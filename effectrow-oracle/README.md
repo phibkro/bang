@@ -43,19 +43,38 @@ plan in the comment.
 ```
 oracle-lean/
   Bang/EffectRow.lean   # SPEC: Finset rows, unify, inherited laws, unify_sound
-  Main.lean             # native binary, same NDJSON protocol as the F* oracle
+  Bang/Eval.lean        # SPEC: the definitional `eval` (ADR-0008) — K2 reference
+  Bang/EvalJson.lean    # JSON codec for the eval op (harness glue)
+  Main.lean             # native binary; ops: unify/union/canon/apply + eval
   lakefile.toml         # requires mathlib (rev must match lean-toolchain)
   lean-toolchain        # pinned Lean version
 oracle/                 # the F* alternate (see oracle/src/Bang.EffectRow.fst)
 harness/
   src/wire.ts           # Effect Schema wire types (parse-don't-validate edge)
-  src/oracle-client.ts  # one long-lived oracle process, line in/out
-  src/transpiler.ts     # CODE UNDER TEST — swap in bang-lang's unifier
+  src/oracle-client.ts  # one long-lived oracle process, line in/out (unify + eval)
+  src/transpiler.ts     # CODE UNDER TEST (unify) — swap in bang-lang's unifier
   src/rowalg.ts         # TS reference algebra + denotation comparison
+  src/ast.ts            # BANG core AST builders (shared by goldens + candidate)
+  src/eval-candidate.ts # CODE UNDER TEST (eval) — independent tree-walker
   test/effectrow.test.ts
+  test/eval.test.ts     # eval goldens (candidate≡oracle≡expected) + pure-core fuzz
+  test/eval-programs.ts # the golden core programs
 tools/selfcheck.mjs     # zero-dep third implementation; the shared de-risk
 flake.nix               # devShells.default = Lean; devShells.fstar = F*
 ```
+
+## The `eval` oracle (the bigger oracle)
+
+The same harness now also hosts a second, larger oracle: the **definitional
+interpreter** `Bang/Eval.lean` (rep 2, toward keyframe **K2** — the VM the
+Bahr–Hutton calculation derives *from*). A fuel-bounded, total free-monad
+interpreter for the pinned core — thunk + `$` force, λ/application, `let`, ADTs +
+match, one-shot `State`/`Throws` handlers — whose effect labels reuse the same
+`Finset` row model. Driven over the same NDJSON pipe (`{"op":"eval",…}`) against
+an **independent** TS candidate (`src/eval-candidate.ts`) on 10 golden programs
+plus a pure-core fuzz. Shape & rationale: **ADR-0008**. The deferred edges
+(multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel) are
+documented `TODO`s in `Eval.lean`, never faked.
 
 ## Run it
 
@@ -117,7 +136,10 @@ extra cross-validation.
 
 ## Next rep
 
-Grow the oracle from "row algebra" to "row algebra + effect inference for a tiny
-expression core," so the differential test compares the transpiler's whole
-inference pass against verified inference. Inference is constraint generation
-plus this unifier, so the unifier is the thing to nail first.
+The definitional `eval` (rep 2) is now in place. **Next is the actual K2
+keyframe: calculate the VM from it** — Bahr–Hutton-derive `(compile, Code, exec)`
+so that `exec ∘ compile ≡ eval`, starting with the pure core (thunk/force/app)
+and then swapping in the effect monad. The harness drives candidate machines
+against `eval` the same way it drives the candidate evaluator now. (Effect-row
+*inference* over an expression core — the other growth direction — folds in at
+K4, on top of the verified unifier.)
