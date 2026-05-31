@@ -19,13 +19,14 @@ A small language whose **paradigm and runtime are values, not language features*
 
 ## Current playhead
 
-**K1 done** (effect-row oracle: verified unifier + harness). **K2 in progress.** The executable definitional `eval` the VM is calculated *from* now exists and is differentially harnessed — but the VM itself is **not** built yet (that *is* K2).
+**K1 done** (effect-row oracle: verified unifier + harness). **K2 in progress** — the `eval` reference exists *and the calculation has started*: a stack machine is calculated + **proven** for the arithmetic kernel. The full VM (closures, effects) is not done yet.
 
 - **Reference:** `oracle-lean/Bang/Eval.lean` — a fuel-bounded, total free-monad interpreter for the pinned core (thunk + `$` force, λ/app, `let`, ADTs + match, one-shot State/Throws handlers as a deep fold). Shape & rationale: **ADR-0008**. Effect labels reuse the `EffectRow` `Finset` model.
-- **Harness:** `Bang/EvalJson.lean` adds an `{"op":"eval",…}` op; `harness/` drives an independent TS candidate (`src/eval-candidate.ts`) against it on 10 golden programs + a pure-core fuzz (`test/eval*.ts`).
-- **Deferred (documented in `Eval.lean`, never faked):** multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
-- **Next (the actual K2 keyframe):** Bahr–Hutton-calculate `(compile, Code, exec)` from this `eval` so that `exec ∘ compile ≡ eval`. Start with the pure core (thunk/force/app), then swap in the effect monad.
-- **In-sandbox build note:** the Lean oracle now compiles and `check-lean` is green here for the first time (the persistent-process harness needed a stdout flush; three Mathlib-version NUDGE spots were fixed). `nix develop` gives Lean via elan; `lake exe cache get` pulls Mathlib oleans.
+- **Calculated VM (started):** `oracle-lean/Bang/Calc.lean` — K2 increment 1. From the denotational `eval` of the arithmetic kernel (`val/add/mul`), `compile`/`exec`/`Instr` are *derived*; `exec ∘ compile ≡ eval` is **proven, no `sorry`** (`exec_compile`, `compile_correct`). Approach & staging: **ADR-0009** (extrinsic; grown one constructor at a time).
+- **Harness:** `Bang/EvalJson.lean` adds `{"op":"eval",…}` (interpreter) and `{"op":"exec",…}` (calculated machine); `harness/` drives an independent TS candidate (`src/eval-candidate.ts`) on 10 eval goldens + pure-core fuzz, and diff-tests the machine vs `eval` on arithmetic (`test/calc.test.ts`). 21 tests green.
+- **Deferred (documented, never faked):** in `Eval.lean` — multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
+- **Next (grow the calculation, ADR-0009 staging):** `if` → `let`/`var` (env in the machine) → `force`/application (closures) → effects (swap in the effect monad; the free-monad `eval`'s resumption defunctionalizes into the machine). Each increment extends `Instr`/`compile`/`exec` and re-proves, with a harness diff-test.
+- **In-sandbox build note:** the Lean oracle compiles and `check-lean` is green (the persistent-process harness needed a stdout flush; three Mathlib-version NUDGE spots were fixed). `nix develop` gives Lean via elan; `lake exe cache get` pulls Mathlib oleans.
 
 K0 decisions are locked — see ADRs. Do not relitigate locked decisions; if you think one is wrong, read its **"Revisit if"** clause first.
 
