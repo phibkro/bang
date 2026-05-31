@@ -45,9 +45,15 @@ export class Oracle {
   }
 
   // Run the CALCULATED stack machine (compile + exec, ADR-0009) on a program.
-  // Defined for the arithmetic kernel (lit, +, *) so far.
+  // Defined for arithmetic + let/var so far.
   execProg(expr: Expr): Promise<RunResult> {
     return this.send({ op: "exec", expr }, (line) => JSON.parse(line) as RunResult);
+  }
+
+  // Run the CALCULATED higher-order machine (closures, CBV, ADR-0010) on a
+  // program. Adds lam/app to the above; fuel-bounded.
+  execHOProg(fuel: number, expr: Expr): Promise<RunResult> {
+    return this.send({ op: "execho", fuel, expr }, (line) => JSON.parse(line) as RunResult);
   }
 
   close(): void {

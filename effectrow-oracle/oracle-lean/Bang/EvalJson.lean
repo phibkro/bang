@@ -1,5 +1,6 @@
 import Bang.Eval
 import Bang.Calc
+import Bang.CalcHO
 import Lean.Data.Json
 
 /-!
@@ -155,5 +156,40 @@ def execRequest (j : Json) : Except String Json := do
                              ("value", Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)])])
   | _   => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
                              ("msg", Json.str "exec: machine halted on a non-singleton stack")])
+
+/-! ## The higher-order calculated machine (`execho`) — closures (ADR-0010)
+
+Same idea as `exec`, but over `Bang.CalcHO` (arithmetic + let/var + λ/app, CBV,
+fuel-bounded). Translates the `Expr` subset to the de Bruijn `CalcHO.Src` and runs
+the calculated closure machine. Diff-tested vs the `eval` oracle on the pure total
+fragment (CBV ≡ CBN there). -/
+
+partial def srcHOFromExpr (ctx : List String) : Expr → Except String Bang.CalcHO.Src
+  | .lit n          => pure (.val n)
+  | .binop "+" a b  => do pure (.add (← srcHOFromExpr ctx a) (← srcHOFromExpr ctx b))
+  | .binop "*" a b  => do pure (.mul (← srcHOFromExpr ctx a) (← srcHOFromExpr ctx b))
+  | .var x          => match ctx.findIdx? (· = x) with
+                       | some i => pure (.var i)
+                       | none   => throw s!"execho: unbound variable {x}"
+  | .letE x e1 e2   => do pure (.letE (← srcHOFromExpr ctx e1) (← srcHOFromExpr (x :: ctx) e2))
+  | .lam x body     => do pure (.lam (← srcHOFromExpr (x :: ctx) body))
+  | .app f a        => do pure (.app (← srcHOFromExpr ctx f) (← srcHOFromExpr ctx a))
+  | _               => throw "execho: only lit, +, *, var, let, lam, app are compiled so far"
+
+def valueHOToJson : Bang.CalcHO.Value → Json
+  | .vint n   => Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)]
+  | .vclo _ _ => Json.mkObj [("v", Json.str "clos")]
+
+/-- Parse and run an `{"op":"execho","fuel":N,"expr":E}` request on the HO machine. -/
+def execHORequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let e    ← exprFromJson (← jField j "expr")
+  let src  ← srcHOFromExpr [] e
+  match Bang.CalcHO.exec fuel (Bang.CalcHO.compile src []) [] [] with
+  | some (rv :: _) => pure (Json.mkObj [("ok", Json.bool true), ("value", valueHOToJson rv)])
+  | some []        => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
+                                        ("msg", Json.str "execho: empty result stack")])
+  | none           => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuckOrOom"),
+                                        ("msg", Json.str "execho: none (out-of-fuel or stuck)")])
 
 end Bang.EvalJson

@@ -13,5 +13,6 @@ Each ADR records a decision a future session could otherwise reverse or relitiga
 | [0007](0007-force-is-dollar-parens-group.md) | Force is `$`; parens group without forcing; fixed global precedence | Accepted | 0005 (supersedes its force note), 0006 |
 | [0008](0008-eval-free-monad-handler-fold.md) | Definitional `eval` is a fuel-bounded free-monad interpreter; handlers are a deep fold | Accepted | 0004, 0001, 0006, 0007 |
 | [0009](0009-calculated-vm-extrinsic-staged.md) | Calculated VM is extrinsic and grown one constructor at a time, from an arithmetic kernel | Accepted | 0004, 0008 |
+| [0010](0010-higher-order-calculation-fuel-cbv.md) | Higher-order calculation: fuel-indexed CBV, shared source-closures; equivalence proof deferred | Accepted | 0009, 0008 |
 
 Format: lightweight MADR. Status ∈ {Proposed, Accepted, Superseded by NNNN, Deprecated}.
