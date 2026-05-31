@@ -24,11 +24,10 @@ The instruction set still *falls out* of the spec
 — `CLOS` (capture a closure) and `APP` (apply) are what the `lam`/`app` cases of
 that equation force into existence (derivation sketch at each `compile` clause).
 
-**Proof status (honest):** the machine is calculated and **differentially tested
-green** against `eval` (the standing guarantee, invariant 1). The Lean equivalence
-`compile_correct` is a fuel-indexed simulation; it is shipped here as `sorry` with
-a concrete proof plan (below), exactly as `unify_sound` ships in `EffectRow.lean`.
-This is the next proof to land — it is *not* claimed as proven.
+**Proof status:** the machine is calculated and the equivalence `exec ∘ compile ≡
+eval` is **PROVEN** — `compile_correct` (via the `sim` simulation), no `sorry`. It
+is *also* differentially tested green against the `eval` oracle. The proof is a
+fuel-indexed simulation resting on fuel-monotonicity (`exec_succ`/`exec_mono`).
 -/
 
 namespace Bang.CalcHO
@@ -82,7 +81,6 @@ def eval : Nat → Env → Src → Option Value
       match eval f env g, eval f env a with
       | some (.vclo body cenv), some va => eval f (va :: cenv) body
       | _,                      _       => none
-termination_by fuel => fuel
 
 /-! ## The machine — derived, not designed
 
@@ -140,36 +138,164 @@ def exec : Nat → Code → Env → Stack → Option Stack
         | some (rv :: _) => exec f c e (rv :: s)
         | _              => none
     | _,              _,        _                       => none      -- stuck
-termination_by fuel => fuel
 
-/-! ## Correctness — the calculation's theorem (PROOF PENDING)
+/-! ## Correctness — the calculation's theorem (PROVEN)
 
-Goal (the fuel-indexed simulation): if the denotational `eval` terminates with a
-value, the compiled machine, given enough fuel, terminates with that value pushed
-onto the stack.
+`exec ∘ compile ≡ eval` for the higher-order closure machine, in three steps:
 
-    eval fe env e = some v  →  ∃ F, exec F (compile e c) env s = exec F c env (v :: s)
-
-with corollary `exec_run`: `eval fe [] e = some v → ∃ F, exec F (compile e []) [] []
-= some [v]`.
-
-Proof plan (the next proof to land):
-1. **Fuel monotonicity** for `exec`: `exec f code env s = some r → f ≤ f' → exec f'
-   code env s = some r`. By induction on `f`/`code`. (Same for `eval`.)
-2. Strengthen to thread the continuation `c` and stack `s`, by induction on the
-   `eval` fuel and `e`. First-order cases (`val/add/mul/var/letE`) mirror the
-   proven `Calc.exec_compile`, now under `Option`/monotonicity.
-3. **`app` / `lam` cases** are where closures bite: `CLOS` matches `eval`'s `lam`
-   by definition (shared `vclo`); `APP` needs the IH on the callee body run under
-   `va :: cenv` plus fuel monotonicity to reconcile the nested `exec` with the
-   `eval` of the body. The shared `Value` representation keeps this an equality,
+1. **Fuel monotonicity** — `exec_succ` / `exec_mono`: more fuel never changes a
+   successful result. Induction on fuel; the `APP` case uses the IH on the nested
+   callee run.
+2. **The simulation** — `sim`: `eval fe env e = some v → ∀ c s F r,
+   exec F c env (v :: s) = some r → ∃ F', exec F' (compile e c) env s = some r`.
+   Induction on the eval fuel; each case chains the IH on subterms through the
+   derived instructions. The concrete target `some r` (not `exec F c …`) is what
+   lets `exec_mono` align the sub-fuels — the `app` case bumps the callee and the
+   continuation to a common fuel. The shared `vclo` keeps `lam`/`app` an equality,
    not a logical relation.
+3. **`compile_correct`** — the corollary: `eval fe env e = some v → ∃ F,
+   exec F (compile e []) env [] = some [v]`.
 
-Until that lands, the standing guarantee is the **harness diff-test** vs the
-`eval` oracle (invariant 1). Shipped as `sorry`, not faked (cf. `unify_sound`). -/
+The machine is *also* differentially tested green against the `eval` oracle. -/
+
+/-- **Fuel monotonicity (one step).** If the machine succeeds with `f` fuel it
+succeeds identically with `f+1`. Proof plan step 1. -/
+theorem exec_succ : ∀ (f : Nat) (code : Code) (env : Env) (s r : Stack),
+    exec f code env s = some r → exec (f + 1) code env s = some r := by
+  intro f
+  induction f with
+  | zero => intro code env s r h; simp [exec] at h
+  | succ f ih =>
+    intro code env s r h
+    cases code with
+    | nil => simpa only [exec] using h
+    | cons i c =>
+      simp only [exec] at h ⊢
+      split at h <;>
+        first
+        | exact ih _ _ _ _ h                              -- simple recursive arms
+        | simp at h                                       -- stuck arms: none = some r
+        | (split at h <;>                                 -- LOOKUP: nested option match
+            first | exact ih _ _ _ _ h | simp at h)
+        | skip                                            -- leave the APP arm
+      -- the remaining goal(s): the APP arm, whose nested callee run needs the IH
+      all_goals (
+        rename_i va body cenv s'
+        cases hb : exec f (compile body []) (va :: cenv) [] with
+        | none      => rw [hb] at h; simp at h
+        | some bs   =>
+          cases bs with
+          | nil          => rw [hb] at h; simp at h
+          | cons rv rest =>
+            rw [hb] at h
+            rw [ih _ _ _ _ hb]
+            exact ih _ _ _ _ h)
+
+/-- **Fuel monotonicity.** More fuel never changes a successful result. -/
+theorem exec_mono (f f' : Nat) (code : Code) (env : Env) (s r : Stack)
+    (h : exec f code env s = some r) (hle : f ≤ f') : exec f' code env s = some r := by
+  obtain ⟨k, rfl⟩ := Nat.le.dest hle
+  clear hle
+  induction k with
+  | zero => simpa using h
+  | succ k ih => rw [Nat.add_succ]; exact exec_succ _ _ _ _ _ ih
+
+/-- **The simulation (forward).** If `eval` produces `v`, then for any
+continuation `c` whose run with `v` pushed reaches `r`, the compiled program
+`compile e c` reaches the same `r` given enough fuel. The concrete target `some r`
+(rather than `exec F c …`) lets `exec_mono` align the sub-fuels. Induction on the
+eval fuel; each case chains the IH on subterms through the derived instructions. -/
+theorem sim : ∀ (fe : Nat) (env : Env) (e : Src) (v : Value),
+    eval fe env e = some v → ∀ (c : Code) (s : Stack) (F : Nat) (r : Stack),
+    exec F c env (v :: s) = some r → ∃ F', exec F' (compile e c) env s = some r := by
+  intro fe
+  induction fe with
+  | zero => intro env e v h; simp [eval] at h
+  | succ fe ih =>
+    intro env e v h c s F r hr
+    cases e with
+    | val n =>
+      simp only [eval] at h; obtain rfl := Option.some.inj h
+      exact ⟨F + 1, by simp only [compile, exec]; exact hr⟩
+    | var i =>
+      simp only [eval] at h
+      exact ⟨F + 1, by simp only [compile, exec, h]; exact hr⟩
+    | lam body =>
+      simp only [eval] at h; obtain rfl := Option.some.inj h
+      exact ⟨F + 1, by simp only [compile, exec]; exact hr⟩
+    | add x y =>
+      simp only [eval] at h
+      cases hx : eval fe env x with
+      | none => rw [hx] at h; simp at h
+      | some vx => cases vx with
+        | vclo _ _ => rw [hx] at h; simp at h
+        | vint a => cases hy : eval fe env y with
+          | none => rw [hx, hy] at h; simp at h
+          | some vy => cases vy with
+            | vclo _ _ => rw [hx, hy] at h; simp at h
+            | vint b =>
+              rw [hx, hy] at h; simp only [Option.some.injEq] at h; subst h
+              obtain ⟨Fy, hFy⟩ := ih env y (.vint b) hy (Instr.ADD :: c) (.vint a :: s)
+                (F + 1) r (by simp only [exec]; exact hr)
+              obtain ⟨Fx, hFx⟩ := ih env x (.vint a) hx (compile y (Instr.ADD :: c)) s Fy r hFy
+              exact ⟨Fx, by simpa only [compile] using hFx⟩
+    | mul x y =>
+      simp only [eval] at h
+      cases hx : eval fe env x with
+      | none => rw [hx] at h; simp at h
+      | some vx => cases vx with
+        | vclo _ _ => rw [hx] at h; simp at h
+        | vint a => cases hy : eval fe env y with
+          | none => rw [hx, hy] at h; simp at h
+          | some vy => cases vy with
+            | vclo _ _ => rw [hx, hy] at h; simp at h
+            | vint b =>
+              rw [hx, hy] at h; simp only [Option.some.injEq] at h; subst h
+              obtain ⟨Fy, hFy⟩ := ih env y (.vint b) hy (Instr.MUL :: c) (.vint a :: s)
+                (F + 1) r (by simp only [exec]; exact hr)
+              obtain ⟨Fx, hFx⟩ := ih env x (.vint a) hx (compile y (Instr.MUL :: c)) s Fy r hFy
+              exact ⟨Fx, by simpa only [compile] using hFx⟩
+    | letE e1 e2 =>
+      simp only [eval] at h
+      cases h1 : eval fe env e1 with
+      | none => rw [h1] at h; simp at h
+      | some v1 =>
+        rw [h1] at h; simp only at h        -- h : eval fe (v1 :: env) e2 = some v
+        obtain ⟨F2, hF2⟩ := ih (v1 :: env) e2 v h (Instr.UNBIND :: c) s (F + 1) r
+          (by simp only [exec]; exact hr)
+        obtain ⟨F1, hF1⟩ := ih env e1 v1 h1 (Instr.BIND :: compile e2 (Instr.UNBIND :: c)) s
+          (F2 + 1) r (by simp only [exec]; exact hF2)
+        exact ⟨F1, by simpa only [compile] using hF1⟩
+    | app g a =>
+      simp only [eval] at h
+      cases hg : eval fe env g with
+      | none => rw [hg] at h; simp at h
+      | some vg => cases vg with
+        | vint _ => rw [hg] at h; simp at h
+        | vclo body cenv => cases ha : eval fe env a with
+          | none => rw [hg, ha] at h; simp at h
+          | some va =>
+            rw [hg, ha] at h; simp only at h    -- h : eval fe (va :: cenv) body = some v
+            -- 1. run the callee body to [v]
+            obtain ⟨G, hG⟩ := ih (va :: cenv) body v h [] [] 1 [v] (by simp [exec])
+            -- 2. APP step, with fuel big enough for both the callee and the continuation
+            have hGbig : exec (G + F) (compile body []) (va :: cenv) [] = some [v] :=
+              exec_mono _ _ _ _ _ _ hG (by omega)
+            have hrbig : exec (G + F) c env (v :: s) = some r :=
+              exec_mono _ _ _ _ _ _ hr (by omega)
+            have happ : exec (G + F + 1) (Instr.APP :: c) env (va :: .vclo body cenv :: s) = some r := by
+              simp only [exec, hGbig]; exact hrbig
+            -- 3. chain ih on the argument, then the function
+            obtain ⟨H, hH⟩ := ih env a va ha (Instr.APP :: c) (.vclo body cenv :: s)
+              (G + F + 1) r happ
+            obtain ⟨F', hF'⟩ := ih env g (.vclo body cenv) hg (compile a (Instr.APP :: c)) s H r hH
+            exact ⟨F', by simpa only [compile] using hF'⟩
+
+/-- **Correctness of the calculated higher-order machine.** If the definitional
+`eval` produces `v`, the compiled program halts (with enough fuel) on `[v]`. The
+calculation `exec ∘ compile ≡ eval` for closures — no longer `sorry`. -/
 theorem compile_correct (fe : Nat) (env : Env) (e : Src) (v : Value)
-    (h : eval fe env e = some v) (c : Code) (s : Stack) :
-    ∃ F, exec F (compile e c) env s = exec F c env (v :: s) := by
-  sorry
+    (h : eval fe env e = some v) : ∃ F, exec F (compile e []) env [] = some [v] :=
+  sim fe env e v h [] [] 1 [v] (by simp [exec])
 
 end Bang.CalcHO

@@ -1,4 +1,4 @@
-# ADR-0010 · Higher-order calculation: fuel-indexed CBV with shared source-closures; equivalence proof deferred
+# ADR-0010 · Higher-order calculation: fuel-indexed CBV with shared source-closures (equivalence now proven)
 
 - **Status:** Accepted
 - **Date:** 2026-05-31
@@ -32,21 +32,28 @@ by the operator and recorded here.
 (eval e :: s)` for the `lam`/`app` cases (derivation sketch in the file) — derived,
 not hand-designed (ADR-0004).
 
-## Proof status — honest
+## Proof status — PROVEN (the deferral was resolved in-session)
 
-The machine is **calculated and differentially tested green** against the `eval`
-oracle (closures, capture, higher-order args; goldens + a 500-case fuzz) — the
-standing guarantee (invariant 1). The Lean equivalence `compile_correct` (a
-**fuel-indexed simulation**) is **shipped as `sorry` with a written proof plan**,
-exactly as `unify_sound` ships in `EffectRow.lean`. It is **not** claimed proven.
-This increment is therefore *harness-backed, proof-pending* — qualitatively weaker
-than the fully-proven `Bang/Calc.lean`, and deliberately kept in a **separate
-module** so the proven first-order calculation stays untouched.
+The machine is calculated, differentially tested green against the `eval` oracle
+(closures, capture, higher-order args; goldens + a 500-case fuzz), **and the Lean
+equivalence `compile_correct` is now proven — no `sorry`.** The proof shipped in
+the same session this ADR was written, so the original "deferred" framing is kept
+only as history; the live status is *proven*.
 
-Proof plan (the next proof to land): (1) fuel-monotonicity for `exec`/`eval`;
-(2) thread the continuation/stack, induct on eval-fuel and `e` — first-order cases
-mirror `Calc.exec_compile` under `Option`; (3) the `app`/`lam` cases close via the
-callee IH + monotonicity, kept an equality by the shared `vclo`.
+The proof (in `Bang/CalcHO.lean`):
+1. **Fuel monotonicity** — `exec_succ` / `exec_mono`: more fuel never changes a
+   successful result (induction on fuel; the `APP` case uses the IH on the nested
+   callee run).
+2. **`sim`** — the forward simulation `eval fe env e = some v → ∀ c s F r,
+   exec F c env (v::s) = some r → ∃ F', exec F' (compile e c) env s = some r`.
+   Stating the target as a concrete `some r` (not `exec F c …`) is the key move:
+   it lets `exec_mono` align the sub-fuels, so the `app` case bumps the callee and
+   the continuation to a common fuel. The shared `vclo` keeps `lam`/`app` an
+   *equality*, not a logical relation — vindicating the shared-`Value` decision.
+3. **`compile_correct`** — corollary: `eval fe env e = some v → ∃ F,
+   exec F (compile e []) env [] = some [v]`.
+
+The only `sorry` left in the build is K1's `unify_sound`.
 
 ## Rejected alternatives
 
