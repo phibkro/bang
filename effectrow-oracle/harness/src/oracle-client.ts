@@ -8,6 +8,12 @@ import { createInterface, Interface } from "node:readline";
 import { decodeUnifyResp, type Row, type UnifyResp } from "./wire.js";
 import type { Expr, RunResult } from "./ast.js";
 
+// Outcome of the effect fragment (CalcEff): a value or a propagating effect.
+export type Outcome =
+  | { ok: true; outcome: "ret"; n: number }
+  | { ok: true; outcome: "exc"; label: number; payload: number }
+  | { ok: false; reason: string; msg?: string };
+
 export class Oracle {
   private proc: ChildProcessWithoutNullStreams;
   private rl: Interface;
@@ -59,6 +65,15 @@ export class Oracle {
   // Run the CALCULATED call-by-name machine (thunk/force; matches Bang.Eval).
   execCBNProg(fuel: number, expr: Expr): Promise<RunResult> {
     return this.send({ op: "execcbn", fuel, expr }, (line) => JSON.parse(line) as RunResult);
+  }
+
+  // Effect fragment (CalcEff.Src wire format): the total reference `eval` and the
+  // calculated handler machine `exec`, both returning an Outcome (ret/exc).
+  evalEff(expr: unknown): Promise<Outcome> {
+    return this.send({ op: "evaleff", expr }, (line) => JSON.parse(line) as Outcome);
+  }
+  execEff(fuel: number, expr: unknown): Promise<Outcome> {
+    return this.send({ op: "execeff", fuel, expr }, (line) => JSON.parse(line) as Outcome);
   }
 
   close(): void {

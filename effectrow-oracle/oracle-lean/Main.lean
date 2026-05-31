@@ -92,6 +92,12 @@ def handle (line : String) : Except String Json := do
   | "execcbn" =>
       -- the CALCULATED call-by-name machine: thunk/force, matches Bang.Eval
       Bang.EvalJson.execCBNRequest j
+  | "evaleff" =>
+      -- the effect reference semantics (total Outcome)
+      Bang.EvalJson.evalEffRequest j
+  | "execeff" =>
+      -- the CALCULATED handler machine: general handlers, Throws (K3)
+      Bang.EvalJson.execEffRequest j
   | other => throw s!"unknown op {other}"
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do

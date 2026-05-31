@@ -2,6 +2,7 @@ import Bang.Eval
 import Bang.Calc
 import Bang.CalcHO
 import Bang.CalcCBN
+import Bang.CalcEff
 import Lean.Data.Json
 
 /-!
@@ -231,5 +232,46 @@ def execCBNRequest (j : Json) : Except String Json := do
                                     ("msg", Json.str "execcbn: forcing the result returned none")])
   | _ => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuckOrOom"),
                            ("msg", Json.str "execcbn: none (out-of-fuel or stuck)")])
+
+/-! ## The effect machine (`evaleff`/`execeff`) — general handlers, Throws (K3)
+
+Its own de Bruijn wire format (`Bang.CalcEff.Src`). Both the reference `eval`
+(`evaleff`) and the calculated handler machine (`execeff`) return an `Outcome` in
+the same JSON shape, so the harness diff-tests them directly. -/
+
+partial def srcEffFromJson (j : Json) : Except String Bang.CalcEff.Src := do
+  match ← jStr j "t" with
+  | "val"     => pure (.val (← jIntF j "n"))
+  | "var"     => pure (.var (← jNat j "i"))
+  | "add"     => pure (.add (← srcEffFromJson (← jField j "a")) (← srcEffFromJson (← jField j "b")))
+  | "let"     => pure (.letE (← srcEffFromJson (← jField j "e1")) (← srcEffFromJson (← jField j "e2")))
+  | "perform" => pure (.perform (← jNat j "l") (← srcEffFromJson (← jField j "arg")))
+  | "handle"  => pure (.handle (← jNat j "l") (← srcEffFromJson (← jField j "onRaise"))
+                               (← srcEffFromJson (← jField j "body")))
+  | other     => throw s!"eff: unknown tag {other}"
+
+def outcomeToJson : Bang.CalcEff.Outcome → Json
+  | .ret n   => Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "ret"), ("n", Lean.toJson n)]
+  | .exc l p => Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "exc"),
+                            ("label", Lean.toJson l), ("payload", Lean.toJson p)]
+
+def resultToJson : Bang.CalcEff.Result → Json
+  | .halt (n :: _)  => Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "ret"), ("n", Lean.toJson n)]
+  | .halt []        => Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
+                                   ("msg", Json.str "execeff: empty halt stack")]
+  | .uncaught l p   => Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "exc"),
+                                   ("label", Lean.toJson l), ("payload", Lean.toJson p)]
+
+/-- `{"op":"evaleff","expr":E}` — the total reference semantics. -/
+def evalEffRequest (j : Json) : Except String Json := do
+  pure (outcomeToJson (Bang.CalcEff.eval [] (← srcEffFromJson (← jField j "expr"))))
+
+/-- `{"op":"execeff","fuel":N,"expr":E}` — the calculated handler machine. -/
+def execEffRequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let src  ← srcEffFromJson (← jField j "expr")
+  match Bang.CalcEff.run fuel src with
+  | some res => pure (resultToJson res)
+  | none     => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
 
 end Bang.EvalJson
