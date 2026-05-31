@@ -107,7 +107,46 @@ call `ihf` to discharge a forcing; the forceV-sim's `FORCE`-on-`vthunk` case cal
 `CalcCBN.compile_correct` (`Bang/CalcCBN.lean`) — BANG's full pure-core kernel,
 proven. Worked the first build after fixing the lemma name + one copy-paste typo.
 
+## Effects → a two-part (ret/exc) sim + handler stack (the K3 pattern)
+
+Calculating an effect machine (`Bang/CalcEff.lean`, general handlers + Throws,
+Hutton–Wright generalised to labels) added these beyond the closure proofs:
+
+- **Total `eval`, fuel-bounded `exec`.** Exceptions short-circuit but don't
+  diverge, so `eval : Env → Src → Outcome` (`ret │ exc`) is *total/structural* —
+  the spec stays clean. Only the machine needs fuel (`THROW` jumps to recovery).
+- **Keep the machine structurally recursive.** A `THROW` that unwinds the handler
+  stack is tempting to write as `unwind (exec f) …` (passing `exec` as a
+  higher-order arg) — but that forces `termination_by`, which makes `exec`
+  WF-recursive and **breaks `simp [exec]` unfolding everywhere**. Instead split out
+  a *pure* finder `unwindFind : Label → Int → HStack → (… ) ⊕ Result` and make the
+  `THROW` arm a **direct** recursive call `exec f rec e' s' hs'`. Structural,
+  clean unfolding, and no monotonicity lemma for the unwind.
+- **Two-part `sim`** (one conjunction, induction on `e`): a *ret* part (as before)
+  and an *exc* part `eval env e = exc ℓ p → ∀ F r, throwOutcome F ℓ p hs = some r →
+  ∃ F', exec F' (compile e c) env s hs = some r`, where `throwOutcome` is the
+  `THROW` arm factored out. The `handle` case is the crux: install/pop the frame
+  (`MARK`/`UNMARK`); a *caught* exception links `eval`'s recovery run to the machine
+  unwinding into that frame's recovery code; a *forwarded* effect skips the frame
+  in both `eval` (`if l'=lab … else`) and `unwindFind` (`if fr.label=l …`).
+- **`subst` direction is unpredictable** when both sides are local vars (`lx = l`).
+  To extract a sub-evaluation's `exc lx px` against the goal's `exc l p`: prefer
+  **`subst lx; subst px`** (name the *cases* var to eliminate) over
+  `obtain ⟨rfl,rfl⟩`/`subst h`. When you must keep a specific name, rewrite the
+  goal instead (`show throwOutcome F lab e hs = some r; rw [hl, hp]; exact hu`).
+
 ## Gotchas (cost real time — don't repeat)
+
+- **`set` is a Mathlib tactic** — the `Calc*` modules import no Mathlib (core +
+  Batteries only), so `set x := … with h` is "unknown tactic". Inline the term
+  (anonymous constructor `⟨…⟩`), or `let`. Also **`rec` is a reserved keyword** —
+  don't name a local `rec`.
+- **`if`-condition symmetry**: `unwindFind`'s `fr.label = l` unfolds to `lab = l`,
+  but `by_cases hc : l' = lab` (post-`subst`) gives `hc : l ≠ lab`. Use
+  `rw [if_neg (Ne.symm hc)]` / `rw [if_pos hc.symm]`.
+- To expose an `if` inside a reduced `match` for `rw [if_pos/neg]`, unfold the
+  scrutinee with **`simp only [hb]`** (iota-reduces), not `rw [hb]` (leaves the
+  match).
 
 - **`::` binds tighter than `+`** (prec 67 vs 65): `n + m :: s` parses as
   `n + (m :: s)` → a `HAdd Int (List Int)` instance error. Write `(n + m) :: s`.

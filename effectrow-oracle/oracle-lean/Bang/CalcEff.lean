@@ -53,7 +53,7 @@ propagating effect; `handle` catches its own label (running the recovery with th
 payload bound) and forwards the rest. -/
 def eval : Env → Src → Outcome
   | _,   .val n  => .ret n
-  | env, .var i  => match env[i]? with | some v => .ret v | none => .ret 0
+  | env, .var i  => .ret (env[i]?.getD 0)
   | env, .add x y =>
       match eval env x with
       | .exc l p => .exc l p
@@ -131,17 +131,17 @@ def compile : Src → Code → Code
       Instr.MARK l (Instr.BIND :: compile onRaise (Instr.UNBIND :: c))
         :: compile body (Instr.UNMARK :: c)
 
-/-- Unwind the handler stack to the nearest frame catching `l`; restore its
-env+stack, push the payload, and run its recovery. No frame ⇒ uncaught. -/
-def unwind (exec : Code → Env → Stack → HStack → Option Result)
-    (l : Label) (p : Int) : HStack → Option Result
-  | []          => some (.uncaught l p)
-  | fr :: hs    =>
-      if fr.label = l
-      then exec fr.recovery fr.savedEnv (p :: fr.savedStack) hs
-      else unwind exec l p hs
+/-- Find the nearest handler frame catching `l`: return the recovery code + the
+restored config (env, payload-on-stack, remaining handler stack), or `uncaught`.
+A *pure* function (no `exec` argument), so `exec` stays structurally recursive. -/
+def unwindFind : Label → Int → HStack → (Code × Env × Stack × HStack) ⊕ Result
+  | l, p, []       => .inr (.uncaught l p)
+  | l, p, fr :: hs => if fr.label = l
+                      then .inl (fr.recovery, fr.savedEnv, p :: fr.savedStack, hs)
+                      else unwindFind l p hs
 
-/-- The machine. Fuel-bounded (`THROW` jumps to recovery code). -/
+/-- The machine. Fuel-bounded (`THROW` jumps to recovery code), structurally
+recursive on fuel. -/
 def exec : Nat → Code → Env → Stack → HStack → Option Result
   | 0,    _,       _,   _, _  => none
   | _+1,  [],      _,   s, _  => some (.halt s)
@@ -149,9 +149,7 @@ def exec : Nat → Code → Env → Stack → HStack → Option Result
     match i, s with
     | Instr.PUSH n,   s              => exec f c env (n :: s) hs
     | Instr.ADD,      (b :: a :: s)  => exec f c env ((a + b) :: s) hs
-    | Instr.LOOKUP i, s              => match env[i]? with
-                                        | some v => exec f c env (v :: s) hs
-                                        | none   => none
+    | Instr.LOOKUP i, s              => exec f c env ((env[i]?.getD 0) :: s) hs  -- default 0 = eval's var
     | Instr.BIND,     (v :: s)       => exec f c (v :: env) s hs
     | Instr.UNBIND,   s              => match env with
                                         | _ :: env' => exec f c env' s hs
@@ -161,35 +159,41 @@ def exec : Nat → Code → Env → Stack → HStack → Option Result
     | Instr.UNMARK,   s              => match hs with
                                         | _ :: hs' => exec f c env s hs'   -- drop the handler frame
                                         | []       => none
-    | Instr.THROW l,  (p :: _)       => unwind (exec f) l p hs
+    | Instr.THROW l,  (p :: _)       =>
+        match unwindFind l p hs with
+        | .inl (rec, e', s', hs') => exec f rec e' s' hs'   -- direct recursive call: structural
+        | .inr res                => some res
     | _,              _              => none                                -- stuck
-  termination_by fuel => fuel
-  decreasing_by all_goals simp_wf
+
+/-- The result of throwing `l p` against handler stack `hs` with `f` fuel: run the
+nearest matching frame's recovery, or report uncaught. (`exec`'s `THROW` arm,
+factored out for the proof.) -/
+def throwOutcome (f : Nat) (l : Label) (p : Int) (hs : HStack) : Option Result :=
+  match unwindFind l p hs with
+  | .inl (rec, e', s', hs') => exec f rec e' s' hs'
+  | .inr res                => some res
 
 /-- Run a closed program: enough fuel, empty env/stack/handler-stack. -/
 def run (fuel : Nat) (e : Src) : Option Result := exec fuel (compile e []) [] [] []
 
-/-! ## Correctness (PROOF PENDING — harness-green, proof is the next step)
+/-! ## Correctness — PROVEN
 
-The handler machine is calculated and **differentially tested green** against the
-reference `eval` (`evaleff` vs `execeff`: catch / forward / nest / recover /
-uncaught + a fuzz) — the standing guarantee (invariant 1).
+`exec ∘ compile ≡ eval` for the handler machine, with **no `sorry`** (also
+differentially tested green against `eval`). The hardest so far — the new piece is
+the **handler stack + unwinding**, so the simulation is *two-part*:
 
-The Lean equivalence `compile_correct` (below) is shipped as `sorry` with a plan,
-as each machine first was. It is the **hardest so far** — the new complexity is
-the **handler stack + unwinding**, so the simulation is *two-part* (reuses the
-playbook fuel-alignment, adds an exc/unwind invariant):
-
-* **`exec_succ`/`exec_mono`** — fuel monotonicity; the `THROW` arm recurses through
-  `unwind` (which itself recurses on the handler stack).
+* **`exec_succ`/`exec_mono`** — fuel monotonicity. `exec` is now structurally
+  recursive (the `THROW` arm uses the pure `unwindFind`, a direct recursive call —
+  not a higher-order `exec` argument), so `simp [exec]` unfolds cleanly.
 * **`sim`** — by induction on `e`, two outcomes proved together:
   - *ret*: `eval env e = ret v → ∀ c s hs F r, exec F c env (v::s) hs = some r →
-    ∃ F', exec F' (compile e c) env s hs = some r` (as before, now carrying `hs`);
-  - *exc*: `eval env e = exc ℓ p → ∀ c s hs, ∃ F', exec F' (compile e c) env s hs
-    = unwind … ℓ p hs` — a raise compiles to a `THROW` that unwinds `hs` exactly as
-    `eval`'s exception propagates. The `handle` case links the two: a caught
-    exception (eval runs the recovery) matches the machine unwinding to that frame
-    and running its recovery code; `MARK`/`UNMARK` bracket the body.
+    ∃ F', exec F' (compile e c) env s hs = some r`;
+  - *exc*: `eval env e = exc ℓ p → ∀ c s hs F r, throwOutcome F ℓ p hs = some r →
+    ∃ F', exec F' (compile e c) env s hs = some r` — a raise compiles to a `THROW`
+    whose `throwOutcome` unwinds `hs` exactly as `eval`'s exception propagates. The
+    `handle` case links them: a caught exception (eval runs the recovery) matches
+    the machine unwinding into that frame's recovery code; `MARK`/`UNMARK` bracket
+    the body; a forwarded effect skips the frame both in `eval` and in `unwindFind`.
 * **`compile_correct`** — corollary: `run` halts on `[v]` for `ret v`, and reports
   `uncaught ℓ p` for `exc ℓ p`. -/
 
@@ -198,8 +202,203 @@ def outcomeToResult : Outcome → Result
   | .ret n   => .halt [n]
   | .exc l p => .uncaught l p
 
+/-! ### Fuel monotonicity -/
+
+theorem exec_succ : ∀ (f : Nat) (code : Code) (env : Env) (s : Stack) (hs : HStack) (r : Result),
+    exec f code env s hs = some r → exec (f + 1) code env s hs = some r := by
+  intro f
+  induction f with
+  | zero => intro code env s hs r h; simp [exec] at h
+  | succ f ih =>
+    intro code env s hs r h
+    cases code with
+    | nil => simpa only [exec] using h
+    | cons i c =>
+      simp only [exec] at h ⊢
+      split at h <;>
+        first
+        | exact ih _ _ _ _ _ h                                                       -- simple recursive
+        | simp at h                                                                  -- stuck
+        | (split at h <;> first | exact ih _ _ _ _ _ h | exact h | simp at h)        -- UNBIND/UNMARK/THROW
+
+theorem exec_mono (f f' : Nat) (code : Code) (env : Env) (s : Stack) (hs : HStack) (r : Result)
+    (h : exec f code env s hs = some r) (hle : f ≤ f') : exec f' code env s hs = some r := by
+  obtain ⟨k, rfl⟩ := Nat.le.dest hle; clear hle
+  induction k with
+  | zero => simpa using h
+  | succ k ih => rw [Nat.add_succ]; exact exec_succ _ _ _ _ _ _ ih
+
+/-! ### The two-part simulation
+
+For every `e`, env, continuation `c`, stack `s`, handler stack `hs`:
+* if `eval env e = ret v`, running `compile e c` simulates pushing `v` and running `c`;
+* if `eval env e = exc ℓ p`, running `compile e c` simulates `THROW ℓ p` unwinding `hs`
+  (the continuation `c` is abandoned). Structural induction on `e`; `exec_mono`
+  aligns sub-fuels. The `handle` case installs/pops the frame (`MARK`/`UNMARK`) and
+  links a caught exception to unwinding into that frame's recovery. -/
+theorem sim : ∀ (e : Src) (env : Env) (c : Code) (s : Stack) (hs : HStack),
+    (∀ v, eval env e = .ret v → ∀ F r, exec F c env (v :: s) hs = some r →
+        ∃ F', exec F' (compile e c) env s hs = some r) ∧
+    (∀ l p, eval env e = .exc l p → ∀ F r, throwOutcome F l p hs = some r →
+        ∃ F', exec F' (compile e c) env s hs = some r) := by
+  intro e
+  induction e with
+  | val n =>
+    intro env c s hs; refine ⟨?_, ?_⟩
+    · intro v hv F r hr; simp only [eval] at hv; obtain rfl := Outcome.ret.inj hv
+      exact ⟨F + 1, by simp only [compile, exec]; exact hr⟩
+    · intro l p hv; simp [eval] at hv
+  | var i =>
+    intro env c s hs; refine ⟨?_, ?_⟩
+    · intro v hv F r hr; simp only [eval] at hv; obtain rfl := Outcome.ret.inj hv
+      exact ⟨F + 1, by simp only [compile, exec]; exact hr⟩
+    · intro l p hv; simp [eval] at hv
+  | add x y ihx ihy =>
+    intro env c s hs; refine ⟨?_, ?_⟩
+    · intro v hv F r hr
+      simp only [eval] at hv
+      cases hxo : eval env x with
+      | exc l p => rw [hxo] at hv; simp at hv
+      | ret a =>
+        cases hyo : eval env y with
+        | exc l p => rw [hxo, hyo] at hv; simp at hv
+        | ret b =>
+          rw [hxo, hyo] at hv; simp only [Outcome.ret.injEq] at hv; subst hv
+          obtain ⟨Gy, hGy⟩ := (ihy env (Instr.ADD :: c) (a :: s) hs).1 b hyo (F + 1) r
+            (by simp only [exec]; exact hr)
+          exact (ihx env (compile y (Instr.ADD :: c)) s hs).1 a hxo Gy r hGy
+    · intro l p hv
+      simp only [eval] at hv
+      cases hxo : eval env x with
+      | exc lx px =>
+        rw [hxo] at hv; simp only [Outcome.exc.injEq] at hv; obtain ⟨hl, hp⟩ := hv
+        subst lx; subst px
+        intro F r hu
+        exact (ihx env (compile y (Instr.ADD :: c)) s hs).2 l p hxo F r hu
+      | ret a =>
+        cases hyo : eval env y with
+        | exc ly py =>
+          rw [hxo, hyo] at hv; simp only [Outcome.exc.injEq] at hv; obtain ⟨hl, hp⟩ := hv
+          subst ly; subst py
+          intro F r hu
+          obtain ⟨Gy, hGy⟩ := (ihy env (Instr.ADD :: c) (a :: s) hs).2 l p hyo F r hu
+          exact (ihx env (compile y (Instr.ADD :: c)) s hs).1 a hxo Gy r hGy
+        | ret b => rw [hxo, hyo] at hv; simp at hv
+  | letE e1 e2 ih1 ih2 =>
+    intro env c s hs; refine ⟨?_, ?_⟩
+    · intro v hv F r hr
+      simp only [eval] at hv
+      cases h1 : eval env e1 with
+      | exc l p => rw [h1] at hv; simp at hv
+      | ret v1 =>
+        rw [h1] at hv               -- hv : eval (v1 :: env) e2 = .ret v
+        obtain ⟨G2, hG2⟩ := (ih2 (v1 :: env) (Instr.UNBIND :: c) s hs).1 v hv (F + 1) r
+          (by simp only [exec]; exact hr)
+        obtain ⟨G1, hG1⟩ := (ih1 env (Instr.BIND :: compile e2 (Instr.UNBIND :: c)) s hs).1 v1 h1
+          (G2 + 1) r (by simp only [exec]; exact hG2)
+        exact ⟨G1, by simpa only [compile] using hG1⟩
+    · intro l p hv
+      simp only [eval] at hv
+      cases h1 : eval env e1 with
+      | exc l' p' =>
+        rw [h1] at hv; simp only [Outcome.exc.injEq] at hv; obtain ⟨hl, hp⟩ := hv
+        subst l'; subst p'
+        intro F r hu
+        obtain ⟨G1, hG1⟩ := (ih1 env (Instr.BIND :: compile e2 (Instr.UNBIND :: c)) s hs).2 l p h1 F r hu
+        exact ⟨G1, by simpa only [compile] using hG1⟩
+      | ret v1 =>
+        rw [h1] at hv               -- hv : eval (v1 :: env) e2 = .exc l p
+        intro F r hu
+        obtain ⟨G2, hG2⟩ := (ih2 (v1 :: env) (Instr.UNBIND :: c) s hs).2 l p hv F r hu
+        obtain ⟨G1, hG1⟩ := (ih1 env (Instr.BIND :: compile e2 (Instr.UNBIND :: c)) s hs).1 v1 h1
+          (G2 + 1) r (by simp only [exec]; exact hG2)
+        exact ⟨G1, by simpa only [compile] using hG1⟩
+  | perform lab argE ih =>
+    intro env c s hs; refine ⟨?_, ?_⟩
+    · intro v hv; simp only [eval] at hv
+      cases ha : eval env argE with
+      | exc l p => rw [ha] at hv; simp at hv
+      | ret e  => rw [ha] at hv; simp at hv
+    · intro l p hv
+      simp only [eval] at hv
+      cases ha : eval env argE with
+      | exc l' p' =>
+        rw [ha] at hv; simp only [Outcome.exc.injEq] at hv; obtain ⟨hl, hp⟩ := hv
+        subst l'; subst p'
+        intro F r hu
+        exact (ih env (Instr.THROW lab :: c) s hs).2 l p ha F r hu
+      | ret e =>
+        rw [ha] at hv; simp only [Outcome.exc.injEq] at hv; obtain ⟨hl, hp⟩ := hv
+        intro F r hu                 -- hl : lab = l, hp : e = p, hu : throwOutcome F l p hs = some r
+        refine (ih env (Instr.THROW lab :: c) s hs).1 e ha (F + 1) r ?_
+        show throwOutcome F lab e hs = some r
+        rw [hl, hp]; exact hu
+  | handle lab onRaise body ihOn ihBody =>
+    intro env c s hs
+    -- the handler frame `MARK` installs (inlined; `CalcEff` imports no Mathlib `set`)
+    refine ⟨?_, ?_⟩
+    · intro v hv F r hr
+      simp only [eval] at hv
+      cases hb : eval env body with
+      | ret w =>
+        simp only [hb] at hv
+        obtain ⟨Gb, hGb⟩ := (ihBody env (Instr.UNMARK :: c) s
+            (⟨lab, Instr.BIND :: compile onRaise (Instr.UNBIND :: c), env, s⟩ :: hs)).1
+          w hb (F + 1) r (by simp only [exec]; rw [Outcome.ret.inj hv]; exact hr)
+        exact ⟨Gb + 1, by simp only [compile, exec]; exact hGb⟩
+      | exc l' p =>
+        simp only [hb] at hv
+        by_cases hc : l' = lab
+        · rw [if_pos hc] at hv                 -- hv : eval (p :: env) onRaise = .ret v
+          obtain ⟨Go, hGo⟩ := (ihOn (p :: env) (Instr.UNBIND :: c) s hs).1 v hv (F + 1) r
+            (by simp only [exec]; exact hr)
+          have hthr : throwOutcome (Go + 1) l' p
+              (⟨lab, Instr.BIND :: compile onRaise (Instr.UNBIND :: c), env, s⟩ :: hs) = some r := by
+            simp only [throwOutcome, unwindFind]; rw [if_pos hc.symm]; simp only [exec]; exact hGo
+          obtain ⟨Gb, hGb⟩ := (ihBody env (Instr.UNMARK :: c) s
+            (⟨lab, Instr.BIND :: compile onRaise (Instr.UNBIND :: c), env, s⟩ :: hs)).2
+            l' p hb (Go + 1) r hthr
+          exact ⟨Gb + 1, by simp only [compile, exec]; exact hGb⟩
+        · rw [if_neg hc] at hv; simp at hv      -- forwarded → eval is exc, not ret: vacuous
+    · intro l p hv
+      simp only [eval] at hv
+      cases hb : eval env body with
+      | ret w => simp only [hb] at hv; simp at hv
+      | exc l' p' =>
+        simp only [hb] at hv
+        by_cases hc : l' = lab
+        · rw [if_pos hc] at hv                  -- hv : eval (p' :: env) onRaise = .exc l p
+          intro F r hu
+          obtain ⟨Go, hGo⟩ := (ihOn (p' :: env) (Instr.UNBIND :: c) s hs).2 l p hv F r hu
+          have hthr : throwOutcome (Go + 1) l' p'
+              (⟨lab, Instr.BIND :: compile onRaise (Instr.UNBIND :: c), env, s⟩ :: hs) = some r := by
+            simp only [throwOutcome, unwindFind]; rw [if_pos hc.symm]; simp only [exec]; exact hGo
+          obtain ⟨Gb, hGb⟩ := (ihBody env (Instr.UNMARK :: c) s
+            (⟨lab, Instr.BIND :: compile onRaise (Instr.UNBIND :: c), env, s⟩ :: hs)).2
+            l' p' hb (Go + 1) r hthr
+          exact ⟨Gb + 1, by simp only [compile, exec]; exact hGb⟩
+        · rw [if_neg hc] at hv; simp only [Outcome.exc.injEq] at hv; obtain ⟨hl, hp⟩ := hv
+          subst l'; subst p'
+          intro F r hu
+          have hthr : throwOutcome F l p
+              (⟨lab, Instr.BIND :: compile onRaise (Instr.UNBIND :: c), env, s⟩ :: hs) = some r := by
+            simp only [throwOutcome, unwindFind]; rw [if_neg (Ne.symm hc)]; exact hu
+          obtain ⟨Gb, hGb⟩ := (ihBody env (Instr.UNMARK :: c) s
+            (⟨lab, Instr.BIND :: compile onRaise (Instr.UNBIND :: c), env, s⟩ :: hs)).2
+            l p hb F r hthr
+          exact ⟨Gb + 1, by simp only [compile, exec]; exact hGb⟩
+
+/-- **Correctness of the calculated handler machine.** Running the compiled
+program halts on `[v]` when `eval` returns `v`, and reports `uncaught ℓ p` when
+`eval` raises an effect that escapes every handler. No `sorry`. -/
 theorem compile_correct (e : Src) :
     ∃ F, run F e = some (outcomeToResult (eval [] e)) := by
-  sorry
+  cases ho : eval [] e with
+  | ret v =>
+    obtain ⟨F, hF⟩ := (sim e [] [] [] []).1 v ho 1 (.halt [v]) (by simp [exec])
+    exact ⟨F, by simpa only [run, outcomeToResult] using hF⟩
+  | exc l p =>
+    obtain ⟨F, hF⟩ := (sim e [] [] [] []).2 l p ho 1 (.uncaught l p) (by simp [throwOutcome, unwindFind])
+    exact ⟨F, by simpa only [run, outcomeToResult] using hF⟩
 
 end Bang.CalcEff
