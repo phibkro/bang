@@ -157,6 +157,82 @@ def compile : Src → Code → Code
 /-- Run a closed program: empty env/stack/continuation, generous fuel from the caller. -/
 def run (fuel : Nat) (e : Src) : Option Value := exec fuel (compile e []) [] [] []
 
+/-! ## Foundation: fuel monotonicity
+
+The bedrock any correctness simulation for this machine needs: a successful run is
+preserved by more fuel. Every recursive step of `exec` — including the empty-code
+return-through, `PERFORM` (run the clause), and `RESUME` (run the spliced
+continuation) — decreases fuel, so the machine is structurally recursive on fuel
+and `simp [exec]` unfolds cleanly. -/
+
+/-- **Fuel monotonicity (one step).** -/
+theorem exec_succ : ∀ (f : Nat) (code : Code) (env : Env) (s : Stack) (K : Kont) (res : Value),
+    exec f code env s K = some res → exec (f + 1) code env s K = some res := by
+  intro f
+  induction f with
+  | zero => intro code env s K res h; simp [exec] at h
+  | succ f ih =>
+    intro code env s K res h
+    cases code with
+    | nil =>
+      cases s with
+      | nil => simp [exec] at h
+      | cons v s'' => cases K with
+        | nil => simpa only [exec] using h
+        | cons fr K' => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+    | cons i c =>
+      cases i with
+      | PUSH n => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+      | ADD =>
+        cases s with
+        | nil => simp [exec] at h
+        | cons v1 r1 => cases v1 with
+          | vcont _ _ _ _ _ => simp [exec] at h
+          | vint b => cases r1 with
+            | nil => simp [exec] at h
+            | cons v2 _ => cases v2 with
+              | vcont _ _ _ _ _ => simp [exec] at h
+              | vint a => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+      | LOOKUP j =>
+        simp only [exec] at h ⊢
+        cases hj : env[j]? with
+        | none => rw [hj] at h; simp at h
+        | some v => rw [hj] at h; exact ih _ _ _ _ _ h
+      | BIND =>
+        cases s with
+        | nil => simp [exec] at h
+        | cons v s' => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+      | UNBIND =>
+        cases env with
+        | nil => simp [exec] at h
+        | cons _ env' => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+      | INSTALL cl oc => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+      | PERFORM =>
+        cases s with
+        | nil => simp [exec] at h
+        | cons p s' => cases K with
+          | nil => simp [exec] at h
+          | cons fr K' => cases hcl : fr.clause with
+            | none => simp only [exec, hcl] at h; simp at h
+            | some cl => obtain ⟨clauseCode, clauseEnv⟩ := cl
+                         simp only [exec, hcl] at h ⊢; exact ih _ _ _ _ _ h
+      | RESUME =>
+        cases s with
+        | nil => simp [exec] at h
+        | cons w r1 => cases r1 with
+          | nil => simp [exec] at h
+          | cons v2 s' => cases v2 with
+            | vint _ => simp [exec] at h
+            | vcont cC cE cS clC clE => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+
+/-- **Fuel monotonicity.** More fuel never changes a successful result. -/
+theorem exec_mono (f f' : Nat) (code : Code) (env : Env) (s : Stack) (K : Kont) (res : Value)
+    (h : exec f code env s K = some res) (hle : f ≤ f') : exec f' code env s K = some res := by
+  obtain ⟨k, rfl⟩ := Nat.le.dest hle; clear hle
+  induction k with
+  | zero => simpa using h
+  | succ k ih => rw [Nat.add_succ]; exact exec_succ _ _ _ _ _ _ ih
+
 /-! ## Sanity checks (the reification demonstrators) -/
 
 section Demos

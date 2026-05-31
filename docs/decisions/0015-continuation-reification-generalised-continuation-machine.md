@@ -66,13 +66,24 @@ statically verified by `rfl`** in the build (seven demonstrators):
 This is a genuine, working reified-handler machine — the capability all five prior
 machines avoided. The file is `sorry`-free: it asserts exactly what it proves.
 
+**Foundation proven.** `exec_succ` / `exec_mono` (fuel monotonicity) are proven,
+`sorry`-free — the bedrock any correctness simulation needs (every machine step,
+including the empty-code return-through, `PERFORM`, and `RESUME`, decreases fuel).
+
 **Named next step — the general theorem.** Unlike the prior five machines, the
-*general* `exec ∘ compile ≡ eval` is **not yet proven** here. The plan: a Src-level
-**defunctionalized** reference `eval` (the same generalised-continuation machine over
-a `SrcKont` whose frames hold `Src`), related to `exec`'s `CodeKont` by `compile`
-(a `vcont`/`Kont` mapping, the `CalcHO`-style shared-representation refinement lifted
-to continuations). Plus a harness fuzz against an **independent** TS CPS interpreter
-(JS closures are real resumptions — no positivity problem), the standard cross-check.
+*general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest
+assessment is that it is **research-grade**, for a *fundamental* reason: strict
+positivity forces any reference to defunctionalize the resumption into data, so the
+reference is a **second abstract machine** (a Src-frame generalised-continuation
+machine), related to `exec`'s `CodeKont` only through `compile`. The proof is then a
+**bisimulation** between the two machines (the continuation-correspondence invariant
+`CodeKont = compile <$> SrcKont` preserved across `PERFORM`/`RESUME`) — the kind of
+abstract-machine-correctness result that is a paper section (Hillerström–Lindley), a
+*different* shape than the equality-style big-step sims the other eight machines use.
+There is no denotational shortcut: `Comp` may hold functions, but `Value` cannot, so
+first-class resumptions must be data on both sides. Plus a harness fuzz against an
+**independent** TS CPS interpreter (JS closures are real resumptions — no positivity
+problem), the standard empirical cross-check, which can land first.
 
 ## Rationale
 
