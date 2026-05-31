@@ -15,14 +15,14 @@ A small language whose **paradigm and runtime are values, not language features*
 | **why** things are the way they are | `docs/decisions/` (ADRs) — read these before proposing changes |
 | the verified reference (K1 unifier) | `effectrow-oracle/oracle-lean/Bang/EffectRow.lean` (Lean 4 + Mathlib) |
 | the reference `eval` (K2/K3 source) | `effectrow-oracle/oracle-lean/Bang/Eval.lean` |
-| the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt, CalcCBNEff, CalcCBNSt, CalcCBNEffSt}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) |
+| the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt, CalcCBNEff, CalcCBNSt, CalcCBNEffSt}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) · `CalcReify.lean` — the reification frontier (machine + demonstrators verified; general theorem pending) |
 | **how to prove the next increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, mutual-induction & two-part-sim patterns, gotchas. **Read before proving.** |
 | the standing guarantee | `effectrow-oracle/harness/` (differential tests) + `effectrow-oracle/tools/selfcheck.mjs` |
 | what to read | reading canon, end of the roadmap `.md` |
 
 ## Current playhead
 
-**K0 locked · K1 done · K2 done · K3 in progress.** **Every theorem in the repo is proven — zero `sorry`s.** The verified reference `eval` exists; the VM is **calculated** from it (Bahr–Hutton), and each calculated machine is proven `exec ∘ compile ≡ eval` *and* differentially tested against `eval`.
+**K0 locked · K1 done · K2 done · K3 in progress.** **Every theorem in the repo is proven — zero `sorry`s** (the repo asserts only what it proves). The verified reference `eval` exists; the VM is **calculated** from it (Bahr–Hutton). The **eight** core machines are each proven `exec ∘ compile ≡ eval` *and* differentially tested. The **ninth**, `CalcReify` (the reification frontier), is a working machine with its core behaviours `rfl`-verified, but its *general* theorem is **not yet proven** — named/scoped/planned in ADR-0015, not faked.
 
 **The reference:** `oracle-lean/Bang/Eval.lean` — a fuel-bounded, total free-monad interpreter for the pinned core (thunk + `$`force, λ/app, `let`, ADTs+match, one-shot State/Throws handlers as a deep fold). Shape/rationale: **ADR-0008**. Effect labels reuse the K1 `EffectRow` `Finset` model.
 
@@ -38,6 +38,7 @@ A small language whose **paradigm and runtime are values, not language features*
 | `CalcCBNEff` | **Throws over the closure core**: + λ/thunk/`$`force/CBN | fuel; `Option Outcome` | **four-part** mutual sim (`eval`/`forceV` × ret/exc); **forcing can raise**; re-throw `uncaught` at the meta-call boundary | 0012 |
 | `CalcCBNSt` | **State over the closure core**: `get`/`put`/`runState` + the CBN core | fuel; `Option (Value × State)` | **two-part** mutual sim; register **threads cleanly** through the nested meta-runs (State resumes ⇒ no re-throw, no flatten) | 0013 |
 | `CalcCBNEffSt` | **Throws *and* State together**: handler stack + register at once (the effect-row model) | fuel; `Option (Outcome × State)` | **four-part** mutual sim with state threaded; State **persists through a throw** (register threads through unwinding; rollback is STM's job) | 0014 |
+| `CalcReify` | **reification** — multi-shot / non-tail handlers (one op, *flat* generalised-continuation machine) | fuel; `Kont` = list of frames; resumption = captured prefix as a `vcont` | machine + **7 `rfl`-verified demonstrators** (one-shot/non-tail/multi-shot/zero-shot/re-handling). ⚠ **general `exec∘compile≡eval` not yet proven** — see ADR-0015 | 0015 |
 
 Plus K1's `unify_sound` (proven — it needed a **freshness precondition**: `fresh` not already a row's tail var, else the open/open case binds a cyclic `some fresh`).
 
@@ -48,13 +49,13 @@ Plus K1's `unify_sound` (proven — it needed a **freshness precondition**: `fre
 **Effect shape → composition mechanism** (the map that's now established):
 - **zero-shot** (Throws) → nested meta-run with empty handler stack, **re-throw** at the boundary (`CalcCBNEff`, ADR-0012, proven; **forcing-can-raise** proven).
 - **one-shot tail** (State) → **thread** the register through the nested meta-runs; no re-throw, no flatten (`CalcCBNSt`, ADR-0013, proven). This *answered* ADR-0012's open question: a resumable-in-tail effect does **not** force a machine flatten.
-- **non-tail / multi-shot** → **flatten** to a control stack + **reify** the continuation. The deferred frontier — and the *only* thing that triggers the flatten.
+- **non-tail / multi-shot** → **flatten** to a control stack + **reify** the continuation as data (a captured prefix of the generalised continuation). The frontier — and the *only* thing that triggers the flatten. **Machine built + demonstrators verified:** `CalcReify`, ADR-0015 (general theorem pending).
 - **two effects at once** (Throws + State) → carry **both** apparatus (handler stack *and* register) in one machine; they interact by *persist* (state threads through unwinding; rollback is STM's job). Proven: `CalcCBNEffSt`, ADR-0014 — the effect-row model realized.
 
 **Genuinely next** (none of this is done — *read the playbook + its K3 addendum first*):
-- **`runState` × throw** — the one deferred sub-decision from the capstone: when a throw escapes a `runState`, does the inner state leak out or is the outer cell restored on unwind? Pick it (likely: `runState` installs an unwind-restoring frame) and prove (ADR-0014 "Revisit if").
-- **A user-extensible effect set** — generalise beyond the two baked-in effects to effect rows over an arbitrary effect signature (the K1 unifier feeds this at K4).
-- **Continuation reification** — non-tail / multi-shot handlers (the true general-resumption frontier; Tsuyama 2024). All five effect machines deliberately avoided it (ADR-0011/0012/0013/0014).
+- **`CalcReify`'s general theorem** — the machine works (7 `rfl`-verified demonstrators) but `exec∘compile≡eval` is unproven. Plan (ADR-0015): a Src-defunctionalized reference `eval` related to `exec` by `compile` (the `CalcHO` shared-representation trick lifted to continuations) + a harness fuzz vs an independent TS CPS interpreter.
+- **`runState` × throw** — the deferred sub-decision from the K3 capstone: when a throw escapes a `runState`, does the inner state leak or is the outer cell restored on unwind? (ADR-0014 "Revisit if".)
+- **Reification ×** {outer-handler **forwarding** (2nd op), the **closure core**} — the harder reification follow-ups (ADR-0015 "Revisit if"); and a **user-extensible** effect set.
 - **K4 front end** — parse → typed AST → effect-row inference on the verified unifier → core IR.
 - **Deferred & documented** (in `Eval.lean`, never faked): multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
 

@@ -7,6 +7,7 @@ import Bang.CalcSt
 import Bang.CalcCBNEff
 import Bang.CalcCBNSt
 import Bang.CalcCBNEffSt
+import Bang.CalcReify          -- the reification frontier (ADR-0015); machine + rfl demonstrators
 import Lean.Data.Json
 
 /-!

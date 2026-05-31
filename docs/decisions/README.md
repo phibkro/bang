@@ -18,5 +18,6 @@ Each ADR records a decision a future session could otherwise reverse or relitiga
 | [0012](0012-effects-composed-with-the-closure-core.md) | Effects composed with the closure/CBN core — Throws fused into `CalcCBNEff` (zero-shot, re-throw at the meta-call boundary) | Accepted | 0011, 0010, 0008, 0009 |
 | [0013](0013-state-composed-with-the-closure-core.md) | State composed with the closure/CBN core — `CalcCBNSt` (the register threads cleanly through the nested meta-runs; no flatten needed) | Accepted | 0012, 0011, 0010 |
 | [0014](0014-two-effects-together-over-the-closure-core.md) | Throws *and* State together in one machine — `CalcCBNEffSt` (effect-row model realized; State persists through a throw) | Accepted | 0012, 0013, 0011, 0003 |
+| [0015](0015-continuation-reification-generalised-continuation-machine.md) | Continuation reification — flat generalised-continuation machine (`CalcReify`); multi-shot/non-tail handlers (machine + demonstrators verified; general theorem next) | Accepted | 0011, 0012, 0013, 0014, 0004, 0009 |
 
 Format: lightweight MADR. Status ∈ {Proposed, Accepted, Superseded by NNNN, Deprecated}.

@@ -3,7 +3,7 @@
 > Keyframes are committed poses (states that must hold). Inbetweens are implementation, drawn later.
 > Proof rides the **reference**; the shipping path is kept honest by the **harness**; performance is summoned only when it touches the user; **the machine is an output of the calculation, never hand-designed.**
 
-Status: K0 locked · K1 done · K2 done (the pure core calculated + proven across 4 increments) · **K3 in progress** (Throws + State calculated + proven, both composed with the closure/CBN core, and **now both together in one machine** — `CalcCBNEffSt`, the effect-row model realized, State persists through a throw; only multi-shot reification, `runState`×throw, and a user-extensible effect set still open). Everything proven, **zero `sorry`s**. Live detail: `AGENTS.md` "Current playhead".
+Status: K0 locked · K1 done · K2 done (the pure core calculated + proven across 4 increments) · **K3 in progress** (Throws + State calculated + proven, both composed with the closure/CBN core, both together in one machine — `CalcCBNEffSt`; and the **reification frontier reached** — `CalcReify`, a flat generalised-continuation machine for multi-shot/non-tail handlers, machine + 7 `rfl`-verified demonstrators, its *general* theorem the named next step. `runState`×throw and a user-extensible effect set still open). Eight machines fully proven + the reification machine validated, **zero `sorry`s** (asserts only what it proves). Live detail: `AGENTS.md` "Current playhead".
 
 ---
 
