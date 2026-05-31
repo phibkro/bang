@@ -81,7 +81,8 @@ def applyR (fuel : Nat) (s : Subst) (r : Row) : Row :=
       | some r' =>
         let rr := applyR f s r'
         { labels := r.labels ∪ rr.labels, tail := rr.tail }
-termination_by fuel
+-- structurally recursive on `fuel` (each call uses `f < f+1`); no `termination_by`
+-- needed, and the equation lemmas unfold cleanly under `simp` for `unify_sound`.
 
 /--
 closed/closed : succeed iff label sets are equal
@@ -116,16 +117,62 @@ cleaner than the F* `row_eq`. We prove SOUNDNESS only (if `unify` says yes, the
 substitution makes the rows denote the same set and agree on tail). Principality
 is deferred to the differential test, exactly as in the F* version. -/
 
-/-- NUDGE: prove by `rcases r1.tail`/`r2.tail` mirroring `unify`, then in each
-branch `simp only [unify, ...] at h`, substitute, and `simp [applyR, lookupVar]`.
-The label-set goals reduce to `Finset` `sdiff`/`union`/`subset` facts closable by
-`simp` + `Finset.union_sdiff_of_subset` (open/closed) and
-`Finset.union_comm`/`sdiff` lemmas (open/open). Replace `sorry` once it checks. -/
+/-! Two `Finset` facts the soundness cases reduce to. -/
+
+/-- For a subset, the open side's fixed labels plus the missing ones recover the
+closed side: `a ⊆ b → a ∪ (b \ a) = b`. (open/closed case) -/
+private theorem union_sdiff_subset {a b : RowC} (hab : a ⊆ b) : a ∪ (b \ a) = b := by
+  ext x; simp only [Finset.mem_union, Finset.mem_sdiff]
+  constructor
+  · rintro (hx | ⟨hx, _⟩)
+    · exact hab hx
+    · exact hx
+  · intro hx; by_cases hxa : x ∈ a
+    · exact Or.inl hxa
+    · exact Or.inr ⟨hx, hxa⟩
+
+/-- **Soundness of the unifier.** If `unify` succeeds with substitution `s`, then
+applying `s` to both rows makes their label sets and tails coincide. Requires that
+`fresh` is genuinely fresh (not already either row's tail variable) — without it the
+open/open case would bind a tail to a cyclic `some fresh`. Principality (MGU) is
+deferred to the differential test, as documented. -/
 theorem unify_sound (fresh : RVar) (r1 r2 : Row) (s : Subst)
+    (hf1 : r1.tail ≠ some fresh) (hf2 : r2.tail ≠ some fresh)
     (h : unify fresh r1 r2 = some s) :
-    let f := s.length + 2
-    (applyR f s r1).labels = (applyR f s r2).labels ∧
-    (applyR f s r1).tail   = (applyR f s r2).tail := by
-  sorry
+    (applyR (s.length + 2) s r1).labels = (applyR (s.length + 2) s r2).labels ∧
+    (applyR (s.length + 2) s r1).tail   = (applyR (s.length + 2) s r2).tail := by
+  rcases h1 : r1.tail with _ | v1 <;> rcases h2 : r2.tail with _ | v2 <;>
+    simp only [unify, h1, h2] at h
+  -- closed / closed
+  · split at h
+    · rename_i heq; obtain rfl := Option.some.inj h
+      refine ⟨?_, ?_⟩ <;> simp [applyR, h1, h2, heq]
+    · exact absurd h (by simp)
+  -- closed / open  (r2 open; bind v2 ↦ r1 \ r2)
+  · split at h
+    · rename_i hsub; obtain rfl := Option.some.inj h
+      refine ⟨?_, ?_⟩ <;>
+        simp [applyR, lookupVar, h1, h2, List.find?, union_sdiff_subset hsub]
+    · exact absurd h (by simp)
+  -- open / closed  (r1 open; bind v1 ↦ r2 \ r1)
+  · split at h
+    · rename_i hsub; obtain rfl := Option.some.inj h
+      refine ⟨?_, ?_⟩ <;>
+        simp [applyR, lookupVar, h1, h2, List.find?, union_sdiff_subset hsub]
+    · exact absurd h (by simp)
+  -- open / open
+  · split at h
+    · -- v1 = v2: substitution is empty, both rows are returned unchanged
+      rename_i hv; split at h
+      · rename_i heq; obtain rfl := Option.some.inj h
+        refine ⟨?_, ?_⟩ <;> simp [applyR, lookupVar, h1, h2, heq, hv]
+      · exact absurd h (by simp)
+    · -- v1 ≠ v2: each tail absorbs the other's exclusive labels, tail ↦ fresh
+      rename_i hv; obtain rfl := Option.some.inj h
+      have hv1 : v1 ≠ fresh := fun e => hf1 (by rw [h1, e])
+      have hv2 : v2 ≠ fresh := fun e => hf2 (by rw [h2, e])
+      refine ⟨?_, ?_⟩ <;>
+        simp [applyR, lookupVar, h1, h2, List.find?, hv, hv1, hv2, Finset.union_comm]
+
 
 end Bang.EffectRow

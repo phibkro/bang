@@ -35,8 +35,9 @@ work in F*:
   Mathlib. `EffectRow.lean` shows `example : Lattice RowC := inferInstance`.
 
 What you give up vs F*: you write the soundness proof more by hand (Lean's
-tactics, not fire-and-forget SMT). `unify_sound` ships as `sorry` with a proof
-plan in the comment.
+tactics, not fire-and-forget SMT). `unify_sound` is **proven** — the proof needed
+a freshness precondition (`fresh` not already a row's tail var; without it the
+open/open case binds a cyclic `some fresh`), a real strengthening of the spec.
 
 ## Layout
 

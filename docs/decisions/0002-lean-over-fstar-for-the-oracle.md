@@ -29,7 +29,7 @@ Use **Lean 4 + Mathlib** as the verified-reference substrate. Keep F\* only as a
 
 ## Consequences
 
-- (−) More manual proof for arithmetic-flavored obligations; `unify_sound` ships as `sorry` with a proof plan.
+- (−) More manual proof for arithmetic-flavored obligations. (`unify_sound` is now **proven** — it needed a freshness precondition on the open/open case; see `EffectRow.lean`.)
 - (−) Divergence/coinduction (partiality monad, bisimilarity) is more effortful in Lean than in Rocq — relevant at K3.
 - (+) The harness doesn't care what language the oracle is in; switching cost was one `.fst` → `.lean` file, everything else stood.
 
