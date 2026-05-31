@@ -4,6 +4,7 @@ import Bang.CalcHO
 import Bang.CalcCBN
 import Bang.CalcEff
 import Bang.CalcSt
+import Bang.CalcCBNEff
 import Lean.Data.Json
 
 /-!
@@ -305,5 +306,65 @@ def execStRequest (j : Json) : Except String Json := do
   | some (v :: _, st) => pure (stOut v st)
   | _ => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
                            ("msg", Json.str "execst: empty/stuck")])
+
+/-! ## Effects over the CBN closure core (`evalcbneff`/`execcbneff`) — Throws (K3)
+
+The real K3 composition (`Bang.CalcCBNEff`, ADR-0012): zero-shot Throws fused into
+the call-by-name closure/thunk core. Both the reference `eval` (fuel-bounded,
+`Option Outcome`) and the calculated re-throw-at-boundary machine (`Option Result`)
+report the same JSON shape — the top result forced to WHNF on both sides (so they
+agree value-for-value), exceptions as `exc label payload`. -/
+
+partial def srcCBNEffFromJson (j : Json) : Except String Bang.CalcCBNEff.Src := do
+  match ← jStr j "t" with
+  | "val"     => pure (.val (← jIntF j "n"))
+  | "var"     => pure (.var (← jNat j "i"))
+  | "add"     => pure (.add (← srcCBNEffFromJson (← jField j "a")) (← srcCBNEffFromJson (← jField j "b")))
+  | "lam"     => pure (.lam (← srcCBNEffFromJson (← jField j "body")))
+  | "app"     => pure (.app (← srcCBNEffFromJson (← jField j "f")) (← srcCBNEffFromJson (← jField j "a")))
+  | "let"     => pure (.letE (← srcCBNEffFromJson (← jField j "e1")) (← srcCBNEffFromJson (← jField j "e2")))
+  | "thunk"   => pure (.thnk (← srcCBNEffFromJson (← jField j "e")))
+  | "force"   => pure (.force (← srcCBNEffFromJson (← jField j "e")))
+  | "perform" => pure (.perform (← jNat j "l") (← srcCBNEffFromJson (← jField j "arg")))
+  | "handle"  => pure (.handle (← jNat j "l") (← srcCBNEffFromJson (← jField j "onRaise"))
+                               (← srcCBNEffFromJson (← jField j "body")))
+  | other     => throw s!"cbneff: unknown tag {other}"
+
+def valueCBNEffToJson : Bang.CalcCBNEff.Value → Json
+  | .vint n     => Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)]
+  | .vclo _ _   => Json.mkObj [("v", Json.str "clos")]
+  | .vthunk _ _ => Json.mkObj [("v", Json.str "thunk")]
+
+/-- Force a result value to WHNF and report it — shared by `eval`/`exec` so they
+agree value-for-value. Forcing can itself raise (`exc`) or run out of fuel. -/
+def cbnEffReport (fuel : Nat) (v : Bang.CalcCBNEff.Value) : Json :=
+  match Bang.CalcCBNEff.forceV fuel v with
+  | some (.ret w)   => Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "ret"),
+                                   ("value", valueCBNEffToJson w)]
+  | some (.exc l p) => Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "exc"),
+                                   ("label", Lean.toJson l), ("payload", valueCBNEffToJson p)]
+  | none            => Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")]
+
+/-- `{"op":"evalcbneff","fuel":N,"expr":E}` — the reference semantics. -/
+def evalCBNEffRequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let src  ← srcCBNEffFromJson (← jField j "expr")
+  match Bang.CalcCBNEff.eval fuel [] src with
+  | none            => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
+  | some (.ret v)   => pure (cbnEffReport fuel v)
+  | some (.exc l p) => pure (Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "exc"),
+                                         ("label", Lean.toJson l), ("payload", valueCBNEffToJson p)])
+
+/-- `{"op":"execcbneff","fuel":N,"expr":E}` — the calculated handler+closure machine. -/
+def execCBNEffRequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let src  ← srcCBNEffFromJson (← jField j "expr")
+  match Bang.CalcCBNEff.run fuel src with
+  | some (.halt (v :: _)) => pure (cbnEffReport fuel v)
+  | some (.halt [])       => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
+                                               ("msg", Json.str "execcbneff: empty halt stack")])
+  | some (.uncaught l p)  => pure (Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "exc"),
+                                               ("label", Lean.toJson l), ("payload", valueCBNEffToJson p)])
+  | none                  => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
 
 end Bang.EvalJson

@@ -15,7 +15,7 @@ A small language whose **paradigm and runtime are values, not language features*
 | **why** things are the way they are | `docs/decisions/` (ADRs) — read these before proposing changes |
 | the verified reference (K1 unifier) | `effectrow-oracle/oracle-lean/Bang/EffectRow.lean` (Lean 4 + Mathlib) |
 | the reference `eval` (K2/K3 source) | `effectrow-oracle/oracle-lean/Bang/Eval.lean` |
-| the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) |
+| the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt, CalcCBNEff}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) |
 | **how to prove the next increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, mutual-induction & two-part-sim patterns, gotchas. **Read before proving.** |
 | the standing guarantee | `effectrow-oracle/harness/` (differential tests) + `effectrow-oracle/tools/selfcheck.mjs` |
 | what to read | reading canon, end of the roadmap `.md` |
@@ -35,16 +35,17 @@ A small language whose **paradigm and runtime are values, not language features*
 | `CalcCBN` | + thunk/`$`force | call-by-name, fuel | **mutual** `eval`/`forceV` `sim`; matches `Bang.Eval` *exactly* | 0010 |
 | `CalcEff` | general handlers, **Throws** | total `eval` / fuel machine | **two-part ret/exc `sim`**; handler stack + unwinding (`unwindFind`) | 0011 |
 | `CalcSt` | **State** (`get`/`put`/`runState`) | total, no fuel | direct equality; threaded state register | 0011 |
+| `CalcCBNEff` | **effects over the closure core**: Throws + λ/thunk/`$`force/CBN | fuel; `Option Outcome` | **four-part** mutual sim (`eval`/`forceV` × ret/exc); **forcing can raise**; re-throw `uncaught` at the meta-call boundary | 0012 |
 
 Plus K1's `unify_sound` (proven — it needed a **freshness precondition**: `fresh` not already a row's tail var, else the open/open case binds a cyclic `some fresh`).
 
-**Harness:** `Bang/EvalJson.lean` exposes the ops; `harness/` drives an independent TS candidate (`src/eval-candidate.ts`) on `eval` goldens + a fuzz, and diff-tests **each** machine vs `eval`. **55 tests green** (`make check-lean`).
+**Harness:** `Bang/EvalJson.lean` exposes the ops; `harness/` drives an independent TS candidate (`src/eval-candidate.ts`) on `eval` goldens + a fuzz, and diff-tests **each** machine vs `eval`. **66 tests green** (`make check-lean`).
 
 **Method ↔ papers** (reading canon, roadmap §8): Bahr–Hutton 2022 *Monadic Compiler Calculation* (swap the monad) · Hutton–Wright *Compiling Exceptions Correctly* (the unwinding machine) · Pickard–Hutton 2021 (intrinsic, Lean-shaped). **Honest deltas (named, not hidden):** we use **fuel/`Option`**, not the partiality monad; artifacts are spec-guided definitions + a *post-hoc* `exec∘compile≡eval` proof (the derivation lives in the `-- derived, not designed` comments), not a mechanized step-by-step calculation; `CalcEff`/`CalcSt` exercise one-shot *tail* resumption / unwinding, **not** explicit continuation **reification**.
 
 **Genuinely next** (none of this is done — *read the playbook first*):
-- **Compose the fragments** — effects on the closure/CBN core (the real K3: swap the underlying monad on `CalcCBN`; merge `CalcEff`'s handler stack with closures). The biggest open step.
-- **Continuation reification** — non-tail / multi-shot handlers (the true general-resumption frontier; Tsuyama 2024). `CalcEff`/`CalcSt` deliberately avoided it (ADR-0011).
+- **State over the closure core** — the composition (Throws over closures/CBN) is **done** (`CalcCBNEff`, ADR-0012, proven): zero-shot `raise` re-thrown at the meta-call boundary, with the new **forcing-can-raise** interaction proven. What remains of the composition is **State** over the same core — thread the register through the nested meta-runs (the resumable case; the empty-nested+re-throw trick is zero-shot-only). If State clashes with the nested-`exec` shape, that's the trigger to **flatten** the machine into a control-stack/CEK form (ADR-0012 "Revisit if").
+- **Continuation reification** — non-tail / multi-shot handlers (the true general-resumption frontier; Tsuyama 2024). `CalcEff`/`CalcSt`/`CalcCBNEff` deliberately avoided it (ADR-0011/0012).
 - **K4 front end** — parse → typed AST → effect-row inference on the verified unifier → core IR.
 - **Deferred & documented** (in `Eval.lean`, never faked): multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
 
@@ -98,7 +99,7 @@ make check-lean      # selfcheck → lake build → differential harness vs the 
 ```
 
 First `lake` build pulls Mathlib via `lake exe cache get` (network; minutes). Green
-means you haven't broken invariant 1 (currently **55 tests green, zero `sorry`s**).
+means you haven't broken invariant 1 (currently **66 tests green, zero `sorry`s**).
 If you can express a new invariant as a runnable check, do that instead of writing it
 in prose — checkable beats described.
 

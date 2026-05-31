@@ -19,6 +19,16 @@ export type StOut =
   | { ok: true; value: number; state: number }
   | { ok: false; reason: string; msg?: string };
 
+// A forced WHNF value as the CBN+effects fragment reports it.
+export type EffVal = { v: "int"; n: number } | { v: "clos" } | { v: "thunk" };
+
+// Outcome of the composed CBN+Throws fragment (CalcCBNEff): a forced value, a
+// propagating effect carrying a forced payload, or out-of-fuel/stuck.
+export type CbnEffOutcome =
+  | { ok: true; outcome: "ret"; value: EffVal }
+  | { ok: true; outcome: "exc"; label: number; payload: EffVal }
+  | { ok: false; reason: string; msg?: string };
+
 export class Oracle {
   private proc: ChildProcessWithoutNullStreams;
   private rl: Interface;
@@ -88,6 +98,16 @@ export class Oracle {
   }
   execSt(expr: unknown): Promise<StOut> {
     return this.send({ op: "execst", expr }, (line) => JSON.parse(line) as StOut);
+  }
+
+  // Composed CBN + Throws fragment (CalcCBNEff.Src): the reference `eval` and the
+  // calculated re-throw-at-boundary machine, both returning a CbnEffOutcome with
+  // the top result forced to WHNF (so they agree value-for-value).
+  evalCbnEff(fuel: number, expr: unknown): Promise<CbnEffOutcome> {
+    return this.send({ op: "evalcbneff", fuel, expr }, (line) => JSON.parse(line) as CbnEffOutcome);
+  }
+  execCbnEff(fuel: number, expr: unknown): Promise<CbnEffOutcome> {
+    return this.send({ op: "execcbneff", fuel, expr }, (line) => JSON.parse(line) as CbnEffOutcome);
   }
 
   close(): void {

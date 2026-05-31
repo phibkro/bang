@@ -174,3 +174,44 @@ Hutton–Wright generalised to labels) added these beyond the closure proofs:
 3. Diff-test against `Bang.Eval` (which *is* call-by-name) — so unlike CBV, CBN
    should now agree with the reference even on programs with unused/divergent
    arguments, a strictly better cross-check.
+
+## K3 addendum — composing effects with the closure core (`CalcCBNEff`, ADR-0012)
+
+Fusing Throws into `CalcCBN` (the real K3) re-runs the shapes above but surfaced a
+few new, transferable gotchas. Read these before **State over the closure core**
+(the next composition) — it will hit the same ones.
+
+- **The simulation is a *four-part* mutual conjunction.** Composing a fuel-bounded
+  CBN core (`eval`/`forceV` mutual) with an effect (`ret`/`exc` two-part) gives
+  **eval-ret · eval-exc · forceV-ret · forceV-exc**, proven together by induction on
+  fuel. `eval`/`forceV` returns `Option Outcome` (partiality ∘ exception). The new
+  content vs the two parents is only the **nested-`uncaught` re-throw** (below).
+- **The new semantic axis is "forcing can raise."** `forceV` returns an `Outcome`;
+  every forcing point (`$e`, both `add` operands, the app function, a `perform`
+  payload) is an effect-propagation point. This is where the bug hides — exercise it
+  in goldens (force-a-thunk-that-raises, effect-escapes-a-call) *and* the fuzz.
+- **Nested meta-runs use an *empty* handler stack `[]`, then re-throw at the
+  boundary.** `APP`/`FORCE` run `exec f (compile b []) … [] []`; if that returns
+  `uncaught ℓ p`, re-throw against the **outer** `hs` via `unwindFind`. Passing the
+  live `hs` into the nested run is *wrong* (a frame's recovery belongs to the outer
+  stream). This is **zero-shot-only** — State (resumable) won't compose this way;
+  expect to flatten into a control stack (ADR-0012 "Revisit if").
+- **A `| o => o` catch-all blocks `rw`-reduction.** With `eval` written as
+  `match … with | some (.ret v) => B | o => o`, `rw [hx] at h` rewrites the scrutinee
+  but does **not** iota-reduce the match, so the next *dependent* scrutinee
+  (`forceV vx`, which uses the binder `vx`) stays shadowed and the next `rw`/`cases`
+  fails. Fix: use **`simp only [hx] at h`** (rewrites *and* reduces) for every
+  productive step, and `simp [hx] at h` for the contradiction leaves. (CalcEff got
+  away with plain `rw` only because its operands were *independent*.)
+- **Pin `f'` before `(by omega)` in `exec_mono`/`throwExec_mono`.** The expected type
+  of a `have hX : exec (G+F) … := exec_mono _ _ … hG (by omega)` does **not**
+  propagate to the `f'` metavar before the `omega` runs (it sees `G ≤ ?m`). Write
+  `exec_mono _ (G + F) _ _ _ _ _ hG (by omega)` to pin it.
+- **Don't put `intro …` on the `=>` line if the body wraps.** For a long arm header
+  (`| handle lab onRaise body => intro …`), a continuation indented *less* than
+  `intro` silently truncates the tactic block ("unsolved goals" / "alternative not
+  provided"). Put `intro` on its own line and indent the body consistently.
+- **Build defs first, fuzz, *then* prove.** The fuzz caught an eager-int-check
+  divergence in `add` (a non-int operand made `eval` stuck *before* the other
+  operand's effect ran, but the machine forces both first) before any proof effort —
+  the "run the real journey" payoff. Fix the definition, re-fuzz, then prove.

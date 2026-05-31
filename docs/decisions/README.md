@@ -15,5 +15,6 @@ Each ADR records a decision a future session could otherwise reverse or relitiga
 | [0009](0009-calculated-vm-extrinsic-staged.md) | Calculated VM is extrinsic and grown one constructor at a time, from an arithmetic kernel | Accepted | 0004, 0008 |
 | [0010](0010-higher-order-calculation-fuel-cbv.md) | Higher-order calculation: fuel-indexed CBV, shared source-closures (equivalence now proven) | Accepted | 0009, 0008 |
 | [0011](0011-effects-calculated-as-specific-machines.md) | Effects calculated as specific machines (Throws→unwinding, State→register); tail-resumption only | Accepted | 0004, 0008, 0009, 0010 |
+| [0012](0012-effects-composed-with-the-closure-core.md) | Effects composed with the closure/CBN core — Throws fused into `CalcCBNEff` (zero-shot, re-throw at the meta-call boundary) | Accepted | 0011, 0010, 0008, 0009 |
 
 Format: lightweight MADR. Status ∈ {Proposed, Accepted, Superseded by NNNN, Deprecated}.
