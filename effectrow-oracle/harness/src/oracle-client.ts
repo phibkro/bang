@@ -56,6 +56,11 @@ export class Oracle {
     return this.send({ op: "execho", fuel, expr }, (line) => JSON.parse(line) as RunResult);
   }
 
+  // Run the CALCULATED call-by-name machine (thunk/force; matches Bang.Eval).
+  execCBNProg(fuel: number, expr: Expr): Promise<RunResult> {
+    return this.send({ op: "execcbn", fuel, expr }, (line) => JSON.parse(line) as RunResult);
+  }
+
   close(): void {
     this.rl.close();
     this.proc.stdin.end();

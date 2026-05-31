@@ -1,6 +1,7 @@
 import Bang.Eval
 import Bang.Calc
 import Bang.CalcHO
+import Bang.CalcCBN
 import Lean.Data.Json
 
 /-!
@@ -191,5 +192,44 @@ def execHORequest (j : Json) : Except String Json := do
                                         ("msg", Json.str "execho: empty result stack")])
   | none           => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuckOrOom"),
                                         ("msg", Json.str "execho: none (out-of-fuel or stuck)")])
+
+/-! ## The call-by-name calculated machine (`execcbn`) — thunk/force (ADR-0010+)
+
+`Bang.CalcCBN` is the CBN machine; it should match the operational `Bang.Eval`
+(also CBN) exactly. Adds `thnk`/`force` to the translation. The top result is
+forced to WHNF (`forceV`) so it matches `Bang.Eval`'s forced output. -/
+
+partial def srcCBNFromExpr (ctx : List String) : Expr → Except String Bang.CalcCBN.Src
+  | .lit n          => pure (.val n)
+  | .binop "+" a b  => do pure (.add (← srcCBNFromExpr ctx a) (← srcCBNFromExpr ctx b))
+  | .binop "*" a b  => do pure (.mul (← srcCBNFromExpr ctx a) (← srcCBNFromExpr ctx b))
+  | .var x          => match ctx.findIdx? (· = x) with
+                       | some i => pure (.var i)
+                       | none   => throw s!"execcbn: unbound variable {x}"
+  | .lam x body     => do pure (.lam (← srcCBNFromExpr (x :: ctx) body))
+  | .app f a        => do pure (.app (← srcCBNFromExpr ctx f) (← srcCBNFromExpr ctx a))
+  | .letE x e1 e2   => do pure (.letE (← srcCBNFromExpr ctx e1) (← srcCBNFromExpr (x :: ctx) e2))
+  | .thnk e         => do pure (.thnk (← srcCBNFromExpr ctx e))
+  | .force e        => do pure (.force (← srcCBNFromExpr ctx e))
+  | _               => throw "execcbn: only lit, +, *, var, lam, app, let, thunk, force are compiled so far"
+
+def valueCBNToJson : Bang.CalcCBN.Value → Json
+  | .vint n     => Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)]
+  | .vclo _ _   => Json.mkObj [("v", Json.str "clos")]
+  | .vthunk _ _ => Json.mkObj [("v", Json.str "thunk")]
+
+/-- Parse and run an `{"op":"execcbn","fuel":N,"expr":E}` request on the CBN machine. -/
+def execCBNRequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let e    ← exprFromJson (← jField j "expr")
+  let src  ← srcCBNFromExpr [] e
+  match Bang.CalcCBN.exec fuel (Bang.CalcCBN.compile src []) [] [] with
+  | some (rv :: _) =>
+      match Bang.CalcCBN.forceV fuel rv with     -- force the top result, like Bang.Eval's run
+      | some w => pure (Json.mkObj [("ok", Json.bool true), ("value", valueCBNToJson w)])
+      | none   => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuckOrOom"),
+                                    ("msg", Json.str "execcbn: forcing the result returned none")])
+  | _ => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuckOrOom"),
+                           ("msg", Json.str "execcbn: none (out-of-fuel or stuck)")])
 
 end Bang.EvalJson

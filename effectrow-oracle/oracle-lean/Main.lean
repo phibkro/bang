@@ -18,7 +18,9 @@ there is no separate extraction/glue step.
   {"op":"exec","expr":EXPR}                  -> RESULT   (calculated machine, ADR-0009;
                                                           arithmetic + let/var)
   {"op":"execho","fuel":N,"expr":EXPR}       -> RESULT   (calculated HO machine, ADR-0010;
-                                                          + lam/app, CBV; proof pending)
+                                                          + lam/app, CBV; proven)
+  {"op":"execcbn","fuel":N,"expr":EXPR}      -> RESULT   (calculated CBN machine; + thunk/force,
+                                                          call-by-name; matches Bang.Eval)
   EXPR/RESULT wire format: see Bang/EvalJson.lean
 -/
 
@@ -85,8 +87,11 @@ def handle (line : String) : Except String Json := do
       -- the CALCULATED machine: compile + run on the verified stack VM (ADR-0009)
       Bang.EvalJson.execRequest j
   | "execho" =>
-      -- the CALCULATED higher-order machine: closures, CBV (ADR-0010; proof pending)
+      -- the CALCULATED higher-order machine: closures, CBV (ADR-0010)
       Bang.EvalJson.execHORequest j
+  | "execcbn" =>
+      -- the CALCULATED call-by-name machine: thunk/force, matches Bang.Eval
+      Bang.EvalJson.execCBNRequest j
   | other => throw s!"unknown op {other}"
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do
