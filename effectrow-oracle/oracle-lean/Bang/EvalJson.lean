@@ -8,6 +8,7 @@ import Bang.CalcCBNEff
 import Bang.CalcCBNSt
 import Bang.CalcCBNEffSt
 import Bang.CalcReify          -- the reification frontier (ADR-0015); machine + rfl demonstrators
+import Bang.CalcReifyRef        -- the denotational reference for CalcReify (CBPV + free monad; rfl-validated)
 import Lean.Data.Json
 
 /-!
