@@ -2,6 +2,19 @@
 
 *Design notes — May 2026*
 
+> ⚠️ **Partially superseded — the ADRs are the source of truth.** This is the
+> original design doc; two notational/structural decisions in it have since
+> changed and were *not* back-edited here:
+> - **Force is `$` (prefix), not `!`** — `$x` forces, `(e)` groups without
+>   forcing, `!` is actor-send (**ADR-0007**). Everywhere below that writes `!x`
+>   for force, read `$x`.
+> - **No `sig` binding form** — reactivity is the `:` vs `=` operator on a `mut`
+>   binding (**ADR-0005**). Binding forms are `let` / `mut` / `tvar`.
+>
+> The pinned executable core and its semantics live in `oracle-lean/Bang/Eval.lean`
+> (**ADR-0008**). Read this doc for the *thesis and shape*; trust the ADRs + Lean
+> for the *exact* notation and semantics.
+
 ## Thesis
 
 bang-lang is a small core on which paradigms, runtimes, and abstractions are built as ordinary library code.

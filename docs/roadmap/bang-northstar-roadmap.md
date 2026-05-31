@@ -114,7 +114,7 @@ flowchart LR
 
 Staging — each a calculated `(compiler, machine)` pair; composition gives end-to-end correctness:
 
-1. **Pure core** → derive VM for thunk + `!` + application. (template: *Calculating Dependently-Typed Compilers*, Lean-shaped)
+1. **Pure core** → derive VM for thunk + `$` force + application. (template: *Calculating Dependently-Typed Compilers*, Lean-shaped)
 2. **+ Effects** → swap underlying monad to the effect-row monad. (*Monadic Compiler Calculation*)
 3. **+ Divergence** → partiality monad + bisimilarity. ⚠ Lean's coinduction is the effortful spot.
 4. **+ Concurrency/STM** → STM as machine primitives, not derived. (*Calculating Compilers for Concurrency*)
