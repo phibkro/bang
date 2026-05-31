@@ -3,6 +3,7 @@ import Bang.Calc
 import Bang.CalcHO
 import Bang.CalcCBN
 import Bang.CalcEff
+import Bang.CalcSt
 import Lean.Data.Json
 
 /-!
@@ -273,5 +274,36 @@ def execEffRequest (j : Json) : Except String Json := do
   match Bang.CalcEff.run fuel src with
   | some res => pure (resultToJson res)
   | none     => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
+
+/-! ## The State machine (`evalst`/`execst`) — threaded register (K3)
+
+`Bang.CalcSt`: the total reference `eval` (`evalst`) and the calculated state-
+register machine (`execst`) both return `(value, state)`. -/
+
+partial def srcStFromJson (j : Json) : Except String Bang.CalcSt.Src := do
+  match ← jStr j "t" with
+  | "val"      => pure (.val (← jIntF j "n"))
+  | "var"      => pure (.var (← jNat j "i"))
+  | "add"      => pure (.add (← srcStFromJson (← jField j "a")) (← srcStFromJson (← jField j "b")))
+  | "let"      => pure (.letE (← srcStFromJson (← jField j "e1")) (← srcStFromJson (← jField j "e2")))
+  | "get"      => pure .get
+  | "put"      => pure (.put (← srcStFromJson (← jField j "arg")))
+  | "runState" => pure (.runState (← srcStFromJson (← jField j "init")) (← srcStFromJson (← jField j "body")))
+  | other      => throw s!"st: unknown tag {other}"
+
+def stOut (value state : Int) : Json :=
+  Json.mkObj [("ok", Json.bool true), ("value", Lean.toJson value), ("state", Lean.toJson state)]
+
+/-- `{"op":"evalst","expr":E}` — the total reference semantics. -/
+def evalStRequest (j : Json) : Except String Json := do
+  let (v, st) := Bang.CalcSt.eval 0 [] (← srcStFromJson (← jField j "expr"))
+  pure (stOut v st)
+
+/-- `{"op":"execst","expr":E}` — the calculated state-register machine. -/
+def execStRequest (j : Json) : Except String Json := do
+  match Bang.CalcSt.run (← srcStFromJson (← jField j "expr")) with
+  | some (v :: _, st) => pure (stOut v st)
+  | _ => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
+                           ("msg", Json.str "execst: empty/stuck")])
 
 end Bang.EvalJson

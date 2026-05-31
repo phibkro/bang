@@ -14,6 +14,11 @@ export type Outcome =
   | { ok: true; outcome: "exc"; label: number; payload: number }
   | { ok: false; reason: string; msg?: string };
 
+// Result of the State fragment (CalcSt): a value plus the final state.
+export type StOut =
+  | { ok: true; value: number; state: number }
+  | { ok: false; reason: string; msg?: string };
+
 export class Oracle {
   private proc: ChildProcessWithoutNullStreams;
   private rl: Interface;
@@ -74,6 +79,15 @@ export class Oracle {
   }
   execEff(fuel: number, expr: unknown): Promise<Outcome> {
     return this.send({ op: "execeff", fuel, expr }, (line) => JSON.parse(line) as Outcome);
+  }
+
+  // State fragment (CalcSt.Src): the total reference `eval` and the calculated
+  // state-register machine, both returning { value, state }.
+  evalSt(expr: unknown): Promise<StOut> {
+    return this.send({ op: "evalst", expr }, (line) => JSON.parse(line) as StOut);
+  }
+  execSt(expr: unknown): Promise<StOut> {
+    return this.send({ op: "execst", expr }, (line) => JSON.parse(line) as StOut);
   }
 
   close(): void {

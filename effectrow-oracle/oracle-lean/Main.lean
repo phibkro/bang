@@ -98,6 +98,12 @@ def handle (line : String) : Except String Json := do
   | "execeff" =>
       -- the CALCULATED handler machine: general handlers, Throws (K3)
       Bang.EvalJson.execEffRequest j
+  | "evalst" =>
+      -- the State reference semantics (total, threaded register)
+      Bang.EvalJson.evalStRequest j
+  | "execst" =>
+      -- the CALCULATED State machine: get/put/runState (K3)
+      Bang.EvalJson.execStRequest j
   | other => throw s!"unknown op {other}"
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do
