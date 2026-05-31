@@ -18,7 +18,7 @@ Status: K0 locked · K1 done (effect-row oracle) · **playhead between K1→K2**
 | D5 | Effect TS / Koka-CPS / WasmFX | the backend | **optional K5 lowerings** | demoted: foundation → fast-path |
 | D6 | STM | privileged kernel primitive | **unchanged** — axiomatized in VM, *not* derived | journal/retry/conflict needs runtime support; "everything is a handler" has exactly this one ceiling |
 
-Force stays `!` (it names the language). Bare `name` = description; `!name` = value.
+Force is **`$`** (prefix); parens group *without* forcing. Bare `name` = description; `$name` = value. `!` is freed for actor-send. *(Superseded the earlier `!`-as-force note — see **ADR-0007**, which is the source of truth.)*
 
 ---
 
@@ -53,7 +53,7 @@ flowchart TD
 
 | frame | pose | invariant that holds | proves | runs | status |
 |-------|------|----------------------|--------|------|--------|
-| **K0** | model sheet | core semantics in Lean: thunk · `!` · rows-as-sets · 1-shot handlers · STM; D1–D6 baked in | model sheet typechecks | core programs, interpreted | ✅ locked |
+| **K0** | model sheet | core semantics in Lean: thunk · `$` force · rows-as-sets · 1-shot handlers · STM; D1–D6 baked in | model sheet typechecks | core programs, interpreted | ✅ locked |
 | **K1** | oracle speaks | reference is executable; unifier verified (`Finset` semilattice); harness drives candidates | `unify_sound`; laws inherited | harness · 20k cases green | ✅ done |
 | **K2** | machine falls out | Bahr–Hutton derives `(compile, Code, exec)` from `eval` for thunk+force+1st-order-effect core; Lean→C | `exec ∘ compile ≡ eval` | core BANG on owned machine | ⬜ next |
 | **K3** | effects on the machine | monadic calculation: effect-row monad + partiality monad; handler stack → config; effect ops → instructions; STM axiomatized | correctness over the effect monad | effectful BANG end-to-end | ⬜ |
@@ -174,7 +174,7 @@ Unification (sound, not principal — MGU deferred to differential test):
 
 - **Reversibility / groupoids.** Opt-in `reversible` effect/region; ops carry inverses. Buys time-travel debugging, undo-as-primitive, clean speculative rollback, bidirectional transforms.
   → **STM becomes a special case** of a reversible region with a conflict policy. Potentially *simplifies* the kernel (one privileged mechanism: reversible regions) rather than special-casing STM. Inverse likely lives in the **handler**, not the operation (different handlers compensate differently).
-- **Distributed eval.** Ship bare `name` (description, small) not `!name` (value, big); force at the data. Enabled by D3 (no implicit capture → serializable thunks).
+- **Distributed eval.** Ship bare `name` (description, small) not `$name` (value, big); force at the data. Enabled by D3 (no implicit capture → serializable thunks).
 - **Native multi-shot handlers.** The hard machine extension; reify continuations.
 
 ---
