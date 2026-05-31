@@ -38,22 +38,22 @@ A small language whose **paradigm and runtime are values, not language features*
 | `CalcCBNEff` | **Throws over the closure core**: + λ/thunk/`$`force/CBN | fuel; `Option Outcome` | **four-part** mutual sim (`eval`/`forceV` × ret/exc); **forcing can raise**; re-throw `uncaught` at the meta-call boundary | 0012 |
 | `CalcCBNSt` | **State over the closure core**: `get`/`put`/`runState` + the CBN core | fuel; `Option (Value × State)` | **two-part** mutual sim; register **threads cleanly** through the nested meta-runs (State resumes ⇒ no re-throw, no flatten) | 0013 |
 | `CalcCBNEffSt` | **Throws *and* State together**: handler stack + register at once (the effect-row model) | fuel; `Option (Outcome × State)` | **four-part** mutual sim with state threaded; State **persists through a throw** (register threads through unwinding; rollback is STM's job) | 0014 |
-| `CalcReify` | **reification** — multi-shot / non-tail handlers (one op, *flat* generalised-continuation machine) | fuel; `Kont` = list of frames; resumption = captured prefix as a `vcont` | machine + **7 `rfl`-verified demonstrators** (one-shot/non-tail/multi-shot/zero-shot/re-handling). ⚠ **general `exec∘compile≡eval` not yet proven** — see ADR-0015 | 0015 |
+| `CalcReify` | **reification** — multi-shot / non-tail handlers (one op, *flat* generalised-continuation machine) | fuel; `Kont` = list of frames; resumption = captured prefix as a `vcont` | machine + **7 `rfl` demonstrators** + fuel-monotonicity proven + **cross-checked vs an independent TS CPS interpreter (2k+ random programs)**. ⚠ **in-Lean `exec∘compile≡eval` not yet proven** — see ADR-0015 | 0015 |
 
 Plus K1's `unify_sound` (proven — it needed a **freshness precondition**: `fresh` not already a row's tail var, else the open/open case binds a cyclic `some fresh`).
 
-**Harness:** `Bang/EvalJson.lean` exposes the ops; `harness/` drives an independent TS candidate (`src/eval-candidate.ts`) on `eval` goldens + a fuzz, and diff-tests **each** machine vs `eval`. **86 tests green** (`make check-lean`).
+**Harness:** `Bang/EvalJson.lean` exposes the ops; `harness/` drives an independent TS candidate (`src/eval-candidate.ts`) on `eval` goldens + a fuzz, and diff-tests **each** machine vs `eval` — except `CalcReify`, which has no in-Lean reference and is instead cross-checked vs an independent TS CPS interpreter (`src/reify-cps.ts`, real JS-closure resumptions). **102 tests green** (`make check-lean`).
 
 **Method ↔ papers** (reading canon, roadmap §8): Bahr–Hutton 2022 *Monadic Compiler Calculation* (swap the monad) · Hutton–Wright *Compiling Exceptions Correctly* (the unwinding machine) · Pickard–Hutton 2021 (intrinsic, Lean-shaped). **Honest deltas (named, not hidden):** we use **fuel/`Option`**, not the partiality monad; artifacts are spec-guided definitions + a *post-hoc* `exec∘compile≡eval` proof (the derivation lives in the `-- derived, not designed` comments), not a mechanized step-by-step calculation; `CalcEff`/`CalcSt` exercise one-shot *tail* resumption / unwinding, **not** explicit continuation **reification**.
 
 **Effect shape → composition mechanism** (the map that's now established):
 - **zero-shot** (Throws) → nested meta-run with empty handler stack, **re-throw** at the boundary (`CalcCBNEff`, ADR-0012, proven; **forcing-can-raise** proven).
 - **one-shot tail** (State) → **thread** the register through the nested meta-runs; no re-throw, no flatten (`CalcCBNSt`, ADR-0013, proven). This *answered* ADR-0012's open question: a resumable-in-tail effect does **not** force a machine flatten.
-- **non-tail / multi-shot** → **flatten** to a control stack + **reify** the continuation as data (a captured prefix of the generalised continuation). The frontier — and the *only* thing that triggers the flatten. **Machine built + demonstrators verified:** `CalcReify`, ADR-0015 (general theorem pending).
+- **non-tail / multi-shot** → **flatten** to a control stack + **reify** the continuation as data (a captured prefix of the generalised continuation). The frontier — and the *only* thing that triggers the flatten. **Machine built + demonstrators verified + cross-checked vs an independent CPS interpreter:** `CalcReify`, ADR-0015 (in-Lean general theorem pending).
 - **two effects at once** (Throws + State) → carry **both** apparatus (handler stack *and* register) in one machine; they interact by *persist* (state threads through unwinding; rollback is STM's job). Proven: `CalcCBNEffSt`, ADR-0014 — the effect-row model realized.
 
 **Genuinely next** (none of this is done — *read the playbook + its K3 addendum first*):
-- **`CalcReify`'s general theorem** — the machine works (7 `rfl`-verified demonstrators) but `exec∘compile≡eval` is unproven. Plan (ADR-0015): a Src-defunctionalized reference `eval` related to `exec` by `compile` (the `CalcHO` shared-representation trick lifted to continuations) + a harness fuzz vs an independent TS CPS interpreter.
+- **`CalcReify`'s general theorem** — the machine works (7 `rfl` demonstrators), fuel-monotonicity is proven, and it is **empirically validated** against an independent TS CPS interpreter (2k+ random multi-shot/non-tail programs, 20k at depth 5 locally). What's open is the *in-Lean machine-checked* `exec∘compile≡eval`. Plan (ADR-0015): a Src-defunctionalized reference `eval` related to `exec` by `compile` (the `CalcHO` shared-representation trick lifted to continuations) — a **bisimulation**, the research-grade piece.
 - **`runState` × throw** — the deferred sub-decision from the K3 capstone: when a throw escapes a `runState`, does the inner state leak or is the outer cell restored on unwind? (ADR-0014 "Revisit if".)
 - **Reification ×** {outer-handler **forwarding** (2nd op), the **closure core**} — the harder reification follow-ups (ADR-0015 "Revisit if"); and a **user-extensible** effect set.
 - **K4 front end** — parse → typed AST → effect-row inference on the verified unifier → core IR.
@@ -109,7 +109,7 @@ make check-lean      # selfcheck → lake build → differential harness vs the 
 ```
 
 First `lake` build pulls Mathlib via `lake exe cache get` (network; minutes). Green
-means you haven't broken invariant 1 (currently **86 tests green, zero `sorry`s**).
+means you haven't broken invariant 1 (currently **102 tests green, zero `sorry`s**).
 If you can express a new invariant as a runnable check, do that instead of writing it
 in prose — checkable beats described.
 

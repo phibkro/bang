@@ -1,6 +1,8 @@
 # ADR-0015 · Continuation reification — a flat generalised-continuation machine (`CalcReify`); multi-shot / non-tail handlers
 
-- **Status:** Accepted (machine + demonstrators verified; general theorem is the named next step)
+- **Status:** Accepted (machine + demonstrators verified; cross-checked vs an
+  independent TS CPS interpreter on 2k+ random programs; in-Lean general theorem is
+  the named next step)
 - **Date:** 2026-06-01
 - **Related:** 0011/0012/0013/0014 (all deferred reification — this is that frontier),
   0004 (calculate, don't hand-design), 0009 (one construct at a time), 0008 (the
@@ -70,6 +72,20 @@ machines avoided. The file is `sorry`-free: it asserts exactly what it proves.
 `sorry`-free — the bedrock any correctness simulation needs (every machine step,
 including the empty-code return-through, `PERFORM`, and `RESUME`, decreases fuel).
 
+**Independent empirical cross-check landed.** Because there is no in-Lean reference
+`eval` for this machine (a reference would itself be a second abstract machine — see
+below), `execreify` is diff-tested against an **independent** TS CPS interpreter
+(`harness/src/reify-cps.ts`): a direct free-monad interpreter of the *same* `Src`
+where a resumption is a **real JS closure** `(w) => Comp` — exactly the representation
+Lean's strict positivity forbids, hence a genuinely different implementation.
+Capture is `op`-node construction; splice is `bind`; the deep handler re-installs
+itself around the resumption; single-handler-depth is modelled by *sealing* a
+clause's own standing `perform` to stuck. The two agree on the seven demonstrators,
+the notok (stuck) shapes, **and 2000 random multi-shot / non-tail programs per CI run
+(stressed to 20 000 at depth 5 locally with zero disagreements)** —
+`harness/test/calc-reify.test.ts`. This is the "run the real journey" cross-check:
+the hand-built `Kont`/`Frame` splicing matches the textbook closure semantics.
+
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest
 assessment is that it is **research-grade**, for a *fundamental* reason: strict
@@ -81,9 +97,11 @@ machine), related to `exec`'s `CodeKont` only through `compile`. The proof is th
 abstract-machine-correctness result that is a paper section (Hillerström–Lindley), a
 *different* shape than the equality-style big-step sims the other eight machines use.
 There is no denotational shortcut: `Comp` may hold functions, but `Value` cannot, so
-first-class resumptions must be data on both sides. Plus a harness fuzz against an
-**independent** TS CPS interpreter (JS closures are real resumptions — no positivity
-problem), the standard empirical cross-check, which can land first.
+first-class resumptions must be data on both sides. The standard empirical
+cross-check — a harness fuzz against an **independent** TS CPS interpreter (JS
+closures are real resumptions — no positivity problem) — **has now landed** (see
+above), so the machine is empirically validated against a different implementation;
+what remains open is only the in-Lean *machine-checked* bisimulation.
 
 ## Rationale
 

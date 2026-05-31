@@ -32,6 +32,9 @@ there is no separate extraction/glue step.
   {"op":"evalcbneffst"/"execcbneffst","fuel":N,"expr":EXPR}
                                              -> OUTCOME+state  (Throws + State together in one
                                                           machine: reference / calculated, ADR-0014)
+  {"op":"execreify","fuel":N,"expr":EXPR}    -> {ok,value}  (reification machine: multi-shot /
+                                                          non-tail handlers, ADR-0015; cross-checked
+                                                          vs an independent TS CPS interpreter)
   EXPR/RESULT wire format: see Bang/EvalJson.lean
 -/
 
@@ -133,6 +136,10 @@ def handle (line : String) : Except String Json := do
   | "execcbneffst" =>
       -- the CALCULATED CBN + Throws + State machine: handler stack + register at once (ADR-0014)
       Bang.EvalJson.execCBNEffStRequest j
+  | "execreify" =>
+      -- the CALCULATED reification machine: multi-shot / non-tail handlers (ADR-0015);
+      -- cross-checked against an independent TS CPS interpreter (no in-Lean reference)
+      Bang.EvalJson.execReifyRequest j
   | other => throw s!"unknown op {other}"
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do

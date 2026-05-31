@@ -472,4 +472,40 @@ def execCBNEffStRequest (j : Json) : Except String Json := do
   | some (.uncaught l p, st)  => pure (outcomeStOut (.exc l p) st)
   | none                      => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
 
+/-! ## The reification machine (`execreify`) — multi-shot / non-tail handlers (ADR-0015)
+
+`Bang.CalcReify`: a flat generalised-continuation machine with first-class,
+**multi-shot** resumptions. Unlike every other fragment, there is *no in-Lean
+reference `eval`* to diff against — a faithful reference would itself be a second
+abstract machine (the bisimulation is the open theorem, ADR-0015). So instead we
+cross-check `execreify` against an **independent** TS CPS interpreter in the
+harness, where resumptions are real JS closures (no strict-positivity constraint).
+The top result is reported as a WHNF tag (`int` or opaque `cont`); `run` conflates
+out-of-fuel and stuck into `none`, reported here as `notok`. -/
+
+partial def srcReifyFromJson (j : Json) : Except String Bang.CalcReify.Src := do
+  match ← jStr j "t" with
+  | "val"     => pure (.val (← jIntF j "n"))
+  | "var"     => pure (.var (← jNat j "i"))
+  | "add"     => pure (.add (← srcReifyFromJson (← jField j "a")) (← srcReifyFromJson (← jField j "b")))
+  | "let"     => pure (.letE (← srcReifyFromJson (← jField j "e1")) (← srcReifyFromJson (← jField j "e2")))
+  | "perform" => pure (.perform (← srcReifyFromJson (← jField j "arg")))
+  | "handle"  => pure (.handle (← srcReifyFromJson (← jField j "clause")) (← srcReifyFromJson (← jField j "body")))
+  | "resume"  => pure (.resume (← srcReifyFromJson (← jField j "k")) (← srcReifyFromJson (← jField j "v")))
+  | other     => throw s!"reify: unknown tag {other}"
+
+def valueReifyToJson : Bang.CalcReify.Value → Json
+  | .vint n          => Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)]
+  | .vcont _ _ _ _ _ => Json.mkObj [("v", Json.str "cont")]
+
+/-- `{"op":"execreify","fuel":N,"expr":E}` — the calculated reification machine.
+`run` returns `none` for both out-of-fuel and stuck (no distinction), reported as
+`notok`. -/
+def execReifyRequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let src  ← srcReifyFromJson (← jField j "expr")
+  match Bang.CalcReify.run fuel src with
+  | some v => pure (Json.mkObj [("ok", Json.bool true), ("value", valueReifyToJson v)])
+  | none   => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuckOrOom")])
+
 end Bang.EvalJson

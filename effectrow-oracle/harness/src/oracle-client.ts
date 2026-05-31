@@ -41,6 +41,13 @@ export type CbnEffStOut =
   | { ok: true; outcome: "exc"; label: number; payload: EffVal; state: number }
   | { ok: false; reason: string; msg?: string };
 
+// Result of the reification fragment (CalcReify): a WHNF value (int or opaque
+// reified continuation), or notok (out-of-fuel or stuck -- `run` conflates them).
+export type ReifyVal = { v: "int"; n: number } | { v: "cont" };
+export type ReifyOut =
+  | { ok: true; value: ReifyVal }
+  | { ok: false; reason: string; msg?: string };
+
 export class Oracle {
   private proc: ChildProcessWithoutNullStreams;
   private rl: Interface;
@@ -138,6 +145,14 @@ export class Oracle {
   }
   execCbnEffSt(fuel: number, expr: unknown): Promise<CbnEffStOut> {
     return this.send({ op: "execcbneffst", fuel, expr }, (line) => JSON.parse(line) as CbnEffStOut);
+  }
+
+  // Reification fragment (CalcReify.Src): the calculated flat generalised-
+  // continuation machine, returning a WHNF value or notok. There is no in-Lean
+  // reference -- this is cross-checked against the independent TS CPS interpreter
+  // in `reify-cps.ts` (ADR-0015).
+  execReify(fuel: number, expr: unknown): Promise<ReifyOut> {
+    return this.send({ op: "execreify", fuel, expr }, (line) => JSON.parse(line) as ReifyOut);
   }
 
   close(): void {
