@@ -57,16 +57,13 @@ inductive Pat where
   | pcon  : CtorId → List Pat → Pat
 deriving Repr
 
-/-- Which handler to install. The state handler's initial state is an expression
-forced at install time. -/
-inductive HandlerSpec where
-  | stateH  : Label → Expr → HandlerSpec
-  | throwsH : Label → HandlerSpec
-deriving Repr
-
-/-- Core expressions (post-elaboration). Parens-group (ADR-0007) is *not* a node:
-grouping is plain subexpression nesting with no force, so the description/value
-distinction lives entirely in where `force` sits. -/
+/- Core expressions and the handler-spec they can install. These are mutually
+recursive: `Expr.handle` carries a `HandlerSpec`, and `HandlerSpec.stateH`
+carries the `Expr` for its initial state — so they share one `mutual` block.
+Parens-group (ADR-0007) is *not* a node: grouping is plain subexpression nesting
+with no force, so the description/value distinction lives entirely in where
+`force` sits. -/
+mutual
 inductive Expr where
   | lit     : Int → Expr
   | unit    : Expr
@@ -82,7 +79,12 @@ inductive Expr where
   | binop   : String → Expr → Expr → Expr       -- + - * < ==  (force both to ints)
   | perform : Label → OpId → Expr → Expr        -- effect op: perform ℓ.op(arg)
   | handle  : HandlerSpec → Expr → Expr         -- install a handler around the body
-deriving Repr, Inhabited
+/-- Which handler to install. The state handler's initial state is an expression
+forced at install time. -/
+inductive HandlerSpec where
+  | stateH  : Label → Expr → HandlerSpec
+  | throwsH : Label → HandlerSpec
+end
 
 /-! ## Values and computations -/
 
@@ -133,9 +135,11 @@ def prim (op : String) (a b : Int) : Option Value :=
   | "==" => some (.vcon (if a = b then "True" else "False") [])
   | _   => none
 
-/-- Match one pattern against a WHNF value, producing the bindings or `none`.
+/- Match one pattern against a WHNF value, producing the bindings or `none`.
 Structural on the pattern. Nested `pcon`/`plit` sub-patterns see lazy `vthunk`
-args and fail (v0 limitation, see header) — never crash. -/
+args and fail (v0 limitation, see header) — never crash. `matchPat`/`matchPats`
+are mutually recursive. -/
+mutual
 def matchPat : Pat → Value → Option Env
   | .pwild,      _            => some []
   | .pvar x,     v            => some [(x, v)]
@@ -151,6 +155,7 @@ def matchPats : List Pat → List Value → Option Env
                         | some b1, some b2 => some (b1 ++ b2)
                         | _,       _       => none
   | _,       _       => none
+end
 
 /-! ## The handler fold (standalone, fuel-bounded — ADR-0008)
 
@@ -167,12 +172,12 @@ def handleC (fuel : Nat) (h : Handler) (c : Comp) (k : Value → Comp) : Comp :=
     | _,            .wrong s    => .wrong s
     -- throws: `raise` discards the resumption; the block's value becomes Err e,
     -- a normal value becomes Ok v.
-    | .throws ℓ,    .pure v     => k (.vcon "Ok" [v])
+    | .throws _,    .pure v     => k (.vcon "Ok" [v])
     | .throws ℓ,    .op ℓ' o a kont =>
         if ℓ' = ℓ ∧ o = "raise" then k (.vcon "Err" [a])
         else .op ℓ' o a (fun r => handleC f (.throws ℓ) (kont r) k)
     -- state: get resumes with the current state, put updates it and resumes ().
-    | .state ℓ s,   .pure v     => k v
+    | .state _ _,   .pure v     => k v
     | .state ℓ s,   .op ℓ' o a kont =>
         if ℓ' = ℓ then
           match o with
@@ -262,8 +267,9 @@ end
 
 /-! ## Running a program (force the result for display) -/
 
-/-- Deep-force a value (force to WHNF, then recursively force constructor args)
+/- Deep-force a value (force to WHNF, then recursively force constructor args)
 for a concrete display normal form. Used only by `run`. Fuel-bounded. -/
+mutual
 def deepForce (fuel : Nat) (v : Value) (k : Value → Comp) : Comp :=
   match fuel with
   | 0          => .oom
@@ -272,6 +278,7 @@ def deepForce (fuel : Nat) (v : Value) (k : Value → Comp) : Comp :=
       match w with
       | .vcon c args => deepForceList f args [] (fun args' => k (.vcon c args'))
       | other        => k other)
+  termination_by fuel
 /-- Deep-force a list of values left to right, accumulating the forced prefix. -/
 def deepForceList (fuel : Nat) (vs : List Value) (acc : List Value)
     (k : List Value → Comp) : Comp :=
@@ -281,7 +288,8 @@ def deepForceList (fuel : Nat) (vs : List Value) (acc : List Value)
     match vs with
     | []      => k acc.reverse
     | v :: r  => deepForce f v (fun v' => deepForceList f r (v' :: acc) k)
-termination_by (fuel, vs.length)
+  termination_by fuel
+end
 
 /-- The observable outcome of running a closed program. -/
 inductive RunResult where
@@ -308,16 +316,26 @@ emit: the `Finset` of labels on its `perform` nodes, with `handle` discharging
 the handled label. This is the dynamic shadow of the unifier's subset/union — and
 it is the SAME `Finset Label` algebra the K1 oracle is verified over, reused, not
 re-invented. (It is not needed to *run* a program; it ties `eval` to the row model.) -/
+mutual
 def effectsOf : Expr → Finset Label
   | .lit _ | .unit | .var _ => ∅
   | .lam _ b | .thnk b | .force b => effectsOf b
   | .app a b | .binop _ a b => effectsOf a ∪ effectsOf b
   | .letE _ a b => effectsOf a ∪ effectsOf b
-  | .con _ args => args.foldr (fun e acc => effectsOf e ∪ acc) ∅
-  | .matchE s arms => effectsOf s ∪ arms.foldr (fun (pe : Pat × Expr) acc => effectsOf pe.2 ∪ acc) ∅
+  | .con _ args => effectsOfList args
+  | .matchE s arms => effectsOf s ∪ effectsOfArms arms
   | .ifE c t e => effectsOf c ∪ effectsOf t ∪ effectsOf e
   | .perform ℓ _ argE => insert ℓ (effectsOf argE)
   | .handle (.throwsH ℓ) body => (effectsOf body).erase ℓ
   | .handle (.stateH ℓ initE) body => effectsOf initE ∪ (effectsOf body).erase ℓ
+/-- Union of effects over a list of subexpressions (structural helper). -/
+def effectsOfList : List Expr → Finset Label
+  | []      => ∅
+  | e :: r  => effectsOf e ∪ effectsOfList r
+/-- Union of effects over match arms' right-hand sides (structural helper). -/
+def effectsOfArms : List (Pat × Expr) → Finset Label
+  | []        => ∅
+  | pe :: r   => effectsOf pe.2 ∪ effectsOfArms r
+end
 
 end Bang.Eval

@@ -6,6 +6,7 @@
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, Interface } from "node:readline";
 import { decodeUnifyResp, type Row, type UnifyResp } from "./wire.js";
+import type { Expr, RunResult } from "./ast.js";
 
 export class Oracle {
   private proc: ChildProcessWithoutNullStreams;
@@ -34,6 +35,13 @@ export class Oracle {
     return this.send({ op: "unify", fresh, r1, r2 }, (line) =>
       decodeUnifyResp(JSON.parse(line)),
     );
+  }
+
+  // Drive the definitional interpreter `eval` (ADR-0008). The reply is already
+  // in the RunResult shape (see Bang/EvalJson.lean); parse-don't-validate at
+  // the edge so a malformed reply fails here rather than skewing a comparison.
+  evalProg(fuel: number, expr: Expr): Promise<RunResult> {
+    return this.send({ op: "eval", fuel, expr }, (line) => JSON.parse(line) as RunResult);
   }
 
   close(): void {

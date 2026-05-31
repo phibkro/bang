@@ -1,4 +1,5 @@
 import Bang.EffectRow
+import Bang.EvalJson
 import Lean.Data.Json
 
 /-!
@@ -12,6 +13,9 @@ there is no separate extraction/glue step.
   {"op":"canon","labels":[..]}               -> {"labels":[..]}
   {"op":"apply","fuel":N,"subst":[[V,ROW]..],"row":ROW} -> ROW
   ROW = {"labels":[int..],"tail": int | null}
+
+  {"op":"eval","fuel":N,"expr":EXPR}         -> RESULT   (the bigger oracle, ADR-0008)
+  EXPR/RESULT wire format: see Bang/EvalJson.lean
 -/
 
 open Lean Bang.EffectRow
@@ -70,18 +74,24 @@ def handle (line : String) : Except String Json := do
       let s ← substFromJson (← j.getObjVal? "subst")
       let r ← rowFromJson (← j.getObjVal? "row")
       pure <| rowToJson (applyR fuel s r)
+  | "eval" =>
+      -- the bigger oracle: drive the definitional interpreter (ADR-0008)
+      Bang.EvalJson.evalRequest j
   | other => throw s!"unknown op {other}"
 
-partial def loop (stdin : IO.FS.Stream) : IO Unit := do
+partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do
   let line ← stdin.getLine
   if line.isEmpty then pure ()            -- EOF (a blank line is "\n", not "")
   else
-    let t := line.trim
+    let t := line.trimAscii.toString    -- `String.trim` is deprecated in this pin
     if t ≠ "" then
       match handle t with
-      | .ok j    => IO.println j.compress
+      -- MUST flush: Lean block-buffers stdout over a pipe, so without an explicit
+      -- flush the long-lived differential harness starves (its reader never sees
+      -- the reply line) and every query times out. One response per line, flushed.
+      | .ok j    => stdout.putStrLn j.compress; stdout.flush
       | .error e => IO.eprintln s!"error: {e}"
-    loop stdin
+    loop stdin stdout
 
 def main : IO Unit := do
-  loop (← IO.getStdin)
+  loop (← IO.getStdin) (← IO.getStdout)
