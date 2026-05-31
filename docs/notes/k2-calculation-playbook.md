@@ -242,4 +242,16 @@ applying the bullets above from the start:
 |--------------|---------------------------------|--------|
 | zero-shot (Throws) | nested run with empty handler stack, **re-throw** at the boundary | `CalcCBNEff` (ADR-0012) |
 | one-shot tail (State) | **thread** the register through the nested runs; no re-throw | `CalcCBNSt` (ADR-0013) |
+| **two at once** (Throws + State) | carry **both** apparatus; the nested run returns `(Result × State)`, re-throw *carries the state* | `CalcCBNEffSt` (ADR-0014) |
 | non-tail / multi-shot | **flatten** to a control stack + **reify** the continuation | deferred (ADR-0011/0012/0013) |
+
+**Two effects at once (`CalcCBNEffSt`) — what carried over.** The proof is exactly
+`CalcCBNEff`'s **four-part** sim (eval/forceV × ret/exc) with `CalcCBNSt`'s state
+register threaded through every step (the result type becomes `Outcome × State`;
+`throwExec` gains the throw-time state). No new technique — the union of the two
+parents' proofs. Two recurring fiddly bits worth flagging: (1) the `injEq` chain on a
+pair-of-Outcome gives a **left-nested** `(l'=l ∧ p'=p) ∧ st1=st'`, so destructure
+`⟨⟨rfl, rfl⟩, rfl⟩`, not `⟨rfl, rfl, rfl⟩`; (2) `rfl` there eliminates the **target**
+`l p st'` (the older ∀-bound vars), leaving the *cased* names alive — so a propagate
+case's IH call must reference the cased names (`l' p' st1`, `lx px2 st2`, …), or use
+explicit `subst` of the cased vars to keep `l p st'`.

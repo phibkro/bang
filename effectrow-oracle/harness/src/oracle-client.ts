@@ -34,6 +34,13 @@ export type CbnStOut =
   | { ok: true; value: EffVal; state: number }
   | { ok: false; reason: string; msg?: string };
 
+// Result of the combined CBN + Throws + State fragment (CalcCBNEffSt): a value or
+// a propagating effect, each carrying the current state.
+export type CbnEffStOut =
+  | { ok: true; outcome: "ret"; value: EffVal; state: number }
+  | { ok: true; outcome: "exc"; label: number; payload: EffVal; state: number }
+  | { ok: false; reason: string; msg?: string };
+
 export class Oracle {
   private proc: ChildProcessWithoutNullStreams;
   private rl: Interface;
@@ -122,6 +129,15 @@ export class Oracle {
   }
   execCbnSt(fuel: number, expr: unknown): Promise<CbnStOut> {
     return this.send({ op: "execcbnst", fuel, expr }, (line) => JSON.parse(line) as CbnStOut);
+  }
+
+  // Combined CBN + Throws + State fragment (CalcCBNEffSt.Src): the reference `eval`
+  // and the calculated machine, both returning an outcome (ret/exc) + final state.
+  evalCbnEffSt(fuel: number, expr: unknown): Promise<CbnEffStOut> {
+    return this.send({ op: "evalcbneffst", fuel, expr }, (line) => JSON.parse(line) as CbnEffStOut);
+  }
+  execCbnEffSt(fuel: number, expr: unknown): Promise<CbnEffStOut> {
+    return this.send({ op: "execcbneffst", fuel, expr }, (line) => JSON.parse(line) as CbnEffStOut);
   }
 
   close(): void {
