@@ -1,0 +1,8 @@
+;; Pull the verified brain (../generated/Bang_EffectRow.ml) into this dir at
+;; build time. `make -C oracle extract` regenerates the source; this copies it.
+(copy_files ../generated/Bang_EffectRow.ml)
+
+(executable
+ (name main)
+ (libraries yojson)
+ (modules main Bang_EffectRow))

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BANG — North Star to v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Spline+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0a0b0f; --ink2:#0f1117; --ink3:#14171f;
+    --ember:#ff9d4d; --ember-soft:#e8915a; --ember-deep:#c75d2c;
+    --cyan:#7ee0d3; --cyan-deep:#3d8f86;
+    --bone:#ece6dc; --bone-dim:#9b958c;
+    --ghost:rgba(236,230,220,.16);
+    --rule:rgba(236,230,220,.09);
+    --star:#ffe9c7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgba(255,157,77,.10), transparent 55%),
+      radial-gradient(90% 60% at 90% 110%, rgba(126,224,211,.06), transparent 60%),
+      var(--ink);
+    color:var(--bone);
+    font-family:"Spline Sans",sans-serif;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* film grain */
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9;opacity:.04;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    mix-blend-mode:overlay;animation:grain 6s steps(6) infinite;
+  }
+  @keyframes grain{0%{transform:translate(0,0)}20%{transform:translate(-4%,2%)}40%{transform:translate(3%,-3%)}60%{transform:translate(-2%,4%)}80%{transform:translate(4%,1%)}100%{transform:translate(0,0)}}
+
+  .wrap{max-width:980px;margin:0 auto;padding:0 28px 120px}
+
+  /* ---------- header / north star ---------- */
+  header{padding:78px 0 34px;text-align:center;position:relative}
+  .kicker{
+    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.42em;
+    text-transform:uppercase;color:var(--ember);opacity:.85;margin-bottom:46px;
+  }
+  .star{
+    position:relative;width:18px;height:18px;margin:0 auto 22px;
+    background:var(--star);border-radius:50%;
+    box-shadow:0 0 14px 4px rgba(255,233,199,.7),0 0 50px 12px rgba(255,157,77,.35);
+    animation:twinkle 3.6s ease-in-out infinite;
+  }
+  .star::before,.star::after{
+    content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    background:linear-gradient(var(--star),transparent);
+  }
+  .star::before{width:1.5px;height:120px;background:linear-gradient(180deg,rgba(255,233,199,.5),transparent);}
+  .star::after{width:120px;height:1.5px;background:linear-gradient(90deg,transparent,rgba(255,233,199,.45),transparent);}
+  @keyframes twinkle{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.82);opacity:.78}}
+  h1{
+    font-family:"Fraunces",serif;font-optical-sizing:auto;
+    font-weight:300;font-size:clamp(40px,7vw,82px);line-height:.98;
+    letter-spacing:-.02em;color:var(--bone);
+  }
+  h1 em{font-style:italic;font-weight:500;color:var(--ember-soft)}
+  .sub{
+    font-family:"Fraunces",serif;font-style:italic;font-weight:300;
+    font-size:clamp(16px,2.4vw,22px);color:var(--bone-dim);margin-top:18px;
+    max-width:620px;margin-left:auto;margin-right:auto;
+  }
+  .manifesto{
+    max-width:600px;margin:40px auto 0;font-size:15px;color:var(--bone-dim);
+    border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+    padding:22px 0;line-height:1.7;
+  }
+  .manifesto b{color:var(--bone);font-weight:600}
+  .manifesto .em{color:var(--ember-soft)}
+  .manifesto .cy{color:var(--cyan)}
+
+  /* ---------- legend ---------- */
+  .legend{
+    display:flex;flex-wrap:wrap;gap:22px;justify-content:center;
+    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;
+    color:var(--bone-dim);margin:34px 0 8px;text-transform:uppercase;
+  }
+  .legend span{display:flex;align-items:center;gap:8px}
+  .dot{width:11px;height:11px;border-radius:50%;flex:none}
+  .dot.lock{background:var(--ember);box-shadow:0 0 10px rgba(255,157,77,.6)}
+  .dot.tween{background:transparent;border:1.5px dashed var(--ghost)}
+  .dot.head{background:var(--cyan);box-shadow:0 0 10px rgba(126,224,211,.6)}
+
+  /* ---------- timeline ---------- */
+  .strip{position:relative;margin-top:30px;padding-left:84px}
+  /* the sightline beam */
+  .strip::before{
+    content:"";position:absolute;left:35px;top:-6px;bottom:60px;width:2px;
+    background:linear-gradient(180deg,rgba(255,233,199,.5),rgba(255,157,77,.25) 14%,var(--rule) 30%,var(--rule));
+  }
+
+  .frame{position:relative;margin-bottom:14px;opacity:0;transform:translateY(26px);
+    animation:rise .9s cubic-bezier(.2,.7,.2,1) forwards;}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .frame:nth-child(1){animation-delay:.05s}
+  .frame:nth-child(2){animation-delay:.13s}
+  .frame:nth-child(3){animation-delay:.21s}
+  .frame:nth-child(4){animation-delay:.29s}
+  .frame:nth-child(5){animation-delay:.37s}
+  .frame:nth-child(6){animation-delay:.45s}
+  .frame:nth-child(7){animation-delay:.53s}
+  .frame:nth-child(8){animation-delay:.61s}
+  .frame:nth-child(9){animation-delay:.69s}
+  .frame:nth-child(10){animation-delay:.77s}
+
+  /* node on the beam */
+  .node{position:absolute;left:-57px;top:26px;width:20px;height:20px;border-radius:50%;
+    background:var(--ink);border:2px solid var(--ember);z-index:3;
+    box-shadow:0 0 0 5px var(--ink),0 0 16px rgba(255,157,77,.5);}
+  .node::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--ember);}
+
+  /* keyframe card */
+  .key{
+    background:linear-gradient(180deg,var(--ink3),var(--ink2));
+    border:1px solid var(--rule);border-left:2px solid var(--ember-deep);
+    border-radius:4px;padding:24px 28px 26px;position:relative;overflow:hidden;
+    transition:border-color .35s,transform .35s;
+  }
+  .key::before{ /* sprocket tick */
+    content:"";position:absolute;right:0;top:0;bottom:0;width:30px;
+    background-image:repeating-linear-gradient(180deg,var(--rule) 0 1px,transparent 1px 13px);
+    opacity:.5;
+  }
+  .key:hover{border-left-color:var(--ember);transform:translateX(3px)}
+  .fno{
+    font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+    letter-spacing:.2em;color:var(--ember);display:inline-block;
+  }
+  .pose{
+    font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.34em;
+    text-transform:uppercase;color:var(--bone-dim);margin-left:14px;
+  }
+  .ktitle{
+    font-family:"Fraunces",serif;font-weight:400;font-size:clamp(23px,3.4vw,31px);
+    letter-spacing:-.01em;color:var(--bone);margin:11px 0 12px;line-height:1.08;
+  }
+  .ktitle b{font-weight:600;font-style:italic;color:var(--ember-soft)}
+  .state{font-size:15px;color:#cdc7bd;max-width:640px}
+  .state code{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--cyan);
+    background:rgba(126,224,211,.07);padding:1px 6px;border-radius:3px}
+  .decisions{margin-top:16px;border:1px solid var(--rule);border-radius:4px;
+    padding:12px 15px;background:rgba(255,157,77,.04);display:flex;flex-direction:column;gap:7px}
+  .dlock{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--ember);align-self:flex-start;
+    border:1px solid var(--ember-deep);border-radius:3px;padding:2px 8px;margin-bottom:2px}
+  .dec{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:#bdb6ac;line-height:1.5}
+  .dec::before{content:"→ ";color:var(--ember)}
+  .dec code{color:var(--cyan);background:rgba(126,224,211,.07);padding:0 4px;border-radius:3px}
+  .marks{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:18px;
+    font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.04em}
+  .mark{display:flex;align-items:center;gap:7px;color:var(--bone-dim)}
+  .mark b{color:var(--bone);font-weight:500}
+  .tag{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+    padding:2px 7px;border-radius:3px}
+  .tag.proof{color:var(--cyan);border:1px solid var(--cyan-deep)}
+  .tag.runs{color:var(--ember);border:1px solid var(--ember-deep)}
+
+  /* onion-skin inbetween */
+  .tween{position:relative;margin:10px 0 24px;padding:6px 0 6px 4px}
+  .tween .gnode{position:absolute;left:-52px;top:9px;width:10px;height:10px;border-radius:50%;
+    border:1.5px dashed var(--ghost);background:transparent;z-index:2}
+  .tween p{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.05em;
+    color:var(--ghost);font-style:normal}
+  .tween p::before{content:"⋯ tween · ";color:rgba(236,230,220,.28);letter-spacing:.1em}
+
+  /* playhead */
+  .playhead{position:relative;margin:4px 0 30px}
+  .playhead .ph{position:absolute;left:-66px;top:-2px;display:flex;align-items:center;gap:0}
+  .playhead .tri{width:0;height:0;border-top:7px solid transparent;border-bottom:7px solid transparent;
+    border-left:11px solid var(--cyan);filter:drop-shadow(0 0 6px rgba(126,224,211,.7))}
+  .playhead .line{position:absolute;left:-55px;right:-40px;height:1px;top:5px;
+    background:linear-gradient(90deg,var(--cyan),rgba(126,224,211,.05));
+    animation:scan 4s ease-in-out infinite}
+  @keyframes scan{0%,100%{opacity:.5}50%{opacity:1}}
+  .playhead label{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--cyan);background:var(--ink);padding-left:18px}
+
+  /* v1 final keyframe */
+  .frame.final .node{border-color:var(--star);box-shadow:0 0 0 5px var(--ink),0 0 22px 4px rgba(255,233,199,.6)}
+  .frame.final .node::after{background:var(--star)}
+  .frame.final .key{border-left-color:var(--ember);
+    background:linear-gradient(180deg,rgba(255,157,77,.08),var(--ink2));
+    box-shadow:0 0 40px rgba(255,157,77,.10)}
+  .frame.final .ktitle{color:var(--star)}
+
+  /* ---------- canon ---------- */
+  .canon{margin-top:80px;border-top:1px solid var(--rule);padding-top:40px}
+  .canon h2{font-family:"Fraunces",serif;font-weight:300;font-style:italic;
+    font-size:28px;color:var(--bone);margin-bottom:6px}
+  .canon .note{font-size:13px;color:var(--bone-dim);margin-bottom:26px;
+    font-family:"IBM Plex Mono",monospace;letter-spacing:.03em}
+  .paper{display:grid;grid-template-columns:62px 1fr;gap:4px 18px;padding:13px 0;
+    border-bottom:1px solid var(--rule)}
+  .paper .yr{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ember);
+    letter-spacing:.05em}
+  .paper .pt{font-size:15px;color:var(--bone)}
+  .paper .pt b{color:var(--bone);font-weight:600}
+  .paper .pd{grid-column:2;font-size:13px;color:var(--bone-dim);margin-top:2px}
+  .paper .pd .cy{color:var(--cyan)}
+  footer{margin-top:54px;text-align:center;font-family:"IBM Plex Mono",monospace;
+    font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;color:rgba(236,230,220,.3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="kicker">bang · a north star, not a route</div>
+    <div class="star"></div>
+    <h1>The pose you are<br><em>animating toward</em></h1>
+    <p class="sub">v1 of BANG, drawn as keyframes. The locked frames are committed; the inbetweens are yours to draw.</p>
+    <p class="manifesto">
+      In animation you set the <b>keyframes</b> first — the poses that must be true —
+      then <em>tween</em> the motion between them. This is that. Each frame below is a
+      <b>state of the system</b>, a thing that holds, not a checklist of steps.
+      Proof rides the <span class="cy">reference</span>; the shipping path is kept honest by the
+      <span class="cy">harness</span>; performance is a second-class citizen, summoned only when
+      it touches the user. The <span class="em">machine is an output of the calculation</span>, never
+      a thing you hand-design.
+    </p>
+    <div class="legend">
+      <span><i class="dot lock"></i>locked keyframe</span>
+      <span><i class="dot tween"></i>onion-skin inbetween</span>
+      <span><i class="dot head"></i>playhead — you are here</span>
+    </div>
+  </header>
+
+  <div class="strip">
+
+    <!-- K0 -->
+    <div class="frame">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K0</span><span class="pose">model sheet</span>
+        <div class="ktitle">The <b>semantics</b> is locked</div>
+        <p class="state">BANG's core, as a precise definitional semantics in Lean — thunk axiom, <code>!</code> force, effect rows as <em>sets</em> composing by union, one-shot handlers, STM as the one privileged primitive. Written as <code>eval</code>, fuel-bounded. Every frame downstream is judged against this one drawing.</p>
+        <div class="decisions">
+          <span class="dlock">locked · v0 core</span>
+          <span class="dec">reactivity is the <code>:</code> vs <code>=</code> operator, not a keyword — <code>sig</code> collapses into <code>mut</code> (introduce silent, update notifies)</span>
+          <span class="dec">capture is explicit &amp; tracked — no implicit lexical closure, so every thunk is honestly serializable</span>
+          <span class="dec">the canonical target is the calculated VM — <code>Effect TS</code> is demoted to an optional lowering at K5</span>
+        </div>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">proves</span> <b>the model sheet typechecks</b></span>
+          <span class="mark"><span class="tag runs">runs</span> tiny core programs, interpreted</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tween"><div class="gnode"></div><p>make the semantics executable, and judgeable</p></div>
+
+    <!-- K1 -->
+    <div class="frame">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K1</span><span class="pose">the oracle speaks</span>
+        <div class="ktitle">A <b>reference</b> you can interrogate</div>
+        <p class="state">The Lean reference is an executable oracle; the differential harness drives any candidate against it. The effect-row unifier is verified — rows as a Mathlib <code>Finset</code> semilattice, <code>unify_sound</code> standing — and oracle-checked across thousands of cases.</p>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">proves</span> <b>unify_sound</b>, laws inherited</span>
+          <span class="mark"><span class="tag runs">runs</span> harness · 20k cases green</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PLAYHEAD -->
+    <div class="playhead">
+      <div class="line"></div>
+      <div class="ph"><div class="tri"></div></div>
+      <label>playhead — rep 1 done, the machine is next</label>
+    </div>
+
+    <div class="tween"><div class="gnode"></div><p>stop designing the machine; let the equation hand it to you</p></div>
+
+    <!-- K2 -->
+    <div class="frame">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K2</span><span class="pose">the machine falls out</span>
+        <div class="ktitle">The <b>VM</b> is calculated, not designed</div>
+        <p class="state">Bahr–Hutton calculation derives <code>(compile, Code, exec)</code> from <code>eval</code> for the thunk + force + first-order-effect core. The instruction set is an <em>output</em> of the derivation, correct by construction. Lean compiles <code>exec</code> to C — the first runtime you own outright.</p>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">proves</span> <b>exec ∘ compile ≡ eval</b></span>
+          <span class="mark"><span class="tag runs">runs</span> core BANG on an owned machine</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tween"><div class="gnode"></div><p>change the underlying monad; carry the handler stack into the configuration</p></div>
+
+    <!-- K3 -->
+    <div class="frame">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K3</span><span class="pose">effects on the machine</span>
+        <div class="ktitle">The <b>real language</b> runs on it</div>
+        <p class="state">The monadic calculation lands: the effect-row monad for effects, the partiality monad for divergence. The handler stack becomes machine configuration; effect operations become instructions; STM is axiomatized as machine primitives. Multi-shot handlers are deferred frontier, named not faked.</p>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">proves</span> <b>correctness over the effect monad</b></span>
+          <span class="mark"><span class="tag runs">runs</span> effectful BANG, end to end</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tween"><div class="gnode"></div><p>give the source a way in: parse, type, infer effects</p></div>
+
+    <!-- K4 -->
+    <div class="frame">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K4</span><span class="pose">the front end is real</span>
+        <div class="ktitle">You write <b>source</b>, it runs</div>
+        <p class="state">Parser → typed AST → effect-row inference (on the verified unifier) → core IR feeding the calculated compiler. A BANG file type-checks with full effect inference and executes on the owned runtime. The thing stops being a kernel and starts being a language.</p>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">proves</span> <b>inference soundness via the oracle</b></span>
+          <span class="mark"><span class="tag runs">runs</span> real <code>.bang</code> files</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tween"><div class="gnode"></div><p>only now, and only where the user feels it — chase speed</p></div>
+
+    <!-- K5 -->
+    <div class="frame">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K5</span><span class="pose">the fast path · optional</span>
+        <div class="ktitle">Speed, <b>without losing the truth</b></div>
+        <p class="state">An optimized bytecode interpreter (C/Rust/Zig) and/or a calculated lowering of <code>Code</code> to C, Wasm, or WasmFX stack switching. Effect TS, once the planned backend, becomes just one optional lowering here — no longer the foundation. All differential-tested against the verified <code>exec</code>, which stays the oracle. The slow correct machine never retires; it adjudicates.</p>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">proves</span> <b>lowering refines exec</b> (or diff-tested)</span>
+          <span class="mark"><span class="tag runs">runs</span> at UX-acceptable speed · portable</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tween"><div class="gnode"></div><p>turn the toolchain on itself; a build graph is a thunk graph</p></div>
+
+    <!-- K6 -->
+    <div class="frame">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K6</span><span class="pose">the toolchain eats itself</span>
+        <div class="ktitle">BANG <b>builds</b> BANG</div>
+        <p class="state">The build system is a thunk graph — targets are thunks, dependencies are the <code>R</code> channel, incremental rebuild is content-addressed memoization. The toolchain becomes BANG-native and the project dogfoods. Reproducibility stops being a wish and becomes a property.</p>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">holds</span> <b>rebuild iff inputs changed</b></span>
+          <span class="mark"><span class="tag runs">runs</span> the project, on itself</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tween"><div class="gnode"></div><p>point it at something that matters and ship</p></div>
+
+    <!-- K7 / v1 -->
+    <div class="frame final">
+      <div class="node"></div>
+      <div class="key">
+        <span class="fno">K7</span><span class="pose">north star · v1</span>
+        <div class="ktitle">An <b>owned, correct-by-construction</b> language</div>
+        <p class="state">Surface syntax, an effect-typed front end, a verified core runtime, an optional fast path, and a native build system — with the differential harness as a standing guarantee. A real program (a slice of the HMS constraint evaluator) is written in BANG and shipped on a runtime you own end to end. This is the pose. Everything above is how you reach it.</p>
+        <div class="marks">
+          <span class="mark"><span class="tag proof">proves</span> <b>the chain holds, frame to frame</b></span>
+          <span class="mark"><span class="tag runs">runs</span> something worth running</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ---------- reading canon ---------- -->
+  <section class="canon">
+    <h2>The canon — calculating correct compilers</h2>
+    <p class="note">read top to bottom · PDFs on pszgmh (cs.nott.ac.uk/~pszgmh) &amp; bahr.io</p>
+
+    <div class="paper"><span class="yr">1967</span><span class="pt">McCarthy &amp; Painter — <b>Correctness of a Compiler for Arithmetic Expressions</b></span><span class="pd">the origin. the first proof that a compiler is correct. everything here is a 50-year reply to it.</span></div>
+    <div class="paper"><span class="yr">2004</span><span class="pt">Hutton &amp; Wright — <b>Compiling Exceptions Correctly</b> · <b>Calculating an Exceptional Machine</b></span><span class="pd">where <span class="cy">calculate, don't verify</span> begins — derive the machine by defunctionalization.</span></div>
+    <div class="paper"><span class="yr">2015</span><span class="pt">Bahr &amp; Hutton — <b>Calculating Correct Compilers</b> · JFP 25</span><span class="pd">the foundational method. compiler + machine fall out of one correctness equation. Coq-formalized. <span class="cy">start here for the technique.</span></span></div>
+    <div class="paper"><span class="yr">2016</span><span class="pt">Hutton &amp; Bahr — <b>Cutting Out Continuations</b></span><span class="pd">the continuation-passing intuition behind the calculations, in miniature.</span></div>
+    <div class="paper"><span class="yr">2017</span><span class="pt">Hutton &amp; Bahr — <b>Compiling a 50-Year Journey</b> · JFP 27</span><span class="pd">the retrospective tying McCarthy–Painter to the modern method. read it as the map.</span></div>
+    <div class="paper"><span class="yr">2020</span><span class="pt">Bahr &amp; Hutton — <b>Calculating Correct Compilers II: Return of the Register Machines</b> · JFP 30</span><span class="pd">same method, register targets instead of stack. proof that the technique generalizes.</span></div>
+    <div class="paper"><span class="yr">2021</span><span class="pt">Pickard &amp; Hutton — <b>Calculating Dependently-Typed Compilers</b> · ICFP</span><span class="pd"><span class="cy">your Lean blueprint.</span> the calculation in a dependently-typed setting, intrinsically typed, easier to mechanize.</span></div>
+    <div class="paper"><span class="yr">2022</span><span class="pt">Bahr &amp; Hutton — <b>Monadic Compiler Calculation</b> · ICFP</span><span class="pd"><span class="cy">the hook for BANG's effects.</span> divergence via the partiality monad; generalizes to any effect by swapping the underlying monad.</span></div>
+    <div class="paper"><span class="yr">2023</span><span class="pt">Bahr &amp; Hutton — <b>Calculating Compilers for Concurrency</b> · ICFP</span><span class="pd">the concurrency extension — nearest the surface for BANG's fibers and STM.</span></div>
+    <div class="paper"><span class="yr">2024</span><span class="pt">Garby, Hutton &amp; Bahr — <b>Calculating Compilers Effectively</b> · Haskell Symp.</span><span class="pd">deriving compilers that emit efficient code, not just tree-shaped code.</span></div>
+    <div class="paper"><span class="yr">2024</span><span class="pt">Bahr &amp; Hutton — <b>Beyond Trees: Calculating Graph-Based Compilers</b> · ICFP</span><span class="pd">jumps and graph-structured code via HOAS — the shape real backends need.</span></div>
+    <div class="paper"><span class="yr">2024</span><span class="pt">Tsuyama, Cong, Masuhara, Keller &amp; Wang — <b>An Intrinsically Typed Compiler for Algebraic Effect Handlers</b> · PEPM</span><span class="pd">adjacent &amp; vital — handlers compiled to a typed stack machine, in Agda. the closest existing artifact to K3.</span></div>
+    <div class="paper"><span class="yr">—</span><span class="pt">Geeson (Oxford MSc) — <b>Calculating Compilers and Algebraic Effects</b></span><span class="pd">the method × algebraic effects, including CBPV with exceptions. a worked precedent for the frontier frames.</span></div>
+  </section>
+
+  <footer>keyframes committed · inbetweens to be drawn</footer>
+
+</div>
+</body>
+</html>

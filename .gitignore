@@ -1,0 +1,23 @@
+# Lean / Lake build artifacts (Mathlib oleans etc. — multi-GB, fetched via `lake exe cache get`)
+.lake/
+*.olean
+*.ilean
+*.c.o
+
+# Node / harness
+node_modules/
+.pnpm-store/
+
+# F* / OCaml alternate oracle build
+oracle/_build/
+*.checked
+*.cmi
+*.cmo
+*.cmx
+*.o
+
+# direnv
+.direnv/
+
+# macOS
+.DS_Store
