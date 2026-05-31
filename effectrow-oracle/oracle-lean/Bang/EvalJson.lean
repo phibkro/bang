@@ -1,4 +1,5 @@
 import Bang.Eval
+import Bang.Calc
 import Lean.Data.Json
 
 /-!
@@ -124,5 +125,28 @@ def evalRequest (j : Json) : Except String Json := do
   let fuel ← jNat j "fuel"
   let e    ← exprFromJson (← jField j "expr")
   pure (runResultToJson (run fuel e))
+
+/-! ## The calculated machine (`exec`) over the arithmetic kernel (ADR-0009)
+
+Translate the arithmetic subset of `Expr` into `Bang.Calc.Src`, run the
+*calculated* stack machine, and return the result in the same value shape `eval`
+uses — so the harness can diff-test the machine against the `eval` oracle. By
+`Bang.Calc.compile_correct` the machine always halts on a singleton stack. -/
+
+def srcFromExpr : Expr → Except String Bang.Calc.Src
+  | .lit n         => pure (.val n)
+  | .binop "+" a b => do pure (.add (← srcFromExpr a) (← srcFromExpr b))
+  | .binop "*" a b => do pure (.mul (← srcFromExpr a) (← srcFromExpr b))
+  | _              => throw "exec: only the arithmetic kernel (lit, +, *) is compiled so far"
+
+/-- Parse and run an `{"op":"exec","expr":E}` request on the calculated machine. -/
+def execRequest (j : Json) : Except String Json := do
+  let e   ← exprFromJson (← jField j "expr")
+  let src ← srcFromExpr e
+  match Bang.Calc.exec (Bang.Calc.compile src []) [] with
+  | [n] => pure (Json.mkObj [("ok", Json.bool true),
+                             ("value", Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)])])
+  | _   => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
+                             ("msg", Json.str "exec: machine halted on a non-singleton stack")])
 
 end Bang.EvalJson

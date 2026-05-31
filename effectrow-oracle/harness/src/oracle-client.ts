@@ -44,6 +44,12 @@ export class Oracle {
     return this.send({ op: "eval", fuel, expr }, (line) => JSON.parse(line) as RunResult);
   }
 
+  // Run the CALCULATED stack machine (compile + exec, ADR-0009) on a program.
+  // Defined for the arithmetic kernel (lit, +, *) so far.
+  execProg(expr: Expr): Promise<RunResult> {
+    return this.send({ op: "exec", expr }, (line) => JSON.parse(line) as RunResult);
+  }
+
   close(): void {
     this.rl.close();
     this.proc.stdin.end();

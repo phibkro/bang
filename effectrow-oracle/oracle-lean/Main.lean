@@ -15,6 +15,8 @@ there is no separate extraction/glue step.
   ROW = {"labels":[int..],"tail": int | null}
 
   {"op":"eval","fuel":N,"expr":EXPR}         -> RESULT   (the bigger oracle, ADR-0008)
+  {"op":"exec","expr":EXPR}                  -> RESULT   (calculated machine, ADR-0009;
+                                                          arithmetic kernel: lit, +, *)
   EXPR/RESULT wire format: see Bang/EvalJson.lean
 -/
 
@@ -77,6 +79,9 @@ def handle (line : String) : Except String Json := do
   | "eval" =>
       -- the bigger oracle: drive the definitional interpreter (ADR-0008)
       Bang.EvalJson.evalRequest j
+  | "exec" =>
+      -- the CALCULATED machine: compile + run on the verified stack VM (ADR-0009)
+      Bang.EvalJson.execRequest j
   | other => throw s!"unknown op {other}"
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do
