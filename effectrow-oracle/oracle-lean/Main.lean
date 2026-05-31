@@ -26,6 +26,9 @@ there is no separate extraction/glue step.
   {"op":"evalcbneff"/"execcbneff","fuel":N,"expr":EXPR}
                                              -> OUTCOME  (Throws over the CBN closure core:
                                                           reference / calculated, ADR-0012)
+  {"op":"evalcbnst"/"execcbnst","fuel":N,"expr":EXPR}
+                                             -> {value,state}  (State over the CBN closure core:
+                                                          reference / calculated, ADR-0013)
   EXPR/RESULT wire format: see Bang/EvalJson.lean
 -/
 
@@ -115,6 +118,12 @@ def handle (line : String) : Except String Json := do
   | "execcbneff" =>
       -- the CALCULATED CBN+Throws machine: re-throw at the meta-call boundary (ADR-0012)
       Bang.EvalJson.execCBNEffRequest j
+  | "evalcbnst" =>
+      -- State over the CBN closure core: reference semantics (ADR-0013)
+      Bang.EvalJson.evalCBNStRequest j
+  | "execcbnst" =>
+      -- the CALCULATED CBN+State machine: register threaded through nested meta-runs (ADR-0013)
+      Bang.EvalJson.execCBNStRequest j
   | other => throw s!"unknown op {other}"
 
 partial def loop (stdin stdout : IO.FS.Stream) : IO Unit := do

@@ -5,6 +5,7 @@ import Bang.CalcCBN
 import Bang.CalcEff
 import Bang.CalcSt
 import Bang.CalcCBNEff
+import Bang.CalcCBNSt
 import Lean.Data.Json
 
 /-!
@@ -366,5 +367,53 @@ def execCBNEffRequest (j : Json) : Except String Json := do
   | some (.uncaught l p)  => pure (Json.mkObj [("ok", Json.bool true), ("outcome", Json.str "exc"),
                                                ("label", Lean.toJson l), ("payload", valueCBNEffToJson p)])
   | none                  => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
+
+/-! ## State over the CBN closure core (`evalcbnst`/`execcbnst`) — K3 (ADR-0013)
+
+State (`get`/`put`/`runState`) threaded through the call-by-name closure/thunk
+core (`Bang.CalcCBNSt`). Both the reference `eval` and the calculated machine
+return `(value, state)`; the value is reported as a WHNF tag (the machine's halt
+value equals `eval`'s, so they agree directly). -/
+
+partial def srcCBNStFromJson (j : Json) : Except String Bang.CalcCBNSt.Src := do
+  match ← jStr j "t" with
+  | "val"      => pure (.val (← jIntF j "n"))
+  | "var"      => pure (.var (← jNat j "i"))
+  | "add"      => pure (.add (← srcCBNStFromJson (← jField j "a")) (← srcCBNStFromJson (← jField j "b")))
+  | "lam"      => pure (.lam (← srcCBNStFromJson (← jField j "body")))
+  | "app"      => pure (.app (← srcCBNStFromJson (← jField j "f")) (← srcCBNStFromJson (← jField j "a")))
+  | "let"      => pure (.letE (← srcCBNStFromJson (← jField j "e1")) (← srcCBNStFromJson (← jField j "e2")))
+  | "thunk"    => pure (.thnk (← srcCBNStFromJson (← jField j "e")))
+  | "force"    => pure (.force (← srcCBNStFromJson (← jField j "e")))
+  | "get"      => pure .get
+  | "put"      => pure (.put (← srcCBNStFromJson (← jField j "arg")))
+  | "runState" => pure (.runState (← srcCBNStFromJson (← jField j "init")) (← srcCBNStFromJson (← jField j "body")))
+  | other      => throw s!"cbnst: unknown tag {other}"
+
+def valueCBNStToJson : Bang.CalcCBNSt.Value → Json
+  | .vint n     => Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)]
+  | .vclo _ _   => Json.mkObj [("v", Json.str "clos")]
+  | .vthunk _ _ => Json.mkObj [("v", Json.str "thunk")]
+
+def cbnStOut (v : Bang.CalcCBNSt.Value) (st : Int) : Json :=
+  Json.mkObj [("ok", Json.bool true), ("value", valueCBNStToJson v), ("state", Lean.toJson st)]
+
+/-- `{"op":"evalcbnst","fuel":N,"expr":E}` — the reference semantics. -/
+def evalCBNStRequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let src  ← srcCBNStFromJson (← jField j "expr")
+  match Bang.CalcCBNSt.eval fuel 0 [] src with
+  | some (v, st) => pure (cbnStOut v st)
+  | none         => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
+
+/-- `{"op":"execcbnst","fuel":N,"expr":E}` — the calculated state+closure machine. -/
+def execCBNStRequest (j : Json) : Except String Json := do
+  let fuel ← jNat j "fuel"
+  let src  ← srcCBNStFromJson (← jField j "expr")
+  match Bang.CalcCBNSt.run fuel src with
+  | some (v :: _, st) => pure (cbnStOut v st)
+  | some ([], _)      => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),
+                                           ("msg", Json.str "execcbnst: empty halt stack")])
+  | none              => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "outOfFuel")])
 
 end Bang.EvalJson

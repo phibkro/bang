@@ -215,3 +215,31 @@ few new, transferable gotchas. Read these before **State over the closure core**
   divergence in `add` (a non-int operand made `eval` stuck *before* the other
   operand's effect ran, but the machine forces both first) before any proof effort —
   the "run the real journey" payoff. Fix the definition, re-fuzz, then prove.
+
+### State over the closure core (`CalcCBNSt`, ADR-0013) — what carried over
+
+The same shapes again, one part lighter, and it went through **first try** by
+applying the bullets above from the start:
+
+- **A tail-resumable effect threads cleanly; the sim is *two*-part** (eval-sim,
+  forceV-sim — no `exc` part). State never raises, so there's no re-throw and no
+  empty-nested trick: the register just threads `st → st'` through every step,
+  *including* the nested meta-runs (`exec f (compile b …) … [] st` returns `st'`,
+  the caller threads it forward). This is the structural reason State doesn't force a
+  machine flatten — see the effect-shape map below.
+- **Returning `Option (Value × State)` adds only pair-plumbing.** `cases hx : eval …
+  with | some px => obtain ⟨vx, st1⟩ := px; simp only [hx] at h`, and finish value
+  cases with `simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, rfl⟩ :=
+  h`. Everything else is `CalcCBN`'s proof with a state argument threaded.
+- **`runState` (the scoped handler) reuses `CalcSt`'s `ENTER`/`LEAVE`** — the body is
+  compiled *inline* (not via a nested meta-run), running on the main stack with the
+  outer state boxed as a `vint` below it; the body-IH uses that stack and `LEAVE`
+  restores. No new technique.
+
+**Effect shape → composition mechanism** (the map these two increments established):
+
+| effect shape | mechanism over the closure core | module |
+|--------------|---------------------------------|--------|
+| zero-shot (Throws) | nested run with empty handler stack, **re-throw** at the boundary | `CalcCBNEff` (ADR-0012) |
+| one-shot tail (State) | **thread** the register through the nested runs; no re-throw | `CalcCBNSt` (ADR-0013) |
+| non-tail / multi-shot | **flatten** to a control stack + **reify** the continuation | deferred (ADR-0011/0012/0013) |
