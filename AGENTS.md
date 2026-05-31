@@ -92,11 +92,15 @@ K0 decisions are locked — see ADRs. Do not relitigate locked decisions; read a
 
 ```
 cd effectrow-oracle
-make selfcheck     # zero-dep algorithm check (Node only) — start here
-make check-lean    # selfcheck → lake build → differential harness vs the Lean oracle
+nix develop          # ENTER THE DEV SHELL FIRST — bare `make`/`node`/`lake` are NOT on PATH
+make selfcheck       # zero-dep algorithm check (Node only) — start here
+make check-lean      # selfcheck → lake build → differential harness vs the Lean oracle (55 tests)
 ```
 
-Green means you haven't broken invariant 1. If you can express a new invariant as a runnable check, do that instead of writing it in prose — checkable beats described.
+First `lake` build pulls Mathlib via `lake exe cache get` (network; minutes). Green
+means you haven't broken invariant 1 (currently **55 tests green, zero `sorry`s**).
+If you can express a new invariant as a runnable check, do that instead of writing it
+in prose — checkable beats described.
 
 ## When you make a decision
 
