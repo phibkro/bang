@@ -14,6 +14,8 @@ A small language whose **paradigm and runtime are values, not language features*
 | where the project is going | `docs/roadmap/bang-northstar-roadmap.md` (dense) · `.html` (visual) |
 | **why** things are the way they are | `docs/decisions/` (ADRs) — read these before proposing changes |
 | the verified reference | `effectrow-oracle/oracle-lean/Bang/EffectRow.lean` (Lean 4 + Mathlib) |
+| the calculated VM (K2) | `effectrow-oracle/oracle-lean/Bang/{Calc,CalcHO}.lean` (proven `exec ∘ compile ≡ eval`) |
+| **how to prove the next K2 increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, tactic patterns, gotchas. **Read before proving.** |
 | the standing guarantee | `effectrow-oracle/harness/` (differential tests) + `effectrow-oracle/tools/selfcheck.mjs` |
 | what to read | reading canon, end of the roadmap `.md` |
 
@@ -27,7 +29,7 @@ A small language whose **paradigm and runtime are values, not language features*
 - **Harness:** `Bang/EvalJson.lean` ops — `{"op":"eval"}` (interpreter), `{"op":"exec"}` (proven first-order machine), `{"op":"execho"}` (proven HO machine). `harness/` drives an independent TS candidate (`eval-candidate.ts`) on eval goldens + fuzz, and diff-tests each machine vs `eval` (`test/calc.test.ts`, `test/calc-ho.test.ts`). **31 tests green.**
 - **One `sorry` left in the whole build:** `unify_sound` (K1, with a proof plan). Everything else — including the entire K2 calculation so far — builds clean and proven.
 - **Deferred (documented in `Eval.lean`, never faked):** multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
-- **Next (grow the calculation):** thunk/`$`force + call-by-name (BANG's actual kernel — `CalcHO` is CBV; reuse its closure machinery, change the arg convention to thunks) → `if` (after a Bool/value story so it diff-tests vs `Bang.Eval`) → effects (swap in the effect monad; the free-monad `eval`'s resumption defunctionalizes into the machine). Optionally also discharge `unify_sound`.
+- **Next (grow the calculation — read `docs/notes/k2-calculation-playbook.md` first):** thunk/`$`force + call-by-name (BANG's actual kernel — `CalcHO` is CBV; reuse its closure machinery, change the arg convention to thunks) → `if` (after a Bool/value story so it diff-tests vs `Bang.Eval`) → effects (swap in the effect monad; the free-monad `eval`'s resumption defunctionalizes into the machine). Optionally also discharge `unify_sound`. The playbook has the fuel-alignment trick, the tactic patterns, and the gotchas that cost real time.
 - **In-sandbox build note:** the Lean oracle compiles and `check-lean` is green (the persistent-process harness needed a stdout flush; three Mathlib-version NUDGE spots were fixed). `nix develop` gives Lean via elan; `lake exe cache get` pulls Mathlib oleans.
 
 K0 decisions are locked — see ADRs. Do not relitigate locked decisions; if you think one is wrong, read its **"Revisit if"** clause first.
