@@ -133,17 +133,24 @@ Translate the arithmetic subset of `Expr` into `Bang.Calc.Src`, run the
 uses — so the harness can diff-test the machine against the `eval` oracle. By
 `Bang.Calc.compile_correct` the machine always halts on a singleton stack. -/
 
-def srcFromExpr : Expr → Except String Bang.Calc.Src
-  | .lit n         => pure (.val n)
-  | .binop "+" a b => do pure (.add (← srcFromExpr a) (← srcFromExpr b))
-  | .binop "*" a b => do pure (.mul (← srcFromExpr a) (← srcFromExpr b))
-  | _              => throw "exec: only the arithmetic kernel (lit, +, *) is compiled so far"
+-- Translate the supported `Expr` subset into the de Bruijn `Calc.Src`. `ctx` is
+-- the binding context (names, innermost first); a `var` resolves to its index, a
+-- `let` extends the context. Unbound names / unsupported nodes fail loudly.
+partial def srcFromExpr (ctx : List String) : Expr → Except String Bang.Calc.Src
+  | .lit n          => pure (.val n)
+  | .binop "+" a b  => do pure (.add (← srcFromExpr ctx a) (← srcFromExpr ctx b))
+  | .binop "*" a b  => do pure (.mul (← srcFromExpr ctx a) (← srcFromExpr ctx b))
+  | .var x          => match ctx.findIdx? (· = x) with
+                       | some i => pure (.var i)
+                       | none   => throw s!"exec: unbound variable {x}"
+  | .letE x e1 e2   => do pure (.letE (← srcFromExpr ctx e1) (← srcFromExpr (x :: ctx) e2))
+  | _               => throw "exec: only lit, +, *, var, let are compiled so far"
 
 /-- Parse and run an `{"op":"exec","expr":E}` request on the calculated machine. -/
 def execRequest (j : Json) : Except String Json := do
   let e   ← exprFromJson (← jField j "expr")
-  let src ← srcFromExpr e
-  match Bang.Calc.exec (Bang.Calc.compile src []) [] with
+  let src ← srcFromExpr [] e
+  match Bang.Calc.exec (Bang.Calc.compile src []) [] [] with
   | [n] => pure (Json.mkObj [("ok", Json.bool true),
                              ("value", Json.mkObj [("v", Json.str "int"), ("n", Lean.toJson n)])])
   | _   => pure (Json.mkObj [("ok", Json.bool false), ("reason", Json.str "stuck"),

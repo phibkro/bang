@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fc from "fast-check";
 import { Oracle } from "../src/oracle-client.js";
-import { type Expr, lit, binop } from "../src/ast.js";
+import { type Expr, lit, binop, v, letE } from "../src/ast.js";
 
 const ORACLE_EXE = process.env.ORACLE_EXE ?? "../oracle-lean/.lake/build/bin/oracle";
 
@@ -22,17 +22,29 @@ async function intOf(p: Promise<{ ok: boolean; value?: { v: string; n?: number }
   return r.ok && r.value?.v === "int" ? r.value.n! : null;
 }
 
-// closed arithmetic programs over lit/+/*; values bounded to stay exact in f64
-function arbArith(): fc.Arbitrary<Expr> {
-  const go = (depth: number): fc.Arbitrary<Expr> =>
-    depth <= 0
+// closed programs over lit/+/*/let/var; values bounded to stay exact in f64.
+// `let` only ever binds fresh names and `var` only references in-scope names, so
+// every generated program is closed and well-scoped.
+function arbProg(): fc.Arbitrary<Expr> {
+  const leaf = (vars: string[]): fc.Arbitrary<Expr> =>
+    vars.length === 0
       ? fc.integer({ min: -9, max: 9 }).map(lit)
-      : fc.oneof(
-          { weight: 1, arbitrary: fc.integer({ min: -9, max: 9 }).map(lit) },
-          { weight: 2, arbitrary: fc.tuple(fc.constantFrom("+", "*"), go(depth - 1), go(depth - 1))
-              .map(([op, a, b]) => binop(op, a, b)) },
-        );
-  return go(3);
+      : fc.oneof(fc.integer({ min: -9, max: 9 }).map(lit), fc.constantFrom(...vars).map(v));
+  const go = (depth: number, vars: string[]): fc.Arbitrary<Expr> => {
+    if (depth <= 0) return leaf(vars);
+    const sub = () => go(depth - 1, vars);
+    return fc.oneof(
+      { weight: 1, arbitrary: leaf(vars) },
+      { weight: 2, arbitrary: fc.tuple(fc.constantFrom("+", "*"), sub(), sub())
+          .map(([op, a, b]) => binop(op, a, b)) },
+      { weight: 1, arbitrary: (() => {
+          const name = `x${depth}`;
+          return fc.tuple(go(depth - 1, vars), go(depth - 1, [...vars, name]))
+            .map(([e1, e2]) => letE(name, e1, e2));
+        })() },
+    );
+  };
+  return go(3, []);
 }
 
 describe("calculated machine (exec) vs reference eval -- arithmetic kernel", () => {
@@ -46,6 +58,12 @@ describe("calculated machine (exec) vs reference eval -- arithmetic kernel", () 
     { p: binop("+", lit(20), lit(22)), want: 42 },
     { p: binop("*", binop("+", lit(2), lit(3)), lit(4)), want: 20 },          // (2+3)*4
     { p: binop("+", binop("*", lit(6), lit(7)), lit(-2)), want: 40 },         // 6*7-2 via +(-2)
+    { p: letE("x", lit(5), binop("+", v("x"), v("x"))), want: 10 },           // let x=5 in x+x
+    // let x=3 in let y=4 in x*y + x  (nested binders, de Bruijn indices)
+    { p: letE("x", lit(3), letE("y", lit(4),
+        binop("+", binop("*", v("x"), v("y")), v("x")))), want: 15 },
+    // shadowing: let x=1 in (let x=2 in x) + x  = 2 + 1 = 3
+    { p: letE("x", lit(1), binop("+", letE("x", lit(2), v("x")), v("x"))), want: 3 },
   ])("golden: exec === eval === expected ($want)", async ({ p, want }) => {
     const machine = await intOf(oracle.execProg(p));
     const reference = await intOf(oracle.evalProg(100_000, p));
@@ -53,9 +71,9 @@ describe("calculated machine (exec) vs reference eval -- arithmetic kernel", () 
     expect(reference).toBe(want);
   });
 
-  it("agrees with eval on 500 random arithmetic programs", async () => {
+  it("agrees with eval on 500 random arithmetic+let/var programs", async () => {
     await fc.assert(
-      fc.asyncProperty(arbArith(), async (p) => {
+      fc.asyncProperty(arbProg(), async (p) => {
         const machine = await intOf(oracle.execProg(p));
         const reference = await intOf(oracle.evalProg(100_000, p));
         return machine !== null && machine === reference;

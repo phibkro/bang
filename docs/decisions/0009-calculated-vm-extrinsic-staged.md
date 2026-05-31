@@ -25,10 +25,16 @@ are each reversible, so they are recorded here:
   corollary `exec (compile e []) [] = [eval e]`.
 - **Grow the source one constructor at a time.** The calculation starts from a
   dedicated denotational `Src` for the **arithmetic kernel** (`val`, `add`, `mul`)
-  and extends constructor-by-constructor toward the full pinned core
-  (→ `if` → `let`/`var` → `force`/application → effects), each stage extending
-  `Code`/`compile`/`exec` and **re-proving** the theorem. Each stage is its own
-  green commit.
+  and extends constructor-by-constructor toward the full pinned core, each stage
+  extending `Code`/`compile`/`exec` and **re-proving** the theorem. Each stage is
+  its own green commit. Order actually taken: **arithmetic → `let`/`var` →** (then)
+  `if` → `force`/application → effects. `let`/`var` was taken before `if` because
+  it has no value-representation mismatch with the reference — on the pure total
+  fragment, `Bang.Eval`'s call-by-name `let` and the machine's strict `let` denote
+  the same value, so the machine is *both* proven and differentially testable.
+  `if` is deferred until a Bool/value story lands: `Bang.Eval`'s `if` branches on a
+  `Bool` ADT, so an Int-conditioned machine `if` could be *proven* but not
+  meaningfully *diff-tested* against the reference until ADTs/Bool are in `Src`.
 - **Calculate from a denotational `eval`, cross-checked against the operational
   one.** The paper method derives from a denotational `eval` (here `eval : Src →
   Int`). It is kept honest against the operational reference `Bang/Eval.lean`
