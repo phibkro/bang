@@ -84,10 +84,36 @@ exec_succ …`).
   callee result and the continuation `hr` up to a common fuel `G + F` before the
   `APP` step; then IH on the argument, then the function.
 
+## Mutual semantics → mutual simulation (the CBN/`force` pattern)
+
+When `eval` is mutually recursive with a `forceV` (call-by-name: `force`/`binop`
+operands/app-function reduce to WHNF), prove **one `sim` theorem that is a
+conjunction**, by induction on the shared fuel:
+
+```lean
+theorem sim : ∀ fe,
+  (∀ env e v, eval fe env e = some v → ∀ c s F r, exec F c env (v::s) = some r →
+     ∃ F', exec F' (compile e c) env s = some r) ∧               -- eval-sim
+  (∀ v w, forceV fe v = some w → ∀ env c s F r, exec F c env (w::s) = some r →
+     ∃ F', exec F' (FORCE :: c) env (v::s) = some r) := by         -- forceV-sim
+  intro fe; induction fe with
+  | zero => exact ⟨fun _ _ _ h => by simp [eval] at h, fun _ _ h => by simp [forceV] at h⟩
+  | succ fe ih => obtain ⟨ihe, ihf⟩ := ih; refine ⟨?_, ?_⟩ ...
+```
+
+`ihe`/`ihf` are both available at `fe`. The eval-sim's `force`/`app`/`binop` cases
+call `ihf` to discharge a forcing; the forceV-sim's `FORCE`-on-`vthunk` case calls
+`ihe` on the thunk body. Shared `vthunk`/`vclo` keep both equalities. This landed
+`CalcCBN.compile_correct` (`Bang/CalcCBN.lean`) — BANG's full pure-core kernel,
+proven. Worked the first build after fixing the lemma name + one copy-paste typo.
+
 ## Gotchas (cost real time — don't repeat)
 
 - **`::` binds tighter than `+`** (prec 67 vs 65): `n + m :: s` parses as
   `n + (m :: s)` → a `HAdd Int (List Int)` instance error. Write `(n + m) :: s`.
+- `Option.bind_eq_some` is **`Option.bind_eq_some_iff`** in this pin
+  (`x.bind f = some b ↔ ∃ a, x = some a ∧ f a = some b`) — used to split a
+  `(eval …).bind (forceV …) = some v` hypothesis.
 - `List.get?` is gone in this Lean/Mathlib pin → use `l[i]?` (`getElem?`).
 - `Finset.toList` is **noncomputable** here; `Finset.sort` (Finset-first arg:
   `s.sort (· ≤ ·)`) is the computable extraction. `deriving Repr` on a

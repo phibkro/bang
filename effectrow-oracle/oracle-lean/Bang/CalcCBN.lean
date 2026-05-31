@@ -140,30 +140,196 @@ def exec : Nat → Code → Env → Stack → Option Stack
     | Instr.FORCE,     e, (v :: s)                  => exec f c e (v :: s)   -- already WHNF
     | _,               _,        _                  => none                  -- stuck
 
-/-! ## Correctness (PROOF PENDING — harness-green, proof is the next step)
+/-! ## Correctness — PROVEN
 
-The machine is calculated and **differentially tested green** against the `eval`
-oracle — and because `Bang.Eval` is *itself* call-by-name, the agreement holds on
-every program, laziness included (the standing guarantee, invariant 1).
-
-The Lean equivalence `exec ∘ compile ≡ eval` is shipped as `sorry` with a plan,
-exactly as CBV's `CalcHO.compile_correct` first was (then proven). It reuses the
-playbook (`docs/notes/k2-calculation-playbook.md`) but needs one extra piece
-because `eval`/`forceV` are **mutually recursive**:
+`exec ∘ compile ≡ eval` for the call-by-name machine, with **no `sorry`**. It is
+*also* differentially tested green against the `eval` oracle — and because
+`Bang.Eval` is itself call-by-name, that agreement holds on every program,
+laziness included (invariant 1). Structure (reuses the playbook
+`docs/notes/k2-calculation-playbook.md`, plus a mutual twist for `eval`/`forceV`):
 
 1. `exec_succ`/`exec_mono` (fuel monotonicity) — as in `CalcHO`, but two nested
    arms now (`APP` *and* `FORCE` on a `vthunk`).
-2. A **mutual** simulation, by induction on the eval fuel, proving together:
-   - `eval`-sim: `eval fe env e = some v → ∀ c s F r, exec F c env (v::s) = some r
-     → ∃ F', exec F' (compile e c) env s = some r`;
-   - `forceV`-sim: `forceV fe v = some w → ∀ env c s F r, exec F c env (w::s) =
-     some r → ∃ F', exec F' (Instr.FORCE :: c) env (v::s) = some r`.
-   The `force`/`app`/`add` cases of the eval-sim invoke the forceV-sim; the
+2. `sim` — a **mutual** simulation, by induction on the eval fuel, proving together
+   the `eval`-sim (compiled `e` then `c` simulates pushing `eval e`) and the
+   `forceV`-sim (`FORCE` then `c` simulates pushing the forced value). The
+   `force`/`app`/`add`/`mul` cases of the eval-sim invoke the forceV-sim; the
    `FORCE`-on-`vthunk` step of the forceV-sim invokes the eval-sim on the thunk
-   body (shared `vthunk` keeps it an equality). `exec_mono` aligns the sub-fuels.
-3. `compile_correct` as the corollary. -/
+   body. Shared `vthunk`/`vclo` keep both sides equalities; `exec_mono` aligns the
+   sub-fuels.
+3. `compile_correct` — the corollary. -/
+
+/-- **Fuel monotonicity (one step).** As in `CalcHO`, but with two nested arms:
+`APP` and `FORCE`-on-a-thunk. -/
+theorem exec_succ : ∀ (f : Nat) (code : Code) (env : Env) (s r : Stack),
+    exec f code env s = some r → exec (f + 1) code env s = some r := by
+  intro f
+  induction f with
+  | zero => intro code env s r h; simp [exec] at h
+  | succ f ih =>
+    intro code env s r h
+    cases code with
+    | nil => simpa only [exec] using h
+    | cons i c =>
+      simp only [exec] at h ⊢
+      split at h <;>
+        first
+        | exact ih _ _ _ _ h                                     -- simple recursive arms
+        | simp at h                                              -- stuck arms
+        | (split at h <;> first | exact ih _ _ _ _ h | simp at h) -- LOOKUP nested option
+        | skip                                                   -- leave the nested arms
+      all_goals first
+        | (-- APP arm
+           rename_i va body cenv s'
+           cases hb : exec f (compile body []) (va :: cenv) [] with
+           | none => rw [hb] at h; simp at h
+           | some bs => cases bs with
+             | nil => rw [hb] at h; simp at h
+             | cons rv _ => rw [hb] at h; rw [ih _ _ _ _ hb]; exact ih _ _ _ _ h)
+        | (-- FORCE-on-thunk arm
+           rename_i body tenv s'
+           cases hb : exec f (compile body [Instr.FORCE]) tenv [] with
+           | none => rw [hb] at h; simp at h
+           | some bs => cases bs with
+             | nil => rw [hb] at h; simp at h
+             | cons w _ => rw [hb] at h; rw [ih _ _ _ _ hb]; exact ih _ _ _ _ h)
+
+/-- **Fuel monotonicity.** More fuel never changes a successful result. -/
+theorem exec_mono (f f' : Nat) (code : Code) (env : Env) (s r : Stack)
+    (h : exec f code env s = some r) (hle : f ≤ f') : exec f' code env s = some r := by
+  obtain ⟨k, rfl⟩ := Nat.le.dest hle
+  clear hle
+  induction k with
+  | zero => simpa using h
+  | succ k ih => rw [Nat.add_succ]; exact exec_succ _ _ _ _ _ ih
+
+/-- **The mutual simulation.** Proved together by induction on the eval fuel:
+the `eval`-sim (compiled `e` then `c` simulates pushing `eval e`) and the
+`forceV`-sim (`FORCE` then `c` simulates pushing the forced value). Each uses the
+other on subterms; `exec_mono` aligns the sub-fuels; the shared `vthunk`/`vclo`
+keep both sides equalities. -/
+theorem sim : ∀ (fe : Nat),
+    (∀ env e v, eval fe env e = some v → ∀ c s F r,
+        exec F c env (v :: s) = some r → ∃ F', exec F' (compile e c) env s = some r) ∧
+    (∀ v w, forceV fe v = some w → ∀ env c s F r,
+        exec F c env (w :: s) = some r → ∃ F', exec F' (Instr.FORCE :: c) env (v :: s) = some r) := by
+  intro fe
+  induction fe with
+  | zero => exact ⟨fun env e v h => by simp [eval] at h, fun v w h => by simp [forceV] at h⟩
+  | succ fe ih =>
+    obtain ⟨ihe, ihf⟩ := ih
+    refine ⟨?_, ?_⟩
+    · -- eval-sim at fe+1
+      intro env e v h c s F r hr
+      cases e with
+      | val n => simp only [eval] at h; obtain rfl := Option.some.inj h
+                 exact ⟨F + 1, by simp only [compile, exec]; exact hr⟩
+      | var i => simp only [eval] at h
+                 exact ⟨F + 1, by simp only [compile, exec, h]; exact hr⟩
+      | lam b => simp only [eval] at h; obtain rfl := Option.some.inj h
+                 exact ⟨F + 1, by simp only [compile, exec]; exact hr⟩
+      | thnk e => simp only [eval] at h; obtain rfl := Option.some.inj h
+                  exact ⟨F + 1, by simp only [compile, exec]; exact hr⟩
+      | force e =>
+        simp only [eval, Option.bind_eq_some_iff] at h
+        obtain ⟨ve, he, hf⟩ := h
+        obtain ⟨G, hG⟩ := ihf ve v hf env c s F r hr
+        obtain ⟨F', hF'⟩ := ihe env e ve he (Instr.FORCE :: c) s G r hG
+        exact ⟨F', by simpa only [compile] using hF'⟩
+      | letE e1 e2 =>
+        simp only [eval] at h
+        obtain ⟨G2, hG2⟩ := ihe (.vthunk e1 env :: env) e2 v h (Instr.UNBIND :: c) s (F + 1) r
+          (by simp only [exec]; exact hr)
+        exact ⟨G2 + 2, by simp only [compile, exec]; exact hG2⟩
+      | add x y =>
+        simp only [eval] at h
+        cases hx : (eval fe env x).bind (forceV fe) with
+        | none => rw [hx] at h; simp at h
+        | some vx => cases vx with
+          | vclo _ _ => rw [hx] at h; simp at h
+          | vthunk _ _ => rw [hx] at h; simp at h
+          | vint a => cases hy : (eval fe env y).bind (forceV fe) with
+            | none => rw [hx, hy] at h; simp at h
+            | some vy => cases vy with
+              | vclo _ _ => rw [hx, hy] at h; simp at h
+              | vthunk _ _ => rw [hx, hy] at h; simp at h
+              | vint b =>
+                rw [hx, hy] at h; simp only [Option.some.injEq] at h; subst h
+                obtain ⟨vyv, hyv, hyf⟩ := Option.bind_eq_some_iff.mp hy
+                obtain ⟨vxv, hxv, hxf⟩ := Option.bind_eq_some_iff.mp hx
+                obtain ⟨Gy, hGy⟩ := ihf vyv (.vint b) hyf env (Instr.ADD :: c) (.vint a :: s) (F + 1) r
+                  (by simp only [exec]; exact hr)
+                obtain ⟨Hy, hHy⟩ := ihe env y vyv hyv (Instr.FORCE :: Instr.ADD :: c) (.vint a :: s) Gy r hGy
+                obtain ⟨Gx, hGx⟩ := ihf vxv (.vint a) hxf env (compile y (Instr.FORCE :: Instr.ADD :: c)) s Hy r hHy
+                obtain ⟨F', hF'⟩ := ihe env x vxv hxv
+                  (Instr.FORCE :: compile y (Instr.FORCE :: Instr.ADD :: c)) s Gx r hGx
+                exact ⟨F', by simpa only [compile] using hF'⟩
+      | mul x y =>
+        simp only [eval] at h
+        cases hx : (eval fe env x).bind (forceV fe) with
+        | none => rw [hx] at h; simp at h
+        | some vx => cases vx with
+          | vclo _ _ => rw [hx] at h; simp at h
+          | vthunk _ _ => rw [hx] at h; simp at h
+          | vint a => cases hy : (eval fe env y).bind (forceV fe) with
+            | none => rw [hx, hy] at h; simp at h
+            | some vy => cases vy with
+              | vclo _ _ => rw [hx, hy] at h; simp at h
+              | vthunk _ _ => rw [hx, hy] at h; simp at h
+              | vint b =>
+                rw [hx, hy] at h; simp only [Option.some.injEq] at h; subst h
+                obtain ⟨vyv, hyv, hyf⟩ := Option.bind_eq_some_iff.mp hy
+                obtain ⟨vxv, hxv, hxf⟩ := Option.bind_eq_some_iff.mp hx
+                obtain ⟨Gy, hGy⟩ := ihf vyv (.vint b) hyf env (Instr.MUL :: c) (.vint a :: s) (F + 1) r
+                  (by simp only [exec]; exact hr)
+                obtain ⟨Hy, hHy⟩ := ihe env y vyv hyv (Instr.FORCE :: Instr.MUL :: c) (.vint a :: s) Gy r hGy
+                obtain ⟨Gx, hGx⟩ := ihf vxv (.vint a) hxf env (compile y (Instr.FORCE :: Instr.MUL :: c)) s Hy r hHy
+                obtain ⟨F', hF'⟩ := ihe env x vxv hxv
+                  (Instr.FORCE :: compile y (Instr.FORCE :: Instr.MUL :: c)) s Gx r hGx
+                exact ⟨F', by simpa only [compile] using hF'⟩
+      | app g a =>
+        simp only [eval] at h
+        cases hgf : (eval fe env g).bind (forceV fe) with
+        | none => rw [hgf] at h; simp at h
+        | some vgf => cases vgf with
+          | vint _ => rw [hgf] at h; simp at h
+          | vthunk _ _ => rw [hgf] at h; simp at h
+          | vclo b cenv =>
+            rw [hgf] at h; simp only at h        -- h : eval fe (vthunk a env :: cenv) b = some v
+            obtain ⟨vg, hgv, hgforce⟩ := Option.bind_eq_some_iff.mp hgf
+            obtain ⟨G, hG⟩ := ihe (.vthunk a env :: cenv) b v h [] [] 1 [v] (by simp [exec])
+            have hGbig : exec (G + F) (compile b []) (.vthunk a env :: cenv) [] = some [v] :=
+              exec_mono _ _ _ _ _ _ hG (by omega)
+            have hrbig : exec (G + F) c env (v :: s) = some r := exec_mono _ _ _ _ _ _ hr (by omega)
+            have happ : exec (G + F + 1) (Instr.APP :: c) env (.vthunk a env :: .vclo b cenv :: s) = some r := by
+              simp only [exec, hGbig]; exact hrbig
+            have hthunk : exec (G + F + 2) (Instr.THUNK a :: Instr.APP :: c) env (.vclo b cenv :: s) = some r := by
+              simp only [exec]; exact happ
+            obtain ⟨H, hH⟩ := ihf vg (.vclo b cenv) hgforce env (Instr.THUNK a :: Instr.APP :: c) s
+              (G + F + 2) r hthunk
+            obtain ⟨F', hF'⟩ := ihe env g vg hgv (Instr.FORCE :: Instr.THUNK a :: Instr.APP :: c) s H r hH
+            exact ⟨F', by simpa only [compile] using hF'⟩
+    · -- forceV-sim at fe+1
+      intro v w h env c s F r hr
+      cases v with
+      | vint n => simp only [forceV] at h; obtain rfl := Option.some.inj h
+                  exact ⟨F + 1, by simp only [exec]; exact hr⟩
+      | vclo b ve => simp only [forceV] at h; obtain rfl := Option.some.inj h
+                     exact ⟨F + 1, by simp only [exec]; exact hr⟩
+      | vthunk e ve =>
+        simp only [forceV, Option.bind_eq_some_iff] at h
+        obtain ⟨ve', he, hf⟩ := h
+        obtain ⟨A, hA⟩ := ihf ve' w hf ve [] [] 1 [w] (by simp [exec])
+        obtain ⟨B, hB⟩ := ihe ve e ve' he [Instr.FORCE] [] A [w] hA
+        have hBbig : exec (B + F) (compile e [Instr.FORCE]) ve [] = some [w] :=
+          exec_mono _ _ _ _ _ _ hB (by omega)
+        have hrbig : exec (B + F) c env (w :: s) = some r := exec_mono _ _ _ _ _ _ hr (by omega)
+        exact ⟨B + F + 1, by simp only [exec, hBbig]; exact hrbig⟩
+
+/-- **Correctness of the calculated call-by-name machine.** If the definitional
+`eval` produces `v`, the compiled program halts (with enough fuel) on `[v]`. -/
 theorem compile_correct (fe : Nat) (env : Env) (e : Src) (v : Value)
-    (h : eval fe env e = some v) : ∃ F, exec F (compile e []) env [] = some [v] := by
-  sorry
+    (h : eval fe env e = some v) : ∃ F, exec F (compile e []) env [] = some [v] :=
+  (sim fe).1 env e v h [] [] 1 [v] (by simp [exec])
 
 end Bang.CalcCBN
