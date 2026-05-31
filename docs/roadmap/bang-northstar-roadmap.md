@@ -3,7 +3,7 @@
 > Keyframes are committed poses (states that must hold). Inbetweens are implementation, drawn later.
 > Proof rides the **reference**; the shipping path is kept honest by the **harness**; performance is summoned only when it touches the user; **the machine is an output of the calculation, never hand-designed.**
 
-Status: K0 locked · K1 done (effect-row oracle) · **playhead between K1→K2**.
+Status: K0 locked · K1 done · K2 done (the pure core calculated + proven across 4 increments) · **K3 in progress** (Throws + State calculated + proven; composition with the closure core, and multi-shot reification, still open). Everything proven, **zero `sorry`s**. Live detail: `AGENTS.md` "Current playhead".
 
 ---
 
@@ -55,8 +55,8 @@ flowchart TD
 |-------|------|----------------------|--------|------|--------|
 | **K0** | model sheet | core semantics in Lean: thunk · `$` force · rows-as-sets · 1-shot handlers · STM; D1–D6 baked in | model sheet typechecks | core programs, interpreted | ✅ locked |
 | **K1** | oracle speaks | reference is executable; unifier verified (`Finset` semilattice); harness drives candidates | `unify_sound`; laws inherited | harness · 20k cases green | ✅ done |
-| **K2** | machine falls out | Bahr–Hutton derives `(compile, Code, exec)` from `eval` for thunk+force+1st-order-effect core; Lean→C | `exec ∘ compile ≡ eval` | core BANG on owned machine | ⬜ next |
-| **K3** | effects on the machine | monadic calculation: effect-row monad + partiality monad; handler stack → config; effect ops → instructions; STM axiomatized | correctness over the effect monad | effectful BANG end-to-end | ⬜ |
+| **K2** | machine falls out | Bahr–Hutton derives `(compile, Code, exec)` from `eval`; pure core done — arithmetic → let/var → CBV closures → CBN+`$`force, **all proven** `exec ∘ compile ≡ eval` (`Calc`/`CalcHO`/`CalcCBN`) | `exec ∘ compile ≡ eval` | core BANG on owned machine | ✅ proven (fuel, not partiality monad) |
+| **K3** | effects on the machine | per-effect calculated machines: **Throws** → handler stack + unwinding (`CalcEff`), **State** → threaded register (`CalcSt`), both **proven**; handler stack → config, effect ops → instructions; STM axiomatized | correctness over the effect monad | effectful BANG end-to-end | 🟡 Throws+State proven · compose-with-closures + reification open |
 | **K4** | front end is real | parse → typed AST → effect-row inference (on the verified unifier) → core IR | inference soundness via oracle | real `.bang` files | ⬜ |
 | **K5** | fast path *(optional)* | optimized bytecode interp (C/Rust/Zig) and/or calculated lowering → C·Wasm·WasmFX·Effect TS; diff-tested vs `exec` | lowering refines `exec` | UX-acceptable speed · portable | ⬜ |
 | **K6** | toolchain eats itself | build = thunk graph (targets=thunks, deps=`R`, incremental=content-addressed memo); BANG-native | rebuild ⟺ inputs changed | BANG builds BANG | ⬜ |

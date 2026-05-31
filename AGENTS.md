@@ -4,7 +4,7 @@ You are a fresh session. **This repo is your only memory.** Anything not written
 
 ## What BANG is
 
-A small language whose **paradigm and runtime are values, not language features**. The kernel is thunks + effects + STM; everything else (mutability, IO, async, actors, signals) is ordinary library code over it. Programs are **descriptions** until forced with `!`; a function's **paradigm** is which effects are in its row; a program's **runtime** is a handler installed at the use site.
+A small language whose **paradigm and runtime are values, not language features**. The kernel is thunks + effects + STM; everything else (mutability, IO, async, actors, signals) is ordinary library code over it. Programs are **descriptions** until forced with `$` (ADR-0007; `!` is actor-send); a function's **paradigm** is which effects are in its row; a program's **runtime** is a handler installed at the use site.
 
 ## Repo map
 
@@ -13,29 +13,44 @@ A small language whose **paradigm and runtime are values, not language features*
 | what the language *is* | `docs/spec/bang-lang-design.md`, `docs/spec/bang-lang-description-value.md` |
 | where the project is going | `docs/roadmap/bang-northstar-roadmap.md` (dense) · `.html` (visual) |
 | **why** things are the way they are | `docs/decisions/` (ADRs) — read these before proposing changes |
-| the verified reference | `effectrow-oracle/oracle-lean/Bang/EffectRow.lean` (Lean 4 + Mathlib) |
-| the calculated VM (K2) | `effectrow-oracle/oracle-lean/Bang/{Calc,CalcHO}.lean` (proven `exec ∘ compile ≡ eval`) |
-| **how to prove the next K2 increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, tactic patterns, gotchas. **Read before proving.** |
+| the verified reference (K1 unifier) | `effectrow-oracle/oracle-lean/Bang/EffectRow.lean` (Lean 4 + Mathlib) |
+| the reference `eval` (K2/K3 source) | `effectrow-oracle/oracle-lean/Bang/Eval.lean` |
+| the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) |
+| **how to prove the next increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, mutual-induction & two-part-sim patterns, gotchas. **Read before proving.** |
 | the standing guarantee | `effectrow-oracle/harness/` (differential tests) + `effectrow-oracle/tools/selfcheck.mjs` |
 | what to read | reading canon, end of the roadmap `.md` |
 
 ## Current playhead
 
-**K1 done** (effect-row oracle: verified unifier + harness). **K2 in progress** — the `eval` reference exists *and the calculation has started*: a stack machine is calculated + **proven** for the arithmetic kernel. The full VM (closures, effects) is not done yet.
+**K0 locked · K1 done · K2 done · K3 in progress.** **Every theorem in the repo is proven — zero `sorry`s.** The verified reference `eval` exists; the VM is **calculated** from it (Bahr–Hutton), and each calculated machine is proven `exec ∘ compile ≡ eval` *and* differentially tested against `eval`.
 
-- **Reference:** `oracle-lean/Bang/Eval.lean` — a fuel-bounded, total free-monad interpreter for the pinned core (thunk + `$` force, λ/app, `let`, ADTs + match, one-shot State/Throws handlers as a deep fold). Shape & rationale: **ADR-0008**. Effect labels reuse the `EffectRow` `Finset` model.
-- **Calculated VM — first-order, PROVEN:** `oracle-lean/Bang/Calc.lean` — K2 increments **1 (arithmetic `val/add/mul`)** + **2 (`let`/`var`, de Bruijn → runtime env + `LOOKUP/BIND/UNBIND`)**. `compile`/`exec`/`Instr` *derived* from `eval`; `exec ∘ compile ≡ eval` **proven, no `sorry`** (`exec_compile`, `compile_correct`). Approach/staging: **ADR-0009**.
-- **Calculated VM — higher-order, PROVEN:** `oracle-lean/Bang/CalcHO.lean` — K2 increment **3 (`λ`/application, closures)**. Fuel-bounded, CBV, `Value = vint | vclo Src Env` (source-closures shared with `eval`). `compile_correct` (`exec ∘ compile ≡ eval` for closures) is **proven, no `sorry`** — a fuel-indexed simulation (`sim`) resting on fuel-monotonicity (`exec_succ`/`exec_mono`); the shared `vclo` keeps it an equality, not a logical relation. *Also* diff-tested green vs `eval`. Decisions/proof: **ADR-0010**.
-- **Harness:** `Bang/EvalJson.lean` ops — `{"op":"eval"}` (interpreter), `{"op":"exec"}` (proven first-order machine), `{"op":"execho"}` (proven HO machine). `harness/` drives an independent TS candidate (`eval-candidate.ts`) on eval goldens + fuzz, and diff-tests each machine vs `eval` (`test/calc.test.ts`, `test/calc-ho.test.ts`). **31 tests green.**
-- **Calculated VM — call-by-name, PROVEN:** `oracle-lean/Bang/CalcCBN.lean` — K2 increment **4 (thunk/`$`force, call-by-name)** = BANG's actual kernel. `CalcHO` with the convention flipped to CBN; `THUNK`/`FORCE` fall out. `compile_correct` (`exec ∘ compile ≡ eval`) is **proven, no `sorry`** — a **mutual** `eval`/`forceV` simulation (`sim`) on top of `exec_succ`/`exec_mono`. Because `Bang.Eval` is *also* CBN, it *also* diff-tests against the reference **exactly**, laziness included (`test/calc-cbn.test.ts`, `{"op":"execcbn"}`).
-- **K3 STARTED — effects, general handler machine, PROVEN:** `oracle-lean/Bang/CalcEff.lean` — **general algebraic handlers** (`perform`/`handle`, label-dispatched, nesting, forwarding) over arithmetic+`let`, with **Throws** (zero-shot) as the first operation. The Hutton–Wright exception machine *generalised to labels* falls out: a runtime **handler stack** with `MARK`/`UNMARK`/`THROW` + unwinding (`unwindFind`). `eval` **total** (`Outcome = ret │ exc`); machine fuel-bounded (`Result = halt │ uncaught`). `compile_correct` (`exec ∘ compile ≡ eval`) is **proven, no `sorry`** — a **two-part ret/exc `sim`** with a handler-stack unwinding invariant. *Also* diff-tested green (`evaleff` vs `execeff`, `test/calc-eff.test.ts`). Grounded in the actual papers (Bahr–Hutton 2022 monadic; Hutton–Wright exceptions).
-- **K3 — State, PROVEN:** `oracle-lean/Bang/CalcSt.lean` — `get`/`put`/`runState` via a **threaded state register** (Bahr–Hutton "swap to the State monad"). `get`/`put` resume *in tail position*, so the machine threads state with **no continuation reification**; `GET/PUT/ENTER/LEAVE` fall out. `eval` total, machine **structural (no fuel)** → `exec_compile` is a *direct equality*, **proven, no `sorry`**. Diff-tested green (`evalst`/`execst`, `test/calc-st.test.ts`). *Honest scope:* exercises one-shot tail resumption (threading), **not** explicit continuation reification (non-tail/multi-shot, Tsuyama) — still the deferred frontier.
-- **Zero `sorry`s in the whole build.** `unify_sound` (K1) is now proven too (it needed a **freshness precondition** — `fresh` not already a row's tail var — without which the open/open case binds a cyclic `some fresh`; a real finding about the K1 spec, now in its hypotheses). **Everything is proven:** K1 (unifier soundness), K2 (arithmetic → let/var → CBV closures → CBN+force), K3 (general handlers/Throws, State).
-- **Deferred (documented in `Eval.lean`, never faked):** multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
-- **Next (read `docs/notes/k2-calculation-playbook.md` first):** (a) **land `CalcEff.compile_correct`** — the ret/exc unwinding `sim` (plan in the file); (b) **`State`** as a second effect — this is where the general-handler machine needs **one-shot resumption** (capture/reify the continuation), the genuinely new mechanism Throws's zero-shot raise didn't exercise; (c) eventually **compose effects with the closure/CBN core** (the full K3: swap the underlying monad on `CalcCBN`). Optionally discharge `unify_sound`. The method follows Bahr–Hutton 2022 (monadic, swap-the-monad) + Hutton–Wright (exceptions) + Tsuyama 2024 (handlers → stack machine, for the general resumption mechanism).
-- **In-sandbox build note:** the Lean oracle compiles and `check-lean` is green (the persistent-process harness needed a stdout flush; three Mathlib-version NUDGE spots were fixed). `nix develop` gives Lean via elan; `lake exe cache get` pulls Mathlib oleans.
+**The reference:** `oracle-lean/Bang/Eval.lean` — a fuel-bounded, total free-monad interpreter for the pinned core (thunk + `$`force, λ/app, `let`, ADTs+match, one-shot State/Throws handlers as a deep fold). Shape/rationale: **ADR-0008**. Effect labels reuse the K1 `EffectRow` `Finset` model.
 
-K0 decisions are locked — see ADRs. Do not relitigate locked decisions; if you think one is wrong, read its **"Revisit if"** clause first.
+**The calculated machines** — each proven `exec ∘ compile ≡ eval` (**no `sorry`**), each with an `{"op":…}` oracle op + a `harness/test/calc-*.test.ts` differential test:
+
+| module | covers | convention | proof shape | ADR |
+|--------|--------|-----------|-------------|-----|
+| `Calc` | arithmetic, `let`/`var` | total, no fuel | direct equality, structural | 0009 |
+| `CalcHO` | + λ/application (closures) | CBV, fuel | fuel-indexed `sim`; shared `vclo` ⇒ equality not a logical relation | 0010 |
+| `CalcCBN` | + thunk/`$`force | call-by-name, fuel | **mutual** `eval`/`forceV` `sim`; matches `Bang.Eval` *exactly* | 0010 |
+| `CalcEff` | general handlers, **Throws** | total `eval` / fuel machine | **two-part ret/exc `sim`**; handler stack + unwinding (`unwindFind`) | 0011 |
+| `CalcSt` | **State** (`get`/`put`/`runState`) | total, no fuel | direct equality; threaded state register | 0011 |
+
+Plus K1's `unify_sound` (proven — it needed a **freshness precondition**: `fresh` not already a row's tail var, else the open/open case binds a cyclic `some fresh`).
+
+**Harness:** `Bang/EvalJson.lean` exposes the ops; `harness/` drives an independent TS candidate (`src/eval-candidate.ts`) on `eval` goldens + a fuzz, and diff-tests **each** machine vs `eval`. **55 tests green** (`make check-lean`).
+
+**Method ↔ papers** (reading canon, roadmap §8): Bahr–Hutton 2022 *Monadic Compiler Calculation* (swap the monad) · Hutton–Wright *Compiling Exceptions Correctly* (the unwinding machine) · Pickard–Hutton 2021 (intrinsic, Lean-shaped). **Honest deltas (named, not hidden):** we use **fuel/`Option`**, not the partiality monad; artifacts are spec-guided definitions + a *post-hoc* `exec∘compile≡eval` proof (the derivation lives in the `-- derived, not designed` comments), not a mechanized step-by-step calculation; `CalcEff`/`CalcSt` exercise one-shot *tail* resumption / unwinding, **not** explicit continuation **reification**.
+
+**Genuinely next** (none of this is done — *read the playbook first*):
+- **Compose the fragments** — effects on the closure/CBN core (the real K3: swap the underlying monad on `CalcCBN`; merge `CalcEff`'s handler stack with closures). The biggest open step.
+- **Continuation reification** — non-tail / multi-shot handlers (the true general-resumption frontier; Tsuyama 2024). `CalcEff`/`CalcSt` deliberately avoided it (ADR-0011).
+- **K4 front end** — parse → typed AST → effect-row inference on the verified unifier → core IR.
+- **Deferred & documented** (in `Eval.lean`, never faked): multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
+
+**Build:** `nix develop` gives Lean via elan; `lake exe cache get` pulls Mathlib oleans; `make check-lean` is green. (The persistent-process harness needs the stdout flush in `Main.lean`; three Mathlib-version NUDGE spots were fixed early in the session.)
+
+K0 decisions are locked — see ADRs. Do not relitigate locked decisions; read a decision's **"Revisit if"** clause first.
 
 ## Invariants — never break these
 
@@ -66,7 +81,7 @@ K0 decisions are locked — see ADRs. Do not relitigate locked decisions; if you
 | **effect row** | the set of effects a function may perform, carried in its type after `with`. composes by union |
 | **handler** | a value implementing an effect's operations; installed with a `with` block; runtimes are handlers |
 | **STM / TVar** | the one privileged primitive; transactional memory with journal/retry. TVars usable only inside `atomically` |
-| **oracle** | the verified reference an implementation is checked against (currently the effect-row unifier; later `eval`/`exec`) |
+| **oracle** | the verified reference an implementation is checked against — the effect-row unifier *and* the reference `eval` (each calculated machine is diff-tested against `eval` via the harness) |
 | **harness** | the differential tester that drives a candidate vs the oracle and reports disagreement |
 | **calculated VM** | the `(compile, Code, exec)` triple *derived* from `eval` by Bahr–Hutton equational reasoning |
 | **keyframe / rep** | a locked project state (K0–K7) / one delivered increment (rep 1 = the oracle) |
