@@ -108,7 +108,14 @@ being attacked directly, in two committed, `sorry`-free pieces:
   installed but its clause never runs). The value relation `RelVal`/`RelEnv`
   scaffolding is in place (int case); the `vcont ↔ ek` case — a step-indexed
   logical relation for resumptions — is the remaining residual that unlocks a
-  *firing* `perform`/`handle`/`resume`.
+  *firing* `perform`/`handle`/`resume` **inductively**. Meanwhile, agreement on
+  *specific* firing programs is already **machine-checked in Lean**: `Agree prog k`
+  (`run = some (vint k) ∧ CalcReifyRef.run = some k`) is proven by `⟨rfl, rfl⟩` for
+  the non-tail, multi-shot (incl. triple), zero-shot, re-handling, and
+  payload-threading demonstrators — strictly stronger than the TS fuzz (both sides
+  are *in-Lean* implementations), covering exactly the firing behaviours the
+  inductive proof cannot yet reach. That is program-specific, not the
+  universally-quantified bisimulation, but it is real and proven.
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest

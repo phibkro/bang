@@ -296,4 +296,53 @@ example :
     (∃ F, run F prog = some (.vint 8)) ∧ (∃ G, CalcReifyRef.run G prog = some 8) :=
   pure_correct_ref (.handle (.letE .val (.add .var .val))) (by rfl)
 
+/-! ## In-Lean machine-vs-reference agreement on **firing** handlers
+
+The inductive `pure_sim`/`eval_pure` above cannot yet reach a *firing* handler (a
+`perform` that actually triggers its clause, possibly resuming): that needs the
+`vcont ↔ ek` step-indexed logical relation, the open residual. But agreement on
+any *specific* closed firing program is provable **right now**, because both
+`CalcReify.run` (the flat machine) and `CalcReifyRef.run` (the free-monad
+reference) reduce by computation: each side is a closed `rfl`. So `⟨rfl, rfl⟩`
+proves the two *independent* implementations land on the same integer.
+
+This is strictly stronger than the harness fuzz (`reify-cps.ts`): there the
+cross-check is empirical and the reference is in TypeScript; here it is a
+*machine-checked Lean proof* that the calculated machine and the in-Lean
+denotational reference agree — on the genuinely-hard cases (non-tail, multi-shot,
+re-handling) the general theorem still owes. It is program-specific, not the
+universally-quantified bisimulation; but it is real, proven, and covers exactly
+the firing behaviours `pure_sim` cannot. -/
+
+section Firing
+open Bang.CalcReify.Src
+
+/-- Machine and reference agree (both yield `k`) on a closed program. -/
+def Agree (prog : Src) (k : Int) : Prop :=
+  run 1000 prog = some (.vint k) ∧ CalcReifyRef.run 1000 prog = some k
+
+-- body `add (perform 5) 1000`: the captured continuation is "λr. r + 1000".
+private def bodyP : Src := add (perform (val 5)) (val 1000)
+
+-- one-shot, NON-TAIL: (7+1000)+100 = 1107
+example : Agree (handle (add (resume (var 1) (val 7)) (val 100)) bodyP) 1107 := ⟨by rfl, by rfl⟩
+-- one-shot, tail: 7+1000 = 1007
+example : Agree (handle (resume (var 1) (val 7)) bodyP) 1007 := ⟨by rfl, by rfl⟩
+-- MULTI-SHOT (resume twice): (7+1000)+(20+1000) = 2027
+example : Agree (handle (add (resume (var 1) (val 7)) (resume (var 1) (val 20))) bodyP) 2027 :=
+  ⟨by rfl, by rfl⟩
+-- ZERO-shot (continuation discarded): 999
+example : Agree (handle (val 999) bodyP) 999 := ⟨by rfl, by rfl⟩
+-- re-handling (perform inside a resumption): 7+7 = 14
+example : Agree (handle (resume (var 1) (val 7)) (add (perform (val 1)) (perform (val 2)))) 14 :=
+  ⟨by rfl, by rfl⟩
+-- payload reaches the clause: 5+3 = 8
+example : Agree (letE (val 5) (handle (add (var 0) (resume (var 1) (val 3))) (perform (var 0)))) 8 :=
+  ⟨by rfl, by rfl⟩
+-- triple multi-shot: (1+1000)+(2+1000)+(3+1000) = 3006
+example : Agree (handle (add (resume (var 1) (val 1))
+    (add (resume (var 1) (val 2)) (resume (var 1) (val 3)))) bodyP) 3006 := ⟨by rfl, by rfl⟩
+
+end Firing
+
 end Bang.CalcReifySim
