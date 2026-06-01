@@ -364,11 +364,69 @@ vs real `Comp` closures). Layers, bottom-up:
   (incl. triple), non-tail, re-handling. Both sides in-Lean — strictly stronger than
   the TS fuzz, covering exactly the firing behaviours the inductive proof can't reach.
 
-**The residual, stated sharply:** a **resuming** clause proved ∀-generally — i.e.
-the full step-indexed `vcont ↔ ek` relation, where the two resumptions must agree
-**when invoked**, not merely be ignorable (the `consK` stub becomes a real
-constructor carrying that agreement). That is the paper-grade core; it now rests on
-proven `fuelOf` + firing machinery, not bare arithmetic.
+- **The step-indexed relation is now *formalized* in Lean (definability greenlit).**
+  The `consK` stub is replaced by a real `def RelV : Nat → Value → Entry → Prop`
+  (with `RelEnvI`, `observe`, `RefK`) that carries the resumption agreement, all
+  sorry-free (`CalcReifySim.lean`, the `Resuming` section). This converts ADR-0015's
+  "the residual is the full step-indexed relation" *prose* into a checked artifact:
+  the relation exists, Lean accepts it, and it integrates with the existing pure
+  scaffolding (`relEnvI_lookup`, `bind_mono`, `relEnvI_forget`, `pure_sim_indexed`).
+  What is *not* yet proven is `capture_relates` (that an actual PERFORM-capture
+  *satisfies* `RelV`) and the firing theorem built on it. Four decisions made it
+  definable, each a transferable lesson, each forced by a design-panel critique:
+  1. **`def`, never `inductive`.** A resumption `g : Int → Comp` embedded in a
+     *constructor* would sit negatively (positivity-rejected). A **`Prop`-valued
+     `def`** carries no positivity obligation — `g` occurs only *applied* (`g w`),
+     a positive use in a function body. (General lesson: a logical relation that
+     quantifies over "continuations that themselves satisfy the relation" must be a
+     recursive `def`, not an inductive — the Ahmed/Appel–McAllester step-indexed
+     trick.)
+  2. **Structural recursion on the index, not well-founded.** The `vcont↔ek` clause
+     at `i+1` mentions `RelV` only at the *predecessor* `i` — so it is plain
+     structural recursion on `Nat` (no `termination_by`/`decreasing_by`). The `∀ j ≤
+     i` flavour the literature uses is recovered from the `i`-fact where needed; but
+     see the downward-closure note below.
+  3. **The base index keeps mismatches `False`.** Only `vcont↔ek` is vacuously `True`
+     at budget `0`; `vint↔ev` stays `n=m` and every other shape stays `False` *at
+     every index*. A blanket `| 0,_,_ => True` would let a `vcont` masquerade as an
+     `ev n` slot at index 0 and **break `relEnv_lookup`**. (Lesson: in a step-indexed
+     `def`, the budget-0 base must not collapse the *type-mismatch* cases, only the
+     genuinely-recursive ones.)
+  4. **`observe` is a pure head-match (no fuel).** The reference's
+     `eval`/`handleC`/`bind` are *eager* and return a fully-formed `Comp` (only
+     `perf`-binder bodies stay delayed, which a final observation never enters), so
+     `g w = handleC fuel (k w) clause cEnv` is already a value — observing its head
+     is exact. This kills the "CompObs reintroduces a fuel quantifier" objection for
+     *this* reference. The RESUME splice config in `RelV` is copied **literally** from
+     `CalcReify.lean:141-143` (`retEnv := <resume-site env>` in *both* spliced
+     frames) — the single most-mis-quoted detail.
+
+  Bonus simplification: with `RelV` carrying the agreement, the old *separate*
+  `consK` constructor collapses into `cons` (one construct per problem) — `RelEnvI`
+  is just `nil`/`cons`.
+
+**The residual, stated sharply:** a **resuming** clause proved ∀-generally —
+`capture_relates` (a PERFORM-capture satisfies `RelV`) and the firing theorem on
+it. Two findings sharpen where the difficulty actually is:
+
+- **The frozen-fuel crux only bites on a *performing* resumed continuation.** The
+  reference's `res w = handleC fuel (k w) clause cEnv` captures the ambient `fuel`;
+  the worry (critiques) is that no structural bound (à la `fuelOf`) controls it.
+  But this only matters when `k w` *itself performs* (deep re-handling) — then
+  raising fuel changes the `perf` continuation and you need reference *perf-outcome*
+  monotonicity, which is itself bisimulation-shaped (the genuine paper-grade core).
+  For the **one-shot / pure-resumed-body fragment** (incl. the headline non-tail
+  `handle (add (resume@1 7) 100) (add (perform 5) 1000)`), `k w` is *pure*, so
+  `res w = handleC f (ret …) clause = ret …` via `handleC_ret` — **no monotonicity
+  needed**. So the right next milestone is that fragment: it exercises the splice +
+  `RelK` + `observe` end-to-end while dodging the crux.
+- **Naive `RelV` downward-closure (`j ≤ i → RelV i → RelV j`) is contravariantly
+  blocked, and is *not needed*.** Lowering the outer index would require upgrading
+  the contravariant `RelK` hypothesis from index `j` to `i` (i.e. `RelV j → RelV i`,
+  the wrong direction). Don't chase it. The deep case instead uses the main
+  induction's IH **at the predecessor index** directly, with the `RelK` hypothesis
+  at the *matching* index — so the relation as-defined is sufficient without a
+  monotonicity lemma.
 
 ### Reification gotchas (cost real time)
 

@@ -126,9 +126,29 @@ being attacked directly, in two committed, `sorry`-free pieces:
     program-specific, but covering the *resuming* behaviours `fire_agree` does not
     yet generalise, both sides *in-Lean* (strictly stronger than the TS fuzz).
 
-  The remaining residual is a **resuming** clause proved ∀-generally — the full
-  step-indexed `vcont ↔ ek` relation, where the two resumptions must agree *when
-  invoked* (not merely be ignorable).
+  - **The step-indexed `vcont ↔ ek` relation is now *formalized* in Lean,
+    sorry-free** (the `Resuming` section of `CalcReifySim`). The partial `consK`
+    stub is replaced by a real `def RelV : Nat → Value → Entry → Prop` carrying the
+    resumption agreement (with `RelEnvI`, `observe`, `RefK`), and Lean accepts it —
+    so the #1 risk (that the relation is not even *expressible* under strict
+    positivity) is retired. The escape, machine-checked: a **`def`** (not an
+    inductive) by **structural** recursion on the index (the `vcont↔ek` clause at
+    `i+1` refers to `RelV` only at `i`), with the resumption `g : Int → Comp`
+    occurring only *applied*. It integrates with the existing pure scaffolding
+    (`relEnvI_lookup`, reference `bind_mono`, a forgetful map `relEnvI_forget` to
+    the old `RelEnv`, and `pure_sim_indexed`). What remains is `capture_relates` —
+    that an actual PERFORM-capture *satisfies* `RelV` — and the firing theorem on
+    it. (See the playbook's K3 section for the four definability decisions and two
+    sharpenings of where the difficulty lives.)
+
+  The remaining residual is a **resuming** clause proved ∀-generally — proving
+  `capture_relates` (a PERFORM-capture satisfies `RelV`) and the firing theorem on
+  it. The genuine paper-grade core is the **deep / re-handling** sub-case, where the
+  resumed continuation itself performs: there the reference's captured (frozen) fuel
+  forces a *perf-outcome* monotonicity that is itself bisimulation-shaped. The
+  **one-shot / pure-resumed-body fragment** dodges that (the resumed continuation is
+  pure, so `handleC_ret` closes the reference side) and is the recommended next
+  milestone.
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest
