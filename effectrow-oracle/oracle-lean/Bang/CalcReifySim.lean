@@ -489,4 +489,154 @@ example : Agree (handle (add (resume (var 1) (val 1))
 
 end Firing
 
+/-! ## The step-indexed `vcont ↔ ek` relation (the resuming-clause frontier)
+
+The residual ADR-0015 names: a *resuming* clause proved ∀-generally. The partial
+`RelEnv.consK` above relates a `vcont` slot to an `ek` slot while asserting nothing
+about *invoking* them — sound only because every clause proven so far is `IsPure`
+(non-resuming). Here we build the real relation: a machine `vcont` relates to a
+reference `ek g` exactly when invoking the one (a `RESUME` splice) agrees with
+invoking the other (`g w`). Because `g w = handleC fuel (k w) clause cEnv` re-runs
+the captured continuation — which may perform/resume again — the agreement is
+inherently **step-indexed** (Hillerström–Lindley–Atkey).
+
+Design (from the design panel + its adversarial critiques):
+* **`def`, not `inductive`.** `RelV : Nat → Value → Entry → Prop` is *structurally*
+  recursive on the index: the `vcont ↔ ek` clause at `i+1` refers to `RelV` only at
+  the predecessor `i`. The resumption `g : Int → Comp` occurs only *applied*
+  (`g w`) — a positive use in a function body — so there is no strict-positivity
+  obligation (an `inductive` here is rejected). The `∀ j ≤ i` flavour the deep
+  cases need is recovered from the `i`-indexed fact via downward closure.
+* **`observe` is a pure head-match, no fuel.** The reference's `eval`/`handleC`/
+  `bind` are eager and return a fully-formed `Comp`, so `g w` is already a value;
+  observing its head is exact, matching `CalcReifyRef.run`.
+* **Conditional forward simulation** (machine halts with `r` ⇒ reference agrees),
+  the same shape as `pure_sim`/`fire_agree`, so divergence maps to `none` on both
+  sides rather than a false termination claim.
+* **The `RESUME` splice config is copied *literally* from `CalcReify.lean`** (both
+  spliced frames carry `retEnv := <resume-site env>`), so the relation's antecedent
+  matches the state the machine actually steps to.
+-/
+
+section Resuming
+
+/-- Observe a fully-evaluated reference computation. The reference is eager, so a
+returned `Comp` is `ret`/`stuck`/standing-`perf`; observing the head is exact and
+matches `CalcReifyRef.run` (out-of-fuel / stuck / unhandled all become `none`). -/
+def observe : Comp → Option Int
+  | .ret n => some n
+  | _      => none
+
+/-- A reference continuation context: it consumes the resumption payload `w` and
+the resumed computation `gw`, yielding the rest of the reference run. For a clause
+`C[resume@1 v]` this is `fun _ gw => bind G gw kclause` — the clause's own
+continuation wrapped around the resumed result. -/
+abbrev RefK := Int → Comp → Comp
+
+/-- **The step-indexed value relation.** Structural recursion on the index: the
+`vcont ↔ ek` clause at `i+1` mentions `RelV` only at `i`. Structural mismatches stay
+`False` at *every* index (so `relEnv_lookup` holds); only the `vcont ↔ ek` slot is
+vacuously related at budget `0`. The inlined first hypothesis is the continuation
+correspondence `RelK i` (the ADR's `CodeKont = compile <$> SrcKont`, observationally
+relaxed): feeding a related value through the clause's own machine continuation
+agrees with the reference context. -/
+def RelV : Nat → Value → Entry → Prop
+  | _,   .vint n, .ev m => n = m
+  | i+1, .vcont cCode cEnv cStack clCode clEnv, .ek g =>
+      ∀ (w : Int) (resumeEnv : Env) (cRet : Code) (s' : Stack) (K : Kont) (Kref : RefK),
+        -- RelK i (inlined): the clause's own continuation, against the reference context.
+        (∀ (v : Int) (F : Nat) (r : Value),
+            exec F cRet resumeEnv (.vint v :: s') K = some r →
+            ∃ (n : Int), RelV i r (.ev n) ∧ observe (Kref v (.ret v)) = some n) →
+        -- invoking the resumption: the literal RESUME splice (CalcReify.lean:141-143).
+        ∀ (F : Nat) (r : Value),
+          exec F cCode cEnv (.vint w :: cStack)
+            ({ clause := some (clCode, clEnv), retCode := [], retEnv := resumeEnv, retStack := [] }
+              :: { clause := none, retCode := cRet, retEnv := resumeEnv, retStack := s' } :: K)
+            = some r →
+          ∃ (n : Int), RelV i r (.ev n) ∧ observe (Kref w (g w)) = some n
+  | 0,   .vcont _ _ _ _ _, .ek _ => True
+  | _,   _,       _     => False
+
+/-- Step-indexed environment relation. With `RelV` carrying the resumption
+agreement, the old separate opaque `consK` collapses into `cons`: a related
+`vcont`/`ek` slot is just `cons (h : RelV i (vcont …) (ek g)) …` (one construct per
+problem). -/
+inductive RelEnvI : Nat → Env → REnv → Prop where
+  | nil  : RelEnvI i [] []
+  | cons : RelV i v e → RelEnvI i vs es → RelEnvI i (v :: vs) (e :: es)
+
+/-- A value related to an `ev n` slot at any index *is* `vint n`: an `ek` would
+demand a `vcont`, and the `.vint/.ev` clause is index-free. -/
+theorem relV_ev {i : Nat} {v : Value} {n : Int} (h : RelV i v (.ev n)) : v = .vint n := by
+  cases v with
+  | vint m => simp only [RelV] at h; subst h; rfl
+  | vcont _ _ _ _ _ => cases i <;> simp only [RelV] at h
+
+/-- A related lookup under the indexed env: if the reference finds `ev n` at `j`,
+the machine finds `vint n` at `j`. The resumption (`ek`) slots are irrelevant. -/
+theorem relEnvI_lookup {i : Nat} {env : Env} {renv : REnv} (h : RelEnvI i env renv) :
+    ∀ {j : Nat} {n : Int}, renv[j]? = some (Entry.ev n) → env[j]? = some (Value.vint n) := by
+  induction h with
+  | nil => intro j n hj; simp at hj
+  | cons hv _ ih =>
+    intro j n hj
+    cases j with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hj ⊢
+      subst hj
+      exact relV_ev hv
+    | succ k => simp only [List.getElem?_cons_succ] at hj ⊢; exact ih hj
+
+/-- **Reference-side `bind` monotonicity.** `bind` returns a `.ret` only when its
+computation argument is already a `.ret` (the `perf`/`stuck` cases propagate), so
+this needs no induction: raise the fuel and the same `g m` fires. -/
+theorem bind_mono (f f' : Nat) (c : Comp) (g : Int → Comp) (n : Int)
+    (h : CalcReifyRef.bind f c g = .ret n) (hle : f ≤ f') :
+    CalcReifyRef.bind f' c g = .ret n := by
+  cases f with
+  | zero => simp [CalcReifyRef.bind] at h
+  | succ f0 =>
+    cases f' with
+    | zero => omega
+    | succ f0' =>
+      cases c with
+      | ret m => simpa only [CalcReifyRef.bind] using h
+      | stuck => simp [CalcReifyRef.bind] at h
+      | perf p k => simp [CalcReifyRef.bind] at h
+
+/-! ### Bridging to the existing pure scaffolding
+
+The indexed env carries strictly more than the old `RelEnv` (it pins resumption
+agreements). For the *pure* fragment that extra content is inert, so an indexed
+env forgets down to an old `RelEnv` and the existing `pure_sim` applies verbatim —
+no need to re-prove the structural induction. -/
+
+/-- One slot of the forgetful map `RelEnvI i → RelEnv`. -/
+theorem relEnvI_forget_cons {i : Nat} {v : Value} {e : Entry} {vs : Env} {es : REnv}
+    (hv : RelV i v e) (hrest : RelEnv vs es) : RelEnv (v :: vs) (e :: es) := by
+  cases e with
+  | ev n => rw [relV_ev hv]; exact .cons (.int n) hrest
+  | ek g => exact .consK v g hrest
+
+/-- **Forgetful map.** An indexed env relation collapses to the old (un-indexed)
+`RelEnv`, dropping the resumption agreements `pure_sim` never inspects. -/
+theorem relEnvI_forget {i : Nat} {env : Env} {renv : REnv}
+    (h : RelEnvI i env renv) : RelEnv env renv := by
+  induction h with
+  | nil => exact .nil
+  | cons hv _ ih => exact relEnvI_forget_cons hv ih
+
+/-- **The pure core, under the indexed env.** Identical to `pure_sim` but with the
+index carried inertly: the pure fragment never reads a resumption slot, so this is
+just `pure_sim` composed with the forgetful map. -/
+theorem pure_sim_indexed (e : Src) (hp : IsPure e) {i : Nat} {renv : REnv} {env : Env}
+    (henv : RelEnvI i env renv) {n : Int} (hpd : pden renv e = some n)
+    (c : Code) (s : Stack) (K : Kont) (F : Nat) (r : Value)
+    (hr : exec F c env (.vint n :: s) K = some r) :
+    ∃ F', exec F' (compile e c) env s K = some r :=
+  pure_sim e hp (relEnvI_forget henv) hpd c s K F r hr
+
+end Resuming
+
 end Bang.CalcReifySim
