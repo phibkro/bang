@@ -9,6 +9,7 @@ import Bang.CalcCBNSt
 import Bang.CalcCBNEffSt
 import Bang.CalcReify          -- the reification frontier (ADR-0015); machine + rfl demonstrators
 import Bang.CalcReifyRef        -- the denotational reference for CalcReify (CBPV + free monad; rfl-validated)
+import Bang.CalcReifySim        -- the bisimulation toward exec∘compile≡run: pure core proven (ADR-0015)
 import Lean.Data.Json
 
 /-!

@@ -86,6 +86,23 @@ the notok (stuck) shapes, **and 2000 random multi-shot / non-tail programs per C
 `harness/test/calc-reify.test.ts`. This is the "run the real journey" cross-check:
 the hand-built `Kont`/`Frame` splicing matches the textbook closure semantics.
 
+**Bisimulation — reference built + pure core proven.** The open theorem is now
+being attacked directly, in two committed, `sorry`-free pieces:
+- `Bang/CalcReifyRef.lean` — the denotational reference *exists in Lean*. The
+  positivity escape is concrete: **CBPV** (values vs computations split) + a **free
+  monad** `Comp` whose resumption `Int → Comp` sits in *positive* position, plus
+  fuel for the non-structural `k w` re-runs. It is `rfl`-validated against the same
+  seven demonstrators — a second in-Lean cross-check.
+- `Bang/CalcReifySim.lean` — the **pure core** of the bisimulation: the
+  continuation-passing simulation (cf. `CalcCBN.sim`) for the `val`/`add`/`var`/
+  `let` fragment, with the handler stack `K` and data stack carried as passengers,
+  proven by structural induction (`pure_sim`/`pure_correct`). The structural
+  denotation `pden` is the `ret`-fragment of `CalcReifyRef.eval`; tying it to the
+  fuel-indexed reference is a straightforward follow-up. The value relation
+  `RelVal`/`RelEnv` scaffolding is in place (int case); the `vcont ↔ ek` case — a
+  step-indexed logical relation for resumptions — is the remaining residual that
+  unlocks `perform`/`handle`/`resume`.
+
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest
 assessment is that it is **research-grade**, for a *fundamental* reason: strict
