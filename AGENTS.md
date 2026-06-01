@@ -15,14 +15,14 @@ A small language whose **paradigm and runtime are values, not language features*
 | **why** things are the way they are | `docs/decisions/` (ADRs) — read these before proposing changes |
 | the verified reference (K1 unifier) | `effectrow-oracle/oracle-lean/Bang/EffectRow.lean` (Lean 4 + Mathlib) |
 | the reference `eval` (K2/K3 source) | `effectrow-oracle/oracle-lean/Bang/Eval.lean` |
-| the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt, CalcCBNEff, CalcCBNSt, CalcCBNEffSt}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) · `CalcReify.lean` — the reification frontier (machine + demonstrators verified; general theorem pending) |
+| the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt, CalcCBNEff, CalcCBNSt, CalcCBNEffSt}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) · the reification frontier `Bang/CalcReify{,Ref,Sim}.lean` — machine + in-Lean denotational reference + bisimulation (pure core & first firing theorem proven; resuming case open) |
 | **how to prove the next increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, mutual-induction & two-part-sim patterns, gotchas; **+ the K3 reification frontier section** (validation ladder, the `fuelOf`/`consK` ideas that unlocked firing handlers, the resuming residual). **Read before proving.** |
 | the standing guarantee | `effectrow-oracle/harness/` (differential tests) + `effectrow-oracle/tools/selfcheck.mjs` |
 | what to read | reading canon, end of the roadmap `.md` |
 
 ## Current playhead
 
-**K0 locked · K1 done · K2 done · K3 in progress.** **Every theorem in the repo is proven — zero `sorry`s** (the repo asserts only what it proves). The verified reference `eval` exists; the VM is **calculated** from it (Bahr–Hutton). The **eight** core machines are each proven `exec ∘ compile ≡ eval` *and* differentially tested. The **ninth**, `CalcReify` (the reification frontier), is a working machine with its core behaviours `rfl`-verified, but its *general* theorem is **not yet proven** — named/scoped/planned in ADR-0015, not faked.
+**K0 locked · K1 done · K2 done · K3 in progress.** **Every theorem in the repo is proven — zero `sorry`s** (the repo asserts only what it proves). The verified reference `eval` exists; the VM is **calculated** from it (Bahr–Hutton). The **eight** core machines are each proven `exec ∘ compile ≡ eval` *and* differentially tested. The **ninth**, `CalcReify` (the reification frontier), is a working machine with its core behaviours `rfl`-verified and a real **bisimulation in progress** (`CalcReifySim`, against the in-Lean denotational reference `CalcReifyRef`): the pure core and the **first ∀-quantified firing-handler theorem** (`fire_agree`) are proven sorry-free; the *resuming-clause* case (the full step-indexed `vcont ↔ ek` relation) is the named, scoped residual in ADR-0015 — not faked.
 
 **The reference:** `oracle-lean/Bang/Eval.lean` — a fuel-bounded, total free-monad interpreter for the pinned core (thunk + `$`force, λ/app, `let`, ADTs+match, one-shot State/Throws handlers as a deep fold). Shape/rationale: **ADR-0008**. Effect labels reuse the K1 `EffectRow` `Finset` model.
 
