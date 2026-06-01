@@ -444,9 +444,30 @@ cover**, ordered by difficulty:
   so `resume_empty_splice` is replaced by an explicit `pure_sim`-over-the-captured-
   continuation step as in `machine_fire_resume_nontail`).
 - **deep / re-handling** (the resumed continuation *itself performs*) — the genuine
-  paper-grade core, and the only case that **must** invoke `RelV`'s agreement
-  (`capture_relates`: a PERFORM-capture satisfies `RelV`). Two findings sharpen
-  where *its* difficulty is:
+  frontier. **Correction to an earlier claim:** deep re-handling does *not*
+  intrinsically require `RelV`. The distinction that actually matters:
+  - **(A) fixed control-flow skeleton, ∀-general over pure subterms** — e.g.
+    `handle (resume@1 v) (add (perform e1) (perform e2))` for *all* pure `e1,e2,v`.
+    Because the language has **no recursion/loops/λ**, every closed program's
+    *firing count is statically bounded by its skeleton*. So even a deep skeleton is
+    **direct-constructible**: a longer inside-out chain with one fire→resume cycle
+    *per* perform, the re-fire happening under the re-installed handler frame `frH`
+    that the previous splice pushed. The reference mirrors this: `eval` of the body
+    is a *nested* `perf` (`perf p1 (fun w⇒ perf p2 (fun w'⇒ ret (w+w')))`), and
+    `handleC` fires once per `perf` layer, each `res` closure itself performing and
+    re-firing `handleC`. **This is the deep mechanism, and it is reachable now.**
+  - **(B) ∀-general over *all* `Src`** (the full `exec ∘ compile ≡ run` for every
+    program) — *this* is what needs the inductive bisimulation and `RelV`'s
+    agreement (`capture_relates`), because the skeleton is no longer fixed so the
+    firing count is unbounded-in-the-quantifier. This is the research-grade core; the
+    formalized `RelV` is built for it.
+
+  Caveat for (A) — the clause is evaluated once **per fire**, in a *different* env
+  each time (payload `p1` then `p2`), so a clause that reads the payload resumes with
+  *different* values per fire: the result is `w1 + w2` (with `wᵢ = ⟦v⟧` under payload
+  `pᵢ`), collapsing to `2⟦v⟧` only when `v` ignores the payload.
+
+  Two findings still sharpen where **(B)**'s difficulty is:
 
 - **The frozen-fuel crux only bites on a *performing* resumed continuation.** The
   reference's `res w = handleC fuel (k w) clause cEnv` captures the ambient `fuel`;

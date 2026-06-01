@@ -156,15 +156,18 @@ being attacked directly, in two committed, `sorry`-free pieces:
     `RelV`-invocation crux because the resumed continuation stays pure (its result is
     an integer, index-free).
 
-  The remaining residual, ordered by difficulty: (a) **non-tail clause** and
-  **multi-shot × non-empty captured continuation** (the full 2027) — still
-  one-shot-of-pure-resumed leaves, reachable by the same direct construction (longer
-  chains); (b) the **deep / re-handling** sub-case (the
-  resumed continuation itself performs) — the genuine paper-grade core, the only one
-  that *must* invoke `RelV`'s agreement (`capture_relates`), where the reference's
-  frozen fuel forces a perf-outcome monotonicity that is itself bisimulation-shaped.
-  (See the playbook's K3 section for the reusable proof shapes and the
-  contravariance/downward-closure caveat.)
+  The remaining residual splits along a sharper axis than "deep vs. shallow"
+  (correcting an earlier framing): **(A) fixed control-flow skeleton, ∀-general over
+  pure subterms** — including *deep / re-handling* skeletons where the resumed
+  continuation itself performs — is **direct-constructible**, because the language
+  has no recursion/loops, so a closed program's firing count is bounded by its
+  skeleton (the re-fire is caught by the re-installed handler frame; the reference's
+  `eval` of the body is a nested `perf` and `handleC` fires once per layer). **(B)
+  ∀-general over *all* `Src`** (the full `exec ∘ compile ≡ run`) is the only part
+  that *must* invoke `RelV`'s agreement (`capture_relates`) — the inductive
+  bisimulation, research-grade, what the formalized `RelV` is built for. (See the
+  playbook's K3 section for the (A)/(B) distinction, the per-fire-env caveat, the
+  reusable proof shapes, and the contravariance/downward-closure caveat for (B).)
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest
