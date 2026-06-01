@@ -141,33 +141,34 @@ being attacked directly, in two committed, `sorry`-free pieces:
     it. (See the playbook's K3 section for the four definability decisions and two
     sharpenings of where the difficulty lives.)
 
-  - **Three ∀-quantified *resuming* firing theorems are now proven**, sorry-free:
+  - **Four ∀-quantified *resuming* firing theorems are now proven**, sorry-free:
     `fire_resume_tail` (`handle (resume (var 1) v) (perform e) ≡ ⟦v⟧` — tail resume,
     empty captured continuation), `fire_resume_nontail_body`
     (`handle (resume (var 1) v) (add (perform e) rest) ≡ ⟦v⟧ + ⟦rest⟧` — non-tail
     body, *non-empty* captured continuation; the 1007 demonstrator, now ∀-general),
-    and `fire_multishot` (`handle (add (resume@1 v1) (resume@1 v2)) (perform e) ≡
+    `fire_multishot` (`handle (add (resume@1 v1) (resume@1 v2)) (perform e) ≡
     ⟦v1⟧ + ⟦v2⟧` — the resumption invoked **twice**, the signature reification
-    capability; demonstrator `27`). These are the first results where the resumption
-    is genuinely **invoked** generally (stronger than `fire_agree`, non-resuming;
-    stronger than the `Agree` `rfl`-demonstrators, program-specific). They are proved
-    by **direct inside-out construction** (machine side like `machine_fire`;
-    reference side via a clean `eval_*` reduction + `handleC`), dodging the
-    `RelV`-invocation crux because the resumed continuation stays pure (its result is
-    an integer, index-free).
+    capability; demonstrator `27`), and **`fire_deep`**
+    (`handle (resume (var 1) v) (add (perform e1) (perform e2)) ≡ w1 + w2` — genuine
+    **deep re-handling**: the resumed continuation itself performs and re-fires the
+    handler; the 14 demonstrator, now ∀-general). These are the first results where
+    the resumption is genuinely **invoked** generally (stronger than `fire_agree`,
+    non-resuming; stronger than the `Agree` `rfl`-demonstrators, program-specific),
+    all by **direct inside-out construction** (machine side like `machine_fire`;
+    reference side via a clean `eval_*` reduction + `handleC`).
 
   The remaining residual splits along a sharper axis than "deep vs. shallow"
   (correcting an earlier framing): **(A) fixed control-flow skeleton, ∀-general over
-  pure subterms** — including *deep / re-handling* skeletons where the resumed
-  continuation itself performs — is **direct-constructible**, because the language
-  has no recursion/loops, so a closed program's firing count is bounded by its
-  skeleton (the re-fire is caught by the re-installed handler frame; the reference's
-  `eval` of the body is a nested `perf` and `handleC` fires once per layer). **(B)
-  ∀-general over *all* `Src`** (the full `exec ∘ compile ≡ run`) is the only part
-  that *must* invoke `RelV`'s agreement (`capture_relates`) — the inductive
-  bisimulation, research-grade, what the formalized `RelV` is built for. (See the
-  playbook's K3 section for the (A)/(B) distinction, the per-fire-env caveat, the
-  reusable proof shapes, and the contravariance/downward-closure caveat for (B).)
+  pure subterms** — including *deep / re-handling* (✅ `fire_deep`) — is
+  **direct-constructible**, because the language has no recursion/loops, so a closed
+  program's firing count is bounded by its skeleton. The remaining (A) leaves
+  (non-tail clause, multi-shot × non-empty continuation, deeper skeletons) are *more
+  of the same* — longer chains, no new ideas. **(B) ∀-general over *all* `Src`** (the
+  full `exec ∘ compile ≡ run`) is the **sole remaining frontier**: the only part that
+  *must* invoke `RelV`'s agreement (`capture_relates`) — the inductive bisimulation,
+  research-grade, what the formalized `RelV` is built for. (See the playbook's K3
+  section for the (A)/(B) distinction, the per-fire-env caveat, the reusable proof
+  shapes, and the contravariance/downward-closure caveat for (B).)
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest

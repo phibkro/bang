@@ -405,9 +405,9 @@ vs real `Comp` closures). Layers, bottom-up:
   `consK` constructor collapses into `cons` (one construct per problem) — `RelEnvI`
   is just `nil`/`cons`.
 
-**Three ∀-quantified *resuming* firing theorems are now proven** (sorry-free, by
-**direct inside-out construction** — they dodge the `RelV`-invocation crux because
-the resumed continuation stays pure, so its result is an integer, index-free):
+**Four ∀-quantified *resuming* firing theorems are now proven** (sorry-free, by
+**direct inside-out construction** — case (A) below; valid because the language has
+no recursion so a fixed skeleton's firing count is bounded):
 - **`fire_resume_tail`** — `handle (resume (var 1) v) (perform e)` ≡ `⟦v⟧` (tail
   resume, *empty* captured continuation). First ∀-quantified theorem where the
   resumption is genuinely invoked.
@@ -420,6 +420,14 @@ the resumed continuation stays pure, so its result is an integer, index-free):
   `resume_empty_splice` helper (a RESUME of an empty-captured-continuation `vcont`
   hands the value to the post-RESUME code in 3 fuel steps); the first resume's pure
   frame carries the *second* resume as its continuation.
+- **`fire_deep`** — `handle (resume@1 v) (add (perform e1) (perform e2))` ≡ `w1 + w2`
+  (the genuine **deep re-handling** mechanism: the clause resumes, the resumed
+  continuation `+ (perform e2)` *performs again*, is caught by the **re-installed
+  handler frame**, and fires the clause a second time; the 14 demonstrator,
+  ∀-general). Reference: `eval_add_perform_perform` reduces the body to a *nested*
+  `perf`, `handleC` fires once per layer (each `res` closure itself performs).
+  Machine: two nested fire→resume cycles, a 5-frame unwind. This retires deep
+  re-handling for case (A).
 
 The reusable proof shapes: machine side built **inside-out** exactly like
 `machine_fire` (halt → return-throughs → RESUME splice → LOOKUP/`pure_sim` v →
@@ -443,24 +451,26 @@ cover**, ordered by difficulty:
   own `+ rest2`; the captured continuation is `compile rest [ADD]` rather than `[]`,
   so `resume_empty_splice` is replaced by an explicit `pure_sim`-over-the-captured-
   continuation step as in `machine_fire_resume_nontail`).
-- **deep / re-handling** (the resumed continuation *itself performs*) — the genuine
-  frontier. **Correction to an earlier claim:** deep re-handling does *not*
-  intrinsically require `RelV`. The distinction that actually matters:
+- **deep / re-handling** (the resumed continuation *itself performs*) — **case (A)
+  now PROVEN** (`fire_deep`). **Correction to an earlier claim:** deep re-handling
+  does *not* intrinsically require `RelV`. The distinction that actually matters:
   - **(A) fixed control-flow skeleton, ∀-general over pure subterms** — e.g.
-    `handle (resume@1 v) (add (perform e1) (perform e2))` for *all* pure `e1,e2,v`.
-    Because the language has **no recursion/loops/λ**, every closed program's
-    *firing count is statically bounded by its skeleton*. So even a deep skeleton is
-    **direct-constructible**: a longer inside-out chain with one fire→resume cycle
-    *per* perform, the re-fire happening under the re-installed handler frame `frH`
-    that the previous splice pushed. The reference mirrors this: `eval` of the body
-    is a *nested* `perf` (`perf p1 (fun w⇒ perf p2 (fun w'⇒ ret (w+w')))`), and
-    `handleC` fires once per `perf` layer, each `res` closure itself performing and
-    re-firing `handleC`. **This is the deep mechanism, and it is reachable now.**
+    `handle (resume@1 v) (add (perform e1) (perform e2))` for *all* pure `e1,e2,v`
+    (✅ `fire_deep`). Because the language has **no recursion/loops/λ**, every closed
+    program's *firing count is statically bounded by its skeleton*. So even a deep
+    skeleton is **direct-constructible**: a longer inside-out chain with one
+    fire→resume cycle *per* perform, the re-fire happening under the re-installed
+    handler frame `frH` that the previous splice pushed. The reference mirrors this:
+    `eval` of the body is a *nested* `perf` (`perf p1 (fun w⇒ perf p2 (fun w'⇒ ret
+    (w+w')))`), and `handleC` fires once per `perf` layer, each `res` closure itself
+    performing and re-firing `handleC`. The remaining (A) leaves (non-tail clause,
+    multi-shot × non-empty captured continuation — the full 1107/2027, and deeper
+    skeletons) are *more of the same*, longer chains, no new ideas.
   - **(B) ∀-general over *all* `Src`** (the full `exec ∘ compile ≡ run` for every
-    program) — *this* is what needs the inductive bisimulation and `RelV`'s
-    agreement (`capture_relates`), because the skeleton is no longer fixed so the
-    firing count is unbounded-in-the-quantifier. This is the research-grade core; the
-    formalized `RelV` is built for it.
+    program) — **the sole remaining frontier.** *This* is what needs the inductive
+    bisimulation and `RelV`'s agreement (`capture_relates`), because the skeleton is
+    no longer fixed so the firing count is unbounded-in-the-quantifier. This is the
+    research-grade core; the formalized `RelV` is built for it.
 
   Caveat for (A) — the clause is evaluated once **per fire**, in a *different* env
   each time (payload `p1` then `p2`), so a clause that reads the payload resumes with
