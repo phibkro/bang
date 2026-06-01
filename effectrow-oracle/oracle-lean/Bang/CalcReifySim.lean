@@ -667,6 +667,52 @@ theorem ref_fire_resume {e v : Src} (he : IsPure e) (hv : IsPure v) {p w : Int}
   obtain ⟨S3, rfl⟩ : ∃ k, S2 = k + 1 := ⟨S2 - 1, by omega⟩
   simp only [bind_ret, CalcReifyRef.handleC]
 
+/-! ### Non-empty captured continuation: a non-tail *body*
+
+`handle (resume (var 1) v) (add (perform e) rest)` — the perform is **not** in tail
+position in the body, so the captured continuation is the body's `+ rest`. Resuming
+with `w` re-runs it: `w + ⟦rest⟧`. This is the first case that splices a *non-empty*
+captured continuation (`compile rest [ADD]`, not `[]`). -/
+
+/-- Reduce a non-tail-perform body `add (perform e) rest` (pure `e`, `rest`) to a
+`perf` carrying the *clean* resumption `fun w ⇒ ret (w + r)` — the `bind`/`eval`
+fuel-closures collapse because `rest` is pure. The lemma is the body analogue of
+`eval_perform`; the resumption shape is what `handleC` then folds the clause over. -/
+theorem eval_add_perform {e rest : Src} (he : IsPure e) (hrest : IsPure rest)
+    {p r : Int} (hpe : pden [] e = some p) (hpr : pden [] rest = some r) :
+    ∀ f, fuelOf e + fuelOf rest + 4 ≤ f →
+      CalcReifyRef.eval f [] (.add (.perform e) rest) = .perf p (fun w => .ret (w + r)) := by
+  intro f hf
+  obtain ⟨S0, rfl⟩ : ∃ k, f = k + 3 := ⟨f - 3, by omega⟩
+  have hadd : CalcReifyRef.eval (S0 + 3) [] (.add (.perform e) rest)
+      = CalcReifyRef.bind (S0 + 2) (CalcReifyRef.eval (S0 + 2) [] (.perform e))
+          (fun x => CalcReifyRef.bind (S0 + 2) (CalcReifyRef.eval (S0 + 2) [] rest)
+            (fun y => .ret (x + y))) := rfl
+  have hrst : CalcReifyRef.eval (S0 + 2) [] rest = .ret r := eval_pure rest hrest hpr (S0 + 2) (by omega)
+  rw [hadd, eval_perform he hpe (S0 + 2) (by omega)]
+  simp only [CalcReifyRef.bind, hrst]
+
+/-- Reference side of non-tail-body resume. `eval_add_perform` reduces the body to
+`perf p (fun w⇒ret (w+r))`; `handleC` installs `res = fun w⇒ret (w+r)`; the clause
+`resume (var 1) v` runs `res ⟦v⟧ = ret (⟦v⟧+r)`. -/
+theorem ref_fire_resume_nontail {e v rest : Src}
+    (he : IsPure e) (hv : IsPure v) (hrest : IsPure rest) {p w r : Int}
+    (hpe : pden [] e = some p) (hpr : pden [] rest = some r)
+    (hpv : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v = some w) :
+    ∀ f, fuelOf e + fuelOf rest + fuelOf v + 6 ≤ f →
+      CalcReifyRef.eval f [] (.handle (.resume (.var 1) v) (.add (.perform e) rest))
+        = .ret (w + r) := by
+  intro f hf
+  obtain ⟨S, rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+  rw [eval_handle_def, eval_add_perform he hrest hpe hpr S (by omega)]
+  obtain ⟨S1, rfl⟩ : ∃ k, S = k + 1 := ⟨S - 1, by omega⟩
+  simp only [CalcReifyRef.handleC]
+  obtain ⟨S2, rfl⟩ : ∃ k, S1 = k + 1 := ⟨S1 - 1, by omega⟩
+  simp only [CalcReifyRef.eval, List.getElem?_cons_succ, List.getElem?_cons_zero]
+  rw [eval_pure v hv (hpv _) S2 (by omega)]
+  obtain ⟨S3, rfl⟩ : ∃ k, S2 = k + 1 := ⟨S2 - 1, by omega⟩
+  simp only [bind_ret, CalcReifyRef.handleC]
+
 /-- Machine side of tail resume. INSTALL the handler; the body performs (PERFORM
 captures the *empty* continuation `kv` and runs the clause); the clause LOOKUPs the
 resumption, pushes `w` (pure `v`), and RESUMEs; the splice runs the empty captured
@@ -703,6 +749,57 @@ theorem machine_fire_resume {e v : Src} (he : IsPure e) (hv : IsPure v) {p w : I
     simp only [exec]; exact hFe
   exact ⟨Fe + 1, hinstall⟩
 
+/-- Machine side of non-tail-body resume. Like `machine_fire_resume`, but PERFORM
+captures the **non-empty** continuation `kv = vcont (compile rest [ADD]) …`; on
+RESUME the splice runs `compile rest [ADD]` with the resumed `w` (pushing `r`, then
+ADD → `w + r`), returning through the re-installed handler to the top. -/
+theorem machine_fire_resume_nontail {e v rest : Src}
+    (he : IsPure e) (hv : IsPure v) (hrest : IsPure rest) {p w r : Int}
+    (hpe : pden [] e = some p) (hpr : pden [] rest = some r)
+    (hpv : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v = some w) :
+    ∃ F, run F (.handle (.resume (.var 1) v) (.add (.perform e) rest)) = some (.vint (w + r)) := by
+  let clCode : Code := compile (.resume (.var 1) v) []
+  let crest : Code := compile rest [Instr.ADD]
+  let kv : Value := .vcont crest [] [] clCode []
+  let frRet : Frame := { clause := none, retCode := [], retEnv := [], retStack := [] }
+  let frH : Frame := { clause := some (clCode, []), retCode := [], retEnv := [Value.vint p, kv], retStack := [] }
+  let frP : Frame := { clause := none, retCode := [], retEnv := [Value.vint p, kv], retStack := [] }
+  have hcl_eq : clCode = Instr.LOOKUP 1 :: compile v [Instr.RESUME] := rfl
+  have henvC : RelEnv [Value.vint p, kv] (.ev p :: .ek (fun _ => Comp.stuck) :: []) :=
+    .cons (.int p) (.consK kv (fun _ => Comp.stuck) .nil)
+  -- the splice's return-through chain (handler re-install → pure frame → PERFORM's frame → halt).
+  have hret : exec 4 [] [] [Value.vint (w + r)] [frH, frP, frRet] = some (.vint (w + r)) := by
+    simp [exec, frH, frP, frRet]
+  -- ADD combines r (just pushed by `rest`) and the resumed w.
+  have hadd : exec 5 [Instr.ADD] [] [Value.vint r, Value.vint w] [frH, frP, frRet]
+      = some (.vint (w + r)) := by simp only [exec]; exact hret
+  -- the captured continuation `compile rest [ADD]` runs, pushing r then ADDing.
+  obtain ⟨Fr, hFr⟩ := pure_sim rest hrest (.nil) hpr [Instr.ADD] [Value.vint w] [frH, frP, frRet] 5
+    (.vint (w + r)) hadd
+  -- RESUME splices the non-empty captured continuation.
+  have hresume : exec (Fr + 1) [Instr.RESUME] [Value.vint p, kv] [Value.vint w, kv] [frRet]
+      = some (.vint (w + r)) := by simp only [exec, kv]; exact hFr
+  -- compile v pushes w on top of the looked-up resumption.
+  obtain ⟨Fv, hFv⟩ := pure_sim v hv henvC (hpv _) [Instr.RESUME] [kv] [frRet] (Fr + 1)
+    (.vint (w + r)) hresume
+  -- LOOKUP 1 pushes the resumption.
+  have hclause : exec (Fv + 1) clCode [Value.vint p, kv] [] [frRet] = some (.vint (w + r)) := by
+    rw [hcl_eq]
+    simp only [exec, List.getElem?_cons_zero, List.getElem?_cons_succ]
+    exact hFv
+  -- PERFORM captures the non-empty continuation `crest` and runs the clause.
+  have hperf : exec (Fv + 2) (Instr.PERFORM :: crest) [] [Value.vint p]
+      [{ clause := some (clCode, []), retCode := [], retEnv := [], retStack := [] }]
+        = some (.vint (w + r)) := by simp only [exec]; exact hclause
+  -- compile e pushes the payload p.
+  obtain ⟨Fe, hFe⟩ := pure_sim e he (.nil) hpe (Instr.PERFORM :: crest) [] [_] (Fv + 2)
+    (.vint (w + r)) hperf
+  -- INSTALL pushes the handler frame, runs the body.
+  have hinstall : exec (Fe + 1)
+      (Instr.INSTALL clCode [] :: compile e (Instr.PERFORM :: crest)) [] [] [] = some (.vint (w + r)) := by
+    simp only [exec]; exact hFe
+  exact ⟨Fe + 1, hinstall⟩
+
 /-- **The first ∀-quantified *resuming* firing agreement.** For any pure payload `e`
 and pure resume-argument `v`, the calculated machine and the denotational reference
 agree on `handle (resume (var 1) v) (perform e)`: both yield `⟦v⟧` (the value of `v`
@@ -733,6 +830,34 @@ example :
     let prog : Src := .handle (.resume (.var 1) (.var 0)) (.perform (.val 41))
     (∃ F, run F prog = some (.vint 41)) ∧ (∃ G, CalcReifyRef.run G prog = some 41) :=
   fire_resume_tail (e := .val 41) (v := .var 0) .val .var (by rfl) (fun _ => by rfl)
+
+/-- **∀-quantified resuming firing with a non-empty captured continuation.** For
+pure `e`, `v`, `rest`, machine and reference agree on
+`handle (resume (var 1) v) (add (perform e) rest)`: both yield `⟦v⟧ + ⟦rest⟧`. The
+body's perform is **non-tail**, so the resumption re-runs the captured `+ rest`
+continuation — the first general theorem that splices a *non-empty* continuation
+(the genuinely-new behaviour over `fire_resume_tail`). -/
+theorem fire_resume_nontail_body {e v rest : Src}
+    (he : IsPure e) (hv : IsPure v) (hrest : IsPure rest) {p w r : Int}
+    (hpe : pden [] e = some p) (hpr : pden [] rest = some r)
+    (hpv : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v = some w) :
+    (∃ F, run F (.handle (.resume (.var 1) v) (.add (.perform e) rest)) = some (.vint (w + r))) ∧
+    (∃ G, CalcReifyRef.run G (.handle (.resume (.var 1) v) (.add (.perform e) rest)) = some (w + r)) := by
+  refine ⟨machine_fire_resume_nontail he hv hrest hpe hpr hpv, ?_⟩
+  exact ⟨fuelOf e + fuelOf rest + fuelOf v + 6,
+    by simp only [CalcReifyRef.run, ref_fire_resume_nontail he hv hrest hpe hpr hpv _ (Nat.le_refl _)]⟩
+
+/-! ## A non-tail-body demonstrator via `fire_resume_nontail_body`
+
+`handle (resume (var 1) (val 7)) (add (perform (val 5)) (val 1000))` — the
+`bodyP`/1007 shape from the `rfl` demonstrators, now proved ∀-generally and with a
+non-empty captured continuation: payload `5` is performed, the clause resumes (tail)
+with `7`, and the captured `+ 1000` continuation runs → `7 + 1000 = 1007`. -/
+example :
+    let prog : Src := .handle (.resume (.var 1) (.val 7)) (.add (.perform (.val 5)) (.val 1000))
+    (∃ F, run F prog = some (.vint 1007)) ∧ (∃ G, CalcReifyRef.run G prog = some 1007) :=
+  fire_resume_nontail_body (e := .val 5) (v := .val 7) (rest := .val 1000)
+    .val .val .val (by rfl) (by rfl) (fun _ => by rfl)
 
 end Resuming
 
