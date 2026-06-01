@@ -1166,6 +1166,116 @@ theorem capture_relates_tail (clCode : Code) (clEnv : Env) (i : Nat) :
   · simp only [exec] at hsplice
     exact hRelK w F2 r hsplice
 
+/-- **Backward pure simulation.** The converse of `pure_sim`: if running
+`compile e c` succeeds, then running the continuation `c` with `e`'s value pushed
+also succeeds. (Pure terms are deterministic, so evaluating `e` is a no-op modulo
+pushing its value — this lets us *analyse* a splice that begins with a pure captured
+continuation, recovering the value it hands on to the clause continuation.) -/
+theorem pure_sim_back : ∀ (e : Src), IsPure e → ∀ {renv : REnv} {env : Env}, RelEnv env renv →
+    ∀ {n : Int}, pden renv e = some n →
+    ∀ (c : Code) (s : Stack) (K : Kont) (F : Nat) (r : Value),
+      exec F (compile e c) env s K = some r →
+      ∃ F', exec F' c env (.vint n :: s) K = some r := by
+  intro e
+  induction e with
+  | val m =>
+    intro _ renv env _ n hp c s K F r hr
+    simp only [pden] at hp; obtain rfl := Option.some.inj hp
+    cases F with
+    | zero => simp [compile, exec] at hr
+    | succ F0 => exact ⟨F0, by simp only [compile, exec] at hr; exact hr⟩
+  | var i =>
+    intro _ renv env henv n hp c s K F r hr
+    simp only [pden] at hp
+    cases hri : renv[i]? with
+    | none => rw [hri] at hp; simp at hp
+    | some entry => cases entry with
+      | ek f => rw [hri] at hp; simp at hp
+      | ev m =>
+        rw [hri] at hp; simp only [Option.some.injEq] at hp; subst hp
+        have hlk : env[i]? = some (Value.vint m) := relEnv_lookup henv hri
+        cases F with
+        | zero => simp [compile, exec] at hr
+        | succ F0 => exact ⟨F0, by simp only [compile, exec, hlk] at hr; exact hr⟩
+  | add a b iha ihb =>
+    intro hpure renv env henv n hp c s K F r hr
+    cases hpure with
+    | add hpa hpb =>
+      simp only [pden] at hp
+      cases ha : pden renv a with
+      | none => rw [ha] at hp; simp at hp
+      | some x => cases hb : pden renv b with
+        | none => rw [ha, hb] at hp; simp at hp
+        | some y =>
+          rw [ha, hb] at hp; simp only [Option.some.injEq] at hp; subst hp
+          obtain ⟨Fa, hFa⟩ := iha hpa henv ha (compile b (Instr.ADD :: c)) s K F r
+            (by simpa only [compile] using hr)
+          obtain ⟨Fb, hFb⟩ := ihb hpb henv hb (Instr.ADD :: c) (.vint x :: s) K Fa r hFa
+          cases Fb with
+          | zero => simp [exec] at hFb
+          | succ Fb0 => exact ⟨Fb0, by simp only [exec] at hFb; exact hFb⟩
+  | letE e1 e2 ih1 ih2 =>
+    intro hpure renv env henv n hp c s K F r hr
+    cases hpure with
+    | letE hp1 hp2 =>
+      simp only [pden] at hp
+      cases h1 : pden renv e1 with
+      | none => rw [h1] at hp; simp at hp
+      | some v =>
+        rw [h1] at hp
+        have henv2 : RelEnv (.vint v :: env) (.ev v :: renv) := .cons (.int v) henv
+        obtain ⟨F1, hF1⟩ := ih1 hp1 henv h1 (Instr.BIND :: compile e2 (Instr.UNBIND :: c)) s K F r
+          (by simpa only [compile] using hr)
+        cases F1 with
+        | zero => simp [exec] at hF1
+        | succ F1' =>
+          simp only [exec] at hF1
+          obtain ⟨F2, hF2⟩ := ih2 hp2 henv2 hp (Instr.UNBIND :: c) s K F1' r hF1
+          cases F2 with
+          | zero => simp [exec] at hF2
+          | succ F2' => exact ⟨F2', by simp only [exec] at hF2; exact hF2⟩
+  | handle clause body _ ihbody =>
+    intro hpure renv env henv n hp c s K F r hr
+    cases hpure with
+    | handle hpb =>
+      simp only [pden] at hp
+      cases F with
+      | zero => simp [compile, exec] at hr
+      | succ F0 =>
+        simp only [compile, exec] at hr
+        obtain ⟨Gb, hGb⟩ := ihbody hpb henv hp [] s
+          ({ clause := some (compile clause [], env), retCode := c, retEnv := env, retStack := s } :: K)
+          F0 r hr
+        cases Gb with
+        | zero => simp [exec] at hGb
+        | succ Gb0 => exact ⟨Gb0, by simp only [exec] at hGb; exact hGb⟩
+  | perform e1 _ => intro hpure _ _ _ _ _ _ _ _ _ _ _; cases hpure
+  | resume k v _ _ => intro hpure _ _ _ _ _ _ _ _ _ _ _; cases hpure
+
+/-- **`capture_relates` for a non-empty pure captured continuation.** From a
+non-tail body `add (perform e) rest`, PERFORM captures `vcont (compile rest [ADD]) …`,
+and the reference resumption is `fun w ⇒ ret (w + rstval)` (it runs `rest` then adds).
+This is the case that exposed the `RefK` bug: when invoked with `w`, the captured
+continuation hands `w + rstval` (not `w`) to the clause continuation — `RelK` is used
+at value `w + rstval`, matching `g w = ret (w + rstval)` exactly under the corrected
+`RefK = Comp → Comp`. Proven by `pure_sim_back` (run `rest`), the ADD step, then the
+two frame returns into the clause continuation. -/
+theorem capture_relates_add (rest : Src) (hrest : IsPure rest) {rstval : Int}
+    (hpr : pden [] rest = some rstval) (clCode : Code) (clEnv : Env) (i : Nat) :
+    RelV (i + 1) (.vcont (compile rest [Instr.ADD]) [] [] clCode clEnv)
+      (.ek (fun w => .ret (w + rstval))) := by
+  simp only [RelV]
+  intro w resumeEnv cRet s' K Kref hRelK F r hsplice
+  obtain ⟨F1, hF1⟩ := pure_sim_back rest hrest RelEnv.nil hpr [Instr.ADD] [Value.vint w]
+    ({ clause := some (clCode, clEnv), retCode := [], retEnv := resumeEnv, retStack := [] }
+      :: { clause := none, retCode := cRet, retEnv := resumeEnv, retStack := s' } :: K) F r hsplice
+  rcases F1 with _ | _ | _ | F2
+  · simp [exec] at hF1
+  · simp [exec] at hF1
+  · simp [exec] at hF1
+  · simp only [exec] at hF1
+    exact hRelK (w + rstval) F2 r hF1
+
 end Resuming
 
 end Bang.CalcReifySim
