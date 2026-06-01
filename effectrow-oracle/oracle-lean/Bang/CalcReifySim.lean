@@ -713,6 +713,18 @@ theorem ref_fire_resume_nontail {e v rest : Src}
   obtain ⟨S3, rfl⟩ : ∃ k, S2 = k + 1 := ⟨S2 - 1, by omega⟩
   simp only [bind_ret, CalcReifyRef.handleC]
 
+/-- **Empty-captured-continuation RESUME splice (reusable).** When the captured
+continuation is empty (`kv = vcont [] [] [] clCode []`, as produced by a body whose
+perform is in tail position), a `RESUME` of `kv` with `w` simply hands `w` back to
+the code `c` after the RESUME (through the re-installed handler frame and the pure
+frame), costing 3 fuel. Used once per resumption — including twice for multi-shot. -/
+theorem resume_empty_splice (clCode c : Code) (env : Env) (w : Int) (s' : Stack) (K : Kont)
+    (n : Nat) (res : Value)
+    (hc : exec n c env (Value.vint w :: s') K = some res) :
+    exec (n + 3) (Instr.RESUME :: c) env
+      (Value.vint w :: Value.vcont [] [] [] clCode [] :: s') K = some res := by
+  simp only [exec]; exact hc
+
 /-- Machine side of tail resume. INSTALL the handler; the body performs (PERFORM
 captures the *empty* continuation `kv` and runs the clause); the clause LOOKUPs the
 resumption, pushes `w` (pure `v`), and RESUMEs; the splice runs the empty captured
@@ -858,6 +870,115 @@ example :
     (∃ F, run F prog = some (.vint 1007)) ∧ (∃ G, CalcReifyRef.run G prog = some 1007) :=
   fire_resume_nontail_body (e := .val 5) (v := .val 7) (rest := .val 1000)
     .val .val .val (by rfl) (by rfl) (fun _ => by rfl)
+
+/-! ### Multi-shot: the resumption invoked twice
+
+`handle (add (resume (var 1) v1) (resume (var 1) v2)) (perform e)` — the clause
+invokes the **same** captured resumption *twice* (the signature reification
+capability). Body `perform e` is tail, so each splice uses the empty-continuation
+helper; the first resume's pure frame carries the *second* resume as its
+continuation. Result: `⟦v1⟧ + ⟦v2⟧`. -/
+
+/-- Reference side of multi-shot. `res = fun w⇒ret w`; the clause
+`add (resume@1 v1) (resume@1 v2)` evaluates `res ⟦v1⟧ = ret w1` and `res ⟦v2⟧ =
+ret w2`, then adds → `ret (w1 + w2)`. -/
+theorem ref_fire_multishot {e v1 v2 : Src}
+    (he : IsPure e) (hv1 : IsPure v1) (hv2 : IsPure v2) {p w1 w2 : Int}
+    (hpe : pden [] e = some p)
+    (hpv1 : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v1 = some w1)
+    (hpv2 : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v2 = some w2) :
+    ∀ f, fuelOf e + fuelOf v1 + fuelOf v2 + 6 ≤ f →
+      CalcReifyRef.eval f [] (.handle (.add (.resume (.var 1) v1) (.resume (.var 1) v2)) (.perform e))
+        = .ret (w1 + w2) := by
+  intro f hf
+  obtain ⟨S, rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+  rw [eval_handle_def, eval_perform he hpe S (by omega)]
+  obtain ⟨S1, rfl⟩ : ∃ k, S = k + 1 := ⟨S - 1, by omega⟩
+  simp only [CalcReifyRef.handleC]
+  obtain ⟨S2, rfl⟩ : ∃ k, S1 = k + 1 := ⟨S1 - 1, by omega⟩
+  obtain ⟨S3, rfl⟩ : ∃ k, S2 = k + 1 := ⟨S2 - 1, by omega⟩
+  simp only [CalcReifyRef.eval, List.getElem?_cons_zero, List.getElem?_cons_succ]
+  rw [eval_pure v1 hv1 (hpv1 _) S3 (by omega), eval_pure v2 hv2 (hpv2 _) S3 (by omega)]
+  obtain ⟨S4, rfl⟩ : ∃ k, S3 = k + 1 := ⟨S3 - 1, by omega⟩
+  simp only [bind_ret, CalcReifyRef.handleC]
+
+/-- Machine side of multi-shot. PERFORM captures the empty continuation `kv`; the
+clause LOOKUPs `kv` and resumes with `w1` (splice via `resume_empty_splice`),
+returning into the *second* resume which LOOKUPs `kv` again and resumes with `w2`,
+then ADDs → `w1 + w2`. Two splices of the **same** immutable `vcont`. -/
+theorem machine_fire_multishot {e v1 v2 : Src}
+    (he : IsPure e) (hv1 : IsPure v1) (hv2 : IsPure v2) {p w1 w2 : Int}
+    (hpe : pden [] e = some p)
+    (hpv1 : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v1 = some w1)
+    (hpv2 : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v2 = some w2) :
+    ∃ F, run F (.handle (.add (.resume (.var 1) v1) (.resume (.var 1) v2)) (.perform e))
+      = some (.vint (w1 + w2)) := by
+  let clCode : Code := compile (.add (.resume (.var 1) v1) (.resume (.var 1) v2)) []
+  let c2 : Code := compile (.resume (.var 1) v2) [Instr.ADD]
+  let kv : Value := .vcont [] [] [] clCode []
+  let frRet : Frame := { clause := none, retCode := [], retEnv := [], retStack := [] }
+  have hcl_eq : clCode = Instr.LOOKUP 1 :: compile v1 (Instr.RESUME :: c2) := rfl
+  have hc2_eq : c2 = Instr.LOOKUP 1 :: compile v2 (Instr.RESUME :: [Instr.ADD]) := rfl
+  have henvC : RelEnv [Value.vint p, kv] (.ev p :: .ek (fun _ => Comp.stuck) :: []) :=
+    .cons (.int p) (.consK kv (fun _ => Comp.stuck) .nil)
+  have hfr : exec 2 [] [Value.vint p, kv] [Value.vint (w1 + w2)] [frRet]
+      = some (.vint (w1 + w2)) := by simp [exec, frRet]
+  have hadd : exec 3 [Instr.ADD] [Value.vint p, kv] [Value.vint w2, Value.vint w1] [frRet]
+      = some (.vint (w1 + w2)) := by simp only [exec]; exact hfr
+  have hres2 : exec 6 (Instr.RESUME :: [Instr.ADD]) [Value.vint p, kv]
+      (Value.vint w2 :: kv :: [Value.vint w1]) [frRet] = some (.vint (w1 + w2)) :=
+    resume_empty_splice clCode [Instr.ADD] [Value.vint p, kv] w2 [Value.vint w1] [frRet] 3 _ hadd
+  obtain ⟨Fv2, hFv2⟩ := pure_sim v2 hv2 henvC (hpv2 _) (Instr.RESUME :: [Instr.ADD])
+    [kv, Value.vint w1] [frRet] 6 (.vint (w1 + w2)) hres2
+  have hc2run : exec (Fv2 + 1) c2 [Value.vint p, kv] [Value.vint w1] [frRet]
+      = some (.vint (w1 + w2)) := by
+    rw [hc2_eq]; simp only [exec, List.getElem?_cons_zero, List.getElem?_cons_succ]; exact hFv2
+  have hres1 : exec (Fv2 + 1 + 3) (Instr.RESUME :: c2) [Value.vint p, kv]
+      (Value.vint w1 :: kv :: []) [frRet] = some (.vint (w1 + w2)) :=
+    resume_empty_splice clCode c2 [Value.vint p, kv] w1 [] [frRet] (Fv2 + 1) _ hc2run
+  obtain ⟨Fv1, hFv1⟩ := pure_sim v1 hv1 henvC (hpv1 _) (Instr.RESUME :: c2) [kv] [frRet]
+    (Fv2 + 1 + 3) (.vint (w1 + w2)) hres1
+  have hclause : exec (Fv1 + 1) clCode [Value.vint p, kv] [] [frRet] = some (.vint (w1 + w2)) := by
+    rw [hcl_eq]; simp only [exec, List.getElem?_cons_zero, List.getElem?_cons_succ]; exact hFv1
+  have hperf : exec (Fv1 + 2) [Instr.PERFORM] [] [Value.vint p]
+      [{ clause := some (clCode, []), retCode := [], retEnv := [], retStack := [] }]
+        = some (.vint (w1 + w2)) := by simp only [exec]; exact hclause
+  obtain ⟨Fe, hFe⟩ := pure_sim e he (.nil) hpe [Instr.PERFORM] [] _ (Fv1 + 2) (.vint (w1 + w2)) hperf
+  have hinstall : exec (Fe + 1)
+      (Instr.INSTALL clCode [] :: compile e [Instr.PERFORM]) [] [] [] = some (.vint (w1 + w2)) := by
+    simp only [exec]; exact hFe
+  exact ⟨Fe + 1, hinstall⟩
+
+/-- **∀-quantified multi-shot resuming firing agreement.** The clause invokes the
+captured resumption twice; machine and reference agree on `⟦v1⟧ + ⟦v2⟧`. (The body
+is tail here — empty captured continuation — so each resume contributes only its
+argument; combining multi-shot with a non-empty captured continuation, as in the
+2027 demonstrator, is a further composition.) -/
+theorem fire_multishot {e v1 v2 : Src}
+    (he : IsPure e) (hv1 : IsPure v1) (hv2 : IsPure v2) {p w1 w2 : Int}
+    (hpe : pden [] e = some p)
+    (hpv1 : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v1 = some w1)
+    (hpv2 : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v2 = some w2) :
+    (∃ F, run F (.handle (.add (.resume (.var 1) v1) (.resume (.var 1) v2)) (.perform e))
+      = some (.vint (w1 + w2))) ∧
+    (∃ G, CalcReifyRef.run G (.handle (.add (.resume (.var 1) v1) (.resume (.var 1) v2)) (.perform e))
+      = some (w1 + w2)) := by
+  refine ⟨machine_fire_multishot he hv1 hv2 hpe hpv1 hpv2, ?_⟩
+  exact ⟨fuelOf e + fuelOf v1 + fuelOf v2 + 6,
+    by simp only [CalcReifyRef.run, ref_fire_multishot he hv1 hv2 hpe hpv1 hpv2 _ (Nat.le_refl _)]⟩
+
+/-! ## A multi-shot demonstrator via `fire_multishot`
+
+`handle (add (resume (var 1) (val 7)) (resume (var 1) (val 20))) (perform (val 5))`
+— the clause resumes the captured continuation **twice** (with 7 and 20), each
+returning its argument (tail body), so the program yields `7 + 20 = 27`. Proved
+∀-generally via `fire_multishot`, not by `rfl`. -/
+example :
+    let prog : Src := .handle (.add (.resume (.var 1) (.val 7)) (.resume (.var 1) (.val 20)))
+      (.perform (.val 5))
+    (∃ F, run F prog = some (.vint 27)) ∧ (∃ G, CalcReifyRef.run G prog = some 27) :=
+  fire_multishot (e := .val 5) (v1 := .val 7) (v2 := .val 20)
+    .val .val .val (by rfl) (fun _ => by rfl) (fun _ => by rfl)
 
 end Resuming
 
