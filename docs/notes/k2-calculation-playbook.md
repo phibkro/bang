@@ -1,10 +1,12 @@
 # K2 calculation — proof playbook
 
 > Hard-won technique for the Bahr–Hutton calculation in Lean. Read this before
-> proving the **next** increment (thunk/`$`force + CBN → `if` → effects): each one
-> re-runs the same shapes. Companion to **ADR-0009** (method/staging) and
-> **ADR-0010** (the higher-order proof). The proven artifacts live in
-> `effectrow-oracle/oracle-lean/Bang/{Calc,CalcHO}.lean`.
+> proving the **next** increment: the equality-sim shapes (K2 core → effects →
+> compositions) re-run constantly, and the **K3 reification frontier** (ADR-0015,
+> last section) is a *different* proof shape — read it before touching the
+> resumption residual. Companion to **ADR-0009** (method/staging), **ADR-0010**
+> (the higher-order proof) and **ADR-0015** (reification). Proven artifacts:
+> `effectrow-oracle/oracle-lean/Bang/{Calc,CalcHO,CalcReify,CalcReifyRef,CalcReifySim}.lean`.
 
 ## The three transferable insights
 
@@ -255,3 +257,139 @@ pair-of-Outcome gives a **left-nested** `(l'=l ∧ p'=p) ∧ st1=st'`, so destru
 `l p st'` (the older ∀-bound vars), leaving the *cased* names alive — so a propagate
 case's IH call must reference the cased names (`l' p' st1`, `lx px2 st2`, …), or use
 explicit `subst` of the cased vars to keep `l p st'`.
+
+## K3 frontier — continuation **reification** (`CalcReify`, ADR-0015)
+
+This is the deferred bottom row of the table above — **non-tail / multi-shot
+handlers** — and it is a *genuinely different proof shape* than the eight equality
+sims, so it earns its own section. The machine, its construction, and the proof
+arc (built across one session) are all in `Bang/CalcReify*.lean`. Read this before
+attempting the remaining residual (a *resuming* clause proved generally).
+
+### Why this one is different (the wall, stated precisely)
+
+A general handler hands its clause the **resumption** as a first-class value,
+invocable 0/1/many times. The eight prior machines all dodged this (Throws is
+zero-shot, State resumes only in tail position), and the dodge let the *reference*
+`eval` return a plain `Value` — which is what made every prior sim a clean
+**equality** (insight #2). Reification breaks the dodge:
+
+- **A resumption can't be a `Value`.** `vcont : (Value → …) → Value` fails Lean's
+  **strict positivity**. That failure is not an obstacle to route around — it is the
+  *reason reification exists*: the continuation must be made **data**
+  (defunctionalized). So the machine carries an explicit `Kont = List Frame` and a
+  reified resumption is a captured *prefix* of it, held in a `vcont` constructor as
+  data (ADR-0015 has the representation).
+- **It forces the machine to flatten.** The closure machines reduce a subterm via a
+  *nested meta-`exec`*; a resumption cannot be captured across that meta-boundary. So
+  `CalcReify` is a **flat** machine — one `Code` stream + an explicit handler/return
+  stack `K` — not an extension of the others. `exec`'s empty-code case *returns
+  through* `K`; `PERFORM` captures a `vcont` and runs the clause; `RESUME` splices.
+
+### The four-layer validation ladder (what to build, in order)
+
+Reification's general theorem is research-grade, so we did **not** chase one monolith.
+We built a ladder of increasingly strong evidence, each rung sorry-free and
+independently valuable. This staging is the transferable method for any
+"research-grade" correctness goal under the project's *never-fake* rule:
+
+1. **`rfl` demonstrators** (`CalcReify.lean`). Seven closed programs — non-tail,
+   multi-shot, zero-shot, re-handling, payload — each `run … = some … := by rfl`.
+   Cheap, and they pin the *intended behaviour* before any proof.
+2. **Fuel monotonicity** (`exec_succ`/`exec_mono`). The bedrock every sim needs;
+   explicit per-instruction case analysis (the empty-code return-through, `PERFORM`,
+   `RESUME` each decrease fuel). Same shape as the prior machines'.
+3. **An independent cross-check** — *empirical*, then *in-Lean*:
+   - **TS CPS interpreter** (`harness/src/reify-cps.ts`): a free-monad interpreter of
+     the *same* `Src` where a resumption is a **real JS closure** `(w) => Comp` — the
+     representation Lean positivity forbids, hence a genuinely independent oracle.
+     2k random programs/CI run (20k locally), zero disagreements. This is the "run the
+     real journey" rung: it finds bugs in the splicing logic before you waste proof
+     effort, and it found two (mis-stated `want` goldens) immediately.
+   - **In-Lean denotational reference** (`CalcReifyRef.lean`): the *same* free monad,
+     now in Lean. The positivity escape is **CBPV + a free monad**: `Comp` is the free
+     monad over `perform : Int ⇝ Int`, and the resumption `Int → Comp` sits in the
+     **codomain** of `perf`'s argument — a *positive* occurrence — so `Comp` passes
+     positivity where `Value` cannot. Resumptions live in the env as `Entry.ek`
+     closures (CBPV values), never inside a `Comp` result. `bind`/`handleC`/`eval`
+     all take **fuel** (a resumed `k w` is not a structural subterm). `rfl`-validated
+     against the same seven demonstrators. This is the object the bisimulation is
+     stated against — and proving it can be written at all turns ADR-0015's "a
+     reference would be a second machine, no shortcut" prose into a checked artifact.
+4. **The bisimulation itself** (`CalcReifySim.lean`) — `exec ∘ compile ≡ run` between
+   the flat machine and the denotational reference. Proven for the pure fragment and
+   the **first firing case**; the resuming case is the residual. Details next.
+
+### The bisimulation, what's proven and the two ideas that unlocked firing
+
+The statement reuses insight #1 (forward to a concrete `some r`, fuels aligned via
+the existential `∃ F'`), but it is a **machine-vs-reference** sim, not machine-vs-its-
+own-spec — the two sides are *different implementations* (defunctionalized `Kont`
+vs real `Comp` closures). Layers, bottom-up:
+
+- **Pure core** (`pure_sim`/`pure_correct`). The `val`/`add`/`var`/`let` fragment,
+  with the handler stack `K` and data stack carried as **passengers** threaded
+  unchanged. This is where the flat machine's new bits live (return-through-`K`,
+  `BIND`/`UNBIND`). `RelVal`/`RelEnv` relate machine `Value`s to reference `Entry`s
+  (int case only, so far).
+- **Tie `pden` to the real reference** (`eval_pure`/`pure_correct_ref`). The
+  structural denotation `pden` *is* the `ret`-fragment of `CalcReifyRef.eval`, so the
+  pure core is a genuine two-implementation agreement (both `run`s yield `n`).
+- **`handle` over a *pure body*** (`IsPure.handle`, `handleC_ret`). An **unfired
+  handler is transparent**: a pure body never performs, so the clause is dead and
+  both sides yield the body's value. This brings the `INSTALL` instruction and the
+  return-through-a-handler-frame path into the proof *without* needing `vcont ↔ ek`.
+- **The first ∀-quantified FIRING theorem** (`fire_agree`). For any pure payload `e`
+  and any pure **non-resuming** `clause`, machine and reference agree on `handle
+  clause (perform e)` — the clause genuinely runs with the captured continuation
+  (zero-shot / payload-threading). **Two ideas made it provable, both transferable:**
+
+  1. **An environment-independent structural fuel bound `fuelOf : Src → Nat`** (not an
+     opaque `∃ F`). The reference's resumption closure *captures the ambient fuel*; an
+     `∃ F` bound for the clause could then secretly depend on the resumption — a
+     **circularity**. But the fuel a pure clause needs is a *structural number* of its
+     term, independent of the environment. Restating `eval_pure` as `∀ f ≥ fuelOf e`
+     breaks the loop. (General lesson: when a fuel witness must survive being placed
+     under a fuel-capturing closure, make the witness *structural*, not existential.)
+  2. **A *partial* value relation `RelEnv.consK`.** It relates an **opaque** machine
+     `vcont` slot to a reference `ek` slot, asserting **nothing** about invoking
+     them. Sound *because the clause is non-resuming* — it never reads the slot as an
+     int (`relEnv_lookup` still holds: it only resolves `ev` entries; an `ek` can
+     never match `some (ev n)`). This is the honest stub that the full step-indexed
+     relation will replace. (General lesson: a logical relation can be introduced
+     **partially** — relate-but-don't-constrain the slots a given theorem never
+     observes — to land real results before the hard, fully-constrained version.)
+- **In-Lean `Agree` on the *resuming* programs** `fire_agree` doesn't yet generalise.
+  `run = some (vint k) ∧ CalcReifyRef.run = some k`, by `⟨rfl, rfl⟩`, for multi-shot
+  (incl. triple), non-tail, re-handling. Both sides in-Lean — strictly stronger than
+  the TS fuzz, covering exactly the firing behaviours the inductive proof can't reach.
+
+**The residual, stated sharply:** a **resuming** clause proved ∀-generally — i.e.
+the full step-indexed `vcont ↔ ek` relation, where the two resumptions must agree
+**when invoked**, not merely be ignorable (the `consK` stub becomes a real
+constructor carrying that agreement). That is the paper-grade core; it now rests on
+proven `fuelOf` + firing machinery, not bare arithmetic.
+
+### Reification gotchas (cost real time)
+
+- **`rec` is a Lean keyword** — don't name a binder `rec` (rename `recov`). Structure
+  literals `{ field := … }` can hit parse issues in some positions; `Frame.mk …` is a
+  reliable fallback.
+- **`DecidableEq` deriving fails on a `List Instr`-recursive constructor** (`INSTALL`
+  holds `List Instr`). Don't derive it — use `by rfl` for `Decidable`-shaped goals on
+  closed terms; `native_decide` is unavailable without the instance.
+- **`let`-bound frames don't auto-unfold under `simp [exec]`.** A `let frN : Frame :=
+  …` in a proof needs `simp [exec, frN]` (name the let) to reduce a return-through-`frN`
+  step. Easy to miss — the goal stalls on `exec 1 frN.retCode …`.
+- **A firing reduction is built inside-out.** `machine_fire` constructs the `exec`
+  chain from the clause's halt outward: clause-halts-via-`pure_sim` → `PERFORM` fires
+  (captures the `vcont`, prepends `[payload, kont]` to the env) → compile-`e`-via-
+  `pure_sim` pushes the payload → `INSTALL` pushes the frame. Each step is a `have
+  hX : exec (F+1) … = some r := by simp only [exec]; exact h_prev`.
+- **Process note (environment, not Lean):** this arc hit a badly *lagged shell output
+  buffer* — `lake build`/`git` results arrived several tool-calls late, and trusting a
+  stale "success" led to committing a file that didn't compile (twice). The fix that
+  restored reliability: **nonce-tagged, single-command verification** — `lake build
+  > /tmp/x 2>&1; echo "NONCE-1234 RC=$? errs=$(grep -c error /tmp/x)"` — so each result
+  is unambiguously from *this* run. Never commit a proof on a build result you can't
+  tie to the current file state; a `sorry`-free claim demands a current-run RC=0.

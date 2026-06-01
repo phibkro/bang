@@ -16,7 +16,7 @@ A small language whose **paradigm and runtime are values, not language features*
 | the verified reference (K1 unifier) | `effectrow-oracle/oracle-lean/Bang/EffectRow.lean` (Lean 4 + Mathlib) |
 | the reference `eval` (K2/K3 source) | `effectrow-oracle/oracle-lean/Bang/Eval.lean` |
 | the calculated machines (K2/K3) | `Bang/{Calc, CalcHO, CalcCBN, CalcEff, CalcSt, CalcCBNEff, CalcCBNSt, CalcCBNEffSt}.lean` — all proven `exec ∘ compile ≡ eval` (see playhead table) · `CalcReify.lean` — the reification frontier (machine + demonstrators verified; general theorem pending) |
-| **how to prove the next increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, mutual-induction & two-part-sim patterns, gotchas. **Read before proving.** |
+| **how to prove the next increment** | `docs/notes/k2-calculation-playbook.md` — fuel-alignment, mutual-induction & two-part-sim patterns, gotchas; **+ the K3 reification frontier section** (validation ladder, the `fuelOf`/`consK` ideas that unlocked firing handlers, the resuming residual). **Read before proving.** |
 | the standing guarantee | `effectrow-oracle/harness/` (differential tests) + `effectrow-oracle/tools/selfcheck.mjs` |
 | what to read | reading canon, end of the roadmap `.md` |
 
