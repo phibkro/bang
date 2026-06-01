@@ -1324,6 +1324,66 @@ theorem sim_pure_lift (e : Src) (he : IsPure e) {i : Nat} {renv : REnv} {env : E
   obtain ⟨n, hn, hobs⟩ := hK m F' r hF'
   exact ⟨fuelOf e, n, hn, by rw [eval_pure e he hpd (fuelOf e) (Nat.le_refl _)]; exact hobs⟩
 
+/-- A value related to an `ek g` slot is a `vcont` (a `vint` would be `False` at every
+index). -/
+theorem relV_ek_form {i : Nat} {vc : Value} {g : Int → Comp} (h : RelV i vc (.ek g)) :
+    ∃ cC cE cS clC clE, vc = .vcont cC cE cS clC clE := by
+  cases vc with
+  | vint m => cases i <;> simp [RelV] at h
+  | vcont cC cE cS clC clE => exact ⟨cC, cE, cS, clC, clE, rfl⟩
+
+/-- Lookup at a resumption slot: if the reference finds `ek g` at `j`, the machine
+finds a value `vc` there related to `ek g`. -/
+theorem relEnvI_lookup_ek {i : Nat} {env : Env} {renv : REnv} (h : RelEnvI i env renv) :
+    ∀ {j : Nat} {g : Int → Comp}, renv[j]? = some (.ek g) →
+      ∃ vc, env[j]? = some vc ∧ RelV i vc (.ek g) := by
+  induction h with
+  | nil => intro j g hj; simp at hj
+  | cons hv _ ih =>
+    intro j g hj
+    cases j with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hj
+      subst hj
+      exact ⟨_, by simp [List.getElem?_cons_zero], hv⟩
+    | succ k => simp only [List.getElem?_cons_succ] at hj ⊢; exact ih hj
+
+/-- **The validation milestone: the `resume` case of the general simulation, for a
+pure resume-argument.** This is the first theorem that genuinely **consumes** the
+step-indexed `RelV` agreement: slot `j` of the env holds a `vcont` related to the
+reference resumption `g`; the machine runs `resume (var j) v` to exactly `RelV`'s
+splice antecedent, which — discharging the `RelK` hypothesis with the ambient
+`RelKont` — delivers the reference agreement at the predecessor index `i`. The
+predecessor-index headroom (env at `i+1`, conclusion at `i`) makes it typecheck.
+Dodges `perf_outcome_mono` (pure `v`); confirms the (B) architecture is viable. -/
+theorem sim_resume_pure_v {i : Nat} {renv : REnv} {env : Env} (henv : RelEnvI (i + 1) env renv)
+    {j : Nat} {g : Int → Comp} (hgj : renv[j]? = some (.ek g))
+    {v : Src} (hv : IsPure v) {w : Int} (hpv : pden renv v = some w)
+    (c : Code) (s : Stack) (K : Kont) (Kref : RefK) (hK : RelKont i c env s K Kref)
+    (F : Nat) (r : Value) (hr : exec F (compile (.resume (.var j) v) c) env s K = some r) :
+    ∃ (G : Nat) (n : Int),
+      RelV i r (.ev n) ∧ observe (Kref (CalcReifyRef.eval G renv (.resume (.var j) v))) = some n := by
+  obtain ⟨vc, hvcj, hRelVc⟩ := relEnvI_lookup_ek henv hgj
+  obtain ⟨cC, cE, cS, clC, clE, rfl⟩ := relV_ek_form hRelVc
+  simp only [compile] at hr
+  cases F with
+  | zero => simp [exec] at hr
+  | succ F0 =>
+    simp only [exec, hvcj] at hr
+    obtain ⟨F1, hF1⟩ := pure_sim_back v hv (relEnvI_forget henv) hpv (Instr.RESUME :: c)
+      (Value.vcont cC cE cS clC clE :: s) K F0 r hr
+    cases F1 with
+    | zero => simp [exec] at hF1
+    | succ F1' =>
+      simp only [exec] at hF1
+      simp only [RelV] at hRelVc
+      obtain ⟨n, hn, hobs⟩ := hRelVc w env c s K Kref hK F1' r hF1
+      refine ⟨fuelOf v + 2, n, hn, ?_⟩
+      have href : CalcReifyRef.eval (fuelOf v + 2) renv (.resume (.var j) v) = g w := by
+        show CalcReifyRef.eval ((fuelOf v + 1) + 1) renv (.resume (.var j) v) = g w
+        simp only [CalcReifyRef.eval, hgj, eval_pure v hv hpv (fuelOf v + 1) (by omega), bind_ret]
+      rw [href]; exact hobs
+
 end Resuming
 
 end Bang.CalcReifySim
