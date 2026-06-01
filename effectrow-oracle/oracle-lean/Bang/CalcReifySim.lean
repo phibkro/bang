@@ -980,6 +980,159 @@ example :
   fire_multishot (e := .val 5) (v1 := .val 7) (v2 := .val 20)
     .val .val .val (by rfl) (fun _ => by rfl) (fun _ => by rfl)
 
+/-! ### Deep re-handling: the resumed continuation itself performs
+
+`handle (resume (var 1) v) (add (perform e1) (perform e2))` — `perform e1` fires; the
+clause resumes; the resumed continuation runs `+ (perform e2)`, which **performs
+again** and is caught by the *re-installed* handler (deep); the clause resumes a
+second time. Result `w1 + w2` where `wᵢ = ⟦v⟧` under payload `pᵢ` (the clause runs in
+a different env per fire). This is the genuine deep mechanism — provable by direct
+construction here (the firing count is fixed by the skeleton; the language has no
+recursion). The full ∀-`Src` generality is what `RelV` is for (ADR-0015). -/
+
+/-- Reduce a two-perform body to a **nested** `perf`: `eval (add (perform e1)
+(perform e2)) = perf p1 (fun w ⇒ perf p2 (fun w' ⇒ ret (w + w')))`. The inner `perf`
+is what makes the resumption itself perform (deep). -/
+theorem eval_add_perform_perform {e1 e2 : Src} (he1 : IsPure e1) (he2 : IsPure e2)
+    {p1 p2 : Int} (hp1 : pden [] e1 = some p1) (hp2 : pden [] e2 = some p2) :
+    ∀ f, fuelOf e1 + fuelOf e2 + 6 ≤ f →
+      CalcReifyRef.eval f [] (.add (.perform e1) (.perform e2))
+        = .perf p1 (fun w => .perf p2 (fun w' => .ret (w + w'))) := by
+  intro f hf
+  obtain ⟨S0, rfl⟩ : ∃ k, f = k + 3 := ⟨f - 3, by omega⟩
+  have hadd : CalcReifyRef.eval (S0 + 3) [] (.add (.perform e1) (.perform e2))
+      = CalcReifyRef.bind (S0 + 2) (CalcReifyRef.eval (S0 + 2) [] (.perform e1))
+          (fun x => CalcReifyRef.bind (S0 + 2) (CalcReifyRef.eval (S0 + 2) [] (.perform e2))
+            (fun y => .ret (x + y))) := rfl
+  rw [hadd, eval_perform he1 hp1 (S0 + 2) (by omega), eval_perform he2 hp2 (S0 + 2) (by omega)]
+  simp only [CalcReifyRef.bind]
+
+/-- Reference side of deep re-handling. The body is a nested `perf`; `handleC` fires
+the clause for `p1` (installs `res1`), which resumes — and `res1 ⟦v⟧` is itself a
+`perf p2`, so `handleC` fires **again** for `p2` (installs `res2`), which resumes →
+`ret (w1 + w2)`. Two firings, the second from inside the first's resumption. -/
+theorem ref_fire_deep {e1 e2 v : Src}
+    (he1 : IsPure e1) (he2 : IsPure e2) (hv : IsPure v)
+    {p1 p2 w1 w2 : Int}
+    (hp1 : pden [] e1 = some p1) (hp2 : pden [] e2 = some p2)
+    (hpv1 : ∀ (g : Int → Comp), pden (.ev p1 :: .ek g :: []) v = some w1)
+    (hpv2 : ∀ (g : Int → Comp), pden (.ev p2 :: .ek g :: []) v = some w2) :
+    ∀ f, fuelOf e1 + fuelOf e2 + fuelOf v + 8 ≤ f →
+      CalcReifyRef.eval f [] (.handle (.resume (.var 1) v) (.add (.perform e1) (.perform e2)))
+        = .ret (w1 + w2) := by
+  intro f hf
+  obtain ⟨S, rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+  rw [eval_handle_def, eval_add_perform_perform he1 he2 hp1 hp2 S (by omega)]
+  obtain ⟨S1, rfl⟩ : ∃ k, S = k + 1 := ⟨S - 1, by omega⟩
+  simp only [CalcReifyRef.handleC]
+  obtain ⟨S2, rfl⟩ : ∃ k, S1 = k + 1 := ⟨S1 - 1, by omega⟩
+  simp only [CalcReifyRef.eval, List.getElem?_cons_zero, List.getElem?_cons_succ]
+  rw [eval_pure v hv (hpv1 _) S2 (by omega)]
+  obtain ⟨S3, rfl⟩ : ∃ k, S2 = k + 1 := ⟨S2 - 1, by omega⟩
+  simp only [bind_ret, CalcReifyRef.handleC]
+  simp only [CalcReifyRef.eval, List.getElem?_cons_zero, List.getElem?_cons_succ]
+  rw [eval_pure v hv (hpv2 _) S3 (by omega)]
+  obtain ⟨S4, rfl⟩ : ∃ k, S3 = k + 1 := ⟨S3 - 1, by omega⟩
+  simp only [bind_ret, CalcReifyRef.handleC]
+
+/-- Machine side of deep re-handling, built inside-out. `perform e1` fires (captures
+`kv1 = vcont cAfterP1 …`); the clause resumes with `w1`; the splice runs `cAfterP1`
+which performs `e2` — caught by the **re-installed handler `frH1`** (deep) — firing
+again (captures `kv2 = vcont [ADD] …`); the clause resumes with `w2`; ADD → `w1+w2`,
+which unwinds through both re-installed handlers' frames to the top. -/
+theorem machine_fire_deep {e1 e2 v : Src}
+    (he1 : IsPure e1) (he2 : IsPure e2) (hv : IsPure v)
+    {p1 p2 w1 w2 : Int}
+    (hp1 : pden [] e1 = some p1) (hp2 : pden [] e2 = some p2)
+    (hpv1 : ∀ (g : Int → Comp), pden (.ev p1 :: .ek g :: []) v = some w1)
+    (hpv2 : ∀ (g : Int → Comp), pden (.ev p2 :: .ek g :: []) v = some w2) :
+    ∃ F, run F (.handle (.resume (.var 1) v) (.add (.perform e1) (.perform e2)))
+      = some (.vint (w1 + w2)) := by
+  let clCode : Code := compile (.resume (.var 1) v) []
+  let cAfterP1 : Code := compile e2 (Instr.PERFORM :: [Instr.ADD])
+  let kv1 : Value := .vcont cAfterP1 [] [] clCode []
+  let kv2 : Value := .vcont [Instr.ADD] [] [Value.vint w1] clCode []
+  let frRet1 : Frame := { clause := none, retCode := [], retEnv := [], retStack := [] }
+  let frH1 : Frame := { clause := some (clCode, []), retCode := [], retEnv := [Value.vint p1, kv1], retStack := [] }
+  let frP1 : Frame := { clause := none, retCode := [], retEnv := [Value.vint p1, kv1], retStack := [] }
+  let frRet2 : Frame := { clause := none, retCode := [], retEnv := [Value.vint p1, kv1], retStack := [] }
+  let frH2 : Frame := { clause := some (clCode, []), retCode := [], retEnv := [Value.vint p2, kv2], retStack := [] }
+  let frP2 : Frame := { clause := none, retCode := [], retEnv := [Value.vint p2, kv2], retStack := [] }
+  have hcl_eq : clCode = Instr.LOOKUP 1 :: compile v [Instr.RESUME] := rfl
+  have henvC1 : RelEnv [Value.vint p1, kv1] (.ev p1 :: .ek (fun _ => Comp.stuck) :: []) :=
+    .cons (.int p1) (.consK kv1 (fun _ => Comp.stuck) .nil)
+  have henvC2 : RelEnv [Value.vint p2, kv2] (.ev p2 :: .ek (fun _ => Comp.stuck) :: []) :=
+    .cons (.int p2) (.consK kv2 (fun _ => Comp.stuck) .nil)
+  -- final unwind through both re-installed handlers + pure frames + PERFORM frames.
+  have hret : exec 6 [] [] [Value.vint (w1 + w2)] [frH2, frP2, frRet2, frP1, frRet1]
+      = some (.vint (w1 + w2)) := by simp [exec, frH2, frP2, frRet2, frP1, frRet1]
+  have hadd : exec 7 [Instr.ADD] [] [Value.vint w2, Value.vint w1] [frH2, frP2, frRet2, frP1, frRet1]
+      = some (.vint (w1 + w2)) := by simp only [exec]; exact hret
+  -- second RESUME splices kv2 (captured `[ADD]`, stack [w1]).
+  have hres2 : exec 8 [Instr.RESUME] [Value.vint p2, kv2] [Value.vint w2, kv2] [frRet2, frP1, frRet1]
+      = some (.vint (w1 + w2)) := by simp only [exec, kv2]; exact hadd
+  obtain ⟨Fv2, hFv2⟩ := pure_sim v hv henvC2 (hpv2 _) [Instr.RESUME] [kv2] [frRet2, frP1, frRet1] 8
+    (.vint (w1 + w2)) hres2
+  have hlk2 : exec (Fv2 + 1) clCode [Value.vint p2, kv2] [] [frRet2, frP1, frRet1]
+      = some (.vint (w1 + w2)) := by
+    rw [hcl_eq]; simp only [exec, List.getElem?_cons_zero, List.getElem?_cons_succ]; exact hFv2
+  -- second PERFORM fires the *re-installed* handler frH1 (deep), capturing kv2.
+  have hperf2 : exec (Fv2 + 2) (Instr.PERFORM :: [Instr.ADD]) [] [Value.vint p2, Value.vint w1]
+      [frH1, frP1, frRet1] = some (.vint (w1 + w2)) := by simp only [exec, frH1]; exact hlk2
+  obtain ⟨Fe2, hFe2⟩ := pure_sim e2 he2 (.nil) hp2 (Instr.PERFORM :: [Instr.ADD]) [Value.vint w1]
+    [frH1, frP1, frRet1] (Fv2 + 2) (.vint (w1 + w2)) hperf2
+  -- first RESUME splices kv1 (captured `cAfterP1`, which performs e2).
+  have hres1 : exec (Fe2 + 1) [Instr.RESUME] [Value.vint p1, kv1] [Value.vint w1, kv1] [frRet1]
+      = some (.vint (w1 + w2)) := by simp only [exec, kv1]; exact hFe2
+  obtain ⟨Fv1, hFv1⟩ := pure_sim v hv henvC1 (hpv1 _) [Instr.RESUME] [kv1] [frRet1] (Fe2 + 1)
+    (.vint (w1 + w2)) hres1
+  have hlk1 : exec (Fv1 + 1) clCode [Value.vint p1, kv1] [] [frRet1]
+      = some (.vint (w1 + w2)) := by
+    rw [hcl_eq]; simp only [exec, List.getElem?_cons_zero, List.getElem?_cons_succ]; exact hFv1
+  -- first PERFORM fires the installed handler, capturing kv1.
+  have hperf1 : exec (Fv1 + 2) (Instr.PERFORM :: cAfterP1) [] [Value.vint p1]
+      [{ clause := some (clCode, []), retCode := [], retEnv := [], retStack := [] }]
+        = some (.vint (w1 + w2)) := by simp only [exec]; exact hlk1
+  obtain ⟨Fe1, hFe1⟩ := pure_sim e1 he1 (.nil) hp1 (Instr.PERFORM :: cAfterP1) [] [_] (Fv1 + 2)
+    (.vint (w1 + w2)) hperf1
+  have hinstall : exec (Fe1 + 1)
+      (Instr.INSTALL clCode [] :: compile e1 (Instr.PERFORM :: cAfterP1)) [] [] []
+        = some (.vint (w1 + w2)) := by simp only [exec]; exact hFe1
+  exact ⟨Fe1 + 1, hinstall⟩
+
+/-- **∀-quantified *deep re-handling* firing agreement.** The clause resumes; the
+resumed continuation **performs again** and is caught by the re-installed handler,
+firing the clause a second time. Machine and reference agree on `w1 + w2` (with
+`wᵢ = ⟦v⟧` under payload `pᵢ`). This is the genuine deep mechanism, proved
+∀-generally over the pure subterms — a fixed-skeleton (case A) result; the full
+∀-`Src` generality is what `RelV` is for (ADR-0015). -/
+theorem fire_deep {e1 e2 v : Src}
+    (he1 : IsPure e1) (he2 : IsPure e2) (hv : IsPure v)
+    {p1 p2 w1 w2 : Int}
+    (hp1 : pden [] e1 = some p1) (hp2 : pden [] e2 = some p2)
+    (hpv1 : ∀ (g : Int → Comp), pden (.ev p1 :: .ek g :: []) v = some w1)
+    (hpv2 : ∀ (g : Int → Comp), pden (.ev p2 :: .ek g :: []) v = some w2) :
+    (∃ F, run F (.handle (.resume (.var 1) v) (.add (.perform e1) (.perform e2)))
+      = some (.vint (w1 + w2))) ∧
+    (∃ G, CalcReifyRef.run G (.handle (.resume (.var 1) v) (.add (.perform e1) (.perform e2)))
+      = some (w1 + w2)) := by
+  refine ⟨machine_fire_deep he1 he2 hv hp1 hp2 hpv1 hpv2, ?_⟩
+  exact ⟨fuelOf e1 + fuelOf e2 + fuelOf v + 8,
+    by simp only [CalcReifyRef.run, ref_fire_deep he1 he2 hv hp1 hp2 hpv1 hpv2 _ (Nat.le_refl _)]⟩
+
+/-! ## A deep-re-handling demonstrator via `fire_deep`
+
+`handle (resume (var 1) (val 7)) (add (perform (val 1)) (perform (val 2)))` — the 14
+demonstrator from the `rfl` set, now proved ∀-generally: `perform 1` fires, the
+clause resumes with 7, the resumed `+ (perform 2)` performs again (caught by the
+re-installed handler — **deep**), the clause resumes with 7 again → `7 + 7 = 14`. -/
+example :
+    let prog : Src := .handle (.resume (.var 1) (.val 7))
+      (.add (.perform (.val 1)) (.perform (.val 2)))
+    (∃ F, run F prog = some (.vint 14)) ∧ (∃ G, CalcReifyRef.run G prog = some 14) :=
+  fire_deep (e1 := .val 1) (e2 := .val 2) (v := .val 7)
+    .val .val .val (by rfl) (by rfl) (fun _ => by rfl) (fun _ => by rfl)
+
 end Resuming
 
 end Bang.CalcReifySim
