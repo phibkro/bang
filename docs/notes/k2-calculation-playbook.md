@@ -405,9 +405,40 @@ vs real `Comp` closures). Layers, bottom-up:
   `consK` constructor collapses into `cons` (one construct per problem) — `RelEnvI`
   is just `nil`/`cons`.
 
-**The residual, stated sharply:** a **resuming** clause proved ∀-generally —
-`capture_relates` (a PERFORM-capture satisfies `RelV`) and the firing theorem on
-it. Two findings sharpen where the difficulty actually is:
+**Two ∀-quantified *resuming* firing theorems are now proven** (sorry-free, by
+**direct inside-out construction** — they dodge the `RelV`-invocation crux because
+the resumed continuation stays pure, so its result is an integer, index-free):
+- **`fire_resume_tail`** — `handle (resume (var 1) v) (perform e)` ≡ `⟦v⟧` (tail
+  resume, *empty* captured continuation). First ∀-quantified theorem where the
+  resumption is genuinely invoked.
+- **`fire_resume_nontail_body`** — `handle (resume (var 1) v) (add (perform e) rest)`
+  ≡ `⟦v⟧ + ⟦rest⟧` (non-tail body, *non-empty* captured continuation `compile rest
+  [ADD]` — the splice runs real captured code). The 1007 demonstrator, ∀-general.
+
+The reusable proof shapes: machine side built **inside-out** exactly like
+`machine_fire` (halt → return-throughs → RESUME splice → LOOKUP/`pure_sim` v →
+PERFORM → `pure_sim` e → INSTALL), with the captured `vcont`/frames as `let`s and
+the recursive `clCode`-in-`kv` occurrence handled by a `rfl` head-rewrite
+(`hcl_eq`) so `simp` never unfolds `clCode` *inside* `kv`. Reference side: a
+`eval_*` reduction lemma (`eval_perform` / `eval_add_perform`) gives the body's
+`perf p k` with a **clean** resumption (the `bind`/`eval` fuel-closures collapse
+because the continuation is pure — `eval_add_perform` does this via plain `simp
+[bind, eval_pure-as-rewrite]`, no `funext`), then `handleC`+clause unfolds mirror
+`ref_fire`. Control eval-unfolding with `rfl`-`have`s for single steps — `simp only
+[eval]` over-unfolds, but it's *safe* on a term whose `Src` argument is a variable
+(it can't reduce an opaque `eval f env v`).
+
+**The residual, stated sharply:** the cases the **direct construction does not yet
+cover**, ordered by difficulty:
+- **non-tail *clause*** (`add (resume@1 v) rest2`) and **multi-shot** (clause
+  resumes twice) — still one-shot-of-pure-resumed leaves, provable by the *same*
+  direct construction (just longer chains: the RESUME pure-frame `retCode` carries
+  the clause's own `+ rest2` / the second resume). These would give the full 1107
+  and `2027` demonstrators ∀-generally.
+- **deep / re-handling** (the resumed continuation *itself performs*) — the genuine
+  paper-grade core, and the only case that **must** invoke `RelV`'s agreement
+  (`capture_relates`: a PERFORM-capture satisfies `RelV`). Two findings sharpen
+  where *its* difficulty is:
 
 - **The frozen-fuel crux only bites on a *performing* resumed continuation.** The
   reference's `res w = handleC fuel (k w) clause cEnv` captures the ambient `fuel`;

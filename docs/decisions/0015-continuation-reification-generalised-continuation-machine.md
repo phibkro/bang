@@ -141,14 +141,26 @@ being attacked directly, in two committed, `sorry`-free pieces:
     it. (See the playbook's K3 section for the four definability decisions and two
     sharpenings of where the difficulty lives.)
 
-  The remaining residual is a **resuming** clause proved ∀-generally — proving
-  `capture_relates` (a PERFORM-capture satisfies `RelV`) and the firing theorem on
-  it. The genuine paper-grade core is the **deep / re-handling** sub-case, where the
-  resumed continuation itself performs: there the reference's captured (frozen) fuel
-  forces a *perf-outcome* monotonicity that is itself bisimulation-shaped. The
-  **one-shot / pure-resumed-body fragment** dodges that (the resumed continuation is
-  pure, so `handleC_ret` closes the reference side) and is the recommended next
-  milestone.
+  - **Two ∀-quantified *resuming* firing theorems are now proven**, sorry-free:
+    `fire_resume_tail` (`handle (resume (var 1) v) (perform e) ≡ ⟦v⟧` — tail resume,
+    empty captured continuation) and `fire_resume_nontail_body`
+    (`handle (resume (var 1) v) (add (perform e) rest) ≡ ⟦v⟧ + ⟦rest⟧` — non-tail
+    body, *non-empty* captured continuation; the 1007 demonstrator, now ∀-general).
+    These are the first results where the resumption is genuinely **invoked**
+    generally (stronger than `fire_agree`, non-resuming; stronger than the `Agree`
+    `rfl`-demonstrators, program-specific). They are proved by **direct inside-out
+    construction** (machine side like `machine_fire`; reference side via a clean
+    `eval_*` reduction + `handleC`), dodging the `RelV`-invocation crux because the
+    resumed continuation stays pure (its result is an integer, index-free).
+
+  The remaining residual, ordered by difficulty: (a) **non-tail clause** and
+  **multi-shot** — still one-shot-of-pure-resumed leaves, reachable by the same
+  direct construction (longer chains); (b) the **deep / re-handling** sub-case (the
+  resumed continuation itself performs) — the genuine paper-grade core, the only one
+  that *must* invoke `RelV`'s agreement (`capture_relates`), where the reference's
+  frozen fuel forces a perf-outcome monotonicity that is itself bisimulation-shaped.
+  (See the playbook's K3 section for the reusable proof shapes and the
+  contravariance/downward-closure caveat.)
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest
