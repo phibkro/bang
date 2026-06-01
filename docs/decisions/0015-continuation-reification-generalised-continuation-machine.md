@@ -96,12 +96,14 @@ being attacked directly, in two committed, `sorry`-free pieces:
 - `Bang/CalcReifySim.lean` — the **pure core** of the bisimulation: the
   continuation-passing simulation (cf. `CalcCBN.sim`) for the `val`/`add`/`var`/
   `let` fragment, with the handler stack `K` and data stack carried as passengers,
-  proven by structural induction (`pure_sim`/`pure_correct`). The structural
-  denotation `pden` is the `ret`-fragment of `CalcReifyRef.eval`; tying it to the
-  fuel-indexed reference is a straightforward follow-up. The value relation
-  `RelVal`/`RelEnv` scaffolding is in place (int case); the `vcont ↔ ek` case — a
-  step-indexed logical relation for resumptions — is the remaining residual that
-  unlocks `perform`/`handle`/`resume`.
+  proven by structural induction (`pure_sim`/`pure_correct`). Crucially `eval_pure`/
+  `pure_correct_ref` prove the structural denotation `pden` *is* the `ret`-fragment
+  of the real fuel-indexed reference `CalcReifyRef.eval` — so the pure core is a
+  genuine **machine-vs-reference** agreement (both `CalcReify.run` and
+  `CalcReifyRef.run` yield `n` on a closed pure program), not a parallel
+  definition. The value relation `RelVal`/`RelEnv` scaffolding is in place (int
+  case); the `vcont ↔ ek` case — a step-indexed logical relation for resumptions —
+  is the remaining residual that unlocks `perform`/`handle`/`resume`.
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest

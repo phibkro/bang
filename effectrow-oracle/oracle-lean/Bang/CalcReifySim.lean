@@ -18,8 +18,9 @@ The statement is the continuation-passing simulation of Bahr–Hutton (cf.
 `compile e c` succeeds with the same result — with the handler stack `K` and the
 rest of the data stack `s` universally quantified and threaded unchanged. We pin
 the pure denotation with a structural evaluator `pden` (no fuel: pure terms are
-strongly normalising), which is the `ret`-fragment of `CalcReifyRef.eval` — tying
-`pden` to the fuel-indexed reference is a straightforward follow-up.
+strongly normalising); `eval_pure`/`pure_correct_ref` below prove `pden` is
+exactly the `ret`-fragment of the real reference `CalcReifyRef.eval`, so the pure
+core is a genuine machine-vs-reference agreement, not a parallel definition.
 
 **Scope / honesty:** this file proves only the pure fragment. The effect cases
 (`perform`/`handle`/`resume`) need the value relation `vcont ↔ ek` — a
@@ -148,5 +149,93 @@ theorem pure_correct {e : Src} (hpure : IsPure e) {n : Int} (hp : pden [] e = so
   obtain ⟨F, hF⟩ := pure_sim e hpure (renv := []) (env := []) RelEnv.nil hp [] [] [] 1 (.vint n)
     (by simp [exec])
   exact ⟨F, hF⟩
+
+/-! ## Tying `pden` to the real reference
+
+`pden` is not an ad-hoc stand-in: on the pure fragment it is exactly what the
+denotational reference `CalcReifyRef.eval` computes (a `ret`), so `pure_sim`/
+`pure_correct` above are genuinely statements about the reference, not a parallel
+definition. The proof is the standard fuel-monotone form (`∀ f ≥ F`), so the two
+sides' fuels can always be aligned. -/
+
+/-- `bind` consumes a `ret` in one step. -/
+theorem bind_ret (k : Nat) (x : Int) (g : Int → Comp) :
+    CalcReifyRef.bind (k + 1) (.ret x) g = g x := by
+  simp [CalcReifyRef.bind]
+
+/-- On a pure term, `CalcReifyRef.eval` returns `ret (pden …)` once it has enough
+fuel — fuel-monotone in the standard `∀ f ≥ F` form. -/
+theorem eval_pure : ∀ (e : Src), IsPure e → ∀ {renv : REnv} {n : Int}, pden renv e = some n →
+    ∃ F, ∀ f, F ≤ f → CalcReifyRef.eval f renv e = .ret n := by
+  intro e
+  induction e with
+  | val m =>
+    intro _ renv n hp
+    simp only [pden] at hp; obtain rfl := Option.some.inj hp
+    refine ⟨1, fun f hf => ?_⟩
+    obtain ⟨f', rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+    simp only [CalcReifyRef.eval]
+  | var i =>
+    intro _ renv n hp
+    simp only [pden] at hp
+    cases hri : renv[i]? with
+    | none => rw [hri] at hp; simp at hp
+    | some entry => cases entry with
+      | ek f => rw [hri] at hp; simp at hp
+      | ev m =>
+        rw [hri] at hp; simp only [Option.some.injEq] at hp; subst hp
+        refine ⟨1, fun f hf => ?_⟩
+        obtain ⟨f', rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+        simp only [CalcReifyRef.eval, hri]
+  | add a b iha ihb =>
+    intro hpure renv n hp
+    cases hpure with
+    | add hpa hpb =>
+      simp only [pden] at hp
+      cases ha : pden renv a with
+      | none => rw [ha] at hp; simp at hp
+      | some x => cases hb : pden renv b with
+        | none => rw [ha, hb] at hp; simp at hp
+        | some y =>
+          rw [ha, hb] at hp; simp only [Option.some.injEq] at hp; subst hp
+          obtain ⟨Fa, hFa⟩ := iha hpa ha
+          obtain ⟨Fb, hFb⟩ := ihb hpb hb
+          refine ⟨Fa + Fb + 2, fun f hf => ?_⟩
+          obtain ⟨f', rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+          have hfa : Fa ≤ f' := by omega
+          have hfb : Fb ≤ f' := by omega
+          obtain ⟨f'', rfl⟩ : ∃ k, f' = k + 1 := ⟨f' - 1, by omega⟩
+          simp only [CalcReifyRef.eval, hFa _ hfa, hFb _ hfb, bind_ret]
+  | letE e1 e2 ih1 ih2 =>
+    intro hpure renv n hp
+    cases hpure with
+    | letE hp1 hp2 =>
+      simp only [pden] at hp
+      cases h1 : pden renv e1 with
+      | none => rw [h1] at hp; simp at hp
+      | some v =>
+        rw [h1] at hp
+        obtain ⟨F1, hF1⟩ := ih1 hp1 h1
+        obtain ⟨F2, hF2⟩ := ih2 hp2 hp
+        refine ⟨F1 + F2 + 2, fun f hf => ?_⟩
+        obtain ⟨f', rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+        have hf1 : F1 ≤ f' := by omega
+        have hf2 : F2 ≤ f' := by omega
+        obtain ⟨f'', rfl⟩ : ∃ k, f' = k + 1 := ⟨f' - 1, by omega⟩
+        simp only [CalcReifyRef.eval, hF1 _ hf1, bind_ret]
+        exact hF2 _ hf2
+  | perform e1 _ => intro hpure _ _ _; cases hpure
+  | handle cl bd _ _ => intro hpure _ _ _; cases hpure
+  | resume k v _ _ => intro hpure _ _ _; cases hpure
+
+/-- **The pure core, against the real reference.** For a closed pure program both
+the machine (`CalcReify.run`) and the denotational reference (`CalcReifyRef.run`)
+agree: each yields `n`. This is the pure spine of `exec ∘ compile ≡ run` as a
+genuine two-implementation theorem. -/
+theorem pure_correct_ref {e : Src} (hpure : IsPure e) {n : Int} (hp : pden [] e = some n) :
+    (∃ F, run F e = some (.vint n)) ∧ (∃ G, CalcReifyRef.run G e = some n) := by
+  refine ⟨pure_correct hpure hp, ?_⟩
+  obtain ⟨G, hG⟩ := eval_pure e hpure (renv := []) hp
+  exact ⟨G, by simp only [CalcReifyRef.run, hG G (Nat.le_refl G)]⟩
 
 end Bang.CalcReifySim
