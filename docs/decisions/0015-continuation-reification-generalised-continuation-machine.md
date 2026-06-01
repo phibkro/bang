@@ -141,21 +141,25 @@ being attacked directly, in two committed, `sorry`-free pieces:
     it. (See the playbook's K3 section for the four definability decisions and two
     sharpenings of where the difficulty lives.)
 
-  - **Two ∀-quantified *resuming* firing theorems are now proven**, sorry-free:
+  - **Three ∀-quantified *resuming* firing theorems are now proven**, sorry-free:
     `fire_resume_tail` (`handle (resume (var 1) v) (perform e) ≡ ⟦v⟧` — tail resume,
-    empty captured continuation) and `fire_resume_nontail_body`
+    empty captured continuation), `fire_resume_nontail_body`
     (`handle (resume (var 1) v) (add (perform e) rest) ≡ ⟦v⟧ + ⟦rest⟧` — non-tail
-    body, *non-empty* captured continuation; the 1007 demonstrator, now ∀-general).
-    These are the first results where the resumption is genuinely **invoked**
-    generally (stronger than `fire_agree`, non-resuming; stronger than the `Agree`
-    `rfl`-demonstrators, program-specific). They are proved by **direct inside-out
-    construction** (machine side like `machine_fire`; reference side via a clean
-    `eval_*` reduction + `handleC`), dodging the `RelV`-invocation crux because the
-    resumed continuation stays pure (its result is an integer, index-free).
+    body, *non-empty* captured continuation; the 1007 demonstrator, now ∀-general),
+    and `fire_multishot` (`handle (add (resume@1 v1) (resume@1 v2)) (perform e) ≡
+    ⟦v1⟧ + ⟦v2⟧` — the resumption invoked **twice**, the signature reification
+    capability; demonstrator `27`). These are the first results where the resumption
+    is genuinely **invoked** generally (stronger than `fire_agree`, non-resuming;
+    stronger than the `Agree` `rfl`-demonstrators, program-specific). They are proved
+    by **direct inside-out construction** (machine side like `machine_fire`;
+    reference side via a clean `eval_*` reduction + `handleC`), dodging the
+    `RelV`-invocation crux because the resumed continuation stays pure (its result is
+    an integer, index-free).
 
   The remaining residual, ordered by difficulty: (a) **non-tail clause** and
-  **multi-shot** — still one-shot-of-pure-resumed leaves, reachable by the same
-  direct construction (longer chains); (b) the **deep / re-handling** sub-case (the
+  **multi-shot × non-empty captured continuation** (the full 2027) — still
+  one-shot-of-pure-resumed leaves, reachable by the same direct construction (longer
+  chains); (b) the **deep / re-handling** sub-case (the
   resumed continuation itself performs) — the genuine paper-grade core, the only one
   that *must* invoke `RelV`'s agreement (`capture_relates`), where the reference's
   frozen fuel forces a perf-outcome monotonicity that is itself bisimulation-shaped.

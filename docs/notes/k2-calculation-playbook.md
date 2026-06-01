@@ -405,7 +405,7 @@ vs real `Comp` closures). Layers, bottom-up:
   `consK` constructor collapses into `cons` (one construct per problem) — `RelEnvI`
   is just `nil`/`cons`.
 
-**Two ∀-quantified *resuming* firing theorems are now proven** (sorry-free, by
+**Three ∀-quantified *resuming* firing theorems are now proven** (sorry-free, by
 **direct inside-out construction** — they dodge the `RelV`-invocation crux because
 the resumed continuation stays pure, so its result is an integer, index-free):
 - **`fire_resume_tail`** — `handle (resume (var 1) v) (perform e)` ≡ `⟦v⟧` (tail
@@ -414,6 +414,12 @@ the resumed continuation stays pure, so its result is an integer, index-free):
 - **`fire_resume_nontail_body`** — `handle (resume (var 1) v) (add (perform e) rest)`
   ≡ `⟦v⟧ + ⟦rest⟧` (non-tail body, *non-empty* captured continuation `compile rest
   [ADD]` — the splice runs real captured code). The 1007 demonstrator, ∀-general.
+- **`fire_multishot`** — `handle (add (resume@1 v1) (resume@1 v2)) (perform e)` ≡
+  `⟦v1⟧ + ⟦v2⟧` (the resumption invoked **twice** — the signature reification
+  capability; the demonstrator `7+20=27`). Enabled by the reusable
+  `resume_empty_splice` helper (a RESUME of an empty-captured-continuation `vcont`
+  hands the value to the post-RESUME code in 3 fuel steps); the first resume's pure
+  frame carries the *second* resume as its continuation.
 
 The reusable proof shapes: machine side built **inside-out** exactly like
 `machine_fire` (halt → return-throughs → RESUME splice → LOOKUP/`pure_sim` v →
@@ -430,11 +436,13 @@ because the continuation is pure — `eval_add_perform` does this via plain `sim
 
 **The residual, stated sharply:** the cases the **direct construction does not yet
 cover**, ordered by difficulty:
-- **non-tail *clause*** (`add (resume@1 v) rest2`) and **multi-shot** (clause
-  resumes twice) — still one-shot-of-pure-resumed leaves, provable by the *same*
-  direct construction (just longer chains: the RESUME pure-frame `retCode` carries
-  the clause's own `+ rest2` / the second resume). These would give the full 1107
-  and `2027` demonstrators ∀-generally.
+- **non-tail *clause*** (`add (resume@1 v) rest2`) and **multi-shot × non-empty
+  captured continuation** (the full 2027: resume twice *and* each re-runs a `+rest`
+  body) — still one-shot-of-pure-resumed leaves, provable by the *same* direct
+  construction (longer chains: the RESUME pure-frame `retCode` carries the clause's
+  own `+ rest2`; the captured continuation is `compile rest [ADD]` rather than `[]`,
+  so `resume_empty_splice` is replaced by an explicit `pure_sim`-over-the-captured-
+  continuation step as in `machine_fire_resume_nontail`).
 - **deep / re-handling** (the resumed continuation *itself performs*) — the genuine
   paper-grade core, and the only case that **must** invoke `RelV`'s agreement
   (`capture_relates`: a PERFORM-capture satisfies `RelV`). Two findings sharpen
