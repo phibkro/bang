@@ -1276,6 +1276,54 @@ theorem capture_relates_add (rest : Src) (hrest : IsPure rest) {rstval : Int}
   · simp only [exec] at hF1
     exact hRelK (w + rstval) F2 r hF1
 
+/-! ## Toward (B): the general ∀-`Src` simulation
+
+The firing theorems and `capture_relates_*` above are bricks. The general
+bisimulation (case B) needs a **continuation correspondence** relating the machine's
+`Kont` to the reference's evaluation context. Per the design pass, the right shape is
+*observational*, not a structural recursion over `Code` (`compile` has no inverse):
+`RelKont` is exactly `RelV`'s inlined `RelK` hypothesis, lifted to a name, and bigger
+correspondences are *built by composition* (never by decompiling `Code`). The
+measure is the `RelV` step index; the conclusion is stated at the **predecessor
+index** of the env (env at `i+1`, result at `i`) to absorb `RelV`'s index drop. -/
+
+/-- **Continuation correspondence (observational).** The machine continuation
+`(c, env, s, K)` agrees with the reference context `Kref` at index `i`: feeding any
+related value `v` through the machine continuation halts compatibly with feeding
+`ret v` through `Kref`. This is literally `RelV`'s inlined `RelK` hypothesis — so a
+`RelKont` *is* exactly what `RelV`'s vcont↔ek clause demands and delivers. -/
+def RelKont (i : Nat) (c : Code) (env : Env) (s : Stack) (K : Kont) (Kref : RefK) : Prop :=
+  ∀ (v : Int) (F : Nat) (r : Value),
+    exec F c env (.vint v :: s) K = some r →
+    ∃ n, RelV i r (.ev n) ∧ observe (Kref (.ret v)) = some n
+
+/-- The top-level continuation: empty code/stack/`Kont` against the identity
+reference context. A value `v` reaching it halts as `vint v`, and `observe (ret v) =
+some v`. -/
+theorem relKont_nil (i : Nat) (env : Env) : RelKont i [] env [] [] (fun comp => comp) := by
+  intro v F r hr
+  cases F with
+  | zero => simp [exec] at hr
+  | succ F0 =>
+    simp only [exec] at hr
+    obtain rfl := (Option.some.inj hr).symm
+    exact ⟨v, by simp [RelV], by simp [observe]⟩
+
+/-- **The pure spine of the general simulation.** For a pure `e` whose denotation is
+`m`, the general-shape conclusion holds: the machine result is `RelV`-related and the
+reference (at fuel `fuelOf e`) observes the matching `n` through `Kref`. Reuses
+`pure_sim_back` (analyse the compiled run), the ambient `RelKont` (discharge the
+clause continuation), and `eval_pure` (reference reduces to `ret m`). -/
+theorem sim_pure_lift (e : Src) (he : IsPure e) {i : Nat} {renv : REnv} {env : Env}
+    (henv : RelEnvI (i + 1) env renv) {m : Int} (hpd : pden renv e = some m)
+    (c : Code) (s : Stack) (K : Kont) (Kref : RefK) (hK : RelKont i c env s K Kref)
+    (F : Nat) (r : Value) (hr : exec F (compile e c) env s K = some r) :
+    ∃ (G : Nat) (n : Int),
+      RelV i r (.ev n) ∧ observe (Kref (CalcReifyRef.eval G renv e)) = some n := by
+  obtain ⟨F', hF'⟩ := pure_sim_back e he (relEnvI_forget henv) hpd c s K F r hr
+  obtain ⟨n, hn, hobs⟩ := hK m F' r hF'
+  exact ⟨fuelOf e, n, hn, by rw [eval_pure e he hpd (fuelOf e) (Nat.le_refl _)]; exact hobs⟩
+
 end Resuming
 
 end Bang.CalcReifySim
