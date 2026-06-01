@@ -101,9 +101,14 @@ being attacked directly, in two committed, `sorry`-free pieces:
   of the real fuel-indexed reference `CalcReifyRef.eval` — so the pure core is a
   genuine **machine-vs-reference** agreement (both `CalcReify.run` and
   `CalcReifyRef.run` yield `n` on a closed pure program), not a parallel
-  definition. The value relation `RelVal`/`RelEnv` scaffolding is in place (int
-  case); the `vcont ↔ ek` case — a step-indexed logical relation for resumptions —
-  is the remaining residual that unlocks `perform`/`handle`/`resume`.
+  definition. The proven fragment now also covers **`handle` over a pure body** —
+  an *unfired handler is transparent* — which brings the machine's `INSTALL`
+  instruction and the return-through-a-handler-frame path into the proof (via
+  `handleC_ret`), still with no `vcont ↔ ek` relation needed (the handler is
+  installed but its clause never runs). The value relation `RelVal`/`RelEnv`
+  scaffolding is in place (int case); the `vcont ↔ ek` case — a step-indexed
+  logical relation for resumptions — is the remaining residual that unlocks a
+  *firing* `perform`/`handle`/`resume`.
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest

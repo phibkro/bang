@@ -34,15 +34,23 @@ namespace Bang.CalcReifySim
 open Bang.CalcReify
 open Bang.CalcReifyRef (Comp Entry REnv)
 
-/-- The pure fragment of `Src`. -/
+/-- The **effect-free** fragment of `Src` — meaning no effect is ever *triggered*,
+not merely "no `perform` syntactically". A `handle clause body` with a pure body
+is itself pure: the body never performs, so the handler never fires and the clause
+(whatever it is) is dead — an *unfired handler is transparent*. This is the natural
+stepping stone into the effect cases: it exercises the machine's `INSTALL`
+instruction and the return-through-a-handler-frame path, without yet needing the
+`vcont ↔ ek` relation (the handler is installed but its clause is never run). -/
 inductive IsPure : Src → Prop where
-  | val  : IsPure (.val n)
-  | var  : IsPure (.var i)
-  | add  : IsPure a → IsPure b → IsPure (.add a b)
-  | letE : IsPure e1 → IsPure e2 → IsPure (.letE e1 e2)
+  | val    : IsPure (.val n)
+  | var    : IsPure (.var i)
+  | add    : IsPure a → IsPure b → IsPure (.add a b)
+  | letE   : IsPure e1 → IsPure e2 → IsPure (.letE e1 e2)
+  | handle : IsPure body → IsPure (.handle clause body)
 
 /-- Structural pure denotation: `none` on effects, unbound vars, or ill-typed
-operands. On the pure fragment this is total (returns `some`). -/
+operands. On the pure fragment this is total (returns `some`). A `handle` over a
+pure body denotes the body's value — the handler is never triggered. -/
 def pden (renv : REnv) : Src → Option Int
   | .val n      => some n
   | .var i      => match renv[i]? with
@@ -54,6 +62,7 @@ def pden (renv : REnv) : Src → Option Int
   | .letE e1 e2 => match pden renv e1 with
                    | some v => pden (.ev v :: renv) e2
                    | none   => none
+  | .handle _ body => pden renv body
   | _           => none
 
 /-- Value relation (int case only — the `vcont ↔ ek` case is the open residual). -/
@@ -138,8 +147,25 @@ theorem pure_sim : ∀ (e : Src), IsPure e → ∀ {renv : REnv} {env : Env}, Re
           simp only [exec]; exact hF2
         obtain ⟨F1, hF1⟩ := ih1 hp1 henv h1 (Instr.BIND :: compile e2 (Instr.UNBIND :: c)) s K (F2 + 1) r hbind
         exact ⟨F1, by simpa only [compile] using hF1⟩
+  | handle clause body _ ihbody =>
+    intro hpure renv env henv n hp c s K F r hr
+    cases hpure with
+    | handle hpb =>
+      simp only [pden] at hp        -- hp : pden renv body = some n
+      -- INSTALL pushes this handler frame; running the pure body never fires it.
+      -- When the body returns `vint n`, the value flows THROUGH the frame to `c`.
+      have hframe : exec (F + 1) [] env (.vint n :: s)
+          ({ clause := some (compile clause [], env), retCode := c, retEnv := env, retStack := s } :: K)
+            = some r := by
+        simp only [exec]; exact hr
+      obtain ⟨Gb, hGb⟩ := ihbody hpb henv hp [] s
+        ({ clause := some (compile clause [], env), retCode := c, retEnv := env, retStack := s } :: K)
+        (F + 1) r hframe
+      have hinstall : exec (Gb + 1) (Instr.INSTALL (compile clause []) c :: compile body []) env s K
+          = some r := by
+        simp only [exec]; exact hGb
+      exact ⟨Gb + 1, by simpa only [compile] using hinstall⟩
   | perform e1 _ => intro hpure _ _ _ _ _ _ _ _ _ _ _; cases hpure
-  | handle cl bd _ _ => intro hpure _ _ _ _ _ _ _ _ _ _ _; cases hpure
   | resume k v _ _ => intro hpure _ _ _ _ _ _ _ _ _ _ _; cases hpure
 
 /-- **Pure correctness corollary.** A closed pure program whose denotation is `n`
@@ -162,6 +188,13 @@ sides' fuels can always be aligned. -/
 theorem bind_ret (k : Nat) (x : Int) (g : Int → Comp) :
     CalcReifyRef.bind (k + 1) (.ret x) g = g x := by
   simp [CalcReifyRef.bind]
+
+/-- `handleC` over a `ret` value is transparent: an unfired handler returns the
+body's value. (`handleC` matches on its computation argument; on `.ret` it ignores
+the clause entirely.) -/
+theorem handleC_ret (k : Nat) (x : Int) (clause : Src) (cEnv : REnv) :
+    CalcReifyRef.handleC (k + 1) (.ret x) clause cEnv = .ret x := by
+  simp [CalcReifyRef.handleC]
 
 /-- On a pure term, `CalcReifyRef.eval` returns `ret (pden …)` once it has enough
 fuel — fuel-monotone in the standard `∀ f ≥ F` form. -/
@@ -224,8 +257,21 @@ theorem eval_pure : ∀ (e : Src), IsPure e → ∀ {renv : REnv} {n : Int}, pde
         obtain ⟨f'', rfl⟩ : ∃ k, f' = k + 1 := ⟨f' - 1, by omega⟩
         simp only [CalcReifyRef.eval, hF1 _ hf1, bind_ret]
         exact hF2 _ hf2
+  | handle clause body _ ihbody =>
+    intro hpure renv n hp
+    cases hpure with
+    | handle hpb =>
+      simp only [pden] at hp          -- hp : pden renv body = some n
+      obtain ⟨Fb, hFb⟩ := ihbody hpb hp
+      refine ⟨Fb + 2, fun f hf => ?_⟩
+      obtain ⟨f', rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+      have hfb : Fb ≤ f' := by omega
+      -- eval (f'+1) (handle clause body) = handleC f' (eval f' body) clause renv
+      --                                  = handleC f' (ret n) clause renv = ret n
+      -- needs f' ≥ 1 so handleC can take a step; the +2 base guarantees it.
+      obtain ⟨f'', rfl⟩ : ∃ k, f' = k + 1 := ⟨f' - 1, by omega⟩
+      simp only [CalcReifyRef.eval, hFb _ hfb, handleC_ret]
   | perform e1 _ => intro hpure _ _ _; cases hpure
-  | handle cl bd _ _ => intro hpure _ _ _; cases hpure
   | resume k v _ _ => intro hpure _ _ _; cases hpure
 
 /-- **The pure core, against the real reference.** For a closed pure program both
@@ -237,5 +283,17 @@ theorem pure_correct_ref {e : Src} (hpure : IsPure e) {n : Int} (hp : pden [] e 
   refine ⟨pure_correct hpure hp, ?_⟩
   obtain ⟨G, hG⟩ := eval_pure e hpure (renv := []) hp
   exact ⟨G, by simp only [CalcReifyRef.run, hG G (Nat.le_refl G)]⟩
+
+/-! ## A `handle`-over-pure-body demonstrator
+
+`handle 999 (let x = 5 in x + 3)`: the body performs nothing, so the (zero-shot)
+clause `999` is dead and an *unfired handler is transparent*. Both the machine and
+the reference yield `8`. This is the `IsPure.handle` case end-to-end — the
+`INSTALL` instruction and the return-through-a-handler-frame path, exercised and
+proven against the real reference, with no `vcont ↔ ek` relation needed. -/
+example :
+    let prog : Src := .handle (.val 999) (.letE (.val 5) (.add (.var 0) (.val 3)))
+    (∃ F, run F prog = some (.vint 8)) ∧ (∃ G, CalcReifyRef.run G prog = some 8) :=
+  pure_correct_ref (.handle (.letE .val (.add .var .val))) (by rfl)
 
 end Bang.CalcReifySim
