@@ -637,6 +637,103 @@ theorem pure_sim_indexed (e : Src) (hp : IsPure e) {i : Nat} {renv : REnv} {env 
     ∃ F', exec F' (compile e c) env s K = some r :=
   pure_sim e hp (relEnvI_forget henv) hpd c s K F r hr
 
+/-! ### A first ∀-quantified *resuming* firing theorem: tail resume
+
+`handle (resume (var 1) v) (perform e)` for pure `e`, `v`: the body performs once
+(payload `p = ⟦e⟧`), the clause **resumes in tail position** with `w = ⟦v⟧`. Because
+the performed body is just `perform e`, the captured continuation is *empty*, so the
+resumption simply returns `w` through the (re-installed) handler to the `handle`'s
+continuation — the program yields `⟦v⟧`. Unlike `fire_agree` (non-resuming) this
+genuinely *invokes* the resumption; unlike the `Agree` demonstrators it is
+∀-quantified over the pure payload and resume-argument. -/
+
+/-- Reference side of tail resume. `eval` reduces the body to `perf p (fun w⇒ret w)`,
+`handleC` installs `res = fun w ⇒ handleC (ret w) clause [] = ret w`, and the clause
+`resume (var 1) v` runs `bind (eval v) (fun w ⇒ res w) = res ⟦v⟧ = ret ⟦v⟧`. The
+resume slot `g` is universally quantified in `hpv` because `pden` never reads it. -/
+theorem ref_fire_resume {e v : Src} (he : IsPure e) (hv : IsPure v) {p w : Int}
+    (hpe : pden [] e = some p)
+    (hpv : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v = some w) :
+    ∀ f, fuelOf e + fuelOf v + 4 ≤ f →
+      CalcReifyRef.eval f [] (.handle (.resume (.var 1) v) (.perform e)) = .ret w := by
+  intro f hf
+  obtain ⟨S, rfl⟩ : ∃ k, f = k + 1 := ⟨f - 1, by omega⟩
+  rw [eval_handle_def, eval_perform he hpe S (by omega)]
+  obtain ⟨S1, rfl⟩ : ∃ k, S = k + 1 := ⟨S - 1, by omega⟩
+  simp only [CalcReifyRef.handleC]
+  obtain ⟨S2, rfl⟩ : ∃ k, S1 = k + 1 := ⟨S1 - 1, by omega⟩
+  simp only [CalcReifyRef.eval, List.getElem?_cons_succ, List.getElem?_cons_zero]
+  rw [eval_pure v hv (hpv _) S2 (by omega)]
+  obtain ⟨S3, rfl⟩ : ∃ k, S2 = k + 1 := ⟨S2 - 1, by omega⟩
+  simp only [bind_ret, CalcReifyRef.handleC]
+
+/-- Machine side of tail resume. INSTALL the handler; the body performs (PERFORM
+captures the *empty* continuation `kv` and runs the clause); the clause LOOKUPs the
+resumption, pushes `w` (pure `v`), and RESUMEs; the splice runs the empty captured
+continuation and returns `w` through the re-installed handler to the top. -/
+theorem machine_fire_resume {e v : Src} (he : IsPure e) (hv : IsPure v) {p w : Int}
+    (hpe : pden [] e = some p)
+    (hpv : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v = some w) :
+    ∃ F, run F (.handle (.resume (.var 1) v) (.perform e)) = some (.vint w) := by
+  let clCode : Code := compile (.resume (.var 1) v) []
+  let kv : Value := .vcont [] [] [] clCode []
+  let frRet : Frame := { clause := none, retCode := [], retEnv := [], retStack := [] }
+  have hcl_eq : clCode = Instr.LOOKUP 1 :: compile v [Instr.RESUME] := rfl
+  have henvC : RelEnv [Value.vint p, kv] (.ev p :: .ek (fun _ => Comp.stuck) :: []) :=
+    .cons (.int p) (.consK kv (fun _ => Comp.stuck) .nil)
+  -- RESUME splices and returns `w` through the (empty) captured continuation + handler.
+  have hresume : exec 5 [Instr.RESUME] [Value.vint p, kv] [Value.vint w, kv] [frRet]
+      = some (.vint w) := by simp [exec, kv, frRet]
+  -- compile v pushes w on top of the looked-up resumption.
+  obtain ⟨Fv, hFv⟩ := pure_sim v hv henvC (hpv _) [Instr.RESUME] [kv] [frRet] 5 (.vint w) hresume
+  -- LOOKUP 1 pushes the resumption kv (head-rewrite clCode to avoid unfolding it inside kv).
+  have hclause : exec (Fv + 1) clCode [Value.vint p, kv] [] [frRet] = some (.vint w) := by
+    rw [hcl_eq]
+    simp only [exec, List.getElem?_cons_zero, List.getElem?_cons_succ]
+    exact hFv
+  -- PERFORM captures kv and runs the clause.
+  have hperf : exec (Fv + 2) [Instr.PERFORM] [] [Value.vint p]
+      [{ clause := some (clCode, []), retCode := [], retEnv := [], retStack := [] }]
+        = some (.vint w) := by simp only [exec]; exact hclause
+  -- compile e pushes the payload p.
+  obtain ⟨Fe, hFe⟩ := pure_sim e he (.nil) hpe [Instr.PERFORM] [] _ (Fv + 2) (.vint w) hperf
+  -- INSTALL pushes the handler frame, runs the body.
+  have hinstall : exec (Fe + 1)
+      (Instr.INSTALL clCode [] :: compile e [Instr.PERFORM]) [] [] [] = some (.vint w) := by
+    simp only [exec]; exact hFe
+  exact ⟨Fe + 1, hinstall⟩
+
+/-- **The first ∀-quantified *resuming* firing agreement.** For any pure payload `e`
+and pure resume-argument `v`, the calculated machine and the denotational reference
+agree on `handle (resume (var 1) v) (perform e)`: both yield `⟦v⟧` (the value of `v`
+under the payload). The handler genuinely **fires and resumes** (one-shot, tail) —
+strictly stronger than `fire_agree` (which is non-resuming) and than the `Agree`
+`rfl`-demonstrators (which are program-specific). The resumption slot is now read
+through a real machine path on one side and a real `ek` closure on the other.
+
+This is the tail corner of the resuming frontier; the non-tail / multi-shot / deep
+cases (where the captured continuation is non-empty and may itself perform) remain
+the residual, and are what the full `RelV` step-indexed relation is built for. -/
+theorem fire_resume_tail {e v : Src} (he : IsPure e) (hv : IsPure v) {p w : Int}
+    (hpe : pden [] e = some p)
+    (hpv : ∀ (g : Int → Comp), pden (.ev p :: .ek g :: []) v = some w) :
+    (∃ F, run F (.handle (.resume (.var 1) v) (.perform e)) = some (.vint w)) ∧
+    (∃ G, CalcReifyRef.run G (.handle (.resume (.var 1) v) (.perform e)) = some w) := by
+  refine ⟨machine_fire_resume he hv hpe hpv, ?_⟩
+  exact ⟨fuelOf e + fuelOf v + 4,
+    by simp only [CalcReifyRef.run, ref_fire_resume he hv hpe hpv _ (Nat.le_refl _)]⟩
+
+/-! ## A tail-resume demonstrator via `fire_resume_tail`
+
+`handle (resume (var 1) (var 0)) (perform (val 41))`: the body performs with payload
+`41`; the clause resumes (tail) with the payload itself (`var 0`), so the program
+yields `41`. Proven via the universally-quantified `fire_resume_tail`, not a bare
+`rfl` — the resumption is genuinely invoked. -/
+example :
+    let prog : Src := .handle (.resume (.var 1) (.var 0)) (.perform (.val 41))
+    (∃ F, run F prog = some (.vint 41)) ∧ (∃ G, CalcReifyRef.run G prog = some 41) :=
+  fire_resume_tail (e := .val 41) (v := .var 0) .val .var (by rfl) (fun _ => by rfl)
+
 end Resuming
 
 end Bang.CalcReifySim
