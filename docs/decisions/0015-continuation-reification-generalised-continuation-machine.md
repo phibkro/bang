@@ -172,16 +172,20 @@ being attacked directly, in two committed, `sorry`-free pieces:
   does not bite). This also **fixed a design bug** (`RefK` was `Int → Comp → Comp`;
   corrected to `Comp → Comp` — the clause continuation consumes the resumption's
   *result*, not its payload), with `pure_sim_back` as new reusable infrastructure.
-  What remains: the *inductive* deep `capture_relates` (a captured continuation that
-  itself performs re-fires the handler, the fresh capture related at the predecessor
-  index by the IH) and a **general inductive simulation** consuming `RelV` at resume
-  nodes — both needing the continuation-correspondence infrastructure (machine `Kont`
-  ↔ reference eval-context), the paper-section that remains. Key realisation: `RelV`
-  transfers *machine-halts ⇒ reference-agrees*, so it is needed only in the general
-  ∀-`Src` induction, not the closed firing theorems (which prove termination *and*
-  agreement by direct construction). (See the playbook's K3 section for the (A)/(B)
-  distinction, per-fire-env caveat, reusable proof shapes, and the
-  contravariance/downward-closure caveat.)
+  **The general-simulation architecture is now designed (2nd design pass) and its
+  viability proven, sorry-free:** `RelKont` (observational continuation
+  correspondence = `RelV`'s inlined `RelK`, built by composition not by decompiling
+  `Code`), `sim_pure_lift` (pure spine in the general shape), and **`sim_resume_pure_v`**
+  — the `resume` case that genuinely *consumes* `RelV` at a resume node (measure = the
+  `RelV` step index, fuel existential; predecessor-index headroom resolves `RelV`'s
+  index drop). What remains: (a) `capture_relates_pure_general` + composition lemmas
+  + `sim_structural` → the **shallow** `bisim_forward` (full ∀-`Src` forward bisim
+  minus deep re-handling — all "hard", no research gate, the guaranteed deliverable);
+  (b) `perf_outcome_mono` (reference perf-outcome fuel-monotonicity, bisimulation-
+  shaped — the research gate) → `capture_relates_deep` → the full bisim; (c)
+  backward/iff is separate. Key realisation: `RelV` transfers *machine-halts ⇒
+  reference-agrees*, so it is needed only in the general ∀-`Src` induction, not the
+  closed firing theorems. (See the playbook's K3 section for the full ladder.)
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest

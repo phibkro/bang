@@ -483,18 +483,36 @@ cover**, ordered by difficulty:
     - `pure_sim_back` — converse of `pure_sim`; lets a splice beginning with a pure
       captured continuation be *analysed* (recover the value handed to the clause).
 
-    **What's left (the genuine research-grade core):** (i) the *inductive* deep
-    `capture_relates` — a captured continuation that *itself performs* re-fires the
-    handler, capturing a fresh `vcont` related at the **predecessor index** by the
-    IH; (ii) a **general inductive simulation** that *consumes* `RelV` at resume
-    nodes. Key realisation from trying to *use* `RelV`: it transfers *machine-halts ⇒
-    reference-agrees*, so it does **not** replace the machine-termination side — the
-    closed firing theorems (A) don't need it (direct construction proves termination
-    *and* agreement). `RelV` is essential only in the **general ∀-`Src` induction**,
-    as the carrier that transfers a resumption's behaviour across the `resume` case.
-    Both (i) and (ii) need the **continuation-correspondence infrastructure**
-    (relate machine `Kont` ↔ reference eval-context through nested handlers) — that
-    is the paper-section that remains.
+    **The general-simulation architecture is now DESIGNED (2nd design pass) and its
+    viability PROVEN.** The design settled (against three critiques) on: measure = the
+    `RelV` step index (never fuel — fuel is existential, realised via `bind_mono`);
+    continuation correspondence = an **observational `def RelKont`** (= `RelV`'s
+    inlined `RelK` hypothesis lifted to a name; bigger ones built by *composition*,
+    never by decompiling `Code` — `compile` has no inverse); and the **predecessor-
+    index headroom** (env at `i+1`, conclusion at `i`) to absorb `RelV`'s index drop.
+    Proven sorry-free toward this:
+    - `RelKont`, `relKont_nil` — the correspondence + its top-level instance.
+    - `sim_pure_lift` — the pure spine in the general shape (machine result
+      `RelV`-related, reference observes the match through `Kref`); via `pure_sim_back`
+      + `RelKont` + `eval_pure`.
+    - **`sim_resume_pure_v` — THE viability proof**: the `resume` case (pure arg) that
+      genuinely **consumes** `RelV` at a resume node. Slot `j`'s `vcont` (related via
+      `RelEnvI (i+1)`) is run to exactly `RelV`'s splice antecedent; discharging its
+      `RelK` with the ambient `RelKont` delivers the reference agreement at index `i`.
+      Confirms the headroom resolves the off-by-one, `RelKont` discharges `RelK`, and
+      the reference aligns — the whole hand-off works. (Helpers: `relV_ek_form`,
+      `relEnvI_lookup_ek`.)
+
+    **What's left (the mapped ladder):** (a) `capture_relates_pure_general` + the
+    composition lemmas `relKont_pushPure`/`relKont_pushHandler` + `sim_structural` →
+    the **shallow** `sim_and_capture`/`bisim_forward` (full ∀-`Src` forward bisim
+    MINUS deep re-handling) — all "hard" but needing NO research gate; this is the
+    guaranteed-reachable deliverable. (b) `perf_outcome_mono` (the reference
+    perf-outcome fuel-monotonicity — genuinely bisimulation-shaped: bumping fuel
+    changes the env's `ek` closures, so it's a fuel-monotone logical relation on
+    `Comp`, not a simple equality) → `capture_relates_deep` → the FULL `sim_and_capture`.
+    (b) is the research gate; (a) is the honest fallback. (c) the backward direction /
+    iff is a separate simulation entirely.
 
   Caveat for (A) — the clause is evaluated once **per fire**, in a *different* env
   each time (payload `p1` then `p2`), so a clause that reads the payload resumes with
