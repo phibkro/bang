@@ -164,11 +164,24 @@ being attacked directly, in two committed, `sorry`-free pieces:
   program's firing count is bounded by its skeleton. The remaining (A) leaves
   (non-tail clause, multi-shot × non-empty continuation, deeper skeletons) are *more
   of the same* — longer chains, no new ideas. **(B) ∀-general over *all* `Src`** (the
-  full `exec ∘ compile ≡ run`) is the **sole remaining frontier**: the only part that
-  *must* invoke `RelV`'s agreement (`capture_relates`) — the inductive bisimulation,
-  research-grade, what the formalized `RelV` is built for. (See the playbook's K3
-  section for the (A)/(B) distinction, the per-fire-env caveat, the reusable proof
-  shapes, and the contravariance/downward-closure caveat for (B).)
+  full `exec ∘ compile ≡ run`) is the **remaining frontier** — the part that must
+  invoke `RelV`'s agreement (`capture_relates`). **Progress into (B), sorry-free:**
+  `capture_relates_tail` and `capture_relates_add` prove an actual PERFORM-captured
+  `vcont` **satisfies `RelV`** for every *one-shot* capture (empty + non-empty pure)
+  — the first proof `RelV` is inhabited by real captures (non-vacuous; contravariance
+  does not bite). This also **fixed a design bug** (`RefK` was `Int → Comp → Comp`;
+  corrected to `Comp → Comp` — the clause continuation consumes the resumption's
+  *result*, not its payload), with `pure_sim_back` as new reusable infrastructure.
+  What remains: the *inductive* deep `capture_relates` (a captured continuation that
+  itself performs re-fires the handler, the fresh capture related at the predecessor
+  index by the IH) and a **general inductive simulation** consuming `RelV` at resume
+  nodes — both needing the continuation-correspondence infrastructure (machine `Kont`
+  ↔ reference eval-context), the paper-section that remains. Key realisation: `RelV`
+  transfers *machine-halts ⇒ reference-agrees*, so it is needed only in the general
+  ∀-`Src` induction, not the closed firing theorems (which prove termination *and*
+  agreement by direct construction). (See the playbook's K3 section for the (A)/(B)
+  distinction, per-fire-env caveat, reusable proof shapes, and the
+  contravariance/downward-closure caveat.)
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest

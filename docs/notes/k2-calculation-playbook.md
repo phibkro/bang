@@ -467,10 +467,34 @@ cover**, ordered by difficulty:
     multi-shot × non-empty captured continuation — the full 1107/2027, and deeper
     skeletons) are *more of the same*, longer chains, no new ideas.
   - **(B) ∀-general over *all* `Src`** (the full `exec ∘ compile ≡ run` for every
-    program) — **the sole remaining frontier.** *This* is what needs the inductive
-    bisimulation and `RelV`'s agreement (`capture_relates`), because the skeleton is
-    no longer fixed so the firing count is unbounded-in-the-quantifier. This is the
-    research-grade core; the formalized `RelV` is built for it.
+    program) — **the remaining frontier.** Needs the inductive bisimulation and
+    `RelV`'s agreement (`capture_relates`). **Progress landed:**
+    - `capture_relates_tail` and `capture_relates_add` — an actual PERFORM-captured
+      `vcont` **satisfies `RelV`** for *every one-shot capture* (empty captured
+      continuation `g = fun w⇒ret w`; non-empty `compile rest [ADD]`,
+      `g = fun w⇒ret (w+rstval)`). First proof `RelV` is *inhabited by real captures*
+      — non-vacuous, design works. **Contravariance does not bite**: the inlined
+      `RelK` hypothesis is used at the *same* index the conclusion needs.
+    - **`RefK` design fix**: was `Int → Comp → Comp`; the `Int` (payload) arg is
+      wrong — it mismatches whenever the captured continuation transforms the value
+      (e.g. `+rest`: the value reaching the clause cont is `w+rstval`, not `w`).
+      Corrected to **`RefK = Comp → Comp`** (the clause cont consumes the
+      resumption's *result*). `capture_relates_add` is the regression test.
+    - `pure_sim_back` — converse of `pure_sim`; lets a splice beginning with a pure
+      captured continuation be *analysed* (recover the value handed to the clause).
+
+    **What's left (the genuine research-grade core):** (i) the *inductive* deep
+    `capture_relates` — a captured continuation that *itself performs* re-fires the
+    handler, capturing a fresh `vcont` related at the **predecessor index** by the
+    IH; (ii) a **general inductive simulation** that *consumes* `RelV` at resume
+    nodes. Key realisation from trying to *use* `RelV`: it transfers *machine-halts ⇒
+    reference-agrees*, so it does **not** replace the machine-termination side — the
+    closed firing theorems (A) don't need it (direct construction proves termination
+    *and* agreement). `RelV` is essential only in the **general ∀-`Src` induction**,
+    as the carrier that transfers a resumption's behaviour across the `resume` case.
+    Both (i) and (ii) need the **continuation-correspondence infrastructure**
+    (relate machine `Kont` ↔ reference eval-context through nested handlers) — that
+    is the paper-section that remains.
 
   Caveat for (A) — the clause is evaluated once **per fire**, in a *different* env
   each time (payload `p1` then `p2`), so a clause that reads the payload resumes with
