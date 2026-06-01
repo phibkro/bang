@@ -107,15 +107,28 @@ being attacked directly, in two committed, `sorry`-free pieces:
   `handleC_ret`), still with no `vcont ↔ ek` relation needed (the handler is
   installed but its clause never runs). The value relation `RelVal`/`RelEnv`
   scaffolding is in place (int case); the `vcont ↔ ek` case — a step-indexed
-  logical relation for resumptions — is the remaining residual that unlocks a
-  *firing* `perform`/`handle`/`resume` **inductively**. Meanwhile, agreement on
-  *specific* firing programs is already **machine-checked in Lean**: `Agree prog k`
-  (`run = some (vint k) ∧ CalcReifyRef.run = some k`) is proven by `⟨rfl, rfl⟩` for
-  the non-tail, multi-shot (incl. triple), zero-shot, re-handling, and
-  payload-threading demonstrators — strictly stronger than the TS fuzz (both sides
-  are *in-Lean* implementations), covering exactly the firing behaviours the
-  inductive proof cannot yet reach. That is program-specific, not the
-  universally-quantified bisimulation, but it is real and proven.
+  logical relation for resumptions — is the remaining residual. **Two firing
+  results now exist in Lean, sorry-free:**
+  - **`fire_agree` — the first ∀-quantified *firing* theorem.** For *any* pure
+    payload `e` and *any* pure non-resuming `clause`, machine and reference agree on
+    `handle clause (perform e)`: both yield the clause's denotation under the
+    payload. The clause genuinely runs with the captured continuation (zero-shot /
+    payload-threading). Two ingredients made it provable: (i) an
+    *environment-independent* structural fuel bound `fuelOf : Src → Nat` (replacing
+    `eval_pure`'s `∃F`), which breaks the circularity the reference's fuel-capturing
+    resumption closure would otherwise create; (ii) a partial `RelEnv.consK`
+    constructor relating an opaque machine `vcont` slot to a reference `ek` slot —
+    sound here because the clause never reads it. This is the genuine first step
+    *into* the `vcont ↔ ek` frontier.
+  - **`Agree` — machine-checked agreement on *specific* harder programs.** `run =
+    some (vint k) ∧ CalcReifyRef.run = some k`, proven by `⟨rfl, rfl⟩` for the
+    non-tail, multi-shot (incl. triple), re-handling, and payload demonstrators —
+    program-specific, but covering the *resuming* behaviours `fire_agree` does not
+    yet generalise, both sides *in-Lean* (strictly stronger than the TS fuzz).
+
+  The remaining residual is a **resuming** clause proved ∀-generally — the full
+  step-indexed `vcont ↔ ek` relation, where the two resumptions must agree *when
+  invoked* (not merely be ignorable).
 
 **Named next step — the general theorem.** Unlike the prior five machines, the
 *general* `exec ∘ compile ≡ eval` is **not yet proven** here, and the honest
