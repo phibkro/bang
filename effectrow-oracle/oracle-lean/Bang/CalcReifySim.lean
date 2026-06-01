@@ -527,11 +527,14 @@ def observe : Comp → Option Int
   | .ret n => some n
   | _      => none
 
-/-- A reference continuation context: it consumes the resumption payload `w` and
-the resumed computation `gw`, yielding the rest of the reference run. For a clause
-`C[resume@1 v]` this is `fun _ gw => bind G gw kclause` — the clause's own
-continuation wrapped around the resumed result. -/
-abbrev RefK := Int → Comp → Comp
+/-- A reference continuation context: given the resumed computation `gw` (the
+resumption's *result* `Comp`), it yields the rest of the reference run — for a clause
+`C[resume@1 v]`, `fun gw => bind G gw kclause`, the clause's own continuation
+threaded onto the resumed result. The resumption *payload* `w` is deliberately
+absent: the clause continuation consumes the resumption's *result*, not the payload
+(an earlier `Int → Comp → Comp` shape mismatched whenever the captured continuation
+transformed the value before it reached the clause continuation). -/
+abbrev RefK := Comp → Comp
 
 /-- **The step-indexed value relation.** Structural recursion on the index: the
 `vcont ↔ ek` clause at `i+1` mentions `RelV` only at `i`. Structural mismatches stay
@@ -545,16 +548,18 @@ def RelV : Nat → Value → Entry → Prop
   | i+1, .vcont cCode cEnv cStack clCode clEnv, .ek g =>
       ∀ (w : Int) (resumeEnv : Env) (cRet : Code) (s' : Stack) (K : Kont) (Kref : RefK),
         -- RelK i (inlined): the clause's own continuation, against the reference context.
+        -- It receives the value `v` *reaching* the clause continuation (= the
+        -- resumption's result), and agrees with `Kref (ret v)`.
         (∀ (v : Int) (F : Nat) (r : Value),
             exec F cRet resumeEnv (.vint v :: s') K = some r →
-            ∃ (n : Int), RelV i r (.ev n) ∧ observe (Kref v (.ret v)) = some n) →
+            ∃ (n : Int), RelV i r (.ev n) ∧ observe (Kref (.ret v)) = some n) →
         -- invoking the resumption: the literal RESUME splice (CalcReify.lean:141-143).
         ∀ (F : Nat) (r : Value),
           exec F cCode cEnv (.vint w :: cStack)
             ({ clause := some (clCode, clEnv), retCode := [], retEnv := resumeEnv, retStack := [] }
               :: { clause := none, retCode := cRet, retEnv := resumeEnv, retStack := s' } :: K)
             = some r →
-          ∃ (n : Int), RelV i r (.ev n) ∧ observe (Kref w (g w)) = some n
+          ∃ (n : Int), RelV i r (.ev n) ∧ observe (Kref (g w)) = some n
   | 0,   .vcont _ _ _ _ _, .ek _ => True
   | _,   _,       _     => False
 
@@ -1132,6 +1137,34 @@ example :
     (∃ F, run F prog = some (.vint 14)) ∧ (∃ G, CalcReifyRef.run G prog = some 14) :=
   fire_deep (e1 := .val 1) (e2 := .val 2) (v := .val 7)
     .val .val .val (by rfl) (by rfl) (fun _ => by rfl) (fun _ => by rfl)
+
+/-! ## Toward (B): `capture_relates` — `RelV` inhabited by real captures
+
+The firing theorems above are all *direct construction* (case A). The full
+∀-`Src` bisimulation (case B) is the only part that must actually **invoke** the
+step-indexed `RelV` agreement, via `capture_relates`: a PERFORM-captured `vcont`
+*satisfies* `RelV` against the reference's resumption closure. Proving even one
+instance is the first evidence the formalized relation is **inhabited by real
+captures** (not vacuous), and that its shape — in particular the contravariant
+`RelK` hypothesis — actually discharges.
+
+The cleanest instance is the **tail capture**: an *empty* captured continuation
+`vcont [] [] [] clCode clEnv`, whose reference resumption is the identity
+`fun w ⇒ ret w` (because `res w = handleC f (ret w) clause cEnv = ret w`). The
+RESUME splice of an empty continuation reduces — through the re-installed handler
+frame and the pure frame — to *exactly* the clause's own continuation, which is
+what the `RelK` hypothesis is about; and `g w = ret w` makes the reference
+observation line up directly. Contravariance does **not** bite: `RelK` is used at
+the *same* index `i` the conclusion needs. -/
+theorem capture_relates_tail (clCode : Code) (clEnv : Env) (i : Nat) :
+    RelV (i + 1) (.vcont [] [] [] clCode clEnv) (.ek (fun w => .ret w)) := by
+  simp only [RelV]
+  intro w resumeEnv cRet s' K Kref hRelK F r hsplice
+  rcases F with _ | _ | F2
+  · simp [exec] at hsplice
+  · simp [exec] at hsplice
+  · simp only [exec] at hsplice
+    exact hRelK w F2 r hsplice
 
 end Resuming
 
