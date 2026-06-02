@@ -1384,6 +1384,29 @@ theorem sim_resume_pure_v {i : Nat} {renv : REnv} {env : Env} (henv : RelEnvI (i
         simp only [CalcReifyRef.eval, hgj, eval_pure v hv hpv (fuelOf v + 1) (by omega), bind_ret]
       rw [href]; exact hobs
 
+/-! ### Composition lemmas: building bigger `RelKont`s
+
+The continuation correspondence is built up — never by decompiling `Code`. Given a
+`RelKont` for a continuation `c`, extend it with a pure layer: running a pure `b`
+then `ADD`-ing (the `add a b` right-continuation) corresponds to wrapping the
+reference context in a `bind … (fun x => ret (x + ⟦b⟧))` layer. Proven by
+`pure_sim_back` (analyse the `b`-run) + the ADD step + the inner `RelKont`. -/
+theorem relKont_pushPure_add {i : Nat} {renv : REnv} {env : Env} (henv : RelEnvI (i + 1) env renv)
+    {b : Src} (hb : IsPure b) {bval : Int} (hpb : pden renv b = some bval)
+    {c : Code} {s : Stack} {K : Kont} {Kref : RefK} (hK : RelKont i c env s K Kref) (Gb : Nat) :
+    RelKont i (compile b (Instr.ADD :: c)) env s K
+      (fun comp => Kref (CalcReifyRef.bind (Gb + 1) comp (fun x => Comp.ret (x + bval)))) := by
+  intro v F r hr
+  obtain ⟨F1, hF1⟩ := pure_sim_back b hb (relEnvI_forget henv) hpb (Instr.ADD :: c)
+    (Value.vint v :: s) K F r hr
+  cases F1 with
+  | zero => simp [exec] at hF1
+  | succ F1' =>
+    simp only [exec] at hF1
+    obtain ⟨n, hn, hobs⟩ := hK (v + bval) F1' r hF1
+    refine ⟨n, hn, ?_⟩
+    simpa only [CalcReifyRef.bind] using hobs
+
 end Resuming
 
 end Bang.CalcReifySim
