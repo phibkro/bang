@@ -1407,6 +1407,27 @@ theorem relKont_pushPure_add {i : Nat} {renv : REnv} {env : Env} (henv : RelEnvI
     refine ⟨n, hn, ?_⟩
     simpa only [CalcReifyRef.bind] using hobs
 
+/-- Pushing a handler frame (the nested-handler correspondence, **unfired** branch).
+On a *normal* return the value passes through the handler frame to the outer
+continuation, and the reference's `handleC` over a `ret` is transparent
+(`handleC_ret`) — so the bigger `RelKont` (body run under the re-installed handler)
+reduces to the outer one. The *fired* branch (body performs) is not part of
+`RelKont`; it is handled by `sim`'s perform case via `capture_relates`. -/
+theorem relKont_pushHandler {i : Nat} {renv : REnv} {env : Env}
+    {clause : Src} {c : Code} {s : Stack} {K : Kont} {Kref : RefK}
+    (hK : RelKont i c env s K Kref) (G : Nat) :
+    RelKont i [] env []
+      ({ clause := some (compile clause [], env), retCode := c, retEnv := env, retStack := s } :: K)
+      (fun comp => Kref (CalcReifyRef.handleC (G + 1) comp clause renv)) := by
+  intro v F r hr
+  cases F with
+  | zero => simp [exec] at hr
+  | succ F0 =>
+    simp only [exec] at hr
+    obtain ⟨n, hn, hobs⟩ := hK v F0 r hr
+    refine ⟨n, hn, ?_⟩
+    simp only [handleC_ret]; exact hobs
+
 end Resuming
 
 end Bang.CalcReifySim
