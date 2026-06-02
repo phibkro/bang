@@ -502,9 +502,21 @@ cover**, ordered by difficulty:
       Confirms the headroom resolves the off-by-one, `RelKont` discharges `RelK`, and
       the reference aligns — the whole hand-off works. (Helpers: `relV_ek_form`,
       `relEnvI_lookup_ek`.)
+    - **`relKont_pushPure_add`** and **`relKont_pushHandler`** — the `RelKont`
+      *composition* toolkit: build a bigger correspondence by wrapping a pure
+      `bind … (fun x => ret (x+⟦b⟧))` layer (add tail), resp. a `handleC … clause`
+      layer (handler, unfired branch via `handleC_ret`), around a smaller `RelKont`.
+      Both via `pure_sim_back` / `handleC_ret` + the inner `RelKont`. This is the
+      "never decompile `Code`" continuation correspondence, working.
 
-    **What's left (the mapped ladder):** (a) `capture_relates_pure_general` + the
-    composition lemmas `relKont_pushPure`/`relKont_pushHandler` + `sim_structural` →
+    **What's left (the mapped ladder) — all *mechanisms* above are proven; this is
+    the ASSEMBLY:** (a) `relKont_pushPure_let` (the `let` layer — the bound value
+    threads into the tail's denotation, fiddlier than `add`), `capture_relates_pure_general`
+    (the perform-capture, production side), then **`sim_structural`** — the structural
+    induction threading the toolkit, *where the real remaining difficulty sits*:
+    aligning the **existential reference fuels** across the composed `Kref`s in the
+    effectful cases (each `relKont_push*` introduces a `bind`/`handleC` layer at some
+    fuel; `sim` must reconcile them with the actual `eval` fuel via `bind_mono`) →
     the **shallow** `sim_and_capture`/`bisim_forward` (full ∀-`Src` forward bisim
     MINUS deep re-handling) — all "hard" but needing NO research gate; this is the
     guaranteed-reachable deliverable. (b) `perf_outcome_mono` (the reference
