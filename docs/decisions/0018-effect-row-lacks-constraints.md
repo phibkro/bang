@@ -57,6 +57,19 @@ The same idempotence that *forces* the constrained-quantifier discipline also *d
 - `Bang/Distribution.lean` — semilattice fact + CALM conjecture
 - `references/papers/effects-handlers/biernacki-popl18-handle-with-care.pdf` — §5.4 (set-row fragment); §I (group/Frobenius end of the spectrum)
 
+## Note on grading convention (per ADR-0016 / Torczon alignment)
+
+The effect grade `e : Eff` indexes the **thunk** type `U φ B` (latent effect
+of the suspended computation, surfaced when forced), per Torczon et al. OOPSLA 2024.
+The lacks-constraint discipline applies to row variables wherever they appear —
+in particular `∀(α # L). U_α B` is a polymorphic thunk over effect rows. The
+constraint is on the *effect* axis (where Eff lives), independent of whether
+that axis annotates U (current convention) or F (an earlier draft).
+
+The multiplicity / coeffect grade `q : Mult` indexes the **returner** type
+`F q A` (consumer usage budget). Multiplicity-row polymorphism, if added later,
+would need its own discipline; the lacks-constraint here is about effect rows.
+
 ## Rejected alternatives
 
 | option | why not |

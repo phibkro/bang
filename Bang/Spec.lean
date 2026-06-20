@@ -27,14 +27,24 @@
 
 namespace Bang
 
-/-! ## 0. Grade algebras -/
+/-! ## 0. Grade algebras
 
--- Effect grades index the returner `F e A`.  `+` = choice, `·` = sequencing,
+Following Torczon et al. (OOPSLA 2024, §1): the effect grade indexes the
+**thunk** `U_φ B` (the latent effect of the suspended computation, surfaced
+when forced), and the multiplicity / coeffect grade indexes the **returner**
+`F_q A` (the consumer-side usage budget on the produced value).
+
+This matches the only existing mechanized graded CBPV (plclub/cbpv-effects-coeffects).
+Cross-check our Lean defs against their Coq when in doubt. -/
+
+-- Effect grades index the thunk `U φ B`.  `+` = choice, `·` = sequencing,
 -- (optionally `*` = iteration; swap in `KleeneAlgebra` if you want star).
--- Ordered for sub-effecting (e' ≤ e).
+-- Ordered for sub-effecting (φ' ≤ φ — a more permissive thunk type is a
+-- supertype of a more restricted one).
 variable {Eff  : Type} [OrderedSemiring Eff]
--- Multiplicity / coeffect grades index the thunk `U ρ B`.  QTT-style {0,1,ω}.
+-- Multiplicity / coeffect grades index the returner `F q A`.  QTT-style {0,1,ω}.
 -- Ordered for sub-usaging; `0` is the erasable grade.
+-- Also annotates context bindings `x :_ρ A` as the consumer's usage budget.
 variable {Mult : Type} [OrderedSemiring Mult]
 
 /-! ## 0.5 Effect-row well-formedness — the discipline that keeps rows SET-shaped
@@ -77,9 +87,9 @@ opaque Val  : Type
 opaque Comp : Type
 opaque Var  : Type
 
--- polarity-crossing constructors
-opaque U : Mult → CTy → VTy     -- thunk, graded by multiplicity ρ
-opaque F : Eff  → VTy → CTy     -- returner, graded by effect e
+-- polarity-crossing constructors (Torczon §1)
+opaque U : Eff  → CTy → VTy     -- thunk, graded by latent effect φ (forced ⇒ effects ⊆ φ)
+opaque F : Mult → VTy → CTy     -- returner, graded by consumer-usage budget q on the result
 
 opaque Ctx        : Type
 opaque emptyCtx   : Ctx
@@ -200,13 +210,16 @@ opaque opArgTy     : Eff → VTy             -- Σ(op) argument type
 opaque opResTy     : Eff → VTy             -- Σ(op) result type = output relation μ
 
 mutual
-  -- VALUE relation (their ⟦τ⟧, Fig 6) + OUR coeffect clause at `U ρ`.
+  -- VALUE relation (their ⟦τ⟧, Fig 6).
+  -- THUNK clause (Torczon U_φ): two thunks are related iff forcing them
+  -- produces Crel-related computations at the inner CTy. The static grade `φ`
+  -- bounds the effects of those forced bodies (see effect_sound) — relatedness
+  -- itself is the same shape as their Fig 6's λV.U clause.
   def Vrel : Nat → VTy → Val → Val → Prop
     | n, A, v₁, v₂ =>
       match asThunk A with
-      | some (ρ, B) =>            -- coeffect / graded comonad (our addition)
-          if ρ = 0 then True       -- erased ⇒ relate anything (⇒ zero_usage_erasable)
-          else ∀ m, m < n → ∀ c₁ c₂, v₁ = thunk c₁ → v₂ = thunk c₂ → Crel m B c₁ c₂
+      | some (_φ, B) =>
+          ∀ m, m < n → ∀ c₁ c₂, v₁ = thunk c₁ → v₂ = thunk c₂ → Crel m B c₁ c₂
       | none => BaseRel A v₁ v₂
 
   -- SIMPLE-EXPRESSION relation (their 𝒮, Fig 7 + row denotation Fig 8).
@@ -222,14 +235,23 @@ mutual
 
   -- STACK relation (their 𝒦, Fig 7). TWO obligations: agree on related RETURN
   -- values AND on related control-stuck OPERATIONS (the 𝒮 half).
+  --
+  -- NOTE on the Torczon-aligned grading: the returner now carries the coeffect
+  -- `q` (consumer budget). The effect axis (`e` below) is the *running effect*
+  -- of stacks built around U_φ-typed thunks — derived from the typing judgment,
+  -- not the F annotation. `q = 0` is the F-erasure clause: stacks may discard
+  -- the value entirely (relates anything). Captured via asReturner returning
+  -- the coeffect q and inner A; the effect side is supplied by Srel's row.
   def Krel : Nat → CTy → Stack → Stack → Prop
     | n, B, S₁, S₂ =>
       match asReturner B with
-      | some (e, A) =>
-          (∀ m, m ≤ n → ∀ v₁ v₂, Vrel m A v₁ v₂ →
-              CoApprox (Stack.plug S₁ (ret v₁)) (Stack.plug S₂ (ret v₂)))
-          ∧ (∀ m, m ≤ n → ∀ c₁ c₂, Srel m e S₁ S₂ c₁ c₂ →
-              CoApprox (Stack.plug S₁ c₁) (Stack.plug S₂ c₂))
+      | some (q, A) =>
+          if q = 0 then True   -- F_0 erasure: any consumer-stack works
+          else
+            (∀ m, m ≤ n → ∀ v₁ v₂, Vrel m A v₁ v₂ →
+                CoApprox (Stack.plug S₁ (ret v₁)) (Stack.plug S₂ (ret v₂)))
+            ∧ (∀ m e₀, m ≤ n → ∀ c₁ c₂, Srel m e₀ S₁ S₂ c₁ c₂ →
+                CoApprox (Stack.plug S₁ c₁) (Stack.plug S₂ c₂))
       | none => BaseStackRel n B S₁ S₂
 
   -- COMPUTATION relation = biorthogonal ⊤⊤-closure over related stacks
@@ -266,10 +288,18 @@ theorem seq_unit (v : Val) {c : Comp} : seqComp (ret v) c ≈ c := sorry
 -- NOT fresh ground. This is the *invertible* (groupoid, f† = f⁻¹) special case of
 -- Heunen–Karvonen: effectful computations are reversible IFF the monad is
 -- dagger-Frobenius. The genuinely open part is the BRIDGE:
---     E a group  ⇒?  the graded monad `F e` is dagger-Frobenius.
+--     E a group  ⇒?  the graded monad `F` (with respect to effects on `U_φ`)
+--     is dagger-Frobenius.
 -- If the bridge holds, this theorem is a corollary. If not, the Frobenius law
 -- must be added as an explicit hypothesis (= the "observability side-condition").
 -- SETTLE THE BRIDGE FIRST — it decides whether this is mechanical or research.
+--
+-- NOTE (Torczon grading): under our convention effects live on `U_φ` (thunks),
+-- not on `F`. So the "invertibility" in question is about composing latent
+-- thunk-effects, not about a Mult-graded returner. The Heunen–Karvonen story
+-- is about effect-side invertibility (still applies). The coeffect side
+-- (Mult on F) has its own erasure story (`F_0`) but no obvious group analogue.
+-- See ADR-0018 Trinity table — the recovery axis is the *effect* axis.
 theorem group_recovers [AddGroup Eff] {c : Comp} :
     seqComp c (recover c) ≈ idComp := sorry
 

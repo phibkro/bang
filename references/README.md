@@ -81,6 +81,33 @@ Citation keys match BibTeX entries in `refs.bib`. Per-paper reading notes go in 
 
 ---
 
+## External resources
+
+Live online resources we link to rather than mirror. Reach for these when looking
+beyond the on-disk corpus.
+
+### Bibliographies & indices
+- **[yallop/effects-bibliography](https://github.com/yallop/effects-bibliography)**
+  — community-maintained index of effect-handler literature; canonical starting
+  point when looking for a paper not yet on disk.
+- **[effect-handlers.org](https://effect-handlers.org/)** — EHOP portal: curated
+  papers, projects, implementations, and a tutorial index.
+
+### Reference implementations
+- **[plclub/cbpv-effects-coeffects](https://github.com/plclub/cbpv-effects-coeffects)**
+  — Coq mechanization of Torczon et al. OOPSLA 2024 (the bang-lang substrate).
+  **Cross-check our Lean defs against their Coq** when in doubt — same judgments,
+  same lemmas, ported. Cited from `Bang/Spec.lean`. Clone locally if/when needed
+  for line-by-line comparison.
+
+### Benchmarks
+- **[effect-handlers/effect-handlers-bench](https://github.com/effect-handlers/effect-handlers-bench)**
+  — cross-language effect-handler benchmark suite. *(Post-◊5 relevance.)* When
+  the WasmFX backend has something to compare, this is the natural target;
+  add a `PATH-benchmark-against-ehop` then.
+
+---
+
 ## Gaps — still to fetch
 
 Pass A = urgent (LR spine + verified-compilation template).
