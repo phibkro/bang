@@ -1,0 +1,364 @@
+% bang-lang reference library — BibTeX entries
+% Citation keys mirror filename stems (without .pdf extension).
+% Entries marked "% TODO: verify" need author/title/doi confirmation.
+
+% ─── Effects & handlers ──────────────────────────────────────────────────────
+
+@inproceedings{biernacki-popl18-handle-with-care,
+  author    = {Biernacki, Dariusz and Pir\'{o}g, Maciej and Polesiuk, Piotr and Sieczkowski, Filip},
+  title     = {Handle with Care: Relational Interpretation of Algebraic Effects and Handlers},
+  booktitle = {Proceedings of the ACM on Programming Languages (POPL)},
+  year      = 2018,
+  doi       = {10.1145/3158096},
+}
+
+@article{bauer-pretnar-algebraic-effects-and-handlers,
+  author  = {Bauer, Andrej and Pretnar, Matija},
+  title   = {Programming with Algebraic Effects and Handlers},
+  journal = {Journal of Logical and Algebraic Methods in Programming},
+  year    = 2015,
+  doi     = {10.1016/j.jlamp.2014.02.001},
+}
+
+@inproceedings{plotkin-pretnar-esop09-handlers,
+  author    = {Plotkin, Gordon and Pretnar, Matija},
+  title     = {Handlers of Algebraic Effects},
+  booktitle = {Programming Languages and Systems (ESOP)},
+  year      = 2009,
+  series    = {LNCS},
+  volume    = 5502,
+  doi       = {10.1007/978-3-642-00590-9_7},
+  % Note: a second PDF rendering of the same paper exists at
+  % effects-handlers/plotkin-pretnar-esop09-handlers-alt.pdf (cite this key).
+}
+
+@inproceedings{tang-popl24-soundly-handling-linearity,
+  author    = {Tang, Wenhao and Hillerstr\"{o}m, Daniel and Lindley, Sam and Morris, J. Garrett},
+  title     = {Soundly Handling Linearity},
+  booktitle = {Proceedings of the ACM on Programming Languages (POPL)},
+  year      = 2024,
+  doi       = {10.1145/3632896},
+}
+
+% ─── Graded CBPV ─────────────────────────────────────────────────────────────
+
+@inproceedings{torczon-oopsla24-effects-coeffects,
+  author    = {Torczon, Cassia and Su\'{a}rez Acevedo, Emmanuel and Agrawal, Shubh and Velez-Ginorio, Joey and Weirich, Stephanie},
+  title     = {Effects and Coeffects in Call-by-Push-Value},
+  booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  year      = 2024,
+  doi       = {10.1145/3689750},
+  % Note: a second PDF rendering exists at
+  % graded-cbpv/torczon-oopsla24-effects-coeffects-alt.pdf (cite this key).
+}
+
+@misc{weirich-wg211-2024-cbpv-effects-coeffects-slides,
+  author = {Weirich, Stephanie},
+  title  = {{CBPV + effects, CBPV + coeffects}},
+  year   = 2024,
+  month  = mar,
+  note   = {Slides, IFIP WG 2.11 meeting, 25 March 2024; joint work with
+            Torczon, Su\'{a}rez Acevedo, Agrawal, Velez-Ginorio},
+}
+
+@inproceedings{katsumata-popl14-parametric-effect-monads,
+  author    = {Katsumata, Shin-ya},
+  title     = {Parametric Effect Monads and Semantics of Effect Systems},
+  booktitle = {POPL},
+  year      = 2014,
+  doi       = {10.1145/2535838.2535846},
+}
+
+% ─── Logical relations ───────────────────────────────────────────────────────
+
+@misc{proving-correctness-step-indexed,
+  title     = {Proving Correctness of a Compiler Using Step-Indexed Logical Relations},
+  note      = {local copy; provenance unverified},
+  % TODO: verify author + venue + year
+}
+
+@inproceedings{ahmed-esop06-step-indexed-syntactic,
+  author    = {Ahmed, Amal},
+  title     = {Step-Indexed Syntactic Logical Relations for Recursive and Quantified Types},
+  booktitle = {Programming Languages and Systems (ESOP)},
+  year      = 2006,
+  series    = {LNCS},
+  volume    = 3924,
+  doi       = {10.1007/11693024_6},
+}
+
+@misc{pitts-step-indexed-biorthogonality,
+  author    = {Pitts, Andrew M.},
+  title     = {Step-Indexed Biorthogonality: A Tutorial Example},
+  year      = 2010,
+  note      = {Tutorial notes; Dagstuhl},
+  % TODO: verify venue / publication form
+}
+
+% ─── Calculated compilers ────────────────────────────────────────────────────
+
+@inproceedings{bahr-hutton-calculating-effectively,
+  author    = {Bahr, Patrick and Hutton, Graham},
+  title     = {Calculating Compilers Effectively},
+  booktitle = {ICFP},
+  year      = 2022,
+  % TODO: verify year and doi
+}
+
+@inproceedings{bahr-hutton-dependently-typed,
+  author    = {Bahr, Patrick and Hutton, Graham},
+  title     = {Calculating Dependently-Typed Compilers},
+  booktitle = {Proceedings of the ACM on Programming Languages (ICFP)},
+  % TODO: verify year and doi
+}
+
+@inproceedings{monadic-compiler-calculation,
+  title     = {Monadic Compiler Calculation},
+  % TODO: verify all fields (likely Bahr-Hutton ICFP 2022)
+}
+
+@inproceedings{swierstra-compilation-alacarte,
+  author    = {Swierstra, Wouter},
+  title     = {Compilation \`{a} la Carte},
+  booktitle = {ICFP},
+  % TODO: verify year and doi
+}
+
+@article{hutton-bahr-jfp17-compiling-50-year-journey,
+  author  = {Hutton, Graham and Bahr, Patrick},
+  title   = {Compiling a 50-Year Journey},
+  journal = {Journal of Functional Programming},
+  volume  = 27,
+  pages   = {e20},
+  year    = 2017,
+  note    = {Functional Pearl},
+  doi     = {10.1017/S0956796817000120},
+}
+
+% ─── Verified compilation ────────────────────────────────────────────────────
+
+@inproceedings{benton-hur-icfp09-biorthogonality-step-indexing,
+  author    = {Benton, Nick and Hur, Chung-Kil},
+  title     = {Biorthogonality, Step-Indexing and Compiler Correctness},
+  booktitle = {ICFP},
+  year      = 2009,
+  doi       = {10.1145/1596527.1596567},
+}
+
+@inproceedings{kumar-popl14-cakeml,
+  author    = {Kumar, Ramana and Myreen, Magnus O. and Norrish, Michael and Owens, Scott},
+  title     = {{CakeML}: A Verified Implementation of {ML}},
+  booktitle = {POPL},
+  year      = 2014,
+  doi       = {10.1145/2535838.2535841},
+}
+
+% ─── WasmFX target ───────────────────────────────────────────────────────────
+
+@inproceedings{phipps-costin-pacmpl23-continuing-webassembly,
+  author    = {Phipps-Costin, Luna and Rossberg, Andreas and Guha, Arjun and Leijen, Daan and Hillerstr\"{o}m, Daniel and Sivaramakrishnan, KC and Pretnar, Matija and Lindley, Sam},
+  title     = {Continuing {WebAssembly} with Effect Handlers},
+  booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  year      = 2023,
+  eprint    = {2308.08347},
+  archivePrefix = {arXiv},
+  % TODO: verify doi (arxiv version on disk)
+}
+
+@inproceedings{ma-oopsla24-lexa,
+  author    = {Ma, Cong and Ge, Zhaoyi and Lee, Edward and Zhang, Yizhou},
+  title     = {Lexical Effect Handlers, Directly},
+  booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  year      = 2024,
+  doi       = {10.1145/3689770},
+}
+
+@inproceedings{ma-oopsla25-zero-overhead-handlers,
+  author    = {Ma, Cong and Ge, Zhaoyi and Jung, Max and Zhang, Yizhou},
+  title     = {Zero-Overhead Lexical Effect Handlers},
+  booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  year      = 2025,
+  doi       = {10.1145/3763177},
+}
+
+% ─── Reversible / Frobenius ──────────────────────────────────────────────────
+
+@article{heunen-karvonen-reversible-monadic,
+  author  = {Heunen, Chris and Karvonen, Martti},
+  title   = {Reversible Monadic Computing},
+  journal = {Mathematical Structures in Computer Science},
+  year    = 2018,
+  doi     = {10.1017/S0960129516000384},
+  % TODO: verify
+}
+
+@misc{compositional-reversible-2024,
+  title  = {Compositional Reversible Computation},
+  year   = 2024,
+  eprint = {2405.20842},
+  archivePrefix = {arXiv},
+  % TODO: verify author(s)
+}
+
+% ─── Cost / AARA ─────────────────────────────────────────────────────────────
+
+@inproceedings{chu-guo-hoffmann-oopsla26-aara-effects,
+  author    = {Chu, David and Guo, Yue and Hoffmann, Jan},
+  title     = {Handling Exceptions and Effects with Automatic Resource Analysis},
+  booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  year      = 2026,
+  % TODO: verify doi
+}
+
+% ─── WasmFX target (cont.) ───────────────────────────────────────────────────
+
+@misc{emrich-hillerstrom-continuing-stack-switching-wasmtime,
+  author = {Emrich, Frank and Hillerstr\"{o}m, Daniel},
+  title  = {Continuing Stack Switching in Wasmtime},
+  year   = 2024,
+  note   = {WebAssembly Workshop talk proposal},
+  % TODO: verify exact venue / proceedings reference
+}
+
+% ─── Type theory ─────────────────────────────────────────────────────────────
+
+@incollection{bove-dybjer-dependent-types-at-work,
+  author    = {Bove, Ana and Dybjer, Peter},
+  title     = {Dependent Types at Work},
+  booktitle = {Language Engineering and Rigorous Software Development (LerNet)},
+  series    = {LNCS},
+  volume    = 5520,
+  year      = 2009,
+  publisher = {Springer},
+  doi       = {10.1007/978-3-642-03153-3_2},
+}
+
+@inproceedings{tang-hillerstrom-structural-subtyping-as-parametric-polymorphism,
+  author    = {Tang, Wenhao and Hillerstr\"{o}m, Daniel and McKinna, James and Steuwer, Michel and Dardha, Ornela and Fu, Rongxiao},
+  title     = {Structural Subtyping as Parametric Polymorphism},
+  booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  year      = 2023,
+  eprint    = {2304.08267},
+  archivePrefix = {arXiv},
+  % TODO: verify doi
+}
+
+@misc{wilshaw-hutton-flow-typing-lightweight-linearity,
+  author = {Wilshaw, Sky and Hutton, Graham},
+  title  = {Flow Typing for Lightweight Linearity},
+  year   = 2024,
+  note   = {Manuscript / preprint},
+  % TODO: verify venue + year
+}
+
+% ─── Partial evaluation / staging ────────────────────────────────────────────
+
+@book{jones-gomard-sestoft-partial-evaluation-book,
+  author    = {Jones, Neil D. and Gomard, Carsten K. and Sestoft, Peter},
+  title     = {Partial Evaluation and Automatic Program Generation},
+  publisher = {Prentice Hall},
+  year      = 1993,
+  isbn      = {978-0130202499},
+}
+
+@phdthesis{taha-multi-stage-programming-thesis,
+  author = {Taha, Walid},
+  title  = {Multi-Stage Programming: Its Theory and Applications},
+  school = {Oregon Graduate Institute of Science and Technology},
+  year   = 1999,
+}
+
+@article{williams-perugini-revisiting-futamura-projections,
+  author  = {Williams, Brandon M. and Perugini, Saverio},
+  title   = {Revisiting the Futamura Projections: A Diagrammatic Approach},
+  year    = 2018,
+  eprint  = {1611.09906},
+  archivePrefix = {arXiv},
+  % TODO: confirm published venue (if any)
+}
+
+% ─── Programming language semantics (general) ────────────────────────────────
+
+@article{hutton-jfp23-programming-language-semantics-1-2-3,
+  author  = {Hutton, Graham},
+  title   = {Programming Language Semantics: {It's} Easy as 1,2,3},
+  journal = {Journal of Functional Programming},
+  volume  = 33,
+  pages   = {e9},
+  year    = 2023,
+  doi     = {10.1017/S0956796823000072},
+}
+
+% ─── Category theory ─────────────────────────────────────────────────────────
+
+@article{boisseau-gibbons-yoneda-profunctor-optics,
+  author  = {Boisseau, Guillaume and Gibbons, Jeremy},
+  title   = {What You Needa Know about {Yoneda}: Profunctor Optics and the {Yoneda} Lemma (Functional Pearl)},
+  journal = {Proceedings of the ACM on Programming Languages (ICFP)},
+  year    = 2018,
+  doi     = {10.1145/3236779},
+}
+
+% ─── Tooling (provers, solvers, package managers) ────────────────────────────
+
+@inproceedings{de-moura-ullrich-lean4-system-description,
+  author    = {de Moura, Leonardo and Ullrich, Sebastian},
+  title     = {The {Lean 4} Theorem Prover and Programming Language (System Description)},
+  booktitle = {Automated Deduction --- CADE 28},
+  series    = {LNCS},
+  volume    = 12699,
+  year      = 2021,
+  publisher = {Springer},
+  doi       = {10.1007/978-3-030-79876-5_37},
+}
+
+@phdthesis{dolstra-purely-functional-software-deployment-thesis,
+  author = {Dolstra, Eelco},
+  title  = {The Purely Functional Software Deployment Model},
+  school = {Utrecht University},
+  year   = 2006,
+}
+
+@misc{smt-lib-standard-v2.7,
+  author = {Barrett, Clark and Fontaine, Pascal and Tinelli, Cesare},
+  title  = {The {SMT-LIB} Standard, Version 2.7},
+  year   = 2024,
+  note   = {Available at \url{https://smt-lib.org/}},
+  % TODO: verify exact release date
+}
+
+% ─── General / off-topic-but-kept ────────────────────────────────────────────
+
+@book{ashby-introduction-to-cybernetics,
+  author    = {Ashby, W. Ross},
+  title     = {An Introduction to Cybernetics},
+  publisher = {Chapman \& Hall},
+  year      = 1956,
+}
+
+@article{mokhov-jfp20-build-systems-a-la-carte,
+  author  = {Mokhov, Andrey and Mitchell, Neil and Peyton Jones, Simon},
+  title   = {Build Systems \`{a} la Carte: Theory and Practice},
+  journal = {Journal of Functional Programming},
+  volume  = 30,
+  pages   = {e11},
+  year    = 2020,
+  doi     = {10.1017/S0956796820000088},
+}
+
+@misc{peng-nous-efficient-pretraining-token-superposition,
+  author = {Peng, Bowen and Gigant, Th\'{e}o and Quesnelle, Jeffrey},
+  title  = {Efficient Pre-Training with Token Superposition},
+  year   = 2025,
+  note   = {Nous Research},
+  % TODO: verify exact arXiv id / venue
+}
+
+@misc{bloom-sawin-arxiv2605-sum-product-conjecture-false,
+  author = {Bloom, Thomas F. and Sawin, Will and Schildkraut, Carl and Zhelezov, Dmitrii},
+  title  = {The Sum-Product Conjecture Is False for Real Numbers},
+  year   = 2026,
+  eprint = {2605.28781},
+  archivePrefix = {arXiv},
+  primaryClass  = {math.NT},
+}

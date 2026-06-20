@@ -1,5 +1,7 @@
 # ADR-0015 · Continuation reification — a flat generalised-continuation machine (`CalcReify`); multi-shot / non-tail handlers
 
+> **Status update (per ADR-0016):** The CalcReifySim bisimulation effort is **paused**. The Benton-Hur logical relation introduced by ADR-0016 provides stronger contextual equivalence and is what `compile_forward_sim` consumes downstream. The CalcReify machine itself stays as the multi-shot/non-tail handler representation; only the bisimulation proof attempt is shelved. See ADR-0016 for context.
+
 - **Status:** Accepted (machine + demonstrators verified; cross-checked vs an
   independent TS CPS interpreter on 2k+ random programs; in-Lean general theorem is
   the named next step)

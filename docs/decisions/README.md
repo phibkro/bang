@@ -2,22 +2,30 @@
 
 Each ADR records a decision a future session could otherwise reverse or relitigate: the **rationale**, the **rejected alternatives**, and a **"Revisit if"** clause that distinguishes legitimate reconsideration from drift. Read the relevant ADR before changing anything it covers.
 
-| # | decision | status | depends on |
-|---|----------|--------|------------|
-| [0001](0001-effect-rows-as-finset-semilattice.md) | Effect rows are idempotent sets (join-semilattice), modeled as `Finset` | Accepted | — |
-| [0002](0002-lean-over-fstar-for-the-oracle.md) | Verify the reference in Lean 4 + Mathlib, not F\* | Accepted | 0001 |
-| [0003](0003-own-the-runtime.md) | Own the runtime; don't transpile to a borrowed effect runtime | Accepted | — |
-| [0004](0004-calculated-vm-as-canonical-target.md) | The canonical target is a calculated VM; Effect TS et al. are optional lowerings | Accepted | 0002, 0003 |
-| [0005](0005-collapse-sig-into-mut.md) | Collapse `sig` into `mut` + the `:`/`=` operator distinction | Accepted | — |
-| [0006](0006-explicit-tracked-capture.md) | Capture is explicit and tracked; no implicit lexical closure | Accepted | 0003 |
-| [0007](0007-force-is-dollar-parens-group.md) | Force is `$`; parens group without forcing; fixed global precedence | Accepted | 0005 (supersedes its force note), 0006 |
-| [0008](0008-eval-free-monad-handler-fold.md) | Definitional `eval` is a fuel-bounded free-monad interpreter; handlers are a deep fold | Accepted | 0004, 0001, 0006, 0007 |
-| [0009](0009-calculated-vm-extrinsic-staged.md) | Calculated VM is extrinsic and grown one constructor at a time, from an arithmetic kernel | Accepted | 0004, 0008 |
-| [0010](0010-higher-order-calculation-fuel-cbv.md) | Higher-order calculation: fuel-indexed CBV, shared source-closures (equivalence now proven) | Accepted | 0009, 0008 |
-| [0011](0011-effects-calculated-as-specific-machines.md) | Effects calculated as specific machines (Throws→unwinding, State→register); tail-resumption only | Accepted | 0004, 0008, 0009, 0010 |
-| [0012](0012-effects-composed-with-the-closure-core.md) | Effects composed with the closure/CBN core — Throws fused into `CalcCBNEff` (zero-shot, re-throw at the meta-call boundary) | Accepted | 0011, 0010, 0008, 0009 |
-| [0013](0013-state-composed-with-the-closure-core.md) | State composed with the closure/CBN core — `CalcCBNSt` (the register threads cleanly through the nested meta-runs; no flatten needed) | Accepted | 0012, 0011, 0010 |
-| [0014](0014-two-effects-together-over-the-closure-core.md) | Throws *and* State together in one machine — `CalcCBNEffSt` (effect-row model realized; State persists through a throw) | Accepted | 0012, 0013, 0011, 0003 |
-| [0015](0015-continuation-reification-generalised-continuation-machine.md) | Continuation reification — flat generalised-continuation machine (`CalcReify`); multi-shot/non-tail handlers (machine + demonstrators verified; general theorem next) | Accepted | 0011, 0012, 0013, 0014, 0004, 0009 |
+## Layer taxonomy
+
+ADRs are tagged by layer (see `../../ROADMAP.md`):
+- **K** — kernel (semantic); near-permanent; deep review required to change
+- **C** — compiler / methodology; stable statements, evolving implementations
+- **S** — surface (liquid); experimental; cheap to write/delete
+
+> **Recent culls:**
+> - **ADR-0003** (own-the-runtime) and **ADR-0004** (calculated-VM-canonical) → deleted, subsumed by **ADR-0016** (two-hop architecture). See 0016 for the current position.
+> - **ADRs 0010–0014** (per-machine K3 calculations) → collapsed into **ADR-0017** (K3 retrospective). The five were execution records; the retrospective preserves the load-bearing insights (composition map, methodology, shared-Value equality). The proofs themselves remain in `effectrow-oracle/oracle-lean/Bang/Calc*.lean`.
+> - **ADRs 0005 and 0007** → rewritten as kernel-layer semantic principles (glyph specifics moved to the liquid surface layer; filenames refreshed).
+
+| # | layer | decision | status | depends on |
+|---|---|----------|--------|------------|
+| [0001](0001-effect-rows-as-finset-semilattice.md) | K | Effect rows are idempotent sets (join-semilattice), modeled as `Finset` | Accepted | — |
+| [0002](0002-lean-over-fstar-for-the-oracle.md) | C | Verify the reference in Lean 4 + Mathlib, not F\* | Accepted | 0001 |
+| [0005](0005-reactivity-as-operator-not-keyword.md) | K | Reactivity is an operator distinction, not a separate kernel form (semantic; surface glyph liquid) | Accepted | — |
+| [0006](0006-explicit-tracked-capture.md) | K | Capture is explicit and tracked; no implicit lexical closure | Accepted | 0016 |
+| [0007](0007-explicit-force-and-fixed-precedence.md) | K | Force is always explicit; grouping ≠ forcing; precedence is global (semantic; surface glyph liquid) | Accepted | 0005, 0006 |
+| [0008](0008-eval-free-monad-handler-fold.md) | K | Definitional `eval` is a fuel-bounded free-monad interpreter; handlers are a deep fold | Accepted | 0016, 0001, 0006, 0007 |
+| [0009](0009-calculated-vm-extrinsic-staged.md) | C | Calculated VM is extrinsic and grown one constructor at a time, from an arithmetic kernel | Accepted | 0016, 0008 |
+| [0015](0015-continuation-reification-generalised-continuation-machine.md) | C | Continuation reification — flat generalised-continuation machine (`CalcReify`); CalcReifySim bisimulation **paused** per ADR-0016 (LR subsumes the goal) | Accepted | 0017, 0009 |
+| [0016](0016-two-hop-architecture-calcvm-and-wasmfx.md) | K+C | Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target (subsumes 0003 + 0004) | Accepted | 0001, 0002, 0015 |
+| [0017](0017-k3-calculated-machine-retrospective.md) | C | K3 calculated-machine retrospective — preserves composition-mechanism map and methodology insights; replaces 0010–0014 | Accepted | 0009, 0008 |
+| [0018](0018-effect-row-lacks-constraints.md) | K | Effect-row algebra extended with lacks-constrained quantifiers (set discipline); enables `no_accidental_handling` | Accepted | 0001, 0016 |
 
 Format: lightweight MADR. Status ∈ {Proposed, Accepted, Superseded by NNNN, Deprecated}.

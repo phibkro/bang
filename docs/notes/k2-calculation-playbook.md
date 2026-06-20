@@ -4,9 +4,10 @@
 > proving the **next** increment: the equality-sim shapes (K2 core → effects →
 > compositions) re-run constantly, and the **K3 reification frontier** (ADR-0015,
 > last section) is a *different* proof shape — read it before touching the
-> resumption residual. Companion to **ADR-0009** (method/staging), **ADR-0010**
-> (the higher-order proof) and **ADR-0015** (reification). Proven artifacts:
-> `effectrow-oracle/oracle-lean/Bang/{Calc,CalcHO,CalcReify,CalcReifyRef,CalcReifySim}.lean`.
+> resumption residual. Companion to **ADR-0009** (method/staging), **ADR-0017**
+> (K3 retrospective — replaces the per-machine 0010–0014) and **ADR-0015**
+> (reification — bisimulation paused per ADR-0016, machine itself stays).
+> Proven artifacts: `Bang/{Calc,CalcHO,CalcReify,CalcReifyRef,CalcReifySim}.lean`.
 
 ## The three transferable insights
 
