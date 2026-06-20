@@ -48,13 +48,65 @@
 
 ## Status
 - [x] Started 2026-06-21
-- [ ] In flight: reading current Eval + Spec, then surfacing design Qs
+- [ ] In flight: Phase A part 2 (typing judgments, Ctx ops, Source.step concretization)
 - [ ] Blockers: none yet
 - [ ] Completed —
 
 ## Owner
 - Agent: claude (acting as kernel-engineer, per `.claude/agents/kernel-engineer.md`)
 - Human: philib (orchestrator)
+
+## Design decisions resolved
+
+- **Grading convention**: Torczon (effect on U, coeffect on F). Switched from
+  Spec.lean's earlier (multiplicity-on-U, effect-on-F) draft. Reason: only
+  existing mechanized graded CBPV (`plclub/cbpv-effects-coeffects`) uses
+  this; lemmas port cleanly. Committed `d7e8ba6`.
+- **Operational shape**: small-step + evaluation contexts (CK-machine,
+  Lexa-style frames). Matches `Source.step` signature; matches Biernacki
+  LR's `Stack`; matches 7-of-9 surveyed effect-handler languages
+  (Effekt, Koka, Frank, Eff, Helium, Lexa, OCaml 5+). Greenlit by operator.
+- **Rewrite strategy**: in place (no archival per operator).
+- **Patterns / ADTs**: dropped from kernel core. Slim CBPV; surface
+  desugars when surface work begins (post-◊2).
+- **Eff carrier**: `Eff = Finset Label` (single source of truth with
+  EffectRow). Will be made concrete in Phase A part 2.
+
+## Phase A staging
+
+- **Part 1 (landed this commit)**: §1 syntactic types concretized in
+  `Bang/Spec.lean` — `Val`, `Comp`, `Handler`, `VTy`, `CTy`, `Frame`,
+  `EvalCtx`, `Var`, `OpId`. Section order in the file restructured so
+  types precede theorems that reference them. Theorem signatures updated
+  for the new type-parameter shape.
+- **Part 2 (next)**:
+  - Make `Eff = Finset Label`, `Mult = QTT enum`; supply
+    `OrderedSemiring` instances (idempotent commutative for Eff;
+    rig-arithmetic for Mult)
+  - Concretize `Ctx.scale`, `Ctx.add`
+  - Concretize `HasVTy`, `HasCTy` as `inductive Prop` (one constructor
+    per typing rule)
+  - Concretize `Source.step`: small-step over `(EvalCtx × Comp)` CK
+    decomposition; implement subst (`Val.subst` / `Comp.subst`); handle
+    propagation through the frame stack
+  - Concretize `Source.eval`: iterate `Source.step` under fuel
+  - Address `decreasing_by` for the mutual LR defs (Vrel/Srel/Krel/Crel)
+
+## Phase A part 1 — uncertainties to verify on first `lake build`
+
+- `mutual` block for `Vrel/Srel/Krel/Crel` may need explicit
+  `termination_by` hints (already noted as a comment in §5)
+- `opaque` declarations with implicit-parameter-before-colon syntax
+  (e.g. `opaque Disjoint {Eff : Type} : Eff → Eff → Prop`) — Lean 4
+  syntax I'm fairly sure about, but unverified
+- `VTy Eff Mult` and `CTy Eff Mult` parameter threading downstream;
+  every theorem signature explicitly names them but Lean's elaborator
+  may have inference quirks
+- `Ctx` as a `List (Var × Mult × VTy Eff Mult)` abbrev — pattern matching
+  on this in theorems may need `[(x, ρ, A)]`-style sugar
+- `Source.step` references `Comp` not `(EvalCtx × Comp)` per Spec.lean's
+  signature — Phase A part 2 will need to either change the signature
+  or define a decomposition pass that splits/recombines
 
 ## Notes
 *Design questions surface here as they arise; deletable once path completes.*
