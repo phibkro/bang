@@ -8,7 +8,7 @@
     Stubbed — the previous content used Ctx/VTy/CTy as 0-arg types, but Phase A
     part 1 made them (Eff Mult)-parametrized. The compat lemmas need:
       (a) explicit Eff/Mult threading in every signature
-      (b) Ctx.scale / Ctx.add to be concrete (still opaque in Spec.lean)
+      (b) the ADR-0019 two-context shape: GradeVec γ (Finsupp +/•) + TyCtx Γ
       (c) `U`, `F`, `ret`, etc. accessed as constructors (e.g. VTy.U, CTy.F, Comp.ret)
       (d) helpers like `var`, `unit`, `lamC`, `forceC`, `bindC`, `opC`, `handleC`,
           `HandlerRelated` to be either dropped (subsumed by Spec.lean's concrete

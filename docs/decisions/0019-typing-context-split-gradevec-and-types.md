@@ -60,6 +60,16 @@ The rules then thread grades Torczon-style (the Q10 upgrade):
 `letC`/`lam` scale-and-add. `Ctx.scale` / `Ctx.add` (the old `List` ops) are
 retired in favour of the `Finsupp` `•` / `+`.
 
+**Companion type-syntax change — the function arrow carries the argument
+multiplicity.** Torczon's function type is `CAbs q' A B`; ours is
+`CTy.arr A B`, dropping `q'`. Without it, `lam` cannot *record* how much it uses
+its argument and `app` has nothing to scale the argument's grades by
+(`T_App: γ = γ₁ Q+ q Q* γ₂`) — the resource-enforcing application rule is
+unimplementable. So `CTy.arr` becomes `arr : Mult → VTy → CTy → CTy`
+(`A →^q B`). This is done **now** because it is currently cheap: `arr` is
+matched in exactly two places (the `lam`/`app` rules); the compiler and LR do
+not pattern-match it yet. Deferring until they do would multiply the cost.
+
 ## Rationale
 
 - **Total arithmetic, no hidden precondition.** `Finsupp +` is defined on all

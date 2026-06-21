@@ -1,10 +1,10 @@
 /-
-  Bang/Syntax.lean — typing judgments + resource arithmetic + row well-formedness.
+  Bang/Syntax.lean — typing judgments + grade discipline + row well-formedness.
   ─────────────────────────────────────────────────────────────────────────────
   Sits between Bang.Core (raw types) and Bang.Operational (executes terms).
 
-    §1.5 Ctx.scale + Ctx.add (QTT-style resource arithmetic)
-    §1.6 HasVTy, HasCTy (mutual inductive Props — per-rule constructors)
+    §1.5 q_or_1 (the let-rule's `q || 1` coeffect floor)
+    §1.6 HasVTy, HasCTy (mutual inductive Props — resource-enforcing, Q10/ADR-0019)
     §0.5 Effect-row well-formedness: Disjoint, RowAll, WfInst, HandlesIntended
 
   Theorem STATEMENTS live in Bang/Spec.lean.
@@ -18,58 +18,87 @@ variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
 
 
-/-! ### 1.5 Resource arithmetic on Ctx (QTT-style)
+/-! ### 1.5 The `q || 1` coeffect floor (`q_or_1`)
 
-  Ctx.scale ρ Γ      = each binding's multiplicity scaled by ρ
-  Ctx.add   Γ₁ Γ₂    = pointwise sum (zipWith)
+Torczon's `T_Let` types its continuation under the bound-var multiplicity
+`q1 * q'` where `q' = q_or_1 q2` and `q_or_1 q := if q = 0 then 1 else q`
+(`common/coeffects.v`). The floor keeps a `let`-bound name from being graded
+`0` purely because the *outer* usage `q2` is `0`; sequencing still forces the
+bound computation once. We define it directly via `DecidableEq Mult`. -/
 
-CAVEAT: `add` uses `List.zipWith` → assumes Γ₁, Γ₂ have matching variable
-lists in matching order. Phase B may need a FinMap representation; see
-`docs/notes/OPEN_QUESTIONS.md` Q3. -/
-
-def Ctx.scale {Eff Mult : Type} [Semiring Mult] (ρ : Mult)
-    (Γ : Ctx Eff Mult) : Ctx Eff Mult :=
-  Γ.map (fun b => (b.1, ρ * b.2.1, b.2.2))
-
-def Ctx.add {Eff Mult : Type} [Semiring Mult]
-    (Γ₁ Γ₂ : Ctx Eff Mult) : Ctx Eff Mult :=
-  List.zipWith (fun b₁ b₂ => (b₁.1, b₁.2.1 + b₂.2.1, b₁.2.2)) Γ₁ Γ₂
+def q_or_1 {Mult : Type} [Semiring Mult] [DecidableEq Mult] (q : Mult) : Mult :=
+  if q = 0 then 1 else q
 
 
-/-! ### 1.6 Typing judgments
+/-! ### 1.6 Typing judgments — resource-enforcing (ADR-0019, OPEN_QUESTIONS Q10)
 
-HasVTy : values are inert (no effect grade); judged at VTy
-HasCTy : computations carry an explicit running effect grade `e`;
-         inhabit CTy (whose `F q A` annotation is consumer-side coeffect)
+Two-component context (ADR-0019): a Finsupp grade-vector `γ` (the resources,
+which split/scale/add) and an ambient `Γ : TyCtx` (the types, shared). Ports
+Torczon's `VWt`/`CWt` (`resource/CBPV/typing.v`); `gradeVec`/`context` ↦
+`γ`/`Γ`, `Q+`/`Q*` ↦ `+`/`•`, the de-Bruijn cons `q .: γ` ↦ named
+`Finsupp.single y q + γ` (grade `q` at the bound var, `γ` on the free vars).
 
-PHASE A part 2 first-cut rules — refinements in `docs/notes/OPEN_QUESTIONS.md`
-Q4 (handle), Q5 (up). -/
+HasVTy : values are inert (no effect grade); judged at VTy.
+HasCTy : computations carry an explicit running effect grade `e`; inhabit CTy
+         (whose `F q A` annotation is consumer-side coeffect).
+
+NOTE on the named-variable cons: `Finsupp.single y ρ + γ` over-approximates
+when `y` is not fresh w.r.t. `γ` (the grades accumulate rather than shadow);
+freshness is discharged by the substitution lemma, not a rule side-condition.
+
+Refinements still open: Q4 (handle — keeps the same-φ shape below; the
+label-removing rule is deferred), Q5 (up — omitted pending opArgTy/opResTy). -/
 
 mutual
-inductive HasVTy : Ctx Eff Mult → Val → VTy Eff Mult → Prop where
-  | vunit  : ∀ {Γ}, HasVTy Γ Val.vunit VTy.unit
-  | vint   : ∀ {Γ n}, HasVTy Γ (Val.vint n) VTy.int
-  | vvar   : ∀ {Γ x A}, (∃ ρ, (x, ρ, A) ∈ Γ) → HasVTy Γ (Val.vvar x) A
-  | vthunk : ∀ {Γ M φ B}, HasCTy Γ M φ B → HasVTy Γ (Val.vthunk M) (VTy.U φ B)
-inductive HasCTy : Ctx Eff Mult → Comp → Eff → CTy Eff Mult → Prop where
-  | ret    : ∀ {Γ v A q}, HasVTy Γ v A → HasCTy Γ (Comp.ret v) ⊥ (CTy.F q A)
-  | letC   : ∀ {Γ y M N φ₁ φ₂ ρ A q B},
-      HasCTy Γ M φ₁ (CTy.F q A) →
-      HasCTy ((y, ρ, A) :: Γ) N φ₂ B →
-      HasCTy Γ (Comp.letC y M N) (φ₁ ⊔ φ₂) B
-  | force  : ∀ {Γ v φ B},
-      HasVTy Γ v (VTy.U φ B) →
-      HasCTy Γ (Comp.force v) φ B
-  | lam    : ∀ {Γ y M φ ρ A B},
-      HasCTy ((y, ρ, A) :: Γ) M φ B →
-      HasCTy Γ (Comp.lam y M) ⊥ (CTy.arr A B)
-  | app    : ∀ {Γ M v φ A B},
-      HasCTy Γ M φ (CTy.arr A B) →
-      HasVTy Γ v A →
-      HasCTy Γ (Comp.app M v) φ B
-  | handle : ∀ {Γ h M φ B},
-      HasCTy Γ M φ B →
-      HasCTy Γ (Comp.handle h M) φ B
+inductive HasVTy : GradeVec Mult → TyCtx Eff Mult → Val → VTy Eff Mult → Prop where
+  -- T_Unit: `γ = 0s`.
+  | vunit  : ∀ {Γ}, HasVTy 0 Γ Val.vunit VTy.unit
+  | vint   : ∀ {Γ n}, HasVTy 0 Γ (Val.vint n) VTy.int
+  -- T_Var: one at `x`, zero elsewhere; `Γ` supplies the type.
+  | vvar   : ∀ {Γ x A},
+      (x, A) ∈ Γ →
+      HasVTy (Finsupp.single x 1) Γ (Val.vvar x) A
+  -- T_Thunk: γ passes through unchanged.
+  | vthunk : ∀ {γ Γ M φ B},
+      HasCTy γ Γ M φ B →
+      HasVTy γ Γ (Val.vthunk M) (VTy.U φ B)
+inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff Mult → Prop where
+  -- T_Ret: `γ = q Q* γ'`; the produced value's budget `q` is recorded in `F q A`.
+  | ret    : ∀ {γ γ' Γ v A q},
+      HasVTy γ' Γ v A →
+      γ = q • γ' →
+      HasCTy γ Γ (Comp.ret v) ⊥ (CTy.F q A)
+  -- T_Let: `q' = q_or_1 q2`; continuation typed under `(q1 * q')` at the bound
+  -- var; `γ = (q' Q* γ₁) Q+ γ₂`. Here `q1` is M's returner grade, `q2` the
+  -- arrow-free outer usage budget of the bound value (recorded nowhere in the
+  -- bare `letC` syntax, so existentially quantified at the rule).
+  | letC   : ∀ {γ γ₁ γ₂ Γ y M N φ₁ φ₂ q1 q2 A B},
+      HasCTy γ₁ Γ M φ₁ (CTy.F q1 A) →
+      HasCTy (Finsupp.single y (q1 * q_or_1 q2) + γ₂) ((y, A) :: Γ) N φ₂ B →
+      γ = (q_or_1 q2) • γ₁ + γ₂ →
+      HasCTy γ Γ (Comp.letC y M N) (φ₁ ⊔ φ₂) B
+  -- T_Force: γ passes through.
+  | force  : ∀ {γ Γ v φ B},
+      HasVTy γ Γ v (VTy.U φ B) →
+      HasCTy γ Γ (Comp.force v) φ B
+  -- T_Abs: body typed with grade `q` at the bound var; the arrow records that
+  -- same `q` (`A →^q B`). Torczon's `Qle q' q` subsumption is DROPPED: it needs
+  -- an ordered `Mult` (POSR `le`), but our bound is `[Semiring Mult]` with no
+  -- order (QTT defines none). Recording `q` directly is the resource-threading
+  -- core; the subsumption is an orthogonal feature gated on an ordered semiring.
+  | lam    : ∀ {γ Γ y M φ q A B},
+      HasCTy (Finsupp.single y q + γ) ((y, A) :: Γ) M φ B →
+      HasCTy γ Γ (Comp.lam y M) ⊥ (CTy.arr q A B)
+  -- T_App: `γ = γ₁ Q+ (q Q* γ₂)`, scaling the argument's grades by the arrow's `q`.
+  | app    : ∀ {γ γ₁ γ₂ Γ M v φ q A B},
+      HasCTy γ₁ Γ M φ (CTy.arr q A B) →
+      HasVTy γ₂ Γ v A →
+      γ = γ₁ + q • γ₂ →
+      HasCTy γ Γ (Comp.app M v) φ B
+  -- handle: same-φ shape (Q4 refinement — label-removing rule — out of scope).
+  | handle : ∀ {γ Γ h M φ B},
+      HasCTy γ Γ M φ B →
+      HasCTy γ Γ (Comp.handle h M) φ B
 end
 
 

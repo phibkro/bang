@@ -10,11 +10,11 @@
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
-◊2   Kernel frozen v1             ── IN PROGRESS — NOT as close as it looked.
-                                     Typing rules carry grades but don't ENFORCE
-                                     them; the grade-soundness theorems (and a
-                                     real subst_value) need a resource-enforcing
-                                     rule upgrade first (Q10, active).
+◊2   Kernel frozen v1             ── IN PROGRESS. Resource-enforcing typing
+                                     rules + context split LANDED (ADR-0019,
+                                     Q10/Q3). Rules now THREAD and CHECK grades
+                                     (Finsupp grade-vec + ambient TyCtx). Remaining:
+                                     prove the (now-stateable) graded theorems.
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0
@@ -123,10 +123,12 @@ remaining gap → Phase B PROOF_ORDER #4 (STD block).
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel.
-  Owner: claude as kernel-engineer. Status: **Phase B started — Path B
-  (resource-enforcing rule upgrade)**. Definitions concrete; `subst_value`
-  reframed to the real graded lemma (sorry); next is the Q3-a context-rep ADR
-  then re-shaping the typing judgments to enforce grades (Q10).
+  Owner: claude as kernel-engineer. Status: **Path B rule upgrade LANDED**.
+  ADR-0019 context split (Finsupp `GradeVec` + ambient `TyCtx`) + Q10
+  resource-enforcing `HasVTy`/`HasCTy` (Torczon-faithful: `vvar` single-x-1,
+  `ret`/`app`/`letC`/`lam` scale+add) are implemented and statement sites
+  updated; build green. Next: discharge the now-stateable graded proof bodies
+  (`subst_value` first, then the STD block).
 
 ## Next stable checkpoint we are paving toward
 
@@ -136,20 +138,26 @@ Definition of stable per `ROADMAP.md`: graded-CBPV `Source.eval` concrete
 (no `opaque`/axiom in `Bang/Spec.lean §0–§4`); row algebra with lacks-
 constrained quantifiers; `no_accidental_handling` proven.
 
-Current ◊2 status: syntactic definitions are done, but the **typing rules are
-grade-insensitive** — the STD proofs are NOT mechanical (a prior reading of this
-doc that called them so was wrong). The gate is a resource-enforcing rule
-upgrade (Q10).
+Current ◊2 status: the resource-enforcing rule upgrade (Q10/ADR-0019) has
+**landed** — `HasVTy`/`HasCTy` now thread and check grades over the Finsupp
+grade-vector + ambient type context, and the graded theorem statements are
+correct (no longer vacuous). The remaining gate is **proving** the now-stateable
+bodies, starting with `subst_value`. (Earlier readings of this doc called the
+STD proofs "mechanical" — that was wrong; they needed the rule upgrade first,
+which is now done.)
 
 ## Outstanding for full ◊2 closure
 
 ```
-ACTIVE — Path B rewrite (Q10), sequenced:
-[ ] Q3: resolve context representation → Finsupp grade-vec + type ctx (ADR)
-[ ] Re-shape HasVTy/HasCTy to thread + ENFORCE grades (Torczon-faithful)
-    blast radius: Syntax.lean (defs) + Spec.lean + Compat.lean (statements)
+DONE — Path B rule upgrade (Q10/Q3, ADR-0019):
+[x] Q3: context representation → Finsupp GradeVec + ambient TyCtx (ADR-0019)
+[x] CTy.arr carries argument multiplicity (`arr q A B`)
+[x] Re-shape HasVTy/HasCTy to thread + ENFORCE grades (Torczon-faithful)
+    landed in Syntax.lean (defs) + Spec.lean + Compat.lean (statements); build green
+
+ACTIVE — prove the now-stateable graded bodies:
 [ ] Prove subst_value (graded), then preservation / progress / type_safety
-    (STD block — now reachable once rules enforce grades; watch Q4 in preservation)
+    (STD block — now reachable; watch Q4 in preservation)
 
 STILL DEFERRED (harder block):
 [ ] RowAll, WfInst, HandlesIntended — concretize (lacks-quantifier mechanism)
@@ -177,14 +185,14 @@ revisit signals.
 |---|---|---|
 | Q1 | Eff algebra (Semiring vs Lattice) | ✓ resolved — Lattice + OrderBot |
 | Q2 | Mult = QTT concretization | ✓ resolved — QTT enum + CommSemiring |
-| Q3 | Ctx representation (List vs FinMap) | **ACTIVE** — forced by Q10; → Finsupp grade-vec + type ctx |
+| Q3 | Ctx representation (List vs FinMap) | ✓ resolved — ADR-0019: Finsupp grade-vec + ambient TyCtx |
 | Q4 | `handle` typing rule refinement | revisit (will surface in preservation) |
 | Q5 | `up` typing rule + opArgTy/opResTy | revisit |
 | Q6 | Source.step deep-handler resumption | defer until tests demand |
 | Q7 | Op names string vs enum | defer (cosmetic) |
 | Q8 | `group_recovers` H-K bridge | Phase B research |
 | Q9 | WasmFX target drift | recorded — ◊5 obligation (pin-to-engine) |
-| Q10 | Typing rules must enforce grades | **ACTIVE** — the live ◊2 task (Path B) |
+| Q10 | Typing rules must enforce grades | rules landed (ADR-0019); proof bodies remain |
 
 ## Subagents available
 

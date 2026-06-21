@@ -7,7 +7,7 @@
     §1.2 term syntax (Val / Comp / Handler — mutual inductives)
     §1.3 CK-machine frames (Frame / EvalCtx)
     §1.4 type syntax (VTy / CTy — mutual inductives, Eff/Mult-parametrized)
-    §1.5 Ctx + basic ops (empty, bind)
+    §1.5 typing-context split (GradeVec / TyCtx — ADR-0019)
 
   Nothing here proves anything; this file defines the alphabet. Operational
   semantics, typing judgments, LR machinery, compilation are in their own
@@ -17,6 +17,8 @@
 import Mathlib.Algebra.Order.Ring.Defs
 import Mathlib.Algebra.Group.Defs
 import Mathlib.Data.Finset.Basic
+import Mathlib.Data.Finsupp.Basic
+import Mathlib.LinearAlgebra.Finsupp.Defs
 import Bang.EffectRow
 
 namespace Bang
@@ -108,22 +110,33 @@ inductive VTy (Eff Mult : Type) : Type where
   | U    : Eff → CTy Eff Mult → VTy Eff Mult
 inductive CTy (Eff Mult : Type) : Type where
   | F   : Mult → VTy Eff Mult → CTy Eff Mult
-  | arr : VTy Eff Mult → CTy Eff Mult → CTy Eff Mult
+  -- `arr q A B` = `A →^q B` (Torczon `CAbs q' A B`): the argument multiplicity
+  -- `q` records how much the function uses its argument, so `app` has something
+  -- to scale the argument's grades by (ADR-0019).
+  | arr : Mult → VTy Eff Mult → CTy Eff Mult → CTy Eff Mult
 end
 
 
-/-! ### 1.5 Context — typing environment
+/-! ### 1.5 Typing-context split — grade-vector + ambient type context (ADR-0019)
 
-List-based (FinMap deferred; see `docs/notes/OPEN_QUESTIONS.md` Q3).
-Resource arithmetic (scale, add) lives in `Bang/Syntax.lean`. -/
+Torczon keeps **two** independent components, not one glued list:
 
-abbrev Ctx (Eff Mult : Type) := List (Var × Mult × VTy Eff Mult)
+  - `GradeVec := Var →₀ Mult`  — the **resources**. A `Finsupp` (default `0`
+    off-support). It splits, scales, and adds: Mathlib supplies total `+`,
+    scalar `•` (the `Module Mult (Var →₀ Mult)` action, since a `Semiring`
+    is a module over itself), and `Finsupp.single x ρ` = "grade ρ at `x`,
+    `0` elsewhere". This is exactly Torczon's `gradeVec := fin n → Q`.
 
-namespace Ctx
-  def empty {Eff Mult : Type} : Ctx Eff Mult := []
-  def bind {Eff Mult : Type}
-      (x : Var) (ρ : Mult) (A : VTy Eff Mult) (Γ : Ctx Eff Mult) : Ctx Eff Mult :=
-    (x, ρ, A) :: Γ
-end Ctx
+  - `TyCtx := List (Var × VTy)`  — the **ambient types**. Shared across a whole
+    derivation; never scaled or added (types must *match*, not add). Torczon's
+    `context := fin n → ValTy`.
+
+The insight (ADR-0019): types are ambient, grades are resources. Gluing them
+forces them to split together, which is wrong — you cannot scale grades without
+scaling types. Lookup on `TyCtx` is via `∈`. -/
+
+abbrev GradeVec (Mult : Type) [Zero Mult] := Var →₀ Mult
+
+abbrev TyCtx (Eff Mult : Type) := List (Var × VTy Eff Mult)
 
 end Bang

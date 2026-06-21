@@ -39,13 +39,23 @@
       (conclusion = hypothesis). Now states the real graded lemma (`Γ + ρ·Δ`,
       `c[v/x]`), sorry-backed. This exposed that the typing rules are
       grade-insensitive.
-- [ ] **In flight — Phase B, Path B (resource-enforcing rules)**:
-      - [ ] Q3-a: ADR — context rep → Finsupp grade-vec + type ctx
-      - [ ] Re-shape `HasVTy`/`HasCTy` to thread + enforce grades
-      - [ ] Prove `subst_value` → preservation/progress/type_safety
-- [ ] **Blocker for full ◊2**: Q10 — typing rules carry grades but don't
-      enforce them; `HasCTy` is grade-insensitive. Until upgraded, the graded
-      `subst_value`, `zero_usage_erasable`, and `effect_sound` are unprovable.
+- [x] **Path B rule upgrade LANDED (2026-06-21)**:
+      - [x] Q3-a: ADR-0019 — context rep → Finsupp grade-vec + ambient type ctx
+      - [x] `CTy.arr` carries argument multiplicity (`arr q A B`)
+      - [x] Re-shaped `HasVTy`/`HasCTy` to thread + ENFORCE grades
+            (Torczon-faithful: `vvar` single-x-1, `ret`/`app`/`letC`/`lam`
+            scale+add); all statement sites updated; `just verify` green
+            (935 jobs); STD theorems carry only sorryAx + trusted three.
+- [ ] **In flight — prove the now-stateable bodies**:
+      - [ ] `subst_value` (graded) → preservation / progress / type_safety
+- [ ] **Carried design notes** (from the rule upgrade, surface when relevant):
+      - subsumption (`q' ≤ q` in `lam`) was dropped — needs an *ordered* `Mult`;
+        own ADR when sub-usage becomes load-bearing (likely at preservation).
+      - `zero_usage_erasable` statement uses `single x 0 + γ` (= γ); pinning
+        x's grade to 0 relies on a no-shadow/freshness assumption — tighten
+        when that theorem is tackled.
+      - Q4 (handle) still same-φ; preservation/effect_sound will force the
+        label-removing rule.
 
 ## Design decisions resolved this path
 

@@ -5,8 +5,8 @@
   Each module owns its DEFINITIONS; this file owns the CLAIMS.
 
   Module layout:
-    Bang.Core         types (Val, Comp, Handler, VTy, CTy, Ctx, Frame)
-    Bang.Syntax       Ctx.scale/add, HasVTy/HasCTy, row well-formedness
+    Bang.Core         types (Val, Comp, Handler, VTy, CTy, GradeVec, TyCtx, Frame)
+    Bang.Syntax       q_or_1, HasVTy/HasCTy (resource-enforcing), row well-formedness
     Bang.Operational  subst, Source.step/eval, Trace, isReturn, NotEvaluated
     Bang.LR           Stack, BaseRel, Vrel/Srel/Krel/Crel, recovery helpers
     Bang.Compile      Wasmfx.* + compileC/compileV/compileHandler
@@ -49,10 +49,11 @@ theorem rowinst_requires_disjoint
 -- handling"; their operational *tunneling* guarantee is what our structural
 -- lacks-constraint (Disjoint l e) formulation discharges.
 theorem no_accidental_handling
-    {Γ : Ctx Eff Mult} {l e : Eff} {A : VTy Eff Mult} {q : Mult}
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {l e : Eff} {A : VTy Eff Mult} {q : Mult}
     {body : Comp} {h : Handler} :
     Disjoint l e →
-    HasCTy Γ body (l ⊔ e) (CTy.F q A) →
+    HasCTy γ Γ body (l ⊔ e) (CTy.F q A) →
     HandlesIntended l body h := sorry
 
 
@@ -69,30 +70,34 @@ theorem no_accidental_handling
 -- (vvar's ρ is existential/ignored; ret/app don't scale Γ), so `HasCTy` is
 -- grade-insensitive. This `sorry` is the backlog item pointing at the
 -- resource-enforcing typing-rule upgrade — see OPEN_QUESTIONS Q10.
--- Precondition (Q3): `Γ` and `Δ` share shape; `Ctx.add` is `zipWith`.
+-- Over the ADR-0019 split: `v` typed in its own grade vector `γ_Δ` (shared
+-- types `Γ`); `c` typed under `Γ` with `x` graded `ρ` (`single x ρ + γ_Γ`).
+-- Conclusion `c[v/x]` typed under `γ_Γ + ρ • γ_Δ` — the ADR's `Γ + ρ·Δ`.
 theorem subst_value
-    (ρ : Mult) {Γ Δ : Ctx Eff Mult} {x : Var} {v : Val} {A : VTy Eff Mult}
+    (ρ : Mult) {γ_Γ γ_Δ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {x : Var} {v : Val} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasVTy Δ v A →
-    HasCTy (Ctx.bind x ρ A Γ) c e B →
-    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) (Comp.subst x v c) e B
+    HasVTy γ_Δ Γ v A →
+    HasCTy (Finsupp.single x ρ + γ_Γ) ((x, A) :: Γ) c e B →
+    HasCTy (γ_Γ + ρ • γ_Δ) Γ (Comp.subst x v c) e B
     := sorry
 
 -- [STD] Preservation.
 theorem preservation
-    {Γ : Ctx Eff Mult} {c c' : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy Γ c e B → Source.step c = some c' →
-    ∃ e', e' ≤ e ∧ HasCTy Γ c' e' B := sorry
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c c' : Comp} {e : Eff} {B : CTy Eff Mult} :
+    HasCTy γ Γ c e B → Source.step c = some c' →
+    ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B := sorry
 
 -- [STD] Progress.
 theorem progress
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy Ctx.empty c e B → isReturn c ∨ ∃ c', Source.step c = some c' := sorry
+    HasCTy 0 [] c e B → isReturn c ∨ ∃ c', Source.step c = some c' := sorry
 
 -- [STD] Safety = progress + preservation, fuel-lifted.
 theorem type_safety
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy Ctx.empty c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    HasCTy 0 [] c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
     := sorry
 
 
@@ -100,15 +105,16 @@ theorem type_safety
 
 -- [KEY] Coeffect erasure: a 0-graded variable is never evaluated.
 theorem zero_usage_erasable
-    {Γ : Ctx Eff Mult} {x : Var} {A : VTy Eff Mult}
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {x : Var} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy (Ctx.bind x (0 : Mult) A Γ) c e B → NotEvaluated x c := sorry
+    HasCTy (Finsupp.single x (0 : Mult) + γ) ((x, A) :: Γ) c e B →
+    NotEvaluated x c := sorry
 
 -- [KEY] Effect soundness: static grade `e` over-approximates every observed trace.
 theorem effect_sound
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
     {v : Val} {t : Trace} :
-    HasCTy Ctx.empty c e (CTy.F q A) →
+    HasCTy 0 [] c e (CTy.F q A) →
     Source.evalTrace fuel c = Result.done (v, t) →
     traceWithin t e := sorry
 
@@ -123,8 +129,9 @@ theorem lr_sound
 
 -- [KEY] Fundamental theorem.
 theorem lr_fundamental
-    {Γ : Ctx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy Γ c e B → ∀ n, Crel n B c c := sorry
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {e : Eff} {B : CTy Eff Mult} :
+    HasCTy γ Γ c e B → ∀ n, Crel n B c c := sorry
 
 
 /-! ## 6. Recovery algebra — the Trinity (ADR-0018) -/
@@ -144,7 +151,7 @@ theorem group_recovers
 -- [KEY] Type preservation under translation.
 theorem compile_well_typed
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy Ctx.empty c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) := sorry
+    HasCTy 0 [] c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) := sorry
 
 -- [KEY][RISKY] Forward simulation — the heart of the contribution.
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
@@ -157,9 +164,9 @@ theorem handler_compiles {h : Handler} :
 
 -- [KEY] Erasure observable in output: 0-graded binder emits no code.
 theorem zero_grade_no_code
-    {Γ : Ctx Eff Mult} {x : Var} {A : VTy Eff Mult}
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {x : Var} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy (Ctx.bind x (0 : Mult) A Γ) c e B →
+    HasCTy (Finsupp.single x (0 : Mult) + γ) ((x, A) :: Γ) c e B →
     ¬ Wasmfx.MentionsLocal (compileC c) x := sorry
 
 end Bang
