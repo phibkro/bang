@@ -42,9 +42,14 @@ HasVTy : values are inert (no effect grade); judged at VTy.
 HasCTy : computations carry an explicit running effect grade `e`; inhabit CTy
          (whose `F q A` annotation is consumer-side coeffect).
 
-NOTE on the named-variable cons: `Finsupp.single y ρ + γ` over-approximates
-when `y` is not fresh w.r.t. `γ` (the grades accumulate rather than shadow);
-freshness is discharged by the substitution lemma, not a rule side-condition.
+NOTE on the named-variable cons: `Finsupp.single y q + γ` only correctly
+encodes the de-Bruijn `q .: γ` if `γ` has NO mass at the bound `y` — otherwise
+the grades accumulate rather than shadow. De Bruijn gives this structurally; the
+named encoding must ENFORCE it as a rule side-condition (`γ y = 0` on `lam`,
+`γ₂ y = 0` on `letC`). An earlier NOTE claimed this freshness was "discharged by
+the substitution lemma" — that is CIRCULAR (the substitution lemma *needs* it as
+an input; cf. `Bang/Metatheory.lean`), so the rules carry it. (Q11: de Bruijn
+would dissolve this and three sibling side-conditions.)
 
 Refinements still open: Q4 (handle — keeps the same-φ shape below; the
 label-removing rule is deferred), Q5 (up — omitted pending opArgTy/opResTy). -/
@@ -73,6 +78,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- arrow-free outer usage budget of the bound value (recorded nowhere in the
   -- bare `letC` syntax, so existentially quantified at the rule).
   | letC   : ∀ {γ γ₁ γ₂ Γ y M N φ₁ φ₂ q1 q2 A B},
+      γ₂ y = 0 →                                      -- bound-var-grade invariant (Gap B / Q11)
       HasCTy γ₁ Γ M φ₁ (CTy.F q1 A) →
       HasCTy (Finsupp.single y (q1 * q_or_1 q2) + γ₂) ((y, A) :: Γ) N φ₂ B →
       γ = (q_or_1 q2) • γ₁ + γ₂ →
@@ -87,6 +93,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- order (QTT defines none). Recording `q` directly is the resource-threading
   -- core; the subsumption is an orthogonal feature gated on an ordered semiring.
   | lam    : ∀ {γ Γ y M φ q A B},
+      γ y = 0 →                                       -- bound-var-grade invariant (Gap B / Q11)
       HasCTy (Finsupp.single y q + γ) ((y, A) :: Γ) M φ B →
       HasCTy γ Γ (Comp.lam y M) ⊥ (CTy.arr q A B)
   -- T_App: `γ = γ₁ Q+ (q Q* γ₂)`, scaling the argument's grades by the arrow's `q`.

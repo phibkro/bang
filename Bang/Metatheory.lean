@@ -49,15 +49,15 @@ theorem HasCTy.weaken_mem
     (h : HasCTy γ Γ c e B) : HasCTy γ Γ' c e B := by
   cases h with
   | ret hv heq => exact .ret (HasVTy.weaken_mem sub hv) heq
-  | letC hM hN heq =>
-      refine .letC (HasCTy.weaken_mem sub hM) (HasCTy.weaken_mem ?_ hN) heq
+  | letC hy0 hM hN heq =>
+      refine .letC hy0 (HasCTy.weaken_mem sub hM) (HasCTy.weaken_mem ?_ hN) heq
       intro z C hmem
       rcases List.mem_cons.mp hmem with h0 | h1
       · exact h0 ▸ List.mem_cons_self ..
       · exact List.mem_cons_of_mem _ (sub h1)
   | force hv => exact .force (HasVTy.weaken_mem sub hv)
-  | lam hM =>
-      refine .lam (HasCTy.weaken_mem ?_ hM)
+  | lam hy0 hM =>
+      refine .lam hy0 (HasCTy.weaken_mem ?_ hM)
       intro z C hmem
       rcases List.mem_cons.mp hmem with h0 | h1
       · exact h0 ▸ List.mem_cons_self ..
@@ -71,6 +71,65 @@ theorem HasVTy.weaken_closed
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
     (h : HasVTy γ [] v A) : HasVTy γ Γ v A :=
   HasVTy.weaken_mem (fun hmem => absurd hmem List.not_mem_nil) h
+
+
+/-! ### Grade support ⊆ context keys.
+
+A variable `z` absent from the type context carries `0` grade. Proved by
+mutual induction; the binder cases (`lam`/`letC`) use the new bound-var-grade
+invariant (`γ y = 0` / `γ₂ y = 0`, Syntax.lean §1.6). Corollary: a CLOSED
+derivation (`Γ = []`) is `0`-graded — so the substituted value's grade
+`γ_Δ` in `subst_value` is forced to `0`. -/
+
+mutual
+theorem HasVTy.grade_support
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (h : HasVTy γ Γ v A) {z : Var} (hz : ∀ C, (z, C) ∉ Γ) : γ z = 0 := by
+  cases h with
+  | vunit => rfl
+  | vint => rfl
+  | @vvar _ x A hmem =>
+      have hzx : z ≠ x := by rintro rfl; exact hz A hmem
+      exact Finsupp.single_eq_of_ne hzx
+  | vthunk hM => exact HasCTy.grade_support hM hz
+theorem HasCTy.grade_support
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
+    (h : HasCTy γ Γ c e B) {z : Var} (hz : ∀ C, (z, C) ∉ Γ) : γ z = 0 := by
+  cases h with
+  | ret hv heq => subst heq; rw [Finsupp.smul_apply, HasVTy.grade_support hv hz, smul_zero]
+  | @letC g g1 g2 _ y M N φ1 φ2 q1 q2 A B hy0 hM hN heq =>
+      subst heq
+      rw [Finsupp.add_apply, Finsupp.smul_apply, HasCTy.grade_support hM hz, smul_zero, zero_add]
+      by_cases hzy : z = y
+      · subst hzy; exact hy0
+      · have hzN := HasCTy.grade_support hN (z := z) (by
+          intro C hmem
+          rcases List.mem_cons.mp hmem with h0 | h1
+          · exact hzy (Prod.mk.injEq .. ▸ h0).1
+          · exact hz C h1)
+        rwa [Finsupp.add_apply, Finsupp.single_eq_of_ne hzy, zero_add] at hzN
+  | force hv => exact HasVTy.grade_support hv hz
+  | @lam g _ y M φ q A B hy0 hM =>
+      by_cases hzy : z = y
+      · subst hzy; exact hy0
+      · have hzM := HasCTy.grade_support hM (z := z) (by
+          intro C hmem
+          rcases List.mem_cons.mp hmem with h0 | h1
+          · exact hzy (Prod.mk.injEq .. ▸ h0).1
+          · exact hz C h1)
+        rwa [Finsupp.add_apply, Finsupp.single_eq_of_ne hzy, zero_add] at hzM
+  | app hM hv heq =>
+      subst heq
+      rw [Finsupp.add_apply, Finsupp.smul_apply, HasCTy.grade_support hM hz,
+        HasVTy.grade_support hv hz, smul_zero, add_zero]
+  | handle hM => exact HasCTy.grade_support hM hz
+end
+
+/-- A closed value is `0`-graded (corollary of `grade_support`). -/
+theorem HasVTy.closed_grade_zero
+    {γ : GradeVec Mult} {v : Val} {A : VTy Eff Mult}
+    (h : HasVTy γ ([] : TyCtx Eff Mult) v A) : γ = 0 := by
+  ext z; exact HasVTy.grade_support h (fun _ => List.not_mem_nil)
 
 
 
@@ -230,19 +289,20 @@ theorem HasCTy.subst_gen
   | @handle g _ h M' φ B' hM =>
       simp only [Comp.subst]
       exact .handle (HasCTy.subst_gen hv hfp hfg hM)
-  | @lam g _ y M' φ q A_l B' hM =>
+  | @lam g _ y M' φ q A_l B' hy0 hM =>
       by_cases hxy : x = y
-      · -- SHADOWED (x = y): `Comp.subst` stops; `lam x M'` is returned unchanged,
-        -- yet the conclusion grade `g.erase x + g x • γ_Δ` mixes in `γ_Δ` as if a
-        -- substitution had occurred. This is consistent ONLY when `g x = 0` (then
-        -- `g.erase x + g x • γ_Δ = g.erase x = g`). KERNEL GAP: the `lam` rule does
-        -- NOT enforce the BOUND-VARIABLE-GRADE INVARIANT `g y = 0` for `lam y _`
-        -- (the named encoding lets free-var grade `g` carry mass at the bound `y`;
-        -- Syntax.lean §1.6 NOTE flags this but says it is "discharged by the
-        -- substitution lemma" — which is circular here, since the subst lemma NEEDS
-        -- it). Also needs an EXCHANGE/STRENGTHENING lemma to drop the now-shadowed
-        -- deep `(x,A)` from M''s context. Both are kernel-rule concerns, not proof
-        -- gaps. See proof-engineer report: shadowed-binder gap (2026-06-21).
+      · -- SHADOWED (x = y): `Comp.subst` stops; `lam x M'` is returned unchanged.
+        -- BLOCKED — FOURTH FALSITY (survives BOTH kernel fixes). `subst_value` is
+        -- FALSE in this case: the body's `vvar x` may be typed via the (deep,
+        -- substituted) slot `(x,A)` at a type `A ≠ A_l` (the lam binder type),
+        -- because the named `vvar` rule's lookup is NON-DETERMINISTIC and the
+        -- shadowing binder `(x,A_l)` is introduced INSIDE `c`, not in `Γ` (so
+        -- neither `hfg`/no-dup nor the `γ y = 0` lam invariant rules it out).
+        -- Substituting then changes the conclusion type `B`, which `subst_value`
+        -- fixes. Machine-checked `example : False` (Bang/CexSubst3.lean, 2026-06-21)
+        -- with c = `lam x (ret (vvar x))`, deep `(x,unit)`, binder `(x,int)`.
+        -- FIX: make `vvar` lookup deterministic (first-match), OR forbid a binder
+        -- from shadowing a context variable. Kernel-rule concern — see report.
         sorry
       · -- not shadowed: descend into the body under the extended prefix (y,A_l)::pre.
         simp only [Comp.subst, if_neg hxy]
@@ -256,14 +316,18 @@ theorem HasCTy.subst_gen
         -- and (single y q + g) x = g x.  Reassemble the lam.
         rw [add_erase, single_erase_of_ne hxy, Finsupp.add_apply,
           Finsupp.single_eq_of_ne hxy, zero_add, add_assoc] at ih
-        exact .lam ih
-  | @letC g g1 g2 _ y M' N' φ1 φ2 q1 q2 A_l B' hM hN hgeq =>
+        -- new lam-rule premise `(g.erase x + g x • γ_Δ) y = 0`:
+        refine .lam ?_ ih
+        have hΔ0 : γ_Δ = 0 := HasVTy.closed_grade_zero hv
+        rw [hΔ0, smul_zero, add_zero]
+        rw [Finsupp.erase_ne (fun he => hxy he.symm), hy0]
+  | @letC g g1 g2 _ y M' N' φ1 φ2 q1 q2 A_l B' hy0 hM hN hgeq =>
       subst hgeq
       by_cases hxy : x = y
       · -- SHADOWED (x = y): subst into M' descends, but N' is left unchanged.
-        -- BLOCKED: same shadowed-binder gap as `lam` — the continuation `N'` lives
-        -- under `(y,A_l)::Γctx` with `y = x` shadowing the deep `(x,A)`; re-typing
-        -- needs the exchange lemma + bound-var-grade invariant. See report.
+        -- BLOCKED — same FOURTH FALSITY as `lam` (continuation `N'` under the
+        -- shadowing binder `(x,A_l)` may use the deep `(x,A)` at a divergent type).
+        -- See `lam` comment + Bang/CexSubst3.lean. Kernel-rule concern.
         sorry
       · -- not shadowed.
         simp only [Comp.subst, if_neg hxy]
@@ -277,16 +341,25 @@ theorem HasCTy.subst_gen
         -- N-binder grade: (single y (q1*q_or_1 q2) + g2).erase x reassembles
         rw [add_erase, single_erase_of_ne hxy, Finsupp.add_apply,
           Finsupp.single_eq_of_ne hxy, zero_add, add_assoc] at ihN
-        refine .letC ihM ihN ?_
+        -- new letC-rule premise `(g2.erase x + g2 x • γ_Δ) y = 0`:
+        refine .letC ?_ ihM ihN ?_
+        · have hΔ0 : γ_Δ = 0 := HasVTy.closed_grade_zero hv
+          rw [hΔ0, smul_zero, add_zero, Finsupp.erase_ne (fun he => hxy he.symm), hy0]
         -- (q_or_1 q2 • g1 + g2).erase x + (q_or_1 q2•g1 + g2) x • γ_Δ
         --   = q_or_1 q2 • (g1.erase x + g1 x•γ_Δ) + (g2.erase x + g2 x•γ_Δ)
-        rw [add_erase, smul_erase, Finsupp.add_apply, Finsupp.smul_apply,
-          add_smul, smul_add, smul_assoc]
-        abel
+        · rw [add_erase, smul_erase, Finsupp.add_apply, Finsupp.smul_apply,
+            add_smul, smul_add, smul_assoc]
+          abel
 end
 
 
-/-! ### `subst_value` — the frozen Spec statement, specialized from `subst_gen`. -/
+/-! ### `subst_value` — the frozen Spec statement, specialized from `subst_gen`.
+
+Mirrors `Bang/Spec.lean`'s `subst_value` exactly (incl. the `∀ C, (x,C) ∉ Γ`
+hypothesis, Gap A). Discharges via `HasCTy.subst_gen` at `pre = []`, then a
+grade rewrite. NOTE: `subst_gen` is itself blocked on the FOURTH falsity in its
+shadowed-binder cases (`lam`/`letC` with `x = y`), so this proof transitively
+carries those `sorry`s until the kernel makes `vvar` lookup deterministic. -/
 
 theorem subst_value_proof
     (ρ : Mult) {γ_Γ γ_Δ : GradeVec Mult} {Γ : TyCtx Eff Mult}
@@ -294,14 +367,21 @@ theorem subst_value_proof
     {c : Comp} {e : Eff} {B : CTy Eff Mult}
     (hv : HasVTy γ_Δ [] v A)
     (hx0 : γ_Γ x = 0)
+    (hfg : ∀ C, (x, C) ∉ Γ)
     (hc : HasCTy (Finsupp.single x ρ + γ_Γ) ((x, A) :: Γ) c e B) :
     HasCTy (γ_Γ + ρ • γ_Δ) Γ (Comp.subst x v c) e B := by
-  -- BLOCKED on the missing kernel hypothesis `∀ C, (x,C) ∉ Γ`.
-  -- subst_gen needs `hfg : x not rebound in Γ` (the well-formedness side-condition
-  -- `subst_value` LACKS — machine-checked counterexample with Γ = [(x,int)] shows
-  -- the bare statement is false). Once the kernel adds `hfg` to `subst_value`,
-  -- this discharges by `have := HasCTy.subst_gen (pre := []) hv (by simp) hfg hc`
-  -- followed by the grade rewrite below (already verified to close).
-  sorry
+  have key := HasCTy.subst_gen (pre := []) hv (by simp) hfg (by simpa using hc)
+  -- grade: (single x ρ + γ_Γ).erase x = γ_Γ  and  (single x ρ + γ_Γ) x = ρ.
+  have he : (Finsupp.single x ρ + γ_Γ).erase x = γ_Γ := by
+    rw [add_erase, single_erase_self]
+    rw [show γ_Γ.erase x = γ_Γ from by
+      ext y; by_cases h : y = x
+      · subst h; rw [Finsupp.erase_same, hx0]
+      · rw [Finsupp.erase_ne h]]
+    rw [zero_add]
+  have ha : (Finsupp.single x ρ + γ_Γ) x = ρ := by
+    rw [Finsupp.add_apply, Finsupp.single_eq_same, hx0, add_zero]
+  rw [he, ha] at key
+  simpa using key
 
 end Bang

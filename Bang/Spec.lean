@@ -75,17 +75,22 @@ theorem no_accidental_handling
 --   (2) GRADE-FRESHNESS — `γ_Γ x = 0`. `single x ρ + γ_Γ` does NOT structurally
 --       pin `x`'s grade to `ρ` (unlike de Bruijn's cons); without `γ_Γ x = 0`,
 --       `γ_Γ` can add mass at `x` that the conclusion's `γ_Γ + ρ•γ_Δ` carries but
---       no derivation in `Γ` (sans `x`) can witness. Machine-checked `example :
---       False` confirmed the statement is false without it (2026-06-21).
--- Both are genuinely-true conditions for the STD block (head-redexes substitute
--- closed values at freshly-bound vars), not weakenings. Open-`v` / general-Γ
--- substitution needs capture-avoiding subst or de Bruijn — OPEN_QUESTIONS Q11.
+--       no derivation in `Γ` (sans `x`) can witness.
+--   (3) CONTEXT WELL-FORMEDNESS — `∀ C, (x,C) ∉ Γ`. The bare `vvar` rule accepts
+--       ANY membership, so a duplicate-key `Γ` lets the looked-up type differ
+--       from `v`'s `A` (e.g. `Γ = [(x,int)]`, head `(x,unit)`). Standard
+--       no-duplicate-keys for named contexts.
+-- (2) and (3) were each confirmed by a machine-checked `example : False`
+-- (2026-06-21). All three are genuinely-true STD-block conditions (head-redexes
+-- substitute closed values at freshly-bound vars in well-formed contexts), not
+-- weakenings. De Bruijn would dissolve all three structurally — OPEN_QUESTIONS Q11.
 theorem subst_value
     (ρ : Mult) {γ_Γ γ_Δ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {x : Var} {v : Val} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasVTy γ_Δ [] v A →
     γ_Γ x = 0 →
+    (∀ C, (x, C) ∉ Γ) →
     HasCTy (Finsupp.single x ρ + γ_Γ) ((x, A) :: Γ) c e B →
     HasCTy (γ_Γ + ρ • γ_Δ) Γ (Comp.subst x v c) e B
     := sorry
