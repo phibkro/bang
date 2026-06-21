@@ -127,7 +127,7 @@ here for programmatic Lean access without an MCP bridge.
 | `lean4-repl` (JSON-over-stdin REPL) | Useful for AI / programmatic exploration. Compatibility iffy across Lean versions. | If we wire an MCP-Lean bridge or LeanDojo-style interactions |
 | `doc-gen4` (HTML API docs) | Spec.lean IS the PRD; HTML docs are the natural artifact. | When Phase A part 2 lands (concrete typing judgments → readable docs) |
 | `iris-lean` (▷ later modality, MoSeL) | Buys guarded recursion for the LR without rolling our own well-founded recursion. | When the LR mutual defs (Vrel/Srel/Krel/Crel) need concrete bodies — Phase B PROOF_ORDER #1 |
-| `grind` (Lean's SMT-style closer, ≥4.28) | Now in our toolchain; just use it. Probably the most impactful tactic for our typing-derivation case work. | Already available — reach for it on goal leaves |
+| `grind` (Lean's SMT-style closer, ≥4.28) | Now in our toolchain; just use it. Probably the most impactful tactic for our typing-derivation case work. See `docs/notes/tactics-survey.md`. | Already available — reach for it on goal leaves |
 | `aesop` custom rule sets | Tag typing-rule constructors with `@[aesop safe constructors]`; case analysis becomes near-automatic. | When typing rules are concretized in Phase A part 2 |
 | `CSLib` (Lean 4 PL library) | Reusable LTS / bisimulation infrastructure. | If our LR proofs find themselves re-implementing standard bisimulation lemmas |
 | `LeanInfer` (local neural premise selection) | Research-grade; needs binary deps. | When closing dozens of compat lemmas in volume; not yet |
