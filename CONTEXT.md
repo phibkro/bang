@@ -30,6 +30,21 @@ What changed:
 
 ## Subsequent landings since ◊1 (housekeeping; not a new checkpoint)
 
+**Dev-env upgrades (2026-06-21):**
+- **Lean toolchain bumped to v4.30.0** (was v4.29.0); Mathlib bumped to
+  matching v4.30.0. Build green: 723/723 jobs.
+- **Loogle added** as a `lake require` — `nix develop --command lake exe loogle "..."`
+  for Mathlib type-signature search. Now compatible with our toolchain.
+- **tools/eval.sh** — submit Lean snippet via stdin, get elaborator output
+  (with `import Bang; open Bang` prepended). Programmatic Lean access for
+  agents / scripts without an MCP bridge.
+- **Dev-env architecture** recorded in `docs/notes/dev-env.md`: Nix manages
+  elan + system deps; elan fetches the official Lean toolchain; Mathlib's
+  cache keys to that hash and stays live. (If Nix built Lean itself, the
+  hash would diverge and the cache would miss — multi-GB recompiles.)
+
+
+
 **Codebase merge & restructure (2026-06-21):**
 - `bang-lang-wasmfx/` merged into the root Lean project, then deleted. Its `.lean` files moved into `Bang/` (now `Bang/Spec.lean`, `Bang/Compat.lean`, `Bang/Audit.lean`, `Bang/Distribution.lean`). `audit.sh` moved to `tools/audit.sh`.
 - `effectrow-oracle/` flattened to project root. `Bang/` is now at root; `lakefile.toml`, `lean-toolchain`, `lake-manifest.json`, `flake.nix`, `flake.lock`, `.envrc`, `Makefile` all live at root per standard Lean 4 conventions.

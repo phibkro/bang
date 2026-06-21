@@ -3,6 +3,21 @@
 > How to set up + use the bang-lang dev tooling. Most things "just work"
 > after `nix develop`; this doc lists the levers and what each does.
 
+## Why Nix manages elan, NOT Lean itself
+
+Mathlib's olean cache is keyed to the official Lean toolchain build (hash).
+If Nix builds Lean itself, the hash diverges and the cache misses — every
+build then recompiles Mathlib from source (multi-GB, hours).
+
+Our `flake.nix` deliberately ships **`pkgs.elan` only**, not `pkgs.lean`.
+Elan reads `lean-toolchain` and fetches the official Lean release. Mathlib's
+Azure-hosted cache stays live; `lake exe cache get` populates oleans in
+seconds.
+
+For hermetic reproducibility (e.g. CI), the second path is `lean4-nix` —
+slow Mathlib rebuild is fine there because CI doesn't iterate. Keep it out
+of the daily dev shell.
+
 ## First-time setup
 
 ```bash
@@ -83,13 +98,38 @@ Currently (Phase A part 1) the burndown shows `sorryAx` plus the
 specific axioms each theorem touches (e.g. `lr_fundamental` depends on
 `[sorryAx, Crel, HasCTy]`). Each axiom is a Phase B target.
 
+## Loogle — Mathlib type-signature search
+
+```bash
+nix develop --command lake exe loogle "?n + 0 = ?n"
+nix develop --command lake exe loogle "Finset _ → Finset _ → Finset _"
+```
+
+Returns Mathlib lemmas matching the shape. First invocation builds loogle
+(~30s); subsequent runs are instant. Added as a `[[require]]` in
+`lakefile.toml`.
+
+## tools/eval.sh — submit Lean snippet, get elaborator output
+
+```bash
+echo '#check @Bang.Comp.handle' | bash tools/eval.sh
+echo '#print Bang.HasCTy' | bash tools/eval.sh
+```
+
+Snippet runs with `import Bang; open Bang` prepended. Useful for
+exploration without editing a file. AI agents / scripts can shell out
+here for programmatic Lean access without an MCP bridge.
+
 ## Tools to consider adding (deferred)
 
 | Tool | Why deferred | When to add |
 |---|---|---|
-| `loogle` (Mathlib type-sig search) | Compatibility with Lean v4.29 unverified; would add as a `lake require`. | When proof bodies start landing and "what's the lemma for X" becomes a daily question |
 | `lean4-repl` (JSON-over-stdin REPL) | Useful for AI / programmatic exploration. Compatibility iffy across Lean versions. | If we wire an MCP-Lean bridge or LeanDojo-style interactions |
 | `doc-gen4` (HTML API docs) | Spec.lean IS the PRD; HTML docs are the natural artifact. | When Phase A part 2 lands (concrete typing judgments → readable docs) |
+| `iris-lean` (▷ later modality, MoSeL) | Buys guarded recursion for the LR without rolling our own well-founded recursion. | When the LR mutual defs (Vrel/Srel/Krel/Crel) need concrete bodies — Phase B PROOF_ORDER #1 |
+| `grind` (Lean's SMT-style closer, ≥4.28) | Now in our toolchain; just use it. Probably the most impactful tactic for our typing-derivation case work. | Already available — reach for it on goal leaves |
+| `aesop` custom rule sets | Tag typing-rule constructors with `@[aesop safe constructors]`; case analysis becomes near-automatic. | When typing rules are concretized in Phase A part 2 |
+| `CSLib` (Lean 4 PL library) | Reusable LTS / bisimulation infrastructure. | If our LR proofs find themselves re-implementing standard bisimulation lemmas |
 | `LeanInfer` (local neural premise selection) | Research-grade; needs binary deps. | When closing dozens of compat lemmas in volume; not yet |
 | CI (GitHub Actions) | No remote yet; cargo-cult locally. | When the project goes public or another agent contributes |
 
