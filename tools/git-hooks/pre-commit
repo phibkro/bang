@@ -47,7 +47,26 @@ if [ -n "$staged_lean_strict" ]; then
   fi
 fi
 
-# ── 3. `just verify` IF .lean files are staged ─────────────────────────
+# ── 3. Statement-change detector ────────────────────────────────────────
+# Theorem statements (Bang/Spec.lean PRD) are FROZEN. Modifying a statement
+# (vs. filling in a proof body) is the cardinal sin in this project.
+# Heuristic: ADD/REMOVE lines starting with `theorem` keyword trigger this.
+# False positives possible; explicit ack via env var bypasses.
+if [ -n "$staged_lean" ]; then
+  theorem_changes=$(git diff --cached -- $staged_lean 2>/dev/null \
+                    | grep -E '^[+-][[:space:]]*theorem' || true)
+  if [ -n "$theorem_changes" ] && [ -z "${STATEMENT_CHANGE_OK:-}" ]; then
+    echo "❌ pre-commit: theorem statement changes detected:"
+    echo "$theorem_changes" | head -6 | sed 's/^/    /'
+    echo ""
+    echo "   Theorem statements are FROZEN (the PRD; per spec-proof-discipline.md)."
+    echo "   To commit anyway (e.g., adding a new theorem, intentional refactor):"
+    echo "     STATEMENT_CHANGE_OK=\"why this is justified\" git commit -m \"...\""
+    exit 1
+  fi
+fi
+
+# ── 4. `just verify` IF .lean files are staged ─────────────────────────
 if [ -z "$staged_lean" ]; then
   echo "✓ pre-commit: static checks passed (no .lean changes; skipping verify)"
   exit 0

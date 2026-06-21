@@ -14,6 +14,14 @@
 default:
     @just --list --unsorted
 
+# First-time setup (idempotent): install hooks + fetch Mathlib oleans + verify.
+setup:
+    bash tools/setup.sh
+
+# One-shot orient — position, active path, burndown, recent commits, next steps.
+orient:
+    bash tools/orient.sh
+
 # Default verify gate — selfcheck + build + audit.
 verify: selfcheck build audit
 

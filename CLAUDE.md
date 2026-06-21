@@ -1,10 +1,12 @@
 # AGENTS.md — read this first
 
-You are a fresh session. **This repo is your only memory.** Anything not written here did not happen. Read this file, then `CONTEXT.md`, then `ROADMAP.md`, before changing anything.
+## What BANG is
+
+A small language whose **paradigm and runtime are values, not language features**. The kernel is thunks + effects + STM; everything else (mutability, IO, async, actors, signals) is ordinary library code over it. Programs are **descriptions** until forced with `$` (ADR-0007; `!` is actor-send); a function's **paradigm** is which effects are in its row; a program's **runtime** is a handler installed at the use site.
 
 **First time in this repo?** Read `ONBOARDING.md` for setup + a tighter reference index.
 
-## Reference index (progressive disclosure)
+## Reference index
 
 This file is the always-loaded core: invariants, glossary, architecture-in-force,
 verify-command. Everything else is on-demand — consult the relevant doc when
@@ -31,10 +33,6 @@ its trigger arises.
 | **References library** (cited papers + refs.bib) | `references/README.md` |
 | **Subagent roles** | `.claude/agents/{kernel-engineer,proof-engineer}.md` |
 | **Run any task** | `just` (lists recipes); see `justfile` |
-
-## What BANG is
-
-A small language whose **paradigm and runtime are values, not language features**. The kernel is thunks + effects + STM; everything else (mutability, IO, async, actors, signals) is ordinary library code over it. Programs are **descriptions** until forced with `$` (ADR-0007; `!` is actor-send); a function's **paradigm** is which effects are in its row; a program's **runtime** is a handler installed at the use site.
 
 ## Architecture in force (third design revision)
 
@@ -63,7 +61,6 @@ what the K3 work taught (preserved as input to the graded-CBPV port at ◊3).
 ## Do NOT
 
 - add a kernel primitive · make rows ordered · reintroduce `sig` · add implicit lexical capture
-- make Effect TS (or any borrowed runtime) the canonical target
 - hand-design the VM, then justify a compiler against it
 - optimize speculatively, or add a feature the spec's Non-Features section forbids
 - prove most-generality (MGU) for unification — soundness is the contract; MGU goes to the differential test

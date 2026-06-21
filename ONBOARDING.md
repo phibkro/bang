@@ -12,10 +12,12 @@
 ```bash
 cd /srv/share/projects/lang-bang
 nix develop          # opens Lean 4 dev shell (or auto-via direnv if `direnv allow`)
-lake exe cache get   # one-time: pull Mathlib oleans from Azure (multi-GB, minutes)
-just install-hooks   # one-time: link pre-commit hook (.git/hooks/pre-commit symlink)
-just verify          # selfcheck + lake build + audit  →  expect green
+just setup           # one shot: install-hooks + lake exe cache get + verify
+just orient          # one-shot status: position + active path + burndown + commits
 ```
+
+`just setup` is idempotent and prints what to read next.
+`just orient` is the fast "where am I?" recap; safe to run anytime.
 
 If `just verify` exits green and `just burndown` shows the per-module
 sorry/axiom counts, you're ready.
