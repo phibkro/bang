@@ -32,7 +32,14 @@ type `Lattice`, `OrderBot`, and `DistribLattice` instances natively (join
 constraints used in `Bang/Core.lean`'s variable block.
 
 The spec stays parametric in any such `Eff`; this is THE bang-lang
-default per ADR-0001. -/
+default per ADR-0001.
+
+The lattice (not semiring) choice is the SOTA abstraction, not an idiosyncrasy:
+yoshioka-icfp24-abstracting-effect-systems proves `(E, ⊔)` a join-semilattice
+is *exactly* the structure under which type-and-effect safety holds; and
+balik-esop26-deciding-not-to-decide independently adopts the same set/join
+semantics (Rocq-mechanized). The Q1 semiring→lattice switch moved toward
+consensus. -/
 abbrev EffRow := Finset Label
 
 /-- A canonical row's label set. `Finset` is canonical by construction: there is

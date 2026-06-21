@@ -46,12 +46,16 @@ Summary of the hard rules:
 
 ## Reference reading (`references/papers/`)
 
-- `logical-relations/biernacki-popl18-handle-with-care.pdf` — Figs 6–9 transcribed (Vrel/Srel/Krel/Crel)
-- `logical-relations/proving-correctness-step-indexed.pdf` — step-indexing template
-- `calculated-compilers/bahr-hutton-calculating-effectively.pdf` — calculation method
-- `calculated-compilers/monadic-compiler-calculation.pdf` — monad-swap for effects
-- Pass-A gaps (not yet on disk): Benton-Hur ICFP'09, Ahmed ESOP'06, Pitts
-  step-indexed-biorthogonality, Katsumata POPL'14. Fetch when actively cited.
+Papers are grouped by pipeline stage (`1-kernel/ 2-calcvm/ 3-lr/ 4-wasmfx/`);
+see `references/README.md`. For proof work the relevant ones:
+
+- `3-lr/biernacki-popl18-handle-with-care.pdf` — Figs 6–9 transcribed (Vrel/Srel/Krel/Crel)
+- `3-lr/proving-correctness-step-indexed.pdf` — step-indexing template
+- `3-lr/benton-hur-icfp09-biorthogonality-step-indexing.pdf` — `compile_forward_sim` template
+- `3-lr/ahmed-esop06-step-indexed-syntactic.pdf`, `3-lr/pitts-step-indexed-biorthogonality.pdf` — step-index foundations
+- `2-calcvm/garby-haskell24-calculating-effectively.pdf` — calculate a compiler for an *effectful* language
+- `2-calcvm/monadic-compiler-calculation.pdf` — partiality-monad + bisimilarity for divergence
+- Pass-A is complete (all the above are on disk). Remaining gaps in `references/README.md`.
 
 # Goal
 
@@ -89,7 +93,7 @@ When given a vague goal (e.g. "advance `lr_fundamental`"), decompose into:
   ```
   -- shape: biernacki-popl18-handle-with-care §5.4
   -- step-index per ahmed-esop06
-  -- calculation per bahr-hutton-calculating-effectively
+  -- calculation per garby-haskell24-calculating-effectively
   ```
 - **Surface what's missing.** If you can't close it, leave the `sorry` with
   a comment naming exactly what's missing: the lemma, the technique, the

@@ -88,6 +88,10 @@ replaced by Bahr-Hutton calculation rather than hand-designed IR.
   observation predicate at the WasmFX seam.
 - WasmFX proposal stalls or is superseded by a different stack-switching
   primitive; the architecture is target-agnostic but the proof bindings
-  are not.
+  are not. **Update 2026-06-21**: the proposal has *drifted* (now Phase 3;
+  added `switch`/`resume_throw_ref`/`nocont`; handlers `(tag $e $h)` →
+  `(on $tag $label)`). This affects only the target's *concrete syntax*, not
+  the two-hop architecture — tracked as a ◊5 reconciliation in
+  `docs/notes/OPEN_QUESTIONS.md` Q9, not an architecture reversal.
 - An interpreter-first user community develops that needs CalcVM as the
   shipped artifact, not just the spec.

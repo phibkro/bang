@@ -18,6 +18,7 @@
 - [Q6 — Source.step's deep-handler resumption](#q6--sourcestep-deep-handler-resumption)
 - [Q7 — Operation names as strings vs symbolic enum](#q7--operation-names-as-strings-vs-symbolic-enum)
 - [Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?](#q8--group_recovers-bridge-e-group--f-dagger-frobenius)
+- [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](#q9--wasmfx-target-drift-frozen-oopsla23-syntax-vs-phase-3-standard)
 
 ---
 
@@ -196,11 +197,69 @@ observability side-condition.
 
 **Blocked on**: literature review (Heunen-Karvonen, compositional reversible
 computation). References on disk:
-- `references/papers/reversible-frobenius/heunen-karvonen-reversible-monadic.pdf`
-- `references/papers/reversible-frobenius/compositional-reversible-2024.pdf`
+- `references/papers/adjacent/heunen-karvonen-reversible-monadic.pdf`
+- `references/papers/adjacent/compositional-reversible-2024.pdf`
 
 **Revisit signal**: Phase B PROOF_ORDER #2 (sequenced second precisely so
 this surfaces before compiler work depends on it).
+
+---
+
+## Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard
+
+**Question**: ADR-0016 freezes the WasmFX *abstract syntax* (from the OOPSLA'23
+paper) as the verified compiler-output target. The WebAssembly stack-switching
+proposal has since advanced to **Phase 3**, and its instruction set has diverged.
+Is the frozen target still the right thing to compile to and verify against?
+
+**Why it matters**: invariant #8 — "the WasmFX backend is the verified compiler
+target." If `compile_forward_sim` proves correctness against an abstract syntax
+the real engine no longer implements, the proof is green against a fiction. A
+frozen, drifted target is the worst case: it *looks* verified.
+
+**Detail** (confirmed by the 2026-06-21 SOTA sweep — see `references/README.md`
+→ Integration findings; sources in `refs.bib`):
+
+```
+Frozen (OOPSLA'23)            Phase-3 standard (live)        Status
+──────────────────            ──────────────────────        ──────
+cont.new / resume / suspend   + switch                      NEW primitive — symmetric
+  + cont.bind                                                peer-to-peer switching,
+                                                             not sugar over suspend/resume
+resume_throw                  + resume_throw_ref             NEW
+cont (top type)               + nocont (bottom heap type)    NEW
+handlers: (tag $e $h) pairs   handlers: (on $tag $label)     RENAMED — old codegen is wrong
+                                clauses on `resume`
+```
+
+The frozen target is now a **strict subset** of the standard. Per the SpecTec
+experience report (WAW 2025), *semantics* (not just surface syntax) were adjusted
+during standardization.
+
+**Options**:
+1. **Pin-to-engine, defer reconciliation to ◊5** *(recommended)*. The target
+   doesn't bind until ◊5 (Compiler v0); we're at ◊2. Do NOT chase a Phase-3
+   (still-mutable) proposal now. When ◊5 begins: pin a specific commit of
+   `WebAssembly/stack-switching` + a Wasmtime version, and gate
+   `compile_forward_sim` on differential testing against that engine
+   (`wasm_stack_switching`, x86-64 Linux) rather than against the paper.
+2. Re-freeze the target now against the current Explainer.md. Premature: the
+   proposal will move again before Phase 4; we'd just re-drift.
+3. Adopt a mechanized oracle. WasmFXCert + Iris-WasmFX (PLDI'26, Rocq) is a
+   mechanized type-soundness model of WasmFX — aligns with invariant #1
+   ("proof rides the reference"). Caveat: Rocq, not Lean; and verify whether it
+   models the new `switch`/`nocont` or only the `suspend`/`resume` core.
+
+**Recommended**: (1) now + (3) as the reference to ride at ◊5. Record here; do
+NOT rewrite ADR-0016 (the two-hop *architecture* is unchanged — only the target's
+concrete syntax drifted, which is a ◊5 reconciliation, not an architecture
+reversal).
+
+**Blocked on**: nothing now. This is a ◊5 obligation, surfaced early.
+
+**Revisit signal**: starting ◊5 compiler/backend work; OR the stack-switching
+proposal reaching Phase 4 (becomes stable — re-freeze then); OR a decision to
+adopt WasmFXCert as the backend oracle.
 
 ---
 

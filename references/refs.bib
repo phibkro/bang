@@ -97,12 +97,16 @@
 
 % ─── Calculated compilers ────────────────────────────────────────────────────
 
-@inproceedings{bahr-hutton-calculating-effectively,
-  author    = {Bahr, Patrick and Hutton, Graham},
-  title     = {Calculating Compilers Effectively},
-  booktitle = {ICFP},
-  year      = 2022,
-  % TODO: verify year and doi
+@inproceedings{garby-haskell24-calculating-effectively,
+  author    = {Garby, Zac and Hutton, Graham and Bahr, Patrick},
+  title     = {Calculating Compilers Effectively (Functional Pearl)},
+  booktitle = {Proceedings of the 17th ACM SIGPLAN International Haskell Symposium},
+  pages     = {109--119},
+  year      = 2024,
+  doi       = {10.1145/3677999.3678283},
+  % Resolved 2026-06-21 from the PDF title page: this is the EFFECTS pearl
+  % (Garby first author, Haskell'24) — the canonical "calculate a compiler for
+  % an effectful language" paper. Earlier mislabeled as Bahr-Hutton ICFP'22.
 }
 
 @inproceedings{bahr-hutton-dependently-typed,
@@ -112,9 +116,15 @@
   % TODO: verify year and doi
 }
 
-@inproceedings{monadic-compiler-calculation,
-  title     = {Monadic Compiler Calculation},
-  % TODO: verify all fields (likely Bahr-Hutton ICFP 2022)
+@article{monadic-compiler-calculation,
+  author    = {Bahr, Patrick and Hutton, Graham},
+  title     = {Monadic Compiler Calculation (Functional Pearl)},
+  journal   = {Proceedings of the ACM on Programming Languages (ICFP)},
+  volume    = 6,
+  year      = 2022,
+  doi       = {10.1145/3547624},
+  % Confirmed 2026-06-21 from the PDF title page. Partiality monad +
+  % strong bisimilarity to calculate compilers handling divergence.
 }
 
 @inproceedings{swierstra-compilation-alacarte,
@@ -361,4 +371,84 @@
   eprint = {2605.28781},
   archivePrefix = {arXiv},
   primaryClass  = {math.NT},
+}
+
+% ─── 2026-06-21 SOTA sweep additions ─────────────────────────────────────────
+% Seven papers fetched during the 2026-06-21 literature reconciliation.
+% Relevance + integration verdicts are recorded in README.md "Integration findings".
+
+@article{yoshioka-icfp24-abstracting-effect-systems,
+  author  = {Yoshioka, Takuma and Sekiyama, Taro and Igarashi, Atsushi},
+  title   = {Abstracting Effect Systems for Algebraic Effect Handlers},
+  journal = {Proceedings of the ACM on Programming Languages (ICFP)},
+  volume  = 8,
+  year    = 2024,
+  doi     = {10.1145/3674641},
+  eprint  = {2404.16381},
+  archivePrefix = {arXiv},
+  % Proves (E, ⊔) a join-semilattice is exactly the structure for type-and-effect
+  % safety — the literature grounding for ADR-0001/0018 (lattice rows).
+}
+
+@article{zhang-popl19-abstraction-safe-tunneling,
+  author  = {Zhang, Yizhou and Myers, Andrew C.},
+  title   = {Abstraction-Safe Effect Handlers via Tunneling},
+  journal = {Proceedings of the ACM on Programming Languages (POPL)},
+  volume  = 3,
+  year    = 2019,
+  doi     = {10.1145/3290318},
+  % Coined the "accidental handling" problem; origin of the property
+  % no_accidental_handling proves (our lacks-constraint = their tunneling).
+}
+
+@inproceedings{mcdermott-fscd25-grading-cbpv,
+  author    = {McDermott, Dylan},
+  title     = {Grading Call-By-Push-Value, Explicitly and Implicitly},
+  booktitle = {10th International Conference on Formal Structures for Computation and Deduction (FSCD)},
+  series    = {LIPIcs},
+  year      = 2025,
+  doi       = {10.4230/LIPIcs.FSCD.2025.28},
+  % First graded monadic semantics + coherence for CBPV; semantic backstop
+  % to Torczon's operational Coq development.
+}
+
+@inproceedings{kanabar-pldi23-purecake,
+  author    = {Kanabar, Hrutvik and Vivien, Samuel and Abrahamsson, Oskar and Myreen, Magnus O. and Norrish, Michael and {\AA}man Pohjola, Johannes and Zanetti, Riccardo},
+  title     = {{PureCake}: A Verified Compiler for a Lazy Functional Language},
+  booktitle = {Proceedings of the 44th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI)},
+  year      = 2023,
+  doi       = {10.1145/3591259},
+  % End-to-end verified compiler for a lazy language with monadic effects (HOL4);
+  % confirms the compose-through-a-verified-backend architecture for effectful langs.
+}
+
+@article{vanrooij-popl25-affect,
+  author  = {van Rooij, Orpheas and Krebbers, Robbert},
+  title   = {Affect: An Affine Type and Effect System},
+  journal = {Proceedings of the ACM on Programming Languages (POPL)},
+  volume  = 9,
+  year    = 2025,
+  doi     = {10.1145/3704841},
+  % Effect-row type system over a Hazel-style CBV calculus; soundness via a
+  % unary Iris logical relation (Coq). Closest published effect-row LR.
+}
+
+@misc{legoupil-pldi26-iris-wasmfx,
+  author = {Legoupil, Maxime and Pedersen, Mathias and Birkedal, Lars and Lindley, Sam and Pichon-Pharabod, Jean},
+  title  = {{Iris-WasmFX}: Modular Reasoning for Wasm Stack Switching},
+  year   = 2025,
+  note   = {Draft November 2025; PLDI 2026 track. WasmFXCert (Rocq) +
+            Iris program logic + logical relation for the WasmFX target.
+            Artifact: \url{https://github.com/logsem/iris-wasmfx}},
+  % TODO: replace with PLDI'26 DOI once published.
+}
+
+@misc{lindley-draft25-asmfx-handlers-all-the-way-down,
+  author = {Lindley, Sam and others},
+  title  = {Effect Handlers All the Way Down},
+  year   = 2025,
+  note   = {Draft October 2025. Handler calculus (ASFX) → register machine
+            (AsmFX); compiler correctness via an annotated simulation relation.
+            Nearest published twin of CalcVM→WasmFX.},
+  % TODO: confirm full author list + venue on publication.
 }

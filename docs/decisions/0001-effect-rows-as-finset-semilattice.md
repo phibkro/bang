@@ -18,6 +18,7 @@ Model a row's label set as an **idempotent set** — a bounded **join-semilattic
 - Union laws (commutative, associative, idempotent, `∅` identity) are **inherited** from Mathlib's `Finset` `Lattice` + `OrderBot` instances — not proven by hand.
 - Extensional equality is **definitional** (`Finset.ext`), so "canonical form is unique" (the keystone we'd have proved manually in F\*) is free.
 - Matches Effect TS's `R`/`E` channel behavior (dedup, order-insensitive), keeping any future lowering honest.
+- **Literature grounding (added 2026-06-21):** the join-semilattice is the SOTA abstraction, not a convenience. Yoshioka, Sekiyama & Igarashi (ICFP 2024, *Abstracting Effect Systems for Algebraic Effect Handlers*) prove that an effect collection forming a join-semilattice `(E, ⊔)` is *exactly* the structure under which type-and-effect safety holds; Balik et al. (ESOP 2026) independently adopt the same idempotent-commutative-monoid-with-join (= set) semantics in a Rocq-mechanized inference system. See `references/README.md` → Integration findings.
 
 ## Rejected alternatives
 

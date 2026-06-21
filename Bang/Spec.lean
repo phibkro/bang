@@ -45,6 +45,9 @@ theorem rowinst_requires_disjoint
 
 -- [INV][KEY] abstraction-safety / NO accidental handling — the invariant
 -- that licenses dropping ρ-maps. See ADR-0018.
+-- Property origin: zhang-popl19-abstraction-safe-tunneling coined "accidental
+-- handling"; their operational *tunneling* guarantee is what our structural
+-- lacks-constraint (Disjoint l e) formulation discharges.
 theorem no_accidental_handling
     {Γ : Ctx Eff Mult} {l e : Eff} {A : VTy Eff Mult} {q : Mult}
     {body : Comp} {h : Handler} :

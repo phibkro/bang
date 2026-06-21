@@ -1,140 +1,173 @@
 # bang-lang reference library
 
-This directory holds papers and books supporting the bang-lang verification work.
-Citation keys match BibTeX entries in `refs.bib`. Per-paper reading notes go in `notes/`.
+Papers and books supporting the bang-lang verification work. Citation keys match
+BibTeX entries in `refs.bib`; per-paper reading notes go in `notes/`.
 
-## What's here
+## How this library is organized
 
-### Effects & handlers
-- `papers/effects-handlers/biernacki-popl18-handle-with-care.pdf` — logical relations for effect handlers; **spine of the LR** (Vrel/Srel/Krel/Crel); §5.4 set-row fragment licenses bang-lang's ρ-map-free model
-- `papers/effects-handlers/plotkin-pretnar-esop09-handlers.pdf` — **handler semantics origin** (Plotkin, Pretnar); the operational story `compile_forward_sim` lowers to typed continuations
-- `papers/effects-handlers/bauer-pretnar-algebraic-effects-and-handlers.pdf` — foundational tutorial; effect syntax and denotational semantics
-- `papers/effects-handlers/tang-popl24-soundly-handling-linearity.pdf` — *(Pass-B)* control-flow linearity for multi-shot handlers; relevant to the CalcReify frontier and `runState × throw` decision
+Papers are grouped by **which hop of the pipeline they support**, numbered so
+`ls` sorts in compilation order — the same order a session walks the roadmap:
 
-### Graded CBPV
-- `papers/graded-cbpv/torczon-oopsla24-effects-coeffects.pdf` — **the substrate** for bang-lang's graded CBPV; Coq mechanization, resource-aware dynamics
-- `papers/graded-cbpv/katsumata-popl14-parametric-effect-monads.pdf` — **graded monad laws**; ordered-monoid effects; soundness of (subeffecting); the F-monad shape `Crel` follows
+```
+source → graded-CBPV semantics → CalcVM (Bahr–Hutton) → WasmFX (Benton–Hur LR)
+            │                        │                      │
+papers/  1-kernel/ (◊2)         2-calcvm/ (◊3)         3-lr/ (◊4) + 4-wasmfx/ (◊5)
+```
 
-### Logical relations
-- `papers/logical-relations/ahmed-esop06-step-indexed-syntactic.pdf` — **step-indexed syntactic LR for recursive and quantified types** (Ahmed); well-founded recursion on step-index — the foundational technique
-- `papers/logical-relations/pitts-step-indexed-biorthogonality.pdf` — **biorthogonality + step-indexing in tutorial form** (Pitts); the combination move the LR uses
-- `papers/logical-relations/proving-correctness-step-indexed.pdf` — additional step-indexed LR notes (provenance unverified)
+| Dir | Checkpoint | What it supports |
+|---|---|---|
+| `1-kernel/` | ◊2 Kernel frozen | graded-CBPV semantics · handler semantics · effect-row algebra · type+effect safety |
+| `2-calcvm/` | ◊3 CalcVM ported | calculated compilers (Bahr–Hutton) · the two-hop verified-compiler architecture |
+| `3-lr/` | ◊4 LR foundation | logical relations · biorthogonality · step-indexing — the `compile_forward_sim` spine |
+| `4-wasmfx/` | ◊5 Compiler v0 | WasmFX backend target · stack switching · verified compilation *into* it |
+| `adjacent/` | — | type theory · partial-eval · category theory · cost/AARA · reversible · tooling · off-topic archive |
 
-### Verified compilation
-- `papers/verified-compilation/benton-hur-icfp09-biorthogonality-step-indexing.pdf` — **template for `compile_forward_sim`**; biorthogonality + step-indexing for compiler correctness (Benton, Hur)
-- `papers/verified-compilation/kumar-popl14-cakeml.pdf` — **the verified-compiler model we're imitating** (CakeML; verified ML→ASM); architecture reference for the two-hop story (ADR-0016)
+Cite from Lean sources by **stem** (path-independent): `-- shape: biernacki-popl18-handle-with-care §5.4`.
 
-### Graded CBPV *(cont.)*
-- `papers/graded-cbpv/weirich-wg211-2024-cbpv-effects-coeffects-slides.pdf` — Weirich's WG2.11 talk slides for the Torczon OOPSLA'24 paper; same material, slide-form
+---
 
-### WasmFX target
-- `papers/wasmfx-target/phipps-costin-pacmpl23-continuing-webassembly.pdf` — **the WasmFX proposal** (Phipps-Costin, Rossberg et al.); typed continuations, `suspend`/`resume`; the target abstract syntax for `compile_forward_sim`
-- `papers/wasmfx-target/ma-oopsla24-lexa.pdf` — *(Pass-B)* Lexa: stack-switching handler compilation, formal stack semantics; template for lowering effect handlers to typed continuations
-- `papers/wasmfx-target/ma-oopsla25-zero-overhead-handlers.pdf` — *(Pass-B)* Zero-overhead lexical handlers (Ma et al. follow-up); cost-aware compilation
-- `papers/wasmfx-target/emrich-hillerstrom-continuing-stack-switching-wasmtime.pdf` — Wasmtime-side report on implementing stack switching; engineering counterpart to the proposal
+## 1-kernel — graded-CBPV semantics, effect rows, type+effect safety (◊2)
 
-### Calculated compilers
-- `papers/calculated-compilers/bahr-hutton-calculating-effectively.pdf` — deriving a correct stack-machine compiler by equational calculation; the source of the K2/K3 method
-- `papers/calculated-compilers/bahr-hutton-dependently-typed.pdf` — extending the calculation to dependently-typed compilers
-- `papers/calculated-compilers/monadic-compiler-calculation.pdf` — monadic framing of the calculation (relevant to effects)
-- `papers/calculated-compilers/swierstra-compilation-alacarte.pdf` — modular compiler components via data types à la carte
-- `papers/calculated-compilers/hutton-bahr-jfp17-compiling-50-year-journey.pdf` — JFP'17 functional pearl; survey of the calculation tradition K2/K3 sits in
+- `torczon-oopsla24-effects-coeffects.pdf` — **the substrate** for bang-lang's graded CBPV; Coq mechanization, resource-aware dynamics. The only paper that is simultaneously CBPV-based, effect+coeffect-grading, and machine-checked.
+- `mcdermott-fscd25-grading-cbpv.pdf` — *(new 2026-06-21)* "Grading Call-By-Push-Value, Explicitly and Implicitly" (FSCD 2025). First graded *monadic semantics* + first coherence result for grading CBPV. The **denotational/semantic backstop** Torczon's operational Coq proof doesn't give; effects-only (no coeffects).
+- `katsumata-popl14-parametric-effect-monads.pdf` — **graded monad laws**; ordered-monoid effects; soundness of subeffecting; the F-monad shape `Crel` follows.
+- `weirich-wg211-2024-cbpv-effects-coeffects-slides.pdf` — Weirich's WG2.11 slides for the Torczon paper; same material, slide-form.
+- `yoshioka-icfp24-abstracting-effect-systems.pdf` — *(new 2026-06-21)* "Abstracting Effect Systems for Algebraic Effect Handlers" (ICFP 2024). λ_EA parameterized over effect algebras; **proves `(E, ⊔)` a join-semilattice is *exactly* the abstract structure under which type-and-effect safety holds.** This is the literature grounding for the lattice choice (ADR-0001, ADR-0018) — cite it where `EffRow := Finset Label` is defined.
+- `zhang-popl19-abstraction-safe-tunneling.pdf` — *(new 2026-06-21)* Zhang & Myers, "Abstraction-Safe Effect Handlers via Tunneling" (POPL 2019). **Coined the *accidental-handling* problem** and solved it via tunneling. The origin of the property `no_accidental_handling` proves — our lacks-constraint formulation is the structural analogue of their operational tunneling.
+- `plotkin-pretnar-esop09-handlers.pdf` — **handler semantics origin** (Plotkin, Pretnar); the operational story `compile_forward_sim` lowers to typed continuations.
+- `bauer-pretnar-algebraic-effects-and-handlers.pdf` — foundational tutorial; effect syntax and denotational semantics.
+- `tang-popl24-soundly-handling-linearity.pdf` — *(Pass-B)* control-flow linearity for multi-shot handlers; relevant to the CalcReify frontier and the `runState × throw` decision.
 
-### Reversible / Frobenius
-- `papers/reversible-frobenius/heunen-karvonen-reversible-monadic.pdf` — reversible computation via monadic structure; dagger-Frobenius. **`group_recovers` rests on this** — does `E` a group ⇒ `F e` dagger-Frobenius?
-- `papers/reversible-frobenius/compositional-reversible-2024.pdf` — recent compositional treatment; graded instance
+## 2-calcvm — calculated compilers + verified-compiler architecture (◊3)
 
-### Cost / AARA
-- `papers/cost-aara/chu-guo-hoffmann-oopsla26-aara-effects.pdf` — AARA extended to algebraic effects and handlers; *(Pass-B)* relevant if cost-grading is later added as a third grade
+- `garby-haskell24-calculating-effectively.pdf` — Garby, Hutton, Bahr, "Calculating Compilers Effectively" (Functional Pearl, Haskell 2024). The canonical **"calculate a compiler for an *effectful* language"** paper: the calculation extends to side-effects via an algebraic-effects treatment, decoupling effect *interpretation* from the derivation — directly on bang-lang's "effects as values, derive the VM" thesis. *(Identity resolved 2026-06-21 from the PDF title page; previously mislabeled as Bahr–Hutton ICFP'22.)*
+- `monadic-compiler-calculation.pdf` — Bahr–Hutton, ICFP'22 monadic framing: handles divergence+effects via the partiality monad with **bisimilarity** replacing equality. The technique for when plain equational reasoning breaks on divergence (bang-lang's `force`/thunks are partial).
+- `bahr-hutton-dependently-typed.pdf` — extending the calculation to dependently-typed compilers.
+- `swierstra-compilation-alacarte.pdf` — modular compiler components via data types à la carte.
+- `hutton-bahr-jfp17-compiling-50-year-journey.pdf` — JFP'17 functional pearl; survey of the calculation tradition K2/K3 sits in.
+- `kumar-popl14-cakeml.pdf` — **the verified-compiler model we imitate** (CakeML; verified ML→ASM); architecture reference for the two-hop story (ADR-0016).
+- `kanabar-pldi23-purecake.pdf` — *(new 2026-06-21)* PureCake (PLDI 2023): first **end-to-end verified compiler for a lazy functional language with monadic effects** (HOL4), composing through CakeML; interaction-trees semantic domain. Confirms the compose-through-a-verified-backend architecture works for an effectful language — but verifies *after the fact* (refinement), the thing invariant #4 rejects in favour of calculation.
 
-### Type theory *(adjacent)*
-- `papers/type-theory/bove-dybjer-dependent-types-at-work.pdf` — Agda/Martin-Löf primer; background for the Lean encoding choices
-- `papers/type-theory/tang-hillerstrom-structural-subtyping-as-parametric-polymorphism.pdf` — structural subtyping via row polymorphism; useful if effect-row subeffecting moves toward subtyping
-- `papers/type-theory/wilshaw-hutton-flow-typing-lightweight-linearity.pdf` — flow typing for linearity; cross-reference for the AARA / linearity story
+## 3-lr — logical relations, biorthogonality, step-indexing (◊4)
 
-### Partial evaluation / staging *(adjacent)*
-- `papers/partial-evaluation/jones-gomard-sestoft-partial-evaluation-book.pdf` — the foundational PE textbook (Jones, Gomard, Sestoft)
-- `papers/partial-evaluation/taha-multi-stage-programming-thesis.pdf` — Walid Taha's MSP thesis; staging-as-language-design
-- `papers/partial-evaluation/williams-perugini-revisiting-futamura-projections.pdf` — diagrammatic restatement of the Futamura projections
+- `biernacki-popl18-handle-with-care.pdf` — logical relations for effect handlers; **spine of the LR** (Vrel/Srel/Krel/Crel); §5.4 set-row fragment licenses bang-lang's ρ-map-free model.
+- `benton-hur-icfp09-biorthogonality-step-indexing.pdf` — **template for `compile_forward_sim`**; biorthogonality + step-indexing for compiler correctness.
+- `ahmed-esop06-step-indexed-syntactic.pdf` — **step-indexed syntactic LR for recursive and quantified types**; well-founded recursion on step-index — the foundational technique.
+- `pitts-step-indexed-biorthogonality.pdf` — **biorthogonality + step-indexing in tutorial form**; the combination move the LR uses.
+- `proving-correctness-step-indexed.pdf` — additional step-indexed LR notes (provenance unverified).
+- `vanrooij-popl25-affect.pdf` — *(new 2026-06-21)* van Rooij & Krebbers, "Affect: An Affine Type and Effect System" (POPL 2025). Effect-**row** type system over a Hazel-style CBV calculus; combines one- and multi-shot handlers via affine continuations; **soundness via a unary Iris logical relation** (Coq). The closest published *effect-row* LR — the model template for the multi-shot-vs-mutable-state soundness pitfall bang-lang will hit. Substrate is Iris, not Biernacki-syntactic.
 
-### PL semantics *(adjacent)*
-- `papers/pl-semantics/hutton-jfp23-programming-language-semantics-1-2-3.pdf` — Hutton's JFP'23 tutorial on the three styles (denotational/operational/axiomatic)
+## 4-wasmfx — WasmFX backend, stack switching, verified compilation into it (◊5)
 
-### Category theory *(adjacent)*
-- `papers/category-theory/boisseau-gibbons-yoneda-profunctor-optics.pdf` — Yoneda + profunctor optics functional pearl; background for the LR's representation choices
+- `phipps-costin-pacmpl23-continuing-webassembly.pdf` — **the WasmFX proposal** (OOPSLA'23); typed continuations, `suspend`/`resume`; the target abstract syntax `compile_forward_sim` lowers to. ⚠ **The proposal has drifted since this paper** — see Integration findings + `docs/notes/OPEN_QUESTIONS.md`.
+- `legoupil-pldi26-iris-wasmfx.pdf` — *(new 2026-06-21)* "Iris-WasmFX: Modular Reasoning for Wasm Stack Switching" (PLDI 2026 draft). **WasmFXCert** (first mechanized type-soundness proof of WasmFX, Rocq) + an Iris program logic + LR for the target. A **mechanized oracle** for the backend semantics — aligns with invariant #1 ("proof rides the reference"), modulo Rocq-vs-Lean. Verify whether it models the new `switch`/`nocont` or only the `suspend`/`resume` core.
+- `lindley-draft25-asmfx-handlers-all-the-way-down.pdf` — *(new 2026-06-21)* "Effect Handlers All the Way Down" (Lindley et al., Oct 2025 draft). Compiler from a handler calculus (deep/shallow/parameterised, multi-shot) → **AsmFX**, a register machine with explicit handler-frame stack; correctness via an **annotated simulation relation** (not biorthogonal LR). The **nearest published twin of CalcVM→WasmFX** — its method is the concrete alternative to compare biorthogonality against before committing the ◊4 proof architecture.
+- `ma-oopsla24-lexa.pdf` — *(Pass-B)* Lexa: stack-switching handler compilation, formal stack semantics; template for lowering handlers to typed continuations.
+- `ma-oopsla25-zero-overhead-handlers.pdf` — *(Pass-B)* Zero-overhead lexical handlers (Ma et al. follow-up); cost-aware compilation.
+- `emrich-hillerstrom-continuing-stack-switching-wasmtime.pdf` — Wasmtime-side report on implementing stack switching; engineering counterpart to the proposal (tracks the revised `switch`-bearing design).
 
-### Tooling
-- `papers/tooling/de-moura-ullrich-lean4-system-description.pdf` — the Lean 4 system-description paper
-- `papers/tooling/smt-lib-standard-v2.7.pdf` — SMT-LIB v2.7 standard reference
-- `papers/tooling/dolstra-purely-functional-software-deployment-thesis.pdf` — Dolstra's Nix thesis (build/deploy reproducibility — context for the dev environment)
+## adjacent — foundations, tooling, off-topic archive
 
-### General *(off-topic but archived)*
-- `papers/general/ashby-introduction-to-cybernetics.pdf` — Ashby (1956); systems-thinking background reading
-- `papers/general/mokhov-jfp20-build-systems-a-la-carte.pdf` — Mokhov, Mitchell, Peyton Jones; build-systems framework
-- `papers/general/peng-nous-efficient-pretraining-token-superposition.pdf` — ML preprint; off-topic
-- `papers/general/bloom-sawin-arxiv2605-sum-product-conjecture-false.pdf` — number-theory preprint; off-topic
+- **Reversible / Frobenius**: `heunen-karvonen-reversible-monadic.pdf` (**`group_recovers` rests on this**), `compositional-reversible-2024.pdf`.
+- **Cost / AARA**: `chu-guo-hoffmann-oopsla26-aara-effects.pdf` — *(Pass-B)* AARA for algebraic effects; relevant if cost-grading is added as a third grade.
+- **Type theory**: `bove-dybjer-dependent-types-at-work.pdf`, `tang-hillerstrom-structural-subtyping-as-parametric-polymorphism.pdf` (justifies the `≤` order on rows), `wilshaw-hutton-flow-typing-lightweight-linearity.pdf`.
+- **Partial evaluation / staging**: `jones-gomard-sestoft-partial-evaluation-book.pdf`, `taha-multi-stage-programming-thesis.pdf`, `williams-perugini-revisiting-futamura-projections.pdf`.
+- **PL semantics**: `hutton-jfp23-programming-language-semantics-1-2-3.pdf`.
+- **Category theory**: `boisseau-gibbons-yoneda-profunctor-optics.pdf`.
+- **Tooling**: `de-moura-ullrich-lean4-system-description.pdf`, `smt-lib-standard-v2.7.pdf`, `dolstra-purely-functional-software-deployment-thesis.pdf`.
+- **Off-topic but archived**: `ashby-introduction-to-cybernetics.pdf`, `mokhov-jfp20-build-systems-a-la-carte.pdf`, `peng-nous-efficient-pretraining-token-superposition.pdf`, `bloom-sawin-arxiv2605-sum-product-conjecture-false.pdf`.
 
-> Some papers have a sha256-distinct second PDF rendering on disk with an `-alt`
-> suffix (e.g. `plotkin-pretnar-esop09-handlers-alt.pdf`,
+> Some papers have a sha256-distinct second rendering with an `-alt` suffix
+> (e.g. `plotkin-pretnar-esop09-handlers-alt.pdf`,
 > `torczon-oopsla24-effects-coeffects-alt.pdf`). Same content, different bytes;
 > cite the non-alt key.
 
 ---
 
+## Integration findings — SOTA sweep 2026-06-21
+
+A five-axis web sweep of the 2024–2026 literature, reconciled against our frozen
+choices. **Four of five axes confirm our design — often more strongly than our
+docs claimed. One is a real, confirmed problem.**
+
+| Axis | Verdict | Evidence |
+|---|---|---|
+| Graded-CBPV substrate | ✓ **confirmed SOTA** | Torczon still the only CBPV+coeffect+mechanized triple; McDermott FSCD'25 adds the semantic layer. |
+| LR spine (Biernacki + Benton–Hur) | ✓ **confirmed**, frontier noted | AsmFX (Oct'25) proves the same shape with a plain simulation, no Iris — independent corroboration. Field frontier for *relational* handler reasoning has moved to Iris (Affect POPL'25, blaze POPL'26); budget a possible migration only if multi-shot continuations cross mutable TVars. |
+| Calculated-compiler method | ✓ **confirmed SOTA** | Bahr–Hutton extended into effects/concurrency '22–'24; nobody has calculated a *handler* compiler → open niche we occupy. |
+| Effect rows = lattice (Q1) | ✓✓ **strongly confirmed** | Yoshioka ICFP'24: join-semilattice is *exactly* the structure for effect-safety; Balik ESOP'26 independently adopts set semantics, Rocq-mechanized. Our semiring→lattice switch moved *toward* consensus. |
+| WasmFX target | ✗ **DRIFTED** | Frozen OOPSLA'23 syntax is now a strict subset of the Phase-3 standard: `switch`, `resume_throw_ref`, `nocont` added; handlers `(tag $e $h)` → `(on $tag $label)`. Recorded in `OPEN_QUESTIONS.md`; bites at ◊5; pin-to-engine, not paper. |
+
+**The Lean-4 substrate is greenfield.** The calculation mechanizations (Agda),
+the WasmFX logical relations (Rocq: Iris-WasmFX/WasmFXCert), and CakeML/PureCake
+(HOL4) all live in *other* proof assistants. The *method* is SOTA; the Lean-4
+realization re-derives infrastructure rather than importing it.
+
+---
+
 ## External resources
 
-Live online resources we link to rather than mirror. Reach for these when looking
-beyond the on-disk corpus.
+Live online resources we link to rather than mirror.
 
 ### Bibliographies & indices
 - **[yallop/effects-bibliography](https://github.com/yallop/effects-bibliography)**
-  — community-maintained index of effect-handler literature; canonical starting
-  point when looking for a paper not yet on disk.
-- **[effect-handlers.org](https://effect-handlers.org/)** — EHOP portal: curated
-  papers, projects, implementations, and a tutorial index.
+  — community index of effect-handler literature; canonical starting point for a
+  paper not yet on disk.
+- **[effect-handlers.org](https://effect-handlers.org/)** — EHOP portal: papers,
+  projects, implementations, tutorial index.
 
 ### Reference implementations
 - **[plclub/cbpv-effects-coeffects](https://github.com/plclub/cbpv-effects-coeffects)**
-  — Coq mechanization of Torczon et al. OOPSLA 2024 (the bang-lang substrate).
-  **Cross-check our Lean defs against their Coq** when in doubt — same judgments,
-  same lemmas, ported. Cited from `Bang/Spec.lean`. Clone locally if/when needed
-  for line-by-line comparison.
+  — Coq mechanization of Torczon et al. (the substrate). **Cross-check our Lean
+  defs against their Coq** — same judgments, ported. Cited from `Bang/Spec.lean`.
+- **[WebAssembly/stack-switching](https://github.com/WebAssembly/stack-switching)**
+  — the live proposal repo (Phase 3). The `Explainer.md` is the current
+  source-of-truth abstract syntax; **pin a commit** before treating it as a
+  verified target. See the WasmFX drift note in `OPEN_QUESTIONS.md`.
+- **[logsem/iris-wasmfx](https://github.com/logsem/iris-wasmfx)** — Rocq artifact
+  for WasmFXCert + Iris-WasmFX (the mechanized backend oracle).
 
 ### Benchmarks
 - **[effect-handlers/effect-handlers-bench](https://github.com/effect-handlers/effect-handlers-bench)**
-  — cross-language effect-handler benchmark suite. *(Post-◊5 relevance.)* When
-  the WasmFX backend has something to compare, this is the natural target;
-  add a `PATH-benchmark-against-ehop` then.
+  — cross-language benchmark suite. *(Post-◊5.)* Add a `PATH-benchmark-against-ehop`
+  when the WasmFX backend has something to compare.
 
 ---
 
 ## Gaps — still to fetch
 
-Pass A = urgent (LR spine + verified-compilation template).
-Pass B = fetch when relevant hop is being worked on.
+Pass-A (LR spine + verified-compilation template) is **complete**. The
+2026-06-21 sweep pulled in seven Pass-B-adjacent papers (now on disk, marked
+*new* above). Remaining Pass-B, fetch when the relevant hop is worked:
 
-### Pass A
-**Complete.** All six Pass-A papers are on disk.
-
-### Pass B (fetch when needed)
-- Tang, Lindley. Modal Effect Types (OOPSLA 2025) — modal alternative to lacks-discipline
-- Niu et al. calf (POPL 2022); Grodin et al. decalf (POPL 2024) — mechanized cost
-- Balik et al. Deciding Not to Decide (ESOP 2026) — Coq-mechanized inference for constrained rows
-- Voigt et al. Dynamic Wind (OOPSLA 2025) — rollback/cleanup operational
-- Atkey. QTT (LICS 2018); McBride. I Got Plenty o' Nuttin' (2016) — origins of the multiplicity grade
-- Gaboardi et al. Combining Effects and Coeffects (ICFP 2016) — graded comonads
-- Orchard et al. Granule (ICFP 2019) — graded modal types in practice
-- Appel, McAllester. Indexed Model of Recursive Types (TOPLAS 2001) — foundations of step-indexing
-- Katsumata. ⊤⊤-Lifting (CSL 2005) — the original ⊤⊤-lifting technique
+- Tang, Lindley. **Modal Effect Types** (OOPSLA 2025) — modal alternative to lacks-discipline. *(The deflating follow-up "Rows and Capabilities as Modal Effects" POPL'26 frames rows vs. modal as unifiable, not rival.)*
+- Balik et al. **Deciding Not to Decide** (ESOP 2026) — Coq-mechanized sound+complete effect inference over **set** rows; the propositional-logic-delay trick is a future asset if higher-rank effect polymorphism + inference is added.
+- de Vilhena, van Collem, Wright, Krebbers. **blaze: A Relational Separation Logic for Effect Handlers** (POPL 2026) — Iris, the SOTA for *relational* handler reasoning.
+- de Vilhena & Pottier. **A Separation Logic for Effect Handlers** (Hazel, POPL 2021) + Maze — the Iris foundation under Affect/blaze.
+- Biernacki et al. **Binders by Day, Labels by Night** (POPL 2020); Xie et al. **First-class Names for Effect Handlers** (OOPSLA 2022) — the named/generative-handler route to no-accidental-handling; compose *on top of* rows for same-label instance disambiguation (a finer problem than our label-disjointness).
+- Bahr, Hutton. **Calculating Correct Compilers** (JFP 2015) — ⚠ the *root* method paper, **not on disk**. We have the survey (JFP'17) and the effects/monadic/dependently-typed extensions, but not the original derivation method. Fetch when porting the calculation to the graded-CBPV eval at ◊3.
+- Bahr, Hutton. **Calculating Compilers for Concurrency** (ICFP 2023); **Choice Trees** (JFP 2025) — the choice/interaction-tree semantic domain for when nondeterminism (STM retry, scheduling) enters the calculation.
+- Liang, Lindley, Rossberg. **Stack Switching in Wasm SpecTec** (WAW 2025) — authoritative narrative of *what changed* between the WasmFX paper and the standard.
+- Chen, Åman Pohjola, Rizkallah. **A Verified Cost Model for CBPV** (ITP 2025) — relevant to the CBPV core if cost-grading is added.
+- Niu et al. **calf** (POPL 2022); Grodin et al. **decalf** (POPL 2024) — mechanized cost.
+- Voigt et al. **Dynamic Wind** (OOPSLA 2025) — rollback/cleanup operational.
+- Atkey. **QTT** (LICS 2018); McBride. **I Got Plenty o' Nuttin'** (2016) — origins of the multiplicity grade.
+- Gaboardi et al. **Combining Effects and Coeffects** (ICFP 2016) — the combined-grading foundation Torczon realizes; Orchard et al. **Granule** (ICFP 2019) — graded-modal surface-language UX reference.
+- Appel, McAllester. **Indexed Model of Recursive Types** (TOPLAS 2001); Katsumata. **⊤⊤-Lifting** (CSL 2005) — step-indexing / lifting foundations.
 
 ---
 
 ## Conventions
 
-- Filenames: `<firstauthor>-<venue><year>-<keywords>.pdf` (lowercase, hyphens)
-- Citation keys in `refs.bib` mirror filename stems
+- Filenames: `<firstauthor>-<venue><year>-<keywords>.pdf` (lowercase, hyphens).
+  Drafts with no venue: `<firstauthor>-draft<yy>-<keywords>.pdf`.
+- Papers live under `papers/<stage>/` where stage ∈ {`1-kernel`, `2-calcvm`,
+  `3-lr`, `4-wasmfx`, `adjacent`}. A paper spanning hops goes to its *primary*
+  consumer (e.g. CakeML → `2-calcvm`, the architecture; Benton–Hur → `3-lr`,
+  the LR template).
+- Citation keys in `refs.bib` mirror the filename stem (path-independent).
 - Cite from Lean sources as comments. Examples:
   - `-- shape: biernacki-popl18-handle-with-care §5.4`
-  - `-- step-index per benton-hur-icfp09-biorthogonality-step-indexing`
+  - `-- lattice rows grounded: yoshioka-icfp24-abstracting-effect-systems`
   - `-- calculation per bahr-hutton-calculating-effectively`
-- Per-paper reading notes go in `notes/<key>.md` (created on demand)
+- Per-paper reading notes go in `notes/<key>.md` (created on demand).
