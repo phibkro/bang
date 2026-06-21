@@ -46,16 +46,31 @@
             (Torczon-faithful: `vvar` single-x-1, `ret`/`app`/`letC`/`lam`
             scale+add); all statement sites updated; `just verify` green
             (935 jobs); STD theorems carry only sorryAx + trusted three.
-- [ ] **In flight — prove the now-stateable bodies**:
-      - [ ] `subst_value` (graded) → preservation / progress / type_safety
-- [ ] **Carried design notes** (from the rule upgrade, surface when relevant):
-      - subsumption (`q' ≤ q` in `lam`) was dropped — needs an *ordered* `Mult`;
+- [x] **`subst_value` attempt → de Bruijn pivot (2026-06-21)**: proving the
+      graded substitution lemma over the NAMED encoding required FIVE structural
+      side-conditions (capture → `v` closed; grade-freshness `γ_Γ x=0`; context-wf
+      `∀C (x,C)∉Γ`; bound-var-grade `γ y=0` on lam/letC; non-deterministic `vvar`
+      lookup) — FOUR of them machine-checked `example : False`. The proof
+      machinery closed axiom-clean (12 lemmas) but fought the representation at
+      every binder. **DECIDED: switch to de Bruijn (ADR-0020).** Full evidence:
+      commits `b853dde`..`e1e4920`.
+- [ ] **In flight — de Bruijn rewrite (ADR-0020)**:
+      - [ ] Core.lean: `vvar : Nat`; `lam`/`letC` drop binder names; context
+            positional (revert ADR-0019 Finsupp split → positional list, now correct)
+      - [ ] Operational.lean: de Bruijn `subst` (shift/lift), `step`, `eval`
+      - [ ] Syntax.lean: rules over positional ctx (`q .: γ` = `::`); DROP the 5
+            named side-conditions
+      - [ ] Spec.lean: statements simplify (`subst_value` loses all side-conditions)
+      - [ ] Metatheory.lean: redo (grade arithmetic + `subst_gen` structure port;
+            weakening → shift lemma) — should close CLEAN
+      - [ ] THEN preservation / progress / type_safety from a clean base
+- [ ] **Carried design notes** (still live, independent of the rep switch):
+      - subsumption (`q' ≤ q` in `lam`) dropped — needs an *ordered* `Mult`;
         own ADR when sub-usage becomes load-bearing (likely at preservation).
-      - `zero_usage_erasable` statement uses `single x 0 + γ` (= γ); pinning
-        x's grade to 0 relies on a no-shadow/freshness assumption — tighten
-        when that theorem is tackled.
       - Q4 (handle) still same-φ; preservation/effect_sound will force the
         label-removing rule.
+      - `Bang/Metatheory.lean` (named) stays in git history as the de Bruijn
+        evidence; it'll be rewritten, not extended.
 
 ## Design decisions resolved this path
 

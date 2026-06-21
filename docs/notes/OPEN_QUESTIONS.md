@@ -326,7 +326,17 @@ graded `subst_value` is proven with a clean axiom set.
 
 ---
 
-## Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn
+## Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn  · ✓ RESOLVED 2026-06-21 → ADR-0020 (option C)
+
+**Resolution**: **Option C — de Bruijn.** The named encoding produced FOUR
+more machine-checked falsities while proving `subst_value` (capture,
+grade-freshness, context-wf, bound-var-grade, non-deterministic lookup) — five
+structural side-conditions for one lemma, each free under de Bruijn. Switched the
+term representation to de Bruijn indices; **ADR-0020**. Option A (closed
+side-condition) was the in-force stopgap that surfaced the full cost. Original
+deliberation preserved below.
+
+---
 
 **Question**: `Comp.subst` is **not capture-avoiding** (Operational.lean §subst,
 scoped to "closed-program reductions"). The graded substitution lemma

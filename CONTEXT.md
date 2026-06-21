@@ -10,11 +10,13 @@
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
-◊2   Kernel frozen v1             ── IN PROGRESS. Resource-enforcing typing
-                                     rules + context split LANDED (ADR-0019,
-                                     Q10/Q3). Rules now THREAD and CHECK grades
-                                     (Finsupp grade-vec + ambient TyCtx). Remaining:
-                                     prove the (now-stateable) graded theorems.
+◊2   Kernel frozen v1             ── IN PROGRESS. Resource-enforcing rules landed
+                                     (ADR-0019). Proving subst_value then exposed
+                                     the NAMED encoding is wrong — 5 structural
+                                     side-conditions (4 machine-checked falsities).
+                                     DECIDED: switch to de Bruijn (ADR-0020).
+                                     NEXT: the de Bruijn rewrite, then the proofs
+                                     start from a clean base.
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0
@@ -123,12 +125,14 @@ remaining gap → Phase B PROOF_ORDER #4 (STD block).
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel.
-  Owner: claude as kernel-engineer. Status: **Path B rule upgrade LANDED**.
-  ADR-0019 context split (Finsupp `GradeVec` + ambient `TyCtx`) + Q10
-  resource-enforcing `HasVTy`/`HasCTy` (Torczon-faithful: `vvar` single-x-1,
-  `ret`/`app`/`letC`/`lam` scale+add) are implemented and statement sites
-  updated; build green. Next: discharge the now-stateable graded proof bodies
-  (`subst_value` first, then the STD block).
+  Owner: claude as kernel-engineer. Status: **de Bruijn rewrite pending (ADR-0020)**.
+  The resource-enforcing rules (ADR-0019) landed, but proving `subst_value`
+  exposed the named encoding as wrong (5 side-conditions, 4 machine-checked
+  falsities — full evidence in commits `b853dde`..`e1e4920`). Decided: switch to
+  de Bruijn. NEXT: execute the de Bruijn rewrite (Core syntax + Operational
+  subst/step/eval + Syntax rules + Spec statements simplify + Metatheory redo),
+  then the STD-block proofs start clean. The named `Metatheory.lean` proof
+  machinery (grade arithmetic, `subst_gen` structure) largely ports.
 
 ## Next stable checkpoint we are paving toward
 
@@ -155,9 +159,16 @@ DONE — Path B rule upgrade (Q10/Q3, ADR-0019):
 [x] Re-shape HasVTy/HasCTy to thread + ENFORCE grades (Torczon-faithful)
     landed in Syntax.lean (defs) + Spec.lean + Compat.lean (statements); build green
 
-ACTIVE — prove the now-stateable graded bodies:
-[ ] Prove subst_value (graded), then preservation / progress / type_safety
-    (STD block — now reachable; watch Q4 in preservation)
+ACTIVE — de Bruijn rewrite (ADR-0020), THEN the proofs:
+[ ] Core.lean: vvar→Nat index; lam/letC drop binder names; context positional
+    (revert ADR-0019's Finsupp split → positional list, now correct)
+[ ] Operational.lean: de Bruijn subst (shift/lift), step, eval
+[ ] Syntax.lean: typing rules over positional context (`q .: γ` = `::`),
+    DROP the 5 named side-conditions (capture/freshness/wf/bound-grade/lookup)
+[ ] Spec.lean: statements simplify (subst_value loses ALL side-conditions)
+[ ] Metatheory.lean: redo subst_value (grade arithmetic + subst_gen structure
+    port; weakening becomes a shift lemma) — should close CLEAN
+[ ] THEN preservation / progress / type_safety from a clean base (watch Q4)
 
 STILL DEFERRED (harder block):
 [ ] RowAll, WfInst, HandlesIntended — concretize (lacks-quantifier mechanism)
