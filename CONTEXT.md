@@ -10,7 +10,11 @@
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
-◊2   Kernel frozen v1             ── ALMOST THERE (definitions done; proofs pending)
+◊2   Kernel frozen v1             ── IN PROGRESS — NOT as close as it looked.
+                                     Typing rules carry grades but don't ENFORCE
+                                     them; the grade-soundness theorems (and a
+                                     real subst_value) need a resource-enforcing
+                                     rule upgrade first (Q10, active).
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0
@@ -36,7 +40,31 @@ What changed:
 
 ## Subsequent landings (housekeeping; not new checkpoints)
 
-### Dev-env (2026-06-21)
+### SOTA literature sweep + reconciliation (2026-06-21)
+
+Five-axis web sweep of 2024–2026 literature, integrated. **Four of five axes
+confirm our frozen choices; the WasmFX target drifted.** See
+`references/README.md` → "Integration findings".
+- Library reorganized by pipeline stage (`papers/1-kernel 2-calcvm 3-lr
+  4-wasmfx adjacent`); 7 new papers fetched + sorted; `refs.bib` corrected
+  (the "calculating-effectively" PDF is Garby-Hutton-Bahr Haskell'24, not the
+  ICFP'22 it was labeled).
+- SOTA confirmations cited in source: Yoshioka ICFP'24 (join-semilattice =
+  exact effect-safety structure) → `EffectRow.lean`/ADR-0001; Zhang-Myers
+  POPL'19 tunneling (accidental-handling origin) → `Spec.lean`; McDermott
+  FSCD'25 → `Core.lean`.
+- **WasmFX drift** recorded as OPEN_QUESTIONS Q9 (◊5 obligation, pin-to-engine).
+- Commit `d1aff27`.
+
+### subst_value reframed → ◊2 is bigger than it looked (2026-06-21)
+
+Fixing the (vacuous) `subst_value` exposed that the typing rules **carry but
+never enforce** grades — `HasCTy` is grade-insensitive. The real graded
+`subst_value` is now stated (sorry); proving it (and `zero_usage_erasable`,
+`effect_sound`) requires a **resource-enforcing rule upgrade** (Torczon-faithful:
+`vvar` grade-one-at-x, `ret`/`app` scale+add). Decision: **Path B** (do the
+upgrade, don't weaken the lemma). Recorded as **Q10 (active)**; sequences
+**Q3** (context rep → Finsupp grade-vec + type ctx) first.
 
 - **Lean toolchain v4.30.0** (Mathlib matching). Build green: **729/729**.
 - **Module split**: Spec.lean → Core / Mult / Syntax / Operational / LR /
@@ -94,9 +122,11 @@ remaining gap → Phase B PROOF_ORDER #4 (STD block).
 
 ## Active paths
 
-- **`paths/PATH-graded-cbpv-eval.md`** — refactor toward graded CBPV.
-  Owner: claude as kernel-engineer. Status: **Phase A part 2 substantially
-  complete**. Definitions concrete; theorem bodies still `sorry` (Phase B).
+- **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel.
+  Owner: claude as kernel-engineer. Status: **Phase B started — Path B
+  (resource-enforcing rule upgrade)**. Definitions concrete; `subst_value`
+  reframed to the real graded lemma (sorry); next is the Q3-a context-rep ADR
+  then re-shaping the typing judgments to enforce grades (Q10).
 
 ## Next stable checkpoint we are paving toward
 
@@ -106,19 +136,28 @@ Definition of stable per `ROADMAP.md`: graded-CBPV `Source.eval` concrete
 (no `opaque`/axiom in `Bang/Spec.lean §0–§4`); row algebra with lacks-
 constrained quantifiers; `no_accidental_handling` proven.
 
-Current ◊2 status: definitions are done; **theorem PROOFS are the gap**.
-That's Phase B territory (PROOF_ORDER #4).
+Current ◊2 status: syntactic definitions are done, but the **typing rules are
+grade-insensitive** — the STD proofs are NOT mechanical (a prior reading of this
+doc that called them so was wrong). The gate is a resource-enforcing rule
+upgrade (Q10).
 
 ## Outstanding for full ◊2 closure
 
 ```
-[ ] Prove subst_value, preservation, progress, type_safety
-    (Phase B PROOF_ORDER #4 — STD block; mechanical now that defs are concrete)
+ACTIVE — Path B rewrite (Q10), sequenced:
+[ ] Q3: resolve context representation → Finsupp grade-vec + type ctx (ADR)
+[ ] Re-shape HasVTy/HasCTy to thread + ENFORCE grades (Torczon-faithful)
+    blast radius: Syntax.lean (defs) + Spec.lean + Compat.lean (statements)
+[ ] Prove subst_value (graded), then preservation / progress / type_safety
+    (STD block — now reachable once rules enforce grades; watch Q4 in preservation)
+
+STILL DEFERRED (harder block):
 [ ] RowAll, WfInst, HandlesIntended — concretize (lacks-quantifier mechanism)
     + prove rowinst_requires_disjoint, no_accidental_handling
 [ ] Concretize Trace + Source.evalTrace + traceWithin (now possible
     with Lattice Eff: a Trace is a List Label; traceWithin is ⊆ semantics)
 [ ] Concretize NotEvaluated semantically via Source.step reachability
+[ ] zero_usage_erasable / effect_sound — unblocked only AFTER the Q10 upgrade
 ```
 
 ## Pending meta-work (not on the critical path)
@@ -138,12 +177,14 @@ revisit signals.
 |---|---|---|
 | Q1 | Eff algebra (Semiring vs Lattice) | ✓ resolved — Lattice + OrderBot |
 | Q2 | Mult = QTT concretization | ✓ resolved — QTT enum + CommSemiring |
-| Q3 | Ctx representation (List vs FinMap) | defer until proofs demand |
-| Q4 | `handle` typing rule refinement | revisit (Q1 resolved enables it) |
+| Q3 | Ctx representation (List vs FinMap) | **ACTIVE** — forced by Q10; → Finsupp grade-vec + type ctx |
+| Q4 | `handle` typing rule refinement | revisit (will surface in preservation) |
 | Q5 | `up` typing rule + opArgTy/opResTy | revisit |
 | Q6 | Source.step deep-handler resumption | defer until tests demand |
 | Q7 | Op names string vs enum | defer (cosmetic) |
 | Q8 | `group_recovers` H-K bridge | Phase B research |
+| Q9 | WasmFX target drift | recorded — ◊5 obligation (pin-to-engine) |
+| Q10 | Typing rules must enforce grades | **ACTIVE** — the live ◊2 task (Path B) |
 
 ## Subagents available
 

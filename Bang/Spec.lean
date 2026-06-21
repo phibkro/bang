@@ -58,14 +58,24 @@ theorem no_accidental_handling
 
 /-! ## 3. Core syntactic metatheory -/
 
--- [STD] Value substitution; grades compose multiplicatively.
--- Conclusion should read `[v/x] c` once subst is wired into the statement.
+-- [STD] Graded value substitution. The real lemma (corrected 2026-06-21; the
+-- prior statement was vacuous — conclusion = hypothesis).
+-- Shape: a value `v` typed in its own grade context `Δ`, substituted for a
+-- variable `x` bound at multiplicity `ρ` in `c`, yields `c[v/x]` typed in
+-- `Γ + ρ·Δ`. This is Torczon's `T_App` arithmetic `γ₁ Q+ q Q* γ₂`
+-- (resource/CBPV/typing.v) adapted to our named-variable / List-context encoding.
+--   shape: torczon-oopsla24-effects-coeffects §graded-subst
+-- ⚠ NOT YET PROVABLE: the current HasVTy/HasCTy rules do not thread grades
+-- (vvar's ρ is existential/ignored; ret/app don't scale Γ), so `HasCTy` is
+-- grade-insensitive. This `sorry` is the backlog item pointing at the
+-- resource-enforcing typing-rule upgrade — see OPEN_QUESTIONS Q10.
+-- Precondition (Q3): `Γ` and `Δ` share shape; `Ctx.add` is `zipWith`.
 theorem subst_value
-    (ρ : Mult) {Γ Δ : Ctx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (ρ : Mult) {Γ Δ : Ctx Eff Mult} {x : Var} {v : Val} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasVTy Δ v A →
-    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) c e B →
-    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) c e B
+    HasCTy (Ctx.bind x ρ A Γ) c e B →
+    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) (Comp.subst x v c) e B
     := sorry
 
 -- [STD] Preservation.

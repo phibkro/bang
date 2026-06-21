@@ -33,8 +33,19 @@
       - **8 axioms closed in Spec.lean (44 → 36)**
       - **Module split**: Spec.lean → Core / Mult / Syntax / Operational / LR /
         Compile / Spec (PRD)
-- [ ] **In flight**: nothing — Phase A part 2 at a clean checkpoint
-- [ ] **Blockers for full ◊2**: theorem PROOFS (defs done; bodies still `sorry`)
+- [x] **SOTA sweep landed (2026-06-21)**: literature reconciled; library
+      reorganized; confirmations cited; WasmFX drift → Q9. Commit `d1aff27`.
+- [x] **`subst_value` reframed (2026-06-21)**: the prior statement was vacuous
+      (conclusion = hypothesis). Now states the real graded lemma (`Γ + ρ·Δ`,
+      `c[v/x]`), sorry-backed. This exposed that the typing rules are
+      grade-insensitive.
+- [ ] **In flight — Phase B, Path B (resource-enforcing rules)**:
+      - [ ] Q3-a: ADR — context rep → Finsupp grade-vec + type ctx
+      - [ ] Re-shape `HasVTy`/`HasCTy` to thread + enforce grades
+      - [ ] Prove `subst_value` → preservation/progress/type_safety
+- [ ] **Blocker for full ◊2**: Q10 — typing rules carry grades but don't
+      enforce them; `HasCTy` is grade-insensitive. Until upgraded, the graded
+      `subst_value`, `zero_usage_erasable`, and `effect_sound` are unprovable.
 
 ## Design decisions resolved this path
 
@@ -68,12 +79,17 @@ PROOF_ORDER #4 (STD block):
                              (semantic predicate)
 ```
 
-The STD block (preservation/progress/type_safety/subst_value) is the natural
-next session — those theorems have CLEAN axiom sets (only `sorryAx` + the
-trusted three kernel axioms). The Phase B `proof-engineer` subagent owns them.
+⚠ **Correction (2026-06-21)**: the STD block is NOT "mechanical." The theorems
+have clean axiom sets, but their proofs are blocked on Q10 — the typing rules
+don't enforce grades, so `subst_value` (graded) and the grade-soundness
+theorems are unprovable until the resource-enforcing rule upgrade lands. The
+real PROOF_ORDER is: Q3-a (context rep) → rule upgrade → STD block.
 
 ## Notes (free-form working notes; deletable once path completes)
 
-*Path doc cleared at session-end 2026-06-21; Phase A part 2 at clean
-checkpoint. Resume with Phase B PROOF_ORDER #4 (STD block) — see
-`docs/notes/spec-proof-discipline.md` for proof discipline.*
+*2026-06-21 (later session): SOTA sweep landed + `subst_value` reframed.
+Phase B started on Path B (resource-enforcing rules). Resume at the Q3-a ADR
+(context rep → Finsupp grade-vec + type ctx), then re-shape the typing
+judgments — see OPEN_QUESTIONS Q10 for the full plan, and the port source
+`plclub/cbpv-effects-coeffects` → `resource/CBPV/typing.v` (Torczon Coq;
+re-clone — see `references/README.md` → External resources).*
