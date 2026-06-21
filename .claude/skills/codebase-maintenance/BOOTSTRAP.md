@@ -94,12 +94,15 @@ it alone.
 Run the **verify** gate once — but **only if it's safe, fast, and provisioned**.
 If it mutates state (rebuilds a machine, deploys), needs credentials/network you lack,
 or its interpreter isn't installed, **identify it, don't run it** (note "identified, not
-run — mutates / heavy / unprovisioned"). Read the *real* result (exit code, or parsed
-output if the gate `exit(0)`s regardless). Spot-check the artifact inventory against
+run — mutates / heavy / unprovisioned"). Read its **real** result: if the gate is an
+orchestrator that `exit(0)`s regardless, parsing its output is the *only* correct read,
+**not** a fallback — do not reach for `$?`. Also pick out the **cheapest safe sub-check**
+(an offline, zero-dep one — a doc/format/type check) and record it in the instance as the
+recommended **G0/G1 fast gate**. Spot-check the artifact inventory against
 `git ls-files '*.md' docs/` — no major doc missed.
 
-**Done when** the verify gate ran green (or was safely identify-only) and the inventory is
-complete.
+**Done when** the verify gate ran green (or was safely identify-only), the fast G0/G1 gate
+is named, and the inventory is complete.
 
 > **Refresh trigger:** the instance is itself a derived artifact. When a checkpoint
 > notices the gate command changed, a new doc kind appeared, or a convention
