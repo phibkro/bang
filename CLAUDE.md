@@ -23,6 +23,11 @@ A small language whose **paradigm and runtime are values, not language features*
 
 ## Current playhead
 
+> **For the current session-level position, read `CONTEXT.md` first.** The
+> K0–K3 playhead below is historical: ADRs 0010–0014 referenced in the K3
+> machine table were collapsed into ADR-0017 (retrospective). ADR-0016
+> (two-hop architecture) is the architecture in force.
+
 **K0 locked · K1 done · K2 done · K3 in progress.** **Every theorem in the repo is proven — zero `sorry`s** (the repo asserts only what it proves). The verified reference `eval` exists; the VM is **calculated** from it (Bahr–Hutton). The **eight** core machines are each proven `exec ∘ compile ≡ eval` *and* differentially tested. The **ninth**, `CalcReify` (the reification frontier), is a working machine with its core behaviours `rfl`-verified and a real **bisimulation in progress** (`CalcReifySim`, against the in-Lean denotational reference `CalcReifyRef`): the pure core and the **first ∀-quantified firing-handler theorem** (`fire_agree`) are proven sorry-free; the *resuming-clause* case (the full step-indexed `vcont ↔ ek` relation) is the named, scoped residual in ADR-0015 — not faked.
 
 **The reference:** `Bang/Eval.lean` — a fuel-bounded, total free-monad interpreter for the pinned core (thunk + `$`force, λ/app, `let`, ADTs+match, one-shot State/Throws handlers as a deep fold). Shape/rationale: **ADR-0008**. Effect labels reuse the K1 `EffectRow` `Finset` model.
