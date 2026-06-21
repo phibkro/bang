@@ -98,17 +98,30 @@ git add ...; git commit -m ...                pre-commit hook runs static
                                               (just install-hooks once)
 ```
 
-Tools available via `just`:
+### Tool selection (which `just` recipe when)
 
-```
-just                  list recipes
-just verify           default gate: selfcheck + build + audit
-just check [FILE]     per-file Lean errors (fast)
-just burndown         pending sorry/axiom counts per file
-just eval             pipe stdin: echo '#check X' | just eval
-just loogle "?n + 0 = ?n"     Mathlib type-sig search
-just axioms           lake env lean Bang/Audit.lean — #print axioms per theorem
-```
+| Situation | → Tool |
+|---|---|
+| editing one file, iterating fast | `just check Bang/Spec.lean` |
+| about to commit | `just verify` (full gate) |
+| want to see remaining sorry/axiom work | `just burndown` |
+| exploring a Lean expression | `echo '#check X' \| just eval` |
+| looking for a Mathlib lemma by shape | `just loogle "?n + 0 = ?n"` |
+| confirming axiom hygiene per theorem | `just axioms` |
+| Mathlib oleans missing or stale | `lake exe cache get` (inside `nix develop`) |
+| build is mysteriously broken after `lake update` | reset `.lake/packages/mathlib` to manifest's rev (see dev-env.md) |
+| just want the recipe list | `just` (no args) |
+
+**Rule of thumb**: use the tightest loop that can detect the issue. Don't
+wait for `just verify` when `just check Bang/Spec.lean` would have caught
+it in 2 seconds.
+
+### Editor / LSP feedback (tightest of all)
+
+For continuous proof-state feedback (goals, hover types, error squiggles),
+open the file in VS Code with the `leanprover.lean4` extension. The LSP
+gives per-keystroke feedback; the `just check` script gives per-file
+feedback after editor disagreement; `just verify` is the per-commit gate.
 
 ## 6. When to write / update which doc
 

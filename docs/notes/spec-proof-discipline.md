@@ -96,3 +96,70 @@ Discharge `sorry`s in `PROOF_ORDER`. After each: `lake build` + run
 Surface the gap; move to the next independent goal. Never fabricate a lemma,
 weaken a statement, or `sorry` to "make progress". A red build with honest
 gaps beats a green build that lies.
+
+---
+
+## What a clean proof looks like (canonical example)
+
+The standard shape for a proof body in Bang/Spec.lean (or downstream
+modules implementing Phase B). Note: statement unchanged from the frozen
+PRD; only the body fills in.
+
+```lean
+-- canonical: structural case-analysis + grind, with technique cited.
+-- shape: biernacki-popl18-handle-with-care §5.4 (set-row case)
+theorem subst_value
+    (ρ : Mult) {Γ Δ : Ctx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    {c : Comp} {e : Eff} {B : CTy Eff Mult} :
+    HasVTy Δ v A →
+    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) c e B →
+    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) c e B := by
+  intro hv hc
+  induction hc with
+  | ret hv'  => exact .ret hv'   -- structural: ret rule
+  | letC hM hN ihM ihN => grind  -- handled by SMT-style closer
+  | force hu => -- TODO(blocking-on): no Vrel-based force lemma yet
+                sorry
+  -- ... cases for force, lam, app, handle ...
+```
+
+What this exhibits:
+
+1. **Statement frozen** — copied verbatim from `Bang/Spec.lean`; only the
+   body changes.
+2. **Technique citation** — `-- shape: biernacki-popl18-handle-with-care §5.4`.
+   Cite the source paper / chapter as a comment so future readers can
+   verify the adaptation.
+3. **Pattern**: `intro → induction → case-by-case`. For 4-6-constructor
+   judgments, this is the workhorse.
+4. **Tactic choice**: `exact` for cases that match a constructor;
+   `grind` (≥4.28) for cases SMT-style closure can handle; `sorry` only
+   when blocked AND commented WHY.
+5. **Sorry-with-comment** — never bare. The comment names what's blocking
+   (e.g., a missing lemma, a definitional adjustment needed in the kernel)
+   so a future session knows where to pick up.
+
+## What an anti-pattern proof looks like
+
+```lean
+theorem subst_value ... := by
+  intros
+  sorry   -- ← bad: no reason, no plan
+```
+
+```lean
+-- ALSO BAD: weakening the statement to make the proof close.
+-- (Original statement removed a precondition; this version weakens.)
+theorem subst_value_weakened (h : False) : True := by trivial
+```
+
+```lean
+-- BAD: a generic `by tactic_chain` that masks failure modes.
+theorem subst_value ... := by aesop  -- if aesop times out or
+                                      -- fails partially, the actual
+                                      -- structure is lost
+```
+
+**Discipline**: if a proof needs to weaken the statement, that's a signal
+to escalate to `kernel-engineer` (statement might be wrong) — not a license
+to mutate.

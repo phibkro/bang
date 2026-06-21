@@ -29,3 +29,25 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0018](0018-effect-row-lacks-constraints.md) | K | Effect-row algebra extended with lacks-constrained quantifiers (set discipline); enables `no_accidental_handling` | Accepted | 0001, 0016 |
 
 Format: lightweight MADR. Status ∈ {Proposed, Accepted, Superseded by NNNN, Deprecated}.
+
+## Canonical exemplar
+
+**Read `0016-two-hop-architecture-calcvm-and-wasmfx.md` first when writing
+a new ADR.** It exhibits the format we want: Context (1-3 paragraphs),
+Decision (concrete + actionable), Why this model (numbered list of
+reasons), What it commits to (the consequences), Consequences for other
+ADRs (subsumptions/deletions), Rejected alternatives (each with "why
+not"), Revisit if (the legitimate reconsideration triggers).
+
+Template stub: `adr-template.md` in this directory (or copy 0016 and edit).
+
+## When to write an ADR
+
+- The choice is reversible by a future session — without an ADR, they
+  WILL reverse it.
+- The "why" is non-obvious from the code alone.
+- Rejected alternatives are worth recording (saves re-thinking).
+- The decision spans multiple files / subsystems.
+
+Skip ADRs for: bug fixes, refactors that don't change semantics, formatting,
+typo fixes. Those go in commit messages.

@@ -26,6 +26,7 @@
           buildInputs = [
             pkgs.elan # Lean version manager (reads lean-toolchain)
             pkgs.just # task runner (see ./justfile)
+            pkgs.jq # JSON for Claude Code hook scripts
             pkgs.git
             pkgs.curl
             pkgs.cacert # SSL for lake to fetch deps
