@@ -59,25 +59,25 @@ theorem no_accidental_handling
 
 /-! ## 3. Core syntactic metatheory -/
 
--- [STD] Graded value substitution. The real lemma (corrected 2026-06-21; the
--- prior statement was vacuous — conclusion = hypothesis).
--- Shape: a value `v` typed in its own grade context `Δ`, substituted for a
--- variable `x` bound at multiplicity `ρ` in `c`, yields `c[v/x]` typed in
--- `Γ + ρ·Δ`. This is Torczon's `T_App` arithmetic `γ₁ Q+ q Q* γ₂`
--- (resource/CBPV/typing.v) adapted to our named-variable / List-context encoding.
+-- [STD] Graded value substitution (closed-value fragment).
+-- Shape: a CLOSED value `v`, substituted for a variable `x` bound at
+-- multiplicity `ρ` in `c`, yields `c[v/x]` typed in `γ_Γ + ρ·γ_Δ` — Torczon's
+-- `T_App` arithmetic `γ₁ Q+ q Q* γ₂` (resource/CBPV/typing.v), over the
+-- ADR-0019 split (Finsupp grade-vec + ambient TyCtx).
 --   shape: torczon-oopsla24-effects-coeffects §graded-subst
--- ⚠ NOT YET PROVABLE: the current HasVTy/HasCTy rules do not thread grades
--- (vvar's ρ is existential/ignored; ret/app don't scale Γ), so `HasCTy` is
--- grade-insensitive. This `sorry` is the backlog item pointing at the
--- resource-enforcing typing-rule upgrade — see OPEN_QUESTIONS Q10.
--- Over the ADR-0019 split: `v` typed in its own grade vector `γ_Δ` (shared
--- types `Γ`); `c` typed under `Γ` with `x` graded `ρ` (`single x ρ + γ_Γ`).
--- Conclusion `c[v/x]` typed under `γ_Γ + ρ • γ_Δ` — the ADR's `Γ + ρ·Δ`.
+-- CLOSEDNESS SIDE-CONDITION (`v` typed in the empty type context `[]`): our
+-- `Comp.subst` is NOT capture-avoiding (Operational.lean §subst, "closed-program
+-- reductions"), so the unconditional open-`v` lemma is FALSE — a free var of `v`
+-- captured under a binder (e.g. `[vvar y / x](lam y. ret x) = lam y. ret y`).
+-- Empty type ctx ⟹ `v` has no free variables ⟹ no capture. This is the genuinely
+-- true statement for the STD block (type_safety runs on closed terms), not a
+-- weakening. The general open-`v` lemma needs capture-avoiding subst or de
+-- Bruijn — deferred to OPEN_QUESTIONS Q11.
 theorem subst_value
     (ρ : Mult) {γ_Γ γ_Δ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {x : Var} {v : Val} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasVTy γ_Δ Γ v A →
+    HasVTy γ_Δ [] v A →
     HasCTy (Finsupp.single x ρ + γ_Γ) ((x, A) :: Γ) c e B →
     HasCTy (γ_Γ + ρ • γ_Δ) Γ (Comp.subst x v c) e B
     := sorry

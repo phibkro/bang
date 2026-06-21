@@ -20,6 +20,7 @@
 - [Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?](#q8--group_recovers-bridge-e-group--f-dagger-frobenius)
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](#q9--wasmfx-target-drift-frozen-oopsla23-syntax-vs-phase-3-standard)
 - [Q10 — Typing rules must enforce grades (resource discipline)](#q10--typing-rules-must-enforce-grades-resource-discipline)  · ACTIVE
+- [Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn](#q11--open-term-substitution-capture-avoiding-subst-vs-de-bruijn)
 
 ---
 
@@ -322,6 +323,41 @@ deferrable; the rule shape forces the context-representation decision.
 
 **Revisit signal**: this IS the active ◊2 task — no deferral. Resolves when the
 graded `subst_value` is proven with a clean axiom set.
+
+---
+
+## Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn
+
+**Question**: `Comp.subst` is **not capture-avoiding** (Operational.lean §subst,
+scoped to "closed-program reductions"). The graded substitution lemma
+`subst_value` is therefore only true with a closedness side-condition (currently
+`v` typed in the empty type context). How do we eventually support **open-term**
+substitution — needed for the *interesting* graded case where the substituted
+value carries its own resource demands (`γ_Δ ≠ 0`)?
+
+**Why it matters**: the closed-`v` `subst_value` suffices for `type_safety`
+(closed programs) but trivializes the grade arithmetic (`ρ·γ_Δ = ρ·0 = 0`). The
+full coeffect payoff — substituting open values while tracking their usage — and
+`preservation` for a *general* context both want open-term substitution.
+
+**Detail** — the unconditional open lemma is FALSE under non-capture-avoiding
+subst. Counterexample: `[vvar y / x](lam y. ret (vvar x)) = lam y. ret (vvar y)`
+— the free `y` of the substituted value is captured by `lam y`.
+
+**Options** (from the 2026-06-21 decision; A chosen for now):
+- **A — closedness side-condition** *(in force)*. `subst_value` requires `v`
+  closed. Cheap, true, unblocks the STD block. Trivializes grades for `v`.
+- **B — capture-avoiding `Comp.subst`**. α-rename binders (fresh-name supply +
+  α-equivalence machinery over named vars). True in general; a real sub-project.
+- **C — de Bruijn representation**. Capture structurally impossible (Torczon's
+  choice via autosubst2). Most robust; a ◊3-scale rewrite of syntax/subst/eval.
+
+**Blocked on**: nothing now (A unblocks the STD block). Revisit when open-term
+graded reasoning is needed.
+
+**Revisit signal**: a coeffect theorem (or `preservation` for non-empty `Γ`)
+that needs `subst_value` with `γ_Δ ≠ 0`; or the ◊3 CalcVM port, where a de
+Bruijn switch (C) could be folded in.
 
 ---
 
