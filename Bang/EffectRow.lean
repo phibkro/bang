@@ -26,6 +26,15 @@ namespace Bang.EffectRow
 abbrev Label := Nat
 abbrev RVar  := Nat
 
+/-- The concrete effect-row carrier: a `Finset Label`. Mathlib gives this
+type `Lattice`, `OrderBot`, and `DistribLattice` instances natively (join
+= union, bottom = empty), satisfying the `[Lattice Eff] [OrderBot Eff]`
+constraints used in `Bang/Core.lean`'s variable block.
+
+The spec stays parametric in any such `Eff`; this is THE bang-lang
+default per ADR-0001. -/
+abbrev EffRow := Finset Label
+
 /-- A canonical row's label set. `Finset` is canonical by construction: there is
 no sorted/duplicate-free invariant to carry, and equality is extensional. -/
 abbrev RowC := Finset Label

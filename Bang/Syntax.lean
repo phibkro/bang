@@ -14,7 +14,7 @@ import Bang.Core
 
 namespace Bang
 
-variable {Eff  : Type} [Semiring Eff] [PartialOrder Eff]
+variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
 
 
@@ -52,17 +52,17 @@ inductive HasVTy : Ctx Eff Mult → Val → VTy Eff Mult → Prop where
   | vvar   : ∀ {Γ x A}, (∃ ρ, (x, ρ, A) ∈ Γ) → HasVTy Γ (Val.vvar x) A
   | vthunk : ∀ {Γ M φ B}, HasCTy Γ M φ B → HasVTy Γ (Val.vthunk M) (VTy.U φ B)
 inductive HasCTy : Ctx Eff Mult → Comp → Eff → CTy Eff Mult → Prop where
-  | ret    : ∀ {Γ v A q}, HasVTy Γ v A → HasCTy Γ (Comp.ret v) 0 (CTy.F q A)
+  | ret    : ∀ {Γ v A q}, HasVTy Γ v A → HasCTy Γ (Comp.ret v) ⊥ (CTy.F q A)
   | letC   : ∀ {Γ y M N φ₁ φ₂ ρ A q B},
       HasCTy Γ M φ₁ (CTy.F q A) →
       HasCTy ((y, ρ, A) :: Γ) N φ₂ B →
-      HasCTy Γ (Comp.letC y M N) (φ₁ + φ₂) B
+      HasCTy Γ (Comp.letC y M N) (φ₁ ⊔ φ₂) B
   | force  : ∀ {Γ v φ B},
       HasVTy Γ v (VTy.U φ B) →
       HasCTy Γ (Comp.force v) φ B
   | lam    : ∀ {Γ y M φ ρ A B},
       HasCTy ((y, ρ, A) :: Γ) M φ B →
-      HasCTy Γ (Comp.lam y M) 0 (CTy.arr A B)
+      HasCTy Γ (Comp.lam y M) ⊥ (CTy.arr A B)
   | app    : ∀ {Γ M v φ A B},
       HasCTy Γ M φ (CTy.arr A B) →
       HasVTy Γ v A →
@@ -76,10 +76,14 @@ end
 /-! ### 0.5 Effect-row well-formedness — keeps rows SET-shaped (ADR-0018)
 
 The lacks-constraint discipline that licenses dropping Biernacki's ρ-maps.
-Currently axiomatized; concretization depends on Eff algebra choice
-(see `docs/notes/OPEN_QUESTIONS.md` Q1). -/
+With `[Lattice Eff] [OrderBot Eff]` (Q1 resolved), `Disjoint` is concrete
+(Mathlib's `_root_.Disjoint`: `a ⊓ b ≤ ⊥`). The other three predicates
+stay axiom pending row-quantifier mechanism design. -/
 
-axiom Disjoint {Eff : Type} : Eff → Eff → Prop
+/-- Two effect rows are disjoint iff their meet is bottom (no shared labels). -/
+def Disjoint {Eff : Type} [Lattice Eff] [OrderBot Eff] (e₁ e₂ : Eff) : Prop :=
+  _root_.Disjoint e₁ e₂
+
 axiom RowAll {Eff Mult : Type} :
     (Eff → CTy Eff Mult) → Eff → CTy Eff Mult
 axiom WfInst {Eff Mult : Type} :

@@ -13,7 +13,7 @@ import Bang.Syntax
 
 namespace Bang
 
-variable {Eff  : Type} [Semiring Eff] [PartialOrder Eff]
+variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
 
 

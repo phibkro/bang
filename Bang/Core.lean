@@ -30,10 +30,17 @@ Following Torczon et al. (OOPSLA 2024, §1): the effect grade indexes the
 when forced), and the multiplicity / coeffect grade indexes the **returner**
 `F_q A` (consumer-side usage budget on the produced value).
 
-See `docs/notes/OPEN_QUESTIONS.md` Q1 — the `[Semiring Eff]` constraint
-doesn't fit `Eff = Finset Label` cleanly; may switch to Lattice. -/
+EFFECT GRADE = `Lattice + OrderBot` (resolves Q1 in OPEN_QUESTIONS.md):
+  - `⊥`     = no effects (the empty row)
+  - `e₁ ⊔ e₂` = combined effects (join; idempotent commutative associative)
+  - `≤`      = effect inclusion (sub-effecting)
+Concrete instance: `Eff = Finset Label` (ADR-0001), which has the required
+Mathlib instances natively.
 
-variable {Eff  : Type} [Semiring Eff] [PartialOrder Eff]
+MULTIPLICITY GRADE = `Semiring`. Concrete instance: `Bang.QTT`
+({zero, one, omega}; see `Bang/Mult.lean`). -/
+
+variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
 
 

@@ -21,39 +21,27 @@
 
 ---
 
-## Q1 — Eff algebra: Semiring vs Lattice
+## Q1 — Eff algebra: Semiring vs Lattice  · ✓ RESOLVED 2026-06-21 — Option (a)
 
-**Question**: what algebraic structure does `Eff` (the effect-row grade) have?
+**Resolution**: Switched `[Semiring Eff]` → `[Lattice Eff] [OrderBot Eff]`
+across all modules (Core / Syntax / Operational / LR / Spec). The effect
+algebra is now:
+  - `⊥`     = no effects (empty row)
+  - `e₁ ⊔ e₂` = combined effects (join)
+  - `≤`      = effect inclusion (sub-effecting)
 
-**Why it matters**: blocks ◊2 finalization (concrete `Eff = Finset Label`
-needs an algebra; current `[Semiring Eff]` doesn't fit Finset).
+Concrete: `Bang.EffRow := Finset Label` (in `Bang/EffectRow.lean`).
+Mathlib gives Finset the required Lattice + OrderBot instances natively.
 
-**Detail**: Spec.lean has `variable {Eff : Type} [Semiring Eff]`. Our
-intended concrete is `Eff = Finset Label`. The clash:
-- Semiring requires `0 * a = 0` (zero absorption in multiplication).
-- For effect rows, `*` naturally means "sequencing of effects" = union `∪`.
-- But `∅ ∪ a = a`, not `∅`. So `Finset Label` doesn't form a Semiring
-  under `(+, *) = (∪, ∪)`.
-
-**Options**:
-1. **Spec change**: replace `[Semiring Eff]` with `[Lattice Eff] [OrderBot Eff]`
-   (Finset has these natively). Change `l * e` in `no_accidental_handling`
-   to `l ⊔ e` or `l + e` (join). Theorem *shapes* stay; the typeclass and
-   one operator change.
-2. **Different Eff carrier**: use `Nat` (clock-counting, à la Torczon).
-   Loses the row-of-labels reading; conflicts with ADR-0001 (rows-as-Finset).
-3. **Keep parametric**: don't concretize Eff; let instantiation happen at
-   the theorem use-site. Punts the question.
-
-**Recommended**: (1). The `Semiring` was inherited from Torczon's
-clock-effect example; it doesn't fit our row-of-labels model. Lattice is
-the honest fit for ADR-0001.
-
-**Blocked on**: design decision from orchestrator.
-
-**Revisit signal**: any work that needs to instantiate `Eff` concretely
-(e.g., `no_accidental_handling` proof; `traceWithin` definition; the
-`effect-row well-formedness` axioms in Spec.lean §0.5).
+Knock-on effects:
+- `HasCTy.ret` and `HasCTy.lam`: `0 (CTy.F ...)` → `⊥ (CTy.F ...)`
+- `HasCTy.letC`: effect combine `φ₁ + φ₂` → `φ₁ ⊔ φ₂`
+- `no_accidental_handling`: `l * e` → `l ⊔ e`
+- `Disjoint` now concrete via Mathlib's `_root_.Disjoint` for Lattice
+  + OrderBot (was axiom — closed)
+- `group_recovers`'s `[AddGroup Eff]` hypothesis is now vacuous for our
+  Lattice Eff (no Lattice + AddGroup nontrivial instance) — theorem statement
+  preserved as conditional; see Q8 for the H-K bridge question
 
 ---
 

@@ -32,7 +32,7 @@ import Bang.Compile
 
 namespace Bang
 
-variable {Eff  : Type} [Semiring Eff] [PartialOrder Eff]
+variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
 
 
@@ -49,7 +49,7 @@ theorem no_accidental_handling
     {Γ : Ctx Eff Mult} {l e : Eff} {A : VTy Eff Mult} {q : Mult}
     {body : Comp} {h : Handler} :
     Disjoint l e →
-    HasCTy Γ body (l * e) (CTy.F q A) →
+    HasCTy Γ body (l ⊔ e) (CTy.F q A) →
     HandlesIntended l body h := sorry
 
 
