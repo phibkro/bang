@@ -202,18 +202,48 @@ def Ctx.add {Eff Mult : Type} [Semiring Mult]
 
 /-! ### 1.6 Typing judgments
 
-Inductive-Prop families. Phase A part 1: axiom signatures (the form is
-frozen; downstream theorems use it). Phase A part 2: per-rule constructors
-(pending — significant work; see PATH-graded-cbpv-eval.md).
+Inductive-Prop families. One constructor per typing rule:
 
-  HasVTy : values are inert, judged at VTy
-  HasCTy : computations carry an explicit running effect grade `e`,
-            inhabit CTy (whose `F q A` annotation is consumer-side coeffect) -/
+  HasVTy : values are inert (no effect grade); judged at VTy
+  HasCTy : computations carry an explicit running effect grade `e`;
+           inhabit CTy (whose `F q A` annotation is consumer-side coeffect)
 
-axiom HasVTy {Eff Mult : Type} [Semiring Eff] [Semiring Mult] :
-    Ctx Eff Mult → Val → VTy Eff Mult → Prop
-axiom HasCTy {Eff Mult : Type} [Semiring Eff] [Semiring Mult] :
-    Ctx Eff Mult → Comp → Eff → CTy Eff Mult → Prop
+PHASE A part 2 first cut: rules cover the common cases. Refinements pending:
+  - `vvar`: only checks variable presence, not multiplicity `1 ≤ ρ`
+    (needs `[PartialOrder Mult]` or explicit threshold predicate)
+  - `up`: omitted (needs `opArgTy`/`opResTy` concrete; see §5 LR helpers)
+  - `handle`: simplified — body's effect passes through unchanged
+    (real rule should remove the handled label from the effect row)
+  - QTT-style context arithmetic (Ctx.scale, Ctx.add in premises) is
+    approximated by simple list-cons context extension `(y, ρ, A) :: Γ`
+-/
+
+mutual
+inductive HasVTy : Ctx Eff Mult → Val → VTy Eff Mult → Prop where
+  | vunit  : ∀ {Γ}, HasVTy Γ Val.vunit VTy.unit
+  | vint   : ∀ {Γ n}, HasVTy Γ (Val.vint n) VTy.int
+  | vvar   : ∀ {Γ x A}, (∃ ρ, (x, ρ, A) ∈ Γ) → HasVTy Γ (Val.vvar x) A
+  | vthunk : ∀ {Γ M φ B}, HasCTy Γ M φ B → HasVTy Γ (Val.vthunk M) (VTy.U φ B)
+inductive HasCTy : Ctx Eff Mult → Comp → Eff → CTy Eff Mult → Prop where
+  | ret    : ∀ {Γ v A q}, HasVTy Γ v A → HasCTy Γ (Comp.ret v) 0 (CTy.F q A)
+  | letC   : ∀ {Γ y M N φ₁ φ₂ ρ A q B},
+      HasCTy Γ M φ₁ (CTy.F q A) →
+      HasCTy ((y, ρ, A) :: Γ) N φ₂ B →
+      HasCTy Γ (Comp.letC y M N) (φ₁ + φ₂) B
+  | force  : ∀ {Γ v φ B},
+      HasVTy Γ v (VTy.U φ B) →
+      HasCTy Γ (Comp.force v) φ B
+  | lam    : ∀ {Γ y M φ ρ A B},
+      HasCTy ((y, ρ, A) :: Γ) M φ B →
+      HasCTy Γ (Comp.lam y M) 0 (CTy.arr A B)
+  | app    : ∀ {Γ M v φ A B},
+      HasCTy Γ M φ (CTy.arr A B) →
+      HasVTy Γ v A →
+      HasCTy Γ (Comp.app M v) φ B
+  | handle : ∀ {Γ h M φ B},
+      HasCTy Γ M φ B →
+      HasCTy Γ (Comp.handle h M) φ B
+end
 
 
 /-! ## 0.5 Effect-row well-formedness — keeps rows SET-shaped
@@ -262,10 +292,67 @@ inductive Result (α : Type) where
   | oom : Result α
   | stuck : Result α
 
-axiom Source.step      : Comp → Option Comp
-axiom Source.eval      : Nat → Comp → Result Val
-axiom Source.evalTrace : Nat → Comp → Result (Val × Trace)
+/-! Source.step — substitution-based small-step semantics
+
+Reductions at the head:
+  force (vthunk M)            ↦  M
+  app   (lam x M) v           ↦  M[v/x]
+  letC  x (ret v) N           ↦  N[v/x]
+  handle h (ret v)            ↦  ret v                  (simplified: handler discards on return)
+  handle (throws ℓ) (up ℓ "raise" v)   ↦  ret v          (zero-shot throws catches matching label)
+  handle (state ℓ s) (up ℓ "get" _)    ↦  handle (state ℓ s) (ret s)
+  handle (state ℓ _) (up ℓ "put" v)    ↦  handle (state ℓ v) (ret .vunit)
+
+Search (no head redex): step into the leftmost subterm of letC / app / handle.
+
+PHASE A part 2 simplifications (refine in Phase B):
+  - Handler return clauses are identity (real return clause is per-handler).
+  - Operation propagation: when `handle h (up ℓ op v)` doesn't match,
+    we return `none` (stuck) rather than propagating with the inner handler
+    preserved for later resumption. Pure substitution-based step can't
+    cleanly express deep-handler resumption; a CK-machine variant
+    (Frame / EvalCtx already defined in §1.3) is the eventual home.
+-/
+def Source.step : Comp → Option Comp
+  | .force (.vthunk M)                         => some M
+  | .app (.lam x M) v                          => some (Comp.subst x v M)
+  | .letC x (.ret v) N                         => some (Comp.subst x v N)
+  | .handle _ (.ret v)                         => some (.ret v)
+  | .handle (.throws ℓ) (.up ℓ' "raise" v)     =>
+      if ℓ = ℓ' then some (.ret v) else none
+  | .handle (.state ℓ s) (.up ℓ' "get" _)      =>
+      if ℓ = ℓ' then some (.handle (.state ℓ s) (.ret s)) else none
+  | .handle (.state ℓ _) (.up ℓ' "put" v)      =>
+      if ℓ = ℓ' then some (.handle (.state ℓ v) (.ret .vunit)) else none
+  -- Search rules (no head redex): step into the leftmost subterm.
+  | .letC x M N                                =>
+      match Source.step M with
+      | some M' => some (.letC x M' N)
+      | none    => none
+  | .app M v                                   =>
+      match Source.step M with
+      | some M' => some (.app M' v)
+      | none    => none
+  | .handle h M                                =>
+      match Source.step M with
+      | some M' => some (.handle h M')
+      | none    => none
+  | _                                          => none
+  termination_by c => sizeOf c
+
+-- Source.eval: fuel-iterated step until we reach a returned value.
+def Source.eval : Nat → Comp → Result Val
+  | 0, _      => .oom
+  | _ + 1, .ret v => .done v
+  | n + 1, c  =>
+      match Source.step c with
+      | some c' => Source.eval n c'
+      | none    => .stuck
+
+-- Trace + evalTrace: pending Phase B (depends on concrete Eff to express
+-- "label in effect row"). For now: opaque.
 axiom Trace            : Type
+axiom Source.evalTrace : Nat → Comp → Result (Val × Trace)
 axiom traceWithin      {Eff : Type} : Trace → Eff → Prop
 
 -- isReturn: a Comp is "returned" iff it's `ret v` for some v.
