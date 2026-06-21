@@ -115,6 +115,42 @@ inductive Frame : Type where
 abbrev EvalCtx := List Frame   -- innermost frame first; head = next reduction site
 
 
+/-! ### 1.3a Substitution (capture-avoiding, named binders)
+
+Standard structural substitution `[v/x]` on `Val`/`Comp`/`Handler`. Three
+mutual defs because:
+  - `Val.vthunk` carries a `Comp` → needs `Comp.subst` recursively
+  - `Comp.handle` carries a `Handler` → needs `Handler.subst`
+  - `Handler.state` carries a `Val` → needs `Val.subst`
+
+At binders (`letC y _ _`, `lam y _`) we skip substitution into the scope when
+`x = y` (the bound `y` shadows the outer `x`). This is the standard textbook
+shape; α-renaming subtleties are deferred (works for closed-program reductions).
+-/
+
+mutual
+def Val.subst (x : Var) (v : Val) : Val → Val
+  | .vunit       => .vunit
+  | .vint n      => .vint n
+  | .vvar y      => if x = y then v else .vvar y
+  | .vthunk M    => .vthunk (Comp.subst x v M)
+def Comp.subst (x : Var) (v : Val) : Comp → Comp
+  | .ret w       => .ret (Val.subst x v w)
+  | .letC y M N  => if x = y then .letC y (Comp.subst x v M) N
+                             else .letC y (Comp.subst x v M) (Comp.subst x v N)
+  | .force w     => .force (Val.subst x v w)
+  | .lam y M     => if x = y then .lam y M else .lam y (Comp.subst x v M)
+  | .app M w     => .app (Comp.subst x v M) (Val.subst x v w)
+  | .up ℓ op w   => .up ℓ op (Val.subst x v w)
+  | .handle h M  => .handle (Handler.subst x v h) (Comp.subst x v M)
+  | .oom         => .oom
+  | .wrong s     => .wrong s
+def Handler.subst (x : Var) (v : Val) : Handler → Handler
+  | .state ℓ s   => .state ℓ (Val.subst x v s)
+  | .throws ℓ    => .throws ℓ
+end
+
+
 /-! ### 1.4 Type syntax (Torczon graded CBPV)
 
 Values inhabit positive `VTy`; computations inhabit negative `CTy`. The
@@ -136,9 +172,14 @@ end
 /-! ### 1.5 Context — typing environment
 
 A context is a list of (variable, multiplicity, type) bindings. Resource
-arithmetic (`scale ρ Γ`, `Γ₁ + Γ₂`) requires the `Semiring Mult`
-instance; left axiompending Phase A part 2 (QTT-style arithmetic w.r.t.
-variable shadowing wants careful definition). -/
+arithmetic (`scale ρ Γ`, `Γ₁ + Γ₂`) is QTT-style: scale multiplies every
+binding's multiplicity by ρ; add combines two contexts of the same shape
+(same variables in same order) by adding multiplicities pointwise.
+
+CAVEAT: this List-based representation requires `Γ₁` and `Γ₂` in
+`Ctx.add` to have matching variable lists in matching order. A FinMap-based
+representation would handle arbitrary contexts cleanly; defer that to a
+future Ctx refactor if proofs surface the need. -/
 
 abbrev Ctx (Eff Mult : Type) := List (Var × Mult × VTy Eff Mult)
 
@@ -149,17 +190,21 @@ namespace Ctx
     (x, ρ, A) :: Γ
 end Ctx
 
--- Resource arithmetic — Phase A part 2 will make these concrete.
-axiom Ctx.scale {Eff Mult : Type} [Semiring Mult] :
-    Mult → Ctx Eff Mult → Ctx Eff Mult
-axiom Ctx.add {Eff Mult : Type} [Semiring Mult] :
-    Ctx Eff Mult → Ctx Eff Mult → Ctx Eff Mult
+-- Resource arithmetic — concrete QTT-style. Scale multiplies; add zips.
+def Ctx.scale {Eff Mult : Type} [Semiring Mult] (ρ : Mult)
+    (Γ : Ctx Eff Mult) : Ctx Eff Mult :=
+  Γ.map (fun b => (b.1, ρ * b.2.1, b.2.2))
+
+def Ctx.add {Eff Mult : Type} [Semiring Mult]
+    (Γ₁ Γ₂ : Ctx Eff Mult) : Ctx Eff Mult :=
+  List.zipWith (fun b₁ b₂ => (b₁.1, b₁.2.1 + b₂.2.1, b₁.2.2)) Γ₁ Γ₂
 
 
 /-! ### 1.6 Typing judgments
 
-Inductive-Prop families. Phase A part 1: axiomsignatures (the form is
-frozen; downstream theorems use it). Phase A part 2: per-rule constructors.
+Inductive-Prop families. Phase A part 1: axiom signatures (the form is
+frozen; downstream theorems use it). Phase A part 2: per-rule constructors
+(pending — significant work; see PATH-graded-cbpv-eval.md).
 
   HasVTy : values are inert, judged at VTy
   HasCTy : computations carry an explicit running effect grade `e`,
@@ -222,7 +267,16 @@ axiom Source.eval      : Nat → Comp → Result Val
 axiom Source.evalTrace : Nat → Comp → Result (Val × Trace)
 axiom Trace            : Type
 axiom traceWithin      {Eff : Type} : Trace → Eff → Prop
-axiom isReturn         : Comp → Prop
+
+-- isReturn: a Comp is "returned" iff it's `ret v` for some v.
+def isReturn : Comp → Prop
+  | .ret _ => True
+  | _      => False
+
+-- NotEvaluated: a syntactic over-approximation — `x` doesn't free-occur in `c`.
+-- The semantic notion (`x`'s thunk is never forced) is the eventual target;
+-- the syntactic version is a sound under-approximation suitable for the
+-- `zero_usage_erasable` theorem statement.
 axiom NotEvaluated     : Var → Comp → Prop
 
 
