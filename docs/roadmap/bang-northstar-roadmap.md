@@ -1,5 +1,24 @@
 # BANG → v1 · North-Star Roadmap
 
+> ⚠️ **K-keyframe roadmap — predates ADR-0016 (third design revision).**
+> K0-K3 milestones (effect-row oracle; reference `eval`; calculated machines)
+> all landed and remain the research narrative. K4+ keyframes have been
+> REPLACED by the two-hop architecture of ADR-0016 (graded-CBPV → CalcVM →
+> WasmFX) and the ◊-checkpoint progression in `ROADMAP.md`.
+>
+> READING ORDER: this doc for the research narrative + intellectual lineage;
+> `ROADMAP.md` for the orchestrator's current map; `CLAUDE.md` →
+> `CONTEXT.md` for current state; `docs/decisions/0016-*.md` for the
+> architecture in force.
+>
+> Drift from the original:
+> - **Effect TS / WasmFX as "K5 optional lowerings"** gone. WasmFX is the
+>   primary compiler target per ADR-0016.
+> - **Harness retired** (TS differential tests deleted with the wasmfx merge;
+>   the standing gate is now `Bang/Audit.lean` per Phase B PROOF_ORDER).
+> - **`oracle-lean/Bang/...` paths** are now `Bang/...` (post-flatten;
+>   see commit `4a1b7a4`).
+>
 > Keyframes are committed poses (states that must hold). Inbetweens are implementation, drawn later.
 > Proof rides the **reference**; the shipping path is kept honest by the **harness**; performance is summoned only when it touches the user; **the machine is an output of the calculation, never hand-designed.**
 

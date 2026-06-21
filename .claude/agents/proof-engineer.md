@@ -107,8 +107,8 @@ A proof is done when ALL of:
 
 ```
 nix develop          # dev shell with lean/elan
-make build           # lake exe cache get && lake build (cold first time)
-make audit           # bash tools/audit.sh (depends on build)
+just build           # lake exe cache get && lake build (cold first time)
+just audit           # bash tools/audit.sh (depends on build)
 
 # the real gate, run after the static guard:
 lake env lean Bang/Audit.lean

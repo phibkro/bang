@@ -47,16 +47,16 @@ CONTEXT.md               volatile current position on the map
 
 ```bash
 nix develop          # dev shell with Lean via elan
-make verify          # selfcheck + lake build + tools/audit.sh
+just verify          # selfcheck + lake build + tools/audit.sh
 ```
 
 First `lake` build pulls Mathlib (`lake exe cache get`; network, minutes).
 
 Piecemeal:
 ```bash
-make selfcheck       # zero-dep Node check on the row unifier algorithm
-make build           # lake build the Bang library
-make audit           # static cheat-grep + lake build clean
+just selfcheck       # zero-dep Node check on the row unifier algorithm
+just build           # lake build the Bang library
+just audit           # static cheat-grep + lake build clean
 lake env lean Bang/Audit.lean   # the real gate — #print axioms
 ```
 

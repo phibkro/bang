@@ -173,7 +173,7 @@ designed but not written — activate when their layer becomes active
 10. Verify locally:
     ```
     nix develop          # dev shell with lean/elan
-    make verify          # selfcheck + lake build + tools/audit.sh
+    just verify          # selfcheck + lake build + tools/audit.sh
     bash tools/burndown.sh   # Phase B burndown chart
     ```
 

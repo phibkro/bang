@@ -1,6 +1,33 @@
 # AGENTS.md — read this first
 
-You are a fresh session. **This repo is your only memory.** Anything not written here did not happen. Read this file, then the roadmap, then the ADRs, before changing anything.
+You are a fresh session. **This repo is your only memory.** Anything not written here did not happen. Read this file, then `CONTEXT.md`, then `ROADMAP.md`, before changing anything.
+
+**First time in this repo?** Read `ONBOARDING.md` for setup + a tighter reference index.
+
+## Reference index (progressive disclosure)
+
+This file is the always-loaded core (invariants, glossary, current architecture). On-demand pointers below — consult the relevant doc when its trigger arises.
+
+| When you need… | Read |
+|---|---|
+| **Current session position** (where we are RIGHT NOW) | `CONTEXT.md` |
+| **Long-term checkpoint map** (◊1 → ◊6) | `ROADMAP.md` |
+| **First-time setup + reference table** | `ONBOARDING.md` |
+| **How work flows** (lifecycle + feedback loops + quality gates) | `docs/notes/development-lifecycle.md` |
+| **Active in-flight work** | `paths/PATH-*.md` |
+| **Architecture in force** | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` |
+| **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
+| **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
+| **Proof discipline** (PROOF_ORDER, sorry rules, axiom hygiene) | `docs/notes/spec-proof-discipline.md` |
+| **Why the wasmfx spec is engineer-ready** | `docs/notes/spec-handover.md` |
+| **Lean 4 tactics for this work** | `docs/notes/tactics-survey.md` |
+| **K2/K3 calculation proof patterns** (legacy) | `docs/notes/k2-calculation-playbook.md` |
+| **Dev environment** (Nix flake, scripts, gotchas) | `docs/notes/dev-env.md` |
+| **Original design thesis** (v0/v1; partially superseded by ADR-0016) | `docs/spec/bang-lang-design.md`, `docs/spec/bang-lang-description-value.md` |
+| **K-keyframe research roadmap** (complementary to ROADMAP.md) | `docs/roadmap/bang-northstar-roadmap.md` |
+| **References library** (cited papers + refs.bib) | `references/README.md` |
+| **Subagent roles** | `.claude/agents/{kernel-engineer,proof-engineer}.md` |
+| **Run any task** | `just` (lists recipes); see `justfile` |
 
 ## What BANG is
 
@@ -65,7 +92,7 @@ Plus K1's `unify_sound` (proven — it needed a **freshness precondition**: `fre
 - **K4 front end** — parse → typed AST → effect-row inference on the verified unifier → core IR.
 - **Deferred & documented** (in `Eval.lean`, never faked): multi-shot handlers, STM, `:`/`=` reactivity, divergence-beyond-fuel, nested deep patterns.
 
-**Build:** `nix develop` gives Lean via elan; `lake exe cache get` pulls Mathlib oleans; `make verify` runs selfcheck + lake build + `tools/audit.sh` (axiom-hygiene gate). The lakefile lives at project root (`lakefile.toml`); the Lean library is `Bang` at `./Bang/`.
+**Build:** `nix develop` gives Lean via elan; `lake exe cache get` pulls Mathlib oleans; `just verify` runs selfcheck + lake build + `tools/audit.sh` (axiom-hygiene gate). The lakefile lives at project root (`lakefile.toml`); the Lean library is `Bang` at `./Bang/`.
 
 K0 decisions are locked — see ADRs. Do not relitigate locked decisions; read a decision's **"Revisit if"** clause first.
 
@@ -114,10 +141,10 @@ K0 decisions are locked — see ADRs. Do not relitigate locked decisions; read a
 
 ```
 nix develop          # ENTER THE DEV SHELL FIRST — bare `make`/`node`/`lake` are NOT on PATH
-make verify          # selfcheck (Node) + lake build + tools/audit.sh
+just verify          # selfcheck (Node) + lake build + tools/audit.sh
 # or piecemeal:
-make build           # lake exe cache get && lake build  (cold first time: minutes)
-make audit           # bash tools/audit.sh  (depends on build; static cheat-grep + clean build)
+just build           # lake exe cache get && lake build  (cold first time: minutes)
+just audit           # bash tools/audit.sh  (depends on build; static cheat-grep + clean build)
 lake env lean Bang/Audit.lean   # the REAL guarantee — `#print axioms` per headline theorem
 ```
 

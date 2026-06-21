@@ -1,19 +1,23 @@
 # bang-lang: paradigms, effects, runtimes
 
-*Design notes — May 2026*
+*Design notes — May 2026 · v0/v1 era*
 
-> ⚠️ **Partially superseded — the ADRs are the source of truth.** This is the
-> original design doc; two notational/structural decisions in it have since
-> changed and were *not* back-edited here:
+> ⚠️ **Partially superseded — read for thesis + shape; trust ADRs + Lean for
+> notation/semantics.** Drift from the original doc:
+> - **Architecture pivoted** to graded CBPV + WasmFX target (**ADR-0016**;
+>   2026-06-20). The "calculated VM" is now the executable spec; WasmFX is
+>   the verified compiler output. The K0-K7 keyframes (see
+>   `docs/roadmap/bang-northstar-roadmap.md`) remain valid as research
+>   milestones; the architecture chapter is ADR-0016.
 > - **Force is `$` (prefix), not `!`** — `$x` forces, `(e)` groups without
->   forcing, `!` is actor-send (**ADR-0007**). Everywhere below that writes `!x`
->   for force, read `$x`.
-> - **No `sig` binding form** — reactivity is the `:` vs `=` operator on a `mut`
->   binding (**ADR-0005**). Binding forms are `let` / `mut` / `tvar`.
+>   forcing, `!` is actor-send (**ADR-0007**). Read `!x` as `$x`.
+> - **No `sig` binding form** — reactivity is the `:` vs `=` operator on a
+>   `mut` binding (**ADR-0005**). Binding forms are `let` / `mut` / `tvar`.
+> - Executable core: `Bang/Eval.lean` (legacy K2 reference) + the graded
+>   modules `Bang/{Core,Syntax,Operational,...}.lean` (**ADR-0008** for K2,
+>   **ADR-0016** for the graded refactor).
 >
-> The pinned executable core and its semantics live in `oracle-lean/Bang/Eval.lean`
-> (**ADR-0008**). Read this doc for the *thesis and shape*; trust the ADRs + Lean
-> for the *exact* notation and semantics.
+> For the CURRENT direction, read `CLAUDE.md` → `CONTEXT.md` → ADR-0016.
 
 ## Thesis
 

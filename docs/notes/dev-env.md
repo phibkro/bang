@@ -24,7 +24,7 @@ of the daily dev shell.
 cd /srv/share/projects/lang-bang
 nix develop          # opens Lean 4 dev shell (or auto-entered via direnv)
 lake exe cache get   # one-time: pull Mathlib oleans from Azure (multi-GB)
-make verify          # selfcheck + lake build + tools/audit.sh
+just verify          # selfcheck + lake build + tools/audit.sh
 bash tools/install-hooks.sh   # one-time: link git pre-commit hook
 ```
 
@@ -46,11 +46,11 @@ Direnv (`.envrc` uses `use flake`) auto-enters the dev shell on `cd` once
 
 | Command | What it does |
 |---|---|
-| `make verify` | Default. selfcheck + build + audit. |
-| `make build` | `lake exe cache get && lake build` (incremental after first run). |
-| `make audit` | `tools/audit.sh` — static guards + axiom-set report per theorem. |
-| `make selfcheck` | Zero-dep Node smoke test of the row-unifier algorithm. |
-| `make clean` | Remove `.lake/` build artifacts. |
+| `just verify` | Default. selfcheck + build + audit. |
+| `just build` | `lake exe cache get && lake build` (incremental after first run). |
+| `just audit` | `tools/audit.sh` — static guards + axiom-set report per theorem. |
+| `just selfcheck` | Zero-dep Node smoke test of the row-unifier algorithm. |
+| `just clean` | Remove `.lake/` build artifacts. |
 
 ## Scripts (`tools/`)
 
@@ -73,13 +73,13 @@ For Phase A part 2 / Phase B work:
 bash tools/check.sh Bang/Spec.lean     # fast: just this file's errors
 # repeat until clean
 
-make audit                              # full gate before committing
+just audit                              # full gate before committing
 bash tools/burndown.sh                  # see remaining sorrys/axioms
 
 git add -A && git commit -m "..."       # pre-commit hook runs static guards
 ```
 
-`tools/check.sh Bang/Spec.lean` is faster than `make build` because it
+`tools/check.sh Bang/Spec.lean` is faster than `just build` because it
 type-checks just one file (still pulling its dependencies via the lake
 cache). Use this constantly while editing.
 
@@ -136,5 +136,5 @@ here for programmatic Lean access without an MCP bridge.
 ## Stale-doc check
 
 If something in this doc no longer matches reality (e.g. a make target
-was renamed), `tools/check.sh` and `make verify` are the ground truth.
+was renamed), `tools/check.sh` and `just verify` are the ground truth.
 This doc is hand-maintained.

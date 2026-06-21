@@ -133,7 +133,7 @@ lang-bang/                  ← project root (Lean 4 conventions)
 ├── lean-toolchain          ← pinned Lean version
 ├── lake-manifest.json      ← dependency lock (Mathlib + plausible)
 ├── flake.nix .envrc        ← Nix dev shell
-├── Makefile                ← make verify | build | audit | selfcheck | clean
+├── Makefile                ← just verify | build | audit | selfcheck | clean
 ├── Bang/                   ← the Lean library
 │   ├── EffectRow.lean      ← row algebra + sound unifier (K1)
 │   ├── Eval.lean           ← reference interpreter (K2/K3) — graded-CBPV port at ◊2

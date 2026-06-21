@@ -92,10 +92,10 @@ A kernel change is done when ALL of:
 
 ```
 nix develop          # dev shell with lean/elan
-make verify          # selfcheck + build + audit
+just verify          # selfcheck + build + audit
 # or piecemeal:
-make build           # lake exe cache get && lake build
-make audit           # bash tools/audit.sh (needs build first)
+just build           # lake exe cache get && lake build
+just audit           # bash tools/audit.sh (needs build first)
 ```
 
 # When you should hand off
