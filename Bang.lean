@@ -14,6 +14,9 @@ import Bang.LR
 import Bang.Compile
 import Bang.Spec
 
+-- Syntactic metatheory: weakening + graded substitution (backs subst_value)
+import Bang.Metatheory
+
 -- Phase B targets and the audit gate
 import Bang.Compat
 import Bang.Distribution
