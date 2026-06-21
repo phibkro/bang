@@ -5,7 +5,20 @@
 -- K1: effect-row algebra (sound unifier)
 import Bang.EffectRow
 
--- K2: definitional reference interpreter (un-graded CBN K2 source)
+-- Spec spine (Phase A part 2 split — Spec re-exports the rest)
+import Bang.Core
+import Bang.Syntax
+import Bang.Operational
+import Bang.LR
+import Bang.Compile
+import Bang.Spec
+
+-- Phase B targets and the audit gate
+import Bang.Compat
+import Bang.Distribution
+import Bang.Audit
+
+-- K2: legacy untyped CBN reference (Bang.Eval namespace; no clash with Bang)
 import Bang.Eval
 
 -- K3: calculated machines (collapsing into one graded-CBPV machine at ◊3
@@ -21,9 +34,3 @@ import Bang.CalcCBNEffSt
 import Bang.CalcReify
 import Bang.CalcReifyRef
 import Bang.CalcReifySim
-
--- wasmfx spec (graded-CBPV + LR + WasmFX target)
-import Bang.Spec
-import Bang.Compat
-import Bang.Distribution
-import Bang.Audit
