@@ -18,10 +18,10 @@
 import Bang.Spec
 namespace Bang
 
-variable {Eff : Type} [OrderedSemiring Eff]
+variable {Eff : Type} [Semiring Eff]
 
 -- The idempotence of `+` (choice) — the defining property of a set-row.
-class IdempotentChoice (Eff : Type) [OrderedSemiring Eff] : Prop where
+class IdempotentChoice (Eff : Type) [Semiring Eff] : Prop where
   add_idem : ∀ e : Eff, e + e = e
 
 /-- [STD / PROVABLE] With idempotent `+`, `(Eff, +, 0)` is a bounded join-

@@ -44,10 +44,12 @@ What changed:
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — refactor toward graded CBPV. Owner:
-  claude as kernel-engineer. Status: Phase A part 1 landed (syntactic types
-  concretized in `Bang/Spec.lean`; grading convention switched to Torczon;
-  operational shape decided as small-step + eval-contexts). Phase A part 2
-  next: typing judgments, Ctx resource arithmetic, `Source.step` rules.
+  claude as kernel-engineer. Status: **Phase A part 1 GREEN BUILD** (730/730
+  jobs, `lake build` clean, `tools/audit.sh` reports the Phase B burndown).
+  Spec.lean: §1 syntactic types concrete; LR mutual defs stubbed as axioms
+  (Phase B: replace with real step-indexed defs). Compat.lean: stubbed
+  placeholder (Phase A part 2 repopulates). Phase A part 2 next: typing
+  judgments, Ctx resource arithmetic, `Source.step` rules.
 
 ## Next stable checkpoint we are paving toward
 

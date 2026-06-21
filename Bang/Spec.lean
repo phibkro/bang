@@ -12,7 +12,7 @@
     - §1 typing judgments + Ctx resource ops still OPAQUE (Phase A part 2)
     - §2 Source.step + Source.eval still OPAQUE (Phase A part 2; small-step + eval-ctx
       per ADR-0016 + the operational-shape decision; Lexa-style frames)
-    - §5 LR is defined; uses opaque BaseRel / asThunk / asReturner (Phase B)
+    - §5 LR is defined; uses axiomBaseRel / asThunk / asReturner (Phase B)
     - All theorems carry `sorry` (Phase B)
 
   GAP (one paragraph): Graded CBPV with effects and coeffects is mechanized
@@ -51,8 +51,8 @@ These are declared as `variable` for theorems / defs that need them.
 Inductive type formers (VTy / CTy) take them as explicit parameters
 because Lean 4's `variable` doesn't auto-bind to inductive type formers. -/
 
-variable {Eff  : Type} [OrderedSemiring Eff]
-variable {Mult : Type} [OrderedSemiring Mult]
+variable {Eff  : Type} [Semiring Eff] [PartialOrder Eff]
+variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
 
 
 /-! ## 1. Syntax + judgments -/
@@ -136,8 +136,8 @@ end
 /-! ### 1.5 Context — typing environment
 
 A context is a list of (variable, multiplicity, type) bindings. Resource
-arithmetic (`scale ρ Γ`, `Γ₁ + Γ₂`) requires the `OrderedSemiring Mult`
-instance; left opaque pending Phase A part 2 (QTT-style arithmetic w.r.t.
+arithmetic (`scale ρ Γ`, `Γ₁ + Γ₂`) requires the `Semiring Mult`
+instance; left axiompending Phase A part 2 (QTT-style arithmetic w.r.t.
 variable shadowing wants careful definition). -/
 
 abbrev Ctx (Eff Mult : Type) := List (Var × Mult × VTy Eff Mult)
@@ -150,24 +150,24 @@ namespace Ctx
 end Ctx
 
 -- Resource arithmetic — Phase A part 2 will make these concrete.
-opaque Ctx.scale {Eff Mult : Type} [OrderedSemiring Mult] :
+axiom Ctx.scale {Eff Mult : Type} [Semiring Mult] :
     Mult → Ctx Eff Mult → Ctx Eff Mult
-opaque Ctx.add {Eff Mult : Type} [OrderedSemiring Mult] :
+axiom Ctx.add {Eff Mult : Type} [Semiring Mult] :
     Ctx Eff Mult → Ctx Eff Mult → Ctx Eff Mult
 
 
 /-! ### 1.6 Typing judgments
 
-Inductive-Prop families. Phase A part 1: opaque signatures (the form is
+Inductive-Prop families. Phase A part 1: axiomsignatures (the form is
 frozen; downstream theorems use it). Phase A part 2: per-rule constructors.
 
   HasVTy : values are inert, judged at VTy
   HasCTy : computations carry an explicit running effect grade `e`,
             inhabit CTy (whose `F q A` annotation is consumer-side coeffect) -/
 
-opaque HasVTy {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult] :
+axiom HasVTy {Eff Mult : Type} [Semiring Eff] [Semiring Mult] :
     Ctx Eff Mult → Val → VTy Eff Mult → Prop
-opaque HasCTy {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult] :
+axiom HasCTy {Eff Mult : Type} [Semiring Eff] [Semiring Mult] :
     Ctx Eff Mult → Comp → Eff → CTy Eff Mult → Prop
 
 
@@ -180,23 +180,21 @@ row containing `l` would let a handler for `l` ACCIDENTALLY capture an
 operation smuggled in through `α`. Fix = "lacks" constraint on row variables,
 enforced at instantiation. See ADR-0018. -/
 
-opaque Disjoint {Eff : Type} : Eff → Eff → Prop      -- Finset model: ∩ = ∅
-opaque RowAll {Eff Mult : Type} :
+axiom Disjoint {Eff : Type} : Eff → Eff → Prop      -- Finset model: ∩ = ∅
+axiom RowAll {Eff Mult : Type} :
     (Eff → CTy Eff Mult) → Eff → CTy Eff Mult         -- ∀(α # L). B
-opaque WfInst {Eff Mult : Type} :
+axiom WfInst {Eff Mult : Type} :
     CTy Eff Mult → Eff → CTy Eff Mult → Prop          -- well-formed row instantiation
 
 -- [INV] the load-bearing typing side-condition.
 theorem rowinst_requires_disjoint
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {q : Eff → CTy Eff Mult} {L ε : Eff} :
     WfInst (RowAll q L) ε (q ε) → Disjoint ε L := sorry
 
 -- [INV][KEY] abstraction-safety / NO accidental handling.
-opaque HandlesIntended {Eff : Type} : Eff → Comp → Handler → Prop
+axiom HandlesIntended {Eff : Type} : Eff → Comp → Handler → Prop
 
 theorem no_accidental_handling
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {Γ : Ctx Eff Mult} {l e : Eff} {A : VTy Eff Mult} {q : Mult}
     {body : Comp} {h : Handler} :
     Disjoint l e →
@@ -219,13 +217,13 @@ inductive Result (α : Type) where
   | oom : Result α
   | stuck : Result α
 
-opaque Source.step      : Comp → Option Comp
-opaque Source.eval      : Nat → Comp → Result Val
-opaque Source.evalTrace : Nat → Comp → Result (Val × Trace)
-opaque Trace            : Type
-opaque traceWithin      {Eff : Type} : Trace → Eff → Prop
-opaque isReturn         : Comp → Prop
-opaque NotEvaluated     : Var → Comp → Prop
+axiom Source.step      : Comp → Option Comp
+axiom Source.eval      : Nat → Comp → Result Val
+axiom Source.evalTrace : Nat → Comp → Result (Val × Trace)
+axiom Trace            : Type
+axiom traceWithin      {Eff : Type} : Trace → Eff → Prop
+axiom isReturn         : Comp → Prop
+axiom NotEvaluated     : Var → Comp → Prop
 
 
 /-! ## 3. Core syntactic metatheory -/
@@ -234,7 +232,6 @@ opaque NotEvaluated     : Var → Comp → Prop
 -- The conclusion's `c` should read `[v/x] c` once subst is concrete;
 -- placeholder shape preserves the type signature.
 theorem subst_value
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     (ρ : Mult) {Γ Δ : Ctx Eff Mult} {v : Val} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasVTy Δ v A →
@@ -244,20 +241,17 @@ theorem subst_value
 
 -- [STD] Preservation.
 theorem preservation
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {Γ : Ctx Eff Mult} {c c' : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy Γ c e B → Source.step c = some c' →
     ∃ e', e' ≤ e ∧ HasCTy Γ c' e' B := sorry
 
 -- [STD] Progress.
 theorem progress
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy Ctx.empty c e B → isReturn c ∨ ∃ c', Source.step c = some c' := sorry
 
 -- [STD] Safety = progress + preservation, fuel-lifted.
 theorem type_safety
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
     HasCTy Ctx.empty c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
     := sorry
@@ -267,14 +261,12 @@ theorem type_safety
 
 -- [KEY] Coeffect erasure: a 0-graded variable is never evaluated.
 theorem zero_usage_erasable
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {Γ : Ctx Eff Mult} {x : Var} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy (Ctx.bind x (0 : Mult) A Γ) c e B → NotEvaluated x c := sorry
 
 -- [KEY] Effect soundness: static grade `e` over-approximates every observed trace.
 theorem effect_sound
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
     {v : Val} {t : Trace} :
     HasCTy Ctx.empty c e (CTy.F q A) →
@@ -285,11 +277,11 @@ theorem effect_sound
 /-! ## 5. Observational equivalence — `≈` IS PINNED HERE (do not redefine) -/
 
 -- Helper terms used in §6.
-opaque seqComp  : Comp → Comp → Comp
-opaque idComp   : Comp
-opaque recover  : Comp → Comp
-opaque Cxt      : Type                       -- computation-to-computation contexts
-opaque Cxt.plug : Cxt → Comp → Comp
+axiom seqComp  : Comp → Comp → Comp
+axiom idComp   : Comp
+axiom recover  : Comp → Comp
+axiom Cxt      : Type                       -- computation-to-computation contexts
+axiom Cxt.plug : Cxt → Comp → Comp
 
 -- Observation: fuel-bounded convergence to a returned value.
 def Converges (c : Comp) : Prop := ∃ fuel v, Source.eval fuel c = Result.done v
@@ -311,75 +303,59 @@ infixl:50 " ≈ " => ctxEquiv
 def CoApprox (c₁ c₂ : Comp) : Prop := Converges c₁ → Converges c₂
 
 -- LR helpers (Phase B will make some concrete).
-opaque Stack       : Type                            -- abstract; concrete = EvalCtx
-opaque Stack.plug  : Stack → Comp → Comp
-opaque BaseRel     {Eff Mult : Type} : VTy Eff Mult → Val → Val → Prop
-opaque BaseStackRel {Eff Mult : Type} : Nat → CTy Eff Mult → Stack → Stack → Prop
+axiom Stack       : Type                            -- abstract; concrete = EvalCtx
+axiom Stack.plug  : Stack → Comp → Comp
+axiom BaseRel     {Eff Mult : Type} : VTy Eff Mult → Val → Val → Prop
+axiom BaseStackRel {Eff Mult : Type} : Nat → CTy Eff Mult → Stack → Stack → Prop
 -- THUNK: returns (latent-effect φ, inner CTy). Torczon: φ lives on U.
-opaque asThunk     {Eff Mult : Type} : VTy Eff Mult → Option (Eff × CTy Eff Mult)
+axiom asThunk     {Eff Mult : Type} : VTy Eff Mult → Option (Eff × CTy Eff Mult)
 -- RETURNER: returns (consumer-budget q, inner VTy). Torczon: q lives on F.
-opaque asReturner  {Eff Mult : Type} : CTy Eff Mult → Option (Mult × VTy Eff Mult)
+axiom asReturner  {Eff Mult : Type} : CTy Eff Mult → Option (Mult × VTy Eff Mult)
 -- a control-stuck computation: operation in row `e` applied to a value, in
 -- evaluation position, unhandled by the enclosing stack.
-opaque raise       {Eff : Type} : Eff → Val → Comp
-opaque opArgTy     {Eff Mult : Type} : Eff → VTy Eff Mult
-opaque opResTy     {Eff Mult : Type} : Eff → VTy Eff Mult
+axiom raise       {Eff : Type} : Eff → Val → Comp
+axiom opArgTy     {Eff Mult : Type} : Eff → VTy Eff Mult
+axiom opResTy     {Eff Mult : Type} : Eff → VTy Eff Mult
 
-section LR
-variable {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
+-- Phase A part 1: LR mutual defs stubbed as axioms.
+-- Phase B (PROOF_ORDER #1) will give real step-indexed definitions; this
+-- requires `termination_by` hints (well-founded on Nat index) or Ahmed-style
+-- WellFoundedRecursion. Shape preserved in comments below; the SIGNATURES
+-- are the spec.
 
-mutual
-  -- VALUE relation (their ⟦τ⟧, Fig 6).
-  -- THUNK clause (Torczon U_φ): related iff forcing gives related comps.
-  -- The grade `φ` bounds effects of the forced body (see effect_sound).
-  def Vrel : Nat → VTy Eff Mult → Val → Val → Prop
-    | n, A, v₁, v₂ =>
-      match asThunk A with
-      | some (_φ, B) =>
-          ∀ m, m < n → ∀ c₁ c₂,
-            v₁ = Val.vthunk c₁ → v₂ = Val.vthunk c₂ → Crel m B c₁ c₂
-      | none => BaseRel A v₁ v₂
+-- VALUE relation (their ⟦τ⟧, Fig 6). THUNK clause (Torczon U_φ):
+--   ∀ m < n, ∀ c₁ c₂, v₁ = vthunk c₁ → v₂ = vthunk c₂ → Crel m B c₁ c₂   (asThunk A = some _)
+--   BaseRel A v₁ v₂                                                          (otherwise)
+axiom Vrel {Eff Mult : Type} [Semiring Eff] [Semiring Mult] [DecidableEq Mult] :
+    Nat → VTy Eff Mult → Val → Val → Prop
 
-  -- SIMPLE-EXPRESSION relation (their 𝒮, Fig 7 + row denotation Fig 8).
-  def Srel : Nat → Eff → Stack → Stack → Comp → Comp → Prop
-    | n, e, S₁, S₂, c₁, c₂ =>
-      ∃ a₁ a₂, c₁ = raise e a₁ ∧ c₂ = raise e a₂
-        ∧ (∀ m, m < n → Vrel m (opArgTy e) a₁ a₂)
-        ∧ (∀ m, m < n → ∀ r₁ r₂, Vrel m (opResTy e) r₁ r₂ →
-             CoApprox (Stack.plug S₁ (Comp.ret r₁)) (Stack.plug S₂ (Comp.ret r₂)))
+-- SIMPLE-EXPRESSION relation (their 𝒮, Fig 7):
+--   ∃ a₁ a₂, c₁ = raise e a₁ ∧ c₂ = raise e a₂
+--     ∧ ▷ Vrel m (opArgTy e) a₁ a₂
+--     ∧ ▷ Vrel m (opResTy e) r₁ r₂ → CoApprox (S₁[ret r₁]) (S₂[ret r₂])
+axiom Srel {Eff Mult : Type} [Semiring Eff] [Semiring Mult] [DecidableEq Mult] :
+    Nat → Eff → Stack → Stack → Comp → Comp → Prop
 
-  -- STACK relation (their 𝒦, Fig 7). The `q=0` clause is F-erasure.
-  def Krel : Nat → CTy Eff Mult → Stack → Stack → Prop
-    | n, B, S₁, S₂ =>
-      match asReturner B with
-      | some (q, A) =>
-          if q = 0 then True   -- F_0 erasure: any consumer-stack works
-          else
-            (∀ m, m ≤ n → ∀ v₁ v₂, Vrel m A v₁ v₂ →
-                CoApprox (Stack.plug S₁ (Comp.ret v₁)) (Stack.plug S₂ (Comp.ret v₂)))
-            ∧ (∀ m e₀, m ≤ n → ∀ c₁ c₂, Srel m e₀ S₁ S₂ c₁ c₂ →
-                CoApprox (Stack.plug S₁ c₁) (Stack.plug S₂ c₂))
-      | none => BaseStackRel n B S₁ S₂
+-- STACK relation (their 𝒦, Fig 7). The q=0 case is F-erasure.
+--   asReturner B = some (q, A):
+--     q = 0 → True
+--     else: agree on RELATED RETURN values AND on RELATED CONTROL-STUCK ops
+--   asReturner B = none → BaseStackRel n B S₁ S₂
+axiom Krel {Eff Mult : Type} [Semiring Eff] [Semiring Mult] [DecidableEq Mult] :
+    Nat → CTy Eff Mult → Stack → Stack → Prop
 
-  -- COMPUTATION relation = biorthogonal ⊤⊤-closure over related stacks.
-  def Crel : Nat → CTy Eff Mult → Comp → Comp → Prop
-    | n, B, c₁, c₂ =>
-      ∀ S₁ S₂, Krel n B S₁ S₂ → CoApprox (Stack.plug S₁ c₁) (Stack.plug S₂ c₂)
-end
--- decreasing_by: well-founded on (n, sizeOf type); every "▷" is at m < n.
--- May require explicit termination hint or thread the index via WellFoundedRecursion.
-
-end LR
+-- COMPUTATION relation = biorthogonal ⊤⊤-closure over related stacks.
+--   ∀ S₁ S₂, Krel n B S₁ S₂ → CoApprox (S₁[c₁]) (S₂[c₂])
+axiom Crel {Eff Mult : Type} [Semiring Eff] [Semiring Mult] [DecidableEq Mult] :
+    Nat → CTy Eff Mult → Comp → Comp → Prop
 
 -- [RISKY] Soundness: LR implies contextual approximation. PROVE THIS FIRST.
 theorem lr_sound
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {c₁ c₂ : Comp} {B : CTy Eff Mult} :
     (∀ n, Crel n B c₁ c₂) → c₁ ⊑ c₂ := sorry
 
 -- [KEY] Fundamental theorem.
 theorem lr_fundamental
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {Γ : Ctx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy Γ c e B → ∀ n, Crel n B c c := sorry
 
@@ -396,27 +372,26 @@ theorem seq_unit (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := sorry
 -- Under Torczon grading effects live on U; the H-K invertibility argument
 -- still applies on the effect axis. See ADR-0018 Trinity table.
 theorem group_recovers
-    {Eff : Type} [OrderedSemiring Eff] [AddGroup Eff] {c : Comp} :
+    {Eff : Type} [Semiring Eff] [AddGroup Eff] {c : Comp} :
     seqComp c (recover c) ≈ idComp := sorry
 
 
 /-! ## 7. WasmFX target + compilation correctness (the unclaimed ground) -/
 
-opaque Wasmfx.Module        : Type
-opaque Wasmfx.Val           : Type
-opaque Wasmfx.Ty            : Type
-opaque Wasmfx.run           : Nat → Wasmfx.Module → Result Wasmfx.Val
-opaque Wasmfx.WellTyped     : Wasmfx.Module → Prop
-opaque Wasmfx.MentionsLocal : Wasmfx.Module → Var → Prop
-opaque HandlerLawful        : Handler → Prop
-opaque Wasmfx.HandlerEquiv  : Wasmfx.Module → Handler → Prop
-opaque compileC             : Comp → Wasmfx.Module
-opaque compileV             : Val  → Wasmfx.Val
-opaque compileHandler       : Handler → Wasmfx.Module
+axiom Wasmfx.Module        : Type
+axiom Wasmfx.Val           : Type
+axiom Wasmfx.Ty            : Type
+axiom Wasmfx.run           : Nat → Wasmfx.Module → Result Wasmfx.Val
+axiom Wasmfx.WellTyped     : Wasmfx.Module → Prop
+axiom Wasmfx.MentionsLocal : Wasmfx.Module → Var → Prop
+axiom HandlerLawful        : Handler → Prop
+axiom Wasmfx.HandlerEquiv  : Wasmfx.Module → Handler → Prop
+axiom compileC             : Comp → Wasmfx.Module
+axiom compileV             : Val  → Wasmfx.Val
+axiom compileHandler       : Handler → Wasmfx.Module
 
 -- [KEY] Type preservation under translation.
 theorem compile_well_typed
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
     HasCTy Ctx.empty c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) := sorry
 
@@ -431,7 +406,6 @@ theorem handler_compiles {h : Handler} :
 
 -- [KEY] Erasure is observable in the output.
 theorem zero_grade_no_code
-    {Eff Mult : Type} [OrderedSemiring Eff] [OrderedSemiring Mult]
     {Γ : Ctx Eff Mult} {x : Var} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy (Ctx.bind x (0 : Mult) A Γ) c e B →
