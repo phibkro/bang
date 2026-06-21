@@ -27,6 +27,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0016](0016-two-hop-architecture-calcvm-and-wasmfx.md) | K+C | Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target (subsumes 0003 + 0004) | Accepted | 0001, 0002, 0015 |
 | [0017](0017-k3-calculated-machine-retrospective.md) | C | K3 calculated-machine retrospective — preserves composition-mechanism map and methodology insights; replaces 0010–0014 | Accepted | 0009, 0008 |
 | [0018](0018-effect-row-lacks-constraints.md) | K | Effect-row algebra extended with lacks-constrained quantifiers (set discipline); enables `no_accidental_handling` | Accepted | 0001, 0016 |
+| [0019](0019-typing-context-split-gradevec-and-types.md) | K | Typing context split into a Finsupp grade-vector + ambient type context (resolves Q3, enables the Q10 resource-enforcing rules) | Accepted | 0001, 0016 |
 
 Format: lightweight MADR. Status ∈ {Proposed, Accepted, Superseded by NNNN, Deprecated}.
 

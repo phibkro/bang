@@ -59,7 +59,16 @@ QTT or stay parametric depending on what the proof needs.
 
 ---
 
-## Q3 — Ctx representation: List vs FinMap
+## Q3 — Ctx representation: List vs FinMap  · ✓ RESOLVED 2026-06-21 → ADR-0019
+
+**Resolution**: Forced active by Q10 (resource-enforcing rules need "grade ρ at
+`x`, 0 elsewhere", which `List`+`zipWith` can't express). **Split** the context
+into a Finsupp grade-vector `Var →₀ Mult` + an ambient type context
+`List (Var × VTy)`, mirroring Torczon's `gradeVec`/`context`. Mathlib's
+`Finsupp` supplies total `+`, `•`, and `single`. See **ADR-0019**. The original
+deliberation is preserved below.
+
+---
 
 **Question**: is the current `List (Var × Mult × VTy)` representation good
 enough, or should `Ctx` be a `FinMap Var (Mult × VTy)`?
