@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# pre-commit hook — fast static checks before commit.
+# Skip with: git commit --no-verify
+#
+# Installation: bash tools/install-hooks.sh
+#
+# Kept INTENTIONALLY fast (no `lake build`). The full audit gate runs via
+# `make audit` separately; pre-commit just prevents obvious cheats and
+# missing newlines.
+
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+# 1. No `admit` in staged Lean files (sorry is allowed during Phase A/B).
+admits=$(git diff --cached --name-only --diff-filter=ACM \
+         | grep -E '\.lean$' || true)
+if [ -n "$admits" ]; then
+  bad=$(echo "$admits" | xargs -r grep -lE '\badmit\b' 2>/dev/null || true)
+  if [ -n "$bad" ]; then
+    echo "❌ pre-commit: 'admit' found in staged Lean files:"
+    echo "$bad" | sed 's/^/    /'
+    echo "   (refusing commit — replace with `sorry` or close the proof)"
+    exit 1
+  fi
+fi
+
+# 2. No hand-rolled `axiom` declarations OUTSIDE Bang/Spec.lean.
+# Spec.lean owns the Phase B target stubs; new axioms elsewhere are mistakes.
+staged_lean=$(git diff --cached --name-only --diff-filter=ACM \
+              | grep -E '\.lean$' \
+              | grep -v '^Bang/Spec\.lean$' \
+              | grep -v '^Bang/Audit\.lean$' || true)
+if [ -n "$staged_lean" ]; then
+  bad=$(echo "$staged_lean" | xargs -r grep -lE '^[[:space:]]*axiom\b' 2>/dev/null || true)
+  if [ -n "$bad" ]; then
+    echo "❌ pre-commit: hand-rolled axiom outside Bang/Spec.lean:"
+    echo "$bad" | sed 's/^/    /'
+    echo "   (axioms belong only in the Spec.lean Phase B stub block)"
+    exit 1
+  fi
+fi
+
+echo "✓ pre-commit static checks passed"

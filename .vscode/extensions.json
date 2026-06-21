@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "leanprover.lean4",
+    "mkhl.direnv",
+    "editorconfig.editorconfig"
+  ],
+  "unwantedRecommendations": []
+}
