@@ -65,19 +65,27 @@ theorem no_accidental_handling
 -- `T_App` arithmetic `γ₁ Q+ q Q* γ₂` (resource/CBPV/typing.v), over the
 -- ADR-0019 split (Finsupp grade-vec + ambient TyCtx).
 --   shape: torczon-oopsla24-effects-coeffects §graded-subst
--- CLOSEDNESS SIDE-CONDITION (`v` typed in the empty type context `[]`): our
--- `Comp.subst` is NOT capture-avoiding (Operational.lean §subst, "closed-program
--- reductions"), so the unconditional open-`v` lemma is FALSE — a free var of `v`
--- captured under a binder (e.g. `[vvar y / x](lam y. ret x) = lam y. ret y`).
--- Empty type ctx ⟹ `v` has no free variables ⟹ no capture. This is the genuinely
--- true statement for the STD block (type_safety runs on closed terms), not a
--- weakening. The general open-`v` lemma needs capture-avoiding subst or de
--- Bruijn — deferred to OPEN_QUESTIONS Q11.
+-- TWO SIDE-CONDITIONS, both compensating for the named encoding (de Bruijn's
+-- `ρ .: γ` cons would give them structurally; cf. Q11):
+--   (1) CLOSEDNESS — `v` typed in the empty type context `[]`. `Comp.subst` is
+--       NOT capture-avoiding (Operational.lean §subst, "closed-program
+--       reductions"); without this, a free var of `v` is captured under a binder
+--       (`[vvar y / x](lam y. ret x) = lam y. ret y`). Empty ctx ⟹ `v` closed ⟹
+--       no capture.
+--   (2) GRADE-FRESHNESS — `γ_Γ x = 0`. `single x ρ + γ_Γ` does NOT structurally
+--       pin `x`'s grade to `ρ` (unlike de Bruijn's cons); without `γ_Γ x = 0`,
+--       `γ_Γ` can add mass at `x` that the conclusion's `γ_Γ + ρ•γ_Δ` carries but
+--       no derivation in `Γ` (sans `x`) can witness. Machine-checked `example :
+--       False` confirmed the statement is false without it (2026-06-21).
+-- Both are genuinely-true conditions for the STD block (head-redexes substitute
+-- closed values at freshly-bound vars), not weakenings. Open-`v` / general-Γ
+-- substitution needs capture-avoiding subst or de Bruijn — OPEN_QUESTIONS Q11.
 theorem subst_value
     (ρ : Mult) {γ_Γ γ_Δ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {x : Var} {v : Val} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasVTy γ_Δ [] v A →
+    γ_Γ x = 0 →
     HasCTy (Finsupp.single x ρ + γ_Γ) ((x, A) :: Γ) c e B →
     HasCTy (γ_Γ + ρ • γ_Δ) Γ (Comp.subst x v c) e B
     := sorry
