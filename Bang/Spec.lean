@@ -59,40 +59,24 @@ theorem no_accidental_handling
 
 /-! ## 3. Core syntactic metatheory -/
 
--- [STD] Graded value substitution (closed-value fragment).
--- Shape: a CLOSED value `v`, substituted for a variable `x` bound at
--- multiplicity `ρ` in `c`, yields `c[v/x]` typed in `γ_Γ + ρ·γ_Δ` — Torczon's
--- `T_App` arithmetic `γ₁ Q+ q Q* γ₂` (resource/CBPV/typing.v), over the
--- ADR-0019 split (Finsupp grade-vec + ambient TyCtx).
+-- [STD] Graded value substitution (de Bruijn — ADR-0020).
+-- Shape: a value `v` typed in `Γ` at grade `γ_v`, substituted for the binder at
+-- index 0 (graded at multiplicity `ρ` in `c`), yields `c[v]` typed in
+-- `γ + ρ·γ_v` — Torczon's `T_App` arithmetic `γ₁ Q+ q Q* γ₂`
+-- (resource/CBPV/typing.v), over the positional grade-vec + ambient TyCtx.
 --   shape: torczon-oopsla24-effects-coeffects §graded-subst
--- TWO SIDE-CONDITIONS, both compensating for the named encoding (de Bruijn's
--- `ρ .: γ` cons would give them structurally; cf. Q11):
---   (1) CLOSEDNESS — `v` typed in the empty type context `[]`. `Comp.subst` is
---       NOT capture-avoiding (Operational.lean §subst, "closed-program
---       reductions"); without this, a free var of `v` is captured under a binder
---       (`[vvar y / x](lam y. ret x) = lam y. ret y`). Empty ctx ⟹ `v` closed ⟹
---       no capture.
---   (2) GRADE-FRESHNESS — `γ_Γ x = 0`. `single x ρ + γ_Γ` does NOT structurally
---       pin `x`'s grade to `ρ` (unlike de Bruijn's cons); without `γ_Γ x = 0`,
---       `γ_Γ` can add mass at `x` that the conclusion's `γ_Γ + ρ•γ_Δ` carries but
---       no derivation in `Γ` (sans `x`) can witness.
---   (3) CONTEXT WELL-FORMEDNESS — `∀ C, (x,C) ∉ Γ`. The bare `vvar` rule accepts
---       ANY membership, so a duplicate-key `Γ` lets the looked-up type differ
---       from `v`'s `A` (e.g. `Γ = [(x,int)]`, head `(x,unit)`). Standard
---       no-duplicate-keys for named contexts.
--- (2) and (3) were each confirmed by a machine-checked `example : False`
--- (2026-06-21). All three are genuinely-true STD-block conditions (head-redexes
--- substitute closed values at freshly-bound vars in well-formed contexts), not
--- weakenings. De Bruijn would dissolve all three structurally — OPEN_QUESTIONS Q11.
+-- ALL FIVE NAMED SIDE-CONDITIONS ARE GONE (ADR-0020):
+--   the cons `ρ :: γ` structurally pins the bound var's grade and shadows
+--   positionally; `Γ` lookup is positional (`get?`), so no no-dup-keys; subst is
+--   capture-avoiding by construction (shift under binders), so no closedness.
+--   `γ` and `γ_v` are both length `Γ.length`, so `+` (zipWith) is well-defined.
 theorem subst_value
-    (ρ : Mult) {γ_Γ γ_Δ : GradeVec Mult} {Γ : TyCtx Eff Mult}
-    {x : Var} {v : Val} {A : VTy Eff Mult}
+    (ρ : Mult) {γ γ_v : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasVTy γ_Δ [] v A →
-    γ_Γ x = 0 →
-    (∀ C, (x, C) ∉ Γ) →
-    HasCTy (Finsupp.single x ρ + γ_Γ) ((x, A) :: Γ) c e B →
-    HasCTy (γ_Γ + ρ • γ_Δ) Γ (Comp.subst x v c) e B
+    HasVTy γ_v Γ v A →
+    HasCTy (ρ :: γ) (A :: Γ) c e B →
+    HasCTy (γ + ρ • γ_v) Γ (Comp.subst v c) e B
     := sorry
 
 -- [STD] Preservation.
@@ -102,32 +86,32 @@ theorem preservation
     HasCTy γ Γ c e B → Source.step c = some c' →
     ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B := sorry
 
--- [STD] Progress.
+-- [STD] Progress. Closed (empty context ⇒ empty grade vector).
 theorem progress
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy 0 [] c e B → isReturn c ∨ ∃ c', Source.step c = some c' := sorry
+    HasCTy [] [] c e B → isReturn c ∨ ∃ c', Source.step c = some c' := sorry
 
 -- [STD] Safety = progress + preservation, fuel-lifted.
 theorem type_safety
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy 0 [] c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    HasCTy [] [] c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
     := sorry
 
 
 /-! ## 4. Grade soundness (the QTT payoff) -/
 
--- [KEY] Coeffect erasure: a 0-graded variable is never evaluated.
+-- [KEY] Coeffect erasure: a 0-graded binder (index 0) is never evaluated.
 theorem zero_usage_erasable
-    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {x : Var} {A : VTy Eff Mult}
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy (Finsupp.single x (0 : Mult) + γ) ((x, A) :: Γ) c e B →
-    NotEvaluated x c := sorry
+    HasCTy ((0 : Mult) :: γ) (A :: Γ) c e B →
+    NotEvaluated 0 c := sorry
 
 -- [KEY] Effect soundness: static grade `e` over-approximates every observed trace.
 theorem effect_sound
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
     {v : Val} {t : Trace} :
-    HasCTy 0 [] c e (CTy.F q A) →
+    HasCTy [] [] c e (CTy.F q A) →
     Source.evalTrace fuel c = Result.done (v, t) →
     traceWithin t e := sorry
 
@@ -164,7 +148,7 @@ theorem group_recovers
 -- [KEY] Type preservation under translation.
 theorem compile_well_typed
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy 0 [] c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) := sorry
+    HasCTy [] [] c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) := sorry
 
 -- [KEY][RISKY] Forward simulation — the heart of the contribution.
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
@@ -175,11 +159,11 @@ theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
 theorem handler_compiles {h : Handler} :
     HandlerLawful h → Wasmfx.HandlerEquiv (compileHandler h) h := sorry
 
--- [KEY] Erasure observable in output: 0-graded binder emits no code.
+-- [KEY] Erasure observable in output: 0-graded binder (index 0) emits no code.
 theorem zero_grade_no_code
-    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {x : Var} {A : VTy Eff Mult}
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy (Finsupp.single x (0 : Mult) + γ) ((x, A) :: Γ) c e B →
-    ¬ Wasmfx.MentionsLocal (compileC c) x := sorry
+    HasCTy ((0 : Mult) :: γ) (A :: Γ) c e B →
+    ¬ Wasmfx.MentionsLocal (compileC c) 0 := sorry
 
 end Bang

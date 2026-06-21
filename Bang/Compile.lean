@@ -22,7 +22,7 @@ axiom Wasmfx.Val           : Type
 axiom Wasmfx.Ty            : Type
 axiom Wasmfx.run           : Nat → Wasmfx.Module → Result Wasmfx.Val
 axiom Wasmfx.WellTyped     : Wasmfx.Module → Prop
-axiom Wasmfx.MentionsLocal : Wasmfx.Module → Var → Prop
+axiom Wasmfx.MentionsLocal : Wasmfx.Module → Nat → Prop
 axiom HandlerLawful        : Handler → Prop
 axiom Wasmfx.HandlerEquiv  : Wasmfx.Module → Handler → Prop
 

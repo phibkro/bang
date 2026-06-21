@@ -17,8 +17,7 @@
 import Mathlib.Algebra.Order.Ring.Defs
 import Mathlib.Algebra.Group.Defs
 import Mathlib.Data.Finset.Basic
-import Mathlib.Data.Finsupp.Basic
-import Mathlib.LinearAlgebra.Finsupp.Defs
+import Mathlib.Data.List.Basic
 import Bang.EffectRow
 
 namespace Bang
@@ -53,30 +52,40 @@ variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
 
 /-! ## 1. Syntax -/
 
-/-! ### 1.1 Identifiers -/
+/-! ### 1.1 Identifiers
 
-abbrev Var  := String
+`OpId`/`Label` are unchanged (they name *operations*, not bound variables).
+The term-level variable is now a **de Bruijn index** (`Nat`), not a name —
+see ADR-0020. There is no `Var` abbreviation anymore: a bound occurrence is
+the offset to its binder (0 = nearest enclosing binder). -/
+
 abbrev OpId := String
 
 
-/-! ### 1.2 Term syntax (CBPV value/computation split)
+/-! ### 1.2 Term syntax (CBPV value/computation split, de Bruijn — ADR-0020)
 
 Values inert; computations effectful. Adjunction crosses via `vthunk` /
-`force`. Handler = value-level spec of how to handle a labelled operation
-(state ℓ s₀ threads state; throws ℓ is zero-shot exception). -/
+`force`. Variables are de Bruijn indices: `vvar i` references the `i`-th
+enclosing binder (0 = nearest). Binders (`lam`, `letC`-continuation) drop
+their names — position *is* the identity, so capture and shadowing are
+structural (ADR-0020, the 5-falsity chain).
+
+Handler = value-level spec of how to handle a labelled operation
+(state ℓ s₀ threads state; throws ℓ is zero-shot exception). Handlers do
+NOT bind; their `Val` payload shifts under substitution like any value. -/
 
 mutual
 inductive Val : Type where
   | vunit  : Val
   | vint   : Int → Val
-  | vvar   : Var → Val
+  | vvar   : Nat → Val                  -- de Bruijn index (0 = nearest binder)
   | vthunk : Comp → Val
   deriving Inhabited
 inductive Comp : Type where
   | ret    : Val → Comp
-  | letC   : Var → Comp → Comp → Comp
+  | letC   : Comp → Comp → Comp          -- letC M N: N binds index 0 (= M's value)
   | force  : Val → Comp
-  | lam    : Var → Comp → Comp
+  | lam    : Comp → Comp                  -- lam M: M binds index 0 (= the argument)
   | app    : Comp → Val → Comp
   | up     : Label → OpId → Val → Comp
   | handle : Handler → Comp → Comp
@@ -90,10 +99,11 @@ end
 
 /-! ### 1.3 Operational machinery: evaluation contexts (CK frames)
 
-Lexa OOPSLA'24 style; near-syntactic mapping to WasmFX typed continuations. -/
+Lexa OOPSLA'24 style; near-syntactic mapping to WasmFX typed continuations.
+`letF` carries the continuation `N` (which binds index 0). -/
 
 inductive Frame : Type where
-  | letF    : Var → Comp → Frame        -- let x = □; body
+  | letF    : Comp → Frame                -- let □; N   (N binds index 0)
   | appF    : Val → Frame                 -- □ v
   | handleF : Handler → Frame             -- handle h □
   deriving Inhabited
@@ -117,26 +127,52 @@ inductive CTy (Eff Mult : Type) : Type where
 end
 
 
-/-! ### 1.5 Typing-context split — grade-vector + ambient type context (ADR-0019)
+/-! ### 1.5 Typing-context split — positional grade-vector + ambient type context
+(ADR-0019's "grades split, types ambient" insight; ADR-0020 positional carrier)
 
-Torczon keeps **two** independent components, not one glued list:
+Two independent **positional** components, indexed by de Bruijn position
+(index `i` ↦ the `i`-th entry). Both are `List`s of the SAME length by
+construction (every binder conses onto BOTH), so the de-Bruijn cons `ρ .: γ`
+is just `::`, and the grade operations become *correct* (they extend in
+lockstep):
 
-  - `GradeVec := Var →₀ Mult`  — the **resources**. A `Finsupp` (default `0`
-    off-support). It splits, scales, and adds: Mathlib supplies total `+`,
-    scalar `•` (the `Module Mult (Var →₀ Mult)` action, since a `Semiring`
-    is a module over itself), and `Finsupp.single x ρ` = "grade ρ at `x`,
-    `0` elsewhere". This is exactly Torczon's `gradeVec := fin n → Q`.
+  - `GradeVec := List Mult`  — the **resources**. Splits, scales, adds:
+      `γ₁ + γ₂`  = `List.zipWith (· + ·)`  (correct: same length)
+      `ρ • γ`    = `List.map (ρ * ·)`
+    Torczon's `gradeVec := fin n → Q`, list-encoded.
 
-  - `TyCtx := List (Var × VTy)`  — the **ambient types**. Shared across a whole
-    derivation; never scaled or added (types must *match*, not add). Torczon's
-    `context := fin n → ValTy`.
+  - `TyCtx := List VTy`  — the **ambient types**. Shared across a derivation;
+    never scaled or added (types must *match*, not add). Torczon's
+    `context := fin n → ValTy`. Lookup is `Γ.get? i`.
 
-The insight (ADR-0019): types are ambient, grades are resources. Gluing them
-forces them to split together, which is wrong — you cannot scale grades without
-scaling types. Lookup on `TyCtx` is via `∈`. -/
+The ADR-0019 carrier (`Finsupp`, `Var →₀ Mult`) was the *named*-key alignment
+fix; de Bruijn aligns positionally, so the carrier reverts to a list and the
+five named side-conditions (closedness, grade-freshness, no-dup-keys, the two
+`γ y = 0` invariants) become structural — they vanish. -/
 
-abbrev GradeVec (Mult : Type) [Zero Mult] := Var →₀ Mult
+abbrev GradeVec (Mult : Type) := List Mult
 
-abbrev TyCtx (Eff Mult : Type) := List (Var × VTy Eff Mult)
+abbrev TyCtx (Eff Mult : Type) := List (VTy Eff Mult)
+
+/-- Positional grade addition (de Bruijn `γ₁ Q+ γ₂`). Same-length lists. -/
+def GradeVec.add {Mult : Type} [Add Mult] (γ₁ γ₂ : GradeVec Mult) : GradeVec Mult :=
+  List.zipWith (· + ·) γ₁ γ₂
+
+/-- Positional scalar action (de Bruijn `ρ Q* γ`). -/
+def GradeVec.smul {Mult : Type} [Mul Mult] (ρ : Mult) (γ : GradeVec Mult) : GradeVec Mult :=
+  γ.map (ρ * ·)
+
+instance {Mult : Type} [Add Mult] : Add (GradeVec Mult) := ⟨GradeVec.add⟩
+instance {Mult : Type} [Mul Mult] : HSMul Mult (GradeVec Mult) (GradeVec Mult) :=
+  ⟨GradeVec.smul⟩
+
+/-- The i-th basis vector of length `n`: grade `1` at position `i`, `0`
+elsewhere (de Bruijn `T_Var`'s grade). -/
+def GradeVec.basis {Mult : Type} [Zero Mult] [One Mult] (n i : Nat) : GradeVec Mult :=
+  (List.range n).map (fun j => if j = i then (1 : Mult) else 0)
+
+/-- The all-`0` grade vector of length `n` (de Bruijn `0s`). -/
+def GradeVec.zeros {Mult : Type} [Zero Mult] (n : Nat) : GradeVec Mult :=
+  List.replicate n (0 : Mult)
 
 end Bang

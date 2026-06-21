@@ -11,12 +11,16 @@
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
 ◊2   Kernel frozen v1             ── IN PROGRESS. Resource-enforcing rules landed
-                                     (ADR-0019). Proving subst_value then exposed
-                                     the NAMED encoding is wrong — 5 structural
+                                     (ADR-0019). Proving subst_value exposed the
+                                     NAMED encoding as wrong — 5 structural
                                      side-conditions (4 machine-checked falsities).
-                                     DECIDED: switch to de Bruijn (ADR-0020).
-                                     NEXT: the de Bruijn rewrite, then the proofs
-                                     start from a clean base.
+                                     DE BRUIJN REWRITE LANDED (ADR-0020): syntax,
+                                     shift/subst, positional List grade-vec +
+                                     TyCtx, rules shed all 5 side-conditions,
+                                     Spec statements simplified (bodies sorry),
+                                     Metatheory reset to clean stub. Build GREEN.
+                                     NEXT: proof-engineer rebuilds subst_value on
+                                     the clean de Bruijn base.
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0
