@@ -59,12 +59,13 @@ What changed:
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — refactor toward graded CBPV. Owner:
-  claude as kernel-engineer. Status: **Phase A part 1 GREEN BUILD** (730/730
-  jobs, `lake build` clean, `tools/audit.sh` reports the Phase B burndown).
-  Spec.lean: §1 syntactic types concrete; LR mutual defs stubbed as axioms
-  (Phase B: replace with real step-indexed defs). Compat.lean: stubbed
-  placeholder (Phase A part 2 repopulates). Phase A part 2 next: typing
-  judgments, Ctx resource arithmetic, `Source.step` rules.
+  claude as kernel-engineer. Status: **Phase A part 2 well underway**;
+  Spec.lean axioms 44 → 37 (subst, Ctx ops, isReturn, HasVTy, HasCTy,
+  Source.step, Source.eval all concrete). Operational theorems
+  (preservation, progress, type_safety, subst_value) now have CLEAN axiom
+  sets (only `sorryAx` + kernel axioms). Remaining for ◊2: Mult = QTT
+  concretization + Eff algebra design question (see PATH for the
+  Semiring-vs-Lattice fork). Build green: 723/723.
 
 ## Next stable checkpoint we are paving toward
 
