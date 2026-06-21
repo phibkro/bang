@@ -48,9 +48,65 @@
 
 ## Status
 - [x] Started 2026-06-21
-- [ ] In flight: Phase A part 2 (typing judgments, Ctx ops, Source.step concretization)
-- [ ] Blockers: none yet
+- [x] Phase A part 1 landed (syntactic types concrete; build green; v4.30; loogle)
+- [x] Phase A part 2 — 7/10 axioms closed in Spec.lean:
+      ✓ subst (Val/Comp/Handler)
+      ✓ Ctx.scale, Ctx.add (List-based; FinMap defer)
+      ✓ isReturn
+      ✓ HasVTy, HasCTy (mutual inductives; common typing rules)
+      ✓ Source.step (substitution-based small-step)
+      ✓ Source.eval (fuel-iterated)
+- [ ] In flight: Mult concretization + Eff algebra design
+- [ ] Blockers: Eff algebra — see below
 - [ ] Completed —
+
+## Phase A part 2 — what's left and known design questions
+
+### Remaining axioms (Spec.lean: 37 axioms / 18 sorry total)
+
+| Axiom | Why pending |
+|---|---|
+| Effect-row well-formedness (Disjoint, RowAll, WfInst, HandlesIntended) | Depends on Eff concretization + lacks-constraint design |
+| Trace / Source.evalTrace / traceWithin | Need concrete Eff to express "label in row" |
+| NotEvaluated | Semantic predicate; needs Source.step reachability analysis |
+| LR helpers (Stack, BaseRel, asThunk, asReturner, raise, opArgTy, opResTy) | Phase B PROOF_ORDER #1 (LR foundation) — not ◊2 scope |
+| Vrel / Srel / Krel / Crel | Same — Phase B |
+| Recovery (seqComp, idComp, recover, Cxt, Cxt.plug) | Phase B PROOF_ORDER #2 (group_recovers) |
+| WasmFX target (Wasmfx.*, compile*) | Phase B PROOF_ORDER #3 (compile_forward_sim) |
+
+### Design question — Eff algebra (BLOCKS ◊2 finalization)
+
+Spec.lean's `variable {Eff : Type} [Semiring Eff]` doesn't fit our intended
+concrete `Eff = Finset Label`. The issue:
+
+- Semiring requires `0 * a = 0` (zero absorbs in multiplication).
+- For effect rows, `*` naturally means "sequencing of effects" = union.
+- But `∅ ∪ a = a`, not `∅`. So `Finset Label` doesn't form a Semiring under
+  `(+, *) = (∪, ∪)`.
+
+Three resolutions:
+1. **Spec change**: replace `[Semiring Eff]` with `[Lattice Eff] [OrderBot Eff]`
+   (Finset has these natively); replace `l * e` in `no_accidental_handling`
+   with `l ⊔ e` (or equivalent). Theorem statements shift slightly.
+2. **Different Eff carrier**: use a different concrete type that IS a Semiring
+   (e.g. `Nat` for clock-counting, like Torczon). Loses the row-of-labels
+   reading.
+3. **Keep parametric**: don't concretize Eff; let users instantiate at
+   theorem use-site. Punts the question.
+
+Recommended: (1). The spec's `Semiring` was inherited from Torczon's
+clock-effect example; it doesn't fit our row-of-labels effect model.
+The shift to Lattice is honest + matches ADR-0001 (rows-as-Finset).
+
+### Concretize Mult = QTT (independent of Eff question)
+
+QTT {zero, one, omega} IS a genuine commutative semiring; the Semiring
+instance is provable by case analysis (`by cases ... <;> rfl` or `decide`).
+Manageable in one focused effort.
+
+When done: theorems automatically specialize. Closes the `Mult` axiom
+implicitly (the parametric `[Semiring Mult]` is satisfied by the concrete
+QTT instance).
 
 ## Owner
 - Agent: claude (acting as kernel-engineer, per `.claude/agents/kernel-engineer.md`)
