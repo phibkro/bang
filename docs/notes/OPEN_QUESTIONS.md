@@ -57,30 +57,15 @@ the honest fit for ADR-0001.
 
 ---
 
-## Q2 — Mult = QTT concretization
+## Q2 — Mult = QTT concretization  · ✓ RESOLVED 2026-06-21
 
-**Question**: concretize `Mult` as the QTT enum `{zero, one, omega}` with a
-`Semiring` instance?
+**Resolution**: Concretized as `Bang.QTT` in `Bang/Mult.lean`. CommSemiring
+instance via case analysis (3 enum elements; proofs by `cases <;> rfl`).
+Build green on first try, smoke-tested via `tools/eval.sh`.
 
-**Why it matters**: closes the `[Semiring Mult]` parameter implicitly;
-makes `0 * a = 0` and other multiplicity-arithmetic theorems provable by
-case analysis.
-
-**Detail**: QTT IS a genuine commutative semiring. The instance proofs are
-mechanical (`by cases ... <;> rfl` or `decide` for finite enums).
-
-**Options**:
-1. Concretize as inductive enum + Semiring instance. ~50 lines.
-2. Keep parametric. Defers proof work but `[Semiring Mult]` constraint
-   propagates everywhere.
-
-**Recommended**: (1). Independent of Q1; no design risk; closes one
-parametric variable.
-
-**Blocked on**: nothing. Just session time.
-
-**Revisit signal**: ready whenever; clean independent chunk for a future
-session.
+The spec stays parametric in `[Semiring Mult]`; QTT is one valid instance
+(the bang-lang default per ROADMAP.md). Phase B proofs may specialize to
+QTT or stay parametric depending on what the proof needs.
 
 ---
 

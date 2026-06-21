@@ -59,13 +59,15 @@ What changed:
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — refactor toward graded CBPV. Owner:
-  claude as kernel-engineer. Status: **Phase A part 2 well underway**;
-  Spec.lean axioms 44 → 37 (subst, Ctx ops, isReturn, HasVTy, HasCTy,
-  Source.step, Source.eval all concrete). Operational theorems
-  (preservation, progress, type_safety, subst_value) now have CLEAN axiom
-  sets (only `sorryAx` + kernel axioms). Remaining for ◊2: Mult = QTT
-  concretization + Eff algebra design question (see PATH for the
-  Semiring-vs-Lattice fork). Build green: 723/723.
+  claude as kernel-engineer. Status: **Phase A part 2 well underway**.
+  Spec.lean now split across 6 modules (Core, Mult, Syntax, Operational,
+  LR, Compile + Spec PRD). Spec.lean axioms 44 → 37 (subst, Ctx ops,
+  isReturn, HasVTy, HasCTy, Source.step, Source.eval all concrete);
+  Mult = QTT concrete (closes Q2). Operational theorems (preservation,
+  progress, type_safety, subst_value) have CLEAN axiom sets (only
+  `sorryAx` + kernel axioms). Remaining for ◊2: Q1 Eff algebra design
+  question (Semiring vs Lattice — see OPEN_QUESTIONS.md), then row
+  well-formedness theorems. Build green: 729/729.
 
 ## Next stable checkpoint we are paving toward
 
