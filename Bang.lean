@@ -7,6 +7,7 @@ import Bang.EffectRow
 
 -- Spec spine (Phase A part 2 split — Spec re-exports the rest)
 import Bang.Core
+import Bang.Mult         -- concrete QTT instance of [Semiring Mult]
 import Bang.Syntax
 import Bang.Operational
 import Bang.LR
