@@ -21,7 +21,7 @@
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](#q9--wasmfx-target-drift-frozen-oopsla23-syntax-vs-phase-3-standard)
 - [Q10 — Typing rules must enforce grades (resource discipline)](#q10--typing-rules-must-enforce-grades-resource-discipline)  · ✓ RESOLVED (ADR-0019+0020; subst_value proven)
 - [Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn](#q11--open-term-substitution-capture-avoiding-subst-vs-de-bruijn)  · ✓ RESOLVED (ADR-0020)
-- [Q12 — Graded state handlers: how does `state ℓ s` thread grades?](#q12--graded-state-handlers-how-does-state--s-thread-grades)  · OPEN
+- [Q12 — Graded state handlers: how does `state ℓ s` thread grades?](#q12--graded-state-handlers-how-does-state--s-thread-grades)  · ✓ RESOLVED (ADR-0025; preservation state-resume cases are RUNG1-OBLIGATIONs)
 - [Q13 — Operation-granularity: `progress` for `throws`](#q13--operation-granularity-progress-for-throws-needs-op-aware-signatures)  · ✓ RESOLVED (ADR-0023)
 - [Q14 — `effect_sound`: what does the trace observe?](#q14--effect_sound-what-does-the-trace-observe)  · OPEN
 - [Q15 — Thunk strictness: uniform laziness vs demand-driven eager folding](#q15--thunk-strictness-uniform-laziness-vs-demand-driven-eager-folding)  · OPEN
@@ -410,9 +410,20 @@ Bruijn switch (C) could be folded in.
 
 ---
 
-## Q12 — Graded state handlers: how does `state ℓ s` thread grades?  · OPEN (deferred from ADR-0022 Unit 2)
+## Q12 — Graded state handlers: how does `state ℓ s` thread grades?  · ✓ RESOLVED 2026-06-23 → ADR-0025
 
-**Question**: the `state` handler's `Source.step` reductions don't thread grades cleanly,
+**Resolution**: the CK machine (ADR-0023) keeps the FOCUS CLOSED (substitution-based binding), and
+that dissolves the grade tension below — **no `ω`-restriction on the state type `S` is needed**
+(rejecting Q12 option 1; the closed focus is Q12 option 2 *subsuming* it). The `state` dispatch RESUMES
+(keeps `Kᵢ`, reinstalls a deep `state ℓ s'` frame); `get` returns the stored `s`, `put w` stores `w`.
+The stored/threaded state is always a CLOSED value (grade vector `[]`), so duplicating it at `get`
+costs zero variable budget for any `S`. Machine + typing (`HasCTy.handleState` / `HasStack.stateF`) +
+`progress` are axiom-clean and the state CELL (`put 7; get ⟶ 7`) runs green (`Bang/Surface.lean`).
+The **preservation** state-resume cases (typing the resumed stack `Kᵢ ++ handleF (state ℓ s') :: Kₒ`)
+are marked `RUNG1-OBLIGATION` in `Bang/Metatheory.lean` for the proof-engineer. See **ADR-0025**.
+Original deliberation preserved below.
+
+**Question (historical)**: the `state` handler's `Source.step` reductions don't thread grades cleanly,
 so `state`-handler typing was deferred from ADR-0022's Unit 2 (which does `up` + `throws`).
 
 **Detail**: two grade mismatches in the simplified (Q6) reductions:

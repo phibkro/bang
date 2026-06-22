@@ -155,6 +155,13 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 - **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel. Status: **◊2 GATE MET** — STD block +
   `no_accidental_handling` axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound`
   (Q14), `zero_usage_erasable` (→◊4).
+- **`paths/PATH-rung1-state.md`** — rung 1 (first resumptive paradigm: State). Status: **K + P-design
+  LANDED** (ADR-0025, Q12 resolved). `dispatch` RESUMES state (keeps `Kᵢ`, reinstalls a deep frame);
+  `HasCTy.handleState`/`HasStack.stateF` typing added; `progress` + `no_accidental_handling` stay
+  axiom-clean; the state CELL (`put 7; get ⟶ 7`) runs green (`Bang/Surface.lean`). **The closed CK
+  focus dissolved Q12's grade tension — no `ω`-restriction on `S` needed.** RESIDUAL: `preservation`'s
+  two state-resume cases carry `sorryAx` (RUNG1-OBLIGATION in `Bang/Metatheory.lean` — the resumed-
+  stack typing lemma); throws/progress unaffected.
 
 ## Next stable checkpoint we are paving toward
 

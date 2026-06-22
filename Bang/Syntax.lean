@@ -138,6 +138,26 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       HasCTy γ Γ M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasCTy γ Γ (Comp.handle (Handler.throws ℓ) M) φ (CTy.F q A)
+  -- handleState (ADR-0025): a RESUMPTIVE state handler. Discharges label `ℓ` like `throws`; its
+  -- interface is exactly `{get, put}` with `get : unit → S`, `put : S → unit` (the op-partial
+  -- `EffSig`, ADR-0023 D6). The return clause is the identity (ADR-0023 Q6 simpl.), so the handle
+  -- block has the body's result type `F q A`. THE GRADE DISCIPLINE (ADR-0025 D2, the Q12 crux): the
+  -- initial state `s₀` is required CLOSED (`HasVTy [] [] s₀ S`), grade vector `[]`. The CK machine's
+  -- closed focus makes the stored/threaded state grade-`[]`, so resumption copies it at zero variable
+  -- budget for ANY `S` — no `ω`-restriction needed (Q12 option 1 is subsumed, not chosen).
+  | handleState : ∀ {γ Γ} {ℓ : Label} {s₀ : Val} {M : Comp} {e φ : Eff} {q : Mult}
+        {S A : VTy Eff Mult},
+      -- INTERFACE: ℓ's ops are exactly get/put with the state signature.
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S →
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit →
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put") →
+      -- THE GRADE DISCIPLINE: the stored state is a CLOSED value of type `S` (ADR-0025 D2).
+      HasVTy [] [] s₀ S →
+      HasCTy γ Γ M e (CTy.F q A) →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      HasCTy γ Γ (Comp.handle (Handler.state ℓ s₀) M) φ (CTy.F q A)
 end
 
 
@@ -169,6 +189,19 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasStack K φ (CTy.F q A) eo Co →
       HasStack (Frame.handleF (Handler.throws ℓ) :: K) e (CTy.F q A) eo Co
+  -- stateF (ADR-0025): a reinstalled resumptive `state ℓ s` frame on the stack. Mirrors
+  -- `HasCTy.handleState`: discharges `ℓ`, interface `{get,put}` with `get : unit → S`,
+  -- `put : S → unit`, the stored state `s` CLOSED of type `S` (the grade discipline, D2).
+  | stateF : ∀ {K ℓ s e φ eo q A S Co},
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S →
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit →
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put") →
+      HasVTy [] [] s S →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      HasStack K φ (CTy.F q A) eo Co →
+      HasStack (Frame.handleF (Handler.state ℓ s) :: K) e (CTy.F q A) eo Co
 
 /-- A config is *returned* iff it is `⟨[], ret v⟩` — a value with no work left on the stack. -/
 def isReturnConfig : Config → Prop

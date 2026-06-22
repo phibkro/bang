@@ -312,6 +312,23 @@ def deepComp : Comp :=
   .handle (.throws exnLabel) (.letC (.up exnLabel "raise" (.vint 7)) (.ret (.vint 99)))
 example : Source.eval 20 deepComp = .done (.vint 7) := by rfl
 
+/-- The state label (a distinct channel from `exnLabel`). -/
+def stateLabel : Label := 1
+
+/-- state CELL (rung 1, ADR-0025): `handle (state ℓ 0) (let _ = put 7 in get ())` ⟶ `7`.
+The RESUMPTIVE handler stores `7` on `put`, then `get` returns it — the deep handler KEEPS the
+captured `letC` continuation and threads the state, unlike `throws` which discards it. (A *counter*
+— `get; put (get+1)` — additionally needs arithmetic `+`, a separate K-ADR; out of scope.) -/
+def stateCellComp : Comp :=
+  .handle (.state stateLabel (.vint 0))
+    (.letC (.up stateLabel "put" (.vint 7)) (.up stateLabel "get" .vunit))
+example : Source.eval 50 stateCellComp = .done (.vint 7) := by rfl
+
+/-- state GET-default: `handle (state ℓ 5) (get ())` ⟶ `5` (read the initial state). -/
+def stateGetComp : Comp :=
+  .handle (.state stateLabel (.vint 5)) (.up stateLabel "get" .vunit)
+example : Source.eval 50 stateGetComp = .done (.vint 5) := by rfl
+
 /-! ### Stage 1b — the lowering of the hand-written surface ASTs matches Stage 1.
 
 This pins the §2 lowering (name→de-Bruijn pass) independently of the parser. -/

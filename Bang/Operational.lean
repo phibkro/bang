@@ -137,18 +137,45 @@ def handlesOp : Handler → Label → OpId → Bool
   | .throws ℓ',   ℓ, op => (ℓ' = ℓ) && (op == "raise")
   | .state  ℓ' _, ℓ, op => (ℓ' = ℓ) && (op == "get" || op == "put")
 
-/-- Deep-handler dispatch: walk the stack (innermost first) to the nearest frame catching `(ℓ, op)`.
-`letF`/`appF` frames and non-matching `handleF` frames are skipped — for `throws` (zero-shot) the
-skipped `letF`/`appF` frames ARE the discarded continuation. Reaching `[]` = unhandled = stuck. -/
-def dispatch : EvalCtx → Label → OpId → Val → Option Config
-  | [], _, _, _ => none
-  | (.handleF h :: K), ℓ, op, v =>
-      if handlesOp h ℓ op then
-        match h with
-        | .throws _  => some (K, .ret v)      -- abort to the outer stack with the payload
-        | .state _ _ => none                  -- state resumption deferred (Q12)
-      else dispatch K ℓ op v
-  | (_ :: K), ℓ, op, v => dispatch K ℓ op v   -- skip letF/appF (captured continuation)
+/-- Split a stack at the nearest frame catching `(ℓ, op)`: returns `(Kᵢ, h, Kₒ)` with
+`K = Kᵢ ++ handleF h :: Kₒ`, `Kᵢ` containing no catching frame (the inner captured continuation),
+and `h` the catching handler. `none` = no handler in `K` (unhandled). The recursion is the SAME walk
+ADR-0023's `dispatch` did; it now also RETURNS the inner prefix `Kᵢ` (kept by `state`, discarded by
+`throws`). -/
+def splitAt : EvalCtx → Label → OpId → Option (EvalCtx × Handler × EvalCtx)
+  | [], _, _ => none
+  | (.handleF h :: K), ℓ, op =>
+      if handlesOp h ℓ op then some ([], h, K)
+      else (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ))
+  | (fr :: K), ℓ, op =>
+      (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
+
+/-- Deep-handler dispatch (ADR-0025 generalizes ADR-0023 to KEEP the captured continuation for
+resumptive handlers). Split the stack at the nearest catching frame, then:
+
+  - `throws ℓ`: ZERO-SHOT abort. Discard `Kᵢ` and the handler frame; the payload `v` becomes the
+    focus over the outer stack `Kₒ`. (ADR-0023, unchanged behaviour.)
+  - `state ℓ s`: ONE-SHOT RESUME (ADR-0025). KEEP `Kᵢ` and reinstall a (deep) `state ℓ s'` frame so
+    the next operation is handled too:
+      · `get`: return the stored `s` to `Kᵢ`, state unchanged (`s' = s`, focus `ret s`);
+      · `put w`: store the payload `w`, return `unit` to `Kᵢ` (`s' = w`, focus `ret unit`).
+    The resumed stack is `Kᵢ ++ handleF (state ℓ s') :: Kₒ`.
+
+Reaching `[]` (no catching frame) = unhandled = stuck (`none`). The CK focus stays CLOSED: the stored
+`s`/payload `w` are closed values (the focus is always closed), so resumption threads no open term and
+no variable budget — the grade vectors stay `[]` (ADR-0025 §grade discipline). -/
+def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option Config
+  | (Kᵢ, h, Kₒ) =>
+      match h with
+      | .throws _   => some (Kₒ, .ret v)                                        -- ABORT
+      | .state ℓ' s =>
+          if op == "get" then
+            some (Kᵢ ++ Frame.handleF (.state ℓ' s) :: Kₒ, .ret s)             -- RESUME with s
+          else
+            some (Kᵢ ++ Frame.handleF (.state ℓ' v) :: Kₒ, .ret .vunit)        -- RESUME with unit
+
+def dispatch (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
+  (splitAt K ℓ op).bind (dispatchOn op v)
 
 /-- One machine transition. `none` = stuck (terminal `⟨[], ret v⟩`, or genuinely wrong). -/
 def Source.step : Config → Option Config

@@ -69,6 +69,37 @@ checking of the surface · in-place handler optimization (invariant #7 — later
 **kernel-engineer + proof-engineer** (the K + P layers are the work). The S layer is a thin
 follow-on, foldable into the same PATH or handed to a surface IC after. NOT a surface-only issue.
 
+## FINDING (2026-06-23) — what resumptive state actually cost
+
+**The grade tension dissolved, it did not need solving.** Q12 framed the crux as "threading a
+resource (state) interacts with QTT multiplicity grades." But the CK machine (ADR-0023) keeps the
+FOCUS CLOSED — so the stored state, the value returned at `get`, and the value stored at `put` are
+ALL closed values (grade vector `[]`). Duplicating a closed value at `get` (returned to the
+continuation *and* kept in the reinstalled handler) costs zero *variable* budget, for ANY state type
+`S`. So **no `ω`-restriction on `S` was needed** (Q12 option 1 rejected): the machine's closed-focus
+invariant is precisely the structure that makes resumptive state type-preserving. Decision recorded
+as **ADR-0025** (K-ADR), tagged the crux.
+
+**What landed (axiom-clean):** machine `dispatch` resumes via `splitAt`/`dispatchOn`
+(`splitAt K ℓ op` returns the inner prefix `Kᵢ`; `state` keeps it, `throws` discards it — throws
+behaviour bit-identical to ADR-0023). Typing: `HasCTy.handleState` + `HasStack.stateF` (state IS now
+typable). `progress` is FULLY proven *including* state get/put dispatch (the live label is discharged
+by a frame whose interface catches the op). `no_accidental_handling` stays **0-axiom** (◊2 gate).
+The state CELL runs green: `Bang/Surface.lean` `stateCellComp` (`put 7; get ⟶ done 7`) by `rfl`.
+
+**What remains (2 marked RUNG1-OBLIGATIONs in `Bang/Metatheory.lean`):** `preservation`'s two
+state-resume cases — typing the RESUMED stack `Kᵢ ++ handleF (state ℓ s') :: Kₒ` from the original
+`HasStack K`, re-typing the focus from the `up`'s result to `ret s`/`ret unit`. The hard core is a
+`dispatch_typed`-analog for `state` that KEEPS `Kᵢ` (re-installs the deep state frame) instead of
+discarding it. `s`/`v` are closed (from `stateF`/the closed focus), so the new focus is closed.
+`preservation`/`type_safety` carry `sorryAx` only via these two; everything else on the spine is clean.
+
+**Event-store framing (PRD §6) — not refuted, deferred:** confirming the event-store handler is
+`state ℓ (event-log)` over this one mechanism is a *library* exercise (build the log handler, fold on
+`get`); the kernel mechanism is sufficient (resumptive state + closed values), so it is plausibly a
+library choice, but I did not build the log handler to verify it end-to-end. Left for the surface/lib
+follow-on. A real *counter* (`get; put (get+1)`) still needs arithmetic `+` (a separate K-ADR).
+
 ## POINTERS
 
 - Q12 (graded state handlers) + Q6 (resolved — CK machine) in `docs/notes/OPEN_QUESTIONS.md`.

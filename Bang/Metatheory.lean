@@ -250,7 +250,7 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasCTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
   · intro Γ; simp
   · intro Γ n; simp
   · intro Γ i A hget; simp
@@ -275,6 +275,9 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [hsmul_eq_smul, GradeVec.smul_length]; exact ih
   · -- handleThrows: effect/type pass through
     intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
+  · -- handleState: the body IH gives `γ.length = Γ.length` (the closed-state IH gives `[]=[]`)
+    intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ _
+    assumption
 
 theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} :
@@ -283,7 +286,7 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasVTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
   · intro Γ; simp
   · intro Γ n; simp
   · intro Γ i A hget; simp
@@ -308,6 +311,9 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [hsmul_eq_smul, GradeVec.smul_length]; exact ih
   · -- handleThrows
     intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
+  · -- handleState: the body IH gives `γ.length = Γ.length` (the closed-state IH gives `[]=[]`)
+    intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ _
+    assumption
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
 
@@ -359,6 +365,88 @@ private theorem insG_add_smul_aux' (q : Mult) (γ₁ γ₂ : GradeVec Mult) (k :
     insG (GradeVec.add γ₁ (GradeVec.smul q γ₂)) k
       = GradeVec.add (insG γ₁ k) (GradeVec.smul q (insG γ₂ k)) := by
   rw [insG_add _ _ _ (by rw [GradeVec.smul_length, h1]), insG_smul]
+
+/-! ### C.1 Closed values are shift- and subst-invariant (ADR-0025)
+
+A value/computation typed under a length-`n` context mentions only de Bruijn indices `< n`, so a
+`shiftFrom k`/`substFrom k` at cutoff `k ≥ n` leaves it unchanged. The `state` handler stores a CLOSED
+state (`HasVTy [] [] s₀ S`, `n = 0`), so it survives weakening (`shiftFrom k s₀ = s₀`) and substitution
+(`substFrom k v s₀ = s₀`) under any binder — the engine that makes `handleState` thread through
+`weaken`/`subst` without grade content (the closed focus, ADR-0025 D2). -/
+mutual
+theorem HasVTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} (h : HasVTy γ Γ v A) (k : Nat) (hk : Γ.length ≤ k) :
+    Val.shiftFrom k v = v := by
+  cases h with
+  | vunit => rfl
+  | vint  => rfl
+  | @vvar Γ i A hget =>
+    -- i < Γ.length ≤ k, so the index is bound (below cutoff) and not shifted
+    have hi : i < Γ.length := by
+      rw [List.getElem?_eq_some_iff] at hget; exact hget.1
+    simp only [Val.shiftFrom]; rw [if_pos (by omega)]
+  | @vthunk γ Γ M φ B hM =>
+    simp only [Val.shiftFrom]; rw [hM.shift_closed k hk]
+
+theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {e : Eff} {C : CTy Eff Mult} (h : HasCTy γ Γ c e C) (k : Nat) (hk : Γ.length ≤ k) :
+    Comp.shiftFrom k c = c := by
+  cases h with
+  | @ret γ γ' Γ v A q hv _ => simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
+    simp only [Comp.shiftFrom]
+    rw [hM.shift_closed k hk, hN.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
+  | @force γ Γ v φ B hv => simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
+  | @lam γ Γ M φ q A B hM =>
+    simp only [Comp.shiftFrom]
+    rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
+  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv _ =>
+    simp only [Comp.shiftFrom]; rw [hM.shift_closed k hk, hv.shift_closed k hk]
+  | @up γ Γ ℓ op v φ q A B _ _ _ hv =>
+    simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
+  | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
+    simp only [Comp.shiftFrom, Handler.shiftFrom]; rw [hM.shift_closed k hk]
+  | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    rw [hM.shift_closed k hk, hs.shift_closed k (Nat.zero_le k)]
+end
+
+mutual
+theorem HasVTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} (h : HasVTy γ Γ v A) (k : Nat) (hk : Γ.length ≤ k) (w : Val) :
+    Val.substFrom k w v = v := by
+  cases h with
+  | vunit => rfl
+  | vint  => rfl
+  | @vvar Γ i A hget =>
+    have hi : i < Γ.length := by
+      rw [List.getElem?_eq_some_iff] at hget; exact hget.1
+    simp only [Val.substFrom]; rw [if_neg (by omega), if_neg (by omega)]
+  | @vthunk γ Γ M φ B hM =>
+    simp only [Val.substFrom]; rw [hM.subst_closed k hk w]
+
+theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {e : Eff} {C : CTy Eff Mult} (h : HasCTy γ Γ c e C) (k : Nat) (hk : Γ.length ≤ k)
+    (w : Val) : Comp.substFrom k w c = c := by
+  cases h with
+  | @ret γ γ' Γ v A q hv _ => simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
+    simp only [Comp.substFrom]
+    rw [hM.subst_closed k hk w, hN.subst_closed (k + 1) (by simp only [List.length_cons]; omega) _]
+  | @force γ Γ v φ B hv => simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
+  | @lam γ Γ M φ q A B hM =>
+    simp only [Comp.substFrom]
+    rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) _]
+  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv _ =>
+    simp only [Comp.substFrom]; rw [hM.subst_closed k hk w, hv.subst_closed k hk w]
+  | @up γ Γ ℓ op v φ q A B _ _ _ hv =>
+    simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
+  | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
+    simp only [Comp.substFrom, Handler.substFrom]; rw [hM.subst_closed k hk w]
+  | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
+    simp only [Comp.substFrom, Handler.substFrom]
+    rw [hM.subst_closed k hk w, hs.subst_closed k (Nat.zero_le k) w]
+end
 
 mutual
 theorem HasVTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
@@ -502,6 +590,11 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     -- Answer-type + interface premises thread verbatim (no grade content).
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     exact HasCTy.handleThrows hraise hiface (hM.weaken k hk A') hle
+  | @handleState γ Γ ℓ s₀ M e φ q S A hga hgr hpa hpr hif hs hM hle =>
+    -- state's stored value is CLOSED, so shift leaves it fixed (ADR-0025); weaken the body.
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    rw [hs.shift_closed k (Nat.zero_le k)]
+    exact HasCTy.handleState hga hgr hpa hpr hif hs (hM.weaken k hk A') hle
 end
 
 /-- Grade at the substituted slot `k`, read off the derivation's grade vector. -/
@@ -900,7 +993,7 @@ theorem HasCTy.subst_gen
            (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B := by
   refine HasCTy.rec
     (motive_1 := VsubstMotive) (motive_2 := CsubstMotive)
-    ?vunit ?vint ?vvar ?vthunk ?ret ?letC ?force ?lam ?app ?up ?handleThrows
+    ?vunit ?vint ?vvar ?vthunk ?ret ?letC ?force ?lam ?app ?up ?handleThrows ?handleState
     hc Δ Γ A γ_v v rfl hv
   case vunit =>
     intro Γ₀ Δ Γ A γ_v v hΓ hv
@@ -957,6 +1050,13 @@ theorem HasCTy.subst_gen
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
     exact HasCTy.handleThrows hraise hiface (ih Δ Γ A γ_v v rfl hv) hle
+  case handleState =>
+    intro γ Γ₀ ℓ s₀ M e φ q S A₀ hga hgr hpa hpr hif hs hM hle _ihs ihM Δ Γ A γ_v v hΓ hv
+    subst hΓ
+    rw [Comp.substFrom, Handler.substFrom]
+    -- the stored state is CLOSED ⇒ substFrom leaves it fixed (ADR-0025)
+    rw [hs.subst_closed Δ.length (Nat.zero_le _) _]
+    exact HasCTy.handleState hga hgr hpa hpr hif hs (ihM Δ Γ A γ_v v rfl hv) hle
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -1012,18 +1112,51 @@ theorem HasStack.appF_inv {w : Val} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
   cases h with
   | @appF _ _ _ _ q A B Co hv hsub => exact ⟨q, A, B, rfl, hv, hsub⟩
 
-theorem HasStack.handleF_inv {hdl : Handler} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
+/-- Invert a `throws` handler frame (the focus type forces the handler to be `throws`, since the
+caller already knows `hdl = throws ℓ`). -/
+theorem HasStack.handleF_throws_inv {ℓ : Label} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
-    HasStack (Frame.handleF hdl :: K) e C eo Co →
-    ∃ ℓ φ q A, hdl = Handler.throws ℓ ∧ C = CTy.F q A
+    HasStack (Frame.handleF (Handler.throws ℓ) :: K) e C eo Co →
+    ∃ φ q A, C = CTy.F q A
       ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A
       ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise")
       ∧ e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ
       ∧ HasStack K φ (CTy.F q A) eo Co := by
   intro h
   cases h with
-  | @handleF _ ℓ _ φ eo q A Co hraise hiface hdis hsub =>
-    exact ⟨ℓ, φ, q, A, rfl, rfl, hraise, hiface, hdis, hsub⟩
+  | @handleF _ _ _ φ eo q A Co hraise hiface hdis hsub =>
+    exact ⟨φ, q, A, rfl, hraise, hiface, hdis, hsub⟩
+
+/-- Invert ANY handler frame (`throws` or `state`): the focus is `F q A`, the handler discharges its
+label, and the substack types `F q A` to the whole program. Used by the REDUCE-`handleF`-`ret` case
+(the handler return clause is the identity for both handler kinds, ADR-0023 Q6 / ADR-0025). -/
+theorem HasStack.handleAny_inv {hdl : Handler} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
+    {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Frame.handleF hdl :: K) e C eo Co →
+    ∃ φ q A, C = CTy.F q A ∧ ∃ eo', eo' ≤ eo ∧ HasStack K φ (CTy.F q A) eo' Co := by
+  intro h
+  cases h with
+  | @handleF _ _ _ φ eo q A Co hraise hiface hdis hsub => exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
+  | @stateF _ _ _ _ φ eo q A S Co hga hgr hpa hpr hif hs hdis hsub =>
+    exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
+
+/-- Invert a `state` handler frame (ADR-0025). -/
+theorem HasStack.stateF_inv {ℓ : Label} {s : Val} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
+    {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Frame.handleF (Handler.state ℓ s) :: K) e C eo Co →
+    ∃ φ q A S, C = CTy.F q A
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit
+      ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put")
+      ∧ HasVTy [] [] s S
+      ∧ e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ
+      ∧ HasStack K φ (CTy.F q A) eo Co := by
+  intro h
+  cases h with
+  | @stateF _ _ _ _ φ eo q A S Co hga hgr hpa hpr hif hs hdis hsub =>
+    exact ⟨φ, q, A, S, rfl, hga, hgr, hpa, hpr, hif, hs, hdis, hsub⟩
 
 /-! ### E.0b Closed-focus HasCTy inversion lemmas (Γ = [], γ = [])
 
@@ -1104,11 +1237,23 @@ theorem HasCTy.handleThrows_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @handleThrows _ _ _ _ e_body φ q A hraise hiface hM hle =>
     exact ⟨e_body, q, A, rfl, hraise, hiface, hM, hle⟩
 
-/-- `handle (state …)` is untypable (Q12): no HasCTy rule for it. -/
-theorem HasCTy.handleState_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
-    {ℓ : Label} {s : Val} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
-    ¬ HasCTy γ0 Γ0 (Comp.handle (Handler.state ℓ s) M) e C := by
-  intro h; cases h
+/-- Invert a `handle (state ℓ s₀) M` typing (ADR-0025) — was `handleState_untypable` pre-rung-1. -/
+theorem HasCTy.handleState_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {ℓ : Label} {s₀ : Val} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.handle (Handler.state ℓ s₀) M) e C →
+    ∃ e_body q S A, C = CTy.F q A
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit
+      ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put")
+      ∧ HasVTy [] [] s₀ S
+      ∧ HasCTy γ0 Γ0 M e_body (CTy.F q A)
+      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e := by
+  intro h
+  cases h with
+  | @handleState _ _ _ _ _ e_body φ q S A hga hgr hpa hpr hif hs hM hle =>
+    exact ⟨e_body, q, S, A, rfl, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩
 
 theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {e : Eff} {C : CTy Eff Mult} :
@@ -1150,33 +1295,130 @@ theorem HasStack.weaken_eff {K : EvalCtx} {e e' : Eff} {C : CTy Eff Mult}
     intro hle
     -- e' ≤ e ≤ labelEff ℓ ⊔ φ; rebuild same frame, same substack ⇒ same eo
     exact ⟨eo, le_refl _, HasStack.handleF hraise hiface (le_trans hle hdis) hsub⟩
+  | @stateF K ℓ s e φ eo q A S Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    intro hle
+    exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs (le_trans hle hdis) hsub⟩
 
-/-- A successful `dispatch` always returns a config whose focus is `ret v` (the only
-non-`none` branch is the `throws` match, which yields `(K', ret v)`). Independent of
-typing — pure recursion shape. -/
-theorem dispatch_shape (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) {cfg' : Config} :
-    dispatch K ℓ op v = some cfg' → cfg'.2 = Comp.ret v := by
-  induction K with
-  | nil => intro h; simp [dispatch] at h
+/-! ### E.1a `splitAt` / `dispatch` reduction lemmas (ADR-0025)
+
+`dispatch` now routes through `splitAt` (returns the inner prefix `Kᵢ` so `state` can KEEP it).
+The throws-soundness lemmas below induct over `HasStack`, whose `handleF` frames are ALWAYS
+`throws` (the only stack-typing constructor — `state` is untypable, Q12/ADR-0025), so the `state`
+branch of `dispatch` is unreachable in these proofs. These equational lemmas unfold `splitAt`/
+`dispatch` over the three frame shapes so the inductions go through as in ADR-0023. -/
+
+@[simp] theorem splitAt_nil (ℓ : Label) (op : OpId) :
+    splitAt ([] : EvalCtx) ℓ op = none := rfl
+
+theorem splitAt_letF (N : Comp) (K : EvalCtx) (ℓ : Label) (op : OpId) :
+    splitAt (Frame.letF N :: K) ℓ op
+      = (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.letF N :: Kᵢ, h', Kₒ)) := rfl
+
+theorem splitAt_appF (w : Val) (K : EvalCtx) (ℓ : Label) (op : OpId) :
+    splitAt (Frame.appF w :: K) ℓ op
+      = (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.appF w :: Kᵢ, h', Kₒ)) := rfl
+
+/-- A NON-matching `handleF h` frame is skipped (`hcatch : handlesOp h ℓ op = false`): split the tail
+and prepend the frame to the inner prefix. -/
+theorem splitAt_handleF_miss {h : Handler} {ℓ : Label} {op : OpId} (K : EvalCtx)
+    (hcatch : handlesOp h ℓ op = false) :
+    splitAt (Frame.handleF h :: K) ℓ op
+      = (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ)) := by
+  show (if handlesOp h ℓ op then some ([], h, K)
+        else (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ))) = _
+  rw [if_neg (by rw [hcatch]; simp)]
+
+/-- A MATCHING `handleF h` frame (`hcatch : handlesOp h ℓ op = true`) is the split point. -/
+theorem splitAt_handleF_hit {h : Handler} {ℓ : Label} {op : OpId} (K : EvalCtx)
+    (hcatch : handlesOp h ℓ op = true) :
+    splitAt (Frame.handleF h :: K) ℓ op = some ([], h, K) := by
+  show (if handlesOp h ℓ op then some ([], h, K)
+        else (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ))) = _
+  rw [if_pos (by rw [hcatch])]
+
+/-- For `op = "raise"`, any catching frame found by `splitAt` is a `throws` handler: `state` catches
+only `get`/`put` (`handlesOp (state ..) ℓ "raise" = false`), so the split skips it. Hence `splitAt`'s
+handler component is `throws _`. -/
+theorem splitAt_raise_throws {K : EvalCtx} {ℓ : Label} {Kᵢ Kₒ : EvalCtx} {h : Handler} :
+    splitAt K ℓ "raise" = some (Kᵢ, h, Kₒ) → ∃ ℓ', h = Handler.throws ℓ' := by
+  induction K generalizing Kᵢ Kₒ h with
+  | nil => intro hd; simp [splitAt] at hd
   | cons fr K ih =>
     cases fr with
-    | letF N => intro h; exact ih (by simpa [dispatch] using h)
-    | appF w => intro h; exact ih (by simpa [dispatch] using h)
-    | handleF h =>
+    | letF N =>
+      intro hd; rw [splitAt_letF, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      exact heq.2.1 ▸ ih hsp
+    | appF w =>
+      intro hd; rw [splitAt_appF, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      exact heq.2.1 ▸ ih hsp
+    | handleF hh =>
       intro hd
-      cases h with
-      | throws ℓ' =>
-        by_cases hcatch : handlesOp (Handler.throws ℓ') ℓ op = true
-        · simp only [dispatch, hcatch, if_true, Option.some.injEq] at hd
-          rw [← hd]
-        · simp only [Bool.not_eq_true] at hcatch
-          exact ih (by simpa [dispatch, hcatch] using hd)
-      | state ℓ' s =>
-        by_cases hcatch : handlesOp (Handler.state ℓ' s) ℓ op = true
-        · -- state match returns none ⇒ contradiction
-          simp [dispatch, hcatch] at hd
-        · simp only [Bool.not_eq_true] at hcatch
-          exact ih (by simpa [dispatch, hcatch] using hd)
+      by_cases hcatch : handlesOp hh ℓ "raise" = true
+      · -- this frame catches ⇒ splitAt returns this handler; it must be throws (state ≠ raise)
+        rw [splitAt_handleF_hit K hcatch, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hd
+        obtain ⟨_, hheq, _⟩ := hd
+        subst hheq
+        cases hh with
+        | throws ℓ' => exact ⟨ℓ', rfl⟩
+        | state ℓ' s => simp [handlesOp] at hcatch
+      · -- does not catch ⇒ recurse
+        simp only [Bool.not_eq_true] at hcatch
+        rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+        obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+        simp only [Prod.mk.injEq] at heq
+        exact heq.2.1 ▸ ih hsp
+
+/-- CLOSED FORM for `"raise"` dispatch: since the catching handler is always `throws` (which aborts
+to the OUTER stack `Kₒ` with the payload, discarding `Kᵢ`), dispatch is exactly `splitAt`'s outer
+stack paired with `ret v`. This collapses all throws reasoning to `splitAt` map-algebra. -/
+theorem dispatch_raise_eq (K : EvalCtx) (ℓ : Label) (v : Val) :
+    dispatch K ℓ "raise" v
+      = (splitAt K ℓ "raise").map (fun (p : EvalCtx × Handler × EvalCtx) => (p.2.2, Comp.ret v)) := by
+  unfold dispatch
+  cases hsp : splitAt K ℓ "raise" with
+  | none => simp
+  | some t =>
+    obtain ⟨Kᵢ, h, Kₒ⟩ := t
+    obtain ⟨ℓ', hℓ'⟩ := splitAt_raise_throws hsp
+    subst hℓ'
+    simp [dispatchOn]
+
+theorem dispatch_skip_letF {N : Comp} {K : EvalCtx} {ℓ : Label} {v : Val} :
+    dispatch (Frame.letF N :: K) ℓ "raise" v = dispatch K ℓ "raise" v := by
+  rw [dispatch_raise_eq, dispatch_raise_eq, splitAt_letF]
+  cases splitAt K ℓ "raise" with
+  | none => rfl
+  | some t => obtain ⟨Kᵢ, h, Kₒ⟩ := t; rfl
+
+theorem dispatch_skip_appF {w : Val} {K : EvalCtx} {ℓ : Label} {v : Val} :
+    dispatch (Frame.appF w :: K) ℓ "raise" v = dispatch K ℓ "raise" v := by
+  rw [dispatch_raise_eq, dispatch_raise_eq, splitAt_appF]
+  cases splitAt K ℓ "raise" with
+  | none => rfl
+  | some t => obtain ⟨Kᵢ, h, Kₒ⟩ := t; rfl
+
+/-- Skipping a NON-matching `handleF hh` frame (`hcatch : handlesOp hh .. = false`) — covers BOTH a
+foreign `throws ℓ'` AND any `state ℓ' s` frame (state never catches `"raise"`, ADR-0025). -/
+theorem dispatch_skip_handleF {hh : Handler} {K : EvalCtx} {ℓ : Label} {v : Val}
+    (hcatch : handlesOp hh ℓ "raise" = false) :
+    dispatch (Frame.handleF hh :: K) ℓ "raise" v = dispatch K ℓ "raise" v := by
+  rw [dispatch_raise_eq, dispatch_raise_eq, splitAt_handleF_miss K hcatch]
+  cases splitAt K ℓ "raise" with
+  | none => rfl
+  | some t => obtain ⟨Kᵢ, h, Kₒ⟩ := t; rfl
+
+/-- A successful `dispatch` for `"raise"` returns a config whose focus is `ret v` (the catching
+handler is `throws`, which aborts with the payload). -/
+theorem dispatch_shape (K : EvalCtx) (ℓ : Label) (v : Val) {cfg' : Config} :
+    dispatch K ℓ "raise" v = some cfg' → cfg'.2 = Comp.ret v := by
+  rw [dispatch_raise_eq]
+  cases splitAt K ℓ "raise" with
+  | none => simp
+  | some t => intro hd; simp only [Option.map_some, Option.some.injEq] at hd; rw [← hd]
 
 /-- The DEEP-DISPATCH decomposition (PRESERVATION direction). GIVEN that `dispatch`
 already found a handling frame (`dispatch K ℓ "raise" v = some (Kₒ, ret v)` — supplied
@@ -1197,15 +1439,16 @@ theorem HasStack.dispatch_typed {K Kₒ : EvalCtx} {e_in : Eff} {C_in : CTy Eff 
   intro hK hopArg
   induction hK with
   | @nil e0 C0 =>
-    intro hd; simp [dispatch] at hd
+    intro hd; unfold dispatch at hd; rw [splitAt_nil, Option.bind_none] at hd; exact absurd hd (by simp)
   | @letF K N e₁ e₂ eo q qk A0 B Co hN hsub ih =>
     intro hd
-    simp only [dispatch] at hd
+    -- skip the letF frame: dispatch (letF :: K) equals dispatch K (same Kₒ/focus)
+    rw [dispatch_skip_letF] at hd
     obtain ⟨q_h, eo', hleo, hsub'⟩ := ih hd
     exact ⟨q_h, eo', hleo, hsub'⟩
   | @appF K w e eo q A0 B Co hv hsub ih =>
     intro hd
-    simp only [dispatch] at hd
+    rw [dispatch_skip_appF] at hd
     obtain ⟨q_h, eo', hleo, hsub'⟩ := ih hd
     exact ⟨q_h, eo', hleo, hsub'⟩
   | @handleF K ℓ' e φ eo q Ah Co hraise hiface hdis hsub ih =>
@@ -1214,7 +1457,8 @@ theorem HasStack.dispatch_typed {K Kₒ : EvalCtx} {e_in : Eff} {C_in : CTy Eff 
     · -- matching label: this frame catches "raise"; dispatch returned (K, ret v) here.
       subst hℓ
       have hcatch : handlesOp (Handler.throws ℓ') ℓ' "raise" = true := by simp [handlesOp]
-      simp only [dispatch, hcatch, if_true, Option.some.injEq, Prod.mk.injEq] at hd
+      rw [dispatch_raise_eq, splitAt_handleF_hit K hcatch] at hd
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hd
       obtain ⟨hKeq, _⟩ := hd
       subst hKeq
       have hAeq : Ah = A := by
@@ -1226,9 +1470,16 @@ theorem HasStack.dispatch_typed {K Kₒ : EvalCtx} {e_in : Eff} {C_in : CTy Eff 
     · -- non-matching label: dispatch skipped this frame
       have hcatch : handlesOp (Handler.throws ℓ') ℓ "raise" = false := by
         simp [handlesOp, hℓ]
-      simp only [dispatch, hcatch, if_false] at hd
+      rw [dispatch_skip_handleF hcatch] at hd
       obtain ⟨q_h, eo', hleo, hsub'⟩ := ih hd
       exact ⟨q_h, eo', hleo, hsub'⟩
+  | @stateF K ℓ' s e φ eo q Ah S Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    -- a state frame never catches "raise" (ADR-0025) ⇒ dispatch skips it; recurse.
+    intro hd
+    have hcatch : handlesOp (Handler.state ℓ' s) ℓ "raise" = false := by simp [handlesOp]
+    rw [dispatch_skip_handleF hcatch] at hd
+    obtain ⟨q_h, eo', hleo, hsub'⟩ := ih hd
+    exact ⟨q_h, eo', hleo, hsub'⟩
 
 /-- DISPATCH must FIRE (PROGRESS direction). When the label is live in the running
 effect and the whole-program effect is `⊥`, the stack MUST contain a handling frame:
@@ -1237,81 +1488,100 @@ effect and the whole-program effect is `⊥`, the stack MUST contain a handling 
 non-matching `throws ℓ'` pushes it into the residual via `labelEff_sep`; a matching
 `throws ℓ` catches `"raise"` (interface premise). `nil` is impossible: it would force
 `labelEff ℓ ≤ ⊥`. -/
-theorem HasStack.dispatch_fires {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff Mult}
-    {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {v : Val} :
+theorem HasStack.splitAt_fires {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff Mult}
+    {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {op : OpId} {A : VTy Eff Mult}
+    (hopArg : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A) :
     HasStack K e_in C_in eo Co →
     ¬ (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ eo) →
     EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ e_in →
-    ∃ cfg', dispatch K ℓ "raise" v = some cfg' := by
+    ∃ p, splitAt K ℓ op = some p := by
+  -- The label is live and cannot escape to ⊥, so SOME frame discharges ℓ; that frame's interface
+  -- (`opArg ℓ op = some A`) forces it to CATCH `op` (throws ⊳ raise / state ⊳ get,put — ADR-0025), so
+  -- `splitAt` stops there. Foreign labels are pushed into the residual via `labelEff_sep`.
   intro hK
   induction hK with
   | nil =>
-    -- at nil e_in = eo; hlive : labelEff ℓ ≤ eo contradicts hesc
     intro hesc hlive; exact absurd hlive hesc
-  | letF _ _ ih =>
+  | @letF K N e₁ e₂ eo q qk A0 B Co hN hsub ih =>
     intro hesc hlive
-    obtain ⟨cfg', hd⟩ := ih hesc (le_trans hlive le_sup_left)
-    exact ⟨cfg', by simp only [dispatch]; exact hd⟩
-  | appF _ _ ih =>
+    obtain ⟨p, hp⟩ := ih hesc (le_trans hlive le_sup_left)
+    exact ⟨_, by rw [splitAt_letF, hp]; rfl⟩
+  | @appF K w e eo q A0 B Co hv hsub ih =>
     intro hesc hlive
-    obtain ⟨cfg', hd⟩ := ih hesc hlive
-    exact ⟨cfg', by simp only [dispatch]; exact hd⟩
+    obtain ⟨p, hp⟩ := ih hesc hlive
+    exact ⟨_, by rw [splitAt_appF, hp]; rfl⟩
   | @handleF K ℓ' e φ eo q Ah Co hraise hiface hdis hsub ih =>
     intro hesc hlive
     by_cases hℓ : ℓ' = ℓ
-    · -- matching label catches "raise" ⇒ dispatch fires here
+    · -- throws ℓ frame: it catches iff op = "raise"; the interface forces op = "raise" (since
+      -- `opArg ℓ op = some A`, hiface gives op = "raise"), so it catches.
       subst hℓ
+      have hop : op = "raise" := hiface op A hopArg
+      subst hop
       have hcatch : handlesOp (Handler.throws ℓ') ℓ' "raise" = true := by simp [handlesOp]
-      exact ⟨(K, Comp.ret v), by simp [dispatch, hcatch]⟩
-    · -- non-matching: push label into φ and recurse
-      have hcatch : handlesOp (Handler.throws ℓ') ℓ "raise" = false := by
-        simp [handlesOp, hℓ]
+      exact ⟨_, splitAt_handleF_hit K hcatch⟩
+    · have hcatch : handlesOp (Handler.throws ℓ') ℓ op = false := by simp [handlesOp, hℓ]
       have hlive' : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ :=
         EffSig.labelEff_sep ℓ ℓ' φ (le_trans hlive hdis) (fun h => hℓ h.symm)
-      obtain ⟨cfg', hd⟩ := ih hesc hlive'
-      exact ⟨cfg', by simp only [dispatch, hcatch, if_false]; exact hd⟩
+      obtain ⟨p, hp⟩ := ih hesc hlive'
+      exact ⟨_, by rw [splitAt_handleF_miss K hcatch, hp]; rfl⟩
+  | @stateF K ℓ' s e φ eo q Ah S Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    intro hesc hlive
+    by_cases hℓ : ℓ' = ℓ
+    · -- state ℓ frame: it catches iff op ∈ {get,put}; the interface `hif` forces that, so it catches.
+      subst hℓ
+      have hcatch : handlesOp (Handler.state ℓ' s) ℓ' op = true := by
+        rcases hif op A hopArg with hg | hp <;> subst_vars <;> simp [handlesOp]
+      exact ⟨_, splitAt_handleF_hit K hcatch⟩
+    · have hcatch : handlesOp (Handler.state ℓ' s) ℓ op = false := by simp [handlesOp, hℓ]
+      have hlive' : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ :=
+        EffSig.labelEff_sep ℓ ℓ' φ (le_trans hlive hdis) (fun h => hℓ h.symm)
+      obtain ⟨p, hp⟩ := ih hesc hlive'
+      exact ⟨_, by rw [splitAt_handleF_miss K hcatch, hp]; rfl⟩
 
-/-- If `dispatch` succeeds for `(ℓ, op)` over a well-typed stack, then `op = "raise"`:
-the only frame that can catch `(ℓ, op)` is a `throws ℓ` frame, whose interface premise
-(`opArg ℓ · = some _ → · = "raise"`) forces `op = "raise"`. (A non-"raise" op skips
-every frame and reaches `[]` = none.) -/
-theorem HasStack.dispatch_op_raise {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff Mult}
-    {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {op : OpId} {v : Val} {A : VTy Eff Mult}
-    {cfg' : Config} :
+/-- `dispatchOn` always succeeds (every catching handler — throws or state — produces a resumed/
+aborted config). So `dispatch K ℓ op v` succeeds iff `splitAt K ℓ op` does. -/
+theorem dispatchOn_isSome (op : OpId) (v : Val) (p : EvalCtx × Handler × EvalCtx) :
+    (dispatchOn op v p).isSome = true := by
+  obtain ⟨Kᵢ, h, Kₒ⟩ := p
+  cases h <;> simp only [dispatchOn] <;> first | rfl | (split <;> rfl)
+
+theorem dispatch_isSome_iff (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) :
+    (dispatch K ℓ op v).isSome = (splitAt K ℓ op).isSome := by
+  show ((splitAt K ℓ op).bind (dispatchOn op v)).isSome = _
+  cases splitAt K ℓ op with
+  | none => rfl
+  | some p => simp only [Option.bind_some]; exact dispatchOn_isSome op v p
+
+/-- If `dispatch` succeeds for `(ℓ, op)` over a well-typed stack, then `op` is `"raise"`, `"get"`, or
+`"put"` (ADR-0025): the catching frame is either a `throws ℓ` (interface `{raise}`) or a `state ℓ`
+(interface `{get,put}`); both interface premises constrain `op`. -/
+theorem HasStack.dispatch_op_handled {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff Mult}
+    {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {op : OpId} {A : VTy Eff Mult} :
     HasStack K e_in C_in eo Co →
     EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A →
-    dispatch K ℓ op v = some cfg' → op = "raise" := by
+    (splitAt K ℓ op).isSome = true → op = "raise" ∨ op = "get" ∨ op = "put" := by
   intro hK hopArg
   induction hK with
-  | nil => intro hd; simp [dispatch] at hd
-  | letF _ _ ih => intro hd; exact ih (by simpa [dispatch] using hd)
-  | appF _ _ ih => intro hd; exact ih (by simpa [dispatch] using hd)
+  | nil => intro hd; simp [splitAt] at hd
+  | @letF K N e₁ e₂ eo q qk A0 B Co hN hsub ih =>
+    intro hd; rw [splitAt_letF, Option.isSome_map] at hd; exact ih hd
+  | @appF K w e eo q A0 B Co hv hsub ih =>
+    intro hd; rw [splitAt_appF, Option.isSome_map] at hd; exact ih hd
   | @handleF K ℓ' e φ eo q Ah Co hraise hiface hdis hsub ih =>
     intro hd
     by_cases hℓ : ℓ' = ℓ
-    · subst hℓ; exact hiface op A hopArg
+    · subst hℓ; exact Or.inl (hiface op A hopArg)
     · have hcatch : handlesOp (Handler.throws ℓ') ℓ op = false := by simp [handlesOp, hℓ]
-      exact ih (by simpa [dispatch, hcatch] using hd)
-
-/-- At a whole-program effect of `⊥` with a LIVE label (`labelEff ℓ ≤ e_in`) and `op` in
-`ℓ`'s interface, the performed op must be `"raise"`. The label cannot escape to `⊥`, so
-it is discharged by some `throws ℓ` frame, whose interface forces `op = "raise"`. -/
-theorem HasStack.must_be_raise {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff Mult}
-    {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {op : OpId} {A : VTy Eff Mult} :
-    HasStack K e_in C_in eo Co →
-    ¬ (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ eo) →
-    EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ e_in →
-    EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A → op = "raise" := by
-  intro hK
-  induction hK with
-  | nil => intro hesc hlive _; exact absurd hlive hesc
-  | letF _ _ ih => intro hesc hlive hopArg; exact ih hesc (le_trans hlive le_sup_left) hopArg
-  | appF _ _ ih => intro hesc hlive hopArg; exact ih hesc hlive hopArg
-  | @handleF K ℓ' e φ eo q Ah Co hraise hiface hdis hsub ih =>
-    intro hesc hlive hopArg
+      rw [splitAt_handleF_miss K hcatch, Option.isSome_map] at hd
+      exact ih hd
+  | @stateF K ℓ' s e φ eo q Ah S Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    intro hd
     by_cases hℓ : ℓ' = ℓ
-    · subst hℓ; exact hiface op A hopArg
-    · exact ih hesc (EffSig.labelEff_sep ℓ ℓ' φ (le_trans hlive hdis) (fun h => hℓ h.symm)) hopArg
+    · subst hℓ; exact Or.inr (hif op A hopArg)
+    · have hcatch : handlesOp (Handler.state ℓ' s) ℓ op = false := by simp [handlesOp, hℓ]
+      rw [splitAt_handleF_miss K hcatch, Option.isSome_map] at hd
+      exact ih hd
 
 /-! ### E.2 preservation (config level, ADR-0023) -/
 
@@ -1344,28 +1614,46 @@ theorem preservation_proof
         exact ⟨eo, le_refl _, ⟨e₂, B, hsubst, hsub⟩⟩
       | appF w => simp [Source.step] at hstep
       | handleF h =>
-        obtain ⟨ℓ, φ, q', A', hh, hCeq, hraise, hiface, hdis, hsub⟩ := hstack.handleF_inv
-        subst hh
+        -- REDUCE handler-return = identity (both throws and state, ADR-0023 Q6 / ADR-0025).
+        obtain ⟨φ, q', A', hCeq, eo₀, hleo₀, hsub⟩ := hstack.handleAny_inv
         simp only [Source.step, Option.some.injEq] at hstep
         subst hstep
         rw [CTy.F.injEq] at hCeq; obtain ⟨hqq, hAA⟩ := hCeq; subst hAA
         obtain ⟨eo', hleo, hsub'⟩ := hsub.weaken_eff (bot_le)
-        exact ⟨eo', hleo, ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩⟩
+        exact ⟨eo', le_trans hleo hleo₀,
+          ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩⟩
   | up ℓ op v =>
-    -- DISPATCH
+    -- DISPATCH. Classify the performed op by the catching handler's interface.
     obtain ⟨γ', q, A, B, hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.up_inv
     subst hC
     have hγ'nil : γ' = [] := by have := hwv.length_eq; simpa using this
     subst hγ'nil
     simp only [Source.step] at hstep
-    have hop_raise : op = "raise" := hstack.dispatch_op_raise hopArg hstep
-    subst hop_raise
-    have hshape : cfg'.2 = Comp.ret v := dispatch_shape K ℓ "raise" v hstep
-    obtain ⟨Kₒ, c2⟩ := cfg'
-    simp only at hshape; subst hshape
-    obtain ⟨q_h, eo', hleo, hsub'⟩ := hstack.dispatch_typed hopArg hstep
-    refine ⟨eo', hleo, ⟨⊥, CTy.F q_h A, ?_, hsub'⟩⟩
-    exact HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul])
+    have hsplit_some : (splitAt K ℓ op).isSome = true := by
+      rw [← dispatch_isSome_iff (v := v), hstep]; rfl
+    rcases hstack.dispatch_op_handled hopArg hsplit_some with hraise | hget | hput
+    · -- THROWS path: op = "raise" — fully proven (ADR-0023). The throws handler aborts to Kₒ.
+      subst hraise
+      have hshape : cfg'.2 = Comp.ret v := dispatch_shape K ℓ v hstep
+      obtain ⟨Kₒ, c2⟩ := cfg'
+      simp only at hshape; subst hshape
+      obtain ⟨q_h, eo', hleo, hsub'⟩ := hstack.dispatch_typed hopArg hstep
+      refine ⟨eo', hleo, ⟨⊥, CTy.F q_h A, ?_, hsub'⟩⟩
+      exact HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul])
+    · -- STATE-get RESUME path (ADR-0025): cfg' = ⟨Kᵢ ++ handleF (state ℓ s) :: Kₒ, ret s⟩.
+      -- RUNG1-OBLIGATION: type the RESUMED stack `Kᵢ ++ handleF (state ℓ s) :: Kₒ` from the original
+      -- `HasStack K`, with the focus re-typed from the `up`'s result (`F q (opRes ℓ "get")`) to
+      -- `ret s : F q' S` (the stored state). The hard core is a `dispatch_typed`-analog for `state`
+      -- that KEEPS `Kᵢ` (re-installs the deep state frame) instead of discarding it. `s` is closed
+      -- (`HasVTy [] [] s S`, from the stateF frame), so the new focus `ret s` is closed.
+      subst hget
+      sorry
+    · -- STATE-put RESUME path (ADR-0025): cfg' = ⟨Kᵢ ++ handleF (state ℓ v) :: Kₒ, ret unit⟩.
+      -- RUNG1-OBLIGATION: same resumed-stack typing as get, with the stored state UPDATED to `v`
+      -- (`v` closed from the closed focus, `HasVTy [] [] v S` via `hwv` + `opArg ℓ "put" = some S`),
+      -- and the new focus `ret unit : F q' unit`.
+      subst hput
+      sorry
   | letC M N =>
     -- PUSH letC
     simp only [Source.step, Option.some.injEq] at hstep
@@ -1387,7 +1675,7 @@ theorem preservation_proof
     subst hγ₁; subst hγ₂
     exact ⟨eo, le_refl _, ⟨e, CTy.arr q A C, hM, HasStack.appF hw hstack⟩⟩
   | handle h M =>
-    -- PUSH handle: only throws is typable
+    -- PUSH handle: push the handler frame; both throws and state are typable (ADR-0025).
     cases h with
     | throws ℓ =>
       simp only [Source.step, Option.some.injEq] at hstep
@@ -1395,7 +1683,13 @@ theorem preservation_proof
       obtain ⟨e_body, q, A, hC, hraise, hiface, hM, hle⟩ := hfocus.handleThrows_inv
       subst hC
       exact ⟨eo, le_refl _, ⟨e_body, CTy.F q A, hM, HasStack.handleF hraise hiface hle hstack⟩⟩
-    | state ℓ s => exact absurd hfocus HasCTy.handleState_untypable
+    | state ℓ s =>
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      obtain ⟨e_body, q, S, A, hC, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩ := hfocus.handleState_inv
+      subst hC
+      exact ⟨eo, le_refl _,
+        ⟨e_body, CTy.F q A, hM, HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩⟩
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
@@ -1418,7 +1712,7 @@ theorem preservation_proof
         obtain ⟨q', A', e₂, qk, B', hCeq, _⟩ := hstack.letF_inv
         exact absurd hCeq (by simp)
       | handleF h =>
-        obtain ⟨ℓ, φ, q', A', hh, hCeq, _⟩ := hstack.handleF_inv
+        obtain ⟨φ, q', A', hCeq, _⟩ := hstack.handleAny_inv
         exact absurd hCeq (by simp)
       | appF w =>
         simp only [Source.step, Option.some.injEq] at hstep
@@ -1454,11 +1748,13 @@ theorem progress_proof
     -- the label cannot escape to the whole-program ⊥
     have hesc : ¬ (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ (⊥ : Eff)) :=
       fun h => EffSig.labelEff_ne_bot (Eff := Eff) (Mult := Mult) ℓ (le_bot_iff.mp h)
-    -- op must be "raise" (live label discharged up the stack to ⊥; interface forces "raise")
-    have hop_raise : op = "raise" := hstack.must_be_raise hesc hmem hopArg
-    subst hop_raise
-    obtain ⟨cfg', hd⟩ := hstack.dispatch_fires hesc hmem
-    exact Or.inr ⟨cfg', by simpa [Source.step] using hd⟩
+    -- the live label is discharged by a frame catching `op` (throws ⊳ raise / state ⊳ get,put);
+    -- splitAt finds it, so dispatch fires (dispatchOn is total) — the config STEPS.
+    obtain ⟨p, hp⟩ := hstack.splitAt_fires hopArg hesc hmem
+    have hd : (dispatch K ℓ op v).isSome = true := by
+      rw [dispatch_isSome_iff, hp]; rfl
+    obtain ⟨cfg', hcfg'⟩ := Option.isSome_iff_exists.mp hd
+    exact Or.inr ⟨cfg', by simpa [Source.step] using hcfg'⟩
   | ret v =>
     cases K with
     | nil => exact Or.inl (by simp [isReturnConfig])
@@ -1466,11 +1762,10 @@ theorem progress_proof
       cases fr with
       | letF N => exact Or.inr ⟨(K', Comp.subst v N), by simp [Source.step]⟩
       | handleF h =>
+        -- REDUCE handler-return = identity for BOTH throws and state (ADR-0023 Q6 / ADR-0025).
         cases h with
         | throws ℓ => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
-        | state ℓ s =>
-          obtain ⟨ℓ', φ, q', A', hh, _⟩ := hstack.handleF_inv
-          exact absurd hh (by simp)
+        | state ℓ s => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
       | appF w =>
         -- appF wants an arr-focus; ret v : F _ _ contradicts the appF stack premise
         obtain ⟨γ', A0, q0, he, hC, hγ, hwv⟩ := hfocus.ret_inv
@@ -1491,7 +1786,7 @@ theorem progress_proof
         obtain ⟨q'', A'', e₂, qk, B'', hCeq, _⟩ := hstack.letF_inv
         exact absurd hCeq (by simp)
       | handleF h =>
-        obtain ⟨ℓ, φ, q'', A'', hh, hCeq, _⟩ := hstack.handleF_inv
+        obtain ⟨φ, q'', A'', hCeq, _⟩ := hstack.handleAny_inv
         exact absurd hCeq (by simp)
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
