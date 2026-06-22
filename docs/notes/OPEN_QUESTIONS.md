@@ -27,7 +27,7 @@
 - [Q15 — Thunk strictness: uniform laziness vs demand-driven eager folding](#q15--thunk-strictness-uniform-laziness-vs-demand-driven-eager-folding)  · OPEN
 - [Q16 — Undecidable + unsafe programs: effects-with-oracles vs FFI](#q16--undecidable--unsafe-programs-effects-with-oracles-vs-ffi)  · OPEN
 - [Q17 — Polymorphism + effect-row polymorphism](#q17--polymorphism--effect-row-polymorphism)  · ✓ RESOLVED (ADR-0027 — staged: monomorphic v1 → HM → System F)
-- [Q18 — Data types: ADTs, inductive/coinductive, law attachment](#q18--data-types-adts-inductivecoinductive-law-attachment)  · OPEN ★
+- [Q18 — Data types: ADTs, inductive/coinductive, law attachment](#q18--data-types-adts-inductivecoinductive-law-attachment)  · ✓ RESOLVED (ADR-0029 — iso-recursive sum/product/μ)
 - [Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)](#q19--typeclassestraits-with-laws-ad-hoc-polymorphism--the-laws-surface)  · OPEN
 - [Q20 — Surface extensibility: pseudoinstructions via aliasing + macros](#q20--surface-extensibility-pseudoinstructions-via-aliasing--macros)  · OPEN
 
@@ -669,7 +669,15 @@ arbitrary effect row); or rung 2's stack needing element-type polymorphism.
 
 ---
 
-## Q18 — Data types: ADTs, inductive/coinductive, law attachment  · OPEN ★ (forced at rung 2)
+## Q18 — Data types: ADTs, inductive/coinductive, law attachment  · ✓ RESOLVED 2026-06-23 → ADR-0029
+
+**Resolution**: **Iso-recursive ADTs** — extend `VTy` with sum (`+`), positive product (`×`), and
+iso-recursive μ (`fold`/`unfold`, which erase). **Inductive only** (coinductive → the Div fragment,
+ADR-0028). μ-recursion variables are **not** polymorphism (a fixpoint binder, not `∀`), so ADR-0027's
+monomorphic v1 is preserved. User-definable (the moat needs it): `List = μX. 1 + (Int × X)`. Laws via
+assert + `plausible` (ADR-0026). Iso over equi because the functional difference is zero but
+equi-recursive type equality is coinductive (brutal metatheory); the surface hides `fold`/`unfold` in
+constructors/patterns (Q20). See **ADR-0029**. Original deliberation below.
 
 **Question**: the kernel has `unit` + `int` only. How do users define data types — products, sums,
 recursive (μ) types, GADTs — and how do **inductive** (terminating, total) vs **coinductive**

@@ -154,9 +154,11 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   `preservation`/`type_safety` **AXIOM-CLEAN** (the 2 obligations closed: `dispatch_state_typed` keeps
   `Kᵢ`); `no_accidental_handling` 0-axiom held; State runs **from source text**
   (`state 0 in (let z = put 7 in get) ⟶ 7`).
-- **rung 2 — NEXT** (no PATH doc yet) — verified stack (`Stack Int`, **monomorphic** per ADR-0027).
-  Forces **Q18** (data types) + **Q19** (laws surface) — the first demo of the moat (laws between
-  operations). Kernel-first (needs Q18 data types), like rung 1.
+- **rung 2 — SCOPED, NEXT** (`paths/PATH-rung2-stack.md`) — verified `Stack Int` (monomorphic,
+  ADR-0027). **Q18 resolved → ADR-0029** (iso-recursive ADTs: sum/product/μ; the kernel data layer).
+  Kernel-first + the biggest rung yet (a whole ADT layer + metatheory). The **first concrete moat demo**:
+  push/pop laws property-tested via **`plausible`** (ADR-0026 tested rung; ADR-0028 adopt-at-rung-2).
+  Q19 (laws *surface* syntax) stays partial — laws stated in Lean for now.
 
 **Verification spine (kernel/compiler — the ◊ march):**
 - **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
@@ -282,7 +284,7 @@ revisit signals.
 | Q15 | Thunk strictness (lazy vs eager fold) | open — uniform-lazy + effect-row-gated fold pass |
 | Q16 | Undecidable + unsafe = effects-with-oracles | open — Div effect + privileged prims; ◊4/◊5 |
 | Q17 | Polymorphism + effect-row poly | ✓ resolved — ADR-0027 (staged: monomorphic v1 → HM → System F) |
-| Q18 | Data types: ADTs, ind/coind, law attach | open ★ — **forced at rung 2 (next)** |
+| Q18 | Data types: ADTs, ind/coind, law attach | ✓ resolved — ADR-0029 (iso-recursive sum/product/μ) |
 | Q19 | Typeclasses/traits with laws (laws surface) | open — discharge via ADR-0026 ladder; surface open |
 | Q20 | Surface extensibility (pseudoinstructions/macros) | open — no primitive if composite (invariant #5) |
 

@@ -30,16 +30,18 @@ meta-circular/totality wall via fuel-total or `Div`-tested `eval`).
 3  the LAWS surface (the moat):   ◑ mechanism decided          algebraic-effect eqns        Q19
    state + discharge a law        (assert + property test,     (Plotkin-Pretnar); lawful
                                   ADR-0026); SURFACE open      typeclasses; QuickCheck
-4  DATA TYPES: ADTs, ind/coind,   ✗ kernel has unit+int only   Agda/Coq (ind/coind),        Q18 ★
-   how laws attach                forced at rung 2             GADTs (Haskell/OCaml)
+4  DATA TYPES: ADTs, ind/coind,   ✓ RESOLVED — ADR-0029       Agda/Coq (ind/coind),        Q18 →
+   how laws attach                (iso-recursive sum/prod/μ;   GADTs (Haskell/OCaml),       ADR-0029
+                                  inductive; equi rejected)    ML (iso-recursive)
 5  TYPECLASSES / traits + laws    ✗ — a class IS "ops + laws"  Haskell classes, Rust traits, Q19
    (ad-hoc poly, the moat link)   = the moat surface           Lean implicits, Coq canonical
 ```
 
 **#2 is the keystone and it's decided (ADR-0026).** It cascades: #3/#5 (the laws surface) inherit the
 ladder's "assert + property-test by default, climb on demand". **#1 is staged (ADR-0027** — monomorphic
-v1, HM next, System F ambitious**)**. **#4 (data types) is the remaining foundational open, forced at
-rung 2.**
+v1, HM next, System F ambitious**)**. **#4 is resolved (ADR-0029** — iso-recursive ADTs**)**. So **all
+four big rocks are now decided**; #3/#5 (the laws *surface*, Q19) remain partially open (discharge
+decided via the ladder; user-facing law syntax still open).
 
 ## By lens (secondary — mostly deferrable, captured here not as individual Q's)
 
