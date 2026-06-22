@@ -75,6 +75,12 @@
       stated at `F q A` (false at general B). Machinery in `Bang/Metatheory.lean` §E:
       `step_letC_inv`/`step_app_inv`/`step_handle_inv`, `preservation_proof`,
       `progress_gen`/`progress_proof`, `type_safety_proof`.
+- [~] **◊2 headline arc started (ADR-0022)**: Unit 1 (EffSig signatures) green; Unit 2
+      PARTIAL — `up` rule + `handleThrows` (label-discharging) + `preservation` PROVEN
+      axiom-clean (effectful programs now type + preserve). `progress`/`type_safety` restated
+      at `⊥`, carry one documented `sorry` (Q13: label-vs-operation granularity — throws
+      handles only `"raise"` but effects are label-granular). State handler deferred (Q12).
+      NEXT: close Q13 (op-aware EffSig), then Unit 3 (no_accidental_handling).
 - [ ] **Carried design notes** (still live, independent of the rep switch):
       - subsumption (`q' ≤ q` in `lam`) dropped — needs an *ordered* `Mult`;
         own ADR when sub-usage becomes load-bearing (likely at preservation).
