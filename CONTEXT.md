@@ -145,23 +145,29 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 
 ## Active paths
 
-- **`paths/PATH-tracer-bullet.md`** — ⭐ **the recommended next work** (product spine, PRD §7). Thin
-  end-to-end: surface → graded-CBPV `Comp` → `Source.eval` → a VALUE. Makes the language RUN; de-risks
-  the surface→kernel lowering. READY, not started. Pure + throws only (State deferred, Q12). Additive —
-  must not touch the verification spine.
-- **`paths/PATH-calcvm-port.md`** — ◊3 (verification spine). Collapse the K3 Calc* matrix into one
-  graded-CBPV calculated machine. SCOPED; D1=A decided (calculate from a denotational `evalD`, prove
-  `evalD ≡ Source.eval`). Tasks #16–#20.
-- **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel. Status: **◊2 GATE MET** — STD block +
-  `no_accidental_handling` axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound`
-  (Q14), `zero_usage_erasable` (→◊4).
-- **`paths/PATH-rung1-state.md`** — rung 1 (first resumptive paradigm: State). Status: **K + P-design
-  LANDED** (ADR-0025, Q12 resolved). `dispatch` RESUMES state (keeps `Kᵢ`, reinstalls a deep frame);
-  `HasCTy.handleState`/`HasStack.stateF` typing added; `progress` + `no_accidental_handling` stay
-  axiom-clean; the state CELL (`put 7; get ⟶ 7`) runs green (`Bang/Surface.lean`). **The closed CK
-  focus dissolved Q12's grade tension — no `ω`-restriction on `S` needed.** RESIDUAL: `preservation`'s
-  two state-resume cases carry `sorryAx` (RUNG1-OBLIGATION in `Bang/Metatheory.lean` — the resumed-
-  stack typing lemma); throws/progress unaffected.
+**Product spine (surface — the rungs; PRD §3.1):**
+- **rung 0 ✓ DONE** (`paths/PATH-tracer-bullet.md`) — surface → graded-CBPV `Comp` → `Source.eval` → a
+  VALUE. The language RUNS (pure + throws). `Bang/Surface.lean`: named AST + name→de-Bruijn lowering +
+  fuel-total parser + `#guard`/`rfl` demos.
+- **rung 1 ✓ DONE** (`paths/PATH-rung1-state.md`) — first resumptive paradigm: State. `dispatch`
+  RESUMES (ADR-0025; the closed CK focus dissolved Q12's grade tension — **no `ω`-restriction on `S`**).
+  `preservation`/`type_safety` **AXIOM-CLEAN** (the 2 obligations closed: `dispatch_state_typed` keeps
+  `Kᵢ`); `no_accidental_handling` 0-axiom held; State runs **from source text**
+  (`state 0 in (let z = put 7 in get) ⟶ 7`).
+- **rung 2 — NEXT** (no PATH doc yet) — verified stack (`Stack Int`, **monomorphic** per ADR-0027).
+  Forces **Q18** (data types) + **Q19** (laws surface) — the first demo of the moat (laws between
+  operations). Kernel-first (needs Q18 data types), like rung 1.
+
+**Verification spine (kernel/compiler — the ◊ march):**
+- **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
+  axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound` (Q14), `zero_usage` (→◊4).
+- **`paths/PATH-calcvm-port.md`** — ◊3 (next verification checkpoint). Collapse the K3 Calc* matrix into
+  one graded-CBPV calculated machine. SCOPED; D1=A (calculate from denotational `evalD`). Tasks #16–#20.
+
+**Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
+verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;
+descent explicit) · **ADR-0027** (polymorphism staged: monomorphic v1 → HM → System F) · the
+design-space map (`docs/notes/design-space-map.md`) + Q15–Q20.
 
 ## Next stable checkpoint we are paving toward
 
@@ -265,13 +271,20 @@ revisit signals.
 | Q3 | Ctx representation (List vs FinMap) | ✓ resolved — ADR-0019: Finsupp grade-vec + ambient TyCtx |
 | Q4 | `handle` typing rule refinement | ✓ resolved — F-restriction (ADR-0021) + label-removal (ADR-0022 D4) + answer-type (ADR-0023) |
 | Q5 | `up` typing rule + opArgTy/opResTy | ✓ resolved — `up` rule + op-partial `EffSig` (ADR-0022/0023) |
-| Q6 | Source.step deep-handler resumption | ◑ throws resolved (ADR-0023 CK machine); state → Q12 |
+| Q6 | Source.step deep-handler resumption | ✓ resolved — throws (ADR-0023) + state (ADR-0025) |
 | Q7 | Op names string vs enum | defer (cosmetic) |
 | Q8 | `group_recovers` H-K bridge | Phase B research |
 | Q9 | WasmFX target drift | recorded — ◊5 obligation (pin-to-engine) |
 | Q10 | Typing rules must enforce grades | rules landed (ADR-0019); proof bodies remain |
-| Q12 | Graded state handlers | open — state dispatch deferred (needs reified continuation) |
+| Q12 | Graded state handlers | ✓ resolved — ADR-0025 (closed focus, no ω-restriction) |
 | Q13 | Op-granularity progress wall | ✓ resolved — CK machine + op-partial sigs (ADR-0023) |
+| Q14 | `effect_sound` trace semantics | open — ◊2 non-gate residual |
+| Q15 | Thunk strictness (lazy vs eager fold) | open — uniform-lazy + effect-row-gated fold pass |
+| Q16 | Undecidable + unsafe = effects-with-oracles | open — Div effect + privileged prims; ◊4/◊5 |
+| Q17 | Polymorphism + effect-row poly | ✓ resolved — ADR-0027 (staged: monomorphic v1 → HM → System F) |
+| Q18 | Data types: ADTs, ind/coind, law attach | open ★ — **forced at rung 2 (next)** |
+| Q19 | Typeclasses/traits with laws (laws surface) | open — discharge via ADR-0026 ladder; surface open |
+| Q20 | Surface extensibility (pseudoinstructions/macros) | open — no primitive if composite (invariant #5) |
 
 ## Subagents available
 
