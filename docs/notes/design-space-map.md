@@ -19,9 +19,9 @@ product decisions (PRD); resumptive state (ADR-0025). The **proof-power dial is 
 ```
 #  question                       bang's lean / status        closest neighbours           where
 ─────────────────────────────────────────────────────────────────────────────────────────────────
-1  POLYMORPHISM + effect-row      kernel is MONOMORPHIC        Koka, Frank, Eff, OCaml 5,   Q17 ★
-   polymorphism                   (no type vars, no row vars)  Helium, Links
-   `map : (a →/e b) → …/e`        ✗ → forced at reuse/HOFs (rung 3+)
+1  POLYMORPHISM + effect-row      ✓ STAGED — ADR-0027         Koka, Frank, Eff, OCaml 5,   Q17 →
+   polymorphism                   (monomorphic v1 → HM →       Helium, Links                ADR-0027
+   `map : (a →/e b) → …/e`        System F + rows + grades)    → HM forced at reuse/HOFs (rung 3+)
 2  the PROOF-POWER dial           ✓ DECIDED — ADR-0026         F*, Liquid Haskell, Dafny,   ADR-0026
    (verify how much, how)         (dispatched ladder)          Verus / Agda,Idris,Lean / Granule
 3  the LAWS surface (the moat):   ◑ mechanism decided          algebraic-effect eqns        Q19
@@ -34,8 +34,9 @@ product decisions (PRD); resumptive state (ADR-0025). The **proof-power dial is 
 ```
 
 **#2 is the keystone and it's decided (ADR-0026).** It cascades: #3/#5 (the laws surface) inherit the
-ladder's "assert + property-test by default, climb on demand"; #1/#4 are the remaining foundational
-opens, forced at rungs 2–3.
+ladder's "assert + property-test by default, climb on demand". **#1 is staged (ADR-0027** — monomorphic
+v1, HM next, System F ambitious**)**. **#4 (data types) is the remaining foundational open, forced at
+rung 2.**
 
 ## By lens (secondary — mostly deferrable, captured here not as individual Q's)
 

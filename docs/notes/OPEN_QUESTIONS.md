@@ -26,7 +26,7 @@
 - [Q14 — `effect_sound`: what does the trace observe?](#q14--effect_sound-what-does-the-trace-observe)  · OPEN
 - [Q15 — Thunk strictness: uniform laziness vs demand-driven eager folding](#q15--thunk-strictness-uniform-laziness-vs-demand-driven-eager-folding)  · OPEN
 - [Q16 — Undecidable + unsafe programs: effects-with-oracles vs FFI](#q16--undecidable--unsafe-programs-effects-with-oracles-vs-ffi)  · OPEN
-- [Q17 — Polymorphism + effect-row polymorphism](#q17--polymorphism--effect-row-polymorphism)  · OPEN ★
+- [Q17 — Polymorphism + effect-row polymorphism](#q17--polymorphism--effect-row-polymorphism)  · ✓ RESOLVED (ADR-0027 — staged: monomorphic v1 → HM → System F)
 - [Q18 — Data types: ADTs, inductive/coinductive, law attachment](#q18--data-types-adts-inductivecoinductive-law-attachment)  · OPEN ★
 - [Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)](#q19--typeclassestraits-with-laws-ad-hoc-polymorphism--the-laws-surface)  · OPEN
 - [Q20 — Surface extensibility: pseudoinstructions via aliasing + macros](#q20--surface-extensibility-pseudoinstructions-via-aliasing--macros)  · OPEN
@@ -633,7 +633,13 @@ MMIO op (the device driver, rung 8); or the effect-zoo design for v1+ effects be
 
 ---
 
-## Q17 — Polymorphism + effect-row polymorphism  · OPEN ★ (foundational)
+## Q17 — Polymorphism + effect-row polymorphism  · ✓ RESOLVED 2026-06-23 → ADR-0027
+
+**Resolution**: **Staged across three tiers; v1 takes only the first.** (1) v1/MVP = **monomorphic**
+(no type/row/grade variables; rung 2's stack is `Stack Int`, not `Stack a`); (2) next = **Hindley-Milner**
+(rank-1, decidable inference — where "paradigms as libraries" becomes real); (3) ambitious = **System F**
++ effect-row variables `⟨e | ε⟩` (cashing the K1 unifier) + grade polymorphism. See **ADR-0027**.
+Original deliberation preserved below.
 
 **Question**: the kernel type syntax (`VTy = unit | int | U eff cty`; `CTy = F mult vty | arr …`) is
 **monomorphic** — no type variables, no effect-row variables. How does bang express parametric

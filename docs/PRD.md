@@ -135,6 +135,7 @@ WHEN (stage)                          WHERE (location)
 | full reactive streams / pub-sub / sinks |
 | the **full** law-language (rich relations between operations) — the **minimal** load-bearing laws ship in v1 (verified stack, rung 2); the general surface is post-v1 |
 | dev-time (live) + at-the-data (distributed) evaluation stages |
+| **polymorphism** — v1 is **monomorphic** (concrete types; rung 2's stack is `Stack Int`). Hindley-Milner, then System F + effect-row + grade polymorphism, are staged post-v1 (ADR-0027) |
 
 Two paradigms (imperative + STM) on one verified kernel **is** the multi-paradigm thesis, proven
 thin; a verified stack (rung 2) shows the moat minimally so v1 isn't all promise. Reactive (basic)
