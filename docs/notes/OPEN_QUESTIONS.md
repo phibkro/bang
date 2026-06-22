@@ -19,7 +19,7 @@
 - [Q7 — Operation names as strings vs symbolic enum](#q7--operation-names-as-strings-vs-symbolic-enum)
 - [Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?](#q8--group_recovers-bridge-e-group--f-dagger-frobenius)
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](#q9--wasmfx-target-drift-frozen-oopsla23-syntax-vs-phase-3-standard)
-- [Q10 — Typing rules must enforce grades (resource discipline)](#q10--typing-rules-must-enforce-grades-resource-discipline)  · ACTIVE
+- [Q10 — Typing rules must enforce grades (resource discipline)](#q10--typing-rules-must-enforce-grades-resource-discipline)  · ✓ RESOLVED (ADR-0019+0020; subst_value proven)
 - [Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn](#q11--open-term-substitution-capture-avoiding-subst-vs-de-bruijn)
 
 ---
@@ -274,7 +274,13 @@ adopt WasmFXCert as the backend oracle.
 
 ---
 
-## Q10 — Typing rules must enforce grades (resource discipline)  · ACTIVE (Path B chosen 2026-06-21)
+## Q10 — Typing rules must enforce grades (resource discipline)  · ✓ RESOLVED 2026-06-22
+
+**Resolution**: Done. The rules now thread + enforce grades (Path B / ADR-0019),
+and after the de Bruijn switch (ADR-0020) the carrier is positional `List Mult`
+rather than the Finsupp this entry assumed — `subst_value` is proven on it
+(`e00ee9a`, axiom-clean). The original deliberation (which still names the
+`Var × Mult × VTy` named context) is preserved below as the historical record.
 
 **Question**: `HasVTy` / `HasCTy` carry a multiplicity in each context binding
 (`Var × Mult × VTy`) but **never thread or check it**. Should they be upgraded

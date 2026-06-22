@@ -105,20 +105,27 @@ The standard shape for a proof body in Bang/Spec.lean (or downstream
 modules implementing Phase B). Note: statement unchanged from the frozen
 PRD; only the body fills in.
 
+`subst_value` is now PROVEN on the de Bruijn base (`Bang/Metatheory.lean`,
+axiom-clean) — the real proof is a bottom-up lemma tree, not a single `induction`.
+The block below is kept only to ILLUSTRATE the pattern (intro → induction →
+case-by-case, technique cited, `sorry`-with-comment for blocked cases), using the
+*current* (de Bruijn, ADR-0020) statement:
+
 ```lean
--- canonical: structural case-analysis + grind, with technique cited.
--- shape: biernacki-popl18-handle-with-care §5.4 (set-row case)
+-- pattern: structural case-analysis on the typing derivation, technique cited.
+-- shape: torczon-oopsla24-effects-coeffects §graded-subst  (port: resource/CBPV/typing.v)
+-- the REAL proof (and its weakening/grade-arithmetic lemmas) is in Bang/Metatheory.lean.
 theorem subst_value
-    (ρ : Mult) {Γ Δ : Ctx Eff Mult} {v : Val} {A : VTy Eff Mult}
-    {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasVTy Δ v A →
-    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) c e B →
-    HasCTy (Ctx.add Γ (Ctx.scale ρ Δ)) c e B := by
+    (ρ : Mult) {γ γ_v : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult} :
+    HasVTy γ_v Γ v A →
+    HasCTy (ρ :: γ) (A :: Γ) c e B →
+    HasCTy (γ + ρ • γ_v) Γ (Comp.subst v c) e B := by
   intro hv hc
   induction hc with
   | ret hv'  => exact .ret hv'   -- structural: ret rule
   | letC hM hN ihM ihN => grind  -- handled by SMT-style closer
-  | force hu => -- TODO(blocking-on): no Vrel-based force lemma yet
+  | force hu => -- TODO(blocking-on): example only — see Metatheory for the real case
                 sorry
   -- ... cases for force, lam, app, handle ...
 ```
