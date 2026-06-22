@@ -78,8 +78,16 @@ Discharge `sorry`s in `PROOF_ORDER`. After each: `lake build` + run
 2. **`group_recovers`** — rollback; may force an observability side-condition.
    Surface it NOW, it reshapes the effect algebra.
 3. **`compile_forward_sim`** — the contribution. Fail fast if it won't go.
-4. **`subst_value`** — validates the CBPV "no σ-split" assumption.
-5. **the `[STD]` block** — mechanical once the above hold.
+4. **`subst_value`** — validates the CBPV "no σ-split" assumption. ✓ PROVEN
+   (de Bruijn, `Bang/Metatheory.lean`, axiom-clean).
+5. **the `[STD]` block** (preservation · progress · type_safety) — ✓ PROVEN
+   (2026-06-22, axiom-clean). ⚠ It was NOT "mechanical": proving `preservation`
+   exposed 4 ways the Phase-A typing rules diverged from the Torczon port and made
+   the frozen statements FALSE (lam dropped its body effect; handle over non-`F`
+   bodies broke progress; the letC grade reshape needs commutative `Mult`; progress
+   is false at general `B`). All corrected in **ADR-0021**. Lesson: "mechanical
+   once X holds" is a hypothesis the proof tests, not a license to skip the proof —
+   the STD block is where the typing rules' fidelity to the reference finally bit.
 
 ## Definition of done
 
