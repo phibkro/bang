@@ -49,6 +49,26 @@ ADRs 0003 and 0004 were deleted, subsumed by 0016. See `CONTEXT.md` for
 where the implementation stands; `docs/notes/k3-historical-status.md` for
 what the K3 work taught (preserved as input to the graded-CBPV port at ◊3).
 
+## The stratification principle (the load-bearing mental model)
+
+One shape governs the whole project: a **verified core + a tested superset, separated by an
+explicit, type-visible seam.** It recurs at three levels (ADR-0026 / ADR-0028):
+
+```
+level         verified core              tested superset             seam
+──────────────────────────────────────────────────────────────────────────────────
+correctness   verified (proof)           tested · unsafe             the ADR-0026 ladder
+tooling       Lean (kernel·CalcVM·       surface · runtime           typed AST + differential test
+              compiler·LR)               (diff-tested vs Lean)
+language      total fragment             Div fragment                the EFFECT ROW (Div = descent)
+              (⊥-row, System F)          (fuel-bounded, Turing-compl.)
+```
+
+Descent (verified → tested) is **always explicit and marked, never silent**. The expensive proof
+budget is spent only on the verified core; the superset rides differential-testing + fuel.
+(`Source.eval`'s fuel-bounded interpretation of the partial `Comp` already demonstrates the
+language-level seam — a total prover interpreting a Turing-complete object language.)
+
 ## Invariants — never break these
 
 1. **Proof rides the reference.** Anything that runs is either `exec` itself or differential-tested against it. Never ship an execution path with no oracle behind it.
