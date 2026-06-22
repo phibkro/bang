@@ -29,6 +29,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0018](0018-effect-row-lacks-constraints.md) | K | Effect-row algebra extended with lacks-constrained quantifiers (set discipline); enables `no_accidental_handling` | Accepted | 0001, 0016 |
 | [0019](0019-typing-context-split-gradevec-and-types.md) | K | Typing context split into a Finsupp grade-vector + ambient type context (resolves Q3, enables the Q10 resource-enforcing rules) | Accepted (partially superseded by 0020) | 0001, 0016 |
 | [0020](0020-de-bruijn-representation.md) | K | De Bruijn indices for the term representation — dissolves 5 named-encoding side-conditions (4 machine-checked falsities); resolves Q11 | Accepted | 0019, Torczon OOPSLA'24 |
+| [0021](0021-std-block-typing-corrections.md) | K | Effect/grade typing corrections surfaced by the STD block — lam carries body effect, handle restricted to F-bodies, Mult→CommSemiring, progress at F-type; makes preservation/progress/type_safety provable; advances Q4 | Accepted | 0019, 0020, Torczon OOPSLA'24 |
 
 Format: lightweight MADR. Status ∈ {Proposed, Accepted, Superseded by NNNN, Deprecated}.
 

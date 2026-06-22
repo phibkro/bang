@@ -30,7 +30,7 @@ import Bang.Operational
 namespace Bang
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
-variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
+variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 /-- Unfold the `HSMul`/`HAdd` notation on grade vectors to the underlying
 `GradeVec.smul`/`GradeVec.add` (so the rewrite lemmas below fire on `•`/`+`). -/
@@ -267,7 +267,7 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     subst hγ
     simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
       ihM, ihV, Nat.min_self]
-  · intro γ Γ hdl M φ B _ ih; exact ih
+  · intro γ Γ hdl M φ q A _ ih; exact ih
 
 theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} :
@@ -296,7 +296,7 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     subst hγ
     simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
       ihM, ihV, Nat.min_self]
-  · intro γ Γ hdl M φ B _ ih; exact ih
+  · intro γ Γ hdl M φ q A _ ih; exact ih
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
 
@@ -478,7 +478,7 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     have hlen1 : γ₁.length = Γ.length := hM.length_eq
     have hlen2 : γ₂.length = Γ.length := hv.length_eq
     apply insG_add_smul_aux' <;> omega
-  | @handle γ Γ h M φ B hM =>
+  | @handle γ Γ h M φ q A hM =>
     simp only [Comp.shiftFrom]
     exact HasCTy.handle (hM.weaken k hk A')
 end
@@ -565,7 +565,7 @@ private theorem Sgrade_add (γ_v : GradeVec Mult) (k : Nat) (γ₁ γ₂ : Grade
   simp only [GradeVec.add, GradeVec.smul, List.getElem?_zipWith, List.getElem?_map]
   rcases (γ₁.eraseIdx k)[j]? with _ | x <;> rcases (γ₂.eraseIdx k)[j]? with _ | y <;>
     rcases γ_v[j]? with _ | z <;>
-    simp [add_comm, add_left_comm, add_assoc, add_mul, mul_comm]
+    simp [add_comm, add_left_comm, add_assoc, add_mul]
 
 /-- `S` distributes over `•`. -/
 private theorem Sgrade_smul (γ_v : GradeVec Mult) (k : Nat) (q : Mult) (γ : GradeVec Mult) :
@@ -820,7 +820,7 @@ private theorem subst_lam_case
     (hM : HasCTy (q :: γ) (A₀ :: Δ ++ A :: Γ) M φ B)
     (ih : CsubstMotive (q :: γ) (A₀ :: Δ ++ A :: Γ) M φ B hM) :
     HasCTy (Sgrade γ_v Δ.length γ) (Δ ++ Γ)
-           (Comp.substFrom Δ.length v (Comp.lam M)) ⊥ (CTy.arr q A₀ B) := by
+           (Comp.substFrom Δ.length v (Comp.lam M)) φ (CTy.arr q A₀ B) := by
   rw [Comp.substFrom]
   -- weaken v under the fresh binder A₀ (insert at position 0)
   have hk0 : (0 : Nat) ≤ (Δ ++ Γ).length := Nat.zero_le _
@@ -925,7 +925,7 @@ theorem HasCTy.subst_gen
     subst hΓ; subst hγ
     exact subst_app_case Δ Γ A γ_v v hv hM hw ihM ihV
   case handle =>
-    intro γ Γ₀ hdl M φ B hM ih Δ Γ A γ_v v hΓ hv
+    intro γ Γ₀ hdl M φ q A₀ hM ih Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom]
     exact HasCTy.handle (ih Δ Γ A γ_v v rfl hv)
@@ -943,5 +943,292 @@ theorem subst_value_proof
   intro hv hc
   have h := HasCTy.subst_gen (γ_v := γ_v) (v := v) (A := A) [] hv hc
   simpa [Sgrade, slotGrade, List.eraseIdx, Comp.subst] using h
+
+/-! ## E. The STD block: preservation, progress, type_safety
+
+Standard syntactic-soundness metatheory (Wright–Felleisen) over the de Bruijn
+graded CBPV. `subst_value_proof` (above) is the substitution lemma; these three
+ride it. Statements frozen in `Bang/Spec.lean`. -/
+
+/-! ### E.1 step-inversion lemmas
+
+Each decomposes `Source.step (ctor M …) = some c'` into the head-redex case and
+the search case. The handle lemma also exposes the `up`-arms; those are killed
+in the caller by inverting the body's typing derivation (no `up` typing rule). -/
+
+private theorem step_letC_inv {M N c' : Comp} (h : Source.step (Comp.letC M N) = some c') :
+    (∃ v, M = Comp.ret v ∧ c' = Comp.subst v N)
+      ∨ (∃ M', Source.step M = some M' ∧ c' = Comp.letC M' N) := by
+  cases M <;> simp only [Source.step] at h
+  -- ret head-redex
+  case ret v => exact Or.inl ⟨v, rfl, by simpa using h.symm⟩
+  -- every other arm is a search arm: Source.step (letC M N) = (match step M with …)
+  all_goals
+    first
+    | (exact absurd h (by simp))
+    | (right
+       split at h
+       · rename_i M' hm; exact ⟨M', hm, by simpa using h.symm⟩
+       · exact absurd h (by simp))
+
+private theorem step_app_inv {M : Comp} {v : Val} {c' : Comp}
+    (h : Source.step (Comp.app M v) = some c') :
+    (∃ M0, M = Comp.lam M0 ∧ c' = Comp.subst v M0)
+      ∨ (∃ M', Source.step M = some M' ∧ c' = Comp.app M' v) := by
+  cases M <;> simp only [Source.step] at h
+  case lam M0 => exact Or.inl ⟨M0, rfl, by simpa using h.symm⟩
+  all_goals
+    first
+    | (exact absurd h (by simp))
+    | (right
+       split at h
+       · rename_i M' hm; exact ⟨M', hm, by simpa using h.symm⟩
+       · exact absurd h (by simp))
+
+/-- `handle` inversion. We only ever apply it after inverting the body typing,
+which rules out `M = up …`, so the head-redex case is just `ret`. To keep the
+lemma self-contained, the `up`-arms are folded into the search disjunct's
+*negation* by requiring the caller to supply that `M` is not an `up`. We instead
+expose the body so the caller can `cases` on it: here we split only on whether
+the body is a `ret`. -/
+private theorem step_handle_inv {hdl : Handler} {M c' : Comp}
+    (hM_not_up : ∀ ℓ op w, M ≠ Comp.up ℓ op w)
+    (h : Source.step (Comp.handle hdl M) = some c') :
+    (∃ v, M = Comp.ret v ∧ c' = Comp.ret v)
+      ∨ (∃ M', Source.step M = some M' ∧ c' = Comp.handle hdl M') := by
+  cases M
+  case up ℓ op w => exact absurd rfl (hM_not_up ℓ op w)
+  all_goals simp only [Source.step] at h
+  case ret v => exact Or.inl ⟨v, rfl, by simpa using h.symm⟩
+  all_goals
+    first
+    | (exact absurd h (by simp))
+    | (right
+       split at h
+       · rename_i M' hm; exact ⟨M', hm, by simpa using h.symm⟩
+       · exact absurd h (by simp))
+
+/-! ### E.2 preservation -/
+
+theorem preservation_proof
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c c' : Comp} {e : Eff} {B : CTy Eff Mult} :
+    HasCTy γ Γ c e B → Source.step c = some c' →
+    ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B := by
+  intro h
+  refine HasCTy.rec
+    (motive_1 := fun _ _ _ _ _ => True)
+    (motive_2 := fun γ Γ c e B _ =>
+      ∀ c', Source.step c = some c' → ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h c'
+  -- value motives: trivial
+  · intro _; trivial
+  · intro _ _; trivial
+  · intro _ _ _ _; trivial
+  · intro _ _ _ _ _ _ _; trivial
+  -- ret: no step
+  · intro γ γ' Γ v A q hv hγ _ c' hstep
+    exact absurd hstep (by simp [Source.step])
+  -- letC
+  · intro γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN hγ ihM _ c' hstep
+    subst hγ
+    rcases step_letC_inv hstep with ⟨w, hMeq, hc'⟩ | ⟨M', hstepM, hc'⟩
+    · -- head β: M = ret w
+      subst hMeq; subst hc'
+      cases hM with
+      | @ret _ γMv _ _ _ _ hwv hγM =>
+        -- hwv : HasVTy γMv Γ w A (q unified to q1, A unified to A by ctor)
+        -- hγM : γ₁ = q1 • γMv
+        subst hγM
+        -- subst_value at multiplicity (q1 * q_or_1 q2)
+        have hsub := subst_value_proof (q1 * q_or_1 q2) hwv hN
+        -- hsub : HasCTy (γ₂ + (q1 * q_or_1 q2) • γMv) Γ (Comp.subst w N) φ₂ B
+        refine ⟨φ₂, by simp, ?_⟩
+        -- grade match: q_or_1 q2 • (q1 • γMv) + γ₂ = γ₂ + (q1 * q_or_1 q2) • γMv
+        have hsmul : (q_or_1 q2) • (q1 • γMv) = (q1 * q_or_1 q2) • γMv := by
+          simp only [hsmul_eq_smul, GradeVec.smul]
+          rw [List.map_map]
+          congr 1
+          funext x
+          show q_or_1 q2 * (q1 * x) = (q1 * q_or_1 q2) * x
+          rw [mul_comm q1 (q_or_1 q2), mul_assoc]
+        have hadd : (q_or_1 q2) • (q1 • γMv) + γ₂ = γ₂ + (q1 * q_or_1 q2) • γMv := by
+          rw [hsmul]
+          -- GradeVec.add commutes (lengths match)
+          have hl2 : γ₂.length = Γ.length := by
+            have := hN.length_eq; simp only [List.length_cons] at this; omega
+          have hl1 : ((q1 * q_or_1 q2) • γMv : GradeVec Mult).length = γ₂.length := by
+            simp only [hsmul_eq_smul, GradeVec.smul_length]
+            rw [hwv.length_eq, hl2]
+          simp only [hadd_eq_add]
+          apply List.ext_getElem?
+          intro j
+          simp only [GradeVec.add, List.getElem?_zipWith]
+          rcases ha : ((q1 * q_or_1 q2) • γMv : GradeVec Mult)[j]? with _ | a <;>
+            rcases hb : γ₂[j]? with _ | b <;>
+            simp [add_comm]
+        rw [hadd]; exact hsub
+    · -- search: M steps
+      subst hc'
+      obtain ⟨e₁', hle, hM'⟩ := ihM M' hstepM
+      exact ⟨e₁' ⊔ φ₂, sup_le_sup_right hle φ₂, HasCTy.letC hM' hN rfl⟩
+  -- force
+  · intro γ Γ v φ B hv _ c' hstep
+    cases hv with
+    | @vthunk γT ΓT MT φT BT hMT =>
+      -- step (force (vthunk MT)) = some MT
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      exact ⟨φ, le_refl φ, hMT⟩
+    | @vvar ΓV i AV hget =>
+      exact absurd hstep (by simp [Source.step])
+  -- lam: no step
+  · intro γ Γ M φ q A B hM _ c' hstep
+    exact absurd hstep (by simp [Source.step])
+  -- app
+  · intro γ γ₁ γ₂ Γ M v φ q A B hM hv hγ ihM _ c' hstep
+    subst hγ
+    rcases step_app_inv hstep with ⟨M0, hMeq, hc'⟩ | ⟨M', hstepM, hc'⟩
+    · -- head β: M = lam M0
+      subst hMeq; subst hc'
+      cases hM with
+      | @lam _ _ _ _ _ _ _ hM0 =>
+        -- hM0 : HasCTy (q :: γ₁) (A :: Γ) M0L φ B  (all conclusion args unified)
+        have hsub := subst_value_proof q hv hM0
+        -- hsub : HasCTy (γ₁ + q • γ₂) Γ (Comp.subst v M0L) φ B
+        exact ⟨φ, le_refl φ, hsub⟩
+    · -- search: M steps
+      subst hc'
+      obtain ⟨e₁', hle, hM'⟩ := ihM M' hstepM
+      exact ⟨e₁', hle, HasCTy.app hM' hv rfl⟩
+  -- handle
+  · intro γ Γ hdl M φ q A hM ihM c' hstep
+    -- M is F-typed; rule out M = up via cases on hM (no up ctor produces F)
+    have hnotup : ∀ ℓ op w, M ≠ Comp.up ℓ op w := by
+      intro ℓ op w heq; subst heq; cases hM
+    rcases step_handle_inv hnotup hstep with ⟨w, hMeq, hc'⟩ | ⟨M', hstepM, hc'⟩
+    · -- head: M = ret w, c' = ret w; hM already types it at φ (F q A)
+      subst hMeq; subst hc'
+      exact ⟨φ, le_refl φ, hM⟩
+    · -- search: M steps
+      subst hc'
+      obtain ⟨e₁', hle, hM'⟩ := ihM M' hstepM
+      exact ⟨e₁', hle, HasCTy.handle hM'⟩
+
+/-! ### E.3 progress -/
+
+/-- Generalized progress over any context with the three-way disjunct
+(carrying the `lam`-normal-form case so the F-restriction can collapse it). -/
+private theorem progress_gen
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {e : Eff} {B : CTy Eff Mult} :
+    HasCTy γ Γ c e B → Γ = [] →
+    isReturn c ∨ (∃ M, c = Comp.lam M) ∨ ∃ c', Source.step c = some c' := by
+  intro h
+  refine HasCTy.rec
+    (motive_1 := fun _ _ _ _ _ => True)
+    (motive_2 := fun γ Γ c e B _ =>
+      Γ = [] → isReturn c ∨ (∃ M, c = Comp.lam M) ∨ ∃ c', Source.step c = some c')
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+  · intro _; trivial
+  · intro _ _; trivial
+  · intro _ _ _ _; trivial
+  · intro _ _ _ _ _ _ _; trivial
+  -- ret
+  · intro γ γ' Γ v A q hv hγ _ _; exact Or.inl (by simp [isReturn])
+  -- letC M N
+  · intro γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN hγ ihM ihN hΓ
+    subst hΓ
+    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨M', hstep⟩
+    · -- M = ret w ⇒ letC (ret w) N steps
+      cases M <;> simp only [isReturn] at hret
+      case ret w => exact Or.inr (Or.inr ⟨Comp.subst w N, by simp [Source.step]⟩)
+    · -- M = lam M0 : but hM : HasCTy _ _ (lam M0) _ (F q1 A) — impossible
+      subst hlam; cases hM
+    · -- M steps ⇒ letC steps
+      refine Or.inr (Or.inr ⟨Comp.letC M' N, ?_⟩)
+      -- need: Source.step (letC M N) = some (letC M' N), with M not a ret
+      cases M <;>
+        first
+        | (exact absurd hstep (by simp [Source.step]))
+        | (simp only [Source.step] at hstep ⊢; rw [hstep])
+  -- force v
+  · intro γ Γ v φ B hv _ hΓ
+    subst hΓ
+    cases hv with
+    | @vthunk γT ΓT MT φT BT hMT =>
+      exact Or.inr (Or.inr ⟨MT, by simp [Source.step]⟩)
+    | @vvar ΓV i AV hget =>
+      -- [] [i]? = some _ impossible
+      simp at hget
+  -- lam
+  · intro γ Γ M φ q A B hM _ _; exact Or.inr (Or.inl ⟨M, rfl⟩)
+  -- app M v
+  · intro γ γ₁ γ₂ Γ M v φ q A B hM hv hγ ihM _ hΓ
+    subst hΓ
+    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨M', hstep⟩
+    · -- M = ret w : but hM : arr-typed ret — impossible
+      cases M <;> simp only [isReturn] at hret
+      case ret w => cases hM
+    · -- M = lam M0 ⇒ app (lam M0) v steps
+      subst hlam
+      exact Or.inr (Or.inr ⟨Comp.subst v M0, by simp [Source.step]⟩)
+    · -- M steps ⇒ app steps
+      refine Or.inr (Or.inr ⟨Comp.app M' v, ?_⟩)
+      cases M <;>
+        first
+        | (exact absurd hstep (by simp [Source.step]))
+        | (simp only [Source.step] at hstep ⊢; rw [hstep])
+  -- handle h M
+  · intro γ Γ hdl M φ q A hM ihM hΓ
+    subst hΓ
+    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨M', hstep⟩
+    · -- M = ret w ⇒ handle h (ret w) steps to ret w
+      cases M <;> simp only [isReturn] at hret
+      case ret w => exact Or.inr (Or.inr ⟨Comp.ret w, by simp [Source.step]⟩)
+    · -- M = lam : F-typed lam impossible
+      subst hlam; cases hM
+    · -- M steps ⇒ handle steps; M is not a ret/up (it steps and is F-typed)
+      refine Or.inr (Or.inr ⟨Comp.handle hdl M', ?_⟩)
+      cases M <;>
+        first
+        | (exact absurd hstep (by simp [Source.step]))
+        | (simp only [Source.step] at hstep ⊢; rw [hstep])
+
+theorem progress_proof
+    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy [] [] c e (CTy.F q A) → isReturn c ∨ ∃ c', Source.step c = some c' := by
+  intro h
+  rcases progress_gen h rfl with hret | ⟨M, hlam⟩ | hstep
+  · exact Or.inl hret
+  · -- c = lam M : but c : F q A — impossible
+    subst hlam; cases h
+  · exact Or.inr hstep
+
+/-! ### E.4 type_safety -/
+
+theorem type_safety_proof
+    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy [] [] c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
+  intro h fuel
+  induction fuel generalizing c e with
+  | zero => simp [Source.eval]
+  | succ n ih =>
+    rcases progress_proof h with hret | ⟨c', hstep⟩
+    · -- isReturn c ⇒ c = ret v ⇒ eval (n+1) c = done v ≠ stuck
+      cases c <;> simp only [isReturn] at hret
+      case ret v => simp [Source.eval]
+    · -- c steps; preservation gives typing of c'; eval (n+1) c = eval n c'
+      obtain ⟨e', _, hc'⟩ := preservation_proof h hstep
+      -- c is not a `ret` (step ret = none), so eval uses the step equation
+      have hnotret : ∀ v, c ≠ Comp.ret v := by
+        intro v heq; subst heq; simp [Source.step] at hstep
+      have heval : Source.eval (n + 1) c = Source.eval n c' := by
+        cases c <;>
+          first
+          | (exact absurd rfl (hnotret _))
+          | (simp only [Source.eval]; rw [hstep])
+      rw [heval]
+      exact ih hc'
 
 end Bang

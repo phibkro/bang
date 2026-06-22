@@ -14,7 +14,7 @@ import Bang.Syntax
 namespace Bang
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
-variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
+variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 
 /-! ### 1.3a Substitution (de Bruijn — ADR-0020)

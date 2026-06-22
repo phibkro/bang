@@ -15,7 +15,7 @@ import Bang.Core
 namespace Bang
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
-variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
+variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 
 /-! ### 1.5 The `q || 1` coeffect floor (`q_or_1`)
@@ -26,7 +26,7 @@ Torczon's `T_Let` types its continuation under the bound-var multiplicity
 `0` purely because the *outer* usage `q2` is `0`; sequencing still forces the
 bound computation once. We define it directly via `DecidableEq Mult`. -/
 
-def q_or_1 {Mult : Type} [Semiring Mult] [DecidableEq Mult] (q : Mult) : Mult :=
+def q_or_1 {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] (q : Mult) : Mult :=
   if q = 0 then 1 else q
 
 
@@ -86,23 +86,34 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       HasVTy γ Γ v (VTy.U φ B) →
       HasCTy γ Γ (Comp.force v) φ B
   -- T_Abs: body typed with grade `q` consed at position 0; the arrow records that
-  -- same `q` (`A →^q B`). Torczon's `Qle q' q` subsumption is DROPPED: it needs
-  -- an ordered `Mult` (POSR `le`), but our bound is `[Semiring Mult]` with no
-  -- order (QTT defines none). Recording `q` directly is the resource-threading
-  -- core; the subsumption is an orthogonal feature gated on an ordered semiring.
+  -- same `q` (`A →^q B`). The lam CARRIES its body's latent effect `φ` (ADR-0021,
+  -- C1; Torczon `effects/CBPV/typing.v` T_Abs: `CWt Γ (cAbs M) (CAbs A B) ϕ`).
+  -- Effects ride the judgment / `U`, not `arr` (ADR-0019/0020), so `lam` threads
+  -- `φ` like `force`/`vthunk` do — constructing a closure is operationally pure,
+  -- but its type-level effect is the latent body effect (surfaced on application).
+  -- An earlier first cut emitted `⊥` here and made `preservation` false on the
+  -- `app (lam M) v ↦ M[v]` β-redex (reduct has effect φ, redex was typed ⊥).
+  -- Torczon's `Qle q' q` subsumption is DROPPED: it needs an ordered `Mult`
+  -- (POSR `le`), but our bound is `[CommSemiring Mult]` with no order (QTT defines
+  -- none). Recording `q` directly is the resource-threading core; the subsumption
+  -- is an orthogonal feature gated on an ordered semiring.
   | lam    : ∀ {γ Γ M φ q A B},
       HasCTy (q :: γ) (A :: Γ) M φ B →
-      HasCTy γ Γ (Comp.lam M) ⊥ (CTy.arr q A B)
+      HasCTy γ Γ (Comp.lam M) φ (CTy.arr q A B)
   -- T_App: `γ = γ₁ Q+ (q Q* γ₂)`, scaling the argument's grades by the arrow's `q`.
   | app    : ∀ {γ γ₁ γ₂ Γ M v φ q A B},
       HasCTy γ₁ Γ M φ (CTy.arr q A B) →
       HasVTy γ₂ Γ v A →
       γ = γ₁ + q • γ₂ →
       HasCTy γ Γ (Comp.app M v) φ B
-  -- handle: same-φ shape (Q4 refinement — label-removing rule — out of scope).
-  | handle : ∀ {γ Γ h M φ B},
-      HasCTy γ Γ M φ B →
-      HasCTy γ Γ (Comp.handle h M) φ B
+  -- handle: handlers handle RETURNERS — the body is `F`-typed (ADR-0021, C2).
+  -- A general `B` would make `handle h (lam M')` a stuck non-`ret` normal form at
+  -- `arr` type (and `handle* (lam …)` an unbounded normal-form family), breaking
+  -- `progress`. Restricting to `F q A` removes them structurally. Still same-φ
+  -- (Q4's label-removing refinement — needed for `effect_sound` — stays deferred).
+  | handle : ∀ {γ Γ h M φ q A},
+      HasCTy γ Γ M φ (CTy.F q A) →
+      HasCTy γ Γ (Comp.handle h M) φ (CTy.F q A)
 end
 
 

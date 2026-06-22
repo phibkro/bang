@@ -119,7 +119,19 @@ Live online resources we link to rather than mirror.
 ### Reference implementations
 - **[plclub/cbpv-effects-coeffects](https://github.com/plclub/cbpv-effects-coeffects)**
   — Coq mechanization of Torczon et al. (the substrate). **Cross-check our Lean
-  defs against their Coq** — same judgments, ported. Cited from `Bang/Spec.lean`.
+  defs against their Coq** — same judgments, ported. Cited from `Bang/Spec.lean`;
+  the port source for ADR-0019/0020/0021. **Pinned commit `9dd07d1`** (2024-08-30,
+  "update final version") — verify against this exact tree, not upstream HEAD:
+  ```
+  git clone https://github.com/plclub/cbpv-effects-coeffects.git /tmp/cbpv-ec \
+    && git -C /tmp/cbpv-ec checkout 9dd07d10ab3ef4a3d63e417d61779d0f6cc89b86
+  ```
+  Layout: `effects/CBPV/typing.v` (effect threading — `T_Abs` carries the body
+  effect, the ADR-0021 C1 fix), `resource/CBPV/typing.v` (grade arithmetic —
+  `T_Let`/`T_App`/`T_Ret`), `common/coeffects.v` (the `POSR` semiring — note: mult
+  comm/assoc are deliberately optional upstream, but our *syntactic* preservation
+  needs comm, hence ADR-0021's `CommSemiring`). We mirror, not vendor: re-clone
+  locally, never an in-tree copy.
 - **[WebAssembly/stack-switching](https://github.com/WebAssembly/stack-switching)**
   — the live proposal repo (Phase 3). The `Explainer.md` is the current
   source-of-truth abstract syntax; **pin a commit** before treating it as a

@@ -34,7 +34,7 @@ import Bang.Metatheory
 namespace Bang
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
-variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
+variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 
 /-! ## 0.5 Effect-row well-formedness theorems -/
@@ -85,18 +85,21 @@ theorem preservation
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c c' : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy γ Γ c e B → Source.step c = some c' →
-    ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B := sorry
+    ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B := preservation_proof
 
--- [STD] Progress. Closed (empty context ⇒ empty grade vector).
+-- [STD] Progress. Closed (empty context ⇒ empty grade vector). Stated at a
+-- returner type `F q A` (ADR-0021, C4): at `arr` type a bare `lam` is a normal
+-- form that is neither `ret` nor a step, so general `B` is false; `F q A` is also
+-- exactly what `type_safety` consumes.
 theorem progress
-    {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy [] [] c e B → isReturn c ∨ ∃ c', Source.step c = some c' := sorry
+    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy [] [] c e (CTy.F q A) → isReturn c ∨ ∃ c', Source.step c = some c' := progress_proof
 
 -- [STD] Safety = progress + preservation, fuel-lifted.
 theorem type_safety
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
     HasCTy [] [] c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
-    := sorry
+    := type_safety_proof
 
 
 /-! ## 4. Grade soundness (the QTT payoff) -/

@@ -47,7 +47,7 @@ MULTIPLICITY GRADE = `Semiring`. Concrete instance: `Bang.QTT`
 ({zero, one, omega}; see `Bang/Mult.lean`). -/
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
-variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
+variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 
 /-! ## 1. Syntax -/

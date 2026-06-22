@@ -16,7 +16,7 @@ import Bang.Operational
 namespace Bang
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
-variable {Mult : Type} [Semiring Mult] [DecidableEq Mult]
+variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 
 /-! ## 5. Observational equivalence — `≈` is the spec notion of equality -/
@@ -65,13 +65,13 @@ Phase B PROOF_ORDER #1 replaces with real defs; signatures are frozen.
 
 See `docs/notes/tactics-survey.md` (C) for iris-lean ▷ modality option. -/
 
-axiom Vrel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [Semiring Mult] [DecidableEq Mult] :
+axiom Vrel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult] :
     Nat → VTy Eff Mult → Val → Val → Prop
-axiom Srel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [Semiring Mult] [DecidableEq Mult] :
+axiom Srel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult] :
     Nat → Eff → Stack → Stack → Comp → Comp → Prop
-axiom Krel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [Semiring Mult] [DecidableEq Mult] :
+axiom Krel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult] :
     Nat → CTy Eff Mult → Stack → Stack → Prop
-axiom Crel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [Semiring Mult] [DecidableEq Mult] :
+axiom Crel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult] :
     Nat → CTy Eff Mult → Comp → Comp → Prop
 
 end Bang

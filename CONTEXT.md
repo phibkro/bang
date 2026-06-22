@@ -13,13 +13,19 @@
 ◊2   Kernel frozen v1             ── IN PROGRESS. De Bruijn rewrite landed
                                      (ADR-0020; the named encoding cost 5
                                      side-conditions / 4 machine-checked falsities).
-                                     ✓ subst_value PROVEN on the de Bruijn base
-                                     (2026-06-22) — FIRST STD-block theorem,
-                                     axiom-clean {propext, Classical.choice,
-                                     Quot.sound}, ZERO side-conditions. List
-                                     carrier held (length_eq lemma; no Fin n).
-                                     NEXT: preservation → progress → type_safety
-                                     (subst_value, the hard one, is done).
+                                     ✓✓ WHOLE STD BLOCK PROVEN on the de Bruijn base
+                                     (2026-06-22): subst_value → preservation →
+                                     progress → type_safety, ALL axiom-clean
+                                     {propext, Classical.choice, Quot.sound}, zero
+                                     sorry. Proving preservation EXPOSED 4 typing-rule
+                                     divergences from Torczon (ADR-0021): lam dropped
+                                     the body effect (made β-preservation false);
+                                     handle over non-F bodies broke progress; Mult
+                                     needed CommSemiring for the letC grade reshape;
+                                     progress is false at general B. All corrected.
+                                     NEXT: the harder block — no_accidental_handling
+                                     + effect_sound + zero_usage_erasable (needs
+                                     RowAll/WfInst/HandlesIntended + Trace concrete).
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0
@@ -128,13 +134,15 @@ remaining gap → Phase B PROOF_ORDER #4 (STD block).
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel.
-  Owner: claude as kernel-engineer. Status: **de Bruijn rewrite landed +
-  subst_value PROVEN**. The named encoding was abandoned (5 side-conditions, 4
-  machine-checked falsities, `b853dde`..`e1e4920`); de Bruijn (ADR-0020, `5bcc469`)
-  dissolved all five structurally, and `subst_value` then closed clean — axiom-set
-  {propext, Classical.choice, Quot.sound}, zero `sorry` (`e00ee9a`). **NEXT (resume
-  here): preservation → progress → type_safety** on the de Bruijn base; the hard
-  lemma is done, the rest is downhill. Proof machinery in `Bang/Metatheory.lean`.
+  Owner: claude as kernel-engineer. Status: **STD block COMPLETE**. de Bruijn
+  (ADR-0020) dissolved the 5 named side-conditions; `subst_value` closed clean
+  (`e00ee9a`); then `preservation → progress → type_safety` all closed axiom-clean
+  (2026-06-22), after ADR-0021 corrected 4 Torczon-divergent typing rules that
+  preservation exposed (lam body-effect, handle F-restriction, CommSemiring Mult,
+  progress-at-F). Proof machinery in `Bang/Metatheory.lean` (subst_gen + step
+  inversion lemmas + the three STD proofs). **NEXT: the harder block** — concretize
+  RowAll/WfInst/HandlesIntended + Trace, then no_accidental_handling / effect_sound
+  / zero_usage_erasable.
 
 ## Next stable checkpoint we are paving toward
 
@@ -145,9 +153,11 @@ Definition of stable per `ROADMAP.md`: graded-CBPV `Source.eval` concrete
 constrained quantifiers; `no_accidental_handling` proven.
 
 Current ◊2 status: rules enforce grades (ADR-0019), the representation is de
-Bruijn (ADR-0020), and **`subst_value` is proven** — the first STD-block theorem,
-axiom-clean. The remaining gate is the rest of the STD block (preservation →
-progress → type_safety) plus the harder block (no_accidental_handling, effect_sound).
+Bruijn (ADR-0020), the rules are Torczon-faithful on effects+grades (ADR-0021),
+and **the entire STD block is proven** — `subst_value`, `preservation`,
+`progress`, `type_safety`, all axiom-clean. The remaining gate is the harder
+block (no_accidental_handling, effect_sound, zero_usage_erasable) which needs the
+row-quantifier mechanism (RowAll/WfInst/HandlesIntended) and a concrete Trace.
 NOTE the grade-vec carrier is now positional `List Mult` (ADR-0020), NOT the
 Finsupp of ADR-0019 — earlier prose mentioning Finsupp grade-vectors is superseded.
 
@@ -165,13 +175,14 @@ DONE — de Bruijn rewrite (ADR-0020, `5bcc469`) + first STD theorem:
 [x] subst_value PROVEN (`e00ee9a`) — axiom-clean, zero sorry; List carrier held
     (length_eq lemma; no Fin n fallback). Machinery in Bang/Metatheory.lean.
 
-ACTIVE — finish the STD block (RESUME HERE):
-[ ] preservation — β-case uses the proven subst_value; WATCH Q4 (handle rule is
-    same-φ; `e' ≤ e` is loose enough it may go through, but effect_sound will force
-    the label-removing rule eventually)
-[ ] progress · type_safety (fuel-lift) — largely mechanical once preservation holds
+DONE — STD block (ADR-0021, `Bang/Metatheory.lean` §E):
+[x] preservation — step-inversion lemmas + subst_value; the β cases needed the
+    ADR-0021 lam-body-effect + CommSemiring fixes to make `e' ≤ e` hold
+[x] progress — generalized terminal motive (ret ∨ lam ∨ steps), specialized to F
+[x] type_safety — fuel induction over progress(F) + preservation
+    ALL axiom-clean {propext, Classical.choice, Quot.sound}; progress: {propext, Quot.sound}
 
-STILL DEFERRED (harder block):
+ACTIVE — the harder block (RESUME HERE):
 [ ] RowAll, WfInst, HandlesIntended — concretize (lacks-quantifier mechanism)
     + prove rowinst_requires_disjoint, no_accidental_handling
 [ ] Concretize Trace + Source.evalTrace + traceWithin (now possible
@@ -207,7 +218,7 @@ revisit signals.
 | Q1 | Eff algebra (Semiring vs Lattice) | ✓ resolved — Lattice + OrderBot |
 | Q2 | Mult = QTT concretization | ✓ resolved — QTT enum + CommSemiring |
 | Q3 | Ctx representation (List vs FinMap) | ✓ resolved — ADR-0019: Finsupp grade-vec + ambient TyCtx |
-| Q4 | `handle` typing rule refinement | revisit (will surface in preservation) |
+| Q4 | `handle` typing rule refinement | partial — F-type restriction landed (ADR-0021); label-removing rule still deferred (effect_sound will force it) |
 | Q5 | `up` typing rule + opArgTy/opResTy | revisit |
 | Q6 | Source.step deep-handler resumption | defer until tests demand |
 | Q7 | Op names string vs enum | defer (cosmetic) |

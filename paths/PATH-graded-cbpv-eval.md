@@ -65,9 +65,16 @@
       Lemma tree in `Bang/Metatheory.lean` (grade arithmetic · weakening/shift ·
       Sgrade homomorphism · `subst_gen` via `HasCTy.rec`). Also fixed a
       `tools/check.sh` false-green (grep missed lake's path-prefixed errors).
-- [ ] **In flight — finish the STD block** (subst_value, the hard one, is done):
-      - [ ] preservation (β-case now has the proven subst_value; watch Q4 handle)
-      - [ ] progress · type_safety (fuel-lift)
+- [x] **STD block COMPLETE (2026-06-22)** — `preservation`, `progress`,
+      `type_safety` all proven axiom-clean ({propext, Classical.choice, Quot.sound};
+      progress: {propext, Quot.sound}). Proving `preservation` exposed 4
+      Torczon-divergent typing rules (ADR-0021), all corrected: lam now carries the
+      body effect φ (the first cut emitted ⊥, making β-preservation false); handle
+      restricted to F-typed bodies (general B breaks progress); `Mult` strengthened
+      to `[CommSemiring]` (letC grade reshape needs `q1*q'=q'*q1`); `progress`
+      stated at `F q A` (false at general B). Machinery in `Bang/Metatheory.lean` §E:
+      `step_letC_inv`/`step_app_inv`/`step_handle_inv`, `preservation_proof`,
+      `progress_gen`/`progress_proof`, `type_safety_proof`.
 - [ ] **Carried design notes** (still live, independent of the rep switch):
       - subsumption (`q' ≤ q` in `lam`) dropped — needs an *ordered* `Mult`;
         own ADR when sub-usage becomes load-bearing (likely at preservation).

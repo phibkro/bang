@@ -13,7 +13,7 @@
 - [Q1 — Eff algebra: Semiring vs Lattice](#q1--eff-algebra-semiring-vs-lattice)
 - [Q2 — Mult = QTT concretization](#q2--mult--qtt-concretization)
 - [Q3 — Ctx representation: List vs FinMap](#q3--ctx-representation-list-vs-finmap)
-- [Q4 — `handle` typing rule: simplified vs label-removing](#q4--handle-typing-rule-simplified-vs-label-removing)
+- [Q4 — `handle` typing rule: simplified vs label-removing](#q4--handle-typing-rule-simplified-vs-label-removing)  · ◑ PARTIAL (F-restriction landed, ADR-0021; label-removal deferred)
 - [Q5 — `up` typing rule + opArgTy/opResTy](#q5--up-typing-rule--oparGty-opresty)
 - [Q6 — Source.step's deep-handler resumption](#q6--sourcestep-deep-handler-resumption)
 - [Q7 — Operation names as strings vs symbolic enum](#q7--operation-names-as-strings-vs-symbolic-enum)
@@ -95,7 +95,15 @@ under the current Ctx representation.
 
 ---
 
-## Q4 — `handle` typing rule: simplified vs label-removing
+## Q4 — `handle` typing rule: simplified vs label-removing  · ◑ PARTIAL (ADR-0021)
+
+**Update (2026-06-22, ADR-0021, C2)**: the `handle` rule body was restricted from
+general `B` to `CTy.F q A` — handlers handle *returners*. This was forced by
+`progress` (a general-`B` `handle h (lam M')` is a stuck non-`ret` normal form).
+The rule is STILL same-φ; the label-removing refinement below remains deferred and
+will be forced by `effect_sound` (a handler must discharge its label for the static
+effect to over-approximate the trace). So Q4 is half-resolved: F-restriction yes,
+label-removal no.
 
 **Question**: the current `HasCTy.handle` rule says the handled computation
 has the SAME effect grade as the unhandled body. The "real" rule should
