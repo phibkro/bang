@@ -26,6 +26,13 @@
 - [Q14 — `effect_sound`: what does the trace observe?](#q14--effect_sound-what-does-the-trace-observe)  · OPEN
 - [Q15 — Thunk strictness: uniform laziness vs demand-driven eager folding](#q15--thunk-strictness-uniform-laziness-vs-demand-driven-eager-folding)  · OPEN
 - [Q16 — Undecidable + unsafe programs: effects-with-oracles vs FFI](#q16--undecidable--unsafe-programs-effects-with-oracles-vs-ffi)  · OPEN
+- [Q17 — Polymorphism + effect-row polymorphism](#q17--polymorphism--effect-row-polymorphism)  · OPEN ★
+- [Q18 — Data types: ADTs, inductive/coinductive, law attachment](#q18--data-types-adts-inductivecoinductive-law-attachment)  · OPEN ★
+- [Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)](#q19--typeclassestraits-with-laws-ad-hoc-polymorphism--the-laws-surface)  · OPEN
+- [Q20 — Surface extensibility: pseudoinstructions via aliasing + macros](#q20--surface-extensibility-pseudoinstructions-via-aliasing--macros)  · OPEN
+
+> See also `design-space-map.md` (the survey) and **ADR-0026** (the correctness-ladder keystone that
+> resolved the proof-power dial, design-space #2).
 
 ---
 
@@ -623,6 +630,126 @@ ahead of rung 1.
 
 **Revisit signal**: a program on the ladder needs non-termination (the scheduler, rung 6) or a raw/
 MMIO op (the device driver, rung 8); or the effect-zoo design for v1+ effects begins.
+
+---
+
+## Q17 — Polymorphism + effect-row polymorphism  · OPEN ★ (foundational)
+
+**Question**: the kernel type syntax (`VTy = unit | int | U eff cty`; `CTy = F mult vty | arr …`) is
+**monomorphic** — no type variables, no effect-row variables. How does bang express parametric
+polymorphism, and crucially **effect-row polymorphism** (a function generic over the effects of its
+argument)?
+
+**Why it matters**: without it there is no reusable higher-order effectful code. `map : (a →^e b) →
+List a → List b !e` must be polymorphic in BOTH the element types AND the effect row `e` — otherwise
+every effect needs its own `map`. Forced at rung 3+ (any HOF over effects); blocks the whole library
+story (paradigms-as-libraries needs effect-generic combinators).
+
+**Detail**: two axes — (1) ordinary parametric polymorphism (System-F-style type variables / `∀`);
+(2) **row polymorphism** (effect-row variables `ε` with `e ⊔ ε`), the Koka/Frank/Links mechanism. The
+grades complicate both: a polymorphic function must also be generic in the multiplicity/coeffect
+grades (grade polymorphism — Granule territory). Interacts with Q18 (polymorphic data types) and
+inference (grade + row inference is hard).
+
+**Options**: (1) System-F + row variables (Koka-style open rows `⟨e | ε⟩`); (2) bounded/qualified
+polymorphism (constraints, links to Q19 typeclasses); (3) stay monomorphic + rely on metaprogramming
+(Q20) to generate monomorphic instances — rejected as a non-answer (no real genericity). The row
+algebra is already `Lattice + OrderBot` (ADR-0001); row variables sit on top as `e ⊔ ε`.
+
+**Blocked on**: nothing structural now; forced when rung 3 (or any effect-generic combinator) is built.
+
+**Revisit signal**: writing the first effect-generic higher-order function (a `map`/`fold` over an
+arbitrary effect row); or rung 2's stack needing element-type polymorphism.
+
+---
+
+## Q18 — Data types: ADTs, inductive/coinductive, law attachment  · OPEN ★ (forced at rung 2)
+
+**Question**: the kernel has `unit` + `int` only. How do users define data types — products, sums,
+recursive (μ) types, GADTs — and how do **inductive** (terminating, total) vs **coinductive**
+(productive, the event loop) types lower to graded CBPV? How do a type's **laws** (Q19) attach to it?
+
+**Why it matters**: rung 2 (verified stack) needs at least products/lists; the moat (laws between
+operations) needs user-defined types to attach laws to. Coinduction is needed for productive
+non-termination (Q16 — the xv6 scheduler loop, reactive streams rung 4).
+
+**Detail**: CBPV already splits value/computation; ADTs are *value* types (sums + products), with
+recursion via a μ/fixpoint. Inductive = least fixpoint (total, foldable); coinductive = greatest
+fixpoint (productive, the `Div`/stream side of Q16). The grades index data too (a linear pair vs an
+unrestricted one). Open: whether bang has full inductive *families* (dependent, Agda-style) or simple
+ADTs (Haskell/OCaml-style) + refinement — this is gated by ADR-0026 (the ladder: structural ADTs +
+laws-on-the-ladder, NOT full dependent inductive families in the kernel).
+
+**Options**: (1) simple ADTs (sum/product/μ) + laws via assertions on the ladder (ADR-0026-consistent;
+recommended); (2) full dependent inductive families (Agda/Lean) — rejected per ADR-0026 (proof-assistant
+in the kernel); (3) Church/CBPV-encoded data (no new kernel types, encode via `U`/functions) — elegant
+but poor ergonomics + performance; possibly an *internal* lowering target.
+
+**Blocked on**: nothing structural; forced at rung 2.
+
+**Revisit signal**: building rung 2 (the verified stack) — it needs the first user data type.
+
+---
+
+## Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)  · OPEN
+
+**Question**: how does bang do ad-hoc polymorphism / overloading (`+`, `Eq`, `Ord`, `Monoid`)? And —
+since **a typeclass IS a set of operations + laws** — is the typeclass mechanism *also* the **laws
+surface** (the moat's user-facing face, design-space #3)?
+
+**Why it matters**: `Monoid {op, id; assoc, unit-laws}` is exactly "fields, operations, and the
+laws/relations between them" from the original vision. Unifying ad-hoc polymorphism with the
+law-declaration surface would make the moat fall out of the module/class system rather than being a
+separate feature (one-construct-per-problem).
+
+**Detail**: the discharge of the laws is settled (ADR-0026: assert + property-test by default, climb to
+SMT/proof). Open is the *surface*: how a `class`/`trait`/`structure` declares ops + laws, how instances
+are resolved (typeclasses à la Haskell? traits à la Rust? canonical structures / implicits à la
+Lean/Coq?), and how that resolution interacts with the grades + effect rows (a method may itself be
+effectful). Links tightly to Q17 (qualified polymorphism = constrained type variables).
+
+**Options**: (1) Haskell-style typeclasses with law obligations attached, discharged on the ADR-0026
+ladder (recommended — unifies ad-hoc poly + the moat); (2) Rust-style traits (coherence via orphan
+rules); (3) Lean/Coq implicits + canonical structures (powerful resolution, heavier). All three make
+laws first-class; the choice is the resolution discipline.
+
+**Blocked on**: Q17 (polymorphism) — qualified polymorphism needs type variables first.
+
+**Revisit signal**: the first overloaded operation (rung 2's stack wanting `Eq`/`Monoid`), or building
+the user-facing law surface.
+
+---
+
+## Q20 — Surface extensibility: pseudoinstructions via aliasing + macros  · OPEN (principle leaning decided)
+
+**Question**: the surface is sugar over the semantics (formatter, linter, **pseudoinstructions**). The
+*principle* is set: **never add a kernel primitive for something expressible as a composite of existing
+primitives** (invariant #5) — instead provide **aliasing + metaprogramming** that expands to primitive
+composites (like assembly pseudo-ops). Open: the *mechanism* — how macros/aliasing work, and how much
+syntactic extensibility the surface offers.
+
+**Why it matters**: this is "write your own constructs" from the vision, and the discipline that keeps
+the kernel at five primitives as the surface grows. Get it right and new paradigms/notations are
+libraries; get it wrong and the kernel bloats or the surface fragments.
+
+**Detail**: levels of extensibility — (a) plain *aliasing* (a name for a composite, no new syntax);
+(b) *hygienic macros* that expand to core terms before lowering (Lean 4 elaboration, Racket
+`define-syntax`, Scheme); (c) full *user-defined notation* / reader extension (custom operators,
+mixfix — Lean `notation`, Agda mixfix). Hygiene (capture-avoidance) interacts with ADR-0006/0020 (no
+implicit capture; de Bruijn). The *semantic* DSL mechanism already exists (effects + handlers = a
+little language per effect); this Q is about *syntactic* extension on top.
+
+**Options**: (1) elaboration-style hygienic macros expanding to core `Comp` (recommended; Lean 4 model
+— composes with the existing lowering pass in `Bang/Surface.lean`); (2) aliasing only (no new syntax —
+minimal, may be too weak for ergonomic DSLs); (3) full reader/notation extension (most powerful, most
+rope). The five-primitive invariant + "no new primitive if composite" is the *constraint*; the
+mechanism is the *choice*.
+
+**Blocked on**: nothing now — a surface-layer concern (liquid); meaningful once the surface grows past
+the rung-0/1 toy parser.
+
+**Revisit signal**: the surface accumulating repeated composite patterns that want a name; or building
+the first user-defined construct/notation.
 
 ---
 
