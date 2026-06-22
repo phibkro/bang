@@ -95,28 +95,53 @@ mid-reduction where the row is non-empty.)
 ### D4 — `handle` discharges its label (completes Q4)
 
 ```lean
-| handle : ∀ {γ Γ h M φ q A},
-    HasHandler h ℓ_h (CTy.F q A) →                       -- h handles label ℓ_h at result F q A
-    HasCTy γ Γ M (EffSig.labelEff ℓ_h ⊔ φ) (CTy.F q A) →  -- body may use ℓ_h plus residual φ
-    HasCTy γ Γ (Comp.handle h M) φ (CTy.F q A)            -- ℓ_h discharged from the row
+| handle : ∀ {γ Γ h M ℓ e φ q A},
+    HasHandler h ℓ →                                 -- h handles label ℓ
+    HasCTy γ Γ M e (CTy.F q A) →                     -- body uses effect e
+    e ≤ EffSig.labelEff ℓ ⊔ φ →                       -- e is within ℓ plus residual φ (SUBSUMPTION)
+    HasCTy γ Γ (Comp.handle h M) φ (CTy.F q A)        -- ℓ dischargeable from the row
 ```
 
-The residual `φ` is what survives; nesting one handler per label drives a closed program to `⊥`.
-This supersedes ADR-0021's same-φ `handle` (which was the F-restricted stopgap).
+**Effect subsumption (`≤`), not equality** — a `ret v` body has effect `⊥`, which cannot
+*equal* `labelEff ℓ ⊔ φ`; the body uses *at most* `ℓ` plus residual `φ`. The derivation picks
+`φ`; choosing `φ` without `ℓ` discharges `ℓ`, and nesting one handler per label drives a closed
+program to `⊥`. This supersedes ADR-0021's same-φ `handle`. (This is the kernel's first effect
+*subsumption*; it lives in the `handle` rule, not as a free-standing `T_SubEff`, so it stays
+localized.)
 
-### D5 — Handler typing `HasHandler h ℓ A`
+### D5 — Handler typing `HasHandler h ℓ`
 
-A judgment that handler `h` correctly implements label `ℓ`'s operations at result type `A`,
-tying the built-in handlers to the signature so the `Source.step` handler reductions preserve
-types:
+`h` correctly implements label `ℓ`'s operations *for the simplified (Q6) `Source.step`
+semantics* — identity return clauses, zero-shot, no continuation capture. Matching those four
+reductions pins the signature shape (these constraints are Q6 artifacts a future CK machine
+removes — Q6's revisit):
 
-- `throws ℓ` handles `raise`: `opRes ℓ "raise"` must unify with the handler's delivered type so
-  `handle (throws ℓ) (up ℓ "raise" v) ↦ ret v` is type-preserving.
-- `state ℓ s` handles `get`/`put`: `s : opArg`-compatible state type; `get : Unit → S`,
-  `put : S → Unit`, with the `↦ handle (state ℓ …) (ret …)` reductions preserving `F q A`.
+```lean
+inductive HasHandler : Handler → Label → Prop where
+  | throws : ∀ {ℓ},
+      -- raise returns its payload as the block result ⇒ arg = result type
+      EffSig.opArg ℓ "raise" = EffSig.opRes ℓ "raise" →
+      HasHandler (Handler.throws ℓ) ℓ
+  | state  : ∀ {ℓ s},
+      -- State shape: get : Unit→S, put : S→Unit, with S the stored-state type
+      EffSig.opRes ℓ "get" = EffSig.opArg ℓ "put" →        -- = S
+      EffSig.opArg ℓ "get" = VTy.unit →
+      EffSig.opRes ℓ "put" = VTy.unit →
+      HasVTy (GradeVec.zeros 0) [] s (EffSig.opRes ℓ "get") →  -- stored state s : S, CLOSED
+      HasHandler (Handler.state ℓ s) ℓ
+```
 
-The exact `HasHandler` rules are settled in implementation against the four `Source.step`
-handler reductions (`Operational.lean` §2) — they are the proof obligations D6 must discharge.
+The **closedness of `s`** (typed in `[]`, grade `zeros 0`) is load-bearing: the `get` reduction
+`handle (state ℓ s)(up ℓ "get" u) ↦ handle (state ℓ s)(ret s)` replaces `up`'s unit-arg `u`
+(grade `zeros`) with `s`; preservation's grade matches only because both are `zeros`. (`s` is
+weakened to the ambient context as needed via `HasVTy.weaken`, already proven.)
+
+### D5′ — `up`'s closed-handler payload note
+
+`Handler.state`/`throws` carry a `Val` that is *substituted/shifted* like any value
+(`Handler.substFrom`/`shiftFrom`, already defined). `HasHandler` types it closed; under
+substitution the handler's `s` is unaffected (closed values shift to themselves), so the
+existing `HasCTy.weaken`/`subst_gen` handle cases extend without new binder reasoning.
 
 ### D6 — STD-block re-proof obligations (the green-breaking work)
 
