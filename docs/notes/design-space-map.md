@@ -12,7 +12,10 @@
 Rows-as-sets (ADR-0001); five primitives (invariant #5); QTT grades (Q2); de Bruijn (ADR-0020);
 calculation-as-method (ADR-0009/0016); WasmFX target (ADR-0016); the convergence/ladder/staging
 product decisions (PRD); resumptive state (ADR-0025). The **proof-power dial is now decided** —
-**correctness is a dispatched ladder, kernel = semantics, checkers = pluggable** (ADR-0026).
+**correctness is a dispatched ladder, kernel = semantics, checkers = pluggable** (ADR-0026). The
+**tech-stack division + the total/partial stratification** are decided too — **verified core + tested
+superset + explicit seam**, at the correctness, tooling, and language levels (ADR-0028; resolves the
+meta-circular/totality wall via fuel-total or `Div`-tested `eval`).
 
 ## The big rocks (foundational — sequenced by the product ladder)
 
