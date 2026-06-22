@@ -1,7 +1,9 @@
 # PATH · Tracer bullet — the first product-spine issue
 
 > The thinnest end-to-end slice that makes bang-lang **run a program**. Pulled forward per PRD §7.
-> Status: **READY** (scoped 2026-06-22, not started). Grabbable by a fresh session.
+> Status: **✓ DONE** (rung 0; 2026-06-23, commit `ff7bb9d`). The language RUNS — surface → graded-CBPV
+> `Comp` → `Source.eval` → a VALUE (pure + throws), in `Bang/Surface.lean`. Superseded as "next work"
+> by rung 1 (✓) then rung 2; kept as the rung-0 record.
 
 ## GOAL (verifiable)
 

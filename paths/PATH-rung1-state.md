@@ -1,7 +1,10 @@
 # PATH · Rung 1 — State (the first resumptive paradigm)
 
 > The first paradigm-as-library on the verified kernel: **mutable State as a handler.** Ladder rung 1
-> (PRD §3.1). Status: **READY** (scoped 2026-06-22, not started).
+> (PRD §3.1). Status: **✓ DONE** (2026-06-23; ADR-0025 + commits `2bcfa22`, `f566f78`). Resumptive
+> state runs end-to-end: kernel resume (closed focus ⇒ no ω-restriction), `preservation`/`type_safety`
+> axiom-clean, `no_accidental_handling` 0-axiom held, State runs from source text. All three layers
+> (K/P/S) landed.
 
 ## ⚠ The finding that reshapes this issue
 

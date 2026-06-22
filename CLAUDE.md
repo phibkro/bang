@@ -23,6 +23,7 @@ its trigger arises.
 | **Architecture in force** | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` |
 | **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
+| **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
 | **Proof discipline** (PROOF_ORDER, sorry rules, axiom hygiene) | `docs/notes/spec-proof-discipline.md` |
 | **Why the wasmfx spec is engineer-ready** | `docs/notes/spec-handover.md` |
 | **Lean 4 tactics for this work** | `docs/notes/tactics-survey.md` |
