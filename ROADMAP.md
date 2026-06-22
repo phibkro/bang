@@ -59,6 +59,28 @@ proofs that observed behavior equals what the reference semantics says.
 | ◊5 | **Compiler v0** | `compile_forward_sim` proven for a trivial fragment (e.g. pure arithmetic + one effect); WasmFX module type concrete | Round-trip test: tiny `.bang` runs through wasm3 producing same value as `Source.eval` |
 | ◊6 | **Release v0** | Three parallel paths from ◊5 converged into a releasable artifact | Public release tag + paper drafts for the three theorems (`lr_fundamental`, `compile_forward_sim`, `group_recovers`/its resolution) |
 
+## Product spine — pulled forward (PRD §7)
+
+`docs/PRD.md` settles that bang-lang is the **language** (not the methodology) and that lang-bang
+grows its **own surface** (convergence decision B). That makes the surface the product *spine*, not a
+◊5 deferral. So a **thin surface tracer bullet** runs as an **early parallel track** alongside the
+verification spine:
+
+```
+verification spine:   ◊2 ✓ ──► ◊3 CalcVM ──► ◊4 LR ──► ◊5 compiler ──► ◊6
+                                  (backbone — proof rides the reference)
+product spine (NEW):  [tracer bullet] ──► thin surface ──► multi-paradigm MVP (v1)
+                       minimal parser → graded-CBPV Comp → Source.eval → a VALUE
+```
+
+The tracer bullet is the first product-spine issue (`paths/PATH-tracer-bullet.md`). It de-risks the
+surface→kernel lowering — the biggest product unknown — and makes the language *run* before ◊5. The
+full end-to-end (surface → CalcVM → WasmFX → engine) thickens as the verification spine reaches it.
+
+This is the **one sanctioned exception** to "linear segments admit no parallelism" below: the product
+spine is a *different layer* (surface) from the verification spine (kernel/compiler), so per rule 2
+(cross-layer paths run in parallel freely) it does not tangle the ◊-march.
+
 ## The layer × path model
 
 Three layers stack vertically. Each layer has its own **invariant discipline**

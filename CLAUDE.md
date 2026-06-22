@@ -14,6 +14,7 @@ its trigger arises.
 
 | When you need… | Read |
 |---|---|
+| **Product definition** (what bang-lang is, the moat, v1 scope, tracer bullet) | `docs/PRD.md` |
 | **Current session position** (where we are RIGHT NOW) | `CONTEXT.md` |
 | **Long-term checkpoint map** (◊1 → ◊6) | `ROADMAP.md` |
 | **First-time setup + reference table** | `ONBOARDING.md` |
