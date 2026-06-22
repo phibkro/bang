@@ -24,6 +24,7 @@
 - [Q12 — Graded state handlers: how does `state ℓ s` thread grades?](#q12--graded-state-handlers-how-does-state--s-thread-grades)  · OPEN
 - [Q13 — Operation-granularity: `progress` for `throws`](#q13--operation-granularity-progress-for-throws-needs-op-aware-signatures)  · ✓ RESOLVED (ADR-0023)
 - [Q14 — `effect_sound`: what does the trace observe?](#q14--effect_sound-what-does-the-trace-observe)  · OPEN
+- [Q15 — Thunk strictness: uniform laziness vs demand-driven eager folding](#q15--thunk-strictness-uniform-laziness-vs-demand-driven-eager-folding)  · OPEN
 
 ---
 
@@ -513,6 +514,40 @@ escaping labels ⊆ `e`; (3) instrument `evalTrace` to log only at the program b
 `no_accidental_handling`). The CK machine makes either tractable (each DISPATCH is an observable point).
 
 **Revisit signal**: taking up `effect_sound` / `Trace` concretization after the ◊2 gate.
+
+---
+
+## Q15 — Thunk strictness: uniform laziness vs demand-driven eager folding  · OPEN
+
+**Question**: should the surface/compiler evaluate pure closed expressions (e.g. `4+2`) eagerly
+("declare/resolve thunks upfront") and suspend only genuinely-deferred ones (`4+x`, or anything
+effectful), or keep the kernel semantics **uniformly lazy** (everything is a thunk; `force` is the
+only observation, ADR-0007) and treat eager evaluation purely as a *compiler optimization*?
+
+**Why it matters**: it is the surface manifestation of the §5 evaluation-stage axis (when/where a
+thunk is forced). Get the boundary wrong and you either bloat every program with thunk allocations
+(naive uniform-lazy) or perform effects at the wrong stage (naive eager — unsound).
+
+**Detail**: the discriminant for "safe to fold now" is NOT "has a free variable" — it is **pure
+(`⊥` effect row) AND closed**:
+- `4 + 2`       `⊥`, closed         → safe to fold at compile-time (`$comptime`)
+- `4 + x`       `⊥`, x unbound       → residual; fold once x is known (partial evaluation)
+- `print(); 2`  row ⊇ `{IO}`         → MUST NOT fold early — folding performs the effect
+The **effect row is the license to fold** (constraints-are-generative). A thunk in THIS kernel is the
+minimal `vthunk : Comp → Val`; the richer "scoped env + deps + cached return" structure is a
+**reactive cell** (ADR-0005/0006, rung 4) — an enrichment built *over* the minimal thunk, not the
+thunk itself. Don't enrich the kernel thunk (collapses the moat / the five-primitive invariant).
+
+**Options**: (1) **uniform-lazy semantics + an effect-row-gated fold/eager pass in the compiler**
+*(recommended)* — one thunk concept; folding is an optimization that must preserve observable
+behavior (invariant #7); (2) two syntactic thunk kinds (eager/lazy) at the surface — a second
+concept, rejected unless (1) proves insufficient; (3) binding-time analysis as a surface-visible
+stage annotation (`$comptime`/`$runtime`, §5) — likely the eventual UX, *layered on* (1).
+
+**Blocked on**: nothing now (v1 ships uniform-lazy per invariant #7).
+
+**Revisit signal**: building the `$comptime` stage, the reactive cell (rung 4), or a perf pass that
+wants to elide thunk allocations.
 
 ---
 
