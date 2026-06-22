@@ -544,6 +544,21 @@ behavior (invariant #7); (2) two syntactic thunk kinds (eager/lazy) at the surfa
 concept, rejected unless (1) proves insufficient; (3) binding-time analysis as a surface-visible
 stage annotation (`$comptime`/`$runtime`, §5) — likely the eventual UX, *layered on* (1).
 
+**Prior art / framing** (the established names for option-1's "fold pass", for the ◊5 compiler
+session): the loop "fold what's static, iterate to fixpoint, emit the residual" is **partial
+evaluation driven by binding-time analysis** (Jones/Gomard/Sestoft 1993); the fold step is
+**constant folding** enabled by **constant propagation** (a forward dataflow analysis); "safe to
+force eagerly in a lazy language" is **strictness analysis** (Mycroft 1980); the fixpoint is the
+least fixed point of a monotone map over a lattice — the shape shared by dataflow analysis and its
+superframe **abstract interpretation** (Cousot² 1977). bang's edge: facts (1) purity and (2) usage
+come FREE from the effect row + QTT grade (the type IS a precomputed static analysis); only
+(3) constant-ness needs the dataflow pass. The static/dynamic partition = the compile-/run-time
+stage assignment (Futamura), which is the §5 axis — bang layers MetaML-style explicit `$comptime`
+staging (option 3) on top of the inferred default. Compiler ARCHITECTURE for hanging these passes:
+the **nanopass/micropass** discipline (Sarkar-Waddell-Dybvig 2004; Keep-Dybvig 2013) — many tiny
+typed-IL passes — is the compiler-level echo of the kernel's correctness-by-construction, and the
+right host for a VERIFIED two-hop pipeline (each small pass individually provable; cf. CompCert).
+
 **Blocked on**: nothing now (v1 ships uniform-lazy per invariant #7).
 
 **Revisit signal**: building the `$comptime` stage, the reactive cell (rung 4), or a perf pass that
