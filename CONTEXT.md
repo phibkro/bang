@@ -208,12 +208,16 @@ handle + progress/type_safety→⊥). Staged:
 [x] **Unit 1 (landed, green)**: `EffSig` typeclass in Core.lean (labelEff/opArg/opRes +
     labelEff_ne_bot); retired the dead per-`Eff` opArgTy/opResTy axioms (LR.lean). No `up`
     rule yet ⇒ STD block untouched ⇒ green.
-[ ] **Unit 2 (next; BREAKS GREEN until whole)**: `up` rule (D2) + handle→label-discharging
-    (D4) + `HasHandler` (D5) + progress/type_safety restated at `⊥` (D3) + re-prove the STD
-    cases the `up` rule makes non-vacuous (D6: handle head-redexes throws/state×get/put).
-    ⚠ progress/type_safety statement change at ⊥ is frozen-PRD (STATEMENT_CHANGE_OK + ADR).
+[~] **Unit 2 (PARTIAL, landed)**: `up` rule + `handleThrows` (label-discharging, throws-only;
+    state deferred → Q12) + progress/type_safety restated at `⊥`. **`up` + `handleThrows` +
+    `preservation` PROVEN axiom-clean** — preservation now holds for EFFECTFUL programs.
+    progress/type_safety carry ONE documented `sorry` (Metatheory `progress_gen` handleThrows
+    case) — the label-vs-operation granularity wall (**Q13**): a well-typed
+    `handle (throws ℓ)(up ℓ "get" v)` is stuck because effects are label-granular but throws
+    handles only `"raise"`. NEXT: close Q13 (op-aware `EffSig` signatures, option 1) →
+    progress/type_safety axiom-clean again.
 [ ] **Unit 3**: no_accidental_handling + effect_sound — now NON-vacuous (operations exist,
-    handlers discharge labels). The ◊2 headline.
+    handlers discharge labels). The ◊2 headline. (Wants Q13 closed first.)
 Defer zero_usage_erasable to ◊4 (LR-flavored; Torczon proves it via semtyping.v).
 ```
 

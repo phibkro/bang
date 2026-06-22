@@ -35,6 +35,7 @@ namespace Bang
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
+variable [EffSig Eff Mult]
 
 
 /-! ## 0.5 Effect-row well-formedness theorems -/
@@ -90,15 +91,20 @@ theorem preservation
 -- [STD] Progress. Closed (empty context ⇒ empty grade vector). Stated at a
 -- returner type `F q A` (ADR-0021, C4): at `arr` type a bare `lam` is a normal
 -- form that is neither `ret` nor a step, so general `B` is false; `F q A` is also
--- exactly what `type_safety` consumes.
+-- exactly what `type_safety` consumes. Stated at effect `⊥` (ADR-0022 D3): a
+-- fully-handled (runnable) program. At `⊥`, an unhandled `up` is untypable
+-- (`labelEff ℓ ≤ ⊥ ⇒ labelEff ℓ = ⊥`, contra `labelEff_ne_bot`), so the new `up`
+-- normal form never arises and progress collapses to `isReturn ∨ steps`.
 theorem progress
-    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c e (CTy.F q A) → isReturn c ∨ ∃ c', Source.step c = some c' := progress_proof
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy [] [] c ⊥ (CTy.F q A) → isReturn c ∨ ∃ c', Source.step c = some c' := progress_proof
 
--- [STD] Safety = progress + preservation, fuel-lifted.
+-- [STD] Safety = progress + preservation, fuel-lifted. At `⊥` (ADR-0022 D3):
+-- preservation gives `c' : e' (F q A)` with `e' ≤ ⊥`, so `e' = ⊥` re-establishes
+-- the precondition for the fuel IH.
 theorem type_safety
-    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy [] [] c ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
     := type_safety_proof
 
 

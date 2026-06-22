@@ -29,8 +29,11 @@ import Bang.Operational
 
 namespace Bang
 
+open Bang.EffectRow (Label)
+
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
+variable [EffSig Eff Mult]
 
 /-- Unfold the `HSMul`/`HAdd` notation on grade vectors to the underlying
 `GradeVec.smul`/`GradeVec.add` (so the rewrite lemmas below fire on `•`/`+`). -/
@@ -247,7 +250,7 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasCTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
   · intro Γ; simp
   · intro Γ n; simp
   · intro Γ i A hget; simp
@@ -267,7 +270,11 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     subst hγ
     simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
       ihM, ihV, Nat.min_self]
-  · intro γ Γ hdl M φ q A _ ih; exact ih
+  · -- up: grade q • γ
+    intro γ Γ ℓ op w φ q _ hw ih
+    simp only [hsmul_eq_smul, GradeVec.smul_length]; exact ih
+  · -- handleThrows: effect/type pass through
+    intro γ Γ ℓ M e φ q A _ _ _ ih; exact ih
 
 theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} :
@@ -276,7 +283,7 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasVTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
   · intro Γ; simp
   · intro Γ n; simp
   · intro Γ i A hget; simp
@@ -296,7 +303,11 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     subst hγ
     simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
       ihM, ihV, Nat.min_self]
-  · intro γ Γ hdl M φ q A _ ih; exact ih
+  · -- up: grade q • γ
+    intro γ Γ ℓ op w φ q _ hw ih
+    simp only [hsmul_eq_smul, GradeVec.smul_length]; exact ih
+  · -- handleThrows
+    intro γ Γ ℓ M e φ q A _ _ _ ih; exact ih
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
 
@@ -478,9 +489,17 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     have hlen1 : γ₁.length = Γ.length := hM.length_eq
     have hlen2 : γ₂.length = Γ.length := hv.length_eq
     apply insG_add_smul_aux' <;> omega
-  | @handle γ Γ h M φ q A hM =>
+  | @up γ Γ ℓ op w φ q hmem hw =>
+    -- shiftFrom k (up ℓ op w) = up ℓ op (shiftFrom k w); grade insG (q•γ) k = q • insG γ k
     simp only [Comp.shiftFrom]
-    exact HasCTy.handle (hM.weaken k hk A')
+    have hw' := hw.weaken k hk A'
+    have hgr : insG (q • γ) k = q • insG γ k := insG_smul q γ k
+    rw [hgr]
+    exact HasCTy.up hmem hw'
+  | @handleThrows γ Γ ℓ M e φ q A hraise hM hle =>
+    -- handle (throws ℓ) carries no value ⇒ unchanged by shift; weaken the body.
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    exact HasCTy.handleThrows hraise (hM.weaken k hk A') hle
 end
 
 /-- Grade at the substituted slot `k`, read off the derivation's grade vector. -/
@@ -879,7 +898,7 @@ theorem HasCTy.subst_gen
            (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B := by
   refine HasCTy.rec
     (motive_1 := VsubstMotive) (motive_2 := CsubstMotive)
-    ?vunit ?vint ?vvar ?vthunk ?ret ?letC ?force ?lam ?app ?handle
+    ?vunit ?vint ?vvar ?vthunk ?ret ?letC ?force ?lam ?app ?up ?handleThrows
     hc Δ Γ A γ_v v rfl hv
   case vunit =>
     intro Γ₀ Δ Γ A γ_v v hΓ hv
@@ -924,11 +943,18 @@ theorem HasCTy.subst_gen
     intro γ γ₁ γ₂ Γ₀ M w φ q A₀ B hM hw hγ ihM ihV Δ Γ A γ_v v hΓ hv
     subst hΓ; subst hγ
     exact subst_app_case Δ Γ A γ_v v hv hM hw ihM ihV
-  case handle =>
-    intro γ Γ₀ hdl M φ q A₀ hM ih Δ Γ A γ_v v hΓ hv
+  case up =>
+    intro γ Γ₀ ℓ op w φ q hmem hw ih Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom]
-    exact HasCTy.handle (ih Δ Γ A γ_v v rfl hv)
+    -- Sgrade γ_v k (q • γ) = q • Sgrade γ_v k γ
+    simp only [hsmul_eq_smul, Sgrade_smul]
+    exact HasCTy.up hmem (ih Δ Γ A γ_v v rfl hv)
+  case handleThrows =>
+    intro γ Γ₀ ℓ M e φ q A₀ hraise hM hle ih Δ Γ A γ_v v hΓ hv
+    subst hΓ
+    rw [Comp.substFrom, Handler.substFrom]
+    exact HasCTy.handleThrows hraise (ih Δ Γ A γ_v v rfl hv) hle
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -1008,6 +1034,47 @@ private theorem step_handle_inv {hdl : Handler} {M c' : Comp}
        · rename_i M' hm; exact ⟨M', hm, by simpa using h.symm⟩
        · exact absurd h (by simp))
 
+/-- `handle (throws ℓ)` inversion (mirror of `step_letC_inv`). Three head shapes:
+the `ret` return-redex, the matching `up ℓ "raise" v` raise-redex, and the search
+arm. A non-matching label (`up ℓ' "raise"` with `ℓ ≠ ℓ'`) or a non-`raise` op of
+the same label does NOT step (returns `none`), so those collapse with `none ≠ some`. -/
+private theorem step_handleThrows_inv {ℓ : Label} {M c' : Comp}
+    (h : Source.step (Comp.handle (Handler.throws ℓ) M) = some c') :
+    (∃ v, M = Comp.ret v ∧ c' = Comp.ret v)
+      ∨ (∃ v, M = Comp.up ℓ "raise" v ∧ c' = Comp.ret v)
+      ∨ (∃ M', Source.step M = some M' ∧ c' = Comp.handle (Handler.throws ℓ) M') := by
+  cases M
+  case ret v =>
+    simp only [Source.step] at h
+    exact Or.inl ⟨v, rfl, by simpa using h.symm⟩
+  case up ℓ' op w =>
+    -- the up-arm: `handle (throws ℓ) (up ℓ' op w)`. Only `op = "raise"` ∧ `ℓ = ℓ'` fires;
+    -- every other shape is the search arm with `Source.step (up …) = none`.
+    by_cases hop : op = "raise"
+    · subst hop
+      simp only [Source.step] at h
+      by_cases hℓ : ℓ = ℓ'
+      · subst hℓ
+        rw [if_pos rfl] at h
+        exact Or.inr (Or.inl ⟨w, rfl, by simpa using h.symm⟩)
+      · rw [if_neg hℓ] at h; exact absurd h (by simp)
+    · -- op ≠ "raise": the literal-"raise" head arm does not match; fall to the search
+      -- arm, where `Source.step (up …) = none`. Full `simp` reduces the string-literal
+      -- match using `hop`.
+      have h2 : Source.step (Comp.handle (Handler.throws ℓ) (Comp.up ℓ' op w)) = none := by
+        simp [Source.step, hop]
+      rw [h2] at h; exact absurd h (by simp)
+  all_goals
+    -- every remaining M is a search arm `match Source.step M with …`
+    simp only [Source.step] at h
+  all_goals
+    first
+    | (exact absurd h (by simp))
+    | (right; right
+       split at h
+       · rename_i M' hm; exact ⟨M', hm, by simpa using h.symm⟩
+       · exact absurd h (by simp))
+
 /-! ### E.2 preservation -/
 
 theorem preservation_proof
@@ -1020,7 +1087,7 @@ theorem preservation_proof
     (motive_1 := fun _ _ _ _ _ => True)
     (motive_2 := fun γ Γ c e B _ =>
       ∀ c', Source.step c = some c' → ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h c'
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h c'
   -- value motives: trivial
   · intro _; trivial
   · intro _ _; trivial
@@ -1101,53 +1168,81 @@ theorem preservation_proof
       subst hc'
       obtain ⟨e₁', hle, hM'⟩ := ihM M' hstepM
       exact ⟨e₁', hle, HasCTy.app hM' hv rfl⟩
-  -- handle
-  · intro γ Γ hdl M φ q A hM ihM c' hstep
-    -- M is F-typed; rule out M = up via cases on hM (no up ctor produces F)
-    have hnotup : ∀ ℓ op w, M ≠ Comp.up ℓ op w := by
-      intro ℓ op w heq; subst heq; cases hM
-    rcases step_handle_inv hnotup hstep with ⟨w, hMeq, hc'⟩ | ⟨M', hstepM, hc'⟩
-    · -- head: M = ret w, c' = ret w; hM already types it at φ (F q A)
+  -- up: a bare `up` has no head reduction (the redex needs a `handle` wrapper),
+  -- so `Source.step (up …) = none` and `hstep : none = some c'` is absurd.
+  · intro γ Γ ℓ op w φ q hmem hw _ c' hstep
+    exact absurd hstep (by simp [Source.step])
+  -- handleThrows
+  · intro γ Γ ℓ M e φ q A hraise hM hle ihM c' hstep
+    rcases step_handleThrows_inv hstep with ⟨w, hMeq, hc'⟩ | ⟨w, hMeq, hc'⟩ | ⟨M', hstepM, hc'⟩
+    · -- ret-redex: M = ret w, c' = ret w. Invert body typing for a ret at F q A.
       subst hMeq; subst hc'
-      exact ⟨φ, le_refl φ, hM⟩
-    · -- search: M steps
+      cases hM with
+      | @ret _ γMv _ _ _ _ hwv hγM =>
+        -- ret w : ⊥ (F q A); rebuild at φ via handleThrows? No — c' = ret w directly.
+        -- The reduct is `ret w` typed at ⊥ ≤ φ; reuse the body's own derivation.
+        refine ⟨⊥, bot_le, ?_⟩
+        exact HasCTy.ret hwv hγM
+    · -- raise-redex: M = up ℓ "raise" w, c' = ret w. Invert the up typing.
+      subst hMeq; subst hc'
+      cases hM with
+      | @up _ _ _ _ γuw _ _ hmem' hwv =>
+        -- hwv : HasVTy γuw Γ w (opArg ℓ "raise"); the body grade unified to q • γuw,
+        -- and `A` unified to `opRes ℓ "raise"` (goal type is now F q (opRes ℓ "raise")).
+        -- By hraise, opArg ℓ "raise" = opRes ℓ "raise", so w : opRes ℓ "raise".
+        -- Build ret w : ⊥ (F q (opRes ℓ "raise")) at grade q • γuw (matches the redex).
+        rw [hraise] at hwv
+        exact ⟨⊥, bot_le, HasCTy.ret hwv rfl⟩
+    · -- search: M ↦ M', c' = handle (throws ℓ) M'. IH gives e' ≤ e; rebuild.
       subst hc'
-      obtain ⟨e₁', hle, hM'⟩ := ihM M' hstepM
-      exact ⟨e₁', hle, HasCTy.handle hM'⟩
+      obtain ⟨e₁', hlee, hM'⟩ := ihM M' hstepM
+      exact ⟨φ, le_refl φ, HasCTy.handleThrows hraise hM' (le_trans hlee hle)⟩
 
 /-! ### E.3 progress -/
 
-/-- Generalized progress over any context with the three-way disjunct
-(carrying the `lam`-normal-form case so the F-restriction can collapse it). -/
+/-- Generalized progress over any context, 4-way disjunct: a closed F/arr-typed
+computation is a `ret`, a `lam` (collapsed by the F-restriction in `progress_proof`),
+"effect-nonempty" (some label is in the running effect `e` — excluded at `⊥` by
+`labelEff_ne_bot`), or it steps. The third disjunct tracks the membership witness
+`labelEff ℓ ≤ e` rather than the exact stuck term, so it PROPAGATES through
+`letC`/`app` (`le_sup_left`/`le_refl`): an unhandled `up` deep in the body forces a
+non-⊥ running effect all the way up. This closes every case at general `e` EXCEPT
+`handleThrows` with a residual-operation body — the genuine abstract wall (the
+throws handler must discharge its label and permit only `"raise"`, neither of which
+`EffSig` exposes; see the `sorry` note). At `⊥`, the third disjunct is impossible,
+so `progress_proof` collapses to `isReturn ∨ steps`. -/
 private theorem progress_gen
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy γ Γ c e B → Γ = [] →
-    isReturn c ∨ (∃ M, c = Comp.lam M) ∨ ∃ c', Source.step c = some c' := by
+    isReturn c ∨ (∃ M, c = Comp.lam M)
+      ∨ (∃ ℓ : Label, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ e) ∨ ∃ c', Source.step c = some c' := by
   intro h
   refine HasCTy.rec
     (motive_1 := fun _ _ _ _ _ => True)
     (motive_2 := fun γ Γ c e B _ =>
-      Γ = [] → isReturn c ∨ (∃ M, c = Comp.lam M) ∨ ∃ c', Source.step c = some c')
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
+      Γ = [] → isReturn c ∨ (∃ M, c = Comp.lam M)
+        ∨ (∃ ℓ : Label, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ e) ∨ ∃ c', Source.step c = some c')
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ h
   · intro _; trivial
   · intro _ _; trivial
   · intro _ _ _ _; trivial
   · intro _ _ _ _ _ _ _; trivial
   -- ret
   · intro γ γ' Γ v A q hv hγ _ _; exact Or.inl (by simp [isReturn])
-  -- letC M N
+  -- letC M N (effect φ₁ ⊔ φ₂)
   · intro γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN hγ ihM ihN hΓ
     subst hΓ
-    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨M', hstep⟩
+    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨ℓ, hmem⟩ | ⟨M', hstep⟩
     · -- M = ret w ⇒ letC (ret w) N steps
       cases M <;> simp only [isReturn] at hret
-      case ret w => exact Or.inr (Or.inr ⟨Comp.subst w N, by simp [Source.step]⟩)
-    · -- M = lam M0 : but hM : HasCTy _ _ (lam M0) _ (F q1 A) — impossible
+      case ret w => exact Or.inr (Or.inr (Or.inr ⟨Comp.subst w N, by simp [Source.step]⟩))
+    · -- M = lam M0 : but hM : HasCTy _ _ (lam M0) φ₁ (F q1 A) — impossible
       subst hlam; cases hM
+    · -- M has an outstanding label in φ₁ ⇒ it's in φ₁ ⊔ φ₂; propagate.
+      exact Or.inr (Or.inr (Or.inl ⟨ℓ, le_trans hmem le_sup_left⟩))
     · -- M steps ⇒ letC steps
-      refine Or.inr (Or.inr ⟨Comp.letC M' N, ?_⟩)
-      -- need: Source.step (letC M N) = some (letC M' N), with M not a ret
+      refine Or.inr (Or.inr (Or.inr ⟨Comp.letC M' N, ?_⟩))
       cases M <;>
         first
         | (exact absurd hstep (by simp [Source.step]))
@@ -1157,70 +1252,92 @@ private theorem progress_gen
     subst hΓ
     cases hv with
     | @vthunk γT ΓT MT φT BT hMT =>
-      exact Or.inr (Or.inr ⟨MT, by simp [Source.step]⟩)
+      exact Or.inr (Or.inr (Or.inr ⟨MT, by simp [Source.step]⟩))
     | @vvar ΓV i AV hget =>
-      -- [] [i]? = some _ impossible
       simp at hget
   -- lam
   · intro γ Γ M φ q A B hM _ _; exact Or.inr (Or.inl ⟨M, rfl⟩)
-  -- app M v
+  -- app M v (effect φ)
   · intro γ γ₁ γ₂ Γ M v φ q A B hM hv hγ ihM _ hΓ
     subst hΓ
-    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨M', hstep⟩
-    · -- M = ret w : but hM : arr-typed ret — impossible
-      cases M <;> simp only [isReturn] at hret
+    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨ℓ, hmem⟩ | ⟨M', hstep⟩
+    · cases M <;> simp only [isReturn] at hret
       case ret w => cases hM
-    · -- M = lam M0 ⇒ app (lam M0) v steps
-      subst hlam
-      exact Or.inr (Or.inr ⟨Comp.subst v M0, by simp [Source.step]⟩)
-    · -- M steps ⇒ app steps
-      refine Or.inr (Or.inr ⟨Comp.app M' v, ?_⟩)
+    · subst hlam
+      exact Or.inr (Or.inr (Or.inr ⟨Comp.subst v M0, by simp [Source.step]⟩))
+    · -- M has an outstanding label in φ (app's effect is the function's φ); propagate.
+      exact Or.inr (Or.inr (Or.inl ⟨ℓ, hmem⟩))
+    · refine Or.inr (Or.inr (Or.inr ⟨Comp.app M' v, ?_⟩))
       cases M <;>
         first
         | (exact absurd hstep (by simp [Source.step]))
         | (simp only [Source.step] at hstep ⊢; rw [hstep])
-  -- handle h M
-  · intro γ Γ hdl M φ q A hM ihM hΓ
+  -- up ℓ op v: the membership premise `labelEff ℓ ≤ φ` IS the third disjunct.
+  · intro γ Γ ℓ op w φ q hmem hw _ _
+    exact Or.inr (Or.inr (Or.inl ⟨ℓ, hmem⟩))
+  -- handleThrows (throws ℓ) M (effect φ; body M at effect e ≤ labelEff ℓ ⊔ φ)
+  · intro γ Γ ℓ M e φ q A hraise hM hle ihM hΓ
     subst hΓ
-    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨M', hstep⟩
-    · -- M = ret w ⇒ handle h (ret w) steps to ret w
+    rcases ihM rfl with hret | ⟨M0, hlam⟩ | ⟨ℓ', hmem⟩ | ⟨M', hstep⟩
+    · -- M = ret w ⇒ handle (throws ℓ) (ret w) ↦ ret w
       cases M <;> simp only [isReturn] at hret
-      case ret w => exact Or.inr (Or.inr ⟨Comp.ret w, by simp [Source.step]⟩)
+      case ret w => exact Or.inr (Or.inr (Or.inr ⟨Comp.ret w, by simp [Source.step]⟩))
     · -- M = lam : F-typed lam impossible
       subst hlam; cases hM
-    · -- M steps ⇒ handle steps; M is not a ret/up (it steps and is F-typed)
-      refine Or.inr (Or.inr ⟨Comp.handle hdl M', ?_⟩)
+    · -- MISSING (the genuine abstract wall — ADR-0022 "known hard spot").
+      -- The body has an outstanding label `ℓ'` with `labelEff ℓ' ≤ e ≤ labelEff ℓ ⊔ φ`.
+      -- To DISCHARGE it we must split:
+      --   (a) ℓ' = ℓ  ⇒ the handle should fire (raise) — but only the "raise" op has a
+      --       head reduction; a same-label non-"raise" body (e.g. `up ℓ "get" w`) is a
+      --       STUCK well-typed term. Needs: a throws label admits ONLY "raise".
+      --   (b) ℓ' ≠ ℓ  ⇒ the label survives into φ, i.e. `labelEff ℓ' ≤ φ`. Needs:
+      --       `labelEff ℓ' ≤ labelEff ℓ ⊔ φ → ℓ' ≠ ℓ → labelEff ℓ' ≤ φ`
+      --       (label separation / a `Disjoint`-style cancellation on `labelEff`).
+      -- Neither property is in `EffSig` (frozen by Unit 1) and there is no concrete
+      -- `EffSig EffRow QTT` instance in-tree to specialize to (Unit 1's Finset instance
+      -- is not yet present). So this case cannot be discharged abstractly here.
+      -- HANDOFF: add `EffSig.labelEff_le_sup_iff`/throws-op-restriction to `EffSig`
+      -- (kernel-engineer, Unit 1 amendment) OR land the `EffSig EffRow QTT` instance and
+      -- specialize `progress`/`type_safety` to it. Both are out of this unit's 3-file scope.
+      sorry
+    · -- M steps ⇒ handle steps
+      refine Or.inr (Or.inr (Or.inr ⟨Comp.handle (Handler.throws ℓ) M', ?_⟩))
       cases M <;>
         first
         | (exact absurd hstep (by simp [Source.step]))
         | (simp only [Source.step] at hstep ⊢; rw [hstep])
 
 theorem progress_proof
-    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c e (CTy.F q A) → isReturn c ∨ ∃ c', Source.step c = some c' := by
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy [] [] c ⊥ (CTy.F q A) → isReturn c ∨ ∃ c', Source.step c = some c' := by
   intro h
-  rcases progress_gen h rfl with hret | ⟨M, hlam⟩ | hstep
+  rcases progress_gen h rfl with hret | ⟨M, hlam⟩ | ⟨ℓ, hmem⟩ | hstep
   · exact Or.inl hret
-  · -- c = lam M : but c : F q A — impossible
-    subst hlam; cases h
+  · -- c = lam M : but c : F q A — impossible (lam is `arr`-typed). Generalize the
+    -- closed grade `[]` first so dependent elimination doesn't choke on `[] = q • γ`.
+    subst hlam
+    generalize hγ : ([] : GradeVec Mult) = γ0 at h
+    cases h
+  · -- effect-nonempty at ⊥: labelEff ℓ ≤ ⊥ ⇒ labelEff ℓ = ⊥, contra labelEff_ne_bot.
+    exact absurd (le_bot_iff.mp hmem) (EffSig.labelEff_ne_bot (Eff := Eff) (Mult := Mult) ℓ)
   · exact Or.inr hstep
 
 /-! ### E.4 type_safety -/
 
 theorem type_safety_proof
-    {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c e (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy [] [] c ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
   intro h fuel
-  induction fuel generalizing c e with
+  induction fuel generalizing c with
   | zero => simp [Source.eval]
   | succ n ih =>
     rcases progress_proof h with hret | ⟨c', hstep⟩
     · -- isReturn c ⇒ c = ret v ⇒ eval (n+1) c = done v ≠ stuck
       cases c <;> simp only [isReturn] at hret
       case ret v => simp [Source.eval]
-    · -- c steps; preservation gives typing of c'; eval (n+1) c = eval n c'
-      obtain ⟨e', _, hc'⟩ := preservation_proof h hstep
-      -- c is not a `ret` (step ret = none), so eval uses the step equation
+    · -- c steps; preservation gives c' : e' (F q A) with e' ≤ ⊥, so e' = ⊥.
+      obtain ⟨e', hle, hc'⟩ := preservation_proof h hstep
+      rw [le_bot_iff] at hle; subst hle
       have hnotret : ∀ v, c ≠ Comp.ret v := by
         intro v heq; subst heq; simp [Source.step] at hstep
       have heval : Source.eval (n + 1) c = Source.eval n c' := by

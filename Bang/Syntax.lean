@@ -14,8 +14,11 @@ import Bang.Core
 
 namespace Bang
 
+open Bang.EffectRow (Label)
+
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
+variable [EffSig Eff Mult]
 
 
 /-! ### 1.5 The `q || 1` coeffect floor (`q_or_1`)
@@ -106,14 +109,28 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       HasVTy γ₂ Γ v A →
       γ = γ₁ + q • γ₂ →
       HasCTy γ Γ (Comp.app M v) φ B
-  -- handle: handlers handle RETURNERS — the body is `F`-typed (ADR-0021, C2).
-  -- A general `B` would make `handle h (lam M')` a stuck non-`ret` normal form at
-  -- `arr` type (and `handle* (lam …)` an unbounded normal-form family), breaking
-  -- `progress`. Restricting to `F q A` removes them structurally. Still same-φ
-  -- (Q4's label-removing refinement — needed for `effect_sound` — stays deferred).
-  | handle : ∀ {γ Γ h M φ q A},
-      HasCTy γ Γ M φ (CTy.F q A) →
-      HasCTy γ Γ (Comp.handle h M) φ (CTy.F q A)
+  -- up (ADR-0022 D2): perform operation `op` of effect `ℓ`. `labelEff ℓ ≤ φ` is the
+  -- lacks-discipline membership "`ℓ ∈ φ`" (ADR-0018) in the abstract lattice. The
+  -- grade `q • γ` mirrors `ret`: the produced value's budget `q` scales the
+  -- argument's grade — this is what makes the `throws` β-grade match in preservation.
+  | up : ∀ {γ Γ} {ℓ : Label} {op : OpId} {v : Val} {φ : Eff} {q : Mult},
+      EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ →
+      HasVTy γ Γ v (EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op) →
+      HasCTy (q • γ) Γ (Comp.up ℓ op v) φ (CTy.F q (EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op))
+  -- handleThrows (ADR-0022 D4/D5, throws-only — `state` deferred per Q12): the
+  -- `throws ℓ` handler DISCHARGES label `ℓ` from the row. Body uses effect `e`
+  -- within `ℓ ⊔ φ` (SUBSUMPTION — a `ret v` body has effect `⊥ ≤ ℓ ⊔ φ`); the
+  -- derivation picks the residual `φ`, choosing `φ` without `ℓ` discharges `ℓ`.
+  -- `opArg ℓ "raise" = opRes ℓ "raise"` (D5 throws clause inlined): raise returns
+  -- its payload as the block result, so arg type = result type. Handlers still
+  -- handle RETURNERS (`F`-typed, ADR-0021 C2). `handle (state …) M` is now UNtypable
+  -- (Q12 deferred); its `Source.step` reductions stay vacuous under typing.
+  | handleThrows : ∀ {γ Γ} {ℓ : Label} {M : Comp} {e φ : Eff} {q : Mult} {A : VTy Eff Mult},
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise"
+        = EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "raise" →
+      HasCTy γ Γ M e (CTy.F q A) →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      HasCTy γ Γ (Comp.handle (Handler.throws ℓ) M) φ (CTy.F q A)
 end
 
 
