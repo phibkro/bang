@@ -26,7 +26,12 @@ fi
 
 echo "→ checking $FILE"
 out=$(lake env lean "$FILE" 2>&1 || true)
-errs=$(echo "$out" | grep -E '^(error|warning):' | head -40 || true)
+# `lake env lean <file>` prints diagnostics as either
+#   error: ...            (bare, e.g. from the elaborator front-end), or
+#   <file>:<line>:<col>: error: ...   (the common per-declaration form).
+# The previous `^(error|warning):` anchor only matched the FIRST form, so any
+# file whose only errors were path-prefixed reported a FALSE green. Match both.
+errs=$(echo "$out" | grep -E '(^|: )(error|warning):' | head -40 || true)
 
 if [ -z "$errs" ]; then
   echo "✓ no errors or warnings"

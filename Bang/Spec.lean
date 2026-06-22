@@ -29,6 +29,7 @@ import Bang.Syntax
 import Bang.Operational
 import Bang.LR
 import Bang.Compile
+import Bang.Metatheory
 
 namespace Bang
 
@@ -77,7 +78,7 @@ theorem subst_value
     HasVTy γ_v Γ v A →
     HasCTy (ρ :: γ) (A :: Γ) c e B →
     HasCTy (γ + ρ • γ_v) Γ (Comp.subst v c) e B
-    := sorry
+    := subst_value_proof ρ
 
 -- [STD] Preservation.
 theorem preservation
