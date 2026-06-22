@@ -10,17 +10,16 @@
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
-◊2   Kernel frozen v1             ── IN PROGRESS. Resource-enforcing rules landed
-                                     (ADR-0019). Proving subst_value exposed the
-                                     NAMED encoding as wrong — 5 structural
-                                     side-conditions (4 machine-checked falsities).
-                                     DE BRUIJN REWRITE LANDED (ADR-0020): syntax,
-                                     shift/subst, positional List grade-vec +
-                                     TyCtx, rules shed all 5 side-conditions,
-                                     Spec statements simplified (bodies sorry),
-                                     Metatheory reset to clean stub. Build GREEN.
-                                     NEXT: proof-engineer rebuilds subst_value on
-                                     the clean de Bruijn base.
+◊2   Kernel frozen v1             ── IN PROGRESS. De Bruijn rewrite landed
+                                     (ADR-0020; the named encoding cost 5
+                                     side-conditions / 4 machine-checked falsities).
+                                     ✓ subst_value PROVEN on the de Bruijn base
+                                     (2026-06-22) — FIRST STD-block theorem,
+                                     axiom-clean {propext, Classical.choice,
+                                     Quot.sound}, ZERO side-conditions. List
+                                     carrier held (length_eq lemma; no Fin n).
+                                     NEXT: preservation → progress → type_safety
+                                     (subst_value, the hard one, is done).
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0

@@ -54,16 +54,20 @@
       machinery closed axiom-clean (12 lemmas) but fought the representation at
       every binder. **DECIDED: switch to de Bruijn (ADR-0020).** Full evidence:
       commits `b853dde`..`e1e4920`.
-- [ ] **In flight — de Bruijn rewrite (ADR-0020)**:
-      - [ ] Core.lean: `vvar : Nat`; `lam`/`letC` drop binder names; context
-            positional (revert ADR-0019 Finsupp split → positional list, now correct)
-      - [ ] Operational.lean: de Bruijn `subst` (shift/lift), `step`, `eval`
-      - [ ] Syntax.lean: rules over positional ctx (`q .: γ` = `::`); DROP the 5
-            named side-conditions
-      - [ ] Spec.lean: statements simplify (`subst_value` loses all side-conditions)
-      - [ ] Metatheory.lean: redo (grade arithmetic + `subst_gen` structure port;
-            weakening → shift lemma) — should close CLEAN
-      - [ ] THEN preservation / progress / type_safety from a clean base
+- [x] **de Bruijn rewrite LANDED (ADR-0020, 2026-06-21)**: Core (vvar:Nat,
+      positional List grade-vec/TyCtx), Operational (shift/substFrom), Syntax
+      (rules shed all 5 side-conditions), Spec (statements simplified). Commit
+      `5bcc469`; build green (730 jobs).
+- [x] **`subst_value` PROVEN (2026-06-22, commit `e00ee9a`)**: fully closed on
+      the de Bruijn base, ZERO `sorry`, axiom-clean {propext, Classical.choice,
+      Quot.sound}. The List-length wall did NOT materialize — `HasCTy.length_eq`
+      makes `γ.length = Γ.length` a theorem, so no `Fin n` fallback needed.
+      Lemma tree in `Bang/Metatheory.lean` (grade arithmetic · weakening/shift ·
+      Sgrade homomorphism · `subst_gen` via `HasCTy.rec`). Also fixed a
+      `tools/check.sh` false-green (grep missed lake's path-prefixed errors).
+- [ ] **In flight — finish the STD block** (subst_value, the hard one, is done):
+      - [ ] preservation (β-case now has the proven subst_value; watch Q4 handle)
+      - [ ] progress · type_safety (fuel-lift)
 - [ ] **Carried design notes** (still live, independent of the rep switch):
       - subsumption (`q' ≤ q` in `lam`) dropped — needs an *ordered* `Mult`;
         own ADR when sub-usage becomes load-bearing (likely at preservation).
