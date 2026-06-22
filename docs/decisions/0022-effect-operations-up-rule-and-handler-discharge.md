@@ -157,8 +157,12 @@ existing `HasCTy.weaken`/`subst_gen` handle cases extend without new binder reas
 ```
 Unit 1 (green, isolated)   EffSig typeclass + Finset instance; replace the opArgTy/opResTy
                            axioms. No up rule yet ⇒ STD block untouched ⇒ stays green.
-Unit 2 (breaks green       up rule (D2) + handle→label-discharging (D4) + HasHandler (D5) +
- until it closes)          progress/type_safety→⊥ (D3) + re-prove the STD cases (D6).
+Unit 2 (breaks green       up rule (D2) + handle→label-discharging (D4) + progress/type_safety
+ until it closes)          →⊥ (D3) + re-prove the STD cases (D6). SCOPED to `up` + the `throws`
+                           handler (zero-shot, clean). The `state` handler is DEFERRED — its
+                           graded threading doesn't preserve cleanly (Q12); revisit with the
+                           Q6 CK machine. Realization: `throws` is one `handleThrows` HasCTy
+                           constructor inlining D5's premise (avoids a 3-way-mutual recursor).
 Unit 3                     no_accidental_handling + effect_sound now NON-vacuous (operations
                            exist, handlers discharge) — the ◊2 headline.
 ```

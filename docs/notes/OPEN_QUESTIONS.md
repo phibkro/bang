@@ -392,6 +392,36 @@ Bruijn switch (C) could be folded in.
 
 ---
 
+## Q12 — Graded state handlers: how does `state ℓ s` thread grades?  · OPEN (deferred from ADR-0022 Unit 2)
+
+**Question**: the `state` handler's `Source.step` reductions don't thread grades cleanly,
+so `state`-handler typing was deferred from ADR-0022's Unit 2 (which does `up` + `throws`).
+
+**Detail**: two grade mismatches in the simplified (Q6) reductions:
+- `get`: `handle (state ℓ s)(up ℓ "get" u) ↦ handle (state ℓ s)(ret s)` — the reduct's grade
+  is `q • γ_s` (from `ret s`) but the redex's is `q • γ_u` (from `up`'s unit arg `u`).
+  Preservation needs `γ_s = γ_u`; only holds if both are `zeros` (closed).
+- `put`: `handle (state ℓ _)(up ℓ "put" v) ↦ handle (state ℓ v)(ret unit)` — stores the
+  *program* value `v` (typed in the ambient `γ Γ`, NOT closed) as the new handler state, but
+  the handler-state typing wants it closed. Open-term preservation breaks.
+
+The root: a stateful handler *threads a resource* (the state) across operations, and QTT grades
+track resource usage — the two interact non-trivially. `throws` avoids this (zero-shot, no
+threading).
+
+**Options**: (1) require the state type `S` to be unrestricted (grade `ω`, freely
+copyable/discardable) so grades don't constrain threading; (2) move to the CK-machine handler
+semantics (Q6) where the continuation is captured and the state threads through the frame, not
+by substitution; (3) a dedicated graded-state metatheory (literature: graded state / coeffectful
+references).
+
+**Blocked on**: Q6 (handler operational semantics) is the likely real fix — graded state wants
+the continuation reified, not the substitution shortcut.
+
+**Revisit signal**: `state`-using programs need type safety; or the CK-machine migration (Q6).
+
+---
+
 ## Adding a new question
 
 Append below with the same format:
