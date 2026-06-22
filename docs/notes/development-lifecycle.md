@@ -99,6 +99,80 @@ research-software seam discipline     each theorem statement has an engineering 
 follow the literature                 borrow shape from Biernacki / Torczon / Bahr-Hutton
 ```
 
+## Design philosophy — the through-line
+
+The invariants (above, and in `CLAUDE.md`) are not a grab-bag; they express **one sensibility**, worth
+stating so a fresh designer can grok the *why* fast. bang is **"make the bad state unrepresentable"
+(the SOUL) applied recursively to language design**:
+
+- **Stratify: verified core + tested superset + an explicit seam.** The single load-bearing model
+  (`CLAUDE.md`, ADR-0028). It recurs at three levels — correctness (ADR-0026 ladder), tooling (Lean
+  spine / diff-tested surface), language (total / `Div` fragment). Descent is *always marked*.
+- **Minimal kernel, everything-as-library.** Five primitives; paradigms, runtimes, even *unsafety and
+  divergence* are effects + handlers (Q16), not language features. Add a primitive only when
+  irreducible (ADR + invariant #5). A pseudoinstruction (alias/macro over a composite) is not a primitive.
+- **Correctness is a chosen ladder, not a binary** (ADR-0026). verified > tested > unsafe, dispatched
+  per-obligation. You do *not* prove everything — you prove the core (sound floor, by construction, the
+  Rust-like part) and *test* the superset (assert + `plausible`). The moat is two-level.
+- **Constraints are generative.** The effect row is not only a restriction — it *licenses* capability:
+  the `⊥`-row permits compile-time folding (Q15); the `Div`-row gates eager eval; the row is the
+  firewall that makes the verified/tested seam safe. An invariant is what lets the optimiser fire.
+- **Proof rides the reference** (invariant #1). Anything that runs has an oracle — a proof, a
+  differential test, or fuel. Never an execution path with nothing behind it.
+- **Calculate, don't hand-design** (ADR-0009/0016). The machine is an *output* of calculation
+  (Bahr-Hutton), not verified after the fact.
+
+Read top-down: *stratify* is the shape; *minimal kernel* is how the core stays small; *the ladder* is how
+the superset stays honest; *constraints are generative* is why the discipline pays; *proof rides the
+reference* and *calculate* are the two non-negotiables underneath.
+
+## The orchestrator's view (the two spines + multi-agent work)
+
+The "two pipelines" frame above (research/engineering) is the *proof* view. The **product turn** (PRD,
+2026-06-22) added a second axis a managing orchestrator must hold:
+
+**Two spines, and they are COUPLED.**
+```
+PRODUCT spine (surface · tested rung)        VERIFICATION spine (kernel/compiler · verified rung)
+  the ladder rungs (PRD §3.1):                 the ◊ checkpoints (ROADMAP):
+  rung 0 RUNS · rung 1 STATE · rung 2 STACK    ◊2 kernel · ◊3 CalcVM · ◊4 LR · ◊5 compiler
+            └──────────────── coupled by ONE-KERNEL-FEATURE-PER-RUNG ────────────────┘
+```
+They are the stratification's two halves (ADR-0028) — but **not freely parallel**. *Each product rung
+pulls a kernel feature*: rung 1 needed resumptive state (Q12 → ADR-0025); rung 2 needs ADTs (Q18 →
+ADR-0029). So the product spine is **kernel-first** — it generates requirements *into* the verification
+spine. Expect every rung = a kernel ask (kernel + proof) + a surface/lib follow-on. (This corrects the
+ROADMAP's earlier "product runs in parallel freely" optimism.)
+
+**The delegation triad** (how a rung gets built):
+```
+kernel-engineer  →  design the kernel feature + machine + the ADR (the crux: can it be type-preserving?)
+proof-engineer   →  discharge the metatheory obligations (preservation/progress), axiom-clean
+surface IC       →  parser/lowering/lib + the tested-rung laws (plausible)
+```
+Sequence them (same file → serialize) or worktree-parallelize (different files → `isolation: worktree`;
+the agent's diff auto-merges into main on completion). Fan-out reads, serialize writes.
+
+**Manager discipline (non-negotiable):**
+- **Verify artifacts, not summaries.** Run `just verify` + `lake env lean Bang/Audit.lean` *yourself*;
+  check the agent's claims against the audit before committing. Pre-compute oracles (hand-trace expected
+  values) so you can *check*, not trust.
+- **The gate holds every commit:** `no_accidental_handling` 0-axiom + headline theorems ⊆ {propext,
+  Classical.choice, Quot.sound}. ◊2 must never regress.
+- **`STATEMENT_CHANGE_OK="why"`** to commit new/renamed theorems (additive helper lemmas count).
+- **Doc-as-you-go:** every decision → ADR immediately, then propagate (OPEN_QUESTIONS · design-space-map
+  · CONTEXT · README index). The maintenance pass catches residue; don't let CONTEXT drift.
+
+**Design forks → the grilling cadence.** When a decision is the *operator's* to make (the proof-power
+dial, polymorphism, iso- vs equi-recursive): present a **strawman + 2–4 pointed questions**, let the
+answers become an ADR. Don't decide solo what the operator's vision should settle; don't *ask* what you
+can derive from existing ADRs. (This session's whole design corpus — ADR-0026..0029 — came from four such
+grills.)
+
+**Session economics.** A big design+build stretch should *checkpoint before* a large fresh build. Scope
+a rung (write its `PATH-*.md`) so it is cold-start-ready, then hand off — don't start the implementation
+on a tired context. `/codebase-maintenance` + a handoff doc is the clean close.
+
 ## The session lifecycle
 
 ```
