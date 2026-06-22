@@ -128,14 +128,13 @@ remaining gap → Phase B PROOF_ORDER #4 (STD block).
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel.
-  Owner: claude as kernel-engineer. Status: **de Bruijn rewrite pending (ADR-0020)**.
-  The resource-enforcing rules (ADR-0019) landed, but proving `subst_value`
-  exposed the named encoding as wrong (5 side-conditions, 4 machine-checked
-  falsities — full evidence in commits `b853dde`..`e1e4920`). Decided: switch to
-  de Bruijn. NEXT: execute the de Bruijn rewrite (Core syntax + Operational
-  subst/step/eval + Syntax rules + Spec statements simplify + Metatheory redo),
-  then the STD-block proofs start clean. The named `Metatheory.lean` proof
-  machinery (grade arithmetic, `subst_gen` structure) largely ports.
+  Owner: claude as kernel-engineer. Status: **de Bruijn rewrite landed +
+  subst_value PROVEN**. The named encoding was abandoned (5 side-conditions, 4
+  machine-checked falsities, `b853dde`..`e1e4920`); de Bruijn (ADR-0020, `5bcc469`)
+  dissolved all five structurally, and `subst_value` then closed clean — axiom-set
+  {propext, Classical.choice, Quot.sound}, zero `sorry` (`e00ee9a`). **NEXT (resume
+  here): preservation → progress → type_safety** on the de Bruijn base; the hard
+  lemma is done, the rest is downhill. Proof machinery in `Bang/Metatheory.lean`.
 
 ## Next stable checkpoint we are paving toward
 
@@ -145,13 +144,12 @@ Definition of stable per `ROADMAP.md`: graded-CBPV `Source.eval` concrete
 (no `opaque`/axiom in `Bang/Spec.lean §0–§4`); row algebra with lacks-
 constrained quantifiers; `no_accidental_handling` proven.
 
-Current ◊2 status: the resource-enforcing rule upgrade (Q10/ADR-0019) has
-**landed** — `HasVTy`/`HasCTy` now thread and check grades over the Finsupp
-grade-vector + ambient type context, and the graded theorem statements are
-correct (no longer vacuous). The remaining gate is **proving** the now-stateable
-bodies, starting with `subst_value`. (Earlier readings of this doc called the
-STD proofs "mechanical" — that was wrong; they needed the rule upgrade first,
-which is now done.)
+Current ◊2 status: rules enforce grades (ADR-0019), the representation is de
+Bruijn (ADR-0020), and **`subst_value` is proven** — the first STD-block theorem,
+axiom-clean. The remaining gate is the rest of the STD block (preservation →
+progress → type_safety) plus the harder block (no_accidental_handling, effect_sound).
+NOTE the grade-vec carrier is now positional `List Mult` (ADR-0020), NOT the
+Finsupp of ADR-0019 — earlier prose mentioning Finsupp grade-vectors is superseded.
 
 ## Outstanding for full ◊2 closure
 
@@ -162,16 +160,16 @@ DONE — Path B rule upgrade (Q10/Q3, ADR-0019):
 [x] Re-shape HasVTy/HasCTy to thread + ENFORCE grades (Torczon-faithful)
     landed in Syntax.lean (defs) + Spec.lean + Compat.lean (statements); build green
 
-ACTIVE — de Bruijn rewrite (ADR-0020), THEN the proofs:
-[ ] Core.lean: vvar→Nat index; lam/letC drop binder names; context positional
-    (revert ADR-0019's Finsupp split → positional list, now correct)
-[ ] Operational.lean: de Bruijn subst (shift/lift), step, eval
-[ ] Syntax.lean: typing rules over positional context (`q .: γ` = `::`),
-    DROP the 5 named side-conditions (capture/freshness/wf/bound-grade/lookup)
-[ ] Spec.lean: statements simplify (subst_value loses ALL side-conditions)
-[ ] Metatheory.lean: redo subst_value (grade arithmetic + subst_gen structure
-    port; weakening becomes a shift lemma) — should close CLEAN
-[ ] THEN preservation / progress / type_safety from a clean base (watch Q4)
+DONE — de Bruijn rewrite (ADR-0020, `5bcc469`) + first STD theorem:
+[x] Core/Operational/Syntax/Spec rewritten to de Bruijn; 5 side-conditions GONE
+[x] subst_value PROVEN (`e00ee9a`) — axiom-clean, zero sorry; List carrier held
+    (length_eq lemma; no Fin n fallback). Machinery in Bang/Metatheory.lean.
+
+ACTIVE — finish the STD block (RESUME HERE):
+[ ] preservation — β-case uses the proven subst_value; WATCH Q4 (handle rule is
+    same-φ; `e' ≤ e` is loose enough it may go through, but effect_sound will force
+    the label-removing rule eventually)
+[ ] progress · type_safety (fuel-lift) — largely mechanical once preservation holds
 
 STILL DEFERRED (harder block):
 [ ] RowAll, WfInst, HandlesIntended — concretize (lacks-quantifier mechanism)
@@ -189,6 +187,15 @@ STILL DEFERRED (harder block):
 - **CLAUDE.md playhead table** — still references deleted ADRs 0010-0014 in
   the right column; should cite ADR-0017 (retrospective). Low priority;
   content remains historically accurate.
+- **`codebase-maintenance` skill — pending homelab rebuild** (2026-06-22): the
+  general skill is committed to homelab source (`c6746bc`, nix-managed) but NOT
+  yet materialized — the operator must run `just rebuild` in homelab. AFTER that:
+  remove lang-bang's temporary local copy
+  `.claude/skills/codebase-maintenance/{SKILL,BOOTSTRAP,REFERENCE}.md` (keep its
+  `instances/` derivation) to avoid two copies of the skill. Until rebuild, the
+  lang-bang local copy is what makes the skill available here.
+- **`tools/check.sh` follow-up**: the grep false-green is fixed (`e00ee9a`), but the
+  robust fix is to key off `lake env lean`'s exit code, not grep (drift-proof).
 
 ## OPEN_QUESTIONS — design decisions
 
