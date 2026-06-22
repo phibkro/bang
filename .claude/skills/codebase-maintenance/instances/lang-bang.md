@@ -19,13 +19,13 @@ discovered here.
 | deps | **test-ish** (Nix `flake.lock` + Lake manifest, frozen by nix) | adequate |
 | cruft | **survey** | legacy `Bang.Eval`/`Calc*` is intentional (baselined); no dead-code tool |
 | debt | **test** (`sorry`/axiom burndown) + **survey** (OPEN_QUESTIONS) | exemplary — debt is *visible and counted* |
-| security | **none** | **climb**: add `gitleaks` pre-commit (cheap; complements the `never-decrypt-sops` rule) |
+| security | **test** (`gitleaks` pre-commit, check 0, runs first + always; landed `a3a0857`) | secrets covered; SCA/dep-CVE absent but low-value (Nix-frozen Mathlib-only deps) |
 | architecture | **survey** (5-primitives / STM-only / rows-are-sets are PROSE) + **test** (statement-freeze hook) | **climb**: an import-cycle / primitive-count fitness function would make Invariants 3 & 5 *structural* |
 | decisions | **survey** + **test** (statement-guard) | ⚠ this repo *deleted* ADR-0003/0004 — research says **supersede, don't delete** (keeps the rejected-alternative trail). Reconsider; add a supersede-link lint |
 
-Two climbs stand out: **gitleaks** (a real gap) and **invariants-as-fitness-functions**
-(Invariants 3/5 are the project's own "make illegal states unrepresentable" creed left on
-the prose rung).
+One climb stands out now: **invariants-as-fitness-functions** (Invariants 3/5 —
+five primitives, STM-only — are the project's own "make illegal states unrepresentable"
+creed left on the prose rung). The **gitleaks** gap is closed (`a3a0857`).
 
 ## The gate (step 3) — real exit code
 
@@ -74,11 +74,19 @@ it cannot drift.
 | refactor (representation/module change) | `CLAUDE.md` (architecture-in-force) + the ADRs it touches + `CONTEXT` |
 | design decision | ADR (+ README index) + `OPEN_QUESTIONS` + `CONTEXT` + `ROADMAP` if ◊ moved |
 
-## Worked example (this session, the de Bruijn pivot — a `design decision`)
+## Worked example (the STD-block landing — `design decision` + `feature`)
 
-The change touched the kernel representation (a design decision), so the survey
-was: **ADR-0020** (new) + README index + **Q11** resolved + **CONTEXT** position
-+ **PATH** in-flight + (no ◊ move, so ROADMAP skipped). The `subst_value` body
-stayed `sorry` (gate: still `sorryAx`, no illegal axiom). Gate read the real exit
-code (`VERIFY_EXIT=0`, 730 jobs). That *is* a G2 checkpoint, run by hand — the
-empirical seed this skill generalizes.
+Corrected 4 typing rules (design decision → **ADR-0021**) and proved
+preservation/progress/type_safety (feature). Survey, named one by one: ADR-0021
+(new) + decisions/README index + **CONTEXT** + **PATH** + **OPEN_QUESTIONS** (Q4 →
+partial) + **references/README** (pinned the cbpv-ec port source to its commit) +
+**spec-proof-discipline.md** — where the survey CAUGHT a falsified fact: PROOF_ORDER
+#5 still said the STD block was "mechanical", the exact assumption the change
+disproved. Confirm-current, no edit: **CLAUDE.md** (no invariant falsified;
+CommSemiring is a typeclass refinement, not a 6th primitive), **ROADMAP** (◊2's
+headline `no_accidental_handling` still unmet → ◊ did not move). Gate read the real
+exit (`VERIFY_EXIT=0`, 730 jobs; axiom-clean). The drift the survey caught is the
+payoff — a generic wrap leaves "mechanical" to mislead the next session.
+
+(Prior exemplar, the de Bruijn pivot → ADR-0020/Q11/CONTEXT/PATH, lives in git
+history at `d5886d9`.)
