@@ -1,7 +1,7 @@
 /-
   Bang/LR.lean — logical relations + observational equivalence + recovery.
   ─────────────────────────────────────────────────────────────────────────
-    §5 helpers — Stack, BaseRel, asThunk, asReturner, raise, opArgTy, opResTy
+    §5 helpers — Stack, BaseRel, asThunk, asReturner, raise (opArg/opRes → EffSig, ADR-0022)
     §5 ⊑ / ≈ — ctxApprox, ctxEquiv, Converges, CoApprox, Cxt, Cxt.plug
     §5 LR — Vrel, Srel, Krel, Crel (axioms; PROOF_ORDER #1 will replace)
     §6 helpers — seqComp, idComp, recover
@@ -53,8 +53,8 @@ axiom BaseStackRel {Eff Mult : Type} : Nat → CTy Eff Mult → Stack → Stack 
 axiom asThunk     {Eff Mult : Type} : VTy Eff Mult → Option (Eff × CTy Eff Mult)
 axiom asReturner  {Eff Mult : Type} : CTy Eff Mult → Option (Mult × VTy Eff Mult)
 axiom raise       {Eff : Type} : Eff → Val → Comp
-axiom opArgTy     {Eff Mult : Type} : Eff → VTy Eff Mult
-axiom opResTy     {Eff Mult : Type} : Eff → VTy Eff Mult
+-- operation arg/result types: superseded by `EffSig.opArg`/`opRes` (ADR-0022 D1),
+-- which are per-`(Label, OpId)` (the old per-`Eff` axioms could not type `get` vs `put`).
 
 
 /-! ## 5.2 LR — Vrel / Srel / Krel / Crel

@@ -175,4 +175,31 @@ def GradeVec.basis {Mult : Type} [Zero Mult] [One Mult] (n i : Nat) : GradeVec M
 def GradeVec.zeros {Mult : Type} [Zero Mult] (n : Nat) : GradeVec Mult :=
   List.replicate n (0 : Mult)
 
+
+/-! ### 1.6 Effect-operation signatures (ADR-0022)
+
+The interface a program's `effect` declarations present to the type system: each
+operation `(ℓ : Label, op : OpId)` has an argument and a result type, and each label
+embeds as a singleton effect row. Kept as a typeclass (not baked into `Eff`, which
+stays the pure `[Lattice] [OrderBot]` row algebra of ADR-0001/0018) so the kernel is
+parametric over the signature; a program supplies the instance.
+
+`labelEff_ne_bot` (a label's effect is never the empty row) is what makes an unhandled
+`up` untypable at `⊥`, so `progress`/`type_safety` hold for fully-handled programs
+(ADR-0022 D3). Concrete instance for `EffRow = Finset Label`: `labelEff ℓ = {ℓ}`
+(`labelEff_ne_bot` = `Finset.singleton_ne_empty`).
+
+The `up` typing rule (`Bang/Syntax.lean`, ADR-0022 D2) and handler typing consume
+this; the metatheory is parametric in `[EffSig Eff Mult]`, so no global instance is
+needed to state or prove the theorems. -/
+class EffSig (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] where
+  /-- The singleton effect row of a label (`ℓ ∈ φ` is `labelEff ℓ ≤ φ`). -/
+  labelEff : Label → Eff
+  /-- Operation argument type. -/
+  opArg : Label → OpId → VTy Eff Mult
+  /-- Operation result type. -/
+  opRes : Label → OpId → VTy Eff Mult
+  /-- A label's effect is non-empty — no operation lives in the empty row. -/
+  labelEff_ne_bot : ∀ ℓ, labelEff ℓ ≠ (⊥ : Eff)
+
 end Bang

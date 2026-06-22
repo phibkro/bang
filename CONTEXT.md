@@ -203,10 +203,18 @@ deferred design fork, and the `up` rule CASCADES BACK into the just-proven STD b
     substitution semantics only via 0-SCALED-position reasoning, which Torczon proves
     SEMANTICALLY (resource/semtyping.v). Likely belongs to ◊4 (LR), not ◊2.
 
-Recommended sequence: Q5 (up rule + signatures + Label↔Eff, ADR) → Q4/Q6 (handler
-typing+reduction, re-prove the STD handle redexes) → no_accidental_handling. Defer
-zero_usage_erasable to ◊4. Each is a fresh focused arc; Q5's first commit breaks
-green until the handle redexes are re-proven, so it must land as a coherent unit.
+**DESIGN LOCKED — ADR-0022** (up rule + EffSig signatures + Label→Eff + label-discharging
+handle + progress/type_safety→⊥). Staged:
+[x] **Unit 1 (landed, green)**: `EffSig` typeclass in Core.lean (labelEff/opArg/opRes +
+    labelEff_ne_bot); retired the dead per-`Eff` opArgTy/opResTy axioms (LR.lean). No `up`
+    rule yet ⇒ STD block untouched ⇒ green.
+[ ] **Unit 2 (next; BREAKS GREEN until whole)**: `up` rule (D2) + handle→label-discharging
+    (D4) + `HasHandler` (D5) + progress/type_safety restated at `⊥` (D3) + re-prove the STD
+    cases the `up` rule makes non-vacuous (D6: handle head-redexes throws/state×get/put).
+    ⚠ progress/type_safety statement change at ⊥ is frozen-PRD (STATEMENT_CHANGE_OK + ADR).
+[ ] **Unit 3**: no_accidental_handling + effect_sound — now NON-vacuous (operations exist,
+    handlers discharge labels). The ◊2 headline.
+Defer zero_usage_erasable to ◊4 (LR-flavored; Torczon proves it via semtyping.v).
 ```
 
 ## Pending meta-work (not on the critical path)

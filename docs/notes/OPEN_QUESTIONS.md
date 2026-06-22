@@ -14,7 +14,7 @@
 - [Q2 — Mult = QTT concretization](#q2--mult--qtt-concretization)
 - [Q3 — Ctx representation: List vs FinMap](#q3--ctx-representation-list-vs-finmap)
 - [Q4 — `handle` typing rule: simplified vs label-removing](#q4--handle-typing-rule-simplified-vs-label-removing)  · ◑ PARTIAL (F-restriction landed, ADR-0021; label-removal deferred)
-- [Q5 — `up` typing rule + opArgTy/opResTy](#q5--up-typing-rule--oparGty-opresty)
+- [Q5 — `up` typing rule + opArgTy/opResTy](#q5--up-typing-rule--oparGty-opresty)  · ◑ DESIGN-LOCKED (ADR-0022)
 - [Q6 — Source.step's deep-handler resumption](#q6--sourcestep-deep-handler-resumption)
 - [Q7 — Operation names as strings vs symbolic enum](#q7--operation-names-as-strings-vs-symbolic-enum)
 - [Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?](#q8--group_recovers-bridge-e-group--f-dagger-frobenius)
@@ -129,7 +129,14 @@ fails because handler doesn't discharge.
 
 ---
 
-## Q5 — `up` typing rule + opArgTy/opResTy
+## Q5 — `up` typing rule + opArgTy/opResTy  · ◑ DESIGN-LOCKED (ADR-0022)
+
+**Resolution (design, 2026-06-22)**: ADR-0022 settles it — per-`(Label, OpId)`
+signatures via an `EffSig` typeclass (`labelEff`/`opArg`/`opRes`/`labelEff_ne_bot`,
+landed in `Bang/Core.lean`, Unit 1), the `up` rule `labelEff ℓ ≤ φ → v : opArg ℓ op →
+up ℓ op v : φ (F q (opRes ℓ op))`, and the knock-ons (progress/type_safety at `⊥`,
+label-discharging `handle`). Implementation Unit 2 is the green-breaking landing. The
+original deliberation is preserved below.
 
 **Question**: the `HasCTy.up` constructor was OMITTED in Phase A part 2
 because it depends on `opArgTy` and `opResTy` (which are still axioms in
