@@ -135,18 +135,26 @@ type_safety) now have CLEAN axiom sets: only `sorryAx` + the kernel-trusted
 three (propext, Classical.choice, Quot.sound). Proof bodies are the only
 remaining gap → Phase B PROOF_ORDER #4 (STD block).
 
+## Product definition
+
+**`docs/PRD.md`** is now the canonical product doc (2026-06-22 product zoom-out). bang-lang is the
+**LANGUAGE** (verified, multi-paradigm, own-surface — convergence decision B); audience = human + agent
+developers ("safe to generate into"); moat = proof-by-construction; north-star golden test = a verified
+OS (xv6; seL4/CertiKOS lineage). v1 MVP = imperative/State + STM. The **surface is pulled forward** as a
+product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "Product spine".
+
 ## Active paths
 
-- **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel.
-  Owner: claude as kernel-engineer. Status: **STD block COMPLETE over the CK machine**.
-  de Bruijn (ADR-0020) + the ADR-0021 corrections closed the substitution-step STD block;
-  then the CK-machine arc (**ADR-0023**) made it true for EFFECTFUL programs:
-  `Source.step` is now config-level (deep handlers), `preservation → progress → type_safety`
-  re-proven axiom-clean over it, fixing the ADR-0022 D3 falsity (shallow-step progress was
-  false — machine-checked counterexample). Machinery in `Bang/Metatheory.lean` §E (HasStack
-  inversion/weakening + `dispatch_typed`/`dispatch_fires` + the three STD proofs over configs).
-  **NEXT: Unit 3** — concretize RowAll/WfInst/HandlesIntended + Trace, then
-  no_accidental_handling / effect_sound (now NON-vacuous). zero_usage_erasable → ◊4.
+- **`paths/PATH-tracer-bullet.md`** — ⭐ **the recommended next work** (product spine, PRD §7). Thin
+  end-to-end: surface → graded-CBPV `Comp` → `Source.eval` → a VALUE. Makes the language RUN; de-risks
+  the surface→kernel lowering. READY, not started. Pure + throws only (State deferred, Q12). Additive —
+  must not touch the verification spine.
+- **`paths/PATH-calcvm-port.md`** — ◊3 (verification spine). Collapse the K3 Calc* matrix into one
+  graded-CBPV calculated machine. SCOPED; D1=A decided (calculate from a denotational `evalD`, prove
+  `evalD ≡ Source.eval`). Tasks #16–#20.
+- **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel. Status: **◊2 GATE MET** — STD block +
+  `no_accidental_handling` axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound`
+  (Q14), `zero_usage_erasable` (→◊4).
 
 ## Next stable checkpoint we are paving toward
 
