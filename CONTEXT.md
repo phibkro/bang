@@ -182,13 +182,31 @@ DONE — STD block (ADR-0021, `Bang/Metatheory.lean` §E):
 [x] type_safety — fuel induction over progress(F) + preservation
     ALL axiom-clean {propext, Classical.choice, Quot.sound}; progress: {propext, Quot.sound}
 
-ACTIVE — the harder block (RESUME HERE):
-[ ] RowAll, WfInst, HandlesIntended — concretize (lacks-quantifier mechanism)
-    + prove rowinst_requires_disjoint, no_accidental_handling
-[ ] Concretize Trace + Source.evalTrace + traceWithin (now possible
-    with Lattice Eff: a Trace is a List Label; traceWithin is ⊆ semantics)
-[ ] Concretize NotEvaluated semantically via Source.step reachability
-[ ] zero_usage_erasable / effect_sound — unblocked only AFTER the Q10 upgrade
+ACTIVE — the harder block (RESUME HERE). Dependency map (2026-06-22 analysis):
+unlike the STD block, NONE of these is a clean isolated proof — each is gated on a
+deferred design fork, and the `up` rule CASCADES BACK into the just-proven STD block.
+
+[ ] **Q5 — the `up` typing rule** is the foundation: without it NO effectful program
+    type-checks, so effect_sound / no_accidental_handling are VACUOUS (no `up` can
+    appear in a well-typed body). Needs: opArgTy/opResTy signature mechanism + a
+    Label→Eff embedding (`ℓ ∈ φ` works abstractly as `labelEff ℓ ≤ φ`). ⚠ CASCADE:
+    adding `up` makes `handle h (up …)` typeable, so preservation's handle head-redex
+    cases (throws/state/get/put) — currently VACUOUS because `up` is untypable — must
+    be RE-PROVEN, and that forces Q4 (label-removing handle) + Q6 (handler op
+    semantics). So Q5 is the head of a coupled arc, not a standalone add.
+[ ] no_accidental_handling — needs RowAll/WfInst/HandlesIntended concretized
+    NON-vacuously (HandlesIntended must be an operational/trace property, not
+    "= Disjoint"); depends on Q5 (operations exist) + Q6 (handler reduction).
+    rowinst_requires_disjoint is near-definitional once WfInst carries the constraint.
+[ ] effect_sound — Trace=List Label + traceWithin (needs Label→Eff) + Q4 + Q5.
+[ ] zero_usage_erasable — LR-flavored: "0-graded ⇒ not forced" is provable in
+    substitution semantics only via 0-SCALED-position reasoning, which Torczon proves
+    SEMANTICALLY (resource/semtyping.v). Likely belongs to ◊4 (LR), not ◊2.
+
+Recommended sequence: Q5 (up rule + signatures + Label↔Eff, ADR) → Q4/Q6 (handler
+typing+reduction, re-prove the STD handle redexes) → no_accidental_handling. Defer
+zero_usage_erasable to ◊4. Each is a fresh focused arc; Q5's first commit breaks
+green until the handle redexes are re-proven, so it must land as a coherent unit.
 ```
 
 ## Pending meta-work (not on the critical path)
