@@ -135,3 +135,35 @@ Phase B started on Path B (resource-enforcing rules). Resume at the Q3-a ADR
 judgments — see OPEN_QUESTIONS Q10 for the full plan, and the port source
 `plclub/cbpv-effects-coeffects` → `resource/CBPV/typing.v` (Torczon Coq;
 re-clone — see `references/README.md` → External resources).*
+
+---
+
+## CK-machine arc (ADR-0023) — 2026-06-22 (PM)
+
+**Why**: ADR-0022 D3's claim that stating `progress`/`type_safety` at `⊥` restores them under the
+substitution step is **machine-checked FALSE**. Counterexample (`/tmp/cex_check.lean`, all green):
+`handle (throws ℓ)(letC (up ℓ "raise" v) N)` is closed, well-typed at `⊥`/`F`, yet STUCK — the shallow
+`Source.step` only catches an operation DIRECTLY under `handle`, but a well-typed body nests it under
+`letC`. Op-aware signatures (the old Q13 plan) do NOT fix this (the counterexample uses the right
+label + right op). The real fix is a **deep handler** = a CK machine. User chose "CK machine now".
+
+**Landed (Units A + B — definitions, validated/elaborating)**:
+- ADR-0023 written + indexed (supersedes ADR-0022 D3; resolves Q6 throws-case; co-resolves Q13).
+- **Machine** (`Operational.lean`): `Config := EvalCtx × Comp`; `Source.step : Config → Option Config`
+  (PUSH letC/app/handle frames · REDUCE ret/lam vs top frame · DISPATCH `up` by scanning the stack
+  for the nearest catching frame, throws discards the captured continuation); `plug`; `Config.run`;
+  `Source.eval : Nat → Comp → Result Val` UNCHANGED signature (loads `⟨[],c⟩`). **Empirically validated**
+  (6 journeys incl. the counterexample → `done`, nested-handler skip, unhandled → stuck).
+- **op-partial `EffSig`** (`Core.lean`, ADR-0023 D6): `opArg`/`opRes : Label → OpId → Option VTy`
+  (`none` = not in interface) + `labelEff_sep` law (label separation). `up` requires `= some`;
+  `handleThrows` requires answer-type `opArg ℓ "raise" = some A` (= block result type — the exposed
+  correction) + interface `= {raise}`.
+- **Config typing** (`Syntax.lean §1.7`): `HasStack`/`HasConfig`/`isReturnConfig`. Stack threads only
+  effects+types (focus always closed ⇒ grades trivial). Core+Syntax build GREEN.
+
+**Remaining (Unit C — proofs; dispatched to proof-engineer)**: rewrite `Metatheory.lean` §E + the
+§C/§D `up`/`handleThrows` premise cases; restate `preservation`/`progress` config-level in `Spec.lean`
+(STATEMENT_CHANGE_OK). §A–§D grade/subst machinery is step-INDEPENDENT → carries over. Per-transition
+preservation obligations + the two needed lemmas (HasStack effect-weakening; stack decomposition at the
+dispatched handler) are in the proof-engineer brief. `type_safety` keeps its frozen statement (bridges
+via `Config.run` from config-progress + config-preservation).

@@ -110,6 +110,9 @@ inductive Frame : Type where
 
 abbrev EvalCtx := List Frame   -- innermost frame first
 
+/-- A CK-machine configuration: a focus computation under a frame stack (ADR-0023). -/
+abbrev Config := EvalCtx × Comp
+
 
 /-! ### 1.4 Type syntax (Torczon graded CBPV) -/
 
@@ -195,11 +198,16 @@ needed to state or prove the theorems. -/
 class EffSig (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] where
   /-- The singleton effect row of a label (`ℓ ∈ φ` is `labelEff ℓ ≤ φ`). -/
   labelEff : Label → Eff
-  /-- Operation argument type. -/
-  opArg : Label → OpId → VTy Eff Mult
-  /-- Operation result type. -/
-  opRes : Label → OpId → VTy Eff Mult
+  /-- Operation argument type (`none` = `op` is NOT in label `ℓ`'s interface, ADR-0023 D6). -/
+  opArg : Label → OpId → Option (VTy Eff Mult)
+  /-- Operation result type (`none` = `op` is NOT in label `ℓ`'s interface). -/
+  opRes : Label → OpId → Option (VTy Eff Mult)
   /-- A label's effect is non-empty — no operation lives in the empty row. -/
   labelEff_ne_bot : ∀ ℓ, labelEff ℓ ≠ (⊥ : Eff)
+  /-- Label separation (ADR-0023 D6): a label embeds atomically, so it cannot hide inside a
+  *different* label's row — it must be in the residual `φ`. Needed in the machine's deep-DISPATCH
+  preservation (skipping a non-matching, different-label handler must not lose the performed label).
+  Holds for `Finset` singletons (atoms of a distributive lattice). -/
+  labelEff_sep : ∀ ℓ ℓ' (φ : Eff), labelEff ℓ ≤ labelEff ℓ' ⊔ φ → ℓ ≠ ℓ' → labelEff ℓ ≤ φ
 
 end Bang

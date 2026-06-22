@@ -113,10 +113,12 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- lacks-discipline membership "`ℓ ∈ φ`" (ADR-0018) in the abstract lattice. The
   -- grade `q • γ` mirrors `ret`: the produced value's budget `q` scales the
   -- argument's grade — this is what makes the `throws` β-grade match in preservation.
-  | up : ∀ {γ Γ} {ℓ : Label} {op : OpId} {v : Val} {φ : Eff} {q : Mult},
+  | up : ∀ {γ Γ} {ℓ : Label} {op : OpId} {v : Val} {φ : Eff} {q : Mult} {A B : VTy Eff Mult},
       EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ →
-      HasVTy γ Γ v (EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op) →
-      HasCTy (q • γ) Γ (Comp.up ℓ op v) φ (CTy.F q (EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op))
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A →      -- op IS in ℓ's interface (D6)
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B →
+      HasVTy γ Γ v A →
+      HasCTy (q • γ) Γ (Comp.up ℓ op v) φ (CTy.F q B)
   -- handleThrows (ADR-0022 D4/D5, throws-only — `state` deferred per Q12): the
   -- `throws ℓ` handler DISCHARGES label `ℓ` from the row. Body uses effect `e`
   -- within `ℓ ⊔ φ` (SUBSUMPTION — a `ret v` body has effect `⊥ ≤ ℓ ⊔ φ`); the
@@ -126,12 +128,57 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- handle RETURNERS (`F`-typed, ADR-0021 C2). `handle (state …) M` is now UNtypable
   -- (Q12 deferred); its `Source.step` reductions stay vacuous under typing.
   | handleThrows : ∀ {γ Γ} {ℓ : Label} {M : Comp} {e φ : Eff} {q : Mult} {A : VTy Eff Mult},
-      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise"
-        = EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "raise" →
+      -- ANSWER-TYPE (ADR-0023): the raise payload type = the handle block's result type `A`. A
+      -- zero-shot abort yields `ret payload : F q A`, so the payload must inhabit `A`. (The old
+      -- `opArg = opRes` premise was masked by the shallow step; the deep handler exposes it.)
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A →
+      -- INTERFACE (ADR-0023 D6): label `ℓ`'s only operation is `raise`, so `up ℓ "get"`-style
+      -- bodies are untypable — they would be stuck under a `throws ℓ` handler.
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise") →
       HasCTy γ Γ M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasCTy γ Γ (Comp.handle (Handler.throws ℓ) M) φ (CTy.F q A)
 end
+
+
+/-! ### 1.7 Configuration typing (ADR-0023) — the CK machine's stack + state.
+
+`HasStack K e_in C_in e_out C_out`: plugging a focus of type `(e_in, C_in)` into frame stack `K`
+yields a whole program of type `(e_out, C_out)`. Binding stays substitution-based, so the focus is
+always CLOSED — the stack threads only effects + computation types; grades live inside each `letF`'s
+stored continuation (one binder), discharged by the closed-`v` `subst_value`. The frame rules mirror
+the corresponding `HasCTy` premises:
+  - `letF N` : the `letC` continuation (`N` typed under one binder; total effect `e₁ ⊔ e₂`);
+  - `appF v` : the `app` argument (effect unchanged: the function's effect IS the app's);
+  - `handleF (throws ℓ)` : discharges `ℓ` (label-removing, ADR-0022 D4) with the answer-type +
+    interface premises of `handleThrows` (ADR-0023). A `handleF (state …)` frame is UNtypable (Q12). -/
+
+inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult → Prop where
+  | nil : ∀ {e C}, HasStack [] e C e C
+  | letF : ∀ {K N e₁ e₂ eo q qk A B Co},
+      HasCTy (qk :: []) [A] N e₂ B →
+      HasStack K (e₁ ⊔ e₂) B eo Co →
+      HasStack (Frame.letF N :: K) e₁ (CTy.F q A) eo Co
+  | appF : ∀ {K v e eo q A B Co},
+      HasVTy [] [] v A →
+      HasStack K e B eo Co →
+      HasStack (Frame.appF v :: K) e (CTy.arr q A B) eo Co
+  | handleF : ∀ {K ℓ e φ eo q A Co},
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A →
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise") →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      HasStack K φ (CTy.F q A) eo Co →
+      HasStack (Frame.handleF (Handler.throws ℓ) :: K) e (CTy.F q A) eo Co
+
+/-- A config is *returned* iff it is `⟨[], ret v⟩` — a value with no work left on the stack. -/
+def isReturnConfig : Config → Prop
+  | ([], .ret _) => True
+  | _            => False
+
+/-- Configuration typing: the focus is closed and well-typed, and the stack carries it to the
+whole-program type `(eo, Co)`. -/
+def HasConfig (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
+  ∃ e C, HasCTy [] [] cfg.2 e C ∧ HasStack cfg.1 e C eo Co
 
 
 /-! ### 0.5 Effect-row well-formedness — keeps rows SET-shaped (ADR-0018)

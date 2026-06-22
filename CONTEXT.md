@@ -11,21 +11,25 @@
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
 ◊2   Kernel frozen v1             ── IN PROGRESS. De Bruijn rewrite landed
-                                     (ADR-0020; the named encoding cost 5
-                                     side-conditions / 4 machine-checked falsities).
-                                     ✓✓ WHOLE STD BLOCK PROVEN on the de Bruijn base
-                                     (2026-06-22): subst_value → preservation →
-                                     progress → type_safety, ALL axiom-clean
-                                     {propext, Classical.choice, Quot.sound}, zero
-                                     sorry. Proving preservation EXPOSED 4 typing-rule
-                                     divergences from Torczon (ADR-0021): lam dropped
-                                     the body effect (made β-preservation false);
-                                     handle over non-F bodies broke progress; Mult
-                                     needed CommSemiring for the letC grade reshape;
-                                     progress is false at general B. All corrected.
-                                     NEXT: the harder block — no_accidental_handling
-                                     + effect_sound + zero_usage_erasable (needs
-                                     RowAll/WfInst/HandlesIntended + Trace concrete).
+                                     (ADR-0020). STD block proven on the de Bruijn
+                                     base; preservation EXPOSED 4 Torczon divergences
+                                     (ADR-0021, all corrected).
+                                     ✓✓ STD BLOCK NOW AXIOM-CLEAN OVER A CK MACHINE
+                                     (2026-06-22, ADR-0023): Source.step is config-level
+                                     (EvalCtx × Comp); deep handlers catch operations
+                                     nested under letC/app and throws discards the
+                                     captured continuation. This FIXED a machine-checked
+                                     FALSITY: ADR-0022 D3's "progress at ⊥ under the
+                                     shallow substitution step" was false — handle(throws ℓ)
+                                     (letC (raise v) N) is well-typed at ⊥ yet stuck.
+                                     preservation/progress/type_safety now GENUINELY TRUE
+                                     for effectful programs, all axiom-clean {propext,
+                                     Classical.choice, Quot.sound}, zero sorry. The fix
+                                     also exposed the handleThrows answer-type correction
+                                     + needed op-partial EffSig signatures (ADR-0023 D6,
+                                     co-resolves Q13). NEXT: Unit 3 — no_accidental_handling
+                                     + effect_sound, now NON-vacuous (operations + deep
+                                     handlers real). zero_usage_erasable → ◊4.
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0
@@ -134,15 +138,15 @@ remaining gap → Phase B PROOF_ORDER #4 (STD block).
 ## Active paths
 
 - **`paths/PATH-graded-cbpv-eval.md`** — graded CBPV kernel.
-  Owner: claude as kernel-engineer. Status: **STD block COMPLETE**. de Bruijn
-  (ADR-0020) dissolved the 5 named side-conditions; `subst_value` closed clean
-  (`e00ee9a`); then `preservation → progress → type_safety` all closed axiom-clean
-  (2026-06-22), after ADR-0021 corrected 4 Torczon-divergent typing rules that
-  preservation exposed (lam body-effect, handle F-restriction, CommSemiring Mult,
-  progress-at-F). Proof machinery in `Bang/Metatheory.lean` (subst_gen + step
-  inversion lemmas + the three STD proofs). **NEXT: the harder block** — concretize
-  RowAll/WfInst/HandlesIntended + Trace, then no_accidental_handling / effect_sound
-  / zero_usage_erasable.
+  Owner: claude as kernel-engineer. Status: **STD block COMPLETE over the CK machine**.
+  de Bruijn (ADR-0020) + the ADR-0021 corrections closed the substitution-step STD block;
+  then the CK-machine arc (**ADR-0023**) made it true for EFFECTFUL programs:
+  `Source.step` is now config-level (deep handlers), `preservation → progress → type_safety`
+  re-proven axiom-clean over it, fixing the ADR-0022 D3 falsity (shallow-step progress was
+  false — machine-checked counterexample). Machinery in `Bang/Metatheory.lean` §E (HasStack
+  inversion/weakening + `dispatch_typed`/`dispatch_fires` + the three STD proofs over configs).
+  **NEXT: Unit 3** — concretize RowAll/WfInst/HandlesIntended + Trace, then
+  no_accidental_handling / effect_sound (now NON-vacuous). zero_usage_erasable → ◊4.
 
 ## Next stable checkpoint we are paving toward
 
@@ -203,21 +207,17 @@ deferred design fork, and the `up` rule CASCADES BACK into the just-proven STD b
     substitution semantics only via 0-SCALED-position reasoning, which Torczon proves
     SEMANTICALLY (resource/semtyping.v). Likely belongs to ◊4 (LR), not ◊2.
 
-**DESIGN LOCKED — ADR-0022** (up rule + EffSig signatures + Label→Eff + label-discharging
-handle + progress/type_safety→⊥). Staged:
-[x] **Unit 1 (landed, green)**: `EffSig` typeclass in Core.lean (labelEff/opArg/opRes +
-    labelEff_ne_bot); retired the dead per-`Eff` opArgTy/opResTy axioms (LR.lean). No `up`
-    rule yet ⇒ STD block untouched ⇒ green.
-[~] **Unit 2 (PARTIAL, landed)**: `up` rule + `handleThrows` (label-discharging, throws-only;
-    state deferred → Q12) + progress/type_safety restated at `⊥`. **`up` + `handleThrows` +
-    `preservation` PROVEN axiom-clean** — preservation now holds for EFFECTFUL programs.
-    progress/type_safety carry ONE documented `sorry` (Metatheory `progress_gen` handleThrows
-    case) — the label-vs-operation granularity wall (**Q13**): a well-typed
-    `handle (throws ℓ)(up ℓ "get" v)` is stuck because effects are label-granular but throws
-    handles only `"raise"`. NEXT: close Q13 (op-aware `EffSig` signatures, option 1) →
-    progress/type_safety axiom-clean again.
-[ ] **Unit 3**: no_accidental_handling + effect_sound — now NON-vacuous (operations exist,
-    handlers discharge labels). The ◊2 headline. (Wants Q13 closed first.)
+**ADR-0022** (up rule + EffSig + label-discharging handle) — Units 1+2 landed; **D3
+superseded by ADR-0023** (the CK machine). **ADR-0023 (CK machine) — LANDED, axiom-clean**:
+[x] **Unit 1 (ADR-0022)**: `EffSig` typeclass in Core.lean. (opArg/opRes now `Option`, ADR-0023 D6.)
+[x] **Unit 2 (ADR-0022)**: `up` rule + label-discharging `handleThrows`. preservation axiom-clean.
+[x] **CK machine (ADR-0023)**: `Source.step : Config → Option Config` (deep handlers, throws
+    discards the captured continuation); op-partial `EffSig` + `labelEff_sep` (D6, closes the Q13
+    op-granularity facet the shallow step couldn't); handleThrows answer-type correction.
+    preservation/progress/type_safety re-proven axiom-clean OVER THE MACHINE, true for effectful
+    programs. Was forced by a machine-checked falsity in ADR-0022 D3 (shallow-step progress).
+[ ] **Unit 3**: no_accidental_handling + effect_sound — now NON-vacuous (operations + deep
+    handlers real). The ◊2 headline. Needs RowAll/WfInst/HandlesIntended + Trace concretized.
 Defer zero_usage_erasable to ◊4 (LR-flavored; Torczon proves it via semtyping.v).
 ```
 
@@ -248,13 +248,15 @@ revisit signals.
 | Q1 | Eff algebra (Semiring vs Lattice) | ✓ resolved — Lattice + OrderBot |
 | Q2 | Mult = QTT concretization | ✓ resolved — QTT enum + CommSemiring |
 | Q3 | Ctx representation (List vs FinMap) | ✓ resolved — ADR-0019: Finsupp grade-vec + ambient TyCtx |
-| Q4 | `handle` typing rule refinement | partial — F-type restriction landed (ADR-0021); label-removing rule still deferred (effect_sound will force it) |
-| Q5 | `up` typing rule + opArgTy/opResTy | revisit |
-| Q6 | Source.step deep-handler resumption | defer until tests demand |
+| Q4 | `handle` typing rule refinement | ✓ resolved — F-restriction (ADR-0021) + label-removal (ADR-0022 D4) + answer-type (ADR-0023) |
+| Q5 | `up` typing rule + opArgTy/opResTy | ✓ resolved — `up` rule + op-partial `EffSig` (ADR-0022/0023) |
+| Q6 | Source.step deep-handler resumption | ◑ throws resolved (ADR-0023 CK machine); state → Q12 |
 | Q7 | Op names string vs enum | defer (cosmetic) |
 | Q8 | `group_recovers` H-K bridge | Phase B research |
 | Q9 | WasmFX target drift | recorded — ◊5 obligation (pin-to-engine) |
 | Q10 | Typing rules must enforce grades | rules landed (ADR-0019); proof bodies remain |
+| Q12 | Graded state handlers | open — state dispatch deferred (needs reified continuation) |
+| Q13 | Op-granularity progress wall | ✓ resolved — CK machine + op-partial sigs (ADR-0023) |
 
 ## Subagents available
 

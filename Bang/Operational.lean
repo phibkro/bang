@@ -13,6 +13,8 @@ import Bang.Syntax
 
 namespace Bang
 
+open Bang.EffectRow (Label)
+
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
@@ -104,57 +106,85 @@ inductive Result (α : Type) where
   | oom : Result α
   | stuck : Result α
 
-/-! Source.step — substitution-based small-step semantics (de Bruijn).
+/-! ### CK machine (ADR-0023) — deep handlers over `EvalCtx × Comp`.
 
-Reductions at the head (`c[v]` = `Comp.subst v c` = fill index 0):
-  force (vthunk M)            ↦  M
-  app   (lam M) v             ↦  M[v]
-  letC  (ret v) N             ↦  N[v]
-  handle h (ret v)            ↦  ret v                    (simplified return)
-  handle (throws ℓ) (up ℓ "raise" v)   ↦  ret v            (zero-shot match)
-  handle (state ℓ s) (up ℓ "get" _)    ↦  handle (state ℓ s) (ret s)
-  handle (state ℓ _) (up ℓ "put" v)    ↦  handle (state ℓ v) (ret unit)
+The substitution step (pre-ADR-0023, preserved in git) was a *shallow* handler: it caught an
+operation only when it sat DIRECTLY under a `handle`. A well-typed body can nest an operation under
+`letC`/`app` frames, and a deep handler must reach past them — and, for a zero-shot exception,
+DISCARD the intervening continuation. A substitution step cannot express that; a stack can.
 
-Search (no head redex): step into the leftmost subterm of letC / app / handle.
+State = `Config := EvalCtx × Comp` (focus + frame stack, innermost frame first). Binding stays
+substitution-based (this is a CK machine, not a CEK machine), so the focus is always closed.
 
-Simplifications (see `docs/notes/OPEN_QUESTIONS.md` Q6):
-  - Handler return clauses are identity (real return is per-handler).
-  - Operation propagation when handle doesn't catch → none (stuck).
-    A CK-machine variant via Frame / EvalCtx is the eventual home. -/
-def Source.step : Comp → Option Comp
-  | .force (.vthunk M)                         => some M
-  | .app (.lam M) v                            => some (Comp.subst v M)
-  | .letC (.ret v) N                           => some (Comp.subst v N)
-  | .handle _ (.ret v)                         => some (.ret v)
-  | .handle (.throws ℓ) (.up ℓ' "raise" v)     =>
-      if ℓ = ℓ' then some (.ret v) else none
-  | .handle (.state ℓ s) (.up ℓ' "get" _)      =>
-      if ℓ = ℓ' then some (.handle (.state ℓ s) (.ret s)) else none
-  | .handle (.state ℓ _) (.up ℓ' "put" v)      =>
-      if ℓ = ℓ' then some (.handle (.state ℓ v) (.ret .vunit)) else none
-  | .letC M N                                  =>
-      match Source.step M with
-      | some M' => some (.letC M' N)
-      | none    => none
-  | .app M v                                   =>
-      match Source.step M with
-      | some M' => some (.app M' v)
-      | none    => none
-  | .handle h M                                =>
-      match Source.step M with
-      | some M' => some (.handle h M')
-      | none    => none
-  | _                                          => none
-  termination_by c => sizeOf c
+```
+PUSH      ⟨K, letC M N⟩          ↦ ⟨letF N :: K, M⟩          (focus the bound computation)
+          ⟨K, app M v⟩           ↦ ⟨appF v :: K, M⟩
+          ⟨K, handle h M⟩        ↦ ⟨handleF h :: K, M⟩
+          ⟨K, force (vthunk M)⟩  ↦ ⟨K, M⟩
+REDUCE    ⟨letF N :: K, ret v⟩   ↦ ⟨K, N[v]⟩                 (let bind)
+          ⟨appF v :: K, lam M⟩   ↦ ⟨K, M[v]⟩                 (β)
+          ⟨handleF h :: K, ret v⟩↦ ⟨K, ret v⟩                (handler return = identity, Q6 simpl.)
+DISPATCH  ⟨K, up ℓ op v⟩         ↦ scan K for the nearest handling frame:
+            throws ℓ ⊳ raise:    ↦ ⟨Kₒ, ret v⟩  (ABORT: discard the captured continuation Kᵢ)
+            no handler in K:     ↦ stuck
+```
 
-/-- Source.eval: fuel-iterated step until we reach a returned value. -/
-def Source.eval : Nat → Comp → Result Val
-  | 0, _      => .oom
-  | _ + 1, .ret v => .done v
-  | n + 1, c  =>
-      match Source.step c with
-      | some c' => Source.eval n c'
-      | none    => .stuck
+`state` dispatch (resume, threading the stored state) is deferred (Q12/Q6) — it KEEPS `Kᵢ` instead of
+discarding it; the search is identical. -/
+
+/-- Does handler `h` catch operation `(ℓ, op)`? -/
+def handlesOp : Handler → Label → OpId → Bool
+  | .throws ℓ',   ℓ, op => (ℓ' = ℓ) && (op == "raise")
+  | .state  ℓ' _, ℓ, op => (ℓ' = ℓ) && (op == "get" || op == "put")
+
+/-- Deep-handler dispatch: walk the stack (innermost first) to the nearest frame catching `(ℓ, op)`.
+`letF`/`appF` frames and non-matching `handleF` frames are skipped — for `throws` (zero-shot) the
+skipped `letF`/`appF` frames ARE the discarded continuation. Reaching `[]` = unhandled = stuck. -/
+def dispatch : EvalCtx → Label → OpId → Val → Option Config
+  | [], _, _, _ => none
+  | (.handleF h :: K), ℓ, op, v =>
+      if handlesOp h ℓ op then
+        match h with
+        | .throws _  => some (K, .ret v)      -- abort to the outer stack with the payload
+        | .state _ _ => none                  -- state resumption deferred (Q12)
+      else dispatch K ℓ op v
+  | (_ :: K), ℓ, op, v => dispatch K ℓ op v   -- skip letF/appF (captured continuation)
+
+/-- One machine transition. `none` = stuck (terminal `⟨[], ret v⟩`, or genuinely wrong). -/
+def Source.step : Config → Option Config
+  -- PUSH
+  | (K, .letC M N)          => some (.letF N :: K, M)
+  | (K, .app M v)           => some (.appF v :: K, M)
+  | (K, .handle h M)        => some (.handleF h :: K, M)
+  | (K, .force (.vthunk M)) => some (K, M)
+  -- REDUCE
+  | (.letF N :: K, .ret v)  => some (K, Comp.subst v N)
+  | (.appF v :: K, .lam M)  => some (K, Comp.subst v M)
+  | (.handleF _ :: K, .ret v) => some (K, .ret v)
+  -- DISPATCH
+  | (K, .up ℓ op v)         => dispatch K ℓ op v
+  -- stuck
+  | _                       => none
+
+/-- Plug a focus back into its evaluation context (the inverse of decomposition). -/
+def plug : EvalCtx → Comp → Comp
+  | [], c            => c
+  | .letF N :: K, c  => plug K (.letC c N)
+  | .appF v :: K, c  => plug K (.app c v)
+  | .handleF h :: K, c => plug K (.handle h c)
+
+/-- Run a config to a returned value. `⟨[], ret v⟩` = done; `step = none` on a non-terminal = stuck. -/
+def Config.run : Nat → Config → Result Val
+  | 0, _              => .oom
+  | _ + 1, ([], .ret v) => .done v
+  | n + 1, cfg        =>
+      match Source.step cfg with
+      | some cfg' => Config.run n cfg'
+      | none      => .stuck
+
+/-- Source.eval: load the closed program into `⟨[], c⟩` and run the machine. Signature unchanged
+(ADR-0023 D3), so `type_safety`'s frozen statement is untouched. -/
+def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel ([], c)
 
 -- Trace / evalTrace: still axiom; need concrete Eff to express
 -- "label in row" (see `docs/notes/OPEN_QUESTIONS.md` Q1).

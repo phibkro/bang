@@ -95,7 +95,13 @@ under the current Ctx representation.
 
 ---
 
-## Q4 — `handle` typing rule: simplified vs label-removing  · ◑ PARTIAL (ADR-0021)
+## Q4 — `handle` typing rule: simplified vs label-removing  · ✓ RESOLVED (ADR-0022 D4 + ADR-0023)
+
+**Resolution (2026-06-22)**: Both refinements landed. F-restriction (ADR-0021 C2) +
+**label-removal**: `handleThrows` now DISCHARGES its label (`e ≤ labelEff ℓ ⊔ φ`, output `φ` —
+ADR-0022 D4), and the corrected answer-type premise `opArg ℓ "raise" = some A` (ADR-0023) makes the
+zero-shot abort type-preserving. The effect row shrinks at the handler, which is what `effect_sound`
+will need. Historical update + deliberation below.
 
 **Update (2026-06-22, ADR-0021, C2)**: the `handle` rule body was restricted from
 general `B` to `CTy.F q A` — handlers handle *returners*. This was forced by
@@ -129,14 +135,14 @@ fails because handler doesn't discharge.
 
 ---
 
-## Q5 — `up` typing rule + opArgTy/opResTy  · ◑ DESIGN-LOCKED (ADR-0022)
+## Q5 — `up` typing rule + opArgTy/opResTy  · ✓ RESOLVED (ADR-0022 + ADR-0023)
 
-**Resolution (design, 2026-06-22)**: ADR-0022 settles it — per-`(Label, OpId)`
-signatures via an `EffSig` typeclass (`labelEff`/`opArg`/`opRes`/`labelEff_ne_bot`,
-landed in `Bang/Core.lean`, Unit 1), the `up` rule `labelEff ℓ ≤ φ → v : opArg ℓ op →
-up ℓ op v : φ (F q (opRes ℓ op))`, and the knock-ons (progress/type_safety at `⊥`,
-label-discharging `handle`). Implementation Unit 2 is the green-breaking landing. The
-original deliberation is preserved below.
+**Resolution (2026-06-22)**: Landed. Per-`(Label, OpId)` signatures via the `EffSig`
+typeclass; the `up` rule in `Bang/Syntax.lean`. ADR-0023 D6 made `opArg`/`opRes` **op-partial**
+(`Label → OpId → Option VTy`, `none` = not in the label's interface); the `up` rule now requires
+`opArg ℓ op = some A` / `opRes ℓ op = some B`. `preservation`/`progress`/`type_safety` are proven
+axiom-clean over the CK machine (ADR-0023), so the rule is non-vacuously exercised. Original
+deliberation preserved below.
 
 **Question**: the `HasCTy.up` constructor was OMITTED in Phase A part 2
 because it depends on `opArgTy` and `opResTy` (which are still axioms in
@@ -155,11 +161,18 @@ literally any effectful program).
 
 ---
 
-## Q6 — Source.step's deep-handler resumption
+## Q6 — Source.step's deep-handler resumption  · ◑ PARTIAL — throws resolved (ADR-0023), state deferred (Q12)
 
-**Question**: the current `Source.step` uses substitution-based small-step.
-When `handle h (up ℓ op v)` doesn't match (h doesn't handle ℓ.op), we
-return `none` (stuck). The "correct" behavior for deep handlers is to
+**Resolution (2026-06-22, ADR-0023)**: `Source.step` is now a **CK machine** over
+`Config = EvalCtx × Comp` (option 2 below — the `Frame`/`EvalCtx` infra). `up` dispatch scans the
+frame stack for the nearest catching handler; the **throws** (zero-shot) case discards the captured
+continuation and aborts with the payload. `preservation`/`progress`/`type_safety` re-proven
+axiom-clean over it. The **state** (resumption) case still uses the same scan but must KEEP the
+captured continuation and thread the stored state — deferred to **Q12** (graded state). Original
+deliberation preserved below.
+
+**Question (historical)**: the substitution-based `Source.step` returned `none` (stuck) when
+`handle h (up ℓ op v)` didn't match. The "correct" behavior for deep handlers is to
 propagate `up` outward while the inner handler is preserved for the
 resumption.
 
@@ -422,9 +435,19 @@ the continuation reified, not the substitution shortcut.
 
 ---
 
-## Q13 — Operation-granularity: `progress` for `throws` needs op-aware signatures  · OPEN (Unit 2 wall)
+## Q13 — Operation-granularity: `progress` for `throws` needs op-aware signatures  · ✓ RESOLVED (ADR-0023)
 
-**Question**: effect rows are **label**-granular (`labelEff ℓ : Eff`), but the `throws`
+**Resolution (2026-06-22, ADR-0023)**: Co-resolved with the CK machine. The Unit-2 `sorry` had TWO
+facets, not one: (a) the wrong-op-same-label case this entry names (`up ℓ "get"` under `throws ℓ`),
+and (b) a DEEPER one this entry MISSED — an operation nested under `letC`/`app` inside the handle is
+stuck under the shallow step *even with the right op* (machine-checked: `handle (throws ℓ)(letC (up ℓ
+"raise" v) N)`). (b) needs the **CK machine** (ADR-0023); (a) needs **op-partial `EffSig`
+signatures** (recommended option 1 below) — `opArg`/`opRes : Label → OpId → Option VTy`, `up`
+requires `some`, `handleThrows` requires the interface `= {raise}`. Both landed in ADR-0023 (D6 + the
+machine); `progress`/`type_safety` are axiom-clean over the machine. The `labelEff_sep` law (sub-gap
+b of this entry) also landed as an `EffSig` law. Original deliberation preserved below.
+
+**Question (historical)**: effect rows are **label**-granular (`labelEff ℓ : Eff`), but the `throws`
 handler reduces only the `"raise"` **operation**. So `handle (throws ℓ) (up ℓ "get" v)` is
 well-typed (label `ℓ` is in the row) yet **stuck** (`Source.step`'s throws arm matches only
 `"raise"`), and `progress` cannot exclude it. This is the single `sorry` left in Unit 2

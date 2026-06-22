@@ -81,27 +81,32 @@ theorem subst_value
     HasCTy (γ + ρ • γ_v) Γ (Comp.subst v c) e B
     := subst_value_proof ρ
 
--- [STD] Preservation.
+-- [STD] Preservation (ADR-0023, config-level). A machine transition preserves the
+-- whole-program type `Co`; the running effect `eo` may only shrink (it shrinks at
+-- the REDUCE-handleF/ret and DISPATCH transitions, where a handler discharges its
+-- label). Stated over `HasConfig` (focus typing + stack typing) because the CK
+-- machine's state is a config, not a bare term (the substitution `Source.step` no
+-- longer exists).
 theorem preservation
-    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
-    {c c' : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy γ Γ c e B → Source.step c = some c' →
-    ∃ e', e' ≤ e ∧ HasCTy γ Γ c' e' B := preservation_proof
+    {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
+    HasConfig cfg eo Co → Source.step cfg = some cfg' →
+    ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := preservation_proof
 
--- [STD] Progress. Closed (empty context ⇒ empty grade vector). Stated at a
--- returner type `F q A` (ADR-0021, C4): at `arr` type a bare `lam` is a normal
--- form that is neither `ret` nor a step, so general `B` is false; `F q A` is also
--- exactly what `type_safety` consumes. Stated at effect `⊥` (ADR-0022 D3): a
--- fully-handled (runnable) program. At `⊥`, an unhandled `up` is untypable
--- (`labelEff ℓ ≤ ⊥ ⇒ labelEff ℓ = ⊥`, contra `labelEff_ne_bot`), so the new `up`
--- normal form never arises and progress collapses to `isReturn ∨ steps`.
+-- [STD] Progress (ADR-0023, config-level). A config typed at whole-program effect
+-- `⊥` (fully handled) and returner type `F q A` is either a returned config
+-- `⟨[], ret v⟩` or it steps. Genuinely true for effectful programs now: a
+-- `⟨K, up ℓ op v⟩` at `⊥` always has a handling frame in `K` (the label must be
+-- discharged up the stack — `labelEff ℓ ≰ ⊥` — and op-partiality forces that
+-- handler to catch `op`), so DISPATCH fires.
 theorem progress
-    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c ⊥ (CTy.F q A) → isReturn c ∨ ∃ c', Source.step c = some c' := progress_proof
+    {cfg : Config} {q : Mult} {A : VTy Eff Mult} :
+    HasConfig cfg ⊥ (CTy.F q A) →
+    isReturnConfig cfg ∨ ∃ cfg', Source.step cfg = some cfg' := progress_proof
 
--- [STD] Safety = progress + preservation, fuel-lifted. At `⊥` (ADR-0022 D3):
--- preservation gives `c' : e' (F q A)` with `e' ≤ ⊥`, so `e' = ⊥` re-establishes
--- the precondition for the fuel IH.
+-- [STD] Safety = progress + preservation, fuel-lifted. Frozen statement (ADR-0023
+-- D3): `Source.eval`'s signature is unchanged (load ⟨[], c⟩, run, unload). The
+-- proof bridges through the config-level progress/preservation. At `⊥`:
+-- preservation gives `eo' ≤ ⊥`, so `eo' = ⊥` re-establishes the fuel IH.
 theorem type_safety
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
     HasCTy [] [] c ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
