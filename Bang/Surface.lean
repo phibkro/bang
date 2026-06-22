@@ -35,6 +35,10 @@ surface exposes exactly one exception channel; richer effect declarations are a
 later issue (out of scope per PATH-tracer-bullet). -/
 def exnLabel : Label := 0
 
+/-- The state channel (rung 1, ADR-0025) — a DISTINCT label from `exnLabel`, so a
+state cell and an exception channel coexist without colliding. -/
+def stateLabel : Label := 1
+
 
 /-! ## 1. Surface AST (named binders)
 
@@ -49,13 +53,22 @@ Grammar (the subset this tracer bullet covers):
              | 'fun' ident '=>' expr               -- lambda → lam
              | 'handle' expr                       -- install the throws handler
              | 'raise' atom                        -- perform the exception op → up
+             | 'state' atom 'in' expr              -- install a state handler (rung 1) → handle (Handler.state)
+             | 'put' atom                          -- write the state cell → up stateLabel "put"
              | app
     app    ::= atom atom*                           -- juxtaposition → app (left assoc)
     atom   ::= int                                  -- literal → ret (vint n)
              | ident                                -- variable → ret (vvar i)
+             | 'get'                                -- read the state cell → up stateLabel "get" unit
              | '$' atom | '!' atom                  -- force a thunk → force
              | '{' expr '}'                         -- thunk a computation → vthunk
              | '(' expr ')'                         -- grouping
+
+State (rung 1, ADR-0025) is a RESUMPTIVE handler on its own label (`stateLabel`,
+distinct from `exnLabel`). `state v in e` installs `Handler.state stateLabel v`
+around `e`; inside, `put a` stores and `get` reads the cell. `get` is nullary
+(atom-position, like a literal); `put`/`state` take an atom argument. The initial
+state and `put`'s argument are VALUE-position (so `put { … }` thunks a comp).
 
 `$`/`!` are BOTH force (the v0.1 `!`-force UX; ADR-0007 makes `$` the canonical
 force, `!` is actor-send in full bang — here we accept both as force for the
@@ -71,6 +84,9 @@ inductive Surf where
   | app    : Surf → Surf → Surf          -- e1 e2
   | raise  : Surf → Surf                 -- raise e
   | handle : Surf → Surf                 -- handle e
+  | getS   : Surf                        -- get      (read the state cell)
+  | putS   : Surf → Surf                 -- put e    (write the state cell)
+  | stateS : Surf → Surf → Surf          -- state e0 in e (install state handler)
   deriving Repr, Inhabited, DecidableEq
 
 
@@ -105,6 +121,9 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
   | .raise e    => do return .up exnLabel "raise" (← lowerV env e)
   | .handle e   => do return .handle (.throws exnLabel) (← lowerC env e)
+  | .getS       => .ok (.up stateLabel "get" .vunit)
+  | .putS e     => do return .up stateLabel "put" (← lowerV env e)
+  | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC env e)
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -163,6 +182,7 @@ def isIntLit (s : String) : Bool :=
 def pIdent : P String
   | t :: ts =>
       if t = "let" || t = "fun" || t = "handle" || t = "raise"
+          || t = "state" || t = "get" || t = "put"
           || t = "in" || t = "=" || t = "=>" then
         .error s!"expected an identifier, got keyword '{t}'"
       else .ok (t, ts)
@@ -201,6 +221,14 @@ def pExpr : Nat → P Surf
   | f + 1, "raise" :: ts => do
       let (a, ts) ← pAtom f ts
       .ok (.raise a, ts)
+  | f + 1, "state" :: ts => do
+      let (e0, ts) ← pAtom f ts
+      let (_, ts) ← expect "in" ts
+      let (e, ts) ← pExpr f ts
+      .ok (.stateS e0 e, ts)
+  | f + 1, "put" :: ts => do
+      let (a, ts) ← pAtom f ts
+      .ok (.putS a, ts)
   | f + 1, ts => pApp f ts
 
 /-- Parse an application chain: one or more atoms, left-associated. -/
@@ -241,9 +269,11 @@ def pAtom : Nat → P Surf
   | f + 1, "!" :: ts => do
       let (a, ts) ← pAtom f ts
       .ok (.force a, ts)
+  | _ + 1, "get" :: ts => .ok (.getS, ts)
   | _ + 1, t :: ts =>
       if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
+              || t = "state" || t = "put"
               || t = "in" || t = "=" || t = "=>" || t = ")" || t = "}" then
         .error s!"unexpected '{t}' where an atom was expected"
       else .ok (.var t, ts)
@@ -312,9 +342,6 @@ def deepComp : Comp :=
   .handle (.throws exnLabel) (.letC (.up exnLabel "raise" (.vint 7)) (.ret (.vint 99)))
 example : Source.eval 20 deepComp = .done (.vint 7) := by rfl
 
-/-- The state label (a distinct channel from `exnLabel`). -/
-def stateLabel : Label := 1
-
 /-- state CELL (rung 1, ADR-0025): `handle (state ℓ 0) (let _ = put 7 in get ())` ⟶ `7`.
 The RESUMPTIVE handler stores `7` on `put`, then `get` returns it — the deep handler KEEPS the
 captured `letC` continuation and threads the state, unlike `throws` which discards it. (A *counter*
@@ -337,6 +364,10 @@ example : lower (.lett "x" (.lit 3) (.var "x")) = .ok pureComp := by rfl
 example : lower (.handle (.raise (.lit 7))) = .ok throwsComp := by rfl
 example :
     lower (.handle (.lett "_" (.raise (.lit 7)) (.lit 99))) = .ok deepComp := by rfl
+-- state forms lower to the hand-built Stage-1 ASTs (pins get/put/state lowering).
+example :
+    lower (.stateS (.lit 0) (.lett "_" (.putS (.lit 7)) .getS)) = .ok stateCellComp := by rfl
+example : lower (.stateS (.lit 5) .getS) = .ok stateGetComp := by rfl
 
 /-! ### Stage 2 — the SAME programs, parsed from SOURCE TEXT, run to the SAME
 values (compiled `#guard`; see the discharge note above). -/
@@ -347,6 +378,10 @@ values (compiled `#guard`; see the discharge note above). -/
 #guard runYieldsInt 20 "handle (raise 7)" 7
 -- deep-throws, from source: `handle (let z = raise 7 in 99)`  ⟶ done (vint 7)
 #guard runYieldsInt 20 "handle (let z = raise 7 in 99)" 7
+-- state cell, from source: `state 0 in (let z = put 7 in get)`  ⟶ done (vint 7)
+#guard runYieldsInt 50 "state 0 in (let z = put 7 in get)" 7
+-- state get-default, from source: `state 5 in get`  ⟶ done (vint 5)
+#guard runYieldsInt 50 "state 5 in get" 5
 
 /-! ### Stage 2b — parse alone resolves to the expected surface tree (pins the
 parser independently of eval). `parsesTo` returns a `Bool` (via `DecidableEq
@@ -360,6 +395,9 @@ def parsesTo (src : String) (e : Surf) : Bool :=
 
 #guard parsesTo "let x = 3 in x" (.lett "x" (.lit 3) (.var "x"))
 #guard parsesTo "handle (raise 7)" (.handle (.raise (.lit 7)))
+#guard parsesTo "state 0 in (let z = put 7 in get)"
+  (.stateS (.lit 0) (.lett "z" (.putS (.lit 7)) .getS))
+#guard parsesTo "state 5 in get" (.stateS (.lit 5) .getS)
 #guard parsesTo "fun x => x" (.lam "x" (.var "x"))
 
 end Bang.Surface

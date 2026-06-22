@@ -1583,6 +1583,221 @@ theorem HasStack.dispatch_op_handled {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff 
       rw [splitAt_handleF_miss K hcatch, Option.isSome_map] at hd
       exact ih hd
 
+/-- The STATE-KEEPING dispatch decomposition (PRESERVATION direction, ADR-0025). The resumptive
+analogue of `dispatch_typed`: where `throws` DISCARDS the captured continuation `Kᵢ` (aborting to
+`Kₒ`), `state` KEEPS `Kᵢ` and re-installs a deep `state ℓ s'` frame, so the resumed stack is
+`Kᵢ ++ handleF (state ℓ s') :: Kₒ`. GIVEN the original `HasStack K e (F q B) eo Co` and that `splitAt`
+located a `state ℓ s` frame for `(ℓ, op)`, we re-type the resumed stack at the SAME focus type
+`F q B` and an outer effect `eo' ≤ eo`, for ANY new closed state `s'` (`HasVTy [] [] s' S`).
+
+The induction follows the `splitAt` recursion (mirrors `dispatch_typed`): each skipped frame
+(`letF`/`appF`/non-matching `handleF`) is rebuilt onto the front of the resumed stack via its own
+`HasStack` constructor (so `Kᵢ` is reconstructed frame-by-frame), and at the matching `state ℓ`
+frame the reinstalled `stateF` constructor splices `s'` in front of the original outer substack.
+`nil` is vacuous (`splitAt [] = none`). Foreign `state ℓ'`/`throws ℓ'` frames are skipped exactly as
+in `dispatch_op_handled`. The resumed focus effect is the original `e`; the caller plugs the closed
+`ret s'` (effect `⊥ ≤ e`) via `weaken_eff`. -/
+theorem HasStack.dispatch_state_typed {K Kᵢ Kₒ : EvalCtx} {e : Eff}
+    {C : CTy Eff Mult} {S : VTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult}
+    {ℓ : Label} {op : OpId} {s s' : Val} :
+    HasStack K e C eo Co →
+    EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S →
+    (op = "get" ∨ op = "put") →
+    HasVTy [] [] s' S →
+    splitAt K ℓ op = some (Kᵢ, Handler.state ℓ s, Kₒ) →
+    ∃ eo', eo' ≤ eo ∧
+      HasStack (Kᵢ ++ Frame.handleF (Handler.state ℓ s') :: Kₒ) e C eo' Co := by
+  intro hK hgetRes hop hs'
+  induction hK generalizing Kᵢ Kₒ s with
+  | @nil e0 C0 => intro hd; simp [splitAt] at hd
+  | @letF K N e₁ e₂ eo q qk A0 B0 Co hN hsub ih =>
+    intro hd
+    rw [splitAt_letF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using HasStack.letF hN hsub'⟩
+  | @appF K w e eo q A0 B0 Co hv hsub ih =>
+    intro hd
+    rw [splitAt_appF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using HasStack.appF hv hsub'⟩
+  | @handleF K ℓ' e φ eo q A0 Co hraise hiface hdis hsub ih =>
+    intro hd
+    -- a `throws ℓ'` frame never catches get/put (op ∈ {get,put}); dispatch skips it.
+    have hcatch : handlesOp (Handler.throws ℓ') ℓ op = false := by
+      rcases hop with h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using HasStack.handleF hraise hiface hdis hsub'⟩
+  | @stateF K ℓ' s₀ e φ eo q A0 S0 Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    intro hd
+    by_cases hℓ : ℓ' = ℓ
+    · -- matching state frame: this is the split point. Reinstall `state ℓ s'` over the same `Kₒ`.
+      subst hℓ
+      have hcatch : handlesOp (Handler.state ℓ' s₀) ℓ' op = true := by
+        rcases hop with h | h <;> subst h <;> simp [handlesOp]
+      rw [splitAt_handleF_hit K hcatch, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hd
+      obtain ⟨hKᵢ, hstateEq, hKₒ⟩ := hd
+      subst hKᵢ; subst hKₒ
+      -- the matching frame's stored state has type `S0`; `s'` must inhabit the SAME `S0`.
+      -- `opRes ℓ' "get" = some S0` (frame) and `= some S` (hyp) ⇒ S = S0.
+      have hSeq : S = S0 := by rw [hgr] at hgetRes; exact (Option.some.inj hgetRes).symm
+      subst hSeq
+      refine ⟨eo, le_refl _, ?_⟩
+      simpa using HasStack.stateF hga hgr hpa hpr hif hs' hdis hsub
+    · -- foreign state frame (different label): dispatch skips it.
+      have hcatch : handlesOp (Handler.state ℓ' s₀) ℓ op = false := by simp [handlesOp, hℓ]
+      rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+      subst hKᵢ; subst hh; subst hKₒ
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+      exact ⟨eo', hleo, by simpa using HasStack.stateF hga hgr hpa hpr hif hs hdis hsub'⟩
+
+/-- The stored state at the matched `state ℓ s` frame is CLOSED of type `S = opRes ℓ "get"`
+(ADR-0025 grade discipline: the CK focus is always closed, so the threaded state is too). Same
+`splitAt`-recursion induction as `dispatch_state_typed`; only the matched frame's `hs`/`hgr` are
+read off. Supplies the get-resume's reinstall typing (`ret s` re-stores the same closed `s`). -/
+theorem HasStack.splitAt_state_closed {K Kᵢ Kₒ : EvalCtx} {e : Eff}
+    {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {op : OpId} {s : Val} :
+    HasStack K e C eo Co →
+    (op = "get" ∨ op = "put") →
+    splitAt K ℓ op = some (Kᵢ, Handler.state ℓ s, Kₒ) →
+    ∃ S, EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit
+      ∧ HasVTy [] [] s S := by
+  intro hK hop
+  induction hK generalizing Kᵢ Kₒ s with
+  | @nil e0 C0 => intro hd; simp [splitAt] at hd
+  | @letF K N e₁ e₂ eo q qk A0 B0 Co hN hsub ih =>
+    intro hd
+    rw [splitAt_letF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
+  | @appF K w e eo q A0 B0 Co hv hsub ih =>
+    intro hd
+    rw [splitAt_appF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
+  | @handleF K ℓ' e φ eo q A0 Co hraise hiface hdis hsub ih =>
+    intro hd
+    have hcatch : handlesOp (Handler.throws ℓ') ℓ op = false := by
+      rcases hop with h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
+  | @stateF K ℓ' s₀ e φ eo q A0 S0 Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    intro hd
+    by_cases hℓ : ℓ' = ℓ
+    · subst hℓ
+      have hcatch : handlesOp (Handler.state ℓ' s₀) ℓ' op = true := by
+        rcases hop with h | h <;> subst h <;> simp [handlesOp]
+      rw [splitAt_handleF_hit K hcatch, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hd
+      obtain ⟨_, hstateEq, _⟩ := hd
+      -- `state ℓ' s₀ = state ℓ' s` ⇒ s = s₀
+      rw [Handler.state.injEq] at hstateEq
+      obtain ⟨_, hseq⟩ := hstateEq; subst hseq
+      exact ⟨S0, hgr, hpa, hpr, hs⟩
+    · have hcatch : handlesOp (Handler.state ℓ' s₀) ℓ op = false := by simp [handlesOp, hℓ]
+      rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨_, hh, _⟩ := heq; subst hh
+      exact ih hsp
+
+/-- For `op ∈ {get, put}`, any catching frame found by `splitAt` is a `state ℓ` handler at the
+SAME label `ℓ`: `throws` catches only `raise` (`handlesOp (throws ..) ℓ get/put = false`), and a
+`state ℓ'` catches `get`/`put` only when `ℓ' = ℓ`. So `splitAt`'s handler component is `state ℓ _`. -/
+theorem splitAt_getput_state {K : EvalCtx} {ℓ : Label} {op : OpId} {Kᵢ Kₒ : EvalCtx} {h : Handler}
+    (hop : op = "get" ∨ op = "put") :
+    splitAt K ℓ op = some (Kᵢ, h, Kₒ) → ∃ s, h = Handler.state ℓ s := by
+  induction K generalizing Kᵢ Kₒ h with
+  | nil => intro hd; simp [splitAt] at hd
+  | cons fr K ih =>
+    cases fr with
+    | letF N =>
+      intro hd; rw [splitAt_letF, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      exact heq.2.1 ▸ ih hsp
+    | appF w =>
+      intro hd; rw [splitAt_appF, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      exact heq.2.1 ▸ ih hsp
+    | handleF hh =>
+      intro hd
+      by_cases hcatch : handlesOp hh ℓ op = true
+      · rw [splitAt_handleF_hit K hcatch, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hd
+        obtain ⟨_, hheq, _⟩ := hd
+        subst hheq
+        cases hh with
+        | throws ℓ' => rcases hop with h | h <;> subst h <;> simp [handlesOp] at hcatch
+        | state ℓ' s =>
+          -- catches get/put ⇒ ℓ' = ℓ
+          rcases hop with h | h <;> subst h <;>
+            (simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hcatch
+             obtain ⟨hℓ', _⟩ := hcatch; subst hℓ'; exact ⟨s, rfl⟩)
+      · simp only [Bool.not_eq_true] at hcatch
+        rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+        obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+        simp only [Prod.mk.injEq] at heq
+        exact heq.2.1 ▸ ih hsp
+
+/-- CLOSED FORM for `"get"` dispatch (ADR-0025 resume): the catching handler is a `state ℓ s`, which
+RESUMES with the stored `s` over the KEPT inner prefix, reinstalling itself: the resumed config is
+`(Kᵢ ++ handleF (state ℓ s) :: Kₒ, ret s)`. -/
+theorem dispatch_get_shape {K : EvalCtx} {ℓ : Label} {v : Val} {cfg' : Config} :
+    dispatch K ℓ "get" v = some cfg' →
+    ∃ Kᵢ s Kₒ, splitAt K ℓ "get" = some (Kᵢ, Handler.state ℓ s, Kₒ)
+      ∧ cfg' = (Kᵢ ++ Frame.handleF (Handler.state ℓ s) :: Kₒ, Comp.ret s) := by
+  unfold dispatch
+  cases hsp : splitAt K ℓ "get" with
+  | none => simp
+  | some t =>
+    obtain ⟨Kᵢ, h, Kₒ⟩ := t
+    obtain ⟨s, hs⟩ := splitAt_getput_state (Or.inl rfl) hsp
+    subst hs
+    simp only [Option.bind_some, dispatchOn, beq_self_eq_true, if_true, Option.some.injEq]
+    intro hd; exact ⟨Kᵢ, s, Kₒ, rfl, hd.symm⟩
+
+/-- CLOSED FORM for `"put"` dispatch (ADR-0025 resume): the catching `state ℓ s` STORES the payload
+`v` (state ← v), returns `unit` over the kept inner prefix, reinstalling `state ℓ v`: the resumed
+config is `(Kᵢ ++ handleF (state ℓ v) :: Kₒ, ret unit)`. -/
+theorem dispatch_put_shape {K : EvalCtx} {ℓ : Label} {v : Val} {cfg' : Config} :
+    dispatch K ℓ "put" v = some cfg' →
+    ∃ Kᵢ s Kₒ, splitAt K ℓ "put" = some (Kᵢ, Handler.state ℓ s, Kₒ)
+      ∧ cfg' = (Kᵢ ++ Frame.handleF (Handler.state ℓ v) :: Kₒ, Comp.ret Val.vunit) := by
+  unfold dispatch
+  cases hsp : splitAt K ℓ "put" with
+  | none => simp
+  | some t =>
+    obtain ⟨Kᵢ, h, Kₒ⟩ := t
+    obtain ⟨s, hs⟩ := splitAt_getput_state (Or.inr rfl) hsp
+    subst hs
+    simp only [Option.bind_some, dispatchOn, show ("put" == "get") = false by decide,
+      Bool.false_eq_true, if_false, Option.some.injEq]
+    intro hd; exact ⟨Kᵢ, s, Kₒ, rfl, hd.symm⟩
+
 /-! ### E.2 preservation (config level, ADR-0023) -/
 
 theorem preservation_proof
@@ -1641,19 +1856,45 @@ theorem preservation_proof
       refine ⟨eo', hleo, ⟨⊥, CTy.F q_h A, ?_, hsub'⟩⟩
       exact HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul])
     · -- STATE-get RESUME path (ADR-0025): cfg' = ⟨Kᵢ ++ handleF (state ℓ s) :: Kₒ, ret s⟩.
-      -- RUNG1-OBLIGATION: type the RESUMED stack `Kᵢ ++ handleF (state ℓ s) :: Kₒ` from the original
+      -- Discharged (ADR-0025) via `dispatch_state_typed`: type the RESUMED stack `Kᵢ ++ handleF (state ℓ s) :: Kₒ` from the original
       -- `HasStack K`, with the focus re-typed from the `up`'s result (`F q (opRes ℓ "get")`) to
       -- `ret s : F q' S` (the stored state). The hard core is a `dispatch_typed`-analog for `state`
       -- that KEEPS `Kᵢ` (re-installs the deep state frame) instead of discarding it. `s` is closed
       -- (`HasVTy [] [] s S`, from the stateF frame), so the new focus `ret s` is closed.
       subst hget
-      sorry
+      obtain ⟨Kᵢ, s, Kₒ, hsplit, hcfg'⟩ := dispatch_get_shape hstep
+      subst hcfg'
+      -- the stored state `s` is closed of type `S = opRes ℓ "get" = B`; re-store it (state unchanged).
+      obtain ⟨S, hgetRes, _, _, hs⟩ := hstack.splitAt_state_closed (Or.inl rfl) hsplit
+      have hSB : S = B := by rw [hopRes] at hgetRes; exact (Option.some.inj hgetRes).symm
+      subst hSB
+      obtain ⟨eo', hleo, hstk'⟩ :=
+        hstack.dispatch_state_typed hgetRes (Or.inl rfl) hs hsplit
+      -- plug the closed `ret s : ⊥ (F q S)` (effect ⊥ ≤ e) into the resumed stack.
+      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
+      exact ⟨eo'', le_trans hleo' hleo,
+        ⟨⊥, CTy.F q S, HasCTy.ret hs (by simp [hsmul_eq_smul, GradeVec.smul]), hstk''⟩⟩
     · -- STATE-put RESUME path (ADR-0025): cfg' = ⟨Kᵢ ++ handleF (state ℓ v) :: Kₒ, ret unit⟩.
-      -- RUNG1-OBLIGATION: same resumed-stack typing as get, with the stored state UPDATED to `v`
+      -- Discharged (ADR-0025): same resumed-stack typing as get, with the stored state UPDATED to `v`
       -- (`v` closed from the closed focus, `HasVTy [] [] v S` via `hwv` + `opArg ℓ "put" = some S`),
       -- and the new focus `ret unit : F q' unit`.
       subst hput
-      sorry
+      obtain ⟨Kᵢ, s, Kₒ, hsplit, hcfg'⟩ := dispatch_put_shape hstep
+      subst hcfg'
+      -- the state type is `S = opArg ℓ "put"`; the payload `v : A = S` re-stores it (state ← v).
+      obtain ⟨S, hgetRes, hputArg, hputRes, _⟩ := hstack.splitAt_state_closed (Or.inr rfl) hsplit
+      have hAS : A = S := by rw [hopArg] at hputArg; exact Option.some.inj hputArg
+      subst hAS
+      -- B = opRes ℓ "put" = unit, so the resumed focus `ret unit : F q unit = F q B`.
+      have hBunit : B = VTy.unit := by rw [hopRes] at hputRes; exact Option.some.inj hputRes
+      subst hBunit
+      obtain ⟨eo', hleo, hstk'⟩ :=
+        hstack.dispatch_state_typed hgetRes (Or.inr rfl) hwv hsplit
+      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
+      exact ⟨eo'', le_trans hleo' hleo,
+        ⟨⊥, CTy.F q VTy.unit,
+          HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+          hstk''⟩⟩
   | letC M N =>
     -- PUSH letC
     simp only [Source.step, Option.some.injEq] at hstep
