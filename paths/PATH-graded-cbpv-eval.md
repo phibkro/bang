@@ -167,3 +167,17 @@ label + right op). The real fix is a **deep handler** = a CK machine. User chose
 preservation obligations + the two needed lemmas (HasStack effect-weakening; stack decomposition at the
 dispatched handler) are in the proof-engineer brief. `type_safety` keeps its frozen statement (bridges
 via `Config.run` from config-progress + config-preservation).
+
+## Unit 3 — abstraction-safety (ADR-0024) — 2026-06-22 (PM) — ◊2 GATE MET
+
+`no_accidental_handling` was a vacuous placeholder (∀-quantified handler `h`). Restated faithfully
+(ADR-0024 D2) + PROVEN 0-axiom: a handler scoped to row `l` (`HandlesWithin l h`) never catches a
+foreign operation (label in a disjoint `e`) — correct-by-construction in the label-indexed CK machine
+(`handlesOp` matches the label exactly; accidental handling is unrepresentable). `WfInst` concretized
+to carry the lacks-constraint (`rowinst_requires_disjoint` proven, ADR-0024 D3). `RowAll`/`HandlesIntended`
+axioms retired. Defs/proofs in `Metatheory.lean §F`; statements in `Spec.lean §0.5`. `just verify` green.
+
+**◊2 gate test MET**: Source.eval concrete (CK machine) + lacks-constraints + no_accidental_handling
+proven + selfcheck green. Residual (NON-gate): `effect_sound` (deferred — trace-semantics design Q14,
+the deep machine hides internally-handled labels from the static effect `e`), `zero_usage_erasable` (→◊4).
+**NEXT checkpoint: ◊3 (CalcVM port).**

@@ -36,11 +36,14 @@ staged_lean=$(git diff --cached --name-only --diff-filter=ACM \
               | grep -E '\.lean$' || true)
 
 if [ -n "$staged_lean" ]; then
-  bad=$(echo "$staged_lean" | xargs -r grep -lE '\badmit\b' 2>/dev/null || true)
+  # Match the `admit` TACTIC (standalone, or after by / ; / => / <;>), NOT the bare
+  # word in prose or comments (e.g. Audit.lean's "from a sorry/admit"). The axiom
+  # audit (sorryAx) is the real backstop; this is a cheap early static check.
+  bad=$(echo "$staged_lean" | xargs -r grep -lE '(^|;|=>|<;>|\bby\b)[[:space:]]*admit\b' 2>/dev/null || true)
   if [ -n "$bad" ]; then
-    echo "❌ pre-commit: 'admit' found in staged Lean files:"
+    echo "❌ pre-commit: 'admit' tactic found in staged Lean files:"
     echo "$bad" | sed 's/^/    /'
-    echo "   (replace with `sorry` or close the proof)"
+    echo '   (replace with sorry or close the proof)'
     exit 1
   fi
 fi

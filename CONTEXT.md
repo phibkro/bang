@@ -10,26 +10,26 @@
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
-◊2   Kernel frozen v1             ── IN PROGRESS. De Bruijn rewrite landed
-                                     (ADR-0020). STD block proven on the de Bruijn
-                                     base; preservation EXPOSED 4 Torczon divergences
-                                     (ADR-0021, all corrected).
-                                     ✓✓ STD BLOCK NOW AXIOM-CLEAN OVER A CK MACHINE
-                                     (2026-06-22, ADR-0023): Source.step is config-level
-                                     (EvalCtx × Comp); deep handlers catch operations
-                                     nested under letC/app and throws discards the
-                                     captured continuation. This FIXED a machine-checked
-                                     FALSITY: ADR-0022 D3's "progress at ⊥ under the
-                                     shallow substitution step" was false — handle(throws ℓ)
-                                     (letC (raise v) N) is well-typed at ⊥ yet stuck.
-                                     preservation/progress/type_safety now GENUINELY TRUE
-                                     for effectful programs, all axiom-clean {propext,
-                                     Classical.choice, Quot.sound}, zero sorry. The fix
-                                     also exposed the handleThrows answer-type correction
-                                     + needed op-partial EffSig signatures (ADR-0023 D6,
-                                     co-resolves Q13). NEXT: Unit 3 — no_accidental_handling
-                                     + effect_sound, now NON-vacuous (operations + deep
-                                     handlers real). zero_usage_erasable → ◊4.
+◊2 ✓ Kernel frozen v1 (GATE MET)  ── 2026-06-22. STD block proven on the de Bruijn
+                                     base (ADR-0020); preservation EXPOSED 4 Torczon
+                                     divergences (ADR-0021, corrected).
+                                     ✓✓ STD BLOCK AXIOM-CLEAN OVER A CK MACHINE
+                                     (ADR-0023): Source.step is config-level (EvalCtx ×
+                                     Comp); deep handlers catch operations nested under
+                                     letC/app; throws discards the captured continuation.
+                                     FIXED a machine-checked FALSITY (ADR-0022 D3's
+                                     "progress at ⊥ under the shallow step" — handle(throws ℓ)
+                                     (letC (raise v) N) is well-typed at ⊥ yet stuck).
+                                     preservation/progress/type_safety GENUINELY TRUE for
+                                     effectful programs, axiom-clean, zero sorry. Exposed the
+                                     handleThrows answer-type fix + op-partial EffSig (D6,
+                                     co-resolves Q13).
+                                     ✓✓ no_accidental_handling PROVEN 0-axiom (ADR-0024):
+                                     correct-by-construction in the label-indexed machine
+                                     (the ∀-h placeholder was vacuous; restated faithfully).
+                                     WfInst carries the lacks-constraint (rowinst proven).
+                                     GATE MET (just verify green). RESIDUAL (non-gate):
+                                     effect_sound (trace semantics → Q14), zero_usage → ◊4.
 ◊3   CalcVM ported
 ◊4   LR foundation
 ◊5   Compiler v0
@@ -150,20 +150,20 @@ remaining gap → Phase B PROOF_ORDER #4 (STD block).
 
 ## Next stable checkpoint we are paving toward
 
-**◊2 — Kernel frozen v1.**
+**◊3 — CalcVM ported.** (◊2 gate met 2026-06-22; see Position block.)
 
-Definition of stable per `ROADMAP.md`: graded-CBPV `Source.eval` concrete
-(no `opaque`/axiom in `Bang/Spec.lean §0–§4`); row algebra with lacks-
-constrained quantifiers; `no_accidental_handling` proven.
+Definition of stable per `ROADMAP.md`: the Calc* machines collapsed into one
+graded-CBPV calculated machine (Bahr-Hutton); `exec ∘ compile ≡ eval` proven;
+single unified `Calc.lean` sorry-free; unified diff-test green. Input: the K3
+work (`docs/notes/k3-historical-status.md`) + the now-proven graded-CBPV kernel.
 
-Current ◊2 status: rules enforce grades (ADR-0019), the representation is de
-Bruijn (ADR-0020), the rules are Torczon-faithful on effects+grades (ADR-0021),
-and **the entire STD block is proven** — `subst_value`, `preservation`,
-`progress`, `type_safety`, all axiom-clean. The remaining gate is the harder
-block (no_accidental_handling, effect_sound, zero_usage_erasable) which needs the
-row-quantifier mechanism (RowAll/WfInst/HandlesIntended) and a concrete Trace.
-NOTE the grade-vec carrier is now positional `List Mult` (ADR-0020), NOT the
-Finsupp of ADR-0019 — earlier prose mentioning Finsupp grade-vectors is superseded.
+**◊2 — Kernel frozen v1 — GATE MET.** `Source.eval` concrete over the CK machine
+(ADR-0023); row algebra with lacks-constraints (`WfInst`, ADR-0024 D3);
+`no_accidental_handling` proven 0-axiom (ADR-0024 D2). The whole STD block
+(`subst_value`/`preservation`/`progress`/`type_safety`) is axiom-clean over the
+machine, true for effectful programs. NON-gate residual: `effect_sound` (trace
+semantics, Q14), `zero_usage_erasable` (→◊4). NOTE the grade-vec carrier is
+positional `List Mult` (ADR-0020), NOT the Finsupp of ADR-0019.
 
 ## Outstanding for full ◊2 closure
 

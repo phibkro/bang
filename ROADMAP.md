@@ -36,8 +36,8 @@ proofs that observed behavior equals what the reference semantics says.
                                                                 │
 [◊1]──►[◊2]──►[◊3]──►[◊4]────────────────────────────────►[◊5]──┼─► Path-Compiler-Optim
  recon  kernel  Calc  LR    compile_forward_sim                 │   (effect-specific lowerings,
- ✓     frozen  ported       for trivial fragment                │    dead-code, zero-grade erasure)
-        v1     to graded                                        │
+ ✓     gate✓  ported       for trivial fragment                 │    dead-code, zero-grade erasure)
+        (v1)   to graded                                        │
                CBPV                                             └─► Path-Kernel-Extensions
                                                                     (multi-shot, STM, cost grading)
                                                                                           │
@@ -53,7 +53,7 @@ proofs that observed behavior equals what the reference semantics says.
 | ◊ | Name | Definition of stable | Gate test |
 |---|---|---|---|
 | ◊1 | **Reconciliation landed** | ADR-0016 committed; obsolete ADRs deleted; reference library + project-orientation docs exist | `ls docs/decisions/0016*` + `ls references/` succeed |
-| ◊2 | **Kernel frozen v1** | Graded-CBPV `Source.eval` concrete (no `opaque`); row algebra extended with lacks-constraints; `no_accidental_handling` proven | `Spec.lean §0–§4` has no `opaque`; row unifier proofs still green; existing diff-tests still green on the un-graded subset |
+| ◊2 | **Kernel frozen v1** · **gate ✓ (2026-06-22)** | Graded-CBPV `Source.eval` concrete (no `opaque`); row algebra extended with lacks-constraints; `no_accidental_handling` proven | ✅ gate met: `Source.eval` concrete (CK machine, ADR-0023); lacks-constraints (`WfInst`); `no_accidental_handling` proven 0-axiom (ADR-0024); `just verify` green. Residual (non-gate): `effect_sound` (trace semantics, Q14), `zero_usage_erasable` (→◊4) |
 | ◊3 | **CalcVM ported** | Calc* machines collapsed into one graded-CBPV calculated machine; `exec ∘ compile ≡ eval` still proven | Single unified `Calc.lean` sorry-free; unified diff-test green |
 | ◊4 | **LR foundation** | `lr_sound`, `lr_fundamental` proven; `group_recovers` resolved (proven OR side-condition added to ≈) | `Audit.lean` reports axioms ⊆ {propext, Classical.choice, Quot.sound} for these three |
 | ◊5 | **Compiler v0** | `compile_forward_sim` proven for a trivial fragment (e.g. pure arithmetic + one effect); WasmFX module type concrete | Round-trip test: tiny `.bang` runs through wasm3 producing same value as `Source.eval` |

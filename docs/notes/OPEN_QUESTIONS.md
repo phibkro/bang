@@ -13,14 +13,17 @@
 - [Q1 — Eff algebra: Semiring vs Lattice](#q1--eff-algebra-semiring-vs-lattice)
 - [Q2 — Mult = QTT concretization](#q2--mult--qtt-concretization)
 - [Q3 — Ctx representation: List vs FinMap](#q3--ctx-representation-list-vs-finmap)
-- [Q4 — `handle` typing rule: simplified vs label-removing](#q4--handle-typing-rule-simplified-vs-label-removing)  · ◑ PARTIAL (F-restriction landed, ADR-0021; label-removal deferred)
-- [Q5 — `up` typing rule + opArgTy/opResTy](#q5--up-typing-rule--oparGty-opresty)  · ◑ DESIGN-LOCKED (ADR-0022)
-- [Q6 — Source.step's deep-handler resumption](#q6--sourcestep-deep-handler-resumption)
+- [Q4 — `handle` typing rule: simplified vs label-removing](#q4--handle-typing-rule-simplified-vs-label-removing)  · ✓ RESOLVED (ADR-0022 D4 + ADR-0023)
+- [Q5 — `up` typing rule + opArgTy/opResTy](#q5--up-typing-rule--oparGty-opresty)  · ✓ RESOLVED (ADR-0022 + ADR-0023)
+- [Q6 — Source.step's deep-handler resumption](#q6--sourcestep-deep-handler-resumption)  · ◑ throws resolved (ADR-0023); state → Q12
 - [Q7 — Operation names as strings vs symbolic enum](#q7--operation-names-as-strings-vs-symbolic-enum)
 - [Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?](#q8--group_recovers-bridge-e-group--f-dagger-frobenius)
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](#q9--wasmfx-target-drift-frozen-oopsla23-syntax-vs-phase-3-standard)
 - [Q10 — Typing rules must enforce grades (resource discipline)](#q10--typing-rules-must-enforce-grades-resource-discipline)  · ✓ RESOLVED (ADR-0019+0020; subst_value proven)
-- [Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn](#q11--open-term-substitution-capture-avoiding-subst-vs-de-bruijn)
+- [Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn](#q11--open-term-substitution-capture-avoiding-subst-vs-de-bruijn)  · ✓ RESOLVED (ADR-0020)
+- [Q12 — Graded state handlers: how does `state ℓ s` thread grades?](#q12--graded-state-handlers-how-does-state--s-thread-grades)  · OPEN
+- [Q13 — Operation-granularity: `progress` for `throws`](#q13--operation-granularity-progress-for-throws-needs-op-aware-signatures)  · ✓ RESOLVED (ADR-0023)
+- [Q14 — `effect_sound`: what does the trace observe?](#q14--effect_sound-what-does-the-trace-observe)  · OPEN
 
 ---
 
@@ -481,6 +484,35 @@ has no `get`).
 **Blocked on**: the (1)-vs-(2) design choice. (1) is the lighter, recommended path.
 
 **Revisit signal**: closing the `progress`/`type_safety` `sorry` (next Unit-2 follow-up).
+
+---
+
+## Q14 — `effect_sound`: what does the trace observe?  · OPEN (deferred from ADR-0024)
+
+**Question**: `effect_sound` states `HasCTy [] [] c e (F q A) → evalTrace fuel c = done (v,t) →
+traceWithin t e` — the static effect `e` over-approximates the observed trace `t`. With what trace
+semantics is this both TRUE and meaningful?
+
+**Why it matters**: it's a ◊2-block soundness theorem (the dynamic counterpart of the static effect
+discipline). Currently `sorry` (not the ◊2 *gate*, which is `no_accidental_handling`).
+
+**Detail (the tension, ADR-0023/0024)**: in the deep-handler machine, `e` bounds only the operations
+that **escape** `c`'s own handlers, NOT those handled internally. `handle (throws ℓ)(… raise ℓ …)`
+performs `raise ℓ` during evaluation, but ℓ is discharged by `c`'s handler, so `labelEff ℓ ⊄ e`. So:
+- trace = **all dispatched labels** ⇒ `traceWithin t e` is FALSE (internal handling hides labels from `e`).
+- trace = **escaping labels only** ⇒ for a program that runs to `done`, nothing escaped (an escaping op
+  is stuck, not `done`), so `t = []` and the theorem is trivially true but vacuous.
+
+**Options**: (1) trace logs `(label, handled-by-depth)` and `traceWithin` checks each label against the
+effect *at the point it was performed* (the focus effect, which preservation bounds) rather than the
+top-level `e`; (2) a two-level statement: internal labels ⊆ (labels discharged by `c`'s handlers),
+escaping labels ⊆ `e`; (3) instrument `evalTrace` to log only at the program boundary and prove the
+(weak) escaping-bound. (1) is the most informative.
+
+**Blocked on**: choosing the trace semantics (a design decision, like ADR-0024 was for
+`no_accidental_handling`). The CK machine makes either tractable (each DISPATCH is an observable point).
+
+**Revisit signal**: taking up `effect_sound` / `Trace` concretization after the ◊2 gate.
 
 ---
 

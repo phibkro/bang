@@ -40,23 +40,24 @@ variable [EffSig Eff Mult]
 
 /-! ## 0.5 Effect-row well-formedness theorems -/
 
--- [INV] the load-bearing typing side-condition.
+-- [INV] the load-bearing typing side-condition. WfInst carries the lacks-constraint
+-- (ADR-0024 D3); the theorem projects out the disjointness it requires.
 theorem rowinst_requires_disjoint
     {q : Eff → CTy Eff Mult} {L ε : Eff} :
-    WfInst (RowAll q L) ε (q ε) → Disjoint ε L := sorry
+    WfInst q L ε → Disjoint ε L := rowinst_requires_disjoint_proof
 
--- [INV][KEY] abstraction-safety / NO accidental handling — the invariant
--- that licenses dropping ρ-maps. See ADR-0018.
--- Property origin: zhang-popl19-abstraction-safe-tunneling coined "accidental
--- handling"; their operational *tunneling* guarantee is what our structural
--- lacks-constraint (Disjoint l e) formulation discharges.
+-- [INV][KEY] abstraction-safety / NO accidental handling — the invariant that
+-- licenses dropping ρ-maps (ADR-0018). Origin: zhang-popl19 "accidental handling".
+-- Restated faithfully (ADR-0024 D2): the old ∀-`h` form was vacuous. A handler
+-- SCOPED to row `l` (`HandlesWithin l h`) never catches a FOREIGN operation (label
+-- in a disjoint row `e`) — foreign ops tunnel to an outer handler. Correct-by-
+-- construction in the label-indexed CK machine (ADR-0023): `handlesOp` matches the
+-- label exactly, so a handler cannot catch a label it does not name.
 theorem no_accidental_handling
-    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
-    {l e : Eff} {A : VTy Eff Mult} {q : Mult}
-    {body : Comp} {h : Handler} :
-    Disjoint l e →
-    HasCTy γ Γ body (l ⊔ e) (CTy.F q A) →
-    HandlesIntended l body h := sorry
+    {l e : Eff} {h : Handler} :
+    HandlesWithin (Eff := Eff) (Mult := Mult) l h → Disjoint l e →
+    ∀ ℓ' op, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ e → handlesOp h ℓ' op = false
+    := no_accidental_handling_proof
 
 
 /-! ## 3. Core syntactic metatheory -/

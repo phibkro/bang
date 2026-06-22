@@ -185,17 +185,22 @@ def HasConfig (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
 
 The lacks-constraint discipline that licenses dropping Biernacki's ρ-maps.
 With `[Lattice Eff] [OrderBot Eff]` (Q1 resolved), `Disjoint` is concrete
-(Mathlib's `_root_.Disjoint`: `a ⊓ b ≤ ⊥`). The other three predicates
-stay axiom pending row-quantifier mechanism design. -/
+(Mathlib's `_root_.Disjoint`: `a ⊓ b ≤ ⊥`). `WfInst` is concretized below
+(ADR-0024 D3); the operational abstraction-safety side (`HandlesWithin`,
+`no_accidental_handling`) lives in `Bang/Metatheory.lean §F` (it needs the CK
+machine's `handlesOp`). `RowAll`/`HandlesIntended` (the old axioms) are retired:
+the monomorphic kernel has no `∀`-row `CTy` former to reify, and the
+operational property replaces the abstract `HandlesIntended` placeholder. -/
 
 /-- Two effect rows are disjoint iff their meet is bottom (no shared labels). -/
 def Disjoint {Eff : Type} [Lattice Eff] [OrderBot Eff] (e₁ e₂ : Eff) : Prop :=
   _root_.Disjoint e₁ e₂
 
-axiom RowAll {Eff Mult : Type} :
-    (Eff → CTy Eff Mult) → Eff → CTy Eff Mult
-axiom WfInst {Eff Mult : Type} :
-    CTy Eff Mult → Eff → CTy Eff Mult → Prop
-axiom HandlesIntended {Eff : Type} : Eff → Comp → Handler → Prop
+/-- Well-formedness of instantiating a lacks-constrained row quantifier `∀(α # L). q α` at
+row `ε` (ADR-0018 rule 2, ADR-0024 D3): the instantiating row must avoid the forbidden labels
+`L`. `WfInst` *is* that disjointness side-condition; the family `q` names the quantifier. The
+monomorphic kernel has no `∀`-row binder, so the quantifier lives only as this `(q, L)` pair. -/
+def WfInst {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
+    (_q : Eff → CTy Eff Mult) (L ε : Eff) : Prop := Disjoint ε L
 
 end Bang

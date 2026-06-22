@@ -1554,4 +1554,51 @@ theorem type_safety_proof
   rw [show Source.eval fuel c = Config.run fuel ([], c) from rfl]
   exact run_safe fuel ([], c) ⟨⊥, CTy.F q A, h, HasStack.nil⟩
 
+/-! ## F. Abstraction-safety — no accidental handling (ADR-0024)
+
+The §0.5 abstraction-safety invariant, monomorphic half. In the label-indexed CK machine
+(ADR-0023) a handler catches an operation only via `handlesOp h ℓ op`, which for `throws ℓ₀`
+is `ℓ₀ = ℓ` — so a handler structurally cannot catch a label it does not name. Accidental
+handling is *unrepresentable*; `no_accidental_handling` witnesses it. (The polymorphic half —
+`rowinst_requires_disjoint` — is the lacks-constraint, `WfInst`/ADR-0024 D3.) -/
+
+/-- Handler `h`'s interface lies within row `l`: every operation it catches has its label ≤ `l`. -/
+def HandlesWithin (l : Eff) (h : Handler) : Prop :=
+  ∀ ℓ' op, handlesOp h ℓ' op = true → EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ l
+
+/-- A `throws ℓ₀` handler is scoped to its own label's row (discharges the `HandlesWithin`
+premise of `no_accidental_handling` for the only handler form; `state` extends it — Q12). -/
+theorem throws_handlesWithin (ℓ₀ : Label) :
+    HandlesWithin (Eff := Eff) (Mult := Mult)
+      (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ₀) (Handler.throws ℓ₀) := by
+  intro ℓ' op hcatch
+  simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hcatch
+  obtain ⟨hℓ, _⟩ := hcatch
+  subst hℓ
+  exact le_refl _
+
+/-- NO ACCIDENTAL HANDLING (ADR-0024 D2): a handler scoped to row `l` never catches a FOREIGN
+operation — one whose label is in a disjoint row `e`. Such operations tunnel to an outer handler.
+Every hypothesis is load-bearing: `HandlesWithin` (a catch forces label ≤ l), `Disjoint l e`
+(label ≤ l ⊓ e = ⊥), `labelEff_ne_bot` (⊥ is impossible for a real label). -/
+theorem no_accidental_handling_proof
+    {l e : Eff} {h : Handler} :
+    HandlesWithin (Eff := Eff) (Mult := Mult) l h → Disjoint l e →
+    ∀ ℓ' op, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ e → handlesOp h ℓ' op = false := by
+  intro hHW hDisj ℓ' op hℓ'e
+  by_contra hne
+  have hcatch : handlesOp h ℓ' op = true := by
+    cases hh : handlesOp h ℓ' op
+    · exact absurd hh hne
+    · rfl
+  have hℓ'l := hHW ℓ' op hcatch
+  have hbot : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ (⊥ : Eff) := hDisj hℓ'l hℓ'e
+  exact EffSig.labelEff_ne_bot (Eff := Eff) (Mult := Mult) ℓ' (le_bot_iff.mp hbot)
+
+/-- Lacks-constrained row instantiation is well-formed only when disjoint (ADR-0018 rule 2,
+ADR-0024 D3). `WfInst` carries exactly this, so the theorem projects it out. -/
+theorem rowinst_requires_disjoint_proof
+    {q : Eff → CTy Eff Mult} {L ε : Eff} :
+    WfInst q L ε → Disjoint ε L := id
+
 end Bang
