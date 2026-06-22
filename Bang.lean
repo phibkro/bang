@@ -22,6 +22,10 @@ import Bang.Compat
 import Bang.Distribution
 import Bang.Audit
 
+-- Tracer bullet: surface → graded-CBPV Comp → Source.eval → value
+-- (PATH-tracer-bullet; additive surface layer, outside the verification spine).
+import Bang.Surface
+
 -- K2: legacy untyped CBN reference (Bang.Eval namespace; no clash with Bang)
 import Bang.Eval
 

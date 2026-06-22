@@ -67,3 +67,59 @@ a demo/test), it must not touch proven theorems.
   `/srv/share/projects/bang-lang/packages/core/src/Parser.ts`.
 - Watch out: `Source.eval`/`Source.step` are well-founded recursions — concrete runs reduce via
   `simp [Source.step]` / `rfl`, NOT bare `rfl` on `Source.step` (it has `termination_by`).
+
+## Finding (Stage 1+2)
+
+Status: **DONE** (2026-06-22). Module `Bang/Surface.lean` (~340 lines), wired into `Bang.lean`.
+The full pipeline `source String → Surf → Comp → Source.eval → Result Val` is green in the build.
+
+What the surface→`Comp` lowering REVEALED — the de-risking output:
+
+1. **The kernel has no primitive arithmetic, and that shapes the surface.** There is no `+`; the
+   five primitives give let-binding, force, lambda/app, raise/handle. So the canonical "pure"
+   demo is `let x = 3 in x` (sequencing + variable lookup), NOT `x + y`. Adding `+` would be a
+   *sixth primitive* (K-ADR) — correctly out of scope. The honest tracer-bullet "compute" story is
+   binding/forcing, not arithmetic; a real `+` belongs in a library effect or a future numeric ADR.
+
+2. **`let` maps cleanly onto `letC`; the only real work is the name→de-Bruijn pass.** The lowering
+   threads an `env : List String` (innermost binder first); a name's index is its position
+   (`List.idxOf?`), and each binder conses its name for the body. This single pass is the whole
+   surface→kernel bridge for binders — `lam`/`letC` both just cons. A free name is a clean
+   `Except String` error. **This is the biggest de-risked unknown: name resolution is ~6 lines.**
+
+3. **The CBPV value/computation split surfaces immediately in lowering.** `lowerC`/`lowerV` are a
+   mutual pair: an atom (literal/var) in *computation* position becomes `ret v`; in *value* position
+   it stays a `Val`. A computation in value position is a surface error — the user must thunk it
+   (`{ … }` → `vthunk`). So the adjunction (`thunk`/`force`) is not hidden plumbing; it is a surface
+   obligation the parser must expose. The `!`/`$` force UX (v0.1) maps to `force (vthunk …)`.
+
+4. **`throws` needs no answer-type juggling to RUN.** Because `Comp` is grade- AND type-free,
+   `handle (throws ℓ) body` and `up ℓ "raise" v` lower with zero type information. The answer-type
+   line-up (ADR-0023's `opArg ℓ "raise" = block result`) is a *typing* concern; running a program
+   never touches it. Lowering picks one concrete label (`exnLabel = 0`, since `Label := Nat`) and a
+   fixed op name `"raise"` — that is all the machine's `handlesOp`/`dispatch` needs.
+
+5. **`rfl` is the right discharge for kernel eval, the WRONG one for string parsing.** Stage-1/1b
+   checks (`Comp` eval, AST lowering) discharge by `by rfl` in milliseconds — the machine is a small
+   concrete `Nat`-fuelled recursion. But reducing the *parser over a `String`* in the kernel
+   (`rfl`/`decide`) is pathological (`String` ops don't `whnf` cheaply) — a single such `rfl` did not
+   finish in 250s. The Stage-2/2b string checks therefore use `#guard` (compiled evaluation):
+   millisecond, build-failing-if-false, and NOT a banned tactic (`#guard` ≠ `sorry`/`admit`/
+   `native_decide`; touches no spine theorem). Practical rule for future surface tests:
+   **`rfl` for kernel terms, `#guard` for anything reducing a `String`.**
+
+6. **The parser must be fuel-driven total, not `partial`, if its results are to appear in checks.**
+   A `partial def` is opaque to the kernel, so `parse "…" = …` cannot reduce. The recursive descent
+   takes a structural `Nat` fuel (passed decremented at every call, set to token-count at the call
+   site) so it is total and its output is inspectable. This is the same fuel discipline the machine
+   already uses (`Config.run`).
+
+Green checks (all in `Bang/Surface.lean`, all in the build):
+- Stage 1 — `example : Source.eval 20 {pure,throws,deep}Comp = .done (.vint {3,7,7})`  · `by rfl`
+- Stage 1b — `example : lower <surf> = .ok <comp>` (×3)  · `by rfl`
+- Stage 2 — `#guard runYieldsInt 20 <src> {3,7,7}` (×3, from source text)
+- Stage 2b — `#guard parsesTo <src> <surf>` (×3, parser pinned independently)
+
+Not done / out of scope (unchanged from above): type-checking the surface (grades/effect rows),
+`mut`/State (Q12), richer effect declarations (only one `raise` channel), and any syntax beyond the
+documented subset grammar (no operators, no top-level decls, no multi-binding `let`).
