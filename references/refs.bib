@@ -508,3 +508,111 @@
             unverified beyond abstract.)
             \url{https://repository.tudelft.nl/file/File_60da1dca-11ba-48b7-b0a0-9fbbf35fd924}},
 }
+
+% ── design corpus (ADR-0026 / 0027 / 0028) — bib-only, fetch on demand ──
+% Added 2026-06-23. Prior-art CITED in this session's structural ADRs but not
+% previously in the library. PDFs fetched on demand (these ground design
+% DECISIONS, not the working proof substrate). Each note records which ADR.
+
+@inproceedings{bracha-ungar-oopsla04-mirrors,
+  author    = {Bracha, Gilad and Ungar, David},
+  title     = {Mirrors: Design Principles for Meta-level Facilities of
+               Object-Oriented Programming Languages},
+  booktitle = {OOPSLA 2004},
+  pages     = {331--344},
+  year      = 2004,
+  doi       = {10.1145/1028976.1029004},
+  note      = {The STRATIFICATION principle: meta-level facilities must be a layer
+               SEPARATE from base-level functionality. The structural backbone of
+               ADR-0026 -- checkers as a pluggable layer over the kernel, not in it.
+               (Most-Influential-Paper, OOPSLA 2014.)
+               \url{https://bracha.org/mirrors.pdf}},
+}
+
+@misc{bracha-04-pluggable-type-systems,
+  author = {Bracha, Gilad},
+  title  = {Pluggable Type Systems},
+  year   = 2004,
+  month  = oct,
+  note   = {Position paper, OOPSLA 2004 Workshop on the Revival of Dynamic Languages.
+            Coined OPTIONAL + PLUGGABLE typing: type systems that neither affect a
+            language's runtime semantics nor are mandatory. The term-origin for
+            ADR-0026's pluggable-checker dispatch (the kernel defines meaning;
+            checkers judge, off to the side).
+            \url{https://bracha.org/pluggableTypesPosition.pdf}},
+}
+
+@inproceedings{amin-rompf-popl17-definitional-interpreters,
+  author    = {Amin, Nada and Rompf, Tiark},
+  title     = {Type Soundness Proofs with Definitional Interpreters},
+  booktitle = {POPL 2017},
+  pages     = {666--679},
+  year      = 2017,
+  doi       = {10.1145/3009837.3009866},
+  note      = {Type soundness for a definitional interpreter made TOTAL by a fuel
+               counter (step budget + timeout result), in Coq. The technique behind
+               ADR-0028's fuel-bounded total interpreter for the Div superset --
+               a total prover interpreting a partial object language.},
+}
+
+@inproceedings{brown-palsberg-popl16-self-interpreter-fomega,
+  author    = {Brown, Matt and Palsberg, Jens},
+  title     = {Breaking Through the Normalization Barrier:
+               A Self-Interpreter for {F}-omega},
+  booktitle = {POPL 2016},
+  pages     = {5--17},
+  year      = 2016,
+  doi       = {10.1145/2837614.2837623},
+  note      = {A typed self-interpreter for a strongly-normalizing calculus (F-omega).
+               ADR-0028's witness that meta-circularity is bounded by totality: a TOTAL
+               self-interpreter cannot exist for a Turing-complete object language
+               (interpreting a divergent program would force divergence). Grounds the
+               bang-in-bang fuel-or-Div choice.},
+}
+
+@article{capretta-lmcs05-general-recursion-coinductive,
+  author  = {Capretta, Venanzio},
+  title   = {General Recursion via Coinductive Types},
+  journal = {Logical Methods in Computer Science},
+  volume  = 1,
+  number  = 2,
+  year    = 2005,
+  doi     = {10.2168/LMCS-1(2:1)2005},
+  note    = {The DELAY monad: partial elements as a coinductive type with now/later
+             constructors, modelling general recursion in a total setting. The
+             semantic root of ADR-0028's Div fragment (the partial Comp interpreted
+             by fuel + oom is the Delay monad's fuel-bounded shadow).
+             \url{https://arxiv.org/abs/cs/0505037}},
+}
+
+@inproceedings{orchard-icfp19-granule,
+  author    = {Orchard, Dominic and Liepelt, Vilem-Benjamin and Eades III, Harley},
+  title     = {Quantitative Program Reasoning with Graded Modal Types},
+  booktitle = {Proceedings of the ACM on Programming Languages (ICFP)},
+  volume    = 3,
+  year      = 2019,
+  doi       = {10.1145/3341714},
+  note      = {Granule: a functional language whose type system embeds data-as-resource
+               via graded modal types, parameterised over the resource semiring. The
+               graded-modal SURFACE-LANGUAGE UX reference for ADR-0027's grade
+               polymorphism -- where the grade arithmetic bang inherits from Torczon
+               becomes user-visible annotations.
+               \url{https://www.cs.kent.ac.uk/people/staff/dao7/publ/granule-icfp19.pdf}},
+}
+
+@incollection{mcbride-16-plenty-o-nuttin,
+  author    = {McBride, Conor},
+  title     = {{I Got Plenty o' Nuttin'}},
+  booktitle = {A List of Successes That Can Change the World:
+               Essays Dedicated to Philip Wadler on the Occasion of His 60th Birthday},
+  series    = {LNCS},
+  volume    = 9600,
+  pages     = {207--233},
+  year      = 2016,
+  publisher = {Springer},
+  doi       = {10.1007/978-3-319-30936-1_12},
+  note      = {The origin of the QUANTITATIVE (multiplicity) grade -- usage 0/1/omega
+               threaded through a dependent type theory -- later systematised by
+               Atkey's QTT. The multiplicity-grade ancestor for ADR-0027's grade
+               polymorphism, and for the coeffect arithmetic bang inherits.},
+}

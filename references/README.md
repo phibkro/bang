@@ -49,6 +49,21 @@ ground **ADR-0030** (STM-as-transactional-handler). Cite by key from `refs.bib`;
 - `lesani-concur12-verifying-stm` — why opacity is subtle (DSTM/McRT are not opaque); cautionary for the eventual concurrent proof.
 - `tomasek-thesis-effects-handlers-for-stm` — direct STM-as-algebraic-effects-handler prior art (TU Delft); corroborates the reduction (image PDF — abstract-only confidence).
 
+### design corpus (ADR-0026 / 0027 / 0028) — *bib-only, fetch on demand*
+
+Added 2026-06-23. Prior-art cited in this session's structural ADRs but not previously
+in the library. These ground design **decisions** (the stratification principle, the
+fuel-total interpreter, grade polymorphism), not the working proof substrate — so they
+sit bib-only like the STM block. Cite by key from `refs.bib`.
+
+- `bracha-ungar-oopsla04-mirrors` — the **Stratification principle** (meta-level facilities are a layer *separate* from base-level functionality). The structural backbone of **ADR-0026**: checkers as a pluggable layer *over* the kernel, never in it.
+- `bracha-04-pluggable-type-systems` — coined **optional + pluggable typing** (type systems that neither affect runtime semantics nor are mandatory). The term-origin for **ADR-0026**'s pluggable-checker dispatch.
+- `amin-rompf-popl17-definitional-interpreters` — type soundness for a **fuel-total** definitional interpreter (step budget + timeout, Coq). The technique behind **ADR-0028**'s fuel-bounded total interpreter for the `Div` superset.
+- `brown-palsberg-popl16-self-interpreter-fomega` — a **typed self-interpreter** for strongly-normalizing F-ω. **ADR-0028**'s witness that a *total* self-interpreter cannot exist for a Turing-complete object language (the totality wall — interpreting divergence would force divergence). Grounds the bang-in-bang fuel-or-`Div` choice.
+- `capretta-lmcs05-general-recursion-coinductive` — the **Delay monad** (partiality as a coinductive type, now/later). The semantic root of **ADR-0028**'s `Div` fragment; the partial `Comp` + fuel + `oom` is its fuel-bounded shadow.
+- `orchard-icfp19-granule` — **Granule** (graded modal types, data-as-resource over a semiring). The graded-modal **surface-language UX** reference for **ADR-0027**'s grade polymorphism.
+- `mcbride-16-plenty-o-nuttin` — origin of the **quantitative (multiplicity) grade** (0/1/ω in a dependent theory), QTT's ancestor. The multiplicity-grade root for **ADR-0027** and the coeffect arithmetic bang inherits from Torczon.
+
 ## 2-calcvm — calculated compilers + verified-compiler architecture (◊3)
 
 - `garby-haskell24-calculating-effectively.pdf` — Garby, Hutton, Bahr, "Calculating Compilers Effectively" (Functional Pearl, Haskell 2024). The canonical **"calculate a compiler for an *effectful* language"** paper: the calculation extends to side-effects via an algebraic-effects treatment, decoupling effect *interpretation* from the derivation — directly on bang-lang's "effects as values, derive the VM" thesis. *(Identity resolved 2026-06-21 from the PDF title page; previously mislabeled as Bahr–Hutton ICFP'22.)*
@@ -174,8 +189,8 @@ Pass-A (LR spine + verified-compilation template) is **complete**. The
 - Chen, Åman Pohjola, Rizkallah. **A Verified Cost Model for CBPV** (ITP 2025) — relevant to the CBPV core if cost-grading is added.
 - Niu et al. **calf** (POPL 2022); Grodin et al. **decalf** (POPL 2024) — mechanized cost.
 - Voigt et al. **Dynamic Wind** (OOPSLA 2025) — rollback/cleanup operational.
-- Atkey. **QTT** (LICS 2018); McBride. **I Got Plenty o' Nuttin'** (2016) — origins of the multiplicity grade.
-- Gaboardi et al. **Combining Effects and Coeffects** (ICFP 2016) — the combined-grading foundation Torczon realizes; Orchard et al. **Granule** (ICFP 2019) — graded-modal surface-language UX reference.
+- Atkey. **QTT** (LICS 2018) — origin of the multiplicity grade. *(McBride's **I Got Plenty o' Nuttin'**, the QTT ancestor, is now in `refs.bib` bib-only as `mcbride-16-plenty-o-nuttin` — see the design-corpus block.)*
+- Gaboardi et al. **Combining Effects and Coeffects** (ICFP 2016) — the combined-grading foundation Torczon realizes. *(Orchard et al. **Granule**, ICFP 2019, the graded-modal surface-language UX reference, is now in `refs.bib` bib-only as `orchard-icfp19-granule`.)*
 - Appel, McAllester. **Indexed Model of Recursive Types** (TOPLAS 2001); Katsumata. **⊤⊤-Lifting** (CSL 2005) — step-indexing / lifting foundations.
 
 ---
