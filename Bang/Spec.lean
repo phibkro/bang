@@ -147,16 +147,17 @@ theorem lr_fundamental
     HasCTy γ Γ c e B → ∀ n, Crel n B e c c := sorry
 
 
-/-! ## 6. Recovery algebra — the Trinity (ADR-0018) -/
+/-! ## 6. Recovery algebra (ADR-0018, amended by ADR-0032) -/
 
 -- [KEY] monoid ⇒ ret is a unit for sequencing.
 theorem seq_unit (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := sorry
 
--- [RISKY] group (invertible) effects ⇒ recovery rolls back.
--- See `docs/notes/OPEN_QUESTIONS.md` Q8 for the H-K bridge.
-theorem group_recovers
-    [AddGroup Eff] {c : Comp} :
-    seqComp c (recover c) ≈ idComp := sorry
+-- `group_recovers` RETIRED (ADR-0032, supersedes ADR-0018's "group ⇒ rollback" row).
+-- The law `[AddGroup Eff] → seqComp c (recover c) ≈ idComp` was FALSE as a plain `≈`
+-- (refutable: a diverging `c` makes `(c;ret()) ≉ ret()`), vacuous for the real effect
+-- lattice (no `AddGroup` instance — rows are an idempotent join-semilattice), and
+-- redundant: v1 rollback is a HANDLER mechanism, proven by `all_or_nothing_abort`
+-- (ADR-0030/0031, axiom-clean `84e3ab3`), NOT an effect-algebra inverse.
 
 
 /-! ## 7. WasmFX compilation correctness (the contribution) -/
