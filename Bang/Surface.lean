@@ -413,6 +413,46 @@ def ledgerAbort : Comp :=
 #guard (match Source.eval 200 ledgerAbort with
   | .done (.pair (.vint a) (.vint b)) => a == 100 && b == 0 | _ => false)
 
+/-! ### Stage 1e — the REACTIVE CELL (rung 4, ADR-0005): reactivity falls out of thunks.
+
+The LAST v1 MVP rung VALIDATES a thesis rather than adding a capability: reactivity is
+EMERGENT, not a new kernel form. A **reactive cell is an unmemoized thunk over a State
+cell** — `let c = {get}`. The kernel does NOT memoize a thunk, so every `$c` (force) RE-RUNS
+the `get`, re-sampling the *current* threaded state. That re-sample-on-force IS pull-based
+reactivity (ADR-0005: "sampling = forcing in equate position"); no `sig`, no subscription
+machinery, no kernel change. Push-based / glitch-free propagation is the deferred dial
+(PRD §6) and stays out.
+
+These demos run the cell from SOURCE TEXT — a live `{get}` cell whose `$c` reflects each
+`put` — then the liveness law proves it for arbitrary writes. -/
+
+-- A reactive cell `c = {get}` re-samples on each force: after `put 5` then `put 9`,
+-- `$c` reads the LATEST write (9), not 5 and not the initial 0. THE re-sampling demo.
+#guard runYieldsInt 80
+  "state 0 in (let c = {get} in (let a = put 5 in (let b = put 9 in $c)))" 9
+-- One write: the cell reflects it (5), not the initial 0.
+#guard runYieldsInt 80 "state 0 in (let c = {get} in (let z = put 5 in $c))" 5
+-- No write: forcing the cell reads the INITIAL state (0) — a live read, not a stale snapshot.
+#guard runYieldsInt 80 "state 0 in (let c = {get} in $c)" 0
+
+/-- The reactive cell at the `Comp` level, parameterised by initial state `s0` and the
+written value `v`: `state s0 in (let c = {get} in (let _ = put v in $c))`. de Bruijn: `c` is
+idx 0 after its binder, idx 1 after the `put`'s `let`, so `$c` is `force (vvar 1)`. -/
+def cellComp (s0 v : Int) : Comp :=
+  .handle (.state stateLabel (.vint s0))
+    (.letC (.ret (.vthunk (.up stateLabel "get" .vunit)))      -- c = {get}   (idx 0)
+      (.letC (.up stateLabel "put" (.vint v))                  -- _ = put v
+        (.force (.vvar 1))))                                   -- $c
+
+/-- **Liveness law (rung 4, ADR-0005):** a reactive cell always reflects the latest write.
+For ARBITRARY initial state `s0` and ARBITRARY written `v`, forcing the cell after `put v`
+yields exactly `v`. PROVEN by `rfl` (climbs the ADR-0026 ladder to the *verified* rung, not
+the tested one): `v` only flows `vint v → stored in the cell → read back`, never inspected,
+so the machine reduces symbolically over `s0` and `v`. The initial `s0` is shadowed by the
+write — the cell is LIVE, not a snapshot of `s0`. axioms ⊆ {propext} (see `Bang/Audit.lean`). -/
+theorem cell_reflects_latest (s0 v : Int) :
+    Source.eval 80 (cellComp s0 v) = .done (.vint v) := by rfl
+
 /-! ### Structural equality on kernel terms (additive — NOT a kernel change).
 
 The laws (Stage 1d) compare an evaluated stack against an expected one, so we need to
