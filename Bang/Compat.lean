@@ -404,6 +404,52 @@ theorem crel_force {n : Nat} {φ : Eff} {B : CTy Eff Mult} {w₁ w₂ : Val}
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
 
+/-! ## B.3b The `letF` frame-extension `Krel` lemma (the `letC` congruence engine)
+
+`compat_letC` proves `Crel n B (φ₁⊔φ₂) (letC M₁ N₁') (letC M₂ N₂')` by running `M` under the extended
+stack `letF N' :: K`: `plug Kᵢ (letC Mᵢ Nᵢ') = plug (letF Nᵢ' :: Kᵢ) Mᵢ` (definitional refocus,
+`plug_cons`), so the IH for `M` (`Crel n (F q1 A) φ₁ M₁ M₂`) fires once the extended stacks are shown
+`Krel`-related at `(F q1 A, φ₁)`. THAT is `krel_letF`:
+
+  • RETURN half: a returned value `v` triggers the `letF` REDUCE (`converges_letF_ret`) to `Nᵢ'.subst v`,
+    related by the continuation hypothesis `hN` (the IH for `N`); the ambient `Krel n B (φ₁⊔φ₂)` weakens
+    to `Krel n B φ₂` (`Krel_eff_anti`, φ₂ ≤ φ₁⊔φ₂) to discharge the resulting `Crel n B φ₂`.
+  • STUCK half: an `Srel`-pair under `letF Nᵢ' :: Kᵢ` is an UNHANDLED `up` (`splitAt = none` is in the
+    `Srel` premise), so `plug (letF Nᵢ' :: K₁) c₁` never converges (`not_converges_up_splitNone`) and
+    `CoApprox` is vacuously true. The resume clause of `Srel` is not consumed — the frame never resumes
+    an op it does not handle.
+
+  shape: biernacki-popl18 §5 evaluation-context congruence (the `let` frame case of the fundamental
+         theorem); benton-hur-icfp09 biorthogonal frame extension. -/
+theorem krel_letF {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ₁ φ₂ : Eff}
+    {N₁' N₂' : Comp} {K₁ K₂ : Stack}
+    (hK : Krel (n + 1) B (φ₁ ⊔ φ₂) K₁ K₂)
+    (hN : ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel (n + 1) A v₁ v₂ →
+      Crel (n + 1) B φ₂ (Comp.subst v₁ N₁') (Comp.subst v₂ N₂')) :
+    Krel (n + 1) (CTy.F q1 A) φ₁ (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) := by
+  rw [Krel]
+  refine ⟨?_, ?_⟩
+  · -- RETURN half: F q1 A = F q A' ⟹ q = q1, A' = A; the letF frame reduces to the continuation.
+    intro q A' hEq v₁ v₂ hc₁ hc₂ hv
+    rw [CTy.F.injEq] at hEq
+    obtain ⟨rfl, rfl⟩ := hEq
+    intro hconv₁
+    -- plug (letF N₁' :: K₁) (ret v₁) converges ⟹ plug K₁ (N₁'.subst v₁) converges.
+    rw [converges_letF_ret] at hconv₁
+    rw [converges_letF_ret]
+    -- the continuation is Crel (n+1) B φ₂; weaken the ambient Krel to φ₂ and apply.
+    have hKφ₂ : Krel (n + 1) B φ₂ K₁ K₂ := Krel_eff_anti (n + 1) B φ₂ (φ₁ ⊔ φ₂) K₁ K₂ le_sup_right hK
+    have hCrel := hN v₁ v₂ hc₁ hc₂ hv
+    rw [Crel] at hCrel
+    exact hCrel K₁ K₂ hKφ₂ hconv₁
+  · -- STUCK half: the Srel pair is an unhandled op under letF :: K — never converges, CoApprox vacuous.
+    intro c₁ c₂ hS
+    rw [Srel] at hS
+    obtain ⟨ℓ, op, v₁, v₂, _, _, hc₁, _, _, _, _, _, hsp₁, _, _⟩ := hS
+    intro hconv₁
+    rw [hc₁] at hconv₁
+    exact absurd hconv₁ (not_converges_up_splitNone (Frame.letF N₁' :: K₁) ℓ op v₁ hsp₁)
+
 /-- `unfold` of `Vrel`-related folds: `unfold (fold w) ↦ ret w` is a CIStep, so the goal reduces to
 `crel_ret` on the payloads. INDEX SUBTLETY (documented blocker): `Vrel (n+1) (mu A)` gives the
 payloads related at the UNROLLED type but at index `n` (the `▷` guard, LR.lean §5.2), whereas

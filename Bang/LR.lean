@@ -509,6 +509,18 @@ the dependency note on `lr_sound` in `Bang/Spec.lean`. -/
 theorem converges_ret (v : Val) : Converges (Comp.ret v) :=
   ⟨1, v, rfl⟩
 
+/-- At index 0 EVERY pair is `Crel`-related: `Srel 0 = True`, so a `Krel 0`-hypothesis's STUCK half is
+exactly `∀ c₁ c₂, CoApprox (plug K₁ c₁) (plug K₂ c₂)` — the goal. The base of the step-indexed
+induction: the fundamental theorem and every compat core discharge `n = 0` by this, doing the real work
+only at `n+1` (where the relations carry information). Standard ahmed-esop06 / Biernacki convention. -/
+theorem crel_zero {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] (C : CTy Eff Mult) (ε : Eff) (c₁ c₂ : Comp) :
+    Crel 0 C ε c₁ c₂ := by
+  rw [Crel]
+  intro K₁ K₂ hK
+  rw [Krel] at hK
+  exact hK.2 c₁ c₂ (by rw [Srel]; trivial)
+
 /-- An UNHANDLED operation never converges: under the empty stack `splitAt [] = none`,
 so `step ([], up ℓ op v) = none` and the machine is immediately stuck. -/
 theorem not_converges_up_nil (ℓ : Label) (op : OpId) (v : Val) :
@@ -531,8 +543,7 @@ Generalizes `not_converges_up_nil` (the `K = []` case) to an arbitrary stack —
 collapses the STUCK half of every frame-extension `Krel` lemma to vacuous truth (`CoApprox` is
 `False → _`). The machine refocuses `([], plug K (up …))` to `(K, up …)` via `run_plug`, then
 `dispatch K ℓ op v = (splitAt K …).bind _ = none` ⇒ `step = none` ⇒ stuck. -/
-theorem not_converges_up_splitNone {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
-    [DecidableEq Mult] [EffSig Eff Mult] (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
+theorem not_converges_up_splitNone (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
     (hsplit : Bang.splitAt K ℓ op = none) :
     ¬ Converges (Stack.plug K (Comp.up ℓ op v)) := by
   -- the focused config (K, up …) is stuck at every fuel: step = dispatch = none (splitAt = none).
