@@ -247,11 +247,16 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   live (ADR-0015); 16-case 5-axis diff-test battery (`Agree M v := exec(compile M)=some[ret v] ∧ Source.eval
   M=done v` — both reps to ONE observable Val ⇒ false agreement unrepresentable; all `rfl`, 0-axiom);
   `just verify` 723 jobs (732→723 = archive took); independently gated on the committed tree.
-- **`paths/PATH-lr-foundation.md`** — **◊4 (ACTIVE).** Foundation landed axiom-clean: U1 helpers (`a58a396`)
-  + U2 the step-indexed `Vrel/Srel/Krel/Crel` WF defs (`eadec83`, THE CRUX — plain lex measure, row-indexed
-  per ADR-0033) + `group_recovers` RETIRED (`fcb2f51`, ADR-0032). `lr_sound`/`lr_fundamental` →
-  `[propext, sorryAx, Quot.sound]` (only proof bodies left). **NEXT:** U4 (`seq_unit` + `zero_usage_erasable`)
-  → U5 (`lr_sound`, biorthogonality) → U6 (Compat 16 → `lr_fundamental`). `effect_sound` → ◊5.
+- **`paths/PATH-lr-foundation.md`** — **◊4 (ACTIVE; STATEMENTS + INFRA landed, proof BODIES remain).** Done:
+  U1 helpers (`a58a396`) · U2 `Vrel/Srel/Krel/Crel` WF defs (`eadec83`, THE CRUX, row-indexed ADR-0033) ·
+  `group_recovers` RETIRED (`fcb2f51`, ADR-0032) · U4 `seq_unit` PROVEN + `NotEvaluated` def (`53d2e1f`) ·
+  U5 closed adequacy `lr_sound_closed` (`f548999`) · U6 statement+infra (`133a4c1`/`a477554`): `lr_fundamental`
+  amended to env-closed form (ADR-0034) + `lr_fundamental_closed`/`krel_refl`/`closeC`/`EnvRel` + the
+  non-binding compat cores. **THREE ◊4 frozen-statement corrections (ADR-0033/0034 + sig catches) — the LR
+  headlines were Phase-A STUBS being finalised through the proofs.** **RESUME (see the PATH's resume-point
+  section):** binding-former `closeC` commutation (the crux) → mutual fundamental induction → `compat_handle`
+  → **Blocker 2** (the μ/▷ off-by-one at recursive types — route to the LR-relation thread) → `lr_sound`
+  capstone + `zero_usage` corollary. `effect_sound` → ◊5.
 
 **Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
 verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;

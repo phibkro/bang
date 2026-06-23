@@ -46,9 +46,43 @@ fiction). The foundation work (U1–U3) discharged the axioms + corrected the sp
   0-graded var still occurs syntactically + type-checks, so non-occurrence/subst-independence are both false).
   It is an LR corollary (Torczon `semtyping.v`): closes once `lr_fundamental`/`lr_sound` land.
 
+## ◀ RESUME POINT (2026-06-23 session end — HEAD `9e2a73d`, clean, green 723 jobs)
+
+**Statements + infrastructure are landed; the proof BODIES of `lr_fundamental`/`lr_sound`/`zero_usage` are
+the remaining work.** Two ◊4 frozen-statement corrections landed this session (ADR-0033 τ/ε row, ADR-0034
+env-closed fundamental theorem) — **the "frozen" LR statements were Phase-A stubs being finalised through the
+proofs; don't treat them as immutable** (the genuinely-frozen ones are the proven ◊2/STD block). Committed
+green: `cab4dfd`→`a477554` (U6: anti-reduction infra, `crel_ret`/`crel_force`, `krel_refl` named contract,
+ADR-0034 amendment, `closeC`/`closeV` commutation for non-binding formers).
+
+**Remaining map (U6's, dependency order — resume here):**
+1. **Binding-former `closeC` commutation** (letC/lam/case/split) — THE CRUX. Needs
+   `(closeC-under-binder δ N)[w] = closeC δ (Comp.subst w N)`; holds because `EnvRel` fillers are CLOSED (the
+   `Comp.substFrom 1 (shift v) N` de Bruijn shifts vanish). Genuine de Bruijn metatheory (~the `subst_gen`
+   layer's size). **Thread closedness EXPLICITLY** — `Vrel`-values-closed is FALSE in general (a `vthunk` of
+   an open comp can be `Vrel`-related), so add a closedness field to `EnvRel` or carry it. [task #33]
+2. **Mutual value+comp fundamental induction** (`vrel_refl` + `crel_fund`, mutual via `vthunk`), each case
+   → its compat core. Leaf cases (ret/force/up) ready; binder cases gated on (1). [task #31]
+3. `compat_up` (consumes `Srel`) then **`compat_handle` [KEY]** (`Srel` across resumption) — LAST. [task #30]
+4. **`crel_unfold` μ/▷ off-by-one = BLOCKER 2, OPEN → route to the LR-relations thread** (it owns the
+   relation defs). Root cause (verified vs biernacki-popl18 §4 Fig 7): `CoApprox` is deliberately index-free
+   (`LR.lean:254`), which correctly absorbs the ▷ for the EFFECT fragment but silently drops the ▷ that
+   `Krel`'s RETURN-half needs at recursive μ types — so `unfold (fold u)` at μ has no ▷ to spend. Decide:
+   global `Krel`-return-half index-step vs a μ-localized Löb step (prefer the most-localized faithful fix —
+   minimize blast radius on the compat lemmas). **Only bites the iso-recursive ADT fragment; everything else
+   proceeds without it.**
+5. Then the **`lr_sound` capstone** → the LR thread (`lr_sound = lr_sound_closed ∘ krel_refl`, short) + the
+   **`zero_usage_erasable` corollary** (U4′, via the now-available `Vrel`/`lr_fundamental`).
+
+**Orchestration note for the resume:** the proof spine is single-writer-serial (Compat/LR/Spec). Route the
+LR-relation work (Blocker 2 + the `lr_sound` capstone) to ONE LR-relations thread (owns the relation silo);
+the compat/substitution-descent to one proof-engineer; serialise their `LR.lean` access or worktree-isolate
+(the `isolation` flag has been unreliable — verify `git worktree list`). See `[[subagent-procedure-vs-thread]]`.
+
 ## References
 
-- `references/papers/3-lr/`: biernacki-popl18 (Figs 6–9, §5.4 set-row), benton-hur-icfp09 (biorthogonality),
-  ahmed-esop06 + pitts (step-indexing), proving-correctness-step-indexed.
-- `docs/notes/spec-proof-discipline.md` (PROOF_ORDER), `docs/decisions/{0032,0033}-*.md`, ADR-0015 (the
+- `references/papers/3-lr/`: biernacki-popl18 (Figs 6–9, §5.4 set-row; **§4 Fig 7 = the ▷/Obs Blocker-2
+  reference**), benton-hur-icfp09 (biorthogonality), ahmed-esop06 + pitts (step-indexing),
+  proving-correctness-step-indexed.
+- `docs/notes/spec-proof-discipline.md` (PROOF_ORDER), `docs/decisions/{0032,0033,0034}-*.md`, ADR-0015 (the
   reification frontier the LR subsumes), ADR-0016 (two-hop; LR = WasmFX-side correctness).
