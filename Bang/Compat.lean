@@ -204,6 +204,35 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeV, Val.subst, Val.substFrom]; exact ih
 
+/-- Closing a CLOSED value is the identity: each `Val.subst` in the fold leaves a closed value fixed
+(`Val.Closed.subst_at` at cutoff 0). -/
+theorem closeV_closed {v : Val} (hv : Val.Closed v) : ∀ δ : List Val, closeV δ v = v
+  | []      => rfl
+  | u :: δ  => by
+      rw [closeV, show Val.subst u v = v from hv.subst_at 0 u]; exact closeV_closed hv δ
+
+/-- Closing `vvar i` over a CLOSED environment picks out the `i`-th filler (innermost = index 0). The
+fold substitutes `δ[0]` at 0 (hitting `vvar 0`), else decrements and recurses — and once a closed filler
+is substituted in, the remaining fold leaves it fixed (`closeV_closed`). In range (`i < δ.length`). -/
+theorem closeV_vvar {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u) :
+    ∀ {i : Nat}, i < δ.length → ∀ (d : Val), closeV δ (Val.vvar i) = δ[i]?.getD d := by
+  induction δ with
+  | nil => intro i hi; exact absurd hi (by simp)
+  | cons u δ ih =>
+      intro i hi d
+      have hu : Val.Closed u := hδ u List.mem_cons_self
+      have hδ' : ∀ w ∈ δ, Val.Closed w := fun w hw => hδ w (List.mem_cons_of_mem u hw)
+      cases i with
+      | zero =>
+          -- closeV (u::δ) (vvar 0) = closeV δ (subst u (vvar 0)) = closeV δ u = u (u closed).
+          rw [closeV, show Val.subst u (Val.vvar 0) = u from by rw [Val.subst, Val.substFrom, if_pos rfl]]
+          rw [closeV_closed hu δ]; rfl
+      | succ k =>
+          -- closeV (u::δ) (vvar (k+1)) = closeV δ (vvar k) = δ[k] = (u::δ)[k+1].
+          rw [closeV, show Val.subst u (Val.vvar (k + 1)) = Val.vvar k from by
+            rw [Val.subst, Val.substFrom, if_neg (by omega), if_pos (by omega), Nat.add_sub_cancel]]
+          rw [ih hδ' (by simp only [List.length_cons] at hi; omega) d]; rfl
+
 @[simp] theorem closeV_vthunk (δ : List Val) (c : Comp) :
     closeV δ (Val.vthunk c) = Val.vthunk (closeC δ c) := by
   induction δ generalizing c with
