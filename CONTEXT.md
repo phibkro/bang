@@ -188,7 +188,9 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 > at BOTH ADR-0026 ladder rungs: *tested* (rung 2, `plausible`) and *verified* (rung 3 `all_or_nothing_abort`,
 > rung 4 `cell_reflects_latest`, proven). The multi-paradigm thesis is shipped. Post-v1: rungs 5–8
 > (systems frontier — QTT-surfaced allocator, cooperative scheduler, fs, driver) → rung 9 (xv6, the golden
-> test). Rung-3/4 follow-ons: orElse (recovery handler), from-source `atomically`, general-S TVars,
+> test). STM is now **writable from source** (`atomically`/`new`/`read`/`write` parse + run incl.
+> abort-rollback, `9892126`). Rung-3/4 follow-ons: **orElse** (needs *nested-transaction* semantics —
+> discard the alternative's writes, Harris OR3; bigger than a "recovery handler") · general-`S` TVars ·
 > push-based reactivity.
 
 **Verification spine (kernel/compiler — the ◊ march):**
