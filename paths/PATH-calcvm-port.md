@@ -19,8 +19,10 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
 
 ### Increments landed
 
-- **✓ Unit 2 — pure spine** (`Bang/CalcVM.lean`, `158f08d`; supersedes the reverted `ae5f1ca` which merged
-  red — termination unproven). Substitution `evalD` over `ret`/`letC`/`force`/`lam`/`app`; **termination by
+- **✓ Unit 2 — pure spine** (`Bang/CalcVM.lean`, `158f08d` — identical to the earlier `ae5f1ca`, which
+  was in fact GREEN; a transient red build came from an *uncommitted, reverted ADT-eliminator attempt*
+  contaminating a working-tree `verify`, mis-attributed to the green commit — lesson: gate the COMMITTED
+  content, not the working tree). Substitution `evalD` over `ret`/`letC`/`force`/`lam`/`app`; **termination by
   STRUCTURAL recursion on the fuel** (`Nat` decrements — no `termination_by`, no `partial def`). Calculated
   machine `{RET, LAMI, SUBST, APP, …}` DERIVED from `evalD` (invariant #4); `exec_compile` +
   `compile_correct` **PROVEN** over the subst machine, axioms `[propext]`, gate-guarded. Rides the gate
