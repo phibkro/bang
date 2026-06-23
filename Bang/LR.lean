@@ -273,6 +273,18 @@ theorem Val.Closed.subst_at {v : Val} (h : Val.Closed v) (k : Nat) (w : Val) :
   conv_lhs => rw [← h.shiftFrom_eq k]
   exact Val.substFrom_shiftFrom k w v
 
+/-- Closedness is inherited by an injection's payload: `Closed (inl w) → Closed w` (and `inr`). The
+constructor `shiftFrom`s structurally, so the payload's shift-invariance follows by injectivity. -/
+theorem Val.Closed.inl_inv {w : Val} (h : Val.Closed (Val.inl w)) : Val.Closed w := by
+  intro k; have := h k; rw [Val.shiftFrom, Val.inl.injEq] at this; exact this
+theorem Val.Closed.inr_inv {w : Val} (h : Val.Closed (Val.inr w)) : Val.Closed w := by
+  intro k; have := h k; rw [Val.shiftFrom, Val.inr.injEq] at this; exact this
+/-- A pair's components are each closed. -/
+theorem Val.Closed.pair_inv {a b : Val} (h : Val.Closed (Val.pair a b)) :
+    Val.Closed a ∧ Val.Closed b := by
+  constructor <;> intro k <;> (have := h k; rw [Val.shiftFrom, Val.pair.injEq] at this)
+  exacts [this.1, this.2]
+
 
 /-! ## 5.2 LR — Vrel / Srel / Krel / Crel
 
