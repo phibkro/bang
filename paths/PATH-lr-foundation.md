@@ -23,9 +23,10 @@ fiction). The foundation work (U1–U3) discharged the axioms + corrected the sp
 | **U1** | concretize §5.1/§6 helper axioms → defs (Cxt/Stack=EvalCtx, BaseRel, seqComp, raise…) | ✓ **DONE** `a58a396` (caught `raise` sig flaw: `Eff→` → `Label→`) |
 | **U2** | define `Vrel`/`Srel`/`Krel`/`Crel` (step-indexed mutual WF) — **THE CRUX** | ✓ **DONE** `eadec83`. WF goes through on plain lex `(n, sizeOf type, role)` — no iris ▷. Caught the τ/ε under-spec → row-indexed (ADR-0033) |
 | **U3** | `group_recovers` research spike (PROOF_ORDER #2, early) | ✓ **DONE** → RETIRED (`fcb2f51`, ADR-0032). `≈` cleared — no side-condition |
-| **U4** | `seq_unit` + `zero_usage_erasable` — the two cheap closes | ▶ **NEXT**. seq_unit = left-unit monad law (seqComp def); zero_usage = `NotEvaluated` def + 0-graded reasoning (verify it closes operationally, not via full Vrel) |
-| **U5** | `lr_sound` — biorthogonality adequacy (Crel ⇒ ⊑) | pending U4. benton-hur ICFP09 / pitts. The harder proof |
+| **U4** | `seq_unit` + `NotEvaluated` def | ✓ **DONE (partial)** `53d2e1f`. `seq_unit` PROVEN axiom-clean (pure operational: autosubst β-identity `(shift c)[v]=c` + the `run_plug`/`converges_plug_iff` plug-run bridge — committed in LR.lean, reusable). `NotEvaluated` axiom→def (`∀ v₁ v₂, substFrom i v₁ c ≈ substFrom i v₂ c`). **`zero_usage` RE-SEQUENCED out** ↓ |
+| **U5** | `lr_sound` — biorthogonality adequacy (Crel ⇒ ⊑) | ▶ **NEXT** (→ LR thread). benton-hur ICFP09 / pitts. The harder proof; reuse U4's `run_plug`/`converges_plug_iff` to bridge Crel↦Converges |
 | **U6** | repopulate `Bang/Compat.lean` (16 lemmas) → `lr_fundamental` by induction over `HasCTy` | pending U5. `compat_handle` LAST (consumes `Srel`) — kernel-engineer pairing there |
+| **U4′** | `zero_usage_erasable` (RE-SEQUENCED here, U4's finding) | pending U5/U6. **NOT a cheap close** — verified: the 0-graded var still occurs syntactically + type-checks (`ret (vvar 0)` at `q=0`), so both syntactic readings of `NotEvaluated` are FALSE; the faithful notion is irreducibly SEMANTIC (Torczon `semtyping.v`), a **corollary of the LR**. The `sorry` body documents the closing argument: instantiate `Crel`/`Vrel` at the 0-graded slot via `lr_fundamental`, then `lr_sound` for `⊑` both ways |
 | U7 | `effect_sound` | **DEFERRED → ◊5** (Q14 trace-semantics *design* decision, not a proof gap) |
 
 ## What's landed (the foundation)
@@ -40,8 +41,9 @@ fiction). The foundation work (U1–U3) discharged the axioms + corrected the sp
 
 - **U5 biorthogonality** is the remaining proof risk (adequacy of the LR wrt the observation `Converges`).
 - **U6 `compat_handle`** consumes `Srel` (the control-stuck clause) — the `[KEY]` compat lemma, proven last.
-- `zero_usage_erasable` (U4): Torczon proves it *semantically* via an LR; check whether our statement closes
-  cheaper via an operational non-occurrence argument over `NotEvaluated` before reaching for the full Vrel.
+- `zero_usage_erasable` (now **U4′**, post-LR): the cheap operational path is REFUTED (U4 verified — the
+  0-graded var still occurs syntactically + type-checks, so non-occurrence/subst-independence are both false).
+  It is an LR corollary (Torczon `semtyping.v`): closes once `lr_fundamental`/`lr_sound` land.
 
 ## References
 
