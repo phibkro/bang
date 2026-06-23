@@ -237,6 +237,43 @@ def raise (ℓ : Label) (v : Val) : Comp := Comp.up ℓ "raise" v
 -- which are per-`(Label, OpId)` (the old per-`Eff` axioms could not type `get` vs `put`).
 
 
+/-! ## 5.2a Semantic closedness (`Val.Closed`)
+
+The substitution-descent lemma `closeC_subst_comm` (Compat.lean) needs the `EnvRel` fillers — and the
+values quantified in `Krel`/`Srel` — to be SHIFT-INVARIANT, so the `Val.shift` that
+`Comp.substFrom (k+1)` introduces under a binder vanishes. We carry this SEMANTICALLY (not via the
+typing judgement `HasVTy`): a value is `Closed` when no `shiftFrom` cutoff alters it. This mirrors
+`Metatheory.lean`'s `HasVTy.shift_closed` (typed-closed ⇒ shift-invariant) but stays inside the LR's
+value language, so the carrier composes with the relations below without dragging the typing context in.
+
+The faithfulness anchor (why this is a real invariant, not an artifact): the CK machine's focus is
+always a CLOSED term, and every value it RETURNS or PLUGS is closed (ADR-0025/0030 — the same
+closed-cell invariant `Handler.shiftFrom`/`substFrom` exploit on heap cells). So enforcing closedness
+on the values quantified in `Krel`'s return-half / `Srel`'s resume-half is exactly the machine's
+behaviour, and `EnvRel`-filler-closedness is then maintained by construction when the fundamental
+induction extends δ under a binder. -/
+
+/-- A value is `Closed` when every `shiftFrom` cutoff fixes it (no free de Bruijn index is exposed).
+The semantic analogue of `Metatheory.HasVTy.shift_closed`'s conclusion. -/
+def Val.Closed (v : Val) : Prop := ∀ k, Val.shiftFrom k v = v
+
+/-- The k=0 instance: a closed value is fixed by `Val.shift`. This is the vanishing-shift fact
+`closeC_subst_comm` consumes (`Comp.substFrom 1 (Val.shift v) N = Comp.substFrom 1 v N`). -/
+theorem Val.Closed.shift {v : Val} (h : Val.Closed v) : Val.shift v = v := h 0
+
+/-- A closed value is fixed by `Val.shiftFrom` at EVERY cutoff (the defining property, named). -/
+theorem Val.Closed.shiftFrom_eq {v : Val} (h : Val.Closed v) (k : Nat) : Val.shiftFrom k v = v := h k
+
+/-- A closed value is fixed by `Val.substFrom` at every cutoff, for any filler. Closed = shift-fixed at
+`k` ⇒ `substFrom k w v = substFrom k w (shiftFrom k v) = v` via the subst-after-shift cancellation
+(`Val.substFrom_shiftFrom`). This is what the substitution-swap lemma consumes when it traverses INTO a
+closed filler. -/
+theorem Val.Closed.subst_at {v : Val} (h : Val.Closed v) (k : Nat) (w : Val) :
+    Val.substFrom k w v = v := by
+  conv_lhs => rw [← h.shiftFrom_eq k]
+  exact Val.substFrom_shiftFrom k w v
+
+
 /-! ## 5.2 LR — Vrel / Srel / Krel / Crel
 
 The four step-indexed logical relations, transcribed clause-by-clause from
@@ -324,7 +361,7 @@ through related values OR related stuck terms" clause. -/
 def Krel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] : Nat → CTy Eff Mult → Eff → Stack → Stack → Prop
   | n, C, ε, K₁, K₂ =>
-      (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Vrel n A v₁ v₂ →
+      (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel n A v₁ v₂ →
         CoApprox (Stack.plug K₁ (Comp.ret v₁)) (Stack.plug K₂ (Comp.ret v₂)))
       ∧ (∀ c₁ c₂, Srel n C ε K₁ K₂ c₁ c₂ →
         CoApprox (Stack.plug K₁ c₁) (Stack.plug K₂ c₂))
@@ -350,7 +387,7 @@ def Srel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
         EffSig.opRes (Mult := Mult) ℓ op = some Ares ∧
         Vrel n Aarg v₁ v₂ ∧
         (Bang.splitAt K₁ ℓ op = none) ∧ (Bang.splitAt K₂ ℓ op = none) ∧
-        (∀ u₁ u₂, Vrel n Ares u₁ u₂ →
+        (∀ u₁ u₂, Val.Closed u₁ → Val.Closed u₂ → Vrel n Ares u₁ u₂ →
           Crel n C ε (Stack.plug K₁ (Comp.ret u₁)) (Stack.plug K₂ (Comp.ret u₂)))
 termination_by n C _ _ _ _ _ => (n, sizeOf C, 0)
 end
@@ -385,11 +422,16 @@ def closeV : List Val → Val → Val
 
 /-- Pointwise `Vrel`-relatedness of two closing environments at the context `Γ`. Same length as `Γ`;
 position `i` relates at type `Γ[i]`. The `▷`-free `Vrel n`: environments carry CLOSED values observed
-at the current index. -/
+at the current index. The `Val.Closed` conjuncts are the carrier `closeC_subst_comm` consumes (§5.2a):
+they make every filler shift-invariant, so closing under a binder commutes with substitution. The
+carrier is MAINTAINED by construction in the fundamental induction — the plug-values that extend δ
+under a binder come from `Krel`'s return-half / `Srel`'s resume-half, both of which now quantify only
+over CLOSED values (faithful to the CK machine, which plugs only closed values; ADR-0025/0030). -/
 def EnvRel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop
   | [],      [],        []        => True
-  | A :: Γ', v₁ :: δ₁', v₂ :: δ₂' => Vrel n A v₁ v₂ ∧ EnvRel n Γ' δ₁' δ₂'
+  | A :: Γ', v₁ :: δ₁', v₂ :: δ₂' =>
+      Val.Closed v₁ ∧ Val.Closed v₂ ∧ Vrel n A v₁ v₂ ∧ EnvRel n Γ' δ₁' δ₂'
   | _,       _,         _         => False
 
 @[simp] theorem closeC_nil (c : Comp) : closeC [] c = c := rfl
@@ -449,7 +491,7 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
   unfold Krel
   refine ⟨?_, ?_⟩
   · -- return half: plug [] (ret vᵢ) = ret vᵢ, which always converges.
-    intro q A _ v₁ v₂ _ _
+    intro q A _ v₁ v₂ _ _ _ _
     exact converges_ret v₂
   · -- stuck half: an Srel (n+1)-pair under [] is an unhandled `up`, which never converges.
     intro c₁ c₂ hS hconv

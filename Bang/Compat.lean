@@ -120,10 +120,45 @@ is unprovable for open `c` (a `vvar i` is not `Vrel`-related to itself), so the 
 `closeC` is a fold of single `Comp.subst`s (innermost binder first), so it commutes with every
 NON-binding former structurally (each `Comp.subst` pushes through, and the fold follows). These are
 proved by induction on the environment `δ`, threading the single-step commutation
-(`Comp.subst v (ret w) = ret (Val.subst v w)`, definitional) through the fold. The BINDING formers
-(`letC`/`lam`/`case`/`split`) are deferred — their commutation needs the shifted-environment form
-(`Comp.substFrom 1 (shift v) N`), which for CLOSED fillers (the `EnvRel` invariant) collapses to
-`Comp.substFrom 1 v N`; that closedness bridge is the next layer. -/
+(`Comp.subst v (ret w) = ret (Val.subst v w)`, definitional) through the fold.
+
+The BINDING formers (`letC`/`lam`/`case`/`split`) push `closeC` UNDER a binder: `Comp.subst v` becomes
+`Comp.substFrom (0+d) (shiftN d v)` for a sub-term under `d` fresh binders (`d=1` for letC/lam/case,
+`d=2` for split). We name that binder-side fold `closeCUnderBinders d` and prove the distribution
+lemmas STRUCTURALLY (no closedness needed — they merely re-associate the fold under the binder). The
+closedness carrier enters only in `closeC_subst_comm` (below), where it collapses the `shiftN d` so the
+bound value can be filled. -/
+
+/-- Shift a value under `d` binders (`Val.shift` iterated `d` times) — the cutoff-0 weakening a filler
+undergoes when `closeC` descends `d` binders. `shiftN 0 v = v`. -/
+def shiftN : Nat → Val → Val
+  | 0,     v => v
+  | d + 1, v => Val.shift (shiftN d v)
+
+@[simp] theorem shiftN_zero (v : Val) : shiftN 0 v = v := rfl
+
+/-- A closed value is fixed by `shiftN d` (induction on `d`, each step is `Val.Closed.shift`). -/
+theorem shiftN_closed {v : Val} (h : Val.Closed v) : ∀ d, shiftN d v = v
+  | 0     => rfl
+  | d + 1 => by
+      show Val.shift (shiftN d v) = v
+      rw [shiftN_closed h d, h.shift]
+
+/-- Apply a closing environment δ to a computation that sits UNDER `d` fresh binders: each filler `v`
+substitutes at level `d` (the binders shift the environment up by `d`), weakened by `shiftN d`.
+`closeCUnderBinders 0 = closeC`; `closeCUnderBinders d [] c = c`. The binder-side fold the distribution
+lemmas peel `closeC` into. -/
+def closeCUnderBinders (d : Nat) : List Val → Comp → Comp
+  | [],     c => c
+  | v :: δ, c => closeCUnderBinders d δ (Comp.substFrom d (shiftN d v) c)
+
+@[simp] theorem closeCUnderBinders_nil (d : Nat) (c : Comp) : closeCUnderBinders d [] c = c := rfl
+
+/-- `closeCUnderBinders 0` is exactly `closeC` (level-0 subst, no weakening). -/
+theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 0 δ c = closeC δ c := by
+  induction δ generalizing c with
+  | nil => rfl
+  | cons v δ ih => simp only [closeCUnderBinders, closeC, Comp.subst, shiftN]; exact ih _
 
 @[simp] theorem closeC_ret (δ : List Val) (w : Val) :
     closeC δ (Comp.ret w) = Comp.ret (closeV δ w) := by
@@ -166,6 +201,164 @@ proved by induction on the environment `δ`, threading the single-step commutati
   | cons v δ ih => simp only [closeV, closeC, Val.subst, Val.substFrom, Comp.subst]; exact ih _
 
 
+/-! ### B.1b BINDING-former `closeC` distribution (`closeCUnderBinders`)
+
+`closeC` pushes under a binder by re-indexing the environment: the sub-term under `d` fresh binders is
+closed by `closeCUnderBinders d` (level-`d` subst with `shiftN d`-weakened fillers). These are STRUCTURAL
+(induction on δ, the single `Comp.substFrom 0` step unfolds to the binding former's `substFrom` clause);
+NO closedness is consumed — they just name the binder-side fold. `shiftN 1 v = Val.shift v` /
+`shiftN 2 v = Val.shift (Val.shift v)` make the level-1/level-2 steps line up with the kernel's
+`Comp.substFrom` clauses for `letC`/`lam`/`case` (d=1) and `split` (d=2) definitionally. -/
+
+theorem closeC_letC (δ : List Val) (M N : Comp) :
+    closeC δ (Comp.letC M N) = Comp.letC (closeC δ M) (closeCUnderBinders 1 δ N) := by
+  induction δ generalizing M N with
+  | nil => rfl
+  | cons v δ ih =>
+    simp only [closeC, closeCUnderBinders, Comp.subst, Comp.substFrom, shiftN]
+    exact ih _ _
+
+theorem closeC_lam (δ : List Val) (M : Comp) :
+    closeC δ (Comp.lam M) = Comp.lam (closeCUnderBinders 1 δ M) := by
+  induction δ generalizing M with
+  | nil => rfl
+  | cons v δ ih =>
+    simp only [closeC, closeCUnderBinders, Comp.subst, Comp.substFrom, shiftN]
+    exact ih _
+
+theorem closeC_case (δ : List Val) (w : Val) (N₁ N₂ : Comp) :
+    closeC δ (Comp.case w N₁ N₂)
+      = Comp.case (closeV δ w) (closeCUnderBinders 1 δ N₁) (closeCUnderBinders 1 δ N₂) := by
+  induction δ generalizing w N₁ N₂ with
+  | nil => rfl
+  | cons v δ ih =>
+    simp only [closeC, closeV, closeCUnderBinders, Comp.subst, Val.subst, Comp.substFrom, shiftN]
+    exact ih _ _ _
+
+theorem closeC_split (δ : List Val) (w : Val) (N : Comp) :
+    closeC δ (Comp.split w N) = Comp.split (closeV δ w) (closeCUnderBinders 2 δ N) := by
+  induction δ generalizing w N with
+  | nil => rfl
+  | cons v δ ih =>
+    simp only [closeC, closeV, closeCUnderBinders, Comp.subst, Val.subst, Comp.substFrom, shiftN]
+    exact ih _ _
+
+
+/-! ### B.1c The single-binder substitution-commutation core
+
+`closeC_subst_comm` reduces (by induction on δ) to a single de Bruijn fact: filling a level-1 binder
+with a CLOSED `v` then a level-0 binder with a CLOSED `w` is the same as filling level-0 with `w` then
+level-0 with `v`. Both fillers must be closed: the second substitution traverses INTO the first's
+filler, so each must be shift-invariant (closed) to survive the other's renumbering. This is faithful —
+the values flowing through the CK machine's binders (a returned value, an env filler) are always closed
+(ADR-0025/0030, the carrier now enforced in `Krel`/`Srel`/`EnvRel`).
+
+  de Bruijn substitution lemma (Pierce TAPL §6.2 / autosubst `subst_comp`), specialized to two closed
+  fillers so neither shift survives. Proved by mutual structural induction, cutoff `k` generalized. -/
+
+-- For CLOSED `v,w`: `substFrom k w (substFrom (k+1) v M) = substFrom k v (substFrom k w M)`. The
+-- cutoff `k` is generalized so the binder cases (which step to `k+1` with `shift v`/`shift w` = `v`/`w`)
+-- reuse the IH at the SAME fillers. Mutual with the `Val`/`Handler` analogues.
+mutual
+theorem Val.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) :
+    ∀ (k : Nat) (t : Val),
+      Val.substFrom k w (Val.substFrom (k + 1) v t) = Val.substFrom k v (Val.substFrom k w t)
+  | _, .vunit => rfl
+  | _, .vint _ => rfl
+  | k, .vvar i => by
+      -- both substs on a variable reduce to nested `if`s over `i vs k`/`k+1`; `split_ifs` + `omega`
+      -- discharges the index arithmetic. In the two FILLED-SLOT branches the outer subst lands on a
+      -- closed filler, fixed by `Closed.subst_at`; elsewhere it lands on another `vvar` (reduce again).
+      rcases Nat.lt_trichotomy i k with hlt | heq | hgt
+      · -- i < k < k+1: every `if` takes its `else`; both sides are `vvar i`.
+        simp only [Val.substFrom, if_neg (show ¬ i = k + 1 by omega), if_neg (show ¬ i > k + 1 by omega),
+          if_neg (show ¬ i = k by omega), if_neg (show ¬ i > k by omega)]
+      · -- i = k: LHS → w; RHS → `substFrom k v w` = w (w closed).
+        subst heq
+        simp only [Val.substFrom, if_neg (show ¬ i = i + 1 by omega), if_neg (show ¬ i > i + 1 by omega),
+          if_true, hw.subst_at i v]
+      · rcases Nat.lt_trichotomy i (k + 1) with hk1 | heq1 | hgt1
+        · omega
+        · -- i = k+1: LHS → `substFrom k w v` = v (v closed); RHS → vvar k → v.
+          subst heq1
+          simp only [Val.substFrom, if_true, hv.subst_at k w,
+            if_neg (show ¬ k + 1 = k by omega), if_pos (show k + 1 > k by omega), Nat.add_sub_cancel]
+        · -- i > k+1: both substs decrement; both sides reach `vvar (i-2)`.
+          simp only [Val.substFrom, if_neg (show ¬ i = k + 1 by omega), if_pos (show i > k + 1 by omega),
+            if_neg (show ¬ i = k by omega), if_pos (show i > k by omega),
+            if_neg (show ¬ i - 1 = k by omega), if_pos (show i - 1 > k by omega)]
+  | k, .vthunk M => by
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed hv hw k M]
+  | k, .inl u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | k, .inr u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | k, .pair u₁ u₂ => by
+      simp only [Val.substFrom]
+      rw [Val.substFrom_swap_closed hv hw k u₁, Val.substFrom_swap_closed hv hw k u₂]
+  | k, .fold u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+
+theorem Comp.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) :
+    ∀ (k : Nat) (t : Comp),
+      Comp.substFrom k w (Comp.substFrom (k + 1) v t) = Comp.substFrom k v (Comp.substFrom k w t)
+  | k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | k, .letC M N => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Comp.substFrom_swap_closed hv hw k M, Comp.substFrom_swap_closed hv hw (k + 1) N]
+  | k, .force u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | k, .lam M => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Comp.substFrom_swap_closed hv hw (k + 1) M]
+  | k, .app M u => by
+      simp only [Comp.substFrom]
+      rw [Comp.substFrom_swap_closed hv hw k M, Val.substFrom_swap_closed hv hw k u]
+  | k, .up ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | k, .handle h M => by
+      simp only [Comp.substFrom]
+      rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed hv hw k M]
+  | k, .case u N₁ N₂ => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Val.substFrom_swap_closed hv hw k u,
+        Comp.substFrom_swap_closed hv hw (k + 1) N₁, Comp.substFrom_swap_closed hv hw (k + 1) N₂]
+  | k, .split u N => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Val.substFrom_swap_closed hv hw k u, Comp.substFrom_swap_closed hv hw (k + 2) N]
+  | k, .unfold u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | _, .oom => rfl
+  | _, .wrong _ => rfl
+
+theorem Handler.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) :
+    ∀ (k : Nat) (h : Handler),
+      Handler.substFrom k w (Handler.substFrom (k + 1) v h) = Handler.substFrom k v (Handler.substFrom k w h)
+  | k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed hv hw k s]
+  | _, .throws _ => rfl
+  | _, .transaction _ _ => rfl
+end
+
+/-! ### B.1d The substitution-descent crux (`closeC_subst_comm`)
+
+The lemma every BINDER case of `lr_fundamental` consumes: closing a body UNDER one binder and then
+filling the binder with `w` equals substituting `w` first and then closing. For a CLOSED environment the
+binder-side weakening `shiftN 1` vanishes (`shiftN_closed`), so `closeCUnderBinders 1 δ` substitutes the
+SAME fillers as `closeC δ` but at level 1; the level-0 `Comp.subst w` then commutes past each via
+`Comp.substFrom_swap_closed` (both fillers closed).
+
+  shape: biernacki-popl18 §5.2 fundamental theorem — closing substitution `G⟦Γ⟧` commutes with the
+         single binder-substitution introduced by `letC`/`lam`/`case`/`split` β-reduction. -/
+theorem closeC_subst_comm {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v) {w : Val} (hw : Val.Closed w)
+    (N : Comp) :
+    (closeCUnderBinders 1 δ N).subst w = closeC δ (Comp.subst w N) := by
+  induction δ generalizing N with
+  | nil => rfl
+  | cons v δ ih =>
+    have hv : Val.Closed v := hδ v List.mem_cons_self
+    have hδ' : ∀ u ∈ δ, Val.Closed u := fun u hu => hδ u (List.mem_cons_of_mem v hu)
+    -- LHS: closeCUnderBinders 1 (v::δ) N = closeCUnderBinders 1 δ (substFrom 1 v N)  [shiftN 1 v = v].
+    -- RHS: closeC (v::δ) (subst w N) = closeC δ (subst v (subst w N)).
+    simp only [closeCUnderBinders, closeC, shiftN, hv.shift]
+    rw [ih hδ' (Comp.substFrom 1 v N)]
+    -- goal: closeC δ (subst w (substFrom 1 v N)) = closeC δ (subst v (subst w N))
+    congr 1
+    -- subst w (substFrom 1 v N) = subst v (subst w N), i.e. the k=0 swap (closed v, w).
+    exact Comp.substFrom_swap_closed hv hw 0 N
 /-! ## B.2 The return / value-injection compat core (`crel_ret`)
 
 `Crel`-relatedness of `ret v₁` and `ret v₂` follows from `Vrel`-relatedness of `v₁,v₂`: a
@@ -174,12 +367,13 @@ This is the biorthogonal "values inject into computations" closure (Biernacki Fi
 clause of `Krel`). It is the `compat_ret` core and the engine of every `▷`-free leaf. -/
 
 theorem crel_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ : Val}
+    (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂)
     (hv : Vrel n A v₁ v₂) : Crel n (CTy.F q A) e (Comp.ret v₁) (Comp.ret v₂) := by
   unfold Crel
   intro K₁ K₂ hK
   unfold Krel at hK
-  -- the RETURN half of Krel fires on `Vrel n A v₁ v₂` at the returner type `F q A`.
-  exact hK.1 q A rfl v₁ v₂ hv
+  -- the RETURN half of Krel fires on `Vrel n A v₁ v₂` (at closed values) at the returner type `F q A`.
+  exact hK.1 q A rfl v₁ v₂ hc₁ hc₂ hv
 
 
 /-! ## B.3 Head-reduction compat cores (`force` / ADT eliminators)
