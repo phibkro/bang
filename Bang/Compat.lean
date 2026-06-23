@@ -134,6 +134,16 @@ theorem converges_appF_lam (K : Stack) (w : Val) (M : Comp) :
   exact converges_cfg_step (Frame.appF w :: K, Comp.lam M) (K, Comp.subst w M)
     rfl (by intro u; simp)
 
+/-- The `handleF` RETURN bridge: a handler frame's return clause is the IDENTITY (ADR-0023 Q6) —
+`handleF h :: K, ret v ↦ K, ret v` — so plugging the handler frame with a returned value co-converges
+with plugging the bare stack. Holds for ANY handler `h` (throws/state/transaction all share the
+identity return). -/
+theorem converges_handleF_ret (K : Stack) (h : Handler) (v : Val) :
+    Converges (Stack.plug (Frame.handleF h :: K) (Comp.ret v)) ↔ Converges (Stack.plug K (Comp.ret v)) := by
+  rw [Stack.plug, Stack.plug, converges_plug_iff, converges_plug_iff]
+  exact converges_cfg_step (Frame.handleF h :: K, Comp.ret v) (K, Comp.ret v)
+    rfl (by intro u; simp)
+
 /-! ## B.1 The environment relation `EnvRel` / closing substitutions
 
 `EnvRel`, `closeC`, `closeV` are defined in `Bang/LR.lean` (§5.2b) — they are LR machinery the FROZEN
@@ -211,6 +221,15 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   induction δ generalizing w with
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
+
+/-- `closeC` distributes through a `throws` handler: the handler carries no value
+(`Handler.subst _ (throws ℓ) = throws ℓ`), and `handle` does not bind, so the body closes structurally.
+(`state`/`transaction` carry values/heaps — their closeC is the resumptive-fragment follow-up.) -/
+@[simp] theorem closeC_handleThrows (δ : List Val) (ℓ : Label) (M : Comp) :
+    closeC δ (Comp.handle (Handler.throws ℓ) M) = Comp.handle (Handler.throws ℓ) (closeC δ M) := by
+  induction δ generalizing M with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom]; exact ih _
 
 @[simp] theorem closeV_vunit (δ : List Val) : closeV δ Val.vunit = Val.vunit := by
   induction δ with
@@ -938,6 +957,69 @@ theorem compat_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
   rw [Crel] at this
   exact this K₁' K₂' hKrem
 
+/-- The `handleF (throws ℓ)` frame-extension `Krel` lemma: extending a `Krel n (F q A) φ K₁ K₂` by a
+`throws ℓ` handler frame gives `Krel n (F q A) e (handleF (throws ℓ)::K₁) (handleF (throws ℓ)::K₂)` for
+any body effect `e`. KEY INSIGHT (the same-M / no-handled-op-clause-needed argument): Krel quantifies
+ONLY over `ret` (return half) and `splitAt = none` ops (stuck half = UNHANDLED). The op the throws frame
+CATCHES (`ℓ`'s raise) is neither — it's consumed by the MACHINE's dispatch inside the body's run, NOT
+observed by this stack relation. So no "handled-op clause" is needed:
+  • RETURN half: `handleF h :: K, ret v ↦ K, ret v` (identity return, ADR-0023 Q6) → `converges_handleF_ret`
+    reduces to the ambient Krel return half.
+  • STUCK half: an `Srel` pair under `handleF::K` has `splitAt = none` (unhandled) → never converges
+    (`not_converges_up_splitNone`) → vacuous.
+  • ARROW half: vacuous (`F q A ≠ arr`).
+This is the THROWS fragment — zero-shot abort, ▷-free (no resume). state/transaction RESUME is the
+follow-up (needs the Kripke/▷ reshape). -/
+theorem krel_handleF_throws {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
+    {K₁ K₂ : Stack} (hK : Krel (n + 1) (CTy.F q A) φ K₁ K₂) :
+    Krel (n + 1) (CTy.F q A) e (Frame.handleF (Handler.throws ℓ) :: K₁)
+                               (Frame.handleF (Handler.throws ℓ) :: K₂) := by
+  rw [Krel]
+  refine ⟨?_, ?_, ?_⟩
+  · -- RETURN half: F q A = F q' A' ⟹ the handler frame returns identically; ambient Krel return fires.
+    intro q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
+    rw [converges_handleF_ret] at hconv₁
+    rw [converges_handleF_ret]
+    rw [Krel] at hK
+    exact hK.1 q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
+  · -- STUCK half: the Srel pair is an unhandled op under handleF::K — never converges.
+    intro c₁ c₂ hS
+    rw [Srel] at hS
+    obtain ⟨ℓ', op, v₁, v₂, _, _, hc₁, _, _, _, _, _, hsp₁, _, _⟩ := hS
+    intro hconv₁
+    rw [hc₁] at hconv₁
+    exact absurd hconv₁
+      (not_converges_up_splitNone (Frame.handleF (Handler.throws ℓ) :: K₁) ℓ' op v₁ hsp₁)
+  · -- ARROW half: VACUOUS — F q A ≠ arr.
+    intro q' A' B' hEq; exact absurd hEq (by simp)
+
+/-- The `handleThrows` compatibility core (`compat_handleThrows`): a body `Crel`-related at its effect
+`e` (the IH for `M`) gives the `handle (throws ℓ) M` block `Crel`-related at the discharged effect `φ`.
+REFOCUS `plug K (handle (throws ℓ) M) = plug (handleF (throws ℓ)::K) M` (`plug_cons`), then run `M`
+through the handler-extended stacks, which `krel_handleF_throws` shows `Krel`-related. The handled raise
+(abort) is consumed by the machine inside M's run — no Srel needed (the same-M self-relation observes it
+through the IH's biorthogonality). ▷-free. -/
+theorem compat_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
+    {M₁ M₂ : Comp}
+    (hM : Crel n (CTy.F q A) e M₁ M₂) :
+    Crel n (CTy.F q A) φ (Comp.handle (Handler.throws ℓ) M₁) (Comp.handle (Handler.throws ℓ) M₂) := by
+  cases n with
+  | zero => exact crel_zero (CTy.F q A) φ (Comp.handle (Handler.throws ℓ) M₁)
+              (Comp.handle (Handler.throws ℓ) M₂)
+  | succ m =>
+      rw [Crel]
+      intro K₁ K₂ hK
+      have hrefocus₁ : Stack.plug K₁ (Comp.handle (Handler.throws ℓ) M₁)
+          = Stack.plug (Frame.handleF (Handler.throws ℓ) :: K₁) M₁ := by
+        rw [Stack.plug, Stack.plug, plug_cons]; rfl
+      have hrefocus₂ : Stack.plug K₂ (Comp.handle (Handler.throws ℓ) M₂)
+          = Stack.plug (Frame.handleF (Handler.throws ℓ) :: K₂) M₂ := by
+        rw [Stack.plug, Stack.plug, plug_cons]; rfl
+      rw [hrefocus₁, hrefocus₂]
+      rw [Crel] at hM
+      exact hM (Frame.handleF (Handler.throws ℓ) :: K₁) (Frame.handleF (Handler.throws ℓ) :: K₂)
+        (krel_handleF_throws hK)
+
 /-- The `case` compatibility core (`compat_case`): `Vrel`-related sum scrutinees force both `case`s to
 the SAME branch (both `inl` or both `inr`, with `Vrel`-related payloads), and `case (inl v) … ↦ N₁[v]`
 is a CIStep (stack-independent in-place reduction). So `Crel_head_step` reduces to the chosen branch's
@@ -1200,7 +1282,10 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       -- (splitAt ≠ none) couples into compat_handle. Documented sorry.
       intro n δ₁ δ₂ hδ; sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
-      intro n δ₁ δ₂ hδ; sorry   -- BLOCKER (PROOF_ORDER-last): compat_handle [KEY], Srel resumption.
+      -- throws is ▷-free (zero-shot abort, no resume): compat_handleThrows + closeC_handleThrows.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_handleThrows, closeC_handleThrows]
+      exact compat_handleThrows (crel_fund hM n δ₁ δ₂ hδ)
   | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
       intro n δ₁ δ₂ hδ; sorry   -- BLOCKER (PROOF_ORDER-last): compat_handle, resumptive state.
   | @handleTransaction _ _ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM hsub =>
