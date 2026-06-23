@@ -258,7 +258,15 @@ def evalD : Nat → SStore → THeap → Comp → Option (Outcome × SStore × T
                 -- tail), so `σ'`/`τ'` retain exactly the outer effects.
                 if ℓ0 = ℓ' ∧ op' = "raise" then some (.term (.ret w), σ', τ')
                 else some (.raised ℓ' op' w, σ', τ'))
-  | _,          _, _, _            => none                -- out of scope (ADT elim)
+  -- ADT eliminators (Unit 6): PURE reductions — closed-value scrutinee, NO σ/τ threading change, NO
+  -- handler/raise interaction. Mirror the kernel's `Source.step` (`Operational.lean` 259-263) exactly:
+  -- `case`/`split` re-`subst` into a branch (recursing on fuel), `unfold` erases to `ret v`. The
+  -- `none` fall-through keeps the catch-all for ill-formed scrutinees (source-unreachable, well-typed).
+  | Nat.succ f, σ, τ, .case (.inl v) N₁ _  => evalD f σ τ (Comp.subst v N₁)
+  | Nat.succ f, σ, τ, .case (.inr v) _  N₂ => evalD f σ τ (Comp.subst v N₂)
+  | Nat.succ f, σ, τ, .split (.pair v w) N => evalD f σ τ (Comp.subst v (Comp.subst (Val.shift w) N))
+  | Nat.succ _, σ, τ, .unfold (.fold v)    => some (.term (.ret v), σ, τ)
+  | _,          _, _, _            => none                -- out of scope (ill-formed scrutinee)
 
 /-! ## The machine — derived, not designed
 
@@ -295,6 +303,12 @@ inductive Instr where
   -- stored state), and CONTINUE `c` (one-shot in-place resume, shape (A) — no continuation reified).
   -- If `ℓ` is NOT a state frame (a throws label), fall through to the THROW/unwind path (zero-shot).
   | OP     : Bang.EffectRow.Label → Bang.OpId → Val → Instr
+  -- ADT eliminators (Unit 6): same residual-`Comp`-in-instruction pattern as `SUBST`/`APP`. `compile`
+  -- emits the instruction WITHOUT recursing into the branches (keeping `compile` structural); `exec`
+  -- inspects the closed-value scrutinee and re-`compile`s the chosen branch at runtime (fuel-bounded).
+  | CASE   : Val → Comp → Comp → Instr  -- sum elim: inl/inr ⇒ compile+run the matching branch[v]
+  | SPLIT  : Val → Comp → Instr         -- product elim: pair ⇒ compile+run N[v][shift w] (DOUBLE subst)
+  | UNFOLD : Val → Instr                -- μ elim: fold v ⇒ push `ret v` (fold/unfold erase)
   deriving Inhabited
 
 abbrev Code  := List Instr
@@ -321,7 +335,10 @@ def compile : Comp → Code → Code
   | .app M v,           c => compile M (Instr.APP v :: c)
   | .handle h M,        c => Instr.MARK h c :: compile M (Instr.UNMARK :: c)
   | .up ℓ op v,         c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); throws falls through to unwind
-  | _,                  c => c               -- out of scope: emit nothing (residual, ADT elim)
+  | .case w N₁ N₂,      c => Instr.CASE w N₁ N₂ :: c   -- ADT: emit instr, do NOT recurse into branches (structural)
+  | .split w N,         c => Instr.SPLIT w N :: c       -- ADT: ditto; `exec` re-compiles the chosen branch[v]
+  | .unfold w,          c => Instr.UNFOLD w :: c        -- ADT: ditto
+  | _,                  c => c               -- out of scope: emit nothing (residual)
 
 /-- Find the nearest **throws** frame catching `(ℓ, op)`: return its saved OUTER
 continuation (`savedCode`, `savedStack`), discarding the inner frames (zero-shot
@@ -1369,6 +1386,21 @@ def exec : Nat → Code → Stack → HStack → Option Stack
               match unwindFind ℓ op hs with
               | some (c', s', hs') => exec f c' (.ret v :: s') hs' -- ABORT to (Kₒ, ret v), c discarded
               | none               => none                     -- uncaught = stuck
+  -- ADT eliminators (Unit 6): inspect the closed-value scrutinee in place, re-`compile` the chosen
+  -- branch[v] (fuel-bounded ⇒ terminating), mirroring the `SUBST` exec arm. PURE — no `hs` change.
+  | Nat.succ f, Instr.CASE w N₁ N₂ :: c, s, hs =>
+      match w with
+      | .inl v => exec f (compile (Comp.subst v N₁) c) s hs
+      | .inr v => exec f (compile (Comp.subst v N₂) c) s hs
+      | _      => none
+  | Nat.succ f, Instr.SPLIT w N :: c, s, hs =>
+      match w with
+      | .pair v u => exec f (compile (Comp.subst v (Comp.subst (Val.shift u) N)) c) s hs
+      | _         => none
+  | Nat.succ f, Instr.UNFOLD w :: c, s, hs =>
+      match w with
+      | .fold v => exec f c (.ret v :: s) hs
+      | _       => none
 
 /-! ## The calculation is correct (proven) -/
 
@@ -1429,6 +1461,22 @@ theorem exec_succ : ∀ f c s hs r, exec f c s hs = some r → exec (f+1) c s hs
             cases hu : unwindFind ℓ op hs with
             | none => simp only [hu] at h; simp at h
             | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ h
+      | CASE w N₁ N₂ =>
+        simp only [exec] at h ⊢
+        cases w with
+        | inl v => simp only [] at h ⊢; exact ih _ _ _ _ h
+        | inr v => simp only [] at h ⊢; exact ih _ _ _ _ h
+        | _ => simp at h
+      | SPLIT w N =>
+        simp only [exec] at h ⊢
+        cases w with
+        | pair v u => simp only [] at h ⊢; exact ih _ _ _ _ h
+        | _ => simp at h
+      | UNFOLD w =>
+        simp only [exec] at h ⊢
+        cases w with
+        | fold v => simp only [] at h ⊢; exact ih _ _ _ _ h
+        | _ => simp at h
 
 /-- Fuel monotonicity, `≤` (k2-playbook §2): bump any sub-fuel to a common value. -/
 theorem exec_mono : ∀ f g c s hs r, f ≤ g → exec f c s hs = some r → exec g c s hs = some r := by
@@ -1853,9 +1901,59 @@ theorem sim : ∀ fe,
                 | (.raised ℓ' op' w, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
-      | case a b d => simp [evalD] at h
-      | split a b => simp [evalD] at h
-      | unfold a => simp [evalD] at h
+      | case a b d =>
+          -- ADT sum elim (Unit 6): closed-value scrutinee, PURE reduction. evalD reduces into a branch;
+          -- the IH on `subst v branch` carries it; `CASE` exec re-compiles that branch (mirrors SUBST).
+          cases a with
+          | inl v =>
+              simp only [evalD] at h
+              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v b) σ τ t σ' τ' h hs hC hT
+              refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
+              obtain ⟨F', hF'⟩ := k c s F r hr
+              exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
+          | inr v =>
+              simp only [evalD] at h
+              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v d) σ τ t σ' τ' h hs hC hT
+              refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
+              obtain ⟨F', hF'⟩ := k c s F r hr
+              exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
+          | vunit => simp [evalD] at h
+          | vint n => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | split a b =>
+          -- ADT product elim (Unit 6): DOUBLE subst (note the `shift`), mirroring the kernel.
+          cases a with
+          | pair v w =>
+              simp only [evalD] at h
+              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ :=
+                ihT (Comp.subst v (Comp.subst (Val.shift w) b)) σ τ t σ' τ' h hs hC hT
+              refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
+              obtain ⟨F', hF'⟩ := k c s F r hr
+              exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
+          | vunit => simp [evalD] at h
+          | vint n => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | unfold a =>
+          -- ADT μ elim (Unit 6): fold/unfold erase to `ret v`. Terminal — no recursion, no IH needed.
+          cases a with
+          | fold v =>
+              simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+              obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+              exact ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
+          | vunit => simp [evalD] at h
+          | vint n => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
     · -- RAISED PART
@@ -2166,9 +2264,53 @@ theorem sim : ∀ fe,
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
                 | (.term (.unfold a), _, _), h => simp [Option.bind] at h
                 | (.term .oom, _, _), h => simp [Option.bind] at h
-      | case a b d => simp [evalD] at h
-      | split a b => simp [evalD] at h
-      | unfold a => simp [evalD] at h
+      | case a b d =>
+          -- ADT sum elim (Unit 6) raising: the chosen branch raises. `ihR` on `subst v branch` carries
+          -- the at-raise triple + throwOutcome; the `CASE` exec bumps one fuel to re-compile the branch.
+          cases a with
+          | inl sv =>
+              simp only [evalD] at h
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv b) σ τ ℓ op v σ' τ' h hs hC hT
+              exact ⟨hpair, fun c s F r hr => by
+                obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩⟩
+          | inr sv =>
+              simp only [evalD] at h
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv d) σ τ ℓ op v σ' τ' h hs hC hT
+              exact ⟨hpair, fun c s F r hr => by
+                obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint n => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | split a b =>
+          -- ADT product elim (Unit 6) raising: DOUBLE subst, then the branch raises.
+          cases a with
+          | pair sv sw =>
+              simp only [evalD] at h
+              obtain ⟨hpair, kR⟩ :=
+                ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) σ τ ℓ op v σ' τ' h hs hC hT
+              exact ⟨hpair, fun c s F r hr => by
+                obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint n => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | unfold a =>
+          -- ADT μ elim (Unit 6): always yields `term (ret v)` — never `raised`, so vacuous here.
+          cases a with
+          | fold v => simp [evalD] at h
+          | vunit => simp [evalD] at h
+          | vint n => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
 
@@ -2210,6 +2352,41 @@ example :
 example :
     exec 10 (compile (.force (.vthunk (.ret (.vint 9)))) []) [] [] = some [.ret (.vint 9)] := by
   rfl
+
+-- ADT eliminators (Unit 6): `CASE`/`SPLIT`/`UNFOLD` reduce a closed-value scrutinee in place. Each
+-- demonstrator is asserted on BOTH `exec ∘ compile` and `evalD` (the diff-test the two reps agree).
+
+/-- `case (inl 5) (ret #0) (ret 99)` ⇒ `ret 5` — sum elim, LEFT branch binds the payload. -/
+example :
+    exec 10 (compile (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99))) []) [] []
+      = some [.ret (.vint 5)] := by rfl
+example :
+    evalD 10 [] [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))
+      = some (.term (.ret (.vint 5)), [], []) := by rfl
+
+/-- `case (inr 7) (ret 99) (ret #0)` ⇒ `ret 7` — sum elim, RIGHT branch. -/
+example :
+    exec 10 (compile (.case (.inr (.vint 7)) (.ret (.vint 99)) (.ret (.vvar 0))) []) [] []
+      = some [.ret (.vint 7)] := by rfl
+example :
+    evalD 10 [] [] (.case (.inr (.vint 7)) (.ret (.vint 99)) (.ret (.vvar 0)))
+      = some (.term (.ret (.vint 7)), [], []) := by rfl
+
+/-- `split (pair 3 4) (ret #1)` ⇒ `ret 3` — product elim. The DOUBLE subst binds `v=3` at #1 and
+`w=4` (shifted) at #0; `ret #1` selects the first component. -/
+example :
+    exec 12 (compile (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1))) []) [] []
+      = some [.ret (.vint 3)] := by rfl
+example :
+    evalD 12 [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
+      = some (.term (.ret (.vint 3)), [], []) := by rfl
+
+/-- `unfold (fold 8)` ⇒ `ret 8` — μ elim: fold/unfold erase. -/
+example :
+    exec 10 (compile (.unfold (.fold (.vint 8))) []) [] [] = some [.ret (.vint 8)] := by rfl
+example :
+    evalD 10 [] [] (.unfold (.fold (.vint 8)))
+      = some (.term (.ret (.vint 8)), [], []) := by rfl
 
 /-! ## The D1-A bridge: `evalD ≡ Source.eval` (pure spine)
 
@@ -3654,9 +3831,60 @@ theorem run_evalD : ∀ fe,
                 | (.raised ℓ' op' w, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
-      | case a b d => simp [evalD] at h
-      | split a b => simp [evalD] at h
-      | unfold a => simp [evalD] at h
+      | case a b d =>
+          -- ADT sum elim (Unit 6): the kernel `Source.step` reduces in place (Operational.lean 260-261).
+          -- Mirror `force`: recurse via `ihT` on the reduced branch, then one `Source.step` bridges.
+          cases a with
+          | inl v =>
+              simp only [evalD] at h
+              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v b) σ τ t σ' τ' h K hCtx hTtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kf n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | inr v =>
+              simp only [evalD] at h
+              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v d) σ τ t σ' τ' h K hCtx hTtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kf n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | split a b =>
+          -- ADT product elim (Unit 6): DOUBLE subst (Operational.lean 262).
+          cases a with
+          | pair v w =>
+              simp only [evalD] at h
+              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v (Comp.subst (Val.shift w) b)) σ τ t σ' τ' h K hCtx hTtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kf n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | unfold a =>
+          -- ADT μ elim (Unit 6): erases to `ret v` (Operational.lean 263). Terminal — no IH; bridge the
+          -- one `Source.step` (fold/unfold) over the `ret`-terminal close, stores unchanged.
+          cases a with
+          | fold v =>
+              simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+              obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+              rw [ctxNetEffect_self hCtx hTtx]
+              exact ⟨⟨hCtx, hTtx⟩, fun n r hr => ⟨n+1, by simp only [Bang.Config.run, Source.step]; exact hr⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
     · -- RAISED PART
@@ -3931,9 +4159,54 @@ theorem run_evalD : ∀ fe,
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
                 | (.term .oom, _, _), h => simp [Option.bind] at h
                 | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-      | case a b d => simp [evalD] at h
-      | split a b => simp [evalD] at h
-      | unfold a => simp [evalD] at h
+      | case a b d =>
+          -- ADT sum elim (Unit 6) raising: branch raises; recurse via `ihR`, bridge one `Source.step`.
+          cases a with
+          | inl sv =>
+              simp only [evalD] at h
+              obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv b) σ τ ℓ v σ' τ' h K hCtx hTtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kR n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | inr sv =>
+              simp only [evalD] at h
+              obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv d) σ τ ℓ v σ' τ' h K hCtx hTtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kR n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | split a b =>
+          -- ADT product elim (Unit 6) raising: DOUBLE subst, then the branch raises.
+          cases a with
+          | pair sv sw =>
+              simp only [evalD] at h
+              obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) σ τ ℓ v σ' τ' h K hCtx hTtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kR n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | unfold a =>
+          -- ADT μ elim (Unit 6): always `term (ret v)` — never `raised`, vacuous here.
+          cases a with
+          | fold v => simp [evalD] at h
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
 
