@@ -125,6 +125,15 @@ theorem converges_letF_ret (K : Stack) (N : Comp) (v : Val) :
   exact converges_cfg_step (Frame.letF N :: K, Comp.ret v) (K, Comp.subst v N)
     rfl (by intro u; simp)
 
+/-- The `appF` REDUCE bridge: plugging `appF w :: K` with `lam M` co-converges with plugging `K` with
+`M.subst w`. The step `(appF w :: K, lam M) ↦ (K, M.subst w)` (β) consumes the `appF` frame — the
+`lam`-elimination analogue of `converges_letF_ret`. -/
+theorem converges_appF_lam (K : Stack) (w : Val) (M : Comp) :
+    Converges (Stack.plug (Frame.appF w :: K) (Comp.lam M)) ↔ Converges (Stack.plug K (Comp.subst w M)) := by
+  rw [Stack.plug, Stack.plug, converges_plug_iff, converges_plug_iff]
+  exact converges_cfg_step (Frame.appF w :: K, Comp.lam M) (K, Comp.subst w M)
+    rfl (by intro u; simp)
+
 /-! ## B.1 The environment relation `EnvRel` / closing substitutions
 
 `EnvRel`, `closeC`, `closeV` are defined in `Bang/LR.lean` (§5.2b) — they are LR machinery the FROZEN
