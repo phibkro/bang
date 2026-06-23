@@ -35,12 +35,27 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
   .done v`. Both `[propext]`, gate-guarded. **D1-A de-risked end-to-end**: `compile_correct` (machine ≡
   evalD) ∘ the bridge (evalD ≡ kernel) ⟹ the calculated machine agrees with the type-safety-verified
   reference (invariant #1). The approach holds.
-- **NEXT: the effect/handler units** (`up`/`handle` — deep handlers, throws-only per D2; the `Source.step`
-  dispatch as machine code) — the real CalcVM novelty. Grown one sub-step at a time (machine clauses +
-  dispatch/splitAt shape → abort REDUCE), extending BOTH `compile_correct` and the bridge's `up` case.
-  THEN ADT `case`/`split`/`unfold` (needs a runtime CASE/SPLIT instruction — compile-time rewrite breaks
-  `compile` termination), then collapse + archive the K3 matrix (ADR-0017). Flattening (defunctionalize
-  frames + compile-away subst) is a later optimization pass, not blocking.
+- **✓ Unit 3 — deep handlers (throws-only), the real CalcVM novelty.** Grown in two sub-steps over the
+  subst machine, extending BOTH `compile_correct` and the bridge:
+  - **O1 — INSTALL** (`8a860a4`): the `handle` frame + `MARK h`/`UNMARK` machine instructions; deep-handler
+    dispatch installs onto the `HStack`. `exec` gained the `HStack` param (`STATEMENT_CHANGE_OK`).
+  - **O2 — THROW abort** (`e07d349`): `unwindFind` + `THROW ℓ op v` machine jump, **throws-only per D2**.
+    The pinned fix that closed the genuine wall: `unwindFind` catches ONLY `throws ℓ0` with
+    `ℓ0 = ℓ ∧ op = "raise"`; **state/transaction frames are SKIPPED** (they'd RESUME — deferred), aligning
+    the machine with `evalD`'s throws-only `handle`-catch + the kernel's zero-shot abort. The two old
+    state-divergence `sorry`s are GONE (those subcases are now "never catch", closed cleanly). `sim` +
+    `run_evalD` became **two-part** (term ∧ raised); `run_evalD`'s raised part op-fixed to `"raise"`,
+    `compile_correct` stays op-general. New helper lemmas `dispatch_handleF_skip` / `dispatchRun_handleF_skip`
+    (splitAt-commutation for a NON-catching frame — promote-to-kernel-API candidates).
+  - **Gate (committed `e07d349`, verified on a clean tree):** `just verify` EXIT=0 (732 jobs);
+    `compile_correct` `[propext, Quot.sound]`, `evalD_agrees_source`/`run_evalD` `[propext, Classical.choice,
+    Quot.sound]`, `sim` `[propext, Quot.sound]`; ◊2 gate (`no_accidental_handling`/`rowinst_requires_disjoint`)
+    still 0-axiom; no new `sorryAx`. Audit guards for the two-part forms added (`e11dc6f`).
+- **NEXT: resumptive (state/transaction) handlers** — the `unwindFind` SKIP is a *deferral*, not the final
+  shape; the calculated machine must eventually RESUME them (the savepoint/continuation-capture frontier,
+  ADR-0025/Q22). THEN ADT `case`/`split`/`unfold` (needs a runtime CASE/SPLIT instruction — compile-time
+  rewrite breaks `compile` termination), then collapse + archive the K3 matrix (ADR-0017). Flattening
+  (defunctionalize frames + compile-away subst) is a later optimization pass, not blocking.
 
 ## Target (◊3 gate, ROADMAP)
 
