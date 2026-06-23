@@ -356,6 +356,51 @@ termination_by n C _ _ _ _ _ => (n, sizeOf C, 0)
 end
 
 
+/-! ## 5.2b Closing substitutions + the environment relation `EnvRel` (ADR-0034)
+
+The fundamental theorem `lr_fundamental` (ADR-0034 env-closed form) relates an OPEN computation to
+itself under a pair of `Vrel`-RELATED substitution environments. The bare `c c` self-relation is
+UNPROVABLE for an open `c`: a free `vvar i` is not `Vrel`-related to itself (`Vrel n unit (vvar 0)
+(vvar 0)` demands `vvar 0 = vunit`), and the induction over `HasCTy` descends under binders into open
+sub-terms. So the faithful invariant closes `c` over related environments δ₁,δ₂ (Biernacki/Ahmed
+`G⟦Γ⟧`):
+
+  shape: biernacki-popl18 §5.2 fundamental theorem (`G⟦Γ⟧η`); ahmed-esop06 closing substitution.
+
+An environment is a `List Val` of CLOSED fillers (the CK focus is always closed). Applying it
+(`closeC`) folds single `Comp.subst`s, innermost binder (index 0) first. These live HERE (not in
+`Compat.lean`) because the FROZEN `lr_fundamental` statement (`Spec.lean`) references them, and
+`Spec.lean` imports `LR` but not `Compat`. -/
+
+/-- Apply a closing environment δ to a computation: substitute index 0 with `δ[0]` (renumbering),
+then recurse on the tail (each `Comp.subst` removes the nearest binder). `closeC [] c = c`. -/
+def closeC : List Val → Comp → Comp
+  | [],      c => c
+  | v :: δ,  c => closeC δ (Comp.subst v c)
+
+/-- Apply a closing environment δ to a value (the value-level `closeC`). -/
+def closeV : List Val → Val → Val
+  | [],      v => v
+  | u :: δ,  v => closeV δ (Val.subst u v)
+
+/-- Pointwise `Vrel`-relatedness of two closing environments at the context `Γ`. Same length as `Γ`;
+position `i` relates at type `Γ[i]`. The `▷`-free `Vrel n`: environments carry CLOSED values observed
+at the current index. -/
+def EnvRel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
+    [EffSig Eff Mult] (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop
+  | [],      [],        []        => True
+  | A :: Γ', v₁ :: δ₁', v₂ :: δ₂' => Vrel n A v₁ v₂ ∧ EnvRel n Γ' δ₁' δ₂'
+  | _,       _,         _         => False
+
+@[simp] theorem closeC_nil (c : Comp) : closeC [] c = c := rfl
+@[simp] theorem closeV_nil (v : Val) : closeV [] v = v := rfl
+
+@[simp] theorem EnvRel_nil_iff {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (δ₁ δ₂ : List Val) :
+    EnvRel n ([] : TyCtx Eff Mult) δ₁ δ₂ ↔ δ₁ = [] ∧ δ₂ = [] := by
+  cases δ₁ <;> cases δ₂ <;> simp [EnvRel]
+
+
 /-! ## 5.3 Adequacy building blocks toward `lr_sound`
 
 `lr_sound : (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂`. Biorthogonal adequacy

@@ -13,6 +13,7 @@ open Bang
 
 #print axioms lr_sound
 #print axioms lr_fundamental
+#print axioms lr_fundamental_closed
 -- group_recovers RETIRED (ADR-0032) — false-as-stated + vacuous; rollback is the txn handler
 #print axioms seq_unit
 #print axioms compile_forward_sim

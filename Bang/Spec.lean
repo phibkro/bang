@@ -167,11 +167,29 @@ theorem lr_sound
     {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult} :
     (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂ := sorry
 
--- [KEY] Fundamental theorem.
+-- [KEY] Fundamental theorem (ADR-0034: env-closed Biernacki form). A well-typed OPEN computation
+-- relates to ITSELF under every pair of `Vrel`-related closing substitution environments. The bare
+-- `c c` / arbitrary-Γ form (the Phase-A stub) was UNDER-SPECIFIED — false for open `c` (a free
+-- `vvar i` is not `Vrel`-related to itself), and unusable as the induction invariant (the proof
+-- descends under binders into open sub-terms). The faithful statement closes `c` over related
+-- environments `δ₁,δ₂` (`EnvRel`, `closeC` in `Bang/LR.lean §5.2b`). The closed (`Γ=[]`) instance
+-- that `lr_sound`/the capstone consume is the named corollary `lr_fundamental_closed` below.
+--   shape: biernacki-popl18 §5.2 (`G⟦Γ⟧η` fundamental theorem); ahmed-esop06 closing substitution.
 theorem lr_fundamental
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy γ Γ c e B → ∀ n, Crel n B e c c := sorry
+    HasCTy γ Γ c e B →
+    ∀ n (δ₁ δ₂ : List Val), EnvRel n Γ δ₁ δ₂ → Crel n B e (closeC δ₁ c) (closeC δ₂ c) := sorry
+
+-- [KEY] The CLOSED (`Γ=[]`) corollary — the instance `lr_sound`/`krel_refl`/the capstone consume.
+-- Empty environments (`EnvRel n [] [] []` holds; `closeC [] c = c`), so this is `lr_fundamental`
+-- specialized to `δ₁=δ₂=[]`. "The fundamental theorem" as closed-program adequacy uses it.
+theorem lr_fundamental_closed
+    {γ : GradeVec Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult} :
+    HasCTy γ ([] : TyCtx Eff Mult) c e B → ∀ n, Crel n B e c c := by
+  intro hc n
+  have h := lr_fundamental hc n [] [] (by simp [EnvRel])
+  simpa using h
 
 
 /-! ## 6. Recovery algebra (ADR-0018, amended by ADR-0032) -/

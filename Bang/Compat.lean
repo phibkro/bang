@@ -106,50 +106,14 @@ theorem Crel_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ c
   exact e2.mpr (hrel K₁ K₂ hK (e1.mp hconv))
 
 
-/-! ## B.1 The environment relation `EnvRel` (the open-term closure)
+/-! ## B.1 The environment relation `EnvRel` / closing substitutions
 
-The fundamental theorem is `Crel n B e c c` — but the induction over `HasCTy` descends through
-binders (`letC`/`lam`/`case`/`split`) into sub-derivations over a NON-empty `Γ`, where the
-sub-computation is OPEN. The literal `c c` self-relation is then UNPROVABLE for the open sub-term: a
-bare `vvar i` is not `Vrel`-related to itself (`Vrel n unit (vvar 0) (vvar 0)` demands
-`vvar 0 = vunit`). So the faithful induction invariant closes the open term over a pair of
-`Vrel`-RELATED substitution environments δ₁,δ₂ (Biernacki/Ahmed `G⟦Γ⟧`):
-
-  shape: biernacki-popl18 §5.2 fundamental theorem (`G⟦Γ⟧η`); ahmed-esop06 closing substitution.
-
-An environment is a `List Val` of CLOSED fillers (the CK focus is always closed). Applying it
-(`closeC`) folds single `Comp.subst`s, innermost binder first. `EnvRel n Γ δ₁ δ₂` relates two
-environments pointwise by `Vrel` at the corresponding `Γ` types.
-
-STATUS: the frozen `lr_fundamental` (`Spec.lean`) is the `Γ = []` instance (empty environments,
-`closeC [] c = c`). The `∀ Γ` form of the frozen statement is provable ONLY at `Γ = []` — surfaced to
-the lead as a statement-shape concern (the open form needs the two-sided `c[δ₁] c[δ₂]` env-closed
-conclusion, the ADR-0033-style tightening). -/
-
-/-- Apply a closing environment δ to a computation: substitute index 0 with `δ[0]`, renumbering, then
-recurse on the tail (each `Comp.subst` removes the nearest binder). `closeC [] c = c`. -/
-def closeC : List Val → Comp → Comp
-  | [],      c => c
-  | v :: δ,  c => closeC δ (Comp.subst v c)
-
-/-- Pointwise `Vrel`-relatedness of two closing environments at the context `Γ`. The two
-environments have the same length as `Γ`; position `i` relates at type `Γ[i]`. -/
-def EnvRel (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop
-  | [],      [],        []        => True
-  | A :: Γ', v₁ :: δ₁', v₂ :: δ₂' => Vrel n A v₁ v₂ ∧ EnvRel n Γ' δ₁' δ₂'
-  | _,       _,         _         => False
-
-/-- Apply a closing environment δ to a value (the value-level `closeC`). -/
-def closeV : List Val → Val → Val
-  | [],      v => v
-  | u :: δ,  v => closeV δ (Val.subst u v)
-
-@[simp] theorem closeC_nil (c : Comp) : closeC [] c = c := rfl
-@[simp] theorem closeV_nil (v : Val) : closeV [] v = v := rfl
-
-@[simp] theorem EnvRel_nil_iff (n : Nat) (δ₁ δ₂ : List Val) :
-    EnvRel n ([] : TyCtx Eff Mult) δ₁ δ₂ ↔ δ₁ = [] ∧ δ₂ = [] := by
-  cases δ₁ <;> cases δ₂ <;> simp [EnvRel]
+`EnvRel`, `closeC`, `closeV` are defined in `Bang/LR.lean` (§5.2b) — they are LR machinery the FROZEN
+`lr_fundamental` statement (`Spec.lean`, ADR-0034 env-closed form) references, so they must live in a
+module `Spec.lean` imports. The fundamental theorem closes an OPEN sub-term over a pair of
+`Vrel`-RELATED substitution environments δ₁,δ₂ (Biernacki/Ahmed `G⟦Γ⟧`): the bare `c c` self-relation
+is unprovable for open `c` (a `vvar i` is not `Vrel`-related to itself), so the induction invariant is
+`EnvRel n Γ δ₁ δ₂ → Crel n B e (closeC δ₁ c) (closeC δ₂ c)`. -/
 
 
 /-! ## B.2 The return / value-injection compat core (`crel_ret`)
