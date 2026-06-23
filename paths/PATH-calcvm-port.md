@@ -29,10 +29,18 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
   (732 jobs); ◊2 gate held (0-axiom).
   - **ADT eliminators (`case`/`split`/`unfold`) DEFERRED** — they break `compile` termination (not cheap);
     revisit when the machine handles them (likely needs the flattening step or a different measure).
-- **NEXT: the effect/handler units** (`up`/`handle` — deep handlers, the `Source.step` dispatch as machine
-  code) — the real CalcVM payoff. THEN the `evalD ≡ Source.eval` agreement (Unit 1 bridge — cheap by
-  construction now), then collapse + archive the K3 matrix (ADR-0017). Flattening (defunctionalize frames
-  + compile-away subst) is a later optimization pass, not blocking.
+- **✓ Unit 1 — the `evalD ≡ Source.eval` bridge** (`7baf5f8` + `6f0a4e2` Audit guard). `run_evalD` (the
+  big/small-step simulation over an arbitrary CK context — subst-vs-subst, NO cross-rep LR, the (b)
+  payoff) + **`evalD_agrees_source`** (headline): `evalD f M = some (ret v) → ∃ F, Source.eval F M =
+  .done v`. Both `[propext]`, gate-guarded. **D1-A de-risked end-to-end**: `compile_correct` (machine ≡
+  evalD) ∘ the bridge (evalD ≡ kernel) ⟹ the calculated machine agrees with the type-safety-verified
+  reference (invariant #1). The approach holds.
+- **NEXT: the effect/handler units** (`up`/`handle` — deep handlers, throws-only per D2; the `Source.step`
+  dispatch as machine code) — the real CalcVM novelty. Grown one sub-step at a time (machine clauses +
+  dispatch/splitAt shape → abort REDUCE), extending BOTH `compile_correct` and the bridge's `up` case.
+  THEN ADT `case`/`split`/`unfold` (needs a runtime CASE/SPLIT instruction — compile-time rewrite breaks
+  `compile` termination), then collapse + archive the K3 matrix (ADR-0017). Flattening (defunctionalize
+  frames + compile-away subst) is a later optimization pass, not blocking.
 
 ## Target (◊3 gate, ROADMAP)
 
