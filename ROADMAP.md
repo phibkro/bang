@@ -112,6 +112,29 @@ and its own **cadence**.
 └───────────────────────────────────────────────────────────────┘
 ```
 
+## The vertical principle — correctness above, performance below (ADR-0037)
+
+The vertical stack is not just decomposition; it encodes a **contract**:
+
+```
+  ABSTRACT layer (above a seam)  ─ fights for CORRECTNESS  (strong invariants, provability)
+        │  seam = the contract (observable behaviour = the layer-above's semantics)
+  IMPL layer (below a seam)      ─ fights for PERFORMANCE  (rewrite freely, BOUND by the seam)
+```
+
+Each **seam IS that contract** — the typed-AST seam, the WasmFX-module + handler-protocol seam. The
+preserving theorem at each (`type_safety`, `lr_fundamental`, `compile_forward_sim`) is what **forbids
+the implementation from assuming an invariant the layer above does not actually prove** — the
+miscompilation guardrail.
+
+**Corollary — constraints are generative:** every invariant *proven* in the layer above is one the
+layer below gets to *assume* instead of *check*, so the deleted dynamic check **is** the performance.
+Correctness and performance are **one ledger viewed from two sides** (instanced: QTT grade-0 → no code;
+effect rows → no dynamic dispatch; linearity → no GC; shared-nothing → no Iris + no locking). Invariant
+#7 ("performance second-class") is this principle's near-term face: we don't chase speed directly — we
+**earn** it by proving invariants upstream. Full treatment + the shared-nothing concurrency instance:
+ADR-0037.
+
 ## Parallelism rules
 
 1. **One path per layer at a time.** Two paths in the same layer touch the

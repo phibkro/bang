@@ -84,7 +84,6 @@ the obligation the implementation no longer has to pay (synchronisation).
 
 - A workload genuinely requires cross-instance shared mutable state → opt into Iris / iris-wasmfx
   **deliberately**, with its own ADR (don't let it leak in).
-- The **principle** is elevated to a top-level project invariant — a strong candidate (it unifies QTT
-  erasure, effect-row specialisation, the LR/sim split, and this invariant under one lens). Held at ADR
-  level for now; promotion to the ROADMAP layer model / always-loaded invariants is a separate,
-  gated decision (don't bloat always-loaded context without the call).
+- **ELEVATED (2026-06-23):** the principle is now a stated invariant in `ROADMAP.md` → "The vertical
+  principle — correctness above, performance below". This ADR remains the full treatment + the
+  shared-nothing concurrency instance; the ROADMAP states the principle for orientation.
