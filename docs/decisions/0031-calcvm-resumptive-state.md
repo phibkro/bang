@@ -1,6 +1,6 @@
 # ADR-0031 · CalcVM resumptive state: `evalD` threads a store and services ops inline; the machine RESUMES with a non-discarding `OP` (shape A stays, one-shot)
 
-- **Status:** Accepted (design lock for the `state`/`transaction` arm of the CalcVM calculated machine; implementation staged below)
+- **Status:** Accepted + **LANDED** (`2063c0e`, 2026-06-23 — the `state` arm fully implemented & axiom-clean: `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext, Classical.choice, Quot.sound}, ◊2 gate intact; both load-bearing claims held, the throws⊗state nesting closed via the raised-IH-handback. The `transaction` arm remains the design lock for the next increment.)
 - **Date:** 2026-06-23
 - **Layer:** K (kernel-adjacent — the calculated machine + its metatheory and the `evalD ≡ Source.eval` bridge). **Tag: K-ADR** (semantic/verification).
 - **Resolves:** the CalcVM port's resumptive-handler increment (the `unwindFind` SKIP that O2 left deferred). Ports **ADR-0025** (kernel resumptive state, `dispatchOn` KEEPS `Kᵢ`) and **ADR-0030** (transaction = state over a list-heap) to the *calculated* machine.
