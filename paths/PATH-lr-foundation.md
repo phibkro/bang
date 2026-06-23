@@ -56,11 +56,15 @@ green: `cab4dfd`→`a477554` (U6: anti-reduction infra, `crel_ret`/`crel_force`,
 ADR-0034 amendment, `closeC`/`closeV` commutation for non-binding formers).
 
 **Remaining map (U6's, dependency order — resume here):**
-1. **Binding-former `closeC` commutation** (letC/lam/case/split) — THE CRUX. Needs
-   `(closeC-under-binder δ N)[w] = closeC δ (Comp.subst w N)`; holds because `EnvRel` fillers are CLOSED (the
-   `Comp.substFrom 1 (shift v) N` de Bruijn shifts vanish). Genuine de Bruijn metatheory (~the `subst_gen`
-   layer's size). **Thread closedness EXPLICITLY** — `Vrel`-values-closed is FALSE in general (a `vthunk` of
-   an open comp can be `Vrel`-related), so add a closedness field to `EnvRel` or carry it. [task #33]
+1. **Binding-former `closeC` commutation** (letC/lam/case/split) — THE CRUX. **The ONE unblocking lemma
+   (U6's precise next step):** `closeC_subst_comm : closed δ → (closeCUnderBinder δ N).subst w = closeC δ
+   (Comp.subst w N)` (close-under-binder then substitute the filler = substitute then close). Holds because
+   `EnvRel` fillers are CLOSED, so `Comp.substFrom 1 (Val.shift v) N = Comp.substFrom 1 v N` (the shift
+   vanishes on closed `v`). **CONCRETE FIRST MOVE:** add a closedness carrier to `EnvRel` (or a parallel
+   `EnvRelClosed`) — `Vrel`-values-closed is FALSE in general (a `vthunk` of an open comp can be
+   `Vrel`-related), so thread it EXPLICITLY — then prove `closeC_letC`/`_lam`/`_case`/`_split` under it,
+   **reusing `Bang/Metatheory.lean`'s `HasVTy.shift_closed`/`subst_closed`** (closed-typed values are
+   shift/subst-invariant — exactly the vanishing-shift fact). [task #33]
 2. **Mutual value+comp fundamental induction** (`vrel_refl` + `crel_fund`, mutual via `vthunk`), each case
    → its compat core. Leaf cases (ret/force/up) ready; binder cases gated on (1). [task #31]
 3. `compat_up` (consumes `Srel`) then **`compat_handle` [KEY]** (`Srel` across resumption) — LAST. [task #30]
