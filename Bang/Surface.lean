@@ -23,6 +23,7 @@
 -/
 
 import Bang.Operational
+import Plausible
 
 namespace Bang.Surface
 
@@ -356,49 +357,195 @@ def stateGetComp : Comp :=
   .handle (.state stateLabel (.vint 5)) (.up stateLabel "get" .vunit)
 example : Source.eval 50 stateGetComp = .done (.vint 5) := by rfl
 
-/-! ### Stage 1c — the iso-recursive DATA LAYER runs (rung 2 K1, ADR-0029).
+/-! ### Structural equality on kernel terms (additive — NOT a kernel change).
 
-GOAL-1: build a stack-shaped value BY HAND from the raw ADT formers
-(`fold`/`inr`/`pair`/`inl`/`vunit`) and observe its top element through
-`unfold` + `case` + `split` — no friendly `push`/`pop` surface (that is phase L).
-This proves the language RUNS sum + product + μ end-to-end via `Source.eval`.
+The laws (Stage 1d) compare an evaluated stack against an expected one, so we need to
+decide equality of `Val`s. `Core.lean` (the kernel) deliberately derives only `Inhabited`;
+adding `DecidableEq` there would be a kernel edit (forbidden at this layer). Instead we
+define a structural `BEq` HERE, in the additive surface, mutually over `Val`/`Comp`/`Handler`
+(the recursion crosses the CBPV adjunction at `vthunk`). It is total and structural — no
+stack-shape assumption — so it is also safe under the `#guard`s above. -/
+
+mutual
+def beqVal : Val → Val → Bool
+  | .vunit,      .vunit      => true
+  | .vint a,     .vint b     => a == b
+  | .vvar i,     .vvar j     => i == j
+  | .vthunk c,   .vthunk d   => beqComp c d
+  | .inl a,      .inl b      => beqVal a b
+  | .inr a,      .inr b      => beqVal a b
+  | .pair a b,   .pair c d   => beqVal a c && beqVal b d
+  | .fold a,     .fold b     => beqVal a b
+  | _,           _           => false
+def beqComp : Comp → Comp → Bool
+  | .ret a,        .ret b        => beqVal a b
+  | .letC a b,     .letC c d     => beqComp a c && beqComp b d
+  | .force a,      .force b      => beqVal a b
+  | .lam a,        .lam b        => beqComp a b
+  | .app a v,      .app b w      => beqComp a b && beqVal v w
+  | .up ℓ o v,     .up ℓ' o' w   => ℓ == ℓ' && o == o' && beqVal v w
+  | .handle h a,   .handle h' b  => beqHandler h h' && beqComp a b
+  | .case v a b,   .case w c d   => beqVal v w && beqComp a c && beqComp b d
+  | .split v a,    .split w b    => beqVal v w && beqComp a b
+  | .unfold v,     .unfold w     => beqVal v w
+  | .oom,          .oom          => true
+  | .wrong s,      .wrong t      => s == t
+  | _,             _             => false
+def beqHandler : Handler → Handler → Bool
+  | .state ℓ v,   .state ℓ' w   => ℓ == ℓ' && beqVal v w
+  | .throws ℓ,    .throws ℓ'    => ℓ == ℓ'
+  | _,            _             => false
+end
+
+instance : BEq Val := ⟨beqVal⟩
+
+
+/-! ### Stage 1c — the surface `Stack` (rung 2 L, ADR-0029): the first moat demo.
+
+GOAL-1 (phase L): a friendly `Stack` surface that HIDES `fold`/`unfold` — the user
+writes `empty`/`push`/`pop`, never the μ coercions or the sum/product formers. This
+runs sum + product + μ end-to-end via `Source.eval`.
 
 `Stack = μX. 1 + (Int × X)`:
   · `empty      = fold (inl unit)`
   · `push n s   = fold (inr (pair (vint n) s))`
-A `pop` reads the top: `unfold` the μ, `case` on the sum (empty vs cons),
-`split` the (Int × Stack) pair, return the Int. `#guard` (compiled), NOT `rfl`:
-kernel whnf over the machine is pathological under `rfl`. -/
+  · `pop s`     ⟶ a STRUCTURED result, encoded in the object language as a sum value:
+       - empty  ⟶ `inl unit`                    (the "none" of `1 + (Int × Stack)`)
+       - cons   ⟶ `inr (pair (vint top) rest)`  (the "some (top, rest)")
+    so the round-trip law `pop (push x s) = some (x, s)` can recover BOTH the popped
+    element AND the remaining stack (K1's `stPop` returned only the top Int, which the
+    round-trip law cannot witness). `pop` is `unfold` → `case` on the sum; the cons
+    branch `split`s the pair and re-pairs `(top, rest)` under `inr`. `#guard` (compiled),
+    NOT `rfl`: kernel whnf over the machine is pathological under `rfl`. -/
 
-/-- `empty = fold (inl unit)`. -/
-def stEmpty : Val := .fold (.inl .vunit)
+/-- `empty = fold (inl unit)` — the surface form; `fold`/`inl` stay hidden from the user. -/
+def empty : Val := .fold (.inl .vunit)
 
-/-- `push n s = fold (inr ⟨n, s⟩)`. -/
-def stPush (n : Int) (s : Val) : Val := .fold (.inr (.pair (.vint n) s))
+/-- `push n s = fold (inr ⟨n, s⟩)` — cons a new top; the μ-`fold` is hidden. -/
+def push (n : Int) (s : Val) : Val := .fold (.inr (.pair (.vint n) s))
 
-/-- `pop s` as a raw computation: read the top element (or `vint 0` if empty).
-`unfold s` exposes `1 + (Int × Stack)`; `case` picks the branch; the cons branch
-`split`s the pair and returns its first component (the top). -/
-def stPop (s : Val) : Comp :=
-  -- letC (unfold s) <binds the unfolded `1 + (Int×Stack)` value at index 0>
+/-- `pop s` as a computation returning the STRUCTURED result `1 + (Int × Stack)`:
+`inl unit` on empty (none), `inr ⟨top, rest⟩` on a cons (some). `unfold s` exposes
+the sum; `case` picks the branch; the cons branch `split`s the payload pair into
+`top` (idx 1) and `rest` (idx 0) and re-pairs them under `inr`. The user never sees
+`unfold`/`case`/`split` — only `pop`. -/
+def pop (s : Val) : Comp :=
+  -- letC (unfold s) binds the unfolded `1 + (Int×Stack)` value at index 0.
   .letC (.unfold s)
-    -- case (vvar 0) <empty: vvar0 = unit> <cons: vvar0 = ⟨top, rest⟩>
     (.case (.vvar 0)
-      (.ret (.vint 0))                       -- empty stack → sentinel 0
-      -- cons branch: payload pair at index 0; split binds fst (idx 1), snd (idx 0);
-      -- return the first component = the top element.
-      (.split (.vvar 0) (.ret (.vvar 1))))
+      -- empty branch: vvar0 = unit → none = inl unit.
+      (.ret (.inl .vunit))
+      -- cons branch: payload pair at idx 0; split binds top (idx 1), rest (idx 0);
+      -- re-pair as some (top, rest) = inr (pair top rest).
+      (.split (.vvar 0) (.ret (.inr (.pair (.vvar 1) (.vvar 0))))))
 
-/-- `pop (push 7 empty)` ⟶ `done (vint 7)` — the top of a one-element stack. -/
-def stackTopComp : Comp := stPop (stPush 7 stEmpty)
-#guard (match Source.eval 50 stackTopComp with | .done (.vint n) => n == 7 | _ => false)
+/-- `pop (push 7 empty)` ⟶ `done (some (7, empty))` = `inr ⟨vint 7, empty⟩`. -/
+def stackTopComp : Comp := pop (push 7 empty)
+#guard (match Source.eval 50 stackTopComp with
+  | .done (.inr (.pair (.vint n) _)) => n == 7 | _ => false)
 
-/-- `pop (push 9 (push 7 empty))` ⟶ `done (vint 9)` — LIFO: the most recent push tops. -/
-def stackTop2Comp : Comp := stPop (stPush 9 (stPush 7 stEmpty))
-#guard (match Source.eval 50 stackTop2Comp with | .done (.vint n) => n == 9 | _ => false)
+/-- `pop (push 9 (push 7 empty))` ⟶ top is `9` (LIFO: the most recent push tops),
+and the `rest` is `push 7 empty`. -/
+def stackTop2Comp : Comp := pop (push 9 (push 7 empty))
+#guard (match Source.eval 50 stackTop2Comp with
+  | .done (.inr (.pair (.vint n) rest)) => n == 9 && (rest == push 7 empty) | _ => false)
 
--- `pop empty` ⟶ `done (vint 0)` — the empty-stack (`inl`) branch fires.
-#guard (match Source.eval 50 (stPop stEmpty) with | .done (.vint n) => n == 0 | _ => false)
+-- `pop empty` ⟶ `done (inl unit)` = none — the empty-stack branch fires.
+#guard (match Source.eval 50 (pop empty) with | .done (.inl .vunit) => true | _ => false)
+
+/-! ### Stage 1d — the STACK LAWS, property-tested via `plausible` (rung 2 Q19).
+
+THE moat demo, and the first use of the ADR-0026 *tested* rung (ADR-0028 adopts
+`plausible` — Lean's QuickCheck — at rung 2). The push/pop laws are stated OVER THE
+EVAL SEMANTICS (run through `Source.eval`) for arbitrary `Int x` and arbitrary
+bounded-depth `Stack Int` value `s`, then `#test`-ed: `#test` (= `#eval
+Testable.check`) SAMPLES the generators and THROWS at elaboration on a counter-example,
+so a false law FAILS THE BUILD. It admits no `sorry` (unlike `by plausible`) and is not
+a banned tactic — it is the compiled-evaluation idiom (same family as `#guard`), which
+is exactly the point of the tested rung: a real sampling test where a proof is not (yet)
+spent.
+
+`StackVal` wraps a `Val` so plausible's instance resolution (`SampleableExt` ←
+`Repr`/`Shrinkable`/`Arbitrary`) targets STACK values specifically, not arbitrary `Val`s.
+The generator builds `push`/`empty` to a depth bounded by the `Gen` size parameter, so
+every sample is a well-formed `Stack Int`. -/
+
+/-- A generated `Stack Int` value (a `Val` known to be `push`/`empty`-shaped). The wrapper
+exists so `Arbitrary`/`Repr`/`Shrinkable` resolve to the stack generator below, not to a
+generic `Val` instance (there is none). -/
+structure StackVal where
+  val : Val
+
+/-- Stack depth (number of pushes), for a readable `Repr` of a counter-example. -/
+def stackDepth : Val → Nat
+  | .fold (.inr (.pair _ rest)) => stackDepth rest + 1
+  | _                            => 0
+
+instance : Repr StackVal := ⟨fun s _ => s!"StackVal(depth={stackDepth s.val})"⟩
+
+open Plausible
+
+/-- Build a stack of EXACTLY `d` pushes (`vint`s drawn from the `Gen` size) on top of
+`empty`. Structural recursion on `d` — total, no fuel needed. -/
+def genStackOfDepth : Nat → Gen Val
+  | 0     => pure empty
+  | d + 1 => do
+      let n : Int ← Arbitrary.arbitrary
+      let rest ← genStackOfDepth d
+      pure (push n rest)
+
+/-- Arbitrary `Stack Int`: pick a depth in `0 … size` (bounded by the `Gen` size
+parameter), then fill it. Bounded depth keeps samples finite and `Source.eval`'s fuel
+sufficient. -/
+instance : Arbitrary StackVal where
+  arbitrary := do
+    let d ← Gen.choose Nat 0 (← Gen.getSize) (Nat.zero_le _)
+    return ⟨← genStackOfDepth d⟩
+
+/-- Shrink toward the empty stack by dropping the top element (one structural step). -/
+instance : Shrinkable StackVal where
+  shrink
+    | ⟨.fold (.inr (.pair _ rest))⟩ => [⟨rest⟩]
+    | _                              => []
+
+/-- Fuel for `Source.eval` in the laws: pops + pushes are O(depth); the size parameter
+caps depth at `plausible`'s `maxSize` (default 100), so this is comfortably above it. -/
+def lawFuel : Nat := 400
+
+/-- The popped result of `pop s`, read back from `Source.eval` (the eval semantics). -/
+def evalPop (s : Val) : Result Val := Source.eval lawFuel (pop s)
+
+/-- **Law 1 — push/pop round-trip:** `pop (push x s) = some (x, s)`. Over eval: popping
+a freshly-pushed stack yields `done (inr (pair (vint x) s))` — the pushed element AND the
+original stack, recovered. -/
+def roundTrip (x : Int) (s : StackVal) : Bool :=
+  match evalPop (push x s.val) with
+  | .done (.inr (.pair (.vint top) rest)) => top == x && (rest == s.val)
+  | _                                     => false
+
+/-- **Law 2 — pop empty = none:** `pop empty` yields `done (inl unit)`. (Constant, but
+stated as a property so it sits in the same tested suite.) -/
+def popEmptyNone : Bool :=
+  match evalPop empty with
+  | .done (.inl .vunit) => true
+  | _                   => false
+
+/-- **Law 3 — LIFO ordering:** `pop (push x (push y s))` exposes `x` first; popping the
+remaining stack then exposes `y`. The most recent push is the first pop. -/
+def lifo (x y : Int) (s : StackVal) : Bool :=
+  match evalPop (push x (push y s.val)) with
+  | .done (.inr (.pair (.vint top1) rest)) =>
+      top1 == x &&
+      (match evalPop rest with
+       | .done (.inr (.pair (.vint top2) rest2)) => top2 == y && (rest2 == s.val)
+       | _                                       => false)
+  | _ => false
+
+-- The properties. `#test` SAMPLES and throws at elaboration on a counter-example
+-- (build-fail); on success it logs "Unable to find a counter-example". No `sorry`.
+#test ∀ (x : Int) (s : StackVal), roundTrip x s = true
+#test popEmptyNone = true
+#test ∀ (x y : Int) (s : StackVal), lifo x y s = true
 
 /-! ### Stage 1b — the lowering of the hand-written surface ASTs matches Stage 1.
 
