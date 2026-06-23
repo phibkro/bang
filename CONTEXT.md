@@ -175,6 +175,21 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   from-source-text `atomically {…}` surface (parity with rung 1's `state … in`); general-`S` TVars
   (default-witness, ADR-0030 amendment). TVar reps are v1 simplifications (TVarRef=int, S=int, total
   default-initialized store) — see ADR-0030.
+- **rung 4 ✓ DONE** (`paths/PATH-rung4-reactive.md`) — reactive cell; the LAST v1 MVP rung. **Reactivity
+  is EMERGENT, not a new kernel form** (ADR-0005, now empirically + formally validated): a reactive cell
+  is an *unmemoized thunk over a State cell*; each `force` re-samples = pull-based reactivity. **ZERO
+  kernel edits** — the rung validates the thesis rather than adding a capability. Liveness law **PROVEN**
+  (`Bang.Surface.cell_reflects_latest`, axioms `[propext]`, in `Audit.lean`) — the third ladder-climb.
+  Commit `b8c86cd`. FINDING → ADR-0005: reactivity is **load-bearing on thunk non-memoization** (now an
+  asserted invariant). Push-based/glitch-free reactivity = the deferred dial. ◊2 gate held (surface-only).
+
+> **✓✓ v1 MVP PRODUCT SPINE COMPLETE (rungs 0–4, 2026-06-23).** Four paradigms — imperative/State,
+> transactional/STM, user-data, reactive — on ONE five-primitive verified kernel. The moat is demonstrated
+> at BOTH ADR-0026 ladder rungs: *tested* (rung 2, `plausible`) and *verified* (rung 3 `all_or_nothing_abort`,
+> rung 4 `cell_reflects_latest`, proven). The multi-paradigm thesis is shipped. Post-v1: rungs 5–8
+> (systems frontier — QTT-surfaced allocator, cooperative scheduler, fs, driver) → rung 9 (xv6, the golden
+> test). Rung-3/4 follow-ons: orElse (recovery handler), from-source `atomically`, general-S TVars,
+> push-based reactivity.
 
 **Verification spine (kernel/compiler — the ◊ march):**
 - **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
