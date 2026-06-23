@@ -9,10 +9,10 @@ matrix over the old free-monad `Expr`/`Value`.
 
 This file lands the **pure CBPV spine** (PATH-calcvm-port): the
 returner/sequencing/abstraction core `ret` · `letC` · `force`/`vthunk` ·
-`lam` · `app`. Deep handlers (`up`/`handle`), the ADT eliminators
-(`case`/`split`/`unfold`), the `evalD ≡ Source.eval` agreement (the D1-A
-bridge), and the diff-test battery are later increments. Nothing here is
-`sorry`/`axiom`.
+`lam` · `app`, the calculated machine over it, AND the **`evalD ≡ Source.eval`
+agreement (the D1-A bridge)** for that spine. Deep handlers (`up`/`handle`), the
+ADT eliminators (`case`/`split`/`unfold`), and the full diff-test battery are
+later increments. Nothing here is `sorry`/`axiom`.
 
 ## Design lock: substitution / closed-focus, mirroring the kernel (option b)
 
@@ -57,7 +57,7 @@ value. `compile_correct` is the `c = []`, `s = []` corollary, **proven** below.
 
 namespace Bang.CalcVM
 
-open Bang (Val Comp)
+open Bang (Val Comp Frame Config Result)
 
 /-! ## The denotational source `evalD` (substitution, terminal-Comp)
 
@@ -293,5 +293,133 @@ example :
 example :
     exec 10 (compile (.force (.vthunk (.ret (.vint 9)))) []) [] = some [.ret (.vint 9)] := by
   rfl
+
+/-! ## The D1-A bridge: `evalD ≡ Source.eval` (pure spine)
+
+The agreement that makes the substitution `evalD` worth calculating from (D1-A):
+the denotational big-step `evalD` agrees with the kernel's *type-safety-verified*
+small-step `Source.eval` (`Bang/Operational.lean`). Because both are substitution-
+based with a closed focus, the bridge is a plain big/small-step simulation — no
+cross-representation logical relation (the payoff of decision (b)).
+
+`run_evalD` is the simulation, forward to a concrete `Config.run` result (the
+fuel-alignment key, k2-playbook §1) over an arbitrary CK context `K`. Each `evalD`
+clause maps to the matching `Source.step` PUSH+REDUCE pair:
+`letC`→`letF`-frame, `app`→`appF`-frame, `force (vthunk)`→drop-the-thunk. The
+`evalD_agrees_source` corollary (`K = []`, terminal `ret v`) is the headline: an
+`evalD` that returns `v` is witnessed by `Source.eval … = .done v`, so the
+verified kernel's `type_safety` now backs the calculated machine's `ret`-results
+(invariant #1). Handlers/ADT eliminators extend this in later increments. -/
+
+/-- Multi-step simulation: running the CK machine (`Config.run`) on focus `M`
+under context `K` reaches the terminal `t` under `K`, for ANY continuation fuel
+`n`, in `F` extra steps. Induction on the eval fuel `fe`, `cases` on `M`; the
+`letC`/`app` cases chain the IH through the PUSH+REDUCE step pair. -/
+theorem run_evalD :
+    ∀ fe M t, evalD fe M = some t →
+      ∀ (K : Bang.EvalCtx) (n : Nat) (r : Result Val),
+        Config.run n (K, t) = r → ∃ F, Config.run F (K, M) = r := by
+  intro fe
+  induction fe with
+  | zero => intro M t h; simp [evalD] at h
+  | succ fe ih =>
+    intro M t h K n r hr
+    cases M with
+    | ret v =>
+        simp only [evalD, Option.some.injEq] at h; subst h
+        exact ⟨n, hr⟩
+    | lam M =>
+        simp only [evalD, Option.some.injEq] at h; subst h
+        exact ⟨n, hr⟩
+    | letC M N =>
+        simp only [evalD] at h
+        cases hM : evalD fe M with
+        | none => rw [hM] at h; simp at h
+        | some tM =>
+          rw [hM] at h
+          cases tM with
+          | ret v =>
+              simp only [Option.bind_some] at h
+              -- PUSH (K, letC M N) ↦ (letF N :: K, M); REDUCE (letF N :: K, ret v) ↦ (K, N[v]).
+              obtain ⟨F2, hF2⟩ := ih (Comp.subst v N) t h K n r hr
+              have hstep : Config.run (F2+1) (Frame.letF N :: K, .ret v) = r := by
+                simp only [Config.run, Source.step]; exact hF2
+              obtain ⟨F1, hF1⟩ := ih M (.ret v) hM (Frame.letF N :: K) (F2+1) r hstep
+              exact ⟨F1+1, by simp only [Config.run, Source.step]; exact hF1⟩
+          | lam M2 => simp [Option.bind] at h
+          | letC a b => simp [Option.bind] at h
+          | force a => simp [Option.bind] at h
+          | app a b => simp [Option.bind] at h
+          | up a b d => simp [Option.bind] at h
+          | handle a b => simp [Option.bind] at h
+          | case a b d => simp [Option.bind] at h
+          | split a b => simp [Option.bind] at h
+          | unfold a => simp [Option.bind] at h
+          | oom => simp [Option.bind] at h
+          | wrong a => simp [Option.bind] at h
+    | force a =>
+        cases a with
+        | vthunk M =>
+            simp only [evalD] at h
+            -- PUSH: Source.step (K, force (vthunk M)) = some (K, M).
+            obtain ⟨F', hF'⟩ := ih M t h K n r hr
+            exact ⟨F'+1, by simp only [Config.run, Source.step]; exact hF'⟩
+        | vunit => simp [evalD] at h
+        | vint x => simp [evalD] at h
+        | vvar i => simp [evalD] at h
+        | inl w => simp [evalD] at h
+        | inr w => simp [evalD] at h
+        | pair w1 w2 => simp [evalD] at h
+        | fold w => simp [evalD] at h
+    | app M v =>
+        simp only [evalD] at h
+        cases hM : evalD fe M with
+        | none => rw [hM] at h; simp at h
+        | some tM =>
+          rw [hM] at h
+          cases tM with
+          | lam N =>
+              simp only [Option.bind_some] at h
+              -- PUSH (K, app M v) ↦ (appF v :: K, M); REDUCE (appF v :: K, lam N) ↦ (K, N[v]).
+              obtain ⟨F2, hF2⟩ := ih (Comp.subst v N) t h K n r hr
+              have hstep : Config.run (F2+1) (Frame.appF v :: K, .lam N) = r := by
+                simp only [Config.run, Source.step]; exact hF2
+              obtain ⟨F1, hF1⟩ := ih M (.lam N) hM (Frame.appF v :: K) (F2+1) r hstep
+              exact ⟨F1+1, by simp only [Config.run, Source.step]; exact hF1⟩
+          | ret w => simp [Option.bind] at h
+          | letC a b => simp [Option.bind] at h
+          | force a => simp [Option.bind] at h
+          | app a b => simp [Option.bind] at h
+          | up a b d => simp [Option.bind] at h
+          | handle a b => simp [Option.bind] at h
+          | case a b d => simp [Option.bind] at h
+          | split a b => simp [Option.bind] at h
+          | unfold a => simp [Option.bind] at h
+          | oom => simp [Option.bind] at h
+          | wrong a => simp [Option.bind] at h
+    | up a b d => simp [evalD] at h
+    | handle a b => simp [evalD] at h
+    | case a b d => simp [evalD] at h
+    | split a b => simp [evalD] at h
+    | unfold a => simp [evalD] at h
+    | oom => simp [evalD] at h
+    | wrong a => simp [evalD] at h
+
+/-- **The D1-A bridge** (headline): when `evalD` says a closed computation returns
+`v`, the kernel's verified `Source.eval` agrees (`.done v`). Ties the calculated
+machine to the type-safety reference (invariant #1) — `Source.eval`'s `type_safety`
+now backs `evalD`'s `ret`-results. Pure spine; handlers/ADT elim later. -/
+theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (h : evalD f M = some (.ret v)) :
+    ∃ F, Source.eval F M = Result.done v := by
+  have hbase : Config.run 1 ([], .ret v) = Result.done v := by simp only [Config.run]
+  obtain ⟨F, hF⟩ := run_evalD f M (.ret v) h [] 1 (Result.done v) hbase
+  exact ⟨F, hF⟩
+
+/-- Bridge witnessed concretely: `(λ.ret #0) 5` — `evalD` returns `ret 5` AND
+`Source.eval` reaches `.done 5`. The two semantics agree. -/
+example :
+    let M := Comp.app (.lam (.ret (.vvar 0))) (.vint 5)
+    evalD 5 M = some (.ret (.vint 5)) ∧ Source.eval 5 M = Result.done (.vint 5) := by
+  refine ⟨by rfl, by rfl⟩
 
 end Bang.CalcVM
