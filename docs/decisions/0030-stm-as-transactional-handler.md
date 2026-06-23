@@ -106,18 +106,23 @@ unpinned. Resolved:
 1. **`TVarRef = int`** (a heap index *is* an int). The handler's eliminators (`newTVar` returns the new
    index, `read`/`write` take one) type cleanly against the single `vint : int` rule. Leaving `TVarRef`
    existential made `vint i : int` un-typeable at the result type.
-2. **The store is TOTAL / default-initialized.** The transaction handler carries a **default-cell
-   witness** (a closed `Val` of cell type `S`, supplied by `atomically` at the boundary); `readTVar` on
-   an out-of-range index returns that default — it does **NOT** produce `oom`. (K1 used `oom`, the
-   *fuel-exhaustion* sentinel, for a bad read — a category error: `oom` is untypable, so a well-typed
+2. **The store is TOTAL / default-initialized, with monomorphic `int` cells in v1.** `readTVar` on an
+   out-of-range index returns a **default of the cell type** rather than producing `oom`. (K1 used `oom`,
+   the *fuel-exhaustion* sentinel, for a bad read — a category error: `oom` is untypable, so a well-typed
    `readTVar (vint 999)` stepping to `oom` falsifies preservation.) A total store is the standard
    finite-representation of a total `Loc → Val` map; it makes `readTVar` total, so preservation closes
    with **no change to the frozen `type_safety` statement** (◊2). `writeTVar` out-of-range is a type-safe
    no-op (source programs never hold an invalid ref — refs come only from `newTVar` — so the default/no-op
    paths are kernel-expressible but source-unreachable).
 
-**Config-explicit (SOUL):** `atomically default M` declares the cell default at the boundary — the caller
-states intent, the kernel guesses nothing.
+   **v1 fixes the cell type `S = int`** (default `= vint 0`; `readTVar` miss returns `Θ.getD i (vint 0)`).
+   This closes preservation with **zero change to the `Handler.transaction` arity and zero edits to the
+   committed K2 resume-typing helpers** — which are written against the 2-arg `transaction ℓ Θ`. The
+   general-`S` alternative (a caller-supplied **default-cell witness** carried by the handler, `atomically
+   default M`, config-explicit at the boundary) is *more* general — TVars of any type, incl. rung-2 ADTs
+   — but it bumps the constructor arity and would churn ~38 committed helper sites for a capability v1
+   (int-balance ledgers, counters) does not need. **Deferred as a refinement**, consistent with
+   monomorphic-v1 (ADR-0027) and the project's stage-it discipline.
 
 **Rejected for the OOB-read case:**
 - *Bounds invariant `i < |Θ|` in `HasConfig`.* Needs a non-trivial reachability invariant (the index is a
