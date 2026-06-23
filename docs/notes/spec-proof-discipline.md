@@ -75,8 +75,11 @@ Discharge `sorry`s in `PROOF_ORDER`. After each: `lake build` + run
    per-rule compatibility lemmas in `Bang/Compat.lean`; prove `compat_handle`
    LAST (it is the `[KEY]` one that consumes `Srel`). The rest of Compat is
    mechanical.
-2. **`group_recovers`** — rollback; may force an observability side-condition.
-   Surface it NOW, it reshapes the effect algebra.
+2. **`group_recovers`** — ✓ RESOLVED (the research gate fired, 2026-06-23, ADR-0032):
+   **RETIRED** — false-as-stated (a diverging `c` makes `(c;ret()) ≉ ret()`) + vacuous
+   (no `AddGroup` instance for the real `Eff`). No `≈` side-condition needed (the gate's
+   whole payoff — surfaced before the LR spine committed). Rollback is the txn handler
+   (`all_or_nothing_abort`). The cheap closes `seq_unit` + `zero_usage_erasable` take this slot now.
 3. **`compile_forward_sim`** — the contribution. Fail fast if it won't go.
 4. **`subst_value`** — validates the CBPV "no σ-split" assumption. ✓ PROVEN
    (de Bruijn, `Bang/Metatheory.lean`, axiom-clean).

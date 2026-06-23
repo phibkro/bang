@@ -48,6 +48,12 @@ This places bang-lang's `+` at the monotone end of a single structural spectrum 
 | monoid (sequencing) | sequencing w/ identity | ordered, coordinated |
 | group (invertible) | rollback (Frobenius / dagger) | compensation |
 
+> **AMENDED by ADR-0032 (2026-06-23):** the "group ⇒ rollback" row is a design-space *map*, not a v1 law.
+> The concrete `group_recovers` theorem encoding it was **RETIRED** — false-as-stated + vacuous for our
+> idempotent (top row) `Eff`, and the H-K bridge needs Frobenius (strictly stronger than group, Q8). v1
+> rollback is delivered by the transaction *handler* (`all_or_nothing_abort`, ADR-0030/0031), not an
+> effect-algebra inverse. The spectrum stays as orientation; the inverse-effect rollback law does not ship.
+
 The same idempotence that *forces* the constrained-quantifier discipline also *delivers* the coordination-freedom story. The conjecture `rowmonotone_coordination_free` (`Bang/Distribution.lean`) marks the latent result; it is a separate paper, NOT part of the verification spine.
 
 ## Related artifacts

@@ -48,7 +48,17 @@
                                      0-axiom throughout. Built across Units 1–7 (ADR-0031
                                      D4 for state/transaction resume; UNFOLD erases onto
                                      RET, not an instr — calc-derived).
-◊4   LR foundation
+◊4 ◐ LR foundation (IN PROGRESS) ── 2026-06-23. The LR machinery is DEFINED: U1 (`a58a396`)
+                                     concretized the §5.1/§6 helpers (Cxt/Stack=EvalCtx, BaseRel,
+                                     seqComp, raise…); U2 (`eadec83`, THE CRUX) defined
+                                     Vrel/Srel/Krel/Crel as step-indexed WF mutual defs (plain lex
+                                     `(n, sizeOf type, role)` — no iris ▷ needed), row-indexed
+                                     (faithful Biernacki τ/ε, ADR-0033). `group_recovers` RETIRED
+                                     (`fcb2f51`, ADR-0032: false-as-stated + vacuous; rollback is the
+                                     txn handler). `lr_sound`/`lr_fundamental` now `[propext, sorryAx,
+                                     Quot.sound]` (only the proof BODY is sorry). NEXT = the PROOFS:
+                                     U4 (seq_unit + zero_usage_erasable) · U5 (lr_sound, biorthogonality)
+                                     · U6 (Compat 16 → lr_fundamental). See `paths/PATH-lr-foundation.md`.
 ◊5   Compiler v0
 ◊6   Release v0
 ```
@@ -236,8 +246,12 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   (ADR-0017, history-preserving `git mv`, out-of-build inert corpus); CalcReify* reification frontier KEPT
   live (ADR-0015); 16-case 5-axis diff-test battery (`Agree M v := exec(compile M)=some[ret v] ∧ Source.eval
   M=done v` — both reps to ONE observable Val ⇒ false agreement unrepresentable; all `rfl`, 0-axiom);
-  `just verify` 723 jobs (732→723 = archive took); independently gated on the committed tree. **The
-  verification spine now points at ◊4 (LR foundation).**
+  `just verify` 723 jobs (732→723 = archive took); independently gated on the committed tree.
+- **`paths/PATH-lr-foundation.md`** — **◊4 (ACTIVE).** Foundation landed axiom-clean: U1 helpers (`a58a396`)
+  + U2 the step-indexed `Vrel/Srel/Krel/Crel` WF defs (`eadec83`, THE CRUX — plain lex measure, row-indexed
+  per ADR-0033) + `group_recovers` RETIRED (`fcb2f51`, ADR-0032). `lr_sound`/`lr_fundamental` →
+  `[propext, sorryAx, Quot.sound]` (only proof bodies left). **NEXT:** U4 (`seq_unit` + `zero_usage_erasable`)
+  → U5 (`lr_sound`, biorthogonality) → U6 (Compat 16 → `lr_fundamental`). `effect_sound` → ◊5.
 
 **Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
 verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;
@@ -248,9 +262,12 @@ design-space map (`docs/notes/design-space-map.md`) + Q15–Q20.
 
 **◊4 — LR foundation.** (◊3 gate met 2026-06-23; see Position block.)
 
-Definition of stable per `ROADMAP.md`: `lr_sound`, `lr_fundamental` proven;
-`group_recovers` resolved (proven OR side-condition added to ≈); `Audit.lean`
-reports axioms ⊆ {propext, Classical.choice, Quot.sound} for these three. Input:
+Definition of stable per `ROADMAP.md`: `lr_sound`, `lr_fundamental`,
+`zero_usage_erasable` proven; `Audit.lean` reports axioms ⊆ {propext,
+Classical.choice, Quot.sound} for these. (`group_recovers` RETIRED — ADR-0032;
+it was false-as-stated + vacuous, and v1 rollback is the txn handler. `effect_sound`
+→ ◊5.) **Foundation already landed (2026-06-23):** the LR relations are real
+WF defs (U1/U2), row-indexed (ADR-0033); only the proof bodies remain. Input:
 the now-ported CalcVM (◊3) + the step-indexed LR machinery sketched in
 `Bang/LR.lean` + the references (`references/papers/3-lr/`). The `zero_usage_erasable`
 and `effect_sound` residuals deferred from ◊2 also live here (LR-flavored).
@@ -356,7 +373,7 @@ revisit signals.
 | Q5 | `up` typing rule + opArgTy/opResTy | ✓ resolved — `up` rule + op-partial `EffSig` (ADR-0022/0023) |
 | Q6 | Source.step deep-handler resumption | ✓ resolved — throws (ADR-0023) + state (ADR-0025) |
 | Q7 | Op names string vs enum | defer (cosmetic) |
-| Q8 | `group_recovers` H-K bridge | Phase B research |
+| Q8 | `group_recovers` H-K bridge | ✓ resolved — ADR-0032 (RETIRED; H-K needs Frobenius ≫ group; bounded) |
 | Q9 | WasmFX target drift | recorded — ◊5 obligation (pin-to-engine) |
 | Q10 | Typing rules must enforce grades | rules landed (ADR-0019); proof bodies remain |
 | Q12 | Graded state handlers | ✓ resolved — ADR-0025 (closed focus, no ω-restriction) |

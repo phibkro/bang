@@ -54,9 +54,9 @@ Knock-on effects:
 - `no_accidental_handling`: `l * e` → `l ⊔ e`
 - `Disjoint` now concrete via Mathlib's `_root_.Disjoint` for Lattice
   + OrderBot (was axiom — closed)
-- `group_recovers`'s `[AddGroup Eff]` hypothesis is now vacuous for our
-  Lattice Eff (no Lattice + AddGroup nontrivial instance) — theorem statement
-  preserved as conditional; see Q8 for the H-K bridge question
+- `group_recovers`'s `[AddGroup Eff]` hypothesis is vacuous for our Lattice
+  Eff (no nontrivial Lattice + AddGroup instance) — theorem **RETIRED** (ADR-0032),
+  not preserved; v1 rollback is the txn handler. See Q8 (resolved-but-bounded).
 
 ---
 
@@ -235,7 +235,7 @@ exhaustive case analysis on operation names.
 
 ---
 
-## Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?
+## Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius? — ✓ RESOLVED (unresolved-but-bounded, ADR-0032)
 
 **Question** (from the original wasmfx spec; surfaced in ADR-0016 + §6 of
 Spec.lean): if `Eff` forms a group (effects are invertible), does the
@@ -243,13 +243,17 @@ graded monad `F` become dagger-Frobenius (Heunen-Karvonen)? If yes,
 `group_recovers` is a corollary. If no, the theorem needs an explicit
 observability side-condition.
 
-**Why it matters**: rollback semantics (PROOF_ORDER #2 in
-`docs/notes/spec-proof-discipline.md`). Genuine research question.
-
-**Blocked on**: literature review (Heunen-Karvonen, compositional reversible
-computation). References on disk:
-- `references/papers/adjacent/heunen-karvonen-reversible-monadic.pdf`
-- `references/papers/adjacent/compositional-reversible-2024.pdf`
+**Resolution (2026-06-23, ADR-0032 — the ◊4 PROOF_ORDER #2 research gate):** the
+H-K bridge as stated is **unsupported** — reversibility needs the monoid to be
+**Frobenius** (involutive + the Frobenius coherence law), strictly stronger than a
+group; our idempotent join-semilattice `Eff` is even further from Frobenius. AND
+`group_recovers` was **false-as-stated** (a diverging `c` makes `(c;ret()) ≉ ret()`)
+and **vacuous** (no `AddGroup` instance for the real effect lattice). So
+`group_recovers` is **RETIRED**, not side-conditioned: v1 rollback is a HANDLER
+mechanism (`all_or_nothing_abort`, ADR-0030/0031), not an effect-algebra inverse.
+Q8 stays formally open (post-v1: a correct Frobenius-conditioned law would be a NEW
+theorem) but bounded — it gates nothing in v1. References on disk:
+`references/papers/adjacent/{heunen-karvonen-reversible-monadic,compositional-reversible-2024}.pdf`.
 
 **Revisit signal**: Phase B PROOF_ORDER #2 (sequenced second precisely so
 this surfaces before compiler work depends on it).
