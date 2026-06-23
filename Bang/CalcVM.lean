@@ -11,8 +11,12 @@ This file lands the **pure CBPV spine** (`ret` · `letC` · `force`/`vthunk` ·
 `lam` · `app`) PLUS **deep-handler INSTALL** (`handle`) — the calculated machine,
 `compile_correct`, AND the **`evalD ≡ Source.eval` bridge** (D1-A) over all of it.
 The handler **abort/dispatch** (an `up` raising to its handler, the THROW-jump) is
-sub-step 2; the ADT eliminators (`case`/`split`/`unfold`) and the full diff-test
-battery are later increments. ADR-0031 (resumptive state) adds the store thread:
+sub-step 2. The ADT eliminators are calculated too: `case`/`split` defer to runtime
+`CASE`/`SPLIT` instructions (their erasure `compile (subst …)` is non-structural, so
+they re-`compile` the branch under fuel exactly as `SUBST`/`APP` do), while
+`unfold (fold v)` ERASES at compile time onto `RET v` (structural — like
+`force (vthunk M) ↦ compile M`; no dedicated instruction, invariant #4).
+ADR-0031 (resumptive state) adds the store thread:
 `evalD` services `get`/`put` inline, the machine RESUMES with a non-discarding `OP`,
 and the `compile_correct` (`sim`) + `evalD ≡ Source.eval` (`run_evalD`) proofs are
 both axiom-clean over the WHOLE state-resuming semantics — no `sorry`. The throws⊗state
@@ -308,7 +312,7 @@ inductive Instr where
   -- inspects the closed-value scrutinee and re-`compile`s the chosen branch at runtime (fuel-bounded).
   | CASE   : Val → Comp → Comp → Instr  -- sum elim: inl/inr ⇒ compile+run the matching branch[v]
   | SPLIT  : Val → Comp → Instr         -- product elim: pair ⇒ compile+run N[v][shift w] (DOUBLE subst)
-  | UNFOLD : Val → Instr                -- μ elim: fold v ⇒ push `ret v` (fold/unfold erase)
+  -- (no UNFOLD: `unfold (fold v)` erases to `RET v` at compile time — see `compile`.)
   deriving Inhabited
 
 abbrev Code  := List Instr
@@ -335,10 +339,19 @@ def compile : Comp → Code → Code
   | .app M v,           c => compile M (Instr.APP v :: c)
   | .handle h M,        c => Instr.MARK h c :: compile M (Instr.UNMARK :: c)
   | .up ℓ op v,         c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); throws falls through to unwind
-  | .case w N₁ N₂,      c => Instr.CASE w N₁ N₂ :: c   -- ADT: emit instr, do NOT recurse into branches (structural)
-  | .split w N,         c => Instr.SPLIT w N :: c       -- ADT: ditto; `exec` re-compiles the chosen branch[v]
-  | .unfold w,          c => Instr.UNFOLD w :: c        -- ADT: ditto
-  | _,                  c => c               -- out of scope: emit nothing (residual)
+  -- case/split: erasure (`compile (case (inl v) N₁ N₂) c = compile (subst v N₁) c`) is what the
+  -- calculation forces, but it is NON-structural (`subst v N₁` is not a subterm) — so, EXACTLY as
+  -- `SUBST`/`APP` resolve the same non-structural `compile (subst …)`, defer it to a runtime instruction
+  -- that re-`compile`s the chosen branch under fuel. The scrutinee `w` may be open (`vvar n`) in a branch
+  -- body, so `compile` cannot peek-and-reduce here the way `force (vthunk M)` can.
+  | .case w N₁ N₂,      c => Instr.CASE w N₁ N₂ :: c
+  | .split w N,         c => Instr.SPLIT w N :: c
+  -- unfold: ERASES at compile time, exactly like `force (vthunk M) ↦ compile M c`. `unfold (fold v) ↦
+  -- ret v` is STRUCTURAL (`v` is in hand, `RET v :: c` does not recurse non-structurally), so the
+  -- calculation collapses it onto the existing `RET` — NO dedicated instruction (invariant #4: the
+  -- machine is the calculation's output; an `UNFOLD` instr would be hand-added redundancy).
+  | .unfold (.fold v), c => Instr.RET v :: c
+  | _,                  c => c               -- out of scope: emit nothing (residual; open/ill-formed)
 
 /-- Find the nearest **throws** frame catching `(ℓ, op)`: return its saved OUTER
 continuation (`savedCode`, `savedStack`), discarding the inner frames (zero-shot
@@ -1397,10 +1410,6 @@ def exec : Nat → Code → Stack → HStack → Option Stack
       match w with
       | .pair v u => exec f (compile (Comp.subst v (Comp.subst (Val.shift u) N)) c) s hs
       | _         => none
-  | Nat.succ f, Instr.UNFOLD w :: c, s, hs =>
-      match w with
-      | .fold v => exec f c (.ret v :: s) hs
-      | _       => none
 
 /-! ## The calculation is correct (proven) -/
 
@@ -1471,11 +1480,6 @@ theorem exec_succ : ∀ f c s hs r, exec f c s hs = some r → exec (f+1) c s hs
         simp only [exec] at h ⊢
         cases w with
         | pair v u => simp only [] at h ⊢; exact ih _ _ _ _ h
-        | _ => simp at h
-      | UNFOLD w =>
-        simp only [exec] at h ⊢
-        cases w with
-        | fold v => simp only [] at h ⊢; exact ih _ _ _ _ h
         | _ => simp at h
 
 /-- Fuel monotonicity, `≤` (k2-playbook §2): bump any sub-fuel to a common value. -/
@@ -2353,8 +2357,9 @@ example :
     exec 10 (compile (.force (.vthunk (.ret (.vint 9)))) []) [] [] = some [.ret (.vint 9)] := by
   rfl
 
--- ADT eliminators (Unit 6): `CASE`/`SPLIT`/`UNFOLD` reduce a closed-value scrutinee in place. Each
--- demonstrator is asserted on BOTH `exec ∘ compile` and `evalD` (the diff-test the two reps agree).
+-- ADT eliminators (Unit 6): `CASE`/`SPLIT` reduce a closed-value scrutinee at runtime; `unfold`
+-- ERASES at compile time onto `RET` (like `force∘vthunk`). Each demonstrator is asserted on BOTH
+-- `exec ∘ compile` and `evalD` (the diff-test the two reps agree).
 
 /-- `case (inl 5) (ret #0) (ret 99)` ⇒ `ret 5` — sum elim, LEFT branch binds the payload. -/
 example :
