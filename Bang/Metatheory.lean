@@ -2205,6 +2205,234 @@ theorem splitAt_getput_state {K : EvalCtx} {ℓ : Label} {op : OpId} {Kᵢ Kₒ 
         simp only [Prod.mk.injEq] at heq
         exact heq.2.1 ▸ ih hsp
 
+/-- The TRANSACTION resume-typing lemma (ADR-0030 preservation), the multi-cell generalization of
+`dispatch_state_typed`: where `state` reinstalls `state ℓ s'`, a `transaction` reinstalls
+`transaction ℓ Θ'` over the KEPT inner prefix `Kᵢ`, so the resumed stack is
+`Kᵢ ++ handleF (transaction ℓ Θ') :: Kₒ`. GIVEN the original `HasStack K e (F q A) eo Co`, that
+`splitAt` located a `transaction ℓ Θ` frame for `(ℓ, op)`, the stm interface signatures, and that
+the NEW heap `Θ'` is all-cells-closed of type `S` (`∀ cell ∈ Θ', HasVTy [] [] cell S`), re-type the
+resumed stack at the SAME focus type `F q A`. The induction follows the `splitAt` recursion exactly
+as `dispatch_state_typed`: skipped frames are rebuilt frame-by-frame; at the matching `transaction ℓ`
+frame the reinstalled `transactionF` constructor splices `Θ'` in. The interface premises (passed in)
+re-discharge the new frame's interface obligations (they are facts about `ℓ`'s `EffSig`, invariant
+under the heap change). -/
+theorem HasStack.dispatch_transaction_typed {K Kᵢ Kₒ : EvalCtx} {e : Eff}
+    {C : CTy Eff Mult} {S TVarRef : VTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult}
+    {ℓ : Label} {op : OpId} {Θ Θ' : Store} :
+    HasStack K e C eo Co →
+    EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some S →
+    EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some TVarRef →
+    EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some TVarRef →
+    EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some S →
+    EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod TVarRef S) →
+    EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit →
+    (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+      op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") →
+    (op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") →
+    (∀ cell ∈ Θ', HasVTy [] [] cell S) →
+    splitAt K ℓ op = some (Kᵢ, Handler.transaction ℓ Θ, Kₒ) →
+    ∃ eo', eo' ≤ eo ∧
+      HasStack (Kᵢ ++ Frame.handleF (Handler.transaction ℓ Θ') :: Kₒ) e C eo' Co := by
+  intro hK hna hnr hra hrr hwa hwr hiface hop hcells'
+  induction hK generalizing Kᵢ Kₒ Θ with
+  | @nil e0 C0 => intro hd; simp [splitAt] at hd
+  | @letF K N e₁ e₂ eo q qk A0 B0 Co hN hsub ih =>
+    intro hd
+    rw [splitAt_letF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using HasStack.letF hN hsub'⟩
+  | @appF K w e eo q A0 B0 Co hv hsub ih =>
+    intro hd
+    rw [splitAt_appF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using HasStack.appF hv hsub'⟩
+  | @handleF K ℓ' e φ eo q A0 Co hraise hifaceT hdis hsub ih =>
+    intro hd
+    -- a `throws ℓ'` frame never catches an stm op; dispatch skips it.
+    have hcatch : handlesOp (Handler.throws ℓ') ℓ op = false := by
+      rcases hop with h | h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using HasStack.handleF hraise hifaceT hdis hsub'⟩
+  | @stateF K ℓ' s₀ e φ eo q A0 S0 Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    intro hd
+    -- a `state ℓ'` frame never catches an stm op (interface is get/put); dispatch skips it.
+    have hcatch : handlesOp (Handler.state ℓ' s₀) ℓ op = false := by
+      rcases hop with h | h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using HasStack.stateF hga hgr hpa hpr hif hs hdis hsub'⟩
+  | @transactionF K ℓ' Θ₀ e φ eo q A0 S0 TVarRef0 Co hna0 hnr0 hra0 hrr0 hwa0 hwr0 hif hcells hdis hsub ih =>
+    intro hd
+    by_cases hℓ : ℓ' = ℓ
+    · -- matching transaction frame: the split point. Reinstall `transaction ℓ Θ'` over the same `Kₒ`.
+      subst hℓ
+      have hcatch : handlesOp (Handler.transaction ℓ' Θ₀) ℓ' op = true := by
+        rcases hop with h | h | h <;> subst h <;> simp [handlesOp]
+      rw [splitAt_handleF_hit K hcatch, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hd
+      obtain ⟨hKᵢ, htxEq, hKₒ⟩ := hd
+      subst hKᵢ; subst hKₒ
+      -- The new heap `Θ'`'s cells inhabit `S`; the frame stored `S0`. Tie `S = S0` from `opArg newTVar`.
+      have hSeq : S = S0 := by rw [hna0] at hna; exact (Option.some.inj hna).symm
+      subst hSeq
+      refine ⟨eo, le_refl _, ?_⟩
+      simpa using HasStack.transactionF hna0 hnr0 hra0 hrr0 hwa0 hwr0 hif hcells' hdis hsub
+    · -- foreign transaction frame (different label): dispatch skips it.
+      have hcatch : handlesOp (Handler.transaction ℓ' Θ₀) ℓ op = false := by simp [handlesOp, hℓ]
+      rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+      subst hKᵢ; subst hh; subst hKₒ
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+      exact ⟨eo', hleo, by simpa using
+        HasStack.transactionF hna0 hnr0 hra0 hrr0 hwa0 hwr0 hif hcells hdis hsub'⟩
+
+/-- The matched `transaction ℓ Θ` frame found by `splitAt` for an stm op carries a CLOSED heap (all
+cells closed of type `S = opArg ℓ "newTVar"`) and the full stm interface signatures (ADR-0030 grade
+discipline, the multi-cell analogue of `splitAt_state_closed`). Read off the matched `transactionF`
+frame's `hcells`/interface fields. -/
+theorem HasStack.splitAt_transaction_store {K Kᵢ Kₒ : EvalCtx} {e : Eff}
+    {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {op : OpId} {Θ : Store} :
+    HasStack K e C eo Co →
+    (op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") →
+    splitAt K ℓ op = some (Kᵢ, Handler.transaction ℓ Θ, Kₒ) →
+    ∃ S TVarRef,
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some S
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some TVarRef
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some TVarRef
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some S
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod TVarRef S)
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit
+      ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+          op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar")
+      ∧ (∀ cell ∈ Θ, HasVTy [] [] cell S) := by
+  intro hK hop
+  induction hK generalizing Kᵢ Kₒ Θ with
+  | @nil e0 C0 => intro hd; simp [splitAt] at hd
+  | @letF K N e₁ e₂ eo q qk A0 B0 Co hN hsub ih =>
+    intro hd
+    rw [splitAt_letF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
+  | @appF K w e eo q A0 B0 Co hv hsub ih =>
+    intro hd
+    rw [splitAt_appF, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
+  | @handleF K ℓ' e φ eo q A0 Co hraise hiface hdis hsub ih =>
+    intro hd
+    have hcatch : handlesOp (Handler.throws ℓ') ℓ op = false := by
+      rcases hop with h | h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
+  | @stateF K ℓ' s₀ e φ eo q A0 S0 Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    intro hd
+    have hcatch : handlesOp (Handler.state ℓ' s₀) ℓ op = false := by
+      rcases hop with h | h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
+  | @transactionF K ℓ' Θ₀ e φ eo q A0 S0 TVarRef0 Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    intro hd
+    by_cases hℓ : ℓ' = ℓ
+    · subst hℓ
+      have hcatch : handlesOp (Handler.transaction ℓ' Θ₀) ℓ' op = true := by
+        rcases hop with h | h | h <;> subst h <;> simp [handlesOp]
+      rw [splitAt_handleF_hit K hcatch, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hd
+      obtain ⟨_, htxEq, _⟩ := hd
+      rw [Handler.transaction.injEq] at htxEq
+      obtain ⟨_, hΘeq⟩ := htxEq; subst hΘeq
+      exact ⟨S0, TVarRef0, hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩
+    · have hcatch : handlesOp (Handler.transaction ℓ' Θ₀) ℓ op = false := by simp [handlesOp, hℓ]
+      rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨_, hh, _⟩ := heq; subst hh
+      exact ih hsp
+
+/-- For an stm op, any catching frame found by `splitAt` is a `transaction ℓ` handler at the SAME
+label (the analogue of `splitAt_getput_state`): `throws`/`state` never catch stm ops; a foreign
+`transaction ℓ'` catches only when `ℓ' = ℓ`. -/
+theorem splitAt_stm_transaction {K : EvalCtx} {ℓ : Label} {op : OpId} {Kᵢ Kₒ : EvalCtx}
+    {h : Handler} (hop : op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") :
+    splitAt K ℓ op = some (Kᵢ, h, Kₒ) → ∃ Θ, h = Handler.transaction ℓ Θ := by
+  induction K generalizing Kᵢ Kₒ h with
+  | nil => intro hd; simp [splitAt] at hd
+  | cons fr K ih =>
+    cases fr with
+    | letF N =>
+      intro hd; rw [splitAt_letF, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      exact heq.2.1 ▸ ih hsp
+    | appF w =>
+      intro hd; rw [splitAt_appF, Option.map_eq_some_iff] at hd
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+      simp only [Prod.mk.injEq] at heq
+      exact heq.2.1 ▸ ih hsp
+    | handleF hh =>
+      intro hd
+      by_cases hcatch : handlesOp hh ℓ op = true
+      · rw [splitAt_handleF_hit K hcatch, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hd
+        obtain ⟨_, hheq, _⟩ := hd
+        subst hheq
+        cases hh with
+        | throws ℓ' => rcases hop with h | h | h <;> subst h <;> simp [handlesOp] at hcatch
+        | state ℓ' s => rcases hop with h | h | h <;> subst h <;> simp [handlesOp] at hcatch
+        | transaction ℓ' Θ =>
+          rcases hop with h | h | h <;> subst h <;>
+            (simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hcatch
+             obtain ⟨hℓ', _⟩ := hcatch; subst hℓ'; exact ⟨Θ, rfl⟩)
+      · simp only [Bool.not_eq_true] at hcatch
+        rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+        obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+        simp only [Prod.mk.injEq] at heq
+        exact heq.2.1 ▸ ih hsp
+
+/-- CLOSED FORM for `"newTVar"` dispatch (ADR-0030 alloc resume): allocation NEVER ooms — it appends
+the closed initial value `v` and returns the fresh index `vint Θ.length`. The catching handler is a
+`transaction ℓ Θ`, resumed with the extended heap `Θ ++ [v]` over the kept inner prefix. -/
+theorem dispatch_new_shape {K : EvalCtx} {ℓ : Label} {v : Val} {cfg' : Config} :
+    dispatch K ℓ "newTVar" v = some cfg' →
+    ∃ Kᵢ Θ Kₒ, splitAt K ℓ "newTVar" = some (Kᵢ, Handler.transaction ℓ Θ, Kₒ)
+      ∧ cfg' = (Kᵢ ++ Frame.handleF (Handler.transaction ℓ (Θ ++ [v])) :: Kₒ,
+                Comp.ret (Val.vint Θ.length)) := by
+  unfold dispatch
+  cases hsp : splitAt K ℓ "newTVar" with
+  | none => simp
+  | some t =>
+    obtain ⟨Kᵢ, h, Kₒ⟩ := t
+    obtain ⟨Θ, hh⟩ := splitAt_stm_transaction (Or.inl rfl) hsp
+    subst hh
+    simp only [Option.bind_some, dispatchOn, beq_self_eq_true, if_true, Option.some.injEq]
+    intro hd; exact ⟨Kᵢ, Θ, Kₒ, rfl, hd.symm⟩
+
 /-- CLOSED FORM for `"get"` dispatch (ADR-0025 resume): the catching handler is a `state ℓ s`, which
 RESUMES with the stored `s` over the KEPT inner prefix, reinstalling itself: the resumed config is
 `(Kᵢ ++ handleF (state ℓ s) :: Kₒ, ret s)`. -/
@@ -2338,17 +2566,49 @@ theorem preservation_proof
         ⟨⊥, CTy.F q VTy.unit,
           HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
           hstk''⟩⟩
-    · -- RUNG3-OBLIGATION (K2): newTVar RESUME preservation. cfg' = ⟨Kᵢ ++ handleF (transaction ℓ
-      -- (Θ++[v])) :: Kₒ, ret (vint |Θ|)⟩. Re-type the resumed stack (allocation extends the heap,
-      -- still all-cells-closed since `v` is closed) and the focus `ret (vint |Θ|) : F q TVarRef`.
-      subst hnew; sorry
+    · -- newTVar RESUME (ADR-0030): cfg' = ⟨Kᵢ ++ handleF (transaction ℓ (Θ++[v])) :: Kₒ,
+      -- ret (vint |Θ|)⟩. Allocation never ooms; the extended heap `Θ ++ [v]` stays all-cells-closed
+      -- (old cells closed via `splitAt_transaction_store`; `v` closed via `hwv`), so re-type the
+      -- resumed stack (`dispatch_transaction_typed`) and plug the closed focus `ret (vint |Θ|)`.
+      subst hnew
+      obtain ⟨Kᵢ, Θ, Kₒ, hsplit, hcfg'⟩ := dispatch_new_shape hstep
+      subst hcfg'
+      obtain ⟨S, TVarRef, hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩ :=
+        hstack.splitAt_transaction_store (Or.inl rfl) hsplit
+      -- the alloc payload `v : A = opArg ℓ "newTVar" = S` is closed; extend the closed heap (use S = A).
+      have hSA : S = A := by rw [hopArg] at hna; exact (Option.some.inj hna).symm
+      subst hSA
+      -- B = opRes ℓ "newTVar" = TVarRef, so the resumed focus `ret (vint |Θ|) : F q TVarRef = F q B`.
+      have hBT : B = TVarRef := by rw [hopRes] at hnr; exact Option.some.inj hnr
+      have hcells' : ∀ cell ∈ Θ ++ [v], HasVTy [] [] cell S := by
+        intro cell hmem
+        rcases List.mem_append.mp hmem with h | h
+        · exact hcells cell h
+        · rw [List.mem_singleton] at h; subst h; exact hwv
+      obtain ⟨eo', hleo, hstk'⟩ :=
+        hstack.dispatch_transaction_typed hna hnr hra hrr hwa hwr hif (Or.inl rfl) hcells' hsplit
+      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
+      refine ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, ?_, hstk''⟩⟩
+      -- GAP (kernel decision, see report): the focus is `ret (vint Θ.length) : F q int`, but `B =
+      -- TVarRef` is UNCONSTRAINED by `transactionF`/`handleTransaction` (not pinned to `int`).
+      -- `vint _ : int` (the only `HasVTy.vint` rule) cannot be shown of type `TVarRef`. Closing this
+      -- needs the typing rule to fix `TVarRef = int` (a heap index IS an int). RUNG3-OBLIGATION (K2).
+      sorry
     · -- RUNG3-OBLIGATION (K2): readTVar RESUME preservation. cfg' = ⟨Kᵢ ++ handleF (transaction ℓ Θ)
-      -- :: Kₒ, ret Θ[i]⟩. The read cell is closed of type S (heap-closed invariant); re-type the
-      -- reinstalled (unchanged) heap frame + focus `ret Θ[i] : F q S`.
+      -- :: Kₒ, ret Θ[i]⟩ on success — BUT `Θ[i]? = none` (out-of-range index) ⇒ cfg' = ⟨Kₒ, oom⟩,
+      -- and `Comp.oom` is UNTYPABLE (`HasCTy.oom_untypable`). The payload `v : TVarRef` is closed but
+      -- (a) `TVarRef` is unconstrained (not `int`, so `tvarIdx v` may be `none`), and (b) no invariant
+      -- bounds the index by `Θ.length`. So a well-typed `readTVar (vint 999)` over a short heap steps
+      -- to untypable `oom` ⇒ PRESERVATION FAILS as stated. GAP (kernel decision, see report): needs
+      -- `TVarRef = int` AND a heap-bounds invariant `index < Θ.length` in the config typing.
       subst hread; sorry
     · -- RUNG3-OBLIGATION (K2): writeTVar RESUME preservation. cfg' = ⟨Kᵢ ++ handleF (transaction ℓ
-      -- Θ[i↦w]) :: Kₒ, ret unit⟩. The updated heap stays all-cells-closed (`w` closed); re-type the
-      -- reinstalled frame + focus `ret unit : F q unit`.
+      -- (storeSet Θ i w)) :: Kₒ, ret unit⟩ when the payload is `pair (vint i) w` (storeSet no-ops
+      -- out of range, so this never ooms on a valid index) — BUT a malformed payload (not a
+      -- `pair (vint _) _`) ⇒ cfg' = ⟨Kₒ, oom⟩ (untypable). The payload has type `prod TVarRef S`, so
+      -- it IS a `pair`, but the first component `TVarRef` need not be a `vint` (TVarRef unconstrained).
+      -- So `tvarIdx iv = none` is reachable ⇒ oom ⇒ PRESERVATION FAILS. Same GAP: `TVarRef = int`
+      -- (then `prod int S` forces `iv = vint _`, `tvarIdx` total, write closes cleanly). See report.
       subst hwrite; sorry
   | letC M N =>
     -- PUSH letC
