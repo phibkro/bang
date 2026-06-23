@@ -6,16 +6,31 @@
 
 ## Progress
 
-- **✓ Unit 2 — pure returner/sequencing core** (`Bang/CalcVM.lean`, `c86be38` + `13a9b5a` registration +
-  `ea17e63` Audit guard). `evalD : Nat → Env → Comp → Option Val` (denotational, env-based, fuel-bounded,
-  D1-A partiality monad) covering `ret`/`letC`/`vvar`; calculated machine `{RET, BIND, UNBIND}` DERIVED
-  from `evalD` (invariant #4); `exec_compile` + `compile_correct` (`exec ∘ compile ≡ evalD` on the pure
-  core) **PROVEN**, axioms `[propext, Quot.sound]`, gate-guarded in `Audit.lean`. 3 `rfl` diff-test seeds
-  (the first grains of the Unit-4 battery). Rides the gate (732 jobs); ◊2 gate held (0-axiom).
-- **NEXT (recommended): extend `evalD`/machine to `force`/`lam`/`app`** — the CBPV thunk/abstraction spine
-  (breadth-first, K3 "grow one constructor at a time" rhythm; needs a closure/value story for `vthunk` on
-  the stack). Defer the `evalD ≡ Source.eval` agreement (Unit 1 bridge) until the pure machine is
-  feature-complete. THEN the effect/handler units, then collapse + archive the K3 matrix (ADR-0017).
+### D1 refinement — `evalD` is SUBSTITUTION-based, not env-based (2026-06-23)
+
+The kernel's `Source.step` is **substitution-based with a closed focus** (no env, no closures:
+`force(vthunk M)↦M`, `letC`/`app` reduce by `Comp.subst`). So `evalD` mirrors it (option (b) over a
+closure/CEK (a)): this makes the `evalD ≡ Source.eval` bridge **nearly mechanical** (subst-vs-subst, it's
+literally `Config.run`'s done-condition) — the whole payoff of D1-A — and keeps values as kernel `Val`.
+**CBPV shape:** `evalD : Nat → Comp → Option Comp` returns the *terminal computation* (`ret v` OR `lam M`),
+not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the machine carries residual
+`Comp` (CK-style, less flat); **flattening toward a numeric-stack VM is a deferred later calculation step**
+(invariant #7). Rejected (a) closures/CEK: forks the value rep + makes the bridge a cross-rep simulation.
+
+### Increments landed
+
+- **✓ Unit 2 — pure spine** (`Bang/CalcVM.lean`, `158f08d`; supersedes the reverted `ae5f1ca` which merged
+  red — termination unproven). Substitution `evalD` over `ret`/`letC`/`force`/`lam`/`app`; **termination by
+  STRUCTURAL recursion on the fuel** (`Nat` decrements — no `termination_by`, no `partial def`). Calculated
+  machine `{RET, LAMI, SUBST, APP, …}` DERIVED from `evalD` (invariant #4); `exec_compile` +
+  `compile_correct` **PROVEN** over the subst machine, axioms `[propext]`, gate-guarded. Rides the gate
+  (732 jobs); ◊2 gate held (0-axiom).
+  - **ADT eliminators (`case`/`split`/`unfold`) DEFERRED** — they break `compile` termination (not cheap);
+    revisit when the machine handles them (likely needs the flattening step or a different measure).
+- **NEXT: the effect/handler units** (`up`/`handle` — deep handlers, the `Source.step` dispatch as machine
+  code) — the real CalcVM payoff. THEN the `evalD ≡ Source.eval` agreement (Unit 1 bridge — cheap by
+  construction now), then collapse + archive the K3 matrix (ADR-0017). Flattening (defunctionalize frames
+  + compile-away subst) is a later optimization pass, not blocking.
 
 ## Target (◊3 gate, ROADMAP)
 
