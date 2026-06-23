@@ -12,7 +12,12 @@ This file lands the **pure CBPV spine** (`ret` · `letC` · `force`/`vthunk` ·
 `compile_correct`, AND the **`evalD ≡ Source.eval` bridge** (D1-A) over all of it.
 The handler **abort/dispatch** (an `up` raising to its handler, the THROW-jump) is
 sub-step 2; the ADT eliminators (`case`/`split`/`unfold`) and the full diff-test
-battery are later increments. Nothing here is `sorry`/`axiom`.
+battery are later increments. ADR-0031 (resumptive state) adds the store thread:
+`evalD` services `get`/`put` inline, the machine RESUMES with a non-discarding `OP`,
+and the `compile_correct` (`sim`) + `evalD ≡ Source.eval` (`run_evalD`) proofs are
+both axiom-clean over the WHOLE state-resuming semantics — no `sorry`. The throws⊗state
+nesting (an outer `put` before a caught inner raise) is handled: the abort keeps the
+outer put (evalD-caught = the at-raise store `σ'`, machine-faithful).
 
 ### Effects: two-part `Outcome` + (A) explicit HANDLE-frame (throws-only, D2)
 
@@ -74,61 +79,111 @@ namespace Bang.CalcVM
 
 open Bang (Val Comp Frame Config Result)
 
-/-! ## The denotational source `evalD` (substitution, terminal-Comp)
+/-! ## The state store (ADR-0031 D1): a 1:1 mirror of the active `state ℓ s` frames
+
+`SStore` is the resumptive mechanism `evalD` threads (ADR-0031 D1). It is a **stack** of
+`(label ↦ value)` bindings that mirrors the machine's active `state ℓ s` frames **1:1, in order**
+(D3): `handle (state ℓ s) M` PUSHES `(ℓ, s)` for the dynamic extent of `M` and POPS it on exit;
+`get` reads the nearest binding for `ℓ`; `put` UPDATES the nearest binding **in place** (NOT a
+prepend — this exactly mirrors the machine's in-place `stateUpdate` on the HStack, so the store and
+the HStack-state-projection stay structurally identical, which is what makes the bridge invariant a
+direct correspondence rather than a representation translation). `∉ store` ⟺ no active `state`
+frame for `ℓ` ⟹ the op propagates as a throws-path `raised`. -/
+abbrev SStore := List (Bang.EffectRow.Label × Val)
+
+/-- The nearest stored value for label `ℓ` (innermost binding wins — shadowing). -/
+def SStore.get? (σ : SStore) (ℓ : Bang.EffectRow.Label) : Option Val :=
+  (σ.find? (fun p => p.1 = ℓ)).map (·.2)
+
+/-- UPDATE the nearest binding for `ℓ` **in place** (mirrors the machine's `stateUpdate`-put). If
+`ℓ` is unbound the store is unchanged (source-unreachable: `put` only fires when a frame is active). -/
+def SStore.put : SStore → Bang.EffectRow.Label → Val → SStore
+  | [],            _, _ => []
+  | (ℓ0, w) :: σ, ℓ, v => if ℓ0 = ℓ then (ℓ0, v) :: σ else (ℓ0, w) :: SStore.put σ ℓ v
+
+/-- PUSH a fresh binding (a `handle (state ℓ s)` install). -/
+def SStore.push (σ : SStore) (ℓ : Bang.EffectRow.Label) (v : Val) : SStore := (ℓ, v) :: σ
+
+/-! ## The denotational source `evalD` (substitution, terminal-Comp, store-threaded)
 
 Fuel-bounded, structurally recursive on the fuel (NO `termination_by`, so the
 equations unfold under `simp`/`rw`; k2-playbook §3). `none` = stuck / out-of-fuel
 / out-of-scope (the partiality ⊥). `ret`/`lam` are terminal; `letC`/`app` sequence
-through a sub-eval and substitute; `force (vthunk M)` runs the (closed) body. -/
+through a sub-eval and substitute; `force (vthunk M)` runs the (closed) body.
+
+**ADR-0031 D1 (store-thread):** `evalD` threads an `SStore` in and out. State ops
+(`get`/`put` on a label with an active `state` frame) are serviced **inline** — they
+never escape as `raised` — which is what dissolves the big-step "no continuation to
+resume" difficulty: state is serviced *during* the recursive descent. `raised` is
+**reserved for throws** after this ADR (D1). -/
 /-- A computation's big-step result: a normal `term`inal computation (`ret v` |
-`lam M`), OR a `raised` operation propagating outward toward its handler (the
-exception dimension; throws-only per D2). `letC`/`app` short-circuit on `raised`;
-`handle` catches it. NOTE (staging): `raised` carries an unhandled `up`; this
-sub-step INSTALLS handlers over non-raising bodies only — the abort/catch REDUCE
-(THROW-jump) is sub-step 2. -/
+`lam M`), OR a `raised` operation propagating outward toward its handler. After
+ADR-0031, `raised` is the THROWS dimension only — state `get`/`put` are serviced
+inline against the store and yield a `term`. `letC`/`app` short-circuit on `raised`;
+a `throws` `handle` catches it. -/
 inductive Outcome where
   | term   : Comp → Outcome                       -- normal terminal (ret v | lam M)
-  | raised : Bang.EffectRow.Label → Bang.OpId → Val → Outcome   -- an `up` en route to its handler
+  | raised : Bang.EffectRow.Label → Bang.OpId → Val → Outcome   -- a throws-`up` en route to its handler
   deriving Inhabited
 
-def evalD : Nat → Comp → Option Outcome
-  | 0,          _                  => none
-  | Nat.succ _, .ret v             => some (.term (.ret v))
-  | Nat.succ _, .lam M             => some (.term (.lam M))
-  | Nat.succ f, .letC M N          =>
-      (evalD f M).bind (fun o => match o with
-        | .term (.ret v) => evalD f (Comp.subst v N)    -- M : F _ ⇒ terminal is `ret v`
-        | .term _        => none                         -- ill-typed (letC of a lam)
-        | .raised ℓ op w => some (.raised ℓ op w))       -- propagate the raise outward
-  | Nat.succ f, .force (.vthunk M) => evalD f M           -- force∘thunk = run the closed body
-  | Nat.succ f, .app M v           =>
-      (evalD f M).bind (fun o => match o with
-        | .term (.lam N) => evalD f (Comp.subst v N)     -- β: M ⇒ lam N, then N[v]
-        | .term _        => none                          -- ill-typed (app of a non-lam)
-        | .raised ℓ op w => some (.raised ℓ op w))        -- propagate the raise outward
-  -- handle h M (INSTALL, sub-step 1): the body is a RETURNER (handle : F A), so its
-  -- terminal is `ret v` and the handler-return is identity (Q6) ⇒ result is `term (ret v)`.
-  -- A non-`ret` terminal is ill-typed (kernel handler-return fires only on `ret`) ⇒ `none`.
-  -- sub-step 2 will CATCH a `raised ℓ "raise" w` here and yield `term (ret w)`.
-  -- up ℓ op v: raise an operation toward its handler (the denotational `dispatch`).
-  | Nat.succ _, .up ℓ op v         => some (.raised ℓ op v)
-  -- handle h M: run the body; `ret v` passes through (handler-return = identity, Q6);
-  -- a `raised` CAUGHT by `h` aborts to `term (ret w)` (the payload is the handled value);
-  -- an uncaught `raised` is FORWARDED. A non-`ret` normal terminal is ill-typed ⇒ none.
-  | Nat.succ f, .handle h M        =>
-      (evalD f M).bind (fun o => match o with
-        | .term (.ret v) => some (.term (.ret v))
-        | .term _        => none
-        | .raised ℓ' op' w =>
-            -- CATCH is the zero-shot THROWS abort only (ADR-0023): a `throws ℓ` handler
-            -- catches `(ℓ, "raise")` ⇒ yields the payload `term (ret w)`. Other handler kinds
-            -- (state/transaction) RESUME — the reification frontier, out of D2 scope — so they
-            -- do NOT catch here; the raise is forwarded. Matches `handlesOp`'s throws clause.
-            match h with
-            | .throws ℓ0 => if ℓ0 = ℓ' ∧ op' = "raise" then some (.term (.ret w))
-                            else some (.raised ℓ' op' w)
-            | _          => some (.raised ℓ' op' w))
-  | _,          _                  => none                -- out of scope (ADT elim)
+def evalD : Nat → SStore → Comp → Option (Outcome × SStore)
+  | 0,          _, _               => none
+  | Nat.succ _, σ, .ret v          => some (.term (.ret v), σ)
+  | Nat.succ _, σ, .lam M          => some (.term (.lam M), σ)
+  | Nat.succ f, σ, .letC M N       =>
+      (evalD f σ M).bind (fun p => match p with
+        | (.term (.ret v), σ') => evalD f σ' (Comp.subst v N)    -- M : F _ ⇒ terminal is `ret v`
+        | (.term _, _)         => none                            -- ill-typed (letC of a lam)
+        | (.raised ℓ op w, σ') => some (.raised ℓ op w, σ'))      -- propagate the raise outward
+  | Nat.succ f, σ, .force (.vthunk M) => evalD f σ M              -- force∘thunk = run the closed body
+  | Nat.succ f, σ, .app M v        =>
+      (evalD f σ M).bind (fun p => match p with
+        | (.term (.lam N), σ') => evalD f σ' (Comp.subst v N)     -- β: M ⇒ lam N, then N[v]
+        | (.term _, _)         => none                            -- ill-typed (app of a non-lam)
+        | (.raised ℓ op w, σ') => some (.raised ℓ op w, σ'))      -- propagate the raise outward
+  -- up ℓ op v: a state `get`/`put` (ℓ has an active `state` frame in σ) is serviced
+  -- INLINE — `get` returns the stored s, `put` threads s := v, both yield `term (ret …)`.
+  -- An op on a label with NO active state frame (∉ σ) propagates as `raised` (the throws path).
+  | Nat.succ _, σ, .up ℓ op v      =>
+      match σ.get? ℓ with
+      | some s =>
+          if op = "get" then some (.term (.ret s), σ)              -- get: return stored s, σ unchanged
+          else if op = "put" then some (.term (.ret .vunit), σ.put ℓ v)  -- put: thread s := v
+          else some (.raised ℓ op v, σ)                            -- a non-state op on a state label (none here)
+      | none => some (.raised ℓ op v, σ)                           -- no state frame ⇒ throws path
+  -- handle h M: dispatch on the handler kind.
+  --  · state ℓ s : push (ℓ ↦ s) for M's extent; on a normal `ret v` RESTORE the outer σ
+  --    (lexical shadowing — D1); the handler-return is identity (Q6). A raise still forwards.
+  --  · throws ℓ0 : CATCH a `raised (ℓ0, "raise")` ⇒ yield the payload `term (ret w)` (zero-shot
+  --    abort, ADR-0023); else forward. State ops never reach here as `raised` (serviced inline).
+  --  · transaction : forward (the list-heap fold-in is a follow-on increment, D4).
+  | Nat.succ f, σ, .handle h M     =>
+      match h with
+      | .state ℓ s =>
+          (evalD f (σ.push ℓ s) M).bind (fun p => match p with
+            | (.term (.ret v), σ') => some (.term (.ret v), σ'.tail)   -- POP the pushed ℓ entry (keep outer puts)
+            | (.term _, _)         => none
+            | (.raised ℓ' op' w, σ') => some (.raised ℓ' op' w, σ'.tail)) -- forward; pop the pushed entry
+      | .throws ℓ0 =>
+          (evalD f σ M).bind (fun p => match p with
+            | (.term (.ret v), σ') => some (.term (.ret v), σ')
+            | (.term _, _)         => none
+            | (.raised ℓ' op' w, σ') =>
+                -- CAUGHT (zero-shot abort): discard the captured CONTINUATION (control unwinds to this
+                -- handler), but KEEP the at-raise store `σ'`. The abort unwinds only `Kᵢ` (the control
+                -- between this throws handler and the raise point); the OUTER `state ℓ` frames live in
+                -- `Kₒ` and are NOT rewound (kernel `dispatchOn` THROW = `(Kₒ, ret v)` — `Operational.lean`).
+                -- So an outer `put` performed before a caught raise PERSISTS. Inner `state` handles nested
+                -- under this throws handler have already popped their pushed entry on the way out
+                -- (`handle (state)` forwards a raise via `σ'.tail`), so `σ'` retains exactly the outer puts.
+                if ℓ0 = ℓ' ∧ op' = "raise" then some (.term (.ret w), σ')
+                else some (.raised ℓ' op' w, σ'))
+      | _ =>
+          (evalD f σ M).bind (fun p => match p with
+            | (.term (.ret v), σ') => some (.term (.ret v), σ')
+            | (.term _, _)         => none
+            | (.raised ℓ' op' w, σ') => some (.raised ℓ' op' w, σ'))
+  | _,          _, _               => none                -- out of scope (ADT elim)
 
 /-! ## The machine — derived, not designed
 
@@ -159,6 +214,12 @@ inductive Instr where
   | MARK   : Handler → List Instr → Instr  -- install handler + the POST-handle resume code (abort target)
   | UNMARK : Instr
   | THROW  : Bang.EffectRow.Label → Bang.OpId → Val → Instr
+  -- OP (ADR-0031 D2): the RESUMPTIVE op instruction. `compile (up ℓ op v) c` emits `OP ℓ op v :: c`;
+  -- the inner continuation `c` IS Kᵢ and is KEPT (not discarded). On execution: find the nearest
+  -- `state ℓ` frame in `hs`, service `get`/`put` IN PLACE (push `ret s`/`ret unit`, update the frame's
+  -- stored state), and CONTINUE `c` (one-shot in-place resume, shape (A) — no continuation reified).
+  -- If `ℓ` is NOT a state frame (a throws label), fall through to the THROW/unwind path (zero-shot).
+  | OP     : Bang.EffectRow.Label → Bang.OpId → Val → Instr
   deriving Inhabited
 
 abbrev Code  := List Instr
@@ -184,7 +245,7 @@ def compile : Comp → Code → Code
   | .force (.vthunk M), c => compile M c
   | .app M v,           c => compile M (Instr.APP v :: c)
   | .handle h M,        c => Instr.MARK h c :: compile M (Instr.UNMARK :: c)
-  | .up ℓ op v,         c => Instr.THROW ℓ op v :: c   -- the `c` (inner cont) is discarded on abort
+  | .up ℓ op v,         c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); throws falls through to unwind
   | _,                  c => c               -- out of scope: emit nothing (residual, ADT elim)
 
 /-- Find the nearest **throws** frame catching `(ℓ, op)`: return its saved OUTER
@@ -206,7 +267,547 @@ def unwindFind : Bang.EffectRow.Label → Bang.OpId → HStack → Option (Code 
       match fr.handler with
       | .throws ℓ0 => if ℓ0 = ℓ ∧ op = "raise" then some (fr.savedCode, fr.savedStack, hs)
                       else unwindFind ℓ op hs
-      | _          => unwindFind ℓ op hs   -- state/transaction RESUME — skip (deferred)
+      | _          => unwindFind ℓ op hs   -- state/transaction RESUME — skip (handled by `stateUpdate`)
+
+/-- Find the nearest **state** frame for `ℓ` and service `get`/`put` IN PLACE (ADR-0031 D2,
+the resume analog of `unwindFind`). `get` returns the stored `s`, leaving `hs` unchanged; `put`
+returns `unit` and UPDATES that frame's stored state to `v` **in `hs`** — the frames ABOVE it
+(Kᵢ's handlers) are KEPT (deep handler). Returns `(resultValue, hs')`. `none` = no `state ℓ` frame
+(a throws label) ⇒ the caller falls through to `unwindFind`. PURE (no `exec` arg), mirroring the
+kernel's `dispatchOn` state arm (KEEP `Kᵢ`, reinstall a deep `state ℓ s'` frame). -/
+def stateUpdate : Bang.EffectRow.Label → Bang.OpId → Val → HStack → Option (Val × HStack)
+  | _, _, _, []       => none
+  | ℓ, op, v, fr :: hs =>
+      match fr.handler with
+      | .state ℓ0 s =>
+          if ℓ0 = ℓ then
+            if op = "get" then some (s, fr :: hs)                                  -- get: return s, frame kept
+            else if op = "put" then some (.vunit, { fr with handler := .state ℓ0 v } :: hs)  -- put: store v in place
+            else none                                                             -- non-get/put on ℓ ⇒ throws path (mirrors evalD)
+          else (stateUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))            -- different label ⇒ keep frame, recurse
+      | _ => (stateUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))              -- non-state frame ⇒ keep, recurse
+
+/-! ### Store ↔ HStack correspondence (ADR-0031 D3): the invariant the resume proof rides
+
+`hsState hs ℓ` reads the nearest `state ℓ` frame's stored value out of the machine's
+HStack — the machine-side mirror of `evalD`'s `SStore.get?`. `Corr σ hs` is the
+bridge invariant: the denotational store agrees with the machine's active state
+frames at every label. The two lemmas below relate `stateUpdate` (the machine's
+in-place service) to `SStore.get?`/`SStore.put` (the store's), so the `sim` `up`/
+`handle (state)` cases close by a direct correspondence (D3), not a representation
+translation. -/
+
+/-- The nearest `state ℓ` frame's stored value in `hs` (the machine-side `SStore.get?`). -/
+def hsState : HStack → Bang.EffectRow.Label → Option Val
+  | [],       _ => none
+  | fr :: hs, ℓ =>
+      match fr.handler with
+      | .state ℓ0 s => if ℓ0 = ℓ then some s else hsState hs ℓ
+      | _           => hsState hs ℓ
+
+/-- Project the machine's HStack to the store it mirrors: the `state ℓ s` frames, in order,
+as `(ℓ, s)` entries (throws/transaction frames carry no state ⇒ skipped). This is the canonical
+store for a given HStack; `Corr` says `evalD`'s threaded store IS exactly this projection. -/
+def hsStates : HStack → SStore
+  | []        => []
+  | fr :: hs  =>
+      match fr.handler with
+      | .state ℓ0 s => (ℓ0, s) :: hsStates hs
+      | _           => hsStates hs
+
+/-- The bridge invariant (D3), STRUCTURAL form: the denotational store IS the projection of the
+machine's active state frames. An equation (not just extensional agreement), so tail/push/pop go
+through definitionally — the whole reason the store mirrors the HStack 1:1 on state frames. -/
+def Corr (σ : SStore) (hs : HStack) : Prop := σ = hsStates hs
+
+/-- Overwrite each `state` frame's stored value in `hs` with the head of `σ` (consumed in order).
+This is `M`'s **net HStack effect** as a PURE function of `hs` and the post-`M` store — NOT of the
+body's compiled continuation — so the `handle` term cases can name the post-`M` HStack BEFORE the
+MARK frame's saved continuation is in scope (ADR-0031 W3). Non-state frames pass through. -/
+def updateStates : HStack → SStore → HStack
+  | [],       _ => []
+  | fr :: hs, σ =>
+      match fr.handler with
+      | .state ℓ0 _ =>
+          match σ with
+          | (_, v) :: σ' => { fr with handler := .state ℓ0 v } :: updateStates hs σ'
+          | []           => fr :: updateStates hs []     -- σ exhausted (unreachable under Corr)
+      | _ => fr :: updateStates hs σ
+
+/-- `get?` of the projection reads the nearest state frame (ties `hsStates` back to `hsState`). -/
+theorem get?_hsStates : ∀ (hs : HStack) (ℓ : Bang.EffectRow.Label),
+    (hsStates hs).get? ℓ = hsState hs ℓ := by
+  intro hs
+  induction hs with
+  | nil => intro ℓ; rfl
+  | cons fr hs ih =>
+    intro ℓ
+    cases hh : fr.handler with
+    | state ℓ0 s =>
+        simp only [hsStates, hsState, hh]
+        by_cases hc : ℓ0 = ℓ
+        · subst hc; simp [SStore.get?, List.find?]
+        · simp only [if_neg hc, SStore.get?, List.find?, hc, decide_false, Bool.false_eq_true,
+            if_false]; exact ih ℓ
+    | throws ℓ0 => simp only [hsStates, hsState, hh]; exact ih ℓ
+    | transaction ℓ0 Θ => simp only [hsStates, hsState, hh]; exact ih ℓ
+
+/-- Under `Corr`, the store read equals the machine read. -/
+theorem Corr.get? {σ : SStore} {hs : HStack} (hC : Corr σ hs) (ℓ : Bang.EffectRow.Label) :
+    σ.get? ℓ = hsState hs ℓ := by rw [hC]; exact get?_hsStates hs ℓ
+
+/-- `SStore.put` hits at its own label when that label is BOUND (an active frame). Induction on σ. -/
+theorem SStore.get?_put_self : ∀ (σ : SStore) (ℓ : Bang.EffectRow.Label) (v s : Val),
+    σ.get? ℓ = some s → (σ.put ℓ v).get? ℓ = some v := by
+  intro σ
+  induction σ with
+  | nil => intro ℓ v s hg; simp [SStore.get?, List.find?] at hg
+  | cons p σ ih =>
+    obtain ⟨ℓ0, w⟩ := p
+    intro ℓ v s hg
+    by_cases hc : ℓ0 = ℓ
+    · subst hc; simp [SStore.put, SStore.get?, List.find?]
+    · have hne : ¬ (ℓ0 = ℓ) := hc
+      simp only [SStore.get?, List.find?, hne, decide_false, Bool.false_eq_true, if_false] at hg ⊢
+      simp only [SStore.put, if_neg hne, SStore.get?, List.find?, hne, decide_false,
+        Bool.false_eq_true, if_false]
+      exact ih ℓ v s hg
+
+/-- `SStore.put` is transparent at a different label. Induction on σ. -/
+theorem SStore.get?_put_ne : ∀ (σ : SStore) {ℓ ℓ' : Bang.EffectRow.Label} (v : Val), ℓ' ≠ ℓ →
+    (σ.put ℓ v).get? ℓ' = σ.get? ℓ' := by
+  intro σ
+  induction σ with
+  | nil => intro ℓ ℓ' v h; rfl
+  | cons p σ ih =>
+    obtain ⟨ℓ0, w⟩ := p
+    intro ℓ ℓ' v h
+    by_cases hc : ℓ0 = ℓ
+    · subst hc
+      have hne : ¬ (ℓ0 = ℓ') := fun he => h he.symm
+      simp [SStore.put, SStore.get?, List.find?, hne]
+    · simp only [SStore.put, if_neg hc]
+      by_cases hc' : ℓ0 = ℓ'
+      · subst hc'; simp [SStore.get?, List.find?]
+      · simp only [SStore.get?, List.find?, hc', decide_false, Bool.false_eq_true, if_false]
+        exact ih v h
+
+/-- `get` correspondence: when `hsState hs ℓ = some s`, the machine's `stateUpdate`
+returns `(s, hs)` unchanged (the deep frame is kept). Induction on `hs`. -/
+theorem stateUpdate_get {ℓ : Bang.EffectRow.Label} {v : Val} :
+    ∀ {hs : HStack} {s : Val}, hsState hs ℓ = some s → stateUpdate ℓ "get" v hs = some (s, hs) := by
+  intro hs
+  induction hs with
+  | nil => intro s hg; simp [hsState] at hg
+  | cons fr hs ih =>
+    intro s hg
+    cases hh : fr.handler with
+    | state ℓ0 s0 =>
+        simp only [hsState, hh] at hg
+        by_cases hc : ℓ0 = ℓ
+        · simp only [if_pos hc, Option.some.injEq] at hg; subst hg
+          simp [stateUpdate, hh, hc]
+        · simp only [if_neg hc] at hg
+          simp [stateUpdate, hh, hc, ih hg]
+    | throws ℓ0 =>
+        simp only [hsState, hh] at hg
+        simp [stateUpdate, hh, ih hg]
+    | transaction ℓ0 Θ =>
+        simp only [hsState, hh] at hg
+        simp [stateUpdate, hh, ih hg]
+
+/-- `put` correspondence: when `hsState hs ℓ = some s₀`, `stateUpdate ℓ "put" v hs` returns
+`(vunit, hs')` whose state-projection is exactly the store after an in-place `put` —
+`hsStates hs' = (hsStates hs).put ℓ v`. This is the structural `Corr`-preservation fact (D3): the
+machine's in-place HStack update mirrors the store's in-place `put`. Induction on `hs`. -/
+theorem stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
+    ∀ {hs : HStack} {s0 : Val}, hsState hs ℓ = some s0 →
+      ∃ hs', stateUpdate ℓ "put" v hs = some (.vunit, hs')
+        ∧ hsStates hs' = (hsStates hs).put ℓ v := by
+  intro hs
+  induction hs with
+  | nil => intro s0 hg; simp [hsState] at hg
+  | cons fr hs ih =>
+    intro s0 hg
+    cases hh : fr.handler with
+    | state ℓ0 s0' =>
+        by_cases hc : ℓ0 = ℓ
+        · -- found here: update this frame in place
+          subst hc
+          refine ⟨{ fr with handler := .state ℓ0 v } :: hs, ?_, ?_⟩
+          · simp [stateUpdate, hh]
+          · simp [hsStates, hh, SStore.put]
+        · -- not here: recurse
+          simp only [hsState, hh, if_neg hc] at hg
+          obtain ⟨hs', hsu, heq⟩ := ih hg
+          refine ⟨fr :: hs', ?_, ?_⟩
+          · simp [stateUpdate, hh, hc, hsu]
+          · simp only [hsStates, hh, heq, SStore.put, if_neg hc]
+    | throws ℓ0 =>
+        simp only [hsState, hh] at hg
+        obtain ⟨hs', hsu, heq⟩ := ih hg
+        refine ⟨fr :: hs', ?_, ?_⟩
+        · simp only [stateUpdate, hh, hsu, Option.map_some]
+        · simp only [hsStates, hh, heq]
+    | transaction ℓ0 Θ =>
+        simp only [hsState, hh] at hg
+        obtain ⟨hs', hsu, heq⟩ := ih hg
+        refine ⟨fr :: hs', ?_, ?_⟩
+        · simp only [stateUpdate, hh, hsu, Option.map_some]
+        · simp only [hsStates, hh, heq]
+
+/-- `Corr` is preserved by a matched `put` (structural form): the machine's in-place update and
+the store's in-place `put` produce mirrored states. -/
+theorem Corr_put {σ : SStore} {hs hs' : HStack} {ℓ : Bang.EffectRow.Label} {v : Val}
+    (hC : Corr σ hs) (heq : hsStates hs' = (hsStates hs).put ℓ v) :
+    Corr (σ.put ℓ v) hs' := by
+  unfold Corr at hC ⊢; rw [hC, heq]
+
+/-! ### `HMut`: structure-preserving HStack mutation (the body's net hstack effect)
+
+A returning body's net effect on the HStack is to mutate **state-frame values in place**, never
+to push/pop or change a frame's `savedCode`/`savedStack`/handler-shape. `HMut hs hsf` captures
+exactly that: same length, frame-by-frame the `savedCode`/`savedStack` agree and the handlers agree
+up to a `state` frame's stored value. This is the invariant that lets the `handle` term cases pop
+the installed frame and recover `Corr` on the tail (the frame the body kept is structurally the one
+that was installed). -/
+
+/-- Two frames agree up to a `state` handler's stored value. -/
+def FrameMut (a b : HFrame) : Prop :=
+  a.savedCode = b.savedCode ∧ a.savedStack = b.savedStack ∧
+    (match a.handler, b.handler with
+     | .state ℓ1 _, .state ℓ2 _ => ℓ1 = ℓ2
+     | .throws ℓ1, .throws ℓ2 => ℓ1 = ℓ2
+     | .transaction ℓ1 Θ1, .transaction ℓ2 Θ2 => ℓ1 = ℓ2 ∧ Θ1 = Θ2
+     | _, _ => False)
+
+/-- `HMut hs hsf`: `hsf` is `hs` with state-frame values possibly changed, no push/pop, frame
+structure preserved (savedCode/savedStack/handler-shape identical). -/
+def HMut : HStack → HStack → Prop
+  | [], []           => True
+  | a :: x, b :: y   => FrameMut a b ∧ HMut x y
+  | _, _             => False
+
+theorem HMut.refl : ∀ hs, HMut hs hs
+  | []      => trivial
+  | fr :: hs => ⟨by
+      refine ⟨rfl, rfl, ?_⟩
+      cases fr.handler <;> simp, HMut.refl hs⟩
+
+/-- If the body was installed under a NON-state top frame (throws/transaction) and `HMut` holds,
+the resulting top is also non-state ⇒ the projection drops it ⇒ `Corr` passes to the tail. -/
+theorem Corr_pop_nonstate {σ : SStore} {fr top : HFrame} {hs tail : HStack}
+    (hns : ∀ ℓ s, fr.handler ≠ .state ℓ s) (hmut : HMut (fr :: hs) (top :: tail))
+    (hC : Corr σ (top :: tail)) : Corr σ tail := by
+  obtain ⟨⟨_, _, hsh⟩, _⟩ := hmut
+  unfold Corr at hC ⊢; rw [hC]
+  cases hfr : fr.handler with
+  | state ℓ1 s1 => exact absurd hfr (hns ℓ1 s1)
+  | throws ℓ1 =>
+      cases hth : top.handler with
+      | throws ℓ2 => simp [hsStates, hth]
+      | state _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
+      | transaction _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
+  | transaction ℓ1 Θ1 =>
+      cases hth : top.handler with
+      | transaction ℓ2 Θ2 => simp [hsStates, hth]
+      | state _ _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
+      | throws _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
+
+/-- `stateUpdate`-put preserves `HMut` (it mutates one state-frame value in place). -/
+theorem HMut.of_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
+    ∀ {hs hs' : HStack} {r : Val}, stateUpdate ℓ "put" v hs = some (r, hs') → HMut hs hs' := by
+  intro hs
+  induction hs with
+  | nil => intro hs' r hsu; simp [stateUpdate] at hsu
+  | cons fr hs ih =>
+    intro hs' r hsu
+    cases hh : fr.handler with
+    | state ℓ0 s =>
+        simp only [stateUpdate, hh] at hsu
+        by_cases hc : ℓ0 = ℓ
+        · simp only [if_pos hc, if_neg (by decide : ¬ ("put" = "get")), Option.some.injEq,
+            Prod.mk.injEq] at hsu
+          obtain ⟨_, rfl⟩ := hsu
+          exact ⟨⟨rfl, rfl, by simp [hh]⟩, HMut.refl hs⟩
+        · simp only [if_neg hc, Option.map_eq_some_iff] at hsu
+          obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+          simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+          exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+    | throws ℓ0 =>
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+    | transaction ℓ0 Θ =>
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+
+/-- `HMut` is transitive (chaining `letC`/`app` sub-runs). -/
+theorem HMut.trans : ∀ {x y z : HStack}, HMut x y → HMut y z → HMut x z := by
+  intro x
+  induction x with
+  | nil =>
+      intro y z hxy hyz
+      cases y with
+      | nil => cases z with | nil => trivial | cons => simp [HMut] at hyz
+      | cons => simp [HMut] at hxy
+  | cons a x ih =>
+      intro y z hxy hyz
+      cases y with
+      | nil => simp [HMut] at hxy
+      | cons b y =>
+        cases z with
+        | nil => simp [HMut] at hyz
+        | cons c z =>
+          obtain ⟨hab, hxy⟩ := hxy
+          obtain ⟨hbc, hyz⟩ := hyz
+          refine ⟨⟨hab.1.trans hbc.1, hab.2.1.trans hbc.2.1, ?_⟩, ih hxy hyz⟩
+          obtain ⟨_, _, h1⟩ := hab; obtain ⟨_, _, h2⟩ := hbc
+          cases ha : a.handler <;> cases hb : b.handler <;> cases hc : c.handler <;>
+            rw [ha, hb] at h1 <;> rw [hb, hc] at h2 <;> simp_all
+
+/-- A pushed frame on top: `HMut (fr :: hs) (top :: tail)` gives `HMut hs tail` (peel the top). -/
+theorem HMut.tail {fr top : HFrame} {hs tail : HStack}
+    (hmut : HMut (fr :: hs) (top :: tail)) : HMut hs tail := hmut.2
+
+/-- The reconstruction lemma: a machine HStack `k` that is `HMut`-related to `hs` AND whose
+state-projection is `σ'` is **exactly** `updateStates hs σ'`. So the post-`M` HStack — which the
+term-part proves satisfies both — is the pure function `updateStates hs σ'` (frame-independent). -/
+theorem updateStates_eq : ∀ {hs k : HStack} {σ' : SStore},
+    HMut hs k → Corr σ' k → k = updateStates hs σ' := by
+  intro hs
+  induction hs with
+  | nil =>
+      intro k σ' hmut _
+      cases k with
+      | nil => rfl
+      | cons => simp [HMut] at hmut
+  | cons fr hs ih =>
+      intro k σ' hmut hC
+      cases k with
+      | nil => simp [HMut] at hmut
+      | cons fk k =>
+        obtain ⟨hfm, hmut'⟩ := hmut
+        obtain ⟨hscode, hsstack, hsh⟩ := hfm
+        unfold Corr at hC
+        cases hfr : fr.handler with
+        | state ℓ0 s0 =>
+            cases hfk : fk.handler with
+            | state ℓ1 s1 =>
+                rw [hfr, hfk] at hsh; simp only at hsh; subst hsh
+                rw [hsStates, hfk] at hC; subst hC
+                simp only [updateStates, hfr]
+                rw [← ih hmut' (rfl : Corr (hsStates k) k)]
+                cases fr; cases fk; simp_all
+            | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+            | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+        | throws ℓ0 =>
+            cases hfk : fk.handler with
+            | throws ℓ1 =>
+                rw [hsStates, hfk] at hC
+                simp only [updateStates, hfr]
+                rw [← ih hmut' (hC : Corr σ' k)]
+                cases fr; cases fk; simp_all
+            | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+            | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+        | transaction ℓ0 Θ0 =>
+            cases hfk : fk.handler with
+            | transaction ℓ1 Θ1 =>
+                rw [hsStates, hfk] at hC
+                simp only [updateStates, hfr]
+                rw [← ih hmut' (hC : Corr σ' k)]
+                cases fr; cases fk; simp_all
+            | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+            | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+
+/-- `updateStates` with the store a HStack already mirrors (`Corr σ hs`) is the identity — overwriting
+each state value with the value it already has. (The `updateStates_eq` corollary at `k = hs`,
+`HMut.refl`.) -/
+theorem updateStates_self {σ : SStore} {hs : HStack} (hC : Corr σ hs) : updateStates hs σ = hs :=
+  (updateStates_eq (HMut.refl hs) hC).symm
+
+
+/-- `updateStates` depends only on a HStack's STATE-FRAME STRUCTURE, not its values: `HMut`-related
+stacks update identically. This is the re-base that lets a `letC`/`app` raised chain restate the
+at-raise HStack on the ORIGINAL `hs` (since `HMut hs hsM`, `updateStates hsM σ = updateStates hs σ`).
+The COVERING hypothesis `Corr σ (updateStates k σ)` (σ mirrors `k`'s state frames — exactly what the
+at-raise store satisfies) rules out the only divergent branch: σ exhausted AT a state frame, where
+`updateStates` would otherwise keep each stack's OWN (possibly differing) value. Induction on `hs`/`k`
+(paired by `HMut`). -/
+theorem updateStates_congr_HMut : ∀ {hs k : HStack} (σ : SStore),
+    HMut hs k → Corr σ (updateStates k σ) → updateStates k σ = updateStates hs σ := by
+  intro hs
+  induction hs with
+  | nil =>
+      intro k σ hmut _
+      cases k with | nil => rfl | cons => simp [HMut] at hmut
+  | cons fr hs ih =>
+    intro k σ hmut hcov
+    cases k with
+    | nil => simp [HMut] at hmut
+    | cons fk k =>
+      obtain ⟨⟨hcode, hstack, hsh⟩, hmut'⟩ := hmut
+      cases hfr : fr.handler with
+      | state ℓ0 s =>
+          cases hfk : fk.handler with
+          | state ℓ1 s1 =>
+              cases σ with
+              | nil =>
+                  -- σ exhausted AT a state frame ⇒ `updateStates (fk::k) [] = fk :: updateStates k []`,
+                  -- whose projection leads with `(ℓ1, s1)`; the covering `Corr [] …` then asserts
+                  -- `[] = (ℓ1,s1) :: …`, impossible. (Under Corr the store always covers the state frames.)
+                  exfalso; unfold Corr at hcov
+                  rw [updateStates] at hcov; simp only [hfk] at hcov
+                  rw [hsStates] at hcov; simp only [hfk] at hcov
+                  exact (List.cons_ne_nil _ _ hcov.symm)
+              | cons p σ' =>
+                  obtain ⟨ℓq, wq⟩ := p
+                  have hcov' : Corr σ' (updateStates k σ') := by
+                    unfold Corr at hcov ⊢; simp only [updateStates, hfk, hsStates] at hcov
+                    exact (List.cons.injEq _ _ _ _).mp hcov |>.2
+                  simp only [updateStates, hfr, hfk]; rw [ih σ' hmut' hcov']
+                  cases fr; cases fk; simp_all
+          | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+          | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+      | throws ℓ0 =>
+          cases hfk : fk.handler with
+          | throws ℓ1 =>
+              have hcov' : Corr σ (updateStates k σ) := by
+                unfold Corr at hcov ⊢; simpa only [updateStates, hfk, hsStates] using hcov
+              simp only [updateStates, hfr, hfk]; rw [ih σ hmut' hcov']; cases fr; cases fk; simp_all
+          | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+          | transaction _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+      | transaction ℓ0 Θ =>
+          cases hfk : fk.handler with
+          | transaction ℓ1 Θ1 =>
+              have hcov' : Corr σ (updateStates k σ) := by
+                unfold Corr at hcov ⊢; simpa only [updateStates, hfk, hsStates] using hcov
+              simp only [updateStates, hfr, hfk]; rw [ih σ hmut' hcov']; cases fr; cases fk; simp_all
+          | state _ _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+          | throws _ => rw [hfr, hfk] at hsh; exact absurd hsh (by simp)
+
+/-- A NON-state frame `fr` is transparent to `updateStates`: `updateStates (fr::hs) σ = fr ::
+updateStates hs σ` (the σ-cursor is not advanced — only `state` frames consume an entry). -/
+theorem updateStates_cons_nonstate {fr : HFrame} {hs : HStack} (σ : SStore)
+    (hns : ∀ ℓ s, fr.handler ≠ .state ℓ s) :
+    updateStates (fr :: hs) σ = fr :: updateStates hs σ := by
+  cases hh : fr.handler with
+  | state ℓ s => exact absurd hh (hns ℓ s)
+  | throws ℓ => simp only [updateStates, hh]
+  | transaction ℓ Θ => simp only [updateStates, hh]
+
+/-- The raised-part at-raise correspondence pops a NON-state install frame: a throws/transaction
+frame carries no store entry, so `Corr`/`HMut` over `fr::hs` (the body's at-raise pair) pass to the
+tail `hs` (the forwarded pair). The `sim` raised handle(throws)/handle(transaction) escape cases. -/
+theorem raisedPair_pop_nonstate {fr : HFrame} {hs : HStack} {σ' : SStore}
+    (hns : ∀ ℓ s, fr.handler ≠ .state ℓ s)
+    (hCr : Corr σ' (updateStates (fr :: hs) σ'))
+    (hmutr : HMut (fr :: hs) (updateStates (fr :: hs) σ')) :
+    Corr σ' (updateStates hs σ') ∧ HMut hs (updateStates hs σ') := by
+  have hupd : updateStates (fr :: hs) σ' = fr :: updateStates hs σ' :=
+    updateStates_cons_nonstate σ' hns
+  rw [hupd] at hCr hmutr
+  refine ⟨?_, HMut.tail hmutr⟩
+  -- `fr` non-state ⇒ its projection contributes nothing: `hsStates (fr :: t) = hsStates t`.
+  unfold Corr at hCr ⊢
+  have hproj : hsStates (fr :: updateStates hs σ') = hsStates (updateStates hs σ') := by
+    cases hh : fr.handler with
+    | state ℓ s => exact absurd hh (hns ℓ s)
+    | throws ℓ => simp only [hsStates, hh]
+    | transaction ℓ Θ => simp only [hsStates, hh]
+  rw [hproj] at hCr; exact hCr
+
+/-- The raised-part at-raise correspondence pops a `state` install frame: `handle (state ℓ0 s0)`'s
+forward of a raise pops the pushed entry (`σ'.tail`), and the machine skips the state frame on the
+throws-unwind. From the body's at-raise pair over `fr::hs` (`fr` a state frame) at store `σ'`, the
+forwarded pair over `hs` at `σ'.tail` follows. The `sim` raised handle(state) escape case. -/
+theorem raisedPair_pop_state {fr : HFrame} {hs : HStack} {σ' : SStore} {ℓ0 : Bang.EffectRow.Label}
+    {s0 : Val} (hfr : fr.handler = .state ℓ0 s0)
+    (hCr : Corr σ' (updateStates (fr :: hs) σ'))
+    (hmutr : HMut (fr :: hs) (updateStates (fr :: hs) σ')) :
+    Corr σ'.tail (updateStates hs σ'.tail) ∧ HMut hs (updateStates hs σ'.tail) := by
+  -- `Corr` forces `σ'` non-empty: its head IS `fr`'s entry. Destruct it.
+  cases σ' with
+  | nil =>
+      -- `updateStates (fr::hs) [] = fr :: updateStates hs []`; projection has `(ℓ0,s0)` ⇒ Corr says
+      -- `[] = (ℓ0,s0) :: …`, impossible.
+      exfalso
+      unfold Corr at hCr
+      rw [updateStates] at hCr; simp only [hfr] at hCr
+      rw [hsStates] at hCr; simp only [hfr] at hCr
+      exact (List.cons_ne_nil _ _ hCr.symm)
+  | cons p σ1' =>
+      obtain ⟨ℓa, wa⟩ := p
+      have hupd : updateStates (fr :: hs) ((ℓa, wa) :: σ1') =
+          { fr with handler := .state ℓ0 wa } :: updateStates hs σ1' := by
+        simp only [updateStates, hfr]
+      rw [hupd] at hCr hmutr
+      simp only [List.tail]
+      refine ⟨?_, HMut.tail hmutr⟩
+      unfold Corr at hCr ⊢
+      simp only [hsStates] at hCr
+      exact (List.cons.injEq _ _ _ _).mp hCr |>.2
+
+/-- An op that is neither `get` nor `put` is NOT serviced by `stateUpdate` (it guards op ∈ {get,put}),
+so the machine OP falls through to the throws/unwind path — mirroring `evalD`'s `raised` for such ops
+on a state label. Induction on `hs`. -/
+theorem stateUpdate_none_of_non_getput (ℓ : Bang.EffectRow.Label) (v : Val) :
+    ∀ (hs : HStack) {op : Bang.OpId}, op ≠ "get" → op ≠ "put" → stateUpdate ℓ op v hs = none := by
+  intro hs
+  induction hs with
+  | nil => intro op _ _; rfl
+  | cons fr hs ih =>
+    intro op hng hnp
+    cases hh : fr.handler with
+    | state ℓ0 s =>
+        by_cases hc : ℓ0 = ℓ
+        · simp [stateUpdate, hh, hc, hng, hnp]
+        · simp [stateUpdate, hh, hc, ih hng hnp]
+    | throws ℓ0 => simp [stateUpdate, hh, ih hng hnp]
+    | transaction ℓ0 Θ => simp [stateUpdate, hh, ih hng hnp]
+
+/-- When no state frame for `ℓ` is active, `stateUpdate` finds nothing (the machine OP then
+falls through to `unwindFind`, the throws path). The contrapositive mirror of `hsState … = none`. -/
+theorem stateUpdate_none_of_get?_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val} :
+    ∀ {hs : HStack}, hsState hs ℓ = none → stateUpdate ℓ op v hs = none := by
+  intro hs
+  induction hs with
+  | nil => intro _; rfl
+  | cons fr hs ih =>
+    intro hns
+    cases hh : fr.handler with
+    | state ℓ0 s =>
+        simp only [hsState, hh] at hns
+        by_cases hc : ℓ0 = ℓ
+        · simp [if_pos hc] at hns
+        · simp only [if_neg hc] at hns
+          simp [stateUpdate, hh, hc, ih hns]
+    | throws ℓ0 => simp only [hsState, hh] at hns; simp [stateUpdate, hh, ih hns]
+    | transaction ℓ0 Θ => simp only [hsState, hh] at hns; simp [stateUpdate, hh, ih hns]
+
+/-- `Corr` is preserved by a `handle (state ℓ s)` install: PUSHING `(ℓ ↦ s)` on the store
+mirrors pushing a `state ℓ s` frame on the HStack. -/
+theorem Corr_install {σ : SStore} {hs : HStack} (ℓ : Bang.EffectRow.Label) (s : Val) (fr : HFrame)
+    (hfr : fr.handler = .state ℓ s) (hC : Corr σ hs) : Corr (σ.push ℓ s) (fr :: hs) := by
+  unfold Corr at hC ⊢; rw [hC]; simp [hsStates, hfr, SStore.push]
+
+/-- A NON-state frame (throws/transaction) carries no store entry: pushing it preserves `Corr`. -/
+theorem Corr_install_nonstate {σ : SStore} {hs : HStack} (fr : HFrame)
+    (hns : ∀ ℓ s, fr.handler ≠ .state ℓ s) (hC : Corr σ hs) : Corr σ (fr :: hs) := by
+  unfold Corr at hC ⊢; rw [hC]
+  cases hh : fr.handler with
+  | state ℓ0 s => exact absurd hh (hns ℓ0 s)
+  | throws ℓ0 => simp [hsStates, hh]
+  | transaction ℓ0 Θ => simp [hsStates, hh]
+
+/-- `Corr` for the tail when the top is a `state` frame (the `handle (state)` POP): the store's
+tail mirrors the HStack's tail. -/
+theorem Corr_pop_state {σ : SStore} {fr : HFrame} {hs : HStack} {ℓ0 : Bang.EffectRow.Label}
+    {s : Val} (hfr : fr.handler = .state ℓ0 s) (hC : Corr σ (fr :: hs)) : Corr σ.tail hs := by
+  unfold Corr at hC ⊢; rw [hC]; simp [hsStates, hfr]
 
 /-- The machine. Structurally recursive on the fuel (k2-playbook §3); `SUBST`/`APP`
 re-enter `compile` on the substituted body, `THROW` jumps via the pure `unwindFind`
@@ -239,6 +840,17 @@ def exec : Nat → Code → Stack → HStack → Option Stack
       match unwindFind ℓ op hs with
       | some (c', s', hs') => exec f c' (.ret v :: s') hs'   -- ABORT to (Kₒ, ret v), frame popped
       | none               => none                            -- uncaught = stuck
+  -- OP (ADR-0031 D2): the RESUMPTIVE dispatch. Try `stateUpdate` first (state get/put, in-place,
+  -- CONTINUE `c` = Kᵢ with the result pushed — one-shot resume). If no state frame, fall through to
+  -- the THROW/unwind path (zero-shot abort, DISCARDING `c`). This unifies state-resume and throws-abort
+  -- in one instruction, matching the kernel's `dispatch` (= `splitAt >>= dispatchOn`).
+  | Nat.succ f, Instr.OP ℓ op v :: c, s, hs =>
+      match stateUpdate ℓ op v hs with
+      | some (r, hs') => exec f c (.ret r :: s) hs'            -- RESUME: continue c (Kᵢ) with ret r
+      | none =>                                                -- not a state frame ⇒ throws abort
+          match unwindFind ℓ op hs with
+          | some (c', s', hs') => exec f c' (.ret v :: s') hs' -- ABORT to (Kₒ, ret v), c discarded
+          | none               => none                         -- uncaught = stuck
 
 /-! ## The calculation is correct (proven) -/
 
@@ -282,6 +894,17 @@ theorem exec_succ : ∀ f c s hs r, exec f c s hs = some r → exec (f+1) c s hs
         cases hu : unwindFind ℓ op hs with
         | none => rw [hu] at h; simp at h
         | some cs => obtain ⟨c', s', hs'⟩ := cs; rw [hu] at h; exact ih _ _ _ _ h
+      | OP ℓ op v =>
+        simp only [exec] at h ⊢
+        cases hsu : stateUpdate ℓ op v hs with
+        | some ru =>
+          obtain ⟨r, hs'⟩ := ru
+          simp only [hsu] at h ⊢; exact ih _ _ _ _ h
+        | none =>
+          simp only [hsu] at h ⊢
+          cases hu : unwindFind ℓ op hs with
+          | none => simp only [hu] at h; simp at h
+          | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ h
 
 /-- Fuel monotonicity, `≤` (k2-playbook §2): bump any sub-fuel to a common value. -/
 theorem exec_mono : ∀ f g c s hs r, f ≤ g → exec f c s hs = some r → exec g c s hs = some r := by
@@ -302,69 +925,95 @@ def throwOutcome (F : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Va
   | some (c', s', hs') => exec F c' (.ret v :: s') hs'
   | none               => none
 
-/-- (★) the **two-part** simulation (k2-playbook §Effects): a `term` part (the
-machine reaches the result normally) AND a `raised` part (the machine THROWs to its
-handler). Forward to a concrete `some r`, fuels aligned via `exec_mono`. One
-conjunction, induction on the eval fuel `fe`. The `handle` case is the crux: a
-body that RAISES and is CAUGHT links `evalD`'s catch to the machine's THROW-jump
-into the MARK frame — the `THROW ↔ dispatch` correspondence. -/
+/-- A non-throws top frame (state/transaction) is SKIPPED by the throws unwind ⇒ `throwOutcome`
+is unchanged by prepending it (the abort target is found deeper). -/
+theorem throwOutcome_cons_nonthrows (F : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Val)
+    (fr : HFrame) (hs : HStack) (hnt : ∀ ℓ0, fr.handler ≠ Handler.throws ℓ0) :
+    throwOutcome F ℓ op v (fr :: hs) = throwOutcome F ℓ op v hs := by
+  cases hh : fr.handler with
+  | throws ℓ0 => exact absurd hh (hnt ℓ0)
+  | state ℓ0 s => simp only [throwOutcome, unwindFind, hh]
+  | transaction ℓ0 Θ => simp only [throwOutcome, unwindFind, hh]
+
+/-- (★) the **two-part, store-threaded** simulation (k2-playbook §Effects + ADR-0031):
+a `term` part AND a `raised` part. The store-thread is the resume mechanism — the
+`term` part is now an EXISTENTIAL over the machine's resulting HStack `hsf` (M
+transforms `hs ↝ hsf`, the continuation `c` runs from `hsf`), with `Corr σ' hsf`
+(the store mirrors the machine's active state frames, D3). The `up`/`handle (state)`
+cases use `stateUpdate_get`/`stateUpdate_put`/`Corr_install` to align the inline
+store service with the in-place HStack update. The `handle (throws)` catch is the
+zero-shot `THROW ↔ dispatch` correspondence (unchanged from O2, now σ-threaded).
+Induction on the eval fuel `fe`. -/
 theorem sim : ∀ fe,
-    (∀ M t, evalD fe M = some (.term t) →
-      ∀ c s hs F r, exec F c (t :: s) hs = some r →
-        ∃ F', exec F' (compile M c) s hs = some r)
-    ∧ (∀ M ℓ op v, evalD fe M = some (.raised ℓ op v) →
-      ∀ c s hs F r, throwOutcome F ℓ op v hs = some r →
+    (∀ M σ t σ', evalD fe σ M = some (.term t, σ') →
+      ∀ hs, Corr σ hs →
+        ∃ hsf, Corr σ' hsf ∧ HMut hs hsf ∧
+          ∀ c s F r, exec F c (t :: s) hsf = some r →
+            ∃ F', exec F' (compile M c) s hs = some r)
+    ∧ (∀ M σ ℓ op v σ', evalD fe σ M = some (.raised ℓ op v, σ') →
+      ∀ hs, Corr σ hs →
+        -- the at-raise HStack `updateStates hs σ'` mirrors the at-raise store σ' (D3) and is a state-
+        -- mutation of the at-handle `hs` — threaded so the throws-CAUGHT term subcase can name it as
+        -- its existential witness (an outer `put` before a caught raise persists; ADR-0031 caught = σ').
+        (Corr σ' (updateStates hs σ') ∧ HMut hs (updateStates hs σ')) ∧
+        ∀ c s F r, throwOutcome F ℓ op v (updateStates hs σ') = some r →
         ∃ F', exec F' (compile M c) s hs = some r) := by
   intro fe
   induction fe with
   | zero =>
-      exact ⟨fun M t h => by simp [evalD] at h, fun M ℓ op v h => by simp [evalD] at h⟩
+      exact ⟨fun M σ t σ' h => by simp [evalD] at h, fun M σ ℓ op v σ' h => by simp [evalD] at h⟩
   | succ fe ih =>
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M t h c s hs F r hr
+      intro M σ t σ' h hs hC
       cases M with
       | ret v =>
-          simp only [evalD, Option.some.injEq, Outcome.term.injEq] at h; subst h
-          exact ⟨F+1, by simp only [compile, exec]; exact hr⟩
+          simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+          obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+          exact ⟨hs, hC, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
       | lam M =>
-          simp only [evalD, Option.some.injEq, Outcome.term.injEq] at h; subst h
-          exact ⟨F+1, by simp only [compile, exec]; exact hr⟩
+          simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+          obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+          exact ⟨hs, hC, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .term (.ret v), h =>
+            | (.term (.ret v), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F1, hF1⟩ := ihT (Comp.subst v N) t h c s hs F r hr
-                have hstep : exec (F1+1) (Instr.SUBST N :: c) (.ret v :: s) hs = some r := by
+                obtain ⟨hsM, hCM, hlenM, kM⟩ := ihT M σ (.ret v) σ1 hM hs hC
+                obtain ⟨hsf, hCf, hlenf, kN⟩ := ihT (Comp.subst v N) σ1 t σ' h hsM hCM
+                refine ⟨hsf, hCf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kN c s F r hr
+                have hstep : exec (F1+1) (Instr.SUBST N :: c) (.ret v :: s) hsM = some r := by
                   simp only [exec]; exact hF1
-                obtain ⟨F2, hF2⟩ := ihT M (.ret v) hM (Instr.SUBST N :: c) s hs (F1+1) r hstep
+                obtain ⟨F2, hF2⟩ := kM (Instr.SUBST N :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | .term (.lam M2), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
-            | .raised ℓ op w, h =>
+            | (.term (.lam M2), _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
+            | (.raised ℓ op w, _), h =>
                 -- letC propagates a raise: evalD (letC M N) = raised ⇒ h : raised = term, absurd
                 simp [Option.bind] at h
       | force a =>
           cases a with
           | vthunk M =>
               simp only [evalD] at h
-              obtain ⟨F', hF'⟩ := ihT M t h c s hs F r hr
-              exact ⟨F', by simpa only [compile] using hF'⟩
+              obtain ⟨hsf, hCf, hlenf, k⟩ := ihT M σ t σ' h hs hC
+              exact ⟨hsf, hCf, hlenf, fun c s F r hr => by
+                obtain ⟨F', hF'⟩ := k c s F r hr; exact ⟨F', by simpa only [compile] using hF'⟩⟩
           | vunit => simp [evalD] at h
           | vint n => simp [evalD] at h
           | vvar i => simp [evalD] at h
@@ -374,142 +1023,353 @@ theorem sim : ∀ fe,
           | fold w => simp [evalD] at h
       | app M v =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .term (.lam N), h =>
+            | (.term (.lam N), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F1, hF1⟩ := ihT (Comp.subst v N) t h c s hs F r hr
-                have hstep : exec (F1+1) (Instr.APP v :: c) (.lam N :: s) hs = some r := by
+                obtain ⟨hsM, hCM, hlenM, kM⟩ := ihT M σ (.lam N) σ1 hM hs hC
+                obtain ⟨hsf, hCf, hlenf, kN⟩ := ihT (Comp.subst v N) σ1 t σ' h hsM hCM
+                refine ⟨hsf, hCf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kN c s F r hr
+                have hstep : exec (F1+1) (Instr.APP v :: c) (.lam N :: s) hsM = some r := by
                   simp only [exec]; exact hF1
-                obtain ⟨F2, hF2⟩ := ihT M (.lam N) hM (Instr.APP v :: c) s hs (F1+1) r hstep
+                obtain ⟨F2, hF2⟩ := kM (Instr.APP v :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | .term (.ret w), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
-            | .raised ℓ op w, h => simp [Option.bind] at h
-      | up ℓ op v => simp [evalD] at h
+            | (.term (.ret w), _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
+            | (.raised ℓ op w, _), h => simp [Option.bind] at h
+      | up ℓ op v =>
+          -- STATE RESUME (D1/D2): get/put serviced inline against σ, mirrored by stateUpdate on hs.
+          simp only [evalD] at h
+          cases hg : σ.get? ℓ with
+          | none =>
+              -- no state frame ⇒ raised; but term part ⇒ contradiction
+              rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h
+              obtain ⟨hraised, _⟩ := h; exact absurd hraised (by simp)
+          | some sv =>
+              rw [hg] at h
+              by_cases hop : op = "get"
+              · -- get: t = ret sv, σ' = σ; machine OP does stateUpdate-get (hs unchanged).
+                simp only [if_pos hop, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                have hgState : hsState hs ℓ = some sv := by rw [← Corr.get? hC ℓ]; exact hg
+                refine ⟨hs, hC, HMut.refl hs, fun c s F r hr => ⟨F+1, ?_⟩⟩
+                subst hop
+                simp only [compile, exec, stateUpdate_get hgState]; exact hr
+              · by_cases hop2 : op = "put"
+                · -- put: t = ret unit, σ' = σ.put ℓ v; machine OP does stateUpdate-put (hs updated).
+                  simp only [if_neg hop, if_pos hop2, Option.some.injEq, Prod.mk.injEq,
+                    Outcome.term.injEq] at h
+                  obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                  have hgState : hsState hs ℓ = some sv := by rw [← Corr.get? hC ℓ]; exact hg
+                  obtain ⟨hs', hsu, heq⟩ := stateUpdate_put (v := v) hgState
+                  refine ⟨hs', Corr_put hC heq, HMut.of_stateUpdate_put hsu, fun c s F r hr => ⟨F+1, ?_⟩⟩
+                  subst hop2
+                  simp only [compile, exec, hsu]; exact hr
+                · -- a non-get/put op on a state label: evalD raises ⇒ term part contradiction
+                  simp only [if_neg hop, if_neg hop2, Option.some.injEq, Prod.mk.injEq] at h
+                  obtain ⟨hraised, _⟩ := h; exact absurd hraised (by simp)
       | handle h0 M =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
-          | none => rw [hM] at h; simp at h
-          | some oM =>
-            rw [hM] at h
-            match oM, h with
-            | .term (.ret v), h =>
-                -- body returns normally: MARK installs, UNMARK pops, identity.
-                simp only [Option.bind_some, Option.some.injEq, Outcome.term.injEq] at h
-                subst h
-                obtain ⟨F1, hF1⟩ := ihT M (.ret v) hM (Instr.UNMARK :: c) s
-                  ({ handler := h0, savedCode := c, savedStack := s } :: hs) (F+1) r
-                  (by simp only [exec]; exact hr)
-                refine ⟨F1+1, ?_⟩
-                simp only [compile, exec]; exact hF1
-            | .term (.lam M2), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
-            | .raised ℓ' op' w, h =>
-                -- body RAISES; CAUGHT only by a THROWS h0 on (ℓ', "raise"); else forwarded (absurd in term mode).
-                cases h0 with
-                | throws ℓ0 =>
+          cases h0 with
+          | state ℓ0 s0 =>
+              -- INSTALL a state frame: body runs under σ.push ℓ0 s0 / a pushed state frame.
+              simp only at h
+              cases hM : evalD fe (σ.push ℓ0 s0) M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                    -- The existential = `updateStates hs σ1.tail` — M's net HStack effect as a PURE
+                    -- function of `hs`/post-store, named BEFORE the MARK saved-cont (c2,s2) is in scope.
+                    -- `body cc ss` runs M under the REAL frame `{state ℓ0 s0, cc, ss}` and shows its tail
+                    -- IS `updateStates hs σ1.tail` (`updateStates_eq`), supplying Corr/HMut + continuation.
+                    have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
+                        exec F2 cc (.ret v :: ss) (updateStates hs σ1.tail) = some r2 →
+                        (∃ F', exec F' (compile M (Instr.UNMARK :: cc)) ss
+                          ({ handler := Handler.state ℓ0 s0, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        ∧ Corr σ1.tail (updateStates hs σ1.tail) ∧ HMut hs (updateStates hs σ1.tail) := by
+                      intro cc ss F2 r2 hr2
+                      set fr : HFrame := { handler := Handler.state ℓ0 s0, savedCode := cc, savedStack := ss }
+                        with hfrdef
+                      have hCinstall : Corr (σ.push ℓ0 s0) (fr :: hs) :=
+                        Corr_install ℓ0 s0 fr (by rw [hfrdef]) hC
+                      obtain ⟨hsM, hCM, hmutM, kM⟩ := ihT M (σ.push ℓ0 s0) (.ret v) σ1 hM (fr :: hs) hCinstall
+                      obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
+                        cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
+                      have htop : ∃ s', top.handler = .state ℓ0 s' := by
+                        have hh := hmutM.1.2.2
+                        cases hth : top.handler with
+                        | state ℓ1 s1 => rw [hfrdef, hth] at hh; simp only at hh; subst hh; exact ⟨s1, rfl⟩
+                        | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                        | transaction _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                      obtain ⟨s', hts⟩ := htop
+                      have hCtail := Corr_pop_state hts hCM
+                      have htaileq : tail = updateStates hs σ1.tail := updateStates_eq (HMut.tail hmutM) hCtail
+                      -- the body's terminal config `top :: tail`; UNMARK pops `top` ⇒ run `cc` from `tail`.
+                      have hstep : exec (F2+1) (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
+                        simp only [exec]; rw [htaileq]; exact hr2
+                      exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
+                        htaileq ▸ hCtail, htaileq ▸ (HMut.tail hmutM)⟩
+                    obtain ⟨_, hCf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
+                    refine ⟨updateStates hs σ1.tail, hCf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
+                    obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
+                    exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
+                | (.term (.lam M2), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, _), h =>
+                    -- body raises past the state frame (state never catches a throws) ⇒ handle forwards
+                    -- ⇒ raised, contradicting the term part.
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+          | throws ℓ0 =>
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                    -- throws-install + normal return: existential = `updateStates hs σ1` (throws stores
+                    -- no state ⇒ σ' = σ1). `body cc ss` runs M under `{throws ℓ0, cc, ss}` and shows the
+                    -- popped tail IS `updateStates hs σ1` (`updateStates_eq` via `Corr_pop_nonstate`).
+                    have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
+                        exec F2 cc (.ret v :: ss) (updateStates hs σ1) = some r2 →
+                        (∃ F', exec F' (compile M (Instr.UNMARK :: cc)) ss
+                          ({ handler := Handler.throws ℓ0, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        ∧ Corr σ1 (updateStates hs σ1) ∧ HMut hs (updateStates hs σ1) := by
+                      intro cc ss F2 r2 hr2
+                      set fr : HFrame := { handler := Handler.throws ℓ0, savedCode := cc, savedStack := ss }
+                        with hfrdef
+                      have hns : ∀ ℓ s, fr.handler ≠ Handler.state ℓ s := by rw [hfrdef]; intro ℓ s; simp
+                      have hCinstall : Corr σ (fr :: hs) := Corr_install_nonstate fr hns hC
+                      obtain ⟨hsM, hCM, hmutM, kM⟩ := ihT M σ (.ret v) σ1 hM (fr :: hs) hCinstall
+                      obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
+                        cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
+                      have hCtail := Corr_pop_nonstate hns hmutM hCM
+                      have htaileq : tail = updateStates hs σ1 := updateStates_eq (HMut.tail hmutM) hCtail
+                      have hstep : exec (F2+1) (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
+                        simp only [exec]; rw [htaileq]; exact hr2
+                      exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
+                        htaileq ▸ hCtail, htaileq ▸ (HMut.tail hmutM)⟩
+                    obtain ⟨_, hCf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
+                    refine ⟨updateStates hs σ1, hCf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
+                    obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
+                    exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
+                | (.term (.lam M2), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, σ1), h =>
                     by_cases hc : ℓ0 = ℓ' ∧ op' = "raise"
-                    · -- caught: h reduces to some (term (ret w)) = some (term t) ⇒ t = ret w
-                      simp only [Option.bind_some, if_pos hc, Option.some.injEq, Outcome.term.injEq] at h
-                      subst h
+                    · simp only [Option.bind_some, if_pos hc, Option.some.injEq, Prod.mk.injEq,
+                        Outcome.term.injEq] at h
+                      obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
                       obtain ⟨rfl, rfl⟩ := hc
-                      -- machine: M raises ⇒ THROW into the MARK (throws ℓ0) frame (the unwind catches
-                      -- a throws frame on (ℓ0, "raise")) ⇒ abort to (savedCode = c, savedStack = s)
-                      -- with ret w pushed = hr.
-                      have hthrow : throwOutcome F ℓ0 "raise" w
-                          ({ handler := Handler.throws ℓ0, savedCode := c, savedStack := s } :: hs)
-                          = some r := by
-                        simp only [throwOutcome, unwindFind, and_self, if_true]; exact hr
-                      obtain ⟨F1, hF1⟩ := ihR M ℓ0 "raise" w hM (Instr.UNMARK :: c) s
-                        ({ handler := Handler.throws ℓ0, savedCode := c, savedStack := s } :: hs)
-                        F r hthrow
-                      refine ⟨F1+1, ?_⟩
-                      simp only [compile, exec]; exact hF1
-                    · -- not caught: handle yields raised ⇒ h : raised = term, absurd
-                      simp [Option.bind_some, if_neg hc] at h
-                | state ℓ0 s0 => simp [Option.bind_some] at h
-                | transaction ℓ0 Θ => simp [Option.bind_some] at h
+                      -- caught: M raises `(ℓ0,raise)` ⇒ machine OP catches the throws frame, aborts to the
+                      -- MARK's saved (c2,s2) with `ret w`. The abort unwinds only the CONTINUATION; the
+                      -- store stays at the at-raise `σ1` (ADR-0031 caught = σ', keeping outer puts), so the
+                      -- existential HStack is the at-raise `updateStates hs σ1`. The outer pair over `hs`
+                      -- comes from popping the throws install frame (non-state) off the raised IH's pair.
+                      have hns0 : ∀ ℓ s, (Handler.throws ℓ0) ≠ Handler.state ℓ s := by intro ℓ s; simp
+                      have hpair : Corr σ1 (updateStates hs σ1) ∧ HMut hs (updateStates hs σ1) := by
+                        set fr0 : HFrame := { handler := Handler.throws ℓ0, savedCode := [], savedStack := [] }
+                        have hns : ∀ ℓ s, fr0.handler ≠ Handler.state ℓ s := hns0
+                        obtain ⟨⟨hCr, hmutr⟩, _⟩ :=
+                          ihR M σ ℓ0 "raise" w σ1 hM (fr0 :: hs) (Corr_install_nonstate fr0 hns hC)
+                        exact raisedPair_pop_nonstate hns hCr hmutr
+                      refine ⟨updateStates hs σ1, hpair.1, hpair.2, fun c2 s2 F2 r2 hr2 => ?_⟩
+                      -- run the raised IH over the ACTUAL installed frame (savedCode/Stack = c2/s2): the
+                      -- throws-unwind catches it (`if_true`) and aborts to `(c2, s2)` over the at-raise
+                      -- tail `updateStates hs σ1` with `ret w` pushed = `hr2`.
+                      set fr2 : HFrame := { handler := Handler.throws ℓ0, savedCode := c2, savedStack := s2 }
+                        with hfrdef
+                      have hCinstall2 : Corr σ (fr2 :: hs) := Corr_install_nonstate fr2 hns0 hC
+                      obtain ⟨_, kR2⟩ := ihR M σ ℓ0 "raise" w σ1 hM (fr2 :: hs) hCinstall2
+                      have hthrow : throwOutcome F2 ℓ0 "raise" w (updateStates (fr2 :: hs) σ1) = some r2 := by
+                        simp only [updateStates, hfrdef, throwOutcome, unwindFind, and_self, if_true]
+                        exact hr2
+                      obtain ⟨F1, hF1⟩ := kR2 (Instr.UNMARK :: c2) s2 F2 r2 hthrow
+                      exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
+                    · simp [Option.bind_some, if_neg hc] at h
+          | transaction ℓ0 Θ =>
+              -- non-throws forward: body raises ⇒ handle forwards ⇒ raised, contradicting term.
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                    -- transaction-install + normal return (mirror of throws-return): existential =
+                    -- `updateStates hs σ1` (a transaction frame stores no `state` ⇒ σ' = σ1).
+                    have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
+                        exec F2 cc (.ret v :: ss) (updateStates hs σ1) = some r2 →
+                        (∃ F', exec F' (compile M (Instr.UNMARK :: cc)) ss
+                          ({ handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        ∧ Corr σ1 (updateStates hs σ1) ∧ HMut hs (updateStates hs σ1) := by
+                      intro cc ss F2 r2 hr2
+                      set fr : HFrame := { handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss }
+                        with hfrdef
+                      have hns : ∀ ℓ s, fr.handler ≠ Handler.state ℓ s := by rw [hfrdef]; intro ℓ s; simp
+                      have hCinstall : Corr σ (fr :: hs) := Corr_install_nonstate fr hns hC
+                      obtain ⟨hsM, hCM, hmutM, kM⟩ := ihT M σ (.ret v) σ1 hM (fr :: hs) hCinstall
+                      obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
+                        cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
+                      have hCtail := Corr_pop_nonstate hns hmutM hCM
+                      have htaileq : tail = updateStates hs σ1 := updateStates_eq (HMut.tail hmutM) hCtail
+                      have hstep : exec (F2+1) (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
+                        simp only [exec]; rw [htaileq]; exact hr2
+                      exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
+                        htaileq ▸ hCtail, htaileq ▸ (HMut.tail hmutM)⟩
+                    obtain ⟨_, hCf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
+                    refine ⟨updateStates hs σ1, hCf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
+                    obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
+                    exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
+                | (.term (.lam M2), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
       | case a b d => simp [evalD] at h
       | split a b => simp [evalD] at h
       | unfold a => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
     · -- RAISED PART
-      intro M ℓ op v h c s hs F r hr
+      intro M σ ℓ op v σ' h hs hC
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
       | up ℓ2 op2 v2 =>
-          -- evalD (up …) = raised ℓ2 op2 v2 = raised ℓ op v ; compile = THROW ℓ op v :: c
-          simp only [evalD, Option.some.injEq, Outcome.raised.injEq] at h
-          obtain ⟨rfl, rfl, rfl⟩ := h
-          -- exec (F+1) (THROW ℓ op v :: c) s hs = throwOutcome via unwindFind = hr
-          refine ⟨F+1, ?_⟩
-          simp only [compile, exec]
-          -- goal = throwOutcome F ℓ op v hs = some r = hr
-          exact hr
-      | letC M N =>
-          -- raise comes from M (propagated) since N runs only after ret.
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hg : σ.get? ℓ2 with
+          | none =>
+              rw [hg] at h
+              simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+              obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+              -- no state frame for ℓ2 ⇒ machine OP falls through to unwindFind = throwOutcome = hr
+              have hus : updateStates hs σ = hs := updateStates_self hC
+              refine ⟨⟨by rw [hus]; exact hC, by rw [hus]; exact HMut.refl hs⟩, fun c s F r hr => ?_⟩
+              rw [updateStates_self hC] at hr
+              refine ⟨F+1, ?_⟩
+              have hns : stateUpdate ℓ2 op2 v2 hs = none := by
+                apply stateUpdate_none_of_get?_none; rw [← Corr.get? hC ℓ2]; exact hg
+              simp only [compile, exec, hns]; exact hr
+          | some sv =>
+              rw [hg] at h
+              by_cases hop : op2 = "get"
+              · simp only [if_pos hop, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+              · by_cases hop2 : op2 = "put"
+                · simp only [if_neg hop, if_pos hop2, Option.some.injEq, Prod.mk.injEq] at h
+                  obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+                · simp only [if_neg hop, if_neg hop2, Option.some.injEq, Prod.mk.injEq,
+                    Outcome.raised.injEq] at h
+                  obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                  -- op ∉ {get,put} (source-unreachable — a state label carries only get/put). evalD
+                  -- RAISES; `stateUpdate` returns `none` (it guards op ∈ {get,put}), so the machine OP
+                  -- falls straight to the `unwindFind`/throw path = `throwOutcome` = `hr`.
+                  have hus : updateStates hs σ = hs := updateStates_self hC
+                  refine ⟨⟨by rw [hus]; exact hC, by rw [hus]; exact HMut.refl hs⟩, fun c s F r hr => ?_⟩
+                  rw [updateStates_self hC] at hr
+                  refine ⟨F+1, ?_⟩
+                  have hsu : stateUpdate ℓ2 op2 v2 hs = none :=
+                    stateUpdate_none_of_non_getput ℓ2 v2 hs hop hop2
+                  simp only [compile, exec, hsu]; exact hr
+      | letC M N =>
+          simp only [evalD] at h
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .raised ℓ' op' w, h =>
-                simp only [Option.bind_some, Option.some.injEq, Outcome.raised.injEq] at h
-                obtain ⟨rfl, rfl, rfl⟩ := h
-                -- machine: M raises under (SUBST N :: c); the THROW propagates through hs unchanged.
-                obtain ⟨F1, hF1⟩ := ihR M ℓ' op' w hM (Instr.SUBST N :: c) s hs F r hr
-                exact ⟨F1, by simpa [compile] using hF1⟩
-            | .term (.ret v0), h =>
-                -- M returns; then evalD (letC) = evalD (N[v0]) which raised ⇒ recurse on N[v0].
+            | (.raised ℓ' op' w, σ1), h =>
+                simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                obtain ⟨hpair, kR⟩ := ihR M σ ℓ' op' w σ1 hM hs hC
+                exact ⟨hpair, fun c s F r hr => by
+                  obtain ⟨F1, hF1⟩ := kR (Instr.SUBST N :: c) s F r hr
+                  exact ⟨F1, by simpa [compile] using hF1⟩⟩
+            | (.term (.ret v0), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F1, hF1⟩ := ihR (Comp.subst v0 N) ℓ op v h c s hs F r hr
-                -- need: machine runs M to ret v0 (SUBST), then N[v0] raises. Use ihT on M then chain.
-                have hstep : exec (F1+1) (Instr.SUBST N :: c) (.ret v0 :: s) hs = some r := by
+                obtain ⟨hsM, hCM, hmutM, kM⟩ := ihT M σ (.ret v0) σ1 hM hs hC
+                -- the inner raise is over hsM = updateStates hs σ1; re-base via composition so the inner
+                -- `ihR` over `updateStates hsM σ'` reuses the outer `hr` over `updateStates hs σ'`. The
+                -- raised IH's at-raise `Corr σ' (updateStates hsM σ')` IS the covering `updateStates_congr`
+                -- needs.
+                obtain ⟨⟨hCr, hmutr⟩, kR⟩ := ihR (Comp.subst v0 N) σ1 ℓ op v σ' h hsM hCM
+                have hreb : updateStates hsM σ' = updateStates hs σ' := updateStates_congr_HMut σ' hmutM hCr
+                refine ⟨⟨hreb ▸ hCr, HMut.trans hmutM (hreb ▸ hmutr)⟩, fun c s F r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kR c s F r (by rw [hreb]; exact hr)
+                have hstep : exec (F1+1) (Instr.SUBST N :: c) (.ret v0 :: s) hsM = some r := by
                   simp only [exec]; exact hF1
-                obtain ⟨F2, hF2⟩ := ihT M (.ret v0) hM (Instr.SUBST N :: c) s hs (F1+1) r hstep
+                obtain ⟨F2, hF2⟩ := kM (Instr.SUBST N :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | .term (.lam a), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
+            | (.term (.lam a), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
       | force a =>
           cases a with
           | vthunk M =>
               simp only [evalD] at h
-              obtain ⟨F', hF'⟩ := ihR M ℓ op v h c s hs F r hr
-              exact ⟨F', by simpa only [compile] using hF'⟩
+              obtain ⟨hpair, kR⟩ := ihR M σ ℓ op v σ' h hs hC
+              exact ⟨hpair, fun c s F r hr => by
+                obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F', by simpa only [compile] using hF'⟩⟩
           | vunit => simp [evalD] at h
           | vint n => simp [evalD] at h
           | vvar i => simp [evalD] at h
@@ -519,98 +1379,180 @@ theorem sim : ∀ fe,
           | fold w => simp [evalD] at h
       | app M v0 =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .raised ℓ' op' w, h =>
-                simp only [Option.bind_some, Option.some.injEq, Outcome.raised.injEq] at h
-                obtain ⟨rfl, rfl, rfl⟩ := h
-                obtain ⟨F1, hF1⟩ := ihR M ℓ' op' w hM (Instr.APP v0 :: c) s hs F r hr
-                exact ⟨F1, by simpa [compile] using hF1⟩
-            | .term (.lam N), h =>
+            | (.raised ℓ' op' w, σ1), h =>
+                simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                obtain ⟨hpair, kR⟩ := ihR M σ ℓ' op' w σ1 hM hs hC
+                exact ⟨hpair, fun c s F r hr => by
+                  obtain ⟨F1, hF1⟩ := kR (Instr.APP v0 :: c) s F r hr
+                  exact ⟨F1, by simpa [compile] using hF1⟩⟩
+            | (.term (.lam N), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F1, hF1⟩ := ihR (Comp.subst v0 N) ℓ op v h c s hs F r hr
-                have hstep : exec (F1+1) (Instr.APP v0 :: c) (.lam N :: s) hs = some r := by
+                obtain ⟨hsM, hCM, hmutM, kM⟩ := ihT M σ (.lam N) σ1 hM hs hC
+                obtain ⟨⟨hCr, hmutr⟩, kR⟩ := ihR (Comp.subst v0 N) σ1 ℓ op v σ' h hsM hCM
+                have hreb : updateStates hsM σ' = updateStates hs σ' := updateStates_congr_HMut σ' hmutM hCr
+                refine ⟨⟨hreb ▸ hCr, HMut.trans hmutM (hreb ▸ hmutr)⟩, fun c s F r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kR c s F r (by rw [hreb]; exact hr)
+                have hstep : exec (F1+1) (Instr.APP v0 :: c) (.lam N :: s) hsM = some r := by
                   simp only [exec]; exact hF1
-                obtain ⟨F2, hF2⟩ := ihT M (.lam N) hM (Instr.APP v0 :: c) s hs (F1+1) r hstep
+                obtain ⟨F2, hF2⟩ := kM (Instr.APP v0 :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | .term (.ret w), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
+            | (.term (.ret w), _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
       | handle h0 M =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
-          | none => rw [hM] at h; simp at h
-          | some oM =>
-            rw [hM] at h
-            match oM, h with
-            | .raised ℓ' op' w, h =>
-                -- body raises; FORWARDED iff h0 doesn't CATCH-as-throws (non-throws ⇒ always
-                -- forwarded — RESUME is deferred; throws ⇒ forwarded unless (ℓ0, "raise") matches).
-                -- THROWS-ONLY unwind: the machine SKIPS state/transaction frames, so the
-                -- state-divergence is GONE (those subcases are "never catch" — closed cleanly, no sorry).
-                -- One `cases h0`: extract the raise equality from `h` (already evalD-unfolded), and the
-                -- machine's `unwindFind`-skip; then a uniform tail through `ihR`.
-                simp only [Option.bind_some] at h
-                cases h0 with
-                | throws ℓ0 =>
-                    -- forwarded ⇒ ¬(ℓ0 = ℓ' ∧ op' = "raise"); both evalD and unwindFind skip on that.
+          cases h0 with
+          | state ℓ0 s0 =>
+              simp only at h
+              cases hM : evalD fe (σ.push ℓ0 s0) M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                    -- at-raise PAIR (store/stack only, continuation-independent): one IH over a dummy
+                    -- install frame, popped through the state frame (`raisedPair_pop_state`).
+                    have hpair : Corr σ1.tail (updateStates hs σ1.tail) ∧ HMut hs (updateStates hs σ1.tail) := by
+                      set fr0 : HFrame := { handler := Handler.state ℓ0 s0, savedCode := [], savedStack := [] }
+                        with hfr0
+                      obtain ⟨⟨hCr, hmutr⟩, _⟩ :=
+                        ihR M (σ.push ℓ0 s0) ℓ' op' w σ1 hM (fr0 :: hs)
+                          (Corr_install ℓ0 s0 fr0 (by rw [hfr0]) hC)
+                      exact raisedPair_pop_state (by rw [hfr0]) hCr hmutr
+                    refine ⟨hpair, fun c s F r hr => ?_⟩
+                    -- the IMPLICATION installs the REAL frame (savedCode/Stack = c/s, the MARK target).
+                    set fr : HFrame := { handler := Handler.state ℓ0 s0, savedCode := c, savedStack := s }
+                      with hfrdef
+                    obtain ⟨_, kR⟩ := ihR M (σ.push ℓ0 s0) ℓ' op' w σ1 hM (fr :: hs)
+                      (Corr_install ℓ0 s0 fr (by rw [hfrdef]) hC)
+                    -- inner needs throwOutcome over `updateStates (fr::hs) σ1`; the state frame is skipped
+                    -- by the throws-unwind, reducing it to `updateStates hs σ1.tail` = `hr`.
+                    have hfwd : throwOutcome F ℓ' op' w (updateStates (fr :: hs) σ1) = some r := by
+                      have hskip : throwOutcome F ℓ' op' w (updateStates (fr :: hs) σ1)
+                          = throwOutcome F ℓ' op' w (updateStates hs σ1.tail) := by
+                        cases σ1 with
+                        | nil =>
+                            simp only [updateStates, hfrdef, List.tail]
+                            exact throwOutcome_cons_nonthrows _ _ _ _ _ _ (by simp)
+                        | cons p σ1' =>
+                            obtain ⟨ℓa, wa⟩ := p
+                            simp only [updateStates, hfrdef, List.tail]
+                            exact throwOutcome_cons_nonthrows _ _ _ _ _ _ (by simp)
+                      rw [hskip]; exact hr
+                    obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
+                    exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
+                | (.term (.ret v0), _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+          | throws ℓ0 =>
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, σ1), h =>
+                    simp only [Option.bind_some] at h
                     by_cases hk : ℓ0 = ℓ' ∧ op' = "raise"
-                    · simp [if_pos hk] at h   -- caught ⇒ term, but h says raised: absurd
-                    · simp only [if_neg hk, Option.some.injEq, Outcome.raised.injEq] at h
-                      obtain ⟨rfl, rfl, rfl⟩ := h
-                      have hfwd : throwOutcome F ℓ' op' w
-                          ({ handler := Handler.throws ℓ0, savedCode := c, savedStack := s } :: hs)
-                          = some r := by
-                        simp only [throwOutcome, unwindFind, if_neg hk]; exact hr
-                      obtain ⟨F1, hF1⟩ := ihR M ℓ' op' w hM (Instr.UNMARK :: c) s
-                        ({ handler := Handler.throws ℓ0, savedCode := c, savedStack := s } :: hs) F r hfwd
+                    · simp [if_pos hk] at h
+                    · simp only [if_neg hk, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                      obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                      have hns0 : ∀ ℓ s, (Handler.throws ℓ0) ≠ Handler.state ℓ s := by intro ℓ s; simp
+                      have hpair : Corr σ1 (updateStates hs σ1) ∧ HMut hs (updateStates hs σ1) := by
+                        set fr0 : HFrame := { handler := Handler.throws ℓ0, savedCode := [], savedStack := [] }
+                        obtain ⟨⟨hCr, hmutr⟩, _⟩ :=
+                          ihR M σ ℓ' op' w σ1 hM (fr0 :: hs) (Corr_install_nonstate fr0 hns0 hC)
+                        exact raisedPair_pop_nonstate hns0 hCr hmutr
+                      refine ⟨hpair, fun c s F r hr => ?_⟩
+                      set fr : HFrame := { handler := Handler.throws ℓ0, savedCode := c, savedStack := s }
+                        with hfrdef
+                      obtain ⟨_, kR⟩ := ihR M σ ℓ' op' w σ1 hM (fr :: hs) (Corr_install_nonstate fr hns0 hC)
+                      -- inner needs throwOutcome over `updateStates (fr::hs) σ1` = `fr :: updateStates hs σ1`
+                      -- (throws frame copies through); fr is throws but does NOT catch (if_neg hk) ⇒ skipped.
+                      have hfwd : throwOutcome F ℓ' op' w (updateStates (fr :: hs) σ1) = some r := by
+                        simp only [updateStates, hfrdef, throwOutcome, unwindFind, if_neg hk]; exact hr
+                      obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
                       exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
-                | state ℓ0 s0 =>
-                    -- non-throws: evalD forwards via the `_` arm; unwindFind skips a non-throws frame.
-                    simp only [Option.some.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨rfl, rfl, rfl⟩ := h
-                    have hfwd : throwOutcome F ℓ' op' w
-                        ({ handler := Handler.state ℓ0 s0, savedCode := c, savedStack := s } :: hs)
-                        = some r := by
-                      simp only [throwOutcome, unwindFind]; exact hr
-                    obtain ⟨F1, hF1⟩ := ihR M ℓ' op' w hM (Instr.UNMARK :: c) s
-                      ({ handler := Handler.state ℓ0 s0, savedCode := c, savedStack := s } :: hs) F r hfwd
+                | (.term (.ret v0), _), h => simp [Option.bind] at h
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+          | transaction ℓ0 Θ =>
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                    have hns0 : ∀ ℓ s, (Handler.transaction ℓ0 Θ) ≠ Handler.state ℓ s := by intro ℓ s; simp
+                    have hpair : Corr σ1 (updateStates hs σ1) ∧ HMut hs (updateStates hs σ1) := by
+                      set fr0 : HFrame := { handler := Handler.transaction ℓ0 Θ, savedCode := [], savedStack := [] }
+                      obtain ⟨⟨hCr, hmutr⟩, _⟩ :=
+                        ihR M σ ℓ' op' w σ1 hM (fr0 :: hs) (Corr_install_nonstate fr0 hns0 hC)
+                      exact raisedPair_pop_nonstate hns0 hCr hmutr
+                    refine ⟨hpair, fun c s F r hr => ?_⟩
+                    set fr : HFrame := { handler := Handler.transaction ℓ0 Θ, savedCode := c, savedStack := s }
+                      with hfrdef
+                    obtain ⟨_, kR⟩ := ihR M σ ℓ' op' w σ1 hM (fr :: hs) (Corr_install_nonstate fr hns0 hC)
+                    -- inner needs throwOutcome over `updateStates (fr::hs) σ1` = `fr :: updateStates hs σ1`
+                    -- (transaction frame copies through); the txn frame is skipped by the throws-unwind.
+                    have hfwd : throwOutcome F ℓ' op' w (updateStates (fr :: hs) σ1) = some r := by
+                      simp only [updateStates, hfrdef]
+                      exact (throwOutcome_cons_nonthrows _ _ _ _ _ _ (by simp)).trans hr
+                    obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
                     exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
-                | transaction ℓ0 Θ =>
-                    simp only [Option.some.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨rfl, rfl, rfl⟩ := h
-                    have hfwd : throwOutcome F ℓ' op' w
-                        ({ handler := Handler.transaction ℓ0 Θ, savedCode := c, savedStack := s } :: hs)
-                        = some r := by
-                      simp only [throwOutcome, unwindFind]; exact hr
-                    obtain ⟨F1, hF1⟩ := ihR M ℓ' op' w hM (Instr.UNMARK :: c) s
-                      ({ handler := Handler.transaction ℓ0 Θ, savedCode := c, savedStack := s } :: hs) F r hfwd
-                    exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
-            | .term (.ret v0), h =>
-                -- body returns normally ⇒ handle returns term, not raised ⇒ absurd
-                simp [Option.bind] at h
-            | .term (.lam a), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
+                | (.term (.ret v0), _), h => simp [Option.bind] at h
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
       | case a b d => simp [evalD] at h
       | split a b => simp [evalD] at h
       | unfold a => simp [evalD] at h
@@ -618,13 +1560,20 @@ theorem sim : ∀ fe,
       | wrong a => simp [evalD] at h
 
 
-/-- Headline: compiling a closed computation and running it on the empty stack
-yields exactly `[t]` where `evalD n M = some t` (the convergent pure spine).
-Pure-spine ◊3 increment — the `compile_correct` analogue of `Bang.Calc`. -/
-theorem compile_correct (n : Nat) (M : Comp) (t : Comp) (h : evalD n M = some (.term t)) :
+/-- Headline: compiling a closed computation and running it on the empty stack/store yields exactly
+`[t]` where `evalD n [] M = some (.term t, σ')` (the convergent spine, now over the resumptive-state
+store-thread). `compile_correct` analogue of `Bang.Calc`; the `c=[]`, `s=[]`, `hs=[]` corollary of
+`sim` (`Corr [] []` holds by `rfl`, the empty store mirrors the empty HStack). -/
+theorem compile_correct (n : Nat) (M : Comp) (t : Comp) (σ' : SStore)
+    (h : evalD n [] M = some (.term t, σ')) :
     ∃ F, exec F (compile M []) [] [] = some [t] := by
   have hbase : exec 1 [] (t :: []) [] = some [t] := by simp [exec]
-  obtain ⟨F, hF⟩ := (sim n).1 M t h [] [] [] 1 [t] hbase
+  obtain ⟨hsf, _, hmutf, k⟩ := (sim n).1 M [] t σ' h [] rfl
+  -- HMut [] hsf forces hsf = [] (a closed program at empty HStack ends at empty), so the continuation
+  -- runs on the empty stack — `hbase`.
+  have hempty : hsf = [] := by cases hsf with | nil => rfl | cons => simp [HMut] at hmutf
+  subst hempty
+  obtain ⟨F, hF⟩ := k [] [] 1 [t] hbase
   exact ⟨F, hF⟩
 
 /-! ## Diff-test seeds (PATH-calcvm-port Unit 4)
@@ -714,6 +1663,467 @@ so DEFINITIONALLY `Config.run (n+1) (K, up ℓ op v)`. The `Config.run` analog o
 machine's `throwOutcome` — the two-part bridge's raised target. -/
 def dispatchRun (n : Nat) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId)
     (v : Val) : Bang.Result Val := Bang.Config.run (n+1) (K, .up ℓ op v)
+
+/-! ### D3 store ↔ kernel-`EvalCtx` correspondence (state)
+
+The kernel resumes state in its `EvalCtx`: a `handleF (state ℓ s)` frame stores `s`, and `dispatch`
+threads it on `get`/`put` (KEEP `Kᵢ`, reinstall `handleF (state ℓ s')` — `Operational.lean`
+`dispatchOn`). `evalD`'s store σ is the kernel side's `state` frames projected, exactly mirroring the
+machine-side `Corr σ hs`/`hsStates`/`updateStates` triad but over `EvalCtx`. -/
+
+/-- Project a kernel `EvalCtx` to the store it mirrors: the `handleF (state ℓ s)` frames, innermost
+first, as `(ℓ, s)` entries. The `Config.run`-side analog of `hsStates`. -/
+def ctxStates : Bang.EvalCtx → SStore
+  | []                              => []
+  | Frame.handleF (.state ℓ s) :: K => (ℓ, s) :: ctxStates K
+  | _ :: K                          => ctxStates K
+
+/-- The bridge's D3 invariant: `evalD`'s threaded store IS the kernel context's active state frames. -/
+def CtxCorr (σ : SStore) (K : Bang.EvalCtx) : Prop := σ = ctxStates K
+
+/-- Overwrite each `state` frame's stored value in `K` with the store `σ` (consumed in order) — the
+kernel context AFTER M's state ops have fired (the at-term/at-raise context the continuation runs on).
+The `Config.run`-side analog of `updateStates`; non-state frames pass through. -/
+def updateCtxStates : Bang.EvalCtx → SStore → Bang.EvalCtx
+  | [],                                  _ => []
+  | Frame.handleF (.state ℓ0 _) :: K, σ =>
+      match σ with
+      | (_, v) :: σ' => Frame.handleF (.state ℓ0 v) :: updateCtxStates K σ'
+      | []           => Frame.handleF (.state ℓ0 default) :: updateCtxStates K []  -- σ-exhausted (∉ Corr)
+  | fr :: K,                             σ => fr :: updateCtxStates K σ
+
+/-- Under `CtxCorr`, `updateCtxStates` is the identity (overwriting each value with itself). -/
+theorem updateCtxStates_self {σ : SStore} {K : Bang.EvalCtx} (hC : CtxCorr σ K) :
+    updateCtxStates K σ = K := by
+  unfold CtxCorr at hC; subst hC
+  induction K with
+  | nil => rfl
+  | cons fr K ih =>
+    cases fr with
+    | handleF h =>
+        cases h with
+        | state ℓ s => simp only [ctxStates, updateCtxStates]; rw [ih]
+        | throws ℓ => simp only [ctxStates, updateCtxStates]; rw [ih]
+        | transaction ℓ Θ => simp only [ctxStates, updateCtxStates]; rw [ih]
+    | letF N => simp only [ctxStates, updateCtxStates]; rw [ih]
+    | appF v => simp only [ctxStates, updateCtxStates]; rw [ih]
+
+/-- A NON-state frame is transparent to `updateCtxStates`. -/
+theorem updateCtxStates_cons_nonstate {fr : Bang.Frame} {K : Bang.EvalCtx} (σ : SStore)
+    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s)) :
+    updateCtxStates (fr :: K) σ = fr :: updateCtxStates K σ := by
+  cases fr with
+  | handleF h =>
+      cases h with
+      | state ℓ s => exact absurd rfl (hns ℓ s)
+      | throws ℓ => simp only [updateCtxStates]
+      | transaction ℓ Θ => simp only [updateCtxStates]
+  | letF N => simp only [updateCtxStates]
+  | appF v => simp only [updateCtxStates]
+
+/-- `updateCtxStates` depends only on `K`'s STATE-FRAME STRUCTURE, which it preserves ⇒ it is
+idempotent in the K-slot: `updateCtxStates (updateCtxStates K σ1) σ = updateCtxStates K σ`. Lets the
+spine compose the at-M-term context with the continuation's update. Induction on `K`. -/
+theorem updateCtxStates_updateCtxStates : ∀ {K : Bang.EvalCtx} (σ1 σ : SStore),
+    updateCtxStates (updateCtxStates K σ1) σ = updateCtxStates K σ := by
+  intro K
+  induction K with
+  | nil => intro σ1 σ; rfl
+  | cons fr K ih =>
+    intro σ1 σ
+    cases fr with
+    | handleF h =>
+        cases h with
+        | state ℓ s =>
+            cases σ1 with
+            | nil =>
+                cases σ with
+                | nil => simp only [updateCtxStates]; rw [ih]
+                | cons p σ' => simp only [updateCtxStates]; rw [ih]
+            | cons p1 σ1' =>
+                cases σ with
+                | nil => simp only [updateCtxStates]; rw [ih]
+                | cons p σ' => simp only [updateCtxStates]; rw [ih]
+        | throws ℓ => simp only [updateCtxStates]; rw [ih]
+        | transaction ℓ Θ => simp only [updateCtxStates]; rw [ih]
+    | letF N => simp only [updateCtxStates]; rw [ih]
+    | appF v => simp only [updateCtxStates]; rw [ih]
+
+/-- A NON-state frame carries no store entry ⇒ `CtxCorr` passes through its install (and pop). -/
+theorem CtxCorr_cons_nonstate {σ : SStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
+    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s)) (hC : CtxCorr σ K) :
+    CtxCorr σ (fr :: K) := by
+  unfold CtxCorr at hC ⊢; rw [hC]
+  cases fr with
+  | handleF h =>
+      cases h with
+      | state ℓ s => exact absurd rfl (hns ℓ s)
+      | throws ℓ => simp only [ctxStates]
+      | transaction ℓ Θ => simp only [ctxStates]
+  | letF N => simp only [ctxStates]
+  | appF v => simp only [ctxStates]
+
+/-- A `state ℓ s` install PUSHES `(ℓ ↦ s)` on the store, preserving `CtxCorr`. -/
+theorem CtxCorr_install {σ : SStore} {ℓ : Bang.EffectRow.Label} {s : Val} {K : Bang.EvalCtx}
+    (hC : CtxCorr σ K) : CtxCorr (σ.push ℓ s) (Frame.handleF (.state ℓ s) :: K) := by
+  unfold CtxCorr at hC ⊢; rw [hC]; simp only [ctxStates, SStore.push]
+
+/-- `at-term/at-raise` non-state install: `updateCtxStates (fr :: K) σ' = fr :: updateCtxStates K σ'`
+and its `CtxCorr`/structure pass through (the non-state install case of the run_evalD spine). -/
+theorem CtxCorr_updateCtx_nonstate {σ' : SStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
+    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s))
+    (hC : CtxCorr σ' (updateCtxStates (fr :: K) σ')) : CtxCorr σ' (updateCtxStates K σ') := by
+  rw [updateCtxStates_cons_nonstate σ' hns] at hC
+  unfold CtxCorr at hC ⊢
+  cases fr with
+  | handleF h =>
+      cases h with
+      | state ℓ s => exact absurd rfl (hns ℓ s)
+      | throws ℓ => simpa only [ctxStates] using hC
+      | transaction ℓ Θ => simpa only [ctxStates] using hC
+  | letF N => simpa only [ctxStates] using hC
+  | appF v => simpa only [ctxStates] using hC
+
+/-- `handle (state ℓ0)`-POP at-term correspondence: from the body's at-term `CtxCorr σ1 (updateCtxStates
+(handleF (state ℓ0 s0) :: K) σ1)`, the popped pair holds — `σ1.tail` covers `K` and the resume context
+after the handler-return is `updateCtxStates K σ1.tail`. The kernel `handleF _ :: K, ret v ↦ K, ret v`
+(handler-return = identity). Forces σ1 non-empty (its head IS the installed state frame). -/
+theorem CtxCorr_updateCtx_pop_state {σ1 : SStore} {ℓ0 : Bang.EffectRow.Label} {s0 : Val}
+    {K : Bang.EvalCtx}
+    (hC : CtxCorr σ1 (updateCtxStates (Frame.handleF (.state ℓ0 s0) :: K) σ1)) :
+    CtxCorr σ1.tail (updateCtxStates K σ1.tail) ∧
+      updateCtxStates (Frame.handleF (.state ℓ0 s0) :: K) σ1
+        = Frame.handleF (.state ℓ0 (σ1.headD (default, default)).2) :: updateCtxStates K σ1.tail := by
+  cases σ1 with
+  | nil =>
+      exfalso; unfold CtxCorr at hC
+      simp only [updateCtxStates, ctxStates] at hC
+      exact (List.cons_ne_nil _ _ hC.symm)
+  | cons p σ1' =>
+      obtain ⟨ℓa, wa⟩ := p
+      have hupd : updateCtxStates (Frame.handleF (.state ℓ0 s0) :: K) ((ℓa, wa) :: σ1')
+          = Frame.handleF (.state ℓ0 wa) :: updateCtxStates K σ1' := by
+        simp only [updateCtxStates]
+      rw [hupd] at hC
+      refine ⟨?_, ?_⟩
+      · unfold CtxCorr at hC ⊢
+        simp only [ctxStates, List.tail] at hC ⊢
+        exact (List.cons.injEq _ _ _ _).mp hC |>.2
+      · simp only [List.headD, List.tail]; exact hupd
+
+/-- `splitAt` RECONSTRUCTS its input: `K = Kᵢ ++ handleF h :: Kₒ`. The decomposition is lossless —
+the inner prefix, the catching frame, and the outer suffix re-concatenate to `K`. Induction on `K`. -/
+theorem splitAt_reconstruct {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {h : Handler},
+      Bang.splitAt K ℓ op = some (Kᵢ, h, Kₒ) → Kᵢ ++ Frame.handleF h :: Kₒ = K := by
+  intro K
+  induction K with
+  | nil => intro Kᵢ Kₒ h hs; simp [Bang.splitAt] at hs
+  | cons fr K ih =>
+    intro Kᵢ Kₒ h hs
+    cases fr with
+    | handleF h0 =>
+        simp only [Bang.splitAt] at hs
+        by_cases hc : Bang.handlesOp h0 ℓ op = true
+        · rw [if_pos hc] at hs; simp only [Option.some.injEq, Prod.mk.injEq] at hs
+          obtain ⟨rfl, rfl, rfl⟩ := hs; simp
+        · rw [if_neg hc] at hs
+          cases hsp : Bang.splitAt K ℓ op with
+          | none => rw [hsp] at hs; simp at hs
+          | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                      obtain ⟨rfl, rfl, rfl⟩ := hs; simp only [List.cons_append]; rw [ih hsp]
+    | letF N =>
+        simp only [Bang.splitAt] at hs
+        cases hsp : Bang.splitAt K ℓ op with
+        | none => rw [hsp] at hs; simp at hs
+        | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                    obtain ⟨rfl, rfl, rfl⟩ := hs; simp only [List.cons_append]; rw [ih hsp]
+    | appF w =>
+        simp only [Bang.splitAt] at hs
+        cases hsp : Bang.splitAt K ℓ op with
+        | none => rw [hsp] at hs; simp at hs
+        | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                    obtain ⟨rfl, rfl, rfl⟩ := hs; simp only [List.cons_append]; rw [ih hsp]
+
+/-- `splitAt` for a `get`/`put` on `ℓ` finds a `state ℓ s` frame whose stored `s` is exactly the
+nearest `ctxStates`-value (`(ctxStates K).get? ℓ`). Induction on `K`. -/
+theorem splitAt_state_value {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
+    (hop : op = "get" ∨ op = "put") :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {s : Val},
+      Bang.splitAt K ℓ op = some (Kᵢ, Handler.state ℓ s, Kₒ) →
+        (ctxStates K).get? ℓ = some s := by
+  intro K
+  induction K with
+  | nil => intro Kᵢ Kₒ s hs; simp [Bang.splitAt] at hs
+  | cons fr K ih =>
+    intro Kᵢ Kₒ s hs
+    cases fr with
+    | handleF h0 =>
+        cases hh : h0 with
+        | state ℓ0 s0 =>
+            simp only [Bang.splitAt, hh] at hs
+            by_cases hc : ℓ0 = ℓ
+            · subst hc
+              have hcatch : Bang.handlesOp (Handler.state ℓ0 s0) ℓ0 op = true := by
+                cases hop with
+                | inl h => subst h; simp [Bang.handlesOp]
+                | inr h => subst h; simp [Bang.handlesOp]
+              rw [if_pos hcatch] at hs
+              simp only [Option.some.injEq, Prod.mk.injEq] at hs
+              obtain ⟨_, ⟨rfl, rfl⟩, _⟩ := hs
+              simp [ctxStates, SStore.get?, List.find?]
+            · have hnc : Bang.handlesOp (Handler.state ℓ0 s0) ℓ op = false := by
+                simp [Bang.handlesOp, hc]
+              rw [if_neg (by simp [hnc])] at hs
+              cases hsp : Bang.splitAt K ℓ op with
+              | none => rw [hsp] at hs; simp at hs
+              | some t =>
+                  obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                  obtain ⟨_, rfl, _⟩ := hs
+                  have := ih hsp
+                  simpa [ctxStates, SStore.get?, List.find?, hc] using this
+        | throws ℓ0 =>
+            simp only [Bang.splitAt, hh] at hs
+            have hnc : Bang.handlesOp (Handler.throws ℓ0) ℓ op = false := by
+              cases hop with
+              | inl h => subst h; simp [Bang.handlesOp]
+              | inr h => subst h; simp [Bang.handlesOp]
+            rw [if_neg (by simp [hnc])] at hs
+            cases hsp : Bang.splitAt K ℓ op with
+            | none => rw [hsp] at hs; simp at hs
+            | some t =>
+                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                obtain ⟨_, rfl, _⟩ := hs
+                simpa [ctxStates] using ih hsp
+        | transaction ℓ0 Θ0 =>
+            simp only [Bang.splitAt, hh] at hs
+            have hnc : Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ op = false := by
+              cases hop with
+              | inl h => subst h; simp [Bang.handlesOp]
+              | inr h => subst h; simp [Bang.handlesOp]
+            rw [if_neg (by simp [hnc])] at hs
+            cases hsp : Bang.splitAt K ℓ op with
+            | none => rw [hsp] at hs; simp at hs
+            | some t =>
+                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                obtain ⟨_, rfl, _⟩ := hs
+                simpa [ctxStates] using ih hsp
+    | letF N =>
+        simp only [Bang.splitAt] at hs
+        cases hsp : Bang.splitAt K ℓ op with
+        | none => rw [hsp] at hs; simp at hs
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+            obtain ⟨_, rfl, _⟩ := hs
+            simpa [ctxStates] using ih hsp
+    | appF w =>
+        simp only [Bang.splitAt] at hs
+        cases hsp : Bang.splitAt K ℓ op with
+        | none => rw [hsp] at hs; simp at hs
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+            obtain ⟨_, rfl, _⟩ := hs
+            simpa [ctxStates] using ih hsp
+
+/-- `splitAt` for a `get`/`put` on `ℓ` SUCCEEDS (finds a state frame) whenever `ℓ` has an active
+`state` frame, i.e. `(ctxStates K).get? ℓ = some s`. The existence companion of `splitAt_state_value`.
+Induction on `K`. -/
+theorem splitAt_state_some {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
+    (hop : op = "get" ∨ op = "put") :
+    ∀ {K : Bang.EvalCtx} {s : Val}, (ctxStates K).get? ℓ = some s →
+      ∃ Kᵢ Kₒ, Bang.splitAt K ℓ op = some (Kᵢ, Handler.state ℓ s, Kₒ) := by
+  intro K
+  induction K with
+  | nil => intro s hg; simp [ctxStates, SStore.get?] at hg
+  | cons fr K ih =>
+    intro s hg
+    cases fr with
+    | handleF h0 =>
+        cases h0 with
+        | state ℓ0 s0 =>
+            by_cases hc : ℓ0 = ℓ
+            · subst hc
+              simp only [ctxStates, SStore.get?, List.find?, decide_true, Option.map_some,
+                Option.some.injEq] at hg
+              subst hg
+              have hcatch : Bang.handlesOp (Handler.state ℓ0 s0) ℓ0 op = true := by
+                cases hop with
+                | inl h => subst h; simp [Bang.handlesOp]
+                | inr h => subst h; simp [Bang.handlesOp]
+              exact ⟨[], K, by simp only [Bang.splitAt, if_pos hcatch]⟩
+            · have hg' : (ctxStates K).get? ℓ = some s := by
+                simp only [ctxStates, SStore.get?, List.find?, hc, decide_false,
+                  Bool.false_eq_true, if_false] at hg; simpa [SStore.get?] using hg
+              obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
+              have hnc : ¬ Bang.handlesOp (Handler.state ℓ0 s0) ℓ op = true := by
+                simp [Bang.handlesOp, hc]
+              exact ⟨Frame.handleF (Handler.state ℓ0 s0) :: Kᵢ, Kₒ, by
+                simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
+        | throws ℓ0 =>
+            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+            obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
+            have hnc : ¬ Bang.handlesOp (Handler.throws ℓ0) ℓ op = true := by
+              cases hop with
+              | inl h => subst h; simp [Bang.handlesOp]
+              | inr h => subst h; simp [Bang.handlesOp]
+            exact ⟨Frame.handleF (Handler.throws ℓ0) :: Kᵢ, Kₒ, by
+              simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
+        | transaction ℓ0 Θ0 =>
+            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+            obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
+            have hnc : ¬ Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ op = true := by
+              cases hop with
+              | inl h => subst h; simp [Bang.handlesOp]
+              | inr h => subst h; simp [Bang.handlesOp]
+            exact ⟨Frame.handleF (Handler.transaction ℓ0 Θ0) :: Kᵢ, Kₒ, by
+              simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
+    | letF N =>
+        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+        obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
+        exact ⟨Frame.letF N :: Kᵢ, Kₒ, by simp only [Bang.splitAt, hsp, Option.map_some]⟩
+    | appF w =>
+        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+        obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
+        exact ⟨Frame.appF w :: Kᵢ, Kₒ, by simp only [Bang.splitAt, hsp, Option.map_some]⟩
+
+/-- A `state`-`get` dispatch RESUMES in place: under `(ctxStates K).get? ℓ = some s`, the kernel finds
+the nearest `state ℓ s` frame and resumes `(K, .ret s)` — context structurally unchanged (same frame
+re-installed; `get` does not mutate). Via `splitAt_state_some` + `splitAt_reconstruct`. -/
+theorem dispatch_state_get {ℓ : Bang.EffectRow.Label} {v s : Val} {K : Bang.EvalCtx}
+    (hg : (ctxStates K).get? ℓ = some s) : Bang.dispatch K ℓ "get" v = some (K, .ret s) := by
+  obtain ⟨Kᵢ, Kₒ, hsp⟩ := splitAt_state_some (Or.inl rfl) hg
+  have hrec : Kᵢ ++ Frame.handleF (Handler.state ℓ s) :: Kₒ = K := splitAt_reconstruct hsp
+  simp only [Bang.dispatch, hsp, Option.bind_some, Bang.dispatchOn, beq_self_eq_true, if_true]
+  rw [hrec]
+
+/-- A `state`-`put` dispatch RESUMES with the value updated: finds `state ℓ s`, reinstalls `state ℓ w`,
+resumes `(updateCtxStates K ((ctxStates K).put ℓ w), .ret unit)` — the context `K` with ℓ's nearest
+state frame's value set to `w`. Induction on `K` (mirroring `splitAt`'s walk + `dispatchOn` put). -/
+theorem updateCtxStates_put_split {ℓ : Bang.EffectRow.Label} {w : Val} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {s : Val},
+      Bang.splitAt K ℓ "put" = some (Kᵢ, Handler.state ℓ s, Kₒ) →
+        updateCtxStates K ((ctxStates K).put ℓ w) = Kᵢ ++ Frame.handleF (Handler.state ℓ w) :: Kₒ := by
+  intro K
+  induction K with
+  | nil => intro Kᵢ Kₒ s hsp; simp [Bang.splitAt] at hsp
+  | cons fr K ih =>
+    intro Kᵢ Kₒ s hsp
+    cases fr with
+    | handleF h0 =>
+        cases h0 with
+        | state ℓ0 s0 =>
+            by_cases hc : ℓ0 = ℓ
+            · subst hc
+              -- the head frame catches ⇒ splitAt = ([], state ℓ0 s0, K); put updates head value.
+              simp only [Bang.splitAt, Bang.handlesOp, beq_self_eq_true, Bool.or_true, Bool.and_true,
+                decide_true, if_true, Option.some.injEq, Prod.mk.injEq] at hsp
+              obtain ⟨rfl, _, rfl⟩ := hsp
+              simp only [ctxStates, SStore.put, if_true, updateCtxStates, List.nil_append]
+              rw [updateCtxStates_self rfl]
+            · -- head doesn't catch ⇒ splitAt recurses; put updates a DEEPER frame.
+              have hnc : ¬ Bang.handlesOp (Handler.state ℓ0 s0) ℓ "put" = true := by
+                simp [Bang.handlesOp, hc]
+              simp only [Bang.splitAt, if_neg hnc] at hsp
+              cases hsp2 : Bang.splitAt K ℓ "put" with
+              | none => rw [hsp2] at hsp; simp at hsp
+              | some t =>
+                  obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+                  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+                  obtain ⟨rfl, rfl, rfl⟩ := hsp
+                  simp only [ctxStates, SStore.put, hc, if_false, updateCtxStates, List.cons_append]
+                  rw [ih hsp2]
+        | throws ℓ0 =>
+            have hnc : ¬ Bang.handlesOp (Handler.throws ℓ0) ℓ "put" = true := by simp [Bang.handlesOp]
+            simp only [Bang.splitAt, if_neg hnc] at hsp
+            cases hsp2 : Bang.splitAt K ℓ "put" with
+            | none => rw [hsp2] at hsp; simp at hsp
+            | some t =>
+                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+                obtain ⟨rfl, rfl, rfl⟩ := hsp
+                simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
+        | transaction ℓ0 Θ0 =>
+            have hnc : ¬ Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ "put" = true := by simp [Bang.handlesOp]
+            simp only [Bang.splitAt, if_neg hnc] at hsp
+            cases hsp2 : Bang.splitAt K ℓ "put" with
+            | none => rw [hsp2] at hsp; simp at hsp
+            | some t =>
+                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+                obtain ⟨rfl, rfl, rfl⟩ := hsp
+                simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
+    | letF N =>
+        simp only [Bang.splitAt] at hsp
+        cases hsp2 : Bang.splitAt K ℓ "put" with
+        | none => rw [hsp2] at hsp; simp at hsp
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+            obtain ⟨rfl, rfl, rfl⟩ := hsp
+            simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
+    | appF w0 =>
+        simp only [Bang.splitAt] at hsp
+        cases hsp2 : Bang.splitAt K ℓ "put" with
+        | none => rw [hsp2] at hsp; simp at hsp
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+            obtain ⟨rfl, rfl, rfl⟩ := hsp
+            simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
+
+theorem dispatch_state_put {ℓ : Bang.EffectRow.Label} {w s : Val} {K : Bang.EvalCtx}
+    (hg : (ctxStates K).get? ℓ = some s) :
+    Bang.dispatch K ℓ "put" w
+      = some (updateCtxStates K ((ctxStates K).put ℓ w), .ret .vunit) := by
+  obtain ⟨Kᵢ, Kₒ, hsp⟩ := splitAt_state_some (Or.inr rfl) hg
+  rw [updateCtxStates_put_split hsp]
+  simp only [Bang.dispatch, hsp, Option.bind_some, Bang.dispatchOn, beq_iff_eq,
+    if_neg (by decide : ¬ ("put" = "get"))]
+
+/-- After a `put`, the resume context's `ctxStates` IS the put-updated store: `ctxStates
+(updateCtxStates K (σ.put ℓ w)) = (ctxStates K).put ℓ w` where σ = ctxStates K. The `CtxCorr`-
+preservation of a state `put` (the kernel `dispatchOn`-put restores the D3 correspondence). Via
+`updateCtxStates_put_split` + `ctxStates` of the split reconstruction. Induction on `K`. -/
+theorem ctxStates_updateCtxStates_put {ℓ : Bang.EffectRow.Label} {w : Val} :
+    ∀ {K : Bang.EvalCtx} {s : Val}, (ctxStates K).get? ℓ = some s →
+      ctxStates (updateCtxStates K ((ctxStates K).put ℓ w)) = (ctxStates K).put ℓ w := by
+  intro K
+  induction K with
+  | nil => intro s hg; simp [ctxStates, SStore.get?] at hg
+  | cons fr K ih =>
+    intro s hg
+    cases fr with
+    | handleF h0 =>
+        cases h0 with
+        | state ℓ0 s0 =>
+            by_cases hc : ℓ0 = ℓ
+            · subst hc
+              simp only [ctxStates, SStore.put, if_true, updateCtxStates]
+              rw [updateCtxStates_self rfl]
+            · have hg' : (ctxStates K).get? ℓ = some s := by
+                simp only [ctxStates, SStore.get?, List.find?, hc, decide_false,
+                  Bool.false_eq_true, if_false] at hg; simpa [SStore.get?] using hg
+              simp only [ctxStates, SStore.put, hc, if_false, updateCtxStates]; rw [ih hg']
+        | throws ℓ0 =>
+            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+            simp only [ctxStates, updateCtxStates]; rw [ih hg']
+        | transaction ℓ0 Θ0 =>
+            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+            simp only [ctxStates, updateCtxStates]; rw [ih hg']
+    | letF N =>
+        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+        simp only [ctxStates, updateCtxStates]; rw [ih hg']
+    | appF v0 =>
+        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+        simp only [ctxStates, updateCtxStates]; rw [ih hg']
 
 /-- `splitAt` returns a handler that actually catches `(ℓ, op)` (induction on `K`). -/
 theorem splitAt_handles {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} :
@@ -805,55 +2215,77 @@ runs to its terminal under K) AND a `raised` part (M raises, dispatched by the
 kernel — the `THROW ↔ dispatch` correspondence). Subst-vs-subst, no cross-rep LR.
 Induction on the eval fuel `fe`. -/
 theorem run_evalD : ∀ fe,
-    (∀ M t, evalD fe M = some (.term t) →
-      ∀ (K : Bang.EvalCtx) (n : Nat) (r : Bang.Result Val),
-        Bang.Config.run n (K, t) = r → ∃ F, Bang.Config.run F (K, M) = r)
-    ∧ (∀ M ℓ v, evalD fe M = some (.raised ℓ "raise" v) →
-      ∀ (K : Bang.EvalCtx) (n : Nat) (r : Bang.Result Val),
-        dispatchRun n K ℓ "raise" v = r → ∃ F, Bang.Config.run F (K, M) = r) := by
+    (∀ M σ t σ', evalD fe σ M = some (.term t, σ') →
+      ∀ (K : Bang.EvalCtx), CtxCorr σ K →
+        CtxCorr σ' (updateCtxStates K σ') ∧
+        ∀ (n : Nat) (r : Bang.Result Val),
+          Bang.Config.run n (updateCtxStates K σ', t) = r → ∃ F, Bang.Config.run F (K, M) = r)
+    ∧ (∀ M σ ℓ v σ', evalD fe σ M = some (.raised ℓ "raise" v, σ') →
+      ∀ (K : Bang.EvalCtx), CtxCorr σ K →
+        CtxCorr σ' (updateCtxStates K σ') ∧
+        ∀ (n : Nat) (r : Bang.Result Val),
+          dispatchRun n (updateCtxStates K σ') ℓ "raise" v = r → ∃ F, Bang.Config.run F (K, M) = r) := by
   intro fe
   induction fe with
-  | zero => exact ⟨fun M t h => by simp [evalD] at h, fun M ℓ v h => by simp [evalD] at h⟩
+  | zero => exact ⟨fun M σ t σ' h => by simp [evalD] at h, fun M σ ℓ v σ' h => by simp [evalD] at h⟩
   | succ fe ih =>
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M t h K n r hr
+      intro M σ t σ' h K hCtx
       cases M with
-      | ret v => simp only [evalD, Option.some.injEq, Outcome.term.injEq] at h; subst h; exact ⟨n, hr⟩
-      | lam M => simp only [evalD, Option.some.injEq, Outcome.term.injEq] at h; subst h; exact ⟨n, hr⟩
+      | ret v =>
+          simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+          obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+          rw [updateCtxStates_self hCtx]
+          exact ⟨hCtx, fun n r hr => ⟨n, hr⟩⟩
+      | lam M =>
+          simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+          obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+          rw [updateCtxStates_self hCtx]
+          exact ⟨hCtx, fun n r hr => ⟨n, hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .term (.ret v), h =>
+            | (.term (.ret v), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F2, hF2⟩ := ihT (Comp.subst v N) t h K n r hr
-                have hstep : Bang.Config.run (F2+1) (Frame.letF N :: K, .ret v) = r := by
+                have hCletF : CtxCorr σ (Frame.letF N :: K) :=
+                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                obtain ⟨hCM, kM⟩ := ihT M σ (.ret v) σ1 hM (Frame.letF N :: K) hCletF
+                have hCM' : CtxCorr σ1 (updateCtxStates K σ1) :=
+                  CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM
+                obtain ⟨hCf, kN⟩ := ihT (Comp.subst v N) σ1 t σ' h (updateCtxStates K σ1) hCM'
+                rw [updateCtxStates_updateCtxStates] at hCf
+                refine ⟨hCf, fun n r hr => ?_⟩
+                obtain ⟨F2, hF2⟩ := kN n r (by rw [updateCtxStates_updateCtxStates]; exact hr)
+                have hstep : Bang.Config.run (F2+1) (Frame.letF N :: updateCtxStates K σ1, .ret v) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF2
-                obtain ⟨F1, hF1⟩ := ihT M (.ret v) hM (Frame.letF N :: K) (F2+1) r hstep
+                rw [← updateCtxStates_cons_nonstate σ1 (by intro ℓ s; simp)] at hstep
+                obtain ⟨F1, hF1⟩ := kM (F2+1) r hstep
                 exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | .term (.lam a), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
-            | .raised ℓ op w, h => simp [Option.bind] at h
+            | (.term (.lam a), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
+            | (.raised ℓ op w, _), h => simp [Option.bind] at h
       | force a =>
           cases a with
           | vthunk M =>
               simp only [evalD] at h
-              obtain ⟨F', hF'⟩ := ihT M t h K n r hr
-              exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩
+              obtain ⟨hCf, kf⟩ := ihT M σ t σ' h K hCtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kf n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
           | vunit => simp [evalD] at h
           | vint x => simp [evalD] at h
           | vvar i => simp [evalD] at h
@@ -863,131 +2295,292 @@ theorem run_evalD : ∀ fe,
           | fold w => simp [evalD] at h
       | app M v =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .term (.lam N), h =>
+            | (.term (.lam N), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F2, hF2⟩ := ihT (Comp.subst v N) t h K n r hr
-                have hstep : Bang.Config.run (F2+1) (Frame.appF v :: K, .lam N) = r := by
+                have hCappF : CtxCorr σ (Frame.appF v :: K) :=
+                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                obtain ⟨hCM, kM⟩ := ihT M σ (.lam N) σ1 hM (Frame.appF v :: K) hCappF
+                have hCM' : CtxCorr σ1 (updateCtxStates K σ1) :=
+                  CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM
+                obtain ⟨hCf, kN⟩ := ihT (Comp.subst v N) σ1 t σ' h (updateCtxStates K σ1) hCM'
+                rw [updateCtxStates_updateCtxStates] at hCf
+                refine ⟨hCf, fun n r hr => ?_⟩
+                obtain ⟨F2, hF2⟩ := kN n r (by rw [updateCtxStates_updateCtxStates]; exact hr)
+                have hstep : Bang.Config.run (F2+1) (Frame.appF v :: updateCtxStates K σ1, .lam N) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF2
-                obtain ⟨F1, hF1⟩ := ihT M (.lam N) hM (Frame.appF v :: K) (F2+1) r hstep
+                rw [← updateCtxStates_cons_nonstate σ1 (by intro ℓ s; simp)] at hstep
+                obtain ⟨F1, hF1⟩ := kM (F2+1) r hstep
                 exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | .term (.ret w), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
-            | .raised ℓ op w, h => simp [Option.bind] at h
-      | up ℓ op v => simp [evalD] at h
+            | (.term (.ret w), _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
+            | (.raised ℓ op w, _), h => simp [Option.bind] at h
+      | up ℓ2 op2 v2 =>
+          simp only [evalD] at h
+          cases hg : σ.get? ℓ2 with
+          | none =>
+              rw [hg] at h
+              simp only [Option.some.injEq, Prod.mk.injEq] at h
+              obtain ⟨ht, _⟩ := h; exact absurd ht (by simp)
+          | some sv =>
+              rw [hg] at h
+              by_cases hop : op2 = "get"
+              · -- state GET: evalD returns `term (ret sv)`, σ unchanged. Kernel: dispatch resumes (K, ret sv).
+                simp only [if_pos hop, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ; subst hop
+                rw [updateCtxStates_self hCtx]
+                refine ⟨hCtx, fun n r hr => ?_⟩
+                have hgc : (ctxStates K).get? ℓ2 = some sv := by rw [← hCtx]; exact hg
+                refine ⟨n+1, ?_⟩
+                simp only [Bang.Config.run, Source.step, dispatch_state_get hgc]; exact hr
+              · by_cases hop2 : op2 = "put"
+                · -- state PUT: evalD threads σ.put; kernel dispatch reinstalls (updateCtxStates …, ret unit).
+                  simp only [if_neg hop, if_pos hop2, Option.some.injEq, Prod.mk.injEq,
+                    Outcome.term.injEq] at h
+                  obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ; subst hop2
+                  subst hCtx
+                  -- σ = ctxStates K; the put-resume context mirrors the put-updated store (D3 preserved).
+                  refine ⟨?_, fun n r hr => ?_⟩
+                  · unfold CtxCorr; exact (ctxStates_updateCtxStates_put (w := v2) hg).symm
+                  · refine ⟨n+1, ?_⟩
+                    simp only [Bang.Config.run, Source.step, dispatch_state_put (w := v2) hg]
+                    exact hr
+                · simp only [if_neg hop, if_neg hop2, Option.some.injEq, Prod.mk.injEq] at h
+                  obtain ⟨ht, _⟩ := h; exact absurd ht (by simp)
       | handle h0 M =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
-          | none => rw [hM] at h; simp at h
-          | some oM =>
-            rw [hM] at h
-            match oM, h with
-            | .term (.ret v), h =>
-                simp only [Option.bind_some, Option.some.injEq, Outcome.term.injEq] at h
-                subst h
-                have hstep : Bang.Config.run (n+1) (Frame.handleF h0 :: K, .ret v) = r := by
-                  simp only [Bang.Config.run, Source.step]; exact hr
-                obtain ⟨F1, hF1⟩ := ihT M (.ret v) hM (Frame.handleF h0 :: K) (n+1) r hstep
-                exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | .term (.lam a), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
-            | .raised ℓ' op' w, h =>
-                -- body raises; CAUGHT only by a THROWS h0 on (ℓ', "raise") ⇒ term (ret w); else
-                -- forwarded ⇒ raised (absurd in the term part). Mirrors `evalD`'s throws-only catch.
-                simp only [Option.bind_some] at h
-                cases h0 with
-                | throws ℓ0 =>
+          cases h0 with
+          | state ℓ0 s0 =>
+              simp only at h
+              cases hM : evalD fe (σ.push ℓ0 s0) M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                    -- handle (state ℓ0 s0): install handleF (state ℓ0 s0), run M, POP on return.
+                    have hCins : CtxCorr (σ.push ℓ0 s0) (Frame.handleF (.state ℓ0 s0) :: K) :=
+                      CtxCorr_install hCtx
+                    obtain ⟨hCM, kM⟩ := ihT M (σ.push ℓ0 s0) (.ret v) σ1 hM
+                      (Frame.handleF (.state ℓ0 s0) :: K) hCins
+                    obtain ⟨hCpop, hupd⟩ := CtxCorr_updateCtx_pop_state hCM
+                    refine ⟨hCpop, fun n r hr => ?_⟩
+                    -- the body ends at `handleF (state ℓ0 _) :: updateCtxStates K σ1.tail`; the
+                    -- handler-return REDUCE pops it, landing at `updateCtxStates K σ1.tail` = `hr`.
+                    have hstep : Bang.Config.run (n+1)
+                        (updateCtxStates (Frame.handleF (.state ℓ0 s0) :: K) σ1, .ret v) = r := by
+                      rw [hupd]; simp only [Bang.Config.run, Source.step]; exact hr
+                    obtain ⟨F1, hF1⟩ := kM (n+1) r hstep
+                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+          | throws ℓ0 =>
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                    have hCins : CtxCorr σ (Frame.handleF (.throws ℓ0) :: K) :=
+                      CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                    obtain ⟨hCM, kM⟩ := ihT M σ (.ret v) σ1 hM (Frame.handleF (.throws ℓ0) :: K) hCins
+                    have hCM' : CtxCorr σ1 (updateCtxStates K σ1) :=
+                      CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM
+                    refine ⟨hCM', fun n r hr => ?_⟩
+                    have hstep : Bang.Config.run (n+1)
+                        (Frame.handleF (.throws ℓ0) :: updateCtxStates K σ1, .ret v) = r := by
+                      simp only [Bang.Config.run, Source.step]; exact hr
+                    rw [← updateCtxStates_cons_nonstate σ1 (by intro ℓ s; simp)] at hstep
+                    obtain ⟨F1, hF1⟩ := kM (n+1) r hstep
+                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, σ1), h =>
+                    simp only [Option.bind_some] at h
                     by_cases hk : ℓ0 = ℓ' ∧ op' = "raise"
-                    · -- caught: handle yields term (ret w) = term t ⇒ t = ret w. Kernel: M raises to
-                      -- (handleF (throws ℓ') :: K), dispatch ABORTS to (K, ret w) — matching hr.
-                      simp only [if_pos hk, Option.some.injEq, Outcome.term.injEq] at h
-                      subst h
+                    · simp only [if_pos hk, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                      obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
                       obtain ⟨rfl, rfl⟩ := hk
-                      have hd : dispatchRun n (Frame.handleF (Handler.throws ℓ0) :: K) ℓ0 "raise" w = r := by
-                        simp only [dispatchRun, Bang.Config.run, Source.step, Bang.dispatch, Bang.splitAt,
-                          Bang.handlesOp, beq_self_eq_true, Bool.and_true, Bang.dispatchOn]
+                      have hCins : CtxCorr σ (Frame.handleF (.throws ℓ0) :: K) :=
+                        CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                      obtain ⟨hCM, kR⟩ := ihR M σ ℓ0 w σ1 hM (Frame.handleF (.throws ℓ0) :: K) hCins
+                      have hCM' : CtxCorr σ1 (updateCtxStates K σ1) :=
+                        CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM
+                      refine ⟨hCM', fun n r hr => ?_⟩
+                      -- the abort lands at (updateCtxStates K σ1, ret w): dispatch over the installed
+                      -- throws frame catches and resumes Kₒ = updateCtxStates K σ1.
+                      have hd : dispatchRun n
+                          (Frame.handleF (.throws ℓ0) :: updateCtxStates K σ1) ℓ0 "raise" w = r := by
+                        simp only [dispatchRun, Bang.Config.run, Source.step, Bang.dispatch,
+                          Bang.splitAt, Bang.handlesOp, beq_self_eq_true, Bool.and_true, decide_true,
+                          if_true, Option.bind_some, Bang.dispatchOn]
                         simpa using hr
-                      obtain ⟨F1, hF1⟩ := ihR M ℓ0 w hM (Frame.handleF (Handler.throws ℓ0) :: K) n r hd
+                      rw [← updateCtxStates_cons_nonstate σ1 (by intro ℓ s; simp)] at hd
+                      obtain ⟨F1, hF1⟩ := kR n r hd
                       exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                    · -- not caught (throws, wrong label/op): handle forwards ⇒ raised, but h says term: absurd
-                      simp [if_neg hk] at h
-                | state ℓ0 s => simp at h   -- non-throws forwards ⇒ raised, but h says term: absurd
-                | transaction ℓ0 Θ => simp at h
+                    · simp [if_neg hk] at h
+          | transaction ℓ0 Θ =>
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hσ⟩ := h; subst ht; subst hσ
+                    have hCins : CtxCorr σ (Frame.handleF (.transaction ℓ0 Θ) :: K) :=
+                      CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                    obtain ⟨hCM, kM⟩ := ihT M σ (.ret v) σ1 hM (Frame.handleF (.transaction ℓ0 Θ) :: K) hCins
+                    have hCM' : CtxCorr σ1 (updateCtxStates K σ1) :=
+                      CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM
+                    refine ⟨hCM', fun n r hr => ?_⟩
+                    have hstep : Bang.Config.run (n+1)
+                        (Frame.handleF (.transaction ℓ0 Θ) :: updateCtxStates K σ1, .ret v) = r := by
+                      simp only [Bang.Config.run, Source.step]; exact hr
+                    rw [← updateCtxStates_cons_nonstate σ1 (by intro ℓ s; simp)] at hstep
+                    obtain ⟨F1, hF1⟩ := kM (n+1) r hstep
+                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
       | case a b d => simp [evalD] at h
       | split a b => simp [evalD] at h
       | unfold a => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
     · -- RAISED PART
-      intro M ℓ v h K n r hr
+      intro M σ ℓ v σ' h K hCtx
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
       | up ℓ2 op2 v2 =>
-          simp only [evalD, Option.some.injEq, Outcome.raised.injEq] at h
-          obtain ⟨rfl, rfl, rfl⟩ := h
-          -- dispatchRun n K ℓ op v = Config.run (n+1) (K, up ℓ op v) DEFINITIONALLY ⇒ hr closes it.
-          exact ⟨n+1, hr⟩
+          simp only [evalD] at h
+          cases hg : σ.get? ℓ2 with
+          | none =>
+              rw [hg] at h
+              simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+              obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+              -- no state frame for ℓ ⇒ raised; σ unchanged ⇒ updateCtxStates K σ = K.
+              rw [updateCtxStates_self hCtx]
+              refine ⟨hCtx, fun n r hr => ⟨n+1, hr⟩⟩
+          | some sv =>
+              rw [hg] at h
+              by_cases hop : op2 = "get"
+              · simp only [if_pos hop, Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+              · by_cases hop2 : op2 = "put"
+                · simp only [if_neg hop, if_pos hop2, Option.some.injEq, Prod.mk.injEq] at h
+                  obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+                · simp only [if_neg hop, if_neg hop2, Option.some.injEq, Prod.mk.injEq,
+                    Outcome.raised.injEq] at h
+                  obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                  -- op ∉ {get,put} on a state label (source-unreachable) ⇒ raised; σ unchanged.
+                  rw [updateCtxStates_self hCtx]
+                  refine ⟨hCtx, fun n r hr => ⟨n+1, hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .raised ℓ' op' w, h =>
-                simp only [Option.bind_some, Option.some.injEq, Outcome.raised.injEq] at h
-                obtain ⟨rfl, rfl, rfl⟩ := h
-                -- M raises under (letF N :: K); dispatch walks past letF to the same handler.
-                obtain ⟨F1, hF1⟩ := ihR M ℓ' w hM (Frame.letF N :: K) n r (by
-                  rw [dispatchRun_letF]; exact hr)
+            | (.raised ℓ' op' w, σ1), h =>
+                simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst σ1
+                have hCletF : CtxCorr σ (Frame.letF N :: K) :=
+                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                obtain ⟨hCM, kR⟩ := ihR M σ ℓ' w σ' hM (Frame.letF N :: K) hCletF
+                refine ⟨CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM, fun n r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kR n r (by
+                  rw [updateCtxStates_cons_nonstate σ' (by intro ℓ s; simp), dispatchRun_letF]; exact hr)
                 exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | .term (.ret v0), h =>
+            | (.term (.ret v0), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F1, hF1⟩ := ihR (Comp.subst v0 N) ℓ v h K n r hr
-                have hstep : Bang.Config.run (F1+1) (Frame.letF N :: K, .ret v0) = r := by
+                have hCletF : CtxCorr σ (Frame.letF N :: K) :=
+                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                obtain ⟨hCM, kM⟩ := ihT M σ (.ret v0) σ1 hM (Frame.letF N :: K) hCletF
+                have hCM' : CtxCorr σ1 (updateCtxStates K σ1) :=
+                  CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM
+                obtain ⟨hCf, kR⟩ := ihR (Comp.subst v0 N) σ1 ℓ v σ' h (updateCtxStates K σ1) hCM'
+                rw [updateCtxStates_updateCtxStates] at hCf
+                refine ⟨hCf, fun n r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kR n r (by rw [updateCtxStates_updateCtxStates]; exact hr)
+                have hstep : Bang.Config.run (F1+1) (Frame.letF N :: updateCtxStates K σ1, .ret v0) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF1
-                obtain ⟨F2, hF2⟩ := ihT M (.ret v0) hM (Frame.letF N :: K) (F1+1) r hstep
+                rw [← updateCtxStates_cons_nonstate σ1 (by intro ℓ s; simp)] at hstep
+                obtain ⟨F2, hF2⟩ := kM (F1+1) r hstep
                 exact ⟨F2+1, by simp only [Bang.Config.run, Source.step]; exact hF2⟩
-            | .term (.lam a), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
+            | (.term (.lam a), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
       | force a =>
           cases a with
           | vthunk M =>
               simp only [evalD] at h
-              obtain ⟨F', hF'⟩ := ihR M ℓ v h K n r hr
-              exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩
+              obtain ⟨hCf, kR⟩ := ihR M σ ℓ v σ' h K hCtx
+              exact ⟨hCf, fun n r hr => by
+                obtain ⟨F', hF'⟩ := kR n r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
           | vunit => simp [evalD] at h
           | vint x => simp [evalD] at h
           | vvar i => simp [evalD] at h
@@ -997,89 +2590,158 @@ theorem run_evalD : ∀ fe,
           | fold w => simp [evalD] at h
       | app M v0 =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
+          cases hM : evalD fe σ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | .raised ℓ' op' w, h =>
-                simp only [Option.bind_some, Option.some.injEq, Outcome.raised.injEq] at h
-                obtain ⟨rfl, rfl, rfl⟩ := h
-                obtain ⟨F1, hF1⟩ := ihR M ℓ' w hM (Frame.appF v0 :: K) n r (by
-                  rw [dispatchRun_appF]; exact hr)
+            | (.raised ℓ' op' w, σ1), h =>
+                simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst σ1
+                have hCappF : CtxCorr σ (Frame.appF v0 :: K) :=
+                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                obtain ⟨hCM, kR⟩ := ihR M σ ℓ' w σ' hM (Frame.appF v0 :: K) hCappF
+                refine ⟨CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM, fun n r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kR n r (by
+                  rw [updateCtxStates_cons_nonstate σ' (by intro ℓ s; simp), dispatchRun_appF]; exact hr)
                 exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | .term (.lam N), h =>
+            | (.term (.lam N), σ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨F1, hF1⟩ := ihR (Comp.subst v0 N) ℓ v h K n r hr
-                have hstep : Bang.Config.run (F1+1) (Frame.appF v0 :: K, .lam N) = r := by
+                have hCappF : CtxCorr σ (Frame.appF v0 :: K) :=
+                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                obtain ⟨hCM, kM⟩ := ihT M σ (.lam N) σ1 hM (Frame.appF v0 :: K) hCappF
+                have hCM' : CtxCorr σ1 (updateCtxStates K σ1) :=
+                  CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM
+                obtain ⟨hCf, kR⟩ := ihR (Comp.subst v0 N) σ1 ℓ v σ' h (updateCtxStates K σ1) hCM'
+                rw [updateCtxStates_updateCtxStates] at hCf
+                refine ⟨hCf, fun n r hr => ?_⟩
+                obtain ⟨F1, hF1⟩ := kR n r (by rw [updateCtxStates_updateCtxStates]; exact hr)
+                have hstep : Bang.Config.run (F1+1) (Frame.appF v0 :: updateCtxStates K σ1, .lam N) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF1
-                obtain ⟨F2, hF2⟩ := ihT M (.lam N) hM (Frame.appF v0 :: K) (F1+1) r hstep
+                rw [← updateCtxStates_cons_nonstate σ1 (by intro ℓ s; simp)] at hstep
+                obtain ⟨F2, hF2⟩ := kM (F1+1) r hstep
                 exact ⟨F2+1, by simp only [Bang.Config.run, Source.step]; exact hF2⟩
-            | .term (.ret w), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
+            | (.term (.ret w), _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _), h => simp [Option.bind] at h
+            | (.term (.force a), _), h => simp [Option.bind] at h
+            | (.term (.app a b), _), h => simp [Option.bind] at h
+            | (.term (.up a b d), _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _), h => simp [Option.bind] at h
+            | (.term (.split a b), _), h => simp [Option.bind] at h
+            | (.term .oom, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _), h => simp [Option.bind] at h
       | handle h0 M =>
           simp only [evalD] at h
-          cases hM : evalD fe M with
-          | none => rw [hM] at h; simp at h
-          | some oM =>
-            rw [hM] at h
-            match oM, h with
-            | .raised ℓ' op' w, h =>
-                -- the headline raised part is op-fixed to "raise"; forwarding forces op' = "raise".
-                -- evalD forwards (throws non-matching, or non-throws); kernel dispatch SKIPS h0 too,
-                -- since `handlesOp h0 ℓ' "raise" = false` for every non-catching frame. One `cases h0`.
-                simp only [Option.bind_some] at h
-                cases h0 with
-                | throws ℓ0 =>
+          cases h0 with
+          | state ℓ0 s0 =>
+              simp only at h
+              cases hM : evalD fe (σ.push ℓ0 s0) M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.raised.injEq] at h
+                    -- evalD forwards `raised ℓ' op' w σ1.tail` (pops the pushed entry) ⇒ `σ' = σ1.tail`.
+                    obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst hσ
+                    have hCins : CtxCorr (σ.push ℓ0 s0) (Frame.handleF (.state ℓ0 s0) :: K) :=
+                      CtxCorr_install hCtx
+                    obtain ⟨hCM, kR⟩ := ihR M (σ.push ℓ0 s0) ℓ' w σ1 hM
+                      (Frame.handleF (.state ℓ0 s0) :: K) hCins
+                    obtain ⟨hCpop, hupd⟩ := CtxCorr_updateCtx_pop_state hCM
+                    refine ⟨hCpop, fun n r hr => ?_⟩
+                    -- the raise dispatches past the state frame (handlesOp state ℓ0 "raise" = false).
+                    have hnc : Bang.handlesOp (Handler.state ℓ0 (σ1.headD (default, default)).2) ℓ' "raise"
+                        = false := by simp [Bang.handlesOp]
+                    have hd : dispatchRun n (updateCtxStates (Frame.handleF (.state ℓ0 s0) :: K) σ1)
+                        ℓ' "raise" w = r := by
+                      rw [hupd, dispatchRun_handleF_skip n _ _ ℓ' w hnc]; exact hr
+                    obtain ⟨F1, hF1⟩ := kR n r hd
+                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
+                | (.term (.ret v0), _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+          | throws ℓ0 =>
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, σ1), h =>
+                    simp only [Option.bind_some] at h
                     by_cases hk : ℓ0 = ℓ' ∧ op' = "raise"
                     · simp [if_pos hk] at h   -- caught ⇒ term, but h says raised: absurd
-                    · -- not caught: `obtain ⟨rfl,rfl,rfl⟩` keeps ℓ'/w (eliminates outer ℓ/v), op'→"raise".
-                      simp only [if_neg hk, Option.some.injEq, Outcome.raised.injEq] at h
-                      obtain ⟨rfl, rfl, rfl⟩ := h
+                    · simp only [if_neg hk, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                      obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst σ1
                       have hne : ℓ0 ≠ ℓ' := fun he => hk ⟨he, rfl⟩
                       have hnc : Bang.handlesOp (Handler.throws ℓ0) ℓ' "raise" = false := by
                         simp [Bang.handlesOp, hne]
-                      obtain ⟨F1, hF1⟩ := ihR M ℓ' w hM (Frame.handleF (Handler.throws ℓ0) :: K) n r (by
-                        rw [dispatchRun_handleF_skip n (Handler.throws ℓ0) K ℓ' w hnc]; exact hr)
+                      have hCins : CtxCorr σ (Frame.handleF (.throws ℓ0) :: K) :=
+                        CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                      obtain ⟨hCM, kR⟩ := ihR M σ ℓ' w σ' hM (Frame.handleF (.throws ℓ0) :: K) hCins
+                      refine ⟨CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM, fun n r hr => ?_⟩
+                      obtain ⟨F1, hF1⟩ := kR n r (by
+                        rw [updateCtxStates_cons_nonstate σ' (by intro ℓ s; simp),
+                          dispatchRun_handleF_skip n (Handler.throws ℓ0) _ ℓ' w hnc]; exact hr)
                       exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | state ℓ0 s =>
-                    -- non-throws forwards (the `_` arm); op' forced to "raise" ⇒ handlesOp = false.
-                    simp only [Option.some.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨rfl, rfl, rfl⟩ := h
-                    have hnc : Bang.handlesOp (Handler.state ℓ0 s) ℓ' "raise" = false := by
-                      simp [Bang.handlesOp]
-                    obtain ⟨F1, hF1⟩ := ihR M ℓ' w hM (Frame.handleF (Handler.state ℓ0 s) :: K) n r (by
-                      rw [dispatchRun_handleF_skip n (Handler.state ℓ0 s) K ℓ' w hnc]; exact hr)
-                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | transaction ℓ0 Θ =>
-                    simp only [Option.some.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨rfl, rfl, rfl⟩ := h
+                | (.term (.ret v0), _), h => simp [Option.bind] at h
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
+          | transaction ℓ0 Θ =>
+              simp only at h
+              cases hM : evalD fe σ M with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, σ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, hσ⟩ := h; subst σ1
                     have hnc : Bang.handlesOp (Handler.transaction ℓ0 Θ) ℓ' "raise" = false := by
                       simp [Bang.handlesOp]
-                    obtain ⟨F1, hF1⟩ := ihR M ℓ' w hM (Frame.handleF (Handler.transaction ℓ0 Θ) :: K) n r (by
-                      rw [dispatchRun_handleF_skip n (Handler.transaction ℓ0 Θ) K ℓ' w hnc]; exact hr)
+                    have hCins : CtxCorr σ (Frame.handleF (.transaction ℓ0 Θ) :: K) :=
+                      CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
+                    obtain ⟨hCM, kR⟩ := ihR M σ ℓ' w σ' hM
+                      (Frame.handleF (.transaction ℓ0 Θ) :: K) hCins
+                    refine ⟨CtxCorr_updateCtx_nonstate (by intro ℓ s; simp) hCM, fun n r hr => ?_⟩
+                    obtain ⟨F1, hF1⟩ := kR n r (by
+                      rw [updateCtxStates_cons_nonstate σ' (by intro ℓ s; simp),
+                        dispatchRun_handleF_skip n (Handler.transaction ℓ0 Θ) _ ℓ' w hnc]; exact hr)
                     exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | .term (.ret v0), h => simp [Option.bind] at h
-            | .term (.lam a), h => simp [Option.bind] at h
-            | .term (.letC a b), h => simp [Option.bind] at h
-            | .term (.force a), h => simp [Option.bind] at h
-            | .term (.app a b), h => simp [Option.bind] at h
-            | .term (.up a b d), h => simp [Option.bind] at h
-            | .term (.handle a b), h => simp [Option.bind] at h
-            | .term (.case a b d), h => simp [Option.bind] at h
-            | .term (.split a b), h => simp [Option.bind] at h
-            | .term (.unfold a), h => simp [Option.bind] at h
-            | .term .oom, h => simp [Option.bind] at h
-            | .term (.wrong a), h => simp [Option.bind] at h
+                | (.term (.ret v0), _), h => simp [Option.bind] at h
+                | (.term (.lam a), _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _), h => simp [Option.bind] at h
+                | (.term (.force a), _), h => simp [Option.bind] at h
+                | (.term (.app a b), _), h => simp [Option.bind] at h
+                | (.term (.up a b d), _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _), h => simp [Option.bind] at h
+                | (.term (.split a b), _), h => simp [Option.bind] at h
+                | (.term .oom, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _), h => simp [Option.bind] at h
       | case a b d => simp [evalD] at h
       | split a b => simp [evalD] at h
       | unfold a => simp [evalD] at h
@@ -1090,10 +2752,15 @@ theorem run_evalD : ∀ fe,
 `v`, the kernel's verified `Source.eval` agrees (`.done v`). Ties the calculated
 machine to the type-safety reference (invariant #1) — `Source.eval`'s `type_safety`
 now backs `evalD`'s `ret`-results. Pure spine; handlers/ADT elim later. -/
-theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (h : evalD f M = some (.term (.ret v))) :
+theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (σ' : SStore)
+    (h : evalD f [] M = some (.term (.ret v), σ')) :
     ∃ F, Source.eval F M = Result.done v := by
-  have hbase : Config.run 1 ([], .ret v) = Result.done v := by simp only [Config.run]
-  obtain ⟨F, hF⟩ := (run_evalD f).1 M (.ret v) h [] 1 (Result.done v) hbase
+  -- the empty store mirrors the empty kernel context (`CtxCorr [] []` by `rfl`); a closed program
+  -- has no state frames ⇒ `updateCtxStates [] σ' = []`, so the continuation runs at `([], ret v)`.
+  obtain ⟨_, k⟩ := (run_evalD f).1 M [] (.ret v) σ' h [] rfl
+  have hbase : Config.run 1 (updateCtxStates [] σ', .ret v) = Result.done v := by
+    simp only [updateCtxStates, Config.run]
+  obtain ⟨F, hF⟩ := k 1 (Result.done v) hbase
   exact ⟨F, hF⟩
 
 /-- `handle`-install over a non-raising body: `handle (throws ℓ) (ret 7)` ⇒ `ret 7`
@@ -1101,7 +2768,7 @@ theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (h : evalD f M = some
 evalD and Source.eval agree. -/
 example :
     let M := Comp.handle (.throws default) (.ret (.vint 7))
-    evalD 5 M = some (.term (.ret (.vint 7)))
+    evalD 5 [] M = some (.term (.ret (.vint 7)), [])
       ∧ exec 10 (compile M []) [] [] = some [.ret (.vint 7)]
       ∧ Source.eval 5 M = Result.done (.vint 7) := by
   refine ⟨by rfl, by rfl, by rfl⟩
@@ -1110,7 +2777,7 @@ example :
 `Source.eval` reaches `.done 5`. The two semantics agree. -/
 example :
     let M := Comp.app (.lam (.ret (.vvar 0))) (.vint 5)
-    evalD 5 M = some (.term (.ret (.vint 5))) ∧ Source.eval 5 M = Result.done (.vint 5) := by
+    evalD 5 [] M = some (.term (.ret (.vint 5)), []) ∧ Source.eval 5 M = Result.done (.vint 5) := by
   refine ⟨by rfl, by rfl⟩
 
 end Bang.CalcVM
