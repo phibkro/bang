@@ -1,0 +1,12 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/2025-03-26/mcp.schema.json",
+  "mcpServers": {
+    "tilth": {
+      "command": "tilth",
+      "args": ["--mcp"]
+    },
+    "context7": {
+      "command": "context7-mcp"
+    }
+  }
+}
