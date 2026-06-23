@@ -355,4 +355,73 @@ def Srel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
 termination_by n C _ _ _ _ _ => (n, sizeOf C, 0)
 end
 
+
+/-! ## 5.3 Adequacy building blocks toward `lr_sound`
+
+`lr_sound : (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂`. Biorthogonal adequacy
+(benton-hur-icfp09, pitts-step-indexed): `Crel` co-behaves against EVERY
+`Krel`-related stack pair, so instantiating at a stack pair `(C, C)` known to be
+`Krel`-self-related yields the `⊑`-clause for context `C`.
+
+The CLOSED case (`C = []`) is provable from the relations ALONE — `krel_nil`
+below — and gives `lr_sound_closed` (empty-context / whole-program adequacy). The
+ARBITRARY-context case needs `Krel n B e C C` for every `C`, i.e. Krel-reflexivity
+(the "identity extension" lemma), which is the FUNDAMENTAL-THEOREM direction — see
+the dependency note on `lr_sound` in `Bang/Spec.lean`. -/
+
+/-- A returned value always converges (one machine step: `([], ret v) ↦ done v`). -/
+theorem converges_ret (v : Val) : Converges (Comp.ret v) :=
+  ⟨1, v, rfl⟩
+
+/-- An UNHANDLED operation never converges: under the empty stack `splitAt [] = none`,
+so `step ([], up ℓ op v) = none` and the machine is immediately stuck. -/
+theorem not_converges_up_nil (ℓ : Label) (op : OpId) (v : Val) :
+    ¬ Converges (Comp.up ℓ op v) := by
+  rintro ⟨fuel, w, hfuel⟩
+  -- `Source.eval fuel (up …) = Config.run fuel ([], up …)`; the step is `none` (stuck), never `done`.
+  cases fuel with
+  | zero => simp [Source.eval, Config.run] at hfuel
+  | succ k =>
+      have hstuck : Config.run (k + 1) ([], Comp.up ℓ op v) = Result.stuck := by
+        rw [Config.run_step k ([], Comp.up ℓ op v) (by intro u; simp)]
+        rfl
+      rw [show Source.eval (k+1) (Comp.up ℓ op v)
+            = Config.run (k+1) ([], Comp.up ℓ op v) from rfl, hstuck] at hfuel
+      simp at hfuel
+
+/-- The empty stack is `Krel`-self-related at every SUCCESSOR index/type/row: the RETURN half
+holds because `ret v` always converges (so `CoApprox` is `True → True`), and the STUCK half
+holds because an `Srel (n+1)`-pair under `[]` is an unhandled `up`, which never converges (so
+`CoApprox` is `False → _`). This is the closed-program observation context.
+
+The `n+1` is necessary: at index 0, `Srel 0 = True` carries no operation shape, so the stuck
+half would demand `CoApprox c₁ c₂` for ARBITRARY `c₁ c₂` — false. (This is the standard
+step-indexed convention that a relation-as-PREMISE is only informative at successor indices;
+the `∀ n` hypothesis of `lr_sound` lets the proof pick `n+1`.) -/
+theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (B : CTy Eff Mult) (e : Eff) :
+    Krel (n + 1) B e ([] : Stack) ([] : Stack) := by
+  unfold Krel
+  refine ⟨?_, ?_⟩
+  · -- return half: plug [] (ret vᵢ) = ret vᵢ, which always converges.
+    intro q A _ v₁ v₂ _ _
+    exact converges_ret v₂
+  · -- stuck half: an Srel (n+1)-pair under [] is an unhandled `up`, which never converges.
+    intro c₁ c₂ hS hconv
+    unfold Srel at hS
+    obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, _, _, _, _, _, _, _, _⟩ := hS
+    rw [Stack.plug, Bang.plug, hc₁] at hconv
+    exact absurd hconv (not_converges_up_nil ℓ op v₁)
+
+/-- WHOLE-PROGRAM adequacy: `Crel` implies the closed (empty-context) observation
+`Converges c₁ → Converges c₂`. The `⊑` restricted to `C = []`. Provable from `Crel` +
+`krel_nil_succ` alone (no fundamental theorem). -/
+theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult}
+    (h : ∀ n, Crel n B e c₁ c₂) : Converges c₁ → Converges c₂ := by
+  have hC := h 1
+  unfold Crel at hC
+  have := hC [] [] (krel_nil_succ 0 B e)
+  simpa [Stack.plug, Bang.plug] using this
+
 end Bang

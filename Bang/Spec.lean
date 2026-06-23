@@ -150,8 +150,19 @@ theorem effect_sound
 
 /-! ## 5. Logical relation theorems -/
 
--- [RISKY] Soundness: LR implies contextual approximation. PROVE THIS FIRST
--- in Phase B (PROOF_ORDER #1).
+-- [RISKY] Soundness: LR implies contextual approximation. PROOF_ORDER #1.
+--   STATUS (U5): the CLOSED fragment is DONE and axiom-clean — `LR.lr_sound_closed`
+--   proves `(∀ n, Crel n B e c₁ c₂) → (Converges c₁ → Converges c₂)` (the `⊑` clause
+--   at the EMPTY context `C = []`), via `LR.krel_nil_succ` (the empty stack is
+--   `Krel`-self-related at successor indices). What remains for FULL `⊑` over arbitrary
+--   `C : Cxt`: `Krel n B e C C` for every evaluation context `C` ("Krel-reflexivity" /
+--   identity extension). That is the FUNDAMENTAL-THEOREM direction — both halves of
+--   `Krel C C` (related values / related stuck-ops plugged into `C` co-converge) are
+--   context-CONGRUENCE, which `Crel` alone does not give (the `letF N :: C'` induction
+--   case blocks on `N[v₁] ~ N[v₂]` needing `Crel`-relatedness from `Vrel v₁ v₂`). Hence
+--   `lr_sound` and `lr_fundamental` are coupled (PROOF_ORDER #1 groups them): close
+--   `lr_fundamental` (→ `Krel`-reflexivity as its identity instance), then
+--   `lr_sound = lr_sound_closed ∘ (congruence of the observation context)`.
 theorem lr_sound
     {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult} :
     (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂ := sorry
