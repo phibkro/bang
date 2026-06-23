@@ -197,12 +197,15 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 - **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
   axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound` (Q14), `zero_usage` (→◊4).
 - **`paths/PATH-calcvm-port.md`** — ◊3 (next verification checkpoint). Collapse the K3 Calc* matrix into
-  one graded-CBPV calculated machine. **IN PROGRESS**: D1=A (calculate from denotational `evalD`). Landed:
-  pure CBPV spine (`158f08d`) + `evalD ≡ Source.eval` bridge (`7baf5f8`) + **deep handlers (throws-only):
-  O1 INSTALL `8a860a4`, O2 THROW abort `e07d349`** — the `unwindFind` throws-only boundary (state/transaction
-  frames SKIPPED, deferred); `compile_correct`/`evalD_agrees_source` PROVEN axiom-clean, two-part forms
-  (`sim`/`run_evalD`) gate-guarded (`e11dc6f`); ◊2 gate still 0-axiom. NEXT: resumptive (state) handlers
-  (the SKIP must become RESUME), then ADT `case`/`split`/`unfold`, then archive the matrix.
+  one graded-CBPV calculated machine. **IN PROGRESS, well advanced**: D1=A (calculate from denotational
+  `evalD`). Landed axiom-clean: pure CBPV spine (`158f08d`) + `evalD ≡ Source.eval` bridge (`7baf5f8`) +
+  **deep handlers throws-only** (O1 INSTALL `8a860a4`, O2 THROW abort `e07d349`) + **resumptive state —
+  handlers RESUME** (ADR-0031, Unit 4, `2063c0e`): `evalD` threads a label-keyed `SStore` servicing get/put
+  inline; the machine RESUMES via a non-discarding `OP` (shape-A, one-shot, `c` IS Kᵢ); the throws⊗state
+  nesting is handled (outer `put` persists past an inner caught throw). `compile_correct`,
+  `evalD_agrees_source`, `sim`, `run_evalD` all ⊆ {propext, Classical.choice, Quot.sound}; ◊2 gate still
+  0-axiom. **NEXT:** transaction fold-in (ADR-0030, state-over-list-heap), then ADT `case`/`split`/`unfold`
+  (runtime CASE/SPLIT instruction), then collapse + archive the K3 Calc* matrix (ADR-0017) → ◊3 gate.
 
 **Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
 verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;
