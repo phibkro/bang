@@ -84,15 +84,23 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
   the churn was eaten). NB the worktree-isolation flag did not engage — the IC landed on the shared main tree;
   benign with a single writer.
 
-- **✓ Unit 6 — ADT eliminators DONE** (`3252ef8`, axiom-clean, independently gated + invariant-#4
-  artifact-checked). `case`/`split`/`unfold` handled across `evalD` + machine + bridge via **runtime**
-  `CASE`/`SPLIT`/`UNFOLD` instructions — `compile` emits them WITHOUT recursing into branches (stays
-  structural/terminating, resolving the Unit-2 defer), `exec` re-compiles the chosen branch at runtime, the
-  **same calculated residual-`Comp` shape as `SUBST`/`APP`** (no flattening — that stays a later pass). PURE
-  reductions (closed-value scrutinees ⇒ no σ/τ threading, no raised-handback); `evalD` mirrors kernel
-  `Source.step` 259-263 byte-for-byte incl. `split`'s double subst with `shift`. `sim`/`run_evalD` cases
-  mirror `SUBST`/`APP` (term) + `force` (pure); `unfold` vacuous in the raise parts. Demonstrator battery
-  (case-inl/inr, split, unfold) `rfl`-proven on BOTH `exec∘compile` and `evalD`.
+- **✓ Unit 6 — ADT eliminators DONE** (`3252ef8` + calc-derivation refinement `59bdd06`, axiom-clean,
+  independently gated + invariant-#4 artifact-checked). `case`/`split`/`unfold` handled across `evalD` +
+  machine + bridge. **The instruction set is the calculation's OUTPUT, and the calc split the three apart**
+  (re-derived per invariant #4 in `59bdd06`, the *second* pinned-shape override on build evidence this
+  session): `case`/`split` are **runtime `CASE`/`SPLIT` instructions** — their erasure `compile (case (inl v)
+  N₁ N₂) c = compile (subst v N₁) c` is NON-structural (`subst v N₁` isn't a subterm), the exact shape
+  `SUBST`/`APP` resolve by deferring to a fuel-bounded re-`compile` in `exec` (and the scrutinee may be open
+  in a branch body, so no compile-time peek-and-erase). **`unfold` ERASES — NO instruction**: the calc
+  collapses `compile (unfold (fold v)) c = RET v :: c` onto the existing `RET`, structurally (the precedent
+  is `force`, not `SUBST`: `compile (force (vthunk M)) c = compile M c` peeks-and-erases at compile time). So
+  the machine gained CASE/SPLIT only; an UNFOLD instr would have been hand-added redundancy. The asymmetry
+  (structural erase vs non-structural defer) is the calc's output, not a taste call. No flattening (later
+  pass). PURE reductions (closed-value scrutinees ⇒ no σ/τ threading, no raised-handback); `evalD` mirrors
+  kernel `Source.step` 259-263 byte-for-byte incl. `split`'s double subst with `shift`. `sim`/`run_evalD`
+  cases mirror `SUBST`/`APP` (term) for case/split + the `ret` terminal for unfold (vacuous in the raise
+  parts). Demonstrator battery (case-inl/inr, split, unfold-via-erasure) `rfl`-proven on BOTH `exec∘compile`
+  and `evalD`.
   `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext, Classical.choice, Quot.sound}; ◊2
   gate 0-axiom. No design fork (the residual-`Comp` shape was over-determined by the SUBST/APP calculation).
 

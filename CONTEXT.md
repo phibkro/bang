@@ -210,10 +210,11 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   free (inner txn frame pops its heap on a forwarded raise; outer write persists past a caught throw).
   `compile_correct`, `evalD_agrees_source`, `sim`, `run_evalD` all ⊆ {propext, Classical.choice, Quot.sound}
   over BOTH arms; ◊2 gate still 0-axiom (independently gated on the committed tree) + **ADT eliminators —
-  Unit 6, `3252ef8`**: `case`/`split`/`unfold` via runtime `CASE`/`SPLIT`/`UNFOLD` instructions (compile
-  emits without recursing → structural; exec re-compiles the chosen branch — the calculated residual-`Comp`
-  shape of `SUBST`/`APP`, resolving the Unit-2 defer; no flattening). PURE reductions, `evalD` mirrors
-  kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held. **NEXT (final ◊3 step):** collapse + archive the
+  Unit 6, `3252ef8`+`59bdd06`**: `case`/`split` via runtime `CASE`/`SPLIT` instructions (non-structural
+  erasure ⇒ defer to a fuel-bounded re-`compile` in `exec`, the `SUBST`/`APP` shape; resolves the Unit-2
+  defer); **`unfold` ERASES onto `RET` — no instruction** (structural, the `force` precedent; an UNFOLD instr
+  would be hand-added redundancy). The split is the calculation's OUTPUT, re-derived per invariant #4
+  (`59bdd06`). PURE reductions, `evalD` mirrors kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held. **NEXT (final ◊3 step):** collapse + archive the
   K3 `Calc*` matrix (ADR-0017) — the new `CalcVM.lean` now covers the full feature surface (pure CBPV + deep
   handlers + resumptive state + transaction + ADT) the K3 matrix calculated over the old K2 `Expr`; unify +
   diff-test green + `archive/` the matrix ⟹ **◊3 met**.
