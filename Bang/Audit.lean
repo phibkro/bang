@@ -23,5 +23,6 @@ open Bang
 #print axioms type_safety
 #print axioms no_accidental_handling
 #print axioms rowinst_requires_disjoint
+#print axioms all_or_nothing_abort
 #print axioms effect_sound
 #print axioms zero_usage_erasable

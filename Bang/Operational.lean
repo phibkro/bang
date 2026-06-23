@@ -224,21 +224,23 @@ def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option 
             -- allocate: append the initial value `v`; the new TVar's index is the old length.
             some (Kᵢ ++ Frame.handleF (.transaction ℓ' (Θ ++ [v])) :: Kₒ, .ret (.vint Θ.length))
           else if op == "readTVar" then
-            -- read: payload `vint i`; return cell `i` (oom on a malformed/out-of-range index).
-            match tvarIdx v with
-            | some i =>
-                match Θ[i]? with
-                | some cell => some (Kᵢ ++ Frame.handleF (.transaction ℓ' Θ) :: Kₒ, .ret cell)
-                | none      => some (Kₒ, .oom)
-            | none => some (Kₒ, .oom)
+            -- read (ADR-0030 amendment, TVarRef = int, TOTAL store): payload `vint i`; return cell `i`,
+            -- or the DEFAULT `vint 0` if out of range. NEVER ooms — `oom` is the fuel sentinel, so a
+            -- bad read producing it would be untypable (preservation gap). The store is conceptually a
+            -- total `Loc → Val` map (`getD` with `vint 0`); source refs come only from `newTVar`, so
+            -- the default path is source-unreachable but kernel-total. Heap unchanged on read.
+            some (Kᵢ ++ Frame.handleF (.transaction ℓ' Θ) :: Kₒ,
+                  .ret (Θ.getD ((tvarIdx v).getD 0) (.vint 0)))
           else
-            -- writeTVar: payload `pair (vint i) w`; store `w` at cell `i`, return unit.
+            -- writeTVar (ADR-0030, total store): payload `pair (vint i) w`; store `w` at cell `i`, return
+            -- unit. `storeSet`/`List.set` is a no-op out of range, so this is TOTAL and never ooms. A
+            -- malformed payload (not `pair (vint _) _`) is a type-safe no-op resume (source-unreachable
+            -- since the payload type is `prod int S`).
             match v with
             | .pair iv w =>
-                match tvarIdx iv with
-                | some i => some (Kᵢ ++ Frame.handleF (.transaction ℓ' (storeSet Θ i w)) :: Kₒ, .ret .vunit)
-                | none   => some (Kₒ, .oom)
-            | _ => some (Kₒ, .oom)
+                some (Kᵢ ++ Frame.handleF (.transaction ℓ' (storeSet Θ ((tvarIdx iv).getD 0) w)) :: Kₒ,
+                      .ret .vunit)
+            | _ => some (Kᵢ ++ Frame.handleF (.transaction ℓ' Θ) :: Kₒ, .ret .vunit)
 
 def dispatch (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
   (splitAt K ℓ op).bind (dispatchOn op v)
