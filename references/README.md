@@ -38,6 +38,17 @@ Cite from Lean sources by **stem** (path-independent): `-- shape: biernacki-popl
 - `bauer-pretnar-algebraic-effects-and-handlers.pdf` — foundational tutorial; effect syntax and denotational semantics.
 - `tang-popl24-soundly-handling-linearity.pdf` — *(Pass-B)* control-flow linearity for multi-shot handlers; relevant to the CalcReify frontier and the `runState × throw` decision.
 
+### transactions / STM (rung 3, ADR-0030) — *bib-only, fetch on demand*
+
+Added 2026-06-23 (the library had zero STM material). STM is a v1 kernel-layer paradigm (rung 3); these
+ground **ADR-0030** (STM-as-transactional-handler). Cite by key from `refs.bib`; PDFs fetched on demand.
+
+- `harris-ppopp05-composable-memory-transactions` — **THE reference operational semantics** (Fig 4: heap threaded directly; abort discards the write-delta, keeps allocations). States journal/rollback is *implementation*, not semantics — the textual basis for STM-as-handler + the all-or-nothing law.
+- `guerraoui-ppopp08-correctness-of-tm` — **opacity** (the standard TM correctness criterion); our all-or-nothing law is its single-threaded degenerate case → the concurrency-checkpoint upgrade target.
+- `lesani-oopsla22-c4-verified-transactional-objects` — Coq-mechanized verified-TM exemplar (strict serializability via linearizability); the model for the concurrency checkpoint.
+- `lesani-concur12-verifying-stm` — why opacity is subtle (DSTM/McRT are not opaque); cautionary for the eventual concurrent proof.
+- `tomasek-thesis-effects-handlers-for-stm` — direct STM-as-algebraic-effects-handler prior art (TU Delft); corroborates the reduction (image PDF — abstract-only confidence).
+
 ## 2-calcvm — calculated compilers + verified-compiler architecture (◊3)
 
 - `garby-haskell24-calculating-effectively.pdf` — Garby, Hutton, Bahr, "Calculating Compilers Effectively" (Functional Pearl, Haskell 2024). The canonical **"calculate a compiler for an *effectful* language"** paper: the calculation extends to side-effects via an algebraic-effects treatment, decoupling effect *interpretation* from the derivation — directly on bang-lang's "effects as values, derive the VM" thesis. *(Identity resolved 2026-06-21 from the PDF title page; previously mislabeled as Bahr–Hutton ICFP'22.)*

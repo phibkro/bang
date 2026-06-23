@@ -452,3 +452,59 @@
             Nearest published twin of CalcVM→WasmFX.},
   % TODO: confirm full author list + venue on publication.
 }
+
+% ── transactions / STM (rung 3, ADR-0030) ──────────────────────────────
+@inproceedings{harris-ppopp05-composable-memory-transactions,
+  author    = {Harris, Tim and Marlow, Simon and Peyton Jones, Simon and Herlihy, Maurice},
+  title     = {Composable Memory Transactions},
+  booktitle = {PPoPP 2005},
+  year      = 2005,
+  note      = {THE reference STM operational semantics (their Fig 4): heap Theta threaded
+               directly; abort discards the heap delta, keeps allocations (all-or-nothing).
+               States the high-level semantics has "no notion of transaction logs or
+               rollback -- these are implementation" (journal/validation is the concurrency
+               device, Sec 6.1). Grounds ADR-0030's STM-as-handler + all-or-nothing law.
+               \url{https://timharris.uk/papers/2005-ppopp-composable.pdf}},
+}
+
+@inproceedings{guerraoui-ppopp08-correctness-of-tm,
+  author    = {Guerraoui, Rachid and Kapalka, Michal},
+  title     = {On the Correctness of Transactional Memory},
+  booktitle = {PPoPP 2008 (extended in TCS)},
+  year      = 2008,
+  note      = {Defines OPACITY = strict serializability + aborted txns never observe
+               inconsistent state; the standard TM correctness criterion. ADR-0030's
+               all-or-nothing law is opacity's single-threaded degenerate case; the
+               concurrency-checkpoint upgrade target.},
+}
+
+@article{lesani-oopsla22-c4-verified-transactional-objects,
+  author  = {Lesani, Mohsen and Chlipala, Adam and others},
+  title   = {{C4}: Verified Transactional Objects},
+  journal = {PACMPL (OOPSLA)},
+  year    = 2022,
+  note    = {Coq-mechanized strict serializability reduced to linearizability; the modern
+             verified-TM exemplar for the concurrency checkpoint.
+             \url{https://adam.chlipala.net/papers/TransactionsOOPSLA22/TransactionsOOPSLA22.pdf}},
+}
+
+@inproceedings{lesani-concur12-verifying-stm,
+  author    = {Lesani, Mohsen and Palsberg, Jens},
+  title     = {A Framework for Verifying STM Algorithms},
+  booktitle = {CONCUR 2012},
+  year      = 2012,
+  note      = {DSTM/McRT are NOT opaque (write-skew/write-exposure); opacity is subtle.
+               Cautionary for the concurrency-checkpoint correctness proof.
+               \url{https://people.csail.mit.edu/lesani/companion/concur12/CONCUR12.pdf}},
+}
+
+@mastersthesis{tomasek-thesis-effects-handlers-for-stm,
+  author = {Tom\'a\v{s}ek, Matej},
+  title  = {Algebraic Effects and Handlers for Software Transactional Memory},
+  school = {TU Delft},
+  note   = {Direct prior art: STM ops (new/read/writeTVar) as algebraic effects interpreted
+            by a handler folding the computation tree; transaction state in the handler.
+            Corroborates ADR-0030's STM-as-handler reduction. (Image PDF; exact theorem
+            unverified beyond abstract.)
+            \url{https://repository.tudelft.nl/file/File_60da1dca-11ba-48b7-b0a0-9fbbf35fd924}},
+}
