@@ -137,14 +137,14 @@ theorem effect_sound
 -- [RISKY] Soundness: LR implies contextual approximation. PROVE THIS FIRST
 -- in Phase B (PROOF_ORDER #1).
 theorem lr_sound
-    {c₁ c₂ : Comp} {B : CTy Eff Mult} :
-    (∀ n, Crel n B c₁ c₂) → c₁ ⊑ c₂ := sorry
+    {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult} :
+    (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂ := sorry
 
 -- [KEY] Fundamental theorem.
 theorem lr_fundamental
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
-    HasCTy γ Γ c e B → ∀ n, Crel n B c c := sorry
+    HasCTy γ Γ c e B → ∀ n, Crel n B e c c := sorry
 
 
 /-! ## 6. Recovery algebra — the Trinity (ADR-0018) -/
