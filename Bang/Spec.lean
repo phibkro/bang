@@ -7,8 +7,8 @@
   Module layout:
     Bang.Core         types (Val, Comp, Handler, VTy, CTy, GradeVec, TyCtx, Frame)
     Bang.Syntax       q_or_1, HasVTy/HasCTy (resource-enforcing), row well-formedness
-    Bang.Operational  subst, Source.step/eval, Trace, isReturn, NotEvaluated
-    Bang.LR           Stack, BaseRel, Vrel/Srel/Krel/Crel, recovery helpers
+    Bang.Operational  subst, Source.step/eval, Trace, isReturn
+    Bang.LR           Stack, BaseRel, Vrel/Srel/Krel/Crel, NotEvaluated, recovery helpers
     Bang.Compile      Wasmfx.* + compileC/compileV/compileHandler
     Bang.Spec         (this file) — re-exports + frozen theorem statements
 
@@ -121,7 +121,23 @@ theorem zero_usage_erasable
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy ((0 : Mult) :: γ) (A :: Γ) c e B →
-    NotEvaluated 0 c := sorry
+    NotEvaluated 0 c := by
+  intro _hc v₁ v₂
+  -- GOAL (NotEvaluated unfolded): `Comp.substFrom 0 v₁ c ≈ Comp.substFrom 0 v₂ c`.
+  -- This is Torczon's grade-0 COEFFECT ERASURE (`semtyping.v`): a binder typed at grade `0` cannot
+  -- influence observable behaviour, so any two fillers give `≈`-equal computations. It is genuinely
+  -- SEMANTIC — a 0-graded var is still substituted syntactically (`ret (vvar 0)` type-checks at
+  -- returner grade `q = 0`), so there is no structural / syntactic-non-occurrence shortcut (verified:
+  -- both the "syntactic non-occurrence" and "syntactic subst-independence" readings are refuted by
+  -- `ret (vvar 0)` at `q = 0`). The proof routes through the logical relation:
+  --   BLOCKER: needs `lr_fundamental` (PROOF_ORDER #1, still `sorry`) — instantiate `Crel`/`Vrel` at
+  --   the grade-0 slot to get observational irrelevance of the filler (Torczon proves erasure as a
+  --   corollary of the fundamental property, `semtyping.v`). With `lr_sound`+`lr_fundamental` closed,
+  --   this becomes: derive `Crel n B e (subst v₁ c) (subst v₂ c)` for all `n` from `_hc` (the 0-slot
+  --   makes the `Vrel`-relatedness of `v₁,v₂` irrelevant), then `lr_sound` gives `⊑` both ways = `≈`.
+  -- Leaving the single `sorry` here (theorem body only) per discipline; the def `NotEvaluated` is
+  -- axiom-free (the `NotEvaluated` axiom is REMOVED — it is now a real `def` in `Bang/LR.lean`).
+  sorry
 
 -- [KEY] Effect soundness: static grade `e` over-approximates every observed trace.
 theorem effect_sound
@@ -150,7 +166,7 @@ theorem lr_fundamental
 /-! ## 6. Recovery algebra (ADR-0018, amended by ADR-0032) -/
 
 -- [KEY] monoid ⇒ ret is a unit for sequencing.
-theorem seq_unit (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := sorry
+theorem seq_unit (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := seq_unit_proof v
 
 -- `group_recovers` RETIRED (ADR-0032, supersedes ADR-0018's "group ⇒ rollback" row).
 -- The law `[AddGroup Eff] → seqComp c (recover c) ≈ idComp` was FALSE as a plain `≈`

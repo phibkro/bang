@@ -124,6 +124,75 @@ with `v`, renumbering. β / let reduce with this. -/
 abbrev Comp.subst (v : Val) : Comp → Comp := Comp.substFrom 0 v
 abbrev Val.subst  (v : Val) : Val  → Val  := Val.substFrom 0 v
 
+/-! ### 1.3b Subst-after-shift cancellation (the autosubst β-identity)
+
+`substFrom k v (shiftFrom k t) = t` — UNCONDITIONALLY (no typing), for every term `t`, cutoff `k`,
+and filler `v`. The standard de Bruijn "weaken-then-substitute is the identity" law (Pierce TAPL §6.2
+shift/subst calculus; autosubst's `subst_shift`): the shift opens a fresh slot at level `k` that the
+immediately-following subst-at-`k` fills back, and every other index round-trips through the
+`if i < c`/`if i = k`/`if i > k` arithmetic to itself. It is the operational core of `seq_unit`:
+`(Comp.shift c).subst v = c`, i.e. the `letC (ret v) (shift c) ↦ (shift c)[v] = c` head-reduction. -/
+mutual
+theorem Val.substFrom_shiftFrom (k : Nat) (v : Val) :
+    ∀ t : Val, Val.substFrom k v (Val.shiftFrom k t) = t
+  | .vunit       => rfl
+  | .vint _      => rfl
+  | .vvar i      => by
+      -- i < k: shift fixes it (vvar i), then subst: i ≠ k and ¬ i > k ⇒ vvar i.
+      -- i ≥ k: shift bumps to i+1, then subst: i+1 ≠ k and i+1 > k ⇒ vvar ((i+1)-1) = vvar i.
+      by_cases hi : i < k
+      · simp only [Val.shiftFrom, if_pos hi, Val.substFrom,
+          if_neg (Nat.ne_of_lt hi), if_neg (Nat.not_lt.mpr (Nat.le_of_lt hi))]
+      · simp only [Val.shiftFrom, if_neg hi, Val.substFrom,
+          if_neg (by omega : i + 1 ≠ k), if_pos (by omega : i + 1 > k), Nat.add_sub_cancel]
+  | .vthunk M    => by simp only [Val.shiftFrom, Val.substFrom, Comp.substFrom_shiftFrom k v M]
+  | .inl w       => by simp only [Val.shiftFrom, Val.substFrom, Val.substFrom_shiftFrom k v w]
+  | .inr w       => by simp only [Val.shiftFrom, Val.substFrom, Val.substFrom_shiftFrom k v w]
+  | .pair w₁ w₂  => by
+      simp only [Val.shiftFrom, Val.substFrom,
+        Val.substFrom_shiftFrom k v w₁, Val.substFrom_shiftFrom k v w₂]
+  | .fold w      => by simp only [Val.shiftFrom, Val.substFrom, Val.substFrom_shiftFrom k v w]
+
+theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
+    ∀ t : Comp, Comp.substFrom k v (Comp.shiftFrom k t) = t
+  | .ret w       => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
+  | .letC M N    => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Comp.substFrom_shiftFrom k v M, Comp.substFrom_shiftFrom (k + 1) (Val.shift v) N]
+  | .force w     => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
+  | .lam M       => by
+      simp only [Comp.shiftFrom, Comp.substFrom, Comp.substFrom_shiftFrom (k + 1) (Val.shift v) M]
+  | .app M w     => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Comp.substFrom_shiftFrom k v M, Val.substFrom_shiftFrom k v w]
+  | .up ℓ op w   => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
+  | .handle h M  => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Handler.substFrom_shiftFrom k v h, Comp.substFrom_shiftFrom k v M]
+  | .case w N₁ N₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w,
+        Comp.substFrom_shiftFrom (k + 1) (Val.shift v) N₁,
+        Comp.substFrom_shiftFrom (k + 1) (Val.shift v) N₂]
+  | .split w N   => by
+      simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w,
+        Comp.substFrom_shiftFrom (k + 2) (Val.shift (Val.shift v)) N]
+  | .unfold w    => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
+  | .oom         => rfl
+  | .wrong _     => rfl
+
+theorem Handler.substFrom_shiftFrom (k : Nat) (v : Val) :
+    ∀ h : Handler, Handler.substFrom k v (Handler.shiftFrom k h) = h
+  | .state ℓ s       => by simp only [Handler.shiftFrom, Handler.substFrom, Val.substFrom_shiftFrom k v s]
+  | .throws _        => rfl
+  -- heap left untouched by both shift and subst (closed cells, ADR-0030) ⇒ identity is definitional.
+  | .transaction _ _ => rfl
+end
+
+/-- `(Comp.shift c).subst v = c` — the cutoff-0 instance of `Comp.substFrom_shiftFrom`, the exact
+shape `seq_unit` needs for the `letC (ret v) (shift c) ↦ c` head-reduction. -/
+theorem Comp.subst_shift (v : Val) (c : Comp) : Comp.subst v (Comp.shift c) = c :=
+  Comp.substFrom_shiftFrom 0 v c
+
 
 /-! ## 2. Operational semantics (small-step + fuel-iterated) -/
 
@@ -266,12 +335,23 @@ def Source.step : Config → Option Config
   -- stuck
   | _                       => none
 
+/-- Fill a single frame's hole with a focus — the one-step node a `plug` builds for a frame, and
+the redex a PUSH step undoes (`step (K, fr.wrapStep c) = (fr :: K, c)`). -/
+def Frame.wrapStep : Frame → Comp → Comp
+  | .letF N,    c => .letC c N
+  | .appF v,    c => .app c v
+  | .handleF h, c => .handle h c
+
 /-- Plug a focus back into its evaluation context (the inverse of decomposition). -/
 def plug : EvalCtx → Comp → Comp
   | [], c            => c
   | .letF N :: K, c  => plug K (.letC c N)
   | .appF v :: K, c  => plug K (.app c v)
   | .handleF h :: K, c => plug K (.handle h c)
+
+/-- `plug` peels its head frame via `wrapStep` (the structural identity `run_plug` inducts on). -/
+theorem plug_cons (fr : Frame) (K : EvalCtx) (c : Comp) :
+    plug (fr :: K) c = plug K (fr.wrapStep c) := by cases fr <;> rfl
 
 /-- Run a config to a returned value. `⟨[], ret v⟩` = done; `step = none` on a non-terminal = stuck. -/
 def Config.run : Nat → Config → Result Val
@@ -286,6 +366,49 @@ def Config.run : Nat → Config → Result Val
 (ADR-0023 D3), so `type_safety`'s frozen statement is untouched. -/
 def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel ([], c)
 
+/-- `Config.run` unfolds one step on a NON-returning config: when `cfg` is not `([], ret v)` the
+machine takes a `Source.step`. Bridges the equation compiler's overlapping `([], ret v)` /
+catch-all arms so callers can reason about a single transition. -/
+theorem Config.run_step (n : Nat) (cfg : Config)
+    (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
+    Config.run (n + 1) cfg =
+      (match Source.step cfg with | some cfg' => Config.run n cfg' | none => .stuck) := by
+  obtain ⟨K, c⟩ := cfg
+  match K, c with
+  | [], .ret v => exact absurd rfl (hne v)
+  | [], .letC _ _ | [], .app _ _ | [], .handle _ _ | [], .force _ | [], .up _ _ _
+  | [], .lam _ | [], .case _ _ _ | [], .split _ _ | [], .unfold _ | [], .oom | [], .wrong _
+  | _ :: _, _ => rfl
+
+/-- Fuel monotonicity: a config that runs to `done w` keeps running to `done w` with MORE fuel.
+Standard "more fuel never hurts a terminating run" — induct on `n`, threading the single transition
+through `Config.run_step`. -/
+theorem Config.run_done_add (k : Nat) :
+    ∀ (n : Nat) (cfg : Config) (w : Val),
+      Config.run n cfg = Result.done w → Config.run (n + k) cfg = Result.done w := by
+  intro n
+  induction n with
+  | zero => intro cfg w h; rw [show Config.run 0 cfg = Result.oom from rfl] at h; exact absurd h (by simp)
+  | succ m ih =>
+    intro cfg w h
+    by_cases hret : ∃ v, cfg = ([], Comp.ret v)
+    · obtain ⟨v, rfl⟩ := hret
+      -- ([], ret v): both runs hit the `done` arm; (m+1)+k = (m+k)+1 still returns v.
+      have hwv : Result.done w = Result.done v := by
+        rw [← h]; rfl
+      rw [show m + 1 + k = (m + k) + 1 by omega]
+      show Result.done v = Result.done w
+      exact hwv.symm
+    · push_neg at hret
+      rw [Config.run_step m cfg hret] at h
+      rw [show m + 1 + k = (m + k) + 1 by omega, Config.run_step (m + k) cfg hret]
+      cases hstep : Source.step cfg with
+      | none => rw [hstep] at h; exact absurd h (by simp)
+      | some cfg' =>
+          rw [hstep] at h
+          show Config.run (m + k) cfg' = Result.done w
+          exact ih cfg' w h
+
 -- Trace / evalTrace: still axiom; need concrete Eff to express
 -- "label in row" (see `docs/notes/OPEN_QUESTIONS.md` Q1).
 axiom Trace            : Type
@@ -297,8 +420,9 @@ def isReturn : Comp → Prop
   | .ret _ => True
   | _      => False
 
-/-- NotEvaluated: real semantic notion (de Bruijn index `i`'s thunk is never
-forced) needs Source.step reachability analysis. Axiom for now. -/
-axiom NotEvaluated     : Nat → Comp → Prop
+-- `NotEvaluated` (the coeffect-erasure notion: de Bruijn index `i`'s binder is never *evaluated*)
+-- is DEFINED in `Bang/LR.lean` (§5.0b), where the observational equivalence `≈` it is phrased over
+-- lives. A 0-graded var is still SUBSTITUTED syntactically (and type-checks — QTT permits 0-graded
+-- occurrences); only its *evaluation* is absent, so the faithful notion is semantic, not structural.
 
 end Bang

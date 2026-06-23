@@ -70,6 +70,108 @@ infixl:50 " ≈ " => ctxEquiv
 /-- Termination of c₁ implies termination of c₂ (Biernacki's `Obs`, approx form). -/
 def CoApprox (c₁ c₂ : Comp) : Prop := Converges c₁ → Converges c₂
 
+/-! ### 5.0b `NotEvaluated` — the coeffect-erasure notion (`zero_usage_erasable`)
+
+`NotEvaluated i c`: the de Bruijn index `i`'s binder is never EVALUATED in `c` — i.e. WHAT is
+substituted at index `i` cannot affect `c`'s observable behaviour. The faithful notion is SEMANTIC,
+not structural: a 0-graded variable is still substituted syntactically and still type-checks (QTT
+permits 0-graded occurrences, e.g. `ret (vvar 0)` at returner grade `q = 0`), so "index `i` doesn't
+occur" is FALSE — only its *evaluation* is absent. We phrase that as observational
+substitution-irrelevance: every two fillers produce `≈`-equivalent computations. This is exactly
+Torczon's grade-0 erasure (`semtyping.v`), which is proved via the logical relation. -/
+def NotEvaluated (i : Nat) (c : Comp) : Prop :=
+  ∀ v₁ v₂ : Val, Comp.substFrom i v₁ c ≈ Comp.substFrom i v₂ c
+
+
+/-! ### 5.0a Plug/run bridge + `seq_unit` (the left-unit head reduction)
+
+`seq_unit` is purely OPERATIONAL — no LR machinery. `seqComp (ret v) c = letC (ret v) (shift c)`
+head-reduces to `c` in TWO machine steps (`letC (ret v) N ↦ N[v]`, then `(shift c)[v] = c` by
+`Comp.subst_shift`), and this holds in EVERY context. The bridge `run_plug` says loading a
+`plug C x` term reaches the focused config `(C, x)` after `C.length` push steps, which lets the
+context-quantified `ctxEquiv` reduce to a config-level co-convergence. -/
+
+/-- Loading `plug C c` and running it equals running the focused config `(C, c)`, modulo the
+`C.length` push steps that re-decompose `plug C c` back into the frame stack `C`. The machine
+PUSHes through each `letC/app/handle` node the `plug` built (those nodes always PUSH, regardless of
+the subterm), rebuilding `C` innermost-first. -/
+theorem run_plug : ∀ (C : EvalCtx) (c : Comp) (n : Nat),
+    Config.run (n + C.length) ([], Bang.plug C c) = Config.run n (C, c)
+  | [], c, n => by simp only [Bang.plug, List.length_nil, Nat.add_zero]
+  | fr :: K, c, n => by
+      -- plug (fr::K) c = plug K (wrap fr c); IH on K reaches (K, wrap fr c); one PUSH ↦ (fr::K, c).
+      have hwrap : Source.step (K, fr.wrapStep c) = some (fr :: K, c) := by
+        cases fr <;> rfl
+      have hne : ∀ v, (K, fr.wrapStep c) ≠ ([], Comp.ret v) := by
+        intro v; cases fr <;> simp [Frame.wrapStep]
+      have hstep : Config.run (n + 1) (K, fr.wrapStep c) = Config.run n (fr :: K, c) := by
+        rw [Config.run_step n (K, fr.wrapStep c) hne, hwrap]
+      rw [plug_cons fr K c, List.length_cons,
+        show n + (K.length + 1) = (n + 1) + K.length by omega, run_plug K (fr.wrapStep c) (n + 1),
+        hstep]
+
+/-- `Converges (plug C x)` is exactly config-level convergence of the focused `(C, x)`. -/
+theorem converges_plug_iff (C : EvalCtx) (x : Comp) :
+    Converges (Bang.plug C x) ↔ ∃ n w, Config.run n (C, x) = Result.done w := by
+  constructor
+  · rintro ⟨fuel, w, hfuel⟩
+    -- bump fuel to `fuel + C.length` (run_done_add), then run_plug peels the C.length push steps.
+    refine ⟨fuel, w, ?_⟩
+    have : Config.run (fuel + C.length) ([], Bang.plug C x) = Result.done w :=
+      Config.run_done_add C.length fuel ([], Bang.plug C x) w hfuel
+    rwa [run_plug C x fuel] at this
+  · rintro ⟨n, w, hn⟩
+    exact ⟨n + C.length, w, by
+      show Source.eval (n + C.length) (Bang.plug C x) = Result.done w
+      rw [show Source.eval (n + C.length) (Bang.plug C x)
+            = Config.run (n + C.length) ([], Bang.plug C x) from rfl, run_plug C x n]; exact hn⟩
+
+/-- The head reduction at config level: `(C, seqComp (ret v) c)` runs to `(C, c)` after 2 steps. -/
+theorem seqComp_ret_run (v : Val) (c : Comp) (C : EvalCtx) (n : Nat) :
+    Config.run (n + 2) (C, seqComp (Comp.ret v) c) = Config.run n (C, c) := by
+  -- step 1 (PUSH): (C, letC (ret v) (shift c)) ↦ (letF (shift c) :: C, ret v)
+  -- step 2 (let-bind): (letF (shift c)::C, ret v) ↦ (C, (shift c)[v]) = (C, c) by subst_shift
+  show Config.run (n + 2) (C, Comp.letC (Comp.ret v) (Comp.shift c)) = _
+  -- two transitions; neither config is `([], ret _)` (focus is `letC …`, then stack is non-empty).
+  have hne1 : ∀ u, (C, Comp.letC (Comp.ret v) (Comp.shift c)) ≠ ([], Comp.ret u) := by
+    intro u; simp
+  have hne2 : ∀ u, (Frame.letF (Comp.shift c) :: C, Comp.ret v) ≠ ([], Comp.ret u) := by
+    intro u; simp
+  -- step 1: (C, letC (ret v) (shift c)) ↦ (letF (shift c) :: C, ret v)
+  have hr1 : Config.run (n + 1 + 1) (C, Comp.letC (Comp.ret v) (Comp.shift c))
+      = Config.run (n + 1) (Frame.letF (Comp.shift c) :: C, Comp.ret v) := by
+    rw [Config.run_step (n + 1) _ hne1]; rfl
+  -- step 2: (letF (shift c) :: C, ret v) ↦ (C, (shift c)[v]) = (C, c) by subst_shift
+  have hr2 : Config.run (n + 1) (Frame.letF (Comp.shift c) :: C, Comp.ret v)
+      = Config.run n (C, c) := by
+    rw [Config.run_step n _ hne2]
+    show Config.run n (C, Comp.subst v (Comp.shift c)) = Config.run n (C, c)
+    rw [Comp.subst_shift]
+  rw [show n + 2 = (n + 1) + 1 by omega, hr1, hr2]
+
+theorem seq_unit_proof (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := by
+  -- `≈` = approx both ways; each is context-quantified `Converges`. Bridge to config level,
+  -- where the 2-step head reduction makes the two foci co-converge with a ±2 fuel offset.
+  have fwd : ∀ x y : Comp, (∀ (C : EvalCtx) n w,
+      Config.run n (C, x) = Result.done w → ∃ m, Config.run m (C, y) = Result.done w) →
+      x ⊑ y := by
+    intro x y hco C hx
+    rw [Cxt.plug, converges_plug_iff] at hx ⊢
+    obtain ⟨n, w, hn⟩ := hx
+    obtain ⟨m, hm⟩ := hco C n w hn
+    exact ⟨m, w, hm⟩
+  refine ⟨fwd _ _ ?_, fwd _ _ ?_⟩
+  · -- seqComp (ret v) c ⊑ c : a run of the seqComp reaches `done` ⇒ so does c (drop the 2 steps).
+    intro C n w hn
+    -- bump n to n+2 (run_done_add), then seqComp_ret_run rewrites it to c's run at fuel n.
+    refine ⟨n, ?_⟩
+    have h2 : Config.run (n + 2) (C, seqComp (Comp.ret v) c) = Result.done w :=
+      Config.run_done_add 2 n (C, seqComp (Comp.ret v) c) w hn
+    rwa [seqComp_ret_run v c C n] at h2
+  · -- c ⊑ seqComp (ret v) c : run of c reaches done ⇒ feed n+2 fuel through the head reduction.
+    intro C n w hn
+    exact ⟨n + 2, by rw [seqComp_ret_run v c C n]; exact hn⟩
+
 
 /-! ## 5.1 LR helpers — concretized from the kernel + Biernacki popl18 §5.1.
 
