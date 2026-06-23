@@ -4,6 +4,7 @@
 - **Layer**: K+C (defines the kernel boundary + the verification methodology)
 - **Depends on**: 0016 (two-hop), 0024 (◊2 gate), Q15, Q16
 - **Date**: 2026-06-23
+- **Amended by**: [0040](0040-laws-as-algebraic-interfaces-proof-first.md) (2026-06-24) — the discharge **default** flips: **proof-first**, not test-first; descent (proof→test→assert) is explicit + marked. The ladder structure here stands; only the default rung changes (proof-first is *more* faithful to this ADR's own "descent explicit, never silent").
 
 ## Context
 
