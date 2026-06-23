@@ -21,10 +21,15 @@ meaning; WasmFX is verified output, not source-of-truth.
 
 | file | role |
 |------|------|
-| `Bang/Spec.lean` | the contract; theorem statements frozen |
-| `Bang/Eval.lean` | reference interpreter (being refactored to graded CBPV at ◊2) |
+| `Bang/Spec.lean` | the contract; theorem **statements** frozen (proofs live in `Metatheory`) |
+| `Bang/Core.lean` | graded-CBPV `Val`/`Comp`/`Handler`, types — the syntactic core (◊2) |
+| `Bang/Syntax.lean` | typing judgements `HasVTy`/`HasCTy` |
+| `Bang/Operational.lean` | `Source.step`/`Source.eval` — the CK machine; deep handlers (`splitAt`/`dispatchOn`) |
+| `Bang/Metatheory.lean` | the **proofs**: preservation/progress/type_safety/subst_value/no_accidental_handling |
+| `Bang/CalcVM.lean` | the ◊3 calculated machine (`evalD`, `compile`, `exec`, `compile_correct`) |
 | `Bang/EffectRow.lean` | row algebra with sound unifier |
-| `Bang/Compat.lean` | per-rule compatibility lemmas (Phase B targets) |
+| `Bang/Eval.lean` | legacy free-monad reference (K2; superseded by the graded-CBPV kernel above) |
+| `Bang/Compat.lean` | per-rule compatibility lemmas |
 | `Bang/Distribution.lean` | semilattice / CALM asset (flagged conjecture, not spine) |
 | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` | current architecture |
 | `docs/decisions/0001-effect-rows-as-finset-semilattice.md` | rows-as-sets commitment |
@@ -105,3 +110,57 @@ Pair with `proof-engineer` when:
   definitional adjustment needed).
 - You add a definition whose well-foundedness or termination is nontrivial.
 - You touch `Bang/Audit.lean` or anything affecting `#print axioms` output.
+
+# Working method — retrieve, contract, exemplar
+
+These encode HOW to work, not WHO you are. (Evidence: a domain-expert *persona*
+does not lift accuracy; method + the right context + a worked exemplar +
+a verifier-grounded output contract do. See
+`/srv/share/projects/agent-orchestration/research/dsl-agent-*`.)
+
+## Retrieve the relevant few — don't dump the corpus
+
+The kernel is five primitives, so the definitions/ADRs bearing on any one change
+form a SMALL set. A stuffed window degrades reasoning; select, don't dump:
+
+```
+SCOPE   the module under change + stacklit dep-graph → its reachable defs/lemmas
+SELECT  tilth_search by symbol/callers → "what calls `Source.step`?",
+        "what mentions `dispatchOn`?"  (AST-aware, no embeddings)
+PULL    tilth_grok <def> for a BODY only when a name looks load-bearing
+```
+
+Load the ADRs that constrain THIS change (e.g. 0001/0018 for rows, 0023/0025 for
+handlers, 0016 for the pipeline), not all 30. (`/srv/share/projects/CLAUDE.md`
+documents tilth/stacklit/rtk.)
+
+## The output contract — what you return
+
+Return the **diff + the gate evidence it preserves, having actually run them**:
+- `just build` clean + `just audit` static checks pass on a clean tree,
+- for any touched headline, the `#print axioms` set ⊆
+  `{propext, Classical.choice, Quot.sound}`, extras NAMED;
+- the ADR written, if the change is a fork a future session could reverse.
+
+The terminal step is the **build + audit**, never "I read it and it's right." If a
+definitional change ripples into a proof you can't close, hand the proof to
+`proof-engineer` with the exact obligation — don't leave an unverified path. Require
+the artifact, never the say-so.
+
+## One worked exemplar — calculate, don't design
+
+Canonical: **`compile_correct`** in `Bang/CalcVM.lean` (axiom-clean
+`[propext, Quot.sound]`). The shape that makes it correct-by-construction:
+
+```
+-- 1. the meaning is the denotation:   evalD : Nat → … → Comp   (or store-threaded)
+-- 2. each evalD clause FORCES an instruction (compute the RHS of the spec) —
+--    {RET, SUBST, APP, MARK, THROW, OP, …} fall OUT; you do not invent them
+-- 3. compile/exec are read off (2); compile_correct : exec (compile M) ≡ evalD M
+--    is then a plain equality (no logical relation), proved by the calculation
+```
+
+The machine is an **output** of this derivation (invariant #4) — never hand-design a
+VM then justify a compiler against it. Reproduce the *derive-then-prove* shape; the
+exemplar pins that discipline more than prose can. Study the real proof for depth;
+don't copy it (it lives in the codebase — single source of truth).

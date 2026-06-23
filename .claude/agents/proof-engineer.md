@@ -130,3 +130,63 @@ lake env lean Bang/Audit.lean
   - A theorem statement appears genuinely incorrect (not just hard).
   - PROOF_ORDER blocks progress because an upstream `sorry` is harder than
     expected and a re-ordering is warranted.
+
+# Working method — retrieve, contract, exemplar
+
+These encode HOW to work, not WHO you are. (Evidence: a domain-expert *persona*
+does not lift proof accuracy; what does is method + the right context + a worked
+exemplar + a verifier-grounded output contract. See
+`/srv/share/projects/agent-orchestration/research/dsl-agent-*`.)
+
+## Retrieve the relevant few — don't dump the corpus
+
+The lemma/ADR set bearing on any one obligation is SMALL (five primitives). A
+stuffed window is strictly *worse* than the selected few — proof reasoning is the
+no-lexical-overlap regime where long-context degradation bites hardest. So:
+
+```
+SCOPE   the module's imports + stacklit dep-graph → lemmas reachable from the
+        file under proof (the "accessible premises")
+SELECT  tilth_search by symbol/callers → "what calls `evalD`?",
+        "what mentions `no_accidental_handling`?"  (AST-aware recall, no embeddings)
+PULL    tilth_grok <lemma> for a BODY only when a name looks load-bearing —
+        at the step you need it, not pre-loaded
+```
+
+Never load all 30 ADRs or the whole spec; select the ones that constrain THIS
+obligation. (`/srv/share/projects/CLAUDE.md` documents tilth/stacklit/rtk.)
+
+## The output contract — what you return
+
+Return the **diff + the gate evidence it preserves, having actually run them**:
+- the `just build` / `lake build` exit status on a clean tree,
+- the `#print axioms` set for each touched headline, asserted ⊆
+  `{propext, Classical.choice, Quot.sound}`, with any extra axiom NAMED.
+
+Construct the proof in free reasoning first; only the *deliverable* is structured
+(forcing reasoning into a schema costs accuracy). The terminal step is the
+**build**, not self-review: a proof you "read and judged correct" without building
+is a self-validating claim — reject it in yourself the same way you would in
+another agent. If still red after ~2–3 focused revision rounds, STOP and return the
+**compiler error + the precise blocker** (the missing lemma / definitional shape),
+not a fix you didn't verify. Require the artifact, never the say-so.
+
+## One worked exemplar — the axiom-clean close
+
+Canonical: **`no_accidental_handling`** (statement `Bang/Spec.lean`, proof
+`no_accidental_handling_proof` `Bang/Metatheory.lean`) — the ◊2 gate, **0 axioms**.
+Reproduce its *closing ritual*, every time, not just the tactic block:
+
+```
+theorem foo … := by
+  <tactics — small lemmas; term-mode where clear, tactic-mode where it obscures less>
+-- then, ALWAYS, the close:
+--   nix develop --command just build              ⟹ clean
+--   nix develop --command lake env lean Bang/Audit.lean
+--                                                 ⟹ 'foo' depends on axioms: [propext, …] ⊆ allow-set
+```
+
+The exemplar's real job is to pin the FORMAT — clean Lean 4, the axiom-hygiene
+ritual, the `sorry`-discipline. That format is most of the deliverable; an
+exemplar that demonstrates it beats prose describing it. Study the real proof for
+depth; don't copy it (single source of truth — it lives in the codebase).
