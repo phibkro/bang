@@ -167,4 +167,44 @@ theorem crel_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ : 
   -- the RETURN half of Krel fires on `Vrel n A v₁ v₂` at the returner type `F q A`.
   exact hK.1 q A rfl v₁ v₂ hv
 
+
+/-! ## B.3 Head-reduction compat cores (`force` / ADT eliminators)
+
+Each of these formers takes a context-independent head step (the focus rewrites in place without
+consulting the stack), so `Crel_head_step` reduces the goal to `Crel` on the reduct. The `Vrel`
+hypothesis on the scrutinee value supplies the reduct's shape (a thunk for `force`, a tag for
+`case`, a pair for `split`, a `fold` for `unfold`). -/
+
+/-- `force` of `Vrel`-related thunks: `Vrel (U φ B)` unfolds to `Crel B φ` on the forced bodies, and
+`force (vthunk c) ↦ c` is a CIStep. -/
+theorem crel_force {n : Nat} {φ : Eff} {B : CTy Eff Mult} {w₁ w₂ : Val}
+    (hv : Vrel n (VTy.U φ B) w₁ w₂) : Crel n B φ (Comp.force w₁) (Comp.force w₂) := by
+  -- Vrel at U φ B: w₁ = vthunk c₁, w₂ = vthunk c₂, Crel n B φ c₁ c₂.
+  rw [Vrel] at hv
+  obtain ⟨c₁, c₂, rfl, rfl, hc⟩ := hv
+  refine Crel_head_step (c₁' := c₁) (c₂' := c₂) ?_ ?_ hc
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+
+/-- `unfold` of `Vrel`-related folds: `unfold (fold w) ↦ ret w` is a CIStep, so the goal reduces to
+`crel_ret` on the payloads. INDEX SUBTLETY (documented blocker): `Vrel (n+1) (mu A)` gives the
+payloads related at the UNROLLED type but at index `n` (the `▷` guard, LR.lean §5.2), whereas
+`Crel (n+1) (F 1 _) (ret u₁) (ret u₂)` consumes a `Krel (n+1)` whose return-half inspects
+`Vrel (n+1)`. Bridging needs Vrel/Krel step-index MONOTONICITY (downward-closure): `Krel (n+1)`'s
+return obligation, restricted to the reduct that only ever observes the value at index ≤ n, holds
+from `Vrel n`. The monotonicity lemmas (`Vrel_mono`, `Krel_mono`, standard ahmed-esop06
+downward-closure by induction on the lex measure) are the missing primitive — sequenced after the
+clean cases. -/
+theorem crel_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
+    (hv : Vrel (n + 1) (VTy.mu A) w₁ w₂) :
+    Crel (n + 1) (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
+  rw [Vrel] at hv
+  obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
+  refine Crel_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_ ?_
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · -- BLOCKER: needs `Vrel (n+1) (unrollMu A) u₁ u₂`; have `Vrel n …` (the μ ▷-guard drop).
+    -- Resolved by Vrel/Krel downward-closure monotonicity (TODO — see docstring).
+    sorry
+
 end Bang
