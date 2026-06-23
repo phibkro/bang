@@ -835,8 +835,33 @@ theorem krel_letF {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
     rw [hc₁] at hconv₁
     exact absurd hconv₁ (not_converges_up_splitNone (Frame.letF N₁' :: K₁) ℓ op v₁ hsp₁)
   · -- ARROW half: VACUOUS — the let-block returns at `F q1 A`, not an arrow type (`F ≠ arr`).
-    intro q A' B' hEq _ _ _ _ _
+    intro q A' B' hEq
     exact absurd hEq (by simp)
+
+/-- The `appF` frame-extension `Krel` lemma: extending a codomain-`Krel n B ε K₁ K₂` by an `appF v`
+frame gives an arrow-`Krel n (arr q A B) ε (appF v₁::K₁) (appF v₂::K₂)` — for `Vrel`-related closed
+args. The PEELING arrow clause (ADR-0038) makes this DIRECT: it just exposes the appF cap (w := v) +
+the codomain remainder (K' := K), no recursion (the double-appF wall the extending form hit). Return
+half vacuous (arr≠F), stuck half vacuous (unhandled op under appF::K). The engine of `compat_app`. -/
+theorem krel_appF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {ε : Eff}
+    {v₁ v₂ : Val} {K₁ K₂ : Stack}
+    (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂) (hv : Vrel (n + 1) A v₁ v₂)
+    (hK : Krel (n + 1) B ε K₁ K₂) :
+    Krel (n + 1) (CTy.arr q A B) ε (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) := by
+  rw [Krel]
+  refine ⟨?_, ?_, ?_⟩
+  · intro q' A' hEq; exact absurd hEq (by simp)   -- return half: arr ≠ F, vacuous.
+  · -- stuck half: an Srel pair under appF::K is an unhandled op (splitAt = none) — never converges.
+    intro c₁ c₂ hS
+    rw [Srel] at hS
+    obtain ⟨ℓ, op, w₁, w₂, _, _, hc₁, _, _, _, _, _, hsp₁, _, _⟩ := hS
+    intro hconv₁; rw [hc₁] at hconv₁
+    exact absurd hconv₁ (not_converges_up_splitNone (Frame.appF v₁ :: K₁) ℓ op w₁ hsp₁)
+  · -- arrow half (peeling): the cap IS appF v, the remainder IS K — supply them directly.
+    intro q' A' B' hEq
+    obtain ⟨rfl, rfl, rfl⟩ : q = q' ∧ A = A' ∧ B = B' := by
+      rw [CTy.arr.injEq] at hEq; exact ⟨hEq.1, hEq.2.1, hEq.2.2⟩
+    exact ⟨v₁, v₂, K₁, K₂, rfl, rfl, hcv₁, hcv₂, hv, hK⟩
 
 /-- The `letC` compatibility core (`compat_letC`): a `Crel` for `M` (the bound computation, at its
 returner type `F q1 A` and effect `φ₁`) plus a continuation relation `hN` (the IH for `N`: for every
@@ -867,6 +892,51 @@ theorem compat_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} 
       have hKletF := krel_letF (q1 := q1) hK hN
       rw [Crel] at hM
       exact hM (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) hKletF
+
+/-- The `app` compatibility core (`compat_app`): `Crel`-related arrow computations applied to
+`Vrel`-related closed args give `Crel`-related results. REFOCUS `plug K (app M v) = plug (appF v::K) M`
+(`plug_cons`), then run `M` (related at the arrow type) through the `appF`-extended stacks, which
+`krel_appF_intro` shows `Krel`-related at `(arr q A B, φ)`. At `n=0`, `crel_zero`. -/
+theorem compat_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ : Eff}
+    {M₁ M₂ : Comp} {v₁ v₂ : Val}
+    (hM : Crel n (CTy.arr q A B) φ M₁ M₂)
+    (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂) (hv : Vrel n A v₁ v₂) :
+    Crel n B φ (Comp.app M₁ v₁) (Comp.app M₂ v₂) := by
+  cases n with
+  | zero => exact crel_zero B φ (Comp.app M₁ v₁) (Comp.app M₂ v₂)
+  | succ m =>
+      rw [Crel]
+      intro K₁ K₂ hK
+      have hrefocus₁ : Stack.plug K₁ (Comp.app M₁ v₁) = Stack.plug (Frame.appF v₁ :: K₁) M₁ := by
+        rw [Stack.plug, Stack.plug, plug_cons]; rfl
+      have hrefocus₂ : Stack.plug K₂ (Comp.app M₂ v₂) = Stack.plug (Frame.appF v₂ :: K₂) M₂ := by
+        rw [Stack.plug, Stack.plug, plug_cons]; rfl
+      rw [hrefocus₁, hrefocus₂]
+      rw [Crel] at hM
+      exact hM (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krel_appF_intro hcv₁ hcv₂ hv hK)
+
+/-- The `lam` compatibility core (`compat_lam`): two `lam`s relate at `arr q A B` when their bodies
+relate at `(B, φ)` under every closed `Vrel`-related argument substituted at the binder. The PEELING
+arrow clause (ADR-0038) exposes any arrow-observation stack as `appF w`-capped with a codomain-`Krel`
+remainder; `converges_appF_lam` β-reduces `plug (appF w::K') (lam M') ⟺ plug K' (M'.subst w)`, and the
+body relation discharges it. (Non-appF stacks can't converge on a `lam` — peeling never produces them.)
+At `n=0`, `crel_zero`. -/
+theorem compat_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ : Eff}
+    {M₁' M₂' : Comp}
+    (hbody : ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ → Vrel n A w₁ w₂ →
+      Crel n B φ (Comp.subst w₁ M₁') (Comp.subst w₂ M₂')) :
+    Crel n (CTy.arr q A B) φ (Comp.lam M₁') (Comp.lam M₂') := by
+  rw [Crel]
+  intro K₁ K₂ hK
+  -- the arrow-observation stack is appF-capped (peeling): expose the cap + codomain remainder.
+  rw [Krel] at hK
+  obtain ⟨w₁, w₂, K₁', K₂', rfl, rfl, hcw₁, hcw₂, hw, hKrem⟩ := hK.2.2 q A B rfl
+  -- β: plug (appF w::K') (lam M') converges ⟺ plug K' (M'.subst w) converges.
+  rw [CoApprox, converges_appF_lam, converges_appF_lam]
+  -- the bodies relate at (B, φ) on the closed args; discharge with the remainder Krel.
+  have := hbody w₁ w₂ hcw₁ hcw₂ hw
+  rw [Crel] at this
+  exact this K₁' K₂' hKrem
 
 /-- The `case` compatibility core (`compat_case`): `Vrel`-related sum scrutinees force both `case`s to
 the SAME branch (both `inl` or both `inr`, with `Vrel`-related payloads), and `case (inl v) … ↦ N₁[v]`
@@ -1069,12 +1139,26 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       rw [closeC_force, closeC_force]
       exact crel_force (vrel_fund hv n δ₁ δ₂ hδ)
   | @lam _ _ M φ q A B hM =>
-      -- BLOCKER (decision #2, Krel arrow clause pending): Crel at arr q A B requires the
-      -- arrow-observation clause; lam is the arrow normal-form. Documented sorry.
-      intro n δ₁ δ₂ hδ; sorry
+      intro n δ₁ δ₂ hδ
+      rw [closeC_lam, closeC_lam]
+      -- body relation at A :: Γ: (closeCUnderBinders 1 δᵢ M).subst w = closeC δᵢ (M.subst w)
+      -- = closeC (w::δᵢ) M (closeC_subst_comm); IH on M at the extended EnvRel.
+      refine compat_lam ?_
+      intro w₁ w₂ hcw₁ hcw₂ hw
+      rw [closeC_subst_comm hδ.closed_left hcw₁, closeC_subst_comm hδ.closed_right hcw₂]
+      have hδ' : EnvRel n (A :: Γ) (w₁ :: δ₁) (w₂ :: δ₂) := by
+        rw [EnvRel]; exact ⟨hcw₁, hcw₂, hw, hδ⟩
+      have := crel_fund hM n (w₁ :: δ₁) (w₂ :: δ₂) hδ'
+      rwa [show closeC (w₁ :: δ₁) M = closeC δ₁ (Comp.subst w₁ M) from rfl,
+           show closeC (w₂ :: δ₂) M = closeC δ₂ (Comp.subst w₂ M) from rfl] at this
   | @app _ _ _ _ M v φ q A B hM hv _ =>
-      -- BLOCKER (decision #2): app observes M at arr q A B under the appF frame — same arrow gap.
-      intro n δ₁ δ₂ hδ; sorry
+      intro n δ₁ δ₂ hδ
+      rw [closeC_app, closeC_app]
+      have hscv₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hscv₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      exact compat_app (crel_fund hM n δ₁ δ₂ hδ) hscv₁ hscv₂ (vrel_fund hv n δ₁ δ₂ hδ)
   | @case _ _ _ _ v N₁ N₂ φ q A B C hv hN₁ hN₂ _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_case, closeC_case]

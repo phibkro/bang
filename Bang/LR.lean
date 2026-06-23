@@ -377,13 +377,17 @@ def Krel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
         CoApprox (Stack.plug K₁ (Comp.ret v₁)) (Stack.plug K₂ (Comp.ret v₂)))
       ∧ (∀ c₁ c₂, Srel n C ε K₁ K₂ c₁ c₂ →
         CoApprox (Stack.plug K₁ c₁) (Stack.plug K₂ c₂))
-      -- ARROW-OBSERVATION clause (ADR-0038 verdict A): a CBPV `arr q A B`-typed computation is observed
-      -- by APPLYING a `Vrel`-related (closed) argument — `app M w` PUSHes `appF w`, so the extended
-      -- stacks must be `Krel`-related at the codomain `(B, ε)`. Biernacki Fig 6 puts the arrow in the
-      -- VALUE relation (their `→ε` is a value type); our `arr` is a CTy, so the analogue lives in `Krel`.
-      -- WF: routes `Krel n (arr q A B)` → `Krel n B` with `sizeOf B < sizeOf (arr q A B)` (lex on sizeOf).
-      ∧ (∀ q A B, C = CTy.arr q A B → ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ → Vrel n A w₁ w₂ →
-        Krel n B ε (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂))
+      -- ARROW-OBSERVATION clause (ADR-0038 verdict A, PEELING form). The EXTENDING form
+      -- (`Krel n B ε (appF w::K₁) (appF w::K₂)`) hit a DOUBLE-appF wall in `krel_appF_intro`; the
+      -- peeling form says instead: an `arr q A B`-typed observation context IS an `appF w`-capped stack
+      -- whose remainder is `Krel`-related at the codomain `(B, ε)` with a `Vrel`-related closed arg `w`.
+      -- `compat_app`/`krel_appF_intro` build it directly (w := the applied arg, K' := the ambient stack),
+      -- no recursion. The empty stack is NOT arrow-observable (a `lam` is stuck at `[]`) — so
+      -- `krel_nil_succ` restricts to returner types (`C = F q A`); whole-program answer contexts are
+      -- always returners. WF: routes `Krel n (arr q A B)` → `Krel n B`, `sizeOf B < sizeOf (arr q A B)`. -/
+      ∧ (∀ q A B, C = CTy.arr q A B →
+          ∃ w₁ w₂ K₁' K₂', K₁ = Frame.appF w₁ :: K₁' ∧ K₂ = Frame.appF w₂ :: K₂' ∧
+            Val.Closed w₁ ∧ Val.Closed w₂ ∧ Vrel n A w₁ w₂ ∧ Krel n B ε K₁' K₂')
 termination_by n C _ _ _ => (n, sizeOf C, 1)
 
 /-- Control-stuck / "simple expression" relation `S⟦C/ε⟧η` (Biernacki Fig 7),
@@ -451,11 +455,12 @@ theorem Krel_eff_anti {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
   refine ⟨hK.1, ?_, ?_⟩
   · intro c₁ c₂ hS
     exact hK.2.1 c₁ c₂ (Srel_eff_mono n C ε ε' K₁ K₂ c₁ c₂ hεε' hS)
-  · -- arrow half: the ε' arrow clause gives `Krel n B ε'`; weaken to `Krel n B ε` (recursive antitone
-    -- at the SMALLER codomain B — sizeOf B < sizeOf (arr q A B), so the lex measure decreases).
-    intro q A B hC w₁ w₂ hcw₁ hcw₂ hw
-    exact Krel_eff_anti n B ε ε' (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂) hεε'
-      (hK.2.2 q A B hC w₁ w₂ hcw₁ hcw₂ hw)
+  · -- arrow half (peeling): the ε' clause exposes the appF cap + `Krel n B ε'` remainder; weaken the
+    -- remainder to ε (recursive antitone at the SMALLER codomain B — sizeOf B < sizeOf (arr q A B)).
+    intro q A B hC
+    obtain ⟨w₁, w₂, K₁', K₂', hK₁, hK₂, hcw₁, hcw₂, hw, hKrem⟩ := hK.2.2 q A B hC
+    exact ⟨w₁, w₂, K₁', K₂', hK₁, hK₂, hcw₁, hcw₂, hw,
+      Krel_eff_anti n B ε ε' K₁' K₂' hεε' hKrem⟩
   termination_by (n, sizeOf C, 1)
 
 theorem Crel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
@@ -603,8 +608,8 @@ half would demand `CoApprox c₁ c₂` for ARBITRARY `c₁ c₂` — false. (Thi
 step-indexed convention that a relation-as-PREMISE is only informative at successor indices;
 the `∀ n` hypothesis of `lr_sound` lets the proof pick `n+1`.) -/
 theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
-    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (B : CTy Eff Mult) (e : Eff) :
-    Krel (n + 1) B e ([] : Stack) ([] : Stack) := by
+    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (q : Mult) (A : VTy Eff Mult) (e : Eff) :
+    Krel (n + 1) (CTy.F q A) e ([] : Stack) ([] : Stack) := by
   unfold Krel
   refine ⟨?_, ?_, ?_⟩
   · -- return half: plug [] (ret vᵢ) = ret vᵢ, which always converges.
@@ -616,23 +621,22 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
     obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, _, _, _, _, _, _, _, _⟩ := hS
     rw [Stack.plug, Bang.plug, hc₁] at hconv
     exact absurd hconv (not_converges_up_nil ℓ op v₁)
-  · -- ARROW half (ADR-0038): `Krel (n+1) B' e (appF w₁::[]) (appF w₂::[])` — the appF-extended empty
-    -- stacks self-relate. NON-vacuous: needs a recursion on the codomain (appF-stacks self-relate by
-    -- induction on B' — return-half vacuous (app (ret v) w stuck), stuck-half vacuous (splitAt (appF::[])
-    -- = none), arrow-half recurses on a deeper appF stack at smaller B''). DOCUMENTED sorry: the
-    -- `krel_self_appFstack` helper (induction on B') is the precise missing lemma — see report.
-    intro q A B' _ w₁ w₂ _ _ _
-    sorry
+  · -- ARROW half: VACUOUS — the whole-program answer context `[]` is a RETURNER type `F q A`, not an
+    -- arrow (ADR-0038 peeling form: `[]` is not appF-capped; arrow-typed whole programs are bare lams,
+    -- stuck at `[]`, so `⊑` is vacuous there — the empty stack only observes returners).
+    intro q' A' B' hEq
+    exact absurd hEq (by simp)
 
 /-- WHOLE-PROGRAM adequacy: `Crel` implies the closed (empty-context) observation
 `Converges c₁ → Converges c₂`. The `⊑` restricted to `C = []`. Provable from `Crel` +
-`krel_nil_succ` alone (no fundamental theorem). -/
+`krel_nil_succ` alone (no fundamental theorem). RETURNER type only (`F q A`): the empty-stack
+observation is vacuous at non-returner types (ADR-0038). -/
 theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
-    [DecidableEq Mult] [EffSig Eff Mult] {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult}
-    (h : ∀ n, Crel n B e c₁ c₂) : Converges c₁ → Converges c₂ := by
+    [DecidableEq Mult] [EffSig Eff Mult] {c₁ c₂ : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult}
+    (h : ∀ n, Crel n (CTy.F q A) e c₁ c₂) : Converges c₁ → Converges c₂ := by
   have hC := h 1
   unfold Crel at hC
-  have := hC [] [] (krel_nil_succ 0 B e)
+  have := hC [] [] (krel_nil_succ 0 q A e)
   simpa [Stack.plug, Bang.plug] using this
 
 end Bang
