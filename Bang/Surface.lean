@@ -61,6 +61,10 @@ Grammar (the subset this tracer bullet covers):
              | 'raise' atom                        -- perform the exception op → up
              | 'state' atom 'in' expr              -- install a state handler (rung 1) → handle (Handler.state)
              | 'put' atom                          -- write the state cell → up stateLabel "put"
+             | 'atomically' expr                   -- install the STM transaction handler (rung 3) → handle (Handler.transaction)
+             | 'new' atom                          -- allocate a TVar (rung 3) → up stmLabel "newTVar"
+             | 'read' atom                         -- read a TVar → up stmLabel "readTVar"
+             | 'write' atom atom                   -- write a TVar → up stmLabel "writeTVar" (pair ref val)
              | app
     app    ::= atom atom*                           -- juxtaposition → app (left assoc)
     atom   ::= int                                  -- literal → ret (vint n)
@@ -75,6 +79,14 @@ distinct from `exnLabel`). `state v in e` installs `Handler.state stateLabel v`
 around `e`; inside, `put a` stores and `get` reads the cell. `get` is nullary
 (atom-position, like a literal); `put`/`state` take an atom argument. The initial
 state and `put`'s argument are VALUE-position (so `put { … }` thunks a comp).
+
+STM (rung 3, ADR-0030) reuses the same shape on `stmLabel`. `atomically e` installs
+`Handler.transaction stmLabel []` (an empty heap) around `e` — keyword-prefixed like
+`handle`, NOT a new punctuator. Inside, the three stm ops are computation-position
+`up`-operations: `new a` allocates (returns the TVar index), `read a` reads the cell
+at index `a`, and `write r w` packs `(r, w)` into a `pair` and writes. Each op's
+arguments are VALUE-position atoms (so a TVar ref is just an `int`, ADR-0030's
+`TVarRef = int`). Monomorphic int cells, single-threaded; no `orElse`/`retry`.
 
 `$`/`!` are BOTH force (the v0.1 `!`-force UX; ADR-0007 makes `$` the canonical
 force, `!` is actor-send in full bang — here we accept both as force for the
@@ -93,6 +105,10 @@ inductive Surf where
   | getS   : Surf                        -- get      (read the state cell)
   | putS   : Surf → Surf                 -- put e    (write the state cell)
   | stateS : Surf → Surf → Surf          -- state e0 in e (install state handler)
+  | atomS  : Surf → Surf                 -- atomically e  (install the STM transaction handler)
+  | newS   : Surf → Surf                 -- new e     (allocate a TVar → up stmLabel "newTVar")
+  | readS  : Surf → Surf                 -- read e    (read a TVar → up stmLabel "readTVar")
+  | writeS : Surf → Surf → Surf          -- write r w (write a TVar → up stmLabel "writeTVar" (pair r w))
   deriving Repr, Inhabited, DecidableEq
 
 
@@ -130,6 +146,10 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .getS       => .ok (.up stateLabel "get" .vunit)
   | .putS e     => do return .up stateLabel "put" (← lowerV env e)
   | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC env e)
+  | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC env e)
+  | .newS e     => do return .up stmLabel "newTVar" (← lowerV env e)
+  | .readS e    => do return .up stmLabel "readTVar" (← lowerV env e)
+  | .writeS r w => do return .up stmLabel "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -189,6 +209,7 @@ def pIdent : P String
   | t :: ts =>
       if t = "let" || t = "fun" || t = "handle" || t = "raise"
           || t = "state" || t = "get" || t = "put"
+          || t = "atomically" || t = "new" || t = "read" || t = "write"
           || t = "in" || t = "=" || t = "=>" then
         .error s!"expected an identifier, got keyword '{t}'"
       else .ok (t, ts)
@@ -235,6 +256,19 @@ def pExpr : Nat → P Surf
   | f + 1, "put" :: ts => do
       let (a, ts) ← pAtom f ts
       .ok (.putS a, ts)
+  | f + 1, "atomically" :: ts => do
+      let (e, ts) ← pExpr f ts
+      .ok (.atomS e, ts)
+  | f + 1, "new" :: ts => do
+      let (a, ts) ← pAtom f ts
+      .ok (.newS a, ts)
+  | f + 1, "read" :: ts => do
+      let (a, ts) ← pAtom f ts
+      .ok (.readS a, ts)
+  | f + 1, "write" :: ts => do
+      let (r, ts) ← pAtom f ts
+      let (w, ts) ← pAtom f ts
+      .ok (.writeS r w, ts)
   | f + 1, ts => pApp f ts
 
 /-- Parse an application chain: one or more atoms, left-associated. -/
@@ -280,6 +314,7 @@ def pAtom : Nat → P Surf
       if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
               || t = "state" || t = "put"
+              || t = "atomically" || t = "new" || t = "read" || t = "write"
               || t = "in" || t = "=" || t = "=>" || t = ")" || t = "}" then
         .error s!"unexpected '{t}' where an atom was expected"
       else .ok (.var t, ts)
@@ -675,6 +710,31 @@ values (compiled `#guard`; see the discharge note above). -/
 -- state get-default, from source: `state 5 in get`  ⟶ done (vint 5)
 #guard runYieldsInt 50 "state 5 in get" 5
 
+/-! ### Stage 2c — the STM ledger, run FROM SOURCE TEXT (rung 3, ADR-0030).
+
+The same transactional semantics as the hand-built `ledgerCommit`/`ledgerAbort` above,
+now parsed: `atomically` installs `transaction stmLabel []`, `new`/`read`/`write` lower
+to the `up stmLabel …` ops. `new` returns the fresh TVar index, so `let r = new v` binds
+`r` to the heap index (the first alloc is `vint 0`). -/
+
+-- COMMIT, from source: allocate r=100, write 70, read it back ⟶ done (vint 70).
+-- The heap is threaded through the transaction; the read sees the committed write.
+#guard runYieldsInt 200
+  "atomically (let r = new 100 in (let z = write r 70 in read r))" 70
+
+-- COMMIT, two TVars: r0=100, r1=0; write r1 := 55; read r1 ⟶ 55 (the second cell).
+-- Pins that `new` allocates DISTINCT indices and writes hit the right cell.
+#guard runYieldsInt 200
+  "atomically (let r0 = new 100 in (let r1 = new 0 in (let z = write r1 55 in read r1)))" 55
+
+-- ABORT rolls back, from source: an outer `handle` (throws) wraps a transaction that
+-- allocates r=100, writes 70, then `raise`s the ORIGINAL balance `100`. The `raise` is
+-- foreign to the `transaction` frame, so it ESCAPES it (ADR-0023 discards the captured
+-- continuation) — the write-delta `70` never commits. The abort payload is the original
+-- `100`, the observable witness that the transaction rolled back. ⟶ done (vint 100).
+#guard runYieldsInt 200
+  "handle (atomically (let r = new 100 in (let z = write r 70 in raise 100)))" 100
+
 /-! ### Stage 2b — parse alone resolves to the expected surface tree (pins the
 parser independently of eval). `parsesTo` returns a `Bool` (via `DecidableEq
 Surf`), so `#guard` needs no `BEq`/`Except` instance. -/
@@ -691,5 +751,9 @@ def parsesTo (src : String) (e : Surf) : Bool :=
   (.stateS (.lit 0) (.lett "z" (.putS (.lit 7)) .getS))
 #guard parsesTo "state 5 in get" (.stateS (.lit 5) .getS)
 #guard parsesTo "fun x => x" (.lam "x" (.var "x"))
+-- STM forms (rung 3): `atomically`/`new`/`read`/`write` parse to their `Surf` constructors.
+#guard parsesTo "atomically (let r = new 100 in (let z = write r 70 in read r))"
+  (.atomS (.lett "r" (.newS (.lit 100))
+    (.lett "z" (.writeS (.var "r") (.lit 70)) (.readS (.var "r")))))
 
 end Bang.Surface
