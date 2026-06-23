@@ -67,11 +67,27 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
     `parallel-agent-writes-need-worktrees`; lesson = worktree-isolate parallel writers. Granular WIP trail
     on branch `wip/u4-state`; squashed to one green commit on main (intermediates were red checkpoints).
 
-- **▶ NEXT (active): transaction** (ADR-0030: `new`/`read`/`write` over a list-heap) — "state generalized to a
-  list-heap"; `dispatchOn` already unifies them. Fold in after state is green (ADR-0031 D4). **THEN** ADT
-  `case`/`split`/`unfold` (needs a runtime CASE/SPLIT instruction — compile-time rewrite breaks `compile`
-  termination), then collapse + archive the K3 matrix (ADR-0017). Flattening (defunctionalize frames +
-  compile-away subst) is a later optimization pass, not blocking.
+- **✓ Unit 5 — resumptive transaction DONE** (ADR-0031 D4 LANDED; `84e3ab3`, axiom-clean, independently
+  gated on the committed clean tree). `new`/`read`/`write` RESUME over a list-heap, mirroring the state unit.
+  Folded in as a **parallel `THeap` store** (NOT a unified sum-cell) — the build measured the unified rep at
+  117 broken `simp` calls re-typing the axiom-clean state spine, to enforce an invariant op-disjointness
+  already makes unrepresentable; parallel leaves the state spine untouched and is correct by the **op-guard**
+  (`{get,put}` ⊥ `{newTVar,readTVar,writeTVar}`). Two build-forced shapes (ADR-0031 D4): `evalD` op-arm is
+  **OP-FIRST** (matches the kernel's `handlesOp`; store-first diverged on a label carrying both a state and a
+  txn frame); the net-HStack-effect is the **two-pass** `netEffect = updateTxns ∘ updateStates` (both frame
+  kinds coexist and mutate; passes commute by op-disjointness). Throws⊗transaction nesting + **free rollback**
+  mirrored on the `τ` side (inner frame pops its heap on a forwarded raise; outer write persists past a caught
+  throw). `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext, Classical.choice, Quot.sound};
+  ◊2 gate 0-axiom. A `handle (transaction 0 []) (newTVar 9; readTVar 0) ⇒ ret 9` RESUME demo `rfl`-proven for
+  both `evalD` and the machine. *Process:* ONE worktree-isolated proof-engineer IC; it correctly **overrode
+  the orchestrator's unified-store pin** on measured evidence (the report-back checkpoint surfaced it before
+  the churn was eaten). NB the worktree-isolation flag did not engage — the IC landed on the shared main tree;
+  benign with a single writer.
+
+- **▶ NEXT (active): ADT eliminators** — `case`/`split`/`unfold` need a **runtime** CASE/SPLIT instruction
+  (compile-time rewrite breaks `compile` termination, deferred since Unit 2). **THEN** collapse + archive the
+  K3 Calc* matrix (ADR-0017) → the ◊3 gate. Flattening (defunctionalize frames + compile-away subst) is a
+  later optimization pass, not blocking.
 
 ## Target (◊3 gate, ROADMAP)
 

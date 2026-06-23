@@ -202,10 +202,16 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   **deep handlers throws-only** (O1 INSTALL `8a860a4`, O2 THROW abort `e07d349`) + **resumptive state —
   handlers RESUME** (ADR-0031, Unit 4, `2063c0e`): `evalD` threads a label-keyed `SStore` servicing get/put
   inline; the machine RESUMES via a non-discarding `OP` (shape-A, one-shot, `c` IS Kᵢ); the throws⊗state
-  nesting is handled (outer `put` persists past an inner caught throw). `compile_correct`,
-  `evalD_agrees_source`, `sim`, `run_evalD` all ⊆ {propext, Classical.choice, Quot.sound}; ◊2 gate still
-  0-axiom. **NEXT:** transaction fold-in (ADR-0030, state-over-list-heap), then ADT `case`/`split`/`unfold`
-  (runtime CASE/SPLIT instruction), then collapse + archive the K3 Calc* matrix (ADR-0017) → ◊3 gate.
+  nesting is handled (outer `put` persists past an inner caught throw) + **resumptive transaction — Unit 5,
+  `84e3ab3`** (ADR-0031 D4 LANDED): `new`/`read`/`write` RESUME over a list-heap, folded in as a **parallel**
+  `THeap` store (op-disjoint from state ⇒ correct-by-construction, NOT a unified sum-cell — see ADR-0031 D4).
+  Two build-forced shapes: `evalD`'s op-arm is **OP-FIRST** (matches the kernel's `handlesOp` op-gating);
+  the net-HStack-effect is a **two-pass composition** `netEffect = updateTxns ∘ updateStates`. Rollback is
+  free (inner txn frame pops its heap on a forwarded raise; outer write persists past a caught throw).
+  `compile_correct`, `evalD_agrees_source`, `sim`, `run_evalD` all ⊆ {propext, Classical.choice, Quot.sound}
+  over BOTH arms; ◊2 gate still 0-axiom (independently gated on the committed tree). **NEXT:** ADT
+  `case`/`split`/`unfold` (runtime CASE/SPLIT instruction), then collapse + archive the K3 Calc* matrix
+  (ADR-0017) → ◊3 gate.
 
 **Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
 verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;

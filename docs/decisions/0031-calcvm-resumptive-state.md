@@ -1,6 +1,11 @@
 # ADR-0031 · CalcVM resumptive state: `evalD` threads a store and services ops inline; the machine RESUMES with a non-discarding `OP` (shape A stays, one-shot)
 
-- **Status:** Accepted + **LANDED** (`2063c0e`, 2026-06-23 — the `state` arm fully implemented & axiom-clean: `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext, Classical.choice, Quot.sound}, ◊2 gate intact; both load-bearing claims held, the throws⊗state nesting closed via the raised-IH-handback. The `transaction` arm remains the design lock for the next increment.)
+- **Status:** Accepted + **LANDED, both arms** — `state` (`2063c0e`) and `transaction` (`84e3ab3`,
+  2026-06-23), each axiom-clean: `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext,
+  Classical.choice, Quot.sound}, ◊2 gate (`no_accidental_handling`/`rowinst_requires_disjoint`) still
+  0-axiom. The `state` arm's load-bearing claims held (shape (A); throws⊗state nesting via the
+  raised-IH-handback). The `transaction` arm folded in as a **parallel** store (see the D4 LANDED note) —
+  rollback-free, with the throws⊗transaction nesting mirrored on the `τ` side.
 - **Date:** 2026-06-23
 - **Layer:** K (kernel-adjacent — the calculated machine + its metatheory and the `evalD ≡ Source.eval` bridge). **Tag: K-ADR** (semantic/verification).
 - **Resolves:** the CalcVM port's resumptive-handler increment (the `unwindFind` SKIP that O2 left deferred). Ports **ADR-0025** (kernel resumptive state, `dispatchOn` KEEPS `Kᵢ`) and **ADR-0030** (transaction = state over a list-heap) to the *calculated* machine.
@@ -103,6 +108,41 @@ external untyped heap. The bridge stays "mechanical" in the D1-A sense.
   scope. `Kᵢ` is not reified; the current code `c` is re-entered exactly once, in place.
 - **Arithmetic** (a real counter `get; put (get+1)`) stays a separate K-ADR (invariant #5). The cell
   needs none.
+
+#### D4 — LANDED (`84e3ab3`, 2026-06-23): transaction folds in as a **parallel store**, two findings
+
+Transaction (`newTVar`/`readTVar`/`writeTVar` over a list-heap) RESUMES exactly as state does. Two
+shapes the **build forced** (the checker arbitrated, per W0's self-correcting discipline):
+
+1. **`evalD`'s op-arm is OP-FIRST, not store-first.** Dispatch tries the op against the *state* store,
+   then the *transaction* heap, by op-id (`get`/`put` → σ; `new`/`read`/`write` → τ; else `raised`).
+   A store-first form (find the nearest frame for `ℓ`, then check the op) **diverges from the kernel**
+   when one label `ℓ` carries *both* a `state` and a `transaction` frame: a txn op must skip an
+   intervening same-label state frame, which the kernel's `splitAt`+`handlesOp` does by op-gating but
+   store-first does not. **The kernel's op-gating is load-bearing, not incidental.**
+
+2. **The net-HStack-effect is a two-pass composition** `netEffect hs σ τ := updateTxns (updateStates hs σ) τ`.
+   State and transaction frames coexist in ONE stack and BOTH mutate on a returning body, so the
+   post-`M` stack composes both passes. They are independent (op-disjoint frames) and commute, so they
+   compose cleanly; `FrameMut`'s transaction clause relaxes `Θ₁ = Θ₂` → `ℓ₁ = ℓ₂` (a returning body may
+   `writeTVar`-mutate the heap, exactly as it `put`-mutates a state value). Throws⊗transaction nesting
+   falls out of the same `τ` thread: an inner txn frame pops its heap on a forwarded raise (**rollback
+   is free**), an outer write persists past a *caught* throw.
+
+**Store-rep decision: PARALLEL `THeap`, not a unified sum-cell store.** The store keeps `SStore`
+(state) and `THeap` (transaction) as two label-keyed projections rather than one `List (Label × Cell)`.
+Rationale — the load-bearing invariant: state ops `{get,put}` are **op-disjoint** from transaction ops
+`{newTVar,readTVar,writeTVar}` (`handlesOp`), so a label shared across both kinds still resolves
+unambiguously **by op-id**; cross-kind mis-resolution is unrepresentable *via the op-guard*, not via the
+store structure. Only within-kind shadowing must be ordered, which each projection does independently.
+
+> **INVARIANT (the parallel rep depends on it):** sound **only while the state and transaction op-sets
+> stay disjoint**. An op handled by BOTH kinds would reintroduce cross-kind ambiguity — re-examine the
+> rep (unify) before adding one.
+
+| rejected | why not |
+|---|---|
+| **Unified ordered store** `List (Label × Cell)`, `Cell ∷= st Val \| tx (List Val)` | Adds structure to enforce an invariant that op-disjointness already makes unrepresentable (the inverse of "make illegal states unrepresentable" — here they already are). Measured cost: re-types the whole axiom-clean state spine — ~40 def/lemma blocks gain a tag, 63 entry sites need `.st`-wrap, **117 `simp` calls break** (the projection-match normal form shifts). Buys ordering-correctness already free from the op-guard; bad trade. The build measured it; the parallel rep leaves the state spine untouched. |
 
 ## Rejected alternatives
 
