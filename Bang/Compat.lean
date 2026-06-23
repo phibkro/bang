@@ -207,4 +207,38 @@ theorem crel_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
     -- Resolved by Vrel/Krel downward-closure monotonicity (TODO — see docstring).
     sorry
 
+
+/-! ## B.4 `krel_refl` — the interface contract for `lr_sound` (the capstone)
+
+The downstream `lr_sound` capstone (separate thread) closes as `lr_sound_closed ∘ krel_refl`: the
+biorthogonal adequacy (LR.lean §5.3) instantiates `Crel`'s `∀ K₁ K₂, Krel … → CoApprox` at a
+self-pair `(C, C)` known to be `Krel`-self-related, yielding the `⊑` clause for observation context
+`C`. `krel_refl` is that "identity extension" (Biernacki/Pitts) — a well-typed stack is `Krel`-related
+to ITSELF. It is the IDENTITY INSTANCE of `lr_fundamental` (the context's sub-computations
+self-related, `c₁ = c₂`), so it falls out of the SAME induction; surfaced here as a NAMED lemma so the
+capstone composes cleanly rather than re-extracting from `lr_fundamental`'s internals.
+
+PREMISE: the stack is well-typed — `HasStack C e B eo Co` carries a focus of type `(e, B)` to the
+whole-program type `(eo, Co)`. The typing is load-bearing in the STUCK half: a stack must eventually
+handle-or-escape every operation it does not catch (the `Srel` clause's `splitAt = none` operations
+tunnel out), which only a typed stack guarantees.
+
+STATUS (gated on the two U6 blockers — see `crel_unfold` docstring + the lead handoff):
+  - the OPEN/CLOSED statement-shape decision (the `letF N :: K` case substitutes `N[v]`, needing the
+    `EnvRel`/`closeC` env-closure for the continuation's self-relation under its binder);
+  - the μ/▷ index alignment (a `letF`-bound continuation returning at a μ-type hits the same
+    off-by-one).
+Both resolve `krel_refl` mechanically; the named contract is fixed NOW so the capstone thread can
+reference it. -/
+theorem krel_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult}
+    (_hC : HasStack C e B eo Co) : Krel n B e C C := by
+  -- IDENTITY INSTANCE of the fundamental theorem: induct on `HasStack C …`, mirroring the
+  -- `lr_fundamental` HasCTy induction (each frame's stored sub-computation related to itself via the
+  -- matching compat core). The `nil` case is `krel_nil_succ` (LR.lean) at successor indices; the
+  -- frame cases (`letF`/`appF`/`handleF`/`stateF`/`transactionF`) extend a `Krel`-related stack by
+  -- one frame, using the sub-computation's self-relation. BLOCKED identically to `lr_fundamental`
+  -- (statement-shape for the `letF` continuation's binder; μ/▷ for μ-typed returns). Contract fixed;
+  -- body lands with the fundamental theorem.
+  sorry
+
 end Bang
