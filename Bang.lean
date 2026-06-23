@@ -42,3 +42,4 @@ import Bang.CalcCBNEffSt
 import Bang.CalcReify
 import Bang.CalcReifyRef
 import Bang.CalcReifySim
+import Bang.CalcVM
