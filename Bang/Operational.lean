@@ -48,6 +48,10 @@ def Val.shiftFrom (c : Nat) : Val → Val
   | .vint n      => .vint n
   | .vvar i      => if i < c then .vvar i else .vvar (i + 1)
   | .vthunk M    => .vthunk (Comp.shiftFrom c M)
+  | .inl w       => .inl (Val.shiftFrom c w)
+  | .inr w       => .inr (Val.shiftFrom c w)
+  | .pair w₁ w₂  => .pair (Val.shiftFrom c w₁) (Val.shiftFrom c w₂)
+  | .fold w      => .fold (Val.shiftFrom c w)
 def Comp.shiftFrom (c : Nat) : Comp → Comp
   | .ret w       => .ret (Val.shiftFrom c w)
   | .letC M N    => .letC (Comp.shiftFrom c M) (Comp.shiftFrom (c + 1) N)  -- N binds 0
@@ -56,6 +60,10 @@ def Comp.shiftFrom (c : Nat) : Comp → Comp
   | .app M w     => .app (Comp.shiftFrom c M) (Val.shiftFrom c w)
   | .up ℓ op w   => .up ℓ op (Val.shiftFrom c w)
   | .handle h M  => .handle (Handler.shiftFrom c h) (Comp.shiftFrom c M)
+  -- ADT eliminators: each `case` branch binds one (idx 0); `split` binds two (idx 1, 0).
+  | .case w N₁ N₂ => .case (Val.shiftFrom c w) (Comp.shiftFrom (c + 1) N₁) (Comp.shiftFrom (c + 1) N₂)
+  | .split w N   => .split (Val.shiftFrom c w) (Comp.shiftFrom (c + 2) N)
+  | .unfold w    => .unfold (Val.shiftFrom c w)
   | .oom         => .oom
   | .wrong s     => .wrong s
 def Handler.shiftFrom (c : Nat) : Handler → Handler
@@ -78,6 +86,10 @@ def Val.substFrom (k : Nat) (v : Val) : Val → Val
       else if i > k then .vvar (i - 1)       -- the level-k binder is gone; renumber down
       else .vvar i                            -- i < k: a deeper-bound var, untouched
   | .vthunk M    => .vthunk (Comp.substFrom k v M)
+  | .inl w       => .inl (Val.substFrom k v w)
+  | .inr w       => .inr (Val.substFrom k v w)
+  | .pair w₁ w₂  => .pair (Val.substFrom k v w₁) (Val.substFrom k v w₂)
+  | .fold w      => .fold (Val.substFrom k v w)
 def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
   | .ret w       => .ret (Val.substFrom k v w)
   | .letC M N    => .letC (Comp.substFrom k v M) (Comp.substFrom (k + 1) (Val.shift v) N)
@@ -86,6 +98,11 @@ def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
   | .app M w     => .app (Comp.substFrom k v M) (Val.substFrom k v w)
   | .up ℓ op w   => .up ℓ op (Val.substFrom k v w)
   | .handle h M  => .handle (Handler.substFrom k v h) (Comp.substFrom k v M)
+  -- ADT eliminators: `case` branches descend under one binder, `split` under two.
+  | .case w N₁ N₂ => .case (Val.substFrom k v w)
+      (Comp.substFrom (k + 1) (Val.shift v) N₁) (Comp.substFrom (k + 1) (Val.shift v) N₂)
+  | .split w N   => .split (Val.substFrom k v w) (Comp.substFrom (k + 2) (Val.shift (Val.shift v)) N)
+  | .unfold w    => .unfold (Val.substFrom k v w)
   | .oom         => .oom
   | .wrong s     => .wrong s
 def Handler.substFrom (k : Nat) (v : Val) : Handler → Handler
@@ -188,6 +205,11 @@ def Source.step : Config → Option Config
   | (.letF N :: K, .ret v)  => some (K, Comp.subst v N)
   | (.appF v :: K, .lam M)  => some (K, Comp.subst v M)
   | (.handleF _ :: K, .ret v) => some (K, .ret v)
+  -- ADT eliminators (ADR-0029): scrutinees are values, so these reduce in place.
+  | (K, .case (.inl v) N₁ _)  => some (K, Comp.subst v N₁)   -- sum: left branch
+  | (K, .case (.inr v) _ N₂)  => some (K, Comp.subst v N₂)   -- sum: right branch
+  | (K, .split (.pair v w) N) => some (K, Comp.subst v (Comp.subst (Val.shift w) N))  -- product
+  | (K, .unfold (.fold v))    => some (K, .ret v)            -- μ: fold/unfold erase
   -- DISPATCH
   | (K, .up ℓ op v)         => dispatch K ℓ op v
   -- stuck

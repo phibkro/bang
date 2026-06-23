@@ -356,6 +356,50 @@ def stateGetComp : Comp :=
   .handle (.state stateLabel (.vint 5)) (.up stateLabel "get" .vunit)
 example : Source.eval 50 stateGetComp = .done (.vint 5) := by rfl
 
+/-! ### Stage 1c — the iso-recursive DATA LAYER runs (rung 2 K1, ADR-0029).
+
+GOAL-1: build a stack-shaped value BY HAND from the raw ADT formers
+(`fold`/`inr`/`pair`/`inl`/`vunit`) and observe its top element through
+`unfold` + `case` + `split` — no friendly `push`/`pop` surface (that is phase L).
+This proves the language RUNS sum + product + μ end-to-end via `Source.eval`.
+
+`Stack = μX. 1 + (Int × X)`:
+  · `empty      = fold (inl unit)`
+  · `push n s   = fold (inr (pair (vint n) s))`
+A `pop` reads the top: `unfold` the μ, `case` on the sum (empty vs cons),
+`split` the (Int × Stack) pair, return the Int. `#guard` (compiled), NOT `rfl`:
+kernel whnf over the machine is pathological under `rfl`. -/
+
+/-- `empty = fold (inl unit)`. -/
+def stEmpty : Val := .fold (.inl .vunit)
+
+/-- `push n s = fold (inr ⟨n, s⟩)`. -/
+def stPush (n : Int) (s : Val) : Val := .fold (.inr (.pair (.vint n) s))
+
+/-- `pop s` as a raw computation: read the top element (or `vint 0` if empty).
+`unfold s` exposes `1 + (Int × Stack)`; `case` picks the branch; the cons branch
+`split`s the pair and returns its first component (the top). -/
+def stPop (s : Val) : Comp :=
+  -- letC (unfold s) <binds the unfolded `1 + (Int×Stack)` value at index 0>
+  .letC (.unfold s)
+    -- case (vvar 0) <empty: vvar0 = unit> <cons: vvar0 = ⟨top, rest⟩>
+    (.case (.vvar 0)
+      (.ret (.vint 0))                       -- empty stack → sentinel 0
+      -- cons branch: payload pair at index 0; split binds fst (idx 1), snd (idx 0);
+      -- return the first component = the top element.
+      (.split (.vvar 0) (.ret (.vvar 1))))
+
+/-- `pop (push 7 empty)` ⟶ `done (vint 7)` — the top of a one-element stack. -/
+def stackTopComp : Comp := stPop (stPush 7 stEmpty)
+#guard (match Source.eval 50 stackTopComp with | .done (.vint n) => n == 7 | _ => false)
+
+/-- `pop (push 9 (push 7 empty))` ⟶ `done (vint 9)` — LIFO: the most recent push tops. -/
+def stackTop2Comp : Comp := stPop (stPush 9 (stPush 7 stEmpty))
+#guard (match Source.eval 50 stackTop2Comp with | .done (.vint n) => n == 9 | _ => false)
+
+-- `pop empty` ⟶ `done (vint 0)` — the empty-stack (`inl`) branch fires.
+#guard (match Source.eval 50 (stPop stEmpty) with | .done (.vint n) => n == 0 | _ => false)
+
 /-! ### Stage 1b — the lowering of the hand-written surface ASTs matches Stage 1.
 
 This pins the §2 lowering (name→de-Bruijn pass) independently of the parser. -/

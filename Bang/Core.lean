@@ -80,6 +80,13 @@ inductive Val : Type where
   | vint   : Int → Val
   | vvar   : Nat → Val                  -- de Bruijn index (0 = nearest binder)
   | vthunk : Comp → Val
+  -- iso-recursive ADT value formers (ADR-0029). All are INERT values; their
+  -- eliminators live in `Comp`. `fold`/`unfold` ERASE at runtime — `fold v`
+  -- carries no tag beyond the sum's `inl`/`inr`.
+  | inl    : Val → Val                  -- sum intro (left)  : A → A + B
+  | inr    : Val → Val                  -- sum intro (right) : B → A + B
+  | pair   : Val → Val → Val            -- product intro     : A → B → A × B
+  | fold   : Val → Val                  -- μ intro (= a constructor): T[μX.T/X] → μX.T
   deriving Inhabited
 inductive Comp : Type where
   | ret    : Val → Comp
@@ -89,6 +96,12 @@ inductive Comp : Type where
   | app    : Comp → Val → Comp
   | up     : Label → OpId → Val → Comp
   | handle : Handler → Comp → Comp
+  -- iso-recursive ADT eliminators (ADR-0029). Scrutinees are VALUES (the formers
+  -- above), so these reduce immediately like `force (vthunk M)` — no eval-context
+  -- frame is needed.
+  | case   : Val → Comp → Comp → Comp     -- sum elim: case v N₁ N₂; each Nᵢ binds index 0
+  | split  : Val → Comp → Comp            -- product elim: split v N; N binds idx 1 (fst), idx 0 (snd)
+  | unfold : Val → Comp                   -- μ elim (= a match): unfold (fold v) ↦ ret v
   | oom    : Comp
   | wrong  : String → Comp
 inductive Handler : Type where
@@ -121,6 +134,14 @@ inductive VTy (Eff Mult : Type) : Type where
   | unit : VTy Eff Mult
   | int  : VTy Eff Mult
   | U    : Eff → CTy Eff Mult → VTy Eff Mult
+  -- iso-recursive ADT type formers (ADR-0029). `mu A` binds a type-level de Bruijn
+  -- recursion variable (`tvar 0` = the nearest enclosing μ); `tvar` is NOT a
+  -- polymorphic ∀-variable (ADR-0027), so `μX. 1 + (Int × X)` is a CLOSED,
+  -- monomorphic type. Inductive (least fixpoint) only — coinductive μ → Div (ADR-0028).
+  | sum  : VTy Eff Mult → VTy Eff Mult → VTy Eff Mult   -- A + B
+  | prod : VTy Eff Mult → VTy Eff Mult → VTy Eff Mult   -- A × B
+  | mu   : VTy Eff Mult → VTy Eff Mult                  -- μX. A  (A under one type-level binder)
+  | tvar : Nat → VTy Eff Mult                           -- type-level de Bruijn recursion var
 inductive CTy (Eff Mult : Type) : Type where
   | F   : Mult → VTy Eff Mult → CTy Eff Mult
   -- `arr q A B` = `A →^q B` (Torczon `CAbs q' A B`): the argument multiplicity
@@ -128,6 +149,56 @@ inductive CTy (Eff Mult : Type) : Type where
   -- to scale the argument's grades by (ADR-0019).
   | arr : Mult → VTy Eff Mult → CTy Eff Mult → CTy Eff Mult
 end
+
+
+/-! ### 1.4a Type-level de Bruijn shift + substitution (ADR-0029, iso-recursive μ)
+
+`unfold` at `μX.A` exposes `A[μX.A / X]` — the iso payoff is that this stays a
+SYNTACTIC type operation (no coinductive equality). `tyShiftFrom`/`tySubst` are
+the type-level analogues of the term-level `shiftFrom`/`substFrom`, but they cross
+only `mu` binders (the sole type-level binder); every other former threads the
+cutoff through unchanged. They live on `VTy`/`CTy` (mutual) because `U`/`arr`
+nest computation types under value types. -/
+
+mutual
+/-- Increment free type-level recursion vars (`≥ c`) by 1; used to push a type
+under one extra `mu`. -/
+def VTy.tyShiftFrom {Eff Mult : Type} (c : Nat) : VTy Eff Mult → VTy Eff Mult
+  | .unit       => .unit
+  | .int        => .int
+  | .U φ B       => .U φ (CTy.tyShiftFrom c B)
+  | .sum A B     => .sum (VTy.tyShiftFrom c A) (VTy.tyShiftFrom c B)
+  | .prod A B    => .prod (VTy.tyShiftFrom c A) (VTy.tyShiftFrom c B)
+  | .mu A        => .mu (VTy.tyShiftFrom (c + 1) A)        -- mu binds one type var
+  | .tvar i      => if i < c then .tvar i else .tvar (i + 1)
+def CTy.tyShiftFrom {Eff Mult : Type} (c : Nat) : CTy Eff Mult → CTy Eff Mult
+  | .F q A       => .F q (VTy.tyShiftFrom c A)
+  | .arr q A B   => .arr q (VTy.tyShiftFrom c A) (CTy.tyShiftFrom c B)
+end
+
+mutual
+/-- Replace type-level recursion var `k` with `T` (shifted under the `k` crossed
+`mu` binders); decrement free vars `> k`. -/
+def VTy.tySubstFrom {Eff Mult : Type} (k : Nat) (T : VTy Eff Mult) : VTy Eff Mult → VTy Eff Mult
+  | .unit       => .unit
+  | .int        => .int
+  | .U φ B       => .U φ (CTy.tySubstFrom k T B)
+  | .sum A B     => .sum (VTy.tySubstFrom k T A) (VTy.tySubstFrom k T B)
+  | .prod A B    => .prod (VTy.tySubstFrom k T A) (VTy.tySubstFrom k T B)
+  | .mu A        => .mu (VTy.tySubstFrom (k + 1) (VTy.tyShiftFrom 0 T) A)
+  | .tvar i      =>
+      if i = k then T
+      else if i > k then .tvar (i - 1)
+      else .tvar i
+def CTy.tySubstFrom {Eff Mult : Type} (k : Nat) (T : VTy Eff Mult) : CTy Eff Mult → CTy Eff Mult
+  | .F q A       => .F q (VTy.tySubstFrom k T A)
+  | .arr q A B   => .arr q (VTy.tySubstFrom k T A) (CTy.tySubstFrom k T B)
+end
+
+/-- The μ-unrolling `A[μX.A / X]`: fill the nearest type-level recursion var
+(index 0) with the whole `μX.A`, renumbering. This is the type `unfold` exposes. -/
+abbrev VTy.unrollMu {Eff Mult : Type} (A : VTy Eff Mult) : VTy Eff Mult :=
+  VTy.tySubstFrom 0 (VTy.mu A) A
 
 
 /-! ### 1.5 Typing-context split — positional grade-vector + ambient type context

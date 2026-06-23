@@ -70,6 +70,25 @@ inductive HasVTy : GradeVec Mult → TyCtx Eff Mult → Val → VTy Eff Mult →
   | vthunk : ∀ {γ Γ M φ B},
       HasCTy γ Γ M φ B →
       HasVTy γ Γ (Val.vthunk M) (VTy.U φ B)
+  -- ADT value formers (ADR-0029). All inert; grades thread like `vthunk`.
+  -- T_Inl / T_Inr: a tagged value of the sum.
+  | inl : ∀ {γ Γ v A B},
+      HasVTy γ Γ v A →
+      HasVTy γ Γ (Val.inl v) (VTy.sum A B)
+  | inr : ∀ {γ Γ v A B},
+      HasVTy γ Γ v B →
+      HasVTy γ Γ (Val.inr v) (VTy.sum A B)
+  -- T_Pair: both components consumed (multiplicative ×): `γ = γ_v + γ_w`.
+  | pair : ∀ {γ γ_v γ_w Γ v w A B},
+      HasVTy γ_v Γ v A →
+      HasVTy γ_w Γ w B →
+      γ = γ_v + γ_w →
+      HasVTy γ Γ (Val.pair v w) (VTy.prod A B)
+  -- T_Fold (= a constructor): `fold v : μX.A` requires `v : A[μX.A/X]`. The
+  -- iso coercion — syntactic, runtime-erased. `unrollMu A = A[μX.A/X]`.
+  | fold : ∀ {γ Γ v A},
+      HasVTy γ Γ v (VTy.unrollMu A) →
+      HasVTy γ Γ (Val.fold v) (VTy.mu A)
 inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff Mult → Prop where
   -- T_Ret: `γ = q Q* γ'`; the produced value's budget `q` is recorded in `F q A`.
   | ret    : ∀ {γ γ' Γ v A q},
@@ -109,6 +128,29 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       HasVTy γ₂ Γ v A →
       γ = γ₁ + q • γ₂ →
       HasCTy γ Γ (Comp.app M v) φ B
+  -- ADT eliminators (ADR-0029). Scrutinees are VALUES; each binds its payload(s)
+  -- and the branch(es) run at the block's effect/type `(φ, C)`.
+  -- T_Case: `v : A + B`; branch `Nᵢ` binds the payload at position 0 with multiplicity
+  -- `q` (the scrutinee scaling); the two branches share grade `γ_N` and result `(φ, C)`.
+  -- `γ = q • γ_v + γ_N` mirrors `app`'s scrutinee-scaling.
+  | case : ∀ {γ γ_v γ_N Γ v N₁ N₂ φ q A B C},
+      HasVTy γ_v Γ v (VTy.sum A B) →
+      HasCTy (q :: γ_N) (A :: Γ) N₁ φ C →
+      HasCTy (q :: γ_N) (B :: Γ) N₂ φ C →
+      γ = q • γ_v + γ_N →
+      HasCTy γ Γ (Comp.case v N₁ N₂) φ C
+  -- T_Split: `v : A × B`; `N` binds fst (idx 1) and snd (idx 0), both at multiplicity
+  -- `q`; `γ = q • γ_v + γ_N`.
+  | split : ∀ {γ γ_v γ_N Γ v N φ q A B C},
+      HasVTy γ_v Γ v (VTy.prod A B) →
+      HasCTy (q :: q :: γ_N) (B :: A :: Γ) N φ C →
+      γ = q • γ_v + γ_N →
+      HasCTy γ Γ (Comp.split v N) φ C
+  -- T_Unfold (= a match): `unfold (v : μX.A) : F 1 (A[μX.A/X])`. The iso coercion;
+  -- returns the unrolled payload. Effect `⊥` (pure, like `ret`); grade passes through.
+  | unfold : ∀ {γ Γ v A},
+      HasVTy γ Γ v (VTy.mu A) →
+      HasCTy γ Γ (Comp.unfold v) ⊥ (CTy.F 1 (VTy.unrollMu A))
   -- up (ADR-0022 D2): perform operation `op` of effect `ℓ`. `labelEff ℓ ≤ φ` is the
   -- lacks-discipline membership "`ℓ ∈ φ`" (ADR-0018) in the abstract lattice. The
   -- grade `q • γ` mirrors `ret`: the produced value's budget `q` scales the
