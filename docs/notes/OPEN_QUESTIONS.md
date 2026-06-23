@@ -316,6 +316,19 @@ reversal).
 > uses AsmFX-style one-directional annotated simulation (not the biorthogonal LR, which stays ◊4-only).
 > Q9 remains open on the *target* alone: AsmFX is its own abstract ISA, not WasmFX, so "pin the engine,
 > not the paper" (options 1+3) is unchanged.
+>
+> **Cross-prover clarification (2026-06-23 recon):** option (3) "ride the mechanized oracle" CANNOT mean
+> *import* — WasmFXCert / Iris-WasmFX are **Rocq** (`logsem/iris-wasmfx`, builds on WasmCert; confirmed
+> models `switch` via `switch.addr` in `theories/`), and **no Lean-4 WasmFX semantics exists** (checked:
+> T-Brick/lean-wasm, cajal/talos, Utrecht LeanWasm all model plain Wasm). So (3) = **transcribe** the Rocq
+> operational semantics into a Lean `Wasmfx.run` (a few hundred lines for the trivial fragment, comparable
+> to `Source.eval`), with the Rocq artifact as the faithful line-by-line reference (invariant #1 satisfied
+> by transcription, not import). NEW SEAM this introduces — the Lean↔Rocq transcription — earns confidence
+> from BOTH a line-by-line Rocq cross-check AND the real-engine differential test (a Lean-only-green
+> `compile_forward_sim` would be "green against a fiction", relocated from syntax-drift to run-level).
+> Engine status: stack-switching is Phase 3 (mutable); **Wasm 3.0 (Sept 2025) did NOT include it**;
+> Wasmtime #10248 has core support behind the flag but x64-only, no `resume_throw`, "all test cases fail"
+> — confirm a usable version by hands-on build at ◊5 start.
 
 **Revisit signal**: starting ◊5 compiler/backend work; OR the stack-switching
 proposal reaching Phase 4 (becomes stable — re-freeze then); OR a decision to

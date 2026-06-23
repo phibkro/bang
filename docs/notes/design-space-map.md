@@ -96,3 +96,49 @@ rung 3+ (reuse, HOFs)    forces →  #1 polymorphism + effect-row vars (Q17)
 extensibility (any rung) wants  →  #metaprogramming (Q20) — but principle (no-new-primitive) is set
 the secondary lens items →  ◊4/◊5/post-v1; deferred, mapped here so they're not lost
 ```
+
+## ★ Concurrency & the OS runtime model (post-v1; foundational for the xv6 north-star)
+
+The vision endgame (xv6, rung 9) needs a **multicore execution model**. Two related, both
+shared-nothing, both verification-friendly decompositions are on the table:
+
+```
+LOGICAL   actors-as-wasm-instances   `!` (actor-send) over a mailbox effect+handler (library,
+                                      invariant #5); each actor = a separate wasm instance →
+                                      separate linear memory = STRUCTURAL isolation
+PHYSICAL  per-CORE wasm module        the MULTIKERNEL (Barrelfish, SOSP'09): treat the machine
+          + coordinator               as a network of cores, NO shared memory, coordination by
+                                      message-passing; OS state REPLICATED, not shared
+```
+
+**Why this is the right model for bang specifically (not just one option):**
+1. Shared-nothing keeps each core/actor a **sequential** program → verifiable with the existing
+   sequential machinery + per-instance forward simulation (ADR-0035). The only concurrent part is the
+   message channels.
+2. It **avoids Iris concurrent separation logic.** Iris is forced by *shared mutable state under
+   interference*; shared-nothing eliminates exactly that. (Corrects an earlier coarser read that
+   "parallel processes → Iris" — parallelism per se doesn't force it; **sharing** does.)
+3. On-thesis: it trades fine-grained-sharing performance for verifiability = invariant #7
+   (performance second-class, correctness first). A perf-first project picks shared-memory SMP;
+   bang's correctness-first stance picks the multikernel.
+4. wasm fits: separate linear memories by construction; stack-switching gives each module its
+   *internal* concurrency (green-threaded actors, scheduler-as-a-handler).
+
+**The load-bearing invariant** (keeps the cheap proof method valid as concurrency lands):
+> messages **by-copy**; **NO cross-instance shared TVars / no shared global heap** baked into the
+> runtime (`Wasmfx.run` / the `⊨` modelling relation).
+
+Violate it — a shared central-manager hot spot, or shared TVars across cores — and you reintroduce
+concurrent state → the Iris bill + a bottleneck/SPOF. **Barrelfish's lesson: the "central manager"
+must itself be message-passing / replicated, not a shared-memory coordinator.** Rework risk is gated
+by ONE decision (Q21, post-v1): *do two actors/cores ever share a TVar across instances?* Never →
+forward-sim composes sequentially, no Iris. Ever → the iris-wasmfx / Affect POPL'25 regime.
+
+```
+neighbours   Barrelfish (multikernel) · seL4 (verified kernel; big-lock vs clustered multicore) ·
+             Erlang/BEAM (actors, shared-nothing, by-copy) · Singularity (SIPs, typesafe isolation) ·
+             Unison (already mapped — ships code @ the data)
+status       ✗ open / ★ — post-v1, but CONSTRAINS ◊5+ via the by-copy invariant above (don't bake a
+             shared global heap into the runtime now). Supersedes the bare "concurrency MEMORY MODEL"
+             row above with a concrete direction.
+```
