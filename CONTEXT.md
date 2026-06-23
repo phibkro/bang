@@ -197,7 +197,10 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 - **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
   axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound` (Q14), `zero_usage` (→◊4).
 - **`paths/PATH-calcvm-port.md`** — ◊3 (next verification checkpoint). Collapse the K3 Calc* matrix into
-  one graded-CBPV calculated machine. SCOPED; D1=A (calculate from denotational `evalD`). Tasks #16–#20.
+  one graded-CBPV calculated machine. **IN PROGRESS**: D1=A (calculate from denotational `evalD`); first
+  green increment landed (`Bang/CalcVM.lean`, `c86be38` — Unit 2 pure CBPV core: `evalD` + machine
+  `{RET,BIND,UNBIND}` + `compile_correct` PROVEN axiom-clean, gate-guarded). NEXT: extend to
+  `force`/`lam`/`app` (the CBPV thunk/abstraction spine), then the effect units, then archive the matrix.
 
 **Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
 verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;

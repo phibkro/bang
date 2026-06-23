@@ -1,7 +1,21 @@
 # PATH · CalcVM port (◊2 → ◊3)
 
 > Collapse the K3 matrix of calculated machines into ONE graded-CBPV calculated machine,
-> proven `exec ∘ compile ≡ eval`. Status: **SCOPING** (2026-06-22). Owner: kernel/proof-engineer.
+> proven `exec ∘ compile ≡ eval`. Status: **IN PROGRESS** — first green increment landed 2026-06-23.
+> Owner: kernel/proof-engineer.
+
+## Progress
+
+- **✓ Unit 2 — pure returner/sequencing core** (`Bang/CalcVM.lean`, `c86be38` + `13a9b5a` registration +
+  `ea17e63` Audit guard). `evalD : Nat → Env → Comp → Option Val` (denotational, env-based, fuel-bounded,
+  D1-A partiality monad) covering `ret`/`letC`/`vvar`; calculated machine `{RET, BIND, UNBIND}` DERIVED
+  from `evalD` (invariant #4); `exec_compile` + `compile_correct` (`exec ∘ compile ≡ evalD` on the pure
+  core) **PROVEN**, axioms `[propext, Quot.sound]`, gate-guarded in `Audit.lean`. 3 `rfl` diff-test seeds
+  (the first grains of the Unit-4 battery). Rides the gate (732 jobs); ◊2 gate held (0-axiom).
+- **NEXT (recommended): extend `evalD`/machine to `force`/`lam`/`app`** — the CBPV thunk/abstraction spine
+  (breadth-first, K3 "grow one constructor at a time" rhythm; needs a closure/value story for `vthunk` on
+  the stack). Defer the `evalD ≡ Source.eval` agreement (Unit 1 bridge) until the pure machine is
+  feature-complete. THEN the effect/handler units, then collapse + archive the K3 matrix (ADR-0017).
 
 ## Target (◊3 gate, ROADMAP)
 
