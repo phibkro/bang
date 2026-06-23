@@ -988,26 +988,25 @@ theorem compat_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact hN a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
 
-/-- `unfold` of `Vrel`-related folds: `unfold (fold w) ↦ ret w` is a CIStep, so the goal reduces to
-`crel_ret` on the payloads. INDEX SUBTLETY (documented blocker): `Vrel (n+1) (mu A)` gives the
-payloads related at the UNROLLED type but at index `n` (the `▷` guard, LR.lean §5.2), whereas
-`Crel (n+1) (F 1 _) (ret u₁) (ret u₂)` consumes a `Krel (n+1)` whose return-half inspects
-`Vrel (n+1)`. Bridging needs Vrel/Krel step-index MONOTONICITY (downward-closure): `Krel (n+1)`'s
-return obligation, restricted to the reduct that only ever observes the value at index ≤ n, holds
-from `Vrel n`. The monotonicity lemmas (`Vrel_mono`, `Krel_mono`, standard ahmed-esop06
-downward-closure by induction on the lex measure) are the missing primitive — sequenced after the
-clean cases. -/
+/-- `unfold` of `Vrel`-related folds (ADR-0038/Blocker-2 resolution, option (a) — `unfold` SPENDS the
+step index): `Vrel (n+1) (mu A)` gives the payloads `Vrel`-related at the UNROLLED type at index `n`
+(the μ `▷`-guard, LR.lean §5.2 — the guard IS a real step that `unfold` discharges). `unfold (fold w) ↦
+ret w` is a CIStep, so `Crel_head_step` reduces the goal (at the DROPPED index `n`) to `crel_ret` on the
+index-`n` payloads. This is the textbook iso-recursive step-indexing treatment (ahmed-esop06 /
+Appel-McAllester): the recursive-type elimination costs one logical step. The conclusion is `Crel n`
+(NOT `n+1`) — the index the `Vrel (n+1)` μ-clause's `▷` discharges. Payload closedness comes from the
+closed scrutinee (`Val.Closed.fold_inv`). -/
 theorem crel_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
-    (hv : Vrel (n + 1) (VTy.mu A) w₁ w₂) :
-    Crel (n + 1) (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
+    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂) (hv : Vrel (n + 1) (VTy.mu A) w₁ w₂) :
+    Crel n (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
   rw [Vrel] at hv
   obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
   refine Crel_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_ ?_
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
-  · -- BLOCKER: needs `Vrel (n+1) (unrollMu A) u₁ u₂`; have `Vrel n …` (the μ ▷-guard drop).
-    -- Resolved by Vrel/Krel downward-closure monotonicity (TODO — see docstring).
-    sorry
+  · -- the index-`n` payloads, related at the unrolled type, inject via crel_ret at index `n`.
+    exact crel_ret hcw₁.fold_inv hcw₂.fold_inv hu
+
 
 
 /-! ## B.4 `krel_refl` — the interface contract for `lr_sound` (the capstone)

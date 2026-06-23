@@ -284,6 +284,9 @@ theorem Val.Closed.pair_inv {a b : Val} (h : Val.Closed (Val.pair a b)) :
     Val.Closed a ∧ Val.Closed b := by
   constructor <;> intro k <;> (have := h k; rw [Val.shiftFrom, Val.pair.injEq] at this)
   exacts [this.1, this.2]
+/-- A `fold`'s payload is closed (the μ-intro analogue of `inl_inv`). -/
+theorem Val.Closed.fold_inv {w : Val} (h : Val.Closed (Val.fold w)) : Val.Closed w := by
+  intro k; have := h k; rw [Val.shiftFrom, Val.fold.injEq] at this; exact this
 
 
 /-! ## 5.2 LR — Vrel / Srel / Krel / Crel
