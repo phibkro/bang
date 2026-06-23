@@ -86,8 +86,10 @@ Commits: `4737a1b` (K1 handler + ledger) · `6a81b0f` (K2 helpers, partial) · `
 GOAL.1 (ledger runs) ✓ · GOAL.2 (all-or-nothing) ✓ **and PROVEN, not just plausible-tested** —
 `all_or_nothing_abort` axiom-clean `[propext, Quot.sound]`, in `Audit.lean`.
 
-**Scoped follow-ons** (the GOAL is met without them): `orElse` (needs a recovery handler — see finding) ·
-from-source `atomically {…}` surface (parity polish) · general-`S` TVars (ADR-0030 amendment).
+**Scoped follow-ons**: ✓ **from-source `atomically`/`new`/`read`/`write` surface DONE** (`9892126` — STM
+is now writable from source text, incl. abort-rollback). Remaining: `orElse` (needs *nested-transaction*
+semantics — discard the alternative's writes, Harris OR3; bigger than "a recovery handler") · general-`S`
+TVars (ADR-0030 amendment, default-witness).
 
 ## FINDING — what STM-as-handler cost
 
