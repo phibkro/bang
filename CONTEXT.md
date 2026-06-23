@@ -48,17 +48,27 @@
                                      0-axiom throughout. Built across Units 1–7 (ADR-0031
                                      D4 for state/transaction resume; UNFOLD erases onto
                                      RET, not an instr — calc-derived).
-◊4 ◐ LR foundation (IN PROGRESS) ── 2026-06-23. The LR machinery is DEFINED: U1 (`a58a396`)
-                                     concretized the §5.1/§6 helpers (Cxt/Stack=EvalCtx, BaseRel,
-                                     seqComp, raise…); U2 (`eadec83`, THE CRUX) defined
-                                     Vrel/Srel/Krel/Crel as step-indexed WF mutual defs (plain lex
-                                     `(n, sizeOf type, role)` — no iris ▷ needed), row-indexed
-                                     (faithful Biernacki τ/ε, ADR-0033). `group_recovers` RETIRED
-                                     (`fcb2f51`, ADR-0032: false-as-stated + vacuous; rollback is the
-                                     txn handler). `lr_sound`/`lr_fundamental` now `[propext, sorryAx,
-                                     Quot.sound]` (only the proof BODY is sorry). NEXT = the PROOFS:
-                                     U4 (seq_unit + zero_usage_erasable) · U5 (lr_sound, biorthogonality)
-                                     · U6 (Compat 16 → lr_fundamental). See `paths/PATH-lr-foundation.md`.
+◊4 ✓ LR foundation — NON-▷ FRAGMENT ── 2026-06-24 (GATE ✓ scoped, ADR-0039). `lr_fundamental`
+     (GATE ✓ scoped)                 PROVEN for the non-▷ fragment (pure CBPV · functions ·
+                                     non-recursive ADTs · throws): all value cases +
+                                     ret/letC/force/case/split/lam/app + handleThrows, sorry-free,
+                                     wired `lr_fundamental := crel_fund` (Compat now UPSTREAM of Spec).
+                                     Reads the REAL proof [propext, sorryAx, Classical.choice, Quot.sound]
+                                     — sorryAx ONLY from the documented ▷-subsystem. ◊2 (no_accidental_
+                                     handling 0-axiom, STD trusted-three) + ◊3 (CalcVM trusted-three) HELD
+                                     throughout. KEY forks, BUILD-ARBITRATED (not guessed): closed-value
+                                     carrier on Krel/Srel/EnvRel (ADR-0036); arrow clause = PEELING +
+                                     krel_nil_succ F-restriction (ADR-0038 — both pure forms refuted by
+                                     the build). 16 proof commits f6d0ce2…69d70b1, 723 jobs green.
+◊4.5 ○ LR ▷-subsystem (NEXT)       ── the cohesive ▷-fragment deferred from ◊4 (ADR-0039): μ fold/unfold ·
+                                     up (op-perform) · resumptive handlers (state/txn) · krel_refl ·
+                                     lr_sound(arbitrary-C) · zero_usage_erasable. Build-confirmed root
+                                     cause: plain Nat→Prop Crel/Krel/Srel lack the both-ways monotonicity
+                                     μ/resume need (Srel resume contravariant in Vrel ⇒ no uniform
+                                     monotonicity; ▷-anti-reduction needs Krel-down, ours is Krel-up;
+                                     crel_unfold(a) closes [`7f1bb24`] but does NOT compose). FIX = re-phrase
+                                     Crel/Krel/Srel with the IxFree ∀k≤n Kripke-monotone reading, designed
+                                     in from the start; crel_unfold(a) + krel_appF_intro + infra carry over.
 ◊5   Compiler v0
 ◊6   Release v0
 ```
