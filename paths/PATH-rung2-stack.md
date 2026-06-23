@@ -81,3 +81,42 @@ The L/Q19 layers are a follow-on (surface + `plausible`). NOT a surface-only iss
   progress — add cases). Pattern: rungs 0/1 added formers + machine steps + metatheory cases the same way.
 - `plausible`: already a `lake` dependency (`lake-manifest.json`); Lean's QuickCheck.
 - Surface: `Bang/Surface.lean` — add `Stack`/`push`/`pop`/`empty` + demos.
+
+## STATUS — ✓ DONE (2026-06-23)
+
+Landed in three commits, ◊2 gate held on each: `cc65d90` (K1 data layer) · `b94276e` (K2 metatheory)
+· `5ec98ad` (L surface + laws). `just verify` green; `no_accidental_handling` + `rowinst` 0-axiom;
+STD block ⊆ {propext, Classical.choice, Quot.sound}.
+
+## FINDING — what the data layer cost
+
+**The ADR-0029 bet (iso-recursive) paid off — the metatheory was cheap.** Syntactic type-matching meant
+canonical-forms lemmas (closed `v : sum/prod/mu ⇒ inl/inr / pair / fold`) + `subst_value` did all the
+work — **no coinduction, no type-equality reasoning**. This is the "constraints are generative" thesis
+cashing out directly in proof budget: the iso constraint *bought* a cheap metatheory. K1's grade shapes
+(pair `γ_v+γ_w`; case/split `q•γ_s+γ_N`; unfold pass-through at `F 1 (unrollMu A)`) held unchanged
+through K2 — no revision.
+
+**Three things worth carrying forward:**
+1. **No new eval-context frame.** Expected case/split/unfold to need frames (like letC/app); they don't —
+   CBPV makes scrutinees *values* (inl/pair/fold are `Val`), so eliminators reduce in place. `HasStack`
+   and the stack-inversion lemmas were untouched. A real simplification the iso/CBPV pairing bought.
+2. **`tvar : Nat` (type-level de Bruijn), not nullary.** Chosen so nested μ (Tree-of-List) is
+   representable, not unrepresentable — correct-by-construction, monomorphism preserved (a recursion var
+   ≠ a generic type parameter). `unrollMu A := tySubstFrom 0 (mu A) A` is the iso `unfold` payoff.
+3. **The one fiddly spot: split's two-binder grade arithmetic** — substituting the outer pair-component
+   under the inner binder grades it `[0]` not `[]`; simp with `smul_cons`/`add_cons`/`mul_zero`, not the
+   nil lemmas. Note for any future 2+-binder eliminator.
+
+**`plausible` integrates cleanly as the tested rung — yes.** Transitive via mathlib (no lakefile
+change). Used **`#test`** (= `#eval Plausible.Testable.check`) over `by plausible`: `#test` build-fails
+on a counter-example and admits **no `sorry`** (`by plausible` admits a sorry on success, which would
+pollute the audit), and it's the same idiom-family as the file's `#guard`s. **Mutation-verified
+non-vacuous**: breaking `pop(push x s)`'s `top==x` to `x+1` fails the build with a real counter-example,
+so the harness genuinely samples `Source.eval` runs. Two small frictions, both surface-additive (no
+kernel touch): plausible has no `Arbitrary Val` → wrap in a `StackVal` newtype to target the generator;
+comparing eval results needs equality on `Val` → hand-rolled a structural `BEq Val` in the surface.
+
+**The one design call worth flagging: structured `pop`.** K1's demo `pop` returned only the top `Int`;
+L refined it to return `none | some (top, rest)` (object-language `inl`/`inr (pair …)`) — that's what
+lets the round-trip law *witness* `rest`. No metatheory cost (pop returns a value, not a Lean-level pair).
