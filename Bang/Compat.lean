@@ -220,6 +220,130 @@ theorem closeV_closed {v : Val} (hv : Val.Closed v) : ∀ δ : List Val, closeV 
   | u :: δ  => by
       rw [closeV, show Val.subst u v = v from hv.subst_at 0 u]; exact closeV_closed hv δ
 
+/-! ### B.1a″ Shift/subst commutation for a CLOSED filler
+
+The standard de Bruijn shift-after-subst commutation, specialized to a CLOSED filler `u` (so the filler
+needs no shifting): for `i ≤ k`,
+  `shiftFrom k (substFrom i u t) = substFrom i u (shiftFrom (k+1) t)`.
+This is what lets `closeV`/`closeC` over a closed length-`Γ` environment produce a CLOSED term (the
+`ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem). Mutual structural
+induction; `i ≤ k` so the binder cases step both cutoffs uniformly (`i+1 ≤ k+1`). -/
+mutual
+theorem Val.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
+    ∀ (k i : Nat), i ≤ k → ∀ (t : Val),
+      Val.shiftFrom k (Val.substFrom i u t) = Val.substFrom i u (Val.shiftFrom (k + 1) t)
+  | _, _, _,    .vunit => rfl
+  | _, _, _,    .vint _ => rfl
+  | k, i, hik,  .vvar j => by
+      -- arithmetic: the subst removes index i; the shift bumps indices ≥ k+1. With i ≤ k they don't
+      -- interfere, and at j = i the closed filler u is shift-fixed.
+      rcases Nat.lt_trichotomy j i with hji | hji | hji
+      · -- j < i ≤ k: subst leaves vvar j (j<i); shift k leaves it (j<k); RHS shift(k+1) + subst leave it.
+        rw [Val.substFrom, if_neg (by omega), if_neg (by omega),
+          Val.shiftFrom, if_pos (by omega : j < k),
+          Val.shiftFrom, if_pos (by omega : j < k + 1),
+          Val.substFrom, if_neg (by omega), if_neg (by omega)]
+      · -- j = i: subst → u (closed, shift-fixed); RHS shift (k+1) leaves vvar i (i ≤ k < k+1) then subst → u.
+        subst hji
+        rw [Val.substFrom, if_pos rfl, hu.shiftFrom_eq,
+          Val.shiftFrom, if_pos (by omega : j < k + 1), Val.substFrom, if_pos rfl]
+      · -- j > i: subst → vvar (j-1); shift depends on j-1 vs k. RHS: shift (k+1) of vvar j, then subst.
+        rw [Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
+        rcases Nat.lt_or_ge j (k + 1) with hjk | hjk
+        · -- j < k+1 ⟹ j-1 < k: shift leaves vvar (j-1); RHS shift leaves vvar j, subst → vvar (j-1).
+          rw [Val.shiftFrom, if_pos (by omega : j - 1 < k),
+            Val.shiftFrom, if_pos (by omega : j < k + 1),
+            Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
+        · -- j ≥ k+1 ⟹ j-1 ≥ k: shift bumps to vvar j; RHS shift bumps to vvar (j+1), subst → vvar j.
+          rw [Val.shiftFrom, if_neg (by omega : ¬ j - 1 < k),
+            Val.shiftFrom, if_neg (by omega : ¬ j < k + 1),
+            Val.substFrom, if_neg (by omega), if_pos (by omega : j + 1 > i),
+            show j - 1 + 1 = j + 1 - 1 by omega]
+  | k, i, hik,  .vthunk M => by
+      simp only [Val.shiftFrom, Val.substFrom]
+      rw [Comp.shiftFrom_substFrom_closed hu k i hik M]
+  | k, i, hik,  .inl w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | k, i, hik,  .inr w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | k, i, hik,  .pair a b => by
+      simp only [Val.shiftFrom, Val.substFrom]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik a, Val.shiftFrom_substFrom_closed hu k i hik b]
+  | k, i, hik,  .fold w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+
+theorem Comp.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
+    ∀ (k i : Nat), i ≤ k → ∀ (t : Comp),
+      Comp.shiftFrom k (Comp.substFrom i u t) = Comp.substFrom i u (Comp.shiftFrom (k + 1) t)
+  | k, i, hik, .ret w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | k, i, hik, .letC M N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.shiftFrom_substFrom_closed hu k i hik M,
+        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N]
+  | k, i, hik, .force w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | k, i, hik, .lam M => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) M]
+  | k, i, hik, .app M w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Comp.shiftFrom_substFrom_closed hu k i hik M, Val.shiftFrom_substFrom_closed hu k i hik w]
+  | k, i, hik, .up ℓ op w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | k, i, hik, .handle h M => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Handler.shiftFrom_substFrom_closed hu k i hik h, Comp.shiftFrom_substFrom_closed hu k i hik M]
+  | k, i, hik, .case w N₁ N₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik w,
+        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N₁,
+        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N₂]
+  | k, i, hik, .split w N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik w,
+        Comp.shiftFrom_substFrom_closed hu (k + 2) (i + 2) (by omega) N]
+  | k, i, hik, .unfold w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | _, _, _, .oom => rfl
+  | _, _, _, .wrong _ => rfl
+
+theorem Handler.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
+    ∀ (k i : Nat), i ≤ k → ∀ (h : Handler),
+      Handler.shiftFrom k (Handler.substFrom i u h) = Handler.substFrom i u (Handler.shiftFrom (k + 1) h)
+  | k, i, hik, .state ℓ s => by
+      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik s]
+  | _, _, _, .throws _ => rfl
+  | _, _, _, .transaction _ _ => rfl
+end
+
+/-- `v` is SCOPED IN `m`: no free de Bruijn index `≥ m` is exposed (`shiftFrom k` fixes `v` for `k ≥ m`).
+`ScopedIn 0 = Closed`. A well-typed value `HasVTy γ Γ v A` is `ScopedIn Γ.length` (`HasVTy.shift_closed`),
+so the fundamental induction gets its scope bound from typing, not a fresh syntactic analysis. -/
+def Val.ScopedIn (m : Nat) (v : Val) : Prop := ∀ k, m ≤ k → Val.shiftFrom k v = v
+
+/-- Substituting the level-0 binder of an `(m+1)`-scoped value with a CLOSED filler drops the scope to
+`m`. Uses the shift/subst commutation: `shiftFrom k (subst u v) = subst u (shiftFrom (k+1) v) = subst u v`
+for `k ≥ m` (since `v` is `(m+1)`-scoped and `k+1 ≥ m+1`). -/
+theorem Val.ScopedIn.subst_closed {m : Nat} {u v : Val} (hu : Val.Closed u)
+    (hv : Val.ScopedIn (m + 1) v) : Val.ScopedIn m (Val.subst u v) := by
+  intro k hk
+  rw [Val.subst, Val.shiftFrom_substFrom_closed hu k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
+
+/-- Closing a value SCOPED IN `δ.length` over a CLOSED environment yields a CLOSED value: the fold
+substitutes each free index with a closed filler, dropping the scope by 1 each step to `ScopedIn 0` =
+`Closed`. The `ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem. -/
+theorem closeV_closed_scoped : ∀ {δ : List Val} {v : Val},
+    (∀ u ∈ δ, Val.Closed u) → Val.ScopedIn δ.length v → Val.Closed (closeV δ v)
+  | [],     v, _,  hv => fun k => hv k (Nat.zero_le k)
+  | u :: δ, v, hδ, hv => by
+      have hu : Val.Closed u := hδ u List.mem_cons_self
+      have hδ' : ∀ w ∈ δ, Val.Closed w := fun w hw => hδ w (List.mem_cons_of_mem u hw)
+      rw [closeV]
+      exact closeV_closed_scoped hδ' (Val.ScopedIn.subst_closed hu (by
+        simpa only [List.length_cons] using hv))
+
+
 /-- Closing `vvar i` over a CLOSED environment picks out the `i`-th filler (innermost = index 0). The
 fold substitutes `δ[0]` at 0 (hitting `vvar 0`), else decrements and recurses — and once a closed filler
 is substituted in, the remaining fold leaves it fixed (`closeV_closed`). In range (`i < δ.length`). -/
@@ -247,6 +371,63 @@ theorem closeV_vvar {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u) :
   induction δ generalizing c with
   | nil => rfl
   | cons v δ ih => simp only [closeV, closeC, Val.subst, Val.substFrom, Comp.subst]; exact ih _
+
+
+/-! ### B.1a′ `EnvRel` accessors (closedness carrier, length, index)
+
+The fundamental induction consumes the `EnvRel` carrier three ways: the fillers' CLOSEDNESS (feeds
+`closeC_subst_comm` under binders), the LENGTH match with `Γ` (feeds `closeV_vvar`'s in-range
+requirement), and the per-position `Vrel` (feeds the `vvar` leaf). All by induction on `Γ`/the lists. -/
+
+/-- `EnvRel`'s left fillers are all closed (the `Val.Closed v₁` conjunct, harvested). -/
+theorem EnvRel.closed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRel n Γ δ₁ δ₂ → ∀ v ∈ δ₁, Val.Closed v
+  | [],      [],        [],        _, v, hv => absurd hv (by simp)
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
+      rw [EnvRel] at h
+      obtain ⟨hc₁, _, _, hrest⟩ := h
+      rcases List.mem_cons.mp hv with rfl | hmem
+      · exact hc₁
+      · exact EnvRel.closed_left hrest v hmem
+
+/-- `EnvRel`'s right fillers are all closed. -/
+theorem EnvRel.closed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRel n Γ δ₁ δ₂ → ∀ v ∈ δ₂, Val.Closed v
+  | [],      [],        [],        _, v, hv => absurd hv (by simp)
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
+      rw [EnvRel] at h
+      obtain ⟨_, hc₂, _, hrest⟩ := h
+      rcases List.mem_cons.mp hv with rfl | hmem
+      · exact hc₂
+      · exact EnvRel.closed_right hrest v hmem
+
+/-- `EnvRel` matches lengths: `δ₁.length = Γ.length` (and `δ₂`). -/
+theorem EnvRel.length_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRel n Γ δ₁ δ₂ → δ₁.length = Γ.length
+  | [],      [],        [],        _ => rfl
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
+      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_left h.2.2.2]
+theorem EnvRel.length_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRel n Γ δ₁ δ₂ → δ₂.length = Γ.length
+  | [],      [],        [],        _ => rfl
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
+      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_right h.2.2.2]
+
+/-- The per-position `Vrel`: if `Γ[i]? = some A`, the `i`-th fillers are `Vrel n A`-related. -/
+theorem EnvRel.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRel n Γ δ₁ δ₂ → ∀ {i : Nat} {A : VTy Eff Mult}, Γ[i]? = some A →
+      ∀ (d₁ d₂ : Val), Vrel n A (δ₁[i]?.getD d₁) (δ₂[i]?.getD d₂)
+  | [],      [],        [],        _, i, A, hΓ, _, _ => by simp at hΓ
+  | A' :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, i, A, hΓ, d₁, d₂ => by
+      rw [EnvRel] at h
+      obtain ⟨_, _, hv, hrest⟩ := h
+      cases i with
+      | zero => simp only [List.getElem?_cons_zero, Option.getD_some]
+                simp only [List.getElem?_cons_zero, Option.some.injEq] at hΓ; subst hΓ; exact hv
+      | succ k =>
+          simp only [List.getElem?_cons_succ]
+          simp only [List.getElem?_cons_succ] at hΓ
+          exact EnvRel.vrel_at hrest hΓ d₁ d₂
 
 
 /-! ### B.1b BINDING-former `closeC` distribution (`closeCUnderBinders`)
