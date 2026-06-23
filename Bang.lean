@@ -26,19 +26,11 @@ import Bang.Audit
 -- (PATH-tracer-bullet; additive surface layer, outside the verification spine).
 import Bang.Surface
 
--- K2: legacy untyped CBN reference (Bang.Eval namespace; no clash with Bang)
-import Bang.Eval
-
--- K3: calculated machines (collapsing into one graded-CBPV machine at ◊3
--- per ADR-0017; currently un-graded artifacts)
-import Bang.Calc
-import Bang.CalcHO
-import Bang.CalcCBN
-import Bang.CalcEff
-import Bang.CalcSt
-import Bang.CalcCBNEff
-import Bang.CalcCBNSt
-import Bang.CalcCBNEffSt
+-- K3: the calculated machine. The K2 matrix of per-feature machines (Calc/CalcHO/
+-- CalcCBN/CalcEff/CalcSt/CalcCBNEff/CalcCBNSt/CalcCBNEffSt) + the untyped CBN reference
+-- (Eval) collapsed into the one graded-CBPV `CalcVM` at ◊3 (ADR-0017) and were moved to
+-- `archive/` (out of the build — inert proven-evidence, machine-checked in git history).
+-- The paused reification frontier (ADR-0015) stays live below.
 import Bang.CalcReify
 import Bang.CalcReifyRef
 import Bang.CalcReifySim

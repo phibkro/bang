@@ -2335,63 +2335,132 @@ theorem compile_correct (n : Nat) (M : Comp) (t : Comp) (σ' : SStore) (τ' : TH
   obtain ⟨F, hF⟩ := k [] [] 1 [t] hbase
   exact ⟨F, hF⟩
 
-/-! ## Diff-test seeds (PATH-calcvm-port Unit 4)
+/-! ## The ◊3 diff-test battery — `exec ∘ compile ≡ Source.eval` on a curated program set
 
-The Lean-side replacement for the deleted TS differential harness: assert the
-machine reproduces `evalD` on curated programs by `rfl`. First grains of the
-`native_decide` battery the ◊3 gate will grow. -/
+The ROADMAP-named ◊3 gate artifact (ADR-0017 / PATH-calcvm-port D3). `compile_correct`
++ `evalD_agrees_source` already PROVE this equality *in general*; this curated battery
+is the concrete cross-check that catches definitional drift and DOCUMENTS coverage of
+all five feature axes. Curated, not a fuzzer (a generator is a deferred nice-to-have).
 
-/-- `(λ. ret #0) 5` ⇒ `[ret 5]` — β through `LAMI`/`APP`. -/
-example :
-    exec 10 (compile (.app (.lam (.ret (.vvar 0))) (.vint 5)) []) [] [] = some [.ret (.vint 5)] := by
-  rfl
+The honesty discipline: each case asserts agreement on the **observable value** via
+`Agree` — the calculated machine (`exec ∘ compile`, yielding `Option Stack` with the
+terminal `ret v` on the stack) and the type-safety-verified kernel (`Source.eval`,
+yielding `Result Val`) both produce the SAME `Val v`. Tying both reps to a single `v`
+makes a false "they agree" structurally unrepresentable — you cannot satisfy `Agree`
+by having the two sides return *different* values. Every case closes by `rfl`
+(empirically: the curated programs reduce symbolically, so no `native_decide` and
+hence no `Lean.ofReduceBool` in the axiom set — the battery stays axiom-clean). The
+empty stores `σ=[]`/`τ=[]` and empty `HStack`/`EvalCtx` mirror the closed-program load.
 
-/-- `let x = (λ.ret #0) 5 in ret x` ⇒ `[ret 5]` — `SUBST` over an applied lambda. -/
-example :
-    exec 12 (compile (.letC (.app (.lam (.ret (.vvar 0))) (.vint 5)) (.ret (.vvar 0))) []) [] []
-      = some [.ret (.vint 5)] := by
-  rfl
+Coverage (the five axes; a `#guard`-style build failure = a red gate, so green = passing):
+  · PURE        — let / app / force·thunk
+  · THROWS      — caught raise (`Agree`) + UNCAUGHT raise (no value; asserted separately)
+  · STATE       — get-default / put-then-get / outer-put-persists-past-a-caught-throw
+  · TRANSACTION — new+read (heap thread) + abort-rollback (write discarded on foreign throw)
+  · ADT         — case·inl / case·inr / split / unfold -/
 
-/-- `force (thunk (ret 9))` ⇒ `[ret 9]` — `force`∘`vthunk` collapses to the body. -/
-example :
-    exec 10 (compile (.force (.vthunk (.ret (.vint 9)))) []) [] [] = some [.ret (.vint 9)] := by
-  rfl
+/-- End-to-end agreement at one observable value: the calculated machine
+(`exec ∘ compile`) and the kernel reference (`Source.eval`) both yield the SAME
+`Val v`. The shared `v` is what makes a false "agree" unrepresentable. -/
+def Agree (fuel : Nat) (M : Comp) (v : Val) : Prop :=
+  exec fuel (compile M []) [] [] = some [.ret v] ∧ Source.eval fuel M = .done v
 
--- ADT eliminators (Unit 6): `CASE`/`SPLIT` reduce a closed-value scrutinee at runtime; `unfold`
--- ERASES at compile time onto `RET` (like `force∘vthunk`). Each demonstrator is asserted on BOTH
--- `exec ∘ compile` and `evalD` (the diff-test the two reps agree).
+-- ─── PURE axis (let / app / force) ───────────────────────────────────────────
 
-/-- `case (inl 5) (ret #0) (ret 99)` ⇒ `ret 5` — sum elim, LEFT branch binds the payload. -/
-example :
-    exec 10 (compile (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99))) []) [] []
-      = some [.ret (.vint 5)] := by rfl
-example :
-    evalD 10 [] [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))
-      = some (.term (.ret (.vint 5)), [], []) := by rfl
+/-- `(λ. ret #0) 5` ⇒ `5` — β through `LAMI`/`APP`. -/
+example : Agree 12 (.app (.lam (.ret (.vvar 0))) (.vint 5)) (.vint 5) := ⟨by rfl, by rfl⟩
 
-/-- `case (inr 7) (ret 99) (ret #0)` ⇒ `ret 7` — sum elim, RIGHT branch. -/
-example :
-    exec 10 (compile (.case (.inr (.vint 7)) (.ret (.vint 99)) (.ret (.vvar 0))) []) [] []
-      = some [.ret (.vint 7)] := by rfl
-example :
-    evalD 10 [] [] (.case (.inr (.vint 7)) (.ret (.vint 99)) (.ret (.vvar 0)))
-      = some (.term (.ret (.vint 7)), [], []) := by rfl
+/-- `let x = (λ.ret #0) 5 in ret x` ⇒ `5` — `SUBST` over an applied lambda. -/
+example : Agree 16 (.letC (.app (.lam (.ret (.vvar 0))) (.vint 5)) (.ret (.vvar 0))) (.vint 5) :=
+  ⟨by rfl, by rfl⟩
 
-/-- `split (pair 3 4) (ret #1)` ⇒ `ret 3` — product elim. The DOUBLE subst binds `v=3` at #1 and
-`w=4` (shifted) at #0; `ret #1` selects the first component. -/
-example :
-    exec 12 (compile (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1))) []) [] []
-      = some [.ret (.vint 3)] := by rfl
-example :
-    evalD 12 [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
-      = some (.term (.ret (.vint 3)), [], []) := by rfl
+/-- `force (thunk (ret 9))` ⇒ `9` — `force`∘`vthunk` collapses to the body. -/
+example : Agree 12 (.force (.vthunk (.ret (.vint 9)))) (.vint 9) := ⟨by rfl, by rfl⟩
 
-/-- `unfold (fold 8)` ⇒ `ret 8` — μ elim: fold/unfold erase. -/
-example :
-    exec 10 (compile (.unfold (.fold (.vint 8))) []) [] [] = some [.ret (.vint 8)] := by rfl
-example :
-    evalD 10 [] [] (.unfold (.fold (.vint 8)))
-      = some (.term (.ret (.vint 8)), [], []) := by rfl
+-- ─── THROWS axis (caught + uncaught) ─────────────────────────────────────────
+
+/-- `handle (throws ℓ) (raise 7)` ⇒ `7` — the deep handler catches and aborts with the payload. -/
+example : Agree 20 (.handle (.throws 0) (.up 0 "raise" (.vint 7))) (.vint 7) := ⟨by rfl, by rfl⟩
+
+/-- DEEP throws: `handle (throws ℓ) (let _ = raise 7 in 99)` ⇒ `7` — the handler reaches PAST a
+`letF` frame and DISCARDS the captured continuation (`99` is never returned). -/
+example : Agree 24 (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.vint 7) :=
+  ⟨by rfl, by rfl⟩
+
+/-- UNCAUGHT `raise` (no handler in scope) yields NO observable value — so it falls OUTSIDE
+`Agree`. Both reps signal it: the machine gets STUCK (`exec = none`), the kernel returns
+`.stuck`. The axis is covered by asserting that shared stuckness (not a value agreement). -/
+example : exec 20 (compile (.up 0 "raise" (.vint 7)) []) [] [] = none := by rfl
+example : Source.eval 20 (Comp.up 0 "raise" (.vint 7)) = .stuck := by rfl
+
+-- ─── STATE axis (get-default / put-then-get / persist-past-caught-throw) ──────
+
+/-- `handle (state ℓ 5) (get ())` ⇒ `5` — read the initial state. -/
+example : Agree 40 (.handle (.state 1 (.vint 5)) (.up 1 "get" .vunit)) (.vint 5) := ⟨by rfl, by rfl⟩
+
+/-- `handle (state ℓ 0) (let _ = put 7 in get ())` ⇒ `7` — the RESUMPTIVE handler KEEPS the captured
+`letF` continuation and threads the store; `get` reads the `put`. -/
+example : Agree 80
+    (.handle (.state 1 (.vint 0)) (.letC (.up 1 "put" (.vint 7)) (.up 1 "get" .vunit)))
+    (.vint 7) := ⟨by rfl, by rfl⟩
+
+/-- OUTER STATE PERSISTS PAST A CAUGHT THROW: `handle (state ℓ 0) (put 7; handle (throws) (raise);
+get)` ⇒ `7`. The inner zero-shot throw is caught and discarded, but the outer resumptive store
+survives — `get` still sees the `put 7`. The interaction the resumptive/zero-shot split must get right. -/
+example : Agree 100
+    (.handle (.state 1 (.vint 0))
+      (.letC (.up 1 "put" (.vint 7))
+        (.letC (.handle (.throws 0) (.up 0 "raise" .vunit))
+          (.up 1 "get" .vunit))))
+    (.vint 7) := ⟨by rfl, by rfl⟩
+
+-- ─── TRANSACTION axis (new+read heap-thread / abort-rollback) ─────────────────
+
+/-- `handle (transaction ℓ []) (newTVar 9; readTVar 0)` ⇒ `9` — allocate then read back; the heap
+threads through both ops (ADR-0031 D4). -/
+example : Agree 40
+    (.handle (.transaction 2 []) (.letC (.up 2 "newTVar" (.vint 9)) (.up 2 "readTVar" (.vvar 0))))
+    (.vint 9) := ⟨by rfl, by rfl⟩
+
+/-- ABORT-ROLLBACK: an outer `throws` wraps `transaction (newTVar 100; writeTVar 0:=70; raise 100)`.
+The `raise` is FOREIGN to the transaction frame, so it escapes it (zero-shot) — the threaded heap with
+the `writeTVar 70` is DISCARDED with the frame (never commits). The abort payload `100` is the ORIGINAL
+balance, the observable proof the write rolled back. -/
+example : Agree 80
+    (.handle (.throws 0)
+      (.handle (.transaction 2 [])
+        (.letC (.up 2 "newTVar" (.vint 100))
+          (.letC (.up 2 "writeTVar" (.pair (.vint 0) (.vint 70)))
+            (.up 0 "raise" (.vint 100))))))
+    (.vint 100) := ⟨by rfl, by rfl⟩
+
+-- ─── ADT axis (case·inl / case·inr / split / unfold) ─────────────────────────
+-- `CASE`/`SPLIT` reduce a closed-value scrutinee at runtime; `unfold` ERASES at compile time onto
+-- `RET` (like `force∘vthunk`). Both reps agree on the observable value.
+
+/-- `case (inl 5) (ret #0) (ret 99)` ⇒ `5` — sum elim, LEFT branch binds the payload. -/
+example : Agree 12 (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99))) (.vint 5) :=
+  ⟨by rfl, by rfl⟩
+
+/-- `case (inr 7) (ret 99) (ret #0)` ⇒ `7` — sum elim, RIGHT branch. -/
+example : Agree 12 (.case (.inr (.vint 7)) (.ret (.vint 99)) (.ret (.vvar 0))) (.vint 7) :=
+  ⟨by rfl, by rfl⟩
+
+/-- `split (pair 3 4) (ret #1)` ⇒ `3` — product elim. The DOUBLE subst binds `v=3` at #1 and `w=4`
+(shifted) at #0; `ret #1` selects the first component. -/
+example : Agree 14 (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1))) (.vint 3) := ⟨by rfl, by rfl⟩
+
+/-- `unfold (fold 8)` ⇒ `8` — μ elim: fold/unfold erase. -/
+example : Agree 12 (.unfold (.fold (.vint 8))) (.vint 8) := ⟨by rfl, by rfl⟩
+
+-- The intermediate `evalD` rep agrees too (it sits between the two `Agree` sides): a sample across
+-- the ADT axis, documenting that the substitution `evalD` calculated-from is itself faithful.
+example : evalD 12 [] [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))
+    = some (.term (.ret (.vint 5)), [], []) := by rfl
+example : evalD 14 [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
+    = some (.term (.ret (.vint 3)), [], []) := by rfl
+example : evalD 12 [] [] (.unfold (.fold (.vint 8)))
+    = some (.term (.ret (.vint 8)), [], []) := by rfl
 
 /-! ## The D1-A bridge: `evalD ≡ Source.eval` (pure spine)
 
@@ -4230,30 +4299,12 @@ theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (σ' : SStore) (τ' :
   obtain ⟨F, hF⟩ := k 1 (Result.done v) hbase
   exact ⟨F, hF⟩
 
-/-- `handle`-install over a non-raising body: `handle (throws ℓ) (ret 7)` ⇒ `ret 7`
-(handler-return = identity). Machine `MARK`/`UNMARK` are identity on normal return;
-evalD and Source.eval agree. -/
+/-- `handle`-install over a non-raising body: `handle (throws ℓ) (ret 7)` ⇒ `7`
+(handler-return = identity — `MARK`/`UNMARK` are identity on a normal return). A distinct
+shape from the battery's *catching* throws cases; the full three-rep bridge witnessed at once. -/
 example :
-    let M := Comp.handle (.throws default) (.ret (.vint 7))
-    evalD 5 [] [] M = some (.term (.ret (.vint 7)), [], [])
-      ∧ exec 10 (compile M []) [] [] = some [.ret (.vint 7)]
-      ∧ Source.eval 5 M = Result.done (.vint 7) := by
+    let M := Comp.handle (.throws 0) (.ret (.vint 7))
+    evalD 5 [] [] M = some (.term (.ret (.vint 7)), [], []) ∧ Agree 10 M (.vint 7) := by
   refine ⟨by rfl, by rfl, by rfl⟩
-
-/-- Bridge witnessed concretely: `(λ.ret #0) 5` — `evalD` returns `ret 5` AND
-`Source.eval` reaches `.done 5`. The two semantics agree. -/
-example :
-    let M := Comp.app (.lam (.ret (.vvar 0))) (.vint 5)
-    evalD 5 [] [] M = some (.term (.ret (.vint 5)), [], []) ∧ Source.eval 5 M = Result.done (.vint 5) := by
-  refine ⟨by rfl, by rfl⟩
-
-/-- Transaction RESUME witnessed: `handle (transaction tx []) (newTVar 9; readTVar 0)` services the
-two ops against the heap and returns the read value `9` — `evalD` and the machine agree (ADR-0031 D4). -/
-example :
-    let M := Comp.handle (.transaction 0 [])
-      (.letC (.up 0 "newTVar" (.vint 9)) (.up 0 "readTVar" (.vvar 0)))
-    evalD 8 [] [] M = some (.term (.ret (.vint 9)), [], [])
-      ∧ exec 16 (compile M []) [] [] = some [.ret (.vint 9)] := by
-  refine ⟨by rfl, by rfl⟩
 
 end Bang.CalcVM
