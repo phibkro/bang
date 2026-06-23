@@ -525,6 +525,36 @@ theorem not_converges_up_nil (ℓ : Label) (op : OpId) (v : Val) :
             = Config.run (k+1) ([], Comp.up ℓ op v) from rfl, hstuck] at hfuel
       simp at hfuel
 
+/-- An UNHANDLED operation never converges UNDER ANY STACK: if no frame of `K` handles `(ℓ, op)`
+(`splitAt K ℓ op = none`), then `plug K (up ℓ op v)` runs to a stuck config and never `done`s.
+Generalizes `not_converges_up_nil` (the `K = []` case) to an arbitrary stack — the workhorse that
+collapses the STUCK half of every frame-extension `Krel` lemma to vacuous truth (`CoApprox` is
+`False → _`). The machine refocuses `([], plug K (up …))` to `(K, up …)` via `run_plug`, then
+`dispatch K ℓ op v = (splitAt K …).bind _ = none` ⇒ `step = none` ⇒ stuck. -/
+theorem not_converges_up_splitNone {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
+    (hsplit : Bang.splitAt K ℓ op = none) :
+    ¬ Converges (Stack.plug K (Comp.up ℓ op v)) := by
+  -- the focused config (K, up …) is stuck at every fuel: step = dispatch = none (splitAt = none).
+  have hstuck : ∀ j w, Config.run j (K, Comp.up ℓ op v) ≠ Result.done w := by
+    intro j w
+    cases j with
+    | zero => simp [Config.run]
+    | succ k =>
+        rw [Config.run_step k (K, Comp.up ℓ op v) (by intro u; simp)]
+        have hdisp : Source.step (K, Comp.up ℓ op v) = none := by
+          show dispatch K ℓ op v = none
+          unfold dispatch; rw [hsplit]; rfl
+        rw [hdisp]; simp
+  rintro ⟨fuel, w, hfuel⟩
+  rw [Stack.plug] at hfuel
+  -- Source.eval fuel (plug K …) = run fuel ([], plug K …); bump to (fuel + K.length), refocus.
+  have hev : Config.run fuel ([], Bang.plug K (Comp.up ℓ op v)) = Result.done w := hfuel
+  have hbig : Config.run (fuel + K.length) ([], Bang.plug K (Comp.up ℓ op v)) = Result.done w :=
+    Config.run_done_add K.length fuel _ w hev
+  rw [run_plug K (Comp.up ℓ op v) fuel] at hbig
+  exact hstuck fuel w hbig
+
 /-- The empty stack is `Krel`-self-related at every SUCCESSOR index/type/row: the RETURN half
 holds because `ret v` always converges (so `CoApprox` is `True → True`), and the STUCK half
 holds because an `Srel (n+1)`-pair under `[]` is an unhandled `up`, which never converges (so

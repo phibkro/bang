@@ -106,6 +106,16 @@ theorem Crel_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ c
   exact e2.mpr (hrel K₁ K₂ hK (e1.mp hconv))
 
 
+/-- The `letF` REDUCE bridge: plugging `letF N :: K` with `ret v` co-converges with plugging `K` with
+`N.subst v`. The step `(letF N :: K, ret v) ↦ (K, N.subst v)` is context-dependent (it consumes the
+`letF` frame), so this is NOT a `CIStep` — proven directly through `converges_cfg_step`. The frame
+`letF N :: K` is never `([], ret _)` (it has a head frame), so the no-terminal side-condition holds. -/
+theorem converges_letF_ret (K : Stack) (N : Comp) (v : Val) :
+    Converges (Stack.plug (Frame.letF N :: K) (Comp.ret v)) ↔ Converges (Stack.plug K (Comp.subst v N)) := by
+  rw [Stack.plug, Stack.plug, converges_plug_iff, converges_plug_iff]
+  exact converges_cfg_step (Frame.letF N :: K, Comp.ret v) (K, Comp.subst v N)
+    rfl (by intro u; simp)
+
 /-! ## B.1 The environment relation `EnvRel` / closing substitutions
 
 `EnvRel`, `closeC`, `closeV` are defined in `Bang/LR.lean` (§5.2b) — they are LR machinery the FROZEN
