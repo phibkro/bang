@@ -377,6 +377,13 @@ def Krel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
         CoApprox (Stack.plug K₁ (Comp.ret v₁)) (Stack.plug K₂ (Comp.ret v₂)))
       ∧ (∀ c₁ c₂, Srel n C ε K₁ K₂ c₁ c₂ →
         CoApprox (Stack.plug K₁ c₁) (Stack.plug K₂ c₂))
+      -- ARROW-OBSERVATION clause (ADR-0038 verdict A): a CBPV `arr q A B`-typed computation is observed
+      -- by APPLYING a `Vrel`-related (closed) argument — `app M w` PUSHes `appF w`, so the extended
+      -- stacks must be `Krel`-related at the codomain `(B, ε)`. Biernacki Fig 6 puts the arrow in the
+      -- VALUE relation (their `→ε` is a value type); our `arr` is a CTy, so the analogue lives in `Krel`.
+      -- WF: routes `Krel n (arr q A B)` → `Krel n B` with `sizeOf B < sizeOf (arr q A B)` (lex on sizeOf).
+      ∧ (∀ q A B, C = CTy.arr q A B → ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ → Vrel n A w₁ w₂ →
+        Krel n B ε (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂))
 termination_by n C _ _ _ => (n, sizeOf C, 1)
 
 /-- Control-stuck / "simple expression" relation `S⟦C/ε⟧η` (Biernacki Fig 7),
@@ -434,15 +441,22 @@ theorem Srel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
       refine ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, hc₂, le_trans hℓ hεε', hArg, hRes, hv, hsp₁, hsp₂, ?_⟩
       intro u₁ u₂ hcu₁ hcu₂ hu
       exact Crel_eff_mono m C ε ε' _ _ hεε' (hout u₁ u₂ hcu₁ hcu₂ hu)
+  termination_by (n, sizeOf C, 0)
 
 theorem Krel_eff_anti {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
     [DecidableEq Mult] [EffSig Eff Mult]
     (n : Nat) (C : CTy Eff Mult) (ε ε' : Eff) (K₁ K₂ : Stack)
     (hεε' : ε ≤ ε') (hK : Krel n C ε' K₁ K₂) : Krel n C ε K₁ K₂ := by
   rw [Krel] at hK ⊢
-  refine ⟨hK.1, ?_⟩
-  intro c₁ c₂ hS
-  exact hK.2 c₁ c₂ (Srel_eff_mono n C ε ε' K₁ K₂ c₁ c₂ hεε' hS)
+  refine ⟨hK.1, ?_, ?_⟩
+  · intro c₁ c₂ hS
+    exact hK.2.1 c₁ c₂ (Srel_eff_mono n C ε ε' K₁ K₂ c₁ c₂ hεε' hS)
+  · -- arrow half: the ε' arrow clause gives `Krel n B ε'`; weaken to `Krel n B ε` (recursive antitone
+    -- at the SMALLER codomain B — sizeOf B < sizeOf (arr q A B), so the lex measure decreases).
+    intro q A B hC w₁ w₂ hcw₁ hcw₂ hw
+    exact Krel_eff_anti n B ε ε' (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂) hεε'
+      (hK.2.2 q A B hC w₁ w₂ hcw₁ hcw₂ hw)
+  termination_by (n, sizeOf C, 1)
 
 theorem Crel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
     [DecidableEq Mult] [EffSig Eff Mult]
@@ -451,6 +465,7 @@ theorem Crel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
   rw [Crel] at hC ⊢
   intro K₁ K₂ hK
   exact hC K₁ K₂ (Krel_eff_anti n C ε ε' K₁ K₂ hεε' hK)
+  termination_by (n, sizeOf C, 2)
 end
 
 
@@ -531,7 +546,7 @@ theorem crel_zero {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring M
   rw [Crel]
   intro K₁ K₂ hK
   rw [Krel] at hK
-  exact hK.2 c₁ c₂ (by rw [Srel]; trivial)
+  exact hK.2.1 c₁ c₂ (by rw [Srel]; trivial)
 
 /-- An UNHANDLED operation never converges: under the empty stack `splitAt [] = none`,
 so `step ([], up ℓ op v) = none` and the machine is immediately stuck. -/
@@ -591,7 +606,7 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
     [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (B : CTy Eff Mult) (e : Eff) :
     Krel (n + 1) B e ([] : Stack) ([] : Stack) := by
   unfold Krel
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · -- return half: plug [] (ret vᵢ) = ret vᵢ, which always converges.
     intro q A _ v₁ v₂ _ _ _ _
     exact converges_ret v₂
@@ -601,6 +616,13 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
     obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, _, _, _, _, _, _, _, _⟩ := hS
     rw [Stack.plug, Bang.plug, hc₁] at hconv
     exact absurd hconv (not_converges_up_nil ℓ op v₁)
+  · -- ARROW half (ADR-0038): `Krel (n+1) B' e (appF w₁::[]) (appF w₂::[])` — the appF-extended empty
+    -- stacks self-relate. NON-vacuous: needs a recursion on the codomain (appF-stacks self-relate by
+    -- induction on B' — return-half vacuous (app (ret v) w stuck), stuck-half vacuous (splitAt (appF::[])
+    -- = none), arrow-half recurses on a deeper appF stack at smaller B''). DOCUMENTED sorry: the
+    -- `krel_self_appFstack` helper (induction on B') is the precise missing lemma — see report.
+    intro q A B' _ w₁ w₂ _ _ _
+    sorry
 
 /-- WHOLE-PROGRAM adequacy: `Crel` implies the closed (empty-context) observation
 `Converges c₁ → Converges c₂`. The `⊑` restricted to `C = []`. Provable from `Crel` +

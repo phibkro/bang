@@ -804,7 +804,7 @@ theorem krel_letF {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
       Crel (n + 1) B φ₂ (Comp.subst v₁ N₁') (Comp.subst v₂ N₂')) :
     Krel (n + 1) (CTy.F q1 A) φ₁ (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) := by
   rw [Krel]
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · -- RETURN half: F q1 A = F q A' ⟹ q = q1, A' = A; the letF frame reduces to the continuation.
     intro q A' hEq v₁ v₂ hc₁ hc₂ hv
     rw [CTy.F.injEq] at hEq
@@ -825,6 +825,9 @@ theorem krel_letF {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
     intro hconv₁
     rw [hc₁] at hconv₁
     exact absurd hconv₁ (not_converges_up_splitNone (Frame.letF N₁' :: K₁) ℓ op v₁ hsp₁)
+  · -- ARROW half: VACUOUS — the let-block returns at `F q1 A`, not an arrow type (`F ≠ arr`).
+    intro q A' B' hEq _ _ _ _ _
+    exact absurd hEq (by simp)
 
 /-- The `letC` compatibility core (`compat_letC`): a `Crel` for `M` (the bound computation, at its
 returner type `F q1 A` and effect `φ₁`) plus a continuation relation `hN` (the IH for `N`: for every
