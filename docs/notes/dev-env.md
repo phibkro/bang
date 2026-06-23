@@ -109,6 +109,22 @@ Returns Mathlib lemmas matching the shape. First invocation builds loogle
 (~30s); subsequent runs are instant. Added as a `[[require]]` in
 `lakefile.toml`.
 
+> **GOTCHA — loogle's moving `master` ref flakes `lake exe cache get` in a FRESH
+> worktree (caught 2026-06-23).** `loogle` is required with no SHA pin (→ `master`).
+> In a clean checkout / new `git worktree`, `lake exe cache get` re-resolves it:
+> "URL has changed; deleting and cloning again" → `fatal: unable to read tree <sha>`
+> → exit 128. `lake build` ALONE is green (loogle already present); only `cache
+> get`'s re-clone of the moving ref breaks — which means the pre-commit hook's
+> `just verify` (= `cache get && lake build`) fails in a fresh worktree even when
+> the code is green. This bit a worktree-isolated agent and trapped ~600 lines of
+> hand-verified-green proof UNCOMMITTED (then lost on worktree cleanup).
+> **Mitigations:** (1) when the flake is purely `cache get` and you've verified the
+> real gate by hand (`lake build` + `lake env lean Bang/Audit.lean`), commit with
+> `BANGLANG_SKIP_VERIFY_REASON="loogle cache-get flake; build+axioms hand-verified
+> green"` rather than leaving work uncommitted. (2) **Real fix (deferred):** pin
+> `loogle` to a SHA (not `master`) in `lakefile.toml`, or pre-seed
+> `.lake/packages/loogle`, so fresh worktrees stop hitting it.
+
 ## tools/eval.sh — submit Lean snippet, get elaborator output
 
 ```bash
