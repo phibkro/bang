@@ -51,11 +51,41 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
     `compile_correct` `[propext, Quot.sound]`, `evalD_agrees_source`/`run_evalD` `[propext, Classical.choice,
     Quot.sound]`, `sim` `[propext, Quot.sound]`; ◊2 gate (`no_accidental_handling`/`rowinst_requires_disjoint`)
     still 0-axiom; no new `sorryAx`. Audit guards for the two-part forms added (`e11dc6f`).
-- **NEXT: resumptive (state/transaction) handlers** — the `unwindFind` SKIP is a *deferral*, not the final
-  shape; the calculated machine must eventually RESUME them (the savepoint/continuation-capture frontier,
-  ADR-0025/Q22). THEN ADT `case`/`split`/`unfold` (needs a runtime CASE/SPLIT instruction — compile-time
-  rewrite breaks `compile` termination), then collapse + archive the K3 matrix (ADR-0017). Flattening
-  (defunctionalize frames + compile-away subst) is a later optimization pass, not blocking.
+- **▶ NEXT (active): Unit 4 — resumptive state** (design-locked: **ADR-0031**). Turn O2's `unwindFind`
+  SKIP into a RESUME; port the kernel's `dispatchOn` state-resume (ADR-0025 D1) to the *calculated*
+  machine + `evalD` + the bridge. The kernel reference is **live** (`Source.step` already resumes state
+  via `splitAt`/`dispatchOn`), so the bridge target is concrete.
+
+  **The two load-bearing claims (validate at W0 before committing breadth):**
+  - **Machine stays shape (A)** — the header's "resumptive needs shape (B)" is true for *multi-shot* only.
+    For one-shot in-place (ADR-0025 D1, the v1 semantics), the current code `c` after `OP ℓ op v` **IS**
+    `Kᵢ`; we just don't discard it (unlike `THROW`). No continuation reification, no new `Val`.
+  - **`evalD` services state INLINE via a label-keyed store** (`raised` reserved for throws) — big-step
+    *can't* resume via the continuation-less `raised` Outcome, so the store threads state through the
+    recursive descent and never lets a state op escape. Bridge = store↔frame correspondence (ADR-0031 D3).
+
+  ```
+  W0  spike + ADR-0031 lock   validate both claims against the checker; cell runs to term(ret 7) AND
+                              done 7 in both semantics. refute ⇒ revise the ADR (checker decides).
+  W1  evalD store-threaded    Store + inline get/put service; cell ⇒ term (ret 7). (STATEMENT_CHANGE_OK)
+  W2  machine RESUME          OP instr + stateFind/in-place HStack update; cell ⇒ done 7 via exec∘compile.
+  W3  compile_correct ext     THE HARD CORE: big-step store-threading ↔ machine in-place HStack update,
+                              deep-handler setting. the proof budget. (throws cases untouched)
+  W4  bridge ext              evalD_agrees_source/run_evalD cover state via the D3 store↔frame invariant.
+  W5  gate + audit            headlines ⊆ {propext, Classical.choice, Quot.sound}; ◊2 gate 0-axiom;
+                              rfl/native_decide cell demonstrator. THEN decide transaction fold-in.
+  ```
+
+  **Scope guards (survive-or-delete):** one-shot in-place state SURVIVES (kernel v1 semantics, ADR-0025
+  D1) — multi-shot is additive later (ADR-0015). Do NOT pull in continuation reification or arithmetic
+  (the cell `put 7; get` needs neither, ADR-0025 D4). **Roles:** kernel-engineer W0–W2 (ADR + evalD +
+  machine shape) → proof-engineer W3–W4 (resume simulation + bridge), same triad as O2.
+
+- **THEN: transaction** (ADR-0030: `new`/`read`/`write` over a list-heap) — "state generalized to a
+  list-heap"; `dispatchOn` already unifies them. Fold in after state is green (ADR-0031 D4). **THEN** ADT
+  `case`/`split`/`unfold` (needs a runtime CASE/SPLIT instruction — compile-time rewrite breaks `compile`
+  termination), then collapse + archive the K3 matrix (ADR-0017). Flattening (defunctionalize frames +
+  compile-away subst) is a later optimization pass, not blocking.
 
 ## Target (◊3 gate, ROADMAP)
 
