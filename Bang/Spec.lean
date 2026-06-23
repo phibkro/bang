@@ -30,6 +30,8 @@ import Bang.Operational
 import Bang.LR
 import Bang.Compile
 import Bang.Metatheory
+import Bang.Compat   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
+                     -- frozen `lr_fundamental`/`lr_sound` statements below via `:= …_proof`
 
 namespace Bang
 

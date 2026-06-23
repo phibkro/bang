@@ -27,7 +27,16 @@
   of the effect side and where `Srel` (the 𝒮 half of `Krel`) is actually used.
   Prove `compat_handle` LAST per PROOF_ORDER.
 -/
-import Bang.Spec
+-- Compat is a proof module UPSTREAM of Spec (sibling to Metatheory): Spec wires its frozen
+-- `lr_fundamental`/`lr_sound` statements to the proofs assembled here (`:= lr_fundamental_proof`,
+-- exactly as `preservation := preservation_proof`). So we import the DEFINITION layers, not Spec
+-- (importing Spec would cycle once Spec imports Compat). Verified no cycle: Metatheory imports only
+-- Core/Syntax/Operational; LR adds the relations; neither imports Spec.
+import Bang.Core
+import Bang.Syntax
+import Bang.Operational
+import Bang.LR
+import Bang.Metatheory
 
 namespace Bang
 
