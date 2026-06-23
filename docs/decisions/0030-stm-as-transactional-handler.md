@@ -36,8 +36,13 @@ orElse a b       a aborts/retries ⟹ discard a's writes, run b   (OR2/OR3 ≈ e
 ```
 
 **Sub-calls** (research-sharpened): `retry ≈ abort` (cleanest single-threaded; no blocking machinery);
-`orElse` is **in** the minimal core (it is exception-style discard — costs nothing, makes the demo
-composable).
+`orElse` is **in** the minimal core (exception-style discard, makes the demo composable).
+
+> **Correction (2026-06-23, post-implementation):** "`orElse` costs nothing" was optimistic. The kernel's
+> `throws` handler *discards* the continuation and yields the payload — it cannot *run an alternative*. So
+> `orElse a b` ("run `b` if `a` aborts") needs a genuine **recovery/catch handler** (a new `Handler`
+> variant, or a sum-tagging of the abort path). Real, small, but not free — scoped as a rung-3 follow-on;
+> the verified all-or-nothing law + the running ledger ship without it.
 
 **Correctness theorem (the rung-3 moat law): all-or-nothing atomicity** —
 `abort / retry / exception ⟹ store unchanged (modulo fresh allocations ∆)`. Property-tested via

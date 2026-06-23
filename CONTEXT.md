@@ -163,6 +163,18 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   (a whole ADT layer + metatheory), and it **confirmed the ADR-0029 bet**: iso-recursive made the
   metatheory cheap (syntactic type-matching, no coinduction). Q19 (laws *surface* syntax) stays partial —
   laws stated in Lean for now; the *discharge mechanism* (plausible) is now demonstrated.
+- **rung 3 ✓ DONE (kernel + verified law)** (`paths/PATH-rung3-ledger.md`) — verified ledger; **STM as a
+  transactional handler** (ADR-0030: `state ⊗ exception`, NO new kernel primitive; privilege =
+  concurrency-only, deferred). `Handler.transaction` = rung 1's state handler generalized to a heap;
+  rollback is **by construction** (abort = `throws` escaping the frame, dropping the heap with it).
+  Commits: `4737a1b` K1 (handler + ledger runs) · `6a81b0f`/`acde8a3` K2 (TVarRef=int + total store fix,
+  metatheory closed). **The moat CLIMBS the ladder**: `all_or_nothing_abort` is **PROVEN** (axiom-clean
+  `[propext, Quot.sound]`, in `Audit.lean`) — a *verified* law, above rung 2's *tested* one. ◊2 gate held
+  every commit. **Follow-ons (not blocking the GOAL, which is met):** `orElse` needs a *recovery handler*
+  (the ADR's "costs nothing" was optimistic — `throws` discards, doesn't run an alternative); a
+  from-source-text `atomically {…}` surface (parity with rung 1's `state … in`); general-`S` TVars
+  (default-witness, ADR-0030 amendment). TVar reps are v1 simplifications (TVarRef=int, S=int, total
+  default-initialized store) — see ADR-0030.
 
 **Verification spine (kernel/compiler — the ◊ march):**
 - **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
