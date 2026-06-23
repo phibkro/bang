@@ -165,6 +165,10 @@ theorem effect_sound
 --   `lr_sound` and `lr_fundamental` are coupled (PROOF_ORDER #1 groups them): close
 --   `lr_fundamental` (→ `Krel`-reflexivity as its identity instance), then
 --   `lr_sound = lr_sound_closed ∘ (congruence of the observation context)`.
+--   ◊4.5 (ADR-0039): full `lr_sound` over arbitrary `C` consumes `krel_refl`, whose handler-frame +
+--   μ-return cases sit in the deferred iso-recursive-▷ subsystem (needs IxFree ∀k≤n Kripke-monotone
+--   Crel/Krel/Srel — plain-Nat phrasing lacks the both-ways monotonicity; build-confirmed). The CLOSED
+--   fragment (`lr_sound_closed`, F-typed) is DONE; the arbitrary-`C` closure is ◊4.5.
 theorem lr_sound
     {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult} :
     (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂ := sorry

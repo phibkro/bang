@@ -1122,13 +1122,12 @@ theorem HasVTy.scopedIn {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A 
 
 theorem krel_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult}
     (_hC : HasStack C e B eo Co) : Krel n B e C C := by
-  -- IDENTITY INSTANCE of the fundamental theorem: induct on `HasStack C …`, mirroring the
-  -- `lr_fundamental` HasCTy induction (each frame's stored sub-computation related to itself via the
-  -- matching compat core). The `nil` case is `krel_nil_succ` (LR.lean) at successor indices; the
-  -- frame cases (`letF`/`appF`/`handleF`/`stateF`/`transactionF`) extend a `Krel`-related stack by
-  -- one frame, using the sub-computation's self-relation. BLOCKED identically to `lr_fundamental`
-  -- (statement-shape for the `letF` continuation's binder; μ/▷ for μ-typed returns). Contract fixed;
-  -- body lands with the fundamental theorem.
+  -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
+  -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
+  -- contravariant in Vrel ⇒ no uniform monotonicity). IDENTITY INSTANCE of lr_fundamental: induct on
+  -- `HasStack C`; nil = krel_nil_succ (F-typed, ▷-free), letF/appF frames reuse krel_letF/krel_appF_intro
+  -- (▷-free), but the handleF (state/txn) frames + μ-typed returns hit the same ▷-subsystem as crel_fund.
+  -- Deferred with lr_fundamental's ▷-fragment.
   sorry
 
 
@@ -1184,9 +1183,10 @@ theorem vrel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy 
       exact ⟨_, _, _, _, rfl, rfl, vrel_fund ha n δ₁ δ₂ hδ, vrel_fund hb n δ₁ δ₂ hδ⟩
   | @fold _ _ w A hw =>
       intro n δ₁ δ₂ hδ
-      -- fold at μ: Vrel (n+1) (mu A) needs payload at unrolled type, index n (the ▷ guard); the
-      -- recursive call gives Vrel n (unrollMu A) at the SAME n. BLOCKER (shared with crel_unfold,
-      -- Blocker 2): the μ ▷ step-index drop / downward-closure. Documented sorry.
+      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
+      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
+      -- contravariant in Vrel ⇒ no uniform monotonicity). fold at μ: the recursive vrel_fund gives the
+      -- payload Vrel at the SAME index, but the μ-clause's ▷ guard wants it one lower. Deferred.
       sorry
 
 theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
@@ -1275,11 +1275,17 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       rwa [show closeC (b₁ :: a₁ :: δ₁) N = closeC δ₁ (Comp.subst a₁ (Comp.subst b₁ N)) from rfl,
            show closeC (b₂ :: a₂ :: δ₂) N = closeC δ₂ (Comp.subst a₂ (Comp.subst b₂ N)) from rfl] at this
   | @unfold _ _ v A hv =>
-      -- unfold: reduces to crel_unfold, which carries the μ ▷ Blocker 2 sorry. Same blocker.
+      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
+      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
+      -- contravariant in Vrel ⇒ no uniform monotonicity). crel_unfold(a) [the LEMMA] closes (Vrel(n+1)→
+      -- Crel n), but composing into crel_fund needs Crel m→Crel(m+1) = the ▷-anti-reduction = Krel-down,
+      -- which our Krel-up lacks. Deferred.
       intro n δ₁ δ₂ hδ; sorry
   | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
-      -- BLOCKER (PROOF_ORDER-last): up is the Srel control-stuck term; compat_up's handled case
-      -- (splitAt ≠ none) couples into compat_handle. Documented sorry.
+      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
+      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
+      -- contravariant in Vrel ⇒ no uniform monotonicity). `up` performs an op: splitAt=none is vacuous,
+      -- but the HANDLED case needs the Srel RESUME clause's Crel-at-NEXT-index (the ▷). Deferred.
       intro n δ₁ δ₂ hδ; sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- throws is ▷-free (zero-shot abort, no resume): compat_handleThrows + closeC_handleThrows.
@@ -1287,9 +1293,18 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       rw [closeC_handleThrows, closeC_handleThrows]
       exact compat_handleThrows (crel_fund hM n δ₁ δ₂ hδ)
   | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
-      intro n δ₁ δ₂ hδ; sorry   -- BLOCKER (PROOF_ORDER-last): compat_handle, resumptive state.
+      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
+      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
+      -- contravariant in Vrel ⇒ no uniform monotonicity). state RESUMES (reinstall frame + continue) ⇒
+      -- the Srel resume clause's Crel-at-NEXT-index (the ▷). Deferred (throws, the zero-shot abort, IS
+      -- closed — see handleThrows above).
+      intro n δ₁ δ₂ hδ; sorry
   | @handleTransaction _ _ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM hsub =>
-      intro n δ₁ δ₂ hδ; sorry   -- BLOCKER (PROOF_ORDER-last): compat_handle, transaction.
+      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
+      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
+      -- contravariant in Vrel ⇒ no uniform monotonicity). transaction RESUMES (multi-cell state) ⇒ the
+      -- Srel resume clause's Crel-at-NEXT-index (the ▷). Deferred.
+      intro n δ₁ δ₂ hδ; sorry
 end
 
 end Bang
