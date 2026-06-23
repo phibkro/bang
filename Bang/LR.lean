@@ -393,6 +393,55 @@ termination_by n C _ _ _ _ _ => (n, sizeOf C, 0)
 end
 
 
+/-! ## 5.2a′ Effect-row subsumption (monotonicity in ε)
+
+The `letC` rule joins effects (`φ₁ ⊔ φ₂`): the IH relates `M` at `φ₁` and `N` at `φ₂`, but the block is
+observed at `φ₁ ⊔ φ₂`. To reconcile, the relations subsume UP the row order: a relation that holds at a
+SMALLER row holds at a LARGER one (more operations are "in scope", but the existing co-behaviour is
+preserved). Directions (proved mutually, plain index — the ε-step needs no `▷`):
+  • `Srel` MONOTONE:  `ε ≤ ε' → Srel n C ε … → Srel n C ε' …`  (the `labelEff ℓ ≤ ε ≤ ε'` membership
+    still holds; the output `Crel n C ε` lifts to `Crel n C ε'` by the Crel-mono IH at the lower index).
+  • `Krel` ANTITONE:  `ε ≤ ε' → Krel n C ε' … → Krel n C ε …`   (return-half is ε-free; the stuck-half
+    lifts its `Srel n C ε` premise to `Srel n C ε'` via Srel-mono, then fires the ε'-Krel stuck half).
+  • `Crel` MONOTONE:  `ε ≤ ε' → Crel n C ε … → Crel n C ε' …`   (a `Krel n C ε'` stack pair is, by
+    Krel-antitone, also `Krel n C ε`, so the ε-Crel applies).
+
+  shape: standard effect-subsumption for biorthogonal LRs (Biernacki popl18 §5; the row order is our
+         set-row `≤`). The three move together; their lex measure is `(n, role)` with the only
+         index-decreasing edge `Srel (n+1)`'s output → `Crel n`. -/
+mutual
+theorem Srel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult]
+    (n : Nat) (C : CTy Eff Mult) (ε ε' : Eff) (K₁ K₂ : Stack) (c₁ c₂ : Comp)
+    (hεε' : ε ≤ ε') (hS : Srel n C ε K₁ K₂ c₁ c₂) : Srel n C ε' K₁ K₂ c₁ c₂ := by
+  cases n with
+  | zero => simp only [Srel]
+  | succ m =>
+      rw [Srel] at hS ⊢
+      obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, hc₂, hℓ, hArg, hRes, hv, hsp₁, hsp₂, hout⟩ := hS
+      refine ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, hc₂, le_trans hℓ hεε', hArg, hRes, hv, hsp₁, hsp₂, ?_⟩
+      intro u₁ u₂ hcu₁ hcu₂ hu
+      exact Crel_eff_mono m C ε ε' _ _ hεε' (hout u₁ u₂ hcu₁ hcu₂ hu)
+
+theorem Krel_eff_anti {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult]
+    (n : Nat) (C : CTy Eff Mult) (ε ε' : Eff) (K₁ K₂ : Stack)
+    (hεε' : ε ≤ ε') (hK : Krel n C ε' K₁ K₂) : Krel n C ε K₁ K₂ := by
+  rw [Krel] at hK ⊢
+  refine ⟨hK.1, ?_⟩
+  intro c₁ c₂ hS
+  exact hK.2 c₁ c₂ (Srel_eff_mono n C ε ε' K₁ K₂ c₁ c₂ hεε' hS)
+
+theorem Crel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult]
+    (n : Nat) (C : CTy Eff Mult) (ε ε' : Eff) (c₁ c₂ : Comp)
+    (hεε' : ε ≤ ε') (hC : Crel n C ε c₁ c₂) : Crel n C ε' c₁ c₂ := by
+  rw [Crel] at hC ⊢
+  intro K₁ K₂ hK
+  exact hC K₁ K₂ (Krel_eff_anti n C ε ε' K₁ K₂ hεε' hK)
+end
+
+
 /-! ## 5.2b Closing substitutions + the environment relation `EnvRel` (ADR-0034)
 
 The fundamental theorem `lr_fundamental` (ADR-0034 env-closed form) relates an OPEN computation to
