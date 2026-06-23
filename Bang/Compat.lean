@@ -586,6 +586,99 @@ theorem Handler.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.
   | _, .transaction _ _ => rfl
 end
 
+/-! ### B.1c′ NON-ADJACENT substitution-swap (for the d=2 `split` descent)
+
+`closeC_subst2_comm` (the `split` case) fills two level-0 binders through `closeCUnderBinders 2`, which
+after the first descent leaves the two substitutions at NON-adjacent levels (0 and `d+1`). The adjacent
+swap above (`i, i+1`) doesn't reach it, so here is the general `i ≤ j` form, both fillers CLOSED:
+  `substFrom i w (substFrom (j+1) u t) = substFrom j u (substFrom i w t)`.
+The adjacent lemma is the `i = j` instance; this generalizes the cutoff gap. Mutual structural
+induction; the binder cases step BOTH cutoffs (`i+1 ≤ j+1`). -/
+mutual
+theorem Val.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) :
+    ∀ (i j : Nat), i ≤ j → ∀ (t : Val),
+      Val.substFrom i w (Val.substFrom (j + 1) u t) = Val.substFrom j u (Val.substFrom i w t)
+  | _, _, _,   .vunit => rfl
+  | _, _, _,   .vint _ => rfl
+  | i, j, hij, .vvar m => by
+      -- the two substs remove levels i and j+1 (i ≤ j), renumbering disjointly; at the removed slots
+      -- the closed fillers w (at i) / u (at j+1) are subst-fixed.
+      rcases Nat.lt_trichotomy m i with hmi | hmi | hmi
+      · -- m < i ≤ j: untouched by all four `if`s.
+        simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_neg (show ¬ m > j + 1 by omega),
+          if_neg (show ¬ m = i by omega), if_neg (show ¬ m > i by omega),
+          if_neg (show ¬ m = j by omega), if_neg (show ¬ m > j by omega)]
+      · -- m = i: LHS subst(j+1) keeps vvar i, subst i → w. RHS subst i → w, subst j fixes w (closed).
+        subst hmi
+        simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega),
+          if_neg (show ¬ m > j + 1 by omega), if_true]
+        rw [hw.subst_at j u]
+      · rcases Nat.lt_trichotomy m (j + 1) with hmj | hmj | hmj
+        · -- i < m ≤ j: subst(j+1) keeps vvar m; subst i → vvar (m-1); RHS → vvar (m-1) (m-1<j? m≤j so m-1<j or =).
+          simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_neg (show ¬ m > j + 1 by omega),
+            if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
+            if_neg (show ¬ m - 1 = j by omega), if_neg (show ¬ m - 1 > j by omega)]
+        · -- m = j+1: LHS subst(j+1) → u, subst i fixes u (closed). RHS subst i → vvar j, subst j → u.
+          subst hmj
+          simp only [Val.substFrom, if_true,
+            if_neg (show ¬ j + 1 = i by omega), if_pos (show j + 1 > i by omega), Nat.add_sub_cancel]
+          rw [hu.subst_at i w]
+        · -- m > j+1: both decrement; vvar (m-2) each side.
+          simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_pos (show m > j + 1 by omega),
+            if_neg (show ¬ m - 1 = i by omega), if_pos (show m - 1 > i by omega),
+            if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
+            if_neg (show ¬ m - 1 = j by omega), if_pos (show m - 1 > j by omega)]
+  | i, j, hij, .vthunk M => by
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed_ge hu hw i j hij M]
+  | i, j, hij, .inl t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .inr t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .pair a b => by
+      simp only [Val.substFrom]
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij a, Val.substFrom_swap_closed_ge hu hw i j hij b]
+  | i, j, hij, .fold t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+
+theorem Comp.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) :
+    ∀ (i j : Nat), i ≤ j → ∀ (t : Comp),
+      Comp.substFrom i w (Comp.substFrom (j + 1) u t) = Comp.substFrom j u (Comp.substFrom i w t)
+  | i, j, hij, .ret t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .letC M N => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Comp.substFrom_swap_closed_ge hu hw i j hij M,
+        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N]
+  | i, j, hij, .force t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .lam M => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) M]
+  | i, j, hij, .app M t => by
+      simp only [Comp.substFrom]
+      rw [Comp.substFrom_swap_closed_ge hu hw i j hij M, Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .up ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .handle h M => by
+      simp only [Comp.substFrom]
+      rw [Handler.substFrom_swap_closed_ge hu hw i j hij h, Comp.substFrom_swap_closed_ge hu hw i j hij M]
+  | i, j, hij, .case t N₁ N₂ => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
+        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N₁,
+        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N₂]
+  | i, j, hij, .split t N => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
+        Comp.substFrom_swap_closed_ge hu hw (i + 2) (j + 2) (by omega) N]
+  | i, j, hij, .unfold t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | _, _, _, .oom => rfl
+  | _, _, _, .wrong _ => rfl
+
+theorem Handler.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) :
+    ∀ (i j : Nat), i ≤ j → ∀ (h : Handler),
+      Handler.substFrom i w (Handler.substFrom (j + 1) u h)
+        = Handler.substFrom j u (Handler.substFrom i w h)
+  | i, j, hij, .state ℓ s => by
+      simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij s]
+  | _, _, _, .throws _ => rfl
+  | _, _, _, .transaction _ _ => rfl
+end
+
 /-! ### B.1d The substitution-descent crux (`closeC_subst_comm`)
 
 The lemma every BINDER case of `lr_fundamental` consumes: closing a body UNDER one binder and then
@@ -612,6 +705,46 @@ theorem closeC_subst_comm {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v) {w 
     congr 1
     -- subst w (substFrom 1 v N) = subst v (subst w N), i.e. the k=0 swap (closed v, w).
     exact Comp.substFrom_swap_closed hv hw 0 N
+
+/-- General level-0 descent through `closeCUnderBinders (d+1)`: filling the outermost (level-0) binder
+with a CLOSED `w` commutes past the `d+1`-level fillers (closed), dropping the binder-depth by one. The
+engine behind `closeC_subst_comm` (d=0) and the d=2 `split` descent. Uses the NON-adjacent swap
+(`Comp.substFrom_swap_closed_ge` at `i=0, j=d`). -/
+theorem closeCUnderBinders_subst0 (d : Nat) {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v)
+    {w : Val} (hw : Val.Closed w) (N : Comp) :
+    Comp.substFrom 0 w (closeCUnderBinders (d + 1) δ N)
+      = closeCUnderBinders d δ (Comp.substFrom 0 w N) := by
+  induction δ generalizing N with
+  | nil => rfl
+  | cons v δ ih =>
+    have hv : Val.Closed v := hδ v List.mem_cons_self
+    have hδ' : ∀ u ∈ δ, Val.Closed u := fun u hu => hδ u (List.mem_cons_of_mem v hu)
+    -- closeCUnderBinders (d+1) (v::δ) N = closeCUnderBinders (d+1) δ (substFrom (d+1) v N)  [shiftN=v].
+    -- closeCUnderBinders d (v::δ) (subst₀ w N) = closeCUnderBinders d δ (substFrom d v (subst₀ w N)).
+    simp only [closeCUnderBinders, shiftN_closed hv]
+    rw [ih hδ' (Comp.substFrom (d + 1) v N)]
+    congr 1
+    -- substFrom 0 w (substFrom (d+1) v N) = substFrom d v (substFrom 0 w N)  (non-adjacent swap, 0 ≤ d).
+    exact Comp.substFrom_swap_closed_ge hv hw 0 d (Nat.zero_le d) N
+
+/-- The d=2 substitution-descent for `split`: filling the TWO binders of `closeCUnderBinders 2 δ N`
+(the inner with `Val.shift w`, the outer with `v`, matching the `split (pair v w) N ↦ subst v (subst
+(shift w) N)` reduct) equals closing `subst v (subst w N)`. The two closed fillers and the closedness
+of `w` (which collapses `Val.shift w = w`) make it go through via two `closeCUnderBinders_subst0`
+descents. -/
+theorem closeC_subst2_comm {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u)
+    {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (N : Comp) :
+    Comp.subst v (Comp.subst (Val.shift w) (closeCUnderBinders 2 δ N))
+      = closeC δ (Comp.subst v (Comp.subst w N)) := by
+  -- subst (shift w) = subst w (w closed); both `Comp.subst` are `substFrom 0`.
+  rw [show Val.shift w = w from hw.shift]
+  show Comp.substFrom 0 v (Comp.substFrom 0 w (closeCUnderBinders (1 + 1) δ N))
+    = closeC δ (Comp.substFrom 0 v (Comp.substFrom 0 w N))
+  -- inner descent (d=1): substFrom 0 w through closeCUnderBinders 2 = closeCUnderBinders 1 of the body.
+  rw [closeCUnderBinders_subst0 1 hδ hw N]
+  -- outer descent (d=0): substFrom 0 v through closeCUnderBinders 1 = closeCUnderBinders 0 = closeC.
+  rw [closeCUnderBinders_subst0 0 hδ hv (Comp.substFrom 0 w N), closeCUnderBinders_zero]
+
 /-! ## B.2 The return / value-injection compat core (`crel_ret`)
 
 `Crel`-relatedness of `ret v₁` and `ret v₂` follows from `Vrel`-relatedness of `v₁,v₂`: a
@@ -947,10 +1080,23 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
         have hδ' : EnvRel n (B :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by rw [EnvRel]; exact ⟨hcu₁, hcu₂, hu, hδ⟩
         exact crel_fund hN₂ n (u₁ :: δ₁) (u₂ :: δ₂) hδ'
   | @split _ _ _ _ v N φ q A B C hv hN _ =>
-      -- split binds TWO (B :: A :: Γ); the continuation needs the two-binder closeC commutation
-      -- (closeCUnderBinders 2 vs the reduct's subst v (subst (shift w) N)) — the d=2 analogue of
-      -- closeC_subst_comm, not yet built. Documented sorry (the d=2 substitution-descent gap).
-      intro n δ₁ δ₂ hδ; sorry
+      intro n δ₁ δ₂ hδ
+      rw [closeC_split, closeC_split]
+      have hscv₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hscv₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      refine compat_split (vrel_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_
+      -- continuation at B :: A :: Γ: the reduct `subst a (subst (shift b) (closeCUnderBinders 2 δ N))`
+      -- = closeC δ (subst a (subst b N)) = closeC (b :: a :: δ) N (closeC_subst2_comm); IH at the
+      -- two-extended env (snd=b at idx0, fst=a at idx1).
+      intro a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
+      rw [closeC_subst2_comm hδ.closed_left hca₁ hcb₁, closeC_subst2_comm hδ.closed_right hca₂ hcb₂]
+      have hδ' : EnvRel n (B :: A :: Γ) (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) := by
+        rw [EnvRel]; refine ⟨hcb₁, hcb₂, hb, ?_⟩; rw [EnvRel]; exact ⟨hca₁, hca₂, ha, hδ⟩
+      have := crel_fund hN n (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) hδ'
+      rwa [show closeC (b₁ :: a₁ :: δ₁) N = closeC δ₁ (Comp.subst a₁ (Comp.subst b₁ N)) from rfl,
+           show closeC (b₂ :: a₂ :: δ₂) N = closeC δ₂ (Comp.subst a₂ (Comp.subst b₂ N)) from rfl] at this
   | @unfold _ _ v A hv =>
       -- unfold: reduces to crel_unfold, which carries the μ ▷ Blocker 2 sorry. Same blocker.
       intro n δ₁ δ₂ hδ; sorry
