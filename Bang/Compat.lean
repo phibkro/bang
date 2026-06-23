@@ -115,6 +115,56 @@ module `Spec.lean` imports. The fundamental theorem closes an OPEN sub-term over
 is unprovable for open `c` (a `vvar i` is not `Vrel`-related to itself), so the induction invariant is
 `EnvRel n Γ δ₁ δ₂ → Crel n B e (closeC δ₁ c) (closeC δ₂ c)`. -/
 
+/-! ### B.1a `closeC`/`closeV` commutation (the substitution-descent lemmas)
+
+`closeC` is a fold of single `Comp.subst`s (innermost binder first), so it commutes with every
+NON-binding former structurally (each `Comp.subst` pushes through, and the fold follows). These are
+proved by induction on the environment `δ`, threading the single-step commutation
+(`Comp.subst v (ret w) = ret (Val.subst v w)`, definitional) through the fold. The BINDING formers
+(`letC`/`lam`/`case`/`split`) are deferred — their commutation needs the shifted-environment form
+(`Comp.substFrom 1 (shift v) N`), which for CLOSED fillers (the `EnvRel` invariant) collapses to
+`Comp.substFrom 1 v N`; that closedness bridge is the next layer. -/
+
+@[simp] theorem closeC_ret (δ : List Val) (w : Val) :
+    closeC δ (Comp.ret w) = Comp.ret (closeV δ w) := by
+  induction δ generalizing w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
+
+@[simp] theorem closeC_force (δ : List Val) (w : Val) :
+    closeC δ (Comp.force w) = Comp.force (closeV δ w) := by
+  induction δ generalizing w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
+
+@[simp] theorem closeC_app (δ : List Val) (M : Comp) (w : Val) :
+    closeC δ (Comp.app M w) = Comp.app (closeC δ M) (closeV δ w) := by
+  induction δ generalizing M w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _ _
+
+@[simp] theorem closeC_up (δ : List Val) (ℓ : Label) (op : OpId) (w : Val) :
+    closeC δ (Comp.up ℓ op w) = Comp.up ℓ op (closeV δ w) := by
+  induction δ generalizing w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
+
+@[simp] theorem closeV_vunit (δ : List Val) : closeV δ Val.vunit = Val.vunit := by
+  induction δ with
+  | nil => rfl
+  | cons v δ ih => simp only [closeV, Val.subst, Val.substFrom]; exact ih
+
+@[simp] theorem closeV_vint (δ : List Val) (i : Int) : closeV δ (Val.vint i) = Val.vint i := by
+  induction δ with
+  | nil => rfl
+  | cons v δ ih => simp only [closeV, Val.subst, Val.substFrom]; exact ih
+
+@[simp] theorem closeV_vthunk (δ : List Val) (c : Comp) :
+    closeV δ (Val.vthunk c) = Val.vthunk (closeC δ c) := by
+  induction δ generalizing c with
+  | nil => rfl
+  | cons v δ ih => simp only [closeV, closeC, Val.subst, Val.substFrom, Comp.subst]; exact ih _
+
 
 /-! ## B.2 The return / value-injection compat core (`crel_ret`)
 
