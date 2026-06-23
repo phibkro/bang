@@ -372,6 +372,30 @@ theorem closeV_vvar {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u) :
   | nil => rfl
   | cons v δ ih => simp only [closeV, closeC, Val.subst, Val.substFrom, Comp.subst]; exact ih _
 
+@[simp] theorem closeV_inl (δ : List Val) (w : Val) :
+    closeV δ (Val.inl w) = Val.inl (closeV δ w) := by
+  induction δ generalizing w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeV, Val.subst, Val.substFrom]; exact ih _
+
+@[simp] theorem closeV_inr (δ : List Val) (w : Val) :
+    closeV δ (Val.inr w) = Val.inr (closeV δ w) := by
+  induction δ generalizing w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeV, Val.subst, Val.substFrom]; exact ih _
+
+@[simp] theorem closeV_pair (δ : List Val) (a b : Val) :
+    closeV δ (Val.pair a b) = Val.pair (closeV δ a) (closeV δ b) := by
+  induction δ generalizing a b with
+  | nil => rfl
+  | cons v δ ih => simp only [closeV, Val.subst, Val.substFrom]; exact ih _ _
+
+@[simp] theorem closeV_fold (δ : List Val) (w : Val) :
+    closeV δ (Val.fold w) = Val.fold (closeV δ w) := by
+  induction δ generalizing w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeV, Val.subst, Val.substFrom]; exact ih _
+
 
 /-! ### B.1a′ `EnvRel` accessors (closedness carrier, length, index)
 
@@ -793,6 +817,13 @@ STATUS (gated on the two U6 blockers — see `crel_unfold` docstring + the lead 
     off-by-one).
 Both resolve `krel_refl` mechanically; the named contract is fixed NOW so the capstone thread can
 reference it. -/
+/-- A well-typed value is `ScopedIn Γ.length` (`HasVTy.shift_closed`: shifting at a cutoff `≥ Γ.length`
+is the identity). The bridge from the typing derivation to the syntactic scope bound that
+`closeV_closed_scoped` consumes. -/
+theorem HasVTy.scopedIn {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (h : HasVTy γ Γ v A) : Val.ScopedIn Γ.length v := fun k hk => h.shift_closed k hk
+
+
 theorem krel_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult}
     (_hC : HasStack C e B eo Co) : Krel n B e C C := by
   -- IDENTITY INSTANCE of the fundamental theorem: induct on `HasStack C …`, mirroring the
@@ -803,5 +834,136 @@ theorem krel_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult}
   -- (statement-shape for the `letF` continuation's binder; μ/▷ for μ-typed returns). Contract fixed;
   -- body lands with the fundamental theorem.
   sorry
+
+
+/-! ## B.5 The mutual fundamental theorem (`vrel_fund` / `crel_fund`)
+
+The capstone: a well-typed value/computation relates to ITSELF under every pair of `Vrel`-related
+closing environments. Proven by mutual induction over the typing derivation (`HasCTy.rec` with both
+motives, mirroring `Metatheory.HasCTy.subst_gen`), each case dispatching to its compat core:
+
+  value side (`vrel_fund`):  vunit/vint (BaseRel), vvar (`closeV_vvar` + `EnvRel.vrel_at`),
+                             vthunk (→ `crel_fund` IH), inl/inr/pair/fold (structural).
+  comp side  (`crel_fund`):  ret (→ `crel_ret` + `vrel_fund` + `closeV_closed_scoped`),
+                             letC (→ `compat_letC`, the IHs through `closeC_letC`/`closeC_subst_comm`),
+                             force (→ `crel_force` + `vrel_fund`), case (→ `compat_case`),
+                             split (→ `compat_split`); unfold (→ `crel_unfold`, μ Blocker 2 sorry);
+                             lam/app (arrow-clause sorry, decision #2 pending);
+                             up/handle* (Srel/handler, PROOF_ORDER-last sorry).
+
+STATUS: PARTIAL — NOT closed. The sorried cases (lam, app, unfold, up, handleThrows/State/Transaction)
+are documented blockers; `lr_fundamental` carries `sorryAx` until all close. -/
+
+mutual
+theorem vrel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (h : HasVTy γ Γ v A) :
+    ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRel n Γ δ₁ δ₂ →
+      Vrel n A (closeV δ₁ v) (closeV δ₂ v) := by
+  cases h with
+  | vunit => intro n δ₁ δ₂ _; rw [closeV_vunit, closeV_vunit, Vrel]; exact ⟨rfl, rfl⟩
+  | vint  => intro n δ₁ δ₂ _; rw [closeV_vint, closeV_vint, Vrel]; exact ⟨_, rfl, rfl⟩
+  | @vvar _ i _ hget =>
+      intro n δ₁ δ₂ hδ
+      have hlen₁ := hδ.length_left
+      have hlen₂ := hδ.length_right
+      have hi : i < Γ.length := by rw [List.getElem?_eq_some_iff] at hget; exact hget.1
+      rw [closeV_vvar (hδ.closed_left) (by omega) Val.vunit,
+          closeV_vvar (hδ.closed_right) (by omega) Val.vunit]
+      exact hδ.vrel_at hget Val.vunit Val.vunit
+  | @vthunk _ _ M φ B hM =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_vthunk, closeV_vthunk, Vrel]
+      exact ⟨closeC δ₁ M, closeC δ₂ M, rfl, rfl, crel_fund hM n δ₁ δ₂ hδ⟩
+  | @inl _ _ w A B hw =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_inl, closeV_inl, Vrel]
+      exact Or.inl ⟨_, _, rfl, rfl, vrel_fund hw n δ₁ δ₂ hδ⟩
+  | @inr _ _ w A B hw =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_inr, closeV_inr, Vrel]
+      exact Or.inr ⟨_, _, rfl, rfl, vrel_fund hw n δ₁ δ₂ hδ⟩
+  | @pair _ _ _ _ a b A B ha hb _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_pair, closeV_pair, Vrel]
+      exact ⟨_, _, _, _, rfl, rfl, vrel_fund ha n δ₁ δ₂ hδ, vrel_fund hb n δ₁ δ₂ hδ⟩
+  | @fold _ _ w A hw =>
+      intro n δ₁ δ₂ hδ
+      -- fold at μ: Vrel (n+1) (mu A) needs payload at unrolled type, index n (the ▷ guard); the
+      -- recursive call gives Vrel n (unrollMu A) at the SAME n. BLOCKER (shared with crel_unfold,
+      -- Blocker 2): the μ ▷ step-index drop / downward-closure. Documented sorry.
+      sorry
+
+theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
+    (h : HasCTy γ Γ c e B) :
+    ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRel n Γ δ₁ δ₂ →
+      Crel n B e (closeC δ₁ c) (closeC δ₂ c) := by
+  cases h with
+  | @ret _ _ _ v A q hv _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_ret, closeC_ret]
+      have hsc₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hsc₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      exact crel_ret hsc₁ hsc₂ (vrel_fund hv n δ₁ δ₂ hδ)
+  | @letC _ _ _ _ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_letC, closeC_letC]
+      refine compat_letC (q1 := q1) (crel_fund hM n δ₁ δ₂ hδ) ?_
+      -- continuation: (closeCUnderBinders 1 δᵢ N).subst v = closeC δᵢ (N.subst v) = closeC (v::δᵢ) N
+      -- (closeC_subst_comm); the extended EnvRel uses the closed Vrel-related bound value v.
+      intro v₁ v₂ hcv₁ hcv₂ hvrel
+      rw [closeC_subst_comm hδ.closed_left hcv₁, closeC_subst_comm hδ.closed_right hcv₂]
+      have hδ' : EnvRel n (A :: Γ) (v₁ :: δ₁) (v₂ :: δ₂) := by
+        rw [EnvRel]; exact ⟨hcv₁, hcv₂, hvrel, hδ⟩
+      have := crel_fund hN n (v₁ :: δ₁) (v₂ :: δ₂) hδ'
+      rwa [show closeC (v₁ :: δ₁) N = closeC δ₁ (Comp.subst v₁ N) from rfl,
+           show closeC (v₂ :: δ₂) N = closeC δ₂ (Comp.subst v₂ N) from rfl] at this
+  | @force _ _ v φ B hv =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_force, closeC_force]
+      exact crel_force (vrel_fund hv n δ₁ δ₂ hδ)
+  | @lam _ _ M φ q A B hM =>
+      -- BLOCKER (decision #2, Krel arrow clause pending): Crel at arr q A B requires the
+      -- arrow-observation clause; lam is the arrow normal-form. Documented sorry.
+      intro n δ₁ δ₂ hδ; sorry
+  | @app _ _ _ _ M v φ q A B hM hv _ =>
+      -- BLOCKER (decision #2): app observes M at arr q A B under the appF frame — same arrow gap.
+      intro n δ₁ δ₂ hδ; sorry
+  | @case _ _ _ _ v N₁ N₂ φ q A B C hv hN₁ hN₂ _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_case, closeC_case]
+      have hscv₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hscv₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      refine compat_case (vrel_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_ ?_
+      · intro u₁ u₂ hcu₁ hcu₂ hu
+        rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
+        have hδ' : EnvRel n (A :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by rw [EnvRel]; exact ⟨hcu₁, hcu₂, hu, hδ⟩
+        exact crel_fund hN₁ n (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+      · intro u₁ u₂ hcu₁ hcu₂ hu
+        rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
+        have hδ' : EnvRel n (B :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by rw [EnvRel]; exact ⟨hcu₁, hcu₂, hu, hδ⟩
+        exact crel_fund hN₂ n (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+  | @split _ _ _ _ v N φ q A B C hv hN _ =>
+      -- split binds TWO (B :: A :: Γ); the continuation needs the two-binder closeC commutation
+      -- (closeCUnderBinders 2 vs the reduct's subst v (subst (shift w) N)) — the d=2 analogue of
+      -- closeC_subst_comm, not yet built. Documented sorry (the d=2 substitution-descent gap).
+      intro n δ₁ δ₂ hδ; sorry
+  | @unfold _ _ v A hv =>
+      -- unfold: reduces to crel_unfold, which carries the μ ▷ Blocker 2 sorry. Same blocker.
+      intro n δ₁ δ₂ hδ; sorry
+  | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
+      -- BLOCKER (PROOF_ORDER-last): up is the Srel control-stuck term; compat_up's handled case
+      -- (splitAt ≠ none) couples into compat_handle. Documented sorry.
+      intro n δ₁ δ₂ hδ; sorry
+  | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
+      intro n δ₁ δ₂ hδ; sorry   -- BLOCKER (PROOF_ORDER-last): compat_handle [KEY], Srel resumption.
+  | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
+      intro n δ₁ δ₂ hδ; sorry   -- BLOCKER (PROOF_ORDER-last): compat_handle, resumptive state.
+  | @handleTransaction _ _ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM hsub =>
+      intro n δ₁ δ₂ hδ; sorry   -- BLOCKER (PROOF_ORDER-last): compat_handle, transaction.
+end
 
 end Bang

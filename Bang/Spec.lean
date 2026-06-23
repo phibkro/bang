@@ -177,11 +177,16 @@ theorem lr_sound
 -- environments `δ₁,δ₂` (`EnvRel`, `closeC` in `Bang/LR.lean §5.2b`). The closed (`Γ=[]`) instance
 -- that `lr_sound`/the capstone consume is the named corollary `lr_fundamental_closed` below.
 --   shape: biernacki-popl18 §5.2 (`G⟦Γ⟧η` fundamental theorem); ahmed-esop06 closing substitution.
+-- WIRED to `Bang.crel_fund` (Compat.lean, the mutual fundamental-theorem proof, upstream of Spec —
+-- exactly as `preservation := preservation_proof`). PARTIAL: `crel_fund` still carries documented
+-- `sorry`s (lam/app — Krel arrow clause pending; split d=2; unfold/fold — μ Blocker 2; up/handle* —
+-- PROOF_ORDER-last), so `lr_fundamental` carries `sorryAx` until those close. NOT yet fully closed.
 theorem lr_fundamental
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy γ Γ c e B →
-    ∀ n (δ₁ δ₂ : List Val), EnvRel n Γ δ₁ δ₂ → Crel n B e (closeC δ₁ c) (closeC δ₂ c) := sorry
+    ∀ n (δ₁ δ₂ : List Val), EnvRel n Γ δ₁ δ₂ → Crel n B e (closeC δ₁ c) (closeC δ₂ c) :=
+  fun h => crel_fund h
 
 -- [KEY] The CLOSED (`Γ=[]`) corollary — the instance `lr_sound`/`krel_refl`/the capstone consume.
 -- Empty environments (`EnvRel n [] [] []` holds; `closeC [] c = c`), so this is `lr_fundamental`
