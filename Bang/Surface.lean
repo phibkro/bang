@@ -40,6 +40,11 @@ def exnLabel : Label := 0
 state cell and an exception channel coexist without colliding. -/
 def stateLabel : Label := 1
 
+/-- The STM channel (rung 3, ADR-0030) — a DISTINCT label from `exnLabel`/`stateLabel`, so a
+transactional heap, a state cell, and an exception channel coexist. The `transaction` handler on
+this label catches `newTVar`/`readTVar`/`writeTVar`. -/
+def stmLabel : Label := 2
+
 
 /-! ## 1. Surface AST (named binders)
 
@@ -357,6 +362,57 @@ def stateGetComp : Comp :=
   .handle (.state stateLabel (.vint 5)) (.up stateLabel "get" .vunit)
 example : Source.eval 50 stateGetComp = .done (.vint 5) := by rfl
 
+/-! ### STM ledger (rung 3, ADR-0030): the transactional moat demo.
+
+`atomically M = handle (transaction stmLabel []) M`. The stm ops are `up`-operations on `stmLabel`,
+with the TVar index packed into the payload (Operational.lean §dispatchOn):
+  · `newTVar v` = `up stmLabel "newTVar" v`             → returns `vint idx` (the new TVar)
+  · `readTVar i` = `up stmLabel "readTVar" (vint i)`     → returns the cell
+  · `writeTVar i w` = `up stmLabel "writeTVar" (pair (vint i) w)` → returns `unit`
+
+The ledger has two accounts (TVar 0 = A, TVar 1 = B). The kernel has NO arithmetic (five primitives),
+so a "transfer" writes LITERAL post-transfer balances — the demo exercises the heap THREADING +
+all-or-nothing ROLLBACK, not arithmetic (a counter needs `+`, a separate K-ADR). `#guard` (compiled),
+NOT `rfl`: kernel whnf over the machine is pathological under `rfl`. -/
+
+/-- Helpers building the raw stm `up`-operations (the surface `newTVar`/`readTVar`/`writeTVar`
+lowerings the L-phase IC will hide behind sugar). -/
+def stmNew (v : Val) : Comp := .up stmLabel "newTVar" v
+def stmRead (i : Int) : Comp := .up stmLabel "readTVar" (.vint i)
+def stmWrite (i : Int) (w : Val) : Comp := .up stmLabel "writeTVar" (.pair (.vint i) w)
+
+/-- COMMIT: `atomically (alloc A=100, B=0; A:=70; B:=30; read (A,B))` ⟶ `(70, 30)`.
+The heap is threaded through every op; the final reads see the committed writes. -/
+def ledgerCommit : Comp :=
+  .handle (.transaction stmLabel [])
+    (.letC (stmNew (.vint 100))            -- idx 0 = A (bind unused: A is statically TVar 0)
+      (.letC (stmNew (.vint 0))            -- idx 1 = B
+        (.letC (stmWrite 0 (.vint 70))     -- A := 70
+          (.letC (stmWrite 1 (.vint 30))   -- B := 30
+            (.letC (stmRead 0)             -- bind 0 ↦ A's balance
+              (.letC (stmRead 1)           -- bind 0 ↦ B's balance, A's now at idx 1
+                (.ret (.pair (.vvar 1) (.vvar 0)))))))))   -- (A, B) = (70, 30)
+
+#guard (match Source.eval 200 ledgerCommit with
+  | .done (.pair (.vint a) (.vint b)) => a == 70 && b == 30 | _ => false)
+
+/-- ABORT: an outer `throws exnLabel` wraps `atomically (alloc; write; raise initial-balances)`.
+The `raise` is a foreign op to the `transaction` frame, so it ESCAPES it (ADR-0023 discards the
+captured continuation) — the write-delta `(70, 30)` never commits. The abort payload carries the
+ORIGINAL balances `(100, 0)`, the observable proof that the transaction rolled back. -/
+def ledgerAbort : Comp :=
+  .handle (.throws exnLabel)
+    (.handle (.transaction stmLabel [])
+      (.letC (stmNew (.vint 100))
+        (.letC (stmNew (.vint 0))
+          (.letC (stmWrite 0 (.vint 70))      -- attempted write (rolled back on abort)
+            (.letC (stmWrite 1 (.vint 30))    -- attempted write (rolled back on abort)
+              -- insufficient funds ⇒ abort with the ORIGINAL balances (100, 0).
+              (.up exnLabel "raise" (.pair (.vint 100) (.vint 0))))))))
+
+#guard (match Source.eval 200 ledgerAbort with
+  | .done (.pair (.vint a) (.vint b)) => a == 100 && b == 0 | _ => false)
+
 /-! ### Structural equality on kernel terms (additive — NOT a kernel change).
 
 The laws (Stage 1d) compare an evaluated stack against an expected one, so we need to
@@ -394,7 +450,12 @@ def beqComp : Comp → Comp → Bool
 def beqHandler : Handler → Handler → Bool
   | .state ℓ v,   .state ℓ' w   => ℓ == ℓ' && beqVal v w
   | .throws ℓ,    .throws ℓ'    => ℓ == ℓ'
+  | .transaction ℓ Θ, .transaction ℓ' Θ' => ℓ == ℓ' && beqStore Θ Θ'
   | _,            _             => false
+def beqStore : List Val → List Val → Bool
+  | [],      []      => true
+  | a :: as, b :: bs => beqVal a b && beqStore as bs
+  | _,       _       => false
 end
 
 instance : BEq Val := ⟨beqVal⟩

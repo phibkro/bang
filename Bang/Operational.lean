@@ -69,6 +69,12 @@ def Comp.shiftFrom (c : Nat) : Comp → Comp
 def Handler.shiftFrom (c : Nat) : Handler → Handler
   | .state ℓ s   => .state ℓ (Val.shiftFrom c s)
   | .throws ℓ    => .throws ℓ
+  -- transaction's heap cells are CLOSED values (the CK focus is always closed, ADR-0025/0030), so
+  -- shift is the IDENTITY on them. We leave `Θ` untouched (rather than `Θ.map (shiftFrom c)`): a
+  -- recursive `List.map (Val.shiftFrom c)` call would force the `shiftFrom` mutual block onto
+  -- well-founded recursion, breaking the `rfl`-reduction the kernel demos + metatheory rely on. The
+  -- identity is SOUND for closed heaps (the only heaps a well-typed `transaction` frame carries).
+  | .transaction ℓ Θ => .transaction ℓ Θ
 end
 
 /-- `Val.shift = Val.shiftFrom 0` — push a closed-ish value under one binder. -/
@@ -108,6 +114,9 @@ def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
 def Handler.substFrom (k : Nat) (v : Val) : Handler → Handler
   | .state ℓ s   => .state ℓ (Val.substFrom k v s)
   | .throws ℓ    => .throws ℓ
+  -- heap cells are CLOSED ⇒ subst is the identity; leave `Θ` untouched (keeps structural recursion,
+  -- so the `substFrom` family still reduces by `rfl`). Sound for closed heaps (ADR-0030).
+  | .transaction ℓ Θ => .transaction ℓ Θ
 end
 
 /-- The head-redex substitution `c[v]`: fill the nearest binder (index 0)
@@ -153,6 +162,9 @@ discarding it; the search is identical. -/
 def handlesOp : Handler → Label → OpId → Bool
   | .throws ℓ',   ℓ, op => (ℓ' = ℓ) && (op == "raise")
   | .state  ℓ' _, ℓ, op => (ℓ' = ℓ) && (op == "get" || op == "put")
+  -- transaction (ADR-0030): catches the three stm ops on its own label.
+  | .transaction ℓ' _, ℓ, op =>
+      (ℓ' = ℓ) && (op == "newTVar" || op == "readTVar" || op == "writeTVar")
 
 /-- Split a stack at the nearest frame catching `(ℓ, op)`: returns `(Kᵢ, h, Kₒ)` with
 `K = Kᵢ ++ handleF h :: Kₒ`, `Kᵢ` containing no catching frame (the inner captured continuation),
@@ -167,6 +179,14 @@ def splitAt : EvalCtx → Label → OpId → Option (EvalCtx × Handler × EvalC
   | (fr :: K), ℓ, op =>
       (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
 
+/-- Read TVar index `i` (a payload `vint i`) out of a value; `none` if the payload is malformed. -/
+def tvarIdx : Val → Option Nat
+  | .vint n => if n ≥ 0 then some n.toNat else none
+  | _       => none
+
+/-- Update heap cell `i` to `w` (out-of-range = unchanged; the type system guarantees in-range). -/
+def storeSet (Θ : Store) (i : Nat) (w : Val) : Store := List.set Θ i w
+
 /-- Deep-handler dispatch (ADR-0025 generalizes ADR-0023 to KEEP the captured continuation for
 resumptive handlers). Split the stack at the nearest catching frame, then:
 
@@ -177,10 +197,14 @@ resumptive handlers). Split the stack at the nearest catching frame, then:
       · `get`: return the stored `s` to `Kᵢ`, state unchanged (`s' = s`, focus `ret s`);
       · `put w`: store the payload `w`, return `unit` to `Kᵢ` (`s' = w`, focus `ret unit`).
     The resumed stack is `Kᵢ ++ handleF (state ℓ s') :: Kₒ`.
+  - `transaction ℓ Θ`: ONE-SHOT RESUME threading the list-heap (ADR-0030) — `state` generalized to a
+    list. `newTVar`/`readTVar`/`writeTVar` reinstall a deep `transaction ℓ Θ'` frame with the heap
+    grown/read/updated. Rollback is FREE: abort is a foreign `throws` escaping this frame, so `Θ'`
+    is discarded with the frame (never commits). A malformed/out-of-range TVar payload yields `oom`.
 
 Reaching `[]` (no catching frame) = unhandled = stuck (`none`). The CK focus stays CLOSED: the stored
-`s`/payload `w` are closed values (the focus is always closed), so resumption threads no open term and
-no variable budget — the grade vectors stay `[]` (ADR-0025 §grade discipline). -/
+`s`/payload `w`/heap cells are closed values (the focus is always closed), so resumption threads no
+open term and no variable budget — the grade vectors stay `[]` (ADR-0025 §grade discipline). -/
 def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option Config
   | (Kᵢ, h, Kₒ) =>
       match h with
@@ -190,6 +214,31 @@ def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option 
             some (Kᵢ ++ Frame.handleF (.state ℓ' s) :: Kₒ, .ret s)             -- RESUME with s
           else
             some (Kᵢ ++ Frame.handleF (.state ℓ' v) :: Kₒ, .ret .vunit)        -- RESUME with unit
+      -- transaction (ADR-0030): the multi-cell generalization of `state`. RESUME threading the
+      -- updated heap (KEEP `Kᵢ`, reinstall a deep `transaction ℓ' Θ'` frame), exactly the ADR-0025
+      -- state-resume pattern with a list-heap. Rollback is FREE: an abort is a zero-shot `throws`
+      -- that escapes this frame (handled by the throws arm above over a DIFFERENT label), so the
+      -- threaded `Θ'` is discarded with the frame and never commits.
+      | .transaction ℓ' Θ =>
+          if op == "newTVar" then
+            -- allocate: append the initial value `v`; the new TVar's index is the old length.
+            some (Kᵢ ++ Frame.handleF (.transaction ℓ' (Θ ++ [v])) :: Kₒ, .ret (.vint Θ.length))
+          else if op == "readTVar" then
+            -- read: payload `vint i`; return cell `i` (oom on a malformed/out-of-range index).
+            match tvarIdx v with
+            | some i =>
+                match Θ[i]? with
+                | some cell => some (Kᵢ ++ Frame.handleF (.transaction ℓ' Θ) :: Kₒ, .ret cell)
+                | none      => some (Kₒ, .oom)
+            | none => some (Kₒ, .oom)
+          else
+            -- writeTVar: payload `pair (vint i) w`; store `w` at cell `i`, return unit.
+            match v with
+            | .pair iv w =>
+                match tvarIdx iv with
+                | some i => some (Kᵢ ++ Frame.handleF (.transaction ℓ' (storeSet Θ i w)) :: Kₒ, .ret .vunit)
+                | none   => some (Kₒ, .oom)
+            | _ => some (Kₒ, .oom)
 
 def dispatch (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
   (splitAt K ℓ op).bind (dispatchOn op v)

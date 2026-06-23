@@ -254,7 +254,8 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
     ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState h
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState
+    ?handleTransaction h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
@@ -288,6 +289,12 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
              exact ih
   case handleThrows => intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
   case handleState => intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ ihM; exact ihM
+  case handleTransaction =>
+    -- the handler leaves γ/Γ unchanged ⇒ `motive M = motive (handle ...)` definitionally. Binders:
+    -- 21 value-args + the `hcells` IH (∀ cell ∈ Θ₀, …), then the goal is the `hM`-IH implication
+    -- `motive M → motive (handle …)`, which id discharges.
+    intro γ Γ ℓ Θ₀ M e φ q S A TVarRef _ _ _ _ _ _ _ _ _ _ _
+    exact fun ih => ih
 
 theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} :
@@ -297,7 +304,8 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
     ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState h
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState
+    ?handleTransaction h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
@@ -331,6 +339,12 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
              exact ih
   case handleThrows => intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
   case handleState => intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ ihM; exact ihM
+  case handleTransaction =>
+    -- the handler leaves γ/Γ unchanged ⇒ `motive M = motive (handle ...)` definitionally. Binders:
+    -- 21 value-args + the `hcells` IH (∀ cell ∈ Θ₀, …), then the goal is the `hM`-IH implication
+    -- `motive M → motive (handle …)`, which id discharges.
+    intro γ Γ ℓ Θ₀ M e φ q S A TVarRef _ _ _ _ _ _ _ _ _ _ _
+    exact fun ih => ih
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
 
@@ -390,6 +404,7 @@ A value/computation typed under a length-`n` context mentions only de Bruijn ind
 state (`HasVTy [] [] s₀ S`, `n = 0`), so it survives weakening (`shiftFrom k s₀ = s₀`) and substitution
 (`substFrom k v s₀ = s₀`) under any binder — the engine that makes `handleState` thread through
 `weaken`/`subst` without grade content (the closed focus, ADR-0025 D2). -/
+
 mutual
 theorem HasVTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} (h : HasVTy γ Γ v A) (k : Nat) (hk : Γ.length ≤ k) :
@@ -439,6 +454,10 @@ theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hM.shift_closed k hk, hs.shift_closed k (Nat.zero_le k)]
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q S A TVarRef _ _ _ _ _ _ _ hcells hM _ =>
+    -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH.
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    rw [hM.shift_closed k hk]
 end
 
 mutual
@@ -489,6 +508,10 @@ theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
     simp only [Comp.substFrom, Handler.substFrom]
     rw [hM.subst_closed k hk w, hs.subst_closed k (Nat.zero_le k) w]
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q S A TVarRef _ _ _ _ _ _ _ hcells hM _ =>
+    -- `Handler.substFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH.
+    simp only [Comp.substFrom, Handler.substFrom]
+    rw [hM.subst_closed k hk w]
 end
 
 mutual
@@ -689,6 +712,10 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hs.shift_closed k (Nat.zero_le k)]
     exact HasCTy.handleState hga hgr hpa hpr hif hs (hM.weaken k hk A') hle
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q S A TVarRef hna hnr hra hrr hwa hwr hif hcells hM hle =>
+    -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); weaken the body.
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells (hM.weaken k hk A') hle
 end
 
 /-- Grade at the substituted slot `k`, read off the derivation's grade vector. -/
@@ -1200,6 +1227,7 @@ theorem HasCTy.subst_gen
     (motive_1 := VsubstMotive) (motive_2 := CsubstMotive)
     ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState
+    ?handleTransaction
     hc Δ Γ A γ_v v rfl hv
   case vunit =>
     intro Γ₀ Δ Γ A γ_v v hΓ hv
@@ -1305,6 +1333,14 @@ theorem HasCTy.subst_gen
     -- the stored state is CLOSED ⇒ substFrom leaves it fixed (ADR-0025)
     rw [hs.subst_closed Δ.length (Nat.zero_le _) _]
     exact HasCTy.handleState hga hgr hpa hpr hif hs (ihM Δ Γ A γ_v v rfl hv) hle
+  case handleTransaction =>
+    -- subst through a transaction handler. `Handler.substFrom` leaves the heap untouched (closed
+    -- cells, ADR-0030), so only the body substitutes (via `ihM`); structural, like `handleState`.
+    intro γ Γ₀ ℓ Θ₀ M e φ q S A₀ TVarRef hna hnr hra hrr hwa hwr hif hcells hM hle _hcellsIH ihM
+      Δ Γ A γ_v v hΓ hv
+    subst hΓ
+    rw [Comp.substFrom, Handler.substFrom]
+    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells (ihM Δ Γ A γ_v v rfl hv) hle
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -1386,6 +1422,8 @@ theorem HasStack.handleAny_inv {hdl : Handler} {K : EvalCtx} {e : Eff} {C : CTy 
   cases h with
   | @handleF _ _ _ φ eo q A Co hraise hiface hdis hsub => exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
   | @stateF _ _ _ _ φ eo q A S Co hga hgr hpa hpr hif hs hdis hsub =>
+    exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
+  | @transactionF _ _ _ _ φ eo q A S TVarRef Co hna hnr hra hrr hwa hwr hif hcells hdis hsub =>
     exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
 
 /-- Invert a `state` handler frame (ADR-0025). -/
@@ -1503,6 +1541,27 @@ theorem HasCTy.handleState_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @handleState _ _ _ _ _ e_body φ q S A hga hgr hpa hpr hif hs hM hle =>
     exact ⟨e_body, q, S, A, rfl, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩
 
+/-- Invert a `handle (transaction ℓ Θ₀) M` typing (ADR-0030). -/
+theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {ℓ : Label} {Θ₀ : List Val} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.handle (Handler.transaction ℓ Θ₀) M) e C →
+    ∃ e_body q S A TVarRef, C = CTy.F q A
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some S
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some TVarRef
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some TVarRef
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some S
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod TVarRef S)
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit
+      ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+          op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar")
+      ∧ (∀ cell ∈ Θ₀, HasVTy [] [] cell S)
+      ∧ HasCTy γ0 Γ0 M e_body (CTy.F q A)
+      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e := by
+  intro h
+  cases h with
+  | @handleTransaction _ _ _ _ _ e_body φ q S A TVarRef hna hnr hra hrr hwa hwr hif hcells hM hle =>
+    exact ⟨e_body, q, S, A, TVarRef, rfl, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle⟩
+
 theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.lam M) e C →
@@ -1611,6 +1670,11 @@ theorem HasStack.weaken_eff {K : EvalCtx} {e e' : Eff} {C : CTy Eff Mult}
   | @stateF K ℓ s e φ eo q A S Co hga hgr hpa hpr hif hs hdis hsub ih =>
     intro hle
     exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs (le_trans hle hdis) hsub⟩
+  | @transactionF K ℓ Θ e φ eo q A S TVarRef Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    -- rebuild the same transaction frame at the narrowed focus effect (ADR-0030).
+    intro hle
+    exact ⟨eo, le_refl _,
+      HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells (le_trans hle hdis) hsub⟩
 
 /-! ### E.1a `splitAt` / `dispatch` reduction lemmas (ADR-0025)
 
@@ -1678,6 +1742,7 @@ theorem splitAt_raise_throws {K : EvalCtx} {ℓ : Label} {Kᵢ Kₒ : EvalCtx} {
         cases hh with
         | throws ℓ' => exact ⟨ℓ', rfl⟩
         | state ℓ' s => simp [handlesOp] at hcatch
+        | transaction ℓ' Θ => simp [handlesOp] at hcatch
       · -- does not catch ⇒ recurse
         simp only [Bool.not_eq_true] at hcatch
         rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
@@ -1793,6 +1858,13 @@ theorem HasStack.dispatch_typed {K Kₒ : EvalCtx} {e_in : Eff} {C_in : CTy Eff 
     rw [dispatch_skip_handleF hcatch] at hd
     obtain ⟨q_h, eo', hleo, hsub'⟩ := ih hd
     exact ⟨q_h, eo', hleo, hsub'⟩
+  | @transactionF K ℓ' Θ e φ eo q Ah S TVarRef Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    -- a transaction frame never catches "raise" (ADR-0030) ⇒ dispatch skips it; recurse.
+    intro hd
+    have hcatch : handlesOp (Handler.transaction ℓ' Θ) ℓ "raise" = false := by simp [handlesOp]
+    rw [dispatch_skip_handleF hcatch] at hd
+    obtain ⟨q_h, eo', hleo, hsub'⟩ := ih hd
+    exact ⟨q_h, eo', hleo, hsub'⟩
 
 /-- DISPATCH must FIRE (PROGRESS direction). When the label is live in the running
 effect and the whole-program effect is `⊥`, the stack MUST contain a handling frame:
@@ -1851,13 +1923,30 @@ theorem HasStack.splitAt_fires {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff Mult}
         EffSig.labelEff_sep ℓ ℓ' φ (le_trans hlive hdis) (fun h => hℓ h.symm)
       obtain ⟨p, hp⟩ := ih hesc hlive'
       exact ⟨_, by rw [splitAt_handleF_miss K hcatch, hp]; rfl⟩
+  | @transactionF K ℓ' Θ e φ eo q Ah S TVarRef Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    intro hesc hlive
+    by_cases hℓ : ℓ' = ℓ
+    · -- transaction ℓ frame: catches iff op ∈ {newTVar,readTVar,writeTVar}; `hif` forces it (ADR-0030).
+      subst hℓ
+      have hcatch : handlesOp (Handler.transaction ℓ' Θ) ℓ' op = true := by
+        rcases hif op A hopArg with hn | hr | hw <;> subst_vars <;> simp [handlesOp]
+      exact ⟨_, splitAt_handleF_hit K hcatch⟩
+    · have hcatch : handlesOp (Handler.transaction ℓ' Θ) ℓ op = false := by simp [handlesOp, hℓ]
+      have hlive' : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ :=
+        EffSig.labelEff_sep ℓ ℓ' φ (le_trans hlive hdis) (fun h => hℓ h.symm)
+      obtain ⟨p, hp⟩ := ih hesc hlive'
+      exact ⟨_, by rw [splitAt_handleF_miss K hcatch, hp]; rfl⟩
 
 /-- `dispatchOn` always succeeds (every catching handler — throws or state — produces a resumed/
 aborted config). So `dispatch K ℓ op v` succeeds iff `splitAt K ℓ op` does. -/
 theorem dispatchOn_isSome (op : OpId) (v : Val) (p : EvalCtx × Handler × EvalCtx) :
     (dispatchOn op v p).isSome = true := by
   obtain ⟨Kᵢ, h, Kₒ⟩ := p
-  cases h <;> simp only [dispatchOn] <;> first | rfl | (split <;> rfl)
+  -- every branch of `dispatchOn` (throws abort, state resume, the three stm resumes incl. the
+  -- oom-on-malformed-payload fall-throughs) returns `some _`, so `isSome` holds. The transaction
+  -- arm has nested `if`/`match` (ADR-0030), so split exhaustively then `rfl` each leaf.
+  cases h <;> simp only [dispatchOn] <;>
+    repeat' first | rfl | split
 
 theorem dispatch_isSome_iff (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) :
     (dispatch K ℓ op v).isSome = (splitAt K ℓ op).isSome := by
@@ -1873,7 +1962,9 @@ theorem HasStack.dispatch_op_handled {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff 
     {eo : Eff} {Co : CTy Eff Mult} {ℓ : Label} {op : OpId} {A : VTy Eff Mult} :
     HasStack K e_in C_in eo Co →
     EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A →
-    (splitAt K ℓ op).isSome = true → op = "raise" ∨ op = "get" ∨ op = "put" := by
+    (splitAt K ℓ op).isSome = true →
+      op = "raise" ∨ op = "get" ∨ op = "put"
+        ∨ op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar" := by
   intro hK hopArg
   induction hK with
   | nil => intro hd; simp [splitAt] at hd
@@ -1891,8 +1982,20 @@ theorem HasStack.dispatch_op_handled {K : EvalCtx} {e_in : Eff} {C_in : CTy Eff 
   | @stateF K ℓ' s e φ eo q Ah S Co hga hgr hpa hpr hif hs hdis hsub ih =>
     intro hd
     by_cases hℓ : ℓ' = ℓ
-    · subst hℓ; exact Or.inr (hif op A hopArg)
+    · subst hℓ; exact Or.inr (Or.imp_right Or.inl (hif op A hopArg))
     · have hcatch : handlesOp (Handler.state ℓ' s) ℓ op = false := by simp [handlesOp, hℓ]
+      rw [splitAt_handleF_miss K hcatch, Option.isSome_map] at hd
+      exact ih hd
+  | @transactionF K ℓ' Θ e φ eo q Ah S TVarRef Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    intro hd
+    by_cases hℓ : ℓ' = ℓ
+    · -- transaction ℓ frame: `hif` forces op ∈ {newTVar,readTVar,writeTVar} (ADR-0030).
+      subst hℓ
+      rcases hif op A hopArg with hn | hr | hw
+      · exact Or.inr (Or.inr (Or.inr (Or.inl hn)))
+      · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl hr))))
+      · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr hw))))
+    · have hcatch : handlesOp (Handler.transaction ℓ' Θ) ℓ op = false := by simp [handlesOp, hℓ]
       rw [splitAt_handleF_miss K hcatch, Option.isSome_map] at hd
       exact ih hd
 
@@ -1978,6 +2081,19 @@ theorem HasStack.dispatch_state_typed {K Kᵢ Kₒ : EvalCtx} {e : Eff}
       subst hKᵢ; subst hh; subst hKₒ
       obtain ⟨eo', hleo, hsub'⟩ := ih hsp
       exact ⟨eo', hleo, by simpa using HasStack.stateF hga hgr hpa hpr hif hs hdis hsub'⟩
+  | @transactionF K ℓ' Θ e φ eo q A0 S0 TVarRef Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    -- a transaction frame never catches get/put (op ∈ {get,put}) ⇒ dispatch skips it; recurse.
+    intro hd
+    have hcatch : handlesOp (Handler.transaction ℓ' Θ) ℓ op = false := by
+      rcases hop with h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨hKᵢ, hh, hKₒ⟩ := heq
+    subst hKᵢ; subst hh; subst hKₒ
+    obtain ⟨eo', hleo, hsub'⟩ := ih hsp
+    exact ⟨eo', hleo, by simpa using
+      HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hdis hsub'⟩
 
 /-- The stored state at the matched `state ℓ s` frame is CLOSED of type `S = opRes ℓ "get"`
 (ADR-0025 grade discipline: the CK focus is always closed, so the threaded state is too). Same
@@ -2036,6 +2152,16 @@ theorem HasStack.splitAt_state_closed {K Kᵢ Kₒ : EvalCtx} {e : Eff}
       simp only [Prod.mk.injEq] at heq
       obtain ⟨_, hh, _⟩ := heq; subst hh
       exact ih hsp
+  | @transactionF K ℓ' Θ e φ eo q A0 S0 TVarRef Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    -- transaction never catches get/put ⇒ foreign-skip (the matched frame is elsewhere).
+    intro hd
+    have hcatch : handlesOp (Handler.transaction ℓ' Θ) ℓ op = false := by
+      rcases hop with h | h <;> subst h <;> simp [handlesOp]
+    rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
+    obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨_, hh, _⟩ := heq; subst hh
+    exact ih hsp
 
 /-- For `op ∈ {get, put}`, any catching frame found by `splitAt` is a `state ℓ` handler at the
 SAME label `ℓ`: `throws` catches only `raise` (`handlesOp (throws ..) ℓ get/put = false`), and a
@@ -2070,6 +2196,9 @@ theorem splitAt_getput_state {K : EvalCtx} {ℓ : Label} {op : OpId} {Kᵢ Kₒ 
           rcases hop with h | h <;> subst h <;>
             (simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hcatch
              obtain ⟨hℓ', _⟩ := hcatch; subst hℓ'; exact ⟨s, rfl⟩)
+        | transaction ℓ' Θ =>
+          -- a transaction frame never catches get/put ⇒ contradiction.
+          rcases hop with h | h <;> subst h <;> simp [handlesOp] at hcatch
       · simp only [Bool.not_eq_true] at hcatch
         rw [splitAt_handleF_miss K hcatch, Option.map_eq_some_iff] at hd
         obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ := hd
@@ -2159,7 +2288,8 @@ theorem preservation_proof
     simp only [Source.step] at hstep
     have hsplit_some : (splitAt K ℓ op).isSome = true := by
       rw [← dispatch_isSome_iff (v := v), hstep]; rfl
-    rcases hstack.dispatch_op_handled hopArg hsplit_some with hraise | hget | hput
+    rcases hstack.dispatch_op_handled hopArg hsplit_some with
+      hraise | hget | hput | hnew | hread | hwrite
     · -- THROWS path: op = "raise" — fully proven (ADR-0023). The throws handler aborts to Kₒ.
       subst hraise
       have hshape : cfg'.2 = Comp.ret v := dispatch_shape K ℓ v hstep
@@ -2208,6 +2338,18 @@ theorem preservation_proof
         ⟨⊥, CTy.F q VTy.unit,
           HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
           hstk''⟩⟩
+    · -- RUNG3-OBLIGATION (K2): newTVar RESUME preservation. cfg' = ⟨Kᵢ ++ handleF (transaction ℓ
+      -- (Θ++[v])) :: Kₒ, ret (vint |Θ|)⟩. Re-type the resumed stack (allocation extends the heap,
+      -- still all-cells-closed since `v` is closed) and the focus `ret (vint |Θ|) : F q TVarRef`.
+      subst hnew; sorry
+    · -- RUNG3-OBLIGATION (K2): readTVar RESUME preservation. cfg' = ⟨Kᵢ ++ handleF (transaction ℓ Θ)
+      -- :: Kₒ, ret Θ[i]⟩. The read cell is closed of type S (heap-closed invariant); re-type the
+      -- reinstalled (unchanged) heap frame + focus `ret Θ[i] : F q S`.
+      subst hread; sorry
+    · -- RUNG3-OBLIGATION (K2): writeTVar RESUME preservation. cfg' = ⟨Kᵢ ++ handleF (transaction ℓ
+      -- Θ[i↦w]) :: Kₒ, ret unit⟩. The updated heap stays all-cells-closed (`w` closed); re-type the
+      -- reinstalled frame + focus `ret unit : F q unit`.
+      subst hwrite; sorry
   | letC M N =>
     -- PUSH letC
     simp only [Source.step, Option.some.injEq] at hstep
@@ -2244,6 +2386,16 @@ theorem preservation_proof
       subst hC
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hM, HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩⟩
+    | transaction ℓ Θ =>
+      -- PUSH transaction: push the frame (ADR-0030); fully typable like state.
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      obtain ⟨e_body, q, S, A, TVarRef, hC, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle⟩ :=
+        hfocus.handleTransaction_inv
+      subst hC
+      exact ⟨eo, le_refl _,
+        ⟨e_body, CTy.F q A, hM,
+          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hstack⟩⟩
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
@@ -2382,6 +2534,7 @@ theorem progress_proof
         cases h with
         | throws ℓ => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
         | state ℓ s => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
+        | transaction ℓ Θ => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
       | appF w =>
         -- appF wants an arr-focus; ret v : F _ _ contradicts the appF stack premise
         obtain ⟨γ', A0, q0, he, hC, hγ, hwv⟩ := hfocus.ret_inv

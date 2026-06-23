@@ -107,7 +107,21 @@ inductive Comp : Type where
 inductive Handler : Type where
   | state  : Label → Val → Handler
   | throws : Label → Handler
+  -- transaction ℓ Θ (ADR-0030, rung 3): STM as a transactional handler — `state ⊗ exception`.
+  -- The `Store` Θ is the transaction-scoped heap (a list of cells; a TVar is a heap INDEX,
+  -- de-Bruijn-style, like the μ tvar / value-level vvar). This is `state` generalized from ONE
+  -- cell to a LIST: `newTVar`/`readTVar`/`writeTVar` thread the updated heap on resume; abort (a
+  -- zero-shot `throws` escaping the frame, ADR-0023) discards the write-delta (the heap never
+  -- commits) while allocations are kept by the heap's append-only growth. NOT a 6th primitive
+  -- (invariant #5): a `Handler` constructor + effect ops, reusing the CK machinery.
+  | transaction : Label → List Val → Handler
 end
+
+/-- `Store` — the transaction-scoped heap a `transaction` handler carries (ADR-0030). A TVar is
+an INDEX into this list (`Nat`, de-Bruijn-style); `newTVar` appends a cell (an allocation),
+`readTVar`/`writeTVar` index/update one. A `List Val`, NOT a `Finset`/map: order is the TVar
+identity, and append-only growth is what "keep allocations on abort" means. -/
+abbrev Store := List Val
 
 
 /-! ### 1.3 Operational machinery: evaluation contexts (CK frames)
@@ -280,5 +294,27 @@ class EffSig (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] where
   preservation (skipping a non-matching, different-label handler must not lose the performed label).
   Holds for `Finset` singletons (atoms of a distributive lattice). -/
   labelEff_sep : ∀ ℓ ℓ' (φ : Eff), labelEff ℓ ≤ labelEff ℓ' ⊔ φ → ℓ ≠ ℓ' → labelEff ℓ ≤ φ
+
+/-! ### 1.6a The `stm` interface (ADR-0030, rung 3)
+
+STM enters as a transactional handler over an `stm` label (`Surface.stmLabel`, distinct from
+`exnLabel = 0` / `stateLabel = 1`). Its three operations are `up`-operations encoded in the
+single-payload `up ℓ op v` shape by packing the TVar index into the payload value:
+
+```
+op           payload v             result            heap effect on resume
+─────────────────────────────────────────────────────────────────────────────────
+newTVar      v₀  (initial value)   vint |Θ| (the     Θ ↦ Θ ++ [v₀]   (allocation ∆)
+                                   new TVar index)
+readTVar     vint i               Θ[i]              Θ unchanged
+writeTVar    pair (vint i) v       vunit             Θ[i ↦ v]        (write into the journal)
+```
+
+The `EffSig` op-type signatures (`opArg`/`opRes`) a concrete instance supplies for these mirror the
+state handler's `get`/`put`: `newTVar : A → TVarRef`, `readTVar : TVarRef → A`,
+`writeTVar : TVarRef × A → unit`. The monomorphic v1 keeps the cell type fixed per `stmLabel` (one
+heap of one element type), so `opArg`/`opRes` are total functions of the op name as before. The
+running `Source.eval` demo needs only the OPERATIONAL arms (Operational.lean); the signatures here
+gate TYPING (Syntax.lean `handleTransaction`). -/
 
 end Bang

@@ -200,6 +200,33 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       HasCTy γ Γ M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasCTy γ Γ (Comp.handle (Handler.state ℓ s₀) M) φ (CTy.F q A)
+  -- handleTransaction (ADR-0030, rung 3): STM as a transactional handler. Discharges label `ℓ`
+  -- like `state`/`throws`; the multi-cell generalization of `handleState`. The cell type is `S`
+  -- (monomorphic v1, one heap-element type per `stmLabel`); the stm interface is `newTVar : S →
+  -- TVarRef`, `readTVar : TVarRef → S`, `writeTVar : TVarRef × S → unit` (the op-partial `EffSig`,
+  -- ADR-0023 D6). TVarRef is `int` (a TVar = a heap index). THE GRADE DISCIPLINE (ADR-0025/0030):
+  -- every cell of the initial heap `Θ₀` is a CLOSED value of type `S` (grade `[]`), so the CK
+  -- machine's closed focus threads the heap at zero variable budget for any `S`. The return clause
+  -- is the identity (ADR-0023 Q6), so the block has the body's result type `F q A`.
+  --
+  -- METATHEORY OBLIGATIONS (RUNG3 K2): preservation/progress for the three resume cases + the
+  -- all-or-nothing law. Stubbed in Metatheory.lean; this RULE is concrete (no opaque, no sorry).
+  | handleTransaction : ∀ {γ Γ} {ℓ : Label} {Θ₀ : List Val} {M : Comp} {e φ : Eff} {q : Mult}
+        {S A TVarRef : VTy Eff Mult},
+      -- INTERFACE: ℓ's ops are exactly newTVar/readTVar/writeTVar with the stm signature.
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some S →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some TVarRef →
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some TVarRef →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some S →
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod TVarRef S) →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit →
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+        op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") →
+      -- THE GRADE DISCIPLINE: every initial heap cell is a CLOSED value of type `S`.
+      (∀ cell ∈ Θ₀, HasVTy [] [] cell S) →
+      HasCTy γ Γ M e (CTy.F q A) →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      HasCTy γ Γ (Comp.handle (Handler.transaction ℓ Θ₀) M) φ (CTy.F q A)
 end
 
 
@@ -244,6 +271,22 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasStack K φ (CTy.F q A) eo Co →
       HasStack (Frame.handleF (Handler.state ℓ s) :: K) e (CTy.F q A) eo Co
+  -- transactionF (ADR-0030): a reinstalled resumptive `transaction ℓ Θ` frame. Mirrors
+  -- `HasCTy.handleTransaction` / `stateF`: discharges `ℓ`, the stm interface, the heap `Θ` all
+  -- CLOSED cells of type `S` (the grade discipline).
+  | transactionF : ∀ {K ℓ Θ e φ eo q A S TVarRef Co},
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some S →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some TVarRef →
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some TVarRef →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some S →
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod TVarRef S) →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit →
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+        op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") →
+      (∀ cell ∈ Θ, HasVTy [] [] cell S) →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      HasStack K φ (CTy.F q A) eo Co →
+      HasStack (Frame.handleF (Handler.transaction ℓ Θ) :: K) e (CTy.F q A) eo Co
 
 /-- A config is *returned* iff it is `⟨[], ret v⟩` — a value with no work left on the stack. -/
 def isReturnConfig : Config → Prop
