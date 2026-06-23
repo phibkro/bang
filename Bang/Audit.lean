@@ -8,6 +8,7 @@
 -/
 import Bang.Spec
 import Bang.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
+import Bang.CalcVM    -- ◊3: the calculated-machine compile_correct (verification spine)
 open Bang
 
 #print axioms lr_sound
@@ -28,3 +29,4 @@ open Bang
 #print axioms effect_sound
 #print axioms zero_usage_erasable
 #print axioms Bang.Surface.cell_reflects_latest
+#print axioms Bang.CalcVM.compile_correct
