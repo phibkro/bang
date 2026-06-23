@@ -31,3 +31,6 @@ open Bang
 #print axioms Bang.Surface.cell_reflects_latest
 #print axioms Bang.CalcVM.compile_correct
 #print axioms Bang.CalcVM.evalD_agrees_source
+-- O2 two-part forms (term ∧ raised); pin the shapes against silent regression.
+#print axioms Bang.CalcVM.sim
+#print axioms Bang.CalcVM.run_evalD
