@@ -33,6 +33,12 @@ build:
 audit:
     bash tools/audit.sh
 
+# Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
+# STM-only) + ADR index/link integrity. Fast, no Lean build. Also run by `just audit`.
+fitness:
+    bash tools/check-primitives.sh
+    bash tools/check-adr-links.sh
+
 # Zero-dep Node sanity check on the row-unifier algorithm.
 selfcheck:
     node tools/selfcheck.mjs

@@ -31,6 +31,17 @@ if grep -RnE '^[[:space:]]*opaque\b' --include='*.lean' "$ROOT/Bang/Spec.lean" 2
   fail "opaque stub still present in Bang/Spec.lean — Phase A incomplete"
 fi
 
+# 3a. Architecture fitness functions — make CLAUDE.md invariants structural.
+#   - check-primitives: kernel constructor set (Val/Comp/Handler) == allowlist
+#     (Invariants #3/#5: five primitives, STM-only; a 6th can't slip in silently).
+#   - check-adr-links: docs/decisions/ index↔file bijection + link integrity.
+# Fast, deterministic, no Lean build. Both gate on real drift (exit 1); ADR
+# cross-ref-to-deleted-history is WARN-only (exit 0). Also runnable via `just fitness`.
+echo "── architecture fitness (Invariants #3/#5, ADR integrity) ──"
+bash "$(dirname "$0")/check-primitives.sh" "$ROOT"
+bash "$(dirname "$0")/check-adr-links.sh" "$ROOT"
+echo "── end fitness ──"
+
 # 4. Build must be clean.
 lake build
 
