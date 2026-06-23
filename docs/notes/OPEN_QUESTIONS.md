@@ -312,6 +312,11 @@ reversal).
 
 **Blocked on**: nothing now. This is a ◊5 obligation, surfaced early.
 
+> **Note (2026-06-23):** the ◊5 *proof method* is now settled — **ADR-0035**: `compile_forward_sim`
+> uses AsmFX-style one-directional annotated simulation (not the biorthogonal LR, which stays ◊4-only).
+> Q9 remains open on the *target* alone: AsmFX is its own abstract ISA, not WasmFX, so "pin the engine,
+> not the paper" (options 1+3) is unchanged.
+
 **Revisit signal**: starting ◊5 compiler/backend work; OR the stack-switching
 proposal reaching Phase 4 (becomes stable — re-freeze then); OR a decision to
 adopt WasmFXCert as the backend oracle.
