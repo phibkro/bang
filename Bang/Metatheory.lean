@@ -1075,6 +1075,117 @@ private theorem subst_app_case
       Sgrade_smul]
   exact HasCTy.app (ihM Δ Γ A γ_v v rfl hv) (ihV Δ Γ A γ_v v rfl hv) rfl
 
+/-- `case` case. Scrutinee `v : A₀ + B₀` graded `γ_s`, scaled by `q`; each branch
+`Nᵢ` descends under ONE binder (`A₀`/`B₀`) sharing grade `γ_N`. Grade reshape:
+`Sgrade k (q • γ_s + γ_N) = q • Sgrade k γ_s + Sgrade k γ_N` (Sgrade_add/smul),
+with each branch's binder-descent via Sgrade_cons (mirrors `subst_letC_case`). -/
+private theorem subst_case_case
+    (Δ Γ : TyCtx Eff Mult) (A : VTy Eff Mult) (γ_v : GradeVec Mult) (v : Val)
+    (hv : HasVTy γ_v (Δ ++ Γ) v A)
+    {γ_s γ_N : GradeVec Mult} {s : Val} {N₁ N₂ : Comp} {φ q : _}
+    {A₀ B₀ : VTy Eff Mult} {C : CTy Eff Mult}
+    (hs : HasVTy γ_s (Δ ++ A :: Γ) s (VTy.sum A₀ B₀))
+    (hN₁ : HasCTy (q :: γ_N) (A₀ :: Δ ++ A :: Γ) N₁ φ C)
+    (hN₂ : HasCTy (q :: γ_N) (B₀ :: Δ ++ A :: Γ) N₂ φ C)
+    (ihs : VsubstMotive γ_s (Δ ++ A :: Γ) s (VTy.sum A₀ B₀) hs)
+    (ihN₁ : CsubstMotive (q :: γ_N) (A₀ :: Δ ++ A :: Γ) N₁ φ C hN₁)
+    (ihN₂ : CsubstMotive (q :: γ_N) (B₀ :: Δ ++ A :: Γ) N₂ φ C hN₂) :
+    HasCTy (Sgrade γ_v Δ.length (q • γ_s + γ_N)) (Δ ++ Γ)
+           (Comp.substFrom Δ.length v (Comp.case s N₁ N₂)) φ C := by
+  have hk : Δ.length < (Δ ++ A :: Γ).length := by
+    rw [List.length_append, List.length_cons]; omega
+  have hl1 : γ_s.length = (Δ ++ A :: Γ).length := hs.length_eq
+  have hl2 : γ_N.length = (Δ ++ A :: Γ).length := by
+    have h := hN₁.length_eq
+    simp only [List.length_cons, List.length_append] at h ⊢; omega
+  have hvl : γ_v.length = (Δ ++ A :: Γ).length - 1 := by
+    rw [hv.length_eq, List.length_append, List.length_append, List.length_cons]; omega
+  rw [Comp.substFrom]
+  -- grade reshape: q • γ_s + γ_N
+  show HasCTy (Sgrade γ_v Δ.length
+      (GradeVec.add (GradeVec.smul q γ_s) γ_N)) _ _ _ _
+  rw [Sgrade_add γ_v Δ.length (GradeVec.smul q γ_s) γ_N
+        (by rw [GradeVec.smul_length]; omega) (by omega)
+        (by rw [GradeVec.smul_length, hl1, hl2]) (by rw [GradeVec.smul_length]; omega),
+      Sgrade_smul]
+  -- scrutinee branch
+  have hihs := ihs Δ Γ A γ_v v rfl hv
+  -- weaken `v` under a fresh binder (shared shape for both branches)
+  have hk0 : (0 : Nat) ≤ (Δ ++ Γ).length := Nat.zero_le _
+  have hgr : insG γ_v 0 = (0 : Mult) :: γ_v := by unfold insG; simp
+  have hctx2 : ∀ (D : VTy Eff Mult), (D :: Δ) ++ Γ = D :: (Δ ++ Γ) := by intro D; simp
+  -- N₁ branch: descend under A₀
+  have hvwA := hv.weaken 0 hk0 A₀
+  have hctxA : insT (Δ ++ Γ) 0 A₀ = (A₀ :: Δ) ++ Γ := by unfold insT; simp
+  rw [hctxA, hgr] at hvwA
+  have hΓeqA : A₀ :: Δ ++ A :: Γ = (A₀ :: Δ) ++ A :: Γ := by simp
+  have hihN₁ := ihN₁ (A₀ :: Δ) Γ A ((0 : Mult) :: γ_v) (Val.shiftFrom 0 v) hΓeqA hvwA
+  rw [List.length_cons, Sgrade_cons, hctx2] at hihN₁
+  -- N₂ branch: descend under B₀
+  have hvwB := hv.weaken 0 hk0 B₀
+  have hctxB : insT (Δ ++ Γ) 0 B₀ = (B₀ :: Δ) ++ Γ := by unfold insT; simp
+  rw [hctxB, hgr] at hvwB
+  have hΓeqB : B₀ :: Δ ++ A :: Γ = (B₀ :: Δ) ++ A :: Γ := by simp
+  have hihN₂ := ihN₂ (B₀ :: Δ) Γ A ((0 : Mult) :: γ_v) (Val.shiftFrom 0 v) hΓeqB hvwB
+  rw [List.length_cons, Sgrade_cons, hctx2] at hihN₂
+  exact HasCTy.case hihs hihN₁ hihN₂ rfl
+
+/-- `split` case. Like `case`, but `N` descends under TWO binders (`B₀` then `A₀`,
+matching the typing rule's `B₀ :: A₀ :: Γ` and `substFrom (k+2)`); Sgrade_cons is
+applied twice. Grade `q • γ_s + γ_N` as in `case`. -/
+private theorem subst_split_case
+    (Δ Γ : TyCtx Eff Mult) (A : VTy Eff Mult) (γ_v : GradeVec Mult) (v : Val)
+    (hv : HasVTy γ_v (Δ ++ Γ) v A)
+    {γ_s γ_N : GradeVec Mult} {s : Val} {N : Comp} {φ q : _}
+    {A₀ B₀ : VTy Eff Mult} {C : CTy Eff Mult}
+    (hs : HasVTy γ_s (Δ ++ A :: Γ) s (VTy.prod A₀ B₀))
+    (hN : HasCTy (q :: q :: γ_N) (B₀ :: A₀ :: Δ ++ A :: Γ) N φ C)
+    (ihs : VsubstMotive γ_s (Δ ++ A :: Γ) s (VTy.prod A₀ B₀) hs)
+    (ihN : CsubstMotive (q :: q :: γ_N) (B₀ :: A₀ :: Δ ++ A :: Γ) N φ C hN) :
+    HasCTy (Sgrade γ_v Δ.length (q • γ_s + γ_N)) (Δ ++ Γ)
+           (Comp.substFrom Δ.length v (Comp.split s N)) φ C := by
+  have hk : Δ.length < (Δ ++ A :: Γ).length := by
+    rw [List.length_append, List.length_cons]; omega
+  have hl1 : γ_s.length = (Δ ++ A :: Γ).length := hs.length_eq
+  have hl2 : γ_N.length = (Δ ++ A :: Γ).length := by
+    have h := hN.length_eq
+    simp only [List.length_cons, List.length_append] at h ⊢; omega
+  have hvl : γ_v.length = (Δ ++ A :: Γ).length - 1 := by
+    rw [hv.length_eq, List.length_append, List.length_append, List.length_cons]; omega
+  rw [Comp.substFrom]
+  show HasCTy (Sgrade γ_v Δ.length
+      (GradeVec.add (GradeVec.smul q γ_s) γ_N)) _ _ _ _
+  rw [Sgrade_add γ_v Δ.length (GradeVec.smul q γ_s) γ_N
+        (by rw [GradeVec.smul_length]; omega) (by omega)
+        (by rw [GradeVec.smul_length, hl1, hl2]) (by rw [GradeVec.smul_length]; omega),
+      Sgrade_smul]
+  have hihs := ihs Δ Γ A γ_v v rfl hv
+  -- N descends under TWO binders A₀ (inner, position 1) then B₀ (outer, position 0).
+  -- Weaken v under A₀ first, then under B₀ on top, mirroring substFrom (k+2)(shift (shift v)).
+  have hk0 : (0 : Nat) ≤ (Δ ++ Γ).length := Nat.zero_le _
+  have hgr : insG γ_v 0 = (0 : Mult) :: γ_v := by unfold insG; simp
+  -- first descent: under A₀
+  have hvwA := hv.weaken 0 hk0 A₀
+  have hctxA : insT (Δ ++ Γ) 0 A₀ = (A₀ :: Δ) ++ Γ := by unfold insT; simp
+  rw [hctxA, hgr] at hvwA
+  -- hvwA : HasVTy (0 :: γ_v) ((A₀ :: Δ) ++ Γ) (shiftFrom 0 v) A
+  -- second descent: under B₀ on top of A₀
+  have hk0' : (0 : Nat) ≤ ((A₀ :: Δ) ++ Γ).length := Nat.zero_le _
+  have hvwB := hvwA.weaken 0 hk0' B₀
+  have hctxB : insT ((A₀ :: Δ) ++ Γ) 0 B₀ = (B₀ :: A₀ :: Δ) ++ Γ := by unfold insT; simp
+  have hgr' : insG ((0 : Mult) :: γ_v) 0 = (0 : Mult) :: (0 : Mult) :: γ_v := by unfold insG; simp
+  rw [hctxB, hgr'] at hvwB
+  -- shiftFrom 0 (shiftFrom 0 v) = shift (shift v)
+  have hΓeq : B₀ :: A₀ :: Δ ++ A :: Γ = (B₀ :: A₀ :: Δ) ++ A :: Γ := by simp
+  have hihN := ihN (B₀ :: A₀ :: Δ) Γ A ((0 : Mult) :: (0 : Mult) :: γ_v)
+    (Val.shiftFrom 0 (Val.shiftFrom 0 v)) hΓeq hvwB
+  -- reshape: |B₀::A₀::Δ| = Δ.length+2 ; Sgrade twice via Sgrade_cons
+  rw [List.length_cons, List.length_cons] at hihN
+  rw [show Δ.length + 1 + 1 = (Δ.length + 1) + 1 from rfl, Sgrade_cons, Sgrade_cons] at hihN
+  have hctx2 : (B₀ :: A₀ :: Δ) ++ Γ = B₀ :: A₀ :: (Δ ++ Γ) := by simp
+  rw [hctx2] at hihN
+  exact HasCTy.split hihs hihN rfl
+
 set_option maxHeartbeats 1600000 in
 theorem HasCTy.subst_gen
     {A : VTy Eff Mult} {Γ : TyCtx Eff Mult}
@@ -1165,16 +1276,11 @@ theorem HasCTy.subst_gen
   case case =>
     intro γ γ_s γ_N Γ₀ s N₁ N₂ φ q A₀ B₀ C hs hN₁ hN₂ hγ ihs ihN₁ ihN₂ Δ Γ A γ_v v hΓ hv
     subst hΓ; subst hγ
-    -- RUNG2-OBLIGATION (K2): case substitution. Needs the Sgrade binder-descent
-    -- reshape (Sgrade_cons) for the two branches plus Sgrade_add/Sgrade_smul for
-    -- the `q • γ_s + γ_N` scrutinee grade — mirror `subst_letC_case`/`subst_app_case`.
-    sorry
+    exact subst_case_case Δ Γ A γ_v v hv hs hN₁ hN₂ ihs ihN₁ ihN₂
   case split =>
     intro γ γ_s γ_N Γ₀ s N φ q A₀ B₀ C hs hN hγ ihs ihN Δ Γ A γ_v v hΓ hv
     subst hΓ; subst hγ
-    -- RUNG2-OBLIGATION (K2): split substitution. Like `case`, but N descends under
-    -- TWO binders (Sgrade_cons applied twice) over the `q • γ_s + γ_N` grade.
-    sorry
+    exact subst_split_case Δ Γ A γ_v v hv hs hN ihs ihN
   case unfold =>
     intro γ Γ₀ s A₀ hs ih Δ Γ A γ_v v hΓ hv
     subst hΓ
@@ -1404,6 +1510,71 @@ theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   intro h
   cases h with
   | @lam _ _ _ φ q A B hM => exact ⟨q, A, B, rfl, hM⟩
+
+theorem HasCTy.case_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {v : Val} {N₁ N₂ : Comp} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.case v N₁ N₂) e C →
+    ∃ γ_v γ_N q A B, γ0 = q • γ_v + γ_N
+      ∧ HasVTy γ_v Γ0 v (VTy.sum A B)
+      ∧ HasCTy (q :: γ_N) (A :: Γ0) N₁ e C
+      ∧ HasCTy (q :: γ_N) (B :: Γ0) N₂ e C := by
+  intro h
+  cases h with
+  | @case _ γ_v γ_N _ _ _ _ φ q A B C hv hN₁ hN₂ hγ =>
+    exact ⟨γ_v, γ_N, q, A, B, hγ, hv, hN₁, hN₂⟩
+
+theorem HasCTy.split_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {v : Val} {N : Comp} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.split v N) e C →
+    ∃ γ_v γ_N q A B, γ0 = q • γ_v + γ_N
+      ∧ HasVTy γ_v Γ0 v (VTy.prod A B)
+      ∧ HasCTy (q :: q :: γ_N) (B :: A :: Γ0) N e C := by
+  intro h
+  cases h with
+  | @split _ γ_v γ_N _ _ _ φ q A B C hv hN hγ =>
+    exact ⟨γ_v, γ_N, q, A, B, hγ, hv, hN⟩
+
+theorem HasCTy.unfold_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {v : Val} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.unfold v) e C →
+    ∃ A, e = ⊥ ∧ C = CTy.F 1 (VTy.unrollMu A) ∧ HasVTy γ0 Γ0 v (VTy.mu A) := by
+  intro h
+  cases h with
+  | @unfold _ _ _ A hv => exact ⟨A, rfl, rfl, hv⟩
+
+/-- Canonical forms for a CLOSED sum value: `v : A + B` in the empty context is
+`inl a` or `inr a`. `vvar` is excluded ( `[][i]? = none`). -/
+theorem HasVTy.sum_canonical {γ0 : GradeVec Mult}
+    {v : Val} {A B : VTy Eff Mult} :
+    HasVTy γ0 [] v (VTy.sum A B) →
+    (∃ a, v = Val.inl a ∧ HasVTy γ0 [] a A)
+      ∨ (∃ a, v = Val.inr a ∧ HasVTy γ0 [] a B) := by
+  intro h
+  cases h with
+  | @inl _ _ a _ _ ha => exact Or.inl ⟨a, rfl, ha⟩
+  | @inr _ _ a _ _ ha => exact Or.inr ⟨a, rfl, ha⟩
+  | @vvar _ i _ hget => simp at hget
+
+/-- Canonical forms for a CLOSED product value: `v : A × B` is `pair a b`. -/
+theorem HasVTy.prod_canonical {γ0 : GradeVec Mult}
+    {v : Val} {A B : VTy Eff Mult} :
+    HasVTy γ0 [] v (VTy.prod A B) →
+    ∃ γ_a γ_b a b, v = Val.pair a b ∧ γ0 = γ_a + γ_b
+      ∧ HasVTy γ_a [] a A ∧ HasVTy γ_b [] b B := by
+  intro h
+  cases h with
+  | @pair _ γ_a γ_b _ a b _ _ ha hb hγ => exact ⟨γ_a, γ_b, a, b, rfl, hγ, ha, hb⟩
+  | @vvar _ i _ hget => simp at hget
+
+/-- Canonical forms for a CLOSED μ value: `v : μX.A` is `fold a` with `a : unrollMu A`. -/
+theorem HasVTy.mu_canonical {γ0 : GradeVec Mult}
+    {v : Val} {A : VTy Eff Mult} :
+    HasVTy γ0 [] v (VTy.mu A) →
+    ∃ a, v = Val.fold a ∧ HasVTy γ0 [] a (VTy.unrollMu A) := by
+  intro h
+  cases h with
+  | @fold _ _ a _ ha => exact ⟨a, rfl, ha⟩
+  | @vvar _ i _ hget => simp at hget
 
 /-- `oom`/`wrong` are untypable: no HasCTy rule. -/
 theorem HasCTy.oom_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
@@ -2108,19 +2279,67 @@ theorem preservation_proof
           GradeVec.add_nil_left] at hsubst
         exact ⟨eo, le_refl _, ⟨e, B, hsubst, hsub⟩⟩
   | case v N₁ N₂ =>
-    -- RUNG2-OBLIGATION (K2): case preservation. Invert the closed focus `case v N₁ N₂`
-    -- (`v : sum A B` ⇒ `v = inl a` or `v = inr a` by canonical-forms on the closed sum
-    -- value), pick the branch, and re-type `Nᵢ[a]` via `subst_value_proof`.
-    sorry
+    -- closed focus `case v N₁ N₂ : (e, C)`; `v : sum A B` is `inl a`/`inr a`
+    -- (canonical forms); the matching branch `Nᵢ[a]` re-types at `(e, C)` via subst.
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN₁, hN₂⟩ := hfocus.case_inv
+    -- closed: scrutinee grade `γ_v = []`; branch shared grade `γ_N = []`.
+    have hγv : γ_v = [] := by have := hv.length_eq; simpa using this
+    have hγN : γ_N = [] := by have := hN₁.length_eq; simp at this; simpa using this
+    subst hγv; subst hγN
+    rcases hv.sum_canonical with ⟨a, hveq, ha⟩ | ⟨a, hveq, ha⟩
+    · subst hveq
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      have hsubst := subst_value_proof q ha hN₁
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+        GradeVec.add_nil_left] at hsubst
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩⟩
+    · subst hveq
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      have hsubst := subst_value_proof q ha hN₂
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+        GradeVec.add_nil_left] at hsubst
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩⟩
   | split v N =>
-    -- RUNG2-OBLIGATION (K2): split preservation. Closed `v : prod A B` ⇒ `v = pair a b`;
-    -- re-type `N[a][b]` via two `subst_value_proof` applications.
-    sorry
+    -- closed focus `split v N`; `v : prod A B` is `pair a b` (canonical forms);
+    -- `N[a][b]` re-types at `(e, C)` via two substitutions (outer `b`, inner `a`).
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN⟩ := hfocus.split_inv
+    obtain ⟨γ_a, γ_b, a, b, hveq, hγab, ha, hb⟩ := hv.prod_canonical
+    subst hveq
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    -- closed: every value grade is `[]`; the branch shared grade `γ_N = []`.
+    have hlenb : γ_b = [] := by have := hb.length_eq; simpa using this
+    have hlena : γ_a = [] := by have := ha.length_eq; simpa using this
+    subst hlenb; subst hlena
+    have hγN : γ_N = [] := by have := hN.length_eq; simp at this; simpa using this
+    subst hγN
+    -- inner subst: the OUTER binder (slot 0 of `B :: A :: []`) is `b : B`; weaken `b`
+    -- under the `A` binder so it types over `A :: []` (graded `[0]` after the insert).
+    have hbw : HasVTy [0] (A :: []) (Val.shift b) B := by
+      have := hb.weaken 0 (Nat.zero_le _) A
+      simpa [Val.shift, insT, insG, GradeVec.zeros] using this
+    -- result grade `(q :: []) + q • [0] = [q]`, i.e. `q :: []` — the shape the outer subst needs.
+    have hsubst_inner := subst_value_proof q hbw hN
+    simp only [hsmul_eq_smul, GradeVec.smul_cons, GradeVec.smul_nil, hadd_eq_add,
+      GradeVec.add_cons, GradeVec.add_nil_left, mul_zero, add_zero] at hsubst_inner
+    -- outer subst: the inner binder (now slot 0) is `a : A` (closed, graded `[]`).
+    have hsubst_outer := subst_value_proof q ha hsubst_inner
+    simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+      GradeVec.add_nil_left, GradeVec.add_nil_right] at hsubst_outer
+    exact ⟨eo, le_refl _, ⟨e, C, hsubst_outer, hstack⟩⟩
   | unfold v =>
-    -- RUNG2-OBLIGATION (K2): unfold preservation. Closed `v : mu A` ⇒ `v = fold a` with
-    -- `a : A[mu A/X] = unrollMu A`; the step yields `ret a : F 1 (unrollMu A)` — matches
-    -- the `unfold` rule's result type.
-    sorry
+    -- closed focus `unfold v : (⊥, F 1 (unrollMu A))`; `v : mu A` is `fold a` with
+    -- `a : unrollMu A`. Step `unfold (fold a) ↦ ret a`; `ret a : F 1 (unrollMu A)` matches.
+    obtain ⟨A, heq, hCeq, hv⟩ := hfocus.unfold_inv
+    subst heq; subst hCeq
+    obtain ⟨a, hveq, ha⟩ := hv.mu_canonical
+    subst hveq
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    -- the closed payload `a` is graded `[]`; `ret a : F 1 (unrollMu A)`, grade `1 • [] = []`.
+    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
 
@@ -2186,17 +2405,23 @@ theorem progress_proof
         obtain ⟨φ, q'', A'', hCeq, _⟩ := hstack.handleAny_inv
         exact absurd hCeq (by simp)
   | case v N₁ N₂ =>
-    -- RUNG2-OBLIGATION (K2): case progress. Closed `v : sum A B` is `inl`/`inr` (canonical
-    -- forms), so `Source.step (K, case v N₁ N₂)` fires the matching branch — always steps.
-    sorry
+    -- closed `v : sum A B` is `inl a`/`inr a` (canonical forms); each fires its branch.
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN₁, hN₂⟩ := hfocus.case_inv
+    rcases hv.sum_canonical with ⟨a, hveq, _⟩ | ⟨a, hveq, _⟩
+    · subst hveq; exact Or.inr ⟨(K, Comp.subst a N₁), by simp [Source.step]⟩
+    · subst hveq; exact Or.inr ⟨(K, Comp.subst a N₂), by simp [Source.step]⟩
   | split v N =>
-    -- RUNG2-OBLIGATION (K2): split progress. Closed `v : prod A B` is `pair a b`, so the
-    -- split reduces — always steps.
-    sorry
+    -- closed `v : prod A B` is `pair a b`; split reduces.
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN⟩ := hfocus.split_inv
+    obtain ⟨γ_a, γ_b, a, b, hveq, _, _, _⟩ := hv.prod_canonical
+    subst hveq
+    exact Or.inr ⟨(K, Comp.subst a (Comp.subst (Val.shift b) N)), by simp [Source.step]⟩
   | unfold v =>
-    -- RUNG2-OBLIGATION (K2): unfold progress. Closed `v : mu A` is `fold a`, so
-    -- `unfold (fold a) ↦ ret a` — always steps.
-    sorry
+    -- closed `v : mu A` is `fold a`; `unfold (fold a) ↦ ret a`.
+    obtain ⟨A, _, _, hv⟩ := hfocus.unfold_inv
+    obtain ⟨a, hveq, _⟩ := hv.mu_canonical
+    subst hveq
+    exact Or.inr ⟨(K, Comp.ret a), by simp [Source.step]⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
 
