@@ -86,9 +86,9 @@ over-plan beyond rung 4 before the MVP runs.
 
 | | v0.1 (`/srv/share/projects/bang-lang`, TS/Effect-TS) | lang-bang (this repo, Lean) |
 |---|---|---|
-| runs end-to-end | ✅ parse→infer→codegen→Effect-TS→stdout (`hello.bang`) | ❌ nothing runs yet |
-| surface syntax | ✅ real `.bang` files, `!`-force UX | ❌ none |
-| paradigms | state/`mut` ✓ · reactive `on` ✓ · `transaction` (interp-only) ◑ · user-types ✓ · actors ✗ | ❌ kernel primitives only |
+| runs end-to-end | ✅ parse→infer→codegen→Effect-TS→stdout (`hello.bang`) | ✅ surface→graded-CBPV `Comp`→`Source.eval`→VALUE (rungs 0–4, from source text) |
+| surface syntax | ✅ real `.bang` files, `!`-force UX | ✅ parser + `state`/`get`/`put`/stm/reactive demos run from source |
+| paradigms | state/`mut` ✓ · reactive `on` ✓ · `transaction` (interp-only) ◑ · user-types ✓ · actors ✗ | ✅ State · STM (transactional, **verified** law) · reactive (**verified** liveness) · user-types (**verified**/tested laws) — rungs 1–4; actors post-v1 |
 | guarantees | ❌ asserted (Effect-TS, no proofs) | ✅ **proven** (type/effect/resource safety, axiom-clean) |
 
 **Decision (B): lang-bang grows its own surface.** lang-bang IS the product — surface-to-WasmFX, one

@@ -73,7 +73,7 @@ language-level seam — a total prover interpreting a Turing-complete object lan
 
 1. **Proof rides the reference.** Anything that runs is either `exec` itself or differential-tested against it. Never ship an execution path with no oracle behind it.
 2. **Effect rows are sets** — idempotent, union = join. Never ordered, never a multiset. (ADR-0001) Post-Q1: `[Lattice Eff] [OrderBot Eff]` (ADR-0018).
-3. **STM is the *only* privileged kernel primitive.** Everything else is effect + handler. (design doc; preserved by ADR-0016)
+3. **STM is the *only* privileged kernel primitive.** Everything else is effect + handler. (design doc; preserved by ADR-0016.) **ADR-0030**: privilege is *concurrency-only* — single-threaded STM **is** a transactional handler, so **v1 ships STM as a handler**; the privileged shared-heap form returns with concurrency (post-v1). STM stays a *named* member of the five (below), unused-as-privileged in v1.
 4. **The machine is an *output* of the calculation**, never hand-designed. Calculate, don't verify-after-the-fact. (ADR-0016, formerly ADR-0004)
 5. **Kernel stays at five primitives:** thunk · force · effect rows · handlers · STM. Adding a sixth is a spec change requiring an ADR.
 6. **No implicit capture; reactivity is the operator, not a keyword.** (ADR-0005, ADR-0006)
@@ -96,7 +96,7 @@ language-level seam — a total prover interpreting a Turing-complete object lan
 | **`:` / `=`** | `:` introduces a binding (silent); `=` equates (live sync if RHS is a live description, sampled if `$`-forced). reactivity = equality over thunks (ADR-0005) |
 | **effect row** | the set of effects a function may perform, carried in its type after `with`. composes by union (join) |
 | **handler** | a value implementing an effect's operations; installed with a `with` block; runtimes are handlers |
-| **STM / TVar** | the one privileged primitive; transactional memory with journal/retry. TVars usable only inside `atomically` |
+| **STM / TVar** | the one privileged primitive (its *concurrent* form; **v1 STM is a transactional handler** — ADR-0030, journal/retry/validation deferred to concurrency). transactional memory; TVars usable only inside `atomically` |
 | **oracle** | the verified reference an implementation is checked against |
 | **calculated VM** | the `(compile, Code, exec)` triple *derived* from `eval` by Bahr–Hutton equational reasoning |
 | **checkpoint (◊)** | a stable pose in the project map; see `ROADMAP.md` |

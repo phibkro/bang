@@ -318,6 +318,7 @@ revisit signals.
 | Q18 | Data types: ADTs, ind/coind, law attach | ✓ resolved — ADR-0029 (iso-recursive sum/product/μ) |
 | Q19 | Typeclasses/traits with laws (laws surface) | partial — discharge via `plausible` (ADR-0026 tested rung) DEMONSTRATED at rung 2; surface law-syntax open |
 | Q20 | Surface extensibility (pseudoinstructions/macros) | open — no primitive if composite (invariant #5) |
+| Q21 | Concurrent STM (privileged shared-heap upgrade) | open — deferred (ADR-0030); privilege returns with concurrency, ◊5+ |
 
 ## Subagents available
 

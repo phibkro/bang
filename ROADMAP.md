@@ -69,8 +69,10 @@ verification spine:
 ```
 verification spine:   ◊2 ✓ ──► ◊3 CalcVM ──► ◊4 LR ──► ◊5 compiler ──► ◊6
                                   (backbone — proof rides the reference)
-product spine (NEW):  [tracer bullet] ──► thin surface ──► multi-paradigm MVP (v1)
+product spine (NEW):  [tracer bullet ✓] ─► thin surface ✓ ─► multi-paradigm MVP (v1) ✓
                        minimal parser → graded-CBPV Comp → Source.eval → a VALUE
+                       ✓✓ v1 MVP SPINE COMPLETE (rungs 0–4, 2026-06-23): State · STM ·
+                          reactive · user-types on one verified kernel — see CONTEXT.md
 ```
 
 The tracer bullet is the first product-spine issue (`paths/PATH-tracer-bullet.md`). It de-risks the
