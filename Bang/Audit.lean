@@ -30,3 +30,4 @@ open Bang
 #print axioms zero_usage_erasable
 #print axioms Bang.Surface.cell_reflects_latest
 #print axioms Bang.CalcVM.compile_correct
+#print axioms Bang.CalcVM.evalD_agrees_source
