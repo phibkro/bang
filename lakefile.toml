@@ -15,7 +15,10 @@ rev = "v4.30.0"
 # Loogle — Mathlib type-signature search (https://github.com/nomeata/loogle).
 # Provides `lake exe loogle "?n + 0 = ?n"` for finding lemmas by shape.
 # Tracks Lean closely; pin a tag if a Lean version bump breaks compatibility.
+# Pinned to a SHA (not the moving `master` ref): a fresh worktree's `lake exe cache get`
+# re-resolves a `master` rev → exit 128, flaking the pre-commit `just verify` (dev-env.md).
+# Bump this SHA deliberately on a Lean version change.
 [[require]]
 name = "loogle"
 git = "https://github.com/nomeata/loogle.git"
-rev = "master"
+rev = "a114d38c1c0172b8b96180b03b6c507647a2f712"
