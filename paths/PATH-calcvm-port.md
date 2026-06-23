@@ -1,8 +1,8 @@
 # PATH · CalcVM port (◊2 → ◊3)
 
 > Collapse the K3 matrix of calculated machines into ONE graded-CBPV calculated machine,
-> proven `exec ∘ compile ≡ eval`. Status: **IN PROGRESS** — first green increment landed 2026-06-23.
-> Owner: kernel/proof-engineer.
+> proven `exec ∘ compile ≡ eval`. Status: **✓ COMPLETE — ◊3 GATE MET 2026-06-23** (`4755fe1`).
+> Owner: kernel/proof-engineer. Units 1–7 landed axiom-clean; K2 matrix archived; diff-test battery green.
 
 ## Progress
 
@@ -104,13 +104,27 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
   `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext, Classical.choice, Quot.sound}; ◊2
   gate 0-axiom. No design fork (the residual-`Comp` shape was over-determined by the SUBST/APP calculation).
 
-- **▶ NEXT (active): collapse + archive the K3 `Calc*` matrix** (ADR-0017) → **the ◊3 gate**. The new
-  graded-CBPV `Bang/CalcVM.lean` now covers pure CBPV + deep handlers (throws) + resumptive state + resumptive
-  transaction + ADT elims — the feature surface the K3 matrix calculated over the OLD K2 `Expr`/`Value`. The
-  ◊3 definition-of-stable (ROADMAP): unified machine, `exec ∘ compile ≡ eval` proven, single module
-  sorry-free, unified diff-test green; THEN archive `Bang/Calc*.lean` + `Bang/Eval.lean` → `archive/`
-  (directory move per ADR-0017, the proven-evidence corpus survives). Flattening stays a later optimization
-  pass (invariant #7), not blocking ◊3.
+- **✓ Unit 7 — K3 COLLAPSE DONE → ◊3 GATE MET** (`4755fe1`, independently gated on the committed tree).
+  Two deliverables: **(A)** a **five-axis diff-test battery** (16 `Agree` cases — `Agree fuel M v := exec fuel
+  (compile M []) [] [] = some [.ret v] ∧ Source.eval fuel M = .done v`, tying BOTH reps to ONE observable
+  `Val` so a false agreement is structurally unrepresentable; all `rfl`, **zero axioms** — `native_decide`
+  was unusable, no `DecidableEq` on `Comp`/`Val`/`Outcome`). Axes: pure (β/let/force) · throws (caught/deep/
+  uncaught-stuckness) · state (get/put/outer-put-past-caught-throw) · transaction (new+read/abort-rollback) ·
+  ADT (case-inl/inr/split/unfold-via-erasure). **(B)** archived the K2 matrix — 8 per-feature `Calc*` + the
+  untyped-CBN `Eval` reference → `archive/` via history-preserving `git mv`, **inert/out-of-build** (the
+  `Bang` lib globs `Bang/` only; proofs stay machine-checked in git history per ADR-0017); dropped the 9
+  imports from `Bang.lean`. **KEPT** `CalcReify`/`CalcReifyRef`/`CalcReifySim` live (paused ADR-0015
+  reification frontier — a self-contained cluster) + `CalcVM`. `just verify` **723 jobs** (732→723 = the 9
+  modules leaving = evidence the archive took); `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆
+  {propext, Classical.choice, Quot.sound}; ◊2 gate 0-axiom. *Process:* IC on the shared main tree (isolation
+  flag didn't engage); a bare `git commit` of mine swept the IC's staged renames into a docs commit — recovered
+  by `git reset --soft` + clean re-split (the red intermediate eliminated; `git diff` proved the final tree
+  byte-identical to the gated commit). Flattening (defunctionalize frames + compile-away subst) stays a later
+  optimization pass (invariant #7) — **not** part of ◊3.
+
+> **✓✓ ◊3 — CalcVM PORTED, GATE MET (2026-06-23).** ONE graded-CBPV calculated machine
+> (`Bang/CalcVM.lean`), `exec ∘ compile ≡ eval` proven over the whole feature surface, K2 matrix archived,
+> diff-test battery green, all axiom-clean. The verification spine advances to **◊4 (LR foundation)**.
 
 ## Target (◊3 gate, ROADMAP)
 

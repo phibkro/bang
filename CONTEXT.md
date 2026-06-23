@@ -30,7 +30,24 @@
                                      WfInst carries the lacks-constraint (rowinst proven).
                                      GATE MET (just verify green). RESIDUAL (non-gate):
                                      effect_sound (trace semantics → Q14), zero_usage → ◊4.
-◊3   CalcVM ported
+◊3 ✓ CalcVM ported (GATE MET)     ── 2026-06-23. K2 Calc* matrix collapsed into ONE
+                                     graded-CBPV calculated machine `Bang/CalcVM.lean`
+                                     (Bahr–Hutton, invariant #4): pure CBPV + deep
+                                     handlers/throws + resumptive state + transaction
+                                     + ADT elims. `exec ∘ compile ≡ eval` proven via
+                                     `compile_correct` + the `evalD ≡ Source.eval`
+                                     bridge (`evalD_agrees_source`/`sim`/`run_evalD`),
+                                     all axiom-clean ⊆ {propext, Classical.choice,
+                                     Quot.sound}. K2 matrix (8 Calc* + Eval) archived →
+                                     `archive/` (ADR-0017, history-preserving); CalcReify*
+                                     reification frontier KEPT live (ADR-0015). 16-case
+                                     5-axis diff-test battery (`Agree`: exec∘compile =
+                                     Source.eval on ONE observable Val ⇒ false agreement
+                                     unrepresentable; all `rfl`, 0-axiom). `just verify`
+                                     723 jobs (732→723 = archive took). ◊2 gate held
+                                     0-axiom throughout. Built across Units 1–7 (ADR-0031
+                                     D4 for state/transaction resume; UNFOLD erases onto
+                                     RET, not an instr — calc-derived).
 ◊4   LR foundation
 ◊5   Compiler v0
 ◊6   Release v0
@@ -196,8 +213,8 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 **Verification spine (kernel/compiler — the ◊ march):**
 - **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
   axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound` (Q14), `zero_usage` (→◊4).
-- **`paths/PATH-calcvm-port.md`** — ◊3 (next verification checkpoint). Collapse the K3 Calc* matrix into
-  one graded-CBPV calculated machine. **IN PROGRESS, well advanced**: D1=A (calculate from denotational
+- **`paths/PATH-calcvm-port.md`** — **◊3 GATE MET (2026-06-23); path COMPLETE.** Collapsed the K3 Calc*
+  matrix into one graded-CBPV calculated machine. D1=A (calculate from denotational
   `evalD`). Landed axiom-clean: pure CBPV spine (`158f08d`) + `evalD ≡ Source.eval` bridge (`7baf5f8`) +
   **deep handlers throws-only** (O1 INSTALL `8a860a4`, O2 THROW abort `e07d349`) + **resumptive state —
   handlers RESUME** (ADR-0031, Unit 4, `2063c0e`): `evalD` threads a label-keyed `SStore` servicing get/put
@@ -214,10 +231,13 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   erasure ⇒ defer to a fuel-bounded re-`compile` in `exec`, the `SUBST`/`APP` shape; resolves the Unit-2
   defer); **`unfold` ERASES onto `RET` — no instruction** (structural, the `force` precedent; an UNFOLD instr
   would be hand-added redundancy). The split is the calculation's OUTPUT, re-derived per invariant #4
-  (`59bdd06`). PURE reductions, `evalD` mirrors kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held. **NEXT (final ◊3 step):** collapse + archive the
-  K3 `Calc*` matrix (ADR-0017) — the new `CalcVM.lean` now covers the full feature surface (pure CBPV + deep
-  handlers + resumptive state + transaction + ADT) the K3 matrix calculated over the old K2 `Expr`; unify +
-  diff-test green + `archive/` the matrix ⟹ **◊3 met**.
+  (`59bdd06`). PURE reductions, `evalD` mirrors kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held.
+  **✓ Unit 7 — K3 COLLAPSE DONE (`4755fe1`), ◊3 MET:** the K2 matrix (8 Calc* + `Eval`) archived → `archive/`
+  (ADR-0017, history-preserving `git mv`, out-of-build inert corpus); CalcReify* reification frontier KEPT
+  live (ADR-0015); 16-case 5-axis diff-test battery (`Agree M v := exec(compile M)=some[ret v] ∧ Source.eval
+  M=done v` — both reps to ONE observable Val ⇒ false agreement unrepresentable; all `rfl`, 0-axiom);
+  `just verify` 723 jobs (732→723 = archive took); independently gated on the committed tree. **The
+  verification spine now points at ◊4 (LR foundation).**
 
 **Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
 verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;
@@ -226,12 +246,20 @@ design-space map (`docs/notes/design-space-map.md`) + Q15–Q20.
 
 ## Next stable checkpoint we are paving toward
 
-**◊3 — CalcVM ported.** (◊2 gate met 2026-06-22; see Position block.)
+**◊4 — LR foundation.** (◊3 gate met 2026-06-23; see Position block.)
 
-Definition of stable per `ROADMAP.md`: the Calc* machines collapsed into one
-graded-CBPV calculated machine (Bahr-Hutton); `exec ∘ compile ≡ eval` proven;
-single unified `Calc.lean` sorry-free; unified diff-test green. Input: the K3
-work (`docs/notes/k3-historical-status.md`) + the now-proven graded-CBPV kernel.
+Definition of stable per `ROADMAP.md`: `lr_sound`, `lr_fundamental` proven;
+`group_recovers` resolved (proven OR side-condition added to ≈); `Audit.lean`
+reports axioms ⊆ {propext, Classical.choice, Quot.sound} for these three. Input:
+the now-ported CalcVM (◊3) + the step-indexed LR machinery sketched in
+`Bang/LR.lean` + the references (`references/papers/3-lr/`). The `zero_usage_erasable`
+and `effect_sound` residuals deferred from ◊2 also live here (LR-flavored).
+
+**◊3 — CalcVM ported — GATE MET (2026-06-23).** K2 Calc* matrix collapsed into one
+graded-CBPV calculated machine `Bang/CalcVM.lean` (Bahr–Hutton); `exec ∘ compile ≡ eval`
+proven (`compile_correct` + the `evalD ≡ Source.eval` bridge); K2 matrix archived
+(ADR-0017); 16-case diff-test battery green; all axiom-clean. See Position block + the
+(now-complete) `paths/PATH-calcvm-port.md`.
 
 **◊2 — Kernel frozen v1 — GATE MET.** `Source.eval` concrete over the CK machine
 (ADR-0023); row algebra with lacks-constraints (`WfInst`, ADR-0024 D3);
