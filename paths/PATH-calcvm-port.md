@@ -84,10 +84,25 @@ not a bare `Val` (a function-typed computation reduces to `lam`). Cost paid: the
   the churn was eaten). NB the worktree-isolation flag did not engage — the IC landed on the shared main tree;
   benign with a single writer.
 
-- **▶ NEXT (active): ADT eliminators** — `case`/`split`/`unfold` need a **runtime** CASE/SPLIT instruction
-  (compile-time rewrite breaks `compile` termination, deferred since Unit 2). **THEN** collapse + archive the
-  K3 Calc* matrix (ADR-0017) → the ◊3 gate. Flattening (defunctionalize frames + compile-away subst) is a
-  later optimization pass, not blocking.
+- **✓ Unit 6 — ADT eliminators DONE** (`3252ef8`, axiom-clean, independently gated + invariant-#4
+  artifact-checked). `case`/`split`/`unfold` handled across `evalD` + machine + bridge via **runtime**
+  `CASE`/`SPLIT`/`UNFOLD` instructions — `compile` emits them WITHOUT recursing into branches (stays
+  structural/terminating, resolving the Unit-2 defer), `exec` re-compiles the chosen branch at runtime, the
+  **same calculated residual-`Comp` shape as `SUBST`/`APP`** (no flattening — that stays a later pass). PURE
+  reductions (closed-value scrutinees ⇒ no σ/τ threading, no raised-handback); `evalD` mirrors kernel
+  `Source.step` 259-263 byte-for-byte incl. `split`'s double subst with `shift`. `sim`/`run_evalD` cases
+  mirror `SUBST`/`APP` (term) + `force` (pure); `unfold` vacuous in the raise parts. Demonstrator battery
+  (case-inl/inr, split, unfold) `rfl`-proven on BOTH `exec∘compile` and `evalD`.
+  `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext, Classical.choice, Quot.sound}; ◊2
+  gate 0-axiom. No design fork (the residual-`Comp` shape was over-determined by the SUBST/APP calculation).
+
+- **▶ NEXT (active): collapse + archive the K3 `Calc*` matrix** (ADR-0017) → **the ◊3 gate**. The new
+  graded-CBPV `Bang/CalcVM.lean` now covers pure CBPV + deep handlers (throws) + resumptive state + resumptive
+  transaction + ADT elims — the feature surface the K3 matrix calculated over the OLD K2 `Expr`/`Value`. The
+  ◊3 definition-of-stable (ROADMAP): unified machine, `exec ∘ compile ≡ eval` proven, single module
+  sorry-free, unified diff-test green; THEN archive `Bang/Calc*.lean` + `Bang/Eval.lean` → `archive/`
+  (directory move per ADR-0017, the proven-evidence corpus survives). Flattening stays a later optimization
+  pass (invariant #7), not blocking ◊3.
 
 ## Target (◊3 gate, ROADMAP)
 

@@ -209,9 +209,14 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   the net-HStack-effect is a **two-pass composition** `netEffect = updateTxns ∘ updateStates`. Rollback is
   free (inner txn frame pops its heap on a forwarded raise; outer write persists past a caught throw).
   `compile_correct`, `evalD_agrees_source`, `sim`, `run_evalD` all ⊆ {propext, Classical.choice, Quot.sound}
-  over BOTH arms; ◊2 gate still 0-axiom (independently gated on the committed tree). **NEXT:** ADT
-  `case`/`split`/`unfold` (runtime CASE/SPLIT instruction), then collapse + archive the K3 Calc* matrix
-  (ADR-0017) → ◊3 gate.
+  over BOTH arms; ◊2 gate still 0-axiom (independently gated on the committed tree) + **ADT eliminators —
+  Unit 6, `3252ef8`**: `case`/`split`/`unfold` via runtime `CASE`/`SPLIT`/`UNFOLD` instructions (compile
+  emits without recursing → structural; exec re-compiles the chosen branch — the calculated residual-`Comp`
+  shape of `SUBST`/`APP`, resolving the Unit-2 defer; no flattening). PURE reductions, `evalD` mirrors
+  kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held. **NEXT (final ◊3 step):** collapse + archive the
+  K3 `Calc*` matrix (ADR-0017) — the new `CalcVM.lean` now covers the full feature surface (pure CBPV + deep
+  handlers + resumptive state + transaction + ADT) the K3 matrix calculated over the old K2 `Expr`; unify +
+  diff-test green + `archive/` the matrix ⟹ **◊3 met**.
 
 **Design corpus settled (2026-06-22/23):** **ADR-0026** (correctness = ONE dispatched ladder
 verified>tested>unsafe; kernel=semantics, checkers=pluggable; moat = sound floor + laddered specs;
