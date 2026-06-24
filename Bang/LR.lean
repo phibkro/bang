@@ -634,9 +634,18 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
       | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂') =>
           ∃ q A B, C = CTy.arr q A B ∧
             Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁' K₂'
-      -- handleF: tail recurses at the same hole type (handler-agnostic at the stack level).
-      | (Frame.handleF _h :: K₁'), (Frame.handleF _h' :: K₂') =>
-          KrelS n C D ε K₁' K₂'
+      -- handleF: tail recurses at the same hole type (handler return = identity, ADR-0023 Q6, so the
+      -- block's returner type = the body's = the tail's hole type — `C` is preserved across the frame).
+      -- ◊4.5b sub-block (f): the handlers MUST be EQUAL (`h₁ = h₂`). The producer's `up` some-half
+      -- (`splitAt = some`) dispatches at the nearest catching frame; without `h₁ = h₂` the two stacks
+      -- could catch `(ℓ,op)` at DIFFERENT positions (or one catch, one walk past) ⇒ the dispatched
+      -- configs would be unrelated ⇒ co-equivalence FALSE (the build-traced gap, Compat:2003). Equal
+      -- handlers make `splitAt` fire at the SAME position with the SAME handler + the SAME reinstalled
+      -- state (state/txn store lives IN the handler, so `h₁=h₂` ⇒ identical resume), so the dispatched
+      -- inner/outer segments stay `KrelS`-related (`krelS_splitAt_decomp`). The 6 CONSUMER cases all
+      -- build EQUAL-handler stacks (`krelS_handleF_intro`), so they supply `h₁=h₂` for free.
+      | (Frame.handleF h₁ :: K₁'), (Frame.handleF h₂ :: K₂') =>
+          h₁ = h₂ ∧ KrelS n C D ε K₁' K₂'
       | _, _ => False
 termination_by n _ _ _ K _ => (n, 1, K.length, 0)
 decreasing_by
@@ -672,7 +681,7 @@ end
 @[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {h h' : Handler}
     {K₁ K₂ : Stack} :
     KrelS n C D ε (Frame.handleF h :: K₁) (Frame.handleF h' :: K₂) ↔
-      KrelS n C D ε K₁ K₂ := by
+      h = h' ∧ KrelS n C D ε K₁ K₂ := by
   rw [KrelS]
 
 /-- ◊4.5b μ-floor: `CrelK 0` is VACUOUS (the metered obs at 0 — `ConvergesC_le 0` is `False`). -/
@@ -751,7 +760,7 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
       exact ⟨q, A, B, hC, hcw₁, hcw₂, VrelK_mono hmn hw, KrelS_mono hmn htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hmn, hK => by
       rw [krelS_handleF] at hK ⊢
-      exact KrelS_mono hmn hK
+      exact ⟨hK.1, KrelS_mono hmn hK.2⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
@@ -782,7 +791,7 @@ theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_anti hεε' htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
-      exact KrelS_eff_anti hεε' hK
+      exact ⟨hK.1, KrelS_eff_anti hεε' hK.2⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
@@ -813,7 +822,7 @@ theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_mono hεε' htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
-      exact KrelS_eff_mono hεε' hK
+      exact ⟨hK.1, KrelS_eff_mono hεε' hK.2⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
@@ -903,7 +912,7 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   refine coApproxC_le_reduce
                     (cfg₁' := (K₁', Comp.ret v₁)) (cfg₂' := (K₂', Comp.ret v₂))
                     rfl (by intro u; simp) rfl (by intro u; simp) ?_
-                  exact ih (K₂ := K₂') hc₁ hc₂ hv hK
+                  exact ih (K₂ := K₂') hc₁ hc₂ hv hK.2
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
 

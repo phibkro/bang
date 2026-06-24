@@ -1530,7 +1530,7 @@ passes through at the relation level); the body row `e` is ARBITRARY w.r.t. the 
 theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Handler}
     {K₁ K₂ : Stack} (hK : KrelS n C D φ K₁ K₂) :
     KrelS n C D e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
-  rw [krelS_handleF]; exact KrelS_eff_cast hK
+  rw [krelS_handleF]; exact ⟨rfl, KrelS_eff_cast hK⟩
 
 /-- ◊4.5b the `handleThrows` compat core at `CrelK`. REFOCUS `(K, handle h M) ↦ (handleF h::K, M)`
 (one PUSH step), then run `M` (related at its body row `e`) through the handleF-extended stack, shown
@@ -2114,12 +2114,13 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- (`HasStack.handleF`: `K` is typed at `φ`, the frame at `e ≤ ℓ⊔φ`). `KrelS_eff_cast` bridges
       -- `φ → e` with no ordering — the SINGLE-ROW `KrelS` expresses the discharge (no two-row needed)
       -- because ε is inert in the answer-typed core (no `Srel` stuck-half gates on it). [decision: single-row]
-      rw [krelS_handleF]; exact KrelS_eff_cast (ihK hCo)
+      -- ◊4.5b sub-block f: the self-relation makes EQUAL handlers (same `h` both sides) ⇒ `h = h` by `rfl`.
+      rw [krelS_handleF]; exact ⟨rfl, KrelS_eff_cast (ihK hCo)⟩
   | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
       -- resumptive `state` frame — same row-discharge as handleF (the ▷ payoff is in the CONSUMER cases of
       -- `crelK_fund`, not the self-relation; the stack relation is handler-agnostic).
-      rw [krelS_handleF]; exact KrelS_eff_cast (ihK hCo)
+      rw [krelS_handleF]; exact ⟨rfl, KrelS_eff_cast (ihK hCo)⟩
   | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
-      rw [krelS_handleF]; exact KrelS_eff_cast (ihK hCo)
+      rw [krelS_handleF]; exact ⟨rfl, KrelS_eff_cast (ihK hCo)⟩
 
 end Bang
