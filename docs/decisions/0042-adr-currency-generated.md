@@ -42,10 +42,14 @@ hand-maintained. Drift moves from "caught if someone notices" to **unrepresentab
    `<!-- BEGIN/END GENERATED ADR INDEX -->` markers (hand-written preamble above
    the markers is preserved). It is idempotent and supports `--check`.
 3. **The gate.** `just adr-check` runs `--check`: (a) the README generated region
-   matches a fresh regen, AND (b) a **bidirectional cross-reference** — every Q
+   matches a fresh regen; (b) a **bidirectional cross-reference** — every Q
    marked `✓ RESOLVED (ADR-n)` in OPEN_QUESTIONS declares `Resolves: Qn` on
-   ADR-n, and every ADR `Resolves: Qn` corresponds to a non-OPEN Qn. Wired into
-   `just verify`. This is the exact check that would have failed on the Q19 drift.
+   ADR-n, and every ADR `Resolves: Qn` corresponds to a non-OPEN Qn; and (c) a
+   **Status-consistency** leg — an ADR's machine-frontmatter Status must agree
+   (first word) with its prose `**Status**` narrative bullet, since the two are
+   two copies of a fact that changes (Accepted→Superseded). Wired into
+   `just verify`. (b) is the exact check that would have failed on the Q19 drift;
+   (c) guards the residual dual-Status copy the frontmatter sweep introduced.
 4. **Onboarding trigger.** Before grilling or opening a design question, read the
    generated ledger first — a question with an ADR is closed (CLAUDE.md doc
    discipline + `development-lifecycle.md`).

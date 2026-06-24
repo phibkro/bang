@@ -30,8 +30,9 @@ verify: selfcheck build audit adr-check
 adr-index:
     python3 tools/gen-adr-index.py
 
-# Gate the ADR ledger: README generated region is current AND every Q marked
-# RESOLVED(ADR-n) in OPEN_QUESTIONS ⟺ ADR-n declares `Resolves: Qn`.
+# Gate the ADR ledger: README generated region is current; every Q marked
+# RESOLVED(ADR-n) in OPEN_QUESTIONS ⟺ ADR-n declares `Resolves: Qn`; and each
+# ADR's sentinel-frontmatter Status agrees with its prose Status bullet.
 adr-check:
     python3 tools/gen-adr-index.py --check
 

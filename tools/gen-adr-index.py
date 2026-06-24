@@ -25,7 +25,9 @@ normalised away, so the long-standing prose bullets (`- **Status:** …`,
 
 Usage:
     gen-adr-index.py            # rewrite the generated region in README.md
-    gen-adr-index.py --check    # exit 1 if the region is stale; print the diff
+    gen-adr-index.py --check    # exit 1 on any of: a stale region, a Q⟺ADR
+                                # `Resolves:` mismatch, or a Status drift between
+                                # an ADR's sentinel frontmatter and its prose bullet
 """
 
 from __future__ import annotations
@@ -98,19 +100,41 @@ def parse_adr(path: Path) -> dict:
         )
     start = lines.index(SENTINEL) + 1
     in_bullets = False
-    for line in lines[start:]:
+    block_end = len(lines)
+    for off, line in enumerate(lines[start:]):
         m = FIELD_RE.match(line)
         if m:
             fields[norm_key(m.group(1))] = m.group(2).strip()
             in_bullets = True
         elif line.strip() == "":
             if in_bullets:
+                block_end = start + off
                 break  # blank line after the bullets ends the frontmatter block
             continue  # blank line(s) between sentinel and first bullet
         else:
+            block_end = start + off
             break  # any non-bullet, non-blank line ends the block
 
-    return {"num": num, "file": path.name, "title": title, "fields": fields}
+    # The prose Status (the human narrative bullet AFTER the block, or a `##
+    # Status` section as in 0016) — the second copy of a fact that can drift from
+    # the sentinel Status. None if the ADR has no separate prose Status.
+    prose_status = None
+    for line in lines[block_end:]:
+        m = FIELD_RE.match(line)
+        if m and norm_key(m.group(1)) == "status":
+            prose_status = m.group(2).strip()
+            break
+    if prose_status is None:
+        for i, line in enumerate(lines):
+            if line.strip() == "## Status":
+                for nxt in lines[i + 1:]:
+                    if nxt.strip():
+                        prose_status = nxt.strip()
+                        break
+                break
+
+    return {"num": num, "file": path.name, "title": title,
+            "fields": fields, "prose_status": prose_status}
 
 
 def status_of(fields: dict[str, str]) -> str:
@@ -210,6 +234,29 @@ def parse_open_questions() -> dict[int, dict]:
     return out
 
 
+def status_word(raw: str | None) -> str | None:
+    """First word of a Status value, normalized — 'Accepted (…)' → 'accepted'."""
+    return raw.split()[0].rstrip(".").lower() if raw else None
+
+
+def status_consistency_check(adrs: list[dict]) -> list[str]:
+    """Each ADR carries Status twice (sentinel frontmatter + prose narrative).
+    They must agree on the first status word, else the two copies have drifted
+    (e.g. an Accepted→Superseded flip applied to one but not the other)."""
+    errs: list[str] = []
+    for a in adrs:
+        sentinel = status_word(a["fields"].get("status"))
+        prose = status_word(a.get("prose_status"))
+        if prose is None:
+            continue  # no second copy → nothing to drift against
+        if sentinel != prose:
+            errs.append(
+                f"{a['num']}: sentinel Status `{sentinel}` ≠ prose Status "
+                f"`{prose}` ({a['file']}). Reconcile the two copies."
+            )
+    return errs
+
+
 def crossref_check(adrs: list[dict]) -> list[str]:
     """The Q ⟺ ADR bidirectional check (catches the Q19 drift). Returns errors."""
     errs: list[str] = []
@@ -288,8 +335,14 @@ def main() -> int:
             for e in errs:
                 print(f"       {e}")
             rc = 1
+        serrs = status_consistency_check(adrs)
+        if serrs:
+            print("FAIL: ADR Status drift (sentinel frontmatter ≠ prose narrative):")
+            for e in serrs:
+                print(f"       {e}")
+            rc = 1
         if rc == 0:
-            print("adr-index: OK — README current + Q⟺ADR cross-refs consistent.")
+            print("adr-index: OK — README current + Q⟺ADR + Status copies consistent.")
         return rc
 
     README.write_text(new, encoding="utf-8")
