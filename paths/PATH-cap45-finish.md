@@ -123,6 +123,13 @@ variant OVER-FORBIDS (bans legit stacking, breaks `krelS_refl`) — DO NOT re-tr
 
 ### ★ DESIGN-PANEL RECOMMENDATION (2026-06-24, 5-agent A–E panel) — Architecture **D**, supersedes the vacuity framing above
 
+> **⛔ PROBED — NO-GO (2026-06-24).** A bounded GO/NO-GO build probe (branch `typed-crelk-probe` @ `ffac1b0`)
+> REFUTED Architecture D. `HasStack` pins the BOTTOM junction answer (`hasStack_append_handleF_split`, proven
+> `[propext]`) — but the strip's `letF` recursion needs the INTERMEDIATE `KrelS` hole typed, and there is no
+> `KrelS ⇒ HasStack` bridge (the LR is one-way), so D only RELOCATES the leak. sorryAx-zero needs typing
+> `KrelS`'s intermediate holes = the heavy reshape (4–7 sessions + frozen break), not worth one edge. **The
+> ADR-0043 seam is the verified-final answer.** The plan below is kept for the record (the wall is now known).
+
 A design panel scored five architectures. **Verdict: pursue D (literature-canonical typed `CrelK` that PROVES the MISS), NOT the A-style vacuity above.** The "MISS-vacuous via scope" framing (lines ~99/117) was REFUTED: legitimate handler stacking is well-typed (state-over-throws is COVERED + tested; the row-discharge premise `e ≤ labelEff ℓ ⊔ φ` discharges each frame's label INDEPENDENTLY and lets a different label survive to a deeper catcher), so typing does **not** forbid the wrap — A only RELOCATES the sorry. Rankings: **D best**; A second (dominated — same typing facts, worse killer, plus a self-inflicted frozen-stmt break); E/B/C dead (E's answer-determinism-FALSE is correct *on raw stacks*; B's refinement can't reach a conjunct *inside* the frozen `KrelS` clause; C's intrinsic-typed Frame breaks inv #1/#4 — the oracle/CalcVM link).
 
 **Why D is the cheaper SOUND close (~3–4 sessions, soundness HIGH):**

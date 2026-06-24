@@ -1,6 +1,6 @@
 # 0043 — ◊4.5b: scoped-seam for nested-wrapping-handler resumption (the `lr_sound` moat scope)
 
-- **Status:** Accepted (build-pinned; the relation-level primitive landed, the sorryAx-zero close scoped to a future kernel session, 2026-06-24)
+- **Status:** Accepted — and the seam is now the **verified-FINAL** answer for this edge: the cheap typed-`CrelK` close (Architecture D) was build-probed and is **NO-GO** (2026-06-24; see "Probe result" below). The only remaining close is the heavy index-everything reshape (rabbit-hole, 4–7 sessions + a frozen-statement break), not worth one tested-descent edge.
 - **Layer:** C+ (LR metatheory / proof architecture)
 - **Depends on / amends:** [0041](0041-cap45-recursive-fragment-needs-later-modality.md) (the `▷` subsystem ◊4.5b lives in), [0039](0039-cap4-non-triangleright-split.md) (the ◊4/◊4.5 split), [0026] (the verified-core / tested-superset descent), [0025] (deep resumptive handlers), [0023] (handler dispatch)
 
@@ -91,5 +91,30 @@ deferred together with it as the **"nested-wrap resumption" kernel project** (se
 - The kernel and `KrelS` stay pristine (`e755afa`); `NoWrapMiss` is the durable relation-level artifact.
 - `lr_sound`/`lr_fundamental` retain the single documented `krelS_splitAt_decomp` MISS sorry — the
   honest moat scope, the verified domain being everything except pass-through resumption.
-- The path to sorryAx-zero is fully specified + de-risked-by-isolation: the typed-`CrelK` reshape, a
-  dedicated future kernel session (`PATH-cap45-finish.md`).
+- ~~The path to sorryAx-zero is fully specified~~ → **PROBED, NO-GO** (see below). The seam is final for this edge.
+
+## Probe result (2026-06-24) — Architecture D (cheap typed-`CrelK`) is NO-GO
+
+A 5-agent design panel recommended **Architecture D** (literature-canonical typed `CrelK` that *proves* the
+MISS rather than vacating it; scope as a PREMISE not an index, so the frozen statements survive;
+~3–4 sessions): use `HasStack`'s answer-index to recover the junction answer type the MISS sorry says
+`KrelS` lacks. A bounded GO/NO-GO **build probe** (branch `typed-crelk-probe` @ `ffac1b0`,
+`Bang/Compat.lean` ~1466–1597) split the bet and the build cleanly arbitrated it:
+
+- **Answer-projection half WORKS** — `hasStack_append_handleF_split` is PROVEN, `#print axioms` = `[propext]`.
+  `HasStack` *does* carry the **bottom** junction answer `Dᵢ` invariantly down the left stack. The panel was right here.
+- **Strip half WALLS (the killer)** — `krelS_strip_handleF` carries `sorryAx`. The genuine structural wall is the
+  `letF`/`letF` recursion: the strip's IH demands the recursive `KrelS` at a **returner** hole, but `KrelS.letF`
+  yields a tail at an **arbitrary existential intermediate** `B` that `HasStack` typing of the LEFT stack does
+  **not** pin onto the `KrelS` index — there is **no `KrelS ⇒ HasStack` bridge** (the logical relation is one-way:
+  typing ⇒ related, never the reverse), and even if `B` were pinned it need not be a returner.
+
+So `HasStack` fixes the **answer-projection** (bottom) but the strip's recursion needs the **intermediate**
+`KrelS` hole typed — which the one-way LR cannot supply. **Architecture D only RELOCATES the leak** (E's panel
+finding "`KrelS.letF` existential `B` leaks" is correct *at the build level* and survives full left-stack typing).
+
+**Consequence:** the only path to sorryAx-zero is typing `KrelS`'s **intermediate** holes — i.e. re-indexing the
+whole mutual block (Architecture A / heavy-D), which the panel scored as 4–7 sessions **with** a forced
+frozen-statement break. Not worth it for a single tested-descent edge. **The ADR-0026 scoped seam is the
+verified-final answer.** Durable evidence: `typed-crelk-probe @ ffac1b0` (both lemmas committed, the wall
+documented inline at the `sorry`).
