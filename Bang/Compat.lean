@@ -1532,6 +1532,69 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Han
     KrelS n C D e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
   rw [krelS_handleF]; exact ⟨rfl, KrelS_eff_cast hK⟩
 
+/-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
+`h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
+handler `h` at the SAME position (same inner-prefix length), and the OUTER tails `K₁ₒ, K₂ₒ` stay
+`KrelS`-related at SOME hole type/row `(C', e')`. Proven by induction on `K₁` (the `KrelS` def forces
+matching frame shapes; `letF`/`appF` skip the frame; the `handleF`-HIT case is the split point with the
+tail-relatedness from the clause; the `handleF`-MISS case recurses). The `(C', e')` are existential —
+they are the hole type/row threaded to the split point; the dispatch consumer pins them via the supplied
+resume relation. shape: biernacki-popl18 §5.4 (set-row `ρ`-free split). -/
+theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
+    {K₁ K₂ : Stack} {ℓ : Label} {op : OpId} {K₁ᵢ K₁ₒ : Stack} {h : Handler}
+    (hK : KrelS n C D e K₁ K₂)
+    (hsp : Bang.splitAt K₁ ℓ op = some (K₁ᵢ, h, K₁ₒ)) :
+    ∃ K₂ᵢ K₂ₒ C' e', Bang.splitAt K₂ ℓ op = some (K₂ᵢ, h, K₂ₒ) ∧ KrelS n C' D e' K₁ₒ K₂ₒ := by
+  induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e with
+  | nil => simp [Bang.splitAt] at hsp
+  | cons fr K₁' ih =>
+      match K₂ with
+      | [] => exact absurd hK (by simp only [KrelS]; cases fr <;> exact not_false)
+      | fr₂ :: K₂' =>
+          cases fr with
+          | letF N₁ =>
+              cases fr₂ with
+              | letF N₂ =>
+                  rw [krelS_letF] at hK
+                  obtain ⟨q, A, B, φ, hC, hbody, htail⟩ := hK
+                  rw [splitAt_letF, Option.map_eq_some_iff] at hsp
+                  obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+                  simp only [Prod.mk.injEq] at heq
+                  obtain ⟨_, rfl, rfl⟩ := heq
+                  obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail2⟩ := ih htail hsp'
+                  exact ⟨_, K₂ₒ, C', e', by rw [splitAt_letF, hsp2]; rfl, htail2⟩
+              | _ => simp only [KrelS] at hK
+          | appF w₁ =>
+              cases fr₂ with
+              | appF w₂ =>
+                  rw [krelS_appF] at hK
+                  obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
+                  rw [splitAt_appF, Option.map_eq_some_iff] at hsp
+                  obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+                  simp only [Prod.mk.injEq] at heq
+                  obtain ⟨_, rfl, rfl⟩ := heq
+                  obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail2⟩ := ih htail hsp'
+                  exact ⟨_, K₂ₒ, C', e', by rw [splitAt_appF, hsp2]; rfl, htail2⟩
+              | _ => simp only [KrelS] at hK
+          | handleF hh₁ =>
+              cases fr₂ with
+              | handleF hh₂ =>
+                  rw [krelS_handleF] at hK
+                  obtain ⟨rfl, htail⟩ := hK
+                  by_cases hcatch : handlesOp hh₁ ℓ op = true
+                  · rw [splitAt_handleF_hit K₁' hcatch] at hsp
+                    rw [Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
+                    obtain ⟨_, rfl, rfl⟩ := hsp
+                    exact ⟨[], K₂', C, e, splitAt_handleF_hit K₂' hcatch, htail⟩
+                  · simp only [Bool.not_eq_true] at hcatch
+                    rw [splitAt_handleF_miss K₁' hcatch, Option.map_eq_some_iff] at hsp
+                    obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+                    simp only [Prod.mk.injEq] at heq
+                    obtain ⟨_, rfl, rfl⟩ := heq
+                    obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail2⟩ := ih htail hsp'
+                    exact ⟨_, K₂ₒ, C', e', by rw [splitAt_handleF_miss K₂' hcatch, hsp2]; rfl, htail2⟩
+              | _ => simp only [KrelS] at hK
+
 /-- ◊4.5b the `handleThrows` compat core at `CrelK`. REFOCUS `(K, handle h M) ↦ (handleF h::K, M)`
 (one PUSH step), then run `M` (related at its body row `e`) through the handleF-extended stack, shown
 `KrelS`-related by `krelS_handleF_intro`. The block discharges `ℓ` from `e` to `φ`. ▷-free. -/
