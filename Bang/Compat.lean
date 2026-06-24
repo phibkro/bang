@@ -237,6 +237,28 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom]; exact ih _
 
+/-- ◊4.5 RESUME INFRA: `closeC` distributes through a `state ℓ s` handler. UNLIKE `throws`, the `state`
+handler CARRIES a value `s` (`Handler.substFrom k v (state ℓ s) = state ℓ (substFrom k v s)`), so the
+stored value closes too — `closeC δ (handle (state ℓ s) M) = handle (state ℓ (closeV δ s)) (closeC δ M)`.
+The `handle` former does not bind, so both `s` and the body `M` close at level 0 (structural). -/
+@[simp] theorem closeC_handleState (δ : List Val) (ℓ : Label) (s : Val) (M : Comp) :
+    closeC δ (Comp.handle (Handler.state ℓ s) M)
+      = Comp.handle (Handler.state ℓ (closeV δ s)) (closeC δ M) := by
+  induction δ generalizing s M with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom, Handler.substFrom]; exact ih _ _
+
+/-- ◊4.5 RESUME INFRA: `closeC` distributes through a `transaction ℓ Θ` handler. The heap cells are
+treated as CLOSED (ADR-0030: `Handler.substFrom _ (transaction ℓ Θ) = transaction ℓ Θ`, identity), so
+the heap is untouched — exactly like `throws`. Only the body `M` closes:
+`closeC δ (handle (transaction ℓ Θ) M) = handle (transaction ℓ Θ) (closeC δ M)`. -/
+@[simp] theorem closeC_handleTransaction (δ : List Val) (ℓ : Label) (Θ : Store) (M : Comp) :
+    closeC δ (Comp.handle (Handler.transaction ℓ Θ) M)
+      = Comp.handle (Handler.transaction ℓ Θ) (closeC δ M) := by
+  induction δ generalizing M with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom]; exact ih _
+
 @[simp] theorem closeV_vunit (δ : List Val) : closeV δ Val.vunit = Val.vunit := by
   induction δ with
   | nil => rfl
@@ -1032,6 +1054,61 @@ theorem krel_handleF_throws {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
     | zero => exact absurd hS (by unfold Srel; exact not_false)
   · -- ARROW half: VACUOUS — F q A ≠ arr.
     intro q' A' B' hEq; exact absurd hEq (by simp)
+
+/-- ◊4.5 RESUME INFRA: the `handleF h` frame-extension `Krel` lemma GENERALIZED to ANY handler `h`
+(the `krel_handleF_throws` argument is handler-AGNOSTIC). KEY INSIGHT (unchanged from throws): `Krel`'s
+stuck-half quantifies ONLY over `Srel` pairs, which carry `splitAt (handleF h :: K) = none` — i.e. ops
+the WHOLE extended stack leaves UNHANDLED. The op a `state`/`transaction` frame CATCHES (`get`/`put`/
+`newTVar`/…) has `splitAt ≠ none`, so it never appears in the `Srel` premise; it is consumed by the
+MACHINE's dispatch inside the body's run, NOT observed by this stack relation. So NO resume reasoning is
+needed at the `Krel` level — the `Srel` RESUME clause is consumed elsewhere (in `crel_fund`'s body
+relatedness), not here. The three halves hold for every `h`:
+  • RETURN half: `handleF h :: K, ret v ↦ K, ret v` (identity return, ADR-0023 Q6) → `converges_handleF_ret`.
+  • STUCK half: an `Srel` pair under `handleF h::K` has `splitAt = none` → never converges
+    (`not_converges_up_splitNone`) → vacuous. Handler-agnostic (uses only the stack + the none-split).
+  • ARROW half: vacuous (`F q A ≠ arr`).
+EnvRel-INDEPENDENT (a pure stack/handler lemma — the build arbitrates this independence). -/
+theorem krel_handleF {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {h : Handler}
+    {K₁ K₂ : Stack} (hK : Krel n (CTy.F q A) φ K₁ K₂) :
+    Krel n (CTy.F q A) e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
+  rw [Krel]; rw [Krel] at hK
+  intro j hj
+  refine ⟨?_, ?_, ?_⟩
+  · -- RETURN half: the handler frame returns identically (any h); ambient Krel return fires at index j.
+    intro q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
+    rw [converges_handleF_ret] at hconv₁
+    rw [converges_handleF_ret]
+    exact (hK j hj).1 q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
+  · -- STUCK half: the Srel pair is an op the WHOLE handleF::K stack leaves unhandled — never converges.
+    intro c₁ c₂ hS
+    cases j with
+    | succ k =>
+        rw [Srel] at hS
+        obtain ⟨ℓ', op, v₁, v₂, _, _, hc₁, _, _, _, _, _, hsp₁, _, _⟩ := hS
+        intro hconv₁
+        rw [hc₁] at hconv₁
+        exact absurd hconv₁ (not_converges_up_splitNone (Frame.handleF h :: K₁) ℓ' op v₁ hsp₁)
+    | zero => exact absurd hS (by unfold Srel; exact not_false)
+  · -- ARROW half: VACUOUS — F q A ≠ arr.
+    intro q' A' B' hEq; exact absurd hEq (by simp)
+
+/-- ◊4.5 RESUME INFRA: `krel_handleF` specialized to a `state ℓ s` frame (the resumptive analogue of
+`krel_handleF_throws`). The resume seam (`Srel` output `Crel`) is NOT consumed here — see `krel_handleF`'s
+docstring: the `get`/`put` ops this frame catches never enter the `Krel` stuck-half. -/
+theorem krel_handleF_state {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label} {s : Val}
+    {K₁ K₂ : Stack} (hK : Krel n (CTy.F q A) φ K₁ K₂) :
+    Krel n (CTy.F q A) e (Frame.handleF (Handler.state ℓ s) :: K₁)
+                         (Frame.handleF (Handler.state ℓ s) :: K₂) :=
+  krel_handleF hK
+
+/-- ◊4.5 RESUME INFRA: `krel_handleF` specialized to a `transaction ℓ Θ` frame (the multi-cell resumptive
+analogue). Same handler-agnostic argument — the `newTVar`/`readTVar`/`writeTVar` ops this frame catches
+never enter the `Krel` stuck-half, so no heap/resume reasoning is needed at the stack-relation level. -/
+theorem krel_handleF_transaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
+    {Θ : Store} {K₁ K₂ : Stack} (hK : Krel n (CTy.F q A) φ K₁ K₂) :
+    Krel n (CTy.F q A) e (Frame.handleF (Handler.transaction ℓ Θ) :: K₁)
+                         (Frame.handleF (Handler.transaction ℓ Θ) :: K₂) :=
+  krel_handleF hK
 
 /-- The `handleThrows` compatibility core (`compat_handleThrows`): a body `Crel`-related at its effect
 `e` (the IH for `M`) gives the `handle (throws ℓ) M` block `Crel`-related at the discharged effect `φ`.
