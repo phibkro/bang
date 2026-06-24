@@ -60,7 +60,7 @@
                                      carrier on Krel/Srel/EnvRel (ADR-0036); arrow clause = PEELING +
                                      krel_nil_succ F-restriction (ADR-0038 — both pure forms refuted by
                                      the build). 16 proof commits f6d0ce2…69d70b1, 723 jobs green.
-◊4.5 ◐ LR ▷-subsystem (IN PROGRESS)── ◊4.5a DONE + banked (main `974e169`): the IxFree reshape — non-▷ spine
+◊4.5 ✓ LR rebuild — lr_sound CLOSED mod append crux (`a5464da`, 2026-06-24) ── ◊4.5a banked (main `974e169`): the IxFree reshape — non-▷ spine
                                      re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `4b2f973`),
                                      `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`b5cfc88`), resume
                                      infra krel_handleF* (`421edc0`), ▷-guarded Vrel μ-clause strict-< (`33f50ea`,
@@ -81,8 +81,17 @@
                                      = multi-session re-prove-all-of-Compat at the mutual relation (IC `krels` in
                                      flight); plan in `paths/PATH-cap45-rebuild.md`, decision ADR-0041 (last amend).
                                      Prior CLOSED work (μ-floor/handler-consumer/krel_refl) re-proves at KrelS.
-                                     Then lr_sound → THE MOAT (contextual equiv incl. resumptive handlers).
-◊5   Compiler v0 (IN PROGRESS)     ── on branch `cap5-compiler` (`b99de40`, NOT yet merged). EFFECT-FREE
+                                     RESOLVED 2026-06-24: the answer-typed KrelS rebuild + ALL handler-consumer cases + THROWS-producer CLOSED
+                                     end-to-end (`05d3f75`); (g) migration DONE (frozen Crel:=CrelK, old Krel/Srel/crel_fund
+                                     DELETED, lr_fundamental:=crelK_fund); lr_sound CLOSED over a TYPED ⊑ (ctxApprox restricted to
+                                     WELL-TYPED observation contexts — decision (a); the untyped form made lr_sound FALSE), on
+                                     `cap45-final` (`a5464da`), append-crux-only. LAST sorry = state/txn RESUMPTIVE composition
+                                     (`krelS_append` + ▷-metering, 6 Compat spots) — RESEARCH in flight on `cap45-append` (task #10);
+                                     closing it → lr_sound FULL trusted-three = THE MOAT (contextual equiv incl. resumptive
+                                     handlers). SEAM (ADR-0026: state/txn-resume tested) banked if the metering walls. NOT yet
+                                     merged to main (carries the append sorry + diverges from ◊5 on Spec.lean).
+◊5 ✓ Compiler v0 — DONE, IN MAIN  ── `b0a9c4d` (2026-06-24). source→WASM verified trusted-three over the
+                                     WHOLE effect language — effect-free + ALL handlers, ungated. EFFECT-FREE
                                      (pure CBPV + ADT) compiler verified end-to-end source→WASM, AXIOM-CLEAN
                                      (`compile_forward_sim_pure` ⊆ trusted-three; zero_grade_no_code +
                                      compile_well_typed [propext]) — UNCHANGED + solid. Two-hop via the proven
@@ -99,13 +108,19 @@
                                      arms (`compile (subst v N) c_cvm` whole, inner markH captures real cont) —
                                      bounded redesign, keeps verified handlers; or (SEAM) draw v1's verified line at
                                      effect-free, handlers tested-not-verified (ADR-0026 ladder). Operator's call;
-                                     write the ADR when decided. Task #40.
+                                     RESOLVED 2026-06-24: FIX chosen + DONE — threaded the CalcVM cont `c_cvm` whole (markH captures the real
+                                     cont); GAP-2 closed via a BOUNDED RE-WIRE (`evalD_complete_gen` total + `exec_wexec_sim_ok`
+                                     handler-complete → compile_correct → run); `compile_forward_sim` trusted-three, all handlers,
+                                     MERGED to main `b0a9c4d`, independently gated. Task #40 CLOSED.
 ◊6   Release v0
 ```
 
-> **Product-spine note:** the surface **trait/law loop** (`Bang/Surface/Trait.lean`, `1f0e6a3`, merged)
-> is verified — eq→preorder→order + Int:Order discharged proof-first, run via `Source.eval`, one marked
-> descent (ADR-0040). First "write a verified program" loop, banked.
+> **Product-spine note (2026-06-24):** the surface **trait/law loop** (`Bang/Surface/Trait.lean`) is
+> verified + GATED in the build graph (`19609cf`) — eq→preorder→order + Int:Order proof-first, run via
+> `Source.eval` (ADR-0040). The TESTED rung now BINDS its check BY CONSTRUCTION (`d45f62a`): a law false on
+> its sample is unconstructible (evidence = sample + kernel-checked `holds`), teeth mutation-tested.
+> The **ADR decided-ledger is GENERATED** from frontmatter (`bac67d0`, ADR-0042; `just adr-check` = README
+> current + Q⟺ADR + Status cross-refs) — ADR-currency drift is now a build failure, not a silent re-derivation.
 
 ## Most recent stable checkpoint
 
