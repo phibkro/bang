@@ -1474,20 +1474,26 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
           -- ADR-0041's plain-Nat proof said was impossible, now build-PROVEN over the metered observation.
           exact crel_unfold hsc₁ hsc₂ (vrel_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
-      -- ◊4.5b WALL (op-PRODUCER, the last ▷-case). `Crel n (F q B) φ (up ℓ op v₁') (up ℓ op v₂')` against an
-      -- ARBITRARY `Krel`-stack. CASE on `splitAt K₁ ℓ op`:
-      --   • `none` (stack leaves `(ℓ,op)` unhandled): `(K₁, up…)` is STUCK ⇒ `ConvergesC_le` False ⇒ the
-      --     metered observation is VACUOUS — this half CLOSES (and is all `lr_sound`/`[]`-adequacy needs).
-      --   • `some` (stack HANDLES it): `(K₁, up…)` dispatches/resumes — needs a `Krel`-level handler-
-      --     COMPATIBILITY fact our `Krel`/`Srel` don't carry. TWO precise gaps (build-isolated):
-      --       (i)  the `Srel` RESUME clause obligation `Crel k (plug K₁ (ret u)) (plug K₂ (ret u))` does NOT
-      --            follow from `Krel`'s return half `CoApproxC_le k (K₁, ret u) (K₂, ret u)`: the resume
-      --            RE-quantifies over fresh outer stacks (nested observation), the return half is direct.
-      --       (ii) no `Krel` clause relates how two `Krel`-stacks DISPATCH the same op (row-discipline:
-      --            a stack typed at row `φ ∋ ℓ` should leave `ℓ` unhandled — not encoded in `Krel`).
-      --   Both stem from the SAME root: `Krel`/`Srel` lack the op-producer's handler/row compatibility.
-      --   STOPPED + reported (the resume-composition wall). The 3 CONSUMER cases (handleThrows/State/Txn)
-      --   ARE closed — `krel_handleF` is handler-agnostic; the producer is the genuinely-open one.
+      -- ◊4.5b — the LAST ▷-case (op-PRODUCER). `Crel n (F q B) φ (up ℓ op v₁') (up ℓ op v₂')`. The `up`
+      -- `splitAt = none` (UNHANDLED) half CLOSES via metered stuck-vacuity (Biernacki compat-op, Lemma 5,
+      -- observed by `ρ-free` contexts only). The `splitAt = some` (HANDLED) half is the open piece.
+      --
+      -- APPROVED DESIGN (lead-signed-off, Biernacki POPL'18 §3.3-grounded; NO frozen-statement change):
+      --   The handled half is NOT the producer's job. In Biernacki a `K⟦τ/ε⟧` stack at row `ε ∋ ℓ` is
+      --   provably `ρ-free` for `ℓ` (a handling stack FAILS the stuck-half — it dispatches `ℓ`-raising
+      --   `S`-terms instead of relating them stuck). OUR `Srel` BAKES `splitAt = none` into the pair, so a
+      --   handling stack satisfies our stuck-half VACUOUSLY — too weak to EXCLUDE it. FIX:
+      --     (1) drop the baked `splitAt = none` from `Srel`; the `Krel` stuck-half quantifies `ℓ`-raising
+      --         terms generally ⇒ `ρ-free` becomes DERIVABLE (`Krel n C ε K → splitAt K ℓ = none` for
+      --         `ℓ ≤ ε`) ⇒ the handled half is vacuous ⇒ `up` closes via the `none`-half.
+      --     (2) the handled-dispatch work MOVES to the handler CONSUMER cases (`compat_handle*`), re-proven
+      --         at the DISCHARGED row via Biernacki Lemma-4-cond-4 (relate the op-raising body THROUGH the
+      --         handler's dispatch). This RE-OPENS the 3 handler cases below — their current `krel_handleF`
+      --         at body-effect `e ∋ ℓ` is UNPROVABLE under the row-disciplined `Krel` (it produces a
+      --         handling stack). WF: the resume is a ▷-drop (same shape as `Crel_head_step`); ▷-infra
+      --         transfers. NOTE: Biernacki's `S`-`µ` (Fig 8) is the UNHANDLED resume relation — our `Srel`
+      --         resume clause ALREADY has it; the HANDLED dispatch is the handler's (Lemma 7), not a new
+      --         `Srel` clause. Build deferred to a fresh focused session (Srel/Krel reshape + 3 re-proofs).
       intro n δ₁ δ₂ hδ; sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- throws is ▷-free (zero-shot abort, no resume): compat_handleThrows + closeC_handleThrows.
