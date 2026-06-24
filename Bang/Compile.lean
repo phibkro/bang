@@ -1513,17 +1513,30 @@ theorem compile_forward_sim_pure {c : Comp} {v : Val} {fuel : Nat}
   rw [hb]
 
 /-- `compile_forward_sim` proof. The PURE fragment is PROVEN axiom-clean
-(`compile_forward_sim_pure`, GAP 1 closed). The remaining `sorry` is GAP 2 only:
-the NON-pure fragment (`up`/`handle`/ADT) — Milestone B (handlers ↦ generator
-suspend/resume) + a later ADT increment, where `compileC`'s lowering drops those
-opcodes so the simulation does not yet hold. -/
+(`compile_forward_sim_pure`, GAP 1 closed). The remaining `sorry` is GAP 2: the
+NON-pure fragment (`up`/`handle`).
+
+  MODEL STATUS (this commit): the WASM model is now SOUND for handlers — `wexec`
+  re-`compile`s residual `subst …` THREADING the CalcVM continuation, so a
+  re-compiled `handle` body's `markH` captures the TRUE outer continuation (the
+  former stop-early abort defect is FIXED; the §7b probes are the build-enforced
+  witnesses, `wexec ≡ Source.eval` on handler programs incl. the ex-counterexample).
+
+  GAP 2 is now PURELY the PROOF extension (no model blocker): extend the two bridges
+  past the pure fragment —
+    · `evalD_complete_gen` (`PureCtx K`/`Comp.Pure c`-gated) to the `handleF`/`up`
+      arms, threading non-empty σ/τ stores (the proof currently runs at `[] []`);
+    · `exec_wexec_sim` (`CodePure`-gated) to its MARK/UNMARK/OP arms — the handler-
+      helper commutation lemmas (`wStateUpdate_comm`/`wUnwindFind_comm`) and
+      `injHStack` are already in place FOR these arms.
+  A distinct Milestone-B effort, not a localized fix. -/
 theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
     (h : Source.eval fuel c = Result.done v) :
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := by
   by_cases hpure : Wasmfx.Comp.Pure c
   · -- PURE fragment: GAP 1 closed, axiom-clean.
     exact compile_forward_sim_pure hpure h
-  · -- NON-pure (Milestone B + ADT increment): GAP 2.
+  · -- NON-pure (handlers): GAP 2 — proof extension only (model now sound, see §7b).
     exact ⟨0, by sorry⟩
 
 /-! ## §7b — HANDLER soundness probes (◊5 — wexec ≡ kernel, including the FORMER defect)
