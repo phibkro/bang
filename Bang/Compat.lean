@@ -1615,6 +1615,32 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                     exact ⟨_, K₂ₒ, C', e', by rw [splitAt_handleF_miss K₂' hcatch, hsp2]; rfl, htail2, hres2⟩
               | _ => simp only [KrelS] at hK
 
+/-- `splitAt` returns a handler that CATCHES `(ℓ, op)` (the split point is a matching frame). The
+producer reads this off to discharge the resume conjunct's `handlesOp` guard. -/
+theorem splitAt_some_handlesOp {K : EvalCtx} {ℓ : Label} {op : OpId} {Kᵢ Kₒ : EvalCtx} {h : Handler}
+    (hsp : Bang.splitAt K ℓ op = some (Kᵢ, h, Kₒ)) : Bang.handlesOp h ℓ op = true := by
+  induction K generalizing Kᵢ Kₒ h with
+  | nil => simp [Bang.splitAt] at hsp
+  | cons fr K ih =>
+    cases fr with
+    | letF N =>
+        rw [splitAt_letF, Option.map_eq_some_iff] at hsp
+        obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+        simp only [Prod.mk.injEq] at heq; exact heq.2.1 ▸ ih hsp'
+    | appF w =>
+        rw [splitAt_appF, Option.map_eq_some_iff] at hsp
+        obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+        simp only [Prod.mk.injEq] at heq; exact heq.2.1 ▸ ih hsp'
+    | handleF hh =>
+        by_cases hc : handlesOp hh ℓ op = true
+        · rw [splitAt_handleF_hit K hc] at hsp
+          rw [Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
+          obtain ⟨_, rfl, _⟩ := hsp; exact hc
+        · simp only [Bool.not_eq_true] at hc
+          rw [splitAt_handleF_miss K hc, Option.map_eq_some_iff] at hsp
+          obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+          simp only [Prod.mk.injEq] at heq; exact heq.2.1 ▸ ih hsp'
+
 /-- ◊4.5b the `handleThrows` compat core at `CrelK`. REFOCUS `(K, handle h M) ↦ (handleF h::K, M)`
 (one PUSH step), then run `M` (related at its body row `e`) through the handleF-extended stack, shown
 `KrelS`-related by `krelS_handleF_intro`. The block discharges `ℓ` from `e` to `φ`. ▷-free. -/
@@ -2134,7 +2160,60 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       --     conjunct lives in the def, ALL consumers must supply it for ALL handler kinds ⇒ append is
       --     REQUIRED to green the build (not optional), even for a throws-only producer close.
       --   FALLBACK (ADR-0026 seam): one documented producer sorry if the metering walls after a real attempt.
-      intro n δ₁ δ₂ hδ; sorry
+      -- ◊4.5b PRODUCER CLOSE (throws fully; state/txn route to the ONE append sorry). The none-half is
+      -- vacuous; the some-half decomposes (`krelS_splitAt_decomp`), and for THROWS the dispatch agrees
+      -- with the `[]`-prefix resume conjunct (Kᵢ discarded) ⇒ `coApproxC_le_anti_step` + the extracted
+      -- `hres` closes, with the type alignment from `hArg` (opArg ℓ op = A) + `handlesOp_label`.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_up, closeC_up]
+      have hvk : VrelK n A (closeV δ₁ v) (closeV δ₂ v) := vrelK_fund hv n δ₁ δ₂ hδ
+      have hcv₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hcv₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      set v₁ := closeV δ₁ v with hv₁def
+      set v₂ := closeV δ₂ v with hv₂def
+      rw [CrelK]
+      intro D K₁ K₂ hK
+      cases hsp1 : Bang.splitAt K₁ ℓ op with
+      | none =>
+          intro hconv; exact absurd hconv (not_convergesC_le_up_splitNone K₁ ℓ op v₁ hsp1)
+      | some t =>
+          obtain ⟨K₁ᵢ, h, K₁ₒ⟩ := t
+          have hcatch : Bang.handlesOp h ℓ op = true := splitAt_some_handlesOp hsp1
+          have hlbl : h.label = ℓ := handlesOp_label hcatch
+          obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail, hres⟩ := krelS_splitAt_decomp hK hsp1
+          cases h with
+          | throws lh =>
+              cases n with
+              | zero => exact coApproxC_le_zero _ _
+              | succ k =>
+                  have hstep1 : Source.step (K₁, Comp.up ℓ op v₁) = some (K₁ₒ, Comp.ret v₁) := by
+                    show Bang.dispatch K₁ ℓ op v₁ = _
+                    unfold Bang.dispatch; rw [hsp1]; simp [dispatchOn]
+                  have hstep2 : Source.step (K₂, Comp.up ℓ op v₂) = some (K₂ₒ, Comp.ret v₂) := by
+                    show Bang.dispatch K₂ ℓ op v₂ = _
+                    unfold Bang.dispatch; rw [hsp2]; simp [dispatchOn]
+                  refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
+                  have hcatch' : Bang.handlesOp (Handler.throws lh) (Handler.throws lh).label op = true := by
+                    rw [hlbl]; exact hcatch
+                  refine hres k (Nat.lt_succ_self k) op v₁ v₂ (K₁ₒ, Comp.ret v₁) (K₂ₒ, Comp.ret v₂)
+                    hcatch' hcv₁ hcv₂ ?_ (by simp [dispatchOn]) (by simp [dispatchOn])
+                  -- type alignment: the resume value's type `Aop = opArg ℓ op = A` (hArg), so `hvk` fits
+                  -- (downward-closed to `k`).
+                  intro Aop hAop
+                  rw [hlbl, hArg] at hAop
+                  obtain rfl := (Option.some.injEq _ _).mp hAop.symm
+                  exact VrelK_mono (le_of_lt (Nat.lt_succ_self k)) hvk
+          | state lh s =>
+              -- STATE producer — THE ONE RESEARCH SORRY (krelS_append + ▷-metering): the producer
+              -- dispatches at the Kᵢ-PREFIX (`dispatchOn op v (K₁ᵢ, state, K₁ₒ)` KEEPS K₁ᵢ + reinstalls),
+              -- but the extracted `hres` is the `[]`-prefix form ⇒ bridging needs `krelS_append`. Same
+              -- crux as `compatK_handleState`. Flagged, not ground (orchestrator 2026-06-24).
+              sorry
+          | transaction lh Θ' =>
+              -- TRANSACTION producer — the multi-cell analogue of the state sorry (krelS_append + metering).
+              sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
       -- resume); `compatK_handleThrows` + `closeC_handleThrows` close it, mirroring the old `crel_fund`.
