@@ -70,12 +70,18 @@
                                      a real machine step) — which OVERTURNED ADR-0041's "step-bounded-obs is dead":
                                      the prior explosion was eval-fuel metering; CONFIG-level localizes it (the
                                      `+K.length` refocus confines to the one adequacy bridge). CLOSED: μ-floor + ALL
-                                     handler-consumer cases + krel_refl. 1 sorry left = handled-`up` (op-producer
-                                     observed by a handling stack) — FULLY DESIGNED (Biernacki §3.3 ρ-free-derived:
-                                     drop baked splitAt=none from Srel ⇒ handling stacks excluded ⇒ up vacuous;
-                                     handled-dispatch re-proves the 3 handler cases at the discharged row; NO
-                                     frozen-stmt change). Build queued (fresh effort) → then lr_sound typed-context
-                                     wiring → THE MOAT proven.
+                                     handler-consumer cases + krel_refl. the last sorry (handled-`up`) RESOLVED to a
+                                     CORE RE-ARCHITECTURE (operator chose REBUILD over seam): the handled-`up`
+                                     "designed" fix (drop splitAt=none) was BUILD-REFUTED (polarity-inverted);
+                                     ~25 probes found the ROOT — our flat-CoApprox Krel ERASED Biernacki's answer
+                                     type. FIX = the standard biorthogonal answer-typed KrelS (Crel⊸Crel);
+                                     composition (Lemma 2) free, producer-resume one line. TERMINATION GREEN
+                                     (stack-structural recursion + ▷-guarded frame bodies = existing metered-▷;
+                                     lex (n,role,stackLen); NO Iris). Frozen-safe (2a, Crel sig unchanged). STEP 2
+                                     = multi-session re-prove-all-of-Compat at the mutual relation (IC `krels` in
+                                     flight); plan in `paths/PATH-cap45-rebuild.md`, decision ADR-0041 (last amend).
+                                     Prior CLOSED work (μ-floor/handler-consumer/krel_refl) re-proves at KrelS.
+                                     Then lr_sound → THE MOAT (contextual equiv incl. resumptive handlers).
 ◊5   Compiler v0 (IN PROGRESS)     ── on branch `cap5-compiler` (`b99de40`, NOT yet merged). EFFECT-FREE
                                      (pure CBPV + ADT) compiler verified end-to-end source→WASM, AXIOM-CLEAN
                                      (`compile_forward_sim_pure` ⊆ trusted-three; zero_grade_no_code +
