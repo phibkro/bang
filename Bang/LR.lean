@@ -463,6 +463,18 @@ theorem Krel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring M
   intro j hjm
   exact hK j (le_trans hjm hmn)
 
+/-- ◊4.5: `Crel` UPWARD-CLOSURE — the `▷`-anti-reduction primitive. `Crel` sits over `Krel` in
+CONTRAVARIANT position (`Crel n := ∀ K, Krel n K → CoApprox`), so the downward-closed `Krel` makes
+`Crel` UPWARD-monotone: a computation related at `m` is related at every `n ≥ m`. This is the lift
+the μ-unfold / handler-resume seams need — they produce `Crel` at a DROPPED index (the `▷` "later")
+and must re-raise it to the goal index. No index arithmetic: `Krel_mono` does the work. -/
+theorem Crel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] {n m : Nat} {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp}
+    (hmn : m ≤ n) (hC : Crel m C ε c₁ c₂) : Crel n C ε c₁ c₂ := by
+  rw [Crel] at hC ⊢
+  intro K₁ K₂ hK
+  exact hC K₁ K₂ (Krel_mono hmn hK)
+
 /-- ◊4.5: `Vrel` DOWNWARD-CLOSURE. With the U-clause wrapped `∀ j ≤ n, Crel j` (◊4.5), Vrel-down is
 STRUCTURAL — the `U` case is quantifier-restriction (`{j ≤ m} ⊆ {j ≤ n}`), NOT a route through Crel-down
 (which would need the false Krel-up). Recursion is on the TYPE (`sizeOf A`): unit/int are index-free,

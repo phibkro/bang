@@ -222,6 +222,12 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
 
+@[simp] theorem closeC_unfold (δ : List Val) (w : Val) :
+    closeC δ (Comp.unfold w) = Comp.unfold (closeV δ w) := by
+  induction δ generalizing w with
+  | nil => rfl
+  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
+
 /-- `closeC` distributes through a `throws` handler: the handler carries no value
 (`Handler.subst _ (throws ℓ) = throws ℓ`), and `handle` does not bind, so the body closes structurally.
 (`state`/`transaction` carry values/heaps — their closeC is the resumptive-fragment follow-up.) -/
@@ -1217,11 +1223,16 @@ theorem vrel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy 
       exact ⟨_, _, _, _, rfl, rfl, vrel_fund ha n δ₁ δ₂ hδ, vrel_fund hb n δ₁ δ₂ hδ⟩
   | @fold _ _ w A hw =>
       intro n δ₁ δ₂ hδ
-      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
-      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
-      -- contravariant in Vrel ⇒ no uniform monotonicity). fold at μ: the recursive vrel_fund gives the
-      -- payload Vrel at the SAME index, but the μ-clause's ▷ guard wants it one lower. Deferred.
-      sorry
+      -- μ intro. `Vrel n (mu A)`: at `n=0` it is `True`; at `n+1` it wants the payload at index `n`
+      -- (the ▷ guard). The IH `vrel_fund hw` gives the payload at the SAME index `n+1`; drop one via
+      -- `Vrel_mono` (◊4.5 downward-closure). closeV_fold pushes the closure under the constructor.
+      rw [closeV_fold, closeV_fold]
+      cases n with
+      | zero => rw [Vrel]; trivial
+      | succ m =>
+          rw [Vrel]
+          exact ⟨_, _, rfl, rfl,
+            Vrel_mono (Nat.le_succ m) (vrel_fund hw (m + 1) δ₁ δ₂ hδ)⟩
 
 theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
     (h : HasCTy γ Γ c e B) :
@@ -1309,12 +1320,43 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       rwa [show closeC (b₁ :: a₁ :: δ₁) N = closeC δ₁ (Comp.subst a₁ (Comp.subst b₁ N)) from rfl,
            show closeC (b₂ :: a₂ :: δ₂) N = closeC δ₂ (Comp.subst a₂ (Comp.subst b₂ N)) from rfl] at this
   | @unfold _ _ v A hv =>
-      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
-      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
-      -- contravariant in Vrel ⇒ no uniform monotonicity). crel_unfold(a) [the LEMMA] closes (Vrel(n+1)→
-      -- Crel n), but composing into crel_fund needs Crel m→Crel(m+1) = the ▷-anti-reduction = Krel-down,
-      -- which our Krel-up lacks. Deferred.
-      intro n δ₁ δ₂ hδ; sorry
+      intro n δ₁ δ₂ hδ
+      rw [closeC_unfold, closeC_unfold]
+      -- μ elim. Split on the scrutinee's typing derivation:
+      --   • `v = fold a`: the closure is `unfold (fold (closeV δ a))`, a CIStep to `ret (closeV δ a)`.
+      --     `Crel_head_step` reduces to `crel_ret` on the payload `Vrel n (unrollMu A)` (= `vrel_fund ha`)
+      --     — ▷-FREE, closes at EVERY `n` (the fold is syntactically present, no μ-clause index gate).
+      --   • `v = vvar i`: the closure is `unfold δ[i]`. For `n = m+1` the env supplies the fold + payload
+      --     (`crel_unfold` spends the step, `Crel_mono` re-raises). For `n = 0` it is the WALL (below).
+      cases hv with
+      | @fold _ _ a _ ha =>
+          rw [closeV_fold, closeV_fold]
+          refine Crel_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
+            ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩ ?_
+          have hsa₁ : Val.Closed (closeV δ₁ a) :=
+            closeV_closed_scoped hδ.closed_left (by have := ha.scopedIn; rwa [hδ.length_left])
+          have hsa₂ : Val.Closed (closeV δ₂ a) :=
+            closeV_closed_scoped hδ.closed_right (by have := ha.scopedIn; rwa [hδ.length_right])
+          exact crel_ret hsa₁ hsa₂ (vrel_fund ha n δ₁ δ₂ hδ)
+      | @vvar _ i _ hget =>
+          have hsc₁ : Val.Closed (closeV δ₁ (Val.vvar i)) :=
+            closeV_closed_scoped hδ.closed_left (by
+              have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_left])
+          have hsc₂ : Val.Closed (closeV δ₂ (Val.vvar i)) :=
+            closeV_closed_scoped hδ.closed_right (by
+              have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
+          cases n with
+          | zero =>
+              -- ◊4.5 WALL (DEFINITIONAL, not a proof gap). `Crel 0 (unfold δ₁[i]) (unfold δ₂[i])`.
+              -- `EnvRel 0` gives only `Vrel 0 (mu A) δ₁[i] δ₂[i] = True` — NO fold-shape, NO payload. With
+              -- index-free `CoApprox`, `unfold` buys no step, so the μ-clause's dropped index has nothing
+              -- to pay it; `δ₁[i],δ₂[i]` may even differ in shape (one fold, one not), making the goal
+              -- genuinely FALSE under the present `Vrel 0 (mu A) := True` + typing-free `EnvRel`. Fix is
+              -- DEFINITIONAL (kernel): see report — escalated, not a missing lemma.
+              sorry
+          | succ m =>
+              exact Crel_mono (Nat.le_succ m)
+                (crel_unfold hsc₁ hsc₂ (vrel_fund (HasVTy.vvar hget) (m + 1) δ₁ δ₂ hδ))
   | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
       -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
       -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
