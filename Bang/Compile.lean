@@ -3233,8 +3233,25 @@ theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
   by_cases hpure : Wasmfx.Comp.Pure c
   · -- PURE fragment: GAP 1 closed, axiom-clean.
     exact compile_forward_sim_pure hpure h
-  · -- NON-pure (handlers): GAP 2 — proof extension only (model now sound, see §7b).
-    exact ⟨0, by sorry⟩
+  · -- NON-pure (handlers): GAP 2 CLOSED — re-wire of the now-TOTAL reverse bridge
+    -- (`evalD_complete_gen`, the dispatch transfer closed it) through the HANDLER-COMPLETE
+    -- WASM lowering (`exec_wexec_sim_ok`, drops `CodePure`, MARK/UNMARK/OP arms proven). Mirrors
+    -- the pure arm with the `_ok`/total versions; `Source.eval = Config.run ([],·)` definitionally.
+    have hrun : Config.run fuel ([], c) = Result.done v := h
+    obtain ⟨n, hn⟩ := evalD_complete_gen fuel [] c v hrun
+    rw [show plug [] c = c from rfl] at hn
+    obtain ⟨F, hexec⟩ := CalcVM.compile_correct n c (.ret v) [] [] hn
+    have hCodeOk : Wasmfx.CodeOk (CalcVM.compile c []) :=
+      Wasmfx.compile_ok c ((Wasmfx.CodeOk_iff_forall []).mpr (by intro i hi; simp at hi))
+    have hHsOk : Wasmfx.HStackOk ([] : CalcVM.HStack) := by intro fr hfr; simp at hfr
+    have hsim := Wasmfx.exec_wexec_sim_ok F (CalcVM.compile c []) [] [.ret v] [] hCodeOk hHsOk hexec
+    refine ⟨F, ?_⟩
+    rw [show Wasmfx.injStack [Comp.ret v] = [compileV v] from by
+      simp [Wasmfx.injStack, injTerminal]] at hsim
+    have hb : Wasmfx.wexec F (compileC c).body [] [] = some [compileV v] := hsim
+    show Wasmfx.run F (compileC c) = Result.done (compileV v)
+    unfold Wasmfx.run
+    rw [hb]
 
 /-! ## §7b — HANDLER soundness probes (◊5 — wexec ≡ kernel, including the FORMER defect)
 
