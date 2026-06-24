@@ -1940,10 +1940,161 @@ theorem evalD_plug_unfold (K : Bang.EvalCtx) (v : Bang.Val) (r : _)
     ∃ m, CalcVM.evalD m [] [] (plug K (.unfold (.fold v))) = some (.term (.ret w'), [], []) :=
   evalD_plug_sim (sim_unfold v) h
 
+/-- HANDLER-RETURN (Q6 identity): `handle h (ret w)` evalD-EQUALS `ret w`. For state/transaction
+the push/pop CANCEL on a terminal `ret`; for throws the body returns directly. So the redex
+`handle h (ret w)` simulates its contractum `ret w` (one handle-unfold of fuel). The simulation
+the `handleF`-return reverse-bridge arm needs. -/
+theorem sim_handle_ret (h : Handler) (w : Bang.Val) : Sim (.handle h (.ret w)) (.ret w) := by
+  intro σ τ b r hb
+  -- evalD b (ret w) σ τ = some (.term (.ret w), σ, τ) (for b ≥ 1).
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      cases hb
+      -- run `handle h (ret w)` at b+2: pushes (state/txn) or not (throws), body `ret w` returns,
+      -- pop cancels ⇒ same (.term (.ret w), σ, τ).
+      refine ⟨b + 2, ?_⟩
+      cases h <;> simp [CalcVM.evalD, CalcVM.SStore.push, CalcVM.THeap.push, List.tail]
+
+theorem evalD_plug_handleF_ret (K : Bang.EvalCtx) (h : Handler) (w : Bang.Val) (r : _)
+    (hn : CalcVM.evalD r [] [] (plug K (Comp.ret w)) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.handle h (.ret w))) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim (sim_handle_ret h w) hn
+
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
 induction on the small-step fuel `F`. -/
 theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Bang.Val),
+    Config.run F (K, c) = Result.done v →
+    ∃ n, CalcVM.evalD n [] [] (plug K c) = some (.term (.ret v), [], []) := by
+  intro F
+  induction F using Nat.strong_induction_on with
+  | _ F ih =>
+    intro K c v hrun
+    cases F with
+    | zero => simp [Config.run] at hrun
+    | succ F' =>
+      by_cases hterm : ∃ w, (K, c) = ([], Comp.ret w)
+      · obtain ⟨w, hKc⟩ := hterm
+        simp only [Prod.mk.injEq] at hKc
+        obtain ⟨hK0, hcw⟩ := hKc; subst hK0; subst hcw
+        simp only [Config.run, Result.done.injEq] at hrun
+        subst hrun
+        exact ⟨1, by simp [plug, CalcVM.evalD]⟩
+      · have hstep := Config.run_step F' (K, c) (fun w h => hterm ⟨w, h⟩)
+        rw [hrun] at hstep
+        cases c with
+        | ret w =>
+            cases K with
+            | nil => exact absurd ⟨w, rfl⟩ hterm
+            | cons fr K' =>
+                cases fr with
+                | letF N =>
+                    simp only [Source.step] at hstep
+                    have hrun' : Config.run F' (K', Comp.subst w N) = Result.done v := hstep.symm
+                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst w N) v hrun'
+                    exact evalD_plug_letC_ret K' w N n hn
+                | appF u =>
+                    simp only [Source.step] at hstep
+                    exact absurd hstep (by simp [Config.run])
+                | handleF h =>
+                    -- handler RETURN (Q6 identity): (handleF h :: K', ret w) ↦ (K', ret w).
+                    simp only [Source.step] at hstep
+                    have hrun' : Config.run F' (K', Comp.ret w) = Result.done v := hstep.symm
+                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.ret w) v hrun'
+                    exact evalD_plug_handleF_ret K' h w n hn
+        | lam M =>
+            cases K with
+            | nil => simp [Config.run, Source.step] at hrun
+            | cons fr K' =>
+                cases fr with
+                | letF N =>
+                    simp only [Source.step] at hstep
+                    exact absurd hstep (by simp [Config.run])
+                | appF u =>
+                    simp only [Source.step] at hstep
+                    have hrun' : Config.run F' (K', Comp.subst u M) = Result.done v := hstep.symm
+                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst u M) v hrun'
+                    exact evalD_plug_app_lam K' u M n hn
+                | handleF h =>
+                    -- (handleF h :: K', lam M): `lam` is not a `ret`; handler-return needs `ret` ⇒ stuck.
+                    simp only [Source.step] at hstep
+                    exact absurd hstep (by simp [Config.run])
+        | letC M N =>
+            simp only [Source.step] at hstep
+            have hrun' : Config.run F' (Frame.letF N :: K, M) = Result.done v := hstep.symm
+            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.letF N :: K) M v hrun'
+            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn
+            exact ⟨n, hn⟩
+        | app M u =>
+            simp only [Source.step] at hstep
+            have hrun' : Config.run F' (Frame.appF u :: K, M) = Result.done v := hstep.symm
+            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.appF u :: K) M v hrun'
+            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn
+            exact ⟨n, hn⟩
+        | force w =>
+            cases w with
+            | vthunk M =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, M) = Result.done v := hstep.symm
+                obtain ⟨n, hn⟩ := ih F' (by omega) K M v hrun'
+                exact evalD_plug_force K M n hn
+            | _ => exact absurd hstep (by simp [Source.step, Config.run])
+        | up ℓ op v0 =>
+            -- DISPATCH: (K, up ℓ op v0) ↦ dispatch K ℓ op v0. The reverse of run_evalD's raise-part
+            -- (splitAt continuation-capture + state/txn-resume/throws-abort + the σ↔K/τ↔K
+            -- correspondences). The remaining GAP-2 piece — needs a reverse-dispatchRun transfer
+            -- lemma (`evalD_plug_dispatch`) mirroring run_evalD's `.2` over `ctxNetEffect`/`CtxCorr`/
+            -- `CtxTxnCorr`. Multi-session; the spine (store-parametric Sim + Sim.handle) is in place.
+            sorry
+        | handle h M =>
+            -- PUSH: (K, handle h M) ↦ (handleF h :: K, M). plug (handleF h :: K) M = plug K (handle h M),
+            -- so this closes DIRECTLY (like letC/app PUSH) — NO σ/τ threading at the reverse-bridge level
+            -- (evalD's own handle arm threads the stores internally; the bridge runs at [] [] throughout).
+            simp only [Source.step] at hstep
+            have hrun' : Config.run F' (Frame.handleF h :: K, M) = Result.done v := hstep.symm
+            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.handleF h :: K) M v hrun'
+            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn
+            exact ⟨n, hn⟩
+        | case w N₁ N₂ =>
+            cases w with
+            | inl vp =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.subst vp N₁) = Result.done v := hstep.symm
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₁) v hrun'
+                exact evalD_plug_case_inl K vp N₁ N₂ n hn
+            | inr vp =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.subst vp N₂) = Result.done v := hstep.symm
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₂) v hrun'
+                exact evalD_plug_case_inr K vp N₁ N₂ n hn
+            | _ => exact absurd hstep (by simp [Source.step, Config.run])
+        | split w N =>
+            cases w with
+            | pair vp up =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.subst vp (Comp.subst (Val.shift up) N)) = Result.done v :=
+                  hstep.symm
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp (Comp.subst (Val.shift up) N)) v hrun'
+                exact evalD_plug_split K vp up N n hn
+            | _ => exact absurd hstep (by simp [Source.step, Config.run])
+        | unfold w =>
+            cases w with
+            | fold vp =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.ret vp) = Result.done v := hstep.symm
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.ret vp) v hrun'
+                exact evalD_plug_unfold K vp n hn
+            | _ => exact absurd hstep (by simp [Source.step, Config.run])
+        | oom => exact absurd hstep (by simp [Source.step, Config.run])
+        | wrong s => exact absurd hstep (by simp [Source.step, Config.run])
+
+/-- The PURE-fragment reverse bridge (sorry-free), routing `compile_forward_sim_pure`. Same shape
+as the total `evalD_complete_gen` but `PureCtx`/`Comp.Pure`-gated, so the `up`/`handle`/`handleF`
+arms close by ABSURD (a pure program has no effect ops / handlers) — keeping the PURE headline
+AXIOM-CLEAN (it never routes through the dispatch sorry). -/
+theorem evalD_complete_gen_pure : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Bang.Val),
     PureCtx K → Wasmfx.Comp.Pure c →
     Config.run F (K, c) = Result.done v →
     ∃ n, CalcVM.evalD n [] [] (plug K c) = some (.term (.ret v), [], []) := by
@@ -1951,111 +2102,84 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
   induction F using Nat.strong_induction_on with
   | _ F ih =>
     intro K c v hK hc hrun
-    -- F = 0 ⇒ run = oom ≠ done.
     cases F with
     | zero => simp [Config.run] at hrun
     | succ F' =>
-      -- terminal `([], ret v)` is the base; otherwise one Source.step.
       by_cases hterm : ∃ w, (K, c) = ([], Comp.ret w)
       · obtain ⟨w, hKc⟩ := hterm
         simp only [Prod.mk.injEq] at hKc
         obtain ⟨hK0, hcw⟩ := hKc; subst hK0; subst hcw
-        -- ([], ret w): run yields done w ⇒ w = v; evalD of `ret w` returns immediately.
         simp only [Config.run, Result.done.injEq] at hrun
         subst hrun
         exact ⟨1, by simp [plug, CalcVM.evalD]⟩
-      · -- non-terminal: step once, recurse with F' < F'+1.
-        have hstep := Config.run_step F' (K, c) (fun w h => hterm ⟨w, h⟩)
+      · have hstep := Config.run_step F' (K, c) (fun w h => hterm ⟨w, h⟩)
         rw [hrun] at hstep
-        -- analyse the step on (K, c).
         cases c with
         | ret w =>
-            -- focus is `ret w` but K ≠ [] (else terminal). K's head reduces.
             cases K with
             | nil => exact absurd ⟨w, rfl⟩ hterm
             | cons fr K' =>
                 cases fr with
                 | letF N =>
-                    -- step: (letF N :: K', ret w) ↦ (K', subst w N)
                     simp only [Source.step] at hstep
                     have hrun' : Config.run F' (K', Comp.subst w N) = Result.done v := hstep.symm
-                    simp only [PureCtx] at hK
-                    have hsub : Wasmfx.Comp.Pure (Comp.subst w N) :=
-                      Wasmfx.subst_pure (by simpa only [Wasmfx.Comp.Pure] using hc) hK.1
-                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst w N) v hK.2 hsub hrun'
-                    -- transfer: evalD (plug K' (letC (ret w) N)) ⟸ evalD (plug K' (subst w N)).
+                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst w N) v hK.2
+                      (Wasmfx.subst_pure (by simpa only [Wasmfx.Comp.Pure] using hc) (by simp only [PureCtx] at hK; exact hK.1)) hrun'
                     exact evalD_plug_letC_ret K' w N n hn
                 | appF u =>
-                    -- (appF u :: K', ret w): `ret w` is not a `lam`; step is `none` ⇒ stuck, not done.
                     simp only [Source.step] at hstep
-                    -- Source.step (appF u :: K', ret w) = none (only lam reduces under appF).
                     exact absurd hstep (by simp [Config.run])
                 | handleF h => simp only [PureCtx] at hK
         | lam M =>
             cases K with
-            | nil => simp [Config.run, Source.step] at hrun   -- ([], lam M): not a `ret`, run = stuck
+            | nil => simp [Config.run, Source.step] at hrun
             | cons fr K' =>
                 cases fr with
-                | letF N =>
-                    simp only [Source.step] at hstep
-                    exact absurd hstep (by simp [Config.run])  -- letF needs `ret`, lam stuck
+                | letF N => simp only [Source.step] at hstep; exact absurd hstep (by simp [Config.run])
                 | appF u =>
-                    -- (appF u :: K', lam M) ↦ (K', subst u M)  (β)
                     simp only [Source.step] at hstep
                     have hrun' : Config.run F' (K', Comp.subst u M) = Result.done v := hstep.symm
-                    simp only [PureCtx] at hK
-                    have hsub : Wasmfx.Comp.Pure (Comp.subst u M) :=
-                      Wasmfx.subst_pure hK.1 (by simpa only [Wasmfx.Comp.Pure] using hc)
-                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst u M) v hK.2 hsub hrun'
+                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst u M) v hK.2
+                      (Wasmfx.subst_pure (by simp only [PureCtx] at hK; exact hK.1) (by simpa only [Wasmfx.Comp.Pure] using hc)) hrun'
                     exact evalD_plug_app_lam K' u M n hn
                 | handleF h => simp only [PureCtx] at hK
         | letC M N =>
-            -- (K, letC M N) ↦ (letF N :: K, M)  (PUSH; plug preserved)
             simp only [Source.step] at hstep
             have hrun' : Config.run F' (Frame.letF N :: K, M) = Result.done v := hstep.symm
             simp only [Wasmfx.Comp.Pure] at hc
-            have hK' : PureCtx (Frame.letF N :: K) := by
-              simp only [PureCtx]; exact ⟨hc.2, hK⟩
-            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.letF N :: K) M v hK' hc.1 hrun'
-            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn
-            exact ⟨n, hn⟩
+            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.letF N :: K) M v (by simp only [PureCtx]; exact ⟨hc.2, hK⟩) hc.1 hrun'
+            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn; exact ⟨n, hn⟩
         | app M u =>
             simp only [Source.step] at hstep
             have hrun' : Config.run F' (Frame.appF u :: K, M) = Result.done v := hstep.symm
             simp only [Wasmfx.Comp.Pure] at hc
-            have hK' : PureCtx (Frame.appF u :: K) := by
-              simp only [PureCtx]; exact ⟨hc.2, hK⟩
-            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.appF u :: K) M v hK' hc.1 hrun'
-            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn
-            exact ⟨n, hn⟩
+            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.appF u :: K) M v (by simp only [PureCtx]; exact ⟨hc.2, hK⟩) hc.1 hrun'
+            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn; exact ⟨n, hn⟩
         | force w =>
             cases w with
             | vthunk M =>
-                -- (K, force (vthunk M)) ↦ (K, M)
                 simp only [Source.step] at hstep
                 have hrun' : Config.run F' (K, M) = Result.done v := hstep.symm
                 simp only [Wasmfx.Comp.Pure] at hc
                 obtain ⟨n, hn⟩ := ih F' (by omega) K M v hK hc hrun'
-                -- evalD (plug K (force (vthunk M))) ⟸ evalD (plug K M)  (force erases).
                 exact evalD_plug_force K M n hn
             | _ => simp only [Wasmfx.Comp.Pure] at hc
+        | up ℓ op v0 => simp only [Wasmfx.Comp.Pure] at hc   -- pure ⇒ no `up`
+        | handle h M => simp only [Wasmfx.Comp.Pure] at hc   -- pure ⇒ no `handle`
         | case w N₁ N₂ =>
-            -- scrutinee must be inl/inr to step (else stuck ≠ done). REDUCE in place (K kept).
             simp only [Wasmfx.Comp.Pure] at hc
             cases w with
             | inl vp =>
                 simp only [Source.step] at hstep
                 have hrun' : Config.run F' (K, Comp.subst vp N₁) = Result.done v := hstep.symm
-                have hsub : Wasmfx.Comp.Pure (Comp.subst vp N₁) :=
-                  Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.1
-                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₁) v hK hsub hrun'
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₁) v hK
+                  (Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.1) hrun'
                 exact evalD_plug_case_inl K vp N₁ N₂ n hn
             | inr vp =>
                 simp only [Source.step] at hstep
                 have hrun' : Config.run F' (K, Comp.subst vp N₂) = Result.done v := hstep.symm
-                have hsub : Wasmfx.Comp.Pure (Comp.subst vp N₂) :=
-                  Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.2
-                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₂) v hK hsub hrun'
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₂) v hK
+                  (Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.2) hrun'
                 exact evalD_plug_case_inr K vp N₁ N₂ n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | split w N =>
@@ -2063,24 +2187,19 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
             cases w with
             | pair vp up =>
                 simp only [Source.step] at hstep
-                have hrun' : Config.run F' (K, Comp.subst vp (Comp.subst (Val.shift up) N)) = Result.done v :=
-                  hstep.symm
+                have hrun' : Config.run F' (K, Comp.subst vp (Comp.subst (Val.shift up) N)) = Result.done v := hstep.symm
                 have hvu : Wasmfx.Val.Pure vp ∧ Wasmfx.Val.Pure up := by simpa only [Wasmfx.Val.Pure] using hc.1
-                have hsub : Wasmfx.Comp.Pure (Comp.subst vp (Comp.subst (Val.shift up) N)) :=
-                  Wasmfx.subst_pure hvu.1 (Wasmfx.subst_pure (Wasmfx.Val.shiftFrom_pure 0 hvu.2) hc.2)
-                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp (Comp.subst (Val.shift up) N)) v hK hsub hrun'
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp (Comp.subst (Val.shift up) N)) v hK
+                  (Wasmfx.subst_pure hvu.1 (Wasmfx.subst_pure (Wasmfx.Val.shiftFrom_pure 0 hvu.2) hc.2)) hrun'
                 exact evalD_plug_split K vp up N n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | unfold w =>
             simp only [Wasmfx.Comp.Pure] at hc
             cases w with
             | fold vp =>
-                -- (K, unfold (fold vp)) ↦ (K, ret vp)
                 simp only [Source.step] at hstep
                 have hrun' : Config.run F' (K, Comp.ret vp) = Result.done v := hstep.symm
-                have hsub : Wasmfx.Comp.Pure (Comp.ret vp) := by
-                  simpa only [Wasmfx.Comp.Pure, Wasmfx.Val.Pure] using hc
-                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.ret vp) v hK hsub hrun'
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.ret vp) v hK (by simpa only [Wasmfx.Comp.Pure, Wasmfx.Val.Pure] using hc) hrun'
                 exact evalD_plug_unfold K vp n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | _ => simp only [Wasmfx.Comp.Pure] at hc
@@ -2091,7 +2210,8 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
 theorem evalD_complete (F : Nat) (c : Comp) (v : Bang.Val)
     (hpure : Wasmfx.Comp.Pure c) (h : Source.eval F c = Result.done v) :
     ∃ n, CalcVM.evalD n [] [] c = some (.term (.ret v), [], []) := by
-  have := evalD_complete_gen F [] c v (by simp [PureCtx]) hpure h
+  -- routes through the PURE bridge (sorry-free) — keeps `compile_forward_sim_pure` axiom-clean.
+  have := evalD_complete_gen_pure F [] c v (by simp [PureCtx]) hpure h
   simpa [plug] using this
 
 /-- The reverse CalcVM bridge for the PURE fragment: a terminating `Source.eval`
