@@ -70,8 +70,48 @@ standard contextual-equivalence quantifier — a `ctxApprox` def change), then `
 krelS_refl` traces to the append crux; or (b) add a `HasStack` hypothesis to `lr_sound` (frozen-statement
 change). `lr_sound` left as honest `sorry` with the precise blocker comment at `Spec.lean:188`.
 
+## ◊4.5b-answertrack — the scoped-seam (ADR-0043, branch `cap45-answertrack` off `eb599b6`)
+
+The append crux + (g) + the `lr_sound` `HasStack`-typing escalation are ALL CLOSED (in `eb599b6`):
+`lr_sound`/`lr_fundamental` build green, `sorryAx` traces to EXACTLY ONE spot — `krelS_splitAt_decomp`'s
+handleF-MISS (the nested-wrapping-handler edge, `Compat.lean:1474`). This branch scoped that last edge.
+
+### LANDED (`1d715cb`, whole-tree green)
+- **`NoWrapMiss : EvalCtx → Label → OpId → Prop`** (`Operational.lean`, after `splitAt`): the dispatch
+  reaches its catcher with a handler-free captured continuation. Standalone; kernel/`KrelS` PRISTINE.
+- **ADR-0043**: the moat scope. COVERED = all contexts incl. legitimate handler stacking (each op at its
+  nearest handler); EXCLUDED narrow = pass-through resumption (op caught by a non-nearest handler).
+
+### WHY sorryAx-ZERO IS DEFERRED (build-pinned, this session) — the EXACT next-session plan
+The MISS-vacuity needs `CrelK` to range only over stacks handling the focus's ops at the nearest handler.
+ALL simple stack-scope predicates WALL at one root cause: `crelK_fund`'s handle-arm pushes the focus's OWN
+handler (`handle h M` → `M` over `handleF h :: K₁`), violating any runtime-stack scope `P K₁` (need
+`P (handleF h :: K₁)`). Build-and-reasoning-confirmed dead: row-indexed `NoWrapMissRow K ε` (walls at
+`crelK_ret` letF row-change, no `φ ≤ e` untyped), row-agnostic ∀-ops (walls at `crelK_ret` handleF
+handler-masking), fully-`HandlerFree` (walls at the handle-arm push). The `HandlerFree`-ON-the-`KrelS`-clause
+variant OVER-FORBIDS (bans legit stacking, breaks `krelS_refl`) — DO NOT re-try it.
+
+**THE CLOSE = a TYPED `CrelK`** (the deferred kernel project, ~pinned-index order of magnitude):
+- Re-index `CrelK`'s scope by typing (`HasCTy`/`HasStack`) so it distinguishes the focus's
+  legitimately-installed handlers from a pre-existing context wrap — that distinction is what no raw
+  stack predicate can make.
+- `CrelK`'s body gains the scope premise ⇒ ripples to **every `rw [CrelK]` site** (`LR.lean`:
+  `crelK_zero`, `crelK_adequacy_nil`, `CrelK_eff_mono`, `crelK_ret`, `crel_force`, `lr_sound_closed`,
+  ~10 sites — each `intro` gains the scope hyp; each APPLICATION supplies it) **+ all Compat compat
+  lemmas** (the `hM D (handleF h :: K₁)` applications) **+ the `crelK_fund` mutual block** (WF watch:
+  the scope is a non-recursive `Prop` premise, so the `(n,role,stackLen,sizeOf)` metric is unaffected —
+  but verify it stays inferring).
+- `krelS_splitAt_decomp` takes the typed-scope hyp ⇒ MISS vacuous (via `NoWrapMiss` + the handler-free
+  captured continuation it now certifies); `crelK_fund_up` supplies it; `lr_sound`'s `ctxApprox` carries
+  the matching premise on the observation context `C` (mirror the #11 `HasStack` premise).
+- Frozen-stmt: `lr_sound` + `lr_fundamental` gain the scope premise (STATEMENT_CHANGE_OK, per ADR-0043).
+- Do it in a FRESH context (Context-Rot on the ~10-site + Compat reshape). Commit-first per clean lemma;
+  flag-before-build at the first `crelK_fund` WF wobble.
+
 ## Discipline (carried)
-Build is the only arbiter; gate the AXIOM SET each commit (`lake env lean Bang/Audit.lean`).
-flag-before-build the metering. Shared git store had a broken cache-tree — recover per-worktree
-via `git read-tree HEAD` (do NOT gc/prune the shared store; other writers active). Backup +
-validated probes at `/tmp/cap45-backup/`.
+Build is the only arbiter; gate the AXIOM SET each commit (`lake env lean Bang/Audit.lean`) AND on a
+WHOLE-TREE `lake build` (never a per-module build — that gives false-green). flag-before-build the
+scope-thread WF. Shared git store had a broken cache-tree — recover per-worktree via `git read-tree HEAD`
+(do NOT gc/prune the shared store; other writers active). The pre-commit `just verify` reclones loogle
+(network-flaky); `--no-verify` with `BANGLANG_SKIP_VERIFY_REASON` is OK for that, but run the whole-tree
+build manually before declaring green.
