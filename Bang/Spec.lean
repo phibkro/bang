@@ -169,6 +169,20 @@ theorem effect_sound
 --   μ-return cases sit in the deferred iso-recursive-▷ subsystem (needs IxFree ∀k≤n Kripke-monotone
 --   Crel/Krel/Srel — plain-Nat phrasing lacks the both-ways monotonicity; build-confirmed). The CLOSED
 --   fragment (`lr_sound_closed`, F-typed) is DONE; the arbitrary-`C` closure is ◊4.5.
+-- ◊4.5b (g) BLOCKER (build-confirmed, NOT the append crux): the migration plumbing is in place — the
+-- `lr_sound` proof refocuses `⊑` to the config level (`converges_plug_iff`) and unfolds `Crel = CrelK`
+-- to the biorthogonal closure `∀ D K₁ K₂, KrelS … → CoApproxC_le`, then instantiates at the observation
+-- context `(C, C)`. The SOLE remaining obligation is `KrelS fuel B C e C C` — the IDENTITY EXTENSION of
+-- the observation context `C`. That is `krelS_refl` (Compat §B.6′), which REQUIRES `C` WELL-TYPED at the
+-- hole type `B` (`HasStack C e B eo (F qo Ao)`). The FROZEN `lr_sound` statement quantifies `⊑` over
+-- ARBITRARY `C : Cxt` with NO typing hypothesis — and `KrelS`-reflexivity genuinely FAILS for a context
+-- ill-typed at the hole (e.g. `letF N :: K'` with `B ≠ F q A` makes the `KrelS` letF clause FALSE, not
+-- vacuous). So `lr_sound` is NOT closable by `lr_sound_closed ∘ krelS_refl` as the statement stands: the
+-- composition needs a typed observation context the statement does not provide. This is an ESCALATION
+-- (statement-shape: `⊑`/`ctxApprox` should range over WELL-TYPED contexts, the standard contextual-
+-- equivalence quantifier), NOT the `krelS_append` research crux. Left as the honest placeholder until the
+-- orchestrator decides the `⊑`/typing fix. `lr_fundamental` (below) IS migrated and traces solely to the
+-- append crux via `crelK_fund`.
 theorem lr_sound
     {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult} :
     (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂ := sorry
@@ -181,16 +195,17 @@ theorem lr_sound
 -- environments `δ₁,δ₂` (`EnvRel`, `closeC` in `Bang/LR.lean §5.2b`). The closed (`Γ=[]`) instance
 -- that `lr_sound`/the capstone consume is the named corollary `lr_fundamental_closed` below.
 --   shape: biernacki-popl18 §5.2 (`G⟦Γ⟧η` fundamental theorem); ahmed-esop06 closing substitution.
--- WIRED to `Bang.crel_fund` (Compat.lean, the mutual fundamental-theorem proof, upstream of Spec —
--- exactly as `preservation := preservation_proof`). PARTIAL: `crel_fund` still carries documented
--- `sorry`s (lam/app — Krel arrow clause pending; split d=2; unfold/fold — μ Blocker 2; up/handle* —
--- PROOF_ORDER-last), so `lr_fundamental` carries `sorryAx` until those close. NOT yet fully closed.
+-- ◊4.5b (g): WIRED to `Bang.crelK_fund` (Compat.lean §B.5′, the ANSWER-TYPED fundamental theorem; the
+-- frozen `Crel`/`EnvRel` names abbreviate `CrelK`/`EnvRelK`, so the statement is byte-identical and the
+-- proof term typechecks definitionally). PARTIAL: `crelK_fund` carries documented `sorry`s ONLY in the
+-- state/transaction producer arms (the `krelS_append` + ▷-metering research crux); THROWS closes
+-- end-to-end. So `lr_fundamental` carries `sorryAx` tracing solely to that one crux until it resolves.
 theorem lr_fundamental
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy γ Γ c e B →
     ∀ n (δ₁ δ₂ : List Val), EnvRel n Γ δ₁ δ₂ → Crel n B e (closeC δ₁ c) (closeC δ₂ c) :=
-  fun h => crel_fund h
+  fun h => crelK_fund h
 
 -- [KEY] The CLOSED (`Γ=[]`) corollary — the instance `lr_sound`/`krel_refl`/the capstone consume.
 -- Empty environments (`EnvRel n [] [] []` holds; `closeC [] c = c`), so this is `lr_fundamental`
