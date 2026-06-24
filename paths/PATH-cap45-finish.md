@@ -83,6 +83,14 @@ handleF-MISS (the nested-wrapping-handler edge, `Compat.lean:1474`). This branch
   nearest handler); EXCLUDED narrow = pass-through resumption (op caught by a non-nearest handler).
 
 ### WHY sorryAx-ZERO IS DEFERRED (build-pinned, this session) — the EXACT next-session plan
+
+**Probe (i) BUILD-PIN (2026-06-24):** operational `NoWrapMiss` threads `krelS_splitAt_decomp` [MISS
+vacuous via the `hnwm` premise, NO sorry] + `crelK_fund_up` [scoped-unfold conclusion] cleanly; WALLS at
+`crelK_fund:1957` (the up-arm `exact crelK_fund_up …`) — unscoped `CrelK` cannot supply the up-arm's
+`NoWrapMiss K₁` premise for its arbitrary `K₁` ⇒ scoping `CrelK`'s BODY (typed-`CrelK`) is REQUIRED, not
+optional. (The green partial — decomp + `crelK_fund_up` threading — re-derives cheaply; a fresh (ii)
+session wants it fresh, no Context-Rot from a stale mutual-block reshape.)
+
 The MISS-vacuity needs `CrelK` to range only over stacks handling the focus's ops at the nearest handler.
 ALL simple stack-scope predicates WALL at one root cause: `crelK_fund`'s handle-arm pushes the focus's OWN
 handler (`handle h M` → `M` over `handleF h :: K₁`), violating any runtime-stack scope `P K₁` (need
