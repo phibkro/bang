@@ -3,6 +3,7 @@
 - **Status:** Accepted (build-proven + literature-confirmed, 2026-06-24)
 - **Layer:** C+ (LR metatheory / proof architecture)
 - **Depends on / amends:** [0039](0039-cap4-non-triangleright-split.md) (the ◊4/◊4.5 split), [0035](0035-lr-for-equivalence-simulation-for-compilation.md) (LR vs compiler), [0033/0034/0036/0038] (the LR formulation)
+- **Amended (2026-06-24, `560ba82`):** the chosen path below names "the `▷`-modality" and rejects alt-1 "step-bounded observation" as build-exploded. **Both are now refined by the build.** ◊4.5b's design pass found that for our *biorthogonal* LR the `▷` **must live in the observation** — so the "▷-modality" and "step-bounded observation" are the **same mechanism**, not alternatives. And alt-1's *explosion was a factoring artifact*, not fundamental: `lr45` metered **eval-fuel**, so the plug-refocus `+K.length` offset fought the bound at every site; metering at the **CONFIG level** (the relations observe the *focused* `(K,c)`, never `plug K c`) makes a head-step a clean `±1` via one `convergesC_le_step` lemma, confining the offset to the single adequacy bridge. The central `▷`-guarded head-expansion lemma **CLOSES** (`560ba82`). So the **CHOSEN mechanism is the config-level metered-observation `▷`** (`ConvergesC_le n cfg := ∃ v, Config.run n cfg = done v`; `Crel 0` vacuated via the observation premise `run 0 = oom`, leaving `Krel_mono` intact). Full rewire of the real `Crel`/`Krel`/`Srel` in progress.
 
 ## Context
 
