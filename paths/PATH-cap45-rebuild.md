@@ -66,6 +66,30 @@ Target at (g): `lr_sound`/`lr_fundamental` drop `sorryAx` → trusted-three {pro
 Classical.choice, Quot.sound}; `no_accidental_handling` stays 0-axiom; `compile_correct` stays
 trusted-three. `c363304` is the labelled fallback throughout. Commit frequently — multi-session.
 
+## STEP-2(a) build notes (from the discovery IC — port these, don't rediscover)
+
+- **`KrelS` def shape: SINGLE-BODY with an internal `match K₁, K₂ with`**, NOT a multi-clause
+  def. The multi-clause form (`[]`/`letF::`/catch-all as separate clauses) type-checks and
+  terminates but FIGHTS the unfolder — `rw [KrelF]` / `simp only [KrelF]` make "no progress".
+  The single-body + internal-match form unfolds cleanly. Generate `@[simp]` per-case equation
+  lemmas explicitly (`krelF_nil`, `krelF_letF`, `krelF_appF`, `krelF_handleF`) so the downstream
+  proofs (`KrelF_mono`, the frame lemmas) rewrite through them. This is a known Lean-4
+  mutual-def mechanic, not a soundness issue.
+- **WF decreases on STACK SYNTAX, answer-type INERT.** `KrelF n (fr::K) → KrelF n K` (frames
+  peel) is the structural decrease; the answer-type `D` is threaded as a parameter, NOT in the
+  measure. The DEAD-END (Lean-rejected): recursing "through `plug`" (`CrelCtx n C D → Crel n D
+  (plug K c)`) — `plug` wraps `c` into a LARGER term at the same index, no syntactic decrease.
+  Use the stack-structural (induction-on-context) form; it sidesteps plug-at-same-index.
+- **The frame-body `Crel` index (`n` vs `m<n`) is a FREE SEMANTIC choice** — termination forces
+  NEITHER (the stack peeling carries WF either way; Lean accepts both). Pick per PROOF-need:
+  likely `m<n` (the `▷`) at the Kripke μ/resume seams to match the existing ◊4.5 ▷-anti-reduction
+  (`Crel_head_step`), `n` elsewhere. This is cleaner than "▷ forced for WF" — it's not.
+- **(ii) cascade is structurally sound (NOT research-grade):** `crelF_zero` (μ-floor) closes
+  trivially (vacuous metered obs at 0); `crelF_head_step` reduces to `KrelF_mono`; `KrelF_mono`'s
+  argument is valid (frame-body `∀m<n` restricts to `∀m<k`, k≤n subset, + recurse on the smaller
+  stack). The "does the `▷`-insert break adequacy" fear is NOT realized — μ-floor + head_step
+  survive structurally. The only STEP-2(a) work is the def-shape-for-unfolding above.
+
 ## Discipline (carried from the discovery phase)
 
 - The build/source arbitrates every fork. Pin sub-claims as falsifiable; revise on the build.
