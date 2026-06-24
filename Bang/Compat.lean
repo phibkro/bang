@@ -1652,13 +1652,38 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
                     intro Aᵣ hAᵣ; rw [hlbl, hRes] at hAᵣ
                     obtain rfl := (Option.some.injEq _ _).mp hAᵣ.symm; exact ⟨q, rfl⟩
           | state lh s =>
-              -- STATE producer — THE ONE RESEARCH SORRY (krelS_append + ▷-metering): the producer
-              -- dispatches at the Kᵢ-PREFIX (`dispatchOn op v (K₁ᵢ, state, K₁ₒ)` KEEPS K₁ᵢ + reinstalls),
-              -- but the extracted `hres` is the `[]`-prefix form ⇒ bridging needs `krelS_append`. Same
-              -- crux as `compatK_handleState`. Flagged, not ground (orchestrator 2026-06-24).
-              sorry
+              -- STATE producer — the ◊4.5b-append close. The producer dispatches at the Kᵢ-PREFIX
+              -- (`dispatchOn op v (K₁ᵢ, state lh s, K₁ₒ)` KEEPS K₁ᵢ + reinstalls); the decomp's Kᵢ-threading
+              -- `hres` (now carrying the inner-prefix relation `hinner`) discharges the dispatched-config
+              -- relation DIRECTLY — no separate append needed at the producer, the conjunct already bundles it.
+              cases n with
+              | zero => exact coApproxC_le_zero _ _
+              | succ k =>
+                  -- the dispatched configs (state KEEPS Kᵢ, reinstalls); `dispatchOn state` always returns
+                  -- `some` (get/put both produce a config). Extract the witnesses.
+                  obtain ⟨c₁, hc₁⟩ : ∃ c, Bang.dispatchOn op v₁ (K₁ᵢ, Handler.state lh s, K₁ₒ) = some c := by
+                    rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
+                  obtain ⟨c₂, hc₂⟩ : ∃ c, Bang.dispatchOn op v₂ (K₂ᵢ, h', K₂ₒ) = some c := by
+                    -- HandlerRel (state) h' forces h' = state (throws/transaction arms are False, auto-closed).
+                    cases h' <;> simp only [HandlerRel] at hHR
+                    obtain ⟨rfl, _⟩ := hHR; rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
+                  have hstep1 : Source.step (K₁, Comp.up ℓ op v₁) = some c₁ := by
+                    show Bang.dispatch K₁ ℓ op v₁ = _; unfold Bang.dispatch; rw [hsp1]; exact hc₁
+                  have hstep2 : Source.step (K₂, Comp.up ℓ op v₂) = some c₂ := by
+                    show Bang.dispatch K₂ ℓ op v₂ = _; unfold Bang.dispatch; rw [hsp2]; exact hc₂
+                  refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
+                  have hcatch' : Bang.handlesOp (Handler.state lh s) (Handler.state lh s).label op = true := by
+                    rw [hlbl]; exact hcatch
+                  refine hres k (Nat.lt_succ_self k) op v₁ v₂ _ _ K₁ᵢ K₂ᵢ c₁ c₂
+                    hcatch' hcv₁ hcv₂ ?_ (KrelS_mono (le_of_lt (Nat.lt_succ_self k)) hinner) ?_ hc₁ hc₂
+                  · intro Aop hAop
+                    rw [hlbl, hArg] at hAop
+                    obtain rfl := (Option.some.injEq _ _).mp hAop.symm
+                    exact VrelK_mono (le_of_lt (Nat.lt_succ_self k)) hvk
+                  · intro Aᵣ hAᵣ; rw [hlbl, hRes] at hAᵣ
+                    obtain rfl := (Option.some.injEq _ _).mp hAᵣ.symm; exact ⟨q, rfl⟩
           | transaction lh Θ' =>
-              -- TRANSACTION producer — the multi-cell analogue of the state sorry (krelS_append + metering).
+              -- TRANSACTION producer — the multi-cell analogue of state (same hres-bundled close). PENDING.
               sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
@@ -1750,11 +1775,19 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       rw [CrelK] at hret
       exact hret Co K K (KrelS_mono (le_of_lt hm) (KrelS_eff_cast (ihK hCo)))
   | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
-      -- ◊4.5b-append: REBUILD PENDING. Self-relation `HandlerRel n (state ℓ s) (state ℓ s)` = ⟨rfl, S, hs-refl⟩
-      -- (needs VrelK n S s s via vrelK_fund on hcs); the Kᵢ-threading resume conjunct closes via crelK_ret
-      -- through the captured continuation. Temporarily sorry'd for the checkpoint.
-      rw [krelS_handleF]
-      exact ⟨sorry, KrelS_eff_cast (ihK hCo), sorry⟩
+      -- ◊4.5b-append: the state-frame self-relation IS `krelS_state_reinstall` at `s = s` (the same stored
+      -- state both sides). The tail self-relates via `ihK` (cast `φ → e`); the interface + state typing come
+      -- from the `stateF` binder. `hcs : HasVTy [] [] s S` ⇒ closed + `VrelK k S s s` (`vrelK_fund`).
+      have hcss : Val.Closed s := fun k => hcs.shift_closed k (Nat.zero_le k)
+      have hsv : ∀ k, VrelK k S s s := fun k => by
+        have := vrelK_fund hcs k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
+        rwa [closeV_closed hcss] at this
+      have hrestrict' : ∀ op s', Bang.handlesOp (Handler.state ℓ s') ℓ op = true → op = "get" ∨ op = "put" :=
+        fun op s' hc => by
+          simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+          rcases hc.2 with rfl | rfl <;> simp
+      exact krelS_state_reinstall hgr hp hpr hrestrict' n s s hcss hcss (hsv n) K K
+        (KrelS_eff_cast (ihK hCo))
   | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
       -- ◊4.5b-append: REBUILD PENDING (multi-cell analogue — pointwise heap self-relation + Kᵢ-threading).
       rw [krelS_handleF]
