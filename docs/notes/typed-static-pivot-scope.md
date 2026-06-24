@@ -80,6 +80,13 @@ higher-rank polymorphism. So the ordering lives where ordering already lived (th
 is untouched. **This is the #1 thing to confirm under the typed relation** before committing — it is the only
 place the research flags real friction.
 
+> **RESOLVED — SETS-PRESERVED (build-gated, `setrow-tension-spike` @ `f92a504`, 2026-06-25).** The typed
+> `perform cap` rule's effect-row premise is `labelEff ℓ ≤ φ` (identical to `HasCTy.up`); the cap is a separate
+> `Nat` absent from the row premise; discharge stays the `⊔`-semilattice (idempotent + commutative); cap
+> well-scopedness is **decidable structural recursion** (`CapResolves`), **no rank-2 polymorphism**. The row
+> stays `Finset Label`; ordering lives on the stack. Tension side-stepped, no invariant-#2 cost. → pivot
+> committed in **ADR-0045** + `paths/PATH-typed-static-pivot.md`.
+
 ## Honest residue (from the spike)
 
 `cap>0` (resume-into-an-outer-handler) needs **either** nearest-only caps (an expressivity cut — no
