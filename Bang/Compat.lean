@@ -1045,23 +1045,24 @@ ROW-DISCHARGE (body row `e` ⊋ discharged row `φ`) is `KrelS_eff_cast` (ε is 
 SINGLE-ROW close of the original ◊4.5b wall — no two-row Biernacki `C⟦τ₁/ε₁{τ₂/ε₂⟧` needed (the row only
 gated the dropped `Srel`). shape: biernacki-popl18 §5.4 set-row ρ-free collapse. -/
 
-/-- ◊4.5b build a handleF-extended `KrelS` from the discharged-row tail + the RESUME CONJUNCT. The body
-row `e` is ARBITRARY w.r.t. the discharged row `φ` (`KrelS_eff_cast`). The resume conjunct (the
-dispatched-config co-convergence at `m < n`) is SUPPLIED by the caller — throws via `crelK_ret` on the
-tail (zero-shot, no append); state/txn via `krelS_append` (the one research sorry). -/
+/-- ◊4.5b-append build a handleF-extended `KrelS` from a SELF-`HandlerRel` witness + the discharged-row
+tail + the Kᵢ-threading RESUME CONJUNCT. The body row `e` is arbitrary w.r.t. `φ` (`KrelS_eff_cast`).
+The conjunct (dispatched-config co-convergence at `m < n`, threading the captured continuation `Kᵢ~Kᵢ'`)
+is SUPPLIED by the caller — throws via `crelK_ret` on the tail (zero-shot); state/txn via the resume
+relation through `Kᵢ`. -/
 theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Handler}
-    {K₁ K₂ : Stack} (hK : KrelS n C D φ K₁ K₂)
-    (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+    {K₁ K₂ : Stack} (hHR : HandlerRel Eff Mult n h h) (hK : KrelS n C D φ K₁ K₂)
+    (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ Dᵢ : CTy Eff Mult) (εᵢ : Eff)
+              (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
         Bang.handlesOp h h.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
-        Bang.dispatchOn op w₁ ([], h, K₁) = some cfg₁ →
-        Bang.dispatchOn op w₂ ([], h, K₂) = some cfg₂ →
+        KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+        Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →
+        Bang.dispatchOn op w₂ (Kᵢ', h, K₂) = some cfg₂ →
         CoApproxC_le m cfg₁ cfg₂) :
     KrelS n C D e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
-  -- ◊4.5b-append: REBUILD PENDING — must build `HandlerRel n h h` (self-relation) + the reshaped
-  -- Kᵢ-threading resume conjunct. Temporarily sorry'd to bank the green relational-clause checkpoint.
-  sorry
+  rw [krelS_handleF]; exact ⟨hHR, KrelS_eff_cast hK, hres⟩
 
 /-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
 `h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
@@ -1214,18 +1215,18 @@ theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff
     rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [CrelK] at hM
   refine hM D (Frame.handleF (Handler.throws ℓ) :: K₁) (Frame.handleF (Handler.throws ℓ) :: K₂)
-    (krelS_handleF_intro hK ?_)
-  -- THROWS resume supply: `dispatchOn op w ([], throws ℓ, Kⱼ) = (Kⱼ, ret w)` (zero-shot abort). The
-  -- `handlesOp` guard forces `op = "raise"`, so `opArg ℓ "raise" = A` (hArg) gives `VrelK m A w` from
-  -- `hVrel`; the dispatched config relation IS the tail's return-half — `crelK_ret` on the (downward-
-  -- closed) tail `hK` at hole type `F q A`.
-  intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
+    (krelS_handleF_intro (by simp only [HandlerRel]) hK ?_)
+  -- THROWS resume supply: `dispatchOn op w (Kᵢ, throws ℓ, Kⱼ) = (Kⱼ, ret w)` (zero-shot abort — Kᵢ
+  -- DISCARDED). The `handlesOp` guard forces `op = "raise"`, so `opArg ℓ "raise" = A` (hArg) gives
+  -- `VrelK m A w` from `hVrel`; the dispatched config relation IS the tail's return-half — `crelK_ret`
+  -- on the (downward-closed) tail `hK` at hole type `F q A`. The threaded `Kᵢ` is irrelevant for throws.
+  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi hd₁ hd₂
   -- `hcatch` (handlesOp (throws ℓ) ℓ op) forces `op = "raise"`.
   have hop : op = "raise" := by
     simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
   subst hop
   have hw : VrelK m A w₁ w₂ := hVrel A (by rw [Handler.label]; exact hArg)
-  -- dispatchOn throws ignores op: cfgⱼ = (Kⱼ, ret w).
+  -- dispatchOn throws ignores op AND Kᵢ: cfgⱼ = (Kⱼ, ret w).
   simp only [dispatchOn] at hd₁ hd₂
   obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
   obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
@@ -1248,15 +1249,12 @@ theorem compatK_handleState {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
     rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [CrelK] at hM
   refine hM D (Frame.handleF (Handler.state ℓ s) :: K₁) (Frame.handleF (Handler.state ℓ s) :: K₂)
-    (krelS_handleF_intro hK ?_)
-  -- STATE resume supply — THE ONE RESEARCH SORRY (krelS_append + ▷-metering). `dispatchOn get/put w`
-  -- KEEPS `Kᵢ` (here `[]`) and REINSTALLS `handleF (state ℓ s')::Kⱼ`, so the dispatched config is
-  -- `(handleF (state ℓ s')::Kⱼ, ret r)` (r = stored s for get, unit for put). Relating the two needs
-  -- `krelS_append` of the reinstalled-handler frame onto the (related) tail + the metering at the seam
-  -- (does the ▷-budget compose so the dispatch step stays payable). Flagged, NOT ground (per orchestrator
-  -- 2026-06-24): this is the genuine multi-day piece — research it or seam it (ADR-0026). Throws closes
-  -- WITHOUT this; only state/txn (Kᵢ-kept resume) needs it.
-  intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
+    (krelS_handleF_intro (sorry) hK ?_)
+  -- STATE resume supply — the Kᵢ-threading resume conjunct (get/put dispatch closing through the captured
+  -- continuation). REBUILD PENDING (commit 4): the self-HandlerRel `⟨rfl, S, VrelK n S s s⟩` needs `s`
+  -- well-typed (thread from the caller `hs : HasVTy [] [] s₀ S`); the conjunct closes via the dispatch
+  -- (state reinstall) running `ret r` through the related `Kᵢ` then the reinstalled handler.
+  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hd₁ hd₂
   sorry
 
 /-- ◊4.5b the `handleTransaction` compat core at `CrelK`. The multi-cell resumptive analogue — same
@@ -1274,12 +1272,11 @@ theorem compatK_handleTransaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ 
     rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [CrelK] at hM
   refine hM D (Frame.handleF (Handler.transaction ℓ Θ) :: K₁) (Frame.handleF (Handler.transaction ℓ Θ) :: K₂)
-    (krelS_handleF_intro hK ?_)
-  -- TRANSACTION resume supply — THE ONE RESEARCH SORRY (krelS_append + ▷-metering), multi-cell analogue
-  -- of state. Same shape: `dispatchOn newTVar/readTVar/writeTVar` KEEPS `Kᵢ` + reinstalls a deep
-  -- `transaction ℓ Θ'` frame ⇒ needs `krelS_append` + the metering. Flagged, not ground (orchestrator
-  -- 2026-06-24). See `compatK_handleState`'s sorry — identical research crux. Throws closes without it.
-  intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
+    (krelS_handleF_intro (sorry) hK ?_)
+  -- TRANSACTION resume supply — multi-cell analogue of state. REBUILD PENDING (commit 4): self-HandlerRel
+  -- (pointwise heap VrelK from the caller `hcells`) + the Kᵢ-threading conjunct (newTVar/readTVar/writeTVar
+  -- reinstall threading the heap, closing through the related `Kᵢ`).
+  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hd₁ hd₂
   sorry
 
 
@@ -1596,10 +1593,22 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- ◊4.5b sub-block f: the self-relation makes EQUAL handlers (same `h` both sides) ⇒ `h = h` by `rfl`.
       -- THROWS resume supply: dispatch aborts to `(K, ret w)` (ANY op, zero-shot) — `crelK_ret` on the
       -- self-related tail `ihK` closes it (the `hVrel` premise at `C = F q A` gives `VrelK m A w`).
-      -- ◊4.5b-append: REBUILD PENDING (throws self-relation under the relational clause + Kᵢ-threading
-      -- conjunct). HandlerRel n (throws ℓ) (throws ℓ) = (ℓ=ℓ) = rfl. Temporarily sorry'd for the checkpoint.
+      -- ◊4.5b-append: throws self-relation. HandlerRel n (throws ℓ) (throws ℓ) = (ℓ=ℓ) = rfl. The
+      -- Kᵢ-threading resume conjunct: dispatch aborts to (K, ret w) (zero-shot, Kᵢ discarded) — `crelK_ret`
+      -- on the self-related tail `ihK` closes it (the hVrel premise at C = F q A gives VrelK m A w).
       rw [krelS_handleF]
-      exact ⟨by simp only [HandlerRel], KrelS_eff_cast (ihK hCo), sorry⟩
+      refine ⟨by simp only [HandlerRel], KrelS_eff_cast (ihK hCo), ?_⟩
+      intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi hd₁ hd₂
+      have hop : op = "raise" := by
+        simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
+      subst hop
+      have hw : VrelK m A w₁ w₂ := hVrel A (by rw [Handler.label]; exact hArg)
+      simp only [dispatchOn] at hd₁ hd₂
+      obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
+      obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
+      have hret := crelK_ret (q := q) (e := φ) hcw₁ hcw₂ hw
+      rw [CrelK] at hret
+      exact hret Co K K (KrelS_mono (le_of_lt hm) (KrelS_eff_cast (ihK hCo)))
   | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
       -- ◊4.5b-append: REBUILD PENDING. Self-relation `HandlerRel n (state ℓ s) (state ℓ s)` = ⟨rfl, S, hs-refl⟩
       -- (needs VrelK n S s s via vrelK_fund on hcs); the Kᵢ-threading resume conjunct closes via crelK_ret
