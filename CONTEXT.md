@@ -87,11 +87,17 @@
                                      WELL-TYPED observation contexts — decision (a); the untyped form made lr_sound FALSE), on
                                      `cap45-final` (`a5464da`), append-crux-only. LAST sorry = state/txn RESUMPTIVE composition
                                      (the resume-conjunct RELATION reshape — NOT the metering, which composes cleanly; build-grounded by
-                                     `append` 2026-06-24, 6 Compat spots) — ACTIVELY CLOSING — `append` LIVE on worktree `lang-bang-append2` (branch `cap45-append2`):
-                                     architecture build-VALIDATED (throws end-to-end via HandlerRel + Kᵢ-threading),
-                                     `krelS_append` + 4 green checkpoints banked (`ba2fa70`), conjunct-typing cycle in
-                                     progress → sorryAx-gone. ⚠ DO NOT touch `lang-bang-append2` (live writer); gate its
-                                     COMMITTED close on a clean checkout. Spec: `paths/PATH-cap45-resume-composition.md` + task #10. SEAM (ADR-0026) is the fallback;
+                                     `append` 2026-06-24, 6 Compat spots) — RESEARCH COMPLETE — `append` banked 8 green checkpoints (`1eec302`, branch `cap45-append2`) + STOOD
+                                     DOWN at a Lean-TOOLING wall. Resumptive handlers COMPOSE in the step-indexed LR:
+                                     throws + state proven END-TO-END (krelS_state_reinstall, guarded recursion on the index),
+                                     transaction MATH proven (krelS_transaction_reinstall, all 3 TVar ops). That was the entire
+                                     ◊4.5b research risk — DONE. REMAINING = a bounded TOOLING unit (NOT research): txn
+                                     integration hits the `import Mathlib.Data.List.GetD` → tips crelK_fund/vrelK_fund mutual-block
+                                     termination auto-inference → timeout wall. Fix via PATH A (per-function mutual `termination_by`
+                                     on HasCTy/HasVTy) or PATH B (GetD-free: prove the 4 heap facts inline / reformulate HeapRel via
+                                     getElem? — lower-risk, block untouched), then RE-APPLY append's already-written txn wirings +
+                                     close 2 rare nested-handler sorrys → sorryAx-gone. Fresh-context unit; resume base `cap45-append2
+                                     @ 1eec302`; spec = task #10 + `paths/PATH-cap45-resume-composition.md` + append's post-exec report. SEAM (ADR-0026) is the fallback;
                                      closing it → lr_sound FULL trusted-three = THE MOAT (contextual equiv incl. resumptive
                                      handlers). SEAM (ADR-0026: throws VERIFIED + state/txn-resume TESTED) is the interim honest state. NOT yet
                                      merged to main (carries the append sorry + diverges from ◊5 on Spec.lean).
