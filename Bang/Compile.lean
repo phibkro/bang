@@ -635,53 +635,460 @@ compile` — is the reverse of the CalcVM bridge that IS proven
 completeness argument (both machines are deterministic and total-on-termination),
 left as a single named obligation. -/
 
-/-- The reverse CalcVM bridge for the PURE fragment: a terminating `Source.eval`
-is mirrored by the calculated `exec ∘ compile`. The converse of
-`CalcVM.evalD_agrees_source`; closes by `evalD`-completeness (a terminating
-`Source.eval` ⟹ `evalD` returns the same value) composed with `compile_correct`.
+/-! ### GAP 1 — the reverse CalcVM bridge (`Source.eval ⟹ exec`, pure fragment)
 
-NEEDS (the precise remaining work for Milestone A's forward-sim):
-  (1) `evalD` COMPLETENESS on the pure spine: `Source.eval F c = done v ⇒
-      ∃F', evalD F' [] [] c = some (.term (.ret v), [], [])`. The converse
-      simulation of `CalcVM.run_evalD`; a determinacy argument since both are
-      deterministic substitution machines. Then `CalcVM.compile_correct` gives
-      `exec`. -/
+The converse of `CalcVM.run_evalD`. `Source.eval` (small-step CK) ⟹ `evalD`
+(big-step) for the pure fragment, then compose the PROVEN `CalcVM.compile_correct`
+(`evalD ⟹ exec`). The converse simulation is a STRONG induction on the
+small-step fuel `F`: each `Source.step` decrements `F`, and the pure restriction
+(no stores/handlers/raises, σ=τ=[]) collapses `run_evalD`'s CtxCorr/ctxNetEffect
+bookkeeping to nothing.
+
+`evalD_mono` (fuel monotonicity) lets the letC/app arms combine the existential
+fuels of their two sub-evaluations. -/
+
+/-- `evalD` fuel monotonicity: more fuel never changes a `some` result. Structural
+induction on `f` with the IH applied to every sub-call (all at `f`). -/
+theorem evalD_mono : ∀ (f : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (c : Comp) r,
+    CalcVM.evalD f σ τ c = some r → CalcVM.evalD (f + 1) σ τ c = some r := by
+  intro f
+  induction f with
+  | zero => intro σ τ c r h; simp [CalcVM.evalD] at h
+  | succ f ih =>
+    intro σ τ c r h
+    cases c with
+    | ret v => simpa [CalcVM.evalD] using h
+    | lam M => simpa [CalcVM.evalD] using h
+    | force w =>
+        cases w with
+        | vthunk M => simp only [CalcVM.evalD] at h ⊢; exact ih σ τ M r h
+        | _ => simp [CalcVM.evalD] at h
+    | letC M N =>
+        simp only [CalcVM.evalD] at h ⊢
+        cases hM : CalcVM.evalD f σ τ M with
+        | none => rw [hM] at h; simp at h
+        | some oM =>
+            rw [hM] at h; rw [ih σ τ M oM hM]
+            cases oM with
+            | mk out st =>
+                cases out with
+                | term t =>
+                    cases t with
+                    | ret w =>
+                        simp only [Option.bind_some] at h ⊢
+                        obtain ⟨st1, st2⟩ := st
+                        exact ih st1 st2 (Comp.subst w N) r h
+                    | _ => simp only [Option.bind_some] at h ⊢; exact h
+                | raised ℓ op w => simpa only [Option.bind_some] using h
+    | app M v =>
+        simp only [CalcVM.evalD] at h ⊢
+        cases hM : CalcVM.evalD f σ τ M with
+        | none => rw [hM] at h; simp at h
+        | some oM =>
+            rw [hM] at h; rw [ih σ τ M oM hM]
+            cases oM with
+            | mk out st =>
+                cases out with
+                | term t =>
+                    cases t with
+                    | lam N =>
+                        simp only [Option.bind_some] at h ⊢
+                        obtain ⟨st1, st2⟩ := st
+                        exact ih st1 st2 (Comp.subst v N) r h
+                    | _ => simp only [Option.bind_some] at h ⊢; exact h
+                | raised ℓ op w => simpa only [Option.bind_some] using h
+    | up ℓ op v => simpa [CalcVM.evalD] using h
+    | handle hh M =>
+        cases hh with
+        | state ℓ s =>
+            simp only [CalcVM.evalD] at h ⊢
+            cases hM : CalcVM.evalD f (σ.push ℓ s) τ M with
+            | none => rw [hM] at h; simp at h
+            | some oM =>
+                rw [hM] at h; rw [ih (σ.push ℓ s) τ M oM hM]
+                cases oM with | mk out st => cases out with
+                  | term t => cases t with
+                    | ret w => simpa only [Option.bind_some] using h
+                    | _ => simpa only [Option.bind_some] using h
+                  | raised ℓ' op' w => simpa only [Option.bind_some] using h
+        | transaction ℓ Θ =>
+            simp only [CalcVM.evalD] at h ⊢
+            cases hM : CalcVM.evalD f σ (τ.push ℓ Θ) M with
+            | none => rw [hM] at h; simp at h
+            | some oM =>
+                rw [hM] at h; rw [ih σ (τ.push ℓ Θ) M oM hM]
+                cases oM with | mk out st => cases out with
+                  | term t => cases t with
+                    | ret w => simpa only [Option.bind_some] using h
+                    | _ => simpa only [Option.bind_some] using h
+                  | raised ℓ' op' w => simpa only [Option.bind_some] using h
+        | throws ℓ0 =>
+            simp only [CalcVM.evalD] at h ⊢
+            cases hM : CalcVM.evalD f σ τ M with
+            | none => rw [hM] at h; simp at h
+            | some oM =>
+                rw [hM] at h; rw [ih σ τ M oM hM]
+                cases oM with | mk out st => cases out with
+                  | term t => cases t with
+                    | ret w => simpa only [Option.bind_some] using h
+                    | _ => simpa only [Option.bind_some] using h
+                  | raised ℓ' op' w => simpa only [Option.bind_some] using h
+    | case w N₁ N₂ =>
+        cases w <;> simp only [CalcVM.evalD] at h ⊢ <;> first
+          | exact ih _ _ _ r h
+          | (exact h)
+    | split w N =>
+        cases w <;> simp only [CalcVM.evalD] at h ⊢ <;> first
+          | exact ih _ _ _ r h
+          | (exact h)
+    | unfold w =>
+        cases w <;> simp only [CalcVM.evalD] at h ⊢ <;> exact h
+    | oom => simp [CalcVM.evalD] at h
+    | wrong s => simp [CalcVM.evalD] at h
+
+/-- `evalD` adds fuel: `evalD f … = some r ⇒ evalD (f + k) … = some r`. -/
+theorem evalD_add (k : Nat) : ∀ (f : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (c : Comp) r,
+    CalcVM.evalD f σ τ c = some r → CalcVM.evalD (f + k) σ τ c = some r := by
+  induction k with
+  | zero => intro f σ τ c r h; simpa using h
+  | succ k ih =>
+    intro f σ τ c r h
+    rw [show f + (k + 1) = (f + k) + 1 by omega]
+    exact evalD_mono (f + k) σ τ c r (ih f σ τ c r h)
+
+/-- `evalD` results agree regardless of which (sufficient) fuel: two `some`s with
+possibly different fuels coincide. Used to align the two sub-evaluation fuels. -/
+theorem evalD_some_le {f g : Nat} {σ : CalcVM.SStore} {τ : CalcVM.THeap} {c : Comp} {r : _}
+    (hfg : f ≤ g) (h : CalcVM.evalD f σ τ c = some r) :
+    CalcVM.evalD g σ τ c = some r := by
+  obtain ⟨k, rfl⟩ := Nat.le.dest hfg
+  exact evalD_add k f σ τ c r h
+
+/-! #### `evalD`-completeness via the plugged-term invariant
+
+KEY IDEA: `plug K c` (`Operational.lean`) wraps the focus `c` back into its
+frame stack as `letC`/`app` nodes, and `evalD` of that plugged term big-steps the
+WHOLE config — so the target is `evalD n [] [] (plug K c) = some (.term (.ret v),
+[],[])`. The induction is STRONG on the small-step fuel `F`. Each `Source.step`
+either PRESERVES `plug K c` (a PUSH: `plug (fr::K) c' = plug K (fr.wrapStep c')`,
+`plug_cons`) or is a β/let REDUCE whose evalD-completeness transfers by one evalD
+unfold. The pure restriction means only letC/app/force-vthunk/letF/appF arise. -/
+
+/-- A frame stack is pure when every frame is a `letF`/`appF` with pure contents
+(no `handleF` — pure programs install no handlers). -/
+def PureCtx : Bang.EvalCtx → Prop
+  | [] => True
+  | .letF N :: K => Wasmfx.Comp.Pure N ∧ PureCtx K
+  | .appF v :: K => Wasmfx.Val.Pure v ∧ PureCtx K
+  | .handleF _ :: K => False
+
+/-- `plug K c` stays pure when `K` and `c` are. -/
+theorem plug_pure : ∀ {K : Bang.EvalCtx}, PureCtx K → ∀ {c : Comp}, Wasmfx.Comp.Pure c →
+    Wasmfx.Comp.Pure (plug K c)
+  | [], _, c, hc => hc
+  | .letF N :: K, hK, c, hc => by
+      simp only [PureCtx] at hK
+      exact plug_pure hK.2 (by simp only [Wasmfx.Comp.Pure]; exact ⟨hc, hK.1⟩)
+  | .appF v :: K, hK, c, hc => by
+      simp only [PureCtx] at hK
+      exact plug_pure hK.2 (by simp only [Wasmfx.Comp.Pure]; exact ⟨hc, hK.1⟩)
+
+/-- `cx` SIMULATES `cy` (closed, pure): everything `cy` big-steps to, `cx` does
+too (possibly with different fuel). The relation a CK REDUCE step establishes
+between a redex and its contractum. -/
+def Simulates (cx cy : Comp) : Prop :=
+  ∀ r, CalcVM.evalD 0 [] [] cy = some r ∨ (∃ b, CalcVM.evalD b [] [] cy = some r) →
+    ∃ a, CalcVM.evalD a [] [] cx = some r
+
+/-- Cleaner simulation: anything `cy` evaluates to (some fuel), `cx` evaluates to. -/
+def Sim (cx cy : Comp) : Prop :=
+  ∀ b r, CalcVM.evalD b [] [] cy = some r → ∃ a, CalcVM.evalD a [] [] cx = some r
+
+/-- `letC` preserves simulation in the bound position: if `cx` simulates `cy`,
+then `letC cx N` simulates `letC cy N`. Both run the bound computation FIRST;
+`cx` reaches every terminal `cy` does, so the `letC`s agree. The non-`ret`
+terminal case is vacuous (`evalD (letC _ N)` of a `lam`-terminal is `none`); the
+`raised` case propagates the same raise. -/
+theorem Sim.letC {cx cy : Comp} (h : Sim cx cy) (N : Comp) : Sim (.letC cx N) (.letC cy N) := by
+  intro b r hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      cases hy : CalcVM.evalD b [] [] cy with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          obtain ⟨a, ha⟩ := h b oy hy
+          cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
+            | term t => cases t with
+              | ret w =>
+                  simp only [Option.bind_some] at hb
+                  refine ⟨(max a b) + 1, ?_⟩
+                  simp only [CalcVM.evalD, evalD_some_le (Nat.le_max_left a b) ha, Option.bind_some]
+                  exact evalD_some_le (Nat.le_max_right a b) hb
+              | lam M => simp at hb
+              | force a => simp at hb
+              | letC a a' => simp at hb
+              | app a a' => simp at hb
+              | up a a' a'' => simp at hb
+              | handle a a' => simp at hb
+              | case a a' a'' => simp at hb
+              | split a a' => simp at hb
+              | unfold a => simp at hb
+              | oom => simp at hb
+              | wrong a => simp at hb
+            | raised ℓ op w =>
+                simp only [Option.bind_some] at hb
+                refine ⟨a + 1, ?_⟩
+                simp only [CalcVM.evalD, ha, Option.bind_some]
+                exact hb
+
+theorem Sim.app {cx cy : Comp} (h : Sim cx cy) (u : Bang.Val) : Sim (.app cx u) (.app cy u) := by
+  intro b r hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      cases hy : CalcVM.evalD b [] [] cy with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          obtain ⟨a, ha⟩ := h b oy hy
+          cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
+            | term t => cases t with
+              | lam M =>
+                  simp only [Option.bind_some] at hb
+                  refine ⟨(max a b) + 1, ?_⟩
+                  simp only [CalcVM.evalD, evalD_some_le (Nat.le_max_left a b) ha, Option.bind_some]
+                  exact evalD_some_le (Nat.le_max_right a b) hb
+              | ret w => simp at hb
+              | force a => simp at hb
+              | letC a a' => simp at hb
+              | app a a' => simp at hb
+              | up a a' a'' => simp at hb
+              | handle a a' => simp at hb
+              | case a a' a'' => simp at hb
+              | split a a' => simp at hb
+              | unfold a => simp at hb
+              | oom => simp at hb
+              | wrong a => simp at hb
+            | raised ℓ op w =>
+                simp only [Option.bind_some] at hb
+                refine ⟨a + 1, ?_⟩
+                simp only [CalcVM.evalD, ha, Option.bind_some]
+                exact hb
+
+/-- The plug-congruence: a focus simulation lifts through any pure frame stack.
+Induction on `K`, using `Sim.letC`/`Sim.app` to push the simulation down one
+frame. -/
+theorem evalD_plug_sim : ∀ {K : Bang.EvalCtx}, PureCtx K → ∀ {cx cy : Comp}, Sim cx cy →
+    ∀ {n r}, CalcVM.evalD n [] [] (plug K cy) = some r →
+    ∃ m, CalcVM.evalD m [] [] (plug K cx) = some r
+  | [], _, cx, cy, h, n, r, hn => h n r (by simpa [plug] using hn)
+  | .letF N :: K, hK, cx, cy, h, n, r, hn => by
+      simp only [PureCtx] at hK
+      rw [plug_cons, Frame.wrapStep] at hn ⊢
+      exact evalD_plug_sim hK.2 (h.letC N) hn
+  | .appF u :: K, hK, cx, cy, h, n, r, hn => by
+      simp only [PureCtx] at hK
+      rw [plug_cons, Frame.wrapStep] at hn ⊢
+      exact evalD_plug_sim hK.2 (h.app u) hn
+
+/-- The three CK REDUCE steps as simulations (the contractum simulates the redex):
+each is a single `evalD` head-unfold. -/
+-- DIRECTION: the REDEX simulates the CONTRACTUM (what `subst …` reaches, `letC (ret w) N`
+-- reaches too, in one extra unfold) — this is the direction the transfer needs (it has the
+-- contractum's `evalD`, wants the redex's).
+theorem sim_letC_ret (w : Bang.Val) (N : Comp) : Sim (.letC (.ret w) N) (Comp.subst w N) := by
+  intro b r hb
+  refine ⟨b + 2, ?_⟩
+  simp only [CalcVM.evalD, Option.bind_some]
+  exact evalD_some_le (by omega) hb
+
+theorem sim_app_lam (u : Bang.Val) (M : Comp) : Sim (.app (.lam M) u) (Comp.subst u M) := by
+  intro b r hb
+  refine ⟨b + 2, ?_⟩
+  simp only [CalcVM.evalD, Option.bind_some]
+  exact evalD_some_le (by omega) hb
+
+theorem sim_force (M : Comp) : Sim (.force (.vthunk M)) M := by
+  intro b r hb
+  exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
+
+/-- The three transfer lemmas `evalD_complete_gen` invokes, derived from
+`evalD_plug_sim` + the redex simulations. -/
+theorem evalD_plug_letC_ret (K : Bang.EvalCtx) (w : Bang.Val) (N : Comp) (r : _)
+    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst w N)) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.letC (.ret w) N)) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim hK (sim_letC_ret w N) h
+
+theorem evalD_plug_app_lam (K : Bang.EvalCtx) (u : Bang.Val) (M : Comp) (r : _)
+    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst u M)) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.app (.lam M) u)) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim hK (sim_app_lam u M) h
+
+theorem evalD_plug_force (K : Bang.EvalCtx) (M : Comp) (r : _)
+    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K M) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.force (.vthunk M))) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim hK (sim_force M) h
+
+/-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
+a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
+induction on the small-step fuel `F`. -/
+theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Bang.Val),
+    PureCtx K → Wasmfx.Comp.Pure c →
+    Config.run F (K, c) = Result.done v →
+    ∃ n, CalcVM.evalD n [] [] (plug K c) = some (.term (.ret v), [], []) := by
+  intro F
+  induction F using Nat.strong_induction_on with
+  | _ F ih =>
+    intro K c v hK hc hrun
+    -- F = 0 ⇒ run = oom ≠ done.
+    cases F with
+    | zero => simp [Config.run] at hrun
+    | succ F' =>
+      -- terminal `([], ret v)` is the base; otherwise one Source.step.
+      by_cases hterm : ∃ w, (K, c) = ([], Comp.ret w)
+      · obtain ⟨w, hKc⟩ := hterm
+        simp only [Prod.mk.injEq] at hKc
+        obtain ⟨hK0, hcw⟩ := hKc; subst hK0; subst hcw
+        -- ([], ret w): run yields done w ⇒ w = v; evalD of `ret w` returns immediately.
+        simp only [Config.run, Result.done.injEq] at hrun
+        subst hrun
+        exact ⟨1, by simp [plug, CalcVM.evalD]⟩
+      · -- non-terminal: step once, recurse with F' < F'+1.
+        have hstep := Config.run_step F' (K, c) (fun w h => hterm ⟨w, h⟩)
+        rw [hrun] at hstep
+        -- analyse the step on (K, c).
+        cases c with
+        | ret w =>
+            -- focus is `ret w` but K ≠ [] (else terminal). K's head reduces.
+            cases K with
+            | nil => exact absurd ⟨w, rfl⟩ hterm
+            | cons fr K' =>
+                cases fr with
+                | letF N =>
+                    -- step: (letF N :: K', ret w) ↦ (K', subst w N)
+                    simp only [Source.step] at hstep
+                    have hrun' : Config.run F' (K', Comp.subst w N) = Result.done v := hstep.symm
+                    simp only [PureCtx] at hK
+                    have hsub : Wasmfx.Comp.Pure (Comp.subst w N) :=
+                      Wasmfx.subst_pure (by simpa only [Wasmfx.Comp.Pure] using hc) hK.1
+                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst w N) v hK.2 hsub hrun'
+                    -- transfer: evalD (plug K' (letC (ret w) N)) ⟸ evalD (plug K' (subst w N)).
+                    exact evalD_plug_letC_ret K' w N n hK.2 hn
+                | appF u =>
+                    -- (appF u :: K', ret w): `ret w` is not a `lam`; step is `none` ⇒ stuck, not done.
+                    simp only [Source.step] at hstep
+                    -- Source.step (appF u :: K', ret w) = none (only lam reduces under appF).
+                    exact absurd hstep (by simp [Config.run])
+                | handleF h => simp only [PureCtx] at hK
+        | lam M =>
+            cases K with
+            | nil => simp [Config.run, Source.step] at hrun   -- ([], lam M): not a `ret`, run = stuck
+            | cons fr K' =>
+                cases fr with
+                | letF N =>
+                    simp only [Source.step] at hstep
+                    exact absurd hstep (by simp [Config.run])  -- letF needs `ret`, lam stuck
+                | appF u =>
+                    -- (appF u :: K', lam M) ↦ (K', subst u M)  (β)
+                    simp only [Source.step] at hstep
+                    have hrun' : Config.run F' (K', Comp.subst u M) = Result.done v := hstep.symm
+                    simp only [PureCtx] at hK
+                    have hsub : Wasmfx.Comp.Pure (Comp.subst u M) :=
+                      Wasmfx.subst_pure hK.1 (by simpa only [Wasmfx.Comp.Pure] using hc)
+                    obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst u M) v hK.2 hsub hrun'
+                    exact evalD_plug_app_lam K' u M n hK.2 hn
+                | handleF h => simp only [PureCtx] at hK
+        | letC M N =>
+            -- (K, letC M N) ↦ (letF N :: K, M)  (PUSH; plug preserved)
+            simp only [Source.step] at hstep
+            have hrun' : Config.run F' (Frame.letF N :: K, M) = Result.done v := hstep.symm
+            simp only [Wasmfx.Comp.Pure] at hc
+            have hK' : PureCtx (Frame.letF N :: K) := by
+              simp only [PureCtx]; exact ⟨hc.2, hK⟩
+            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.letF N :: K) M v hK' hc.1 hrun'
+            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn
+            exact ⟨n, hn⟩
+        | app M u =>
+            simp only [Source.step] at hstep
+            have hrun' : Config.run F' (Frame.appF u :: K, M) = Result.done v := hstep.symm
+            simp only [Wasmfx.Comp.Pure] at hc
+            have hK' : PureCtx (Frame.appF u :: K) := by
+              simp only [PureCtx]; exact ⟨hc.2, hK⟩
+            obtain ⟨n, hn⟩ := ih F' (by omega) (Frame.appF u :: K) M v hK' hc.1 hrun'
+            rw [plug_cons] at hn; simp only [Frame.wrapStep] at hn
+            exact ⟨n, hn⟩
+        | force w =>
+            cases w with
+            | vthunk M =>
+                -- (K, force (vthunk M)) ↦ (K, M)
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, M) = Result.done v := hstep.symm
+                simp only [Wasmfx.Comp.Pure] at hc
+                obtain ⟨n, hn⟩ := ih F' (by omega) K M v hK hc hrun'
+                -- evalD (plug K (force (vthunk M))) ⟸ evalD (plug K M)  (force erases).
+                exact evalD_plug_force K M n hK hn
+            | _ => simp only [Wasmfx.Comp.Pure] at hc
+        | _ => simp only [Wasmfx.Comp.Pure] at hc
+
+/-- `evalD`-completeness (pure fragment, closed): `Source.eval F c = done v ⟹
+∃n, evalD n [] [] c = some(.term(.ret v),[],[])`. The `K = []` instance of
+`evalD_complete_gen`. -/
+theorem evalD_complete (F : Nat) (c : Comp) (v : Bang.Val)
+    (hpure : Wasmfx.Comp.Pure c) (h : Source.eval F c = Result.done v) :
+    ∃ n, CalcVM.evalD n [] [] c = some (.term (.ret v), [], []) := by
+  have := evalD_complete_gen F [] c v (by simp [PureCtx]) hpure h
+  simpa [plug] using this
+
+/-- The reverse CalcVM bridge for the PURE fragment: a terminating `Source.eval`
+is mirrored by the calculated `exec ∘ compile`. Composes `evalD`-completeness
+(`evalD_complete`) with the PROVEN `CalcVM.compile_correct`. -/
 theorem source_eval_to_exec (c : Comp) (v : Bang.Val) (fuel : Nat)
     (hpure : Wasmfx.Comp.Pure c)
     (h : Source.eval fuel c = Result.done v) :
     ∃ F, CalcVM.exec F (CalcVM.compile c []) [] [] = some [.ret v] := by
-  -- shape: composes evalD-completeness (gap 1) with CalcVM.compile_correct (proven).
-  sorry
+  obtain ⟨n, hn⟩ := evalD_complete fuel c v hpure h
+  exact CalcVM.compile_correct n c (.ret v) [] [] hn
 
-/-- `compile_forward_sim` proof. PROVEN for the PURE CBPV fragment (Milestone A
-scope) modulo the single reverse-bridge obligation `source_eval_to_exec`; the
-`exec ⟹ wexec` leg and the `run` unfold are fully proven (`exec_wexec_sim`).
+/-- **GAP 1 CLOSED** — the forward simulation, PROVEN and AXIOM-CLEAN
+(⊆ {propext, Classical.choice, Quot.sound}) for the PURE CBPV fragment. Chains
+the reverse CalcVM bridge (`source_eval_to_exec`, now proven via the converse
+simulation `evalD_complete`) through the `exec ⟹ wexec` lockstep
+(`exec_wexec_sim`) to `run`. No `sorry` on this path. -/
+theorem compile_forward_sim_pure {c : Comp} {v : Val} {fuel : Nat}
+    (hpure : Wasmfx.Comp.Pure c)
+    (h : Source.eval fuel c = Result.done v) :
+    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := by
+  obtain ⟨F, hexec⟩ := source_eval_to_exec c v fuel hpure h
+  have hcp : Wasmfx.CodePure (CalcVM.compile c []) :=
+    Wasmfx.compile_pure hpure (fun _ hm => by simp at hm)
+  have hsim := Wasmfx.exec_wexec_sim F (CalcVM.compile c []) [] [.ret v] hcp
+    (fun _ hm => by simp at hm) hexec
+  refine ⟨F, ?_⟩
+  -- injStack [.ret v] = [compileV v]; wexec yields it.
+  rw [show Wasmfx.injStack [Comp.ret v] = [compileV v] from by
+    simp [Wasmfx.injStack, injTerminal]] at hsim
+  -- `run` reduces on `wexec … = some [compileV v]` (singleton-operand-stack ⇒ done).
+  have hb : Wasmfx.wexec F (compileC c).body [] = some [compileV v] := hsim
+  show Wasmfx.run F (compileC c) = Result.done (compileV v)
+  unfold Wasmfx.run
+  rw [hb]
 
-NEEDS (beyond `source_eval_to_exec`'s gap 1):
-  (2) the NON-pure fragment (`up`/`handle`/ADT) — Milestone B (handlers ↦
-      generator suspend/resume) and a later ADT increment. Here `compileC`'s
-      lowering drops those opcodes, so the simulation does not yet hold; this is
-      the `¬ Comp.Pure c` branch. -/
+/-- `compile_forward_sim` proof. The PURE fragment is PROVEN axiom-clean
+(`compile_forward_sim_pure`, GAP 1 closed). The remaining `sorry` is GAP 2 only:
+the NON-pure fragment (`up`/`handle`/ADT) — Milestone B (handlers ↦ generator
+suspend/resume) + a later ADT increment, where `compileC`'s lowering drops those
+opcodes so the simulation does not yet hold. -/
 theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
     (h : Source.eval fuel c = Result.done v) :
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := by
   by_cases hpure : Wasmfx.Comp.Pure c
-  · -- PURE fragment: chain the reverse bridge through the proven simulation.
-    obtain ⟨F, hexec⟩ := source_eval_to_exec c v fuel hpure h
-    have hcp : Wasmfx.CodePure (CalcVM.compile c []) :=
-      Wasmfx.compile_pure hpure (fun _ hm => by simp at hm)
-    have hsim := Wasmfx.exec_wexec_sim F (CalcVM.compile c []) [] [.ret v] hcp
-      (fun _ hm => by simp at hm) hexec
-    refine ⟨F, ?_⟩
-    -- injStack [.ret v] = [compileV v]; wexec yields it.
-    rw [show Wasmfx.injStack [Comp.ret v] = [compileV v] from by
-      simp [Wasmfx.injStack, injTerminal]] at hsim
-    -- `run` reduces on `wexec … = some [compileV v]` (singleton-operand-stack ⇒ done).
-    have hb : Wasmfx.wexec F (compileC c).body [] = some [compileV v] := hsim
-    show Wasmfx.run F (compileC c) = Result.done (compileV v)
-    unfold Wasmfx.run
-    rw [hb]
-  · -- NON-pure (Milestone B + ADT increment): see NEEDS (2).
+  · -- PURE fragment: GAP 1 closed, axiom-clean.
+    exact compile_forward_sim_pure hpure h
+  · -- NON-pure (Milestone B + ADT increment): GAP 2.
     exact ⟨0, by sorry⟩
 
 end Bang

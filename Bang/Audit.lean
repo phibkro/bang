@@ -17,6 +17,10 @@ open Bang
 -- group_recovers RETIRED (ADR-0032) — false-as-stated + vacuous; rollback is the txn handler
 #print axioms seq_unit
 #print axioms compile_forward_sim
+-- ◊5 GAP 1 CLOSED: the PURE-fragment forward-sim is axiom-clean (sorry only in the
+-- non-pure GAP 2 branch of `compile_forward_sim`, Milestone B).
+#print axioms Bang.compile_forward_sim_pure
+#print axioms Bang.source_eval_to_exec
 #print axioms compile_well_typed
 #print axioms handler_compiles
 #print axioms zero_grade_no_code
