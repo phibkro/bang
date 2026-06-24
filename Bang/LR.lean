@@ -70,6 +70,61 @@ infixl:50 " ≈ " => ctxEquiv
 /-- Termination of c₁ implies termination of c₂ (Biernacki's `Obs`, approx form). -/
 def CoApprox (c₁ c₂ : Comp) : Prop := Converges c₁ → Converges c₂
 
+/-! ### 5.0a‴ The step-bounded observation — the `▷` (later) modality (◊4.5b / ADR-0041)
+
+The unbounded `CoApprox` cannot carry a `▷`: a machine head-step is observed by an index-PRESERVING
+`Converges ↔ Converges` (the reduct co-converges at the SAME budget), so head-expansion cannot be
+`▷`-guarded, and the μ-floor's `Crel 0` stays a real (non-vacuous) obligation through the inhabited
+`Krel 0`. This is exactly ADR-0041's "unbounded biorthogonal observation + μ = vicious cycle".
+
+The fix is Biernacki's `Obs` (popl18 Fig 7), whose left term is STEP-BOUNDED (`▷Obs` on every
+left-reduction): we METER THE LEFT term's machine steps while leaving the right UNBOUNDED ("e₂ may
+use any number of steps"). The bound IS the step index. Two facts make this discharge the μ-floor
+WITHOUT touching `Krel_mono` (ADR-0041's `Krel 0`-inhabitation argument is sidestepped):
+  • `ConvergesC_le 0 cfg = ∃ v, run 0 cfg = done v` — but `run 0 = oom` (Operational.lean), so this is
+    FALSE, so `CoApprox_le 0` is VACUOUSLY TRUE ⇒ `Crel 0` is vacuous (the floor discharges, no payload).
+  • the bound is downward-closed (`∀ j ≤ n` in `Krel`), so `Krel_mono` is still free.
+
+DESIGN — config level, no refocus offset (the lr45 wall): the metered observation counts CONFIG steps
+(`Config.run n (K, c)`), NOT `Source.eval` fuel on the plugged term. At config level a head-step is a
+clean `±1` (`Config.run_step`), with NO `+K.length` `run_plug` offset — that offset (the lr45
+"(j+1)+K.length refocus mismatch") never enters because `Krel`/`Crel`/`Srel` observe the FOCUSED
+config `(K, c)`, not `plug K c`. The bridge to the frozen index-free `Converges` is `run_plug`, applied
+ONCE at the `lr_sound` adequacy boundary (`converges_iff_exists_ConvergesC_le`). -/
+
+/-- Step-bounded convergence of a CONFIG within `n` machine steps. Monotone in `n` (`run_done_add`).
+`ConvergesC_le 0 _` is `False` (`run 0 = oom`), the fact that vacates the μ-floor. -/
+def ConvergesC_le (n : Nat) (cfg : Config) : Prop := ∃ v, Config.run n cfg = Result.done v
+
+/-- `run 0 = oom`, so 0-step convergence is empty — the floor-vacuity fact. -/
+theorem not_convergesC_le_zero (cfg : Config) : ¬ ConvergesC_le 0 cfg := by
+  rintro ⟨v, h⟩; rw [show Config.run 0 cfg = Result.oom from rfl] at h; exact absurd h (by simp)
+
+/-- Monotone: convergence within `n` steps persists within any `m ≥ n` (`run_done_add`). -/
+theorem ConvergesC_le.mono {n m : Nat} (hnm : n ≤ m) {cfg : Config}
+    (h : ConvergesC_le n cfg) : ConvergesC_le m cfg := by
+  obtain ⟨v, hv⟩ := h
+  obtain ⟨k, rfl⟩ := Nat.le.dest hnm
+  exact ⟨v, Config.run_done_add k n cfg v hv⟩
+
+/-- THE step lemma (factored once). A non-terminal config `cfg` stepping to `cfg'` converges within
+`n+1` steps iff `cfg'` converges within `n` — a clean `±1` with NO `K.length` offset (config level).
+This is the single primitive every `▷`-guarded anti-reduction threads through. -/
+theorem convergesC_le_step {n : Nat} {cfg cfg' : Config}
+    (hstep : Source.step cfg = some cfg') (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
+    ConvergesC_le (n + 1) cfg ↔ ConvergesC_le n cfg' := by
+  unfold ConvergesC_le
+  rw [Config.run_step n cfg hne, hstep]
+
+/-- Config-level step-bounded co-approximation: `cfg₁` converges within `n` steps ⇒ `cfg₂` converges
+(UNBOUNDED on the right — Biernacki's `Obs`). The `▷`-carrying observation `Krel`/`Crel`/`Srel` use. -/
+def CoApproxC_le (n : Nat) (cfg₁ cfg₂ : Config) : Prop :=
+  ConvergesC_le n cfg₁ → (∃ m w, Config.run m cfg₂ = Result.done w)
+
+/-- `CoApproxC_le 0` is VACUOUSLY TRUE (premise `ConvergesC_le 0` is `False`). The μ-floor discharge. -/
+theorem coApproxC_le_zero (cfg₁ cfg₂ : Config) : CoApproxC_le 0 cfg₁ cfg₂ :=
+  fun h => absurd h (not_convergesC_le_zero cfg₁)
+
 /-! ### 5.0b `NotEvaluated` — the coeffect-erasure notion (`zero_usage_erasable`)
 
 `NotEvaluated i c`: the de Bruijn index `i`'s binder is never EVALUATED in `c` — i.e. WHAT is

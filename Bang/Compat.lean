@@ -115,6 +115,68 @@ theorem Crel_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ c
   exact e2.mpr (hrel K₁ K₂ hK (e1.mp hconv))
 
 
+/-! ### B.0a EXPERIMENTAL (◊4.5b) — the central `▷`-guarded head-expansion lemma over METERED obs
+
+PoC validating the metered-observation `▷` design (ADR-0041 reopen). We prove the make-or-break
+`Crel_head_step_le` over MINIMAL metered relations capturing exactly the biorthogonal observation
+shape — `CrelExp`/`KrelExp` quantify the CONFIG-level metered `CoApproxC_le` (LR.lean §5.0a‴) over
+stacks, abstracting the value-relation content `R` (orthogonal to head-expansion). The lead flagged
+THIS lemma as where lr45 died (the `(j+1)+K.length` refocus offset fought the bound). Our config-level
+`convergesC_le_step` (clean `±1`, NO offset) is the bet: `CrelExp`/`KrelExp` observe the FOCUSED config
+`(Kᵢ, cᵢ)`, never `plug Kᵢ cᵢ`, so `run_plug`'s `+K.length` never enters. If this closes, the full
+rewire of `Crel`/`Krel`/`Srel` over `CoApproxC_le` is mechanical. -/
+
+/-- Minimal metered continuation relation: `R` is the (abstracted) return/stuck/arrow content,
+downward-closed in the index (mirrors `Krel n := ∀ j ≤ n`). `Eff`/`Mult`-free. -/
+def KrelExp (R : Nat → Stack → Stack → Prop) (n : Nat) (K₁ K₂ : Stack) : Prop :=
+  ∀ j, j ≤ n → R j K₁ K₂
+
+theorem KrelExp_mono {R : Nat → Stack → Stack → Prop} {n m : Nat} {K₁ K₂ : Stack}
+    (hmn : m ≤ n) (hK : KrelExp R n K₁ K₂) : KrelExp R m K₁ K₂ :=
+  fun j hjm => hK j (le_trans hjm hmn)
+
+/-- Minimal metered computation relation: biorthogonal closure with the config-level metered
+observation `CoApproxC_le` (focused configs `(Kᵢ, cᵢ)`, no `plug`/refocus). -/
+def CrelExp (R : Nat → Stack → Stack → Prop) (n : Nat) (c₁ c₂ : Comp) : Prop :=
+  ∀ K₁ K₂ : Stack, KrelExp R n K₁ K₂ → CoApproxC_le n (K₁, c₁) (K₂, c₂)
+
+/-- THE CENTRAL LEMMA (◊4.5b make-or-break). `▷`-guarded head-expansion over the metered observation:
+a context-independent head-step on both sides reduces `CrelExp n` to the reducts related at every
+STRICTLY-SMALLER index (`∀ m < n`). Provable BECAUSE the left step is a clean config-level `−1`
+(`convergesC_le_step`) with NO `K.length` offset — the wall lr45 hit. At `n = 0` the goal is vacuous
+(`CoApproxC_le 0`). For `n = k+1` the head-step spends exactly the `▷` budget: `m := k < n`. -/
+theorem Crel_head_step_le {R : Nat → Stack → Stack → Prop} {n : Nat} {c₁ c₁' c₂ c₂' : Comp}
+    (h₁ : CIStep c₁ c₁') (h₂ : CIStep c₂ c₂')
+    (hlater : ∀ m, m < n → CrelExp R m c₁' c₂') :
+    CrelExp R n c₁ c₂ := by
+  intro K₁ K₂ hK hconv
+  -- left: c₁ is a CIStep redex under K₁ — non-terminal, steps to c₁' under the SAME K₁.
+  have hstep₁ : Source.step (K₁, c₁) = some (K₁, c₁') := h₁.1 K₁
+  have hne₁ : ∀ v, (K₁, c₁) ≠ ([], Comp.ret v) := by intro v; simp [h₁.2 v]
+  -- n must be a successor: ConvergesC_le 0 is False.
+  cases n with
+  | zero => exact absurd hconv (not_convergesC_le_zero _)
+  | succ k =>
+      -- spend one left step: ConvergesC_le (k+1) (K₁,c₁) ↔ ConvergesC_le k (K₁,c₁').
+      rw [convergesC_le_step hstep₁ hne₁] at hconv
+      -- fire the ▷ premise at m = k (< k+1), with the ambient stack weakened to index k (KrelExp_mono).
+      have hCk : CrelExp R k c₁' c₂' := hlater k (Nat.lt_succ_self k)
+      have hKk : KrelExp R k K₁ K₂ := KrelExp_mono (Nat.le_succ k) hK
+      obtain ⟨m, w, hm⟩ := hCk K₁ K₂ hKk hconv
+      -- right: anti-reduce one step. (K₂, c₂) ↦ (K₂, c₂') (CIStep), so converging at (K₂,c₂') ⇒ (K₂,c₂).
+      have hstep₂ : Source.step (K₂, c₂) = some (K₂, c₂') := h₂.1 K₂
+      have hne₂ : ∀ v, (K₂, c₂) ≠ ([], Comp.ret v) := by intro v; simp [h₂.2 v]
+      exact ⟨m + 1, w, by rw [Config.run_step m (K₂, c₂) hne₂, hstep₂]; exact hm⟩
+
+/-- The μ-FLOOR discharge (the ◊4.5b proof-of-concept). At `n = 0` a `CrelExp` obligation is VACUOUS —
+no payload relation needed. This is exactly the wall in `crel_fund`'s `unfold`/`vvar`/`n=0` case: after
+`unfold (fold w) ↦ ret w` the residual `Crel 0 (ret w₁) (ret w₂)` discharges with the floor's vacuous
+(`∀ j < 0`) payload, because the metered observation `CoApproxC_le 0` is vacuously true. Closes WITHOUT
+any `Vrel 0` payload — the reconciliation ADR-0041 said plain-Nat can't reach. -/
+theorem crelExp_zero {R : Nat → Stack → Stack → Prop} (c₁ c₂ : Comp) : CrelExp R 0 c₁ c₂ :=
+  fun K₁ K₂ _ hconv => absurd hconv (not_convergesC_le_zero _)
+
+
 /-- The `letF` REDUCE bridge: plugging `letF N :: K` with `ret v` co-converges with plugging `K` with
 `N.subst v`. The step `(letF N :: K, ret v) ↦ (K, N.subst v)` is context-dependent (it consumes the
 `letF` frame), so this is NOT a `CIStep` — proven directly through `converges_cfg_step`. The frame
