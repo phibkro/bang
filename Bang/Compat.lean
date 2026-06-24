@@ -523,6 +523,54 @@ theorem EnvRel.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List
           simp only [List.getElem?_cons_succ] at hΓ
           exact EnvRel.vrel_at hrest hΓ d₁ d₂
 
+/-! ◊4.5b `EnvRelK` helpers (mirror the `EnvRel` ones; the closed/length proofs are relation-agnostic,
+`vrel_at` returns a `VrelK`). For the migrated `crelK_fund`/`vrelK_fund`. -/
+theorem EnvRelK.closed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRelK n Γ δ₁ δ₂ → ∀ v ∈ δ₁, Val.Closed v
+  | [],      [],        [],        _, v, hv => absurd hv (by simp)
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
+      rw [EnvRelK] at h
+      obtain ⟨hc₁, _, _, hrest⟩ := h
+      rcases List.mem_cons.mp hv with rfl | hmem
+      · exact hc₁
+      · exact EnvRelK.closed_left hrest v hmem
+
+theorem EnvRelK.closed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRelK n Γ δ₁ δ₂ → ∀ v ∈ δ₂, Val.Closed v
+  | [],      [],        [],        _, v, hv => absurd hv (by simp)
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
+      rw [EnvRelK] at h
+      obtain ⟨_, hc₂, _, hrest⟩ := h
+      rcases List.mem_cons.mp hv with rfl | hmem
+      · exact hc₂
+      · exact EnvRelK.closed_right hrest v hmem
+
+theorem EnvRelK.length_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRelK n Γ δ₁ δ₂ → δ₁.length = Γ.length
+  | [],      [],        [],        _ => rfl
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
+      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_left h.2.2.2]
+theorem EnvRelK.length_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRelK n Γ δ₁ δ₂ → δ₂.length = Γ.length
+  | [],      [],        [],        _ => rfl
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
+      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_right h.2.2.2]
+
+theorem EnvRelK.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRelK n Γ δ₁ δ₂ → ∀ {i : Nat} {A : VTy Eff Mult}, Γ[i]? = some A →
+      ∀ (d₁ d₂ : Val), VrelK n A (δ₁[i]?.getD d₁) (δ₂[i]?.getD d₂)
+  | [],      [],        [],        _, i, A, hΓ, _, _ => by simp at hΓ
+  | A' :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, i, A, hΓ, d₁, d₂ => by
+      rw [EnvRelK] at h
+      obtain ⟨_, _, hv, hrest⟩ := h
+      cases i with
+      | zero => simp only [List.getElem?_cons_zero, Option.getD_some]
+                simp only [List.getElem?_cons_zero, Option.some.injEq] at hΓ; subst hΓ; exact hv
+      | succ k =>
+          simp only [List.getElem?_cons_succ]
+          simp only [List.getElem?_cons_succ] at hΓ
+          exact EnvRelK.vrel_at hrest hΓ d₁ d₂
+
 
 /-! ### B.1b BINDING-former `closeC` distribution (`closeCUnderBinders`)
 
@@ -1721,6 +1769,171 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       intro n δ₁ δ₂ hδ
       rw [closeC_handleTransaction, closeC_handleTransaction]
       exact compat_handleTransaction (crel_fund hM n δ₁ δ₂ hδ)
+end
+
+
+/-! ### B.5′ ◊4.5b — the migrated fundamental theorem (`vrelK_fund` / `crelK_fund`) over `CrelK`/`KrelS`
+
+The answer-typed migration of `vrel_fund`/`crel_fund`, wiring the `compatK_*` cores (sub-block c) over
+`EnvRelK`. STATUS: all NON-handler cases closed; the 3 handler cases + `up` carry `sorry` (→ sub-block f,
+where the handler row-discharge / producer-`up` close together — exactly as the old `crel_fund`'s `up`
+sorry). The Kripke continuation indices use `∀ m < n` at the letC/case/split seams (the `compatK_*`
+cores' ▷-guarded shape) and `∀ j ≤ n` would over-supply. -/
+mutual
+theorem vrelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (h : HasVTy γ Γ v A) :
+    ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
+      VrelK n A (closeV δ₁ v) (closeV δ₂ v) := by
+  cases h with
+  | vunit => intro n δ₁ δ₂ _; rw [closeV_vunit, closeV_vunit, VrelK]; exact ⟨rfl, rfl⟩
+  | vint  => intro n δ₁ δ₂ _; rw [closeV_vint, closeV_vint, VrelK]; exact ⟨_, rfl, rfl⟩
+  | @vvar _ i _ hget =>
+      intro n δ₁ δ₂ hδ
+      have hlen₁ := hδ.length_left
+      have hlen₂ := hδ.length_right
+      have hi : i < Γ.length := by rw [List.getElem?_eq_some_iff] at hget; exact hget.1
+      rw [closeV_vvar (hδ.closed_left) (by omega) Val.vunit,
+          closeV_vvar (hδ.closed_right) (by omega) Val.vunit]
+      exact hδ.vrel_at hget Val.vunit Val.vunit
+  | @vthunk _ _ M φ B hM =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_vthunk, closeV_vthunk, VrelK]
+      -- ◊4.5b the U-clause is `∀ j < n`: supply `CrelK j` for each `j < n` via the IH at `j` on the
+      -- `EnvRelK_mono`-weakened env (`j < n ⇒ j ≤ n`). The ▷-guarded thunk.
+      exact ⟨closeC δ₁ M, closeC δ₂ M, rfl, rfl,
+        fun j hjn => crelK_fund hM j δ₁ δ₂ (EnvRelK_mono (Nat.le_of_lt hjn) hδ)⟩
+  | @inl _ _ w A B hw =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_inl, closeV_inl, VrelK]
+      exact Or.inl ⟨_, _, rfl, rfl, vrelK_fund hw n δ₁ δ₂ hδ⟩
+  | @inr _ _ w A B hw =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_inr, closeV_inr, VrelK]
+      exact Or.inr ⟨_, _, rfl, rfl, vrelK_fund hw n δ₁ δ₂ hδ⟩
+  | @pair _ _ _ _ a b A B ha hb _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_pair, closeV_pair, VrelK]
+      exact ⟨_, _, _, _, rfl, rfl, vrelK_fund ha n δ₁ δ₂ hδ, vrelK_fund hb n δ₁ δ₂ hδ⟩
+  | @fold _ _ w A hw =>
+      intro n δ₁ δ₂ hδ
+      rw [closeV_fold, closeV_fold, VrelK]
+      exact ⟨_, _, rfl, rfl,
+        fun j hjn => vrelK_fund hw j δ₁ δ₂ (EnvRelK_mono (Nat.le_of_lt hjn) hδ)⟩
+
+theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
+    (h : HasCTy γ Γ c e B) :
+    ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
+      CrelK n B e (closeC δ₁ c) (closeC δ₂ c) := by
+  cases h with
+  | @ret _ _ _ v A q hv _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_ret, closeC_ret]
+      have hsc₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hsc₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      exact crelK_ret hsc₁ hsc₂ (vrelK_fund hv n δ₁ δ₂ hδ)
+  | @letC _ _ _ _ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_letC, closeC_letC]
+      refine compatK_letC (q1 := q1) (crelK_fund hM n δ₁ δ₂ hδ) ?_
+      -- ▷-guarded continuation: at EVERY `m < n`, on the `EnvRelK_mono`-weakened env.
+      intro m hmn v₁ v₂ hcv₁ hcv₂ hvrel
+      rw [closeC_subst_comm hδ.closed_left hcv₁, closeC_subst_comm hδ.closed_right hcv₂]
+      have hδ' : EnvRelK m (A :: Γ) (v₁ :: δ₁) (v₂ :: δ₂) := by
+        rw [EnvRelK]; exact ⟨hcv₁, hcv₂, hvrel, EnvRelK_mono (Nat.le_of_lt hmn) hδ⟩
+      have := crelK_fund hN m (v₁ :: δ₁) (v₂ :: δ₂) hδ'
+      rwa [show closeC (v₁ :: δ₁) N = closeC δ₁ (Comp.subst v₁ N) from rfl,
+           show closeC (v₂ :: δ₂) N = closeC δ₂ (Comp.subst v₂ N) from rfl] at this
+  | @force _ _ v φ B hv =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_force, closeC_force]
+      exact crelK_force (vrelK_fund hv n δ₁ δ₂ hδ)
+  | @lam _ _ M φ q A B hM =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_lam, closeC_lam]
+      refine compatK_lam ?_
+      intro w₁ w₂ hcw₁ hcw₂ hw
+      rw [closeC_subst_comm hδ.closed_left hcw₁, closeC_subst_comm hδ.closed_right hcw₂]
+      have hδ' : EnvRelK n (A :: Γ) (w₁ :: δ₁) (w₂ :: δ₂) := by
+        rw [EnvRelK]; exact ⟨hcw₁, hcw₂, hw, hδ⟩
+      have := crelK_fund hM n (w₁ :: δ₁) (w₂ :: δ₂) hδ'
+      rwa [show closeC (w₁ :: δ₁) M = closeC δ₁ (Comp.subst w₁ M) from rfl,
+           show closeC (w₂ :: δ₂) M = closeC δ₂ (Comp.subst w₂ M) from rfl] at this
+  | @app _ _ _ _ M v φ q A B hM hv _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_app, closeC_app]
+      have hscv₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hscv₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      exact compatK_app (crelK_fund hM n δ₁ δ₂ hδ) hscv₁ hscv₂ (vrelK_fund hv n δ₁ δ₂ hδ)
+  | @case _ _ _ _ v N₁ N₂ φ q A B C hv hN₁ hN₂ _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_case, closeC_case]
+      have hscv₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hscv₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      refine compatK_case (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_ ?_
+      · intro m hm u₁ u₂ hcu₁ hcu₂ hu
+        rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
+        have hδ' : EnvRelK m (A :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by
+          rw [EnvRelK]; exact ⟨hcu₁, hcu₂, hu, EnvRelK_mono (Nat.le_of_lt hm) hδ⟩
+        exact crelK_fund hN₁ m (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+      · intro m hm u₁ u₂ hcu₁ hcu₂ hu
+        rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
+        have hδ' : EnvRelK m (B :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by
+          rw [EnvRelK]; exact ⟨hcu₁, hcu₂, hu, EnvRelK_mono (Nat.le_of_lt hm) hδ⟩
+        exact crelK_fund hN₂ m (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+  | @split _ _ _ _ v N φ q A B C hv hN _ =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_split, closeC_split]
+      have hscv₁ : Val.Closed (closeV δ₁ v) :=
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+      have hscv₂ : Val.Closed (closeV δ₂ v) :=
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      refine compatK_split (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_
+      intro m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
+      rw [closeC_subst2_comm hδ.closed_left hca₁ hcb₁, closeC_subst2_comm hδ.closed_right hca₂ hcb₂]
+      have hδ' : EnvRelK m (B :: A :: Γ) (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) := by
+        rw [EnvRelK]; refine ⟨hcb₁, hcb₂, hb, ?_⟩; rw [EnvRelK]
+        exact ⟨hca₁, hca₂, ha, EnvRelK_mono (Nat.le_of_lt hm) hδ⟩
+      have := crelK_fund hN m (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) hδ'
+      rwa [show closeC (b₁ :: a₁ :: δ₁) N = closeC δ₁ (Comp.subst a₁ (Comp.subst b₁ N)) from rfl,
+           show closeC (b₂ :: a₂ :: δ₂) N = closeC δ₂ (Comp.subst a₂ (Comp.subst b₂ N)) from rfl] at this
+  | @unfold _ _ v A hv =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_unfold, closeC_unfold]
+      cases hv with
+      | @fold _ _ a _ ha =>
+          rw [closeV_fold, closeV_fold]
+          have hsa₁ : Val.Closed (closeV δ₁ a) :=
+            closeV_closed_scoped hδ.closed_left (by have := ha.scopedIn; rwa [hδ.length_left])
+          have hsa₂ : Val.Closed (closeV δ₂ a) :=
+            closeV_closed_scoped hδ.closed_right (by have := ha.scopedIn; rwa [hδ.length_right])
+          refine CrelK_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
+            ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩
+            (fun m hm => crelK_ret hsa₁ hsa₂ (vrelK_fund ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ)))
+      | @vvar _ i _ hget =>
+          have hsc₁ : Val.Closed (closeV δ₁ (Val.vvar i)) :=
+            closeV_closed_scoped hδ.closed_left (by
+              have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_left])
+          have hsc₂ : Val.Closed (closeV δ₂ (Val.vvar i)) :=
+            closeV_closed_scoped hδ.closed_right (by
+              have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
+          exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
+  | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
+      -- ◊4.5b sub-block (f): the op-PRODUCER. Carried as `sorry` (same as the old crel_fund's up) until
+      -- (f) closes it together with the handler row-discharge (the two-row / ρ-free question).
+      intro n δ₁ δ₂ hδ; sorry
+  | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
+      -- ◊4.5b sub-block (f): the handler row-discharge (`KrelS …φ → …e` for the body row). `sorry` until f.
+      intro n δ₁ δ₂ hδ; sorry
+  | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
+      intro n δ₁ δ₂ hδ; sorry
+  | @handleTransaction _ _ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM hsub =>
+      intro n δ₁ δ₂ hδ; sorry
 end
 
 

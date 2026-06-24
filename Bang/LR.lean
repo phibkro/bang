@@ -1075,6 +1075,36 @@ theorem EnvRel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring
   | _ :: _,  _ :: _,    [],        _,   h => absurd h (by simp [EnvRel])
 
 
+/-! ## 5.2′d ◊4.5b — `EnvRelK` (the env relation over `VrelK`, for the migrated fundamental theorem).
+Structurally identical to `EnvRel` (Closed ∧ Closed ∧ rel ∧ rec); only the value relation is `VrelK`.
+The `crelK_fund`/`vrelK_fund` migration closes open terms over `EnvRelK`-related environments. -/
+
+def EnvRelK {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
+    [EffSig Eff Mult] (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop
+  | [],      [],        []        => True
+  | A :: Γ', v₁ :: δ₁', v₂ :: δ₂' =>
+      Val.Closed v₁ ∧ Val.Closed v₂ ∧ VrelK n A v₁ v₂ ∧ EnvRelK n Γ' δ₁' δ₂'
+  | _,       _,         _         => False
+
+@[simp] theorem EnvRelK_nil_iff {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (δ₁ δ₂ : List Val) :
+    EnvRelK n ([] : TyCtx Eff Mult) δ₁ δ₂ ↔ δ₁ = [] ∧ δ₂ = [] := by
+  cases δ₁ <;> cases δ₂ <;> simp [EnvRelK]
+
+/-- `EnvRelK` DOWNWARD-CLOSURE — pointwise `VrelK_mono`. -/
+theorem EnvRelK_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] {n m : Nat} :
+    ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val}, m ≤ n → EnvRelK n Γ δ₁ δ₂ → EnvRelK m Γ δ₁ δ₂
+  | [],      [],        [],        _,   _  => trivial
+  | _A :: _, _v₁ :: _,  _v₂ :: _,  hmn, h => by
+      obtain ⟨hc₁, hc₂, hv, hrest⟩ := h
+      exact ⟨hc₁, hc₂, VrelK_mono hmn hv, EnvRelK_mono hmn hrest⟩
+  | [],      _ :: _,    _,         _,   h => absurd h (by simp [EnvRelK])
+  | [],      [],        _ :: _,    _,   h => absurd h (by simp [EnvRelK])
+  | _ :: _,  [],        _,         _,   h => absurd h (by simp [EnvRelK])
+  | _ :: _,  _ :: _,    [],        _,   h => absurd h (by simp [EnvRelK])
+
+
 /-! ## 5.3 Adequacy building blocks toward `lr_sound`
 
 `lr_sound : (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂`. Biorthogonal adequacy
