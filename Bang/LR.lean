@@ -646,6 +646,21 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
       -- build EQUAL-handler stacks (`krelS_handleF_intro`), so they supply `h₁=h₂` for free.
       | (Frame.handleF h₁ :: K₁'), (Frame.handleF h₂ :: K₂') =>
           h₁ = h₂ ∧ KrelS n C D ε K₁' K₂'
+            -- ◊4.5b RESUME CONJUNCT (config-level answer-typed re-expression of old `Srel` LR:554). The
+            -- producer (`crelK_fund` up some-half) has NO `HasStack` on the stacks (only this `KrelS`), so
+            -- the typed dispatched-config relation is NOT reconstructible from `h₁=h₂` + the tail alone —
+            -- it must be CARRIED here. For every op + arg-values `w₁,w₂` related at SOME type `Aarg` (the
+            -- producer instantiates `Aarg :=` the op's arg type), the two configs `dispatchOn` produces at
+            -- the immediate split (`Kᵢ=[]`) co-converge at the dropped index `m < n` (the `▷`). The producer
+            -- EXTRACTS this via `krelS_splitAt_decomp` at the catching frame; the CONSUMERS supply it
+            -- (throws via `crelK_ret` on the tail — zero-shot, no append; state/txn via `krelS_append` — the
+            -- one research crux). No op-interface needed in the def — the producer supplies `Aarg`.
+            ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+                Val.Closed w₁ → Val.Closed w₂ →
+                (∀ qC AC, C = CTy.F qC AC → VrelK m AC w₁ w₂) →
+                Bang.dispatchOn op w₁ ([], h₁, K₁') = some cfg₁ →
+                Bang.dispatchOn op w₂ ([], h₁, K₂') = some cfg₂ →
+                CoApproxC_le m cfg₁ cfg₂)
       | _, _ => False
 termination_by n _ _ _ K _ => (n, 1, K.length, 0)
 decreasing_by
@@ -681,7 +696,13 @@ end
 @[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {h h' : Handler}
     {K₁ K₂ : Stack} :
     KrelS n C D ε (Frame.handleF h :: K₁) (Frame.handleF h' :: K₂) ↔
-      h = h' ∧ KrelS n C D ε K₁ K₂ := by
+      (h = h' ∧ KrelS n C D ε K₁ K₂
+        ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+            Val.Closed w₁ → Val.Closed w₂ →
+            (∀ qC AC, C = CTy.F qC AC → VrelK m AC w₁ w₂) →
+            Bang.dispatchOn op w₁ ([], h, K₁) = some cfg₁ →
+            Bang.dispatchOn op w₂ ([], h, K₂) = some cfg₂ →
+            CoApproxC_le m cfg₁ cfg₂)) := by
   rw [KrelS]
 
 /-- ◊4.5b μ-floor: `CrelK 0` is VACUOUS (the metered obs at 0 — `ConvergesC_le 0` is `False`). -/
@@ -760,7 +781,10 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
       exact ⟨q, A, B, hC, hcw₁, hcw₂, VrelK_mono hmn hw, KrelS_mono hmn htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hmn, hK => by
       rw [krelS_handleF] at hK ⊢
-      exact ⟨hK.1, KrelS_mono hmn hK.2⟩
+      obtain ⟨hh, htail, hres⟩ := hK
+      -- the resume conjunct at `∀ m' < n` restricts to `∀ m' < m` (m ≤ n) — monotone sub-quantification.
+      exact ⟨hh, KrelS_mono hmn htail,
+        fun m' hm' => hres m' (lt_of_lt_of_le hm' hmn)⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
@@ -791,7 +815,8 @@ theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_anti hεε' htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
-      exact ⟨hK.1, KrelS_eff_anti hεε' hK.2⟩
+      -- the resume conjunct is ε-free (dispatch + VrelK don't gate on ε) ⇒ passes through unchanged.
+      exact ⟨hK.1, KrelS_eff_anti hεε' hK.2.1, hK.2.2⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
@@ -822,7 +847,7 @@ theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_mono hεε' htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
-      exact ⟨hK.1, KrelS_eff_mono hεε' hK.2⟩
+      exact ⟨hK.1, KrelS_eff_mono hεε' hK.2.1, hK.2.2⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
@@ -912,7 +937,7 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   refine coApproxC_le_reduce
                     (cfg₁' := (K₁', Comp.ret v₁)) (cfg₂' := (K₂', Comp.ret v₂))
                     rfl (by intro u; simp) rfl (by intro u; simp) ?_
-                  exact ih (K₂ := K₂') hc₁ hc₂ hv hK.2
+                  exact ih (K₂ := K₂') hc₁ hc₂ hv hK.2.1
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
 
