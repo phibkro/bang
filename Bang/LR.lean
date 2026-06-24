@@ -520,12 +520,16 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
             -- it to reach the body type before hitting `Kₒ`. The producer EXTRACTS this via
             -- `krelS_splitAt_decomp` (now also returns the inner-prefix relation); throws supplies it with `Kᵢ`
             -- arbitrary (discarded zero-shot). No op-interface in the def — the producer supplies `Aarg`.
-            ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ Dᵢ : CTy Eff Mult) (εᵢ : Eff)
+            -- the inner prefix relates at ANSWER type `C` (= the handler-frame hole; handleF preserves it).
+            -- FIXED to `C`, not quantified — lets the state/txn consumer `krelS_append` onto the tail (hole
+            -- `C`) with no extra `Dᵢ=C` obligation; the producer instantiates at the SPLIT-POINT hole that
+            -- `krelS_splitAt_decomp` returns (threaded existentially as the conjunct's `C`).
+            ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
                   (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
                 Bang.handlesOp h₁ h₁.label op = true →
                 Val.Closed w₁ → Val.Closed w₂ →
                 (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
-                KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+                KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
                 -- the captured continuation's hole `Cᵢ` is a RETURNER at the op-RESULT type (the resume
                 -- value flows into `Kᵢ` there). state/txn need this for `crelK_ret` to bridge the resume
                 -- through `Kᵢ`; the producer supplies it from the `up` typing (Cᵢ = F q (opRes)). throws
@@ -588,12 +592,12 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
     {K₁ K₂ : Stack} :
     KrelS n C D ε (Frame.handleF h :: K₁) (Frame.handleF h' :: K₂) ↔
       (HandlerRel Eff Mult n h h' ∧ KrelS n C D ε K₁ K₂
-        ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ Dᵢ : CTy Eff Mult) (εᵢ : Eff)
+        ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
             Bang.handlesOp h h.label op = true →
             Val.Closed w₁ → Val.Closed w₂ →
             (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
-            KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+            KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
             (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
               ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
             Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →

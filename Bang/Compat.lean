@@ -1052,12 +1052,12 @@ is SUPPLIED by the caller — throws via `crelK_ret` on the tail (zero-shot); st
 relation through `Kᵢ`. -/
 theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Handler}
     {K₁ K₂ : Stack} (hHR : HandlerRel Eff Mult n h h) (hK : KrelS n C D φ K₁ K₂)
-    (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ Dᵢ : CTy Eff Mult) (εᵢ : Eff)
+    (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
         Bang.handlesOp h h.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
-        KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+        KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
           ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
         Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →
@@ -1079,12 +1079,12 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
     (hin : KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ')
     (hHR : HandlerRel Eff Mult m h h)
     (htail : KrelS m Dᵢ D' e' K₁ K₂)
-    (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ Dⱼ : CTy Eff Mult) (εⱼ : Eff)
+    (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ : CTy Eff Mult) (εⱼ : Eff)
               (Kⱼ Kⱼ' : Stack) (cfg₁ cfg₂ : Config),
         Bang.handlesOp h h.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK k Aop w₁ w₂) →
-        KrelS k Cⱼ Dⱼ εⱼ Kⱼ Kⱼ' →
+        KrelS k Cⱼ Dᵢ εⱼ Kⱼ Kⱼ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
           ∃ qᵣ, Cⱼ = CTy.F qᵣ Aᵣ) →
         Bang.dispatchOn op w₁ (Kⱼ, h, K₁) = some cfg₁ →
@@ -1151,12 +1151,13 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
     ∃ (K₂ᵢ K₂ₒ : Stack) (h' : Handler) (Dᵢ : CTy Eff Mult) (C' : CTy Eff Mult) (e' : Eff),
       Bang.splitAt K₂ ℓ op = some (K₂ᵢ, h', K₂ₒ) ∧ HandlerRel Eff Mult n h h' ∧
       KrelS n C Dᵢ e K₁ᵢ K₂ᵢ ∧ KrelS n C' D e' K₁ₒ K₂ₒ
-      ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' Dᵢ' : CTy Eff Mult) (εᵢ' : Eff)
+      ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' : CTy Eff Mult) (εᵢ' : Eff)
             (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
           Bang.handlesOp h h.label op' = true →
           Val.Closed w₁ → Val.Closed w₂ →
           (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
-          KrelS m Cᵢ' Dᵢ' εᵢ' Kᵢ Kᵢ' →
+          -- inner-prefix answer = the SPLIT-POINT hole `Dᵢ` (the catching frame's hole, threaded above).
+          KrelS m Cᵢ' Dᵢ εᵢ' Kᵢ Kᵢ' →
           (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op' = some Aᵣ →
             ∃ qᵣ, Cᵢ' = CTy.F qᵣ Aᵣ) →
           Bang.dispatchOn op' w₁ (Kᵢ, h, K₁ₒ) = some cfg₁ →
@@ -1289,7 +1290,7 @@ theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff
   -- DISCARDED). The `handlesOp` guard forces `op = "raise"`, so `opArg ℓ "raise" = A` (hArg) gives
   -- `VrelK m A w` from `hVrel`; the dispatched config relation IS the tail's return-half — `crelK_ret`
   -- on the (downward-closed) tail `hK` at hole type `F q A`. The threaded `Kᵢ` is irrelevant for throws.
-  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
+  intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
   -- `hcatch` (handlesOp (throws ℓ) ℓ op) forces `op = "raise"`.
   have hop : op = "raise" := by
     simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
@@ -1323,7 +1324,7 @@ theorem compatK_handleState {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
   -- continuation). REBUILD PENDING (commit 4): the self-HandlerRel `⟨rfl, S, VrelK n S s s⟩` needs `s`
   -- well-typed (thread from the caller `hs : HasVTy [] [] s₀ S`); the conjunct closes via the dispatch
   -- (state reinstall) running `ret r` through the related `Kᵢ` then the reinstalled handler.
-  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hd₁ hd₂
+  intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
   sorry
 
 /-- ◊4.5b the `handleTransaction` compat core at `CrelK`. The multi-cell resumptive analogue — same
@@ -1345,7 +1346,7 @@ theorem compatK_handleTransaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ 
   -- TRANSACTION resume supply — multi-cell analogue of state. REBUILD PENDING (commit 4): self-HandlerRel
   -- (pointwise heap VrelK from the caller `hcells`) + the Kᵢ-threading conjunct (newTVar/readTVar/writeTVar
   -- reinstall threading the heap, closing through the related `Kᵢ`).
-  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hd₁ hd₂
+  intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
   sorry
 
 
@@ -1577,7 +1578,7 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
                     rw [hlbl]; exact hcatch
                   -- supply the Kᵢ-threading conjunct at Kᵢ=K₁ᵢ, Kᵢ'=K₂ᵢ (throws discards them); the inner
                   -- relation `hinner` discharges the new `KrelS m … Kᵢ Kᵢ'` premise.
-                  refine hres k (Nat.lt_succ_self k) op v₁ v₂ _ Dᵢ _ K₁ᵢ K₂ᵢ
+                  refine hres k (Nat.lt_succ_self k) op v₁ v₂ _ _ K₁ᵢ K₂ᵢ
                     (K₁ₒ, Comp.ret v₁) (K₂ₒ, Comp.ret v₂)
                     hcatch' hcv₁ hcv₂ ?_ (KrelS_mono (le_of_lt (Nat.lt_succ_self k)) hinner)
                     ?_ (by simp [dispatchOn]) (by simp [dispatchOn])
@@ -1670,7 +1671,7 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- on the self-related tail `ihK` closes it (the hVrel premise at C = F q A gives VrelK m A w).
       rw [krelS_handleF]
       refine ⟨by simp only [HandlerRel], KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
+      intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
       have hop : op = "raise" := by
         simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
       subst hop
