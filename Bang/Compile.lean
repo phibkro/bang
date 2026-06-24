@@ -2354,6 +2354,85 @@ theorem sim_put_handle (ℓ : Bang.EffectRow.Label) (s w : Bang.Val) {Kᵢ : Ban
           simp only [CalcVM.evalD, CalcVM.SStore.push]
           rw [ha]; exact hb
 
+/-! ### abort (throws) case: raise-forwarding through the inner context.
+
+A `throws`-routed `up ℓ "raise" v` produces `.raised ℓ "raise" v` and propagates through the inner
+context Kᵢ (which catches nothing) to the throws handler, which catches → `ret v`. `Raises ℓ v cy`
+captures "cy evalD-raises (ℓ,raise,v) at unchanged stores"; it forwards through letC/app and through
+non-catching handles (push+pop restores the store). `evalD_plug_raises` lifts it through `plug Kᵢ`. -/
+
+theorem evalD_up_raise (ℓ : Bang.EffectRow.Label) (v : Bang.Val) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (b : Nat) :
+    CalcVM.evalD (b+1) σ τ (.up ℓ "raise" v) = some (.raised ℓ "raise" v, σ, τ) := by
+  simp only [CalcVM.evalD, if_neg (by decide : ¬("raise"="get")), if_neg (by decide : ¬("raise"="put")),
+    (by decide : CalcVM.isTxnOp "raise" = false), Bool.false_eq_true, if_false]
+
+-- A focus `cy` that evalD-RAISES (ℓ,raise,v) at σ τ unchanged simulates the same raise under one
+-- frame wrap: letC forwards, app forwards, handle (non-catching) forwards+pops (store restored).
+-- We carry the predicate "evalD-of-cy raises (ℓ,raise,v) leaving σ,τ" as `Raises cy`.
+def Raises (ℓ : Bang.EffectRow.Label) (v : Bang.Val) (cy : Bang.Comp) : Prop :=
+  ∀ σ τ, ∃ n, CalcVM.evalD n σ τ cy = some (.raised ℓ "raise" v, σ, τ)
+
+theorem Raises.up (ℓ : Bang.EffectRow.Label) (v : Bang.Val) : Raises ℓ v (.up ℓ "raise" v) :=
+  fun σ τ => ⟨1, evalD_up_raise ℓ v σ τ 0⟩
+
+theorem Raises.letC {ℓ v N} (h : Raises ℓ v cy) : Raises ℓ v (.letC cy N) := by
+  intro σ τ; obtain ⟨n, hn⟩ := h σ τ
+  exact ⟨n+1, by simp only [CalcVM.evalD, hn, Option.bind_some]⟩
+
+theorem Raises.app {ℓ v u} (h : Raises ℓ v cy) : Raises ℓ v (.app cy u) := by
+  intro σ τ; obtain ⟨n, hn⟩ := h σ τ
+  exact ⟨n+1, by simp only [CalcVM.evalD, hn, Option.bind_some]⟩
+
+theorem Raises.handle {ℓ v hh} (hnc : Bang.handlesOp hh ℓ "raise" = false) (h : Raises ℓ v cy) :
+    Raises ℓ v (.handle hh cy) := by
+  intro σ τ
+  cases hh with
+  | state ℓ0 s0 =>
+      obtain ⟨n, hn⟩ := h (σ.push ℓ0 s0) τ
+      refine ⟨n+1, ?_⟩
+      simp only [CalcVM.SStore.push] at hn
+      simp only [CalcVM.evalD, CalcVM.SStore.push, hn, Option.bind_some, List.tail_cons]
+  | transaction ℓ0 Θ0 =>
+      obtain ⟨n, hn⟩ := h σ (τ.push ℓ0 Θ0)
+      refine ⟨n+1, ?_⟩
+      simp only [CalcVM.THeap.push] at hn
+      simp only [CalcVM.evalD, CalcVM.THeap.push, hn, Option.bind_some, List.tail_cons]
+  | throws ℓ0 =>
+      obtain ⟨n, hn⟩ := h σ τ
+      refine ⟨n+1, ?_⟩
+      have hne0 : ¬ (ℓ0 = ℓ) := by
+        simp only [Bang.handlesOp, beq_self_eq_true, Bool.and_true, decide_eq_false_iff_not] at hnc
+        exact hnc
+      simp only [CalcVM.evalD, hn, Option.bind_some, if_neg (by tauto : ¬ (ℓ0 = ℓ ∧ True))]
+
+-- The plug-lift of Raises (mirrors evalD_plug_sim): a raising focus lifts through any frame stack
+-- that catches nothing. splitAt Kᵢ none ⇒ each handleF doesn't catch (handlesOp = false).
+theorem evalD_plug_raises (ℓ : Bang.EffectRow.Label) (v : Bang.Val) :
+    ∀ {Kᵢ : Bang.EvalCtx} {cy : Bang.Comp}, Bang.splitAt Kᵢ ℓ "raise" = none → Raises ℓ v cy →
+      Raises ℓ v (plug Kᵢ cy)
+  | [], cy, _, h => by simpa [plug] using h
+  | .letF N :: Kᵢ, cy, hns, h => by
+      rw [plug_cons, Bang.Frame.wrapStep]
+      have hns' : Bang.splitAt Kᵢ ℓ "raise" = none := by
+        simp only [Bang.splitAt, Option.map_eq_none_iff] at hns; exact hns
+      exact evalD_plug_raises ℓ v hns' (Raises.letC h)
+  | .appF u :: Kᵢ, cy, hns, h => by
+      rw [plug_cons, Bang.Frame.wrapStep]
+      have hns' : Bang.splitAt Kᵢ ℓ "raise" = none := by
+        simp only [Bang.splitAt, Option.map_eq_none_iff] at hns; exact hns
+      exact evalD_plug_raises ℓ v hns' (Raises.app h)
+  | .handleF hh :: Kᵢ, cy, hns, h => by
+      rw [plug_cons, Bang.Frame.wrapStep]
+      -- splitAt (handleF hh :: Kᵢ) = none ⇒ hh doesn't catch (handlesOp false) AND splitAt Kᵢ = none.
+      simp only [Bang.splitAt] at hns
+      by_cases hc : Bang.handlesOp hh ℓ "raise" = true
+      · rw [if_pos hc] at hns; exact absurd hns (by simp)
+      · rw [if_neg hc] at hns
+        rw [Option.map_eq_none_iff] at hns
+        have hncf : Bang.handlesOp hh ℓ "raise" = false := by
+          simpa using hc
+        exact evalD_plug_raises ℓ v hns (Raises.handle hncf h)
+
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
 induction on the small-step fuel `F`. -/
