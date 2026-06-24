@@ -76,15 +76,24 @@
                                      handled-dispatch re-proves the 3 handler cases at the discharged row; NO
                                      frozen-stmt change). Build queued (fresh effort) → then lr_sound typed-context
                                      wiring → THE MOAT proven.
-◊5   Compiler v0 (IN PROGRESS)     ── on branch `cap5-compiler` (`4434c5b`, NOT yet merged): the WHOLE EFFECT-FREE
-                                     compiler (pure CBPV + ADT) verified end-to-end source→WASM, AXIOM-CLEAN
+◊5   Compiler v0 (IN PROGRESS)     ── on branch `cap5-compiler` (`b99de40`, NOT yet merged). EFFECT-FREE
+                                     (pure CBPV + ADT) compiler verified end-to-end source→WASM, AXIOM-CLEAN
                                      (`compile_forward_sim_pure` ⊆ trusted-three; zero_grade_no_code +
-                                     compile_well_typed [propext]). Two-hop via the proven CalcVM (machine = the
-                                     calculation's output, inv #4). ENGINE PROBE GREEN — released wasmtime 44.0.1
-                                     runs suspend/resume (Q9 RESOLVED on branch), leg #2 diff-test viable. Handler
-                                     transcription + commutation done; REMAINING: the handler SIMULATION
-                                     (exec_wexec_sim gen + evalD_complete σ/τ + compileHandler) = GAP 2, all
-                                     first-order (forward-sim ≠ the LR's ▷, ADR-0035).
+                                     compile_well_typed [propext]) — UNCHANGED + solid. Two-hop via the proven
+                                     CalcVM (machine = the calculation's output, inv #4). ENGINE PROBE GREEN —
+                                     released wasmtime 44.0.1 runs suspend/resume (Q9 RESOLVED on branch).
+                                     ⚠ HANDLER EXTENSION BLOCKED — MODEL DEFECT (not proof-only): `wexec` is
+                                     UNSOUND for handlers from a β/let-RESIDUAL re-compile with a non-trivial abort
+                                     cont — `lowerCode (compile body []) ++ c` bakes markH savedCode=[] so a
+                                     zero-shot abort stops early, bypassing `c`. Counterexample PINNED as a
+                                     fail-loud rfl (`b99de40`): `letC ((λ.handle(throws 0)(letC(raise 7)(ret 99)))())
+                                     (force(thunk(ret 100)))` → Source.eval=100, Wasmfx.run=7 (WRONG). The "small
+                                     run-equivalence FIX" is DEAD (general lemma FALSE — flag-before-build caught
+                                     it). fix-vs-seam RE-OPENS: (FIX) thread CalcVM cont `c_cvm` into the 4 residual
+                                     arms (`compile (subst v N) c_cvm` whole, inner markH captures real cont) —
+                                     bounded redesign, keeps verified handlers; or (SEAM) draw v1's verified line at
+                                     effect-free, handlers tested-not-verified (ADR-0026 ladder). Operator's call;
+                                     write the ADR when decided. Task #40.
 ◊6   Release v0
 ```
 
