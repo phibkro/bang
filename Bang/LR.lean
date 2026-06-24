@@ -494,31 +494,40 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
             Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁' K₂'
       -- handleF: tail recurses at the same hole type (handler return = identity, ADR-0023 Q6, so the
       -- block's returner type = the body's = the tail's hole type — `C` is preserved across the frame).
-      -- ◊4.5b sub-block (f): the handlers MUST be EQUAL (`h₁ = h₂`). The producer's `up` some-half
-      -- (`splitAt = some`) dispatches at the nearest catching frame; without `h₁ = h₂` the two stacks
-      -- could catch `(ℓ,op)` at DIFFERENT positions (or one catch, one walk past) ⇒ the dispatched
-      -- configs would be unrelated ⇒ co-equivalence FALSE (the build-traced gap, Compat:2003). Equal
-      -- handlers make `splitAt` fire at the SAME position with the SAME handler + the SAME reinstalled
-      -- state (state/txn store lives IN the handler, so `h₁=h₂` ⇒ identical resume), so the dispatched
-      -- inner/outer segments stay `KrelS`-related (`krelS_splitAt_decomp`). The 6 CONSUMER cases all
-      -- build EQUAL-handler stacks (`krelS_handleF_intro`), so they supply `h₁=h₂` for free.
+      -- ◊4.5b-append: the handlers are RELATED (`HandlerRel n`), not necessarily EQUAL. `HandlerRel`
+      -- fixes the LABEL + KIND (so `splitAt`/`handlesOp`/`Handler.label` fire IDENTICALLY — they ignore
+      -- the stored state, Operational:230-242) and relates the STORED STATE via `VrelK` (state: one cell;
+      -- transaction: pointwise heap). EQUAL handlers (`h₁=h₂`, the old sub-block-f form) were TOO STRONG:
+      -- `put w` reinstalls `state ℓ w₁` vs `state ℓ w₂` with `w₁ ~ w₂` RELATED-not-equal, so `h₁=h₂` made
+      -- the resume conjunct unprovable for state/txn (the append-crux wall, build-traced 2026-06-24). The
+      -- relational form is WF-safe: `VrelK n` on the handler state is a role-1→role-0 drop (= the appF cap).
+      -- throws relates by LABEL only (no state) so the zero-shot case recovers the old behaviour. The
+      -- match is INLINED (can't forward-ref `HandlerRel`, defined post-block); `krelS_handleF` exposes it.
       | (Frame.handleF h₁ :: K₁'), (Frame.handleF h₂ :: K₂') =>
-          h₁ = h₂ ∧ KrelS n C D ε K₁' K₂'
-            -- ◊4.5b RESUME CONJUNCT (config-level answer-typed re-expression of old `Srel` LR:554). The
-            -- producer (`crelK_fund` up some-half) has NO `HasStack` on the stacks (only this `KrelS`), so
-            -- the typed dispatched-config relation is NOT reconstructible from `h₁=h₂` + the tail alone —
-            -- it must be CARRIED here. For every op + arg-values `w₁,w₂` related at SOME type `Aarg` (the
-            -- producer instantiates `Aarg :=` the op's arg type), the two configs `dispatchOn` produces at
-            -- the immediate split (`Kᵢ=[]`) co-converge at the dropped index `m < n` (the `▷`). The producer
-            -- EXTRACTS this via `krelS_splitAt_decomp` at the catching frame; the CONSUMERS supply it
-            -- (throws via `crelK_ret` on the tail — zero-shot, no append; state/txn via `krelS_append` — the
-            -- one research crux). No op-interface needed in the def — the producer supplies `Aarg`.
-            ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+          (match h₁, h₂ with
+           | Handler.throws ℓ₁,         Handler.throws ℓ₂         => ℓ₁ = ℓ₂
+           | Handler.state ℓ₁ s₁,       Handler.state ℓ₂ s₂       =>
+               ℓ₁ = ℓ₂ ∧ ∃ S : VTy Eff Mult, VrelK n S s₁ s₂
+           | Handler.transaction ℓ₁ Θ₁, Handler.transaction ℓ₂ Θ₂ =>
+               ℓ₁ = ℓ₂ ∧ Θ₁.length = Θ₂.length ∧
+                 ∀ i : Nat, i < Θ₁.length →
+                   VrelK n (VTy.int : VTy Eff Mult) (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
+           | _, _ => False) ∧ KrelS n C D ε K₁' K₂'
+            -- ◊4.5b-append RESUME CONJUNCT (config-level re-expression of old `Srel` LR:554), now threading
+            -- the CAPTURED CONTINUATION `Kᵢ`. state/txn dispatch KEEPS `Kᵢ` (Operational:295): the dispatched
+            -- config is `(Kᵢ ++ handleF(state ℓ s')::Kₒ, ret r)`. The conjunct quantifies over a related
+            -- captured continuation `Kᵢ ~ Kᵢ'` (at SOME hole type/row), so the resume value `r` flows through
+            -- it to reach the body type before hitting `Kₒ`. The producer EXTRACTS this via
+            -- `krelS_splitAt_decomp` (now also returns the inner-prefix relation); throws supplies it with `Kᵢ`
+            -- arbitrary (discarded zero-shot). No op-interface in the def — the producer supplies `Aarg`.
+            ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ Dᵢ : CTy Eff Mult) (εᵢ : Eff)
+                  (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
                 Bang.handlesOp h₁ h₁.label op = true →
                 Val.Closed w₁ → Val.Closed w₂ →
                 (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
-                Bang.dispatchOn op w₁ ([], h₁, K₁') = some cfg₁ →
-                Bang.dispatchOn op w₂ ([], h₁, K₂') = some cfg₂ →
+                KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+                Bang.dispatchOn op w₁ (Kᵢ, h₁, K₁') = some cfg₁ →
+                Bang.dispatchOn op w₂ (Kᵢ', h₂, K₂') = some cfg₂ →
                 CoApproxC_le m cfg₁ cfg₂)
       | _, _ => False
 termination_by n _ _ _ K _ => (n, 1, K.length, 0)
@@ -552,18 +561,37 @@ end
         Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁ K₂ := by
   rw [KrelS]
 
+/-- ◊4.5b-append the RELATIONAL handler condition (state lives IN the handler, related-not-equal). Fixes
+label+kind (so `splitAt`/`handlesOp` fire identically — they ignore stored state) + relates the stored
+state via `VrelK` (state: one cell; transaction: pointwise heap). throws relates by label only. Defined
+AFTER the mutual block (references `VrelK`); `rfl`-equal to the inlined match in `KrelS`'s handleF clause
+so `krelS_handleF` exposes it. Explicit `Eff Mult` type params (Handler is monomorphic, so they can't be
+inferred from the scrutinees). -/
+def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
+    [EffSig Eff Mult] (n : Nat) : Handler → Handler → Prop
+  | Handler.throws ℓ₁,         Handler.throws ℓ₂         => ℓ₁ = ℓ₂
+  | Handler.state ℓ₁ s₁,       Handler.state ℓ₂ s₂       =>
+      ℓ₁ = ℓ₂ ∧ ∃ S : VTy Eff Mult, VrelK (Eff := Eff) (Mult := Mult) n S s₁ s₂
+  | Handler.transaction ℓ₁ Θ₁, Handler.transaction ℓ₂ Θ₂ =>
+      ℓ₁ = ℓ₂ ∧ Θ₁.length = Θ₂.length ∧
+        ∀ i : Nat, i < Θ₁.length →
+          VrelK (Eff := Eff) (Mult := Mult) n VTy.int (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
+  | _, _ => False
+
 @[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {h h' : Handler}
     {K₁ K₂ : Stack} :
     KrelS n C D ε (Frame.handleF h :: K₁) (Frame.handleF h' :: K₂) ↔
-      (h = h' ∧ KrelS n C D ε K₁ K₂
-        ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+      (HandlerRel Eff Mult n h h' ∧ KrelS n C D ε K₁ K₂
+        ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ Dᵢ : CTy Eff Mult) (εᵢ : Eff)
+              (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
             Bang.handlesOp h h.label op = true →
             Val.Closed w₁ → Val.Closed w₂ →
             (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
-            Bang.dispatchOn op w₁ ([], h, K₁) = some cfg₁ →
-            Bang.dispatchOn op w₂ ([], h, K₂) = some cfg₂ →
+            KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+            Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →
+            Bang.dispatchOn op w₂ (Kᵢ', h', K₂) = some cfg₂ →
             CoApproxC_le m cfg₁ cfg₂)) := by
-  rw [KrelS]
+  cases h <;> cases h' <;> simp only [KrelS, HandlerRel]
 
 /-- ◊4.5b μ-floor: `CrelK 0` is VACUOUS (the metered obs at 0 — `ConvergesC_le 0` is `False`). -/
 theorem crelK_zero {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp} : CrelK 0 C ε c₁ c₂ := by
@@ -642,9 +670,16 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hmn, hK => by
       rw [krelS_handleF] at hK ⊢
       obtain ⟨hh, htail, hres⟩ := hK
-      -- the resume conjunct at `∀ m' < n` restricts to `∀ m' < m` (m ≤ n) — monotone sub-quantification.
-      exact ⟨hh, KrelS_mono hmn htail,
-        fun m' hm' => hres m' (lt_of_lt_of_le hm' hmn)⟩
+      -- ◊4.5b-append: the relational handler condition is downward-mono on its `VrelK` state; the resume
+      -- conjunct at `∀ m' < n` restricts to `∀ m' < m` (m ≤ n) — monotone sub-quantification.
+      refine ⟨?_, KrelS_mono hmn htail, fun m' hm' => hres m' (lt_of_lt_of_le hm' hmn)⟩
+      cases h <;> cases h' <;> simp only [HandlerRel] at hh ⊢
+      · -- state/state: relate the stored cell at the smaller index
+        exact ⟨hh.1, hh.2.imp fun _ hv => VrelK_mono hmn hv⟩
+      · -- throws/throws: label-only, index-independent
+        exact hh
+      · -- transaction/transaction: pointwise heap mono
+        exact ⟨hh.1, hh.2.1, fun i hi => VrelK_mono hmn (hh.2.2 i hi)⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK

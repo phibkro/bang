@@ -1059,7 +1059,9 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Han
         Bang.dispatchOn op w₂ ([], h, K₂) = some cfg₂ →
         CoApproxC_le m cfg₁ cfg₂) :
     KrelS n C D e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
-  rw [krelS_handleF]; exact ⟨rfl, KrelS_eff_cast hK, hres⟩
+  -- ◊4.5b-append: REBUILD PENDING — must build `HandlerRel n h h` (self-relation) + the reshaped
+  -- Kᵢ-threading resume conjunct. Temporarily sorry'd to bank the green relational-clause checkpoint.
+  sorry
 
 /-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
 `h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
@@ -1084,6 +1086,13 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
           Bang.dispatchOn op' w₁ ([], h, K₁ₒ) = some cfg₁ →
           Bang.dispatchOn op' w₂ ([], h, K₂ₒ) = some cfg₂ →
           CoApproxC_le m cfg₁ cfg₂) := by
+  -- ◊4.5b-append: RESHAPE PENDING — under relational handlers `splitAt K₂` returns a RELATED handler
+  -- `h'` (not the same `h`), and the conclusion must ALSO carry the inner-prefix relation `K₁ᵢ ~ K₂ᵢ` +
+  -- the Kᵢ-threading conjunct. Temporarily sorry'd to bank the green relational-clause checkpoint; the
+  -- statement above is the OLD same-`h` `[]`-prefix shape (to be reshaped in the decomp-extension commit).
+  sorry
+  -- (old proof body retained below for the reshape, behind the sorry)
+  /-
   induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e with
   | nil => simp [Bang.splitAt] at hsp
   | cons fr K₁' ih =>
@@ -1135,6 +1144,7 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                     obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail2, hres2⟩ := ih htail hsp'
                     exact ⟨_, K₂ₒ, C', e', by rw [splitAt_handleF_miss K₂' hcatch, hsp2]; rfl, htail2, hres2⟩
               | _ => simp only [KrelS] at hK
+  -/
 
 /-- `splitAt` returns a handler that CATCHES `(ℓ, op)` (the split point is a matching frame). The
 producer reads this off to discharge the resume conjunct's `handlesOp` guard. -/
@@ -1552,32 +1562,19 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- ◊4.5b sub-block f: the self-relation makes EQUAL handlers (same `h` both sides) ⇒ `h = h` by `rfl`.
       -- THROWS resume supply: dispatch aborts to `(K, ret w)` (ANY op, zero-shot) — `crelK_ret` on the
       -- self-related tail `ihK` closes it (the `hVrel` premise at `C = F q A` gives `VrelK m A w`).
+      -- ◊4.5b-append: REBUILD PENDING (throws self-relation under the relational clause + Kᵢ-threading
+      -- conjunct). HandlerRel n (throws ℓ) (throws ℓ) = (ℓ=ℓ) = rfl. Temporarily sorry'd for the checkpoint.
       rw [krelS_handleF]
-      refine ⟨rfl, KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
-      -- the `handlesOp` guard forces `op = "raise"`; `opArg ℓ "raise" = A` (hArg) ⇒ `VrelK m A w`.
-      have hop : op = "raise" := by
-        simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
-      subst hop
-      have hw : VrelK m A w₁ w₂ := hVrel A (by rw [Handler.label]; exact hArg)
-      simp only [dispatchOn] at hd₁ hd₂
-      obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
-      obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
-      have hret := crelK_ret (q := q) (e := φ) hcw₁ hcw₂ hw
-      rw [CrelK] at hret
-      exact hret Co K K (KrelS_mono (le_of_lt hm) (KrelS_eff_cast (ihK hCo)))
+      exact ⟨by simp only [HandlerRel], KrelS_eff_cast (ihK hCo), sorry⟩
   | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
-      -- resumptive `state` frame — the resume conjunct is THE ONE RESEARCH SORRY (krelS_append + metering,
-      -- see `compatK_handleState`). The `h₁=h₂`/tail pieces close; only the Kᵢ-kept resume needs append.
+      -- ◊4.5b-append: REBUILD PENDING. Self-relation `HandlerRel n (state ℓ s) (state ℓ s)` = ⟨rfl, S, hs-refl⟩
+      -- (needs VrelK n S s s via vrelK_fund on hcs); the Kᵢ-threading resume conjunct closes via crelK_ret
+      -- through the captured continuation. Temporarily sorry'd for the checkpoint.
       rw [krelS_handleF]
-      refine ⟨rfl, KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
-      sorry
+      exact ⟨sorry, KrelS_eff_cast (ihK hCo), sorry⟩
   | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
-      -- multi-cell resumptive analogue — THE ONE RESEARCH SORRY (krelS_append + metering).
+      -- ◊4.5b-append: REBUILD PENDING (multi-cell analogue — pointwise heap self-relation + Kᵢ-threading).
       rw [krelS_handleF]
-      refine ⟨rfl, KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
-      sorry
+      exact ⟨sorry, KrelS_eff_cast (ihK hCo), sorry⟩
 
 end Bang
