@@ -620,13 +620,16 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
           C = D ∧ (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
             CoApproxC_le n ([], Comp.ret v₁) ([], Comp.ret v₂))
       -- letF: hole is a returner `F q A`; frame body ▷-guarded at `m < n`, tail at continuation B.
-      -- The continuation's row `φ` is INDEPENDENT of the stack's ambient `ε` (the old design separates
-      -- them: stack at φ₁, continuation at φ₂ ≤ φ₁⊔φ₂) — bound existentially so `KrelS` is ε-antitone.
+      -- The continuation's row `φ` is bound existentially, AND the TAIL is at `φ` (not the ambient ε):
+      -- after a letF frame the tail observes the CONTINUATION's execution, so the row threading through
+      -- the eval context carries the continuation row `φ` downward. (This is what makes `crelK_ret`'s
+      -- letF case close with NO row conversion — body and tail both at `φ`. Build-proven; the wrong
+      -- "tail at ε" shape created a spurious antitone/monotone polarity clash.)
       | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂') =>
           ∃ q A B φ, C = CTy.F q A ∧
             (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
               CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
-            ∧ KrelS n B D ε K₁' K₂'
+            ∧ KrelS n B D φ K₁' K₂'
       -- appF: hole is an arrow `arr q A B`; cap is the appF arg, tail at codomain B.
       | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂') =>
           ∃ q A B, C = CTy.arr q A B ∧
@@ -657,7 +660,7 @@ end
       ∃ q A B φ, C = CTy.F q A ∧
         (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
           CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
-        ∧ KrelS n B D ε K₁ K₂ := by
+        ∧ KrelS n B D φ K₁ K₂ := by
   rw [KrelS]
 
 @[simp] theorem krelS_appF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {w₁ w₂ : Val} {K₁ K₂ : Stack} :
@@ -759,21 +762,20 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
   | (Frame.handleF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
 termination_by K₁ _ => K₁.length
 
-/-! ◊4.5b sub-block (b) — effect-row subsumption for the `KrelS`/`CrelK` core (mirrors the old
-`Krel_eff_anti`/`Crel_eff_mono`). `CrelK` MONOTONE up the row; `KrelS` ANTITONE. The stack's ambient
-`ε` appears in NO `KrelS` clause body (the letF continuation row `φ` is INDEPENDENT — existentially
-bound), so `KrelS` is ε-antitone by a STRAIGHT structural pass-through (`ε` only gates `CrelK`'s
-observation premise via the def). `CrelK_eff_mono` is the real content: it consumes `KrelS_eff_anti`. -/
-/-- `KrelS` ANTITONE in ε — STRUCTURAL pass-through. `ε` is threaded but appears in no clause body
-(letF's continuation row is independent), so each clause re-packs unchanged; only the def's `ε`
-parameter shifts. The tail recurses on the shorter stack. -/
+/-! ◊4.5b sub-block (b) — effect-row subsumption for the `KrelS`/`CrelK` core. With the tail-at-`φ`
+threading, the ambient `ε` appears ONLY at the `appF`/`handleF` tails (frames that don't bind a
+continuation row); the `letF` clause replaces `ε` by the continuation row `φ` at the tail, and the
+`nil` clause is ε-free. So `KrelS` is ε-ANTITONE by a structural pass-through that recurses on the
+ε-bearing tails (appF/handleF) and leaves the letF tail (at `φ`, ε-independent) unchanged. `CrelK`
+is then ε-MONOTONE (its `KrelS … ε'` premise weakens to `KrelS … ε`). -/
+/-- `KrelS` ANTITONE in ε. The `letF` tail is at the continuation row `φ` (ε-independent) so it passes
+through unchanged; the appF/handleF tails carry the ambient `ε` and recurse. -/
 theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
     ∀ {K₁ K₂ : Stack}, ε ≤ ε' → KrelS n C D ε' K₁ K₂ → KrelS n C D ε K₁ K₂
   | [], [], _, hK => by rw [krelS_nil] at hK ⊢; exact hK
-  | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), hεε', hK => by
-      rw [krelS_letF] at hK ⊢
-      obtain ⟨q, A, B, φ, hC, hbody, htail⟩ := hK
-      exact ⟨q, A, B, φ, hC, hbody, KrelS_eff_anti hεε' htail⟩
+  | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), _, hK => by
+      -- the letF tail is at `φ` (ε-independent); the whole clause is ε-free ⇒ passes through unchanged.
+      rw [krelS_letF] at hK ⊢; exact hK
   | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂'), hεε', hK => by
       rw [krelS_appF] at hK ⊢
       obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
@@ -798,6 +800,73 @@ theorem CrelK_eff_mono {n : Nat} {C : CTy Eff Mult} {ε ε' : Eff} {c₁ c₂ : 
   rw [CrelK] at hC ⊢
   intro D K₁ K₂ hK
   exact hC D K₁ K₂ (KrelS_eff_anti hεε' hK)
+
+
+/-! ## 5.2′c ◊4.5b sub-block (c) — `CrelK` value/head-step lemmas
+
+`crelK_ret`: a `VrelK`-related RETURN co-behaves under EVERY `KrelS`-related stack — the answer-typed
+analogue of the old `crel_ret`. Proven by induction on the stack, consuming the matching `KrelS` clause
+at each frame. The tail-at-`φ` threading (the def's letF clause) is what makes the letF case close with
+NO row conversion: `hbody : CrelK m B φ` meets `htail : KrelS m B D φ` — rows MATCH. Machine `ret`
+behaviour per frame (`Source.step`): nil = done; `letF N::K ↦ (K, N.subst v)`; `appF v::K` = STUCK
+(observation vacuous); `handleF h::K ↦ (K, ret v)` (pass-through). -/
+
+/-- A STUCK config (`step = none`, not a nil-return) never converges within any budget. -/
+private theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
+    (hstep : Source.step cfg = none) (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
+    ¬ ConvergesC_le n cfg := by
+  rintro ⟨v, hrun⟩
+  cases n with
+  | zero => rw [show Config.run 0 cfg = Result.oom from rfl] at hrun; exact absurd hrun (by simp)
+  | succ k => rw [Config.run_step k cfg hne, hstep] at hrun; exact absurd hrun (by simp)
+
+/-- ◊4.5b `crelK_ret`: a `VrelK`-related RETURN at returner type `F q A` is `CrelK`-related. -/
+theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ : Val}
+    (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂) (hv : VrelK n A v₁ v₂) :
+    CrelK n (CTy.F q A) e (Comp.ret v₁) (Comp.ret v₂) := by
+  rw [CrelK]
+  intro D K₁ K₂ hK
+  induction K₁ generalizing K₂ A v₁ v₂ e with
+  | nil =>
+      cases K₂ with
+      | nil => rw [krelS_nil] at hK; exact hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
+      | cons fr K₂' => simp only [KrelS] at hK
+  | cons fr K₁' ih =>
+      cases fr with
+      | letF N₁ =>
+          cases K₂ with
+          | cons fr₂ K₂' =>
+              cases fr₂ with
+              | letF N₂ =>
+                  rw [krelS_letF] at hK
+                  obtain ⟨q', A', B, φ, hC, hbody, htail⟩ := hK
+                  rw [CTy.F.injEq] at hC; obtain ⟨rfl, rfl⟩ := hC
+                  cases n with
+                  | zero => intro hconv; exact absurd hconv (not_convergesC_le_zero _)
+                  | succ k =>
+                      refine coApproxC_le_anti_step
+                        (cfg₁' := (K₁', Comp.subst v₁ N₁)) (cfg₂' := (K₂', Comp.subst v₂ N₂))
+                        rfl (by intro u; simp) rfl (by intro u; simp) ?_
+                      have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ (VrelK_mono (Nat.le_succ k) hv)
+                      rw [CrelK] at hCrel
+                      exact hCrel D K₁' K₂' (KrelS_mono (Nat.le_succ k) htail)
+              | _ => simp only [KrelS] at hK
+          | nil => simp only [KrelS] at hK
+      | appF w₁ =>
+          intro hconv
+          exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro u; simp))
+      | handleF h₁ =>
+          cases K₂ with
+          | cons fr₂ K₂' =>
+              cases fr₂ with
+              | handleF h₂ =>
+                  rw [krelS_handleF] at hK
+                  refine coApproxC_le_reduce
+                    (cfg₁' := (K₁', Comp.ret v₁)) (cfg₂' := (K₂', Comp.ret v₂))
+                    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+                  exact ih (K₂ := K₂') hc₁ hc₂ hv hK
+              | _ => simp only [KrelS] at hK
+          | nil => simp only [KrelS] at hK
 
 
 /-! ## 5.2a‴ Step-index DOWNWARD-CLOSURE (`Krel_mono`) — the ◊4.5 payoff
