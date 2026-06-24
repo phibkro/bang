@@ -39,3 +39,8 @@ import Bang.CalcReify
 import Bang.CalcReifyRef
 import Bang.CalcReifySim
 import Bang.CalcVM
+
+-- SPIKE (task #14, branch setrow-tension-spike): does typed cap-over-stack dispatch
+-- keep effect rows as idempotent SETS (`Finset Label`)? Scratch model, NOT a kernel
+-- change — in the build graph so the verdict is whole-tree build-grounded.
+import Bang.SetRowSpike
