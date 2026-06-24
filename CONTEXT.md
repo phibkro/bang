@@ -64,17 +64,27 @@
                                      re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `4b2f973`),
                                      `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`b5cfc88`), resume
                                      infra krel_handleF* (`421edc0`), ▷-guarded Vrel μ-clause strict-< (`33f50ea`,
-                                     fixes the open-μ soundness hole). ◊4.5b OPEN: the recursive fragment
-                                     (μ-floor · up · resumptive handlers) REQUIRES a ▷ (later) MODALITY —
-                                     build-PROVEN (no plain-Nat Krel is both monotone AND floor-vacuous; vacuity
-                                     relocates the wall n=0→n=1→…) + literature-CONFIRMED (Biernacki POPL'18, our
-                                     template, guards recursion with ▷; we'd dropped it for an unbounded CoApprox;
-                                     no third way — ADR-0041). PATH: ▷-realignment (LSLR/Iris ▷, Löb), the ▷ is
-                                     INTERNAL to the proof so frozen statements are preserved. 5 documented
-                                     ▷-sorrys; lr_sound HONEST (true-but-incomplete; n=0/μ-floor is
-                                     soundness-irrelevant — lr_sound_closed uses index 1, GREEN).
-◊5   Compiler v0 (IN PROGRESS)     ── design banked (transcribe iris-wasmfx opsem → Lean interp → forward-sim,
-                                     ADR-0035); dispatched IN PARALLEL with ◊4.5b — shared Iris-`▷` foundation.
+                                     fixes the open-μ soundness hole). ◊4.5b NEARLY DONE on branch
+                                     `cap45-modality` (`c363304`, NOT yet merged): the ▷ IS the CONFIG-LEVEL
+                                     METERED OBSERVATION (`ConvergesC_le`; `Crel_head_step` pays the index-lift with
+                                     a real machine step) — which OVERTURNED ADR-0041's "step-bounded-obs is dead":
+                                     the prior explosion was eval-fuel metering; CONFIG-level localizes it (the
+                                     `+K.length` refocus confines to the one adequacy bridge). CLOSED: μ-floor + ALL
+                                     handler-consumer cases + krel_refl. 1 sorry left = handled-`up` (op-producer
+                                     observed by a handling stack) — FULLY DESIGNED (Biernacki §3.3 ρ-free-derived:
+                                     drop baked splitAt=none from Srel ⇒ handling stacks excluded ⇒ up vacuous;
+                                     handled-dispatch re-proves the 3 handler cases at the discharged row; NO
+                                     frozen-stmt change). Build queued (fresh effort) → then lr_sound typed-context
+                                     wiring → THE MOAT proven.
+◊5   Compiler v0 (IN PROGRESS)     ── on branch `cap5-compiler` (`2531137`, NOT yet merged): the WHOLE EFFECT-FREE
+                                     compiler (pure CBPV + ADT) verified end-to-end source→WASM, AXIOM-CLEAN
+                                     (`compile_forward_sim_pure` ⊆ trusted-three; zero_grade_no_code +
+                                     compile_well_typed [propext]). Two-hop via the proven CalcVM (machine = the
+                                     calculation's output, inv #4). ENGINE PROBE GREEN — released wasmtime 44.0.1
+                                     runs suspend/resume (Q9 RESOLVED on branch), leg #2 diff-test viable. Handler
+                                     transcription + commutation done; REMAINING: the handler SIMULATION
+                                     (exec_wexec_sim gen + evalD_complete σ/τ + compileHandler) = GAP 2, all
+                                     first-order (forward-sim ≠ the LR's ▷, ADR-0035).
 ◊6   Release v0
 ```
 
