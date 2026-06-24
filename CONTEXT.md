@@ -60,18 +60,27 @@
                                      carrier on Krel/Srel/EnvRel (ADR-0036); arrow clause = PEELING +
                                      krel_nil_succ F-restriction (ADR-0038 — both pure forms refuted by
                                      the build). 16 proof commits f6d0ce2…69d70b1, 723 jobs green.
-◊4.5 ○ LR ▷-subsystem (NEXT)       ── the cohesive ▷-fragment deferred from ◊4 (ADR-0039): μ fold/unfold ·
-                                     up (op-perform) · resumptive handlers (state/txn) · krel_refl ·
-                                     lr_sound(arbitrary-C) · zero_usage_erasable. Build-confirmed root
-                                     cause: plain Nat→Prop Crel/Krel/Srel lack the both-ways monotonicity
-                                     μ/resume need (Srel resume contravariant in Vrel ⇒ no uniform
-                                     monotonicity; ▷-anti-reduction needs Krel-down, ours is Krel-up;
-                                     crel_unfold(a) closes [`7f1bb24`] but does NOT compose). FIX = re-phrase
-                                     Crel/Krel/Srel with the IxFree ∀k≤n Kripke-monotone reading, designed
-                                     in from the start; crel_unfold(a) + krel_appF_intro + infra carry over.
-◊5   Compiler v0
+◊4.5 ◐ LR ▷-subsystem (IN PROGRESS)── ◊4.5a DONE + banked (main `974e169`): the IxFree reshape — non-▷ spine
+                                     re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `4b2f973`),
+                                     `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`b5cfc88`), resume
+                                     infra krel_handleF* (`421edc0`), ▷-guarded Vrel μ-clause strict-< (`33f50ea`,
+                                     fixes the open-μ soundness hole). ◊4.5b OPEN: the recursive fragment
+                                     (μ-floor · up · resumptive handlers) REQUIRES a ▷ (later) MODALITY —
+                                     build-PROVEN (no plain-Nat Krel is both monotone AND floor-vacuous; vacuity
+                                     relocates the wall n=0→n=1→…) + literature-CONFIRMED (Biernacki POPL'18, our
+                                     template, guards recursion with ▷; we'd dropped it for an unbounded CoApprox;
+                                     no third way — ADR-0041). PATH: ▷-realignment (LSLR/Iris ▷, Löb), the ▷ is
+                                     INTERNAL to the proof so frozen statements are preserved. 5 documented
+                                     ▷-sorrys; lr_sound HONEST (true-but-incomplete; n=0/μ-floor is
+                                     soundness-irrelevant — lr_sound_closed uses index 1, GREEN).
+◊5   Compiler v0 (IN PROGRESS)     ── design banked (transcribe iris-wasmfx opsem → Lean interp → forward-sim,
+                                     ADR-0035); dispatched IN PARALLEL with ◊4.5b — shared Iris-`▷` foundation.
 ◊6   Release v0
 ```
+
+> **Product-spine note:** the surface **trait/law loop** (`Bang/Surface/Trait.lean`, `1f0e6a3`, merged)
+> is verified — eq→preorder→order + Int:Order discharged proof-first, run via `Source.eval`, one marked
+> descent (ADR-0040). First "write a verified program" loop, banked.
 
 ## Most recent stable checkpoint
 
