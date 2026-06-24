@@ -357,18 +357,27 @@ def Vrel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
   | n,     .prod A B, v₁, v₂ =>
       ∃ a₁ a₂ b₁ b₂, v₁ = Val.pair a₁ b₁ ∧ v₂ = Val.pair a₂ b₂ ∧
         Vrel n A a₁ a₂ ∧ Vrel n B b₁ b₂
-  | 0,     .mu _,    _,  _  => True
-  | n+1,   .mu A,    v₁, v₂ =>
-      ∃ w₁ w₂, v₁ = Val.fold w₁ ∧ v₂ = Val.fold w₂ ∧ Vrel n (VTy.unrollMu A) w₁ w₂
+  | n,     .mu A,    v₁, v₂ =>
+      -- ◊4.5 ROUTE 1 (ke): UNIFIED strict-`<` μ-clause. The fold SHAPE holds at EVERY index (incl. the
+      -- `n=0` floor — there `∀ j < 0` is vacuous, so the floor still pins `v₁=fold w₁ ∧ v₂=fold w₂`); the
+      -- unrolled PAYLOAD relation is `▷`-guarded as `∀ j < n` (Biernacki's later modality). Well-founded by
+      -- `Prod.Lex.left` on the strict `j < n` — NO `sizeOf` decrease needed on the type, so `unrollMu A`
+      -- being structurally larger is irrelevant (this is why the old `(n, sizeOf)`-only worry dissolves).
+      -- The floor now carries fold-shape (vs the old `Vrel 0 (mu) := True`), so the `crel_fund` unfold/vvar
+      -- case gets the scrutinee shape at `n=0`; the floor return-obligation is degenerated in `Krel` below.
+      ∃ w₁ w₂, v₁ = Val.fold w₁ ∧ v₂ = Val.fold w₂ ∧ ∀ j, j < n → Vrel j (VTy.unrollMu A) w₁ w₂
   | _,     .tvar _,  _,  _  => False
 termination_by n A _ _ => (n, sizeOf A, 3)
 decreasing_by
-  -- ◊4.5: the new U-clause edge is `Crel j B φ` at `j ≤ n` (measure `(j, sizeOf B, 2)` vs Vrel's
+  -- ◊4.5: the U-clause edge is `Crel j B φ` at `j ≤ n` (measure `(j, sizeOf B, 2)` vs Vrel's
   -- `(n, sizeOf (U φ B), 3)`). `j < n` drops the index; `j = n` drops on `sizeOf B < sizeOf (U φ B)`.
-  -- The structural sub-type edges (sum/prod/mu) auto-discharge. Try auto first, then the j-split.
+  -- ROUTE 1: the new μ-clause edge is `Vrel j (unrollMu A)` at STRICT `j < n` — pure `Prod.Lex.left`
+  -- (index drop), no type-size obligation. The structural sub-type edges (sum/prod) auto-discharge.
+  -- Try auto first, then the strict-`<` edge, then the `≤`-split (U-clause).
   all_goals
     first
       | decreasing_tactic
+      | (simp_wf; exact Prod.Lex.left _ _ ‹_ < _›)
       | (rcases Nat.lt_or_eq_of_le ‹_ ≤ _› with hlt | rfl <;>
           first | (simp_wf; exact Prod.Lex.left _ _ hlt) | (simp_wf; decreasing_tactic))
 
@@ -410,6 +419,9 @@ decreasing_by
   -- same type but a smaller ROLE (Srel: role 0 < Krel's 1). Lex `(index, sizeOf, role)`: `j < n` drops
   -- the first component; `j = n` reduces to the SAME goal the pre-◊4.5 auto-discharge handled
   -- (index unchanged, sizeOf/role tie-break) — so delegate it to `decreasing_tactic`.
+  -- ◊4.5 ROUTE 1: the degenerate return-half puts the `Vrel j A` edge under a `0 < j` hyp, so a bare
+  -- `‹_ ≤ _›` can grab the wrong bound. Discharge each edge robustly: `simp_wf` then either a strict
+  -- index drop (`Prod.Lex.left`, `j < n` by omega) or a same-index type/role drop (`decreasing_tactic`).
   all_goals
     (rcases Nat.lt_or_eq_of_le ‹_ ≤ _› with hlt | rfl)
     <;> first
@@ -503,14 +515,12 @@ theorem Vrel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring M
       obtain ⟨a₁, a₂, b₁, b₂, rfl, rfl, ha, hb⟩ := hv
       exact ⟨a₁, a₂, b₁, b₂, rfl, rfl, Vrel_mono hmn ha, Vrel_mono hmn hb⟩
   | .mu A =>
-      -- `Vrel 0 (mu _) = True`; `Vrel (k+1) (mu A)` drops to `Vrel k (unrollMu A)`. Down on `mu`:
-      -- `m ≤ n`; if `m = 0` trivial, else both successors, recurse at SMALLER index on `unrollMu A`.
-      match m, n, hmn with
-      | 0,     _,     _   => rw [Vrel]; trivial
-      | k + 1, l + 1, hmn =>
-          rw [Vrel] at hv ⊢
-          obtain ⟨w₁, w₂, rfl, rfl, hw⟩ := hv
-          exact ⟨w₁, w₂, rfl, rfl, Vrel_mono (Nat.le_of_succ_le_succ hmn) hw⟩
+      -- ◊4.5 ROUTE 1: the μ-clause is `∃ fold w₁ w₂, ∀ j < n, Vrel j (unrollMu A) w₁ w₂`. Down on `mu`
+      -- is STRUCTURAL — restrict the `∀ j < n` to `∀ j < m` (`m ≤ n` ⇒ `j < m → j < n`). No recursive
+      -- `Vrel_mono` call (the payload already quantifies `∀ j <`); same shape as the U-clause down-step.
+      rw [Vrel] at hv ⊢
+      obtain ⟨w₁, w₂, rfl, rfl, hw⟩ := hv
+      exact ⟨w₁, w₂, rfl, rfl, fun j hjm => hw j (lt_of_lt_of_le hjm hmn)⟩
   | .tvar i => rw [Vrel] at hv; exact absurd hv not_false
 termination_by (n, sizeOf A)
 

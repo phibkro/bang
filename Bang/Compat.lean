@@ -1197,11 +1197,12 @@ theorem crel_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
     Crel n (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
   rw [Vrel] at hv
   obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
+  -- ◊4.5 ROUTE 1: `hu : ∀ j < n+1, Vrel j (unrollMu A) u₁ u₂`; take the payload at the conclusion
+  -- index `n` (`n < n+1`) — the `▷`-guarded unroll discharged by the `unfold` step.
   refine Crel_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_ ?_
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
-  · -- the index-`n` payloads, related at the unrolled type, inject via crel_ret at index `n`.
-    exact crel_ret hcw₁.fold_inv hcw₂.fold_inv hu
+  · exact crel_ret hcw₁.fold_inv hcw₂.fold_inv (hu n (Nat.lt_succ_self n))
 
 
 
@@ -1300,16 +1301,12 @@ theorem vrel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy 
       exact ⟨_, _, _, _, rfl, rfl, vrel_fund ha n δ₁ δ₂ hδ, vrel_fund hb n δ₁ δ₂ hδ⟩
   | @fold _ _ w A hw =>
       intro n δ₁ δ₂ hδ
-      -- μ intro. `Vrel n (mu A)`: at `n=0` it is `True`; at `n+1` it wants the payload at index `n`
-      -- (the ▷ guard). The IH `vrel_fund hw` gives the payload at the SAME index `n+1`; drop one via
-      -- `Vrel_mono` (◊4.5 downward-closure). closeV_fold pushes the closure under the constructor.
-      rw [closeV_fold, closeV_fold]
-      cases n with
-      | zero => rw [Vrel]; trivial
-      | succ m =>
-          rw [Vrel]
-          exact ⟨_, _, rfl, rfl,
-            Vrel_mono (Nat.le_succ m) (vrel_fund hw (m + 1) δ₁ δ₂ hδ)⟩
+      -- μ intro (◊4.5 ROUTE 1). `Vrel n (mu A) := ∃ fold, ∀ j < n, Vrel j (unrollMu A)`. The fold SHAPE
+      -- holds at every n (incl. the floor); for each `j < n` the IH `vrel_fund hw` at index `j` on the
+      -- `EnvRel_mono`-weakened env supplies the unrolled payload — Kripke, the `▷`-guard is `∀ j <`.
+      rw [closeV_fold, closeV_fold, Vrel]
+      exact ⟨_, _, rfl, rfl,
+        fun j hjn => vrel_fund hw j δ₁ δ₂ (EnvRel_mono (Nat.le_of_lt hjn) hδ)⟩
 
 theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
     (h : HasCTy γ Γ c e B) :
@@ -1424,12 +1421,14 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           cases n with
           | zero =>
-              -- ◊4.5 WALL (DEFINITIONAL, not a proof gap). `Crel 0 (unfold δ₁[i]) (unfold δ₂[i])`.
-              -- `EnvRel 0` gives only `Vrel 0 (mu A) δ₁[i] δ₂[i] = True` — NO fold-shape, NO payload. With
-              -- index-free `CoApprox`, `unfold` buys no step, so the μ-clause's dropped index has nothing
-              -- to pay it; `δ₁[i],δ₂[i]` may even differ in shape (one fold, one not), making the goal
-              -- genuinely FALSE under the present `Vrel 0 (mu A) := True` + typing-free `EnvRel`. Fix is
-              -- DEFINITIONAL (kernel): see report — escalated, not a missing lemma.
+              -- ◊4.5 ROUTE 1 (Vrel μ-clause strict-`<`) gives fold-SHAPE at the floor (∀ j<0 payload
+              -- vacuous), so the head-step `unfold (fold wᵢ) ↦ ret wᵢ` applies — but the residual
+              -- `Crel 0 (F 1 (unrollMu A)) (ret w₁) (ret w₂)` STILL needs `Vrel 0 (unrollMu A) w₁ w₂`
+              -- (via crel_ret), which the floor's vacuous payload does not supply. ke's step (ii)
+              -- (degenerate the `Krel 0` return-half) makes the global return-half UNPROVABLE by
+              -- `krel_letF`/`krel_appF_intro` at j=0 (they need the `Vrel j` premise to fire their
+              -- continuation) ⇒ the degeneration must thread `0<j→Vrel` through EnvRel + every binder
+              -- case — pervasive. STOPPED + reported (the iteration-3 gate). See report.
               sorry
           | succ m =>
               exact Crel_mono (Nat.le_succ m)
