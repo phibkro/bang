@@ -103,8 +103,21 @@ shell.** Dispatch is the first, highest-value test case.
 
 ## Open boundaries
 
-1. **Dispatch: kernel or shell?** — the spike (task #13). GO ⇒ kernel sheds the search, `no_accidental_handling`
-   becomes structural, the ADR-0043 seam moves into the dynamic-dispatch shell library.
+1. **Dispatch: kernel or shell? — ANSWERED, GO (spike, task #13, 2026-06-25).** Build-gated verdict
+   (`static-dispatch-spike` @ `b1330db`, `Bang/StaticSpike.lean`, lemmas `[propext, Quot.sound]`, 725 jobs
+   green): a static-link kernel dispatch (`perform cap`, `staticSplit` — counts a de-Bruijn capability, **never
+   calls `handlesOp` to decide skipping**) **dissolves the ADR-0043 edge structurally AND UNTYPED for cap=0**
+   (the perform resolves to its NEAREST enclosing handler — the common, well-scoped case): the captured `Kᵢ` is
+   `NoHandleF` (pure letF/appF plumbing), so there is no nested non-catching handler and no answer type to
+   recover. For **cap>0** (resume-into-an-outer / shadowing) the strip RELOCATES but to a tractable place — it
+   becomes **cap-indexed**, and the static count IS the answer-type witness (so it does NOT reintroduce the
+   untyped-LR's missing recovery). Consequences confirmed: `no_accidental_handling` becomes **structural** at
+   cap=0; the **calculated VM impact is LOW** (static dispatch is a *simpler* `splitAt` — Bahr–Hutton re-runs a
+   strictly smaller obligation); **no 6th primitive** (`perform cap` REPLACES `up`+`splitAt`-search; the search
+   moves to shell elaboration); frozen statements untouched (`dispatchOn` consumers unchanged). The
+   dynamic-dispatch-as-shell-macro (Effekt-style capability threading, `perform name` → reader-effect lookup →
+   `perform cap`) is the kernel↓shell derivability test passing. **Honest residue:** cap>0 needs either
+   nearest-only caps (an expressivity cut — no resume-into-outer) or the typed cap-witness (the pivot's intent).
 2. **How far does the typed pivot reach into the kernel?** — minimal kernel typing vs a fully typed relation;
    the set-vs-multiset (#2) question.
 3. **Paradigm runtimes: shell or library?** — the definitional test; lean = a small blessed set in the shell.
