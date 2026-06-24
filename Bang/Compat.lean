@@ -1312,6 +1312,71 @@ theorem crelK_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
   · exact ⟨fun K => rfl, by intro v; simp⟩
 
 
+/-! ### B.3′b `CrelK` frame extensions + `compat` cores (`letC`/`app`)
+
+The answer-typed frame lemmas. `krelS_letF_intro` builds a `KrelS (F q A)` from a `▷`-guarded
+continuation relation + a tail `KrelS B` — directly packing the def's letF clause (the tail weakens
+from the ambient `ε` to the continuation row `φ` via `KrelS_eff_anti`, `φ ≤ ε`). `compatK_letC`/`_app`
+refocus the source redex (`letC`/`app` PUSH) and run the bound computation through the extended stack. -/
+
+/-- ◊4.5b build a letF-extended `KrelS` from a continuation relation (`▷`-guarded, `∀ m < n`) + the
+ambient tail. The continuation row `φ ≤ ε`; the tail weakens `ε → φ` via `KrelS_eff_anti`. -/
+theorem krelS_letF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε φ : Eff}
+    {N₁ N₂ : Comp} {K₁ K₂ : Stack} (hφε : φ ≤ ε)
+    (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+      CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
+    (hK : KrelS n B D ε K₁ K₂) :
+    KrelS n (CTy.F q A) D ε (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) := by
+  rw [krelS_letF]
+  exact ⟨q, A, B, φ, rfl, hN, KrelS_eff_anti hφε hK⟩
+
+/-- ◊4.5b the `letC` compat core at `CrelK` (the answer-typed `compat_letC`). REFOCUS
+`(K, letC M N) ↦ (letF N::K, M)` (one PUSH step), then run `M` (related at `F q1 A`, row φ₁) through the
+letF-extended stack, shown `KrelS`-related by `krelS_letF_intro`. The continuation `hN` is `▷`-guarded
+(`∀ m < n`) at row φ₂; the block is at `φ₁ ⊔ φ₂`. -/
+theorem compatK_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ₁ φ₂ : Eff}
+    {M₁ M₂ N₁' N₂' : Comp}
+    (hM : CrelK n (CTy.F q1 A) φ₁ M₁ M₂)
+    (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+      CrelK m B φ₂ (Comp.subst v₁ N₁') (Comp.subst v₂ N₂')) :
+    CrelK n B (φ₁ ⊔ φ₂) (Comp.letC M₁ N₁') (Comp.letC M₂ N₂') := by
+  rw [CrelK]
+  intro D K₁ K₂ hK
+  refine coApproxC_le_reduce (cfg₁' := (Frame.letF N₁' :: K₁, M₁)) (cfg₂' := (Frame.letF N₂' :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  -- the letF-extended stack is `KrelS`-related at `(F q1 A, φ₁)`: tail at the block row φ₁⊔φ₂ weakens
+  -- to the continuation row φ₂ (≤ φ₁⊔φ₂); `hM` (related at F q1 A, row φ₁) discharges the reduct.
+  have hKletF : KrelS n (CTy.F q1 A) D (φ₁ ⊔ φ₂) (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) :=
+    krelS_letF_intro le_sup_right hN hK
+  rw [CrelK] at hM
+  -- `hM` is at row φ₁; the letF-extended stack is at φ₁⊔φ₂. Weaken the stack φ₁⊔φ₂ → φ₁ (antitone).
+  exact hM D (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) (KrelS_eff_anti le_sup_left hKletF)
+
+/-- ◊4.5b build an appF-extended `KrelS` from a `VrelK`-related closed argument + the codomain tail.
+The appF frame doesn't bind a continuation row, so the tail stays at the ambient `ε` (no weakening). -/
+theorem krelS_appF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε : Eff}
+    {v₁ v₂ : Val} {K₁ K₂ : Stack} (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂)
+    (hv : VrelK n A v₁ v₂) (hK : KrelS n B D ε K₁ K₂) :
+    KrelS n (CTy.arr q A B) D ε (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) := by
+  rw [krelS_appF]
+  exact ⟨q, A, B, rfl, hcv₁, hcv₂, hv, hK⟩
+
+/-- ◊4.5b the `app` compat core at `CrelK` (the answer-typed `compat_app`). REFOCUS
+`(K, app M v) ↦ (appF v::K, M)`, then run `M` (related at `arr q A B`) through the appF-extended
+stack, shown `KrelS`-related by `krelS_appF_intro`. -/
+theorem compatK_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ : Eff}
+    {M₁ M₂ : Comp} {v₁ v₂ : Val}
+    (hM : CrelK n (CTy.arr q A B) φ M₁ M₂)
+    (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂) (hv : VrelK n A v₁ v₂) :
+    CrelK n B φ (Comp.app M₁ v₁) (Comp.app M₂ v₂) := by
+  rw [CrelK]
+  intro D K₁ K₂ hK
+  refine coApproxC_le_reduce (cfg₁' := (Frame.appF v₁ :: K₁, M₁)) (cfg₂' := (Frame.appF v₂ :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  rw [CrelK] at hM
+  exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hv hK)
+
+
 /-! ## B.4 `krel_refl` — the interface contract for `lr_sound` (the capstone)
 
 The downstream `lr_sound` capstone (separate thread) closes as `lr_sound_closed ∘ krel_refl`: the
