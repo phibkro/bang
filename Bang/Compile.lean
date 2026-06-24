@@ -1721,9 +1721,14 @@ def Simulates (cx cy : Comp) : Prop :=
   ∀ r, CalcVM.evalD 0 [] [] cy = some r ∨ (∃ b, CalcVM.evalD b [] [] cy = some r) →
     ∃ a, CalcVM.evalD a [] [] cx = some r
 
-/-- Cleaner simulation: anything `cy` evaluates to (some fuel), `cx` evaluates to. -/
+/-- STORE-PARAMETRIC simulation: at ANY stores `σ τ`, anything `cy` evaluates to (some
+fuel), `cx` evaluates to. The store parameter is what lets the simulation push UNDER a
+`handle` (`Sim.handle`): a handle runs its body at PUSHED stores, so a `[] []`-only `Sim`
+can't go under it — the reverse bridge needs the simulation at every store-context (every
+`handleF` frame in `K` opens a new one). letC/app run the inner at the SAME stores, so their
+congruences are store-agnostic (the σ/τ thread unchanged). -/
 def Sim (cx cy : Comp) : Prop :=
-  ∀ b r, CalcVM.evalD b [] [] cy = some r → ∃ a, CalcVM.evalD a [] [] cx = some r
+  ∀ σ τ b r, CalcVM.evalD b σ τ cy = some r → ∃ a, CalcVM.evalD a σ τ cx = some r
 
 /-- `letC` preserves simulation in the bound position: if `cx` simulates `cy`,
 then `letC cx N` simulates `letC cy N`. Both run the bound computation FIRST;
@@ -1731,16 +1736,16 @@ then `letC cx N` simulates `letC cy N`. Both run the bound computation FIRST;
 terminal case is vacuous (`evalD (letC _ N)` of a `lam`-terminal is `none`); the
 `raised` case propagates the same raise. -/
 theorem Sim.letC {cx cy : Comp} (h : Sim cx cy) (N : Comp) : Sim (.letC cx N) (.letC cy N) := by
-  intro b r hb
+  intro σ τ b r hb
   cases b with
   | zero => simp [CalcVM.evalD] at hb
   | succ b =>
       simp only [CalcVM.evalD] at hb
-      cases hy : CalcVM.evalD b [] [] cy with
+      cases hy : CalcVM.evalD b σ τ cy with
       | none => rw [hy] at hb; simp at hb
       | some oy =>
           rw [hy] at hb
-          obtain ⟨a, ha⟩ := h b oy hy
+          obtain ⟨a, ha⟩ := h σ τ b oy hy
           cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
             | term t => cases t with
               | ret w =>
@@ -1766,16 +1771,16 @@ theorem Sim.letC {cx cy : Comp} (h : Sim cx cy) (N : Comp) : Sim (.letC cx N) (.
                 exact hb
 
 theorem Sim.app {cx cy : Comp} (h : Sim cx cy) (u : Bang.Val) : Sim (.app cx u) (.app cy u) := by
-  intro b r hb
+  intro σ τ b r hb
   cases b with
   | zero => simp [CalcVM.evalD] at hb
   | succ b =>
       simp only [CalcVM.evalD] at hb
-      cases hy : CalcVM.evalD b [] [] cy with
+      cases hy : CalcVM.evalD b σ τ cy with
       | none => rw [hy] at hb; simp at hb
       | some oy =>
           rw [hy] at hb
-          obtain ⟨a, ha⟩ := h b oy hy
+          obtain ⟨a, ha⟩ := h σ τ b oy hy
           cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
             | term t => cases t with
               | lam M =>
@@ -1800,21 +1805,63 @@ theorem Sim.app {cx cy : Comp} (h : Sim cx cy) (u : Bang.Val) : Sim (.app cx u) 
                 simp only [CalcVM.evalD, ha, Option.bind_some]
                 exact hb
 
-/-- The plug-congruence: a focus simulation lifts through any pure frame stack.
-Induction on `K`, using `Sim.letC`/`Sim.app` to push the simulation down one
-frame. -/
-theorem evalD_plug_sim : ∀ {K : Bang.EvalCtx}, PureCtx K → ∀ {cx cy : Comp}, Sim cx cy →
+/-- `handle` preserves simulation: this is the NEW congruence the handler-fragment reverse
+bridge needs (and the reason `Sim` is store-parametric). `evalD (handle h cy)` runs `cy` at
+PUSHED stores and post-processes the body OUTCOME (pop / forward / catch) — a pure function of
+that outcome. By `Sim cx cy` AT the pushed stores, `cx` reaches the SAME body outcome `oy`, so
+the SAME post-processing yields the SAME `handle`-result. Case on the handler kind (state pushes
+σ, transaction pushes τ, throws keeps both) — the body-fuel transfers, the post-step is identical. -/
+theorem Sim.handle {cx cy : Comp} (h : Sim cx cy) (hh : Handler) :
+    Sim (.handle hh cx) (.handle hh cy) := by
+  intro σ τ b r hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      cases hh with
+      | state ℓ s =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b (σ.push ℓ s) τ cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h (σ.push ℓ s) τ b oy hy
+              refine ⟨a + 1, ?_⟩
+              simp only [CalcVM.evalD]; rw [ha]; exact hb
+      | transaction ℓ Θ =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b σ (τ.push ℓ Θ) cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h σ (τ.push ℓ Θ) b oy hy
+              refine ⟨a + 1, ?_⟩
+              simp only [CalcVM.evalD]; rw [ha]; exact hb
+      | throws ℓ0 =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b σ τ cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h σ τ b oy hy
+              refine ⟨a + 1, ?_⟩
+              simp only [CalcVM.evalD]; rw [ha]; exact hb
+
+/-- The plug-congruence: a focus simulation lifts through ANY frame stack — including `handleF`
+(via `Sim.handle`), now that `Sim` is store-parametric. Induction on `K`. The total context
+predicate `CtxOk` (admits handleF) replaces the old `PureCtx`. -/
+theorem evalD_plug_sim : ∀ {K : Bang.EvalCtx} {cx cy : Comp}, Sim cx cy →
     ∀ {n r}, CalcVM.evalD n [] [] (plug K cy) = some r →
     ∃ m, CalcVM.evalD m [] [] (plug K cx) = some r
-  | [], _, cx, cy, h, n, r, hn => h n r (by simpa [plug] using hn)
-  | .letF N :: K, hK, cx, cy, h, n, r, hn => by
-      simp only [PureCtx] at hK
+  | [], cx, cy, h, n, r, hn => h _ _ n r (by simpa [plug] using hn)
+  | .letF N :: K, cx, cy, h, n, r, hn => by
       rw [plug_cons, Frame.wrapStep] at hn ⊢
-      exact evalD_plug_sim hK.2 (h.letC N) hn
-  | .appF u :: K, hK, cx, cy, h, n, r, hn => by
-      simp only [PureCtx] at hK
+      exact evalD_plug_sim (h.letC N) hn
+  | .appF u :: K, cx, cy, h, n, r, hn => by
       rw [plug_cons, Frame.wrapStep] at hn ⊢
-      exact evalD_plug_sim hK.2 (h.app u) hn
+      exact evalD_plug_sim (h.app u) hn
+  | .handleF hh :: K, cx, cy, h, n, r, hn => by
+      rw [plug_cons, Frame.wrapStep] at hn ⊢
+      exact evalD_plug_sim (h.handle hh) hn
 
 /-- The three CK REDUCE steps as simulations (the contractum simulates the redex):
 each is a single `evalD` head-unfold. -/
@@ -1822,67 +1869,66 @@ each is a single `evalD` head-unfold. -/
 -- reaches too, in one extra unfold) — this is the direction the transfer needs (it has the
 -- contractum's `evalD`, wants the redex's).
 theorem sim_letC_ret (w : Bang.Val) (N : Comp) : Sim (.letC (.ret w) N) (Comp.subst w N) := by
-  intro b r hb
+  intro σ τ b r hb
   refine ⟨b + 2, ?_⟩
   simp only [CalcVM.evalD, Option.bind_some]
   exact evalD_some_le (by omega) hb
 
 theorem sim_app_lam (u : Bang.Val) (M : Comp) : Sim (.app (.lam M) u) (Comp.subst u M) := by
-  intro b r hb
+  intro σ τ b r hb
   refine ⟨b + 2, ?_⟩
   simp only [CalcVM.evalD, Option.bind_some]
   exact evalD_some_le (by omega) hb
 
 theorem sim_force (M : Comp) : Sim (.force (.vthunk M)) M := by
-  intro b r hb
+  intro σ τ b r hb
   exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
 
 /-- The three transfer lemmas `evalD_complete_gen` invokes, derived from
 `evalD_plug_sim` + the redex simulations. -/
 theorem evalD_plug_letC_ret (K : Bang.EvalCtx) (w : Bang.Val) (N : Comp) (r : _)
-    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst w N)) = some (.term (.ret w'), [], [])) :
+    (h : CalcVM.evalD r [] [] (plug K (Comp.subst w N)) = some (.term (.ret w'), [], [])) :
     ∃ m, CalcVM.evalD m [] [] (plug K (.letC (.ret w) N)) = some (.term (.ret w'), [], []) :=
-  evalD_plug_sim hK (sim_letC_ret w N) h
+  evalD_plug_sim (sim_letC_ret w N) h
 
 theorem evalD_plug_app_lam (K : Bang.EvalCtx) (u : Bang.Val) (M : Comp) (r : _)
-    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst u M)) = some (.term (.ret w'), [], [])) :
+    (h : CalcVM.evalD r [] [] (plug K (Comp.subst u M)) = some (.term (.ret w'), [], [])) :
     ∃ m, CalcVM.evalD m [] [] (plug K (.app (.lam M) u)) = some (.term (.ret w'), [], []) :=
-  evalD_plug_sim hK (sim_app_lam u M) h
+  evalD_plug_sim (sim_app_lam u M) h
 
 theorem evalD_plug_force (K : Bang.EvalCtx) (M : Comp) (r : _)
-    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K M) = some (.term (.ret w'), [], [])) :
+    (h : CalcVM.evalD r [] [] (plug K M) = some (.term (.ret w'), [], [])) :
     ∃ m, CalcVM.evalD m [] [] (plug K (.force (.vthunk M))) = some (.term (.ret w'), [], []) :=
-  evalD_plug_sim hK (sim_force M) h
+  evalD_plug_sim (sim_force M) h
 
 -- ADT redex simulations (sub-step 1a): the eliminator simulates its contractum (one evalD unfold).
 theorem sim_case_inl (v : Bang.Val) (N₁ N₂ : Comp) :
     Sim (.case (.inl v) N₁ N₂) (Comp.subst v N₁) := by
-  intro b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
+  intro σ τ b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
 theorem sim_case_inr (v : Bang.Val) (N₁ N₂ : Comp) :
     Sim (.case (.inr v) N₁ N₂) (Comp.subst v N₂) := by
-  intro b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
+  intro σ τ b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
 theorem sim_split (v u : Bang.Val) (N : Comp) :
     Sim (.split (.pair v u) N) (Comp.subst v (Comp.subst (Val.shift u) N)) := by
-  intro b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
+  intro σ τ b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
 
 theorem evalD_plug_case_inl (K : Bang.EvalCtx) (v : Bang.Val) (N₁ N₂ : Comp) (r : _)
-    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst v N₁)) = some (.term (.ret w'), [], [])) :
+    (h : CalcVM.evalD r [] [] (plug K (Comp.subst v N₁)) = some (.term (.ret w'), [], [])) :
     ∃ m, CalcVM.evalD m [] [] (plug K (.case (.inl v) N₁ N₂)) = some (.term (.ret w'), [], []) :=
-  evalD_plug_sim hK (sim_case_inl v N₁ N₂) h
+  evalD_plug_sim (sim_case_inl v N₁ N₂) h
 theorem evalD_plug_case_inr (K : Bang.EvalCtx) (v : Bang.Val) (N₁ N₂ : Comp) (r : _)
-    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst v N₂)) = some (.term (.ret w'), [], [])) :
+    (h : CalcVM.evalD r [] [] (plug K (Comp.subst v N₂)) = some (.term (.ret w'), [], [])) :
     ∃ m, CalcVM.evalD m [] [] (plug K (.case (.inr v) N₁ N₂)) = some (.term (.ret w'), [], []) :=
-  evalD_plug_sim hK (sim_case_inr v N₁ N₂) h
+  evalD_plug_sim (sim_case_inr v N₁ N₂) h
 theorem evalD_plug_split (K : Bang.EvalCtx) (v u : Bang.Val) (N : Comp) (r : _)
-    (hK : PureCtx K)
     (h : CalcVM.evalD r [] [] (plug K (Comp.subst v (Comp.subst (Val.shift u) N))) = some (.term (.ret w'), [], [])) :
     ∃ m, CalcVM.evalD m [] [] (plug K (.split (.pair v u) N)) = some (.term (.ret w'), [], []) :=
-  evalD_plug_sim hK (sim_split v u N) h
+  evalD_plug_sim (sim_split v u N) h
 
 /-- `unfold (fold v)` reduces to `ret v` — a TERMINAL, not a focus-step. Under a pure
 plug, `evalD (plug K (ret v))` ⟹ `evalD (plug K (unfold (fold v)))` (one unfold). -/
 theorem sim_unfold (v : Bang.Val) : Sim (.unfold (.fold v)) (Comp.ret v) := by
-  intro b r hb
+  intro σ τ b r hb
   cases b with
   | zero => simp [CalcVM.evalD] at hb
   | succ b =>
@@ -1890,9 +1936,9 @@ theorem sim_unfold (v : Bang.Val) : Sim (.unfold (.fold v)) (Comp.ret v) := by
       simp only [CalcVM.evalD] at hb
       exact ⟨1, by simp only [CalcVM.evalD]; exact hb⟩
 theorem evalD_plug_unfold (K : Bang.EvalCtx) (v : Bang.Val) (r : _)
-    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.ret v)) = some (.term (.ret w'), [], [])) :
+    (h : CalcVM.evalD r [] [] (plug K (Comp.ret v)) = some (.term (.ret w'), [], [])) :
     ∃ m, CalcVM.evalD m [] [] (plug K (.unfold (.fold v))) = some (.term (.ret w'), [], []) :=
-  evalD_plug_sim hK (sim_unfold v) h
+  evalD_plug_sim (sim_unfold v) h
 
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
@@ -1938,7 +1984,7 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                       Wasmfx.subst_pure (by simpa only [Wasmfx.Comp.Pure] using hc) hK.1
                     obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst w N) v hK.2 hsub hrun'
                     -- transfer: evalD (plug K' (letC (ret w) N)) ⟸ evalD (plug K' (subst w N)).
-                    exact evalD_plug_letC_ret K' w N n hK.2 hn
+                    exact evalD_plug_letC_ret K' w N n hn
                 | appF u =>
                     -- (appF u :: K', ret w): `ret w` is not a `lam`; step is `none` ⇒ stuck, not done.
                     simp only [Source.step] at hstep
@@ -1961,7 +2007,7 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                     have hsub : Wasmfx.Comp.Pure (Comp.subst u M) :=
                       Wasmfx.subst_pure hK.1 (by simpa only [Wasmfx.Comp.Pure] using hc)
                     obtain ⟨n, hn⟩ := ih F' (by omega) K' (Comp.subst u M) v hK.2 hsub hrun'
-                    exact evalD_plug_app_lam K' u M n hK.2 hn
+                    exact evalD_plug_app_lam K' u M n hn
                 | handleF h => simp only [PureCtx] at hK
         | letC M N =>
             -- (K, letC M N) ↦ (letF N :: K, M)  (PUSH; plug preserved)
@@ -1991,7 +2037,7 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 simp only [Wasmfx.Comp.Pure] at hc
                 obtain ⟨n, hn⟩ := ih F' (by omega) K M v hK hc hrun'
                 -- evalD (plug K (force (vthunk M))) ⟸ evalD (plug K M)  (force erases).
-                exact evalD_plug_force K M n hK hn
+                exact evalD_plug_force K M n hn
             | _ => simp only [Wasmfx.Comp.Pure] at hc
         | case w N₁ N₂ =>
             -- scrutinee must be inl/inr to step (else stuck ≠ done). REDUCE in place (K kept).
@@ -2003,14 +2049,14 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 have hsub : Wasmfx.Comp.Pure (Comp.subst vp N₁) :=
                   Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.1
                 obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₁) v hK hsub hrun'
-                exact evalD_plug_case_inl K vp N₁ N₂ n hK hn
+                exact evalD_plug_case_inl K vp N₁ N₂ n hn
             | inr vp =>
                 simp only [Source.step] at hstep
                 have hrun' : Config.run F' (K, Comp.subst vp N₂) = Result.done v := hstep.symm
                 have hsub : Wasmfx.Comp.Pure (Comp.subst vp N₂) :=
                   Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.2
                 obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₂) v hK hsub hrun'
-                exact evalD_plug_case_inr K vp N₁ N₂ n hK hn
+                exact evalD_plug_case_inr K vp N₁ N₂ n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | split w N =>
             simp only [Wasmfx.Comp.Pure] at hc
@@ -2023,7 +2069,7 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 have hsub : Wasmfx.Comp.Pure (Comp.subst vp (Comp.subst (Val.shift up) N)) :=
                   Wasmfx.subst_pure hvu.1 (Wasmfx.subst_pure (Wasmfx.Val.shiftFrom_pure 0 hvu.2) hc.2)
                 obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp (Comp.subst (Val.shift up) N)) v hK hsub hrun'
-                exact evalD_plug_split K vp up N n hK hn
+                exact evalD_plug_split K vp up N n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | unfold w =>
             simp only [Wasmfx.Comp.Pure] at hc
@@ -2035,7 +2081,7 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 have hsub : Wasmfx.Comp.Pure (Comp.ret vp) := by
                   simpa only [Wasmfx.Comp.Pure, Wasmfx.Val.Pure] using hc
                 obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.ret vp) v hK hsub hrun'
-                exact evalD_plug_unfold K vp n hK hn
+                exact evalD_plug_unfold K vp n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | _ => simp only [Wasmfx.Comp.Pure] at hc
 
