@@ -1463,6 +1463,137 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
       exact ⟨qᵣ, VTy.unit, Val.vunit, Val.vunit, _, _, εᵢ, rfl, rfl, (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.unit Val.vunit Val.vunit; rw [VrelK, BaseRel]; exact ⟨rfl, rfl⟩), happ⟩
 
+/-- ◊4.5b-answertrack GO/NO-GO probe — `HasStack` append-SPLIT. Inverting `HasStack` at an append
+boundary `Sᵢ ++ handleF h₁ :: Ko'` peels `Sᵢ` front-to-back, exposing the JUNCTION answer type `Dᵢ`
+(the `HasStack`-index at the `Sᵢ`/`handleF` boundary). This is the "`Stack → CTy` answer-projection" the
+`krelS_splitAt_decomp` MISS sorry asks for: `KrelS` hides the answer (only pinned at nil), but `HasStack`
+carries it as an invariant index to every constructor's conclusion (`Syntax.lean:247-293`). Returns the
+typed prefix on `Sᵢ` AT `Dᵢ`, where `Dᵢ = CTy.F qᵣ Aᵣ` is FORCED — every handler frame requires its focus
+to be a returner `F qᵣ Aᵣ`, so the junction below `handleF h₁` is exactly the handler's focus. -/
+theorem hasStack_append_handleF_split {Sᵢ Ko' : Stack} {h₁ : Handler}
+    {eₛ' eo : Eff} {C Co : CTy Eff Mult}
+    (hHS : HasStack (Eff := Eff) (Mult := Mult) (Sᵢ ++ Frame.handleF h₁ :: Ko') eₛ' C eo Co) :
+    ∃ (Dᵢ : CTy Eff Mult) (eⱼ : Eff),
+      HasStack (Eff := Eff) (Mult := Mult) Sᵢ eₛ' C eⱼ Dᵢ := by
+  induction Sᵢ generalizing eₛ' C with
+  | nil =>
+      -- `Sᵢ = []`: the boundary IS the head `handleF h₁`. The junction answer `Dᵢ = C` (the handler's
+      -- focus), via `HasStack.nil`. `handleAny_inv` confirms `C` is a returner, but we don't need it here.
+      exact ⟨C, eₛ', HasStack.nil⟩
+  | cons fr Srest ih =>
+      cases fr with
+      | letF N =>
+          obtain ⟨q, A, e₂, qk, B, rfl, hN, htail⟩ := HasStack.letF_inv (by simpa using hHS)
+          obtain ⟨Dᵢ, eⱼ, hpre⟩ := ih htail
+          exact ⟨Dᵢ, eⱼ, HasStack.letF hN hpre⟩
+      | appF w =>
+          obtain ⟨q, A, B, rfl, hw, htail⟩ := HasStack.appF_inv (by simpa using hHS)
+          obtain ⟨Dᵢ, eⱼ, hpre⟩ := ih htail
+          exact ⟨Dᵢ, eⱼ, HasStack.appF hw hpre⟩
+      | handleF hh =>
+          -- a handler NESTED in the prefix. `handleAny_inv` gives the focus `F q A` + the tail typing;
+          -- recurse on the tail, then rebuild the handler frame. We rebuild via `cases` on `hh` so the
+          -- specific constructor's interface premises are recovered.
+          rw [List.cons_append] at hHS
+          cases hh with
+          | throws ℓ =>
+              obtain ⟨φ, q, A, rfl, hra, hif, hsub, htail⟩ := HasStack.handleF_throws_inv hHS
+              obtain ⟨Dᵢ, eⱼ, hpre⟩ := ih htail
+              exact ⟨Dᵢ, eⱼ, HasStack.handleF hra hif hsub hpre⟩
+          | state ℓ s =>
+              obtain ⟨φ, q, A, S, rfl, hga, hgr, hpa, hpr, hif, hs, hsub, htail⟩ :=
+                HasStack.stateF_inv hHS
+              obtain ⟨Dᵢ, eⱼ, hpre⟩ := ih htail
+              exact ⟨Dᵢ, eⱼ, HasStack.stateF hga hgr hpa hpr hif hs hsub hpre⟩
+          | transaction ℓ Θ =>
+              -- no dedicated `transactionF_inv`; invert by `cases` on the derivation directly.
+              cases hHS with
+              | transactionF hna hnr hra hrr hwa hwr hif hcells hsub htail =>
+                  obtain ⟨Dᵢ, eⱼ, hpre⟩ := ih htail
+                  exact ⟨Dᵢ, eⱼ, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hsub hpre⟩
+
+/-- ◊4.5b-answertrack GO/NO-GO probe — the STRIP lemma (inverse of `krelS_append`). Given a `KrelS`
+relating two appended stacks `Sᵢ ++ handleF h₁ :: Ko'` ~ `Sᵢ' ++ handleF h₂ :: Ko''` AND a `HasStack`
+on the LEFT append exposing the junction answer `Dᵢ` (read off via `hasStack_append_handleF_split`),
+strip the shared `handleF :: Ko` tail to recover `KrelS m (F qᵣ Aᵣ) Dᵢ eₛ Sᵢ Sᵢ'`. Induct on `Sᵢ`
+mirroring `krelS_append` in REVERSE: nil bottoms out at the junction (answer = `Dᵢ` = the handler's
+focus, SYNTACTICALLY pinned by `HasStack`); letF/appF/handleF peel one frame and recurse. The `HasStack`
+hypothesis is THREADED through the recursion so the junction answer stays determined at every depth —
+this is the whole bet of Architecture D (the typed `CrelK` close). `KrelS.letF`'s existential intermediate
+type `B` does NOT leak because the `HasStack`-read `Dᵢ` is supplied as the TARGET answer; the `KrelS`
+existential is consumed locally and never escapes. -/
+theorem krelS_strip_handleF {m : Nat} {qᵣ : Mult} {Aᵣ : VTy Eff Mult} {D' Dᵢ : CTy Eff Mult}
+    {eₛ eₛ' : Eff} {eo : Eff} {Co : CTy Eff Mult} {h₁ h₂ : Handler} {Sᵢ Sᵢ' Ko' Ko'' : Stack}
+    (hK : KrelS m (CTy.F qᵣ Aᵣ) D' eₛ (Sᵢ ++ Frame.handleF h₁ :: Ko') (Sᵢ' ++ Frame.handleF h₂ :: Ko''))
+    (hHS : HasStack (Eff := Eff) (Mult := Mult) Sᵢ eₛ' (CTy.F qᵣ Aᵣ) eo Dᵢ) :
+    KrelS m (CTy.F qᵣ Aᵣ) Dᵢ eₛ Sᵢ Sᵢ' := by
+  induction Sᵢ generalizing Sᵢ' qᵣ Aᵣ eₛ eₛ' eo with
+  | nil =>
+      -- `Sᵢ = []`: `HasStack [] ... (F qᵣ Aᵣ) eo Dᵢ` ⇒ by `nil` inversion `Dᵢ = F qᵣ Aᵣ` and `eₛ' = eo`.
+      -- THE KILLER: the junction answer is SYNTACTICALLY `F qᵣ Aᵣ` — no existential leak. The left stack is
+      -- `handleF h₁ :: Ko'`, so `KrelS` forces `Sᵢ'` to start with a `handleF` (or `KrelS` is False). Match.
+      cases hHS
+      match Sᵢ' with
+      | [] =>
+          -- both bottomed out: `KrelS m (F qᵣ Aᵣ) (F qᵣ Aᵣ) eₛ [] []` = `krelS_nil_succ` reflexive.
+          exact krelS_nil_succ m qᵣ Aᵣ eₛ
+      | (Frame.letF _ :: _)   => simp only [List.nil_append, List.cons_append, KrelS] at hK
+      | (Frame.appF _ :: _)   => simp only [List.nil_append, List.cons_append, KrelS] at hK
+      | (Frame.handleF hh₂ :: Sᵢ'rest) =>
+          -- left = `handleF h₁ :: Ko'`, right = `handleF hh₂ :: (Sᵢ'rest ++ handleF h₂::Ko'')`.
+          -- but `Sᵢ = []` means the goal is `KrelS m (F qᵣ Aᵣ) (F qᵣ Aᵣ) eₛ [] (handleF hh₂ :: …)` — a nil
+          -- vs cons KrelS, which is FALSE. `hK` does NOT refute it (both heads are handleF) — the GOAL is
+          -- just unprovable. THIS is the answer-leak edge: nothing forces `Sᵢ'.length = Sᵢ.length`.
+          sorry
+  | cons fr Srest ih =>
+      match Sᵢ' with
+      | [] =>
+          -- left non-nil, right nil. letF/appF heads refute by shape mismatch with the right's `handleF`.
+          -- The handleF/handleF head is NOT shape-refuted (both handleF) — same length-leak edge as nil/cons.
+          cases fr with
+          | letF _   => simp only [List.nil_append, List.cons_append, KrelS] at hK
+          | appF _   => simp only [List.nil_append, List.cons_append, KrelS] at hK
+          | handleF _ => sorry
+      | (fr₂ :: Sᵢ'rest) =>
+          cases fr with
+          | letF N₁ =>
+              cases fr₂ with
+              | letF N₂ =>
+                  rw [List.cons_append, List.cons_append, krelS_letF] at hK
+                  obtain ⟨q, A, B, φ, hC, hbody, htin⟩ := hK
+                  obtain ⟨q', A', e₂, qk, B', hCeq, hN, htail⟩ := HasStack.letF_inv (by simpa using hHS)
+                  -- hCeq : F qᵣ Aᵣ = F q' A'; align with hC : F qᵣ Aᵣ = F q A.
+                  injection hC with hq hA; subst hq; subst hA
+                  injection hCeq with hq' hA'; subst hq'; subst hA'
+                  rw [krelS_letF]
+                  -- the goal's intermediate is EXISTENTIAL; the HasStack tail pins `B'`. The KrelS tail
+                  -- `htin` is at `B` — a DIFFERENT existential. To recurse I must thread HasStack at the
+                  -- SAME hole as `htin`, i.e. at `B`. But `htail` is at `B'`. ⇒ NEED `B = B'`.
+                  refine ⟨qᵣ, Aᵣ, B, φ, rfl, hbody, ?_⟩
+                  -- ★ THE PROBE WALL (build-confirmed NO-GO). The IH demands its KrelS argument at a
+                  -- RETURNER hole `CTy.F ?q ?A`; `htin : KrelS m B D' φ …` is at an ARBITRARY `B` (the
+                  -- `KrelS.letF` existential intermediate). `HasStack.letF_inv` gives `htail` at the TYPED
+                  -- intermediate `B'` (the unique type of `N₁` under `[A]`) — but `B` (LR index) is NOT
+                  -- tied to `B'`: the logical relation `CrelK m B φ (subst v₁ N₁)(subst v₂ N₂)` carries NO
+                  -- typing of `N₁` at `B`, and there is NO `KrelS ⇒ HasStack` bridge (the LR is one-way:
+                  -- typing ⇒ related, never the reverse). Even if `B = B'`, `B'` need not be a RETURNER, so
+                  -- the IH (quantified over returner holes only — forced by the junction handler focus)
+                  -- still cannot apply. `HasStack` exposes the BOTTOM answer `Dᵢ` (proven cleanly in
+                  -- `hasStack_append_handleF_split`), but does NOT pin the INTERMEDIATE `KrelS` hole — and
+                  -- the strip's recursion needs THAT, not the bottom. ⇒ Architecture D's killer FAILS.
+                  sorry
+              | _ => simp only [List.cons_append, KrelS] at hK
+          | appF w₁ =>
+              -- VACUOUS: the strip's hole is a returner `F qᵣ Aᵣ`; `krelS_appF` forces it `= arr …`. F ≠ arr.
+              cases fr₂ with
+              | appF w₂ =>
+                  rw [List.cons_append, List.cons_append, krelS_appF] at hK
+                  obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htin⟩ := hK
+                  exact absurd hC (by simp)
+              | _ => simp only [List.cons_append, KrelS] at hK
+          | handleF hh₁ =>
+              sorry
+
 /-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
 `h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
 handler `h` at the SAME position (same inner-prefix length), and the OUTER tails `K₁ₒ, K₂ₒ` stay
