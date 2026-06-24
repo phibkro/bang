@@ -1515,6 +1515,75 @@ theorem compatK_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Ef
   · exact ⟨fun K => rfl, by intro v; simp⟩
 
 
+/-! ### B.3′c ◊4.5b sub-block (f) — handler-frame `KrelS` intro + `compatK_handle*` cores
+
+The answer-typed analogues of the old `krel_handleF*`/`compat_handle*`. The new `KrelS` has NO stuck-half
+(`Srel` is gone — the op-stuck behaviour lives in `CrelK`'s biorthogonality, not the stack relation), so
+the handler-frame intro is TRIVIAL: `krelS_handleF` says `KrelS …ε (handleF h::K) ↔ KrelS …ε K`, and the
+ROW-DISCHARGE (body row `e` ⊋ discharged row `φ`) is `KrelS_eff_cast` (ε is inert in `KrelS`). This is the
+SINGLE-ROW close of the original ◊4.5b wall — no two-row Biernacki `C⟦τ₁/ε₁{τ₂/ε₂⟧` needed (the row only
+gated the dropped `Srel`). shape: biernacki-popl18 §5.4 set-row ρ-free collapse. -/
+
+/-- ◊4.5b build a handleF-extended `KrelS` from the discharged-row tail. Handler-AGNOSTIC (the frame just
+passes through at the relation level); the body row `e` is ARBITRARY w.r.t. the discharged row `φ`
+(`KrelS_eff_cast`). The new `KrelS` has no stuck-half so there is nothing to discharge but the frame. -/
+theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Handler}
+    {K₁ K₂ : Stack} (hK : KrelS n C D φ K₁ K₂) :
+    KrelS n C D e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
+  rw [krelS_handleF]; exact KrelS_eff_cast hK
+
+/-- ◊4.5b the `handleThrows` compat core at `CrelK`. REFOCUS `(K, handle h M) ↦ (handleF h::K, M)`
+(one PUSH step), then run `M` (related at its body row `e`) through the handleF-extended stack, shown
+`KrelS`-related by `krelS_handleF_intro`. The block discharges `ℓ` from `e` to `φ`. ▷-free. -/
+theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
+    {M₁ M₂ : Comp}
+    (hM : CrelK n (CTy.F q A) e M₁ M₂) :
+    CrelK n (CTy.F q A) φ (Comp.handle (Handler.throws ℓ) M₁) (Comp.handle (Handler.throws ℓ) M₂) := by
+  rw [CrelK]
+  intro D K₁ K₂ hK
+  refine coApproxC_le_reduce
+    (cfg₁' := (Frame.handleF (Handler.throws ℓ) :: K₁, M₁))
+    (cfg₂' := (Frame.handleF (Handler.throws ℓ) :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  rw [CrelK] at hM
+  exact hM D (Frame.handleF (Handler.throws ℓ) :: K₁) (Frame.handleF (Handler.throws ℓ) :: K₂)
+    (krelS_handleF_intro hK)
+
+/-- ◊4.5b the `handleState` compat core at `CrelK`. Handler-agnostic at the stack level — the resume
+mechanism is consumed by the MACHINE's dispatch inside `M`'s run, not the stack relation, so it closes
+exactly like throws (`krelS_handleF_intro`). The resumptive ▷ payoff is in the run, not here. -/
+theorem compatK_handleState {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label} {s : Val}
+    {M₁ M₂ : Comp}
+    (hM : CrelK n (CTy.F q A) e M₁ M₂) :
+    CrelK n (CTy.F q A) φ (Comp.handle (Handler.state ℓ s) M₁) (Comp.handle (Handler.state ℓ s) M₂) := by
+  rw [CrelK]
+  intro D K₁ K₂ hK
+  refine coApproxC_le_reduce
+    (cfg₁' := (Frame.handleF (Handler.state ℓ s) :: K₁, M₁))
+    (cfg₂' := (Frame.handleF (Handler.state ℓ s) :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  rw [CrelK] at hM
+  exact hM D (Frame.handleF (Handler.state ℓ s) :: K₁) (Frame.handleF (Handler.state ℓ s) :: K₂)
+    (krelS_handleF_intro hK)
+
+/-- ◊4.5b the `handleTransaction` compat core at `CrelK`. The multi-cell resumptive analogue — same
+handler-agnostic argument, closes like state/throws (`krelS_handleF_intro`); the heap `Θ` is arbitrary. -/
+theorem compatK_handleTransaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
+    {Θ : Store} {M₁ M₂ : Comp}
+    (hM : CrelK n (CTy.F q A) e M₁ M₂) :
+    CrelK n (CTy.F q A) φ (Comp.handle (Handler.transaction ℓ Θ) M₁)
+                          (Comp.handle (Handler.transaction ℓ Θ) M₂) := by
+  rw [CrelK]
+  intro D K₁ K₂ hK
+  refine coApproxC_le_reduce
+    (cfg₁' := (Frame.handleF (Handler.transaction ℓ Θ) :: K₁, M₁))
+    (cfg₂' := (Frame.handleF (Handler.transaction ℓ Θ) :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  rw [CrelK] at hM
+  exact hM D (Frame.handleF (Handler.transaction ℓ Θ) :: K₁) (Frame.handleF (Handler.transaction ℓ Θ) :: K₂)
+    (krelS_handleF_intro hK)
+
+
 /-! ## B.4 `krel_refl` — the interface contract for `lr_sound` (the capstone)
 
 The downstream `lr_sound` capstone (separate thread) closes as `lr_sound_closed ∘ krel_refl`: the
@@ -1928,12 +1997,26 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       -- (f) closes it together with the handler row-discharge (the two-row / ρ-free question).
       intro n δ₁ δ₂ hδ; sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
-      -- ◊4.5b sub-block (f): the handler row-discharge (`KrelS …φ → …e` for the body row). `sorry` until f.
-      intro n δ₁ δ₂ hδ; sorry
+      -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
+      -- resume); `compatK_handleThrows` + `closeC_handleThrows` close it, mirroring the old `crel_fund`.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_handleThrows, closeC_handleThrows]
+      exact compatK_handleThrows (crelK_fund hM n δ₁ δ₂ hδ)
   | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
-      intro n δ₁ δ₂ hδ; sorry
+      -- ◊4.5b: state-resume is handler-agnostic at the stack level (`compatK_handleState`); the resume
+      -- mechanism is consumed by the machine inside M's run. The stored state `s₀` is CLOSED (`HasVTy [] []`),
+      -- so `closeV δᵢ s₀ = s₀` on both sides.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_handleState, closeC_handleState]
+      have hcs₀ : Val.Closed s₀ := fun k => hs.shift_closed k (Nat.zero_le k)
+      rw [closeV_closed hcs₀, closeV_closed hcs₀]
+      exact compatK_handleState (crelK_fund hM n δ₁ δ₂ hδ)
   | @handleTransaction _ _ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM hsub =>
-      intro n δ₁ δ₂ hδ; sorry
+      -- ◊4.5b: transaction-resume is handler-agnostic at the stack level (`compatK_handleTransaction`),
+      -- the multi-cell analogue — closes like state/throws.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_handleTransaction, closeC_handleTransaction]
+      exact compatK_handleTransaction (crelK_fund hM n δ₁ δ₂ hδ)
 end
 
 
@@ -2015,11 +2098,17 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
         rwa [closeV_closed hcv] at this
       exact krelS_appF_intro hcv hcv hvr (ihK hCo)
   | @handleF K ℓ e φ eo q A Co hArg hIface hsub hK ihK =>
-      -- ◊4.5b sub-block f: the handler-frame self-relation (row-discharge). `sorry` until f.
-      sorry
+      -- ◊4.5b sub-block f: the handler-frame self-relation = the ROW-DISCHARGE. `krelS_handleF` reduces the
+      -- goal `KrelS …e (handleF::K)` to `KrelS …e K`; the IH gives the tail at the DISCHARGED row `φ`
+      -- (`HasStack.handleF`: `K` is typed at `φ`, the frame at `e ≤ ℓ⊔φ`). `KrelS_eff_cast` bridges
+      -- `φ → e` with no ordering — the SINGLE-ROW `KrelS` expresses the discharge (no two-row needed)
+      -- because ε is inert in the answer-typed core (no `Srel` stuck-half gates on it). [decision: single-row]
+      rw [krelS_handleF]; exact KrelS_eff_cast (ihK hCo)
   | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
-      sorry
+      -- resumptive `state` frame — same row-discharge as handleF (the ▷ payoff is in the CONSUMER cases of
+      -- `crelK_fund`, not the self-relation; the stack relation is handler-agnostic).
+      rw [krelS_handleF]; exact KrelS_eff_cast (ihK hCo)
   | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
-      sorry
+      rw [krelS_handleF]; exact KrelS_eff_cast (ihK hCo)
 
 end Bang

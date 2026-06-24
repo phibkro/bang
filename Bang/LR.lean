@@ -793,6 +793,45 @@ theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
   | (Frame.handleF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
   termination_by K₁ _ => K₁.length
 
+/-- `KrelS` is ε-MONOTONE too (in fact ε-INVARIANT): the new answer-typed `KrelS` has NO stuck-half /
+`Srel` clause (unlike the old `Krel`) — no clause GATES on `ε` (nil observes returns; letF tail is at
+the continuation row `φ`; appF/handleF tails merely carry `ε` through, never check `· ≤ ε`). So `ε` is
+vestigial threading and the SAME structural pass-through that proves `KrelS_eff_anti` proves the mono
+direction. This is what discharges the handler ROW-CHANGE (`KrelS …φ → KrelS …e`, `e` possibly ⊋ `φ`)
+in `krelS_refl`'s handleF/state/transaction arms — the SINGLE-ROW `KrelS` suffices (no two-row Biernacki
+`C⟦τ₁/ε₁{τ₂/ε₂⟧` needed), because the row carried past a handleF frame is inert at the relation level.
+shape: biernacki-popl18 §5.4 — set-row ρ-free collapse; the row only gates `Srel`, which this core drops. -/
+theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
+    ∀ {K₁ K₂ : Stack}, ε ≤ ε' → KrelS n C D ε K₁ K₂ → KrelS n C D ε' K₁ K₂
+  | [], [], _, hK => by rw [krelS_nil] at hK ⊢; exact hK
+  | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), _, hK => by
+      -- the letF tail is at `φ` (ε-independent); the whole clause is ε-free ⇒ passes through unchanged.
+      rw [krelS_letF] at hK ⊢; exact hK
+  | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂'), hεε', hK => by
+      rw [krelS_appF] at hK ⊢
+      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
+      exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_mono hεε' htail⟩
+  | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
+      rw [krelS_handleF] at hK ⊢
+      exact KrelS_eff_mono hεε' hK
+  | [], (_ :: _), _, hK => by simp only [KrelS] at hK
+  | (_ :: _), [], _, hK => by simp only [KrelS] at hK
+  | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.letF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.appF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.appF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
+  termination_by K₁ _ => K₁.length
+
+/-- `KrelS` is ε-INVARIANT: the row can be replaced by ANY other row (no ordering). Corollary of
+anti+mono via the bottom row (`⊥ ≤ ε`, `⊥ ≤ ε'`). This is the lemma the handler ROW-DISCHARGE consumes
+in `krelS_refl`: the tail self-relates at the discharged row `φ` (IH), and the handleF frame demands it
+at the body row `e` (possibly `e ⊋ φ`) — invariance bridges them with no `φ`/`e` ordering hypothesis. -/
+theorem KrelS_eff_cast {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} {K₁ K₂ : Stack}
+    (hK : KrelS n C D ε K₁ K₂) : KrelS n C D ε' K₁ K₂ :=
+  KrelS_eff_mono (bot_le : (⊥ : Eff) ≤ ε') (KrelS_eff_anti (bot_le : (⊥ : Eff) ≤ ε) hK)
+
 /-- `CrelK` MONOTONE in ε: a `KrelS … ε'` stack is (by `KrelS_eff_anti`) a `KrelS … ε` stack, so the
 ε-`CrelK` applies. -/
 theorem CrelK_eff_mono {n : Nat} {C : CTy Eff Mult} {ε ε' : Eff} {c₁ c₂ : Comp}
