@@ -583,6 +583,10 @@ U-clause, in-envelope): the old `∀ j ≤ n` FAILS termination at the VrelK→C
 head-expansion) needs (reducts at `m < n`). This is a SEPARATE edge from the letF frame-body index
 (`m < n`), which is the independent ▷ at the resume seam. -/
 
+-- ◊4.5b: the `KrelS` handleF RESUME CONJUNCT references `opArg` (the op-arg type the resume value
+-- inhabits), so the whole mutual block now needs the `EffSig` instance in scope.
+variable [EffSig Eff Mult]
+
 mutual
 /-- ◊4.5b value relation (temp name `VrelK`; → frozen `Vrel` at sub-block g). The ▷-guarded thunk
 U-clause is `∀ j < n` (vs the old `∀ j ≤ n`) — required for the 3-way termination, exactly sufficient
@@ -656,8 +660,9 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
             -- (throws via `crelK_ret` on the tail — zero-shot, no append; state/txn via `krelS_append` — the
             -- one research crux). No op-interface needed in the def — the producer supplies `Aarg`.
             ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+                Bang.handlesOp h₁ h₁.label op = true →
                 Val.Closed w₁ → Val.Closed w₂ →
-                (∀ qC AC, C = CTy.F qC AC → VrelK m AC w₁ w₂) →
+                (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
                 Bang.dispatchOn op w₁ ([], h₁, K₁') = some cfg₁ →
                 Bang.dispatchOn op w₂ ([], h₁, K₂') = some cfg₂ →
                 CoApproxC_le m cfg₁ cfg₂)
@@ -698,8 +703,9 @@ end
     KrelS n C D ε (Frame.handleF h :: K₁) (Frame.handleF h' :: K₂) ↔
       (h = h' ∧ KrelS n C D ε K₁ K₂
         ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+            Bang.handlesOp h h.label op = true →
             Val.Closed w₁ → Val.Closed w₂ →
-            (∀ qC AC, C = CTy.F qC AC → VrelK m AC w₁ w₂) →
+            (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
             Bang.dispatchOn op w₁ ([], h, K₁) = some cfg₁ →
             Bang.dispatchOn op w₂ ([], h, K₂) = some cfg₂ →
             CoApproxC_le m cfg₁ cfg₂)) := by

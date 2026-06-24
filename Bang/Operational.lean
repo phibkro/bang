@@ -227,6 +227,12 @@ DISPATCH  ⟨K, up ℓ op v⟩         ↦ scan K for the nearest handling frame
 `state` dispatch (resume, threading the stored state) is deferred (Q12/Q6) — it KEEPS `Kᵢ` instead of
 discarding it; the search is identical. -/
 
+/-- The label a handler discharges (its first field). `handlesOp h ℓ op = true → h.label = ℓ`. -/
+def Handler.label : Handler → Label
+  | .throws ℓ => ℓ
+  | .state ℓ _ => ℓ
+  | .transaction ℓ _ => ℓ
+
 /-- Does handler `h` catch operation `(ℓ, op)`? -/
 def handlesOp : Handler → Label → OpId → Bool
   | .throws ℓ',   ℓ, op => (ℓ' = ℓ) && (op == "raise")
@@ -234,6 +240,12 @@ def handlesOp : Handler → Label → OpId → Bool
   -- transaction (ADR-0030): catches the three stm ops on its own label.
   | .transaction ℓ' _, ℓ, op =>
       (ℓ' = ℓ) && (op == "newTVar" || op == "readTVar" || op == "writeTVar")
+
+/-- `handlesOp` forces the label match: a catching handler's `label` IS the dispatched `ℓ`. -/
+theorem handlesOp_label {h : Handler} {ℓ : Label} {op : OpId} (hc : handlesOp h ℓ op = true) :
+    h.label = ℓ := by
+  cases h <;> simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hc <;>
+    simp only [Handler.label] <;> exact hc.1
 
 /-- Split a stack at the nearest frame catching `(ℓ, op)`: returns `(Kᵢ, h, Kₒ)` with
 `K = Kᵢ ++ handleF h :: Kₒ`, `Kᵢ` containing no catching frame (the inner captured continuation),

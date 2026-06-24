@@ -1531,8 +1531,9 @@ tail (zero-shot, no append); state/txn via `krelS_append` (the one research sorr
 theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Handler}
     {K₁ K₂ : Stack} (hK : KrelS n C D φ K₁ K₂)
     (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+        Bang.handlesOp h h.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
-        (∀ qC AC, C = CTy.F qC AC → VrelK m AC w₁ w₂) →
+        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
         Bang.dispatchOn op w₁ ([], h, K₁) = some cfg₁ →
         Bang.dispatchOn op w₂ ([], h, K₂) = some cfg₂ →
         CoApproxC_le m cfg₁ cfg₂) :
@@ -1556,8 +1557,9 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
       -- producer uses it DIRECTLY for throws (Kᵢ discarded ⇒ the producer's K₁ᵢ-prefix dispatch = this
       -- `[]`-prefix one); for state/txn it bridges to the K₁ᵢ-prefix via `krelS_append` (the one sorry).
       ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+          Bang.handlesOp h h.label op' = true →
           Val.Closed w₁ → Val.Closed w₂ →
-          (∀ qC AC, C' = CTy.F qC AC → VrelK m AC w₁ w₂) →
+          (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
           Bang.dispatchOn op' w₁ ([], h, K₁ₒ) = some cfg₁ →
           Bang.dispatchOn op' w₂ ([], h, K₂ₒ) = some cfg₂ →
           CoApproxC_le m cfg₁ cfg₂) := by
@@ -1618,6 +1620,7 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
 `KrelS`-related by `krelS_handleF_intro`. The block discharges `ℓ` from `e` to `φ`. ▷-free. -/
 theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
     {M₁ M₂ : Comp}
+    (hArg : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A)
     (hM : CrelK n (CTy.F q A) e M₁ M₂) :
     CrelK n (CTy.F q A) φ (Comp.handle (Handler.throws ℓ) M₁) (Comp.handle (Handler.throws ℓ) M₂) := by
   rw [CrelK]
@@ -1629,11 +1632,16 @@ theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff
   rw [CrelK] at hM
   refine hM D (Frame.handleF (Handler.throws ℓ) :: K₁) (Frame.handleF (Handler.throws ℓ) :: K₂)
     (krelS_handleF_intro hK ?_)
-  -- THROWS resume supply: `dispatchOn op w ([], throws ℓ, Kⱼ) = (Kⱼ, ret w)` (zero-shot abort, ANY op).
-  -- So the dispatched config relation IS the tail's return-half — `crelK_ret` on the (downward-closed)
-  -- tail `hK` at the hole type `F q A` (the `hVrel` premise gives `VrelK m A w` via the `C = F q A` case).
-  intro m hm op w₁ w₂ cfg₁ cfg₂ hcw₁ hcw₂ hVrel hd₁ hd₂
-  have hw : VrelK m A w₁ w₂ := hVrel q A rfl
+  -- THROWS resume supply: `dispatchOn op w ([], throws ℓ, Kⱼ) = (Kⱼ, ret w)` (zero-shot abort). The
+  -- `handlesOp` guard forces `op = "raise"`, so `opArg ℓ "raise" = A` (hArg) gives `VrelK m A w` from
+  -- `hVrel`; the dispatched config relation IS the tail's return-half — `crelK_ret` on the (downward-
+  -- closed) tail `hK` at hole type `F q A`.
+  intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
+  -- `hcatch` (handlesOp (throws ℓ) ℓ op) forces `op = "raise"`.
+  have hop : op = "raise" := by
+    simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
+  subst hop
+  have hw : VrelK m A w₁ w₂ := hVrel A (by rw [Handler.label]; exact hArg)
   -- dispatchOn throws ignores op: cfgⱼ = (Kⱼ, ret w).
   simp only [dispatchOn] at hd₁ hd₂
   obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
@@ -1665,7 +1673,7 @@ theorem compatK_handleState {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
   -- (does the ▷-budget compose so the dispatch step stays payable). Flagged, NOT ground (per orchestrator
   -- 2026-06-24): this is the genuine multi-day piece — research it or seam it (ADR-0026). Throws closes
   -- WITHOUT this; only state/txn (Kᵢ-kept resume) needs it.
-  intro m hm op w₁ w₂ cfg₁ cfg₂ hcw₁ hcw₂ hVrel hd₁ hd₂
+  intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
   sorry
 
 /-- ◊4.5b the `handleTransaction` compat core at `CrelK`. The multi-cell resumptive analogue — same
@@ -1688,7 +1696,7 @@ theorem compatK_handleTransaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ 
   -- of state. Same shape: `dispatchOn newTVar/readTVar/writeTVar` KEEPS `Kᵢ` + reinstalls a deep
   -- `transaction ℓ Θ'` frame ⇒ needs `krelS_append` + the metering. Flagged, not ground (orchestrator
   -- 2026-06-24). See `compatK_handleState`'s sorry — identical research crux. Throws closes without it.
-  intro m hm op w₁ w₂ cfg₁ cfg₂ hcw₁ hcw₂ hVrel hd₁ hd₂
+  intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
   sorry
 
 
@@ -2132,7 +2140,7 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       -- resume); `compatK_handleThrows` + `closeC_handleThrows` close it, mirroring the old `crel_fund`.
       intro n δ₁ δ₂ hδ
       rw [closeC_handleThrows, closeC_handleThrows]
-      exact compatK_handleThrows (crelK_fund hM n δ₁ δ₂ hδ)
+      exact compatK_handleThrows hArg (crelK_fund hM n δ₁ δ₂ hδ)
   | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
       -- ◊4.5b: state-resume is handler-agnostic at the stack level (`compatK_handleState`); the resume
       -- mechanism is consumed by the machine inside M's run. The stored state `s₀` is CLOSED (`HasVTy [] []`),
@@ -2239,8 +2247,12 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- self-related tail `ihK` closes it (the `hVrel` premise at `C = F q A` gives `VrelK m A w`).
       rw [krelS_handleF]
       refine ⟨rfl, KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ cfg₁ cfg₂ hcw₁ hcw₂ hVrel hd₁ hd₂
-      have hw : VrelK m A w₁ w₂ := hVrel q A rfl
+      intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
+      -- the `handlesOp` guard forces `op = "raise"`; `opArg ℓ "raise" = A` (hArg) ⇒ `VrelK m A w`.
+      have hop : op = "raise" := by
+        simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
+      subst hop
+      have hw : VrelK m A w₁ w₂ := hVrel A (by rw [Handler.label]; exact hArg)
       simp only [dispatchOn] at hd₁ hd₂
       obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
@@ -2252,13 +2264,13 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- see `compatK_handleState`). The `h₁=h₂`/tail pieces close; only the Kᵢ-kept resume needs append.
       rw [krelS_handleF]
       refine ⟨rfl, KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ cfg₁ cfg₂ hcw₁ hcw₂ hVrel hd₁ hd₂
+      intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
       sorry
   | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
       -- multi-cell resumptive analogue — THE ONE RESEARCH SORRY (krelS_append + metering).
       rw [krelS_handleF]
       refine ⟨rfl, KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ cfg₁ cfg₂ hcw₁ hcw₂ hVrel hd₁ hd₂
+      intro m hm op w₁ w₂ cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hd₁ hd₂
       sorry
 
 end Bang
