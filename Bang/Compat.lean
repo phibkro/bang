@@ -1116,6 +1116,16 @@ theorem coApproxC_le_of_resumeDecomp {m : Nat} {D : CTy Eff Mult} {cfg₁ cfg₂
   rw [CrelK] at hret
   exact hret D Sᵢ Sᵢ' hS
 
+/-- ◊4.5b-strengthen `HandlerRel` DOWNWARD-CLOSURE — the relational handler condition is monotone in its
+`VrelK`-stored state (state: one cell; transaction: pointwise heap; throws: index-independent label). The
+inlined form lives in `KrelS_mono`'s handleF case; extracted here for the `krelS_append` index-drop. -/
+theorem HandlerRel_mono {n m : Nat} {h₁ h₂ : Handler} (hmn : m ≤ n)
+    (hh : HandlerRel Eff Mult n h₁ h₂) : HandlerRel Eff Mult m h₁ h₂ := by
+  cases h₁ <;> cases h₂ <;> simp only [HandlerRel] at hh ⊢
+  · exact ⟨hh.1, hh.2.imp fun _ hv => VrelK_mono hmn hv⟩
+  · exact hh
+  · exact ⟨hh.1, hh.2.1, fun i hi => VrelK_mono hmn (hh.2.2 i hi)⟩
+
 /-- ◊4.5b-append `krelS_append` — the config-level Biernacki Lemma-2 analogue. Compose a related captured
 continuation `Kᵢ ~ Kᵢ'` (answer type `Dᵢ`) with a related handleF-extended tail (`handleF h :: K`, hole
 `Dᵢ`) into the appended stack `Kᵢ ++ handleF h :: K`. The inner `Kᵢ`'s answer type MUST equal the
@@ -1144,64 +1154,80 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
             Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ ∧
             KrelS k (CTy.F qᵣ Aᵣ) D' eₛ Sᵢ Sᵢ')) :
     KrelS m Cᵢ D' εᵢ (Kᵢ ++ Frame.handleF h₁ :: K₁) (Kᵢ' ++ Frame.handleF h₂ :: K₂) := by
-  induction Kᵢ generalizing Cᵢ εᵢ Kᵢ' with
-  | nil =>
-      -- Kᵢ' = [] (nil clause), Cᵢ = Dᵢ; the append is `handleF h :: K` — `krelS_handleF_intro`.
-      cases Kᵢ' with
-      | nil =>
-          rw [krelS_nil] at hin
-          obtain ⟨rfl, _⟩ := hin
-          simpa using krelS_handleF_intro (e := εᵢ) hHR htail hres
-      | cons _ _ => simp only [KrelS] at hin
-  | cons fr Kᵢrest ih =>
-      cases Kᵢ' with
-      | nil => exact absurd hin (by simp only [KrelS]; cases fr <;> exact not_false)
-      | cons fr₂ Kᵢ'rest =>
-          cases fr with
-          | letF N₁ =>
-              cases fr₂ with
-              | letF N₂ =>
-                  rw [krelS_letF] at hin
-                  obtain ⟨q, A, B, φ, hC, hbody, htin⟩ := hin
-                  rw [List.cons_append, List.cons_append, krelS_letF]
-                  exact ⟨q, A, B, φ, hC, hbody, ih htin⟩
-              | _ => simp only [KrelS] at hin
-          | appF u₁ =>
-              cases fr₂ with
-              | appF u₂ =>
-                  rw [krelS_appF] at hin
-                  obtain ⟨q, A, B, hC, hcu₁, hcu₂, hu, htin⟩ := hin
-                  rw [List.cons_append, List.cons_append, krelS_appF]
-                  exact ⟨q, A, B, hC, hcu₁, hcu₂, hu, ih htin⟩
-              | _ => simp only [KrelS] at hin
-          | handleF hh₁ =>
-              cases fr₂ with
-              | handleF hh₂ =>
-                  -- ◊4.5b-append: a handler NESTED in the captured continuation. From `hin` (via
-                  -- `krelS_handleF`): `hHRtop : HandlerRel m hh₁ hh₂`, `htin : KrelS m Cᵢ Dᵢ εᵢ Kᵢrest
-                  -- Kᵢ'rest`, and the OPAQUE inner resume conjunct `hres_inner` (dispatch over `Kᵢrest`).
-                  -- The append's structural shape closes two of three goals (HandlerRel + the recursive-
-                  -- append tail `ih htin`); the THIRD — the resume conjunct over the appended tail — WALLS.
-                  rw [krelS_handleF] at hin
-                  obtain ⟨hHRtop, htin, _hres_inner⟩ := hin
-                  rw [List.cons_append, List.cons_append, krelS_handleF]
-                  refine ⟨hHRtop, ih htin, ?_⟩
-                  intro k _hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ _hcatch _hcw₁ _hcw₂ _hVrel _hKj _hCⱼ _hd₁ _hd₂
-                  -- DEFINITIONAL WALL (build-confirmed): `dispatchOn_append_outer` shows dispatch over
-                  -- `Kᵢrest ++ handleF h₁::K₁` = dispatch over `Kᵢrest` with `handleF h₁::K₁` appended to the
-                  -- result's outer stack — i.e. `cfg₁ = (S₁ ++ handleF h₁::K₁, ret r₁)` where the inner
-                  -- conjunct `hres_inner` relates `(S₁, ret r₁) ~ (S₂, ret r₂)` via `CoApproxC_le k`.
-                  -- The GOAL is `CoApproxC_le k (S₁ ++ handleF h₁::K₁, ret r₁) (S₂ ++ handleF h₂::K₂, ret r₂)`.
-                  -- These DIFFER: convergence of the SHORTER stack does NOT imply convergence of the
-                  -- APPENDED stack (the resume value must also traverse `handleF h₁::K₁`). The opaque
-                  -- `CoApproxC_le` carries NO krel-level data (resume value relation r₁~r₂ / stack relation
-                  -- S₁~S₂) to reconstruct via `crelK_ret`+`krelS_append`. Closing this requires the `KrelS`
-                  -- handleF RESUME CONJUNCT strengthened from opaque `CoApproxC_le` to a krel-carrying form
-                  -- (a `KrelS`-def change rippling through the 6 reinstall/producer lemmas) OR the ADR-0026
-                  -- seam (this rare nested-handler-in-captured-continuation edge as a tested descent).
-                  -- letF/appF/nil are PROVEN; only this nested-handler case is open. See post-exec report.
-                  sorry
-              | _ => simp only [KrelS] at hin
+  -- ◊4.5b-strengthen: WELL-FOUNDED recursion on `(m, Kᵢ.length)`. letF/appF recurse on the shorter
+  -- `Kᵢ` (second component drops); the NESTED handleF case recurses at the DROPPED index `k < m` (first
+  -- component drops) on the dispatched stack `Sᵢ` — which may be LONGER, but the step-index pays for it.
+  match Kᵢ, Kᵢ' with
+  | [], [] =>
+      -- Cᵢ = Dᵢ (nil); the append is `handleF h :: K` — `krelS_handleF_intro`.
+      rw [krelS_nil] at hin
+      obtain ⟨rfl, _⟩ := hin
+      simpa using krelS_handleF_intro (e := εᵢ) hHR htail hres
+  | (Frame.letF N₁ :: Kᵢrest), (Frame.letF N₂ :: Kᵢ'rest) =>
+      rw [krelS_letF] at hin
+      obtain ⟨q, A, B, φ, hC, hbody, htin⟩ := hin
+      rw [List.cons_append, List.cons_append, krelS_letF]
+      exact ⟨q, A, B, φ, hC, hbody, krelS_append htin hHR htail hres⟩
+  | (Frame.appF u₁ :: Kᵢrest), (Frame.appF u₂ :: Kᵢ'rest) =>
+      rw [krelS_appF] at hin
+      obtain ⟨q, A, B, hC, hcu₁, hcu₂, hu, htin⟩ := hin
+      rw [List.cons_append, List.cons_append, krelS_appF]
+      exact ⟨q, A, B, hC, hcu₁, hcu₂, hu, krelS_append htin hHR htail hres⟩
+  | (Frame.handleF hh₁ :: Kᵢrest), (Frame.handleF hh₂ :: Kᵢ'rest) =>
+      -- ◊4.5b-strengthen CLOSE: a handler NESTED in the captured continuation. The structural shape
+      -- closes HandlerRel + the recursive-append tail; the resume conjunct over the APPENDED tail is now
+      -- reconstructible. From the inner conjunct `_hres_inner` (krel-carrying): the inner dispatch over
+      -- `Kᵢrest` yields a RETURN config `(Sᵢ, ret rⱼ)` with `Sᵢ~Sᵢ'` (KrelS at hole `F qᵣ Aᵣ`, answer `Dᵢ`)
+      -- and `r₁~r₂`. `dispatchOn_append_outer` lifts this dispatch over `Kᵢrest ++ handleF h₁::K₁` to
+      -- `(Sᵢ ++ handleF h₁::K₁, ret rⱼ)`. Then `krelS_append` (at the DROPPED index `k`, on the inner `Sᵢ`)
+      -- composes `Sᵢ` with `handleF h₁::K₁` ⇒ `KrelS k (F qᵣ Aᵣ) D' (Sᵢ++handleF h₁::K₁)(Sᵢ'++…)`, exactly
+      -- the appended decomposition the goal demands. shape: biernacki-popl18 §5.4 Lemma 2 (config append).
+      rw [krelS_handleF] at hin
+      obtain ⟨hHRtop, htin, hres_inner⟩ := hin
+      rw [List.cons_append, List.cons_append, krelS_handleF]
+      refine ⟨hHRtop, krelS_append htin hHR htail hres, ?_⟩
+      intro k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hd₁ hd₂
+      -- recover the INNER dispatch (over `Kᵢrest`) by computing it, then lift via `dispatchOn_append_outer`.
+      obtain ⟨cfgᵢ₁, hdi₁⟩ : ∃ c, Bang.dispatchOn op w₁ (Kⱼ, hh₁, Kᵢrest) = some c := by
+        cases hh₁ with
+        | throws _ => exact ⟨_, rfl⟩
+        | state _ _ => rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
+        | transaction _ _ => unfold dispatchOn; split_ifs <;> first | exact ⟨_, rfl⟩ | (cases w₁ <;> exact ⟨_, rfl⟩)
+      obtain ⟨cfgᵢ₂, hdi₂⟩ : ∃ c, Bang.dispatchOn op w₂ (Kⱼ', hh₂, Kᵢ'rest) = some c := by
+        cases hh₂ with
+        | throws _ => exact ⟨_, rfl⟩
+        | state _ _ => rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
+        | transaction _ _ => unfold dispatchOn; split_ifs <;> first | exact ⟨_, rfl⟩ | (cases w₂ <;> exact ⟨_, rfl⟩)
+      have hlift₁ := dispatchOn_append_outer op w₁ Kⱼ hh₁ Kᵢrest (Frame.handleF h₁ :: K₁) hdi₁
+      have hlift₂ := dispatchOn_append_outer op w₂ Kⱼ' hh₂ Kᵢ'rest (Frame.handleF h₂ :: K₂) hdi₂
+      rw [hd₁] at hlift₁; rw [hd₂] at hlift₂
+      obtain rfl := (Option.some.injEq _ _).mp hlift₁.symm
+      obtain rfl := (Option.some.injEq _ _).mp hlift₂.symm
+      -- apply the inner conjunct to the inner dispatch → the decomposition `cfgᵢⱼ = (Sᵢ, ret rⱼ)`.
+      obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcf₁, hcf₂, hcr₁, hcr₂, hr, hSrel⟩ :=
+        hres_inner k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfgᵢ₁ cfgᵢ₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hdi₁ hdi₂
+      subst hcf₁; subst hcf₂
+      -- the appended config is `(Sᵢ ++ handleF h₁::K₁, ret rⱼ)`; rebuild the decomposition over the
+      -- append by `krelS_append` at the dropped index `k` (the step-index pays for the longer `Sᵢ`).
+      refine ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ ++ Frame.handleF h₁ :: K₁, Sᵢ' ++ Frame.handleF h₂ :: K₂, eₛ,
+        by simp, by simp, hcr₁, hcr₂, hr, ?_⟩
+      exact krelS_append (εᵢ := eₛ) hSrel (HandlerRel_mono (le_of_lt hk) hHR)
+        (KrelS_mono (le_of_lt hk) htail) (fun k' hk' => hres k' (lt_trans hk' hk))
+  | [], (_ :: _) => simp only [KrelS] at hin
+  | (fr :: _), [] => exact absurd hin (by simp only [KrelS]; cases fr <;> exact not_false)
+  | (Frame.letF _ :: _), (Frame.appF _ :: _) => simp only [KrelS] at hin
+  | (Frame.letF _ :: _), (Frame.handleF _ :: _) => simp only [KrelS] at hin
+  | (Frame.appF _ :: _), (Frame.letF _ :: _) => simp only [KrelS] at hin
+  | (Frame.appF _ :: _), (Frame.handleF _ :: _) => simp only [KrelS] at hin
+  | (Frame.handleF _ :: _), (Frame.letF _ :: _) => simp only [KrelS] at hin
+  | (Frame.handleF _ :: _), (Frame.appF _ :: _) => simp only [KrelS] at hin
+termination_by (m, Kᵢ.length)
+decreasing_by
+  -- letF/appF/handleF structural recursions drop `Kᵢ.length` (m fixed); the nested handleF resume
+  -- recursion drops the step-index `m` (to `k`).
+  all_goals first
+    | exact Prod.Lex.right _ (by simp)
+    | exact Prod.Lex.left _ _ hk
 
 /-- ◊4.5b-append the STATE-reinstall lemma — the resumptive heart. A `state ℓ s` handler frame over a
 related tail self-relates at every index, with the resume conjunct supplied by GUARDED RECURSION on the
