@@ -29,16 +29,25 @@ KrelS n C D ε K₁ K₂    :=  the answer-typed stack relation, defined STACK-S
   **If anything forces `D` into `Crel`'s signature, STOP and escalate** (that would be a
   frozen-statement change).
 
-## Termination metric (the feasibility gate — already GREEN)
+## Termination metric (the feasibility gate — GREEN)
 
-Lex **`(n, role, stackLen)`** — build-verified Lean-accepts the mutual block:
-- `Crel n C` (role 1) → `KrelS n C` (role 0): same `n`, role drops.
-- `KrelS n (fr::K)` → `KrelS n K`: same `n`, same role, `stackLen` drops.
-- `KrelS n` → `Crel m` (frame body, `m<n`, the `▷`): `n` drops — breaks the `Crel↔KrelS` 2-cycle.
+**Well-foundedness is from the STACK-STRUCTURAL decrease ALONE** (build-verified; the index is
+NOT needed in the WF measure):
+- `Crel n C` (role 1) → `KrelS n C` (role 0): role drops.
+- `KrelS n (fr::K)` → `KrelS n K`: `stackLen` drops — frames peel (Biernacki induction-on-context).
+  This stack decrease is acyclic w.r.t. `Crel` and **carries WF on its own** (measure: role + stackLen).
+- **The recursion decreases on STACK SYNTAX, NOT the answer type** (type `D` is an inert threaded
+  parameter). The DEAD-END (Lean-rejects): recursing through `plug` — `CrelCtx n C D → Crel n D
+  (plug K c)` wraps `c` into a LARGER term at the same index, no syntactic decrease. The
+  stack-structural form sidesteps it. **Do NOT use the type-driven form.**
 - Verified for `letF`, `appF`, AND the resumptive `handleF`.
-- **The recursion decreases on STACK SYNTAX, NOT the answer type** (type is inert). The
-  type-driven form FAILS termination — do not use it. The `▷` is the EXISTING metered-`▷`
-  (`Crel_head_step`), not a new modality. No Iris.
+
+**The frame-body `Crel` index (`n` vs `m<n`/`▷`) is a SEPARABLE SEMANTIC choice, NOT a WF
+necessity** — Lean accepts the def at same-index too; the stack carries WF either way. Pick it
+per PROOF-need (`Crel_head_step` / `krel_refl` / the Kripke μ/resume continuation IHs — likely
+`m<n` to match the existing ◊4.5 ▷-anti-reduction at those seams), with termination guaranteed
+by the stack regardless. The `▷` if used is the EXISTING metered-`▷` (`Crel_head_step`), not a
+new modality. No Iris.
 
 ## Banked infra (scratch-proven; re-establish in the real LR)
 
