@@ -557,6 +557,135 @@ termination_by n C _ _ _ _ _ => (n, sizeOf C, 0)
 end
 
 
+/-! ## 5.2′ ◊4.5b KrelS REBUILD — the answer-typed biorthogonal LR core (ADR-0041, PATH-cap45-rebuild)
+
+The ◊4.5b core re-architecture (sub-block a, ADDITIVE landing). The flat `Crel`/`Krel`/`Srel` above
+ERASED Biernacki's answer type — the producer-`up` resume needs `Krel⊸Crel` biorthogonal COMPOSITION
+(Lemma 2), which a focus-typed relation cannot express. The fix: the standard **answer-typed** stack
+relation `KrelS n C D` (`C` = hole type, `D` = answer type at the bottom), with `CrelK` the
+biorthogonal closure over it. Built UNDER TEMP NAMES (`VrelK`/`CrelK`/`KrelS`) ALONGSIDE the old
+relations — the frozen `Crel` stays wired to the OLD def until sub-block (g) re-points it (body swap,
+signature byte-identical, `D` quantified internally). Sub-blocks (b)–(f) migrate Compat onto `KrelS`.
+
+  shape: biernacki-popl18 §5.1 Figs 6–9 (answer-typed `K⟦τ/ε⟧` + `C⟦τ₁/ε₁⟧{τ₂/ε₂⟧` partial contexts).
+
+TERMINATION (build-verified, the discovery + this IC): lex **`(n, role, stackLen, sizeOf)`**, roles
+`VrelK = 0 < KrelS = 1 < CrelK = 2`. `KrelS` recurses STACK-STRUCTURALLY (`KrelS n (fr::K) → KrelS n K`,
+frames peel — `stackLen` drops); the answer-type `D` is INERT (threaded, NOT in the measure). The
+type-DRIVEN form FAILS (the type grows under `plug` at the same index — ADR-0041). Every cross-function
+edge drops: `n` (VrelK→CrelK via the ▷-guarded thunk `∀ j < n`; KrelS→CrelK frame-body `m < n`; VrelK-μ),
+`role` (CrelK→KrelS, KrelS→VrelK-cap), `stackLen` (KrelS tail), or `sizeOf` (VrelK sum/prod internal —
+the 4th tiebreaker, needed once VrelK joins the SCC via its U-clause → CrelK).
+
+THUNK GUARD `∀ j < n` (Biernacki guarded-thunk, lead-APPROVED — STATEMENT_CHANGE_OK as at the old Vrel
+U-clause, in-envelope): the old `∀ j ≤ n` FAILS termination at the VrelK→CrelK `j = n` edge
+(build-confirmed both directions); `∀ j < n` passes AND is exactly what the sole consumer (`force`'s
+head-expansion) needs (reducts at `m < n`). This is a SEPARATE edge from the letF frame-body index
+(`m < n`), which is the independent ▷ at the resume seam. -/
+
+mutual
+/-- ◊4.5b value relation (temp name `VrelK`; → frozen `Vrel` at sub-block g). The ▷-guarded thunk
+U-clause is `∀ j < n` (vs the old `∀ j ≤ n`) — required for the 3-way termination, exactly sufficient
+for `force`'s head-expansion. -/
+def VrelK : Nat → VTy Eff Mult → Val → Val → Prop
+  | _,     .unit,    v₁, v₂ => BaseRel (Eff := Eff) (Mult := Mult) VTy.unit v₁ v₂
+  | _,     .int,     v₁, v₂ => BaseRel (Eff := Eff) (Mult := Mult) VTy.int v₁ v₂
+  | n,     .U φ B,   v₁, v₂ =>
+      ∃ c₁ c₂, v₁ = Val.vthunk c₁ ∧ v₂ = Val.vthunk c₂ ∧ ∀ j, j < n → CrelK j B φ c₁ c₂
+  | n,     .sum A B, v₁, v₂ =>
+      (∃ w₁ w₂, v₁ = Val.inl w₁ ∧ v₂ = Val.inl w₂ ∧ VrelK n A w₁ w₂) ∨
+      (∃ w₁ w₂, v₁ = Val.inr w₁ ∧ v₂ = Val.inr w₂ ∧ VrelK n B w₁ w₂)
+  | n,     .prod A B, v₁, v₂ =>
+      ∃ a₁ a₂ b₁ b₂, v₁ = Val.pair a₁ b₁ ∧ v₂ = Val.pair a₂ b₂ ∧
+        VrelK n A a₁ a₂ ∧ VrelK n B b₁ b₂
+  | n,     .mu A,    v₁, v₂ =>
+      ∃ w₁ w₂, v₁ = Val.fold w₁ ∧ v₂ = Val.fold w₂ ∧ ∀ j, j < n → VrelK j (VTy.unrollMu A) w₁ w₂
+  | _,     .tvar _,  _,  _  => False
+  termination_by n A _ _ => (n, 0, 0, sizeOf A)
+/-- ◊4.5b biorthogonal closure (temp name `CrelK`; → frozen `Crel` at sub-block g). The answer type
+`D` is QUANTIFIED here (internal to `KrelS`), so the eventual `Crel` signature is byte-identical. -/
+def CrelK : Nat → CTy Eff Mult → Eff → Comp → Comp → Prop
+  | n, C, ε, c₁, c₂ =>
+      ∀ (D : CTy Eff Mult) (K₁ K₂ : Stack), KrelS n C D ε K₁ K₂ →
+        CoApproxC_le n (K₁, c₁) (K₂, c₂)
+  termination_by n C _ _ _ => (n, 2, 0, sizeOf C)
+/-- ◊4.5b answer-typed stack relation, STACK-STRUCTURAL. `C` = hole type, `D` = answer type (inert).
+DISCOVERY-IC FORM: SINGLE-BODY def + internal `match K₁, K₂` (the multi-clause form fights the
+unfolder); per-case `@[simp]` eq lemmas (`krelS_nil`/`letF`/`appF`/`handleF`) generated below. -/
+def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack → Prop
+  | n, C, D, ε, K₁, K₂ =>
+      match K₁, K₂ with
+      -- nil: hole type = answer type; observe related RETURNS (the biorthogonal base / return-half).
+      | [], [] =>
+          C = D ∧ (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
+            CoApproxC_le n ([], Comp.ret v₁) ([], Comp.ret v₂))
+      -- letF: hole is a returner `F q A`; frame body ▷-guarded at `m < n`, tail at continuation B.
+      | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂') =>
+          ∃ q A B, C = CTy.F q A ∧
+            (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+              CrelK m B ε (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
+            ∧ KrelS n B D ε K₁' K₂'
+      -- appF: hole is an arrow `arr q A B`; cap is the appF arg, tail at codomain B.
+      | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂') =>
+          ∃ q A B, C = CTy.arr q A B ∧
+            Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁' K₂'
+      -- handleF: tail recurses at the same hole type (handler-agnostic at the stack level).
+      | (Frame.handleF _h :: K₁'), (Frame.handleF _h' :: K₂') =>
+          KrelS n C D ε K₁' K₂'
+      | _, _ => False
+termination_by n _ _ _ K _ => (n, 1, K.length, 0)
+decreasing_by
+  -- Lex `(n, role, stackLen, sizeOf)`: every edge drops `n` (▷-thunk j<n / frame-body m<n / μ),
+  -- `role` (CrelK→KrelS, KrelS→VrelK-cap), `stackLen` (tail), or `sizeOf` (VrelK sum/prod).
+  all_goals
+    first
+      | (simp_wf; exact Prod.Lex.left _ _ ‹_ < _›)
+      | decreasing_tactic
+end
+
+-- DISCOVERY-IC per-case `@[simp]` equation lemmas (so downstream proofs unfold cleanly).
+@[simp] theorem krelS_nil {n : Nat} {C D : CTy Eff Mult} {ε : Eff} :
+    KrelS n C D ε [] [] ↔
+      (C = D ∧ ∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
+        CoApproxC_le n ([], Comp.ret v₁) ([], Comp.ret v₂)) := by
+  rw [KrelS]
+
+@[simp] theorem krelS_letF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {N₁ N₂ : Comp} {K₁ K₂ : Stack} :
+    KrelS n C D ε (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) ↔
+      ∃ q A B, C = CTy.F q A ∧
+        (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+          CrelK m B ε (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
+        ∧ KrelS n B D ε K₁ K₂ := by
+  rw [KrelS]
+
+@[simp] theorem krelS_appF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {w₁ w₂ : Val} {K₁ K₂ : Stack} :
+    KrelS n C D ε (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂) ↔
+      ∃ q A B, C = CTy.arr q A B ∧
+        Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁ K₂ := by
+  rw [KrelS]
+
+@[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {h h' : Handler}
+    {K₁ K₂ : Stack} :
+    KrelS n C D ε (Frame.handleF h :: K₁) (Frame.handleF h' :: K₂) ↔
+      KrelS n C D ε K₁ K₂ := by
+  rw [KrelS]
+
+/-- ◊4.5b μ-floor: `CrelK 0` is VACUOUS (the metered obs at 0 — `ConvergesC_le 0` is `False`). -/
+theorem crelK_zero {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp} : CrelK 0 C ε c₁ c₂ := by
+  rw [CrelK]; intro D K₁ K₂ _ hconv; exact absurd hconv (not_convergesC_le_zero _)
+
+/-- ◊4.5b adequacy grounding: `CrelK n (F q A)` at the IDENTITY (nil) stack gives the whole-program
+return observation. The `D = C, K = []` instance (Biernacki Lemma 2 identity). The capstone of
+sub-block (a): it is the bridge `CrelK → ⊑` that the eventual `lr_sound` consumes. -/
+theorem crelK_adequacy_nil {n : Nat} {q : Mult} {A : VTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp}
+    (h : CrelK n (CTy.F q A) ε c₁ c₂) : CoApproxC_le n ([], c₁) ([], c₂) := by
+  rw [CrelK] at h
+  apply h (CTy.F q A) [] []
+  rw [krelS_nil]
+  refine ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ?_⟩
+  exact ⟨1, v₂, rfl⟩
+
+
 /-! ## 5.2a‴ Step-index DOWNWARD-CLOSURE (`Krel_mono`) — the ◊4.5 payoff
 
 With `Krel n := ∀ j ≤ n, (body j)` (◊4.5 downward-closed shape), `Krel`-monotonicity is FREE: a stack
