@@ -128,6 +128,33 @@ trusted-three. `c363304` is the labelled fallback throughout. Commit frequently 
   stack). The "does the `▷`-insert break adequacy" fear is NOT realized — μ-floor + head_step
   survive structurally. The only STEP-2(a) work is the def-shape-for-unfolding above.
 
+## Sub-block (f) — the handler row-discharge (THE conceptual piece; the original ◊4.5b wall)
+
+Entry state (`cap45-modality @ 0fa5899`): the ENTIRE non-handler spine is ported + green
+(a / b / c-nonhandler / e crelK_fund+vrelK_fund / d krelS_refl). The **7 remaining sorrys are ALL
+here**: crelK_fund's 4 (up + handleThrows/State/Transaction) + krelS_refl's 3 (handler arms).
+(f) closes: the `up` op-producer + `compatK_handle*` + `krelS_handleF_intro`.
+
+**THE CRUX — the handler is a row-DISCHARGE frame:** body row `e ⊋ φ` (the body raises ℓ) →
+outer row `φ` (the handler catches ℓ). This is the ONE frame that genuinely CHANGES the row (not
+just weakens it like letF). `krelS_handleF_intro` needs `KrelS …φ K → KrelS …e K` for an ARBITRARY
+body row `e` — the row-discharge.
+
+**DECISION POINT (flag-before-build; do NOT re-architect on a guess):**
+- FIRST trace whether the SINGLE-ROW KrelS (tail-at-φ) can express the body-row-`e` → outer-row-`φ`
+  discharge. The throws handler (▷-free, zero-shot abort) may close single-row.
+- If single-row CANNOT express the row CHANGE → adopt the TWO-ROW Biernacki `C⟦τ₁/ε₁{τ₂/ε₂⟧`
+  (a FROM row + a TO row; litscout-grounded — `refs.bib` devilhena-popl26-blaze / Biernacki §4.2).
+  This is a KrelS DEF change → **FLAG the orchestrator before re-architecting** (kernel-engineer pair
+  available); it's the literature's principled form, NOT a guess. tail-at-φ is already its partial
+  (per-frame) form, so the step is "add the explicit to-row," not a rewrite from scratch.
+- state/transaction handlers = the resumptive ▷ payoff (dispatch-resume at the discharged row;
+  ADR-0041 Biernacki ρ-free-derived: the up producer closes via the discharged-row some-half).
+
+ORDER: trace → (single vs two-row, flag if two-row) → `krelS_handleF_intro` →
+`compatK_handleThrows/State/Transaction` (discharge the 4 crelK_fund + 3 krelS_refl sorrys) → the
+`up` producer. Commit per handler. Then (g).
+
 ## Discipline (carried from the discovery phase)
 
 - The build/source arbitrates every fork. Pin sub-claims as falsifiable; revise on the build.
