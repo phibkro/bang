@@ -108,6 +108,12 @@ trusted-three. `c363304` is the labelled fallback throughout. Commit frequently 
   NEITHER (the stack peeling carries WF either way; Lean accepts both). Pick per PROOF-need:
   likely `m<n` (the `▷`) at the Kripke μ/resume seams to match the existing ◊4.5 ▷-anti-reduction
   (`Crel_head_step`), `n` elsewhere. This is cleaner than "▷ forced for WF" — it's not.
+- **letF clause: the continuation row `φ` MUST be existentially bound, INDEPENDENT of the stack's
+  ambient `ε`** (build-caught in sub-block b). Threading the stack's `ε` into the continuation body
+  (`CrelK m B ε`) breaks ε-antitonicity — the body is ε-covariant but `CrelK` is ε-MONOTONE, a
+  polarity clash. With `φ` independent, `ε` appears in NO `KrelS` clause body, so `KrelS_eff_anti`
+  is a clean structural pass-through. This matches the OLD `krel_letF` separation (stack at `φ₁`,
+  continuation at `φ₂`). Landed in `615dd2a`/`2ef83af`.
 - **(ii) cascade is structurally sound (NOT research-grade):** `crelF_zero` (μ-floor) closes
   trivially (vacuous metered obs at 0); `crelF_head_step` reduces to `KrelF_mono`; `KrelF_mono`'s
   argument is valid (frame-body `∀m<n` restricts to `∀m<k`, k≤n subset, + recurse on the smaller
