@@ -1058,6 +1058,8 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Han
         Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
         KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+        (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
+          ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
         Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →
         Bang.dispatchOn op w₂ (Kᵢ', h, K₂) = some cfg₂ →
         CoApproxC_le m cfg₁ cfg₂) :
@@ -1083,6 +1085,8 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
         Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK k Aop w₁ w₂) →
         KrelS k Cⱼ Dⱼ εⱼ Kⱼ Kⱼ' →
+        (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
+          ∃ qᵣ, Cⱼ = CTy.F qᵣ Aᵣ) →
         Bang.dispatchOn op w₁ (Kⱼ, h, K₁) = some cfg₁ →
         Bang.dispatchOn op w₂ (Kⱼ', h, K₂) = some cfg₂ →
         CoApproxC_le k cfg₁ cfg₂) :
@@ -1153,6 +1157,8 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
           Val.Closed w₁ → Val.Closed w₂ →
           (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
           KrelS m Cᵢ' Dᵢ' εᵢ' Kᵢ Kᵢ' →
+          (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op' = some Aᵣ →
+            ∃ qᵣ, Cᵢ' = CTy.F qᵣ Aᵣ) →
           Bang.dispatchOn op' w₁ (Kᵢ, h, K₁ₒ) = some cfg₁ →
           Bang.dispatchOn op' w₂ (Kᵢ', h', K₂ₒ) = some cfg₂ →
           CoApproxC_le m cfg₁ cfg₂) := by
@@ -1283,7 +1289,7 @@ theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff
   -- DISCARDED). The `handlesOp` guard forces `op = "raise"`, so `opArg ℓ "raise" = A` (hArg) gives
   -- `VrelK m A w` from `hVrel`; the dispatched config relation IS the tail's return-half — `crelK_ret`
   -- on the (downward-closed) tail `hK` at hole type `F q A`. The threaded `Kᵢ` is irrelevant for throws.
-  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi hd₁ hd₂
+  intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
   -- `hcatch` (handlesOp (throws ℓ) ℓ op) forces `op = "raise"`.
   have hop : op = "raise" := by
     simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
@@ -1574,13 +1580,16 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
                   refine hres k (Nat.lt_succ_self k) op v₁ v₂ _ Dᵢ _ K₁ᵢ K₂ᵢ
                     (K₁ₒ, Comp.ret v₁) (K₂ₒ, Comp.ret v₂)
                     hcatch' hcv₁ hcv₂ ?_ (KrelS_mono (le_of_lt (Nat.lt_succ_self k)) hinner)
-                    (by simp [dispatchOn]) (by simp [dispatchOn])
-                  -- type alignment: the resume value's type `Aop = opArg ℓ op = A` (hArg), so `hvk` fits
-                  -- (downward-closed to `k`).
-                  intro Aop hAop
-                  rw [hlbl, hArg] at hAop
-                  obtain rfl := (Option.some.injEq _ _).mp hAop.symm
-                  exact VrelK_mono (le_of_lt (Nat.lt_succ_self k)) hvk
+                    ?_ (by simp [dispatchOn]) (by simp [dispatchOn])
+                  · -- hVrel: the resume ARG value's type `Aop = opArg ℓ op = A` (hArg), so `hvk` fits.
+                    intro Aop hAop
+                    rw [hlbl, hArg] at hAop
+                    obtain rfl := (Option.some.injEq _ _).mp hAop.symm
+                    exact VrelK_mono (le_of_lt (Nat.lt_succ_self k)) hvk
+                  · -- hCᵢ: the op-result-returner premise. throws DISCARDS Kᵢ so the consumer never uses it;
+                    -- the producer's hole `C = F q B` with `B = opRes ℓ op` (hRes) supplies it.
+                    intro Aᵣ hAᵣ; rw [hlbl, hRes] at hAᵣ
+                    obtain rfl := (Option.some.injEq _ _).mp hAᵣ.symm; exact ⟨q, rfl⟩
           | state lh s =>
               -- STATE producer — THE ONE RESEARCH SORRY (krelS_append + ▷-metering): the producer
               -- dispatches at the Kᵢ-PREFIX (`dispatchOn op v (K₁ᵢ, state, K₁ₒ)` KEEPS K₁ᵢ + reinstalls),
@@ -1661,7 +1670,7 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- on the self-related tail `ihK` closes it (the hVrel premise at C = F q A gives VrelK m A w).
       rw [krelS_handleF]
       refine ⟨by simp only [HandlerRel], KrelS_eff_cast (ihK hCo), ?_⟩
-      intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi hd₁ hd₂
+      intro m hm op w₁ w₂ Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
       have hop : op = "raise" := by
         simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
       subst hop

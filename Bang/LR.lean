@@ -526,6 +526,12 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
                 Val.Closed w₁ → Val.Closed w₂ →
                 (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
                 KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+                -- the captured continuation's hole `Cᵢ` is a RETURNER at the op-RESULT type (the resume
+                -- value flows into `Kᵢ` there). state/txn need this for `crelK_ret` to bridge the resume
+                -- through `Kᵢ`; the producer supplies it from the `up` typing (Cᵢ = F q (opRes)). throws
+                -- discards `Kᵢ` so it never consults this.
+                (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
+                  ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
                 Bang.dispatchOn op w₁ (Kᵢ, h₁, K₁') = some cfg₁ →
                 Bang.dispatchOn op w₂ (Kᵢ', h₂, K₂') = some cfg₂ →
                 CoApproxC_le m cfg₁ cfg₂)
@@ -588,6 +594,8 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
             Val.Closed w₁ → Val.Closed w₂ →
             (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
             KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ' →
+            (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
+              ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
             Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →
             Bang.dispatchOn op w₂ (Kᵢ', h', K₂) = some cfg₂ →
             CoApproxC_le m cfg₁ cfg₂)) := by
