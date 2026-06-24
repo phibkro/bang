@@ -81,16 +81,24 @@ they make `MentionsLocal` observable (the QTT-erasure headline). -/
 inductive Instr where
   | const  : Bang.Val → Instr    -- push a constant terminal value (ret v)
   | clos   : Comp → Instr        -- push a closure (lam M)
-  | bindS  : Comp → Instr        -- pop value, bind, run continuation N[v]  (let)
-  | callS  : Bang.Val → Instr    -- pop closure, apply to argument         (app/β)
+  -- RESIDUAL re-compile instructions (`bindS`/`callS`/`caseS`/`splitS`). Each subsumes the WHOLE
+  -- tail: at runtime it re-`compile`s `subst …` THREADING the CalcVM continuation it carries, exactly
+  -- as `exec`'s SUBST/APP/CASE/SPLIT arms run `compile (subst …) c`. The carried `CalcVM.Code` is the
+  -- AsmFX "epilogue annotation" (Lindley et al. 2025 §1.3): the real outer continuation a re-compiled
+  -- `handle` body must capture in its `markH` — WITHOUT it, a zero-shot abort resumes `[]` and stops
+  -- early (the model defect this representation fixes). NOTHING runs after a residual instr in the
+  -- stream; the recompile consumes the tail (mirrors `exec`, where `compile (subst v N) c` replaces
+  -- the whole code). So `lowerCode (SUBST N :: c) = [bindS N c]`, NOT `bindS N :: lowerCode c`.
+  | bindS  : Comp → CalcVM.Code → Instr        -- pop value, bind, run N[v] THREADING the CalcVM cont  (let)
+  | callS  : Bang.Val → CalcVM.Code → Instr    -- pop closure, apply to arg THREADING the CalcVM cont  (app/β)
   | getL   : Nat → Instr         -- local.get k   (free de Bruijn occurrence k)
   | setL   : Nat → Instr         -- local.set k
-  -- ADT eliminators (sub-step 1a): branch on a sum scrutinee / destructure a pair. Carry the
-  -- residual branch `Comp`s (re-compiled at runtime, like `bindS`); a real WASM backend lowers
-  -- these to `br_table` over the boxed sum tag / a tuple projection. Scrutinee is in the instr
-  -- (a closed value at runtime), matching CalcVM's `CASE`/`SPLIT`.
-  | caseS  : Bang.Val → Comp → Comp → Instr   -- sum elim: inl/inr ⇒ run the matching branch
-  | splitS : Bang.Val → Comp → Instr          -- product elim: pair ⇒ run N[fst][snd]
+  -- ADT eliminators (sub-step 1a): branch on a sum scrutinee / destructure a pair. Like `bindS`,
+  -- carry the residual branch `Comp`s AND the CalcVM continuation (re-compiled+threaded at runtime);
+  -- a real WASM backend lowers these to `br_table` over the boxed sum tag / a tuple projection.
+  -- Scrutinee is in the instr (a closed value at runtime), matching CalcVM's `CASE`/`SPLIT`.
+  | caseS  : Bang.Val → Comp → Comp → CalcVM.Code → Instr   -- sum elim: inl/inr ⇒ run matching branch threading cont
+  | splitS : Bang.Val → Comp → CalcVM.Code → Instr          -- product elim: pair ⇒ run N[fst][snd] threading cont
   -- effect handlers (sub-step 1b). The CURRENT stack-switching Explainer shape:
   --   markH  = install a handler boundary = `(cont.new $ct)` capturing the OUTER continuation
   --            (resume target on a zero-shot abort), carrying the post-handle resume code.
@@ -155,27 +163,37 @@ def injTerminal : Comp → Wasmfx.Val
   | .lam M => .clos M
   | _      => .unit          -- non-terminal: unreachable on the well-formed path
 
-/- `lowerInstr`/`lowerCode`: lower a calculated `Bang.Instr`/`Code` to WASM
-opcodes. RET/LAMI/SUBST/APP/CASE/SPLIT map 1:1; MARK/UNMARK/OP are the handler
-opcodes (sub-step 1b); THROW is never compiled. Mutual because `MARK` carries a
-residual `Code` to lower. -/
+/- `lowerInstr`/`lowerCode`: lower a calculated `Bang.Code` to WASM opcodes.
+RET/LAMI map 1:1; MARK/UNMARK/OP are the handler opcodes (sub-step 1b); THROW is
+never compiled. The RESIDUAL opcodes SUBST/APP/CASE/SPLIT each CARRY the CalcVM
+continuation `c` (the tail) so a re-compiled `handle` body captures the TRUE outer
+continuation in its `markH` (the AsmFX epilogue annotation — Lindley et al. 2025
+§1.3). Since the residual recompile consumes the whole tail (mirroring `exec`'s
+`compile (subst …) c`), a residual `lowerInstr i c rest` SUBSUMES the tail
+(`lowerInstr (SUBST N) c rest = [bindS N c]`, DROPPING `rest = lowerCode c`).
+
+`lowerCode` recurses STRUCTURALLY on the list (`i :: c => lowerInstr i c (lowerCode
+c)`); `lowerInstr` is a non-recursive constructor-match (its only `lowerCode` is on
+the structurally-smaller MARK payload `cr`). BOTH reduce by `rfl` — the prior
+single-function form, which matched the head constructor THROUGH the cons
+(`.SUBST N :: c => …`), compiled to a non-reducing matcher and broke `rfl` on every
+handler probe (the build caught it). Mutual because `MARK` lowers a nested `Code`. -/
 mutual
-def lowerInstr : CalcVM.Instr → List Wasmfx.Instr
-  | .RET v   => [.const v]
-  | .LAMI M  => [.clos M]
-  | .SUBST N => [.bindS N]
-  | .APP v   => [.callS v]
-  | .CASE w N₁ N₂ => [.caseS w N₁ N₂]   -- sub-step 1a (ADT)
-  | .SPLIT w N    => [.splitS w N]
-  -- effect handlers (sub-step 1b): MARK/UNMARK/OP. `compile` never emits THROW (it is an
-  -- internal `exec` transition target, never compiled), so THROW lowers to nothing.
-  | .MARK h cr    => [.markH h (lowerCode cr)]
-  | .UNMARK       => [.unmarkH]
-  | .OP ℓ op v    => [.opH ℓ op v]
-  | .THROW _ _ _  => []      -- never compiled
+def lowerInstr (i : CalcVM.Instr) (c : CalcVM.Code) (rest : Wasmfx.Code) : Wasmfx.Code :=
+  match i with
+  | .RET v        => .const v :: rest
+  | .LAMI M       => .clos M :: rest
+  | .SUBST N      => [.bindS N c]            -- subsumes the tail (re-compile threads `c`)
+  | .APP v        => [.callS v c]
+  | .CASE w N₁ N₂ => [.caseS w N₁ N₂ c]      -- sub-step 1a (ADT)
+  | .SPLIT w N    => [.splitS w N c]
+  | .MARK h cr    => .markH h (lowerCode cr) :: rest
+  | .UNMARK       => .unmarkH :: rest
+  | .OP ℓ op v    => .opH ℓ op v :: rest
+  | .THROW _ _ _  => rest                      -- never compiled (no-op)
 def lowerCode : CalcVM.Code → Wasmfx.Code
   | []      => []
-  | i :: c  => lowerInstr i ++ lowerCode c
+  | i :: c  => lowerInstr i c (lowerCode c)
 end
 
 /-- The compiler: lower the calculated `compile c []`. Result type fixed to `i32`
@@ -250,25 +268,29 @@ def wexec : Nat → Code → VStack → HStack → Option VStack
   | Nat.succ _, [],             s, _ => some s
   | Nat.succ f, .const v :: c,  s, hs => wexec f c (compileV v :: s) hs
   | Nat.succ f, .clos M :: c,   s, hs => wexec f c (.clos M :: s) hs
-  | Nat.succ f, .bindS N :: c,  s, hs =>
+  -- RESIDUAL arms: re-`compile` `subst …` THREADING the carried CalcVM continuation `cc`, then lower
+  -- the WHOLE thing — exactly `exec`'s `compile (subst …) cc`. A re-compiled `handle` body's `markH`
+  -- now captures the TRUE outer continuation `cc` (the model-soundness fix). The `:: _` tail is empty
+  -- (`lowerCode` subsumes it into the instr), so nothing is stranded.
+  | Nat.succ f, .bindS N cc :: _,  s, hs =>
       match s with
-      | w :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst (recoverV w) N) []) ++ c) s' hs
+      | w :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst (recoverV w) N) cc)) s' hs
       | _       => none
-  | Nat.succ f, .callS v :: c,  s, hs =>
+  | Nat.succ f, .callS v cc :: _,  s, hs =>
       match s with
-      | .clos N :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst v N) []) ++ c) s' hs
+      | .clos N :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst v N) cc)) s' hs
       | _             => none
   | Nat.succ f, .getL _ :: c,   s, hs => wexec f c s hs
   | Nat.succ f, .setL _ :: c,   s, hs => wexec f c s hs
-  -- ADT eliminators (sub-step 1a): scrutinee in the instr; re-compile the chosen branch.
-  | Nat.succ f, .caseS w N₁ N₂ :: c, s, hs =>
+  -- ADT eliminators (sub-step 1a): scrutinee in the instr; re-compile the chosen branch (cont threaded).
+  | Nat.succ f, .caseS w N₁ N₂ cc :: _, s, hs =>
       match w with
-      | .inl v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) []) ++ c) s hs
-      | .inr v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) []) ++ c) s hs
+      | .inl v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) cc)) s hs
+      | .inr v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) cc)) s hs
       | _      => none
-  | Nat.succ f, .splitS w N :: c, s, hs =>
+  | Nat.succ f, .splitS w N cc :: _, s, hs =>
       match w with
-      | .pair v u => wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) []) ++ c) s hs
+      | .pair v u => wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) cc)) s hs
       | _         => none
   -- effect handlers (sub-step 1b): mirror exec's MARK/UNMARK/OP arms.
   | Nat.succ f, .markH h cr :: c, s, hs =>
@@ -568,14 +590,16 @@ theorem subst_pure {v : Bang.Val} {N : Comp} (hv : Val.Pure v) (hN : Comp.Pure N
     Comp.Pure (Comp.subst v N) :=
   Comp.substFrom_pure 0 hv hN
 
-/-! #### `compile` / `lowerCode` append homomorphisms + purity -/
+/-! #### `compile` purity (residual reducts stay pure)
 
-/-- `lowerCode` is a `++`-homomorphism (it is a `flatMap`). -/
-theorem lowerCode_append (a b : CalcVM.Code) :
-    lowerCode (a ++ b) = lowerCode a ++ lowerCode b := by
-  induction a with
-  | nil => simp [lowerCode]
-  | cons i c ih => simp [lowerCode, ih, List.append_assoc]
+NOTE: `lowerCode` is NO LONGER a `++`-homomorphism. The residual opcodes
+(SUBST/APP/CASE/SPLIT) SUBSUME their tail into a single threaded-continuation
+instr (`lowerCode (SUBST N :: c) = [bindS N c]`), so `lowerCode (a ++ b) ≠
+lowerCode a ++ lowerCode b` when `a` ends in a residual opcode. The old
+`lowerCode_append` lemma (and its `compile_append` companion in the residual
+arms) was the workaround for `wexec`'s former `compile … [] ++ c` shape — that
+shape is exactly the model defect; with the continuation threaded, the residual
+`wexec`/`exec` equality is DEFINITIONAL and needs no append homomorphism. -/
 
 /-- `compile` is a difference-list builder on the PURE fragment: `compile M c`
 appends to `c`. (True structurally over the 5 pure arms; the non-pure arms are
@@ -670,7 +694,8 @@ For PURE-spine code at the EMPTY handler stack, every successful `exec` run is
 mirrored by a `wexec` run at the SAME fuel on the injected stacks. Fuel aligns
 1:1 (a pure CalcVM instr lowers to exactly one WASM instr). The SUBST/APP arms
 recover the popped value (`compileV_recoverV`) and re-compile the SAME residual,
-prepended via `compile_append`/`lowerCode_append`; the recompiled code stays pure
+THREADING the carried CalcVM continuation `c` (the threaded-cont rep) so the
+`wexec`/`exec` recompiles coincide DEFINITIONALLY; the recompiled code stays pure
 (`compile_pure` + `subst_pure`), sustaining the induction invariant.
 
 `StackPure` is the operand-stack invariant: every terminal on the stack is a pure
@@ -714,8 +739,7 @@ theorem exec_wexec_sim :
         | RET v =>
             simp only [CalcVM.exec] at h
             have hv : Val.Pure v := by simpa only [InstrPure] using hi
-            simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack,
-              injTerminal, List.map_cons]
+            simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
             exact ih c (.ret v :: s) s' hs hc
               (fun t ht => by
                 rcases List.mem_cons.mp ht with rfl | ht
@@ -724,13 +748,16 @@ theorem exec_wexec_sim :
         | LAMI M =>
             simp only [CalcVM.exec] at h
             have hM : Comp.Pure M := by simpa only [InstrPure] using hi
-            simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack,
-              injTerminal, List.map_cons]
+            simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
             exact ih c (.lam M :: s) s' hs hc
               (fun t ht => by
                 rcases List.mem_cons.mp ht with rfl | ht
                 · simpa only [TerminalPure] using hM
                 · exact hsp t ht) hsph h
+        -- RESIDUAL arms: `wexec` now re-`compile`s THREADING the carried CalcVM continuation `c`,
+        -- matching `exec`'s `compile (subst …) c` EXACTLY — no `compile_append`/`lowerCode_append`
+        -- detour (those held only on the pure fragment; the threaded-cont rep makes the equality
+        -- definitional, which is also what makes the model SOUND for handlers).
         | SUBST N =>
             simp only [CalcVM.exec] at h
             cases s with
@@ -743,14 +770,11 @@ theorem exec_wexec_sim :
                       have := hsp (.ret v) (by simp); simpa only [TerminalPure] using this
                     have hsp0 : StackPure s0 := fun t ht => hsp t (List.mem_cons_of_mem _ ht)
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
-                    have hcode : CalcVM.compile (Comp.subst v N) c
-                        = CalcVM.compile (Comp.subst v N) [] ++ c := compile_append hpu c
                     have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
                         = some (injStack s') :=
                       ih _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
-                    simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec,
-                      injStack, injTerminal, List.map_cons]
-                    rw [compileV_recoverV, ← lowerCode_append, ← hcode]
+                    simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
+                    rw [compileV_recoverV]
                     simpa [injStack] using key
                 | _ => simp at h
         | APP v =>
@@ -765,14 +789,10 @@ theorem exec_wexec_sim :
                       have := hsp (.lam N) (by simp); simpa only [TerminalPure] using this
                     have hsp0 : StackPure s0 := fun t ht => hsp t (List.mem_cons_of_mem _ ht)
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
-                    have hcode : CalcVM.compile (Comp.subst v N) c
-                        = CalcVM.compile (Comp.subst v N) [] ++ c := compile_append hpu c
                     have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
                         = some (injStack s') :=
                       ih _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
-                    simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec,
-                      injStack, injTerminal, List.map_cons]
-                    rw [← lowerCode_append, ← hcode]
+                    simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
                     simpa [injStack] using key
                 | _ => simp at h
         | CASE w N₁ N₂ =>
@@ -783,22 +803,16 @@ theorem exec_wexec_sim :
             | inl v =>
                 have hpu : Comp.Pure (Comp.subst v N₁) :=
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.1
-                have hcode : CalcVM.compile (Comp.subst v N₁) c
-                    = CalcVM.compile (Comp.subst v N₁) [] ++ c := compile_append hpu c
                 have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) (injHStack hs)
                     = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
-                simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
-                rw [← lowerCode_append, ← hcode]
+                simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | inr v =>
                 have hpu : Comp.Pure (Comp.subst v N₂) :=
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.2
-                have hcode : CalcVM.compile (Comp.subst v N₂) c
-                    = CalcVM.compile (Comp.subst v N₂) [] ++ c := compile_append hpu c
                 have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) (injHStack hs)
                     = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
-                simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
-                rw [← lowerCode_append, ← hcode]
+                simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
         | SPLIT w N =>
@@ -809,13 +823,9 @@ theorem exec_wexec_sim :
                 have hpu : Comp.Pure (Comp.subst v (Comp.subst (Val.shift u) N)) := by
                   have hvw : Val.Pure v ∧ Val.Pure u := by simpa only [Val.Pure] using hP.1
                   exact subst_pure hvw.1 (subst_pure (Val.shiftFrom_pure 0 hvw.2) hP.2)
-                have hcode : CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c
-                    = CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) [] ++ c :=
-                  compile_append hpu c
                 have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) (injHStack hs)
                     = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
-                simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
-                rw [← lowerCode_append, ← hcode]
+                simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
         | _ => exact absurd hi (by simp [InstrPure])
@@ -873,25 +883,45 @@ namespace Wasmfx
 
 /-- The lowering NEVER emits a `getL`/`setL`: the calculated machine is
 substitution-based (closed focus, ADR-0025 D2), so it threads no free-variable
-locals. Every `lowerInstr` output is `const`/`clos`/`bindS`/`callS` (or empty).
-This is the structural core of BOTH `zero_grade_no_code` (the QTT-erasure
-headline) and `compile_well_typed`. -/
-theorem lowerInstr_no_locals (i : CalcVM.Instr) (j : Wasmfx.Instr)
-    (h : j ∈ lowerInstr i) : (∀ k, j ≠ .getL k) ∧ (∀ k, j ≠ .setL k) := by
-  cases i <;> simp [lowerInstr] at h <;>
-    first
-    | (subst h; exact ⟨by intro k; simp, by intro k; simp⟩)
-    | exact absurd h (by simp)
-
+locals. Every emitted opcode is `const`/`clos`/`bindS`/`callS`/`caseS`/`splitS`/
+`markH`/`unmarkH`/`opH` — none a local. This is the structural core of BOTH
+`zero_grade_no_code` (the QTT-erasure headline) and `compile_well_typed`. The
+residual arms (SUBST/APP/CASE/SPLIT) SUBSUME the tail into a single instr (the
+threaded-continuation representation), so each cons-arm contributes exactly its
+head opcode; induction on `Code` discharges every shape. -/
 theorem lowerCode_no_locals (code : CalcVM.Code) (j : Wasmfx.Instr)
     (h : j ∈ lowerCode code) : (∀ k, j ≠ .getL k) ∧ (∀ k, j ≠ .setL k) := by
   induction code with
   | nil => simp [lowerCode] at h
   | cons i c ih =>
-    simp only [lowerCode, List.mem_append] at h
-    rcases h with h | h
-    · exact lowerInstr_no_locals i j h
-    · exact ih h
+    cases i with
+    -- head-cons-tail opcodes: head is not a local; tail by ih.
+    | RET v   => simp only [lowerCode, lowerInstr, List.mem_cons] at h
+                 rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
+                 · exact ih h
+    | LAMI M  => simp only [lowerCode, lowerInstr, List.mem_cons] at h
+                 rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
+                 · exact ih h
+    | MARK h0 cr => simp only [lowerCode, lowerInstr, List.mem_cons] at h
+                    rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
+                    · exact ih h
+    | UNMARK  => simp only [lowerCode, lowerInstr, List.mem_cons] at h
+                 rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
+                 · exact ih h
+    | OP ℓ op v => simp only [lowerCode, lowerInstr, List.mem_cons] at h
+                   rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
+                   · exact ih h
+    -- residual opcodes: a SINGLE subsuming instr (threaded-cont rep) — not a local.
+    | SUBST N => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
+                 exact ⟨by intro k; simp, by intro k; simp⟩
+    | APP v   => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
+                 exact ⟨by intro k; simp, by intro k; simp⟩
+    | CASE w N₁ N₂ => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
+                      exact ⟨by intro k; simp, by intro k; simp⟩
+    | SPLIT w N => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
+                   exact ⟨by intro k; simp, by intro k; simp⟩
+    -- THROW: lowers to nothing — `lowerCode c`; entirely the tail.
+    | THROW ℓ op v => simp only [lowerCode, lowerInstr] at h; exact ih h
 
 /-- `compileC` output mentions NO local (any `k`) — a fortiori not local 0. The
 substitution-based calculated machine carries no variable locals. -/
@@ -1496,31 +1526,28 @@ theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
   · -- NON-pure (Milestone B + ADT increment): GAP 2.
     exact ⟨0, by sorry⟩
 
-/-! ## §7b — HANDLER soundness probes (◊5 — DOCUMENTS A MODEL DEFECT)
+/-! ## §7b — HANDLER soundness probes (◊5 — wexec ≡ kernel, including the FORMER defect)
 
-⚠ FAIL-LOUD: `Wasmfx.run` (`wexec`) is currently UNSOUND for handlers produced by
-a β/let-RESIDUAL re-compilation with a non-trivial abort continuation. These
-probes record both the agreeing cases AND the counterexample, so no reader
-mistakes the agreeing `rfl`s for handler soundness.
+These probes pin `Wasmfx.run` (`wexec`) ≡ `Source.eval` (the kernel) on handler
+programs. They include the case that USED to be a counterexample — the residual-arm
+model defect — now AGREEING after the threaded-continuation fix (task #40).
 
-THE DEFECT: `wexec`'s SUBST/APP/CASE/SPLIT arms run `lowerCode (compile body [])
-++ c`. When `body` contains a `handle`, `compile body []` bakes the markH
-savedCode = `[]` (NOT the real outer continuation `c`). A zero-shot ABORT resumes
-that `[]` ⟹ `wexec` STOPS early with the aborted value, never reaching `c`. The
-markH must instead capture the real `c` (as exec's MARK does). FIX: thread the
-CalcVM continuation into the residual re-`compile` (`compile (subst v N) c_cvm`
-whole), mirroring exec — a bounded redesign of the 4 residual arms (task #40).
+THE FORMER DEFECT (fixed at this commit): `wexec`'s SUBST/APP/CASE/SPLIT arms ran
+`lowerCode (compile body []) ++ c`. When `body` contained a `handle`, `compile body
+[]` baked the markH savedCode = `[]` (NOT the real outer continuation `c`); a zero-shot
+ABORT then resumed `[]` and STOPPED early. THE FIX (Lindley et al. 2025 §1.3 epilogue
+annotation): the residual WASM instrs (`bindS`/`callS`/`caseS`/`splitS`) now CARRY the
+CalcVM continuation `c`, so the residual re-`compile (subst …) c` threads it WHOLE and
+the markH captures the TRUE `c` — exactly as `exec`'s MARK does. The counterexample
+below now returns the kernel's result (100), the build-enforced witness that the fix
+landed. -/
 
-The agreeing cases below are NOT a general validation: their abort continuations
-are identity-on-the-aborted-value, so stop-early coincides with the correct
-result. The COUNTEREXAMPLE breaks that coincidence. -/
-
--- AGREE (state resume — no abort, savedCode unused): wexec ≡ kernel.
+-- state resume (no abort, savedCode unused): wexec ≡ kernel.
 example : Source.eval 50 (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)) = Result.done (.vint 42) := by rfl
 example : Wasmfx.run 50 (compileC (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)))
     = Result.done (.i32 42) := by rfl
 
--- AGREE (abort, but outer cont = identity-on-the-value ⇒ stop-early coincides): NOT a soundness witness.
+-- abort, outer cont = identity-on-the-value: wexec ≡ kernel (7).
 example : Source.eval 50
     (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0)))
     = Result.done (.vint 7) := by rfl
@@ -1528,10 +1555,10 @@ example : Wasmfx.run 50
     (compileC (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0))))
     = Result.done (.i32 7) := by rfl
 
--- ⚠ COUNTEREXAMPLE — wexec DIVERGES from the kernel. An APP β-residual produces a `handle`
--- that ABORTS; the outer let-cont IGNORES the aborted value (7) and returns 100. The kernel
--- returns 100; `wexec` stops early at the abort and returns 7. Pinned to BLOCK a false "handlers
--- work" claim until the residual-arm redesign lands (task #40).
+-- ✓ THE FORMER COUNTEREXAMPLE — now AGREES. An APP β-residual produces a `handle` that
+-- ABORTS; the outer let-cont IGNORES the aborted value (7) and returns 100. The kernel returns
+-- 100, and `wexec` NOW returns 100 too (the threaded continuation reaches the outer cont, no
+-- stop-early). This `rfl` is the build-enforced witness that the residual-arm fix is SOUND.
 example : Source.eval 80
     (.letC (.app (.lam (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
            (.force (.vthunk (.ret (.vint 100)))))
@@ -1539,7 +1566,7 @@ example : Source.eval 80
 example : Wasmfx.run 80
     (compileC (.letC (.app (.lam (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
                      (.force (.vthunk (.ret (.vint 100))))))
-    = Result.done (.i32 7)   -- ⚠ WRONG (should be i32 100); documents the defect, see task #40
+    = Result.done (.i32 100)   -- ✓ SOUND: the threaded outer cont returns 100 (was i32 7 pre-fix)
     := by rfl
 
 end Bang
