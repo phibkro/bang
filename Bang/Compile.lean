@@ -684,16 +684,25 @@ def TerminalPure : Comp → Prop
 
 def StackPure (s : CalcVM.Stack) : Prop := ∀ t ∈ s, TerminalPure t
 
+/-- A handler frame is pure when its saved continuation (code + stack) is — the
+abort/UNMARK paths resume it, so the recursive simulation needs it pure. The
+handler itself is `state`/`throws` (effect-free carriers; state's stored value is
+pure for a well-typed closed program — threaded as part of the invariant). -/
+def HFramePure (fr : CalcVM.HFrame) : Prop :=
+  CodePure fr.savedCode ∧ StackPure fr.savedStack
+
+def HStackPure (hs : CalcVM.HStack) : Prop := ∀ fr ∈ hs, HFramePure fr
+
 theorem exec_wexec_sim :
-    ∀ (f : Nat) (code : CalcVM.Code) (s s' : CalcVM.Stack),
-      CodePure code → StackPure s →
-      CalcVM.exec f code s [] = some s' →
-      wexec f (lowerCode code) (injStack s) [] = some (injStack s') := by
+    ∀ (f : Nat) (code : CalcVM.Code) (s s' : CalcVM.Stack) (hs : CalcVM.HStack),
+      CodePure code → StackPure s → HStackPure hs →
+      CalcVM.exec f code s hs = some s' →
+      wexec f (lowerCode code) (injStack s) (injHStack hs) = some (injStack s') := by
   intro f
   induction f with
-  | zero => intro code s s' _ _ h; simp [CalcVM.exec] at h
+  | zero => intro code s s' hs _ _ _ h; simp [CalcVM.exec] at h
   | succ f ih =>
-    intro code s s' hpure hsp h
+    intro code s s' hs hpure hsp hsph h
     cases code with
     | nil =>
         simp only [CalcVM.exec, Option.some.injEq] at h; subst h
@@ -707,21 +716,21 @@ theorem exec_wexec_sim :
             have hv : Val.Pure v := by simpa only [InstrPure] using hi
             simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack,
               injTerminal, List.map_cons]
-            exact ih c (.ret v :: s) s' hc
+            exact ih c (.ret v :: s) s' hs hc
               (fun t ht => by
                 rcases List.mem_cons.mp ht with rfl | ht
                 · simpa only [TerminalPure] using hv
-                · exact hsp t ht) h
+                · exact hsp t ht) hsph h
         | LAMI M =>
             simp only [CalcVM.exec] at h
             have hM : Comp.Pure M := by simpa only [InstrPure] using hi
             simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack,
               injTerminal, List.map_cons]
-            exact ih c (.lam M :: s) s' hc
+            exact ih c (.lam M :: s) s' hs hc
               (fun t ht => by
                 rcases List.mem_cons.mp ht with rfl | ht
                 · simpa only [TerminalPure] using hM
-                · exact hsp t ht) h
+                · exact hsp t ht) hsph h
         | SUBST N =>
             simp only [CalcVM.exec] at h
             cases s with
@@ -736,9 +745,9 @@ theorem exec_wexec_sim :
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
                     have hcode : CalcVM.compile (Comp.subst v N) c
                         = CalcVM.compile (Comp.subst v N) [] ++ c := compile_append hpu c
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) []
+                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
                         = some (injStack s') :=
-                      ih _ s0 s' (compile_pure hpu hc) hsp0 h
+                      ih _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
                     simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec,
                       injStack, injTerminal, List.map_cons]
                     rw [compileV_recoverV, ← lowerCode_append, ← hcode]
@@ -758,9 +767,9 @@ theorem exec_wexec_sim :
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
                     have hcode : CalcVM.compile (Comp.subst v N) c
                         = CalcVM.compile (Comp.subst v N) [] ++ c := compile_append hpu c
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) []
+                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
                         = some (injStack s') :=
-                      ih _ s0 s' (compile_pure hpu hc) hsp0 h
+                      ih _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
                     simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec,
                       injStack, injTerminal, List.map_cons]
                     rw [← lowerCode_append, ← hcode]
@@ -776,8 +785,8 @@ theorem exec_wexec_sim :
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.1
                 have hcode : CalcVM.compile (Comp.subst v N₁) c
                     = CalcVM.compile (Comp.subst v N₁) [] ++ c := compile_append hpu c
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) []
-                    = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
                 simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
                 rw [← lowerCode_append, ← hcode]
                 simpa [injStack] using key
@@ -786,8 +795,8 @@ theorem exec_wexec_sim :
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.2
                 have hcode : CalcVM.compile (Comp.subst v N₂) c
                     = CalcVM.compile (Comp.subst v N₂) [] ++ c := compile_append hpu c
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) []
-                    = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
                 simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
                 rw [← lowerCode_append, ← hcode]
                 simpa [injStack] using key
@@ -803,8 +812,8 @@ theorem exec_wexec_sim :
                 have hcode : CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c
                     = CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) [] ++ c :=
                   compile_append hpu c
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) []
-                    = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
                 simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
                 rw [← lowerCode_append, ← hcode]
                 simpa [injStack] using key
@@ -1461,8 +1470,8 @@ theorem compile_forward_sim_pure {c : Comp} {v : Val} {fuel : Nat}
   obtain ⟨F, hexec⟩ := source_eval_to_exec c v fuel hpure h
   have hcp : Wasmfx.CodePure (CalcVM.compile c []) :=
     Wasmfx.compile_pure hpure (fun _ hm => by simp at hm)
-  have hsim := Wasmfx.exec_wexec_sim F (CalcVM.compile c []) [] [.ret v] hcp
-    (fun _ hm => by simp at hm) hexec
+  have hsim := Wasmfx.exec_wexec_sim F (CalcVM.compile c []) [] [.ret v] [] hcp
+    (fun _ hm => by simp at hm) (fun _ hm => by simp at hm) hexec
   refine ⟨F, ?_⟩
   -- injStack [.ret v] = [compileV v]; wexec yields it.
   rw [show Wasmfx.injStack [Comp.ret v] = [compileV v] from by
