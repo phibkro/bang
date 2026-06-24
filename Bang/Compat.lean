@@ -1151,6 +1151,42 @@ theorem compat_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
   exact hM (Frame.handleF (Handler.throws ℓ) :: K₁) (Frame.handleF (Handler.throws ℓ) :: K₂)
     (krel_handleF_throws hK)
 
+/-- ◊4.5b The `handleState` compatibility core. STRUCTURALLY IDENTICAL to `compat_handleThrows` — the
+RESUME mechanism is consumed by the MACHINE's dispatch inside `M`'s run (handler-agnostic), NOT observed
+by the stack relation, so `krel_handleF_state` (= the handler-agnostic `krel_handleF`) discharges it
+exactly like throws. The deferred-▷ worry was misplaced: the `Srel` resume clause is the OP-PRODUCER's
+obligation (`up`), not the handler's. The state value `s` is arbitrary (the body IH is `s`-independent). -/
+theorem compat_handleState {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label} {s : Val}
+    {M₁ M₂ : Comp}
+    (hM : Crel n (CTy.F q A) e M₁ M₂) :
+    Crel n (CTy.F q A) φ (Comp.handle (Handler.state ℓ s) M₁) (Comp.handle (Handler.state ℓ s) M₂) := by
+  rw [Crel]
+  intro K₁ K₂ hK
+  refine coApproxC_le_reduce
+    (cfg₁' := (Frame.handleF (Handler.state ℓ s) :: K₁, M₁))
+    (cfg₂' := (Frame.handleF (Handler.state ℓ s) :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  rw [Crel] at hM
+  exact hM (Frame.handleF (Handler.state ℓ s) :: K₁) (Frame.handleF (Handler.state ℓ s) :: K₂)
+    (krel_handleF_state hK)
+
+/-- ◊4.5b The `handleTransaction` compatibility core. As `compat_handleState`, the multi-cell resumptive
+analogue — `krel_handleF_transaction` (handler-agnostic) discharges it; the heap `Θ` is arbitrary. -/
+theorem compat_handleTransaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
+    {Θ : Store} {M₁ M₂ : Comp}
+    (hM : Crel n (CTy.F q A) e M₁ M₂) :
+    Crel n (CTy.F q A) φ (Comp.handle (Handler.transaction ℓ Θ) M₁)
+                         (Comp.handle (Handler.transaction ℓ Θ) M₂) := by
+  rw [Crel]
+  intro K₁ K₂ hK
+  refine coApproxC_le_reduce
+    (cfg₁' := (Frame.handleF (Handler.transaction ℓ Θ) :: K₁, M₁))
+    (cfg₂' := (Frame.handleF (Handler.transaction ℓ Θ) :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  rw [Crel] at hM
+  exact hM (Frame.handleF (Handler.transaction ℓ Θ) :: K₁) (Frame.handleF (Handler.transaction ℓ Θ) :: K₂)
+    (krel_handleF_transaction hK)
+
 /-- The `case` compatibility core (`compat_case`): `Vrel`-related sum scrutinees force both `case`s to
 the SAME branch (both `inl` or both `inr`, with `Vrel`-related payloads), and `case (inl v) … ↦ N₁[v]`
 is a CIStep (stack-independent in-place reduction). So `Crel_head_step` reduces to the chosen branch's
@@ -1275,15 +1311,15 @@ motives, mirroring `Metatheory.HasCTy.subst_gen`), each case dispatching to its 
 
   value side (`vrel_fund`):  vunit/vint (BaseRel), vvar (`closeV_vvar` + `EnvRel.vrel_at`),
                              vthunk (→ `crel_fund` IH), inl/inr/pair/fold (structural).
-  comp side  (`crel_fund`):  ret (→ `crel_ret` + `vrel_fund` + `closeV_closed_scoped`),
-                             letC (→ `compat_letC`, the IHs through `closeC_letC`/`closeC_subst_comm`),
-                             force (→ `crel_force` + `vrel_fund`), case (→ `compat_case`),
-                             split (→ `compat_split`); unfold (→ `crel_unfold`, μ Blocker 2 sorry);
-                             lam/app (arrow-clause sorry, decision #2 pending);
-                             up/handle* (Srel/handler, PROOF_ORDER-last sorry).
+  comp side  (`crel_fund`):  ret (→ `crel_ret`), letC (→ `compat_letC`), force (→ `crel_force`),
+                             lam (→ `compat_lam`), app (→ `compat_app`), case (→ `compat_case`),
+                             split (→ `compat_split`), unfold (→ `crel_unfold` — μ-floor CLOSED ◊4.5b),
+                             handleThrows/State/Transaction (→ `compat_handle*` — CLOSED ◊4.5b, the
+                             handler-agnostic `krel_handleF`), up (the op-PRODUCER — OPEN, see its case).
 
-STATUS: PARTIAL — NOT closed. The sorried cases (lam, app, unfold, up, handleThrows/State/Transaction)
-are documented blockers; `lr_fundamental` carries `sorryAx` until all close. -/
+STATUS (◊4.5b): all CLOSED except `up` (the resume-PRODUCER wall — `Krel`/`Srel` lack handler/row
+compatibility for the `splitAt = some` half) and `krel_refl` (the `lr_sound` capstone interface).
+`lr_fundamental` carries `sorryAx` from exactly these two until they close. -/
 
 mutual
 theorem vrel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
@@ -1454,10 +1490,20 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
           -- ADR-0041's plain-Nat proof said was impossible, now build-PROVEN over the metered observation.
           exact crel_unfold hsc₁ hsc₂ (vrel_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
-      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
-      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
-      -- contravariant in Vrel ⇒ no uniform monotonicity). `up` performs an op: splitAt=none is vacuous,
-      -- but the HANDLED case needs the Srel RESUME clause's Crel-at-NEXT-index (the ▷). Deferred.
+      -- ◊4.5b WALL (op-PRODUCER, the last ▷-case). `Crel n (F q B) φ (up ℓ op v₁') (up ℓ op v₂')` against an
+      -- ARBITRARY `Krel`-stack. CASE on `splitAt K₁ ℓ op`:
+      --   • `none` (stack leaves `(ℓ,op)` unhandled): `(K₁, up…)` is STUCK ⇒ `ConvergesC_le` False ⇒ the
+      --     metered observation is VACUOUS — this half CLOSES (and is all `lr_sound`/`[]`-adequacy needs).
+      --   • `some` (stack HANDLES it): `(K₁, up…)` dispatches/resumes — needs a `Krel`-level handler-
+      --     COMPATIBILITY fact our `Krel`/`Srel` don't carry. TWO precise gaps (build-isolated):
+      --       (i)  the `Srel` RESUME clause obligation `Crel k (plug K₁ (ret u)) (plug K₂ (ret u))` does NOT
+      --            follow from `Krel`'s return half `CoApproxC_le k (K₁, ret u) (K₂, ret u)`: the resume
+      --            RE-quantifies over fresh outer stacks (nested observation), the return half is direct.
+      --       (ii) no `Krel` clause relates how two `Krel`-stacks DISPATCH the same op (row-discipline:
+      --            a stack typed at row `φ ∋ ℓ` should leave `ℓ` unhandled — not encoded in `Krel`).
+      --   Both stem from the SAME root: `Krel`/`Srel` lack the op-producer's handler/row compatibility.
+      --   STOPPED + reported (the resume-composition wall). The 3 CONSUMER cases (handleThrows/State/Txn)
+      --   ARE closed — `krel_handleF` is handler-agnostic; the producer is the genuinely-open one.
       intro n δ₁ δ₂ hδ; sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- throws is ▷-free (zero-shot abort, no resume): compat_handleThrows + closeC_handleThrows.
@@ -1465,18 +1511,22 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       rw [closeC_handleThrows, closeC_handleThrows]
       exact compat_handleThrows (crel_fund hM n δ₁ δ₂ hδ)
   | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
-      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
-      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
-      -- contravariant in Vrel ⇒ no uniform monotonicity). state RESUMES (reinstall frame + continue) ⇒
-      -- the Srel resume clause's Crel-at-NEXT-index (the ▷). Deferred (throws, the zero-shot abort, IS
-      -- closed — see handleThrows above).
-      intro n δ₁ δ₂ hδ; sorry
+      -- ◊4.5b: state-resume is handler-agnostic at the stack level (`krel_handleF_state`); the resume
+      -- mechanism is consumed by the machine inside M's run, not the stack relation. So this closes
+      -- exactly like throws. The stored state `closeV δ s₀` is closed (typing `HasVTy [] []`), but the
+      -- core is `s`-generic so no closedness obligation is discharged here.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_handleState, closeC_handleState]
+      -- the stored state `s₀` is CLOSED (`HasVTy [] []`), so `closeV δᵢ s₀ = s₀` (same on both sides).
+      have hcs₀ : Val.Closed s₀ := fun k => hs.shift_closed k (Nat.zero_le k)
+      rw [closeV_closed hcs₀, closeV_closed hcs₀]
+      exact compat_handleState (crel_fund hM n δ₁ δ₂ hδ)
   | @handleTransaction _ _ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM hsub =>
-      -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
-      -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
-      -- contravariant in Vrel ⇒ no uniform monotonicity). transaction RESUMES (multi-cell state) ⇒ the
-      -- Srel resume clause's Crel-at-NEXT-index (the ▷). Deferred.
-      intro n δ₁ δ₂ hδ; sorry
+      -- ◊4.5b: transaction-resume is handler-agnostic at the stack level (`krel_handleF_transaction`),
+      -- the multi-cell analogue — closes like state/throws.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_handleTransaction, closeC_handleTransaction]
+      exact compat_handleTransaction (crel_fund hM n δ₁ δ₂ hδ)
 end
 
 end Bang
