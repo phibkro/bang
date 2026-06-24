@@ -2057,18 +2057,30 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
       -- ◊4.5b sub-block (f) — the op-PRODUCER. Goal: `CrelK n (F q B) φ (up ℓ op v₁) (up ℓ op v₂)`.
-      -- BLOCKED on a `KrelS` DEF GAP (build-traced, flagged to orchestrator 2026-06-24):
+      -- PARTIAL: the ENABLERS are landed + build-validated (2026-06-24, cap45-modality); the close
+      -- needs ONE remaining def piece (the resume conjunct + state/txn append) — scoped below.
       --   • none-half (`splitAt = none`, ρ-free / unhandled): CLOSES via `not_convergesC_le_up_splitNone`
       --     (the stuck config never converges ⇒ the metered premise is False ⇒ vacuous). Biernacki compat-op.
-      --   • some-half (`splitAt = some`, HANDLED): UNPROVABLE at the current `KrelS`. The handleF clause
-      --     `| handleF _h::K₁', handleF _h'::K₂' => KrelS … K₁' K₂'` IGNORES the handlers + carries the SAME
-      --     row + has NO resume clause (the old `Srel` resume was dropped in the rebuild). So a `KrelS …φ`
-      --     pair may HANDLE ℓ (def doesn't forbid `ℓ ≤ φ` + a handleF for ℓ) AND handle DIFFERENT labels on
-      --     the two sides ⇒ one dispatches/converges, the other is stuck ⇒ co-equivalence FALSE. The 6 closed
-      --     handler cases never exposed it (they all make EQUAL-handler stacks); only the PRODUCER (arbitrary
-      --     related stacks) does. MINIMAL FIX (def change, awaiting decision): handleF clause must (a) relate
-      --     the handlers and (b) re-add the dispatch/resume composition (Biernacki Lemma 2 via CrelCtx +
-      --     plug_append + the blaze §2.3 anti-handler side-condition), OR seam the producer per ADR-0026.
+      --   • some-half (`splitAt = some`, HANDLED): the `h₁=h₂` handleF clause (86a906f) makes `splitAt`
+      --     fire IDENTICALLY on both stacks — `krelS_splitAt_decomp` (PROVEN, this file) gives the SAME
+      --     handler `h` + the outer tails `KrelS`-related at SOME `(C', e')`. The dispatch then closes via
+      --     `coApproxC_le_anti_step` (LR:140) GIVEN a resume relation at `m < n` (build-validated in a
+      --     standalone probe — the THROWS feasibility gate is GREEN). Step:
+      --       `step (Kᵢ, up ℓ op vᵢ) = dispatch = (splitAt).bind (dispatchOn op vᵢ)`.
+      --   THE REMAINING PIECE (the multi-day core): the producer has NO `HasStack` on the stacks (only
+      --     `hK : KrelS`), so the TYPE ALIGNMENT (abort/resume payload type = outer-tail hole type) is NOT
+      --     reconstructible — `krelS_splitAt_decomp`'s `C'` is EXISTENTIAL, not pinned to `F q' A_op`.
+      --     So `KrelS`'s handleF clause must additionally carry a RESUME CONJUNCT (config-level answer-typed
+      --     re-expression of old `Srel` LR:554): for related resume-values at `opRes ℓ op`, the dispatched
+      --     configs relate at `m < n`. The producer EXTRACTS it (via decomp); the 6 CONSUMERS must SUPPLY it
+      --     — `krelS_refl` HAS `HasStack` (produces the typed resume via `crelK_fund`/`crelK_ret`),
+      --     `compatK_handle*` from the body. THROWS supply = `crelK_ret` at the outer tail (zero-shot abort,
+      --     no append, `Kᵢ` discarded REGARDLESS of length). STATE/TXN supply = `krelS_append` (Kᵢ KEPT +
+      --     handler reinstalled: `Kᵢ ++ handleF(state ℓ s')::Kₒ`) + the METERING crux (does the ▷-budget
+      --     compose so the 1 dispatch step stays payable — likely the resume conjunct at `m<n`). Because the
+      --     conjunct lives in the def, ALL consumers must supply it for ALL handler kinds ⇒ append is
+      --     REQUIRED to green the build (not optional), even for a throws-only producer close.
+      --   FALLBACK (ADR-0026 seam): one documented producer sorry if the metering walls after a real attempt.
       intro n δ₁ δ₂ hδ; sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
