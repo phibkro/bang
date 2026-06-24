@@ -43,63 +43,75 @@ open Bang.Surface
 
 /-! ## 1. The discharge ladder as DATA (correctness by construction)
 
-A `law`'s evidence is a value of `Evidence P` for the law's proposition `P`.
-There are exactly two rungs, and BOTH carry their justification:
+A `law` is a UNIVERSAL claim `∀ x, pred x` over a predicate `pred : α → Prop`.
+Its evidence is a value of `Evidence pred` — and BOTH rungs carry a KERNEL-CHECKED
+justification, so neither can be constructed for a predicate that fails:
 
-  * `Evidence.proof  (h : P)`     — the verified rung (proof-first DEFAULT).
-  * `Evidence.descend (d : Descend P)` — the tested rung, an EXPLICIT marked descent.
+  * `Evidence.proof  (h : ∀ x, pred x)` — the VERIFIED rung (proof-first DEFAULT):
+    a proof of the whole claim.
+  * `Evidence.tested reason sample (holds : ∀ x ∈ sample, pred x)` — the TESTED
+    rung: a FINITE sample together with a kernel-checked proof the predicate holds
+    on every element of it. There is NO "trust me" rung.
 
-There is NO third constructor — no "trust me" rung — so a law with no evidence
-is unrepresentable. That is the "no silent pass" rule, made structural. -/
+This is the binding the brief demands: the tested rung's `holds` is real evidence,
+discharged at the call site (by `decide` on a decidable `pred`). A law FALSE on
+its sample makes `holds` unprovable ⇒ the `Law` is UNREPRESENTABLE. The check is
+not a detached `#test` command beside the law — it is a field of the law's value.
+That is the "no silent pass" rule, made structural at BOTH rungs. -/
 
-/-- An explicit, MARKED descent off the verified rung (ADR-0026 §5: descent is
-never silent). `test`/`assert` mirror the surface keywords: `test` descends to a
-`plausible` property test, `assert` to a runtime assertion. Carries `reason` so a
-reader sees WHY the proof was not spent — the descent is documented at its site. -/
-inductive Descend (P : Prop) where
-  | test   (reason : String) : Descend P     -- descend to a `plausible` property test
-  | assert (reason : String) : Descend P     -- descend to a runtime assertion
-  deriving Inhabited
+/-- The evidence a `law` carries, over its predicate `pred : α → Prop`. Proof-first:
+`proof` is the verified rung (proves the universal claim outright); `tested` is the
+marked tested rung — it carries a finite `sample` AND a proof the predicate holds on
+every element of it, so the descent is checked, not asserted. No silent third rung. -/
+inductive Evidence {α : Type} (pred : α → Prop) where
+  | proof  (h : ∀ x, pred x)                            : Evidence pred  -- VERIFIED rung — the default
+  | tested (reason : String) (sample : List α)
+           (holds : ∀ x ∈ sample, pred x)               : Evidence pred  -- TESTED rung — carries its check
 
-/-- The evidence a `law` carries. Proof-first: `proof` is the verified rung (the
-DEFAULT); `descend` is the marked tested rung. No silent third rung. -/
-inductive Evidence (P : Prop) where
-  | proof   (h : P)          : Evidence P     -- VERIFIED rung — the default
-  | descend (d : Descend P)  : Evidence P     -- TESTED rung — explicit marked descent
-
-/-- A first-class `law`: its proposition together with its discharge evidence.
-Bundling `prop` with `evidence` is the enforcement — you cannot have a `Law`
-without discharging it one way or the other. -/
+/-- A first-class `law`: its predicate together with its discharge evidence.
+Bundling `pred` with `evidence` is the enforcement — you cannot have a `Law`
+without discharging it (proof of the claim, or a checked sample) one way or the
+other. The universal CLAIM the law makes is `Law.prop` (`∀ x, pred x`). -/
 structure Law where
   name     : String
-  {prop    : Prop}
-  evidence : Evidence prop
+  {α       : Type}
+  pred     : α → Prop
+  evidence : Evidence pred
 
-/-- Is this law on the VERIFIED rung (discharged by a proof)? Used by the harness
-to REPORT the rung of each law (so a tested-rung descent is visible, not silent). -/
+/-- The universal CLAIM a law makes, regardless of rung: `∀ x, pred x`. On the
+verified rung this is fully proven; on the tested rung it is sampled (the `holds`
+field proves only the finite sample). -/
+def Law.prop (l : Law) : Prop := ∀ x, l.pred x
+
+/-- Is this law on the VERIFIED rung (discharged by a proof of the whole claim)?
+Used by the harness to REPORT the rung of each law (so a tested descent is visible,
+not silent). -/
 def Law.isVerified (l : Law) : Bool :=
   match l.evidence with
-  | .proof _   => true
-  | .descend _ => false
+  | .proof _      => true
+  | .tested ..    => false
 
-/-- The descent reason, if this law descended (else `none`). Surfaces the marked
-descent for the harness's visibility report. -/
+/-- The descent reason + sample size, if this law is on the tested rung (else
+`none`). Surfaces the marked descent for the harness's visibility report. -/
 def Law.descentReason (l : Law) : Option String :=
   match l.evidence with
-  | .proof _              => none
-  | .descend (.test r)    => some s!"test: {r}"
-  | .descend (.assert r)  => some s!"assert: {r}"
+  | .proof _                  => none
+  | .tested reason sample _   => some s!"test ({sample.length} samples): {reason}"
 
-/-- Smart constructor: a law discharged PROOF-FIRST. `mkVerified "antisym" h`
-records the proof `h : P` on the verified rung. This is the default path. -/
-def mkVerified (name : String) {P : Prop} (h : P) : Law :=
-  { name := name, prop := P, evidence := .proof h }
+/-- Smart constructor: a law discharged PROOF-FIRST. `mkVerified "antisym" pred h`
+records the proof `h : ∀ x, pred x` on the verified rung. This is the default path. -/
+def mkVerified (name : String) {α : Type} (pred : α → Prop) (h : ∀ x, pred x) : Law :=
+  { name := name, pred := pred, evidence := .proof h }
 
 /-- Smart constructor: a law that EXPLICITLY DESCENDS to the tested rung. The
-descent is MARKED (the `Descend` value) and documented (`reason`) — never silent.
-The accompanying `#test`/property check lives at the use site (see §4). -/
-def mkTested (name : String) (P : Prop) (reason : String) : Law :=
-  { name := name, prop := P, evidence := .descend (.test reason) }
+descent is MARKED (a `reason`) AND CHECKED: `holds` proves the predicate on every
+element of `sample`, so a law false on its sample cannot be constructed (the
+`holds` obligation is unprovable). At the call site `holds` is discharged by
+`by decide` on a decidable `pred`. The check is a FIELD of the law, not a detached
+command beside it — the binding the brief demands. -/
+def mkTested (name : String) {α : Type} (pred : α → Prop)
+    (reason : String) (sample : List α) (holds : ∀ x ∈ sample, pred x) : Law :=
+  { name := name, pred := pred, evidence := .tested reason sample holds }
 
 
 /-! ## 2. The interface hierarchy `eq → preorder → order` (ops + laws)
@@ -211,27 +223,34 @@ This is the proof-first default in action: simple algebraic laws on lowered defs
 discharge by `decide`/`omega`, so NONE of these descends. -/
 
 /-- `refl: ∀ a, eq a a` — proven by `simp` (`a == a` is `true`). -/
-def intEqRefl : Law := mkVerified "eq.refl" (P := ∀ a : Int, intEq a a = true) (by
+def intEqRefl : Law := mkVerified "eq.refl"
+    (fun a : Int => intEq a a = true) (by
   intro a; simp [intEq])
 
-/-- `sym: ∀ a b, eq a b → eq b a` — proven; `==` is symmetric on `Int`. -/
+/-- `sym: ∀ a b, eq a b → eq b a` — proven; `==` is symmetric on `Int`. The
+predicate ranges over a PAIR `(a, b)` so the law is a single `∀ x, pred x` claim. -/
 def intEqSym : Law := mkVerified "eq.sym"
-    (P := ∀ a b : Int, intEq a b = true → intEq b a = true) (by
-  intro a b h; simp_all [intEq])
+    (fun p : Int × Int => intEq p.1 p.2 = true → intEq p.2 p.1 = true) (by
+  rintro ⟨a, b⟩ h; simp_all [intEq])
 
-/-- `le.refl: ∀ a, le a a` — `a ≤ a`, by `decide`-style `omega`. -/
-def intLeRefl : Law := mkVerified "le.refl" (P := ∀ a : Int, intLe a a = true) (by
+/-- `le.refl: ∀ a, le a a` — `a ≤ a`, by `simp` on `intLe`. -/
+def intLeRefl : Law := mkVerified "le.refl"
+    (fun a : Int => intLe a a = true) (by
   intro a; simp [intLe])
 
-/-- `le.trans: ∀ a b c, le a b → le b c → le a c` — transitivity of `≤`. -/
+/-- `le.trans: ∀ a b c, le a b → le b c → le a c` — transitivity of `≤`, over a
+TRIPLE `(a, b, c)`. -/
 def intLeTrans : Law := mkVerified "le.trans"
-    (P := ∀ a b c : Int, intLe a b = true → intLe b c = true → intLe a c = true) (by
-  intro a b c hab hbc; simp_all [intLe]; omega)
+    (fun t : Int × Int × Int =>
+      intLe t.1 t.2.1 = true → intLe t.2.1 t.2.2 = true → intLe t.1 t.2.2 = true) (by
+  rintro ⟨a, b, c⟩ hab hbc; simp_all [intLe]; omega)
 
-/-- `antisym: ∀ a b, le a b → le b a → eq a b` — THE order law, by `omega`. -/
+/-- `antisym: ∀ a b, le a b → le b a → eq a b` — THE order law, by `omega`, over a
+PAIR `(a, b)`. -/
 def intAntisym : Law := mkVerified "order.antisym"
-    (P := ∀ a b : Int, intLe a b = true → intLe b a = true → intEq a b = true) (by
-  intro a b hab hba; simp_all [intLe, intEq]; omega)
+    (fun p : Int × Int =>
+      intLe p.1 p.2 = true → intLe p.2 p.1 = true → intEq p.1 p.2 = true) (by
+  rintro ⟨a, b⟩ hab hba; simp_all [intLe, intEq]; omega)
 
 /-- The assembled instance: `Int` is an `Order`, every rung's laws discharged
 proof-first. The hierarchy is visible — `intOrder.toPreorderT.toEqT` is the `Eq`
@@ -308,11 +327,16 @@ interpreter's output (`runPair`), discharged PROOF-FIRST by `omega` on `min`/`ma
 This is a real rep-invariant law on a data structure, checked against the verified
 reference. -/
 def orderedPairLaw : Law := mkVerified "OrderedPair.invariant"
-    (P := ∀ a b : Int, ∃ lo hi, runPair a b = some (lo, hi) ∧ lo ≤ hi) (by
-  intro a b
-  refine ⟨min a b, max a b, ?_, ?_⟩
-  · unfold runPair mkPairComp; rfl
-  · omega)
+    (fun p : Int × Int =>
+      match runPair p.1 p.2 with
+      | some (lo, hi) => lo ≤ hi
+      | none          => False) (by
+  rintro ⟨a, b⟩
+  show (match runPair a b with | some (lo, hi) => lo ≤ hi | none => False)
+  have hrun : runPair a b = some (min a b, max a b) := by
+    unfold runPair mkPairComp; rfl
+  rw [hrun]
+  omega)
 
 -- GREEN CHECK: the data-structure law is on the VERIFIED rung (proof-first).
 #guard orderedPairLaw.isVerified
@@ -326,28 +350,46 @@ def orderedPairLaw : Law := mkVerified "OrderedPair.invariant"
 /-! ## 7. ONE explicit DESCENT — proving the marked tested rung WORKS + is visible
 
 To validate that the descent path is real (not just the proof path), we state one
-law via `mkTested` — an EXPLICIT, MARKED descent to the tested rung — and back it
-with a `plausible` `#test`. This is the SAME law as `intLeTrans` (transitivity),
-deliberately re-discharged by sampling to exercise the descent machinery. In real
-use you'd descend only when a proof is genuinely out of reach; here it demonstrates
-the seam. The descent is VISIBLE in `dischargeReport` (it prints `↓ … DESCENT`). -/
+law via `mkTested` — an EXPLICIT, MARKED descent to the tested rung. This is the
+SAME predicate as `intLeTrans` (transitivity), deliberately re-discharged by a
+FINITE SAMPLE to exercise the descent machinery. In real use you'd descend only
+when a proof is genuinely out of reach; here it demonstrates the seam.
 
-open Plausible
+The tested rung's check is BOUND to the law BY CONSTRUCTION: `mkTested` demands a
+`holds : ∀ x ∈ sample, pred x`, discharged here by `by decide` over the concrete
+sample. A law false on this sample could not be constructed (see §7-TEETH). The
+descent is VISIBLE in `dischargeReport` (it prints `↓ … DESCENT`). -/
 
-/-- The transitivity law, DESCENDED to the tested rung (marked, with a reason).
-`isVerified` is `false`; `dischargeReport` prints it as a descent — never silent. -/
+/-- The transitivity predicate, DESCENDED to the tested rung (marked, with a reason)
+and CHECKED on a real sample of triples. `isVerified` is `false`; `dischargeReport`
+prints it as a descent — never silent — and the `holds` field (by `decide`) is the
+binding that makes the tested verdict real, not asserted. -/
 def intLeTransTested : Law :=
   mkTested "le.trans (descended)"
-    (∀ a b c : Int, intLe a b = true → intLe b c = true → intLe a c = true)
+    (fun t : Int × Int × Int =>
+      intLe t.1 t.2.1 = true → intLe t.2.1 t.2.2 = true → intLe t.1 t.2.2 = true)
     "demonstrates the explicit tested-rung descent seam"
+    [(0, 1, 2), (-3, 0, 7), (5, 5, 9), (2, 2, 2)]
+    (by decide)
 
 -- The descent is VISIBLE: this law reports as tested, not verified.
 #guard !intLeTransTested.isVerified
 #guard (match intLeTransTested.descentReason with | some _ => true | none => false)
 
--- The `plausible` property test that BACKS the descent (the tested-rung check).
--- `#test` samples and throws at elaboration on a counter-example (build-fail).
-#test ∀ a b c : Int, !(intLe a b && intLe b c) || intLe a c
+/-! ### §7-TEETH — the binding has teeth (real-journey gate)
+
+The headline deliverable: demonstrate that a law FALSE on its sample genuinely
+CANNOT reach the tested rung. `mkTested` requires `holds : ∀ x ∈ sample, pred x`;
+if that obligation is REFUTABLE, `mkTested … (by decide)` cannot elaborate — the
+tested rung is unreachable for a false-on-sample law. We prove the refutation
+directly: the predicate `fun x => x < 0` is false on the sample `[3]`, so its
+`holds` obligation is `¬ (∀ x ∈ [3], x < 0)` — provable, hence the obligation it
+negates is UNPROVABLE, hence `mkTested` would reject it. -/
+
+/-- TEETH: a law FALSE on its sample cannot reach the tested rung — its `holds`
+obligation `∀ x ∈ [3], x < 0` is refutable, so `mkTested … (by decide)` for this
+predicate+sample would NOT elaborate. The bad state is unrepresentable. -/
+example : ¬ (∀ x ∈ [(3 : Int)], x < 0) := by decide
 
 /-! ## 8. The discharge report — the loop's VISIBLE output
 
