@@ -25,7 +25,7 @@ Two fully-general closes were build-confirmed DEAD before this decision:
 relation-level primitive `NoWrapMiss` is landed; the sorryAx-zero close (which requires a TYPED
 `CrelK`) is build-pinned and deferred to a dedicated kernel session.
 
-### What landed (relation level — `1d715cb`, whole-tree green)
+### What landed (relation level — `2b4479b`, whole-tree green)
 
 `Bang/Operational.lean` gains a standalone predicate:
 
@@ -39,7 +39,7 @@ NoWrapMiss : EvalCtx → Label → OpId → Prop
 `NoWrapMiss K ℓ op` says the dispatch of `(ℓ, op)` reaches its catcher **without passing through a
 non-catching handler** (the captured continuation up to the catcher is handler-free). `¬ NoWrapMiss`
 is *exactly* the splitAt-wrap-MISS edge. The kernel, `KrelS`, and the whole relation stay **pristine
-at `eb599b6`** — `NoWrapMiss` touches nothing else.
+at `e755afa`** — `NoWrapMiss` touches nothing else.
 
 ### Covered / excluded
 
@@ -88,7 +88,7 @@ deferred together with it as the **"nested-wrap resumption" kernel project** (se
 
 ## Consequences
 
-- The kernel and `KrelS` stay pristine (`eb599b6`); `NoWrapMiss` is the durable relation-level artifact.
+- The kernel and `KrelS` stay pristine (`e755afa`); `NoWrapMiss` is the durable relation-level artifact.
 - `lr_sound`/`lr_fundamental` retain the single documented `krelS_splitAt_decomp` MISS sorry — the
   honest moat scope, the verified domain being everything except pass-through resumption.
 - The path to sorryAx-zero is fully specified + de-risked-by-isolation: the typed-`CrelK` reshape, a

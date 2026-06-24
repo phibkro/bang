@@ -47,7 +47,7 @@ The ONE research question, in 6 new-arch spots that are all THE SAME: `compatK_h
 When (g) lands AND the append crux resolves (research or seam): `lr_sound`/`lr_fundamental` →
 trusted-three = the full contextual-equivalence moat.
 
-## (g) STATUS — LANDED (cap45-finish: `812e9da` LR, `6764d22` Compat, `89e98e0` Spec)
+## (g) STATUS — LANDED (cap45-finish: `fc4a168` LR, `08f5442` Compat, `07aee4a` Spec)
 
 The body-swap is DONE and build-green. Old flat `Vrel`/`Crel`/`Krel`/`Srel` + `crel_fund`/`vrel_fund`/
 `krel_refl` + old compat cores DELETED (grep gate clean). Frozen `Vrel`/`Crel`/`EnvRel` re-pointed to the
@@ -70,13 +70,13 @@ standard contextual-equivalence quantifier — a `ctxApprox` def change), then `
 krelS_refl` traces to the append crux; or (b) add a `HasStack` hypothesis to `lr_sound` (frozen-statement
 change). `lr_sound` left as honest `sorry` with the precise blocker comment at `Spec.lean:188`.
 
-## ◊4.5b-answertrack — the scoped-seam (ADR-0043, branch `cap45-answertrack` off `eb599b6`)
+## ◊4.5b-answertrack — the scoped-seam (ADR-0043, branch `cap45-answertrack` off `e755afa`)
 
-The append crux + (g) + the `lr_sound` `HasStack`-typing escalation are ALL CLOSED (in `eb599b6`):
+The append crux + (g) + the `lr_sound` `HasStack`-typing escalation are ALL CLOSED (in `e755afa`):
 `lr_sound`/`lr_fundamental` build green, `sorryAx` traces to EXACTLY ONE spot — `krelS_splitAt_decomp`'s
 handleF-MISS (the nested-wrapping-handler edge, `Compat.lean:1474`). This branch scoped that last edge.
 
-### LANDED (`1d715cb`, whole-tree green)
+### LANDED (`2b4479b`, whole-tree green)
 - **`NoWrapMiss : EvalCtx → Label → OpId → Prop`** (`Operational.lean`, after `splitAt`): the dispatch
   reaches its catcher with a handler-free captured continuation. Standalone; kernel/`KrelS` PRISTINE.
 - **ADR-0043**: the moat scope. COVERED = all contexts incl. legitimate handler stacking (each op at its
