@@ -27,8 +27,12 @@ it. Fresh-context job (Context-Rot risk on a relation-def reshape).
 
 ## THE READY PROGRAM — append's (a)-(d), ~68 refs, multi-session, fresh-context
 
-- **(a) Relax the handleF clause** (LR:505-506): state/txn require stored-state/heap VrelK-RELATED
-  (throws stays equal; or a uniform handler-relation predicate). [task #12]
+- **(a) Relax the handleF clause** (LR:505-506) — **build-CONFIRMED viable by append** (the def + the
+  reshaped `krelS_handleF` simp-lemma COMPILED cleanly): replace `h₁=h₂` with a `HandlerRel` condition —
+  throws = label-eq; state = label-eq + `∃ S, VrelK n S s₁ s₂`; txn = label-eq + heap-len-eq + pointwise
+  `VrelK`. WF-SAFE: `VrelK n` here is a role-1→role-0 drop, identical to the existing appF cap (checked
+  against the `(n,role,stackLen,sizeOf)` metric). The simp-lemma proves via `cases h <;> cases h' <;>
+  simp only [KrelS, HandlerRel]`. [task #12 — designed + compile-checked]
 - **(b) Extend `krelS_splitAt_decomp`** (Compat:1072) to ALSO return the inner-prefix relation
   `K₁ᵢ ~ K₂ᵢ` (+ anti-handler side-cond: Kᵢ has no catching frame — structurally true from splitAt).
 - **(c) Reshape the resume conjunct** to quantify over related captured continuations `Kᵢ ~ Kᵢ'` and

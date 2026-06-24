@@ -48,7 +48,7 @@ build with a hidden `sorryAx` is a false done.
 | **PATHs** (`paths/PATH-*.md`) | SURVEY | on work-unit completion | stale PATH describing finished work (litter) | prune/archive on completion. *Climb candidate.* |
 | **`OPEN_QUESTIONS.md`** Q-statuses | TEST | per ADR resolving a Q | a resolved Q still reads OPEN (→ re-derivation, as happened with Q19) | `adr-check` cross-ref (ADR `Resolves: Qn` ⟺ Qn non-OPEN) |
 | **`references/` + `refs.bib`** | SURVEY | on citation add | mis-cited paper (e.g. the Garby-Hutton-Bahr mislabel) | hand-survey. *Climb candidate.* |
-| **Worktrees / branches** (multi-agent isolation) | OP | on agent completion / quiesce | sprawl (dead worktrees + branches accumulate) | `git worktree remove` + branch delete on completion; one-writer-per-tree |
+| **Worktrees / branches** (multi-agent isolation) | OP | on agent completion / quiesce | sprawl (dead worktrees + branches) **AND silent discard of a live writer's uncommitted WIP** | teardown-safety RULE below; one-writer-per-tree |
 | **git object store** | OP (operator-gated) | when ALL writers quiesce | dangling-object bloat (benign corruption from concurrent-git races) | `git gc`/repack — NEVER while a worktree has a live writer |
 | **`archive/`** (retired K2 matrix etc.) | SURVEY | rare | archive bloat / resurrection confusion | history-preserving; out of the build |
 
@@ -88,6 +88,28 @@ enforces it?" — and climb:
 - a new derived doc/index → generate it + a `--check` in `just verify` (like the ADR ledger).
 - a new theorem → its axiom set is auto-audited; a new sorry → document + track it or it fails the gate.
 - a new cross-reference between two docs → a cross-ref test (like Q⟺ADR), not "remember to sync".
+
+## Worktree teardown safety (hard-won 2026-06-24 — a force-remove discarded a live writer's WIP)
+
+Worktree cleanup is a **destructive op**, and the multi-agent setup makes "is this worktree done?"
+genuinely hard (agents can't be reliably stopped; idle ≠ stopped; stand-down messages are async). The
+rule, structural not remembered:
+
+```
+1. NEVER blanket `--force` a destructive git op (worktree remove, branch -D, reset --hard, prune,
+   gc --prune=now). Default to the NON-forcing form — `git worktree remove` REFUSES on a dirty tree,
+   which is the fail-loud guardrail. Force ONE target only after `git status` on THAT worktree confirms
+   its dirtiness is expendable.
+2. Teardown-safety = working-tree CLEAN (`git status`) + writer CONFIRMED-STOPPED. NOT committed-
+   subsumption (`git rev-list ^trunk = 0`) — that answers "are the commits redundant", and says NOTHING
+   about uncommitted work or whether a writer is live. Uncommitted WIP is invisible to rev-list.
+3. If a worktree has uncommitted changes, STOP — assume a live writer. Removing it silently discards
+   their work (this is exactly what happened: `rev-list = 0` looked safe, but ~1hr of uncommitted
+   reshape WIP was force-discarded).
+```
+
+The friction of a command that *refuses* is the safety feature — don't suppress it. (Cross-project
+memory: `parallel-agent-writes-need-worktrees`.)
 
 ## Survey-residue that could still climb (the maintenance backlog for the machinery itself)
 
