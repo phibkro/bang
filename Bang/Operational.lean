@@ -260,6 +260,19 @@ def splitAt : EvalCtx → Label → OpId → Option (EvalCtx × Handler × EvalC
   | (fr :: K), ℓ, op =>
       (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
 
+/-- ◊4.5b-answertrack SCOPED-SEAM (ADR-0043): `(ℓ, op)` does NOT "pass through" a non-catching handler
+before reaching its catcher — the captured continuation up to the catching handler contains NO handler
+frame. Mirrors `splitAt`'s recursion: a `handleF h` frame must either CATCH `(ℓ, op)` (split point,
+`Kᵢ = []`) or have NO catcher below it (`splitAt K = none`, op unhandled = stuck). The EXCLUDED edge
+(`splitAt`-wrap-MISS) is exactly `¬ NoWrapMiss`: a non-catching `handleF` with a deeper catcher — the
+captured continuation then wraps that handler, the inverse-strip case `krelS_splitAt_decomp` cannot
+certify (answer-determinism FALSE). COVERED: every op caught by the NEAREST enclosing handler. -/
+def NoWrapMiss : EvalCtx → Label → OpId → Prop
+  | [], _, _ => True
+  | (.handleF h :: K), ℓ, op =>
+      handlesOp h ℓ op = true ∨ splitAt K ℓ op = none
+  | (_ :: K), ℓ, op => NoWrapMiss K ℓ op
+
 /-- Read TVar index `i` (a payload `vint i`) out of a value; `none` if the payload is malformed. -/
 def tvarIdx : Val → Option Nat
   | .vint n => if n ≥ 0 then some n.toNat else none
