@@ -2709,6 +2709,214 @@ theorem sim_txn_handle (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.V
           simp only [CalcVM.evalD, CalcVM.THeap.push]
           rw [ha]; exact hb
 
+/-! ### Assembly: splitAt decomposition + the dispatch transfer lemma `evalD_plug_dispatch`. -/
+
+theorem plug_append (A B : Bang.EvalCtx) (c : Bang.Comp) :
+    plug (A ++ B) c = plug B (plug A c) := by
+  induction A generalizing c with
+  | nil => simp [plug]
+  | cons fr A ih => rw [List.cons_append, plug_cons, plug_cons, ih]
+
+-- The inner prefix Kᵢ from a splitAt catches NOTHING for (ℓ,op): induction on K.
+theorem CalcVM.splitAt_inner_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {h : Bang.Handler},
+      Bang.splitAt K ℓ op = some (Kᵢ, h, Kₒ) → Bang.splitAt Kᵢ ℓ op = none := by
+  intro K
+  induction K with
+  | nil => intro Kᵢ Kₒ h hs; simp [Bang.splitAt] at hs
+  | cons fr K ih =>
+      intro Kᵢ Kₒ h hs
+      cases fr with
+      | handleF h0 =>
+          simp only [Bang.splitAt] at hs
+          by_cases hc : Bang.handlesOp h0 ℓ op = true
+          · rw [if_pos hc] at hs; simp only [Option.some.injEq, Prod.mk.injEq] at hs
+            obtain ⟨rfl, _, _⟩ := hs; simp [Bang.splitAt]
+          · rw [if_neg hc] at hs
+            cases hsp : Bang.splitAt K ℓ op with
+            | none => rw [hsp] at hs; simp at hs
+            | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                        obtain ⟨rfl, rfl, rfl⟩ := hs
+                        simp only [Bang.splitAt, if_neg hc, ih hsp, Option.map_none]
+      | letF N =>
+          simp only [Bang.splitAt] at hs
+          cases hsp : Bang.splitAt K ℓ op with
+          | none => rw [hsp] at hs; simp at hs
+          | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                      obtain ⟨rfl, rfl, rfl⟩ := hs
+                      simp only [Bang.splitAt, ih hsp, Option.map_none]
+      | appF w =>
+          simp only [Bang.splitAt] at hs
+          cases hsp : Bang.splitAt K ℓ op with
+          | none => rw [hsp] at hs; simp at hs
+          | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+                      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+                      obtain ⟨rfl, rfl, rfl⟩ := hs
+                      simp only [Bang.splitAt, ih hsp, Option.map_none]
+
+-- splitAt none (for a get/put op) ⇒ no state ℓ frame ⇒ CalcVM.ctxStates get? none. Induction on Kᵢ.
+theorem ctxStates_none_of_splitAt_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
+    (hop : op = "get" ∨ op = "put") :
+    ∀ {Kᵢ : Bang.EvalCtx}, Bang.splitAt Kᵢ ℓ op = none → (CalcVM.ctxStates Kᵢ).get? ℓ = none := by
+  intro Kᵢ
+  induction Kᵢ with
+  | nil => intro _; simp [CalcVM.ctxStates, CalcVM.SStore.get?]
+  | cons fr Kᵢ ih =>
+      intro hns
+      cases fr with
+      | handleF h0 =>
+          cases h0 with
+          | state ℓ0 s0 =>
+              by_cases hc : ℓ0 = ℓ
+              · subst hc
+                exfalso
+                have hcatch : Bang.handlesOp (Bang.Handler.state ℓ0 s0) ℓ0 op = true := by
+                  cases hop with | inl h => subst h; simp [Bang.handlesOp] | inr h => subst h; simp [Bang.handlesOp]
+                simp only [Bang.splitAt, if_pos hcatch] at hns
+                exact absurd hns (by simp)
+              · simp only [Bang.splitAt, if_neg (by simp [Bang.handlesOp, hc] : ¬ Bang.handlesOp (Bang.Handler.state ℓ0 s0) ℓ op = true), Option.map_eq_none_iff] at hns
+                simp only [CalcVM.ctxStates, CalcVM.SStore.get?, List.find?, hc, decide_false]
+                simpa [CalcVM.SStore.get?] using ih hns
+          | throws ℓ0 =>
+              have hnt : ¬ Bang.handlesOp (Bang.Handler.throws ℓ0) ℓ op = true := by
+                cases hop with | inl h => subst h; simp [Bang.handlesOp] | inr h => subst h; simp [Bang.handlesOp]
+              simp only [Bang.splitAt, if_neg hnt, Option.map_eq_none_iff] at hns
+              simp only [CalcVM.ctxStates]; exact ih hns
+          | transaction ℓ0 Θ0 =>
+              have hnt : ¬ Bang.handlesOp (Bang.Handler.transaction ℓ0 Θ0) ℓ op = true := by
+                cases hop with | inl h => subst h; simp [Bang.handlesOp] | inr h => subst h; simp [Bang.handlesOp]
+              simp only [Bang.splitAt, if_neg hnt, Option.map_eq_none_iff] at hns
+              simp only [CalcVM.ctxStates]; exact ih hns
+      | letF N =>
+          simp only [Bang.splitAt, Option.map_eq_none_iff] at hns
+          simp only [CalcVM.ctxStates]; exact ih hns
+      | appF u =>
+          simp only [Bang.splitAt, Option.map_eq_none_iff] at hns
+          simp only [CalcVM.ctxStates]; exact ih hns
+
+theorem ctxTxns_none_of_splitAt_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
+    (hop : CalcVM.isTxnOp op = true) :
+    ∀ {Kᵢ : Bang.EvalCtx}, Bang.splitAt Kᵢ ℓ op = none → (CalcVM.ctxTxns Kᵢ).get? ℓ = none := by
+  intro Kᵢ
+  induction Kᵢ with
+  | nil => intro _; simp [CalcVM.ctxTxns, CalcVM.THeap.get?]
+  | cons fr Kᵢ ih =>
+      intro hns
+      cases fr with
+      | handleF h0 =>
+          cases h0 with
+          | transaction ℓ0 Θ0 =>
+              by_cases hc : ℓ0 = ℓ
+              · subst hc
+                exfalso
+                have hcatch : Bang.handlesOp (Bang.Handler.transaction ℓ0 Θ0) ℓ0 op = true := by
+                  rcases CalcVM.isTxnOp_iff.mp hop with rfl|rfl|rfl <;> simp [Bang.handlesOp]
+                simp only [Bang.splitAt, if_pos hcatch] at hns
+                exact absurd hns (by simp)
+              · simp only [Bang.splitAt, if_neg (by simp [Bang.handlesOp, hc] : ¬ Bang.handlesOp (Bang.Handler.transaction ℓ0 Θ0) ℓ op = true), Option.map_eq_none_iff] at hns
+                simp only [CalcVM.ctxTxns, CalcVM.THeap.get?, List.find?, hc, decide_false]
+                simpa [CalcVM.THeap.get?] using ih hns
+          | state ℓ0 s0 =>
+              have hnt : ¬ Bang.handlesOp (Bang.Handler.state ℓ0 s0) ℓ op = true := by
+                rcases CalcVM.isTxnOp_iff.mp hop with rfl|rfl|rfl <;> simp [Bang.handlesOp]
+              simp only [Bang.splitAt, if_neg hnt, Option.map_eq_none_iff] at hns
+              simp only [CalcVM.ctxTxns]; exact ih hns
+          | throws ℓ0 =>
+              have hnt : ¬ Bang.handlesOp (Bang.Handler.throws ℓ0) ℓ op = true := by
+                rcases CalcVM.isTxnOp_iff.mp hop with rfl|rfl|rfl <;> simp [Bang.handlesOp]
+              simp only [Bang.splitAt, if_neg hnt, Option.map_eq_none_iff] at hns
+              simp only [CalcVM.ctxTxns]; exact ih hns
+      | letF N =>
+          simp only [Bang.splitAt, Option.map_eq_none_iff] at hns
+          simp only [CalcVM.ctxTxns]; exact ih hns
+      | appF u =>
+          simp only [Bang.splitAt, Option.map_eq_none_iff] at hns
+          simp only [CalcVM.ctxTxns]; exact ih hns
+
+-- dispatchOn for a txn op on a transaction frame: resumes Kᵢ ++ handleF (transaction ℓ Θ') :: Kₒ.
+theorem dispatchOn_txn (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) (Θ : List Bang.Val)
+    (Kᵢ Kₒ : Bang.EvalCtx) (hop : CalcVM.isTxnOp op = true) :
+    Bang.dispatchOn op v (Kᵢ, Bang.Handler.transaction ℓ Θ, Kₒ)
+      = some (Kᵢ ++ Bang.Frame.handleF (Bang.Handler.transaction ℓ (CalcVM.txnService op v Θ).2) :: Kₒ,
+              .ret (CalcVM.txnService op v Θ).1) := by
+  rcases CalcVM.isTxnOp_iff.mp hop with rfl | rfl | rfl
+  · simp [Bang.dispatchOn, CalcVM.txnService]
+  · simp [Bang.dispatchOn, CalcVM.txnService, (by decide : ("readTVar" == "newTVar") = false)]
+  · simp only [Bang.dispatchOn, CalcVM.txnService, (by decide : ("writeTVar" == "newTVar") = false),
+      (by decide : ("writeTVar" == "readTVar") = false), Bool.false_eq_true, if_false,
+      if_neg (by decide : ¬ ("writeTVar" = "newTVar")), if_neg (by decide : ¬ ("writeTVar" = "readTVar"))]
+    cases v with
+    | pair iv w => simp
+    | _ => simp
+
+-- THE DISPATCH TRANSFER LEMMA. dispatch K = some (K', focus); evalD of plug K' focus reaches
+-- (ret w',[],[]) ⇒ so does plug K (up ℓ op v). Case on splitAt + the handler kind.
+theorem evalD_plug_dispatch (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val)
+    {K' : Bang.EvalCtx} {focus : Bang.Comp} {w' : Bang.Val} {n : Nat}
+    (hd : Bang.dispatch K ℓ op v = some (K', focus))
+    (hn : CalcVM.evalD n [] [] (plug K' focus) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.up ℓ op v)) = some (.term (.ret w'), [], []) := by
+  simp only [Bang.dispatch] at hd
+  cases hsp : Bang.splitAt K ℓ op with
+  | none => rw [hsp] at hd; simp at hd
+  | some t =>
+      obtain ⟨Kᵢ, h, Kₒ⟩ := t
+      rw [hsp] at hd
+      simp only [Option.bind_some] at hd
+      have hrec : Kᵢ ++ Bang.Frame.handleF h :: Kₒ = K := CalcVM.splitAt_reconstruct hsp
+      have hinner : Bang.splitAt Kᵢ ℓ op = none := CalcVM.splitAt_inner_none hsp
+      -- plug K (up ℓ op v) = plug Kₒ (handle h (plug Kᵢ (up ℓ op v)))
+      have hplugK : plug K (.up ℓ op v) = plug Kₒ (.handle h (plug Kᵢ (.up ℓ op v))) := by
+        rw [← hrec, plug_append, plug_cons, Bang.Frame.wrapStep]
+      -- common: from splitAt, handlesOp h ℓ op = true (h IS the catcher).
+      have hcatch : Bang.handlesOp h ℓ op = true := CalcVM.splitAt_handles hsp
+      cases h with
+      | throws ℓ' =>
+          -- handlesOp (throws ℓ') ℓ op = (ℓ'=ℓ)&&(op="raise") = true ⇒ ℓ'=ℓ, op="raise".
+          simp only [Bang.handlesOp, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hcatch
+          obtain ⟨rfl, rfl⟩ := hcatch
+          simp only [Bang.dispatchOn] at hd
+          simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
+          rw [hplugK]
+          exact evalD_plug_sim (sim_abort_handle ℓ' v hinner) hn
+      | state ℓ' s =>
+          simp only [Bang.handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
+            beq_iff_eq] at hcatch
+          obtain ⟨rfl, hgp⟩ := hcatch
+          have hns : (CalcVM.ctxStates Kᵢ).get? ℓ' = none :=
+            ctxStates_none_of_splitAt_none hgp hinner
+          rw [hplugK]
+          rcases hgp with rfl | rfl
+          · -- op = "get"
+            simp only [Bang.dispatchOn, beq_self_eq_true, if_true] at hd
+            simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
+            rw [plug_append, plug_cons, Bang.Frame.wrapStep] at hn
+            exact evalD_plug_sim (sim_get_handle ℓ' s v hns) hn
+          · -- op = "put"
+            simp only [Bang.dispatchOn, if_neg (by decide : ¬ ("put" == "get") = true)] at hd
+            simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
+            rw [plug_append, plug_cons, Bang.Frame.wrapStep] at hn
+            exact evalD_plug_sim (sim_put_handle ℓ' s v hns) hn
+      | transaction ℓ' Θ =>
+          simp only [Bang.handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
+            beq_iff_eq] at hcatch
+          obtain ⟨rfl, hgp⟩ := hcatch
+          have hopt : CalcVM.isTxnOp op = true := by
+            rcases hgp with (rfl | rfl) | rfl
+            · rfl
+            · rfl
+            · rfl
+          have hns : (CalcVM.ctxTxns Kᵢ).get? ℓ' = none := ctxTxns_none_of_splitAt_none hopt hinner
+          rw [hplugK]
+          -- dispatchOn transaction: K' = Kᵢ ++ handleF (transaction ℓ' Θ') :: Kₒ, focus = ret r.
+          have hres := dispatchOn_txn ℓ' op v Θ Kᵢ Kₒ hopt
+          rw [hres] at hd
+          simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
+          rw [plug_append, plug_cons, Bang.Frame.wrapStep] at hn
+          exact evalD_plug_sim (sim_txn_handle ℓ' op v Θ hopt hns) hn
+
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
 induction on the small-step fuel `F`. -/
@@ -2789,12 +2997,18 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 exact evalD_plug_force K M n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | up ℓ op v0 =>
-            -- DISPATCH: (K, up ℓ op v0) ↦ dispatch K ℓ op v0. The reverse of run_evalD's raise-part
-            -- (splitAt continuation-capture + state/txn-resume/throws-abort + the σ↔K/τ↔K
-            -- correspondences). The remaining GAP-2 piece — needs a reverse-dispatchRun transfer
-            -- lemma (`evalD_plug_dispatch`) mirroring run_evalD's `.2` over `ctxNetEffect`/`CtxCorr`/
-            -- `CtxTxnCorr`. Multi-session; the spine (store-parametric Sim + Sim.handle) is in place.
-            sorry
+            -- DISPATCH: (K, up ℓ op v0) ↦ dispatch K ℓ op v0 (the reverse of run_evalD's raise-part).
+            -- splitAt continuation-capture + state/txn-resume/throws-abort, discharged by the dispatch
+            -- transfer lemma `evalD_plug_dispatch` (the get/put/txn handle-Sims + the abort Raises-fwd).
+            simp only [Source.step] at hstep
+            cases hdsp : Bang.dispatch K ℓ op v0 with
+            | none => rw [hdsp] at hstep; exact absurd hstep.symm (by simp [Config.run])
+            | some Kf =>
+                obtain ⟨K', focus⟩ := Kf
+                rw [hdsp] at hstep
+                have hrun' : Config.run F' (K', focus) = Result.done v := hstep.symm
+                obtain ⟨n, hn⟩ := ih F' (by omega) K' focus v hrun'
+                exact evalD_plug_dispatch K ℓ op v0 hdsp hn
         | handle h M =>
             -- PUSH: (K, handle h M) ↦ (handleF h :: K, M). plug (handleF h :: K) M = plug K (handle h M),
             -- so this closes DIRECTLY (like letC/app PUSH) — NO σ/τ threading at the reverse-bridge level
