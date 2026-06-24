@@ -8,6 +8,16 @@
 
 ## Position
 
+> **★ ACTIVE DIRECTION (decided 2026-06-25) — the typed + static-dispatch PIVOT (ADR-0045).** The ◊4.5b
+> resume-edge (ADR-0043's "verified-final" seam) is an ARTIFACT of dynamic dispatch. Three build-gated spikes
+> + two fact-checked deep-research sweeps established: a STATIC-link kernel dispatch (`perform cap`/`staticSplit`,
+> evidence on branch `static-dispatch-spike@b1330db`) **dissolves the edge** (cap=0 untyped, structural), the
+> pivot stays inside graded CBPV (bounded — Levy types the CK machine), and it preserves set-rows with no
+> polymorphism (`setrow-tension-spike@f92a504`, SETS-PRESERVED). DECISION COMMITTED: pivot to a TYPED LR (re-index
+> Vτ/Cτ/Tτ, same Nat-step+▷ substrate) + STATIC/capability dispatch; dynamic dispatch → a tested shell macro.
+> Implementation plan: **`paths/PATH-typed-static-pivot.md`** (multi-session; LR re-index is the bulk). Reframes
+> ◊4.5b below: the seam is no longer "final" — it dissolves under the pivot. Architecture: `docs/notes/kernel-shell-library.md`.
+
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
 ◊2 ✓ Kernel frozen v1 (GATE MET)  ── 2026-06-22. STD block proven on the de Bruijn
