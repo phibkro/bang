@@ -345,7 +345,12 @@ def Vrel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
   | _,     .unit,    v₁, v₂ => BaseRel (Eff := Eff) (Mult := Mult) VTy.unit v₁ v₂
   | _,     .int,     v₁, v₂ => BaseRel (Eff := Eff) (Mult := Mult) VTy.int v₁ v₂
   | n,     .U φ B,   v₁, v₂ =>
-      ∃ c₁ c₂, v₁ = Val.vthunk c₁ ∧ v₂ = Val.vthunk c₂ ∧ Crel n B φ c₁ c₂
+      -- ◊4.5 STATEMENT_CHANGE_OK="◊4.5 Vrel U-clause ∀j≤n". DOWNWARD-CLOSED thunk relation: the forced
+      -- computations are `Crel j`-related at EVERY `j ≤ n`, not just at `n`. This makes `Vrel`-down
+      -- STRUCTURAL (quantifier-restriction `{j≤m} ⊆ {j≤n}`), sidestepping the `Vrel (U φ B)` → `Crel`-down
+      -- → `Krel`-up (false under the `∀j≤n` Krel) route that blocked `krel_appF_intro`'s arrow half. The
+      -- Kripke continuation IHs (`∀j≤n, Vrel j → Crel j`) consume this at the matching index.
+      ∃ c₁ c₂, v₁ = Val.vthunk c₁ ∧ v₂ = Val.vthunk c₂ ∧ ∀ j, j ≤ n → Crel j B φ c₁ c₂
   | n,     .sum A B, v₁, v₂ =>
       (∃ w₁ w₂, v₁ = Val.inl w₁ ∧ v₂ = Val.inl w₂ ∧ Vrel n A w₁ w₂) ∨
       (∃ w₁ w₂, v₁ = Val.inr w₁ ∧ v₂ = Val.inr w₂ ∧ Vrel n B w₁ w₂)
@@ -357,6 +362,15 @@ def Vrel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
       ∃ w₁ w₂, v₁ = Val.fold w₁ ∧ v₂ = Val.fold w₂ ∧ Vrel n (VTy.unrollMu A) w₁ w₂
   | _,     .tvar _,  _,  _  => False
 termination_by n A _ _ => (n, sizeOf A, 3)
+decreasing_by
+  -- ◊4.5: the new U-clause edge is `Crel j B φ` at `j ≤ n` (measure `(j, sizeOf B, 2)` vs Vrel's
+  -- `(n, sizeOf (U φ B), 3)`). `j < n` drops the index; `j = n` drops on `sizeOf B < sizeOf (U φ B)`.
+  -- The structural sub-type edges (sum/prod/mu) auto-discharge. Try auto first, then the j-split.
+  all_goals
+    first
+      | decreasing_tactic
+      | (rcases Nat.lt_or_eq_of_le ‹_ ≤ _› with hlt | rfl <;>
+          first | (simp_wf; exact Prod.Lex.left _ _ hlt) | (simp_wf; decreasing_tactic))
 
 /-- Computation relation `E⟦C/ε⟧η` (Biernacki Fig 7), the BIORTHOGONAL closure: two
 computations relate iff they co-behave (`CoApprox = Obs`) under every `Krel`-related pair
@@ -376,22 +390,31 @@ through related values OR related stuck terms" clause. -/
 def Krel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] : Nat → CTy Eff Mult → Eff → Stack → Stack → Prop
   | n, C, ε, K₁, K₂ =>
-      (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel n A v₁ v₂ →
+      -- ◊4.5 (ADR-0039): DOWNWARD-CLOSED `∀ j ≤ n` (IxFree/COFE monotone reading — Biernacki §line-555:
+      -- `A ⇒ B` valid at n iff `∀k≤n. Aₖ→Bₖ`; ahmed-esop06 Fig 3 `Rel τ` is `∀i≤j`-closed). Makes
+      -- `Krel`-monotonicity FREE (subset of the `∀ j ≤ n`) — what the μ/resume `▷`-anti-reduction needs
+      -- (`Crel m → Crel (m+1)` via `Krel (m+1) → Krel m`). The `∀ j ≤ n` over the implications dissolves
+      -- the Srel-resume contravariance (a relation-as-PREMISE checked at every `j ≤ n` is monotone). The
+      -- arrow clause (ADR-0038 PEELING) routes `Krel j (arr q A B) → Krel j B` (`sizeOf B < sizeOf (arr)`).
+      ∀ j, j ≤ n →
+      (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel j A v₁ v₂ →
         CoApprox (Stack.plug K₁ (Comp.ret v₁)) (Stack.plug K₂ (Comp.ret v₂)))
-      ∧ (∀ c₁ c₂, Srel n C ε K₁ K₂ c₁ c₂ →
+      ∧ (∀ c₁ c₂, Srel j C ε K₁ K₂ c₁ c₂ →
         CoApprox (Stack.plug K₁ c₁) (Stack.plug K₂ c₂))
-      -- ARROW-OBSERVATION clause (ADR-0038 verdict A, PEELING form). The EXTENDING form
-      -- (`Krel n B ε (appF w::K₁) (appF w::K₂)`) hit a DOUBLE-appF wall in `krel_appF_intro`; the
-      -- peeling form says instead: an `arr q A B`-typed observation context IS an `appF w`-capped stack
-      -- whose remainder is `Krel`-related at the codomain `(B, ε)` with a `Vrel`-related closed arg `w`.
-      -- `compat_app`/`krel_appF_intro` build it directly (w := the applied arg, K' := the ambient stack),
-      -- no recursion. The empty stack is NOT arrow-observable (a `lam` is stuck at `[]`) — so
-      -- `krel_nil_succ` restricts to returner types (`C = F q A`); whole-program answer contexts are
-      -- always returners. WF: routes `Krel n (arr q A B)` → `Krel n B`, `sizeOf B < sizeOf (arr q A B)`. -/
       ∧ (∀ q A B, C = CTy.arr q A B →
           ∃ w₁ w₂ K₁' K₂', K₁ = Frame.appF w₁ :: K₁' ∧ K₂ = Frame.appF w₂ :: K₂' ∧
-            Val.Closed w₁ ∧ Val.Closed w₂ ∧ Vrel n A w₁ w₂ ∧ Krel n B ε K₁' K₂')
+            Val.Closed w₁ ∧ Val.Closed w₂ ∧ Vrel j A w₁ w₂ ∧ Krel j B ε K₁' K₂')
 termination_by n C _ _ _ => (n, sizeOf C, 1)
+decreasing_by
+  -- Each recursive edge is at index `j ≤ n` with a strictly-smaller TYPE (Vrel/Krel: A/B ⊏ C) or the
+  -- same type but a smaller ROLE (Srel: role 0 < Krel's 1). Lex `(index, sizeOf, role)`: `j < n` drops
+  -- the first component; `j = n` reduces to the SAME goal the pre-◊4.5 auto-discharge handled
+  -- (index unchanged, sizeOf/role tie-break) — so delegate it to `decreasing_tactic`.
+  all_goals
+    (rcases Nat.lt_or_eq_of_le ‹_ ≤ _› with hlt | rfl)
+    <;> first
+      | (simp_wf; exact Prod.Lex.left _ _ hlt)
+      | decreasing_tactic
 
 /-- Control-stuck / "simple expression" relation `S⟦C/ε⟧η` (Biernacki Fig 7),
 SET-ROW-specialized (§5.4: ρ-maps dropped). Carries the contexts `K₁,K₂` and the bare
@@ -404,7 +427,14 @@ two stacks `Crel`-related at the NEXT index. The `n+1 ↦ n` drop is Biernacki's
 modality on the output. `Srel 0` is vacuously `True` (index exhausted). -/
 def Srel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] : Nat → CTy Eff Mult → Eff → Stack → Stack → Comp → Comp → Prop
-  | 0,   _, _, _,  _,  _,  _  => True
+  -- ◊4.5 STATEMENT_CHANGE_OK="◊4.5 Srel 0 := False (IxFree premise-position index-0 convention)".
+  -- The index-0 case is EMPTY, not trivially-true: `Srel` sits in `Krel`'s stuck-half PREMISE, and the
+  -- downward-closed `Krel n := ∀ j ≤ n, …` exposes `j = 0`. With `Srel 0 = True`, the j=0 stuck half
+  -- demands `CoApprox c₁ c₂` for ARBITRARY c (no `up`-shape) ⇒ `Krel (n+1) [] []` FALSE ⇒ `krel_nil_succ`
+  -- (hence `lr_sound`'s witness) gutted — vacuity. `Srel 0 := False` makes the j=0 stuck half
+  -- (`False → CoApprox`) vacuously true (the degenerate-at-0 = EMPTY convention for a premise-position
+  -- relation). `crel_zero` re-derives under the new downward-closed `Krel` (see its proof).
+  | 0,   _, _, _,  _,  _,  _  => False
   | n+1, C, ε, K₁, K₂, c₁, c₂ =>
       ∃ (ℓ : Label) (op : OpId) (v₁ v₂ : Val) (Aarg Ares : VTy Eff Mult),
         c₁ = Comp.up ℓ op v₁ ∧ c₂ = Comp.up ℓ op v₂ ∧
@@ -417,6 +447,60 @@ def Srel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
           Crel n C ε (Stack.plug K₁ (Comp.ret u₁)) (Stack.plug K₂ (Comp.ret u₂)))
 termination_by n C _ _ _ _ _ => (n, sizeOf C, 0)
 end
+
+
+/-! ## 5.2a‴ Step-index DOWNWARD-CLOSURE (`Krel_mono`) — the ◊4.5 payoff
+
+With `Krel n := ∀ j ≤ n, (body j)` (◊4.5 downward-closed shape), `Krel`-monotonicity is FREE: a stack
+related at `n` is related at every `m ≤ n` (the `∀ j ≤ m` is a sub-quantification of `∀ j ≤ n`). This
+is the both-ways-monotone property the plain-Nat phrasing lacked — it enables the μ/resume `▷`-anti-
+reduction (`Crel m → Crel (m+1)` via `Krel (m+1) → Krel m`). No index arithmetic, no contravariance
+problem — the `∀ j ≤ n` dissolves it (IxFree/COFE, Biernacki §line-555). -/
+theorem Krel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] {n m : Nat} {C : CTy Eff Mult} {ε : Eff} {K₁ K₂ : Stack}
+    (hmn : m ≤ n) (hK : Krel n C ε K₁ K₂) : Krel m C ε K₁ K₂ := by
+  rw [Krel] at hK ⊢
+  intro j hjm
+  exact hK j (le_trans hjm hmn)
+
+/-- ◊4.5: `Vrel` DOWNWARD-CLOSURE. With the U-clause wrapped `∀ j ≤ n, Crel j` (◊4.5), Vrel-down is
+STRUCTURAL — the `U` case is quantifier-restriction (`{j ≤ m} ⊆ {j ≤ n}`), NOT a route through Crel-down
+(which would need the false Krel-up). Recursion is on the TYPE (`sizeOf A`): unit/int are index-free,
+sum/prod/mu recurse at strictly-smaller types, U restricts the inner `∀ j`. This is the lemma
+`krel_appF_intro`'s arrow half + `EnvRel_mono` consume. -/
+theorem Vrel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] {n m : Nat} {A : VTy Eff Mult} {v₁ v₂ : Val}
+    (hmn : m ≤ n) (hv : Vrel n A v₁ v₂) : Vrel m A v₁ v₂ := by
+  -- WF on `(n, sizeOf A)` lex (mirrors Vrel's measure): sum/prod recurse at smaller TYPE same index;
+  -- mu recurses at smaller INDEX. `VTy` is mutually inductive, so match on `A` (not `induction`).
+  match A with
+  | .unit => rw [Vrel] at hv ⊢; exact hv
+  | .int => rw [Vrel] at hv ⊢; exact hv
+  | .U φ B =>
+      rw [Vrel] at hv ⊢
+      obtain ⟨c₁, c₂, rfl, rfl, hc⟩ := hv
+      -- U-clause is `∀ j ≤ n, Crel j`; restrict to `∀ j ≤ m` (m ≤ n). STRUCTURAL — no Crel-down.
+      exact ⟨c₁, c₂, rfl, rfl, fun j hjm => hc j (le_trans hjm hmn)⟩
+  | .sum A B =>
+      rw [Vrel] at hv ⊢
+      rcases hv with ⟨w₁, w₂, rfl, rfl, hw⟩ | ⟨w₁, w₂, rfl, rfl, hw⟩
+      · exact Or.inl ⟨w₁, w₂, rfl, rfl, Vrel_mono hmn hw⟩
+      · exact Or.inr ⟨w₁, w₂, rfl, rfl, Vrel_mono hmn hw⟩
+  | .prod A B =>
+      rw [Vrel] at hv ⊢
+      obtain ⟨a₁, a₂, b₁, b₂, rfl, rfl, ha, hb⟩ := hv
+      exact ⟨a₁, a₂, b₁, b₂, rfl, rfl, Vrel_mono hmn ha, Vrel_mono hmn hb⟩
+  | .mu A =>
+      -- `Vrel 0 (mu _) = True`; `Vrel (k+1) (mu A)` drops to `Vrel k (unrollMu A)`. Down on `mu`:
+      -- `m ≤ n`; if `m = 0` trivial, else both successors, recurse at SMALLER index on `unrollMu A`.
+      match m, n, hmn with
+      | 0,     _,     _   => rw [Vrel]; trivial
+      | k + 1, l + 1, hmn =>
+          rw [Vrel] at hv ⊢
+          obtain ⟨w₁, w₂, rfl, rfl, hw⟩ := hv
+          exact ⟨w₁, w₂, rfl, rfl, Vrel_mono (Nat.le_of_succ_le_succ hmn) hw⟩
+  | .tvar i => rw [Vrel] at hv; exact absurd hv not_false
+termination_by (n, sizeOf A)
 
 
 /-! ## 5.2a′ Effect-row subsumption (monotonicity in ε)
@@ -441,7 +525,7 @@ theorem Srel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
     (n : Nat) (C : CTy Eff Mult) (ε ε' : Eff) (K₁ K₂ : Stack) (c₁ c₂ : Comp)
     (hεε' : ε ≤ ε') (hS : Srel n C ε K₁ K₂ c₁ c₂) : Srel n C ε' K₁ K₂ c₁ c₂ := by
   cases n with
-  | zero => simp only [Srel]
+  | zero => exact absurd hS (by simp only [Srel]; exact not_false)  -- ◊4.5: `Srel 0 = False`, vacuous.
   | succ m =>
       rw [Srel] at hS ⊢
       obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, hc₂, hℓ, hArg, hRes, hv, hsp₁, hsp₂, hout⟩ := hS
@@ -455,16 +539,27 @@ theorem Krel_eff_anti {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
     (n : Nat) (C : CTy Eff Mult) (ε ε' : Eff) (K₁ K₂ : Stack)
     (hεε' : ε ≤ ε') (hK : Krel n C ε' K₁ K₂) : Krel n C ε K₁ K₂ := by
   rw [Krel] at hK ⊢
-  refine ⟨hK.1, ?_, ?_⟩
+  -- ◊4.5: Krel is `∀ j ≤ n, …`; antitone-in-ε at each index `j`.
+  intro j hjn
+  refine ⟨(hK j hjn).1, ?_, ?_⟩
   · intro c₁ c₂ hS
-    exact hK.2.1 c₁ c₂ (Srel_eff_mono n C ε ε' K₁ K₂ c₁ c₂ hεε' hS)
-  · -- arrow half (peeling): the ε' clause exposes the appF cap + `Krel n B ε'` remainder; weaken the
+    exact (hK j hjn).2.1 c₁ c₂ (Srel_eff_mono j C ε ε' K₁ K₂ c₁ c₂ hεε' hS)
+  · -- arrow half (peeling): the ε' clause exposes the appF cap + `Krel j B ε'` remainder; weaken the
     -- remainder to ε (recursive antitone at the SMALLER codomain B — sizeOf B < sizeOf (arr q A B)).
     intro q A B hC
-    obtain ⟨w₁, w₂, K₁', K₂', hK₁, hK₂, hcw₁, hcw₂, hw, hKrem⟩ := hK.2.2 q A B hC
+    obtain ⟨w₁, w₂, K₁', K₂', hK₁, hK₂, hcw₁, hcw₂, hw, hKrem⟩ := (hK j hjn).2.2 q A B hC
     exact ⟨w₁, w₂, K₁', K₂', hK₁, hK₂, hcw₁, hcw₂, hw,
-      Krel_eff_anti n B ε ε' K₁' K₂' hεε' hKrem⟩
+      Krel_eff_anti j B ε ε' K₁' K₂' hεε' hKrem⟩
   termination_by (n, sizeOf C, 1)
+decreasing_by
+  -- ◊4.5: the antitone recursions fire at `j ≤ n` (from `Krel`'s `∀ j ≤ n` body): `Srel_eff_mono j`
+  -- (role 0 < 1) and `Krel_eff_anti j B` (codomain, `sizeOf B < sizeOf (arr…)`). `j < n` drops the
+  -- index; `j = n` falls to the sizeOf/role tie-break. Mirrors the `Krel`-def `decreasing_by`.
+  all_goals
+    first
+      | (rcases Nat.lt_or_eq_of_le ‹_ ≤ _› with hlt | rfl <;>
+          first | (simp_wf; exact Prod.Lex.left _ _ hlt) | decreasing_tactic)
+      | decreasing_tactic
 
 theorem Crel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
     [DecidableEq Mult] [EffSig Eff Mult]
@@ -474,6 +569,16 @@ theorem Crel_eff_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
   intro K₁ K₂ hK
   exact hC K₁ K₂ (Krel_eff_anti n C ε ε' K₁ K₂ hεε' hK)
   termination_by (n, sizeOf C, 2)
+decreasing_by
+  -- ◊4.5: the `Krel`-antitone recursions fire at an index `j ≤ n` (from the `∀ j ≤ n` body), so the
+  -- first lex component can TIE (`j = n`). Split: `j < n` drops the index; `j = n` falls to the
+  -- sizeOf/role tie-break (Srel role 0 < Krel 1; Krel at codomain B with `sizeOf B < sizeOf (arr…)`).
+  -- Mirrors the Krel-def `decreasing_by`.
+  all_goals
+    first
+      | (rcases Nat.lt_or_eq_of_le ‹_ ≤ _› with hlt | rfl <;>
+          first | (simp_wf; exact Prod.Lex.left _ _ hlt) | decreasing_tactic)
+      | decreasing_tactic
 end
 
 
@@ -526,6 +631,22 @@ def EnvRel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [D
     EnvRel n ([] : TyCtx Eff Mult) δ₁ δ₂ ↔ δ₁ = [] ∧ δ₂ = [] := by
   cases δ₁ <;> cases δ₂ <;> simp [EnvRel]
 
+/-- ◊4.5: `EnvRel` DOWNWARD-CLOSURE — pointwise `Vrel_mono`. The Kripke fundamental theorem closes
+`c` over environments at EVERY `j ≤ n` (the `vthunk`/binder-extension cases need the IH at the lower
+index), and `EnvRel`-down lets `vrel_fund`/`crel_fund` supply the environment at any `j ≤ n` from the
+ambient `EnvRel n`. Structural now that `Vrel`-down is (◊4.5 Vrel U-clause `∀j≤n`). -/
+theorem EnvRel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] {n m : Nat} :
+    ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val}, m ≤ n → EnvRel n Γ δ₁ δ₂ → EnvRel m Γ δ₁ δ₂
+  | [],      [],        [],        _,   _  => trivial
+  | _A :: _, _v₁ :: _,  _v₂ :: _,  hmn, h => by
+      obtain ⟨hc₁, hc₂, hv, hrest⟩ := h
+      exact ⟨hc₁, hc₂, Vrel_mono hmn hv, EnvRel_mono hmn hrest⟩
+  | [],      _ :: _,    _,         _,   h => absurd h (by simp [EnvRel])
+  | [],      [],        _ :: _,    _,   h => absurd h (by simp [EnvRel])
+  | _ :: _,  [],        _,         _,   h => absurd h (by simp [EnvRel])
+  | _ :: _,  _ :: _,    [],        _,   h => absurd h (by simp [EnvRel])
+
 
 /-! ## 5.3 Adequacy building blocks toward `lr_sound`
 
@@ -544,17 +665,12 @@ the dependency note on `lr_sound` in `Bang/Spec.lean`. -/
 theorem converges_ret (v : Val) : Converges (Comp.ret v) :=
   ⟨1, v, rfl⟩
 
-/-- At index 0 EVERY pair is `Crel`-related: `Srel 0 = True`, so a `Krel 0`-hypothesis's STUCK half is
-exactly `∀ c₁ c₂, CoApprox (plug K₁ c₁) (plug K₂ c₂)` — the goal. The base of the step-indexed
-induction: the fundamental theorem and every compat core discharge `n = 0` by this, doing the real work
-only at `n+1` (where the relations carry information). Standard ahmed-esop06 / Biernacki convention. -/
-theorem crel_zero {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
-    [DecidableEq Mult] [EffSig Eff Mult] (C : CTy Eff Mult) (ε : Eff) (c₁ c₂ : Comp) :
-    Crel 0 C ε c₁ c₂ := by
-  rw [Crel]
-  intro K₁ K₂ hK
-  rw [Krel] at hK
-  exact hK.2.1 c₁ c₂ (by rw [Srel]; trivial)
+-- ◊4.5: `crel_zero` (the old universal `Crel 0` base) is REMOVED. Under `Srel 0 := False` it is no
+-- longer true for arbitrary `c` (`Krel 0` is inhabited at `F q A` and does not force arbitrary
+-- `CoApprox`). It is also no longer NEEDED: the `krel_*` frame-extension lemmas are now stated at general
+-- `n` (their stuck halves are vacuous at every `j` via `Srel 0 := False`), so each compat core proves its
+-- `n = 0` case by its ordinary main argument — no `cases n`/`crel_zero` base. Single source of truth: a
+-- dead lemma carrying a `sorry` is worse than no lemma.
 
 /-- An UNHANDLED operation never converges: under the empty stack `splitAt [] = none`,
 so `step ([], up ℓ op v) = none` and the machine is immediately stuck. -/
@@ -614,16 +730,24 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
     [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (q : Mult) (A : VTy Eff Mult) (e : Eff) :
     Krel (n + 1) (CTy.F q A) e ([] : Stack) ([] : Stack) := by
   unfold Krel
+  -- ◊4.5 downward-closed shape: `∀ j ≤ n+1, (return ∧ stuck ∧ arrow)`.
+  intro j _hj
   refine ⟨?_, ?_, ?_⟩
   · -- return half: plug [] (ret vᵢ) = ret vᵢ, which always converges.
     intro q A _ v₁ v₂ _ _ _ _
     exact converges_ret v₂
-  · -- stuck half: an Srel (n+1)-pair under [] is an unhandled `up`, which never converges.
+  · -- stuck half: an `Srel j`-pair under [] is an unhandled `up`, which never converges.
     intro c₁ c₂ hS hconv
-    unfold Srel at hS
-    obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, _, _, _, _, _, _, _, _⟩ := hS
-    rw [Stack.plug, Bang.plug, hc₁] at hconv
-    exact absurd hconv (not_converges_up_nil ℓ op v₁)
+    -- ◊4.5 (Srel 0 := False): `j = 0` is VACUOUS (`Srel 0 = False`, `hS` is absurd). `j = k+1` is the REAL
+    -- unhandled-op argument — `Srel (k+1)` forces `c₁ = up ℓ op v₁`, never convergent under `[]`. The
+    -- soundness content lives entirely in the n≥1 branch; the j=0 branch is genuinely empty, not papered.
+    cases j with
+    | succ k =>
+        unfold Srel at hS
+        obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, _, _, _, _, _, _, _, _⟩ := hS
+        rw [Stack.plug, Bang.plug, hc₁] at hconv
+        exact absurd hconv (not_converges_up_nil ℓ op v₁)
+    | zero => exact absurd hS (by unfold Srel; exact not_false)
   · -- ARROW half: VACUOUS — the whole-program answer context `[]` is a RETURNER type `F q A`, not an
     -- arrow (ADR-0038 peeling form: `[]` is not appF-capped; arrow-typed whole programs are bare lams,
     -- stuck at `[]`, so `⊑` is vacuous there — the empty stack only observes returners).
