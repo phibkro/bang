@@ -86,9 +86,11 @@
                                      DELETED, lr_fundamental:=crelK_fund); lr_sound CLOSED over a TYPED ⊑ (ctxApprox restricted to
                                      WELL-TYPED observation contexts — decision (a); the untyped form made lr_sound FALSE), on
                                      `cap45-final` (`a5464da`), append-crux-only. LAST sorry = state/txn RESUMPTIVE composition
-                                     (`krelS_append` + ▷-metering, 6 Compat spots) — RESEARCH in flight on `cap45-append` (task #10);
+                                     (the resume-conjunct RELATION reshape — NOT the metering, which composes cleanly; build-grounded by
+                                     `append` 2026-06-24, 6 Compat spots) — SEAM'd interim, PURSUE next session via the (a)-(d) program
+                                     in `paths/PATH-cap45-resume-composition.md` (task #10);
                                      closing it → lr_sound FULL trusted-three = THE MOAT (contextual equiv incl. resumptive
-                                     handlers). SEAM (ADR-0026: state/txn-resume tested) banked if the metering walls. NOT yet
+                                     handlers). SEAM (ADR-0026: throws VERIFIED + state/txn-resume TESTED) is the interim honest state. NOT yet
                                      merged to main (carries the append sorry + diverges from ◊5 on Spec.lean).
 ◊5 ✓ Compiler v0 — DONE, IN MAIN  ── `b0a9c4d` (2026-06-24). source→WASM verified trusted-three over the
                                      WHOLE effect language — effect-free + ALL handlers, ungated. EFFECT-FREE

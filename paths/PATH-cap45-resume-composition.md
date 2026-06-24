@@ -1,10 +1,48 @@
 # PATH — ◊4.5b: the config-level resume-composition (the research-grade up-producer close)
 
-**Status:** the FINAL obligation of ◊4.5b — the handled-producer-dispatch (resumptive-handler
-PRODUCER) equivalence. Operator chose **research-grade VERIFY** (the full clean moat, no seam).
-This is a dedicated multi-day research effort: a config-level KrelS-APPEND lemma + a handleF
-resume clause. Base: `cap45-modality @ c26c4c9` (entire non-handler spine + all 6 handler-CONSUMER
-cases verified + green; only this one sorry left). Design-sketched by cap45f before stand-down.
+**Status (2026-06-24, BUILD-GROUNDED — the ready spec):** the FINAL obligation of ◊4.5b — the
+resumptive-handler PRODUCER equivalence (state/txn). `lr_sound` is CLOSED modulo exactly this (the
+6 Compat sorrys 1224/1247/1485/1488/1575/1581) on **`cap45-final @ a5464da`**. Operator decision:
+**wrap now, PURSUE this reshape next session.** Interim honest state = the SEAM (ADR-0026 descent:
+throws-handlers VERIFIED end-to-end + state/txn-resume TESTED); this PATH is the ready spec to LIFT
+it. Fresh-context job (Context-Rot risk on a relation-def reshape).
+
+> ⚠ **THE METERING WAS A MISDIAGNOSIS** (build-confirmed by the `append` IC, 2026-06-24). The ▷-budget
+> composes CLEANLY — the reinstalled-handler config takes ONE handleF-discard step (`(handleF h::K, ret r)
+> ↦ (K, ret r)`, Operational:339), discharged by `coApproxC_le_anti_step` + `crelK_ret`; NO metering crux.
+> The `krelS_append`/metering framing in the design sketch BELOW is superseded. The REAL wall is the
+> resume-conjunct SHAPE — a structural relation-def reshape, three coupled defects:
+>
+> 1. **Conjunct loses Kᵢ.** The conjunct (LR:516-522) dispatches at `([], h, K')` — Kᵢ baked to `[]`. But
+>    state/txn dispatch KEEPS Kᵢ (`dispatchOn` Operational:295 → `Kᵢ ++ handleF(state ℓ s')::Kₒ`). The
+>    producer splits at NON-empty K₁ᵢ; `krelS_splitAt_decomp` (Compat:1072) returns only the OUTER-tail
+>    relation, NOT the inner-prefix `K₁ᵢ ~ K₂ᵢ` the bridge needs.
+> 2. **h₁=h₂ too strong for `put`.** The handleF clause (LR:505-506) forces equal handlers; `put w`
+>    reinstalls `state ℓ w₁` vs `w₂` with `w₁ ~ w₂` VrelK-RELATED (not equal). splitAt/handlesOp/
+>    Handler.label IGNORE stored state (Operational:230-242) — equal split positions need same label+kind,
+>    NOT equal state.
+> 3. **Type mediation.** With Kᵢ=[] the resume value `r` (op-result-typed: get→S, put→unit) hits Kₒ
+>    (body-typed `F q A`) directly → unprovable `VrelK k A s s` (state at the wrong type, no VrelK_refl).
+>    The captured Kᵢ is exactly what transforms `r:opRes` into `A` before Kₒ; dropping it is unsound.
+
+## THE READY PROGRAM — append's (a)-(d), ~68 refs, multi-session, fresh-context
+
+- **(a) Relax the handleF clause** (LR:505-506): state/txn require stored-state/heap VrelK-RELATED
+  (throws stays equal; or a uniform handler-relation predicate). [task #12]
+- **(b) Extend `krelS_splitAt_decomp`** (Compat:1072) to ALSO return the inner-prefix relation
+  `K₁ᵢ ~ K₂ᵢ` (+ anti-handler side-cond: Kᵢ has no catching frame — structurally true from splitAt).
+- **(c) Reshape the resume conjunct** to quantify over related captured continuations `Kᵢ ~ Kᵢ'` and
+  relate the FULL reinstalled configs (this IS the real `krelS_append`: compose the relational-state
+  handler onto related-Kᵢ + related-Kₒ).
+- **(d) Re-prove** `KrelS_mono` / `KrelS_eff_{cast,anti,mono}` handleF cases (the state-relation threads
+  like VrelK in appF) + the 6 consumer sites.
+
+Closing (a)-(d) → the 6 Compat sorrys close → `lr_sound` FULL trusted-three = **THE MOAT** (contextual
+equiv incl. resumptive handlers). Base `cap45-final @ a5464da`. SEAM (ADR-0026) is the interim state.
+
+---
+*Below: the original metering-framed sketch (by cap45f), SUPERSEDED by the build-grounded program above —
+kept for the `krelS_append` shape intuition, but the inner-prefix relation (not the metering) is the missing piece.*
 
 > Two cheap routes are DEAD (build-arbitrated): discharge-vacuity (`krelS_splitNone`) is FALSE —
 > `HasStack.splitAt_fires` (Metatheory:1877) proves a φ-stack with `ℓ≤φ` not-escaping-`ℓ` DOES
