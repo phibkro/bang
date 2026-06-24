@@ -1075,24 +1075,23 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
     {K₁ K₂ : Stack} {ℓ : Label} {op : OpId} {K₁ᵢ K₁ₒ : Stack} {h : Handler}
     (hK : KrelS n C D e K₁ K₂)
     (hsp : Bang.splitAt K₁ ℓ op = some (K₁ᵢ, h, K₁ₒ)) :
-    ∃ K₂ᵢ K₂ₒ C' e', Bang.splitAt K₂ ℓ op = some (K₂ᵢ, h, K₂ₒ) ∧ KrelS n C' D e' K₁ₒ K₂ₒ
-      -- ◊4.5b: ALSO carry the RESUME CONJUNCT from the catching frame (`[]`-prefix dispatch). The
-      -- producer uses it DIRECTLY for throws (Kᵢ discarded ⇒ the producer's K₁ᵢ-prefix dispatch = this
-      -- `[]`-prefix one); for state/txn it bridges to the K₁ᵢ-prefix via `krelS_append` (the one sorry).
-      ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (cfg₁ cfg₂ : Config),
+    -- ◊4.5b-append: `splitAt K₂` fires at the SAME position (HandlerRel fixes label+kind, which
+    -- `splitAt`/`handlesOp` read) with a RELATED handler `h'` (`HandlerRel n h h'`, stored state related),
+    -- the INNER prefixes related at SOME `(Cᵢ,Dᵢ,εᵢ)` (the producer threads the resume value through them),
+    -- the OUTER tails related at SOME `(C',e')`, AND the Kᵢ-threading resume conjunct from the catching
+    -- handleF clause. state/txn use the inner-prefix relation (Kᵢ KEPT); throws ignores it (Kᵢ discarded).
+    ∃ (K₂ᵢ K₂ₒ : Stack) (h' : Handler) (Dᵢ : CTy Eff Mult) (C' : CTy Eff Mult) (e' : Eff),
+      Bang.splitAt K₂ ℓ op = some (K₂ᵢ, h', K₂ₒ) ∧ HandlerRel Eff Mult n h h' ∧
+      KrelS n C Dᵢ e K₁ᵢ K₂ᵢ ∧ KrelS n C' D e' K₁ₒ K₂ₒ
+      ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' Dᵢ' : CTy Eff Mult) (εᵢ' : Eff)
+            (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
           Bang.handlesOp h h.label op' = true →
           Val.Closed w₁ → Val.Closed w₂ →
           (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
-          Bang.dispatchOn op' w₁ ([], h, K₁ₒ) = some cfg₁ →
-          Bang.dispatchOn op' w₂ ([], h, K₂ₒ) = some cfg₂ →
+          KrelS m Cᵢ' Dᵢ' εᵢ' Kᵢ Kᵢ' →
+          Bang.dispatchOn op' w₁ (Kᵢ, h, K₁ₒ) = some cfg₁ →
+          Bang.dispatchOn op' w₂ (Kᵢ', h', K₂ₒ) = some cfg₂ →
           CoApproxC_le m cfg₁ cfg₂) := by
-  -- ◊4.5b-append: RESHAPE PENDING — under relational handlers `splitAt K₂` returns a RELATED handler
-  -- `h'` (not the same `h`), and the conclusion must ALSO carry the inner-prefix relation `K₁ᵢ ~ K₂ᵢ` +
-  -- the Kᵢ-threading conjunct. Temporarily sorry'd to bank the green relational-clause checkpoint; the
-  -- statement above is the OLD same-`h` `[]`-prefix shape (to be reshaped in the decomp-extension commit).
-  sorry
-  -- (old proof body retained below for the reshape, behind the sorry)
-  /-
   induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e with
   | nil => simp [Bang.splitAt] at hsp
   | cons fr K₁' ih =>
@@ -1106,11 +1105,16 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                   rw [krelS_letF] at hK
                   obtain ⟨q, A, B, φ, hC, hbody, htail⟩ := hK
                   rw [splitAt_letF, Option.map_eq_some_iff] at hsp
-                  obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+                  obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
-                  obtain ⟨_, rfl, rfl⟩ := heq
-                  obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail2, hres2⟩ := ih htail hsp'
-                  exact ⟨_, K₂ₒ, C', e', by rw [splitAt_letF, hsp2]; rfl, htail2, hres2⟩
+                  obtain ⟨rfl, rfl, rfl⟩ := heq
+                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
+                  -- inner prefix grows by THIS letF frame: prepend it (the frame body self-relates via hbody).
+                  -- `ih` recursed on `htail : KrelS n B D φ K₁' K₂'`, so `hin : KrelS n B Dᵢ φ K₁ᵢ K₂ᵢ`; the
+                  -- letF wrap is at hole F q A, row e (the ambient), tail at φ — matches `hbody`.
+                  refine ⟨Frame.letF N₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
+                    by rw [splitAt_letF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                  rw [krelS_letF]; exact ⟨q, A, B, φ, hC, hbody, hin⟩
               | _ => simp only [KrelS] at hK
           | appF w₁ =>
               cases fr₂ with
@@ -1118,33 +1122,55 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                   rw [krelS_appF] at hK
                   obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
                   rw [splitAt_appF, Option.map_eq_some_iff] at hsp
-                  obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+                  obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
-                  obtain ⟨_, rfl, rfl⟩ := heq
-                  obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail2, hres2⟩ := ih htail hsp'
-                  exact ⟨_, K₂ₒ, C', e', by rw [splitAt_appF, hsp2]; rfl, htail2, hres2⟩
+                  obtain ⟨rfl, rfl, rfl⟩ := heq
+                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
+                  refine ⟨Frame.appF w₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
+                    by rw [splitAt_appF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                  rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, hin⟩
               | _ => simp only [KrelS] at hK
           | handleF hh₁ =>
               cases fr₂ with
               | handleF hh₂ =>
                   rw [krelS_handleF] at hK
-                  obtain ⟨rfl, htail, hres⟩ := hK
+                  obtain ⟨hHRtop, htail, hres⟩ := hK
                   by_cases hcatch : handlesOp hh₁ ℓ op = true
-                  · -- the catching frame: the OUTER tail = this frame's tail (K₁'/K₂'), and the clause's
-                    -- resume conjunct `hres` IS the `[]`-prefix dispatch relation the conclusion wants.
+                  · -- the catching frame: inner prefix = `[]` (nil at hole C), outer tail = K₁'/K₂'
+                    -- (related via `htail`), and the clause's resume conjunct `hres` is the Kᵢ-threading one.
                     rw [splitAt_handleF_hit K₁' hcatch] at hsp
                     rw [Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
-                    obtain ⟨_, rfl, rfl⟩ := hsp
-                    exact ⟨[], K₂', C, e, splitAt_handleF_hit K₂' hcatch, htail, hres⟩
+                    obtain ⟨rfl, rfl, rfl⟩ := hsp
+                    have hcatch2 : handlesOp hh₂ ℓ op = true := by
+                      cases hh₁ <;> cases hh₂ <;>
+                        simp_all only [HandlerRel, handlesOp] <;> obtain ⟨rfl, _⟩ := hHRtop <;> assumption
+                    refine ⟨[], K₂', hh₂, C, C, e, splitAt_handleF_hit K₂' hcatch2, hHRtop, ?_, htail, hres⟩
+                    rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
                   · simp only [Bool.not_eq_true] at hcatch
                     rw [splitAt_handleF_miss K₁' hcatch, Option.map_eq_some_iff] at hsp
-                    obtain ⟨⟨Ki', h', Ko'⟩, hsp', heq⟩ := hsp
+                    obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                     simp only [Prod.mk.injEq] at heq
-                    obtain ⟨_, rfl, rfl⟩ := heq
-                    obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail2, hres2⟩ := ih htail hsp'
-                    exact ⟨_, K₂ₒ, C', e', by rw [splitAt_handleF_miss K₂' hcatch, hsp2]; rfl, htail2, hres2⟩
+                    obtain ⟨rfl, rfl, rfl⟩ := heq
+                    obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
+                    have hcatch2 : handlesOp hh₂ ℓ op = false := by
+                      -- HandlerRel fixes label+kind ⇒ handlesOp hh₂ = handlesOp hh₁ = false (the miss).
+                      cases hh₁ <;> cases hh₂ <;>
+                        simp_all only [HandlerRel, handlesOp, false_iff, not_true, reduceCtorEq] <;>
+                        (first
+                          | exact absurd hHRtop not_false
+                          | (obtain ⟨rfl, _⟩ := hHRtop; simpa [handlesOp] using hcatch)
+                          | (obtain ⟨rfl, _, _⟩ := hHRtop; simpa [handlesOp] using hcatch))
+                    refine ⟨Frame.handleF hh₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
+                      by rw [splitAt_handleF_miss K₂' hcatch2, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                    rw [krelS_handleF]
+                    refine ⟨hHRtop, hin, ?_⟩
+                    -- ◊4.5b-append: the wrapping (non-catching) handleF inside the captured continuation
+                    -- needs its resume conjunct re-stated at the inner-prefix tail `Ki'` (not the original
+                    -- `K₁'`). `hres` is at `K₁'`; bridging needs a conjunct-at-Ki' lemma. PENDING — a handler
+                    -- nested in the captured continuation (rare); documented sorry, the other 3 decomp cases
+                    -- (letF/appF/handleF-hit) are PROVEN. Closes with the conjunct-relocation helper.
+                    sorry
               | _ => simp only [KrelS] at hK
-  -/
 
 /-- `splitAt` returns a handler that CATCHES `(ℓ, op)` (the split point is a matching frame). The
 producer reads this off to discharge the resume conjunct's `handlesOp` guard. -/
@@ -1464,9 +1490,13 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
           obtain ⟨K₁ᵢ, h, K₁ₒ⟩ := t
           have hcatch : Bang.handlesOp h ℓ op = true := splitAt_some_handlesOp hsp1
           have hlbl : h.label = ℓ := handlesOp_label hcatch
-          obtain ⟨K₂ᵢ, K₂ₒ, C', e', hsp2, htail, hres⟩ := krelS_splitAt_decomp hK hsp1
+          obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hinner, htail, hres⟩ := krelS_splitAt_decomp hK hsp1
           cases h with
           | throws lh =>
+              -- ◊4.5b-append: `HandlerRel n (throws lh) h'` ⇒ `h' = throws lh` (label-eq). The producer's
+              -- dispatch (full K₁/K₂) gives `(K₁ₒ, ret v₁)`/`(K₂ₒ, ret v₂)` — zero-shot abort, Kᵢ discarded.
+              obtain ⟨lh', rfl⟩ : ∃ lh', h' = Handler.throws lh' := by
+                cases h' <;> simp_all only [HandlerRel] <;> exact ⟨_, rfl⟩
               cases n with
               | zero => exact coApproxC_le_zero _ _
               | succ k =>
@@ -1479,8 +1509,12 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
                   refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
                   have hcatch' : Bang.handlesOp (Handler.throws lh) (Handler.throws lh).label op = true := by
                     rw [hlbl]; exact hcatch
-                  refine hres k (Nat.lt_succ_self k) op v₁ v₂ (K₁ₒ, Comp.ret v₁) (K₂ₒ, Comp.ret v₂)
-                    hcatch' hcv₁ hcv₂ ?_ (by simp [dispatchOn]) (by simp [dispatchOn])
+                  -- supply the Kᵢ-threading conjunct at Kᵢ=K₁ᵢ, Kᵢ'=K₂ᵢ (throws discards them); the inner
+                  -- relation `hinner` discharges the new `KrelS m … Kᵢ Kᵢ'` premise.
+                  refine hres k (Nat.lt_succ_self k) op v₁ v₂ _ Dᵢ _ K₁ᵢ K₂ᵢ
+                    (K₁ₒ, Comp.ret v₁) (K₂ₒ, Comp.ret v₂)
+                    hcatch' hcv₁ hcv₂ ?_ (KrelS_mono (le_of_lt (Nat.lt_succ_self k)) hinner)
+                    (by simp [dispatchOn]) (by simp [dispatchOn])
                   -- type alignment: the resume value's type `Aop = opArg ℓ op = A` (hArg), so `hvk` fits
                   -- (downward-closed to `k`).
                   intro Aop hAop
