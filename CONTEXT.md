@@ -76,7 +76,7 @@
                                      handled-dispatch re-proves the 3 handler cases at the discharged row; NO
                                      frozen-stmt change). Build queued (fresh effort) → then lr_sound typed-context
                                      wiring → THE MOAT proven.
-◊5   Compiler v0 (IN PROGRESS)     ── on branch `cap5-compiler` (`2531137`, NOT yet merged): the WHOLE EFFECT-FREE
+◊5   Compiler v0 (IN PROGRESS)     ── on branch `cap5-compiler` (`4434c5b`, NOT yet merged): the WHOLE EFFECT-FREE
                                      compiler (pure CBPV + ADT) verified end-to-end source→WASM, AXIOM-CLEAN
                                      (`compile_forward_sim_pure` ⊆ trusted-three; zero_grade_no_code +
                                      compile_well_typed [propext]). Two-hop via the proven CalcVM (machine = the
