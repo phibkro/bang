@@ -616,3 +616,48 @@
                Atkey's QTT. The multiplicity-grade ancestor for ADR-0027's grade
                polymorphism, and for the coeffect arithmetic bang inherits.},
 }
+
+% ─── 2026-06-24 handler resume-relatedness sweep (Hazel lineage) ──────────────
+% Fetched during the ◊4.5b/◊5 frontier survey (litscout). Both were on the
+% README "Gaps" to-fetch list; promoted to cited. They settle the DECISION-
+% CRITICAL question (does the resumptive LR need Iris ▷/Löb): blaze §3 says its
+% model FOLLOWS Biernacki's pure step-indexed construction, and §7 says its
+% later modality is ELIMINABLE via a greatest-fixpoint operator -- the strongest
+% evidence that the no-Iris config-level metered-▷ suffices.
+
+@article{devilhena-pottier-popl21-separation-logic-handlers,
+  author  = {de Vilhena, Paulo Em\'{\i}lio and Pottier, Fran\c{c}ois},
+  title   = {A Separation Logic for Effect Handlers},
+  journal = {Proceedings of the ACM on Programming Languages (POPL)},
+  volume  = 5,
+  year    = 2021,
+  doi     = {10.1145/3434314},
+  note    = {Hazel: the Iris-based separation logic under Affect/blaze/Iris-WasmFX.
+             Protocols relate an effect payload to a RESUMPTION CONDITION; the
+             deep-handler rule (§4.2.3) guards the recursive resumption premise
+             with a later modality ⊲ and is discharged by Löb induction -- but
+             only because the deep handler reinstalls itself INSIDE the resumption
+             (one-shot only; multi-shot is future work §8). The precise spot where
+             the field needs a guard.
+             \url{https://cambium.inria.fr/~fpottier/publis/de-vilhena-pottier-sleh.pdf}},
+}
+
+@article{devilhena-popl26-blaze,
+  author  = {de Vilhena, Paulo Em\'{\i}lio and van Collem, Simcha and Wright, Ines and Krebbers, Robbert},
+  title   = {{blaze}: A Relational Separation Logic for Effect Handlers},
+  journal = {Proceedings of the ACM on Programming Languages (POPL)},
+  volume  = 10,
+  year    = 2026,
+  doi     = {10.1145/3776676},
+  note    = {The relational/binary handler-LR SOTA (Rocq/Iris). §3: "the novelty of
+             blaze does not lie in the construction of its model, which FOLLOWS
+             Biernacki et al." -- whose relational theories use "pure (step-indexed)
+             logic". §7: "we suspect the later modality in [...] blaze's refinement
+             relation can be ELIMINATED" via Iris's greatest-fixpoint operator.
+             Adds deep + multi-shot (persistently modality, not more ▷). Caveats:
+             algebraic theories not transitive (step-indexed limitation, §2);
+             later-credits charged only for multi-shot-over-mutable-state (§6).
+             Strongest published evidence that no-Iris Nat step-indexing suffices
+             for the resumptive LR.
+             \url{https://iris-project.org/pdfs/2026-popl-blaze.pdf}},
+}
