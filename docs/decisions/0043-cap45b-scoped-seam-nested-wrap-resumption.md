@@ -124,3 +124,47 @@ whole mutual block (Architecture A / heavy-D), which the panel scored as 4–7 s
 frozen-statement break. Not worth it for a single tested-descent edge. **The ADR-0026 scoped seam is the
 verified-final answer.** Durable evidence: `typed-crelk-probe @ ffac1b0` (both lemmas committed, the wall
 documented inline at the `sorry`).
+
+## Literature sweep (2026-06-25) — no indexed technique avoids the typed-relation / Iris / semantics-change cost
+
+A 6-angle sweep of the indexed references (`references/papers/`) mined the SOTA + canonical handler-LR
+literature for any technique that exposes the intermediate continuation answer type (or dissolves the
+wrap-MISS) within our hard constraints — untyped executable oracle (#1), calculated VM (#4), Lean-not-Iris
+(#3), frozen statements. **Conclusion: no viable technique was missed; the literature CONFIRMS the seam.**
+
+- **blaze (POPL'26, relational handler-LR SOTA)** — *dissolves*, but its move is a **syntactic side-condition**
+  (`neutral(ls,K) ≜ ℒ(K)∩ls=∅`, §4.1.2) that excludes the conflicting-handler prefix — which IS our landed
+  `NoWrapMiss`. SOTA corroboration of the discipline, **zero new machinery**. Its model is Iris-built; closing
+  the strip wholesale = an Iris port (off-limits). The README's "▷ eliminable via greatest fixpoint" is the
+  paper's *speculative future-work* (§7 l.1417–1420), not a delivered Nat-step construction. λ-blaze is
+  **untyped** and §4.4 explicitly "cannot state contextual refinement because it depends on types" — so it
+  offers nothing to pin our existential intermediate `B`.
+- **Biernacki "Handle with Care" (POPL'18) / Benton–Hur / Pitts** — *solves*, and confirms the diagnosis: the
+  canonical continuation relation is **hole-type-indexed from the start** (Fig.7, `K⟦τ/ε⟧`, `C⟦τ1/ε1⤳τ2/ε2⟧`),
+  so the intermediate type is **never existential**. Our untyped `KrelS` is the deliberate deviation. The fix
+  is "do what Biernacki does" = the declined 4–7-session reshape + frozen-statement break, **plus a new
+  invariant-#2 tension** (his `EN↪N` partial-map count wants a *multiset*; our rows are *sets*).
+- **Lexa / lexical-tunneled dispatch (Ma OOPSLA'24; Zhang POPL'19 tunneling)** — *dissolves* by making the
+  MISS **unrepresentable** (lexical op→handler resolution removes the deep search past a non-matching handler),
+  the only untyped candidate. But build-check shows the cost is understated: `splitAt`/`dispatch` is threaded
+  through the **calculated machine** (`CalcVM.lean`), so it forces re-running the Bahr–Hutton calculation +
+  re-verifying the CalcReify bridge **and overturns ADR-0023/0024's dynamic dispatch** (a frozen kernel
+  decision → a new ADR, not a patch). Cost ≈ the declined reshape, to delete one tested edge.
+- **Affect/Hazel (Iris protocols + Löb)** — *partial*: dissolves by **replacing** the relation with a
+  protocol-`Φ` WP (heavier than the reshape) and is **unary**, not contextual-equivalence (binary frontier
+  unsolved; its own README routes binary to blaze).
+- **AsmFX "Effect Handlers All the Way Down" (annotated simulation)** — *partial*: type-free, but the
+  leave-record is a **compiler-derived** location annotation unavailable to the untyped `Source.step` (#1),
+  and it's forward-sim for *compiler* correctness, not `lr_sound` contextual equivalence.
+- **WasmFX tags / Iris-WasmFX (the "metadata through labeling" question)** — *no-help*: a tag is only a **key**
+  into a typed declaration table; the answer type must still be populated by something typed at the `handleF`
+  push, which the untyped oracle cannot supply = **Architecture C with one indirection**. Iris-WasmFX is
+  likewise one-way (typing⇒op-sem). The only portable idea — its `x∉h1*` name-matching side-condition — again
+  just corroborates `NoWrapMiss`.
+
+**Net:** every route to exposing the intermediate answer type is (a) a typed relation index (the declined
+reshape, and even the canonical form has an inv-#2 tension), (b) an Iris-native mechanism (off-limits), or
+(c) a calculated-semantics change (Lexa, cross-cutting + an ADR reversal). The untyped `KrelS` deviation is
+what *buys* invariants #1/#4; this one edge is its exact, principled price. A durable reconfirm, if ever
+wanted, is a ≤1-session `stackAnswer : Stack → CTy` probe (predicted NO-GO at `krelS_letF`, the same
+answer-determinism-FALSE). Sweep artifact: workflow `wf_6a9f7d3f-ab1`.
