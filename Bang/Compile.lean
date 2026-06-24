@@ -91,12 +91,35 @@ inductive Instr where
   -- (a closed value at runtime), matching CalcVM's `CASE`/`SPLIT`.
   | caseS  : Bang.Val → Comp → Comp → Instr   -- sum elim: inl/inr ⇒ run the matching branch
   | splitS : Bang.Val → Comp → Instr          -- product elim: pair ⇒ run N[fst][snd]
+  -- effect handlers (sub-step 1b). The CURRENT stack-switching Explainer shape:
+  --   markH  = install a handler boundary = `(cont.new $ct)` capturing the OUTER continuation
+  --            (resume target on a zero-shot abort), carrying the post-handle resume code.
+  --   unmarkH = pop the boundary on a normal return (handler-return = identity, Q6).
+  --   opH ℓ op v = perform op = `suspend $tag` for a RESUMPTIVE op (state get/put — `(on $tag
+  --            $label)` resumes in place) OR a zero-shot unwind for a `throws` op. The tracer
+  --            effect (ADR-0025 state) is the RESUMPTIVE path → plain suspend/resume (NOT
+  --            resume_throw, unlanded in Wasmtime #10248).
+  -- shape: logsem/iris-wasmfx opsem — `resume`/`suspend`/`cont.new` (stack-switching Explainer).
+  | markH   : Handler → List Instr → Instr    -- install handler + post-handle resume code
+  | unmarkH : Instr                           -- pop the handler boundary (normal return)
+  | opH     : Bang.EffectRow.Label → Bang.OpId → Bang.Val → Instr  -- perform op (resume/unwind)
   deriving Inhabited
 
 abbrev Code := List Instr
 
 /-- The WASM operand stack holds runtime values (`Wasmfx.Val`). -/
 abbrev VStack := List Val
+
+/-- A saved handler boundary on the WASM handler-stack — the injection of CalcVM's
+`HFrame` (`Bang/CalcVM.lean`): the handler + the OUTER continuation (WASM code ×
+operand stack) to resume on a zero-shot abort. Mirrors the stack-switching
+`cont`-reference captured at the handler boundary. -/
+structure HFrame where
+  handler    : Handler
+  savedCode  : Code
+  savedStack : VStack
+
+abbrev HStack := List HFrame
 
 /-- A WASM module: a single start-function body (the lowered instruction stream
 of a closed program) plus its declared result type. The forward simulation runs
@@ -132,10 +155,11 @@ def injTerminal : Comp → Wasmfx.Val
   | .lam M => .clos M
   | _      => .unit          -- non-terminal: unreachable on the well-formed path
 
-/-- Lower one calculated instruction (`Bang.Instr`) to a WASM opcode list. Pure
-spine only (Milestone A): RET/LAMI/SUBST/APP map 1:1; the handler/ADT
-instructions are Milestone B / out-of-scope and lower to the empty stream (a
-closed PURE program's `compile` emits none of them). -/
+/- `lowerInstr`/`lowerCode`: lower a calculated `Bang.Instr`/`Code` to WASM
+opcodes. RET/LAMI/SUBST/APP/CASE/SPLIT map 1:1; MARK/UNMARK/OP are the handler
+opcodes (sub-step 1b); THROW is never compiled. Mutual because `MARK` carries a
+residual `Code` to lower. -/
+mutual
 def lowerInstr : CalcVM.Instr → List Wasmfx.Instr
   | .RET v   => [.const v]
   | .LAMI M  => [.clos M]
@@ -143,11 +167,16 @@ def lowerInstr : CalcVM.Instr → List Wasmfx.Instr
   | .APP v   => [.callS v]
   | .CASE w N₁ N₂ => [.caseS w N₁ N₂]   -- sub-step 1a (ADT)
   | .SPLIT w N    => [.splitS w N]
-  | _        => []          -- sub-step 1b (MARK/UNMARK/THROW/OP — handlers)
-
+  -- effect handlers (sub-step 1b): MARK/UNMARK/OP. `compile` never emits THROW (it is an
+  -- internal `exec` transition target, never compiled), so THROW lowers to nothing.
+  | .MARK h cr    => [.markH h (lowerCode cr)]
+  | .UNMARK       => [.unmarkH]
+  | .OP ℓ op v    => [.opH ℓ op v]
+  | .THROW _ _ _  => []      -- never compiled
 def lowerCode : CalcVM.Code → Wasmfx.Code
   | []      => []
   | i :: c  => lowerInstr i ++ lowerCode c
+end
 
 /-- The compiler: lower the calculated `compile c []`. Result type fixed to `i32`
 for Milestone A (the pure fragment returns i32/unit; a precise result type comes
@@ -185,39 +214,81 @@ re-compile the SAME residual `exec` does. -/
 theorem compileV_recoverV (v : Bang.Val) : recoverV (compileV v) = v := by
   cases v <;> rfl
 
-def wexec : Nat → Code → VStack → Option VStack
-  | 0,          _,              _ => none
-  | Nat.succ _, [],             s => some s
-  | Nat.succ f, .const v :: c,  s => wexec f c (compileV v :: s)
-  | Nat.succ f, .clos M :: c,   s => wexec f c (.clos M :: s)
-  | Nat.succ f, .bindS N :: c,  s =>
+/-! #### WASM handler-stack helpers (sub-step 1b) — mirror exec's exactly.
+
+`wStateUpdate`/`wUnwindFind` are the WASM analogs of CalcVM's
+`stateUpdate`/`unwindFind` (`Bang/CalcVM.lean`), operating on the WASM `HStack`.
+They are STRUCTURALLY IDENTICAL (same recursion on the frame list, same handler
+match) — only the saved code/stack carried in the kept/restored frames are WASM
+rather than CalcVM. This 1:1 mirror is what keeps `exec_wexec_sim` a clean
+lockstep: `injHStack` commutes with both (proven in the handler-commutation
+lemmas). -/
+def wStateUpdate : Bang.EffectRow.Label → Bang.OpId → Bang.Val → HStack → Option (Bang.Val × HStack)
+  | _, _, _, []       => none
+  | ℓ, op, v, fr :: hs =>
+      match fr.handler with
+      | .state ℓ0 s =>
+          if ℓ0 = ℓ then
+            if op = "get" then some (s, fr :: hs)
+            else if op = "put" then some (.vunit, { fr with handler := .state ℓ0 v } :: hs)
+            else none
+          else (wStateUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))
+      | _ => (wStateUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))
+
+/-- WASM analog of CalcVM's `unwindFind` (throws-only abort target): the nearest
+`throws ℓ`-frame's saved OUTER continuation. -/
+def wUnwindFind : Bang.EffectRow.Label → Bang.OpId → HStack → Option (Code × VStack × HStack)
+  | _, _, [] => none
+  | ℓ, op, fr :: hs =>
+      match fr.handler with
+      | .throws ℓ0 => if ℓ0 = ℓ ∧ op = "raise" then some (fr.savedCode, fr.savedStack, hs)
+                      else (wUnwindFind ℓ op hs).map (fun p => (p.1, p.2.1, p.2.2))
+      | _ => (wUnwindFind ℓ op hs).map (fun p => (p.1, p.2.1, p.2.2))
+
+def wexec : Nat → Code → VStack → HStack → Option VStack
+  | 0,          _,              _, _ => none
+  | Nat.succ _, [],             s, _ => some s
+  | Nat.succ f, .const v :: c,  s, hs => wexec f c (compileV v :: s) hs
+  | Nat.succ f, .clos M :: c,   s, hs => wexec f c (.clos M :: s) hs
+  | Nat.succ f, .bindS N :: c,  s, hs =>
       match s with
-      -- pop the operand (the injection of a `ret v`); recover `v` and re-compile
-      -- `N[v]` PREPENDED to the remaining code `c`, exactly as `exec`'s SUBST arm.
-      | w :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst (recoverV w) N) []) ++ c) s'
+      | w :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst (recoverV w) N) []) ++ c) s' hs
       | _       => none
-  | Nat.succ f, .callS v :: c,  s =>
+  | Nat.succ f, .callS v :: c,  s, hs =>
       match s with
-      | .clos N :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst v N) []) ++ c) s'
+      | .clos N :: s' => wexec f (lowerCode (CalcVM.compile (Comp.subst v N) []) ++ c) s' hs
       | _             => none
-  | Nat.succ f, .getL _ :: c,   s => wexec f c s     -- (open programs only; closed ⇒ unused)
-  | Nat.succ f, .setL _ :: c,   s => wexec f c s
-  -- ADT eliminators (sub-step 1a): inspect the closed-value scrutinee IN THE INSTR (no stack pop),
-  -- re-compile the chosen branch PREPENDED to `c`, exactly as `exec`'s CASE/SPLIT arms.
-  | Nat.succ f, .caseS w N₁ N₂ :: c, s =>
+  | Nat.succ f, .getL _ :: c,   s, hs => wexec f c s hs
+  | Nat.succ f, .setL _ :: c,   s, hs => wexec f c s hs
+  -- ADT eliminators (sub-step 1a): scrutinee in the instr; re-compile the chosen branch.
+  | Nat.succ f, .caseS w N₁ N₂ :: c, s, hs =>
       match w with
-      | .inl v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) []) ++ c) s
-      | .inr v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) []) ++ c) s
+      | .inl v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) []) ++ c) s hs
+      | .inr v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) []) ++ c) s hs
       | _      => none
-  | Nat.succ f, .splitS w N :: c, s =>
+  | Nat.succ f, .splitS w N :: c, s, hs =>
       match w with
-      | .pair v u => wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) []) ++ c) s
+      | .pair v u => wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) []) ++ c) s hs
       | _         => none
+  -- effect handlers (sub-step 1b): mirror exec's MARK/UNMARK/OP arms.
+  | Nat.succ f, .markH h cr :: c, s, hs =>
+      wexec f c s ({ handler := h, savedCode := cr, savedStack := s } :: hs)
+  | Nat.succ f, .unmarkH :: c, s, hs =>
+      match hs with
+      | _ :: hs' => wexec f c s hs'
+      | []       => none
+  | Nat.succ f, .opH ℓ op v :: c, s, hs =>
+      match wStateUpdate ℓ op v hs with
+      | some (r, hs') => wexec f c (compileV r :: s) hs'         -- RESUME (state): continue c with ret r
+      | none =>
+          match wUnwindFind ℓ op hs with
+          | some (c', s', hs') => wexec f c' (compileV v :: s') hs'  -- ABORT to (Kₒ, ret v)
+          | none               => none
 
 /-- Run a compiled module to a single value on the operand stack. The closed
-program starts on the empty stack; `done` = a singleton operand stack. -/
+program starts on the empty stack + empty handler stack; `done` = a singleton. -/
 def run (fuel : Nat) (m : Module) : Result Val :=
-  match wexec fuel m.body [] with
+  match wexec fuel m.body [] [] with
   | some [v] => .done v
   | some _   => .stuck
   | none     => .oom
@@ -289,6 +360,15 @@ def CodePure (code : CalcVM.Code) : Prop := ∀ i ∈ code, InstrPure i
 
 /-- Pointwise injection of `exec`'s terminal-stack onto the WASM operand stack. -/
 def injStack (s : CalcVM.Stack) : VStack := s.map injTerminal
+
+/-- Injection of a CalcVM handler frame / handler stack onto the WASM ones: the
+handler is shared, the saved code/stack are lowered/injected. The relating
+invariant `whs = injHStack hs` is what makes `exec_wexec_sim`'s handler arms a
+lockstep (the WASM helpers `wStateUpdate`/`wUnwindFind` commute with it). -/
+def injHFrame (fr : CalcVM.HFrame) : HFrame :=
+  { handler := fr.handler, savedCode := lowerCode fr.savedCode, savedStack := injStack fr.savedStack }
+
+def injHStack (hs : CalcVM.HStack) : HStack := hs.map injHFrame
 
 /-! #### Purity preservation under shift / subst (autosubst-style, structural) -/
 
@@ -516,7 +596,7 @@ theorem exec_wexec_sim :
     ∀ (f : Nat) (code : CalcVM.Code) (s s' : CalcVM.Stack),
       CodePure code → StackPure s →
       CalcVM.exec f code s [] = some s' →
-      wexec f (lowerCode code) (injStack s) = some (injStack s') := by
+      wexec f (lowerCode code) (injStack s) [] = some (injStack s') := by
   intro f
   induction f with
   | zero => intro code s s' _ _ h; simp [CalcVM.exec] at h
@@ -564,7 +644,7 @@ theorem exec_wexec_sim :
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
                     have hcode : CalcVM.compile (Comp.subst v N) c
                         = CalcVM.compile (Comp.subst v N) [] ++ c := compile_append hpu c
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0)
+                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) []
                         = some (injStack s') :=
                       ih _ s0 s' (compile_pure hpu hc) hsp0 h
                     simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec,
@@ -586,7 +666,7 @@ theorem exec_wexec_sim :
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
                     have hcode : CalcVM.compile (Comp.subst v N) c
                         = CalcVM.compile (Comp.subst v N) [] ++ c := compile_append hpu c
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0)
+                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) []
                         = some (injStack s') :=
                       ih _ s0 s' (compile_pure hpu hc) hsp0 h
                     simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec,
@@ -604,7 +684,7 @@ theorem exec_wexec_sim :
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.1
                 have hcode : CalcVM.compile (Comp.subst v N₁) c
                     = CalcVM.compile (Comp.subst v N₁) [] ++ c := compile_append hpu c
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s)
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) []
                     = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
                 simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
                 rw [← lowerCode_append, ← hcode]
@@ -614,7 +694,7 @@ theorem exec_wexec_sim :
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.2
                 have hcode : CalcVM.compile (Comp.subst v N₂) c
                     = CalcVM.compile (Comp.subst v N₂) [] ++ c := compile_append hpu c
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s)
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) []
                     = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
                 simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
                 rw [← lowerCode_append, ← hcode]
@@ -631,7 +711,7 @@ theorem exec_wexec_sim :
                 have hcode : CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c
                     = CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) [] ++ c :=
                   compile_append hpu c
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s)
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) []
                     = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
                 simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
                 rw [← lowerCode_append, ← hcode]
@@ -1296,7 +1376,7 @@ theorem compile_forward_sim_pure {c : Comp} {v : Val} {fuel : Nat}
   rw [show Wasmfx.injStack [Comp.ret v] = [compileV v] from by
     simp [Wasmfx.injStack, injTerminal]] at hsim
   -- `run` reduces on `wexec … = some [compileV v]` (singleton-operand-stack ⇒ done).
-  have hb : Wasmfx.wexec F (compileC c).body [] = some [compileV v] := hsim
+  have hb : Wasmfx.wexec F (compileC c).body [] [] = some [compileV v] := hsim
   show Wasmfx.run F (compileC c) = Result.done (compileV v)
   unfold Wasmfx.run
   rw [hb]
