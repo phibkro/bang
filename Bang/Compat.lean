@@ -1980,4 +1980,46 @@ theorem krel_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo :
   | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
       exact krel_handleF_transaction (ihK hCo)
 
+
+/-! ### B.6′ ◊4.5b — `krelS_refl` (the answer-typed `lr_sound` capstone)
+
+A well-typed stack is `KrelS`-self-related at answer type `Co` (the whole-program returner type, the
+`D` parameter). Induction over `HasStack`: nil = `krelS_nil_succ`; letF/appF reuse the frame intros +
+`crelK_fund`/`vrelK_fund` for the continuation/arg self-relation. The 3 handler arms carry `sorry`
+(→ sub-block f, with the handler row-discharge + the `crelK_fund` handler cases). -/
+theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo : Mult}
+    {Ao : VTy Eff Mult} (hCo : Co = CTy.F qo Ao)
+    (hC : HasStack C e B eo Co) : KrelS n B Co e C C := by
+  induction hC with
+  | @nil e' C' =>
+      -- `B = C' = Co = F qo Ao` (`hCo`): the returner empty stack is `krelS_nil_succ`.
+      subst hCo; exact krelS_nil_succ n _ _ _
+  | @letF K N e₁ e₂ eo q qk A B Co hN hK ihK =>
+      -- HasStack.letF: tail `K` at the JOINED row `e₁⊔e₂` (ihK), continuation `N` at `e₂`, frame hole
+      -- at `e₁`. Build the letF-extended `KrelS` at the joined row `e₁⊔e₂` (continuation row e₂ ≤ e₁⊔e₂),
+      -- then WEAKEN the whole frame down to the goal's hole row `e₁` (`e₁ ≤ e₁⊔e₂`, antitone). The frame
+      -- body self-relates the continuation `N` via `crelK_fund` (▷-guarded, ∀ m < n).
+      have hframe : KrelS n (CTy.F q A) Co (e₁ ⊔ e₂) (Frame.letF N :: K) (Frame.letF N :: K) := by
+        refine krelS_letF_intro (φ := e₂) le_sup_right ?_ (ihK hCo)
+        intro m _hm v₁ v₂ hcv₁ hcv₂ hv
+        have hδ' : EnvRelK m [A] [v₁] [v₂] := by
+          rw [EnvRelK]; exact ⟨hcv₁, hcv₂, hv, EnvRelK_nil_iff m [] [] |>.mpr ⟨rfl, rfl⟩⟩
+        have := crelK_fund hN m [v₁] [v₂] hδ'
+        rwa [show closeC [v₁] N = Comp.subst v₁ N from rfl,
+             show closeC [v₂] N = Comp.subst v₂ N from rfl] at this
+      exact KrelS_eff_anti le_sup_left hframe
+  | @appF K v e eo q A B Co hv hK ihK =>
+      have hcv : Val.Closed v := fun k => hv.shift_closed k (Nat.zero_le k)
+      have hvr : VrelK n A v v := by
+        have := vrelK_fund hv n [] [] (EnvRelK_nil_iff n [] [] |>.mpr ⟨rfl, rfl⟩)
+        rwa [closeV_closed hcv] at this
+      exact krelS_appF_intro hcv hcv hvr (ihK hCo)
+  | @handleF K ℓ e φ eo q A Co hArg hIface hsub hK ihK =>
+      -- ◊4.5b sub-block f: the handler-frame self-relation (row-discharge). `sorry` until f.
+      sorry
+  | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
+      sorry
+  | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
+      sorry
+
 end Bang

@@ -1234,6 +1234,16 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
     intro q' A' B' hEq
     exact absurd hEq (by simp)
 
+/-- ◊4.5b `KrelS` nil self-relation: the empty stack relates to itself at answer type = hole type
+`F q A`. The return-half is index-free (`ret` always converges); `C = D` holds (both `F q A`). Works
+at EVERY index (the metered nil return-half is monotone-trivial — no `n+1` needed, unlike the old
+`krel_nil_succ` whose stuck-half needed `Srel (n+1)`; `KrelS`'s nil has no stuck-half). -/
+theorem krelS_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
+    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (q : Mult) (A : VTy Eff Mult) (e : Eff) :
+    KrelS n (CTy.F q A) (CTy.F q A) e ([] : Stack) ([] : Stack) := by
+  rw [krelS_nil]
+  exact ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+
 /-- WHOLE-PROGRAM adequacy: `Crel` implies the closed (empty-context) observation
 `Converges c₁ → Converges c₂`. The `⊑` restricted to `C = []`. Provable from `Crel` +
 `krel_nil_succ` alone (no fundamental theorem). RETURNER type only (`F q A`): the empty-stack
