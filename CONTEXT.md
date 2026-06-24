@@ -60,7 +60,7 @@
                                      carrier on Krel/Srel/EnvRel (ADR-0036); arrow clause = PEELING +
                                      krel_nil_succ F-restriction (ADR-0038 — both pure forms refuted by
                                      the build). 16 proof commits f6d0ce2…69d70b1, 723 jobs green.
-◊4.5 ✓ LR rebuild — lr_sound CLOSED mod append crux (`a5464da`, 2026-06-24) ── ◊4.5a banked (main `974e169`): the IxFree reshape — non-▷ spine
+◊4.5 ✓ LR rebuild — lr_sound + all 3 handler kinds END-TO-END; SCOPED-SEAM landing (answertrack, `cap45-answertrack`) → axiom-clean over the no-nested-wrap domain; full-generality reshape DEFERRED (answer-determinism FALSE = confirmed rabbit-hole) (2026-06-24) ── ◊4.5a banked (main `974e169`): the IxFree reshape — non-▷ spine
                                      re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `4b2f973`),
                                      `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`b5cfc88`), resume
                                      infra krel_handleF* (`421edc0`), ▷-guarded Vrel μ-clause strict-< (`33f50ea`,
