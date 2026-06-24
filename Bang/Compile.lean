@@ -370,6 +370,98 @@ def injHFrame (fr : CalcVM.HFrame) : HFrame :=
 
 def injHStack (hs : CalcVM.HStack) : HStack := hs.map injHFrame
 
+/-! #### Handler-helper commutation: the WASM helpers mirror exec's under `injHStack`.
+
+`wStateUpdate`/`wUnwindFind` are STRUCTURALLY IDENTICAL to CalcVM's
+`stateUpdate`/`unwindFind`, so they commute with `injHStack` — the resume/abort
+result value is the SAME `Bang.Val`, and the returned handler stack is the
+injection of exec's. These are what make the `opH` simulation arm a lockstep. -/
+
+theorem wStateUpdate_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) :
+    ∀ {hs : CalcVM.HStack} {r hs'}, CalcVM.stateUpdate ℓ op v hs = some (r, hs') →
+      wStateUpdate ℓ op v (injHStack hs) = some (r, injHStack hs') := by
+  intro hs
+  induction hs with
+  | nil => intro r hs' h; simp [CalcVM.stateUpdate] at h
+  | cons fr hs ih =>
+      intro r hs' h
+      simp only [injHStack, List.map_cons, wStateUpdate, injHFrame]
+      simp only [CalcVM.stateUpdate] at h
+      cases hfr : fr.handler with
+      | state ℓ0 s =>
+          rw [hfr] at h
+          by_cases hℓ : ℓ0 = ℓ
+          · subst hℓ
+            by_cases hg : op = "get"
+            · subst hg; simp only [Prod.mk.injEq] at h
+              obtain ⟨rfl, rfl⟩ := h; simp [injHStack, injHFrame, hfr.symm]
+            · simp only [if_neg hg, if_pos rfl] at h ⊢
+              by_cases hp : op = "put"
+              · subst hp; simp only [Prod.mk.injEq] at h
+                obtain ⟨rfl, rfl⟩ := h; simp [injHStack, injHFrame]
+              · simp only [if_neg hp] at h; simp at h
+          · simp only [if_neg hℓ] at h ⊢
+            cases hrec : CalcVM.stateUpdate ℓ op v hs with
+            | none => rw [hrec] at h; simp at h
+            | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
+                        obtain ⟨rfl, rfl⟩ := h
+                        simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+      | throws ℓ0 =>
+          rw [hfr] at h
+          cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+      | transaction ℓ0 Θ =>
+          rw [hfr] at h
+          cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+
+theorem wUnwindFind_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) :
+    ∀ {hs : CalcVM.HStack} {c' s' hs'}, CalcVM.unwindFind ℓ op hs = some (c', s', hs') →
+      wUnwindFind ℓ op (injHStack hs) = some (lowerCode c', injStack s', injHStack hs') := by
+  intro hs
+  induction hs with
+  | nil => intro c' s' hs' h; simp [CalcVM.unwindFind] at h
+  | cons fr hs ih =>
+      intro c' s' hs' h
+      simp only [injHStack, List.map_cons, wUnwindFind, injHFrame]
+      simp only [CalcVM.unwindFind] at h
+      cases hfr : fr.handler with
+      | throws ℓ0 =>
+          rw [hfr] at h
+          by_cases hcond : ℓ0 = ℓ ∧ op = "raise"
+          · simp only [if_pos hcond] at h ⊢
+            simp only [Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨rfl, rfl, rfl⟩ := h; simp [injHStack, injHFrame]
+          · simp only [if_neg hcond] at h ⊢
+            cases hrec : CalcVM.unwindFind ℓ op hs with
+            | none => rw [hrec] at h; simp at h
+            | some p => obtain ⟨pc, ps, phs⟩ := p
+                        rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                        obtain ⟨rfl, rfl, rfl⟩ := h
+                        simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
+      | state ℓ0 s =>
+          rw [hfr] at h
+          cases hrec : CalcVM.unwindFind ℓ op hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => obtain ⟨pc, ps, phs⟩ := p
+                      rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨rfl, rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
+      | transaction ℓ0 Θ =>
+          rw [hfr] at h
+          cases hrec : CalcVM.unwindFind ℓ op hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => obtain ⟨pc, ps, phs⟩ := p
+                      rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨rfl, rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
+
 /-! #### Purity preservation under shift / subst (autosubst-style, structural) -/
 
 mutual
