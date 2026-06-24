@@ -1,5 +1,11 @@
 # 0036 — LR closed-value carrier: enforced at Krel/Srel quantification, not EnvRel alone
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: LR closed-value carrier enforced at `Krel`/`Srel` quantification (not `EnvRel` alone); unblocks `closeC_subst_comm` + the binder cases.
+- **Depends-on**: 0034, 0033, 0025, 0030, 0016
+
 - **Layer:** P (LR / proof-statement, with 0033 / 0034)
 - **Status:** Accepted
 - **Depends on:** 0034 (env-closed fundamental), 0033 (LR relations row-indexed), 0025 (closed CK focus), 0030 (closed heap cells), 0016

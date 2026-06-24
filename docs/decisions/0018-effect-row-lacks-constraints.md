@@ -1,5 +1,11 @@
 # ADR-0018 · Effect-row algebra — lacks-constrained row quantifiers (set discipline)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Effect-row algebra extended with lacks-constrained row quantifiers (set discipline); enables `no_accidental_handling`.
+- **Depends-on**: 0001, 0016
+
 - **Status:** Accepted
 - **Date:** 2026-06-21 (extracted from bang-lang-wasmfx/ADR-effect-row-algebra.md as part of the wasmfx merge)
 - **Layer:** K (kernel — extends ADR-0001's effect-row algebra)

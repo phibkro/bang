@@ -1,5 +1,11 @@
 # 0039 — ◊4 split: LR foundation lands for the non-▷ fragment; the ▷-subsystem (μ + resumptive handlers) → ◊4.5
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: ◊4 split — the LR foundation lands sorry-free for the non-▷ fragment; the cohesive ▷-subsystem (μ · `up` · resumptive handlers) defers to ◊4.5.
+- **Depends-on**: 0038, 0036, 0034, 0033, 0035, 0030, 0016
+
 - **Layer:** P (LR / proof-architecture)
 - **Status:** Accepted (user-authorized scope decision, 2026-06-24)
 - **Depends on:** 0038, 0036, 0034, 0033, 0035, 0030, 0016

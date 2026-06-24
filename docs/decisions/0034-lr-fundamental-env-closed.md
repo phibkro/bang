@@ -1,5 +1,11 @@
 # ADR-0034 · `lr_fundamental` is the env-closed (open-term) fundamental theorem; the bare `c c` is its `Γ=[]` corollary
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: `lr_fundamental` amended to the env-closed (open-term) form; the bare `c c` becomes its `Γ=[]` corollary `lr_fundamental_closed`.
+- **Depends-on**: 0033, 0023, 0016
+
 - **Status:** Accepted + **statement amendment LANDED** (◊4 U6, `133a4c1`, 2026-06-23; `just verify` green,
   716 jobs). The proof BODIES remain `sorry` (the ◊4 proof work — `lr_fundamental`/`_closed` are
   `[propext, sorryAx, Quot.sound]`); ◊2 0-axiom + ◊3 trusted-three intact.

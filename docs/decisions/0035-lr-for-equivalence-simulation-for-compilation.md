@@ -1,5 +1,11 @@
 # 0035 — Biorthogonal LR for equivalence (◊4); annotated simulation for compilation (◊5)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Biorthogonal LR proves ◊4's contextual-equivalence theorems; AsmFX-style annotated simulation is the method for ◊5's `compile_forward_sim`.
+- **Depends-on**: 0016, 0033, 0034
+
 - **Layer:** C (compiler / methodology)
 - **Status:** Accepted
 - **Depends on:** 0016 (two-hop architecture), 0033 (LR relations row-indexed), 0034 (lr_fundamental env-closed)

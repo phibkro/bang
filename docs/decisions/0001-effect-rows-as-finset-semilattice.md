@@ -1,5 +1,10 @@
 # ADR-0001 · Effect rows are idempotent sets (a join-semilattice), modeled as `Finset`
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Effect rows are idempotent sets (a join-semilattice), modeled as `Finset`.
+
 - **Status:** Accepted
 - **Date:** 2026-05-31
 - **Related:** 0002 (Lean substrate makes the laws free), spec `bang-lang-design.md` ("rows are sets… compose via union")

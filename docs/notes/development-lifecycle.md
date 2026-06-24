@@ -169,6 +169,12 @@ answers become an ADR. Don't decide solo what the operator's vision should settl
 can derive from existing ADRs. (This session's whole design corpus — ADR-0026..0029 — came from four such
 grills.)
 
+> **Before grilling or opening a design question, read the generated decided-ledger**
+> (`docs/decisions/README.md`) — a question with an ADR is **closed**; `grep docs/decisions/` first.
+> The ledger is generated from ADR frontmatter (`just adr-index`) and gated by `just adr-check`
+> (ADR-0042); a grilling session once re-derived an already-decided question (Q19/ADR-0040) because
+> the hand-maintained ledger had drifted. Don't repeat it.
+
 **Session economics.** A big design+build stretch should *checkpoint before* a large fresh build. Scope
 a rung (write its `PATH-*.md`) so it is cold-start-ready, then hand off — don't start the implementation
 on a tired context. `/codebase-maintenance` + a handoff doc is the clean close.

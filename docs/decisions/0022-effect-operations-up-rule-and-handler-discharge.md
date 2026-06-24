@@ -1,5 +1,12 @@
 # ADR-0022 · Effect operations: the `up` rule, operation signatures, and label-discharging `handle`
 
+<!-- adr-frontmatter -->
+
+- **Status**: Proposed
+- **Summary**: Effect operations: `up` rule + `EffSig` signatures + label-discharging `handle`; makes effect-soundness non-vacuous (D3 superseded by 0023).
+- **Resolves**: Q4, Q5
+- **Depends-on**: 0018, 0019, 0020, 0021
+
 - **Status:** Proposed (design lock for the up-rule arc; implementation staged below)
 - **Date:** 2026-06-22
 - **Layer:** K (kernel — typing rules, the effect-signature interface, the operational/typing tie for handlers)

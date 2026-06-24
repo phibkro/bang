@@ -1,5 +1,12 @@
 # ADR-0032 · `group_recovers` RETIRED — rollback is a handler mechanism, not an effect-algebra inverse
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: `group_recovers` RETIRED — the rollback law is false-as-`≈`, vacuous, and redundant; v1 rollback is the txn handler. Supersedes 0018's group-row.
+- **Resolves**: Q8
+- **Depends-on**: 0018, 0030, 0031, 0001
+
 - **Status:** Accepted + **LANDED** (2026-06-23, this retirement commit) — `group_recovers` DELETED from
   `Bang/Spec.lean` §6 and its `#print axioms` line from `Bang/Audit.lean`. `≈` UNCHANGED (the whole point —
   no LR-spine re-derivation). Supersedes the "group ⇒ rollback" row of ADR-0018's Trinity. NOTE: `Bang/LR.lean`'s

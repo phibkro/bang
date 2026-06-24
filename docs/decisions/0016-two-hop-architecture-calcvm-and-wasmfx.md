@@ -1,5 +1,12 @@
 # ADR-0016 — Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Two-hop architecture: graded-CBPV reference, CalcVM as executable spec, WasmFX as verified compiler target.
+- **Supersedes**: 0003, 0004
+- **Depends-on**: 0001, 0002, 0015
+
 ## Status
 Accepted. Supersedes ADRs 0003 (own-the-runtime) and 0004 (calculated-VM-canonical),
 which it subsumes. Folds in the renumbered effect-row-algebra ADR

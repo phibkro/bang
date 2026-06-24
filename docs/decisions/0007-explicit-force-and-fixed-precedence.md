@@ -1,5 +1,10 @@
 # ADR-0007 · Force is always explicit; grouping ≠ forcing; operator precedence is global
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Force is always explicit; grouping ≠ forcing; operator precedence is global (semantic; glyph liquid).
+
 - **Status:** Accepted
 - **Date:** 2026-06-21 (rewritten from earlier glyph-specific version of 2026-05-31)
 - **Layer:** K (kernel — semantic decisions; surface spellings are liquid)

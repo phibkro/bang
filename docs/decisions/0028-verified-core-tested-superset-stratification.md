@@ -1,5 +1,11 @@
 # ADR-0028 — Verified core + tested superset: the stratification principle (tooling · language · the meta-circular evaluator)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Verified core + tested superset, separated by an explicit seam — at three levels (correctness · tooling · language total/partial).
+- **Depends-on**: 0026, 0027, 0002
+
 - **Status**: Accepted
 - **Layer**: K+C (tooling division + the language's total/partial stratification)
 - **Depends on**: 0026 (the correctness ladder), 0027 (System F is the total typed core), 0002 (Lean), Q16

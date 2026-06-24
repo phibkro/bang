@@ -1,5 +1,12 @@
 # ADR-0017 · K3 calculated-machine retrospective (supersedes ADRs 0010–0014)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: K3 calculated-machine retrospective — composition-mechanism map + methodology; replaces the five per-machine ADRs.
+- **Supersedes**: 0010, 0011, 0012, 0013, 0014
+- **Depends-on**: 0009, 0008
+
 - **Status:** Accepted (retrospective; replaces five per-machine ADRs that were execution records)
 - **Date:** 2026-06-21
 - **Layer:** C (compiler methodology — what the K3 staging taught)

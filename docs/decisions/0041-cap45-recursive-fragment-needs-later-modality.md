@@ -1,5 +1,12 @@
 # 0041 — ◊4.5: the LR's recursive fragment requires a `▷` (later) modality
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: ◊4.5 — the LR's recursive fragment (μ · `up` · resumptive handlers) requires a ▷ (later) modality; build-proven + literature-confirmed.
+- **Amends**: 0039
+- **Depends-on**: 0039, 0038, 0036, 0035, 0034, 0033
+
 - **Status:** Accepted (build-proven + literature-confirmed, 2026-06-24)
 - **Layer:** C+ (LR metatheory / proof architecture)
 - **Depends on / amends:** [0039](0039-cap4-non-triangleright-split.md) (the ◊4/◊4.5 split), [0035](0035-lr-for-equivalence-simulation-for-compilation.md) (LR vs compiler), [0033/0034/0036/0038] (the LR formulation)

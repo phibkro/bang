@@ -1,5 +1,13 @@
 # 0040 — Laws as first-class algebraic interfaces; proof-first discharge (amends ADR-0026)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Surface laws are first-class, enforced algebraic interfaces; discharge is proof-first → test → assert. Amends 0026's test-default.
+- **Amends**: 0026
+- **Resolves**: Q19
+- **Depends-on**: 0026, 0027, 0029, 0016
+
 - **Layer:** C (language design / discharge methodology) — the moat surface, near-permanent
 - **Status:** Accepted (user-grilled, 2026-06-24)
 - **Depends on:** 0026 (amends), 0027 (polymorphism staging), 0029 (ADTs), the ◊4 LR

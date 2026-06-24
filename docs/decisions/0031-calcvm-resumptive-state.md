@@ -1,5 +1,11 @@
 # ADR-0031 · CalcVM resumptive state: `evalD` threads a store and services ops inline; the machine RESUMES with a non-discarding `OP` (shape A stays, one-shot)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: CalcVM resumptive state: `evalD` threads a label-keyed store servicing ops inline; the machine RESUMES with a non-discarding `OP` (shape A stays).
+- **Depends-on**: 0025, 0030, 0023, 0016
+
 - **Status:** Accepted + **LANDED, both arms** — `state` (`2063c0e`) and `transaction` (`84e3ab3`,
   2026-06-23), each axiom-clean: `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` ⊆ {propext,
   Classical.choice, Quot.sound}, ◊2 gate (`no_accidental_handling`/`rowinst_requires_disjoint`) still

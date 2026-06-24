@@ -1,5 +1,10 @@
 # ADR-0002 · Verify the reference in Lean 4 + Mathlib, not F\*
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Verify the reference in Lean 4 + Mathlib, not F\* (agent-maintainable proofs).
+
 - **Status:** Accepted
 - **Date:** 2026-05-31
 - **Related:** 0001 (Mathlib gives the row algebra free), 0004 (the reference is what the VM is calculated against)

@@ -1,5 +1,10 @@
 # ADR-0008 · The definitional `eval` is a fuel-bounded free-monad interpreter; handlers are a deep fold
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: The definitional `eval` is a fuel-bounded free-monad interpreter; handlers are a deep fold.
+
 - **Status:** Accepted
 - **Date:** 2026-05-31
 - **Related:** 0004 (the VM is *calculated from* this `eval`; this ADR fixes the shape it calculates against), 0001 (effect labels reuse the `Finset` row model), 0006 (capture scoping note), 0007 (`$` force / parens group drive the AST shape)

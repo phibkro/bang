@@ -1,5 +1,13 @@
 # ADR-0020 · De Bruijn indices for the term representation
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: De Bruijn indices for the term representation — dissolves the named-encoding side-conditions; amends 0019's context split.
+- **Amends**: 0019
+- **Resolves**: Q10, Q11
+- **Depends-on**: 0019
+
 - **Status:** Accepted
 - **Date:** 2026-06-21
 - **Layer:** K (kernel — term syntax, substitution, typing context)

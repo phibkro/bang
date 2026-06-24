@@ -1,5 +1,12 @@
 # ADR-0019 · Typing context split — Finsupp grade-vector + ambient type context
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Typing context split into a Finsupp grade-vector + ambient type context; enables the resource-enforcing rules.
+- **Resolves**: Q3, Q10
+- **Depends-on**: 0001, 0016
+
 - **Status:** Accepted
 - **Date:** 2026-06-21
 - **Layer:** K (kernel — resolves OPEN_QUESTIONS Q3, enables Q10)

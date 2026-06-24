@@ -1,5 +1,12 @@
 # ADR-0023 · The CK machine: deep handlers, and why `progress` needs a stack
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: CK machine for deep handlers — `Source.step` becomes config-level (`EvalCtx × Comp`); throws discards the captured continuation.
+- **Resolves**: Q4, Q5, Q6, Q13
+- **Depends-on**: 0020, 0021, 0022
+
 - **Status:** Accepted (design lock for the operational-semantics rewrite; implementation staged below)
 - **Date:** 2026-06-22
 - **Layer:** K (kernel — operational semantics + the STD-block metatheory over it)

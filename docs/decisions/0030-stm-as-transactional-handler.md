@@ -1,5 +1,11 @@
 # ADR-0030 — STM enters as a transactional handler in v1; privilege is concurrency-only
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: STM enters v1 as a transactional handler — NO new kernel primitive; privilege (shared heap) is concurrency-only and deferred.
+- **Depends-on**: 0025, 0023, 0001, 0018, 0026, 0016
+
 - **Status**: Accepted
 - **Layer**: K (kernel semantics — how STM enters the model)
 - **Depends on**: 0025 (resumptive state handler — STM reuses it), 0023 (CK machine + throws handler — rollback-on-abort), 0001/0018 (effect rows — the `stm` label), 0026 (laws on the tested rung), 0016 (architecture in force)

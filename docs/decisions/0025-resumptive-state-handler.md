@@ -1,5 +1,12 @@
 # ADR-0025 · Resumptive state handlers: the CK machine keeps the continuation, and the closed focus dissolves the grade tension
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Resumptive state handler: `dispatch` keeps the captured continuation + reinstalls a deep `state ℓ s'` frame; the closed focus dissolves the grade tension.
+- **Resolves**: Q12
+- **Depends-on**: 0023, 0020
+
 - **Status:** Accepted (design lock for the `state` arm of the CK machine; implementation staged below)
 - **Date:** 2026-06-22
 - **Layer:** K (kernel — operational semantics + the metatheory over it). **Tag: K-ADR** (semantic).

@@ -1,5 +1,10 @@
 # ADR-0006 · Capture is explicit and tracked; no implicit lexical closure
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Capture is explicit and tracked; no implicit lexical closure.
+
 - **Status:** Accepted
 - **Date:** 2026-05-31
 - **Related:** 0003 (this unlocks what owning the runtime enables), spec `bang-lang-description-value.md`

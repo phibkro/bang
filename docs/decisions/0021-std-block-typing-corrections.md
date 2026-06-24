@@ -1,5 +1,11 @@
 # ADR-0021 · Effect/grade typing corrections surfaced by the STD block
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Effect/grade typing corrections surfaced by the STD block — makes preservation/progress/type_safety provable; advances Q4.
+- **Depends-on**: 0019, 0020
+
 - **Status:** Accepted
 - **Date:** 2026-06-22
 - **Layer:** K (kernel — typing rules, multiplicity algebra, theorem statements)

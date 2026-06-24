@@ -1,5 +1,10 @@
 # ADR-0005 · Reactivity is an operator distinction, not a separate kernel form
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Reactivity is an operator distinction, not a separate kernel form (semantic; surface glyph liquid).
+
 - **Status:** Accepted
 - **Date:** 2026-06-21 (rewritten from earlier glyph-specific version of 2026-05-31)
 - **Layer:** K (kernel — semantic decision)

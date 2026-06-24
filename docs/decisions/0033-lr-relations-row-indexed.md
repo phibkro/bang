@@ -1,5 +1,11 @@
 # ADR-0033 · The LR relations are indexed by the effect row ε (faithful Biernacki τ/ε)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: The LR relations are indexed by the effect row ε (faithful Biernacki τ/ε); a faithful tightening of the Phase-A stub.
+- **Depends-on**: 0021, 0023, 0016
+
 - **Status:** Accepted + **LANDED** (◊4 U2, `eadec83`, 2026-06-23) — axiom-clean (`lr_sound`/`lr_fundamental`
   → `[propext, sorryAx, Quot.sound]`; the 4 LR-relation axioms became WF defs; ◊2/◊3 gates not regressed).
 - **Date:** 2026-06-23

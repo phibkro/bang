@@ -12,12 +12,12 @@
 
 - [Q1 — Eff algebra: Semiring vs Lattice](#q1--eff-algebra-semiring-vs-lattice)
 - [Q2 — Mult = QTT concretization](#q2--mult--qtt-concretization)
-- [Q3 — Ctx representation: List vs FinMap](#q3--ctx-representation-list-vs-finmap)
+- [Q3 — Ctx representation: List vs FinMap](#q3--ctx-representation-list-vs-finmap)  · ✓ RESOLVED (ADR-0019)
 - [Q4 — `handle` typing rule: simplified vs label-removing](#q4--handle-typing-rule-simplified-vs-label-removing)  · ✓ RESOLVED (ADR-0022 D4 + ADR-0023)
 - [Q5 — `up` typing rule + opArgTy/opResTy](#q5--up-typing-rule--oparGty-opresty)  · ✓ RESOLVED (ADR-0022 + ADR-0023)
 - [Q6 — Source.step's deep-handler resumption](#q6--sourcestep-deep-handler-resumption)  · ◑ throws resolved (ADR-0023); state → Q12
 - [Q7 — Operation names as strings vs symbolic enum](#q7--operation-names-as-strings-vs-symbolic-enum)
-- [Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?](#q8--group_recovers-bridge-e-group--f-dagger-frobenius)
+- [Q8 — `group_recovers` bridge: E group ⇒ F dagger-Frobenius?](#q8--group_recovers-bridge-e-group--f-dagger-frobenius)  · ✓ RESOLVED (ADR-0032 — unresolved-but-bounded)
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](#q9--wasmfx-target-drift-frozen-oopsla23-syntax-vs-phase-3-standard)
 - [Q10 — Typing rules must enforce grades (resource discipline)](#q10--typing-rules-must-enforce-grades-resource-discipline)  · ✓ RESOLVED (ADR-0019+0020; subst_value proven)
 - [Q11 — Open-term substitution: capture-avoiding subst vs de Bruijn](#q11--open-term-substitution-capture-avoiding-subst-vs-de-bruijn)  · ✓ RESOLVED (ADR-0020)
@@ -28,7 +28,7 @@
 - [Q16 — Undecidable + unsafe programs: effects-with-oracles vs FFI](#q16--undecidable--unsafe-programs-effects-with-oracles-vs-ffi)  · OPEN
 - [Q17 — Polymorphism + effect-row polymorphism](#q17--polymorphism--effect-row-polymorphism)  · ✓ RESOLVED (ADR-0027 — staged: monomorphic v1 → HM → System F)
 - [Q18 — Data types: ADTs, inductive/coinductive, law attachment](#q18--data-types-adts-inductivecoinductive-law-attachment)  · ✓ RESOLVED (ADR-0029 — iso-recursive sum/product/μ)
-- [Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)](#q19--typeclassestraits-with-laws-ad-hoc-polymorphism--the-laws-surface)  · OPEN
+- [Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)](#q19--typeclassestraits-with-laws-ad-hoc-polymorphism--the-laws-surface)  · ✓ RESOLVED (ADR-0040)
 - [Q20 — Surface extensibility: pseudoinstructions via aliasing + macros](#q20--surface-extensibility-pseudoinstructions-via-aliasing--macros)  · OPEN
 
 > See also `design-space-map.md` (the survey) and **ADR-0026** (the correctness-ladder keystone that
@@ -741,7 +741,15 @@ but poor ergonomics + performance; possibly an *internal* lowering target.
 
 ---
 
-## Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)  · OPEN
+## Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)  · ✓ RESOLVED 2026-06-24 → ADR-0040
+
+**Resolution**: **ADR-0040** (the user-grilled laws-surface design) answers this: laws are
+first-class, enforced **algebraic interfaces** (Rust-ish traits whose `law` members are
+operations + equations relating them; the moat's user-facing face). Discharge is **proof-first**
+→ property-test → assert, descent explicit + marked (amends ADR-0026's test-default). Monomorphic
+first, Hindley-Milner next (ADR-0027). The *resolution discipline* (option 1 vs 2 vs 3 below) is
+subsumed by the algebraic-interface framing. The full rationale + rejected alternatives live in
+**ADR-0040** (the SoT); the original deliberation is preserved below.
 
 **Question**: how does bang do ad-hoc polymorphism / overloading (`+`, `Eq`, `Ord`, `Monoid`)? And —
 since **a typeclass IS a set of operations + laws** — is the typeclass mechanism *also* the **laws

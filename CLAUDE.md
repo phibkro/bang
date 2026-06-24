@@ -119,6 +119,10 @@ language-level seam — a total prover interpreting a Turing-complete object lan
   (CLAUDE.md). Every token in this file is loaded into every session;
   bloat is expensive.
 - **On-demand reference** → `docs/notes/*` indexed in the Reference Index above.
+- **Before grilling or opening a design question, read the generated decided-ledger**
+  (`docs/decisions/README.md`) — a question with an ADR is **closed**, not open.
+  `grep docs/decisions/` first. The ledger is generated from each ADR's frontmatter
+  (`just adr-index`); `just adr-check` keeps it ≡ the ADRs + OPEN_QUESTIONS (ADR-0042).
 
 ## How to verify (the cheapest orientation)
 

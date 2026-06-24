@@ -1,5 +1,11 @@
 # ADR-0026 — Correctness is a dispatched ladder; the kernel defines semantics, checkers are a pluggable layer
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Correctness is a dispatched ladder (verified > tested > unsafe); the kernel defines semantics, checkers are a pluggable layer. Resolves the proof-power dial.
+- **Depends-on**: 0016, 0024
+
 - **Status**: Accepted
 - **Layer**: K+C (defines the kernel boundary + the verification methodology)
 - **Depends on**: 0016 (two-hop), 0024 (◊2 gate), Q15, Q16

@@ -1,5 +1,11 @@
 # 0038 — CBPV arrow observation in the biorthogonal LR: peeling `Krel(arr)` + returner-restricted empty-stack adequacy
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: CBPV computation-typed arrows in the LR: a PEELING/existential `Krel` arrow clause + returner-restricted empty-stack adequacy.
+- **Depends-on**: 0034, 0036, 0033, 0035, 0016
+
 - **Layer:** P (LR / proof-statement, with 0033 / 0034 / 0036)
 - **Status:** Accepted
 - **Depends on:** 0034 (env-closed fundamental), 0036 (closed-value carrier), 0033 (row-indexed relations), 0035 (biorthogonal LR for ◊4), 0016

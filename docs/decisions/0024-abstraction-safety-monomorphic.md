@@ -1,5 +1,11 @@
 # ADR-0024 · Abstraction-safety: `no_accidental_handling` is correct-by-construction in a label-indexed machine
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Abstraction-safety: `no_accidental_handling` restated faithfully + proven — correct-by-construction in the label-indexed machine. Closes the ◊2 gate.
+- **Depends-on**: 0018, 0023
+
 - **Status:** Accepted
 - **Date:** 2026-06-22
 - **Layer:** K (kernel — the §0.5 effect-row well-formedness block; the ◊2 gate theorem)

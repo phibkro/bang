@@ -1,5 +1,12 @@
 # ADR-0029 — Iso-recursive ADTs (sum + product + μ) for the data layer
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Iso-recursive ADTs (sum + product + μ with `fold`/`unfold`); inductive only; μ-vars ≠ polymorphism.
+- **Resolves**: Q18
+- **Depends-on**: 0027, 0026, 0028
+
 - **Status**: Accepted
 - **Layer**: K (kernel type-system extension)
 - **Depends on**: 0027 (monomorphic — μ-vars ≠ polymorphism), 0026 (laws on the ladder), 0028 (inductive = verified core; coinductive → Div superset)

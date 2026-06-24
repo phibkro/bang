@@ -1,5 +1,11 @@
 # 0037 — Abstract model fights for correctness; implementation fights for performance under contract (+ the shared-nothing concurrency invariant)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Abstract model fights for correctness; implementation for performance under contract; the concurrency runtime is shared-nothing.
+- **Depends-on**: 0016, 0035, 0030, 0026, 0028
+
 - **Layer:** C (architecture / methodology; constrains the semantics-preservation contract)
 - **Status:** Accepted (forward-looking invariant, pre-committed before ◊5/concurrency code exists)
 - **Depends on:** 0016 (two-hop), 0035 (LR=correctness / sim=compilation), 0030 (STM concurrency deferred), 0026/0028 (the verified-core/tested-superset seam), invariant #7

@@ -1,5 +1,12 @@
 # ADR-0027 — Polymorphism is staged: monomorphic v1 → Hindley-Milner → System F (+ effect-row + grade)
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: Polymorphism is staged: monomorphic v1 → Hindley-Milner → System F + effect-row + grade variables.
+- **Resolves**: Q17
+- **Depends-on**: 0026, 0001
+
 - **Status**: Accepted
 - **Layer**: K+C (defines the v1 type-system scope + the staging roadmap)
 - **Depends on**: 0026 (the correctness ladder — inference is a checker on it), 0001 (set-rows + the K1 unifier)

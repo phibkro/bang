@@ -22,8 +22,18 @@ setup:
 orient:
     bash tools/orient.sh
 
-# Default verify gate — selfcheck + build + audit.
-verify: selfcheck build audit
+# Default verify gate — selfcheck + build + audit + ADR-ledger currency.
+verify: selfcheck build audit adr-check
+
+# Regenerate the ADR decided-ledger (the index + resolved-questions tables in
+# docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
+adr-index:
+    python3 tools/gen-adr-index.py
+
+# Gate the ADR ledger: README generated region is current AND every Q marked
+# RESOLVED(ADR-n) in OPEN_QUESTIONS ⟺ ADR-n declares `Resolves: Qn`.
+adr-check:
+    python3 tools/gen-adr-index.py --check
 
 # Build the Lean library. First time: pulls Mathlib oleans (multi-GB).
 build:

@@ -1,5 +1,10 @@
 # ADR-0009 · The calculated VM is extrinsic and grown one constructor at a time, starting from an arithmetic kernel
 
+<!-- adr-frontmatter -->
+
+- **Status**: Accepted
+- **Summary**: The calculated VM is extrinsic and grown one constructor at a time, from an arithmetic kernel.
+
 - **Status:** Accepted
 - **Date:** 2026-05-31
 - **Related:** 0004 (the VM is the *output* of a Bahr–Hutton calculation from `eval`), 0008 (the `eval` it derives from; the free monad collapses to a plain `eval` on the pure fragment), roadmap §3 (the staging) and §8 (the reading canon)
