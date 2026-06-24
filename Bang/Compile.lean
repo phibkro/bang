@@ -816,6 +816,22 @@ theorem compile_ok (M : Comp) {c : CalcVM.Code} (hc : CodeOk c) :
     CodeOk (CalcVM.compile M c) :=
   (CodeOk_iff_forall _).mpr (compile_ok_mem M ((CodeOk_iff_forall c).mp hc))
 
+/-- **The load-bearing premise, BUILD-ENFORCED:** `compile` NEVER emits a `THROW`. This is the
+fact the whole `NoThrow`-is-total argument rests on (THROW is an internal `exec` transition
+target, NOT a compile output — `compile`'s `up` arm emits `OP`, never `THROW`). Stated directly
++ legibly at `c = []` (a CLOSED program's compilation, exactly what `compileC` runs): NO top-level
+instruction of `compile M []` is a `THROW`. Derived from `compile_ok` (so `CodeOk` is the witness):
+if any `compile` arm could emit `THROW`, `compile_ok`/`compile_ok_mem` fails to build (since
+`InstrOk (.THROW …) = False`), so `CodeOk`-of-compile-output — and the whole handler simulation's
+totality — is GATED on this, not assumed. (`CodeOk` is the STRONGER nested form: it forbids `THROW`
+inside `MARK` saved code too; this corollary is the legible headline of that fact.) -/
+theorem compile_no_throw (M : Comp) :
+    ∀ ℓ op v, CalcVM.Instr.THROW ℓ op v ∉ CalcVM.compile M [] := by
+  intro ℓ op v hmem
+  have hok : ∀ i ∈ CalcVM.compile M [], InstrOk i :=
+    (CodeOk_iff_forall _).mp (compile_ok M (by simp [CodeOk]))
+  exact (by simpa only [InstrOk] using hok _ hmem : False)
+
 /-! #### The lockstep simulation `exec ⟹ wexec`
 
 For PURE-spine code at the EMPTY handler stack, every successful `exec` run is
