@@ -1496,38 +1496,50 @@ theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
   · -- NON-pure (Milestone B + ADT increment): GAP 2.
     exact ⟨0, by sorry⟩
 
-/-! ## §7b — HANDLER model-validation battery (◊5 leg-#2, in-Lean half)
+/-! ## §7b — HANDLER soundness probes (◊5 — DOCUMENTS A MODEL DEFECT)
 
-The run-the-real-journey check on the TRANSCRIPTION: the Lean `Wasmfx.run`
-(`wexec`) agrees with the type-safety-verified kernel `Source.eval` on HANDLER
-programs — state resume AND the throws-abort path. Each closes by `rfl` (the
-programs reduce symbolically ⇒ no `native_decide`, axiom-clean).
+⚠ FAIL-LOUD: `Wasmfx.run` (`wexec`) is currently UNSOUND for handlers produced by
+a β/let-RESIDUAL re-compilation with a non-trivial abort continuation. These
+probes record both the agreeing cases AND the counterexample, so no reader
+mistakes the agreeing `rfl`s for handler soundness.
 
-These ALSO witness that the `compile_append`-for-handle proof obstacle is
-PROOF-ONLY, not a model defect: `wexec`'s residual arms (`lowerCode (compile M
-[]) ++ c`) are RUN-equivalent to `lowerCode (compile M c)` even where `compile`
-is not a difference-list builder (markH captures the continuation). The handler
-forward-sim's residual step will be a `wexec`-run-equivalence lemma, not the
-syntactic `compile_append`. The Wasmtime side of leg #2 (`tools/wasmfx-probe.sh`)
-covers the real-engine half once `compileHandler` emits a handler `.wat`. -/
+THE DEFECT: `wexec`'s SUBST/APP/CASE/SPLIT arms run `lowerCode (compile body [])
+++ c`. When `body` contains a `handle`, `compile body []` bakes the markH
+savedCode = `[]` (NOT the real outer continuation `c`). A zero-shot ABORT resumes
+that `[]` ⟹ `wexec` STOPS early with the aborted value, never reaching `c`. The
+markH must instead capture the real `c` (as exec's MARK does). FIX: thread the
+CalcVM continuation into the residual re-`compile` (`compile (subst v N) c_cvm`
+whole), mirroring exec — a bounded redesign of the 4 residual arms (task #40).
 
--- state get → RESUME with the stored value.
+The agreeing cases below are NOT a general validation: their abort continuations
+are identity-on-the-aborted-value, so stop-early coincides with the correct
+result. The COUNTEREXAMPLE breaks that coincidence. -/
+
+-- AGREE (state resume — no abort, savedCode unused): wexec ≡ kernel.
 example : Source.eval 50 (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)) = Result.done (.vint 42) := by rfl
 example : Wasmfx.run 50 (compileC (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)))
     = Result.done (.i32 42) := by rfl
 
--- a let-continuation that CONTAINS a handle (the SUBST residual runs over handler code).
-example : Wasmfx.run 50
-    (compileC (.letC (.ret (.vint 5)) (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit))))
-    = Result.done (.i32 42) := by rfl
-
--- throws ABORT with a load-bearing markH continuation: raise discards the inner cont
--- (`ret 99`), yields `7` to the NON-EMPTY outer let-continuation (`ret #0`).
+-- AGREE (abort, but outer cont = identity-on-the-value ⇒ stop-early coincides): NOT a soundness witness.
 example : Source.eval 50
     (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0)))
     = Result.done (.vint 7) := by rfl
 example : Wasmfx.run 50
     (compileC (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0))))
     = Result.done (.i32 7) := by rfl
+
+-- ⚠ COUNTEREXAMPLE — wexec DIVERGES from the kernel. An APP β-residual produces a `handle`
+-- that ABORTS; the outer let-cont IGNORES the aborted value (7) and returns 100. The kernel
+-- returns 100; `wexec` stops early at the abort and returns 7. Pinned to BLOCK a false "handlers
+-- work" claim until the residual-arm redesign lands (task #40).
+example : Source.eval 80
+    (.letC (.app (.lam (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
+           (.force (.vthunk (.ret (.vint 100)))))
+    = Result.done (.vint 100) := by rfl
+example : Wasmfx.run 80
+    (compileC (.letC (.app (.lam (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
+                     (.force (.vthunk (.ret (.vint 100))))))
+    = Result.done (.i32 7)   -- ⚠ WRONG (should be i32 100); documents the defect, see task #40
+    := by rfl
 
 end Bang
