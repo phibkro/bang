@@ -1496,4 +1496,38 @@ theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
   · -- NON-pure (Milestone B + ADT increment): GAP 2.
     exact ⟨0, by sorry⟩
 
+/-! ## §7b — HANDLER model-validation battery (◊5 leg-#2, in-Lean half)
+
+The run-the-real-journey check on the TRANSCRIPTION: the Lean `Wasmfx.run`
+(`wexec`) agrees with the type-safety-verified kernel `Source.eval` on HANDLER
+programs — state resume AND the throws-abort path. Each closes by `rfl` (the
+programs reduce symbolically ⇒ no `native_decide`, axiom-clean).
+
+These ALSO witness that the `compile_append`-for-handle proof obstacle is
+PROOF-ONLY, not a model defect: `wexec`'s residual arms (`lowerCode (compile M
+[]) ++ c`) are RUN-equivalent to `lowerCode (compile M c)` even where `compile`
+is not a difference-list builder (markH captures the continuation). The handler
+forward-sim's residual step will be a `wexec`-run-equivalence lemma, not the
+syntactic `compile_append`. The Wasmtime side of leg #2 (`tools/wasmfx-probe.sh`)
+covers the real-engine half once `compileHandler` emits a handler `.wat`. -/
+
+-- state get → RESUME with the stored value.
+example : Source.eval 50 (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)) = Result.done (.vint 42) := by rfl
+example : Wasmfx.run 50 (compileC (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)))
+    = Result.done (.i32 42) := by rfl
+
+-- a let-continuation that CONTAINS a handle (the SUBST residual runs over handler code).
+example : Wasmfx.run 50
+    (compileC (.letC (.ret (.vint 5)) (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit))))
+    = Result.done (.i32 42) := by rfl
+
+-- throws ABORT with a load-bearing markH continuation: raise discards the inner cont
+-- (`ret 99`), yields `7` to the NON-EMPTY outer let-continuation (`ret #0`).
+example : Source.eval 50
+    (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0)))
+    = Result.done (.vint 7) := by rfl
+example : Wasmfx.run 50
+    (compileC (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0))))
+    = Result.done (.i32 7) := by rfl
+
 end Bang
