@@ -84,12 +84,17 @@ handleF-MISS (the nested-wrapping-handler edge, `Compat.lean:1474`). This branch
 
 ### WHY sorryAx-ZERO IS DEFERRED (build-pinned, this session) — the EXACT next-session plan
 
-**Probe (i) BUILD-PIN (2026-06-24):** operational `NoWrapMiss` threads `krelS_splitAt_decomp` [MISS
-vacuous via the `hnwm` premise, NO sorry] + `crelK_fund_up` [scoped-unfold conclusion] cleanly; WALLS at
-`crelK_fund:1957` (the up-arm `exact crelK_fund_up …`) — unscoped `CrelK` cannot supply the up-arm's
-`NoWrapMiss K₁` premise for its arbitrary `K₁` ⇒ scoping `CrelK`'s BODY (typed-`CrelK`) is REQUIRED, not
-optional. (The green partial — decomp + `crelK_fund_up` threading — re-derives cheaply; a fresh (ii)
-session wants it fresh, no Context-Rot from a stale mutual-block reshape.)
+**typed-CrelK necessity — BUILD-PINNED (2026-06-24).** Row-indexed (ii-b) `NoWrapMissRow` on `CrelK`'s
+tail threads `crelK_zero`/`adequacy_nil`/`eff_mono` (antitone OK) but WALLS at `crelK_ret`'s two
+frame-strips: (1) **letF** (LR.lean ~879) — the continuation runs at row `φ` over `K₁'`, needs `φ ≤ e`
+which a RAW `KrelS` lemma lacks → typing required; (2) **handleF** (LR.lean:887) — passing a `ret` through
+`handleF h₁` masks `h₁`'s caught ops, so `NoWrapMiss (handleF h₁::K₁') ⊬ NoWrapMiss K₁'` → handler-
+interface knowledge required. The row-discharge discriminator is right for the handle-ARM but the scope
+dies UPSTREAM in `crelK_ret` first. ⇒ **typed-`CrelK`** (`CrelK` re-indexed by `HasCTy`/`HasStack`) is the
+necessary mechanism, threaded through the whole mutual block. Probe (i) corroborates: threads
+`krelS_splitAt_decomp` + `crelK_fund_up`, walls at `crelK_fund:1957` (unscoped `CrelK` can't supply the
+up-arm premise). (The green partials re-derive cheaply; a fresh (ii) session wants them fresh — no
+Context-Rot from a stale mutual-block reshape.)
 
 The MISS-vacuity needs `CrelK` to range only over stacks handling the focus's ops at the nearest handler.
 ALL simple stack-scope predicates WALL at one root cause: `crelK_fund`'s handle-arm pushes the focus's OWN
