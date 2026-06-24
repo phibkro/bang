@@ -108,12 +108,20 @@ trusted-three. `c363304` is the labelled fallback throughout. Commit frequently 
   NEITHER (the stack peeling carries WF either way; Lean accepts both). Pick per PROOF-need:
   likely `m<n` (the `▷`) at the Kripke μ/resume seams to match the existing ◊4.5 ▷-anti-reduction
   (`Crel_head_step`), `n` elsewhere. This is cleaner than "▷ forced for WF" — it's not.
-- **letF clause: the continuation row `φ` MUST be existentially bound, INDEPENDENT of the stack's
-  ambient `ε`** (build-caught in sub-block b). Threading the stack's `ε` into the continuation body
-  (`CrelK m B ε`) breaks ε-antitonicity — the body is ε-covariant but `CrelK` is ε-MONOTONE, a
-  polarity clash. With `φ` independent, `ε` appears in NO `KrelS` clause body, so `KrelS_eff_anti`
-  is a clean structural pass-through. This matches the OLD `krel_letF` separation (stack at `φ₁`,
-  continuation at `φ₂`). Landed in `615dd2a`/`2ef83af`.
+- **letF clause row threading — TAIL AT THE CONTINUATION ROW `φ`, NOT the ambient `ε`** (the
+  load-bearing def detail; got it wrong twice, build-caught). The letF clause has a continuation
+  body at row `φ` AND a tail `KrelS … K'`. BOTH the continuation body and the tail are at `φ`
+  (the continuation's row), NOT the ambient `ε`:
+  - body at ambient `ε` → ε-antitonicity polarity clash (body ε-covariant, CrelK ε-monotone). [sub-block b]
+  - tail at ambient `ε` → a FALSE ε-polarity wall: `crelK_ret` then needs an ANTITONE row-conversion
+    (`KrelS e → KrelS φ`) while `crel_fund`'s producer needs MONOTONE — both directions on one
+    single-ε relation = ε-invariant, impossible. [sub-block c, ~4 dead rounds]
+  - **FIX: tail at `φ`** → rows MATCH by construction (`hbody : CrelK m B φ` vs `htail : KrelS m B D φ`),
+    no conversion, wall dissolves. This is per-frame row composition realized MINIMALLY (each frame's
+    tail carries its continuation's row) — NO Biernacki from/to two-row pair needed; the single-row
+    KrelS with tail-at-`φ` suffices, at arbitrary `e`. Build-proven through `crelK_ret`. Matches the
+    OLD `krel_letF` separation (stack `φ₁`, continuation `φ₂`). Under per-frame row threading the
+    global `KrelS` ε-mono/anti lemmas may be unneeded — keep only what consumers require.
 - **(ii) cascade is structurally sound (NOT research-grade):** `crelF_zero` (μ-floor) closes
   trivially (vacuous metered obs at 0); `crelF_head_step` reduces to `KrelF_mono`; `KrelF_mono`'s
   argument is valid (frame-body `∀m<n` restricts to `∀m<k`, k≤n subset, + recurse on the smaller
