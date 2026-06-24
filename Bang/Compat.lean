@@ -1570,15 +1570,23 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                       by rw [splitAt_handleF_miss K₂' hcatch2, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
                     rw [krelS_handleF]
                     refine ⟨hHRtop, hin, ?_⟩
-                    -- ◊4.5b-append: the wrapping (non-catching) handleF inside the captured continuation.
-                    -- The SAME DEFINITIONAL WALL as `krelS_append`'s handleF case: the goal needs the resume
-                    -- conjunct for `hh₁` re-stated over the inner-prefix tail `Ki'` (the `splitAt` prefix of
-                    -- the original `K₁'`); `hres` is over `K₁'`. By `dispatchOn_append_outer`, dispatch over
-                    -- the longer `K₁'` = dispatch over `Ki'` with the remainder appended, so `hres` (longer)
-                    -- ↛ the goal (shorter) — and even the reverse direction is an opaque-`CoApproxC_le` lift
-                    -- that convergence does not give. NEEDS the krel-carrying conjunct strengthening OR the
-                    -- ADR-0026 seam (same resolution as the `krelS_append` wall). letF/appF/handleF-hit are
-                    -- PROVEN; only this nested-handler-miss case is open. See post-exec report.
+                    -- ◊4.5b-strengthen RESIDUAL (post-conjunct-strengthening): the wrapping (non-catching)
+                    -- handleF inside the captured continuation. The krel-carrying conjunct CLOSED the FORWARD
+                    -- direction (`krelS_append` nested case, this commit) — but THIS case is the INVERSE: the
+                    -- goal needs `hh₁`'s conjunct over the SHORTER inner-prefix `Ki'`; `hres` is over the LONGER
+                    -- `K₁' = Ki' ++ handleF hh::Ko'` (`splitAt_some_append`). Lifting the goal's dispatch over
+                    -- `Ki'` to `K₁'` (via `dispatchOn_append_outer`) + feeding `hres` gives the decomposition
+                    -- over `(cfg₁.1 ++ handleF hh::Ko', ret r)` — and the goal needs `cfg₁.1 ~ cfg₂.1` (the
+                    -- STRIP of `handleF hh::Ko'`). The strip `krelS_strip_handleF` is provable structurally
+                    -- (WF on `(k, Sᵢ.len)`, mirror of the append close) EXCEPT it must certify the STRIPPED
+                    -- stack's ANSWER TYPE = the goal's `Dᵢ`. `KrelS` does not EXPOSE a stack's answer type
+                    -- (the answer is only pinned at the nil base — front-peeling reaches it only at the end),
+                    -- so the recovered `D2` (= `cfg₁.1`'s answer, semantically `Dᵢ` since dispatch preserves the
+                    -- bottom) is not SYNTACTICALLY `Dᵢ`. CLOSING THIS needs a `Stack → CTy` answer-type
+                    -- function + a `dispatch-preserves-bottom-answer` lemma (a ~2-lemma kernel addition), OR
+                    -- the ADR-0026 seam (nested-wrapping-handler-in-captured-continuation as a tested descent;
+                    -- throws/state/txn at the catching frame are FULLY verified). letF/appF/handleF-HIT proven;
+                    -- only this inverse nested-handler-MISS case is open. See post-exec report.
                     sorry
               | _ => simp only [KrelS] at hK
 
