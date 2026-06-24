@@ -60,7 +60,7 @@
                                      carrier on Krel/Srel/EnvRel (ADR-0036); arrow clause = PEELING +
                                      krel_nil_succ F-restriction (ADR-0038 — both pure forms refuted by
                                      the build). 16 proof commits f6d0ce2…69d70b1, 723 jobs green.
-◊4.5 ✓ LR rebuild — lr_sound + all 3 handler kinds END-TO-END; SCOPED-SEAM landing (answertrack, `cap45-answertrack`) → axiom-clean over the no-nested-wrap domain; full-generality reshape DEFERRED (answer-determinism FALSE = confirmed rabbit-hole) (2026-06-24) ── ◊4.5a banked (main `974e169`): the IxFree reshape — non-▷ spine
+◊4.5 ✓ LR rebuild — lr_sound + all 3 handler kinds END-TO-END; SCOPED-SEAM **LANDED** (answertrack, `cap45-answertrack` tip `9ad7899`, gated green at `0b08dd0`, NOT merged) → **BROAD moat** (ALL contexts incl. state-over-throws + legit handler stacking) + **ONE documented resume-edge sorry** (`krelS_splitAt_decomp` handleF-MISS = resume-through-a-wrap only, ADR-0026 descent; ADR-0043). **NOT sorryAx-zero** — that needs a TYPED-CrelK reshape, BUILD-PINNED (all simple stack-scope predicates wall at `crelK_ret`/`crelK_fund` — untyped scope can't survive frame-strips), a dedicated FUTURE kernel session (`paths/PATH-cap45-finish.md`). `NoWrapMiss` predicate banked = the right primitive. (2026-06-24) ── ◊4.5a banked (main `974e169`): the IxFree reshape — non-▷ spine
                                      re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `4b2f973`),
                                      `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`b5cfc88`), resume
                                      infra krel_handleF* (`421edc0`), ▷-guarded Vrel μ-clause strict-< (`33f50ea`,
@@ -101,10 +101,13 @@
                                      on HasCTy/HasVTy) or PATH B (GetD-free: prove the 4 heap facts inline / reformulate HeapRel via
                                      getElem? — lower-risk, block untouched), then RE-APPLY append's already-written txn wirings +
                                      close 2 rare nested-handler sorrys → sorryAx-gone. Fresh-context unit; resume base `cap45-append2
-                                     @ b431247`; spec = task #10 + `paths/PATH-cap45-resume-composition.md` + append's post-exec report. SEAM (ADR-0026) is the fallback;
-                                     closing it → lr_sound FULL trusted-three = THE MOAT (contextual equiv incl. resumptive
-                                     handlers). SEAM (ADR-0026: throws VERIFIED + state/txn-resume TESTED) is the interim honest state. NOT yet
-                                     merged to main (carries the append sorry + diverges from ◊5 on Spec.lean).
+                                     @ b431247`; spec = task #10 + `paths/PATH-cap45-resume-composition.md` + append's post-exec report. [SUPERSEDED by the SCOPED-SEAM landing — see header.]
+                                     FINAL 2026-06-24: landed on `cap45-answertrack` (`0b08dd0` + docs) — answer-typed KrelS
+                                     rebuild + (g) migration (frozen Crel:=CrelK) + lr_sound over typed ⊑ + throws/state/txn
+                                     resumptive composition ALL closed end-to-end; the resume-through-a-wrap edge is the ONE
+                                     documented `krelS_splitAt_decomp` sorry (ADR-0026 descent, ADR-0043). sorryAx-zero needs
+                                     typed-CrelK (build-pinned, deferred → `paths/PATH-cap45-finish.md`). NOT merged: forks
+                                     pre-ADR-0042 (ADR-0043 needs re-frontmatter + adr-index) and diverges from ◊5 on Spec.lean.
 ◊5 ✓ Compiler v0 — DONE, IN MAIN  ── `b0a9c4d` (2026-06-24). source→WASM verified trusted-three over the
                                      WHOLE effect language — effect-free + ALL handlers, ungated. EFFECT-FREE
                                      (pure CBPV + ADT) compiler verified end-to-end source→WASM, AXIOM-CLEAN
