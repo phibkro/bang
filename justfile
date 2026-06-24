@@ -33,6 +33,11 @@ build:
 audit:
     bash tools/audit.sh
 
+# ◊5 engine probe (OPEN_QUESTIONS Q9): run a stack-switching suspend/resume
+# generator on real Wasmtime — leg #2's oracle foundation. Expects `49`.
+wasmfx-probe:
+    bash tools/wasmfx-probe.sh
+
 # Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
 # STM-only) + ADR index/link integrity. Fast, no Lean build. Also run by `just audit`.
 fitness:

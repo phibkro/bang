@@ -221,12 +221,17 @@ theorem seq_unit (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := seq_unit
 -- [KEY] Type preservation under translation.
 theorem compile_well_typed
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) := sorry
+    HasCTy [] [] c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) :=
+  compile_well_typed_proof
 
--- [KEY][RISKY] Forward simulation — the heart of the contribution.
+-- [KEY][RISKY] Forward simulation — the heart of the contribution. PROVEN for the
+-- PURE CBPV fragment (Milestone A) modulo the reverse CalcVM bridge
+-- `source_eval_to_exec` (gap 1) + the non-pure fragment (gap 2, Milestone B). The
+-- `exec ⟹ wexec` simulation (`exec_wexec_sim`) is fully proven.
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
     Source.eval fuel c = Result.done v →
-    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := sorry
+    ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) :=
+  compile_forward_sim_proof
 
 -- [KEY] Handler ↦ suspend/resume.
 theorem handler_compiles {h : Handler} :
@@ -237,6 +242,7 @@ theorem zero_grade_no_code
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy ((0 : Mult) :: γ) (A :: Γ) c e B →
-    ¬ Wasmfx.MentionsLocal (compileC c) 0 := sorry
+    ¬ Wasmfx.MentionsLocal (compileC c) 0 :=
+  zero_grade_no_code_proof
 
 end Bang
