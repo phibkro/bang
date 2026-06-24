@@ -168,3 +168,23 @@ reshape, and even the canonical form has an inv-#2 tension), (b) an Iris-native 
 what *buys* invariants #1/#4; this one edge is its exact, principled price. A durable reconfirm, if ever
 wanted, is a ≤1-session `stackAnswer : Stack → CTy` probe (predicted NO-GO at `krelS_letF`, the same
 answer-determinism-FALSE). Sweep artifact: workflow `wf_6a9f7d3f-ab1`.
+
+## Narrowing probe (2026-06-25) — the edge does NOT shrink by wrap-kind (it is kind-agnostic)
+
+A bounded build-probe tested whether the excluded edge narrows to *resumptive-through-resumptive* by
+closing the **throws-wrap** sub-case (a throws-wrap aborts zero-shot, discarding the captured `Kᵢ`, so its
+resume conjunct looked trivial). **Verdict: NOT NARROWED** (clean NO, nothing committed, whole-tree build
+GREEN 724 jobs, axioms unchanged). The matrix collapses to **wrap-kind only** (the MISS conjunct is the
+resume clause for the *wrap* `hh₁` itself; the catcher's kind never appears). Throws *does* discard `Kᵢ`,
+but that only **relocates** the obligation: the residual goal needs `KrelS m (F qᵣ Aᵣ) Dᵢ eₛ Ki' K₂ᵢ` while
+the only available hypothesis is `KrelS n C Dᵢ e Ki' K₂ᵢ` at the wrap's **opaque hole `C`** — and nothing
+forces `C = F qᵣ (opArg ℓ op')`. This is the SAME "`KrelS` does not expose a stack's answer type" wall,
+surfacing at the wrap-hole `C` instead of the strip's `Dᵢ`. state/txn-wraps wall *a fortiori* (they also keep
+`Kᵢ`). **Ledger:** the MISS sorry is required for EVERY wrap kind (throws included) — the obligation is
+recovery of the wrapping handler's hole answer-type, which `KrelS` structurally hides, independent of whether
+the wrap discards (throws) or keeps (state/txn) the captured prefix. So the "any pass-through" EXCLUDED
+wording above is exact; the edge cannot be tightened without the same typed-relation machinery that is NO-GO.
+
+**Closure status:** the seam is now confirmed from THREE independent angles — the typed-`CrelK` build probe
+(can't recover the intermediate), the literature sweep (no indexed technique avoids the typed/Iris/semantics
+cost), and the narrowing probe (can't even shrink the edge by wrap-kind). The question is settled.
