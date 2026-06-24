@@ -25,6 +25,10 @@ import Bang.Audit
 -- Tracer bullet: surface → graded-CBPV Comp → Source.eval → value
 -- (PATH-tracer-bullet; additive surface layer, outside the verification spine).
 import Bang.Surface
+-- Laws-as-algebraic-interfaces surface (ADR-0040): trait/impl + the proof-first
+-- discharge ladder. In the build graph so its #guards GATE (proof-first default,
+-- visible descent, no-silent-pass enforced by construction).
+import Bang.Surface.Trait
 
 -- K3: the calculated machine. The K2 matrix of per-feature machines (Calc/CalcHO/
 -- CalcCBN/CalcEff/CalcSt/CalcCBNEff/CalcCBNSt/CalcCBNEffSt) + the untyped CBN reference
