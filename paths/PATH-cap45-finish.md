@@ -1,6 +1,13 @@
 # PATH — ◊4.5b finish: the append crux + the (g) re-point
 
-**Status:** THROWS CLOSED end-to-end in the new arch (cap45-modality @ 3eca3ce, build GREEN,
+> **⛔ SUPERSEDED by ADR-0045 (2026-06-25) — the typed+static-dispatch pivot.** This PATH's deferred close
+> (typed-`CrelK` on the DYNAMIC-dispatch kernel) is moot: ADR-0043 proved that close NO-GO under dynamic
+> dispatch, and ADR-0045 instead **pivots the kernel to static-link dispatch, which DISSOLVES the resume-edge**
+> (build-gated). The active plan is **`paths/PATH-typed-static-pivot.md`**. Kept for the record (the ◊4.5b
+> landing + the build-pinned analysis of *why* the dynamic-kernel close fails — exactly what motivated the
+> pivot). Do NOT resume the typed-CrelK-on-dynamic work below.
+
+**Status:** [SUPERSEDED — see banner above.] THROWS CLOSED end-to-end in the new arch (cap45-modality @ 3eca3ce, build GREEN,
 axiom set clean: no_accidental 0-axiom, compile_correct trusted-three). The whole ◊4.5b moat is
 reduced to ONE research crux + the (g) mechanical migration. Two INDEPENDENT remaining pieces.
 
