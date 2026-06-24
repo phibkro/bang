@@ -1962,6 +1962,156 @@ theorem evalD_plug_handleF_ret (K : Bang.EvalCtx) (h : Handler) (w : Bang.Val) (
     ∃ m, CalcVM.evalD m [] [] (plug K (.handle h (.ret w))) = some (.term (.ret w'), [], []) :=
   evalD_plug_sim (sim_handle_ret h w) hn
 
+/-! ### The dispatch reverse-bridge (◊5 GAP-2): store-restricted simulation lifted through `plug`.
+
+The dispatch arm of `evalD_complete_gen` rewrites `up ℓ op v` to a handler-resume `focus` over a
+RESTRUCTURED context `K'`. The focus-rewrite at the catching frame is a STORE-RESTRICTED simulation
+(`SimOn P`): `Sim (up ℓ "get" v) (ret s)` is only valid when the threaded store has `get? σ ℓ = some s`
+(a plain `Sim` is false). `evalD_plug_simon` lifts a `SimOn P` through any frame stack whose state
+pushes preserve `P` — the reverse-direction analog of how `run_evalD` threads stores forward.
+shape: the store-parametric `Sim`/`evalD_plug_sim` (above), conditioned on a store predicate. -/
+
+def SimOn (P : CalcVM.SStore → Prop) (cx cy : Bang.Comp) : Prop :=
+  ∀ σ τ b r, P σ → CalcVM.evalD b σ τ cy = some r → ∃ a, CalcVM.evalD a σ τ cx = some r
+
+theorem SimOn.handle {P : CalcVM.SStore → Prop} {cx cy : Bang.Comp} (h : SimOn P cx cy) (hh : Bang.Handler)
+    (hsurv : ∀ σ, P σ → ∀ ℓ' s', hh = Bang.Handler.state ℓ' s' → P (σ.push ℓ' s')) :
+    SimOn P (.handle hh cx) (.handle hh cy) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      cases hh with
+      | state ℓ s =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b (σ.push ℓ s) τ cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h (σ.push ℓ s) τ b oy (hsurv σ hP ℓ s rfl) hy
+              exact ⟨a + 1, by simp only [CalcVM.evalD]; rw [ha]; exact hb⟩
+      | transaction ℓ Θ =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b σ (τ.push ℓ Θ) cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h σ (τ.push ℓ Θ) b oy hP hy
+              exact ⟨a + 1, by simp only [CalcVM.evalD]; rw [ha]; exact hb⟩
+      | throws ℓ0 =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b σ τ cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h σ τ b oy hP hy
+              exact ⟨a + 1, by simp only [CalcVM.evalD]; rw [ha]; exact hb⟩
+
+theorem SimOn.letC {P : CalcVM.SStore → Prop} {cx cy : Bang.Comp} (h : SimOn P cx cy) (N : Bang.Comp) :
+    SimOn P (.letC cx N) (.letC cy N) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      cases hy : CalcVM.evalD b σ τ cy with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          obtain ⟨a, ha⟩ := h σ τ b oy hP hy
+          cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
+            | term t => cases t with
+              | ret w =>
+                  simp only [Option.bind_some] at hb
+                  exact ⟨(max a b) + 1, by
+                    simp only [CalcVM.evalD, evalD_some_le (Nat.le_max_left a b) ha, Option.bind_some]
+                    exact evalD_some_le (Nat.le_max_right a b) hb⟩
+              | lam M => simp at hb
+              | force a => simp at hb
+              | letC a a' => simp at hb
+              | app a a' => simp at hb
+              | up a a' a'' => simp at hb
+              | handle a a' => simp at hb
+              | case a a' a'' => simp at hb
+              | split a a' => simp at hb
+              | unfold a => simp at hb
+              | oom => simp at hb
+              | wrong a => simp at hb
+            | raised ℓ op w =>
+                simp only [Option.bind_some] at hb
+                exact ⟨a + 1, by simp only [CalcVM.evalD, ha, Option.bind_some]; exact hb⟩
+
+theorem SimOn.app {P : CalcVM.SStore → Prop} {cx cy : Bang.Comp} (h : SimOn P cx cy) (u : Bang.Val) :
+    SimOn P (.app cx u) (.app cy u) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      cases hy : CalcVM.evalD b σ τ cy with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          obtain ⟨a, ha⟩ := h σ τ b oy hP hy
+          cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
+            | term t => cases t with
+              | lam M =>
+                  simp only [Option.bind_some] at hb
+                  exact ⟨(max a b) + 1, by
+                    simp only [CalcVM.evalD, evalD_some_le (Nat.le_max_left a b) ha, Option.bind_some]
+                    exact evalD_some_le (Nat.le_max_right a b) hb⟩
+              | ret w => simp at hb
+              | force a => simp at hb
+              | letC a a' => simp at hb
+              | app a a' => simp at hb
+              | up a a' a'' => simp at hb
+              | handle a a' => simp at hb
+              | case a a' a'' => simp at hb
+              | split a a' => simp at hb
+              | unfold a => simp at hb
+              | oom => simp at hb
+              | wrong a => simp at hb
+            | raised ℓ op w =>
+                simp only [Option.bind_some] at hb
+                exact ⟨a + 1, by simp only [CalcVM.evalD, ha, Option.bind_some]; exact hb⟩
+
+-- The plug-lift: structural recursion on K (mirrors evalD_plug_sim). The store-predicate P must
+-- survive every state-push K does. We carry that as `hsurv`: P is preserved by any (ℓ',s')-push
+-- where (ℓ',s') is a state frame of K. Stated as: for the HEAD handleF (state ℓ' s'), P survives.
+theorem evalD_plug_simon {P : CalcVM.SStore → Prop} {cx cy : Bang.Comp} (hsim : SimOn P cx cy) :
+    ∀ {K : Bang.EvalCtx},
+      (∀ σ, P σ → ∀ ℓ' s', Bang.Frame.handleF (Bang.Handler.state ℓ' s') ∈ K → P (σ.push ℓ' s')) →
+    ∀ {σ τ n r}, P σ → CalcVM.evalD n σ τ (plug K cy) = some r →
+      ∃ m, CalcVM.evalD m σ τ (plug K cx) = some r
+  | [], _, σ, τ, n, r, hP, hn => hsim σ τ n r hP (by simpa [plug] using hn)
+  | .letF N :: K, hsurv, σ, τ, n, r, hP, hn => by
+      rw [plug_cons, Bang.Frame.wrapStep] at hn ⊢
+      exact evalD_plug_simon (SimOn.letC hsim N) (fun σ' hP' ℓ' s' hmem => hsurv σ' hP' ℓ' s' (by simp [hmem])) hP hn
+  | .appF u :: K, hsurv, σ, τ, n, r, hP, hn => by
+      rw [plug_cons, Bang.Frame.wrapStep] at hn ⊢
+      exact evalD_plug_simon (SimOn.app hsim u) (fun σ' hP' ℓ' s' hmem => hsurv σ' hP' ℓ' s' (by simp [hmem])) hP hn
+  | .handleF hh :: K, hsurv, σ, τ, n, r, hP, hn => by
+      rw [plug_cons, Bang.Frame.wrapStep] at hn ⊢
+      refine evalD_plug_simon (SimOn.handle hsim hh ?_) (fun σ' hP' ℓ' s' hmem => hsurv σ' hP' ℓ' s' (by simp [hmem])) hP hn
+      -- survival of the HEAD handle: if hh = state ℓ' s', it's a member of (handleF hh :: K).
+      intro σ' hP' ℓ' s' hhe
+      exact hsurv σ' hP' ℓ' s' (by rw [hhe]; simp)
+
+-- ===== Redex SimOn lemmas (the focus-rewrite each dispatch sub-case performs) =====
+
+theorem simon_get (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) :
+    SimOn (fun σ => CalcVM.SStore.get? σ ℓ = some s) (.up ℓ "get" v) (.ret s) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      exact ⟨b+1, by simp only [CalcVM.evalD] at hb ⊢; rw [hP]; exact hb⟩
+
+-- put: focus rewrite up ℓ "put" v ↦ ret unit, AND the store threads σ := σ.put ℓ v.
+-- But SimOn fixes cy = ret unit at the SAME store, while evalD of put CHANGES the store to σ.put.
+-- The post-store differs! evalD (up ℓ put v) = (term (ret unit), σ.put ℓ v, τ); evalD (ret unit) = (term(ret unit), σ, τ).
+-- These do NOT agree (different output store r). So a plain SimOn for put is FALSE.
+
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
 induction on the small-step fuel `F`. -/
