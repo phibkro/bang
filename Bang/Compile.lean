@@ -85,6 +85,12 @@ inductive Instr where
   | callS  : Bang.Val → Instr    -- pop closure, apply to argument         (app/β)
   | getL   : Nat → Instr         -- local.get k   (free de Bruijn occurrence k)
   | setL   : Nat → Instr         -- local.set k
+  -- ADT eliminators (sub-step 1a): branch on a sum scrutinee / destructure a pair. Carry the
+  -- residual branch `Comp`s (re-compiled at runtime, like `bindS`); a real WASM backend lowers
+  -- these to `br_table` over the boxed sum tag / a tuple projection. Scrutinee is in the instr
+  -- (a closed value at runtime), matching CalcVM's `CASE`/`SPLIT`.
+  | caseS  : Bang.Val → Comp → Comp → Instr   -- sum elim: inl/inr ⇒ run the matching branch
+  | splitS : Bang.Val → Comp → Instr          -- product elim: pair ⇒ run N[fst][snd]
   deriving Inhabited
 
 abbrev Code := List Instr
@@ -135,7 +141,9 @@ def lowerInstr : CalcVM.Instr → List Wasmfx.Instr
   | .LAMI M  => [.clos M]
   | .SUBST N => [.bindS N]
   | .APP v   => [.callS v]
-  | _        => []          -- Milestone B (MARK/UNMARK/THROW/OP/CASE/SPLIT)
+  | .CASE w N₁ N₂ => [.caseS w N₁ N₂]   -- sub-step 1a (ADT)
+  | .SPLIT w N    => [.splitS w N]
+  | _        => []          -- sub-step 1b (MARK/UNMARK/THROW/OP — handlers)
 
 def lowerCode : CalcVM.Code → Wasmfx.Code
   | []      => []
@@ -194,6 +202,17 @@ def wexec : Nat → Code → VStack → Option VStack
       | _             => none
   | Nat.succ f, .getL _ :: c,   s => wexec f c s     -- (open programs only; closed ⇒ unused)
   | Nat.succ f, .setL _ :: c,   s => wexec f c s
+  -- ADT eliminators (sub-step 1a): inspect the closed-value scrutinee IN THE INSTR (no stack pop),
+  -- re-compile the chosen branch PREPENDED to `c`, exactly as `exec`'s CASE/SPLIT arms.
+  | Nat.succ f, .caseS w N₁ N₂ :: c, s =>
+      match w with
+      | .inl v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) []) ++ c) s
+      | .inr v => wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) []) ++ c) s
+      | _      => none
+  | Nat.succ f, .splitS w N :: c, s =>
+      match w with
+      | .pair v u => wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) []) ++ c) s
+      | _         => none
 
 /-- Run a compiled module to a single value on the operand stack. The closed
 program starts on the empty stack; `done` = a singleton operand stack. -/
@@ -205,11 +224,13 @@ def run (fuel : Nat) (m : Module) : Result Val :=
 
 /-! ### The pure fragment (Milestone A scope)
 
-`Comp.Pure`/`Val.Pure` carve out the CBPV core the compiler covers: `ret · letC ·
-force/vthunk · lam · app` over `vint/vunit/vthunk` values. NO `up`/`handle` (the
-effect ops — Milestone B), NO ADT formers/eliminators (`case/split/unfold`,
-`inl/inr/pair/fold` — a later increment), NO `oom`/`wrong`. A thunk body must be
-pure (it is run on `force`), so the predicates are mutually recursive. -/
+`Comp.Pure`/`Val.Pure` carve out the EFFECT-FREE fragment the compiler covers:
+the pure CBPV core (`ret · letC · force/vthunk · lam · app`) PLUS the ADT formers
+(`inl/inr/pair/fold`) and eliminators (`case/split/unfold`, ADR-0029) — Milestone
+B sub-step (1a). NO `up`/`handle` (the effect ops — sub-step 1b), NO `oom`/`wrong`.
+A thunk body must be pure (run on `force`); the predicates are mutually recursive.
+ADT scrutinees may be open (`vvar`, substituted before the eliminator steps), so
+`Val.Pure` accepts variables. -/
 mutual
 def Comp.Pure : Comp → Prop
   | .ret v          => Val.Pure v
@@ -218,13 +239,21 @@ def Comp.Pure : Comp → Prop
   | .force _        => False
   | .lam M          => Comp.Pure M
   | .app M v        => Comp.Pure M ∧ Val.Pure v
+  -- ADT eliminators (ADR-0029, sub-step 1a): scrutinee + each branch pure.
+  | .case v N₁ N₂   => Val.Pure v ∧ Comp.Pure N₁ ∧ Comp.Pure N₂
+  | .split v N      => Val.Pure v ∧ Comp.Pure N
+  | .unfold v       => Val.Pure v
   | _               => False
 def Val.Pure : Bang.Val → Prop
   | .vunit        => True
   | .vint _       => True
   | .vvar _       => True
   | .vthunk M     => Comp.Pure M
-  | _             => False
+  -- ADT formers (ADR-0029, sub-step 1a): inert; purity threads into payloads.
+  | .inl v        => Val.Pure v
+  | .inr v        => Val.Pure v
+  | .pair v w     => Val.Pure v ∧ Val.Pure w
+  | .fold v       => Val.Pure v
 end
 
 /-! ### `wexec ≈ exec` — the forward simulation (pure spine)
@@ -251,6 +280,9 @@ def InstrPure : CalcVM.Instr → Prop
   | .LAMI M  => Comp.Pure M       -- a `lam` body must stay pure (it is re-compiled on APP)
   | .SUBST N => Comp.Pure N
   | .APP v   => Val.Pure v        -- the applied argument must be pure (it is substituted)
+  -- ADT eliminators (sub-step 1a): the residual branch(es) re-compiled at runtime must be pure.
+  | .CASE w N₁ N₂ => Val.Pure w ∧ Comp.Pure N₁ ∧ Comp.Pure N₂
+  | .SPLIT w N => Val.Pure w ∧ Comp.Pure N
   | _        => False
 
 def CodePure (code : CalcVM.Code) : Prop := ∀ i ∈ code, InstrPure i
@@ -268,6 +300,15 @@ theorem Val.shiftFrom_pure (k : Nat) : ∀ {t : Bang.Val}, Val.Pure t → Val.Pu
       by_cases hi : i < k <;> simp [Val.shiftFrom, hi, Val.Pure]
   | .vthunk M, h => by
       simp only [Val.shiftFrom, Val.Pure] at h ⊢; exact Comp.shiftFrom_pure k h
+  | .inl w, h => by
+      simp only [Val.shiftFrom, Val.Pure] at h ⊢; exact Val.shiftFrom_pure k h
+  | .inr w, h => by
+      simp only [Val.shiftFrom, Val.Pure] at h ⊢; exact Val.shiftFrom_pure k h
+  | .pair w₁ w₂, h => by
+      simp only [Val.shiftFrom, Val.Pure] at h ⊢
+      exact ⟨Val.shiftFrom_pure k h.1, Val.shiftFrom_pure k h.2⟩
+  | .fold w, h => by
+      simp only [Val.shiftFrom, Val.Pure] at h ⊢; exact Val.shiftFrom_pure k h
 theorem Comp.shiftFrom_pure (k : Nat) : ∀ {t : Comp}, Comp.Pure t → Comp.Pure (Comp.shiftFrom k t)
   | .ret w, h => by
       simp only [Comp.shiftFrom, Comp.Pure] at h ⊢; exact Val.shiftFrom_pure k h
@@ -285,6 +326,14 @@ theorem Comp.shiftFrom_pure (k : Nat) : ∀ {t : Comp}, Comp.Pure t → Comp.Pur
   | .app M w, h => by
       simp only [Comp.shiftFrom, Comp.Pure] at h ⊢
       exact ⟨Comp.shiftFrom_pure k h.1, Val.shiftFrom_pure k h.2⟩
+  | .case w N₁ N₂, h => by
+      simp only [Comp.shiftFrom, Comp.Pure] at h ⊢
+      exact ⟨Val.shiftFrom_pure k h.1, Comp.shiftFrom_pure (k+1) h.2.1, Comp.shiftFrom_pure (k+1) h.2.2⟩
+  | .split w N, h => by
+      simp only [Comp.shiftFrom, Comp.Pure] at h ⊢
+      exact ⟨Val.shiftFrom_pure k h.1, Comp.shiftFrom_pure (k+2) h.2⟩
+  | .unfold w, h => by
+      simp only [Comp.shiftFrom, Comp.Pure] at h ⊢; exact Val.shiftFrom_pure k h
 end
 
 mutual
@@ -299,6 +348,15 @@ theorem Val.substFrom_pure (k : Nat) {v : Bang.Val} (hv : Val.Pure v) :
       · by_cases h2 : i > k <;> simp [h1, h2, Val.Pure]
   | .vthunk M, h => by
       simp only [Val.substFrom, Val.Pure] at h ⊢; exact Comp.substFrom_pure k hv h
+  | .inl w, h => by
+      simp only [Val.substFrom, Val.Pure] at h ⊢; exact Val.substFrom_pure k hv h
+  | .inr w, h => by
+      simp only [Val.substFrom, Val.Pure] at h ⊢; exact Val.substFrom_pure k hv h
+  | .pair w₁ w₂, h => by
+      simp only [Val.substFrom, Val.Pure] at h ⊢
+      exact ⟨Val.substFrom_pure k hv h.1, Val.substFrom_pure k hv h.2⟩
+  | .fold w, h => by
+      simp only [Val.substFrom, Val.Pure] at h ⊢; exact Val.substFrom_pure k hv h
 theorem Comp.substFrom_pure (k : Nat) {v : Bang.Val} (hv : Val.Pure v) :
     ∀ {t : Comp}, Comp.Pure t → Comp.Pure (Comp.substFrom k v t)
   | .ret w, h => by
@@ -319,6 +377,17 @@ theorem Comp.substFrom_pure (k : Nat) {v : Bang.Val} (hv : Val.Pure v) :
   | .app M w, h => by
       simp only [Comp.substFrom, Comp.Pure] at h ⊢
       exact ⟨Comp.substFrom_pure k hv h.1, Val.substFrom_pure k hv h.2⟩
+  | .case w N₁ N₂, h => by
+      simp only [Comp.substFrom, Comp.Pure] at h ⊢
+      exact ⟨Val.substFrom_pure k hv h.1,
+             Comp.substFrom_pure (k+1) (Val.shiftFrom_pure 0 hv) h.2.1,
+             Comp.substFrom_pure (k+1) (Val.shiftFrom_pure 0 hv) h.2.2⟩
+  | .split w N, h => by
+      simp only [Comp.substFrom, Comp.Pure] at h ⊢
+      exact ⟨Val.substFrom_pure k hv h.1,
+             Comp.substFrom_pure (k+2) (Val.shiftFrom_pure 0 (Val.shiftFrom_pure 0 hv)) h.2⟩
+  | .unfold w, h => by
+      simp only [Comp.substFrom, Comp.Pure] at h ⊢; exact Val.substFrom_pure k hv h
 end
 
 /-- `subst v N` stays pure when both `v` and `N` are. The β/let reduct purity that
@@ -360,6 +429,12 @@ theorem compile_append : ∀ {M : Comp}, Comp.Pure M → ∀ (c : CalcVM.Code),
       rw [compile_append h.1 (CalcVM.Instr.APP w :: c),
           compile_append h.1 (CalcVM.Instr.APP w :: []), List.append_assoc]
       simp
+  -- ADT eliminators (sub-step 1a): `case`/`split` cons ONE instruction (no recursion into
+  -- branches — they re-compile at runtime); `unfold (fold v)` emits `RET v`, other `unfold`
+  -- emits nothing. All trivially `x :: c = (x :: []) ++ c` (or `c = [] ++ c`).
+  | .case w N₁ N₂, _, c => by simp [CalcVM.compile]
+  | .split w N, _, c => by simp [CalcVM.compile]
+  | .unfold w, _, c => by cases w <;> simp [CalcVM.compile]
 
 /-- `compile M c` of a pure `M` onto pure `c` stays pure. -/
 theorem compile_pure : ∀ {M : Comp}, Comp.Pure M → ∀ {c : CalcVM.Code}, CodePure c →
@@ -394,6 +469,28 @@ theorem compile_pure : ∀ {M : Comp}, Comp.Pure M → ∀ {c : CalcVM.Code}, Co
       rcases hi with rfl | hi
       · simpa only [InstrPure] using h.2
       · exact hc i hi
+  -- ADT eliminators: `case`/`split` cons their `CASE`/`SPLIT` instr (pure by `InstrPure`);
+  -- `unfold (fold v)` conses `RET v` (pure since `v` is pure); other `unfold` emits nothing.
+  | .case w N₁ N₂, h, c, hc => by
+      simp only [Comp.Pure] at h
+      intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
+      rcases hi with rfl | hi
+      · simpa only [InstrPure] using h
+      · exact hc i hi
+  | .split w N, h, c, hc => by
+      simp only [Comp.Pure] at h
+      intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
+      rcases hi with rfl | hi
+      · simpa only [InstrPure] using h
+      · exact hc i hi
+  | .unfold w, h, c, hc => by
+      cases w with
+      | fold v =>
+          intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
+          rcases hi with rfl | hi
+          · simpa only [InstrPure, Comp.Pure] using h
+          · exact hc i hi
+      | _ => simp only [CalcVM.compile]; exact hc   -- emits nothing (open scrutinee)
 
 /-! #### The lockstep simulation `exec ⟹ wexec`
 
@@ -497,6 +594,49 @@ theorem exec_wexec_sim :
                     rw [← lowerCode_append, ← hcode]
                     simpa [injStack] using key
                 | _ => simp at h
+        | CASE w N₁ N₂ =>
+            -- scrutinee in the instr; mirror exec's CASE (inl/inr ⇒ re-compile the branch).
+            have hP : Val.Pure w ∧ Comp.Pure N₁ ∧ Comp.Pure N₂ := by simpa only [InstrPure] using hi
+            simp only [CalcVM.exec] at h
+            cases w with
+            | inl v =>
+                have hpu : Comp.Pure (Comp.subst v N₁) :=
+                  subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.1
+                have hcode : CalcVM.compile (Comp.subst v N₁) c
+                    = CalcVM.compile (Comp.subst v N₁) [] ++ c := compile_append hpu c
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s)
+                    = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
+                simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
+                rw [← lowerCode_append, ← hcode]
+                simpa [injStack] using key
+            | inr v =>
+                have hpu : Comp.Pure (Comp.subst v N₂) :=
+                  subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.2
+                have hcode : CalcVM.compile (Comp.subst v N₂) c
+                    = CalcVM.compile (Comp.subst v N₂) [] ++ c := compile_append hpu c
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s)
+                    = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
+                simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
+                rw [← lowerCode_append, ← hcode]
+                simpa [injStack] using key
+            | _ => simp [CalcVM.exec] at h
+        | SPLIT w N =>
+            have hP : Val.Pure w ∧ Comp.Pure N := by simpa only [InstrPure] using hi
+            simp only [CalcVM.exec] at h
+            cases w with
+            | pair v u =>
+                have hpu : Comp.Pure (Comp.subst v (Comp.subst (Val.shift u) N)) := by
+                  have hvw : Val.Pure v ∧ Val.Pure u := by simpa only [Val.Pure] using hP.1
+                  exact subst_pure hvw.1 (subst_pure (Val.shiftFrom_pure 0 hvw.2) hP.2)
+                have hcode : CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c
+                    = CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) [] ++ c :=
+                  compile_append hpu c
+                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s)
+                    = some (injStack s') := ih _ s s' (compile_pure hpu hc) hsp h
+                simp only [lowerInstr, lowerCode, List.cons_append, List.nil_append, wexec, injStack]
+                rw [← lowerCode_append, ← hcode]
+                simpa [injStack] using key
+            | _ => simp [CalcVM.exec] at h
         | _ => exact absurd hi (by simp [InstrPure])
 
 /-! ### Structural predicates (`WellTyped`, `MentionsLocal`)
@@ -933,6 +1073,46 @@ theorem evalD_plug_force (K : Bang.EvalCtx) (M : Comp) (r : _)
     ∃ m, CalcVM.evalD m [] [] (plug K (.force (.vthunk M))) = some (.term (.ret w'), [], []) :=
   evalD_plug_sim hK (sim_force M) h
 
+-- ADT redex simulations (sub-step 1a): the eliminator simulates its contractum (one evalD unfold).
+theorem sim_case_inl (v : Bang.Val) (N₁ N₂ : Comp) :
+    Sim (.case (.inl v) N₁ N₂) (Comp.subst v N₁) := by
+  intro b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
+theorem sim_case_inr (v : Bang.Val) (N₁ N₂ : Comp) :
+    Sim (.case (.inr v) N₁ N₂) (Comp.subst v N₂) := by
+  intro b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
+theorem sim_split (v u : Bang.Val) (N : Comp) :
+    Sim (.split (.pair v u) N) (Comp.subst v (Comp.subst (Val.shift u) N)) := by
+  intro b r hb; exact ⟨b + 1, by simp only [CalcVM.evalD]; exact evalD_some_le (by omega) hb⟩
+
+theorem evalD_plug_case_inl (K : Bang.EvalCtx) (v : Bang.Val) (N₁ N₂ : Comp) (r : _)
+    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst v N₁)) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.case (.inl v) N₁ N₂)) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim hK (sim_case_inl v N₁ N₂) h
+theorem evalD_plug_case_inr (K : Bang.EvalCtx) (v : Bang.Val) (N₁ N₂ : Comp) (r : _)
+    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.subst v N₂)) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.case (.inr v) N₁ N₂)) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim hK (sim_case_inr v N₁ N₂) h
+theorem evalD_plug_split (K : Bang.EvalCtx) (v u : Bang.Val) (N : Comp) (r : _)
+    (hK : PureCtx K)
+    (h : CalcVM.evalD r [] [] (plug K (Comp.subst v (Comp.subst (Val.shift u) N))) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.split (.pair v u) N)) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim hK (sim_split v u N) h
+
+/-- `unfold (fold v)` reduces to `ret v` — a TERMINAL, not a focus-step. Under a pure
+plug, `evalD (plug K (ret v))` ⟹ `evalD (plug K (unfold (fold v)))` (one unfold). -/
+theorem sim_unfold (v : Bang.Val) : Sim (.unfold (.fold v)) (Comp.ret v) := by
+  intro b r hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      -- evalD (ret v) = some(.term(.ret v),σ,τ); evalD (unfold (fold v)) = the SAME.
+      simp only [CalcVM.evalD] at hb
+      exact ⟨1, by simp only [CalcVM.evalD]; exact hb⟩
+theorem evalD_plug_unfold (K : Bang.EvalCtx) (v : Bang.Val) (r : _)
+    (hK : PureCtx K) (h : CalcVM.evalD r [] [] (plug K (Comp.ret v)) = some (.term (.ret w'), [], [])) :
+    ∃ m, CalcVM.evalD m [] [] (plug K (.unfold (.fold v))) = some (.term (.ret w'), [], []) :=
+  evalD_plug_sim hK (sim_unfold v) h
+
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
 induction on the small-step fuel `F`. -/
@@ -1032,6 +1212,50 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 -- evalD (plug K (force (vthunk M))) ⟸ evalD (plug K M)  (force erases).
                 exact evalD_plug_force K M n hK hn
             | _ => simp only [Wasmfx.Comp.Pure] at hc
+        | case w N₁ N₂ =>
+            -- scrutinee must be inl/inr to step (else stuck ≠ done). REDUCE in place (K kept).
+            simp only [Wasmfx.Comp.Pure] at hc
+            cases w with
+            | inl vp =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.subst vp N₁) = Result.done v := hstep.symm
+                have hsub : Wasmfx.Comp.Pure (Comp.subst vp N₁) :=
+                  Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.1
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₁) v hK hsub hrun'
+                exact evalD_plug_case_inl K vp N₁ N₂ n hK hn
+            | inr vp =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.subst vp N₂) = Result.done v := hstep.symm
+                have hsub : Wasmfx.Comp.Pure (Comp.subst vp N₂) :=
+                  Wasmfx.subst_pure (by simpa only [Wasmfx.Val.Pure] using hc.1) hc.2.2
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp N₂) v hK hsub hrun'
+                exact evalD_plug_case_inr K vp N₁ N₂ n hK hn
+            | _ => exact absurd hstep (by simp [Source.step, Config.run])
+        | split w N =>
+            simp only [Wasmfx.Comp.Pure] at hc
+            cases w with
+            | pair vp up =>
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.subst vp (Comp.subst (Val.shift up) N)) = Result.done v :=
+                  hstep.symm
+                have hvu : Wasmfx.Val.Pure vp ∧ Wasmfx.Val.Pure up := by simpa only [Wasmfx.Val.Pure] using hc.1
+                have hsub : Wasmfx.Comp.Pure (Comp.subst vp (Comp.subst (Val.shift up) N)) :=
+                  Wasmfx.subst_pure hvu.1 (Wasmfx.subst_pure (Wasmfx.Val.shiftFrom_pure 0 hvu.2) hc.2)
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.subst vp (Comp.subst (Val.shift up) N)) v hK hsub hrun'
+                exact evalD_plug_split K vp up N n hK hn
+            | _ => exact absurd hstep (by simp [Source.step, Config.run])
+        | unfold w =>
+            simp only [Wasmfx.Comp.Pure] at hc
+            cases w with
+            | fold vp =>
+                -- (K, unfold (fold vp)) ↦ (K, ret vp)
+                simp only [Source.step] at hstep
+                have hrun' : Config.run F' (K, Comp.ret vp) = Result.done v := hstep.symm
+                have hsub : Wasmfx.Comp.Pure (Comp.ret vp) := by
+                  simpa only [Wasmfx.Comp.Pure, Wasmfx.Val.Pure] using hc
+                obtain ⟨n, hn⟩ := ih F' (by omega) K (Comp.ret vp) v hK hsub hrun'
+                exact evalD_plug_unfold K vp n hK hn
+            | _ => exact absurd hstep (by simp [Source.step, Config.run])
         | _ => simp only [Wasmfx.Comp.Pure] at hc
 
 /-- `evalD`-completeness (pure fragment, closed): `Source.eval F c = done v ⟹
