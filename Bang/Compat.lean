@@ -1376,6 +1376,96 @@ theorem compatK_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
   rw [CrelK] at hM
   exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hv hK)
 
+/-- ◊4.5b the `lam` compat core at `CrelK` (the answer-typed `compat_lam`). A `lam` only β-reduces under
+an `appF` frame; other stacks are STUCK on a `lam` (observation vacuous). Stack induction: appF-headed
+β-reduces `(appF w::K', lam M') ↦ (K', M'.subst w)`, the body IH discharges; nil/letF are stuck on a
+`lam`; handleF passes the lam through (`handleF h::K, lam M` is STUCK too — handleF only reduces a
+`ret`). So only the appF case is non-vacuous. -/
+theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ : Eff}
+    {M₁' M₂' : Comp}
+    (hbody : ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ → VrelK n A w₁ w₂ →
+      CrelK n B φ (Comp.subst w₁ M₁') (Comp.subst w₂ M₂')) :
+    CrelK n (CTy.arr q A B) φ (Comp.lam M₁') (Comp.lam M₂') := by
+  rw [CrelK]
+  intro D K₁ K₂ hK
+  cases K₁ with
+  | nil =>
+      -- nil arrow: `([], lam M)` is STUCK (lam reduces only under appF). Vacuous.
+      intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro u; simp))
+  | cons fr K₁' =>
+      cases fr with
+      | appF w₁ =>
+          cases K₂ with
+          | cons fr₂ K₂' =>
+              cases fr₂ with
+              | appF w₂ =>
+                  rw [krelS_appF] at hK
+                  obtain ⟨q', A', B', hC, hcw₁, hcw₂, hw, htail⟩ := hK
+                  rw [CTy.arr.injEq] at hC; obtain ⟨rfl, rfl, rfl⟩ := hC
+                  -- β `(appF w::K', lam M') ↦ (K', M'.subst w)`; body IH at the SAME index, non-dropping.
+                  refine coApproxC_le_reduce (cfg₁' := (K₁', Comp.subst w₁ M₁'))
+                    (cfg₂' := (K₂', Comp.subst w₂ M₂')) rfl (by intro u; simp) rfl (by intro u; simp) ?_
+                  have hb := hbody w₁ w₂ hcw₁ hcw₂ hw
+                  rw [CrelK] at hb
+                  exact hb D K₁' K₂' htail
+              | _ => simp only [KrelS] at hK
+          | nil => simp only [KrelS] at hK
+      | letF N₁ =>
+          -- letF arrow: the clause requires `C = F q A`, but `C = arr q A B` (arr ≠ F) ⇒ False.
+          cases K₂ with
+          | cons fr₂ K₂' =>
+              cases fr₂ with
+              | letF N₂ => rw [krelS_letF] at hK; obtain ⟨_, _, _, _, hC, _⟩ := hK; exact absurd hC (by simp)
+              | _ => simp only [KrelS] at hK
+          | nil => simp only [KrelS] at hK
+      | handleF h₁ =>
+          -- handleF on a `lam`: `(handleF h::K, lam M)` is STUCK (handleF reduces only a `ret`). Vacuous.
+          intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro u; simp))
+
+/-- ◊4.5b the `case` (sum elim) compat core at `CrelK`. `case (inl u) ↦ N₁[u]` / `case (inr u) ↦ N₂[u]`
+are CISteps; the ▷-head-step needs the chosen branch related at every `m < n`, from the matching branch
+IH on the `VrelK m`-related payload (the sum scrutinee gives the tag + payload). -/
+theorem compatK_case {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
+    {w₁ w₂ : Val} {N₁₁ N₂₁ N₁₂ N₂₂ : Comp}
+    (hw : VrelK n (VTy.sum A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
+    (hN₁ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+      CrelK m C φ (Comp.subst v₁ N₁₁) (Comp.subst v₂ N₁₂))
+    (hN₂ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m B v₁ v₂ →
+      CrelK m C φ (Comp.subst v₁ N₂₁) (Comp.subst v₂ N₂₂)) :
+    CrelK n C φ (Comp.case w₁ N₁₁ N₂₁) (Comp.case w₂ N₁₂ N₂₂) := by
+  rw [VrelK] at hw
+  rcases hw with ⟨u₁, u₂, rfl, rfl, hu⟩ | ⟨u₁, u₂, rfl, rfl, hu⟩
+  · refine CrelK_head_step (c₁' := Comp.subst u₁ N₁₁) (c₂' := Comp.subst u₂ N₁₂) ?_ ?_
+      (fun m hm => hN₁ m hm u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv (VrelK_mono (le_of_lt hm) hu))
+    · exact ⟨fun K => rfl, by intro v; simp⟩
+    · exact ⟨fun K => rfl, by intro v; simp⟩
+  · refine CrelK_head_step (c₁' := Comp.subst u₁ N₂₁) (c₂' := Comp.subst u₂ N₂₂) ?_ ?_
+      (fun m hm => hN₂ m hm u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv (VrelK_mono (le_of_lt hm) hu))
+    · exact ⟨fun K => rfl, by intro v; simp⟩
+    · exact ⟨fun K => rfl, by intro v; simp⟩
+
+/-- ◊4.5b the `split` (product elim) compat core at `CrelK`. `split (pair a b) N ↦ N[a][shift b]` is a
+CIStep; the ▷-head-step needs the two-binder body related at every `m < n`. -/
+theorem compatK_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
+    {w₁ w₂ : Val} {N₁' N₂' : Comp}
+    (hw : VrelK n (VTy.prod A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
+    (hN : ∀ m, m < n → ∀ a₁ a₂ b₁ b₂, Val.Closed a₁ → Val.Closed a₂ → Val.Closed b₁ → Val.Closed b₂ →
+      VrelK m A a₁ a₂ → VrelK m B b₁ b₂ →
+      CrelK m C φ (Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
+                  (Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂'))) :
+    CrelK n C φ (Comp.split w₁ N₁') (Comp.split w₂ N₂') := by
+  rw [VrelK] at hw
+  obtain ⟨a₁, a₂, b₁, b₂, rfl, rfl, ha, hb⟩ := hw
+  obtain ⟨hca₁, hcb₁⟩ := hcw₁.pair_inv
+  obtain ⟨hca₂, hcb₂⟩ := hcw₂.pair_inv
+  refine CrelK_head_step
+    (c₁' := Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
+    (c₂' := Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂')) ?_ ?_
+    (fun m hm => hN m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂
+      (VrelK_mono (le_of_lt hm) ha) (VrelK_mono (le_of_lt hm) hb))
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+
 
 /-! ## B.4 `krel_refl` — the interface contract for `lr_sound` (the capstone)
 

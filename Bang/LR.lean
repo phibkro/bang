@@ -812,7 +812,7 @@ behaviour per frame (`Source.step`): nil = done; `letF N::K ↦ (K, N.subst v)`;
 (observation vacuous); `handleF h::K ↦ (K, ret v)` (pass-through). -/
 
 /-- A STUCK config (`step = none`, not a nil-return) never converges within any budget. -/
-private theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
+theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
     (hstep : Source.step cfg = none) (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
     ¬ ConvergesC_le n cfg := by
   rintro ⟨v, hrun⟩
