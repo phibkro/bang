@@ -2433,6 +2433,282 @@ theorem evalD_plug_raises (ℓ : Bang.EffectRow.Label) (v : Bang.Val) :
           simpa using hc
         exact evalD_plug_raises ℓ v hns (Raises.handle hncf h)
 
+/-! ### get/abort handle-Sims + the txn (transaction) store-shift mirror. -/
+
+-- get handle-Sim: mirrors sim_put_handle but via SimOn (no store change). The handle pushes (ℓ,s),
+-- establishing P = (get? · ℓ = some s); lift simon_get through Kᵢ.
+theorem sim_get_handle (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) {Kᵢ : Bang.EvalCtx}
+    (hnone : (CalcVM.ctxStates Kᵢ).get? ℓ = none) :
+    Sim (.handle (.state ℓ s) (plug Kᵢ (.up ℓ "get" v)))
+        (.handle (.state ℓ s) (plug Kᵢ (.ret s))) := by
+  intro σ τ b r hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD, CalcVM.SStore.push] at hb
+      cases hy : CalcVM.evalD b ((ℓ,s)::σ) τ (plug Kᵢ (.ret s)) with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          have hne := state_mem_ne_of_ctxStates_none hnone
+          obtain ⟨a, ha⟩ := evalD_plug_simon (simon_get ℓ s v) (K := Kᵢ)
+            (fun σ' hP' ℓ' s' hmem => by
+              simp only [CalcVM.SStore.push, CalcVM.SStore.get?, List.find?, (hne ℓ' s' hmem), decide_false] at hP' ⊢
+              exact hP')
+            (P := fun σ => CalcVM.SStore.get? σ ℓ = some s)
+            (σ := (ℓ,s)::σ) (τ := τ)
+            (get?_push_self2 σ ℓ s) hy
+          refine ⟨a+1, ?_⟩
+          simp only [CalcVM.evalD, CalcVM.SStore.push]
+          rw [ha]; exact hb
+
+-- abort handle-Sim: the inner raises (via evalD_plug_raises), the throws handler catches → ret v.
+theorem sim_abort_handle (ℓ : Bang.EffectRow.Label) (v : Bang.Val) {Kᵢ : Bang.EvalCtx}
+    (hnone : Bang.splitAt Kᵢ ℓ "raise" = none) :
+    Sim (.handle (.throws ℓ) (plug Kᵢ (.up ℓ "raise" v))) (.ret v) := by
+  intro σ τ b r hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      -- RHS: evalD (b+1) σ τ (ret v) = some (term (ret v), σ, τ) = r
+      simp only [CalcVM.evalD] at hb
+      -- inner raises at σ τ:
+      obtain ⟨n, hn⟩ := evalD_plug_raises ℓ v hnone (Raises.up ℓ v) σ τ
+      refine ⟨n+1, ?_⟩
+      simp only [CalcVM.evalD, hn, Option.bind_some, if_pos (by simp : (ℓ = ℓ ∧ "raise" = "raise"))]
+      exact hb
+
+-- CalcVM.THeap-shift simulation (txn analog of SimShift). cx at τ ≡ cy at (f τ); P on τ.
+def SimShiftT (f : CalcVM.THeap → CalcVM.THeap) (P : CalcVM.THeap → Prop) (cx cy : Bang.Comp) : Prop :=
+  ∀ σ τ b r, P τ → CalcVM.evalD b σ (f τ) cy = some r → ∃ a, CalcVM.evalD a σ τ cx = some r
+
+-- txn redex: up ℓ op v at τ (active heap ℓ↦Θ) ≡ ret r at (τ.put ℓ Θ'), where (r,Θ')=txnService.
+theorem simshiftT_txn (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) (Θ : List Bang.Val)
+    (hop : CalcVM.isTxnOp op = true) :
+    SimShiftT (fun τ => CalcVM.THeap.put τ ℓ (CalcVM.txnService op v Θ).2)
+      (fun τ => CalcVM.THeap.get? τ ℓ = some Θ)
+      (.up ℓ op v) (.ret (CalcVM.txnService op v Θ).1) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      refine ⟨b+1, ?_⟩
+      have hng : ¬ (op = "get") := by rcases CalcVM.isTxnOp_iff.mp hop with rfl|rfl|rfl <;> decide
+      have hnp : ¬ (op = "put") := by rcases CalcVM.isTxnOp_iff.mp hop with rfl|rfl|rfl <;> decide
+      simp only [CalcVM.evalD, if_neg hng, if_neg hnp, hop, if_true, hP]
+      exact hb
+
+theorem put_consT_ne (ℓ ℓ' : Bang.EffectRow.Label) (Θ' Θx : List Bang.Val) (τ : CalcVM.THeap) (hne : ℓ' ≠ ℓ) :
+    CalcVM.THeap.put ((ℓ', Θx) :: τ) ℓ Θ' = (ℓ', Θx) :: CalcVM.THeap.put τ ℓ Θ' := by
+  simp only [CalcVM.THeap.put, if_neg hne]
+
+theorem SimShiftT.handle {f : CalcVM.THeap → CalcVM.THeap} {P : CalcVM.THeap → Prop} {cx cy : Bang.Comp}
+    (h : SimShiftT f P cx cy) (hh : Bang.Handler)
+    (hstab : ∀ τ ℓ' Θ', hh = Bang.Handler.transaction ℓ' Θ' → f ((ℓ',Θ') :: τ) = (ℓ',Θ') :: f τ)
+    (hsurv : ∀ τ, P τ → ∀ ℓ' Θ', hh = Bang.Handler.transaction ℓ' Θ' → P (τ.push ℓ' Θ')) :
+    SimShiftT f P (.handle hh cx) (.handle hh cy) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      cases hh with
+      | state ℓ0 s0 =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b (σ.push ℓ0 s0) (f τ) cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h (σ.push ℓ0 s0) τ b oy hP hy
+              exact ⟨a + 1, by simp only [CalcVM.evalD]; rw [ha]; exact hb⟩
+      | transaction ℓ0 Θ0 =>
+          simp only [CalcVM.evalD] at hb
+          rw [show (f τ).push ℓ0 Θ0 = f (τ.push ℓ0 Θ0) by
+            simp only [CalcVM.THeap.push]; rw [hstab τ ℓ0 Θ0 rfl]] at hb
+          cases hy : CalcVM.evalD b σ (f (τ.push ℓ0 Θ0)) cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h σ (τ.push ℓ0 Θ0) b oy (hsurv τ hP ℓ0 Θ0 rfl) hy
+              exact ⟨a + 1, by simp only [CalcVM.evalD]; rw [ha]; exact hb⟩
+      | throws ℓ0 =>
+          simp only [CalcVM.evalD] at hb
+          cases hy : CalcVM.evalD b σ (f τ) cy with
+          | none => rw [hy] at hb; simp at hb
+          | some oy =>
+              rw [hy] at hb
+              obtain ⟨a, ha⟩ := h σ τ b oy hP hy
+              exact ⟨a + 1, by simp only [CalcVM.evalD]; rw [ha]; exact hb⟩
+
+theorem SimShiftT.letC {f : CalcVM.THeap → CalcVM.THeap} {P : CalcVM.THeap → Prop} {cx cy : Bang.Comp}
+    (h : SimShiftT f P cx cy) (N : Bang.Comp) : SimShiftT f P (.letC cx N) (.letC cy N) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      cases hy : CalcVM.evalD b σ (f τ) cy with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          obtain ⟨a, ha⟩ := h σ τ b oy hP hy
+          cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
+            | term t => cases t with
+              | ret w =>
+                  simp only [Option.bind_some] at hb
+                  exact ⟨(max a b) + 1, by
+                    simp only [CalcVM.evalD, evalD_some_le (Nat.le_max_left a b) ha, Option.bind_some]
+                    exact evalD_some_le (Nat.le_max_right a b) hb⟩
+              | lam M => simp at hb
+              | force a => simp at hb
+              | letC a a' => simp at hb
+              | app a a' => simp at hb
+              | up a a' a'' => simp at hb
+              | handle a a' => simp at hb
+              | case a a' a'' => simp at hb
+              | split a a' => simp at hb
+              | unfold a => simp at hb
+              | oom => simp at hb
+              | wrong a => simp at hb
+            | raised ℓ op w =>
+                simp only [Option.bind_some] at hb
+                exact ⟨a + 1, by simp only [CalcVM.evalD, ha, Option.bind_some]; exact hb⟩
+
+theorem SimShiftT.app {f : CalcVM.THeap → CalcVM.THeap} {P : CalcVM.THeap → Prop} {cx cy : Bang.Comp}
+    (h : SimShiftT f P cx cy) (u : Bang.Val) : SimShiftT f P (.app cx u) (.app cy u) := by
+  intro σ τ b r hP hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD] at hb
+      cases hy : CalcVM.evalD b σ (f τ) cy with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          obtain ⟨a, ha⟩ := h σ τ b oy hP hy
+          cases oy with | mk out st => cases st with | mk s1 s2 => cases out with
+            | term t => cases t with
+              | lam M =>
+                  simp only [Option.bind_some] at hb
+                  exact ⟨(max a b) + 1, by
+                    simp only [CalcVM.evalD, evalD_some_le (Nat.le_max_left a b) ha, Option.bind_some]
+                    exact evalD_some_le (Nat.le_max_right a b) hb⟩
+              | ret w => simp at hb
+              | force a => simp at hb
+              | letC a a' => simp at hb
+              | app a a' => simp at hb
+              | up a a' a'' => simp at hb
+              | handle a a' => simp at hb
+              | case a a' a'' => simp at hb
+              | split a a' => simp at hb
+              | unfold a => simp at hb
+              | oom => simp at hb
+              | wrong a => simp at hb
+            | raised ℓ op w =>
+                simp only [Option.bind_some] at hb
+                exact ⟨a + 1, by simp only [CalcVM.evalD, ha, Option.bind_some]; exact hb⟩
+
+theorem evalD_plug_simshiftT {f : CalcVM.THeap → CalcVM.THeap} {P : CalcVM.THeap → Prop} {cx cy : Bang.Comp}
+    (hsim : SimShiftT f P cx cy) :
+    ∀ {K : Bang.EvalCtx},
+      (∀ τ ℓ' Θ', Bang.Frame.handleF (Bang.Handler.transaction ℓ' Θ') ∈ K → f ((ℓ',Θ') :: τ) = (ℓ',Θ') :: f τ) →
+      (∀ τ, P τ → ∀ ℓ' Θ', Bang.Frame.handleF (Bang.Handler.transaction ℓ' Θ') ∈ K → P (τ.push ℓ' Θ')) →
+    ∀ {σ τ n r}, P τ → CalcVM.evalD n σ (f τ) (plug K cy) = some r →
+      ∃ m, CalcVM.evalD m σ τ (plug K cx) = some r
+  | [], _, _, σ, τ, n, r, hP, hn => hsim σ τ n r hP (by simpa [plug] using hn)
+  | .letF N :: K, hstab, hsurv, σ, τ, n, r, hP, hn => by
+      rw [plug_cons, Bang.Frame.wrapStep] at hn ⊢
+      exact evalD_plug_simshiftT (SimShiftT.letC hsim N)
+        (fun τ' ℓ' Θ' hmem => hstab τ' ℓ' Θ' (by simp [hmem]))
+        (fun τ' hP' ℓ' Θ' hmem => hsurv τ' hP' ℓ' Θ' (by simp [hmem])) hP hn
+  | .appF u :: K, hstab, hsurv, σ, τ, n, r, hP, hn => by
+      rw [plug_cons, Bang.Frame.wrapStep] at hn ⊢
+      exact evalD_plug_simshiftT (SimShiftT.app hsim u)
+        (fun τ' ℓ' Θ' hmem => hstab τ' ℓ' Θ' (by simp [hmem]))
+        (fun τ' hP' ℓ' Θ' hmem => hsurv τ' hP' ℓ' Θ' (by simp [hmem])) hP hn
+  | .handleF hh :: K, hstab, hsurv, σ, τ, n, r, hP, hn => by
+      rw [plug_cons, Bang.Frame.wrapStep] at hn ⊢
+      refine evalD_plug_simshiftT (SimShiftT.handle hsim hh ?_ ?_)
+        (fun τ' ℓ' Θ' hmem => hstab τ' ℓ' Θ' (by simp [hmem]))
+        (fun τ' hP' ℓ' Θ' hmem => hsurv τ' hP' ℓ' Θ' (by simp [hmem])) hP hn
+      · intro τ' ℓ' Θ' hhe; exact hstab τ' ℓ' Θ' (by rw [hhe]; simp)
+      · intro τ' hP' ℓ' Θ' hhe; exact hsurv τ' hP' ℓ' Θ' (by rw [hhe]; simp)
+
+theorem txn_mem_ne_of_ctxTxns_none {ℓ : Bang.EffectRow.Label} :
+    ∀ {Kᵢ : Bang.EvalCtx}, (CalcVM.ctxTxns Kᵢ).get? ℓ = none →
+      ∀ ℓ' Θ', Bang.Frame.handleF (Bang.Handler.transaction ℓ' Θ') ∈ Kᵢ → ℓ' ≠ ℓ := by
+  intro Kᵢ
+  induction Kᵢ with
+  | nil => intro _ ℓ' Θ' hmem; simp at hmem
+  | cons fr Kᵢ ih =>
+      intro hnone ℓ' Θ' hmem
+      cases fr with
+      | handleF h0 =>
+          cases h0 with
+          | transaction ℓ0 Θ0 =>
+              by_cases hc : ℓ0 = ℓ
+              · subst hc
+                simp only [CalcVM.ctxTxns, CalcVM.THeap.get?, List.find?, decide_true, Option.map_some] at hnone
+                exact absurd hnone (by simp)
+              · simp only [CalcVM.ctxTxns, CalcVM.THeap.get?, List.find?, hc, decide_false] at hnone
+                rcases List.mem_cons.mp hmem with heq | htl
+                · simp only [Bang.Frame.handleF.injEq, Bang.Handler.transaction.injEq] at heq; obtain ⟨h1, _⟩ := heq; subst h1; exact hc
+                · exact ih (by simpa [CalcVM.THeap.get?] using hnone) ℓ' Θ' htl
+          | state ℓ0 s0 =>
+              simp only [CalcVM.ctxTxns] at hnone
+              rcases List.mem_cons.mp hmem with heq | htl
+              · exact absurd heq (by simp)
+              · exact ih hnone ℓ' Θ' htl
+          | throws ℓ0 =>
+              simp only [CalcVM.ctxTxns] at hnone
+              rcases List.mem_cons.mp hmem with heq | htl
+              · exact absurd heq (by simp)
+              · exact ih hnone ℓ' Θ' htl
+      | letF N =>
+          simp only [CalcVM.ctxTxns] at hnone
+          rcases List.mem_cons.mp hmem with heq | htl
+          · exact absurd heq (by simp)
+          · exact ih hnone ℓ' Θ' htl
+      | appF u =>
+          simp only [CalcVM.ctxTxns] at hnone
+          rcases List.mem_cons.mp hmem with heq | htl
+          · exact absurd heq (by simp)
+          · exact ih hnone ℓ' Θ' htl
+
+theorem get?T_push_self (τ : CalcVM.THeap) (ℓ : Bang.EffectRow.Label) (Θ : List Bang.Val) :
+    CalcVM.THeap.get? ((ℓ, Θ) :: τ) ℓ = some Θ := by simp [CalcVM.THeap.get?, List.find?]
+
+theorem sim_txn_handle (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) (Θ : List Bang.Val)
+    (hop : CalcVM.isTxnOp op = true) {Kᵢ : Bang.EvalCtx}
+    (hnone : (CalcVM.ctxTxns Kᵢ).get? ℓ = none) :
+    Sim (.handle (.transaction ℓ Θ) (plug Kᵢ (.up ℓ op v)))
+        (.handle (.transaction ℓ (CalcVM.txnService op v Θ).2) (plug Kᵢ (.ret (CalcVM.txnService op v Θ).1))) := by
+  intro σ τ b r hb
+  cases b with
+  | zero => simp [CalcVM.evalD] at hb
+  | succ b =>
+      simp only [CalcVM.evalD, CalcVM.THeap.push] at hb
+      have hfeq : ((ℓ, (CalcVM.txnService op v Θ).2) :: τ : CalcVM.THeap)
+          = CalcVM.THeap.put ((ℓ,Θ)::τ) ℓ (CalcVM.txnService op v Θ).2 := by
+        simp [CalcVM.THeap.put]
+      rw [hfeq] at hb
+      cases hy : CalcVM.evalD b σ (CalcVM.THeap.put ((ℓ,Θ)::τ) ℓ (CalcVM.txnService op v Θ).2)
+          (plug Kᵢ (.ret (CalcVM.txnService op v Θ).1)) with
+      | none => rw [hy] at hb; simp at hb
+      | some oy =>
+          rw [hy] at hb
+          have hne := txn_mem_ne_of_ctxTxns_none hnone
+          obtain ⟨a, ha⟩ := evalD_plug_simshiftT (simshiftT_txn ℓ op v Θ hop) (K := Kᵢ)
+            (fun τ' ℓ' Θ' hmem => put_consT_ne ℓ ℓ' (CalcVM.txnService op v Θ).2 Θ' τ' (hne ℓ' Θ' hmem))
+            (fun τ' hP' ℓ' Θ' hmem => by
+              simp only [CalcVM.THeap.push, CalcVM.THeap.get?, List.find?, (hne ℓ' Θ' hmem), decide_false] at hP' ⊢
+              exact hP')
+            (σ := σ) (τ := (ℓ,Θ)::τ)
+            (get?T_push_self τ ℓ Θ) hy
+          refine ⟨a+1, ?_⟩
+          simp only [CalcVM.evalD, CalcVM.THeap.push]
+          rw [ha]; exact hb
+
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
 induction on the small-step fuel `F`. -/
