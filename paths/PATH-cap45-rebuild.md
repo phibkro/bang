@@ -29,25 +29,32 @@ KrelS n C D ε K₁ K₂    :=  the answer-typed stack relation, defined STACK-S
   **If anything forces `D` into `Crel`'s signature, STOP and escalate** (that would be a
   frozen-statement change).
 
-## Termination metric (the feasibility gate — GREEN)
+## Termination metric (the feasibility gate — GREEN, full 3-way block)
 
-**Well-foundedness is from the STACK-STRUCTURAL decrease ALONE** (build-verified; the index is
-NOT needed in the WF measure):
-- `Crel n C` (role 1) → `KrelS n C` (role 0): role drops.
-- `KrelS n (fr::K)` → `KrelS n K`: `stackLen` drops — frames peel (Biernacki induction-on-context).
-  This stack decrease is acyclic w.r.t. `Crel` and **carries WF on its own** (measure: role + stackLen).
-- **The recursion decreases on STACK SYNTAX, NOT the answer type** (type `D` is an inert threaded
-  parameter). The DEAD-END (Lean-rejects): recursing through `plug` — `CrelCtx n C D → Crel n D
-  (plug K c)` wraps `c` into a LARGER term at the same index, no syntactic decrease. The
-  stack-structural form sidesteps it. **Do NOT use the type-driven form.**
-- Verified for `letF`, `appF`, AND the resumptive `handleF`.
+The REAL block is **3-way**: `Vrel`/`Crel`/`KrelS` are mutually recursive (`Vrel`'s U-clause
+references `Crel`; `KrelS`'s nil/appF caps reference `Vrel`). Build-verified WF metric (Lean
+accepts the full block):
 
-**The frame-body `Crel` index (`n` vs `m<n`/`▷`) is a SEPARABLE SEMANTIC choice, NOT a WF
-necessity** — Lean accepts the def at same-index too; the stack carries WF either way. Pick it
-per PROOF-need (`Crel_head_step` / `krel_refl` / the Kripke μ/resume continuation IHs — likely
-`m<n` to match the existing ◊4.5 ▷-anti-reduction at those seams), with termination guaranteed
-by the stack regardless. The `▷` if used is the EXISTING metered-`▷` (`Crel_head_step`), not a
-new modality. No Iris.
+**Lex `(n, role, stackLen, sizeOf)`**, roles `Vrel=0 < KrelS=1 < Crel=2`:
+- `Vrel n` (U-clause) → `Crel j` at **strict `j < n`** (the ▷-guarded thunk): `n` drops. **The
+  thunk guard MUST be `∀ j<n`, not `∀ j≤n`** — `≤` FAILS termination at this edge (build-confirmed
+  both ways); `<` is Biernacki's standard guarded-thunk and is exactly what the sole consumer
+  `crel_force` needs (`m<n`). This is the `STATEMENT_CHANGE_OK="◊4.5 Vrel U-clause ∀j≤n"` (LR:439)
+  refinement — in-envelope, NO frozen-statement change (`Spec.lean` never references the U-clause body).
+- `Crel n` (role 2) → `KrelS n` (role 1) → `Vrel n` (cap, role 0): role drops at same `n`.
+- `KrelS n (fr::K)` → `KrelS n K`: `stackLen` drops (frames peel — Biernacki induction-on-context).
+- `Vrel`-internal sum/prod edges: `sizeOf` (the 4th tiebreaker).
+- answer-type `D` is INERT (threaded parameter, NOT a recursion driver). **DEAD-END (Lean-rejects):**
+  recursing through `plug` (`CrelCtx n C D → Crel n D (plug K c)` wraps `c` into a LARGER term at
+  the same index) — do NOT use the type-driven form.
+- Verified across `letF`/`appF`/the resumptive `handleF`.
+
+**TWO DISTINCT EDGES — do not conflate** (both build-confirmed):
+- the **Vrel-U-clause → Crel thunk guard** is `∀ j<n` — **REQUIRED**, strict (this is the `n`-drop).
+- the **letF frame-body `Crel` index** (`n` vs `m<n`) is a **SEPARATE FREE choice** — carried by
+  `stackLen`, not `n`; pick per proof-need (likely `m<n` at the Kripke μ/resume seams to match the
+  existing `Crel_head_step` ▷-anti-reduction). The `▷` here is the EXISTING metered-`▷`, no new
+  modality, no Iris.
 
 ## Banked infra (scratch-proven; re-establish in the real LR)
 
@@ -60,9 +67,17 @@ new modality. No Iris.
 
 ## STEP 2 sub-blocks (dependency order — commit + gate each on `cap45-modality`)
 
+**SEQUENCING: ADDITIVE-THEN-MIGRATE (required — the gate cannot pass mid-migration).** Removing
+the old `Krel`/`Srel` reds **183 references** (LR:86, Compat:97, Spec:7) until ALL of Compat is
+re-proven. So land the new `KrelS` + biorthogonal `Crel`-core + 4 eq lemmas + adequacy + 5 gates
+**ALONGSIDE** the existing `Vrel`/`Crel`/`Krel`/`Srel`, under a **TEMP name** (e.g. `CrelK`/`KrelS`);
+the frozen `Crel` stays wired to the OLD def until (g). Build stays GREEN at every sub-block.
+(b)–(f) incrementally migrate Compat's lemmas onto `KrelS`; **(g) re-points the frozen `Crel`
+(body swap, signature byte-identical) + deletes the old `Krel`/`Srel`.** Each sub-block commits green.
+
 | | sub-block | risk |
 |---|---|---|
-| a | `Crel`/`KrelS` def sink + adequacy | the foundation; gate first |
+| a | `Crel`/`KrelS` def sink (additive, temp name) + adequacy + 5 gates | the foundation; gate first |
 | b | `Krel_mono` / `Krel_eff_anti` at `KrelS` | structural |
 | c | `Vrel` U-clause + frame lemmas (`letF`/`appF`/`handleF`) at `KrelS` | the bulk |
 | d | `krel_refl` | uses the stuck-half |
