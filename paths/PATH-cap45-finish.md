@@ -47,6 +47,29 @@ The ONE research question, in 6 new-arch spots that are all THE SAME: `compatK_h
 When (g) lands AND the append crux resolves (research or seam): `lr_sound`/`lr_fundamental` →
 trusted-three = the full contextual-equivalence moat.
 
+## (g) STATUS — LANDED (cap45-finish: `812e9da` LR, `6764d22` Compat, `89e98e0` Spec)
+
+The body-swap is DONE and build-green. Old flat `Vrel`/`Crel`/`Krel`/`Srel` + `crel_fund`/`vrel_fund`/
+`krel_refl` + old compat cores DELETED (grep gate clean). Frozen `Vrel`/`Crel`/`EnvRel` re-pointed to the
+answer-typed `VrelK`/`CrelK`/`EnvRelK` via `abbrev` (signature byte-identical). `lr_fundamental :=
+crelK_fund` — axioms `[propext, sorryAx, Classical.choice, Quot.sound]`, `sorryAx` traces SOLELY to the
+append crux. `no_accidental_handling` 0-axiom + `compile_correct`/`compile_forward_sim` trusted-three
+PRESERVED. The 6 append-crux sorrys (`compatK_handleState`/`Transaction`, `crelK_fund` + `krelS_refl`
+state/txn arms) are the ONLY research sorrys `lr_fundamental` depends on.
+
+### BLOCKER on `lr_sound` (ESCALATION — NOT the append crux)
+
+`lr_sound` could NOT be closed by `lr_sound_closed ∘ krelS_refl`. The migration plumbing composes (refocus
+`⊑` to config level + `CrelK` unfold + instantiate at observation context `(C,C)`), but the sole remaining
+obligation `KrelS fuel B C e C C = krelS_refl` REQUIRES `C` WELL-TYPED at the hole type `B`
+(`HasStack C e B eo (F qo Ao)`). The FROZEN `⊑`/`ctxApprox` (LR.lean:64) quantifies over ARBITRARY UNTYPED
+`Cxt` — and `KrelS`-reflexivity genuinely FAILS for a context ill-typed at the hole (`letF N :: K'` with
+`B ≠ F q A` makes the `KrelS` letF clause FALSE, not vacuous; `lr_sound` is likely even FALSE over untyped
+contexts). RESOLUTION (orchestrator decision): (a) restrict `ctxApprox`/`⊑` to well-typed contexts (the
+standard contextual-equivalence quantifier — a `ctxApprox` def change), then `lr_sound = lr_sound_closed ∘
+krelS_refl` traces to the append crux; or (b) add a `HasStack` hypothesis to `lr_sound` (frozen-statement
+change). `lr_sound` left as honest `sorry` with the precise blocker comment at `Spec.lean:188`.
+
 ## Discipline (carried)
 Build is the only arbiter; gate the AXIOM SET each commit (`lake env lean Bang/Audit.lean`).
 flag-before-build the metering. Shared git store had a broken cache-tree — recover per-worktree
