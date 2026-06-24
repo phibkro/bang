@@ -19,6 +19,9 @@ open Bang.EffectRow (Label)
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
+-- ◊4.5b (g): `ctxApprox`/`⊑` is now typed by a `HasStack` premise (needs the `EffSig` instance to type
+-- the observation context's operations). Auto-included only where referenced (Lean drops unused vars).
+variable [EffSig Eff Mult]
 
 
 /-! ## 5. Observational equivalence — `≈` is the spec notion of equality -/
@@ -60,10 +63,22 @@ def Cxt.plug (C : Cxt) (c : Comp) : Comp := Bang.plug C c
 /-- Observation: fuel-bounded convergence to a returned value. -/
 def Converges (c : Comp) : Prop := ∃ fuel v, Source.eval fuel c = Result.done v
 
-/-- THE SPEC NOTION. Contextual approximation (`⊑`) and equivalence (`≈`). -/
-def ctxApprox (c₁ c₂ : Comp) : Prop :=
-  ∀ C : Cxt, Converges (Cxt.plug C c₁) → Converges (Cxt.plug C c₂)
-def ctxEquiv (c₁ c₂ : Comp) : Prop := ctxApprox c₁ c₂ ∧ ctxApprox c₂ c₁
+/-- THE SPEC NOTION. Contextual approximation (`⊑`) and equivalence (`≈`).
+
+◊4.5b (g): the observation context `C` is restricted to those WELL-TYPED at the focus `(e, B)` — the
+STANDARD contextual-equivalence quantifier (a context observes terms at their type). The earlier UNTYPED
+quantifier (`∀ C : Cxt`) was a DEFECT: `lr_sound` is FALSE over ill-typed-at-hole contexts (a `letF N::K'`
+context with `B ≠ F q A` plugs a non-returner where the machine expects a returner — the `KrelS` letF
+clause is FALSE, not vacuous), and an untyped context can distinguish `Crel`-related terms it has no right
+to observe. The type `(e, B)` is carried as IMPLICIT params (inferred at every use site — `lr_sound`'s
+`{e B}` supply them), so the `⊑`/`≈` NOTATION and every `_ ⊑ _` / `_ ≈ _` statement stay BYTE-IDENTICAL;
+only this definition gains the typing premise. `HasStack C e B eo (F qo Ao)` (returner answer type `Co`,
+ADR-0038: only returners are observed) is exactly what `krelS_refl` consumes to produce the self-relation. -/
+def ctxApprox {e : Eff} {B : CTy Eff Mult} (c₁ c₂ : Comp) : Prop :=
+  ∀ (C : Cxt) (eo : Eff) (qo : Mult) (Ao : VTy Eff Mult),
+    HasStack C e B eo (CTy.F qo Ao) → Converges (Cxt.plug C c₁) → Converges (Cxt.plug C c₂)
+def ctxEquiv {e : Eff} {B : CTy Eff Mult} (c₁ c₂ : Comp) : Prop :=
+  ctxApprox (e := e) (B := B) c₁ c₂ ∧ ctxApprox (e := e) (B := B) c₂ c₁
 infixl:50 " ⊑ " => ctxApprox
 infixl:50 " ≈ " => ctxEquiv
 
@@ -170,8 +185,11 @@ permits 0-graded occurrences, e.g. `ret (vvar 0)` at returner grade `q = 0`), so
 occur" is FALSE — only its *evaluation* is absent. We phrase that as observational
 substitution-irrelevance: every two fillers produce `≈`-equivalent computations. This is exactly
 Torczon's grade-0 erasure (`semtyping.v`), which is proved via the logical relation. -/
+-- ◊4.5b (g): `≈` now carries an implicit focus type `{e B}` (the typed-context restriction). The
+-- substitution-irrelevance is QUANTIFIED over EVERY focus type — the two fillers give `≈`-equal terms at
+-- whatever type the observation context demands. The implicit `{e B}` are bound here (def-level ∀).
 def NotEvaluated (i : Nat) (c : Comp) : Prop :=
-  ∀ v₁ v₂ : Val, Comp.substFrom i v₁ c ≈ Comp.substFrom i v₂ c
+  ∀ (v₁ v₂ : Val) {e : Eff} {B : CTy Eff Mult}, ctxEquiv (e := e) (B := B) (Comp.substFrom i v₁ c) (Comp.substFrom i v₂ c)
 
 
 /-! ### 5.0a Plug/run bridge + `seq_unit` (the left-unit head reduction)
@@ -240,13 +258,17 @@ theorem seqComp_ret_run (v : Val) (c : Comp) (C : EvalCtx) (n : Nat) :
     rw [Comp.subst_shift]
   rw [show n + 2 = (n + 1) + 1 by omega, hr1, hr2]
 
-theorem seq_unit_proof (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := by
+theorem seq_unit_proof (v : Val) {c : Comp} {e : Eff} {B : CTy Eff Mult} :
+    ctxEquiv (e := e) (B := B) (seqComp (Comp.ret v) c) c := by
   -- `≈` = approx both ways; each is context-quantified `Converges`. Bridge to config level,
   -- where the 2-step head reduction makes the two foci co-converge with a ±2 fuel offset.
+  -- ◊4.5b (g): `⊑` now threads a `HasStack`-typing on the observation context; `fwd` `intro`s and
+  -- IGNORES it (the head-reduction co-convergence is typing-independent). Implicit `{e B}` are free here
+  -- (seq_unit's `≈` is at an arbitrary focus type — the proof holds for every typing of the context).
   have fwd : ∀ x y : Comp, (∀ (C : EvalCtx) n w,
       Config.run n (C, x) = Result.done w → ∃ m, Config.run m (C, y) = Result.done w) →
-      x ⊑ y := by
-    intro x y hco C hx
+      ctxApprox (e := e) (B := B) x y := by
+    intro x y hco C _eo _qo _Ao _hStack hx
     rw [Cxt.plug, converges_plug_iff] at hx ⊢
     obtain ⟨n, w, hn⟩ := hx
     obtain ⟨m, hm⟩ := hco C n w hn

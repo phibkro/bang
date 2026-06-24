@@ -123,7 +123,10 @@ theorem zero_usage_erasable
     {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {A : VTy Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     HasCTy ((0 : Mult) :: γ) (A :: Γ) c e B →
-    NotEvaluated 0 c := by
+    -- ◊4.5b (g): `NotEvaluated` reduces to `≈` (typed-context `ctxEquiv`), so its `Eff`/`Mult` params are
+    -- not inferrable from `(0, c)` (both untyped). Pin them to the in-scope `Eff`/`Mult`; the focus type
+    -- `{e B}` inside `NotEvaluated` stays universally quantified (erasure holds at every observation type).
+    NotEvaluated (Eff := Eff) (Mult := Mult) 0 c := by
   intro _hc v₁ v₂
   -- GOAL (NotEvaluated unfolded): `Comp.substFrom 0 v₁ c ≈ Comp.substFrom 0 v₂ c`.
   -- This is Torczon's grade-0 COEFFECT ERASURE (`semtyping.v`): a binder typed at grade `0` cannot
@@ -169,23 +172,30 @@ theorem effect_sound
 --   μ-return cases sit in the deferred iso-recursive-▷ subsystem (needs IxFree ∀k≤n Kripke-monotone
 --   Crel/Krel/Srel — plain-Nat phrasing lacks the both-ways monotonicity; build-confirmed). The CLOSED
 --   fragment (`lr_sound_closed`, F-typed) is DONE; the arbitrary-`C` closure is ◊4.5.
--- ◊4.5b (g) BLOCKER (build-confirmed, NOT the append crux): the migration plumbing is in place — the
--- `lr_sound` proof refocuses `⊑` to the config level (`converges_plug_iff`) and unfolds `Crel = CrelK`
--- to the biorthogonal closure `∀ D K₁ K₂, KrelS … → CoApproxC_le`, then instantiates at the observation
--- context `(C, C)`. The SOLE remaining obligation is `KrelS fuel B C e C C` — the IDENTITY EXTENSION of
--- the observation context `C`. That is `krelS_refl` (Compat §B.6′), which REQUIRES `C` WELL-TYPED at the
--- hole type `B` (`HasStack C e B eo (F qo Ao)`). The FROZEN `lr_sound` statement quantifies `⊑` over
--- ARBITRARY `C : Cxt` with NO typing hypothesis — and `KrelS`-reflexivity genuinely FAILS for a context
--- ill-typed at the hole (e.g. `letF N :: K'` with `B ≠ F q A` makes the `KrelS` letF clause FALSE, not
--- vacuous). So `lr_sound` is NOT closable by `lr_sound_closed ∘ krelS_refl` as the statement stands: the
--- composition needs a typed observation context the statement does not provide. This is an ESCALATION
--- (statement-shape: `⊑`/`ctxApprox` should range over WELL-TYPED contexts, the standard contextual-
--- equivalence quantifier), NOT the `krelS_append` research crux. Left as the honest placeholder until the
--- orchestrator decides the `⊑`/typing fix. `lr_fundamental` (below) IS migrated and traces solely to the
--- append crux via `crelK_fund`.
+-- [KEY] Soundness: the LR implies contextual approximation. PROOF_ORDER #1. ◊4.5b (g): CLOSED via
+-- `lr_sound_closed ∘ krelS_refl` over the now-TYPED `⊑` (the observation context restricted to those
+-- `HasStack`-typed at the focus `(e, B)` — ADR decision (a), the standard contextual-equivalence
+-- quantifier; the untyped form was a DEFECT under which `lr_sound` is FALSE). The proof: the typed `⊑`
+-- hands us `hStack : HasStack C e B eo (F qo Ao)` for the observation context; `krelS_refl` turns it into
+-- the IDENTITY EXTENSION `KrelS fuel B (F qo Ao) e C C`; `Crel = CrelK`'s biorthogonal closure then
+-- co-converges the two configs at the witnessing fuel (the `lr_sound_closed` adequacy strip, generalized
+-- from `C = []` to the typed `C`). Traces to `sorryAx` SOLELY via `krelS_refl`'s state/txn arms = the
+-- `krelS_append` + ▷-metering research crux — NO introduced non-append sorry.
+--   shape: benton-hur-icfp09 biorthogonal adequacy; pitts-step-indexed; ahmed-esop06 identity extension.
 theorem lr_sound
     {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult} :
-    (∀ n, Crel n B e c₁ c₂) → c₁ ⊑ c₂ := sorry
+    (∀ n, Crel n B e c₁ c₂) → ctxApprox (e := e) (B := B) c₁ c₂ := by
+  intro hCrel C eo qo Ao hStack hconv
+  -- typed `⊑`: `C` is `HasStack`-typed at the focus `(e, B)`, answer type `F qo Ao` (returner, ADR-0038).
+  -- Refocus both observations to the config level (`converges_plug_iff`).
+  rw [Cxt.plug, converges_plug_iff] at hconv
+  rw [Cxt.plug, converges_plug_iff]
+  obtain ⟨fuel, w, hfuel⟩ := hconv
+  -- instantiate the biorthogonal closure `Crel = CrelK` at the witnessing fuel, observation context (C,C),
+  -- answer type `F qo Ao`. The self-relation `KrelS fuel B (F qo Ao) e C C` is `krelS_refl hStack`.
+  have hC := hCrel fuel
+  rw [show (Crel fuel B e c₁ c₂) = CrelK fuel B e c₁ c₂ from rfl, CrelK] at hC
+  exact hC (CTy.F qo Ao) C C (krelS_refl (n := fuel) rfl hStack) ⟨w, hfuel⟩
 
 -- [KEY] Fundamental theorem (ADR-0034: env-closed Biernacki form). A well-typed OPEN computation
 -- relates to ITSELF under every pair of `Vrel`-related closing substitution environments. The bare
@@ -221,7 +231,13 @@ theorem lr_fundamental_closed
 /-! ## 6. Recovery algebra (ADR-0018, amended by ADR-0032) -/
 
 -- [KEY] monoid ⇒ ret is a unit for sequencing.
-theorem seq_unit (v : Val) {c : Comp} : seqComp (Comp.ret v) c ≈ c := seq_unit_proof v
+-- ◊4.5b (g): `≈` now carries an implicit focus type `{e B}` (the typed-context restriction). The
+-- left-unit law holds at EVERY focus type (the head reduction is typing-independent), so `{e B}` are
+-- universally quantified here and threaded explicitly into `ctxEquiv` (the bare notation cannot elaborate
+-- a free focus type — `Comp` is untyped). NOT a statement weakening: the proposition is the left-unit law
+-- at an arbitrary observation type, which is strictly the standard reading.
+theorem seq_unit (v : Val) {c : Comp} {e : Eff} {B : CTy Eff Mult} :
+    ctxEquiv (e := e) (B := B) (seqComp (Comp.ret v) c) c := seq_unit_proof v
 
 -- `group_recovers` RETIRED (ADR-0032, supersedes ADR-0018's "group ⇒ rollback" row).
 -- The law `[AddGroup Eff] → seqComp c (recover c) ≈ idComp` was FALSE as a plain `≈`
