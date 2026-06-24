@@ -1064,6 +1064,69 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Han
     KrelS n C D e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
   rw [krelS_handleF]; exact ⟨hHR, KrelS_eff_cast hK, hres⟩
 
+/-- ◊4.5b-append `krelS_append` — the config-level Biernacki Lemma-2 analogue. Compose a related captured
+continuation `Kᵢ ~ Kᵢ'` (answer type `Dᵢ`) with a related handleF-extended tail (`handleF h :: K`, hole
+`Dᵢ`) into the appended stack `Kᵢ ++ handleF h :: K`. The inner `Kᵢ`'s answer type MUST equal the
+reinstalled-handler frame's hole type `Dᵢ` (the resume value flows out of `Kᵢ` into the handler frame).
+Proven by induction on `Kᵢ` (structural, like `crelK_ret`/`KrelS_mono`): nil = `krelS_handleF_intro`;
+letF/appF peel + reconstruct over the appended tail. The handleF-in-`Kᵢ` sub-case (a handler NESTED in
+the captured continuation) needs the resume-conjunct RELOCATED to the appended tail — same as the
+decomp-miss-wrap; one documented sorry. shape: biernacki-popl18 §5.4 Lemma 2 (config-level append). -/
+theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h : Handler}
+    {Kᵢ Kᵢ' K₁ K₂ : Stack}
+    (hin : KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ')
+    (hHR : HandlerRel Eff Mult m h h)
+    (htail : KrelS m Dᵢ D' e' K₁ K₂)
+    (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ Dⱼ : CTy Eff Mult) (εⱼ : Eff)
+              (Kⱼ Kⱼ' : Stack) (cfg₁ cfg₂ : Config),
+        Bang.handlesOp h h.label op = true →
+        Val.Closed w₁ → Val.Closed w₂ →
+        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK k Aop w₁ w₂) →
+        KrelS k Cⱼ Dⱼ εⱼ Kⱼ Kⱼ' →
+        Bang.dispatchOn op w₁ (Kⱼ, h, K₁) = some cfg₁ →
+        Bang.dispatchOn op w₂ (Kⱼ', h, K₂) = some cfg₂ →
+        CoApproxC_le k cfg₁ cfg₂) :
+    KrelS m Cᵢ D' εᵢ (Kᵢ ++ Frame.handleF h :: K₁) (Kᵢ' ++ Frame.handleF h :: K₂) := by
+  induction Kᵢ generalizing Cᵢ εᵢ Kᵢ' with
+  | nil =>
+      -- Kᵢ' = [] (nil clause), Cᵢ = Dᵢ; the append is `handleF h :: K` — `krelS_handleF_intro`.
+      cases Kᵢ' with
+      | nil =>
+          rw [krelS_nil] at hin
+          obtain ⟨rfl, _⟩ := hin
+          simpa using krelS_handleF_intro (e := εᵢ) hHR htail hres
+      | cons _ _ => simp only [KrelS] at hin
+  | cons fr Kᵢrest ih =>
+      cases Kᵢ' with
+      | nil => exact absurd hin (by simp only [KrelS]; cases fr <;> exact not_false)
+      | cons fr₂ Kᵢ'rest =>
+          cases fr with
+          | letF N₁ =>
+              cases fr₂ with
+              | letF N₂ =>
+                  rw [krelS_letF] at hin
+                  obtain ⟨q, A, B, φ, hC, hbody, htin⟩ := hin
+                  rw [List.cons_append, List.cons_append, krelS_letF]
+                  exact ⟨q, A, B, φ, hC, hbody, ih htin⟩
+              | _ => simp only [KrelS] at hin
+          | appF u₁ =>
+              cases fr₂ with
+              | appF u₂ =>
+                  rw [krelS_appF] at hin
+                  obtain ⟨q, A, B, hC, hcu₁, hcu₂, hu, htin⟩ := hin
+                  rw [List.cons_append, List.cons_append, krelS_appF]
+                  exact ⟨q, A, B, hC, hcu₁, hcu₂, hu, ih htin⟩
+              | _ => simp only [KrelS] at hin
+          | handleF hh₁ =>
+              cases fr₂ with
+              | handleF hh₂ =>
+                  -- ◊4.5b-append: a handler NESTED in the captured continuation. Its resume conjunct
+                  -- (from `hin`) is at the OLD tail; the append puts it over `Kᵢrest ++ handleF h :: K`,
+                  -- so the conjunct must RELOCATE. Same gap as the decomp-miss-wrap; documented sorry.
+                  -- letF/appF/nil are PROVEN; this is the nested-handler-in-continuation case (rare).
+                  sorry
+              | _ => simp only [KrelS] at hin
+
 /-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
 `h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
 handler `h` at the SAME position (same inner-prefix length), and the OUTER tails `K₁ₒ, K₂ₒ` stay
