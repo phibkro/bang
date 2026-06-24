@@ -125,6 +125,42 @@ def CoApproxC_le (n : Nat) (cfg₁ cfg₂ : Config) : Prop :=
 theorem coApproxC_le_zero (cfg₁ cfg₂ : Config) : CoApproxC_le 0 cfg₁ cfg₂ :=
   fun h => absurd h (not_convergesC_le_zero cfg₁)
 
+/-- Right-side anti-reduction (UNBOUNDED): if `cfg₂ ↦ cfg₂'` and `cfg₂'` converges, so does `cfg₂`. -/
+theorem converges_anti_step {cfg₂ cfg₂' : Config} (hstep : Source.step cfg₂ = some cfg₂')
+    (hne : ∀ v, cfg₂ ≠ ([], Comp.ret v)) (h : ∃ m w, Config.run m cfg₂' = Result.done w) :
+    ∃ m w, Config.run m cfg₂ = Result.done w := by
+  obtain ⟨m, w, hm⟩ := h
+  exact ⟨m + 1, w, by rw [Config.run_step m cfg₂ hne, hstep]; exact hm⟩
+
+/-- THE generic `▷`-anti-reduction over the metered observation. Both sides take ONE config step
+(left metered `−1`, right unbounded anti-reduce); the reducts related at the DROPPED index `n` give the
+redexes related at `n+1`. Every frame-reduce return-half (`letF`/`appF`/`handleF`) and every `CIStep`
+head-expansion routes through this ONE lemma — the factoring that localizes the metering (ADR-0041
+alt-1 overturn). NO `K.length` offset: config level. -/
+theorem coApproxC_le_anti_step {n : Nat} {cfg₁ cfg₁' cfg₂ cfg₂' : Config}
+    (hstep₁ : Source.step cfg₁ = some cfg₁') (hne₁ : ∀ v, cfg₁ ≠ ([], Comp.ret v))
+    (hstep₂ : Source.step cfg₂ = some cfg₂') (hne₂ : ∀ v, cfg₂ ≠ ([], Comp.ret v))
+    (h : CoApproxC_le n cfg₁' cfg₂') : CoApproxC_le (n + 1) cfg₁ cfg₂ := by
+  intro hconv
+  rw [convergesC_le_step hstep₁ hne₁] at hconv
+  exact converges_anti_step hstep₂ hne₂ (h hconv)
+
+/-- NON-dropping frame anti-reduction (the β/return-bridge form). When the reduct is already related at
+the SAME index `n` (not the dropped one), the left's lost step (`n → n-1` via the step) is re-padded by
+monotonicity (`ConvergesC_le (n-1) ⊆ ConvergesC_le n`). Used by `appF`/`handleF` REDUCE bridges where the
+reduct relation comes from a body IH at the full index `n`, not a `▷`-dropped one. -/
+theorem coApproxC_le_reduce {n : Nat} {cfg₁ cfg₁' cfg₂ cfg₂' : Config}
+    (hstep₁ : Source.step cfg₁ = some cfg₁') (hne₁ : ∀ v, cfg₁ ≠ ([], Comp.ret v))
+    (hstep₂ : Source.step cfg₂ = some cfg₂') (hne₂ : ∀ v, cfg₂ ≠ ([], Comp.ret v))
+    (h : CoApproxC_le n cfg₁' cfg₂') : CoApproxC_le n cfg₁ cfg₂ := by
+  intro hconv
+  -- ConvergesC_le n redex; if n=0 vacuous. Else step ⇒ ConvergesC_le (n-1) reduct ⊆ ConvergesC_le n reduct.
+  cases n with
+  | zero => exact absurd hconv (not_convergesC_le_zero _)
+  | succ k =>
+      rw [convergesC_le_step hstep₁ hne₁] at hconv
+      exact converges_anti_step hstep₂ hne₂ (h (hconv.mono (Nat.le_succ k)))
+
 /-! ### 5.0b `NotEvaluated` — the coeffect-erasure notion (`zero_usage_erasable`)
 
 `NotEvaluated i c`: the de Bruijn index `i`'s binder is never EVALUATED in `c` — i.e. WHAT is
@@ -442,8 +478,13 @@ of stacks. This is the relation `lr_sound`/`lr_fundamental` are stated over. -/
 def Crel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] : Nat → CTy Eff Mult → Eff → Comp → Comp → Prop
   | n, C, ε, c₁, c₂ =>
+      -- ◊4.5b: METERED config-level observation (`CoApproxC_le`, §5.0a‴) — left term metered within
+      -- `n` machine steps, right unbounded. Observes the FOCUSED config `(Kᵢ, cᵢ)`, never `plug Kᵢ cᵢ`,
+      -- so the `+K.length` `run_plug` refocus offset (lr45's wall) never enters. This is the `▷` carrier:
+      -- at `n=0` the premise `ConvergesC_le 0` is `False` (`run 0 = oom`), so `Crel 0` is VACUOUS — the
+      -- μ-floor discharge. Head-expansion drops one budget (`Crel_head_step`, Compat.lean §B.0).
       ∀ K₁ K₂ : Stack, Krel n C ε K₁ K₂ →
-        CoApprox (Stack.plug K₁ c₁) (Stack.plug K₂ c₂)
+        CoApproxC_le n (K₁, c₁) (K₂, c₂)
 termination_by n C _ _ _ => (n, sizeOf C, 2)
 
 /-- Continuation/stack relation `K⟦C/ε⟧η` (Biernacki Fig 7). A computation can finish two
@@ -462,9 +503,9 @@ def Krel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [Dec
       -- arrow clause (ADR-0038 PEELING) routes `Krel j (arr q A B) → Krel j B` (`sizeOf B < sizeOf (arr)`).
       ∀ j, j ≤ n →
       (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel j A v₁ v₂ →
-        CoApprox (Stack.plug K₁ (Comp.ret v₁)) (Stack.plug K₂ (Comp.ret v₂)))
+        CoApproxC_le j (K₁, Comp.ret v₁) (K₂, Comp.ret v₂))
       ∧ (∀ c₁ c₂, Srel j C ε K₁ K₂ c₁ c₂ →
-        CoApprox (Stack.plug K₁ c₁) (Stack.plug K₂ c₂))
+        CoApproxC_le j (K₁, c₁) (K₂, c₂))
       ∧ (∀ q A B, C = CTy.arr q A B →
           ∃ w₁ w₂ K₁' K₂', K₁ = Frame.appF w₁ :: K₁' ∧ K₂ = Frame.appF w₂ :: K₂' ∧
             Val.Closed w₁ ∧ Val.Closed w₂ ∧ Vrel j A w₁ w₂ ∧ Krel j B ε K₁' K₂')
@@ -530,17 +571,14 @@ theorem Krel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring M
   intro j hjm
   exact hK j (le_trans hjm hmn)
 
-/-- ◊4.5: `Crel` UPWARD-CLOSURE — the `▷`-anti-reduction primitive. `Crel` sits over `Krel` in
-CONTRAVARIANT position (`Crel n := ∀ K, Krel n K → CoApprox`), so the downward-closed `Krel` makes
-`Crel` UPWARD-monotone: a computation related at `m` is related at every `n ≥ m`. This is the lift
-the μ-unfold / handler-resume seams need — they produce `Crel` at a DROPPED index (the `▷` "later")
-and must re-raise it to the goal index. No index arithmetic: `Krel_mono` does the work. -/
-theorem Crel_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
-    [DecidableEq Mult] [EffSig Eff Mult] {n m : Nat} {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp}
-    (hmn : m ≤ n) (hC : Crel m C ε c₁ c₂) : Crel n C ε c₁ c₂ := by
-  rw [Crel] at hC ⊢
-  intro K₁ K₂ hK
-  exact hC K₁ K₂ (Krel_mono hmn hK)
+-- ◊4.5b: the old `Crel_mono` (blanket UPWARD `Crel m → Crel n`) is GONE — it is FALSE under the metered
+-- observation. `Crel n := ∀ K, Krel n K → CoApproxC_le n` carries the index in the observation premise
+-- (`ConvergesC_le n`, monotone-INCREASING in n), so a comp related at `m` is NOT blanket-related at `n ≥ m`
+-- (a `≤n`-step convergence need not be a `≤m`-step one). The index-RAISING the μ-unfold / resume seams need
+-- is now done by the `▷`-guarded head-expansion `Crel_head_step` (Compat.lean §B.0a) — it raises `m<n` to
+-- `n` by SPENDING the machine step that the metered observation meters. That is the whole point of the ▷:
+-- the lift is tied to a real reduction, not a free monotonicity. (`Krel_mono` survives — `Krel` is
+-- downward-closed `∀ j ≤ n`, untouched.)
 
 /-- ◊4.5: `Vrel` DOWNWARD-CLOSURE. With the U-clause wrapped `∀ j ≤ n, Crel j` (◊4.5), Vrel-down is
 STRUCTURAL — the `U` case is quantifier-restriction (`{j ≤ m} ⊆ {j ≤ n}`), NOT a route through Crel-down
@@ -794,6 +832,28 @@ theorem not_converges_up_splitNone (K : Stack) (ℓ : Label) (op : OpId) (v : Va
   rw [run_plug K (Comp.up ℓ op v) fuel] at hbig
   exact hstuck fuel w hbig
 
+/-- ◊4.5b CONFIG-LEVEL form: the focused config `(K, up ℓ op v)` with `splitAt K = none` is STUCK at
+every fuel (`step = dispatch = none`), so it never converges within ANY step bound. This is what the
+metered STUCK halves consume — `CoApproxC_le j (K, up…) _` is vacuous because `ConvergesC_le j (K, up…)`
+is `False`. No `plug`/refocus (config level): the `+K.length` offset never enters. -/
+theorem config_stuck_up_splitNone (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
+    (hsplit : Bang.splitAt K ℓ op = none) : ∀ j w, Config.run j (K, Comp.up ℓ op v) ≠ Result.done w := by
+  intro j w
+  cases j with
+  | zero => simp [Config.run]
+  | succ k =>
+      rw [Config.run_step k (K, Comp.up ℓ op v) (by intro u; simp)]
+      have hdisp : Source.step (K, Comp.up ℓ op v) = none := by
+        show dispatch K ℓ op v = none
+        unfold dispatch; rw [hsplit]; rfl
+      rw [hdisp]; simp
+
+/-- `ConvergesC_le j (K, up…)` is `False` when `K` does not handle `(ℓ,op)` — the metered stuck-half
+discharge. -/
+theorem not_convergesC_le_up_splitNone {j : Nat} (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
+    (hsplit : Bang.splitAt K ℓ op = none) : ¬ ConvergesC_le j (K, Comp.up ℓ op v) := by
+  rintro ⟨w, hw⟩; exact config_stuck_up_splitNone K ℓ op v hsplit j w hw
+
 /-- The empty stack is `Krel`-self-related at every SUCCESSOR index/type/row: the RETURN half
 holds because `ret v` always converges (so `CoApprox` is `True → True`), and the STUCK half
 holds because an `Srel (n+1)`-pair under `[]` is an unhandled `up`, which never converges (so
@@ -810,20 +870,21 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
   -- ◊4.5 downward-closed shape: `∀ j ≤ n+1, (return ∧ stuck ∧ arrow)`.
   intro j _hj
   refine ⟨?_, ?_, ?_⟩
-  · -- return half: plug [] (ret vᵢ) = ret vᵢ, which always converges.
-    intro q A _ v₁ v₂ _ _ _ _
-    exact converges_ret v₂
-  · -- stuck half: an `Srel j`-pair under [] is an unhandled `up`, which never converges.
+  · -- return half: config ([], ret v₂) always converges (`run 1 = done v₂`); metered premise unused.
+    intro q A _ v₁ v₂ _ _ _
+    exact fun _ => ⟨1, v₂, rfl⟩
+  · -- stuck half: an `Srel j`-pair under [] is an unhandled `up`, which never converges (even unbounded);
+    -- the metered premise `ConvergesC_le j ([], up …)` implies the unbounded `Converges`, contradiction.
     intro c₁ c₂ hS hconv
     -- ◊4.5 (Srel 0 := False): `j = 0` is VACUOUS (`Srel 0 = False`, `hS` is absurd). `j = k+1` is the REAL
-    -- unhandled-op argument — `Srel (k+1)` forces `c₁ = up ℓ op v₁`, never convergent under `[]`. The
-    -- soundness content lives entirely in the n≥1 branch; the j=0 branch is genuinely empty, not papered.
+    -- unhandled-op argument — `Srel (k+1)` forces `c₁ = up ℓ op v₁`, never convergent under `[]`.
     cases j with
     | succ k =>
         unfold Srel at hS
         obtain ⟨ℓ, op, v₁, v₂, Aarg, Ares, hc₁, _, _, _, _, _, _, _, _⟩ := hS
-        rw [Stack.plug, Bang.plug, hc₁] at hconv
-        exact absurd hconv (not_converges_up_nil ℓ op v₁)
+        obtain ⟨w, hw⟩ := hconv
+        rw [hc₁] at hw
+        exact absurd (⟨k + 1, w, hw⟩ : Converges (Comp.up ℓ op v₁)) (not_converges_up_nil ℓ op v₁)
     | zero => exact absurd hS (by unfold Srel; exact not_false)
   · -- ARROW half: VACUOUS — the whole-program answer context `[]` is a RETURNER type `F q A`, not an
     -- arrow (ADR-0038 peeling form: `[]` is not appF-capped; arrow-typed whole programs are bare lams,
@@ -834,13 +895,28 @@ theorem krel_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiri
 /-- WHOLE-PROGRAM adequacy: `Crel` implies the closed (empty-context) observation
 `Converges c₁ → Converges c₂`. The `⊑` restricted to `C = []`. Provable from `Crel` +
 `krel_nil_succ` alone (no fundamental theorem). RETURNER type only (`F q A`): the empty-stack
-observation is vacuous at non-returner types (ADR-0038). -/
+observation is vacuous at non-returner types (ADR-0038).
+
+◊4.5b ADEQUACY STRIP: the metered `Crel n` observes only `≤ n` left-steps, so instantiate at the
+WITNESSING fuel — `Converges c₁` gives a fuel `f+1` with `run (f+1) ([],c₁) = done`, which IS
+`ConvergesC_le (f+1) ([], c₁)`. `Crel (f+1)`'s metered `CoApproxC_le (f+1)` then discharges to the
+unbounded right `Converges c₂`. The frozen `∀ n` statement is what makes the right fuel available. -/
 theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
     [DecidableEq Mult] [EffSig Eff Mult] {c₁ c₂ : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult}
     (h : ∀ n, Crel n (CTy.F q A) e c₁ c₂) : Converges c₁ → Converges c₂ := by
-  have hC := h 1
-  unfold Crel at hC
-  have := hC [] [] (krel_nil_succ 0 q A e)
-  simpa [Stack.plug, Bang.plug] using this
+  rintro ⟨fuel, v, hfuel⟩
+  -- `Source.eval fuel c₁ = Config.run fuel ([], c₁) = done v` ⇒ fuel ≥ 1 (run 0 = oom).
+  cases fuel with
+  | zero => simp [Source.eval, Config.run] at hfuel
+  | succ f =>
+      have hC := h (f + 1)
+      unfold Crel at hC
+      -- the metered left premise: ConvergesC_le (f+1) ([], c₁), witnessed by hfuel.
+      have hconv : ConvergesC_le (f + 1) ([], c₁) :=
+        ⟨v, hfuel⟩
+      have hright := hC [] [] (krel_nil_succ f q A e) hconv
+      -- hright : ∃ m w, Config.run m ([], c₂) = done w  =  Converges c₂.
+      obtain ⟨m, w, hm⟩ := hright
+      exact ⟨m, w, hm⟩
 
 end Bang

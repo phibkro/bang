@@ -97,84 +97,36 @@ without consulting the stack. -/
 def CIStep (c c' : Comp) : Prop :=
   (∀ K : Stack, Source.step (K, c) = some (K, c')) ∧ (∀ v, c ≠ Comp.ret v)
 
-/-- Head-expansion of `Crel`: a context-independent head step on BOTH sides reduces `Crel` to the
-relation on the reducts. The `▷`-free direction (same index `n`), because the step is a machine
-β/ι-reduction, not an effect crossing a `▷`. -/
+/-- ◊4.5b `▷`-guarded head-expansion of `Crel` over the METERED observation: a context-independent
+head-step on both sides reduces `Crel n` to the reducts related at every STRICTLY-SMALLER index
+(`∀ m < n`). The `▷` lives in the OBSERVATION (`CoApproxC_le`): a left machine step spends one budget
+unit (`convergesC_le_step`), so the reduct is observed one-step-LATER. At `n=0` the goal is vacuous
+(`CoApproxC_le 0`). This is the index-RAISING the μ-unfold / resume seams use (replacing the old
+blanket `Crel_mono`, which is FALSE under metering). Same proof as the `CrelExp` PoC (§B.0a), now over
+the real `Crel`/`Krel`; config level, so NO `K.length` refocus offset (the lr45 wall). -/
 theorem Crel_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ c₂' : Comp}
-    (h₁ : CIStep c₁ c₁') (h₂ : CIStep c₂ c₂') :
-    Crel n B e c₁' c₂' → Crel n B e c₁ c₂ := by
-  intro hrel
-  unfold Crel at hrel ⊢
-  intro K₁ K₂ hK hconv
-  -- forward: plug K₁ c₁ converges ⇒ (anti-red) plug K₁ c₁' converges ⇒ (hrel) plug K₂ c₂' ⇒
-  -- (anti-red, reverse) plug K₂ c₂ converges.
-  have e1 : Converges (Stack.plug K₁ c₁) ↔ Converges (Stack.plug K₁ c₁') :=
-    converges_plug_step K₁ c₁ c₁' (h₁.1 K₁) (by intro v; simp [h₁.2 v])
-  have e2 : Converges (Stack.plug K₂ c₂) ↔ Converges (Stack.plug K₂ c₂') :=
-    converges_plug_step K₂ c₂ c₂' (h₂.1 K₂) (by intro v; simp [h₂.2 v])
-  exact e2.mpr (hrel K₁ K₂ hK (e1.mp hconv))
-
-
-/-! ### B.0a EXPERIMENTAL (◊4.5b) — the central `▷`-guarded head-expansion lemma over METERED obs
-
-PoC validating the metered-observation `▷` design (ADR-0041 reopen). We prove the make-or-break
-`Crel_head_step_le` over MINIMAL metered relations capturing exactly the biorthogonal observation
-shape — `CrelExp`/`KrelExp` quantify the CONFIG-level metered `CoApproxC_le` (LR.lean §5.0a‴) over
-stacks, abstracting the value-relation content `R` (orthogonal to head-expansion). The lead flagged
-THIS lemma as where lr45 died (the `(j+1)+K.length` refocus offset fought the bound). Our config-level
-`convergesC_le_step` (clean `±1`, NO offset) is the bet: `CrelExp`/`KrelExp` observe the FOCUSED config
-`(Kᵢ, cᵢ)`, never `plug Kᵢ cᵢ`, so `run_plug`'s `+K.length` never enters. If this closes, the full
-rewire of `Crel`/`Krel`/`Srel` over `CoApproxC_le` is mechanical. -/
-
-/-- Minimal metered continuation relation: `R` is the (abstracted) return/stuck/arrow content,
-downward-closed in the index (mirrors `Krel n := ∀ j ≤ n`). `Eff`/`Mult`-free. -/
-def KrelExp (R : Nat → Stack → Stack → Prop) (n : Nat) (K₁ K₂ : Stack) : Prop :=
-  ∀ j, j ≤ n → R j K₁ K₂
-
-theorem KrelExp_mono {R : Nat → Stack → Stack → Prop} {n m : Nat} {K₁ K₂ : Stack}
-    (hmn : m ≤ n) (hK : KrelExp R n K₁ K₂) : KrelExp R m K₁ K₂ :=
-  fun j hjm => hK j (le_trans hjm hmn)
-
-/-- Minimal metered computation relation: biorthogonal closure with the config-level metered
-observation `CoApproxC_le` (focused configs `(Kᵢ, cᵢ)`, no `plug`/refocus). -/
-def CrelExp (R : Nat → Stack → Stack → Prop) (n : Nat) (c₁ c₂ : Comp) : Prop :=
-  ∀ K₁ K₂ : Stack, KrelExp R n K₁ K₂ → CoApproxC_le n (K₁, c₁) (K₂, c₂)
-
-/-- THE CENTRAL LEMMA (◊4.5b make-or-break). `▷`-guarded head-expansion over the metered observation:
-a context-independent head-step on both sides reduces `CrelExp n` to the reducts related at every
-STRICTLY-SMALLER index (`∀ m < n`). Provable BECAUSE the left step is a clean config-level `−1`
-(`convergesC_le_step`) with NO `K.length` offset — the wall lr45 hit. At `n = 0` the goal is vacuous
-(`CoApproxC_le 0`). For `n = k+1` the head-step spends exactly the `▷` budget: `m := k < n`. -/
-theorem Crel_head_step_le {R : Nat → Stack → Stack → Prop} {n : Nat} {c₁ c₁' c₂ c₂' : Comp}
     (h₁ : CIStep c₁ c₁') (h₂ : CIStep c₂ c₂')
-    (hlater : ∀ m, m < n → CrelExp R m c₁' c₂') :
-    CrelExp R n c₁ c₂ := by
-  intro K₁ K₂ hK hconv
-  -- left: c₁ is a CIStep redex under K₁ — non-terminal, steps to c₁' under the SAME K₁.
+    (hlater : ∀ m, m < n → Crel m B e c₁' c₂') :
+    Crel n B e c₁ c₂ := by
+  rw [Crel]; intro K₁ K₂ hK hconv
   have hstep₁ : Source.step (K₁, c₁) = some (K₁, c₁') := h₁.1 K₁
   have hne₁ : ∀ v, (K₁, c₁) ≠ ([], Comp.ret v) := by intro v; simp [h₁.2 v]
-  -- n must be a successor: ConvergesC_le 0 is False.
   cases n with
   | zero => exact absurd hconv (not_convergesC_le_zero _)
   | succ k =>
-      -- spend one left step: ConvergesC_le (k+1) (K₁,c₁) ↔ ConvergesC_le k (K₁,c₁').
       rw [convergesC_le_step hstep₁ hne₁] at hconv
-      -- fire the ▷ premise at m = k (< k+1), with the ambient stack weakened to index k (KrelExp_mono).
-      have hCk : CrelExp R k c₁' c₂' := hlater k (Nat.lt_succ_self k)
-      have hKk : KrelExp R k K₁ K₂ := KrelExp_mono (Nat.le_succ k) hK
-      obtain ⟨m, w, hm⟩ := hCk K₁ K₂ hKk hconv
-      -- right: anti-reduce one step. (K₂, c₂) ↦ (K₂, c₂') (CIStep), so converging at (K₂,c₂') ⇒ (K₂,c₂).
+      have hCk : Crel k B e c₁' c₂' := hlater k (Nat.lt_succ_self k)
+      rw [Crel] at hCk
+      have hKk : Krel k B e K₁ K₂ := Krel_mono (Nat.le_succ k) hK
       have hstep₂ : Source.step (K₂, c₂) = some (K₂, c₂') := h₂.1 K₂
       have hne₂ : ∀ v, (K₂, c₂) ≠ ([], Comp.ret v) := by intro v; simp [h₂.2 v]
-      exact ⟨m + 1, w, by rw [Config.run_step m (K₂, c₂) hne₂, hstep₂]; exact hm⟩
+      exact converges_anti_step hstep₂ hne₂ (hCk K₁ K₂ hKk hconv)
 
-/-- The μ-FLOOR discharge (the ◊4.5b proof-of-concept). At `n = 0` a `CrelExp` obligation is VACUOUS —
-no payload relation needed. This is exactly the wall in `crel_fund`'s `unfold`/`vvar`/`n=0` case: after
-`unfold (fold w) ↦ ret w` the residual `Crel 0 (ret w₁) (ret w₂)` discharges with the floor's vacuous
-(`∀ j < 0`) payload, because the metered observation `CoApproxC_le 0` is vacuously true. Closes WITHOUT
-any `Vrel 0` payload — the reconciliation ADR-0041 said plain-Nat can't reach. -/
-theorem crelExp_zero {R : Nat → Stack → Stack → Prop} (c₁ c₂ : Comp) : CrelExp R 0 c₁ c₂ :=
-  fun K₁ K₂ _ hconv => absurd hconv (not_convergesC_le_zero _)
+
+-- ◊4.5b: the EXPERIMENTAL `CrelExp`/`Crel_head_step_le` PoC (the make-or-break that validated the
+-- config-level metered `▷` before the full rewire) is REMOVED — it is subsumed by the real
+-- `Crel_head_step` above (single source of truth). The PoC's verdict (the config-level metering localizes
+-- the offset; ADR-0041 alt-1 overturned) is recorded in ADR-0041 (amended `560ba82`).
 
 
 /-- The `letF` REDUCE bridge: plugging `letF N :: K` with `ret v` co-converges with plugging `K` with
@@ -896,8 +848,9 @@ theorem crel_force {n : Nat} {φ : Eff} {B : CTy Eff Mult} {w₁ w₂ : Val}
   -- Vrel at U φ B: w₁ = vthunk c₁, w₂ = vthunk c₂, Crel n B φ c₁ c₂.
   rw [Vrel] at hv
   obtain ⟨c₁, c₂, rfl, rfl, hc⟩ := hv
-  -- ◊4.5 (Vrel U-clause ∀j≤n): `hc : ∀ j ≤ n, Crel j …`; consume at the TOP index `j = n`.
-  refine Crel_head_step (c₁' := c₁) (c₂' := c₂) ?_ ?_ (hc n (le_refl n))
+  -- ◊4.5b: `force (vthunk c) ↦ c` is a CIStep; the `▷`-guarded head-expansion needs the reducts related
+  -- at every `m < n`, supplied by the U-clause `hc : ∀ j ≤ n, Crel j …` (Kripke) at `j = m ≤ n`.
+  refine Crel_head_step (c₁' := c₁) (c₂' := c₂) ?_ ?_ (fun m hm => hc m (le_of_lt hm))
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
 
@@ -936,18 +889,21 @@ theorem krel_letF {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
     intro q A' hEq v₁ v₂ hc₁ hc₂ hv
     rw [CTy.F.injEq] at hEq
     obtain ⟨rfl, rfl⟩ := hEq
-    intro hconv₁
-    -- plug (letF N₁' :: K₁) (ret v₁) converges ⟹ plug K₁ (N₁'.subst v₁) converges.
-    rw [converges_letF_ret] at hconv₁
-    rw [converges_letF_ret]
-    -- ◊4.5: fire the Kripke `hN` at the SAME index `j` (it has `Vrel j`); weaken the ambient
-    -- `Krel j (φ₁⊔φ₂)` (via Krel_mono) to `Krel j φ₂` (Krel_eff_anti, φ₂ ≤ φ₁⊔φ₂), apply the Crel.
-    have hKj : Krel j B (φ₁ ⊔ φ₂) K₁ K₂ := Krel_mono hj hK
-    have hKφ₂ : Krel j B φ₂ K₁ K₂ := Krel_eff_anti j B φ₂ (φ₁ ⊔ φ₂) K₁ K₂ le_sup_right hKj
-    have hCrel := hN j hj v₁ v₂ hc₁ hc₂ hv
-    rw [Crel] at hCrel
-    exact hCrel K₁ K₂ hKφ₂ hconv₁
-  · -- STUCK half: the Srel pair is an unhandled op under letF :: K — never converges, CoApprox vacuous.
+    -- ◊4.5b: the `letF` REDUCE `(letF N::K, ret v) ↦ (K, N.subst v)` is ONE config step. Route the metered
+    -- return-half through `coApproxC_le_anti_step` (the generic ▷-anti-reduction): the reduct relation at
+    -- the DROPPED index `j-1` comes from `hN` (continuation IH) at `j-1`, with `Vrel`/`Krel` weakened.
+    cases j with
+    | zero => exact coApproxC_le_zero _ _
+    | succ k =>
+        refine coApproxC_le_anti_step (cfg₁' := (K₁, Comp.subst v₁ N₁')) (cfg₂' := (K₂, Comp.subst v₂ N₂'))
+          rfl (by intro u; simp) rfl (by intro u; simp) ?_
+        -- fire `hN` at index `k` (≤ n): weaken `Vrel (k+1) → Vrel k`, ambient `Krel (k+1) → Krel k → φ₂`.
+        have hKk : Krel k B (φ₁ ⊔ φ₂) K₁ K₂ := Krel_mono (Nat.le_of_succ_le hj) hK
+        have hKφ₂ : Krel k B φ₂ K₁ K₂ := Krel_eff_anti k B φ₂ (φ₁ ⊔ φ₂) K₁ K₂ le_sup_right hKk
+        have hCrel := hN k (Nat.le_of_succ_le hj) v₁ v₂ hc₁ hc₂ (Vrel_mono (Nat.le_succ k) hv)
+        rw [Crel] at hCrel
+        exact hCrel K₁ K₂ hKφ₂
+  · -- STUCK half: the Srel pair is an unhandled op under letF :: K — `ConvergesC_le j` is False, vacuous.
     intro c₁ c₂ hS
     -- ◊4.5 (Srel 0 := False): `j = 0` is vacuous (`hS : Srel 0 = False`). `j = k+1` is the REAL
     -- unhandled-op argument — `Srel (k+1)` forces `c₁ = up …`, never convergent under `letF :: K`.
@@ -957,7 +913,7 @@ theorem krel_letF {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
         obtain ⟨ℓ, op, v₁, v₂, _, _, hc₁, _, _, _, _, _, hsp₁, _, _⟩ := hS
         intro hconv₁
         rw [hc₁] at hconv₁
-        exact absurd hconv₁ (not_converges_up_splitNone (Frame.letF N₁' :: K₁) ℓ op v₁ hsp₁)
+        exact absurd hconv₁ (not_convergesC_le_up_splitNone (Frame.letF N₁' :: K₁) ℓ op v₁ hsp₁)
     | zero => exact absurd hS (by unfold Srel; exact not_false)
   · -- ARROW half: VACUOUS — the let-block returns at `F q1 A`, not an arrow type (`F ≠ arr`).
     intro q A' B' hEq
@@ -988,7 +944,7 @@ theorem krel_appF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mul
         rw [Srel] at hS
         obtain ⟨ℓ, op, w₁, w₂, _, _, hc₁, _, _, _, _, _, hsp₁, _, _⟩ := hS
         intro hconv₁; rw [hc₁] at hconv₁
-        exact absurd hconv₁ (not_converges_up_splitNone (Frame.appF v₁ :: K₁) ℓ op w₁ hsp₁)
+        exact absurd hconv₁ (not_convergesC_le_up_splitNone (Frame.appF v₁ :: K₁) ℓ op w₁ hsp₁)
     | zero => exact absurd hS (by unfold Srel; exact not_false)
   · -- arrow half (peeling): the cap IS appF v, the remainder IS K — supply them at index `j`.
     intro q' A' B' hEq
@@ -1018,13 +974,11 @@ theorem compat_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} 
   -- `n = 0` (the stuck halves are vacuous at all j; the index-free `CoApprox` is discharged the same way).
   rw [Crel]
   intro K₁ K₂ hK
-  -- REFOCUS: plug Kᵢ (letC Mᵢ Nᵢ') = plug (letF Nᵢ' :: Kᵢ) Mᵢ.
-  have hrefocus₁ : Stack.plug K₁ (Comp.letC M₁ N₁') = Stack.plug (Frame.letF N₁' :: K₁) M₁ := by
-    rw [Stack.plug, Stack.plug, plug_cons]; rfl
-  have hrefocus₂ : Stack.plug K₂ (Comp.letC M₂ N₂') = Stack.plug (Frame.letF N₂' :: K₂) M₂ := by
-    rw [Stack.plug, Stack.plug, plug_cons]; rfl
-  rw [hrefocus₁, hrefocus₂]
-  -- the letF-extended stacks are Krel-related at (F q1 A, φ₁); run M through them.
+  -- ◊4.5b CONFIG REFOCUS: `(K, letC M N') ↦ (letF N'::K, M)` is one PUSH config step (non-dropping
+  -- `coApproxC_le_reduce`); the letF-extended stacks are `Krel`-related at `(F q1 A, φ₁)` (`krel_letF`),
+  -- so `hM` (related at the arrow type, index `n`) discharges the reduct.
+  refine coApproxC_le_reduce (cfg₁' := (Frame.letF N₁' :: K₁, M₁)) (cfg₂' := (Frame.letF N₂' :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
   have hKletF := krel_letF (q1 := q1) hK hN
   rw [Crel] at hM
   exact hM (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) hKletF
@@ -1041,11 +995,10 @@ theorem compat_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
   -- ◊4.5: NO `cases n`/`crel_zero` — `krel_appF_intro` at general `n` covers `n = 0`.
   rw [Crel]
   intro K₁ K₂ hK
-  have hrefocus₁ : Stack.plug K₁ (Comp.app M₁ v₁) = Stack.plug (Frame.appF v₁ :: K₁) M₁ := by
-    rw [Stack.plug, Stack.plug, plug_cons]; rfl
-  have hrefocus₂ : Stack.plug K₂ (Comp.app M₂ v₂) = Stack.plug (Frame.appF v₂ :: K₂) M₂ := by
-    rw [Stack.plug, Stack.plug, plug_cons]; rfl
-  rw [hrefocus₁, hrefocus₂]
+  -- ◊4.5b CONFIG REFOCUS: `(K, app M v) ↦ (appF v::K, M)` is one PUSH config step (non-dropping); the
+  -- appF-extended stacks are `Krel`-related at `(arr q A B, φ)` (`krel_appF_intro`), so `hM` discharges.
+  refine coApproxC_le_reduce (cfg₁' := (Frame.appF v₁ :: K₁, M₁)) (cfg₂' := (Frame.appF v₂ :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [Crel] at hM
   exact hM (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krel_appF_intro hcv₁ hcv₂ hv hK)
 
@@ -1066,12 +1019,13 @@ theorem compat_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {�
   rw [Krel] at hK
   -- ◊4.5: consume the arrow half at the TOP index `j = n` (downward-closed body, strongest at `n`).
   obtain ⟨w₁, w₂, K₁', K₂', rfl, rfl, hcw₁, hcw₂, hw, hKrem⟩ := (hK n (le_refl n)).2.2 q A B rfl
-  -- β: plug (appF w::K') (lam M') converges ⟺ plug K' (M'.subst w) converges.
-  rw [CoApprox, converges_appF_lam, converges_appF_lam]
-  -- the bodies relate at (B, φ) on the closed args; discharge with the remainder Krel.
-  have := hbody w₁ w₂ hcw₁ hcw₂ hw
-  rw [Crel] at this
-  exact this K₁' K₂' hKrem
+  -- ◊4.5b: β `(appF w::K', lam M') ↦ (K', M'.subst w)` is one config step; the body IH gives the reduct
+  -- related at the SAME index `n`, so the NON-dropping `coApproxC_le_reduce` discharges it.
+  refine coApproxC_le_reduce (cfg₁' := (K₁', Comp.subst w₁ M₁')) (cfg₂' := (K₂', Comp.subst w₂ M₂'))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  have hb := hbody w₁ w₂ hcw₁ hcw₂ hw
+  rw [Crel] at hb
+  exact hb K₁' K₂' hKrem
 
 /-- The `handleF (throws ℓ)` frame-extension `Krel` lemma: extending a `Krel n (F q A) φ K₁ K₂` by a
 `throws ℓ` handler frame gives `Krel n (F q A) e (handleF (throws ℓ)::K₁) (handleF (throws ℓ)::K₂)` for
@@ -1097,12 +1051,13 @@ theorem krel_handleF_throws {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
   rw [Krel] at hK
   intro j hj
   refine ⟨?_, ?_, ?_⟩
-  · -- RETURN half: F q A = F q' A' ⟹ the handler frame returns identically; ambient Krel return fires.
-    intro q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
-    rw [converges_handleF_ret] at hconv₁
-    rw [converges_handleF_ret]
-    exact (hK j hj).1 q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
-  · -- STUCK half: the Srel pair is an unhandled op under handleF::K — never converges.
+  · -- RETURN half: the handler frame returns identically (`handleF h::K, ret v ↦ K, ret v`, one config
+    -- step); ambient `Krel` return half gives the reduct related at the SAME index `j` (non-dropping).
+    intro q' A' hEq v₁ v₂ hcv₁ hcv₂ hv
+    refine coApproxC_le_reduce (cfg₁' := (K₁, Comp.ret v₁)) (cfg₂' := (K₂, Comp.ret v₂))
+      rfl (by intro u; simp) rfl (by intro u; simp) ?_
+    exact (hK j hj).1 q' A' hEq v₁ v₂ hcv₁ hcv₂ hv
+  · -- STUCK half: the Srel pair is an unhandled op under handleF::K — `ConvergesC_le j` is False, vacuous.
     intro c₁ c₂ hS
     -- ◊4.5 (Srel 0 := False): `j = 0` vacuous; `j = k+1` is the real unhandled-op argument.
     cases j with
@@ -1112,7 +1067,7 @@ theorem krel_handleF_throws {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
         intro hconv₁
         rw [hc₁] at hconv₁
         exact absurd hconv₁
-          (not_converges_up_splitNone (Frame.handleF (Handler.throws ℓ) :: K₁) ℓ' op v₁ hsp₁)
+          (not_convergesC_le_up_splitNone (Frame.handleF (Handler.throws ℓ) :: K₁) ℓ' op v₁ hsp₁)
     | zero => exact absurd hS (by unfold Srel; exact not_false)
   · -- ARROW half: VACUOUS — F q A ≠ arr.
     intro q' A' B' hEq; exact absurd hEq (by simp)
@@ -1136,11 +1091,12 @@ theorem krel_handleF {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {h : H
   rw [Krel]; rw [Krel] at hK
   intro j hj
   refine ⟨?_, ?_, ?_⟩
-  · -- RETURN half: the handler frame returns identically (any h); ambient Krel return fires at index j.
-    intro q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
-    rw [converges_handleF_ret] at hconv₁
-    rw [converges_handleF_ret]
-    exact (hK j hj).1 q' A' hEq v₁ v₂ hcv₁ hcv₂ hv hconv₁
+  · -- RETURN half: the handler frame returns identically (any h, one config step); ambient `Krel` return
+    -- gives the reduct related at the SAME index `j` (non-dropping `coApproxC_le_reduce`).
+    intro q' A' hEq v₁ v₂ hcv₁ hcv₂ hv
+    refine coApproxC_le_reduce (cfg₁' := (K₁, Comp.ret v₁)) (cfg₂' := (K₂, Comp.ret v₂))
+      rfl (by intro u; simp) rfl (by intro u; simp) ?_
+    exact (hK j hj).1 q' A' hEq v₁ v₂ hcv₁ hcv₂ hv
   · -- STUCK half: the Srel pair is an op the WHOLE handleF::K stack leaves unhandled — never converges.
     intro c₁ c₂ hS
     cases j with
@@ -1149,7 +1105,7 @@ theorem krel_handleF {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {h : H
         obtain ⟨ℓ', op, v₁, v₂, _, _, hc₁, _, _, _, _, _, hsp₁, _, _⟩ := hS
         intro hconv₁
         rw [hc₁] at hconv₁
-        exact absurd hconv₁ (not_converges_up_splitNone (Frame.handleF h :: K₁) ℓ' op v₁ hsp₁)
+        exact absurd hconv₁ (not_convergesC_le_up_splitNone (Frame.handleF h :: K₁) ℓ' op v₁ hsp₁)
     | zero => exact absurd hS (by unfold Srel; exact not_false)
   · -- ARROW half: VACUOUS — F q A ≠ arr.
     intro q' A' B' hEq; exact absurd hEq (by simp)
@@ -1185,13 +1141,12 @@ theorem compat_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
   -- ◊4.5: NO `cases n`/`crel_zero` — `krel_handleF_throws` at general `n` covers `n = 0`.
   rw [Crel]
   intro K₁ K₂ hK
-  have hrefocus₁ : Stack.plug K₁ (Comp.handle (Handler.throws ℓ) M₁)
-      = Stack.plug (Frame.handleF (Handler.throws ℓ) :: K₁) M₁ := by
-    rw [Stack.plug, Stack.plug, plug_cons]; rfl
-  have hrefocus₂ : Stack.plug K₂ (Comp.handle (Handler.throws ℓ) M₂)
-      = Stack.plug (Frame.handleF (Handler.throws ℓ) :: K₂) M₂ := by
-    rw [Stack.plug, Stack.plug, plug_cons]; rfl
-  rw [hrefocus₁, hrefocus₂]
+  -- ◊4.5b CONFIG REFOCUS: `(K, handle h M) ↦ (handleF h::K, M)` is one PUSH config step (non-dropping);
+  -- the handler-extended stacks are `Krel`-related (`krel_handleF_throws`), so `hM` discharges the reduct.
+  refine coApproxC_le_reduce
+    (cfg₁' := (Frame.handleF (Handler.throws ℓ) :: K₁, M₁))
+    (cfg₂' := (Frame.handleF (Handler.throws ℓ) :: K₂, M₂))
+    rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [Crel] at hM
   exact hM (Frame.handleF (Handler.throws ℓ) :: K₁) (Frame.handleF (Handler.throws ℓ) :: K₂)
     (krel_handleF_throws hK)
@@ -1204,23 +1159,24 @@ the fundamental induction) supplies the payload-closedness the branch IH needs. 
 theorem compat_case {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
     {w₁ w₂ : Val} {N₁₁ N₂₁ N₁₂ N₂₂ : Comp}
     (hw : Vrel n (VTy.sum A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
-    (hN₁ : ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel n A v₁ v₂ →
-      Crel n C φ (Comp.subst v₁ N₁₁) (Comp.subst v₂ N₁₂))
-    (hN₂ : ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel n B v₁ v₂ →
-      Crel n C φ (Comp.subst v₁ N₂₁) (Comp.subst v₂ N₂₂)) :
+    -- ◊4.5b KRIPKE continuation IHs (the head-step's `▷` needs the branch related at every `m < n`).
+    (hN₁ : ∀ j, j ≤ n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel j A v₁ v₂ →
+      Crel j C φ (Comp.subst v₁ N₁₁) (Comp.subst v₂ N₁₂))
+    (hN₂ : ∀ j, j ≤ n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → Vrel j B v₁ v₂ →
+      Crel j C φ (Comp.subst v₁ N₂₁) (Comp.subst v₂ N₂₂)) :
     Crel n C φ (Comp.case w₁ N₁₁ N₂₁) (Comp.case w₂ N₁₂ N₂₂) := by
   rw [Vrel] at hw
   rcases hw with ⟨u₁, u₂, rfl, rfl, hu⟩ | ⟨u₁, u₂, rfl, rfl, hu⟩
-  · -- both inl: reduce to the left branch, related by hN₁ on the (closed) payloads.
-    refine Crel_head_step (c₁' := Comp.subst u₁ N₁₁) (c₂' := Comp.subst u₂ N₁₂) ?_ ?_ ?_
+  · -- both inl: `case (inl u) ↦ N₁[u]` (CIStep); the ▷-head-step needs the branch at each `m < n`.
+    refine Crel_head_step (c₁' := Comp.subst u₁ N₁₁) (c₂' := Comp.subst u₂ N₁₂) ?_ ?_
+      (fun m hm => hN₁ m (le_of_lt hm) u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv (Vrel_mono (le_of_lt hm) hu))
     · exact ⟨fun K => rfl, by intro v; simp⟩
     · exact ⟨fun K => rfl, by intro v; simp⟩
-    · exact hN₁ u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv hu
-  · -- both inr: reduce to the right branch, related by hN₂.
-    refine Crel_head_step (c₁' := Comp.subst u₁ N₂₁) (c₂' := Comp.subst u₂ N₂₂) ?_ ?_ ?_
+  · -- both inr: `case (inr u) ↦ N₂[u]` (CIStep).
+    refine Crel_head_step (c₁' := Comp.subst u₁ N₂₁) (c₂' := Comp.subst u₂ N₂₂) ?_ ?_
+      (fun m hm => hN₂ m (le_of_lt hm) u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv (Vrel_mono (le_of_lt hm) hu))
     · exact ⟨fun K => rfl, by intro v; simp⟩
     · exact ⟨fun K => rfl, by intro v; simp⟩
-    · exact hN₂ u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv hu
 
 /-- The `split` compatibility core (`compat_split`): a `Vrel`-related product scrutinee gives both
 `split`s a `pair` with `Vrel`-related components, and `split (pair v w) N ↦ N[fst][shift snd]` is a
@@ -1230,41 +1186,44 @@ closed scrutinee. -/
 theorem compat_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
     {w₁ w₂ : Val} {N₁' N₂' : Comp}
     (hw : Vrel n (VTy.prod A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
-    (hN : ∀ a₁ a₂ b₁ b₂, Val.Closed a₁ → Val.Closed a₂ → Val.Closed b₁ → Val.Closed b₂ →
-      Vrel n A a₁ a₂ → Vrel n B b₁ b₂ →
-      Crel n C φ (Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
+    -- ◊4.5b KRIPKE continuation IH (the head-step's `▷` needs the body related at every `m < n`).
+    (hN : ∀ j, j ≤ n → ∀ a₁ a₂ b₁ b₂, Val.Closed a₁ → Val.Closed a₂ → Val.Closed b₁ → Val.Closed b₂ →
+      Vrel j A a₁ a₂ → Vrel j B b₁ b₂ →
+      Crel j C φ (Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
                  (Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂'))) :
     Crel n C φ (Comp.split w₁ N₁') (Comp.split w₂ N₂') := by
   rw [Vrel] at hw
   obtain ⟨a₁, a₂, b₁, b₂, rfl, rfl, ha, hb⟩ := hw
   obtain ⟨hca₁, hcb₁⟩ := hcw₁.pair_inv
   obtain ⟨hca₂, hcb₂⟩ := hcw₂.pair_inv
+  -- `split (pair a b) N ↦ N[a][shift b]` (CIStep); the ▷-head-step needs the body at each `m < n`.
   refine Crel_head_step
     (c₁' := Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
-    (c₂' := Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂')) ?_ ?_ ?_
+    (c₂' := Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂')) ?_ ?_
+    (fun m hm => hN m (le_of_lt hm) a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂
+      (Vrel_mono (le_of_lt hm) ha) (Vrel_mono (le_of_lt hm) hb))
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
-  · exact hN a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
 
-/-- `unfold` of `Vrel`-related folds (ADR-0038/Blocker-2 resolution, option (a) — `unfold` SPENDS the
-step index): `Vrel (n+1) (mu A)` gives the payloads `Vrel`-related at the UNROLLED type at index `n`
-(the μ `▷`-guard, LR.lean §5.2 — the guard IS a real step that `unfold` discharges). `unfold (fold w) ↦
-ret w` is a CIStep, so `Crel_head_step` reduces the goal (at the DROPPED index `n`) to `crel_ret` on the
-index-`n` payloads. This is the textbook iso-recursive step-indexing treatment (ahmed-esop06 /
-Appel-McAllester): the recursive-type elimination costs one logical step. The conclusion is `Crel n`
-(NOT `n+1`) — the index the `Vrel (n+1)` μ-clause's `▷` discharges. Payload closedness comes from the
-closed scrutinee (`Val.Closed.fold_inv`). -/
+/-- ◊4.5b `unfold` of `Vrel`-related folds, over the METERED observation. `Vrel n (mu A)` gives the
+fold SHAPE at every `n` plus the payloads `Vrel`-related at the UNROLLED type at every `j < n` (the μ
+`▷`-guard). `unfold (fold w) ↦ ret w` is a CIStep, so the `▷`-guarded `Crel_head_step` reduces the goal
+to `crel_ret` on the payload at each DROPPED index `m < n` — exactly what the μ-clause's `∀ j < n`
+supplies. The conclusion is `Crel n` from `Vrel n` (index-MATCHED, no off-by-one): the metered observation
+spends the step, so at `n=0` the goal is vacuous and the floor closes with NO payload (the ADR-0041 wall,
+dissolved). This is the textbook iso-recursive step-indexing treatment (ahmed-esop06 / Appel-McAllester):
+the recursive-type elimination costs one logical step, now PAID by the metered `▷`. -/
 theorem crel_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
-    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂) (hv : Vrel (n + 1) (VTy.mu A) w₁ w₂) :
+    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂) (hv : Vrel n (VTy.mu A) w₁ w₂) :
     Crel n (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
   rw [Vrel] at hv
   obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
-  -- ◊4.5 ROUTE 1: `hu : ∀ j < n+1, Vrel j (unrollMu A) u₁ u₂`; take the payload at the conclusion
-  -- index `n` (`n < n+1`) — the `▷`-guarded unroll discharged by the `unfold` step.
-  refine Crel_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_ ?_
+  -- the ▷-head-step needs `Crel m (ret u₁) (ret u₂)` at each `m < n`, from `crel_ret` on the μ-payload
+  -- `hu m : Vrel m (unrollMu A) u₁ u₂`. At `n=0` the `∀ m < 0` is vacuous and the goal `Crel 0` is too.
+  refine Crel_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_
+    (fun m hm => crel_ret hcw₁.fold_inv hcw₂.fold_inv (hu m hm))
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
-  · exact crel_ret hcw₁.fold_inv hcw₂.fold_inv (hu n (Nat.lt_succ_self n))
 
 
 
@@ -1428,15 +1387,18 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      -- ◊4.5b KRIPKE: the branch IHs fire at each `j ≤ n` on the `EnvRel_mono`-weakened env.
       refine compat_case (vrel_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_ ?_
-      · intro u₁ u₂ hcu₁ hcu₂ hu
+      · intro j hj u₁ u₂ hcu₁ hcu₂ hu
         rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
-        have hδ' : EnvRel n (A :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by rw [EnvRel]; exact ⟨hcu₁, hcu₂, hu, hδ⟩
-        exact crel_fund hN₁ n (u₁ :: δ₁) (u₂ :: δ₂) hδ'
-      · intro u₁ u₂ hcu₁ hcu₂ hu
+        have hδ' : EnvRel j (A :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by
+          rw [EnvRel]; exact ⟨hcu₁, hcu₂, hu, EnvRel_mono hj hδ⟩
+        exact crel_fund hN₁ j (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+      · intro j hj u₁ u₂ hcu₁ hcu₂ hu
         rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
-        have hδ' : EnvRel n (B :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by rw [EnvRel]; exact ⟨hcu₁, hcu₂, hu, hδ⟩
-        exact crel_fund hN₂ n (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+        have hδ' : EnvRel j (B :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by
+          rw [EnvRel]; exact ⟨hcu₁, hcu₂, hu, EnvRel_mono hj hδ⟩
+        exact crel_fund hN₂ j (u₁ :: δ₁) (u₂ :: δ₂) hδ'
   | @split _ _ _ _ v N φ q A B C hv hN _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_split, closeC_split]
@@ -1444,15 +1406,16 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+      -- ◊4.5b KRIPKE: the body IH fires at each `j ≤ n` on the `EnvRel_mono`-weakened two-extended env.
       refine compat_split (vrel_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_
       -- continuation at B :: A :: Γ: the reduct `subst a (subst (shift b) (closeCUnderBinders 2 δ N))`
       -- = closeC δ (subst a (subst b N)) = closeC (b :: a :: δ) N (closeC_subst2_comm); IH at the
       -- two-extended env (snd=b at idx0, fst=a at idx1).
-      intro a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
+      intro j hj a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
       rw [closeC_subst2_comm hδ.closed_left hca₁ hcb₁, closeC_subst2_comm hδ.closed_right hca₂ hcb₂]
-      have hδ' : EnvRel n (B :: A :: Γ) (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) := by
-        rw [EnvRel]; refine ⟨hcb₁, hcb₂, hb, ?_⟩; rw [EnvRel]; exact ⟨hca₁, hca₂, ha, hδ⟩
-      have := crel_fund hN n (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) hδ'
+      have hδ' : EnvRel j (B :: A :: Γ) (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) := by
+        rw [EnvRel]; refine ⟨hcb₁, hcb₂, hb, ?_⟩; rw [EnvRel]; exact ⟨hca₁, hca₂, ha, EnvRel_mono hj hδ⟩
+      have := crel_fund hN j (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) hδ'
       rwa [show closeC (b₁ :: a₁ :: δ₁) N = closeC δ₁ (Comp.subst a₁ (Comp.subst b₁ N)) from rfl,
            show closeC (b₂ :: a₂ :: δ₂) N = closeC δ₂ (Comp.subst a₂ (Comp.subst b₂ N)) from rfl] at this
   | @unfold _ _ v A hv =>
@@ -1467,13 +1430,16 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       cases hv with
       | @fold _ _ a _ ha =>
           rw [closeV_fold, closeV_fold]
-          refine Crel_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
-            ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩ ?_
           have hsa₁ : Val.Closed (closeV δ₁ a) :=
             closeV_closed_scoped hδ.closed_left (by have := ha.scopedIn; rwa [hδ.length_left])
           have hsa₂ : Val.Closed (closeV δ₂ a) :=
             closeV_closed_scoped hδ.closed_right (by have := ha.scopedIn; rwa [hδ.length_right])
-          exact crel_ret hsa₁ hsa₂ (vrel_fund ha n δ₁ δ₂ hδ)
+          -- ◊4.5b: `unfold (fold a) ↦ ret a` (CIStep); the ▷-head-step needs `Crel m (ret a) (ret a)` at
+          -- each `m < n`, from `crel_ret` on `vrel_fund ha` at index `m` (EnvRel_mono-weakened). ▷-FREE in
+          -- the sense that the fold is SYNTACTIC (no μ-clause index gate) — closes at EVERY `n` incl. 0.
+          refine Crel_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
+            ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩
+            (fun m hm => crel_ret hsa₁ hsa₂ (vrel_fund ha m δ₁ δ₂ (EnvRel_mono (le_of_lt hm) hδ)))
       | @vvar _ i _ hget =>
           have hsc₁ : Val.Closed (closeV δ₁ (Val.vvar i)) :=
             closeV_closed_scoped hδ.closed_left (by
@@ -1481,20 +1447,12 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
           have hsc₂ : Val.Closed (closeV δ₂ (Val.vvar i)) :=
             closeV_closed_scoped hδ.closed_right (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
-          cases n with
-          | zero =>
-              -- ◊4.5 ROUTE 1 (Vrel μ-clause strict-`<`) gives fold-SHAPE at the floor (∀ j<0 payload
-              -- vacuous), so the head-step `unfold (fold wᵢ) ↦ ret wᵢ` applies — but the residual
-              -- `Crel 0 (F 1 (unrollMu A)) (ret w₁) (ret w₂)` STILL needs `Vrel 0 (unrollMu A) w₁ w₂`
-              -- (via crel_ret), which the floor's vacuous payload does not supply. ke's step (ii)
-              -- (degenerate the `Krel 0` return-half) makes the global return-half UNPROVABLE by
-              -- `krel_letF`/`krel_appF_intro` at j=0 (they need the `Vrel j` premise to fire their
-              -- continuation) ⇒ the degeneration must thread `0<j→Vrel` through EnvRel + every binder
-              -- case — pervasive. STOPPED + reported (the iteration-3 gate). See report.
-              sorry
-          | succ m =>
-              exact Crel_mono (Nat.le_succ m)
-                (crel_unfold hsc₁ hsc₂ (vrel_fund (HasVTy.vvar hget) (m + 1) δ₁ δ₂ hδ))
+          -- ◊4.5b: the μ-FLOOR WALL DISSOLVED. The env supplies `Vrel n (mu A)` (= `vrel_fund` of the
+          -- vvar), and the metered `crel_unfold` consumes it DIRECTLY at the goal index `n` — no
+          -- `Crel_mono` re-raise (it's false now), no `cases n`. At `n=0` `crel_unfold`'s ▷-head-step is
+          -- vacuous (the metered `Crel 0`), so the floor closes with NO payload — the reconciliation
+          -- ADR-0041's plain-Nat proof said was impossible, now build-PROVEN over the metered observation.
+          exact crel_unfold hsc₁ hsc₂ (vrel_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
       -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
       -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
