@@ -60,12 +60,12 @@
                                      carrier on Krel/Srel/EnvRel (ADR-0036); arrow clause = PEELING +
                                      krel_nil_succ F-restriction (ADR-0038 — both pure forms refuted by
                                      the build). 16 proof commits f6d0ce2…69d70b1, 723 jobs green.
-◊4.5 ✓ LR rebuild — lr_sound + all 3 handler kinds END-TO-END; SCOPED-SEAM **LANDED** (answertrack, `cap45-answertrack` tip `9ad7899`, gated green at `0b08dd0`, NOT merged) → **BROAD moat** (ALL contexts incl. state-over-throws + legit handler stacking) + **ONE documented resume-edge sorry** (`krelS_splitAt_decomp` handleF-MISS = resume-through-a-wrap only, ADR-0026 descent; ADR-0043). **NOT sorryAx-zero** — that needs a TYPED-CrelK reshape, BUILD-PINNED (all simple stack-scope predicates wall at `crelK_ret`/`crelK_fund` — untyped scope can't survive frame-strips), a dedicated FUTURE kernel session (`paths/PATH-cap45-finish.md`). `NoWrapMiss` predicate banked = the right primitive. (2026-06-24) ── ◊4.5a banked (main `974e169`): the IxFree reshape — non-▷ spine
-                                     re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `4b2f973`),
-                                     `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`b5cfc88`), resume
-                                     infra krel_handleF* (`421edc0`), ▷-guarded Vrel μ-clause strict-< (`33f50ea`,
+◊4.5 ✓ LR rebuild — lr_sound + all 3 handler kinds END-TO-END; SCOPED-SEAM **LANDED** (answertrack, `cap45-answertrack` tip `bdf5047`, gated green at `39f29ff`, NOT merged) → **BROAD moat** (ALL contexts incl. state-over-throws + legit handler stacking) + **ONE documented resume-edge sorry** (`krelS_splitAt_decomp` handleF-MISS = resume-through-a-wrap only, ADR-0026 descent; ADR-0043). **NOT sorryAx-zero** — that needs a TYPED-CrelK reshape, BUILD-PINNED (all simple stack-scope predicates wall at `crelK_ret`/`crelK_fund` — untyped scope can't survive frame-strips), a dedicated FUTURE kernel session (`paths/PATH-cap45-finish.md`). `NoWrapMiss` predicate banked = the right primitive. (2026-06-24) ── ◊4.5a banked (main `773c5e6`): the IxFree reshape — non-▷ spine
+                                     re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `22e1684`),
+                                     `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`8513fd3`), resume
+                                     infra krel_handleF* (`1af79f8`), ▷-guarded Vrel μ-clause strict-< (`642d335`,
                                      fixes the open-μ soundness hole). ◊4.5b NEARLY DONE on branch
-                                     `cap45-modality` (`c363304`, NOT yet merged): the ▷ IS the CONFIG-LEVEL
+                                     `cap45-modality` (`3345375`, NOT yet merged): the ▷ IS the CONFIG-LEVEL
                                      METERED OBSERVATION (`ConvergesC_le`; `Crel_head_step` pays the index-lift with
                                      a real machine step) — which OVERTURNED ADR-0041's "step-bounded-obs is dead":
                                      the prior explosion was eval-fuel metering; CONFIG-level localizes it (the
@@ -82,12 +82,12 @@
                                      flight); plan in `paths/PATH-cap45-rebuild.md`, decision ADR-0041 (last amend).
                                      Prior CLOSED work (μ-floor/handler-consumer/krel_refl) re-proves at KrelS.
                                      RESOLVED 2026-06-24: the answer-typed KrelS rebuild + ALL handler-consumer cases + THROWS-producer CLOSED
-                                     end-to-end (`05d3f75`); (g) migration DONE (frozen Crel:=CrelK, old Krel/Srel/crel_fund
+                                     end-to-end (`a75f887`); (g) migration DONE (frozen Crel:=CrelK, old Krel/Srel/crel_fund
                                      DELETED, lr_fundamental:=crelK_fund); lr_sound CLOSED over a TYPED ⊑ (ctxApprox restricted to
                                      WELL-TYPED observation contexts — decision (a); the untyped form made lr_sound FALSE), on
-                                     `cap45-final` (`a5464da`), append-crux-only. LAST sorry = state/txn RESUMPTIVE composition
+                                     `cap45-final` (`21fecd9`), append-crux-only. LAST sorry = state/txn RESUMPTIVE composition
                                      (the resume-conjunct RELATION reshape — NOT the metering, which composes cleanly; build-grounded by
-                                     `append` 2026-06-24, 6 Compat spots) — RESEARCH COMPLETE — `append` banked 9 green checkpoints (`b431247`, branch `cap45-append2`) — throws+state+transaction ALL closed END-TO-END + STOOD
+                                     `append` 2026-06-24, 6 Compat spots) — RESEARCH COMPLETE — `append` banked 9 green checkpoints (`b40981c`, branch `cap45-append2`) — throws+state+transaction ALL closed END-TO-END + STOOD
                                      DOWN at a Lean-TOOLING wall. Resumptive handlers COMPOSE in the step-indexed LR:
                                      throws + state proven END-TO-END (krelS_state_reinstall, guarded recursion on the index),
                                      transaction MATH proven (krelS_transaction_reinstall, all 3 TVar ops). That was the entire
@@ -102,13 +102,13 @@
                                      getElem? — lower-risk, block untouched), then RE-APPLY append's already-written txn wirings +
                                      close 2 rare nested-handler sorrys → sorryAx-gone. Fresh-context unit; resume base `cap45-append2
                                      @ b431247`; spec = task #10 + `paths/PATH-cap45-resume-composition.md` + append's post-exec report. [SUPERSEDED by the SCOPED-SEAM landing — see header.]
-                                     FINAL 2026-06-24: landed on `cap45-answertrack` (`0b08dd0` + docs) — answer-typed KrelS
+                                     FINAL 2026-06-24: landed on `cap45-answertrack` (`39f29ff` + docs) — answer-typed KrelS
                                      rebuild + (g) migration (frozen Crel:=CrelK) + lr_sound over typed ⊑ + throws/state/txn
                                      resumptive composition ALL closed end-to-end; the resume-through-a-wrap edge is the ONE
                                      documented `krelS_splitAt_decomp` sorry (ADR-0026 descent, ADR-0043). sorryAx-zero needs
                                      typed-CrelK (build-pinned, deferred → `paths/PATH-cap45-finish.md`). NOT merged: forks
                                      pre-ADR-0042 (ADR-0043 needs re-frontmatter + adr-index) and diverges from ◊5 on Spec.lean.
-◊5 ✓ Compiler v0 — DONE, IN MAIN  ── `b0a9c4d` (2026-06-24). source→WASM verified trusted-three over the
+◊5 ✓ Compiler v0 — DONE, IN MAIN  ── `0e5e28d` (2026-06-24). source→WASM verified trusted-three over the
                                      WHOLE effect language — effect-free + ALL handlers, ungated. EFFECT-FREE
                                      (pure CBPV + ADT) compiler verified end-to-end source→WASM, AXIOM-CLEAN
                                      (`compile_forward_sim_pure` ⊆ trusted-three; zero_grade_no_code +
@@ -119,7 +119,7 @@
                                      UNSOUND for handlers from a β/let-RESIDUAL re-compile with a non-trivial abort
                                      cont — `lowerCode (compile body []) ++ c` bakes markH savedCode=[] so a
                                      zero-shot abort stops early, bypassing `c`. Counterexample PINNED as a
-                                     fail-loud rfl (`b99de40`): `letC ((λ.handle(throws 0)(letC(raise 7)(ret 99)))())
+                                     fail-loud rfl (`d44d90a`): `letC ((λ.handle(throws 0)(letC(raise 7)(ret 99)))())
                                      (force(thunk(ret 100)))` → Source.eval=100, Wasmfx.run=7 (WRONG). The "small
                                      run-equivalence FIX" is DEAD (general lemma FALSE — flag-before-build caught
                                      it). fix-vs-seam RE-OPENS: (FIX) thread CalcVM cont `c_cvm` into the 4 residual
@@ -129,15 +129,15 @@
                                      RESOLVED 2026-06-24: FIX chosen + DONE — threaded the CalcVM cont `c_cvm` whole (markH captures the real
                                      cont); GAP-2 closed via a BOUNDED RE-WIRE (`evalD_complete_gen` total + `exec_wexec_sim_ok`
                                      handler-complete → compile_correct → run); `compile_forward_sim` trusted-three, all handlers,
-                                     MERGED to main `b0a9c4d`, independently gated. Task #40 CLOSED.
+                                     MERGED to main `0e5e28d`, independently gated. Task #40 CLOSED.
 ◊6   Release v0
 ```
 
 > **Product-spine note (2026-06-24):** the surface **trait/law loop** (`Bang/Surface/Trait.lean`) is
-> verified + GATED in the build graph (`19609cf`) — eq→preorder→order + Int:Order proof-first, run via
-> `Source.eval` (ADR-0040). The TESTED rung now BINDS its check BY CONSTRUCTION (`d45f62a`): a law false on
+> verified + GATED in the build graph (`3dbf819`) — eq→preorder→order + Int:Order proof-first, run via
+> `Source.eval` (ADR-0040). The TESTED rung now BINDS its check BY CONSTRUCTION (`39c7fbd`): a law false on
 > its sample is unconstructible (evidence = sample + kernel-checked `holds`), teeth mutation-tested.
-> The **ADR decided-ledger is GENERATED** from frontmatter (`bac67d0`, ADR-0042; `just adr-check` = README
+> The **ADR decided-ledger is GENERATED** from frontmatter (`a496eb2`, ADR-0042; `just adr-check` = README
 > current + Q⟺ADR + Status cross-refs) — ADR-currency drift is now a build failure, not a silent re-derivation.
 
 ## Most recent stable checkpoint
@@ -173,7 +173,7 @@ confirm our frozen choices; the WasmFX target drifted.** See
   POPL'19 tunneling (accidental-handling origin) → `Spec.lean`; McDermott
   FSCD'25 → `Core.lean`.
 - **WasmFX drift** recorded as OPEN_QUESTIONS Q9 (◊5 obligation, pin-to-engine).
-- Commit `d1aff27`.
+- Commit `33e5349`.
 
 ### subst_value reframed → ◊2 is bigger than it looked (2026-06-21)
 
@@ -260,9 +260,9 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   (`state 0 in (let z = put 7 in get) ⟶ 7`).
 - **rung 2 ✓ DONE** (`paths/PATH-rung2-stack.md`) — verified `Stack Int` (monomorphic, ADR-0027); the
   **first concrete moat demo**. Iso-recursive ADTs (ADR-0029: sum/product/μ + fold/unfold) landed as the
-  kernel data layer (`cc65d90` K1), metatheory **axiom-clean** (`b94276e` K2 — preservation/progress for
+  kernel data layer (`3738556` K1), metatheory **axiom-clean** (`b4adc42` K2 — preservation/progress for
   case/split/unfold via new canonical-forms inversions), Stack surface + push/pop laws **property-tested
-  green via `plausible`** (`5ec98ad` L — the FIRST ADR-0026 *tested*-rung use; mutation-verified
+  green via `plausible`** (`6883b61` L — the FIRST ADR-0026 *tested*-rung use; mutation-verified
   non-vacuous). ◊2 gate held on every commit (`no_accidental_handling` 0-axiom). The biggest rung yet
   (a whole ADT layer + metatheory), and it **confirmed the ADR-0029 bet**: iso-recursive made the
   metatheory cheap (syntactic type-matching, no coinduction). Q19 (laws *surface* syntax) stays partial —
@@ -271,7 +271,7 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   transactional handler** (ADR-0030: `state ⊗ exception`, NO new kernel primitive; privilege =
   concurrency-only, deferred). `Handler.transaction` = rung 1's state handler generalized to a heap;
   rollback is **by construction** (abort = `throws` escaping the frame, dropping the heap with it).
-  Commits: `4737a1b` K1 (handler + ledger runs) · `6a81b0f`/`acde8a3` K2 (TVarRef=int + total store fix,
+  Commits: `ff13252` K1 (handler + ledger runs) · `df9f9ff`/`1042540` K2 (TVarRef=int + total store fix,
   metatheory closed). **The moat CLIMBS the ladder**: `all_or_nothing_abort` is **PROVEN** (axiom-clean
   `[propext, Quot.sound]`, in `Audit.lean`) — a *verified* law, above rung 2's *tested* one. ◊2 gate held
   every commit. **Follow-ons (not blocking the GOAL, which is met):** `orElse` needs a *recovery handler*
@@ -284,7 +284,7 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   is an *unmemoized thunk over a State cell*; each `force` re-samples = pull-based reactivity. **ZERO
   kernel edits** — the rung validates the thesis rather than adding a capability. Liveness law **PROVEN**
   (`Bang.Surface.cell_reflects_latest`, axioms `[propext]`, in `Audit.lean`) — the third ladder-climb.
-  Commit `b8c86cd`. FINDING → ADR-0005: reactivity is **load-bearing on thunk non-memoization** (now an
+  Commit `1208b45`. FINDING → ADR-0005: reactivity is **load-bearing on thunk non-memoization** (now an
   asserted invariant). Push-based/glitch-free reactivity = the deferred dial. ◊2 gate held (surface-only).
 
 > **✓✓ v1 MVP PRODUCT SPINE COMPLETE (rungs 0–4, 2026-06-23).** Four paradigms — imperative/State,
@@ -293,7 +293,7 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 > rung 4 `cell_reflects_latest`, proven). The multi-paradigm thesis is shipped. Post-v1: rungs 5–8
 > (systems frontier — QTT-surfaced allocator, cooperative scheduler, fs, driver) → rung 9 (xv6, the golden
 > test). STM is now **writable from source** (`atomically`/`new`/`read`/`write` parse + run incl.
-> abort-rollback, `9892126`). Rung-3/4 follow-ons: **orElse** (needs *nested-transaction* semantics —
+> abort-rollback, `06e3076`). Rung-3/4 follow-ons: **orElse** (needs *nested-transaction* semantics —
 > discard the alternative's writes, Harris OR3; bigger than a "recovery handler") · general-`S` TVars ·
 > push-based reactivity.
 
@@ -302,32 +302,32 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound` (Q14), `zero_usage` (→◊4).
 - **`paths/PATH-calcvm-port.md`** — **◊3 GATE MET (2026-06-23); path COMPLETE.** Collapsed the K3 Calc*
   matrix into one graded-CBPV calculated machine. D1=A (calculate from denotational
-  `evalD`). Landed axiom-clean: pure CBPV spine (`158f08d`) + `evalD ≡ Source.eval` bridge (`7baf5f8`) +
-  **deep handlers throws-only** (O1 INSTALL `8a860a4`, O2 THROW abort `e07d349`) + **resumptive state —
-  handlers RESUME** (ADR-0031, Unit 4, `2063c0e`): `evalD` threads a label-keyed `SStore` servicing get/put
+  `evalD`). Landed axiom-clean: pure CBPV spine (`1d15437`) + `evalD ≡ Source.eval` bridge (`a777ffa`) +
+  **deep handlers throws-only** (O1 INSTALL `d995cd0`, O2 THROW abort `8780be6`) + **resumptive state —
+  handlers RESUME** (ADR-0031, Unit 4, `fd2bc3d`): `evalD` threads a label-keyed `SStore` servicing get/put
   inline; the machine RESUMES via a non-discarding `OP` (shape-A, one-shot, `c` IS Kᵢ); the throws⊗state
   nesting is handled (outer `put` persists past an inner caught throw) + **resumptive transaction — Unit 5,
-  `84e3ab3`** (ADR-0031 D4 LANDED): `new`/`read`/`write` RESUME over a list-heap, folded in as a **parallel**
+  `9b2d531`** (ADR-0031 D4 LANDED): `new`/`read`/`write` RESUME over a list-heap, folded in as a **parallel**
   `THeap` store (op-disjoint from state ⇒ correct-by-construction, NOT a unified sum-cell — see ADR-0031 D4).
   Two build-forced shapes: `evalD`'s op-arm is **OP-FIRST** (matches the kernel's `handlesOp` op-gating);
   the net-HStack-effect is a **two-pass composition** `netEffect = updateTxns ∘ updateStates`. Rollback is
   free (inner txn frame pops its heap on a forwarded raise; outer write persists past a caught throw).
   `compile_correct`, `evalD_agrees_source`, `sim`, `run_evalD` all ⊆ {propext, Classical.choice, Quot.sound}
   over BOTH arms; ◊2 gate still 0-axiom (independently gated on the committed tree) + **ADT eliminators —
-  Unit 6, `3252ef8`+`59bdd06`**: `case`/`split` via runtime `CASE`/`SPLIT` instructions (non-structural
+  Unit 6, `505cf53`+`498bceb`**: `case`/`split` via runtime `CASE`/`SPLIT` instructions (non-structural
   erasure ⇒ defer to a fuel-bounded re-`compile` in `exec`, the `SUBST`/`APP` shape; resolves the Unit-2
   defer); **`unfold` ERASES onto `RET` — no instruction** (structural, the `force` precedent; an UNFOLD instr
   would be hand-added redundancy). The split is the calculation's OUTPUT, re-derived per invariant #4
-  (`59bdd06`). PURE reductions, `evalD` mirrors kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held.
-  **✓ Unit 7 — K3 COLLAPSE DONE (`4755fe1`), ◊3 MET:** the K2 matrix (8 Calc* + `Eval`) archived → `archive/`
+  (`498bceb`). PURE reductions, `evalD` mirrors kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held.
+  **✓ Unit 7 — K3 COLLAPSE DONE (`87d5aeb`), ◊3 MET:** the K2 matrix (8 Calc* + `Eval`) archived → `archive/`
   (ADR-0017, history-preserving `git mv`, out-of-build inert corpus); CalcReify* reification frontier KEPT
   live (ADR-0015); 16-case 5-axis diff-test battery (`Agree M v := exec(compile M)=some[ret v] ∧ Source.eval
   M=done v` — both reps to ONE observable Val ⇒ false agreement unrepresentable; all `rfl`, 0-axiom);
   `just verify` 723 jobs (732→723 = archive took); independently gated on the committed tree.
 - **`paths/PATH-lr-foundation.md`** — **◊4 (ACTIVE; STATEMENTS + INFRA landed, proof BODIES remain).** Done:
-  U1 helpers (`a58a396`) · U2 `Vrel/Srel/Krel/Crel` WF defs (`eadec83`, THE CRUX, row-indexed ADR-0033) ·
-  `group_recovers` RETIRED (`fcb2f51`, ADR-0032) · U4 `seq_unit` PROVEN + `NotEvaluated` def (`53d2e1f`) ·
-  U5 closed adequacy `lr_sound_closed` (`f548999`) · U6 statement+infra (`133a4c1`/`a477554`): `lr_fundamental`
+  U1 helpers (`0f5891d`) · U2 `Vrel/Srel/Krel/Crel` WF defs (`25a2fdd`, THE CRUX, row-indexed ADR-0033) ·
+  `group_recovers` RETIRED (`eca7587`, ADR-0032) · U4 `seq_unit` PROVEN + `NotEvaluated` def (`5042754`) ·
+  U5 closed adequacy `lr_sound_closed` (`187be29`) · U6 statement+infra (`7928f02`/`b2c3c10`): `lr_fundamental`
   amended to env-closed form (ADR-0034) + `lr_fundamental_closed`/`krel_refl`/`closeC`/`EnvRel` + the
   non-binding compat cores. **THREE ◊4 frozen-statement corrections (ADR-0033/0034 + sig catches) — the LR
   headlines were Phase-A STUBS being finalised through the proofs.** **RESUME (see the PATH's resume-point
@@ -377,9 +377,9 @@ DONE — Path B rule upgrade (Q10/Q3, ADR-0019):
 [x] Re-shape HasVTy/HasCTy to thread + ENFORCE grades (Torczon-faithful)
     landed in Syntax.lean (defs) + Spec.lean + Compat.lean (statements); build green
 
-DONE — de Bruijn rewrite (ADR-0020, `5bcc469`) + first STD theorem:
+DONE — de Bruijn rewrite (ADR-0020, `411ed08`) + first STD theorem:
 [x] Core/Operational/Syntax/Spec rewritten to de Bruijn; 5 side-conditions GONE
-[x] subst_value PROVEN (`e00ee9a`) — axiom-clean, zero sorry; List carrier held
+[x] subst_value PROVEN (`d72199e`) — axiom-clean, zero sorry; List carrier held
     (length_eq lemma; no Fin n fallback). Machinery in Bang/Metatheory.lean.
 
 DONE — STD block (ADR-0021, `Bang/Metatheory.lean` §E):
@@ -438,7 +438,7 @@ Defer zero_usage_erasable to ◊4 (LR-flavored; Torczon proves it via semtyping.
   `.claude/skills/codebase-maintenance/{SKILL,BOOTSTRAP,REFERENCE}.md` (keep its
   `instances/` derivation) to avoid two copies of the skill. Until rebuild, the
   lang-bang local copy is what makes the skill available here.
-- **`tools/check.sh` follow-up**: the grep false-green is fixed (`e00ee9a`), but the
+- **`tools/check.sh` follow-up**: the grep false-green is fixed (`d72199e`), but the
   robust fix is to key off `lake env lean`'s exit code, not grep (drift-proof).
 
 ## OPEN_QUESTIONS — design decisions
