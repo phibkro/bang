@@ -1262,6 +1262,55 @@ theorem crel_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
   · exact ⟨fun K => rfl, by intro v; simp⟩
 
 
+/-! ## B.3′ ◊4.5b sub-block (c) — `CrelK` head-step + value lemmas (the answer-typed migration)
+
+The `CrelK` analogues of `Crel_head_step`/`crel_force`/`crel_unfold`, over the answer-typed `KrelS`.
+`CrelK_head_step` is the generic `▷`-anti-reduction: a context-independent `CIStep` on both sides
+reduces `CrelK n` to the reducts related at every `m < n` (the metered `▷`). Uses `KrelS_mono` (the
+sub-block b downward-closure) where the old one used `Krel_mono`. -/
+
+/-- ◊4.5b `▷`-guarded head-expansion of `CrelK` over the metered observation (the `KrelS` analogue of
+`Crel_head_step`). A context-independent head-step on both sides reduces `CrelK n` to the reducts
+related at every `m < n`. -/
+theorem CrelK_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ c₂' : Comp}
+    (h₁ : CIStep c₁ c₁') (h₂ : CIStep c₂ c₂')
+    (hlater : ∀ m, m < n → CrelK m B e c₁' c₂') : CrelK n B e c₁ c₂ := by
+  rw [CrelK]; intro D K₁ K₂ hK hconv
+  have hstep₁ : Source.step (K₁, c₁) = some (K₁, c₁') := h₁.1 K₁
+  have hne₁ : ∀ v, (K₁, c₁) ≠ ([], Comp.ret v) := by intro v; simp [h₁.2 v]
+  cases n with
+  | zero => exact absurd hconv (not_convergesC_le_zero _)
+  | succ k =>
+      rw [convergesC_le_step hstep₁ hne₁] at hconv
+      have hCk : CrelK k B e c₁' c₂' := hlater k (Nat.lt_succ_self k)
+      rw [CrelK] at hCk
+      have hKk : KrelS k B D e K₁ K₂ := KrelS_mono (Nat.le_succ k) hK
+      have hstep₂ : Source.step (K₂, c₂) = some (K₂, c₂') := h₂.1 K₂
+      have hne₂ : ∀ v, (K₂, c₂) ≠ ([], Comp.ret v) := by intro v; simp [h₂.2 v]
+      exact converges_anti_step hstep₂ hne₂ (hCk D K₁ K₂ hKk hconv)
+
+/-- ◊4.5b `force` of `VrelK`-related thunks. The U-clause is `∀ j < n, CrelK j` — exactly the `m < n`
+reducts `CrelK_head_step` consumes (cleaner than the old `∀ j ≤ n` + `le_of_lt`). -/
+theorem crelK_force {n : Nat} {φ : Eff} {B : CTy Eff Mult} {w₁ w₂ : Val}
+    (hv : VrelK n (VTy.U φ B) w₁ w₂) : CrelK n B φ (Comp.force w₁) (Comp.force w₂) := by
+  rw [VrelK] at hv
+  obtain ⟨c₁, c₂, rfl, rfl, hc⟩ := hv
+  refine CrelK_head_step (c₁' := c₁) (c₂' := c₂) ?_ ?_ (fun m hm => hc m hm)
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+
+/-- ◊4.5b `unfold` of `VrelK`-related μ-values. `unfold (fold u) ↦ ret u` (CIStep); the ▷-head-step
+needs `CrelK m (ret u₁) (ret u₂)` at each `m < n`, from `crelK_ret` on the μ-payload. -/
+theorem crelK_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
+    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂) (hv : VrelK n (VTy.mu A) w₁ w₂) :
+    CrelK n (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
+  rw [VrelK] at hv
+  obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
+  refine CrelK_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_
+    (fun m hm => crelK_ret hcw₁.fold_inv hcw₂.fold_inv (hu m hm))
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun K => rfl, by intro v; simp⟩
+
 
 /-! ## B.4 `krel_refl` — the interface contract for `lr_sound` (the capstone)
 
