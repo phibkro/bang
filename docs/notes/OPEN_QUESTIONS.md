@@ -329,6 +329,20 @@ reversal).
 > Engine status: stack-switching is Phase 3 (mutable); **Wasm 3.0 (Sept 2025) did NOT include it**;
 > Wasmtime #10248 has core support behind the flag but x64-only, no `resume_throw`, "all test cases fail"
 > — confirm a usable version by hands-on build at ◊5 start.
+>
+> **ENGINE PROBE RESOLVED (◊5, 2026-06-24):** stack-switching now RUNS on a RELEASED Wasmtime — no
+> dev-commit pin needed. `wasmtime 44.0.1` (nixpkgs) executes a suspend/resume generator `.wat` on
+> **x86_64 Linux**, deterministically returning the expected value. Required flag combination (the
+> "conflated features" the brief flagged):
+> `-W stack-switching=y,function-references=y,gc=y,exceptions=y`
+> plus `(elem declare func $gen)` for the `ref.func`. The working shape (matches the ◊5
+> markH/opH/unmarkH lowering): `(type $ct (cont $ft))` · `(tag $yield (param i32))` · `(cont.new $ct
+> (ref.func …))` · `(resume $ct (on $yield $label) …)` · `(suspend $yield)` — the CURRENT Explainer
+> form, NOT the OOPSLA'23 `(tag $e $h)`. The tracer/generator path (suspend/resume) needs NEITHER
+> `resume_throw` NOR exceptions-as-control (exceptions is enabled only because the tag machinery shares
+> it). ⟹ leg #2 (the differential-test oracle) is VIABLE: `compile_forward_sim` can gate on BOTH the
+> Rocq cross-check (leg #1) AND a real wasmtime diff-test, not Lean-only-green. Probe `.wat` +
+> invocation reproducible; not committed to the repo (a scratch artifact).
 
 **Revisit signal**: starting ◊5 compiler/backend work; OR the stack-switching
 proposal reaching Phase 4 (becomes stable — re-freeze then); OR a decision to
