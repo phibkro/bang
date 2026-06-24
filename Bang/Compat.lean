@@ -1050,20 +1050,20 @@ tail + the Kᵢ-threading RESUME CONJUNCT. The body row `e` is arbitrary w.r.t. 
 The conjunct (dispatched-config co-convergence at `m < n`, threading the captured continuation `Kᵢ~Kᵢ'`)
 is SUPPLIED by the caller — throws via `crelK_ret` on the tail (zero-shot); state/txn via the resume
 relation through `Kᵢ`. -/
-theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h : Handler}
-    {K₁ K₂ : Stack} (hHR : HandlerRel Eff Mult n h h) (hK : KrelS n C D φ K₁ K₂)
+theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h₁ h₂ : Handler}
+    {K₁ K₂ : Stack} (hHR : HandlerRel Eff Mult n h₁ h₂) (hK : KrelS n C D φ K₁ K₂)
     (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
-        Bang.handlesOp h h.label op = true →
+        Bang.handlesOp h₁ h₁.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
-        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
+        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
         KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
-        (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
+        (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
           ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
-        Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →
-        Bang.dispatchOn op w₂ (Kᵢ', h, K₂) = some cfg₂ →
+        Bang.dispatchOn op w₁ (Kᵢ, h₁, K₁) = some cfg₁ →
+        Bang.dispatchOn op w₂ (Kᵢ', h₂, K₂) = some cfg₂ →
         CoApproxC_le m cfg₁ cfg₂) :
-    KrelS n C D e (Frame.handleF h :: K₁) (Frame.handleF h :: K₂) := by
+    KrelS n C D e (Frame.handleF h₁ :: K₁) (Frame.handleF h₂ :: K₂) := by
   rw [krelS_handleF]; exact ⟨hHR, KrelS_eff_cast hK, hres⟩
 
 /-- ◊4.5b-append `krelS_append` — the config-level Biernacki Lemma-2 analogue. Compose a related captured
@@ -1074,23 +1074,23 @@ Proven by induction on `Kᵢ` (structural, like `crelK_ret`/`KrelS_mono`): nil =
 letF/appF peel + reconstruct over the appended tail. The handleF-in-`Kᵢ` sub-case (a handler NESTED in
 the captured continuation) needs the resume-conjunct RELOCATED to the appended tail — same as the
 decomp-miss-wrap; one documented sorry. shape: biernacki-popl18 §5.4 Lemma 2 (config-level append). -/
-theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h : Handler}
+theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h₁ h₂ : Handler}
     {Kᵢ Kᵢ' K₁ K₂ : Stack}
     (hin : KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ')
-    (hHR : HandlerRel Eff Mult m h h)
+    (hHR : HandlerRel Eff Mult m h₁ h₂)
     (htail : KrelS m Dᵢ D' e' K₁ K₂)
     (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ : CTy Eff Mult) (εⱼ : Eff)
               (Kⱼ Kⱼ' : Stack) (cfg₁ cfg₂ : Config),
-        Bang.handlesOp h h.label op = true →
+        Bang.handlesOp h₁ h₁.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
-        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK k Aop w₁ w₂) →
+        (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK k Aop w₁ w₂) →
         KrelS k Cⱼ Dᵢ εⱼ Kⱼ Kⱼ' →
-        (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
+        (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
           ∃ qᵣ, Cⱼ = CTy.F qᵣ Aᵣ) →
-        Bang.dispatchOn op w₁ (Kⱼ, h, K₁) = some cfg₁ →
-        Bang.dispatchOn op w₂ (Kⱼ', h, K₂) = some cfg₂ →
+        Bang.dispatchOn op w₁ (Kⱼ, h₁, K₁) = some cfg₁ →
+        Bang.dispatchOn op w₂ (Kⱼ', h₂, K₂) = some cfg₂ →
         CoApproxC_le k cfg₁ cfg₂) :
-    KrelS m Cᵢ D' εᵢ (Kᵢ ++ Frame.handleF h :: K₁) (Kᵢ' ++ Frame.handleF h :: K₂) := by
+    KrelS m Cᵢ D' εᵢ (Kᵢ ++ Frame.handleF h₁ :: K₁) (Kᵢ' ++ Frame.handleF h₂ :: K₂) := by
   induction Kᵢ generalizing Cᵢ εᵢ Kᵢ' with
   | nil =>
       -- Kᵢ' = [] (nil clause), Cᵢ = Dᵢ; the append is `handleF h :: K` — `krelS_handleF_intro`.
@@ -1130,6 +1130,65 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
                   -- letF/appF/nil are PROVEN; this is the nested-handler-in-continuation case (rare).
                   sorry
               | _ => simp only [KrelS] at hin
+
+/-- ◊4.5b-append the STATE-reinstall lemma — the resumptive heart. A `state ℓ s` handler frame over a
+related tail self-relates at every index, with the resume conjunct supplied by GUARDED RECURSION on the
+index: the get/put dispatch reinstalls `state ℓ s` and resumes `ret r` (r = s for get, unit for put)
+through the captured continuation `Kᵢ`, which `krelS_append`s onto the reinstalled frame + tail at the
+DROPPED index `m' < m` (the IH). The stored state `s` self-relates at `S` (hsv, from the caller's typing
+via `vrelK_fund`). shape: biernacki-popl18 §5.4 resumptive clause + the ▷-guarded reinstall. -/
+theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult} {φ : Eff} {ℓ : Label}
+    (hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S)
+    (hp : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S)
+    (hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit)
+    (hrestrict : ∀ op s, Bang.handlesOp (Handler.state ℓ s) ℓ op = true → op = "get" ∨ op = "put") :
+    ∀ m (s₁ s₂ : Val), Val.Closed s₁ → Val.Closed s₂ → VrelK m S s₁ s₂ →
+      ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ K₁ K₂ →
+      KrelS m (CTy.F q A) D φ (Frame.handleF (Handler.state ℓ s₁) :: K₁)
+                              (Frame.handleF (Handler.state ℓ s₂) :: K₂) := by
+  -- GUARDED RECURSION on the index: the reinstalled handler (over the SAME tail, at the put-updated state
+  -- pair) relates at the DROPPED index m' < m (the IH), supplying `krelS_append`'s resume conjunct.
+  intro m
+  induction m using Nat.strong_induction_on with
+  | _ m ih =>
+    intro s₁ s₂ hcs₁ hcs₂ hsv K₁ K₂ hK
+    refine krelS_handleF_intro
+      (show HandlerRel Eff Mult m (Handler.state ℓ s₁) (Handler.state ℓ s₂) from ⟨rfl, S, hsv⟩) hK ?_
+    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
+    rcases hrestrict op s₁ hcatch with rfl | rfl
+    · -- GET: cfg = (Kᵢ ++ handleF(state ℓ sⱼ)::Kⱼ, ret sⱼ); resume value = the stored state (related).
+      obtain ⟨qᵣ, rfl⟩ := hCᵢ S (by rw [Handler.label]; exact hgr)
+      simp only [Handler.label, dispatchOn] at hd₁ hd₂
+      obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
+      obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
+      -- the reinstalled `state ℓ s₁/s₂` over the tail relates at m' (IH at the SAME state pair, downward).
+      have hreinst := ih m' hm' s₁ s₂ hcs₁ hcs₂ (VrelK_mono (le_of_lt hm') hsv) K₁ K₂
+        (KrelS_mono (le_of_lt hm') hK)
+      rw [krelS_handleF] at hreinst
+      have happ := krelS_append (Dᵢ := CTy.F q A) hKi
+        (show HandlerRel Eff Mult m' (Handler.state ℓ s₁) (Handler.state ℓ s₂) from
+          ⟨rfl, S, VrelK_mono (le_of_lt hm') hsv⟩)
+        (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
+      have hret := crelK_ret (q := qᵣ) (A := S) (e := εᵢ) hcs₁ hcs₂ (VrelK_mono (le_of_lt hm') hsv)
+      rw [CrelK] at hret
+      exact hret D _ _ happ
+    · -- PUT: cfg = (Kᵢ ++ handleF(state ℓ wⱼ)::Kⱼ, ret unit); reinstalled state = the payload (related at
+      -- S via hVrel), resume value = unit (trivially related). The IH at the NEW state pair (w₁,w₂).
+      have hwS : VrelK m' S w₁ w₂ := hVrel S (by rw [Handler.label]; exact hp)
+      obtain ⟨qᵣ, rfl⟩ := hCᵢ VTy.unit (by rw [Handler.label]; exact hpr)
+      simp only [Handler.label, dispatchOn] at hd₁ hd₂
+      obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
+      obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
+      have hreinst := ih m' hm' w₁ w₂ hcw₁ hcw₂ hwS K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
+      rw [krelS_handleF] at hreinst
+      have happ := krelS_append (Dᵢ := CTy.F q A) hKi
+        (show HandlerRel Eff Mult m' (Handler.state ℓ w₁) (Handler.state ℓ w₂) from ⟨rfl, S, hwS⟩)
+        (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
+      have hret := crelK_ret (q := qᵣ) (A := VTy.unit) (e := εᵢ)
+        (fun k => rfl) (fun k => rfl)
+        (by show VrelK m' VTy.unit Val.vunit Val.vunit; rw [VrelK, BaseRel]; exact ⟨rfl, rfl⟩)
+      rw [CrelK] at hret
+      exact hret D _ _ happ
 
 /-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
 `h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
@@ -1304,11 +1363,17 @@ theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff
   rw [CrelK] at hret
   exact hret D K₁ K₂ (KrelS_mono (le_of_lt hm) hK)
 
-/-- ◊4.5b the `handleState` compat core at `CrelK`. Handler-agnostic at the stack level — the resume
-mechanism is consumed by the MACHINE's dispatch inside `M`'s run, not the stack relation, so it closes
-exactly like throws (`krelS_handleF_intro`). The resumptive ▷ payoff is in the run, not here. -/
-theorem compatK_handleState {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label} {s : Val}
+/-- ◊4.5b-append the `handleState` compat core at `CrelK`. REFOCUS `(K, handle (state ℓ s) M) ↦
+(handleF (state ℓ s)::K, M)`, then run `M` (related at body row `e`) through the reinstalling stack, shown
+`KrelS`-related by `krelS_state_reinstall` (the resumptive heart). The interface (get/put sig) + the stored
+state's self-relation `hsv` are threaded from the caller's `HasCTy.handleState` typing. -/
+theorem compatK_handleState {n : Nat} {q : Mult} {A S : VTy Eff Mult} {e φ : Eff} {ℓ : Label} {s : Val}
     {M₁ M₂ : Comp}
+    (hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S)
+    (hp : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S)
+    (hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit)
+    (hrestrict : ∀ op s', Bang.handlesOp (Handler.state ℓ s') ℓ op = true → op = "get" ∨ op = "put")
+    (hcs : Val.Closed s) (hsv : ∀ k, VrelK k S s s)
     (hM : CrelK n (CTy.F q A) e M₁ M₂) :
     CrelK n (CTy.F q A) φ (Comp.handle (Handler.state ℓ s) M₁) (Comp.handle (Handler.state ℓ s) M₂) := by
   rw [CrelK]
@@ -1318,14 +1383,9 @@ theorem compatK_handleState {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff}
     (cfg₂' := (Frame.handleF (Handler.state ℓ s) :: K₂, M₂))
     rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [CrelK] at hM
-  refine hM D (Frame.handleF (Handler.state ℓ s) :: K₁) (Frame.handleF (Handler.state ℓ s) :: K₂)
-    (krelS_handleF_intro (sorry) hK ?_)
-  -- STATE resume supply — the Kᵢ-threading resume conjunct (get/put dispatch closing through the captured
-  -- continuation). REBUILD PENDING (commit 4): the self-HandlerRel `⟨rfl, S, VrelK n S s s⟩` needs `s`
-  -- well-typed (thread from the caller `hs : HasVTy [] [] s₀ S`); the conjunct closes via the dispatch
-  -- (state reinstall) running `ret r` through the related `Kᵢ` then the reinstalled handler.
-  intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
-  sorry
+  -- discharge the row `φ → e` (the handler block discharges `ℓ`); `KrelS_eff_cast` (ε inert in KrelS).
+  exact hM D (Frame.handleF (Handler.state ℓ s) :: K₁) (Frame.handleF (Handler.state ℓ s) :: K₂)
+    (krelS_state_reinstall hgr hp hpr hrestrict n s s hcs hcs (hsv n) K₁ K₂ (KrelS_eff_cast hK))
 
 /-- ◊4.5b the `handleTransaction` compat core at `CrelK`. The multi-cell resumptive analogue — same
 handler-agnostic argument, closes like state/throws (`krelS_handleF_intro`); the heap `Θ` is arbitrary. -/
@@ -1606,15 +1666,22 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       intro n δ₁ δ₂ hδ
       rw [closeC_handleThrows, closeC_handleThrows]
       exact compatK_handleThrows hArg (crelK_fund hM n δ₁ δ₂ hδ)
-  | @handleState _ _ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM hsub =>
-      -- ◊4.5b: state-resume is handler-agnostic at the stack level (`compatK_handleState`); the resume
-      -- mechanism is consumed by the machine inside M's run. The stored state `s₀` is CLOSED (`HasVTy [] []`),
-      -- so `closeV δᵢ s₀ = s₀` on both sides.
+  | @handleState _ _ ℓ s₀ M e φ q S A _hg hgr hp hpr hrestrict hs hM hsub =>
+      -- ◊4.5b-append: state-resume closes via `compatK_handleState` (→ `krelS_state_reinstall`, the
+      -- resumptive heart). The stored state `s₀` is CLOSED (`HasVTy [] []`, so `closeV δᵢ s₀ = s₀`); its
+      -- self-relation `VrelK k S s₀ s₀` comes from `vrelK_fund hs` (the fundamental theorem on a closed value).
       intro n δ₁ δ₂ hδ
       rw [closeC_handleState, closeC_handleState]
       have hcs₀ : Val.Closed s₀ := fun k => hs.shift_closed k (Nat.zero_le k)
       rw [closeV_closed hcs₀, closeV_closed hcs₀]
-      exact compatK_handleState (crelK_fund hM n δ₁ δ₂ hδ)
+      have hsv : ∀ k, VrelK k S s₀ s₀ := fun k => by
+        have := vrelK_fund hs k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
+        rwa [closeV_closed hcs₀] at this
+      have hrestrict' : ∀ op s', Bang.handlesOp (Handler.state ℓ s') ℓ op = true → op = "get" ∨ op = "put" :=
+        fun op s' hc => by
+          simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+          rcases hc.2 with rfl | rfl <;> simp
+      exact compatK_handleState hgr hp hpr hrestrict' hcs₀ hsv (crelK_fund hM n δ₁ δ₂ hδ)
   | @handleTransaction _ _ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM hsub =>
       -- ◊4.5b: transaction-resume is handler-agnostic at the stack level (`compatK_handleTransaction`),
       -- the multi-cell analogue — closes like state/throws.
