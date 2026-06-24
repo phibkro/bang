@@ -39,3 +39,8 @@ import Bang.CalcReify
 import Bang.CalcReifyRef
 import Bang.CalcReifySim
 import Bang.CalcVM
+
+-- SPIKE (task #13, NOT verification spine): static-link dispatch scratch model.
+-- In the build graph only so its lemmas GATE (the dissolve/relocate claims are
+-- build-grounded). Imports nothing from the spine beyond Operational.
+import Bang.StaticSpike
