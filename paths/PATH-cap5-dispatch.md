@@ -44,6 +44,23 @@ correspondences are already defined: `CtxCorr σ K = (σ = ctxStates K)` (CalcVM
 repo; everything else reuses.** Plus the `splitAt`-decomposition of `plug K` at the evalD level
 (the `Kᵢ/handle/Kₒ` split).
 
+**v2 implementation detail (the design IC source-checked these — start here):**
+- Exact statement: `evalD n [] [] (plug K c) = (evalD n c (ctxStates K) (ctxTxns K)) >>= postK`,
+  where `postK` applies K's handleF pop/forward chain to the body outcome (the SAME pop/forward
+  `evalD`'s handle arm does, lifted over the K-prefix). **Prove by induction on K** (the handleF
+  case pushes one store + composes one pop into `postK`; letF/appF wrap the focus, no store change).
+- **THE TRAP — store accumulation ORDER.** `ctxStates` collects state-frame values
+  INNERMOST-FIRST: `handleF (state ℓ s) :: K => (ℓ,s) :: ctxStates K`. This matches `evalD`'s push
+  order (`plug` wraps outermost-first; `evalD` pushes as it descends ⇒ the innermost handle's store
+  is deepest = LAST pushed = HEAD of σ). Get the store order right or the descend won't typecheck —
+  this is the MEDIUM-risk bookkeeping.
+- **No shortcut via the forward bridge:** `dispatchRun n K ℓ op v = Config.run (n+1) (K, up ℓ op v)`
+  (CalcVM:2528) is SOURCE-side (`Config.run`), NOT `evalD`. So the forward lemmas are reused as
+  FACTS, not inverted wholesale; the dispatch arm genuinely needs the reverse argument.
+- `splitAt↔plug` decomposition: `plug K = plug Kₒ ∘ handle h ∘ plug Kᵢ` at the catching frame —
+  aligns the descend with `dispatchOn`'s `Kᵢ/h/Kₒ` split. `evalD` up-arm forks at CalcVM:213-229
+  exactly as `dispatchOn` (Operational:277).
+
 ## The 3 sub-cases (case on `splitAt K ℓ op = some (Kᵢ, h, Kₒ)`; mirror `dispatchOn`, Operational:277)
 
 1. **throws ℓ' → ABORT.** `K'=Kₒ`, `focus=ret v`. The up-arm RAISES (no σ/τ service for a throws
