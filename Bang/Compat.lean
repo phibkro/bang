@@ -1066,6 +1066,37 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h₁ h�
     KrelS n C D e (Frame.handleF h₁ :: K₁) (Frame.handleF h₂ :: K₂) := by
   rw [krelS_handleF]; exact ⟨hHR, KrelS_eff_cast hK, hres⟩
 
+/-- ◊4.5b-append DISPATCH-APPEND structural fact. `dispatchOn` over an outer stack `Kₒ ++ T` produces
+the SAME config as over `Kₒ`, with `T` appended to the result's outer stack. Uniform across all handler
+kinds: throws returns `(Kₒ, ret v)` ⇒ `(Kₒ ++ T, ret v)`; state/txn reinstall over `Kᵢ ++ reinstall :: Kₒ`
+⇒ `Kᵢ ++ reinstall :: (Kₒ ++ T) = (Kᵢ ++ reinstall :: Kₒ) ++ T`. Proven by `cases` on the handler then
+`cases` on the op-string decisions. (Note: this is the structural half; it does NOT make the OPAQUE
+`CoApproxC_le` resume conjunct compose under append — see the wall comment at `krelS_append`'s handleF
+case.) -/
+theorem dispatchOn_append_outer (op : OpId) (v : Val) (Kᵢ : Stack) (hh : Handler) (Kₒ T : Stack)
+    {cfg : Config} (hd : Bang.dispatchOn op v (Kᵢ, hh, Kₒ) = some cfg) :
+    Bang.dispatchOn op v (Kᵢ, hh, Kₒ ++ T) = some (cfg.1 ++ T, cfg.2) := by
+  cases hh with
+  | throws _ =>
+      simp only [dispatchOn] at hd ⊢
+      obtain rfl := (Option.some.injEq _ _).mp hd.symm; rfl
+  | state ℓ' s =>
+      simp only [dispatchOn] at hd ⊢
+      by_cases hop : op == "get" <;> simp only [hop, if_true, if_false, Bool.false_eq_true] at hd ⊢ <;>
+        (obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp [List.append_assoc])
+  | transaction ℓ' Θ =>
+      simp only [dispatchOn] at hd ⊢
+      by_cases h1 : op == "newTVar"
+      · simp only [h1, if_true] at hd ⊢
+        obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp [List.append_assoc]
+      · by_cases h2 : op == "readTVar"
+        · simp only [h1, h2, if_true, if_false, Bool.false_eq_true] at hd ⊢
+          obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp [List.append_assoc]
+        · simp only [h1, h2, if_false, Bool.false_eq_true] at hd ⊢
+          cases v <;>
+            (simp only [] at hd ⊢; obtain rfl := (Option.some.injEq _ _).mp hd.symm;
+             simp [List.append_assoc])
+
 /-- ◊4.5b-append `krelS_append` — the config-level Biernacki Lemma-2 analogue. Compose a related captured
 continuation `Kᵢ ~ Kᵢ'` (answer type `Dᵢ`) with a related handleF-extended tail (`handleF h :: K`, hole
 `Dᵢ`) into the appended stack `Kᵢ ++ handleF h :: K`. The inner `Kᵢ`'s answer type MUST equal the
@@ -1124,10 +1155,29 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
           | handleF hh₁ =>
               cases fr₂ with
               | handleF hh₂ =>
-                  -- ◊4.5b-append: a handler NESTED in the captured continuation. Its resume conjunct
-                  -- (from `hin`) is at the OLD tail; the append puts it over `Kᵢrest ++ handleF h :: K`,
-                  -- so the conjunct must RELOCATE. Same gap as the decomp-miss-wrap; documented sorry.
-                  -- letF/appF/nil are PROVEN; this is the nested-handler-in-continuation case (rare).
+                  -- ◊4.5b-append: a handler NESTED in the captured continuation. From `hin` (via
+                  -- `krelS_handleF`): `hHRtop : HandlerRel m hh₁ hh₂`, `htin : KrelS m Cᵢ Dᵢ εᵢ Kᵢrest
+                  -- Kᵢ'rest`, and the OPAQUE inner resume conjunct `hres_inner` (dispatch over `Kᵢrest`).
+                  -- The append's structural shape closes two of three goals (HandlerRel + the recursive-
+                  -- append tail `ih htin`); the THIRD — the resume conjunct over the appended tail — WALLS.
+                  rw [krelS_handleF] at hin
+                  obtain ⟨hHRtop, htin, _hres_inner⟩ := hin
+                  rw [List.cons_append, List.cons_append, krelS_handleF]
+                  refine ⟨hHRtop, ih htin, ?_⟩
+                  intro k _hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ _hcatch _hcw₁ _hcw₂ _hVrel _hKj _hCⱼ _hd₁ _hd₂
+                  -- DEFINITIONAL WALL (build-confirmed): `dispatchOn_append_outer` shows dispatch over
+                  -- `Kᵢrest ++ handleF h₁::K₁` = dispatch over `Kᵢrest` with `handleF h₁::K₁` appended to the
+                  -- result's outer stack — i.e. `cfg₁ = (S₁ ++ handleF h₁::K₁, ret r₁)` where the inner
+                  -- conjunct `hres_inner` relates `(S₁, ret r₁) ~ (S₂, ret r₂)` via `CoApproxC_le k`.
+                  -- The GOAL is `CoApproxC_le k (S₁ ++ handleF h₁::K₁, ret r₁) (S₂ ++ handleF h₂::K₂, ret r₂)`.
+                  -- These DIFFER: convergence of the SHORTER stack does NOT imply convergence of the
+                  -- APPENDED stack (the resume value must also traverse `handleF h₁::K₁`). The opaque
+                  -- `CoApproxC_le` carries NO krel-level data (resume value relation r₁~r₂ / stack relation
+                  -- S₁~S₂) to reconstruct via `crelK_ret`+`krelS_append`. Closing this requires the `KrelS`
+                  -- handleF RESUME CONJUNCT strengthened from opaque `CoApproxC_le` to a krel-carrying form
+                  -- (a `KrelS`-def change rippling through the 6 reinstall/producer lemmas) OR the ADR-0026
+                  -- seam (this rare nested-handler-in-captured-continuation edge as a tested descent).
+                  -- letF/appF/nil are PROVEN; only this nested-handler case is open. See post-exec report.
                   sorry
               | _ => simp only [KrelS] at hin
 
@@ -1475,11 +1525,15 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                       by rw [splitAt_handleF_miss K₂' hcatch2, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
                     rw [krelS_handleF]
                     refine ⟨hHRtop, hin, ?_⟩
-                    -- ◊4.5b-append: the wrapping (non-catching) handleF inside the captured continuation
-                    -- needs its resume conjunct re-stated at the inner-prefix tail `Ki'` (not the original
-                    -- `K₁'`). `hres` is at `K₁'`; bridging needs a conjunct-at-Ki' lemma. PENDING — a handler
-                    -- nested in the captured continuation (rare); documented sorry, the other 3 decomp cases
-                    -- (letF/appF/handleF-hit) are PROVEN. Closes with the conjunct-relocation helper.
+                    -- ◊4.5b-append: the wrapping (non-catching) handleF inside the captured continuation.
+                    -- The SAME DEFINITIONAL WALL as `krelS_append`'s handleF case: the goal needs the resume
+                    -- conjunct for `hh₁` re-stated over the inner-prefix tail `Ki'` (the `splitAt` prefix of
+                    -- the original `K₁'`); `hres` is over `K₁'`. By `dispatchOn_append_outer`, dispatch over
+                    -- the longer `K₁'` = dispatch over `Ki'` with the remainder appended, so `hres` (longer)
+                    -- ↛ the goal (shorter) — and even the reverse direction is an opaque-`CoApproxC_le` lift
+                    -- that convergence does not give. NEEDS the krel-carrying conjunct strengthening OR the
+                    -- ADR-0026 seam (same resolution as the `krelS_append` wall). letF/appF/handleF-hit are
+                    -- PROVEN; only this nested-handler-miss case is open. See post-exec report.
                     sorry
               | _ => simp only [KrelS] at hK
 
