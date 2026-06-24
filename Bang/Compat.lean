@@ -1278,29 +1278,13 @@ whole-program type `(eo, Co)`. The typing is load-bearing in the STUCK half: a s
 handle-or-escape every operation it does not catch (the `Srel` clause's `splitAt = none` operations
 tunnel out), which only a typed stack guarantees.
 
-STATUS (gated on the two U6 blockers — see `crel_unfold` docstring + the lead handoff):
-  - the OPEN/CLOSED statement-shape decision (the `letF N :: K` case substitutes `N[v]`, needing the
-    `EnvRel`/`closeC` env-closure for the continuation's self-relation under its binder);
-  - the μ/▷ index alignment (a `letF`-bound continuation returning at a μ-type hits the same
-    off-by-one).
-Both resolve `krel_refl` mechanically; the named contract is fixed NOW so the capstone thread can
-reference it. -/
+◊4.5b: `krel_refl` PROVEN below the mutual `crel_fund` block (it CALLS `crel_fund` for the frame
+continuations' self-relation, so it must follow it). -/
 /-- A well-typed value is `ScopedIn Γ.length` (`HasVTy.shift_closed`: shifting at a cutoff `≥ Γ.length`
 is the identity). The bridge from the typing derivation to the syntactic scope bound that
 `closeV_closed_scoped` consumes. -/
 theorem HasVTy.scopedIn {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
     (h : HasVTy γ Γ v A) : Val.ScopedIn Γ.length v := fun k hk => h.shift_closed k hk
-
-
-theorem krel_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult}
-    (_hC : HasStack C e B eo Co) : Krel n B e C C := by
-  -- ◊4.5 (ADR-0039): needs IxFree ∀k≤n Kripke-monotone Crel/Krel/Srel; plain-Nat phrasing lacks the
-  -- both-ways monotonicity the μ/resume ▷-anti-reduction needs (build-confirmed: Srel resume is
-  -- contravariant in Vrel ⇒ no uniform monotonicity). IDENTITY INSTANCE of lr_fundamental: induct on
-  -- `HasStack C`; nil = krel_nil_succ (F-typed, ▷-free), letF/appF frames reuse krel_letF/krel_appF_intro
-  -- (▷-free), but the handleF (state/txn) frames + μ-typed returns hit the same ▷-subsystem as crel_fund.
-  -- Deferred with lr_fundamental's ▷-fragment.
-  sorry
 
 
 /-! ## B.5 The mutual fundamental theorem (`vrel_fund` / `crel_fund`)
@@ -1528,5 +1512,49 @@ theorem crel_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff
       rw [closeC_handleTransaction, closeC_handleTransaction]
       exact compat_handleTransaction (crel_fund hM n δ₁ δ₂ hδ)
 end
+
+
+/-! ## B.6 `krel_refl` — the `lr_sound` capstone (identity extension)
+
+A well-typed stack is `Krel`-self-related. The IDENTITY INSTANCE of the fundamental theorem: each frame's
+continuation self-relates via `crel_fund` (closed over a singleton env), so `krel_refl` CALLS `crel_fund`
+and must follow it. Proven for `n+1` (the `nil` return half observes a RETURNER `F q A` — `krel_nil_succ`;
+ADR-0038: the empty stack only observes returners, arrow-typed programs are `⊑`-vacuous). The frame cases
+reuse the metered `krel_letF`/`krel_appF_intro`/`krel_handleF*`. Inherits `crel_fund`'s `up` sorryAx (a
+continuation may `up`), so `lr_sound` is 0-sorry exactly when `up` closes — NOT independently. -/
+theorem krel_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo : Mult}
+    {Ao : VTy Eff Mult} (hCo : Co = CTy.F qo Ao)
+    (hC : HasStack C e B eo Co) : Krel (n + 1) B e C C := by
+  -- `Co` (the whole-program answer type) is a RETURNER (ADR-0038: only returners are observed). This
+  -- EXCLUDES arrow-`nil`: a `letF`/handler frame with an arrow continuation `B` over `K=[]` would force
+  -- `Co = B = arr`, contradicting `hCo`. So `nil`'s focus type `B = Co` is always `F`-typed.
+  induction hC with
+  | @nil e' C' =>
+      -- `B = C' = Co = F qo Ao` (`hCo`): the returner empty stack is `krel_nil_succ`.
+      subst hCo; exact krel_nil_succ n _ _ _
+  | @letF K N e₁ e₂ eo q qk A B Co hN hK ihK =>
+      refine krel_letF (q1 := q) (ihK hCo) ?_
+      -- continuation `N` (open at `[A]`) self-relates via `crel_fund` closed over `[v₁],[v₂]`.
+      intro j _hj v₁ v₂ hcv₁ hcv₂ hv
+      have hδ' : EnvRel j [A] [v₁] [v₂] := by
+        rw [EnvRel]; exact ⟨hcv₁, hcv₂, hv, EnvRel_nil_iff j [] [] |>.mpr ⟨rfl, rfl⟩⟩
+      have := crel_fund hN j [v₁] [v₂] hδ'
+      rwa [show closeC [v₁] N = Comp.subst v₁ N from rfl,
+           show closeC [v₂] N = Comp.subst v₂ N from rfl] at this
+  | @appF K v e eo q A B Co hv hK ihK =>
+      -- `appF v::K` at `arr q A B`: the arrow cap IS `appF v`, the remainder `K` (IH `ihK`). The closed
+      -- arg `v` (`HasVTy [] []`) self-relates `Vrel`; `krel_appF_intro` assembles.
+      have hcv : Val.Closed v := fun k => hv.shift_closed k (Nat.zero_le k)
+      -- `Vrel (n+1) A v v` from `vrel_fund` on the closed `v` (closed over the empty env).
+      have hvr : Vrel (n + 1) A v v := by
+        have := vrel_fund hv (n + 1) [] [] (EnvRel_nil_iff (n + 1) [] [] |>.mpr ⟨rfl, rfl⟩)
+        rwa [closeV_closed hcv] at this
+      exact krel_appF_intro hcv hcv hvr (ihK hCo)
+  | @handleF K ℓ e φ eo q A Co hArg hIface hsub hK ihK =>
+      exact krel_handleF_throws (ihK hCo)
+  | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
+      exact krel_handleF_state (ihK hCo)
+  | @transactionF K ℓ Θ e φ eo q A Co _ _ _ _ _ _ _ hcells hsub hK ihK =>
+      exact krel_handleF_transaction (ihK hCo)
 
 end Bang
