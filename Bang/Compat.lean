@@ -1993,8 +1993,19 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
-      -- ◊4.5b sub-block (f): the op-PRODUCER. Carried as `sorry` (same as the old crel_fund's up) until
-      -- (f) closes it together with the handler row-discharge (the two-row / ρ-free question).
+      -- ◊4.5b sub-block (f) — the op-PRODUCER. Goal: `CrelK n (F q B) φ (up ℓ op v₁) (up ℓ op v₂)`.
+      -- BLOCKED on a `KrelS` DEF GAP (build-traced, flagged to orchestrator 2026-06-24):
+      --   • none-half (`splitAt = none`, ρ-free / unhandled): CLOSES via `not_convergesC_le_up_splitNone`
+      --     (the stuck config never converges ⇒ the metered premise is False ⇒ vacuous). Biernacki compat-op.
+      --   • some-half (`splitAt = some`, HANDLED): UNPROVABLE at the current `KrelS`. The handleF clause
+      --     `| handleF _h::K₁', handleF _h'::K₂' => KrelS … K₁' K₂'` IGNORES the handlers + carries the SAME
+      --     row + has NO resume clause (the old `Srel` resume was dropped in the rebuild). So a `KrelS …φ`
+      --     pair may HANDLE ℓ (def doesn't forbid `ℓ ≤ φ` + a handleF for ℓ) AND handle DIFFERENT labels on
+      --     the two sides ⇒ one dispatches/converges, the other is stuck ⇒ co-equivalence FALSE. The 6 closed
+      --     handler cases never exposed it (they all make EQUAL-handler stacks); only the PRODUCER (arbitrary
+      --     related stacks) does. MINIMAL FIX (def change, awaiting decision): handleF clause must (a) relate
+      --     the handlers and (b) re-add the dispatch/resume composition (Biernacki Lemma 2 via CrelCtx +
+      --     plug_append + the blaze §2.3 anti-handler side-condition), OR seam the producer per ADR-0026.
       intro n δ₁ δ₂ hδ; sorry
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
