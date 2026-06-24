@@ -1,0 +1,119 @@
+# Codebase maintenance — lang-bang instance
+
+> The per-repo instance the `/codebase-maintenance` skill loads. Records THIS repo's
+> gate, its maintenance objects (object · rung · cadence · debt), the guards already in
+> place, and the survey-residue that could still climb. Authored 2026-06-24 from a
+> full survey; update when the machinery changes.
+
+This repo's whole stance is **correctness-by-construction** (make the bad state
+unrepresentable) + the **derivation ladder** (generate > test > survey). It already sits
+high on the ladder — most derived facts are *generated* or *tested*, so the hand-survey is
+small. The maintenance instinct here is **keep it that way**: when a new derived fact
+appears, climb it; don't let it land on survey.
+
+## The gate
+
+```
+nix develop          # ENTER FIRST — bare lake/just/node/python3 are NOT on PATH
+just verify          # = selfcheck · build · audit · adr-check   (the 4-leg verify gate)
+just fitness         # check-primitives.sh (kernel invariants #3/#5 STRUCTURAL) + check-adr-links.sh
+just axioms          # lake env lean Bang/Audit.lean — #print axioms per headline theorem
+just burndown        # sorry/axiom census (the SATD chart)
+```
+
+**Read the gate's real result, not its exit code** — three traps live here:
+- **Piped exit** (`lake build … | head` returns head's 0). Use the unpiped exit / `$PIPESTATUS[0]` / a store-path check. (Burned 2026-06-21; memory `nix-build-verify-exit-codes`.)
+- **The pre-commit hook runs `just verify`** but the loogle dep periodically re-clones with local changes, which breaks the hook's `just build` leg on an *unrelated* network/tree issue. Escape: `BANGLANG_SKIP_VERIFY_REASON="…" git commit --no-verify` — BUT then **run the full `nix develop -c lake build` yourself** before trusting green (per-module `lake build Bang.X` can miss cross-module breakage).
+- **`adr-check` / `audit` are verify-rung** (read-only, safe at every checkpoint). There is **no mutating apply/deploy step** in this repo — nothing here rebuilds a machine or ships a release, so the whole gate is safe to run.
+
+**Gate the committed content on a clean tree**, never a dirty working tree or an agent's
+summary. For a proof claim, the artifact is `#print axioms` on the *committed* sha — a green
+build with a hidden `sorryAx` is a false done.
+
+## Maintenance objects — rung · cadence · debt-risk · guard
+
+| Object | Rung | Cadence | Debt if it rots | Guard / how |
+|---|---|---|---|---|
+| **Axiom set** per headline theorem (⊆ {propext, Classical.choice, Quot.sound}) | TEST | every commit | hidden `sorryAx`, a 4th axiom (trust creep) | `just audit` / `Bang/Audit.lean` #print axioms |
+| **Build** (`lake build`) | TEST | every commit | untrue code | `just build` |
+| **Differential tests** (`Agree` battery, `#guard`/`#test`/`example` batteries, §7b handler probes, `selfcheck.mjs` third-impl) | TEST | every commit | a stub goes stale / a test that can't fail | the rfl/`#guard` batteries (0-axiom) + `selfcheck` |
+| **Kernel invariants #3 & #5** (5 primitives; STM-only-privileged) | TEST (fitness) | every commit (`just fitness`) | a 6th primitive sneaks in (prose invariant violated) | `tools/check-primitives.sh` — prose invariant made STRUCTURAL |
+| **Frozen theorem statements** (`Bang/Spec.lean` — the acceptance criteria) | TEST (hook) | every commit | a frozen statement silently weakened/reshaped | pre-commit `STATEMENT_CHANGE_OK="why"` guard (a frozen-stmt diff blocks the commit unless justified) |
+| **Secrets** | TEST (hook) | every commit | leaked credential | pre-commit `gitleaks` (skips loudly if it can't run) |
+| **ADR decided-ledger** (README index · Q⟺ADR resolution · Status copies) | GENERATE + TEST | per ADR add/supersede/status-change | stale index, Q-status drift, dual-Status drift | `gen-adr-index.py` generates README from frontmatter; `just adr-check` (3-leg) fails CI on drift. ADR-0042. |
+| **ADR cross-links** | TEST (fitness) | every commit | broken `[NNNN](file)` refs | `tools/check-adr-links.sh` |
+| **Burndown** (sorry/axiom census) | GENERATE | on demand | — (purely derived) | `tools/burndown.sh` |
+| **Orientation docs** (`CONTEXT.md`, `ROADMAP.md`) | SURVEY | every checkpoint / wrap | stale status (the classic drift) | hand-survey; update when a ◊ closes. *Climb candidate — see below.* |
+| **`CLAUDE.md`** (always-loaded core) | SURVEY | rare (invariant/arch change) | bloat (every token loaded every session) + stale file/recipe refs | hand-survey; keep list-shaped, ~2–4k tokens |
+| **PATHs** (`paths/PATH-*.md`) | SURVEY | on work-unit completion | stale PATH describing finished work (litter) | prune/archive on completion. *Climb candidate.* |
+| **`OPEN_QUESTIONS.md`** Q-statuses | TEST | per ADR resolving a Q | a resolved Q still reads OPEN (→ re-derivation, as happened with Q19) | `adr-check` cross-ref (ADR `Resolves: Qn` ⟺ Qn non-OPEN) |
+| **`references/` + `refs.bib`** | SURVEY | on citation add | mis-cited paper (e.g. the Garby-Hutton-Bahr mislabel) | hand-survey. *Climb candidate.* |
+| **Worktrees / branches** (multi-agent isolation) | OP | on agent completion / quiesce | sprawl (dead worktrees + branches accumulate) | `git worktree remove` + branch delete on completion; one-writer-per-tree |
+| **git object store** | OP (operator-gated) | when ALL writers quiesce | dangling-object bloat (benign corruption from concurrent-git races) | `git gc`/repack — NEVER while a worktree has a live writer |
+| **`archive/`** (retired K2 matrix etc.) | SURVEY | rare | archive bloat / resurrection confusion | history-preserving; out of the build |
+
+## Technical-debt sources — and how each is prevented (preemptively, by construction)
+
+The debt categories in this repo and the rung that makes each *unrepresentable* rather than *detected*:
+
+```
+DEBT SOURCE                         PREVENTED BY (the construction that forbids it)
+─────────────────────────────────────────────────────────────────────────────────
+proof debt (a sorry)                every sorry is DOCUMENTED + TRACKED (Spec.lean header +
+                                    burndown); the axiom gate requires sorryAx to trace ONLY to
+                                    those documented sorries. An UNtracked sorry fails the audit.
+                                    Model: the append-crux sorry — single, named, gated.
+trust debt (an axiom)               #print axioms gate: a 4th axiom beyond trusted-three is a SPEC
+                                    CHANGE requiring an ADR (invariant #5-style discipline).
+oracle debt (stub / can't-fail test) invariant #1 "proof rides the reference": every exec path is
+                                    `exec` itself or differential-tested against it. No oracle-less path.
+SSoT debt (two copies of a fact)    generate (the fact's home is the root; everything else derived)
+                                    or cross-ref-test. The ADR ledger is the worked example: index +
+                                    Q-status + Status are all generated/tested from ADR frontmatter,
+                                    so they CANNOT disagree. (Dual-Status drift → adr-check Status leg.)
+frozen-statement debt (silent weaken) pre-commit STATEMENT_CHANGE_OK guard — a frozen-stmt diff blocks
+                                    the commit unless explicitly justified.
+kernel-creep debt (6th primitive)   check-primitives.sh fitness function — invariant #5 made structural.
+doc-drift debt (stale prose)        climb to generate/test where possible; the residue (CONTEXT/ROADMAP)
+                                    is survey — update at every ◊ close, not "later".
+worktree/branch sprawl              one-writer-per-tree (collision unrepresentable) + cleanup on
+                                    agent completion. Don't let dead worktrees accumulate.
+```
+
+**The preemptive instinct (the operator's question, answered):** debt is prevented *before
+creation* by refusing to let a derived fact land on the survey rung when it could be
+generated or tested. Concretely, when you add X, ask "what fact does X derive, and which rung
+enforces it?" — and climb:
+- a new invariant in prose → a fitness function (like `check-primitives.sh`), not a comment.
+- a new derived doc/index → generate it + a `--check` in `just verify` (like the ADR ledger).
+- a new theorem → its axiom set is auto-audited; a new sorry → document + track it or it fails the gate.
+- a new cross-reference between two docs → a cross-ref test (like Q⟺ADR), not "remember to sync".
+
+## Survey-residue that could still climb (the maintenance backlog for the machinery itself)
+
+These three facts are currently hand-surveyed but have a clear test/generate rung available:
+
+1. **Orientation-doc status (CONTEXT/ROADMAP)** → PARTIAL GENERATE. The *proof-state* lines
+   (which ◊ is axiom-clean, the sorry count, which sha) are derivable from `Audit.lean` +
+   `burndown.sh` + `git`. A generated "status header" would leave only the *narrative* on
+   survey. (The 2026-06-24 hand-fix of these is exactly the drift this would prevent.)
+2. **PATH lifecycle** → TEST. A check that no `paths/PATH-*.md` references a ◊ that CONTEXT
+   marks closed (or: a PATH whose checkpoint is done must be archived) — catches stale PATHs.
+3. **Citation integrity** → TEST. A lint that every `\cite`/inline citation resolves to a
+   `refs.bib` entry (doctest-style) — catches the mislabel class.
+
+Until they climb, they are the G2 survey shortlist: confirm-or-update them whenever the
+proof state or an ADR moves.
+
+## Grades for this repo
+
+- **G0** (per-edit): `just check FILE` — fast single-file Lean error check.
+- **G1** (per-commit): `just verify` (+ the pre-commit hook: gitleaks, STATEMENT_CHANGE_OK, fitness). Tree committed.
+- **G2** (feature / checkpoint / wrap): G1 + the survey shortlist above (CONTEXT/ROADMAP/PATHs/refs) + `just fitness`.
+- **G3** (release / ◊ close): full sweep + `just axioms` per headline + cold-agent dogfood (a fresh agent reading CLAUDE.md + CONTEXT.md + `git log` orients correctly).
+
+## Anti-triggers
+
+A pure rename, a comment typo, a `docs:` commit with no status/ADR/interface surface → G0/G1,
+skip the survey. A proof-only commit that doesn't touch a frozen statement or add a sorry →
+the axiom gate is the whole survey. Scale the pass to the change.
