@@ -87,8 +87,11 @@
                                      WELL-TYPED observation contexts — decision (a); the untyped form made lr_sound FALSE), on
                                      `cap45-final` (`a5464da`), append-crux-only. LAST sorry = state/txn RESUMPTIVE composition
                                      (the resume-conjunct RELATION reshape — NOT the metering, which composes cleanly; build-grounded by
-                                     `append` 2026-06-24, 6 Compat spots) — SEAM'd interim, PURSUE next session via the (a)-(d) program
-                                     in `paths/PATH-cap45-resume-composition.md` (task #10);
+                                     `append` 2026-06-24, 6 Compat spots) — ACTIVELY CLOSING — `append` LIVE on worktree `lang-bang-append2` (branch `cap45-append2`):
+                                     architecture build-VALIDATED (throws end-to-end via HandlerRel + Kᵢ-threading),
+                                     `krelS_append` + 4 green checkpoints banked (`ba2fa70`), conjunct-typing cycle in
+                                     progress → sorryAx-gone. ⚠ DO NOT touch `lang-bang-append2` (live writer); gate its
+                                     COMMITTED close on a clean checkout. Spec: `paths/PATH-cap45-resume-composition.md` + task #10. SEAM (ADR-0026) is the fallback;
                                      closing it → lr_sound FULL trusted-three = THE MOAT (contextual equiv incl. resumptive
                                      handlers). SEAM (ADR-0026: throws VERIFIED + state/txn-resume TESTED) is the interim honest state. NOT yet
                                      merged to main (carries the append sorry + diverges from ◊5 on Spec.lean).
