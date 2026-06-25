@@ -4,6 +4,49 @@
 > ◊4.5b resume-edge (`sorryAx`-zero `lr_sound`/`lr_fundamental`). Scoped 2026-06-25 (`lrscope`), reframe
 > verified on the defs. Branch `typed-static-r1` (kernel STD block gated to 1 sorry @ `91e7444`).
 
+## ★★★★ LR seam 5→2 LANDED via ABSOLUTE CAPS (2026-06-25 → ADR-0053, `b14d43c`). READ FIRST — supersedes the RESOLVED block below.
+
+The `★★★ RESOLVED` block below (route A build-refuted, ship seam-5) is **SUPERSEDED**: the deferred
+representation fix (absolute/level caps) was spiked, ratified GO, and IMPLEMENTED. **The 5→2 DID materialize**
+— via absolute caps, NOT route-A `n-free`. Caps are root-levels; crossing a `handle` no longer shifts them, so
+`closeC_handle*` rewrite UNSHIFTED and the 3 `crelK_fund` handler arms close on their `compatK_handle*` cores.
+Axiom-gated (3 cores clean; `lr_sound`/`lr_fundamental` sorryAx = ONLY `hcatch` + `:1801`, the deferred 5→0).
+Net **-112 LOC**. See ADR-0053 + `docs/notes/cap-representation-spike-findings.md`.
+
+### ★ THE OPEN NEXT UNIT — WC keystone 2c (proof-engineer-paired, NOT solo)
+
+**Lemma:** `WCComp.shiftCap_insert` (now restated SHIFT-FREE, Operational ~930) — currently SEAMED with 3
+`sorry`s (mutual over Comp/Val/Handler), behind `preservation_returnEscape_TODO`. Statement:
+`WCComp (hframes Δ ++ Sg) M → WCComp (hframes Δ ++ handleF h :: Sg) M` (body UNCHANGED — absolute caps don't shift).
+
+**The split (build-traced, do NOT re-litigate by argument):**
+- **Sg-targeting caps (`cap < handlerCount Sg`) — PROVEN.** The perform-case insert holds via
+  `absSplit_stable_under_top_push`: the modulus `+1` cancels the inserted frame.
+- **Δ-targeting caps — GENUINELY UNCERTAIN / the wall.** Inserting `handleF h` BELOW an existing `handleF h₀`
+  shifts h₀'s absolute root-level, so a `perform` targeting h₀ (inside a thunk's own `handle h₀ …`) mis-resolves
+  to h. **Lean-checked counterexample:** level `handlerCount Sg` → h₀ in `handleF h₀ :: Sg`, → h in
+  `handleF h₀ :: handleF h :: Sg`. The de-Bruijn `shiftCap` compensated exactly this; absolute caps remove it.
+  So `absResolvesKind`-WC is NOT preserved under handler-insertion-below-use-site — a real semantic property,
+  **NOT a mechanical re-proof.**
+
+**Containment (why this is isolated):** the ONLY consumer is `WCComp.substFrom`'s handle case, which needs the
+keystone for the **FILLER `v` at Δ=[]** (caps target Sg — the SAFE case) — **that consumer seam is already
+DISCHARGED.** The keystone's general recursion descends into `v`'s thunks (the unsafe case). Feeds only
+`WellCapped → LWConfig → preservation/progress`; the LR 5→2 is independent (Compat zero WCComp refs).
+
+**Hypotheses for the reformulation (need a build-test — now buildable behind the seam — + second eyes):**
+1. Caps stored **relative to the nearest enclosing handler** (a hybrid de-Bruijn/absolute) — so insertion below
+   doesn't disturb them.
+2. WC stated so insertion only ever happens **ABOVE all caps' targets** (the SAFE direction) — i.e. restructure
+   so the keystone is only ever the Sg-targeting/top case (the filler case is already this; can the WCComp
+   recursion be made to only top-insert?).
+3. Revisit **stored-thunk cap-closedness** — a thunk's internal `handle h₀ (perform→h₀)` is closed-within-itself;
+   if those caps are cap-closed/local, the insert leaves them fixed.
+
+**DISCIPLINE NOTE:** the prior session over/under-estimated this 3× by-argument (the flip-flop = the stop signal).
+Whoever picks this up: do an **isolated build-test** of the chosen reformulation (the seam makes it buildable in
+isolation), pair with proof-engineer — **do NOT solo-grind by reasoning.**
+
 ## The reframe (verified) — it's a RE-KEY, not a re-index
 
 "Typed LR re-index" is a misnomer. The ◊4.5b rebuild ALREADY made the LR answer-typed + type-indexed:

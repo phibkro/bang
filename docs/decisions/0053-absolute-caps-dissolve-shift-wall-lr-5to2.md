@@ -115,8 +115,9 @@ sorry is now the **sole** line for escape behaviour. Closing it is higher-priori
   measured net-negative cost.
 
 ## See also
-- `findings-cap-representation` (the spike — not committed; captured in the team report) + the de-risk
-  probes `scratch/AbsoluteCapsProbe.lean`, `scratch/AbsoluteCapsStepProbe.lean` (committed `20fa7ab`).
+- `docs/notes/cap-representation-spike-findings.md` (the spike's findings — GO rationale, the measured
+  comparison, the WC-keystone obligation) + the de-risk probes `scratch/AbsoluteCapsProbe.lean`,
+  `scratch/AbsoluteCapsStepProbe.lean` (committed `20fa7ab`).
 - ADR-0052 (CalcVM route-B, orthogonal); ADR-0050 (the seam-5 this supersedes); ADR-0046 (de-Bruijn caps).
 - `Bang/Compat.lean` `crelK_fund` (the closed handler arms + the 2 deferred descents);
   `Bang/Operational.lean` `absSplit`/`absResolvesKind` + the seamed `WCComp.shiftCap_insert` (2c).
