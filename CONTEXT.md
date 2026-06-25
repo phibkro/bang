@@ -38,6 +38,19 @@
 > README). Whole tree RED downstream (CalcVM/Compat/Surface) until the LR re-index + the ◊5 CalcVM re-run land.
 > **Surface design SETTLED** (parallel): ADRs 0046 (core + inference-bridged sugar), 0046-amendment (canonical core
 > = named S-expr), 0047 (sugar dialects + user macros). Architecture: `docs/notes/kernel-shell-library.md`.
+> **Surface IMPLEMENTATION — landing (2026-06-25, parallel to the LR pivot; ADR-0048 = the library tiering):**
+> - **`Bang.Frontend.NamedCore` (ADR-0046 ① — the writable IR) LANDED** (`9452660`, gated GREEN in isolation, 709 jobs):
+>   named-explicit S-expr core 1:1 with the kernel AST (NVal/NComp/NHandler) + `print`/`readC` round-trip gate
+>   (`read∘print=id`, #guard×3) + `elab` (name→de-Bruijn) + end-to-end `elab→Source.eval` by rfl (state-get⟶5,
+>   reactive-cell⟶5, STM-abort⟶(100,0)). Notably RUNS the explicit-`cap 1` abort that hardcoded-`cap 0` Surface
+>   can't emit under static dispatch (a live argument for candidate ②, the cap-inference stage).
+> - **`tools/arch-check.sh` (ADR-0046/0047 ② — the import-direction fitness function) LANDED** (`20cedc2`, in
+>   `just fitness`/`audit`): the V holds (Core imports neither edge; Frontend/Backend meet only at Core); apex
+>   (Spec/Audit/Distribution) exempt. Mutation-tested (catches a synthetic Core→Frontend import). Pure grep, gates
+>   pre-build (runs even on the mid-pivot-red tree).
+> - **DEFERRED (seam-first, ADR-0048):** the physical `git mv` of Surface/Trait→Frontend, CalcVM/Compile→Backend
+>   waits until each is green again (pivot collateral red); the Core-internal sweep + candidates ②(cap stage)/③(split
+>   Compat) wait for `lr_sound`. ④ (EffSig fixture dedup) is low-priority.
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
