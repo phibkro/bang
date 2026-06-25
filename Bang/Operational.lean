@@ -261,9 +261,9 @@ and `h` the catching handler. `none` = no handler in `K` (unhandled). The recurs
 ADR-0023's `dispatch` did; it now also RETURNS the inner prefix `Kᵢ` (kept by `state`, discarded by
 `throws`).
 
-ADR-0045 1b: `splitAt` is now LEGACY for `Source.step` (which dispatches via `staticSplit`), but
-STAYS because the CalcVM's `unwindFind` analogue + the LR's `krelS_splitAt_decomp` still reference its
-shape (B2/B3 re-index them onto `staticSplit`). -/
+ADR-0054: `splitAt` (label search) is LEGACY for `Source.step` (which now dispatches by IDENTITY via
+`idDispatch`/`splitAtId`). It STAYS only because the not-yet-ported LR (`krelS_splitAt_decomp`) +
+`NoWrapMiss` still reference its shape; the inc-5 LR port re-keys them onto `splitAtId`. -/
 def splitAt : EvalCtx → Label → OpId → Option (EvalCtx × Handler × EvalCtx)
   | [], _, _ => none
   | (.handleF m h :: K), ℓ, op =>
@@ -279,8 +279,8 @@ def splitAtId : EvalCtx → Nat → Option (EvalCtx × Handler × EvalCtx)
   | [], _ => none
   | (.handleF m h :: K), n =>
       if m = n then some ([], h, K)
-      else (splitAtId K n).map (fun x => (Frame.handleF m h :: x.1, x.2.1, x.2.2))
-  | (fr :: K), n => (splitAtId K n).map (fun x => (fr :: x.1, x.2.1, x.2.2))
+      else (splitAtId K n).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF m h :: Kᵢ, h', Kₒ))
+  | (fr :: K), n => (splitAtId K n).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
 
 /-- ◊4.5b-answertrack SCOPED-SEAM (ADR-0043): `(ℓ, op)` does NOT "pass through" a non-catching handler
 before reaching its catcher — the captured continuation up to the catching handler contains NO handler
@@ -363,22 +363,13 @@ matched `(Kᵢ, h, Kₒ)` through `dispatchOn n` (which reinstalls `handleF n` o
 def idDispatch (K : EvalCtx) (n : Nat) (op : OpId) (v : Val) : Option Config :=
   (splitAtId K n).bind (dispatchOn n op v)
 
-/-! ### Absolute (level-from-root) cap resolution (ADR-0053).
+/-! ### Handler-skeleton utilities (`handlerCount` / `handlersOf`).
 
-The cap field of `perform` is a ROOT-LEVEL (counted from the program root / stack bottom; `lvl = 0`
-is the OUTERMOST handler), NOT a de-Bruijn outward index. Root-levels are migration-INVARIANT: a
-cap-carrying thunk cannot escape its handler (the `LWT` return-escape gate, ADR-0045 D), so a pending
-`perform`'s target handler is always still on the stack when it fires, and migration only pushes
-handlers ABOVE the target — never pops below it. So crossing a `handle` does NOT shift the cap
-(`Comp.substFrom` leaves it untouched), which DISSOLVES the de-Bruijn shift wall (ADR-0050) by
-construction. Resolution converts the root-level to the top-index `staticSplit` consumes:
-`topIndex = handlerCount K - 1 - lvl`. The conversion modulus is `handlerCount` (= `handlersOf` length,
-the single source of truth — `handlerCount_eq_handlersOf_length`). Verified sorry-free in the de-risk
-probe (`scratch/AbsoluteCapsStepProbe.lean`); the bricks live in `Metatheory.lean`. -/
+`handlerCount K` is also the fresh-identity source for `Source.step`'s `handle` arm (ADR-0054: the
+new handler's identity is the count of handlers below it, Fork ii). -/
 
-/-- Number of `handleF` frames in a context — the level↔index conversion modulus. Equal to
-`(handlersOf K).length` (`handlerCount_eq_handlersOf_length`), so the modulus reuses the existing
-handler skeleton rather than introducing a second notion. -/
+/-- Number of `handleF` frames in a context. Equal to `(handlersOf K).length`
+(`handlerCount_eq_handlersOf_length`). The `handle` step mints the new identity as `handlerCount K`. -/
 def handlerCount : EvalCtx → Nat
   | [] => 0
   | .handleF _ _ :: K => handlerCount K + 1
@@ -392,9 +383,8 @@ def handlerCount : EvalCtx → Nat
 @[simp] theorem handlerCount_handleF (n : Nat) (h : Handler) (K : EvalCtx) :
     handlerCount (Frame.handleF n h :: K) = handlerCount K + 1 := rfl
 
-/-- Resolve an absolute root-LEVEL against the runtime stack: convert to the top-index `staticSplit`
-expects (`handlerCount K - 1 - lvl`), then reuse `staticSplit`. `lvl < handlerCount K` is
-well-scopedness (an in-range level always resolves — `absSplit_isSome_of_lt`). -/
+/-- The handler skeleton of a context: keep `handleF` frames (identity + handler), drop the
+cap-transparent `letF`/`appF` plumbing. -/
 def handlersOf : EvalCtx → EvalCtx
   | [] => []
   | .handleF n h :: K => Frame.handleF n h :: handlersOf K
@@ -438,11 +428,8 @@ def HasConfig [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : 
   HasConfigTy cfg eo Co ∧ NonEscape cfg
 
 
-/-! ### WC under VARIABLE shift + substitution (ADR-0045 B3a)
-
-`WCComp`/`WCVal` read the context only via caps, which the VARIABLE shift/subst never touch — so they
-are invariant under `shiftFrom` (var shift). And `handlesOp` is invariant under `substFrom` (subst
-changes only handler payloads). These feed the substitution lemma. -/
+/-- `handlesOp` is invariant under `substFrom` (subst changes only handler payloads, never the label
+or op-kind it reads). -/
 
 @[simp] theorem handlesOp_substFrom (k : Nat) (v : Val) (h : Handler) (ℓ : Label) (op : OpId) :
     handlesOp (Handler.substFrom k v h) ℓ op = handlesOp h ℓ op := by cases h <;> rfl
@@ -454,9 +441,12 @@ def Source.step : Config → Option Config
   | (K, .letC M N)          => some (.letF N :: K, M)
   | (K, .app M v)           => some (.appF v :: K, M)
   | (K, .handle h M)        =>
-      -- ADR-0054: mint a fresh identity `n = handlerCount K` (Fork ii), push `handleF n h`, and
-      -- substitute the capability value `vcap n h.label` for the handle-bound var 0 in the body.
-      some (.handleF (handlerCount K) h :: K, Comp.subst (.vcap (handlerCount K) h.label) M)
+      -- ADR-0054: mint the identity `n = handlerCount K` (Fork ii — depth-from-root: unique among the
+      -- LIVE handlers by stack discipline; cross-extent uniqueness rides `NonEscape`). Push `handleF n h`
+      -- and substitute the capability `vcap n h.label` for the handle-bound var 0 (the SAME `n` both
+      -- places). `let` keeps it one term + `rfl`-reducible.
+      let n := handlerCount K
+      some (.handleF n h :: K, Comp.subst (.vcap n h.label) M)
   | (K, .force (.vthunk M)) => some (K, M)
   -- REDUCE
   | (.letF N :: K, .ret v)  => some (K, Comp.subst v N)
@@ -504,33 +494,15 @@ def Config.run : Nat → Config → Result Val
 (ADR-0023 D3), so `type_safety`'s frozen statement is untouched. -/
 def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel ([], c)
 
-/-- **THE typed return-escape obligation (ADR-0045 R1, the documented scoped sorry).**
-
-`LWConfig` is preserved by every non-`handleF`-ret `Source.step` transition. The cases divide:
-
-  • **FORCED-thunk fragment** (PUSH letC/app/handle · force · the β-redexes case/split/lam/unfold ·
-    letF-ret of a CAPABILITY-FREE value): these THREAD — a capability whose thunk is FORCED (or a value
-    that carries none) re-establishes `LWConfig` via `LWT`-substitution (the cap-shift keystone handles
-    migration; cf. the `WCComp.subst` machinery). The cap-assignment suite (ADR-0045 Resolution
-    evidence) confirms this fragment is accepted: capMigrate / cellComp / stateCell / throws / the STM
-    ledger all stay well-typed.
-
-  • **RETURN-ESCAPE of a CAPABILITY-CARRYING value** (a `ret`/`letF`-ret threading a value whose thunk
-    holds a LIVE-effect cap PAST its handler): the seqEscape/ledger FORK. Build-settled (ADR-0045
-    Resolution): a purely UNTYPED config invariant CANNOT certify it without OVER-rejecting the safe
-    ledger (which returns a cap-FREE `vint` out of a `transaction`) — the distinction is the escaping
-    value's TYPE (`U φ C` with `φ ≠ ⊥` vs `int`/`unit`). The non-escape check is therefore TYPE-DIRECTED
-    and belongs in the typed-LR re-index (`Vτ/Cτ/Tτ`), a type-premise on `ret`/`letC` constraining ONLY
-    `U φ C` values. (A) lazy refuted (`progB` well-typed-but-stuck); (C) untyped tightening over-rejects
-    the ledger; (D) typed adopted.
-
-The single scoped boundary: `preservation_proof`'s `LWConfig` re-establishment routes here for the
-non-`handleF`-ret cases. Its `sorry` is the typed-LR obligation — a deferred type-premise (ADR-0045
-Resolution + `paths/PATH-cap-assignment-spike.md` NEXT), NOT a wall. `handleF_ret` (by construction)
-and `progress_proof` are axiom-clean and independent of it. -/
+/-- **The non-escape preservation obligation (ADR-0054).** `NonEscape` is preserved by every
+`Source.step` transition. The only genuine case is RETURN-ESCAPE of a capability-carrying value (a
+`ret`/`letF`-ret threading a value whose thunk holds a live-effect capability PAST its handler) — the
+non-escape check is TYPE-DIRECTED (distinguishes `U φ C` with `φ ≠ ⊥` from a cap-free `int`/`unit`).
+STUB: `NonEscape := True` (inc-3 first cut), so this is `trivial`; **inc 4 (Metatheory) gives `NonEscape`
+its real form** + the real proof (revealed by what `preservation`/`progress` need). See ADR-0054 amendment. -/
 theorem preservation_returnEscape_TODO
     {cfg cfg' : Config} (_hne : NonEscape cfg) (_hstep : Source.step cfg = some cfg') :
-    NonEscape cfg' := trivial   -- ADR-0054 inc 3: NonEscape := True (first cut); inc 4 gives it real content
+    NonEscape cfg' := trivial
 
 /-! ### Lexical-cap regression demos (ADR-0045 amendment) — REAL artifacts, build-gated.
 
