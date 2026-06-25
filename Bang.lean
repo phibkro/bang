@@ -29,6 +29,10 @@ import Bang.Surface
 -- discharge ladder. In the build graph so its #guards GATE (proof-first default,
 -- visible descent, no-silent-pass enforced by construction).
 import Bang.Surface.Trait
+-- Frontend (the human/agent-facing edge of the V — depends on Core, never on Backend).
+-- The canonical core made WRITABLE (ADR-0046 ①): named-explicit S-expression IR with a
+-- print/read round-trip gate + name→de-Bruijn elaboration. The plugin/LSP surface (ADR-0047).
+import Bang.Frontend.NamedCore
 
 -- K3: the calculated machine. The K2 matrix of per-feature machines (Calc/CalcHO/
 -- CalcCBN/CalcEff/CalcSt/CalcCBNEff/CalcCBNSt/CalcCBNEffSt) + the untyped CBN reference
