@@ -56,3 +56,52 @@ HUMAN/AGENT ──► SUGAR SURFACE ──elaborate (infer)──► CANONICAL C
 - **Two modes** for humans + agents: PRECISION (write explicit core, zero inference to get wrong) and CONCISION (write sugar, inspect the elaboration), with a checkable bridge between them.
 - The open **grades** question resolves: inferred-by-default, explicit-in-core, surfaced-on-demand.
 - **Anchor for every future surface decision:** any sugar must (a) elaborate deterministically to the core, (b) add no core primitive, (c) be inspectable. A sugar that can't is rejected — and this ADR is the reference, so the question isn't re-derived per feature.
+
+## Amendment (2026-06-25) — the canonical core IS named-explicit S-expressions
+
+Verified by round-tripping the actual kernel AST (`Bang/Core.lean`) against the rung programs. The
+canonical core is a 1:1 S-expr serialization of the `Comp`/`Val`/`Handler` term + explicit type/grade
+annotations, with NAMED binders — `name → de-Bruijn` is the thinnest elaboration to the kernel term
+(where the proofs live). So the full stack is: `sugar surface → named-explicit core (S-expr) → de-Bruijn
+kernel term`. Chosen for the 1:1-with-AST / unambiguous / agent-reliable reasons (NOT "tree-sitter");
+precedent: WAT (wasm text — our compile target) is S-expr for exactly these reasons.
+
+### Grammar — one head per constructor (~15 term forms, build-grounded against Core.lean)
+
+```
+VALUES        unit · 42 · x · (thunk C) · (inl V) · (inr V) · (pair V V) · (fold V)
+COMPUTATIONS  (ret V) · (let x C C) · (force V) · (lam x C) · (app C V)
+              (perform cap L op V) · (handle H C) · (case V (x C) (y C)) · (split (x y) V C) · (unfold V)
+HANDLERS      (state L V) · (throws L) · (transaction L [V…])
+TYPES         unit · int · (U E C) · (+ A B) · (* A B) · (mu X A) · (F q A) · (arr q A C)
+ROWS/GRADES   {L…}  (set of channel labels) · 0 · 1 · omega
+TYPED BINDER  (let (x : A) C C)   — the fully-explicit precision form; sugar drops the `: A`
+```
+Binder positions match the kernel: `let`/`lam`/`case`-arms bind one name; `split` binds two (fst snd).
+
+### Round-trips — the actual rung programs (the cap made EXPLICIT)
+
+```
+state-get:     (handle (state St 5) (perform 0 St get unit))                       ⟶ 5
+reactive cell: (handle (state St 0)
+                 (let c (thunk (perform 0 St get unit))
+                   (let _ (perform 0 St put 5) (force c))))                         ⟶ 5
+STM abort:     (handle (throws Exn)
+                 (handle (transaction Stm [])
+                   (let _ (perform 0 Stm newTVar 100)
+                     (let _ (perform 0 Stm writeTVar (pair 0 70))
+                       (perform 1 Exn raise (pair 100 0))))))                       ⟶ (100, 0)
+               ;; perform 1 — the abort reaches PAST the transaction to the throws.
+               ;; The sugar surface INFERS that 1; the core spells it out. THIS is the precision mode.
+```
+
+### Why it holds (verified, not intuited)
+- Every kernel constructor has exactly one head form (1:1, no precedence, unambiguous).
+- Reader/printer is total + trivial; `surface → named-core → de-Bruijn` is inspectable at each step.
+- The cap is LITERAL in the core (and grade/type/row in the typed form) — the "true shape"; sugar infers them.
+
+### Decision + its gate
+Canonical core = **named-explicit S-expressions**, 1:1 with the kernel AST. The bottom inference is
+`name → de-Bruijn`; above it, cap/row/grade/type inference (the sugar surface). The faithfulness gate is a
+round-trip property `print ∘ read = id` (and `read ∘ print = id` up to α) on the AST — a build-gated test,
+so the two reps cannot drift (SSoT for the syntax).
