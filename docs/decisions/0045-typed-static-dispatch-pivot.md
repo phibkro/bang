@@ -121,3 +121,38 @@ folded into `HasConfig`).
 **Resolves the carried open choice (cap>0 keep-vs-forbid):** the divergence program needs `get` to
 reach PAST `throws` to `state` — a cap>0 dispatch. **KEEP is forced**; forbidding cap>0 (nearest-only)
 would make this ordinary program ill-typed. The forbid fallback is off the table for v1.
+
+### Correction (2026-06-25, same day) — the uniform cap-shift is INCOMPLETE: fixes case A, breaks case B
+
+The amendment above (`shiftFrom`/`substFrom` shift the cap under every `handle`) is **necessary but not
+sufficient**, and as a standalone mechanism it is UNSOUND. Build-gated reliable A/B (compiled `lake build`
+`#guard`, NOT `lake env lean` — see below):
+
+```
+progB = let c = {get} in handle (state 1) ($c)      -- well-typed (axiom-clean), an "open cap"
+  DYNAMIC kernel:   done   (terminates)
+  CAP-SHIFT kernel: STUCK  ← REGRESSION
+```
+
+`perform 0` conflates two meanings with identical syntax:
+- **case A (closed cap)** — the target handler lexically ENCLOSES the perform's author site; the cap must
+  SHIFT under handlers crossed during migration (the B1-wall divergence; the cap-shift fixes it — `capMigrate`).
+- **case B (open cap)** — there is NO enclosing handler at the author site; the effect is latent in the
+  thunk's TYPE, to be discharged by a handler placed UNDER it later. The cap must NOT shift. The uniform
+  shift breaks these (`progB`/`e1`): well-typed, terminate under dynamic, STUCK under the cap-shift.
+
+So `progress`/`type_safety` are genuinely FALSE for the naive-cap-shift kernel (`progB` is the
+counterexample). **There is NO `type_safety` hole in the dynamic kernel** (progB terminates there).
+
+**Root incoherence:** the effect-ROW type system is DYNAMIC (label-based, admits late binding — case B),
+but static cap dispatch is LEXICAL (cap fixed at author site). The fix is to make the TYPE SYSTEM lexical
+too — a `perform` must have its handler in scope at its author site (a handler-context in `HasCTy`), making
+case B ILL-TYPED. Then caps are always closed, the uniform shift is sound, and progress holds. This is the
+typed-capability discipline (Effekt second-class capabilities) — being de-risked by a bounded spike before
+further impl. Expressivity note: this FORBIDS late-bound effects (handler placed under the perform's
+definition); confirm no v1 rung needs it.
+
+**Measurement reliability (a hard-won tooling lesson):** `Source.eval` does not reduce under
+`lake env lean` (`#eval`/`#guard` give garbage — interpreted can't unfold the recursion); only compiled
+`lake build` `#guard`s are reliable. An earlier "no regression" reading came from `lake env lean` and was
+WRONG. Gate eval behaviour with compiled `#guard`s only.
