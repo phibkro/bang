@@ -8,56 +8,50 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-25, session wrap) — LR seam-5 → **seam-2**: absolute/level caps LANDED (ADR-0053).
-> On `typed-static-r1` @ `b14d43c`. SoT = ADR-0053 + ADR-0052 + `paths/PATH-typed-lr-reindex.md` (the 2c hand-off).**
+> **★ ACTIVE DIRECTION (2026-06-25) — CAP REPRESENTATION PIVOT: absolute caps (ADR-0053) build-verified
+> UNSOUND → handler-reference-by-generative-IDENTITY (ADR-0054).** On `typed-static-r1` @ `12b6bd5`.
+> SoT = ADR-0054 + `docs/architecture/core-overview.md` + ADR-0052 (CalcVM route-B).
 >
-> **This session (5 ADRs, every fork BUILD-arbitrated):**
-> 1. Route A (Biernacki `n-free` in the LR — the prior committed route) **BUILD-REFUTED** → seam-5 (ADR-0050). Root
->    cause = the **de-Bruijn cap SHIFT** (ADR-0046), NOT a dropped `n-free`; routes A & B shared one config-sim wall.
-> 2. Monadic recast (CalcReify→Bahr-Hutton'22) **NO-GO** — renames `perf_outcome_mono`, doesn't dissolve it (ADR-0051).
-> 3. CalcVM ◊5 dispatch: build-PROVEN the kernel (lexical/cap) and `evalD` (dynamic/label) DISAGREE on a well-typed
->    same-label-shadow program (10 vs 20). bang is **LEXICAL**; re-derive `evalD` cap-keyed (route B), deferred → ADR-0052.
-> 4. **Absolute caps GO → LR seam-2.** The cap is a ROOT-LEVEL (no `handle`-crossing shift), so `closeC_handle*`
->    close UNSHIFTED and the 3 `crelK_fund` handler arms CLOSE on axiom-clean cores. **Independently axiom-gate-verified**
->    @ `b14d43c`: the 3 cores `[propext, Classical.choice, Quot.sound]`; `lr_sound`/`lr_fundamental` `sorryAx` = ONLY
->    the 2 deferred descents (`hcatch`+`:1801`). **Net-NEGATIVE (-112 LOC** — shift theory deleted). ADR-0053.
+> **The reversal (build-verified this session):** ADR-0053 absolute caps mis-dispatch a thunk that locally
+> handles its OWN effect when it is FORCED under an unrelated handler (insert-below-the-target migration).
+> Witness `migrate_vFragile_well_typed` (`scratch/MigrationTypingProbe.lean`) is well-typed (axiom-clean) +
+> `LWConfig`-valid yet `Source.eval` yields a WRONG-typed value. Root cause is STRUCTURAL: a single integer
+> cap can't be both migration-stable and shift-free, and `closeC ≡ Comp.subst` couples them (a subst-time
+> shift for soundness re-shifts `closeC_handle*` = the ADR-0050 LR wall). The minimal patch is therefore DEAD.
 >
-> **Build:** 711 jobs, LR layer + kernel GREEN at seam-2; CalcVM RED = the deferred route-B (ADR-0052), orthogonal.
+> **The decision (ADR-0054, deep-research-grounded — Lexa/Effekt/Koka, 22/25 claims 3-0):** reference the
+> handler by a generative IDENTITY (a value — NO 6th primitive), carry any handler-crossing re-base as
+> explicit DATA on the thunk (re-based at CAPTURE, not force). Keep the step-indexed LR (route B — Effekt
+> System Ξ shows lexical capability-passing admits a closeable LR); Leroy forward-sim (Lexa, no LR) is the
+> recorded alternative. First-class-thunk escape is ruled out by the EXISTING `LWT` non-escape gate
+> (`preservation_returnEscape_TODO`), not by second-class thunks.
 >
-> **Deferred units (next sessions):**
-> - **WC keystone (2c) — the ONE genuinely-hard open piece.** Absolute caps do NOT preserve `WellCapped` under
->   handler-insertion-BELOW-the-use-site (build-traced counterexample: a cap→`h₀` mis-resolves to an inserted `h`);
->   the de-Bruijn shift compensated it. Needs a WC-invariant REFORMULATION (caps-rel-nearest-handler / insert-only-
->   above-targets / thunk-cap-closedness) — **kernel-engineer-paired + an OPERATOR DESIGN DECISION.** SEAMED: Operational
->   3 sorries, behind `preservation_returnEscape_TODO`. Precise hand-off in `paths/PATH-typed-lr-reindex.md` + ADR-0053.
-> - **CalcVM route B** — re-derive `evalD` cap-keyed to match the lexical kernel (ADR-0052); multi-session.
-> - **`hcatch` + `:1801`** (seam-2 → 0) — the 2 remaining ADR-0043 descents (Compat).
-> - **`preservation_returnEscape_TODO`** — priority ROSE (ADR-0053): absolute caps dropped the de-Bruijn shift's
->   incidental runtime-stuck-the-escape backstop, so this typing proof is now the SOLE escape-safety line.
+> **★ THE IMMEDIATE NEXT UNIT — implement the identity representation** (Core/Syntax: `perform` carries an
+> identity; `handle` mints a fresh label) + re-derive dispatch + re-establish the LR `closeC_handle*`
+> (unshifted by construction). SUPERSEDES the old "WC keystone 2c" (now MOOT — the dead `WellCapped`/`WCComp`
+> island was removed this session, −316 LOC; the keystone was an absolute-caps artifact).
 >
-> **↓ The detailed seam-5 refutation narrative below is HISTORY** (how seam-5 was reached, before absolute caps → seam-2).
+> **This session's commits (`typed-static-r1`):**
+> - `e133e9a` ADR-0054 (+ 3 build-verified unsoundness probes + ledger; ADR-0053 → Superseded).
+> - `d1f0916` removed dead `WellCapped`/`WCComp` machinery (−316 LOC; verified `lake build Bang.Compat` 711 green).
+> - `12b6bd5` `docs/architecture/core-overview.md` — module + coupling map (the dispatch⟂subst missing seam
+>   as exhibit A) + the restructuring target.
 >
-> The pivot landed kernel-side (`perform cap` + static `staticSplit` + lexical cap-shift; `LWT` typing; STD block
-> axiom-clean @ `91e7444` modulo the documented `preservation_returnEscape_TODO`; the ◊4.5b MISS edge DISSOLVED by
-> construction @ `a771cc1`). Re-keying the **LR** to static dispatch exposed the 3 `crelK_fund` handler arms, which
-> a build-gated de-risk (this session, scratch-only, NO frozen-def edits) then **REFUTED**:
-> - **The wall (ADR-0050):** the arms need an env cap-shift cancellation (`closeC_handle*` closes the body over
->   `δ.map shiftCap`, the IH is at `δ`). The bridge `EnvRelK_shiftCap` reduces (U-clause) to a config-simulation
->   `(handleF h :: K, shiftCap c) ≈ (K, c)` that **walls at the state/txn resume** (resumed `ret s` unshifted while
->   the insertion depth moves → needs `s` cap-closed, FALSE). Stack-side `LWStack` can't force the handleF-headed
->   stack; a focus-side `WCComp` premise is a FALSE FLOOR (static ✓ / dynamic ✗). Routes A (LR-fold) and B
->   (config-sim) **share this one wall.**
-> - **Corrected diagnosis:** the obstacle is NOT a "dropped Biernacki `n-free`" — it's the **de-Bruijn cap SHIFT**
->   (ADR-0046). Biernacki uses NAMED handlers (no shift on `handle`-crossing) → there was never a proof to inherit.
-> - **DECISION (operator):** **seam to green now**; the real 5→2/full close is a REPRESENTATION change (absolute/level
->   caps, or named handlers ADR-0044) → a separate **feasibility spike** (kernel-engineer-paired).
-> - **Landed:** `staticSplit_insert_ge` (`Metatheory.lean`, `7c781cf`, axiom-clean — the cancellation building block,
->   reusable for the spike); the 3 arms SEAMED as ADR-0043/0050 descents; ADR-0050. **LR layer (LR/Compat/Metatheory)
->   builds GREEN** (seam-5: 3 arms + `hcatch` + `:1801`); `#print axioms` `sorryAx` only on the descent set. The frozen
->   `lr_sound`/`lr_fundamental` statements are UNCHANGED (the trial `ctxApprox LWStack C` premise was reverted with A).
->   CalcVM/Surface remain separately RED pending the ◊5 re-run (unrelated to this seam).
+> **Build:** green subset `lake build Bang.Compat` = 711 jobs (kernel + Operational + Metatheory + LR +
+> Compat), 2 known descent sorries (`hcatch` + `:1801`). Full `lake build` RED by design = deferred CalcVM
+> route-B (ADR-0052), orthogonal.
 >
-> **This session also landed (surface/tooling spine, all committed + gated):** `Bang.Frontend.NamedCore` (ADR-0046 ①,
+> **Deferred units:**
+> - **CalcVM route B** — re-derive `evalD` to match the lexical kernel (ADR-0052), now keyed to the identity
+>   representation; multi-session. Whole-tree green returns when this lands.
+> - **`hcatch` + `:1801`** — the 2 remaining ADR-0043 LR descents (Compat).
+> - **`preservation_returnEscape_TODO`** — the `LWT` non-escape gate; now the escape-safety line AND the
+>   first-class-thunk-escape guard for the identity representation (ADR-0054).
+> - **Restructuring** (recorded, `core-overview.md §6`): split the Operational hub (the dispatch⟂subst seam),
+>   relocate `plug` LR→machine, reorg LR/Compat, prune legacy `splitAt` + the orphaned WC helpers. GATED on
+>   the tree gating green (the moves touch red CalcVM/Compile/Surface imports — unverifiable until route-B lands).
+>
+> **Earlier landings (surface/tooling spine, committed + gated):** `Bang.Frontend.NamedCore` (ADR-0046 ①,
 > the writable S-expr core, `9452660`) · `arch-check` import-direction fitness fn (ADR-0048, the Frontend/Core/Backend
 > V) · `check-refs` stale-reference fitness fn + `archive/` removed (`053b79c`) · `just symbols` Lean symbol index +
 > ADR-0049 (capability diagnostics via the LW pass, NOT HasCTy fusion) · the pre-commit hook now runs `just fitness`
