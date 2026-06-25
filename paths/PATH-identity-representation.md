@@ -148,3 +148,21 @@ Revised inc-3 deletions (the collapse drops MORE than before):
 
 Net effect on the metatheory: the WC keystone (the session-long hardest piece) + the entire positional
 cap-resolution theory are GONE; the only structural invariant left is non-escape.
+
+### inc 3 — dispatch/step rewrite DONE; collapse-deletion remaining
+
+DONE (commit pending): `dispatchOn` threads identity `n` (resume reinstall) · `splitAtId` (identity match)
++ `idDispatch` added · legacy `dispatch` → `idDispatch` · `Source.step` handle mints `n = handlerCount K`
++ substitutes `vcap n h.label`; perform `(.vcap n _)` → `idDispatch K n` · handleF re-keys (splitAt,
+handlerCount(+simp), handlersOf, NoWrapMiss, wrapStep, plug) · `staticSplit`/`CapResolves`/`CapResolvesKind`
+block DELETED.
+
+REMAINING (the collapse-deletion — interleaved, build-guided per-block):
+- DELETE the absolute section (`absSplit`/`absResolves`/`absResolvesKind`/`staticDispatch`, ~L366-428) +
+  `CapResolvesKind_handlersOf`/`absResolvesKind_handlersOf` (KEEP `handlersOf`(+`_append`/`handlerCount_*`)).
+- DELETE the LWT block (`LWT`/`LWVal`/`LWHandler`/`retCtx`/`LWStack`/`LWConfig`, ~L474-547) + the LWConfig
+  preservation lemmas + WC structural/orphan blocks (~L556-716).
+- DEFINE `NonEscape : Config → Prop` (first cut, inc-4 refines) + `HasConfig := HasConfigTy ∧ NonEscape`.
+- `preservation_returnEscape_TODO` (~L797): re-key to `NonEscape` (the sole obligation now).
+- capMigrate1/2 #guards (~L815): rewrite to the capability-passing shape (handle-binds-cap, perform vvar)
+  + ADD the insert-below-target witness.

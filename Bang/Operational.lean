@@ -266,43 +266,21 @@ STAYS because the CalcVM's `unwindFind` analogue + the LR's `krelS_splitAt_decom
 shape (B2/B3 re-index them onto `staticSplit`). -/
 def splitAt : EvalCtx → Label → OpId → Option (EvalCtx × Handler × EvalCtx)
   | [], _, _ => none
-  | (.handleF h :: K), ℓ, op =>
+  | (.handleF m h :: K), ℓ, op =>
       if handlesOp h ℓ op then some ([], h, K)
-      else (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ))
+      else (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF m h :: Kᵢ, h', Kₒ))
   | (fr :: K), ℓ, op =>
       (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
 
-/-! ### STATIC dispatch (ADR-0045 1b) — capability-passing, label-blind
-
-`staticSplit K cap` walks OUT `cap`-many `handleF` frames; the `(cap+1)`-th `handleF` IS the handler,
-taken WITHOUT a `handlesOp` test (the capability already named it). `letF`/`appF` frames are part of
-the captured continuation and skipped transparently. Returns `(Kᵢ, h, Kₒ)` exactly like `splitAt`, so
-`dispatchOn` (which routes by the RESOLVED handler `h`, label-carrying) is unchanged. Lifted verbatim
-from `static-dispatch-spike` (`Bang/StaticSpike.lean`). -/
-def staticSplit : EvalCtx → Nat → Option (EvalCtx × Handler × EvalCtx)
+/-- ADR-0054 IDENTITY dispatch: split the stack at the `handleF` whose IDENTITY is `n` (the capability's
+generative name). Unlike `splitAt`'s label search, this MATCHES the unique identity — migration-invariant
+(a match never re-counts, so it never shifts). Mirror of `scratch/IdentityKernelProbe.splitAtId`. -/
+def splitAtId : EvalCtx → Nat → Option (EvalCtx × Handler × EvalCtx)
   | [], _ => none
-  | (.handleF h :: K), 0 => some ([], h, K)              -- THIS handler: cap exhausted, take it
-  | (.handleF h :: K), (c+1) =>                          -- skip one handler frame (cap counts down)
-      (staticSplit K c).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ))
-  | (fr :: K), c =>                                      -- non-handler frame: transparent, keep walking
-      (staticSplit K c).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
-
-/-- The cap resolves to an in-scope handler frame: walking out `cap`-many `handleF` frames reaches a
-`handleF`. Non-`handleF` frames are transparent. This is `staticSplit`'s well-scopedness SIDE — a pure
-`Nat`/`List` structural recursion, decidable (no polymorphism). Lifted from `setrow-tension-spike`. -/
-def CapResolves : EvalCtx → Nat → Prop
-  | [], _ => False                                   -- ran off the stack: out of scope
-  | (.handleF _ :: _), 0 => True                     -- cap exhausted AT a handler: in scope
-  | (.handleF _ :: K), (c+1) => CapResolves K c      -- skip one handler, cap counts down
-  | (_ :: K), c => CapResolves K c                   -- transparent frame: keep walking
-
-/-- The kind-match refinement: the resolved handler handles `(ℓ, op)` (the RIGHT kind). Reuses the real
-`handlesOp`. Lifted from `setrow-tension-spike`. -/
-def CapResolvesKind : EvalCtx → Nat → Label → OpId → Prop
-  | [], _, _, _ => False
-  | (.handleF h :: _), 0, ℓ, op => handlesOp h ℓ op = true
-  | (.handleF _ :: K), (c+1), ℓ, op => CapResolvesKind K c ℓ op
-  | (_ :: K), c, ℓ, op => CapResolvesKind K c ℓ op
+  | (.handleF m h :: K), n =>
+      if m = n then some ([], h, K)
+      else (splitAtId K n).map (fun x => (Frame.handleF m h :: x.1, x.2.1, x.2.2))
+  | (fr :: K), n => (splitAtId K n).map (fun x => (fr :: x.1, x.2.1, x.2.2))
 
 /-- ◊4.5b-answertrack SCOPED-SEAM (ADR-0043): `(ℓ, op)` does NOT "pass through" a non-catching handler
 before reaching its catcher — the captured continuation up to the catching handler contains NO handler
@@ -313,7 +291,7 @@ captured continuation then wraps that handler, the inverse-strip case `krelS_spl
 certify (answer-determinism FALSE). COVERED: every op caught by the NEAREST enclosing handler. -/
 def NoWrapMiss : EvalCtx → Label → OpId → Prop
   | [], _, _ => True
-  | (.handleF h :: K), ℓ, op =>
+  | (.handleF _ h :: K), ℓ, op =>
       handlesOp h ℓ op = true ∨ splitAt K ℓ op = none
   | (_ :: K), ℓ, op => NoWrapMiss K ℓ op
 
@@ -343,15 +321,15 @@ resumptive handlers). Split the stack at the nearest catching frame, then:
 Reaching `[]` (no catching frame) = unhandled = stuck (`none`). The CK focus stays CLOSED: the stored
 `s`/payload `w`/heap cells are closed values (the focus is always closed), so resumption threads no
 open term and no variable budget — the grade vectors stay `[]` (ADR-0025 §grade discipline). -/
-def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option Config
+def dispatchOn (n : Nat) (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option Config
   | (Kᵢ, h, Kₒ) =>
       match h with
       | .throws _   => some (Kₒ, .ret v)                                        -- ABORT
       | .state ℓ' s =>
           if op == "get" then
-            some (Kᵢ ++ Frame.handleF (.state ℓ' s) :: Kₒ, .ret s)             -- RESUME with s
+            some (Kᵢ ++ Frame.handleF n (.state ℓ' s) :: Kₒ, .ret s)             -- RESUME with s
           else
-            some (Kᵢ ++ Frame.handleF (.state ℓ' v) :: Kₒ, .ret .vunit)        -- RESUME with unit
+            some (Kᵢ ++ Frame.handleF n (.state ℓ' v) :: Kₒ, .ret .vunit)        -- RESUME with unit
       -- transaction (ADR-0030): the multi-cell generalization of `state`. RESUME threading the
       -- updated heap (KEEP `Kᵢ`, reinstall a deep `transaction ℓ' Θ'` frame), exactly the ADR-0025
       -- state-resume pattern with a list-heap. Rollback is FREE: an abort is a zero-shot `throws`
@@ -360,14 +338,14 @@ def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option 
       | .transaction ℓ' Θ =>
           if op == "newTVar" then
             -- allocate: append the initial value `v`; the new TVar's index is the old length.
-            some (Kᵢ ++ Frame.handleF (.transaction ℓ' (Θ ++ [v])) :: Kₒ, .ret (.vint Θ.length))
+            some (Kᵢ ++ Frame.handleF n (.transaction ℓ' (Θ ++ [v])) :: Kₒ, .ret (.vint Θ.length))
           else if op == "readTVar" then
             -- read (ADR-0030 amendment, TVarRef = int, TOTAL store): payload `vint i`; return cell `i`,
             -- or the DEFAULT `vint 0` if out of range. NEVER ooms — `oom` is the fuel sentinel, so a
             -- bad read producing it would be untypable (preservation gap). The store is conceptually a
             -- total `Loc → Val` map (`getD` with `vint 0`); source refs come only from `newTVar`, so
             -- the default path is source-unreachable but kernel-total. Heap unchanged on read.
-            some (Kᵢ ++ Frame.handleF (.transaction ℓ' Θ) :: Kₒ,
+            some (Kᵢ ++ Frame.handleF n (.transaction ℓ' Θ) :: Kₒ,
                   .ret (Θ.getD ((tvarIdx v).getD 0) (.vint 0)))
           else
             -- writeTVar (ADR-0030, total store): payload `pair (vint i) w`; store `w` at cell `i`, return
@@ -376,12 +354,14 @@ def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option 
             -- since the payload type is `prod int S`).
             match v with
             | .pair iv w =>
-                some (Kᵢ ++ Frame.handleF (.transaction ℓ' (storeSet Θ ((tvarIdx iv).getD 0) w)) :: Kₒ,
+                some (Kᵢ ++ Frame.handleF n (.transaction ℓ' (storeSet Θ ((tvarIdx iv).getD 0) w)) :: Kₒ,
                       .ret .vunit)
-            | _ => some (Kᵢ ++ Frame.handleF (.transaction ℓ' Θ) :: Kₒ, .ret .vunit)
+            | _ => some (Kᵢ ++ Frame.handleF n (.transaction ℓ' Θ) :: Kₒ, .ret .vunit)
 
-def dispatch (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
-  (splitAt K ℓ op).bind (dispatchOn op v)
+/-- ADR-0054: the kernel's effect dispatch — resolve the capability's IDENTITY `n`, then route the
+matched `(Kᵢ, h, Kₒ)` through `dispatchOn n` (which reinstalls `handleF n` on a resumptive RESUME). -/
+def idDispatch (K : EvalCtx) (n : Nat) (op : OpId) (v : Val) : Option Config :=
+  (splitAtId K n).bind (dispatchOn n op v)
 
 /-! ### Absolute (level-from-root) cap resolution (ADR-0053).
 
@@ -401,7 +381,7 @@ probe (`scratch/AbsoluteCapsStepProbe.lean`); the bricks live in `Metatheory.lea
 handler skeleton rather than introducing a second notion. -/
 def handlerCount : EvalCtx → Nat
   | [] => 0
-  | .handleF _ :: K => handlerCount K + 1
+  | .handleF _ _ :: K => handlerCount K + 1
   | .letF _ :: K => handlerCount K
   | .appF _ :: K => handlerCount K
 
@@ -409,8 +389,8 @@ def handlerCount : EvalCtx → Nat
     handlerCount (Frame.letF N :: K) = handlerCount K := rfl
 @[simp] theorem handlerCount_appF (v : Val) (K : EvalCtx) :
     handlerCount (Frame.appF v :: K) = handlerCount K := rfl
-@[simp] theorem handlerCount_handleF (h : Handler) (K : EvalCtx) :
-    handlerCount (Frame.handleF h :: K) = handlerCount K + 1 := rfl
+@[simp] theorem handlerCount_handleF (n : Nat) (h : Handler) (K : EvalCtx) :
+    handlerCount (Frame.handleF n h :: K) = handlerCount K + 1 := rfl
 
 /-- Resolve an absolute root-LEVEL against the runtime stack: convert to the top-index `staticSplit`
 expects (`handlerCount K - 1 - lvl`), then reuse `staticSplit`. `lvl < handlerCount K` is
@@ -443,7 +423,7 @@ context `WCComp`/`CapResolvesKind` effectively see (caps skip plumbing). Seeding
 makes PUSH-letF/appF preservation DEFINITIONAL (`handlersOf (letF N :: K) = handlersOf K`). -/
 def handlersOf : EvalCtx → EvalCtx
   | [] => []
-  | .handleF h :: K => Frame.handleF h :: handlersOf K
+  | .handleF n h :: K => Frame.handleF n h :: handlersOf K
   | .letF _ :: K => handlersOf K
   | .appF _ :: K => handlersOf K
 
@@ -739,20 +719,23 @@ def Source.step : Config → Option Config
   -- PUSH
   | (K, .letC M N)          => some (.letF N :: K, M)
   | (K, .app M v)           => some (.appF v :: K, M)
-  | (K, .handle h M)        => some (.handleF h :: K, M)
+  | (K, .handle h M)        =>
+      -- ADR-0054: mint a fresh identity `n = handlerCount K` (Fork ii), push `handleF n h`, and
+      -- substitute the capability value `vcap n h.label` for the handle-bound var 0 in the body.
+      some (.handleF (handlerCount K) h :: K, Comp.subst (.vcap (handlerCount K) h.label) M)
   | (K, .force (.vthunk M)) => some (K, M)
   -- REDUCE
   | (.letF N :: K, .ret v)  => some (K, Comp.subst v N)
   | (.appF v :: K, .lam M)  => some (K, Comp.subst v M)
-  | (.handleF _ :: K, .ret v) => some (K, .ret v)
+  | (.handleF _ _ :: K, .ret v) => some (K, .ret v)
   -- ADT eliminators (ADR-0029): scrutinees are values, so these reduce in place.
   | (K, .case (.inl v) N₁ _)  => some (K, Comp.subst v N₁)   -- sum: left branch
   | (K, .case (.inr v) _ N₂)  => some (K, Comp.subst v N₂)   -- sum: right branch
   | (K, .split (.pair v w) N) => some (K, Comp.subst v (Comp.subst (Val.shift w) N))  -- product
   | (K, .unfold (.fold v))    => some (K, .ret v)            -- μ: fold/unfold erase
-  -- DISPATCH (ADR-0045 1b): STATIC — resolve by `cap`, route by resolved handler. `ℓ` is now inert in
-  -- the STEP (it lives in the row + on the resolved handler); `staticDispatch` uses `cap`, not `ℓ`.
-  | (K, .perform cap _ op v)  => staticDispatch K cap op v
+  -- DISPATCH (ADR-0054): IDENTITY — the capability `vcap n _` names handler `n`; match it, route by the
+  -- resolved handler (`dispatchOn` reinstalls `handleF n` on a resumptive resume).
+  | (K, .perform (.vcap n _) op v) => idDispatch K n op v
   -- stuck
   | _                       => none
 
@@ -761,14 +744,14 @@ the redex a PUSH step undoes (`step (K, fr.wrapStep c) = (fr :: K, c)`). -/
 def Frame.wrapStep : Frame → Comp → Comp
   | .letF N,    c => .letC c N
   | .appF v,    c => .app c v
-  | .handleF h, c => .handle h c
+  | .handleF _ h, c => .handle h c
 
 /-- Plug a focus back into its evaluation context (the inverse of decomposition). -/
 def plug : EvalCtx → Comp → Comp
   | [], c            => c
   | .letF N :: K, c  => plug K (.letC c N)
   | .appF v :: K, c  => plug K (.app c v)
-  | .handleF h :: K, c => plug K (.handle h c)
+  | .handleF _ h :: K, c => plug K (.handle h c)
 
 /-- `plug` peels its head frame via `wrapStep` (the structural identity `run_plug` inducts on). -/
 theorem plug_cons (fr : Frame) (K : EvalCtx) (c : Comp) :
