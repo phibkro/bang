@@ -24,11 +24,20 @@
 >   close in the typed LR, which is the NEXT phase (in flight: scoping the re-index).
 > - **Shell cap-assignment elaborator** done on `shell-elaborator-spike` (lexical effect→cap resolution; re-greens Surface; case-B = lowering error).
 >
-> **NEXT (the bulk): the TYPED LR re-index** (`Vτ/Cτ/Tτ`) — folds in the type-gate (`U φ C`, `φ≠⊥`) to close BOTH
-> obligations AND dissolve the ◊4.5b edge (`sorryAx`-zero `lr_sound`). Entry: `paths/PATH-cap-assignment-spike.md`
-> (NEXT) + `paths/PATH-typed-static-pivot.md`. Branch chain: `typed-static-r1` (kernel, current) ← `b3a` ← `1a` ←
-> main (which now has the de-staled README). Whole tree is RED downstream (CalcVM/LR/Surface) until the re-index +
-> the ◊5 CalcVM re-run land. Architecture: `docs/notes/kernel-shell-library.md`.
+> - **TYPED LR re-index — IN PROGRESS** (`paths/PATH-typed-lr-reindex.md`, the SoT for this phase; it's a dispatch
+>   RE-KEY, the LR is already typed). **THE ◊4.5b EDGE DISSOLVED BY CONSTRUCTION** (`a771cc1`,
+>   `krelS_staticSplit_decomp`: static dispatch can't produce the walk-past config, the `:1590` sorry DELETED) —
+>   the pivot's central thesis, build-verified. Course-corrected route A→B: the LR cap-discipline is CONTEXTUAL
+>   (shift↔handleF-extension cancellation), NOT cap-closedness (over-strong) NOR naive shiftCap-stability (false) —
+>   both build-refuted (ADR-0045 "Re-grounding"). Route-B `KrelS` strip banked LR-green; ONE bounded cap>0
+>   resume-relocation sorry remains in the decomp. **Remaining (handoff-ready):** (b) swap-layer reproof via the
+>   commutation + (a) mechanical Compat strip + the cancellation lemma + R1 bridge + `crelK_fund_up` re-key +
+>   **the frozen `lr_fundamental` well-capped premise (STOP-and-show)** → `sorryAx`-zero `lr_sound` (the payoff).
+>
+> **Branch chain:** `typed-static-r1` (kernel STD @ `91e7444` 1-sorry; LR @ `a771cc1`) ← `b3a` ← `1a` ← main (de-staled
+> README). Whole tree RED downstream (CalcVM/Compat/Surface) until the LR re-index + the ◊5 CalcVM re-run land.
+> **Surface design SETTLED** (parallel): ADRs 0046 (core + inference-bridged sugar), 0046-amendment (canonical core
+> = named S-expr), 0047 (sugar dialects + user macros). Architecture: `docs/notes/kernel-shell-library.md`.
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20

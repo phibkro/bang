@@ -34,3 +34,31 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
 - `lr_sound`/`lr_fundamental` (Spec.lean:188,216): **NO statement change** — the types are already in the statements (`Crel n B e c₁ c₂`). Only the AXIOM SET changes (`sorryAx` vanishes): statement-stable, axiom-strengthened. (The PATH/ADR called it a STATEMENT_CHANGE; on the actual frozen text it is NOT.)
 - `preservation`/`type_safety`/`progress` (Spec.lean:93,116,104): the REAL frozen-statement risk, via Inc 3 — a φ≠⊥ premise on `ret`/`letC` in `HasConfigTy` would change the `HasConfig` premise shape. STATEMENT_CHANGE_OK against ADR-0045 (same envelope as the existing `LWConfig` fold).
 - "Only the index moves" is OPTIMISTIC (the index already moved; the dispatch re-key is the bulk — multi-session, ~the ◊4.5b sub-block-(f) surface area) and the return-escape gate (Inc 3) is genuinely NEW machinery, not a re-index.
+
+## Status + remaining work — handoff at `a771cc1` (2026-06-25)
+
+- **Banked `a771cc1` (LR-green, 709):** route-B `KrelS`/`EnvRelK` strip (`Val.CapClosed` GONE — route A was
+  over-strong) + `closeC` route-B shapes + **the MISS dissolution** (`krelS_staticSplit_decomp` — the ◊4.5b edge
+  GONE by construction; ONE documented bounded cap>0 resume-relocation sorry at `Compat.lean:1801`). Commutation
+  lemmas banked. Kernel STD block at `91e7444` (1 sorry = the type-gate return-escape).
+- **Re-grounding:** the LR cap-discipline is CONTEXTUAL (shift↔handleF-extension cancellation) — ADR-0045
+  "Re-grounding". Routes A (CapClosed) and B-naive (shiftCap-stability) both build-REFUTED; don't re-derive them.
+- **Remaining (precisely spec'd, fresh-context-ready):**
+  - **(b) swap-layer reproof — the ONE non-mechanical piece.** `Comp/Val/Handler.substFrom_swap_closed`
+    (~`Compat:823`), `_swap_closed_ge` (~941), `shiftFrom_substFrom_closed` (~279) carry `CapClosed` ONLY on
+    their `handle` arm. Fix: quantify `{v w}` PER-CALL (into the ∀ motive) so the handle arm recurses at
+    `shiftCap v`/`shiftCap w`, discharged via the commutation `shiftCapFrom_shiftFrom` (`Val.Closed v →
+    Val.Closed (shiftCap v)`, a ~3-line helper). NO `CapClosed`. Gates `closeC_subst_comm` → the `crelK_fund`
+    binder cases.
+  - **(a) mechanical strip (~30 Compat sites)** — once (b) lands, remove `CapClosed` from `_intro`/`compatK_*`/
+    `crelK_unfold`/`coApproxC_le_of_resumeDecomp`/`krelS_append`/`*_reinstall`/`krelS_staticSplit_decomp`. Pure
+    reverse of pass-1a threading.
+  - **Pipeline (authorized):** the cancellation lemma (shift↔handleF-extension, threaded at `compatK_handle*`
+    refocus) → R1 bridge (`KrelS`→cap-resolution via `HandlerRel`) + `crelK_fund_up` dispatch re-key → close the
+    bounded cap>0 resume-relocation (`dispatchOn_append_outer` + `staticSplit_decomp`, answer type cap-witnessed)
+    → **the frozen `lr_fundamental` well-capped premise** (context-relative `WellCapped`, mirrors `type_safety`'s
+    `LWConfig`; **STOP-and-show the exact premise before editing `Spec.lean`**).
+- **Working-tree note:** at handoff the tree has lrscope's uncommitted partial (a)+(b) Compat WIP (red) on top
+  of `a771cc1` — a fresh session can `git stash`/discard it and redo (b)→(a) from `a771cc1` per this spec.
+- **End state (the payoff):** `#print axioms lr_sound`/`lr_fundamental` ⊆ {propext, Classical.choice, Quot.sound},
+  `sorryAx` GONE — the ◊4.5b edge closed.

@@ -182,3 +182,19 @@ RETURN-ESCAPE case is a typed-LR obligation (the documented scoped lemma
 `dispatch`↦`staticDispatch` re-keying) is scoped as `preservation_perform_typing_TODO`. NO v1
 expressivity loss: the ledger + every rung (pure/throws/deep/state/cell/STM) are accepted; only
 capability-ESCAPES are ill-typed. `progress`/`handleF_ret` stay axiom-clean.
+
+### Re-grounding (2026-06-25) — the LR cap-discipline is CONTEXTUAL (not cap-closedness)
+
+The typed-LR re-index surfaced that the LR's cap-discipline is **contextual** — a value's caps are meaningful
+relative to its enclosing-handler count. TWO naive framings were BUILD-REFUTED before the faithful one:
+- **Route A (`Val.CapClosed` on LR values): OVER-STRONG.** A returned `vthunk (perform 0 …)` has live
+  context-relative caps (`shiftCap` adjusts them — `WCVal.shiftCap_insert`), so it is NOT cap-closed.
+- **Route B-naive (`VrelK` shiftCap-stability, same stack): FALSE.** `shiftCap c` dispatches DIFFERENTLY in
+  the same stack (the bumped cap skips one more handler).
+- **FAITHFUL: the shift ↔ handleF-extension CANCELLATION.** `shiftCap c` running in `handleF h :: K`
+  dispatches IDENTICALLY to `c` in `K` (the +1 cap and +1 handler cancel — `WCVal.shiftCap_insert` at the
+  observation level). Threaded at the `compatK_handle*` refocus, where the machine already pushes the handleF.
+
+The ◊4.5b MISS edge DISSOLVED by construction under `staticSplit` (cap-counting, no `handlesOp` walk-past) —
+the pivot's central thesis, build-verified (`krelS_staticSplit_decomp`, the `:1590` sorry deleted; one bounded
+cap>0 resume-relocation residual remains). See `paths/PATH-typed-lr-reindex.md` for the remaining-work map.
