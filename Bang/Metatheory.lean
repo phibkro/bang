@@ -253,12 +253,13 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasCTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
-    ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
+    ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
     ?handleTransaction h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
+  case vcap => intro Γ n ℓ; simp
   case vthunk => intro γ Γ M φ B _ ih; exact ih
   case inl => intro γ Γ w A B _ ih; exact ih
   case inr => intro γ Γ w A B _ ih; exact ih
@@ -285,16 +286,20 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                 simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
                   ihv, Nat.succ.inj (Nat.succ.inj ihN), Nat.min_self]
   case unfold => intro γ Γ v A _ ih; exact ih
-  case perform => intro γ Γ _cap ℓ op w φ q A B _ _ _ _ ih; simp only [hsmul_eq_smul, GradeVec.smul_length]
-                  exact ih
-  case handleThrows => intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
-  case handleState => intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ ihM; exact ihM
+  case perform => intro γ_c γ_v Γ _c ℓ op w φ q A B _hcap _hle _harg _hres _hv ih_cap ih_v
+                  -- ADR-0054: perform now carries the cap derivation (grade γ_c) alongside the arg (γ_v):
+                  -- grade `(q • γ_v) + γ_c`. Both IHs give `_.length = Γ.length`.
+                  simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
+                    ih_v, ih_cap, Nat.min_self]
+  -- ADR-0054: handle BINDS the cap (mult `qc`), so the body grade is `qc :: γ` ⇒ the IH gives
+  -- `(qc::γ).length = (cap ℓ::Γ).length`; strip the cons (`Nat.succ.inj`) for `γ.length = Γ.length`.
+  case handleThrows => intro γ Γ ℓ M e φ q qc A _ _ _ _ ih
+                       simp only [List.length_cons] at ih; exact Nat.succ.inj ih
+  case handleState => intro γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ _ _ _ _ ihM
+                      simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
   case handleTransaction =>
-    -- the handler leaves γ/Γ unchanged ⇒ `motive M = motive (handle ...)` definitionally. After
-    -- intro-ing all value-args + the `hcells` IH, the goal is the `hM`-IH implication
-    -- `motive M → motive (handle …)`, which id discharges.
-    intro γ Γ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ _ _ _ _
-    exact fun ih => ih
+    intro γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ _ _ _ _ ihM
+    simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
 
 theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} :
@@ -303,12 +308,13 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasVTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
-    ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
+    ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
     ?handleTransaction h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
+  case vcap => intro Γ n ℓ; simp
   case vthunk => intro γ Γ M φ B _ ih; exact ih
   case inl => intro γ Γ w A B _ ih; exact ih
   case inr => intro γ Γ w A B _ ih; exact ih
@@ -335,16 +341,20 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                 simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
                   ihv, Nat.succ.inj (Nat.succ.inj ihN), Nat.min_self]
   case unfold => intro γ Γ v A _ ih; exact ih
-  case perform => intro γ Γ _cap ℓ op w φ q A B _ _ _ _ ih; simp only [hsmul_eq_smul, GradeVec.smul_length]
-                  exact ih
-  case handleThrows => intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
-  case handleState => intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ ihM; exact ihM
+  case perform => intro γ_c γ_v Γ _c ℓ op w φ q A B _hcap _hle _harg _hres _hv ih_cap ih_v
+                  -- ADR-0054: perform now carries the cap derivation (grade γ_c) alongside the arg (γ_v):
+                  -- grade `(q • γ_v) + γ_c`. Both IHs give `_.length = Γ.length`.
+                  simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
+                    ih_v, ih_cap, Nat.min_self]
+  -- ADR-0054: handle BINDS the cap (mult `qc`), so the body grade is `qc :: γ` ⇒ the IH gives
+  -- `(qc::γ).length = (cap ℓ::Γ).length`; strip the cons (`Nat.succ.inj`) for `γ.length = Γ.length`.
+  case handleThrows => intro γ Γ ℓ M e φ q qc A _ _ _ _ ih
+                       simp only [List.length_cons] at ih; exact Nat.succ.inj ih
+  case handleState => intro γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ _ _ _ _ ihM
+                      simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
   case handleTransaction =>
-    -- the handler leaves γ/Γ unchanged ⇒ `motive M = motive (handle ...)` definitionally. After
-    -- intro-ing all value-args + the `hcells` IH, the goal is the `hM`-IH implication
-    -- `motive M → motive (handle …)`, which id discharges.
-    intro γ Γ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ _ _ _ _
-    exact fun ih => ih
+    intro γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ _ _ _ _ ihM
+    simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
 
@@ -417,6 +427,7 @@ theorem HasVTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     have hi : i < Γ.length := by
       rw [List.getElem?_eq_some_iff] at hget; exact hget.1
     simp only [Val.shiftFrom]; rw [if_pos (by omega)]
+  | @vcap Γ n ℓ => rfl                            -- a capability is closed: shift is the identity
   | @vthunk γ Γ M φ B hM =>
     simp only [Val.shiftFrom]; rw [hM.shift_closed k hk]
   | @inl γ Γ w A B hw => simp only [Val.shiftFrom]; rw [hw.shift_closed k hk]
@@ -447,17 +458,21 @@ theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.shiftFrom]
     rw [hv.shift_closed k hk, hN.shift_closed (k + 2) (by simp only [List.length_cons]; omega)]
   | @unfold γ Γ v A hv => simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
-  | @perform γ Γ _ ℓ op v φ q A B _ _ _ hv =>
-    simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
-  | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
-    simp only [Comp.shiftFrom, Handler.shiftFrom]; rw [hM.shift_closed k hk]
-  | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
+  | @perform γ_c γ_v Γ c ℓ op v φ q A B hcap _ _ _ hv =>
+    -- ADR-0054: perform carries the cap value `c` (closed) + the arg `v`; both shift-fixed.
+    simp only [Comp.shiftFrom]; rw [hcap.shift_closed k hk, hv.shift_closed k hk]
+  -- ADR-0054: handle BINDS the cap, so the body context is `cap ℓ :: Γ` (length +1) ⇒ cutoff `k+1`.
+  | @handleThrows γ Γ ℓ M e φ q qc A _ _ hM _ =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]
-    rw [hM.shift_closed k hk, hs.shift_closed k (Nat.zero_le k)]
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM _ =>
-    -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH.
+    rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ hs hM _ =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]
-    rw [hM.shift_closed k hk]
+    rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega),
+      hs.shift_closed k (Nat.zero_le k)]
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ hcells hM _ =>
+    -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH at k+1.
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
 end
 
 mutual
@@ -471,6 +486,7 @@ theorem HasVTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     have hi : i < Γ.length := by
       rw [List.getElem?_eq_some_iff] at hget; exact hget.1
     simp only [Val.substFrom]; rw [if_neg (by omega), if_neg (by omega)]
+  | @vcap Γ n ℓ => rfl                            -- a capability is closed: subst is the identity
   | @vthunk γ Γ M φ B hM =>
     simp only [Val.substFrom]; rw [hM.subst_closed k hk w]
   | @inl γ Γ u A B hu => simp only [Val.substFrom]; rw [hu.subst_closed k hk w]
@@ -501,19 +517,22 @@ theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.substFrom]
     rw [hv.subst_closed k hk w, hN.subst_closed (k + 2) (by simp only [List.length_cons]; omega) _]
   | @unfold γ Γ v A hv => simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
-  | @perform γ Γ _ ℓ op v φ q A B _ _ _ hv =>
-    simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
-  -- ADR-0053: `Comp.substFrom`'s `handle` case fills the body with `w` UNCHANGED (absolute caps don't
-  -- shift on handle-crossing). For a CLOSED body, `substFrom k w M = M` — apply the IH at the filler `w`.
-  | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
-    simp only [Comp.substFrom, Handler.substFrom]; rw [hM.subst_closed k hk w]
-  | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
+  | @perform γ_c γ_v Γ c ℓ op v φ q A B hcap _ _ _ hv =>
+    -- ADR-0054: perform carries the cap value `c` (closed) + the arg `v`; both subst-fixed.
+    simp only [Comp.substFrom]; rw [hcap.subst_closed k hk w, hv.subst_closed k hk w]
+  -- ADR-0054: handle BINDS the cap, so the body context is `cap ℓ :: Γ` (length +1) ⇒ the body
+  -- substitutes at cutoff `k+1` with the lifted filler `shift w`; a CLOSED body is fixed by the IH.
+  | @handleThrows γ Γ ℓ M e φ q qc A _ _ hM _ =>
     simp only [Comp.substFrom, Handler.substFrom]
-    rw [hM.subst_closed k hk w, hs.subst_closed k (Nat.zero_le k) w]
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM _ =>
-    -- `Handler.substFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH.
+    rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w)]
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ hs hM _ =>
     simp only [Comp.substFrom, Handler.substFrom]
-    rw [hM.subst_closed k hk w]
+    rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w),
+      hs.subst_closed k (Nat.zero_le k) w]
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ hcells hM _ =>
+    -- `Handler.substFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH at k+1.
+    simp only [Comp.substFrom, Handler.substFrom]
+    rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w)]
 end
 
 /-! ### ADR-0053: `HasVTy.shiftCap`/`HasCTy.shiftCap` (the cap-shift-preserves-typing re-typing theorems)
@@ -599,6 +618,25 @@ theorem HasVTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
       rw [if_neg hik] at hbasis
       rw [hbasis]
       exact HasVTy.vvar (by rw [if_neg hik] at hgetins; exact hgetins)
+  | @vcap Γ n ℓ =>
+    -- a capability is inert (grade `zeros`, like `vunit`/`vint`) and closed (shift = id);
+    -- the inserted 0 keeps the grade `zeros` at the longer context length.
+    show HasVTy (insG (GradeVec.zeros Γ.length) k) (insT Γ k A') (Val.vcap n ℓ) (VTy.cap ℓ)
+    have : insG (GradeVec.zeros Γ.length) k
+        = (GradeVec.zeros (insT Γ k A').length : GradeVec Mult) := by
+      apply List.ext_getElem?
+      intro j
+      show ((GradeVec.zeros Γ.length).take k ++ (0:Mult) :: (GradeVec.zeros Γ.length).drop k)[j]?
+        = (GradeVec.zeros (insT Γ k A').length : GradeVec Mult)[j]?
+      rw [GradeVec.insert_get _ _ _ _ (by rw [GradeVec.zeros_length]; omega),
+        GradeVec.zeros_get]
+      simp only [GradeVec.zeros_get]
+      have hl : (insT Γ k A').length = Γ.length + 1 := by
+        simp only [insT, List.length_append, List.length_cons, List.length_take,
+          List.length_drop]; omega
+      rw [hl]
+      split_ifs <;> first | rfl | (exfalso; omega)
+    exact this ▸ HasVTy.vcap
   | @vthunk γ Γ M φ B hM =>
     simp only [Val.shiftFrom]
     exact HasVTy.vthunk (hM.weaken k hk A')
@@ -702,28 +740,41 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   | @unfold γ Γ v A hv =>
     simp only [Comp.shiftFrom]
     exact HasCTy.unfold (hv.weaken k hk A')
-  | @perform γ Γ _ ℓ op w φ q A B hmem hopArg hopRes hw =>
-    -- shiftFrom k (up ℓ op w) = up ℓ op (shiftFrom k w); grade insG (q•γ) k = q • insG γ k.
-    -- The interface premises (opArg/opRes) carry no grade content; thread verbatim.
+  | @perform γ_c γ_v Γ c ℓ op w φ q A B hcap hmem hopArg hopRes hw =>
+    -- ADR-0054: shiftFrom k (perform c op w) = perform (shift c) op (shift w); grade
+    -- insG ((q•γ_v) + γ_c) k = (q • insG γ_v k) + insG γ_c k (insG_add_smul_aux). Cap + arg both weaken.
     simp only [Comp.shiftFrom]
-    have hw' := hw.weaken k hk A'
-    have hgr : insG (q • γ) k = q • insG γ k := insG_smul q γ k
-    rw [hgr]
-    exact HasCTy.perform hmem hopArg hopRes hw'
-  | @handleThrows γ Γ ℓ M e φ q A hraise hiface hM hle =>
-    -- handle (throws ℓ) carries no value ⇒ unchanged by shift; weaken the body.
-    -- Answer-type + interface premises thread verbatim (no grade content).
+    have hl_v : γ_v.length = Γ.length := hw.length_eq
+    have hl_c : γ_c.length = Γ.length := hcap.length_eq
+    rw [show (q • γ_v) + γ_c = GradeVec.add (GradeVec.smul q γ_v) γ_c from rfl,
+      insG_add_smul_aux q γ_v γ_c k (by omega)]
+    exact HasCTy.perform (hcap.weaken k hk A') hmem hopArg hopRes (hw.weaken k hk A')
+  -- ADR-0054: handle BINDS the cap (`cap ℓ :: Γ`, mult `qc`), so the body weakens at the SHIFTED
+  -- cutoff `k+1`; `insT`/`insG` insert past the cap binder (`x :: insT Γ k A'`, `qc :: insG γ k`).
+  | @handleThrows γ Γ ℓ M e φ q qc A hraise hiface hM hle =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]
-    exact HasCTy.handleThrows hraise hiface (hM.weaken k hk A') hle
-  | @handleState γ Γ ℓ s₀ M e φ q S A hga hgr hpa hpr hif hs hM hle =>
-    -- state's stored value is CLOSED, so shift leaves it fixed (ADR-0025); weaken the body.
+    have hM' := hM.weaken (k + 1) (by simp only [List.length_cons]; omega) A'
+    have hctx : insT (VTy.cap ℓ :: Γ) (k + 1) A' = VTy.cap ℓ :: insT Γ k A' := by unfold insT; rfl
+    have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
+    rw [hctx, hgr2] at hM'
+    exact HasCTy.handleThrows hraise hiface hM' hle
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hif hs hM hle =>
+    -- state's stored value is CLOSED, so shift leaves it fixed (ADR-0025); body weakens at k+1.
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hs.shift_closed k (Nat.zero_le k)]
-    exact HasCTy.handleState hga hgr hpa hpr hif hs (hM.weaken k hk A') hle
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q A hna hnr hra hrr hwa hwr hif hcells hM hle =>
-    -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); weaken the body.
+    have hM' := hM.weaken (k + 1) (by simp only [List.length_cons]; omega) A'
+    have hctx : insT (VTy.cap ℓ :: Γ) (k + 1) A' = VTy.cap ℓ :: insT Γ k A' := by unfold insT; rfl
+    have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
+    rw [hctx, hgr2] at hM'
+    exact HasCTy.handleState hga hgr hpa hpr hif hs hM' hle
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle =>
+    -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); body weakens at k+1.
     simp only [Comp.shiftFrom, Handler.shiftFrom]
-    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells (hM.weaken k hk A') hle
+    have hM' := hM.weaken (k + 1) (by simp only [List.length_cons]; omega) A'
+    have hctx : insT (VTy.cap ℓ :: Γ) (k + 1) A' = VTy.cap ℓ :: insT Γ k A' := by unfold insT; rfl
+    have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
+    rw [hctx, hgr2] at hM'
+    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells hM' hle
 end
 
 /-- Grade at the substituted slot `k`, read off the derivation's grade vector. -/
@@ -1084,6 +1135,31 @@ private theorem subst_lam_case
   rw [hctx2] at hih
   exact HasCTy.lam hih
 
+/-- ADR-0054 `handle*` body descent: `handle` BINDS the capability (`Cap ℓ` at index 0, mult `qc`), so the
+body `M` descends under a fresh binder EXACTLY like `lam` — only the binder TYPE differs (`VTy.cap ℓ`).
+Shared by all three handle arms (the interface/grade premises thread verbatim; only the body needs the
+binder-shift). Mirrors `subst_lam_case`. -/
+private theorem subst_handle_body
+    (Δ Γ : TyCtx Eff Mult) (A : VTy Eff Mult) (γ_v : GradeVec Mult) (v : Val)
+    (hv : HasVTy γ_v (Δ ++ Γ) v A)
+    {γ : GradeVec Mult} {ℓ : Label} {M : Comp} {e : Eff} {q qc : Mult} {A₀ : VTy Eff Mult}
+    (hM : HasCTy (qc :: γ) (VTy.cap ℓ :: (Δ ++ A :: Γ)) M e (CTy.F q A₀))
+    (ih : CsubstMotive (qc :: γ) (VTy.cap ℓ :: (Δ ++ A :: Γ)) M e (CTy.F q A₀) hM) :
+    HasCTy (qc :: Sgrade γ_v Δ.length γ) (VTy.cap ℓ :: (Δ ++ Γ))
+           (Comp.substFrom (Δ.length + 1) (Val.shift v) M) e (CTy.F q A₀) := by
+  have hk0 : (0 : Nat) ≤ (Δ ++ Γ).length := Nat.zero_le _
+  have hvw := hv.weaken 0 hk0 (VTy.cap ℓ)
+  have hctx : insT (Δ ++ Γ) 0 (VTy.cap ℓ) = (VTy.cap ℓ :: Δ) ++ Γ := by unfold insT; simp
+  have hgr : insG γ_v 0 = (0 : Mult) :: γ_v := by unfold insG; simp
+  rw [hctx, hgr] at hvw
+  have hΓeq : VTy.cap ℓ :: (Δ ++ A :: Γ) = (VTy.cap ℓ :: Δ) ++ A :: Γ := by simp
+  have hih := ih (VTy.cap ℓ :: Δ) Γ A ((0 : Mult) :: γ_v) (Val.shiftFrom 0 v) hΓeq hvw
+  rw [List.length_cons] at hih
+  rw [Sgrade_cons] at hih
+  have hctx2 : (VTy.cap ℓ :: Δ) ++ Γ = VTy.cap ℓ :: (Δ ++ Γ) := by simp
+  rw [hctx2] at hih
+  exact hih
+
 /-- `app` case. -/
 private theorem subst_app_case
     (Δ Γ : TyCtx Eff Mult) (A : VTy Eff Mult) (γ_v : GradeVec Mult) (v : Val)
@@ -1233,7 +1309,7 @@ theorem HasCTy.subst_gen
            (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B := by
   refine HasCTy.rec
     (motive_1 := VsubstMotive) (motive_2 := CsubstMotive)
-    ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
+    ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
     ?handleTransaction
     hc Δ Γ A γ_v v rfl hv
@@ -1251,6 +1327,12 @@ theorem HasCTy.subst_gen
     intro Γ₀ i A₀ hget Δ Γ A γ_v v hΓ hv
     subst hΓ
     exact subst_vvar_case Δ Γ A γ_v v hv i A₀ hget
+  case vcap =>
+    -- ADR-0054: a capability is inert (grade `zeros`) and closed (subst = id), like `vunit`/`vint`.
+    intro Γ₀ n ℓ Δ Γ A γ_v v hΓ hv
+    subst hΓ
+    rw [show Val.substFrom Δ.length v (Val.vcap n ℓ) = Val.vcap n ℓ from by rw [Val.substFrom]]
+    exact subst_leaf_zeros Δ Γ A γ_v v hv (Val.vcap n ℓ) (VTy.cap ℓ) HasVTy.vcap
   case vthunk =>
     intro γ Γ₀ M φ B hM ih Δ Γ A γ_v v hΓ hv
     subst hΓ
@@ -1323,37 +1405,49 @@ theorem HasCTy.subst_gen
     rw [Comp.substFrom]
     exact HasCTy.unfold (ih Δ Γ A γ_v v rfl hv)
   case perform =>
-    intro γ Γ₀ _cap ℓ op w φ q A₀ B₀ hmem hopArg hopRes hw ih Δ Γ A γ_v v hΓ hv
+    -- ADR-0054: perform now carries the cap derivation (grade γ_cp) alongside the arg (γ_a); the
+    -- substituted grade `Sgrade k ((q•γ_a) + γ_cp)` reshapes via `Sgrade_add` + `Sgrade_smul` (the
+    -- `pair`-case combinator over the `ret`-case scalar). Both sub-derivations re-type at the filler `v`.
+    intro γ_cp γ_a Γ₀ cp ℓ op w φ q A₀ B₀ hcap hmem hopArg hopRes hw ih_cap ih_w Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom]
-    -- Sgrade γ_v k (q • γ) = q • Sgrade γ_v k γ. Interface premises thread verbatim.
-    simp only [hsmul_eq_smul, Sgrade_smul]
-    exact HasCTy.perform hmem hopArg hopRes (ih Δ Γ A γ_v v rfl hv)
+    have hk : Δ.length < (Δ ++ A :: Γ).length := by rw [List.length_append, List.length_cons]; omega
+    have hl_a : γ_a.length = (Δ ++ A :: Γ).length := hw.length_eq
+    have hl_cp : γ_cp.length = (Δ ++ A :: Γ).length := hcap.length_eq
+    have hvl : γ_v.length = (Δ ++ A :: Γ).length - 1 := by
+      rw [hv.length_eq, List.length_append, List.length_append, List.length_cons]; omega
+    rw [show (q • γ_a) + γ_cp = GradeVec.add (GradeVec.smul q γ_a) γ_cp from rfl,
+      Sgrade_add γ_v Δ.length (GradeVec.smul q γ_a) γ_cp
+        (by rw [GradeVec.smul_length]; omega) (by omega)
+        (by rw [GradeVec.smul_length]; omega) (by rw [GradeVec.smul_length]; omega),
+      Sgrade_smul]
+    exact HasCTy.perform (ih_cap Δ Γ A γ_v v rfl hv) hmem hopArg hopRes (ih_w Δ Γ A γ_v v rfl hv)
   -- ADR-0053: `Comp.substFrom`'s `handle` arm fills the body with `v` UNCHANGED (absolute caps don't
   -- shift on handle-crossing). The body IH re-types it at the filler `v` directly — no `HasVTy.shiftCap`,
   -- no cap-shift. This is the STD-block simplification the absolute-cap representation buys.
   case handleThrows =>
-    intro γ Γ₀ ℓ M e φ q A₀ hraise hiface hM hle ih Δ Γ A γ_v v hΓ hv
+    -- ADR-0054: handle BINDS the cap (`qc`); the body descends under it (subst_handle_body).
+    intro γ Γ₀ ℓ M e φ q qc A₀ hraise hiface hM hle _ihM Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
-    exact HasCTy.handleThrows hraise hiface (ih Δ Γ A γ_v v rfl hv) hle
+    exact HasCTy.handleThrows hraise hiface (subst_handle_body Δ Γ A γ_v v hv hM _ihM) hle
   case handleState =>
-    intro γ Γ₀ ℓ s₀ M e φ q S A₀ hga hgr hpa hpr hif hs hM hle _ihs ihM Δ Γ A γ_v v hΓ hv
+    intro γ Γ₀ ℓ s₀ M e φ q qc S A₀ hga hgr hpa hpr hif hs hM hle _ihs ihM Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
-    -- the stored state is CLOSED ⇒ substFrom leaves it fixed (ADR-0025)
+    -- the stored state is CLOSED ⇒ substFrom leaves it fixed (ADR-0025); body descends under the cap.
     rw [hs.subst_closed Δ.length (Nat.zero_le _) _]
     exact HasCTy.handleState hga hgr hpa hpr hif hs
-      (ihM Δ Γ A γ_v v rfl hv) hle
+      (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle
   case handleTransaction =>
     -- subst through a transaction handler. `Handler.substFrom` leaves the heap untouched (closed
-    -- cells, ADR-0030), so only the body substitutes (via `ihM`); structural, like `handleState`.
-    intro γ Γ₀ ℓ Θ₀ M e φ q A₀ hna hnr hra hrr hwa hwr hif hcells hM hle _hcellsIH ihM
+    -- cells, ADR-0030), so only the body substitutes (under the cap binder); like `handleState`.
+    intro γ Γ₀ ℓ Θ₀ M e φ q qc A₀ hna hnr hra hrr hwa hwr hif hcells hM hle _hcellsIH ihM
       Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
     exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells
-      (ihM Δ Γ A γ_v v rfl hv) hle
+      (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
