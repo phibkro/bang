@@ -79,6 +79,30 @@ carried as explicit DATA on the value — not a single integer counted from anyw
   incompatible with BANG's first-class thunks). Effekt's System C boxing (capture-set types, OOPSLA'22)
   is the recorded post-v1 expressiveness upgrade if escaped capabilities must be re-usable.
 
+## Amendment (2026-06-25, during implementation) — the invariant COLLAPSE
+
+Implementing inc 2/3 surfaced a major simplification (operator-approved). ADR-0045 introduced the separate
+`WellCapped`/`LWConfig` structural invariant *because* "typing is cap-irrelevant" — the positional cap was
+a bare `Nat`, invisible to typing, so cap-resolution needed its own invariant. **Under identity caps that
+premise is false:** the capability is a value `c : Cap ℓ` and `HasCTy.perform` *requires* it, so typing is
+now cap-RELEVANT. Resolution becomes a TYPING + lexical-scoping property (a `vvar : Cap ℓ` in scope ⟹ its
+binding `handle` lexically encloses the `perform` ⟹ that handler is on the stack when it fires; runtime
+`vcap n` names the just-installed `handleF n`).
+
+**Decision: COLLAPSE the well-cappedness invariant into typing.**
+```
+HasConfig = HasConfigTy ∧ LWConfig (positional resolution + WC keystone + absResolvesKind + shiftCap)
+      ↓
+HasConfig = HasConfigTy ∧ NonEscape        — NonEscape = capabilities don't outlive their handler
+```
+The ENTIRE positional well-cappedness machinery dissolves (the WC keystone — the session-long hard piece —
+`absResolvesKind`/`CapResolves`/`staticSplit`/`absSplit` and the shift theory are DELETED). The sole
+remaining structural obligation is **non-escape**, which IS the existing `preservation_returnEscape_TODO`,
+now promoted from one clause to the whole invariant. Mirrors the research (Effekt: capability-passing makes
+resolution lexical, not a runtime-searched invariant). The exact `NonEscape` definition is the inc-4
+metatheory crux (revealed by what `preservation`/`progress` need; the thunk-escape case is the subtle part,
+gated as before). Frozen-statement-safe: `preservation`/`progress`/`type_safety` stay stated over `HasConfig`.
+
 ## Confirmation
 
 - Build-gated unsoundness witnesses (this session): `scratch/MigrationSoundnessProbe.lean` (the

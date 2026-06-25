@@ -129,3 +129,22 @@ The dispatch rewrite, by operation (use `scratch/IdentityKernelProbe` as the blu
 - **Source.step:** handle `(K, handle h M) ↦ (handleF (handlerCount K) h :: K, subst0 (vcap (handlerCount K)
   h.label) M)`; perform `(K, perform (vcap n _) op v) ↦ idDispatch K n op v`; handleF-return drops n.
 - **capMigrate1/2 #guards:** rewrite to the new shape + ADD the insert-below-target witness (reads its own state).
+
+### inc 3/4 — the INVARIANT COLLAPSE (operator-approved; ADR-0054 amendment)
+
+Major simplification: under identity caps, resolution is TYPED (`c : Cap ℓ`), so the separate positional
+`WellCapped`/`LWConfig` invariant DISSOLVES. `HasConfig = HasConfigTy ∧ NonEscape`.
+
+Revised inc-3 deletions (the collapse drops MORE than before):
+- DELETE all positional resolution: `staticSplit`/`CapResolves`/`CapResolvesKind`/`absSplit`/`absResolves`/
+  `absResolvesKind`/`staticDispatch` + their proof lemmas + the WC orphans (as before) AND the OLD
+  `LWT`/`LWVal`/`LWHandler`/`LWStack`/`LWConfig`/`retCtx` positional machinery.
+- ADD identity dispatch (`splitAtId`/`idDispatch`, dispatchOn threads `n` for resume reinstall) + `Source.step`.
+- DEFINE `HasConfig := HasConfigTy ∧ NonEscape`. NonEscape = capabilities don't outlive their handler (the
+  identity-non-escape; the thunk-escape case is the subtle bit). For inc 3, a first-cut `NonEscape` to compile;
+  **inc 4 (Metatheory) pins its exact form** — preservation/progress reveal what's needed (the thunk-escape =
+  the old `preservation_returnEscape_TODO`, now the sole structural obligation, gated as before).
+- progress's perform case: typing gives `Cap ℓ` + NonEscape gives `handleF n` on-stack → `idDispatch` succeeds.
+
+Net effect on the metatheory: the WC keystone (the session-long hardest piece) + the entire positional
+cap-resolution theory are GONE; the only structural invariant left is non-escape.
