@@ -1759,14 +1759,11 @@ theorem HasStack.weaken_eff {K : EvalCtx} {e e' : Eff} {C : CTy Eff Mult}
     exact ⟨eo, le_refl _,
       HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells (le_trans hle hdis) hsub⟩
 
-/- ADR-0054 STEP-4 (bankable milestone): the E.1c concat re-typing lemmas below are STEP-5
-infrastructure — they re-type the `perform` DISPATCH reduct, which in STEP 4 is the documented sorry in
-`preservation_proof`. They are COMMENTED OUT here (preserved verbatim in git + this block) because they
-still carry the OLD positional `Frame.handleF (Handler.throws _)` shape (no identity `n`) and peel
-`HasStack` frames with pre-ADR-0054 patterns. STEP 5 RE-KEYS them onto `splitAtId`/`idDispatch` AND
-discharges the perform sorry as ONE unit (the re-typing is exactly what the sorry needs). Unused elsewhere.
+/-! ### E.1c label-blind concat decomposition (the STATIC re-typing core, ADR-0045 1b → ADR-0054 STEP-5)
 
-/-! ### E.1c label-blind concat decomposition (the STATIC re-typing core, ADR-0045 1b)
+RE-KEYED onto identity dispatch (STEP 5): the boundary frame carries the identity `n`
+(`Frame.handleF n (Handler.…)`), and the resume lemmas reinstall `handleF n (…)` (matching `dispatchOn`'s
+reinstall). The `Kᵢ`-peeling is unchanged (label-blind). Used by `preservation_proof`'s perform case.
 
 Given `HasStack (Kᵢ ++ handleF h :: Kₒ) e C eo Co`, peel `Kᵢ` frame-by-frame to expose the boundary
 `handleF h` frame's typing and re-type either the OUTER `Kₒ` (throws abort) or the RESUMED stack
@@ -1777,9 +1774,9 @@ already located the boundary, so no `handlesOp`-driven search/skip recursion is 
 
 /-- THROWS abort re-typing (static). The boundary handler is a `throws ℓ'` frame; type the outer `Kₒ`
 at the throws answer type `A_h = opArg ℓ' "raise"`, whole-program effect `eo' ≤ eo`. Induct on `Kᵢ`. -/
-theorem HasStack.concat_throws_typed {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {e : Eff} {C : CTy Eff Mult}
+theorem HasStack.concat_throws_typed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {e : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
-    HasStack (Kᵢ ++ Frame.handleF (Handler.throws ℓ') :: Kₒ) e C eo Co →
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.throws ℓ') :: Kₒ) e C eo Co →
     ∃ q A_h eo', eo' ≤ eo
       ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "raise" = some A_h
       ∧ HasStack Kₒ ⊥ (CTy.F q A_h) eo' Co := by
@@ -1794,9 +1791,9 @@ theorem HasStack.concat_throws_typed {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {e : E
     cases hK with
     | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
     | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
-    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
-    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
-    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
 
 /-- STATE resume re-typing (static). The boundary handler is a `state ℓ' s` frame; reinstall a
 `state ℓ' s'` frame (any closed `s' : S`, `S = opRes ℓ' "get"`) over the same `Kᵢ`/`Kₒ`, re-typing the
@@ -1804,19 +1801,19 @@ resumed stack at the SAME `e C`. Each `Kᵢ` frame is rebuilt by `cases hK` (so 
 incl. nested `state`/`transaction` frames — is preserved, not lost to `handleAny_inv`). This is the
 WellCapped-under-resume core: the resumed stack has the IDENTICAL frame skeleton (only `s↦s'` at one
 `handleF`), which is why the static cap of every buried perform still resolves. -/
-theorem HasStack.concat_state_resume {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s s' : Val} {S : VTy Eff Mult}
+theorem HasStack.concat_state_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s s' : Val} {S : VTy Eff Mult}
     {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
-    HasStack (Kᵢ ++ Frame.handleF (Handler.state ℓ' s) :: Kₒ) e C eo Co →
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.state ℓ' s) :: Kₒ) e C eo Co →
     EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "get" = some S →
     HasVTy [] [] s' S →
     ∃ eo', eo' ≤ eo
-      ∧ HasStack (Kᵢ ++ Frame.handleF (Handler.state ℓ' s') :: Kₒ) e C eo' Co := by
+      ∧ HasStack (Kᵢ ++ Frame.handleF n (Handler.state ℓ' s') :: Kₒ) e C eo' Co := by
   intro hK hgetRes hs'
   induction Kᵢ generalizing e C with
   | nil =>
     simp only [List.nil_append] at hK ⊢
     cases hK with
-    | @stateF _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub =>
+    | @stateF _ _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub =>
       have hSeq : S = S0 := by rw [hgr] at hgetRes; exact (Option.some.inj hgetRes).symm
       subst hSeq
       exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs' hle hsub⟩
@@ -1829,13 +1826,13 @@ theorem HasStack.concat_state_resume {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s s' 
     | @appF _ _ _ _ q A B _ hv hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
-    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hsub'⟩
-    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hsub'⟩
-    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hsub'⟩
 
@@ -1843,18 +1840,18 @@ theorem HasStack.concat_state_resume {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s s' 
 boundary `transaction ℓ' Θ` frame is reinstalled as `transaction ℓ' Θ'` (any all-`int`-cells heap `Θ'`)
 over the same `Kᵢ`/`Kₒ`. The interface premises (facts about `ℓ'`'s `EffSig`, heap-invariant) are
 passed in to re-discharge the reinstalled frame. -/
-theorem HasStack.concat_transaction_resume {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ Θ' : Store}
+theorem HasStack.concat_transaction_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ Θ' : Store}
     {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
-    HasStack (Kᵢ ++ Frame.handleF (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
     (∀ cell ∈ Θ', HasVTy [] [] cell (VTy.int : VTy Eff Mult)) →
     ∃ eo', eo' ≤ eo
-      ∧ HasStack (Kᵢ ++ Frame.handleF (Handler.transaction ℓ' Θ') :: Kₒ) e C eo' Co := by
+      ∧ HasStack (Kᵢ ++ Frame.handleF n (Handler.transaction ℓ' Θ') :: Kₒ) e C eo' Co := by
   intro hK hcells'
   induction Kᵢ generalizing e C with
   | nil =>
     simp only [List.nil_append] at hK ⊢
     cases hK with
-    | @transactionF _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+    | @transactionF _ _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
       exact ⟨eo, le_refl _, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells' hle hsub⟩
   | cons fr Kᵢ ih =>
     simp only [List.cons_append] at hK ⊢
@@ -1865,22 +1862,22 @@ theorem HasStack.concat_transaction_resume {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} 
     | @appF _ _ _ _ q A B _ hv hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
-    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hsub'⟩
-    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hsub'⟩
-    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hsub'⟩
 
 /-- The boundary `state ℓ' s` frame (located by the cap) carries a CLOSED stored state of type
 `S = opRes ℓ' "get"` and the get/put interface signatures — read off by peeling `Kᵢ` to the boundary
 (`cases hK`). The static analogue of `splitAt_state_closed`, over the concat. -/
-theorem HasStack.concat_state_closed {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s : Val} {e : Eff}
+theorem HasStack.concat_state_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s : Val} {e : Eff}
     {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
-    HasStack (Kᵢ ++ Frame.handleF (Handler.state ℓ' s) :: Kₒ) e C eo Co →
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.state ℓ' s) :: Kₒ) e C eo Co →
     ∃ S, EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "get" = some S
       ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "put" = some S
       ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "put" = some VTy.unit
@@ -1889,22 +1886,22 @@ theorem HasStack.concat_state_closed {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s : V
   | nil =>
     intro hK; simp only [List.nil_append] at hK
     cases hK with
-    | @stateF _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub => exact ⟨S0, hgr, hpa, hpr, hs⟩
+    | @stateF _ _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub => exact ⟨S0, hgr, hpa, hpr, hs⟩
   | cons fr Kᵢ ih =>
     intro hK; simp only [List.cons_append] at hK
     cases hK with
     | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
     | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
-    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
-    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
-    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
 
 /-- The boundary `transaction ℓ' Θ` frame (located by the cap) carries a CLOSED all-`int` heap and the
 monomorphic-`int` stm interface signatures — read off by peeling `Kᵢ` to the boundary. The static
 analogue of `splitAt_transaction_store`, over the concat. -/
-theorem HasStack.concat_transaction_store {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ : Store} {e : Eff}
+theorem HasStack.concat_transaction_store {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ : Store} {e : Eff}
     {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
-    HasStack (Kᵢ ++ Frame.handleF (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "newTVar" = some VTy.int
       ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "newTVar" = some VTy.int
       ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "readTVar" = some VTy.int
@@ -1918,18 +1915,16 @@ theorem HasStack.concat_transaction_store {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {
   | nil =>
     intro hK; simp only [List.nil_append] at hK
     cases hK with
-    | @transactionF _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+    | @transactionF _ _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
       exact ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩
   | cons fr Kᵢ ih =>
     intro hK; simp only [List.cons_append] at hK
     cases hK with
     | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
     | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
-    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
-    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
-    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
--- END ADR-0054 STEP-4 commented concat block (re-keyed + re-enabled in STEP 5).
--/
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
 
 /-! ### E.1d STEP-5: identity-dispatch decomposition (`splitAtId_decomp`) -/
 
