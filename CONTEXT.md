@@ -596,3 +596,9 @@ This file is rewritten when:
 
 Do NOT rewrite for: routine commits, in-path progress, casual notes. Those
 belong in the active path's `PATH-*.md`.
+
+**On position SHAs.** An `@ <sha>` in the Position block marks a STABLE
+conceptual waypoint — the commit where a milestone settled — NOT a live HEAD
+pointer. Mid-port, HEAD legitimately runs a few commits ahead of the recorded
+SHA; that is normal in-path progress, not drift. The SHA is updated when a new
+checkpoint settles (the bullets above), not on every commit.
