@@ -67,14 +67,22 @@ theorem capMigrate2_LWT : LWT [] [] capMigrate2 := by
   simp only [capMigrate2, LWT, LWVal, LWHandler]
   exact ⟨trivial, ⟨state1_resolves_get _, trivial⟩, trivial, trivial, trivial⟩
 
-/-! ### 2. case B — ILL-TYPED under the kernel `LWT` (the capability escape) + stuck. -/
+/-! ### 2. case B — ILL-TYPED under the kernel `LWT` (the capability escape). -/
 
 private def escapeM : Comp :=
   .handle (.state 1 .vunit) (.ret (.vthunk (.perform 0 1 "get" .vunit)))
 private def progB : Comp :=
   .letC escapeM (.handle (.state 1 .vunit) (.force (.vvar 0)))
-private def progB_stuck : Bool := match Source.eval 300 progB with | .stuck => true | _ => false
-#guard progB_stuck
+
+-- ADR-0053 BEHAVIORAL NOTE — the escape's RUNTIME manifestation moved (sound), so the regression
+-- oracle moved with it. Under OLD de-Bruijn caps the escaped `{perform 0}` thunk's cap was SHIFTED
+-- out of range as it crossed the fresh `handle` (subst), so `progB` ran STUCK. That stuckness was a
+-- SHIFT ARTIFACT, not a safety property. Under ABSOLUTE caps there is no shift, so `progB` now
+-- TERMINATES. This is SOUND: `progB` is LWT-ILL-TYPED (`progB_ill_typed`, below — STILL holds), so
+-- type-safety promises nothing about it and its runtime outcome is don't-care. The safety oracle for
+-- the escape is therefore the TYPING rejection (`progB_ill_typed`, which survives the migration), NOT
+-- a `Source.eval` outcome. The old `#guard progB_stuck` is RETIRED (it pinned the representation
+-- artifact); `progB_ill_typed` is the regression that encodes the invariant.
 
 /-- case B's escape is ILL-TYPED under the kernel `LWT`: the handle body `ret {get}` is checked with
 return-ctx = OLD S = [], so `perform 0` must resolve against [] — `CapResolvesKind [] 0 1 "get" = False`.

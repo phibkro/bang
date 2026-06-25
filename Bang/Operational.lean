@@ -149,10 +149,12 @@ def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
   | .lam M       => .lam (Comp.substFrom (k + 1) (Val.shift v) M)
   | .app M w     => .app (Comp.substFrom k v M) (Val.substFrom k v w)
   | .perform cap ℓ op w   => .perform cap ℓ op (Val.substFrom k v w)
-  -- ADR-0045 amendment: `handle` BINDS a capability. The filler `v` crosses into `M` under one extra
-  -- `handleF h` frame, so its ambient caps bump (`Val.shiftCap`) — exactly as `Val.shift` bumps the
-  -- variable index under a `lam`/`letC` binder. (`v`'s var-binding is unchanged; handle binds no var.)
-  | .handle h M  => .handle (Handler.substFrom k v h) (Comp.substFrom k (Val.shiftCap v) M)
+  -- ADR-0053: caps are ABSOLUTE root-levels, so crossing the `handle` cap-binder does NOT shift them
+  -- (a root-level names a handler from the program root, invariant under where the term sits). The
+  -- filler `v` enters `M` UNCHANGED — `handle` adds a handler at the TOP, which leaves every existing
+  -- root-level untouched (migration-invariance, `absSplit_stable_under_top_push`). This dissolves the
+  -- de-Bruijn shift wall (ADR-0050). (`v`'s var-binding is unchanged; handle binds no var.)
+  | .handle h M  => .handle (Handler.substFrom k v h) (Comp.substFrom k v M)
   -- ADT eliminators: `case` branches descend under one binder, `split` under two.
   | .case w N₁ N₂ => .case (Val.substFrom k v w)
       (Comp.substFrom (k + 1) (Val.shift v) N₁) (Comp.substFrom (k + 1) (Val.shift v) N₂)
@@ -216,10 +218,9 @@ theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
         Comp.substFrom_shiftFrom k v M, Val.substFrom_shiftFrom k v w]
   | .perform cap ℓ op w   => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
   | .handle h M  => by
-      -- ADR-0045 amendment: the body's filler is `shiftCap v` (handle binds a cap). The β-identity
-      -- still holds — instantiate the IH at `(Val.shiftCap v)` rather than `v`.
+      -- ADR-0053: caps are absolute root-levels — the body's filler is `v` UNCHANGED (no cap-shift).
       simp only [Comp.shiftFrom, Comp.substFrom,
-        Handler.substFrom_shiftFrom k v h, Comp.substFrom_shiftFrom k (Val.shiftCap v) M]
+        Handler.substFrom_shiftFrom k v h, Comp.substFrom_shiftFrom k v M]
   | .case w N₁ N₂ => by
       simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w,
         Comp.substFrom_shiftFrom (k + 1) (Val.shift v) N₁,
@@ -426,11 +427,47 @@ def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option 
 def dispatch (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
   (splitAt K ℓ op).bind (dispatchOn op v)
 
-/-- STATIC dispatch (ADR-0045 1b): resolve the handler by CAPABILITY (`staticSplit K cap`), then route
-the resolved `(Kᵢ, h, Kₒ)` through the UNCHANGED `dispatchOn` (which reads the handler's kind/label).
-This is what `Source.step` now uses for `perform`; `dispatch` (label search) is retired to legacy. -/
+/-! ### Absolute (level-from-root) cap resolution (ADR-0053).
+
+The cap field of `perform` is a ROOT-LEVEL (counted from the program root / stack bottom; `lvl = 0`
+is the OUTERMOST handler), NOT a de-Bruijn outward index. Root-levels are migration-INVARIANT: a
+cap-carrying thunk cannot escape its handler (the `LWT` return-escape gate, ADR-0045 D), so a pending
+`perform`'s target handler is always still on the stack when it fires, and migration only pushes
+handlers ABOVE the target — never pops below it. So crossing a `handle` does NOT shift the cap
+(`Comp.substFrom` leaves it untouched), which DISSOLVES the de-Bruijn shift wall (ADR-0050) by
+construction. Resolution converts the root-level to the top-index `staticSplit` consumes:
+`topIndex = handlerCount K - 1 - lvl`. The conversion modulus is `handlerCount` (= `handlersOf` length,
+the single source of truth — `handlerCount_eq_handlersOf_length`). Verified sorry-free in the de-risk
+probe (`scratch/AbsoluteCapsStepProbe.lean`); the bricks live in `Metatheory.lean`. -/
+
+/-- Number of `handleF` frames in a context — the level↔index conversion modulus. Equal to
+`(handlersOf K).length` (`handlerCount_eq_handlersOf_length`), so the modulus reuses the existing
+handler skeleton rather than introducing a second notion. -/
+def handlerCount : EvalCtx → Nat
+  | [] => 0
+  | .handleF _ :: K => handlerCount K + 1
+  | .letF _ :: K => handlerCount K
+  | .appF _ :: K => handlerCount K
+
+@[simp] theorem handlerCount_letF (N : Comp) (K : EvalCtx) :
+    handlerCount (Frame.letF N :: K) = handlerCount K := rfl
+@[simp] theorem handlerCount_appF (v : Val) (K : EvalCtx) :
+    handlerCount (Frame.appF v :: K) = handlerCount K := rfl
+@[simp] theorem handlerCount_handleF (h : Handler) (K : EvalCtx) :
+    handlerCount (Frame.handleF h :: K) = handlerCount K + 1 := rfl
+
+/-- Resolve an absolute root-LEVEL against the runtime stack: convert to the top-index `staticSplit`
+expects (`handlerCount K - 1 - lvl`), then reuse `staticSplit`. `lvl < handlerCount K` is
+well-scopedness (an in-range level always resolves — `absSplit_isSome_of_lt`). -/
+def absSplit (K : EvalCtx) (lvl : Nat) : Option (EvalCtx × Handler × EvalCtx) :=
+  staticSplit K (handlerCount K - 1 - lvl)
+
+/-- STATIC dispatch (ADR-0045 1b / ADR-0053): resolve the handler by CAPABILITY — an ABSOLUTE
+root-level cap (`absSplit K cap` converts level→top-index), then route the resolved `(Kᵢ, h, Kₒ)`
+through the UNCHANGED `dispatchOn` (which reads the handler's kind/label). This is what `Source.step`
+uses for `perform`; `dispatch` (label search) is retired to legacy. -/
 def staticDispatch (K : EvalCtx) (cap : Nat) (op : OpId) (v : Val) : Option Config :=
-  (staticSplit K cap).bind (dispatchOn op v)
+  (absSplit K cap).bind (dispatchOn op v)
 
 /-! ### Well-capped judgement (ADR-0045 B3a) — the cap-scoping invariant `HasConfig` carries
 
@@ -533,46 +570,13 @@ theorem handlersOf_append (K K' : EvalCtx) : handlersOf (K ++ K') = handlersOf K
   | nil => rfl
   | cons fr K ih => cases fr <;> simp only [handlersOf, List.cons_append, ih]
 
-/-! ### Absolute (level-from-root) cap resolution (ADR-0053).
-
-The cap field of `perform` is a ROOT-LEVEL (counted from the program root / stack bottom; `lvl = 0`
-is the OUTERMOST handler), NOT a de-Bruijn outward index. Root-levels are migration-INVARIANT: a
-cap-carrying thunk cannot escape its handler (the `LWT` return-escape gate, ADR-0045 D), so a pending
-`perform`'s target handler is always still on the stack when it fires, and migration only pushes
-handlers ABOVE the target — never pops below it. So crossing a `handle` does NOT shift the cap
-(`Comp.substFrom` leaves it untouched), which DISSOLVES the de-Bruijn shift wall (ADR-0050) by
-construction. Resolution converts the root-level to the top-index `staticSplit` consumes:
-`topIndex = handlerCount K - 1 - lvl`. The conversion modulus is `handlerCount` (= `handlersOf` length,
-the single source of truth). Verified sorry-free in the de-risk probe (`scratch/AbsoluteCapsStepProbe.lean`). -/
-
-/-- Number of `handleF` frames in a context — the level↔index conversion modulus. Equal to
-`(handlersOf K).length` (`handlerCount_eq_handlersOf_length`), so the modulus reuses the existing
-handler skeleton rather than introducing a second notion. -/
-def handlerCount : EvalCtx → Nat
-  | [] => 0
-  | .handleF _ :: K => handlerCount K + 1
-  | .letF _ :: K => handlerCount K
-  | .appF _ :: K => handlerCount K
-
-/-- `handlerCount K = (handlersOf K).length` — the conversion modulus IS the handler skeleton length. -/
+/-- `handlerCount K = (handlersOf K).length` — the conversion modulus IS the handler skeleton length
+(`handlerCount` defined above with the dispatch family; this ties it to the existing skeleton, SSoT). -/
 theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
     handlerCount K = (handlersOf K).length := by
   induction K with
   | nil => rfl
   | cons fr K ih => cases fr <;> simp [handlerCount, handlersOf, ih]
-
-@[simp] theorem handlerCount_letF (N : Comp) (K : EvalCtx) :
-    handlerCount (Frame.letF N :: K) = handlerCount K := rfl
-@[simp] theorem handlerCount_appF (v : Val) (K : EvalCtx) :
-    handlerCount (Frame.appF v :: K) = handlerCount K := rfl
-@[simp] theorem handlerCount_handleF (h : Handler) (K : EvalCtx) :
-    handlerCount (Frame.handleF h :: K) = handlerCount K + 1 := rfl
-
-/-- Resolve an absolute root-LEVEL against the runtime stack: convert to the top-index `staticSplit`
-expects (`handlerCount K - 1 - lvl`), then reuse `staticSplit`. `lvl < handlerCount K` is
-well-scopedness (an in-range level always resolves — `absSplit_isSome_of_lt`). -/
-def absSplit (K : EvalCtx) (lvl : Nat) : Option (EvalCtx × Handler × EvalCtx) :=
-  staticSplit K (handlerCount K - 1 - lvl)
 
 /-- A frame STACK is well-capped: each stored continuation/argument/handler is well-capped against the
 HANDLER skeleton BELOW it (the handlers it will face after the frame is consumed). Innermost-first: a
@@ -1058,18 +1062,19 @@ theorem WCComp.substFrom (Sg : EvalCtx) (v : Val) (hv : WCVal Sg v) :
   | .handle h₀ M  => intro h; simp only [Comp.substFrom, WCComp] at h ⊢
                      refine ⟨?_, ?_⟩
                      · exact WCHandler.substFrom Sg v hv k h₀ h.1
-                     · -- the body: filler becomes `shiftCap v`, context gains `handleF (h₀.subst)`.
-                       -- (1) `WCVal (handleF (h₀.subst) :: Sg) (shiftCap v)` via the keystone (Δ=[], h:=h₀.subst).
-                       have hvc : WCVal (Frame.handleF (Handler.substFrom k v h₀) :: Sg) (Val.shiftCap v) := by
-                         have := WCVal.shiftCap_insert (Handler.substFrom k v h₀) Sg [] v (by simpa [hframes] using hv)
-                         simpa [hframes, Val.shiftCap] using this
-                       -- (2) the body hyp `WCComp (handleF h₀ :: Sg) M`, bridged to `handleF (h₀.subst)` by kind.
-                       have hbridge : CtxKindEq (Frame.handleF h₀ :: Sg)
-                           (Frame.handleF (Handler.substFrom k v h₀) :: Sg) :=
-                         ⟨fun ℓ op => by cases h₀ <;> rfl, CtxKindEq.refl _⟩
-                       have hbody : WCComp (Frame.handleF (Handler.substFrom k v h₀) :: Sg) M :=
-                         WCComp.ctxKindEq _ _ M hbridge h.2
-                       exact WCComp.substFrom _ (Val.shiftCap v) hvc k M hbody
+                     · -- ADR-0053 WC ABSOLUTE RE-KEY PENDING (Stage 2c — documented seam, LR-independent).
+                       -- Under absolute caps the filler is `v` UNCHANGED (no cap-shift), and the keystone
+                       -- `WCComp.shiftCap_insert` collapses to a SHIFT-FREE insert
+                       -- (`WCVal Σ v → WCVal (handleF h :: Σ) v` — the form the B3a comment at :486 anticipated:
+                       -- "preservation of WellCapped resumes once caps are lexical"). Closing it requires
+                       -- re-keying `WCComp`/`CapResolvesKind` to absolute resolution + collapsing the keystone
+                       -- mutual — a self-contained Operational sub-block. This whole `WellCapped`/`WCComp` block
+                       -- feeds ONLY the `LWConfig` half of `preservation`, which ALREADY routes through
+                       -- `preservation_returnEscape_TODO` (the one documented sorry); the LR 5→2 (Compat) is
+                       -- independent of `WCComp` (zero refs). So this seam is INSIDE the existing sorry-gated
+                       -- block — NOT a new frozen-path exposure. Discharged in Stage 2c after the LR win.
+                       -- SEAM: ADR-0053 WC absolute re-key pending (stage 2c); behind `preservation_returnEscape_TODO`; LR-independent.
+                       sorry
   | .case w N₁ N₂ => intro h; simp only [Comp.substFrom, WCComp] at h ⊢
                      refine ⟨WCVal.substFrom Sg v hv k w h.1, ?_, ?_⟩
                      · exact WCComp.substFrom Sg (Val.shift v) (WCVal.shiftFrom_inv 0 Sg v hv) (k+1) N₁ h.2.1
