@@ -35,7 +35,29 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
 - `preservation`/`type_safety`/`progress` (Spec.lean:93,116,104): the REAL frozen-statement risk, via Inc 3 — a φ≠⊥ premise on `ret`/`letC` in `HasConfigTy` would change the `HasConfig` premise shape. STATEMENT_CHANGE_OK against ADR-0045 (same envelope as the existing `LWConfig` fold).
 - "Only the index moves" is OPTIMISTIC (the index already moved; the dispatch re-key is the bulk — multi-session, ~the ◊4.5b sub-block-(f) surface area) and the return-escape gate (Inc 3) is genuinely NEW machinery, not a re-index.
 
-## Status + remaining work — at `c105904` (2026-06-25)
+## Status + remaining work — at `c105904`/`8b6deeb` (2026-06-25)
+
+> **★★ DECISIVE REFRAME (2026-06-25, two-prong de-risk + representation research) — the obstacle is SELF-INFLICTED;
+> the fix is a published technique bang HALF-BUILT. Operator COMMITTED to PATH A.**
+> bang transcribed Biernacki POPL18's `Vrel/Srel/Krel/Crel` (the LR template) but DROPPED Biernacki's **`n-free`**
+> predicate when it swapped labels for de-Bruijn caps — and never put back an equivalent. That single omission IS
+> both LR obligations: `hcatch` (cap-resolution) = missing `n-free`; the env cap-shift cancellation (3 handler arms)
+> = Biernacki's `Q ↑ l`, which cancels because crossing a handler shifts `ρ` +1 in LOCKSTEP. **Both fall out of ONE
+> carry** (confirmed by prong-1's cascade + prong-2's literature). The fix = carry `ρ-free`/`HasStack`-compatibility
+> in `KrelS` (= the "typed-KrelS reshape" the code comments already prescribe = restrict `CrelK`'s `K₁` to
+> well-capped stacks). It is the CORRECT statement, not a compromise: `lr_sound` over well-capped contexts (the
+> unrestricted form is FALSE — same reason the typed-`⊑` restriction exists). **In-envelope with typed-`⊑`.**
+> - **De-risk findings (build-grounded):** cheap paths CLOSED — the invariant MUST live in `CrelK`/`KrelS` (touches
+>   frozen `lr_sound`/`lr_fundamental`); `closeC`-restructure is kernel-FORCED (off the table); the `WellCapped Γ c`
+>   term-premise can't reach `CrelK`-internal `K₁`. Cost = index-everything ripple (est. ~52 LR / 113 Compat / 7 Spec).
+> - **Alternatives (rep research, `references/papers/3-lr/biernacki-popl18`; Effekt; Koka):** B = absolute/level caps
+>   (cap from root, not de-Bruijn from use-site) → obligation 2 vanishes DEFINITIONALLY (no shift under binders);
+>   small kernel retag, complements A. C = capability-as-value (Effekt) → dissolves both but a DIFFERENT kernel
+>   (re-derive VM/compiler) → reserve for named handlers, post-v1.
+> - **IN FLIGHT:** lrscope prototyping A NON-COMMITTING — confirm (i) the 4/5 cascade, (ii) real ripple, (iii) the
+>   exact frozen `lr_sound` statement → **STOP-and-show before any committed `Spec.lean` edit**. Bank `8b6deeb`
+>   (item-1 dispatch re-key + `hcatch` documented + dup-deleted). The seam is now the FALLBACK, not the destination.
+
 
 - **Banked `a771cc1` (LR-green, 709):** route-B `KrelS`/`EnvRelK` strip (`Val.CapClosed` GONE — route A was
   over-strong) + `closeC` route-B shapes + **the MISS dissolution** (`krelS_staticSplit_decomp` — the ◊4.5b edge
