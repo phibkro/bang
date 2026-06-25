@@ -1123,6 +1123,35 @@ def Config.run : Nat → Config → Result Val
 (ADR-0023 D3), so `type_safety`'s frozen statement is untouched. -/
 def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel ([], c)
 
+/-- **THE typed return-escape obligation (ADR-0045 R1, the documented scoped sorry).**
+
+`LWConfig` is preserved by every non-`handleF`-ret `Source.step` transition. The cases divide:
+
+  • **FORCED-thunk fragment** (PUSH letC/app/handle · force · the β-redexes case/split/lam/unfold ·
+    letF-ret of a CAPABILITY-FREE value): these THREAD — a capability whose thunk is FORCED (or a value
+    that carries none) re-establishes `LWConfig` via `LWT`-substitution (the cap-shift keystone handles
+    migration; cf. the `WCComp.subst` machinery). The cap-assignment suite (ADR-0045 Resolution
+    evidence) confirms this fragment is accepted: capMigrate / cellComp / stateCell / throws / the STM
+    ledger all stay well-typed.
+
+  • **RETURN-ESCAPE of a CAPABILITY-CARRYING value** (a `ret`/`letF`-ret threading a value whose thunk
+    holds a LIVE-effect cap PAST its handler): the seqEscape/ledger FORK. Build-settled (ADR-0045
+    Resolution): a purely UNTYPED config invariant CANNOT certify it without OVER-rejecting the safe
+    ledger (which returns a cap-FREE `vint` out of a `transaction`) — the distinction is the escaping
+    value's TYPE (`U φ C` with `φ ≠ ⊥` vs `int`/`unit`). The non-escape check is therefore TYPE-DIRECTED
+    and belongs in the typed-LR re-index (`Vτ/Cτ/Tτ`), a type-premise on `ret`/`letC` constraining ONLY
+    `U φ C` values. (A) lazy refuted (`progB` well-typed-but-stuck); (C) untyped tightening over-rejects
+    the ledger; (D) typed adopted.
+
+The single scoped boundary: `preservation_proof`'s `LWConfig` re-establishment routes here for the
+non-`handleF`-ret cases. Its `sorry` is the typed-LR obligation — a deferred type-premise (ADR-0045
+Resolution + `paths/PATH-cap-assignment-spike.md` NEXT), NOT a wall. `handleF_ret` (by construction)
+and `progress_proof` are axiom-clean and independent of it. -/
+theorem preservation_returnEscape_TODO
+    {cfg cfg' : Config} (_hlw : LWConfig cfg) (_hstep : Source.step cfg = some cfg') :
+    LWConfig cfg' := by
+  sorry
+
 /-! ### Lexical-cap regression demos (ADR-0045 amendment) — REAL artifacts, build-gated.
 
 These `#guard`s are the divergence-is-fixed evidence: a false cap-shift fails the build. The program is

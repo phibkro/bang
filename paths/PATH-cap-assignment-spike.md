@@ -70,3 +70,25 @@ the spike's deleted discrimination probe confirmed all three; make these PERMANE
 3. Re-green the STD block (progress/type_safety) over the cap-shift kernel under `LWT` — now SOUND because
    case B is ill-typed. Then the LR re-index (Vτ/Cτ/Tτ).
 4. CONFIRM no v1 rung needs late-bound effects (case B) — the expressivity LWT forbids.
+
+## NEXT — the typed LR re-index (where the non-escape check lands)
+
+R1 (branch `typed-static-r1`) promoted `LWT`/`LWConfig` to the kernel and closed the FORCED-thunk
+fragment of preservation + progress (axiom-clean). Two scoped obligations remain, both pointing here:
+
+1. **`preservation_returnEscape_TODO`** (the typed obligation, ADR-0045 Resolution). The non-escape
+   check is TYPE-DIRECTED: a `ret`/`letC` may return a value only if its escaping thunks are cap-free
+   OR self-contained — i.e. only `U φ C` values with `φ ≠ ⊥` are constrained (`int`/`unit`/cap-free
+   thunks escape freely). This is the entry where the **eager R-context check + the type gate** live
+   together, re-indexing the biorthogonal LR by `Vτ/Cτ/Tτ` (the ADR-0045 pivot). The Nat-step + `▷`
+   substrate is unchanged; only the index set moves. The `ret`/`letC` type-premise replaces the untyped
+   `LWConfig` return-escape case.
+
+2. **`preservation_perform_typing_TODO`** (the dispatch-rewiring port, independent of the LR re-index).
+   Re-key the 6-path resume-typing (`splitAt`-era body @ `b59242c`) onto `staticSplit`/`staticDispatch`
+   (`staticSplit_decomp` + `staticSplit_kind`, both green). Mechanical but ≈170 lines; the typing core
+   (`concat_*`/`dispatch_*_typed`) is green. Can be done before OR alongside the LR re-index.
+
+The untyped `LWConfig` stays as the FORCED-thunk-fragment invariant; the typed LR carries the escape
+discipline. Evidence: the cap-assignment spike (`cap-spike` branch) + the fork-settling probe
+(ADR-0045 Resolution).

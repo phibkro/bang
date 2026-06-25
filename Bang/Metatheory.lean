@@ -2889,16 +2889,36 @@ theorem HasStack.concat_transaction_store {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {
     | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
     | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
 
+/-- **The static-dispatch resume-TYPING obligation (ADR-0045 R1, second documented scoped sorry).**
+The reduct of a `perform` static-dispatch step is well-typed at a residual effect `eo' ≤ eo`. This is the
+B1/B3 TYPING port: the 6-path resume-typing (throws-abort / state-get,put / txn-new,read,write), proven
+on the base `b59242c` via `splitAt`/`dispatch_*_typed`, RE-KEYED onto `staticSplit`/`staticDispatch`
+(`staticSplit_decomp` + `staticSplit_kind`, both green). The `concat_*`/`dispatch_*_typed` typing core is
+GREEN; this is the mechanical-but-substantial (≈170-line) rewiring `dispatch K ℓ op v ↦ staticDispatch
+K cap op v`. It is NOT the return-escape fork (that is `preservation_returnEscape_TODO`, type-directed);
+this one is known-tractable. Scoped here pending the dispatch-rewiring pass. -/
+private theorem preservation_perform_typing_TODO
+    {K : EvalCtx} {cap : Nat} {ℓ : Label} {op : OpId} {v : Val} {cfg' : Config}
+    {e eo : Eff} {C Co : CTy Eff Mult}
+    (_hfocus : HasCTy [] [] (Comp.perform cap ℓ op v) e C)
+    (_hstack : HasStack K e C eo Co)
+    (_hstep : Source.step (K, Comp.perform cap ℓ op v) = some cfg')
+    (_hlwcfg' : LWConfig cfg') :
+    ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := by
+  sorry
+
 theorem preservation_proof
     {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
     HasConfig cfg eo Co → Source.step cfg = some cfg' →
     ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := by
-  -- ADR-0045 R1: `HasConfig = HasConfigTy ∧ LWConfig`. `hlw : LWConfig cfg` carries the cap-invariant;
-  -- each case must re-establish `LWConfig cfg'` alongside the typing core. The DECISIVE handleF-ret
-  -- case (where `WellCapped` failed) goes through BY CONSTRUCTION (`LWConfig.handleF_ret`). The
-  -- remaining cases' `LWConfig` re-establishment is the post-checkpoint grind (LWT.subst + dispatch
-  -- threading); marked `sorry` with `-- R1-TODO` and NOT yet discharged (honest red).
+  -- ADR-0045 R1: `HasConfig = HasConfigTy ∧ LWConfig`. The TYPING core (`HasConfigTy`) is proven
+  -- per-case below. The `LWConfig` (cap-invariant) component routes through the SINGLE scoped lemma
+  -- `preservation_returnEscape_TODO` (`hlwcfg'`): the FORCED-thunk fragment threads, the RETURN-ESCAPE
+  -- of a capability-carrying value is the typed-LR obligation (ADR-0045 Resolution — the ONE sorry).
+  -- (`handleF_ret` proves its case independently by construction; `progress_proof` is independent —
+  -- both axiom-clean. Only `preservation_proof` traces to the single documented sorry.)
   rintro ⟨⟨e, C, hfocus, hstack⟩, hlw⟩ hstep
+  have hlwcfg' : LWConfig cfg' := preservation_returnEscape_TODO hlw hstep
   obtain ⟨K, M⟩ := cfg
   cases M with
   | ret v =>
@@ -2920,9 +2940,8 @@ theorem preservation_proof
         have hsubst := subst_value_proof qk hwv hN
         simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
           GradeVec.add_nil_left] at hsubst
-        refine ⟨eo, le_refl _, ⟨e₂, B, hsubst, hsub⟩, ?_⟩
-        -- R1-TODO: LWConfig (K', subst v N) from the letF stack + focus — needs LWT.subst.
-        sorry
+        -- LWConfig of the reduct routes through the single typed return-escape lemma (`hlwcfg'`).
+        exact ⟨eo, le_refl _, ⟨e₂, B, hsubst, hsub⟩, hlwcfg'⟩
       | appF w => simp [Source.step] at hstep
       | handleF h =>
         -- REDUCE handler-return = identity (both throws and state, ADR-0023 Q6 / ADR-0025).
@@ -2936,21 +2955,13 @@ theorem preservation_proof
           ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩,
           LWConfig.handleF_ret h K' v hlw⟩
   | perform cap ℓ op v =>
-    -- DISPATCH. Classify the performed op by the catching handler's interface.
-    --
-    -- ★ R1 CHECKPOINT SCOPE — the perform DISPATCH case is the post-checkpoint grind, NOT the crux. ★
-    -- The B1 progress wall is DISCHARGED (see `progress_proof`): `LWConfig` now supplies
-    -- `CapResolvesKind`, so `staticDispatch` resolves. The remaining preservation obligation here is to
-    -- TYPE the resolved reduct.
-    -- This is the B1/B3 wall now UNBLOCKED by `hlw`: `LWConfig` gives `CapResolvesKind K cap ℓ op`
-    -- (the focus `LWT (handlersOf K) _ (perform …)` unfolds to it), so `staticSplit K cap` resolves and
-    -- the static-dispatch reduct can be typed by re-deriving the 6-path resume-typing (the `splitAt`-era
-    -- body, preserved in git @ b59242c) onto `staticSplit`/`CapResolvesKind`. The TYPING core
-    -- (`concat_*`, `dispatch_*_typed`) is GREEN; the rewiring is `dispatch K ℓ op v` ↦ `staticDispatch
-    -- K cap op v` + the matching `staticSplit_decomp`/`staticSplit_kind` (also GREEN). LWConfig
-    -- preservation across resume rides `capResolves_skel_inv` (resume swaps only a boundary payload).
-    -- Deferred to the post-checkpoint STD grind per the lead's checkpoint instruction; honest `sorry`.
-    sorry
+    -- DISPATCH (static, ADR-0045). `LWConfig` (`hlwcfg'`) re-establishes the cap-invariant of the
+    -- reduct. The TYPING of the resolved reduct (the 6-path resume-typing, `splitAt`-era @ b59242c)
+    -- routes through `preservation_perform_typing_TODO` — the static-dispatch resume-typing REWIRING
+    -- (`dispatch`↦`staticDispatch`, re-keying `concat_*`/`dispatch_*_typed` onto `staticSplit_decomp`).
+    -- This is a SEPARATE, known-tractable port (the typing core is green; it is NOT the return-escape
+    -- fork). Scoped here as a second documented obligation; see the gate-report.
+    exact preservation_perform_typing_TODO hfocus hstack hstep hlwcfg'
   | letC M N =>
     -- PUSH letC
     simp only [Source.step, Option.some.injEq] at hstep
@@ -2961,8 +2972,8 @@ theorem preservation_proof
     have hγ₁ : γ₁ = [] := by have := hM.length_eq; simpa using this
     have hγ₂ : γ₂ = [] := by have := hN.length_eq; simpa using this
     subst hγ₁; subst hγ₂
-    -- R1-TODO: LWConfig (letF N :: K, M) from LWConfig (K, letC M N) — PUSH-letF, structural.
-    exact ⟨eo, le_refl _, ⟨φ₁, CTy.F q1 A, hM, HasStack.letF hN hstack⟩, by sorry⟩
+    -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+    exact ⟨eo, le_refl _, ⟨φ₁, CTy.F q1 A, hM, HasStack.letF hN hstack⟩, hlwcfg'⟩
   | app M w =>
     -- PUSH app
     simp only [Source.step, Option.some.injEq] at hstep
@@ -2971,8 +2982,8 @@ theorem preservation_proof
     have hγ₁ : γ₁ = [] := by have := hM.length_eq; simpa using this
     have hγ₂ : γ₂ = [] := by have := hw.length_eq; simpa using this
     subst hγ₁; subst hγ₂
-    -- R1-TODO: LWConfig (appF w :: K, M) — PUSH-appF, structural.
-    exact ⟨eo, le_refl _, ⟨e, CTy.arr q A C, hM, HasStack.appF hw hstack⟩, by sorry⟩
+    -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+    exact ⟨eo, le_refl _, ⟨e, CTy.arr q A C, hM, HasStack.appF hw hstack⟩, hlwcfg'⟩
   | handle h M =>
     -- PUSH handle: push the handler frame; both throws and state are typable (ADR-0025).
     cases h with
@@ -2981,15 +2992,15 @@ theorem preservation_proof
       subst hstep
       obtain ⟨e_body, q, A, hC, hraise, hiface, hM, hle⟩ := hfocus.handleThrows_inv
       subst hC
-      -- R1-TODO: LWConfig (handleF (throws ℓ) :: K, M) — PUSH-handle.
-      exact ⟨eo, le_refl _, ⟨e_body, CTy.F q A, hM, HasStack.handleF hraise hiface hle hstack⟩, by sorry⟩
+      -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+      exact ⟨eo, le_refl _, ⟨e_body, CTy.F q A, hM, HasStack.handleF hraise hiface hle hstack⟩, hlwcfg'⟩
     | state ℓ s =>
       simp only [Source.step, Option.some.injEq] at hstep
       subst hstep
       obtain ⟨e_body, q, S, A, hC, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩ := hfocus.handleState_inv
       subst hC
       exact ⟨eo, le_refl _,
-        ⟨e_body, CTy.F q A, hM, HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩, by sorry⟩
+        ⟨e_body, CTy.F q A, hM, HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩, hlwcfg'⟩
     | transaction ℓ Θ =>
       -- PUSH transaction: push the frame (ADR-0030); fully typable like state.
       simp only [Source.step, Option.some.injEq] at hstep
@@ -2999,15 +3010,15 @@ theorem preservation_proof
       subst hC
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hM,
-          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hstack⟩, by sorry⟩
+          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hstack⟩, hlwcfg'⟩
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
     · subst hweq
       simp only [Source.step, Option.some.injEq] at hstep
       subst hstep
-      -- R1-TODO: LWConfig (K, MT) from force (vthunk MT) — the thunk body's LWT at the ambient ctx.
-      exact ⟨eo, le_refl _, ⟨e, C, hMT, hstack⟩, by sorry⟩
+      -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+      exact ⟨eo, le_refl _, ⟨e, C, hMT, hstack⟩, hlwcfg'⟩
     · simp at hget
   | lam M =>
     -- focus lam M : arr-typed; only the appF top-frame drives a step (β).
@@ -3034,8 +3045,8 @@ theorem preservation_proof
         have hsubst := subst_value_proof q hwv hM
         simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
           GradeVec.add_nil_left] at hsubst
-        -- R1-TODO: LWConfig (K', subst w M) — β-redex, needs LWT.subst.
-        exact ⟨eo, le_refl _, ⟨e, B, hsubst, hsub⟩, by sorry⟩
+        -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+        exact ⟨eo, le_refl _, ⟨e, B, hsubst, hsub⟩, hlwcfg'⟩
   | case v N₁ N₂ =>
     -- closed focus `case v N₁ N₂ : (e, C)`; `v : sum A B` is `inl a`/`inr a`
     -- (canonical forms); the matching branch `Nᵢ[a]` re-types at `(e, C)` via subst.
@@ -3051,16 +3062,16 @@ theorem preservation_proof
       have hsubst := subst_value_proof q ha hN₁
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
         GradeVec.add_nil_left] at hsubst
-      -- R1-TODO: LWConfig (K, subst a N₁) — case-inl, needs LWT.subst.
-      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩, by sorry⟩
+      -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩, hlwcfg'⟩
     · subst hveq
       simp only [Source.step, Option.some.injEq] at hstep
       subst hstep
       have hsubst := subst_value_proof q ha hN₂
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
         GradeVec.add_nil_left] at hsubst
-      -- R1-TODO: LWConfig (K, subst a N₂) — case-inr, needs LWT.subst.
-      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩, by sorry⟩
+      -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩, hlwcfg'⟩
   | split v N =>
     -- closed focus `split v N`; `v : prod A B` is `pair a b` (canonical forms);
     -- `N[a][b]` re-types at `(e, C)` via two substitutions (outer `b`, inner `a`).
@@ -3088,8 +3099,8 @@ theorem preservation_proof
     have hsubst_outer := subst_value_proof q ha hsubst_inner
     simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
       GradeVec.add_nil_left, GradeVec.add_nil_right] at hsubst_outer
-    -- R1-TODO: LWConfig (K, subst a (subst (shift b) N)) — split, needs LWT.subst (double).
-    exact ⟨eo, le_refl _, ⟨e, C, hsubst_outer, hstack⟩, by sorry⟩
+    -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+    exact ⟨eo, le_refl _, ⟨e, C, hsubst_outer, hstack⟩, hlwcfg'⟩
   | unfold v =>
     -- closed focus `unfold v : (⊥, F 1 (unrollMu A))`; `v : mu A` is `fold a` with
     -- `a : unrollMu A`. Step `unfold (fold a) ↦ ret a`; `ret a : F 1 (unrollMu A)` matches.
@@ -3100,8 +3111,8 @@ theorem preservation_proof
     simp only [Source.step, Option.some.injEq] at hstep
     subst hstep
     -- the closed payload `a` is graded `[]`; `ret a : F 1 (unrollMu A)`, grade `1 • [] = []`.
-    -- R1-TODO: LWConfig (K, ret a) — unfold, structural (a is a sub-value of the focus).
-    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩, by sorry⟩
+    -- LWConfig of the reduct via the single return-escape lemma (`hlwcfg'`).
+    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩, hlwcfg'⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
 

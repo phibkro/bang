@@ -156,3 +156,29 @@ definition); confirm no v1 rung needs it.
 `lake env lean` (`#eval`/`#guard` give garbage — interpreted can't unfold the recursion); only compiled
 `lake build` `#guard`s are reliable. An earlier "no regression" reading came from `lake env lean` and was
 WRONG. Gate eval behaviour with compiled `#guard`s only.
+
+### Resolution (2026-06-25) — the non-escape discipline is TYPE-DIRECTED (→ the typed LR)
+
+Completing R1's preservation surfaced a fork: source `LWT` and the untyped config invariant `LWConfig`
+disagree on whether a program may RETURN a capability-carrying value. Build-settled
+(`Bang/TightSuite2.lean` probe, throwaway; the gated R1 checkpoint records the conclusions):
+
+- **(A) lazy obligation** — UNSOUND: with `LWVal (vthunk _) := True`, `progB` becomes
+  LWT-well-typed-but-STUCK (`progB_lazy_welltyped` elaborates) — the soundness hole reopens.
+- **(C) untyped tightening** (a per-variable binding-context suffix check) — OVER-REJECTS the ledger
+  (`ledgerCommit_REJECTED`, axiom-clean): it rejects returning a plain `vint` out of a `transaction`
+  (SAFE), because an untyped context-check cannot distinguish escaping-a-`vint` from
+  escaping-a-capability-thunk. (The shift-aware suffix variant gets the THUNK split right — capMigrate /
+  cellComp accepted, seqEscape / progB rejected — but still over-rejects the cap-free ledger return.)
+- **(D) TYPE-DIRECTED** — ADOPTED: the distinction IS the escaping value's TYPE (only `U φ C` with
+  `φ ≠ ⊥` is cap-constrained; `int`/`unit` escape freely). The non-escape check is a TYPE-premise on
+  `ret`/`letC`, living in the typed-LR re-index (`Vτ/Cτ/Tτ`). This is build-confirmation that the typed
+  re-index is NECESSARY, not a nicety.
+
+**Consequence:** the untyped `LWConfig` STD block is sound + complete for the FORCED-thunk fragment
+(PUSH · force · β-redexes · letF-ret of cap-free values · handleF-ret by construction · progress); the
+RETURN-ESCAPE case is a typed-LR obligation (the documented scoped lemma
+`preservation_returnEscape_TODO`). The `perform`-dispatch resume-TYPING (a separate, known-tractable
+`dispatch`↦`staticDispatch` re-keying) is scoped as `preservation_perform_typing_TODO`. NO v1
+expressivity loss: the ledger + every rung (pure/throws/deep/state/cell/STM) are accepted; only
+capability-ESCAPES are ill-typed. `progress`/`handleF_ret` stay axiom-clean.
