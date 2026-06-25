@@ -39,10 +39,11 @@ fi
 #     Frontend and Backend meet only at Core. Keeps the layered seam from tangling.
 # Fast, deterministic, no Lean build. All gate on real drift (exit 1); ADR
 # cross-ref-to-deleted-history is WARN-only (exit 0). Also runnable via `just fitness`.
-echo "── architecture fitness (Invariants #3/#5, ADR integrity, import-direction V) ──"
+echo "── architecture fitness (Invariants #3/#5, ADR integrity, import-direction V, doc refs) ──"
 bash "$(dirname "$0")/check-primitives.sh" "$ROOT"
 bash "$(dirname "$0")/check-adr-links.sh" "$ROOT"
 bash "$(dirname "$0")/arch-check.sh" "$ROOT"
+python3 "$(dirname "$0")/check-refs.py" "$ROOT"
 echo "── end fitness ──"
 
 # 4. Build must be clean.

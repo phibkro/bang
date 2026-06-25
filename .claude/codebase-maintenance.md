@@ -42,6 +42,8 @@ build with a hidden `sorryAx` is a false done.
 | **Secrets** | TEST (hook) | every commit | leaked credential | pre-commit `gitleaks` (skips loudly if it can't run) |
 | **ADR decided-ledger** (README index · Q⟺ADR resolution · Status copies) | GENERATE + TEST | per ADR add/supersede/status-change | stale index, Q-status drift, dual-Status drift | `gen-adr-index.py` generates README from frontmatter; `just adr-check` (3-leg) fails CI on drift. ADR-0042. |
 | **ADR cross-links** | TEST (fitness) | every commit | broken `[NNNN](file)` refs | `tools/check-adr-links.sh` |
+| **Import-direction V** (Frontend→Core←Backend) | TEST (fitness) | every commit | a tier imports across the V (tangle) | `tools/arch-check.sh` (ADR-0048) |
+| **Doc cross-references** (path/link refs in `*.md`) | TEST (fitness) | every commit | stale path after a rename/move/delete | `tools/check-refs.py` + `tools/refs-allow.txt` (intentional-historical refs documented once) |
 | **Burndown** (sorry/axiom census) | GENERATE | on demand | — (purely derived) | `tools/burndown.sh` |
 | **Orientation docs** (`CONTEXT.md`, `ROADMAP.md`) | SURVEY | every checkpoint / wrap | stale status (the classic drift) | hand-survey; update when a ◊ closes. *Climb candidate — see below.* |
 | **`CLAUDE.md`** (always-loaded core) | SURVEY | rare (invariant/arch change) | bloat (every token loaded every session) + stale file/recipe refs | hand-survey; keep list-shaped, ~2–4k tokens |
@@ -50,7 +52,7 @@ build with a hidden `sorryAx` is a false done.
 | **`references/` + `refs.bib`** | SURVEY | on citation add | mis-cited paper (e.g. the Garby-Hutton-Bahr mislabel) | hand-survey. *Climb candidate.* |
 | **Worktrees / branches** (multi-agent isolation) | OP | on agent completion / quiesce | sprawl (dead worktrees + branches) **AND silent discard of a live writer's uncommitted WIP** | teardown-safety RULE below; one-writer-per-tree |
 | **git object store** | OP (operator-gated) | when ALL writers quiesce | dangling-object bloat (benign corruption from concurrent-git races) | `git gc`/repack — NEVER while a worktree has a live writer |
-| **`archive/`** (retired K2 matrix etc.) | SURVEY | rare | archive bloat / resurrection confusion | history-preserving; out of the build |
+| **`archive/`** — REMOVED 2026-06-25 (was the retired K2 matrix) | — | — | a second copy of history (git is the SSoT) | deleted; recover via `git show <sha>:archive/<file>` (ADR-0017 amendment) |
 
 ## Technical-debt sources — and how each is prevented (preemptively, by construction)
 

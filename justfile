@@ -56,6 +56,7 @@ fitness:
     bash tools/check-primitives.sh
     bash tools/check-adr-links.sh
     bash tools/arch-check.sh
+    python3 tools/check-refs.py
 
 # Zero-dep Node sanity check on the row-unifier algorithm.
 selfcheck:

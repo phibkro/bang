@@ -1,0 +1,38 @@
+# tools/refs-allow.txt — references that are intentionally dangling (NOT stale).
+#
+# Read by tools/check-refs.py. Each entry is a substring of a path reference whose
+# target file no longer exists IN THE WORKING TREE but lives in the git graph — the
+# single source of truth for history (CLAUDE.md doc-discipline: "history lives in git,
+# not in docs"). A NEW dangling reference fails the check; these are the documented,
+# greppable exceptions, each with the commit where the file lives.
+#
+# Cited almost entirely by RETROSPECTIVE ADRs, COMPLETED PATHs, and the CONTEXT
+# "Deleted" narrative — docs that correctly record what *was*. When you delete/move a
+# file and a CURRENT doc still points at it, FIX the doc; only genuinely-historical
+# refs belong here.
+
+# ── A. The retired K2 machine matrix + untyped reference ──────────────────────────
+# Collapsed into Bang/CalcVM.lean at 87d5aeb (ADR-0017). Formerly kept under archive/
+# as an inert corpus; archive/ was removed 2026-06-25 (git history is the preservation,
+# ADR-0017 amendment). Recover any file: `git show 87d5aeb~:Bang/<file>` (pre-collapse)
+# or `git show 9452660:archive/<file>` (the archived copy, before removal).
+Bang/Eval.lean
+Bang/Calc.lean
+Bang/CalcEff.lean
+Bang/CalcCBN.lean
+
+# ── B. Pre-ADR-0016 repository layout ─────────────────────────────────────────────
+# The wasmfx + oracle subtrees were flattened into the root Lean project at b537bb2
+# (CONTEXT "Codebase merge"). Cited by historical ADRs/notes describing that structure.
+oracle-lean/
+effectrow-oracle/
+bang-lang-wasmfx/
+Bang/EvalJson.lean
+
+# ── C. Exploratory spike modules ──────────────────────────────────────────────────
+# Deleted after their lessons merged into the kernel (ADR-0045) / surface. Cited by the
+# ADRs + completed PATHs that record the spikes. Recover via `git log --all -- <path>`.
+Bang/StaticSpike.lean
+Bang/SetRowSpike.lean
+Bang/CapAssignSpike.lean
+Bang/TightSuite2.lean

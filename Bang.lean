@@ -36,9 +36,9 @@ import Bang.Frontend.NamedCore
 
 -- K3: the calculated machine. The K2 matrix of per-feature machines (Calc/CalcHO/
 -- CalcCBN/CalcEff/CalcSt/CalcCBNEff/CalcCBNSt/CalcCBNEffSt) + the untyped CBN reference
--- (Eval) collapsed into the one graded-CBPV `CalcVM` at ◊3 (ADR-0017) and were moved to
--- `archive/` (out of the build — inert proven-evidence, machine-checked in git history).
--- The paused reification frontier (ADR-0015) stays live below.
+-- (Eval) collapsed into the one graded-CBPV `CalcVM` at ◊3 (ADR-0017); the matrix is
+-- retired to git history (`87d5aeb`; the `archive/` corpus was removed 2026-06-25 — git is
+-- the single source). The paused reification frontier (ADR-0015) stays live below.
 import Bang.CalcReify
 import Bang.CalcReifyRef
 import Bang.CalcReifySim

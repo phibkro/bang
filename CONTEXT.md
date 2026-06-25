@@ -83,7 +83,7 @@
                                      bridge (`evalD_agrees_source`/`sim`/`run_evalD`),
                                      all axiom-clean ⊆ {propext, Classical.choice,
                                      Quot.sound}. K2 matrix (8 Calc* + Eval) archived →
-                                     `archive/` (ADR-0017, history-preserving); CalcReify*
+                                     git history (ADR-0017; `archive/` removed 2026-06-25); CalcReify*
                                      reification frontier KEPT live (ADR-0015). 16-case
                                      5-axis diff-test battery (`Agree`: exec∘compile =
                                      Source.eval on ONE observable Val ⇒ false agreement
@@ -363,8 +363,8 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   defer); **`unfold` ERASES onto `RET` — no instruction** (structural, the `force` precedent; an UNFOLD instr
   would be hand-added redundancy). The split is the calculation's OUTPUT, re-derived per invariant #4
   (`498bceb`). PURE reductions, `evalD` mirrors kernel `Source.step` byte-for-byte; axiom-clean, ◊2 held.
-  **✓ Unit 7 — K3 COLLAPSE DONE (`87d5aeb`), ◊3 MET:** the K2 matrix (8 Calc* + `Eval`) archived → `archive/`
-  (ADR-0017, history-preserving `git mv`, out-of-build inert corpus); CalcReify* reification frontier KEPT
+  **✓ Unit 7 — K3 COLLAPSE DONE (`87d5aeb`), ◊3 MET:** the K2 matrix (8 Calc* + `Eval`) retired to git history (`87d5aeb`)
+  (ADR-0017; `archive/` removed 2026-06-25 — git is the corpus); CalcReify* reification frontier KEPT
   live (ADR-0015); 16-case 5-axis diff-test battery (`Agree M v := exec(compile M)=some[ret v] ∧ Source.eval
   M=done v` — both reps to ONE observable Val ⇒ false agreement unrepresentable; all `rfl`, 0-axiom);
   `just verify` 723 jobs (732→723 = archive took); independently gated on the committed tree.

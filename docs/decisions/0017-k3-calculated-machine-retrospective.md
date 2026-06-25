@@ -73,6 +73,10 @@ The proofs themselves stay in the repo while the ◊3 port is in flight:
 
 All remain proven and diff-tested under `make check-lean` (102 tests green at the time of this retrospective). When ◊3 lands and the graded-CBPV unified machine replaces them, they will be archived (a directory move, not a delete) so the proven-evidence corpus survives as a reference.
 
+## Amendment (2026-06-25) — `archive/` removed; git history is the corpus
+
+The matrix WAS archived to `archive/` at `87d5aeb` (the `git mv` above), then `archive/` was **removed** 2026-06-25. The git graph already preserves the proven-evidence corpus, so an out-of-build working-tree copy was a second copy of history (the SSoT anti-pattern). This **reverses** the "a directory move, not a delete" choice above: the delete is safe *because* git is the single source. Recover any machine: `git show 87d5aeb~:Bang/<file>.lean` (its live form, pre-collapse) or `git show 9452660:archive/<file>.lean` (the archived copy, the commit before removal). The historical path references to these files (here and in the completed PATHs) are allowlisted in `tools/refs-allow.txt` for the `check-refs` fitness function.
+
 ## Revisit if
 
 - The graded-CBPV port at ◊3 reveals a composition mechanism not anticipated by the map above — likely candidates: cost-grading interacting with effect ordering, or multi-shot interacting with side-effects in ways the per-machine staging never exercised.
