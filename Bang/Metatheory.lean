@@ -1931,6 +1931,48 @@ theorem HasStack.concat_transaction_store {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {
 -- END ADR-0054 STEP-4 commented concat block (re-keyed + re-enabled in STEP 5).
 -/
 
+/-! ### E.1d STEP-5: identity-dispatch decomposition (`splitAtId_decomp`) -/
+
+/-- **The identity-dispatch decomposition.** A successful `splitAtId` certifies the stack is
+`Kᵢ ++ handleF n h :: Kₒ` — the boundary frame's identity IS the resolved cap `n` (the `m = n` match),
+the inner prefix `Kᵢ` is the captured continuation, `Kₒ` the outer stack. Mirror of the deleted
+`staticSplit_decomp` onto `splitAtId` (ADR-0054). Induction on `K`. -/
+theorem splitAtId_decomp : ∀ (K : EvalCtx) (n : Nat) {Kᵢ Kₒ : EvalCtx} {h : Handler},
+    splitAtId K n = some (Kᵢ, h, Kₒ) → K = Kᵢ ++ Frame.handleF n h :: Kₒ := by
+  intro K n
+  induction K with
+  | nil => intro Kᵢ Kₒ h hsp; simp [splitAtId] at hsp
+  | cons fr K ih =>
+    intro Kᵢ Kₒ h hsp
+    cases fr with
+    | handleF m h₀ =>
+      simp only [splitAtId] at hsp
+      by_cases hmn : m = n
+      · rw [if_pos hmn] at hsp
+        simp only [Option.some.injEq, Prod.mk.injEq] at hsp
+        obtain ⟨hKi, hh, hKo⟩ := hsp
+        subst hKi; subst hh; subst hKo; subst hmn; rfl
+      · rw [if_neg hmn, Option.map_eq_some_iff] at hsp
+        obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+        simp only [Prod.mk.injEq] at heq
+        obtain ⟨hKi, hh, hKo⟩ := heq
+        subst hKi; subst hh; subst hKo
+        rw [ih hsp']; rfl
+    | letF N =>
+      simp only [splitAtId, Option.map_eq_some_iff] at hsp
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨hKi, hh, hKo⟩ := heq
+      subst hKi; subst hh; subst hKo
+      rw [ih hsp']; rfl
+    | appF w =>
+      simp only [splitAtId, Option.map_eq_some_iff] at hsp
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨hKi, hh, hKo⟩ := heq
+      subst hKi; subst hh; subst hKo
+      rw [ih hsp']; rfl
+
 theorem preservation_proof
     {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
     HasConfig cfg eo Co → Source.step cfg = some cfg' →
