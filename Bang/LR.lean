@@ -1045,7 +1045,7 @@ stuck. ADR-0045 RE-KEY (Inc 0): the predicate is `staticSplit K cap = none` (the
 NOT the legacy label-search `splitAt K ℓ op = none` — `Source.step` routes `perform` through
 `staticDispatch K cap` (Operational.lean), so the `ℓ`-keyed search no longer governs stuckness. -/
 theorem not_converges_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.staticSplit K cap = none) :
+    (hsplit : Bang.absSplit K cap = none) :
     ¬ Converges (Stack.plug K (Comp.perform cap ℓ op v)) := by
   -- the focused config (K, perform …) is stuck at every fuel: step = staticDispatch = none (cap unresolved).
   have hstuck : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
@@ -1073,7 +1073,7 @@ This is what the metered STUCK halves consume — `CoApproxC_le j (K, perform…
 `ConvergesC_le j (K, perform…)` is `False`. No `plug`/refocus (config level): the `+K.length` offset
 never enters. ADR-0045 RE-KEY (Inc 0): cap-unresolved (`staticSplit K cap = none`), not label-search. -/
 theorem config_stuck_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.staticSplit K cap = none) : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
+    (hsplit : Bang.absSplit K cap = none) : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
   intro j w
   cases j with
   | zero => simp [Config.run]
@@ -1084,10 +1084,10 @@ theorem config_stuck_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : Op
         unfold staticDispatch; rw [hsplit]; rfl
       rw [hdisp]; simp
 
-/-- `ConvergesC_le j (K, perform…)` is `False` when the cap does not resolve (`staticSplit K cap = none`)
-— the metered stuck-half discharge. ADR-0045 RE-KEY (Inc 0): cap-unresolved, not label-search. -/
+/-- `ConvergesC_le j (K, perform…)` is `False` when the cap does not resolve (`absSplit K cap = none`)
+— the metered stuck-half discharge. ADR-0053: ABSOLUTE cap-unresolved (root-level → top-index). -/
 theorem not_convergesC_le_up_splitNone {j : Nat} (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.staticSplit K cap = none) : ¬ ConvergesC_le j (K, Comp.perform cap ℓ op v) := by
+    (hsplit : Bang.absSplit K cap = none) : ¬ ConvergesC_le j (K, Comp.perform cap ℓ op v) := by
   rintro ⟨w, hw⟩; exact config_stuck_up_splitNone K cap ℓ op v hsplit j w hw
 
 

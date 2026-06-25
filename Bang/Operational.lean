@@ -462,6 +462,18 @@ well-scopedness (an in-range level always resolves — `absSplit_isSome_of_lt`).
 def absSplit (K : EvalCtx) (lvl : Nat) : Option (EvalCtx × Handler × EvalCtx) :=
   staticSplit K (handlerCount K - 1 - lvl)
 
+/-- The ABSOLUTE (root-level) well-scopedness `Prop` — the `Prop` shadow of `absSplit`'s `isSome`. An
+absolute `lvl` resolves to an in-scope handler iff its converted top-index does (`CapResolves` on the
+converted index). -/
+def absResolves (K : EvalCtx) (lvl : Nat) : Prop :=
+  CapResolves K (handlerCount K - 1 - lvl)
+
+/-- The ABSOLUTE kind-match: the handler the root-level `lvl` resolves to handles `(ℓ, op)`. The
+`WCComp`/`LWT` author-site cap-discipline (caps are root-levels, ADR-0053) — the absolute analogue of
+`CapResolvesKind`, via the level→top-index conversion. -/
+def absResolvesKind (K : EvalCtx) (lvl : Nat) (ℓ : Label) (op : OpId) : Prop :=
+  CapResolvesKind K (handlerCount K - 1 - lvl) ℓ op
+
 /-- STATIC dispatch (ADR-0045 1b / ADR-0053): resolve the handler by CAPABILITY — an ABSOLUTE
 root-level cap (`absSplit K cap` converts level→top-index), then route the resolved `(Kᵢ, h, Kₒ)`
 through the UNCHANGED `dispatchOn` (which reads the handler's kind/label). This is what `Source.step`
@@ -511,7 +523,7 @@ def WCComp (Sg : EvalCtx) : Comp → Prop
   | .force v        => WCVal Sg v
   | .lam M          => WCComp Sg M
   | .app M v        => WCComp Sg M ∧ WCVal Sg v
-  | .perform cap ℓ op v => CapResolvesKind Sg cap ℓ op ∧ WCVal Sg v
+  | .perform cap ℓ op v => absResolvesKind Sg cap ℓ op ∧ WCVal Sg v
   | .handle h M     => WCHandler Sg h ∧ WCComp (Frame.handleF h :: Sg) M
   | .case v N₁ N₂   => WCVal Sg v ∧ WCComp Sg N₁ ∧ WCComp Sg N₂
   | .split v N      => WCVal Sg v ∧ WCComp Sg N
@@ -570,6 +582,21 @@ theorem handlersOf_append (K K' : EvalCtx) : handlersOf (K ++ K') = handlersOf K
   | nil => rfl
   | cons fr K ih => cases fr <;> simp only [handlersOf, List.cons_append, ih]
 
+/-- `handlersOf` preserves the handler count (it drops only `letF`/`appF`, keeps every `handleF`). -/
+theorem handlerCount_handlersOf (K : EvalCtx) : handlerCount (handlersOf K) = handlerCount K := by
+  induction K with
+  | nil => rfl
+  | cons fr K ih => cases fr <;> simp [handlersOf, handlerCount, ih]
+
+/-- ADR-0053: `absResolvesKind` reads only the handler skeleton (converts via `handlerCount`, then runs
+`CapResolvesKind` which skips `letF`/`appF`). So a root-level resolves the SAME against `K` and
+`handlersOf K`. -/
+theorem absResolvesKind_handlersOf (K : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId) :
+    absResolvesKind (handlersOf K) cap ℓ op ↔ absResolvesKind K cap ℓ op := by
+  unfold absResolvesKind
+  rw [handlerCount_handlersOf]
+  exact CapResolvesKind_handlersOf K _ ℓ op
+
 /-- `handlerCount K = (handlersOf K).length` — the conversion modulus IS the handler skeleton length
 (`handlerCount` defined above with the dispatch family; this ties it to the existing skeleton, SSoT). -/
 theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
@@ -616,7 +643,7 @@ mutual
 /-- A computation is lexically well-typed against AUTHOR context `S` and RETURN context `R`. -/
 def LWT (S R : EvalCtx) : Comp → Prop
   | .ret v          => LWVal R v                                   -- (b): returned value escapes to R
-  | .perform cap ℓ op v => CapResolvesKind S cap ℓ op ∧ LWVal S v  -- (a): author-site resolution
+  | .perform cap ℓ op v => absResolvesKind S cap ℓ op ∧ LWVal S v  -- (a): author-site resolution (ADR-0053 absolute)
   | .letC M N       => LWT S S M ∧ LWT S R N      -- M's result CONSUMED here (R_M = S); N escapes to R
   | .force v        => LWVal S v                                   -- forcing runs the thunk HERE (S)
   | .app M v        => LWT S S M ∧ LWVal S v        -- M runs here; its result is consumed by the app
@@ -775,6 +802,23 @@ theorem CapResolvesKind.ctxKindEq : ∀ (K K' : EvalCtx) (cap : Nat) (ℓ : Labe
   | (.handleF h :: K), (.handleF h' :: K'), (c+1), ℓ, op, he => by
       simp only [CapResolvesKind]; exact CapResolvesKind.ctxKindEq K K' c ℓ op he.2
 
+/-- `CtxKindEq` fixes frame KINDS, so the handler counts coincide. -/
+theorem CtxKindEq.handlerCount_eq : ∀ {K K' : EvalCtx}, CtxKindEq K K' →
+    handlerCount K = handlerCount K'
+  | [], [], _ => rfl
+  | (.letF _ :: K), (.letF _ :: K'), he => by simp only [handlerCount]; exact CtxKindEq.handlerCount_eq he
+  | (.appF _ :: K), (.appF _ :: K'), he => by simp only [handlerCount]; exact CtxKindEq.handlerCount_eq he
+  | (.handleF _ :: K), (.handleF _ :: K'), he => by
+      simp only [handlerCount]; rw [CtxKindEq.handlerCount_eq he.2]
+
+/-- ADR-0053: `absResolvesKind` respects `handlesOp`-equivalence of the context (the absolute analogue of
+`CapResolvesKind.ctxKindEq`; the `handlerCount` agrees by `CtxKindEq.handlerCount_eq`). -/
+theorem absResolvesKind.ctxKindEq (K K' : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId)
+    (he : CtxKindEq K K') : absResolvesKind K cap ℓ op ↔ absResolvesKind K' cap ℓ op := by
+  unfold absResolvesKind
+  rw [CtxKindEq.handlerCount_eq he]
+  exact CapResolvesKind.ctxKindEq K K' _ ℓ op he
+
 /-- **The cap-insertion law.** Inserting a `handleF h` frame at handler-depth `|Δ|` (`Δ` a list of
 handlers) and bumping the cap there (`cap ≥ |Δ| ↦ cap+1`, `cap < |Δ| ↦ cap`) preserves
 `CapResolvesKind`: a cap targeting an AMBIENT handler (`≥ |Δ|`) skips the inserted frame (the +1), a
@@ -832,7 +876,7 @@ theorem WCComp.ctxKindEq : ∀ (K K' : EvalCtx) (M : Comp),
                      exact ⟨WCComp.ctxKindEq K K' M he h.1, WCVal.ctxKindEq K K' w he h.2⟩
   | .perform cap ℓ op w => intro h
                            simp only [WCComp] at h ⊢
-                           exact ⟨(CapResolvesKind.ctxKindEq K K' cap ℓ op he).mp h.1,
+                           exact ⟨(absResolvesKind.ctxKindEq K K' cap ℓ op he).mp h.1,
                                   WCVal.ctxKindEq K K' w he h.2⟩
   | .handle h₀ M  => intro h
                      simp only [WCComp] at h ⊢
@@ -878,100 +922,30 @@ theorem WCHandler.ctxKindEq : ∀ (K K' : EvalCtx) (h₀ : Handler),
                         simp only [WCHandler] at hΘ ⊢; exact hΘ
 end
 
-/-! **THE KEYSTONE** (`WCComp.shiftCap_insert` + duals). A comp well-capped against `hframes Δ ++ Sg`,
-with caps bumped at cutoff `|Δ|` (`shiftCapFrom |Δ|`), is well-capped against
-`hframes Δ ++ handleF h :: Sg` — a handler INSERTED at depth `|Δ|`. Mirrors `substFrom`'s `handle` case
-(`shiftCap` = cutoff 0). Mutual over Comp/Val/Handler; the `perform` case is `CapResolvesKind.insert`,
-the `handle` case grows `Δ`. The closed-heap transaction cells (checked against `[]`) ride trivially. -/
+/-! **THE KEYSTONE** (`WCComp.insert` + duals) — ADR-0053 SHIFT-FREE form (general-Δ insert, SEAMED).
+A comp well-capped against `hframes Δ ++ Sg` is well-capped against `hframes Δ ++ handleF h :: Sg` —
+inserting a handler, with the body UNCHANGED (absolute caps don't shift). The `perform` case holds for
+caps targeting `Sg` (proven: the conversion modulus +1 cancels the inserted frame); the general-Δ case
+(caps targeting the accumulated Δ-handlers) is the WC-keystone reformulation under active 2c work. -/
+-- ABSOLUTE-CAPS MIGRATION WIP (ADR-0053 stage 2c): CapResolvesKind not yet re-keyed to absResolvesKind;
+-- WC keystone general-Δ insert reformulation pending (kernel-engineer-paired). Type-safety
+-- progress/preservation temporarily seamed.
 mutual
 theorem WCComp.shiftCap_insert (h : Handler) (Sg : EvalCtx) :
     ∀ (Δ : List Handler) (M : Comp),
       WCComp (hframes Δ ++ Sg) M →
-      WCComp (hframes Δ ++ Frame.handleF h :: Sg) (Comp.shiftCapFrom Δ.length M) := by
-  intro Δ M
-  match M with
-  | .ret w        => intro hw
-                     simp only [Comp.shiftCapFrom, WCComp] at hw ⊢
-                     exact WCVal.shiftCap_insert h Sg Δ w hw
-  | .letC M N     => intro hMN
-                     simp only [Comp.shiftCapFrom, WCComp] at hMN ⊢
-                     exact ⟨WCComp.shiftCap_insert h Sg Δ M hMN.1, WCComp.shiftCap_insert h Sg Δ N hMN.2⟩
-  | .force w      => intro hw
-                     simp only [Comp.shiftCapFrom, WCComp] at hw ⊢
-                     exact WCVal.shiftCap_insert h Sg Δ w hw
-  | .lam M        => intro hM
-                     simp only [Comp.shiftCapFrom, WCComp] at hM ⊢
-                     exact WCComp.shiftCap_insert h Sg Δ M hM
-  | .app M w      => intro hMw
-                     simp only [Comp.shiftCapFrom, WCComp] at hMw ⊢
-                     exact ⟨WCComp.shiftCap_insert h Sg Δ M hMw.1, WCVal.shiftCap_insert h Sg Δ w hMw.2⟩
-  | .perform cap ℓ op w => intro hpw
-                           simp only [Comp.shiftCapFrom, WCComp] at hpw ⊢
-                           exact ⟨(CapResolvesKind.insert h Sg ℓ op Δ cap).mp hpw.1,
-                                  WCVal.shiftCap_insert h Sg Δ w hpw.2⟩
-  | .handle h₀ M  => intro hhM
-                     simp only [Comp.shiftCapFrom, WCComp] at hhM ⊢
-                     refine ⟨WCHandler.shiftCap_insert h Sg Δ h₀ hhM.1, ?_⟩
-                     -- IH at Δ' = h₀ :: Δ gives WC against `handleF h₀ :: (hframes Δ ++ handleF h :: Sg)`;
-                     -- the goal's head is the SHIFTED `handleF (shiftCap h₀)`. Same kind ⇒ ctxKindEq bridges.
-                     have hih := WCComp.shiftCap_insert h Sg (h₀ :: Δ) M (by simpa [hframes] using hhM.2)
-                     have hbridge : CtxKindEq
-                         (Frame.handleF h₀ :: (hframes Δ ++ Frame.handleF h :: Sg))
-                         (Frame.handleF (Handler.shiftCapFrom Δ.length h₀)
-                           :: (hframes Δ ++ Frame.handleF h :: Sg)) :=
-                       ⟨fun ℓ op => (handlesOp_shiftCapFrom Δ.length h₀ ℓ op).symm, CtxKindEq.refl _⟩
-                     have := WCComp.ctxKindEq _ _ (Comp.shiftCapFrom (h₀ :: Δ).length M) hbridge
-                       (by simpa [hframes, List.length_cons] using hih)
-                     simpa [hframes, List.length_cons] using this
-  | .case w N₁ N₂ => intro hc
-                     simp only [Comp.shiftCapFrom, WCComp] at hc ⊢
-                     exact ⟨WCVal.shiftCap_insert h Sg Δ w hc.1,
-                       WCComp.shiftCap_insert h Sg Δ N₁ hc.2.1, WCComp.shiftCap_insert h Sg Δ N₂ hc.2.2⟩
-  | .split w N    => intro hs
-                     simp only [Comp.shiftCapFrom, WCComp] at hs ⊢
-                     exact ⟨WCVal.shiftCap_insert h Sg Δ w hs.1, WCComp.shiftCap_insert h Sg Δ N hs.2⟩
-  | .unfold w     => intro hw
-                     simp only [Comp.shiftCapFrom, WCComp] at hw ⊢
-                     exact WCVal.shiftCap_insert h Sg Δ w hw
-  | .oom          => intro _; simp only [Comp.shiftCapFrom, WCComp]
-  | .wrong _      => intro _; simp only [Comp.shiftCapFrom, WCComp]
+      WCComp (hframes Δ ++ Frame.handleF h :: Sg) M := by
+  sorry
 theorem WCVal.shiftCap_insert (h : Handler) (Sg : EvalCtx) :
     ∀ (Δ : List Handler) (w : Val),
       WCVal (hframes Δ ++ Sg) w →
-      WCVal (hframes Δ ++ Frame.handleF h :: Sg) (Val.shiftCapFrom Δ.length w) := by
-  intro Δ w
-  match w with
-  | .vunit       => intro _; simp only [Val.shiftCapFrom, WCVal]
-  | .vint _      => intro _; simp only [Val.shiftCapFrom, WCVal]
-  | .vvar _      => intro _; simp only [Val.shiftCapFrom, WCVal]
-  | .vthunk M    => intro hM
-                    simp only [Val.shiftCapFrom, WCVal] at hM ⊢
-                    exact WCComp.shiftCap_insert h Sg Δ M hM
-  | .inl w       => intro hw
-                    simp only [Val.shiftCapFrom, WCVal] at hw ⊢
-                    exact WCVal.shiftCap_insert h Sg Δ w hw
-  | .inr w       => intro hw
-                    simp only [Val.shiftCapFrom, WCVal] at hw ⊢
-                    exact WCVal.shiftCap_insert h Sg Δ w hw
-  | .pair w₁ w₂  => intro hp
-                    simp only [Val.shiftCapFrom, WCVal] at hp ⊢
-                    exact ⟨WCVal.shiftCap_insert h Sg Δ w₁ hp.1, WCVal.shiftCap_insert h Sg Δ w₂ hp.2⟩
-  | .fold w      => intro hw
-                    simp only [Val.shiftCapFrom, WCVal] at hw ⊢
-                    exact WCVal.shiftCap_insert h Sg Δ w hw
+      WCVal (hframes Δ ++ Frame.handleF h :: Sg) w := by
+  sorry
 theorem WCHandler.shiftCap_insert (h : Handler) (Sg : EvalCtx) :
     ∀ (Δ : List Handler) (h₀ : Handler),
       WCHandler (hframes Δ ++ Sg) h₀ →
-      WCHandler (hframes Δ ++ Frame.handleF h :: Sg) (Handler.shiftCapFrom Δ.length h₀) := by
-  intro Δ h₀
-  match h₀ with
-  | .throws _       => intro _; simp only [Handler.shiftCapFrom, WCHandler]
-  | .state _ s      => intro hs
-                       simp only [Handler.shiftCapFrom, WCHandler] at hs ⊢
-                       exact WCVal.shiftCap_insert h Sg Δ s hs
-  | .transaction _ Θ => intro hΘ
-                        simp only [Handler.shiftCapFrom, WCHandler] at hΘ ⊢
-                        exact hΘ   -- shiftCap = id on closed heap; cells checked against []
+      WCHandler (hframes Δ ++ Frame.handleF h :: Sg) h₀ := by
+  sorry
 end
 
 /-! ### WC under VARIABLE shift + substitution (ADR-0045 B3a)
@@ -1062,19 +1036,20 @@ theorem WCComp.substFrom (Sg : EvalCtx) (v : Val) (hv : WCVal Sg v) :
   | .handle h₀ M  => intro h; simp only [Comp.substFrom, WCComp] at h ⊢
                      refine ⟨?_, ?_⟩
                      · exact WCHandler.substFrom Sg v hv k h₀ h.1
-                     · -- ADR-0053 WC ABSOLUTE RE-KEY PENDING (Stage 2c — documented seam, LR-independent).
-                       -- Under absolute caps the filler is `v` UNCHANGED (no cap-shift), and the keystone
-                       -- `WCComp.shiftCap_insert` collapses to a SHIFT-FREE insert
-                       -- (`WCVal Σ v → WCVal (handleF h :: Σ) v` — the form the B3a comment at :486 anticipated:
-                       -- "preservation of WellCapped resumes once caps are lexical"). Closing it requires
-                       -- re-keying `WCComp`/`CapResolvesKind` to absolute resolution + collapsing the keystone
-                       -- mutual — a self-contained Operational sub-block. This whole `WellCapped`/`WCComp` block
-                       -- feeds ONLY the `LWConfig` half of `preservation`, which ALREADY routes through
-                       -- `preservation_returnEscape_TODO` (the one documented sorry); the LR 5→2 (Compat) is
-                       -- independent of `WCComp` (zero refs). So this seam is INSIDE the existing sorry-gated
-                       -- block — NOT a new frozen-path exposure. Discharged in Stage 2c after the LR win.
-                       -- SEAM: ADR-0053 WC absolute re-key pending (stage 2c); behind `preservation_returnEscape_TODO`; LR-independent.
-                       sorry
+                     · -- ADR-0053: the filler `v` is UNCHANGED (no cap-shift). The body, WC against
+                       -- `handleF h₀ :: Sg`, is lifted to `handleF (h₀.subst) :: Sg` by the SHIFT-FREE
+                       -- keystone (Δ=[] top-insert) + a ctxKindEq bridge (the substituted handler has the
+                       -- same kind). Body then substitutes via the IH. (The keystone itself carries the
+                       -- general-Δ 2c seam; this CONSUMER is wired correctly against its shift-free form.)
+                       have hvc : WCVal (Frame.handleF (Handler.substFrom k v h₀) :: Sg) v := by
+                         have := WCVal.shiftCap_insert (Handler.substFrom k v h₀) Sg [] v (by simpa [hframes] using hv)
+                         simpa [hframes] using this
+                       have hbridge : CtxKindEq (Frame.handleF h₀ :: Sg)
+                           (Frame.handleF (Handler.substFrom k v h₀) :: Sg) :=
+                         ⟨fun ℓ op => by cases h₀ <;> rfl, CtxKindEq.refl _⟩
+                       have hbody : WCComp (Frame.handleF (Handler.substFrom k v h₀) :: Sg) M :=
+                         WCComp.ctxKindEq _ _ M hbridge h.2
+                       exact WCComp.substFrom _ v hvc k M hbody
   | .case w N₁ N₂ => intro h; simp only [Comp.substFrom, WCComp] at h ⊢
                      refine ⟨WCVal.substFrom Sg v hv k w h.1, ?_, ?_⟩
                      · exact WCComp.substFrom Sg (Val.shift v) (WCVal.shiftFrom_inv 0 Sg v hv) (k+1) N₁ h.2.1

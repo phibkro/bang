@@ -503,60 +503,24 @@ theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   | @unfold γ Γ v A hv => simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
   | @perform γ Γ _ ℓ op v φ q A B _ _ _ hv =>
     simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
-  -- ADR-0045 cap-shift: `Comp.substFrom`'s `handle` case fills the body with `Val.shiftCap w`.
-  -- For a CLOSED body (no free vars ≥ k), `substFrom k (shiftCap w) M = M` — apply the IH at the
-  -- SHIFTED filler (the IH is universally quantified over the filler value).
+  -- ADR-0053: `Comp.substFrom`'s `handle` case fills the body with `w` UNCHANGED (absolute caps don't
+  -- shift on handle-crossing). For a CLOSED body, `substFrom k w M = M` — apply the IH at the filler `w`.
   | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
-    simp only [Comp.substFrom, Handler.substFrom]; rw [hM.subst_closed k hk (Val.shiftCap w)]
+    simp only [Comp.substFrom, Handler.substFrom]; rw [hM.subst_closed k hk w]
   | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
     simp only [Comp.substFrom, Handler.substFrom]
-    rw [hM.subst_closed k hk (Val.shiftCap w), hs.subst_closed k (Nat.zero_le k) w]
+    rw [hM.subst_closed k hk w, hs.subst_closed k (Nat.zero_le k) w]
   | @handleTransaction γ Γ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM _ =>
     -- `Handler.substFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH.
     simp only [Comp.substFrom, Handler.substFrom]
-    rw [hM.subst_closed k hk (Val.shiftCap w)]
+    rw [hM.subst_closed k hk w]
 end
 
-/-! ### Cap-shift preserves typing (ADR-0045 R1) — the enabler for the `handle`-case substitution ripple.
-
-`Comp.shiftCapFrom`/`Val.shiftCapFrom` rewrite ONLY the `cap` field of `perform`s (and recurse). Since
-`HasCTy.perform` is CAP-IRRELEVANT (the rule constrains the row/grade/op, never the cap), the cap-shift
-preserves `HasCTy`/`HasVTy` — re-type each shifted subterm by the IH. The `handle` cases bump the cutoff
-(`d+1`), matching `shiftCapFrom`'s `handle` arm. This is what lets `subst`'s `handle` case (filler
-`Val.shiftCap v`) re-type its body: the cap-shift on the filler does not disturb its type. -/
-mutual
-theorem HasVTy.shiftCap {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
-    (h : HasVTy γ Γ v A) (d : Nat) : HasVTy γ Γ (Val.shiftCapFrom d v) A := by
-  cases h with
-  | vunit => exact HasVTy.vunit
-  | vint => exact HasVTy.vint
-  | @vvar Γ i A hget => exact HasVTy.vvar hget
-  | @vthunk γ Γ M φ B hM => exact HasVTy.vthunk (hM.shiftCap d)
-  | @inl γ Γ u A B hu => exact HasVTy.inl (hu.shiftCap d)
-  | @inr γ Γ u A B hu => exact HasVTy.inr (hu.shiftCap d)
-  | @pair γ γ_v γ_w Γ u₁ u₂ A B hu₁ hu₂ heq => exact HasVTy.pair (hu₁.shiftCap d) (hu₂.shiftCap d) heq
-  | @fold γ Γ u A hu => exact HasVTy.fold (hu.shiftCap d)
-theorem HasCTy.shiftCap {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff}
-    {C : CTy Eff Mult} (h : HasCTy γ Γ c e C) (d : Nat) : HasCTy γ Γ (Comp.shiftCapFrom d c) e C := by
-  cases h with
-  | @ret γ γ' Γ v A q hv heq => exact HasCTy.ret (hv.shiftCap d) heq
-  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN heq => exact HasCTy.letC (hM.shiftCap d) (hN.shiftCap d) heq
-  | @force γ Γ v φ B hv => exact HasCTy.force (hv.shiftCap d)
-  | @lam γ Γ M φ q A B hM => exact HasCTy.lam (hM.shiftCap d)
-  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv heq => exact HasCTy.app (hM.shiftCap d) (hv.shiftCap d) heq
-  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C hv hN₁ hN₂ heq =>
-      exact HasCTy.case (hv.shiftCap d) (hN₁.shiftCap d) (hN₂.shiftCap d) heq
-  | @split γ γ_v γ_N Γ v N φ q A B C hv hN heq => exact HasCTy.split (hv.shiftCap d) (hN.shiftCap d) heq
-  | @unfold γ Γ v A hv => exact HasCTy.unfold (hv.shiftCap d)
-  | @perform γ Γ cap ℓ op v φ q A B hmem hopArg hopRes hv =>
-      exact HasCTy.perform hmem hopArg hopRes (hv.shiftCap d)
-  | @handleThrows γ Γ ℓ M e φ q A hraise hiface hM hle =>
-      exact HasCTy.handleThrows hraise hiface (hM.shiftCap (d+1)) hle
-  | @handleState γ Γ ℓ s₀ M e φ q S A hga hgr hpa hpr hif hs hM hle =>
-      exact HasCTy.handleState hga hgr hpa hpr hif (hs.shiftCap d) (hM.shiftCap (d+1)) hle
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q A hna hnr hra hrr hwa hwr hif hcells hM hle =>
-      exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells (hM.shiftCap (d+1)) hle
-end
+/-! ### ADR-0053: `HasVTy.shiftCap`/`HasCTy.shiftCap` (the cap-shift-preserves-typing re-typing theorems)
+are DELETED. Caps are absolute root-levels: `subst`'s `handle` case fills the body with the UNSHIFTED
+filler, so the STD handle arms re-type at the filler `v` directly (no `HasVTy.shiftCap`). With the
+`shiftCapFrom` operation dead on all live paths, these re-typing theorems have no consumers. The
+de-Bruijn shift wall (ADR-0050) is dissolved by construction. -/
 
 mutual
 theorem HasVTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
@@ -1365,14 +1329,14 @@ theorem HasCTy.subst_gen
     -- Sgrade γ_v k (q • γ) = q • Sgrade γ_v k γ. Interface premises thread verbatim.
     simp only [hsmul_eq_smul, Sgrade_smul]
     exact HasCTy.perform hmem hopArg hopRes (ih Δ Γ A γ_v v rfl hv)
-  -- ADR-0045 cap-shift: `Comp.substFrom`'s `handle` arm fills the body with `Val.shiftCap v`
-  -- (`handle` is a cap-binder). The body IH (`ihM`) re-types it at the SHIFTED filler — `v`'s type is
-  -- preserved by `HasVTy.shiftCap`, so `ihM Δ Γ A γ_v (shiftCap v) rfl (hv.shiftCap 0)` discharges it.
+  -- ADR-0053: `Comp.substFrom`'s `handle` arm fills the body with `v` UNCHANGED (absolute caps don't
+  -- shift on handle-crossing). The body IH re-types it at the filler `v` directly — no `HasVTy.shiftCap`,
+  -- no cap-shift. This is the STD-block simplification the absolute-cap representation buys.
   case handleThrows =>
     intro γ Γ₀ ℓ M e φ q A₀ hraise hiface hM hle ih Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
-    exact HasCTy.handleThrows hraise hiface (ih Δ Γ A γ_v (Val.shiftCap v) rfl (hv.shiftCap 0)) hle
+    exact HasCTy.handleThrows hraise hiface (ih Δ Γ A γ_v v rfl hv) hle
   case handleState =>
     intro γ Γ₀ ℓ s₀ M e φ q S A₀ hga hgr hpa hpr hif hs hM hle _ihs ihM Δ Γ A γ_v v hΓ hv
     subst hΓ
@@ -1380,7 +1344,7 @@ theorem HasCTy.subst_gen
     -- the stored state is CLOSED ⇒ substFrom leaves it fixed (ADR-0025)
     rw [hs.subst_closed Δ.length (Nat.zero_le _) _]
     exact HasCTy.handleState hga hgr hpa hpr hif hs
-      (ihM Δ Γ A γ_v (Val.shiftCap v) rfl (hv.shiftCap 0)) hle
+      (ihM Δ Γ A γ_v v rfl hv) hle
   case handleTransaction =>
     -- subst through a transaction handler. `Handler.substFrom` leaves the heap untouched (closed
     -- cells, ADR-0030), so only the body substitutes (via `ihM`); structural, like `handleState`.
@@ -1389,7 +1353,7 @@ theorem HasCTy.subst_gen
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
     exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells
-      (ihM Δ Γ A γ_v (Val.shiftCap v) rfl (hv.shiftCap 0)) hle
+      (ihM Δ Γ A γ_v v rfl hv) hle
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -2064,11 +2028,12 @@ theorem staticSplit_decomp : ∀ (K : EvalCtx) (cap : Nat) {Kᵢ Kₒ : EvalCtx}
       obtain ⟨rfl, rfl, rfl⟩ := heq
       rw [staticSplit_decomp K cap hsp]; rfl
 
-/-- `staticDispatch` succeeds iff `staticSplit` does (`dispatchOn` is total). -/
+/-- `staticDispatch` succeeds iff `absSplit` does (`dispatchOn` is total). ADR-0053: dispatch resolves
+the ABSOLUTE root-level cap via `absSplit`. -/
 theorem staticDispatch_isSome_iff (K : EvalCtx) (cap : Nat) (op : OpId) (v : Val) :
-    (staticDispatch K cap op v).isSome = (staticSplit K cap).isSome := by
-  show ((staticSplit K cap).bind (dispatchOn op v)).isSome = _
-  cases staticSplit K cap with
+    (staticDispatch K cap op v).isSome = (absSplit K cap).isSome := by
+  show ((absSplit K cap).bind (dispatchOn op v)).isSome = _
+  cases absSplit K cap with
   | none => rfl
   | some p => simp only [Option.bind_some]; exact dispatchOn_isSome op v p
 
@@ -2991,16 +2956,21 @@ private theorem preservation_perform_typing
   subst hC
   have hγ'nil : γ' = [] := by have := hwv.length_eq; simpa using this
   subst hγ'nil
-  have hres0 : CapResolvesKind (handlersOf K) cap ℓ op := by
+  -- ADR-0053: caps are ABSOLUTE root-levels — `LWConfig`/`LWT` carries `absResolvesKind`, and dispatch
+  -- resolves via `absSplit` (= `staticSplit` at the converted top-index `c := handlerCount K - 1 - cap`).
+  -- Thread the existing `staticSplit_*` lemmas at the CONVERTED index `c`.
+  have hres0 : absResolvesKind (handlersOf K) cap ℓ op := by
     simp only [LWConfig, LWT] at hlw; exact hlw.1.1
-  have hres : CapResolvesKind K cap ℓ op := (CapResolvesKind_handlersOf K cap ℓ op).mp hres0
-  have hsome : (staticSplit K cap).isSome := staticSplit_isSome_of_resolvesKind K cap ℓ op hres
+  have hresA : absResolvesKind K cap ℓ op := (absResolvesKind_handlersOf K cap ℓ op).mp hres0
+  have hres : CapResolvesKind K (handlerCount K - 1 - cap) ℓ op := hresA
+  have hsome : (staticSplit K (handlerCount K - 1 - cap)).isSome :=
+    staticSplit_isSome_of_resolvesKind K (handlerCount K - 1 - cap) ℓ op hres
   obtain ⟨⟨Kᵢ, h, Kₒ⟩, hss⟩ := Option.isSome_iff_exists.mp hsome
-  have hdecomp : K = Kᵢ ++ Frame.handleF h :: Kₒ := staticSplit_decomp K cap hss
-  have hkind : handlesOp h ℓ op = true := staticSplit_kind K cap hss hres
+  have hdecomp : K = Kᵢ ++ Frame.handleF h :: Kₒ := staticSplit_decomp K _ hss
+  have hkind : handlesOp h ℓ op = true := staticSplit_kind K _ hss hres
   have hstep' : staticDispatch K cap op v = some cfg' := by simpa [Source.step] using hstep
   have hcfg' : dispatchOn op v (Kᵢ, h, Kₒ) = some cfg' := by
-    unfold staticDispatch at hstep'; rw [hss] at hstep'
+    unfold staticDispatch absSplit at hstep'; rw [hss] at hstep'
     simpa only [Option.bind_some] using hstep'
   rw [hdecomp] at hstack
   cases h with
@@ -3345,10 +3315,14 @@ theorem progress_proof
     -- (`staticDispatch_isSome_iff`) — the config STEPS. This is the spike's `perform_progress`, now the
     -- kernel progress case. The cap-IRRELEVANCE of typing no longer matters: cap-scoping rides
     -- `LWConfig`, not `HasCTy`.
-    have hres0 : CapResolvesKind (handlersOf K) cap ℓ op := by
+    -- ADR-0053: `LWConfig` carries `absResolvesKind`; dispatch resolves via `absSplit`. Thread the
+    -- existing `staticSplit_*` lemmas at the converted top-index `handlerCount K - 1 - cap`.
+    have hres0 : absResolvesKind (handlersOf K) cap ℓ op := by
       simp only [LWConfig, LWT] at hlw; exact hlw.1.1
-    have hres : CapResolvesKind K cap ℓ op := (CapResolvesKind_handlersOf K cap ℓ op).mp hres0
-    have hsome : (staticSplit K cap).isSome := staticSplit_isSome_of_resolvesKind K cap ℓ op hres
+    have hresA : absResolvesKind K cap ℓ op := (absResolvesKind_handlersOf K cap ℓ op).mp hres0
+    have hres : CapResolvesKind K (handlerCount K - 1 - cap) ℓ op := hresA
+    have hsome : (staticSplit K (handlerCount K - 1 - cap)).isSome :=
+      staticSplit_isSome_of_resolvesKind K (handlerCount K - 1 - cap) ℓ op hres
     have hd : (staticDispatch K cap op v).isSome = true := by
       rw [staticDispatch_isSome_iff]; exact hsome
     obtain ⟨cfg', hcfg'⟩ := Option.isSome_iff_exists.mp hd

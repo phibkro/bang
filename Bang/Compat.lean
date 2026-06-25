@@ -210,14 +210,14 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
 
-/-- `closeC` distributes through a `throws` handler. ADR-0045 (route B): `handle` IS a cap-binder, so
-`Comp.subst v (handle h M)` crosses the body with `Val.shiftCap v` (the value's caps bump as they cross
-the handle). The body therefore closes over the CAP-SHIFTED fillers `δ.map Val.shiftCap` — the
-context-relative `shiftCap`-threading (matching the kernel `WCVal`), NOT cap-closedness. The handler
+/-- `closeC` distributes through a `throws` handler. ADR-0053: caps are ABSOLUTE root-levels, so
+`Comp.subst v (handle h M)` crosses the body with `v` UNCHANGED (no cap-shift) — the body closes over
+the SAME fillers `δ` as the surrounding context. This is what dissolves the shift wall (ADR-0050): the
+IH for the LR handler arms now matches `closeC δ M` directly, no `δ.map shiftCap` mismatch. The handler
 `throws ℓ` carries no value (`Handler.subst _ (throws ℓ) = throws ℓ`). -/
 @[simp] theorem closeC_handleThrows (δ : List Val) (ℓ : Label) (M : Comp) :
     closeC δ (Comp.handle (Handler.throws ℓ) M)
-      = Comp.handle (Handler.throws ℓ) (closeC (δ.map Val.shiftCap) M) := by
+      = Comp.handle (Handler.throws ℓ) (closeC δ M) := by
   induction δ generalizing M with
   | nil => rfl
   | cons v δ ih =>
@@ -229,9 +229,9 @@ stored value closes too — `closeC δ (handle (state ℓ s) M) = handle (state 
 The `handle` former does not bind, so both `s` and the body `M` close at level 0 (structural). -/
 @[simp] theorem closeC_handleState (δ : List Val) (ℓ : Label) (s : Val) (M : Comp) :
     closeC δ (Comp.handle (Handler.state ℓ s) M)
-      = Comp.handle (Handler.state ℓ (closeV δ s)) (closeC (δ.map Val.shiftCap) M) := by
-  -- the stored `s` closes normally (`Handler.substFrom` doesn't cap-shift the state cell); the body `M`
-  -- closes over the cap-shifted fillers (it's UNDER the `handle` cap-binder). Route B (no CapClosed).
+      = Comp.handle (Handler.state ℓ (closeV δ s)) (closeC δ M) := by
+  -- ADR-0053: the stored `s` closes normally; the body `M` closes over the SAME fillers `δ` (absolute
+  -- caps don't shift on handle-crossing). No `δ.map shiftCap`.
   induction δ generalizing s M with
   | nil => rfl
   | cons v δ ih =>
@@ -243,8 +243,9 @@ the heap is untouched — exactly like `throws`. Only the body `M` closes:
 `closeC δ (handle (transaction ℓ Θ) M) = handle (transaction ℓ Θ) (closeC δ M)`. -/
 @[simp] theorem closeC_handleTransaction (δ : List Val) (ℓ : Label) (Θ : Store) (M : Comp) :
     closeC δ (Comp.handle (Handler.transaction ℓ Θ) M)
-      = Comp.handle (Handler.transaction ℓ Θ) (closeC (δ.map Val.shiftCap) M) := by
-  -- the heap is closed (`Handler.substFrom` identity on `Θ`); the body closes over cap-shifted fillers.
+      = Comp.handle (Handler.transaction ℓ Θ) (closeC δ M) := by
+  -- ADR-0053: the heap is closed (`Handler.substFrom` identity on `Θ`); the body closes over the SAME
+  -- fillers `δ` (absolute caps don't shift). No `δ.map shiftCap`.
   induction δ generalizing M with
   | nil => rfl
   | cons v δ ih =>
@@ -398,10 +399,10 @@ theorem Comp.shiftFrom_substFrom_closed :
   | u, hu, k, i, hik, .perform _ ℓ op w => by
       simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
   | u, hu, k, i, hik, .handle h M => by
-      -- ADR-0045 route-B: `Comp.substFrom i u (handle h M)` cap-shifts the body filler to `shiftCap u`;
-      -- the IH recurses at `shiftCap u`, `Val.Closed` preserved by `Closed.shiftCap` (no `CapClosed`).
+      -- ADR-0053: `Comp.substFrom i u (handle h M)` fills the body with `u` UNCHANGED (absolute caps
+      -- don't shift on handle-crossing); the IH recurses at `u` directly (no `shiftCap`).
       simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Handler.shiftFrom_substFrom_closed hu k i hik h, Comp.shiftFrom_substFrom_closed (Val.Closed.shiftCap hu) k i hik M]
+      rw [Handler.shiftFrom_substFrom_closed hu k i hik h, Comp.shiftFrom_substFrom_closed hu k i hik M]
   | u, hu, k, i, hik, .case w N₁ N₂ => by
       simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
       rw [Val.shiftFrom_substFrom_closed hu k i hik w,
@@ -482,99 +483,13 @@ theorem Handler.shiftCapFrom_swap : ∀ (d e : Nat), e ≤ d → ∀ (h : Handle
   | _, _, _, .transaction _ _ => rfl
 end
 
-/-! `shiftCapFrom` commutes with `substFrom` (the descent the cap-closedness needs). The `handle` arm
-uses the self-swap (`shiftCapFrom (d+1) (shiftCap w) = shiftCap (shiftCapFrom d w)`, the `e=0` instance). -/
-mutual
-theorem Val.shiftCapFrom_substFrom : ∀ (d k : Nat) (w t : Val),
-    Val.shiftCapFrom d (Val.substFrom k w t) = Val.substFrom k (Val.shiftCapFrom d w) (Val.shiftCapFrom d t)
-  | _, _, _, .vunit => rfl
-  | _, _, _, .vint _ => rfl
-  | d, k, w, .vvar j => by
-      simp only [Val.shiftCapFrom, Val.substFrom]
-      split
-      · rfl
-      · split <;> rfl
-  | d, k, w, .vthunk M => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Comp.shiftCapFrom_substFrom d k w M]
-  | d, k, w, .inl u => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
-  | d, k, w, .inr u => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
-  | d, k, w, .pair a b => by simp only [Val.shiftCapFrom, Val.substFrom];
-                             rw [Val.shiftCapFrom_substFrom d k w a, Val.shiftCapFrom_substFrom d k w b]
-  | d, k, w, .fold u => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
-theorem Comp.shiftCapFrom_substFrom : ∀ (d k : Nat) (w : Val) (t : Comp),
-    Comp.shiftCapFrom d (Comp.substFrom k w t) = Comp.substFrom k (Val.shiftCapFrom d w) (Comp.shiftCapFrom d t)
-  | d, k, w, .ret u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
-  | d, k, w, .perform _ _ _ u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
-  | d, k, w, .handle h M => by
-      -- handle: substFrom fills the body with `Val.shiftCap w = shiftCapFrom 0 w`; shiftCapFrom (d+1) on the
-      -- body then needs `shiftCapFrom (d+1) (shiftCapFrom 0 w) = shiftCapFrom 0 (shiftCapFrom d w)` (the swap).
-      simp only [Comp.shiftCapFrom, Comp.substFrom]
-      rw [Handler.shiftCapFrom_substFrom d k w h, Comp.shiftCapFrom_substFrom (d+1) k (Val.shiftCap w) M,
-          show Val.shiftCapFrom (d+1) (Val.shiftCap w) = Val.shiftCap (Val.shiftCapFrom d w) from
-            Val.shiftCapFrom_swap d 0 (Nat.zero_le d) w]
-  | d, k, w, .letC M N => by simp only [Comp.shiftCapFrom, Comp.substFrom];
-                             rw [Comp.shiftCapFrom_substFrom d k w M, Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) N,
-                                 show Val.shiftCapFrom d (Val.shift w) = Val.shift (Val.shiftCapFrom d w) from
-                                   Val.shiftCapFrom_shiftFrom d 0 w]
-  | d, k, w, .force u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
-  | d, k, w, .lam M => by simp only [Comp.shiftCapFrom, Comp.substFrom];
-                          rw [Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) M,
-                              show Val.shiftCapFrom d (Val.shift w) = Val.shift (Val.shiftCapFrom d w) from
-                                Val.shiftCapFrom_shiftFrom d 0 w]
-  | d, k, w, .app M u => by simp only [Comp.shiftCapFrom, Comp.substFrom];
-                            rw [Comp.shiftCapFrom_substFrom d k w M, Val.shiftCapFrom_substFrom d k w u]
-  | d, k, w, .case u N₁ N₂ => by
-      simp only [Comp.shiftCapFrom, Comp.substFrom]
-      rw [Val.shiftCapFrom_substFrom d k w u,
-          Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) N₁, Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) N₂,
-          show Val.shiftCapFrom d (Val.shift w) = Val.shift (Val.shiftCapFrom d w) from Val.shiftCapFrom_shiftFrom d 0 w]
-  | d, k, w, .split u N => by
-      simp only [Comp.shiftCapFrom, Comp.substFrom]
-      rw [Val.shiftCapFrom_substFrom d k w u, Comp.shiftCapFrom_substFrom d (k+2) (Val.shift (Val.shift w)) N,
-          show Val.shiftCapFrom d (Val.shift (Val.shift w)) = Val.shift (Val.shift (Val.shiftCapFrom d w)) by
-            rw [Val.shiftCapFrom_shiftFrom d 0 (Val.shift w), Val.shiftCapFrom_shiftFrom d 0 w]]
-  | d, k, w, .unfold u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
-  | _, _, _, .oom => rfl
-  | _, _, _, .wrong _ => rfl
-theorem Handler.shiftCapFrom_substFrom : ∀ (d k : Nat) (w : Val) (h : Handler),
-    Handler.shiftCapFrom d (Handler.substFrom k w h) = Handler.substFrom k (Val.shiftCapFrom d w) (Handler.shiftCapFrom d h)
-  | d, k, w, .state _ s => by simp only [Handler.shiftCapFrom, Handler.substFrom]; rw [Val.shiftCapFrom_substFrom d k w s]
-  | _, _, _, .throws _ => rfl
-  | _, _, _, .transaction _ _ => rfl
-end
-
-/-- `Val.CapScopedIn m v`: `v` carries no ambient `perform`-cap at depth ≥ `m` (every `shiftCapFrom d`
-with `d ≥ m` fixes `v`). The cap-analogue of `Val.ScopedIn`; the lexical-cap discipline at the value
-level. `CapScopedIn 0 = Val.CapClosed`. -/
-def Val.CapScopedIn (m : Nat) (v : Val) : Prop := ∀ d, m ≤ d → Val.shiftCapFrom d v = v
-
-/-- `CapScopedIn 0` IS `CapClosed`. -/
-theorem Val.CapScopedIn.capClosed {v : Val} (h : Val.CapScopedIn 0 v) : Val.CapClosed v :=
-  fun d => h d (Nat.zero_le d)
-
-/-- Substituting a (de-Bruijn) binder with a CAP-CLOSED filler PRESERVES the cap-scope: capabilities and
-variables are INDEPENDENT binders, so a var-subst doesn't shift the cap-scope. `shiftCapFrom d (subst u v)
-= subst (shiftCapFrom d u) (shiftCapFrom d v) = subst u v` (`u` cap-closed ⟹ `shiftCapFrom d u = u`; `v`
-cap-scope-fixed at `d ≥ m`). -/
-theorem Val.CapScopedIn.subst_capClosed {m : Nat} {u v : Val}
-    (hucap : Val.CapClosed u) (hvcap : Val.CapScopedIn m v) :
-    Val.CapScopedIn m (Val.subst u v) := by
-  intro d hd
-  rw [Val.subst, Val.shiftCapFrom_substFrom d 0 u v, hucap d, hvcap d hd]
-
-/-- Closing a `CapScopedIn 0` value over a CAP-CLOSED environment yields a `Val.CapClosed` value.
-Caps and (closing-env) VARS are independent binders: `closeV` only var-substitutes, and var-subst with
-cap-closed fillers PRESERVES cap-scope (`subst_capClosed`), so `CapScopedIn 0` (the source value has no
-ambient `perform`-cap) is maintained to the end ⟹ `CapClosed`. The SOURCE value's `CapScopedIn 0` is the
-lexical-cap-discipline obligation — for a CLOSED well-typed program it holds by construction (every
-`perform` cap resolves to a handler on the stack). -/
-theorem closeV_capClosed_scoped : ∀ {δ : List Val} {v : Val},
-    (∀ u ∈ δ, Val.CapClosed u) → Val.CapScopedIn 0 v → Val.CapClosed (closeV δ v)
-  | [],     v, _,     hv => hv.capClosed
-  | u :: δ, v, hδcap, hv => by
-      have hucap : Val.CapClosed u := hδcap u List.mem_cons_self
-      have hδcap' : ∀ w ∈ δ, Val.CapClosed w := fun w hw => hδcap w (List.mem_cons_of_mem u hw)
-      rw [closeV]
-      exact closeV_capClosed_scoped hδcap' (Val.CapScopedIn.subst_capClosed hucap hv)
+/-! ADR-0053: the `Val/Comp/Handler.shiftCapFrom_substFrom` commutation mutual + the route-A
+`Val.CapScopedIn`/`Val.CapClosed` family (`closeV_capClosed_scoped`) are DELETED. Caps are absolute
+root-levels: `substFrom` no longer applies `shiftCap` to the `handle` body, so the shift↔subst
+commutation de-syncs at the binder and is no longer needed — the LR handler arms close on the
+UNSHIFTED `closeC δ M` (`closeC_handle*`, simplified above). Route-A `CapClosed` was build-refuted
+(ADR-0050). `shiftCapFrom_shiftFrom`/`_swap` (shift-only, still valid) are retained pending the
+full shift-theory sweep. -/
 
 /-- Closing a value SCOPED IN `δ.length` over a CLOSED environment yields a CLOSED value: the fold
 substitutes each free index with a closed filler, dropping the scope by 1 each step to `ScopedIn 0` =
@@ -864,10 +779,10 @@ theorem Comp.substFrom_swap_closed :
       rw [Comp.substFrom_swap_closed hv hw k M, Val.substFrom_swap_closed hv hw k u]
   | v, w, hv, hw, k, .perform _ ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
   | v, w, hv, hw, k, .handle h M => by
-      -- ADR-0045 route-B: both substs cap-shift the body (`shiftCap v`/`shiftCap w`); the IH recurses at
-      -- the SHIFTED fillers, whose `Val.Closed` survives via `Closed.shiftCap` (no `CapClosed` premise).
+      -- ADR-0053: both substs fill the body with `v`/`w` UNCHANGED (absolute caps don't shift on
+      -- handle-crossing); the IH recurses at the unshifted fillers directly.
       simp only [Comp.substFrom]
-      rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed (Val.Closed.shiftCap hv) (Val.Closed.shiftCap hw) k M]
+      rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed hv hw k M]
   | v, w, hv, hw, k, .case u N₁ N₂ => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
       rw [Val.substFrom_swap_closed hv hw k u,
@@ -957,10 +872,10 @@ theorem Comp.substFrom_swap_closed_ge :
       rw [Comp.substFrom_swap_closed_ge hu hw i j hij M, Val.substFrom_swap_closed_ge hu hw i j hij t]
   | u, w, hu, hw, i, j, hij, .perform _ ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
   | u, w, hu, hw, i, j, hij, .handle h M => by
-      -- ADR-0045 route-B: the `handle` body filler cap-shifts (`shiftCap = shiftCapFrom 0`, independent
-      -- of i/j); the IH recurses at the SHIFTED fillers, `Val.Closed` preserved by `Closed.shiftCap`.
+      -- ADR-0053: the `handle` body filler is unshifted (absolute caps); the IH recurses at the
+      -- unshifted fillers directly.
       simp only [Comp.substFrom]
-      rw [Handler.substFrom_swap_closed_ge hu hw i j hij h, Comp.substFrom_swap_closed_ge (Val.Closed.shiftCap hu) (Val.Closed.shiftCap hw) i j hij M]
+      rw [Handler.substFrom_swap_closed_ge hu hw i j hij h, Comp.substFrom_swap_closed_ge hu hw i j hij M]
   | u, w, hu, hw, i, j, hij, .case t N₁ N₂ => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
       rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
@@ -1690,17 +1605,42 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
       exact ⟨qᵣ, VTy.unit, Val.vunit, Val.vunit, _, _, εᵢ, rfl, rfl, (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.unit Val.vunit Val.vunit; rw [VrelK, BaseRel]; exact ⟨rfl, rfl⟩), happ⟩
 
-/-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
+/-! ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
 `h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
-handler `h` at the SAME position (same inner-prefix length), and the OUTER tails `K₁ₒ, K₂ₒ` stay
-`KrelS`-related at SOME hole type/row `(C', e')`. Proven by induction on `K₁` (the `KrelS` def forces
-matching frame shapes; `letF`/`appF` skip the frame; the `handleF`-HIT case is the split point with the
-tail-relatedness from the clause; the `handleF`-MISS case recurses). The `(C', e')` are existential —
-they are the hole type/row threaded to the split point; the dispatch consumer pins them via the supplied
-resume relation. shape: biernacki-popl18 §5.4 (set-row `ρ`-free split). -/
--- ◊4.5b legacy (dynamic-dispatch): kept ONLY for reference until all consumers move to the static form
--- below. NOT consumed by the re-keyed `crelK_fund_up`. Its handleF-MISS arm is the ADR-0043 edge.
--- `krelS_staticSplit_decomp` (ADR-0045) SUPERSEDES it — the MISS arm DISSOLVES under `staticSplit`.
+handler `h` at the SAME position, and the OUTER tails `K₁ₒ, K₂ₒ` stay `KrelS`-related. The
+`krelS_staticSplit_decomp` (ADR-0045) form below SUPERSEDES the legacy `splitAt`-decomp — the
+handleF-MISS arm DISSOLVES under `staticSplit` (cap-counting, no `handlesOp` walk-past). -/
+
+/-- ADR-0053: `KrelS`-related stacks have the SAME handler count. `KrelS` forces matching frame KINDS
+(`letF::letF`/`appF::appF`/`handleF::handleF`), so the handler skeletons coincide. This is what lets the
+ABSOLUTE level→index conversion `handlerCount K - 1 - cap` agree on `K₁` and `K₂` at the dispatch seam. -/
+theorem krelS_handlerCount_eq {n : Nat} :
+    ∀ {K₁ K₂ : Stack} {C D : CTy Eff Mult} {e : Eff},
+      KrelS n C D e K₁ K₂ → Bang.handlerCount K₁ = Bang.handlerCount K₂ := by
+  intro K₁
+  induction K₁ with
+  | nil =>
+      intro K₂ C D e hK
+      rcases K₂ with _ | ⟨fr, K⟩
+      · rfl
+      · simp only [KrelS] at hK
+  | cons fr K₁' ih =>
+      intro K₂ C D e hK
+      rcases K₂ with _ | ⟨fr₂, K₂'⟩
+      · cases fr <;> simp only [KrelS] at hK
+      · cases fr <;> cases fr₂ <;>
+          first
+          | (simp only [KrelS] at hK; done)
+          | (rw [KrelS] at hK
+             obtain ⟨_, _, _, _, _, _, htail⟩ := hK
+             simp only [Bang.handlerCount]; exact ih htail)
+          | (rw [KrelS] at hK
+             obtain ⟨_, _, _, _, _, _, _, htail⟩ := hK
+             simp only [Bang.handlerCount]; exact ih htail)
+          | (have htail := (krelS_handleF.mp hK).2.1
+             simp only [Bang.handlerCount]
+             have := ih htail; omega)
+
 theorem krelS_staticSplit_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
     {K₁ K₂ : Stack} {cap : Nat} {K₁ᵢ K₁ₒ : Stack} {h : Handler}
     (hK : KrelS n C D e K₁ K₂)
@@ -1845,7 +1785,9 @@ theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult}
     CrelK n (CTy.F q B) φ (Comp.perform cap ℓ op v₁) (Comp.perform cap ℓ op v₂) := by
   rw [CrelK]
   intro D K₁ K₂ hK
-  cases hsp1 : Bang.staticSplit K₁ cap with
+  -- ADR-0053: dispatch resolves the ABSOLUTE root-level `cap` via `absSplit` (= `staticSplit` at the
+  -- converted top-index `handlerCount K₁ - 1 - cap`). Case on `absSplit`, matching `staticDispatch`.
+  cases hsp1 : Bang.absSplit K₁ cap with
   | none =>
       intro hconv; exact absurd hconv (not_convergesC_le_up_splitNone K₁ cap ℓ op v₁ hsp1)
   | some t =>
@@ -1866,7 +1808,16 @@ theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult}
       -- dispatch equivalence is tested-not-proved at this one edge. Mirrors the `:1801` documented sorry.
       have hcatch : Bang.handlesOp h ℓ op = true := sorry
       have hlbl : h.label = ℓ := handlesOp_label hcatch
-      obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hinner, htail, hres⟩ := krelS_staticSplit_decomp hK hsp1
+      -- `hsp1 : absSplit K₁ cap = some …` = `staticSplit K₁ (handlerCount K₁-1-cap) = some …`. Feed the
+      -- converted top-index to the (generic) decomp; it yields the SAME index on `K₂`.
+      have hsp1' : Bang.staticSplit K₁ (Bang.handlerCount K₁ - 1 - cap) = some (K₁ᵢ, h, K₁ₒ) := hsp1
+      obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2', hHR, hinner, htail, hres⟩ := krelS_staticSplit_decomp hK hsp1'
+      -- bridge `hsp2'` (index from `K₁`) to `absSplit K₂ cap` (index from `K₂`): `handlerCount` agrees
+      -- on `KrelS`-related stacks (`krelS_handlerCount_eq`).
+      have hcnt : Bang.handlerCount K₁ = Bang.handlerCount K₂ := krelS_handlerCount_eq hK
+      have hsp2 : Bang.absSplit K₂ cap = some (K₂ᵢ, h', K₂ₒ) := by
+        show Bang.staticSplit K₂ (Bang.handlerCount K₂ - 1 - cap) = _
+        rw [← hcnt]; exact hsp2'
       cases h with
       | throws lh =>
           obtain ⟨lh', rfl⟩ : ∃ lh', h' = Handler.throws lh' := by
@@ -2198,23 +2149,13 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       exact crelK_fund_up hArg hRes hcv₁ hcv₂ hvk
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
-      -- resume); `compatK_handleThrows` + `closeC_handleThrows` would close it, EXCEPT for the env
-      -- cap-shift gap below.
+      -- resume). ADR-0053 CLOSED: with absolute caps, `closeC_handleThrows` rewrites to the UNSHIFTED
+      -- `closeC δ M` (no `δ.map shiftCap` — the de-Bruijn shift wall, ADR-0050, is DISSOLVED), so the IH
+      -- `crelK_fund hM n δ₁ δ₂` matches the `compatK_handleThrows` premise directly. The env-shift
+      -- cancellation the seam needed no longer arises (the shift is the identity).
       intro n δ₁ δ₂ hδ
       rw [closeC_handleThrows, closeC_handleThrows]
-      -- ADR-0043/0050 SEAM DESCENT. `closeC_handleThrows` rewrites the body to close over the CAP-SHIFTED
-      -- fillers `δ.map Val.shiftCap` (crossing the `handle` cap-binder bumps every ambient cap), but the
-      -- IH `crelK_fund hM n δ₁ δ₂` produces `CrelK … (closeC δ M)` (UNSHIFTED). Bridging the two is the
-      -- env-shift cancellation `EnvRelK_shiftCap` (= `VrelK`/`CrelK`-shiftCap-stability), which is
-      -- BUILD-REFUTED (ADR-0050, 2026-06-25): its U-clause reduces to the config-simulation
-      -- `(handleF h :: K, shiftCap c) ≈ (K, c)` which walls at the state/txn resume (the resumed focus
-      -- `ret s` is unshifted while the insertion depth moves → needs `s` cap-closed, FALSE). This is a
-      -- bang-SPECIFIC de-Bruijn cap-SHIFT artifact (ADR-0046), NOT in Biernacki (named handlers don't
-      -- shift), so there is no `n-free` proof to inherit. Routes A (LR `LWStack`-fold) and B (config-sim)
-      -- share this one wall. v1 ships seam-5; the real close is a representation change (absolute-caps /
-      -- named-handlers, ADR-0044) deferred to a feasibility spike. The `compatK_handleThrows` core +
-      -- `staticSplit_insert_ge` (the cancellation building block) are LANDED and reusable for that spike.
-      sorry
+      exact compatK_handleThrows hArg (crelK_fund hM n δ₁ δ₂ hδ)
   | @handleState _ _ ℓ s₀ M e φ q S A _hg hgr hp hpr hrestrict hs hM hsub =>
       -- ◊4.5b-append: state-resume closes via `compatK_handleState` (→ `krelS_state_reinstall`, the
       -- resumptive heart). The stored state `s₀` is CLOSED (`HasVTy [] []`, so `closeV δᵢ s₀ = s₀`); its
@@ -2230,13 +2171,10 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
         fun op s' hc => by
           simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
           rcases hc.2 with rfl | rfl <;> simp
-      -- ADR-0043/0050 SEAM DESCENT. Same env cap-shift gap as the throws arm (`closeC_handleState`
-      -- shifts the body's fillers to `δ.map shiftCap`; the IH is at the unshifted `δ`). The bridge
-      -- `EnvRelK_shiftCap` is build-refuted (ADR-0050) — and state is the arm where the underlying
-      -- config-simulation WALLS HARDEST: the resume reinstalls `state ℓ s` and returns the unshifted
-      -- stored `s`, so the simulation needs `shiftCapFrom |Kᵢ| s = s` (cap-closedness), FALSE for a
-      -- general resumptive state. Deferred to the representation spike (absolute-caps / named-handlers).
-      sorry
+      -- ADR-0053 CLOSED: `closeC_handleState` now rewrites to the UNSHIFTED `closeC δ M` (the de-Bruijn
+      -- shift wall, ADR-0050, is dissolved by absolute caps). The IH `crelK_fund hM` matches
+      -- `compatK_handleState`'s premise directly — no env-shift cancellation, no config-simulation.
+      exact compatK_handleState hgr hp hpr hrestrict' hcs₀ hsv (crelK_fund hM n δ₁ δ₂ hδ)
   | @handleTransaction _ _ ℓ Θ₀ M e φ q A hnewA hnewR hreadA hreadR hwriteA hwriteR _ hcells hM hsub =>
       -- ◊4.5b-append: transaction-resume via `compatK_handleTransaction` (→ `krelS_transaction_reinstall`).
       -- `HeapRel n Θ₀ Θ₀` from `hcells` via `heapRel_self_of_cells_int` (NO `vrelK_fund` — int is base, so
@@ -2246,11 +2184,12 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       have hrestrict' : ∀ op Θ', Bang.handlesOp (Handler.transaction ℓ Θ') ℓ op = true →
           op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar" := fun op Θ' hc => by
         simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc; tauto
-      -- ADR-0043/0050 SEAM DESCENT. Same env cap-shift gap (`closeC_handleTransaction` shifts the body's
-      -- fillers); the bridge `EnvRelK_shiftCap` is build-refuted (ADR-0050). transaction is the multi-cell
-      -- generalization of the state wall (the resume reinstalls `transaction ℓ Θ'` and returns unshifted
-      -- cells). Deferred to the representation spike (absolute-caps / named-handlers).
-      sorry
+      -- ADR-0053 CLOSED: `closeC_handleTransaction` now rewrites to the UNSHIFTED `closeC δ M` (the
+      -- de-Bruijn shift wall, ADR-0050, is dissolved by absolute caps). `HeapRel n Θ₀ Θ₀` from `hcells`
+      -- (int cells, self-related). The IH `crelK_fund hM` matches `compatK_handleTransaction` directly.
+      have hheap : HeapRel Eff Mult n Θ₀ Θ₀ := heapRel_self_of_cells_int n Θ₀ hcells
+      exact compatK_handleTransaction hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' hheap
+        (crelK_fund hM n δ₁ δ₂ hδ)
 end
 
 
