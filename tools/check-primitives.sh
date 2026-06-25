@@ -25,15 +25,16 @@ CORE="$ROOT/Bang/Core.lean"
 # Grouped by the five-primitive creed. Editing this list is a SPEC CHANGE (ADR).
 #
 #   thunk/force adjunction : vthunk · force
-#   effect rows + ops      : perform            (a labelled operation + carried capability; rows live in types, EffectRow.lean. ADR-0045: renamed from `up`, gained an inert `cap` field — same primitive, 1b makes cap dispatch-bearing)
+#   effect rows + ops      : perform            (a labelled operation; rows live in types, EffectRow.lean. ADR-0045: renamed from `up`. ADR-0054: now `perform c op v` — the target handler is named by a CAPABILITY value `c`, not a positional cap)
 #   handlers (runtimes)    : handle · state · throws · transaction   (transaction = STM, ADR-0030)
-#   CBPV scaffolding       : vunit vint vvar · ret letC lam app
+#   CBPV scaffolding       : vunit vint vvar vcap · ret letC lam app   (vcap = the capability identity value, ADR-0054 — a value former like vint, NOT a 6th primitive)
 #   ADT data layer (0029)  : inl inr pair fold · case split unfold
 #   error/divergence forms : oom wrong
 ALLOWLIST="$(cat <<'EOF'
 Val.vunit
 Val.vint
 Val.vvar
+Val.vcap
 Val.vthunk
 Val.inl
 Val.inr

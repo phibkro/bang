@@ -79,6 +79,12 @@ inductive Val : Type where
   | vunit  : Val
   | vint   : Int → Val
   | vvar   : Nat → Val                  -- de Bruijn index (0 = nearest binder)
+  -- capability identity (ADR-0054): the runtime name of a handler instance — `vcap n ℓ` pairs the
+  -- generative identity `n` (minted at `handle` installation = the handler-count below it, Fork ii;
+  -- the DISPATCH key) with the effect label `ℓ` (the TYPING key — `vcap n ℓ : Cap ℓ`, recoverable
+  -- statelessly by `HasVTy`). An ordinary inert value (NOT a 6th primitive); runtime-only (the
+  -- elaborator emits `vvar` referencing a `handle` binding, never `vcap`).
+  | vcap   : Nat → Label → Val
   | vthunk : Comp → Val
   -- iso-recursive ADT value formers (ADR-0029). All are INERT values; their
   -- eliminators live in `Comp`. `fold`/`unfold` ERASE at runtime — `fold v`
@@ -94,7 +100,14 @@ inductive Comp : Type where
   | force  : Val → Comp
   | lam    : Comp → Comp                  -- lam M: M binds index 0 (= the argument)
   | app    : Comp → Val → Comp
-  | perform : Nat → Label → OpId → Val → Comp   -- `cap` (first field) is carried but inert in 1a; static dispatch flips it in 1b (ADR-0045)
+  -- ADR-0054 (identity representation): `perform c op v` — `c` is the CAPABILITY value naming the target
+  -- handler instance (a `vvar` bound by the enclosing `handle`, or `vcap n` after installation). The
+  -- term carries NO positional cap and NO label: the effect/label is recovered from `c`'s TYPE at typing,
+  -- and runtime dispatch matches `c`'s identity (Fork a). (Was `Nat → Label → OpId → Val`, ADR-0045.)
+  | perform : Val → OpId → Val → Comp
+  -- ADR-0054: `handle h M` now BINDS a capability variable at index 0 in `M` (like `lam`). Installation
+  -- mints a fresh identity and substitutes `vcap n` for that var; structurally unchanged (the binder is
+  -- positional, by convention).
   | handle : Handler → Comp → Comp
   -- iso-recursive ADT eliminators (ADR-0029). Scrutinees are VALUES (the formers
   -- above), so these reduce immediately like `force (vthunk M)` — no eval-context
@@ -132,7 +145,7 @@ Lexa OOPSLA'24 style; near-syntactic mapping to WasmFX typed continuations.
 inductive Frame : Type where
   | letF    : Comp → Frame                -- let □; N   (N binds index 0)
   | appF    : Val → Frame                 -- □ v
-  | handleF : Handler → Frame             -- handle h □
+  | handleF : Nat → Handler → Frame       -- handle h □  (Nat = the runtime capability identity, ADR-0054)
   deriving Inhabited
 
 abbrev EvalCtx := List Frame   -- innermost frame first
@@ -148,6 +161,9 @@ inductive VTy (Eff Mult : Type) : Type where
   | unit : VTy Eff Mult
   | int  : VTy Eff Mult
   | U    : Eff → CTy Eff Mult → VTy Eff Mult
+  -- capability type (ADR-0054): `Cap ℓ` is the type of a `vcap _ ℓ` value — the handle-bound capability
+  -- naming a handler instance for effect label `ℓ`. Inert, carries no recursion var (labels aren't tvars).
+  | cap  : Label → VTy Eff Mult
   -- iso-recursive ADT type formers (ADR-0029). `mu A` binds a type-level de Bruijn
   -- recursion variable (`tvar 0` = the nearest enclosing μ); `tvar` is NOT a
   -- polymorphic ∀-variable (ADR-0027), so `μX. 1 + (Int × X)` is a CLOSED,
@@ -180,6 +196,7 @@ under one extra `mu`. -/
 def VTy.tyShiftFrom {Eff Mult : Type} (c : Nat) : VTy Eff Mult → VTy Eff Mult
   | .unit       => .unit
   | .int        => .int
+  | .cap ℓ       => .cap ℓ
   | .U φ B       => .U φ (CTy.tyShiftFrom c B)
   | .sum A B     => .sum (VTy.tyShiftFrom c A) (VTy.tyShiftFrom c B)
   | .prod A B    => .prod (VTy.tyShiftFrom c A) (VTy.tyShiftFrom c B)
@@ -196,6 +213,7 @@ mutual
 def VTy.tySubstFrom {Eff Mult : Type} (k : Nat) (T : VTy Eff Mult) : VTy Eff Mult → VTy Eff Mult
   | .unit       => .unit
   | .int        => .int
+  | .cap ℓ       => .cap ℓ
   | .U φ B       => .U φ (CTy.tySubstFrom k T B)
   | .sum A B     => .sum (VTy.tySubstFrom k T A) (VTy.tySubstFrom k T B)
   | .prod A B    => .prod (VTy.tySubstFrom k T A) (VTy.tySubstFrom k T B)
