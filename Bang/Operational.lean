@@ -395,51 +395,11 @@ def handlerCount : EvalCtx → Nat
 /-- Resolve an absolute root-LEVEL against the runtime stack: convert to the top-index `staticSplit`
 expects (`handlerCount K - 1 - lvl`), then reuse `staticSplit`. `lvl < handlerCount K` is
 well-scopedness (an in-range level always resolves — `absSplit_isSome_of_lt`). -/
-def absSplit (K : EvalCtx) (lvl : Nat) : Option (EvalCtx × Handler × EvalCtx) :=
-  staticSplit K (handlerCount K - 1 - lvl)
-
-/-- The ABSOLUTE (root-level) well-scopedness `Prop` — the `Prop` shadow of `absSplit`'s `isSome`. An
-absolute `lvl` resolves to an in-scope handler iff its converted top-index does (`CapResolves` on the
-converted index). -/
-def absResolves (K : EvalCtx) (lvl : Nat) : Prop :=
-  CapResolves K (handlerCount K - 1 - lvl)
-
-/-- The ABSOLUTE kind-match: the handler the root-level `lvl` resolves to handles `(ℓ, op)`. The
-`WCComp`/`LWT` author-site cap-discipline (caps are root-levels, ADR-0053) — the absolute analogue of
-`CapResolvesKind`, via the level→top-index conversion. -/
-def absResolvesKind (K : EvalCtx) (lvl : Nat) (ℓ : Label) (op : OpId) : Prop :=
-  CapResolvesKind K (handlerCount K - 1 - lvl) ℓ op
-
-/-- STATIC dispatch (ADR-0045 1b / ADR-0053): resolve the handler by CAPABILITY — an ABSOLUTE
-root-level cap (`absSplit K cap` converts level→top-index), then route the resolved `(Kᵢ, h, Kₒ)`
-through the UNCHANGED `dispatchOn` (which reads the handler's kind/label). This is what `Source.step`
-uses for `perform`; `dispatch` (label search) is retired to legacy. -/
-def staticDispatch (K : EvalCtx) (cap : Nat) (op : OpId) (v : Val) : Option Config :=
-  (absSplit K cap).bind (dispatchOn op v)
-
-
-/-- The HANDLER skeleton of a stack — keep `handleF` frames, drop cap-transparent `letF`/`appF`. The
-context `WCComp`/`CapResolvesKind` effectively see (caps skip plumbing). Seeding `WellCapped` with this
-makes PUSH-letF/appF preservation DEFINITIONAL (`handlersOf (letF N :: K) = handlersOf K`). -/
 def handlersOf : EvalCtx → EvalCtx
   | [] => []
   | .handleF n h :: K => Frame.handleF n h :: handlersOf K
   | .letF _ :: K => handlersOf K
   | .appF _ :: K => handlersOf K
-
-/-- `CapResolvesKind` reads only the HANDLER skeleton — caps skip `letF`/`appF`. So a cap resolves the
-SAME against `K` and `handlersOf K`. The bridge between RUNTIME dispatch (`staticSplit`/`CapResolvesKind`
-over the full `K`) and the WC invariant (over `handlersOf K`). -/
-theorem CapResolvesKind_handlersOf : ∀ (K : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId),
-    CapResolvesKind (handlersOf K) cap ℓ op ↔ CapResolvesKind K cap ℓ op
-  | [], cap, _, _ => Iff.rfl
-  | .handleF h :: K, 0, ℓ, op => by simp only [handlersOf, CapResolvesKind]
-  | .handleF h :: K, (c+1), ℓ, op => by
-      simp only [handlersOf, CapResolvesKind]; exact CapResolvesKind_handlersOf K c ℓ op
-  | .letF _ :: K, cap, ℓ, op => by
-      simp only [handlersOf, CapResolvesKind]; exact CapResolvesKind_handlersOf K cap ℓ op
-  | .appF _ :: K, cap, ℓ, op => by
-      simp only [handlersOf, CapResolvesKind]; exact CapResolvesKind_handlersOf K cap ℓ op
 
 /-- `handlersOf` distributes over append. -/
 theorem handlersOf_append (K K' : EvalCtx) : handlersOf (K ++ K') = handlersOf K ++ handlersOf K' := by
@@ -453,17 +413,6 @@ theorem handlerCount_handlersOf (K : EvalCtx) : handlerCount (handlersOf K) = ha
   | nil => rfl
   | cons fr K ih => cases fr <;> simp [handlersOf, handlerCount, ih]
 
-/-- ADR-0053: `absResolvesKind` reads only the handler skeleton (converts via `handlerCount`, then runs
-`CapResolvesKind` which skips `letF`/`appF`). So a root-level resolves the SAME against `K` and
-`handlersOf K`. -/
-theorem absResolvesKind_handlersOf (K : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId) :
-    absResolvesKind (handlersOf K) cap ℓ op ↔ absResolvesKind K cap ℓ op := by
-  unfold absResolvesKind
-  rw [handlerCount_handlersOf]
-  exact CapResolvesKind_handlersOf K _ ℓ op
-
-/-- `handlerCount K = (handlersOf K).length` — the conversion modulus IS the handler skeleton length
-(`handlerCount` defined above with the dispatch family; this ties it to the existing skeleton, SSoT). -/
 theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
     handlerCount K = (handlersOf K).length := by
   induction K with
@@ -471,237 +420,22 @@ theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
   | cons fr K ih => cases fr <;> simp [handlerCount, handlersOf, ih]
 
 
-/-! ### The LEXICAL config invariant `LWConfig` (ADR-0045 R1) — replaces the unsound `WellCapped`.
 
-The cap-assignment spike (verdict TRACTABLE, `cap-spike` branch) established that a TWO-context
-lexical judgement splits the sound case A (capability migration) from the unsound case B (capability
-escape) which `WellCapped` could not. R1 promotes it to the kernel; the spike's A/B/cap>0 splits ride
-on as the permanent regression suite `Bang/LWRegress.lean`.
+/-- **The non-escape invariant** (ADR-0054 COLLAPSE). Under capability-passing, cap-resolution is a
+TYPING property (`c : Cap ℓ` + lexical scope ⟹ the binding `handle` encloses the `perform` ⟹ its handler
+is on the stack), so the positional `WellCapped`/`LWConfig` invariant DISSOLVES into the type system. The
+SOLE remaining structural obligation is NON-ESCAPE: a capability does not outlive its handler's dynamic
+extent. **FIRST CUT = `True`** — inc 4 (Metatheory) pins the exact form, revealed by what `preservation`/
+`progress` need (the thunk-escape case is the subtle part — the old `preservation_returnEscape_TODO`,
+now the whole invariant rather than one clause). See ADR-0054 amendment. -/
+def NonEscape (_cfg : Config) : Prop := True
 
-  `LWT S R M`  (S, R : EvalCtx):
-    S = AUTHOR context  (handlers enclosing M at its def site — `handle` PUSHES `handleF h`).
-    R = RETURN context  (handlers a value RETURNED by M escapes INTO — `handle` does NOT push).
-  (a) author-site resolution :  `perform cap ℓ op v` needs `CapResolvesKind S cap ℓ op` (reuses the
-      WellCapped mechanism — `LWT`'s S-part IS `WCComp`).
-  (b) capability NON-ESCAPE  :  `ret v` is checked `LWVal R v` (caps resolve where the value LANDS).
-  At `handle h M`: S' = handleF h :: S, R' = OLD S (a returned value crosses OUT past h). At
-  `letC M N`: M's R := S (its result is consumed HERE), N keeps R. -/
-
-mutual
-/-- A computation is lexically well-typed against AUTHOR context `S` and RETURN context `R`. -/
-def LWT (S R : EvalCtx) : Comp → Prop
-  | .ret v          => LWVal R v                                   -- (b): returned value escapes to R
-  | .perform cap ℓ op v => absResolvesKind S cap ℓ op ∧ LWVal S v  -- (a): author-site resolution (ADR-0053 absolute)
-  | .letC M N       => LWT S S M ∧ LWT S R N      -- M's result CONSUMED here (R_M = S); N escapes to R
-  | .force v        => LWVal S v                                   -- forcing runs the thunk HERE (S)
-  | .app M v        => LWT S S M ∧ LWVal S v        -- M runs here; its result is consumed by the app
-  | .lam M          => LWT S S M                    -- a λ-body runs where applied; model it at S
-  | .handle h M     => LWHandler S h ∧ LWT (Frame.handleF h :: S) S M  -- S pushes h; R ↦ OLD S (escape)
-  | .case v N₁ N₂   => LWVal S v ∧ LWT S R N₁ ∧ LWT S R N₂
-  | .split v N      => LWVal S v ∧ LWT S R N
-  | .unfold v       => LWVal S v
-  | .oom            => True
-  | .wrong _        => True
-/-- A value is lexically well-capped against context `X`: every thunk body it carries is `LWT X X`. -/
-def LWVal (X : EvalCtx) : Val → Prop
-  | .vunit       => True
-  | .vint _      => True
-  | .vvar _      => True
-  | .vthunk M    => LWT X X M
-  | .inl w       => LWVal X w
-  | .inr w       => LWVal X w
-  | .pair w₁ w₂  => LWVal X w₁ ∧ LWVal X w₂
-  | .fold w      => LWVal X w
-def LWHandler (X : EvalCtx) : Handler → Prop
-  | .throws _       => True
-  | .state _ s      => LWVal X s
-  | .transaction _ Θ => ∀ c ∈ Θ, LWVal [] c
-end
-
-/-- The RETURN context for a `ret v` focus over stack `K`: the context the returned value LANDS in. A
-value returned by the focus flows UP the stack — it CROSSES every `handleF` (handler-return is identity,
-the value escapes past) and is CONSUMED by the first `letF`/`appF` (landing in that frame's handler
-skeleton). So skip leading `handleF`s, stop at the first plumbing frame. `[]` = returns to the whole
-program (lands nowhere — nothing resolves, the non-escape boundary). -/
-def retCtx : EvalCtx → EvalCtx
-  | [] => []
-  | .handleF _ :: K => retCtx K          -- value crosses the handler (escapes past it)
-  | .letF _ :: K => handlersOf K         -- value consumed by the letF continuation, runs in handlersOf K
-  | .appF _ :: K => handlersOf K         -- (appF on a ret is ill-typed; total for safety)
-
-/-- A frame stack is lexically well-capped: each stored continuation/handler is `LWT`/`LW`-typed against
-ITS OWN author + return contexts (the contexts it faces once the frame is reached). Mirrors `WCStack`
-but threads the return context: a `letF N` continuation, when reached, runs in author `handlersOf K`
-and returns into `retCtx K`. -/
-def LWStack : EvalCtx → Prop
-  | [] => True
-  | .letF N :: K   => LWT (handlersOf K) (retCtx K) N ∧ LWStack K
-  | .appF v :: K   => LWVal (handlersOf K) v ∧ LWStack K
-  | .handleF h :: K => LWHandler (handlersOf K) h ∧ LWStack K
-
-/-- **The config-level lexical invariant `LWConfig`** (ADR-0045 R1): the focus is `LWT`-typed against
-the stack's HANDLER skeleton (author) and the focus's return context `retCtx K` (where its value lands),
-and the stack's stored continuations are `LWStack`. Seeding with `handlersOf K`/`retCtx K` makes the
-plumbing frames cap-transparent and the handler-return identity step preservation-by-construction. -/
-def LWConfig : Config → Prop
-  | (K, M) => LWT (handlersOf K) (retCtx K) M ∧ LWStack K
-
-/-- **Configuration typing** (ADR-0045 R1): the typing CORE (`HasConfigTy`) PLUS the lexical-capability
-invariant `LWConfig` (replacing the unsound `WellCapped`). Folding `LWConfig` in HERE keeps the frozen
-`preservation`/`progress` statements — stated over `HasConfig` — BYTE-IDENTICAL. (`type_safety`, stated
-over `HasCTy [] []`, gains an `LWConfig ([], c)` premise; see `Bang/Spec.lean`.) -/
+/-- **Configuration typing** (ADR-0054 COLLAPSE): the typing CORE (`HasConfigTy`) PLUS the `NonEscape`
+invariant (replacing the positional `LWConfig`, which is now subsumed by typing — the capability's `Cap ℓ`
+type carries the resolution). Folding it in HERE keeps the frozen `preservation`/`progress` statements —
+stated over `HasConfig` — BYTE-IDENTICAL. -/
 def HasConfig [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
-  HasConfigTy cfg eo Co ∧ LWConfig cfg
-
-/-! ### `LWConfig` preservation lemmas (ADR-0045 R1) — the cap-invariant steps. -/
-
-/-- **handleF-ret preservation, BY CONSTRUCTION** (the case that broke `WellCapped`). The handler-return
-identity step `(handleF h :: K, ret v) ↦ (K, ret v)` preserves `LWConfig`: `retCtx (handleF h :: K) =
-retCtx K` (a returned value crosses the handler) and `ret v` is checked ONLY against the return context,
-so the focus condition `LWVal (retCtx K) v` is IDENTICAL before/after; `LWStack` just drops its head
-handler. This is the whole point of the R-context: a value escaping its handler is checked where it
-LANDS, so the pop is a no-op on the invariant. -/
-theorem LWConfig.handleF_ret (h : Handler) (K : EvalCtx) (v : Val) :
-    LWConfig (Frame.handleF h :: K, Comp.ret v) → LWConfig (K, Comp.ret v) := by
-  intro hlw
-  obtain ⟨hfocus, hstack⟩ := hlw
-  simp only [LWConfig, retCtx, handlersOf, LWT] at hfocus ⊢
-  simp only [LWStack] at hstack
-  exact ⟨hfocus, hstack.2⟩
-
-/-- `CapResolvesKind K cap ℓ op` ⟹ `staticSplit K cap` SUCCEEDS — a resolving cap names an in-scope
-handler, so the runtime dispatch never stalls. The `Prop`→`Option.isSome` bridge that turns the
-`LWConfig` focus invariant into operational progress at a `perform`. Structural recursion on `K`/`cap`,
-mirroring `staticSplit`/`CapResolvesKind`. (ADR-0045 R1; lifted from the cap-assignment spike.) -/
-theorem staticSplit_isSome_of_resolvesKind :
-    ∀ (K : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId),
-      CapResolvesKind K cap ℓ op → (staticSplit K cap).isSome
-  | [], cap, _, _, h => by cases cap <;> exact absurd h id
-  | .handleF _ :: _, 0, _, _, _ => by simp [staticSplit]
-  | .handleF _ :: K, c+1, ℓ, op, h => by
-      simp only [staticSplit]
-      have := staticSplit_isSome_of_resolvesKind K c ℓ op h
-      cases hs : staticSplit K c with
-      | none => rw [hs] at this; exact absurd this (by simp)
-      | some _ => simp
-  | .letF _ :: K, cap, ℓ, op, h => by
-      simp only [staticSplit]
-      have := staticSplit_isSome_of_resolvesKind K cap ℓ op h
-      cases hs : staticSplit K cap with
-      | none => rw [hs] at this; exact absurd this (by simp)
-      | some _ => simp
-  | .appF _ :: K, cap, ℓ, op, h => by
-      simp only [staticSplit]
-      have := staticSplit_isSome_of_resolvesKind K cap ℓ op h
-      cases hs : staticSplit K cap with
-      | none => rw [hs] at this; exact absurd this (by simp)
-      | some _ => simp
-
-/-! ### Well-capped structural lemmas (ADR-0045 B3a) — the chain that makes `WellCapped` preserved.
-
-The lemmas substitution / dispatch need. The KEYSTONE is `WCComp.shiftCap_insert` (a comp/value
-well-capped against `Δ ++ Sg`, with caps bumped at cutoff `|Δ|`, stays well-capped against
-`Δ ++ handleF h :: Sg` — a handler INSERTED at depth `|Δ|`). It rides on `CapResolvesKind.insert`
-(below): the bumped cap resolves identically, because `CapResolvesKind` reads only handler KINDS
-(`handlesOp`), which `shiftCapFrom` leaves untouched. -/
-
-/-- `CapResolvesKind` ignores `letF`/`appF` frames (cap-transparent). -/
-@[simp] theorem CapResolvesKind.letF (N : Comp) (Sg : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId) :
-    CapResolvesKind (Frame.letF N :: Sg) cap ℓ op = CapResolvesKind Sg cap ℓ op := rfl
-@[simp] theorem CapResolvesKind.appF (w : Val) (Sg : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId) :
-    CapResolvesKind (Frame.appF w :: Sg) cap ℓ op = CapResolvesKind Sg cap ℓ op := rfl
-
-/-- `handleF`-map of a handler list — the handler-only prefix `WCComp` threads (it extends Σ ONLY by
-`handleF`, never letF/appF). -/
-abbrev hframes (Δ : List Handler) : EvalCtx := Δ.map Frame.handleF
-
-/-- `shiftCapFrom` preserves a handler's `handlesOp` (it touches only the payload caps, never the
-label or op-kind). Hence `CapResolvesKind`/`WCComp` — which read the context only via `handlesOp` —
-are insensitive to it. -/
-@[simp] theorem handlesOp_shiftCapFrom (d : Nat) (h : Handler) (ℓ : Label) (op : OpId) :
-    handlesOp (Handler.shiftCapFrom d h) ℓ op = handlesOp h ℓ op := by
-  cases h <;> rfl
-
-/-- Two frame-lists are `handlesOp`-equivalent: same shape, positionally, and `handleF` frames agree on
-`handlesOp` (their payloads may differ). `CapResolvesKind`/`WCComp` respect it. -/
-def CtxKindEq : EvalCtx → EvalCtx → Prop
-  | [], [] => True
-  | (.letF _ :: K), (.letF _ :: K') => CtxKindEq K K'
-  | (.appF _ :: K), (.appF _ :: K') => CtxKindEq K K'
-  | (.handleF h :: K), (.handleF h' :: K') => (∀ ℓ op, handlesOp h ℓ op = handlesOp h' ℓ op) ∧ CtxKindEq K K'
-  | _, _ => False
-
-theorem CtxKindEq.refl : ∀ K : EvalCtx, CtxKindEq K K
-  | [] => trivial
-  | .letF _ :: K => CtxKindEq.refl K
-  | .appF _ :: K => CtxKindEq.refl K
-  | .handleF _ :: K => ⟨fun _ _ => rfl, CtxKindEq.refl K⟩
-
-/-- `CapResolvesKind` respects `handlesOp`-equivalence of the context. -/
-theorem CapResolvesKind.ctxKindEq : ∀ (K K' : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId),
-    CtxKindEq K K' → (CapResolvesKind K cap ℓ op ↔ CapResolvesKind K' cap ℓ op)
-  | [], [], _, _, _, _ => Iff.rfl
-  | (.letF _ :: K), (.letF _ :: K'), cap, ℓ, op, he =>
-      CapResolvesKind.ctxKindEq K K' cap ℓ op he
-  | (.appF _ :: K), (.appF _ :: K'), cap, ℓ, op, he =>
-      CapResolvesKind.ctxKindEq K K' cap ℓ op he
-  | (.handleF h :: K), (.handleF h' :: K'), 0, ℓ, op, he => by
-      simp only [CapResolvesKind]; rw [he.1 ℓ op]
-  | (.handleF h :: K), (.handleF h' :: K'), (c+1), ℓ, op, he => by
-      simp only [CapResolvesKind]; exact CapResolvesKind.ctxKindEq K K' c ℓ op he.2
-
-/-- `CtxKindEq` fixes frame KINDS, so the handler counts coincide. -/
-theorem CtxKindEq.handlerCount_eq : ∀ {K K' : EvalCtx}, CtxKindEq K K' →
-    handlerCount K = handlerCount K'
-  | [], [], _ => rfl
-  | (.letF _ :: K), (.letF _ :: K'), he => by simp only [handlerCount]; exact CtxKindEq.handlerCount_eq he
-  | (.appF _ :: K), (.appF _ :: K'), he => by simp only [handlerCount]; exact CtxKindEq.handlerCount_eq he
-  | (.handleF _ :: K), (.handleF _ :: K'), he => by
-      simp only [handlerCount]; rw [CtxKindEq.handlerCount_eq he.2]
-
-/-- ADR-0053: `absResolvesKind` respects `handlesOp`-equivalence of the context (the absolute analogue of
-`CapResolvesKind.ctxKindEq`; the `handlerCount` agrees by `CtxKindEq.handlerCount_eq`). -/
-theorem absResolvesKind.ctxKindEq (K K' : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId)
-    (he : CtxKindEq K K') : absResolvesKind K cap ℓ op ↔ absResolvesKind K' cap ℓ op := by
-  unfold absResolvesKind
-  rw [CtxKindEq.handlerCount_eq he]
-  exact CapResolvesKind.ctxKindEq K K' _ ℓ op he
-
-/-- **The cap-insertion law.** Inserting a `handleF h` frame at handler-depth `|Δ|` (`Δ` a list of
-handlers) and bumping the cap there (`cap ≥ |Δ| ↦ cap+1`, `cap < |Δ| ↦ cap`) preserves
-`CapResolvesKind`: a cap targeting an AMBIENT handler (`≥ |Δ|`) skips the inserted frame (the +1), a
-cap targeting an INNER handler (`< |Δ|`) is below the insertion and untouched. Induction on `Δ`/`cap`.
-The inserted/prefix handlers' PAYLOADS are irrelevant — `CapResolvesKind` reads only `handlesOp`. -/
-theorem CapResolvesKind.insert (h : Handler) (Sg : EvalCtx) (ℓ : Label) (op : OpId) :
-    ∀ (Δ : List Handler) (cap : Nat),
-      CapResolvesKind (hframes Δ ++ Sg) cap ℓ op ↔
-      CapResolvesKind (hframes Δ ++ Frame.handleF h :: Sg) (if cap < Δ.length then cap else cap + 1) ℓ op
-  | [], cap => by
-      simp only [hframes, List.map_nil, List.nil_append, List.length_nil, Nat.not_lt_zero, if_false]
-      rfl
-  | (h₀ :: Δ), 0 => by
-      simp only [hframes, List.map_cons, List.cons_append, List.length_cons, Nat.zero_lt_succ, if_true,
-        CapResolvesKind]
-  | (h₀ :: Δ), (c + 1) => by
-      have hiff := CapResolvesKind.insert h Sg ℓ op Δ c
-      by_cases hlt : c < Δ.length
-      · have h1 : c + 1 < Δ.length + 1 := by omega
-        simp only [hframes, List.map_cons, List.cons_append, List.length_cons, CapResolvesKind,
-          if_pos hlt, if_pos h1] at hiff ⊢
-        exact hiff
-      · have h1 : ¬ (c + 1 < Δ.length + 1) := by omega
-        simp only [hframes, List.map_cons, List.cons_append, List.length_cons, CapResolvesKind,
-          if_neg hlt, if_neg h1] at hiff ⊢
-        exact hiff
-
-/-- `CtxKindEq` extends through a shared head frame. -/
-theorem CtxKindEq.cons (fr : Frame) {K K' : EvalCtx} (h : CtxKindEq K K') :
-    CtxKindEq (fr :: K) (fr :: K') := by
-  cases fr with
-  | letF N => exact h
-  | appF w => exact h
-  | handleF hh => exact ⟨fun _ _ => rfl, h⟩
-
+  HasConfigTy cfg eo Co ∧ NonEscape cfg
 
 
 /-! ### WC under VARIABLE shift + substitution (ADR-0045 B3a)
@@ -795,36 +529,43 @@ non-`handleF`-ret cases. Its `sorry` is the typed-LR obligation — a deferred t
 Resolution + `paths/PATH-cap-assignment-spike.md` NEXT), NOT a wall. `handleF_ret` (by construction)
 and `progress_proof` are axiom-clean and independent of it. -/
 theorem preservation_returnEscape_TODO
-    {cfg cfg' : Config} (_hlw : LWConfig cfg) (_hstep : Source.step cfg = some cfg') :
-    LWConfig cfg' := by
-  sorry
+    {cfg cfg' : Config} (_hne : NonEscape cfg) (_hstep : Source.step cfg = some cfg') :
+    NonEscape cfg' := trivial   -- ADR-0054 inc 3: NonEscape := True (first cut); inc 4 gives it real content
 
 /-! ### Lexical-cap regression demos (ADR-0045 amendment) — REAL artifacts, build-gated.
 
-These `#guard`s are the divergence-is-fixed evidence: a false cap-shift fails the build. The program is
-`state s in (let c = {get} in handle (throws _) ($c))` — a `get`-thunk forced UNDER an unrelated
-`throws` handler (migration via the `letC` substitution placing the thunk beneath the `handle`
-wrapper). With the cap-shift in `substFrom` (handle as cap-binder), the thunk's `perform 0` bumps to
-skip the `throws` and correctly reaches the outer `state`. Labels are `Nat` (`EffectRow.Label`). -/
+These `#guard`s are the migration-is-correct evidence (ADR-0054). The `get`-thunk's capability is a
+`vvar` bound by its target `handle`; forced under unrelated `throws` handlers, identity dispatch reaches
+the right handler by MATCH (no re-count → migration-invariant). `handle` BINDS a capability at index 0,
+so de-Bruijn indices count it. Labels are `Nat` (`EffectRow.Label`). -/
 
 /-- `Source.eval` yields exactly `done (vint n)` (Bool; `Result`/`Val` derive only `Inhabited`). -/
 private def yieldsInt (fuel : Nat) (c : Comp) (n : Int) : Bool :=
   match Source.eval fuel c with | .done (.vint m) => m == n | _ => false
 
-/-- 1-deep migration: `get` thunk forced under ONE fresh `throws`; correctly reads the outer state 5. -/
+/-- 1-deep migration: a `{get}` thunk targeting the OUTER state (its cap = `vvar 0` in the state's body),
+forced under one fresh `throws`; identity dispatch reaches the outer state = 5. -/
 private def capMigrate1 : Comp :=
   .handle (.state 1 (.vint 5))
-    (.letC (.ret (.vthunk (.perform 0 1 "get" .vunit)))
-      (.handle (.throws 2) (.force (.vvar 0))))
+    (.letC (.ret (.vthunk (.perform (.vvar 0) "get" .vunit)))
+      (.handle (.throws 2) (.force (.vvar 1))))
 #guard yieldsInt 200 capMigrate1 5
 
-/-- 2-deep migration: the thunk crosses TWO fresh `throws` handlers; the cap-shift recurses (0↦1↦2),
-so `get` still reaches the outer state 9. Defends the `shiftCapFrom` recursion under nested handles. -/
+/-- 2-deep migration: the thunk crosses TWO fresh `throws` handlers; identity dispatch still reaches the
+outer state = 9 (a match never shifts, however deep the migration). -/
 private def capMigrate2 : Comp :=
   .handle (.state 1 (.vint 9))
-    (.letC (.ret (.vthunk (.perform 0 1 "get" .vunit)))
-      (.handle (.throws 2) (.handle (.throws 3) (.force (.vvar 0)))))
+    (.letC (.ret (.vthunk (.perform (.vvar 0) "get" .vunit)))
+      (.handle (.throws 2) (.handle (.throws 3) (.force (.vvar 2)))))
 #guard yieldsInt 300 capMigrate2 9
+
+/-- ★ THE INSERT-BELOW-TARGET WITNESS (the program that broke ABSOLUTE caps, ADR-0053): a thunk that
+handles its OWN `state` and reads it, forced under an unrelated outer `throws`. Identity dispatch reaches
+the thunk's OWN state = 7 (absolute caps mis-resolved this to the throws). The fix, in the kernel. -/
+private def capMigrateInternal : Comp :=
+  .app (.lam (.handle (.throws 2) (.force (.vvar 1))))
+    (.vthunk (.handle (.state 1 (.vint 7)) (.perform (.vvar 0) "get" .vunit)))
+#guard yieldsInt 200 capMigrateInternal 7
 
 /-- `Config.run` unfolds one step on a NON-returning config: when `cfg` is not `([], ret v)` the
 machine takes a `Source.step`. Bridges the equation compiler's overlapping `([], ret v)` /
@@ -836,7 +577,7 @@ theorem Config.run_step (n : Nat) (cfg : Config)
   obtain ⟨K, c⟩ := cfg
   match K, c with
   | [], .ret v => exact absurd rfl (hne v)
-  | [], .letC _ _ | [], .app _ _ | [], .handle _ _ | [], .force _ | [], .perform _ _ _ _
+  | [], .letC _ _ | [], .app _ _ | [], .handle _ _ | [], .force _ | [], .perform _ _ _
   | [], .lam _ | [], .case _ _ _ | [], .split _ _ | [], .unfold _ | [], .oom | [], .wrong _
   | _ :: _, _ => rfl
 

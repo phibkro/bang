@@ -166,3 +166,15 @@ REMAINING (the collapse-deletion — interleaved, build-guided per-block):
 - `preservation_returnEscape_TODO` (~L797): re-key to `NonEscape` (the sole obligation now).
 - capMigrate1/2 #guards (~L815): rewrite to the capability-passing shape (handle-binds-cap, perform vvar)
   + ADD the insert-below-target witness.
+
+### inc 3 COMPLETE (Operational green, 708 jobs)
+
+Collapse-deletion DONE: absolute section + LWT/LWConfig + WC-orphan proof blocks DELETED;
+`HasConfig := HasConfigTy ∧ NonEscape`; `NonEscape := True` (FIRST CUT — inc 4 gives it real content);
+`preservation_returnEscape_TODO` re-keyed to `NonEscape` (`trivial` for now); capMigrate guards rewritten
+to capability-passing + ADDED `capMigrateInternal` (the ADR-0053 insert-below witness) → #guard reads 7.
+`lake build Bang.Operational` green; the three migration #guards pass IN-KERNEL.
+
+★ inc 4 (Metatheory) NEXT: pin `NonEscape`'s real form + re-prove `preservation`/`progress` over the new
+AST (handle-binder + identity dispatch). The thunk-escape case is the sole genuine obligation (the old
+`returnEscape` content). Then inc 5 (LR/Compat — first whole-LR green) · inc 6/7.
