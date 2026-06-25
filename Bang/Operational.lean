@@ -677,38 +677,6 @@ theorem staticSplit_isSome_of_resolvesKind :
       | none => rw [hs] at this; exact absurd this (by simp)
       | some _ => simp
 
-/-- ADR-0045 Inc 2 (the static analogue of `splitAt_some_handlesOp`): a RESOLVING cap names a handler
-that CATCHES `(ℓ, op)`. `CapResolvesKind K cap ℓ op` (the author-site resolution that `LWT`/`WCComp`
-carry) ⟹ the handler `staticSplit K cap` lands on `handlesOp`s `(ℓ, op)`. This is the bridge the typed
-LR's `crelK_fund_up` consumes to recover `handlesOp h ℓ op` from a cap-resolved (label-blind) dispatch.
-Structure mirrors `staticSplit_isSome_of_resolvesKind`. -/
-theorem handlesOp_of_resolvesKind_staticSplit :
-    ∀ (K : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId) {Kᵢ Kₒ : EvalCtx} {h : Handler},
-      CapResolvesKind K cap ℓ op → staticSplit K cap = some (Kᵢ, h, Kₒ) → handlesOp h ℓ op = true
-  | [], cap, _, _, _, _, _, hr, _ => by cases cap <;> exact absurd hr id
-  | .handleF h₀ :: K, 0, ℓ, op, Kᵢ, Kₒ, h, hr, hs => by
-      simp only [CapResolvesKind] at hr
-      simp only [staticSplit, Option.some.injEq, Prod.mk.injEq] at hs
-      obtain ⟨_, rfl, _⟩ := hs; exact hr
-  | .handleF _ :: K, c+1, ℓ, op, Kᵢ, Kₒ, h, hr, hs => by
-      simp only [CapResolvesKind] at hr
-      simp only [staticSplit, Option.map_eq_some_iff] at hs
-      obtain ⟨⟨Ki', h', Ko'⟩, hs', heq⟩ := hs
-      simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, _⟩ := heq
-      exact handlesOp_of_resolvesKind_staticSplit K c ℓ op hr hs'
-  | .letF _ :: K, cap, ℓ, op, Kᵢ, Kₒ, h, hr, hs => by
-      simp only [CapResolvesKind] at hr
-      simp only [staticSplit, Option.map_eq_some_iff] at hs
-      obtain ⟨⟨Ki', h', Ko'⟩, hs', heq⟩ := hs
-      simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, _⟩ := heq
-      exact handlesOp_of_resolvesKind_staticSplit K cap ℓ op hr hs'
-  | .appF _ :: K, cap, ℓ, op, Kᵢ, Kₒ, h, hr, hs => by
-      simp only [CapResolvesKind] at hr
-      simp only [staticSplit, Option.map_eq_some_iff] at hs
-      obtain ⟨⟨Ki', h', Ko'⟩, hs', heq⟩ := hs
-      simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, _⟩ := heq
-      exact handlesOp_of_resolvesKind_staticSplit K cap ℓ op hr hs'
-
 /-! ### Well-capped structural lemmas (ADR-0045 B3a) — the chain that makes `WellCapped` preserved.
 
 The lemmas substitution / dispatch need. The KEYSTONE is `WCComp.shiftCap_insert` (a comp/value
