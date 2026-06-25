@@ -76,3 +76,30 @@ NEW typing: a `Cap ℓ` value type (HasVTy.vcap : the capability's type carries 
   gate (`preservation_returnEscape_TODO`) on the critical path.
 - The **restructuring** (`core-overview.md §6`) is best folded into this port (the Operational split lands
   naturally as inc 2 re-organises the hub) — but only once green; don't block the port on it.
+
+## Resume state — inc 3 (Operational) IN PROGRESS
+
+Commits so far: `05f6e45` (inc 1 Core, green) · `e5ef635` (inc 2 Syntax, green) · then Operational WIP.
+
+**Operational port — DONE:** `shiftFrom`/`substFrom` ported (`vcap` case · `perform` shifts/substs its
+capability VALUE · `handle` is a BINDER → body at cutoff `+1` with lifted filler, like `lam`). The entire
+`shiftCapFrom`/`shiftCap` machinery DELETED (no positional cap to shift under identity caps). 72 → 62 errors.
+
+**Operational port — REMAINING (62 errors, by cluster):**
+1. **Substitution proof lemmas** (`substFrom_shiftFrom`, `shiftFrom_substFrom`, `_closed` family): port the
+   `perform`/`handle` cases (handle now binds → `+1`); add `vcap` cases. Mechanical.
+2. **Dispatch** (`handlesOp`/`staticSplit`/`splitAt`/`dispatchOn` + `handlerCount`): `handleF` now `handleF n h`
+   (re-key every pattern). REWRITE dispatch to IDENTITY MATCH (`splitAt` by the capability's `n`, mirror
+   `scratch/IdentityKernelProbe.splitAtId`). DELETE `absSplit`/`absResolves`/`absResolvesKind` (absolute-cap
+   machinery, gone).
+3. **`Source.step`**: handle case mints identity `= handlerCount K`, pushes `handleF n h`, substitutes
+   `vcap n ℓ` (ℓ = h's label) for var 0 (`subst0`); perform case dispatches by identity; handleF-return drops `n`.
+4. **`LWT`/`LWConfig`**: `perform` author-resolution re-keys to the capability identity; `handle` BINDS (its
+   LWT body context extends); `retCtx`/`LWStack`/`handlersOf` over `handleF n h`. `preservation_returnEscape_TODO`
+   stays (the escape gate, now also the capability-escape guard).
+5. **Orphaned WC helpers** (`hframes`/`CtxKindEq`/`CapResolvesKind.insert`/`handlesOp_shiftCapFrom`/…, left from
+   `d1f0916`): DELETE — they reference the now-gone `shiftCapFrom` and are dead.
+6. **`capMigrate1/2` #guards**: rewrite to the new `perform`/`handle` shape + ADD the insert-below-target case
+   (the witness that broke absolute caps; should now read its own state).
+
+Then inc 4 (Metatheory) → inc 5 (LR/Compat, first green) → inc 6/7.

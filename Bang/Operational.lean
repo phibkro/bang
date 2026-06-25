@@ -47,6 +47,7 @@ def Val.shiftFrom (c : Nat) : Val → Val
   | .vunit       => .vunit
   | .vint n      => .vint n
   | .vvar i      => if i < c then .vvar i else .vvar (i + 1)
+  | .vcap n ℓ    => .vcap n ℓ                          -- a capability is a closed identity (no var)
   | .vthunk M    => .vthunk (Comp.shiftFrom c M)
   | .inl w       => .inl (Val.shiftFrom c w)
   | .inr w       => .inr (Val.shiftFrom c w)
@@ -58,8 +59,8 @@ def Comp.shiftFrom (c : Nat) : Comp → Comp
   | .force w     => .force (Val.shiftFrom c w)
   | .lam M       => .lam (Comp.shiftFrom (c + 1) M)                        -- M binds 0
   | .app M w     => .app (Comp.shiftFrom c M) (Val.shiftFrom c w)
-  | .perform cap ℓ op w   => .perform cap ℓ op (Val.shiftFrom c w)
-  | .handle h M  => .handle (Handler.shiftFrom c h) (Comp.shiftFrom c M)
+  | .perform cp op w   => .perform (Val.shiftFrom c cp) op (Val.shiftFrom c w)  -- cap is a value (ADR-0054)
+  | .handle h M  => .handle (Handler.shiftFrom c h) (Comp.shiftFrom (c + 1) M)  -- handle BINDS the cap at 0
   -- ADT eliminators: each `case` branch binds one (idx 0); `split` binds two (idx 1, 0).
   | .case w N₁ N₂ => .case (Val.shiftFrom c w) (Comp.shiftFrom (c + 1) N₁) (Comp.shiftFrom (c + 1) N₂)
   | .split w N   => .split (Val.shiftFrom c w) (Comp.shiftFrom (c + 2) N)
@@ -81,52 +82,6 @@ end
 abbrev Val.shift  : Val → Val  := Val.shiftFrom 0
 abbrev Comp.shift : Comp → Comp := Comp.shiftFrom 0
 
-/-! ### Cap shift (ADR-0045 amendment) — `handle` is a CAP-BINDER, the de-Bruijn handler dimension.
-
-The `cap` field of `perform` is a de-Bruijn index into the *handler* stack (it counts `handleF`
-frames to its handler). Its binder is `handle`. So just as `shiftFrom` lifts a VARIABLE index when a
-term crosses a `lam`/`letC` binder, `shiftCapFrom` lifts a CAP index when a term crosses a `handle`
-binder. Applied to the filler `v` in the `handle` case of `substFrom` (below), it keeps static
-dispatch SOUND under thunk migration (the B3a divergence). `d` is the handler-depth cutoff: a perform
-with `cap ≥ d` targets an AMBIENT handler (outside the crossed `handle`) and bumps; `cap < d` targets a
-handler INTERNAL to the term and is untouched. Variable binders (`letC`/`lam`/`case`/`split`) do NOT
-change `d` (they add no handler); only `handle` increments it. Structural recursion (no `List.map` over
-`Θ` — heap cells are closed, ADR-0030 — so the `rfl`-reduction the demos/metatheory rely on survives). -/
-mutual
-def Val.shiftCapFrom (d : Nat) : Val → Val
-  | .vunit       => .vunit
-  | .vint n      => .vint n
-  | .vvar i      => .vvar i
-  | .vthunk M    => .vthunk (Comp.shiftCapFrom d M)        -- a thunk adds no handler: same `d`
-  | .inl w       => .inl (Val.shiftCapFrom d w)
-  | .inr w       => .inr (Val.shiftCapFrom d w)
-  | .pair w₁ w₂  => .pair (Val.shiftCapFrom d w₁) (Val.shiftCapFrom d w₂)
-  | .fold w      => .fold (Val.shiftCapFrom d w)
-def Comp.shiftCapFrom (d : Nat) : Comp → Comp
-  | .ret w       => .ret (Val.shiftCapFrom d w)
-  | .letC M N    => .letC (Comp.shiftCapFrom d M) (Comp.shiftCapFrom d N)    -- letC binds a VAR, not a handler
-  | .force w     => .force (Val.shiftCapFrom d w)
-  | .lam M       => .lam (Comp.shiftCapFrom d M)
-  | .app M w     => .app (Comp.shiftCapFrom d M) (Val.shiftCapFrom d w)
-  | .perform cap ℓ op w   =>
-      .perform (if cap < d then cap else cap + 1) ℓ op (Val.shiftCapFrom d w)  -- bump ambient caps
-  | .handle h M  => .handle (Handler.shiftCapFrom d h) (Comp.shiftCapFrom (d + 1) M)  -- handle BINDS a cap
-  | .case w N₁ N₂ => .case (Val.shiftCapFrom d w) (Comp.shiftCapFrom d N₁) (Comp.shiftCapFrom d N₂)
-  | .split w N   => .split (Val.shiftCapFrom d w) (Comp.shiftCapFrom d N)
-  | .unfold w    => .unfold (Val.shiftCapFrom d w)
-  | .oom         => .oom
-  | .wrong s     => .wrong s
-def Handler.shiftCapFrom (d : Nat) : Handler → Handler
-  | .state ℓ s   => .state ℓ (Val.shiftCapFrom d s)
-  | .throws ℓ    => .throws ℓ
-  -- heap cells are CLOSED (ADR-0030) ⇒ no caps to shift; identity keeps structural recursion.
-  | .transaction ℓ Θ => .transaction ℓ Θ
-end
-
-/-- `Val.shiftCap = Val.shiftCapFrom 0` — bump a value's ambient caps as it crosses ONE `handle`. -/
-abbrev Val.shiftCap  : Val → Val  := Val.shiftCapFrom 0
-abbrev Comp.shiftCap : Comp → Comp := Comp.shiftCapFrom 0
-
 mutual
 /-- Replace de Bruijn level `k` with `v` (shifted under the `k` crossed
 binders); decrement free indices `> k`. -/
@@ -137,6 +92,7 @@ def Val.substFrom (k : Nat) (v : Val) : Val → Val
       if i = k then v
       else if i > k then .vvar (i - 1)       -- the level-k binder is gone; renumber down
       else .vvar i                            -- i < k: a deeper-bound var, untouched
+  | .vcap n ℓ    => .vcap n ℓ                  -- a capability is a closed identity (no var to subst)
   | .vthunk M    => .vthunk (Comp.substFrom k v M)
   | .inl w       => .inl (Val.substFrom k v w)
   | .inr w       => .inr (Val.substFrom k v w)
@@ -148,13 +104,11 @@ def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
   | .force w     => .force (Val.substFrom k v w)
   | .lam M       => .lam (Comp.substFrom (k + 1) (Val.shift v) M)
   | .app M w     => .app (Comp.substFrom k v M) (Val.substFrom k v w)
-  | .perform cap ℓ op w   => .perform cap ℓ op (Val.substFrom k v w)
-  -- ADR-0053: caps are ABSOLUTE root-levels, so crossing the `handle` cap-binder does NOT shift them
-  -- (a root-level names a handler from the program root, invariant under where the term sits). The
-  -- filler `v` enters `M` UNCHANGED — `handle` adds a handler at the TOP, which leaves every existing
-  -- root-level untouched (migration-invariance, `absSplit_stable_under_top_push`). This dissolves the
-  -- de-Bruijn shift wall (ADR-0050). (`v`'s var-binding is unchanged; handle binds no var.)
-  | .handle h M  => .handle (Handler.substFrom k v h) (Comp.substFrom k v M)
+  | .perform cp op w   => .perform (Val.substFrom k v cp) op (Val.substFrom k v w)  -- cap is a value (ADR-0054)
+  -- ADR-0054: `handle` BINDS the capability at index 0, so `M` substitutes at the shifted cutoff `k+1`
+  -- with the lifted filler (exactly like `lam`/`letC`). The capability reference is an ordinary value
+  -- (`vvar`/`vcap`), so it rides substitution UNCHANGED — no special cap-shift (that machinery is gone).
+  | .handle h M  => .handle (Handler.substFrom k v h) (Comp.substFrom (k + 1) (Val.shift v) M)
   -- ADT eliminators: `case` branches descend under one binder, `split` under two.
   | .case w N₁ N₂ => .case (Val.substFrom k v w)
       (Comp.substFrom (k + 1) (Val.shift v) N₁) (Comp.substFrom (k + 1) (Val.shift v) N₂)
