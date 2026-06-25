@@ -13,14 +13,15 @@
 > dissolves it. Progress, all compiled-#guard / `#print axioms` gated:
 > - **`perform cap` + static `staticSplit` + LEXICAL cap-shift** landed. Caps are de-Bruijn indices shifted under
 >   `handle` binders (ADR-0045 amendments). The naive uniform shift was found UNSOUND (regressed open-caps) and corrected.
-> - **Lexical-capability typing `LWT` (two-context S/R)** landed — the kernel STD crux is gated axiom-clean at
->   **`dd00df5`**: `LWConfig.handleF_ret` (the case that broke the earlier `WellCapped`) holds BY CONSTRUCTION, and
->   `progress_proof` is sorryAx-FREE (the B1 progress wall discharged). `progB` (the session's soundness bug) is now
+> - **Lexical-capability typing `LWT` (two-context S/R)** landed — the kernel STD block is gated axiom-clean at
+>   **`91e7444`** down to ONE sorry: `LWConfig.handleF_ret` (the case that broke the earlier `WellCapped`) holds BY
+>   CONSTRUCTION, `progress_proof` is sorryAx-FREE (the B1 progress wall discharged), and `preservation_perform_typing`
+>   (the `dispatch`↦`staticDispatch` resume-typing re-key) is CLOSED. `progB` (the session's soundness bug) is now
 >   ill-typed AND progress holds.
 > - **Fork RESOLVED — TYPE-DIRECTED** (ADR-0045 "Resolution"): the capability non-escape check can't be untyped
->   ((A) lazy = unsound; (C) untyped = over-rejects the SAFE ledger) — it's a TYPE-premise on `ret`/`letC`. Two named
->   typed-LR obligations remain: `preservation_returnEscape_TODO` (the type-directed non-escape) +
->   `preservation_perform_typing_TODO` (the `dispatch`↦`staticDispatch` resume-typing re-key, ~170 mechanical lines).
+>   ((A) lazy = unsound; (C) untyped = over-rejects the SAFE ledger) — it's a TYPE-premise on `ret`/`letC`. ONE
+>   typed-LR obligation remains: `preservation_returnEscape_TODO` (the type-directed non-escape) — it can only
+>   close in the typed LR, which is the NEXT phase (in flight: scoping the re-index).
 > - **Shell cap-assignment elaborator** done on `shell-elaborator-spike` (lexical effect→cap resolution; re-greens Surface; case-B = lowering error).
 >
 > **NEXT (the bulk): the TYPED LR re-index** (`Vτ/Cτ/Tτ`) — folds in the type-gate (`U φ C`, `φ≠⊥`) to close BOTH
