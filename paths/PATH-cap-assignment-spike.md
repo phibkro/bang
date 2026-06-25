@@ -42,3 +42,31 @@ the operator's "reassess the pivot" option). Both are useful.
   (it can't reduce Source.eval → garbage; see memory `lean-eval-reliable-only-compiled`).
 - The progress/resolve lemma = a real elaborating lemma; `#print axioms` ⊆ trusted-three, no sorryAx.
 - Manager gates by `lake build` + `#print axioms` on a clean tree.
+
+## VERDICT (2026-06-25) — TRACTABLE (gated, manager-verified on a clean compiled build)
+
+The spike is on branch **`cap-spike @ 216f136`** (`Bang/CapAssignSpike.lean`, builds isolated-green —
+710 jobs). Manager-gated: `lake build` green ⇒ compiled `#guard`s pass (case A `done 5/9`, case B `stuck`);
+`#print axioms` `perform_progress` / `progB_ill_typed` / `capMigrate1_LWT` all `[propext, Quot.sound]`,
+**no sorryAx**.
+
+**The de-risked mechanism — a two-context lexical judgement `LWT S R`:**
+- `S` = AUTHOR context (handlers enclosing M at its def site); `handle h` PUSHES `handleF h` onto S for body.
+- `R` = RETURN/escape context; `handle h`'s body gets `R := old S` (a returned value crosses OUT past h).
+- `letC M N`: M typed with `R_M := S` (consumed here, not escaped).
+- `perform cap ℓ op v` : `CapResolvesKind S cap ℓ op` (author-site resolution).
+- `ret v` : `LWVal R v` (NON-ESCAPE — the returned value's caps must resolve where it LANDS).
+
+The S/R split IS the capability-non-escape discipline (Effekt second-class, minimal form). It makes the
+escape (`progB`'s `ret {get}` out of `handle(state)`) ill-typed (its `perform 0` must resolve against `[]`
+= False), keeps case-A migration well-typed, and `cap>0` resume-into-outer stays accepted (ADR-0045 KEEP) —
+the spike's deleted discrimination probe confirmed all three; make these PERMANENT #guards in the re-index.
+
+## NEXT (the full typed re-index — the multi-session bulk, now de-risked)
+1. Promote `LWT` to the real typed judgement: thread S/R through `HasCTy` (or fold into `HasConfig` exactly
+   as `WellCapped` was), `handle` as the binder.
+2. Prove `LWT` PRESERVATION across `Source.step` (incl. `Comp.subst` + the cap-shift) — the bulk the spike
+   did NOT do (it proved only the decisive perform case + the A/B split).
+3. Re-green the STD block (progress/type_safety) over the cap-shift kernel under `LWT` — now SOUND because
+   case B is ill-typed. Then the LR re-index (Vτ/Cτ/Tτ).
+4. CONFIRM no v1 rung needs late-bound effects (case B) — the expressivity LWT forbids.
