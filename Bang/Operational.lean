@@ -420,21 +420,20 @@ theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
 
 
 
-/-- **The non-escape invariant** (ADR-0054 COLLAPSE). Under capability-passing, cap-resolution is a
-TYPING property (`c : Cap ℓ` + lexical scope ⟹ the binding `handle` encloses the `perform` ⟹ its handler
-is on the stack), so the positional `WellCapped`/`LWConfig` invariant DISSOLVES into the type system. The
-SOLE remaining structural obligation is NON-ESCAPE: a capability does not outlive its handler's dynamic
-extent. **FIRST CUT = `True`** — inc 4 (Metatheory) pins the exact form, revealed by what `preservation`/
-`progress` need (the thunk-escape case is the subtle part — the old `preservation_returnEscape_TODO`,
-now the whole invariant rather than one clause). See ADR-0054 amendment. -/
-def NonEscape (_cfg : Config) : Prop := True
+/-- **`CapResolves K n ℓ op`** — the capability named `n` (label `ℓ`) resolves in stack `K` to a frame
+that HANDLES `(ℓ, op)`. This is precisely the precondition `idDispatch`/`Source.step` need to fire on a
+`perform (vcap n ℓ) op v` focus: `splitAtId` finds the frame and the fail-loud guard `handlesOp` passes.
+The existential mirrors `idDispatch`'s `bind`. shape: scratch/NonEscapeProbe.lean §1. -/
+def CapResolves (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) : Prop :=
+  ∃ Kᵢ h Kₒ, splitAtId K n = some (Kᵢ, h, Kₒ) ∧ handlesOp h ℓ op = true
 
-/-- **Configuration typing** (ADR-0054 COLLAPSE): the typing CORE (`HasConfigTy`) PLUS the `NonEscape`
-invariant (replacing the positional `LWConfig`, which is now subsumed by typing — the capability's `Cap ℓ`
-type carries the resolution). Folding it in HERE keeps the frozen `preservation`/`progress` statements —
-stated over `HasConfig` — BYTE-IDENTICAL. -/
-def HasConfig [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
-  HasConfigTy cfg eo Co ∧ NonEscape cfg
+/-- The focus-level non-escape obligation: a `perform (vcap …)` focus must RESOLVE; every other focus is
+inert (`int`/`unit`/cap-free thunks impose nothing — this is the TYPE-directedness). `NonEscape` (defined
+after `Source.step`, which its reachability closure needs) is the forward closure of this over reachable
+configs. shape: scratch/NonEscapeProbe.lean §3. -/
+def FocusResolves : Config → Prop
+  | (K, .perform (.vcap n ℓ) op _) => CapResolves K n ℓ op
+  | _                              => True
 
 
 /-- `handlesOp` is invariant under `substFrom` (subst changes only handler payloads, never the label
@@ -472,6 +471,40 @@ def Source.step : Config → Option Config
   -- stuck
   | _                       => none
 
+/-- Reflexive-transitive closure of `Source.step` (snoc form) — the reachability relation `NonEscape`
+quantifies over. No prior closure of `Source.step` existed (only the fuel-based `Config.run`), so this
+is its single source. shape: scratch/NonEscapeProbe.lean §3. -/
+inductive StepStar : Config → Config → Prop where
+  | refl : StepStar cfg cfg
+  | tail : StepStar cfg cfg' → Source.step cfg' = some cfg'' → StepStar cfg cfg''
+
+/-- Prepend a step — the cons lemma preservation-of-`NonEscape` rides on (forward-closure is
+structural, not earned). -/
+theorem StepStar.head {cfg cfg₁ cfg' : Config}
+    (h0 : Source.step cfg = some cfg₁) (h : StepStar cfg₁ cfg') : StepStar cfg cfg' := by
+  induction h with
+  | refl => exact StepStar.tail StepStar.refl h0
+  | tail _ hstep ih => exact StepStar.tail ih hstep
+
+/-- **The non-escape invariant** (ADR-0054 COLLAPSE, inc 4). Under capability-passing, cap-resolution is
+a TYPING property (`c : Cap ℓ` + lexical scope ⟹ the binding `handle` encloses the `perform` ⟹ its
+handler is on the stack), so the positional `WellCapped`/`LWConfig` invariant DISSOLVES into the type
+system. The SOLE remaining structural obligation is NON-ESCAPE: a capability does not outlive its
+handler's dynamic extent — expressed as the forward closure of `FocusResolves` over every reachable
+config (Shape B: the unary projection of the typed LR config relation, so non-escape is not a
+hand-maintained parallel invariant — preservation is then BY CONSTRUCTION; the one carried obligation is
+the initial-config direction `well-typed ([],c) → NonEscape ([],c)`, supplied by the ported LR at inc 5).
+See ADR-0054 amendment + scratch/NonEscapeProbe.lean §3. -/
+def NonEscape (cfg : Config) : Prop :=
+  ∀ cfg', StepStar cfg cfg' → FocusResolves cfg'
+
+/-- **Configuration typing** (ADR-0054 COLLAPSE): the typing CORE (`HasConfigTy`) PLUS the `NonEscape`
+invariant (replacing the positional `LWConfig`, which is now subsumed by typing — the capability's `Cap ℓ`
+type carries the resolution). Folding it in HERE keeps the frozen `preservation`/`progress` statements —
+stated over `HasConfig` — BYTE-IDENTICAL. -/
+def HasConfig [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
+  HasConfigTy cfg eo Co ∧ NonEscape cfg
+
 /-- Fill a single frame's hole with a focus — the one-step node a `plug` builds for a frame, and
 the redex a PUSH step undoes (`step (K, fr.wrapStep c) = (fr :: K, c)`). -/
 def Frame.wrapStep : Frame → Comp → Comp
@@ -504,14 +537,16 @@ def Config.run : Nat → Config → Result Val
 def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel ([], c)
 
 /-- **The non-escape preservation obligation (ADR-0054).** `NonEscape` is preserved by every
-`Source.step` transition. The only genuine case is RETURN-ESCAPE of a capability-carrying value (a
-`ret`/`letF`-ret threading a value whose thunk holds a live-effect capability PAST its handler) — the
-non-escape check is TYPE-DIRECTED (distinguishes `U φ C` with `φ ≠ ⊥` from a cap-free `int`/`unit`).
-STUB: `NonEscape := True` (inc-3 first cut), so this is `trivial`; **inc 4 (Metatheory) gives `NonEscape`
-its real form** + the real proof (revealed by what `preservation`/`progress` need). See ADR-0054 amendment. -/
+`Source.step` transition. With `NonEscape` now the forward closure of `FocusResolves` over reachable
+configs (inc 4), preservation is BY CONSTRUCTION: any config reachable from the successor `cfg'` is
+reachable from `cfg` by prepending the step (`StepStar.head`), so `cfg`'s closure covers it. No typing,
+no LR — the type-directed escape discrimination lives in `FocusResolves`, the cap-resolution obligation.
+The one remaining LR-carried direction is the INITIAL config (`well-typed ([],c) → NonEscape ([],c)`),
+not this preservation step. See ADR-0054 amendment + scratch/NonEscapeProbe.lean §3. -/
 theorem preservation_returnEscape_TODO
-    {cfg cfg' : Config} (_hne : NonEscape cfg) (_hstep : Source.step cfg = some cfg') :
-    NonEscape cfg' := trivial
+    {cfg cfg' : Config} (hne : NonEscape cfg) (hstep : Source.step cfg = some cfg') :
+    NonEscape cfg' :=
+  fun cfg'' hreach => hne cfg'' (StepStar.head hstep hreach)
 
 /-! ### Lexical-cap regression demos (ADR-0045 amendment) — REAL artifacts, build-gated.
 
