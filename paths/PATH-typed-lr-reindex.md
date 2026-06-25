@@ -35,7 +35,7 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
 - `preservation`/`type_safety`/`progress` (Spec.lean:93,116,104): the REAL frozen-statement risk, via Inc 3 — a φ≠⊥ premise on `ret`/`letC` in `HasConfigTy` would change the `HasConfig` premise shape. STATEMENT_CHANGE_OK against ADR-0045 (same envelope as the existing `LWConfig` fold).
 - "Only the index moves" is OPTIMISTIC (the index already moved; the dispatch re-key is the bulk — multi-session, ~the ◊4.5b sub-block-(f) surface area) and the return-escape gate (Inc 3) is genuinely NEW machinery, not a re-index.
 
-## Status + remaining work — at `26f4373` (2026-06-25)
+## Status + remaining work — at `c105904` (2026-06-25)
 
 - **Banked `a771cc1` (LR-green, 709):** route-B `KrelS`/`EnvRelK` strip (`Val.CapClosed` GONE — route A was
   over-strong) + `closeC` route-B shapes + **the MISS dissolution** (`krelS_staticSplit_decomp` — the ◊4.5b edge
@@ -52,18 +52,31 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
   - **(a) mechanical strip (~30 sites):** `CapClosed` removed from the `closeC_subst_comm` family,
     `crelK_unfold`, `krelS_*_intro`, `compatK_letC/app/lam/case/split`, `krelS_append`, `*_reinstall`,
     `krelS_staticSplit_decomp`, and the ~14 `crelK_fund` body sites (`EnvRelK.capClosed_*` projections gone).
-- **Remaining — the 6 errors, two next-increment items:**
-  - **Item 1 — `crelK_fund_up` dispatch RE-KEY (`Compat:1850/1855`) — IN FLIGHT (lrscope).** `splitAt`→`staticSplit`,
-    `krelS_splitAt_decomp`→`krelS_staticSplit_decomp`, match the `staticDispatch` shape. THROWS arm first (PATH Inc 0).
-  - **Item 2 — the contextual cancellation gate (`Compat:2188/2204/2215`, `crelK_fund` handler arms).**
-    `compatK_handle*` expects the body under the cap-SHIFTED env `closeC (δ.map shiftCap) M`; `crelK_fund hM`
-    supplies unshifted `closeC δ M`. **Design APPROVED: try the refocus-restructure FIRST** (push `handleF` before
-    closing the body so `δ.map shiftCap` is the natural +1-handler env — may dissolve the cancellation lemma
-    entirely, PATH lines 66–78); fall back to the contextual cancellation lemma if not.
-  - **Then:** R1 bridge (`KrelS`→cap-resolution via `HandlerRel`) → close the bounded cap>0 resume-relocation
-    (`:1801`, `dispatchOn_append_outer` + `staticSplit_decomp`, answer type cap-witnessed) → **the frozen
-    `lr_fundamental` well-capped premise** (context-relative `WellCapped`, mirrors `type_safety`'s `LWConfig`;
-    **STOP-and-show the exact premise before editing `Spec.lean`**).
+- **✓ Item 1 — `crelK_fund_up` dispatch RE-KEY DONE — banked `c105904`.** none-half + all arms →
+  `staticDispatch`/`staticSplit`; `krelS_splitAt_decomp`→`krelS_staticSplit_decomp`. Reduced to ONE labeled sorry
+  `hcatch : handlesOp h ℓ op = true` (`Compat:1857`) — the cap-resolution obligation. Build: errors only at item-2
+  (`2194/2210/2221`); sorries `:1801` + `:1857`.
+- **✓ DE-RISK DONE (throwaway, reverted to `c105904`) — DECISIVE:**
+  - cap=0 does NOT close on existing `KrelS` (`exact?`-refuted); cap>0 does NOT fold into `:1801` (distinct). Cheap path dead.
+  - **`hcatch` CLOSES sorry-free, cap-UNIFORM, GIVEN `CapResolvesKind K₁ cap ℓ op`** — via the new helper
+    `handlesOp_of_resolvesKind_staticSplit` (mirrors `staticSplit_isSome_of_resolvesKind`) + `handlesOp_label`. The
+    hardest unknown is PROVEN; `crelK_fund_up` goes sorry-free given the hypothesis.
+  - **cap-in-`KrelS` alone is INSUFFICIENT:** `CrelK`/`KrelS` quantify over ALL related stacks incl. cap-NON-resolving
+    ones; `KrelS` has no `(cap,ℓ,op)` to key a conjunct. The cap-resolution must be SEEDED from the well-capped term
+    → the FROZEN `lr_fundamental` premise IS needed, bridged through an `LWStack`-carrying `KrelS`. The full R1
+    `LWConfig`+`LWStack` bridge (PATH line ~63) — genuinely new but BOUNDED machinery.
+- **★ OPERATOR COMMITTED (2026-06-25) — the staged Inc 2 (NOT the ADR-0043 seam).** The de-risked path to
+  `sorryAx`-zero `lr_sound`. Staged, each build-gated + banked (lrscope; manager gates per stage):
+  1. helper `handlesOp_of_resolvesKind_staticSplit` (✓ proven in prototype) — IN FLIGHT.
+  2. `LWStack` into `KrelS`'s handleF clause + re-prove the ~7 handleF-clause consumers (`krelS_handleF`/`_intro`,
+     `krelS_append`, `krelS_state`/`transaction_reinstall`, `krelS_staticSplit_decomp`, `krelS_refl` handleF arm, `*_mono`).
+  3. `krelS_refl` establishes `LWStack` from `HasStack`.
+  4. **STOP-and-SHOW the exact frozen `lr_fundamental` premise** (`WellCapped`/`LWConfig`-open-analogue, shape
+     pre-approved) before editing `Spec.lean`; then wire premise → `crelK_fund_up`, close `hcatch`, confirm
+     `#print axioms lr_sound` `sorryAx`-GONE.
+- **Item 2 — the contextual cancellation gate (`Compat:2188/…`, `crelK_fund` handler arms) — HELD** until Inc 2 lands
+  (the `KrelS` change may shift its errors). Design pre-approved: refocus-restructure first (push `handleF` before
+  closing the body), fall back to the contextual cancellation lemma.
 - **End state (the payoff):** `#print axioms lr_sound`/`lr_fundamental` ⊆ {propext, Classical.choice, Quot.sound},
   `sorryAx` GONE — the ◊4.5b edge closed.
 
