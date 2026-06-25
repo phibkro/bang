@@ -68,6 +68,15 @@ selfcheck:
 check FILE="":
     bash tools/check.sh {{FILE}}
 
+# Generated Lean symbol index (the navigation gap-fill — tilth/stacklit don't do Lean).
+# ON-DEMAND: regenerates fresh in <1s, so it never drifts (a file:line index would churn
+# every edit, so it is NOT committed/gated). Optional name filter.
+#   just symbols                      # all declarations, sorted by name
+#   just symbols HasCTy               # only names containing "HasCTy"
+#   just symbols --by-file            # per-module structural outline
+symbols PATTERN="":
+    python3 tools/symbols.py {{PATTERN}}
+
 # Phase B burndown chart — sorry + axiom count per Bang/*.lean.
 burndown:
     bash tools/burndown.sh
