@@ -28,7 +28,6 @@ meaning; WasmFX is verified output, not source-of-truth.
 | `Bang/Metatheory.lean` | the **proofs**: preservation/progress/type_safety/subst_value/no_accidental_handling |
 | `Bang/CalcVM.lean` | the ◊3 calculated machine (`evalD`, `compile`, `exec`, `compile_correct`) |
 | `Bang/EffectRow.lean` | row algebra with sound unifier |
-| `Bang/Eval.lean` | legacy free-monad reference (K2; superseded by the graded-CBPV kernel above) |
 | `Bang/Compat.lean` | per-rule compatibility lemmas |
 | `Bang/Distribution.lean` | semilattice / CALM asset (flagged conjecture, not spine) |
 | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` | current architecture |
