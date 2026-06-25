@@ -1,15 +1,21 @@
 /-
-  Bang/LWRegress.lean — ADR-0045 R1 permanent regression suite for the KERNEL `LWT`.
+  Bang/LWRegress.lean — ADR-0054 behavioral regression suite (NonEscape's operational oracle).
   ─────────────────────────────────────────────────────────────────────────────────
-  Carries the cap-assignment spike's decisive splits forward onto the PROMOTED kernel `LWT`
-  (Operational.lean), as permanent build-gated checks:
-    1. case A (capMigrate) — WELL-TYPED under `LWT` + `done 5`/`done 9` (compiled `#guard`).
-    2. case B (escapeM/progB) — ILL-TYPED under `LWT` (the capability-escape) + `stuck`.
-    3. cap>0 (resume-into-outer) — WELL-TYPED (the ADR-0045 KEEP case — a perform reaching PAST an
-       inner handler to an enclosing one is legal; only ESCAPE out of a handler is illegal).
+  Carries the cap-assignment witnesses forward onto the IDENTITY-dispatch kernel (ADR-0054). The old
+  positional `LWT`/`CapResolvesKind` are DELETED; the structural escape-rejection re-keys onto `NonEscape`
+  (Operational.lean). The behavioural claims are COMPILED `#guard`s (a failing build = a false `#guard`;
+  the project oracle — `lean-eval-reliable-only-compiled`); never `lake env lean`.
 
-  GATING: every behavioural claim is a COMPILED `#guard` (a failing build = a false `#guard`); never
-  `lake env lean` (`Source.eval` does not reduce interpreted — memory `lean-eval-reliable-only-compiled`).
+    1. case A (capMigrate) — a `{get}`-thunk captures its handler's cap and migrates INTO the enclosing
+       state handler (legal); reads its own state → `done 5`/`done 9`.
+    2. case B (escape) — a `{get}`-thunk RETURNED out of its handler and forced with NO same-depth
+       handler is STUCK (fail-loud) and `¬ NonEscape` (the structural rejection).
+
+  ADR-0054 BEHAVIORAL NOTE: the escape's RE-HANDLED form (progB, scratch/IdentityCollisionProbe.lean) is
+  NO LONGER the stuck oracle — under depth-based identities it COLLIDES with a fresh same-depth handler
+  and resolves (the WC keystone-2c gap, pending an operator design call). The robust escape oracle is the
+  DIRECT-FORCE form `escapeB` here: stuck + `¬ NonEscape`, independent of that design call.
+
   Imports ONLY `Bang.Operational` + `Bang.Mult`.
 -/
 import Bang.Operational
@@ -20,96 +26,62 @@ namespace Bang.LWRegress
 open Bang
 open Bang.EffectRow (Label EffRow)
 
-/-- The concrete `EffSig`: label `1` is a `state`-label (ops `get`/`put`, `unit → unit`). -/
-@[reducible] def sigU : EffSig EffRow QTT where
-  labelEff ℓ := {ℓ}
-  opArg ℓ op := if ℓ = 1 ∧ (op = "get" ∨ op = "put") then some VTy.unit else none
-  opRes ℓ op := if ℓ = 1 ∧ (op = "get" ∨ op = "put") then some VTy.unit else none
-  labelEff_ne_bot ℓ := Finset.singleton_ne_empty ℓ
-  labelEff_sep ℓ ℓ' φ h hne := by
-    have hmem : ℓ ∈ ({ℓ'} : EffRow) ∪ φ := h (Finset.mem_singleton_self ℓ)
-    apply Finset.singleton_subset_iff.mpr
-    rcases Finset.mem_union.1 hmem with hℓ | hφ
-    · exact absurd (Finset.mem_singleton.1 hℓ) hne
-    · exact hφ
+/-! ### 1. case A — migration INTO an enclosing handler terminates reading its own state.
 
-attribute [local instance] sigU
-
-/-- The author-site fact every case-A perform needs: `state 1`'s nearest-handler resolves `(1, get)`. -/
-theorem state1_resolves_get (s : Val) :
-    CapResolvesKind [Frame.handleF (.state 1 s)] 0 1 "get" := rfl
-
-/-! ### 1. case A — WELL-TYPED under the kernel `LWT` + terminates under the cap-shift. -/
+ADR-0054: the `{get}`-thunk performs on the handle-bound capability `vvar 0` (the `state` handler's cap).
+Returned by the `letC` and forced under a fresh `throws` (which binder-shifts the bound thunk to `vvar 1`
+/ `vvar 2`), the cap travels WITH the thunk and resolves to the SAME state handler still on the stack —
+migration, not escape. -/
 
 private def capMigrate1 : Comp :=
   .handle (.state 1 (.vint 5))
-    (.letC (.ret (.vthunk (.perform 0 1 "get" .vunit)))
-      (.handle (.throws 2) (.force (.vvar 0))))
+    (.letC (.ret (.vthunk (.perform (.vvar 0) "get" .vunit)))
+      (.handle (.throws 2) (.force (.vvar 1))))
 private def capMigrate1_done5 : Bool :=
   match Source.eval 200 capMigrate1 with | .done (.vint n) => n == 5 | _ => false
 #guard capMigrate1_done5
 
 private def capMigrate2 : Comp :=
   .handle (.state 1 (.vint 9))
-    (.letC (.ret (.vthunk (.perform 0 1 "get" .vunit)))
-      (.handle (.throws 2) (.handle (.throws 3) (.force (.vvar 0)))))
+    (.letC (.ret (.vthunk (.perform (.vvar 0) "get" .vunit)))
+      (.handle (.throws 2) (.handle (.throws 3) (.force (.vvar 2)))))
 private def capMigrate2_done9 : Bool :=
   match Source.eval 300 capMigrate2 with | .done (.vint n) => n == 9 | _ => false
 #guard capMigrate2_done9
 
-/-- case A is LEXICALLY WELL-TYPED under the kernel `LWT` (the `ret {get}` is a `letC`'s M, return-ctx
-= S = [state], so the perform resolves). -/
-theorem capMigrate1_LWT : LWT [] [] capMigrate1 := by
-  simp only [capMigrate1, LWT, LWVal, LWHandler]
-  exact ⟨trivial, ⟨state1_resolves_get _, trivial⟩, trivial, trivial⟩
+/-! ### 2. case B — the DIRECT-FORCE escape: STUCK + `¬ NonEscape` (the structural rejection). -/
 
-theorem capMigrate2_LWT : LWT [] [] capMigrate2 := by
-  simp only [capMigrate2, LWT, LWVal, LWHandler]
-  exact ⟨trivial, ⟨state1_resolves_get _, trivial⟩, trivial, trivial, trivial⟩
+/-- The escape: a `{get}`-thunk capturing the inner `state 1` handler's cap (`vvar 0`) is RETURNED out
+and forced at top level (no re-handler). The cap names the popped handler's identity `0`; `splitAtId []
+0 = none` → fail-loud STUCK. (= `scratch/NonEscapeProbe.escapeWitness` at `unit` state.) -/
+def escapeB : Comp :=
+  .letC (.handle (.state 1 .vunit) (.ret (.vthunk (.perform (.vvar 0) "get" .vunit))))
+        (.force (.vvar 0))
+private def escapeB_stuck : Bool :=
+  match Source.eval 300 escapeB with | .stuck => true | _ => false
+#guard escapeB_stuck
 
-/-! ### 2. case B — ILL-TYPED under the kernel `LWT` (the capability escape). -/
+/-- `¬ CapResolves [] 0 1 "get"` — the escaped cap names handler `0`, but the stack is empty
+(`splitAtId [] 0 = none`). The Prop-level twin of the `#guard` above. -/
+theorem escape_site_unresolved : ¬ CapResolves ([] : EvalCtx) 0 1 "get" := by
+  rintro ⟨Kᵢ, h, Kₒ, hsp, _⟩
+  simp [splitAtId] at hsp
 
-private def escapeM : Comp :=
-  .handle (.state 1 .vunit) (.ret (.vthunk (.perform 0 1 "get" .vunit)))
-private def progB : Comp :=
-  .letC escapeM (.handle (.state 1 .vunit) (.force (.vvar 0)))
-
--- ADR-0053 BEHAVIORAL NOTE — the escape's RUNTIME manifestation moved (sound), so the regression
--- oracle moved with it. Under OLD de-Bruijn caps the escaped `{perform 0}` thunk's cap was SHIFTED
--- out of range as it crossed the fresh `handle` (subst), so `progB` ran STUCK. That stuckness was a
--- SHIFT ARTIFACT, not a safety property. Under ABSOLUTE caps there is no shift, so `progB` now
--- TERMINATES. This is SOUND: `progB` is LWT-ILL-TYPED (`progB_ill_typed`, below — STILL holds), so
--- type-safety promises nothing about it and its runtime outcome is don't-care. The safety oracle for
--- the escape is therefore the TYPING rejection (`progB_ill_typed`, which survives the migration), NOT
--- a `Source.eval` outcome. The old `#guard progB_stuck` is RETIRED (it pinned the representation
--- artifact); `progB_ill_typed` is the regression that encodes the invariant.
-
-/-- case B's escape is ILL-TYPED under the kernel `LWT`: the handle body `ret {get}` is checked with
-return-ctx = OLD S = [], so `perform 0` must resolve against [] — `CapResolvesKind [] 0 1 "get" = False`.
-The capability cannot escape its handler. -/
-theorem escapeM_ill_typed : ¬ LWT [] [] escapeM := by
-  simp only [escapeM, LWT, LWVal, LWHandler, CapResolvesKind]; tauto
-
-theorem progB_ill_typed : ¬ LWT [] [] progB := by
-  intro h; simp only [progB, LWT] at h; exact escapeM_ill_typed h.1
-
-/-! ### 3. cap>0 — the ADR-0045 KEEP case: resume-into-an-outer-handler is WELL-TYPED.
-
-A `perform 1` reaching PAST an inner `throws` to the enclosing `state` is LEGAL (the cap counts the
-skipped handler). This is what distinguishes legal deep-dispatch (cap>0) from illegal escape (case B). -/
-theorem capResume_outer_LWT :
-    LWT [] [] (.handle (.state 1 .vunit) (.handle (.throws 2) (.perform 1 1 "get" .vunit))) := by
-  simp only [LWT, LWVal, LWHandler, CapResolvesKind, handlesOp]; tauto
-
-/-! ### 4. Discrimination — the kernel `LWT` is not vacuous either way. -/
-
-/-- An in-scope direct perform is ACCEPTED (not vacuously rejecting). -/
-theorem inscope_perform_LWT :
-    LWT [] [] (.handle (.state 1 .vunit) (.perform 0 1 "get" .vunit)) := by
-  simp only [LWT, LWVal, LWHandler, CapResolvesKind, handlesOp]; tauto
-
-/-- A top-level handler-less perform is REJECTED (not vacuously accepting). -/
-theorem toplevel_perform_ill_typed : ¬ LWT [] [] (.perform 0 1 "get" .vunit) := by
-  simp only [LWT, CapResolvesKind]; tauto
+/-- **case B is `¬ NonEscape`** — the ADR-0054 structural rejection (replacing the deleted `¬ LWT`). The
+escape config `([], perform (vcap 0 1) "get" unit)` is reachable, and its focus does NOT resolve
+(`escape_site_unresolved`), so the forward-closure `NonEscape` fails. -/
+theorem escapeB_not_nonEscape : ¬ NonEscape ([], escapeB) := by
+  intro hne
+  have hreach : StepStar ([], escapeB) ([], Comp.perform (Val.vcap 0 1) "get" .vunit) := by
+    apply StepStar.tail (cfg' := ([], Comp.force (.vthunk (Comp.perform (Val.vcap 0 1) "get" .vunit))))
+    · apply StepStar.tail (cfg' := ([Frame.letF (Comp.force (.vvar 0))], Comp.ret (.vthunk (Comp.perform (Val.vcap 0 1) "get" .vunit))))
+      · apply StepStar.tail (cfg' := ([Frame.handleF 0 (Handler.state 1 .vunit), Frame.letF (Comp.force (.vvar 0))], Comp.ret (.vthunk (Comp.perform (Val.vcap 0 1) "get" .vunit))))
+        · apply StepStar.tail (cfg' := ([Frame.letF (Comp.force (.vvar 0))], Comp.handle (Handler.state 1 .vunit) (Comp.ret (.vthunk (Comp.perform (Val.vvar 0) "get" .vunit)))))
+          · exact StepStar.tail StepStar.refl rfl
+          · rfl
+        · rfl
+      · rfl
+    · rfl
+  exact escape_site_unresolved (hne _ hreach)
 
 end Bang.LWRegress
