@@ -2122,6 +2122,39 @@ theorem staticSplit_kind : ∀ (K : EvalCtx) (cap : Nat) {Kᵢ Kₒ : EvalCtx} {
       obtain ⟨_, rfl, _⟩ := heq
       exact staticSplit_kind K cap hsp hkind
 
+/-- **The dispatch-side insertion law** (the DYNAMIC sibling of `CapResolvesKind.insert`,
+Operational §well-capped). Inserting a `handleF h` frame at handler-depth `|Δ|` and bumping an
+AMBIENT cap there (`cap + |Δ| ↦ cap + |Δ| + 1`) leaves `staticSplit` resolving to the SAME handler
+`h'` and the SAME outer stack `Kₒ`; only the captured-continuation prefix `Kᵢ` gains the inserted
+frame (`hframes Δ ++ handleF h :: Kᵢ.drop |Δ|`). This is the runtime witness of the cap-shift the LR's
+`Val.shiftCap`/`closeC_handle*` lemmas introduce: a value crossing one `handle` bumps every ambient
+cap by one (`shiftCapFrom |Δ|`), and that +1 skips exactly the freshly-pushed `handleF` — so the
+shifted focus dispatches to the same place. `CapResolvesKind.insert` is the resolution-level (`Prop`)
+shadow; this is the `staticSplit`-level (data) form that the resume conjunct needs. Induction on `Δ`
+mirroring `staticSplit_handleF_succ`'s countdown. The `≥ |Δ|` (ambient) half — the `< |Δ|` (inner-cap)
+companion is below the insertion and is only needed by the full step-commutation (deferred). -/
+theorem staticSplit_insert_ge (h : Handler) (Sg : EvalCtx) :
+    ∀ (Δ : List Handler) (cap : Nat) {Kᵢ Kₒ : EvalCtx} {h' : Handler},
+      staticSplit (hframes Δ ++ Sg) (cap + Δ.length) = some (Kᵢ, h', Kₒ) →
+      staticSplit (hframes Δ ++ Frame.handleF h :: Sg) (cap + Δ.length + 1)
+        = some (hframes Δ ++ Frame.handleF h :: Kᵢ.drop Δ.length, h', Kₒ)
+  | [], cap, Kᵢ, Kₒ, h' => by
+      intro hsp
+      simp only [hframes, List.map_nil, List.nil_append, List.length_nil, Nat.add_zero,
+        List.drop_zero] at hsp ⊢
+      rw [staticSplit_handleF_succ, hsp]; rfl
+  | (h₀ :: Δ), cap, Kᵢ, Kₒ, h' => by
+      intro hsp
+      simp only [hframes, List.map_cons, List.cons_append, List.length_cons] at hsp ⊢
+      rw [show cap + (Δ.length + 1) = (cap + Δ.length) + 1 by omega] at hsp ⊢
+      rw [staticSplit_handleF_succ, Option.map_eq_some_iff] at hsp
+      obtain ⟨⟨Kᵢ', hh', Kₒ'⟩, hsp', heq⟩ := hsp
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      have ihc := staticSplit_insert_ge h Sg Δ cap hsp'
+      rw [staticSplit_handleF_succ, ihc]
+      simp [hframes, List.drop_succ_cons]
+
 /-- If `dispatch` succeeds for `(ℓ, op)` over a well-typed stack, then `op` is `"raise"`, `"get"`, or
 `"put"` (ADR-0025): the catching frame is either a `throws ℓ` (interface `{raise}`) or a `state ℓ`
 (interface `{get,put}`); both interface premises constrain `op`. -/
