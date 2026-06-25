@@ -211,35 +211,50 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
 
 /-- `closeC` distributes through a `throws` handler: the handler carries no value
-(`Handler.subst _ (throws ℓ) = throws ℓ`), and `handle` does not bind, so the body closes structurally.
-(`state`/`transaction` carry values/heaps — their closeC is the resumptive-fragment follow-up.) -/
-@[simp] theorem closeC_handleThrows (δ : List Val) (ℓ : Label) (M : Comp) :
+(`Handler.subst _ (throws ℓ) = throws ℓ`), and `handle` does not bind a VAR, so the body closes
+structurally. ADR-0045: `handle` IS a cap-binder, so `Comp.subst v (handle h M)` crosses the body with
+`Val.shiftCap v`; the `Val.CapClosed` premise on the fillers vanishes that shift (`hv.shiftCap`), exactly
+as `closeC_subst_comm` uses `Val.Closed` to vanish the de-Bruijn shift. (`state`/`transaction` carry
+values/heaps — their closeC is the resumptive-fragment follow-up.) -/
+@[simp] theorem closeC_handleThrows (δ : List Val) (ℓ : Label) (M : Comp)
+    (hδcap : ∀ v ∈ δ, Val.CapClosed v) :
     closeC δ (Comp.handle (Handler.throws ℓ) M) = Comp.handle (Handler.throws ℓ) (closeC δ M) := by
   induction δ generalizing M with
   | nil => rfl
-  | cons v δ ih => simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom]; exact ih _
+  | cons v δ ih =>
+    have hv : Val.CapClosed v := hδcap v List.mem_cons_self
+    have hδ' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
+    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, hv.shiftCap]; exact ih _ hδ'
 
 /-- ◊4.5 RESUME INFRA: `closeC` distributes through a `state ℓ s` handler. UNLIKE `throws`, the `state`
 handler CARRIES a value `s` (`Handler.substFrom k v (state ℓ s) = state ℓ (substFrom k v s)`), so the
 stored value closes too — `closeC δ (handle (state ℓ s) M) = handle (state ℓ (closeV δ s)) (closeC δ M)`.
 The `handle` former does not bind, so both `s` and the body `M` close at level 0 (structural). -/
-@[simp] theorem closeC_handleState (δ : List Val) (ℓ : Label) (s : Val) (M : Comp) :
+@[simp] theorem closeC_handleState (δ : List Val) (ℓ : Label) (s : Val) (M : Comp)
+    (hδcap : ∀ v ∈ δ, Val.CapClosed v) :
     closeC δ (Comp.handle (Handler.state ℓ s) M)
       = Comp.handle (Handler.state ℓ (closeV δ s)) (closeC δ M) := by
   induction δ generalizing s M with
   | nil => rfl
-  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom, Handler.substFrom]; exact ih _ _
+  | cons v δ ih =>
+    have hv : Val.CapClosed v := hδcap v List.mem_cons_self
+    have hδ' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
+    simp only [closeC, closeV, Comp.subst, Comp.substFrom, Handler.substFrom, hv.shiftCap]; exact ih _ _ hδ'
 
 /-- ◊4.5 RESUME INFRA: `closeC` distributes through a `transaction ℓ Θ` handler. The heap cells are
 treated as CLOSED (ADR-0030: `Handler.substFrom _ (transaction ℓ Θ) = transaction ℓ Θ`, identity), so
 the heap is untouched — exactly like `throws`. Only the body `M` closes:
 `closeC δ (handle (transaction ℓ Θ) M) = handle (transaction ℓ Θ) (closeC δ M)`. -/
-@[simp] theorem closeC_handleTransaction (δ : List Val) (ℓ : Label) (Θ : Store) (M : Comp) :
+@[simp] theorem closeC_handleTransaction (δ : List Val) (ℓ : Label) (Θ : Store) (M : Comp)
+    (hδcap : ∀ v ∈ δ, Val.CapClosed v) :
     closeC δ (Comp.handle (Handler.transaction ℓ Θ) M)
       = Comp.handle (Handler.transaction ℓ Θ) (closeC δ M) := by
   induction δ generalizing M with
   | nil => rfl
-  | cons v δ ih => simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom]; exact ih _
+  | cons v δ ih =>
+    have hv : Val.CapClosed v := hδcap v List.mem_cons_self
+    have hδ' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
+    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, hv.shiftCap]; exact ih _ hδ'
 
 @[simp] theorem closeV_vunit (δ : List Val) : closeV δ Val.vunit = Val.vunit := by
   induction δ with
@@ -267,7 +282,7 @@ This is what lets `closeV`/`closeC` over a closed length-`Γ` environment produc
 `ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem). Mutual structural
 induction; `i ≤ k` so the binder cases step both cutoffs uniformly (`i+1 ≤ k+1`). -/
 mutual
-theorem Val.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
+theorem Val.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u) :
     ∀ (k i : Nat), i ≤ k → ∀ (t : Val),
       Val.shiftFrom k (Val.substFrom i u t) = Val.substFrom i u (Val.shiftFrom (k + 1) t)
   | _, _, _,    .vunit => rfl
@@ -299,58 +314,60 @@ theorem Val.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
             show j - 1 + 1 = j + 1 - 1 by omega]
   | k, i, hik,  .vthunk M => by
       simp only [Val.shiftFrom, Val.substFrom]
-      rw [Comp.shiftFrom_substFrom_closed hu k i hik M]
+      rw [Comp.shiftFrom_substFrom_closed hu hucap k i hik M]
   | k, i, hik,  .inl w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
   | k, i, hik,  .inr w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
   | k, i, hik,  .pair a b => by
       simp only [Val.shiftFrom, Val.substFrom]
-      rw [Val.shiftFrom_substFrom_closed hu k i hik a, Val.shiftFrom_substFrom_closed hu k i hik b]
+      rw [Val.shiftFrom_substFrom_closed hu hucap k i hik a, Val.shiftFrom_substFrom_closed hu hucap k i hik b]
   | k, i, hik,  .fold w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
 
-theorem Comp.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
+theorem Comp.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u) :
     ∀ (k i : Nat), i ≤ k → ∀ (t : Comp),
       Comp.shiftFrom k (Comp.substFrom i u t) = Comp.substFrom i u (Comp.shiftFrom (k + 1) t)
   | k, i, hik, .ret w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
   | k, i, hik, .letC M N => by
       simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Comp.shiftFrom_substFrom_closed hu k i hik M,
-        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N]
+      rw [Comp.shiftFrom_substFrom_closed hu hucap k i hik M,
+        Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) N]
   | k, i, hik, .force w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
   | k, i, hik, .lam M => by
       simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) M]
+      rw [Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) M]
   | k, i, hik, .app M w => by
       simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Comp.shiftFrom_substFrom_closed hu k i hik M, Val.shiftFrom_substFrom_closed hu k i hik w]
+      rw [Comp.shiftFrom_substFrom_closed hu hucap k i hik M, Val.shiftFrom_substFrom_closed hu hucap k i hik w]
   | k, i, hik, .perform _ ℓ op w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
   | k, i, hik, .handle h M => by
-      simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Handler.shiftFrom_substFrom_closed hu k i hik h, Comp.shiftFrom_substFrom_closed hu k i hik M]
+      -- ADR-0045: `Comp.substFrom i u (handle h M)` cap-shifts the body filler to `u.shiftCap`; the
+      -- `Val.CapClosed u` premise (`hucap.shiftCap`) vanishes it back to `u`, restoring the IH's shape.
+      simp only [Comp.shiftFrom, Comp.substFrom, hucap.shiftCap]
+      rw [Handler.shiftFrom_substFrom_closed hu hucap k i hik h, Comp.shiftFrom_substFrom_closed hu hucap k i hik M]
   | k, i, hik, .case w N₁ N₂ => by
       simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Val.shiftFrom_substFrom_closed hu k i hik w,
-        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N₁,
-        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N₂]
+      rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w,
+        Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) N₁,
+        Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) N₂]
   | k, i, hik, .split w N => by
       simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Val.shiftFrom_substFrom_closed hu k i hik w,
-        Comp.shiftFrom_substFrom_closed hu (k + 2) (i + 2) (by omega) N]
+      rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w,
+        Comp.shiftFrom_substFrom_closed hu hucap (k + 2) (i + 2) (by omega) N]
   | k, i, hik, .unfold w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
   | _, _, _, .oom => rfl
   | _, _, _, .wrong _ => rfl
 
-theorem Handler.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
+theorem Handler.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u) :
     ∀ (k i : Nat), i ≤ k → ∀ (h : Handler),
       Handler.shiftFrom k (Handler.substFrom i u h) = Handler.substFrom i u (Handler.shiftFrom (k + 1) h)
   | k, i, hik, .state ℓ s => by
-      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik s]
+      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik s]
   | _, _, _, .throws _ => rfl
   | _, _, _, .transaction _ _ => rfl
 end
@@ -363,22 +380,25 @@ def Val.ScopedIn (m : Nat) (v : Val) : Prop := ∀ k, m ≤ k → Val.shiftFrom 
 /-- Substituting the level-0 binder of an `(m+1)`-scoped value with a CLOSED filler drops the scope to
 `m`. Uses the shift/subst commutation: `shiftFrom k (subst u v) = subst u (shiftFrom (k+1) v) = subst u v`
 for `k ≥ m` (since `v` is `(m+1)`-scoped and `k+1 ≥ m+1`). -/
-theorem Val.ScopedIn.subst_closed {m : Nat} {u v : Val} (hu : Val.Closed u)
+theorem Val.ScopedIn.subst_closed {m : Nat} {u v : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u)
     (hv : Val.ScopedIn (m + 1) v) : Val.ScopedIn m (Val.subst u v) := by
   intro k hk
-  rw [Val.subst, Val.shiftFrom_substFrom_closed hu k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
+  rw [Val.subst, Val.shiftFrom_substFrom_closed hu hucap k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
 
 /-- Closing a value SCOPED IN `δ.length` over a CLOSED environment yields a CLOSED value: the fold
 substitutes each free index with a closed filler, dropping the scope by 1 each step to `ScopedIn 0` =
 `Closed`. The `ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem. -/
 theorem closeV_closed_scoped : ∀ {δ : List Val} {v : Val},
-    (∀ u ∈ δ, Val.Closed u) → Val.ScopedIn δ.length v → Val.Closed (closeV δ v)
-  | [],     v, _,  hv => fun k => hv k (Nat.zero_le k)
-  | u :: δ, v, hδ, hv => by
+    (∀ u ∈ δ, Val.Closed u) → (∀ u ∈ δ, Val.CapClosed u) → Val.ScopedIn δ.length v →
+      Val.Closed (closeV δ v)
+  | [],     v, _,  _,     hv => fun k => hv k (Nat.zero_le k)
+  | u :: δ, v, hδ, hδcap, hv => by
       have hu : Val.Closed u := hδ u List.mem_cons_self
+      have hucap : Val.CapClosed u := hδcap u List.mem_cons_self
       have hδ' : ∀ w ∈ δ, Val.Closed w := fun w hw => hδ w (List.mem_cons_of_mem u hw)
+      have hδcap' : ∀ w ∈ δ, Val.CapClosed w := fun w hw => hδcap w (List.mem_cons_of_mem u hw)
       rw [closeV]
-      exact closeV_closed_scoped hδ' (Val.ScopedIn.subst_closed hu (by
+      exact closeV_closed_scoped hδ' hδcap' (Val.ScopedIn.subst_closed hu hucap (by
         simpa only [List.length_cons] using hv))
 
 
@@ -447,7 +467,7 @@ theorem EnvRel.closed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : 
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRel] at h
-      obtain ⟨hc₁, _, _, hrest⟩ := h
+      obtain ⟨hc₁, _, _, _, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₁
       · exact EnvRel.closed_left hrest v hmem
@@ -458,7 +478,7 @@ theorem EnvRel.closed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ :
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRel] at h
-      obtain ⟨_, hc₂, _, hrest⟩ := h
+      obtain ⟨_, hc₂, _, _, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₂
       · exact EnvRel.closed_right hrest v hmem
@@ -468,12 +488,12 @@ theorem EnvRel.length_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : 
     EnvRel n Γ δ₁ δ₂ → δ₁.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_left h.2.2.2]
+      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_left h.2.2.2.2.2]
 theorem EnvRel.length_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRel n Γ δ₁ δ₂ → δ₂.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_right h.2.2.2]
+      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_right h.2.2.2.2.2]
 
 /-- The per-position `Vrel`: if `Γ[i]? = some A`, the `i`-th fillers are `Vrel n A`-related. -/
 theorem EnvRel.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
@@ -482,7 +502,7 @@ theorem EnvRel.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List
   | [],      [],        [],        _, i, A, hΓ, _, _ => by simp at hΓ
   | A' :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, i, A, hΓ, d₁, d₂ => by
       rw [EnvRel] at h
-      obtain ⟨_, _, hv, hrest⟩ := h
+      obtain ⟨_, _, _, _, hv, hrest⟩ := h
       cases i with
       | zero => simp only [List.getElem?_cons_zero, Option.getD_some]
                 simp only [List.getElem?_cons_zero, Option.some.injEq] at hΓ; subst hΓ; exact hv
@@ -498,7 +518,7 @@ theorem EnvRelK.closed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ :
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRelK] at h
-      obtain ⟨hc₁, _, _, hrest⟩ := h
+      obtain ⟨hc₁, _, _, _, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₁
       · exact EnvRelK.closed_left hrest v hmem
@@ -508,21 +528,43 @@ theorem EnvRelK.closed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ 
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRelK] at h
-      obtain ⟨_, hc₂, _, hrest⟩ := h
+      obtain ⟨_, hc₂, _, _, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₂
       · exact EnvRelK.closed_right hrest v hmem
+
+-- ADR-0045 (Inc 0b): the cap-closedness projections — the cap-analogue of `closed_left`/`closed_right`,
+-- supplying the `Val.CapClosed` fillers the `closeC`/substitution-commutation lemmas now require.
+theorem EnvRelK.capClosed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRelK n Γ δ₁ δ₂ → ∀ v ∈ δ₁, Val.CapClosed v
+  | [],      [],        [],        _, v, hv => absurd hv (by simp)
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
+      rw [EnvRelK] at h
+      obtain ⟨_, _, hcap₁, _, _, hrest⟩ := h
+      rcases List.mem_cons.mp hv with rfl | hmem
+      · exact hcap₁
+      · exact EnvRelK.capClosed_left hrest v hmem
+
+theorem EnvRelK.capClosed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
+    EnvRelK n Γ δ₁ δ₂ → ∀ v ∈ δ₂, Val.CapClosed v
+  | [],      [],        [],        _, v, hv => absurd hv (by simp)
+  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
+      rw [EnvRelK] at h
+      obtain ⟨_, _, _, hcap₂, _, hrest⟩ := h
+      rcases List.mem_cons.mp hv with rfl | hmem
+      · exact hcap₂
+      · exact EnvRelK.capClosed_right hrest v hmem
 
 theorem EnvRelK.length_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRelK n Γ δ₁ δ₂ → δ₁.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_left h.2.2.2]
+      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_left h.2.2.2.2.2]
 theorem EnvRelK.length_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRelK n Γ δ₁ δ₂ → δ₂.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_right h.2.2.2]
+      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_right h.2.2.2.2.2]
 
 theorem EnvRelK.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRelK n Γ δ₁ δ₂ → ∀ {i : Nat} {A : VTy Eff Mult}, Γ[i]? = some A →
@@ -530,7 +572,7 @@ theorem EnvRelK.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : Lis
   | [],      [],        [],        _, i, A, hΓ, _, _ => by simp at hΓ
   | A' :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, i, A, hΓ, d₁, d₂ => by
       rw [EnvRelK] at h
-      obtain ⟨_, _, hv, hrest⟩ := h
+      obtain ⟨_, _, _, _, hv, hrest⟩ := h
       cases i with
       | zero => simp only [List.getElem?_cons_zero, Option.getD_some]
                 simp only [List.getElem?_cons_zero, Option.some.injEq] at hΓ; subst hΓ; exact hv
@@ -599,7 +641,7 @@ the values flowing through the CK machine's binders (a returned value, an env fi
 -- cutoff `k` is generalized so the binder cases (which step to `k+1` with `shift v`/`shift w` = `v`/`w`)
 -- reuse the IH at the SAME fillers. Mutual with the `Val`/`Handler` analogues.
 mutual
-theorem Val.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) :
+theorem Val.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) :
     ∀ (k : Nat) (t : Val),
       Val.substFrom k w (Val.substFrom (k + 1) v t) = Val.substFrom k v (Val.substFrom k w t)
   | _, .vunit => rfl
@@ -627,47 +669,49 @@ theorem Val.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Clos
             if_neg (show ¬ i = k by omega), if_pos (show i > k by omega),
             if_neg (show ¬ i - 1 = k by omega), if_pos (show i - 1 > k by omega)]
   | k, .vthunk M => by
-      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed hv hw k M]
-  | k, .inl u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
-  | k, .inr u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed hv hw hvcap hwcap k M]
+  | k, .inl u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
+  | k, .inr u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
   | k, .pair u₁ u₂ => by
       simp only [Val.substFrom]
-      rw [Val.substFrom_swap_closed hv hw k u₁, Val.substFrom_swap_closed hv hw k u₂]
-  | k, .fold u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+      rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u₁, Val.substFrom_swap_closed hv hw hvcap hwcap k u₂]
+  | k, .fold u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
 
-theorem Comp.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) :
+theorem Comp.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) :
     ∀ (k : Nat) (t : Comp),
       Comp.substFrom k w (Comp.substFrom (k + 1) v t) = Comp.substFrom k v (Comp.substFrom k w t)
-  | k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
   | k, .letC M N => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed hv hw k M, Comp.substFrom_swap_closed hv hw (k + 1) N]
-  | k, .force u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+      rw [Comp.substFrom_swap_closed hv hw hvcap hwcap k M, Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) N]
+  | k, .force u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
   | k, .lam M => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed hv hw (k + 1) M]
+      rw [Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) M]
   | k, .app M u => by
       simp only [Comp.substFrom]
-      rw [Comp.substFrom_swap_closed hv hw k M, Val.substFrom_swap_closed hv hw k u]
-  | k, .perform _ ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+      rw [Comp.substFrom_swap_closed hv hw hvcap hwcap k M, Val.substFrom_swap_closed hv hw hvcap hwcap k u]
+  | k, .perform _ ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
   | k, .handle h M => by
-      simp only [Comp.substFrom]
-      rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed hv hw k M]
+      -- ADR-0045: both substs cap-shift the body (`v.shiftCap`/`w.shiftCap`); the CapClosed premises
+      -- vanish them, restoring the bare `v`/`w` the IH swaps over.
+      simp only [Comp.substFrom, hvcap.shiftCap, hwcap.shiftCap]
+      rw [Handler.substFrom_swap_closed hv hw hvcap hwcap k h, Comp.substFrom_swap_closed hv hw hvcap hwcap k M]
   | k, .case u N₁ N₂ => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Val.substFrom_swap_closed hv hw k u,
-        Comp.substFrom_swap_closed hv hw (k + 1) N₁, Comp.substFrom_swap_closed hv hw (k + 1) N₂]
+      rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u,
+        Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) N₁, Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) N₂]
   | k, .split u N => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Val.substFrom_swap_closed hv hw k u, Comp.substFrom_swap_closed hv hw (k + 2) N]
-  | k, .unfold u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+      rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u, Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 2) N]
+  | k, .unfold u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
   | _, .oom => rfl
   | _, .wrong _ => rfl
 
-theorem Handler.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) :
+theorem Handler.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) :
     ∀ (k : Nat) (h : Handler),
       Handler.substFrom k w (Handler.substFrom (k + 1) v h) = Handler.substFrom k v (Handler.substFrom k w h)
-  | k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed hv hw k s]
+  | k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k s]
   | _, .throws _ => rfl
   | _, .transaction _ _ => rfl
 end
@@ -681,7 +725,7 @@ swap above (`i, i+1`) doesn't reach it, so here is the general `i ≤ j` form, b
 The adjacent lemma is the `i = j` instance; this generalizes the cutoff gap. Mutual structural
 induction; the binder cases step BOTH cutoffs (`i+1 ≤ j+1`). -/
 mutual
-theorem Val.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) :
+theorem Val.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) (hucap : Val.CapClosed u) (hwcap : Val.CapClosed w) :
     ∀ (i j : Nat), i ≤ j → ∀ (t : Val),
       Val.substFrom i w (Val.substFrom (j + 1) u t) = Val.substFrom j u (Val.substFrom i w t)
   | _, _, _,   .vunit => rfl
@@ -715,52 +759,54 @@ theorem Val.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.C
             if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
             if_neg (show ¬ m - 1 = j by omega), if_pos (show m - 1 > j by omega)]
   | i, j, hij, .vthunk M => by
-      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed_ge hu hw i j hij M]
-  | i, j, hij, .inl t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
-  | i, j, hij, .inr t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M]
+  | i, j, hij, .inl t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
+  | i, j, hij, .inr t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
   | i, j, hij, .pair a b => by
       simp only [Val.substFrom]
-      rw [Val.substFrom_swap_closed_ge hu hw i j hij a, Val.substFrom_swap_closed_ge hu hw i j hij b]
-  | i, j, hij, .fold t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+      rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij a, Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij b]
+  | i, j, hij, .fold t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
 
-theorem Comp.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) :
+theorem Comp.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) (hucap : Val.CapClosed u) (hwcap : Val.CapClosed w) :
     ∀ (i j : Nat), i ≤ j → ∀ (t : Comp),
       Comp.substFrom i w (Comp.substFrom (j + 1) u t) = Comp.substFrom j u (Comp.substFrom i w t)
-  | i, j, hij, .ret t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .ret t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
   | i, j, hij, .letC M N => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed_ge hu hw i j hij M,
-        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N]
-  | i, j, hij, .force t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+      rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M,
+        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) N]
+  | i, j, hij, .force t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
   | i, j, hij, .lam M => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) M]
+      rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) M]
   | i, j, hij, .app M t => by
       simp only [Comp.substFrom]
-      rw [Comp.substFrom_swap_closed_ge hu hw i j hij M, Val.substFrom_swap_closed_ge hu hw i j hij t]
-  | i, j, hij, .perform _ ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+      rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M, Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
+  | i, j, hij, .perform _ ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
   | i, j, hij, .handle h M => by
-      simp only [Comp.substFrom]
-      rw [Handler.substFrom_swap_closed_ge hu hw i j hij h, Comp.substFrom_swap_closed_ge hu hw i j hij M]
+      -- ADR-0045: the `handle` body filler cap-shifts (`shiftCap = shiftCapFrom 0`, independent of i/j);
+      -- the CapClosed premises vanish it.
+      simp only [Comp.substFrom, hucap.shiftCap, hwcap.shiftCap]
+      rw [Handler.substFrom_swap_closed_ge hu hw hucap hwcap i j hij h, Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M]
   | i, j, hij, .case t N₁ N₂ => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
-        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N₁,
-        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N₂]
+      rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t,
+        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) N₁,
+        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) N₂]
   | i, j, hij, .split t N => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
-        Comp.substFrom_swap_closed_ge hu hw (i + 2) (j + 2) (by omega) N]
-  | i, j, hij, .unfold t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+      rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t,
+        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 2) (j + 2) (by omega) N]
+  | i, j, hij, .unfold t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
   | _, _, _, .oom => rfl
   | _, _, _, .wrong _ => rfl
 
-theorem Handler.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) :
+theorem Handler.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) (hucap : Val.CapClosed u) (hwcap : Val.CapClosed w) :
     ∀ (i j : Nat), i ≤ j → ∀ (h : Handler),
       Handler.substFrom i w (Handler.substFrom (j + 1) u h)
         = Handler.substFrom j u (Handler.substFrom i w h)
   | i, j, hij, .state ℓ s => by
-      simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij s]
+      simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij s]
   | _, _, _, .throws _ => rfl
   | _, _, _, .transaction _ _ => rfl
 end
@@ -775,43 +821,49 @@ SAME fillers as `closeC δ` but at level 1; the level-0 `Comp.subst w` then comm
 
   shape: biernacki-popl18 §5.2 fundamental theorem — closing substitution `G⟦Γ⟧` commutes with the
          single binder-substitution introduced by `letC`/`lam`/`case`/`split` β-reduction. -/
-theorem closeC_subst_comm {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v) {w : Val} (hw : Val.Closed w)
+theorem closeC_subst_comm {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v) (hδcap : ∀ v ∈ δ, Val.CapClosed v)
+    {w : Val} (hw : Val.Closed w) (hwcap : Val.CapClosed w)
     (N : Comp) :
     (closeCUnderBinders 1 δ N).subst w = closeC δ (Comp.subst w N) := by
   induction δ generalizing N with
   | nil => rfl
   | cons v δ ih =>
     have hv : Val.Closed v := hδ v List.mem_cons_self
+    have hvcap : Val.CapClosed v := hδcap v List.mem_cons_self
     have hδ' : ∀ u ∈ δ, Val.Closed u := fun u hu => hδ u (List.mem_cons_of_mem v hu)
+    have hδcap' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
     -- LHS: closeCUnderBinders 1 (v::δ) N = closeCUnderBinders 1 δ (substFrom 1 v N)  [shiftN 1 v = v].
     -- RHS: closeC (v::δ) (subst w N) = closeC δ (subst v (subst w N)).
     simp only [closeCUnderBinders, closeC, shiftN, hv.shift]
-    rw [ih hδ' (Comp.substFrom 1 v N)]
+    rw [ih hδ' hδcap' (Comp.substFrom 1 v N)]
     -- goal: closeC δ (subst w (substFrom 1 v N)) = closeC δ (subst v (subst w N))
     congr 1
-    -- subst w (substFrom 1 v N) = subst v (subst w N), i.e. the k=0 swap (closed v, w).
-    exact Comp.substFrom_swap_closed hv hw 0 N
+    -- subst w (substFrom 1 v N) = subst v (subst w N), i.e. the k=0 swap (closed + cap-closed v, w).
+    exact Comp.substFrom_swap_closed hv hw hvcap hwcap 0 N
 
 /-- General level-0 descent through `closeCUnderBinders (d+1)`: filling the outermost (level-0) binder
 with a CLOSED `w` commutes past the `d+1`-level fillers (closed), dropping the binder-depth by one. The
 engine behind `closeC_subst_comm` (d=0) and the d=2 `split` descent. Uses the NON-adjacent swap
 (`Comp.substFrom_swap_closed_ge` at `i=0, j=d`). -/
 theorem closeCUnderBinders_subst0 (d : Nat) {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v)
-    {w : Val} (hw : Val.Closed w) (N : Comp) :
+    (hδcap : ∀ v ∈ δ, Val.CapClosed v) {w : Val} (hw : Val.Closed w) (hwcap : Val.CapClosed w)
+    (N : Comp) :
     Comp.substFrom 0 w (closeCUnderBinders (d + 1) δ N)
       = closeCUnderBinders d δ (Comp.substFrom 0 w N) := by
   induction δ generalizing N with
   | nil => rfl
   | cons v δ ih =>
     have hv : Val.Closed v := hδ v List.mem_cons_self
+    have hvcap : Val.CapClosed v := hδcap v List.mem_cons_self
     have hδ' : ∀ u ∈ δ, Val.Closed u := fun u hu => hδ u (List.mem_cons_of_mem v hu)
+    have hδcap' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
     -- closeCUnderBinders (d+1) (v::δ) N = closeCUnderBinders (d+1) δ (substFrom (d+1) v N)  [shiftN=v].
     -- closeCUnderBinders d (v::δ) (subst₀ w N) = closeCUnderBinders d δ (substFrom d v (subst₀ w N)).
     simp only [closeCUnderBinders, shiftN_closed hv]
-    rw [ih hδ' (Comp.substFrom (d + 1) v N)]
+    rw [ih hδ' hδcap' (Comp.substFrom (d + 1) v N)]
     congr 1
     -- substFrom 0 w (substFrom (d+1) v N) = substFrom d v (substFrom 0 w N)  (non-adjacent swap, 0 ≤ d).
-    exact Comp.substFrom_swap_closed_ge hv hw 0 d (Nat.zero_le d) N
+    exact Comp.substFrom_swap_closed_ge hv hw hvcap hwcap 0 d (Nat.zero_le d) N
 
 /-- The d=2 substitution-descent for `split`: filling the TWO binders of `closeCUnderBinders 2 δ N`
 (the inner with `Val.shift w`, the outer with `v`, matching the `split (pair v w) N ↦ subst v (subst
@@ -819,7 +871,9 @@ theorem closeCUnderBinders_subst0 (d : Nat) {δ : List Val} (hδ : ∀ v ∈ δ,
 of `w` (which collapses `Val.shift w = w`) make it go through via two `closeCUnderBinders_subst0`
 descents. -/
 theorem closeC_subst2_comm {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u)
-    {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (N : Comp) :
+    (hδcap : ∀ u ∈ δ, Val.CapClosed u)
+    {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w)
+    (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) (N : Comp) :
     Comp.subst v (Comp.subst (Val.shift w) (closeCUnderBinders 2 δ N))
       = closeC δ (Comp.subst v (Comp.subst w N)) := by
   -- subst (shift w) = subst w (w closed); both `Comp.subst` are `substFrom 0`.
@@ -827,9 +881,9 @@ theorem closeC_subst2_comm {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u)
   show Comp.substFrom 0 v (Comp.substFrom 0 w (closeCUnderBinders (1 + 1) δ N))
     = closeC δ (Comp.substFrom 0 v (Comp.substFrom 0 w N))
   -- inner descent (d=1): substFrom 0 w through closeCUnderBinders 2 = closeCUnderBinders 1 of the body.
-  rw [closeCUnderBinders_subst0 1 hδ hw N]
+  rw [closeCUnderBinders_subst0 1 hδ hδcap hw hwcap N]
   -- outer descent (d=0): substFrom 0 v through closeCUnderBinders 1 = closeCUnderBinders 0 = closeC.
-  rw [closeCUnderBinders_subst0 0 hδ hv (Comp.substFrom 0 w N), closeCUnderBinders_zero]
+  rw [closeCUnderBinders_subst0 0 hδ hδcap hv hvcap (Comp.substFrom 0 w N), closeCUnderBinders_zero]
 
 /-! ## B.3′ ◊4.5b sub-block (c) — `CrelK` head-step + value lemmas (the answer-typed migration)
 
@@ -1863,9 +1917,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       intro n δ₁ δ₂ hδ
       rw [closeC_ret, closeC_ret]
       have hsc₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hsc₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact crelK_ret hsc₁ hsc₂ (vrelK_fund hv n δ₁ δ₂ hδ)
   | @letC _ _ _ _ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
       intro n δ₁ δ₂ hδ
@@ -1898,17 +1952,17 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       intro n δ₁ δ₂ hδ
       rw [closeC_app, closeC_app]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact compatK_app (crelK_fund hM n δ₁ δ₂ hδ) hscv₁ hscv₂ (vrelK_fund hv n δ₁ δ₂ hδ)
   | @case _ _ _ _ v N₁ N₂ φ q A B C hv hN₁ hN₂ _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_case, closeC_case]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       refine compatK_case (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_ ?_
       · intro m hm u₁ u₂ hcu₁ hcu₂ hu
         rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
@@ -1924,9 +1978,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       intro n δ₁ δ₂ hδ
       rw [closeC_split, closeC_split]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       refine compatK_split (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_
       intro m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
       rw [closeC_subst2_comm hδ.closed_left hca₁ hcb₁, closeC_subst2_comm hδ.closed_right hca₂ hcb₂]
@@ -1943,18 +1997,18 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       | @fold _ _ a _ ha =>
           rw [closeV_fold, closeV_fold]
           have hsa₁ : Val.Closed (closeV δ₁ a) :=
-            closeV_closed_scoped hδ.closed_left (by have := ha.scopedIn; rwa [hδ.length_left])
+            closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := ha.scopedIn; rwa [hδ.length_left])
           have hsa₂ : Val.Closed (closeV δ₂ a) :=
-            closeV_closed_scoped hδ.closed_right (by have := ha.scopedIn; rwa [hδ.length_right])
+            closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := ha.scopedIn; rwa [hδ.length_right])
           refine CrelK_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
             ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩
             (fun m hm => crelK_ret hsa₁ hsa₂ (vrelK_fund ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ)))
       | @vvar _ i _ hget =>
           have hsc₁ : Val.Closed (closeV δ₁ (Val.vvar i)) :=
-            closeV_closed_scoped hδ.closed_left (by
+            closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_left])
           have hsc₂ : Val.Closed (closeV δ₂ (Val.vvar i)) :=
-            closeV_closed_scoped hδ.closed_right (by
+            closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | @perform _ _ _cap ℓ op v φ q A B hℓ hArg hRes hv =>
@@ -1965,9 +2019,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       rw [closeC_perform, closeC_perform]
       have hvk : VrelK n A (closeV δ₁ v) (closeV δ₂ v) := vrelK_fund hv n δ₁ δ₂ hδ
       have hcv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hcv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact crelK_fund_up hArg hRes hcv₁ hcv₂ hvk
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no

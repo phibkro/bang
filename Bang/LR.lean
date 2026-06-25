@@ -401,6 +401,48 @@ theorem Val.Closed.pair_inv {a b : Val} (h : Val.Closed (Val.pair a b)) :
 theorem Val.Closed.fold_inv {w : Val} (h : Val.Closed (Val.fold w)) : Val.Closed w := by
   intro k; have := h k; rw [Val.shiftFrom, Val.fold.injEq] at this; exact this
 
+/-! ### 5.2a′ Cap-closedness (`Val.CapClosed`) — the ADR-0045 LEXICAL-CAP analogue of `Val.Closed`
+
+ADR-0045 made `Comp.substFrom`'s `handle` arm a CAP-BINDER: the filler crosses the `handle` wrapper
+shifted by `Val.shiftCap` (Operational.lean §cap-shift). The LR's `closeC` handler-distribution lemmas
+(`closeC_handleThrows`/`State`/`Transaction`, Compat.lean) therefore need the closing-env fillers to be
+SHIFTCAP-INVARIANT, so the `Val.shiftCap` that crossing a `handle` introduces vanishes — exactly as
+`closeC_subst_comm` needs `Val.Closed` to vanish the de-Bruijn `Val.shift`.
+
+`Val.shiftCapFrom` (Operational.lean) touches ONLY `perform cap` nodes (`cap ↦ cap+1` when `cap ≥ d`);
+it is ORTHOGONAL to the de-Bruijn `Val.shiftFrom`. So `Val.Closed` (de-Bruijn-closed) does NOT entail
+`Val.CapClosed` — a de-Bruijn-closed `vthunk (perform 0 ℓ op vunit)` carries a live ambient cap. The
+faithfulness anchor (why it is a real machine invariant, not an artifact): the CK machine's fillers are
+always closed values whose ambient caps are RESOLVED (every `perform` in a substituted value names a
+handler already on the stack — the lexical-cap discipline, ADR-0045). A cap-closed value is precisely
+one whose `perform`s carry NO ambient (handler-unbound) cap to be bumped, mirroring how `Val.Closed`
+carries no free de-Bruijn var. This is the structural invariant of the type-gate's cap-constrained
+`U φ C` (`φ ≠ ⊥`) thunks. -/
+def Val.CapClosed (v : Val) : Prop := ∀ d, Val.shiftCapFrom d v = v
+
+/-- The `d=0` instance: a cap-closed value is fixed by `Val.shiftCap`. This is the vanishing-shiftCap
+fact the `closeC` handler-distribution lemmas consume (the `handle`-cap-shift becomes the identity). -/
+theorem Val.CapClosed.shiftCap {v : Val} (h : Val.CapClosed v) : Val.shiftCap v = v := h 0
+
+/-- A cap-closed value is fixed by `Val.shiftCapFrom` at EVERY cutoff (the defining property, named). -/
+theorem Val.CapClosed.shiftCapFrom_eq {v : Val} (h : Val.CapClosed v) (d : Nat) :
+    Val.shiftCapFrom d v = v := h d
+
+/-- Cap-closedness is inherited by an injection's payload (`inl`/`inr`), mirroring `Val.Closed.inl_inv`.
+The `shiftCapFrom` constructor recurses structurally, so injectivity peels the payload's invariance. -/
+theorem Val.CapClosed.inl_inv {w : Val} (h : Val.CapClosed (Val.inl w)) : Val.CapClosed w := by
+  intro d; have := h d; rw [Val.shiftCapFrom, Val.inl.injEq] at this; exact this
+theorem Val.CapClosed.inr_inv {w : Val} (h : Val.CapClosed (Val.inr w)) : Val.CapClosed w := by
+  intro d; have := h d; rw [Val.shiftCapFrom, Val.inr.injEq] at this; exact this
+/-- A pair's components are each cap-closed. -/
+theorem Val.CapClosed.pair_inv {a b : Val} (h : Val.CapClosed (Val.pair a b)) :
+    Val.CapClosed a ∧ Val.CapClosed b := by
+  constructor <;> intro d <;> (have := h d; rw [Val.shiftCapFrom, Val.pair.injEq] at this)
+  exacts [this.1, this.2]
+/-- A `fold`'s payload is cap-closed (the μ-intro analogue of `inl_inv`). -/
+theorem Val.CapClosed.fold_inv {w : Val} (h : Val.CapClosed (Val.fold w)) : Val.CapClosed w := by
+  intro d; have := h d; rw [Val.shiftCapFrom, Val.fold.injEq] at this; exact this
+
 
 /-! ## 5.2 LR — the answer-typed core (`VrelK`/`CrelK`/`KrelS`) IS the frozen `Vrel`/`Crel`/`EnvRel`
 
@@ -902,11 +944,19 @@ def closeV : List Val → Val → Val
 Structurally identical to `EnvRel` (Closed ∧ Closed ∧ rel ∧ rec); only the value relation is `VrelK`.
 The `crelK_fund`/`vrelK_fund` migration closes open terms over `EnvRelK`-related environments. -/
 
+-- ADR-0045 (typed-LR re-key, Inc 0b): each filler also carries `Val.CapClosed` (the lexical-cap
+-- analogue of `Val.Closed`). The `closeC` handler-distribution / substitution-commutation lemmas need
+-- the closing-env fillers to be SHIFTCAP-invariant (so the `Val.shiftCap` a `handle` cap-binder
+-- introduces vanishes — Compat.lean `closeC_handle*`/`*_swap_closed`). The machine's fillers ARE
+-- cap-closed (every substituted `perform` names a stacked handler — the lexical-cap discipline), so this
+-- is a faithful invariant, not a restriction; it is carried HERE so the fundamental theorem's binder
+-- descent has it at every closing step.
 def EnvRelK {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop
   | [],      [],        []        => True
   | A :: Γ', v₁ :: δ₁', v₂ :: δ₂' =>
-      Val.Closed v₁ ∧ Val.Closed v₂ ∧ VrelK n A v₁ v₂ ∧ EnvRelK n Γ' δ₁' δ₂'
+      Val.Closed v₁ ∧ Val.Closed v₂ ∧ Val.CapClosed v₁ ∧ Val.CapClosed v₂ ∧
+        VrelK n A v₁ v₂ ∧ EnvRelK n Γ' δ₁' δ₂'
   | _,       _,         _         => False
 
 @[simp] theorem EnvRelK_nil_iff {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
@@ -920,8 +970,8 @@ theorem EnvRelK_mono {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemirin
     ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val}, m ≤ n → EnvRelK n Γ δ₁ δ₂ → EnvRelK m Γ δ₁ δ₂
   | [],      [],        [],        _,   _  => trivial
   | _A :: _, _v₁ :: _,  _v₂ :: _,  hmn, h => by
-      obtain ⟨hc₁, hc₂, hv, hrest⟩ := h
-      exact ⟨hc₁, hc₂, VrelK_mono hmn hv, EnvRelK_mono hmn hrest⟩
+      obtain ⟨hc₁, hc₂, hcap₁, hcap₂, hv, hrest⟩ := h
+      exact ⟨hc₁, hc₂, hcap₁, hcap₂, VrelK_mono hmn hv, EnvRelK_mono hmn hrest⟩
   | [],      _ :: _,    _,         _,   h => absurd h (by simp [EnvRelK])
   | [],      [],        _ :: _,    _,   h => absurd h (by simp [EnvRelK])
   | _ :: _,  [],        _,         _,   h => absurd h (by simp [EnvRelK])
