@@ -87,3 +87,37 @@ dynamic search does and static dispatch does not.
   (`wf_60f94539-140`, `wf_9cda0b3f-5f2`), and the scope note.
 - Open design choice carried into the PATH: cap>0 (resume-into-an-outer-handler) — keep it (typed cap-witness)
   or forbid it (nearest-only caps, total untyped dissolve, an expressivity cut).
+
+## Amendment (2026-06-25) — the de-Bruijn cap is LEXICAL: `handle` is a cap-binder
+
+Implementing the pivot (`paths/PATH-typed-static-pivot.md`, Phase B) surfaced that ADR-0045's
+"de-Bruijn capability into the runtime stack" carries an obligation the original decision left
+implicit: **a de-Bruijn index must be shifted under its binders.** The capability's binder is
+`handle`. The transitional B1 kernel (cap carried but `Comp.shiftFrom`/`substFrom` leaving it
+**unshifted**) is therefore **unsound**, not merely unprovable.
+
+**Verified divergence** (run on the real `Source.eval`, static-dispatch branch, 2026-06-25):
+
+```
+handle (state 1 5) (let c = {get} in handle (throws 2) ($c))
+  cap=0 (as-lowered, unshifted)      → done (other val)   ✗ WRONG — get mis-dispatches to throws(2)
+  cap=1 (shifted to skip the throws) → done (vint 5)      ✓ correct
+```
+
+An ordinary thunk-bound `get` forced under an unrelated `handle` migrates (via `letC`/β subst into
+a position beneath the wrapper); with the cap unshifted, static dispatch sends it to the WRONG
+handler. The old dynamic LABEL search skipped the wrong-label `throws` and found the state; static
+positional dispatch cannot, unless the cap is shifted as it crosses the `handle`. This is the
+standard de-Bruijn capture/shift pattern (Lexa/Effekt lexical capabilities), now build-pinned.
+
+**Decision (refinement, not a new fork):** `Comp.shiftFrom`/`substFrom` SHIFT the `cap` field when
+crossing a `handle` wrapper — `handle` is a binder for capabilities exactly as `lam`/`letC` are for
+variables. The surface keeps emitting nearest-at-binding-site caps; subst maintains correctness under
+migration. (Full lexical cap *computation* for non-trivial scopes remains the shell elaborator's job,
+PATH step 4.) Frozen-statement impact: `type_safety` gains a `WellCapped` premise (or a
+closed-well-typed ⟹ well-capped lemma); `preservation`/`progress` stand byte-identical (`WellCapped`
+folded into `HasConfig`).
+
+**Resolves the carried open choice (cap>0 keep-vs-forbid):** the divergence program needs `get` to
+reach PAST `throws` to `state` — a cap>0 dispatch. **KEEP is forced**; forbidding cap>0 (nearest-only)
+would make this ordinary program ill-typed. The forbid fallback is off the table for v1.
