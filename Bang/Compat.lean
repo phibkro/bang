@@ -1845,14 +1845,18 @@ theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult}
     CrelK n (CTy.F q B) φ (Comp.perform cap ℓ op v₁) (Comp.perform cap ℓ op v₂) := by
   rw [CrelK]
   intro D K₁ K₂ hK
-  cases hsp1 : Bang.splitAt K₁ ℓ op with
+  cases hsp1 : Bang.staticSplit K₁ cap with
   | none =>
       intro hconv; exact absurd hconv (not_convergesC_le_up_splitNone K₁ cap ℓ op v₁ hsp1)
   | some t =>
       obtain ⟨K₁ᵢ, h, K₁ₒ⟩ := t
-      have hcatch : Bang.handlesOp h ℓ op = true := splitAt_some_handlesOp hsp1
+      -- ADR-0045 route-B WALL (STOP-and-show): `staticSplit` resolves the handler by CAP, NOT by label,
+      -- so `handlesOp h ℓ op`/`h.label = ℓ` are NOT free here (the dynamic `splitAt_some_handlesOp` is
+      -- gone). They require `CapResolvesKind K₁ cap ℓ op` for the AMBIENT stack `K₁` — a stack-relative
+      -- premise threaded from `lr_fundamental`'s well-capped premise. See the message to the lead.
+      have hcatch : Bang.handlesOp h ℓ op = true := sorry
       have hlbl : h.label = ℓ := handlesOp_label hcatch
-      obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hinner, htail, hres⟩ := krelS_splitAt_decomp hK hsp1
+      obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hinner, htail, hres⟩ := krelS_staticSplit_decomp hK hsp1
       cases h with
       | throws lh =>
           obtain ⟨lh', rfl⟩ : ∃ lh', h' = Handler.throws lh' := by
@@ -1861,9 +1865,11 @@ theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult}
           | zero => exact coApproxC_le_zero _ _
           | succ k =>
               have hstep1 : Source.step (K₁, Comp.perform cap ℓ op v₁) = some (K₁ₒ, Comp.ret v₁) := by
-                show Bang.dispatch K₁ ℓ op v₁ = _; unfold Bang.dispatch; rw [hsp1]; simp [dispatchOn]
+                show Bang.staticDispatch K₁ cap op v₁ = _
+                unfold Bang.staticDispatch; rw [hsp1]; simp [dispatchOn]
               have hstep2 : Source.step (K₂, Comp.perform cap ℓ op v₂) = some (K₂ₒ, Comp.ret v₂) := by
-                show Bang.dispatch K₂ ℓ op v₂ = _; unfold Bang.dispatch; rw [hsp2]; simp [dispatchOn]
+                show Bang.staticDispatch K₂ cap op v₂ = _
+                unfold Bang.staticDispatch; rw [hsp2]; simp [dispatchOn]
               refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
               have hcatch' : Bang.handlesOp (Handler.throws lh) (Handler.throws lh).label op = true := by
                 rw [hlbl]; exact hcatch
@@ -1885,9 +1891,9 @@ theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult}
                 cases h' <;> simp only [HandlerRel] at hHR
                 obtain ⟨rfl, _⟩ := hHR; exact dispatchOn_state_isSome op v₂ K₂ᵢ K₂ₒ _ _
               have hstep1 : Source.step (K₁, Comp.perform cap ℓ op v₁) = some c₁ := by
-                show Bang.dispatch K₁ ℓ op v₁ = _; unfold Bang.dispatch; rw [hsp1]; exact hc₁
+                show Bang.staticDispatch K₁ cap op v₁ = _; unfold Bang.staticDispatch; rw [hsp1]; exact hc₁
               have hstep2 : Source.step (K₂, Comp.perform cap ℓ op v₂) = some c₂ := by
-                show Bang.dispatch K₂ ℓ op v₂ = _; unfold Bang.dispatch; rw [hsp2]; exact hc₂
+                show Bang.staticDispatch K₂ cap op v₂ = _; unfold Bang.staticDispatch; rw [hsp2]; exact hc₂
               refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
               have hcatch' : Bang.handlesOp (Handler.state lh s) (Handler.state lh s).label op = true := by
                 rw [hlbl]; exact hcatch
@@ -1907,9 +1913,9 @@ theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult}
                 cases h' <;> simp only [HandlerRel] at hHR
                 obtain ⟨rfl, _, _⟩ := hHR; exact dispatchOn_transaction_isSome op v₂ K₂ᵢ K₂ₒ _ _
               have hstep1 : Source.step (K₁, Comp.perform cap ℓ op v₁) = some c₁ := by
-                show Bang.dispatch K₁ ℓ op v₁ = _; unfold Bang.dispatch; rw [hsp1]; exact hc₁
+                show Bang.staticDispatch K₁ cap op v₁ = _; unfold Bang.staticDispatch; rw [hsp1]; exact hc₁
               have hstep2 : Source.step (K₂, Comp.perform cap ℓ op v₂) = some c₂ := by
-                show Bang.dispatch K₂ ℓ op v₂ = _; unfold Bang.dispatch; rw [hsp2]; exact hc₂
+                show Bang.staticDispatch K₂ cap op v₂ = _; unfold Bang.staticDispatch; rw [hsp2]; exact hc₂
               refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
               have hcatch' : Bang.handlesOp (Handler.transaction lh Θ') (Handler.transaction lh Θ').label op
                   = true := by rw [hlbl]; exact hcatch
