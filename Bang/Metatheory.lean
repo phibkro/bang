@@ -1968,6 +1968,32 @@ theorem splitAtId_decomp : ∀ (K : EvalCtx) (n : Nat) {Kᵢ Kₒ : EvalCtx} {h 
       subst hKi; subst hh; subst hKo
       rw [ih hsp']; rfl
 
+/-- Full `perform` focus inversion (ADR-0054 shape): exposes the cap typing, the op interface, and the
+argument typing. The re-typing the preservation perform case threads. -/
+theorem HasCTy.perform_full_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {c : Val} {op : OpId} {v : Val} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.perform c op v) e C →
+    ∃ (ℓ : Label) (γ_c γ_v : GradeVec Mult) (q : Mult) (A B : VTy Eff Mult),
+      C = CTy.F q B ∧ γ0 = (q • γ_v) + γ_c
+      ∧ HasVTy γ_c Γ0 c (VTy.cap ℓ)
+      ∧ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ e
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B
+      ∧ HasVTy γ_v Γ0 v A := by
+  intro h
+  cases h with
+  | @perform γ_c γ_v _ _ ℓ _ _ φ q A B hcap hle harg hres hv =>
+    exact ⟨ℓ, γ_c, γ_v, q, A, B, rfl, rfl, hcap, hle, harg, hres, hv⟩
+
+/-- Canonical form for a CLOSED capability value: `c : Cap ℓ` in the empty context is `vcap n ℓ`
+(`vvar` is excluded — `[][i]? = none`). The preservation/progress perform cases rest on this. -/
+theorem HasVTy.cap_canonical {γ0 : GradeVec Mult} {c : Val} {ℓ : Label} :
+    HasVTy γ0 ([] : TyCtx Eff Mult) c (VTy.cap ℓ) → ∃ n, c = Val.vcap n ℓ := by
+  intro h
+  cases h with
+  | @vcap _ n _ => exact ⟨n, rfl⟩
+  | @vvar _ i A hget => simp at hget
+
 theorem preservation_proof
     {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
     HasConfig cfg eo Co → Source.step cfg = some cfg' →
@@ -2014,14 +2040,125 @@ theorem preservation_proof
           ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩,
           hnecfg'⟩
   | perform c op v =>
-    -- DISPATCH (ADR-0054 IDENTITY). ★ THE ONE DOCUMENTED SORRY of this module. ★
-    -- The reduct of an `idDispatch` perform step is well-typed at a residual `eo' ≤ eo`. Discharging this
-    -- needs (STEP 5): `splitAtId_decomp` — the boundary `K = Kᵢ ++ handleF m h :: Kₒ` from
-    -- `splitAtId K n = some (Kᵢ, h, Kₒ)` (mirror of the deleted `staticSplit_decomp` onto `splitAtId`) —
-    -- PLUS the `dispatchOn` reduct re-typing (the COMMENTED-OUT E.1c `concat_*` lemmas, re-keyed onto
-    -- identity dispatch). It is the SAME re-typing the old `preservation_perform_typing` did, now keyed on
-    -- identity. NonEscape of the reduct is by-construction (`hnecfg'`); only the TYPING side is open here.
-    sorry
+    -- DISPATCH (ADR-0054 IDENTITY). The reduct re-typing, keyed on `splitAtId_decomp` + the E.1c concat
+    -- lemmas (re-keyed onto identity dispatch). The step gives the resolved boundary + `handlesOp`; the
+    -- boundary handler's KIND drives the 6 op paths (throws-abort / state-get,put / txn-new,read,write).
+    obtain ⟨ℓ, γ_c, γ_v, q, A, B, hC, hγ, hcap, hle, hopArg, hopRes, hwv⟩ := hfocus.perform_full_inv
+    subst hC
+    have hγc : γ_c = [] := by have := hcap.length_eq; simpa using this
+    have hγv : γ_v = [] := by have := hwv.length_eq; simpa using this
+    subst hγc; subst hγv
+    obtain ⟨n, hceq⟩ := hcap.cap_canonical
+    subst hceq
+    simp only [Source.step, idDispatch] at hstep
+    obtain ⟨⟨Kᵢ, hh, Kₒ⟩, hsplit, hstep2⟩ := Option.bind_eq_some_iff.mp hstep
+    by_cases hk : handlesOp hh ℓ op = true
+    · rw [if_pos hk] at hstep2
+      have hdecomp : K = Kᵢ ++ Frame.handleF n hh :: Kₒ := splitAtId_decomp K n hsplit
+      rw [hdecomp] at hstack
+      cases hh with
+      | throws ℓ' =>
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hk
+        obtain ⟨hℓ, hopr⟩ := hk; subst hℓ; subst hopr
+        simp only [dispatchOn, Option.some.injEq] at hstep2
+        subst hstep2
+        obtain ⟨qh, Ah, eo', hleo, hrA, hsub'⟩ := hstack.concat_throws_typed
+        have hAAh : A = Ah := by rw [hopArg] at hrA; exact Option.some.inj hrA
+        subst hAAh
+        exact ⟨eo', hleo,
+          ⟨⊥, CTy.F qh A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩, hnecfg'⟩
+      | state ℓ' s =>
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq] at hk
+        obtain ⟨hℓ, hopGP⟩ := hk; subst hℓ
+        obtain ⟨S, hgetRes, hputArg, hputRes, hs⟩ := hstack.concat_state_closed
+        rcases hopGP with hget | hput
+        · subst hget
+          simp only [dispatchOn, beq_self_eq_true, if_true, Option.some.injEq] at hstep2
+          subst hstep2
+          have hSB : S = B := by rw [hopRes] at hgetRes; exact (Option.some.inj hgetRes).symm
+          subst hSB
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_state_resume hgetRes hs
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q S, HasCTy.ret hs (by simp [hsmul_eq_smul, GradeVec.smul]), hsub''⟩, hnecfg'⟩
+        · subst hput
+          simp only [dispatchOn, show ("put" == "get") = false by decide, Bool.false_eq_true,
+            if_false, Option.some.injEq] at hstep2
+          subst hstep2
+          have hAS : A = S := by rw [hopArg] at hputArg; exact Option.some.inj hputArg
+          subst hAS
+          have hBunit : B = VTy.unit := by rw [hopRes] at hputRes; exact Option.some.inj hputRes
+          subst hBunit
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_state_resume hgetRes hwv
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.unit,
+              HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩, hnecfg'⟩
+      | transaction ℓ' Θ =>
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq] at hk
+        obtain ⟨hℓ, hopT⟩ := hk; subst hℓ
+        obtain ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩ := hstack.concat_transaction_store
+        rcases hopT with (hnew | hread) | hwrite
+        · rw [hnew] at hstep2 hopArg hopRes
+          simp only [dispatchOn, beq_self_eq_true, if_true, Option.some.injEq] at hstep2
+          subst hstep2
+          have hAint : A = VTy.int := by rw [hopArg] at hna; exact Option.some.inj hna
+          have hBint : B = VTy.int := by rw [hopRes] at hnr; exact Option.some.inj hnr
+          subst hAint; subst hBint
+          have hcells' : ∀ cell ∈ Θ ++ [v], HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
+            intro cell hcm; rcases List.mem_append.mp hcm with hc | hc
+            · exact hcells cell hc
+            · rw [List.mem_singleton] at hc; subst hc; exact hwv
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells'
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.int,
+              HasCTy.ret (HasVTy.vint (n := (Θ.length : Int)) (Γ := []))
+                (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]), hsub''⟩, hnecfg'⟩
+        · rw [hread] at hstep2 hopArg hopRes
+          simp only [dispatchOn, show ("readTVar" == "newTVar") = false by decide, Bool.false_eq_true,
+            if_false, beq_self_eq_true, if_true, Option.some.injEq] at hstep2
+          subst hstep2
+          have hBint : B = VTy.int := by rw [hopRes] at hrr; exact Option.some.inj hrr
+          subst hBint
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          have hcell : HasVTy [] [] (Θ.getD ((tvarIdx v).getD 0) (Val.vint 0)) (VTy.int : VTy Eff Mult) := by
+            rw [List.getD_eq_getElem?_getD]
+            rcases lt_or_ge ((tvarIdx v).getD 0) Θ.length with hlt | hge
+            · rw [List.getElem?_eq_getElem hlt, Option.getD_some]; exact hcells _ (List.getElem_mem hlt)
+            · rw [List.getElem?_eq_none hge, Option.getD_none]; exact HasVTy.vint (n := 0) (Γ := [])
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.int, HasCTy.ret hcell (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩, hnecfg'⟩
+        · rw [hwrite] at hstep2 hopArg hopRes
+          simp only [dispatchOn, show ("writeTVar" == "newTVar") = false by decide,
+            show ("writeTVar" == "readTVar") = false by decide, Bool.false_eq_true, if_false] at hstep2
+          have hBunit : B = VTy.unit := by rw [hopRes] at hwr; exact Option.some.inj hwr
+          subst hBunit
+          have hAprod : A = VTy.prod VTy.int VTy.int := by rw [hopArg] at hwa; exact Option.some.inj hwa
+          subst hAprod
+          obtain ⟨_, γ_b, a, b, hvpair, _, _, hbint⟩ := hwv.prod_canonical
+          have hγb : γ_b = [] := by have := hbint.length_eq; simpa using this
+          subst hγb
+          subst hvpair
+          simp only [dispatchOn, Option.some.injEq] at hstep2
+          subst hstep2
+          have hcells' : ∀ cell ∈ storeSet Θ ((tvarIdx a).getD 0) b,
+              HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
+            intro cell hcm
+            unfold storeSet at hcm
+            rcases List.mem_or_eq_of_mem_set hcm with hc | hc
+            · exact hcells cell hc
+            · subst hc; exact hbint
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells'
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.unit,
+              HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩, hnecfg'⟩
+    · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
     simp only [Source.step, Option.some.injEq] at hstep
@@ -2184,15 +2321,6 @@ theorem preservation_proof
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
 
 /-! ### E.3 progress (config level, ADR-0023) -/
-
-/-- Canonical form for a CLOSED capability value: `c : Cap ℓ` in the empty context is `vcap n ℓ`
-(`vvar` is excluded — `[][i]? = none`). The progress perform case rests on this. -/
-theorem HasVTy.cap_canonical {γ0 : GradeVec Mult} {c : Val} {ℓ : Label} :
-    HasVTy γ0 ([] : TyCtx Eff Mult) c (VTy.cap ℓ) → ∃ n, c = Val.vcap n ℓ := by
-  intro h
-  cases h with
-  | @vcap _ n _ => exact ⟨n, rfl⟩
-  | @vvar _ i A hget => simp at hget
 
 /-- Expose the capability typing buried in a `perform` focus (the new ADR-0054 shape: the head is a
 `Cap ℓ` VALUE). Replaces the deleted positional `perform_inv` for the progress path. -/
