@@ -381,6 +381,91 @@ This is what `Source.step` now uses for `perform`; `dispatch` (label search) is 
 def staticDispatch (K : EvalCtx) (cap : Nat) (op : OpId) (v : Val) : Option Config :=
   (staticSplit K cap).bind (dispatchOn op v)
 
+/-! ### Well-capped judgement (ADR-0045 B3a) — the cap-scoping invariant `HasConfig` carries
+
+★★ B3a SECOND WALL (build-grounded, BLOCKS preservation) — caps must be LEXICAL, not dynamic. ★★
+This `WellCapped` predicate is the CORRECT invariant shape, but it is NOT preserved under `Source.step`
+while `Comp.subst`/`shiftFrom` leave the `cap` field UNSHIFTED. The decisive finding:
+`WCVal Σ v → WCVal (handleF h :: Σ) v` is FALSE (build-confirmed `wc_fails_after_migration`) — a
+thunk's `perform 0` ("nearest handler") that MIGRATES under a fresh `handle h` (via `letC`/β subst into
+a `vvar 0` position beneath an `h`-wrapper) now resolves to `h`, the WRONG handler. A reachable
+well-typed program then DIVERGES: `handle (state 1 5) (let c={get} in handle (throws 2) ($c))` yields a
+WRONG value, not `5` (build-confirmed) — the get mis-dispatches to the inner `throws`. The OLD dynamic
+LABEL search handled this correctly (it skipped the wrong-label `throws`); the static CAP does not,
+because `perform 0` is dynamic-nearest, not lexical. FIX (build-confirmed `res5`): the cap must be
+SHIFTED to skip handlers it crosses — i.e. `handle` must be a CAP-BINDER in `shiftFrom`/`substFrom`
+(lexical capabilities, Lexa/Effekt-style). That is a kernel SUBSTITUTION change + an ADR decision,
+beyond B3a's "minimal Σ" scope. REPORTED to lead; preservation of `WellCapped` resumes once caps are
+lexical (then `WCVal Σ v → WCVal (handleF h::Σ) v` holds because the shifted cap compensates).
+
+ORIGINAL B3a design intent (valid once caps are lexical):
+The B1 wall: static dispatch needs every `perform cap`'s `cap` to RESOLVE (`CapResolvesKind`) against
+the handler-context it faces at dispatch, but typing is cap-irrelevant, so this must enter as a
+SEPARATE structural invariant. `WellCapped` is that invariant. It is folded INTO `HasConfig` (so the
+frozen `preservation`/`progress` statements stand byte-identical) and added as a premise to
+`type_safety` (the only frozen statement over `HasCTy [] []` rather than `HasConfig`).
+
+`Σ : EvalCtx` is the handler-context a computation faces — innermost-first, exactly the runtime stack
+a focus dispatches against. `WCComp Σ M` checks every `perform` in `M` against `Σ` extended by the
+syntactic `handle` wrappers above it (a `handle h M'` pushes `handleF h` onto `Σ` for `M'`). The cap
+counts only `handleF` frames (it skips letF/appF — `CapResolvesKind`), so threading the full `Σ`
+(handlers + plumbing) is faithful: a stored `letF`/`appF` continuation is checked against the SAME `Σ`
+it will face when it becomes the focus (the intervening plumbing frame is popped first). -/
+
+mutual
+/-- Every `perform` in `M` resolves (kind-correctly) against the handler-context `Sg` extended by `M`'s
+own enclosing `handle` wrappers. Structural recursion mirroring `Comp`; `handle h M'` extends `Sg` with
+`handleF h`. `letC`/`app`/`case`/`split` descend with `Sg` unchanged (their frames are cap-transparent,
+so a perform buried under them dispatches against the same `Sg`). -/
+def WCComp (Sg : EvalCtx) : Comp → Prop
+  | .ret v          => WCVal Sg v
+  | .letC M N       => WCComp Sg M ∧ WCComp Sg N
+  | .force v        => WCVal Sg v
+  | .lam M          => WCComp Sg M
+  | .app M v        => WCComp Sg M ∧ WCVal Sg v
+  | .perform cap ℓ op v => CapResolvesKind Sg cap ℓ op ∧ WCVal Sg v
+  | .handle h M     => WCHandler Sg h ∧ WCComp (Frame.handleF h :: Sg) M
+  | .case v N₁ N₂   => WCVal Sg v ∧ WCComp Sg N₁ ∧ WCComp Sg N₂
+  | .split v N      => WCVal Sg v ∧ WCComp Sg N
+  | .unfold v       => WCVal Sg v
+  | .oom            => True
+  | .wrong _        => True
+/-- A value is well-capped iff every `Comp` it thunks is (a `vthunk M` faces a FRESH handler-context
+when forced — the stack at its force site — so it is checked against `[]`, the empty context: a thunk
+body's caps must be self-contained, since `force` discards the ambient stack for the thunk's own
+dispatch... no: `force (vthunk M)` steps to `(K, M)`, so `M` faces the AMBIENT `K`. Hence check against
+`Sg`.). -/
+def WCVal (Sg : EvalCtx) : Val → Prop
+  | .vunit       => True
+  | .vint _      => True
+  | .vvar _      => True
+  | .vthunk M    => WCComp Sg M
+  | .inl w       => WCVal Sg w
+  | .inr w       => WCVal Sg w
+  | .pair w₁ w₂  => WCVal Sg w₁ ∧ WCVal Sg w₂
+  | .fold w      => WCVal Sg w
+/-- A handler's payload value is well-capped (state's stored value, transaction's heap cells). -/
+def WCHandler (Sg : EvalCtx) : Handler → Prop
+  | .throws _       => True
+  | .state _ s      => WCVal Sg s
+  | .transaction _ Θ => ∀ c ∈ Θ, WCVal Sg c
+end
+
+/-- A frame STACK is well-capped: each stored continuation/argument/handler is well-capped against the
+context BELOW it (the tail it will face after the frame is consumed). Innermost-first: the head frame
+sits on `K`, so its payload faces `K` (a `letF N` continuation `N`, once reached, dispatches against
+`K`; an `appF v` argument is a value; a `handleF h` payload faces `K`). -/
+def WCStack : EvalCtx → Prop
+  | [] => True
+  | .letF N :: K   => WCComp K N ∧ WCStack K
+  | .appF v :: K   => WCVal K v ∧ WCStack K
+  | .handleF h :: K => WCHandler K h ∧ WCStack K
+
+/-- The config-level well-capped invariant: the focus is well-capped against the stack, and the stack's
+stored continuations are well-capped against their tails. This is what `HasConfig` carries (B3a). -/
+def WellCapped : Config → Prop
+  | (K, M) => WCComp K M ∧ WCStack K
+
 /-- One machine transition. `none` = stuck (terminal `⟨[], ret v⟩`, or genuinely wrong). -/
 def Source.step : Config → Option Config
   -- PUSH
