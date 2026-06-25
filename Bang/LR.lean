@@ -985,16 +985,19 @@ theorem not_converges_up_nil (cap : Nat) (ℓ : Label) (op : OpId) (v : Val) :
             = Config.run (k+1) ([], Comp.perform cap ℓ op v) from rfl, hstuck] at hfuel
       simp at hfuel
 
-/-- An UNHANDLED operation never converges UNDER ANY STACK: if no frame of `K` handles `(ℓ, op)`
-(`splitAt K ℓ op = none`), then `plug K (up ℓ op v)` runs to a stuck config and never `done`s.
-Generalizes `not_converges_up_nil` (the `K = []` case) to an arbitrary stack — the workhorse that
-collapses the STUCK half of every frame-extension `Krel` lemma to vacuous truth (`CoApprox` is
-`False → _`). The machine refocuses `([], plug K (up …))` to `(K, up …)` via `run_plug`, then
-`dispatch K ℓ op v = (splitAt K …).bind _ = none` ⇒ `step = none` ⇒ stuck. -/
+/-- An UNHANDLED operation never converges UNDER ANY STACK: if the cap does NOT resolve to an in-scope
+handler (`staticSplit K cap = none`), then `plug K (perform cap ℓ op v)` runs to a stuck config and
+never `done`s. Generalizes `not_converges_up_nil` (the `K = []` case) to an arbitrary stack — the
+workhorse that collapses the STUCK half of every frame-extension `Krel` lemma to vacuous truth
+(`CoApprox` is `False → _`). The machine refocuses `([], plug K (perform …))` to `(K, perform …)` via
+`run_plug`, then `staticDispatch K cap op v = (staticSplit K cap).bind _ = none` ⇒ `step = none` ⇒
+stuck. ADR-0045 RE-KEY (Inc 0): the predicate is `staticSplit K cap = none` (the cap does not resolve),
+NOT the legacy label-search `splitAt K ℓ op = none` — `Source.step` routes `perform` through
+`staticDispatch K cap` (Operational.lean), so the `ℓ`-keyed search no longer governs stuckness. -/
 theorem not_converges_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.splitAt K ℓ op = none) :
+    (hsplit : Bang.staticSplit K cap = none) :
     ¬ Converges (Stack.plug K (Comp.perform cap ℓ op v)) := by
-  -- the focused config (K, up …) is stuck at every fuel: step = dispatch = none (splitAt = none).
+  -- the focused config (K, perform …) is stuck at every fuel: step = staticDispatch = none (cap unresolved).
   have hstuck : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
     intro j w
     cases j with
@@ -1002,8 +1005,8 @@ theorem not_converges_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : O
     | succ k =>
         rw [Config.run_step k (K, Comp.perform cap ℓ op v) (by intro u; simp)]
         have hdisp : Source.step (K, Comp.perform cap ℓ op v) = none := by
-          show dispatch K ℓ op v = none
-          unfold dispatch; rw [hsplit]; rfl
+          show staticDispatch K cap op v = none
+          unfold staticDispatch; rw [hsplit]; rfl
         rw [hdisp]; simp
   rintro ⟨fuel, w, hfuel⟩
   rw [Stack.plug] at hfuel
@@ -1014,26 +1017,27 @@ theorem not_converges_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : O
   rw [run_plug K (Comp.perform cap ℓ op v) fuel] at hbig
   exact hstuck fuel w hbig
 
-/-- ◊4.5b CONFIG-LEVEL form: the focused config `(K, up ℓ op v)` with `splitAt K = none` is STUCK at
-every fuel (`step = dispatch = none`), so it never converges within ANY step bound. This is what the
-metered STUCK halves consume — `CoApproxC_le j (K, up…) _` is vacuous because `ConvergesC_le j (K, up…)`
-is `False`. No `plug`/refocus (config level): the `+K.length` offset never enters. -/
+/-- ◊4.5b CONFIG-LEVEL form: the focused config `(K, perform cap ℓ op v)` with `staticSplit K cap = none`
+is STUCK at every fuel (`step = staticDispatch = none`), so it never converges within ANY step bound.
+This is what the metered STUCK halves consume — `CoApproxC_le j (K, perform…) _` is vacuous because
+`ConvergesC_le j (K, perform…)` is `False`. No `plug`/refocus (config level): the `+K.length` offset
+never enters. ADR-0045 RE-KEY (Inc 0): cap-unresolved (`staticSplit K cap = none`), not label-search. -/
 theorem config_stuck_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.splitAt K ℓ op = none) : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
+    (hsplit : Bang.staticSplit K cap = none) : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
   intro j w
   cases j with
   | zero => simp [Config.run]
   | succ k =>
       rw [Config.run_step k (K, Comp.perform cap ℓ op v) (by intro u; simp)]
       have hdisp : Source.step (K, Comp.perform cap ℓ op v) = none := by
-        show dispatch K ℓ op v = none
-        unfold dispatch; rw [hsplit]; rfl
+        show staticDispatch K cap op v = none
+        unfold staticDispatch; rw [hsplit]; rfl
       rw [hdisp]; simp
 
-/-- `ConvergesC_le j (K, up…)` is `False` when `K` does not handle `(ℓ,op)` — the metered stuck-half
-discharge. -/
+/-- `ConvergesC_le j (K, perform…)` is `False` when the cap does not resolve (`staticSplit K cap = none`)
+— the metered stuck-half discharge. ADR-0045 RE-KEY (Inc 0): cap-unresolved, not label-search. -/
 theorem not_convergesC_le_up_splitNone {j : Nat} (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.splitAt K ℓ op = none) : ¬ ConvergesC_le j (K, Comp.perform cap ℓ op v) := by
+    (hsplit : Bang.staticSplit K cap = none) : ¬ ConvergesC_le j (K, Comp.perform cap ℓ op v) := by
   rintro ⟨w, hw⟩; exact config_stuck_up_splitNone K cap ℓ op v hsplit j w hw
 
 
