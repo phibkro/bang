@@ -26,15 +26,25 @@
 > recorded alternative. First-class-thunk escape is ruled out by the EXISTING `LWT` non-escape gate
 > (`preservation_returnEscape_TODO`), not by second-class thunks.
 >
-> **★ THE IMMEDIATE NEXT UNIT — implement the identity representation. DESIGN VALIDATED + SIGNED OFF;
-> roadmap = `paths/PATH-identity-representation.md`.** Capability-passing: `handle` BINDS a capability var,
-> `perform` references it as a VALUE (`vcap n`), dispatch by identity MATCH. Forks chosen: **(ii)** identity
-> = `handlerCount`-at-install (no Config counter); **(a)** `splitAt` match dispatch (keeps the ADR-0043 wrap
-> edge). De-risked end-to-end (`a9af7bb`, `scratch/Identity{Dispatch,Kernel}Probe.lean`: the `migrate
-> vFragile` witness returns 7). Increment seq in the PATH: Core AST → Operational → Syntax(frozen typing) →
-> Metatheory → LR/Compat (first green checkpoint) → CalcVM → Surface. An AST change takes the green subset RED
-> until inc 5. SUPERSEDES the old "WC keystone 2c" (MOOT — the dead `WellCapped`/`WCComp` island removed
-> `d1f0916`, −316 LOC; the keystone was an absolute-caps artifact).
+> **★ IMPLEMENTING the identity representation. inc 1–3 DONE; inc 4 (Metatheory) NEXT.** @ `ea2223c`.
+> Roadmap + precise resume map = `paths/PATH-identity-representation.md`. Capability-passing: `perform c op v`
+> (capability VALUE), `handle` BINDS the cap (`vcap n ℓ`), dispatch by identity MATCH; Forks (ii) id =
+> `handlerCount`-at-install, (a) match dispatch. De-risked end-to-end (`scratch/IdentityKernelProbe.lean`).
+>
+> - **inc 1 Core ✓ (`05f6e45`) · inc 2 Syntax ✓ (`e5ef635`) · inc 3 Operational ✓ (`ea2223c`)** — each green
+>   at its level. `lake build Bang.Operational` = 708 jobs, 0 sorries. The bug is fixed IN-KERNEL: `#guard
+>   capMigrateInternal → 7` (the ADR-0053 insert-below witness now reads its own state).
+> - **THE COLLAPSE (ADR-0054 amendment):** capability-passing makes typing cap-RELEVANT (`c : Cap ℓ`), so the
+>   positional `WellCapped`/`LWConfig` + the WC keystone (this session's *starting* hard piece) + the
+>   absolute-cap theory all DISSOLVE into typing. `HasConfig := HasConfigTy ∧ NonEscape` (`NonEscape := True`
+>   first cut — inc 4 gives it real content).
+> - **★ inc 4 (Metatheory) = DEEP multi-session metatheory** (NOT mechanical): port ~15 HasVTy/HasCTy
+>   inductions (vcap + new perform + handle-binder) · delete dead `staticSplit`/`absSplit`/`shiftCap`
+>   machinery · RE-PROVE `preservation`/`progress` + PIN `NonEscape`'s real form (the thunk-escape case = the
+>   soundness proof — don't rush). Then inc 5 LR/Compat (first whole-LR green) · 6 CalcVM · 7 Surface.
+> - **Build RED by design** until inc 5 (AST port). Green subset = `lake build Bang.Operational` (+`Metatheory`
+>   at inc 4). Frozen Spec statements unchanged (collapse changed `HasConfig`'s def, not the theorem text).
+> - Latest detail: `/tmp/lang-bang-handoff-2026-06-25-inc4.md` + the PATH. SUPERSEDES the WC keystone 2c (MOOT).
 >
 > **This session's commits (`typed-static-r1`):**
 > - `e133e9a` ADR-0054 (+ 3 build-verified unsoundness probes + ledger; ADR-0053 → Superseded).
