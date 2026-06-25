@@ -298,9 +298,13 @@ def isReturnConfig : Config → Prop
   | ([], .ret _) => True
   | _            => False
 
-/-- Configuration typing: the focus is closed and well-typed, and the stack carries it to the
-whole-program type `(eo, Co)`. -/
-def HasConfig (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
+/-- Configuration typing CORE: the focus is closed and well-typed, and the stack carries it to the
+whole-program type `(eo, Co)`. ADR-0045 B3a: the FULL `HasConfig` (in `Operational.lean`) conjoins
+this with `WellCapped` (the cap-scoping invariant static dispatch needs); `WellCapped` lives there
+because it mentions the runtime-stack predicates. The split keeps `HasStack` here and the cap-invariant
+next to `Source.step`, and keeps `preservation`/`progress`'s frozen `HasConfig`-stated form
+byte-identical. -/
+def HasConfigTy (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
   ∃ e C, HasCTy [] [] cfg.2 e C ∧ HasStack cfg.1 e C eo Co
 
 

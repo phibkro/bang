@@ -504,20 +504,57 @@ def WCHandler (Sg : EvalCtx) : Handler → Prop
   | .transaction _ Θ => ∀ c ∈ Θ, WCVal [] c
 end
 
+/-- The HANDLER skeleton of a stack — keep `handleF` frames, drop cap-transparent `letF`/`appF`. The
+context `WCComp`/`CapResolvesKind` effectively see (caps skip plumbing). Seeding `WellCapped` with this
+makes PUSH-letF/appF preservation DEFINITIONAL (`handlersOf (letF N :: K) = handlersOf K`). -/
+def handlersOf : EvalCtx → EvalCtx
+  | [] => []
+  | .handleF h :: K => Frame.handleF h :: handlersOf K
+  | .letF _ :: K => handlersOf K
+  | .appF _ :: K => handlersOf K
+
+/-- `CapResolvesKind` reads only the HANDLER skeleton — caps skip `letF`/`appF`. So a cap resolves the
+SAME against `K` and `handlersOf K`. The bridge between RUNTIME dispatch (`staticSplit`/`CapResolvesKind`
+over the full `K`) and the WC invariant (over `handlersOf K`). -/
+theorem CapResolvesKind_handlersOf : ∀ (K : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId),
+    CapResolvesKind (handlersOf K) cap ℓ op ↔ CapResolvesKind K cap ℓ op
+  | [], cap, _, _ => Iff.rfl
+  | .handleF h :: K, 0, ℓ, op => by simp only [handlersOf, CapResolvesKind]
+  | .handleF h :: K, (c+1), ℓ, op => by
+      simp only [handlersOf, CapResolvesKind]; exact CapResolvesKind_handlersOf K c ℓ op
+  | .letF _ :: K, cap, ℓ, op => by
+      simp only [handlersOf, CapResolvesKind]; exact CapResolvesKind_handlersOf K cap ℓ op
+  | .appF _ :: K, cap, ℓ, op => by
+      simp only [handlersOf, CapResolvesKind]; exact CapResolvesKind_handlersOf K cap ℓ op
+
+/-- `handlersOf` distributes over append. -/
+theorem handlersOf_append (K K' : EvalCtx) : handlersOf (K ++ K') = handlersOf K ++ handlersOf K' := by
+  induction K with
+  | nil => rfl
+  | cons fr K ih => cases fr <;> simp only [handlersOf, List.cons_append, ih]
+
 /-- A frame STACK is well-capped: each stored continuation/argument/handler is well-capped against the
-context BELOW it (the tail it will face after the frame is consumed). Innermost-first: the head frame
-sits on `K`, so its payload faces `K` (a `letF N` continuation `N`, once reached, dispatches against
-`K`; an `appF v` argument is a value; a `handleF h` payload faces `K`). -/
+HANDLER skeleton BELOW it (the handlers it will face after the frame is consumed). Innermost-first: a
+`letF N` continuation `N`, once reached, dispatches against `handlersOf K`. -/
 def WCStack : EvalCtx → Prop
   | [] => True
-  | .letF N :: K   => WCComp K N ∧ WCStack K
-  | .appF v :: K   => WCVal K v ∧ WCStack K
-  | .handleF h :: K => WCHandler K h ∧ WCStack K
+  | .letF N :: K   => WCComp (handlersOf K) N ∧ WCStack K
+  | .appF v :: K   => WCVal (handlersOf K) v ∧ WCStack K
+  | .handleF h :: K => WCHandler (handlersOf K) h ∧ WCStack K
 
-/-- The config-level well-capped invariant: the focus is well-capped against the stack, and the stack's
-stored continuations are well-capped against their tails. This is what `HasConfig` carries (B3a). -/
+/-- The config-level well-capped invariant: the focus is well-capped against the stack's HANDLER
+skeleton, and the stack's stored continuations are well-capped against their (own) tails' skeletons.
+This is what `HasConfig` carries (B3a). Seeding `WCComp` with `handlersOf K` (not `K`) makes the
+plumbing frames cap-transparent BY CONSTRUCTION. -/
 def WellCapped : Config → Prop
-  | (K, M) => WCComp K M ∧ WCStack K
+  | (K, M) => WCComp (handlersOf K) M ∧ WCStack K
+
+/-- **Configuration typing** (ADR-0045 B3a): the typing CORE (`HasConfigTy`) PLUS the cap-scoping
+invariant `WellCapped`. Folding `WellCapped` in HERE (rather than adding a premise) keeps the frozen
+`preservation`/`progress` statements — stated over `HasConfig` — BYTE-IDENTICAL. (`type_safety`, stated
+over `HasCTy [] []`, gains a `WellCapped ([], c)` premise; see `Bang/Spec.lean`.) -/
+def HasConfig [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
+  HasConfigTy cfg eo Co ∧ WellCapped cfg
 
 /-! ### Well-capped structural lemmas (ADR-0045 B3a) — the chain that makes `WellCapped` preserved.
 
