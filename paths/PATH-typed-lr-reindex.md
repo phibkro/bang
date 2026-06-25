@@ -62,3 +62,17 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
   of `a771cc1` — a fresh session can `git stash`/discard it and redo (b)→(a) from `a771cc1` per this spec.
 - **End state (the payoff):** `#print axioms lr_sound`/`lr_fundamental` ⊆ {propext, Classical.choice, Quot.sound},
   `sorryAx` GONE — the ◊4.5b edge closed.
+
+### Refinement (2026-06-25, lrscope) — the cancellation gate is localized; try the refocus-restructure FIRST
+
+The cancellation reduces (build-traced through `crelK_fund @handleThrows`, `Compat:2188`) to **`CrelK`-shiftCap-stability**:
+`crelK_fund` over `δ.map shiftCap` ⟹ `EnvRelK (δ.map shiftCap)` ⟹ per-element `VrelK n A v v → VrelK n A (shiftCap v)`
+⟹ at `U φ B` ⟹ **`CrelK j B φ c c → CrelK j B φ (shiftCap c)`**. The FREE form is FALSE (bumped caps dispatch
+differently in the same `K₁`). The TRUE form is **CONTEXTUAL** — `CrelK` against stacks carrying the absorbing
+`handleF` (which `compatK_handleThrows` pushes, but the bare `CrelK` quantifier doesn't). So the cancellation is a
+**contextual `CrelK`-stability** indexed by the absorbing-handler context, NOT a free stability lemma.
+
+**Cleaner alternative — TRY THIS FIRST:** restructure `compatK_handle*` to **push `handleF` BEFORE closing the body**,
+so the env is naturally at the +1-handler context and `δ.map shiftCap` is the correct env there — **no cancellation
+lemma needed** (the shift is absorbed structurally by where the refocus happens). Matches "the shift mirrors the
+handleF-push" most directly and may dissolve the gate entirely. If the restructure works, skip the contextual mutual.
