@@ -1,0 +1,36 @@
+# PATH — the typed LR re-index (ADR-0045 step 2) — really a DISPATCH RE-KEY
+
+> The pivot's payoff phase: close the last kernel sorry (`preservation_returnEscape_TODO`) AND dissolve the
+> ◊4.5b resume-edge (`sorryAx`-zero `lr_sound`/`lr_fundamental`). Scoped 2026-06-25 (`lrscope`), reframe
+> verified on the defs. Branch `typed-static-r1` (kernel STD block gated to 1 sorry @ `91e7444`).
+
+## The reframe (verified) — it's a RE-KEY, not a re-index
+
+"Typed LR re-index" is a misnomer. The ◊4.5b rebuild ALREADY made the LR answer-typed + type-indexed:
+- `VrelK : Nat → VTy → Val → Val → Prop` (LR.lean:448) — `U φ B` clause already forces `vthunk` + `CrelK j B φ`; `int`/`unit` use `BaseRel` (escape free). **The type-gate is already encoded here.**
+- `CrelK : Nat → CTy → Eff → …` (465); `KrelS : Nat → CTy(hole) → CTy(answer) → Eff → Stack → Stack → …` (473).
+- The Nat-step + `▷` substrate (`ConvergesC_le`, `coApproxC_le_anti_step`) is reused VERBATIM.
+
+So the index is already there. The REAL work is two things:
+1. **DISPATCH RE-KEY** — the LR resume machinery is keyed to `splitAt`/`dispatch`/`dispatchOn` (label search); the kernel now routes `perform` through `staticDispatch K cap` (Operational.lean:1091). Re-key the spine to `staticSplit`/`staticDispatch` (cap). **This is the bulk AND where the edge dissolves.**
+2. **The return-escape type-gate** — close `preservation_returnEscape_TODO` (Operational.lean:1150) via the type `A` in `VrelK n A` (the (D) type-directed resolution). Possibly a `HasConfigTy` φ≠⊥ premise on `ret`/`letC` — a frozen-statement risk (below).
+
+## The edge dissolution (verified on `staticSplit`)
+
+The ◊4.5b edge = the sorry at `Compat.lean:1590`, the handleF-MISS case of `krelS_splitAt_decomp`. It exists ONLY because dynamic `splitAt` WALKS PAST a non-matching handler (prepending it into `Kᵢ`), which is the only thing that puts a non-catching `handleF` into the captured continuation. `staticSplit` (Operational.lean:325) NEVER tests `handlesOp` to decide skipping — cap=0 ⇒ `Kᵢ=[]` (handler-free by construction, MISS unreachable); cap>0 ⇒ cap-pinned answer type (no existential search ⇒ no `D2≠Dᵢ` non-determinism). **The MISS case literally ceases to exist** — `NoWrapMiss` becomes vacuous. The hardest historical risk dissolves by construction.
+
+## The CRUX
+Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.lean:1474) + threading `cap` through `KrelS`'s handleF resume conjunct (LR.lean:527-555), from label-dispatch to `staticSplit`/`staticDispatch`. The concrete current RED: `crelK_fund_up` proves the step via the `dispatch`/`dispatchOn` shape, which fails against `staticDispatch`. NOT the mutual fundamental, NOT ▷-metering, NOT `closeC` (all DONE, byte-identical). Secondary: the LR `closeC`/`EnvRel` substitution-descent must commute with the lexical cap-shift (`Comp.shiftFrom`/`substFrom`) — check in Increment 0.
+
+## Staged increments (build-gated)
+
+- **Inc 0 (DECISIVE FIRST — the dispatch re-key surface):** re-key `crelK_fund_up` + the up-none lemmas (LR.lean:972-1036) from `splitAt`/`dispatch` to `staticSplit`/`staticDispatch`. Smallest closable unit = `crelK_fund_up`'s **THROWS arm** (throws discards `Kᵢ`, so `cap` only selects the handler — cleanest). **Gate:** build reaches/passes the throws arm over `staticDispatch`; up-none lemmas re-green over `staticSplit … = none`. This surfaces every moved kernel-LR dispatch seam = the map of the rest.
+- **Inc 1 (the dissolve):** re-key `krelS_splitAt_decomp` to `staticSplit`. letF/appF arms port mechanically; handleF splits into cap=0 (HIT, `Kᵢ=[]`, old MISS arm GONE) + cap>0 (countdown, cap-pinned). **Gate:** `Compat.lean` builds with the `:1590` sorry DELETED; `#print axioms krelS_splitAt_decomp` no `sorryAx`.
+- **Inc 2 (resume conjunct + state/txn):** re-express `KrelS`'s handleF resume conjunct over `cap`/`staticSplit`; re-green `crelK_fund_up`'s state/txn arms over the cap-determined `Kᵢ`. **Gate:** `crelK_fund`/`krelS_refl` handler arms close or are cap-witnessed.
+- **Inc 3 (the return-escape type-gate):** close `preservation_returnEscape_TODO` via the type-premise (φ≠⊥ on `U φ C` escapes), routed through `VrelK n A`. May need a `HasConfigTy` amendment. **Gate:** `preservation`/`type_safety` `sorryAx`-gone.
+- **Inc 4 (payoff):** `#print axioms lr_sound`/`lr_fundamental` ⊆ {propext, Classical.choice, Quot.sound} — `sorryAx` GONE. The ◊4.5b edge closed.
+
+## Frozen-statement + risk
+- `lr_sound`/`lr_fundamental` (Spec.lean:188,216): **NO statement change** — the types are already in the statements (`Crel n B e c₁ c₂`). Only the AXIOM SET changes (`sorryAx` vanishes): statement-stable, axiom-strengthened. (The PATH/ADR called it a STATEMENT_CHANGE; on the actual frozen text it is NOT.)
+- `preservation`/`type_safety`/`progress` (Spec.lean:93,116,104): the REAL frozen-statement risk, via Inc 3 — a φ≠⊥ premise on `ret`/`letC` in `HasConfigTy` would change the `HasConfig` premise shape. STATEMENT_CHANGE_OK against ADR-0045 (same envelope as the existing `LWConfig` fold).
+- "Only the index moves" is OPTIMISTIC (the index already moved; the dispatch re-key is the bulk — multi-session, ~the ◊4.5b sub-block-(f) surface area) and the return-escape gate (Inc 3) is genuinely NEW machinery, not a re-index.
