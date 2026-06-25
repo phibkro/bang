@@ -31,6 +31,7 @@ its trigger arises.
 | **K2/K3 calculation proof patterns** (legacy) | `docs/notes/k2-calculation-playbook.md` |
 | **K3 historical status** (pre-pivot narrative + composition-mechanism map) | `docs/notes/k3-historical-status.md` |
 | **Dev environment** (Nix flake, scripts, gotchas) | `docs/notes/dev-env.md` |
+| **Comment/doc convention** (Mathlib-grounded; `just symbols` for navigation) | `docs/notes/lean-comment-style.md` |
 | **Original design thesis** (v0/v1; partially superseded by ADR-0016) | `docs/spec/bang-lang-design.md`, `docs/spec/bang-lang-description-value.md` |
 | **K-keyframe research roadmap** (complementary to ROADMAP.md) | `docs/roadmap/bang-northstar-roadmap.md` |
 | **References library** (cited papers + refs.bib) | `references/README.md` |
