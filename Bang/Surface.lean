@@ -131,38 +131,52 @@ def lookup (env : List String) (x : String) : Except String Nat :=
   | some i => .ok i
   | none   => .error s!"unbound variable: {x}"
 
+/-- The capability for an effect at label `ℓ`, given the enclosing handler-scope `hs`
+(handler labels, innermost first): the index of the nearest enclosing handler for `ℓ` — i.e.
+the number of handler frames the kernel's `staticSplit` skips to reach it. NO enclosing handler
+for `ℓ` ⇒ a **capability escape** (case B) ⇒ a lowering error, mirroring the kernel's lexical
+typing (`LWT`): an effect must have a handler in scope at its AUTHOR site. -/
+def capFor (hs : List Label) (ℓ : Label) : Except String Nat :=
+  match hs.idxOf? ℓ with
+  | some i => .ok i
+  | none   => .error s!"unbound effect: no handler for label {ℓ} in scope (capability escape — case B)"
+
 mutual
-/-- Lower a surface term that is in COMPUTATION position to a `Comp`. -/
-def lowerC (env : List String) : Surf → Except String Comp
+/-- Lower a surface term in COMPUTATION position. `hs` is the handler-scope (labels of the
+enclosing handlers, innermost first): `handle`/`state`/`atomically` PUSH their label, and each
+effect op resolves its capability via `capFor hs ·` (the lexical distance to its handler). Caps
+are fixed at the AUTHOR site (a `{thunk}` lowers under the *current* `hs`); the kernel's
+substitution then shifts them under migration — elaborator + kernel together implement `LWT`. -/
+def lowerC (env : List String) (hs : List Label) : Surf → Except String Comp
   | .lit n      => .ok (.ret (.vint n))
   | .var x      => do return .ret (.vvar (← lookup env x))
-  | .thunk e    => do return .ret (.vthunk (← lowerC env e))   -- a thunk is a value
-  | .force e    => do return .force (← lowerV env e)
-  | .lett x e b => do return .letC (← lowerC env e) (← lowerC (x :: env) b)
-  | .lam x b    => do return .lam (← lowerC (x :: env) b)
-  | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
-  | .raise e    => do return .perform 0 exnLabel "raise" (← lowerV env e)
-  | .handle e   => do return .handle (.throws exnLabel) (← lowerC env e)
-  | .getS       => .ok (.perform 0 stateLabel "get" .vunit)
-  | .putS e     => do return .perform 0 stateLabel "put" (← lowerV env e)
-  | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC env e)
-  | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC env e)
-  | .newS e     => do return .perform 0 stmLabel "newTVar" (← lowerV env e)
-  | .readS e    => do return .perform 0 stmLabel "readTVar" (← lowerV env e)
-  | .writeS r w => do return .perform 0 stmLabel "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
+  | .thunk e    => do return .ret (.vthunk (← lowerC env hs e))   -- a thunk is a value; caps at AUTHOR site
+  | .force e    => do return .force (← lowerV env hs e)
+  | .lett x e b => do return .letC (← lowerC env hs e) (← lowerC (x :: env) hs b)
+  | .lam x b    => do return .lam (← lowerC (x :: env) hs b)
+  | .app f a    => do return .app (← lowerC env hs f) (← lowerV env hs a)
+  | .raise e    => do return .perform (← capFor hs exnLabel) exnLabel "raise" (← lowerV env hs e)
+  | .handle e   => do return .handle (.throws exnLabel) (← lowerC env (exnLabel :: hs) e)
+  | .getS       => do return .perform (← capFor hs stateLabel) stateLabel "get" .vunit
+  | .putS e     => do return .perform (← capFor hs stateLabel) stateLabel "put" (← lowerV env hs e)
+  | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env hs e0)) (← lowerC env (stateLabel :: hs) e)
+  | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC env (stmLabel :: hs) e)
+  | .newS e     => do return .perform (← capFor hs stmLabel) stmLabel "newTVar" (← lowerV env hs e)
+  | .readS e    => do return .perform (← capFor hs stmLabel) stmLabel "readTVar" (← lowerV env hs e)
+  | .writeS r w => do return .perform (← capFor hs stmLabel) stmLabel "writeTVar" (.pair (← lowerV env hs r) (← lowerV env hs w))
 
-/-- Lower a surface term that is in VALUE position to a `Val`. Only the
-value-shaped constructors are legal here; a computation in value position must
-be explicitly thunked (`{ … }`) at the surface. -/
-def lowerV (env : List String) : Surf → Except String Val
+/-- Lower a surface term in VALUE position. Only the value-shaped constructors are legal here;
+a computation in value position must be explicitly thunked (`{ … }`). A `{thunk}` lowers its body
+under the current author-site `hs`. -/
+def lowerV (env : List String) (hs : List Label) : Surf → Except String Val
   | .lit n      => .ok (.vint n)
   | .var x      => do return .vvar (← lookup env x)
-  | .thunk e    => do return .vthunk (← lowerC env e)
+  | .thunk e    => do return .vthunk (← lowerC env hs e)
   | _           => .error "expected a value (wrap a computation in braces)"
 end
 
-/-- Lower a closed surface program. -/
-def lower (e : Surf) : Except String Comp := lowerC [] e
+/-- Lower a closed surface program (empty variable env, empty handler-scope). -/
+def lower (e : Surf) : Except String Comp := lowerC [] [] e
 
 
 /-! ## 3. Minimal parser `String → Except String Surf`
@@ -443,7 +457,8 @@ def ledgerAbort : Comp :=
           (.letC (stmWrite 0 (.vint 70))      -- attempted write (rolled back on abort)
             (.letC (stmWrite 1 (.vint 30))    -- attempted write (rolled back on abort)
               -- insufficient funds ⇒ abort with the ORIGINAL balances (100, 0).
-              (.perform 0 exnLabel "raise" (.pair (.vint 100) (.vint 0))))))))
+              -- cap=1: raise reaches PAST the (non-matching) transaction frame to the outer throws.
+              (.perform 1 exnLabel "raise" (.pair (.vint 100) (.vint 0))))))))
 
 #guard (match Source.eval 200 ledgerAbort with
   | .done (.pair (.vint a) (.vint b)) => a == 100 && b == 0 | _ => false)
@@ -469,6 +484,13 @@ These demos run the cell from SOURCE TEXT — a live `{get}` cell whose `$c` ref
 #guard runYieldsInt 80 "state 0 in (let c = {get} in (let z = put 5 in $c))" 5
 -- No write: forcing the cell reads the INITIAL state (0) — a live read, not a stale snapshot.
 #guard runYieldsInt 80 "state 0 in (let c = {get} in $c)" 0
+
+-- CASE B (capability ESCAPE) is a LOWERING ERROR (ADR-0045, the lexical `LWT` discipline): a `{get}`
+-- thunk bound BEFORE any state handler, then forced under a LATER-placed `state`, has no handler for
+-- `get` at its AUTHOR site. Contrast the reactive cell above, where `state … in` ENCLOSES the `{get}`
+-- (case A, cap 0). The elaborator rejects exactly what the kernel's `LWT` typing rejects.
+#guard (match lower (.lett "c" (.thunk .getS) (.stateS (.lit 0) (.force (.var "c")))) with
+        | .error _ => true | _ => false)
 
 /-- The reactive cell at the `Comp` level, parameterised by initial state `s0` and the
 written value `v`: `state s0 in (let c = {get} in (let _ = put v in $c))`. de Bruijn: `c` is
