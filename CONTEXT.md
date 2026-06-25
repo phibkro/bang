@@ -8,36 +8,35 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-25) — the typed + static-dispatch PIVOT (ADR-0045) is LANDING, on `typed-static-r1`.**
-> The ◊4.5b resume-edge was an artifact of dynamic dispatch; pivoting to STATIC/capability dispatch + a TYPED LR
-> dissolves it. Progress, all compiled-#guard / `#print axioms` gated:
-> - **`perform cap` + static `staticSplit` + LEXICAL cap-shift** landed. Caps are de-Bruijn indices shifted under
->   `handle` binders (ADR-0045 amendments). The naive uniform shift was found UNSOUND (regressed open-caps) and corrected.
-> - **Lexical-capability typing `LWT` (two-context S/R)** landed — the kernel STD block is gated axiom-clean at
->   **`91e7444`** down to ONE sorry: `LWConfig.handleF_ret` (the case that broke the earlier `WellCapped`) holds BY
->   CONSTRUCTION, `progress_proof` is sorryAx-FREE (the B1 progress wall discharged), and `preservation_perform_typing`
->   (the `dispatch`↦`staticDispatch` resume-typing re-key) is CLOSED. `progB` (the session's soundness bug) is now
->   ill-typed AND progress holds.
-> - **Fork RESOLVED — TYPE-DIRECTED** (ADR-0045 "Resolution"): the capability non-escape check can't be untyped
->   ((A) lazy = unsound; (C) untyped = over-rejects the SAFE ledger) — it's a TYPE-premise on `ret`/`letC`. ONE
->   typed-LR obligation remains: `preservation_returnEscape_TODO` (the type-directed non-escape) — it can only
->   close in the typed LR, which is the NEXT phase (in flight: scoping the re-index).
-> - **Shell cap-assignment elaborator** done on `shell-elaborator-spike` (lexical effect→cap resolution; re-greens Surface; case-B = lowering error).
+> **★ ACTIVE DIRECTION (2026-06-25 session wrap) — the typed-static LR re-key is AT A CROSSROADS on `typed-static-r1`.
+> Resting at `5295ec4`. SoT = `paths/PATH-typed-lr-reindex.md` (read its ★★ CROSSROADS block FIRST).**
 >
-> - **TYPED LR re-index — IN PROGRESS** (`paths/PATH-typed-lr-reindex.md`, the SoT for this phase; it's a dispatch
->   RE-KEY, the LR is already typed). **THE ◊4.5b EDGE DISSOLVED BY CONSTRUCTION** (`a771cc1`,
->   `krelS_staticSplit_decomp`: static dispatch can't produce the walk-past config, the `:1590` sorry DELETED) —
->   the pivot's central thesis, build-verified. Course-corrected route A→B: the LR cap-discipline is CONTEXTUAL
->   (shift↔handleF-extension cancellation), NOT cap-closedness (over-strong) NOR naive shiftCap-stability (false) —
->   both build-refuted (ADR-0045 "Re-grounding"). Route-B `KrelS` strip banked LR-green; ONE bounded cap>0
->   resume-relocation sorry remains in the decomp. **Remaining (handoff-ready):** (b) swap-layer reproof via the
->   commutation + (a) mechanical Compat strip + the cancellation lemma + R1 bridge + `crelK_fund_up` re-key +
->   **the frozen `lr_fundamental` well-capped premise (STOP-and-show)** → `sorryAx`-zero `lr_sound` (the payoff).
+> The pivot landed kernel-side (`perform cap` + static `staticSplit` + lexical cap-shift; `LWT` typing; STD block
+> axiom-clean @ `91e7444` modulo the documented `preservation_returnEscape_TODO` return-escape; the ◊4.5b MISS edge
+> DISSOLVED by construction @ `a771cc1`). Re-keying the **LR** to static dispatch then exposed two cap-resolution
+> obligations a full build-grounded de-risk chain (4 rounds) + representation research (Biernacki/Effekt/Koka) mapped:
+> - **Insight:** bang DROPPED Biernacki POPL18's `n-free` predicate when it swapped labels for de-Bruijn caps. Putting
+>   it back (carry `WCStack`/`ρ-free` in `KrelS`) is the CORRECT `lr_sound` (over well-capped contexts, in-envelope
+>   with typed-`⊑`) — the code comments already prescribe it.
+> - **DECISION (operator):** take the **ADR-0043 seam** now; **implement A** (`n-free` in `KrelS`, LR-only, kernel
+>   UNTOUCHED → closes the 3 handler arms, seam **5→2**) when resumed; **full-close DEFERRED** (`hcatch`+`:1801` need
+>   the term-cap pinned context-side = a kernel change: B absolute-caps BALLOONS into the axiom-clean STD block, 1b
+>   `HasCTy.perform` premise is an STD-cascade — both kernel-engineer-paired). Build-grounded, not research-uncertain.
+> - **Resting state `5295ec4`:** item-1 dispatch re-key + `hcatch` documented as the ADR-0043 descent. **Compat RED**
+>   (item-2's 3 handler arms await A). `lr_sound`/`lr_fundamental` frozen statements + kernel STD + CalcVM + compiler
+>   UNAFFECTED (the 2-to-5 descents are isolated to the LR's effectful cases; `Compile` doesn't even import `LR`).
 >
-> **Branch chain:** `typed-static-r1` (kernel STD @ `91e7444` 1-sorry; LR @ `a771cc1`) ← `b3a` ← `1a` ← main (de-staled
-> README). Whole tree RED downstream (CalcVM/Compat/Surface) until the LR re-index + the ◊5 CalcVM re-run land.
-> **Surface design SETTLED** (parallel): ADRs 0046 (core + inference-bridged sugar), 0046-amendment (canonical core
-> = named S-expr), 0047 (sugar dialects + user macros). Architecture: `docs/notes/kernel-shell-library.md`.
+> **This session also landed (surface/tooling spine, all committed + gated):** `Bang.Frontend.NamedCore` (ADR-0046 ①,
+> the writable S-expr core, `9452660`) · `arch-check` import-direction fitness fn (ADR-0048, the Frontend/Core/Backend
+> V) · `check-refs` stale-reference fitness fn + `archive/` removed (`053b79c`) · `just symbols` Lean symbol index +
+> ADR-0049 (capability diagnostics via the LW pass, NOT HasCTy fusion) · the pre-commit hook now runs `just fitness`
+> on EVERY commit · the Lean comment convention (`docs/notes/lean-comment-style.md`) · kernel/proof-engineer prompts
+> re-pointed at the real Lean nav tools. **Lean MCP (`lean-lsp`): DEFERRED operator action** — `.mcp.json` committed,
+> homelab allowlist edit UNCOMMITTED (in the homelab repo's `modules/home/claude-code/` claude-code module); needs `just rebuild` in homelab + a
+> Claude Code restart to activate.
+>
+> **Branch:** `typed-static-r1` ← main (the dynamic-dispatch LR, green-1-sorry, is on `main` @ `4c77ba8`/`0e5e28d`).
+> Whole tree RED downstream until the LR re-index + ◊5 CalcVM re-run land. **Surface design SETTLED:** ADRs 0046/0047/0048/0049.
 > **Surface IMPLEMENTATION — landing (2026-06-25, parallel to the LR pivot; ADR-0048 = the library tiering):**
 > - **`Bang.Frontend.NamedCore` (ADR-0046 ① — the writable IR) LANDED** (`9452660`, gated GREEN in isolation, 709 jobs):
 >   named-explicit S-expr core 1:1 with the kernel AST (NVal/NComp/NHandler) + `print`/`readC` round-trip gate

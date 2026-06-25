@@ -35,28 +35,58 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
 - `preservation`/`type_safety`/`progress` (Spec.lean:93,116,104): the REAL frozen-statement risk, via Inc 3 — a φ≠⊥ premise on `ret`/`letC` in `HasConfigTy` would change the `HasConfig` premise shape. STATEMENT_CHANGE_OK against ADR-0045 (same envelope as the existing `LWConfig` fold).
 - "Only the index moves" is OPTIMISTIC (the index already moved; the dispatch re-key is the bulk — multi-session, ~the ◊4.5b sub-block-(f) surface area) and the return-escape gate (Inc 3) is genuinely NEW machinery, not a re-index.
 
-## Status + remaining work — at `c105904`/`8b6deeb` (2026-06-25)
+## ★★ THE CROSSROADS — resting at `5295ec4` (2026-06-25, session wrap). READ THIS FIRST on resume.
 
-> **★★ DECISIVE REFRAME (2026-06-25, two-prong de-risk + representation research) — the obstacle is SELF-INFLICTED;
-> the fix is a published technique bang HALF-BUILT. Operator COMMITTED to PATH A.**
-> bang transcribed Biernacki POPL18's `Vrel/Srel/Krel/Crel` (the LR template) but DROPPED Biernacki's **`n-free`**
-> predicate when it swapped labels for de-Bruijn caps — and never put back an equivalent. That single omission IS
-> both LR obligations: `hcatch` (cap-resolution) = missing `n-free`; the env cap-shift cancellation (3 handler arms)
-> = Biernacki's `Q ↑ l`, which cancels because crossing a handler shifts `ρ` +1 in LOCKSTEP. **Both fall out of ONE
-> carry** (confirmed by prong-1's cascade + prong-2's literature). The fix = carry `ρ-free`/`HasStack`-compatibility
-> in `KrelS` (= the "typed-KrelS reshape" the code comments already prescribe = restrict `CrelK`'s `K₁` to
-> well-capped stacks). It is the CORRECT statement, not a compromise: `lr_sound` over well-capped contexts (the
-> unrestricted form is FALSE — same reason the typed-`⊑` restriction exists). **In-envelope with typed-`⊑`.**
-> - **De-risk findings (build-grounded):** cheap paths CLOSED — the invariant MUST live in `CrelK`/`KrelS` (touches
->   frozen `lr_sound`/`lr_fundamental`); `closeC`-restructure is kernel-FORCED (off the table); the `WellCapped Γ c`
->   term-premise can't reach `CrelK`-internal `K₁`. Cost = index-everything ripple (est. ~52 LR / 113 Compat / 7 Spec).
-> - **Alternatives (rep research, `references/papers/3-lr/biernacki-popl18`; Effekt; Koka):** B = absolute/level caps
->   (cap from root, not de-Bruijn from use-site) → obligation 2 vanishes DEFINITIONALLY (no shift under binders);
->   small kernel retag, complements A. C = capability-as-value (Effekt) → dissolves both but a DIFFERENT kernel
->   (re-derive VM/compiler) → reserve for named handlers, post-v1.
-> - **IN FLIGHT:** lrscope prototyping A NON-COMMITTING — confirm (i) the 4/5 cascade, (ii) real ripple, (iii) the
->   exact frozen `lr_sound` statement → **STOP-and-show before any committed `Spec.lean` edit**. Bank `8b6deeb`
->   (item-1 dispatch re-key + `hcatch` documented + dup-deleted). The seam is now the FALLBACK, not the destination.
+**Where we stand:** the static-dispatch LR re-key dissolved the ◊4.5b MISS edge (banked) but exposed TWO
+cap-resolution obligations that the LR can't discharge cheaply. A full build-grounded de-risk chain (4 rounds,
+each "looks closeable" refuted by evidence) + representation research (Biernacki POPL18 / Effekt / Koka) settled
+the decision tree. **Operator decision: take the ADR-0043 seam now; implement A (5→2) when resumed; full-close
+deferred.** Nothing below this is research-uncertain — it's all build-grounded.
+
+**The insight (prong-2 research):** bang transcribed Biernacki's `Vrel/Srel/Krel/Crel` but DROPPED Biernacki's
+**`n-free`** predicate when it swapped labels for de-Bruijn caps. `n-free` = the well-bracketing predicate (carrying
+per-name maps `ρ`) that ties the runtime context to the typing context. Putting it back = carry `WCStack`/`ρ-free`
+in `KrelS` (the "typed-KrelS reshape" the code comments already prescribe). It's the CORRECT `lr_sound` (over
+well-capped contexts — the unrestricted form is FALSE), in-envelope with the existing typed-`⊑`.
+
+**The two obligations split (VERIFIED def-counterexample, NOT estimate):**
+- **Obligation 2 — the 3 handler arms (env cap-shift cancellation, `crelK_fund` `compatK_handle*` @ Compat:2204/2220/2231).**
+  = Biernacki's `Q↑l` lockstep. **CLOSED by A (n-free/`WCStack` in `KrelS`)** — LR-only, the `WCComp.shiftCap_insert`
+  keystone makes the shift the natural form. ✓ This is the 5→2 win.
+- **Obligation 1 — `hcatch` (cap-resolution, Compat:1867) + `:1801`.** **A does NOT close these.** Verified
+  counterexample: `WCStack [handleF (throws ℓ')] = True` but `CapResolvesKind (handlersOf …) 0 ℓ op = handlesOp
+  (throws ℓ') ℓ op = False` for `ℓ≠ℓ'`. Root: bang's cap is **term-side + `HasCTy.perform`-1a-unconstrained**
+  (Syntax:163), whereas Biernacki's label is context-only — a stack predicate can't pin a free term-cap. The
+  research/synthesis "one carry closes 4/5" was an OVERCLAIM; lrscope's def-check corrected it.
+
+**Closing hcatch needs the term-cap PINNED context-side — a KERNEL change (both build-refuted as STD-block-touching):**
+- **B — absolute/level caps** (cap from root, not de-Bruijn from use-site): DOES dissolve obligation 2 definitionally
+  + makes hcatch tractable, BUT **BALLOONS** — `preservation`'s handle arms are woven through `Val.shiftCap`
+  (Metatheory:510/513/517 + `HasVTy.shiftCap`), so removing the shift re-derives the **axiom-clean STD block**;
+  + `staticSplit` rewrite (bottom-counting), migration-soundness, CalcVM/Compile cascade (~205 Operational /
+  ~140 Metatheory cap touch-points). NOT the "small retag" the research hoped.
+- **1b — `CapResolves` premise on `HasCTy.perform`**: also an STD-block cascade (~200-300 LOC, ADR-0049's declined
+  Route A), but a premise-add (lighter than B's rep-rewrite). **Both need a kernel-engineer + a frozen-Spec decision.**
+- C — capability-as-value (Effekt): dissolves both but a DIFFERENT kernel (re-derive VM/compiler) → post-v1, named handlers.
+
+### RESUME POINT (the next implementation unit — A, the 5→2 win, LR-only)
+Implement **A = `n-free`/`WCStack` carried in `KrelS`** (restrict `CrelK`'s `K₁` quantifier to well-capped stacks)
+→ closes the 3 handler arms (obligation 2) → seam shrinks **5→2** (only `hcatch` + `:1801` remain as ADR-0043
+descents). It is LR-only (kernel/STD-block UNTOUCHED) but touches the **FROZEN** `lr_sound`/`lr_fundamental`
+statements (the well-capped restriction) → **STOP-and-SHOW the exact post-restriction statement before any
+`Spec.lean` edit** (in-envelope with typed-`⊑`; operator pre-approved the shape, needs exact-text sign-off).
+Ripple est. ~52 LR / 113 Compat / 7 Spec sites (mechanical-vs-hard not yet measured — first prototype non-committing).
+Biernacki guide: `references/papers/3-lr/biernacki-popl18-handle-with-care.pdf` pp.13-16 (`n-free` Fig 2, `ρ`-quintuple
+Fig 8, compat Lemmas 3-4). **Then** `hcatch`+`:1801` full-close (B/1b) is the deferred kernel-engineer-paired decision.
+
+### Resting state (committed)
+- Bank `5295ec4`: item-1 dispatch re-key (`crelK_fund_up` → `staticDispatch`) + `hcatch` documented as the ADR-0043
+  descent + dup-deleted. **Compat builds RED** — item-2's 3 handler arms are type-errors (2204/2220/2231) awaiting A.
+  (NOT a clean buildable state: A closes them, deferred. A future session lands A or, if dropping the LR re-key,
+  seams the 3 arms too for a buildable 5-descent state.)
+- `lr_sound`/`lr_fundamental` frozen statements UNTOUCHED. Kernel STD block (`91e7444`) + CalcVM + compiler unaffected.
+
+### Earlier de-risk audit trail (don't re-derive — all build-refuted)
 
 
 - **Banked `a771cc1` (LR-green, 709):** route-B `KrelS`/`EnvRelK` strip (`Val.CapClosed` GONE — route A was
