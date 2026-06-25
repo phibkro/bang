@@ -24,10 +24,14 @@ variable {Eff : Type} [Semiring Eff]
 class IdempotentChoice (Eff : Type) [Semiring Eff] : Prop where
   add_idem : ∀ e : Eff, e + e = e
 
-/-- [STD / PROVABLE] With idempotent `+`, `(Eff, +, 0)` is a bounded join-
-    semilattice: join = `+`, bottom = `0`, order = the induced `≤`. This is the
-    algebraic precondition for CALM/CRDT-style reasoning. Mechanical from the
-    semiring laws + `add_idem`. -/
+/-- [STD / PROVABLE — UNVERIFIED] With idempotent `+`, `(Eff, +, 0)` is a bounded
+    join-semilattice: join = `+`, bottom = `0`, order = the induced `≤`. This is
+    the algebraic precondition for CALM/CRDT-style reasoning. Mechanical from the
+    semiring laws + `add_idem`.
+
+    ⚠ GATE: carries `sorry` — provable but NOT YET PROVEN, so NOT verified. This
+    file is NOT imported by `Spec.lean` (the spine); do NOT import it into the
+    spec path or its `sorryAx` leaks into the soundness gate. -/
 theorem eff_join_semilattice [IdempotentChoice Eff] :
     (∀ e : Eff, e + e = e)
       ∧ (∀ a b : Eff, a + b = b + a)
@@ -46,7 +50,12 @@ opaque CoordinationFree : Comp → Prop
     Grounding: Hellerstein's CALM (monotone ⇒ coordination-free); Shapiro et al.
     CRDTs (state-based CRDTs ARE join-semilattices). A separate paper's result;
     stated here only to mark that the idempotence choice has already paid for
-    the precondition (`eff_join_semilattice`). -/
+    the precondition (`eff_join_semilattice`).
+
+    ⚠ GATE: CONJECTURE — carries `sorry`, NOT verified and not intended to be
+    proven as part of the spec. This file is NOT imported by `Spec.lean` (the
+    spine); do NOT import it into the spec path or its `sorryAx` leaks into the
+    soundness gate. -/
 theorem rowmonotone_coordination_free {c : Comp} :
     RowMonotone c → CoordinationFree c := sorry
 
