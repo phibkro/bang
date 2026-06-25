@@ -503,15 +503,59 @@ theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   | @unfold γ Γ v A hv => simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
   | @perform γ Γ _ ℓ op v φ q A B _ _ _ hv =>
     simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
+  -- ADR-0045 cap-shift: `Comp.substFrom`'s `handle` case fills the body with `Val.shiftCap w`.
+  -- For a CLOSED body (no free vars ≥ k), `substFrom k (shiftCap w) M = M` — apply the IH at the
+  -- SHIFTED filler (the IH is universally quantified over the filler value).
   | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
-    simp only [Comp.substFrom, Handler.substFrom]; rw [hM.subst_closed k hk w]
+    simp only [Comp.substFrom, Handler.substFrom]; rw [hM.subst_closed k hk (Val.shiftCap w)]
   | @handleState γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ hs hM _ =>
     simp only [Comp.substFrom, Handler.substFrom]
-    rw [hM.subst_closed k hk w, hs.subst_closed k (Nat.zero_le k) w]
+    rw [hM.subst_closed k hk (Val.shiftCap w), hs.subst_closed k (Nat.zero_le k) w]
   | @handleTransaction γ Γ ℓ Θ₀ M e φ q A _ _ _ _ _ _ _ hcells hM _ =>
     -- `Handler.substFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH.
     simp only [Comp.substFrom, Handler.substFrom]
-    rw [hM.subst_closed k hk w]
+    rw [hM.subst_closed k hk (Val.shiftCap w)]
+end
+
+/-! ### Cap-shift preserves typing (ADR-0045 R1) — the enabler for the `handle`-case substitution ripple.
+
+`Comp.shiftCapFrom`/`Val.shiftCapFrom` rewrite ONLY the `cap` field of `perform`s (and recurse). Since
+`HasCTy.perform` is CAP-IRRELEVANT (the rule constrains the row/grade/op, never the cap), the cap-shift
+preserves `HasCTy`/`HasVTy` — re-type each shifted subterm by the IH. The `handle` cases bump the cutoff
+(`d+1`), matching `shiftCapFrom`'s `handle` arm. This is what lets `subst`'s `handle` case (filler
+`Val.shiftCap v`) re-type its body: the cap-shift on the filler does not disturb its type. -/
+mutual
+theorem HasVTy.shiftCap {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (h : HasVTy γ Γ v A) (d : Nat) : HasVTy γ Γ (Val.shiftCapFrom d v) A := by
+  cases h with
+  | vunit => exact HasVTy.vunit
+  | vint => exact HasVTy.vint
+  | @vvar Γ i A hget => exact HasVTy.vvar hget
+  | @vthunk γ Γ M φ B hM => exact HasVTy.vthunk (hM.shiftCap d)
+  | @inl γ Γ u A B hu => exact HasVTy.inl (hu.shiftCap d)
+  | @inr γ Γ u A B hu => exact HasVTy.inr (hu.shiftCap d)
+  | @pair γ γ_v γ_w Γ u₁ u₂ A B hu₁ hu₂ heq => exact HasVTy.pair (hu₁.shiftCap d) (hu₂.shiftCap d) heq
+  | @fold γ Γ u A hu => exact HasVTy.fold (hu.shiftCap d)
+theorem HasCTy.shiftCap {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff}
+    {C : CTy Eff Mult} (h : HasCTy γ Γ c e C) (d : Nat) : HasCTy γ Γ (Comp.shiftCapFrom d c) e C := by
+  cases h with
+  | @ret γ γ' Γ v A q hv heq => exact HasCTy.ret (hv.shiftCap d) heq
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN heq => exact HasCTy.letC (hM.shiftCap d) (hN.shiftCap d) heq
+  | @force γ Γ v φ B hv => exact HasCTy.force (hv.shiftCap d)
+  | @lam γ Γ M φ q A B hM => exact HasCTy.lam (hM.shiftCap d)
+  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv heq => exact HasCTy.app (hM.shiftCap d) (hv.shiftCap d) heq
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C hv hN₁ hN₂ heq =>
+      exact HasCTy.case (hv.shiftCap d) (hN₁.shiftCap d) (hN₂.shiftCap d) heq
+  | @split γ γ_v γ_N Γ v N φ q A B C hv hN heq => exact HasCTy.split (hv.shiftCap d) (hN.shiftCap d) heq
+  | @unfold γ Γ v A hv => exact HasCTy.unfold (hv.shiftCap d)
+  | @perform γ Γ cap ℓ op v φ q A B hmem hopArg hopRes hv =>
+      exact HasCTy.perform hmem hopArg hopRes (hv.shiftCap d)
+  | @handleThrows γ Γ ℓ M e φ q A hraise hiface hM hle =>
+      exact HasCTy.handleThrows hraise hiface (hM.shiftCap (d+1)) hle
+  | @handleState γ Γ ℓ s₀ M e φ q S A hga hgr hpa hpr hif hs hM hle =>
+      exact HasCTy.handleState hga hgr hpa hpr hif (hs.shiftCap d) (hM.shiftCap (d+1)) hle
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q A hna hnr hra hrr hwa hwr hif hcells hM hle =>
+      exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells (hM.shiftCap (d+1)) hle
 end
 
 mutual
@@ -1321,18 +1365,22 @@ theorem HasCTy.subst_gen
     -- Sgrade γ_v k (q • γ) = q • Sgrade γ_v k γ. Interface premises thread verbatim.
     simp only [hsmul_eq_smul, Sgrade_smul]
     exact HasCTy.perform hmem hopArg hopRes (ih Δ Γ A γ_v v rfl hv)
+  -- ADR-0045 cap-shift: `Comp.substFrom`'s `handle` arm fills the body with `Val.shiftCap v`
+  -- (`handle` is a cap-binder). The body IH (`ihM`) re-types it at the SHIFTED filler — `v`'s type is
+  -- preserved by `HasVTy.shiftCap`, so `ihM Δ Γ A γ_v (shiftCap v) rfl (hv.shiftCap 0)` discharges it.
   case handleThrows =>
     intro γ Γ₀ ℓ M e φ q A₀ hraise hiface hM hle ih Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
-    exact HasCTy.handleThrows hraise hiface (ih Δ Γ A γ_v v rfl hv) hle
+    exact HasCTy.handleThrows hraise hiface (ih Δ Γ A γ_v (Val.shiftCap v) rfl (hv.shiftCap 0)) hle
   case handleState =>
     intro γ Γ₀ ℓ s₀ M e φ q S A₀ hga hgr hpa hpr hif hs hM hle _ihs ihM Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
     -- the stored state is CLOSED ⇒ substFrom leaves it fixed (ADR-0025)
     rw [hs.subst_closed Δ.length (Nat.zero_le _) _]
-    exact HasCTy.handleState hga hgr hpa hpr hif hs (ihM Δ Γ A γ_v v rfl hv) hle
+    exact HasCTy.handleState hga hgr hpa hpr hif hs
+      (ihM Δ Γ A γ_v (Val.shiftCap v) rfl (hv.shiftCap 0)) hle
   case handleTransaction =>
     -- subst through a transaction handler. `Handler.substFrom` leaves the heap untouched (closed
     -- cells, ADR-0030), so only the body substitutes (via `ihM`); structural, like `handleState`.
@@ -1340,7 +1388,8 @@ theorem HasCTy.subst_gen
       Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
-    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells (ihM Δ Γ A γ_v v rfl hv) hle
+    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells
+      (ihM Δ Γ A γ_v (Val.shiftCap v) rfl (hv.shiftCap 0)) hle
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -2844,7 +2893,12 @@ theorem preservation_proof
     {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
     HasConfig cfg eo Co → Source.step cfg = some cfg' →
     ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := by
-  rintro ⟨e, C, hfocus, hstack⟩ hstep
+  -- ADR-0045 R1: `HasConfig = HasConfigTy ∧ LWConfig`. `hlw : LWConfig cfg` carries the cap-invariant;
+  -- each case must re-establish `LWConfig cfg'` alongside the typing core. The DECISIVE handleF-ret
+  -- case (where `WellCapped` failed) goes through BY CONSTRUCTION (`LWConfig.handleF_ret`). The
+  -- remaining cases' `LWConfig` re-establishment is the post-checkpoint grind (LWT.subst + dispatch
+  -- threading); marked `sorry` with `-- R1-TODO` and NOT yet discharged (honest red).
+  rintro ⟨⟨e, C, hfocus, hstack⟩, hlw⟩ hstep
   obtain ⟨K, M⟩ := cfg
   cases M with
   | ret v =>
@@ -2866,7 +2920,9 @@ theorem preservation_proof
         have hsubst := subst_value_proof qk hwv hN
         simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
           GradeVec.add_nil_left] at hsubst
-        exact ⟨eo, le_refl _, ⟨e₂, B, hsubst, hsub⟩⟩
+        refine ⟨eo, le_refl _, ⟨e₂, B, hsubst, hsub⟩, ?_⟩
+        -- R1-TODO: LWConfig (K', subst v N) from the letF stack + focus — needs LWT.subst.
+        sorry
       | appF w => simp [Source.step] at hstep
       | handleF h =>
         -- REDUCE handler-return = identity (both throws and state, ADR-0023 Q6 / ADR-0025).
@@ -2875,178 +2931,26 @@ theorem preservation_proof
         subst hstep
         rw [CTy.F.injEq] at hCeq; obtain ⟨hqq, hAA⟩ := hCeq; subst hAA
         obtain ⟨eo', hleo, hsub'⟩ := hsub.weaken_eff (bot_le)
+        -- ★ THE DECISIVE CASE — handleF-ret preservation BY CONSTRUCTION (R1). ★
         exact ⟨eo', le_trans hleo hleo₀,
-          ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩⟩
+          ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩,
+          LWConfig.handleF_ret h K' v hlw⟩
   | perform cap ℓ op v =>
     -- DISPATCH. Classify the performed op by the catching handler's interface.
     --
-    -- ★ B1 WALL (ADR-0045 1b, the load-bearing finding) — HONEST RED, NO sorry. ★
-    -- `Source.step` now resolves by CAPABILITY (`staticDispatch K cap`), so the connection
-    -- `Source.step = some cfg' ⟹ splitAt K ℓ op = some _` below is BROKEN: `staticSplit K cap`
-    -- need not agree with `splitAt K ℓ op` (the cap names a frame the label-search may shadow).
-    -- The static analogue needs `CapResolvesKind K cap ℓ op` (well-scopedness) — but the FROZEN
-    -- `HasConfig`-only premise of `preservation`/`progress` does NOT entail it: 1a left the cap
-    -- UNCONSTRAINED in `HasCTy.perform`, so typing is CAP-IRRELEVANT (build-confirmed:
-    -- `perform_cap_irrelevant`) and a well-typed config can carry a non-resolving cap that makes
-    -- `Source.step` STUCK (build-confirmed: `staticSplit [handleF h] 5 = none`). Hence option (b)
-    -- — a free-standing `WellCapped` invariant — cannot thread the frozen statements: B1 MUST FUSE
-    -- with B3 (option a: constrain the cap in the typing rule, so `HasConfig ⟹ WellCapped`).
-    -- The static infrastructure that B3 consumes is GREEN above (§E.1b/c: `staticSplit_decomp`,
-    -- `staticSplit_kind`, `concat_throws_typed`/`concat_state_resume`/`concat_transaction_resume`,
-    -- `concat_state_closed`/`concat_transaction_store`). The resume verdict is build-confirmed
-    -- SAFE (`/tmp` spike `capResolves_skel_inv`): resume swaps only the boundary handler payload,
-    -- under which `CapResolves` is invariant — so resume is NOT the wall; the wall is at
-    -- progress/initial-typing (the frozen-contract collision). The `splitAt`-era body below is
-    -- retained verbatim as B3's port target; it is genuine RED under the static flip.
-    obtain ⟨γ', q, A, B, hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.perform_inv
-    subst hC
-    have hγ'nil : γ' = [] := by have := hwv.length_eq; simpa using this
-    subst hγ'nil
-    simp only [Source.step] at hstep
-    have hsplit_some : (splitAt K ℓ op).isSome = true := by
-      rw [← dispatch_isSome_iff (v := v), hstep]; rfl
-    rcases hstack.dispatch_op_handled hopArg hsplit_some with
-      hraise | hget | hput | hnew | hread | hwrite
-    · -- THROWS path: op = "raise" — fully proven (ADR-0023). The throws handler aborts to Kₒ.
-      subst hraise
-      have hshape : cfg'.2 = Comp.ret v := dispatch_shape K ℓ v hstep
-      obtain ⟨Kₒ, c2⟩ := cfg'
-      simp only at hshape; subst hshape
-      obtain ⟨q_h, eo', hleo, hsub'⟩ := hstack.dispatch_typed hopArg hstep
-      refine ⟨eo', hleo, ⟨⊥, CTy.F q_h A, ?_, hsub'⟩⟩
-      exact HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul])
-    · -- STATE-get RESUME path (ADR-0025): cfg' = ⟨Kᵢ ++ handleF (state ℓ s) :: Kₒ, ret s⟩.
-      -- Discharged (ADR-0025) via `dispatch_state_typed`: type the RESUMED stack `Kᵢ ++ handleF (state ℓ s) :: Kₒ` from the original
-      -- `HasStack K`, with the focus re-typed from the `up`'s result (`F q (opRes ℓ "get")`) to
-      -- `ret s : F q' S` (the stored state). The hard core is a `dispatch_typed`-analog for `state`
-      -- that KEEPS `Kᵢ` (re-installs the deep state frame) instead of discarding it. `s` is closed
-      -- (`HasVTy [] [] s S`, from the stateF frame), so the new focus `ret s` is closed.
-      subst hget
-      obtain ⟨Kᵢ, s, Kₒ, hsplit, hcfg'⟩ := dispatch_get_shape hstep
-      subst hcfg'
-      -- the stored state `s` is closed of type `S = opRes ℓ "get" = B`; re-store it (state unchanged).
-      obtain ⟨S, hgetRes, _, _, hs⟩ := hstack.splitAt_state_closed (Or.inl rfl) hsplit
-      have hSB : S = B := by rw [hopRes] at hgetRes; exact (Option.some.inj hgetRes).symm
-      subst hSB
-      obtain ⟨eo', hleo, hstk'⟩ :=
-        hstack.dispatch_state_typed hgetRes (Or.inl rfl) hs hsplit
-      -- plug the closed `ret s : ⊥ (F q S)` (effect ⊥ ≤ e) into the resumed stack.
-      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
-      exact ⟨eo'', le_trans hleo' hleo,
-        ⟨⊥, CTy.F q S, HasCTy.ret hs (by simp [hsmul_eq_smul, GradeVec.smul]), hstk''⟩⟩
-    · -- STATE-put RESUME path (ADR-0025): cfg' = ⟨Kᵢ ++ handleF (state ℓ v) :: Kₒ, ret unit⟩.
-      -- Discharged (ADR-0025): same resumed-stack typing as get, with the stored state UPDATED to `v`
-      -- (`v` closed from the closed focus, `HasVTy [] [] v S` via `hwv` + `opArg ℓ "put" = some S`),
-      -- and the new focus `ret unit : F q' unit`.
-      subst hput
-      obtain ⟨Kᵢ, s, Kₒ, hsplit, hcfg'⟩ := dispatch_put_shape hstep
-      subst hcfg'
-      -- the state type is `S = opArg ℓ "put"`; the payload `v : A = S` re-stores it (state ← v).
-      obtain ⟨S, hgetRes, hputArg, hputRes, _⟩ := hstack.splitAt_state_closed (Or.inr rfl) hsplit
-      have hAS : A = S := by rw [hopArg] at hputArg; exact Option.some.inj hputArg
-      subst hAS
-      -- B = opRes ℓ "put" = unit, so the resumed focus `ret unit : F q unit = F q B`.
-      have hBunit : B = VTy.unit := by rw [hopRes] at hputRes; exact Option.some.inj hputRes
-      subst hBunit
-      obtain ⟨eo', hleo, hstk'⟩ :=
-        hstack.dispatch_state_typed hgetRes (Or.inr rfl) hwv hsplit
-      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
-      exact ⟨eo'', le_trans hleo' hleo,
-        ⟨⊥, CTy.F q VTy.unit,
-          HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
-          hstk''⟩⟩
-    · -- newTVar RESUME (ADR-0030, int-pinned): cfg' = ⟨Kᵢ ++ handleF (transaction ℓ (Θ++[v])) :: Kₒ,
-      -- ret (vint |Θ|)⟩. Allocation never ooms; the extended heap `Θ ++ [v]` stays all-cells-closed
-      -- `int` (old cells via `splitAt_transaction_store`; `v` closed `int` via `hwv` since
-      -- `A = opArg ℓ "newTVar" = int`), so re-type the resumed stack (`dispatch_transaction_typed`)
-      -- and plug the closed focus `ret (vint |Θ|) : F q int = F q B` (`B = opRes ℓ "newTVar" = int`).
-      subst hnew
-      obtain ⟨Kᵢ, Θ, Kₒ, hsplit, hcfg'⟩ := dispatch_new_shape hstep
-      subst hcfg'
-      obtain ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩ :=
-        hstack.splitAt_transaction_store (Or.inl rfl) hsplit
-      -- int-pinning: `A = opArg ℓ "newTVar" = int`, `B = opRes ℓ "newTVar" = int`.
-      have hAint : A = VTy.int := by rw [hopArg] at hna; exact Option.some.inj hna
-      have hBint : B = VTy.int := by rw [hopRes] at hnr; exact Option.some.inj hnr
-      subst hAint; subst hBint
-      have hcells' : ∀ cell ∈ Θ ++ [v], HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
-        intro cell hmem
-        rcases List.mem_append.mp hmem with h | h
-        · exact hcells cell h
-        · rw [List.mem_singleton] at h; subst h; exact hwv
-      obtain ⟨eo', hleo, hstk'⟩ :=
-        hstack.dispatch_transaction_typed hna hnr hra hrr hwa hwr hif (Or.inl rfl) hcells' hsplit
-      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
-      refine ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q VTy.int, ?_, hstk''⟩⟩
-      -- the fresh index `vint Θ.length : int` is closed; plug it as the resumed focus.
-      exact HasCTy.ret (HasVTy.vint (n := (Θ.length : Int)) (Γ := []))
-        (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros])
-    · -- readTVar RESUME (ADR-0030, int-pinned + TOTAL store): cfg' = ⟨Kᵢ ++ handleF (transaction ℓ Θ)
-      -- :: Kₒ, ret (Θ.getD ((tvarIdx v).getD 0) (vint 0))⟩. The store is TOTAL (`getD` with default
-      -- `vint 0`), so the read NEVER ooms. The returned cell is `int` either way: in-range cells are
-      -- closed `int` (heap-closed invariant from `splitAt_transaction_store`); the out-of-range default
-      -- `vint 0 : int`. So re-type the (unchanged) heap frame + focus `ret _ : F q int = F q B`
-      -- (`B = opRes ℓ "readTVar" = int`).
-      subst hread
-      obtain ⟨Kᵢ, Θ, Kₒ, hsplit, hcfg'⟩ := dispatch_read_shape hstep
-      subst hcfg'
-      obtain ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩ :=
-        hstack.splitAt_transaction_store (Or.inr (Or.inl rfl)) hsplit
-      have hBint : B = VTy.int := by rw [hopRes] at hrr; exact Option.some.inj hrr
-      subst hBint
-      obtain ⟨eo', hleo, hstk'⟩ :=
-        hstack.dispatch_transaction_typed hna hnr hra hrr hwa hwr hif (Or.inr (Or.inl rfl)) hcells hsplit
-      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
-      refine ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q VTy.int, ?_, hstk''⟩⟩
-      -- the read result is a closed `int`: either an in-range closed cell or the `vint 0` default.
-      have hcell : HasVTy [] [] (Θ.getD ((tvarIdx v).getD 0) (Val.vint 0)) (VTy.int : VTy Eff Mult) := by
-        rw [List.getD_eq_getElem?_getD]
-        rcases lt_or_ge ((tvarIdx v).getD 0) Θ.length with hlt | hge
-        · rw [List.getElem?_eq_getElem hlt, Option.getD_some]
-          exact hcells _ (List.getElem_mem hlt)
-        · rw [List.getElem?_eq_none hge, Option.getD_none]; exact HasVTy.vint (n := 0) (Γ := [])
-      exact HasCTy.ret hcell (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros])
-    · -- writeTVar RESUME (ADR-0030, int-pinned + TOTAL store): cfg' = ⟨Kᵢ ++ handleF (transaction ℓ Θ')
-      -- :: Kₒ, ret unit⟩, where Θ' = storeSet Θ i w on a `pair (vint i) w` payload, or Θ unchanged on a
-      -- malformed payload. `storeSet` (= `List.set`) no-ops out of range, so this is TOTAL — never ooms.
-      -- The updated heap stays all-cells-`int`: `List.set` of a closed `int` `w` over closed-`int` cells.
-      -- Re-type the reinstalled frame + focus `ret unit : F q unit = F q B` (`B = opRes ℓ "writeTVar"
-      -- = unit`). The write payload `v : A = opArg ℓ "writeTVar" = prod int int`, so `w` is a closed `int`.
-      subst hwrite
-      obtain ⟨Kᵢ, Θ, Θ', Kₒ, hsplit, hΘ', hcfg'⟩ := dispatch_write_shape hstep
-      subst hcfg'
-      obtain ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩ :=
-        hstack.splitAt_transaction_store (Or.inr (Or.inr rfl)) hsplit
-      have hBunit : B = VTy.unit := by rw [hopRes] at hwr; exact Option.some.inj hwr
-      subst hBunit
-      -- the payload type is `A = opArg ℓ "writeTVar" = prod int int`, so `v` is a closed pair whose
-      -- SECOND component (the written value) inhabits `int` (`prod_canonical`).
-      have hAprod : A = VTy.prod VTy.int VTy.int := by rw [hopArg] at hwa; exact Option.some.inj hwa
-      subst hAprod
-      obtain ⟨_, γ_b, a, b, hvpair, _, _, hbint⟩ := hwv.prod_canonical
-      -- the second component's grade is `[]` (closed context ⇒ length-0 grade vector).
-      have hγb : γ_b = [] := by have := hbint.length_eq; simpa using this
-      subst hγb
-      -- the updated heap Θ' is all-cells-`int`: every cell of Θ is closed `int`, and any written value
-      -- is the closed-`int` second component `b`, so `List.set` preserves the invariant.
-      have hcells' : ∀ cell ∈ Θ', HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
-        intro cell hmem
-        rcases hΘ' with hkeep | ⟨iv, w, hv_eq, hset⟩
-        · subst hkeep; exact hcells cell hmem
-        · -- the pair branch: `v = pair iv w` and `v = pair a b` ⇒ `w = b : int`.
-          rw [hvpair, Val.pair.injEq] at hv_eq
-          obtain ⟨_, hwb⟩ := hv_eq; subst hwb
-          subst hset
-          rcases List.mem_or_eq_of_mem_set hmem with h | h
-          · exact hcells cell h
-          · subst h; exact hbint
-      obtain ⟨eo', hleo, hstk'⟩ :=
-        hstack.dispatch_transaction_typed hna hnr hra hrr hwa hwr hif (Or.inr (Or.inr rfl)) hcells' hsplit
-      obtain ⟨eo'', hleo', hstk''⟩ := hstk'.weaken_eff (bot_le)
-      exact ⟨eo'', le_trans hleo' hleo,
-        ⟨⊥, CTy.F q VTy.unit,
-          HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
-          hstk''⟩⟩
+    -- ★ R1 CHECKPOINT SCOPE — the perform DISPATCH case is the post-checkpoint grind, NOT the crux. ★
+    -- The B1 progress wall is DISCHARGED (see `progress_proof`): `LWConfig` now supplies
+    -- `CapResolvesKind`, so `staticDispatch` resolves. The remaining preservation obligation here is to
+    -- TYPE the resolved reduct.
+    -- This is the B1/B3 wall now UNBLOCKED by `hlw`: `LWConfig` gives `CapResolvesKind K cap ℓ op`
+    -- (the focus `LWT (handlersOf K) _ (perform …)` unfolds to it), so `staticSplit K cap` resolves and
+    -- the static-dispatch reduct can be typed by re-deriving the 6-path resume-typing (the `splitAt`-era
+    -- body, preserved in git @ b59242c) onto `staticSplit`/`CapResolvesKind`. The TYPING core
+    -- (`concat_*`, `dispatch_*_typed`) is GREEN; the rewiring is `dispatch K ℓ op v` ↦ `staticDispatch
+    -- K cap op v` + the matching `staticSplit_decomp`/`staticSplit_kind` (also GREEN). LWConfig
+    -- preservation across resume rides `capResolves_skel_inv` (resume swaps only a boundary payload).
+    -- Deferred to the post-checkpoint STD grind per the lead's checkpoint instruction; honest `sorry`.
+    sorry
   | letC M N =>
     -- PUSH letC
     simp only [Source.step, Option.some.injEq] at hstep
@@ -3057,7 +2961,8 @@ theorem preservation_proof
     have hγ₁ : γ₁ = [] := by have := hM.length_eq; simpa using this
     have hγ₂ : γ₂ = [] := by have := hN.length_eq; simpa using this
     subst hγ₁; subst hγ₂
-    exact ⟨eo, le_refl _, ⟨φ₁, CTy.F q1 A, hM, HasStack.letF hN hstack⟩⟩
+    -- R1-TODO: LWConfig (letF N :: K, M) from LWConfig (K, letC M N) — PUSH-letF, structural.
+    exact ⟨eo, le_refl _, ⟨φ₁, CTy.F q1 A, hM, HasStack.letF hN hstack⟩, by sorry⟩
   | app M w =>
     -- PUSH app
     simp only [Source.step, Option.some.injEq] at hstep
@@ -3066,7 +2971,8 @@ theorem preservation_proof
     have hγ₁ : γ₁ = [] := by have := hM.length_eq; simpa using this
     have hγ₂ : γ₂ = [] := by have := hw.length_eq; simpa using this
     subst hγ₁; subst hγ₂
-    exact ⟨eo, le_refl _, ⟨e, CTy.arr q A C, hM, HasStack.appF hw hstack⟩⟩
+    -- R1-TODO: LWConfig (appF w :: K, M) — PUSH-appF, structural.
+    exact ⟨eo, le_refl _, ⟨e, CTy.arr q A C, hM, HasStack.appF hw hstack⟩, by sorry⟩
   | handle h M =>
     -- PUSH handle: push the handler frame; both throws and state are typable (ADR-0025).
     cases h with
@@ -3075,14 +2981,15 @@ theorem preservation_proof
       subst hstep
       obtain ⟨e_body, q, A, hC, hraise, hiface, hM, hle⟩ := hfocus.handleThrows_inv
       subst hC
-      exact ⟨eo, le_refl _, ⟨e_body, CTy.F q A, hM, HasStack.handleF hraise hiface hle hstack⟩⟩
+      -- R1-TODO: LWConfig (handleF (throws ℓ) :: K, M) — PUSH-handle.
+      exact ⟨eo, le_refl _, ⟨e_body, CTy.F q A, hM, HasStack.handleF hraise hiface hle hstack⟩, by sorry⟩
     | state ℓ s =>
       simp only [Source.step, Option.some.injEq] at hstep
       subst hstep
       obtain ⟨e_body, q, S, A, hC, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩ := hfocus.handleState_inv
       subst hC
       exact ⟨eo, le_refl _,
-        ⟨e_body, CTy.F q A, hM, HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩⟩
+        ⟨e_body, CTy.F q A, hM, HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩, by sorry⟩
     | transaction ℓ Θ =>
       -- PUSH transaction: push the frame (ADR-0030); fully typable like state.
       simp only [Source.step, Option.some.injEq] at hstep
@@ -3092,14 +2999,15 @@ theorem preservation_proof
       subst hC
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hM,
-          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hstack⟩⟩
+          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hstack⟩, by sorry⟩
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
     · subst hweq
       simp only [Source.step, Option.some.injEq] at hstep
       subst hstep
-      exact ⟨eo, le_refl _, ⟨e, C, hMT, hstack⟩⟩
+      -- R1-TODO: LWConfig (K, MT) from force (vthunk MT) — the thunk body's LWT at the ambient ctx.
+      exact ⟨eo, le_refl _, ⟨e, C, hMT, hstack⟩, by sorry⟩
     · simp at hget
   | lam M =>
     -- focus lam M : arr-typed; only the appF top-frame drives a step (β).
@@ -3126,7 +3034,8 @@ theorem preservation_proof
         have hsubst := subst_value_proof q hwv hM
         simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
           GradeVec.add_nil_left] at hsubst
-        exact ⟨eo, le_refl _, ⟨e, B, hsubst, hsub⟩⟩
+        -- R1-TODO: LWConfig (K', subst w M) — β-redex, needs LWT.subst.
+        exact ⟨eo, le_refl _, ⟨e, B, hsubst, hsub⟩, by sorry⟩
   | case v N₁ N₂ =>
     -- closed focus `case v N₁ N₂ : (e, C)`; `v : sum A B` is `inl a`/`inr a`
     -- (canonical forms); the matching branch `Nᵢ[a]` re-types at `(e, C)` via subst.
@@ -3142,14 +3051,16 @@ theorem preservation_proof
       have hsubst := subst_value_proof q ha hN₁
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
         GradeVec.add_nil_left] at hsubst
-      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩⟩
+      -- R1-TODO: LWConfig (K, subst a N₁) — case-inl, needs LWT.subst.
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩, by sorry⟩
     · subst hveq
       simp only [Source.step, Option.some.injEq] at hstep
       subst hstep
       have hsubst := subst_value_proof q ha hN₂
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
         GradeVec.add_nil_left] at hsubst
-      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩⟩
+      -- R1-TODO: LWConfig (K, subst a N₂) — case-inr, needs LWT.subst.
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩, by sorry⟩
   | split v N =>
     -- closed focus `split v N`; `v : prod A B` is `pair a b` (canonical forms);
     -- `N[a][b]` re-types at `(e, C)` via two substitutions (outer `b`, inner `a`).
@@ -3177,7 +3088,8 @@ theorem preservation_proof
     have hsubst_outer := subst_value_proof q ha hsubst_inner
     simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
       GradeVec.add_nil_left, GradeVec.add_nil_right] at hsubst_outer
-    exact ⟨eo, le_refl _, ⟨e, C, hsubst_outer, hstack⟩⟩
+    -- R1-TODO: LWConfig (K, subst a (subst (shift b) N)) — split, needs LWT.subst (double).
+    exact ⟨eo, le_refl _, ⟨e, C, hsubst_outer, hstack⟩, by sorry⟩
   | unfold v =>
     -- closed focus `unfold v : (⊥, F 1 (unrollMu A))`; `v : mu A` is `fold a` with
     -- `a : unrollMu A`. Step `unfold (fold a) ↦ ret a`; `ret a : F 1 (unrollMu A)` matches.
@@ -3188,7 +3100,8 @@ theorem preservation_proof
     simp only [Source.step, Option.some.injEq] at hstep
     subst hstep
     -- the closed payload `a` is graded `[]`; `ret a : F 1 (unrollMu A)`, grade `1 • [] = []`.
-    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩⟩
+    -- R1-TODO: LWConfig (K, ret a) — unfold, structural (a is a sub-value of the focus).
+    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩, by sorry⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
 
@@ -3198,7 +3111,10 @@ theorem progress_proof
     {cfg : Config} {q : Mult} {A : VTy Eff Mult} :
     HasConfig cfg ⊥ (CTy.F q A) →
     isReturnConfig cfg ∨ ∃ cfg', Source.step cfg = some cfg' := by
-  rintro ⟨e, C, hfocus, hstack⟩
+  -- ADR-0045 R1: `hlw : LWConfig cfg` carries the cap-invariant — it is what UNBLOCKS the B1 progress
+  -- wall (the perform case): the focus `LWT (handlersOf K) _ (perform …)` gives `CapResolvesKind`,
+  -- so `staticSplit` resolves and `staticDispatch` STEPS (cf. spike `perform_progress`).
+  rintro ⟨⟨e, C, hfocus, hstack⟩, hlw⟩
   obtain ⟨K, M⟩ := cfg
   cases M with
   | letC M N => exact Or.inr ⟨(Frame.letF N :: K, M), by simp [Source.step]⟩
@@ -3209,25 +3125,21 @@ theorem progress_proof
     · subst hweq; exact Or.inr ⟨(K, MT), by simp [Source.step]⟩
     · simp at hget
   | perform cap ℓ op v =>
-    -- ★ B1 WALL (ADR-0045 1b) — the DECISIVE progress break, HONEST RED, NO sorry. ★
-    -- Under static dispatch the config STEPS iff `staticSplit K cap` succeeds, i.e. iff
-    -- `CapResolves K cap` (build-confirmed: `staticSplit_isSome_iff_capResolves`). But the FROZEN
-    -- `HasConfig ⊥`-only premise does NOT entail `CapResolves K cap`: typing is cap-irrelevant
-    -- (`perform_cap_irrelevant`), so a well-typed `⊥`-config with a bad cap (e.g. cap 5 over a
-    -- 1-handler stack) has `staticSplit K cap = none` ⟹ `Source.step = none` ⟹ STUCK. Progress is
-    -- therefore FALSE as stated for static dispatch + 1a typing. The cap must be constrained in the
-    -- typing rule (B3 / option a) so `HasConfig ⟹ CapResolves`; then this case discharges via
-    -- `CapResolves.staticSplit_some` + `staticDispatch_isSome_iff`. The `splitAt_fires` body below
-    -- (label-liveness search) is retained as B3's port reference; it is genuine RED under the flip.
-    obtain ⟨γ', q', A', B', hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.perform_inv
-    -- the label cannot escape to the whole-program ⊥
-    have hesc : ¬ (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ (⊥ : Eff)) :=
-      fun h => EffSig.labelEff_ne_bot (Eff := Eff) (Mult := Mult) ℓ (le_bot_iff.mp h)
-    -- the live label is discharged by a frame catching `op` (throws ⊳ raise / state ⊳ get,put);
-    -- splitAt finds it, so dispatch fires (dispatchOn is total) — the config STEPS.
-    obtain ⟨p, hp⟩ := hstack.splitAt_fires hopArg hesc hmem
-    have hd : (dispatch K ℓ op v).isSome = true := by
-      rw [dispatch_isSome_iff, hp]; rfl
+    -- ★ B1 WALL DISCHARGED (ADR-0045 R1) — `LWConfig` supplies the missing `CapResolvesKind`. ★
+    -- Under static dispatch the config STEPS iff `staticSplit K cap` succeeds. The frozen `HasConfig`
+    -- premise NOW carries `LWConfig` (R1): its focus part `LWT (handlersOf K) _ (perform …)` unfolds to
+    -- `CapResolvesKind (handlersOf K) cap ℓ op`, which (cap reads only handler kinds —
+    -- `CapResolvesKind_handlersOf`) gives `CapResolvesKind K cap ℓ op`, hence `staticSplit K cap` is
+    -- `some` (`staticSplit_isSome_of_resolvesKind`), hence `staticDispatch` is `some`
+    -- (`staticDispatch_isSome_iff`) — the config STEPS. This is the spike's `perform_progress`, now the
+    -- kernel progress case. The cap-IRRELEVANCE of typing no longer matters: cap-scoping rides
+    -- `LWConfig`, not `HasCTy`.
+    have hres0 : CapResolvesKind (handlersOf K) cap ℓ op := by
+      simp only [LWConfig, LWT] at hlw; exact hlw.1.1
+    have hres : CapResolvesKind K cap ℓ op := (CapResolvesKind_handlersOf K cap ℓ op).mp hres0
+    have hsome : (staticSplit K cap).isSome := staticSplit_isSome_of_resolvesKind K cap ℓ op hres
+    have hd : (staticDispatch K cap op v).isSome = true := by
+      rw [staticDispatch_isSome_iff]; exact hsome
     obtain ⟨cfg', hcfg'⟩ := Option.isSome_iff_exists.mp hd
     exact Or.inr ⟨cfg', by simpa [Source.step] using hcfg'⟩
   | ret v =>
@@ -3342,12 +3254,17 @@ private theorem run_safe {q : Mult} {A : VTy Eff Mult} :
       rw [hrun]
       exact ih cfg' hcfg'
 
+/-- ADR-0045 R1: `type_safety` gains an `LWConfig ([], c)` premise (the lexical-capability invariant),
+exactly as the `WellCapped` fold required (the amendment in ADR-0045). `LWConfig ([], c)` unfolds to
+`LWT [] [] c ∧ True` (`handlersOf [] = []`, `retCtx [] = []`, `LWStack [] = True`) — the program is
+lexically well-scoped at top level (no escaping capability). This is the closed-well-typed ⟹
+well-capped obligation the shell elaborator discharges. -/
 theorem type_safety_proof
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
-  intro h fuel
+    HasCTy [] [] c ⊥ (CTy.F q A) → LWConfig ([], c) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
+  intro h hlw fuel
   rw [show Source.eval fuel c = Config.run fuel ([], c) from rfl]
-  exact run_safe fuel ([], c) ⟨⊥, CTy.F q A, h, HasStack.nil⟩
+  exact run_safe fuel ([], c) ⟨⟨⊥, CTy.F q A, h, HasStack.nil⟩, hlw⟩
 
 /-! ## F. Abstraction-safety — no accidental handling (ADR-0024)
 

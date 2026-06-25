@@ -544,17 +544,138 @@ def WCStack : EvalCtx → Prop
 
 /-- The config-level well-capped invariant: the focus is well-capped against the stack's HANDLER
 skeleton, and the stack's stored continuations are well-capped against their (own) tails' skeletons.
-This is what `HasConfig` carries (B3a). Seeding `WCComp` with `handlersOf K` (not `K`) makes the
-plumbing frames cap-transparent BY CONSTRUCTION. -/
+SUPERSEDED by `LWConfig` (ADR-0045 R1): `WellCapped` is the AUTHOR-context half only and is UNSOUND as
+a progress invariant — it ACCEPTS the capability-escape `progB` (build-confirmed) which then runs STUCK,
+so it cannot thread `progress`. The two-context `LWT` (below) adds the RETURN/non-escape half that
+rejects the escape. Kept here only as the historical witness of the case-B hole; not used by `HasConfig`. -/
 def WellCapped : Config → Prop
   | (K, M) => WCComp (handlersOf K) M ∧ WCStack K
 
-/-- **Configuration typing** (ADR-0045 B3a): the typing CORE (`HasConfigTy`) PLUS the cap-scoping
-invariant `WellCapped`. Folding `WellCapped` in HERE (rather than adding a premise) keeps the frozen
+/-! ### The LEXICAL config invariant `LWConfig` (ADR-0045 R1) — replaces the unsound `WellCapped`.
+
+The cap-assignment spike (verdict TRACTABLE, `cap-spike` branch) established that a TWO-context
+lexical judgement splits the sound case A (capability migration) from the unsound case B (capability
+escape) which `WellCapped` could not. R1 promotes it to the kernel; the spike's A/B/cap>0 splits ride
+on as the permanent regression suite `Bang/LWRegress.lean`.
+
+  `LWT S R M`  (S, R : EvalCtx):
+    S = AUTHOR context  (handlers enclosing M at its def site — `handle` PUSHES `handleF h`).
+    R = RETURN context  (handlers a value RETURNED by M escapes INTO — `handle` does NOT push).
+  (a) author-site resolution :  `perform cap ℓ op v` needs `CapResolvesKind S cap ℓ op` (reuses the
+      WellCapped mechanism — `LWT`'s S-part IS `WCComp`).
+  (b) capability NON-ESCAPE  :  `ret v` is checked `LWVal R v` (caps resolve where the value LANDS).
+  At `handle h M`: S' = handleF h :: S, R' = OLD S (a returned value crosses OUT past h). At
+  `letC M N`: M's R := S (its result is consumed HERE), N keeps R. -/
+
+mutual
+/-- A computation is lexically well-typed against AUTHOR context `S` and RETURN context `R`. -/
+def LWT (S R : EvalCtx) : Comp → Prop
+  | .ret v          => LWVal R v                                   -- (b): returned value escapes to R
+  | .perform cap ℓ op v => CapResolvesKind S cap ℓ op ∧ LWVal S v  -- (a): author-site resolution
+  | .letC M N       => LWT S S M ∧ LWT S R N      -- M's result CONSUMED here (R_M = S); N escapes to R
+  | .force v        => LWVal S v                                   -- forcing runs the thunk HERE (S)
+  | .app M v        => LWT S S M ∧ LWVal S v        -- M runs here; its result is consumed by the app
+  | .lam M          => LWT S S M                    -- a λ-body runs where applied; model it at S
+  | .handle h M     => LWHandler S h ∧ LWT (Frame.handleF h :: S) S M  -- S pushes h; R ↦ OLD S (escape)
+  | .case v N₁ N₂   => LWVal S v ∧ LWT S R N₁ ∧ LWT S R N₂
+  | .split v N      => LWVal S v ∧ LWT S R N
+  | .unfold v       => LWVal S v
+  | .oom            => True
+  | .wrong _        => True
+/-- A value is lexically well-capped against context `X`: every thunk body it carries is `LWT X X`. -/
+def LWVal (X : EvalCtx) : Val → Prop
+  | .vunit       => True
+  | .vint _      => True
+  | .vvar _      => True
+  | .vthunk M    => LWT X X M
+  | .inl w       => LWVal X w
+  | .inr w       => LWVal X w
+  | .pair w₁ w₂  => LWVal X w₁ ∧ LWVal X w₂
+  | .fold w      => LWVal X w
+def LWHandler (X : EvalCtx) : Handler → Prop
+  | .throws _       => True
+  | .state _ s      => LWVal X s
+  | .transaction _ Θ => ∀ c ∈ Θ, LWVal [] c
+end
+
+/-- The RETURN context for a `ret v` focus over stack `K`: the context the returned value LANDS in. A
+value returned by the focus flows UP the stack — it CROSSES every `handleF` (handler-return is identity,
+the value escapes past) and is CONSUMED by the first `letF`/`appF` (landing in that frame's handler
+skeleton). So skip leading `handleF`s, stop at the first plumbing frame. `[]` = returns to the whole
+program (lands nowhere — nothing resolves, the non-escape boundary). -/
+def retCtx : EvalCtx → EvalCtx
+  | [] => []
+  | .handleF _ :: K => retCtx K          -- value crosses the handler (escapes past it)
+  | .letF _ :: K => handlersOf K         -- value consumed by the letF continuation, runs in handlersOf K
+  | .appF _ :: K => handlersOf K         -- (appF on a ret is ill-typed; total for safety)
+
+/-- A frame stack is lexically well-capped: each stored continuation/handler is `LWT`/`LW`-typed against
+ITS OWN author + return contexts (the contexts it faces once the frame is reached). Mirrors `WCStack`
+but threads the return context: a `letF N` continuation, when reached, runs in author `handlersOf K`
+and returns into `retCtx K`. -/
+def LWStack : EvalCtx → Prop
+  | [] => True
+  | .letF N :: K   => LWT (handlersOf K) (retCtx K) N ∧ LWStack K
+  | .appF v :: K   => LWVal (handlersOf K) v ∧ LWStack K
+  | .handleF h :: K => LWHandler (handlersOf K) h ∧ LWStack K
+
+/-- **The config-level lexical invariant `LWConfig`** (ADR-0045 R1): the focus is `LWT`-typed against
+the stack's HANDLER skeleton (author) and the focus's return context `retCtx K` (where its value lands),
+and the stack's stored continuations are `LWStack`. Seeding with `handlersOf K`/`retCtx K` makes the
+plumbing frames cap-transparent and the handler-return identity step preservation-by-construction. -/
+def LWConfig : Config → Prop
+  | (K, M) => LWT (handlersOf K) (retCtx K) M ∧ LWStack K
+
+/-- **Configuration typing** (ADR-0045 R1): the typing CORE (`HasConfigTy`) PLUS the lexical-capability
+invariant `LWConfig` (replacing the unsound `WellCapped`). Folding `LWConfig` in HERE keeps the frozen
 `preservation`/`progress` statements — stated over `HasConfig` — BYTE-IDENTICAL. (`type_safety`, stated
-over `HasCTy [] []`, gains a `WellCapped ([], c)` premise; see `Bang/Spec.lean`.) -/
+over `HasCTy [] []`, gains an `LWConfig ([], c)` premise; see `Bang/Spec.lean`.) -/
 def HasConfig [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
-  HasConfigTy cfg eo Co ∧ WellCapped cfg
+  HasConfigTy cfg eo Co ∧ LWConfig cfg
+
+/-! ### `LWConfig` preservation lemmas (ADR-0045 R1) — the cap-invariant steps. -/
+
+/-- **handleF-ret preservation, BY CONSTRUCTION** (the case that broke `WellCapped`). The handler-return
+identity step `(handleF h :: K, ret v) ↦ (K, ret v)` preserves `LWConfig`: `retCtx (handleF h :: K) =
+retCtx K` (a returned value crosses the handler) and `ret v` is checked ONLY against the return context,
+so the focus condition `LWVal (retCtx K) v` is IDENTICAL before/after; `LWStack` just drops its head
+handler. This is the whole point of the R-context: a value escaping its handler is checked where it
+LANDS, so the pop is a no-op on the invariant. -/
+theorem LWConfig.handleF_ret (h : Handler) (K : EvalCtx) (v : Val) :
+    LWConfig (Frame.handleF h :: K, Comp.ret v) → LWConfig (K, Comp.ret v) := by
+  intro hlw
+  obtain ⟨hfocus, hstack⟩ := hlw
+  simp only [LWConfig, retCtx, handlersOf, LWT] at hfocus ⊢
+  simp only [LWStack] at hstack
+  exact ⟨hfocus, hstack.2⟩
+
+/-- `CapResolvesKind K cap ℓ op` ⟹ `staticSplit K cap` SUCCEEDS — a resolving cap names an in-scope
+handler, so the runtime dispatch never stalls. The `Prop`→`Option.isSome` bridge that turns the
+`LWConfig` focus invariant into operational progress at a `perform`. Structural recursion on `K`/`cap`,
+mirroring `staticSplit`/`CapResolvesKind`. (ADR-0045 R1; lifted from the cap-assignment spike.) -/
+theorem staticSplit_isSome_of_resolvesKind :
+    ∀ (K : EvalCtx) (cap : Nat) (ℓ : Label) (op : OpId),
+      CapResolvesKind K cap ℓ op → (staticSplit K cap).isSome
+  | [], cap, _, _, h => by cases cap <;> exact absurd h id
+  | .handleF _ :: _, 0, _, _, _ => by simp [staticSplit]
+  | .handleF _ :: K, c+1, ℓ, op, h => by
+      simp only [staticSplit]
+      have := staticSplit_isSome_of_resolvesKind K c ℓ op h
+      cases hs : staticSplit K c with
+      | none => rw [hs] at this; exact absurd this (by simp)
+      | some _ => simp
+  | .letF _ :: K, cap, ℓ, op, h => by
+      simp only [staticSplit]
+      have := staticSplit_isSome_of_resolvesKind K cap ℓ op h
+      cases hs : staticSplit K cap with
+      | none => rw [hs] at this; exact absurd this (by simp)
+      | some _ => simp
+  | .appF _ :: K, cap, ℓ, op, h => by
+      simp only [staticSplit]
+      have := staticSplit_isSome_of_resolvesKind K cap ℓ op h
+      cases hs : staticSplit K cap with
+      | none => rw [hs] at this; exact absurd this (by simp)
+      | some _ => simp
 
 /-! ### Well-capped structural lemmas (ADR-0045 B3a) — the chain that makes `WellCapped` preserved.
 

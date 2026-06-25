@@ -110,9 +110,12 @@ theorem progress
 -- D3): `Source.eval`'s signature is unchanged (load ⟨[], c⟩, run, unload). The
 -- proof bridges through the config-level progress/preservation. At `⊥`:
 -- preservation gives `eo' ≤ ⊥`, so `eo' = ⊥` re-establishes the fuel IH.
+-- ADR-0045 R1: gains an `LWConfig ([], c)` premise (the lexical-capability invariant the static
+-- kernel needs; folded into `HasConfig` for `preservation`/`progress`, surfaced here since this is the
+-- one frozen statement over `HasCTy [] []` not `HasConfig`). `LWConfig ([], c) = LWT [] [] c ∧ True`.
 theorem type_safety
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    HasCTy [] [] c ⊥ (CTy.F q A) → LWConfig ([], c) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
     := type_safety_proof
 
 
