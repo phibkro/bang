@@ -385,6 +385,191 @@ theorem Val.ScopedIn.subst_closed {m : Nat} {u v : Val} (hu : Val.Closed u) (huc
   intro k hk
   rw [Val.subst, Val.shiftFrom_substFrom_closed hu hucap k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
 
+/-! ### ADR-0045 (Inc 0b) — `shiftCap` commutations (the B-probe lemmas, promoted) + `Val.CapScopedIn`
+
+The `shiftCapFrom` operation COMMUTES with `substFrom`/`shiftFrom`/itself — it touches only `perform cap`
+nodes (orthogonal to de-Bruijn indices). These are the foundations the cap-closedness descent
+(`closeV_capClosed_scoped`) needs to push `shiftCapFrom` through `subst`. Build-verified in the Inc-0b
+B-probe; promoted here as real lemmas (axiom-clean). -/
+
+/-! `shiftCapFrom` commutes with the de-Bruijn `shiftFrom` (orthogonal indices). -/
+mutual
+theorem Val.shiftCapFrom_shiftFrom : ∀ (d k : Nat) (w : Val),
+    Val.shiftCapFrom d (Val.shiftFrom k w) = Val.shiftFrom k (Val.shiftCapFrom d w)
+  | _, _, .vunit => rfl
+  | _, _, .vint _ => rfl
+  | d, k, .vvar j => by simp only [Val.shiftCapFrom, Val.shiftFrom]; split <;> rfl
+  | d, k, .vthunk M => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Comp.shiftCapFrom_shiftFrom d k M]
+  | d, k, .inl u => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
+  | d, k, .inr u => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
+  | d, k, .pair a b => by simp only [Val.shiftCapFrom, Val.shiftFrom];
+                          rw [Val.shiftCapFrom_shiftFrom d k a, Val.shiftCapFrom_shiftFrom d k b]
+  | d, k, .fold u => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
+theorem Comp.shiftCapFrom_shiftFrom : ∀ (d k : Nat) (t : Comp),
+    Comp.shiftCapFrom d (Comp.shiftFrom k t) = Comp.shiftFrom k (Comp.shiftCapFrom d t)
+  | d, k, .ret u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
+  | d, k, .perform _ _ _ u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
+  | d, k, .handle h M => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
+                            rw [Handler.shiftCapFrom_shiftFrom d k h, Comp.shiftCapFrom_shiftFrom (d+1) k M]
+  | d, k, .letC M N => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
+                          rw [Comp.shiftCapFrom_shiftFrom d k M, Comp.shiftCapFrom_shiftFrom d (k+1) N]
+  | d, k, .force u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
+  | d, k, .lam M => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Comp.shiftCapFrom_shiftFrom d (k+1) M]
+  | d, k, .app M u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
+                         rw [Comp.shiftCapFrom_shiftFrom d k M, Val.shiftCapFrom_shiftFrom d k u]
+  | d, k, .case u N₁ N₂ => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
+                              rw [Val.shiftCapFrom_shiftFrom d k u, Comp.shiftCapFrom_shiftFrom d (k+1) N₁,
+                                  Comp.shiftCapFrom_shiftFrom d (k+1) N₂]
+  | d, k, .split u N => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
+                           rw [Val.shiftCapFrom_shiftFrom d k u, Comp.shiftCapFrom_shiftFrom d (k+2) N]
+  | d, k, .unfold u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
+  | _, _, .oom => rfl
+  | _, _, .wrong _ => rfl
+theorem Handler.shiftCapFrom_shiftFrom : ∀ (d k : Nat) (h : Handler),
+    Handler.shiftCapFrom d (Handler.shiftFrom k h) = Handler.shiftFrom k (Handler.shiftCapFrom d h)
+  | d, k, .state _ s => by simp only [Handler.shiftCapFrom, Handler.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k s]
+  | _, _, .throws _ => rfl
+  | _, _, .transaction _ _ => rfl
+end
+
+/-! `shiftCapFrom` self-swap (the lift-lift exchange): for `e ≤ d`,
+`shiftCapFrom (d+1) (shiftCapFrom e w) = shiftCapFrom e (shiftCapFrom d w)`. -/
+mutual
+theorem Val.shiftCapFrom_swap : ∀ (d e : Nat), e ≤ d → ∀ (w : Val),
+    Val.shiftCapFrom (d+1) (Val.shiftCapFrom e w) = Val.shiftCapFrom e (Val.shiftCapFrom d w)
+  | _, _, _, .vunit => rfl
+  | _, _, _, .vint _ => rfl
+  | _, _, _, .vvar _ => rfl
+  | d, e, he, .vthunk M => by simp only [Val.shiftCapFrom]; rw [Comp.shiftCapFrom_swap d e he M]
+  | d, e, he, .inl u => by simp only [Val.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
+  | d, e, he, .inr u => by simp only [Val.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
+  | d, e, he, .pair a b => by simp only [Val.shiftCapFrom];
+                              rw [Val.shiftCapFrom_swap d e he a, Val.shiftCapFrom_swap d e he b]
+  | d, e, he, .fold u => by simp only [Val.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
+theorem Comp.shiftCapFrom_swap : ∀ (d e : Nat), e ≤ d → ∀ (t : Comp),
+    Comp.shiftCapFrom (d+1) (Comp.shiftCapFrom e t) = Comp.shiftCapFrom e (Comp.shiftCapFrom d t)
+  | d, e, he, .ret u => by simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
+  | d, e, he, .perform cap ℓ op u => by
+      simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
+      simp only [Comp.perform.injEq, true_and, and_true]
+      split_ifs <;> omega
+  | d, e, he, .handle h M => by simp only [Comp.shiftCapFrom];
+                                rw [Handler.shiftCapFrom_swap d e he h, Comp.shiftCapFrom_swap (d+1) (e+1) (by omega) M]
+  | d, e, he, .letC M N => by simp only [Comp.shiftCapFrom];
+                              rw [Comp.shiftCapFrom_swap d e he M, Comp.shiftCapFrom_swap d e he N]
+  | d, e, he, .force u => by simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
+  | d, e, he, .lam M => by simp only [Comp.shiftCapFrom]; rw [Comp.shiftCapFrom_swap d e he M]
+  | d, e, he, .app M u => by simp only [Comp.shiftCapFrom];
+                             rw [Comp.shiftCapFrom_swap d e he M, Val.shiftCapFrom_swap d e he u]
+  | d, e, he, .case u N₁ N₂ => by simp only [Comp.shiftCapFrom];
+                                  rw [Val.shiftCapFrom_swap d e he u, Comp.shiftCapFrom_swap d e he N₁,
+                                      Comp.shiftCapFrom_swap d e he N₂]
+  | d, e, he, .split u N => by simp only [Comp.shiftCapFrom];
+                               rw [Val.shiftCapFrom_swap d e he u, Comp.shiftCapFrom_swap d e he N]
+  | d, e, he, .unfold u => by simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
+  | _, _, _, .oom => rfl
+  | _, _, _, .wrong _ => rfl
+theorem Handler.shiftCapFrom_swap : ∀ (d e : Nat), e ≤ d → ∀ (h : Handler),
+    Handler.shiftCapFrom (d+1) (Handler.shiftCapFrom e h) = Handler.shiftCapFrom e (Handler.shiftCapFrom d h)
+  | d, e, he, .state _ s => by simp only [Handler.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he s]
+  | _, _, _, .throws _ => rfl
+  | _, _, _, .transaction _ _ => rfl
+end
+
+/-! `shiftCapFrom` commutes with `substFrom` (the descent the cap-closedness needs). The `handle` arm
+uses the self-swap (`shiftCapFrom (d+1) (shiftCap w) = shiftCap (shiftCapFrom d w)`, the `e=0` instance). -/
+mutual
+theorem Val.shiftCapFrom_substFrom : ∀ (d k : Nat) (w t : Val),
+    Val.shiftCapFrom d (Val.substFrom k w t) = Val.substFrom k (Val.shiftCapFrom d w) (Val.shiftCapFrom d t)
+  | _, _, _, .vunit => rfl
+  | _, _, _, .vint _ => rfl
+  | d, k, w, .vvar j => by
+      simp only [Val.shiftCapFrom, Val.substFrom]
+      split
+      · rfl
+      · split <;> rfl
+  | d, k, w, .vthunk M => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Comp.shiftCapFrom_substFrom d k w M]
+  | d, k, w, .inl u => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
+  | d, k, w, .inr u => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
+  | d, k, w, .pair a b => by simp only [Val.shiftCapFrom, Val.substFrom];
+                             rw [Val.shiftCapFrom_substFrom d k w a, Val.shiftCapFrom_substFrom d k w b]
+  | d, k, w, .fold u => by simp only [Val.shiftCapFrom, Val.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
+theorem Comp.shiftCapFrom_substFrom : ∀ (d k : Nat) (w : Val) (t : Comp),
+    Comp.shiftCapFrom d (Comp.substFrom k w t) = Comp.substFrom k (Val.shiftCapFrom d w) (Comp.shiftCapFrom d t)
+  | d, k, w, .ret u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
+  | d, k, w, .perform _ _ _ u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
+  | d, k, w, .handle h M => by
+      -- handle: substFrom fills the body with `Val.shiftCap w = shiftCapFrom 0 w`; shiftCapFrom (d+1) on the
+      -- body then needs `shiftCapFrom (d+1) (shiftCapFrom 0 w) = shiftCapFrom 0 (shiftCapFrom d w)` (the swap).
+      simp only [Comp.shiftCapFrom, Comp.substFrom]
+      rw [Handler.shiftCapFrom_substFrom d k w h, Comp.shiftCapFrom_substFrom (d+1) k (Val.shiftCap w) M,
+          show Val.shiftCapFrom (d+1) (Val.shiftCap w) = Val.shiftCap (Val.shiftCapFrom d w) from
+            Val.shiftCapFrom_swap d 0 (Nat.zero_le d) w]
+  | d, k, w, .letC M N => by simp only [Comp.shiftCapFrom, Comp.substFrom];
+                             rw [Comp.shiftCapFrom_substFrom d k w M, Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) N,
+                                 show Val.shiftCapFrom d (Val.shift w) = Val.shift (Val.shiftCapFrom d w) from
+                                   Val.shiftCapFrom_shiftFrom d 0 w]
+  | d, k, w, .force u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
+  | d, k, w, .lam M => by simp only [Comp.shiftCapFrom, Comp.substFrom];
+                          rw [Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) M,
+                              show Val.shiftCapFrom d (Val.shift w) = Val.shift (Val.shiftCapFrom d w) from
+                                Val.shiftCapFrom_shiftFrom d 0 w]
+  | d, k, w, .app M u => by simp only [Comp.shiftCapFrom, Comp.substFrom];
+                            rw [Comp.shiftCapFrom_substFrom d k w M, Val.shiftCapFrom_substFrom d k w u]
+  | d, k, w, .case u N₁ N₂ => by
+      simp only [Comp.shiftCapFrom, Comp.substFrom]
+      rw [Val.shiftCapFrom_substFrom d k w u,
+          Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) N₁, Comp.shiftCapFrom_substFrom d (k+1) (Val.shift w) N₂,
+          show Val.shiftCapFrom d (Val.shift w) = Val.shift (Val.shiftCapFrom d w) from Val.shiftCapFrom_shiftFrom d 0 w]
+  | d, k, w, .split u N => by
+      simp only [Comp.shiftCapFrom, Comp.substFrom]
+      rw [Val.shiftCapFrom_substFrom d k w u, Comp.shiftCapFrom_substFrom d (k+2) (Val.shift (Val.shift w)) N,
+          show Val.shiftCapFrom d (Val.shift (Val.shift w)) = Val.shift (Val.shift (Val.shiftCapFrom d w)) by
+            rw [Val.shiftCapFrom_shiftFrom d 0 (Val.shift w), Val.shiftCapFrom_shiftFrom d 0 w]]
+  | d, k, w, .unfold u => by simp only [Comp.shiftCapFrom, Comp.substFrom]; rw [Val.shiftCapFrom_substFrom d k w u]
+  | _, _, _, .oom => rfl
+  | _, _, _, .wrong _ => rfl
+theorem Handler.shiftCapFrom_substFrom : ∀ (d k : Nat) (w : Val) (h : Handler),
+    Handler.shiftCapFrom d (Handler.substFrom k w h) = Handler.substFrom k (Val.shiftCapFrom d w) (Handler.shiftCapFrom d h)
+  | d, k, w, .state _ s => by simp only [Handler.shiftCapFrom, Handler.substFrom]; rw [Val.shiftCapFrom_substFrom d k w s]
+  | _, _, _, .throws _ => rfl
+  | _, _, _, .transaction _ _ => rfl
+end
+
+/-- `Val.CapScopedIn m v`: `v` carries no ambient `perform`-cap at depth ≥ `m` (every `shiftCapFrom d`
+with `d ≥ m` fixes `v`). The cap-analogue of `Val.ScopedIn`; the lexical-cap discipline at the value
+level. `CapScopedIn 0 = Val.CapClosed`. -/
+def Val.CapScopedIn (m : Nat) (v : Val) : Prop := ∀ d, m ≤ d → Val.shiftCapFrom d v = v
+
+/-- `CapScopedIn 0` IS `CapClosed`. -/
+theorem Val.CapScopedIn.capClosed {v : Val} (h : Val.CapScopedIn 0 v) : Val.CapClosed v :=
+  fun d => h d (Nat.zero_le d)
+
+/-- Substituting a (de-Bruijn) binder with a CAP-CLOSED filler PRESERVES the cap-scope: capabilities and
+variables are INDEPENDENT binders, so a var-subst doesn't shift the cap-scope. `shiftCapFrom d (subst u v)
+= subst (shiftCapFrom d u) (shiftCapFrom d v) = subst u v` (`u` cap-closed ⟹ `shiftCapFrom d u = u`; `v`
+cap-scope-fixed at `d ≥ m`). -/
+theorem Val.CapScopedIn.subst_capClosed {m : Nat} {u v : Val}
+    (hucap : Val.CapClosed u) (hvcap : Val.CapScopedIn m v) :
+    Val.CapScopedIn m (Val.subst u v) := by
+  intro d hd
+  rw [Val.subst, Val.shiftCapFrom_substFrom d 0 u v, hucap d, hvcap d hd]
+
+/-- Closing a `CapScopedIn 0` value over a CAP-CLOSED environment yields a `Val.CapClosed` value.
+Caps and (closing-env) VARS are independent binders: `closeV` only var-substitutes, and var-subst with
+cap-closed fillers PRESERVES cap-scope (`subst_capClosed`), so `CapScopedIn 0` (the source value has no
+ambient `perform`-cap) is maintained to the end ⟹ `CapClosed`. The SOURCE value's `CapScopedIn 0` is the
+lexical-cap-discipline obligation — for a CLOSED well-typed program it holds by construction (every
+`perform` cap resolves to a handler on the stack). -/
+theorem closeV_capClosed_scoped : ∀ {δ : List Val} {v : Val},
+    (∀ u ∈ δ, Val.CapClosed u) → Val.CapScopedIn 0 v → Val.CapClosed (closeV δ v)
+  | [],     v, _,     hv => hv.capClosed
+  | u :: δ, v, hδcap, hv => by
+      have hucap : Val.CapClosed u := hδcap u List.mem_cons_self
+      have hδcap' : ∀ w ∈ δ, Val.CapClosed w := fun w hw => hδcap w (List.mem_cons_of_mem u hw)
+      rw [closeV]
+      exact closeV_capClosed_scoped hδcap' (Val.CapScopedIn.subst_capClosed hucap hv)
+
 /-- Closing a value SCOPED IN `δ.length` over a CLOSED environment yields a CLOSED value: the fold
 substitutes each free index with a closed filler, dropping the scope by 1 each step to `ScopedIn 0` =
 `Closed`. The `ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem. -/
@@ -925,12 +1110,13 @@ theorem crelK_force {n : Nat} {φ : Eff} {B : CTy Eff Mult} {w₁ w₂ : Val}
 /-- ◊4.5b `unfold` of `VrelK`-related μ-values. `unfold (fold u) ↦ ret u` (CIStep); the ▷-head-step
 needs `CrelK m (ret u₁) (ret u₂)` at each `m < n`, from `crelK_ret` on the μ-payload. -/
 theorem crelK_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
-    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂) (hv : VrelK n (VTy.mu A) w₁ w₂) :
+    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
+    (hccw₁ : Val.CapClosed w₁) (hccw₂ : Val.CapClosed w₂) (hv : VrelK n (VTy.mu A) w₁ w₂) :
     CrelK n (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
   rw [VrelK] at hv
   obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
   refine CrelK_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_
-    (fun m hm => crelK_ret hcw₁.fold_inv hcw₂.fold_inv (hu m hm))
+    (fun m hm => crelK_ret hcw₁.fold_inv hcw₂.fold_inv hccw₁.fold_inv hccw₂.fold_inv (hu m hm))
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
 
@@ -946,7 +1132,8 @@ refocus the source redex (`letC`/`app` PUSH) and run the bound computation throu
 ambient tail. The continuation row `φ ≤ ε`; the tail weakens `ε → φ` via `KrelS_eff_anti`. -/
 theorem krelS_letF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε φ : Eff}
     {N₁ N₂ : Comp} {K₁ K₂ : Stack} (hφε : φ ≤ ε)
-    (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+    (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
       CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
     (hK : KrelS n B D ε K₁ K₂) :
     KrelS n (CTy.F q A) D ε (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) := by
@@ -960,7 +1147,8 @@ letF-extended stack, shown `KrelS`-related by `krelS_letF_intro`. The continuati
 theorem compatK_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ₁ φ₂ : Eff}
     {M₁ M₂ N₁' N₂' : Comp}
     (hM : CrelK n (CTy.F q1 A) φ₁ M₁ M₂)
-    (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+    (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
       CrelK m B φ₂ (Comp.subst v₁ N₁') (Comp.subst v₂ N₂')) :
     CrelK n B (φ₁ ⊔ φ₂) (Comp.letC M₁ N₁') (Comp.letC M₂ N₂') := by
   rw [CrelK]
@@ -979,10 +1167,11 @@ theorem compatK_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult}
 The appF frame doesn't bind a continuation row, so the tail stays at the ambient `ε` (no weakening). -/
 theorem krelS_appF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε : Eff}
     {v₁ v₂ : Val} {K₁ K₂ : Stack} (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂)
+    (hccv₁ : Val.CapClosed v₁) (hccv₂ : Val.CapClosed v₂)
     (hv : VrelK n A v₁ v₂) (hK : KrelS n B D ε K₁ K₂) :
     KrelS n (CTy.arr q A B) D ε (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) := by
   rw [krelS_appF]
-  exact ⟨q, A, B, rfl, hcv₁, hcv₂, hv, hK⟩
+  exact ⟨q, A, B, rfl, hcv₁, hcv₂, hccv₁, hccv₂, hv, hK⟩
 
 /-- ◊4.5b the `app` compat core at `CrelK` (the answer-typed `compat_app`). REFOCUS
 `(K, app M v) ↦ (appF v::K, M)`, then run `M` (related at `arr q A B`) through the appF-extended
@@ -990,14 +1179,15 @@ stack, shown `KrelS`-related by `krelS_appF_intro`. -/
 theorem compatK_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ : Eff}
     {M₁ M₂ : Comp} {v₁ v₂ : Val}
     (hM : CrelK n (CTy.arr q A B) φ M₁ M₂)
-    (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂) (hv : VrelK n A v₁ v₂) :
+    (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂)
+    (hccv₁ : Val.CapClosed v₁) (hccv₂ : Val.CapClosed v₂) (hv : VrelK n A v₁ v₂) :
     CrelK n B φ (Comp.app M₁ v₁) (Comp.app M₂ v₂) := by
   rw [CrelK]
   intro D K₁ K₂ hK
   refine coApproxC_le_reduce (cfg₁' := (Frame.appF v₁ :: K₁, M₁)) (cfg₂' := (Frame.appF v₂ :: K₂, M₂))
     rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [CrelK] at hM
-  exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hv hK)
+  exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hccv₁ hccv₂ hv hK)
 
 /-- ◊4.5b the `lam` compat core at `CrelK` (the answer-typed `compat_lam`). A `lam` only β-reduces under
 an `appF` frame; other stacks are STUCK on a `lam` (observation vacuous). Stack induction: appF-headed
@@ -1006,8 +1196,8 @@ an `appF` frame; other stacks are STUCK on a `lam` (observation vacuous). Stack 
 `ret`). So only the appF case is non-vacuous. -/
 theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ : Eff}
     {M₁' M₂' : Comp}
-    (hbody : ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ → VrelK n A w₁ w₂ →
-      CrelK n B φ (Comp.subst w₁ M₁') (Comp.subst w₂ M₂')) :
+    (hbody : ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
+      VrelK n A w₁ w₂ → CrelK n B φ (Comp.subst w₁ M₁') (Comp.subst w₂ M₂')) :
     CrelK n (CTy.arr q A B) φ (Comp.lam M₁') (Comp.lam M₂') := by
   rw [CrelK]
   intro D K₁ K₂ hK
@@ -1023,12 +1213,12 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
               cases fr₂ with
               | appF w₂ =>
                   rw [krelS_appF] at hK
-                  obtain ⟨q', A', B', hC, hcw₁, hcw₂, hw, htail⟩ := hK
+                  obtain ⟨q', A', B', hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
                   rw [CTy.arr.injEq] at hC; obtain ⟨rfl, rfl, rfl⟩ := hC
                   -- β `(appF w::K', lam M') ↦ (K', M'.subst w)`; body IH at the SAME index, non-dropping.
                   refine coApproxC_le_reduce (cfg₁' := (K₁', Comp.subst w₁ M₁'))
                     (cfg₂' := (K₂', Comp.subst w₂ M₂')) rfl (by intro u; simp) rfl (by intro u; simp) ?_
-                  have hb := hbody w₁ w₂ hcw₁ hcw₂ hw
+                  have hb := hbody w₁ w₂ hcw₁ hcw₂ hccw₁ hccw₂ hw
                   rw [CrelK] at hb
                   exact hb D K₁' K₂' htail
               | _ => simp only [KrelS] at hK
@@ -1051,19 +1241,22 @@ IH on the `VrelK m`-related payload (the sum scrutinee gives the tag + payload).
 theorem compatK_case {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
     {w₁ w₂ : Val} {N₁₁ N₂₁ N₁₂ N₂₂ : Comp}
     (hw : VrelK n (VTy.sum A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
-    (hN₁ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+    (hccw₁ : Val.CapClosed w₁) (hccw₂ : Val.CapClosed w₂)
+    (hN₁ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
       CrelK m C φ (Comp.subst v₁ N₁₁) (Comp.subst v₂ N₁₂))
-    (hN₂ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m B v₁ v₂ →
+    (hN₂ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m B v₁ v₂ →
       CrelK m C φ (Comp.subst v₁ N₂₁) (Comp.subst v₂ N₂₂)) :
     CrelK n C φ (Comp.case w₁ N₁₁ N₂₁) (Comp.case w₂ N₁₂ N₂₂) := by
   rw [VrelK] at hw
   rcases hw with ⟨u₁, u₂, rfl, rfl, hu⟩ | ⟨u₁, u₂, rfl, rfl, hu⟩
   · refine CrelK_head_step (c₁' := Comp.subst u₁ N₁₁) (c₂' := Comp.subst u₂ N₁₂) ?_ ?_
-      (fun m hm => hN₁ m hm u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv (VrelK_mono (le_of_lt hm) hu))
+      (fun m hm => hN₁ m hm u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv hccw₁.inl_inv hccw₂.inl_inv (VrelK_mono (le_of_lt hm) hu))
     · exact ⟨fun K => rfl, by intro v; simp⟩
     · exact ⟨fun K => rfl, by intro v; simp⟩
   · refine CrelK_head_step (c₁' := Comp.subst u₁ N₂₁) (c₂' := Comp.subst u₂ N₂₂) ?_ ?_
-      (fun m hm => hN₂ m hm u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv (VrelK_mono (le_of_lt hm) hu))
+      (fun m hm => hN₂ m hm u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv hccw₁.inr_inv hccw₂.inr_inv (VrelK_mono (le_of_lt hm) hu))
     · exact ⟨fun K => rfl, by intro v; simp⟩
     · exact ⟨fun K => rfl, by intro v; simp⟩
 
@@ -1072,7 +1265,9 @@ CIStep; the ▷-head-step needs the two-binder body related at every `m < n`. -/
 theorem compatK_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
     {w₁ w₂ : Val} {N₁' N₂' : Comp}
     (hw : VrelK n (VTy.prod A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
+    (hccw₁ : Val.CapClosed w₁) (hccw₂ : Val.CapClosed w₂)
     (hN : ∀ m, m < n → ∀ a₁ a₂ b₁ b₂, Val.Closed a₁ → Val.Closed a₂ → Val.Closed b₁ → Val.Closed b₂ →
+      Val.CapClosed a₁ → Val.CapClosed a₂ → Val.CapClosed b₁ → Val.CapClosed b₂ →
       VrelK m A a₁ a₂ → VrelK m B b₁ b₂ →
       CrelK m C φ (Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
                   (Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂'))) :
@@ -1081,10 +1276,12 @@ theorem compatK_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Ef
   obtain ⟨a₁, a₂, b₁, b₂, rfl, rfl, ha, hb⟩ := hw
   obtain ⟨hca₁, hcb₁⟩ := hcw₁.pair_inv
   obtain ⟨hca₂, hcb₂⟩ := hcw₂.pair_inv
+  obtain ⟨hcca₁, hccb₁⟩ := hccw₁.pair_inv
+  obtain ⟨hcca₂, hccb₂⟩ := hccw₂.pair_inv
   refine CrelK_head_step
     (c₁' := Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
     (c₂' := Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂')) ?_ ?_
-    (fun m hm => hN m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂
+    (fun m hm => hN m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ hcca₁ hcca₂ hccb₁ hccb₂
       (VrelK_mono (le_of_lt hm) ha) (VrelK_mono (le_of_lt hm) hb))
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
@@ -1109,7 +1306,7 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h₁ h�
     (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
         Bang.handlesOp h₁ h₁.label op = true →
-        Val.Closed w₁ → Val.Closed w₂ →
+        Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
         KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
@@ -1118,7 +1315,7 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h₁ h�
         Bang.dispatchOn op w₂ (Kᵢ', h₂, K₂) = some cfg₂ →
         (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
             cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-            Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+            Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
             KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ')) :
     KrelS n C D e (Frame.handleF h₁ :: K₁) (Frame.handleF h₂ :: K₂) := by
   rw [krelS_handleF]; exact ⟨hHR, KrelS_eff_cast hK, hres⟩
@@ -1162,11 +1359,11 @@ plain `CoApproxC_le m cfg₁ cfg₂`. This is the T=[] consumer; the nested case
 theorem coApproxC_le_of_resumeDecomp {m : Nat} {D : CTy Eff Mult} {cfg₁ cfg₂ : Config}
     (h : ∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
         cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-        Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+        Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
         KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ') :
     CoApproxC_le m cfg₁ cfg₂ := by
-  obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, rfl, rfl, hcr₁, hcr₂, hr, hS⟩ := h
-  have hret := crelK_ret (q := qᵣ) (A := Aᵣ) (e := eₛ) hcr₁ hcr₂ hr
+  obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, rfl, rfl, hcr₁, hcr₂, hccr₁, hccr₂, hr, hS⟩ := h
+  have hret := crelK_ret (q := qᵣ) (A := Aᵣ) (e := eₛ) hcr₁ hcr₂ hccr₁ hccr₂ hr
   rw [CrelK] at hret
   exact hret D Sᵢ Sᵢ' hS
 
@@ -1196,7 +1393,7 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
     (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ : CTy Eff Mult) (εⱼ : Eff)
               (Kⱼ Kⱼ' : Stack) (cfg₁ cfg₂ : Config),
         Bang.handlesOp h₁ h₁.label op = true →
-        Val.Closed w₁ → Val.Closed w₂ →
+        Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK k Aop w₁ w₂) →
         KrelS k Cⱼ Dᵢ εⱼ Kⱼ Kⱼ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
@@ -1205,7 +1402,7 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
         Bang.dispatchOn op w₂ (Kⱼ', h₂, K₂) = some cfg₂ →
         (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
             cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-            Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ ∧
+            Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK k Aᵣ r₁ r₂ ∧
             KrelS k (CTy.F qᵣ Aᵣ) D' eₛ Sᵢ Sᵢ')) :
     KrelS m Cᵢ D' εᵢ (Kᵢ ++ Frame.handleF h₁ :: K₁) (Kᵢ' ++ Frame.handleF h₂ :: K₂) := by
   -- ◊4.5b-strengthen: WELL-FOUNDED recursion on `(m, Kᵢ.length)`. letF/appF recurse on the shorter
@@ -1224,9 +1421,9 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
       exact ⟨q, A, B, φ, hC, hbody, krelS_append htin hHR htail hres⟩
   | (Frame.appF u₁ :: Kᵢrest), (Frame.appF u₂ :: Kᵢ'rest) =>
       rw [krelS_appF] at hin
-      obtain ⟨q, A, B, hC, hcu₁, hcu₂, hu, htin⟩ := hin
+      obtain ⟨q, A, B, hC, hcu₁, hcu₂, hccu₁, hccu₂, hu, htin⟩ := hin
       rw [List.cons_append, List.cons_append, krelS_appF]
-      exact ⟨q, A, B, hC, hcu₁, hcu₂, hu, krelS_append htin hHR htail hres⟩
+      exact ⟨q, A, B, hC, hcu₁, hcu₂, hccu₁, hccu₂, hu, krelS_append htin hHR htail hres⟩
   | (Frame.handleF hh₁ :: Kᵢrest), (Frame.handleF hh₂ :: Kᵢ'rest) =>
       -- ◊4.5b-strengthen CLOSE: a handler NESTED in the captured continuation. The structural shape
       -- closes HandlerRel + the recursive-append tail; the resume conjunct over the APPENDED tail is now
@@ -1240,7 +1437,7 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
       obtain ⟨hHRtop, htin, hres_inner⟩ := hin
       rw [List.cons_append, List.cons_append, krelS_handleF]
       refine ⟨hHRtop, krelS_append htin hHR htail hres, ?_⟩
-      intro k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hd₁ hd₂
+      intro k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKj hCⱼ hd₁ hd₂
       -- recover the INNER dispatch (over `Kᵢrest`) by computing it, then lift via `dispatchOn_append_outer`.
       obtain ⟨cfgᵢ₁, hdi₁⟩ : ∃ c, Bang.dispatchOn op w₁ (Kⱼ, hh₁, Kᵢrest) = some c := by
         cases hh₁ with
@@ -1258,13 +1455,13 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
       obtain rfl := (Option.some.injEq _ _).mp hlift₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hlift₂.symm
       -- apply the inner conjunct to the inner dispatch → the decomposition `cfgᵢⱼ = (Sᵢ, ret rⱼ)`.
-      obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcf₁, hcf₂, hcr₁, hcr₂, hr, hSrel⟩ :=
-        hres_inner k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfgᵢ₁ cfgᵢ₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hdi₁ hdi₂
+      obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcf₁, hcf₂, hcr₁, hcr₂, hccr₁, hccr₂, hr, hSrel⟩ :=
+        hres_inner k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfgᵢ₁ cfgᵢ₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKj hCⱼ hdi₁ hdi₂
       subst hcf₁; subst hcf₂
       -- the appended config is `(Sᵢ ++ handleF h₁::K₁, ret rⱼ)`; rebuild the decomposition over the
       -- append by `krelS_append` at the dropped index `k` (the step-index pays for the longer `Sᵢ`).
       refine ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ ++ Frame.handleF h₁ :: K₁, Sᵢ' ++ Frame.handleF h₂ :: K₂, eₛ,
-        by simp, by simp, hcr₁, hcr₂, hr, ?_⟩
+        by simp, by simp, hcr₁, hcr₂, hccr₁, hccr₂, hr, ?_⟩
       exact krelS_append (εᵢ := eₛ) hSrel (HandlerRel_mono (le_of_lt hk) hHR)
         (KrelS_mono (le_of_lt hk) htail) (fun k' hk' => hres k' (lt_trans hk' hk))
   | [], (_ :: _) => simp only [KrelS] at hin
@@ -1294,7 +1491,8 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
     (hp : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S)
     (hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit)
     (hrestrict : ∀ op s, Bang.handlesOp (Handler.state ℓ s) ℓ op = true → op = "get" ∨ op = "put") :
-    ∀ m (s₁ s₂ : Val), Val.Closed s₁ → Val.Closed s₂ → VrelK m S s₁ s₂ →
+    ∀ m (s₁ s₂ : Val), Val.Closed s₁ → Val.Closed s₂ → Val.CapClosed s₁ → Val.CapClosed s₂ →
+      VrelK m S s₁ s₂ →
       ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ K₁ K₂ →
       KrelS m (CTy.F q A) D φ (Frame.handleF (Handler.state ℓ s₁) :: K₁)
                               (Frame.handleF (Handler.state ℓ s₂) :: K₂) := by
@@ -1303,10 +1501,10 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
   intro m
   induction m using Nat.strong_induction_on with
   | _ m ih =>
-    intro s₁ s₂ hcs₁ hcs₂ hsv K₁ K₂ hK
+    intro s₁ s₂ hcs₁ hcs₂ hccs₁ hccs₂ hsv K₁ K₂ hK
     refine krelS_handleF_intro
       (show HandlerRel Eff Mult m (Handler.state ℓ s₁) (Handler.state ℓ s₂) from ⟨rfl, S, hsv⟩) hK ?_
-    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
+    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKi hCᵢ hd₁ hd₂
     rcases hrestrict op s₁ hcatch with rfl | rfl
     · -- GET: cfg = (Kᵢ ++ handleF(state ℓ sⱼ)::Kⱼ, ret sⱼ); resume value = the stored state (related).
       obtain ⟨qᵣ, rfl⟩ := hCᵢ S (by rw [Handler.label]; exact hgr)
@@ -1314,7 +1512,7 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
       obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
       -- the reinstalled `state ℓ s₁/s₂` over the tail relates at m' (IH at the SAME state pair, downward).
-      have hreinst := ih m' hm' s₁ s₂ hcs₁ hcs₂ (VrelK_mono (le_of_lt hm') hsv) K₁ K₂
+      have hreinst := ih m' hm' s₁ s₂ hcs₁ hcs₂ hccs₁ hccs₂ (VrelK_mono (le_of_lt hm') hsv) K₁ K₂
         (KrelS_mono (le_of_lt hm') hK)
       rw [krelS_handleF] at hreinst
       have happ := krelS_append (Dᵢ := CTy.F q A) hKi
@@ -1323,7 +1521,7 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
         (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — the dispatched config is `(Kᵢ++reinstall::K, ret sⱼ)`,
       -- the resume value `s₁~s₂` at `S`, the appended stack `KrelS`-related at the returner hole `F qᵣ S`.
-      exact ⟨qᵣ, S, s₁, s₂, _, _, εᵢ, rfl, rfl, hcs₁, hcs₂, VrelK_mono (le_of_lt hm') hsv, happ⟩
+      exact ⟨qᵣ, S, s₁, s₂, _, _, εᵢ, rfl, rfl, hcs₁, hcs₂, hccs₁, hccs₂, VrelK_mono (le_of_lt hm') hsv, happ⟩
     · -- PUT: cfg = (Kᵢ ++ handleF(state ℓ wⱼ)::Kⱼ, ret unit); reinstalled state = the payload (related at
       -- S via hVrel), resume value = unit (trivially related). The IH at the NEW state pair (w₁,w₂).
       have hwS : VrelK m' S w₁ w₂ := hVrel S (by rw [Handler.label]; exact hp)
@@ -1331,13 +1529,14 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
       simp only [Handler.label, dispatchOn] at hd₁ hd₂
       obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
-      have hreinst := ih m' hm' w₁ w₂ hcw₁ hcw₂ hwS K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
+      have hreinst := ih m' hm' w₁ w₂ hcw₁ hcw₂ hccw₁ hccw₂ hwS K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
       rw [krelS_handleF] at hreinst
       have happ := krelS_append (Dᵢ := CTy.F q A) hKi
         (show HandlerRel Eff Mult m' (Handler.state ℓ w₁) (Handler.state ℓ w₂) from ⟨rfl, S, hwS⟩)
         (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: PUT resumes `unit` (unit~unit); the appended stack relates at hole `F qᵣ unit`.
       exact ⟨qᵣ, VTy.unit, Val.vunit, Val.vunit, _, _, εᵢ, rfl, rfl, (fun k => rfl), (fun k => rfl),
+        (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.unit Val.vunit Val.vunit; rw [VrelK, BaseRel]; exact ⟨rfl, rfl⟩), happ⟩
 
 /-! ### ◊4.5b-append — heap `getD` facts, proved GetD-IMPORT-FREE (from `List.Basic`'s `getElem?`).
@@ -1428,7 +1627,7 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
     refine krelS_handleF_intro
       (show HandlerRel Eff Mult m (Handler.transaction ℓ Θ₁) (Handler.transaction ℓ Θ₂) from
         ⟨rfl, hheap.1, hheap.2⟩) hK ?_
-    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
+    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKi hCᵢ hd₁ hd₂
     have hheap' : HeapRel Eff Mult m' Θ₁ Θ₂ := ⟨hheap.1, fun i hi => VrelK_mono (le_of_lt hm') (hheap.2 i hi)⟩
     rcases hrestrict op Θ₁ hcatch with rfl | rfl | rfl
     · -- newTVar: reinstall Θⱼ ++ [wⱼ], resume `vint Θⱼ.length` (same length ⇒ equal int).
@@ -1453,7 +1652,7 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
           from ⟨rfl, happend.1, happend.2⟩) (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — resume `vint Θⱼ.length` (related; same length).
       exact ⟨qᵣ, VTy.int, Val.vint Θ₁.length, Val.vint Θ₂.length, _, _, εᵢ, rfl, rfl,
-        (fun k => rfl), (fun k => rfl),
+        (fun k => rfl), (fun k => rfl), (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.int (Val.vint Θ₁.length) (Val.vint Θ₂.length)
             rw [VrelK, BaseRel]; exact ⟨Θ₁.length, rfl, by rw [hheap'.1]⟩), happ⟩
     · -- readTVar: heap UNCHANGED, resume the cell (related via hheap', or default both sides).
@@ -1482,6 +1681,7 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
           from ⟨rfl, hheap'.1, hheap'.2⟩) (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — resume the read cell (related via `hcellrel`).
       exact ⟨qᵣ, VTy.int, Θ₁.getD idx (Val.vint 0), Θ₂.getD idx (Val.vint 0), _, _, εᵢ, rfl, rfl,
+        (by rw [hca₁]; intro k; rfl), (by rw [hca₂]; intro k; rfl),
         (by rw [hca₁]; intro k; rfl), (by rw [hca₂]; intro k; rfl), hcellrel, happ⟩
     · -- writeTVar: payload `pair (vint i) (vint b)`; reinstall `storeSet Θⱼ i (vint b)`, resume unit.
       obtain ⟨qᵣ, rfl⟩ := hCᵢ VTy.unit (by rw [Handler.label]; exact hwriteR)
@@ -1515,6 +1715,7 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
           from ⟨rfl, hset.1, hset.2⟩) (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — writeTVar resumes `unit`.
       exact ⟨qᵣ, VTy.unit, Val.vunit, Val.vunit, _, _, εᵢ, rfl, rfl, (fun k => rfl), (fun k => rfl),
+        (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.unit Val.vunit Val.vunit; rw [VrelK, BaseRel]; exact ⟨rfl, rfl⟩), happ⟩
 
 /-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
@@ -1580,7 +1781,7 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
               cases fr₂ with
               | appF w₂ =>
                   rw [krelS_appF] at hK
-                  obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
+                  obtain ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
                   rw [splitAt_appF, Option.map_eq_some_iff] at hsp
                   obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
@@ -1588,7 +1789,7 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                   obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
                   refine ⟨Frame.appF w₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
                     by rw [splitAt_appF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
-                  rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, hin⟩
+                  rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, hin⟩
               | _ => simp only [KrelS] at hK
           | handleF hh₁ =>
               cases fr₂ with
@@ -1605,7 +1806,7 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                       cases hh₁ <;> cases hh₂ <;>
                         simp_all only [HandlerRel, handlesOp] <;> obtain ⟨rfl, _⟩ := hHRtop <;> assumption
                     refine ⟨[], K₂', hh₂, C, C, e, splitAt_handleF_hit K₂' hcatch2, hHRtop, ?_, htail, hres⟩
-                    rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+                    rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
                   · simp only [Bool.not_eq_true] at hcatch
                     rw [splitAt_handleF_miss K₁' hcatch, Option.map_eq_some_iff] at hsp
                     obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp

@@ -517,7 +517,8 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
       match K₁, K₂ with
       -- nil: hole type = answer type; observe related RETURNS (the biorthogonal base / return-half).
       | [], [] =>
-          C = D ∧ (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
+          C = D ∧ (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+            Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK n A v₁ v₂ →
             CoApproxC_le n ([], Comp.ret v₁) ([], Comp.ret v₂))
       -- letF: hole is a returner `F q A`; frame body ▷-guarded at `m < n`, tail at continuation B.
       -- The continuation's row `φ` is bound existentially, AND the TAIL is at `φ` (not the ambient ε):
@@ -527,13 +528,15 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
       -- "tail at ε" shape created a spurious antitone/monotone polarity clash.)
       | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂') =>
           ∃ q A B φ, C = CTy.F q A ∧
-            (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+            (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+              Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
               CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
             ∧ KrelS n B D φ K₁' K₂'
       -- appF: hole is an arrow `arr q A B`; cap is the appF arg, tail at codomain B.
       | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂') =>
           ∃ q A B, C = CTy.arr q A B ∧
-            Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁' K₂'
+            Val.Closed w₁ ∧ Val.Closed w₂ ∧ Val.CapClosed w₁ ∧ Val.CapClosed w₂ ∧
+            VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁' K₂'
       -- handleF: tail recurses at the same hole type (handler return = identity, ADR-0023 Q6, so the
       -- block's returner type = the body's = the tail's hole type — `C` is preserved across the frame).
       -- ◊4.5b-append: the handlers are RELATED (`HandlerRel n`), not necessarily EQUAL. `HandlerRel`
@@ -569,7 +572,7 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
             ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
                   (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
                 Bang.handlesOp h₁ h₁.label op = true →
-                Val.Closed w₁ → Val.Closed w₂ →
+                Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
                 (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
                 KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
                 -- the captured continuation's hole `Cᵢ` is a RETURNER at the op-RESULT type (the resume
@@ -593,7 +596,8 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
                 -- the resume value + its captured continuation, made first-class. -/
                 (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
                     cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-                    Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+                    Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧
+                    VrelK m Aᵣ r₁ r₂ ∧
                     KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ'))
       | _, _ => False
 termination_by n _ _ _ K _ => (n, 1, K.length, 0)
@@ -609,14 +613,16 @@ end
 -- DISCOVERY-IC per-case `@[simp]` equation lemmas (so downstream proofs unfold cleanly).
 @[simp] theorem krelS_nil {n : Nat} {C D : CTy Eff Mult} {ε : Eff} :
     KrelS n C D ε [] [] ↔
-      (C = D ∧ ∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
+      (C = D ∧ ∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+        Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK n A v₁ v₂ →
         CoApproxC_le n ([], Comp.ret v₁) ([], Comp.ret v₂)) := by
   rw [KrelS]
 
 @[simp] theorem krelS_letF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {N₁ N₂ : Comp} {K₁ K₂ : Stack} :
     KrelS n C D ε (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) ↔
       ∃ q A B φ, C = CTy.F q A ∧
-        (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
+        (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
+          Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
           CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
         ∧ KrelS n B D φ K₁ K₂ := by
   rw [KrelS]
@@ -624,7 +630,8 @@ end
 @[simp] theorem krelS_appF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {w₁ w₂ : Val} {K₁ K₂ : Stack} :
     KrelS n C D ε (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂) ↔
       ∃ q A B, C = CTy.arr q A B ∧
-        Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁ K₂ := by
+        Val.Closed w₁ ∧ Val.Closed w₂ ∧ Val.CapClosed w₁ ∧ Val.CapClosed w₂ ∧
+        VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁ K₂ := by
   rw [KrelS]
 
 /-- ◊4.5b-append the RELATIONAL handler condition (state lives IN the handler, related-not-equal). Fixes
@@ -651,7 +658,7 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
         ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
             Bang.handlesOp h h.label op = true →
-            Val.Closed w₁ → Val.Closed w₂ →
+            Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
             (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
             KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
             (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
@@ -660,7 +667,8 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
             Bang.dispatchOn op w₂ (Kᵢ', h', K₂) = some cfg₂ →
             (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
                 cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-                Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+                Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧
+                VrelK m Aᵣ r₁ r₂ ∧
                 KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ'))) := by
   cases h <;> cases h' <;> simp only [KrelS, HandlerRel]
 
@@ -676,7 +684,7 @@ theorem crelK_adequacy_nil {n : Nat} {q : Mult} {A : VTy Eff Mult} {ε : Eff} {c
   rw [CrelK] at h
   apply h (CTy.F q A) [] []
   rw [krelS_nil]
-  refine ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ?_⟩
+  refine ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ _ _ => ?_⟩
   exact ⟨1, v₂, rfl⟩
 
 
@@ -727,17 +735,17 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
     ∀ {K₁ K₂ : Stack}, m ≤ n → KrelS n C D ε K₁ K₂ → KrelS m C D ε K₁ K₂
   | [], [], hmn, hK => by
       rw [krelS_nil] at hK ⊢
-      exact ⟨hK.1, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+      exact ⟨hK.1, fun q A hC v₁ v₂ _ _ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
   | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), hmn, hK => by
       rw [krelS_letF] at hK ⊢
       obtain ⟨q, A, B, φ, hC, hbody, htail⟩ := hK
       exact ⟨q, A, B, φ, hC,
-        fun k hk v₁ v₂ hc₁ hc₂ hv => hbody k (lt_of_lt_of_le hk hmn) v₁ v₂ hc₁ hc₂ hv,
+        fun k hk v₁ v₂ hc₁ hc₂ hcc₁ hcc₂ hv => hbody k (lt_of_lt_of_le hk hmn) v₁ v₂ hc₁ hc₂ hcc₁ hcc₂ hv,
         KrelS_mono hmn htail⟩
   | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂'), hmn, hK => by
       rw [krelS_appF] at hK ⊢
-      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
-      exact ⟨q, A, B, hC, hcw₁, hcw₂, VrelK_mono hmn hw, KrelS_mono hmn htail⟩
+      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
+      exact ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, VrelK_mono hmn hw, KrelS_mono hmn htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hmn, hK => by
       rw [krelS_handleF] at hK ⊢
       obtain ⟨hh, htail, hres⟩ := hK
@@ -777,8 +785,8 @@ theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       rw [krelS_letF] at hK ⊢; exact hK
   | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂'), hεε', hK => by
       rw [krelS_appF] at hK ⊢
-      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
-      exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_anti hεε' htail⟩
+      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
+      exact ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, KrelS_eff_anti hεε' htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
       -- the resume conjunct is ε-free (dispatch + VrelK don't gate on ε) ⇒ passes through unchanged.
@@ -809,8 +817,8 @@ theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       rw [krelS_letF] at hK ⊢; exact hK
   | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂'), hεε', hK => by
       rw [krelS_appF] at hK ⊢
-      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
-      exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_mono hεε' htail⟩
+      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
+      exact ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, KrelS_eff_mono hεε' htail⟩
   | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
       exact ⟨hK.1, KrelS_eff_mono hεε' hK.2.1, hK.2.2⟩
@@ -859,16 +867,19 @@ theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
   | zero => rw [show Config.run 0 cfg = Result.oom from rfl] at hrun; exact absurd hrun (by simp)
   | succ k => rw [Config.run_step k cfg hne, hstep] at hrun; exact absurd hrun (by simp)
 
-/-- ◊4.5b `crelK_ret`: a `VrelK`-related RETURN at returner type `F q A` is `CrelK`-related. -/
+/-- ◊4.5b `crelK_ret`: a `VrelK`-related RETURN at returner type `F q A` is `CrelK`-related.
+ADR-0045 (cap-discipline): the returned values must be `Val.CapClosed` too (the `KrelS` nil/letF clauses
+now demand it — a returned value crossing a handler frame must carry no unbound ambient cap). -/
 theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ : Val}
-    (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂) (hv : VrelK n A v₁ v₂) :
+    (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂) (hcc₁ : Val.CapClosed v₁) (hcc₂ : Val.CapClosed v₂)
+    (hv : VrelK n A v₁ v₂) :
     CrelK n (CTy.F q A) e (Comp.ret v₁) (Comp.ret v₂) := by
   rw [CrelK]
   intro D K₁ K₂ hK
   induction K₁ generalizing K₂ A v₁ v₂ e with
   | nil =>
       cases K₂ with
-      | nil => rw [krelS_nil] at hK; exact hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
+      | nil => rw [krelS_nil] at hK; exact hK.2 q A rfl v₁ v₂ hc₁ hc₂ hcc₁ hcc₂ hv
       | cons fr K₂' => simp only [KrelS] at hK
   | cons fr K₁' ih =>
       cases fr with
@@ -886,7 +897,7 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                       refine coApproxC_le_anti_step
                         (cfg₁' := (K₁', Comp.subst v₁ N₁)) (cfg₂' := (K₂', Comp.subst v₂ N₂))
                         rfl (by intro u; simp) rfl (by intro u; simp) ?_
-                      have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ (VrelK_mono (Nat.le_succ k) hv)
+                      have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ hcc₁ hcc₂ (VrelK_mono (Nat.le_succ k) hv)
                       rw [CrelK] at hCrel
                       exact hCrel D K₁' K₂' (KrelS_mono (Nat.le_succ k) htail)
               | _ => simp only [KrelS] at hK
@@ -903,7 +914,7 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   refine coApproxC_le_reduce
                     (cfg₁' := (K₁', Comp.ret v₁)) (cfg₂' := (K₂', Comp.ret v₂))
                     rfl (by intro u; simp) rfl (by intro u; simp) ?_
-                  exact ih (K₂ := K₂') hc₁ hc₂ hv hK.2.1
+                  exact ih (K₂ := K₂') hc₁ hc₂ hcc₁ hcc₂ hv hK.2.1
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
 
@@ -1099,7 +1110,7 @@ theorem krelS_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemir
     [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (q : Mult) (A : VTy Eff Mult) (e : Eff) :
     KrelS n (CTy.F q A) (CTy.F q A) e ([] : Stack) ([] : Stack) := by
   rw [krelS_nil]
-  exact ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+  exact ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
 
 /-- WHOLE-PROGRAM adequacy: `Crel` implies the closed (empty-context) observation
 `Converges c₁ → Converges c₂`. The `⊑` restricted to `C = []`. Provable from `Crel` (= `CrelK`) +
