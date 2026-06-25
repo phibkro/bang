@@ -103,3 +103,29 @@ capability VALUE · `handle` is a BINDER → body at cutoff `+1` with lifted fil
    (the witness that broke absolute caps; should now read its own state).
 
 Then inc 4 (Metatheory) → inc 5 (LR/Compat, first green) → inc 6/7.
+
+### inc 3 dispatch layer — PRECISE map (worked out; the delicate core)
+
+DONE additionally: `substFrom_shiftFrom` proof family ported (perform/handle/vcap cases).
+
+The dispatch rewrite, by operation (use `scratch/IdentityKernelProbe` as the blueprint):
+- **DELETE (absolute-cap machinery, all dead under identity):** defs `staticSplit` · `CapResolves` ·
+  `CapResolvesKind` · `absSplit` · `absResolves` · `absResolvesKind` · `staticDispatch`; AND the dead proof
+  block (~L595–616 `staticSplit_*` lemmas, ~L624–713 `CapResolvesKind.*`/`CtxKindEq`/`hframes`/
+  `handlesOp_shiftCapFrom` — the WC orphans left from d1f0916). ⚠ INTERLEAVED with LIVE `LWConfig`
+  preservation lemmas (~L565–594) — delete per-lemma, do NOT sed a range.
+- **ADD:** `splitAtId : EvalCtx → Nat → Option (EvalCtx × Handler × EvalCtx)` (match handleF by identity n,
+  mirror IdentityKernelProbe.splitAtId) · `idResolvesKind : EvalCtx → Nat → Label → OpId → Prop` (the
+  handleF at id n exists ∧ handlesOp (ℓ,op) — for LWT) · `idDispatch K n op v := (splitAtId K n).bind
+  (dispatchOn n op v)`.
+- **THREAD IDENTITY through `dispatchOn`:** signature gains `(n : Nat)`; the state/transaction RESUME arms
+  reinstall `Frame.handleF n (.state …)` / `.transaction …` (the resumed continuation's performs still
+  target n). The legacy label-search `dispatch` (L383) is LR-only → delete from Operational (LR re-keys inc 5).
+- **RE-KEY handleF patterns** (`handleF h` → `handleF n h`, n often `_`): `splitAt` · `handlerCount`(+its 3
+  simp lemmas) · `handlersOf` · `retCtx` · `LWStack` · `NoWrapMiss`.
+- **LWT perform clause:** `absResolvesKind S cap ℓ op` → `idResolvesKind S (the capability's id) ℓ op`; the
+  `perform` AST is `perform c op v` with `c = vcap n ℓ` (or a vvar before install — LWT sees post-subst).
+  `LWVal`/`LWHandler` gain a `vcap` case (inert, like vunit).
+- **Source.step:** handle `(K, handle h M) ↦ (handleF (handlerCount K) h :: K, subst0 (vcap (handlerCount K)
+  h.label) M)`; perform `(K, perform (vcap n _) op v) ↦ idDispatch K n op v`; handleF-return drops n.
+- **capMigrate1/2 #guards:** rewrite to the new shape + ADD the insert-below-target witness (reads its own state).

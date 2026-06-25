@@ -142,6 +142,7 @@ theorem Val.substFrom_shiftFrom (k : Nat) (v : Val) :
     ∀ t : Val, Val.substFrom k v (Val.shiftFrom k t) = t
   | .vunit       => rfl
   | .vint _      => rfl
+  | .vcap _ _    => rfl
   | .vvar i      => by
       -- i < k: shift fixes it (vvar i), then subst: i ≠ k and ¬ i > k ⇒ vvar i.
       -- i ≥ k: shift bumps to i+1, then subst: i+1 ≠ k and i+1 > k ⇒ vvar ((i+1)-1) = vvar i.
@@ -170,11 +171,12 @@ theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
   | .app M w     => by
       simp only [Comp.shiftFrom, Comp.substFrom,
         Comp.substFrom_shiftFrom k v M, Val.substFrom_shiftFrom k v w]
-  | .perform cap ℓ op w   => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
+  | .perform cp op w   => by simp only [Comp.shiftFrom, Comp.substFrom,
+      Val.substFrom_shiftFrom k v cp, Val.substFrom_shiftFrom k v w]
   | .handle h M  => by
-      -- ADR-0053: caps are absolute root-levels — the body's filler is `v` UNCHANGED (no cap-shift).
+      -- ADR-0054: `handle` binds the capability ⇒ body recurses at `k+1` with the lifted filler (like `lam`).
       simp only [Comp.shiftFrom, Comp.substFrom,
-        Handler.substFrom_shiftFrom k v h, Comp.substFrom_shiftFrom k v M]
+        Handler.substFrom_shiftFrom k v h, Comp.substFrom_shiftFrom (k + 1) (Val.shift v) M]
   | .case w N₁ N₂ => by
       simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w,
         Comp.substFrom_shiftFrom (k + 1) (Val.shift v) N₁,
