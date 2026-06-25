@@ -267,124 +267,13 @@ theorem closeV_closed {v : Val} (hv : Val.Closed v) : ∀ δ : List Val, closeV 
   | u :: δ  => by
       rw [closeV, show Val.subst u v = v from hv.subst_at 0 u]; exact closeV_closed hv δ
 
-/-! ### B.1a″ Shift/subst commutation for a CLOSED filler
-
-The standard de Bruijn shift-after-subst commutation, specialized to a CLOSED filler `u` (so the filler
-needs no shifting): for `i ≤ k`,
-  `shiftFrom k (substFrom i u t) = substFrom i u (shiftFrom (k+1) t)`.
-This is what lets `closeV`/`closeC` over a closed length-`Γ` environment produce a CLOSED term (the
-`ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem). Mutual structural
-induction; `i ≤ k` so the binder cases step both cutoffs uniformly (`i+1 ≤ k+1`). -/
-mutual
-theorem Val.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u) :
-    ∀ (k i : Nat), i ≤ k → ∀ (t : Val),
-      Val.shiftFrom k (Val.substFrom i u t) = Val.substFrom i u (Val.shiftFrom (k + 1) t)
-  | _, _, _,    .vunit => rfl
-  | _, _, _,    .vint _ => rfl
-  | k, i, hik,  .vvar j => by
-      -- arithmetic: the subst removes index i; the shift bumps indices ≥ k+1. With i ≤ k they don't
-      -- interfere, and at j = i the closed filler u is shift-fixed.
-      rcases Nat.lt_trichotomy j i with hji | hji | hji
-      · -- j < i ≤ k: subst leaves vvar j (j<i); shift k leaves it (j<k); RHS shift(k+1) + subst leave it.
-        rw [Val.substFrom, if_neg (by omega), if_neg (by omega),
-          Val.shiftFrom, if_pos (by omega : j < k),
-          Val.shiftFrom, if_pos (by omega : j < k + 1),
-          Val.substFrom, if_neg (by omega), if_neg (by omega)]
-      · -- j = i: subst → u (closed, shift-fixed); RHS shift (k+1) leaves vvar i (i ≤ k < k+1) then subst → u.
-        subst hji
-        rw [Val.substFrom, if_pos rfl, hu.shiftFrom_eq,
-          Val.shiftFrom, if_pos (by omega : j < k + 1), Val.substFrom, if_pos rfl]
-      · -- j > i: subst → vvar (j-1); shift depends on j-1 vs k. RHS: shift (k+1) of vvar j, then subst.
-        rw [Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
-        rcases Nat.lt_or_ge j (k + 1) with hjk | hjk
-        · -- j < k+1 ⟹ j-1 < k: shift leaves vvar (j-1); RHS shift leaves vvar j, subst → vvar (j-1).
-          rw [Val.shiftFrom, if_pos (by omega : j - 1 < k),
-            Val.shiftFrom, if_pos (by omega : j < k + 1),
-            Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
-        · -- j ≥ k+1 ⟹ j-1 ≥ k: shift bumps to vvar j; RHS shift bumps to vvar (j+1), subst → vvar j.
-          rw [Val.shiftFrom, if_neg (by omega : ¬ j - 1 < k),
-            Val.shiftFrom, if_neg (by omega : ¬ j < k + 1),
-            Val.substFrom, if_neg (by omega), if_pos (by omega : j + 1 > i),
-            show j - 1 + 1 = j + 1 - 1 by omega]
-  | k, i, hik,  .vthunk M => by
-      simp only [Val.shiftFrom, Val.substFrom]
-      rw [Comp.shiftFrom_substFrom_closed hu hucap k i hik M]
-  | k, i, hik,  .inl w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-  | k, i, hik,  .inr w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-  | k, i, hik,  .pair a b => by
-      simp only [Val.shiftFrom, Val.substFrom]
-      rw [Val.shiftFrom_substFrom_closed hu hucap k i hik a, Val.shiftFrom_substFrom_closed hu hucap k i hik b]
-  | k, i, hik,  .fold w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-
-theorem Comp.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u) :
-    ∀ (k i : Nat), i ≤ k → ∀ (t : Comp),
-      Comp.shiftFrom k (Comp.substFrom i u t) = Comp.substFrom i u (Comp.shiftFrom (k + 1) t)
-  | k, i, hik, .ret w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-  | k, i, hik, .letC M N => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Comp.shiftFrom_substFrom_closed hu hucap k i hik M,
-        Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) N]
-  | k, i, hik, .force w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-  | k, i, hik, .lam M => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) M]
-  | k, i, hik, .app M w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Comp.shiftFrom_substFrom_closed hu hucap k i hik M, Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-  | k, i, hik, .perform _ ℓ op w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-  | k, i, hik, .handle h M => by
-      -- ADR-0045: `Comp.substFrom i u (handle h M)` cap-shifts the body filler to `u.shiftCap`; the
-      -- `Val.CapClosed u` premise (`hucap.shiftCap`) vanishes it back to `u`, restoring the IH's shape.
-      simp only [Comp.shiftFrom, Comp.substFrom, hucap.shiftCap]
-      rw [Handler.shiftFrom_substFrom_closed hu hucap k i hik h, Comp.shiftFrom_substFrom_closed hu hucap k i hik M]
-  | k, i, hik, .case w N₁ N₂ => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w,
-        Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) N₁,
-        Comp.shiftFrom_substFrom_closed hu hucap (k + 1) (i + 1) (by omega) N₂]
-  | k, i, hik, .split w N => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w,
-        Comp.shiftFrom_substFrom_closed hu hucap (k + 2) (i + 2) (by omega) N]
-  | k, i, hik, .unfold w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik w]
-  | _, _, _, .oom => rfl
-  | _, _, _, .wrong _ => rfl
-
-theorem Handler.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u) :
-    ∀ (k i : Nat), i ≤ k → ∀ (h : Handler),
-      Handler.shiftFrom k (Handler.substFrom i u h) = Handler.substFrom i u (Handler.shiftFrom (k + 1) h)
-  | k, i, hik, .state ℓ s => by
-      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closed hu hucap k i hik s]
-  | _, _, _, .throws _ => rfl
-  | _, _, _, .transaction _ _ => rfl
-end
-
-/-- `v` is SCOPED IN `m`: no free de Bruijn index `≥ m` is exposed (`shiftFrom k` fixes `v` for `k ≥ m`).
-`ScopedIn 0 = Closed`. A well-typed value `HasVTy γ Γ v A` is `ScopedIn Γ.length` (`HasVTy.shift_closed`),
-so the fundamental induction gets its scope bound from typing, not a fresh syntactic analysis. -/
-def Val.ScopedIn (m : Nat) (v : Val) : Prop := ∀ k, m ≤ k → Val.shiftFrom k v = v
-
-/-- Substituting the level-0 binder of an `(m+1)`-scoped value with a CLOSED filler drops the scope to
-`m`. Uses the shift/subst commutation: `shiftFrom k (subst u v) = subst u (shiftFrom (k+1) v) = subst u v`
-for `k ≥ m` (since `v` is `(m+1)`-scoped and `k+1 ≥ m+1`). -/
-theorem Val.ScopedIn.subst_closed {m : Nat} {u v : Val} (hu : Val.Closed u) (hucap : Val.CapClosed u)
-    (hv : Val.ScopedIn (m + 1) v) : Val.ScopedIn m (Val.subst u v) := by
-  intro k hk
-  rw [Val.subst, Val.shiftFrom_substFrom_closed hu hucap k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
-
-/-! ### ADR-0045 (Inc 0b) — `shiftCap` commutations (the B-probe lemmas, promoted) + `Val.CapScopedIn`
+/-! ### ADR-0045 (Inc 0b) — `shiftCap` commutations (the B-probe lemmas, promoted)
 
 The `shiftCapFrom` operation COMMUTES with `substFrom`/`shiftFrom`/itself — it touches only `perform cap`
 nodes (orthogonal to de-Bruijn indices). These are the foundations the cap-closedness descent
-(`closeV_capClosed_scoped`) needs to push `shiftCapFrom` through `subst`. Build-verified in the Inc-0b
-B-probe; promoted here as real lemmas (axiom-clean). -/
+(`closeV_capClosed_scoped`) needs to push `shiftCapFrom` through `subst`, AND the `Closed.shiftCap`
+helper the route-B swap-layer reproof consumes (hence hoisted ABOVE the `_closed` blocks). Build-verified
+in the Inc-0b B-probe; promoted here as real lemmas (axiom-clean). -/
 
 /-! `shiftCapFrom` commutes with the de-Bruijn `shiftFrom` (orthogonal indices). -/
 mutual
@@ -425,6 +314,129 @@ theorem Handler.shiftCapFrom_shiftFrom : ∀ (d k : Nat) (h : Handler),
   | _, _, .throws _ => rfl
   | _, _, .transaction _ _ => rfl
 end
+
+/-- `Val.Closed` is preserved by `Val.shiftCap` — de-Bruijn closedness and cap-shift are orthogonal
+(`shiftCapFrom_shiftFrom`), so bumping a closed value's ambient caps keeps it de-Bruijn-closed. This is
+what lets the `substFrom_swap_closed` `handle` arm recurse on the cap-shifted fillers (`shiftCap v`/
+`shiftCap w`) WITHOUT a `CapClosed` premise — the IH's `Val.Closed` hypotheses survive the cap-shift. -/
+theorem Val.Closed.shiftCap {v : Val} (h : Val.Closed v) : Val.Closed (Val.shiftCap v) := by
+  intro k
+  rw [show Val.shiftCap v = Val.shiftCapFrom 0 v from rfl,
+    ← Val.shiftCapFrom_shiftFrom 0 k v, Val.Closed.shiftFrom_eq h k]
+
+/-! ### B.1a″ Shift/subst commutation for a CLOSED filler
+
+The standard de Bruijn shift-after-subst commutation, specialized to a CLOSED filler `u` (so the filler
+needs no shifting): for `i ≤ k`,
+  `shiftFrom k (substFrom i u t) = substFrom i u (shiftFrom (k+1) t)`.
+This is what lets `closeV`/`closeC` over a closed length-`Γ` environment produce a CLOSED term (the
+`ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem). Mutual structural
+induction; `i ≤ k` so the binder cases step both cutoffs uniformly (`i+1 ≤ k+1`). -/
+-- ADR-0045 route-B (`{u}` quantified into the motive; the `handle` arm recurses at `shiftCap u`,
+-- `Val.Closed` preserved by `Closed.shiftCap`; no `CapClosed`).
+mutual
+theorem Val.shiftFrom_substFrom_closed :
+    ∀ {u : Val}, Val.Closed u → ∀ (k i : Nat), i ≤ k → ∀ (t : Val),
+      Val.shiftFrom k (Val.substFrom i u t) = Val.substFrom i u (Val.shiftFrom (k + 1) t)
+  | _, _,  _, _, _,    .vunit => rfl
+  | _, _,  _, _, _,    .vint _ => rfl
+  | u, hu, k, i, hik,  .vvar j => by
+      -- arithmetic: the subst removes index i; the shift bumps indices ≥ k+1. With i ≤ k they don't
+      -- interfere, and at j = i the closed filler u is shift-fixed.
+      rcases Nat.lt_trichotomy j i with hji | hji | hji
+      · -- j < i ≤ k: subst leaves vvar j (j<i); shift k leaves it (j<k); RHS shift(k+1) + subst leave it.
+        rw [Val.substFrom, if_neg (by omega), if_neg (by omega),
+          Val.shiftFrom, if_pos (by omega : j < k),
+          Val.shiftFrom, if_pos (by omega : j < k + 1),
+          Val.substFrom, if_neg (by omega), if_neg (by omega)]
+      · -- j = i: subst → u (closed, shift-fixed); RHS shift (k+1) leaves vvar i (i ≤ k < k+1) then subst → u.
+        subst hji
+        rw [Val.substFrom, if_pos rfl, hu.shiftFrom_eq,
+          Val.shiftFrom, if_pos (by omega : j < k + 1), Val.substFrom, if_pos rfl]
+      · -- j > i: subst → vvar (j-1); shift depends on j-1 vs k. RHS: shift (k+1) of vvar j, then subst.
+        rw [Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
+        rcases Nat.lt_or_ge j (k + 1) with hjk | hjk
+        · -- j < k+1 ⟹ j-1 < k: shift leaves vvar (j-1); RHS shift leaves vvar j, subst → vvar (j-1).
+          rw [Val.shiftFrom, if_pos (by omega : j - 1 < k),
+            Val.shiftFrom, if_pos (by omega : j < k + 1),
+            Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
+        · -- j ≥ k+1 ⟹ j-1 ≥ k: shift bumps to vvar j; RHS shift bumps to vvar (j+1), subst → vvar j.
+          rw [Val.shiftFrom, if_neg (by omega : ¬ j - 1 < k),
+            Val.shiftFrom, if_neg (by omega : ¬ j < k + 1),
+            Val.substFrom, if_neg (by omega), if_pos (by omega : j + 1 > i),
+            show j - 1 + 1 = j + 1 - 1 by omega]
+  | u, hu, k, i, hik,  .vthunk M => by
+      simp only [Val.shiftFrom, Val.substFrom]
+      rw [Comp.shiftFrom_substFrom_closed hu k i hik M]
+  | u, hu, k, i, hik,  .inl w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik,  .inr w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik,  .pair a b => by
+      simp only [Val.shiftFrom, Val.substFrom]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik a, Val.shiftFrom_substFrom_closed hu k i hik b]
+  | u, hu, k, i, hik,  .fold w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+
+theorem Comp.shiftFrom_substFrom_closed :
+    ∀ {u : Val}, Val.Closed u → ∀ (k i : Nat), i ≤ k → ∀ (t : Comp),
+      Comp.shiftFrom k (Comp.substFrom i u t) = Comp.substFrom i u (Comp.shiftFrom (k + 1) t)
+  | u, hu, k, i, hik, .ret w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik, .letC M N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.shiftFrom_substFrom_closed hu k i hik M,
+        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N]
+  | u, hu, k, i, hik, .force w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik, .lam M => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) M]
+  | u, hu, k, i, hik, .app M w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Comp.shiftFrom_substFrom_closed hu k i hik M, Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik, .perform _ ℓ op w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik, .handle h M => by
+      -- ADR-0045 route-B: `Comp.substFrom i u (handle h M)` cap-shifts the body filler to `shiftCap u`;
+      -- the IH recurses at `shiftCap u`, `Val.Closed` preserved by `Closed.shiftCap` (no `CapClosed`).
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Handler.shiftFrom_substFrom_closed hu k i hik h, Comp.shiftFrom_substFrom_closed (Val.Closed.shiftCap hu) k i hik M]
+  | u, hu, k, i, hik, .case w N₁ N₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik w,
+        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N₁,
+        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) N₂]
+  | u, hu, k, i, hik, .split w N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik w,
+        Comp.shiftFrom_substFrom_closed hu (k + 2) (i + 2) (by omega) N]
+  | u, hu, k, i, hik, .unfold w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | _, _, _, _, _, .oom => rfl
+  | _, _, _, _, _, .wrong _ => rfl
+
+theorem Handler.shiftFrom_substFrom_closed :
+    ∀ {u : Val}, Val.Closed u → ∀ (k i : Nat), i ≤ k → ∀ (h : Handler),
+      Handler.shiftFrom k (Handler.substFrom i u h) = Handler.substFrom i u (Handler.shiftFrom (k + 1) h)
+  | u, hu, k, i, hik, .state ℓ s => by
+      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik s]
+  | _, _, _, _, _, .throws _ => rfl
+  | _, _, _, _, _, .transaction _ _ => rfl
+end
+
+/-- `v` is SCOPED IN `m`: no free de Bruijn index `≥ m` is exposed (`shiftFrom k` fixes `v` for `k ≥ m`).
+`ScopedIn 0 = Closed`. A well-typed value `HasVTy γ Γ v A` is `ScopedIn Γ.length` (`HasVTy.shift_closed`),
+so the fundamental induction gets its scope bound from typing, not a fresh syntactic analysis. -/
+def Val.ScopedIn (m : Nat) (v : Val) : Prop := ∀ k, m ≤ k → Val.shiftFrom k v = v
+
+/-- Substituting the level-0 binder of an `(m+1)`-scoped value with a CLOSED filler drops the scope to
+`m`. Uses the shift/subst commutation: `shiftFrom k (subst u v) = subst u (shiftFrom (k+1) v) = subst u v`
+for `k ≥ m` (since `v` is `(m+1)`-scoped and `k+1 ≥ m+1`). -/
+theorem Val.ScopedIn.subst_closed {m : Nat} {u v : Val} (hu : Val.Closed u)
+    (hv : Val.ScopedIn (m + 1) v) : Val.ScopedIn m (Val.subst u v) := by
+  intro k hk
+  rw [Val.subst, Val.shiftFrom_substFrom_closed hu k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
 
 /-! `shiftCapFrom` self-swap (the lift-lift exchange): for `e ≤ d`,
 `shiftCapFrom (d+1) (shiftCapFrom e w) = shiftCapFrom e (shiftCapFrom d w)`. -/
@@ -568,16 +580,14 @@ theorem closeV_capClosed_scoped : ∀ {δ : List Val} {v : Val},
 substitutes each free index with a closed filler, dropping the scope by 1 each step to `ScopedIn 0` =
 `Closed`. The `ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem. -/
 theorem closeV_closed_scoped : ∀ {δ : List Val} {v : Val},
-    (∀ u ∈ δ, Val.Closed u) → (∀ u ∈ δ, Val.CapClosed u) → Val.ScopedIn δ.length v →
+    (∀ u ∈ δ, Val.Closed u) → Val.ScopedIn δ.length v →
       Val.Closed (closeV δ v)
-  | [],     v, _,  _,     hv => fun k => hv k (Nat.zero_le k)
-  | u :: δ, v, hδ, hδcap, hv => by
+  | [],     v, _,  hv => fun k => hv k (Nat.zero_le k)
+  | u :: δ, v, hδ, hv => by
       have hu : Val.Closed u := hδ u List.mem_cons_self
-      have hucap : Val.CapClosed u := hδcap u List.mem_cons_self
       have hδ' : ∀ w ∈ δ, Val.Closed w := fun w hw => hδ w (List.mem_cons_of_mem u hw)
-      have hδcap' : ∀ w ∈ δ, Val.CapClosed w := fun w hw => hδcap w (List.mem_cons_of_mem u hw)
       rw [closeV]
-      exact closeV_closed_scoped hδ' hδcap' (Val.ScopedIn.subst_closed hu hucap (by
+      exact closeV_closed_scoped hδ' (Val.ScopedIn.subst_closed hu (by
         simpa only [List.length_cons] using hv))
 
 
@@ -797,13 +807,17 @@ the values flowing through the CK machine's binders (a returned value, an env fi
 -- For CLOSED `v,w`: `substFrom k w (substFrom (k+1) v M) = substFrom k v (substFrom k w M)`. The
 -- cutoff `k` is generalized so the binder cases (which step to `k+1` with `shift v`/`shift w` = `v`/`w`)
 -- reuse the IH at the SAME fillers. Mutual with the `Val`/`Handler` analogues.
+-- ADR-0045 route-B: the `handle` arm cap-shifts the fillers (`shiftCap v`/`shiftCap w`), so the IH
+-- recurses at the SHIFTED fillers. We quantify `{v w}` INTO the motive (not the theorem signature) so
+-- that recursion is available, and reconstruct the IH's `Val.Closed` hypotheses via `Closed.shiftCap`
+-- (de-Bruijn closedness survives the cap-shift). NO `CapClosed` premise needed.
 mutual
-theorem Val.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) :
-    ∀ (k : Nat) (t : Val),
+theorem Val.substFrom_swap_closed :
+    ∀ {v w : Val}, Val.Closed v → Val.Closed w → ∀ (k : Nat) (t : Val),
       Val.substFrom k w (Val.substFrom (k + 1) v t) = Val.substFrom k v (Val.substFrom k w t)
-  | _, .vunit => rfl
-  | _, .vint _ => rfl
-  | k, .vvar i => by
+  | _, _, _, _, _, .vunit => rfl
+  | _, _, _, _, _, .vint _ => rfl
+  | v, w, hv, hw, k, .vvar i => by
       -- both substs on a variable reduce to nested `if`s over `i vs k`/`k+1`; `split_ifs` + `omega`
       -- discharges the index arithmetic. In the two FILLED-SLOT branches the outer subst lands on a
       -- closed filler, fixed by `Closed.subst_at`; elsewhere it lands on another `vvar` (reduce again).
@@ -825,52 +839,52 @@ theorem Val.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Clos
           simp only [Val.substFrom, if_neg (show ¬ i = k + 1 by omega), if_pos (show i > k + 1 by omega),
             if_neg (show ¬ i = k by omega), if_pos (show i > k by omega),
             if_neg (show ¬ i - 1 = k by omega), if_pos (show i - 1 > k by omega)]
-  | k, .vthunk M => by
-      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed hv hw hvcap hwcap k M]
-  | k, .inl u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
-  | k, .inr u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
-  | k, .pair u₁ u₂ => by
+  | v, w, hv, hw, k, .vthunk M => by
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed hv hw k M]
+  | v, w, hv, hw, k, .inl u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .inr u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .pair u₁ u₂ => by
       simp only [Val.substFrom]
-      rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u₁, Val.substFrom_swap_closed hv hw hvcap hwcap k u₂]
-  | k, .fold u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
+      rw [Val.substFrom_swap_closed hv hw k u₁, Val.substFrom_swap_closed hv hw k u₂]
+  | v, w, hv, hw, k, .fold u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
 
-theorem Comp.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) :
-    ∀ (k : Nat) (t : Comp),
+theorem Comp.substFrom_swap_closed :
+    ∀ {v w : Val}, Val.Closed v → Val.Closed w → ∀ (k : Nat) (t : Comp),
       Comp.substFrom k w (Comp.substFrom (k + 1) v t) = Comp.substFrom k v (Comp.substFrom k w t)
-  | k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
-  | k, .letC M N => by
+  | v, w, hv, hw, k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .letC M N => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed hv hw hvcap hwcap k M, Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) N]
-  | k, .force u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
-  | k, .lam M => by
+      rw [Comp.substFrom_swap_closed hv hw k M, Comp.substFrom_swap_closed hv hw (k + 1) N]
+  | v, w, hv, hw, k, .force u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .lam M => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) M]
-  | k, .app M u => by
+      rw [Comp.substFrom_swap_closed hv hw (k + 1) M]
+  | v, w, hv, hw, k, .app M u => by
       simp only [Comp.substFrom]
-      rw [Comp.substFrom_swap_closed hv hw hvcap hwcap k M, Val.substFrom_swap_closed hv hw hvcap hwcap k u]
-  | k, .perform _ ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
-  | k, .handle h M => by
-      -- ADR-0045: both substs cap-shift the body (`v.shiftCap`/`w.shiftCap`); the CapClosed premises
-      -- vanish them, restoring the bare `v`/`w` the IH swaps over.
-      simp only [Comp.substFrom, hvcap.shiftCap, hwcap.shiftCap]
-      rw [Handler.substFrom_swap_closed hv hw hvcap hwcap k h, Comp.substFrom_swap_closed hv hw hvcap hwcap k M]
-  | k, .case u N₁ N₂ => by
+      rw [Comp.substFrom_swap_closed hv hw k M, Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .perform _ ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .handle h M => by
+      -- ADR-0045 route-B: both substs cap-shift the body (`shiftCap v`/`shiftCap w`); the IH recurses at
+      -- the SHIFTED fillers, whose `Val.Closed` survives via `Closed.shiftCap` (no `CapClosed` premise).
+      simp only [Comp.substFrom]
+      rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed (Val.Closed.shiftCap hv) (Val.Closed.shiftCap hw) k M]
+  | v, w, hv, hw, k, .case u N₁ N₂ => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u,
-        Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) N₁, Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 1) N₂]
-  | k, .split u N => by
+      rw [Val.substFrom_swap_closed hv hw k u,
+        Comp.substFrom_swap_closed hv hw (k + 1) N₁, Comp.substFrom_swap_closed hv hw (k + 1) N₂]
+  | v, w, hv, hw, k, .split u N => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u, Comp.substFrom_swap_closed hv hw hvcap hwcap (k + 2) N]
-  | k, .unfold u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k u]
-  | _, .oom => rfl
-  | _, .wrong _ => rfl
+      rw [Val.substFrom_swap_closed hv hw k u, Comp.substFrom_swap_closed hv hw (k + 2) N]
+  | v, w, hv, hw, k, .unfold u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | _, _, _, _, _, .oom => rfl
+  | _, _, _, _, _, .wrong _ => rfl
 
-theorem Handler.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) :
-    ∀ (k : Nat) (h : Handler),
+theorem Handler.substFrom_swap_closed :
+    ∀ {v w : Val}, Val.Closed v → Val.Closed w → ∀ (k : Nat) (h : Handler),
       Handler.substFrom k w (Handler.substFrom (k + 1) v h) = Handler.substFrom k v (Handler.substFrom k w h)
-  | k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed hv hw hvcap hwcap k s]
-  | _, .throws _ => rfl
-  | _, .transaction _ _ => rfl
+  | v, w, hv, hw, k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed hv hw k s]
+  | _, _, _, _, _, .throws _ => rfl
+  | _, _, _, _, _, .transaction _ _ => rfl
 end
 
 /-! ### B.1c′ NON-ADJACENT substitution-swap (for the d=2 `split` descent)
@@ -881,13 +895,15 @@ swap above (`i, i+1`) doesn't reach it, so here is the general `i ≤ j` form, b
   `substFrom i w (substFrom (j+1) u t) = substFrom j u (substFrom i w t)`.
 The adjacent lemma is the `i = j` instance; this generalizes the cutoff gap. Mutual structural
 induction; the binder cases step BOTH cutoffs (`i+1 ≤ j+1`). -/
+-- ADR-0045 route-B (`{u w}` quantified into the motive; the `handle` arm recurses at `shiftCap u`/
+-- `shiftCap w`, `Val.Closed` preserved by `Closed.shiftCap`; no `CapClosed`).
 mutual
-theorem Val.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) (hucap : Val.CapClosed u) (hwcap : Val.CapClosed w) :
-    ∀ (i j : Nat), i ≤ j → ∀ (t : Val),
+theorem Val.substFrom_swap_closed_ge :
+    ∀ {u w : Val}, Val.Closed u → Val.Closed w → ∀ (i j : Nat), i ≤ j → ∀ (t : Val),
       Val.substFrom i w (Val.substFrom (j + 1) u t) = Val.substFrom j u (Val.substFrom i w t)
-  | _, _, _,   .vunit => rfl
-  | _, _, _,   .vint _ => rfl
-  | i, j, hij, .vvar m => by
+  | _, _, _, _, _, _, _,   .vunit => rfl
+  | _, _, _, _, _, _, _,   .vint _ => rfl
+  | u, w, hu, hw, i, j, hij, .vvar m => by
       -- the two substs remove levels i and j+1 (i ≤ j), renumbering disjointly; at the removed slots
       -- the closed fillers w (at i) / u (at j+1) are subst-fixed.
       rcases Nat.lt_trichotomy m i with hmi | hmi | hmi
@@ -915,57 +931,57 @@ theorem Val.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.C
             if_neg (show ¬ m - 1 = i by omega), if_pos (show m - 1 > i by omega),
             if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
             if_neg (show ¬ m - 1 = j by omega), if_pos (show m - 1 > j by omega)]
-  | i, j, hij, .vthunk M => by
-      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M]
-  | i, j, hij, .inl t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
-  | i, j, hij, .inr t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
-  | i, j, hij, .pair a b => by
+  | u, w, hu, hw, i, j, hij, .vthunk M => by
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed_ge hu hw i j hij M]
+  | u, w, hu, hw, i, j, hij, .inl t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .inr t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .pair a b => by
       simp only [Val.substFrom]
-      rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij a, Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij b]
-  | i, j, hij, .fold t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij a, Val.substFrom_swap_closed_ge hu hw i j hij b]
+  | u, w, hu, hw, i, j, hij, .fold t => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
 
-theorem Comp.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) (hucap : Val.CapClosed u) (hwcap : Val.CapClosed w) :
-    ∀ (i j : Nat), i ≤ j → ∀ (t : Comp),
+theorem Comp.substFrom_swap_closed_ge :
+    ∀ {u w : Val}, Val.Closed u → Val.Closed w → ∀ (i j : Nat), i ≤ j → ∀ (t : Comp),
       Comp.substFrom i w (Comp.substFrom (j + 1) u t) = Comp.substFrom j u (Comp.substFrom i w t)
-  | i, j, hij, .ret t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
-  | i, j, hij, .letC M N => by
+  | u, w, hu, hw, i, j, hij, .ret t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .letC M N => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M,
-        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) N]
-  | i, j, hij, .force t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
-  | i, j, hij, .lam M => by
+      rw [Comp.substFrom_swap_closed_ge hu hw i j hij M,
+        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N]
+  | u, w, hu, hw, i, j, hij, .force t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .lam M => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) M]
-  | i, j, hij, .app M t => by
+      rw [Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) M]
+  | u, w, hu, hw, i, j, hij, .app M t => by
       simp only [Comp.substFrom]
-      rw [Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M, Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
-  | i, j, hij, .perform _ ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
-  | i, j, hij, .handle h M => by
-      -- ADR-0045: the `handle` body filler cap-shifts (`shiftCap = shiftCapFrom 0`, independent of i/j);
-      -- the CapClosed premises vanish it.
-      simp only [Comp.substFrom, hucap.shiftCap, hwcap.shiftCap]
-      rw [Handler.substFrom_swap_closed_ge hu hw hucap hwcap i j hij h, Comp.substFrom_swap_closed_ge hu hw hucap hwcap i j hij M]
-  | i, j, hij, .case t N₁ N₂ => by
+      rw [Comp.substFrom_swap_closed_ge hu hw i j hij M, Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .perform _ ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .handle h M => by
+      -- ADR-0045 route-B: the `handle` body filler cap-shifts (`shiftCap = shiftCapFrom 0`, independent
+      -- of i/j); the IH recurses at the SHIFTED fillers, `Val.Closed` preserved by `Closed.shiftCap`.
+      simp only [Comp.substFrom]
+      rw [Handler.substFrom_swap_closed_ge hu hw i j hij h, Comp.substFrom_swap_closed_ge (Val.Closed.shiftCap hu) (Val.Closed.shiftCap hw) i j hij M]
+  | u, w, hu, hw, i, j, hij, .case t N₁ N₂ => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t,
-        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) N₁,
-        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 1) (j + 1) (by omega) N₂]
-  | i, j, hij, .split t N => by
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
+        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N₁,
+        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) N₂]
+  | u, w, hu, hw, i, j, hij, .split t N => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t,
-        Comp.substFrom_swap_closed_ge hu hw hucap hwcap (i + 2) (j + 2) (by omega) N]
-  | i, j, hij, .unfold t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij t]
-  | _, _, _, .oom => rfl
-  | _, _, _, .wrong _ => rfl
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
+        Comp.substFrom_swap_closed_ge hu hw (i + 2) (j + 2) (by omega) N]
+  | u, w, hu, hw, i, j, hij, .unfold t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | _, _, _, _, _, _, _, .oom => rfl
+  | _, _, _, _, _, _, _, .wrong _ => rfl
 
-theorem Handler.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.Closed w) (hucap : Val.CapClosed u) (hwcap : Val.CapClosed w) :
-    ∀ (i j : Nat), i ≤ j → ∀ (h : Handler),
+theorem Handler.substFrom_swap_closed_ge :
+    ∀ {u w : Val}, Val.Closed u → Val.Closed w → ∀ (i j : Nat), i ≤ j → ∀ (h : Handler),
       Handler.substFrom i w (Handler.substFrom (j + 1) u h)
         = Handler.substFrom j u (Handler.substFrom i w h)
-  | i, j, hij, .state ℓ s => by
-      simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw hucap hwcap i j hij s]
-  | _, _, _, .throws _ => rfl
-  | _, _, _, .transaction _ _ => rfl
+  | u, w, hu, hw, i, j, hij, .state ℓ s => by
+      simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij s]
+  | _, _, _, _, _, _, _, .throws _ => rfl
+  | _, _, _, _, _, _, _, .transaction _ _ => rfl
 end
 
 /-! ### B.1d The substitution-descent crux (`closeC_subst_comm`)
@@ -978,32 +994,30 @@ SAME fillers as `closeC δ` but at level 1; the level-0 `Comp.subst w` then comm
 
   shape: biernacki-popl18 §5.2 fundamental theorem — closing substitution `G⟦Γ⟧` commutes with the
          single binder-substitution introduced by `letC`/`lam`/`case`/`split` β-reduction. -/
-theorem closeC_subst_comm {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v) (hδcap : ∀ v ∈ δ, Val.CapClosed v)
-    {w : Val} (hw : Val.Closed w) (hwcap : Val.CapClosed w)
+theorem closeC_subst_comm {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v)
+    {w : Val} (hw : Val.Closed w)
     (N : Comp) :
     (closeCUnderBinders 1 δ N).subst w = closeC δ (Comp.subst w N) := by
   induction δ generalizing N with
   | nil => rfl
   | cons v δ ih =>
     have hv : Val.Closed v := hδ v List.mem_cons_self
-    have hvcap : Val.CapClosed v := hδcap v List.mem_cons_self
     have hδ' : ∀ u ∈ δ, Val.Closed u := fun u hu => hδ u (List.mem_cons_of_mem v hu)
-    have hδcap' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
     -- LHS: closeCUnderBinders 1 (v::δ) N = closeCUnderBinders 1 δ (substFrom 1 v N)  [shiftN 1 v = v].
     -- RHS: closeC (v::δ) (subst w N) = closeC δ (subst v (subst w N)).
     simp only [closeCUnderBinders, closeC, shiftN, hv.shift]
-    rw [ih hδ' hδcap' (Comp.substFrom 1 v N)]
+    rw [ih hδ' (Comp.substFrom 1 v N)]
     -- goal: closeC δ (subst w (substFrom 1 v N)) = closeC δ (subst v (subst w N))
     congr 1
-    -- subst w (substFrom 1 v N) = subst v (subst w N), i.e. the k=0 swap (closed + cap-closed v, w).
-    exact Comp.substFrom_swap_closed hv hw hvcap hwcap 0 N
+    -- subst w (substFrom 1 v N) = subst v (subst w N), i.e. the k=0 swap (closed v, w; route-B).
+    exact Comp.substFrom_swap_closed hv hw 0 N
 
 /-- General level-0 descent through `closeCUnderBinders (d+1)`: filling the outermost (level-0) binder
 with a CLOSED `w` commutes past the `d+1`-level fillers (closed), dropping the binder-depth by one. The
 engine behind `closeC_subst_comm` (d=0) and the d=2 `split` descent. Uses the NON-adjacent swap
 (`Comp.substFrom_swap_closed_ge` at `i=0, j=d`). -/
 theorem closeCUnderBinders_subst0 (d : Nat) {δ : List Val} (hδ : ∀ v ∈ δ, Val.Closed v)
-    (hδcap : ∀ v ∈ δ, Val.CapClosed v) {w : Val} (hw : Val.Closed w) (hwcap : Val.CapClosed w)
+    {w : Val} (hw : Val.Closed w)
     (N : Comp) :
     Comp.substFrom 0 w (closeCUnderBinders (d + 1) δ N)
       = closeCUnderBinders d δ (Comp.substFrom 0 w N) := by
@@ -1011,16 +1025,14 @@ theorem closeCUnderBinders_subst0 (d : Nat) {δ : List Val} (hδ : ∀ v ∈ δ,
   | nil => rfl
   | cons v δ ih =>
     have hv : Val.Closed v := hδ v List.mem_cons_self
-    have hvcap : Val.CapClosed v := hδcap v List.mem_cons_self
     have hδ' : ∀ u ∈ δ, Val.Closed u := fun u hu => hδ u (List.mem_cons_of_mem v hu)
-    have hδcap' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
     -- closeCUnderBinders (d+1) (v::δ) N = closeCUnderBinders (d+1) δ (substFrom (d+1) v N)  [shiftN=v].
     -- closeCUnderBinders d (v::δ) (subst₀ w N) = closeCUnderBinders d δ (substFrom d v (subst₀ w N)).
     simp only [closeCUnderBinders, shiftN_closed hv]
-    rw [ih hδ' hδcap' (Comp.substFrom (d + 1) v N)]
+    rw [ih hδ' (Comp.substFrom (d + 1) v N)]
     congr 1
     -- substFrom 0 w (substFrom (d+1) v N) = substFrom d v (substFrom 0 w N)  (non-adjacent swap, 0 ≤ d).
-    exact Comp.substFrom_swap_closed_ge hv hw hvcap hwcap 0 d (Nat.zero_le d) N
+    exact Comp.substFrom_swap_closed_ge hv hw 0 d (Nat.zero_le d) N
 
 /-- The d=2 substitution-descent for `split`: filling the TWO binders of `closeCUnderBinders 2 δ N`
 (the inner with `Val.shift w`, the outer with `v`, matching the `split (pair v w) N ↦ subst v (subst
@@ -1028,9 +1040,7 @@ theorem closeCUnderBinders_subst0 (d : Nat) {δ : List Val} (hδ : ∀ v ∈ δ,
 of `w` (which collapses `Val.shift w = w`) make it go through via two `closeCUnderBinders_subst0`
 descents. -/
 theorem closeC_subst2_comm {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u)
-    (hδcap : ∀ u ∈ δ, Val.CapClosed u)
-    {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w)
-    (hvcap : Val.CapClosed v) (hwcap : Val.CapClosed w) (N : Comp) :
+    {v w : Val} (hv : Val.Closed v) (hw : Val.Closed w) (N : Comp) :
     Comp.subst v (Comp.subst (Val.shift w) (closeCUnderBinders 2 δ N))
       = closeC δ (Comp.subst v (Comp.subst w N)) := by
   -- subst (shift w) = subst w (w closed); both `Comp.subst` are `substFrom 0`.
@@ -1038,9 +1048,9 @@ theorem closeC_subst2_comm {δ : List Val} (hδ : ∀ u ∈ δ, Val.Closed u)
   show Comp.substFrom 0 v (Comp.substFrom 0 w (closeCUnderBinders (1 + 1) δ N))
     = closeC δ (Comp.substFrom 0 v (Comp.substFrom 0 w N))
   -- inner descent (d=1): substFrom 0 w through closeCUnderBinders 2 = closeCUnderBinders 1 of the body.
-  rw [closeCUnderBinders_subst0 1 hδ hδcap hw hwcap N]
+  rw [closeCUnderBinders_subst0 1 hδ hw N]
   -- outer descent (d=0): substFrom 0 v through closeCUnderBinders 1 = closeCUnderBinders 0 = closeC.
-  rw [closeCUnderBinders_subst0 0 hδ hδcap hv hvcap (Comp.substFrom 0 w N), closeCUnderBinders_zero]
+  rw [closeCUnderBinders_subst0 0 hδ hv (Comp.substFrom 0 w N), closeCUnderBinders_zero]
 
 /-! ## B.3′ ◊4.5b sub-block (c) — `CrelK` head-step + value lemmas (the answer-typed migration)
 
@@ -1082,13 +1092,12 @@ theorem crelK_force {n : Nat} {φ : Eff} {B : CTy Eff Mult} {w₁ w₂ : Val}
 /-- ◊4.5b `unfold` of `VrelK`-related μ-values. `unfold (fold u) ↦ ret u` (CIStep); the ▷-head-step
 needs `CrelK m (ret u₁) (ret u₂)` at each `m < n`, from `crelK_ret` on the μ-payload. -/
 theorem crelK_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
-    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
-    (hccw₁ : Val.CapClosed w₁) (hccw₂ : Val.CapClosed w₂) (hv : VrelK n (VTy.mu A) w₁ w₂) :
+    (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂) (hv : VrelK n (VTy.mu A) w₁ w₂) :
     CrelK n (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
   rw [VrelK] at hv
   obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
   refine CrelK_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_
-    (fun m hm => crelK_ret hcw₁.fold_inv hcw₂.fold_inv hccw₁.fold_inv hccw₂.fold_inv (hu m hm))
+    (fun m hm => crelK_ret hcw₁.fold_inv hcw₂.fold_inv (hu m hm))
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
 
@@ -1105,7 +1114,7 @@ ambient tail. The continuation row `φ ≤ ε`; the tail weakens `ε → φ` via
 theorem krelS_letF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε φ : Eff}
     {N₁ N₂ : Comp} {K₁ K₂ : Stack} (hφε : φ ≤ ε)
     (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
-      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
+      VrelK m A v₁ v₂ →
       CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
     (hK : KrelS n B D ε K₁ K₂) :
     KrelS n (CTy.F q A) D ε (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) := by
@@ -1120,7 +1129,7 @@ theorem compatK_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult}
     {M₁ M₂ N₁' N₂' : Comp}
     (hM : CrelK n (CTy.F q1 A) φ₁ M₁ M₂)
     (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
-      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
+      VrelK m A v₁ v₂ →
       CrelK m B φ₂ (Comp.subst v₁ N₁') (Comp.subst v₂ N₂')) :
     CrelK n B (φ₁ ⊔ φ₂) (Comp.letC M₁ N₁') (Comp.letC M₂ N₂') := by
   rw [CrelK]
@@ -1139,11 +1148,10 @@ theorem compatK_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult}
 The appF frame doesn't bind a continuation row, so the tail stays at the ambient `ε` (no weakening). -/
 theorem krelS_appF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε : Eff}
     {v₁ v₂ : Val} {K₁ K₂ : Stack} (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂)
-    (hccv₁ : Val.CapClosed v₁) (hccv₂ : Val.CapClosed v₂)
     (hv : VrelK n A v₁ v₂) (hK : KrelS n B D ε K₁ K₂) :
     KrelS n (CTy.arr q A B) D ε (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) := by
   rw [krelS_appF]
-  exact ⟨q, A, B, rfl, hcv₁, hcv₂, hccv₁, hccv₂, hv, hK⟩
+  exact ⟨q, A, B, rfl, hcv₁, hcv₂, hv, hK⟩
 
 /-- ◊4.5b the `app` compat core at `CrelK` (the answer-typed `compat_app`). REFOCUS
 `(K, app M v) ↦ (appF v::K, M)`, then run `M` (related at `arr q A B`) through the appF-extended
@@ -1152,14 +1160,14 @@ theorem compatK_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
     {M₁ M₂ : Comp} {v₁ v₂ : Val}
     (hM : CrelK n (CTy.arr q A B) φ M₁ M₂)
     (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂)
-    (hccv₁ : Val.CapClosed v₁) (hccv₂ : Val.CapClosed v₂) (hv : VrelK n A v₁ v₂) :
+    (hv : VrelK n A v₁ v₂) :
     CrelK n B φ (Comp.app M₁ v₁) (Comp.app M₂ v₂) := by
   rw [CrelK]
   intro D K₁ K₂ hK
   refine coApproxC_le_reduce (cfg₁' := (Frame.appF v₁ :: K₁, M₁)) (cfg₂' := (Frame.appF v₂ :: K₂, M₂))
     rfl (by intro u; simp) rfl (by intro u; simp) ?_
   rw [CrelK] at hM
-  exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hccv₁ hccv₂ hv hK)
+  exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hv hK)
 
 /-- ◊4.5b the `lam` compat core at `CrelK` (the answer-typed `compat_lam`). A `lam` only β-reduces under
 an `appF` frame; other stacks are STUCK on a `lam` (observation vacuous). Stack induction: appF-headed
@@ -1168,7 +1176,7 @@ an `appF` frame; other stacks are STUCK on a `lam` (observation vacuous). Stack 
 `ret`). So only the appF case is non-vacuous. -/
 theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {φ : Eff}
     {M₁' M₂' : Comp}
-    (hbody : ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
+    (hbody : ∀ w₁ w₂, Val.Closed w₁ → Val.Closed w₂ →
       VrelK n A w₁ w₂ → CrelK n B φ (Comp.subst w₁ M₁') (Comp.subst w₂ M₂')) :
     CrelK n (CTy.arr q A B) φ (Comp.lam M₁') (Comp.lam M₂') := by
   rw [CrelK]
@@ -1185,12 +1193,12 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
               cases fr₂ with
               | appF w₂ =>
                   rw [krelS_appF] at hK
-                  obtain ⟨q', A', B', hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
+                  obtain ⟨q', A', B', hC, hcw₁, hcw₂, hw, htail⟩ := hK
                   rw [CTy.arr.injEq] at hC; obtain ⟨rfl, rfl, rfl⟩ := hC
                   -- β `(appF w::K', lam M') ↦ (K', M'.subst w)`; body IH at the SAME index, non-dropping.
                   refine coApproxC_le_reduce (cfg₁' := (K₁', Comp.subst w₁ M₁'))
                     (cfg₂' := (K₂', Comp.subst w₂ M₂')) rfl (by intro u; simp) rfl (by intro u; simp) ?_
-                  have hb := hbody w₁ w₂ hcw₁ hcw₂ hccw₁ hccw₂ hw
+                  have hb := hbody w₁ w₂ hcw₁ hcw₂ hw
                   rw [CrelK] at hb
                   exact hb D K₁' K₂' htail
               | _ => simp only [KrelS] at hK
@@ -1213,22 +1221,21 @@ IH on the `VrelK m`-related payload (the sum scrutinee gives the tag + payload).
 theorem compatK_case {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
     {w₁ w₂ : Val} {N₁₁ N₂₁ N₁₂ N₂₂ : Comp}
     (hw : VrelK n (VTy.sum A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
-    (hccw₁ : Val.CapClosed w₁) (hccw₂ : Val.CapClosed w₂)
     (hN₁ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
-      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m A v₁ v₂ →
+      VrelK m A v₁ v₂ →
       CrelK m C φ (Comp.subst v₁ N₁₁) (Comp.subst v₂ N₁₂))
     (hN₂ : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
-      Val.CapClosed v₁ → Val.CapClosed v₂ → VrelK m B v₁ v₂ →
+      VrelK m B v₁ v₂ →
       CrelK m C φ (Comp.subst v₁ N₂₁) (Comp.subst v₂ N₂₂)) :
     CrelK n C φ (Comp.case w₁ N₁₁ N₂₁) (Comp.case w₂ N₁₂ N₂₂) := by
   rw [VrelK] at hw
   rcases hw with ⟨u₁, u₂, rfl, rfl, hu⟩ | ⟨u₁, u₂, rfl, rfl, hu⟩
   · refine CrelK_head_step (c₁' := Comp.subst u₁ N₁₁) (c₂' := Comp.subst u₂ N₁₂) ?_ ?_
-      (fun m hm => hN₁ m hm u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv hccw₁.inl_inv hccw₂.inl_inv (VrelK_mono (le_of_lt hm) hu))
+      (fun m hm => hN₁ m hm u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv (VrelK_mono (le_of_lt hm) hu))
     · exact ⟨fun K => rfl, by intro v; simp⟩
     · exact ⟨fun K => rfl, by intro v; simp⟩
   · refine CrelK_head_step (c₁' := Comp.subst u₁ N₂₁) (c₂' := Comp.subst u₂ N₂₂) ?_ ?_
-      (fun m hm => hN₂ m hm u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv hccw₁.inr_inv hccw₂.inr_inv (VrelK_mono (le_of_lt hm) hu))
+      (fun m hm => hN₂ m hm u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv (VrelK_mono (le_of_lt hm) hu))
     · exact ⟨fun K => rfl, by intro v; simp⟩
     · exact ⟨fun K => rfl, by intro v; simp⟩
 
@@ -1237,9 +1244,7 @@ CIStep; the ▷-head-step needs the two-binder body related at every `m < n`. -/
 theorem compatK_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff}
     {w₁ w₂ : Val} {N₁' N₂' : Comp}
     (hw : VrelK n (VTy.prod A B) w₁ w₂) (hcw₁ : Val.Closed w₁) (hcw₂ : Val.Closed w₂)
-    (hccw₁ : Val.CapClosed w₁) (hccw₂ : Val.CapClosed w₂)
     (hN : ∀ m, m < n → ∀ a₁ a₂ b₁ b₂, Val.Closed a₁ → Val.Closed a₂ → Val.Closed b₁ → Val.Closed b₂ →
-      Val.CapClosed a₁ → Val.CapClosed a₂ → Val.CapClosed b₁ → Val.CapClosed b₂ →
       VrelK m A a₁ a₂ → VrelK m B b₁ b₂ →
       CrelK m C φ (Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
                   (Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂'))) :
@@ -1248,12 +1253,10 @@ theorem compatK_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Ef
   obtain ⟨a₁, a₂, b₁, b₂, rfl, rfl, ha, hb⟩ := hw
   obtain ⟨hca₁, hcb₁⟩ := hcw₁.pair_inv
   obtain ⟨hca₂, hcb₂⟩ := hcw₂.pair_inv
-  obtain ⟨hcca₁, hccb₁⟩ := hccw₁.pair_inv
-  obtain ⟨hcca₂, hccb₂⟩ := hccw₂.pair_inv
   refine CrelK_head_step
     (c₁' := Comp.subst a₁ (Comp.subst (Val.shift b₁) N₁'))
     (c₂' := Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂')) ?_ ?_
-    (fun m hm => hN m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ hcca₁ hcca₂ hccb₁ hccb₂
+    (fun m hm => hN m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂
       (VrelK_mono (le_of_lt hm) ha) (VrelK_mono (le_of_lt hm) hb))
   · exact ⟨fun K => rfl, by intro v; simp⟩
   · exact ⟨fun K => rfl, by intro v; simp⟩
@@ -1278,7 +1281,7 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h₁ h�
     (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
         Bang.handlesOp h₁ h₁.label op = true →
-        Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
+        Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
         KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
@@ -1287,7 +1290,7 @@ theorem krelS_handleF_intro {n : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h₁ h�
         Bang.dispatchOn op w₂ (Kᵢ', h₂, K₂) = some cfg₂ →
         (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
             cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-            Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+            Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
             KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ')) :
     KrelS n C D e (Frame.handleF h₁ :: K₁) (Frame.handleF h₂ :: K₂) := by
   rw [krelS_handleF]; exact ⟨hHR, KrelS_eff_cast hK, hres⟩
@@ -1331,11 +1334,11 @@ plain `CoApproxC_le m cfg₁ cfg₂`. This is the T=[] consumer; the nested case
 theorem coApproxC_le_of_resumeDecomp {m : Nat} {D : CTy Eff Mult} {cfg₁ cfg₂ : Config}
     (h : ∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
         cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-        Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+        Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
         KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ') :
     CoApproxC_le m cfg₁ cfg₂ := by
-  obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, rfl, rfl, hcr₁, hcr₂, hccr₁, hccr₂, hr, hS⟩ := h
-  have hret := crelK_ret (q := qᵣ) (A := Aᵣ) (e := eₛ) hcr₁ hcr₂ hccr₁ hccr₂ hr
+  obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, rfl, rfl, hcr₁, hcr₂, hr, hS⟩ := h
+  have hret := crelK_ret (q := qᵣ) (A := Aᵣ) (e := eₛ) hcr₁ hcr₂ hr
   rw [CrelK] at hret
   exact hret D Sᵢ Sᵢ' hS
 
@@ -1365,7 +1368,7 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
     (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ : CTy Eff Mult) (εⱼ : Eff)
               (Kⱼ Kⱼ' : Stack) (cfg₁ cfg₂ : Config),
         Bang.handlesOp h₁ h₁.label op = true →
-        Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
+        Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK k Aop w₁ w₂) →
         KrelS k Cⱼ Dᵢ εⱼ Kⱼ Kⱼ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
@@ -1374,7 +1377,7 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
         Bang.dispatchOn op w₂ (Kⱼ', h₂, K₂) = some cfg₂ →
         (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
             cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-            Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK k Aᵣ r₁ r₂ ∧
+            Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ ∧
             KrelS k (CTy.F qᵣ Aᵣ) D' eₛ Sᵢ Sᵢ')) :
     KrelS m Cᵢ D' εᵢ (Kᵢ ++ Frame.handleF h₁ :: K₁) (Kᵢ' ++ Frame.handleF h₂ :: K₂) := by
   -- ◊4.5b-strengthen: WELL-FOUNDED recursion on `(m, Kᵢ.length)`. letF/appF recurse on the shorter
@@ -1393,9 +1396,9 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
       exact ⟨q, A, B, φ, hC, hbody, krelS_append htin hHR htail hres⟩
   | (Frame.appF u₁ :: Kᵢrest), (Frame.appF u₂ :: Kᵢ'rest) =>
       rw [krelS_appF] at hin
-      obtain ⟨q, A, B, hC, hcu₁, hcu₂, hccu₁, hccu₂, hu, htin⟩ := hin
+      obtain ⟨q, A, B, hC, hcu₁, hcu₂, hu, htin⟩ := hin
       rw [List.cons_append, List.cons_append, krelS_appF]
-      exact ⟨q, A, B, hC, hcu₁, hcu₂, hccu₁, hccu₂, hu, krelS_append htin hHR htail hres⟩
+      exact ⟨q, A, B, hC, hcu₁, hcu₂, hu, krelS_append htin hHR htail hres⟩
   | (Frame.handleF hh₁ :: Kᵢrest), (Frame.handleF hh₂ :: Kᵢ'rest) =>
       -- ◊4.5b-strengthen CLOSE: a handler NESTED in the captured continuation. The structural shape
       -- closes HandlerRel + the recursive-append tail; the resume conjunct over the APPENDED tail is now
@@ -1409,7 +1412,7 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
       obtain ⟨hHRtop, htin, hres_inner⟩ := hin
       rw [List.cons_append, List.cons_append, krelS_handleF]
       refine ⟨hHRtop, krelS_append htin hHR htail hres, ?_⟩
-      intro k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKj hCⱼ hd₁ hd₂
+      intro k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hd₁ hd₂
       -- recover the INNER dispatch (over `Kᵢrest`) by computing it, then lift via `dispatchOn_append_outer`.
       obtain ⟨cfgᵢ₁, hdi₁⟩ : ∃ c, Bang.dispatchOn op w₁ (Kⱼ, hh₁, Kᵢrest) = some c := by
         cases hh₁ with
@@ -1427,13 +1430,13 @@ theorem krelS_append {m : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h
       obtain rfl := (Option.some.injEq _ _).mp hlift₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hlift₂.symm
       -- apply the inner conjunct to the inner dispatch → the decomposition `cfgᵢⱼ = (Sᵢ, ret rⱼ)`.
-      obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcf₁, hcf₂, hcr₁, hcr₂, hccr₁, hccr₂, hr, hSrel⟩ :=
-        hres_inner k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfgᵢ₁ cfgᵢ₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKj hCⱼ hdi₁ hdi₂
+      obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcf₁, hcf₂, hcr₁, hcr₂, hr, hSrel⟩ :=
+        hres_inner k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfgᵢ₁ cfgᵢ₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hdi₁ hdi₂
       subst hcf₁; subst hcf₂
       -- the appended config is `(Sᵢ ++ handleF h₁::K₁, ret rⱼ)`; rebuild the decomposition over the
       -- append by `krelS_append` at the dropped index `k` (the step-index pays for the longer `Sᵢ`).
       refine ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ ++ Frame.handleF h₁ :: K₁, Sᵢ' ++ Frame.handleF h₂ :: K₂, eₛ,
-        by simp, by simp, hcr₁, hcr₂, hccr₁, hccr₂, hr, ?_⟩
+        by simp, by simp, hcr₁, hcr₂, hr, ?_⟩
       exact krelS_append (εᵢ := eₛ) hSrel (HandlerRel_mono (le_of_lt hk) hHR)
         (KrelS_mono (le_of_lt hk) htail) (fun k' hk' => hres k' (lt_trans hk' hk))
   | [], (_ :: _) => simp only [KrelS] at hin
@@ -1463,7 +1466,7 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
     (hp : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S)
     (hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit)
     (hrestrict : ∀ op s, Bang.handlesOp (Handler.state ℓ s) ℓ op = true → op = "get" ∨ op = "put") :
-    ∀ m (s₁ s₂ : Val), Val.Closed s₁ → Val.Closed s₂ → Val.CapClosed s₁ → Val.CapClosed s₂ →
+    ∀ m (s₁ s₂ : Val), Val.Closed s₁ → Val.Closed s₂ →
       VrelK m S s₁ s₂ →
       ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ K₁ K₂ →
       KrelS m (CTy.F q A) D φ (Frame.handleF (Handler.state ℓ s₁) :: K₁)
@@ -1473,10 +1476,10 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
   intro m
   induction m using Nat.strong_induction_on with
   | _ m ih =>
-    intro s₁ s₂ hcs₁ hcs₂ hccs₁ hccs₂ hsv K₁ K₂ hK
+    intro s₁ s₂ hcs₁ hcs₂ hsv K₁ K₂ hK
     refine krelS_handleF_intro
       (show HandlerRel Eff Mult m (Handler.state ℓ s₁) (Handler.state ℓ s₂) from ⟨rfl, S, hsv⟩) hK ?_
-    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKi hCᵢ hd₁ hd₂
+    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
     rcases hrestrict op s₁ hcatch with rfl | rfl
     · -- GET: cfg = (Kᵢ ++ handleF(state ℓ sⱼ)::Kⱼ, ret sⱼ); resume value = the stored state (related).
       obtain ⟨qᵣ, rfl⟩ := hCᵢ S (by rw [Handler.label]; exact hgr)
@@ -1484,7 +1487,7 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
       obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
       -- the reinstalled `state ℓ s₁/s₂` over the tail relates at m' (IH at the SAME state pair, downward).
-      have hreinst := ih m' hm' s₁ s₂ hcs₁ hcs₂ hccs₁ hccs₂ (VrelK_mono (le_of_lt hm') hsv) K₁ K₂
+      have hreinst := ih m' hm' s₁ s₂ hcs₁ hcs₂ (VrelK_mono (le_of_lt hm') hsv) K₁ K₂
         (KrelS_mono (le_of_lt hm') hK)
       rw [krelS_handleF] at hreinst
       have happ := krelS_append (Dᵢ := CTy.F q A) hKi
@@ -1493,7 +1496,7 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
         (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — the dispatched config is `(Kᵢ++reinstall::K, ret sⱼ)`,
       -- the resume value `s₁~s₂` at `S`, the appended stack `KrelS`-related at the returner hole `F qᵣ S`.
-      exact ⟨qᵣ, S, s₁, s₂, _, _, εᵢ, rfl, rfl, hcs₁, hcs₂, hccs₁, hccs₂, VrelK_mono (le_of_lt hm') hsv, happ⟩
+      exact ⟨qᵣ, S, s₁, s₂, _, _, εᵢ, rfl, rfl, hcs₁, hcs₂, VrelK_mono (le_of_lt hm') hsv, happ⟩
     · -- PUT: cfg = (Kᵢ ++ handleF(state ℓ wⱼ)::Kⱼ, ret unit); reinstalled state = the payload (related at
       -- S via hVrel), resume value = unit (trivially related). The IH at the NEW state pair (w₁,w₂).
       have hwS : VrelK m' S w₁ w₂ := hVrel S (by rw [Handler.label]; exact hp)
@@ -1501,14 +1504,13 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
       simp only [Handler.label, dispatchOn] at hd₁ hd₂
       obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
       obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
-      have hreinst := ih m' hm' w₁ w₂ hcw₁ hcw₂ hccw₁ hccw₂ hwS K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
+      have hreinst := ih m' hm' w₁ w₂ hcw₁ hcw₂ hwS K₁ K₂ (KrelS_mono (le_of_lt hm') hK)
       rw [krelS_handleF] at hreinst
       have happ := krelS_append (Dᵢ := CTy.F q A) hKi
         (show HandlerRel Eff Mult m' (Handler.state ℓ w₁) (Handler.state ℓ w₂) from ⟨rfl, S, hwS⟩)
         (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: PUT resumes `unit` (unit~unit); the appended stack relates at hole `F qᵣ unit`.
       exact ⟨qᵣ, VTy.unit, Val.vunit, Val.vunit, _, _, εᵢ, rfl, rfl, (fun k => rfl), (fun k => rfl),
-        (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.unit Val.vunit Val.vunit; rw [VrelK, BaseRel]; exact ⟨rfl, rfl⟩), happ⟩
 
 /-! ### ◊4.5b-append — heap `getD` facts, proved GetD-IMPORT-FREE (from `List.Basic`'s `getElem?`).
@@ -1599,7 +1601,7 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
     refine krelS_handleF_intro
       (show HandlerRel Eff Mult m (Handler.transaction ℓ Θ₁) (Handler.transaction ℓ Θ₂) from
         ⟨rfl, hheap.1, hheap.2⟩) hK ?_
-    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hccw₁ hccw₂ hVrel hKi hCᵢ hd₁ hd₂
+    intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
     have hheap' : HeapRel Eff Mult m' Θ₁ Θ₂ := ⟨hheap.1, fun i hi => VrelK_mono (le_of_lt hm') (hheap.2 i hi)⟩
     rcases hrestrict op Θ₁ hcatch with rfl | rfl | rfl
     · -- newTVar: reinstall Θⱼ ++ [wⱼ], resume `vint Θⱼ.length` (same length ⇒ equal int).
@@ -1624,7 +1626,7 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
           from ⟨rfl, happend.1, happend.2⟩) (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — resume `vint Θⱼ.length` (related; same length).
       exact ⟨qᵣ, VTy.int, Val.vint Θ₁.length, Val.vint Θ₂.length, _, _, εᵢ, rfl, rfl,
-        (fun k => rfl), (fun k => rfl), (fun k => rfl), (fun k => rfl),
+        (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.int (Val.vint Θ₁.length) (Val.vint Θ₂.length)
             rw [VrelK, BaseRel]; exact ⟨Θ₁.length, rfl, by rw [hheap'.1]⟩), happ⟩
     · -- readTVar: heap UNCHANGED, resume the cell (related via hheap', or default both sides).
@@ -1653,7 +1655,6 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
           from ⟨rfl, hheap'.1, hheap'.2⟩) (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — resume the read cell (related via `hcellrel`).
       exact ⟨qᵣ, VTy.int, Θ₁.getD idx (Val.vint 0), Θ₂.getD idx (Val.vint 0), _, _, εᵢ, rfl, rfl,
-        (by rw [hca₁]; intro k; rfl), (by rw [hca₂]; intro k; rfl),
         (by rw [hca₁]; intro k; rfl), (by rw [hca₂]; intro k; rfl), hcellrel, happ⟩
     · -- writeTVar: payload `pair (vint i) (vint b)`; reinstall `storeSet Θⱼ i (vint b)`, resume unit.
       obtain ⟨qᵣ, rfl⟩ := hCᵢ VTy.unit (by rw [Handler.label]; exact hwriteR)
@@ -1687,7 +1688,6 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
           from ⟨rfl, hset.1, hset.2⟩) (KrelS_mono (le_of_lt hm') hK) hreinst.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — writeTVar resumes `unit`.
       exact ⟨qᵣ, VTy.unit, Val.vunit, Val.vunit, _, _, εᵢ, rfl, rfl, (fun k => rfl), (fun k => rfl),
-        (fun k => rfl), (fun k => rfl),
         (by show VrelK m' VTy.unit Val.vunit Val.vunit; rw [VrelK, BaseRel]; exact ⟨rfl, rfl⟩), happ⟩
 
 /-- ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
@@ -1716,7 +1716,7 @@ theorem krelS_staticSplit_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
       ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' : CTy Eff Mult) (εᵢ' : Eff)
             (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
           Bang.handlesOp h h.label op' = true →
-          Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
+          Val.Closed w₁ → Val.Closed w₂ →
           (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
           KrelS m Cᵢ' Dᵢ εᵢ' Kᵢ Kᵢ' →
           (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op' = some Aᵣ →
@@ -1725,7 +1725,7 @@ theorem krelS_staticSplit_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
           Bang.dispatchOn op' w₂ (Kᵢ', h', K₂ₒ) = some cfg₂ →
           (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
               cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-              Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+              Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
               KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ')) := by
   induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e cap with
   | nil => simp [Bang.staticSplit] at hsp
@@ -1752,7 +1752,7 @@ theorem krelS_staticSplit_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
               cases fr₂ with
               | appF w₂ =>
                   rw [krelS_appF] at hK
-                  obtain ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
+                  obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
                   rw [staticSplit_appF, Option.map_eq_some_iff] at hsp
                   obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
@@ -1760,7 +1760,7 @@ theorem krelS_staticSplit_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                   obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
                   refine ⟨Frame.appF w₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
                     by rw [staticSplit_appF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
-                  rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, hin⟩
+                  rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, hin⟩
               | _ => simp only [KrelS] at hK
           | handleF hh₁ =>
               cases fr₂ with
@@ -1775,7 +1775,7 @@ theorem krelS_staticSplit_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
                       rw [Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
                       obtain ⟨rfl, rfl, rfl⟩ := hsp
                       refine ⟨[], K₂', hh₂, C, C, e, staticSplit_handleF_zero hh₂ K₂', hHRtop, ?_, htail, hres⟩
-                      rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+                      rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
                   | succ c =>
                       -- cap=succ COUNTDOWN: skip this handler (NO handlesOp test — the dissolved MISS),
                       -- recurse with cap c on the tail. The skipped handleF rebuilds onto the inner prefix.
@@ -2074,9 +2074,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       intro n δ₁ δ₂ hδ
       rw [closeC_ret, closeC_ret]
       have hsc₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hsc₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact crelK_ret hsc₁ hsc₂ (vrelK_fund hv n δ₁ δ₂ hδ)
   | @letC _ _ _ _ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
       intro n δ₁ δ₂ hδ
@@ -2109,17 +2109,17 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       intro n δ₁ δ₂ hδ
       rw [closeC_app, closeC_app]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact compatK_app (crelK_fund hM n δ₁ δ₂ hδ) hscv₁ hscv₂ (vrelK_fund hv n δ₁ δ₂ hδ)
   | @case _ _ _ _ v N₁ N₂ φ q A B C hv hN₁ hN₂ _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_case, closeC_case]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       refine compatK_case (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_ ?_
       · intro m hm u₁ u₂ hcu₁ hcu₂ hu
         rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
@@ -2135,9 +2135,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       intro n δ₁ δ₂ hδ
       rw [closeC_split, closeC_split]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       refine compatK_split (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_
       intro m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
       rw [closeC_subst2_comm hδ.closed_left hca₁ hcb₁, closeC_subst2_comm hδ.closed_right hca₂ hcb₂]
@@ -2154,18 +2154,18 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       | @fold _ _ a _ ha =>
           rw [closeV_fold, closeV_fold]
           have hsa₁ : Val.Closed (closeV δ₁ a) :=
-            closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := ha.scopedIn; rwa [hδ.length_left])
+            closeV_closed_scoped hδ.closed_left (by have := ha.scopedIn; rwa [hδ.length_left])
           have hsa₂ : Val.Closed (closeV δ₂ a) :=
-            closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := ha.scopedIn; rwa [hδ.length_right])
+            closeV_closed_scoped hδ.closed_right (by have := ha.scopedIn; rwa [hδ.length_right])
           refine CrelK_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
             ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩
             (fun m hm => crelK_ret hsa₁ hsa₂ (vrelK_fund ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ)))
       | @vvar _ i _ hget =>
           have hsc₁ : Val.Closed (closeV δ₁ (Val.vvar i)) :=
-            closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by
+            closeV_closed_scoped hδ.closed_left (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_left])
           have hsc₂ : Val.Closed (closeV δ₂ (Val.vvar i)) :=
-            closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by
+            closeV_closed_scoped hδ.closed_right (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | @perform _ _ _cap ℓ op v φ q A B hℓ hArg hRes hv =>
@@ -2176,9 +2176,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       rw [closeC_perform, closeC_perform]
       have hvk : VrelK n A (closeV δ₁ v) (closeV δ₂ v) := vrelK_fund hv n δ₁ δ₂ hδ
       have hcv₁ : Val.Closed (closeV δ₁ v) :=
-        closeV_closed_scoped hδ.closed_left hδ.capClosed_left (by have := hv.scopedIn; rwa [hδ.length_left])
+        closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hcv₂ : Val.Closed (closeV δ₂ v) :=
-        closeV_closed_scoped hδ.closed_right hδ.capClosed_right (by have := hv.scopedIn; rwa [hδ.length_right])
+        closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact crelK_fund_up hArg hRes hcv₁ hcv₂ hvk
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
