@@ -52,13 +52,18 @@ CLOSED configs (`Source.eval` loads `([], c)`), so stack-bottom = program root =
 Author-site assignment for OPEN terms is the shell elaborator's job (the downstream consistency
 requirement: the elaborator must emit root-level caps to match).
 
-## The double-duty consequence (a genuine semantic shift — pinned)
+## The multi-duty consequence (a genuine semantic shift — pinned)
 
-The de-Bruijn shift was doing **DOUBLE DUTY**:
+The de-Bruijn shift was doing **THREE** jobs at once; removing it keeps the one we need and exposes the
+other two:
 1. **Correctness for well-typed migration** — KEPT under absolute caps (via the conversion modulus).
 2. **An *incidental* runtime backstop** — it bumped an ill-typed capability-ESCAPE's cap out of range,
    so the escape ran STUCK. DROPPED under absolute caps (no shift → the escaped cap resolves silently;
-   the program TERMINATES instead of getting stuck).
+   the program TERMINATES instead of getting stuck). (See below; type safety unaffected.)
+3. **Compensating below-use-site handler insertion in the WC invariant** — the keystone (`WCComp.insert`,
+   below) shifted the body's caps so that inserting a handler kept well-cappedness. DROPPED under absolute
+   caps — and this one is NOT recoverable by the modulus (the keystone Δ-targeting wall, below). This is
+   the open 2c design problem: the shift was silently doing WC-preservation work, exposed only when removed.
 
 **Type safety is unaffected:** escape-safety always rode the **typing** non-escape property (`LWT` rejects
 the escape — `escapeM_ill_typed`/`progB_ill_typed` STILL hold under absolute caps; the rejection is the
@@ -93,10 +98,12 @@ sorry is now the **sole** line for escape behaviour. Closing it is higher-priori
   (Lean-checked: level `handlerCount Sg` resolves to `h₀` in `handleF h₀ :: Sg` but to `h` in
   `handleF h₀ :: handleF h :: Sg`). `absSplit_stable_under_top_push` only covers caps targeting handlers
   BELOW the inserted frame; caps targeting ABOVE it break. The de-Bruijn `shiftCap` compensated exactly
-  this (it re-based the internal caps); absolute caps remove the compensation. **This is NOT a mechanical
-  re-proof** — it needs a different WC formulation (e.g. caps stored relative to the nearest enclosing
-  handler; or WC stated so insertion only ever happens above all caps' targets; or stored-thunk
-  cap-closedness revisited). The `WCComp.substFrom` consumer's specific need (the FILLER `v` at Δ=[], caps
+  this (it re-based the internal caps) — **duty #3 of the multi-duty shift** (above); absolute caps remove
+  the compensation, and unlike duty #1 it is NOT recoverable by the conversion modulus. **This is NOT a
+  mechanical re-proof** — it needs a different WC formulation (e.g. caps stored relative to the nearest
+  enclosing handler; or WC stated so insertion only ever happens above all caps' targets; or stored-thunk
+  cap-closedness revisited). It is a kernel DESIGN decision (the WC invariant's shape) needing fresh eyes +
+  an operator design direction — a scoped paired unit, not end-of-session work. The `WCComp.substFrom` consumer's specific need (the FILLER `v` at Δ=[], caps
   targeting `Sg`) is the SAFE case — but the keystone's general recursion into thunk-internal handles hits
   the unsafe case. The consumer seam (Stage-2a) is discharged; the keystone proof carries the 2c seam. It
   feeds only `WellCapped → LWConfig → preservation/progress`, behind `preservation_returnEscape_TODO`; the

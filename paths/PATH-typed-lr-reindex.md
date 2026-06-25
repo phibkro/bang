@@ -43,9 +43,18 @@ DISCHARGED.** The keystone's general recursion descends into `v`'s thunks (the u
 3. Revisit **stored-thunk cap-closedness** — a thunk's internal `handle h₀ (perform→h₀)` is closed-within-itself;
    if those caps are cap-closed/local, the insert leaves them fixed.
 
-**DISCIPLINE NOTE:** the prior session over/under-estimated this 3× by-argument (the flip-flop = the stop signal).
-Whoever picks this up: do an **isolated build-test** of the chosen reformulation (the seam makes it buildable in
-isolation), pair with proof-engineer — **do NOT solo-grind by reasoning.**
+**WHY IT'S FUNDAMENTAL (not a proof gap):** absolute-from-root caps are anchored at the stack bottom, so ANY
+insertion below a cap's target shifts that target's level — a structural property of the representation, not a
+missing lemma. The de-Bruijn `shiftCap` was silently compensating this (duty #3 of the multi-duty shift, ADR-0053);
+removing the shift exposed it. Choosing the fix changes the WC INVARIANT's shape, so it is a **kernel DESIGN
+decision needing the operator's direction**, not just a proof effort.
+
+**DISCIPLINE NOTE:** the prior session over/under-estimated this 3× by-argument (the flip-flop = the stop signal);
+the BUILD (a Lean-traced counterexample) resolved it, not prose. Whoever picks this up: it's **kernel-engineer-
+paired + needs an operator design decision** on the WC invariant's shape. Do an **isolated build-test** of the
+chosen reformulation (the seam at Operational ~930 makes it buildable in isolation, behind
+`preservation_returnEscape_TODO`), pair with proof-engineer — **do NOT solo-grind by reasoning.** The 5→2 is
+banked + independently verified (`0435e88`); there is zero urgency.
 
 ## The reframe (verified) — it's a RE-KEY, not a re-index
 
