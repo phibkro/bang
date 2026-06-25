@@ -2198,10 +2198,23 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       exact crelK_fund_up hArg hRes hcv₁ hcv₂ hvk
   | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
-      -- resume); `compatK_handleThrows` + `closeC_handleThrows` close it, mirroring the old `crel_fund`.
+      -- resume); `compatK_handleThrows` + `closeC_handleThrows` would close it, EXCEPT for the env
+      -- cap-shift gap below.
       intro n δ₁ δ₂ hδ
       rw [closeC_handleThrows, closeC_handleThrows]
-      exact compatK_handleThrows hArg (crelK_fund hM n δ₁ δ₂ hδ)
+      -- ADR-0043/0050 SEAM DESCENT. `closeC_handleThrows` rewrites the body to close over the CAP-SHIFTED
+      -- fillers `δ.map Val.shiftCap` (crossing the `handle` cap-binder bumps every ambient cap), but the
+      -- IH `crelK_fund hM n δ₁ δ₂` produces `CrelK … (closeC δ M)` (UNSHIFTED). Bridging the two is the
+      -- env-shift cancellation `EnvRelK_shiftCap` (= `VrelK`/`CrelK`-shiftCap-stability), which is
+      -- BUILD-REFUTED (ADR-0050, 2026-06-25): its U-clause reduces to the config-simulation
+      -- `(handleF h :: K, shiftCap c) ≈ (K, c)` which walls at the state/txn resume (the resumed focus
+      -- `ret s` is unshifted while the insertion depth moves → needs `s` cap-closed, FALSE). This is a
+      -- bang-SPECIFIC de-Bruijn cap-SHIFT artifact (ADR-0046), NOT in Biernacki (named handlers don't
+      -- shift), so there is no `n-free` proof to inherit. Routes A (LR `LWStack`-fold) and B (config-sim)
+      -- share this one wall. v1 ships seam-5; the real close is a representation change (absolute-caps /
+      -- named-handlers, ADR-0044) deferred to a feasibility spike. The `compatK_handleThrows` core +
+      -- `staticSplit_insert_ge` (the cancellation building block) are LANDED and reusable for that spike.
+      sorry
   | @handleState _ _ ℓ s₀ M e φ q S A _hg hgr hp hpr hrestrict hs hM hsub =>
       -- ◊4.5b-append: state-resume closes via `compatK_handleState` (→ `krelS_state_reinstall`, the
       -- resumptive heart). The stored state `s₀` is CLOSED (`HasVTy [] []`, so `closeV δᵢ s₀ = s₀`); its
@@ -2217,7 +2230,13 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
         fun op s' hc => by
           simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
           rcases hc.2 with rfl | rfl <;> simp
-      exact compatK_handleState hgr hp hpr hrestrict' hcs₀ hsv (crelK_fund hM n δ₁ δ₂ hδ)
+      -- ADR-0043/0050 SEAM DESCENT. Same env cap-shift gap as the throws arm (`closeC_handleState`
+      -- shifts the body's fillers to `δ.map shiftCap`; the IH is at the unshifted `δ`). The bridge
+      -- `EnvRelK_shiftCap` is build-refuted (ADR-0050) — and state is the arm where the underlying
+      -- config-simulation WALLS HARDEST: the resume reinstalls `state ℓ s` and returns the unshifted
+      -- stored `s`, so the simulation needs `shiftCapFrom |Kᵢ| s = s` (cap-closedness), FALSE for a
+      -- general resumptive state. Deferred to the representation spike (absolute-caps / named-handlers).
+      sorry
   | @handleTransaction _ _ ℓ Θ₀ M e φ q A hnewA hnewR hreadA hreadR hwriteA hwriteR _ hcells hM hsub =>
       -- ◊4.5b-append: transaction-resume via `compatK_handleTransaction` (→ `krelS_transaction_reinstall`).
       -- `HeapRel n Θ₀ Θ₀` from `hcells` via `heapRel_self_of_cells_int` (NO `vrelK_fund` — int is base, so
@@ -2227,8 +2246,11 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       have hrestrict' : ∀ op Θ', Bang.handlesOp (Handler.transaction ℓ Θ') ℓ op = true →
           op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar" := fun op Θ' hc => by
         simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc; tauto
-      exact compatK_handleTransaction hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict'
-        (heapRel_self_of_cells_int n Θ₀ hcells) (crelK_fund hM n δ₁ δ₂ hδ)
+      -- ADR-0043/0050 SEAM DESCENT. Same env cap-shift gap (`closeC_handleTransaction` shifts the body's
+      -- fillers); the bridge `EnvRelK_shiftCap` is build-refuted (ADR-0050). transaction is the multi-cell
+      -- generalization of the state wall (the resume reinstalls `transaction ℓ Θ'` and returns unshifted
+      -- cells). Deferred to the representation spike (absolute-caps / named-handlers).
+      sorry
 end
 
 

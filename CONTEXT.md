@@ -8,23 +8,28 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-25 session wrap) — the typed-static LR re-key is AT A CROSSROADS on `typed-static-r1`.
-> Resting at `5295ec4`. SoT = `paths/PATH-typed-lr-reindex.md` (read its ★★ CROSSROADS block FIRST).**
+> **★ ACTIVE DIRECTION (2026-06-25) — route A BUILD-REFUTED; v1 ships LR seam-5 (operator ruling → ADR-0050).
+> On `typed-static-r1`. SoT = `paths/PATH-typed-lr-reindex.md` (read its ★★★ RESOLVED banner FIRST) + ADR-0050.**
 >
 > The pivot landed kernel-side (`perform cap` + static `staticSplit` + lexical cap-shift; `LWT` typing; STD block
-> axiom-clean @ `91e7444` modulo the documented `preservation_returnEscape_TODO` return-escape; the ◊4.5b MISS edge
-> DISSOLVED by construction @ `a771cc1`). Re-keying the **LR** to static dispatch then exposed two cap-resolution
-> obligations a full build-grounded de-risk chain (4 rounds) + representation research (Biernacki/Effekt/Koka) mapped:
-> - **Insight:** bang DROPPED Biernacki POPL18's `n-free` predicate when it swapped labels for de-Bruijn caps. Putting
->   it back (carry `WCStack`/`ρ-free` in `KrelS`) is the CORRECT `lr_sound` (over well-capped contexts, in-envelope
->   with typed-`⊑`) — the code comments already prescribe it.
-> - **DECISION (operator):** take the **ADR-0043 seam** now; **implement A** (`n-free` in `KrelS`, LR-only, kernel
->   UNTOUCHED → closes the 3 handler arms, seam **5→2**) when resumed; **full-close DEFERRED** (`hcatch`+`:1801` need
->   the term-cap pinned context-side = a kernel change: B absolute-caps BALLOONS into the axiom-clean STD block, 1b
->   `HasCTy.perform` premise is an STD-cascade — both kernel-engineer-paired). Build-grounded, not research-uncertain.
-> - **Resting state `5295ec4`:** item-1 dispatch re-key + `hcatch` documented as the ADR-0043 descent. **Compat RED**
->   (item-2's 3 handler arms await A). `lr_sound`/`lr_fundamental` frozen statements + kernel STD + CalcVM + compiler
->   UNAFFECTED (the 2-to-5 descents are isolated to the LR's effectful cases; `Compile` doesn't even import `LR`).
+> axiom-clean @ `91e7444` modulo the documented `preservation_returnEscape_TODO`; the ◊4.5b MISS edge DISSOLVED by
+> construction @ `a771cc1`). Re-keying the **LR** to static dispatch exposed the 3 `crelK_fund` handler arms, which
+> a build-gated de-risk (this session, scratch-only, NO frozen-def edits) then **REFUTED**:
+> - **The wall (ADR-0050):** the arms need an env cap-shift cancellation (`closeC_handle*` closes the body over
+>   `δ.map shiftCap`, the IH is at `δ`). The bridge `EnvRelK_shiftCap` reduces (U-clause) to a config-simulation
+>   `(handleF h :: K, shiftCap c) ≈ (K, c)` that **walls at the state/txn resume** (resumed `ret s` unshifted while
+>   the insertion depth moves → needs `s` cap-closed, FALSE). Stack-side `LWStack` can't force the handleF-headed
+>   stack; a focus-side `WCComp` premise is a FALSE FLOOR (static ✓ / dynamic ✗). Routes A (LR-fold) and B
+>   (config-sim) **share this one wall.**
+> - **Corrected diagnosis:** the obstacle is NOT a "dropped Biernacki `n-free`" — it's the **de-Bruijn cap SHIFT**
+>   (ADR-0046). Biernacki uses NAMED handlers (no shift on `handle`-crossing) → there was never a proof to inherit.
+> - **DECISION (operator):** **seam to green now**; the real 5→2/full close is a REPRESENTATION change (absolute/level
+>   caps, or named handlers ADR-0044) → a separate **feasibility spike** (kernel-engineer-paired).
+> - **Landed:** `staticSplit_insert_ge` (`Metatheory.lean`, `7c781cf`, axiom-clean — the cancellation building block,
+>   reusable for the spike); the 3 arms SEAMED as ADR-0043/0050 descents; ADR-0050. **LR layer (LR/Compat/Metatheory)
+>   builds GREEN** (seam-5: 3 arms + `hcatch` + `:1801`); `#print axioms` `sorryAx` only on the descent set. The frozen
+>   `lr_sound`/`lr_fundamental` statements are UNCHANGED (the trial `ctxApprox LWStack C` premise was reverted with A).
+>   CalcVM/Surface remain separately RED pending the ◊5 re-run (unrelated to this seam).
 >
 > **This session also landed (surface/tooling spine, all committed + gated):** `Bang.Frontend.NamedCore` (ADR-0046 ①,
 > the writable S-expr core, `9452660`) · `arch-check` import-direction fitness fn (ADR-0048, the Frontend/Core/Backend

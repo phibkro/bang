@@ -35,7 +35,38 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
 - `preservation`/`type_safety`/`progress` (Spec.lean:93,116,104): the REAL frozen-statement risk, via Inc 3 — a φ≠⊥ premise on `ret`/`letC` in `HasConfigTy` would change the `HasConfig` premise shape. STATEMENT_CHANGE_OK against ADR-0045 (same envelope as the existing `LWConfig` fold).
 - "Only the index moves" is OPTIMISTIC (the index already moved; the dispatch re-key is the bulk — multi-session, ~the ◊4.5b sub-block-(f) surface area) and the return-escape gate (Inc 3) is genuinely NEW machinery, not a re-index.
 
-## ★★ THE CROSSROADS — resting at `5295ec4` (2026-06-25, session wrap). READ THIS FIRST on resume.
+## ★★★ RESOLVED — A is BUILD-REFUTED; v1 ships LR seam-5 (2026-06-25, operator ruling → ADR-0050). READ FIRST.
+
+**Outcome:** route A (Biernacki `n-free`/`LWStack` in `KrelS`, the committed "5→2 win") is **build-refuted.**
+De-risked in scratch (no frozen-def edits) BEFORE the 60-site spread; walled at the crux; operator ruled
+**seam to green now**, representation fix → a separate feasibility spike. **The 5→2 did NOT materialize.**
+
+**Why (corrects the diagnosis below):** the obstacle is NOT a "dropped Biernacki `n-free`" — it's the
+**de-Bruijn cap SHIFT** (ADR-0046): crossing a `handle` bumps caps (`Val.shiftCap`), so the 3 handler arms'
+IH (at env `δ`) doesn't match the goal (at `δ.map shiftCap`). The bridge `EnvRelK_shiftCap` reduces (U-clause)
+to a config-simulation `(handleF h :: K, shiftCap c) ≈ (K, c)` that **walls at the state/txn resume** (resumed
+focus `ret s` is unshifted while the insertion depth moves → needs `s` cap-closed, FALSE). Stack-side `LWStack`
+can't force the handleF-headed stack the cancellation needs; a focus-side `WCComp` premise is a FALSE FLOOR
+(static well-cappedness ✓ via `WCComp.shiftCap_insert`, dynamic residual ✗). Routes A (LR-fold) and B
+(config-sim) **share this one wall.** Biernacki uses NAMED handlers (no shift) → **no proof to inherit.**
+
+**Landed (this session):**
+- `staticSplit_insert_ge` (`Metatheory.lean`, commit `7c781cf`, axiom-clean) — the cancellation building
+  block (dynamic sibling of `CapResolvesKind.insert`). Reusable for the representation spike.
+- The 3 `crelK_fund` handler arms SEAMED as ADR-0043/0050 descents (documented `sorry` citing the refutation).
+- ADR-0050 records the refutation + the seam-5 v1 scope + the deferred representation path.
+
+**v1 SCOPE = LR seam-5:** the 3 handler arms + `hcatch` (ADR-0043) + `:1801` ride as documented descents.
+LR layer (LR/Compat/Metatheory) builds GREEN. `#print axioms` traces `sorryAx` only to the descent set.
+(CalcVM/Surface are separately RED pending the ◊5 re-run — unrelated to this seam.)
+
+**The real 5→2/full-close path (deferred to a feasibility spike):** a REPRESENTATION change — **absolute/level
+caps** (no shift → no cancellation obligation; but balloons into the axiom-clean STD block) or **named handlers**
+(ADR-0044, post-v1; the representation where this is a non-problem). Both are kernel-engineer-paired.
+
+---
+
+## (HISTORICAL — superseded by the RESOLVED banner above) ★★ THE CROSSROADS — resting at `5295ec4`.
 
 **Where we stand:** the static-dispatch LR re-key dissolved the ◊4.5b MISS edge (banked) but exposed TWO
 cap-resolution obligations that the LR can't discharge cheaply. A full build-grounded de-risk chain (4 rounds,
