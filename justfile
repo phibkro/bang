@@ -50,10 +50,12 @@ wasmfx-probe:
     bash tools/wasmfx-probe.sh
 
 # Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
-# STM-only) + ADR index/link integrity. Fast, no Lean build. Also run by `just audit`.
+# STM-only) + ADR index/link integrity + the import-direction V (ADR-0046/0047:
+# Core imports neither edge). Fast, no Lean build. Also run by `just audit`.
 fitness:
     bash tools/check-primitives.sh
     bash tools/check-adr-links.sh
+    bash tools/arch-check.sh
 
 # Zero-dep Node sanity check on the row-unifier algorithm.
 selfcheck:

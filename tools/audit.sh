@@ -35,11 +35,14 @@ fi
 #   - check-primitives: kernel constructor set (Val/Comp/Handler) == allowlist
 #     (Invariants #3/#5: five primitives, STM-only; a 6th can't slip in silently).
 #   - check-adr-links: docs/decisions/ index↔file bijection + link integrity.
-# Fast, deterministic, no Lean build. Both gate on real drift (exit 1); ADR
+#   - arch-check: import-direction V (ADR-0046/0047) — Core imports neither edge;
+#     Frontend and Backend meet only at Core. Keeps the layered seam from tangling.
+# Fast, deterministic, no Lean build. All gate on real drift (exit 1); ADR
 # cross-ref-to-deleted-history is WARN-only (exit 0). Also runnable via `just fitness`.
-echo "── architecture fitness (Invariants #3/#5, ADR integrity) ──"
+echo "── architecture fitness (Invariants #3/#5, ADR integrity, import-direction V) ──"
 bash "$(dirname "$0")/check-primitives.sh" "$ROOT"
 bash "$(dirname "$0")/check-adr-links.sh" "$ROOT"
+bash "$(dirname "$0")/arch-check.sh" "$ROOT"
 echo "── end fitness ──"
 
 # 4. Build must be clean.
