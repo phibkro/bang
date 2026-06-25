@@ -2072,6 +2072,55 @@ theorem staticDispatch_isSome_iff (K : EvalCtx) (cap : Nat) (op : OpId) (v : Val
   | none => rfl
   | some p => simp only [Option.bind_some]; exact dispatchOn_isSome op v p
 
+/-! ### Absolute (level-from-root) cap resolution — the ADR-0053 bricks (de-risked sorry-free).
+
+`absSplit K lvl = staticSplit K (handlerCount K - 1 - lvl)` converts a root-level to the top-index
+`staticSplit` consumes. The two facts the migration rides on: (1) well-scopedness — an in-range level
+resolves; (2) the INVARIANCE — a root-anchored level resolves to the SAME handler when a fresh handler
+is pushed at the top (migration), because the `+1` the de-Bruijn shift threaded is absorbed by the
+conversion modulus (the two `+1`'s cancel). This is what dissolves the shift wall by construction. -/
+
+/-- `staticSplit K c` succeeds exactly when the top-index `c` is below the handler count — the
+arithmetic shadow of `staticSplit_isSome_iff_capResolves`, in the form the level↔index conversion needs. -/
+theorem staticSplit_isSome_iff_lt : ∀ (K : EvalCtx) (c : Nat),
+    (staticSplit K c).isSome = true ↔ c < handlerCount K
+  | [], c => by simp [staticSplit, handlerCount]
+  | .handleF _ :: K, 0 => by simp [staticSplit, handlerCount]
+  | .handleF _ :: K, c+1 => by
+      simp only [staticSplit, handlerCount, Option.isSome_map]
+      rw [staticSplit_isSome_iff_lt K c]; omega
+  | .letF _ :: K, c => by
+      simp only [staticSplit, handlerCount, Option.isSome_map]
+      exact staticSplit_isSome_iff_lt K c
+  | .appF _ :: K, c => by
+      simp only [staticSplit, handlerCount, Option.isSome_map]
+      exact staticSplit_isSome_iff_lt K c
+
+/-- An in-range absolute level always resolves (the conversion is total on `lvl < handlerCount K`). -/
+theorem absSplit_isSome_of_lt (K : EvalCtx) (lvl : Nat) (h : lvl < handlerCount K) :
+    (absSplit K lvl).isSome = true := by
+  rw [absSplit, staticSplit_isSome_iff_lt]; omega
+
+/-- **THE MIGRATION INVARIANCE.** A root-anchored level keeps its target across a top-`handleF` PUSH:
+resolving the SAME `lvl` (for `lvl < handlerCount K`) against `handleF h :: K` reaches the SAME handler
+it reached in `K`, with the fresh `handleF h` merely prepended to the inner prefix. The `+1` the
+de-Bruijn shift threads as a `shiftCap` is absorbed by the modulus `handlerCount - 1 - lvl` (the count
+`+1` and the target-depth `+1` cancel). This is the corollary that lets `subst` stop shifting. -/
+theorem absSplit_stable_under_top_push (h : Handler) (K : EvalCtx) (lvl : Nat)
+    (hlt : lvl < handlerCount K) :
+    absSplit (Frame.handleF h :: K) lvl
+      = (absSplit K lvl).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ)) := by
+  unfold absSplit
+  rw [handlerCount_handleF]
+  have hconv : handlerCount K + 1 - 1 - lvl = (handlerCount K - 1 - lvl) + 1 := by omega
+  rw [hconv, staticSplit_handleF_succ]
+
+/-- `absSplit` inherits the stack decomposition verbatim (`absSplit` is `staticSplit` at a converted
+index, so `staticSplit_decomp` certifies the same `K = Kᵢ ++ handleF h :: Kₒ` shape). -/
+theorem absSplit_decomp (K : EvalCtx) (lvl : Nat) {Kᵢ Kₒ : EvalCtx} {h : Handler}
+    (hsp : absSplit K lvl = some (Kᵢ, h, Kₒ)) : K = Kᵢ ++ Frame.handleF h :: Kₒ :=
+  staticSplit_decomp K _ hsp
+
 /-- `staticSplit` SUCCEEDS exactly when the cap RESOLVES (`CapResolves K cap`). The well-scopedness
 predicate `CapResolves` is the `Prop` shadow of `staticSplit`'s `isSome`; both recurse identically. -/
 theorem staticSplit_isSome_iff_capResolves : ∀ (K : EvalCtx) (cap : Nat),

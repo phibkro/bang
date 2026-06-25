@@ -533,6 +533,47 @@ theorem handlersOf_append (K K' : EvalCtx) : handlersOf (K ++ K') = handlersOf K
   | nil => rfl
   | cons fr K ih => cases fr <;> simp only [handlersOf, List.cons_append, ih]
 
+/-! ### Absolute (level-from-root) cap resolution (ADR-0053).
+
+The cap field of `perform` is a ROOT-LEVEL (counted from the program root / stack bottom; `lvl = 0`
+is the OUTERMOST handler), NOT a de-Bruijn outward index. Root-levels are migration-INVARIANT: a
+cap-carrying thunk cannot escape its handler (the `LWT` return-escape gate, ADR-0045 D), so a pending
+`perform`'s target handler is always still on the stack when it fires, and migration only pushes
+handlers ABOVE the target — never pops below it. So crossing a `handle` does NOT shift the cap
+(`Comp.substFrom` leaves it untouched), which DISSOLVES the de-Bruijn shift wall (ADR-0050) by
+construction. Resolution converts the root-level to the top-index `staticSplit` consumes:
+`topIndex = handlerCount K - 1 - lvl`. The conversion modulus is `handlerCount` (= `handlersOf` length,
+the single source of truth). Verified sorry-free in the de-risk probe (`scratch/AbsoluteCapsStepProbe.lean`). -/
+
+/-- Number of `handleF` frames in a context — the level↔index conversion modulus. Equal to
+`(handlersOf K).length` (`handlerCount_eq_handlersOf_length`), so the modulus reuses the existing
+handler skeleton rather than introducing a second notion. -/
+def handlerCount : EvalCtx → Nat
+  | [] => 0
+  | .handleF _ :: K => handlerCount K + 1
+  | .letF _ :: K => handlerCount K
+  | .appF _ :: K => handlerCount K
+
+/-- `handlerCount K = (handlersOf K).length` — the conversion modulus IS the handler skeleton length. -/
+theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
+    handlerCount K = (handlersOf K).length := by
+  induction K with
+  | nil => rfl
+  | cons fr K ih => cases fr <;> simp [handlerCount, handlersOf, ih]
+
+@[simp] theorem handlerCount_letF (N : Comp) (K : EvalCtx) :
+    handlerCount (Frame.letF N :: K) = handlerCount K := rfl
+@[simp] theorem handlerCount_appF (v : Val) (K : EvalCtx) :
+    handlerCount (Frame.appF v :: K) = handlerCount K := rfl
+@[simp] theorem handlerCount_handleF (h : Handler) (K : EvalCtx) :
+    handlerCount (Frame.handleF h :: K) = handlerCount K + 1 := rfl
+
+/-- Resolve an absolute root-LEVEL against the runtime stack: convert to the top-index `staticSplit`
+expects (`handlerCount K - 1 - lvl`), then reuse `staticSplit`. `lvl < handlerCount K` is
+well-scopedness (an in-range level always resolves — `absSplit_isSome_of_lt`). -/
+def absSplit (K : EvalCtx) (lvl : Nat) : Option (EvalCtx × Handler × EvalCtx) :=
+  staticSplit K (handlerCount K - 1 - lvl)
+
 /-- A frame STACK is well-capped: each stored continuation/argument/handler is well-capped against the
 HANDLER skeleton BELOW it (the handlers it will face after the frame is consumed). Innermost-first: a
 `letF N` continuation `N`, once reached, dispatches against `handlersOf K`. -/
