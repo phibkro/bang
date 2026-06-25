@@ -1956,6 +1956,123 @@ theorem dispatch_isSome_iff (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) :
   | none => rfl
   | some p => simp only [Option.bind_some]; exact dispatchOn_isSome op v p
 
+/-! ### E.1b STATIC dispatch (ADR-0045 1b) — `staticSplit` reduction + decomposition
+
+`Source.step` now resolves the handler by CAPABILITY (`staticSplit K cap`), not by label search. The
+key structural fact: `staticSplit K cap = some (Kᵢ, h, Kₒ)` still yields `K = Kᵢ ++ handleF h :: Kₒ`
+(`staticSplit_decomp`), so the throws/state/transaction RE-TYPING reduces to a label-BLIND
+decomposition over that append — `HasStack.split_outer_typed` (throws abort) and
+`HasStack.split_resume_typed` (state/transaction resume). These are SIMPLER than the `splitAt`-search
+versions: no `handlesOp` test, no foreign-frame skip reasoning — the cap already located the frame, so
+the induction is plain `Kᵢ`-list-recursion. -/
+
+@[simp] theorem staticSplit_nil (cap : Nat) :
+    staticSplit ([] : EvalCtx) cap = none := by cases cap <;> rfl
+
+theorem staticSplit_letF (N : Comp) (K : EvalCtx) (cap : Nat) :
+    staticSplit (Frame.letF N :: K) cap
+      = (staticSplit K cap).map (fun (Kᵢ, h', Kₒ) => (Frame.letF N :: Kᵢ, h', Kₒ)) := by
+  cases cap <;> rfl
+
+theorem staticSplit_appF (w : Val) (K : EvalCtx) (cap : Nat) :
+    staticSplit (Frame.appF w :: K) cap
+      = (staticSplit K cap).map (fun (Kᵢ, h', Kₒ) => (Frame.appF w :: Kᵢ, h', Kₒ)) := by
+  cases cap <;> rfl
+
+theorem staticSplit_handleF_zero (h : Handler) (K : EvalCtx) :
+    staticSplit (Frame.handleF h :: K) 0 = some ([], h, K) := rfl
+
+theorem staticSplit_handleF_succ (h : Handler) (K : EvalCtx) (c : Nat) :
+    staticSplit (Frame.handleF h :: K) (c + 1)
+      = (staticSplit K c).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ)) := rfl
+
+/-- **The decomposition.** A successful `staticSplit` certifies the stack is `Kᵢ ++ handleF h :: Kₒ`:
+the cap walked `Kᵢ` (any frames) and stopped at `handleF h`, with `Kₒ` below. Induction on `K`/`cap`
+mirroring `staticSplit`'s four clauses. This is the label-blind analogue of `splitAt`'s implicit
+post-condition; everything downstream rides it. -/
+theorem staticSplit_decomp : ∀ (K : EvalCtx) (cap : Nat) {Kᵢ Kₒ : EvalCtx} {h : Handler},
+    staticSplit K cap = some (Kᵢ, h, Kₒ) → K = Kᵢ ++ Frame.handleF h :: Kₒ
+  | [], cap, _, _, _ => by simp
+  | (.handleF h₀ :: K), 0, Kᵢ, Kₒ, h => by
+      rw [staticSplit_handleF_zero, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq]
+      rintro ⟨rfl, rfl, rfl⟩; rfl
+  | (.handleF h₀ :: K), (c + 1), Kᵢ, Kₒ, h => by
+      rw [staticSplit_handleF_succ, Option.map_eq_some_iff]
+      rintro ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      rw [staticSplit_decomp K c hsp]; rfl
+  | (.letF N :: K), cap, Kᵢ, Kₒ, h => by
+      rw [staticSplit_letF, Option.map_eq_some_iff]
+      rintro ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      rw [staticSplit_decomp K cap hsp]; rfl
+  | (.appF w :: K), cap, Kᵢ, Kₒ, h => by
+      rw [staticSplit_appF, Option.map_eq_some_iff]
+      rintro ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      rw [staticSplit_decomp K cap hsp]; rfl
+
+/-- `staticDispatch` succeeds iff `staticSplit` does (`dispatchOn` is total). -/
+theorem staticDispatch_isSome_iff (K : EvalCtx) (cap : Nat) (op : OpId) (v : Val) :
+    (staticDispatch K cap op v).isSome = (staticSplit K cap).isSome := by
+  show ((staticSplit K cap).bind (dispatchOn op v)).isSome = _
+  cases staticSplit K cap with
+  | none => rfl
+  | some p => simp only [Option.bind_some]; exact dispatchOn_isSome op v p
+
+/-- `staticSplit` SUCCEEDS exactly when the cap RESOLVES (`CapResolves K cap`). The well-scopedness
+predicate `CapResolves` is the `Prop` shadow of `staticSplit`'s `isSome`; both recurse identically. -/
+theorem staticSplit_isSome_iff_capResolves : ∀ (K : EvalCtx) (cap : Nat),
+    (staticSplit K cap).isSome = true ↔ CapResolves K cap
+  | [], cap => by cases cap <;> simp [staticSplit, CapResolves]
+  | (.handleF h :: K), 0 => by simp [staticSplit, CapResolves]
+  | (.handleF h :: K), (c + 1) => by
+      rw [staticSplit_handleF_succ, Option.isSome_map]; exact staticSplit_isSome_iff_capResolves K c
+  | (.letF N :: K), cap => by
+      rw [staticSplit_letF, Option.isSome_map]; exact staticSplit_isSome_iff_capResolves K cap
+  | (.appF w :: K), cap => by
+      rw [staticSplit_appF, Option.isSome_map]; exact staticSplit_isSome_iff_capResolves K cap
+
+/-- `CapResolves K cap` ⟹ `staticSplit K cap` actually produces a triple. -/
+theorem CapResolves.staticSplit_some {K : EvalCtx} {cap : Nat} (h : CapResolves K cap) :
+    ∃ p, staticSplit K cap = some p :=
+  Option.isSome_iff_exists.mp ((staticSplit_isSome_iff_capResolves K cap).mpr h)
+
+/-- **THE KIND BRIDGE.** A KIND-correct cap (`CapResolvesKind K cap ℓ op`) forces the statically
+resolved handler `h` to CATCH `(ℓ, op)` — exactly the `handlesOp h ℓ op = true` fact that dynamic
+`splitAt` guaranteed by construction. This is the single lemma that lets the static path reuse all the
+`splitAt`-era typed decomposition lemmas: feed them this `handlesOp` and the `staticSplit_decomp`
+concatenation. Induction on `K`/`cap` mirrors `staticSplit`/`CapResolvesKind`'s shared recursion. -/
+theorem staticSplit_kind : ∀ (K : EvalCtx) (cap : Nat) {Kᵢ Kₒ : EvalCtx} {h : Handler}
+    {ℓ : Label} {op : OpId},
+    staticSplit K cap = some (Kᵢ, h, Kₒ) → CapResolvesKind K cap ℓ op → handlesOp h ℓ op = true
+  | [], cap, _, _, _, _, _ => by simp
+  | (.handleF h₀ :: K), 0, Kᵢ, Kₒ, h, ℓ, op => by
+      rw [staticSplit_handleF_zero, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq]
+      rintro ⟨_, rfl, _⟩ hkind
+      exact hkind
+  | (.handleF h₀ :: K), (c + 1), Kᵢ, Kₒ, h, ℓ, op => by
+      rw [staticSplit_handleF_succ, Option.map_eq_some_iff]
+      rintro ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ hkind
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨_, rfl, _⟩ := heq
+      exact staticSplit_kind K c hsp hkind
+  | (.letF N :: K), cap, Kᵢ, Kₒ, h, ℓ, op => by
+      rw [staticSplit_letF, Option.map_eq_some_iff]
+      rintro ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ hkind
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨_, rfl, _⟩ := heq
+      exact staticSplit_kind K cap hsp hkind
+  | (.appF w :: K), cap, Kᵢ, Kₒ, h, ℓ, op => by
+      rw [staticSplit_appF, Option.map_eq_some_iff]
+      rintro ⟨⟨Kᵢ', h', Kₒ'⟩, hsp, heq⟩ hkind
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨_, rfl, _⟩ := heq
+      exact staticSplit_kind K cap hsp hkind
+
 /-- If `dispatch` succeeds for `(ℓ, op)` over a well-typed stack, then `op` is `"raise"`, `"get"`, or
 `"put"` (ADR-0025): the catching frame is either a `throws ℓ` (interface `{raise}`) or a `state ℓ`
 (interface `{get,put}`); both interface premises constrain `op`. -/
@@ -2560,7 +2677,168 @@ theorem dispatch_put_shape {K : EvalCtx} {ℓ : Label} {v : Val} {cfg' : Config}
       Bool.false_eq_true, if_false, Option.some.injEq]
     intro hd; exact ⟨Kᵢ, s, Kₒ, rfl, hd.symm⟩
 
-/-! ### E.2 preservation (config level, ADR-0023) -/
+/-! ### E.1c label-blind concat decomposition (the STATIC re-typing core, ADR-0045 1b)
+
+Given `HasStack (Kᵢ ++ handleF h :: Kₒ) e C eo Co`, peel `Kᵢ` frame-by-frame to expose the boundary
+`handleF h` frame's typing and re-type either the OUTER `Kₒ` (throws abort) or the RESUMED stack
+`Kᵢ ++ handleF h' :: Kₒ` (state/transaction resume). These are LABEL-BLIND (`Kᵢ` is rebuilt by its own
+`HasStack` constructors regardless of what it contains) and are the static analogues of
+`dispatch_typed` / `dispatch_state_typed` / `dispatch_transaction_typed` — simpler, because the cap
+already located the boundary, so no `handlesOp`-driven search/skip recursion is needed. -/
+
+/-- THROWS abort re-typing (static). The boundary handler is a `throws ℓ'` frame; type the outer `Kₒ`
+at the throws answer type `A_h = opArg ℓ' "raise"`, whole-program effect `eo' ≤ eo`. Induct on `Kᵢ`. -/
+theorem HasStack.concat_throws_typed {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {e : Eff} {C : CTy Eff Mult}
+    {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF (Handler.throws ℓ') :: Kₒ) e C eo Co →
+    ∃ q A_h eo', eo' ≤ eo
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "raise" = some A_h
+      ∧ HasStack Kₒ ⊥ (CTy.F q A_h) eo' Co := by
+  induction Kᵢ generalizing e C with
+  | nil =>
+    intro hK; simp only [List.nil_append] at hK
+    obtain ⟨φ, q, A, hCeq, hraise, hiface, hle, hsub⟩ := hK.handleF_throws_inv
+    obtain ⟨eo', hleo, hsub'⟩ := hsub.weaken_eff (bot_le)
+    exact ⟨q, A, eo', hleo, hraise, hsub'⟩
+  | cons fr Kᵢ ih =>
+    intro hK; simp only [List.cons_append] at hK
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
+    | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
+    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
+    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
+    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
+
+/-- STATE resume re-typing (static). The boundary handler is a `state ℓ' s` frame; reinstall a
+`state ℓ' s'` frame (any closed `s' : S`, `S = opRes ℓ' "get"`) over the same `Kᵢ`/`Kₒ`, re-typing the
+resumed stack at the SAME `e C`. Each `Kᵢ` frame is rebuilt by `cases hK` (so the exact constructor —
+incl. nested `state`/`transaction` frames — is preserved, not lost to `handleAny_inv`). This is the
+WellCapped-under-resume core: the resumed stack has the IDENTICAL frame skeleton (only `s↦s'` at one
+`handleF`), which is why the static cap of every buried perform still resolves. -/
+theorem HasStack.concat_state_resume {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s s' : Val} {S : VTy Eff Mult}
+    {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF (Handler.state ℓ' s) :: Kₒ) e C eo Co →
+    EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "get" = some S →
+    HasVTy [] [] s' S →
+    ∃ eo', eo' ≤ eo
+      ∧ HasStack (Kᵢ ++ Frame.handleF (Handler.state ℓ' s') :: Kₒ) e C eo' Co := by
+  intro hK hgetRes hs'
+  induction Kᵢ generalizing e C with
+  | nil =>
+    simp only [List.nil_append] at hK ⊢
+    cases hK with
+    | @stateF _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub =>
+      have hSeq : S = S0 := by rw [hgr] at hgetRes; exact (Option.some.inj hgetRes).symm
+      subst hSeq
+      exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs' hle hsub⟩
+  | cons fr Kᵢ ih =>
+    simp only [List.cons_append] at hK ⊢
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.letF hN hsub'⟩
+    | @appF _ _ _ _ q A B _ hv hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
+    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hsub'⟩
+    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hsub'⟩
+    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hsub'⟩
+
+/-- TRANSACTION resume re-typing (static), the multi-cell analogue of `concat_state_resume`. The
+boundary `transaction ℓ' Θ` frame is reinstalled as `transaction ℓ' Θ'` (any all-`int`-cells heap `Θ'`)
+over the same `Kᵢ`/`Kₒ`. The interface premises (facts about `ℓ'`'s `EffSig`, heap-invariant) are
+passed in to re-discharge the reinstalled frame. -/
+theorem HasStack.concat_transaction_resume {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ Θ' : Store}
+    {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
+    (∀ cell ∈ Θ', HasVTy [] [] cell (VTy.int : VTy Eff Mult)) →
+    ∃ eo', eo' ≤ eo
+      ∧ HasStack (Kᵢ ++ Frame.handleF (Handler.transaction ℓ' Θ') :: Kₒ) e C eo' Co := by
+  intro hK hcells'
+  induction Kᵢ generalizing e C with
+  | nil =>
+    simp only [List.nil_append] at hK ⊢
+    cases hK with
+    | @transactionF _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+      exact ⟨eo, le_refl _, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells' hle hsub⟩
+  | cons fr Kᵢ ih =>
+    simp only [List.cons_append] at hK ⊢
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.letF hN hsub'⟩
+    | @appF _ _ _ _ q A B _ hv hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
+    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hsub'⟩
+    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hsub'⟩
+    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hsub'⟩
+
+/-- The boundary `state ℓ' s` frame (located by the cap) carries a CLOSED stored state of type
+`S = opRes ℓ' "get"` and the get/put interface signatures — read off by peeling `Kᵢ` to the boundary
+(`cases hK`). The static analogue of `splitAt_state_closed`, over the concat. -/
+theorem HasStack.concat_state_closed {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s : Val} {e : Eff}
+    {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF (Handler.state ℓ' s) :: Kₒ) e C eo Co →
+    ∃ S, EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "get" = some S
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "put" = some S
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "put" = some VTy.unit
+      ∧ HasVTy [] [] s S := by
+  induction Kᵢ generalizing e C with
+  | nil =>
+    intro hK; simp only [List.nil_append] at hK
+    cases hK with
+    | @stateF _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub => exact ⟨S0, hgr, hpa, hpr, hs⟩
+  | cons fr Kᵢ ih =>
+    intro hK; simp only [List.cons_append] at hK
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
+    | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
+    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
+    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
+    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
+
+/-- The boundary `transaction ℓ' Θ` frame (located by the cap) carries a CLOSED all-`int` heap and the
+monomorphic-`int` stm interface signatures — read off by peeling `Kᵢ` to the boundary. The static
+analogue of `splitAt_transaction_store`, over the concat. -/
+theorem HasStack.concat_transaction_store {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ : Store} {e : Eff}
+    {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "newTVar" = some VTy.int
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "newTVar" = some VTy.int
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "readTVar" = some VTy.int
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "readTVar" = some VTy.int
+      ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "writeTVar" = some (VTy.prod VTy.int VTy.int)
+      ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "writeTVar" = some VTy.unit
+      ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' op = some B →
+          op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar")
+      ∧ (∀ cell ∈ Θ, HasVTy [] [] cell (VTy.int : VTy Eff Mult)) := by
+  induction Kᵢ generalizing e C with
+  | nil =>
+    intro hK; simp only [List.nil_append] at hK
+    cases hK with
+    | @transactionF _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+      exact ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩
+  | cons fr Kᵢ ih =>
+    intro hK; simp only [List.cons_append] at hK
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
+    | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
+    | @handleF _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
+    | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
+    | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
 
 theorem preservation_proof
     {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
@@ -2599,8 +2877,27 @@ theorem preservation_proof
         obtain ⟨eo', hleo, hsub'⟩ := hsub.weaken_eff (bot_le)
         exact ⟨eo', le_trans hleo hleo₀,
           ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩⟩
-  | perform _ ℓ op v =>
+  | perform cap ℓ op v =>
     -- DISPATCH. Classify the performed op by the catching handler's interface.
+    --
+    -- ★ B1 WALL (ADR-0045 1b, the load-bearing finding) — HONEST RED, NO sorry. ★
+    -- `Source.step` now resolves by CAPABILITY (`staticDispatch K cap`), so the connection
+    -- `Source.step = some cfg' ⟹ splitAt K ℓ op = some _` below is BROKEN: `staticSplit K cap`
+    -- need not agree with `splitAt K ℓ op` (the cap names a frame the label-search may shadow).
+    -- The static analogue needs `CapResolvesKind K cap ℓ op` (well-scopedness) — but the FROZEN
+    -- `HasConfig`-only premise of `preservation`/`progress` does NOT entail it: 1a left the cap
+    -- UNCONSTRAINED in `HasCTy.perform`, so typing is CAP-IRRELEVANT (build-confirmed:
+    -- `perform_cap_irrelevant`) and a well-typed config can carry a non-resolving cap that makes
+    -- `Source.step` STUCK (build-confirmed: `staticSplit [handleF h] 5 = none`). Hence option (b)
+    -- — a free-standing `WellCapped` invariant — cannot thread the frozen statements: B1 MUST FUSE
+    -- with B3 (option a: constrain the cap in the typing rule, so `HasConfig ⟹ WellCapped`).
+    -- The static infrastructure that B3 consumes is GREEN above (§E.1b/c: `staticSplit_decomp`,
+    -- `staticSplit_kind`, `concat_throws_typed`/`concat_state_resume`/`concat_transaction_resume`,
+    -- `concat_state_closed`/`concat_transaction_store`). The resume verdict is build-confirmed
+    -- SAFE (`/tmp` spike `capResolves_skel_inv`): resume swaps only the boundary handler payload,
+    -- under which `CapResolves` is invariant — so resume is NOT the wall; the wall is at
+    -- progress/initial-typing (the frozen-contract collision). The `splitAt`-era body below is
+    -- retained verbatim as B3's port target; it is genuine RED under the static flip.
     obtain ⟨γ', q, A, B, hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.perform_inv
     subst hC
     have hγ'nil : γ' = [] := by have := hwv.length_eq; simpa using this
@@ -2911,7 +3208,17 @@ theorem progress_proof
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
     · subst hweq; exact Or.inr ⟨(K, MT), by simp [Source.step]⟩
     · simp at hget
-  | perform _ ℓ op v =>
+  | perform cap ℓ op v =>
+    -- ★ B1 WALL (ADR-0045 1b) — the DECISIVE progress break, HONEST RED, NO sorry. ★
+    -- Under static dispatch the config STEPS iff `staticSplit K cap` succeeds, i.e. iff
+    -- `CapResolves K cap` (build-confirmed: `staticSplit_isSome_iff_capResolves`). But the FROZEN
+    -- `HasConfig ⊥`-only premise does NOT entail `CapResolves K cap`: typing is cap-irrelevant
+    -- (`perform_cap_irrelevant`), so a well-typed `⊥`-config with a bad cap (e.g. cap 5 over a
+    -- 1-handler stack) has `staticSplit K cap = none` ⟹ `Source.step = none` ⟹ STUCK. Progress is
+    -- therefore FALSE as stated for static dispatch + 1a typing. The cap must be constrained in the
+    -- typing rule (B3 / option a) so `HasConfig ⟹ CapResolves`; then this case discharges via
+    -- `CapResolves.staticSplit_some` + `staticDispatch_isSome_iff`. The `splitAt_fires` body below
+    -- (label-liveness search) is retained as B3's port reference; it is genuine RED under the flip.
     obtain ⟨γ', q', A', B', hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.perform_inv
     -- the label cannot escape to the whole-program ⊥
     have hesc : ¬ (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ (⊥ : Eff)) :=

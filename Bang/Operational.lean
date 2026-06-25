@@ -251,7 +251,11 @@ theorem handlesOp_label {h : Handler} {ℓ : Label} {op : OpId} (hc : handlesOp 
 `K = Kᵢ ++ handleF h :: Kₒ`, `Kᵢ` containing no catching frame (the inner captured continuation),
 and `h` the catching handler. `none` = no handler in `K` (unhandled). The recursion is the SAME walk
 ADR-0023's `dispatch` did; it now also RETURNS the inner prefix `Kᵢ` (kept by `state`, discarded by
-`throws`). -/
+`throws`).
+
+ADR-0045 1b: `splitAt` is now LEGACY for `Source.step` (which dispatches via `staticSplit`), but
+STAYS because the CalcVM's `unwindFind` analogue + the LR's `krelS_splitAt_decomp` still reference its
+shape (B2/B3 re-index them onto `staticSplit`). -/
 def splitAt : EvalCtx → Label → OpId → Option (EvalCtx × Handler × EvalCtx)
   | [], _, _ => none
   | (.handleF h :: K), ℓ, op =>
@@ -259,6 +263,38 @@ def splitAt : EvalCtx → Label → OpId → Option (EvalCtx × Handler × EvalC
       else (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ))
   | (fr :: K), ℓ, op =>
       (splitAt K ℓ op).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
+
+/-! ### STATIC dispatch (ADR-0045 1b) — capability-passing, label-blind
+
+`staticSplit K cap` walks OUT `cap`-many `handleF` frames; the `(cap+1)`-th `handleF` IS the handler,
+taken WITHOUT a `handlesOp` test (the capability already named it). `letF`/`appF` frames are part of
+the captured continuation and skipped transparently. Returns `(Kᵢ, h, Kₒ)` exactly like `splitAt`, so
+`dispatchOn` (which routes by the RESOLVED handler `h`, label-carrying) is unchanged. Lifted verbatim
+from `static-dispatch-spike` (`Bang/StaticSpike.lean`). -/
+def staticSplit : EvalCtx → Nat → Option (EvalCtx × Handler × EvalCtx)
+  | [], _ => none
+  | (.handleF h :: K), 0 => some ([], h, K)              -- THIS handler: cap exhausted, take it
+  | (.handleF h :: K), (c+1) =>                          -- skip one handler frame (cap counts down)
+      (staticSplit K c).map (fun (Kᵢ, h', Kₒ) => (Frame.handleF h :: Kᵢ, h', Kₒ))
+  | (fr :: K), c =>                                      -- non-handler frame: transparent, keep walking
+      (staticSplit K c).map (fun (Kᵢ, h', Kₒ) => (fr :: Kᵢ, h', Kₒ))
+
+/-- The cap resolves to an in-scope handler frame: walking out `cap`-many `handleF` frames reaches a
+`handleF`. Non-`handleF` frames are transparent. This is `staticSplit`'s well-scopedness SIDE — a pure
+`Nat`/`List` structural recursion, decidable (no polymorphism). Lifted from `setrow-tension-spike`. -/
+def CapResolves : EvalCtx → Nat → Prop
+  | [], _ => False                                   -- ran off the stack: out of scope
+  | (.handleF _ :: _), 0 => True                     -- cap exhausted AT a handler: in scope
+  | (.handleF _ :: K), (c+1) => CapResolves K c      -- skip one handler, cap counts down
+  | (_ :: K), c => CapResolves K c                   -- transparent frame: keep walking
+
+/-- The kind-match refinement: the resolved handler handles `(ℓ, op)` (the RIGHT kind). Reuses the real
+`handlesOp`. Lifted from `setrow-tension-spike`. -/
+def CapResolvesKind : EvalCtx → Nat → Label → OpId → Prop
+  | [], _, _, _ => False
+  | (.handleF h :: _), 0, ℓ, op => handlesOp h ℓ op = true
+  | (.handleF _ :: K), (c+1), ℓ, op => CapResolvesKind K c ℓ op
+  | (_ :: K), c, ℓ, op => CapResolvesKind K c ℓ op
 
 /-- ◊4.5b-answertrack SCOPED-SEAM (ADR-0043): `(ℓ, op)` does NOT "pass through" a non-catching handler
 before reaching its catcher — the captured continuation up to the catching handler contains NO handler
@@ -339,6 +375,12 @@ def dispatchOn (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option 
 def dispatch (K : EvalCtx) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
   (splitAt K ℓ op).bind (dispatchOn op v)
 
+/-- STATIC dispatch (ADR-0045 1b): resolve the handler by CAPABILITY (`staticSplit K cap`), then route
+the resolved `(Kᵢ, h, Kₒ)` through the UNCHANGED `dispatchOn` (which reads the handler's kind/label).
+This is what `Source.step` now uses for `perform`; `dispatch` (label search) is retired to legacy. -/
+def staticDispatch (K : EvalCtx) (cap : Nat) (op : OpId) (v : Val) : Option Config :=
+  (staticSplit K cap).bind (dispatchOn op v)
+
 /-- One machine transition. `none` = stuck (terminal `⟨[], ret v⟩`, or genuinely wrong). -/
 def Source.step : Config → Option Config
   -- PUSH
@@ -355,8 +397,9 @@ def Source.step : Config → Option Config
   | (K, .case (.inr v) _ N₂)  => some (K, Comp.subst v N₂)   -- sum: right branch
   | (K, .split (.pair v w) N) => some (K, Comp.subst v (Comp.subst (Val.shift w) N))  -- product
   | (K, .unfold (.fold v))    => some (K, .ret v)            -- μ: fold/unfold erase
-  -- DISPATCH
-  | (K, .perform _ ℓ op v)  => dispatch K ℓ op v   -- 1a: cap IGNORED, still dynamic splitAt by label (1b flips to staticSplit cap)
+  -- DISPATCH (ADR-0045 1b): STATIC — resolve by `cap`, route by resolved handler. `ℓ` is now inert in
+  -- the STEP (it lives in the row + on the resolved handler); `staticDispatch` uses `cap`, not `ℓ`.
+  | (K, .perform cap _ op v)  => staticDispatch K cap op v
   -- stuck
   | _                       => none
 
