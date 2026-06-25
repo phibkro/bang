@@ -35,7 +35,7 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
 - `preservation`/`type_safety`/`progress` (Spec.lean:93,116,104): the REAL frozen-statement risk, via Inc 3 — a φ≠⊥ premise on `ret`/`letC` in `HasConfigTy` would change the `HasConfig` premise shape. STATEMENT_CHANGE_OK against ADR-0045 (same envelope as the existing `LWConfig` fold).
 - "Only the index moves" is OPTIMISTIC (the index already moved; the dispatch re-key is the bulk — multi-session, ~the ◊4.5b sub-block-(f) surface area) and the return-escape gate (Inc 3) is genuinely NEW machinery, not a re-index.
 
-## Status + remaining work — handoff at `a771cc1` (2026-06-25)
+## Status + remaining work — at `26f4373` (2026-06-25)
 
 - **Banked `a771cc1` (LR-green, 709):** route-B `KrelS`/`EnvRelK` strip (`Val.CapClosed` GONE — route A was
   over-strong) + `closeC` route-B shapes + **the MISS dissolution** (`krelS_staticSplit_decomp` — the ◊4.5b edge
@@ -43,23 +43,27 @@ Re-keying `crelK_fund_up` (Compat.lean:1628) + `krelS_splitAt_decomp` (Compat.le
   lemmas banked. Kernel STD block at `91e7444` (1 sorry = the type-gate return-escape).
 - **Re-grounding:** the LR cap-discipline is CONTEXTUAL (shift↔handleF-extension cancellation) — ADR-0045
   "Re-grounding". Routes A (CapClosed) and B-naive (shiftCap-stability) both build-REFUTED; don't re-derive them.
-- **Remaining (precisely spec'd, fresh-context-ready):**
-  - **(b) swap-layer reproof — the ONE non-mechanical piece.** `Comp/Val/Handler.substFrom_swap_closed`
-    (~`Compat:823`), `_swap_closed_ge` (~941), `shiftFrom_substFrom_closed` (~279) carry `CapClosed` ONLY on
-    their `handle` arm. Fix: quantify `{v w}` PER-CALL (into the ∀ motive) so the handle arm recurses at
-    `shiftCap v`/`shiftCap w`, discharged via the commutation `shiftCapFrom_shiftFrom` (`Val.Closed v →
-    Val.Closed (shiftCap v)`, a ~3-line helper). NO `CapClosed`. Gates `closeC_subst_comm` → the `crelK_fund`
-    binder cases.
-  - **(a) mechanical strip (~30 Compat sites)** — once (b) lands, remove `CapClosed` from `_intro`/`compatK_*`/
-    `crelK_unfold`/`coApproxC_le_of_resumeDecomp`/`krelS_append`/`*_reinstall`/`krelS_staticSplit_decomp`. Pure
-    reverse of pass-1a threading.
-  - **Pipeline (authorized):** the cancellation lemma (shift↔handleF-extension, threaded at `compatK_handle*`
-    refocus) → R1 bridge (`KrelS`→cap-resolution via `HandlerRel`) + `crelK_fund_up` dispatch re-key → close the
-    bounded cap>0 resume-relocation (`dispatchOn_append_outer` + `staticSplit_decomp`, answer type cap-witnessed)
-    → **the frozen `lr_fundamental` well-capped premise** (context-relative `WellCapped`, mirrors `type_safety`'s
-    `LWConfig`; **STOP-and-show the exact premise before editing `Spec.lean`**).
-- **Working-tree note:** at handoff the tree has lrscope's uncommitted partial (a)+(b) Compat WIP (red) on top
-  of `a771cc1` — a fresh session can `git stash`/discard it and redo (b)→(a) from `a771cc1` per this spec.
+- **✓ (b) + (a) DONE — banked `26f4373` (build-gated: `lake build Bang.Compat` 55 errors → 6, all
+  next-increment; zero new sorries; only `:1801`).**
+  - **(b) swap-layer reproof:** new helper `Val.Closed.shiftCap` (from `shiftCapFrom_shiftFrom` orthogonality),
+    HOISTED above the `_closed` blocks. `shiftFrom_substFrom_closed`/`substFrom_swap_closed`/`_swap_closed_ge`
+    quantify `{v w}` into the ∀-motive and DROP `CapClosed`; handle arms recurse at `shiftCap u` via
+    `Val.Closed.shiftCap`. Gated `closeV_closed_scoped` → `closeC_subst_comm`.
+  - **(a) mechanical strip (~30 sites):** `CapClosed` removed from the `closeC_subst_comm` family,
+    `crelK_unfold`, `krelS_*_intro`, `compatK_letC/app/lam/case/split`, `krelS_append`, `*_reinstall`,
+    `krelS_staticSplit_decomp`, and the ~14 `crelK_fund` body sites (`EnvRelK.capClosed_*` projections gone).
+- **Remaining — the 6 errors, two next-increment items:**
+  - **Item 1 — `crelK_fund_up` dispatch RE-KEY (`Compat:1850/1855`) — IN FLIGHT (lrscope).** `splitAt`→`staticSplit`,
+    `krelS_splitAt_decomp`→`krelS_staticSplit_decomp`, match the `staticDispatch` shape. THROWS arm first (PATH Inc 0).
+  - **Item 2 — the contextual cancellation gate (`Compat:2188/2204/2215`, `crelK_fund` handler arms).**
+    `compatK_handle*` expects the body under the cap-SHIFTED env `closeC (δ.map shiftCap) M`; `crelK_fund hM`
+    supplies unshifted `closeC δ M`. **Design APPROVED: try the refocus-restructure FIRST** (push `handleF` before
+    closing the body so `δ.map shiftCap` is the natural +1-handler env — may dissolve the cancellation lemma
+    entirely, PATH lines 66–78); fall back to the contextual cancellation lemma if not.
+  - **Then:** R1 bridge (`KrelS`→cap-resolution via `HandlerRel`) → close the bounded cap>0 resume-relocation
+    (`:1801`, `dispatchOn_append_outer` + `staticSplit_decomp`, answer type cap-witnessed) → **the frozen
+    `lr_fundamental` well-capped premise** (context-relative `WellCapped`, mirrors `type_safety`'s `LWConfig`;
+    **STOP-and-show the exact premise before editing `Spec.lean`**).
 - **End state (the payoff):** `#print axioms lr_sound`/`lr_fundamental` ⊆ {propext, Classical.choice, Quot.sound},
   `sorryAx` GONE — the ◊4.5b edge closed.
 
