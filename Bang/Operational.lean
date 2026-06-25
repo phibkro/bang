@@ -360,8 +360,17 @@ def dispatchOn (n : Nat) (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx �
 
 /-- ADR-0054: the kernel's effect dispatch — resolve the capability's IDENTITY `n`, then route the
 matched `(Kᵢ, h, Kₒ)` through `dispatchOn n` (which reinstalls `handleF n` on a resumptive RESUME). -/
-def idDispatch (K : EvalCtx) (n : Nat) (op : OpId) (v : Val) : Option Config :=
-  (splitAtId K n).bind (dispatchOn n op v)
+def idDispatch (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
+  (splitAtId K n).bind fun (Kᵢ, h, Kₒ) =>
+    -- FAIL-LOUD (ADR-0054 inc 4): identity match alone does NOT check the handler KIND, so a
+    -- mis-identified / escaped capability could land on a wrong-kind frame and be read
+    -- silently-wrong (`op = "get"` on a `.throws` frame hits the abort arm → a wrong value, not
+    -- `none`). Gate on the capability's OWN label `ℓ`: a cap whose resolved handler does not
+    -- handle `(ℓ, op)` is STUCK (fail-loud), never wrong-valued. Well-typed programs are
+    -- unaffected — typing (`c : Cap ℓ`) + `NonEscape` guarantee the match handles `(ℓ, op)`,
+    -- so the migration #guards still pass. This makes the `dispatchOn` kind-check redundant on
+    -- the verified core while keeping the tested superset honest at the escape boundary.
+    if handlesOp h ℓ op then dispatchOn n op v (Kᵢ, h, Kₒ) else none
 
 /-! ### Handler-skeleton utilities (`handlerCount` / `handlersOf`).
 
@@ -459,7 +468,7 @@ def Source.step : Config → Option Config
   | (K, .unfold (.fold v))    => some (K, .ret v)            -- μ: fold/unfold erase
   -- DISPATCH (ADR-0054): IDENTITY — the capability `vcap n _` names handler `n`; match it, route by the
   -- resolved handler (`dispatchOn` reinstalls `handleF n` on a resumptive resume).
-  | (K, .perform (.vcap n _) op v) => idDispatch K n op v
+  | (K, .perform (.vcap n ℓ) op v) => idDispatch K n ℓ op v
   -- stuck
   | _                       => none
 
