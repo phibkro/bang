@@ -2,13 +2,18 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Accepted
+- **Status**: Superseded
 - **Summary**: GO on **absolute/level caps** — the `perform` cap is a ROOT-LEVEL (from the program root / stack bottom; `lvl=0` = outermost handler), NOT a de-Bruijn outward index. Crossing a `handle` does NOT shift the cap (`Comp.subst` leaves it unchanged), which **dissolves the de-Bruijn shift wall (ADR-0050) BY CONSTRUCTION**: `closeC_handle*` rewrite to the UNSHIFTED `closeC δ M`, so the 3 `crelK_fund` handler arms close on their LANDED `compatK_handle*` cores — **LR seam 5→2** (only `hcatch` + `:1801` remain as ADR-0043 descents). Runtime dispatch resolves the level via `absSplit K cap = staticSplit K (handlerCount K - 1 - cap)` (the conversion modulus self-adjusts under stack mutation — the `+1` the shift threaded is absorbed). The WC/`LWT`/`progress` cap-resolution re-keys to `absResolvesKind`; the **WC keystone** (`WCComp.shiftCap_insert` general-Δ insert) reformulation is the one **kernel-engineer-paired 2c** piece still seamed. Frozen-statement-free for the 5→2. Supersedes ADR-0050's "defer the representation fix."
 - **Amends**: 0050
 - **Depends-on**: 0045, 0046, 0050
 - **See-also**: 0052
 
 ## Status
+Superseded by ADR-0054 (2026-06-25): absolute caps are build-verified UNSOUND under internal-handler
+migration (`scratch/MigrationSoundnessProbe.lean` — a well-typed, `LWConfig`-valid program evaluating to
+a wrong-typed value). The DECISION (adopt absolute caps) is reversed; the diagnostic findings below
+(the multi-duty shift, LR independence) carry forward as input to ADR-0054. Historical context follows.
+
 Accepted (2026-06-25, operator ratification of the cap-representation feasibility spike). The 5→2 is
 **landed + axiom-gated** (below); the WC-keystone 2c is a separate, deliberate, kernel-engineer-paired
 unit. CalcVM is the orthogonal deferred route-B (ADR-0052), unaffected by this decision.
