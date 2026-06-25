@@ -210,51 +210,45 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
 
-/-- `closeC` distributes through a `throws` handler: the handler carries no value
-(`Handler.subst _ (throws ℓ) = throws ℓ`), and `handle` does not bind a VAR, so the body closes
-structurally. ADR-0045: `handle` IS a cap-binder, so `Comp.subst v (handle h M)` crosses the body with
-`Val.shiftCap v`; the `Val.CapClosed` premise on the fillers vanishes that shift (`hv.shiftCap`), exactly
-as `closeC_subst_comm` uses `Val.Closed` to vanish the de-Bruijn shift. (`state`/`transaction` carry
-values/heaps — their closeC is the resumptive-fragment follow-up.) -/
-@[simp] theorem closeC_handleThrows (δ : List Val) (ℓ : Label) (M : Comp)
-    (hδcap : ∀ v ∈ δ, Val.CapClosed v) :
-    closeC δ (Comp.handle (Handler.throws ℓ) M) = Comp.handle (Handler.throws ℓ) (closeC δ M) := by
+/-- `closeC` distributes through a `throws` handler. ADR-0045 (route B): `handle` IS a cap-binder, so
+`Comp.subst v (handle h M)` crosses the body with `Val.shiftCap v` (the value's caps bump as they cross
+the handle). The body therefore closes over the CAP-SHIFTED fillers `δ.map Val.shiftCap` — the
+context-relative `shiftCap`-threading (matching the kernel `WCVal`), NOT cap-closedness. The handler
+`throws ℓ` carries no value (`Handler.subst _ (throws ℓ) = throws ℓ`). -/
+@[simp] theorem closeC_handleThrows (δ : List Val) (ℓ : Label) (M : Comp) :
+    closeC δ (Comp.handle (Handler.throws ℓ) M)
+      = Comp.handle (Handler.throws ℓ) (closeC (δ.map Val.shiftCap) M) := by
   induction δ generalizing M with
   | nil => rfl
   | cons v δ ih =>
-    have hv : Val.CapClosed v := hδcap v List.mem_cons_self
-    have hδ' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
-    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, hv.shiftCap]; exact ih _ hδ'
+    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, List.map_cons]; exact ih _
 
 /-- ◊4.5 RESUME INFRA: `closeC` distributes through a `state ℓ s` handler. UNLIKE `throws`, the `state`
 handler CARRIES a value `s` (`Handler.substFrom k v (state ℓ s) = state ℓ (substFrom k v s)`), so the
 stored value closes too — `closeC δ (handle (state ℓ s) M) = handle (state ℓ (closeV δ s)) (closeC δ M)`.
 The `handle` former does not bind, so both `s` and the body `M` close at level 0 (structural). -/
-@[simp] theorem closeC_handleState (δ : List Val) (ℓ : Label) (s : Val) (M : Comp)
-    (hδcap : ∀ v ∈ δ, Val.CapClosed v) :
+@[simp] theorem closeC_handleState (δ : List Val) (ℓ : Label) (s : Val) (M : Comp) :
     closeC δ (Comp.handle (Handler.state ℓ s) M)
-      = Comp.handle (Handler.state ℓ (closeV δ s)) (closeC δ M) := by
+      = Comp.handle (Handler.state ℓ (closeV δ s)) (closeC (δ.map Val.shiftCap) M) := by
+  -- the stored `s` closes normally (`Handler.substFrom` doesn't cap-shift the state cell); the body `M`
+  -- closes over the cap-shifted fillers (it's UNDER the `handle` cap-binder). Route B (no CapClosed).
   induction δ generalizing s M with
   | nil => rfl
   | cons v δ ih =>
-    have hv : Val.CapClosed v := hδcap v List.mem_cons_self
-    have hδ' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
-    simp only [closeC, closeV, Comp.subst, Comp.substFrom, Handler.substFrom, hv.shiftCap]; exact ih _ _ hδ'
+    simp only [closeC, closeV, Comp.subst, Comp.substFrom, Handler.substFrom, List.map_cons]; exact ih _ _
 
 /-- ◊4.5 RESUME INFRA: `closeC` distributes through a `transaction ℓ Θ` handler. The heap cells are
 treated as CLOSED (ADR-0030: `Handler.substFrom _ (transaction ℓ Θ) = transaction ℓ Θ`, identity), so
 the heap is untouched — exactly like `throws`. Only the body `M` closes:
 `closeC δ (handle (transaction ℓ Θ) M) = handle (transaction ℓ Θ) (closeC δ M)`. -/
-@[simp] theorem closeC_handleTransaction (δ : List Val) (ℓ : Label) (Θ : Store) (M : Comp)
-    (hδcap : ∀ v ∈ δ, Val.CapClosed v) :
+@[simp] theorem closeC_handleTransaction (δ : List Val) (ℓ : Label) (Θ : Store) (M : Comp) :
     closeC δ (Comp.handle (Handler.transaction ℓ Θ) M)
-      = Comp.handle (Handler.transaction ℓ Θ) (closeC δ M) := by
+      = Comp.handle (Handler.transaction ℓ Θ) (closeC (δ.map Val.shiftCap) M) := by
+  -- the heap is closed (`Handler.substFrom` identity on `Θ`); the body closes over cap-shifted fillers.
   induction δ generalizing M with
   | nil => rfl
   | cons v δ ih =>
-    have hv : Val.CapClosed v := hδcap v List.mem_cons_self
-    have hδ' : ∀ u ∈ δ, Val.CapClosed u := fun u hu => hδcap u (List.mem_cons_of_mem v hu)
-    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, hv.shiftCap]; exact ih _ hδ'
+    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, List.map_cons]; exact ih _
 
 @[simp] theorem closeV_vunit (δ : List Val) : closeV δ Val.vunit = Val.vunit := by
   induction δ with
@@ -652,7 +646,7 @@ theorem EnvRel.closed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : 
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRel] at h
-      obtain ⟨hc₁, _, _, _, _, hrest⟩ := h
+      obtain ⟨hc₁, _, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₁
       · exact EnvRel.closed_left hrest v hmem
@@ -663,7 +657,7 @@ theorem EnvRel.closed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ :
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRel] at h
-      obtain ⟨_, hc₂, _, _, _, hrest⟩ := h
+      obtain ⟨_, hc₂, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₂
       · exact EnvRel.closed_right hrest v hmem
@@ -673,12 +667,12 @@ theorem EnvRel.length_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : 
     EnvRel n Γ δ₁ δ₂ → δ₁.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_left h.2.2.2.2.2]
+      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_left h.2.2.2]
 theorem EnvRel.length_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRel n Γ δ₁ δ₂ → δ₂.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_right h.2.2.2.2.2]
+      rw [EnvRel] at h; simp only [List.length_cons]; rw [EnvRel.length_right h.2.2.2]
 
 /-- The per-position `Vrel`: if `Γ[i]? = some A`, the `i`-th fillers are `Vrel n A`-related. -/
 theorem EnvRel.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
@@ -687,7 +681,7 @@ theorem EnvRel.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List
   | [],      [],        [],        _, i, A, hΓ, _, _ => by simp at hΓ
   | A' :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, i, A, hΓ, d₁, d₂ => by
       rw [EnvRel] at h
-      obtain ⟨_, _, _, _, hv, hrest⟩ := h
+      obtain ⟨_, _, hv, hrest⟩ := h
       cases i with
       | zero => simp only [List.getElem?_cons_zero, Option.getD_some]
                 simp only [List.getElem?_cons_zero, Option.some.injEq] at hΓ; subst hΓ; exact hv
@@ -703,7 +697,7 @@ theorem EnvRelK.closed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ :
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRelK] at h
-      obtain ⟨hc₁, _, _, _, _, hrest⟩ := h
+      obtain ⟨hc₁, _, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₁
       · exact EnvRelK.closed_left hrest v hmem
@@ -713,43 +707,21 @@ theorem EnvRelK.closed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ 
   | [],      [],        [],        _, v, hv => absurd hv (by simp)
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
       rw [EnvRelK] at h
-      obtain ⟨_, hc₂, _, _, _, hrest⟩ := h
+      obtain ⟨_, hc₂, _, hrest⟩ := h
       rcases List.mem_cons.mp hv with rfl | hmem
       · exact hc₂
       · exact EnvRelK.closed_right hrest v hmem
-
--- ADR-0045 (Inc 0b): the cap-closedness projections — the cap-analogue of `closed_left`/`closed_right`,
--- supplying the `Val.CapClosed` fillers the `closeC`/substitution-commutation lemmas now require.
-theorem EnvRelK.capClosed_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
-    EnvRelK n Γ δ₁ δ₂ → ∀ v ∈ δ₁, Val.CapClosed v
-  | [],      [],        [],        _, v, hv => absurd hv (by simp)
-  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
-      rw [EnvRelK] at h
-      obtain ⟨_, _, hcap₁, _, _, hrest⟩ := h
-      rcases List.mem_cons.mp hv with rfl | hmem
-      · exact hcap₁
-      · exact EnvRelK.capClosed_left hrest v hmem
-
-theorem EnvRelK.capClosed_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
-    EnvRelK n Γ δ₁ δ₂ → ∀ v ∈ δ₂, Val.CapClosed v
-  | [],      [],        [],        _, v, hv => absurd hv (by simp)
-  | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, v, hv => by
-      rw [EnvRelK] at h
-      obtain ⟨_, _, _, hcap₂, _, hrest⟩ := h
-      rcases List.mem_cons.mp hv with rfl | hmem
-      · exact hcap₂
-      · exact EnvRelK.capClosed_right hrest v hmem
 
 theorem EnvRelK.length_left {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRelK n Γ δ₁ δ₂ → δ₁.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_left h.2.2.2.2.2]
+      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_left h.2.2.2]
 theorem EnvRelK.length_right {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRelK n Γ δ₁ δ₂ → δ₂.length = Γ.length
   | [],      [],        [],        _ => rfl
   | _ :: Γ', v₁ :: δ₁', v₂ :: δ₂', h => by
-      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_right h.2.2.2.2.2]
+      rw [EnvRelK] at h; simp only [List.length_cons]; rw [EnvRelK.length_right h.2.2.2]
 
 theorem EnvRelK.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : List Val},
     EnvRelK n Γ δ₁ δ₂ → ∀ {i : Nat} {A : VTy Eff Mult}, Γ[i]? = some A →
@@ -757,7 +729,7 @@ theorem EnvRelK.vrel_at {n : Nat} : ∀ {Γ : TyCtx Eff Mult} {δ₁ δ₂ : Lis
   | [],      [],        [],        _, i, A, hΓ, _, _ => by simp at hΓ
   | A' :: Γ', v₁ :: δ₁', v₂ :: δ₂', h, i, A, hΓ, d₁, d₂ => by
       rw [EnvRelK] at h
-      obtain ⟨_, _, _, _, hv, hrest⟩ := h
+      obtain ⟨_, _, hv, hrest⟩ := h
       cases i with
       | zero => simp only [List.getElem?_cons_zero, Option.getD_some]
                 simp only [List.getElem?_cons_zero, Option.some.injEq] at hΓ; subst hΓ; exact hv
@@ -1726,24 +1698,26 @@ matching frame shapes; `letF`/`appF` skip the frame; the `handleF`-HIT case is t
 tail-relatedness from the clause; the `handleF`-MISS case recurses). The `(C', e')` are existential —
 they are the hole type/row threaded to the split point; the dispatch consumer pins them via the supplied
 resume relation. shape: biernacki-popl18 §5.4 (set-row `ρ`-free split). -/
-theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
-    {K₁ K₂ : Stack} {ℓ : Label} {op : OpId} {K₁ᵢ K₁ₒ : Stack} {h : Handler}
+-- ◊4.5b legacy (dynamic-dispatch): kept ONLY for reference until all consumers move to the static form
+-- below. NOT consumed by the re-keyed `crelK_fund_up`. Its handleF-MISS arm is the ADR-0043 edge.
+-- `krelS_staticSplit_decomp` (ADR-0045) SUPERSEDES it — the MISS arm DISSOLVES under `staticSplit`.
+theorem krelS_staticSplit_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
+    {K₁ K₂ : Stack} {cap : Nat} {K₁ᵢ K₁ₒ : Stack} {h : Handler}
     (hK : KrelS n C D e K₁ K₂)
-    (hsp : Bang.splitAt K₁ ℓ op = some (K₁ᵢ, h, K₁ₒ)) :
-    -- ◊4.5b-append: `splitAt K₂` fires at the SAME position (HandlerRel fixes label+kind, which
-    -- `splitAt`/`handlesOp` read) with a RELATED handler `h'` (`HandlerRel n h h'`, stored state related),
-    -- the INNER prefixes related at SOME `(Cᵢ,Dᵢ,εᵢ)` (the producer threads the resume value through them),
-    -- the OUTER tails related at SOME `(C',e')`, AND the Kᵢ-threading resume conjunct from the catching
-    -- handleF clause. state/txn use the inner-prefix relation (Kᵢ KEPT); throws ignores it (Kᵢ discarded).
+    (hsp : Bang.staticSplit K₁ cap = some (K₁ᵢ, h, K₁ₒ)) :
+    -- ADR-0045: `staticSplit K₂ cap` fires at the SAME cap position (the stacks have matching frame
+    -- shapes by `KrelS`) with a RELATED handler `h'` (`HandlerRel n h h'`). The MISS arm of the old
+    -- `splitAt`-decomp DISSOLVES: `staticSplit` never tests `handlesOp`, so the handleF case is purely
+    -- cap=0 (HIT, inner prefix `[]`) or cap=succ (countdown, a clean structural recursion — NO
+    -- non-catching-handler-in-captured-continuation, hence NO answer-type-determinism wall, NO sorry).
     ∃ (K₂ᵢ K₂ₒ : Stack) (h' : Handler) (Dᵢ : CTy Eff Mult) (C' : CTy Eff Mult) (e' : Eff),
-      Bang.splitAt K₂ ℓ op = some (K₂ᵢ, h', K₂ₒ) ∧ HandlerRel Eff Mult n h h' ∧
+      Bang.staticSplit K₂ cap = some (K₂ᵢ, h', K₂ₒ) ∧ HandlerRel Eff Mult n h h' ∧
       KrelS n C Dᵢ e K₁ᵢ K₂ᵢ ∧ KrelS n C' D e' K₁ₒ K₂ₒ
       ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' : CTy Eff Mult) (εᵢ' : Eff)
             (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
           Bang.handlesOp h h.label op' = true →
-          Val.Closed w₁ → Val.Closed w₂ →
+          Val.Closed w₁ → Val.Closed w₂ → Val.CapClosed w₁ → Val.CapClosed w₂ →
           (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
-          -- inner-prefix answer = the SPLIT-POINT hole `Dᵢ` (the catching frame's hole, threaded above).
           KrelS m Cᵢ' Dᵢ εᵢ' Kᵢ Kᵢ' →
           (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op' = some Aᵣ →
             ∃ qᵣ, Cᵢ' = CTy.F qᵣ Aᵣ) →
@@ -1751,10 +1725,10 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
           Bang.dispatchOn op' w₂ (Kᵢ', h', K₂ₒ) = some cfg₂ →
           (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
               cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
-              Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+              Val.Closed r₁ ∧ Val.Closed r₂ ∧ Val.CapClosed r₁ ∧ Val.CapClosed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
               KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ')) := by
-  induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e with
-  | nil => simp [Bang.splitAt] at hsp
+  induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e cap with
+  | nil => simp [Bang.staticSplit] at hsp
   | cons fr K₁' ih =>
       match K₂ with
       | [] => exact absurd hK (by simp only [KrelS]; cases fr <;> exact not_false)
@@ -1765,16 +1739,13 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
               | letF N₂ =>
                   rw [krelS_letF] at hK
                   obtain ⟨q, A, B, φ, hC, hbody, htail⟩ := hK
-                  rw [splitAt_letF, Option.map_eq_some_iff] at hsp
+                  rw [staticSplit_letF, Option.map_eq_some_iff] at hsp
                   obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
                   obtain ⟨rfl, rfl, rfl⟩ := heq
                   obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
-                  -- inner prefix grows by THIS letF frame: prepend it (the frame body self-relates via hbody).
-                  -- `ih` recursed on `htail : KrelS n B D φ K₁' K₂'`, so `hin : KrelS n B Dᵢ φ K₁ᵢ K₂ᵢ`; the
-                  -- letF wrap is at hole F q A, row e (the ambient), tail at φ — matches `hbody`.
                   refine ⟨Frame.letF N₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
-                    by rw [splitAt_letF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                    by rw [staticSplit_letF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
                   rw [krelS_letF]; exact ⟨q, A, B, φ, hC, hbody, hin⟩
               | _ => simp only [KrelS] at hK
           | appF w₁ =>
@@ -1782,13 +1753,13 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
               | appF w₂ =>
                   rw [krelS_appF] at hK
                   obtain ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, htail⟩ := hK
-                  rw [splitAt_appF, Option.map_eq_some_iff] at hsp
+                  rw [staticSplit_appF, Option.map_eq_some_iff] at hsp
                   obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
                   obtain ⟨rfl, rfl, rfl⟩ := heq
                   obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
                   refine ⟨Frame.appF w₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
-                    by rw [splitAt_appF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                    by rw [staticSplit_appF, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
                   rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hccw₁, hccw₂, hw, hin⟩
               | _ => simp only [KrelS] at hK
           | handleF hh₁ =>
@@ -1796,53 +1767,38 @@ theorem krelS_splitAt_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
               | handleF hh₂ =>
                   rw [krelS_handleF] at hK
                   obtain ⟨hHRtop, htail, hres⟩ := hK
-                  by_cases hcatch : handlesOp hh₁ ℓ op = true
-                  · -- the catching frame: inner prefix = `[]` (nil at hole C), outer tail = K₁'/K₂'
-                    -- (related via `htail`), and the clause's resume conjunct `hres` is the Kᵢ-threading one.
-                    rw [splitAt_handleF_hit K₁' hcatch] at hsp
-                    rw [Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
-                    obtain ⟨rfl, rfl, rfl⟩ := hsp
-                    have hcatch2 : handlesOp hh₂ ℓ op = true := by
-                      cases hh₁ <;> cases hh₂ <;>
-                        simp_all only [HandlerRel, handlesOp] <;> obtain ⟨rfl, _⟩ := hHRtop <;> assumption
-                    refine ⟨[], K₂', hh₂, C, C, e, splitAt_handleF_hit K₂' hcatch2, hHRtop, ?_, htail, hres⟩
-                    rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
-                  · simp only [Bool.not_eq_true] at hcatch
-                    rw [splitAt_handleF_miss K₁' hcatch, Option.map_eq_some_iff] at hsp
-                    obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
-                    simp only [Prod.mk.injEq] at heq
-                    obtain ⟨rfl, rfl, rfl⟩ := heq
-                    obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
-                    have hcatch2 : handlesOp hh₂ ℓ op = false := by
-                      -- HandlerRel fixes label+kind ⇒ handlesOp hh₂ = handlesOp hh₁ = false (the miss).
-                      cases hh₁ <;> cases hh₂ <;>
-                        simp_all only [HandlerRel, handlesOp, false_iff, not_true, reduceCtorEq] <;>
-                        (first
-                          | exact absurd hHRtop not_false
-                          | (obtain ⟨rfl, _⟩ := hHRtop; simpa [handlesOp] using hcatch)
-                          | (obtain ⟨rfl, _, _⟩ := hHRtop; simpa [handlesOp] using hcatch))
-                    refine ⟨Frame.handleF hh₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
-                      by rw [splitAt_handleF_miss K₂' hcatch2, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
-                    rw [krelS_handleF]
-                    refine ⟨hHRtop, hin, ?_⟩
-                    -- ◊4.5b-strengthen RESIDUAL (post-conjunct-strengthening): the wrapping (non-catching)
-                    -- handleF inside the captured continuation. The krel-carrying conjunct CLOSED the FORWARD
-                    -- direction (`krelS_append` nested case, this commit) — but THIS case is the INVERSE: the
-                    -- goal needs `hh₁`'s conjunct over the SHORTER inner-prefix `Ki'`; `hres` is over the LONGER
-                    -- `K₁' = Ki' ++ handleF hh::Ko'` (`splitAt_some_append`). Lifting the goal's dispatch over
-                    -- `Ki'` to `K₁'` (via `dispatchOn_append_outer`) + feeding `hres` gives the decomposition
-                    -- over `(cfg₁.1 ++ handleF hh::Ko', ret r)` — and the goal needs `cfg₁.1 ~ cfg₂.1` (the
-                    -- STRIP of `handleF hh::Ko'`). The strip `krelS_strip_handleF` is provable structurally
-                    -- (WF on `(k, Sᵢ.len)`, mirror of the append close) EXCEPT it must certify the STRIPPED
-                    -- stack's ANSWER TYPE = the goal's `Dᵢ`. `KrelS` does not EXPOSE a stack's answer type
-                    -- (the answer is only pinned at the nil base — front-peeling reaches it only at the end),
-                    -- so the recovered `D2` (= `cfg₁.1`'s answer, semantically `Dᵢ` since dispatch preserves the
-                    -- bottom) is not SYNTACTICALLY `Dᵢ`. CLOSING THIS needs a `Stack → CTy` answer-type
-                    -- function + a `dispatch-preserves-bottom-answer` lemma (a ~2-lemma kernel addition), OR
-                    -- the ADR-0026 seam (nested-wrapping-handler-in-captured-continuation as a tested descent;
-                    -- throws/state/txn at the catching frame are FULLY verified). letF/appF/handleF-HIT proven;
-                    -- only this inverse nested-handler-MISS case is open. See post-exec report.
-                    sorry
+                  cases cap with
+                  | zero =>
+                      -- cap=0 HIT: the split point. Inner prefix `[]` (nil at hole C), outer tail K₁'/K₂'
+                      -- (related via `htail`), resume conjunct `hres` is the catching frame's Kᵢ-threading one.
+                      rw [staticSplit_handleF_zero] at hsp
+                      rw [Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
+                      obtain ⟨rfl, rfl, rfl⟩ := hsp
+                      refine ⟨[], K₂', hh₂, C, C, e, staticSplit_handleF_zero hh₂ K₂', hHRtop, ?_, htail, hres⟩
+                      rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+                  | succ c =>
+                      -- cap=succ COUNTDOWN: skip this handler (NO handlesOp test — the dissolved MISS),
+                      -- recurse with cap c on the tail. The skipped handleF rebuilds onto the inner prefix.
+                      rw [staticSplit_handleF_succ, Option.map_eq_some_iff] at hsp
+                      obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
+                      simp only [Prod.mk.injEq] at heq
+                      obtain ⟨rfl, rfl, rfl⟩ := heq
+                      obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
+                      refine ⟨Frame.handleF hh₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
+                        by rw [staticSplit_handleF_succ, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                      -- the skipped handleF wraps the inner prefix: `KrelS n C Dᵢ e (handleF hh₁::K₁ᵢ)(…)`.
+                      -- `krelS_handleF_intro` rebuilds it from `hHRtop` + `hin` (inner relation, hole C,
+                      -- answer Dᵢ) + a resume conjunct. The MISS edge is GONE (static dispatch located the
+                      -- catcher by cap, NOT by walking past hh₁ — no answer-type-determinism wall).
+                      rw [krelS_handleF]
+                      refine ⟨hHRtop, hin, ?_⟩
+                      -- ADR-0045 cap>0 RESIDUAL: `hres` (hh₁'s resume over the ORIGINAL tail `K₁'`) must
+                      -- relocate to the recursed inner prefix `K₁ᵢ` (where `staticSplit` placed the deeper
+                      -- catcher). This is the cap-indexed relocation — `dispatchOn_append_outer` + `hres`
+                      -- over `K₁' = K₁ᵢ ++ handleF h::K₁ₒ` (`staticSplit_decomp`), then the answer type is
+                      -- the cap-WITNESSED `Dᵢ` (NOT the dynamic-walk's undetermined answer — the dissolution
+                      -- is real, the residual is a clean relocation). Bounded; scoped here for the cap>0 arm.
+                      sorry
               | _ => simp only [KrelS] at hK
 
 /-- `splitAt` returns a handler that CATCHES `(ℓ, op)` (the split point is a matching frame). The
