@@ -25,7 +25,7 @@ CORE="$ROOT/Bang/Core.lean"
 # Grouped by the five-primitive creed. Editing this list is a SPEC CHANGE (ADR).
 #
 #   thunk/force adjunction : vthunk · force
-#   effect rows + ops      : up                 (a labelled operation; rows live in types, EffectRow.lean)
+#   effect rows + ops      : perform            (a labelled operation + carried capability; rows live in types, EffectRow.lean. ADR-0045: renamed from `up`, gained an inert `cap` field — same primitive, 1b makes cap dispatch-bearing)
 #   handlers (runtimes)    : handle · state · throws · transaction   (transaction = STM, ADR-0030)
 #   CBPV scaffolding       : vunit vint vvar · ret letC lam app
 #   ADT data layer (0029)  : inl inr pair fold · case split unfold
@@ -44,7 +44,7 @@ Comp.letC
 Comp.force
 Comp.lam
 Comp.app
-Comp.up
+Comp.perform
 Comp.handle
 Comp.case
 Comp.split

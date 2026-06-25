@@ -345,7 +345,7 @@ the frozen axiom: the old signature `raise : Eff → Val → Comp` took an opaqu
 `Eff` element, from which NO concrete `Label` can be extracted to feed `up` — it could
 not have been inhabited faithfully. The faithful type is `Label → Val → Comp`
 (`Label = Nat`, the concrete operation channel `up` consumes). -/
-def raise (ℓ : Label) (v : Val) : Comp := Comp.up ℓ "raise" v
+def raise (ℓ : Label) (v : Val) : Comp := Comp.perform 0 ℓ "raise" v
 -- operation arg/result types: superseded by `EffSig.opArg`/`opRes` (ADR-0022 D1),
 -- which are per-`(Label, OpId)` (the old per-`Eff` axioms could not type `get` vs `put`).
 
@@ -971,18 +971,18 @@ theorem converges_ret (v : Val) : Converges (Comp.ret v) :=
 
 /-- An UNHANDLED operation never converges: under the empty stack `splitAt [] = none`,
 so `step ([], up ℓ op v) = none` and the machine is immediately stuck. -/
-theorem not_converges_up_nil (ℓ : Label) (op : OpId) (v : Val) :
-    ¬ Converges (Comp.up ℓ op v) := by
+theorem not_converges_up_nil (cap : Nat) (ℓ : Label) (op : OpId) (v : Val) :
+    ¬ Converges (Comp.perform cap ℓ op v) := by
   rintro ⟨fuel, w, hfuel⟩
   -- `Source.eval fuel (up …) = Config.run fuel ([], up …)`; the step is `none` (stuck), never `done`.
   cases fuel with
   | zero => simp [Source.eval, Config.run] at hfuel
   | succ k =>
-      have hstuck : Config.run (k + 1) ([], Comp.up ℓ op v) = Result.stuck := by
-        rw [Config.run_step k ([], Comp.up ℓ op v) (by intro u; simp)]
+      have hstuck : Config.run (k + 1) ([], Comp.perform cap ℓ op v) = Result.stuck := by
+        rw [Config.run_step k ([], Comp.perform cap ℓ op v) (by intro u; simp)]
         rfl
-      rw [show Source.eval (k+1) (Comp.up ℓ op v)
-            = Config.run (k+1) ([], Comp.up ℓ op v) from rfl, hstuck] at hfuel
+      rw [show Source.eval (k+1) (Comp.perform cap ℓ op v)
+            = Config.run (k+1) ([], Comp.perform cap ℓ op v) from rfl, hstuck] at hfuel
       simp at hfuel
 
 /-- An UNHANDLED operation never converges UNDER ANY STACK: if no frame of `K` handles `(ℓ, op)`
@@ -991,50 +991,50 @@ Generalizes `not_converges_up_nil` (the `K = []` case) to an arbitrary stack —
 collapses the STUCK half of every frame-extension `Krel` lemma to vacuous truth (`CoApprox` is
 `False → _`). The machine refocuses `([], plug K (up …))` to `(K, up …)` via `run_plug`, then
 `dispatch K ℓ op v = (splitAt K …).bind _ = none` ⇒ `step = none` ⇒ stuck. -/
-theorem not_converges_up_splitNone (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
+theorem not_converges_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
     (hsplit : Bang.splitAt K ℓ op = none) :
-    ¬ Converges (Stack.plug K (Comp.up ℓ op v)) := by
+    ¬ Converges (Stack.plug K (Comp.perform cap ℓ op v)) := by
   -- the focused config (K, up …) is stuck at every fuel: step = dispatch = none (splitAt = none).
-  have hstuck : ∀ j w, Config.run j (K, Comp.up ℓ op v) ≠ Result.done w := by
+  have hstuck : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
     intro j w
     cases j with
     | zero => simp [Config.run]
     | succ k =>
-        rw [Config.run_step k (K, Comp.up ℓ op v) (by intro u; simp)]
-        have hdisp : Source.step (K, Comp.up ℓ op v) = none := by
+        rw [Config.run_step k (K, Comp.perform cap ℓ op v) (by intro u; simp)]
+        have hdisp : Source.step (K, Comp.perform cap ℓ op v) = none := by
           show dispatch K ℓ op v = none
           unfold dispatch; rw [hsplit]; rfl
         rw [hdisp]; simp
   rintro ⟨fuel, w, hfuel⟩
   rw [Stack.plug] at hfuel
   -- Source.eval fuel (plug K …) = run fuel ([], plug K …); bump to (fuel + K.length), refocus.
-  have hev : Config.run fuel ([], Bang.plug K (Comp.up ℓ op v)) = Result.done w := hfuel
-  have hbig : Config.run (fuel + K.length) ([], Bang.plug K (Comp.up ℓ op v)) = Result.done w :=
+  have hev : Config.run fuel ([], Bang.plug K (Comp.perform cap ℓ op v)) = Result.done w := hfuel
+  have hbig : Config.run (fuel + K.length) ([], Bang.plug K (Comp.perform cap ℓ op v)) = Result.done w :=
     Config.run_done_add K.length fuel _ w hev
-  rw [run_plug K (Comp.up ℓ op v) fuel] at hbig
+  rw [run_plug K (Comp.perform cap ℓ op v) fuel] at hbig
   exact hstuck fuel w hbig
 
 /-- ◊4.5b CONFIG-LEVEL form: the focused config `(K, up ℓ op v)` with `splitAt K = none` is STUCK at
 every fuel (`step = dispatch = none`), so it never converges within ANY step bound. This is what the
 metered STUCK halves consume — `CoApproxC_le j (K, up…) _` is vacuous because `ConvergesC_le j (K, up…)`
 is `False`. No `plug`/refocus (config level): the `+K.length` offset never enters. -/
-theorem config_stuck_up_splitNone (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.splitAt K ℓ op = none) : ∀ j w, Config.run j (K, Comp.up ℓ op v) ≠ Result.done w := by
+theorem config_stuck_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
+    (hsplit : Bang.splitAt K ℓ op = none) : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
   intro j w
   cases j with
   | zero => simp [Config.run]
   | succ k =>
-      rw [Config.run_step k (K, Comp.up ℓ op v) (by intro u; simp)]
-      have hdisp : Source.step (K, Comp.up ℓ op v) = none := by
+      rw [Config.run_step k (K, Comp.perform cap ℓ op v) (by intro u; simp)]
+      have hdisp : Source.step (K, Comp.perform cap ℓ op v) = none := by
         show dispatch K ℓ op v = none
         unfold dispatch; rw [hsplit]; rfl
       rw [hdisp]; simp
 
 /-- `ConvergesC_le j (K, up…)` is `False` when `K` does not handle `(ℓ,op)` — the metered stuck-half
 discharge. -/
-theorem not_convergesC_le_up_splitNone {j : Nat} (K : Stack) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.splitAt K ℓ op = none) : ¬ ConvergesC_le j (K, Comp.up ℓ op v) := by
-  rintro ⟨w, hw⟩; exact config_stuck_up_splitNone K ℓ op v hsplit j w hw
+theorem not_convergesC_le_up_splitNone {j : Nat} (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
+    (hsplit : Bang.splitAt K ℓ op = none) : ¬ ConvergesC_le j (K, Comp.perform cap ℓ op v) := by
+  rintro ⟨w, hw⟩; exact config_stuck_up_splitNone K cap ℓ op v hsplit j w hw
 
 
 /-- ◊4.5b `KrelS` nil self-relation: the empty stack relates to itself at answer type = hole type

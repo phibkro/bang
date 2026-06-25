@@ -94,7 +94,7 @@ inductive Comp : Type where
   | force  : Val → Comp
   | lam    : Comp → Comp                  -- lam M: M binds index 0 (= the argument)
   | app    : Comp → Val → Comp
-  | up     : Label → OpId → Val → Comp
+  | perform : Nat → Label → OpId → Val → Comp   -- `cap` (first field) is carried but inert in 1a; static dispatch flips it in 1b (ADR-0045)
   | handle : Handler → Comp → Comp
   -- iso-recursive ADT eliminators (ADR-0029). Scrutinees are VALUES (the formers
   -- above), so these reduce immediately like `force (vthunk M)` — no eval-context

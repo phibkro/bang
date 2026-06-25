@@ -58,7 +58,7 @@ def Comp.shiftFrom (c : Nat) : Comp → Comp
   | .force w     => .force (Val.shiftFrom c w)
   | .lam M       => .lam (Comp.shiftFrom (c + 1) M)                        -- M binds 0
   | .app M w     => .app (Comp.shiftFrom c M) (Val.shiftFrom c w)
-  | .up ℓ op w   => .up ℓ op (Val.shiftFrom c w)
+  | .perform cap ℓ op w   => .perform cap ℓ op (Val.shiftFrom c w)
   | .handle h M  => .handle (Handler.shiftFrom c h) (Comp.shiftFrom c M)
   -- ADT eliminators: each `case` branch binds one (idx 0); `split` binds two (idx 1, 0).
   | .case w N₁ N₂ => .case (Val.shiftFrom c w) (Comp.shiftFrom (c + 1) N₁) (Comp.shiftFrom (c + 1) N₂)
@@ -102,7 +102,7 @@ def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
   | .force w     => .force (Val.substFrom k v w)
   | .lam M       => .lam (Comp.substFrom (k + 1) (Val.shift v) M)
   | .app M w     => .app (Comp.substFrom k v M) (Val.substFrom k v w)
-  | .up ℓ op w   => .up ℓ op (Val.substFrom k v w)
+  | .perform cap ℓ op w   => .perform cap ℓ op (Val.substFrom k v w)
   | .handle h M  => .handle (Handler.substFrom k v h) (Comp.substFrom k v M)
   -- ADT eliminators: `case` branches descend under one binder, `split` under two.
   | .case w N₁ N₂ => .case (Val.substFrom k v w)
@@ -165,7 +165,7 @@ theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
   | .app M w     => by
       simp only [Comp.shiftFrom, Comp.substFrom,
         Comp.substFrom_shiftFrom k v M, Val.substFrom_shiftFrom k v w]
-  | .up ℓ op w   => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
+  | .perform cap ℓ op w   => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
   | .handle h M  => by
       simp only [Comp.shiftFrom, Comp.substFrom,
         Handler.substFrom_shiftFrom k v h, Comp.substFrom_shiftFrom k v M]
@@ -356,7 +356,7 @@ def Source.step : Config → Option Config
   | (K, .split (.pair v w) N) => some (K, Comp.subst v (Comp.subst (Val.shift w) N))  -- product
   | (K, .unfold (.fold v))    => some (K, .ret v)            -- μ: fold/unfold erase
   -- DISPATCH
-  | (K, .up ℓ op v)         => dispatch K ℓ op v
+  | (K, .perform _ ℓ op v)  => dispatch K ℓ op v   -- 1a: cap IGNORED, still dynamic splitAt by label (1b flips to staticSplit cap)
   -- stuck
   | _                       => none
 
@@ -401,7 +401,7 @@ theorem Config.run_step (n : Nat) (cfg : Config)
   obtain ⟨K, c⟩ := cfg
   match K, c with
   | [], .ret v => exact absurd rfl (hne v)
-  | [], .letC _ _ | [], .app _ _ | [], .handle _ _ | [], .force _ | [], .up _ _ _
+  | [], .letC _ _ | [], .app _ _ | [], .handle _ _ | [], .force _ | [], .perform _ _ _ _
   | [], .lam _ | [], .case _ _ _ | [], .split _ _ | [], .unfold _ | [], .oom | [], .wrong _
   | _ :: _, _ => rfl
 

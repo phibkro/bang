@@ -155,12 +155,13 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- lacks-discipline membership "`ℓ ∈ φ`" (ADR-0018) in the abstract lattice. The
   -- grade `q • γ` mirrors `ret`: the produced value's budget `q` scales the
   -- argument's grade — this is what makes the `throws` β-grade match in preservation.
-  | up : ∀ {γ Γ} {ℓ : Label} {op : OpId} {v : Val} {φ : Eff} {q : Mult} {A B : VTy Eff Mult},
+  | perform : ∀ {γ Γ} {cap : Nat} {ℓ : Label} {op : OpId} {v : Val} {φ : Eff} {q : Mult} {A B : VTy Eff Mult},
       EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ →
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A →      -- op IS in ℓ's interface (D6)
       EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B →
       HasVTy γ Γ v A →
-      HasCTy (q • γ) Γ (Comp.up ℓ op v) φ (CTy.F q B)
+      -- 1a (ADR-0045): `cap` is UNCONSTRAINED here. 1b adds the CapResolves premise tying cap to ℓ.
+      HasCTy (q • γ) Γ (Comp.perform cap ℓ op v) φ (CTy.F q B)
   -- handleThrows (ADR-0022 D4/D5, throws-only — `state` deferred per Q12): the
   -- `throws ℓ` handler DISCHARGES label `ℓ` from the row. Body uses effect `e`
   -- within `ℓ ⊔ φ` (SUBSUMPTION — a `ret v` body has effect `⊥ ≤ ℓ ⊔ φ`); the

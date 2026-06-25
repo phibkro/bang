@@ -775,7 +775,7 @@ theorem compile_ok_mem : ∀ (M : Comp) {c : CalcVM.Code}, (∀ i ∈ c, InstrOk
       rcases hi with rfl | hi
       · exact trivial
       · exact hc i hi
-  | .up ℓ op v, c, hc => by
+  | .perform _ ℓ op v, c, hc => by
       intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
       rcases hi with rfl | hi
       · exact trivial
@@ -1618,7 +1618,7 @@ theorem evalD_mono : ∀ (f : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (c :
                         exact ih st1 st2 (Comp.subst v N) r h
                     | _ => simp only [Option.bind_some] at h ⊢; exact h
                 | raised ℓ op w => simpa only [Option.bind_some] using h
-    | up ℓ op v => simpa [CalcVM.evalD] using h
+    | perform _ ℓ op v => simpa [CalcVM.evalD] using h
     | handle hh M =>
         cases hh with
         | state ℓ s =>
@@ -1757,7 +1757,7 @@ theorem Sim.letC {cx cy : Comp} (h : Sim cx cy) (N : Comp) : Sim (.letC cx N) (.
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -1792,7 +1792,7 @@ theorem Sim.app {cx cy : Comp} (h : Sim cx cy) (u : Bang.Val) : Sim (.app cx u) 
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -2030,7 +2030,7 @@ theorem SimOn.letC {P : CalcVM.SStore → Prop} {cx cy : Bang.Comp} (h : SimOn P
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -2064,7 +2064,7 @@ theorem SimOn.app {P : CalcVM.SStore → Prop} {cx cy : Bang.Comp} (h : SimOn P 
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -2099,8 +2099,8 @@ theorem evalD_plug_simon {P : CalcVM.SStore → Prop} {cx cy : Bang.Comp} (hsim 
 
 -- ===== Redex SimOn lemmas (the focus-rewrite each dispatch sub-case performs) =====
 
-theorem simon_get (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) :
-    SimOn (fun σ => CalcVM.SStore.get? σ ℓ = some s) (.up ℓ "get" v) (.ret s) := by
+theorem simon_get (cap : Nat) (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) :
+    SimOn (fun σ => CalcVM.SStore.get? σ ℓ = some s) (.perform cap ℓ "get" v) (.ret s) := by
   intro σ τ b r hP hb
   cases b with
   | zero => simp [CalcVM.evalD] at hb
@@ -2122,9 +2122,9 @@ def SimShift (f : CalcVM.SStore → CalcVM.SStore) (P : CalcVM.SStore → Prop) 
   ∀ σ τ b r, P σ → CalcVM.evalD b (f σ) τ cy = some r → ∃ a, CalcVM.evalD a σ τ cx = some r
 
 -- put redex: f = (·.put ℓ v), P = (get? · ℓ = some s).
-theorem simshift_put (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) :
+theorem simshift_put (cap : Nat) (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) :
     SimShift (fun σ => CalcVM.SStore.put σ ℓ v) (fun σ => CalcVM.SStore.get? σ ℓ = some s)
-      (.up ℓ "put" v) (.ret .vunit) := by
+      (.perform cap ℓ "put" v) (.ret .vunit) := by
   intro σ τ b r hP hb
   cases b with
   | zero => simp [CalcVM.evalD] at hb
@@ -2202,7 +2202,7 @@ theorem SimShift.letC {f : CalcVM.SStore → CalcVM.SStore} {P : CalcVM.SStore �
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -2236,7 +2236,7 @@ theorem SimShift.app {f : CalcVM.SStore → CalcVM.SStore} {P : CalcVM.SStore �
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -2321,9 +2321,9 @@ theorem get?_push_self2 (σ : CalcVM.SStore) (ℓ : Bang.EffectRow.Label) (s : B
     CalcVM.SStore.get? ((ℓ, s) :: σ) ℓ = some s := by simp [CalcVM.SStore.get?, List.find?]
 
 -- The handle-level put Sim: lifting through Kᵢ (no state ℓ in Kᵢ).
-theorem sim_put_handle (ℓ : Bang.EffectRow.Label) (s w : Bang.Val) {Kᵢ : Bang.EvalCtx}
+theorem sim_put_handle (cap : Nat) (ℓ : Bang.EffectRow.Label) (s w : Bang.Val) {Kᵢ : Bang.EvalCtx}
     (hnone : (CalcVM.ctxStates Kᵢ).get? ℓ = none) :
-    Sim (.handle (.state ℓ s) (plug Kᵢ (.up ℓ "put" w)))
+    Sim (.handle (.state ℓ s) (plug Kᵢ (.perform cap ℓ "put" w)))
         (.handle (.state ℓ w) (plug Kᵢ (.ret .vunit))) := by
   intro σ τ b r hb
   cases b with
@@ -2341,7 +2341,7 @@ theorem sim_put_handle (ℓ : Bang.EffectRow.Label) (s w : Bang.Val) {Kᵢ : Ban
           rw [hy] at hb
           -- lift via SimShift through Kᵢ at inner store (ℓ,s)::σ
           have hne := state_mem_ne_of_ctxStates_none hnone
-          obtain ⟨a, ha⟩ := evalD_plug_simshift (simshift_put ℓ s w)
+          obtain ⟨a, ha⟩ := evalD_plug_simshift (simshift_put cap ℓ s w)
             (K := Kᵢ)
             (fun σ' ℓ' s' hmem => put_cons_ne ℓ ℓ' s' w σ' (hne ℓ' s' hmem))
             (fun σ' hP' ℓ' s' hmem => by
@@ -2361,8 +2361,8 @@ context Kᵢ (which catches nothing) to the throws handler, which catches → `r
 captures "cy evalD-raises (ℓ,raise,v) at unchanged stores"; it forwards through letC/app and through
 non-catching handles (push+pop restores the store). `evalD_plug_raises` lifts it through `plug Kᵢ`. -/
 
-theorem evalD_up_raise (ℓ : Bang.EffectRow.Label) (v : Bang.Val) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (b : Nat) :
-    CalcVM.evalD (b+1) σ τ (.up ℓ "raise" v) = some (.raised ℓ "raise" v, σ, τ) := by
+theorem evalD_perform_raise (cap : Nat) (ℓ : Bang.EffectRow.Label) (v : Bang.Val) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (b : Nat) :
+    CalcVM.evalD (b+1) σ τ (.perform cap ℓ "raise" v) = some (.raised ℓ "raise" v, σ, τ) := by
   simp only [CalcVM.evalD, if_neg (by decide : ¬("raise"="get")), if_neg (by decide : ¬("raise"="put")),
     (by decide : CalcVM.isTxnOp "raise" = false), Bool.false_eq_true, if_false]
 
@@ -2372,8 +2372,8 @@ theorem evalD_up_raise (ℓ : Bang.EffectRow.Label) (v : Bang.Val) (σ : CalcVM.
 def Raises (ℓ : Bang.EffectRow.Label) (v : Bang.Val) (cy : Bang.Comp) : Prop :=
   ∀ σ τ, ∃ n, CalcVM.evalD n σ τ cy = some (.raised ℓ "raise" v, σ, τ)
 
-theorem Raises.up (ℓ : Bang.EffectRow.Label) (v : Bang.Val) : Raises ℓ v (.up ℓ "raise" v) :=
-  fun σ τ => ⟨1, evalD_up_raise ℓ v σ τ 0⟩
+theorem Raises.perform (cap : Nat) (ℓ : Bang.EffectRow.Label) (v : Bang.Val) : Raises ℓ v (.perform cap ℓ "raise" v) :=
+  fun σ τ => ⟨1, evalD_perform_raise cap ℓ v σ τ 0⟩
 
 theorem Raises.letC {ℓ v N} (h : Raises ℓ v cy) : Raises ℓ v (.letC cy N) := by
   intro σ τ; obtain ⟨n, hn⟩ := h σ τ
@@ -2437,9 +2437,9 @@ theorem evalD_plug_raises (ℓ : Bang.EffectRow.Label) (v : Bang.Val) :
 
 -- get handle-Sim: mirrors sim_put_handle but via SimOn (no store change). The handle pushes (ℓ,s),
 -- establishing P = (get? · ℓ = some s); lift simon_get through Kᵢ.
-theorem sim_get_handle (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) {Kᵢ : Bang.EvalCtx}
+theorem sim_get_handle (cap : Nat) (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) {Kᵢ : Bang.EvalCtx}
     (hnone : (CalcVM.ctxStates Kᵢ).get? ℓ = none) :
-    Sim (.handle (.state ℓ s) (plug Kᵢ (.up ℓ "get" v)))
+    Sim (.handle (.state ℓ s) (plug Kᵢ (.perform cap ℓ "get" v)))
         (.handle (.state ℓ s) (plug Kᵢ (.ret s))) := by
   intro σ τ b r hb
   cases b with
@@ -2451,7 +2451,7 @@ theorem sim_get_handle (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) {Kᵢ : Ban
       | some oy =>
           rw [hy] at hb
           have hne := state_mem_ne_of_ctxStates_none hnone
-          obtain ⟨a, ha⟩ := evalD_plug_simon (simon_get ℓ s v) (K := Kᵢ)
+          obtain ⟨a, ha⟩ := evalD_plug_simon (simon_get cap ℓ s v) (K := Kᵢ)
             (fun σ' hP' ℓ' s' hmem => by
               simp only [CalcVM.SStore.push, CalcVM.SStore.get?, List.find?, (hne ℓ' s' hmem), decide_false] at hP' ⊢
               exact hP')
@@ -2463,9 +2463,9 @@ theorem sim_get_handle (ℓ : Bang.EffectRow.Label) (s v : Bang.Val) {Kᵢ : Ban
           rw [ha]; exact hb
 
 -- abort handle-Sim: the inner raises (via evalD_plug_raises), the throws handler catches → ret v.
-theorem sim_abort_handle (ℓ : Bang.EffectRow.Label) (v : Bang.Val) {Kᵢ : Bang.EvalCtx}
+theorem sim_abort_handle (cap : Nat) (ℓ : Bang.EffectRow.Label) (v : Bang.Val) {Kᵢ : Bang.EvalCtx}
     (hnone : Bang.splitAt Kᵢ ℓ "raise" = none) :
-    Sim (.handle (.throws ℓ) (plug Kᵢ (.up ℓ "raise" v))) (.ret v) := by
+    Sim (.handle (.throws ℓ) (plug Kᵢ (.perform cap ℓ "raise" v))) (.ret v) := by
   intro σ τ b r hb
   cases b with
   | zero => simp [CalcVM.evalD] at hb
@@ -2473,7 +2473,7 @@ theorem sim_abort_handle (ℓ : Bang.EffectRow.Label) (v : Bang.Val) {Kᵢ : Ban
       -- RHS: evalD (b+1) σ τ (ret v) = some (term (ret v), σ, τ) = r
       simp only [CalcVM.evalD] at hb
       -- inner raises at σ τ:
-      obtain ⟨n, hn⟩ := evalD_plug_raises ℓ v hnone (Raises.up ℓ v) σ τ
+      obtain ⟨n, hn⟩ := evalD_plug_raises ℓ v hnone (Raises.perform cap ℓ v) σ τ
       refine ⟨n+1, ?_⟩
       simp only [CalcVM.evalD, hn, Option.bind_some, if_pos (by simp : (ℓ = ℓ ∧ "raise" = "raise"))]
       exact hb
@@ -2483,11 +2483,11 @@ def SimShiftT (f : CalcVM.THeap → CalcVM.THeap) (P : CalcVM.THeap → Prop) (c
   ∀ σ τ b r, P τ → CalcVM.evalD b σ (f τ) cy = some r → ∃ a, CalcVM.evalD a σ τ cx = some r
 
 -- txn redex: up ℓ op v at τ (active heap ℓ↦Θ) ≡ ret r at (τ.put ℓ Θ'), where (r,Θ')=txnService.
-theorem simshiftT_txn (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) (Θ : List Bang.Val)
+theorem simshiftT_txn (cap : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) (Θ : List Bang.Val)
     (hop : CalcVM.isTxnOp op = true) :
     SimShiftT (fun τ => CalcVM.THeap.put τ ℓ (CalcVM.txnService op v Θ).2)
       (fun τ => CalcVM.THeap.get? τ ℓ = some Θ)
-      (.up ℓ op v) (.ret (CalcVM.txnService op v Θ).1) := by
+      (.perform cap ℓ op v) (.ret (CalcVM.txnService op v Θ).1) := by
   intro σ τ b r hP hb
   cases b with
   | zero => simp [CalcVM.evalD] at hb
@@ -2563,7 +2563,7 @@ theorem SimShiftT.letC {f : CalcVM.THeap → CalcVM.THeap} {P : CalcVM.THeap →
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -2597,7 +2597,7 @@ theorem SimShiftT.app {f : CalcVM.THeap → CalcVM.THeap} {P : CalcVM.THeap → 
               | force a => simp at hb
               | letC a a' => simp at hb
               | app a a' => simp at hb
-              | up a a' a'' => simp at hb
+              | perform _ a a' a'' => simp at hb
               | handle a a' => simp at hb
               | case a a' a'' => simp at hb
               | split a a' => simp at hb
@@ -2678,10 +2678,10 @@ theorem txn_mem_ne_of_ctxTxns_none {ℓ : Bang.EffectRow.Label} :
 theorem get?T_push_self (τ : CalcVM.THeap) (ℓ : Bang.EffectRow.Label) (Θ : List Bang.Val) :
     CalcVM.THeap.get? ((ℓ, Θ) :: τ) ℓ = some Θ := by simp [CalcVM.THeap.get?, List.find?]
 
-theorem sim_txn_handle (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) (Θ : List Bang.Val)
+theorem sim_txn_handle (cap : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) (Θ : List Bang.Val)
     (hop : CalcVM.isTxnOp op = true) {Kᵢ : Bang.EvalCtx}
     (hnone : (CalcVM.ctxTxns Kᵢ).get? ℓ = none) :
-    Sim (.handle (.transaction ℓ Θ) (plug Kᵢ (.up ℓ op v)))
+    Sim (.handle (.transaction ℓ Θ) (plug Kᵢ (.perform cap ℓ op v)))
         (.handle (.transaction ℓ (CalcVM.txnService op v Θ).2) (plug Kᵢ (.ret (CalcVM.txnService op v Θ).1))) := by
   intro σ τ b r hb
   cases b with
@@ -2698,7 +2698,7 @@ theorem sim_txn_handle (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.V
       | some oy =>
           rw [hy] at hb
           have hne := txn_mem_ne_of_ctxTxns_none hnone
-          obtain ⟨a, ha⟩ := evalD_plug_simshiftT (simshiftT_txn ℓ op v Θ hop) (K := Kᵢ)
+          obtain ⟨a, ha⟩ := evalD_plug_simshiftT (simshiftT_txn cap ℓ op v Θ hop) (K := Kᵢ)
             (fun τ' ℓ' Θ' hmem => put_consT_ne ℓ ℓ' (CalcVM.txnService op v Θ).2 Θ' τ' (hne ℓ' Θ' hmem))
             (fun τ' hP' ℓ' Θ' hmem => by
               simp only [CalcVM.THeap.push, CalcVM.THeap.get?, List.find?, (hne ℓ' Θ' hmem), decide_false] at hP' ⊢
@@ -2853,11 +2853,11 @@ theorem dispatchOn_txn (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.V
 
 -- THE DISPATCH TRANSFER LEMMA. dispatch K = some (K', focus); evalD of plug K' focus reaches
 -- (ret w',[],[]) ⇒ so does plug K (up ℓ op v). Case on splitAt + the handler kind.
-theorem evalD_plug_dispatch (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val)
+theorem evalD_plug_dispatch (K : Bang.EvalCtx) (cap : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val)
     {K' : Bang.EvalCtx} {focus : Bang.Comp} {w' : Bang.Val} {n : Nat}
     (hd : Bang.dispatch K ℓ op v = some (K', focus))
     (hn : CalcVM.evalD n [] [] (plug K' focus) = some (.term (.ret w'), [], [])) :
-    ∃ m, CalcVM.evalD m [] [] (plug K (.up ℓ op v)) = some (.term (.ret w'), [], []) := by
+    ∃ m, CalcVM.evalD m [] [] (plug K (.perform cap ℓ op v)) = some (.term (.ret w'), [], []) := by
   simp only [Bang.dispatch] at hd
   cases hsp : Bang.splitAt K ℓ op with
   | none => rw [hsp] at hd; simp at hd
@@ -2868,7 +2868,7 @@ theorem evalD_plug_dispatch (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op 
       have hrec : Kᵢ ++ Bang.Frame.handleF h :: Kₒ = K := CalcVM.splitAt_reconstruct hsp
       have hinner : Bang.splitAt Kᵢ ℓ op = none := CalcVM.splitAt_inner_none hsp
       -- plug K (up ℓ op v) = plug Kₒ (handle h (plug Kᵢ (up ℓ op v)))
-      have hplugK : plug K (.up ℓ op v) = plug Kₒ (.handle h (plug Kᵢ (.up ℓ op v))) := by
+      have hplugK : plug K (.perform cap ℓ op v) = plug Kₒ (.handle h (plug Kᵢ (.perform cap ℓ op v))) := by
         rw [← hrec, plug_append, plug_cons, Bang.Frame.wrapStep]
       -- common: from splitAt, handlesOp h ℓ op = true (h IS the catcher).
       have hcatch : Bang.handlesOp h ℓ op = true := CalcVM.splitAt_handles hsp
@@ -2880,7 +2880,7 @@ theorem evalD_plug_dispatch (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op 
           simp only [Bang.dispatchOn] at hd
           simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
           rw [hplugK]
-          exact evalD_plug_sim (sim_abort_handle ℓ' v hinner) hn
+          exact evalD_plug_sim (sim_abort_handle cap ℓ' v hinner) hn
       | state ℓ' s =>
           simp only [Bang.handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
             beq_iff_eq] at hcatch
@@ -2893,12 +2893,12 @@ theorem evalD_plug_dispatch (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op 
             simp only [Bang.dispatchOn, beq_self_eq_true, if_true] at hd
             simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
             rw [plug_append, plug_cons, Bang.Frame.wrapStep] at hn
-            exact evalD_plug_sim (sim_get_handle ℓ' s v hns) hn
+            exact evalD_plug_sim (sim_get_handle cap ℓ' s v hns) hn
           · -- op = "put"
             simp only [Bang.dispatchOn, if_neg (by decide : ¬ ("put" == "get") = true)] at hd
             simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
             rw [plug_append, plug_cons, Bang.Frame.wrapStep] at hn
-            exact evalD_plug_sim (sim_put_handle ℓ' s v hns) hn
+            exact evalD_plug_sim (sim_put_handle cap ℓ' s v hns) hn
       | transaction ℓ' Θ =>
           simp only [Bang.handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true,
             beq_iff_eq] at hcatch
@@ -2915,7 +2915,7 @@ theorem evalD_plug_dispatch (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op 
           rw [hres] at hd
           simp only [Option.some.injEq, Prod.mk.injEq] at hd; obtain ⟨rfl, rfl⟩ := hd
           rw [plug_append, plug_cons, Bang.Frame.wrapStep] at hn
-          exact evalD_plug_sim (sim_txn_handle ℓ' op v Θ hopt hns) hn
+          exact evalD_plug_sim (sim_txn_handle cap ℓ' op v Θ hopt hns) hn
 
 /-- `evalD`-completeness for the pure fragment, generalized over the frame stack:
 a terminating CK run is big-stepped by `evalD` of the plugged term. Strong
@@ -2996,8 +2996,8 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 obtain ⟨n, hn⟩ := ih F' (by omega) K M v hrun'
                 exact evalD_plug_force K M n hn
             | _ => exact absurd hstep (by simp [Source.step, Config.run])
-        | up ℓ op v0 =>
-            -- DISPATCH: (K, up ℓ op v0) ↦ dispatch K ℓ op v0 (the reverse of run_evalD's raise-part).
+        | perform cap ℓ op v0 =>
+            -- DISPATCH: (K, perform cap ℓ op v0) ↦ dispatch K ℓ op v0 (the reverse of run_evalD's raise-part).
             -- splitAt continuation-capture + state/txn-resume/throws-abort, discharged by the dispatch
             -- transfer lemma `evalD_plug_dispatch` (the get/put/txn handle-Sims + the abort Raises-fwd).
             simp only [Source.step] at hstep
@@ -3008,7 +3008,7 @@ theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Ba
                 rw [hdsp] at hstep
                 have hrun' : Config.run F' (K', focus) = Result.done v := hstep.symm
                 obtain ⟨n, hn⟩ := ih F' (by omega) K' focus v hrun'
-                exact evalD_plug_dispatch K ℓ op v0 hdsp hn
+                exact evalD_plug_dispatch K cap ℓ op v0 hdsp hn
         | handle h M =>
             -- PUSH: (K, handle h M) ↦ (handleF h :: K, M). plug (handleF h :: K) M = plug K (handle h M),
             -- so this closes DIRECTLY (like letC/app PUSH) — NO σ/τ threading at the reverse-bridge level
@@ -3125,7 +3125,7 @@ theorem evalD_complete_gen_pure : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v
                 obtain ⟨n, hn⟩ := ih F' (by omega) K M v hK hc hrun'
                 exact evalD_plug_force K M n hn
             | _ => simp only [Wasmfx.Comp.Pure] at hc
-        | up ℓ op v0 => simp only [Wasmfx.Comp.Pure] at hc   -- pure ⇒ no `up`
+        | perform _ ℓ op v0 => simp only [Wasmfx.Comp.Pure] at hc   -- pure ⇒ no `perform`
         | handle h M => simp only [Wasmfx.Comp.Pure] at hc   -- pure ⇒ no `handle`
         | case w N₁ N₂ =>
             simp only [Wasmfx.Comp.Pure] at hc
@@ -3270,16 +3270,16 @@ below now returns the kernel's result (100), the build-enforced witness that the
 landed. -/
 
 -- state resume (no abort, savedCode unused): wexec ≡ kernel.
-example : Source.eval 50 (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)) = Result.done (.vint 42) := by rfl
-example : Wasmfx.run 50 (compileC (.handle (.state 0 (.vint 42)) (.up 0 "get" .vunit)))
+example : Source.eval 50 (.handle (.state 0 (.vint 42)) (.perform 0 0 "get" .vunit)) = Result.done (.vint 42) := by rfl
+example : Wasmfx.run 50 (compileC (.handle (.state 0 (.vint 42)) (.perform 0 0 "get" .vunit)))
     = Result.done (.i32 42) := by rfl
 
 -- abort, outer cont = identity-on-the-value: wexec ≡ kernel (7).
 example : Source.eval 50
-    (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0)))
+    (.letC (.handle (.throws 0) (.letC (.perform 0 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0)))
     = Result.done (.vint 7) := by rfl
 example : Wasmfx.run 50
-    (compileC (.letC (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0))))
+    (compileC (.letC (.handle (.throws 0) (.letC (.perform 0 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0))))
     = Result.done (.i32 7) := by rfl
 
 -- ✓ THE FORMER COUNTEREXAMPLE — now AGREES. An APP β-residual produces a `handle` that
@@ -3287,11 +3287,11 @@ example : Wasmfx.run 50
 -- 100, and `wexec` NOW returns 100 too (the threaded continuation reaches the outer cont, no
 -- stop-early). This `rfl` is the build-enforced witness that the residual-arm fix is SOUND.
 example : Source.eval 80
-    (.letC (.app (.lam (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
+    (.letC (.app (.lam (.handle (.throws 0) (.letC (.perform 0 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
            (.force (.vthunk (.ret (.vint 100)))))
     = Result.done (.vint 100) := by rfl
 example : Wasmfx.run 80
-    (compileC (.letC (.app (.lam (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
+    (compileC (.letC (.app (.lam (.handle (.throws 0) (.letC (.perform 0 0 "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
                      (.force (.vthunk (.ret (.vint 100))))))
     = Result.done (.i32 100)   -- ✓ SOUND: the threaded outer cont returns 100 (was i32 7 pre-fix)
     := by rfl
@@ -3301,10 +3301,10 @@ example : Wasmfx.run 80
 -- back 5. wexec ≡ kernel — the build-enforced witness that the txn OP-resume branch is sound (NOT
 -- the old abort/fall-through that the missing branch would have produced).
 example : Source.eval 50
-    (.handle (.transaction 0 []) (.letC (.up 0 "newTVar" (.vint 5)) (.up 0 "readTVar" (.vint 0))))
+    (.handle (.transaction 0 []) (.letC (.perform 0 0 "newTVar" (.vint 5)) (.perform 0 0 "readTVar" (.vint 0))))
     = Result.done (.vint 5) := by rfl
 example : Wasmfx.run 50
-    (compileC (.handle (.transaction 0 []) (.letC (.up 0 "newTVar" (.vint 5)) (.up 0 "readTVar" (.vint 0)))))
+    (compileC (.handle (.transaction 0 []) (.letC (.perform 0 0 "newTVar" (.vint 5)) (.perform 0 0 "readTVar" (.vint 0)))))
     = Result.done (.i32 5) := by rfl
 
 end Bang

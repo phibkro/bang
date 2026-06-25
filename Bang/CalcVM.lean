@@ -210,7 +210,7 @@ def evalD : Nat → SStore → THeap → Comp → Option (Outcome × SStore × T
   -- projection (state and txn op-sets are DISJOINT), so a label shared by both kinds resolves
   -- unambiguously — and the machine's `stateUpdate` (op-guarded {get,put}) / `txnUpdate` (op-guarded
   -- isTxnOp) stay in lockstep. Any other op, or a state/txn op with no active frame, raises (throws).
-  | Nat.succ _, σ, τ, .up ℓ op v   =>
+  | Nat.succ _, σ, τ, .perform _ ℓ op v   =>
       if op = "get" then
         match σ.get? ℓ with
         | some s => some (.term (.ret s), σ, τ)                      -- get: return stored s, σ unchanged
@@ -338,7 +338,7 @@ def compile : Comp → Code → Code
   | .force (.vthunk M), c => compile M c
   | .app M v,           c => compile M (Instr.APP v :: c)
   | .handle h M,        c => Instr.MARK h c :: compile M (Instr.UNMARK :: c)
-  | .up ℓ op v,         c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); throws falls through to unwind
+  | .perform _ ℓ op v,  c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); 1a: cap ignored, OP stays label-dispatched; throws falls through to unwind
   -- case/split: erasure (`compile (case (inl v) N₁ N₂) c = compile (subst v N₁) c`) is what the
   -- calculation forces, but it is NON-structural (`subst v N₁` is not a subterm) — so, EXACTLY as
   -- `SUBST`/`APP` resolve the same non-structural `compile (subst …)`, defer it to a runtime instruction
@@ -1574,7 +1574,7 @@ theorem sim : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1619,7 +1619,7 @@ theorem sim : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1627,7 +1627,7 @@ theorem sim : ∀ fe,
             | (.term .oom, _, _), h => simp [Option.bind] at h
             | (.term (.wrong a), _, _), h => simp [Option.bind] at h
             | (.raised ℓ op w, _, _), h => simp [Option.bind] at h
-      | up ℓ op v =>
+      | perform _ ℓ op v =>
           -- RESUME (D1/D2/D4), OP-FIRST: get/put serviced against σ (state), txn ops against τ. Mirrored
           -- by stateUpdate (op-guard {get,put}) then txnUpdate (op-guard isTxnOp) on hs.
           simp only [evalD] at h
@@ -1738,7 +1738,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1800,7 +1800,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1895,7 +1895,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1965,7 +1965,7 @@ theorem sim : ∀ fe,
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
-      | up ℓ2 op2 v2 =>
+      | perform _ ℓ2 op2 v2 =>
           -- OP-FIRST raise: a `raised` from `up` means the op matched no resumptive frame — either a
           -- get/put with no state frame, a txn op with no txn frame, or a non-resumptive op. In ALL of
           -- these the machine's stateUpdate/txnUpdate both return none and the OP falls to the throw path.
@@ -1976,7 +1976,7 @@ theorem sim : ∀ fe,
           have close : ∀ (hns : stateUpdate ℓ op v hs = none) (hnt : txnUpdate ℓ op v hs = none),
               (Corr σ (netEffect hs σ τ) ∧ TCorr τ (netEffect hs σ τ) ∧ HMut hs (netEffect hs σ τ)) ∧
               ∀ c s F r, throwOutcome F ℓ op v (netEffect hs σ τ) = some r →
-                ∃ F', exec F' (compile (.up ℓ op v) c) s hs = some r := by
+                ∃ F', exec F' (compile (.perform 0 ℓ op v) c) s hs = some r := by
             intro hns hnt
             have hus : netEffect hs σ τ = hs := updateStates_self hC hT
             refine ⟨⟨by rw [hus]; exact hC, by rw [hus]; exact hT, by rw [hus]; exact HMut.refl hs⟩,
@@ -2050,7 +2050,7 @@ theorem sim : ∀ fe,
             | (.term (.lam a), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2100,7 +2100,7 @@ theorem sim : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2160,7 +2160,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2204,7 +2204,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2262,7 +2262,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2380,28 +2380,28 @@ example : Agree 12 (.force (.vthunk (.ret (.vint 9)))) (.vint 9) := ⟨by rfl, b
 -- ─── THROWS axis (caught + uncaught) ─────────────────────────────────────────
 
 /-- `handle (throws ℓ) (raise 7)` ⇒ `7` — the deep handler catches and aborts with the payload. -/
-example : Agree 20 (.handle (.throws 0) (.up 0 "raise" (.vint 7))) (.vint 7) := ⟨by rfl, by rfl⟩
+example : Agree 20 (.handle (.throws 0) (.perform 0 0 "raise" (.vint 7))) (.vint 7) := ⟨by rfl, by rfl⟩
 
 /-- DEEP throws: `handle (throws ℓ) (let _ = raise 7 in 99)` ⇒ `7` — the handler reaches PAST a
 `letF` frame and DISCARDS the captured continuation (`99` is never returned). -/
-example : Agree 24 (.handle (.throws 0) (.letC (.up 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.vint 7) :=
+example : Agree 24 (.handle (.throws 0) (.letC (.perform 0 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.vint 7) :=
   ⟨by rfl, by rfl⟩
 
 /-- UNCAUGHT `raise` (no handler in scope) yields NO observable value — so it falls OUTSIDE
 `Agree`. Both reps signal it: the machine gets STUCK (`exec = none`), the kernel returns
 `.stuck`. The axis is covered by asserting that shared stuckness (not a value agreement). -/
-example : exec 20 (compile (.up 0 "raise" (.vint 7)) []) [] [] = none := by rfl
-example : Source.eval 20 (Comp.up 0 "raise" (.vint 7)) = .stuck := by rfl
+example : exec 20 (compile (.perform 0 0 "raise" (.vint 7)) []) [] [] = none := by rfl
+example : Source.eval 20 (Comp.perform 0 0 "raise" (.vint 7)) = .stuck := by rfl
 
 -- ─── STATE axis (get-default / put-then-get / persist-past-caught-throw) ──────
 
 /-- `handle (state ℓ 5) (get ())` ⇒ `5` — read the initial state. -/
-example : Agree 40 (.handle (.state 1 (.vint 5)) (.up 1 "get" .vunit)) (.vint 5) := ⟨by rfl, by rfl⟩
+example : Agree 40 (.handle (.state 1 (.vint 5)) (.perform 0 1 "get" .vunit)) (.vint 5) := ⟨by rfl, by rfl⟩
 
 /-- `handle (state ℓ 0) (let _ = put 7 in get ())` ⇒ `7` — the RESUMPTIVE handler KEEPS the captured
 `letF` continuation and threads the store; `get` reads the `put`. -/
 example : Agree 80
-    (.handle (.state 1 (.vint 0)) (.letC (.up 1 "put" (.vint 7)) (.up 1 "get" .vunit)))
+    (.handle (.state 1 (.vint 0)) (.letC (.perform 0 1 "put" (.vint 7)) (.perform 0 1 "get" .vunit)))
     (.vint 7) := ⟨by rfl, by rfl⟩
 
 /-- OUTER STATE PERSISTS PAST A CAUGHT THROW: `handle (state ℓ 0) (put 7; handle (throws) (raise);
@@ -2409,9 +2409,9 @@ get)` ⇒ `7`. The inner zero-shot throw is caught and discarded, but the outer 
 survives — `get` still sees the `put 7`. The interaction the resumptive/zero-shot split must get right. -/
 example : Agree 100
     (.handle (.state 1 (.vint 0))
-      (.letC (.up 1 "put" (.vint 7))
-        (.letC (.handle (.throws 0) (.up 0 "raise" .vunit))
-          (.up 1 "get" .vunit))))
+      (.letC (.perform 0 1 "put" (.vint 7))
+        (.letC (.handle (.throws 0) (.perform 0 0 "raise" .vunit))
+          (.perform 0 1 "get" .vunit))))
     (.vint 7) := ⟨by rfl, by rfl⟩
 
 -- ─── TRANSACTION axis (new+read heap-thread / abort-rollback) ─────────────────
@@ -2419,7 +2419,7 @@ example : Agree 100
 /-- `handle (transaction ℓ []) (newTVar 9; readTVar 0)` ⇒ `9` — allocate then read back; the heap
 threads through both ops (ADR-0031 D4). -/
 example : Agree 40
-    (.handle (.transaction 2 []) (.letC (.up 2 "newTVar" (.vint 9)) (.up 2 "readTVar" (.vvar 0))))
+    (.handle (.transaction 2 []) (.letC (.perform 0 2 "newTVar" (.vint 9)) (.perform 0 2 "readTVar" (.vvar 0))))
     (.vint 9) := ⟨by rfl, by rfl⟩
 
 /-- ABORT-ROLLBACK: an outer `throws` wraps `transaction (newTVar 100; writeTVar 0:=70; raise 100)`.
@@ -2429,9 +2429,9 @@ balance, the observable proof the write rolled back. -/
 example : Agree 80
     (.handle (.throws 0)
       (.handle (.transaction 2 [])
-        (.letC (.up 2 "newTVar" (.vint 100))
-          (.letC (.up 2 "writeTVar" (.pair (.vint 0) (.vint 70)))
-            (.up 0 "raise" (.vint 100))))))
+        (.letC (.perform 0 2 "newTVar" (.vint 100))
+          (.letC (.perform 0 2 "writeTVar" (.pair (.vint 0) (.vint 70)))
+            (.perform 0 0 "raise" (.vint 100))))))
     (.vint 100) := ⟨by rfl, by rfl⟩
 
 -- ─── ADT axis (case·inl / case·inr / split / unfold) ─────────────────────────
@@ -2526,7 +2526,16 @@ running the machine from the `up` config (`Source.step (K, up ℓ op v) = dispat
 so DEFINITIONALLY `Config.run (n+1) (K, up ℓ op v)`. The `Config.run` analog of the
 machine's `throwOutcome` — the two-part bridge's raised target. -/
 def dispatchRun (n : Nat) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId)
-    (v : Val) : Bang.Result Val := Bang.Config.run (n+1) (K, .up ℓ op v)
+    (v : Val) : Bang.Result Val := Bang.Config.run (n+1) (K, .perform 0 ℓ op v)
+
+/-- `dispatchRun` is independent of the carried `cap` field (1a: `Source.step` ignores it).
+The raised-config bridge target equals the run from `.perform cap …` for ANY `cap`. -/
+theorem dispatchRun_perform (n : Nat) (cap : Nat) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label)
+    (op : Bang.OpId) (v : Val) :
+    Bang.Config.run (n+1) (K, .perform cap ℓ op v) = dispatchRun n K ℓ op v := by
+  cases K with
+  | nil => simp only [dispatchRun, Bang.Config.run, Source.step]
+  | cons fr K' => simp only [dispatchRun, Bang.Config.run, Source.step]
 
 /-! ### D3 store ↔ kernel-`EvalCtx` correspondence (state)
 
@@ -3624,7 +3633,7 @@ theorem run_evalD : ∀ fe,
             | (.term (.lam a), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3678,14 +3687,14 @@ theorem run_evalD : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
             | (.term .oom, _, _), h => simp [Option.bind] at h
             | (.term (.wrong a), _, _), h => simp [Option.bind] at h
             | (.raised ℓ op w, _, _), h => simp [Option.bind] at h
-      | up ℓ2 op2 v2 =>
+      | perform _ ℓ2 op2 v2 =>
           -- OP-FIRST (mirrors evalD's up-arm + the kernel's handlesOp): get/put→σ, txnops→τ, else raise.
           simp only [evalD] at h
           by_cases hop : op2 = "get"
@@ -3800,7 +3809,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3837,7 +3846,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3895,7 +3904,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3966,7 +3975,7 @@ theorem run_evalD : ∀ fe,
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
-      | up ℓ2 op2 v2 =>
+      | perform _ ℓ2 op2 v2 =>
           -- OP-FIRST: the obligation fixes op = "raise", which is NOT get/put/txnop ⇒ evalD's up-arm
           -- falls to the final `raised ℓ2 "raise" v2` branch unconditionally; σ/τ unchanged.
           simp only [evalD] at h
@@ -3994,7 +4003,8 @@ theorem run_evalD : ∀ fe,
                   Outcome.raised.injEq] at h
                 obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩ := h
                 rw [ctxNetEffect_self hCtx hTtx]
-                refine ⟨⟨hCtx, hTtx⟩, fun n r hr => ⟨n+1, hr⟩⟩
+                refine ⟨⟨hCtx, hTtx⟩, fun n r hr => ⟨n+1, ?_⟩⟩
+                rw [dispatchRun_perform]; exact hr
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe σ τ M with
@@ -4040,7 +4050,7 @@ theorem run_evalD : ∀ fe,
             | (.term (.lam a), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4108,7 +4118,7 @@ theorem run_evalD : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4151,7 +4161,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4189,7 +4199,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4227,7 +4237,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.up a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h

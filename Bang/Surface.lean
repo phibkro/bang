@@ -141,15 +141,15 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .lett x e b => do return .letC (← lowerC env e) (← lowerC (x :: env) b)
   | .lam x b    => do return .lam (← lowerC (x :: env) b)
   | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
-  | .raise e    => do return .up exnLabel "raise" (← lowerV env e)
+  | .raise e    => do return .perform 0 exnLabel "raise" (← lowerV env e)
   | .handle e   => do return .handle (.throws exnLabel) (← lowerC env e)
-  | .getS       => .ok (.up stateLabel "get" .vunit)
-  | .putS e     => do return .up stateLabel "put" (← lowerV env e)
+  | .getS       => .ok (.perform 0 stateLabel "get" .vunit)
+  | .putS e     => do return .perform 0 stateLabel "put" (← lowerV env e)
   | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC env e)
   | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC env e)
-  | .newS e     => do return .up stmLabel "newTVar" (← lowerV env e)
-  | .readS e    => do return .up stmLabel "readTVar" (← lowerV env e)
-  | .writeS r w => do return .up stmLabel "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
+  | .newS e     => do return .perform 0 stmLabel "newTVar" (← lowerV env e)
+  | .readS e    => do return .perform 0 stmLabel "readTVar" (← lowerV env e)
+  | .writeS r w => do return .perform 0 stmLabel "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -374,13 +374,13 @@ def pureComp : Comp := .letC (.ret (.vint 3)) (.ret (.vvar 0))
 example : Source.eval 20 pureComp = .done (.vint 3) := by rfl
 
 /-- throws: `handle (raise 7)` — the deep handler aborts with the payload. -/
-def throwsComp : Comp := .handle (.throws exnLabel) (.up exnLabel "raise" (.vint 7))
+def throwsComp : Comp := .handle (.throws exnLabel) (.perform 0 exnLabel "raise" (.vint 7))
 example : Source.eval 20 throwsComp = .done (.vint 7) := by rfl
 
 /-- deep-throws: `handle (let _ = raise 7 in 99)` — `99` is the discarded
 continuation; proves the deep handler reaches PAST a `letC` frame. -/
 def deepComp : Comp :=
-  .handle (.throws exnLabel) (.letC (.up exnLabel "raise" (.vint 7)) (.ret (.vint 99)))
+  .handle (.throws exnLabel) (.letC (.perform 0 exnLabel "raise" (.vint 7)) (.ret (.vint 99)))
 example : Source.eval 20 deepComp = .done (.vint 7) := by rfl
 
 /-- state CELL (rung 1, ADR-0025): `handle (state ℓ 0) (let _ = put 7 in get ())` ⟶ `7`.
@@ -389,12 +389,12 @@ captured `letC` continuation and threads the state, unlike `throws` which discar
 — `get; put (get+1)` — additionally needs arithmetic `+`, a separate K-ADR; out of scope.) -/
 def stateCellComp : Comp :=
   .handle (.state stateLabel (.vint 0))
-    (.letC (.up stateLabel "put" (.vint 7)) (.up stateLabel "get" .vunit))
+    (.letC (.perform 0 stateLabel "put" (.vint 7)) (.perform 0 stateLabel "get" .vunit))
 example : Source.eval 50 stateCellComp = .done (.vint 7) := by rfl
 
 /-- state GET-default: `handle (state ℓ 5) (get ())` ⟶ `5` (read the initial state). -/
 def stateGetComp : Comp :=
-  .handle (.state stateLabel (.vint 5)) (.up stateLabel "get" .vunit)
+  .handle (.state stateLabel (.vint 5)) (.perform 0 stateLabel "get" .vunit)
 example : Source.eval 50 stateGetComp = .done (.vint 5) := by rfl
 
 /-! ### STM ledger (rung 3, ADR-0030): the transactional moat demo.
@@ -412,9 +412,9 @@ NOT `rfl`: kernel whnf over the machine is pathological under `rfl`. -/
 
 /-- Helpers building the raw stm `up`-operations (the surface `newTVar`/`readTVar`/`writeTVar`
 lowerings the L-phase IC will hide behind sugar). -/
-def stmNew (v : Val) : Comp := .up stmLabel "newTVar" v
-def stmRead (i : Int) : Comp := .up stmLabel "readTVar" (.vint i)
-def stmWrite (i : Int) (w : Val) : Comp := .up stmLabel "writeTVar" (.pair (.vint i) w)
+def stmNew (v : Val) : Comp := .perform 0 stmLabel "newTVar" v
+def stmRead (i : Int) : Comp := .perform 0 stmLabel "readTVar" (.vint i)
+def stmWrite (i : Int) (w : Val) : Comp := .perform 0 stmLabel "writeTVar" (.pair (.vint i) w)
 
 /-- COMMIT: `atomically (alloc A=100, B=0; A:=70; B:=30; read (A,B))` ⟶ `(70, 30)`.
 The heap is threaded through every op; the final reads see the committed writes. -/
@@ -443,7 +443,7 @@ def ledgerAbort : Comp :=
           (.letC (stmWrite 0 (.vint 70))      -- attempted write (rolled back on abort)
             (.letC (stmWrite 1 (.vint 30))    -- attempted write (rolled back on abort)
               -- insufficient funds ⇒ abort with the ORIGINAL balances (100, 0).
-              (.up exnLabel "raise" (.pair (.vint 100) (.vint 0))))))))
+              (.perform 0 exnLabel "raise" (.pair (.vint 100) (.vint 0))))))))
 
 #guard (match Source.eval 200 ledgerAbort with
   | .done (.pair (.vint a) (.vint b)) => a == 100 && b == 0 | _ => false)
@@ -475,8 +475,8 @@ written value `v`: `state s0 in (let c = {get} in (let _ = put v in $c))`. de Br
 idx 0 after its binder, idx 1 after the `put`'s `let`, so `$c` is `force (vvar 1)`. -/
 def cellComp (s0 v : Int) : Comp :=
   .handle (.state stateLabel (.vint s0))
-    (.letC (.ret (.vthunk (.up stateLabel "get" .vunit)))      -- c = {get}   (idx 0)
-      (.letC (.up stateLabel "put" (.vint v))                  -- _ = put v
+    (.letC (.ret (.vthunk (.perform 0 stateLabel "get" .vunit)))      -- c = {get}   (idx 0)
+      (.letC (.perform 0 stateLabel "put" (.vint v))                  -- _ = put v
         (.force (.vvar 1))))                                   -- $c
 
 /-- **Liveness law (rung 4, ADR-0005):** a reactive cell always reflects the latest write.
@@ -514,7 +514,7 @@ def beqComp : Comp → Comp → Bool
   | .force a,      .force b      => beqVal a b
   | .lam a,        .lam b        => beqComp a b
   | .app a v,      .app b w      => beqComp a b && beqVal v w
-  | .up ℓ o v,     .up ℓ' o' w   => ℓ == ℓ' && o == o' && beqVal v w
+  | .perform c ℓ o v, .perform c' ℓ' o' w => c == c' && ℓ == ℓ' && o == o' && beqVal v w
   | .handle h a,   .handle h' b  => beqHandler h h' && beqComp a b
   | .case v a b,   .case w c d   => beqVal v w && beqComp a c && beqComp b d
   | .split v a,    .split w b    => beqVal v w && beqComp a b

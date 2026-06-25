@@ -254,7 +254,7 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
     ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
     ?handleTransaction h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
@@ -285,8 +285,8 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                 simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
                   ihv, Nat.succ.inj (Nat.succ.inj ihN), Nat.min_self]
   case unfold => intro γ Γ v A _ ih; exact ih
-  case up => intro γ Γ ℓ op w φ q A B _ _ _ _ ih; simp only [hsmul_eq_smul, GradeVec.smul_length]
-             exact ih
+  case perform => intro γ Γ _cap ℓ op w φ q A B _ _ _ _ ih; simp only [hsmul_eq_smul, GradeVec.smul_length]
+                  exact ih
   case handleThrows => intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
   case handleState => intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ ihM; exact ihM
   case handleTransaction =>
@@ -304,7 +304,7 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
     ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
     ?handleTransaction h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
@@ -335,8 +335,8 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                 simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
                   ihv, Nat.succ.inj (Nat.succ.inj ihN), Nat.min_self]
   case unfold => intro γ Γ v A _ ih; exact ih
-  case up => intro γ Γ ℓ op w φ q A B _ _ _ _ ih; simp only [hsmul_eq_smul, GradeVec.smul_length]
-             exact ih
+  case perform => intro γ Γ _cap ℓ op w φ q A B _ _ _ _ ih; simp only [hsmul_eq_smul, GradeVec.smul_length]
+                  exact ih
   case handleThrows => intro γ Γ ℓ M e φ q A _ _ _ _ ih; exact ih
   case handleState => intro γ Γ ℓ s₀ M e φ q S A _ _ _ _ _ _ _ _ _ ihM; exact ihM
   case handleTransaction =>
@@ -447,7 +447,7 @@ theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.shiftFrom]
     rw [hv.shift_closed k hk, hN.shift_closed (k + 2) (by simp only [List.length_cons]; omega)]
   | @unfold γ Γ v A hv => simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
-  | @up γ Γ ℓ op v φ q A B _ _ _ hv =>
+  | @perform γ Γ _ ℓ op v φ q A B _ _ _ hv =>
     simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
   | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]; rw [hM.shift_closed k hk]
@@ -501,7 +501,7 @@ theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.substFrom]
     rw [hv.subst_closed k hk w, hN.subst_closed (k + 2) (by simp only [List.length_cons]; omega) _]
   | @unfold γ Γ v A hv => simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
-  | @up γ Γ ℓ op v φ q A B _ _ _ hv =>
+  | @perform γ Γ _ ℓ op v φ q A B _ _ _ hv =>
     simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
   | @handleThrows γ Γ ℓ M e φ q A _ _ hM _ =>
     simp only [Comp.substFrom, Handler.substFrom]; rw [hM.subst_closed k hk w]
@@ -694,14 +694,14 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   | @unfold γ Γ v A hv =>
     simp only [Comp.shiftFrom]
     exact HasCTy.unfold (hv.weaken k hk A')
-  | @up γ Γ ℓ op w φ q A B hmem hopArg hopRes hw =>
+  | @perform γ Γ _ ℓ op w φ q A B hmem hopArg hopRes hw =>
     -- shiftFrom k (up ℓ op w) = up ℓ op (shiftFrom k w); grade insG (q•γ) k = q • insG γ k.
     -- The interface premises (opArg/opRes) carry no grade content; thread verbatim.
     simp only [Comp.shiftFrom]
     have hw' := hw.weaken k hk A'
     have hgr : insG (q • γ) k = q • insG γ k := insG_smul q γ k
     rw [hgr]
-    exact HasCTy.up hmem hopArg hopRes hw'
+    exact HasCTy.perform hmem hopArg hopRes hw'
   | @handleThrows γ Γ ℓ M e φ q A hraise hiface hM hle =>
     -- handle (throws ℓ) carries no value ⇒ unchanged by shift; weaken the body.
     -- Answer-type + interface premises thread verbatim (no grade content).
@@ -1226,7 +1226,7 @@ theorem HasCTy.subst_gen
   refine HasCTy.rec
     (motive_1 := VsubstMotive) (motive_2 := CsubstMotive)
     ?vunit ?vint ?vvar ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?up ?handleThrows ?handleState
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
     ?handleTransaction
     hc Δ Γ A γ_v v rfl hv
   case vunit =>
@@ -1314,13 +1314,13 @@ theorem HasCTy.subst_gen
     subst hΓ
     rw [Comp.substFrom]
     exact HasCTy.unfold (ih Δ Γ A γ_v v rfl hv)
-  case up =>
-    intro γ Γ₀ ℓ op w φ q A₀ B₀ hmem hopArg hopRes hw ih Δ Γ A γ_v v hΓ hv
+  case perform =>
+    intro γ Γ₀ _cap ℓ op w φ q A₀ B₀ hmem hopArg hopRes hw ih Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom]
     -- Sgrade γ_v k (q • γ) = q • Sgrade γ_v k γ. Interface premises thread verbatim.
     simp only [hsmul_eq_smul, Sgrade_smul]
-    exact HasCTy.up hmem hopArg hopRes (ih Δ Γ A γ_v v rfl hv)
+    exact HasCTy.perform hmem hopArg hopRes (ih Δ Γ A γ_v v rfl hv)
   case handleThrows =>
     intro γ Γ₀ ℓ M e φ q A₀ hraise hiface hM hle ih Δ Γ A γ_v v hΓ hv
     subst hΓ
@@ -1458,9 +1458,9 @@ theorem HasCTy.ret_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   cases h with
   | @ret _ γ' _ _ A q hv hγ => exact ⟨γ', A, q, rfl, rfl, hγ, hv⟩
 
-theorem HasCTy.up_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
-    {ℓ : Label} {op : OpId} {v : Val} {e : Eff} {C : CTy Eff Mult} :
-    HasCTy γ0 Γ0 (Comp.up ℓ op v) e C →
+theorem HasCTy.perform_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {cap : Nat} {ℓ : Label} {op : OpId} {v : Val} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.perform cap ℓ op v) e C →
     ∃ γ q A B, C = CTy.F q B ∧ γ0 = q • γ
       ∧ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ e
       ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A
@@ -1468,7 +1468,7 @@ theorem HasCTy.up_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
       ∧ HasVTy γ Γ0 v A := by
   intro h
   cases h with
-  | @up γ _ _ _ _ _ q A B hmem hopArg hopRes hv =>
+  | @perform γ _ _ _ _ _ _ q A B hmem hopArg hopRes hv =>
     exact ⟨γ, q, A, B, rfl, rfl, hmem, hopArg, hopRes, hv⟩
 
 theorem HasCTy.letC_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
@@ -2599,9 +2599,9 @@ theorem preservation_proof
         obtain ⟨eo', hleo, hsub'⟩ := hsub.weaken_eff (bot_le)
         exact ⟨eo', le_trans hleo hleo₀,
           ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩⟩
-  | up ℓ op v =>
+  | perform _ ℓ op v =>
     -- DISPATCH. Classify the performed op by the catching handler's interface.
-    obtain ⟨γ', q, A, B, hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.up_inv
+    obtain ⟨γ', q, A, B, hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.perform_inv
     subst hC
     have hγ'nil : γ' = [] := by have := hwv.length_eq; simpa using this
     subst hγ'nil
@@ -2911,8 +2911,8 @@ theorem progress_proof
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
     · subst hweq; exact Or.inr ⟨(K, MT), by simp [Source.step]⟩
     · simp at hget
-  | up ℓ op v =>
-    obtain ⟨γ', q', A', B', hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.up_inv
+  | perform _ ℓ op v =>
+    obtain ⟨γ', q', A', B', hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.perform_inv
     -- the label cannot escape to the whole-program ⊥
     have hesc : ¬ (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ (⊥ : Eff)) :=
       fun h => EffSig.labelEff_ne_bot (Eff := Eff) (Mult := Mult) ℓ (le_bot_iff.mp h)
@@ -3004,7 +3004,7 @@ private theorem run_safe {q : Mult} {A : VTy Eff Mult} :
         | app _ _ => simp only [isReturnConfig] at hret
         | handle _ _ => simp only [isReturnConfig] at hret
         | force _ => simp only [isReturnConfig] at hret
-        | up _ _ _ => simp only [isReturnConfig] at hret
+        | perform _ _ _ _ => simp only [isReturnConfig] at hret
         | lam _ => simp only [isReturnConfig] at hret
         | case _ _ _ => simp only [isReturnConfig] at hret
         | split _ _ => simp only [isReturnConfig] at hret
@@ -3025,7 +3025,7 @@ private theorem run_safe {q : Mult} {A : VTy Eff Mult} :
           | app M w => simp only [Config.run]; rw [hstep]
           | handle hh M => simp only [Config.run]; rw [hstep]
           | force w => simp only [Config.run]; rw [hstep]
-          | up l o w => simp only [Config.run]; rw [hstep]
+          | perform _ l o w => simp only [Config.run]; rw [hstep]
           | lam M => simp [Source.step] at hstep
           | case v N₁ N₂ => simp only [Config.run]; rw [hstep]
           | split v N => simp only [Config.run]; rw [hstep]

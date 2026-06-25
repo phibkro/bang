@@ -198,8 +198,8 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _ _
 
-@[simp] theorem closeC_up (δ : List Val) (ℓ : Label) (op : OpId) (w : Val) :
-    closeC δ (Comp.up ℓ op w) = Comp.up ℓ op (closeV δ w) := by
+@[simp] theorem closeC_perform (δ : List Val) (cap : Nat) (ℓ : Label) (op : OpId) (w : Val) :
+    closeC δ (Comp.perform cap ℓ op w) = Comp.perform cap ℓ op (closeV δ w) := by
   induction δ generalizing w with
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
@@ -327,7 +327,7 @@ theorem Comp.shiftFrom_substFrom_closed {u : Val} (hu : Val.Closed u) :
   | k, i, hik, .app M w => by
       simp only [Comp.shiftFrom, Comp.substFrom]
       rw [Comp.shiftFrom_substFrom_closed hu k i hik M, Val.shiftFrom_substFrom_closed hu k i hik w]
-  | k, i, hik, .up ℓ op w => by
+  | k, i, hik, .perform _ ℓ op w => by
       simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
   | k, i, hik, .handle h M => by
       simp only [Comp.shiftFrom, Comp.substFrom]
@@ -649,7 +649,7 @@ theorem Comp.substFrom_swap_closed {v w : Val} (hv : Val.Closed v) (hw : Val.Clo
   | k, .app M u => by
       simp only [Comp.substFrom]
       rw [Comp.substFrom_swap_closed hv hw k M, Val.substFrom_swap_closed hv hw k u]
-  | k, .up ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | k, .perform _ ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
   | k, .handle h M => by
       simp only [Comp.substFrom]
       rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed hv hw k M]
@@ -738,7 +738,7 @@ theorem Comp.substFrom_swap_closed_ge {u w : Val} (hu : Val.Closed u) (hw : Val.
   | i, j, hij, .app M t => by
       simp only [Comp.substFrom]
       rw [Comp.substFrom_swap_closed_ge hu hw i j hij M, Val.substFrom_swap_closed_ge hu hw i j hij t]
-  | i, j, hij, .up ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | i, j, hij, .perform _ ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
   | i, j, hij, .handle h M => by
       simp only [Comp.substFrom]
       rw [Handler.substFrom_swap_closed_ge hu hw i j hij h, Comp.substFrom_swap_closed_ge hu hw i j hij M]
@@ -1625,17 +1625,18 @@ theorem splitAt_some_handlesOp {K : EvalCtx} {ℓ : Label} {op : OpId} {Kᵢ K�
 -- state/txn dispatch through the kept Kᵢ — all discharged by the conjunct + `coApproxC_le_anti_step`.
 -- STANDALONE ⇒ a `set_option maxHeartbeats` is safe here — no mutual structural-recursion inference.
 set_option maxHeartbeats 1000000 in
-theorem crelK_fund_up {n : Nat} {ℓ : Label} {op : OpId} {q : Mult} {A B : VTy Eff Mult} {φ : Eff}
+theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult} {A B : VTy Eff Mult} {φ : Eff}
     {v₁ v₂ : Val}
     (hArg : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A)
     (hRes : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B)
     (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂) (hvk : VrelK n A v₁ v₂) :
-    CrelK n (CTy.F q B) φ (Comp.up ℓ op v₁) (Comp.up ℓ op v₂) := by
+    -- 1a: `cap` is inert — `Source.step` ignores it (still dynamic `splitAt` by label).
+    CrelK n (CTy.F q B) φ (Comp.perform cap ℓ op v₁) (Comp.perform cap ℓ op v₂) := by
   rw [CrelK]
   intro D K₁ K₂ hK
   cases hsp1 : Bang.splitAt K₁ ℓ op with
   | none =>
-      intro hconv; exact absurd hconv (not_convergesC_le_up_splitNone K₁ ℓ op v₁ hsp1)
+      intro hconv; exact absurd hconv (not_convergesC_le_up_splitNone K₁ cap ℓ op v₁ hsp1)
   | some t =>
       obtain ⟨K₁ᵢ, h, K₁ₒ⟩ := t
       have hcatch : Bang.handlesOp h ℓ op = true := splitAt_some_handlesOp hsp1
@@ -1648,9 +1649,9 @@ theorem crelK_fund_up {n : Nat} {ℓ : Label} {op : OpId} {q : Mult} {A B : VTy 
           cases n with
           | zero => exact coApproxC_le_zero _ _
           | succ k =>
-              have hstep1 : Source.step (K₁, Comp.up ℓ op v₁) = some (K₁ₒ, Comp.ret v₁) := by
+              have hstep1 : Source.step (K₁, Comp.perform cap ℓ op v₁) = some (K₁ₒ, Comp.ret v₁) := by
                 show Bang.dispatch K₁ ℓ op v₁ = _; unfold Bang.dispatch; rw [hsp1]; simp [dispatchOn]
-              have hstep2 : Source.step (K₂, Comp.up ℓ op v₂) = some (K₂ₒ, Comp.ret v₂) := by
+              have hstep2 : Source.step (K₂, Comp.perform cap ℓ op v₂) = some (K₂ₒ, Comp.ret v₂) := by
                 show Bang.dispatch K₂ ℓ op v₂ = _; unfold Bang.dispatch; rw [hsp2]; simp [dispatchOn]
               refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
               have hcatch' : Bang.handlesOp (Handler.throws lh) (Handler.throws lh).label op = true := by
@@ -1672,9 +1673,9 @@ theorem crelK_fund_up {n : Nat} {ℓ : Label} {op : OpId} {q : Mult} {A B : VTy 
               obtain ⟨c₂, hc₂⟩ : ∃ c, Bang.dispatchOn op v₂ (K₂ᵢ, h', K₂ₒ) = some c := by
                 cases h' <;> simp only [HandlerRel] at hHR
                 obtain ⟨rfl, _⟩ := hHR; exact dispatchOn_state_isSome op v₂ K₂ᵢ K₂ₒ _ _
-              have hstep1 : Source.step (K₁, Comp.up ℓ op v₁) = some c₁ := by
+              have hstep1 : Source.step (K₁, Comp.perform cap ℓ op v₁) = some c₁ := by
                 show Bang.dispatch K₁ ℓ op v₁ = _; unfold Bang.dispatch; rw [hsp1]; exact hc₁
-              have hstep2 : Source.step (K₂, Comp.up ℓ op v₂) = some c₂ := by
+              have hstep2 : Source.step (K₂, Comp.perform cap ℓ op v₂) = some c₂ := by
                 show Bang.dispatch K₂ ℓ op v₂ = _; unfold Bang.dispatch; rw [hsp2]; exact hc₂
               refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
               have hcatch' : Bang.handlesOp (Handler.state lh s) (Handler.state lh s).label op = true := by
@@ -1694,9 +1695,9 @@ theorem crelK_fund_up {n : Nat} {ℓ : Label} {op : OpId} {q : Mult} {A B : VTy 
               obtain ⟨c₂, hc₂⟩ : ∃ c, Bang.dispatchOn op v₂ (K₂ᵢ, h', K₂ₒ) = some c := by
                 cases h' <;> simp only [HandlerRel] at hHR
                 obtain ⟨rfl, _, _⟩ := hHR; exact dispatchOn_transaction_isSome op v₂ K₂ᵢ K₂ₒ _ _
-              have hstep1 : Source.step (K₁, Comp.up ℓ op v₁) = some c₁ := by
+              have hstep1 : Source.step (K₁, Comp.perform cap ℓ op v₁) = some c₁ := by
                 show Bang.dispatch K₁ ℓ op v₁ = _; unfold Bang.dispatch; rw [hsp1]; exact hc₁
-              have hstep2 : Source.step (K₂, Comp.up ℓ op v₂) = some c₂ := by
+              have hstep2 : Source.step (K₂, Comp.perform cap ℓ op v₂) = some c₂ := by
                 show Bang.dispatch K₂ ℓ op v₂ = _; unfold Bang.dispatch; rw [hsp2]; exact hc₂
               refine coApproxC_le_anti_step hstep1 (by intro u; simp) hstep2 (by intro u; simp) ?_
               have hcatch' : Bang.handlesOp (Handler.transaction lh Θ') (Handler.transaction lh Θ').label op
@@ -1956,12 +1957,12 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
             closeV_closed_scoped hδ.closed_right (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
-  | @up _ _ ℓ op v φ q A B hℓ hArg hRes hv =>
+  | @perform _ _ _cap ℓ op v φ q A B hℓ hArg hRes hv =>
       -- ◊4.5b-append: the op-PRODUCER, now a THIN call to `crelK_fund_up` (extracted outside the mutual
       -- block so its match stays small enough for structural-recursion inference). `hvk` precomputed via
       -- `vrelK_fund hv` (the only mutual recursion); the rest is self-contained in `crelK_fund_up`.
       intro n δ₁ δ₂ hδ
-      rw [closeC_up, closeC_up]
+      rw [closeC_perform, closeC_perform]
       have hvk : VrelK n A (closeV δ₁ v) (closeV δ₂ v) := vrelK_fund hv n δ₁ δ₂ hδ
       have hcv₁ : Val.Closed (closeV δ₁ v) :=
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
