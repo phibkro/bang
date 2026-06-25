@@ -1987,10 +1987,12 @@ theorem HasVTy.scopedIn {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A 
 /-! ### B.5′ ◊4.5b — the migrated fundamental theorem (`vrelK_fund` / `crelK_fund`) over `CrelK`/`KrelS`
 
 The answer-typed migration of `vrel_fund`/`crel_fund`, wiring the `compatK_*` cores (sub-block c) over
-`EnvRelK`. STATUS: all NON-handler cases closed; the 3 handler cases + `up` carry `sorry` (→ sub-block f,
-where the handler row-discharge / producer-`up` close together — exactly as the old `crel_fund`'s `up`
-sorry). The Kripke continuation indices use `∀ m < n` at the letC/case/split seams (the `compatK_*`
-cores' ▷-guarded shape) and `∀ j ≤ n` would over-supply. -/
+`EnvRelK`. STATUS (ADR-0053, the LR 5→2): all non-handler cases AND the 3 handler cases CLOSED — the
+absolute-cap representation dissolved the shift wall (`closeC_handle*` rewrite unshifted), so the arms
+close on their `compatK_handle*` cores. The ONLY remaining `sorry`s are the 2 ADR-0043 descents in
+`crelK_fund_up`: `hcatch` (cap-resolution at the producer-`up` edge) + the `:1801` cap>0 resume residual
+— the deferred 5→0 set. The Kripke continuation indices use `∀ m < n` at the letC/case/split seams (the
+`compatK_*` cores' ▷-guarded shape) and `∀ j ≤ n` would over-supply. -/
 mutual
 theorem vrelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
     (h : HasVTy γ Γ v A) :
@@ -2197,8 +2199,8 @@ end
 
 A well-typed stack is `KrelS`-self-related at answer type `Co` (the whole-program returner type, the
 `D` parameter). Induction over `HasStack`: nil = `krelS_nil_succ`; letF/appF reuse the frame intros +
-`crelK_fund`/`vrelK_fund` for the continuation/arg self-relation. The 3 handler arms carry `sorry`
-(→ sub-block f, with the handler row-discharge + the `crelK_fund` handler cases). -/
+`crelK_fund`/`vrelK_fund` for the continuation/arg self-relation; the handler arms reuse the closed
+`crelK_fund` handler cases (ADR-0053 5→2 — no handler-arm sorry here). -/
 theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo : Mult}
     {Ao : VTy Eff Mult} (hCo : Co = CTy.F qo Ao)
     (hC : HasStack C e B eo Co) : KrelS n B Co e C C := by

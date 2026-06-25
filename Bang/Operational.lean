@@ -922,14 +922,17 @@ theorem WCHandler.ctxKindEq : ∀ (K K' : EvalCtx) (h₀ : Handler),
                         simp only [WCHandler] at hΘ ⊢; exact hΘ
 end
 
-/-! **THE KEYSTONE** (`WCComp.insert` + duals) — ADR-0053 SHIFT-FREE form (general-Δ insert, SEAMED).
+/-! **THE KEYSTONE** (`WCComp.insert` + duals) — ADR-0053 SHIFT-FREE form (handler-insert, SEAMED).
 A comp well-capped against `hframes Δ ++ Sg` is well-capped against `hframes Δ ++ handleF h :: Sg` —
-inserting a handler, with the body UNCHANGED (absolute caps don't shift). The `perform` case holds for
-caps targeting `Sg` (proven: the conversion modulus +1 cancels the inserted frame); the general-Δ case
-(caps targeting the accumulated Δ-handlers) is the WC-keystone reformulation under active 2c work. -/
--- ABSOLUTE-CAPS MIGRATION WIP (ADR-0053 stage 2c): CapResolvesKind not yet re-keyed to absResolvesKind;
--- WC keystone general-Δ insert reformulation pending (kernel-engineer-paired). Type-safety
--- progress/preservation temporarily seamed.
+inserting a handler, body UNCHANGED (absolute caps don't shift). The `perform` case holds for caps
+targeting `Sg` (proven, `absSplit_stable_under_top_push`: the modulus +1 cancels the inserted frame). -/
+-- ABSOLUTE-CAPS MIGRATION (ADR-0053): WC keystone Δ-targeting-cap insert GENUINELY UNCERTAIN — inserting
+-- a handler BELOW an existing `handleF h₀` shifts `h₀`'s absolute root-level, so a `perform` targeting
+-- `h₀` (e.g. inside a thunk's own `handle h₀ …`) mis-resolves (build-traced counterexample). Sg-targeting
+-- proven; Δ-targeting needs an isolated build-test / second eyes (do NOT solo-grind) — a different WC
+-- formulation (caps relative to nearest enclosing handler / insert-only-above-targets / stored-thunk
+-- cap-closedness). Feeds ONLY WellCapped→LWConfig→preservation/progress, behind
+-- preservation_returnEscape_TODO; the LR 5→2 (Compat) is independent. progress/preservation seamed.
 mutual
 theorem WCComp.shiftCap_insert (h : Handler) (Sg : EvalCtx) :
     ∀ (Δ : List Handler) (M : Comp),
