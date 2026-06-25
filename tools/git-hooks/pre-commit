@@ -85,19 +85,35 @@ if [ -n "$staged_lean" ]; then
   fi
 fi
 
-# ── 4. `just verify` IF .lean files are staged ─────────────────────────
+# ── 4. Fitness functions (fast, NO Lean build) — ALWAYS ────────────────
+# check-primitives · check-adr-links · arch-check (the import-direction V, ADR-0048)
+# · check-refs (stale *.md path/link references). These are cheap and need no build,
+# so they gate EVERY commit — including docs-only and build-skipped — which is exactly
+# when check-refs matters most (a renamed/deleted file leaving dangling doc refs).
+# NOT covered by BANGLANG_SKIP_VERIFY_REASON (that is only for the slow/possibly-red
+# build); only `git commit --no-verify` bypasses them.
+echo "→ pre-commit: running just fitness (primitives · adr-links · arch-check · check-refs)"
+if ! nix develop --command just fitness > /tmp/bang-fitness.log 2>&1; then
+  echo "❌ pre-commit: just fitness failed. Last 20 lines:"
+  tail -20 /tmp/bang-fitness.log | sed 's/^/    /'
+  echo "   (full log: /tmp/bang-fitness.log) — fix the drift, or 'git commit --no-verify' to bypass."
+  exit 1
+fi
+echo "✓ pre-commit: fitness passed"
+
+# ── 5. `just verify` (full build) IF .lean files are staged ────────────
 if [ -z "$staged_lean" ]; then
-  echo "✓ pre-commit: static checks passed (no .lean changes; skipping verify)"
+  echo "✓ pre-commit: passed (no .lean changes; skipping the verify build)"
   exit 0
 fi
 
 if [ -n "${BANGLANG_SKIP_VERIFY_REASON:-}" ]; then
-  echo "✓ pre-commit: static checks passed"
-  echo "⚠ pre-commit: SKIPPING just verify — reason: $BANGLANG_SKIP_VERIFY_REASON"
+  echo "⚠ pre-commit: SKIPPING the just verify build — reason: $BANGLANG_SKIP_VERIFY_REASON"
+  echo "   (fitness still ran above — only the Lean build was skipped)"
   exit 0
 fi
 
-echo "→ pre-commit: running just verify (set BANGLANG_SKIP_VERIFY_REASON to skip)"
+echo "→ pre-commit: running just verify (set BANGLANG_SKIP_VERIFY_REASON to skip the build)"
 # Run via nix develop so lake/just are on PATH
 if ! nix develop --command just verify > /tmp/bang-precommit.log 2>&1; then
   echo "❌ pre-commit: just verify failed. Last 20 lines:"

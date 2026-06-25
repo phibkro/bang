@@ -16,14 +16,16 @@ appears, climb it; don't let it land on survey.
 ```
 nix develop          # ENTER FIRST — bare lake/just/node/python3 are NOT on PATH
 just verify          # = selfcheck · build · audit · adr-check   (the 4-leg verify gate)
-just fitness         # check-primitives.sh (kernel invariants #3/#5 STRUCTURAL) + check-adr-links.sh
+just fitness         # the no-build fitness bundle (gates EVERY commit via the hook):
+                     #   check-primitives (#3/#5) + check-adr-links + arch-check (the V,
+                     #   ADR-0048) + check-refs (stale *.md path/link refs)
 just axioms          # lake env lean Bang/Audit.lean — #print axioms per headline theorem
 just burndown        # sorry/axiom census (the SATD chart)
 ```
 
 **Read the gate's real result, not its exit code** — three traps live here:
 - **Piped exit** (`lake build … | head` returns head's 0). Use the unpiped exit / `$PIPESTATUS[0]` / a store-path check. (Burned 2026-06-21; memory `nix-build-verify-exit-codes`.)
-- **The pre-commit hook runs `just verify`** but the loogle dep periodically re-clones with local changes, which breaks the hook's `just build` leg on an *unrelated* network/tree issue. Escape: `BANGLANG_SKIP_VERIFY_REASON="…" git commit --no-verify` — BUT then **run the full `nix develop -c lake build` yourself** before trusting green (per-module `lake build Bang.X` can miss cross-module breakage).
+- **The pre-commit hook runs the fast FITNESS bundle on EVERY commit, then `just verify` (the build) for `.lean` commits.** The loogle dep periodically re-clones with local changes, breaking the build leg on an *unrelated* network/tree issue. Escape the BUILD with `BANGLANG_SKIP_VERIFY_REASON="…" git commit` — **fitness still gates** (check-refs/arch-check/adr-links/primitives are not skipped) — BUT then **run the full `nix develop -c lake build` yourself** before trusting green (per-module `lake build Bang.X` can miss cross-module breakage). `git commit --no-verify` is the HARD escape that skips fitness too — avoid it except for genuine emergencies.
 - **`adr-check` / `audit` are verify-rung** (read-only, safe at every checkpoint). There is **no mutating apply/deploy step** in this repo — nothing here rebuilds a machine or ships a release, so the whole gate is safe to run.
 
 **Gate the committed content on a clean tree**, never a dirty working tree or an agent's
@@ -132,7 +134,7 @@ proof state or an ADR moves.
 ## Grades for this repo
 
 - **G0** (per-edit): `just check FILE` — fast single-file Lean error check.
-- **G1** (per-commit): `just verify` (+ the pre-commit hook: gitleaks, STATEMENT_CHANGE_OK, fitness). Tree committed.
+- **G1** (per-commit): the pre-commit hook runs gitleaks + STATEMENT_CHANGE_OK, then the fast **fitness** bundle (no build) on EVERY commit — so check-refs/arch-check gate docs-only and build-skipped commits, not just `.lean` ones; `just verify` (the full build) runs for `.lean` commits unless `BANGLANG_SKIP_VERIFY_REASON`. Tree committed.
 - **G2** (feature / checkpoint / wrap): G1 + the survey shortlist above (CONTEXT/ROADMAP/PATHs/refs) + `just fitness`.
 - **G3** (release / ◊ close): full sweep + `just axioms` per headline + cold-agent dogfood (a fresh agent reading CLAUDE.md + CONTEXT.md + `git log` orients correctly).
 
