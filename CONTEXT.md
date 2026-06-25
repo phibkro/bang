@@ -8,60 +8,56 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-25) — CAP REPRESENTATION PIVOT: absolute caps (ADR-0053) build-verified
-> UNSOUND → handler-reference-by-generative-IDENTITY (ADR-0054).** On `typed-static-r1` @ `12b6bd5`.
-> SoT = ADR-0054 + `docs/architecture/core-overview.md` + ADR-0052 (CalcVM route-B).
+> **★ ACTIVE DIRECTION (2026-06-26) — inc-4 metatheory DONE + merged AXIOM-CLEAN. NEXT = GLOBAL-FRESH
+> identity rework (ADR-0055), reversing Fork-ii's `handlerCount`.** On `typed-static-r1` @ `2a7f5c1`.
+> SoT = ADR-0055 (the next unit's spec) + ADR-0054 (the identity rep) + ADR-0052 (CalcVM route-B, inc 6).
 >
-> **The reversal (build-verified this session):** ADR-0053 absolute caps mis-dispatch a thunk that locally
-> handles its OWN effect when it is FORCED under an unrelated handler (insert-below-the-target migration).
-> Witness `migrate_vFragile_well_typed` (`scratch/MigrationTypingProbe.lean`) is well-typed (axiom-clean) +
-> `LWConfig`-valid yet `Source.eval` yields a WRONG-typed value. Root cause is STRUCTURAL: a single integer
-> cap can't be both migration-stable and shift-free, and `closeC ≡ Comp.subst` couples them (a subst-time
-> shift for soundness re-shifts `closeC_handle*` = the ADR-0050 LR wall). The minimal patch is therefore DEAD.
+> **inc 4 landed (merged `6cadd6b`):** `NonEscape` frozen as Shape B — an LR-FREE operational closure
+> `∀ cfg', StepStar cfg cfg' → FocusResolves cfg'` (Operational sits below LR, so a KrelS projection would
+> be an import cycle; Shape B is the proof STRATEGY, the def is operational). The STD block
+> (`preservation`/`progress`/`type_safety`) RE-PROVEN over identity dispatch + NonEscape, **ALL axiom-clean**
+> `⊆ {propext, Classical.choice, Quot.sound}`, zero sorries; ~1225 lines positional machinery deleted; the
+> perform-dispatch re-typing DISCHARGED (`splitAtId_decomp` + re-keyed concat); `type_safety` unified under
+> `HasConfig` (Option X — all 3 STD theorems now HasConfig-stated). The sole carried obligation is the
+> initial-config NonEscape premise (rides the LR diagonal at inc 5). Green subset: `lake build Bang.Operational
+> Bang.Metatheory` (both green); full build RED by design (LR/Compile/Compat/CalcVM unported — inc 5-6).
 >
-> **The decision (ADR-0054, deep-research-grounded — Lexa/Effekt/Koka, 22/25 claims 3-0):** reference the
-> handler by a generative IDENTITY (a value — NO 6th primitive), carry any handler-crossing re-base as
-> explicit DATA on the thunk (re-based at CAPTURE, not force). Keep the step-indexed LR (route B — Effekt
-> System Ξ shows lexical capability-passing admits a closeable LR); Leroy forward-sim (Lexa, no LR) is the
-> recorded alternative. First-class-thunk escape is ruled out by the EXISTING `LWT` non-escape gate
-> (`preservation_returnEscape_TODO`), not by second-class thunks.
+> **★ THE LOAD-BEARING FINDING (this session) — the WC keystone-2c is NOT moot; it is CONCRETELY WITNESSED.**
+> The witness port surfaced (verified, reproduced independently on main — `scratch/IdentityCollisionProbe.lean`):
+> Fork-ii's `handlerCount` is a DEPTH; a popped-then-reused depth lets an escaped capability re-resolve to a
+> WRONG same-depth handler (a CROSS-EXTENT COLLISION). `progB` (re-handled escape) → `done` reading the
+> impostor's state; `progB'` (direct-force escape) → `stuck`. `NonEscape`-as-`FocusResolves` ("resolves to
+> something") is TOO WEAK — it admits the collision (resolves-to-something ≠ -to-the-right-one). The merged
+> inc-4 theorems stay SOUND (they prove no-stuck, not resolution-transparency; `progB` is `done` not stuck),
+> but capability resolution-transparency is NOT yet achieved.
 >
-> **★ IMPLEMENTING the identity representation. inc 1–3 DONE; inc 4 (Metatheory) NEXT.** @ `ea2223c`.
-> Roadmap + precise resume map = `paths/PATH-identity-representation.md`. Capability-passing: `perform c op v`
-> (capability VALUE), `handle` BINDS the cap (`vcap n ℓ`), dispatch by identity MATCH; Forks (ii) id =
-> `handlerCount`-at-install, (a) match dispatch. De-risked end-to-end (`scratch/IdentityKernelProbe.lean`).
+> **★ THE DECISION (ADR-0055, operator ruling) — GLOBAL-FRESH IDENTITY = the next unit:** mint identity from
+> a MONOTONIC Config counter (gensym), never reused → no two handlers ever share an id → an escaped cap
+> resolves to ITS handler or to NOTHING (stuck, fail-loud); collisions UNREPRESENTABLE; `NonEscape`'s simple
+> form becomes ADEQUATE unchanged. Rework (NEXT, ADR-0055 is the spec): `Config` gains a counter
+> (`Nat × EvalCtx × Comp`); `Source.step` handle-arm mints+increments; add ONE freshness lemma (minted id ∉
+> live stack); re-establish the STD block over the counter-`Config` (structure carries over — dispatch,
+> `splitAtId`, resume re-typing unchanged; only minting + freshness are new). Then inc 5 LR/Compat (first
+> whole-LR green) · inc 6 CalcVM route-B (ADR-0052) · inc 7 Surface.
 >
-> - **inc 1 Core ✓ (`05f6e45`) · inc 2 Syntax ✓ (`e5ef635`) · inc 3 Operational ✓ (`ea2223c`)** — each green
->   at its level. `lake build Bang.Operational` = 708 jobs, 0 sorries. The bug is fixed IN-KERNEL: `#guard
->   capMigrateInternal → 7` (the ADR-0053 insert-below witness now reads its own state).
-> - **THE COLLAPSE (ADR-0054 amendment):** capability-passing makes typing cap-RELEVANT (`c : Cap ℓ`), so the
->   positional `WellCapped`/`LWConfig` + the WC keystone (this session's *starting* hard piece) + the
->   absolute-cap theory all DISSOLVE into typing. `HasConfig := HasConfigTy ∧ NonEscape` (`NonEscape := True`
->   first cut — inc 4 gives it real content).
-> - **★ inc 4 (Metatheory) = DEEP multi-session metatheory** (NOT mechanical): port ~15 HasVTy/HasCTy
->   inductions (vcap + new perform + handle-binder) · delete dead `staticSplit`/`absSplit`/`shiftCap`
->   machinery · RE-PROVE `preservation`/`progress` + PIN `NonEscape`'s real form (the thunk-escape case = the
->   soundness proof — don't rush). Then inc 5 LR/Compat (first whole-LR green) · 6 CalcVM · 7 Surface.
-> - **Build RED by design** until inc 5 (AST port). Green subset = `lake build Bang.Operational` (+`Metatheory`
->   at inc 4). Frozen Spec statements unchanged (collapse changed `HasConfig`'s def, not the theorem text).
-> - Latest detail: `/tmp/lang-bang-handoff-2026-06-25-inc4.md` + the PATH. SUPERSEDES the WC keystone 2c (MOOT).
+> **Parallel this session — improve hygiene (4/5 landed on main):** audit-gate sync lifted convention→tested
+> (`tools/check-audit-sync.sh` in `just fitness`) · 4 superseded probes → `scratch/archive/` · Distribution
+> conjectures gated · CONTEXT SHA-discipline note. #1 (wire the behavioral witnesses into the Audit gate) —
+> the witnesses are now ported + green (`CapEscapeWitness`/`LWRegress`, 3-arg AST), wire them into `Audit.lean`
+> when inc-6 greens the Audit gate (it imports CalcVM, red until route-B).
 >
-> **This session's commits (`typed-static-r1`):**
-> - `e133e9a` ADR-0054 (+ 3 build-verified unsoundness probes + ledger; ADR-0053 → Superseded).
-> - `d1f0916` removed dead `WellCapped`/`WCComp` machinery (−316 LOC; verified `lake build Bang.Compat` 711 green).
-> - `12b6bd5` `docs/architecture/core-overview.md` — module + coupling map (the dispatch⟂subst missing seam
->   as exhibit A) + the restructuring target.
->
-> **Build:** green subset `lake build Bang.Compat` = 711 jobs (kernel + Operational + Metatheory + LR +
-> Compat), 2 known descent sorries (`hcatch` + `:1801`). Full `lake build` RED by design = deferred CalcVM
-> route-B (ADR-0052), orthogonal.
+> **This session's commits (`typed-static-r1`):** inc-4 metatheory `0d5e7c9`→`2193d31` (merge `6cadd6b`) ·
+> witnesses + collision probe `f1d962a`/`184846d` (merge `a43f9ca`) · improve `172a02f`/`51e6da3`/`cd10446`/
+> `1146a02` · guard+de-risk `eacd7b8` · ADR-0055 `2a7f5c1`. Detail: `paths/PATH-identity-representation.md`.
 >
 > **Deferred units:**
 > - **CalcVM route B** — re-derive `evalD` to match the lexical kernel (ADR-0052), now keyed to the identity
 >   representation; multi-session. Whole-tree green returns when this lands.
 > - **`hcatch` + `:1801`** — the 2 remaining ADR-0043 LR descents (Compat).
-> - **`preservation_returnEscape_TODO`** — the `LWT` non-escape gate; now the escape-safety line AND the
->   first-class-thunk-escape guard for the identity representation (ADR-0054).
+> - **~~`preservation_returnEscape_TODO`~~ — DONE (inc 4):** now PROVEN by construction (NonEscape's
+>   forward-closure, `StepStar.head`). The remaining escape-safety obligations are (a) the initial-config
+>   NonEscape premise (rides the LR diagonal, inc 5) and (b) the GLOBAL-FRESH rework (ADR-0055) that makes
+>   NonEscape adequate against the witnessed `handlerCount` collision — the NEXT unit (see ★ above).
 > - **Restructuring** (recorded, `core-overview.md §6`): split the Operational hub (the dispatch⟂subst seam),
 >   relocate `plug` LR→machine, reorg LR/Compat, prune legacy `splitAt` + the orphaned WC helpers. GATED on
 >   the tree gating green (the moves touch red CalcVM/Compile/Surface imports — unverifiable until route-B lands).
