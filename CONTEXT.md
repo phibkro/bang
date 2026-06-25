@@ -8,15 +8,26 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (decided 2026-06-25) — the typed + static-dispatch PIVOT (ADR-0045).** The ◊4.5b
-> resume-edge (ADR-0043's "verified-final" seam) is an ARTIFACT of dynamic dispatch. Three build-gated spikes
-> + two fact-checked deep-research sweeps established: a STATIC-link kernel dispatch (`perform cap`/`staticSplit`,
-> evidence on branch `static-dispatch-spike@b1330db`) **dissolves the edge** (cap=0 untyped, structural), the
-> pivot stays inside graded CBPV (bounded — Levy types the CK machine), and it preserves set-rows with no
-> polymorphism (`setrow-tension-spike@f92a504`, SETS-PRESERVED). DECISION COMMITTED: pivot to a TYPED LR (re-index
-> Vτ/Cτ/Tτ, same Nat-step+▷ substrate) + STATIC/capability dispatch; dynamic dispatch → a tested shell macro.
-> Implementation plan: **`paths/PATH-typed-static-pivot.md`** (multi-session; LR re-index is the bulk). Reframes
-> ◊4.5b below: the seam is no longer "final" — it dissolves under the pivot. Architecture: `docs/notes/kernel-shell-library.md`.
+> **★ ACTIVE DIRECTION (2026-06-25) — the typed + static-dispatch PIVOT (ADR-0045) is LANDING, on `typed-static-r1`.**
+> The ◊4.5b resume-edge was an artifact of dynamic dispatch; pivoting to STATIC/capability dispatch + a TYPED LR
+> dissolves it. Progress, all compiled-#guard / `#print axioms` gated:
+> - **`perform cap` + static `staticSplit` + LEXICAL cap-shift** landed. Caps are de-Bruijn indices shifted under
+>   `handle` binders (ADR-0045 amendments). The naive uniform shift was found UNSOUND (regressed open-caps) and corrected.
+> - **Lexical-capability typing `LWT` (two-context S/R)** landed — the kernel STD crux is gated axiom-clean at
+>   **`dd00df5`**: `LWConfig.handleF_ret` (the case that broke the earlier `WellCapped`) holds BY CONSTRUCTION, and
+>   `progress_proof` is sorryAx-FREE (the B1 progress wall discharged). `progB` (the session's soundness bug) is now
+>   ill-typed AND progress holds.
+> - **Fork RESOLVED — TYPE-DIRECTED** (ADR-0045 "Resolution"): the capability non-escape check can't be untyped
+>   ((A) lazy = unsound; (C) untyped = over-rejects the SAFE ledger) — it's a TYPE-premise on `ret`/`letC`. Two named
+>   typed-LR obligations remain: `preservation_returnEscape_TODO` (the type-directed non-escape) +
+>   `preservation_perform_typing_TODO` (the `dispatch`↦`staticDispatch` resume-typing re-key, ~170 mechanical lines).
+> - **Shell cap-assignment elaborator** done on `shell-elaborator-spike` (lexical effect→cap resolution; re-greens Surface; case-B = lowering error).
+>
+> **NEXT (the bulk): the TYPED LR re-index** (`Vτ/Cτ/Tτ`) — folds in the type-gate (`U φ C`, `φ≠⊥`) to close BOTH
+> obligations AND dissolve the ◊4.5b edge (`sorryAx`-zero `lr_sound`). Entry: `paths/PATH-cap-assignment-spike.md`
+> (NEXT) + `paths/PATH-typed-static-pivot.md`. Branch chain: `typed-static-r1` (kernel, current) ← `b3a` ← `1a` ←
+> main (which now has the de-staled README). Whole tree is RED downstream (CalcVM/LR/Surface) until the re-index +
+> the ◊5 CalcVM re-run land. Architecture: `docs/notes/kernel-shell-library.md`.
 
 ```
 ◊1 ✓ Reconciliation landed        ── 2026-06-20
