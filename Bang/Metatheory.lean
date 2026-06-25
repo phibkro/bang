@@ -2489,19 +2489,17 @@ private theorem run_safe {q : Mult} {A : VTy Eff Mult} :
       rw [hrun]
       exact ih cfg' hcfg'
 
-/-- ADR-0054: `type_safety` gains a `NonEscape ([], c)` premise (replacing the ADR-0045 `LWConfig ([], c)`
-under the collapse — non-escape is the sole structural invariant left; cap-resolution itself rides
-typing via `Cap ℓ`). This is the INITIAL-CONFIG obligation the ported LR discharges (inc 5: well-typed
-`([], c) → NonEscape ([], c)`); surfaced as a premise here since this is the one frozen statement over
-`HasCTy [] []` not `HasConfig`. NOTE: the frozen `Bang/Spec.lean` `type_safety` still carries the old
-`LWConfig` premise — that statement needs the same `LWConfig → NonEscape` collapse (ADR-0054), a
-separate update outside the `Bang.Metatheory` gate. -/
+/-- ADR-0054 collapse: `type_safety` is now stated over `HasConfig ([], c) ⊥ (F q A)` — the SAME
+`HasConfig` as `preservation`/`progress`, whose definition is `HasConfigTy ∧ NonEscape`. The empty stack
+forces `HasConfigTy ([], c) ⊥ (F q A) ≡ HasCTy [] [] c ⊥ (F q A)`, so this folds the old ADR-0045
+`LWConfig ([], c)` premise into `HasConfig`'s `NonEscape ([], c)` conjunct — the INITIAL-CONFIG obligation
+the ported LR discharges (inc 5). No raw cap-invariant premise surfaces; the proof is `run_safe` directly. -/
 theorem type_safety_proof
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
-    HasCTy [] [] c ⊥ (CTy.F q A) → NonEscape ([], c) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
-  intro h hne fuel
+    HasConfig ([], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
+  intro hcfg fuel
   rw [show Source.eval fuel c = Config.run fuel ([], c) from rfl]
-  exact run_safe fuel ([], c) ⟨⟨⊥, CTy.F q A, h, HasStack.nil⟩, hne⟩
+  exact run_safe fuel ([], c) hcfg
 
 /-! ## F. Abstraction-safety — no accidental handling (ADR-0024)
 
