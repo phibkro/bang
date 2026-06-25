@@ -66,6 +66,9 @@ inductive HasVTy : GradeVec Mult → TyCtx Eff Mult → Val → VTy Eff Mult →
   | vvar   : ∀ {Γ i A},
       Γ[i]? = some A →
       HasVTy (GradeVec.basis Γ.length i) Γ (Val.vvar i) A
+  -- T_Cap (ADR-0054): a capability value is inert — grade `0s` like `vunit`/`vint`. `vcap n ℓ : Cap ℓ`;
+  -- the label `ℓ` is carried IN the value so typing is stack-free (the identity `n` is dispatch-only).
+  | vcap   : ∀ {Γ n ℓ}, HasVTy (GradeVec.zeros Γ.length) Γ (Val.vcap n ℓ) (VTy.cap ℓ)
   -- T_Thunk: γ passes through unchanged.
   | vthunk : ∀ {γ Γ M φ B},
       HasCTy γ Γ M φ B →
@@ -155,13 +158,17 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- lacks-discipline membership "`ℓ ∈ φ`" (ADR-0018) in the abstract lattice. The
   -- grade `q • γ` mirrors `ret`: the produced value's budget `q` scales the
   -- argument's grade — this is what makes the `throws` β-grade match in preservation.
-  | perform : ∀ {γ Γ} {cap : Nat} {ℓ : Label} {op : OpId} {v : Val} {φ : Eff} {q : Mult} {A B : VTy Eff Mult},
+  -- ADR-0054: the target handler is named by a CAPABILITY value `c : Cap ℓ` — the effect label `ℓ` is
+  -- RECOVERED from `c`'s type (no free `ℓ`, no positional cap). The capability is used once (grade `γ_c`
+  -- added); the operation argument is scaled by the result budget `q` (as before — the throws β-grade).
+  | perform : ∀ {γ_c γ_v Γ} {c : Val} {ℓ : Label} {op : OpId} {v : Val} {φ : Eff} {q : Mult}
+        {A B : VTy Eff Mult},
+      HasVTy γ_c Γ c (VTy.cap ℓ) →
       EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ →
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A →      -- op IS in ℓ's interface (D6)
       EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B →
-      HasVTy γ Γ v A →
-      -- 1a (ADR-0045): `cap` is UNCONSTRAINED here. 1b adds the CapResolves premise tying cap to ℓ.
-      HasCTy (q • γ) Γ (Comp.perform cap ℓ op v) φ (CTy.F q B)
+      HasVTy γ_v Γ v A →
+      HasCTy ((q • γ_v) + γ_c) Γ (Comp.perform c op v) φ (CTy.F q B)
   -- handleThrows (ADR-0022 D4/D5, throws-only — `state` deferred per Q12): the
   -- `throws ℓ` handler DISCHARGES label `ℓ` from the row. Body uses effect `e`
   -- within `ℓ ⊔ φ` (SUBSUMPTION — a `ret v` body has effect `⊥ ≤ ℓ ⊔ φ`); the
@@ -170,7 +177,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- its payload as the block result, so arg type = result type. Handlers still
   -- handle RETURNERS (`F`-typed, ADR-0021 C2). `handle (state …) M` is now UNtypable
   -- (Q12 deferred); its `Source.step` reductions stay vacuous under typing.
-  | handleThrows : ∀ {γ Γ} {ℓ : Label} {M : Comp} {e φ : Eff} {q : Mult} {A : VTy Eff Mult},
+  | handleThrows : ∀ {γ Γ} {ℓ : Label} {M : Comp} {e φ : Eff} {q qc : Mult} {A : VTy Eff Mult},
       -- ANSWER-TYPE (ADR-0023): the raise payload type = the handle block's result type `A`. A
       -- zero-shot abort yields `ret payload : F q A`, so the payload must inhabit `A`. (The old
       -- `opArg = opRes` premise was masked by the shallow step; the deep handler exposes it.)
@@ -178,7 +185,8 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       -- INTERFACE (ADR-0023 D6): label `ℓ`'s only operation is `raise`, so `up ℓ "get"`-style
       -- bodies are untypable — they would be stuck under a `throws ℓ` handler.
       (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise") →
-      HasCTy γ Γ M e (CTy.F q A) →
+      -- ADR-0054: `handle` BINDS the capability (`Cap ℓ` at index 0, multiplicity `qc`); the body runs with it.
+      HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasCTy γ Γ (Comp.handle (Handler.throws ℓ) M) φ (CTy.F q A)
   -- handleState (ADR-0025): a RESUMPTIVE state handler. Discharges label `ℓ` like `throws`; its
@@ -188,7 +196,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- initial state `s₀` is required CLOSED (`HasVTy [] [] s₀ S`), grade vector `[]`. The CK machine's
   -- closed focus makes the stored/threaded state grade-`[]`, so resumption copies it at zero variable
   -- budget for ANY `S` — no `ω`-restriction needed (Q12 option 1 is subsumed, not chosen).
-  | handleState : ∀ {γ Γ} {ℓ : Label} {s₀ : Val} {M : Comp} {e φ : Eff} {q : Mult}
+  | handleState : ∀ {γ Γ} {ℓ : Label} {s₀ : Val} {M : Comp} {e φ : Eff} {q qc : Mult}
         {S A : VTy Eff Mult},
       -- INTERFACE: ℓ's ops are exactly get/put with the state signature.
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit →
@@ -198,7 +206,8 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put") →
       -- THE GRADE DISCIPLINE: the stored state is a CLOSED value of type `S` (ADR-0025 D2).
       HasVTy [] [] s₀ S →
-      HasCTy γ Γ M e (CTy.F q A) →
+      -- ADR-0054: `handle` binds the capability (`Cap ℓ` at index 0, multiplicity `qc`).
+      HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasCTy γ Γ (Comp.handle (Handler.state ℓ s₀) M) φ (CTy.F q A)
   -- handleTransaction (ADR-0030, rung 3): STM as a transactional handler. Discharges label `ℓ`
@@ -213,7 +222,7 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- initial heap `Θ₀` is a CLOSED `int` value (grade `[]`), so the CK machine's closed focus threads
   -- the heap at zero variable budget. Return clause = identity (ADR-0023 Q6) ⇒ block type `F q A`.
   -- (General-cell-type `S` via an explicit default-witness is the deferred refinement; ADR-0030.)
-  | handleTransaction : ∀ {γ Γ} {ℓ : Label} {Θ₀ : List Val} {M : Comp} {e φ : Eff} {q : Mult}
+  | handleTransaction : ∀ {γ Γ} {ℓ : Label} {Θ₀ : List Val} {M : Comp} {e φ : Eff} {q qc : Mult}
         {A : VTy Eff Mult},
       -- INTERFACE: ℓ's ops are exactly newTVar/readTVar/writeTVar at the monomorphic-`int` stm sig.
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int →
@@ -226,7 +235,8 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
         op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") →
       -- THE GRADE DISCIPLINE: every initial heap cell is a CLOSED `int` value.
       (∀ cell ∈ Θ₀, HasVTy [] [] cell VTy.int) →
-      HasCTy γ Γ M e (CTy.F q A) →
+      -- ADR-0054: `handle` binds the capability (`Cap ℓ` at index 0, multiplicity `qc`).
+      HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasCTy γ Γ (Comp.handle (Handler.transaction ℓ Θ₀) M) φ (CTy.F q A)
 end
@@ -254,16 +264,16 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       HasVTy [] [] v A →
       HasStack K e B eo Co →
       HasStack (Frame.appF v :: K) e (CTy.arr q A B) eo Co
-  | handleF : ∀ {K ℓ e φ eo q A Co},
+  | handleF : ∀ {K n ℓ e φ eo q A Co},
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A →
       (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise") →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasStack K φ (CTy.F q A) eo Co →
-      HasStack (Frame.handleF (Handler.throws ℓ) :: K) e (CTy.F q A) eo Co
+      HasStack (Frame.handleF n (Handler.throws ℓ) :: K) e (CTy.F q A) eo Co
   -- stateF (ADR-0025): a reinstalled resumptive `state ℓ s` frame on the stack. Mirrors
   -- `HasCTy.handleState`: discharges `ℓ`, interface `{get,put}` with `get : unit → S`,
   -- `put : S → unit`, the stored state `s` CLOSED of type `S` (the grade discipline, D2).
-  | stateF : ∀ {K ℓ s e φ eo q A S Co},
+  | stateF : ∀ {K n ℓ s e φ eo q A S Co},
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit →
       EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S →
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S →
@@ -272,13 +282,13 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       HasVTy [] [] s S →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasStack K φ (CTy.F q A) eo Co →
-      HasStack (Frame.handleF (Handler.state ℓ s) :: K) e (CTy.F q A) eo Co
+      HasStack (Frame.handleF n (Handler.state ℓ s) :: K) e (CTy.F q A) eo Co
   -- transactionF (ADR-0030, int-pinned amendment): a reinstalled resumptive `transaction ℓ Θ` frame.
   -- Mirrors `HasCTy.handleTransaction` / `stateF`: discharges `ℓ`, the monomorphic-`int` stm interface,
   -- the heap `Θ` all CLOSED `int` cells (the grade discipline). `int`-pinning (cell + `TVarRef`) is what
   -- makes `readTVar`'s total-store default (`vint 0`) typable + `newTVar`'s `vint`-index typable, so the
   -- resume preservation cases close without `oom`.
-  | transactionF : ∀ {K ℓ Θ e φ eo q} {A : VTy Eff Mult} {Co},
+  | transactionF : ∀ {K n ℓ Θ e φ eo q} {A : VTy Eff Mult} {Co},
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some (VTy.int : VTy Eff Mult) →
       EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some (VTy.int : VTy Eff Mult) →
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some (VTy.int : VTy Eff Mult) →
@@ -291,7 +301,7 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       (∀ cell ∈ Θ, HasVTy [] [] cell (VTy.int : VTy Eff Mult)) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
       HasStack K φ (CTy.F q A) eo Co →
-      HasStack (Frame.handleF (Handler.transaction ℓ Θ) :: K) e (CTy.F q A) eo Co
+      HasStack (Frame.handleF n (Handler.transaction ℓ Θ) :: K) e (CTy.F q A) eo Co
 
 /-- A config is *returned* iff it is `⟨[], ret v⟩` — a value with no work left on the stack. -/
 def isReturnConfig : Config → Prop
