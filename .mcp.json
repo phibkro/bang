@@ -7,6 +7,10 @@
     },
     "context7": {
       "command": "context7-mcp"
+    },
+    "lean-lsp": {
+      "command": "nix",
+      "args": ["run", "github:oOo0oOo/lean-lsp-mcp"]
     }
   }
 }
