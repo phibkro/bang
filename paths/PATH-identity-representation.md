@@ -178,3 +178,22 @@ to capability-passing + ADDED `capMigrateInternal` (the ADR-0053 insert-below wi
 ★ inc 4 (Metatheory) NEXT: pin `NonEscape`'s real form + re-prove `preservation`/`progress` over the new
 AST (handle-binder + identity dispatch). The thunk-escape case is the sole genuine obligation (the old
 `returnEscape` content). Then inc 5 (LR/Compat — first whole-LR green) · inc 6/7.
+
+### inc 4 — the fail-loud / kind-check finding (from /simplify altitude review, 90fa70d)
+
+Under identity dispatch the kernel step LOST its op-kind safety net: `splitAtId` matches the capability's
+identity `n` ONLY (no `handlesOp` test), and `dispatchOn` then interprets `op` by string. So a capability
+that lands on a WRONG-KIND handler (an escaped/ill-typed cap, or — with depth-based ids, Fork ii — a
+cross-extent identity COLLISION) is read by `dispatchOn` against the wrong handler and fails **silently-
+wrong** rather than stuck: e.g. `op = "get"` on a `.throws` frame hits the throws arm → `some (Kₒ, ret v)`
+(a silent ABORT / wrong value), not `none`. The old label search would have SKIPPED the wrong-kind frame.
+
+**This is a real input to pinning `NonEscape`.** Two non-exclusive options for inc 4:
+- (a) make `NonEscape` strong enough that a mis-identified/colliding capability can NEVER reach `dispatchOn`
+  (i.e. every reachable `vcap n ℓ` names an on-stack `handleF n` whose handler handles `(ℓ, op)`) — then
+  progress's perform case closes and the kind-check is genuinely redundant; OR
+- (b) restore fail-LOUD at the seam: add an op-kind guard in `dispatchOn`/`idDispatch` (`handlesOp h ℓ op`
+  ⟹ else `none`), so a mis-dispatch is STUCK (fail-loud) not wrong-valued. Cheap; behaviour-changing on
+  ill-typed inputs only (well-typed programs unaffected — the migration #guards still pass).
+Decide as part of the `NonEscape` design (the well-typed witnesses don't exercise this — it's the
+ill-typed/escape boundary). Deferred from /simplify (behaviour-changing, not a quality fix).
