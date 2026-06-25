@@ -4,7 +4,7 @@
 The recast **renames, it does not dissolve**. `perf_outcome_mono` survives essentially
 unchanged. A coinductive-substrate version is a *separate, larger* question (§5), parked.
 
-Time-boxed spike. Two new untracked files only: this doc + `scratch/MonadicRecast.lean`
+Time-boxed spike. Two new untracked files only: this doc + `scratch/archive/MonadicRecast.lean`
 (unwired → inert to `lake build`/`just check`; elaborates green modulo ONE deliberate `sorry`).
 Nothing of teammate lrA's touched (Operational/LR/Compat/Spec untouched; `git status` = `?? scratch/` + this doc).
 
@@ -15,7 +15,7 @@ Nothing of teammate lrA's touched (Operational/LR/Compat/Spec untouched; `git st
 - The tree is RED **downstream** (CalcVM/Surface, pending the LR re-key) — but the
   **CalcReify track builds**: `CalcReifyRef.lean` + `CalcReifySim.lean` elaborate green
   and `sorry`-free (`just check Bang/CalcReifySim.lean` → only unused-simp warnings).
-- `scratch/MonadicRecast.lean` elaborates **against the real built dependencies** (not
+- `scratch/archive/MonadicRecast.lean` elaborates **against the real built dependencies** (not
   stubs). Only diagnostic: the single `sorry` at `deep_step_recurses` (line 132).
   `shallow_is_bind_mono` typechecks against the real `Bang.CalcReifySim.bind_mono` and is
   **axiom-clean** (`propext, Classical.choice, Quot.sound` — no `sorryAx`).
@@ -30,7 +30,7 @@ three places: `docs/decisions/0015-…md:191`, `docs/notes/k2-calculation-playbo
 and a comment at `Bang/CalcReifySim.lean:1358`. No `theorem`/`sorry`/`admit` carried that
 name. It is a *named-but-unformalized future obligation* (the (b) research gate of
 ADR-0015). This spike writes it out in Lean for the first time (`PerfOutcomeMono`,
-`scratch/MonadicRecast.lean`). **This corrects the brief's premise** ("find its EXACT
+`scratch/archive/MonadicRecast.lean`). **This corrects the brief's premise** ("find its EXACT
 statement / open goal / admitted").
 
 Two more brief corrections:
@@ -84,7 +84,7 @@ doesn't change a real one. That proof IS `perf_outcome_mono`, and the coinductiv
 ## 3. Verdict — dissolved / reduced / UNCHANGED → **NO-GO**
 
 `perf_outcome_mono` is **unchanged** under the recast. Evidence, all *elaborated* in
-`scratch/MonadicRecast.lean` (not asserted):
+`scratch/archive/MonadicRecast.lean` (not asserted):
 
 - **Shallow half = already done.** `shallow_is_bind_mono` proves the `now`/`ret` leg of
   upward monotonicity is *literally* `bind_mono` (the paper's `bind-cong` specialised to
@@ -140,6 +140,6 @@ dissolve the bookkeeping it currently can't.
 
 ## Files (both untracked, for manager review)
 - `findings-monadic-recast.md` — this doc.
-- `scratch/MonadicRecast.lean` — the spike. Elaborates green except ONE deliberate `sorry`
+- `scratch/archive/MonadicRecast.lean` — the spike. Elaborates green except ONE deliberate `sorry`
   (`deep_step_recurses`, the visible circularity). `shallow_is_bind_mono` axiom-clean.
   Unwired (no module imports it).

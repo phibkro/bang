@@ -107,7 +107,7 @@ gated as before). Frozen-statement-safe: `preservation`/`progress`/`type_safety`
 
 - Build-gated unsoundness witnesses (this session): `scratch/MigrationSoundnessProbe.lean` (the
   mis-evaluation + `LWConfig` validity), `scratch/MigrationTypingProbe.lean` (`migrate_vFragile_well_typed`,
-  axiom-clean), `scratch/WCKeystoneCounterProbe.lean` (the `absSplit` cap-0 mis-resolution under
+  axiom-clean), `scratch/archive/WCKeystoneCounterProbe.lean` (the `absSplit` cap-0 mis-resolution under
   below-insert). These pin the ADR-0053 hole so a future "fixed" claim is gated against a run, not prose.
 - Implementation fitness (future): a generative-identity `perform` dispatches CORRECTLY on the
   `migrate vFragile` witness; the re-established `closeC_handle*` distribute without a positional shift;

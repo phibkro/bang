@@ -7,7 +7,7 @@ landed axiom-clean at `0435e88`, net **-112 LOC**.
 This is the durable record of the spike that preceded the ADR-0053 implementation
 (the brief: assess absolute-caps vs named-handlers vs stay-seam-5 to dissolve the
 ADR-0050 shift wall). De-risk probes committed at `20fa7ab`:
-`scratch/AbsoluteCapsProbe.lean` (shift dissolution) + `scratch/AbsoluteCapsStepProbe.lean`
+`scratch/archive/AbsoluteCapsProbe.lean` (shift dissolution) + `scratch/archive/AbsoluteCapsStepProbe.lean`
 (level↔index invariance against the real kernel).
 
 ---

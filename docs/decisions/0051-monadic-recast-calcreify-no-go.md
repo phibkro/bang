@@ -3,7 +3,7 @@
 <!-- adr-frontmatter -->
 
 - **Status**: Accepted
-- **Summary**: Recasting CalcReify's fuel-indexed forward bisimulation into the Bahr–Hutton 2022 *Monadic Compiler Calculation* frame (partiality/`Delay` monad + step-indexed strong bisimilarity) does NOT dissolve the open `perf_outcome_mono` gate — it RENAMES it. The 2022 frame gets its key monotonicity (`~idown`) FREE from coinduction; bang's index is EAGER fuel, so the matching obligation is the *opposite* direction (upward, `f ≤ f' ⇒ outcome preserved`), must be EARNED, and the deep case (a performing resumed body under `handleC`, deep re-handling) is a genuine bisimulation knot the single-monad paper never confronts. The shallow leg is already `bind_mono` (the paper's `bind-cong` specialised to the `ret` leg — bang has it). No usable coinductive `Delay`/`Partial` exists in Mathlib (only propositional `Part`/`PFun`); a faithful port is prohibitive infra for zero buy on the gate. **Keep bang's eager `Comp` + `Nat` fuel + `RelV`.** Re-open ONLY if genuine divergence (the Div fragment) enters CalcReify. Bonus: `perf_outcome_mono` was never a Lean statement (only a doc-name in 0015 / k2-playbook / a `CalcReifySim` comment); formalized for the first time in the spike (`scratch/MonadicRecast.lean`, `PerfOutcomeMono`).
+- **Summary**: Recasting CalcReify's fuel-indexed forward bisimulation into the Bahr–Hutton 2022 *Monadic Compiler Calculation* frame (partiality/`Delay` monad + step-indexed strong bisimilarity) does NOT dissolve the open `perf_outcome_mono` gate — it RENAMES it. The 2022 frame gets its key monotonicity (`~idown`) FREE from coinduction; bang's index is EAGER fuel, so the matching obligation is the *opposite* direction (upward, `f ≤ f' ⇒ outcome preserved`), must be EARNED, and the deep case (a performing resumed body under `handleC`, deep re-handling) is a genuine bisimulation knot the single-monad paper never confronts. The shallow leg is already `bind_mono` (the paper's `bind-cong` specialised to the `ret` leg — bang has it). No usable coinductive `Delay`/`Partial` exists in Mathlib (only propositional `Part`/`PFun`); a faithful port is prohibitive infra for zero buy on the gate. **Keep bang's eager `Comp` + `Nat` fuel + `RelV`.** Re-open ONLY if genuine divergence (the Div fragment) enters CalcReify. Bonus: `perf_outcome_mono` was never a Lean statement (only a doc-name in 0015 / k2-playbook / a `CalcReifySim` comment); formalized for the first time in the spike (`scratch/archive/MonadicRecast.lean`, `PerfOutcomeMono`).
 - **Amends**: 0015
 - **Depends-on**: 0015, 0016
 
@@ -30,7 +30,7 @@ bisimilarity, and might make `perf_outcome_mono` an instance of a free monadic p
 
 ## Decision
 
-**NO-GO.** Build-grounded, elaborated in `scratch/MonadicRecast.lean` (against the real, green
+**NO-GO.** Build-grounded, elaborated in `scratch/archive/MonadicRecast.lean` (against the real, green
 `CalcReifyRef`/`CalcReifySim` deps — not stubs):
 
 - **Shallow half is already free.** `shallow_is_bind_mono` proves the `ret` leg of upward
@@ -76,6 +76,6 @@ bang's v1 fragment is **total** (skeleton-bounded firing), so this does not appl
 
 - `docs/notes/monadic-recast-spike-findings.md` — the full spike findings (mapping table, build state,
   per-section detail).
-- `scratch/MonadicRecast.lean` — the elaborated spike: `PerfOutcomeMono` (first formalization),
+- `scratch/archive/MonadicRecast.lean` — the elaborated spike: `PerfOutcomeMono` (first formalization),
   `shallow_is_bind_mono` (axiom-clean), `deep_step_recurses` (the visible circularity, one deliberate
   `sorry`). Unwired (no module imports it) → inert to the build.
