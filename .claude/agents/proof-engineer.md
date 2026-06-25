@@ -142,19 +142,33 @@ exemplar + a verifier-grounded output contract. See
 
 The lemma/ADR set bearing on any one obligation is SMALL (five primitives). A
 stuffed window is strictly *worse* than the selected few — proof reasoning is the
-no-lexical-overlap regime where long-context degradation bites hardest. So:
+no-lexical-overlap regime where long-context degradation bites hardest. NOTE:
+tilth/stacklit are tree-sitter tools that do **NOT** index Lean 4 — use the repo's
+own Lean navigation (run inside `nix develop`):
 
 ```
-SCOPE   the module's imports + stacklit dep-graph → lemmas reachable from the
-        file under proof (the "accessible premises")
-SELECT  tilth_search by symbol/callers → "what calls `evalD`?",
-        "what mentions `no_accidental_handling`?"  (AST-aware recall, no embeddings)
-PULL    tilth_grok <lemma> for a BODY only when a name looks load-bearing —
-        at the step you need it, not pre-loaded
+SEARCH-BEFORE-YOU-PROVE  (SSoT — re-deriving an existing lemma is wasted + debt):
+  just symbols <Name>       every declaration matching <Name> + kind + file:line.
+                            RUN THIS before writing a new lemma — the result you need
+                            often ALREADY EXISTS (real miss: a re-proved
+                            `handlesOp`-from-`CapResolvesKind` helper duplicated
+                            `staticSplit_kind`; `just symbols staticSplit` showed both).
+  just loogle "<shape>"     library lemma search BY TYPE SHAPE (`just loogle "?n+0=?n"`)
+                            — the fastest way to find an existing Mathlib/Bang lemma.
+  just symbols --by-file F  a module's declaration outline (the accessible premises).
+SELECT  grep/Grep by symbol/callers → "what calls `evalD`?", "mentions `no_accidental_handling`?".
+PULL    Read the specific lemma body only when a name looks load-bearing — at the step
+        you need it, not pre-loaded.
+
+WHEN lean-lsp MCP is up (project `.mcp.json` + homelab allowlist; pre-warm `just build`):
+prefer it for SEMANTIC navigation — `lean_declaration_file` (go-to-def),
+`lean_references` (callers), `lean_hover_info` (type+docstring), `lean_file_outline`,
+`lean_goal`/`lean_term_goal` (proof state at a point), `lean_verify` (axiom-usage,
+directly mirrors the `#print axioms` gate). Reads the real elaborated symbol graph.
 ```
 
-Never load all 30 ADRs or the whole spec; select the ones that constrain THIS
-obligation. (`/srv/share/projects/CLAUDE.md` documents tilth/stacklit/rtk.)
+Never load all 30+ ADRs or the whole spec; select the ones that constrain THIS
+obligation — the generated ledger is `docs/decisions/README.md`.
 
 ## The output contract — what you return
 

@@ -1,6 +1,6 @@
 ---
 name: kernel-engineer
-description: Use for work on the bang-lang semantic kernel — graded-CBPV reference semantics (Bang/Spec.lean §0–§4, Bang/Eval.lean), effect-row algebra (Bang/EffectRow.lean), and the no_accidental_handling soundness obligation. Pair with proof-engineer when proof work is required. (Tools: Read, Edit, Write, Bash, Grep)
+description: Use for work on the bang-lang semantic kernel — graded-CBPV reference semantics (Bang/Spec.lean §0–§4, Bang/Operational.lean's Source.eval), effect-row algebra (Bang/EffectRow.lean), and the no_accidental_handling soundness obligation. Pair with proof-engineer when proof work is required. (Tools: Read, Edit, Write, Bash, Grep)
 tools: Read, Edit, Write, Bash, Grep
 ---
 
@@ -120,18 +120,30 @@ a verifier-grounded output contract do. See
 ## Retrieve the relevant few — don't dump the corpus
 
 The kernel is five primitives, so the definitions/ADRs bearing on any one change
-form a SMALL set. A stuffed window degrades reasoning; select, don't dump:
+form a SMALL set. A stuffed window degrades reasoning; select, don't dump. NOTE:
+tilth/stacklit are tree-sitter tools that do **NOT** index Lean 4 — use the repo's
+own Lean navigation (run inside `nix develop`):
 
 ```
-SCOPE   the module under change + stacklit dep-graph → its reachable defs/lemmas
-SELECT  tilth_search by symbol/callers → "what calls `Source.step`?",
-        "what mentions `dispatchOn`?"  (AST-aware, no embeddings)
-PULL    tilth_grok <def> for a BODY only when a name looks load-bearing
+SEARCH-BEFORE-YOU-CREATE  (SSoT — a duplicate lemma/def is debt, not progress):
+  just symbols <Name>       every declaration matching <Name> + kind + file:line.
+                            RUN THIS before landing any new lemma/def — the one you'd
+                            write often ALREADY EXISTS (real miss: a re-proved
+                            `handlesOp`-from-`CapResolvesKind` helper duplicated the
+                            existing `staticSplit_kind`).
+  just loogle "<shape>"     library lemma search BY TYPE SHAPE (`just loogle "?n+0=?n"`).
+  just symbols --by-file F  a module's declaration outline.
+SELECT  grep/Grep by symbol/callers → "what calls `Source.step`?", "mentions `dispatchOn`?".
+PULL    Read the specific def/lemma body only when a name looks load-bearing.
+
+WHEN lean-lsp MCP is up (project `.mcp.json` + homelab allowlist; pre-warm `just build`):
+prefer it for SEMANTIC navigation — `lean_declaration_file` (go-to-def),
+`lean_references` (callers), `lean_hover_info` (type+docstring), `lean_file_outline`,
+`lean_goal` (proof state), `lean_verify` (axiom-usage). Reads the real elaborated graph.
 ```
 
-Load the ADRs that constrain THIS change (e.g. 0001/0018 for rows, 0023/0025 for
-handlers, 0016 for the pipeline), not all 30. (`/srv/share/projects/CLAUDE.md`
-documents tilth/stacklit/rtk.)
+Load the ADRs that constrain THIS change (e.g. 0001/0018 rows, 0023/0025 handlers,
+0016 pipeline), not all 30+ — the generated ledger is `docs/decisions/README.md`.
 
 ## The output contract — what you return
 
