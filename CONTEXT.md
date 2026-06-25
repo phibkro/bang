@@ -8,8 +8,34 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-25) — route A BUILD-REFUTED; v1 ships LR seam-5 (operator ruling → ADR-0050).
-> On `typed-static-r1`. SoT = `paths/PATH-typed-lr-reindex.md` (read its ★★★ RESOLVED banner FIRST) + ADR-0050.**
+> **★ ACTIVE DIRECTION (2026-06-25, session wrap) — LR seam-5 → **seam-2**: absolute/level caps LANDED (ADR-0053).
+> On `typed-static-r1` @ `b14d43c`. SoT = ADR-0053 + ADR-0052 + `paths/PATH-typed-lr-reindex.md` (the 2c hand-off).**
+>
+> **This session (5 ADRs, every fork BUILD-arbitrated):**
+> 1. Route A (Biernacki `n-free` in the LR — the prior committed route) **BUILD-REFUTED** → seam-5 (ADR-0050). Root
+>    cause = the **de-Bruijn cap SHIFT** (ADR-0046), NOT a dropped `n-free`; routes A & B shared one config-sim wall.
+> 2. Monadic recast (CalcReify→Bahr-Hutton'22) **NO-GO** — renames `perf_outcome_mono`, doesn't dissolve it (ADR-0051).
+> 3. CalcVM ◊5 dispatch: build-PROVEN the kernel (lexical/cap) and `evalD` (dynamic/label) DISAGREE on a well-typed
+>    same-label-shadow program (10 vs 20). bang is **LEXICAL**; re-derive `evalD` cap-keyed (route B), deferred → ADR-0052.
+> 4. **Absolute caps GO → LR seam-2.** The cap is a ROOT-LEVEL (no `handle`-crossing shift), so `closeC_handle*`
+>    close UNSHIFTED and the 3 `crelK_fund` handler arms CLOSE on axiom-clean cores. **Independently axiom-gate-verified**
+>    @ `b14d43c`: the 3 cores `[propext, Classical.choice, Quot.sound]`; `lr_sound`/`lr_fundamental` `sorryAx` = ONLY
+>    the 2 deferred descents (`hcatch`+`:1801`). **Net-NEGATIVE (-112 LOC** — shift theory deleted). ADR-0053.
+>
+> **Build:** 711 jobs, LR layer + kernel GREEN at seam-2; CalcVM RED = the deferred route-B (ADR-0052), orthogonal.
+>
+> **Deferred units (next sessions):**
+> - **WC keystone (2c) — the ONE genuinely-hard open piece.** Absolute caps do NOT preserve `WellCapped` under
+>   handler-insertion-BELOW-the-use-site (build-traced counterexample: a cap→`h₀` mis-resolves to an inserted `h`);
+>   the de-Bruijn shift compensated it. Needs a WC-invariant REFORMULATION (caps-rel-nearest-handler / insert-only-
+>   above-targets / thunk-cap-closedness) — **kernel-engineer-paired + an OPERATOR DESIGN DECISION.** SEAMED: Operational
+>   3 sorries, behind `preservation_returnEscape_TODO`. Precise hand-off in `paths/PATH-typed-lr-reindex.md` + ADR-0053.
+> - **CalcVM route B** — re-derive `evalD` cap-keyed to match the lexical kernel (ADR-0052); multi-session.
+> - **`hcatch` + `:1801`** (seam-2 → 0) — the 2 remaining ADR-0043 descents (Compat).
+> - **`preservation_returnEscape_TODO`** — priority ROSE (ADR-0053): absolute caps dropped the de-Bruijn shift's
+>   incidental runtime-stuck-the-escape backstop, so this typing proof is now the SOLE escape-safety line.
+>
+> **↓ The detailed seam-5 refutation narrative below is HISTORY** (how seam-5 was reached, before absolute caps → seam-2).
 >
 > The pivot landed kernel-side (`perform cap` + static `staticSplit` + lexical cap-shift; `LWT` typing; STD block
 > axiom-clean @ `91e7444` modulo the documented `preservation_returnEscape_TODO`; the ◊4.5b MISS edge DISSOLVED by
