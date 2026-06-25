@@ -1850,10 +1850,20 @@ theorem crelK_fund_up {n : Nat} {cap : Nat} {ℓ : Label} {op : OpId} {q : Mult}
       intro hconv; exact absurd hconv (not_convergesC_le_up_splitNone K₁ cap ℓ op v₁ hsp1)
   | some t =>
       obtain ⟨K₁ᵢ, h, K₁ₒ⟩ := t
-      -- ADR-0045 route-B WALL (STOP-and-show): `staticSplit` resolves the handler by CAP, NOT by label,
-      -- so `handlesOp h ℓ op`/`h.label = ℓ` are NOT free here (the dynamic `splitAt_some_handlesOp` is
-      -- gone). They require `CapResolvesKind K₁ cap ℓ op` for the AMBIENT stack `K₁` — a stack-relative
-      -- premise threaded from `lr_fundamental`'s well-capped premise. See the message to the lead.
+      -- ◊4.5b ADR-0043 SEAM (documented descent — operator decision 2026-06-25: take the seam, decline the
+      -- typed-KrelS reshape). Static `staticSplit` resolves the handler by CAP, not by label, so the
+      -- dynamic `splitAt_some_handlesOp` is gone. `hcatch` needs `CapResolvesKind (handlersOf K₁) cap ℓ op`
+      -- (then `staticSplit_kind` + `CapResolvesKind_handlersOf` close it sorry-free — the bridge PROOF is
+      -- verified). But that premise is UNDISCHARGEABLE at the `crelK_fund` call site, for two reasons:
+      --   (1) `KrelS` does not constrain `K₁`'s cap-resolution (it's purely structural + resume);
+      --   (2) DEEPER: `HasCTy.perform`'s `cap` is 1a-UNCONSTRAINED (Syntax.lean:163), so even a well-capped
+      --       `K₁` need not resolve the term's arbitrary `cap` — nothing ties the de-Bruijn cap to `K₁`'s
+      --       handler positions, and `handlersOf K₁` (runtime) ≠ the term's `Γ`-author context.
+      -- Closing it requires the typed-KrelS reshape (carry `HasStack`-compatibility so `handlersOf K₁` is
+      -- row-determined) OR the 1b `CapResolves` premise on `HasCTy.perform` (cascades to the STD block) —
+      -- both DECLINED per the operator's seam decision (build-vindicated as the index-everything work the
+      -- seam exists to avoid). So this is the ADR-0043 resumptive-handler-producer descent: the static
+      -- dispatch equivalence is tested-not-proved at this one edge. Mirrors the `:1801` documented sorry.
       have hcatch : Bang.handlesOp h ℓ op = true := sorry
       have hlbl : h.label = ℓ := handlesOp_label hcatch
       obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hinner, htail, hres⟩ := krelS_staticSplit_decomp hK hsp1
