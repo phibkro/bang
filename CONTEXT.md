@@ -26,10 +26,15 @@
 > recorded alternative. First-class-thunk escape is ruled out by the EXISTING `LWT` non-escape gate
 > (`preservation_returnEscape_TODO`), not by second-class thunks.
 >
-> **★ THE IMMEDIATE NEXT UNIT — implement the identity representation** (Core/Syntax: `perform` carries an
-> identity; `handle` mints a fresh label) + re-derive dispatch + re-establish the LR `closeC_handle*`
-> (unshifted by construction). SUPERSEDES the old "WC keystone 2c" (now MOOT — the dead `WellCapped`/`WCComp`
-> island was removed this session, −316 LOC; the keystone was an absolute-caps artifact).
+> **★ THE IMMEDIATE NEXT UNIT — implement the identity representation. DESIGN VALIDATED + SIGNED OFF;
+> roadmap = `paths/PATH-identity-representation.md`.** Capability-passing: `handle` BINDS a capability var,
+> `perform` references it as a VALUE (`vcap n`), dispatch by identity MATCH. Forks chosen: **(ii)** identity
+> = `handlerCount`-at-install (no Config counter); **(a)** `splitAt` match dispatch (keeps the ADR-0043 wrap
+> edge). De-risked end-to-end (`a9af7bb`, `scratch/Identity{Dispatch,Kernel}Probe.lean`: the `migrate
+> vFragile` witness returns 7). Increment seq in the PATH: Core AST → Operational → Syntax(frozen typing) →
+> Metatheory → LR/Compat (first green checkpoint) → CalcVM → Surface. An AST change takes the green subset RED
+> until inc 5. SUPERSEDES the old "WC keystone 2c" (MOOT — the dead `WellCapped`/`WCComp` island removed
+> `d1f0916`, −316 LOC; the keystone was an absolute-caps artifact).
 >
 > **This session's commits (`typed-static-r1`):**
 > - `e133e9a` ADR-0054 (+ 3 build-verified unsoundness probes + ledger; ADR-0053 → Superseded).
