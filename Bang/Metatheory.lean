@@ -2889,23 +2889,143 @@ theorem HasStack.concat_transaction_store {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {
     | @stateF _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
     | @transactionF _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
 
-/-- **The static-dispatch resume-TYPING obligation (ADR-0045 R1, second documented scoped sorry).**
-The reduct of a `perform` static-dispatch step is well-typed at a residual effect `eo' ≤ eo`. This is the
-B1/B3 TYPING port: the 6-path resume-typing (throws-abort / state-get,put / txn-new,read,write), proven
-on the base `b59242c` via `splitAt`/`dispatch_*_typed`, RE-KEYED onto `staticSplit`/`staticDispatch`
-(`staticSplit_decomp` + `staticSplit_kind`, both green). The `concat_*`/`dispatch_*_typed` typing core is
-GREEN; this is the mechanical-but-substantial (≈170-line) rewiring `dispatch K ℓ op v ↦ staticDispatch
-K cap op v`. It is NOT the return-escape fork (that is `preservation_returnEscape_TODO`, type-directed);
-this one is known-tractable. Scoped here pending the dispatch-rewiring pass. -/
-private theorem preservation_perform_typing_TODO
+/-- **The static-dispatch resume-typing (ADR-0045 R1) — the B1/B3 TYPING port, COMPLETED.**
+The reduct of a `perform` static-dispatch step is well-typed at a residual effect `eo' ≤ eo`. The 6-path
+resume-typing (throws-abort / state-get,put / txn-new,read,write) is RE-KEYED off `splitAt`/`dispatch`
+onto `staticSplit`/`staticDispatch`: `LWConfig` supplies `CapResolvesKind`, `staticSplit_decomp` exposes
+the boundary `K = Kᵢ ++ handleF h :: Kₒ`, `staticSplit_kind` gives `handlesOp h ℓ op` (the kind the cap
+located), and the label-blind `concat_*` re-typing lemmas (already green) finish each path. The `LWConfig`
+component of the reduct routes through `preservation_returnEscape_TODO` (the single typed obligation) —
+so this lemma is sorryAx-clean modulo that ONE return-escape sorry, NOT a second independent one. -/
+private theorem preservation_perform_typing
     {K : EvalCtx} {cap : Nat} {ℓ : Label} {op : OpId} {v : Val} {cfg' : Config}
     {e eo : Eff} {C Co : CTy Eff Mult}
-    (_hfocus : HasCTy [] [] (Comp.perform cap ℓ op v) e C)
-    (_hstack : HasStack K e C eo Co)
-    (_hstep : Source.step (K, Comp.perform cap ℓ op v) = some cfg')
-    (_hlwcfg' : LWConfig cfg') :
+    (hfocus : HasCTy [] [] (Comp.perform cap ℓ op v) e C)
+    (hstack : HasStack K e C eo Co)
+    (hstep : Source.step (K, Comp.perform cap ℓ op v) = some cfg')
+    (hlw : LWConfig (K, Comp.perform cap ℓ op v)) :
     ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := by
-  sorry
+  obtain ⟨γ', q, A, B, hC, hγ, hmem, hopArg, hopRes, hwv⟩ := hfocus.perform_inv
+  subst hC
+  have hγ'nil : γ' = [] := by have := hwv.length_eq; simpa using this
+  subst hγ'nil
+  have hres0 : CapResolvesKind (handlersOf K) cap ℓ op := by
+    simp only [LWConfig, LWT] at hlw; exact hlw.1.1
+  have hres : CapResolvesKind K cap ℓ op := (CapResolvesKind_handlersOf K cap ℓ op).mp hres0
+  have hsome : (staticSplit K cap).isSome := staticSplit_isSome_of_resolvesKind K cap ℓ op hres
+  obtain ⟨⟨Kᵢ, h, Kₒ⟩, hss⟩ := Option.isSome_iff_exists.mp hsome
+  have hdecomp : K = Kᵢ ++ Frame.handleF h :: Kₒ := staticSplit_decomp K cap hss
+  have hkind : handlesOp h ℓ op = true := staticSplit_kind K cap hss hres
+  have hstep' : staticDispatch K cap op v = some cfg' := by simpa [Source.step] using hstep
+  have hcfg' : dispatchOn op v (Kᵢ, h, Kₒ) = some cfg' := by
+    unfold staticDispatch at hstep'; rw [hss] at hstep'
+    simpa only [Option.bind_some] using hstep'
+  rw [hdecomp] at hstack
+  cases h with
+  | throws ℓ' =>
+    simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hkind
+    obtain ⟨hℓ, hopr⟩ := hkind; subst hℓ; subst hopr
+    simp only [dispatchOn, Option.some.injEq] at hcfg'
+    subst hcfg'
+    obtain ⟨qh, Ah, eo', hleo, hrA, hsub'⟩ := hstack.concat_throws_typed
+    have hAAh : A = Ah := by rw [hopArg] at hrA; exact Option.some.inj hrA
+    subst hAAh
+    refine ⟨eo', hleo, ⟨⊥, CTy.F qh A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩, ?_⟩
+    exact preservation_returnEscape_TODO hlw hstep
+  | state ℓ' s =>
+    simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq] at hkind
+    obtain ⟨hℓ, hopGP⟩ := hkind; subst hℓ
+    obtain ⟨S, hgetRes, hputArg, hputRes, hs⟩ := hstack.concat_state_closed
+    rcases hopGP with hget | hput
+    · subst hget
+      simp only [dispatchOn, beq_self_eq_true, if_true, Option.some.injEq] at hcfg'
+      subst hcfg'
+      have hSB : S = B := by rw [hopRes] at hgetRes; exact (Option.some.inj hgetRes).symm
+      subst hSB
+      obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_state_resume hgetRes hs
+      obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+      refine ⟨eo'', le_trans hleo' hleo,
+        ⟨⊥, CTy.F q S, HasCTy.ret hs (by simp [hsmul_eq_smul, GradeVec.smul]), hsub''⟩, ?_⟩
+      exact preservation_returnEscape_TODO hlw hstep
+    · subst hput
+      simp only [dispatchOn, show ("put" == "get") = false by decide, Bool.false_eq_true,
+        if_false, Option.some.injEq] at hcfg'
+      subst hcfg'
+      have hAS : A = S := by rw [hopArg] at hputArg; exact Option.some.inj hputArg
+      subst hAS
+      have hBunit : B = VTy.unit := by rw [hopRes] at hputRes; exact Option.some.inj hputRes
+      subst hBunit
+      obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_state_resume hgetRes hwv
+      obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+      refine ⟨eo'', le_trans hleo' hleo,
+        ⟨⊥, CTy.F q VTy.unit,
+          HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]), hsub''⟩, ?_⟩
+      exact preservation_returnEscape_TODO hlw hstep
+  | transaction ℓ' Θ =>
+    simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq] at hkind
+    obtain ⟨hℓ, hopT⟩ := hkind; subst hℓ
+    obtain ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩ := hstack.concat_transaction_store
+    rcases hopT with (hnew | hread) | hwrite
+    · rw [hnew] at hcfg' hopArg hopRes
+      simp only [dispatchOn, beq_self_eq_true, if_true, Option.some.injEq] at hcfg'
+      subst hcfg'
+      have hAint : A = VTy.int := by rw [hopArg] at hna; exact Option.some.inj hna
+      have hBint : B = VTy.int := by rw [hopRes] at hnr; exact Option.some.inj hnr
+      subst hAint; subst hBint
+      have hcells' : ∀ cell ∈ Θ ++ [v], HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
+        intro cell hcm; rcases List.mem_append.mp hcm with hc | hc
+        · exact hcells cell hc
+        · rw [List.mem_singleton] at hc; subst hc; exact hwv
+      obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells'
+      obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+      refine ⟨eo'', le_trans hleo' hleo,
+        ⟨⊥, CTy.F q VTy.int,
+          HasCTy.ret (HasVTy.vint (n := (Θ.length : Int)) (Γ := []))
+            (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]), hsub''⟩, ?_⟩
+      exact preservation_returnEscape_TODO hlw hstep
+    · rw [hread] at hcfg' hopArg hopRes
+      simp only [dispatchOn, show ("readTVar" == "newTVar") = false by decide, Bool.false_eq_true,
+        if_false, beq_self_eq_true, if_true, Option.some.injEq] at hcfg'
+      subst hcfg'
+      have hBint : B = VTy.int := by rw [hopRes] at hrr; exact Option.some.inj hrr
+      subst hBint
+      obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells
+      obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+      have hcell : HasVTy [] [] (Θ.getD ((tvarIdx v).getD 0) (Val.vint 0)) (VTy.int : VTy Eff Mult) := by
+        rw [List.getD_eq_getElem?_getD]
+        rcases lt_or_ge ((tvarIdx v).getD 0) Θ.length with hlt | hge
+        · rw [List.getElem?_eq_getElem hlt, Option.getD_some]; exact hcells _ (List.getElem_mem hlt)
+        · rw [List.getElem?_eq_none hge, Option.getD_none]; exact HasVTy.vint (n := 0) (Γ := [])
+      refine ⟨eo'', le_trans hleo' hleo,
+        ⟨⊥, CTy.F q VTy.int, HasCTy.ret hcell (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+          hsub''⟩, ?_⟩
+      exact preservation_returnEscape_TODO hlw hstep
+    · rw [hwrite] at hcfg' hopArg hopRes
+      simp only [dispatchOn, show ("writeTVar" == "newTVar") = false by decide,
+        show ("writeTVar" == "readTVar") = false by decide, Bool.false_eq_true, if_false] at hcfg'
+      have hBunit : B = VTy.unit := by rw [hopRes] at hwr; exact Option.some.inj hwr
+      subst hBunit
+      have hAprod : A = VTy.prod VTy.int VTy.int := by rw [hopArg] at hwa; exact Option.some.inj hwa
+      subst hAprod
+      obtain ⟨_, γ_b, a, b, hvpair, _, _, hbint⟩ := hwv.prod_canonical
+      have hγb : γ_b = [] := by have := hbint.length_eq; simpa using this
+      subst hγb
+      subst hvpair
+      simp only [dispatchOn, Option.some.injEq] at hcfg'
+      subst hcfg'
+      have hcells' : ∀ cell ∈ storeSet Θ ((tvarIdx a).getD 0) b,
+          HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
+        intro cell hcm
+        unfold storeSet at hcm
+        rcases List.mem_or_eq_of_mem_set hcm with hc | hc
+        · exact hcells cell hc
+        · subst hc; exact hbint
+      obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells'
+      obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+      refine ⟨eo'', le_trans hleo' hleo,
+        ⟨⊥, CTy.F q VTy.unit,
+          HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]), hsub''⟩, ?_⟩
+      exact preservation_returnEscape_TODO hlw hstep
 
 theorem preservation_proof
     {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
@@ -2955,13 +3075,11 @@ theorem preservation_proof
           ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩,
           LWConfig.handleF_ret h K' v hlw⟩
   | perform cap ℓ op v =>
-    -- DISPATCH (static, ADR-0045). `LWConfig` (`hlwcfg'`) re-establishes the cap-invariant of the
-    -- reduct. The TYPING of the resolved reduct (the 6-path resume-typing, `splitAt`-era @ b59242c)
-    -- routes through `preservation_perform_typing_TODO` — the static-dispatch resume-typing REWIRING
-    -- (`dispatch`↦`staticDispatch`, re-keying `concat_*`/`dispatch_*_typed` onto `staticSplit_decomp`).
-    -- This is a SEPARATE, known-tractable port (the typing core is green; it is NOT the return-escape
-    -- fork). Scoped here as a second documented obligation; see the gate-report.
-    exact preservation_perform_typing_TODO hfocus hstack hstep hlwcfg'
+    -- DISPATCH (static, ADR-0045). The static-dispatch resume-typing is COMPLETE
+    -- (`preservation_perform_typing`): `LWConfig` supplies `CapResolvesKind`, `staticSplit_decomp`
+    -- exposes the boundary, and the label-blind `concat_*` lemmas re-type each of the 6 paths. Its
+    -- `LWConfig` component still routes through the single return-escape lemma (the typed obligation).
+    exact preservation_perform_typing hfocus hstack hstep hlw
   | letC M N =>
     -- PUSH letC
     simp only [Source.step, Option.some.injEq] at hstep
