@@ -268,62 +268,6 @@ theorem closeV_closed {v : Val} (hv : Val.Closed v) : ∀ δ : List Val, closeV 
   | u :: δ  => by
       rw [closeV, show Val.subst u v = v from hv.subst_at 0 u]; exact closeV_closed hv δ
 
-/-! ### ADR-0045 (Inc 0b) — `shiftCap` commutations (the B-probe lemmas, promoted)
-
-The `shiftCapFrom` operation COMMUTES with `substFrom`/`shiftFrom`/itself — it touches only `perform cap`
-nodes (orthogonal to de-Bruijn indices). These are the foundations the cap-closedness descent
-(`closeV_capClosed_scoped`) needs to push `shiftCapFrom` through `subst`, AND the `Closed.shiftCap`
-helper the route-B swap-layer reproof consumes (hence hoisted ABOVE the `_closed` blocks). Build-verified
-in the Inc-0b B-probe; promoted here as real lemmas (axiom-clean). -/
-
-/-! `shiftCapFrom` commutes with the de-Bruijn `shiftFrom` (orthogonal indices). -/
-mutual
-theorem Val.shiftCapFrom_shiftFrom : ∀ (d k : Nat) (w : Val),
-    Val.shiftCapFrom d (Val.shiftFrom k w) = Val.shiftFrom k (Val.shiftCapFrom d w)
-  | _, _, .vunit => rfl
-  | _, _, .vint _ => rfl
-  | d, k, .vvar j => by simp only [Val.shiftCapFrom, Val.shiftFrom]; split <;> rfl
-  | d, k, .vthunk M => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Comp.shiftCapFrom_shiftFrom d k M]
-  | d, k, .inl u => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
-  | d, k, .inr u => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
-  | d, k, .pair a b => by simp only [Val.shiftCapFrom, Val.shiftFrom];
-                          rw [Val.shiftCapFrom_shiftFrom d k a, Val.shiftCapFrom_shiftFrom d k b]
-  | d, k, .fold u => by simp only [Val.shiftCapFrom, Val.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
-theorem Comp.shiftCapFrom_shiftFrom : ∀ (d k : Nat) (t : Comp),
-    Comp.shiftCapFrom d (Comp.shiftFrom k t) = Comp.shiftFrom k (Comp.shiftCapFrom d t)
-  | d, k, .ret u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
-  | d, k, .perform _ _ _ u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
-  | d, k, .handle h M => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
-                            rw [Handler.shiftCapFrom_shiftFrom d k h, Comp.shiftCapFrom_shiftFrom (d+1) k M]
-  | d, k, .letC M N => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
-                          rw [Comp.shiftCapFrom_shiftFrom d k M, Comp.shiftCapFrom_shiftFrom d (k+1) N]
-  | d, k, .force u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
-  | d, k, .lam M => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Comp.shiftCapFrom_shiftFrom d (k+1) M]
-  | d, k, .app M u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
-                         rw [Comp.shiftCapFrom_shiftFrom d k M, Val.shiftCapFrom_shiftFrom d k u]
-  | d, k, .case u N₁ N₂ => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
-                              rw [Val.shiftCapFrom_shiftFrom d k u, Comp.shiftCapFrom_shiftFrom d (k+1) N₁,
-                                  Comp.shiftCapFrom_shiftFrom d (k+1) N₂]
-  | d, k, .split u N => by simp only [Comp.shiftCapFrom, Comp.shiftFrom];
-                           rw [Val.shiftCapFrom_shiftFrom d k u, Comp.shiftCapFrom_shiftFrom d (k+2) N]
-  | d, k, .unfold u => by simp only [Comp.shiftCapFrom, Comp.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k u]
-  | _, _, .oom => rfl
-  | _, _, .wrong _ => rfl
-theorem Handler.shiftCapFrom_shiftFrom : ∀ (d k : Nat) (h : Handler),
-    Handler.shiftCapFrom d (Handler.shiftFrom k h) = Handler.shiftFrom k (Handler.shiftCapFrom d h)
-  | d, k, .state _ s => by simp only [Handler.shiftCapFrom, Handler.shiftFrom]; rw [Val.shiftCapFrom_shiftFrom d k s]
-  | _, _, .throws _ => rfl
-  | _, _, .transaction _ _ => rfl
-end
-
-/-- `Val.Closed` is preserved by `Val.shiftCap` — de-Bruijn closedness and cap-shift are orthogonal
-(`shiftCapFrom_shiftFrom`), so bumping a closed value's ambient caps keeps it de-Bruijn-closed. This is
-what lets the `substFrom_swap_closed` `handle` arm recurse on the cap-shifted fillers (`shiftCap v`/
-`shiftCap w`) WITHOUT a `CapClosed` premise — the IH's `Val.Closed` hypotheses survive the cap-shift. -/
-theorem Val.Closed.shiftCap {v : Val} (h : Val.Closed v) : Val.Closed (Val.shiftCap v) := by
-  intro k
-  rw [show Val.shiftCap v = Val.shiftCapFrom 0 v from rfl,
-    ← Val.shiftCapFrom_shiftFrom 0 k v, Val.Closed.shiftFrom_eq h k]
 
 /-! ### B.1a″ Shift/subst commutation for a CLOSED filler
 
@@ -333,8 +277,8 @@ needs no shifting): for `i ≤ k`,
 This is what lets `closeV`/`closeC` over a closed length-`Γ` environment produce a CLOSED term (the
 `ret`/`case`/`split`/`vthunk` closedness obligations of the fundamental theorem). Mutual structural
 induction; `i ≤ k` so the binder cases step both cutoffs uniformly (`i+1 ≤ k+1`). -/
--- ADR-0045 route-B (`{u}` quantified into the motive; the `handle` arm recurses at `shiftCap u`,
--- `Val.Closed` preserved by `Closed.shiftCap`; no `CapClosed`).
+-- ADR-0054/0055 identity dispatch: caps don't shift on handle-crossing, so the `handle` arm recurses
+-- at the filler `u` UNCHANGED — no `shiftCap`, no `CapClosed` (the cap-shift theory is fully deleted).
 mutual
 theorem Val.shiftFrom_substFrom_closed :
     ∀ {u : Val}, Val.Closed u → ∀ (k i : Nat), i ≤ k → ∀ (t : Val),
@@ -439,57 +383,14 @@ theorem Val.ScopedIn.subst_closed {m : Nat} {u v : Val} (hu : Val.Closed u)
   intro k hk
   rw [Val.subst, Val.shiftFrom_substFrom_closed hu k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
 
-/-! `shiftCapFrom` self-swap (the lift-lift exchange): for `e ≤ d`,
-`shiftCapFrom (d+1) (shiftCapFrom e w) = shiftCapFrom e (shiftCapFrom d w)`. -/
-mutual
-theorem Val.shiftCapFrom_swap : ∀ (d e : Nat), e ≤ d → ∀ (w : Val),
-    Val.shiftCapFrom (d+1) (Val.shiftCapFrom e w) = Val.shiftCapFrom e (Val.shiftCapFrom d w)
-  | _, _, _, .vunit => rfl
-  | _, _, _, .vint _ => rfl
-  | _, _, _, .vvar _ => rfl
-  | d, e, he, .vthunk M => by simp only [Val.shiftCapFrom]; rw [Comp.shiftCapFrom_swap d e he M]
-  | d, e, he, .inl u => by simp only [Val.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
-  | d, e, he, .inr u => by simp only [Val.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
-  | d, e, he, .pair a b => by simp only [Val.shiftCapFrom];
-                              rw [Val.shiftCapFrom_swap d e he a, Val.shiftCapFrom_swap d e he b]
-  | d, e, he, .fold u => by simp only [Val.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
-theorem Comp.shiftCapFrom_swap : ∀ (d e : Nat), e ≤ d → ∀ (t : Comp),
-    Comp.shiftCapFrom (d+1) (Comp.shiftCapFrom e t) = Comp.shiftCapFrom e (Comp.shiftCapFrom d t)
-  | d, e, he, .ret u => by simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
-  | d, e, he, .perform cap ℓ op u => by
-      simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
-      simp only [Comp.perform.injEq, true_and, and_true]
-      split_ifs <;> omega
-  | d, e, he, .handle h M => by simp only [Comp.shiftCapFrom];
-                                rw [Handler.shiftCapFrom_swap d e he h, Comp.shiftCapFrom_swap (d+1) (e+1) (by omega) M]
-  | d, e, he, .letC M N => by simp only [Comp.shiftCapFrom];
-                              rw [Comp.shiftCapFrom_swap d e he M, Comp.shiftCapFrom_swap d e he N]
-  | d, e, he, .force u => by simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
-  | d, e, he, .lam M => by simp only [Comp.shiftCapFrom]; rw [Comp.shiftCapFrom_swap d e he M]
-  | d, e, he, .app M u => by simp only [Comp.shiftCapFrom];
-                             rw [Comp.shiftCapFrom_swap d e he M, Val.shiftCapFrom_swap d e he u]
-  | d, e, he, .case u N₁ N₂ => by simp only [Comp.shiftCapFrom];
-                                  rw [Val.shiftCapFrom_swap d e he u, Comp.shiftCapFrom_swap d e he N₁,
-                                      Comp.shiftCapFrom_swap d e he N₂]
-  | d, e, he, .split u N => by simp only [Comp.shiftCapFrom];
-                               rw [Val.shiftCapFrom_swap d e he u, Comp.shiftCapFrom_swap d e he N]
-  | d, e, he, .unfold u => by simp only [Comp.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he u]
-  | _, _, _, .oom => rfl
-  | _, _, _, .wrong _ => rfl
-theorem Handler.shiftCapFrom_swap : ∀ (d e : Nat), e ≤ d → ∀ (h : Handler),
-    Handler.shiftCapFrom (d+1) (Handler.shiftCapFrom e h) = Handler.shiftCapFrom e (Handler.shiftCapFrom d h)
-  | d, e, he, .state _ s => by simp only [Handler.shiftCapFrom]; rw [Val.shiftCapFrom_swap d e he s]
-  | _, _, _, .throws _ => rfl
-  | _, _, _, .transaction _ _ => rfl
-end
 
-/-! ADR-0053: the `Val/Comp/Handler.shiftCapFrom_substFrom` commutation mutual + the route-A
-`Val.CapScopedIn`/`Val.CapClosed` family (`closeV_capClosed_scoped`) are DELETED. Caps are absolute
-root-levels: `substFrom` no longer applies `shiftCap` to the `handle` body, so the shift↔subst
-commutation de-syncs at the binder and is no longer needed — the LR handler arms close on the
-UNSHIFTED `closeC δ M` (`closeC_handle*`, simplified above). Route-A `CapClosed` was build-refuted
-(ADR-0050). `shiftCapFrom_shiftFrom`/`_swap` (shift-only, still valid) are retained pending the
-full shift-theory sweep. -/
+/-! ADR-0054/0055 (identity dispatch): the whole cap-shift theory is DELETED — `shiftCapFrom`/`shiftCap`
+on `Val/Comp/Handler`, the `shiftCapFrom_shiftFrom`/`_swap` commutations, the `Closed.shiftCap` helper,
+and the route-A `Val.CapScopedIn`/`Val.CapClosed` family (`closeV_capClosed_scoped`). Caps are now
+identity-keyed (a global-fresh `Nat` minted at `handle`), not positional: `substFrom` leaves the
+`handle` body's caps UNCHANGED, so there is no shift↔subst commutation to maintain and the LR handler
+arms close on the UNSHIFTED `closeC δ M` (`closeC_handle*`). Route-A `CapClosed` was build-refuted
+(ADR-0050); the residual shift-only lemmas were swept here (inc-5). -/
 
 /-- Closing a value SCOPED IN `δ.length` over a CLOSED environment yields a CLOSED value: the fold
 substitutes each free index with a closed filler, dropping the scope by 1 each step to `ScopedIn 0` =
