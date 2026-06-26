@@ -91,10 +91,10 @@ eval:
 install-hooks:
     bash tools/install-hooks.sh
 
-# Run loogle Mathlib type-signature search.
-#   just loogle "?n + 0 = ?n"
+# Run loogle Mathlib type-signature search (via the web service, not a build dep — see lakefile.toml).
+#   just loogle "?n + 0 = ?n"     ·     agents: prefer the lean_loogle MCP tool
 loogle QUERY:
-    lake exe loogle "{{QUERY}}"
+    @curl -sG "https://loogle.lean-lang.org/json" --data-urlencode "q={{QUERY}}" | jq -r 'if .error then "loogle: \(.error)" else (.hits[]? | "\(.name) : \(.type)") end'
 
 # Remove .lake build artifacts (forces full rebuild next time).
 clean:

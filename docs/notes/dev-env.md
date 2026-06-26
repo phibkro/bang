@@ -101,29 +101,25 @@ specific axioms each theorem touches (e.g. `lr_fundamental` depends on
 ## Loogle — Mathlib type-signature search
 
 ```bash
-nix develop --command lake exe loogle "?n + 0 = ?n"
-nix develop --command lake exe loogle "Finset _ → Finset _ → Finset _"
+just loogle "?n + 0 = ?n"                       # hits the web service (loogle.lean-lang.org)
+just loogle "Finset _ → Finset _ → Finset _"
 ```
 
-Returns Mathlib lemmas matching the shape. First invocation builds loogle
-(~30s); subsequent runs are instant. Added as a `[[require]]` in
-`lakefile.toml`.
+Returns Mathlib lemmas matching the shape. **Loogle is NOT a build dependency** — agents
+should prefer the `lean_loogle` MCP tool (richer, no shell). The `just loogle` recipe queries
+the public web service; nothing is fetched or built locally.
 
-> **GOTCHA — loogle's moving `master` ref flakes `lake exe cache get` in a FRESH
-> worktree (caught 2026-06-23).** `loogle` is required with no SHA pin (→ `master`).
-> In a clean checkout / new `git worktree`, `lake exe cache get` re-resolves it:
-> "URL has changed; deleting and cloning again" → `fatal: unable to read tree <sha>`
-> → exit 128. `lake build` ALONE is green (loogle already present); only `cache
-> get`'s re-clone of the moving ref breaks — which means the pre-commit hook's
-> `just verify` (= `cache get && lake build`) fails in a fresh worktree even when
-> the code is green. This bit a worktree-isolated agent and trapped ~600 lines of
-> hand-verified-green proof UNCOMMITTED (then lost on worktree cleanup).
-> **Mitigations:** (1) when the flake is purely `cache get` and you've verified the
-> real gate by hand (`lake build` + `lake env lean Bang/Audit.lean`), commit with
-> `BANGLANG_SKIP_VERIFY_REASON="loogle cache-get flake; build+axioms hand-verified
-> green"` rather than leaving work uncommitted. (2) **Real fix (deferred):** pin
-> `loogle` to a SHA (not `master`) in `lakefile.toml`, or pre-seed
-> `.lake/packages/loogle`, so fresh worktrees stop hitting it.
+> **RESOLVED (2026-06-26, task #19) — the loogle re-clone hazard is gone at the root.**
+> Previously `loogle` was a `[[require]]` in `lakefile.toml` (a dev-only tool, NEVER imported
+> by `Bang`). In a fresh `git worktree`, `lake exe cache get` re-resolved it ("URL has changed;
+> deleting and cloning again" → `fatal: unable to read tree <sha>` → exit 128), and loogle's
+> untracked `frontend-tests/*.py` aborted lake's checkout — triggering a clobbering re-clone
+> that corrupted the SHARED worktree object store. This flaked the pre-commit `just verify`,
+> forced `BANGLANG_SKIP_VERIFY_REASON` commits (bypassing the build gate), and once trapped
+> ~600 lines of green proof uncommitted. **Fixed by removing loogle from the dependency graph
+> entirely** — removal doesn't fetch, so it can't trigger the hazard, and since `Bang` never
+> imported loogle the build graph is unchanged. If a Bang module ever needs loogle *as a
+> library*, re-add it pinned to a TAG (not `master`) — but it does not.
 
 ## tools/eval.sh — submit Lean snippet, get elaborator output
 
