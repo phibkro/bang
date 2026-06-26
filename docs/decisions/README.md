@@ -77,6 +77,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0057](0057-non-escape-answer-type-label-freedom.md) | Accepted | The non-escape discipline: answer-type label-freedom at the kernel (B-occ) | ADR-0056 recorded that the language is unsound — a capability can escape its handler and | — / — | — / — | — | — |
 | [0058](0058-crelk-canonical-wall-is-a-frozen-signature-artifact.md) | Accepted | The CrelK Canonical wall is a frozen-signature artifact; route 1 (carry the real counter) deletes it | The binary-LR **Canonical wall** (task #33) — closing `crelK_fund`'s ret case, hence | — / — | — / — | — | — |
 | [0059](0059-wasm3-grade-directed-pluggable-backend.md) | Accepted | Compile to Wasm 3.0 with a grade-directed pluggable backend (refines ADR-0016's WasmFX-primary target) | Stack switching did NOT land in Wasm 3.0** (Sept 2025 standardized WasmGC, exception | — / — | — / — | — | — |
+| [0060](0060-grade-driven-liveness-non-escape-and-the-grade-rig-commitment.md) | Accepted | Cap-non-escape soundness via grade-driven liveness; commit the grade rig to NoZeroDivisors + ZeroSumFree + Nontrivial | The diagonal's last obligation `wsCfg_step` (the `WScfg` preservation that closes | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 
