@@ -524,13 +524,24 @@ THE ARMS (`Source.step`, Operational:455):
   • DISPATCH (`perform (vcap n ℓ) ↦ idDispatch`): the resume/abort reduct's `WSC` is rebuilt from the
     resolved handler's stored `WSC`/`WSV` (in `WSK`) + the returned value. Uses `WSC` (the cap resolves)
     — why the invariants ride together.
-  • POP (`handleF g::K, ret v ↦ K, ret v`): THE crux. After the pop a cap `(g,ℓ_f)` in `v` no longer
-    resolves. CLOSED by deep-modulo-non-performability: `v : A` with `¬LabelOccurs ℓ_f A` (the ADR-0057
-    B-occ premise on the popped handler's answer type) ⇒ every `ℓ_f`-cap in `v` is under a thunk whose
-    row excludes `ℓ_f` (non-performable) ⇒ its `WSV` gate `labelEff ℓ_f ≤ ρ → …` is vacuous at the
-    reduced stack. The B-occ lever + a `WSV`-restack-modulo-popped-label lemma.
-NAMED SORRY: the mutual `WSC`/`WSK` preservation across all arms (the typing half is `preservation_proof`).
-The POP arm is the ⊥-row return-escape crux; the design (deep-modulo-non-performability) is de-risked. -/
+  • POP (`handleF g::K, ret v ↦ K, ret v`): THE crux — and the OPEN sub-case (the whole `sorry`).
+    ⚠ The sketched closure ("`¬LabelOccurs ℓ_f A` ⇒ every `ℓ_f`-cap in `v` is under a thunk whose row
+    excludes `ℓ_f`") is FALSE. The "deep B-occ lever" it relied on (`a performable cap at a thunk-row-φ
+    position in v:A ⟹ LabelOccurs ℓ A`) is REFUTED by `Bang.BoccRegress.escapeB_app`: wrap the escaping
+    `ℓ_f`-performing thunk `w : U {ℓ_f} (F 1 unit)` as the DISCARDED argument of `app (lam (ret vunit)) w`;
+    `app` ELIMINATES the arrow, so `A = U ⊥ (F 1 unit)` with `¬LabelOccurs ℓ_f A` — B-occ ADMITS it
+    (`escapeB_app_typeable`, qc = 0) — yet `w`'s thunk row `{ℓ_f}` makes the buried cap PERFORMABLE per
+    `WSV`. So `WScfg` is NOT POP-preserved with the current `WSV` gate. The program is SAFE (the `lam`
+    discards `w`, cap dead, never forced) — invariant-too-strong, NOT a soundness bug, NOT a Spec.lean
+    issue. A type-level B-occ premise on the answer type cannot see arrow-guarded latent caps (the info
+    is in the TERM, not `A`): the ADR-0041 later-modality territory. The fix is a WSV REDESIGN, decided
+    by the opt-1/2/3 spikes: (1) later/Kripke LR (caps behind → resolve "later"); (2) focus-reachability-
+    refined gate (require resolution only for caps that can reach a focus-perform); (3) grade-directed
+    gate (the discarding `lam` binds at `q = 0` ⇒ `qc = 0` ⇒ the cap is statically dead; gate on grade).
+NAMED SORRY: the mutual `WSC`/`WSK` preservation. The TYPING half rides `hasConfigTy_step` (DONE); the
+PUSH/REDUCE/MINT/DISPATCH cap-halves are mechanical given `wsc_subst` + the restack/`resolvesLabel_uncons`
+mechanics (`resolvesLabel_uncons` = the removal direction, DONE). The OPEN content is the POP arm above,
+blocked on the WSV redesign (the arrow-guarded-cap wall, build-pinned by `escapeB_app`). -/
 theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
     (hP : WScfg Co cfg) (hstep : Source.step cfg = some cfg') : WScfg Co cfg' := by
   sorry
