@@ -2369,6 +2369,339 @@ theorem preservation_proof
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
 
+/-- **The NonEscape-free TYPING preservation** — the gate for every `wsCfg_step` arm's typing half.
+A by-pathspec projection of `preservation_proof` (Metatheory:2038): identical per-case reconstruction,
+with the `NonEscape` conjunct dropped (it is the only use of the input invariant there; the typing
+reconstruction is NonEscape-free). UNIFY-LATER: `preservation_proof` should be re-expressed as
+`hasConfigTy_step` + the NonEscape slot (SSoT); kept standalone for now to not risk the proven proof. -/
+theorem hasConfigTy_step
+    {cfg cfg' : Config} {eo : Eff} {Co : CTy Eff Mult} :
+    HasConfigTy cfg eo Co → Source.step cfg = some cfg' →
+    ∃ eo', eo' ≤ eo ∧ HasConfigTy cfg' eo' Co := by
+  rintro ⟨e, C, hfocus, hstack⟩ hstep
+  obtain ⟨g, K, M⟩ := cfg
+  cases M with
+  | ret v =>
+    -- REDUCE/terminal: the top frame drives the step. Focus ret v : ⊥ (F q A), v : A closed.
+    obtain ⟨γ', A, q, he, hC, hγ, hwv⟩ := hfocus.ret_inv
+    subst he; subst hC
+    have hγ'nil : γ' = [] := by have := hwv.length_eq; simpa using this
+    subst hγ'nil
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | letF N =>
+        simp only [Source.step, Option.some.injEq] at hstep
+        subst hstep
+        obtain ⟨q', A', e₂, qk, B, hCeq, hN, hsub⟩ := hstack.letF_inv
+        rw [CTy.F.injEq] at hCeq; obtain ⟨hqq, hAA⟩ := hCeq; subst hAA
+        rw [bot_sup_eq] at hsub
+        have hsubst := subst_value_proof qk hwv hN
+        simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+          GradeVec.add_nil_left] at hsubst
+        -- NonEscape of the reduct routes through the single typed return-escape lemma (`hnecfg'`).
+        exact ⟨eo, le_refl _, ⟨e₂, B, hsubst, hsub⟩⟩
+      | appF w => simp [Source.step] at hstep
+      | handleF n h =>
+        -- REDUCE handler-return = identity (both throws and state, ADR-0023 Q6 / ADR-0025).
+        obtain ⟨φ, q', A', hCeq, eo₀, hleo₀, hsub⟩ := hstack.handleAny_inv
+        simp only [Source.step, Option.some.injEq] at hstep
+        subst hstep
+        rw [CTy.F.injEq] at hCeq; obtain ⟨hqq, hAA⟩ := hCeq; subst hAA
+        obtain ⟨eo', hleo, hsub'⟩ := hsub.weaken_eff (bot_le)
+        -- ★ THE DECISIVE CASE — handleF-ret preservation BY CONSTRUCTION (R1). ★
+        exact ⟨eo', le_trans hleo hleo₀,
+          ⟨⊥, CTy.F q' A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩⟩
+  | perform c op v =>
+    -- DISPATCH (ADR-0054 IDENTITY). The reduct re-typing, keyed on `splitAtId_decomp` + the E.1c concat
+    -- lemmas (re-keyed onto identity dispatch). The step gives the resolved boundary + `handlesOp`; the
+    -- boundary handler's KIND drives the 6 op paths (throws-abort / state-get,put / txn-new,read,write).
+    obtain ⟨ℓ, γ_c, γ_v, q, A, B, hC, hγ, hcap, hle, hopArg, hopRes, hwv⟩ := hfocus.perform_full_inv
+    subst hC
+    have hγc : γ_c = [] := by have := hcap.length_eq; simpa using this
+    have hγv : γ_v = [] := by have := hwv.length_eq; simpa using this
+    subst hγc; subst hγv
+    obtain ⟨n, hceq⟩ := hcap.cap_canonical
+    subst hceq
+    -- ADR-0055: `Source.step`'s perform arm threads the counter `g` via `.map` over the (counter-free)
+    -- `idDispatch`. Strip the map FIRST (the inner result `p` stays a single var, so every handler-kind
+    -- leaf's `subst hstep2` substitutes it exactly as before), then decompose the `bind`.
+    simp only [Source.step, idDispatch, Option.map_eq_some_iff] at hstep
+    obtain ⟨p, hbind, hcfg⟩ := hstep
+    subst hcfg
+    obtain ⟨⟨Kᵢ, hh, Kₒ⟩, hsplit, hstep2⟩ := Option.bind_eq_some_iff.mp hbind
+    by_cases hk : handlesOp hh ℓ op = true
+    · rw [if_pos hk] at hstep2
+      have hdecomp : K = Kᵢ ++ Frame.handleF n hh :: Kₒ := splitAtId_decomp K n hsplit
+      rw [hdecomp] at hstack
+      cases hh with
+      | throws ℓ' =>
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hk
+        obtain ⟨hℓ, hopr⟩ := hk; subst hℓ; subst hopr
+        simp only [dispatchOn, Option.some.injEq] at hstep2
+        subst hstep2
+        obtain ⟨qh, Ah, eo', hleo, hrA, hsub'⟩ := hstack.concat_throws_typed
+        have hAAh : A = Ah := by rw [hopArg] at hrA; exact Option.some.inj hrA
+        subst hAAh
+        exact ⟨eo', hleo,
+          ⟨⊥, CTy.F qh A, HasCTy.ret hwv (by simp [hsmul_eq_smul, GradeVec.smul]), hsub'⟩⟩
+      | state ℓ' s =>
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq] at hk
+        obtain ⟨hℓ, hopGP⟩ := hk; subst hℓ
+        obtain ⟨S, hgetRes, hputArg, hputRes, hs⟩ := hstack.concat_state_closed
+        rcases hopGP with hget | hput
+        · subst hget
+          simp only [dispatchOn, beq_self_eq_true, if_true, Option.some.injEq] at hstep2
+          subst hstep2
+          have hSB : S = B := by rw [hopRes] at hgetRes; exact (Option.some.inj hgetRes).symm
+          subst hSB
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_state_resume hgetRes hs
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q S, HasCTy.ret hs (by simp [hsmul_eq_smul, GradeVec.smul]), hsub''⟩⟩
+        · subst hput
+          simp only [dispatchOn, show ("put" == "get") = false by decide, Bool.false_eq_true,
+            if_false, Option.some.injEq] at hstep2
+          subst hstep2
+          have hAS : A = S := by rw [hopArg] at hputArg; exact Option.some.inj hputArg
+          subst hAS
+          have hBunit : B = VTy.unit := by rw [hopRes] at hputRes; exact Option.some.inj hputRes
+          subst hBunit
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_state_resume hgetRes hwv
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.unit,
+              HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩⟩
+      | transaction ℓ' Θ =>
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true, beq_iff_eq] at hk
+        obtain ⟨hℓ, hopT⟩ := hk; subst hℓ
+        obtain ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩ := hstack.concat_transaction_store
+        rcases hopT with (hnew | hread) | hwrite
+        · rw [hnew] at hstep2 hopArg hopRes
+          simp only [dispatchOn, beq_self_eq_true, if_true, Option.some.injEq] at hstep2
+          subst hstep2
+          have hAint : A = VTy.int := by rw [hopArg] at hna; exact Option.some.inj hna
+          have hBint : B = VTy.int := by rw [hopRes] at hnr; exact Option.some.inj hnr
+          subst hAint; subst hBint
+          have hcells' : ∀ cell ∈ Θ ++ [v], HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
+            intro cell hcm; rcases List.mem_append.mp hcm with hc | hc
+            · exact hcells cell hc
+            · rw [List.mem_singleton] at hc; subst hc; exact hwv
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells'
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.int,
+              HasCTy.ret (HasVTy.vint (n := (Θ.length : Int)) (Γ := []))
+                (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]), hsub''⟩⟩
+        · rw [hread] at hstep2 hopArg hopRes
+          simp only [dispatchOn, show ("readTVar" == "newTVar") = false by decide, Bool.false_eq_true,
+            if_false, beq_self_eq_true, if_true, Option.some.injEq] at hstep2
+          subst hstep2
+          have hBint : B = VTy.int := by rw [hopRes] at hrr; exact Option.some.inj hrr
+          subst hBint
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          have hcell : HasVTy [] [] (Θ.getD ((tvarIdx v).getD 0) (Val.vint 0)) (VTy.int : VTy Eff Mult) := by
+            rw [List.getD_eq_getElem?_getD]
+            rcases lt_or_ge ((tvarIdx v).getD 0) Θ.length with hlt | hge
+            · rw [List.getElem?_eq_getElem hlt, Option.getD_some]; exact hcells _ (List.getElem_mem hlt)
+            · rw [List.getElem?_eq_none hge, Option.getD_none]; exact HasVTy.vint (n := 0) (Γ := [])
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.int, HasCTy.ret hcell (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩⟩
+        · rw [hwrite] at hstep2 hopArg hopRes
+          simp only [dispatchOn, show ("writeTVar" == "newTVar") = false by decide,
+            show ("writeTVar" == "readTVar") = false by decide, Bool.false_eq_true, if_false] at hstep2
+          have hBunit : B = VTy.unit := by rw [hopRes] at hwr; exact Option.some.inj hwr
+          subst hBunit
+          have hAprod : A = VTy.prod VTy.int VTy.int := by rw [hopArg] at hwa; exact Option.some.inj hwa
+          subst hAprod
+          obtain ⟨_, γ_b, a, b, hvpair, _, _, hbint⟩ := hwv.prod_canonical
+          have hγb : γ_b = [] := by have := hbint.length_eq; simpa using this
+          subst hγb
+          subst hvpair
+          simp only [dispatchOn, Option.some.injEq] at hstep2
+          subst hstep2
+          have hcells' : ∀ cell ∈ storeSet Θ ((tvarIdx a).getD 0) b,
+              HasVTy [] [] cell (VTy.int : VTy Eff Mult) := by
+            intro cell hcm
+            unfold storeSet at hcm
+            rcases List.mem_or_eq_of_mem_set hcm with hc | hc
+            · exact hcells cell hc
+            · subst hc; exact hbint
+          obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_transaction_resume hcells'
+          obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+          exact ⟨eo'', le_trans hleo' hleo,
+            ⟨⊥, CTy.F q VTy.unit,
+              HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
+              hsub''⟩⟩
+    · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
+  | letC M N =>
+    -- PUSH letC
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    obtain ⟨γ₁, γ₂, φ₁, φ₂, q1, q2, A, he, hγ, hM, hN⟩ := hfocus.letC_inv
+    subst he
+    -- focus is closed: γ₁ = [], γ₂ = []
+    have hγ₁ : γ₁ = [] := by have := hM.length_eq; simpa using this
+    have hγ₂ : γ₂ = [] := by have := hN.length_eq; simpa using this
+    subst hγ₁; subst hγ₂
+    -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+    exact ⟨eo, le_refl _, ⟨φ₁, CTy.F q1 A, hM, HasStack.letF hN hstack⟩⟩
+  | app M w =>
+    -- PUSH app
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    obtain ⟨γ₁, γ₂, q, A, hγ, hM, hw⟩ := hfocus.app_inv
+    have hγ₁ : γ₁ = [] := by have := hM.length_eq; simpa using this
+    have hγ₂ : γ₂ = [] := by have := hw.length_eq; simpa using this
+    subst hγ₁; subst hγ₂
+    -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+    exact ⟨eo, le_refl _, ⟨e, CTy.arr q A C, hM, HasStack.appF hw hstack⟩⟩
+  | handle h M =>
+    -- PUSH handle (ADR-0055): mint the GLOBAL-FRESH identity `g` (the carried counter), push
+    -- `handleF g h`, advance to `g+1`, and SUBSTITUTE the capability `vcap g ℓ` for the handle-bound
+    -- var 0. The reduct focus `subst (vcap g ℓ) M` re-types via `subst_value_proof` at the inert cap
+    -- (`HasVTy.vcap`, identity-agnostic), collapsing the body grade `qc::[]` to `[]`. The counter value
+    -- is invisible to typing — only the substituted `n := g` must match the step's mint.
+    cases h with
+    | throws ℓ =>
+      simp only [Source.step, Handler.label, Option.some.injEq] at hstep
+      subst hstep
+      obtain ⟨e_body, q, qc, A, hC, hraise, hiface, hM, hle, hbocc⟩ := hfocus.handleThrows_inv
+      subst hC
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
+      exact ⟨eo, le_refl _,
+        ⟨e_body, CTy.F q A, hfocus', HasStack.handleF hraise hiface hle hbocc hstack⟩⟩
+    | state ℓ s =>
+      simp only [Source.step, Handler.label, Option.some.injEq] at hstep
+      subst hstep
+      obtain ⟨e_body, q, qc, S, A, hC, hga, hgr, hpa, hpr, hif, hs, hM, hle, hbocc⟩ :=
+        hfocus.handleState_inv
+      subst hC
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
+      exact ⟨eo, le_refl _,
+        ⟨e_body, CTy.F q A, hfocus', HasStack.stateF hga hgr hpa hpr hif hs hle hbocc hstack⟩⟩
+    | transaction ℓ Θ =>
+      simp only [Source.step, Handler.label, Option.some.injEq] at hstep
+      subst hstep
+      obtain ⟨e_body, q, qc, A, hC, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle, hbocc⟩ :=
+        hfocus.handleTransaction_inv
+      subst hC
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
+      exact ⟨eo, le_refl _,
+        ⟨e_body, CTy.F q A, hfocus',
+          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hstack⟩⟩
+  | force w =>
+    -- PUSH force: focus typing forces w = vthunk M
+    rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
+    · subst hweq
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+      exact ⟨eo, le_refl _, ⟨e, C, hMT, hstack⟩⟩
+    · simp at hget
+  | lam M =>
+    -- focus lam M : arr-typed; only the appF top-frame drives a step (β).
+    obtain ⟨q, A, B, hC, hM⟩ := hfocus.lam_inv
+    subst hC
+    -- focus closed: the body grade is q :: [] (γ0 = [])
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | letF N =>
+        -- letF wants F-focus; arr ≠ F via letF_inv
+        obtain ⟨q', A', e₂, qk, B', hCeq, _⟩ := hstack.letF_inv
+        exact absurd hCeq (by simp)
+      | handleF n h =>
+        obtain ⟨φ, q', A', hCeq, _⟩ := hstack.handleAny_inv
+        exact absurd hCeq (by simp)
+      | appF w =>
+        simp only [Source.step, Option.some.injEq] at hstep
+        subst hstep
+        obtain ⟨q', A', B', hCeq, hwv, hsub⟩ := hstack.appF_inv
+        rw [CTy.arr.injEq] at hCeq
+        obtain ⟨hqq, hAA, hBB⟩ := hCeq; subst hqq; subst hAA; subst hBB
+        have hsubst := subst_value_proof q hwv hM
+        simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+          GradeVec.add_nil_left] at hsubst
+        -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+        exact ⟨eo, le_refl _, ⟨e, B, hsubst, hsub⟩⟩
+  | case v N₁ N₂ =>
+    -- closed focus `case v N₁ N₂ : (e, C)`; `v : sum A B` is `inl a`/`inr a`
+    -- (canonical forms); the matching branch `Nᵢ[a]` re-types at `(e, C)` via subst.
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN₁, hN₂⟩ := hfocus.case_inv
+    -- closed: scrutinee grade `γ_v = []`; branch shared grade `γ_N = []`.
+    have hγv : γ_v = [] := by have := hv.length_eq; simpa using this
+    have hγN : γ_N = [] := by have := hN₁.length_eq; simp at this; simpa using this
+    subst hγv; subst hγN
+    rcases hv.sum_canonical with ⟨a, hveq, ha⟩ | ⟨a, hveq, ha⟩
+    · subst hveq
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      have hsubst := subst_value_proof q ha hN₁
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+        GradeVec.add_nil_left] at hsubst
+      -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩⟩
+    · subst hveq
+      simp only [Source.step, Option.some.injEq] at hstep
+      subst hstep
+      have hsubst := subst_value_proof q ha hN₂
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+        GradeVec.add_nil_left] at hsubst
+      -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+      exact ⟨eo, le_refl _, ⟨e, C, hsubst, hstack⟩⟩
+  | split v N =>
+    -- closed focus `split v N`; `v : prod A B` is `pair a b` (canonical forms);
+    -- `N[a][b]` re-types at `(e, C)` via two substitutions (outer `b`, inner `a`).
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN⟩ := hfocus.split_inv
+    obtain ⟨γ_a, γ_b, a, b, hveq, hγab, ha, hb⟩ := hv.prod_canonical
+    subst hveq
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    -- closed: every value grade is `[]`; the branch shared grade `γ_N = []`.
+    have hlenb : γ_b = [] := by have := hb.length_eq; simpa using this
+    have hlena : γ_a = [] := by have := ha.length_eq; simpa using this
+    subst hlenb; subst hlena
+    have hγN : γ_N = [] := by have := hN.length_eq; simp at this; simpa using this
+    subst hγN
+    -- inner subst: the OUTER binder (slot 0 of `B :: A :: []`) is `b : B`; weaken `b`
+    -- under the `A` binder so it types over `A :: []` (graded `[0]` after the insert).
+    have hbw : HasVTy [0] (A :: []) (Val.shift b) B := by
+      have := hb.weaken 0 (Nat.zero_le _) A
+      simpa [Val.shift, insT, insG, GradeVec.zeros] using this
+    -- result grade `(q :: []) + q • [0] = [q]`, i.e. `q :: []` — the shape the outer subst needs.
+    have hsubst_inner := subst_value_proof q hbw hN
+    simp only [hsmul_eq_smul, GradeVec.smul_cons, GradeVec.smul_nil, hadd_eq_add,
+      GradeVec.add_cons, GradeVec.add_nil_left, mul_zero, add_zero] at hsubst_inner
+    -- outer subst: the inner binder (now slot 0) is `a : A` (closed, graded `[]`).
+    have hsubst_outer := subst_value_proof q ha hsubst_inner
+    simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+      GradeVec.add_nil_left, GradeVec.add_nil_right] at hsubst_outer
+    -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+    exact ⟨eo, le_refl _, ⟨e, C, hsubst_outer, hstack⟩⟩
+  | unfold v =>
+    -- closed focus `unfold v : (⊥, F 1 (unrollMu A))`; `v : mu A` is `fold a` with
+    -- `a : unrollMu A`. Step `unfold (fold a) ↦ ret a`; `ret a : F 1 (unrollMu A)` matches.
+    obtain ⟨A, heq, hCeq, hv⟩ := hfocus.unfold_inv
+    subst heq; subst hCeq
+    obtain ⟨a, hveq, ha⟩ := hv.mu_canonical
+    subst hveq
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    -- the closed payload `a` is graded `[]`; `ret a : F 1 (unrollMu A)`, grade `1 • [] = []`.
+    -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩⟩
+  | oom => exact absurd hfocus HasCTy.oom_untypable
+  | wrong s => exact absurd hfocus HasCTy.wrong_untypable
+
 /-! ### E.3 progress (config level, ADR-0023) -/
 
 /-- Expose the capability typing buried in a `perform` focus (the new ADR-0054 shape: the head is a
