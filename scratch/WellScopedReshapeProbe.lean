@@ -67,4 +67,16 @@ theorem surfaceCaps_labelOccurs : (v : Val) → ∀ {γ : GradeVec Mult} {Γ : T
           -- the μ corner — needs `labelOccurs ℓ (unrollMu A) → labelOccurs ℓ A`. SEAMED (one lemma).
           sorry
 
+/-- **LEG 2 (force re-establishment) — the WALL for a PURE shallow invariant.** `force (vthunk c) → c`.
+The pre-step surface caps of `force (vthunk c)` are `surfaceCapsV (Val.vthunk c) = []` (shallow drops them,
+below), so a pure-shallow `WellScoped` carries NOTHING about `c`'s caps — yet post-step `surfaceCapsV c`
+must resolve in `K`. The pre is STRICTLY weaker than the post ⇒ pure-shallow `WellScoped` is NOT preserved
+by force, and `HasConfigTy` alone can't supply the resolution (ADR-0056: typing-is-by-LABEL, dispatch-is-
+by-ID). So the two legs are in TENSION: leg 1 (pop) wants SHALLOW (drop thunk caps to dodge carry-drop);
+leg 2 (force) wants DEEP (track them so force re-establishes). The reconciling invariant: track caps DEEP
+but require resolution only MODULO NON-PERFORMABILITY (a cap at a position whose row excludes its label is
+inert by B-occ ⇒ not required to resolve; this is exactly what dodges carry-drop at pop AND covers force).
+Its preservation IS the reachability/typing argument = the genuine multi-session `wsCfg_step` content. -/
+theorem surfaceCapsV_vthunk (c : Comp) : surfaceCapsV (Val.vthunk c) = [] := rfl
+
 end Bang.WellScopedReshapeProbe
