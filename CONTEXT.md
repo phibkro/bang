@@ -34,8 +34,15 @@
 > NOT the binary LR.** The diagonal is axiom-CLEAN except 2 B-occ-shaped sorries: `handlesOp_of_hasConfigTy`
 > (Model:147 — needs `concat_*_interface` infra) + `wsCfg_step` pop-escape (Model:170 — the `¬LabelOccurs`
 > NON-PERFORMABILITY lemma: caps INERT past the handler, NOT syntactic absence per bocc-impl's carry-drop).
-> Closing both → diagonal/NonEscape/`type_safety` **sorryAx-clean** = THE soundness payoff. inc5-endgame closing
-> them now (handlesOp first). **DEFERRED — the binary LR** (`crelK_fund`/`lr_sound` contextual equivalence, for
+> Closing both → diagonal/NonEscape/`type_safety` **sorryAx-clean** = THE soundness payoff. **`handlesOp_of_hasConfigTy` CLOSED axiom-clean (`6dab05c`, via
+> `HasStack.handlesOp_of_split`)** — `#print axioms diagonal` now traces sorryAx to ONLY `wsCfg_step`. **The
+> diagonal's LAST sorry = `wsCfg_step` (Model:185), the WellScoped RESHAPE crux (task #34):** current WellScoped
+> collects caps syntactically THROUGH thunks (`capsV (.vthunk c) = capsC c`) → NOT preserved under handleF-pop
+> (a dormant cap in a never-forced thunk is carried past the handler yet unresolvable = carry-drop). Fix =
+> reshape to SHALLOW/PERFORMABILITY (only PERFORMABLE caps must resolve; a dormant thunk cap is INERT via B-occ
+> non-performability + re-resolves dynamically when FORCED — the force-case re-establishment is the de-risk
+> crux). WellScoped is the PROOF INVARIANT (not frozen) → reshape freely if step-preserved + implies
+> FocusResolves. A multi-session research unit; closing it = `type_safety` sorryAx-clean. **DEFERRED — the binary LR** (`crelK_fund`/`lr_sound` contextual equivalence, for
 > the inc-6 compiler path): Units 1+2 decomp banked green (`285338a`); the `crelK_fund` resume reshape + the
 > obligation-2 CapsBelow/Canonical question is multi-session — first build-confirm whether `crelK_ret`'s guard is
 > over-strong (route 4) before any frozen change. cap-resolution is NOT the blocker (rides stuck-stuck vacuity;
