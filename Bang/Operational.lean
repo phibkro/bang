@@ -608,15 +608,92 @@ theorem splitAtId_fresh (g : Nat) (K : EvalCtx) (h : StackBelow g K) :
     | letF N => simp only [splitAtId]; rw [ih h]; rfl
     | appF v => simp only [splitAtId]; rw [ih h]; rfl
 
-/-- **DISPATCH-arm residue (ADR-0055).** `idDispatch` reinstalls `handleF n` (the matched id `n < g`,
-since it came from `K`) on a state/transaction RESUME; the resumed stack `Kᵢ ++ handleF n h' :: Kₒ` (a
-re-assembly of sub-stacks of `K`, with the same id `n`) keeps every id `< g`. Mechanical stack-surgery
-over `splitAtId`-append + `dispatchOn`'s reinstall — the ONE deferred lemma of the buildable milestone,
-discharged in the next commit. -/
+/-- `StackBelow` distributes over `++` (every frame independently dominated). The reconstruction
+direction (`mpr`) is what rebuilds the resumed stack `Kᵢ ++ handleF n h' :: Kₒ` after a resume. -/
+theorem StackBelow_append (g : Nat) : ∀ (K1 K2 : EvalCtx),
+    StackBelow g (K1 ++ K2) ↔ (StackBelow g K1 ∧ StackBelow g K2) := by
+  intro K1 K2
+  induction K1 with
+  | nil => simp only [List.nil_append, StackBelow, true_and]
+  | cons fr K1 ih =>
+    cases fr with
+    | handleF n hd => simp only [List.cons_append, StackBelow, ih]; tauto
+    | letF N => simp only [List.cons_append, StackBelow]; exact ih
+    | appF w => simp only [List.cons_append, StackBelow]; exact ih
+
+/-- `splitAtId` returns sub-stacks of `K`, so `StackBelow g K` passes to BOTH the captured prefix `Kᵢ`
+and the outer `Kₒ`, and the matched frame's identity `n` is `< g`. The freshness companion to
+`splitAtId_fresh`: it bounds what a SUCCESSFUL split yields. -/
+theorem stackBelow_splitAtId {g n : Nat} : ∀ {K Kᵢ Kₒ : EvalCtx} {h : Handler},
+    StackBelow g K → splitAtId K n = some (Kᵢ, h, Kₒ) →
+    StackBelow g Kᵢ ∧ n < g ∧ StackBelow g Kₒ := by
+  intro K
+  induction K with
+  | nil => intro Kᵢ Kₒ h hsb hsp; simp [splitAtId] at hsp
+  | cons fr K ih =>
+    intro Kᵢ Kₒ hh hsb hsp
+    cases fr with
+    | handleF m hd =>
+      simp only [splitAtId] at hsp
+      by_cases hmn : m = n
+      · rw [if_pos hmn] at hsp
+        simp only [Option.some.injEq, Prod.mk.injEq] at hsp
+        obtain ⟨rfl, _, rfl⟩ := hsp; subst hmn
+        obtain ⟨hlt, hrest⟩ := hsb
+        exact ⟨trivial, hlt, hrest⟩
+      · rw [if_neg hmn, Option.map_eq_some_iff] at hsp
+        obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+        simp only [Prod.mk.injEq] at heq
+        obtain ⟨rfl, rfl, rfl⟩ := heq
+        obtain ⟨hlt, hrest⟩ := hsb
+        obtain ⟨hsbi, hng, hsbo⟩ := ih hrest hsp'
+        exact ⟨⟨hlt, hsbi⟩, hng, hsbo⟩
+    | letF N =>
+      simp only [splitAtId, Option.map_eq_some_iff] at hsp
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      obtain ⟨hsbi, hng, hsbo⟩ := ih hsb hsp'
+      exact ⟨hsbi, hng, hsbo⟩
+    | appF w =>
+      simp only [splitAtId, Option.map_eq_some_iff] at hsp
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+      simp only [Prod.mk.injEq] at heq
+      obtain ⟨rfl, rfl, rfl⟩ := heq
+      obtain ⟨hsbi, hng, hsbo⟩ := ih hsb hsp'
+      exact ⟨hsbi, hng, hsbo⟩
+
+/-- **DISPATCH-arm `WellCounted` preservation (ADR-0055).** `idDispatch` reinstalls `handleF n` (the
+matched id `n < g`, by `stackBelow_splitAtId`) on a state/transaction RESUME; the resumed stack
+`Kᵢ ++ handleF n h' :: Kₒ` re-assembles sub-stacks of `K` with the SAME id `n`, so every id stays `< g`
+(`StackBelow_append`). The `throws` abort yields `Kₒ` directly. This is the freshness obligation the
+ADR predicted — what makes a resume never break `WellCounted`. -/
 theorem stackBelow_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label} {op : OpId}
     {v : Val} {c' : Comp} (hwc : StackBelow g K)
     (hd : idDispatch K n ℓ op v = some (K', c')) : StackBelow g K' := by
-  sorry
+  unfold idDispatch at hd
+  obtain ⟨⟨Kᵢ, h, Kₒ⟩, hsplit, hd2⟩ := Option.bind_eq_some_iff.mp hd
+  obtain ⟨hsbi, hng, hsbo⟩ := stackBelow_splitAtId hwc hsplit
+  dsimp only at hd2  -- iota-reduce the destructuring-lambda `match (Kᵢ,h,Kₒ) with …` to the bare `if`
+  by_cases hk : handlesOp h ℓ op = true
+  · rw [if_pos hk] at hd2
+    cases h with
+    | throws ℓ' =>
+      simp only [dispatchOn, Option.some.injEq, Prod.mk.injEq] at hd2
+      obtain ⟨rfl, _⟩ := hd2; exact hsbo
+    | state ℓ' s =>
+      simp only [dispatchOn] at hd2
+      split at hd2 <;>
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+          obtain ⟨rfl, _⟩ := hd2
+          exact (StackBelow_append g Kᵢ _).mpr ⟨hsbi, hng, hsbo⟩
+    | transaction ℓ' Θ =>
+      simp only [dispatchOn] at hd2
+      (repeat' split at hd2) <;>
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hd2
+          obtain ⟨rfl, _⟩ := hd2
+          exact (StackBelow_append g Kᵢ _).mpr ⟨hsbi, hng, hsbo⟩
+  · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- **`WellCounted` is preserved by `cstep`.** The mint arm pushes `handleF g` with counter `g+1` (old
 frames stay `< g < g+1` by mono; the new frame is `g < g+1`); every other arm keeps/shrinks the stack
