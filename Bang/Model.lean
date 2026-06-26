@@ -317,22 +317,41 @@ theorem focusResolves_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (hWS : WScfg C
   | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
   | unfold _ | oom | wrong _ => trivial
 
-/-- **OBLIGATION 2 — the MUTUAL preservation (the research crux).** `WScfg` is preserved by every
-`Source.step`. The arms (Source.step, Operational:455):
-  • PUSH/REDUCE non-cap (letC/app/force/case/split/unfold/letF/appF): cap multiset preserved-or-shrinks,
-    `K` grows only below ⇒ `WellScoped` mechanical; `HasConfigTy` by the focus-decomposition typing.
-  • MINT (`handle h M ↦ (g+1, handleF g h::K, subst (vcap g ℓ) M)`): the new `vcap g` resolves to the
-    just-pushed `handleF g` (label match by construction); old caps still resolve (`g` fresh by
-    `WellCounted`, `splitAtId` monotone under a non-matching cons). PROVABLE.
-  • DISPATCH (`perform (vcap n ℓ) ↦ idDispatch`): `WellScoped` supplies the resolution `idDispatch`
-    fires on; the resume/abort reduct re-types via the resolved handler's interface. PROVABLE (uses
-    `WellScoped`, which is why the two invariants must ride together — `HasConfigTy`-alone preservation
-    is unavailable here, it would need `NonEscape`/`WellScoped` for the dispatch re-typing).
-  • POP-ESCAPE (`handleF n::K, ret v ↦ K, ret v`): if `v`/`K` carries `vcap n`, it no longer resolves
-    after the pop. CLOSED by the ⊥-row discipline: a value returned past `handleF n` typed at `⊥` cannot
-    expose a performable `Cap ℓ` for the popped `ℓ` (performing needs an ℓ-handler, absent at ⊥). This is
-    the inc-4 `preservation_returnEscape` content, now phrased over `WellScoped`. THE research arm.
-NAMED SORRY: the mutual preservation; pop-escape is the ⊥-row return-escape crux. -/
+/-- **OBLIGATION 2 — the MUTUAL preservation (the research crux, multi-session).** `WScfg` is preserved
+by every `Source.step`. `WScfg` = `HasCTy ∧ HasStack ∧ WSC ∧ WSK`: the TYPING half (`HasCTy`/`HasStack`)
+rides EXISTING preservation (`preservation_proof`, Metatheory — NonEscape-free); the NEW content is the
+`WSC`/`WSK` cap-resolution half, now invertible/buildable since they are TERM+TYPE indexed.
+
+SUPPORTING LEMMAS the arms need (NOT yet proven — the next units):
+  · `ResolvesLabel`-push: `ResolvesLabel K n ℓ → ResolvesLabel (fr :: K) n ℓ` for `fr` a fresh frame
+    (`fr`'s id ≠ n, by `WellCounted`/global-fresh `g`). `splitAtId` walks past a non-matching head.
+  · `WSV`/`WSC`-restack: under the same push, `WSV K ρ v A → WSV (fr :: K) ρ v A` (every gate's
+    `ResolvesLabel` survives the push). Mutual on `WSV`/`WSC`.
+  · the B-occ lever (PROBE `scratch/WellScopedReshapeProbe.lean::surfaceCaps_labelOccurs`, promote it):
+    a surface `vcap _ ℓ` in `v : A` forces `LabelOccurs ℓ A` — feeds the POP arm + the μ-corner lemma
+    `labelOccurs (unrollMu A) → labelOccurs A` (the one seam left in the probe).
+
+THE ARMS (`Source.step`, Operational:455):
+  • PUSH (`letC M N ↦ letF N::K, M`, etc.): focus `WSC` splits (the letC `WSC` gives `WSC` of `M`); the
+    continuation `N` moves into a new `letF` frame ⇒ rebuild `WSK` with `WSK.letF`. The new frame is
+    fresh ⇒ `ResolvesLabel`-push re-homes the OLD caps. Mechanical given the supporting lemmas.
+  • REDUCE (`letF N::K, ret v ↦ K, subst v N`, β, etc.): the returned `v`'s `WSV` + the frame's stored
+    `WSC`(`N`) combine into the reduct's `WSC` THROUGH `subst` — needs a `WSC`-substitution lemma
+    (`WSV K ρ v A → WSC K ρ N … → WSC K ρ (subst v N) …`). The cap-substitution analogue of `subst_value`.
+  • MINT (`handle h M ↦ (g+1, handleF g h::K, subst (vcap g ℓ) M)`): the NEW `vcap g` resolves to the
+    just-pushed `handleF g` (`splitAtId (handleF g h::K) g = some([],h,K)`, label by construction) ⇒
+    `WSV`'s `vcap` gate holds; old caps survive `ResolvesLabel`-push. The handle-body `WSC` re-keys via
+    the cap-subst lemma at the new ambient `e` (the body row).
+  • DISPATCH (`perform (vcap n ℓ) ↦ idDispatch`): the resume/abort reduct's `WSC` is rebuilt from the
+    resolved handler's stored `WSC`/`WSV` (in `WSK`) + the returned value. Uses `WSC` (the cap resolves)
+    — why the invariants ride together.
+  • POP (`handleF g::K, ret v ↦ K, ret v`): THE crux. After the pop a cap `(g,ℓ_f)` in `v` no longer
+    resolves. CLOSED by deep-modulo-non-performability: `v : A` with `¬LabelOccurs ℓ_f A` (the ADR-0057
+    B-occ premise on the popped handler's answer type) ⇒ every `ℓ_f`-cap in `v` is under a thunk whose
+    row excludes `ℓ_f` (non-performable) ⇒ its `WSV` gate `labelEff ℓ_f ≤ ρ → …` is vacuous at the
+    reduced stack. The B-occ lever + a `WSV`-restack-modulo-popped-label lemma.
+NAMED SORRY: the mutual `WSC`/`WSK` preservation across all arms (the typing half is `preservation_proof`).
+The POP arm is the ⊥-row return-escape crux; the design (deep-modulo-non-performability) is de-risked. -/
 theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
     (hP : WScfg Co cfg) (hstep : Source.step cfg = some cfg') : WScfg Co cfg' := by
   sorry
