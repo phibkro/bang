@@ -25,6 +25,7 @@ its trigger arises.
 | **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
+| **Categorical reading** (objects/morphisms: graded `F⊣U` adjunction · graded monad = paradigm · handler-algebra · the two-hop functor) | `docs/notes/categorical-architecture.md` |
 | **Proof discipline** (PROOF_ORDER, sorry rules, axiom hygiene) | `docs/notes/spec-proof-discipline.md` |
 | **Why the wasmfx spec is engineer-ready** | `docs/notes/spec-handover.md` |
 | **Lean 4 tactics for this work** | `docs/notes/tactics-survey.md` |
