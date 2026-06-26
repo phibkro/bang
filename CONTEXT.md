@@ -14,6 +14,14 @@
 > unblocked, turn-key dispatch in `paths/PATH-inc5-lr-reindex.md`): A2 = Compat deep-block re-derivation
 > (staticSplit→splitAtId, using the keystone) · B2 = the diagonal's 2 obligations. Then integrate + ADR
 > cluster → whole-LR green = inc-5 DONE → inc-6.
+> **★ SOUNDNESS FINDING (2026-06-26, ADR-0056) — the inc-5 diagonal is machine-checked FALSE.** A cap can
+> escape its handler and get STUCK in a well-typed-at-⊥ program (`progB`: the ⊥-row gate is label-based,
+> escape is identity-based; ADR-0054's "escape ruled out by the gate" REFUTED — the WC keystone-2c escape,
+> half of which global-fresh did NOT fix). **The diagonal + A2's value-cap arms are HELD.** NEXT = explore
+> the non-escape discipline (operator ruling; ADR-0056's 3 options: surface-enforced / kernel coeffect /
+> other) → the fix (likely shapes inc-7 or the type system) → close the diagonal. Non-escape-INDEPENDENT
+> inc-5 (LR re-key, run_rename/run_plug integration, the splitAtId krelS_staticSplit_decomp re-derivation)
+> PROCEEDS. Witness oracle for the fix: progB (DiagonalFalsifyProbe + IdentityCollisionProbe + CapEscapeWitness).
 > SoT = ADR-0054/0055 (the cap rep, done) + ADR-0052 (CalcVM route-B, inc 6). inc 1-4 + the global-fresh
 > rework are LANDED; the STD block (preservation/progress/type_safety) is axiom-clean over the final kernel.
 >
