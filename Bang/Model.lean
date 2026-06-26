@@ -936,6 +936,64 @@ theorem wsc_restack {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.hand
   | handleTransaction hM => exact .handleTransaction (wsc_restack fr hfr hM)
 end
 
+/-! ### §3′.5 — TYPELESS restack (the PUSH/MINT stack mechanics; mirrors `wsv_restack` onto `LWSV`).
+
+`LWSV`/`LWSC`/`LWSK` re-home under a pushed frame. A restack changes only the resolution context `K`,
+never the flag `b` nor the per-position gate `b && decide (q ≠ 0)`, so each `vcap_live` gate's
+`ResolvesLabel` survives (`resolvesLabel_cons`) and every `vcap_dormant` is inert. Two variants:
+  · NON-`handleF` push (PUSH/REDUCE `letF`/`appF`): the side-condition is the blanket `fr ≠ handleF`.
+  · `handleF g` push (MINT): the side-condition `g ≠ n` rides FRESHNESS — a LIVE cap resolves in `K`,
+    so its id `n < g` (`stackBelow_splitAtId`), given `StackBelow g K` (the `WellCounted` witness). -/
+mutual
+/-- `LWSV` re-homes under a pushed non-`handleF` frame. -/
+theorem lwsv_restack {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h)
+    {b : Bool} {v : Val} (h : LWSV K b v) : LWSV (fr :: K) b v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar => exact .vvar
+  | vcap_live hg =>
+      exact .vcap_live (resolvesLabel_cons fr (fun m hd he => absurd he (hfr m hd)) hg)
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk hM => exact .vthunk (lwsc_restack fr hfr hM)
+  | inl hv => exact .inl (lwsv_restack fr hfr hv)
+  | inr hv => exact .inr (lwsv_restack fr hfr hv)
+  | pair h1 h2 => exact .pair (lwsv_restack fr hfr h1) (lwsv_restack fr hfr h2)
+  | fold hv => exact .fold (lwsv_restack fr hfr hv)
+/-- `LWSC` re-homes under a pushed non-`handleF` frame. -/
+theorem lwsc_restack {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h)
+    {b : Bool} {c : Comp} (h : LWSC K b c) : LWSC (fr :: K) b c := by
+  cases h with
+  | @ret b' v' q hv => exact .ret (q := q) (lwsv_restack fr hfr hv)
+  | letC h1 h2 => exact .letC (lwsc_restack fr hfr h1) (lwsc_restack fr hfr h2)
+  | force hv => exact .force (lwsv_restack fr hfr hv)
+  | lam hM => exact .lam (lwsc_restack fr hfr hM)
+  | @app b' M' v' q h1 h2 => exact .app (q := q) (lwsc_restack fr hfr h1) (lwsv_restack fr hfr h2)
+  | case h1 h2 h3 => exact .case (lwsv_restack fr hfr h1) (lwsc_restack fr hfr h2) (lwsc_restack fr hfr h3)
+  | split h1 h2 => exact .split (lwsv_restack fr hfr h1) (lwsc_restack fr hfr h2)
+  | unfold hv => exact .unfold (lwsv_restack fr hfr hv)
+  | perform h1 h2 => exact .perform (lwsv_restack fr hfr h1) (lwsv_restack fr hfr h2)
+  | handleThrows hM => exact .handleThrows (lwsc_restack fr hfr hM)
+  | handleState h1 h2 => exact .handleState (lwsv_restack fr hfr h1) (lwsc_restack fr hfr h2)
+  | handleTransaction hM => exact .handleTransaction (lwsc_restack fr hfr hM)
+end
+
+/-- `LWSK` re-homes under a pushed non-`handleF` frame (the PUSH/REDUCE stack-extension mechanic).
+Recurses on `Sg`; each frame's stored cap re-homes via `lwsv_restack`/`lwsc_restack`. -/
+theorem lwsk_restack {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h) :
+    ∀ {Sg : EvalCtx} {b : Bool}, LWSK K Sg b → LWSK (fr :: K) Sg b
+  | [], _, h => by cases h; exact .nil
+  | (Frame.letF _ :: _), _, h => by
+      cases h with | letF hN hK => exact .letF (lwsc_restack fr hfr hN) (lwsk_restack fr hfr hK)
+  | (Frame.appF _ :: _), _, h => by
+      cases h with
+      | @appF _ _ _ q hv hK => exact .appF (q := q) (lwsv_restack fr hfr hv) (lwsk_restack fr hfr hK)
+  | (Frame.handleF _ _ :: _), _, h => by
+      cases h with
+      | handleF hK => exact .handleF (lwsk_restack fr hfr hK)
+      | stateF hs hK => exact .stateF (lwsv_restack fr hfr hs) (lwsk_restack fr hfr hK)
+      | transactionF hK => exact .transactionF (lwsk_restack fr hfr hK)
+
 /-- **OBLIGATION 2 — the MUTUAL preservation (the research crux, multi-session).** `WScfg` is preserved
 by every `Source.step`. `WScfg` = `HasCTy ∧ HasStack ∧ WSC ∧ WSK`: the TYPING half (`HasCTy`/`HasStack`)
 rides EXISTING preservation (`preservation_proof`, Metatheory — NonEscape-free); the NEW content is the
