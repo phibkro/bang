@@ -782,7 +782,7 @@ the stack against the full `K`). Bundling the derivations existentially keeps `W
 (the shape `nonEscape_of_fwd_invariant` consumes); the output effect is `⊥` (the diagonal's target). -/
 def WScfg (Co : CTy Eff Mult) (cfg : Config) : Prop :=
   ∃ (e : Eff) (C : CTy Eff Mult), HasCTy [] [] cfg.2.2 e C ∧ HasStack cfg.2.1 e C ⊥ Co
-    ∧ WSC cfg.2.1 e cfg.2.2 e C ∧ WSK cfg.2.1 cfg.2.1 e C ⊥ Co
+    ∧ LWSC cfg.2.1 true cfg.2.2 ∧ LWSK cfg.2.1 cfg.2.1 true
 
 /-- **SEED (GREEN).** A `VcapFree` closed program satisfies the typed-relative invariant at the initial
 config — no caps to resolve, the stack is empty. The typing derivations come from `hty`. -/
@@ -791,7 +791,7 @@ theorem wellScoped_initial (c : Comp) (hvf : VcapFree c) {Co : CTy Eff Mult}
   obtain ⟨e, C, hfocus, hstack⟩ := hty
   -- the stack is `[]`, so `hstack : HasStack [] e C ⊥ Co` must be `nil` (`e = ⊥`, `C = Co`).
   cases hstack
-  exact ⟨⊥, Co, hfocus, .nil, wsc_capFree [] ⊥ hfocus hvf, .nil⟩
+  exact ⟨⊥, Co, hfocus, .nil, lwsc_capFree [] true hfocus hvf, .nil⟩
 
 /-- **OBLIGATION 1 — the op-in-interface typing inversion.** A `WellScoped`-resolved `perform (vcap n ℓ)
 op v` focus that types (`HasConfigTy … ⊥ …`) lands on a handler that HANDLES `(ℓ, op)`: `HasCTy.perform`
@@ -843,13 +843,13 @@ theorem focusResolves_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (hWS : WScfg C
     FocusResolves cfg := by
   obtain ⟨e, C, dc, dk, hWSC, _⟩ := hWS
   obtain ⟨g, K, c⟩ := cfg
-  -- now `dc : HasCTy [] [] c e C`, `hWSC : WSC K e dc`; split STRUCTURALLY on the focus `c` (refines
-  -- `dc`/`hWSC` without the closed-grade elimination wall).
+  -- now `dc : HasCTy [] [] c e C`, `hWSC : LWSC K true c`; split STRUCTURALLY on the focus `c`. The
+  -- cap-resolution comes from `LWSC`'s `vcap_live` gate (the focus is LIVE, `b = true`).
   cases c with
   | perform cv op v =>
       cases cv with
       | vcap n ℓ =>
-          obtain ⟨Kᵢ, h, Kₒ, hsplit, hlbl⟩ := resolvesLabel_of_wsc_perform dc hWSC
+          obtain ⟨Kᵢ, h, Kₒ, hsplit, hlbl⟩ := lwsc_focus_resolves hWSC
           exact ⟨Kᵢ, h, Kₒ, hsplit,
             handlesOp_of_hasConfigTy (g, K, _) ⟨e, C, dc, dk⟩ K n ℓ op v rfl Kᵢ h Kₒ hsplit hlbl⟩
       | vunit | vint | vvar _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ => trivial
