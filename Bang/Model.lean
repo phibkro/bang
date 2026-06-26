@@ -719,6 +719,132 @@ theorem lwscp_pop_restack {g : Nat} {hd : Handler} {K : EvalCtx} {b : Bool} {M :
   | handleTransaction h => exact .handleTransaction (lwscp_pop_restack h)
 end
 
+/-! ### §2′.8 — the COHERENT graded liveness `LWSVg`/`LWSCg`/`LWSKg` (ADR-0060 / Task B, the Coh layer).
+
+The typeless `LWSV`/`LWSC` leave the storage `q`'s (the `ret`/`app`/`appF` budget/mult) EXISTENTIAL, so a
+`γ[k]=0` typing fact can't reach the liveness flags. `LWSVg`/`LWSCg` add a GRADE-CONTEXT index `γ` and
+mirror `HasCTy`'s grade structure EXACTLY (the equation hypotheses `γ = q • γ'` at `ret`, `γ = γ₁ + q•γ₂`
+at `app`, the binder extensions), pinning each storage `q` to the typing's scalar. The only NEW content
+over `HasCTy` is the liveness gates (`b && decide (q ≠ 0)` on storage positions; `vvar`'s grade-liveness
+link). Projects to `LWSV`/`LWSC` by FORGETTING `γ` (`lwsvg_to_lwsv`), so the green cap-bridge + positive
+direction are reused UNCHANGED. The discharge `lwscg_to_lwsvk` reads `γ` to route `γ[k]=0 ⇒ dormant`. -/
+mutual
+inductive LWSVg (K : EvalCtx) : GradeVec Mult → Bool → Val → Prop where
+  | vunit {γ : GradeVec Mult} {b} : LWSVg K γ b Val.vunit
+  | vint {γ : GradeVec Mult} {b n} : LWSVg K γ b (Val.vint n)
+  -- THE grade-liveness LINK: `vvar i` may be LIVE (`b = true`) only where its grade is non-zero.
+  | vvar {γ : GradeVec Mult} {b i} (h : b = true → (γ[i]?.getD 0) ≠ 0) : LWSVg K γ b (Val.vvar i)
+  | vcap_live {γ : GradeVec Mult} {n ℓ} (h : ResolvesLabel K n ℓ) : LWSVg K γ true (Val.vcap n ℓ)
+  | vcap_dormant {γ : GradeVec Mult} {n ℓ} : LWSVg K γ false (Val.vcap n ℓ)
+  | vthunk {γ : GradeVec Mult} {b c} (h : LWSCg K γ b c) : LWSVg K γ b (Val.vthunk c)
+  | inl {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSVg K γ b (Val.inl v)
+  | inr {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSVg K γ b (Val.inr v)
+  | pair {γ γ_v γ_w : GradeVec Mult} {b a c} (hγ : γ = γ_v + γ_w)
+      (h1 : LWSVg K γ_v b a) (h2 : LWSVg K γ_w b c) : LWSVg K γ b (Val.pair a c)
+  | fold {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSVg K γ b (Val.fold v)
+inductive LWSCg (K : EvalCtx) : GradeVec Mult → Bool → Comp → Prop where
+  | ret {γ γ' : GradeVec Mult} {b v} {q : Mult} (hγ : γ = q • γ')
+      (h : LWSVg K γ' (b && decide (q ≠ 0)) v) : LWSCg K γ b (Comp.ret v)
+  | letC {γ γ₁ γ₂ : GradeVec Mult} {b M N} {q1 q2 : Mult}
+      (hγ : γ = (q_or_1 q2) • γ₁ + γ₂)
+      (h1 : LWSCg K γ₁ b M) (h2 : LWSCg K ((q1 * q_or_1 q2) :: γ₂) b N) : LWSCg K γ b (Comp.letC M N)
+  | force {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSCg K γ b (Comp.force v)
+  | lam {γ : GradeVec Mult} {b M} {q : Mult} (h : LWSCg K (q :: γ) b M) : LWSCg K γ b (Comp.lam M)
+  | app {γ γ₁ γ₂ : GradeVec Mult} {b M v} {q : Mult} (hγ : γ = γ₁ + q • γ₂)
+      (h1 : LWSCg K γ₁ b M) (h2 : LWSVg K γ₂ (b && decide (q ≠ 0)) v) : LWSCg K γ b (Comp.app M v)
+  | case {γ γ_v γ_N : GradeVec Mult} {b v N₁ N₂} {q : Mult} (hγ : γ = q • γ_v + γ_N)
+      (h1 : LWSVg K γ_v b v) (h2 : LWSCg K (q :: γ_N) b N₁) (h3 : LWSCg K (q :: γ_N) b N₂) :
+      LWSCg K γ b (Comp.case v N₁ N₂)
+  | split {γ γ_v γ_N : GradeVec Mult} {b v N} {q : Mult} (hγ : γ = q • γ_v + γ_N)
+      (h1 : LWSVg K γ_v b v) (h2 : LWSCg K (q :: q :: γ_N) b N) : LWSCg K γ b (Comp.split v N)
+  | unfold {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSCg K γ b (Comp.unfold v)
+  | perform {γ γ_v γ_c : GradeVec Mult} {b cv op v} {q : Mult} (hγ : γ = q • γ_v + γ_c)
+      (h1 : LWSVg K γ_c b cv) (h2 : LWSVg K γ_v false v) : LWSCg K γ b (Comp.perform cv op v)
+  | handleThrows {γ : GradeVec Mult} {b ℓ M} {qc : Mult} (h : LWSCg K (qc :: γ) b M) :
+      LWSCg K γ b (Comp.handle (Handler.throws ℓ) M)
+  | handleState {γ : GradeVec Mult} {b ℓ s M} {qc : Mult} (hs : LWSVg K [] b s)
+      (h : LWSCg K (qc :: γ) b M) : LWSCg K γ b (Comp.handle (Handler.state ℓ s) M)
+  | handleTransaction {γ : GradeVec Mult} {b ℓ Θ M} {qc : Mult} (h : LWSCg K (qc :: γ) b M) :
+      LWSCg K γ b (Comp.handle (Handler.transaction ℓ Θ) M)
+end
+
+/-- The COHERENT stack: each frame stores its continuation's `LWSCg`/`LWSVg` at the frame's FIXED grade
+(`letF`'s `N` at `qk :: []`, `appF`'s closed `v` at `[]`). The ambient `γ : GradeVec Mult` index is
+threaded unchanged (the frames carry their own internal grades) — it binds the `Mult` instances for the
+constructor gates and matches the `WScfg` threading `LWSKg cfg.2.1 cfg.2.1 [] true`. -/
+inductive LWSKg (K : EvalCtx) : EvalCtx → GradeVec Mult → Bool → Prop where
+  | nil {γ b} : LWSKg K [] γ b
+  | letF {Sg N γ b} {qk : Mult} (hN : LWSCg K (qk :: []) b N) (hK : LWSKg K Sg γ b) :
+      LWSKg K (Frame.letF N :: Sg) γ b
+  -- `q : ℕ` (like the typeless `LWSK.appF`): the stored `v` is CLOSED (cap-free ⇒ gate-vacuous), so the
+  -- budget carries no grade meaning here; `ℕ` keeps `DecidableEq` global (`Mult`'s isn't auto-bound).
+  | appF {Sg v γ b} {q : ℕ} (hv : LWSVg K ([] : GradeVec Mult) (b && decide (q ≠ 0)) v)
+      (hK : LWSKg K Sg γ b) : LWSKg K (Frame.appF v :: Sg) γ b
+  | handleF {Sg n ℓ γ b} (hK : LWSKg K Sg γ b) :
+      LWSKg K (Frame.handleF n (Handler.throws ℓ) :: Sg) γ b
+  | stateF {Sg n ℓ s γ b} (hs : LWSVg K ([] : GradeVec Mult) b s) (hK : LWSKg K Sg γ b) :
+      LWSKg K (Frame.handleF n (Handler.state ℓ s) :: Sg) γ b
+  | transactionF {Sg n ℓ Θ γ b} (hK : LWSKg K Sg γ b) :
+      LWSKg K (Frame.handleF n (Handler.transaction ℓ Θ) :: Sg) γ b
+
+/-! ### §2′.8a — the PROJECTION `LWSVg`/`LWSCg`/`LWSKg → LWSV`/`LWSC`/`LWSK` (forget `γ`).
+
+Drops the grade index; the liveness gates carry over via `gnat` (the typeless `LWSV`/`LWSK` gates carry
+a `ℕ`-typed budget `q` — only `decide (q ≠ 0)` matters — while `LWSCg`'s `q` is the `Mult` grade; `gnat`
+realizes the `Mult`-non-zeroness as the `ℕ` witness). This is how the GREEN typeless cap-bridge +
+positive direction are reused UNCHANGED. -/
+
+/-- The `ℕ` budget realizing a `Mult`-grade's non-zeroness (the typeless gates' `q` is `ℕ`). -/
+private def gnat (q : Mult) : Nat := if q = 0 then 0 else 1
+private theorem decide_gnat (q : Mult) : decide (gnat q ≠ 0) = decide (q ≠ 0) := by
+  unfold gnat; by_cases hq : q = 0 <;> simp [hq]
+
+mutual
+theorem lwsvg_to_lwsv {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {v : Val}
+    (h : LWSVg K γ b v) : LWSV K b v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar _ => exact .vvar
+  | vcap_live hr => exact .vcap_live hr
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk h => exact .vthunk (lwscg_to_lwsc h)
+  | inl h => exact .inl (lwsvg_to_lwsv h)
+  | inr h => exact .inr (lwsvg_to_lwsv h)
+  | pair _ h1 h2 => exact .pair (lwsvg_to_lwsv h1) (lwsvg_to_lwsv h2)
+  | fold h => exact .fold (lwsvg_to_lwsv h)
+theorem lwscg_to_lwsc {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp}
+    (h : LWSCg K γ b c) : LWSC K b c := by
+  cases h with
+  | @ret _ _ _ _ q _ h => exact .ret (q := gnat q) (by simpa only [decide_gnat] using lwsvg_to_lwsv h)
+  | letC _ h1 h2 => exact .letC (lwscg_to_lwsc h1) (lwscg_to_lwsc h2)
+  | force h => exact .force (lwsvg_to_lwsv h)
+  | lam h => exact .lam (lwscg_to_lwsc h)
+  | @app _ _ _ _ _ _ q _ h1 h2 =>
+      exact .app (q := gnat q) (lwscg_to_lwsc h1) (by simpa only [decide_gnat] using lwsvg_to_lwsv h2)
+  | case _ h1 h2 h3 => exact .case (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2) (lwscg_to_lwsc h3)
+  | split _ h1 h2 => exact .split (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2)
+  | unfold h => exact .unfold (lwsvg_to_lwsv h)
+  | perform _ h1 h2 => exact .perform (lwsvg_to_lwsv h1) (lwsvg_to_lwsv h2)
+  | handleThrows h => exact .handleThrows (lwscg_to_lwsc h)
+  | handleState hs h => exact .handleState (lwsvg_to_lwsv hs) (lwscg_to_lwsc h)
+  | handleTransaction h => exact .handleTransaction (lwscg_to_lwsc h)
+end
+
+theorem lwskg_to_lwsk {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} :
+    ∀ {Sg : EvalCtx}, LWSKg K Sg γ b → LWSK K Sg b
+  | [], h => by cases h; exact .nil
+  | (Frame.letF _ :: _), h => by
+      cases h with | letF hN hK => exact .letF (lwscg_to_lwsc hN) (lwskg_to_lwsk hK)
+  | (Frame.appF _ :: _), h => by
+      cases h with
+      | @appF _ _ _ _ q hv hK => exact .appF (q := q) (lwsvg_to_lwsv hv) (lwskg_to_lwsk hK)
+  | (Frame.handleF _ _ :: _), h => by
+      cases h with
+      | handleF hK => exact .handleF (lwskg_to_lwsk hK)
+      | stateF hs hK => exact .stateF (lwsvg_to_lwsv hs) (lwskg_to_lwsk hK)
+      | transactionF hK => exact .transactionF (lwskg_to_lwsk hK)
+
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
 (`vcap`s arise only by minting). The diagonal's side-condition (the bare form is FALSE: a hand-written
