@@ -92,3 +92,24 @@ NB `krelS_staticSplit_decomp`/`crelK_fund`/`krelS_refl` live ONLY in Compat (no 
   the keystone; compat's STOP-and-SHOW characterization is the map] alongside (B2) the diagonal's 2 obligations.
 - **arch-check gap (fold into inc-5 merge):** `tools/arch-check.sh` doesn't classify the new `Bang.Model`
   module (fitness fails → branch ICs use --no-verify). Classify Model as the backend/LR edge at merge.
+
+## ★ B1 DONE (2026-06-26) — the run-renaming keystone, axiom-clean
+kernel-engineer `rename`, `1ff9a60` on `kernel-rename` (worktree `/srv/share/projects/lang-bang-rename`),
+its `RunRenameProbe` scratch probe. The DYNAMIC half (Config.run id-renaming invariance) PROVEN — unblocks A2 + B2 + the 2 LR sorries. CONTRACT to integrate (all defs in-probe):
+- `renameCfg σ (g,K,c) = (σ g, renameK σ K, renameC σ c)`; `renameR σ` on Result.
+- `run_rename (σ inj) (n cfg) (shift hyp: ∀ k≥cfg.1, σ(k+1)=σk+1) : Config.run n (renameCfg σ cfg) = renameR σ (Config.run n cfg)`.
+- `run_rename_converges (…)` : renamed-cfg co-converges with cfg — THE form the 3 sites read off
+  (crelK_ret handleF · crelK_fund up/perform · converges_plug_iff→krelS_refl bridge).
+- σ HYPOTHESIS (cleaner than feared): ONLY injectivity + shift-on-fresh-region. WellCounted NOT needed for the
+  lemma — it's the CONSUMER's job to supply such a σ (canonical↔original perm + tail shift IS one).
+- Supporting: `splitAtId_rename`/`dispatchOn_rename`/`idDispatch_rename`/`renameC_subst`/`renameC_shiftFrom`/
+  `renameC_substFrom`/`renameH_label`/`handlesOp_renameH`/`step_counter_le`.
+
+## ★ REMAINING — the inc-5 home stretch (ALL unblocked by B1)
+- **A2 — Compat deep-block re-derivation** [PROOF-ENGINEER on inc5-lr-reindex]: re-derive `krelS_staticSplit_decomp`
+  around `splitAtId` (was positional `staticSplit`) + close `crelK_fund`/`krelS_refl` + the 2 LR sorries
+  (crelK_ret handleF arm) USING `run_rename_converges` + the supporting lemmas. compat's STOP-and-SHOW is the map.
+- **B2 — the diagonal's 2 obligations** [PROOF-ENGINEER, Bang.Model]: `wsCfg_step` (mutual WellScoped∧HasConfigTy
+  preservation, the ⊥-row return-escape) + `handlesOp_of_hasConfigTy` (typing inversion).
+- THEN: integrate run_rename + run_plug from their scratch probes into LR/Compat · classify Bang.Model in
+  arch-check · the ADR cluster (renaming-invariance + machine-shaped KrelS + VcapFree) · whole-LR green = inc-5 DONE.
