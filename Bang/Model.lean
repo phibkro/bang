@@ -496,6 +496,226 @@ theorem lwsc_dormant_stack_indep {K K' : EvalCtx} {M : Comp} (h : LWSC K false M
   | handleTransaction h => exact .handleTransaction (lwsc_dormant_stack_indep h)
 end
 
+/-! ### §2′.5 — the SEED: a cap-free program is `LWSV`/`LWSC` at any flag (no `vcap_live` obligation).
+Mirrors `wsv_capFree`; storage formers use `q := 0` so the sub-gate collapses to dormant. -/
+mutual
+theorem lwsv_capFree {γ Γ v A} (K : EvalCtx) (b : Bool)
+    (d : HasVTy (Eff := Eff) (Mult := Mult) γ Γ v A) (h : capsV v = []) : LWSV K b v := by
+  cases d with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar _ => exact .vvar
+  | vcap => simp only [capsV] at h; exact absurd h (List.cons_ne_nil _ _)
+  | vthunk hM => exact .vthunk (lwsc_capFree K b hM (by simpa only [capsV] using h))
+  | inl hv => exact .inl (lwsv_capFree K b hv (by simpa only [capsV] using h))
+  | inr hv => exact .inr (lwsv_capFree K b hv (by simpa only [capsV] using h))
+  | pair hv hw _ =>
+      simp only [capsV, List.append_eq_nil_iff] at h
+      exact .pair (lwsv_capFree K b hv h.1) (lwsv_capFree K b hw h.2)
+  | fold hv => exact .fold (lwsv_capFree K b hv (by simpa only [capsV] using h))
+theorem lwsc_capFree {γ Γ c φ C} (K : EvalCtx) (b : Bool)
+    (d : HasCTy (Eff := Eff) (Mult := Mult) γ Γ c φ C) (h : capsC c = []) : LWSC K b c := by
+  cases d with
+  | ret hv _ => exact .ret (q := 0) (lwsv_capFree K _ hv (by simpa only [capsC] using h))
+  | letC hM hN _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .letC (lwsc_capFree K b hM h.1) (lwsc_capFree K b hN h.2)
+  | force hv => exact .force (lwsv_capFree K b hv (by simpa only [capsC] using h))
+  | lam hM => exact .lam (lwsc_capFree K b hM (by simpa only [capsC] using h))
+  | app hM hv _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .app (q := 0) (lwsc_capFree K b hM h.1) (lwsv_capFree K _ hv h.2)
+  | case hv hN₁ hN₂ _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .case (lwsv_capFree K b hv h.1.1) (lwsc_capFree K b hN₁ h.1.2) (lwsc_capFree K b hN₂ h.2)
+  | split hv hN _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .split (lwsv_capFree K b hv h.1) (lwsc_capFree K b hN h.2)
+  | unfold hv => exact .unfold (lwsv_capFree K b hv (by simpa only [capsC] using h))
+  | perform hc _ _ _ hv =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .perform (lwsv_capFree K b hc h.1) (lwsv_capFree K _ hv h.2)
+  | handleThrows _ _ hM _ _ =>
+      simp only [capsC, capsH, List.nil_append] at h
+      exact .handleThrows (lwsc_capFree K b hM h)
+  | handleState _ _ _ _ _ hs hM _ _ =>
+      simp only [capsC, capsH, List.append_eq_nil_iff] at h
+      exact .handleState (lwsv_capFree K b hs h.1) (lwsc_capFree K b hM h.2)
+  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ =>
+      simp only [capsC, capsH, List.append_eq_nil_iff] at h
+      exact .handleTransaction (lwsc_capFree K b hM h.2)
+end
+
+/-- **FOCUSRESOLVES (typeless).** A LIVE `perform (vcap n ℓ)` focus's cap RESOLVES — from the term's
+`ℓ` via `LWSV.vcap_live`, no type index. (Op-in-interface stays in the threaded typing.) -/
+theorem lwsc_focus_resolves {K : EvalCtx} {n : Nat} {ℓ : Label} {op : OpId} {v : Val}
+    (h : LWSC K true (Comp.perform (Val.vcap n ℓ) op v)) : ResolvesLabel K n ℓ := by
+  cases h with
+  | perform h1 _ => cases h1 with | vcap_live hr => exact hr
+
+/-- The ratified zero-sum-free property (ADR-0060): a sum is zero only if both summands are (`ℕ`,
+`QTT` hold it; rings fail). The grade-rig commitment — discharges the dormant-arm grade-0 routing. -/
+def ZeroSumFree (Mult : Type) [Add Mult] [Zero Mult] : Prop := ∀ a b : Mult, a + b = 0 → a = 0 ∧ b = 0
+
+/-! ### §2′.6 — the MIXED β arm (b=true∧q=0), GIVEN coherence. `LWSVk`/`LWSCk` = `LWSV`/`LWSC` + "the
+substituted var `k` occurs only at DORMANT flags" (`vvar_k` forces false; `k` shifts under each binder
+— case/handle `k+1`, split `k+2`). Port discharges `γ[k]=0 ⇒ LWSVk` via the rig. -/
+mutual
+inductive LWSVk (K : EvalCtx) : Nat → Bool → Val → Prop where
+  | vunit {k b} : LWSVk K k b Val.vunit
+  | vint {k b n} : LWSVk K k b (Val.vint n)
+  | vvar_other {k b i} (h : i ≠ k) : LWSVk K k b (Val.vvar i)
+  | vvar_k {k} : LWSVk K k false (Val.vvar k)
+  | vcap_live {k b n ℓ} (h : ResolvesLabel K n ℓ) (hb : b = true) : LWSVk K k b (Val.vcap n ℓ)
+  | vcap_dormant {k b n ℓ} (hb : b = false) : LWSVk K k b (Val.vcap n ℓ)
+  | vthunk {k b c} (h : LWSCk K k b c) : LWSVk K k b (Val.vthunk c)
+  | inl {k b v} (h : LWSVk K k b v) : LWSVk K k b (Val.inl v)
+  | inr {k b v} (h : LWSVk K k b v) : LWSVk K k b (Val.inr v)
+  | pair {k b a c} (h1 : LWSVk K k b a) (h2 : LWSVk K k b c) : LWSVk K k b (Val.pair a c)
+  | fold {k b v} (h : LWSVk K k b v) : LWSVk K k b (Val.fold v)
+inductive LWSCk (K : EvalCtx) : Nat → Bool → Comp → Prop where
+  | ret {k b v q} (h : LWSVk K k (b && decide (q ≠ 0)) v) : LWSCk K k b (Comp.ret v)
+  | letC {k b M N} (h1 : LWSCk K k b M) (h2 : LWSCk K (k + 1) b N) : LWSCk K k b (Comp.letC M N)
+  | force {k b v} (h : LWSVk K k b v) : LWSCk K k b (Comp.force v)
+  | lam {k b M} (h : LWSCk K (k + 1) b M) : LWSCk K k b (Comp.lam M)
+  | app {k b M v q} (h1 : LWSCk K k b M) (h2 : LWSVk K k (b && decide (q ≠ 0)) v) :
+      LWSCk K k b (Comp.app M v)
+  | case {k b v N₁ N₂} (h1 : LWSVk K k b v) (h2 : LWSCk K (k + 1) b N₁) (h3 : LWSCk K (k + 1) b N₂) :
+      LWSCk K k b (Comp.case v N₁ N₂)
+  | split {k b v N} (h1 : LWSVk K k b v) (h2 : LWSCk K (k + 2) b N) : LWSCk K k b (Comp.split v N)
+  | unfold {k b v} (h : LWSVk K k b v) : LWSCk K k b (Comp.unfold v)
+  | perform {k b cv op v} (h1 : LWSVk K k b cv) (h2 : LWSVk K k false v) :
+      LWSCk K k b (Comp.perform cv op v)
+  | handleThrows {k b ℓ M} (h : LWSCk K (k + 1) b M) : LWSCk K k b (Comp.handle (Handler.throws ℓ) M)
+  | handleState {k b ℓ s M} (h1 : LWSVk K k b s) (h2 : LWSCk K (k + 1) b M) :
+      LWSCk K k b (Comp.handle (Handler.state ℓ s) M)
+  | handleTransaction {k b ℓ Θ M} (h : LWSCk K (k + 1) b M) :
+      LWSCk K k b (Comp.handle (Handler.transaction ℓ Θ) M)
+end
+
+mutual
+theorem lwsvk_subst {K : EvalCtx} {w : Val} (hwd : LWSV K false w)
+    (hcl : ∀ j, Val.shiftFrom j w = w) {u : Val} {bu : Bool} (k : Nat)
+    (hu : LWSVk K k bu u) : LWSV K bu (Val.substFrom k w u) := by
+  cases hu with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar_other hik => simp only [Val.substFrom, if_neg hik]; split <;> exact .vvar
+  | vvar_k => simpa only [Val.substFrom, if_pos rfl] using hwd
+  | vcap_live h hb => subst hb; simpa only [Val.substFrom] using LWSV.vcap_live h
+  | vcap_dormant hb => subst hb; simpa only [Val.substFrom] using LWSV.vcap_dormant
+  | vthunk h => exact .vthunk (lwsck_subst hwd hcl k h)
+  | inl h => exact .inl (lwsvk_subst hwd hcl k h)
+  | inr h => exact .inr (lwsvk_subst hwd hcl k h)
+  | pair h1 h2 => exact .pair (lwsvk_subst hwd hcl k h1) (lwsvk_subst hwd hcl k h2)
+  | fold h => exact .fold (lwsvk_subst hwd hcl k h)
+theorem lwsck_subst {K : EvalCtx} {w : Val} (hwd : LWSV K false w)
+    (hcl : ∀ j, Val.shiftFrom j w = w) {M : Comp} {bM : Bool} (k : Nat)
+    (hM : LWSCk K k bM M) : LWSC K bM (Comp.substFrom k w M) := by
+  have hsh : Val.shift w = w := hcl 0
+  cases hM with
+  | ret h => exact .ret (lwsvk_subst hwd hcl k h)
+  | letC h1 h2 =>
+    refine .letC (lwsck_subst hwd hcl k h1) ?_
+    simp only [hsh]; exact lwsck_subst hwd hcl (k + 1) h2
+  | force h => exact .force (lwsvk_subst hwd hcl k h)
+  | lam h => simp only [Comp.substFrom, hsh]; exact .lam (lwsck_subst hwd hcl (k + 1) h)
+  | app h1 h2 => exact .app (lwsck_subst hwd hcl k h1) (lwsvk_subst hwd hcl k h2)
+  | case h1 h2 h3 =>
+    simp only [Comp.substFrom, hsh]
+    exact .case (lwsvk_subst hwd hcl k h1) (lwsck_subst hwd hcl (k + 1) h2) (lwsck_subst hwd hcl (k + 1) h3)
+  | split h1 h2 =>
+    simp only [Comp.substFrom, hsh]
+    exact .split (lwsvk_subst hwd hcl k h1) (lwsck_subst hwd hcl (k + 2) h2)
+  | unfold h => exact .unfold (lwsvk_subst hwd hcl k h)
+  | perform h1 h2 => exact .perform (lwsvk_subst hwd hcl k h1) (lwsvk_subst hwd hcl k h2)
+  | handleThrows h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]; exact .handleThrows (lwsck_subst hwd hcl (k + 1) h)
+  | handleState h1 h2 =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    exact .handleState (lwsvk_subst hwd hcl k h1) (lwsck_subst hwd hcl (k + 1) h2)
+  | handleTransaction h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    exact .handleTransaction (lwsck_subst hwd hcl (k + 1) h)
+end
+
+/-! ### §2′.7 — LIVE-cap-across-POP, GIVEN B-occ freshness. `LWSVp`/`LWSCp` = `LWSV`/`LWSC` with
+`vcap_live` carrying `n ≠ g` (resolution over the un-popped stack). `pop_restack` re-homes each live
+cap below `g`. Port discharges `n ≠ g` from ADR-0057 B-occ. -/
+
+/-- A cap with `n ≠ g` resolving over `handleF g hd :: K` resolves over the popped `K` (`splitAtId`
+walks past the non-matching frame). Local copy of the later `resolvesLabel_uncons` (forward-ref). -/
+theorem resolvesLabel_pop {g : Nat} {hd : Handler} {K : EvalCtx} {n : Nat} {ℓ : Label}
+    (hng : n ≠ g) (hr : ResolvesLabel (Frame.handleF g hd :: K) n ℓ) : ResolvesLabel K n ℓ := by
+  obtain ⟨Kᵢ, hh, Kₒ, hsplit, hlbl⟩ := hr
+  rw [splitAtId, if_neg (Ne.symm hng)] at hsplit
+  obtain ⟨⟨Kᵢ', hh', Kₒ'⟩, hsK, heq⟩ := Option.map_eq_some_iff.mp hsplit
+  simp only [Prod.mk.injEq] at heq
+  exact ⟨Kᵢ', hh, Kₒ, by rw [hsK, heq.2.1, heq.2.2], hlbl⟩
+
+mutual
+inductive LWSVp (K : EvalCtx) (g : Nat) : Bool → Val → Prop where
+  | vunit {b} : LWSVp K g b Val.vunit
+  | vint {b n} : LWSVp K g b (Val.vint n)
+  | vvar {b i} : LWSVp K g b (Val.vvar i)
+  | vcap_live {n ℓ} (h : ResolvesLabel K n ℓ) (hng : n ≠ g) : LWSVp K g true (Val.vcap n ℓ)
+  | vcap_dormant {n ℓ} : LWSVp K g false (Val.vcap n ℓ)
+  | vthunk {b c} (h : LWSCp K g b c) : LWSVp K g b (Val.vthunk c)
+  | inl {b v} (h : LWSVp K g b v) : LWSVp K g b (Val.inl v)
+  | inr {b v} (h : LWSVp K g b v) : LWSVp K g b (Val.inr v)
+  | pair {b a c} (h1 : LWSVp K g b a) (h2 : LWSVp K g b c) : LWSVp K g b (Val.pair a c)
+  | fold {b v} (h : LWSVp K g b v) : LWSVp K g b (Val.fold v)
+inductive LWSCp (K : EvalCtx) (g : Nat) : Bool → Comp → Prop where
+  | ret {b v q} (h : LWSVp K g (b && decide (q ≠ 0)) v) : LWSCp K g b (Comp.ret v)
+  | letC {b M N} (h1 : LWSCp K g b M) (h2 : LWSCp K g b N) : LWSCp K g b (Comp.letC M N)
+  | force {b v} (h : LWSVp K g b v) : LWSCp K g b (Comp.force v)
+  | lam {b M} (h : LWSCp K g b M) : LWSCp K g b (Comp.lam M)
+  | app {b M v q} (h1 : LWSCp K g b M) (h2 : LWSVp K g (b && decide (q ≠ 0)) v) :
+      LWSCp K g b (Comp.app M v)
+  | case {b v N₁ N₂} (h1 : LWSVp K g b v) (h2 : LWSCp K g b N₁) (h3 : LWSCp K g b N₂) :
+      LWSCp K g b (Comp.case v N₁ N₂)
+  | split {b v N} (h1 : LWSVp K g b v) (h2 : LWSCp K g b N) : LWSCp K g b (Comp.split v N)
+  | unfold {b v} (h : LWSVp K g b v) : LWSCp K g b (Comp.unfold v)
+  | perform {b cv op v} (h1 : LWSVp K g b cv) (h2 : LWSVp K g false v) :
+      LWSCp K g b (Comp.perform cv op v)
+  | handleThrows {b ℓ M} (h : LWSCp K g b M) : LWSCp K g b (Comp.handle (Handler.throws ℓ) M)
+  | handleState {b ℓ s M} (h1 : LWSVp K g b s) (h2 : LWSCp K g b M) :
+      LWSCp K g b (Comp.handle (Handler.state ℓ s) M)
+  | handleTransaction {b ℓ Θ M} (h : LWSCp K g b M) :
+      LWSCp K g b (Comp.handle (Handler.transaction ℓ Θ) M)
+end
+
+mutual
+theorem lwsvp_pop_restack {g : Nat} {hd : Handler} {K : EvalCtx} {b : Bool} {v : Val}
+    (hv : LWSVp (Frame.handleF g hd :: K) g b v) : LWSV K b v := by
+  cases hv with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar => exact .vvar
+  | vcap_live hr hng => exact .vcap_live (resolvesLabel_pop hng hr)
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk h => exact .vthunk (lwscp_pop_restack h)
+  | inl h => exact .inl (lwsvp_pop_restack h)
+  | inr h => exact .inr (lwsvp_pop_restack h)
+  | pair h1 h2 => exact .pair (lwsvp_pop_restack h1) (lwsvp_pop_restack h2)
+  | fold h => exact .fold (lwsvp_pop_restack h)
+theorem lwscp_pop_restack {g : Nat} {hd : Handler} {K : EvalCtx} {b : Bool} {M : Comp}
+    (hM : LWSCp (Frame.handleF g hd :: K) g b M) : LWSC K b M := by
+  cases hM with
+  | ret h => exact .ret (lwsvp_pop_restack h)
+  | letC h1 h2 => exact .letC (lwscp_pop_restack h1) (lwscp_pop_restack h2)
+  | force h => exact .force (lwsvp_pop_restack h)
+  | lam h => exact .lam (lwscp_pop_restack h)
+  | app h1 h2 => exact .app (lwscp_pop_restack h1) (lwsvp_pop_restack h2)
+  | case h1 h2 h3 => exact .case (lwsvp_pop_restack h1) (lwscp_pop_restack h2) (lwscp_pop_restack h3)
+  | split h1 h2 => exact .split (lwsvp_pop_restack h1) (lwscp_pop_restack h2)
+  | unfold h => exact .unfold (lwsvp_pop_restack h)
+  | perform h1 h2 => exact .perform (lwsvp_pop_restack h1) (lwsvp_pop_restack h2)
+  | handleThrows h => exact .handleThrows (lwscp_pop_restack h)
+  | handleState h1 h2 => exact .handleState (lwsvp_pop_restack h1) (lwscp_pop_restack h2)
+  | handleTransaction h => exact .handleTransaction (lwscp_pop_restack h)
+end
+
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
 (`vcap`s arise only by minting). The diagonal's side-condition (the bare form is FALSE: a hand-written
