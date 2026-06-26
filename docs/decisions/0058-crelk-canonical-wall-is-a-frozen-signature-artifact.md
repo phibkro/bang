@@ -118,6 +118,12 @@ machine-checked target. **The deletion COMPILING is the proof.** So: *here is th
 deletes, pending the re-key actually compiling* (inc-6). The decision is sound; the verification is the
 implementation.
 
+> **This clause is OPEN — tracked by task #33 (route-1 re-key) → inc-6 (task #15).** It resolves to PROVEN
+> only when the re-key compiles. **Do not cite route 1 as "verified" until then** — this ADR is the
+> *decision*, not the *proof*; the proof is a green build, and the hedge in this paragraph is on the
+> survey/prose rung until then. (Full structural form: the re-key landing in inc-6 with `Canonical` deleted
+> and the tree green.)
+
 ## Consequences
 
 - **Frozen-statement change.** `CrelK`/`KrelS` (the `Crel` target `lr_sound`/`lr_fundamental` consume, in

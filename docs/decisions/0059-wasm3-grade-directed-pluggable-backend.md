@@ -138,6 +138,13 @@ membership-clean**. So the post-v1 general leg is **verified-as-designed (per-st
 cross-step invariant**, to be resolved (clean-or-cracks) by the store-preservation lemma. This is a *post-v1
 cleanliness* status, not a v1 gate.
 
+> **This sub-clause is OPEN — tracked by task #36 (the cross-step partition / store-preservation).** It
+> resolves to PROVEN only when that lemma lands membership-clean (or to an honest crack — a post-v1 multishot
+> finding, v1 unaffected). **Do not cite the general leg as "verified" full stop until then** — "machine-
+> checked easy" is *per-step* (HANDLE append-only, RESUME read-disjointness); the cross-step partition is the
+> unbuilt half, and this hedge is on the survey/prose rung until task #36 puts a build behind it (the durable
+> form: `gc_sim.lean` ported into the build with the cross-step lemma as a tracked sorry, then closed).
+
 ## Alternatives considered (rejected)
 
 - **WasmFX as primary now (keep ADR-0016 as written).** Leaves stock engines (fork-only); puts an opaque
