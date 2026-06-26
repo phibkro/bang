@@ -321,7 +321,12 @@ resumptive handlers). Split the stack at the nearest catching frame, then:
 Reaching `[]` (no catching frame) = unhandled = stuck (`none`). The CK focus stays CLOSED: the stored
 `s`/payload `w`/heap cells are closed values (the focus is always closed), so resumption threads no
 open term and no variable budget — the grade vectors stay `[]` (ADR-0025 §grade discipline). -/
-def dispatchOn (n : Nat) (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx → Option Config
+-- ADR-0055: dispatch is COUNTER-FREE — it produces a `(stack, focus)` pair (the old Config shape),
+-- and `Source.step`'s perform arm threads the carried counter `g` back in via `.map`. A resume reuses
+-- the matched id, so dispatch never mints; keeping it counter-free is what lets the `splitAtId`/
+-- `dispatchOn`/`idDispatch` helpers stay byte-identical under the reshape.
+def dispatchOn (n : Nat) (op : OpId) (v : Val) :
+    EvalCtx × Handler × EvalCtx → Option (EvalCtx × Comp)
   | (Kᵢ, h, Kₒ) =>
       match h with
       | .throws _   => some (Kₒ, .ret v)                                        -- ABORT
@@ -360,7 +365,7 @@ def dispatchOn (n : Nat) (op : OpId) (v : Val) : EvalCtx × Handler × EvalCtx �
 
 /-- ADR-0054: the kernel's effect dispatch — resolve the capability's IDENTITY `n`, then route the
 matched `(Kᵢ, h, Kₒ)` through `dispatchOn n` (which reinstalls `handleF n` on a resumptive RESUME). -/
-def idDispatch (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val) : Option Config :=
+def idDispatch (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val) : Option (EvalCtx × Comp) :=
   (splitAtId K n).bind fun (Kᵢ, h, Kₒ) =>
     -- FAIL-LOUD (ADR-0054 inc 4): identity match alone does NOT check the handler KIND, so a
     -- mis-identified / escaped capability could land on a wrong-kind frame and be read
@@ -432,8 +437,8 @@ inert (`int`/`unit`/cap-free thunks impose nothing — this is the TYPE-directed
 after `Source.step`, which its reachability closure needs) is the forward closure of this over reachable
 configs. shape: scratch/NonEscapeProbe.lean §3. -/
 def FocusResolves : Config → Prop
-  | (K, .perform (.vcap n ℓ) op _) => CapResolves K n ℓ op
-  | _                              => True
+  | (_, K, .perform (.vcap n ℓ) op _) => CapResolves K n ℓ op
+  | _                                 => True
 
 
 /-- `handlesOp` is invariant under `substFrom` (subst changes only handler payloads, never the label
@@ -443,31 +448,35 @@ or op-kind it reads). -/
     handlesOp (Handler.substFrom k v h) ℓ op = handlesOp h ℓ op := by cases h <;> rfl
 
 
-/-- One machine transition. `none` = stuck (terminal `⟨[], ret v⟩`, or genuinely wrong). -/
+/-- One machine transition. `none` = stuck (terminal `⟨g, [], ret v⟩`, or genuinely wrong).
+ADR-0055: the leading `g` is the next-fresh capability identity. Only the `handle` arm consumes it
+(mints `g`, increments to `g+1`); every other arm threads it unchanged (dispatch reuses an existing
+id, never mints). -/
 def Source.step : Config → Option Config
   -- PUSH
-  | (K, .letC M N)          => some (.letF N :: K, M)
-  | (K, .app M v)           => some (.appF v :: K, M)
-  | (K, .handle h M)        =>
-      -- ADR-0054: mint the identity `n = handlerCount K` (Fork ii — depth-from-root: unique among the
-      -- LIVE handlers by stack discipline; cross-extent uniqueness rides `NonEscape`). Push `handleF n h`
-      -- and substitute the capability `vcap n h.label` for the handle-bound var 0 (the SAME `n` both
-      -- places). `let` keeps it one term + `rfl`-reducible.
-      let n := handlerCount K
-      some (.handleF n h :: K, Comp.subst (.vcap n h.label) M)
-  | (K, .force (.vthunk M)) => some (K, M)
+  | (g, K, .letC M N)          => some (g, .letF N :: K, M)
+  | (g, K, .app M v)           => some (g, .appF v :: K, M)
+  | (g, K, .handle h M)        =>
+      -- ADR-0055: MINT the GLOBAL-FRESH identity `g` (a monotone counter, never reused — reverses
+      -- ADR-0054 Fork-ii's depth-minting, which admitted a build-verified cross-extent collision).
+      -- Push `handleF g h`, substitute the capability `vcap g h.label` for the handle-bound var 0 (the
+      -- SAME `g` both places), and advance the counter to `g+1`. `WellCounted` (every live id `< g`)
+      -- makes `g` fresh — `splitAtId K g = none` — so an escaped cap fails loud, never collides.
+      some (g + 1, .handleF g h :: K, Comp.subst (.vcap g h.label) M)
+  | (g, K, .force (.vthunk M)) => some (g, K, M)
   -- REDUCE
-  | (.letF N :: K, .ret v)  => some (K, Comp.subst v N)
-  | (.appF v :: K, .lam M)  => some (K, Comp.subst v M)
-  | (.handleF _ _ :: K, .ret v) => some (K, .ret v)
+  | (g, .letF N :: K, .ret v)  => some (g, K, Comp.subst v N)
+  | (g, .appF v :: K, .lam M)  => some (g, K, Comp.subst v M)
+  | (g, .handleF _ _ :: K, .ret v) => some (g, K, .ret v)
   -- ADT eliminators (ADR-0029): scrutinees are values, so these reduce in place.
-  | (K, .case (.inl v) N₁ _)  => some (K, Comp.subst v N₁)   -- sum: left branch
-  | (K, .case (.inr v) _ N₂)  => some (K, Comp.subst v N₂)   -- sum: right branch
-  | (K, .split (.pair v w) N) => some (K, Comp.subst v (Comp.subst (Val.shift w) N))  -- product
-  | (K, .unfold (.fold v))    => some (K, .ret v)            -- μ: fold/unfold erase
+  | (g, K, .case (.inl v) N₁ _)  => some (g, K, Comp.subst v N₁)   -- sum: left branch
+  | (g, K, .case (.inr v) _ N₂)  => some (g, K, Comp.subst v N₂)   -- sum: right branch
+  | (g, K, .split (.pair v w) N) => some (g, K, Comp.subst v (Comp.subst (Val.shift w) N))  -- product
+  | (g, K, .unfold (.fold v))    => some (g, K, .ret v)            -- μ: fold/unfold erase
   -- DISPATCH (ADR-0054): IDENTITY — the capability `vcap n _` names handler `n`; match it, route by the
-  -- resolved handler (`dispatchOn` reinstalls `handleF n` on a resumptive resume).
-  | (K, .perform (.vcap n ℓ) op v) => idDispatch K n ℓ op v
+  -- resolved handler (`dispatchOn` reinstalls `handleF n` on a resumptive resume). The counter `g` is
+  -- threaded UNCHANGED — a resume reuses the matched id, it never mints a fresh one.
+  | (g, K, .perform (.vcap n ℓ) op v) => (idDispatch K n ℓ op v).map (fun (K', c') => (g, K', c'))
   -- stuck
   | _                       => none
 
@@ -523,18 +532,18 @@ def plug : EvalCtx → Comp → Comp
 theorem plug_cons (fr : Frame) (K : EvalCtx) (c : Comp) :
     plug (fr :: K) c = plug K (fr.wrapStep c) := by cases fr <;> rfl
 
-/-- Run a config to a returned value. `⟨[], ret v⟩` = done; `step = none` on a non-terminal = stuck. -/
+/-- Run a config to a returned value. `⟨g, [], ret v⟩` = done; `step = none` on a non-terminal = stuck. -/
 def Config.run : Nat → Config → Result Val
   | 0, _              => .oom
-  | _ + 1, ([], .ret v) => .done v
+  | _ + 1, (_, [], .ret v) => .done v
   | n + 1, cfg        =>
       match Source.step cfg with
       | some cfg' => Config.run n cfg'
       | none      => .stuck
 
-/-- Source.eval: load the closed program into `⟨[], c⟩` and run the machine. Signature unchanged
-(ADR-0023 D3), so `type_safety`'s frozen statement is untouched. -/
-def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel ([], c)
+/-- Source.eval: load the closed program into `⟨0, [], c⟩` (a FRESH machine: counter at 0, empty
+stack) and run. Signature unchanged (ADR-0023 D3); ADR-0055 only seeds the fresh-id counter at 0. -/
+def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel (0, [], c)
 
 /-- **The non-escape preservation obligation (ADR-0054).** `NonEscape` is preserved by every
 `Source.step` transition. With `NonEscape` now the forward closure of `FocusResolves` over reachable
@@ -547,6 +556,144 @@ theorem preservation_returnEscape_TODO
     {cfg cfg' : Config} (hne : NonEscape cfg) (hstep : Source.step cfg = some cfg') :
     NonEscape cfg' :=
   fun cfg'' hreach => hne cfg'' (StepStar.head hstep hreach)
+
+/-! ### `WellCounted` — the global-fresh freshness invariant (ADR-0055)
+
+A SEPARATE reachability invariant (sibling to `NonEscape`, NOT folded into `HasConfig` — it is a
+property of reachability-from-a-fresh-start, not of typing; the STD block is counter-insensitive and
+needs no extra conjunct). `WellCounted (g, K, _)` = every live handler identity on `K` is `< g`, so the
+minted `g` is FRESH (`splitAtId K g = none`): an escaped capability resolves to ITS handler or to
+NOTHING (stuck, fail-loud), never to a same-depth impostor. This is what makes `NonEscape` ADEQUATE
+under global-fresh minting; the inc-5 LR diagonal consumes it via `wellCounted_reachable`.
+shape: scratch/GlobalFreshProbe.lean §3 (build-validated). -/
+
+/-- Every `handleF` identity on the stack is `< g` (the cap-transparent `letF`/`appF` frames impose
+nothing). -/
+def StackBelow (g : Nat) : EvalCtx → Prop
+  | [] => True
+  | .handleF n _ :: K => n < g ∧ StackBelow g K
+  | .letF _ :: K => StackBelow g K
+  | .appF _ :: K => StackBelow g K
+
+/-- The config-level invariant: the carried counter dominates every live handler identity. -/
+def WellCounted : Config → Prop
+  | (g, K, _) => StackBelow g K
+
+/-- `StackBelow` is monotone in the counter — a larger counter still dominates. Lets the incremented
+`g+1` bound the OLD frames after a mint. -/
+theorem StackBelow_mono {g g' : Nat} (hle : g ≤ g') :
+    ∀ K, StackBelow g K → StackBelow g' K := by
+  intro K hK
+  induction K with
+  | nil => trivial
+  | cons fr K ih =>
+    cases fr with
+    | handleF n hd => obtain ⟨hlt, hrest⟩ := hK; exact ⟨by omega, ih hrest⟩
+    | letF N => exact ih hK
+    | appF v => exact ih hK
+
+/-- **Freshness**: if every id on `K` is `< g`, then `splitAtId K g = none` — the fresh id `g` matches
+NO live frame. This kills the ADR-0054 collision: minting `g` then later resolving a cap named `g`
+finds ITS handler or nothing, never a same-depth impostor. shape: scratch/GlobalFreshProbe.lean. -/
+theorem splitAtId_fresh (g : Nat) (K : EvalCtx) (h : StackBelow g K) :
+    splitAtId K g = none := by
+  induction K with
+  | nil => rfl
+  | cons fr K ih =>
+    cases fr with
+    | handleF n hd =>
+      obtain ⟨hlt, hrest⟩ := h
+      simp only [splitAtId]
+      rw [if_neg (by omega : ¬ n = g), ih hrest]; rfl
+    | letF N => simp only [splitAtId]; rw [ih h]; rfl
+    | appF v => simp only [splitAtId]; rw [ih h]; rfl
+
+/-- **DISPATCH-arm residue (ADR-0055).** `idDispatch` reinstalls `handleF n` (the matched id `n < g`,
+since it came from `K`) on a state/transaction RESUME; the resumed stack `Kᵢ ++ handleF n h' :: Kₒ` (a
+re-assembly of sub-stacks of `K`, with the same id `n`) keeps every id `< g`. Mechanical stack-surgery
+over `splitAtId`-append + `dispatchOn`'s reinstall — the ONE deferred lemma of the buildable milestone,
+discharged in the next commit. -/
+theorem stackBelow_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label} {op : OpId}
+    {v : Val} {c' : Comp} (hwc : StackBelow g K)
+    (hd : idDispatch K n ℓ op v = some (K', c')) : StackBelow g K' := by
+  sorry
+
+/-- **`WellCounted` is preserved by `cstep`.** The mint arm pushes `handleF g` with counter `g+1` (old
+frames stay `< g < g+1` by mono; the new frame is `g < g+1`); every other arm keeps/shrinks the stack
+with an unchanged counter, or (dispatch) reinstalls an existing id (`stackBelow_idDispatch`). -/
+theorem wellCounted_step {cfg cfg' : Config}
+    (hwc : WellCounted cfg) (hstep : Source.step cfg = some cfg') : WellCounted cfg' := by
+  obtain ⟨g, K, c⟩ := cfg
+  have hwc' : StackBelow g K := hwc
+  cases c with
+  | letC M N =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc'
+  | app M v =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc'
+  | handle h M =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+    exact ⟨Nat.lt_succ_self g, StackBelow_mono (Nat.le_succ g) K hwc'⟩
+  | force w =>
+    cases w <;>
+      first
+        | (simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc')
+        | (simp [Source.step] at hstep)
+  | ret v =>
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | letF N =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc'
+      | appF w => simp [Source.step] at hstep
+      | handleF n h =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc'.2
+  | lam M =>
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | appF w =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc'
+      | letF N => simp [Source.step] at hstep
+      | handleF n h => simp [Source.step] at hstep
+  | perform cap op v =>
+    cases cap with
+    | vcap n ℓ =>
+      simp only [Source.step, Option.map_eq_some_iff] at hstep
+      obtain ⟨⟨K', c'⟩, hd, hcfg⟩ := hstep
+      subst hcfg
+      exact stackBelow_idDispatch hwc' hd
+    | _ => simp [Source.step] at hstep
+  | case v N₁ N₂ =>
+    cases v <;>
+      first
+        | (simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc')
+        | (simp [Source.step] at hstep)
+  | split v N =>
+    cases v <;>
+      first
+        | (simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc')
+        | (simp [Source.step] at hstep)
+  | unfold v =>
+    cases v <;>
+      first
+        | (simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc')
+        | (simp [Source.step] at hstep)
+  | oom => simp [Source.step] at hstep
+  | wrong s => simp [Source.step] at hstep
+
+/-- `WellCounted` propagates along reachability (`StepStar`) — the forward closure, by induction on
+the path through the single-step `wellCounted_step`. This is what hands the inc-5 LR diagonal a fresh
+`WellCounted` at any reachable config (it does NOT need to ride in `HasConfig`). -/
+theorem wellCounted_reachable {cfg cfg' : Config}
+    (hwc : WellCounted cfg) (hreach : StepStar cfg cfg') : WellCounted cfg' := by
+  induction hreach with
+  | refl => exact hwc
+  | tail _ hstep ih => exact wellCounted_step ih hstep
+
+/-- The initial config `(0, [], c)` is `WellCounted` trivially (empty stack). The fresh-start seed. -/
+theorem wellCounted_initial (c : Comp) : WellCounted (0, [], c) := trivial
 
 /-! ### Lexical-cap regression demos (ADR-0045 amendment) — REAL artifacts, build-gated.
 
@@ -583,16 +730,17 @@ private def capMigrateInternal : Comp :=
     (.vthunk (.handle (.state 1 (.vint 7)) (.perform (.vvar 0) "get" .vunit)))
 #guard yieldsInt 200 capMigrateInternal 7
 
-/-- `Config.run` unfolds one step on a NON-returning config: when `cfg` is not `([], ret v)` the
-machine takes a `Source.step`. Bridges the equation compiler's overlapping `([], ret v)` /
-catch-all arms so callers can reason about a single transition. -/
+/-- `Config.run` unfolds one step on a NON-returning config: when `cfg` is not `(g, [], ret v)` the
+machine takes a `Source.step`. Bridges the equation compiler's overlapping `(_, [], ret v)` /
+catch-all arms so callers can reason about a single transition. ADR-0055: the returned config now
+carries the fresh-id counter `g`, so the non-returning hypothesis quantifies over it. -/
 theorem Config.run_step (n : Nat) (cfg : Config)
-    (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
+    (hne : ∀ g v, cfg ≠ (g, [], Comp.ret v)) :
     Config.run (n + 1) cfg =
       (match Source.step cfg with | some cfg' => Config.run n cfg' | none => .stuck) := by
-  obtain ⟨K, c⟩ := cfg
+  obtain ⟨g, K, c⟩ := cfg
   match K, c with
-  | [], .ret v => exact absurd rfl (hne v)
+  | [], .ret v => exact absurd rfl (hne g v)
   | [], .letC _ _ | [], .app _ _ | [], .handle _ _ | [], .force _ | [], .perform _ _ _
   | [], .lam _ | [], .case _ _ _ | [], .split _ _ | [], .unfold _ | [], .oom | [], .wrong _
   | _ :: _, _ => rfl
@@ -608,9 +756,9 @@ theorem Config.run_done_add (k : Nat) :
   | zero => intro cfg w h; rw [show Config.run 0 cfg = Result.oom from rfl] at h; exact absurd h (by simp)
   | succ m ih =>
     intro cfg w h
-    by_cases hret : ∃ v, cfg = ([], Comp.ret v)
-    · obtain ⟨v, rfl⟩ := hret
-      -- ([], ret v): both runs hit the `done` arm; (m+1)+k = (m+k)+1 still returns v.
+    by_cases hret : ∃ g v, cfg = (g, [], Comp.ret v)
+    · obtain ⟨g, v, rfl⟩ := hret
+      -- (g, [], ret v): both runs hit the `done` arm; (m+1)+k = (m+k)+1 still returns v.
       have hwv : Result.done w = Result.done v := by
         rw [← h]; rfl
       rw [show m + 1 + k = (m + k) + 1 by omega]
