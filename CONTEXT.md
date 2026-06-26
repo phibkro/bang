@@ -10,12 +10,13 @@
 
 > **★ ACTIVE DIRECTION (2026-06-26) — SOUNDNESS is one supporting-lemma-gated theorem from machine-checked;
 > the COMPILER's next two hops are DECIDED.** On `typed-static-r1` @ `96c3d9c` (docs/design); proof work on
-> `inc5-lr-reindex` @ `ea09603` (clean, `lake build Bang.Model` green save one sorry). **The session arc:**
+> `inc5-lr-reindex` @ `4f1c1e2` (PUSHED; clean, `lake build Bang.Model` green save one sorry). **The session arc:**
 > inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE — a cap escapes a
 > ⊥-typed program) → **ADR-0057 B-occ** (answer-type label-freedom — the fix; phase-1 kernel premise landed
 > axiom-clean) → the diagonal re-keyed: **`type_safety` is ONE theorem from sorryAx-clean** — `wsCfg_step`
-> (task #34), 2 of 4 supporting units banked (restack + μ-corner), the gate = `hasConfigTy_step` (~300-line
-> NonEscape-free factoring of `preservation_proof`), then `wsc_subst` + the deep B-occ lever + 4-arm assembly.
+> (task #34), **3 of 4 supporting units banked** (restack + μ-corner + **the GATE `hasConfigTy_step` `4f1c1e2`**,
+> the NonEscape-free typing-preservation; unblocks every arm's typing half); remaining = `wsc_subst` + the deep
+> B-occ lever + the 4-arm assembly.
 > **COMPILER (Lexa comparison + Wasm-3.0): ADR-0058** (the binary-LR Canonical wall is a frozen-signature
 > artifact → route 1 deletes it; build-confirmable, task #33→inc-6) **+ ADR-0059** (Wasm 3.0 + grade-directed
 > pluggable backend; v1 = `throws`→exn + `state`/`transaction`→tail-call, the GC-machine general leg is the
