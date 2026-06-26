@@ -17,11 +17,18 @@
 > **★ SOUNDNESS FINDING (2026-06-26, ADR-0056) — the inc-5 diagonal is machine-checked FALSE.** A cap can
 > escape its handler and get STUCK in a well-typed-at-⊥ program (`progB`: the ⊥-row gate is label-based,
 > escape is identity-based; ADR-0054's "escape ruled out by the gate" REFUTED — the WC keystone-2c escape,
-> half of which global-fresh did NOT fix). **The diagonal + A2's value-cap arms are HELD.** NEXT = explore
-> the non-escape discipline (operator ruling; ADR-0056's 3 options: surface-enforced / kernel coeffect /
-> other) → the fix (likely shapes inc-7 or the type system) → close the diagonal. Non-escape-INDEPENDENT
-> inc-5 (LR re-key, run_rename/run_plug integration, the splitAtId krelS_staticSplit_decomp re-derivation)
-> PROCEEDS. Witness oracle for the fix: progB (DiagonalFalsifyProbe + IdentityCollisionProbe + CapEscapeWitness).
+> half of which global-fresh did NOT fix). **The diagonal + A2's value-cap arms are HELD.** EXPLORATION DONE
+> (escape-research, `scratch/ADR-0057-draft.md`): recommend **B-occ** — kernel answer-type label-freedom
+> (`¬LabelOccurs ℓ A` on the 3 handle typing rules). KEY INSIGHT: in v1 the answer type is the ONLY escape
+> channel (state/transaction cells are closed `int`), so a one-premise kernel fix closes the diagonal BY
+> CONSTRUCTION + may DISSOLVE NonEscape entirely (the false diagonal sorry → a corollary of preservation, net
+> LOC negative). **Operator ratified B-occ (build-confirm first), 2026-06-26.** `bocc-spike` worktree validating
+> the load-bearing claims → GO/NO-GO → finalize ADR-0057: only-channel · discrimination (rejects
+> progB+escapeWitness, accepts both safe witnesses) · NonEscape-dissolution · LR blast radius. Right-answer-absolute
+> = System-C rank-2 (post-v1, needs polymorphism, contradicts ADR-0027); fallback = surface-enforced. B-occ pairs
+> with task #18 (untypeable raw vcap → drop VcapFree). Non-escape-INDEPENDENT inc-5 (LR re-key — guarded crelK_ret
+> `8c30f06`, LR green/1 sorry; the splitAtId `krelS_staticSplit_decomp` re-derivation = build-ready spec in the
+> PATH, best AFTER ADR-0057) PROCEEDS. Witness oracle: progB (DiagonalFalsifyProbe + IdentityCollisionProbe + CapEscapeWitness).
 > SoT = ADR-0054/0055 (the cap rep, done) + ADR-0052 (CalcVM route-B, inc 6). inc 1-4 + the global-fresh
 > rework are LANDED; the STD block (preservation/progress/type_safety) is axiom-clean over the final kernel.
 >
