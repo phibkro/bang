@@ -270,6 +270,58 @@ inductive WSK (K : EvalCtx) : EvalCtx → Eff → CTy Eff Mult → Eff → CTy E
       WSK K (Frame.handleF n (Handler.transaction ℓ Θ) :: Sg) e (CTy.F q A) eo Co
 end
 
+/-! ## §2′ — the TYPELESS grade-driven liveness invariant (ADR-0060, the inc-5 reshape).
+
+`LWSV`/`LWSC`/`LWSK` replace `WSV`/`WSC`/`WSK`: the TYPE/EFFECT indices are DROPPED (a `vcap`'s label
+`ℓ` is read from the TERM; the storage grade `q` is a constructor PARAMETER, pinned to the bundled
+`HasConfigTy` — not a `WSC` type index). This dissolves the §2.9 obstruction (no intermediate-type
+reconciliation at `letC`/`app`; no non-injective `φ₁⊔φ₂` join-elim) and lets the subst bridge close.
+The reachability flag `b : Bool` (opt-2): `true` = "the evaluator will force this position" (`vcap_live`
+demands resolution); `false` = dormant (no obligation). Storage positions gate liveness on the local
+scalar grade: `app`-arg / `ret`-value off `decide (q ≠ 0)`. Ported from the build-confirmed engine
+(`scratch/Opt3GradeLiveness.lean`, branch inc5-opt3-gradegate), extended to the full former set. -/
+
+mutual
+inductive LWSV (K : EvalCtx) : Bool → Val → Prop where
+  | vunit {b} : LWSV K b Val.vunit
+  | vint {b n} : LWSV K b (Val.vint n)
+  | vvar {b i} : LWSV K b (Val.vvar i)
+  | vcap_live {n ℓ} (h : ResolvesLabel K n ℓ) : LWSV K true (Val.vcap n ℓ)
+  | vcap_dormant {n ℓ} : LWSV K false (Val.vcap n ℓ)
+  | vthunk {b c} (h : LWSC K b c) : LWSV K b (Val.vthunk c)
+  | inl {b v} (h : LWSV K b v) : LWSV K b (Val.inl v)
+  | inr {b v} (h : LWSV K b v) : LWSV K b (Val.inr v)
+  | pair {b a c} (h1 : LWSV K b a) (h2 : LWSV K b c) : LWSV K b (Val.pair a c)
+  | fold {b v} (h : LWSV K b v) : LWSV K b (Val.fold v)
+inductive LWSC (K : EvalCtx) : Bool → Comp → Prop where
+  | ret {b v q} (h : LWSV K (b && decide (q ≠ 0)) v) : LWSC K b (Comp.ret v)
+  | letC {b M N} (h1 : LWSC K b M) (h2 : LWSC K b N) : LWSC K b (Comp.letC M N)
+  | force {b v} (h : LWSV K b v) : LWSC K b (Comp.force v)
+  | lam {b M} (h : LWSC K b M) : LWSC K b (Comp.lam M)
+  | app {b M v q} (h1 : LWSC K b M) (h2 : LWSV K (b && decide (q ≠ 0)) v) : LWSC K b (Comp.app M v)
+  | case {b v N₁ N₂} (h1 : LWSV K b v) (h2 : LWSC K b N₁) (h3 : LWSC K b N₂) :
+      LWSC K b (Comp.case v N₁ N₂)
+  | split {b v N} (h1 : LWSV K b v) (h2 : LWSC K b N) : LWSC K b (Comp.split v N)
+  | unfold {b v} (h : LWSV K b v) : LWSC K b (Comp.unfold v)
+  | perform {b cv op v} (h1 : LWSV K b cv) (h2 : LWSV K false v) : LWSC K b (Comp.perform cv op v)
+  | handleThrows {b ℓ M} (h : LWSC K b M) : LWSC K b (Comp.handle (Handler.throws ℓ) M)
+  | handleState {b ℓ s M} (h1 : LWSV K b s) (h2 : LWSC K b M) :
+      LWSC K b (Comp.handle (Handler.state ℓ s) M)
+  | handleTransaction {b ℓ Θ M} (h : LWSC K b M) :
+      LWSC K b (Comp.handle (Handler.transaction ℓ Θ) M)
+inductive LWSK (K : EvalCtx) : EvalCtx → Bool → Prop where
+  | nil {b} : LWSK K [] b
+  | letF {Sg N b} (hN : LWSC K b N) (hK : LWSK K Sg b) : LWSK K (Frame.letF N :: Sg) b
+  | appF {Sg v b q} (hv : LWSV K (b && decide (q ≠ 0)) v) (hK : LWSK K Sg b) :
+      LWSK K (Frame.appF v :: Sg) b
+  | handleF {Sg n ℓ b} (hK : LWSK K Sg b) :
+      LWSK K (Frame.handleF n (Handler.throws ℓ) :: Sg) b
+  | stateF {Sg n ℓ s b} (hs : LWSV K b s) (hK : LWSK K Sg b) :
+      LWSK K (Frame.handleF n (Handler.state ℓ s) :: Sg) b
+  | transactionF {Sg n ℓ Θ b} (hK : LWSK K Sg b) :
+      LWSK K (Frame.handleF n (Handler.transaction ℓ Θ) :: Sg) b
+end
+
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
 (`vcap`s arise only by minting). The diagonal's side-condition (the bare form is FALSE: a hand-written
