@@ -143,7 +143,7 @@
                                      carrier on Krel/Srel/EnvRel (ADR-0036); arrow clause = PEELING +
                                      krel_nil_succ F-restriction (ADR-0038 — both pure forms refuted by
                                      the build). 16 proof commits f6d0ce2…69d70b1, 723 jobs green.
-◊4.5 ✓ LR rebuild — lr_sound + all 3 handler kinds END-TO-END; SCOPED-SEAM **LANDED + MERGED into main @ `4c77ba8`** (gated green, 724 jobs; ◊5 `compile_correct` + ◊2 `no_accidental` HELD) → **BROAD moat** (ALL contexts incl. state-over-throws + legit handler stacking) + **ONE documented resume-edge sorry** (`krelS_splitAt_decomp` handleF-MISS = resume-through-a-wrap only, ADR-0026 descent; ADR-0043). **NOT sorryAx-zero, and now PROBED NO-GO:** the cheap typed-CrelK close (Architecture D, design-panel rec) was build-probed (`typed-crelk-probe@ffac1b0`) and REFUTED — `HasStack` pins the BOTTOM junction answer (`hasStack_append_handleF_split`, `[propext]`) but the strip's `letF` recursion needs the INTERMEDIATE `KrelS` hole typed, and there's no `KrelS⇒HasStack` bridge (the LR is one-way) → D only RELOCATES the leak. sorryAx-zero would need typing `KrelS`'s intermediate holes = the heavy index-everything reshape (4–7 sessions + frozen break), not worth one tested-descent edge. **The ADR-0043 seam is the verified-FINAL answer** (`paths/PATH-cap45-finish.md`). `NoWrapMiss` predicate banked = the right primitive. (2026-06-24) ── ◊4.5a banked (main `773c5e6`): the IxFree reshape — non-▷ spine
+◊4.5 ✓ LR rebuild — lr_sound + all 3 handler kinds END-TO-END; SCOPED-SEAM **LANDED + MERGED into main @ `4c77ba8`** (gated green, 724 jobs; ◊5 `compile_correct` + ◊2 `no_accidental` HELD) → **BROAD moat** (ALL contexts incl. state-over-throws + legit handler stacking) + **ONE documented resume-edge sorry** (`krelS_splitAt_decomp` handleF-MISS = resume-through-a-wrap only, ADR-0026 descent; ADR-0043). **NOT sorryAx-zero, and now PROBED NO-GO:** the cheap typed-CrelK close (Architecture D, design-panel rec) was build-probed (`typed-crelk-probe@ffac1b0`) and REFUTED — `HasStack` pins the BOTTOM junction answer (`hasStack_append_handleF_split`, `[propext]`) but the strip's `letF` recursion needs the INTERMEDIATE `KrelS` hole typed, and there's no `KrelS⇒HasStack` bridge (the LR is one-way) → D only RELOCATES the leak. sorryAx-zero would need typing `KrelS`'s intermediate holes = the heavy index-everything reshape (4–7 sessions + frozen break), not worth one tested-descent edge. **The ADR-0043 seam is the verified-FINAL answer** (`paths/archive/PATH-cap45-finish.md`). `NoWrapMiss` predicate banked = the right primitive. (2026-06-24) ── ◊4.5a banked (main `773c5e6`): the IxFree reshape — non-▷ spine
                                      re-green sorry-free (Srel 0:=False + Vrel-U ∀j≤n + Kripke IHs, `22e1684`),
                                      `Crel_mono` ▷-anti-reduction primitive + μ intro/elim (`8513fd3`), resume
                                      infra krel_handleF* (`1af79f8`), ▷-guarded Vrel μ-clause strict-< (`642d335`,
@@ -162,7 +162,7 @@
                                      (stack-structural recursion + ▷-guarded frame bodies = existing metered-▷;
                                      lex (n,role,stackLen); NO Iris). Frozen-safe (2a, Crel sig unchanged). STEP 2
                                      = multi-session re-prove-all-of-Compat at the mutual relation (IC `krels` in
-                                     flight); plan in `paths/PATH-cap45-rebuild.md`, decision ADR-0041 (last amend).
+                                     flight); plan in `paths/archive/PATH-cap45-rebuild.md`, decision ADR-0041 (last amend).
                                      Prior CLOSED work (μ-floor/handler-consumer/krel_refl) re-proves at KrelS.
                                      RESOLVED 2026-06-24: the answer-typed KrelS rebuild + ALL handler-consumer cases + THROWS-producer CLOSED
                                      end-to-end (`a75f887`); (g) migration DONE (frozen Crel:=CrelK, old Krel/Srel/crel_fund
@@ -184,12 +184,12 @@
                                      on HasCTy/HasVTy) or PATH B (GetD-free: prove the 4 heap facts inline / reformulate HeapRel via
                                      getElem? — lower-risk, block untouched), then RE-APPLY append's already-written txn wirings +
                                      close 2 rare nested-handler sorrys → sorryAx-gone. Fresh-context unit; resume base `cap45-append2
-                                     @ b431247`; spec = task #10 + `paths/PATH-cap45-resume-composition.md` + append's post-exec report. [SUPERSEDED by the SCOPED-SEAM landing — see header.]
+                                     @ b431247`; spec = task #10 + `paths/archive/PATH-cap45-resume-composition.md` + append's post-exec report. [SUPERSEDED by the SCOPED-SEAM landing — see header.]
                                      FINAL 2026-06-24: landed on `cap45-answertrack` (`39f29ff` + docs) — answer-typed KrelS
                                      rebuild + (g) migration (frozen Crel:=CrelK) + lr_sound over typed ⊑ + throws/state/txn
                                      resumptive composition ALL closed end-to-end; the resume-through-a-wrap edge is the ONE
                                      documented `krelS_splitAt_decomp` sorry (ADR-0026 descent, ADR-0043). sorryAx-zero needs
-                                     typed-CrelK (build-pinned, deferred → `paths/PATH-cap45-finish.md`). NOT merged: forks
+                                     typed-CrelK (build-pinned, deferred → `paths/archive/PATH-cap45-finish.md`). NOT merged: forks
                                      pre-ADR-0042 (ADR-0043 needs re-frontmatter + adr-index) and diverges from ◊5 on Spec.lean.
 ◊5 ✓ Compiler v0 — DONE, IN MAIN  ── `0e5e28d` (2026-06-24). source→WASM verified trusted-three over the
                                      WHOLE effect language — effect-free + ALL handlers, ungated. EFFECT-FREE
@@ -333,15 +333,15 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 ## Active paths
 
 **Product spine (surface — the rungs; PRD §3.1):**
-- **rung 0 ✓ DONE** (`paths/PATH-tracer-bullet.md`) — surface → graded-CBPV `Comp` → `Source.eval` → a
+- **rung 0 ✓ DONE** (`paths/archive/PATH-tracer-bullet.md`) — surface → graded-CBPV `Comp` → `Source.eval` → a
   VALUE. The language RUNS (pure + throws). `Bang/Surface.lean`: named AST + name→de-Bruijn lowering +
   fuel-total parser + `#guard`/`rfl` demos.
-- **rung 1 ✓ DONE** (`paths/PATH-rung1-state.md`) — first resumptive paradigm: State. `dispatch`
+- **rung 1 ✓ DONE** (`paths/archive/PATH-rung1-state.md`) — first resumptive paradigm: State. `dispatch`
   RESUMES (ADR-0025; the closed CK focus dissolved Q12's grade tension — **no `ω`-restriction on `S`**).
   `preservation`/`type_safety` **AXIOM-CLEAN** (the 2 obligations closed: `dispatch_state_typed` keeps
   `Kᵢ`); `no_accidental_handling` 0-axiom held; State runs **from source text**
   (`state 0 in (let z = put 7 in get) ⟶ 7`).
-- **rung 2 ✓ DONE** (`paths/PATH-rung2-stack.md`) — verified `Stack Int` (monomorphic, ADR-0027); the
+- **rung 2 ✓ DONE** (`paths/archive/PATH-rung2-stack.md`) — verified `Stack Int` (monomorphic, ADR-0027); the
   **first concrete moat demo**. Iso-recursive ADTs (ADR-0029: sum/product/μ + fold/unfold) landed as the
   kernel data layer (`3738556` K1), metatheory **axiom-clean** (`b4adc42` K2 — preservation/progress for
   case/split/unfold via new canonical-forms inversions), Stack surface + push/pop laws **property-tested
@@ -350,7 +350,7 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   (a whole ADT layer + metatheory), and it **confirmed the ADR-0029 bet**: iso-recursive made the
   metatheory cheap (syntactic type-matching, no coinduction). Q19 (laws *surface* syntax) stays partial —
   laws stated in Lean for now; the *discharge mechanism* (plausible) is now demonstrated.
-- **rung 3 ✓ DONE (kernel + verified law)** (`paths/PATH-rung3-ledger.md`) — verified ledger; **STM as a
+- **rung 3 ✓ DONE (kernel + verified law)** (`paths/archive/PATH-rung3-ledger.md`) — verified ledger; **STM as a
   transactional handler** (ADR-0030: `state ⊗ exception`, NO new kernel primitive; privilege =
   concurrency-only, deferred). `Handler.transaction` = rung 1's state handler generalized to a heap;
   rollback is **by construction** (abort = `throws` escaping the frame, dropping the heap with it).
@@ -362,7 +362,7 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   from-source-text `atomically {…}` surface (parity with rung 1's `state … in`); general-`S` TVars
   (default-witness, ADR-0030 amendment). TVar reps are v1 simplifications (TVarRef=int, S=int, total
   default-initialized store) — see ADR-0030.
-- **rung 4 ✓ DONE** (`paths/PATH-rung4-reactive.md`) — reactive cell; the LAST v1 MVP rung. **Reactivity
+- **rung 4 ✓ DONE** (`paths/archive/PATH-rung4-reactive.md`) — reactive cell; the LAST v1 MVP rung. **Reactivity
   is EMERGENT, not a new kernel form** (ADR-0005, now empirically + formally validated): a reactive cell
   is an *unmemoized thunk over a State cell*; each `force` re-samples = pull-based reactivity. **ZERO
   kernel edits** — the rung validates the thesis rather than adding a capability. Liveness law **PROVEN**
@@ -381,9 +381,9 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 > push-based reactivity.
 
 **Verification spine (kernel/compiler — the ◊ march):**
-- **`paths/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
+- **`paths/archive/PATH-graded-cbpv-eval.md`** — **◊2 GATE MET**: STD block + `no_accidental_handling`
   axiom-clean over the CK machine (ADR-0023/0024). Residual: `effect_sound` (Q14), `zero_usage` (→◊4).
-- **`paths/PATH-calcvm-port.md`** — **◊3 GATE MET (2026-06-23); path COMPLETE.** Collapsed the K3 Calc*
+- **`paths/archive/PATH-calcvm-port.md`** — **◊3 GATE MET (2026-06-23); path COMPLETE.** Collapsed the K3 Calc*
   matrix into one graded-CBPV calculated machine. D1=A (calculate from denotational
   `evalD`). Landed axiom-clean: pure CBPV spine (`1d15437`) + `evalD ≡ Source.eval` bridge (`a777ffa`) +
   **deep handlers throws-only** (O1 INSTALL `d995cd0`, O2 THROW abort `8780be6`) + **resumptive state —
@@ -407,7 +407,7 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
   live (ADR-0015); 16-case 5-axis diff-test battery (`Agree M v := exec(compile M)=some[ret v] ∧ Source.eval
   M=done v` — both reps to ONE observable Val ⇒ false agreement unrepresentable; all `rfl`, 0-axiom);
   `just verify` 723 jobs (732→723 = archive took); independently gated on the committed tree.
-- **`paths/PATH-lr-foundation.md`** — **◊4 (ACTIVE; STATEMENTS + INFRA landed, proof BODIES remain).** Done:
+- **`paths/archive/PATH-lr-foundation.md`** — **◊4 (ACTIVE; STATEMENTS + INFRA landed, proof BODIES remain).** Done:
   U1 helpers (`0f5891d`) · U2 `Vrel/Srel/Krel/Crel` WF defs (`25a2fdd`, THE CRUX, row-indexed ADR-0033) ·
   `group_recovers` RETIRED (`eca7587`, ADR-0032) · U4 `seq_unit` PROVEN + `NotEvaluated` def (`5042754`) ·
   U5 closed adequacy `lr_sound_closed` (`187be29`) · U6 statement+infra (`7928f02`/`b2c3c10`): `lr_fundamental`
@@ -441,7 +441,7 @@ and `effect_sound` residuals deferred from ◊2 also live here (LR-flavored).
 graded-CBPV calculated machine `Bang/CalcVM.lean` (Bahr–Hutton); `exec ∘ compile ≡ eval`
 proven (`compile_correct` + the `evalD ≡ Source.eval` bridge); K2 matrix archived
 (ADR-0017); 16-case diff-test battery green; all axiom-clean. See Position block + the
-(now-complete) `paths/PATH-calcvm-port.md`.
+(now-complete) `paths/archive/PATH-calcvm-port.md`.
 
 **◊2 — Kernel frozen v1 — GATE MET.** `Source.eval` concrete over the CK machine
 (ADR-0023); row algebra with lacks-constraints (`WfInst`, ADR-0024 D3);

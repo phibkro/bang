@@ -86,6 +86,6 @@ inherit here.**
   route-A-CapClosed build-refuted (`EnvRelK` cannot carry it; the stored values are not cap-closed).
 
 ## See also
-- `paths/PATH-typed-lr-reindex.md` (the CROSSROADS + the de-risk audit trail)
+- `paths/archive/PATH-typed-lr-reindex.md` (the CROSSROADS + the de-risk audit trail)
 - `Bang/Metatheory.lean` `staticSplit_insert_ge` (the landed brick)
 - `Bang/Compat.lean` `crelK_fund` handler arms (the seam descents) + `compatK_handle*` cores

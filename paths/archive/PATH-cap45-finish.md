@@ -3,7 +3,7 @@
 > **⛔ SUPERSEDED by ADR-0045 (2026-06-25) — the typed+static-dispatch pivot.** This PATH's deferred close
 > (typed-`CrelK` on the DYNAMIC-dispatch kernel) is moot: ADR-0043 proved that close NO-GO under dynamic
 > dispatch, and ADR-0045 instead **pivots the kernel to static-link dispatch, which DISSOLVES the resume-edge**
-> (build-gated). The active plan is **`paths/PATH-typed-static-pivot.md`**. Kept for the record (the ◊4.5b
+> (build-gated). The active plan is **`paths/archive/PATH-typed-static-pivot.md`**. Kept for the record (the ◊4.5b
 > landing + the build-pinned analysis of *why* the dynamic-kernel close fails — exactly what motivated the
 > pivot). Do NOT resume the typed-CrelK-on-dynamic work below.
 
