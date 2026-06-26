@@ -122,14 +122,20 @@ DORMANT cap is stranded harmlessly (handled structurally by `decide(q≠0)`); a 
 label still forces `LabelOccurs ℓ A` and is excluded by the ADR-0057 B-occ premise. The two mechanisms
 compose; the fix EXTENDS B-occ.
 
-> **This decision's PROOF is OPEN — tracked by task #41 (full close) + #35 (DISPATCH resumption).**
-> Build-confirmed so far (axiom-clean): the `GRWSV/GRWSC` inductive, the three case-shape reducts,
-> the monotonicity lemmas, and the rig-property instances. STILL OPEN: the de-Bruijn-generalized joint
-> subst bridge (`subst_value_proof`-scale, threading `GRWSC` + the typing), `live-cap-across-POP`, and
-> the **port** (replacing `WSV/WSC` with `GRWSV/GRWSC` in `Model.lean` to close the real
-> `wsCfg_step`). **Do not cite `type_safety` as `sorryAx`-clean until the port lands green** — the
-> hedge is on the survey/prose rung until the build closes it. The decision is sound; the verification
-> is the implementation.
+> **This decision's PROOF is OPEN — progress 2026-06-27, blocked on one kernel decision (task #45) →
+> `coh_step` → assembly; DISPATCH deferred (#35).** Build-confirmed axiom-clean ON `inc5-lr-reindex`
+> (`ad97a37`, `Bang.Model` green save the one `wsCfg_step` sorry): the full engine (live/dormant/mixed
+> β subst bridge + POP wall + `⇒FocusResolves` + seed) PORTED to all 18 formers and the typeless
+> `LWSV/LWSC/LWSK` invariant now carries `WScfg`; the typeless restack + MINT freshness; the rig bounds;
+> the **`Coh` graded-mirror layer** (`LWSVg/LWSCg/LWSKg` + projection — the (A+) decision: the cap-bridge
+> stays untouched, coherence is a SEPARATE layer, because (B-grade) would thread grade-arithmetic into
+> the proven bridge and regress it — build-probed); and the discharge **rig + all non-`case`/`split`
+> arms**. STILL OPEN: (i) **task #45** — the `case`/`split` scrutinee `q=0` grading gap blocks the
+> `LWSVk` discharge (`HasCTy.case` charges the inspected scrutinee `q•γ_v` with no `q≠0`); a kernel/Spec
+> decision. (ii) `coh_step` — the ~12-arm γ-preservation through `subst_value` (the multi-session crux).
+> (iii) the `wsCfg_step` ASSEMBLY (pure wiring per opt-3's arm-map). **Do not cite `type_safety` as
+> `sorryAx`-clean until `wsCfg_step` closes green** — it does NOT yet; the lone `Bang.Model` sorry is
+> `wsCfg_step`. The decision is sound; the verification is the (now well-mapped) implementation.
 
 ## Consequences
 

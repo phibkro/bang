@@ -8,9 +8,17 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-26) — SOUNDNESS: the grade-driven-liveness engine is build-confirmed; PORTING it
-> into the diagonal now. The COMPILER's next two hops are DECIDED.** On `typed-static-r1` @ `f67905e` (docs/design);
-> proof work on `inc5-lr-reindex` (engine being ported in — single-writer opt-3; base was `7c82d91`, moving). **The
+> **★ ACTIVE DIRECTION (2026-06-27) — SOUNDNESS: grade-driven-liveness engine PORTED into the diagonal + the Coh
+> layer built; blocked on ONE kernel decision (task #45) then coh_step + assembly. The COMPILER's next two hops are
+> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `ad97a37` (PUSHED; `Bang.Model` green
+> save the lone `wsCfg_step` sorry). **WHERE IT STANDS:** engine (β bridge + POP wall + ⇒FocusResolves + seed)
+> ported to all 18 formers, `WScfg` rides the typeless `LWSV/LWSC/LWSK`; typeless restack + MINT freshness; rig
+> bounds; the **Coh graded-mirror layer** (ADR-0060 (A+) — cap-bridge untouched, coherence a separate layer); the
+> discharge rig + all non-case/split arms. **BLOCKER = task #45:** the `case`/`split` `q=0` scrutinee grading gap
+> (`HasCTy.case` charges the inspected scrutinee `q•γ_v` with no `q≠0`) blocks the `LWSVk` discharge — a kernel/Spec
+> decision (kernel-engineer + opt-3). Then `coh_step` (~12-arm γ-preservation, the multi-session crux) → the
+> `wsCfg_step` assembly (pure wiring per opt-3's arm-map) → `type_safety` sorryAx-on-DISPATCH-only (#35). Handoff:
+> `/tmp/lang-bang-handoff-2026-06-27-soundness-checkpoint.md`. **The
 > soundness arc:** inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE —
 > a cap escapes a ⊥-typed program) → **ADR-0057 B-occ** → the `wsCfg_step` POP arm exposed the **deep B-occ lever
 > as machine-checked FALSE** (an arrow-guarded cap survives `app`-elimination into a `¬LabelOccurs` answer type;
