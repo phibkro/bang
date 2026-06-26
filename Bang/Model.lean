@@ -317,6 +317,59 @@ theorem focusResolves_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (hWS : WScfg C
   | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
   | unfold _ | oom | wrong _ => trivial
 
+/-! ### §3.5 — restack lemmas (the shared mechanics of the preservation arms).
+
+`splitAtId` is stable under pushing a frame on top, provided that frame is not a `handleF` capturing the
+very identity being resolved (`splitAtId` walks past a non-matching head). So a cap that resolves in `K`
+still resolves in `fr :: K`, and `WSV`/`WSC`/`WSK` re-home wholesale. -/
+
+/-- A cap that resolves in `K` resolves in `fr :: K` when `fr` is not the `handleF` for that identity. -/
+theorem resolvesLabel_cons (fr : Frame) {K : EvalCtx} {n : Nat} {ℓ : Label}
+    (hfr : ∀ m h, fr = Frame.handleF m h → m ≠ n) (h : ResolvesLabel K n ℓ) :
+    ResolvesLabel (fr :: K) n ℓ := by
+  obtain ⟨Kᵢ, hh, Kₒ, hsplit, hlbl⟩ := h
+  refine ⟨fr :: Kᵢ, hh, Kₒ, ?_, hlbl⟩
+  cases fr with
+  | letF N => simp only [splitAtId, hsplit, Option.map_some]
+  | appF w => simp only [splitAtId, hsplit, Option.map_some]
+  | handleF m hd =>
+      have hmn : ¬ (m = n) := hfr m hd rfl
+      simp only [splitAtId, hmn, if_false, hsplit, Option.map_some]
+
+-- `WSV`/`WSC` re-home under a pushed NON-`handleF` frame (every gate's `ResolvesLabel` survives). The
+-- `letF`/`appF` PUSH/REDUCE frames; the `handleF` MINT push needs the freshness-keyed variant separately.
+mutual
+/-- `WSV` re-homes under a pushed non-`handleF` frame. -/
+theorem wsv_restack {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h)
+    {ρ : Eff} {v : Val} {A : VTy Eff Mult} (h : WSV K ρ v A) : WSV (fr :: K) ρ v A := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar => exact .vvar
+  | vcap hg => exact .vcap fun hle => resolvesLabel_cons fr (fun m hd he => absurd he (hfr m hd)) (hg hle)
+  | vthunk hM => exact .vthunk (wsc_restack fr hfr hM)
+  | inl hv => exact .inl (wsv_restack fr hfr hv)
+  | inr hv => exact .inr (wsv_restack fr hfr hv)
+  | pair h1 h2 => exact .pair (wsv_restack fr hfr h1) (wsv_restack fr hfr h2)
+  | fold hv => exact .fold (wsv_restack fr hfr hv)
+/-- `WSC` re-homes under a pushed non-`handleF` frame. -/
+theorem wsc_restack {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h)
+    {ρ : Eff} {c : Comp} {φ : Eff} {C : CTy Eff Mult} (h : WSC K ρ c φ C) : WSC (fr :: K) ρ c φ C := by
+  cases h with
+  | ret hv => exact .ret (wsv_restack fr hfr hv)
+  | letC h1 h2 => exact .letC (wsc_restack fr hfr h1) (wsc_restack fr hfr h2)
+  | force hv => exact .force (wsv_restack fr hfr hv)
+  | lam hM => exact .lam (wsc_restack fr hfr hM)
+  | app h1 h2 => exact .app (wsc_restack fr hfr h1) (wsv_restack fr hfr h2)
+  | case h1 h2 h3 => exact .case (wsv_restack fr hfr h1) (wsc_restack fr hfr h2) (wsc_restack fr hfr h3)
+  | split h1 h2 => exact .split (wsv_restack fr hfr h1) (wsc_restack fr hfr h2)
+  | unfold hv => exact .unfold (wsv_restack fr hfr hv)
+  | perform h1 h2 => exact .perform (wsv_restack fr hfr h1) (wsv_restack fr hfr h2)
+  | handleThrows hM => exact .handleThrows (wsc_restack fr hfr hM)
+  | handleState h1 h2 => exact .handleState (wsv_restack fr hfr h1) (wsc_restack fr hfr h2)
+  | handleTransaction hM => exact .handleTransaction (wsc_restack fr hfr hM)
+end
+
 /-- **OBLIGATION 2 — the MUTUAL preservation (the research crux, multi-session).** `WScfg` is preserved
 by every `Source.step`. `WScfg` = `HasCTy ∧ HasStack ∧ WSC ∧ WSK`: the TYPING half (`HasCTy`/`HasStack`)
 rides EXISTING preservation (`preservation_proof`, Metatheory — NonEscape-free); the NEW content is the
