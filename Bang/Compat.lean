@@ -1524,7 +1524,7 @@ theorem krelS_handlerCount_eq {n : Nat} :
           | (rw [KrelS] at hK
              obtain ⟨_, _, _, _, _, _, _, htail⟩ := hK
              simp only [Bang.handlerCount]; exact ih htail)
-          | (have htail := (krelS_handleF.mp hK).2.1
+          | (have htail := (krelS_handleF.mp hK).2.2.1
              simp only [Bang.handlerCount]
              have := ih htail; omega)
 
