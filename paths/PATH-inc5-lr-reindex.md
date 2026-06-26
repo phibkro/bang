@@ -194,8 +194,17 @@ dense, so route-(a)'s "consumer supplies density" bet is in doubt.** Routes (com
 Canonical-reachability lemma (the stacks lr_sound actually instantiates CrelK at are Canonical — hard, the mutual
 block re-instantiates at handleF::K sub-stacks); (3) B-occ/dissolution makes Canonical derivable at use sites
 (the density-(a) hope, cast in doubt). Possible (4): re-derive crelK_ret WITHOUT the Canonical premise (the
-guarded form may be over-strong — handle the +1 shift locally via run_bump, not global density). inc5-endgame is
-determining the route by attempting it (build-confirmed), STOP-and-SHOW on route (1).
+guarded form may be over-strong — handle the +1 shift locally via run_bump, not global density). **inc5-endgame BUILD-CONFIRMED (`e909e73` scratch/CanonicalWallProbe.lean): routes 3 + 4 BOTH FAIL.** Route 3 —
+`density_bites` (green): `¬Canonical [handleF 5 (throws ℓ)]` (Canonical needs `n<handlerCount`); `krelS_handleF`
+(LR:1589) places NO `n<handlerCount` bound, so a KrelS-related sparse stack is self-relatable yet NOT Canonical —
+B-occ is orthogonal to id-density. Route 4 — `crelK_ret`'s `hcan` is LOAD-BEARING at the handleF-pop `+1` bridge
+(LR:1869-1895: pop keeps `g=handlerCount K'+1`, tail IH at `handlerCount K'`; bridge = `Canonical.capsBelow →
+run_bump_converges`); drop it ⇒ the pop breaks. Necessary, NOT defensive. ⇒ closing binary-LR `lr_fundamental`
+needs `Canonical` for arbitrary KrelS stacks, neither derivable (3) nor removable (4). **OPERATOR-LEVEL decision,
+route 1 or 2, DEFERRED to inc-6** (binary LR = contextual equivalence, not the soundness payoff): (1) CrelK/KrelS
+quantify over Canonical = FROZEN Crel/Spec.lean change + ADR + STATEMENT_CHANGE_OK; (2) a Canonical-reachability
+lemma (hard — `lr_sound` Spec:192 instantiates CrelK at the observation context `C C` via `krelS_refl`, needing
+its own Canonical-supply). inc5-endgame parked it + moved to the diagonal soundness path.
 
 ### ★★★ REFRAME (inc5-endgame, build-grounded `4178ed9`) — soundness is the DIAGONAL, not the binary LR
 inc5-endgame integrated B-occ (`4178ed9`: `git checkout 075f894 -- Bang/{Syntax,Metatheory,BoccRegress}.lean` —
