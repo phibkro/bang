@@ -12,13 +12,11 @@ name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"
 rev = "v4.30.0"
 
-# Loogle — Mathlib type-signature search (https://github.com/nomeata/loogle).
-# Provides `lake exe loogle "?n + 0 = ?n"` for finding lemmas by shape.
-# Tracks Lean closely; pin a tag if a Lean version bump breaks compatibility.
-# Pinned to a SHA (not the moving `master` ref): a fresh worktree's `lake exe cache get`
-# re-resolves a `master` rev → exit 128, flaking the pre-commit `just verify` (dev-env.md).
-# Bump this SHA deliberately on a Lean version change.
-[[require]]
-name = "loogle"
-git = "https://github.com/nomeata/loogle.git"
-rev = "a114d38c1c0172b8b96180b03b6c507647a2f712"
+# Loogle (Mathlib type-signature search) is deliberately NOT a build dependency. It was a
+# dev-only tool (`lake exe loogle`), NEVER imported by `Bang`, but as a `[[require]]` lake
+# resolved + checked-out its tree on every build — and its re-clone repeatedly clobbered
+# worktree git state (task #19: loogle's untracked `frontend-tests/*.py` abort lake's
+# checkout, which then triggered a clobbering re-clone of the shared store). Removed at the
+# root (removal doesn't fetch, so it can't trigger the hazard). `just loogle` now hits the
+# web service (loogle.lean-lang.org); agents use the `lean_loogle` MCP tool. Re-add ONLY if
+# a Bang module ever imports Loogle (it does not) — then pin a tag, not `master`.
