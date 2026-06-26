@@ -739,7 +739,7 @@ inductive LWSVg (K : EvalCtx) : GradeVec Mult → Bool → Val → Prop where
   | vthunk {γ : GradeVec Mult} {b c} (h : LWSCg K γ b c) : LWSVg K γ b (Val.vthunk c)
   | inl {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSVg K γ b (Val.inl v)
   | inr {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSVg K γ b (Val.inr v)
-  | pair {γ γ_v γ_w : GradeVec Mult} {b a c} (hγ : γ = γ_v + γ_w)
+  | pair {γ γ_v γ_w : GradeVec Mult} {b a c} (hγ : γ = γ_v + γ_w) (hlen : γ_v.length = γ_w.length)
       (h1 : LWSVg K γ_v b a) (h2 : LWSVg K γ_w b c) : LWSVg K γ b (Val.pair a c)
   | fold {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSVg K γ b (Val.fold v)
 inductive LWSCg (K : EvalCtx) : GradeVec Mult → Bool → Comp → Prop where
@@ -751,14 +751,18 @@ inductive LWSCg (K : EvalCtx) : GradeVec Mult → Bool → Comp → Prop where
   | force {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSCg K γ b (Comp.force v)
   | lam {γ : GradeVec Mult} {b M} {q : Mult} (h : LWSCg K (q :: γ) b M) : LWSCg K γ b (Comp.lam M)
   | app {γ γ₁ γ₂ : GradeVec Mult} {b M v} {q : Mult} (hγ : γ = γ₁ + q • γ₂)
+      (hlen : γ₁.length = γ₂.length)
       (h1 : LWSCg K γ₁ b M) (h2 : LWSVg K γ₂ (b && decide (q ≠ 0)) v) : LWSCg K γ b (Comp.app M v)
   | case {γ γ_v γ_N : GradeVec Mult} {b v N₁ N₂} {q : Mult} (hγ : γ = q • γ_v + γ_N)
+      (hlen : γ_v.length = γ_N.length)
       (h1 : LWSVg K γ_v b v) (h2 : LWSCg K (q :: γ_N) b N₁) (h3 : LWSCg K (q :: γ_N) b N₂) :
       LWSCg K γ b (Comp.case v N₁ N₂)
   | split {γ γ_v γ_N : GradeVec Mult} {b v N} {q : Mult} (hγ : γ = q • γ_v + γ_N)
+      (hlen : γ_v.length = γ_N.length)
       (h1 : LWSVg K γ_v b v) (h2 : LWSCg K (q :: q :: γ_N) b N) : LWSCg K γ b (Comp.split v N)
   | unfold {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSCg K γ b (Comp.unfold v)
   | perform {γ γ_v γ_c : GradeVec Mult} {b cv op v} {q : Mult} (hγ : γ = q • γ_v + γ_c)
+      (hlen : γ_v.length = γ_c.length)
       (h1 : LWSVg K γ_c b cv) (h2 : LWSVg K γ_v false v) : LWSCg K γ b (Comp.perform cv op v)
   | handleThrows {γ : GradeVec Mult} {b ℓ M} {qc : Mult} (h : LWSCg K (qc :: γ) b M) :
       LWSCg K γ b (Comp.handle (Handler.throws ℓ) M)
@@ -811,7 +815,7 @@ theorem lwsvg_to_lwsv {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {v : Val}
   | vthunk h => exact .vthunk (lwscg_to_lwsc h)
   | inl h => exact .inl (lwsvg_to_lwsv h)
   | inr h => exact .inr (lwsvg_to_lwsv h)
-  | pair _ h1 h2 => exact .pair (lwsvg_to_lwsv h1) (lwsvg_to_lwsv h2)
+  | pair _ _ h1 h2 => exact .pair (lwsvg_to_lwsv h1) (lwsvg_to_lwsv h2)
   | fold h => exact .fold (lwsvg_to_lwsv h)
 theorem lwscg_to_lwsc {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp}
     (h : LWSCg K γ b c) : LWSC K b c := by
@@ -820,12 +824,12 @@ theorem lwscg_to_lwsc {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp}
   | letC _ h1 h2 => exact .letC (lwscg_to_lwsc h1) (lwscg_to_lwsc h2)
   | force h => exact .force (lwsvg_to_lwsv h)
   | lam h => exact .lam (lwscg_to_lwsc h)
-  | @app _ _ _ _ _ _ q _ h1 h2 =>
+  | @app _ _ _ _ _ _ q _ _ h1 h2 =>
       exact .app (q := gnat q) (lwscg_to_lwsc h1) (by simpa only [decide_gnat] using lwsvg_to_lwsv h2)
-  | case _ h1 h2 h3 => exact .case (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2) (lwscg_to_lwsc h3)
-  | split _ h1 h2 => exact .split (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2)
+  | case _ _ h1 h2 h3 => exact .case (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2) (lwscg_to_lwsc h3)
+  | split _ _ h1 h2 => exact .split (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2)
   | unfold h => exact .unfold (lwsvg_to_lwsv h)
-  | perform _ h1 h2 => exact .perform (lwsvg_to_lwsv h1) (lwsvg_to_lwsv h2)
+  | perform _ _ h1 h2 => exact .perform (lwsvg_to_lwsv h1) (lwsvg_to_lwsv h2)
   | handleThrows h => exact .handleThrows (lwscg_to_lwsc h)
   | handleState hs h => exact .handleState (lwsvg_to_lwsv hs) (lwscg_to_lwsc h)
   | handleTransaction h => exact .handleTransaction (lwscg_to_lwsc h)
