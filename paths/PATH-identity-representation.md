@@ -4,7 +4,18 @@
 > handler reference is a generative IDENTITY (a value), dispatched by MATCH. Branch `typed-static-r1`.
 > SoT = ADR-0054 + `docs/architecture/core-overview.md`. Design **validated end-to-end** + operator-signed-off.
 
-## Status: design done, validated, signed off — IMPLEMENTATION not yet started
+## Status: inc 1–4 DONE + merged AXIOM-CLEAN (`2a7f5c1`, 2026-06-26). ⚠ NEXT UNIT PIVOTED — see banner.
+
+> **★ inc 1 Core · 2 Syntax · 3 Operational · 4 Metatheory — ALL DONE + merged, axiom-clean.** NonEscape
+> frozen (Shape B operational closure); the STD block (`preservation`/`progress`/`type_safety`) re-proven
+> over identity dispatch, 0 sorries, ⊆ {propext, Classical.choice, Quot.sound}; ~1225 LOC positional
+> machinery deleted; `type_safety` unified under `HasConfig` (Option X).
+> **⚠ Fork-ii below (identity = `handlerCount`) was build-REFUTED** — depth-based ids admit a CROSS-EXTENT
+> COLLISION (an escaped cap re-resolves to a same-depth impostor; `scratch/IdentityCollisionProbe.lean`;
+> `NonEscape`-as-`FocusResolves` too weak). The operator chose **global-fresh identity (a monotonic Config
+> counter) — `docs/decisions/0055-global-fresh-capability-identity.md` is the NEXT unit's spec** (supersedes
+> Fork-ii). Then inc 5 (LR/Compat) · 6 (CalcVM route-B, ADR-0052) · 7 (Surface) remain. The inc-by-inc map
+> below is the RECORD of how inc 1–4 landed — read it as history, not as the live plan.
 
 - **De-risked** (scratch, `a9af7bb`): `scratch/IdentityDispatchProbe.lean` (match dispatch fixes the
   witness, migration-invariant) + `scratch/IdentityKernelProbe.lean` (standalone mini-kernel: the
