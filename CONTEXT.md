@@ -8,23 +8,29 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-26) — SOUNDNESS is one supporting-lemma-gated theorem from machine-checked;
-> the COMPILER's next two hops are DECIDED.** On `typed-static-r1` @ `96c3d9c` (docs/design); proof work on
-> `inc5-lr-reindex` @ `4f1c1e2` (PUSHED; clean, `lake build Bang.Model` green save one sorry). **The session arc:**
-> inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE — a cap escapes a
-> ⊥-typed program) → **ADR-0057 B-occ** (answer-type label-freedom — the fix; phase-1 kernel premise landed
-> axiom-clean) → the diagonal re-keyed: **`type_safety` is ONE theorem from sorryAx-clean** — `wsCfg_step`
-> (task #34), **3 of 4 supporting units banked** (restack + μ-corner + **the GATE `hasConfigTy_step` `4f1c1e2`**,
-> the NonEscape-free typing-preservation; unblocks every arm's typing half); remaining = `wsc_subst` + the deep
-> B-occ lever + the 4-arm assembly.
+> **★ ACTIVE DIRECTION (2026-06-26) — SOUNDNESS: the grade-driven-liveness engine is build-confirmed; PORTING it
+> into the diagonal now. The COMPILER's next two hops are DECIDED.** On `typed-static-r1` @ `f67905e` (docs/design);
+> proof work on `inc5-lr-reindex` (engine being ported in — single-writer opt-3; base was `7c82d91`, moving). **The
+> soundness arc:** inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE —
+> a cap escapes a ⊥-typed program) → **ADR-0057 B-occ** → the `wsCfg_step` POP arm exposed the **deep B-occ lever
+> as machine-checked FALSE** (an arrow-guarded cap survives `app`-elimination into a `¬LabelOccurs` answer type;
+> `escapeB_app`). A three-way build-checked survey REFUTED every first-order fix (▷-later, reachability, naive
+> grade-gate) → **ADR-0060 grade-driven liveness**: a TYPELESS `LWSV/LWSC` invariant gated `b ∧ decide(q≠0)`
+> (dropping the type index dodges the dependent-elim wall), committing the grade rig to **NoZeroDivisors +
+> ZeroSumFree + Nontrivial** (QTT/ℕ qualify; rings fail). The **engine is build-confirmed axiom-clean** (12 lemmas
+> ⊆ {propext,Quot.sound}) for the two HARD arms — the β/REDUCE subst bridge + the POP wall — plus the positive
+> direction (⇒FocusResolves + seed). **NOW: porting** the engine into the diagonal module (tasks #41→#42/#43,
+> single-writer); after port `wsCfg_step` closes for PUSH+REDUCE+MINT+POP save **DISPATCH** (the resume-continuation
+> liveness, tied to #35) → `type_safety` reaches `sorryAx`-on-DISPATCH-only.
 > **COMPILER (Lexa comparison + Wasm-3.0): ADR-0058** (the binary-LR Canonical wall is a frozen-signature
 > artifact → route 1 deletes it; build-confirmable, task #33→inc-6) **+ ADR-0059** (Wasm 3.0 + grade-directed
 > pluggable backend; v1 = `throws`→exn + `state`/`transaction`→tail-call, the GC-machine general leg is the
 > post-v1 ADR-0015 frontier). Both backed by a machine-checked GC-simulation relation (identity-keyed,
 > axiom-clean). Two OPEN clauses are task-linked + build-gated (task #33 the re-key compiling; task #36 the
-> cross-step partition). **NEXT:** `hasConfigTy_step` gate → close `wsCfg_step` → `type_safety` sorryAx-clean;
-> then inc-6 (CalcVM route-B + the ADR-0058 re-key + the Wasm-3.0 backend). Detail in the SOUNDNESS-FINDING
-> block below + tasks #33/#34/#35/#36.
+> cross-step partition). **NEXT:** finish the port (tasks #42/#43) → `wsCfg_step` closes save DISPATCH → then the
+> DISPATCH arm (#35, resumption-grade) for full `type_safety` sorryAx-clean; then inc-6 (CalcVM route-B + the
+> ADR-0058 re-key + the Wasm-3.0 backend). Detail in the SOUNDNESS-FINDING block below + ADR-0060 + tasks
+> #35/#41/#42/#43 (soundness) and #33/#36 (compiler).
 > **★ SOUNDNESS FINDING (2026-06-26, ADR-0056) — the inc-5 diagonal is machine-checked FALSE.** A cap can
 > escape its handler and get STUCK in a well-typed-at-⊥ program (`progB`: the ⊥-row gate is label-based,
 > escape is identity-based; ADR-0054's "escape ruled out by the gate" REFUTED — the WC keystone-2c escape,
