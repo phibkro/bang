@@ -78,3 +78,17 @@ halves (plug/splitAtId). This is the dynamic-half MIRROR of runplug's work.
 - THEN the ADR cluster (renaming-invariance + machine-shaped KrelS + VcapFree) → inc-6.
 Worktrees live: `lang-bang-inc5` @ inc5-lr-reindex (the LR work), `lang-bang-runplug` @ kernel-runplug
 (runplug's probe — keep until B1/Compat confirm run_plug is fully integrated, then teardown).
+
+## ★ UPDATE (2026-06-26) — unit A re-scoped: mechanical banked, deep block is KEYSTONE-GATED
+compat (unit A) banked the MECHANICAL Compat surface (≤1090): `dd6b297` (swept dead cap-shift theory, −99 LOC)
++ `d56f471` (3-tuple Config + vcap/perform/handle-binds-at-0 + closeC_handle lam-shape + the compatK_* frame
+cores). But the DEEP BLOCK (Compat 1091-2080) is NOT mechanical — it's the **keystone-gated fundamental-theorem
+re-derivation**: `staticSplit`/`krelS_staticSplit_decomp` (the positional cap-countdown decomposition that
+`crelK_fund`/`crelK_fund_up`/`krelS_refl` all consume) are GONE; `splitAtId` is identity-keyed, so the whole
+decomposition needs **re-derivation around `splitAtId`** — exactly what B1's run-renaming keystone underpins.
+NB `krelS_staticSplit_decomp`/`crelK_fund`/`krelS_refl` live ONLY in Compat (no LR analogue to transcribe).
+- **Revised dispatch:** (B1) run-renaming keystone [in flight, `rename`] → THEN (A2) the Compat deep-block
+  re-derivation [post-B1 PROOF-ENGINEER: re-derive the `splitAtId`-decomposition + crelK_fund/krelS_refl using
+  the keystone; compat's STOP-and-SHOW characterization is the map] alongside (B2) the diagonal's 2 obligations.
+- **arch-check gap (fold into inc-5 merge):** `tools/arch-check.sh` doesn't classify the new `Bang.Model`
+  module (fitness fails → branch ICs use --no-verify). Classify Model as the backend/LR edge at merge.
