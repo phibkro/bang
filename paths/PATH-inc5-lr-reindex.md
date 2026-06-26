@@ -126,3 +126,23 @@ config; consumers build it via canonStack/reshape, dispatch-reinstall preserves 
 a premise onto the FROZEN `lr_sound`/`lr_fundamental` → STOP-and-SHOW (shouldn't — density is internal). RESERVE
 = **(b)** [change CrelK/KrelS def to a fresh-id counter — re-does form b, OPERATOR-level] only if (a) walls. run_rename
 banked into LR §5.0a′ (`0b739db`, axiom-clean). A2 is a multi-session re-derivation.
+
+## ★ A2 STAND-DOWN (2026-06-26) — LR re-key BANKED; Compat deep block handed off
+compat2 banked (inc5-lr-reindex, LR GREEN, axiom-clean): `0b739db` run_rename integrated · `d91ef1c` density-(a)
+machinery (`bumpσ`/`CapsBelow`/`run_bump_converges`/`Canonical` — the counter-bump bridge, non-escape-independent,
+KEPT as prepared tooling) · `0a1504f` crelK_ret reverted to FROZEN 3-arg signature (stable consumer interface) +
+the ADR-0056 named sorry (interface-stability over the explicit-premise form — sound: don't ripple a held premise
+through all consumers; the STACK half of the +1 bridge is READY via `run_bump_converges`, only the VALUE-cap
+half is held). LR NAMED SORRIES: (1) crelK_ret handleF arm (LR:1808, "ADR-0056 escape-discipline pending");
+(2) seq_unit_proof (LR:1243, pre-existing off-critical-path).
+**NEXT LR UNIT — Compat deep block** (1091-2167, ~103 errs; proof-engineer; escape-INDEPENDENT except the noted
+intersection), dependency-ordered: (i) #3 mechanical id-threading (dispatchOn 4→5-arg [carries id n], handleF
+1→2-arg, through `dispatchOn_append_outer`/`krelS_append`/`krelS_state·transaction_reinstall`/`krelS_handlerCount_eq`)
+· (ii) `krelS_staticSplit_decomp` re-derivation around `splitAtId` (staticSplit/absSplit/staticDispatch DELETED →
+identity-keyed; the CORE; STOP-and-SHOW if IT walls) · (iii) `compatK_handle*` refocus re-derivation (now
+`(g+1, handleF g h::K, subst (vcap g ℓ) M)` — mints g, substitutes cap, increments). WATCH: the decomp's resume
+conjunct produces the returned values feeding crelK_ret's held value-cap arm + `crelK_fund` up/perform's
+value-cap sub-parts — NAMED-SORRY those (same ADR-0056 hold). Compat still at d56f471's red.
+**DISPATCH TIMING**: best AFTER the escape discipline (ADR-0057) lands, so the value-cap sub-parts CLOSE in one
+pass instead of named-sorry + a second visit. The mechanical+decomp parts are escape-independent if a fresh IC
+wants to bank them sooner.
