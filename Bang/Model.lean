@@ -375,12 +375,18 @@ by every `Source.step`. `WScfg` = `HasCTy ∧ HasStack ∧ WSC ∧ WSK`: the TYP
 rides EXISTING preservation (`preservation_proof`, Metatheory — NonEscape-free); the NEW content is the
 `WSC`/`WSK` cap-resolution half, now invertible/buildable since they are TERM+TYPE indexed.
 
-SUPPORTING LEMMAS the arms need (NOT yet proven — the next units):
-  · `ResolvesLabel`-push: `ResolvesLabel K n ℓ → ResolvesLabel (fr :: K) n ℓ` for `fr` a fresh frame
-    (`fr`'s id ≠ n, by `WellCounted`/global-fresh `g`). `splitAtId` walks past a non-matching head.
-  · `WSV`/`WSC`-restack: under the same push, `WSV K ρ v A → WSV (fr :: K) ρ v A` (every gate's
-    `ResolvesLabel` survives the push). Mutual on `WSV`/`WSC`.
-  · the B-occ lever (PROBE `scratch/WellScopedReshapeProbe.lean::surfaceCaps_labelOccurs`, promote it):
+SUPPORTING LEMMAS:
+  · ✓ DONE `resolvesLabel_cons` + `wsv_restack`/`wsc_restack` (§3.5) — `ResolvesLabel`/`WSV`/`WSC` re-home
+    under a pushed non-`handleF` frame (the PUSH/REDUCE mechanics). The MINT `handleF g` push needs the
+    freshness-keyed variant (`g` global-fresh ⇒ id ≠ any live cap, so `resolvesLabel_cons`'s side-condition
+    discharges via `WellCounted`/`splitAtId_fresh`).
+  · TODO `hasConfigTy_step` — factor the NonEscape-free TYPING preservation out of `preservation_proof`
+    (Metatheory:2038). Every leaf there is `⟨eo',hle,⟨HasConfigTy⟩,hnecfg'⟩`; `hnecfg'` is the ONLY
+    NonEscape use ⇒ drop the last tuple slot + the `hne`/`hnecfg'` lines ⇒ `HasConfigTy cfg eo Co → step →
+    ∃ eo' ≤ eo, HasConfigTy cfg' eo' Co`. ~300 lines, mechanical. THE gate for every arm's typing half.
+  · TODO `wsc_subst` — the cap-substitution lemma `WSV K ρ v A → WSC K ρ N … → WSC K ρ (subst v N) …`
+    (the `subst_value` analogue for caps; REDUCE/MINT/DISPATCH need it).
+  · TODO the B-occ lever (PROBE `scratch/WellScopedReshapeProbe.lean::surfaceCaps_labelOccurs`, promote it):
     a surface `vcap _ ℓ` in `v : A` forces `LabelOccurs ℓ A` — feeds the POP arm + the μ-corner lemma
     `labelOccurs (unrollMu A) → labelOccurs A` (the one seam left in the probe).
 
