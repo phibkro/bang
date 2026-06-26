@@ -849,6 +849,48 @@ theorem lwskg_to_lwsk {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} :
       | stateF hs hK => exact .stateF (lwsvg_to_lwsv hs) (lwskg_to_lwsk hK)
       | transactionF hK => exact .transactionF (lwskg_to_lwsk hK)
 
+/-! ### §2′.8b — the q=0 β DISCHARGE `LWSCg → γ[k]=0 → LWSCk` (the rig + false-base + induction).
+
+`lwscg_to_lwsck` upgrades a coherent `LWSCg` to the substituted-var-`k`-dormant `LWSCk` (which feeds the
+green `lwsck_subst` at the dead-arg β step). Uses the `γ[k]? = some 0` form (opt-3's): the `some` carries
+in-range-ness, so the `+`-split needs NO grade-length tracking (zipWith is `some` only when both are). The
+rig routes `γ[k]=0` through scale-`0` nodes: `q • γ' = 0` at `k` ⟹ `q = 0` (gate ⟹ false ⟹ false-base) OR
+`γ'[k] = 0` (recurse); `γ_a + γ_b = 0` at `k` ⟹ both `0` (ZeroSumFree). -/
+
+/-- `•`-scale split (`NoZeroDivisors`): a scaled grade is `0` at `k` ⟹ the scalar is `0` or the grade is. -/
+private theorem smul_some_zero {q : Mult} {γ : GradeVec Mult} {k : Nat}
+    (h : (q • γ)[k]? = some 0) : q = 0 ∨ γ[k]? = some 0 := by
+  rw [show (q • γ) = GradeVec.smul q γ from rfl, GradeVec.smul, List.getElem?_map] at h
+  cases hk : γ[k]? with
+  | none => rw [hk] at h; simp at h
+  | some x =>
+    rw [hk] at h; simp only [Option.map_some, Option.some.injEq] at h
+    rcases mul_eq_zero.mp h with hq | hx
+    · exact Or.inl hq
+    · exact Or.inr (by rw [hx])
+
+/-- `+`-split (`ZeroSumFree`): a sum-grade is `0` at `k` ⟹ BOTH summands are. The `some` forces both
+in-range (zipWith), so NO length hypothesis is needed. -/
+private theorem add_some_zero (hzsf : ZeroSumFree Mult) {γ_a γ_b : GradeVec Mult} {k : Nat}
+    (h : (γ_a + γ_b)[k]? = some 0) : γ_a[k]? = some 0 ∧ γ_b[k]? = some 0 := by
+  rw [show (γ_a + γ_b) = GradeVec.add γ_a γ_b from rfl, GradeVec.add, List.getElem?_zipWith] at h
+  cases ha : γ_a[k]? with
+  | none => rw [ha] at h; simp at h
+  | some x =>
+    cases hb : γ_b[k]? with
+    | none => rw [ha, hb] at h; simp at h
+    | some y =>
+      rw [ha, hb] at h; simp only [Option.map₂_some_some, Option.some.injEq] at h
+      obtain ⟨hx, hy⟩ := hzsf x y h
+      exact ⟨by rw [hx], by rw [hy]⟩
+
+/-! THE DISCHARGE `lwscg_to_lwsck` (γ[k]=0 ⇒ LWSVk) is BLOCKED on an engine-internal gap at the
+`case`/`split` arms: their scrutinee is gated at flag `b` (not `b && decide(q≠0)`), so at scrutinee
+multiplicity `q = 0` the scrutinee is still LIVE while `γ[k]=0` no longer constrains its grade —
+`case (vvar k) …` at `q=0`, `b=true` then has no `LWSVk` (needs `vvar_k` at flag false). The rig
+above (`smul_some_zero`/`add_some_zero`, the `some 0` length-free split) is reusable; the discharge
+resumes once the case/split scrutinee gating is resolved (opt-3's LWSVk shape / kernel case-grading). -/
+
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
 (`vcap`s arise only by minting). The diagonal's side-condition (the bare form is FALSE: a hand-written
