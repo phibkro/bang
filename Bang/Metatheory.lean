@@ -293,12 +293,12 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                     ih_v, ih_cap, Nat.min_self]
   -- ADR-0054: handle BINDS the cap (mult `qc`), so the body grade is `qc :: γ` ⇒ the IH gives
   -- `(qc::γ).length = (cap ℓ::Γ).length`; strip the cons (`Nat.succ.inj`) for `γ.length = Γ.length`.
-  case handleThrows => intro γ Γ ℓ M e φ q qc A _ _ _ _ ih
+  case handleThrows => intro γ Γ ℓ M e φ q qc A _ _ _ _ _ ih
                        simp only [List.length_cons] at ih; exact Nat.succ.inj ih
-  case handleState => intro γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ _ _ _ _ ihM
+  case handleState => intro γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ _ _ _ _ _ ihM
                       simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
   case handleTransaction =>
-    intro γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ _ _ _ _ ihM
+    intro γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ _ _ _ _ _ ihM
     simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
 
 theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
@@ -348,12 +348,12 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                     ih_v, ih_cap, Nat.min_self]
   -- ADR-0054: handle BINDS the cap (mult `qc`), so the body grade is `qc :: γ` ⇒ the IH gives
   -- `(qc::γ).length = (cap ℓ::Γ).length`; strip the cons (`Nat.succ.inj`) for `γ.length = Γ.length`.
-  case handleThrows => intro γ Γ ℓ M e φ q qc A _ _ _ _ ih
+  case handleThrows => intro γ Γ ℓ M e φ q qc A _ _ _ _ _ ih
                        simp only [List.length_cons] at ih; exact Nat.succ.inj ih
-  case handleState => intro γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ _ _ _ _ ihM
+  case handleState => intro γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ _ _ _ _ _ ihM
                       simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
   case handleTransaction =>
-    intro γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ _ _ _ _ ihM
+    intro γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ _ _ _ _ _ ihM
     simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
@@ -462,14 +462,14 @@ theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     -- ADR-0054: perform carries the cap value `c` (closed) + the arg `v`; both shift-fixed.
     simp only [Comp.shiftFrom]; rw [hcap.shift_closed k hk, hv.shift_closed k hk]
   -- ADR-0054: handle BINDS the cap, so the body context is `cap ℓ :: Γ` (length +1) ⇒ cutoff `k+1`.
-  | @handleThrows γ Γ ℓ M e φ q qc A _ _ hM _ =>
+  | @handleThrows γ Γ ℓ M e φ q qc A _ _ hM _ _ =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
-  | @handleState γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ hs hM _ =>
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ hs hM _ _ =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega),
       hs.shift_closed k (Nat.zero_le k)]
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ hcells hM _ =>
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ hcells hM _ _ =>
     -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH at k+1.
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
@@ -522,14 +522,14 @@ theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.substFrom]; rw [hcap.subst_closed k hk w, hv.subst_closed k hk w]
   -- ADR-0054: handle BINDS the cap, so the body context is `cap ℓ :: Γ` (length +1) ⇒ the body
   -- substitutes at cutoff `k+1` with the lifted filler `shift w`; a CLOSED body is fixed by the IH.
-  | @handleThrows γ Γ ℓ M e φ q qc A _ _ hM _ =>
+  | @handleThrows γ Γ ℓ M e φ q qc A _ _ hM _ _ =>
     simp only [Comp.substFrom, Handler.substFrom]
     rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w)]
-  | @handleState γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ hs hM _ =>
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A _ _ _ _ _ hs hM _ _ =>
     simp only [Comp.substFrom, Handler.substFrom]
     rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w),
       hs.subst_closed k (Nat.zero_le k) w]
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ hcells hM _ =>
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ hcells hM _ _ =>
     -- `Handler.substFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH at k+1.
     simp only [Comp.substFrom, Handler.substFrom]
     rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w)]
@@ -751,14 +751,14 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     exact HasCTy.perform (hcap.weaken k hk A') hmem hopArg hopRes (hw.weaken k hk A')
   -- ADR-0054: handle BINDS the cap (`cap ℓ :: Γ`, mult `qc`), so the body weakens at the SHIFTED
   -- cutoff `k+1`; `insT`/`insG` insert past the cap binder (`x :: insT Γ k A'`, `qc :: insG γ k`).
-  | @handleThrows γ Γ ℓ M e φ q qc A hraise hiface hM hle =>
+  | @handleThrows γ Γ ℓ M e φ q qc A hraise hiface hM hle hbocc =>
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     have hM' := hM.weaken (k + 1) (by simp only [List.length_cons]; omega) A'
     have hctx : insT (VTy.cap ℓ :: Γ) (k + 1) A' = VTy.cap ℓ :: insT Γ k A' := by unfold insT; rfl
     have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
     rw [hctx, hgr2] at hM'
-    exact HasCTy.handleThrows hraise hiface hM' hle
-  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hif hs hM hle =>
+    exact HasCTy.handleThrows hraise hiface hM' hle hbocc
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hif hs hM hle hbocc =>
     -- state's stored value is CLOSED, so shift leaves it fixed (ADR-0025); body weakens at k+1.
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hs.shift_closed k (Nat.zero_le k)]
@@ -766,15 +766,15 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     have hctx : insT (VTy.cap ℓ :: Γ) (k + 1) A' = VTy.cap ℓ :: insT Γ k A' := by unfold insT; rfl
     have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
     rw [hctx, hgr2] at hM'
-    exact HasCTy.handleState hga hgr hpa hpr hif hs hM' hle
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle =>
+    exact HasCTy.handleState hga hgr hpa hpr hif hs hM' hle hbocc
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle hbocc =>
     -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); body weakens at k+1.
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     have hM' := hM.weaken (k + 1) (by simp only [List.length_cons]; omega) A'
     have hctx : insT (VTy.cap ℓ :: Γ) (k + 1) A' = VTy.cap ℓ :: insT Γ k A' := by unfold insT; rfl
     have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
     rw [hctx, hgr2] at hM'
-    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells hM' hle
+    exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells hM' hle hbocc
 end
 
 /-- Grade at the substituted slot `k`, read off the derivation's grade vector. -/
@@ -1427,27 +1427,27 @@ theorem HasCTy.subst_gen
   -- no cap-shift. This is the STD-block simplification the absolute-cap representation buys.
   case handleThrows =>
     -- ADR-0054: handle BINDS the cap (`qc`); the body descends under it (subst_handle_body).
-    intro γ Γ₀ ℓ M e φ q qc A₀ hraise hiface hM hle _ihM Δ Γ A γ_v v hΓ hv
+    intro γ Γ₀ ℓ M e φ q qc A₀ hraise hiface hM hle hbocc _ihM Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
-    exact HasCTy.handleThrows hraise hiface (subst_handle_body Δ Γ A γ_v v hv hM _ihM) hle
+    exact HasCTy.handleThrows hraise hiface (subst_handle_body Δ Γ A γ_v v hv hM _ihM) hle hbocc
   case handleState =>
-    intro γ Γ₀ ℓ s₀ M e φ q qc S A₀ hga hgr hpa hpr hif hs hM hle _ihs ihM Δ Γ A γ_v v hΓ hv
+    intro γ Γ₀ ℓ s₀ M e φ q qc S A₀ hga hgr hpa hpr hif hs hM hle hbocc _ihs ihM Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
     -- the stored state is CLOSED ⇒ substFrom leaves it fixed (ADR-0025); body descends under the cap.
     rw [hs.subst_closed Δ.length (Nat.zero_le _) _]
     exact HasCTy.handleState hga hgr hpa hpr hif hs
-      (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle
+      (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle hbocc
   case handleTransaction =>
     -- subst through a transaction handler. `Handler.substFrom` leaves the heap untouched (closed
     -- cells, ADR-0030), so only the body substitutes (under the cap binder); like `handleState`.
-    intro γ Γ₀ ℓ Θ₀ M e φ q qc A₀ hna hnr hra hrr hwa hwr hif hcells hM hle _hcellsIH ihM
+    intro γ Γ₀ ℓ Θ₀ M e φ q qc A₀ hna hnr hra hrr hwa hwr hif hcells hM hle hbocc _hcellsIH ihM
       Δ Γ A γ_v v hΓ hv
     subst hΓ
     rw [Comp.substFrom, Handler.substFrom]
     exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells
-      (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle
+      (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle hbocc
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -1515,7 +1515,7 @@ theorem HasStack.handleF_throws_inv {n : Nat} {ℓ : Label} {K : EvalCtx} {e : E
       ∧ HasStack K φ (CTy.F q A) eo Co := by
   intro h
   cases h with
-  | @handleF _ _ _ _ φ eo q A Co hraise hiface hdis hsub =>
+  | @handleF _ _ _ _ φ eo q A Co hraise hiface hdis _ hsub =>
     exact ⟨φ, q, A, rfl, hraise, hiface, hdis, hsub⟩
 
 /-- Invert ANY handler frame (`throws` or `state`): the focus is `F q A`, the handler discharges its
@@ -1528,10 +1528,10 @@ theorem HasStack.handleAny_inv {n : Nat} {hdl : Handler} {K : EvalCtx} {e : Eff}
     ∃ φ q A, C = CTy.F q A ∧ ∃ eo', eo' ≤ eo ∧ HasStack K φ (CTy.F q A) eo' Co := by
   intro h
   cases h with
-  | @handleF _ _ _ _ φ eo q A Co hraise hiface hdis hsub => exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
-  | @stateF _ _ _ _ _ φ eo q A S Co hga hgr hpa hpr hif hs hdis hsub =>
+  | @handleF _ _ _ _ φ eo q A Co hraise hiface hdis _ hsub => exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
+  | @stateF _ _ _ _ _ φ eo q A S Co hga hgr hpa hpr hif hs hdis _ hsub =>
     exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
-  | @transactionF _ _ _ _ _ φ eo q A Co hna hnr hra hrr hwa hwr hif hcells hdis hsub =>
+  | @transactionF _ _ _ _ _ φ eo q A Co hna hnr hra hrr hwa hwr hif hcells hdis _ hsub =>
     exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
 
 /-! ### E.0b Closed-focus HasCTy inversion lemmas (Γ = [], γ = [])
@@ -1599,11 +1599,12 @@ theorem HasCTy.handleThrows_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
       ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A
       ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise")
       ∧ HasCTy (qc :: γ0) (VTy.cap ℓ :: Γ0) M e_body (CTy.F q A)
-      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e := by
+      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e
+      ∧ ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A := by
   intro h
   cases h with
-  | @handleThrows _ _ _ _ e_body φ q qc A hraise hiface hM hle =>
-    exact ⟨e_body, q, qc, A, rfl, hraise, hiface, hM, hle⟩
+  | @handleThrows _ _ _ _ e_body φ q qc A hraise hiface hM hle hbocc =>
+    exact ⟨e_body, q, qc, A, rfl, hraise, hiface, hM, hle, hbocc⟩
 
 /-- Invert a `handle (state ℓ s₀) M` typing (ADR-0025) — was `handleState_untypable` pre-rung-1. -/
 theorem HasCTy.handleState_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
@@ -1617,11 +1618,12 @@ theorem HasCTy.handleState_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
       ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put")
       ∧ HasVTy [] [] s₀ S
       ∧ HasCTy (qc :: γ0) (VTy.cap ℓ :: Γ0) M e_body (CTy.F q A)
-      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e := by
+      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e
+      ∧ ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A := by
   intro h
   cases h with
-  | @handleState _ _ _ _ _ e_body φ q qc S A hga hgr hpa hpr hif hs hM hle =>
-    exact ⟨e_body, q, qc, S, A, rfl, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩
+  | @handleState _ _ _ _ _ e_body φ q qc S A hga hgr hpa hpr hif hs hM hle hbocc =>
+    exact ⟨e_body, q, qc, S, A, rfl, hga, hgr, hpa, hpr, hif, hs, hM, hle, hbocc⟩
 
 /-- Invert a `handle (transaction ℓ Θ₀) M` typing (ADR-0030). -/
 theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
@@ -1639,11 +1641,12 @@ theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult
           op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar")
       ∧ (∀ cell ∈ Θ₀, HasVTy [] [] cell (VTy.int : VTy Eff Mult))
       ∧ HasCTy (qc :: γ0) (VTy.cap ℓ :: Γ0) M e_body (CTy.F q A)
-      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e := by
+      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e
+      ∧ ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A := by
   intro h
   cases h with
-  | @handleTransaction _ _ _ _ _ e_body φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle =>
-    exact ⟨e_body, q, qc, A, rfl, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle⟩
+  | @handleTransaction _ _ _ _ _ e_body φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle hbocc =>
+    exact ⟨e_body, q, qc, A, rfl, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle, hbocc⟩
 
 theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {e : Eff} {C : CTy Eff Mult} :
@@ -1746,18 +1749,18 @@ theorem HasStack.weaken_eff {K : EvalCtx} {e e' : Eff} {C : CTy Eff Mult}
     intro hle
     obtain ⟨eo', hleo, hsub'⟩ := ih hle
     exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
-  | @handleF K n ℓ e φ eo q A Co hraise hiface hdis hsub ih =>
+  | @handleF K n ℓ e φ eo q A Co hraise hiface hdis hbocc hsub ih =>
     intro hle
     -- e' ≤ e ≤ labelEff ℓ ⊔ φ; rebuild same frame, same substack ⇒ same eo
-    exact ⟨eo, le_refl _, HasStack.handleF hraise hiface (le_trans hle hdis) hsub⟩
-  | @stateF K n ℓ s e φ eo q A S Co hga hgr hpa hpr hif hs hdis hsub ih =>
+    exact ⟨eo, le_refl _, HasStack.handleF hraise hiface (le_trans hle hdis) hbocc hsub⟩
+  | @stateF K n ℓ s e φ eo q A S Co hga hgr hpa hpr hif hs hdis hbocc hsub ih =>
     intro hle
-    exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs (le_trans hle hdis) hsub⟩
-  | @transactionF K n ℓ Θ e φ eo q A Co hna hnr hra hrr hwa hwr hif hcells hdis hsub ih =>
+    exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs (le_trans hle hdis) hbocc hsub⟩
+  | @transactionF K n ℓ Θ e φ eo q A Co hna hnr hra hrr hwa hwr hif hcells hdis hbocc hsub ih =>
     -- rebuild the same transaction frame at the narrowed focus effect (ADR-0030).
     intro hle
     exact ⟨eo, le_refl _,
-      HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells (le_trans hle hdis) hsub⟩
+      HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells (le_trans hle hdis) hbocc hsub⟩
 
 /-! ### E.1c label-blind concat decomposition (the STATIC re-typing core, ADR-0045 1b → ADR-0054 STEP-5)
 
@@ -1791,9 +1794,9 @@ theorem HasStack.concat_throws_typed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Lab
     cases hK with
     | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
     | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
-    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
-    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
-    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
 
 /-- STATE resume re-typing (static). The boundary handler is a `state ℓ' s` frame; reinstall a
 `state ℓ' s'` frame (any closed `s' : S`, `S = opRes ℓ' "get"`) over the same `Kᵢ`/`Kₒ`, re-typing the
@@ -1813,10 +1816,10 @@ theorem HasStack.concat_state_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Lab
   | nil =>
     simp only [List.nil_append] at hK ⊢
     cases hK with
-    | @stateF _ _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub =>
+    | @stateF _ _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hbocc hsub =>
       have hSeq : S = S0 := by rw [hgr] at hgetRes; exact (Option.some.inj hgetRes).symm
       subst hSeq
-      exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs' hle hsub⟩
+      exact ⟨eo, le_refl _, HasStack.stateF hga hgr hpa hpr hif hs' hle hbocc hsub⟩
   | cons fr Kᵢ ih =>
     simp only [List.cons_append] at hK ⊢
     cases hK with
@@ -1826,15 +1829,15 @@ theorem HasStack.concat_state_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Lab
     | @appF _ _ _ _ q A B _ hv hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
-    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
-      exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hsub'⟩
-    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
+      exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hbocc hsub'⟩
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
-      exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hsub'⟩
-    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+      exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hbocc hsub'⟩
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
-      exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hsub'⟩
+      exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub'⟩
 
 /-- TRANSACTION resume re-typing (static), the multi-cell analogue of `concat_state_resume`. The
 boundary `transaction ℓ' Θ` frame is reinstalled as `transaction ℓ' Θ'` (any all-`int`-cells heap `Θ'`)
@@ -1851,8 +1854,8 @@ theorem HasStack.concat_transaction_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ'
   | nil =>
     simp only [List.nil_append] at hK ⊢
     cases hK with
-    | @transactionF _ _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
-      exact ⟨eo, le_refl _, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells' hle hsub⟩
+    | @transactionF _ _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
+      exact ⟨eo, le_refl _, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells' hle hbocc hsub⟩
   | cons fr Kᵢ ih =>
     simp only [List.cons_append] at hK ⊢
     cases hK with
@@ -1862,15 +1865,15 @@ theorem HasStack.concat_transaction_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ'
     | @appF _ _ _ _ q A B _ hv hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
-    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub =>
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
-      exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hsub'⟩
-    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub =>
+      exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hbocc hsub'⟩
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
-      exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hsub'⟩
-    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+      exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hbocc hsub'⟩
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
-      exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hsub'⟩
+      exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub'⟩
 
 /-- The boundary `state ℓ' s` frame (located by the cap) carries a CLOSED stored state of type
 `S = opRes ℓ' "get"` and the get/put interface signatures — read off by peeling `Kᵢ` to the boundary
@@ -1886,15 +1889,15 @@ theorem HasStack.concat_state_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Lab
   | nil =>
     intro hK; simp only [List.nil_append] at hK
     cases hK with
-    | @stateF _ _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle hsub => exact ⟨S0, hgr, hpa, hpr, hs⟩
+    | @stateF _ _ _ _ _ φ _ q A S0 _ hga hgr hpa hpr hif hs hle _ hsub => exact ⟨S0, hgr, hpa, hpr, hs⟩
   | cons fr Kᵢ ih =>
     intro hK; simp only [List.cons_append] at hK
     cases hK with
     | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
     | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
-    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
-    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
-    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
 
 /-- The boundary `transaction ℓ' Θ` frame (located by the cap) carries a CLOSED all-`int` heap and the
 monomorphic-`int` stm interface signatures — read off by peeling `Kᵢ` to the boundary. The static
@@ -1915,16 +1918,16 @@ theorem HasStack.concat_transaction_store {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' 
   | nil =>
     intro hK; simp only [List.nil_append] at hK
     cases hK with
-    | @transactionF _ _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub =>
+    | @transactionF _ _ _ _ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub =>
       exact ⟨hna, hnr, hra, hrr, hwa, hwr, hif, hcells⟩
   | cons fr Kᵢ ih =>
     intro hK; simp only [List.cons_append] at hK
     cases hK with
     | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
     | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
-    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hsub => exact ih hsub
-    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hsub => exact ih hsub
-    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
 
 /-! ### E.1d STEP-5: identity-dispatch decomposition (`splitAtId_decomp`) -/
 
@@ -2196,32 +2199,33 @@ theorem preservation_proof
     | throws ℓ =>
       simp only [Source.step, Handler.label, Option.some.injEq] at hstep
       subst hstep
-      obtain ⟨e_body, q, qc, A, hC, hraise, hiface, hM, hle⟩ := hfocus.handleThrows_inv
+      obtain ⟨e_body, q, qc, A, hC, hraise, hiface, hM, hle, hbocc⟩ := hfocus.handleThrows_inv
       subst hC
       have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
-        ⟨e_body, CTy.F q A, hfocus', HasStack.handleF hraise hiface hle hstack⟩, hnecfg'⟩
+        ⟨e_body, CTy.F q A, hfocus', HasStack.handleF hraise hiface hle hbocc hstack⟩, hnecfg'⟩
     | state ℓ s =>
       simp only [Source.step, Handler.label, Option.some.injEq] at hstep
       subst hstep
-      obtain ⟨e_body, q, qc, S, A, hC, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩ := hfocus.handleState_inv
+      obtain ⟨e_body, q, qc, S, A, hC, hga, hgr, hpa, hpr, hif, hs, hM, hle, hbocc⟩ :=
+        hfocus.handleState_inv
       subst hC
       have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
-        ⟨e_body, CTy.F q A, hfocus', HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩, hnecfg'⟩
+        ⟨e_body, CTy.F q A, hfocus', HasStack.stateF hga hgr hpa hpr hif hs hle hbocc hstack⟩, hnecfg'⟩
     | transaction ℓ Θ =>
       simp only [Source.step, Handler.label, Option.some.injEq] at hstep
       subst hstep
-      obtain ⟨e_body, q, qc, A, hC, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle⟩ :=
+      obtain ⟨e_body, q, qc, A, hC, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle, hbocc⟩ :=
         hfocus.handleTransaction_inv
       subst hC
       have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus',
-          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hstack⟩, hnecfg'⟩
+          HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hstack⟩, hnecfg'⟩
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩

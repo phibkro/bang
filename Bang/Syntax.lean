@@ -33,6 +33,45 @@ def q_or_1 {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] (q : Mult) : Mul
   if q = 0 then 1 else q
 
 
+/-! ### 1.5b `LabelOccurs` — the B-occ answer-type label-freedom predicate (ADR-0057)
+
+`LabelOccurs ℓ A` holds iff label `ℓ` is *mentioned* in value type `A` — either as a
+`cap ℓ` capability directly, OR latently as a member of an effect row inside any `U φ C`
+sub-term. It recurses through every `VTy`/`CTy` former (`prod`/`sum`/`mu`/`arr`/nested
+`U`/`F`), since a capability can hide arbitrarily deep.
+
+The B-occ premise added to the three `handle` rules below (and their `HasStack` frame
+mirrors) is its NEGATION — `¬ LabelOccurs ℓ A`, where `A` is the handle's answer-type
+payload and `ℓ` the handled label. It enforces *answer-type label-freedom*: the handled
+label may not appear in the handle's answer type, so no capability naming this very handler
+can ride out in the returned value (closing the ADR-0056 cap-escape gap — a `vcap`
+escaping its `handle` then dispatching to nothing, `splitAtId … = none`, STUCK).
+
+The `U φ C` case uses the generic-lattice membership `labelEff ℓ ≤ φ`, which is exactly
+`ℓ ∈ φ` for the concrete `EffRow = Finset Label` (`labelEff ℓ = {ℓ}`, `{ℓ} ⊆ φ ↔ ℓ ∈ φ`)
+and matches the `up`/`perform` rule's own `labelEff ℓ ≤ φ` row-membership premise. The
+predicate is `Prop`-valued (no new decidability burden on the typing judgment); it is
+nonetheless DECIDABLE whenever `Eff` has a decidable `≤` (e.g. `EffRow`) — see the
+`Decidable` instance after the typing block. -/
+mutual
+def VTy.labelOccurs (ℓ : Label) : VTy Eff Mult → Prop
+  | .unit      => False
+  | .int       => False
+  | .cap ℓ'    => ℓ = ℓ'
+  | .U φ C     => EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ ∨ CTy.labelOccurs ℓ C
+  | .sum A B   => VTy.labelOccurs ℓ A ∨ VTy.labelOccurs ℓ B
+  | .prod A B  => VTy.labelOccurs ℓ A ∨ VTy.labelOccurs ℓ B
+  | .mu A      => VTy.labelOccurs ℓ A
+  | .tvar _    => False
+def CTy.labelOccurs (ℓ : Label) : CTy Eff Mult → Prop
+  | .F _ A     => VTy.labelOccurs ℓ A
+  | .arr _ A B => VTy.labelOccurs ℓ A ∨ CTy.labelOccurs ℓ B
+end
+
+/-- `LabelOccurs ℓ A` — the B-occ predicate; the `handle` rules require its negation. -/
+@[reducible] def LabelOccurs (ℓ : Label) (A : VTy Eff Mult) : Prop := VTy.labelOccurs ℓ A
+
+
 /-! ### 1.6 Typing judgments — resource-enforcing, de Bruijn (ADR-0020, Q10)
 
 Two-component **positional** context (ADR-0019's split, ADR-0020's carrier):
@@ -188,6 +227,9 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       -- ADR-0054: `handle` BINDS the capability (`Cap ℓ` at index 0, multiplicity `qc`); the body runs with it.
       HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      -- B-occ (ADR-0057): the handled label may not occur in the answer type `A`, so no
+      -- capability naming this handler escapes in the returned value (the ADR-0056 gap).
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasCTy γ Γ (Comp.handle (Handler.throws ℓ) M) φ (CTy.F q A)
   -- handleState (ADR-0025): a RESUMPTIVE state handler. Discharges label `ℓ` like `throws`; its
   -- interface is exactly `{get, put}` with `get : unit → S`, `put : S → unit` (the op-partial
@@ -209,6 +251,8 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       -- ADR-0054: `handle` binds the capability (`Cap ℓ` at index 0, multiplicity `qc`).
       HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      -- B-occ (ADR-0057): the handled label may not occur in the answer type `A`.
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasCTy γ Γ (Comp.handle (Handler.state ℓ s₀) M) φ (CTy.F q A)
   -- handleTransaction (ADR-0030, rung 3): STM as a transactional handler. Discharges label `ℓ`
   -- like `state`/`throws`; the multi-cell generalization of `handleState`. ADR-0030 amendment
@@ -238,6 +282,8 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       -- ADR-0054: `handle` binds the capability (`Cap ℓ` at index 0, multiplicity `qc`).
       HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      -- B-occ (ADR-0057): the handled label may not occur in the answer type `A`.
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasCTy γ Γ (Comp.handle (Handler.transaction ℓ Θ₀) M) φ (CTy.F q A)
 end
 
@@ -268,6 +314,8 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A →
       (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise") →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      -- B-occ (ADR-0057): mirrors `HasCTy.handleThrows` — `ℓ` may not occur in the answer `A`.
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasStack K φ (CTy.F q A) eo Co →
       HasStack (Frame.handleF n (Handler.throws ℓ) :: K) e (CTy.F q A) eo Co
   -- stateF (ADR-0025): a reinstalled resumptive `state ℓ s` frame on the stack. Mirrors
@@ -281,6 +329,8 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put") →
       HasVTy [] [] s S →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      -- B-occ (ADR-0057): mirrors `HasCTy.handleState` — `ℓ` may not occur in the answer `A`.
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasStack K φ (CTy.F q A) eo Co →
       HasStack (Frame.handleF n (Handler.state ℓ s) :: K) e (CTy.F q A) eo Co
   -- transactionF (ADR-0030, int-pinned amendment): a reinstalled resumptive `transaction ℓ Θ` frame.
@@ -300,6 +350,8 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
         op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") →
       (∀ cell ∈ Θ, HasVTy [] [] cell (VTy.int : VTy Eff Mult)) →
       e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      -- B-occ (ADR-0057): mirrors `HasCTy.handleTransaction` — `ℓ` may not occur in the answer `A`.
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasStack K φ (CTy.F q A) eo Co →
       HasStack (Frame.handleF n (Handler.transaction ℓ Θ) :: K) e (CTy.F q A) eo Co
 
