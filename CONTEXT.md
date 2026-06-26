@@ -8,12 +8,22 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-26) — GLOBAL-FRESH IDENTITY (ADR-0055) DONE + merged; the collision is
-> dead, NonEscape adequate. inc 5 (LR/Compat) ~80% IN FLIGHT — Bang.LR GREEN + diagonal ASSEMBLED (route β).** On `typed-static-r1` @ `6041bea`.
-> inc-5: **B1 run-renaming keystone DONE** (`1ff9a60`, axiom-clean) + Compat mechanical banked. Remaining (all
-> unblocked, turn-key dispatch in `paths/PATH-inc5-lr-reindex.md`): A2 = Compat deep-block re-derivation
-> (staticSplit→splitAtId, using the keystone) · B2 = the diagonal's 2 obligations. Then integrate + ADR
-> cluster → whole-LR green = inc-5 DONE → inc-6.
+> **★ ACTIVE DIRECTION (2026-06-26) — SOUNDNESS is one supporting-lemma-gated theorem from machine-checked;
+> the COMPILER's next two hops are DECIDED.** On `typed-static-r1` @ `96c3d9c` (docs/design); proof work on
+> `inc5-lr-reindex` @ `ea09603` (clean, `lake build Bang.Model` green save one sorry). **The session arc:**
+> inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE — a cap escapes a
+> ⊥-typed program) → **ADR-0057 B-occ** (answer-type label-freedom — the fix; phase-1 kernel premise landed
+> axiom-clean) → the diagonal re-keyed: **`type_safety` is ONE theorem from sorryAx-clean** — `wsCfg_step`
+> (task #34), 2 of 4 supporting units banked (restack + μ-corner), the gate = `hasConfigTy_step` (~300-line
+> NonEscape-free factoring of `preservation_proof`), then `wsc_subst` + the deep B-occ lever + 4-arm assembly.
+> **COMPILER (Lexa comparison + Wasm-3.0): ADR-0058** (the binary-LR Canonical wall is a frozen-signature
+> artifact → route 1 deletes it; build-confirmable, task #33→inc-6) **+ ADR-0059** (Wasm 3.0 + grade-directed
+> pluggable backend; v1 = `throws`→exn + `state`/`transaction`→tail-call, the GC-machine general leg is the
+> post-v1 ADR-0015 frontier). Both backed by a machine-checked GC-simulation relation (identity-keyed,
+> axiom-clean). Two OPEN clauses are task-linked + build-gated (task #33 the re-key compiling; task #36 the
+> cross-step partition). **NEXT:** `hasConfigTy_step` gate → close `wsCfg_step` → `type_safety` sorryAx-clean;
+> then inc-6 (CalcVM route-B + the ADR-0058 re-key + the Wasm-3.0 backend). Detail in the SOUNDNESS-FINDING
+> block below + tasks #33/#34/#35/#36.
 > **★ SOUNDNESS FINDING (2026-06-26, ADR-0056) — the inc-5 diagonal is machine-checked FALSE.** A cap can
 > escape its handler and get STUCK in a well-typed-at-⊥ program (`progB`: the ⊥-row gate is label-based,
 > escape is identity-based; ADR-0054's "escape ruled out by the gate" REFUTED — the WC keystone-2c escape,
