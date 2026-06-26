@@ -93,6 +93,99 @@ secondary typing dependency, `handlesOp_of_hasConfigTy`). -/
 def ResolvesLabel (K : EvalCtx) (n : Nat) (ℓ : Label) : Prop :=
   ∃ Kᵢ h Kₒ, splitAtId K n = some (Kᵢ, h, Kₒ) ∧ Handler.label h = ℓ
 
+/-! ### §2.4 — the μ corner: `labelOccurs` survives `unrollMu` (the POP arm's B-occ μ case).
+
+`tyShiftFrom`/`tySubstFrom` touch only `tvar`s — they leave cap-labels and effect rows fixed — so a
+label occurring in the unrolled type `A[μX.A/X]` already occurs in `μX.A` (= occurs in `A`). The B-occ
+premise `¬LabelOccurs ℓ A` then propagates through `unfold`/`fold`. -/
+
+-- A label in a shifted type occurs in the original (shift only renumbers `tvar`s).
+mutual
+/-- value-type half of `labelOccurs`-`tyShiftFrom` invariance. -/
+theorem vty_labelOccurs_tyShiftFrom (ℓ : Label) :
+    ∀ (c : Nat) (T : VTy Eff Mult), VTy.labelOccurs ℓ (VTy.tyShiftFrom c T) → VTy.labelOccurs ℓ T
+  | _, .unit, h => h
+  | _, .int, h => h
+  | _, .cap _, h => h
+  | c, .U φ B, h => by
+      simp only [VTy.tyShiftFrom, VTy.labelOccurs] at h ⊢
+      exact h.imp id (cty_labelOccurs_tyShiftFrom ℓ c B)
+  | c, .sum A B, h => by
+      simp only [VTy.tyShiftFrom, VTy.labelOccurs] at h ⊢
+      exact h.imp (vty_labelOccurs_tyShiftFrom ℓ c A) (vty_labelOccurs_tyShiftFrom ℓ c B)
+  | c, .prod A B, h => by
+      simp only [VTy.tyShiftFrom, VTy.labelOccurs] at h ⊢
+      exact h.imp (vty_labelOccurs_tyShiftFrom ℓ c A) (vty_labelOccurs_tyShiftFrom ℓ c B)
+  | c, .mu A, h => by
+      simp only [VTy.tyShiftFrom, VTy.labelOccurs] at h ⊢
+      exact vty_labelOccurs_tyShiftFrom ℓ (c + 1) A h
+  | c, .tvar i, h => by
+      simp only [VTy.tyShiftFrom] at h; split at h <;> simp only [VTy.labelOccurs] at h
+theorem cty_labelOccurs_tyShiftFrom (ℓ : Label) :
+    ∀ (c : Nat) (T : CTy Eff Mult), CTy.labelOccurs ℓ (CTy.tyShiftFrom c T) → CTy.labelOccurs ℓ T
+  | c, .F _ A, h => by
+      simp only [CTy.tyShiftFrom, CTy.labelOccurs] at h ⊢
+      exact vty_labelOccurs_tyShiftFrom ℓ c A h
+  | c, .arr _ A B, h => by
+      simp only [CTy.tyShiftFrom, CTy.labelOccurs] at h ⊢
+      exact h.imp (vty_labelOccurs_tyShiftFrom ℓ c A) (cty_labelOccurs_tyShiftFrom ℓ c B)
+end
+
+-- A label in `B[T/k]` occurs in `B` OR in the substituted `T` (subst touches only `tvar`s).
+mutual
+/-- value-type half of `labelOccurs`-`tySubstFrom`. -/
+theorem vty_labelOccurs_tySubstFrom (ℓ : Label) :
+    ∀ (k : Nat) (T : VTy Eff Mult) (B : VTy Eff Mult),
+      VTy.labelOccurs ℓ (VTy.tySubstFrom k T B) → VTy.labelOccurs ℓ B ∨ VTy.labelOccurs ℓ T
+  | _, _, .unit, h => Or.inl h
+  | _, _, .int, h => Or.inl h
+  | _, _, .cap _, h => Or.inl h
+  | k, T, .U φ B, h => by
+      simp only [VTy.tySubstFrom, VTy.labelOccurs] at h ⊢
+      rcases h with h | h
+      · exact Or.inl (Or.inl h)
+      · exact (cty_labelOccurs_tySubstFrom ℓ k T B h).imp Or.inr id
+  | k, T, .sum A B, h => by
+      simp only [VTy.tySubstFrom, VTy.labelOccurs] at h ⊢
+      rcases h with h | h
+      · exact (vty_labelOccurs_tySubstFrom ℓ k T A h).imp Or.inl id
+      · exact (vty_labelOccurs_tySubstFrom ℓ k T B h).imp Or.inr id
+  | k, T, .prod A B, h => by
+      simp only [VTy.tySubstFrom, VTy.labelOccurs] at h ⊢
+      rcases h with h | h
+      · exact (vty_labelOccurs_tySubstFrom ℓ k T A h).imp Or.inl id
+      · exact (vty_labelOccurs_tySubstFrom ℓ k T B h).imp Or.inr id
+  | k, T, .mu A, h => by
+      simp only [VTy.tySubstFrom, VTy.labelOccurs] at h ⊢
+      rcases vty_labelOccurs_tySubstFrom ℓ (k + 1) (VTy.tyShiftFrom 0 T) A h with h | h
+      · exact Or.inl h
+      · exact Or.inr (vty_labelOccurs_tyShiftFrom ℓ 0 T h)
+  | k, T, .tvar i, h => by
+      simp only [VTy.tySubstFrom] at h
+      split at h
+      · exact Or.inr h
+      · split at h <;> simp only [VTy.labelOccurs] at h
+theorem cty_labelOccurs_tySubstFrom (ℓ : Label) :
+    ∀ (k : Nat) (T : VTy Eff Mult) (B : CTy Eff Mult),
+      CTy.labelOccurs ℓ (CTy.tySubstFrom k T B) → CTy.labelOccurs ℓ B ∨ VTy.labelOccurs ℓ T
+  | k, T, .F _ A, h => by
+      simp only [CTy.tySubstFrom, CTy.labelOccurs] at h ⊢
+      exact vty_labelOccurs_tySubstFrom ℓ k T A h
+  | k, T, .arr _ A B, h => by
+      simp only [CTy.tySubstFrom, CTy.labelOccurs] at h ⊢
+      rcases h with h | h
+      · exact (vty_labelOccurs_tySubstFrom ℓ k T A h).imp Or.inl id
+      · exact (cty_labelOccurs_tySubstFrom ℓ k T B h).imp Or.inr id
+end
+
+/-- **THE μ CORNER.** A label in the μ-unrolling occurs in the rolled type — so `¬LabelOccurs ℓ (mu A)`
+(= `¬LabelOccurs ℓ A`) propagates to `¬LabelOccurs ℓ (unrollMu A)`. -/
+theorem labelOccurs_unrollMu (ℓ : Label) (A : VTy Eff Mult)
+    (h : VTy.labelOccurs ℓ (VTy.unrollMu A)) : VTy.labelOccurs ℓ A := by
+  rcases vty_labelOccurs_tySubstFrom ℓ 0 (VTy.mu A) A h with h | h
+  · exact h
+  · simpa only [VTy.labelOccurs] using h
+
 /-! ### §2.5 — the TYPED-RELATIVE invariant (ADR-0057, deep-modulo-non-performability).
 
 The naive config-function `WellScoped` (every `vcap`, tracked DEEP through thunks, resolves) is NOT
