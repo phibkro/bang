@@ -35,6 +35,9 @@ open Bang
 open Bang.EffectRow (Label)
 
 variable {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+  -- ADR-0060 ratified grade-rig commitment (only the dormant-arm discharge consumes these; QTT/ℕ qualify,
+  -- rings fail ZeroSumFree). `[NoZeroDivisors]` for the `•`-scale split; `[Nontrivial]` (`1 ≠ 0`) for q_or_1.
+  [NoZeroDivisors Mult] [Nontrivial Mult]
 
 /-! ## §1 — the route-β architecture result (GREEN). -/
 
