@@ -152,3 +152,31 @@ up/perform arms produce the resume `r₁`/`r₂` that feed crelK_ret's `CapsBelo
 it internally (observation contexts canonical-by-construction) → clean, NOTE it. If it must propagate UP to frozen
 `lr_sound`/`lr_fundamental` → **STOP-and-SHOW** (lr_sound sound only for non-escaping contexts = the ADR-0056
 question). **DISPATCH TIMING**: best AFTER ADR-0057, so the crelK_fund value-cap premises close in one pass.
+
+## ★ COMPAT DEEP BLOCK (2026-06-26) — Units 1+2 GREEN; Unit 3 = the crelK_fund crux (B-occ convergence)
+compat-decomp banked `285338a` (inc5-lr-reindex, **Compat.lean only — Spec.lean byte-untouched, verified**).
+Error count 85→36; the ENTIRE KrelS-relational layer + decomp (1067-1665) GREEN.
+- **Unit 1 (mechanical id-threading) DONE green**: handleF 1→2-arg (id nh), dispatchOn 4→5-arg (id n),
+  resume-cfg `Config`→`EvalCtx×Comp`, `krelS_handleF` `.2.2`→`.2.2.2`, threaded through all the `krelS_*` lemmas.
+- **Unit 2 (THE CORE — `krelS_splitAtId_decomp`) DONE green** except ONE documented residual: the SKIP
+  resume-conjunct relocation (= the old 1628 sorry, identity-keyed; the inverse of `dispatchOn_append_outer`,
+  doesn't factor in general — the SAME single residual the positional version carried). **The MISS answer-type-
+  determinism wall DISSOLVED as designed** (splitAtId never tests handlesOp).
+- **Unit 3 — WALLED at frozen lr_sound (the guard fired, STOP-and-SHOW).** The 36 remaining errors = the Unit-3
+  consumer block (≥1677) + pre-existing :896. `crelK_fund`'s 3 obligations all propagate up: (1) cap-RESOLUTION
+  (perform arm) = `splitAtId K₁ m = some` ∧ handlesOp = `CapResolves K₁ m ℓ op` = NonEscape; (2) value
+  `CapsBelow 0` + counter-bridge (resume→guarded crelK_ret, via run_bump); (3) cap-BINDING subst (compatK_handle*
+  substitutes `vcap g ℓ`, g=handlerCount K — needs the cap-substituted body parameterized by the minted id =
+  crelK_fund handle-case reshape + EnvRelK). Held as named sorries.
+
+**THE CONVERGENCE + THE INC-5 ENDGAME**: all 3 obligations = the ADR-0056/0057 escape discipline (B-occ). They
+propagate to frozen lr_sound ONLY because inc5-lr-reindex's HasCTy lacks B-occ's `¬LabelOccurs` premise (it's on
+`bocc-spike` @ `075f894`, phase 1). bocc-impl independently found NonEscape IS the typed-LR fundamental theorem
+(Shape B), B-occ the enabler. So the **ENDGAME** = (i) integrate B-occ phase 1 (bocc-spike: Syntax premise +
+`LabelOccurs` + Metatheory fixups) into inc5-lr-reindex; (ii) retry Unit 3 — cap-resolution discharges via B-occ
+(perform-after-pop contradictory inside the crelK_fund induction), CapsBelow via run_bump, cap-binding via the
+EnvRelK reshape. **OPEN QUESTION (build-confirmable)**: does Unit 3 close WITHOUT a frozen lr_sound change
+(hypothesis: the B-occ-strengthened HasCTy hypothesis carries it), or does it need a NonEscape premise on
+lr_sound (operator-level STOP-and-SHOW)? Units 1+2 are banked + won't need redoing. (Integration note: bocc-spike
++ inc5-lr-reindex both touched Compat.lean — the merge reconciles bocc-spike's 5 pre-threaded arms into inc5's
+re-derived decomp; the kernel premise is additive.)

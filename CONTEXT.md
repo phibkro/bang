@@ -28,9 +28,15 @@
 > axiom-clean (`bocc-spike` `075f894`): premise + `LabelOccurs` + regression (`escapeB_not_typeable` — bug
 > untypeable for ANY EffSig). The standalone dissolution WALLS (a `vthunk` can carry-then-DROP a label-free-typed
 > cap → `NonEscape` is NOT a structural value predicate) → B-occ is the ENABLER for inc-5's diagonal (NonEscape
-> stays the reachability/Shape-B LR projection), NOT a free corollary. **NEXT = the inc-5 LR re-key** (the diagonal
-> closes THERE, with B-occ as the key premise making perform-after-pop contradictory) + B-occ phase 3 (thread the
-> premise through the ~5 Compat/LR handle arms, after inc-5 settles; task #23). Right-answer-absolute
+> stays the reachability/Shape-B LR projection), NOT a free corollary. **inc-5 Units 1+2 GREEN**
+> (`285338a` — the `splitAtId` decomp + the KrelS layer 1067-1665; the MISS answer-type-determinism wall
+> DISSOLVED as designed). **Unit 3 (`crelK_fund`) WALLED at frozen lr_sound** — its 3 obligations (cap-resolution
+> =NonEscape · CapsBelow+counter-bridge · cap-binding subst) ARE the B-occ escape discipline; they propagate up
+> ONLY because the LR branch's HasCTy lacks B-occ's premise yet. **THE ENDGAME** = integrate B-occ phase 1
+> (bocc-spike `075f894`) into inc5-lr-reindex → retry Unit 3 (cap-resolution discharges via B-occ: perform-after-
+> pop contradictory in the crelK_fund induction). OPEN (build-confirmable): does Unit 3 close WITHOUT a frozen
+> lr_sound change (hypothesis: the B-occ-strengthened HasCTy carries it) or need a NonEscape premise on lr_sound
+> (operator STOP-and-SHOW)? Units 1+2 banked, won't need redoing. Right-answer-absolute
 > = System-C rank-2 (post-v1, needs polymorphism, contradicts ADR-0027); fallback = surface-enforced. B-occ pairs
 > with task #18 (untypeable raw vcap → drop VcapFree). Non-escape-INDEPENDENT inc-5 (LR re-key — guarded crelK_ret
 > `8c30f06`, LR green/1 sorry; the splitAtId `krelS_staticSplit_decomp` re-derivation = build-ready spec in the
