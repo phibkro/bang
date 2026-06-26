@@ -1971,6 +1971,44 @@ theorem splitAtId_decomp : ∀ (K : EvalCtx) (n : Nat) {Kᵢ Kₒ : EvalCtx} {h 
       subst hKi; subst hh; subst hKo
       rw [ih hsp']; rfl
 
+/-- **PROGRESS-side resolution** (inc-5 diagonal, `handlesOp_of_hasConfigTy`): if a well-typed stack
+splits at `handleF n h` (any kind) and an operation `op` is in `ℓ = h.label`'s interface
+(`opArg ℓ op = some A`), then `h` HANDLES `(ℓ, op)`. The found handler's typed interface premise
+(`hiface`/`hif`, exposed by `cases` at the split point) PINS `op` to the handler's op-set, so
+`handlesOp` fires. Mirror of the preservation perform-case reasoning (Metatheory §E.1c `if_pos` branch),
+but in the FORWARD direction (no successful step assumed — the diagonal needs it for `FocusResolves`). -/
+theorem HasStack.handlesOp_of_split {n : Nat} {h : Handler} {Kᵢ Kₒ : EvalCtx} {ℓ : Label} {op : OpId}
+    {A : VTy Eff Mult} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult}
+    (hstack : HasStack (Kᵢ ++ Frame.handleF n h :: Kₒ) e C eo Co)
+    (hlbl : Handler.label h = ℓ)
+    (hop : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A) :
+    handlesOp h ℓ op = true := by
+  induction Kᵢ generalizing e C with
+  | nil =>
+    simp only [List.nil_append] at hstack
+    cases hstack with
+    | @handleF _ _ ℓ' _ _ _ _ _ _ hraise hiface hle hbocc hsub =>
+        have hℓ : ℓ' = ℓ := by simpa only [Handler.label] using hlbl
+        subst hℓ
+        have : op = "raise" := hiface op A hop
+        subst this; simp [handlesOp]
+    | @stateF _ _ ℓ' _ _ _ _ _ _ _ _ hga hgr hpa hpr hif hs hle hbocc hsub =>
+        have hℓ : ℓ' = ℓ := by simpa only [Handler.label] using hlbl
+        subst hℓ
+        rcases hif op A hop with h | h <;> subst h <;> simp [handlesOp]
+    | @transactionF _ _ ℓ' _ _ _ _ _ _ _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
+        have hℓ : ℓ' = ℓ := by simpa only [Handler.label] using hlbl
+        subst hℓ
+        rcases hif op A hop with h | h | h <;> subst h <;> simp [handlesOp]
+  | cons fr Kᵢ ih =>
+    simp only [List.cons_append] at hstack
+    cases hstack with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
+    | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+
 /-- Full `perform` focus inversion (ADR-0054 shape): exposes the cap typing, the op interface, and the
 argument typing. The re-typing the preservation perform case threads. -/
 theorem HasCTy.perform_full_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}

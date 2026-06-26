@@ -149,7 +149,20 @@ theorem handlesOp_of_hasConfigTy {Co : CTy Eff Mult} (cfg : Config)
     ∀ K n ℓ op v, cfg = (cfg.1, K, Comp.perform (Val.vcap n ℓ) op v) →
       ∀ Kᵢ h Kₒ, splitAtId K n = some (Kᵢ, h, Kₒ) → Handler.label h = ℓ →
       handlesOp h ℓ op = true := by
-  sorry
+  intro K n ℓ op v hcfg Kᵢ h Kₒ hsplit hlbl
+  obtain ⟨e, C, hfocus, hstack⟩ := hty
+  -- project the focus + stack out of the assumed config shape.
+  have hK : cfg.2.1 = K := by rw [hcfg]
+  have hc : cfg.2.2 = Comp.perform (Val.vcap n ℓ) op v := by rw [hcfg]
+  rw [hK] at hstack; rw [hc] at hfocus
+  -- the perform's interface: `op ∈ ℓ`'s ops (`opArg ℓ op = some A`); the cap's `Cap ℓ'` pins `ℓ' = ℓ`.
+  obtain ⟨ℓ', γ_c, γ_v, q, A, B, hC, hγ, hcap, hle, hopArg, hopRes, hwv⟩ := hfocus.perform_full_inv
+  obtain ⟨m, hceq⟩ := hcap.cap_canonical
+  simp only [Val.vcap.injEq] at hceq; obtain ⟨_, rfl⟩ := hceq
+  -- the resolved handler `h` (id `n`) is the typed split-point frame; its interface forces `handlesOp`.
+  have hdecomp : K = Kᵢ ++ Frame.handleF n h :: Kₒ := splitAtId_decomp K n hsplit
+  rw [hdecomp] at hstack
+  exact HasStack.handlesOp_of_split hstack hlbl hopArg
 
 /-- **OBLIGATION 2 — the MUTUAL preservation (the research crux).** `WScfg` is preserved by every
 `Source.step`. The arms (Source.step, Operational:455):
