@@ -130,19 +130,24 @@ banked into LR §5.0a′ (`0b739db`, axiom-clean). A2 is a multi-session re-deri
 ## ★ A2 STAND-DOWN (2026-06-26) — LR re-key BANKED; Compat deep block handed off
 compat2 banked (inc5-lr-reindex, LR GREEN, axiom-clean): `0b739db` run_rename integrated · `d91ef1c` density-(a)
 machinery (`bumpσ`/`CapsBelow`/`run_bump_converges`/`Canonical` — the counter-bump bridge, non-escape-independent,
-KEPT as prepared tooling) · `0a1504f` crelK_ret reverted to FROZEN 3-arg signature (stable consumer interface) +
-the ADR-0056 named sorry (interface-stability over the explicit-premise form — sound: don't ripple a held premise
-through all consumers; the STACK half of the +1 bridge is READY via `run_bump_converges`, only the VALUE-cap
-half is held). LR NAMED SORRIES: (1) crelK_ret handleF arm (LR:1808, "ADR-0056 escape-discipline pending");
-(2) seq_unit_proof (LR:1243, pre-existing off-critical-path).
-**NEXT LR UNIT — Compat deep block** (1091-2167, ~103 errs; proof-engineer; escape-INDEPENDENT except the noted
-intersection), dependency-ordered: (i) #3 mechanical id-threading (dispatchOn 4→5-arg [carries id n], handleF
-1→2-arg, through `dispatchOn_append_outer`/`krelS_append`/`krelS_state·transaction_reinstall`/`krelS_handlerCount_eq`)
-· (ii) `krelS_staticSplit_decomp` re-derivation around `splitAtId` (staticSplit/absSplit/staticDispatch DELETED →
-identity-keyed; the CORE; STOP-and-SHOW if IT walls) · (iii) `compatK_handle*` refocus re-derivation (now
-`(g+1, handleF g h::K, subst (vcap g ℓ) M)` — mints g, substitutes cap, increments). WATCH: the decomp's resume
-conjunct produces the returned values feeding crelK_ret's held value-cap arm + `crelK_fund` up/perform's
-value-cap sub-parts — NAMED-SORRY those (same ADR-0056 hold). Compat still at d56f471's red.
-**DISPATCH TIMING**: best AFTER the escape discipline (ADR-0057) lands, so the value-cap sub-parts CLOSE in one
-pass instead of named-sorry + a second visit. The mechanical+decomp parts are escape-independent if a fresh IC
-wants to bank them sooner.
+KEPT as prepared tooling) · `8c30f06` crelK_ret RESTORED to the GUARDED explicit-premise form (axiom-clean; explicit `CapsBelow 0 v`
+premise = the VISIBLE non-escape obligation, NOT a sorry — consumers discharge it when ADR-0057 lands) ·
+`8abda91` `krelS_handlerCount_eq` handleF-tail re-key (`.2.1`→`.2.2.1` for the new `krelS_handleF` shape).
+**LR GREEN, exactly 1 sorry (seq_unit_proof, LR:1243, pre-existing off-critical-path).** Density-(a) machinery
+in use. Compat red-WIP @ `8abda91`.
+**Compat deep block is a SINGLE RED FILE** (103 errs) — NOT incrementally build-verifiable (clearing one error
+unmasks a cascade); needs CONTIGUOUS chunks landed before the count moves. Don't scatter unverifiable edits.
+**NEXT LR UNIT — the splitAtId decomp** (build-ready design, compat2): re-derive `krelS_staticSplit_decomp` around
+`splitAtId` (identity-keyed; structurally CLEANER than the old positional countdown). Induct on K₁, parallel K₂
+via KrelS (handleF forces nh₁=nh₂). **letF/appF**: `splitAtId (fr::K') cap = (splitAtId K' cap).map (prepend fr)`,
+recurse + rebuild via `krelS_letF`/`krelS_appF`. **handleF/handleF**: cap-countdown → ID TEST. HIT (nh=cap):
+`splitAtId = some([],h,K')`, resume conjunct = the clause's `hres` directly. SKIP (nh≠cap): recurse, rebuild via
+`krelS_handleF_intro` — **the old 1628 sorry lives here** (skipped handler's resume must RELOCATE to the recursed
+prefix; residual = the `dispatchOn_append_outer` + `krelS_append` nested-handleF pattern, likely closeable or a
+documented residual). **The old MISS arm (answer-type-determinism wall) DISSOLVES** — `splitAtId` never tests
+`handlesOp`, pure id match. Order: #3 cluster (1091-1500) → the decomp → `crelK_fund`.
+**THE FROZEN-lr_sound GUARD bites at `crelK_fund`** (NOT the decomp — that's stack-structural, no CapsBelow): its
+up/perform arms produce the resume `r₁`/`r₂` that feed crelK_ret's `CapsBelow 0 v` premise. If crelK_fund discharges
+it internally (observation contexts canonical-by-construction) → clean, NOTE it. If it must propagate UP to frozen
+`lr_sound`/`lr_fundamental` → **STOP-and-SHOW** (lr_sound sound only for non-escaping contexts = the ADR-0056
+question). **DISPATCH TIMING**: best AFTER ADR-0057, so the crelK_fund value-cap premises close in one pass.
