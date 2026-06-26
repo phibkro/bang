@@ -9,7 +9,10 @@
 ## Position
 
 > **★ ACTIVE DIRECTION (2026-06-26) — GLOBAL-FRESH IDENTITY (ADR-0055) DONE + merged; the collision is
-> dead, NonEscape adequate. NEXT = inc 5 (LR/Compat — first whole-LR green).** On `typed-static-r1` @ `6041bea`.
+> dead, NonEscape adequate. inc 5 (LR/Compat) ~80% IN FLIGHT — Bang.LR GREEN + diagonal ASSEMBLED (route β).** On `typed-static-r1` @ `6041bea`.
+> inc-5 remaining (3 units, turn-key dispatch plan in `paths/PATH-inc5-lr-reindex.md`): (B1) run-renaming
+> keystone → kernel-engineer · (A) Bang.Compat re-key → proof-engineer · (B2) the diagonal's 2 obligations
+> (`wsCfg_step` ⊥-row return-escape + `handlesOp_of_hasConfigTy`). Then the ADR cluster → inc-6.
 > SoT = ADR-0054/0055 (the cap rep, done) + ADR-0052 (CalcVM route-B, inc 6). inc 1-4 + the global-fresh
 > rework are LANDED; the STD block (preservation/progress/type_safety) is axiom-clean over the final kernel.
 >

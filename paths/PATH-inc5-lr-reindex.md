@@ -49,3 +49,32 @@ integrate `run_plug` → `lake build Bang.LR` green-with-named-sorries → `Bang
 [DiagonalProbe §B] + the run_plug bridge) → ADR cluster (renaming-invariance over re-base/restrict + machine-shaped
 KrelS + VcapFree side-condition). Whole-LR-green = builds + the 2 seamed `:1741`/`:1809` (ADR-0043 descents, stay
 seamed) + the diagonal CLOSED. Then inc-6 (CalcVM route-B → whole-tree green) · inc-7 (Surface).
+
+## ★ STATE UPDATE (2026-06-26) — run_plug integrated · Bang.LR GREEN · diagonal ASSEMBLED (~80%)
+
+Commits on `inc5-lr-reindex`: `fa3046a` · `56a2e1a` · `c3e4aed` (+ the new `the new `Bang.Model` module` diagonal).
+- **Bang.LR GREEN** (41 errors → 0), 2 named sorries: `seq_unit_proof` (cap-subst-commutes residual, OFF the
+  critical path) + `crelK_ret` handleF arm (the run-renaming gap below). `run_plug`/`converges_plug_iff` PROVEN
+  (converges_plug_iff was a STATEMENT FIX — old RHS `(handlerCount C, C, x)` is FALSE for a cap-using focus
+  [raw `vvar 0` cap is stuck, only `vcap` fires]; faithful RHS = the canonical reshape config).
+- **THE DIAGONAL ASSEMBLED** in NEW `the new `Bang.Model` module` (route β): `diagonal : HasConfigTy (0,[],c) ⊥ (F q A) ∧
+  VcapFree c → NonEscape (0,[],c)` closes with NO own sorry → reduces the soundness payoff to exactly 2
+  obligations. Architecture lemmas axiom-clean. `preservation_returnEscape` ALREADY proven (NonEscape-preservation free).
+
+★ **THE RUN-RENAMING KEYSTONE** (one lemma unblocks much): the DYNAMIC half — `Config.run` commutes with an
+injective id-renaming (the handlerCount counter-shift) — is the keystone for `crelK_ret` handleF + `crelK_fund`
+up/perform + the `converges_plug_iff → krelS_refl` bridge in `lr_sound`. RunPlugReshape gave only the STATIC
+halves (plug/splitAtId). This is the dynamic-half MIRROR of runplug's work.
+
+## ★ NEXT DISPATCH PLAN (turn-key — 3 units, fresh ICs, full budget)
+- **(B1) run-renaming keystone → KERNEL-ENGINEER** (dynamic-half mirror of runplug; de-risk in scratch then
+  the IC integrates). Unblocks the most — do FIRST / in parallel.
+- **(A) Bang.Compat re-key → PROOF-ENGINEER** (103 errors: mechanical config-tuples + `closeC_handle` lam-shape;
+  named-sorry the `crelK_fund` deep arms pending B1, integrate B1 when it lands). Largely mechanical.
+- **(B2) close the diagonal's 2 obligations**: `wsCfg_step` (the MUTUAL `WellScoped∧HasConfigTy` preservation;
+  pop-escape arm = the ⊥-row return-escape — a research-grade PROOF, not a design fork [effect_sound at ⊥];
+  the 2 obligations ride TOGETHER, `preservation_proof`'s NonEscape-bundling makes it circular) +
+  `handlesOp_of_hasConfigTy` (typing inversion, smaller). Closes the soundness payoff.
+- THEN the ADR cluster (renaming-invariance + machine-shaped KrelS + VcapFree) → inc-6.
+Worktrees live: `lang-bang-inc5` @ inc5-lr-reindex (the LR work), `lang-bang-runplug` @ kernel-runplug
+(runplug's probe — keep until B1/Compat confirm run_plug is fully integrated, then teardown).
