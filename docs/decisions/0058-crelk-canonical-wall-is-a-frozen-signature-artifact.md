@@ -103,7 +103,20 @@ vanish and its ret case closes.
 The route-1 re-key needs one invariant — *the freshly-minted id is disjoint from the live stack* (the real-
 `g` analogue of the GC-machine's `h ∉ rs`). **We already have it**: `WellCounted` / `splitAtId_fresh`
 (ADR-0055). So the read-disjointness the GC-machine assumes and our freshness lemma are the same fact in two
-encodings.
+encodings. NOTE: the sharper re-keying criterion (from the machine-checked invariant lemma) is **carry the
+read-set as a `NoDup` list** — the density obligations become `nodup_split`-shaped membership facts
+(`h ∉ prefix`), not counts; so route 1 is mechanical iff `handlerCount` is reconstructible as the length of a
+`NoDup` read-set the relation already carries (it is — `handlerCount K` is written adjacent to `K`).
+
+**EPISTEMIC STATUS (build-confirmable, NOT yet proven).** The `CtxRel`/`SegRel` reference relation is
+machine-checked axiom-clean for a *clean-slate* machine; that *our* `crelK_ret` re-keys onto it — that
+`handlerCount` is load-bearing for nothing the read-set can't reconstruct (in particular not the step index
+or the `crelK_ret` induction) — is a **code-read conclusion**, not a `#print axioms` result. The code
+documents the artifact (the "DERIVED, not a param" comment is dispositive about *why* the counter is faked),
+and that is the right basis for the decision — but it is a different epistemic status than the
+machine-checked target. **The deletion COMPILING is the proof.** So: *here is the artifact we believe
+deletes, pending the re-key actually compiling* (inc-6). The decision is sound; the verification is the
+implementation.
 
 ## Consequences
 

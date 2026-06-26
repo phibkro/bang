@@ -16,13 +16,17 @@
   fast-path once standardized + shipped. The decisive reason for *us* is verification: a GC-frame-chain
   runtime is **our** abstract machine, verified end-to-end with **no opaque primitive in the TCB**
   (invariant #1), and its simulation relation is the easy, append-only, arithmetic-free kind — **machine-
-  checked** (the `CtxRel`/`SegRel` relation, Lean 4.31, axiom-clean), the same identity-keyed shape that
-  ADR-0058 adopts to dissolve the `CrelK` Canonical wall. **CAVEAT (load-bearing):** the grade-*directed*
-  routing is banked as the backend SHAPE, but **deriving** abort/tail/general *from the grades* requires
-  grading the **resumption** multiplicity, which our type system does NOT currently do (the resumption is
-  operational, not source-graded; ADR-0025's closed-focus dissolves the state-grade the *opposite* way). So
-  the grade-derivation is an **open extension (its own follow-up ADR), NOT load-bearing**; until it lands the
-  routing falls back to annotation/analysis (Lexa's own mechanism).
+  checked per-step** (the `CtxRel`/`SegRel` relation, Lean 4.31, axiom-clean; the *cross-step* partition is
+  unbuilt — see the open sub-clause), the same identity-keyed shape that ADR-0058 adopts to dissolve the
+  `CrelK` Canonical wall. **SCOPE (the load-bearing sharpening):** v1's three handler forms (`state`,
+  `throws`, `transaction` — machine-confirmed exhaustive, Core.lean:120) are ALL abort or tail-resumptive
+  (ADR-0025, one-shot-in-place, no reification), so **v1's backend is just `throws`→exception +
+  `state`/`transaction`→tail-call — no GC-machine, no reified resumption; closed-focus IS the v1 answer.**
+  The GC-frame general leg + grade-derived dispatch is the **post-v1 ADR-0015 multishot frontier**: the
+  GC-machine proofs are the *frontier's* reference proof, NOT v1's backend, and v1 ships without any of it.
+  Grading the resumption (which `HasCTy` doesn't do) is what *post-v1* needs to derive its annotation,
+  composing with closed-focus at the v1/post-v1 boundary (a partition, not a conflict). Detail + the open
+  cross-step sub-clause: §"The v1/post-v1 boundary".
 - **Refines**: 0016
 - **Depends-on**: 0016, 0058, 0001, 0052
 - **See-also**: 0044, 0015, 0025, 0030
@@ -96,20 +100,43 @@ for which the simulation relation is machine-checked easy (above).
   per effectful call) — the Effekt cost, now *contained* by the grade rather than whole-program. The engine
   can't optimize across reified frames the way Lexa got LLVM to optimize across C calls.
 
-## The open extension (flagged, NOT load-bearing) — grade-derived dispatch
+## The v1/post-v1 boundary — where the open extension actually lives
 
-The routing *shape* (abort/tail/general) is banked. **Deriving** the disposition *from the grades* is NOT a
-current result: our `HasCTy` grades track value/computation/capability/`let`-continuation multiplicity, but
-**not the resumption** (the captured continuation is operational, not a source-graded binding), and ADR-0025
-deliberately uses the **closed focus** to dissolve the state-grade tension rather than track it — the
-*opposite* move from Lexa's multiplicity annotation. So:
+The routing *shape* (abort/tail/general) is banked, and its scope is sharper than "grade-derivation flagged":
+it falls on a line the project already drew (ADR-0025 + ADR-0015). **`Handler` is exactly `state | throws |
+transaction`** (machine-confirmed exhaustive, Core.lean:120; a fourth is a 6th-primitive ADR, invariant #5),
+and **all three are abort or tail-resumptive** (ADR-0025: `throws` discards the continuation = abort;
+`state`/`transaction` resume *one-shot in-place* — **no continuation value, no reification**). So:
 
-- The backend does **not** depend on grade-derivation — only the "strictly ahead of Lexa" framing does.
-- Making it real is a **separate follow-up ADR**: extend graded-CBPV to grade the resumption (0× / 1×-tail /
-  1×-arbitrary), deriving abort/tail/general statically, and reconcile with ADR-0025's closed-focus (they
-  pull opposite ways). This is a genuine, unbuilt research contribution — and it is where the "ahead of
-  Lexa" claim would be *earned* rather than asserted.
-- Until it lands, the routing uses annotation/analysis (Lexa's own mechanism); the backend is unaffected.
+- **v1's backend is the easy, engine-independent half:** `throws → exception`, `state`/`transaction →
+  tail-call. **Nothing in v1 reifies a resumption**, so v1 needs no GC-frame-chain runtime, no `Resump`, no
+  capture trampoline. **closed-focus (ADR-0025) *is* the v1 answer** — and the better one (grade `[]`, copy
+  free, nothing to discharge), not a detour. v1 ships on stock 3.0 without the hand-built runtime.
+- **The GC-frame general leg is the post-v1 ADR-0015 multishot frontier.** The machine-checked relation
+  (`CtxRel`/`SegRel`/`resume_preserves`/`raise_establishes`) verifies *that* leg — it reifies a `Resump`,
+  which no v1 handler does. So those proofs are **the frontier's reference proof, NOT v1's backend
+  correctness** (v1's is the easy half, which needs no machine to verify because nothing reifies). Their
+  value is "de-risks the frontier," not "unblocks the ship."
+- **Grade-derived dispatch (task #35) is scoped to post-v1 (ADR-0015), not "the grade system."** It is what
+  the post-v1 multishot leg would need to *derive* its annotation, and it **composes with closed-focus at the
+  v1/post-v1 boundary** — a partition, **not a conflict**. (Our `HasCTy` grades track value/computation/
+  capability/`let`-continuation multiplicity but not the resumption; closed-focus covers the v1 cases, so
+  the resumption-grade is only needed where a resumption is reified, i.e. post-v1.) Where "ahead of Lexa"
+  gets *earned*.
+
+The convergence worth trusting (**nobody steered it**): three independent things land on this same line —
+ADR-0025 drew it (closed-focus, 2026-06-22); the GC-machine proof lives entirely on the post-v1 side
+(everything verified reifies a resumption); and the `Handler`-inductive enumeration confirms v1 has nothing
+that crosses it. Design, proof, code — three arrivals at one boundary.
+
+**Open sub-clause — the post-v1 general leg's verification status (NOT yet "verified", full stop).** The
+GC-machine relation is machine-checked axiom-clean for HANDLE (append-only `Ξ`) and RESUME (read-disjointness)
+**at each step**, but `resume_preserves` *assumes* its disjointness and `raise_establishes` discharges it
+**only at the raise instant**. The **cross-step partition** (the resumption store modelled, the single-shot
+core stated, `h ∉ active` preserved across HANDLE/LEAVE/RESUME) is **unbuilt — explicitly not predicted
+membership-clean**. So the post-v1 general leg is **verified-as-designed (per-step, axiom-clean), modulo the
+cross-step invariant**, to be resolved (clean-or-cracks) by the store-preservation lemma. This is a *post-v1
+cleanliness* status, not a v1 gate.
 
 ## Alternatives considered (rejected)
 
