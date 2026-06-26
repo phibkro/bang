@@ -305,17 +305,18 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
 
 /-- A config is *returned* iff it is `⟨[], ret v⟩` — a value with no work left on the stack. -/
 def isReturnConfig : Config → Prop
-  | ([], .ret _) => True
-  | _            => False
+  | (_, [], .ret _) => True
+  | _               => False
 
 /-- Configuration typing CORE: the focus is closed and well-typed, and the stack carries it to the
 whole-program type `(eo, Co)`. ADR-0054: the FULL `HasConfig` (in `Operational.lean`) conjoins this with
 `NonEscape` (the sole structural invariant left after the collapse — cap-resolution itself is now carried
 by typing, via `Cap ℓ`). It lives there because it mentions runtime-stack predicates. The split keeps
 `HasStack` here and the invariant next to `Source.step`, and keeps `preservation`/`progress`'s frozen
-`HasConfig`-stated form byte-identical. -/
+`HasConfig`-stated form byte-identical. ADR-0055: `Config` now leads with the fresh-id counter
+(`cfg.1`), which typing IGNORES — the focus is `cfg.2.2`, the stack `cfg.2.1`. -/
 def HasConfigTy (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
-  ∃ e C, HasCTy [] [] cfg.2 e C ∧ HasStack cfg.1 e C eo Co
+  ∃ e C, HasCTy [] [] cfg.2.2 e C ∧ HasStack cfg.2.1 e C eo Co
 
 
 /-! ### 0.5 Effect-row well-formedness — keeps rows SET-shaped (ADR-0018)

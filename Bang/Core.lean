@@ -150,8 +150,14 @@ inductive Frame : Type where
 
 abbrev EvalCtx := List Frame   -- innermost frame first
 
-/-- A CK-machine configuration: a focus computation under a frame stack (ADR-0023). -/
-abbrev Config := EvalCtx × Comp
+/-- A CK-machine configuration: a focus computation under a frame stack (ADR-0023), with a
+**global-fresh capability-identity counter** (ADR-0055). The leading `Nat` is the NEXT-fresh
+identity (a monotone gensym): `Source.step`'s `handle` arm MINTS it for the new handler and
+increments, so no two handler instances ever share an identity → an escaped capability resolves
+to ITS handler or to NOTHING (stuck), never to a same-depth impostor (the depth-minting collision
+of ADR-0054 Fork-ii, build-refuted). The counter is unconstrained by typing (`HasConfigTy` ignores
+`cfg.1`); freshness is the SEPARATE `WellCounted` reachability invariant. -/
+abbrev Config := Nat × EvalCtx × Comp
 
 
 /-! ### 1.4 Type syntax (Torczon graded CBPV) -/

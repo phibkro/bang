@@ -110,14 +110,16 @@ theorem progress
 -- D3): `Source.eval`'s signature is unchanged (load ⟨[], c⟩, run, unload). The
 -- proof bridges through the config-level progress/preservation. At `⊥`:
 -- preservation gives `eo' ≤ ⊥`, so `eo' = ⊥` re-establishes the fuel IH.
--- ADR-0054 collapse: now stated over `HasConfig ([], c) ⊥ (F q A)` — the SAME `HasConfig` as
+-- ADR-0054 collapse: stated over `HasConfig (0, [], c) ⊥ (F q A)` — the SAME `HasConfig` as
 -- `preservation`/`progress` (`HasConfigTy ∧ NonEscape`). The empty stack forces
--- `HasConfigTy ([], c) ⊥ (F q A) ≡ HasCTy [] [] c ⊥ (F q A)`, so this FOLDS the old ADR-0045
--- `LWConfig ([], c)` premise into `HasConfig`'s `NonEscape ([], c)` conjunct (the initial-config
+-- `HasConfigTy (0, [], c) ⊥ (F q A) ≡ HasCTy [] [] c ⊥ (F q A)`, so this FOLDS the old ADR-0045
+-- `LWConfig ([], c)` premise into `HasConfig`'s `NonEscape (0, [], c)` conjunct (the initial-config
 -- obligation the ported LR discharges, inc 5). No raw cap-invariant premise surfaces.
+-- ADR-0055: the initial config gains the fresh-id counter `0` (load into a FRESH machine); the
+-- counter is semantics-only and ignored by typing, so this is not a weakening.
 theorem type_safety
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
-    HasConfig ([], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    HasConfig (0, [], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
     := type_safety_proof
 
 

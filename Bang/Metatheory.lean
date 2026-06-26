@@ -2004,7 +2004,7 @@ theorem preservation_proof
   -- the single documented sorry, named below (STEP 5: splitAtId_decomp + the commented E.1c re-typing).
   rintro ⟨⟨e, C, hfocus, hstack⟩, hne⟩ hstep
   have hnecfg' : NonEscape cfg' := preservation_returnEscape_TODO hne hstep
-  obtain ⟨K, M⟩ := cfg
+  obtain ⟨g, K, M⟩ := cfg
   cases M with
   | ret v =>
     -- REDUCE/terminal: the top frame drives the step. Focus ret v : ⊥ (F q A), v : A closed.
@@ -2050,8 +2050,13 @@ theorem preservation_proof
     subst hγc; subst hγv
     obtain ⟨n, hceq⟩ := hcap.cap_canonical
     subst hceq
-    simp only [Source.step, idDispatch] at hstep
-    obtain ⟨⟨Kᵢ, hh, Kₒ⟩, hsplit, hstep2⟩ := Option.bind_eq_some_iff.mp hstep
+    -- ADR-0055: `Source.step`'s perform arm threads the counter `g` via `.map` over the (counter-free)
+    -- `idDispatch`. Strip the map FIRST (the inner result `p` stays a single var, so every handler-kind
+    -- leaf's `subst hstep2` substitutes it exactly as before), then decompose the `bind`.
+    simp only [Source.step, idDispatch, Option.map_eq_some_iff] at hstep
+    obtain ⟨p, hbind, hcfg⟩ := hstep
+    subst hcfg
+    obtain ⟨⟨Kᵢ, hh, Kₒ⟩, hsplit, hstep2⟩ := Option.bind_eq_some_iff.mp hbind
     by_cases hk : handlesOp hh ℓ op = true
     · rw [if_pos hk] at hstep2
       have hdecomp : K = Kᵢ ++ Frame.handleF n hh :: Kₒ := splitAtId_decomp K n hsplit
@@ -2182,16 +2187,18 @@ theorem preservation_proof
     -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
     exact ⟨eo, le_refl _, ⟨e, CTy.arr q A C, hM, HasStack.appF hw hstack⟩, hnecfg'⟩
   | handle h M =>
-    -- PUSH handle (ADR-0054): mint identity `n = handlerCount K`, push `handleF n h`, and SUBSTITUTE
-    -- the capability `vcap n ℓ` for the handle-bound var 0. The reduct focus `subst (vcap n ℓ) M` re-types
-    -- via `subst_value_proof` at the inert cap (`HasVTy.vcap`), collapsing the body grade `qc::[]` to `[]`.
+    -- PUSH handle (ADR-0055): mint the GLOBAL-FRESH identity `g` (the carried counter), push
+    -- `handleF g h`, advance to `g+1`, and SUBSTITUTE the capability `vcap g ℓ` for the handle-bound
+    -- var 0. The reduct focus `subst (vcap g ℓ) M` re-types via `subst_value_proof` at the inert cap
+    -- (`HasVTy.vcap`, identity-agnostic), collapsing the body grade `qc::[]` to `[]`. The counter value
+    -- is invisible to typing — only the substituted `n := g` must match the step's mint.
     cases h with
     | throws ℓ =>
       simp only [Source.step, Handler.label, Option.some.injEq] at hstep
       subst hstep
       obtain ⟨e_body, q, qc, A, hC, hraise, hiface, hM, hle⟩ := hfocus.handleThrows_inv
       subst hC
-      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := handlerCount K) (ℓ := ℓ)) hM
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus', HasStack.handleF hraise hiface hle hstack⟩, hnecfg'⟩
@@ -2200,7 +2207,7 @@ theorem preservation_proof
       subst hstep
       obtain ⟨e_body, q, qc, S, A, hC, hga, hgr, hpa, hpr, hif, hs, hM, hle⟩ := hfocus.handleState_inv
       subst hC
-      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := handlerCount K) (ℓ := ℓ)) hM
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus', HasStack.stateF hga hgr hpa hpr hif hs hle hstack⟩, hnecfg'⟩
@@ -2210,7 +2217,7 @@ theorem preservation_proof
       obtain ⟨e_body, q, qc, A, hC, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle⟩ :=
         hfocus.handleTransaction_inv
       subst hC
-      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := handlerCount K) (ℓ := ℓ)) hM
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
       simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus',
@@ -2345,12 +2352,14 @@ theorem dispatchOn_isSome (n : Nat) (op : OpId) (v : Val) (X : EvalCtx × Handle
 /-- **PROGRESS'S PERFORM CASE** (probe §2): given `CapResolves K n ℓ op`, the `idDispatch` step fires —
 `splitAtId` finds the handling frame, the fail-loud `handlesOp` guard passes, and `dispatchOn` is total. -/
 theorem progress_perform_from_capResolves
-    (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val)
+    (g : Nat) (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val)
     (hr : CapResolves K n ℓ op) :
-    ∃ cfg', Source.step (K, Comp.perform (Val.vcap n ℓ) op v) = some cfg' := by
+    ∃ cfg', Source.step (g, K, Comp.perform (Val.vcap n ℓ) op v) = some cfg' := by
   obtain ⟨Kᵢ, h, Kₒ, hsplit, hhandles⟩ := hr
-  simp only [Source.step, idDispatch, hsplit, Option.bind_some, hhandles, if_true]
-  exact dispatchOn_isSome n op v (Kᵢ, h, Kₒ)
+  obtain ⟨p, hp⟩ := dispatchOn_isSome n op v (Kᵢ, h, Kₒ)
+  refine ⟨(g, p.1, p.2), ?_⟩
+  simp only [Source.step, idDispatch, hsplit, Option.bind_some, hhandles, if_true, hp,
+    Option.map_some]
 
 theorem progress_proof
     {cfg : Config} {q : Mult} {A : VTy Eff Mult} :
@@ -2360,14 +2369,14 @@ theorem progress_proof
   -- `FocusResolves` clause (at the reflexive reach) yields `CapResolves K n ℓ op`, so `idDispatch` fires
   -- (`progress_perform_from_capResolves`). The cap value is `vcap n ℓ` by canonical forms.
   rintro ⟨⟨e, C, hfocus, hstack⟩, hne⟩
-  obtain ⟨K, M⟩ := cfg
+  obtain ⟨g, K, M⟩ := cfg
   cases M with
-  | letC M N => exact Or.inr ⟨(Frame.letF N :: K, M), by simp [Source.step]⟩
-  | app M w => exact Or.inr ⟨(Frame.appF w :: K, M), by simp [Source.step]⟩
+  | letC M N => exact Or.inr ⟨(g, Frame.letF N :: K, M), by simp [Source.step]⟩
+  | app M w => exact Or.inr ⟨(g, Frame.appF w :: K, M), by simp [Source.step]⟩
   | handle h M => exact Or.inr ⟨_, rfl⟩
   | force w =>
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
-    · subst hweq; exact Or.inr ⟨(K, MT), by simp [Source.step]⟩
+    · subst hweq; exact Or.inr ⟨(g, K, MT), by simp [Source.step]⟩
     · simp at hget
   | perform c op v =>
     -- ADR-0054: the focus types `c : Cap ℓ` (closed) ⇒ `c = vcap n ℓ` (canonical). `NonEscape` then
@@ -2375,20 +2384,20 @@ theorem progress_proof
     obtain ⟨ℓ, γ_c, hcap⟩ := hfocus.perform_cap_inv
     obtain ⟨n, hceq⟩ := hcap.cap_canonical
     subst hceq
-    have hfr : FocusResolves (K, Comp.perform (Val.vcap n ℓ) op v) := hne _ StepStar.refl
-    exact Or.inr (progress_perform_from_capResolves K n ℓ op v hfr)
+    have hfr : FocusResolves (g, K, Comp.perform (Val.vcap n ℓ) op v) := hne _ StepStar.refl
+    exact Or.inr (progress_perform_from_capResolves g K n ℓ op v hfr)
   | ret v =>
     cases K with
     | nil => exact Or.inl (by simp [isReturnConfig])
     | cons fr K' =>
       cases fr with
-      | letF N => exact Or.inr ⟨(K', Comp.subst v N), by simp [Source.step]⟩
+      | letF N => exact Or.inr ⟨(g, K', Comp.subst v N), by simp [Source.step]⟩
       | handleF n h =>
         -- REDUCE handler-return = identity for BOTH throws and state (ADR-0023 Q6 / ADR-0025).
         cases h with
-        | throws ℓ => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
-        | state ℓ s => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
-        | transaction ℓ Θ => exact Or.inr ⟨(K', Comp.ret v), by simp [Source.step]⟩
+        | throws ℓ => exact Or.inr ⟨(g, K', Comp.ret v), by simp [Source.step]⟩
+        | state ℓ s => exact Or.inr ⟨(g, K', Comp.ret v), by simp [Source.step]⟩
+        | transaction ℓ Θ => exact Or.inr ⟨(g, K', Comp.ret v), by simp [Source.step]⟩
       | appF w =>
         -- appF wants an arr-focus; ret v : F _ _ contradicts the appF stack premise
         obtain ⟨γ', A0, q0, he, hC, hγ, hwv⟩ := hfocus.ret_inv
@@ -2404,7 +2413,7 @@ theorem progress_proof
       cases hstack
     | cons fr K' =>
       cases fr with
-      | appF w => exact Or.inr ⟨(K', Comp.subst w M), by simp [Source.step]⟩
+      | appF w => exact Or.inr ⟨(g, K', Comp.subst w M), by simp [Source.step]⟩
       | letF N =>
         obtain ⟨q'', A'', e₂, qk, B'', hCeq, _⟩ := hstack.letF_inv
         exact absurd hCeq (by simp)
@@ -2415,20 +2424,20 @@ theorem progress_proof
     -- closed `v : sum A B` is `inl a`/`inr a` (canonical forms); each fires its branch.
     obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN₁, hN₂⟩ := hfocus.case_inv
     rcases hv.sum_canonical with ⟨a, hveq, _⟩ | ⟨a, hveq, _⟩
-    · subst hveq; exact Or.inr ⟨(K, Comp.subst a N₁), by simp [Source.step]⟩
-    · subst hveq; exact Or.inr ⟨(K, Comp.subst a N₂), by simp [Source.step]⟩
+    · subst hveq; exact Or.inr ⟨(g, K, Comp.subst a N₁), by simp [Source.step]⟩
+    · subst hveq; exact Or.inr ⟨(g, K, Comp.subst a N₂), by simp [Source.step]⟩
   | split v N =>
     -- closed `v : prod A B` is `pair a b`; split reduces.
     obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN⟩ := hfocus.split_inv
     obtain ⟨γ_a, γ_b, a, b, hveq, _, _, _⟩ := hv.prod_canonical
     subst hveq
-    exact Or.inr ⟨(K, Comp.subst a (Comp.subst (Val.shift b) N)), by simp [Source.step]⟩
+    exact Or.inr ⟨(g, K, Comp.subst a (Comp.subst (Val.shift b) N)), by simp [Source.step]⟩
   | unfold v =>
     -- closed `v : mu A` is `fold a`; `unfold (fold a) ↦ ret a`.
     obtain ⟨A, _, _, hv⟩ := hfocus.unfold_inv
     obtain ⟨a, hveq, _⟩ := hv.mu_canonical
     subst hveq
-    exact Or.inr ⟨(K, Comp.ret a), by simp [Source.step]⟩
+    exact Or.inr ⟨(g, K, Comp.ret a), by simp [Source.step]⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
 
@@ -2447,8 +2456,8 @@ private theorem run_safe {q : Mult} {A : VTy Eff Mult} :
   | succ n ih =>
     intro cfg hcfg
     rcases progress_proof hcfg with hret | ⟨cfg', hstep⟩
-    · -- isReturnConfig cfg ⇒ cfg = ([], ret v) ⇒ Config.run hits the `done` arm.
-      obtain ⟨K, M⟩ := cfg
+    · -- isReturnConfig cfg ⇒ cfg = (g, [], ret v) ⇒ Config.run hits the `done` arm.
+      obtain ⟨g, K, M⟩ := cfg
       cases K with
       | cons fr K' => cases M <;> simp only [isReturnConfig] at hret
       | nil =>
@@ -2468,8 +2477,8 @@ private theorem run_safe {q : Mult} {A : VTy Eff Mult} :
     · -- cfg steps; preservation gives eo' ≤ ⊥ ⇒ eo' = ⊥; re-establish IH on cfg'.
       obtain ⟨eo', hle, hcfg'⟩ := preservation_proof hcfg hstep
       rw [le_bot_iff] at hle; subst hle
-      obtain ⟨K, M⟩ := cfg
-      have hrun : Config.run (n + 1) (K, M) = Config.run n cfg' := by
+      obtain ⟨g, K, M⟩ := cfg
+      have hrun : Config.run (n + 1) (g, K, M) = Config.run n cfg' := by
         cases K with
         | cons fr K' => simp only [Config.run]; rw [hstep]
         | nil =>
@@ -2496,10 +2505,10 @@ forces `HasConfigTy ([], c) ⊥ (F q A) ≡ HasCTy [] [] c ⊥ (F q A)`, so this
 the ported LR discharges (inc 5). No raw cap-invariant premise surfaces; the proof is `run_safe` directly. -/
 theorem type_safety_proof
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
-    HasConfig ([], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
+    HasConfig (0, [], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
   intro hcfg fuel
-  rw [show Source.eval fuel c = Config.run fuel ([], c) from rfl]
-  exact run_safe fuel ([], c) hcfg
+  rw [show Source.eval fuel c = Config.run fuel (0, [], c) from rfl]
+  exact run_safe fuel (0, [], c) hcfg
 
 /-! ## F. Abstraction-safety — no accidental handling (ADR-0024)
 
