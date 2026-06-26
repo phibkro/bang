@@ -126,7 +126,7 @@ theorem ConvergesC_le.mono {n m : Nat} (hnm : n ≤ m) {cfg : Config}
 `n+1` steps iff `cfg'` converges within `n` — a clean `±1` with NO `K.length` offset (config level).
 This is the single primitive every `▷`-guarded anti-reduction threads through. -/
 theorem convergesC_le_step {n : Nat} {cfg cfg' : Config}
-    (hstep : Source.step cfg = some cfg') (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
+    (hstep : Source.step cfg = some cfg') (hne : ∀ g v, cfg ≠ (g, [], Comp.ret v)) :
     ConvergesC_le (n + 1) cfg ↔ ConvergesC_le n cfg' := by
   unfold ConvergesC_le
   rw [Config.run_step n cfg hne, hstep]
@@ -142,7 +142,7 @@ theorem coApproxC_le_zero (cfg₁ cfg₂ : Config) : CoApproxC_le 0 cfg₁ cfg�
 
 /-- Right-side anti-reduction (UNBOUNDED): if `cfg₂ ↦ cfg₂'` and `cfg₂'` converges, so does `cfg₂`. -/
 theorem converges_anti_step {cfg₂ cfg₂' : Config} (hstep : Source.step cfg₂ = some cfg₂')
-    (hne : ∀ v, cfg₂ ≠ ([], Comp.ret v)) (h : ∃ m w, Config.run m cfg₂' = Result.done w) :
+    (hne : ∀ g v, cfg₂ ≠ (g, [], Comp.ret v)) (h : ∃ m w, Config.run m cfg₂' = Result.done w) :
     ∃ m w, Config.run m cfg₂ = Result.done w := by
   obtain ⟨m, w, hm⟩ := h
   exact ⟨m + 1, w, by rw [Config.run_step m cfg₂ hne, hstep]; exact hm⟩
@@ -153,8 +153,8 @@ redexes related at `n+1`. Every frame-reduce return-half (`letF`/`appF`/`handleF
 head-expansion routes through this ONE lemma — the factoring that localizes the metering (ADR-0041
 alt-1 overturn). NO `K.length` offset: config level. -/
 theorem coApproxC_le_anti_step {n : Nat} {cfg₁ cfg₁' cfg₂ cfg₂' : Config}
-    (hstep₁ : Source.step cfg₁ = some cfg₁') (hne₁ : ∀ v, cfg₁ ≠ ([], Comp.ret v))
-    (hstep₂ : Source.step cfg₂ = some cfg₂') (hne₂ : ∀ v, cfg₂ ≠ ([], Comp.ret v))
+    (hstep₁ : Source.step cfg₁ = some cfg₁') (hne₁ : ∀ g v, cfg₁ ≠ (g, [], Comp.ret v))
+    (hstep₂ : Source.step cfg₂ = some cfg₂') (hne₂ : ∀ g v, cfg₂ ≠ (g, [], Comp.ret v))
     (h : CoApproxC_le n cfg₁' cfg₂') : CoApproxC_le (n + 1) cfg₁ cfg₂ := by
   intro hconv
   rw [convergesC_le_step hstep₁ hne₁] at hconv
@@ -165,8 +165,8 @@ the SAME index `n` (not the dropped one), the left's lost step (`n → n-1` via 
 monotonicity (`ConvergesC_le (n-1) ⊆ ConvergesC_le n`). Used by `appF`/`handleF` REDUCE bridges where the
 reduct relation comes from a body IH at the full index `n`, not a `▷`-dropped one. -/
 theorem coApproxC_le_reduce {n : Nat} {cfg₁ cfg₁' cfg₂ cfg₂' : Config}
-    (hstep₁ : Source.step cfg₁ = some cfg₁') (hne₁ : ∀ v, cfg₁ ≠ ([], Comp.ret v))
-    (hstep₂ : Source.step cfg₂ = some cfg₂') (hne₂ : ∀ v, cfg₂ ≠ ([], Comp.ret v))
+    (hstep₁ : Source.step cfg₁ = some cfg₁') (hne₁ : ∀ g v, cfg₁ ≠ (g, [], Comp.ret v))
+    (hstep₂ : Source.step cfg₂ = some cfg₂') (hne₂ : ∀ g v, cfg₂ ≠ (g, [], Comp.ret v))
     (h : CoApproxC_le n cfg₁' cfg₂') : CoApproxC_le n cfg₁ cfg₂ := by
   intro hconv
   -- ConvergesC_le n redex; if n=0 vacuous. Else step ⇒ ConvergesC_le (n-1) reduct ⊆ ConvergesC_le n reduct.
@@ -204,86 +204,34 @@ context-quantified `ctxEquiv` reduce to a config-level co-convergence. -/
 `C.length` push steps that re-decompose `plug C c` back into the frame stack `C`. The machine
 PUSHes through each `letC/app/handle` node the `plug` built (those nodes always PUSH, regardless of
 the subterm), rebuilding `C` innermost-first. -/
-theorem run_plug : ∀ (C : EvalCtx) (c : Comp) (n : Nat),
-    Config.run (n + C.length) ([], Bang.plug C c) = Config.run n (C, c)
-  | [], c, n => by simp only [Bang.plug, List.length_nil, Nat.add_zero]
-  | fr :: K, c, n => by
-      -- plug (fr::K) c = plug K (wrap fr c); IH on K reaches (K, wrap fr c); one PUSH ↦ (fr::K, c).
-      have hwrap : Source.step (K, fr.wrapStep c) = some (fr :: K, c) := by
-        cases fr <;> rfl
-      have hne : ∀ v, (K, fr.wrapStep c) ≠ ([], Comp.ret v) := by
-        intro v; cases fr <;> simp [Frame.wrapStep]
-      have hstep : Config.run (n + 1) (K, fr.wrapStep c) = Config.run n (fr :: K, c) := by
-        rw [Config.run_step n (K, fr.wrapStep c) hne, hwrap]
-      rw [plug_cons fr K c, List.length_cons,
-        show n + (K.length + 1) = (n + 1) + K.length by omega, run_plug K (fr.wrapStep c) (n + 1),
-        hstep]
+-- ◊inc-5 METERING RESHAPE (named sorry, step 2): under ADR-0055 minting, running `plug C c` does NOT
+-- reach `(C, c)` — the machine mints CANONICAL ids for C's handle frames + substitutes the caps into
+-- the focus (the machine-shaped config). So the RHS becomes the canonical-reached config; `run_plug`
+-- must be re-proven to that form using `scratch/RenameInvarianceProbe` §2/§3 (plug ignores frame ids,
+-- splitAtId commutes under injective renaming). Placeholder statement (RHS counter = handlerCount C)
+-- pending the reshape; see PlugMintWall.lean + the renaming-invariance ADR.
+theorem run_plug (C : EvalCtx) (c : Comp) (n : Nat) :
+    Config.run (n + C.length) (0, [], Bang.plug C c) = Config.run n (handlerCount C, C, c) := by
+  sorry
 
-/-- `Converges (plug C x)` is exactly config-level convergence of the focused `(C, x)`. -/
+/-- `Converges (plug C x)` is config-level convergence of the (machine-shaped) reached config. -/
 theorem converges_plug_iff (C : EvalCtx) (x : Comp) :
-    Converges (Bang.plug C x) ↔ ∃ n w, Config.run n (C, x) = Result.done w := by
-  constructor
-  · rintro ⟨fuel, w, hfuel⟩
-    -- bump fuel to `fuel + C.length` (run_done_add), then run_plug peels the C.length push steps.
-    refine ⟨fuel, w, ?_⟩
-    have : Config.run (fuel + C.length) ([], Bang.plug C x) = Result.done w :=
-      Config.run_done_add C.length fuel ([], Bang.plug C x) w hfuel
-    rwa [run_plug C x fuel] at this
-  · rintro ⟨n, w, hn⟩
-    exact ⟨n + C.length, w, by
-      show Source.eval (n + C.length) (Bang.plug C x) = Result.done w
-      rw [show Source.eval (n + C.length) (Bang.plug C x)
-            = Config.run (n + C.length) ([], Bang.plug C x) from rfl, run_plug C x n]; exact hn⟩
+    Converges (Bang.plug C x) ↔ ∃ n w, Config.run n (handlerCount C, C, x) = Result.done w := by
+  sorry  -- inc-5 step 2: derives from the reshaped `run_plug` (machine-shaped reached config)
 
-/-- The head reduction at config level: `(C, seqComp (ret v) c)` runs to `(C, c)` after 2 steps. -/
-theorem seqComp_ret_run (v : Val) (c : Comp) (C : EvalCtx) (n : Nat) :
-    Config.run (n + 2) (C, seqComp (Comp.ret v) c) = Config.run n (C, c) := by
-  -- step 1 (PUSH): (C, letC (ret v) (shift c)) ↦ (letF (shift c) :: C, ret v)
-  -- step 2 (let-bind): (letF (shift c)::C, ret v) ↦ (C, (shift c)[v]) = (C, c) by subst_shift
-  show Config.run (n + 2) (C, Comp.letC (Comp.ret v) (Comp.shift c)) = _
-  -- two transitions; neither config is `([], ret _)` (focus is `letC …`, then stack is non-empty).
-  have hne1 : ∀ u, (C, Comp.letC (Comp.ret v) (Comp.shift c)) ≠ ([], Comp.ret u) := by
-    intro u; simp
-  have hne2 : ∀ u, (Frame.letF (Comp.shift c) :: C, Comp.ret v) ≠ ([], Comp.ret u) := by
-    intro u; simp
-  -- step 1: (C, letC (ret v) (shift c)) ↦ (letF (shift c) :: C, ret v)
-  have hr1 : Config.run (n + 1 + 1) (C, Comp.letC (Comp.ret v) (Comp.shift c))
-      = Config.run (n + 1) (Frame.letF (Comp.shift c) :: C, Comp.ret v) := by
-    rw [Config.run_step (n + 1) _ hne1]; rfl
-  -- step 2: (letF (shift c) :: C, ret v) ↦ (C, (shift c)[v]) = (C, c) by subst_shift
-  have hr2 : Config.run (n + 1) (Frame.letF (Comp.shift c) :: C, Comp.ret v)
-      = Config.run n (C, c) := by
-    rw [Config.run_step n _ hne2]
-    show Config.run n (C, Comp.subst v (Comp.shift c)) = Config.run n (C, c)
-    rw [Comp.subst_shift]
-  rw [show n + 2 = (n + 1) + 1 by omega, hr1, hr2]
+/-- The head reduction at config level: `(g, C, seqComp (ret v) c)` runs to `(g, C, c)` after 2 steps.
+The two transitions (letC PUSH + let-bind) do NOT mint (no `handle`), so the counter `g` threads
+unchanged — this re-keys cleanly (no reshape). NAMED sorry for step 1; proven in step 2 alongside the
+metering spine. -/
+theorem seqComp_ret_run (v : Val) (c : Comp) (C : EvalCtx) (n g : Nat) :
+    Config.run (n + 2) (g, C, seqComp (Comp.ret v) c) = Config.run n (g, C, c) := by
+  sorry  -- inc-5 step 2 (mechanical: letC steps thread `g`, no mint)
 
 theorem seq_unit_proof (v : Val) {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     ctxEquiv (e := e) (B := B) (seqComp (Comp.ret v) c) c := by
-  -- `≈` = approx both ways; each is context-quantified `Converges`. Bridge to config level,
-  -- where the 2-step head reduction makes the two foci co-converge with a ±2 fuel offset.
-  -- ◊4.5b (g): `⊑` now threads a `HasStack`-typing on the observation context; `fwd` `intro`s and
-  -- IGNORES it (the head-reduction co-convergence is typing-independent). Implicit `{e B}` are free here
-  -- (seq_unit's `≈` is at an arbitrary focus type — the proof holds for every typing of the context).
-  have fwd : ∀ x y : Comp, (∀ (C : EvalCtx) n w,
-      Config.run n (C, x) = Result.done w → ∃ m, Config.run m (C, y) = Result.done w) →
-      ctxApprox (e := e) (B := B) x y := by
-    intro x y hco C _eo _qo _Ao _hStack hx
-    rw [Cxt.plug, converges_plug_iff] at hx ⊢
-    obtain ⟨n, w, hn⟩ := hx
-    obtain ⟨m, hm⟩ := hco C n w hn
-    exact ⟨m, w, hm⟩
-  refine ⟨fwd _ _ ?_, fwd _ _ ?_⟩
-  · -- seqComp (ret v) c ⊑ c : a run of the seqComp reaches `done` ⇒ so does c (drop the 2 steps).
-    intro C n w hn
-    -- bump n to n+2 (run_done_add), then seqComp_ret_run rewrites it to c's run at fuel n.
-    refine ⟨n, ?_⟩
-    have h2 : Config.run (n + 2) (C, seqComp (Comp.ret v) c) = Result.done w :=
-      Config.run_done_add 2 n (C, seqComp (Comp.ret v) c) w hn
-    rwa [seqComp_ret_run v c C n] at h2
-  · -- c ⊑ seqComp (ret v) c : run of c reaches done ⇒ feed n+2 fuel through the head reduction.
-    intro C n w hn
-    exact ⟨n + 2, by rw [seqComp_ret_run v c C n]; exact hn⟩
+  -- inc-5 step 2 (metering spine): the proof bridges via `converges_plug_iff`/`seqComp_ret_run`
+  -- (both machine-shaped-reshape dependent). NAMED sorry until the reshape lands.
+  sorry
 
 
 /-! ## 5.1 LR helpers — concretized from the kernel + Biernacki popl18 §5.1.
@@ -345,7 +293,7 @@ the frozen axiom: the old signature `raise : Eff → Val → Comp` took an opaqu
 `Eff` element, from which NO concrete `Label` can be extracted to feed `up` — it could
 not have been inhabited faithfully. The faithful type is `Label → Val → Comp`
 (`Label = Nat`, the concrete operation channel `up` consumes). -/
-def raise (ℓ : Label) (v : Val) : Comp := Comp.perform 0 ℓ "raise" v
+def raise (ℓ : Label) (v : Val) : Comp := Comp.perform (Val.vcap 0 ℓ) "raise" v
 -- operation arg/result types: superseded by `EffSig.opArg`/`opRes` (ADR-0022 D1),
 -- which are per-`(Label, OpId)` (the old per-`Eff` axioms could not type `get` vs `put`).
 
@@ -401,47 +349,13 @@ theorem Val.Closed.pair_inv {a b : Val} (h : Val.Closed (Val.pair a b)) :
 theorem Val.Closed.fold_inv {w : Val} (h : Val.Closed (Val.fold w)) : Val.Closed w := by
   intro k; have := h k; rw [Val.shiftFrom, Val.fold.injEq] at this; exact this
 
-/-! ### 5.2a′ Cap-closedness (`Val.CapClosed`) — the ADR-0045 LEXICAL-CAP analogue of `Val.Closed`
+/-! ### 5.2a′ Cap-closedness — REMOVED (ADR-0054).
 
-ADR-0045 made `Comp.substFrom`'s `handle` arm a CAP-BINDER: the filler crosses the `handle` wrapper
-shifted by `Val.shiftCap` (Operational.lean §cap-shift). The LR's `closeC` handler-distribution lemmas
-(`closeC_handleThrows`/`State`/`Transaction`, Compat.lean) therefore need the closing-env fillers to be
-SHIFTCAP-INVARIANT, so the `Val.shiftCap` that crossing a `handle` introduces vanishes — exactly as
-`closeC_subst_comm` needs `Val.Closed` to vanish the de-Bruijn `Val.shift`.
-
-`Val.shiftCapFrom` (Operational.lean) touches ONLY `perform cap` nodes (`cap ↦ cap+1` when `cap ≥ d`);
-it is ORTHOGONAL to the de-Bruijn `Val.shiftFrom`. So `Val.Closed` (de-Bruijn-closed) does NOT entail
-`Val.CapClosed` — a de-Bruijn-closed `vthunk (perform 0 ℓ op vunit)` carries a live ambient cap. The
-faithfulness anchor (why it is a real machine invariant, not an artifact): the CK machine's fillers are
-always closed values whose ambient caps are RESOLVED (every `perform` in a substituted value names a
-handler already on the stack — the lexical-cap discipline, ADR-0045). A cap-closed value is precisely
-one whose `perform`s carry NO ambient (handler-unbound) cap to be bumped, mirroring how `Val.Closed`
-carries no free de-Bruijn var. This is the structural invariant of the type-gate's cap-constrained
-`U φ C` (`φ ≠ ⊥`) thunks. -/
-def Val.CapClosed (v : Val) : Prop := ∀ d, Val.shiftCapFrom d v = v
-
-/-- The `d=0` instance: a cap-closed value is fixed by `Val.shiftCap`. This is the vanishing-shiftCap
-fact the `closeC` handler-distribution lemmas consume (the `handle`-cap-shift becomes the identity). -/
-theorem Val.CapClosed.shiftCap {v : Val} (h : Val.CapClosed v) : Val.shiftCap v = v := h 0
-
-/-- A cap-closed value is fixed by `Val.shiftCapFrom` at EVERY cutoff (the defining property, named). -/
-theorem Val.CapClosed.shiftCapFrom_eq {v : Val} (h : Val.CapClosed v) (d : Nat) :
-    Val.shiftCapFrom d v = v := h d
-
-/-- Cap-closedness is inherited by an injection's payload (`inl`/`inr`), mirroring `Val.Closed.inl_inv`.
-The `shiftCapFrom` constructor recurses structurally, so injectivity peels the payload's invariance. -/
-theorem Val.CapClosed.inl_inv {w : Val} (h : Val.CapClosed (Val.inl w)) : Val.CapClosed w := by
-  intro d; have := h d; rw [Val.shiftCapFrom, Val.inl.injEq] at this; exact this
-theorem Val.CapClosed.inr_inv {w : Val} (h : Val.CapClosed (Val.inr w)) : Val.CapClosed w := by
-  intro d; have := h d; rw [Val.shiftCapFrom, Val.inr.injEq] at this; exact this
-/-- A pair's components are each cap-closed. -/
-theorem Val.CapClosed.pair_inv {a b : Val} (h : Val.CapClosed (Val.pair a b)) :
-    Val.CapClosed a ∧ Val.CapClosed b := by
-  constructor <;> intro d <;> (have := h d; rw [Val.shiftCapFrom, Val.pair.injEq] at this)
-  exacts [this.1, this.2]
-/-- A `fold`'s payload is cap-closed (the μ-intro analogue of `inl_inv`). -/
-theorem Val.CapClosed.fold_inv {w : Val} (h : Val.CapClosed (Val.fold w)) : Val.CapClosed w := by
-  intro d; have := h d; rw [Val.shiftCapFrom, Val.fold.injEq] at this; exact this
+The `Val.CapClosed` block (the ADR-0045 cap-shift analogue of `Val.Closed`) is DELETED: ADR-0054
+removed the cap-shift entirely (`Comp.substFrom`'s `handle` arm is now an ordinary de-Bruijn binder
+descent, no `Val.shiftCap`), so `Val.shiftCapFrom`/`Val.shiftCap` no longer exist and the
+shiftcap-invariance the `closeC_handle*` lemmas once consumed is the identity. Those lemmas re-key to
+the plain-binder `Val.Closed` form (Compat, the `closeC_lam` shape). -/
 
 
 /-! ## 5.2 LR — the answer-typed core (`VrelK`/`CrelK`/`KrelS`) IS the frozen `Vrel`/`Crel`/`EnvRel`
@@ -490,6 +404,10 @@ for `force`'s head-expansion. -/
 def VrelK : Nat → VTy Eff Mult → Val → Val → Prop
   | _,     .unit,    v₁, v₂ => BaseRel (Eff := Eff) (Mult := Mult) VTy.unit v₁ v₂
   | _,     .int,     v₁, v₂ => BaseRel (Eff := Eff) (Mult := Mult) VTy.int v₁ v₂
+  -- cap (ADR-0054): a capability value relates by IDENTITY + label (machine-shaped — both sides name
+  -- the SAME handler instance `m` for the SAME effect `ℓ`). Closed-value / stack-agnostic like the base
+  -- types; the value→stack resolution linkage lives in the diagonal's `WellScoped`, not here.
+  | _,     .cap ℓ,   v₁, v₂ => ∃ m, v₁ = Val.vcap m ℓ ∧ v₂ = Val.vcap m ℓ
   | n,     .U φ B,   v₁, v₂ =>
       ∃ c₁ c₂, v₁ = Val.vthunk c₁ ∧ v₂ = Val.vthunk c₂ ∧ ∀ j, j < n → CrelK j B φ c₁ c₂
   | n,     .sum A B, v₁, v₂ =>
@@ -507,7 +425,10 @@ def VrelK : Nat → VTy Eff Mult → Val → Val → Prop
 def CrelK : Nat → CTy Eff Mult → Eff → Comp → Comp → Prop
   | n, C, ε, c₁, c₂ =>
       ∀ (D : CTy Eff Mult) (K₁ K₂ : Stack), KrelS n C D ε K₁ K₂ →
-        CoApproxC_le n (K₁, c₁) (K₂, c₂)
+        -- machine-shaped (ADR-0054/0055): the observed config carries the fresh-id counter. The
+        -- canonical fresh counter for a stack `K` is `handlerCount K` (ids `0..hc-1` are live, `hc`
+        -- is next-fresh). CrelK/KrelS signatures are frozen, so the counter is DERIVED, not a param.
+        CoApproxC_le n (handlerCount K₁, K₁, c₁) (handlerCount K₂, K₂, c₂)
   termination_by n C _ _ _ => (n, 2, 0, sizeOf C)
 /-- ◊4.5b answer-typed stack relation, STACK-STRUCTURAL. `C` = hole type, `D` = answer type (inert).
 DISCOVERY-IC FORM: SINGLE-BODY def + internal `match K₁, K₂` (the multi-clause form fights the
@@ -518,7 +439,7 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
       -- nil: hole type = answer type; observe related RETURNS (the biorthogonal base / return-half).
       | [], [] =>
           C = D ∧ (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
-            CoApproxC_le n ([], Comp.ret v₁) ([], Comp.ret v₂))
+            CoApproxC_le n (0, [], Comp.ret v₁) (0, [], Comp.ret v₂))
       -- letF: hole is a returner `F q A`; frame body ▷-guarded at `m < n`, tail at continuation B.
       -- The continuation's row `φ` is bound existentially, AND the TAIL is at `φ` (not the ambient ε):
       -- after a letF frame the tail observes the CONTINUATION's execution, so the row threading through
@@ -545,7 +466,11 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
       -- relational form is WF-safe: `VrelK n` on the handler state is a role-1→role-0 drop (= the appF cap).
       -- throws relates by LABEL only (no state) so the zero-shot case recovers the old behaviour. The
       -- match is INLINED (can't forward-ref `HandlerRel`, defined post-block); `krelS_handleF` exposes it.
-      | (Frame.handleF h₁ :: K₁'), (Frame.handleF h₂ :: K₂') =>
+      | (Frame.handleF n₁ h₁ :: K₁'), (Frame.handleF n₂ h₂ :: K₂') =>
+          -- machine-shaped (ADR-0055): the two frames carry their generative identity. Under canonical
+          -- ids (both stacks reached by runs from a fresh counter) related frames share the id, so the
+          -- relation REQUIRES `n₁ = n₂` (the diagonal has it by reflexivity; the resume dispatch keys on it).
+          n₁ = n₂ ∧
           (match h₁, h₂ with
            | Handler.throws ℓ₁,         Handler.throws ℓ₂         => ℓ₁ = ℓ₂
            | Handler.state ℓ₁ s₁,       Handler.state ℓ₂ s₂       =>
@@ -567,7 +492,7 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
             -- `C`) with no extra `Dᵢ=C` obligation; the producer instantiates at the SPLIT-POINT hole that
             -- `krelS_splitAt_decomp` returns (threaded existentially as the conjunct's `C`).
             ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
-                  (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
+                  (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
                 Bang.handlesOp h₁ h₁.label op = true →
                 Val.Closed w₁ → Val.Closed w₂ →
                 (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
@@ -578,8 +503,8 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
                 -- discards `Kᵢ` so it never consults this.
                 (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
                   ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
-                Bang.dispatchOn op w₁ (Kᵢ, h₁, K₁') = some cfg₁ →
-                Bang.dispatchOn op w₂ (Kᵢ', h₂, K₂') = some cfg₂ →
+                Bang.dispatchOn n₁ op w₁ (Kᵢ, h₁, K₁') = some cfg₁ →
+                Bang.dispatchOn n₂ op w₂ (Kᵢ', h₂, K₂') = some cfg₂ →
                 -- ◊4.5b-strengthen (path (a)): KREL-CARRYING resume conclusion. The opaque
                 -- `CoApproxC_le m cfg₁ cfg₂` is too weak for a handler NESTED in a captured continuation:
                 -- it cannot lift through an appended outer tail (convergence of the shorter stack ⊬
@@ -610,7 +535,7 @@ end
 @[simp] theorem krelS_nil {n : Nat} {C D : CTy Eff Mult} {ε : Eff} :
     KrelS n C D ε [] [] ↔
       (C = D ∧ ∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
-        CoApproxC_le n ([], Comp.ret v₁) ([], Comp.ret v₂)) := by
+        CoApproxC_le n (0, [], Comp.ret v₁) (0, [], Comp.ret v₂)) := by
   rw [KrelS]
 
 @[simp] theorem krelS_letF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {N₁ N₂ : Comp} {K₁ K₂ : Stack} :
@@ -644,20 +569,20 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
           VrelK (Eff := Eff) (Mult := Mult) n VTy.int (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
   | _, _ => False
 
-@[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {h h' : Handler}
+@[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {nh nh' : Nat} {h h' : Handler}
     {K₁ K₂ : Stack} :
-    KrelS n C D ε (Frame.handleF h :: K₁) (Frame.handleF h' :: K₂) ↔
-      (HandlerRel Eff Mult n h h' ∧ KrelS n C D ε K₁ K₂
+    KrelS n C D ε (Frame.handleF nh h :: K₁) (Frame.handleF nh' h' :: K₂) ↔
+      (nh = nh' ∧ HandlerRel Eff Mult n h h' ∧ KrelS n C D ε K₁ K₂
         ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
-              (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : Config),
+              (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
             Bang.handlesOp h h.label op = true →
             Val.Closed w₁ → Val.Closed w₂ →
             (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
             KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
             (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
               ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
-            Bang.dispatchOn op w₁ (Kᵢ, h, K₁) = some cfg₁ →
-            Bang.dispatchOn op w₂ (Kᵢ', h', K₂) = some cfg₂ →
+            Bang.dispatchOn nh op w₁ (Kᵢ, h, K₁) = some cfg₁ →
+            Bang.dispatchOn nh' op w₂ (Kᵢ', h', K₂) = some cfg₂ →
             (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
                 cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
                 Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
@@ -672,9 +597,11 @@ theorem crelK_zero {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp} : CrelK 0 C 
 return observation. The `D = C, K = []` instance (Biernacki Lemma 2 identity). The capstone of
 sub-block (a): it is the bridge `CrelK → ⊑` that the eventual `lr_sound` consumes. -/
 theorem crelK_adequacy_nil {n : Nat} {q : Mult} {A : VTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp}
-    (h : CrelK n (CTy.F q A) ε c₁ c₂) : CoApproxC_le n ([], c₁) ([], c₂) := by
+    (h : CrelK n (CTy.F q A) ε c₁ c₂) : CoApproxC_le n (0, [], c₁) (0, [], c₂) := by
   rw [CrelK] at h
-  apply h (CTy.F q A) [] []
+  have := h (CTy.F q A) [] []
+  simp only [handlerCount] at this
+  apply this
   rw [krelS_nil]
   refine ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ?_⟩
   exact ⟨1, v₂, rfl⟩
@@ -700,6 +627,7 @@ theorem VrelK_mono {n m : Nat} {A : VTy Eff Mult} {v₁ v₂ : Val}
   match A with
   | .unit => rw [VrelK] at hv ⊢; exact hv
   | .int => rw [VrelK] at hv ⊢; exact hv
+  | .cap ℓ => rw [VrelK] at hv ⊢; exact hv   -- cap relation is index-independent (id + label)
   | .U φ B =>
       rw [VrelK] at hv ⊢
       obtain ⟨c₁, c₂, rfl, rfl, hc⟩ := hv
