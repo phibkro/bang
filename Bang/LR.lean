@@ -551,12 +551,25 @@ unchanged — this re-keys cleanly (no reshape). NAMED sorry for step 1; proven 
 metering spine. -/
 theorem seqComp_ret_run (v : Val) (c : Comp) (C : EvalCtx) (n g : Nat) :
     Config.run (n + 2) (g, C, seqComp (Comp.ret v) c) = Config.run n (g, C, c) := by
-  sorry  -- inc-5 step 2 (mechanical: letC steps thread `g`, no mint)
+  -- `seqComp (ret v) c = letC (ret v) (shift c)`: step 1 PUSHes (`letC`→`letF (shift c)::C`, focus `ret
+  -- v`), step 2 LET-binds (`letF (shift c)::C, ret v → C, subst v (shift c)`). Neither mints, so the
+  -- counter `g` threads unchanged; `Comp.subst_shift` collapses `subst v (shift c) = c`.
+  show Config.run (n + 2) (g, C, Comp.letC (Comp.ret v) (Comp.shift c)) = Config.run n (g, C, c)
+  rw [show n + 2 = (n + 1) + 1 from rfl,
+      Config.run_step (n + 1) (g, C, Comp.letC (Comp.ret v) (Comp.shift c)) (by intro g' u; simp)]
+  show Config.run (n + 1) (g, Frame.letF (Comp.shift c) :: C, Comp.ret v) = Config.run n (g, C, c)
+  rw [Config.run_step n (g, Frame.letF (Comp.shift c) :: C, Comp.ret v) (by intro g' u; simp)]
+  show Config.run n (g, C, Comp.subst v (Comp.shift c)) = Config.run n (g, C, c)
+  rw [Comp.subst_shift]
 
 theorem seq_unit_proof (v : Val) {c : Comp} {e : Eff} {B : CTy Eff Mult} :
     ctxEquiv (e := e) (B := B) (seqComp (Comp.ret v) c) c := by
-  -- inc-5 step 2 (metering spine): the proof bridges via `converges_plug_iff`/`seqComp_ret_run`
-  -- (both machine-shaped-reshape dependent). NAMED sorry until the reshape lands.
+  -- NAMED sorry. The bridges are now in place (`converges_plug_iff` machine-shaped + proven;
+  -- `seqComp_ret_run` proven), but connecting them needs the residual step: the reshape's focus is
+  -- `capSubstInto C (seqComp (ret v) c)`, and `capSubstInto`/`applyCaps` distributes through the `letC`
+  -- of `seqComp` (`applyCaps_letC`) into `seqComp (ret v') c'` — i.e. cap-substitution COMMUTES with the
+  -- left-unit head-reduction, so `seqComp_ret_run` fires on the substituted focus. Mechanical but fiddly;
+  -- off the diagonal critical path (recovery-algebra / group_recovers-adjacent). Deferred.
   sorry
 
 
