@@ -1,8 +1,8 @@
-# 0057 (DRAFT — for operator ratification) — The non-escape discipline: answer-type label-freedom at the kernel
+# 0057 — The non-escape discipline: answer-type label-freedom at the kernel (B-occ)
 
 <!-- adr-frontmatter -->
 
-- **Status**: DRAFT (proposed; recommendation for operator ruling, not yet accepted)
+- **Status**: Accepted
 - **Summary**: ADR-0056 recorded that the language is unsound — a capability can escape its handler and
   get stuck in a well-typed-at-⊥ program (`progB`), because **typing is by LABEL, dispatch is by
   IDENTITY**, and the ⊥-row gate cannot see the identity-escape. This ADR surveys how effect-handler /
@@ -23,8 +23,9 @@
 
 ## Status
 
-DRAFT (2026-06-26). Written for operator ratification per the ADR-0056 "explore the design space first"
-ruling. The DECISION below is a **recommendation**, not a final call. The witness `progB`
+Accepted (2026-06-26). Operator ratified B-occ ("build-confirm first") per the ADR-0056 ruling; the
+build-confirm (`bocc-spike`, the `BoccSpike` probe @ `39455a7`, axiom-clean ⊆ the gate set) returned
+**GO** on all four load-bearing claims — see *Build-confirm result* below. The witness `progB`
 (`DiagonalFalsifyProbe` / `IdentityCollisionProbe` / `CapEscapeWitness`) is the regression oracle:
 whatever is ratified must make `progB` untypeable or un-elaboratable, then the diagonal
 (`HasConfigTy ⊥ ∧ VcapFree → NonEscape`) closes.
@@ -55,10 +56,14 @@ WHY THE GATE MISSES IT:  the ⊥-row gate only checks ℓ is discharged SOMEWHER
 Two facts pin the channel:
 - `HasVTy.vcap` (Syntax.lean:71) types *any* `vcap n ℓ : Cap ℓ` unconditionally — typing is
   cap-identity-blind (this is why `VcapFree` is a separate diagonal precondition).
-- In v1, state/transaction cells are CLOSED `int` (`HasVTy [] [] cell int`, the ADR-0025/0030 grade
-  discipline), so a capability **cannot** escape through mutable store. **The answer type is the *only*
-  escape channel** — which is what makes a single answer-type side-condition sufficient (see Open
-  Questions: this must be build-confirmed).
+- **The answer type is the only EXIT channel** — and (build-confirmed, bocc-spike) NOT because cells are
+  `int`: that wording was imprecise. Only `handleTransaction` cells are int-pinned (`Syntax.lean:237`);
+  `handleState`'s stored state is general type `S` (`Syntax.lean:208`) and could itself be cap-carrying.
+  The real reason is structural: **handlers DISCARD their frame and stored state on pop**
+  (`Operational.lean:229`: `⟨handleF h :: K, ret v⟩ ↦ ⟨K, ret v⟩`, identity-return), so the only value
+  crossing outward is `v`, typed at the answer type `A`. A cap stored in a state cell exits only via
+  `get`→answer-type (dispatch reinstalls the frame) and is then caught by its OWN label's B-occ premise.
+  No store/closure bypass exists. This is what makes a single answer-type side-condition sufficient.
 
 ### Why this is the same failure shape as ADR-0053 / ADR-0054
 
@@ -199,19 +204,33 @@ be proven, not promised.
 - **Weaken `NonEscape` so `progB` satisfies it** — already rejected in ADR-0056 (`progB` genuinely
   escapes; the fix belongs in typing/surface, not in weakening the safety predicate).
 
-## Open questions (flagged — build-confirm before ratifying as Accepted)
+## Build-confirm result (bocc-spike @ `39455a7`, the `BoccSpike` probe, axiom-clean) — GO
 
-1. **Is the answer type the ONLY escape channel?** Argued yes for v1 (state/transaction cells are closed
-   `int`, ADR-0025/0030). MUST be build-confirmed — if any value can carry a cap out by another route
-   (a future general-cell store, a closure field), B-occ needs a companion premise there.
-2. **Does B-occ actually dissolve `NonEscape`** (HasConfigTy ⟹ NonEscape derivable), or does it only
-   make the carried diagonal provable? Either is a win; which one changes the inc-5 shape.
-3. **Exact form of `LabelOccurs`** — does "ℓ latent inside `U φ C` in `A`" need to recurse through
-   nested `U`/`F`/`arr`/`sum`/`prod`/`mu`? Almost certainly yes (a cap can hide arbitrarily deep in a
-   data type). Mechanical but must be total + decidable.
-4. **Precise blast radius on the in-flight LR** — B-occ touches the handle compat arms mid-port. Measure
-   the LOC delta on a worktree before committing the kernel change (don't perturb the ~80%-done LR
-   blind).
+All four pre-ratification open questions resolved build-grounded; **GO on B-occ**:
+
+1. **Only-channel — CONFIRMED (corrected rationale).** Not int-cells (false for `handleState`'s general
+   `S`, `Syntax.lean:208`) but **discard-on-pop + identity-return** (`Operational.lean:229`). The answer
+   type is the only EXIT channel; a cap stored in a state cell is caught by its own label's B-occ premise
+   on `get`-exit. No store/closure bypass.
+2. **Discrimination — CONFIRMED (built, not asserted).** `bug_progB_rejected : LabelOccurs 1 (U {1}(F 1 unit))`
+   rejects both `progB` and `escapeWitness` (same mechanism); `safe_*_accepted : ¬LabelOccurs ℓ int` accepts
+   both `migrateWitness`/`migrateWitness1`. The sharp point: `migrateWitness1` constructs the SAME `U {1}`
+   thunk as `progB` but is ACCEPTED — B-occ constrains only handle ANSWER types; within a live extent caps
+   flow freely. Exactly the right discriminator.
+3. **NonEscape-dissolution — PLAUSIBLE/sketchable (not free).** Needs one preservation-style liveness lemma
+   ("every `vcap` in a well-typed config names a live on-stack handler", preserved under step; key case =
+   handler-pop, where B-occ guarantees no escaping value named it). Converts inc-5's false diagonal sorry
+   into a corollary. Net inc-5 LOC plausibly ≤ 0.
+4. **LR blast radius — MANAGEABLE, sequence it.** Adding the premise as a constructor field breaks ~55
+   positional matches (Metatheory ~43, Operational ~6, Compat arms — almost all mechanical one-binder `_`
+   insertions in currently-GREEN files); the *consumed* threading is small (~2 LR handle-compat arms + a
+   few Compat theorems). **SEQUENCING: land the Syntax premise + the ~55 mechanical green-file fixups FIRST
+   (additive, independent), thread the LR LAST after the inc-5 re-key settles — do NOT perturb the
+   ~80%-done RED LR blind.** `LabelOccurs` (Q3) recurses through nested `U`/`F`/`arr`/`sum`/`prod`/`mu`;
+   total + decidable.
+
+Scoping (unchanged): B-occ closes *escape*; a raw dangling `vcap 5 1` still types (`HasVTy.vcap`,
+`Syntax.lean:71`), so the diagonal keeps `VcapFree` under B-occ alone — dropping it needs task #18 (Decision §2).
 
 ## Sources
 

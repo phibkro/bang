@@ -17,8 +17,8 @@
 > **★ SOUNDNESS FINDING (2026-06-26, ADR-0056) — the inc-5 diagonal is machine-checked FALSE.** A cap can
 > escape its handler and get STUCK in a well-typed-at-⊥ program (`progB`: the ⊥-row gate is label-based,
 > escape is identity-based; ADR-0054's "escape ruled out by the gate" REFUTED — the WC keystone-2c escape,
-> half of which global-fresh did NOT fix). **The diagonal + A2's value-cap arms are HELD.** EXPLORATION DONE
-> (escape-research, `scratch/ADR-0057-draft.md`): recommend **B-occ** — kernel answer-type label-freedom
+> half of which global-fresh did NOT fix). **The diagonal + A2's value-cap arms are HELD.** EXPLORATION DONE →
+> **ADR-0057 ACCEPTED** (build-confirmed GO): **B-occ** — kernel answer-type label-freedom
 > (`¬LabelOccurs ℓ A` on the 3 handle typing rules). KEY INSIGHT: in v1 the answer type is the ONLY escape
 > channel (state/transaction cells are closed `int`), so a one-premise kernel fix closes the diagonal BY
 > CONSTRUCTION + may DISSOLVE NonEscape entirely (the false diagonal sorry → a corollary of preservation, net
