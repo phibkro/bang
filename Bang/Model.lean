@@ -93,51 +93,166 @@ secondary typing dependency, `handlesOp_of_hasConfigTy`). -/
 def ResolvesLabel (K : EvalCtx) (n : Nat) (ℓ : Label) : Prop :=
   ∃ Kᵢ h Kₒ, splitAtId K n = some (Kᵢ, h, Kₒ) ∧ Handler.label h = ℓ
 
-/-- **The route-β invariant.** Every `vcap` in focus + stack resolves to its handler. -/
-def WellScoped : Config → Prop
-  | (_, K, c) => ∀ p ∈ capsC c ++ capsK K, ResolvesLabel K p.1 p.2
+/-! ### §2.5 — the TYPED-RELATIVE invariant (ADR-0057, deep-modulo-non-performability).
+
+The naive config-function `WellScoped` (every `vcap`, tracked DEEP through thunks, resolves) is NOT
+preserved by `Source.step`: the `handleF`-pop's carry-drop breaks it (a cap of the popped handler can
+sit dormant inside a returned thunk). The reshape (de-risked in `scratch/WellScopedReshapeProbe.lean`):
+track caps DEEP but require resolution only for caps PERFORMABLE at their position — a cap whose label is
+in the row of its nearest-enclosing thunk/focus. A cap under a thunk `U φ B` with label `ℓ ∉ φ` is
+inert (the thunk can never perform it without being ill-typed), so it is NOT required to resolve. At a
+pop with answer type `A` and `¬LabelOccurs ℓ_f A` (the ADR-0057 B-occ premise), every `ℓ_f`-cap under a
+thunk of `A` has its thunk-row exclude `ℓ_f` (since `U φ B ⊆ A` ⇒ `¬(labelEff ℓ_f ≤ φ)`) — non-performable
+⇒ not required ⇒ the carry-drop dissolves.
+
+"Performable at position" needs the thunk's row `φ`, which lives in the TYPE `U φ C`, NOT the `vthunk c`
+TERM — so the invariant CANNOT be a pure syntactic config-function. It is a TYPED PREDICATE, indexed by
+the `HasVTy`/`HasCTy`/`HasStack` derivation, threading an ambient performability row `ρ` (the row of the
+nearest enclosing thunk/focus). `WSV`/`WSC` are mutual inductives mirroring the typing rules; the gate
+fires only at `vcap` leaves whose label is `≤ ρ`. Resolution is always against the FULL current stack
+`K` (`splitAtId` is stable under pushing fresh frames on top, so a cap that resolves in a stack tail
+resolves in the whole stack). -/
+
+mutual
+/-- `WSV K ρ v A`: every cap in the value `v : A` performable at ambient row `ρ` resolves in `K`.
+Indexed by the TERM + TYPE (NOT the `HasVTy` derivation) — keeps it structurally invertible (a
+derivation-indexed version is blocked by the non-structural GRADE index: `cases` cannot solve
+`[] = (q•γv)+γc`). Crossing a thunk `U φ B` RESETS the ambient to the thunk's own row `φ`. -/
+inductive WSV (K : EvalCtx) : Eff → Val → VTy Eff Mult → Prop where
+  | vunit {ρ} : WSV K ρ Val.vunit VTy.unit
+  | vint {ρ n} : WSV K ρ (Val.vint n) VTy.int
+  | vvar {ρ i A} : WSV K ρ (Val.vvar i) A
+  -- THE GATE: a bare cap value resolves iff its label is performable at the ambient row.
+  | vcap {ρ n ℓ} (h : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ ρ → ResolvesLabel K n ℓ) :
+      WSV K ρ (Val.vcap n ℓ) (VTy.cap ℓ)
+  -- THE RESET: inside a thunk `U φ B`, the ambient becomes the thunk's own row `φ`.
+  | vthunk {ρ c φ B} (h : WSC K φ c φ B) : WSV K ρ (Val.vthunk c) (VTy.U φ B)
+  | inl {ρ v A B} (h : WSV K ρ v A) : WSV K ρ (Val.inl v) (VTy.sum A B)
+  | inr {ρ v A B} (h : WSV K ρ v B) : WSV K ρ (Val.inr v) (VTy.sum A B)
+  | pair {ρ a b A B} (h1 : WSV K ρ a A) (h2 : WSV K ρ b B) : WSV K ρ (Val.pair a b) (VTy.prod A B)
+  | fold {ρ v A} (h : WSV K ρ v (VTy.unrollMu A)) : WSV K ρ (Val.fold v) (VTy.mu A)
+/-- `WSC K ρ c φ C`: every performable cap in the computation `c : (φ, C)` resolves. Ambient `ρ` is
+threaded UNCHANGED through every former (the gate is purely at thunk boundaries / `vcap` leaves) — a
+sub-computation of lower literal row (`ret v : ⊥`) still flows its caps to a consumer at the enclosing
+row. The non-cap typing premises (`labelEff ℓ ≤ φ`, `opArg`, …) are NOT carried — they live in the
+companion `HasCTy`; `WSC` carries only the cap-resolution obligations. -/
+inductive WSC (K : EvalCtx) : Eff → Comp → Eff → CTy Eff Mult → Prop where
+  | ret {ρ v A q} (h : WSV K ρ v A) : WSC K ρ (Comp.ret v) ⊥ (CTy.F q A)
+  | letC {ρ M N φ₁ φ₂ q1 A B} (h1 : WSC K ρ M φ₁ (CTy.F q1 A)) (h2 : WSC K ρ N φ₂ B) :
+      WSC K ρ (Comp.letC M N) (φ₁ ⊔ φ₂) B
+  | force {ρ v φ B} (h : WSV K ρ v (VTy.U φ B)) : WSC K ρ (Comp.force v) φ B
+  | lam {ρ M φ q A B} (h : WSC K ρ M φ B) : WSC K ρ (Comp.lam M) φ (CTy.arr q A B)
+  | app {ρ M v φ q A B} (h1 : WSC K ρ M φ (CTy.arr q A B)) (h2 : WSV K ρ v A) :
+      WSC K ρ (Comp.app M v) φ B
+  | case {ρ v N₁ N₂ φ A B C} (h1 : WSV K ρ v (VTy.sum A B)) (h2 : WSC K ρ N₁ φ C) (h3 : WSC K ρ N₂ φ C) :
+      WSC K ρ (Comp.case v N₁ N₂) φ C
+  | split {ρ v N φ A B C} (h1 : WSV K ρ v (VTy.prod A B)) (h2 : WSC K ρ N φ C) :
+      WSC K ρ (Comp.split v N) φ C
+  | unfold {ρ v A} (h : WSV K ρ v (VTy.mu A)) : WSC K ρ (Comp.unfold v) ⊥ (CTy.F 1 (VTy.unrollMu A))
+  | perform {ρ cv op v φ q A B ℓ} (h1 : WSV K ρ cv (VTy.cap ℓ)) (h2 : WSV K ρ v A) :
+      WSC K ρ (Comp.perform cv op v) φ (CTy.F q B)
+  | handleThrows {ρ ℓ M e φ q A} (h : WSC K ρ M e (CTy.F q A)) :
+      WSC K ρ (Comp.handle (Handler.throws ℓ) M) φ (CTy.F q A)
+  | handleState {ρ ℓ s M e φ q S A} (h1 : WSV K ρ s S) (h2 : WSC K ρ M e (CTy.F q A)) :
+      WSC K ρ (Comp.handle (Handler.state ℓ s) M) φ (CTy.F q A)
+  | handleTransaction {ρ ℓ Θ M e φ q A} (h : WSC K ρ M e (CTy.F q A)) :
+      WSC K ρ (Comp.handle (Handler.transaction ℓ Θ) M) φ (CTy.F q A)
+/-- `WSK Kfull K e C eo Co`: every performable cap stored in the stack frames of `K` resolves in `Kfull`
+(the full ambient stack). Indexed by the stack TERM + the `HasStack` effect/type chain. Each frame's
+stored term is gated at its hole-effect (the row it runs at when that frame becomes focus). `throws`/
+`transaction` frames carry no cap-bearing value (the heap is `int`). In the same `mutual` block as
+`WSV`/`WSC` so the `Mult` instance context is shared (a standalone `inductive` leaves `EffSig Eff ?Mult`
+stuck). -/
+inductive WSK (K : EvalCtx) : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult → Prop where
+  | nil {e C} : WSK K [] e C e C
+  | letF {Sg N e₁ e₂ eo q A B Co} (hN : WSC K e₂ N e₂ B) (hK : WSK K Sg (e₁ ⊔ e₂) B eo Co) :
+      WSK K (Frame.letF N :: Sg) e₁ (CTy.F q A) eo Co
+  | appF {Sg v e eo q A B Co} (hv : WSV K e v A) (hK : WSK K Sg e B eo Co) :
+      WSK K (Frame.appF v :: Sg) e (CTy.arr q A B) eo Co
+  | handleF {Sg n ℓ e φ eo q A Co} (hK : WSK K Sg φ (CTy.F q A) eo Co) :
+      WSK K (Frame.handleF n (Handler.throws ℓ) :: Sg) e (CTy.F q A) eo Co
+  | stateF {Sg n ℓ s e φ eo q A S Co} (hs : WSV K e s S) (hK : WSK K Sg φ (CTy.F q A) eo Co) :
+      WSK K (Frame.handleF n (Handler.state ℓ s) :: Sg) e (CTy.F q A) eo Co
+  | transactionF {Sg n ℓ Θ e φ eo q A Co} (hK : WSK K Sg φ (CTy.F q A) eo Co) :
+      WSK K (Frame.handleF n (Handler.transaction ℓ Θ) :: Sg) e (CTy.F q A) eo Co
+end
+
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
 (`vcap`s arise only by minting). The diagonal's side-condition (the bare form is FALSE: a hand-written
 `vcap 5` types but runs stuck — DiagonalProbe §B). -/
 def VcapFree (c : Comp) : Prop := capsC c = []
 
-/-- **SEED (GREEN).** A `VcapFree` closed program trivially satisfies `WellScoped` at the initial
-config — no caps to resolve. -/
-theorem wellScoped_initial (c : Comp) (hvf : VcapFree c) : WellScoped (0, [], c) := by
-  have hvf' : capsC c = [] := hvf
-  intro p hp
-  simp only [capsK, List.append_nil, hvf'] at hp
-  exact absurd hp (List.not_mem_nil)
-
-/-- **POSITIVE (GREEN modulo the op-in-interface hypothesis).** `WellScoped ⇒ FocusResolves`. The label
-match comes from `WellScoped`; the op-membership `handlesOp h ℓ op` is supplied by `hop` (a `HasConfigTy`
-fact, discharged at the call site by `handlesOp_of_hasConfigTy`). -/
-theorem focusResolves_of_wellScoped (cfg : Config) (hWS : WellScoped cfg)
-    (hop : ∀ K n ℓ op v, cfg = (cfg.1, K, Comp.perform (Val.vcap n ℓ) op v) →
-            ∀ Kᵢ h Kₒ, splitAtId K n = some (Kᵢ, h, Kₒ) → Handler.label h = ℓ →
-            handlesOp h ℓ op = true) :
-    FocusResolves cfg := by
-  obtain ⟨g, K, c⟩ := cfg
-  match c with
-  | .perform (.vcap n ℓ) op v =>
-      have hp : (n, ℓ) ∈ capsC (Comp.perform (Val.vcap n ℓ) op v) ++ capsK K := by
-        simp only [capsC, capsV, List.mem_append, List.mem_cons]; tauto
-      obtain ⟨Kᵢ, h, Kₒ, hsplit, hlbl⟩ := hWS (n, ℓ) hp
-      exact ⟨Kᵢ, h, Kₒ, hsplit, hop K n ℓ op v rfl Kᵢ h Kₒ hsplit hlbl⟩
-  | .ret _ | .letC _ _ | .force _ | .lam _ | .app _ _ | .handle _ _
-  | .perform .vunit _ _ | .perform (.vint _) _ _ | .perform (.vvar _) _ _
-  | .perform (.vthunk _) _ _ | .perform (.inl _) _ _ | .perform (.inr _) _ _
-  | .perform (.pair _ _) _ _ | .perform (.fold _) _ _
-  | .case _ _ _ | .split _ _ | .unfold _ | .oom | .wrong _ => trivial
+-- cap-free ⇒ `WSV`/`WSC` hold (no `vcap` leaf imposes a gate). Built by recursion on the typing
+-- derivation, mapping each typing rule to its `WSV`/`WSC` constructor; cap-freeness kills the `vcap` leaf.
+mutual
+/-- A cap-free value is `WSV` at any ambient row (no `vcap` to impose a gate). -/
+theorem wsv_capFree {γ Γ v A} (K : EvalCtx) (ρ : Eff)
+    (d : HasVTy (Eff := Eff) (Mult := Mult) γ Γ v A) (h : capsV v = []) : WSV K ρ v A := by
+  cases d with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar _ => exact .vvar
+  | vcap => simp only [capsV] at h; exact absurd h (List.cons_ne_nil _ _)
+  | vthunk hM => exact .vthunk (wsc_capFree K _ hM (by simpa only [capsV] using h))
+  | inl hv => exact .inl (wsv_capFree K ρ hv (by simpa only [capsV] using h))
+  | inr hv => exact .inr (wsv_capFree K ρ hv (by simpa only [capsV] using h))
+  | pair hv hw _ =>
+      simp only [capsV, List.append_eq_nil_iff] at h
+      exact .pair (wsv_capFree K ρ hv h.1) (wsv_capFree K ρ hw h.2)
+  | fold hv => exact .fold (wsv_capFree K ρ hv (by simpa only [capsV] using h))
+/-- A cap-free computation is `WSC` at any ambient row. -/
+theorem wsc_capFree {γ Γ c φ C} (K : EvalCtx) (ρ : Eff)
+    (d : HasCTy (Eff := Eff) (Mult := Mult) γ Γ c φ C) (h : capsC c = []) : WSC K ρ c φ C := by
+  cases d with
+  | ret hv _ => exact .ret (wsv_capFree K ρ hv (by simpa only [capsC] using h))
+  | letC hM hN _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .letC (wsc_capFree K ρ hM h.1) (wsc_capFree K ρ hN h.2)
+  | force hv => exact .force (wsv_capFree K ρ hv (by simpa only [capsC] using h))
+  | lam hM => exact .lam (wsc_capFree K ρ hM (by simpa only [capsC] using h))
+  | app hM hv _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .app (wsc_capFree K ρ hM h.1) (wsv_capFree K ρ hv h.2)
+  | case hv hN₁ hN₂ _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .case (wsv_capFree K ρ hv h.1.1) (wsc_capFree K ρ hN₁ h.1.2) (wsc_capFree K ρ hN₂ h.2)
+  | split hv hN _ =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .split (wsv_capFree K ρ hv h.1) (wsc_capFree K ρ hN h.2)
+  | unfold hv => exact .unfold (wsv_capFree K ρ hv (by simpa only [capsC] using h))
+  | perform hc _ _ _ hv =>
+      simp only [capsC, List.append_eq_nil_iff] at h
+      exact .perform (wsv_capFree K ρ hc h.1) (wsv_capFree K ρ hv h.2)
+  | handleThrows _ _ hM _ _ =>
+      simp only [capsC, capsH, List.nil_append] at h
+      exact .handleThrows (wsc_capFree K ρ hM h)
+  | handleState _ _ _ _ _ hs hM _ _ =>
+      simp only [capsC, capsH, List.append_eq_nil_iff] at h
+      exact .handleState (wsv_capFree K ρ hs h.1) (wsc_capFree K ρ hM h.2)
+  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ =>
+      simp only [capsC, capsH, List.append_eq_nil_iff] at h
+      exact .handleTransaction (wsc_capFree K ρ hM h.2)
+end
 
 /-! ## §3 — the combined invariant + the two named obligations. -/
 
-/-- The COMBINED route-β invariant: `WellScoped` (caps resolve) AND well-typed at `⊥` (the focus types,
-which licenses the op-in-interface half of `FocusResolves` and the ⊥-row return-escape discipline that
-closes `WellScoped`'s pop-escape preservation arm). -/
+/-- The COMBINED route-β invariant (ADR-0057 typed-relative reshape): there EXIST typing derivations for
+the focus + stack such that every PERFORMABLE cap resolves (`WSC` for the focus at its row `e`; `WSK` for
+the stack against the full `K`). Bundling the derivations existentially keeps `WScfg : Config → Prop`
+(the shape `nonEscape_of_fwd_invariant` consumes); the output effect is `⊥` (the diagonal's target). -/
 def WScfg (Co : CTy Eff Mult) (cfg : Config) : Prop :=
-  WellScoped cfg ∧ HasConfigTy cfg ⊥ Co
+  ∃ (e : Eff) (C : CTy Eff Mult), HasCTy [] [] cfg.2.2 e C ∧ HasStack cfg.2.1 e C ⊥ Co
+    ∧ WSC cfg.2.1 e cfg.2.2 e C ∧ WSK cfg.2.1 cfg.2.1 e C ⊥ Co
+
+/-- **SEED (GREEN).** A `VcapFree` closed program satisfies the typed-relative invariant at the initial
+config — no caps to resolve, the stack is empty. The typing derivations come from `hty`. -/
+theorem wellScoped_initial (c : Comp) (hvf : VcapFree c) {Co : CTy Eff Mult}
+    (hty : HasConfigTy (0, [], c) ⊥ Co) : WScfg Co (0, [], c) := by
+  obtain ⟨e, C, hfocus, hstack⟩ := hty
+  -- the stack is `[]`, so `hstack : HasStack [] e C ⊥ Co` must be `nil` (`e = ⊥`, `C = Co`).
+  cases hstack
+  exact ⟨⊥, Co, hfocus, .nil, wsc_capFree [] ⊥ hfocus hvf, .nil⟩
 
 /-- **OBLIGATION 1 — the op-in-interface typing inversion.** A `WellScoped`-resolved `perform (vcap n ℓ)
 op v` focus that types (`HasConfigTy … ⊥ …`) lands on a handler that HANDLES `(ℓ, op)`: `HasCTy.perform`
@@ -163,6 +278,44 @@ theorem handlesOp_of_hasConfigTy {Co : CTy Eff Mult} (cfg : Config)
   have hdecomp : K = Kᵢ ++ Frame.handleF n h :: Kₒ := splitAtId_decomp K n hsplit
   rw [hdecomp] at hstack
   exact HasStack.handlesOp_of_split hstack hlbl hopArg
+
+/-- `WScfg` carries the typing core: project out `HasConfigTy` (drop the `WSC`/`WSK` cap-resolution). -/
+theorem hasConfigTy_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (h : WScfg Co cfg) :
+    HasConfigTy cfg ⊥ Co := by
+  obtain ⟨e, C, dc, dk, _, _⟩ := h; exact ⟨e, C, dc, dk⟩
+
+/-- A `perform (vcap n ℓ)` focus whose `WSC` holds at the focus row `e` resolves its cap's label: the
+typing gives `labelEff ℓ ≤ e` (performability), and `WSC`'s `vcap` gate then forces `ResolvesLabel`. -/
+theorem resolvesLabel_of_wsc_perform {K : EvalCtx} {e : Eff}
+    {n : Nat} {ℓ : Label} {op : OpId} {v : Val} {C : CTy Eff Mult}
+    (dc : HasCTy [] [] (Comp.perform (Val.vcap n ℓ) op v) e C)
+    (hWSC : WSC K e (Comp.perform (Val.vcap n ℓ) op v) e C) : ResolvesLabel K n ℓ := by
+  -- the typing supplies `labelEff ℓ ≤ e` (performability of the focus cap); `WSC`'s `vcap` gate then fires.
+  obtain ⟨ℓ', _, _, _, _, _, _, _, hcap, hle, _, _, _⟩ := dc.perform_full_inv
+  obtain ⟨m, hceq⟩ := hcap.cap_canonical
+  simp only [Val.vcap.injEq] at hceq; obtain ⟨_, rfl⟩ := hceq
+  -- invert `WSC` at the perform (term-indexed ⇒ structural); only the `vcap` WSV constructor matches.
+  cases hWSC with
+  | perform h1 _ => cases h1 with | vcap hgate => exact hgate hle
+
+/-- **POSITIVE (GREEN).** The typed-relative invariant `⇒ FocusResolves`: the cap-resolution comes from
+`WSC`'s `vcap` gate (`resolvesLabel_of_wsc_perform`); the op-membership from the typing core (`handlesOp_of_hasConfigTy`). -/
+theorem focusResolves_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (hWS : WScfg Co cfg) :
+    FocusResolves cfg := by
+  obtain ⟨e, C, dc, dk, hWSC, _⟩ := hWS
+  obtain ⟨g, K, c⟩ := cfg
+  -- now `dc : HasCTy [] [] c e C`, `hWSC : WSC K e dc`; split STRUCTURALLY on the focus `c` (refines
+  -- `dc`/`hWSC` without the closed-grade elimination wall).
+  cases c with
+  | perform cv op v =>
+      cases cv with
+      | vcap n ℓ =>
+          obtain ⟨Kᵢ, h, Kₒ, hsplit, hlbl⟩ := resolvesLabel_of_wsc_perform dc hWSC
+          exact ⟨Kᵢ, h, Kₒ, hsplit,
+            handlesOp_of_hasConfigTy (g, K, _) ⟨e, C, dc, dk⟩ K n ℓ op v rfl Kᵢ h Kₒ hsplit hlbl⟩
+      | vunit | vint | vvar _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ => trivial
+  | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
+  | unfold _ | oom | wrong _ => trivial
 
 /-- **OBLIGATION 2 — the MUTUAL preservation (the research crux).** `WScfg` is preserved by every
 `Source.step`. The arms (Source.step, Operational:455):
@@ -194,10 +347,9 @@ theorem diagonal {c : Comp} {q : Mult} {A : VTy Eff Mult}
     (hty : HasConfigTy (0, [], c) ⊥ (CTy.F q A)) (hvf : VcapFree c) :
     NonEscape (0, [], c) := by
   refine nonEscape_of_fwd_invariant (WScfg (CTy.F q A)) ?_ ?_ (0, [], c)
-    ⟨wellScoped_initial c hvf, hty⟩
-  · -- hpos: WScfg ⇒ FocusResolves (label from WellScoped, op-membership from HasConfigTy).
-    rintro cfg ⟨hWS, hty'⟩
-    exact focusResolves_of_wellScoped cfg hWS (handlesOp_of_hasConfigTy cfg hty')
+    (wellScoped_initial c hvf hty)
+  · -- hpos: WScfg ⇒ FocusResolves (cap-resolution from WSC, op-membership from HasConfigTy).
+    exact fun cfg hWS => focusResolves_of_wscfg cfg hWS
   · -- hpres: the mutual preservation.
     rintro cfg cfg' hP hstep
     exact wsCfg_step cfg cfg' hP hstep
