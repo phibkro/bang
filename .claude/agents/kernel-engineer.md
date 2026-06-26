@@ -102,6 +102,12 @@ just build           # lake exe cache get && lake build
 just audit           # bash tools/audit.sh (needs build first)
 ```
 
+**The `sorry`-signal is the axiom set, never a text grep.** `lake env lean … ` +
+`#print axioms` (or `lean_verify`) reads the proof TERM — *comment-immune* (`-- NO
+sorry` can't fool it) and *transitive* (a clean-looking lemma calling a `sorry`'d
+helper still reports `sorryAx`). `grep "sorry"` is neither: it false-positives on
+prose and false-negatives on dependencies. Never report a sorry-count from a source scan.
+
 # When you should hand off
 
 Pair with `proof-engineer` when:

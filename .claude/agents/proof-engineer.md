@@ -176,6 +176,12 @@ Return the **diff + the gate evidence it preserves, having actually run them**:
 - the `just build` / `lake build` exit status on a clean tree,
 - the `#print axioms` set for each touched headline, asserted ⊆
   `{propext, Classical.choice, Quot.sound}`, with any extra axiom NAMED.
+- **the `sorry`-signal is the axiom set, NEVER a text grep.** `#print axioms` /
+  `lean_verify` reads the proof TERM, so it is both *comment-immune* (`-- NO sorry`
+  cannot fool it) and *transitive* (a clean-looking lemma that calls a `sorry`'d
+  helper still reports `sorryAx`). A `grep "sorry"` count is neither — it
+  false-positives on prose and false-negatives on dependencies. Report
+  `sorryAx`-presence (or its absence) from the axiom set, not from a source scan.
 
 Construct the proof in free reasoning first; only the *deliverable* is structured
 (forcing reasoning into a schema costs accuracy). The terminal step is the
