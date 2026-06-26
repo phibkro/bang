@@ -180,3 +180,19 @@ EnvRelK reshape. **OPEN QUESTION (build-confirmable)**: does Unit 3 close WITHOU
 lr_sound (operator-level STOP-and-SHOW)? Units 1+2 are banked + won't need redoing. (Integration note: bocc-spike
 + inc5-lr-reindex both touched Compat.lean — the merge reconciles bocc-spike's 5 pre-threaded arms into inc5's
 re-derived decomp; the kernel premise is additive.)
+
+### ★★ SHARPER VERDICT (compat-decomp, VERIFIED by attempting Unit 3) — the real wall is DENSITY, not cap-escape
+The upstream wall is the **`ret` case**, not perform: guarded `crelK_ret` (LR:1816) needs `Canonical K₁ K₂`
+(dense ids), but `CrelK` (FROZEN — the `Crel` target `lr_sound` consumes) = `∀ D K₁ K₂, KrelS … → CoApproxC_le`,
+so crelK_fund's arms (after `rw[CrelK]; intro D K₁ K₂ hK`) get ARBITRARY KrelS-related stacks — and **KrelS does
+NOT imply Canonical** (sparse gensym ids: a KrelS stack can carry id 5 where handlerCount=2; KrelS forces nh₁=nh₂
++ kinds, not density). Even the SIMPLEST (`ret`) case can't supply Canonical; `crelK_ret` has ZERO green
+consumers (the density-supply pattern was introduced by the guarded-form decision, never established). **This is
+a DENSITY problem SEPARATE from cap-escape — B-occ (`¬LabelOccurs` on answer types) does NOT make a sparse stack
+dense, so route-(a)'s "consumer supplies density" bet is in doubt.** Routes (compat-decomp's, verified): (1)
+`CrelK` quantifies over Canonical = FROZEN Crel/Spec.lean change → ADR + STATEMENT_CHANGE_OK; (2) a
+Canonical-reachability lemma (the stacks lr_sound actually instantiates CrelK at are Canonical — hard, the mutual
+block re-instantiates at handleF::K sub-stacks); (3) B-occ/dissolution makes Canonical derivable at use sites
+(the density-(a) hope, cast in doubt). Possible (4): re-derive crelK_ret WITHOUT the Canonical premise (the
+guarded form may be over-strong — handle the +1 shift locally via run_bump, not global density). inc5-endgame is
+determining the route by attempting it (build-confirmed), STOP-and-SHOW on route (1).
