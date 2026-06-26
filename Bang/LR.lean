@@ -1804,17 +1804,27 @@ theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
   | zero => rw [show Config.run 0 cfg = Result.oom from rfl] at hrun; exact absurd hrun (by simp)
   | succ k => rw [Config.run_step k cfg hne, hstep] at hrun; exact absurd hrun (by simp)
 
-/-- ◊4.5b `crelK_ret`: a `VrelK`-related RETURN at returner type `F q A` is `CrelK`-related. -/
+/-- ◊4.5b `crelK_ret` (GUARDED form, ADR-0054/0055 density resolution, lead decision 2026-06-26): a
+`VrelK`-related RETURN co-behaves through every `KrelS`-related stack pair that is CANONICAL (dense ids
+`0..handlerCount-1`) — the runplug §4 canonical-observation made explicit. The density premises
+(`Canonical K₁/K₂` + the value's cap-scopedness `Val.CapsBelow 0`, i.e. the returned value carries no
+escaping cap) let the `handleF`-pop's `+1` counter shift discharge via `run_bump_converges` (the
+`run_rename` consumer). `CrelK`/`KrelS` stay FROZEN — the invariant is a consumer-supplied hypothesis
+on this supporting lemma; consumers (`crelK_fund`/`coApproxC_le_of_resumeDecomp`) build canonical stacks
+via `canonStack`/reshape (dispatch-reinstall preserves density) and supply it. The conclusion is the
+unfolded `CrelK` clause (`CoApproxC_le` at the machine-shaped config). -/
 theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ : Val}
+    (D : CTy Eff Mult) (K₁ K₂ : Stack)
+    (hK : KrelS n (CTy.F q A) D e K₁ K₂)
+    (hcan₁ : RunPlugReshape.Canonical K₁) (hcan₂ : RunPlugReshape.Canonical K₂)
+    (hvcf₁ : RunPlugReshape.Val.CapsBelow 0 v₁) (hvcf₂ : RunPlugReshape.Val.CapsBelow 0 v₂)
     (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂)
     (hv : VrelK n A v₁ v₂) :
-    CrelK n (CTy.F q A) e (Comp.ret v₁) (Comp.ret v₂) := by
-  rw [CrelK]
-  intro D K₁ K₂ hK
+    CoApproxC_le n (handlerCount K₁, K₁, Comp.ret v₁) (handlerCount K₂, K₂, Comp.ret v₂) := by
   induction K₁ generalizing K₂ A v₁ v₂ e with
   | nil =>
       cases K₂ with
-      | nil => rw [krelS_nil] at hK; exact hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
+      | nil => rw [krelS_nil] at hK; simpa only [handlerCount] using hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
       | cons fr K₂' => simp only [KrelS] at hK
   | cons fr K₁' ih =>
       cases fr with
@@ -1830,8 +1840,9 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   | zero => intro hconv; exact absurd hconv (not_convergesC_le_zero _)
                   | succ k =>
                       -- letF reduce: `step (g, letF N₁::K₁', ret v₁) = (g, K₁', subst v₁ N₁)`, counter
-                      -- `g = handlerCount (letF N₁::K₁') = handlerCount K₁'` UNCHANGED (letF adds no
-                      -- handler). So the landed config's counter matches the IH/`CrelK` observation.
+                      -- `handlerCount (letF N₁::K₁') = handlerCount K₁'` UNCHANGED (letF adds no handler),
+                      -- so the landed config's counter matches the `CrelK` body observation. No bump needed.
+                      simp only [handlerCount]
                       refine coApproxC_le_anti_step rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
                       have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ (VrelK_mono (Nat.le_succ k) hv)
                       rw [CrelK] at hCrel
@@ -1839,6 +1850,7 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
       | appF w₁ =>
+          simp only [handlerCount]
           intro hconv
           exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
       | handleF nh₁ h₁ =>
@@ -1846,21 +1858,41 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
           | cons fr₂ K₂' =>
               cases fr₂ with
               | handleF nh₂ h₂ =>
-                  -- ◊inc-5 / ADR-0056 ESCAPE-DISCIPLINE NAMED SORRY (operator design call pending).
-                  -- handleF pass-through on `ret`: `step (g, handleF nh::K', ret v) = (g, K', ret v)` keeps
-                  -- the counter `g = handlerCount K' + 1`, while the tail observation (`ih`) is at
-                  -- `handlerCount K'` — a `+1` counter shift. The STACK half of the bridge is READY: the
-                  -- density machinery (`RunPlugReshape.run_bump_converges` + `Canonical.capsBelow`, this file)
-                  -- discharges the shift for a CANONICAL config. The blocker is the VALUE half: it needs the
-                  -- returned `v₁/v₂` to carry NO escaping cap (`CapsBelow (handlerCount K') v`), i.e. not to
-                  -- reference the just-popped handler `nh`. B2 machine-checked (ADR-0056, `progB`) that this
-                  -- NON-ESCAPE property is currently FALSE — a well-typed-at-⊥ `VcapFree` program CAN forward
-                  -- an escaping cap and get stuck. So this arm rides the (undecided) non-escape type/surface
-                  -- discipline; proving value-cap-scopedness now would prove something FALSE for escaping
-                  -- terms. CLOSES via the prepared density bridge the moment the escape discipline supplies
-                  -- the value-cap premise. STACK density is non-escape-independent (`Canonical` from
-                  -- `canonStack`/reshape); ONLY the value cap is held. SAME hold as `crelK_fund` up/perform.
-                  sorry
+                  -- ◊inc-5 COUNTER-SHIFT, DISCHARGED (density resolution). handleF pass-through on `ret`:
+                  -- `step (g, handleF nh::K', ret v) = (g, K', ret v)` keeps the counter `g = handlerCount
+                  -- (handleF nh::K') = handlerCount K' + 1`, while the tail observation (`ih`) is at
+                  -- `handlerCount K'`. The `+1` is invisible because the config is CANONICAL: `Canonical K'`
+                  -- gives `StackBelow`/`CapsBelow (handlerCount K') K'` and the returned value carries no
+                  -- escaping cap (`CapsBelow 0`), so `run_bump_converges` (the `run_rename` consumer) bridges
+                  -- the two counters. The popped handler's id `nh` is dead and `handlerCount K'+1` is still
+                  -- fresh — now SECURED by the density invariant, not asserted.
+                  obtain ⟨_, hcan₁'⟩ := RunPlugReshape.Canonical_cons hcan₁
+                  obtain ⟨_, hcan₂'⟩ := RunPlugReshape.Canonical_cons hcan₂
+                  rw [krelS_handleF] at hK
+                  obtain ⟨_hid, _hHR, htail, _hres⟩ := hK
+                  have hih := ih K₂' htail hcan₁' hcan₂' hvcf₁ hvcf₂ hc₁ hc₂ hv
+                  -- pop both handleF frames (counter unchanged), landing at `(handlerCount K' + 1, K', ret v)`.
+                  simp only [handlerCount]
+                  refine coApproxC_le_reduce
+                    (cfg₁' := (handlerCount K₁' + 1, K₁', Comp.ret v₁))
+                    (cfg₂' := (handlerCount K₂' + 1, K₂', Comp.ret v₂))
+                    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
+                  -- the `+1` bump bridge, both sides, via `run_bump_converges`.
+                  have hSK₁ : RunPlugReshape.Stack.CapsBelow (handlerCount K₁') K₁' :=
+                    RunPlugReshape.Canonical.capsBelow hcan₁'
+                  have hSK₂ : RunPlugReshape.Stack.CapsBelow (handlerCount K₂') K₂' :=
+                    RunPlugReshape.Canonical.capsBelow hcan₂'
+                  have hcv₁ : RunPlugReshape.Comp.CapsBelow (handlerCount K₁') (Comp.ret v₁) := by
+                    simp only [RunPlugReshape.Comp.CapsBelow]
+                    exact RunPlugReshape.Val.CapsBelow_mono (Nat.zero_le _) hvcf₁
+                  have hcv₂ : RunPlugReshape.Comp.CapsBelow (handlerCount K₂') (Comp.ret v₂) := by
+                    simp only [RunPlugReshape.Comp.CapsBelow]
+                    exact RunPlugReshape.Val.CapsBelow_mono (Nat.zero_le _) hvcf₂
+                  intro hconv
+                  have hconv' : ConvergesC_le n (handlerCount K₁', K₁', Comp.ret v₁) :=
+                    (RunPlugReshape.run_bump_converges hSK₁ hcv₁).mp hconv
+                  obtain ⟨m, w, hrun⟩ := hih hconv'
+                  exact ⟨m, (RunPlugReshape.run_bump_converges hSK₂ hcv₂).mpr ⟨w, hrun⟩⟩
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
 
