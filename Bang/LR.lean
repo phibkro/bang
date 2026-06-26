@@ -958,6 +958,236 @@ theorem run_rename_converges (σ : Nat → Nat) (hσ : Function.Injective σ) (n
   rw [run_rename σ hσ n cfg hshift]
   cases Config.run n cfg <;> simp only [renameR, reduceCtorEq, Result.done.injEq, exists_eq']
 
+/-! ### Counter-bump invariance — the consumer of `run_rename` the LR's machine-shaped observation needs.
+
+The LR observes configs at the DERIVED counter `handlerCount K`. A `handleF` pop (`crelK_ret`) lands at
+`handlerCount K' + 1` while the recursion observes `handlerCount K'` — a `+1` counter shift. The shift is
+convergence-INVARIANT precisely when the config is CANONICAL (every live cap id `< handlerCount K`,
+densely) — the runplug §4 fact made explicit (ADR-0054/0055; lead decision 2026-06-26). We supply the
+witnessing `σ` (a shift-up on the fresh region) and the LR-LOCAL cap-scopedness predicate `CapsBelow`
+that makes `σ` a fixpoint on the observed stack + focus. Decoupled from `Bang.Model`'s `WellScoped`
+(B2's operational reachability invariant): this is exactly what the LR's re-index needs, no more. -/
+
+/-- The shift-up renaming on `[g, ∞)` (identity below `g`). Injective; the `σ` `run_rename` consumes for
+the `+1` counter bump. -/
+def bumpσ (g : Nat) : Nat → Nat := fun k => if k < g then k else k + 1
+
+theorem bumpσ_lt {g k : Nat} (h : k < g) : bumpσ g k = k := by simp only [bumpσ, if_pos h]
+theorem bumpσ_ge {g k : Nat} (h : g ≤ k) : bumpσ g k = k + 1 := by
+  simp only [bumpσ, if_neg (Nat.not_lt.mpr h)]
+theorem bumpσ_self (g : Nat) : bumpσ g g = g + 1 := bumpσ_ge (Nat.le_refl g)
+theorem bumpσ_injective (g : Nat) : Function.Injective (bumpσ g) := by
+  intro a b hab
+  by_cases ha : a < g <;> by_cases hb : b < g
+  · rwa [bumpσ_lt ha, bumpσ_lt hb] at hab
+  · rw [bumpσ_lt ha, bumpσ_ge (Nat.le_of_not_lt hb)] at hab; omega
+  · rw [bumpσ_ge (Nat.le_of_not_lt ha), bumpσ_lt hb] at hab; omega
+  · rw [bumpσ_ge (Nat.le_of_not_lt ha), bumpσ_ge (Nat.le_of_not_lt hb)] at hab; omega
+theorem bumpσ_shift (g : Nat) : ∀ k, g ≤ k → bumpσ g (k + 1) = bumpσ g k + 1 := by
+  intro k hk; rw [bumpσ_ge hk, bumpσ_ge (Nat.le_succ_of_le hk)]
+
+/-! LR-LOCAL cap-scopedness: every `vcap` id occurring in the term is `< g`. The `bumpσ g` fixpoint
+predicate (a renaming that shifts only `[g, ∞)` leaves a `CapsBelow g` term unchanged). -/
+mutual
+def Val.CapsBelow (g : Nat) : Val → Prop
+  | .vcap n _   => n < g
+  | .vthunk c   => Comp.CapsBelow g c
+  | .inl v      => Val.CapsBelow g v
+  | .inr v      => Val.CapsBelow g v
+  | .pair a b   => Val.CapsBelow g a ∧ Val.CapsBelow g b
+  | .fold v     => Val.CapsBelow g v
+  | _           => True
+def Comp.CapsBelow (g : Nat) : Comp → Prop
+  | .ret v        => Val.CapsBelow g v
+  | .letC M N     => Comp.CapsBelow g M ∧ Comp.CapsBelow g N
+  | .force v      => Val.CapsBelow g v
+  | .lam M        => Comp.CapsBelow g M
+  | .app M v      => Comp.CapsBelow g M ∧ Val.CapsBelow g v
+  | .perform c _ v => Val.CapsBelow g c ∧ Val.CapsBelow g v
+  | .handle h M   => Handler.CapsBelow g h ∧ Comp.CapsBelow g M
+  | .case v N₁ N₂ => Val.CapsBelow g v ∧ Comp.CapsBelow g N₁ ∧ Comp.CapsBelow g N₂
+  | .split v N    => Val.CapsBelow g v ∧ Comp.CapsBelow g N
+  | .unfold v     => Val.CapsBelow g v
+  | _             => True
+def Handler.CapsBelow (g : Nat) : Handler → Prop
+  | .state _ s       => Val.CapsBelow g s
+  | .throws _        => True
+  | .transaction _ Θ => ∀ x ∈ Θ, Val.CapsBelow g x
+end
+
+/-- Frame cap-scopedness: the `handleF` id AND the frame's stored sub-terms are `< g`. -/
+def Frame.CapsBelow (g : Nat) : Frame → Prop
+  | .letF N      => Comp.CapsBelow g N
+  | .appF v      => Val.CapsBelow g v
+  | .handleF n h => n < g ∧ Handler.CapsBelow g h
+
+/-- Stack cap-scopedness: every frame is `CapsBelow g`. -/
+def Stack.CapsBelow (g : Nat) (K : EvalCtx) : Prop := ∀ fr ∈ K, Frame.CapsBelow g fr
+
+theorem Stack.CapsBelow_nil (g : Nat) : Stack.CapsBelow g [] := by
+  intro fr h; exact absurd h (List.not_mem_nil)
+theorem Stack.CapsBelow_cons {g : Nat} {fr : Frame} {K : EvalCtx}
+    (hfr : Frame.CapsBelow g fr) (hK : Stack.CapsBelow g K) : Stack.CapsBelow g (fr :: K) := by
+  intro x hx; rcases List.mem_cons.mp hx with rfl | hx'
+  · exact hfr
+  · exact hK x hx'
+theorem Stack.CapsBelow_of_cons {g : Nat} {fr : Frame} {K : EvalCtx}
+    (h : Stack.CapsBelow g (fr :: K)) : Frame.CapsBelow g fr ∧ Stack.CapsBelow g K :=
+  ⟨h fr (List.mem_cons_self), fun x hx => h x (List.mem_cons_of_mem fr hx)⟩
+
+/-! `CapsBelow` is monotone in the bound (a larger bound is weaker). -/
+mutual
+theorem Val.CapsBelow_mono {g g' : Nat} (hgg : g ≤ g') :
+    ∀ {v : Val}, Val.CapsBelow g v → Val.CapsBelow g' v
+  | .vcap n _,  h => by simp only [Val.CapsBelow] at h ⊢; omega
+  | .vthunk c,  h => by simp only [Val.CapsBelow] at h ⊢; exact Comp.CapsBelow_mono hgg h
+  | .inl v,     h => by simp only [Val.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .inr v,     h => by simp only [Val.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .pair a b,  h => by
+      simp only [Val.CapsBelow] at h ⊢; exact ⟨Val.CapsBelow_mono hgg h.1, Val.CapsBelow_mono hgg h.2⟩
+  | .fold v,    h => by simp only [Val.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .vunit,     _ => by simp only [Val.CapsBelow]
+  | .vint _,    _ => by simp only [Val.CapsBelow]
+  | .vvar _,    _ => by simp only [Val.CapsBelow]
+theorem Comp.CapsBelow_mono {g g' : Nat} (hgg : g ≤ g') :
+    ∀ {c : Comp}, Comp.CapsBelow g c → Comp.CapsBelow g' c
+  | .ret v,        h => by simp only [Comp.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .letC M N,     h => by
+      simp only [Comp.CapsBelow] at h ⊢; exact ⟨Comp.CapsBelow_mono hgg h.1, Comp.CapsBelow_mono hgg h.2⟩
+  | .force v,      h => by simp only [Comp.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .lam M,        h => by simp only [Comp.CapsBelow] at h ⊢; exact Comp.CapsBelow_mono hgg h
+  | .app M v,      h => by
+      simp only [Comp.CapsBelow] at h ⊢; exact ⟨Comp.CapsBelow_mono hgg h.1, Val.CapsBelow_mono hgg h.2⟩
+  | .perform c _ v, h => by
+      simp only [Comp.CapsBelow] at h ⊢; exact ⟨Val.CapsBelow_mono hgg h.1, Val.CapsBelow_mono hgg h.2⟩
+  | .handle hh M,  h => by
+      simp only [Comp.CapsBelow] at h ⊢; exact ⟨Handler.CapsBelow_mono hgg h.1, Comp.CapsBelow_mono hgg h.2⟩
+  | .case v N₁ N₂, h => by
+      simp only [Comp.CapsBelow] at h ⊢
+      exact ⟨Val.CapsBelow_mono hgg h.1, Comp.CapsBelow_mono hgg h.2.1, Comp.CapsBelow_mono hgg h.2.2⟩
+  | .split v N,    h => by
+      simp only [Comp.CapsBelow] at h ⊢; exact ⟨Val.CapsBelow_mono hgg h.1, Comp.CapsBelow_mono hgg h.2⟩
+  | .unfold v,     h => by simp only [Comp.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .oom,          _ => by simp only [Comp.CapsBelow]
+  | .wrong _,      _ => by simp only [Comp.CapsBelow]
+theorem Handler.CapsBelow_mono {g g' : Nat} (hgg : g ≤ g') :
+    ∀ {h : Handler}, Handler.CapsBelow g h → Handler.CapsBelow g' h
+  | .state _ s,       h => by simp only [Handler.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .throws _,        _ => by simp only [Handler.CapsBelow]
+  | .transaction _ Θ, h => by
+      simp only [Handler.CapsBelow] at h ⊢; exact fun x hx => Val.CapsBelow_mono hgg (h x hx)
+end
+
+/-! `bumpσ g` is a FIXPOINT on a `CapsBelow g` term: every cap `< g` is fixed by `bumpσ g`. (The
+mutual structural induction mirrors `renameV_shiftFrom`.) -/
+mutual
+theorem renameV_capsBelow {g : Nat} :
+    ∀ {v : Val}, Val.CapsBelow g v → renameV (bumpσ g) v = v
+  | .vcap n _,  h => by simp only [Val.CapsBelow] at h; simp only [renameV_vcap, bumpσ_lt h]
+  | .vthunk c,  h => by simp only [Val.CapsBelow] at h; simp only [renameV_vthunk, renameC_capsBelow h]
+  | .inl v,     h => by simp only [Val.CapsBelow] at h; simp only [renameV_inl, renameV_capsBelow h]
+  | .inr v,     h => by simp only [Val.CapsBelow] at h; simp only [renameV_inr, renameV_capsBelow h]
+  | .pair a b,  h => by
+      simp only [Val.CapsBelow] at h
+      simp only [renameV_pair, renameV_capsBelow h.1, renameV_capsBelow h.2]
+  | .fold v,    h => by simp only [Val.CapsBelow] at h; simp only [renameV_fold, renameV_capsBelow h]
+  | .vunit,     _ => by simp only [renameV_vunit]
+  | .vint _,    _ => by simp only [renameV_vint]
+  | .vvar _,    _ => by simp only [renameV_vvar]
+theorem renameC_capsBelow {g : Nat} :
+    ∀ {c : Comp}, Comp.CapsBelow g c → renameC (bumpσ g) c = c
+  | .ret v,        h => by simp only [Comp.CapsBelow] at h; simp only [renameC_ret, renameV_capsBelow h]
+  | .letC M N,     h => by
+      simp only [Comp.CapsBelow] at h; simp only [renameC_letC, renameC_capsBelow h.1, renameC_capsBelow h.2]
+  | .force v,      h => by simp only [Comp.CapsBelow] at h; simp only [renameC_force, renameV_capsBelow h]
+  | .lam M,        h => by simp only [Comp.CapsBelow] at h; simp only [renameC_lam, renameC_capsBelow h]
+  | .app M v,      h => by
+      simp only [Comp.CapsBelow] at h; simp only [renameC_app, renameC_capsBelow h.1, renameV_capsBelow h.2]
+  | .perform c _ v, h => by
+      simp only [Comp.CapsBelow] at h
+      simp only [renameC_perform, renameV_capsBelow h.1, renameV_capsBelow h.2]
+  | .handle hh M,  h => by
+      simp only [Comp.CapsBelow] at h; simp only [renameC_handle, renameH_capsBelow h.1, renameC_capsBelow h.2]
+  | .case v N₁ N₂, h => by
+      simp only [Comp.CapsBelow] at h
+      simp only [renameC_case, renameV_capsBelow h.1, renameC_capsBelow h.2.1, renameC_capsBelow h.2.2]
+  | .split v N,    h => by
+      simp only [Comp.CapsBelow] at h; simp only [renameC_split, renameV_capsBelow h.1, renameC_capsBelow h.2]
+  | .unfold v,     h => by simp only [Comp.CapsBelow] at h; simp only [renameC_unfold, renameV_capsBelow h]
+  | .oom,          _ => by simp only [renameC_oom]
+  | .wrong _,      _ => by simp only [renameC_wrong]
+theorem renameH_capsBelow {g : Nat} :
+    ∀ {h : Handler}, Handler.CapsBelow g h → renameH (bumpσ g) h = h
+  | .state _ s,       hh => by
+      simp only [Handler.CapsBelow] at hh; simp only [renameH_state, renameV_capsBelow hh]
+  | .throws _,        _  => by simp only [renameH_throws]
+  | .transaction _ Θ, hh => by
+      simp only [Handler.CapsBelow] at hh
+      simp only [renameH_transaction, Handler.transaction.injEq, true_and]
+      have hmap : Θ.map (renameV (bumpσ g)) = Θ.map id :=
+        List.map_congr_left (fun x hx => renameV_capsBelow (hh x hx))
+      rw [hmap, List.map_id]
+end
+
+/-- `bumpσ g` is a fixpoint on a `Stack.CapsBelow g` stack. -/
+theorem renameK_capsBelow {g : Nat} : ∀ {K : EvalCtx}, Stack.CapsBelow g K → renameK (bumpσ g) K = K
+  | [],      _ => rfl
+  | fr :: K, h => by
+      obtain ⟨hfr, hK⟩ := Stack.CapsBelow_of_cons h
+      rw [renameK_cons, renameK_capsBelow hK]
+      cases fr with
+      | letF N => simp only [Frame.CapsBelow] at hfr; simp only [renameF_letF, renameC_capsBelow hfr]
+      | appF v => simp only [Frame.CapsBelow] at hfr; simp only [renameF_appF, renameV_capsBelow hfr]
+      | handleF n hh =>
+          simp only [Frame.CapsBelow] at hfr
+          simp only [renameF_handleF, bumpσ_lt hfr.1, renameH_capsBelow hfr.2]
+
+/-- **THE COUNTER-BUMP BRIDGE.** For a CANONICAL config (stack + focus `CapsBelow g`), running at counter
+`g + 1` converges iff running at `g` converges — the `handleF`-pop `+1` shift is invisible. Proof:
+`renameCfg (bumpσ g) (g, K, c) = (g+1, K, c)` (the `CapsBelow` fixpoint), then `run_rename_converges`. -/
+theorem run_bump_converges {g n : Nat} {K : EvalCtx} {c : Comp}
+    (hK : Stack.CapsBelow g K) (hc : Comp.CapsBelow g c) :
+    (∃ w, Config.run n (g + 1, K, c) = Result.done w)
+      ↔ (∃ w, Config.run n (g, K, c) = Result.done w) := by
+  have hfix : renameCfg (bumpσ g) (g, K, c) = (g + 1, K, c) := by
+    simp only [renameCfg_eq, bumpσ_self, renameK_capsBelow hK, renameC_capsBelow hc]
+  have hbridge := run_rename_converges (bumpσ g) (bumpσ_injective g) n (g, K, c)
+    (fun k hk => bumpσ_shift g k hk)
+  rw [hfix] at hbridge
+  exact hbridge
+
+/-- **Density (`Canonical`)** — the LR-LOCAL canonical-stack invariant: each `handleF` frame's id is the
+count of handlers below it (so ids are dense `0..handlerCount K - 1`) AND every frame's stored sub-terms
+are cap-scoped below the count at that position. This is what the runplug-reshaped (`canonStack`)
+observation produces, preserved by dispatch-reinstall. It yields `Stack.CapsBelow (handlerCount K') K'`
+for EVERY tail `K'` — the strict bound the `+1` bump needs. -/
+def Canonical : EvalCtx → Prop
+  | []      => True
+  | fr :: K => Frame.CapsBelow (handlerCount (fr :: K)) fr ∧ Canonical K
+
+theorem Canonical_cons {fr : Frame} {K : EvalCtx} (h : Canonical (fr :: K)) :
+    Frame.CapsBelow (handlerCount (fr :: K)) fr ∧ Canonical K := h
+
+/-- `Canonical K` yields the STRICT cap-bound `Stack.CapsBelow (handlerCount K) K`: each frame is scoped
+below the count at ITS position, hence below `handlerCount K` (monotone up the stack). -/
+theorem Canonical.capsBelow : ∀ {K : EvalCtx}, Canonical K → Stack.CapsBelow (handlerCount K) K
+  | [],      _ => Stack.CapsBelow_nil 0
+  | fr :: K, h => by
+      obtain ⟨hfr, hK⟩ := Canonical_cons h
+      refine Stack.CapsBelow_cons hfr ?_
+      have htail : Stack.CapsBelow (handlerCount K) K := Canonical.capsBelow hK
+      intro x hx
+      have hle : handlerCount K ≤ handlerCount (fr :: K) := by
+        cases fr <;> simp only [handlerCount] <;> omega
+      exact frame_capsBelow_mono hle (htail x hx)
+where
+  frame_capsBelow_mono {g g' : Nat} (hgg : g ≤ g') : ∀ {fr : Frame},
+      Frame.CapsBelow g fr → Frame.CapsBelow g' fr
+    | .letF N,      h => by simp only [Frame.CapsBelow] at h ⊢; exact Comp.CapsBelow_mono hgg h
+    | .appF v,      h => by simp only [Frame.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+    | .handleF n hh, h => by
+        simp only [Frame.CapsBelow] at h ⊢; exact ⟨by omega, Handler.CapsBelow_mono hgg h.2⟩
+
 end RunPlugReshape
 
 /-- Loading `plug C c` and running it reaches the CANONICAL machine-shaped config `reshape 0 [] C c`
@@ -1574,17 +1804,27 @@ theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
   | zero => rw [show Config.run 0 cfg = Result.oom from rfl] at hrun; exact absurd hrun (by simp)
   | succ k => rw [Config.run_step k cfg hne, hstep] at hrun; exact absurd hrun (by simp)
 
-/-- ◊4.5b `crelK_ret`: a `VrelK`-related RETURN at returner type `F q A` is `CrelK`-related. -/
+/-- ◊4.5b `crelK_ret` (GUARDED form, ADR-0054/0055 density resolution, lead decision 2026-06-26): a
+`VrelK`-related RETURN co-behaves through every `KrelS`-related stack pair that is CANONICAL (dense ids
+`0..handlerCount-1`) — the runplug §4 canonical-observation made explicit. The density premises
+(`Canonical K₁/K₂` + the value's cap-scopedness `Val.CapsBelow 0`, i.e. the returned value carries no
+escaping cap) let the `handleF`-pop's `+1` counter shift discharge via `run_bump_converges` (the
+`run_rename` consumer). `CrelK`/`KrelS` stay FROZEN — the invariant is a consumer-supplied hypothesis
+on this supporting lemma; consumers (`crelK_fund`/`coApproxC_le_of_resumeDecomp`) build canonical stacks
+via `canonStack`/reshape (dispatch-reinstall preserves density) and supply it. The conclusion is the
+unfolded `CrelK` clause (`CoApproxC_le` at the machine-shaped config). -/
 theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ : Val}
+    (D : CTy Eff Mult) (K₁ K₂ : Stack)
+    (hK : KrelS n (CTy.F q A) D e K₁ K₂)
+    (hcan₁ : RunPlugReshape.Canonical K₁) (hcan₂ : RunPlugReshape.Canonical K₂)
+    (hvcf₁ : RunPlugReshape.Val.CapsBelow 0 v₁) (hvcf₂ : RunPlugReshape.Val.CapsBelow 0 v₂)
     (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂)
     (hv : VrelK n A v₁ v₂) :
-    CrelK n (CTy.F q A) e (Comp.ret v₁) (Comp.ret v₂) := by
-  rw [CrelK]
-  intro D K₁ K₂ hK
+    CoApproxC_le n (handlerCount K₁, K₁, Comp.ret v₁) (handlerCount K₂, K₂, Comp.ret v₂) := by
   induction K₁ generalizing K₂ A v₁ v₂ e with
   | nil =>
       cases K₂ with
-      | nil => rw [krelS_nil] at hK; exact hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
+      | nil => rw [krelS_nil] at hK; simpa only [handlerCount] using hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
       | cons fr K₂' => simp only [KrelS] at hK
   | cons fr K₁' ih =>
       cases fr with
@@ -1600,9 +1840,9 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   | zero => intro hconv; exact absurd hconv (not_convergesC_le_zero _)
                   | succ k =>
                       -- letF reduce: `step (g, letF N₁::K₁', ret v₁) = (g, K₁', subst v₁ N₁)`, counter
-                      -- `g = handlerCount (letF N₁::K₁') = handlerCount K₁'` UNCHANGED (letF adds no
-                      -- handler). So the landed config's counter matches the IH/`CrelK` observation —
-                      -- the configs are inferred from `rfl`; no explicit tuple annotation needed.
+                      -- `handlerCount (letF N₁::K₁') = handlerCount K₁'` UNCHANGED (letF adds no handler),
+                      -- so the landed config's counter matches the `CrelK` body observation. No bump needed.
+                      simp only [handlerCount]
                       refine coApproxC_le_anti_step rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
                       have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ (VrelK_mono (Nat.le_succ k) hv)
                       rw [CrelK] at hCrel
@@ -1610,6 +1850,7 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
       | appF w₁ =>
+          simp only [handlerCount]
           intro hconv
           exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
       | handleF nh₁ h₁ =>
@@ -1617,17 +1858,41 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
           | cons fr₂ K₂' =>
               cases fr₂ with
               | handleF nh₂ h₂ =>
-                  -- ◊inc-5 COUNTER-AGNOSTICISM GAP (named sorry). handleF pass-through on a `ret`:
-                  -- `step (g, handleF nh₁ h₁::K₁', ret v₁) = (g, K₁', ret v₁)` keeps the counter `g`, but
-                  -- `handlerCount (handleF nh₁ h₁::K₁') = handlerCount K₁' + 1`, so the landed config is
-                  -- `(handlerCount K₁' + 1, K₁', ret v₁)` while `ih`/`CrelK` observes `(handlerCount K₁',
-                  -- K₁', ret v₁)`. The popped handler's id is now dead and the `+1` counter is still fresh
-                  -- (> every live id of K₁'), so convergence is INVARIANT under it — but discharging it
-                  -- needs the run-renaming lemma (`Config.run` commutes with an injective id-renaming),
-                  -- the DYNAMIC half NOT yet transcribed (RunPlugReshape supplies only the static
-                  -- `plug`/`splitAtId` halves). SAME gap as `crelK_fund`'s up/perform arm; reconnects when
-                  -- the run-renaming / counter-shift bridge lands.
-                  sorry
+                  -- ◊inc-5 COUNTER-SHIFT, DISCHARGED (density resolution). handleF pass-through on `ret`:
+                  -- `step (g, handleF nh::K', ret v) = (g, K', ret v)` keeps the counter `g = handlerCount
+                  -- (handleF nh::K') = handlerCount K' + 1`, while the tail observation (`ih`) is at
+                  -- `handlerCount K'`. The `+1` is invisible because the config is CANONICAL: `Canonical K'`
+                  -- gives `StackBelow`/`CapsBelow (handlerCount K') K'` and the returned value carries no
+                  -- escaping cap (`CapsBelow 0`), so `run_bump_converges` (the `run_rename` consumer) bridges
+                  -- the two counters. The popped handler's id `nh` is dead and `handlerCount K'+1` is still
+                  -- fresh — now SECURED by the density invariant, not asserted.
+                  obtain ⟨_, hcan₁'⟩ := RunPlugReshape.Canonical_cons hcan₁
+                  obtain ⟨_, hcan₂'⟩ := RunPlugReshape.Canonical_cons hcan₂
+                  rw [krelS_handleF] at hK
+                  obtain ⟨_hid, _hHR, htail, _hres⟩ := hK
+                  have hih := ih K₂' htail hcan₁' hcan₂' hvcf₁ hvcf₂ hc₁ hc₂ hv
+                  -- pop both handleF frames (counter unchanged), landing at `(handlerCount K' + 1, K', ret v)`.
+                  simp only [handlerCount]
+                  refine coApproxC_le_reduce
+                    (cfg₁' := (handlerCount K₁' + 1, K₁', Comp.ret v₁))
+                    (cfg₂' := (handlerCount K₂' + 1, K₂', Comp.ret v₂))
+                    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
+                  -- the `+1` bump bridge, both sides, via `run_bump_converges`.
+                  have hSK₁ : RunPlugReshape.Stack.CapsBelow (handlerCount K₁') K₁' :=
+                    RunPlugReshape.Canonical.capsBelow hcan₁'
+                  have hSK₂ : RunPlugReshape.Stack.CapsBelow (handlerCount K₂') K₂' :=
+                    RunPlugReshape.Canonical.capsBelow hcan₂'
+                  have hcv₁ : RunPlugReshape.Comp.CapsBelow (handlerCount K₁') (Comp.ret v₁) := by
+                    simp only [RunPlugReshape.Comp.CapsBelow]
+                    exact RunPlugReshape.Val.CapsBelow_mono (Nat.zero_le _) hvcf₁
+                  have hcv₂ : RunPlugReshape.Comp.CapsBelow (handlerCount K₂') (Comp.ret v₂) := by
+                    simp only [RunPlugReshape.Comp.CapsBelow]
+                    exact RunPlugReshape.Val.CapsBelow_mono (Nat.zero_le _) hvcf₂
+                  intro hconv
+                  have hconv' : ConvergesC_le n (handlerCount K₁', K₁', Comp.ret v₁) :=
+                    (RunPlugReshape.run_bump_converges hSK₁ hcv₁).mp hconv
+                  obtain ⟨m, w, hrun⟩ := hih hconv'
+                  exact ⟨m, (RunPlugReshape.run_bump_converges hSK₂ hcv₂).mpr ⟨w, hrun⟩⟩
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
 
