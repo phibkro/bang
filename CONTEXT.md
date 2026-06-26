@@ -8,9 +8,10 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-26) — inc-4 metatheory DONE + merged AXIOM-CLEAN. NEXT = GLOBAL-FRESH
-> identity rework (ADR-0055), reversing Fork-ii's `handlerCount`.** On `typed-static-r1` @ `2a7f5c1`.
-> SoT = ADR-0055 (the next unit's spec) + ADR-0054 (the identity rep) + ADR-0052 (CalcVM route-B, inc 6).
+> **★ ACTIVE DIRECTION (2026-06-26) — GLOBAL-FRESH IDENTITY (ADR-0055) DONE + merged; the collision is
+> dead, NonEscape adequate. NEXT = inc 5 (LR/Compat — first whole-LR green).** On `typed-static-r1` @ `6041bea`.
+> SoT = ADR-0054/0055 (the cap rep, done) + ADR-0052 (CalcVM route-B, inc 6). inc 1-4 + the global-fresh
+> rework are LANDED; the STD block (preservation/progress/type_safety) is axiom-clean over the final kernel.
 >
 > **inc 4 landed (merged `6cadd6b`):** `NonEscape` frozen as Shape B — an LR-FREE operational closure
 > `∀ cfg', StepStar cfg cfg' → FocusResolves cfg'` (Operational sits below LR, so a KrelS projection would
@@ -31,14 +32,17 @@
 > inc-4 theorems stay SOUND (they prove no-stuck, not resolution-transparency; `progB` is `done` not stuck),
 > but capability resolution-transparency is NOT yet achieved.
 >
-> **★ THE DECISION (ADR-0055, operator ruling) — GLOBAL-FRESH IDENTITY = the next unit:** mint identity from
-> a MONOTONIC Config counter (gensym), never reused → no two handlers ever share an id → an escaped cap
-> resolves to ITS handler or to NOTHING (stuck, fail-loud); collisions UNREPRESENTABLE; `NonEscape`'s simple
-> form becomes ADEQUATE unchanged. Rework (NEXT, ADR-0055 is the spec): `Config` gains a counter
-> (`Nat × EvalCtx × Comp`); `Source.step` handle-arm mints+increments; add ONE freshness lemma (minted id ∉
-> live stack); re-establish the STD block over the counter-`Config` (structure carries over — dispatch,
-> `splitAtId`, resume re-typing unchanged; only minting + freshness are new). Then inc 5 LR/Compat (first
-> whole-LR green) · inc 6 CalcVM route-B (ADR-0052) · inc 7 Surface.
+> **★ GLOBAL-FRESH DONE (ADR-0055, merged `6041bea`):** identity now mints from a MONOTONIC Config counter
+> (`Config := Nat × EvalCtx × Comp`), never reused → no two handlers share an id → an escaped cap resolves
+> to ITS handler or to NOTHING (stuck) → collisions UNREPRESENTABLE, `NonEscape` ADEQUATE. **`progB` → STUCK**
+> (was done-via-impostor; independently gated on the real reworked kernel). `WellCounted` (live ids < counter)
+> added as a SEPARATE reachability invariant (sibling to `NonEscape`, NOT in `HasConfig` — the STD block never
+> touches it; confirmed by the isolated-sorry milestone); STD block re-established axiom-clean,
+> `stackBelow_idDispatch` discharged sorry-free; `type_safety` literal `(0,[],c)` (blessed STATEMENT_CHANGE_OK).
+> `wellCounted_reachable`/`splitAtId_fresh` feed the inc-5 diagonal.
+> **★ NEXT = inc 5 (LR/Compat):** re-key the LR to the new Config + identity dispatch; the initial-config
+> NonEscape obligation (the LR diagonal) becomes PROVABLE under global-fresh (was the inc-4 carried obligation).
+> First whole-LR green. Then inc 6 CalcVM route-B (ADR-0052) · inc 7 Surface.
 >
 > **Parallel this session — improve hygiene (4/5 landed on main):** audit-gate sync lifted convention→tested
 > (`tools/check-audit-sync.sh` in `just fitness`) · 4 superseded probes → `scratch/archive/` · Distribution

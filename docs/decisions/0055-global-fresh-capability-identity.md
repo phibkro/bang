@@ -10,12 +10,16 @@
 
 ## Status
 
-Accepted (2026-06-26, operator ruling after a build-verified cross-extent identity collision). The
-DECISION (global-fresh identity via a Config counter) is recorded; IMPLEMENTATION is pending — the
-merged inc-4 kernel (`6cadd6b`) still mints `handlerCount K` (collision-prone) until the rework lands.
-The inc-4 metatheory achievement (the STD block axiom-clean over identity dispatch) is to be
-**re-established** under global-fresh minting, not discarded — the re-shape is incremental (thread a
-counter; add a freshness lemma), not a redesign.
+Accepted + **IMPLEMENTED** (2026-06-26, merged `6041bea`). Operator ruling after a build-verified
+cross-extent collision; the rework landed the same session. `Config := Nat × EvalCtx × Comp`;
+`Source.step` mints a MONOTONIC counter (never reused) instead of `handlerCount`. `WellCounted` (every
+live id < the counter) added as a SEPARATE reachability invariant (sibling to `NonEscape`, NOT in
+`HasConfig` — the STD block never touches it; confirmed by an isolated-sorry milestone). The STD block
+re-established axiom-clean ⊆ {propext, Classical.choice, Quot.sound}; the dispatch-arm freshness
+(`stackBelow_idDispatch`) discharged sorry-free. **`progB` → STUCK** (the collision dead — independently
+gated on the real reworked kernel). The freshness lemmas (`wellCounted_reachable` / `splitAtId_fresh`)
+hand the inc-5 LR diagonal a fresh `WellCounted` + the freshness fact, making the initial-config
+NonEscape obligation PROVABLE (NonEscape now adequate).
 
 ## Context
 
