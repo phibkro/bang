@@ -1106,7 +1106,7 @@ behaviour per frame (`Source.step`): nil = done; `letF N::K ↦ (K, N.subst v)`;
 
 /-- A STUCK config (`step = none`, not a nil-return) never converges within any budget. -/
 theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
-    (hstep : Source.step cfg = none) (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
+    (hstep : Source.step cfg = none) (hne : ∀ g v, cfg ≠ (g, [], Comp.ret v)) :
     ¬ ConvergesC_le n cfg := by
   rintro ⟨v, hrun⟩
   cases n with
@@ -1138,9 +1138,11 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   cases n with
                   | zero => intro hconv; exact absurd hconv (not_convergesC_le_zero _)
                   | succ k =>
-                      refine coApproxC_le_anti_step
-                        (cfg₁' := (K₁', Comp.subst v₁ N₁)) (cfg₂' := (K₂', Comp.subst v₂ N₂))
-                        rfl (by intro u; simp) rfl (by intro u; simp) ?_
+                      -- letF reduce: `step (g, letF N₁::K₁', ret v₁) = (g, K₁', subst v₁ N₁)`, counter
+                      -- `g = handlerCount (letF N₁::K₁') = handlerCount K₁'` UNCHANGED (letF adds no
+                      -- handler). So the landed config's counter matches the IH/`CrelK` observation —
+                      -- the configs are inferred from `rfl`; no explicit tuple annotation needed.
+                      refine coApproxC_le_anti_step rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
                       have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ (VrelK_mono (Nat.le_succ k) hv)
                       rw [CrelK] at hCrel
                       exact hCrel D K₁' K₂' (KrelS_mono (Nat.le_succ k) htail)
@@ -1148,17 +1150,23 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
           | nil => simp only [KrelS] at hK
       | appF w₁ =>
           intro hconv
-          exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro u; simp))
-      | handleF h₁ =>
+          exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
+      | handleF nh₁ h₁ =>
           cases K₂ with
           | cons fr₂ K₂' =>
               cases fr₂ with
-              | handleF h₂ =>
-                  rw [krelS_handleF] at hK
-                  refine coApproxC_le_reduce
-                    (cfg₁' := (K₁', Comp.ret v₁)) (cfg₂' := (K₂', Comp.ret v₂))
-                    rfl (by intro u; simp) rfl (by intro u; simp) ?_
-                  exact ih (K₂ := K₂') hc₁ hc₂ hv hK.2.1
+              | handleF nh₂ h₂ =>
+                  -- ◊inc-5 COUNTER-AGNOSTICISM GAP (named sorry). handleF pass-through on a `ret`:
+                  -- `step (g, handleF nh₁ h₁::K₁', ret v₁) = (g, K₁', ret v₁)` keeps the counter `g`, but
+                  -- `handlerCount (handleF nh₁ h₁::K₁') = handlerCount K₁' + 1`, so the landed config is
+                  -- `(handlerCount K₁' + 1, K₁', ret v₁)` while `ih`/`CrelK` observes `(handlerCount K₁',
+                  -- K₁', ret v₁)`. The popped handler's id is now dead and the `+1` counter is still fresh
+                  -- (> every live id of K₁'), so convergence is INVARIANT under it — but discharging it
+                  -- needs the run-renaming lemma (`Config.run` commutes with an injective id-renaming),
+                  -- the DYNAMIC half NOT yet transcribed (RunPlugReshape supplies only the static
+                  -- `plug`/`splitAtId` halves). SAME gap as `crelK_fund`'s up/perform arm; reconnects when
+                  -- the run-renaming / counter-shift bridge lands.
+                  sorry
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
 
@@ -1273,76 +1281,36 @@ theorem converges_ret (v : Val) : Converges (Comp.ret v) :=
 -- `n = 0` case by its ordinary main argument — no `cases n`/`crel_zero` base. Single source of truth: a
 -- dead lemma carrying a `sorry` is worse than no lemma.
 
-/-- An UNHANDLED operation never converges: under the empty stack `splitAt [] = none`,
-so `step ([], up ℓ op v) = none` and the machine is immediately stuck. -/
-theorem not_converges_up_nil (cap : Nat) (ℓ : Label) (op : OpId) (v : Val) :
-    ¬ Converges (Comp.perform cap ℓ op v) := by
-  rintro ⟨fuel, w, hfuel⟩
-  -- `Source.eval fuel (up …) = Config.run fuel ([], up …)`; the step is `none` (stuck), never `done`.
-  cases fuel with
-  | zero => simp [Source.eval, Config.run] at hfuel
-  | succ k =>
-      have hstuck : Config.run (k + 1) ([], Comp.perform cap ℓ op v) = Result.stuck := by
-        rw [Config.run_step k ([], Comp.perform cap ℓ op v) (by intro u; simp)]
-        rfl
-      rw [show Source.eval (k+1) (Comp.perform cap ℓ op v)
-            = Config.run (k+1) ([], Comp.perform cap ℓ op v) from rfl, hstuck] at hfuel
-      simp at hfuel
+-- (◊inc-5 re-key) The legacy `not_converges_up_nil`/`not_converges_up_splitNone` were UNUSED (doc-only
+-- references) and their `Stack.plug`-refocus proof is subsumed by the reshaped `run_plug`; deleted (SSoT).
+-- The two CONSUMED config-level stuck lemmas re-key from the deleted `absSplit`/4-arg `perform cap ℓ op v`
+-- to the identity-dispatch shape: `splitAtId K cap = none` + `perform (vcap cap ℓ) op v` (ADR-0054/0055).
 
-/-- An UNHANDLED operation never converges UNDER ANY STACK: if the cap does NOT resolve to an in-scope
-handler (`staticSplit K cap = none`), then `plug K (perform cap ℓ op v)` runs to a stuck config and
-never `done`s. Generalizes `not_converges_up_nil` (the `K = []` case) to an arbitrary stack — the
-workhorse that collapses the STUCK half of every frame-extension `Krel` lemma to vacuous truth
-(`CoApprox` is `False → _`). The machine refocuses `([], plug K (perform …))` to `(K, perform …)` via
-`run_plug`, then `staticDispatch K cap op v = (staticSplit K cap).bind _ = none` ⇒ `step = none` ⇒
-stuck. ADR-0045 RE-KEY (Inc 0): the predicate is `staticSplit K cap = none` (the cap does not resolve),
-NOT the legacy label-search `splitAt K ℓ op = none` — `Source.step` routes `perform` through
-`staticDispatch K cap` (Operational.lean), so the `ℓ`-keyed search no longer governs stuckness. -/
-theorem not_converges_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.absSplit K cap = none) :
-    ¬ Converges (Stack.plug K (Comp.perform cap ℓ op v)) := by
-  -- the focused config (K, perform …) is stuck at every fuel: step = staticDispatch = none (cap unresolved).
-  have hstuck : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
-    intro j w
-    cases j with
-    | zero => simp [Config.run]
-    | succ k =>
-        rw [Config.run_step k (K, Comp.perform cap ℓ op v) (by intro u; simp)]
-        have hdisp : Source.step (K, Comp.perform cap ℓ op v) = none := by
-          show staticDispatch K cap op v = none
-          unfold staticDispatch; rw [hsplit]; rfl
-        rw [hdisp]; simp
-  rintro ⟨fuel, w, hfuel⟩
-  rw [Stack.plug] at hfuel
-  -- Source.eval fuel (plug K …) = run fuel ([], plug K …); bump to (fuel + K.length), refocus.
-  have hev : Config.run fuel ([], Bang.plug K (Comp.perform cap ℓ op v)) = Result.done w := hfuel
-  have hbig : Config.run (fuel + K.length) ([], Bang.plug K (Comp.perform cap ℓ op v)) = Result.done w :=
-    Config.run_done_add K.length fuel _ w hev
-  rw [run_plug K (Comp.perform cap ℓ op v) fuel] at hbig
-  exact hstuck fuel w hbig
-
-/-- ◊4.5b CONFIG-LEVEL form: the focused config `(K, perform cap ℓ op v)` with `staticSplit K cap = none`
-is STUCK at every fuel (`step = staticDispatch = none`), so it never converges within ANY step bound.
-This is what the metered STUCK halves consume — `CoApproxC_le j (K, perform…) _` is vacuous because
-`ConvergesC_le j (K, perform…)` is `False`. No `plug`/refocus (config level): the `+K.length` offset
-never enters. ADR-0045 RE-KEY (Inc 0): cap-unresolved (`staticSplit K cap = none`), not label-search. -/
-theorem config_stuck_up_splitNone (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.absSplit K cap = none) : ∀ j w, Config.run j (K, Comp.perform cap ℓ op v) ≠ Result.done w := by
+/-- ◊4.5b CONFIG-LEVEL stuck: the focused config `(g, K, perform (vcap cap ℓ) op v)` with the cap
+UNRESOLVED (`splitAtId K cap = none`) is STUCK at every fuel — `Source.step` routes `perform` through
+`idDispatch K cap ℓ op v = (splitAtId K cap).bind … = none`, so it never `done`s within ANY step bound.
+This is what the metered STUCK halves consume (`CoApproxC_le j (…, perform…) _` is vacuous). Counter `g`
+is INERT to stuckness. ◊inc-5 RE-KEY: identity dispatch (`splitAtId K cap`), not the deleted `absSplit`. -/
+theorem config_stuck_up_splitNone (g : Nat) (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
+    (hsplit : Bang.splitAtId K cap = none) :
+    ∀ j w, Config.run j (g, K, Comp.perform (Val.vcap cap ℓ) op v) ≠ Result.done w := by
   intro j w
+  have hid : Bang.idDispatch K cap ℓ op v = none := by unfold Bang.idDispatch; rw [hsplit]; rfl
   cases j with
   | zero => simp [Config.run]
   | succ k =>
-      rw [Config.run_step k (K, Comp.perform cap ℓ op v) (by intro u; simp)]
-      have hdisp : Source.step (K, Comp.perform cap ℓ op v) = none := by
-        show staticDispatch K cap op v = none
-        unfold staticDispatch; rw [hsplit]; rfl
+      rw [Config.run_step k (g, K, Comp.perform (Val.vcap cap ℓ) op v) (by intro g' u; simp)]
+      have hdisp : Source.step (g, K, Comp.perform (Val.vcap cap ℓ) op v) = none := by
+        show (Bang.idDispatch K cap ℓ op v).map (fun (p : EvalCtx × Comp) => (g, p.1, p.2)) = none
+        rw [hid]; rfl
       rw [hdisp]; simp
 
-/-- `ConvergesC_le j (K, perform…)` is `False` when the cap does not resolve (`absSplit K cap = none`)
-— the metered stuck-half discharge. ADR-0053: ABSOLUTE cap-unresolved (root-level → top-index). -/
-theorem not_convergesC_le_up_splitNone {j : Nat} (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
-    (hsplit : Bang.absSplit K cap = none) : ¬ ConvergesC_le j (K, Comp.perform cap ℓ op v) := by
-  rintro ⟨w, hw⟩; exact config_stuck_up_splitNone K cap ℓ op v hsplit j w hw
+/-- `ConvergesC_le j (g, K, perform (vcap cap ℓ) op v)` is `False` when the cap does not resolve
+(`splitAtId K cap = none`) — the metered stuck-half discharge. ◊inc-5 RE-KEY: identity dispatch. -/
+theorem not_convergesC_le_up_splitNone {j g : Nat} (K : Stack) (cap : Nat) (ℓ : Label) (op : OpId) (v : Val)
+    (hsplit : Bang.splitAtId K cap = none) :
+    ¬ ConvergesC_le j (g, K, Comp.perform (Val.vcap cap ℓ) op v) := by
+  rintro ⟨w, hw⟩; exact config_stuck_up_splitNone g K cap ℓ op v hsplit j w hw
 
 
 /-- ◊4.5b `KrelS` nil self-relation: the empty stack relates to itself at answer type = hole type
@@ -1376,8 +1344,9 @@ theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemi
       have hC := h (f + 1)
       -- `Crel` is the abbrev for `CrelK`: `∀ D K₁ K₂, KrelS … → CoApproxC_le n (K₁,c₁) (K₂,c₂)`.
       rw [Crel, CrelK] at hC
-      -- the metered left premise: ConvergesC_le (f+1) ([], c₁), witnessed by hfuel.
-      have hconv : ConvergesC_le (f + 1) ([], c₁) :=
+      -- the metered left premise: ConvergesC_le (f+1) (0, [], c₁), witnessed by hfuel
+      -- (`handlerCount [] = 0`, so the CrelK observation at the empty stack is the fresh config).
+      have hconv : ConvergesC_le (f + 1) (0, [], c₁) :=
         ⟨v, hfuel⟩
       -- instantiate at the identity observation context: D = F q A, K₁ = K₂ = [] (krelS_nil_succ).
       have hright := hC (CTy.F q A) [] [] (krelS_nil_succ (f + 1) q A e) hconv
