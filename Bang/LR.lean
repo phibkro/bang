@@ -666,12 +666,12 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
       rw [krelS_appF] at hK ⊢
       obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
       exact ⟨q, A, B, hC, hcw₁, hcw₂, VrelK_mono hmn hw, KrelS_mono hmn htail⟩
-  | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hmn, hK => by
+  | (Frame.handleF nh h :: K₁'), (Frame.handleF nh' h' :: K₂'), hmn, hK => by
       rw [krelS_handleF] at hK ⊢
-      obtain ⟨hh, htail, hres⟩ := hK
+      obtain ⟨hid, hh, htail, hres⟩ := hK
       -- ◊4.5b-append: the relational handler condition is downward-mono on its `VrelK` state; the resume
       -- conjunct at `∀ m' < n` restricts to `∀ m' < m` (m ≤ n) — monotone sub-quantification.
-      refine ⟨?_, KrelS_mono hmn htail, fun m' hm' => hres m' (lt_of_lt_of_le hm' hmn)⟩
+      refine ⟨hid, ?_, KrelS_mono hmn htail, fun m' hm' => hres m' (lt_of_lt_of_le hm' hmn)⟩
       cases h <;> cases h' <;> simp only [HandlerRel] at hh ⊢
       · -- state/state: relate the stored cell at the smaller index
         exact ⟨hh.1, hh.2.imp fun _ hv => VrelK_mono hmn hv⟩
@@ -682,11 +682,11 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.letF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.letF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp only [KrelS] at hK
   | (Frame.appF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.appF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.handleF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.handleF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.appF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
 termination_by K₁ _ => K₁.length
 
 /-! ◊4.5b sub-block (b) — effect-row subsumption for the `KrelS`/`CrelK` core. With the tail-at-`φ`
@@ -707,18 +707,18 @@ theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       rw [krelS_appF] at hK ⊢
       obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
       exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_anti hεε' htail⟩
-  | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
+  | (Frame.handleF nh h :: K₁'), (Frame.handleF nh' h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
       -- the resume conjunct is ε-free (dispatch + VrelK don't gate on ε) ⇒ passes through unchanged.
-      exact ⟨hK.1, KrelS_eff_anti hεε' hK.2.1, hK.2.2⟩
+      exact ⟨hK.1, hK.2.1, KrelS_eff_anti hεε' hK.2.2.1, hK.2.2.2⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.letF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.letF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp only [KrelS] at hK
   | (Frame.appF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.appF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.handleF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.handleF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.appF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
   termination_by K₁ _ => K₁.length
 
 /-- `KrelS` is ε-MONOTONE too (in fact ε-INVARIANT): the new answer-typed `KrelS` has NO stuck-half /
@@ -739,17 +739,17 @@ theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
       rw [krelS_appF] at hK ⊢
       obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
       exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_eff_mono hεε' htail⟩
-  | (Frame.handleF h :: K₁'), (Frame.handleF h' :: K₂'), hεε', hK => by
+  | (Frame.handleF nh h :: K₁'), (Frame.handleF nh' h' :: K₂'), hεε', hK => by
       rw [krelS_handleF] at hK ⊢
-      exact ⟨hK.1, KrelS_eff_mono hεε' hK.2.1, hK.2.2⟩
+      exact ⟨hK.1, hK.2.1, KrelS_eff_mono hεε' hK.2.2.1, hK.2.2.2⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.letF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.letF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp only [KrelS] at hK
   | (Frame.appF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.appF _ :: _), (Frame.handleF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.handleF _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
-  | (Frame.handleF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.appF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ _ :: _), (Frame.letF _ :: _), _, hK => by simp only [KrelS] at hK
+  | (Frame.handleF _ _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
   termination_by K₁ _ => K₁.length
 
 /-- `KrelS` is ε-INVARIANT: the row can be replaced by ANY other row (no ordering). Corollary of
