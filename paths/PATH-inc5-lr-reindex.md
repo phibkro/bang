@@ -131,7 +131,8 @@ banked into LR §5.0a′ (`0b739db`, axiom-clean). A2 is a multi-session re-deri
 compat2 banked (inc5-lr-reindex, LR GREEN, axiom-clean): `0b739db` run_rename integrated · `d91ef1c` density-(a)
 machinery (`bumpσ`/`CapsBelow`/`run_bump_converges`/`Canonical` — the counter-bump bridge, non-escape-independent,
 KEPT as prepared tooling) · `8c30f06` crelK_ret RESTORED to the GUARDED explicit-premise form (axiom-clean; explicit `CapsBelow 0 v`
-premise = the VISIBLE non-escape obligation, NOT a sorry — consumers discharge it when ADR-0057 lands) ·
+premise = the VISIBLE non-escape obligation, NOT a sorry — discharged when B-occ is IMPLEMENTED (task #23);
+ADR-0057 ACCEPTED `dfe8e3d` decides the discipline, likely making it a corollary via the dissolution lemma) ·
 `8abda91` `krelS_handlerCount_eq` handleF-tail re-key (`.2.1`→`.2.2.1` for the new `krelS_handleF` shape).
 **LR GREEN, exactly 1 sorry (seq_unit_proof, LR:1243, pre-existing off-critical-path).** Density-(a) machinery
 in use. Compat red-WIP @ `8abda91`.
