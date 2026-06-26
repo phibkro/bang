@@ -24,8 +24,10 @@
 - DONE + CLEAN: form-(b) machine-shaped KrelS def core (LR 433–647) + metering-spine re-key (`2ed9078`) ·
   downstream `KrelS_mono`/eff handleF lemmas (`19798fb`). Nice simplification: `dispatchOn` outputs stay the
   2-tuple `EvalCtx × Comp`, so the counter lives only in the nil/CrelK metering configs.
-- IN FLIGHT: kernel-engineer `runplug` (worktree `kernel-runplug` @ `4005e52`) proving `run_plug_reshape` +
-  the bridge in its `RunPlugReshapeProbe` scratch probe (lands on main when integrated). Contract:
+- **run_plug DONE** (`f88879a`, kernel-engineer `runplug`, worktree `/srv/share/projects/lang-bang-runplug`):
+  `run_plug_reshape` PROVEN axiom-clean ⊆ {propext, Quot.sound}, zero sorry — TRANSCRIBE into `Bang/LR.lean`.
+  §4 RESOLVED: plug+reshape erase frame ids → KrelS observes the CANONICAL config (the one remaining LR-side
+  step = KrelS stack-id-agnosticism, HasStack-id-irrelevance). Its `RunPlugReshapeProbe` probe. Contract:
   `Config.run (n + C.length) (0,[],plug C c) = Config.run n (handlerCount C, canonStack C, capSubstInto C c)`
   + renaming-invariance bridging `canonStack C ↔ C`. When it delivers, transcribe `canonStack`/`capSubstInto`/
   `run_plug_reshape` into LR.lean's `run_plug` (~207), discharging the `run_plug`/`converges_plug_iff` sorries.
