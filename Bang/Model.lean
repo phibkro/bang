@@ -429,6 +429,33 @@ theorem resolvesLabel_cons (fr : Frame) {K : EvalCtx} {n : Nat} {ℓ : Label}
       have hmn : ¬ (m = n) := hfr m hd rfl
       simp only [splitAtId, hmn, if_false, hsplit, Option.map_some]
 
+/-- The REMOVAL direction (reverse of `resolvesLabel_cons`, the POP arm's mechanic): a cap that resolves
+in `fr :: K` resolves in `K` when `fr` is not the `handleF` for that identity. `splitAtId` walks PAST a
+non-matching head, so popping it leaves resolution of every OTHER id untouched. (The popped id itself is
+ruled out separately — at POP via the B-occ lever / freshness, not by this lemma.) Invariant-shape
+independent: purely a `splitAtId` fact, reused by any `wsCfg_step` redesign. -/
+theorem resolvesLabel_uncons (fr : Frame) {K : EvalCtx} {n : Nat} {ℓ : Label}
+    (hfr : ∀ m h, fr = Frame.handleF m h → m ≠ n) (h : ResolvesLabel (fr :: K) n ℓ) :
+    ResolvesLabel K n ℓ := by
+  obtain ⟨Kᵢ, hh, Kₒ, hsplit, hlbl⟩ := h
+  cases fr with
+  | letF N =>
+      simp only [splitAtId, Option.map_eq_some_iff] at hsplit
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsplit', heq⟩ := hsplit
+      simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, rfl⟩ := heq
+      exact ⟨Kᵢ', h', Kₒ', hsplit', hlbl⟩
+  | appF w =>
+      simp only [splitAtId, Option.map_eq_some_iff] at hsplit
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsplit', heq⟩ := hsplit
+      simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, rfl⟩ := heq
+      exact ⟨Kᵢ', h', Kₒ', hsplit', hlbl⟩
+  | handleF m hd =>
+      have hmn : ¬ (m = n) := hfr m hd rfl
+      rw [splitAtId, if_neg hmn, Option.map_eq_some_iff] at hsplit
+      obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsplit', heq⟩ := hsplit
+      simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, rfl⟩ := heq
+      exact ⟨Kᵢ', h', Kₒ', hsplit', hlbl⟩
+
 -- `WSV`/`WSC` re-home under a pushed NON-`handleF` frame (every gate's `ResolvesLabel` survives). The
 -- `letF`/`appF` PUSH/REDUCE frames; the `handleF` MINT push needs the freshness-keyed variant separately.
 mutual
