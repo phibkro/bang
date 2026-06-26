@@ -322,6 +322,180 @@ inductive LWSK (K : EvalCtx) : EvalCtx → Bool → Prop where
       LWSK K (Frame.handleF n (Handler.transaction ℓ Θ) :: Sg) b
 end
 
+/-! ### §2′.1 — MONOTONICITY: any flag collapses DOWN to dormant.
+
+`true` is the STRONGEST flag (`vcap_live` demands resolution, `vcap_dormant` nothing). So any
+`LWSV`/`LWSC` weakens to dormant — the engine for the LIVE subst bridge (a live arg plugs into ANY
+occurrence flag). Full former set. -/
+mutual
+theorem lwsv_to_dormant {K : EvalCtx} {b : Bool} {v : Val} (h : LWSV K b v) : LWSV K false v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar => exact .vvar
+  | vcap_live _ => exact .vcap_dormant
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk h => exact .vthunk (lwsc_to_dormant h)
+  | inl h => exact .inl (lwsv_to_dormant h)
+  | inr h => exact .inr (lwsv_to_dormant h)
+  | pair h1 h2 => exact .pair (lwsv_to_dormant h1) (lwsv_to_dormant h2)
+  | fold h => exact .fold (lwsv_to_dormant h)
+theorem lwsc_to_dormant {K : EvalCtx} {b : Bool} {M : Comp} (h : LWSC K b M) : LWSC K false M := by
+  cases h with
+  | @ret b v q h => exact .ret (q := q) (by simpa using lwsv_to_dormant h)
+  | letC h1 h2 => exact .letC (lwsc_to_dormant h1) (lwsc_to_dormant h2)
+  | force h => exact .force (lwsv_to_dormant h)
+  | lam h => exact .lam (lwsc_to_dormant h)
+  | @app b M' v q h1 h2 => exact .app (q := q) (lwsc_to_dormant h1) (by simpa using lwsv_to_dormant h2)
+  | case h1 h2 h3 => exact .case (lwsv_to_dormant h1) (lwsc_to_dormant h2) (lwsc_to_dormant h3)
+  | split h1 h2 => exact .split (lwsv_to_dormant h1) (lwsc_to_dormant h2)
+  | unfold h => exact .unfold (lwsv_to_dormant h)
+  | perform h1 h2 => exact .perform (lwsv_to_dormant h1) (lwsv_to_dormant h2)
+  | handleThrows h => exact .handleThrows (lwsc_to_dormant h)
+  | handleState h1 h2 => exact .handleState (lwsv_to_dormant h1) (lwsc_to_dormant h2)
+  | handleTransaction h => exact .handleTransaction (lwsc_to_dormant h)
+end
+
+/-- A LIVE value plugs into ANY occurrence flag (`b = true` identity; `false` is `lwsv_to_dormant`). -/
+theorem lwsv_of_live {K : EvalCtx} (b : Bool) {v : Val} (h : LWSV K true v) : LWSV K b v := by
+  cases b with
+  | true => exact h
+  | false => exact lwsv_to_dormant h
+
+/-! ### §2′.2 — the LIVE subst bridge (REDUCE/β, q≠0): substitute a LIVE closed arg.
+
+`w` closed ⇒ `shift w = w` (kills the under-binder shift); the live arg plugs into every `vvar`-`k`
+leaf via `lwsv_of_live`. TYPING-FREE, all cutoffs/binders, full former set. -/
+mutual
+theorem lwsv_subst {K : EvalCtx} {w : Val} (hwl : LWSV K true w) (hcl : ∀ j, Val.shiftFrom j w = w)
+    {u : Val} {bu : Bool} (k : Nat) (hu : LWSV K bu u) : LWSV K bu (Val.substFrom k w u) := by
+  cases hu with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar b i =>
+    simp only [Val.substFrom]
+    by_cases hik : i = k
+    · subst hik; simpa using lwsv_of_live bu hwl
+    · rw [if_neg hik]; split <;> exact .vvar
+  | vcap_live h => simpa only [Val.substFrom] using LWSV.vcap_live h
+  | vcap_dormant => simpa only [Val.substFrom] using LWSV.vcap_dormant
+  | vthunk h => exact .vthunk (lwsc_subst hwl hcl k h)
+  | inl h => exact .inl (lwsv_subst hwl hcl k h)
+  | inr h => exact .inr (lwsv_subst hwl hcl k h)
+  | pair h1 h2 => exact .pair (lwsv_subst hwl hcl k h1) (lwsv_subst hwl hcl k h2)
+  | fold h => exact .fold (lwsv_subst hwl hcl k h)
+theorem lwsc_subst {K : EvalCtx} {w : Val} (hwl : LWSV K true w) (hcl : ∀ j, Val.shiftFrom j w = w)
+    {M : Comp} {bM : Bool} (k : Nat) (hM : LWSC K bM M) : LWSC K bM (Comp.substFrom k w M) := by
+  have hsh : Val.shift w = w := hcl 0
+  cases hM with
+  | ret h => exact .ret (lwsv_subst hwl hcl k h)
+  | letC h1 h2 =>
+    refine .letC (lwsc_subst hwl hcl k h1) ?_
+    simp only [hsh]; exact lwsc_subst hwl hcl (k + 1) h2
+  | force h => exact .force (lwsv_subst hwl hcl k h)
+  | lam h => simp only [Comp.substFrom, hsh]; exact .lam (lwsc_subst hwl hcl (k + 1) h)
+  | app h1 h2 => exact .app (lwsc_subst hwl hcl k h1) (lwsv_subst hwl hcl k h2)
+  | case h1 h2 h3 =>
+    simp only [Comp.substFrom, hsh]
+    exact .case (lwsv_subst hwl hcl k h1) (lwsc_subst hwl hcl (k + 1) h2) (lwsc_subst hwl hcl (k + 1) h3)
+  | split h1 h2 =>
+    simp only [Comp.substFrom, hsh]
+    exact .split (lwsv_subst hwl hcl k h1) (lwsc_subst hwl hcl (k + 2) h2)
+  | unfold h => exact .unfold (lwsv_subst hwl hcl k h)
+  | perform h1 h2 => exact .perform (lwsv_subst hwl hcl k h1) (lwsv_subst hwl hcl k h2)
+  | handleThrows h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]; exact .handleThrows (lwsc_subst hwl hcl (k + 1) h)
+  | handleState h1 h2 =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    exact .handleState (lwsv_subst hwl hcl k h1) (lwsc_subst hwl hcl (k + 1) h2)
+  | handleTransaction h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    exact .handleTransaction (lwsc_subst hwl hcl (k + 1) h)
+end
+
+/-! ### §2′.3 — the ALL-DORMANT subst bridge (REDUCE/β, b=false): dormant arg into dormant term. -/
+mutual
+theorem lwsv_subst_dormant {K : EvalCtx} {w : Val} (hwd : LWSV K false w)
+    (hcl : ∀ j, Val.shiftFrom j w = w) {u : Val} (k : Nat) (hu : LWSV K false u) :
+    LWSV K false (Val.substFrom k w u) := by
+  cases hu with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar b i =>
+    simp only [Val.substFrom]
+    by_cases hik : i = k
+    · subst hik; simpa using hwd
+    · rw [if_neg hik]; split <;> exact .vvar
+  | vcap_dormant => simpa only [Val.substFrom] using LWSV.vcap_dormant
+  | vthunk h => exact .vthunk (lwsc_subst_dormant hwd hcl k h)
+  | inl h => exact .inl (lwsv_subst_dormant hwd hcl k h)
+  | inr h => exact .inr (lwsv_subst_dormant hwd hcl k h)
+  | pair h1 h2 => exact .pair (lwsv_subst_dormant hwd hcl k h1) (lwsv_subst_dormant hwd hcl k h2)
+  | fold h => exact .fold (lwsv_subst_dormant hwd hcl k h)
+theorem lwsc_subst_dormant {K : EvalCtx} {w : Val} (hwd : LWSV K false w)
+    (hcl : ∀ j, Val.shiftFrom j w = w) {M : Comp} (k : Nat) (hM : LWSC K false M) :
+    LWSC K false (Comp.substFrom k w M) := by
+  have hsh : Val.shift w = w := hcl 0
+  cases hM with
+  | @ret b v q h => exact .ret (q := q) (lwsv_subst_dormant hwd hcl k (by simpa using h))
+  | letC h1 h2 =>
+    refine .letC (lwsc_subst_dormant hwd hcl k h1) ?_
+    simp only [hsh]; exact lwsc_subst_dormant hwd hcl (k + 1) h2
+  | force h => exact .force (lwsv_subst_dormant hwd hcl k h)
+  | lam h => simp only [Comp.substFrom, hsh]; exact .lam (lwsc_subst_dormant hwd hcl (k + 1) h)
+  | @app b M' v q h1 h2 =>
+    exact .app (q := q) (lwsc_subst_dormant hwd hcl k h1) (lwsv_subst_dormant hwd hcl k (by simpa using h2))
+  | case h1 h2 h3 =>
+    simp only [Comp.substFrom, hsh]
+    exact .case (lwsv_subst_dormant hwd hcl k h1) (lwsc_subst_dormant hwd hcl (k + 1) h2)
+      (lwsc_subst_dormant hwd hcl (k + 1) h3)
+  | split h1 h2 =>
+    simp only [Comp.substFrom, hsh]
+    exact .split (lwsv_subst_dormant hwd hcl k h1) (lwsc_subst_dormant hwd hcl (k + 2) h2)
+  | unfold h => exact .unfold (lwsv_subst_dormant hwd hcl k h)
+  | perform h1 h2 => exact .perform (lwsv_subst_dormant hwd hcl k h1) (lwsv_subst_dormant hwd hcl k h2)
+  | handleThrows h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    exact .handleThrows (lwsc_subst_dormant hwd hcl (k + 1) h)
+  | handleState h1 h2 =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    exact .handleState (lwsv_subst_dormant hwd hcl k h1) (lwsc_subst_dormant hwd hcl (k + 1) h2)
+  | handleTransaction h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    exact .handleTransaction (lwsc_subst_dormant hwd hcl (k + 1) h)
+end
+
+/-! ### §2′.4 — POP dead-cap: a dormant value is STACK-INDEPENDENT (re-homes to ANY stack). -/
+mutual
+theorem lwsv_dormant_stack_indep {K K' : EvalCtx} {u : Val} (h : LWSV K false u) : LWSV K' false u := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar => exact .vvar
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk h => exact .vthunk (lwsc_dormant_stack_indep h)
+  | inl h => exact .inl (lwsv_dormant_stack_indep h)
+  | inr h => exact .inr (lwsv_dormant_stack_indep h)
+  | pair h1 h2 => exact .pair (lwsv_dormant_stack_indep h1) (lwsv_dormant_stack_indep h2)
+  | fold h => exact .fold (lwsv_dormant_stack_indep h)
+theorem lwsc_dormant_stack_indep {K K' : EvalCtx} {M : Comp} (h : LWSC K false M) : LWSC K' false M := by
+  cases h with
+  | @ret b v q h => exact .ret (q := q) (by simpa using lwsv_dormant_stack_indep (by simpa using h))
+  | letC h1 h2 => exact .letC (lwsc_dormant_stack_indep h1) (lwsc_dormant_stack_indep h2)
+  | force h => exact .force (lwsv_dormant_stack_indep h)
+  | lam h => exact .lam (lwsc_dormant_stack_indep h)
+  | @app b M' v q h1 h2 =>
+    exact .app (q := q) (lwsc_dormant_stack_indep h1) (by simpa using lwsv_dormant_stack_indep (by simpa using h2))
+  | case h1 h2 h3 =>
+    exact .case (lwsv_dormant_stack_indep h1) (lwsc_dormant_stack_indep h2) (lwsc_dormant_stack_indep h3)
+  | split h1 h2 => exact .split (lwsv_dormant_stack_indep h1) (lwsc_dormant_stack_indep h2)
+  | unfold h => exact .unfold (lwsv_dormant_stack_indep h)
+  | perform h1 h2 => exact .perform (lwsv_dormant_stack_indep h1) (lwsv_dormant_stack_indep h2)
+  | handleThrows h => exact .handleThrows (lwsc_dormant_stack_indep h)
+  | handleState h1 h2 => exact .handleState (lwsv_dormant_stack_indep h1) (lwsc_dormant_stack_indep h2)
+  | handleTransaction h => exact .handleTransaction (lwsc_dormant_stack_indep h)
+end
+
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
 (`vcap`s arise only by minting). The diagonal's side-condition (the bare form is FALSE: a hand-written
