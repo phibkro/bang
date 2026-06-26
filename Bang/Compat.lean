@@ -66,7 +66,7 @@ the focused subterm under an extended stack — handled by `Stack.plug` unfoldin
 is: a config that takes a fixed first step `(K,c) ↦ cfg'` converges iff `cfg'` does. -/
 theorem converges_cfg_step (cfg cfg' : Config)
     (hstep : Source.step cfg = some cfg')
-    (hne : ∀ v, cfg ≠ ([], Comp.ret v)) :
+    (hne : ∀ g v, cfg ≠ (g, [], Comp.ret v)) :
     (∃ n w, Config.run n cfg = Result.done w) ↔ (∃ n w, Config.run n cfg' = Result.done w) := by
   constructor
   · rintro ⟨n, w, hn⟩
@@ -80,51 +80,20 @@ theorem converges_cfg_step (cfg cfg' : Config)
     rw [Config.run_step n cfg hne, hstep]
     exact hn
 
-/-- `Converges`-level form: if `c` takes a context-independent head step to `c'` under stack `K`
-(`step (K, c) = some (K, c')`), and `K ≠ []` OR `c` is not a bare `ret`, then plugging `K` with `c`
-converges iff plugging with `c'` does. Bridges through `converges_plug_iff`. -/
-theorem converges_plug_step (K : Stack) (c c' : Comp)
-    (hstep : Source.step (K, c) = some (K, c'))
-    (hne : ∀ v, (K, c) ≠ ([], Comp.ret v)) :
-    Converges (Stack.plug K c) ↔ Converges (Stack.plug K c') := by
-  rw [Stack.plug, Stack.plug, converges_plug_iff, converges_plug_iff]
-  exact converges_cfg_step (K, c) (K, c') hstep hne
-
 /-- A *context-independent head step*: `c ↦ c'` fires under EVERY stack, and `c` is never a bare
 returned focus (`ret v` would be terminal, not a redex). The non-PUSH reductions
 (`force (vthunk M) ↦ M`, the ADT eliminators) have this shape: they rewrite the focus in place
 without consulting the stack. -/
 def CIStep (c c' : Comp) : Prop :=
-  (∀ K : Stack, Source.step (K, c) = some (K, c')) ∧ (∀ v, c ≠ Comp.ret v)
+  (∀ (g : Nat) (K : Stack), Source.step (g, K, c) = some (g, K, c')) ∧ (∀ v, c ≠ Comp.ret v)
 
-/-- The `letF` REDUCE bridge: plugging `letF N :: K` with `ret v` co-converges with plugging `K` with
-`N.subst v`. The step `(letF N :: K, ret v) ↦ (K, N.subst v)` is context-dependent (it consumes the
-`letF` frame), so this is NOT a `CIStep` — proven directly through `converges_cfg_step`. The frame
-`letF N :: K` is never `([], ret _)` (it has a head frame), so the no-terminal side-condition holds. -/
-theorem converges_letF_ret (K : Stack) (N : Comp) (v : Val) :
-    Converges (Stack.plug (Frame.letF N :: K) (Comp.ret v)) ↔ Converges (Stack.plug K (Comp.subst v N)) := by
-  rw [Stack.plug, Stack.plug, converges_plug_iff, converges_plug_iff]
-  exact converges_cfg_step (Frame.letF N :: K, Comp.ret v) (K, Comp.subst v N)
-    rfl (by intro u; simp)
-
-/-- The `appF` REDUCE bridge: plugging `appF w :: K` with `lam M` co-converges with plugging `K` with
-`M.subst w`. The step `(appF w :: K, lam M) ↦ (K, M.subst w)` (β) consumes the `appF` frame — the
-`lam`-elimination analogue of `converges_letF_ret`. -/
-theorem converges_appF_lam (K : Stack) (w : Val) (M : Comp) :
-    Converges (Stack.plug (Frame.appF w :: K) (Comp.lam M)) ↔ Converges (Stack.plug K (Comp.subst w M)) := by
-  rw [Stack.plug, Stack.plug, converges_plug_iff, converges_plug_iff]
-  exact converges_cfg_step (Frame.appF w :: K, Comp.lam M) (K, Comp.subst w M)
-    rfl (by intro u; simp)
-
-/-- The `handleF` RETURN bridge: a handler frame's return clause is the IDENTITY (ADR-0023 Q6) —
-`handleF h :: K, ret v ↦ K, ret v` — so plugging the handler frame with a returned value co-converges
-with plugging the bare stack. Holds for ANY handler `h` (throws/state/transaction all share the
-identity return). -/
-theorem converges_handleF_ret (K : Stack) (h : Handler) (v : Val) :
-    Converges (Stack.plug (Frame.handleF h :: K) (Comp.ret v)) ↔ Converges (Stack.plug K (Comp.ret v)) := by
-  rw [Stack.plug, Stack.plug, converges_plug_iff, converges_plug_iff]
-  exact converges_cfg_step (Frame.handleF h :: K, Comp.ret v) (K, Comp.ret v)
-    rfl (by intro u; simp)
+-- NOTE (inc-5): the `converges_plug_step`/`converges_letF_ret`/`converges_appF_lam`/
+-- `converges_handleF_ret` frame-reduce bridges were DELETED. They bridged through the old
+-- `converges_plug_iff` (RHS = the raw `(K, c)` config), which LR rekeyed to the machine-shaped
+-- reshape config (`handlerCount K, canonStack K c, capSubstInto K c`, ADR-0054/0055); the bridges had
+-- zero consumers (the fundamental theorem now goes through the machine-shaped `KrelS`, not these
+-- convergence bridges). `converges_cfg_step` (the general config-level head-step anti-reduction) and
+-- `CIStep` (the context-independent head-step predicate, used by `CrelK_head_step`) are retained.
 
 /-! ## B.1 The environment relation `EnvRel` / closing substitutions
 
@@ -198,11 +167,11 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _ _
 
-@[simp] theorem closeC_perform (δ : List Val) (cap : Nat) (ℓ : Label) (op : OpId) (w : Val) :
-    closeC δ (Comp.perform cap ℓ op w) = Comp.perform cap ℓ op (closeV δ w) := by
-  induction δ generalizing w with
+@[simp] theorem closeC_perform (δ : List Val) (cp : Val) (op : OpId) (w : Val) :
+    closeC δ (Comp.perform cp op w) = Comp.perform (closeV δ cp) op (closeV δ w) := by
+  induction δ generalizing cp w with
   | nil => rfl
-  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
+  | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _ _
 
 @[simp] theorem closeC_unfold (δ : List Val) (w : Val) :
     closeC δ (Comp.unfold w) = Comp.unfold (closeV δ w) := by
@@ -210,46 +179,45 @@ theorem closeCUnderBinders_zero (δ : List Val) (c : Comp) : closeCUnderBinders 
   | nil => rfl
   | cons v δ ih => simp only [closeC, closeV, Comp.subst, Comp.substFrom]; exact ih _
 
-/-- `closeC` distributes through a `throws` handler. ADR-0053: caps are ABSOLUTE root-levels, so
-`Comp.subst v (handle h M)` crosses the body with `v` UNCHANGED (no cap-shift) — the body closes over
-the SAME fillers `δ` as the surrounding context. This is what dissolves the shift wall (ADR-0050): the
-IH for the LR handler arms now matches `closeC δ M` directly, no `δ.map shiftCap` mismatch. The handler
-`throws ℓ` carries no value (`Handler.subst _ (throws ℓ) = throws ℓ`). -/
+/-- `closeC` distributes through a `throws` handler. ADR-0054: `handle` BINDS the capability at index 0,
+so the body `M` sits under ONE binder and closes via `closeCUnderBinders 1 δ M` (mirror `closeC_lam`);
+the no-shift win materializes here — the LR handler arms match this directly (ADR-0050 wall dissolved).
+The handler `throws ℓ` carries no value (`Handler.substFrom _ (throws ℓ) = throws ℓ`). -/
 @[simp] theorem closeC_handleThrows (δ : List Val) (ℓ : Label) (M : Comp) :
     closeC δ (Comp.handle (Handler.throws ℓ) M)
-      = Comp.handle (Handler.throws ℓ) (closeC δ M) := by
+      = Comp.handle (Handler.throws ℓ) (closeCUnderBinders 1 δ M) := by
   induction δ generalizing M with
   | nil => rfl
   | cons v δ ih =>
-    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, List.map_cons]; exact ih _
+    simp only [closeC, closeCUnderBinders, Comp.subst, Comp.substFrom, Handler.substFrom, shiftN]
+    exact ih _
 
-/-- ◊4.5 RESUME INFRA: `closeC` distributes through a `state ℓ s` handler. UNLIKE `throws`, the `state`
-handler CARRIES a value `s` (`Handler.substFrom k v (state ℓ s) = state ℓ (substFrom k v s)`), so the
-stored value closes too — `closeC δ (handle (state ℓ s) M) = handle (state ℓ (closeV δ s)) (closeC δ M)`.
-The `handle` former does not bind, so both `s` and the body `M` close at level 0 (structural). -/
+/-- ◊4.5 RESUME INFRA: `closeC` distributes through a `state ℓ s` handler. The `state` handler CARRIES a
+value `s` (`Handler.substFrom k v (state ℓ s) = state ℓ (substFrom k v s)`), so the stored value closes
+at level 0 (the handler does not bind). ADR-0054: the body `M` is under the cap-binder, so it closes via
+`closeCUnderBinders 1 δ M`. -/
 @[simp] theorem closeC_handleState (δ : List Val) (ℓ : Label) (s : Val) (M : Comp) :
     closeC δ (Comp.handle (Handler.state ℓ s) M)
-      = Comp.handle (Handler.state ℓ (closeV δ s)) (closeC δ M) := by
-  -- ADR-0053: the stored `s` closes normally; the body `M` closes over the SAME fillers `δ` (absolute
-  -- caps don't shift on handle-crossing). No `δ.map shiftCap`.
+      = Comp.handle (Handler.state ℓ (closeV δ s)) (closeCUnderBinders 1 δ M) := by
   induction δ generalizing s M with
   | nil => rfl
   | cons v δ ih =>
-    simp only [closeC, closeV, Comp.subst, Comp.substFrom, Handler.substFrom, List.map_cons]; exact ih _ _
+    simp only [closeC, closeV, closeCUnderBinders, Comp.subst, Val.subst, Comp.substFrom,
+      Handler.substFrom, shiftN]
+    exact ih _ _
 
 /-- ◊4.5 RESUME INFRA: `closeC` distributes through a `transaction ℓ Θ` handler. The heap cells are
 treated as CLOSED (ADR-0030: `Handler.substFrom _ (transaction ℓ Θ) = transaction ℓ Θ`, identity), so
-the heap is untouched — exactly like `throws`. Only the body `M` closes:
-`closeC δ (handle (transaction ℓ Θ) M) = handle (transaction ℓ Θ) (closeC δ M)`. -/
+the heap is untouched. ADR-0054: the body `M` is under the cap-binder, so it closes via
+`closeCUnderBinders 1 δ M`. -/
 @[simp] theorem closeC_handleTransaction (δ : List Val) (ℓ : Label) (Θ : Store) (M : Comp) :
     closeC δ (Comp.handle (Handler.transaction ℓ Θ) M)
-      = Comp.handle (Handler.transaction ℓ Θ) (closeC δ M) := by
-  -- ADR-0053: the heap is closed (`Handler.substFrom` identity on `Θ`); the body closes over the SAME
-  -- fillers `δ` (absolute caps don't shift). No `δ.map shiftCap`.
+      = Comp.handle (Handler.transaction ℓ Θ) (closeCUnderBinders 1 δ M) := by
   induction δ generalizing M with
   | nil => rfl
   | cons v δ ih =>
-    simp only [closeC, Comp.subst, Comp.substFrom, Handler.substFrom, List.map_cons]; exact ih _
+    simp only [closeC, closeCUnderBinders, Comp.subst, Comp.substFrom, Handler.substFrom, shiftN]
+    exact ih _
 
 @[simp] theorem closeV_vunit (δ : List Val) : closeV δ Val.vunit = Val.vunit := by
   induction δ with
@@ -285,6 +253,7 @@ theorem Val.shiftFrom_substFrom_closed :
       Val.shiftFrom k (Val.substFrom i u t) = Val.substFrom i u (Val.shiftFrom (k + 1) t)
   | _, _,  _, _, _,    .vunit => rfl
   | _, _,  _, _, _,    .vint _ => rfl
+  | _, _,  _, _, _,    .vcap _ _ => rfl   -- a capability is shift/subst-fixed (closed identity, ADR-0054)
   | u, hu, k, i, hik,  .vvar j => by
       -- arithmetic: the subst removes index i; the shift bumps indices ≥ k+1. With i ≤ k they don't
       -- interfere, and at j = i the closed filler u is shift-fixed.
@@ -340,13 +309,16 @@ theorem Comp.shiftFrom_substFrom_closed :
   | u, hu, k, i, hik, .app M w => by
       simp only [Comp.shiftFrom, Comp.substFrom]
       rw [Comp.shiftFrom_substFrom_closed hu k i hik M, Val.shiftFrom_substFrom_closed hu k i hik w]
-  | u, hu, k, i, hik, .perform _ ℓ op w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
-  | u, hu, k, i, hik, .handle h M => by
-      -- ADR-0053: `Comp.substFrom i u (handle h M)` fills the body with `u` UNCHANGED (absolute caps
-      -- don't shift on handle-crossing); the IH recurses at `u` directly (no `shiftCap`).
+  | u, hu, k, i, hik, .perform cp op w => by
       simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Handler.shiftFrom_substFrom_closed hu k i hik h, Comp.shiftFrom_substFrom_closed hu k i hik M]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik cp, Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik, .handle h M => by
+      -- ADR-0054: `handle` BINDS the capability at index 0, so the body `M` descends under one binder
+      -- (`k+1`/`i+1`), exactly like `lam`/`letC`; the handler `h` does NOT bind (stays at `k`). Closed
+      -- filler is shift-fixed (`hu.shift`).
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Handler.shiftFrom_substFrom_closed hu k i hik h,
+        Comp.shiftFrom_substFrom_closed hu (k + 1) (i + 1) (by omega) M]
   | u, hu, k, i, hik, .case w N₁ N₂ => by
       simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
       rw [Val.shiftFrom_substFrom_closed hu k i hik w,
@@ -623,16 +595,16 @@ the values flowing through the CK machine's binders (a returned value, an env fi
 -- For CLOSED `v,w`: `substFrom k w (substFrom (k+1) v M) = substFrom k v (substFrom k w M)`. The
 -- cutoff `k` is generalized so the binder cases (which step to `k+1` with `shift v`/`shift w` = `v`/`w`)
 -- reuse the IH at the SAME fillers. Mutual with the `Val`/`Handler` analogues.
--- ADR-0045 route-B: the `handle` arm cap-shifts the fillers (`shiftCap v`/`shiftCap w`), so the IH
--- recurses at the SHIFTED fillers. We quantify `{v w}` INTO the motive (not the theorem signature) so
--- that recursion is available, and reconstruct the IH's `Val.Closed` hypotheses via `Closed.shiftCap`
--- (de-Bruijn closedness survives the cap-shift). NO `CapClosed` premise needed.
+-- ADR-0054: `handle` BINDS the capability at index 0, so the `handle` arm descends the body under one
+-- binder (`k+1`) with the shifted fillers — but the fillers are CLOSED (`hv.shift`/`hw.shift`), so the IH
+-- recurses at `v`/`w` unchanged, exactly like `lam`/`letC`. No cap-shift (that machinery is gone).
 mutual
 theorem Val.substFrom_swap_closed :
     ∀ {v w : Val}, Val.Closed v → Val.Closed w → ∀ (k : Nat) (t : Val),
       Val.substFrom k w (Val.substFrom (k + 1) v t) = Val.substFrom k v (Val.substFrom k w t)
   | _, _, _, _, _, .vunit => rfl
   | _, _, _, _, _, .vint _ => rfl
+  | _, _, _, _, _, .vcap _ _ => rfl
   | v, w, hv, hw, k, .vvar i => by
       -- both substs on a variable reduce to nested `if`s over `i vs k`/`k+1`; `split_ifs` + `omega`
       -- discharges the index arithmetic. In the two FILLED-SLOT branches the outer subst lands on a
@@ -678,12 +650,14 @@ theorem Comp.substFrom_swap_closed :
   | v, w, hv, hw, k, .app M u => by
       simp only [Comp.substFrom]
       rw [Comp.substFrom_swap_closed hv hw k M, Val.substFrom_swap_closed hv hw k u]
-  | v, w, hv, hw, k, .perform _ ℓ op u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
-  | v, w, hv, hw, k, .handle h M => by
-      -- ADR-0053: both substs fill the body with `v`/`w` UNCHANGED (absolute caps don't shift on
-      -- handle-crossing); the IH recurses at the unshifted fillers directly.
+  | v, w, hv, hw, k, .perform cp op u => by
       simp only [Comp.substFrom]
-      rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed hv hw k M]
+      rw [Val.substFrom_swap_closed hv hw k cp, Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .handle h M => by
+      -- ADR-0054: `handle` BINDS the cap at 0, so the body descends to `k+1` with shifted fillers; the
+      -- fillers are CLOSED (`hv.shift`/`hw.shift`), so the IH recurses at `v`/`w` directly (mirror `lam`).
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Handler.substFrom_swap_closed hv hw k h, Comp.substFrom_swap_closed hv hw (k + 1) M]
   | v, w, hv, hw, k, .case u N₁ N₂ => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
       rw [Val.substFrom_swap_closed hv hw k u,
@@ -711,14 +685,15 @@ swap above (`i, i+1`) doesn't reach it, so here is the general `i ≤ j` form, b
   `substFrom i w (substFrom (j+1) u t) = substFrom j u (substFrom i w t)`.
 The adjacent lemma is the `i = j` instance; this generalizes the cutoff gap. Mutual structural
 induction; the binder cases step BOTH cutoffs (`i+1 ≤ j+1`). -/
--- ADR-0045 route-B (`{u w}` quantified into the motive; the `handle` arm recurses at `shiftCap u`/
--- `shiftCap w`, `Val.Closed` preserved by `Closed.shiftCap`; no `CapClosed`).
+-- ADR-0054: `handle` BINDS the cap at 0, so the `handle` arm descends both bodies to `i+1`/`j+1`; the
+-- fillers are CLOSED, so the IH recurses at `u`/`w` unchanged (mirror `lam`/`letC`). No cap-shift.
 mutual
 theorem Val.substFrom_swap_closed_ge :
     ∀ {u w : Val}, Val.Closed u → Val.Closed w → ∀ (i j : Nat), i ≤ j → ∀ (t : Val),
       Val.substFrom i w (Val.substFrom (j + 1) u t) = Val.substFrom j u (Val.substFrom i w t)
   | _, _, _, _, _, _, _,   .vunit => rfl
   | _, _, _, _, _, _, _,   .vint _ => rfl
+  | _, _, _, _, _, _, _,   .vcap _ _ => rfl
   | u, w, hu, hw, i, j, hij, .vvar m => by
       -- the two substs remove levels i and j+1 (i ≤ j), renumbering disjointly; at the removed slots
       -- the closed fillers w (at i) / u (at j+1) are subst-fixed.
@@ -771,12 +746,15 @@ theorem Comp.substFrom_swap_closed_ge :
   | u, w, hu, hw, i, j, hij, .app M t => by
       simp only [Comp.substFrom]
       rw [Comp.substFrom_swap_closed_ge hu hw i j hij M, Val.substFrom_swap_closed_ge hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .perform _ ℓ op t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .handle h M => by
-      -- ADR-0053: the `handle` body filler is unshifted (absolute caps); the IH recurses at the
-      -- unshifted fillers directly.
+  | u, w, hu, hw, i, j, hij, .perform cp op t => by
       simp only [Comp.substFrom]
-      rw [Handler.substFrom_swap_closed_ge hu hw i j hij h, Comp.substFrom_swap_closed_ge hu hw i j hij M]
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij cp, Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .handle h M => by
+      -- ADR-0054: `handle` BINDS the cap at 0, so the body descends to `i+1`/`j+1` with shifted fillers;
+      -- the fillers are CLOSED (`hu.shift`/`hw.shift`), so the IH recurses at `u`/`w` directly (mirror `lam`).
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Handler.substFrom_swap_closed_ge hu hw i j hij h,
+        Comp.substFrom_swap_closed_ge hu hw (i + 1) (j + 1) (by omega) M]
   | u, w, hu, hw, i, j, hij, .case t N₁ N₂ => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
       rw [Val.substFrom_swap_closed_ge hu hw i j hij t,
@@ -882,8 +860,9 @@ theorem CrelK_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ 
     (h₁ : CIStep c₁ c₁') (h₂ : CIStep c₂ c₂')
     (hlater : ∀ m, m < n → CrelK m B e c₁' c₂') : CrelK n B e c₁ c₂ := by
   rw [CrelK]; intro D K₁ K₂ hK hconv
-  have hstep₁ : Source.step (K₁, c₁) = some (K₁, c₁') := h₁.1 K₁
-  have hne₁ : ∀ v, (K₁, c₁) ≠ ([], Comp.ret v) := by intro v; simp [h₁.2 v]
+  have hstep₁ : Source.step (handlerCount K₁, K₁, c₁) = some (handlerCount K₁, K₁, c₁') :=
+    h₁.1 (handlerCount K₁) K₁
+  have hne₁ : ∀ g v, (handlerCount K₁, K₁, c₁) ≠ (g, [], Comp.ret v) := by intro g v; simp [h₁.2 v]
   cases n with
   | zero => exact absurd hconv (not_convergesC_le_zero _)
   | succ k =>
@@ -891,8 +870,9 @@ theorem CrelK_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ 
       have hCk : CrelK k B e c₁' c₂' := hlater k (Nat.lt_succ_self k)
       rw [CrelK] at hCk
       have hKk : KrelS k B D e K₁ K₂ := KrelS_mono (Nat.le_succ k) hK
-      have hstep₂ : Source.step (K₂, c₂) = some (K₂, c₂') := h₂.1 K₂
-      have hne₂ : ∀ v, (K₂, c₂) ≠ ([], Comp.ret v) := by intro v; simp [h₂.2 v]
+      have hstep₂ : Source.step (handlerCount K₂, K₂, c₂) = some (handlerCount K₂, K₂, c₂') :=
+        h₂.1 (handlerCount K₂) K₂
+      have hne₂ : ∀ g v, (handlerCount K₂, K₂, c₂) ≠ (g, [], Comp.ret v) := by intro g v; simp [h₂.2 v]
       exact converges_anti_step hstep₂ hne₂ (hCk D K₁ K₂ hKk hconv)
 
 /-- ◊4.5b `force` of `VrelK`-related thunks. The U-clause is `∀ j < n, CrelK j` — exactly the `m < n`
@@ -902,8 +882,8 @@ theorem crelK_force {n : Nat} {φ : Eff} {B : CTy Eff Mult} {w₁ w₂ : Val}
   rw [VrelK] at hv
   obtain ⟨c₁, c₂, rfl, rfl, hc⟩ := hv
   refine CrelK_head_step (c₁' := c₁) (c₂' := c₂) ?_ ?_ (fun m hm => hc m hm)
-  · exact ⟨fun K => rfl, by intro v; simp⟩
-  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
 
 /-- ◊4.5b `unfold` of `VrelK`-related μ-values. `unfold (fold u) ↦ ret u` (CIStep); the ▷-head-step
 needs `CrelK m (ret u₁) (ret u₂)` at each `m < n`, from `crelK_ret` on the μ-payload. -/
@@ -914,8 +894,8 @@ theorem crelK_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
   obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
   refine CrelK_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_
     (fun m hm => crelK_ret hcw₁.fold_inv hcw₂.fold_inv (hu m hm))
-  · exact ⟨fun K => rfl, by intro v; simp⟩
-  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
 
 
 /-! ### B.3′b `CrelK` frame extensions + `compat` cores (`letC`/`app`)
@@ -950,8 +930,10 @@ theorem compatK_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult}
     CrelK n B (φ₁ ⊔ φ₂) (Comp.letC M₁ N₁') (Comp.letC M₂ N₂') := by
   rw [CrelK]
   intro D K₁ K₂ hK
-  refine coApproxC_le_reduce (cfg₁' := (Frame.letF N₁' :: K₁, M₁)) (cfg₂' := (Frame.letF N₂' :: K₂, M₂))
-    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  refine coApproxC_le_reduce
+    (cfg₁' := (handlerCount K₁, Frame.letF N₁' :: K₁, M₁))
+    (cfg₂' := (handlerCount K₂, Frame.letF N₂' :: K₂, M₂))
+    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
   -- the letF-extended stack is `KrelS`-related at `(F q1 A, φ₁)`: tail at the block row φ₁⊔φ₂ weakens
   -- to the continuation row φ₂ (≤ φ₁⊔φ₂); `hM` (related at F q1 A, row φ₁) discharges the reduct.
   have hKletF : KrelS n (CTy.F q1 A) D (φ₁ ⊔ φ₂) (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) :=
@@ -980,8 +962,10 @@ theorem compatK_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
     CrelK n B φ (Comp.app M₁ v₁) (Comp.app M₂ v₂) := by
   rw [CrelK]
   intro D K₁ K₂ hK
-  refine coApproxC_le_reduce (cfg₁' := (Frame.appF v₁ :: K₁, M₁)) (cfg₂' := (Frame.appF v₂ :: K₂, M₂))
-    rfl (by intro u; simp) rfl (by intro u; simp) ?_
+  refine coApproxC_le_reduce
+    (cfg₁' := (handlerCount K₁, Frame.appF v₁ :: K₁, M₁))
+    (cfg₂' := (handlerCount K₂, Frame.appF v₂ :: K₂, M₂))
+    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
   rw [CrelK] at hM
   exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hv hK)
 
@@ -1000,7 +984,7 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
   cases K₁ with
   | nil =>
       -- nil arrow: `([], lam M)` is STUCK (lam reduces only under appF). Vacuous.
-      intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro u; simp))
+      intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
   | cons fr K₁' =>
       cases fr with
       | appF w₁ =>
@@ -1012,8 +996,10 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
                   obtain ⟨q', A', B', hC, hcw₁, hcw₂, hw, htail⟩ := hK
                   rw [CTy.arr.injEq] at hC; obtain ⟨rfl, rfl, rfl⟩ := hC
                   -- β `(appF w::K', lam M') ↦ (K', M'.subst w)`; body IH at the SAME index, non-dropping.
-                  refine coApproxC_le_reduce (cfg₁' := (K₁', Comp.subst w₁ M₁'))
-                    (cfg₂' := (K₂', Comp.subst w₂ M₂')) rfl (by intro u; simp) rfl (by intro u; simp) ?_
+                  refine coApproxC_le_reduce
+                    (cfg₁' := (handlerCount K₁', K₁', Comp.subst w₁ M₁'))
+                    (cfg₂' := (handlerCount K₂', K₂', Comp.subst w₂ M₂'))
+                    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
                   have hb := hbody w₁ w₂ hcw₁ hcw₂ hw
                   rw [CrelK] at hb
                   exact hb D K₁' K₂' htail
@@ -1029,7 +1015,7 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
           | nil => simp only [KrelS] at hK
       | handleF h₁ =>
           -- handleF on a `lam`: `(handleF h::K, lam M)` is STUCK (handleF reduces only a `ret`). Vacuous.
-          intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro u; simp))
+          intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
 
 /-- ◊4.5b the `case` (sum elim) compat core at `CrelK`. `case (inl u) ↦ N₁[u]` / `case (inr u) ↦ N₂[u]`
 are CISteps; the ▷-head-step needs the chosen branch related at every `m < n`, from the matching branch
@@ -1048,12 +1034,12 @@ theorem compatK_case {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Eff
   rcases hw with ⟨u₁, u₂, rfl, rfl, hu⟩ | ⟨u₁, u₂, rfl, rfl, hu⟩
   · refine CrelK_head_step (c₁' := Comp.subst u₁ N₁₁) (c₂' := Comp.subst u₂ N₁₂) ?_ ?_
       (fun m hm => hN₁ m hm u₁ u₂ hcw₁.inl_inv hcw₂.inl_inv (VrelK_mono (le_of_lt hm) hu))
-    · exact ⟨fun K => rfl, by intro v; simp⟩
-    · exact ⟨fun K => rfl, by intro v; simp⟩
+    · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+    · exact ⟨fun _ _ => rfl, by intro v; simp⟩
   · refine CrelK_head_step (c₁' := Comp.subst u₁ N₂₁) (c₂' := Comp.subst u₂ N₂₂) ?_ ?_
       (fun m hm => hN₂ m hm u₁ u₂ hcw₁.inr_inv hcw₂.inr_inv (VrelK_mono (le_of_lt hm) hu))
-    · exact ⟨fun K => rfl, by intro v; simp⟩
-    · exact ⟨fun K => rfl, by intro v; simp⟩
+    · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+    · exact ⟨fun _ _ => rfl, by intro v; simp⟩
 
 /-- ◊4.5b the `split` (product elim) compat core at `CrelK`. `split (pair a b) N ↦ N[a][shift b]` is a
 CIStep; the ▷-head-step needs the two-binder body related at every `m < n`. -/
@@ -1074,8 +1060,8 @@ theorem compatK_split {n : Nat} {A B : VTy Eff Mult} {C : CTy Eff Mult} {φ : Ef
     (c₂' := Comp.subst a₂ (Comp.subst (Val.shift b₂) N₂')) ?_ ?_
     (fun m hm => hN m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂
       (VrelK_mono (le_of_lt hm) ha) (VrelK_mono (le_of_lt hm) hb))
-  · exact ⟨fun K => rfl, by intro v; simp⟩
-  · exact ⟨fun K => rfl, by intro v; simp⟩
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
 
 
 /-! ### B.3′c ◊4.5b sub-block (f) — handler-frame `KrelS` intro + `compatK_handle*` cores
