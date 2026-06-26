@@ -140,6 +140,40 @@ tree gates green. So execute the code-moves **after** the CalcVM route-B lands (
 contained within the green subset). Doing them now would add unverifiable changes to red modules — the exact
 way a hidden break hides.
 
+### Module system + deep-module target (verified v4.30, 2026-06-26 spike)
+
+The toolchain (Lean v4.30) ships the **module system**, and a spike empirically gated what it buys us.
+This **revises the "many public peers" target above** — the real target is deep modules
+(directories with hidden internals), not a flat split.
+
+**What the spike verified (empirically gated, not from docs):**
+- The module system IS available and **HEADER-DRIVEN** — a `module` line at the top of a file; **no
+  lakefile change**. `module` / `public` / `public import` all parse.
+- A non-`public` def is **HIDDEN from importers** (cross-file encapsulation) — and even **CLASSIC
+  (non-module) importers respect it**. The boundary holds regardless of whether the importer opted in.
+- Module mode is **PRIVATE-BY-DEFAULT**: a plain `def` is module-local; `public` opts into the
+  interface. **Mathlib-interop works** — module files import and use Mathlib normally.
+
+**→ Incremental BOTTOM-UP migration is viable.** Module-ify a leaf, mark its internals non-`public`,
+and its (still-classic) importers automatically see only the public interface AND still compile.
+**No big-bang.** The v4.30 module system **dissolves the encapsulation-vs-incrementality tradeoff**
+that forced the earlier flat-peer target.
+
+**DEEP-MODULE TARGET (revised).** Not single large files, not many flat peers, but
+**DIRECTORIES-WITH-HIDDEN-INTERNALS** — ~12 public modules:
+
+```
+  Algebra · Syntax · Typing · Semantics · Safety · Model(=LR+Compat)
+  · CalcVM · Compile · Surface · Spec · Audit · Witness
+```
+
+Each module = a `module` **barrel** re-exporting only its `public` interface; the internals are plain
+files (non-`public`), hidden behind it.
+
+**SEQUENCING.** The restructure **TRAILS GREEN, module-by-module** — each module is restructured +
+module-ified **the moment inc-5/inc-6 greens it** (boundary moves in still-red modules stay
+unverifiable until then, per §6 "Timing" above). Module-ify **bottom-up** (leaves first).
+
 ## See also
 - ADR-0016 (architecture in force) · ADR-0054 (the cap representation) · ADR-0052 (CalcVM route-B, the red)
 - `CLAUDE.md` (the stratification principle, the invariants) · `tools/arch-check.sh` (the V fitness function)
