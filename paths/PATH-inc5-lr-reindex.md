@@ -113,3 +113,16 @@ its `RunRenameProbe` scratch probe. The DYNAMIC half (Config.run id-renaming inv
   preservation, the ⊥-row return-escape) + `handlesOp_of_hasConfigTy` (typing inversion).
 - THEN: integrate run_rename + run_plug from their scratch probes into LR/Compat · classify Bang.Model in
   arch-check · the ADR cluster (renaming-invariance + machine-shaped KrelS + VcapFree) · whole-LR green = inc-5 DONE.
+
+## ★ A2 DESIGN FORK RESOLVED (2026-06-26) — the sparse-stack counter, route (a)
+A2 found that global-fresh makes the machine reach SPARSE stacks (gensym ids, handlers pop leaving gaps), so
+form-(b)'s `CrelK` observing `(handlerCount K, K, c)` is a latent inconsistency: `handlerCount K` (a dense
+count) can collide with a live sparse id, exposed by the `crelK_ret` handleF pop (lands at `handlerCount K'+1`,
+IH observes `handlerCount K'`). RESOLUTION = **(a)**: thread a `StackBelow (handlerCount K) K` density +
+LR-local value-cap-scopedness invariant through `crelK_ret`/`crelK_fund`/`krelS_staticSplit_decomp` (CrelK/KrelS
+FROZEN; invariant = consumer-supplied hypothesis, STATEMENT_CHANGE_OK on the supporting lemmas). This is NOT a
+new design — it's **runplug's §4 canonical-observation made explicit** (the LR observes the dense canonical
+config; consumers build it via canonStack/reshape, dispatch-reinstall preserves density). GUARDS: if it forces
+a premise onto the FROZEN `lr_sound`/`lr_fundamental` → STOP-and-SHOW (shouldn't — density is internal). RESERVE
+= **(b)** [change CrelK/KrelS def to a fresh-id counter — re-does form b, OPERATOR-level] only if (a) walls. run_rename
+banked into LR §5.0a′ (`0b739db`, axiom-clean). A2 is a multi-session re-derivation.
