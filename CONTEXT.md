@@ -28,15 +28,18 @@
 > axiom-clean (`bocc-spike` `075f894`): premise + `LabelOccurs` + regression (`escapeB_not_typeable` — bug
 > untypeable for ANY EffSig). The standalone dissolution WALLS (a `vthunk` can carry-then-DROP a label-free-typed
 > cap → `NonEscape` is NOT a structural value predicate) → B-occ is the ENABLER for inc-5's diagonal (NonEscape
-> stays the reachability/Shape-B LR projection), NOT a free corollary. **inc-5 Units 1+2 GREEN**
-> (`285338a` — the `splitAtId` decomp + the KrelS layer 1067-1665; the MISS answer-type-determinism wall
-> DISSOLVED as designed). **Unit 3 (`crelK_fund`) WALLED at frozen lr_sound** — its 3 obligations (cap-resolution
-> =NonEscape · CapsBelow+counter-bridge · cap-binding subst) ARE the B-occ escape discipline; they propagate up
-> ONLY because the LR branch's HasCTy lacks B-occ's premise yet. **THE ENDGAME** = integrate B-occ phase 1
-> (bocc-spike `075f894`) into inc5-lr-reindex → retry Unit 3 (cap-resolution discharges via B-occ: perform-after-
-> pop contradictory in the crelK_fund induction). OPEN (build-confirmable): does Unit 3 close WITHOUT a frozen
-> lr_sound change (hypothesis: the B-occ-strengthened HasCTy carries it) or need a NonEscape premise on lr_sound
-> (operator STOP-and-SHOW)? Units 1+2 banked, won't need redoing. Right-answer-absolute
+> stays the reachability/Shape-B LR projection), NOT a free corollary. **B-occ INTEGRATED** into inc5-lr-reindex
+> (`4178ed9`, green except Compat — the diagonal `Bang.Model` STILL CLOSES under the premise). **★ KEY REFRAME
+> (inc5-endgame, build-grounded): the SOUNDNESS payoff (`type_safety`) goes through the DIAGONAL (`Bang.Model`),
+> NOT the binary LR.** The diagonal is axiom-CLEAN except 2 B-occ-shaped sorries: `handlesOp_of_hasConfigTy`
+> (Model:147 — needs `concat_*_interface` infra) + `wsCfg_step` pop-escape (Model:170 — the `¬LabelOccurs`
+> NON-PERFORMABILITY lemma: caps INERT past the handler, NOT syntactic absence per bocc-impl's carry-drop).
+> Closing both → diagonal/NonEscape/`type_safety` **sorryAx-clean** = THE soundness payoff. inc5-endgame closing
+> them now (handlesOp first). **DEFERRED — the binary LR** (`crelK_fund`/`lr_sound` contextual equivalence, for
+> the inc-6 compiler path): Units 1+2 decomp banked green (`285338a`); the `crelK_fund` resume reshape + the
+> obligation-2 CapsBelow/Canonical question is multi-session — first build-confirm whether `crelK_ret`'s guard is
+> over-strong (route 4) before any frozen change. cap-resolution is NOT the blocker (rides stuck-stuck vacuity;
+> B-occ doesn't reach that premise-free node). Right-answer-absolute
 > = System-C rank-2 (post-v1, needs polymorphism, contradicts ADR-0027); fallback = surface-enforced. B-occ pairs
 > with task #18 (untypeable raw vcap → drop VcapFree). Non-escape-INDEPENDENT inc-5 (LR re-key — guarded crelK_ret
 > `8c30f06`, LR green/1 sorry; the splitAtId `krelS_staticSplit_decomp` re-derivation = build-ready spec in the

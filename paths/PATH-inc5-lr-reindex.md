@@ -196,3 +196,20 @@ block re-instantiates at handleF::K sub-stacks); (3) B-occ/dissolution makes Can
 (the density-(a) hope, cast in doubt). Possible (4): re-derive crelK_ret WITHOUT the Canonical premise (the
 guarded form may be over-strong — handle the +1 shift locally via run_bump, not global density). inc5-endgame is
 determining the route by attempting it (build-confirmed), STOP-and-SHOW on route (1).
+
+### ★★★ REFRAME (inc5-endgame, build-grounded `4178ed9`) — soundness is the DIAGONAL, not the binary LR
+inc5-endgame integrated B-occ (`4178ed9`: `git checkout 075f894 -- Bang/{Syntax,Metatheory,BoccRegress}.lean` —
+green except Compat; **Bang.Model still closes**, the additive premise didn't break the diagonal) and verified:
+the SOUNDNESS payoff (`type_safety`) goes through the DIAGONAL (`Bang.Model`), SEPARATE from the binary LR
+(`crelK_fund`/`lr_sound` = contextual equivalence). cap-resolution is NOT the binary-LR blocker — it rides
+stuck-stuck vacuity (`not_convergesC_le_of_stuck`, LR:1799); B-occ isn't even present at the premise-free
+`crelK_fund_up` node. **So the entire SHARPER-VERDICT crelK_ret↔CrelK density wall is on the BINARY-LR path, now
+DEFERRED** (a separate inc-6-compiler-path deliverable; Units 1+2 decomp banked + load-bearing).
+**THE SOUNDNESS PATH = the diagonal's 2 sorries** (`handlesOp_of_hasConfigTy` Model:147 [needs `concat_*_interface`
+infra mirroring `concat_throws_typed`, returning the `hiface` premise discarded at Metatheory:1789] + `wsCfg_step`
+pop-escape Model:170), both B-occ-shaped + axiom-clean-adjacent (`#print axioms`: only `diagonal` carries sorryAx,
+from these 2). Closing them = diagonal/NonEscape/`type_safety` **sorryAx-clean**. wsCfg_step's lemma is
+NON-PERFORMABILITY (`¬LabelOccurs ℓ A ⟹` a type-A value can't PERFORM ℓ ⟹ cap inert past the handler), NOT
+syntactic vcap absence (FALSE — bocc-impl's carry-drop). When the binary LR is eventually resumed: FIRST
+build-confirm whether `crelK_ret`'s guard (Canonical+CapsBelow, added defensively at `8c30f06`) is over-strong
+(route 4) before any frozen change.
