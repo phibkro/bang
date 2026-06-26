@@ -24,9 +24,13 @@
 > CONSTRUCTION + may DISSOLVE NonEscape entirely (the false diagonal sorry → a corollary of preservation, net
 > LOC negative). **Operator ratified B-occ (build-confirm first); `bocc-spike` build-confirmed GO on all four
 > claims → ADR-0057 ACCEPTED `dfe8e3d`, 2026-06-26.** (only-channel — corrected to DISCARD-ON-POP, not int-cells;
-> discrimination built; dissolution sketchable via one liveness lemma; LR blast ~55 mostly-mechanical.) **NEXT =
-> the B-occ IMPLEMENTATION** (task #23, sequenced: kernel premise + `LabelOccurs` + ~55 green-file fixups FIRST,
-> the dissolution lemma, LR threading LAST — don't perturb the RED LR mid-port). Right-answer-absolute
+> discrimination built; dissolution sketchable via one liveness lemma; LR blast ~55 mostly-mechanical.) **B-occ PHASE 1 LANDED**
+> axiom-clean (`bocc-spike` `075f894`): premise + `LabelOccurs` + regression (`escapeB_not_typeable` — bug
+> untypeable for ANY EffSig). The standalone dissolution WALLS (a `vthunk` can carry-then-DROP a label-free-typed
+> cap → `NonEscape` is NOT a structural value predicate) → B-occ is the ENABLER for inc-5's diagonal (NonEscape
+> stays the reachability/Shape-B LR projection), NOT a free corollary. **NEXT = the inc-5 LR re-key** (the diagonal
+> closes THERE, with B-occ as the key premise making perform-after-pop contradictory) + B-occ phase 3 (thread the
+> premise through the ~5 Compat/LR handle arms, after inc-5 settles; task #23). Right-answer-absolute
 > = System-C rank-2 (post-v1, needs polymorphism, contradicts ADR-0027); fallback = surface-enforced. B-occ pairs
 > with task #18 (untypeable raw vcap → drop VcapFree). Non-escape-INDEPENDENT inc-5 (LR re-key — guarded crelK_ret
 > `8c30f06`, LR green/1 sorry; the splitAtId `krelS_staticSplit_decomp` re-derivation = build-ready spec in the

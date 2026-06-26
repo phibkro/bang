@@ -25,7 +25,12 @@
 
 Accepted (2026-06-26). Operator ratified B-occ ("build-confirm first") per the ADR-0056 ruling; the
 build-confirm (`bocc-spike`, the `BoccSpike` probe @ `39455a7`, axiom-clean ⊆ the gate set) returned
-**GO** on all four load-bearing claims — see *Build-confirm result* below. The witness `progB`
+**GO** on all four load-bearing claims — see *Build-confirm result* below. **Phase 1 LANDED axiom-clean**
+(`bocc-spike` @ `075f894`, 2026-06-26): the kernel premise + `LabelOccurs` (a `Prop`, no `Decidable` footprint)
++ regression lemmas (`escapeB_not_typeable` — the bug witness untypeable for ANY `EffSig`, purely structural;
+`safe_handle_typeable`). Fixups: Metatheory ~43 / Operational 0 / Compat 5 (Compat unverified pending the LR
+re-key). The standalone dissolution WALLS (Build-confirm #3) — B-occ *enables* inc-5's diagonal, doesn't replace
+it; phase 3 (LR threading) follows the inc-5 re-key. The witness `progB`
 (`DiagonalFalsifyProbe` / `IdentityCollisionProbe` / `CapEscapeWitness`) is the regression oracle:
 whatever is ratified must make `progB` untypeable or un-elaboratable, then the diagonal
 (`HasConfigTy ⊥ ∧ VcapFree → NonEscape`) closes.
@@ -217,10 +222,16 @@ All four pre-ratification open questions resolved build-grounded; **GO on B-occ*
    both `migrateWitness`/`migrateWitness1`. The sharp point: `migrateWitness1` constructs the SAME `U {1}`
    thunk as `progB` but is ACCEPTED — B-occ constrains only handle ANSWER types; within a live extent caps
    flow freely. Exactly the right discriminator.
-3. **NonEscape-dissolution — PLAUSIBLE/sketchable (not free).** Needs one preservation-style liveness lemma
-   ("every `vcap` in a well-typed config names a live on-stack handler", preserved under step; key case =
-   handler-pop, where B-occ guarantees no escaping value named it). Converts inc-5's false diagonal sorry
-   into a corollary. Net inc-5 LOC plausibly ≤ 0.
+3. **NonEscape-dissolution — ATTEMPTED in phase 1, WALLS standalone (`075f894`, bocc-impl).** The natural
+   bridge "B-occ ⟹ label-free answer type ⟹ no escaping cap" is FALSE at the VALUE level: a `vthunk` can
+   carry-then-DROP a free cap of a label-free type — `vthunk (letC (ret (vcap n ℓ)) (ret vunit)) : U φ (F _ unit)`
+   is label-free yet names `vcap n ℓ` — so `NonEscape` CANNOT be a structural value predicate. B-occ correctly
+   kills the HARMFUL case (PERFORMING an escaped cap needs `labelEff ℓ ≤ φ` ⟹ `LabelOccurs`) but not the
+   benign carry-drop. So B-occ is the necessary **ENABLER** (perform-after-pop becomes contradictory) — the
+   diagonal still closes, but via **inc-5's typed-LR fundamental theorem** (`NonEscape` = the unary reachability
+   projection over `StepStar`, Shape B, exactly ADR-0056's own consequence), NOT as a free standalone corollary.
+   inc-5's LR is still required; B-occ *unblocks* its diagonal rather than replacing it. The provable half
+   (`perform_vcap_label_in_effect`) is banked.
 4. **LR blast radius — MANAGEABLE, sequence it.** Adding the premise as a constructor field breaks ~55
    positional matches (Metatheory ~43, Operational ~6, Compat arms — almost all mechanical one-binder `_`
    insertions in currently-GREEN files); the *consumed* threading is small (~2 LR handle-compat arms + a
