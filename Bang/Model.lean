@@ -2506,14 +2506,21 @@ theorem Sgrade_nil (γ_v : GradeVec Mult) (k : Nat) :
 vanishes (`slotGrade (zeros n) k = 0`), leaving `zeros (n-1)` (lengths align via `hlen`). -/
 theorem Sgrade_zeros (γ_v : GradeVec Mult) (k n : Nat) (hk : k < n) (hlen : γ_v.length = n - 1) :
     Sgrade γ_v k (GradeVec.zeros n) = GradeVec.zeros (n - 1) := by
-  -- FLAGGED to lead (PHASE A helper): TRUE — all three sub-facts verify STANDALONE over `Nat`
-  --   · slotGrade (zeros n) k = 0       (`getElem?_replicate` + `if_pos hk` + `Option.getD_some`)
-  --   · (zeros n).eraseIdx k = zeros (n-1)  (`eraseIdx_eq_take_drop_succ` + take/drop_replicate +
-  --       `replicate_append_replicate`, count `min k n + (n-(k+1)) = n-1` by omega)
-  --   · smul 0 γ_v = zeros (n-1)         (`zero_mul` + `List.map_const'`, len via `hlen`)
-  -- but assembling them IN CONTEXT (abstract `[CommSemiring Mult]`) wedges a `CommSemiring ℕ`
-  -- metavar (a List-lemma implicit defaulting to `ℕ`). A 10-min elaboration-quirk fix, not math.
-  sorry
+  have hslot : slotGrade (GradeVec.zeros n) k = (0 : Mult) := by
+    unfold slotGrade GradeVec.zeros
+    rw [List.getElem?_replicate, if_pos hk, Option.getD_some]
+  have herase : (GradeVec.zeros n).eraseIdx k = (GradeVec.zeros (n - 1) : GradeVec Mult) := by
+    unfold GradeVec.zeros
+    rw [List.eraseIdx_eq_take_drop_succ, List.take_replicate, List.drop_replicate,
+      List.replicate_append_replicate]
+    congr 1
+    omega
+  have hsmul : GradeVec.smul (0 : Mult) γ_v = GradeVec.zeros (n - 1) := by
+    unfold GradeVec.smul GradeVec.zeros
+    rw [← hlen]
+    simp only [zero_mul, List.map_const']
+  simp only [Sgrade, hslot, herase, hsmul]
+  simp [GradeVec.add, GradeVec.zeros]
 
 /-- `Sgrade` length depends on `γ` only through its length, so equal-length grades give equal
 `Sgrade` lengths — the `hlen` reconstructed at each binary former. -/
