@@ -2781,16 +2781,111 @@ theorem lwscg_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label
   | handleTransaction _ _ _ _ _ _ _ _ hM _ _ => sorry
 end
 
-/-- **lwskg_pop_fresh (Phase 2 — the POP tail arm, via stratified freshness).** Popping `handleF g'` from
-the tail stack: every STORED cap in `K'` has id `< g'` (from `CapsBelow g' K'`, inverted off
-`StratFresh (handleF g' hd :: K')`), hence `≠ g'`, so each re-homes past the popped frame
-(`resolvesLabel_pop`). The `LWSKg` analogue of `lwsvp_pop_restack` — but the `n ≠ g'` comes from
-FRESHNESS (the tail predates `g'`), not B-occ. -/
+/-! ### §3.6 — GRADED pop re-homing (the POP tail arm). The graded mirror of `lwsvp_pop_restack`: a
+value/comp whose caps are all `≠ g'` re-homes its resolution context past the popped `handleF g'` frame
+(`resolvesLabel_pop` at the `vcap_live` leaf; dormant + non-`vcap` leaves are structural). The `≠ g'`
+condition is supplied per-frame by `capsK K' < g'` — the FLAT stored-cap bound (`CapsBelow` omits the
+`stateF`-stored value's caps, so `capsK` is the right hypothesis, mirroring the `freshCfg_step` fix). -/
+mutual
+theorem lwsvg_pop_fresh {g' : Nat} {hd : Handler} {K' : EvalCtx} {γ : GradeVec Mult} {b : Bool}
+    {v : Val} (hv : LWSVg (Frame.handleF g' hd :: K') γ b v)
+    (hng : ∀ p ∈ capsV v, p.1 ≠ g') : LWSVg K' γ b v := by
+  cases hv with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar h => exact .vvar h
+  | @vcap_live _ n ℓ hr => exact .vcap_live (resolvesLabel_pop (hng (n, ℓ) (by simp [capsV])) hr)
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk h => exact .vthunk (lwscg_pop_fresh h (fun p hp => hng p (by simpa only [capsV] using hp)))
+  | inl h => exact .inl (lwsvg_pop_fresh h (fun p hp => hng p (by simpa only [capsV] using hp)))
+  | inr h => exact .inr (lwsvg_pop_fresh h (fun p hp => hng p (by simpa only [capsV] using hp)))
+  | pair hγ hlen h1 h2 =>
+      exact .pair hγ hlen
+        (lwsvg_pop_fresh h1 (fun p hp => hng p (by simp only [capsV]; exact List.mem_append_left _ hp)))
+        (lwsvg_pop_fresh h2 (fun p hp => hng p (by simp only [capsV]; exact List.mem_append_right _ hp)))
+  | fold h => exact .fold (lwsvg_pop_fresh h (fun p hp => hng p (by simpa only [capsV] using hp)))
+theorem lwscg_pop_fresh {g' : Nat} {hd : Handler} {K' : EvalCtx} {γ : GradeVec Mult} {b : Bool}
+    {c : Comp} (hc : LWSCg (Frame.handleF g' hd :: K') γ b c)
+    (hng : ∀ p ∈ capsC c, p.1 ≠ g') : LWSCg K' γ b c := by
+  cases hc with
+  | ret hγ h => exact .ret hγ (lwsvg_pop_fresh h (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | letC hγ hlen h1 h2 =>
+      exact .letC hγ hlen
+        (lwscg_pop_fresh h1 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+        (lwscg_pop_fresh h2 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | force h => exact .force (lwsvg_pop_fresh h (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | lam h => exact .lam (lwscg_pop_fresh h (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | app hγ hlen h1 h2 =>
+      exact .app hγ hlen
+        (lwscg_pop_fresh h1 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+        (lwsvg_pop_fresh h2 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | case hγ hlen h1 h2 h3 =>
+      exact .case hγ hlen
+        (lwsvg_pop_fresh h1 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ (List.mem_append_left _ hp))))
+        (lwscg_pop_fresh h2 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ (List.mem_append_right _ hp))))
+        (lwscg_pop_fresh h3 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | split hγ hlen h1 h2 =>
+      exact .split hγ hlen
+        (lwsvg_pop_fresh h1 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+        (lwscg_pop_fresh h2 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | unfold h => exact .unfold (lwsvg_pop_fresh h (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | perform hγ hlen h1 h2 =>
+      exact .perform hγ hlen
+        (lwsvg_pop_fresh h1 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+        (lwsvg_pop_fresh h2 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | handleThrows h =>
+      exact .handleThrows (lwscg_pop_fresh h (fun p hp => hng p (by simpa only [capsC, capsH, List.nil_append] using hp)))
+  | handleState hs h =>
+      exact .handleState
+        (lwsvg_pop_fresh hs (fun p hp => hng p (by simp only [capsC, capsH]; exact List.mem_append_left _ hp)))
+        (lwscg_pop_fresh h (fun p hp => hng p (by simp only [capsC, capsH]; exact List.mem_append_right _ hp)))
+  | handleTransaction h =>
+      exact .handleTransaction (lwscg_pop_fresh h (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+end
+
+/-- Re-home an `LWSKg`'s resolution context past a popped `handleF g'` frame: every stored cap on the
+tail `Sg` is `< g'` (`capsK Sg`), so `≠ g'`, so each frame's stored value re-homes (`lws*g_pop_fresh`). -/
+theorem lwskg_rehome {g' : Nat} {hd : Handler} {K' : EvalCtx} {γ : GradeVec Mult} {b : Bool} :
+    ∀ {Sg : EvalCtx}, LWSKg (Frame.handleF g' hd :: K') Sg γ b →
+    (∀ p ∈ capsK Sg, p.1 < g') → LWSKg K' Sg γ b
+  | [], h, _ => by cases h; exact .nil
+  | (Frame.letF N :: Sg), h, hck => by
+      cases h with
+      | letF hN hK =>
+        exact .letF (lwscg_pop_fresh hN (fun p hp => by
+            have := hck p (by simp only [capsK]; exact List.mem_append_left _ hp); omega))
+          (lwskg_rehome hK (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
+  | (Frame.appF w :: Sg), h, hck => by
+      cases h with
+      | appF hv hK =>
+        exact .appF (lwsvg_pop_fresh hv (fun p hp => by
+            have := hck p (by simp only [capsK]; exact List.mem_append_left _ hp); omega))
+          (lwskg_rehome hK (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
+  | (Frame.handleF n hh :: Sg), h, hck => by
+      cases h with
+      | handleF hK =>
+        exact .handleF (lwskg_rehome hK (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
+      | stateF hs hK =>
+        exact .stateF (lwsvg_pop_fresh hs (fun p hp => by
+            have := hck p (by simp only [capsK, capsH]; exact List.mem_append_left _ hp); omega))
+          (lwskg_rehome hK (fun p hp => hck p (by simp only [capsK, capsH]; exact List.mem_append_right _ hp)))
+      | transactionF hK =>
+        exact .transactionF (lwskg_rehome hK (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
+
+/-- **lwskg_pop_fresh (Phase 2 — the POP tail arm, via FLAT stored-cap freshness).** Popping `handleF g'`:
+every STORED cap on the tail `K'` has id `< g'` (`capsK K' < g'`, the `FreshCfg` conjunct), hence `≠ g'`,
+so each re-homes past the popped frame (`resolvesLabel_pop`, via `lwskg_rehome`). The `LWSKg` analogue of
+`lwsvp_pop_restack` — the `n ≠ g'` comes from FRESHNESS (the tail predates `g'`), not B-occ. -/
 theorem lwskg_pop_fresh {g' : Nat} {hd : Handler} {K' : EvalCtx} {γ : GradeVec Mult} {b : Bool}
-    (hcb : CapsBelow g' K')
+    (hck : ∀ p ∈ capsK K', p.1 < g')
     (h : LWSKg (Frame.handleF g' hd :: K') (Frame.handleF g' hd :: K') γ b) :
     LWSKg K' K' γ b := by
-  sorry
+  have hK : LWSKg (Frame.handleF g' hd :: K') K' γ b := by
+    cases h with
+    | handleF hK => exact hK
+    | stateF _ hK => exact hK
+    | transactionF hK => exact hK
+  exact lwskg_rehome hK hck
 
 /-- **GRADED liveness preservation — the NON-perform arms (Phase 2).** Given the pre-step graded invariant
 + typing + freshness, the post-step focus/stack stay graded-well-scoped. Discharged in Phase 2 by:
