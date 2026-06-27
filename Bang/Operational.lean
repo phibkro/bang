@@ -232,8 +232,9 @@ DISPATCH  ⟨K, up ℓ op v⟩         ↦ scan K for the nearest handling frame
             no handler in K:     ↦ stuck
 ```
 
-`state` dispatch (resume, threading the stored state) is deferred (Q12/Q6) — it KEEPS `Kᵢ` instead of
-discarding it; the search is identical. -/
+`dispatchOn` (below) implements both resumptive kinds — `state` (get/put, ADR-0025) and `transaction`
+(newTVar/read/write, ADR-0030): each KEEPS `Kᵢ` and reinstalls the handler frame; only `throws`
+discards `Kᵢ`. The search is identical across kinds. -/
 
 /-- The label a handler discharges (its first field). `handlesOp h ℓ op = true → h.label = ℓ`. -/
 def Handler.label : Handler → Label

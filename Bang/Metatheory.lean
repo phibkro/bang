@@ -1,26 +1,11 @@
 /-
-  Bang/Metatheory.lean — syntactic metatheory (RESET for de Bruijn — ADR-0020).
+  Bang/Metatheory.lean — syntactic metatheory over the de Bruijn graded CBPV (ADR-0020).
   ──────────────────────────────────────────────────────────────────────────────
-  The NAMED metatheory that used to live here (weakening, `grade_support`, the
-  Finsupp grade-arithmetic lemmas, `subst_gen`, `subst_value_proof`) is DEAD
-  under the de Bruijn representation: every lemma was named-encoding-specific
-  (Finsupp `single`/`erase`, `(x,A) ∈ Γ` membership, the five binder
-  side-conditions). It is preserved in git history (pre-ADR-0020).
-
-  This file is intentionally a clean stub. A fresh proof-engineer pass rebuilds
-  the metatheory directly on the de Bruijn base, porting Torczon's
-  `resource/CBPV/renaming.v` + `substitution`:
-
-    - `shiftFrom`/`substFrom` lemmas (Operational.lean) — the shift/subst
-      interaction laws (autosubst's `compRenRen`/`compSubstSubst` analogues).
-    - graded weakening = a *renaming* lemma (insert a 0-graded slot).
-    - `subst_value` (Spec.lean) — the side-condition-free graded substitution
-      lemma, the ADR-0020 payoff. Its statement is now honest; the proof is the
-      next target.
-
-  The grade-arithmetic *ideas* (read the bound multiplicity off the cons head,
-  thread `+`/`•` through the rules) carry over; the lemmas do not. Build it
-  fresh on `GradeVec.add`/`GradeVec.smul`/`GradeVec.basis` (List, positional).
+  The pre-ADR-0020 NAMED metatheory (Finsupp `single`/`erase`, `(x,A) ∈ Γ` membership,
+  binder side-conditions) is dead and lives in git history; everything here is rebuilt
+  on positional `GradeVec.add`/`smul`/`basis` (List), porting Torczon's renaming.v +
+  substitution. Layout: A grade-arithmetic · B length invariant · C weakening/shift ·
+  D substitution · E the STD block (preservation/progress/type_safety) · F abstraction-safety.
 -/
 
 import Bang.Core
@@ -243,7 +228,7 @@ truncation never bites — `γ + γ_v` is always full-length because both summan
 match `Γ.length`. Proved by mutual induction; the grade-arithmetic length simp
 lemmas above discharge each case. -/
 
-/-- Mutual length invariant. Rewritten to `induction … using ….rec` with NAMED
+/-- Mutual length invariant. Uses `induction … using ….rec` with NAMED
 cases (ADR-0029 added ADT constructors; positional `.rec` arms were brittle). Each
 arm is a mechanical grade-length fact. -/
 theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
@@ -2041,8 +2026,8 @@ theorem preservation_proof
     ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := by
   -- ADR-0054: `HasConfig = HasConfigTy ∧ NonEscape`. The TYPING core (`HasConfigTy`) is proven per-case
   -- below. `NonEscape` of the reduct (`hnecfg'`) is preserved BY CONSTRUCTION (`preservation_returnEscape_TODO`,
-  -- proven in Operational). The ONE remaining obligation is the DISPATCH (`perform`) reduct re-typing —
-  -- the single documented sorry, named below (STEP 5: splitAtId_decomp + the commented E.1c re-typing).
+  -- Operational.lean). The DISPATCH (`perform`) reduct re-typing is discharged below via
+  -- `splitAtId_decomp` + the E.1c concat re-typing lemmas.
   rintro ⟨⟨e, C, hfocus, hstack⟩, hne⟩ hstep
   have hnecfg' : NonEscape cfg' := preservation_returnEscape_TODO hne hstep
   obtain ⟨g, K, M⟩ := cfg
