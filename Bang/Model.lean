@@ -3461,7 +3461,8 @@ def VcarrierSubstMotive (K : EvalCtx) {γ₀ : GradeVec Mult} {Γ' : TyCtx Eff M
     {A₀ : VTy Eff Mult} (hw : HasVTy γ₀ Γ' w A₀) (_ : LiveCapsResolveV K hw) : Prop :=
   ∀ (Δ Γ : TyCtx Eff Mult) (A : VTy Eff Mult) (γ_v : GradeVec Mult) (v : Val)
     (hv : HasVTy γ_v (Δ ++ Γ) v A), ZeroSumFree Mult → (∀ j, Val.shiftFrom j v = v) →
-    LiveCapsResolveV K hv → Γ' = Δ ++ A :: Γ → (γ₀.eraseIdx Δ.length).length ≤ γ_v.length →
+    Γ' = Δ ++ A :: Γ → (γ₀.eraseIdx Δ.length).length ≤ γ_v.length →
+    (slotGrade γ₀ Δ.length ≠ 0 → LiveCapsResolveV K hv) →
     ∃ d' : HasVTy (Sgrade γ_v Δ.length γ₀) (Δ ++ Γ) (Val.substFrom Δ.length v w) A₀,
       LiveCapsResolveV K d'
 
@@ -3491,9 +3492,9 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
   refine LiveCapsResolveV.rec (motive_1 := VcarrierSubstMotive K) (motive_2 := CcarrierSubstMotive K)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState ?handleTransaction
-    hwres Δ Γ A γ_v v hv hzsf hcl hvres rfl hcov
+    hwres Δ Γ A γ_v v hv hzsf hcl rfl hcov (fun _ => hvres)
   case vunit =>
-    intro Γ_w Δ' Γ' A' γ_v' v' hv' _ _ _ heq hcov'
+    intro Γ_w Δ' Γ' A' γ_v' v' hv' _ _ heq hcov' _
     subst heq
     have hk : Δ'.length < (Δ' ++ A' :: Γ').length := by
       simp only [List.length_append, List.length_cons]; omega
@@ -3504,7 +3505,7 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     rw [Val.substFrom, Sgrade_zeros γ_v' Δ'.length _ hk hlen, hcnt]
     exact ⟨HasVTy.vunit, .vunit⟩
   case vint =>
-    intro Γ_w n Δ' Γ' A' γ_v' v' hv' _ _ _ heq hcov'
+    intro Γ_w n Δ' Γ' A' γ_v' v' hv' _ _ heq hcov' _
     subst heq
     have hk : Δ'.length < (Δ' ++ A' :: Γ').length := by
       simp only [List.length_append, List.length_cons]; omega
@@ -3515,7 +3516,7 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     rw [Val.substFrom, Sgrade_zeros γ_v' Δ'.length _ hk hlen, hcnt]
     exact ⟨HasVTy.vint, .vint⟩
   case vcap =>
-    intro Γ_w n ℓ hr Δ' Γ' A' γ_v' v' hv' _ _ _ heq hcov'
+    intro Γ_w n ℓ hr Δ' Γ' A' γ_v' v' hv' _ _ heq hcov' _
     subst heq
     have hk : Δ'.length < (Δ' ++ A' :: Γ').length := by
       simp only [List.length_append, List.length_cons]; omega
@@ -3526,40 +3527,49 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     rw [Val.substFrom, Sgrade_zeros γ_v' Δ'.length _ hk hlen, hcnt]
     exact ⟨HasVTy.vcap, .vcap hr⟩
   case inl =>
-    intro γ Γ_i v_i A_i B_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
-    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    intro γ Γ_i v_i A_i B_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
     rw [Val.substFrom]
     exact ⟨HasVTy.inl dv', .inl hdv'⟩
   case inr =>
-    intro γ Γ_i v_i A_i B_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
-    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    intro γ Γ_i v_i A_i B_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
     rw [Val.substFrom]
     exact ⟨HasVTy.inr dv', .inr hdv'⟩
   case fold =>
-    intro γ Γ_i v_i A_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
-    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    intro γ Γ_i v_i A_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
     rw [Val.substFrom]
     exact ⟨HasVTy.fold dv', .fold hdv'⟩
   case vthunk =>
-    -- V→C crossing: the IH is the COMP motive (gate-shaped); supply gate = `fun _ => hvres'`.
-    intro γ Γ_i M φ B dM h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
-    obtain ⟨dM', hdM'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' (fun _ => hvres')
+    -- V→C crossing: the IH is the COMP motive (same grade γ₀), pass the gate straight through.
+    intro γ Γ_i M φ B dM h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    obtain ⟨dM', hdM'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
     rw [Val.substFrom]
     exact ⟨HasVTy.vthunk dM', .vthunk hdM'⟩
   case pair =>
     intro γ γv γw Γ_i v_i w_i A_i B_i dv dw hγ h1 h2 ih1 ih2
-      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
     subst hγ
     have hlen : γv.length = γw.length := by rw [dv.length_eq, dw.length_eq]
-    obtain ⟨dv', hdv'⟩ := ih1 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq (cov_add_left hlen hcov')
-    obtain ⟨dw', hdw'⟩ := ih2 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq (cov_add_right hlen hcov')
+    -- build each sub-gate from the parent: slotGrade γv ≠ 0 ⟹ slotGrade (γv+γw) ≠ 0 (slotGrade_add + hzsf).
+    have hlcov_v : Δ'.length < γv.length := by
+      rw [dv.length_eq, heq, List.length_append, List.length_cons]; omega
+    have hlcov_w : Δ'.length < γw.length := by
+      rw [dw.length_eq, heq, List.length_append, List.length_cons]; omega
+    obtain ⟨dv', hdv'⟩ := ih1 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq (cov_add_left hlen hcov')
+      (fun hsv => hgate' (show slotGrade (GradeVec.add γv γw) Δ'.length ≠ 0 by
+        rw [slotGrade_add _ _ _ hlcov_v hlcov_w]; intro hsum; exact hsv (hzsf' _ _ hsum).1))
+    obtain ⟨dw', hdw'⟩ := ih2 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq (cov_add_right hlen hcov')
+      (fun hsw => hgate' (show slotGrade (GradeVec.add γv γw) Δ'.length ≠ 0 by
+        rw [slotGrade_add _ _ _ hlcov_v hlcov_w]; intro hsum; exact hsw (hzsf' _ _ hsum).2))
     rw [Val.substFrom]
     exact ⟨HasVTy.pair dv' dw' (Sgrade_add_free γ_v' Δ'.length hlen),
       .pair (hγ := Sgrade_add_free γ_v' Δ'.length hlen) hdv' hdw'⟩
   case vvar =>
     -- the substituted-slot split (mirrors `subst_vvar_case`): i<k survives (vvar i, `.vvar`),
     -- i=k is the slot (term = v, grade γ_v, carrier = hvres'), i>k renumbers down (vvar (i-1), `.vvar`).
-    intro Γ_w i A₀ hmem Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    intro Γ_w i A₀ hmem Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
     subst heq
     have hkn : Δ'.length < (Δ' ++ A' :: Γ').length := by
       simp only [List.length_append, List.length_cons]; omega
@@ -3612,7 +3622,8 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
         rw [hslot, herase, h1smul, show (Δ' ++ Γ').length = γ_v'.length from hlen_v.symm]
         exact GradeVec.zeros_add γ_v'
       rw [hSg]
-      exact ⟨hv', hvres'⟩
+      -- the slot's grade is `basis k`, slotGrade = 1 ≠ 0, so the gate fires and hands back v's carrier.
+      exact ⟨hv', hgate' (by rw [hslot]; exact one_ne_zero)⟩
     · rw [if_neg (by omega), if_pos hgt]
       have hslot : slotGrade (GradeVec.basis (Δ' ++ A' :: Γ').length i : GradeVec Mult) Δ'.length = 0 := by
         unfold slotGrade; rw [GradeVec.basis_get, if_pos hkn, if_neg (by omega : Δ'.length ≠ i)]; rfl
