@@ -1312,14 +1312,239 @@ Strengthens (subsumes) the old `WellCounted` (`StackBelow`, ids-only). -/
 def FreshCfg : Config → Prop
   | (g, K, c) => CapsBelow g K ∧ (∀ p ∈ capsC c, p.1 < g) ∧ StratFresh K
 
+/-! ### §3.0a — caps are SHIFT-invariant and SUBST-bounded (the focus-cap-bound mechanics for §3.0). -/
+
+mutual
+/-- `shiftFrom` moves only `vvar` indices (cap-free), so it preserves the cap multiset. -/
+theorem capsV_shiftFrom (j : Nat) (u : Val) : capsV (Val.shiftFrom j u) = capsV u := by
+  match u with
+  | .vunit | .vint _ | .vcap _ _ => rfl
+  | .vvar i => by_cases h : i < j <;> simp [Val.shiftFrom, capsV, h]
+  | .vthunk c => simp only [Val.shiftFrom, capsV]; exact capsC_shiftFrom j c
+  | .inl w => simp only [Val.shiftFrom, capsV]; exact capsV_shiftFrom j w
+  | .inr w => simp only [Val.shiftFrom, capsV]; exact capsV_shiftFrom j w
+  | .pair a b => simp only [Val.shiftFrom, capsV]; rw [capsV_shiftFrom j a, capsV_shiftFrom j b]
+  | .fold w => simp only [Val.shiftFrom, capsV]; exact capsV_shiftFrom j w
+theorem capsC_shiftFrom (j : Nat) (c : Comp) : capsC (Comp.shiftFrom j c) = capsC c := by
+  match c with
+  | .ret v => simp only [Comp.shiftFrom, capsC]; exact capsV_shiftFrom j v
+  | .letC M N => simp only [Comp.shiftFrom, capsC]; rw [capsC_shiftFrom j M, capsC_shiftFrom (j+1) N]
+  | .force v => simp only [Comp.shiftFrom, capsC]; exact capsV_shiftFrom j v
+  | .lam M => simp only [Comp.shiftFrom, capsC]; exact capsC_shiftFrom (j+1) M
+  | .app M w => simp only [Comp.shiftFrom, capsC]; rw [capsC_shiftFrom j M, capsV_shiftFrom j w]
+  | .perform cp _ w =>
+      simp only [Comp.shiftFrom, capsC]; rw [capsV_shiftFrom j cp, capsV_shiftFrom j w]
+  | .handle h M =>
+      simp only [Comp.shiftFrom, capsC]; rw [capsH_shiftFrom j h, capsC_shiftFrom (j+1) M]
+  | .case w N₁ N₂ =>
+      simp only [Comp.shiftFrom, capsC]
+      rw [capsV_shiftFrom j w, capsC_shiftFrom (j+1) N₁, capsC_shiftFrom (j+1) N₂]
+  | .split w N => simp only [Comp.shiftFrom, capsC]; rw [capsV_shiftFrom j w, capsC_shiftFrom (j+2) N]
+  | .unfold w => simp only [Comp.shiftFrom, capsC]; exact capsV_shiftFrom j w
+  | .oom | .wrong _ => rfl
+theorem capsH_shiftFrom (j : Nat) (h : Handler) : capsH (Handler.shiftFrom j h) = capsH h := by
+  match h with
+  | .state _ s => simp only [Handler.shiftFrom, capsH]; exact capsV_shiftFrom j s
+  | .throws _ => rfl
+  | .transaction _ _ => rfl
+end
+
+mutual
+/-- `substFrom k v` only injects `v` at the `vvar k` leaves, so every cap of the result was already a
+cap of `u` or a cap of `v` (the binder cases use `shift v`, cap-equal to `v` by `capsV_shiftFrom`). -/
+theorem capsV_substFrom (k : Nat) (v u : Val) :
+    ∀ p ∈ capsV (Val.substFrom k v u), p ∈ capsV u ∨ p ∈ capsV v := by
+  match u with
+  | .vunit | .vint _ => intro p hp; simp [Val.substFrom, capsV] at hp
+  | .vcap n ℓ => intro p hp; exact Or.inl hp
+  | .vvar i =>
+      intro p hp
+      simp only [Val.substFrom] at hp
+      split at hp
+      · exact Or.inr hp
+      · split at hp <;> simp [capsV] at hp
+  | .vthunk c => intro p hp; simp only [Val.substFrom, capsV] at hp ⊢; exact capsC_substFrom k v c p hp
+  | .inl w => intro p hp; simp only [Val.substFrom, capsV] at hp ⊢; exact capsV_substFrom k v w p hp
+  | .inr w => intro p hp; simp only [Val.substFrom, capsV] at hp ⊢; exact capsV_substFrom k v w p hp
+  | .pair a b =>
+      intro p hp; simp only [Val.substFrom, capsV, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · rcases capsV_substFrom k v a p h with h' | h' <;> tauto
+      · rcases capsV_substFrom k v b p h with h' | h' <;> tauto
+  | .fold w => intro p hp; simp only [Val.substFrom, capsV] at hp ⊢; exact capsV_substFrom k v w p hp
+theorem capsC_substFrom (k : Nat) (v : Val) (c : Comp) :
+    ∀ p ∈ capsC (Comp.substFrom k v c), p ∈ capsC c ∨ p ∈ capsV v := by
+  match c with
+  | .ret w => intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢; exact capsV_substFrom k v w p hp
+  | .force w => intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢; exact capsV_substFrom k v w p hp
+  | .unfold w => intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢; exact capsV_substFrom k v w p hp
+  | .lam M =>
+      intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢
+      rcases capsC_substFrom (k+1) (Val.shift v) M p hp with h | h
+      · exact Or.inl h
+      · exact Or.inr (by rwa [capsV_shiftFrom] at h)
+  | .letC M N =>
+      intro p hp; simp only [Comp.substFrom, capsC, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · rcases capsC_substFrom k v M p h with h' | h' <;> tauto
+      · rcases capsC_substFrom (k+1) (Val.shift v) N p h with h' | h'
+        · tauto
+        · exact Or.inr (by rwa [capsV_shiftFrom] at h')
+  | .app M w =>
+      intro p hp; simp only [Comp.substFrom, capsC, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · rcases capsC_substFrom k v M p h with h' | h' <;> tauto
+      · rcases capsV_substFrom k v w p h with h' | h' <;> tauto
+  | .perform cp _ w =>
+      intro p hp; simp only [Comp.substFrom, capsC, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · rcases capsV_substFrom k v cp p h with h' | h' <;> tauto
+      · rcases capsV_substFrom k v w p h with h' | h' <;> tauto
+  | .handle hd M =>
+      intro p hp; simp only [Comp.substFrom, capsC, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · rcases capsH_substFrom k v hd p h with h' | h' <;> tauto
+      · rcases capsC_substFrom (k+1) (Val.shift v) M p h with h' | h'
+        · tauto
+        · exact Or.inr (by rwa [capsV_shiftFrom] at h')
+  | .case w N₁ N₂ =>
+      intro p hp; simp only [Comp.substFrom, capsC, List.mem_append] at hp ⊢
+      rcases hp with (h | h) | h
+      · rcases capsV_substFrom k v w p h with h' | h' <;> tauto
+      · rcases capsC_substFrom (k+1) (Val.shift v) N₁ p h with h' | h'
+        · tauto
+        · exact Or.inr (by rwa [capsV_shiftFrom] at h')
+      · rcases capsC_substFrom (k+1) (Val.shift v) N₂ p h with h' | h'
+        · tauto
+        · exact Or.inr (by rwa [capsV_shiftFrom] at h')
+  | .split w N =>
+      intro p hp; simp only [Comp.substFrom, capsC, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · rcases capsV_substFrom k v w p h with h' | h' <;> tauto
+      · rcases capsC_substFrom (k+2) (Val.shift (Val.shift v)) N p h with h' | h'
+        · tauto
+        · exact Or.inr (by rwa [capsV_shiftFrom, capsV_shiftFrom] at h')
+  | .oom | .wrong _ => intro p hp; simp [Comp.substFrom, capsC] at hp
+theorem capsH_substFrom (k : Nat) (v : Val) (h : Handler) :
+    ∀ p ∈ capsH (Handler.substFrom k v h), p ∈ capsH h ∨ p ∈ capsV v := by
+  match h with
+  | .state _ s => intro p hp; simp only [Handler.substFrom, capsH] at hp ⊢; exact capsV_substFrom k v s p hp
+  | .throws _ => intro p hp; simp [Handler.substFrom, capsH] at hp
+  | .transaction _ _ => intro p hp; exact Or.inl hp
+end
+
 /-- **FRESHNESS PRESERVATION (Phase 2 — the freshness arm).** `FreshCfg` rides `Source.step`: MINT pushes
 `handleF g`, advances the counter to `g+1`, injects `vcap g` (the new focus cap `g < g+1`) and re-bounds
 the old frames by monotonicity; POP inverts the `StratFresh` head; PUSH/REDUCE re-home sub-stacks; the
 focus-cap bound rides because every reduct's caps are a subset of the redex's. Stack-structural ADR-0055
 preservation — mechanical but REAL (mint extends, pop inverts); SORRIED for Phase 2, NOT hand-waved. -/
-theorem freshCfg_step (cfg cfg' : Config) (h : FreshCfg cfg)
+theorem freshCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
+    (hty : HasConfigTy cfg ⊥ Co) (h : FreshCfg cfg)
     (hstep : Source.step cfg = some cfg') : FreshCfg cfg' := by
-  sorry
+  obtain ⟨g, K, c⟩ := cfg
+  obtain ⟨hcb, hfc, hsf⟩ := h
+  cases c with
+  | letC M N =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+    refine ⟨⟨fun p hp => hfc p (by simp only [capsC]; exact List.mem_append_right _ hp), hcb⟩,
+      fun p hp => hfc p (by simp only [capsC]; exact List.mem_append_left _ hp), hsf⟩
+  | app M w =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+    refine ⟨⟨fun p hp => hfc p (by simp only [capsC]; exact List.mem_append_right _ hp), hcb⟩,
+      fun p hp => hfc p (by simp only [capsC]; exact List.mem_append_left _ hp), hsf⟩
+  | handle hh M =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+    refine ⟨⟨Nat.lt_succ_self g, CapsBelow_mono (Nat.le_succ g) K hcb⟩, ?_,
+      ⟨hcb, hsf⟩⟩
+    intro p hp
+    rcases capsC_substFrom 0 (Val.vcap g hh.label) M p hp with h' | h'
+    · have := hfc p (by simp only [capsC]; exact List.mem_append_right _ h'); omega
+    · simp only [capsV, List.mem_singleton] at h'; subst h'; exact Nat.lt_succ_self g
+  | force w =>
+    cases w with
+    | vthunk M =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      exact ⟨hcb, fun p hp => hfc p (by simp only [capsC, capsV]; exact hp), hsf⟩
+    | vunit | vint _ | vvar _ | vcap _ _ | inl _ | inr _ | pair _ _ | fold _ =>
+      simp [Source.step] at hstep
+  | ret v =>
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | letF N =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        refine ⟨hcb.2, ?_, hsf⟩
+        intro p hp
+        rcases capsC_substFrom 0 v N p hp with h' | h'
+        · exact hcb.1 p h'
+        · exact hfc p (by simp only [capsC]; exact h')
+      | appF w => simp [Source.step] at hstep
+      | handleF g' hh =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        obtain ⟨_, hsf2⟩ := hsf
+        exact ⟨hcb.2, hfc, hsf2⟩
+  | lam M =>
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | letF N => simp [Source.step] at hstep
+      | handleF g' hh => simp [Source.step] at hstep
+      | appF w =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        refine ⟨hcb.2, ?_, hsf⟩
+        intro p hp
+        rcases capsC_substFrom 0 w M p hp with h' | h'
+        · exact hfc p (by simp only [capsC]; exact h')
+        · exact hcb.1 p h'
+  | case v N₁ N₂ =>
+    cases v with
+    | inl a =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      refine ⟨hcb, ?_, hsf⟩
+      intro p hp
+      rcases capsC_substFrom 0 a N₁ p hp with h' | h'
+      · exact hfc p (by simp only [capsC]; exact List.mem_append_left _ (List.mem_append_right _ h'))
+      · exact hfc p (by simp only [capsC, capsV]; exact List.mem_append_left _ (List.mem_append_left _ h'))
+    | inr a =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      refine ⟨hcb, ?_, hsf⟩
+      intro p hp
+      rcases capsC_substFrom 0 a N₂ p hp with h' | h'
+      · exact hfc p (by simp only [capsC]; exact List.mem_append_right _ h')
+      · exact hfc p (by simp only [capsC, capsV]; exact List.mem_append_left _ (List.mem_append_left _ h'))
+    | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | pair _ _ | fold _ =>
+      simp [Source.step] at hstep
+  | split v N =>
+    cases v with
+    | pair a b =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      refine ⟨hcb, ?_, hsf⟩
+      intro p hp
+      rcases capsC_substFrom 0 a _ p hp with h' | h'
+      · rcases capsC_substFrom 0 (Val.shift b) N p h' with h'' | h''
+        · exact hfc p (by simp only [capsC]; exact List.mem_append_right _ h'')
+        · rw [capsV_shiftFrom] at h''
+          exact hfc p (by simp only [capsC, capsV]; exact List.mem_append_left _ (List.mem_append_right _ h''))
+      · exact hfc p (by simp only [capsC, capsV]; exact List.mem_append_left _ (List.mem_append_left _ h'))
+    | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | fold _ =>
+      simp [Source.step] at hstep
+  | unfold v =>
+    cases v with
+    | fold a =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      exact ⟨hcb, fun p hp => hfc p (by simpa only [capsC, capsV] using hp), hsf⟩
+    | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ =>
+      simp [Source.step] at hstep
+  | perform cv op v =>
+    -- DISPATCH (#freshness): reassemble the resumed stack's `CapsBelow`/`StratFresh` (mirror of
+    -- `stackBelow_idDispatch`, richer) + the resumed focus's cap bound. The state-`get` focus `ret s`
+    -- needs `capsV s < g` — discharged from `capFreeStored hty` (the state value is cap-free by the
+    -- closed-state premise; ③). Threaded next; clean sorry pending `capFreeStored`.
+    sorry
+  | oom => simp [Source.step] at hstep
+  | wrong s => simp [Source.step] at hstep
 
 /-- The COMBINED route-β invariant (ADR-0061 GRADED regrade of ADR-0057's typed-relative reshape): there
 EXIST typing derivations for the focus + stack such that the GRADED liveness holds — `LWSCg` for the
@@ -2368,7 +2593,7 @@ theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
   obtain ⟨eo', hle, e', C', hf', hs'⟩ := hasConfigTy_step ⟨e, C, hfocus, hstack⟩ hstep
   obtain rfl : eo' = ⊥ := le_bot_iff.mp hle
   -- FRESHNESS half (uniform, §3.0).
-  have hFreshr : FreshCfg cfg' := freshCfg_step (g, K, c) cfg' hfresh hstep
+  have hFreshr : FreshCfg cfg' := freshCfg_step (g, K, c) cfg' ⟨e, C, hfocus, hstack⟩ hfresh hstep
   -- GRADED WELL-SCOPED half: route DISPATCH (perform-vcap, #35) vs every other arm (Phase 2 obligations).
   by_cases hperf : ∃ n ℓ op v, c = Comp.perform (Val.vcap n ℓ) op v
   · obtain ⟨n, ℓ, op, v, rfl⟩ := hperf
