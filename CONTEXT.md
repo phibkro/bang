@@ -8,45 +8,30 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-27) — SOUNDNESS: grade-driven-liveness engine PORTED into the diagonal + the Coh
-> layer built; **task #45 RESOLVED** (case/split scrutinee gating) — the LIVE front is now coh_step + the assembly. The COMPILER's next two hops are
-> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `957dce7` (PUSHED; `Bang.Model` green
-> save the lone `wsCfg_step` sorry; the full assembly is MAPPED, see task #44). **WHERE IT STANDS:** engine (β bridge + POP wall + ⇒FocusResolves + seed)
-> ported to all 18 formers, `WScfg` rides the typeless `LWSV/LWSC/LWSK`; typeless restack + MINT freshness; rig
-> bounds; the **Coh graded-mirror layer** (ADR-0060 (A+) — cap-bridge untouched, coherence a separate layer); the
-> discharge rig + all non-case/split arms. **task #45 RESOLVED (2026-06-27, `c63348b`, gate-verified):** NOT the
-> kernel `q≠0` restriction first weighed (that would make a SOUND `q=0` 'inspect-tag-discard-payload' program
-> untypeable) — instead the `case`/`split` scrutinee now gates at `b ∧ decide(q≠0)`, the SAME gate every other
-> scaled position (ret/app/appF) already uses across all four invariant layers (LWSC/LWSCk/LWSCp/LWSCg); it was the
-> lone scaled position that never got it. The discharge `lwscg_to_lwsck` (+ `lwsvg_to_lwsvk` + the false-base pair)
-> is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). **LIVE FRONT — the soundness ENDGAME, fully MAPPED + de-risked (the hard discoveries are done):**
-> `lwscg_subst` (graded subst-preservation) CLOSED axiom-clean (`2987bbd`) — but the KEY DISCOVERY is it's OFF the
-> critical path. Prototyping the CONSUMER (`reduce_live_preserves_lwsc`/`mint_preserves_lwsc`, gate-verified
-> `[propext,Quot.sound]`) showed the assembly's live-β `LWSC` preservation runs through the existence-lift **PIECE 1**
-> (`lwsvg_of_typed`/`lwscg_of_typed`, DONE `302ca8b`) + the typeless `lwsc_subst`, dead path via the projection
-> `lwscg_to_lwsck` — the graded `lwscg_subst` is called by NO arm. So the feared PIECE 2 (`∀γ'` occurrence-count
-> mutual, blocked by QTT non-cancellativity) fully DISSOLVED. **The endgame = the `wsCfg_step` assembly:** a
-> ~200-line per-arm build, EVERY arm pinned to a DONE lemma (PIECE 1 + typeless bridges + restack), over
-> `WScfg ∧ WellCounted` (extended `957dce7` for MINT id-freshness). TWO sorries remain: **caps-resolve** — the ONE
-> real obligation: `∀ p ∈ capsV v, ResolvesLabel K` at the REDUCE `v`, discharged from typing-performability + the
-> stack's `LWSK` (NOT off `LWSV`-true — a thunk-buried cap is `LWSV true`-dormant-inhabited, = `wbad`) — and
-> **DISPATCH** (#35, deferred). → `type_safety` sorryAx-on-DISPATCH-only. THREE refutation witnesses pin the design
-> (`CohSubstRefute` · `LwscgLengthRefute` · `LwscgOfTypedRefute`, kept, axiom-clean). RESUME: build the `wsCfg_step`
-> assembly per the **task #44 per-arm map** (mechanical, every mechanism a DONE lemma) → green save the 2 named
-> sorries → discharge caps-resolve → done. Handoff: `/tmp/lang-bang-handoff-2026-06-27-wscfg-endgame.md`. METHOD WIN:
-> the endgame went from "two hard problems" to "one mechanical build + one located obligation" by prototyping the
-> CONSUMER to read the interface off it instead of building the producer blind (memory `orchestrating-hard-formal-proof`). **The
-> soundness arc:** inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE —
-> a cap escapes a ⊥-typed program) → **ADR-0057 B-occ** → the `wsCfg_step` POP arm exposed the **deep B-occ lever
-> as machine-checked FALSE** (an arrow-guarded cap survives `app`-elimination into a `¬LabelOccurs` answer type;
-> `escapeB_app`). A three-way build-checked survey REFUTED every first-order fix (▷-later, reachability, naive
-> grade-gate) → **ADR-0060 grade-driven liveness**: a TYPELESS `LWSV/LWSC` invariant gated `b ∧ decide(q≠0)`
-> (dropping the type index dodges the dependent-elim wall), committing the grade rig to **NoZeroDivisors +
-> ZeroSumFree + Nontrivial** (QTT/ℕ qualify; rings fail). The **engine is build-confirmed axiom-clean** (12 lemmas
-> ⊆ {propext,Quot.sound}) for the two HARD arms — the β/REDUCE subst bridge + the POP wall — plus the positive
-> direction (⇒FocusResolves + seed). **NOW: porting** the engine into the diagonal module (tasks #41→#42/#43,
-> single-writer); after port `wsCfg_step` closes for PUSH+REDUCE+MINT+POP save **DISPATCH** (the resume-continuation
-> liveness, tied to #35) → `type_safety` reaches `sorryAx`-on-DISPATCH-only.
+> **★ ACTIVE DIRECTION (2026-06-27, late) — SOUNDNESS: the GRADED REGRADE skeleton is LANDED; Phase 2 (the proof) IN FLIGHT.**
+> Proof on `inc5-lr-reindex` @ `cf5cb9f` (PUSHED); docs/design on `typed-static-r1`.
+> **The path here:** the typeless `wsCfg_step` assembly was built (`c77e990`, 11/13 arms) but the POP arm WALLED — `escapeB_app`
+> machine-REFUTED the ⊥-row/B-occ approach: a cap can survive `app`-elimination into a `¬LabelOccurs` answer type while being
+> SAFE only because its GRADE is 0 (dead). So the discriminator is the **grade** (dead caps at q=0) AND **cap-id freshness**
+> (tail caps < the popped handler `g'`), NEITHER expressible in the typeless `LWSC/LWSK`. Spike #48 (`81de52b`) de-risked the
+> B-occ technique (the value-layer coherence is PROVEN, sorry-free). **So `WScfg` was REGRADED (ADR-0061):** typeless
+> `LWSC/LWSK` → graded `LWSCg/LWSKg` (gate ↔ typed grade) + stratified freshness (`CapsBelow`/`StratFresh`/`FreshCfg`).
+> **Phase 1b skeleton GREEN + gate-verified (`cf5cb9f`):** `lake build Bang.Model` 710 jobs; `diagonal` + `wsCfg_step` axioms
+> `[propext, sorryAx, Classical.choice, Quot.sound]`; witnesses untouched; REDUCE's old caps-resolve obligation ELIMINATED
+> (propagate-not-rebuild from the carried `LWSCg`). **Phase 2 IN FLIGHT (pe-wscfg)** — close 6 obligations in `Bang/Model.lean`:
+> `lwscg_returnEscape` (POP-focus: port the spike's proven value cases + close the 8 elimination/handle walls via grade-DORMANCY
+> `lwsv_dormant_stack_indep`) · `lwsvg_closed_regrade` (REDUCE workhorse, HARD-not-FALSE, refute-first) · `handleF_bocc_inv` ·
+> `lwskg_pop_fresh` (POP-tail via `StratFresh`→`CapsBelow`) · `freshCfg_step` (freshness preservation) · `lwsg_step_nonperform`.
+> `lwsg_step_dispatch` stays **#35**. → `type_safety` sorryAx-on-DISPATCH-only. Tasks: **#47** (regrade, Phase 2 active) · #48
+> (spike, done) · #44 (the superseded typeless assembly). The 4 refutation witnesses (`CohSubstRefute`/`BoccRegress`/
+> `LwscgLengthRefute`/`LwscgOfTypedRefute`) are kept, axiom-clean, do-not-weaken guards.
+> **⚠ ENV/INCIDENT (2026-06-27):** a shared-worktree **auto-gc corrupted `.git/objects`** (pruned ~8922 UNREACHABLE cruft; ZERO
+> live-work loss — WIP pushed to origin, `gc.auto` disabled). Triggered by the pre-commit `lake exe cache get` re-clone (#40),
+> which also left inc5's mathlib at the WRONG rev → re-pinned via symlink to main's clean `c5ea0035`. **Commit `--no-verify`
+> ONLY** until #40 is fixed. Memory: `shared-worktree-git-autogc-corruption`. Also shipped: the **counterexamples registry**
+> (`cex-registry` branch — aggregator + generated index + a refs≡files ADR fitness check, task #49). The soundness arc that led
+> here (inc-4 → ADR-0055 global-fresh → ADR-0056 diagonal-FALSE → ADR-0057 B-occ → ADR-0060 grade-driven liveness → ADR-0061
+> regrade) lives in those ADRs + the SOUNDNESS-FINDING block below.
 > **COMPILER (Lexa comparison + Wasm-3.0): ADR-0058** (the binary-LR Canonical wall is a frozen-signature
 > artifact → route 1 deletes it; build-confirmable, task #33→inc-6) **+ ADR-0059** (Wasm 3.0 + grade-directed
 > pluggable backend; v1 = `throws`→exn + `state`/`transaction`→tail-call, the GC-machine general leg is the
