@@ -3028,28 +3028,10 @@ theorem lwsvg_closed_regrade_refute
         obtain ⟨Kᵢ, hh, Kₒ, hsp, _⟩ := hr
         simp [splitAtId] at hsp
 
-/-- **lwsvg_closed_regrade (Phase 2 — the REDUCE workhorse generaliser; HARD-not-FALSE).** A CLOSED value
-LIVE at one grade is `LWSVg` at ANY grade/flag: γ-irrelevance (no `vvar` leaves to read the grade) +
-flag-weakening (live→dormant via `lwsvg_to_dormant`). This feeds `lwscg_subst`'s `∀ γ' b'` hypothesis from
-the SINGLE witness inverted off the carried focus `LWSCg` — eliminating the `capsResolve_reduce` (all-caps-
-resolve) obligation entirely. The witness MUST be live (`b0 = true`): from a DORMANT witness the claim is
-FALSE (`CohSubstRefute::wbad` — a dormant cap can't be made live); that case is the DEAD-arg path
-(`lwscg_to_lwsck` + `lwsck_subst`), not this. If a case forces caps-resolve, STOP + refute (kept witness).
-
-PROOF PLAN (derived; Torczon OOPSLA'24 Cor 4.4 / Thm 4.3 — a UNARY grade-threading predicate, NOT a ⊤⊤-LR):
-  • `b' = false` (dormant): `lwsvg_to_anyγ_false` (§2′.8a″, DONE) — every gate collapses, nothing reads γ.
-  • `b' = true` (live): the EXISTENTIAL-`pre` LIFT, generalised over a cutoff `k` (free vars < k):
-      `lwsvg_regrade_live (k) (free vars < k) (h : LWSVg γ0 true v) (δ) : ∃ pre, pre.length = k ∧
-         LWSVg (pre ++ δ) true v`.
-    The use-count problem DISSOLVES: at a `vvar i` leaf `pre = (1 at i)`; at an ADDITIVE split
-    (`pair`/`app`/`case`/`split`) the components' `pre`s ADD (`pre = pre_a + pre_b`), so a var used in K
-    places accumulates `pre[i] = K` bottom-up — no "split γ'[i] into K nonzeros" needed (the rig's
-    `NoZeroDivisors`/`ZeroSumFree`/`Nontrivial` carry the nonzeroness). Dead-gated sub-positions route to
-    `lwsvg_to_anyγ_false`. `lwsvg_closed_regrade` falls out at `k = 0` (`pre = []`, so `LWSVg δ true v`). -/
-theorem lwsvg_closed_regrade {K : EvalCtx} {γ0 : GradeVec Mult} {v : Val}
-    (hcl : ∀ j, Val.shiftFrom j v = v) (h : LWSVg K γ0 true v) :
-    ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg K γ' b' v := by
-  sorry
+-- (PRUNED #51) `lwsvg_closed_regrade` (the `∀γ'b'` REDUCE generaliser, sorry) is DEAD: the
+-- `of_typed_live` coherence path supersedes the `lwscg_subst` `∀γ'b'` hypothesis it fed (the subst arm
+-- preserves `LiveCapsResolveC` directly, no closed-value regrade). The refuted form stays as the kept
+-- witness `lwsvg_closed_regrade_refute`.
 
 /-- **handleF_bocc_inv (Phase 2 — re-expose the discarded B-occ for the POP arm).** The frozen `handleF`/
 `handleAny` typing inversions DISCARD the `¬labelOccurs` (B-occ) premise (ADR-0057); this inversion
