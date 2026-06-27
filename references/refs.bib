@@ -677,3 +677,49 @@
              See docs/notes/scoped-capabilities-for-vcapfree-drop.md.
              \url{https://arxiv.org/abs/2207.03402}},
 }
+
+@inproceedings{garby-haskell25-calculated-typer,
+  author    = {Garby, Zac and Bahr, Patrick and Hutton, Graham},
+  title     = {The Calculated Typer (Functional Pearl)},
+  booktitle = {Proceedings of the 18th ACM SIGPLAN International Haskell Symposium (Haskell '25)},
+  year      = 2025,
+  doi       = {10.1145/3759164.3759346},
+  note      = {Derives the type CHECKER (an executable decision procedure) by fold fusion from a
+               behavioural spec — the typing-side analogue of the Bahr-Hutton calculated-compiler
+               method bang uses for CalcVM (invariant #4). CHECKING, not inference (inference deferred
+               to follow-up). Scope: semantics expressible as a fold (bang's CK machine isn't; the
+               CBPV-spine eval might be). See docs/notes/calculated-type-system-frontier.md.},
+}
+
+@misc{bahr-pearl25-sound-by-construction,
+  author    = {Bahr, Patrick and Garby, Zac and Hutton, Graham},
+  title     = {Sound-By-Construction Type Systems (Functional Pearl)},
+  year      = 2025,
+  note      = {Functional pearl; preprint (acmart class, no published venue/DOI located as of 2026-06-27).
+               Derives the typing RELATION by SOLVING the type-soundness property algebraically (like
+               solving an equation) — rules sound-by-construction, no separate soundness proof. Scope:
+               deterministic big-step + STRONG NORMALISATION (the blocker for bang's Div fragment; SbC's
+               exists-v.e-eval-v is vacuous on divergence). The "solve for the rule" move is the
+               typing-side analogue of bang's calculated CalcVM. Open frontier: does it survive over a
+               step-indexed relation (Crel) and DERIVE the grade coefficients rather than assert them?
+               See docs/notes/calculated-type-system-frontier.md.},
+}
+
+@article{gordon-arxiv2606-effect-systems-as-abstract-interpretations,
+  author  = {Gordon, Colin S.},
+  title   = {Effect Systems as Abstract Interpretations},
+  journal = {arXiv preprint arXiv:2606.19686},
+  year    = 2026,
+  note    = {Embeds Gordon's EFFECT QUANTALE (carrier + a join for branching + a partial monoid for
+             sequencing, Def 2.1, with the two distribution laws) as an abstract domain over
+             event-occurrence traces. Classifies bang as the DEGENERATE commutative-total effect quantale
+             (sequence = join: order-insensitive Finset effects; the easy corner, no MacNeille completion).
+             Load-bearing structural fact for the GRADED design: effect IDEMPOTENCE (phi-join-phi = phi)
+             DECOUPLES the effect and grade axes, so the letC product is direct (independent), NOT reduced
+             -- which keeps the quantitative calculation tractable; ordered effects (sequence != join)
+             would re-couple them via the Sec 6 iteration operator. Does SOUNDNESS, not DERIVATION (the
+             SbC complement); names continuation answer-type effect/type mutual-dependency as the hard
+             open case (adjacent to the #35 grade-the-resumption crux). Raises the abstract-interpretation
+             / logical-soundness (Timany 2024) intersection as open -- where bang sits.
+             \url{https://arxiv.org/abs/2606.19686}},
+}
