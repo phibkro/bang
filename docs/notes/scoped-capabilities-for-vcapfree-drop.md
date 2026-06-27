@@ -56,3 +56,20 @@ The paper's metatheory is a surface calculus with subtyping + capture polymorphi
 intrinsic + CK-machine. The de-risk verdict (from `scopedcap-design`) is that the #18 ADDITION stays a
 **syntactic induction, not a logical relation** — it's a `LabelOccurs` premise like B-occ. Full CC<:□
 is the larger lift. Cost/tractability figures are estimates from the design pass, not build-confirmed.
+
+## Paper technique + citable theorems (for whoever implements #18)
+
+CC<:□ (the capture calculus behind Scala-3 capture checking). Mechanisms:
+- **Capturing type `C T`**; a **capability = a tracked variable** with a non-empty capture set; `*` = universal cap (§2–3).
+- **Subcapturing (sc-var, Fig. 3):** `x : C S ∈ Γ ⟹ {x} <: C` — a cap subcaptures its provenance (no cap from nothing).
+- **Avoidance ((let), Prop. 3.3):** side-condition `x ∉ fv(U)` — a scoped cap may not appear in a type leaving its scope. **This is THE escape-prevention rule; our B-occ `¬LabelOccurs ℓ A` is its monomorphic-label projection onto the answer type, and the cap-free-cell premise is the same projection onto the cell type.**
+- **Boxing `□T` / unbox (§3.3):** tunnels caps through polymorphism — the *only* reason boxing exists, irrelevant to v1 monomorphism.
+
+Soundness = **standard syntactic progress + preservation, NOT a logical relation**:
+- **Thm 4.6 (Preservation) + Thm 4.8 (Progress)** — subject reduction.
+- **Lemma 4.11/4.12 (capture prediction):** `cv(t)` over-approximates runtime-captured vars.
+- **Lemma 4.14 (authority preservation):** `cv(t') ⊆ cv(t)` — capture sets only SHRINK under reduction. **This monotone-`cv` IS our grade-driven liveness (ADR-0060) reconstructed: `cv(app (lam …)(…cap…))` drops the dead cap by rule (app) = exactly `escapeB_app`.** §5.2 (stack allocation) handles reference/cell escape with no separate machinery.
+
+So the three current guards are each a projection of one CC<:□ mechanism: B-occ ⊂ avoidance-on-answer, grade ⊂ `cv`-monotonicity, cap-free-cell ⊂ avoidance-on-cell. That's why full CC<:□ unifies them — and why each is forward-compatible (the empty-capture / monomorphic special case).
+
+**Build-confirm before any #18 ratification:** a BoccSpike-pattern probe proving (a) `stateEscape` untypeable via the cap-free-`S` premise *independent of VcapFree*, (b) int/handled-thunk cells stay typeable, (c) the put-resume preservation case discharges from it. (`escapeB`/`escapeB_app` are untouched ⇒ green by construction.)
