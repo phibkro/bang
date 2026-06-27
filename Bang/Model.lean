@@ -1286,6 +1286,17 @@ def CapsBelow (g : Nat) : EvalCtx → Prop
   | Frame.letF N :: K => (∀ p ∈ capsC N, p.1 < g) ∧ CapsBelow g K
   | Frame.appF v :: K => (∀ p ∈ capsV v, p.1 < g) ∧ CapsBelow g K
 
+/-- `CapsBelow` is monotone in the counter (the MINT arm re-bounds the old frames by `g < g+1`). -/
+theorem CapsBelow_mono {g g' : Nat} (hle : g ≤ g') : ∀ K, CapsBelow g K → CapsBelow g' K := by
+  intro K hK
+  induction K with
+  | nil => trivial
+  | cons fr K ih =>
+    cases fr with
+    | handleF n hd => obtain ⟨hlt, hrest⟩ := hK; exact ⟨by omega, ih hrest⟩
+    | letF N => obtain ⟨hcaps, hrest⟩ := hK; exact ⟨fun p hp => by have := hcaps p hp; omega, ih hrest⟩
+    | appF v => obtain ⟨hcaps, hrest⟩ := hK; exact ⟨fun p hp => by have := hcaps p hp; omega, ih hrest⟩
+
 /-- The stack is fresh-STRATIFIED: everything strictly below each `handleF n` frame is `< n` (it predates
 the mint of `n`). The POP arm inverts the head conjunct to bound the popped frame's tail by `g'`. -/
 def StratFresh : EvalCtx → Prop
