@@ -3457,15 +3457,15 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     {hv : HasVTy γ_v (Δ ++ Γ) v A}
     (hcl : ∀ j, Val.shiftFrom j v = v) (hvres : LiveCapsResolveV K hv)
     {γ_w : GradeVec Mult} {w : Val} {A_w : VTy Eff Mult}
-    (hw : HasVTy γ_w (Δ ++ A :: Γ) w A_w)
+    {hw : HasVTy γ_w (Δ ++ A :: Γ) w A_w}
     (hcov : (γ_w.eraseIdx Δ.length).length ≤ γ_v.length) (hwres : LiveCapsResolveV K hw) :
     ∃ d' : HasVTy (Sgrade γ_v Δ.length γ_w) (Δ ++ Γ) (Val.substFrom Δ.length v w) A_w,
       LiveCapsResolveV K d' := by
-  -- (mirror `lwsvg_subst_gen` + carry the typing existentially). FLAGGED: the mutual `cases hwres` +
-  -- manual recursive-call form wedges Lean's structural-recursion compiler — the recursive call's grade
-  -- index `γ_w` won't unify against the packed mutual fixpoint's bound `γ✝` (kernel app-mismatch), even
-  -- for `inl` where the grade is UNCHANGED. Needs a structure fix (induction-with-motive, well-founded on
-  -- a size measure, or explicit recursor à la `subst_gen`) — flagged to lead. Signature is correct/green.
+  -- FLAGGED (build-confirmed, hw explicit AND implicit both fail): the mutual `cases hwres` + recursive
+  -- call cannot compile — the carrier is indexed by a Prop (the typing `hw`), so the structural recursion
+  -- can't extract the sub-derivation as the recursive call's index (`γ_w` ≠ packed `γ✝`). RESOLUTION =
+  -- recurse on the TYPING via `HasVTy.rec` with the carrier in an explicit motive (the `subst_gen` shape:
+  -- `VsubstMotive`/`CsubstMotive` analogue). Per-case logic worked out; harness pending lead nod.
   sorry
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
@@ -3475,7 +3475,7 @@ theorem liveCapsResolveC_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     {hv : HasVTy γ_v (Δ ++ Γ) v A}
     (hcl : ∀ j, Val.shiftFrom j v = v)
     {γ_full : GradeVec Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
-    (hc : HasCTy γ_full (Δ ++ A :: Γ) c e B)
+    {hc : HasCTy γ_full (Δ ++ A :: Γ) c e B}
     (hcov : (γ_full.eraseIdx Δ.length).length ≤ γ_v.length)
     (hgate : slotGrade γ_full Δ.length ≠ 0 → LiveCapsResolveV K hv)
     (hcres : LiveCapsResolveC K hc) :
