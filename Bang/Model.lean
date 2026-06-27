@@ -4118,6 +4118,46 @@ theorem liveCapsResolveC_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
   exact liveCapsResolveV_vthunk_termInv dth hdth
 end
 
+/-! ### §3.7c — CARRIER RETURN-ESCAPE (ADR-0061, #51 PIECE 3 — the POP-focus block for `lwsg_step_nonperform`).
+
+The ADR-0061 carrier analogue of `lwsvg_returnEscape`/`lwscg_returnEscape`: a focus carrier resolving in
+`Frame.handleF g' hd :: K'` re-homes to `K'` (the popped stack) when no CARRIER-live cap references the
+just-popped handler. At the value layer the B-occ `¬ labelOccurs ℓ A` precludes a label-`ℓ` cap in `v`
+(the only caps that resolve to `g'`, since resolution is by identity and the typed cap's label must match
+the frame's `ℓ`). At the comp layer the ROW `¬(ℓ ≤ φ)` (covers caps that are PERFORMED) + B-occ
+`¬ labelOccurs ℓ C` (covers caps that ESCAPE in the result) jointly cover every carrier-live cap.
+
+REFUTE-FIRST (SOUND — survived the discarded-cap refutation; the prior refutes in this area, e.g.
+`lwsvg_closed_regrade_refute`, made caution mandatory). Naive worry: a held-but-discarded live
+`vcap g' ℓ` (`letC (ret (vcap g' ℓ)) N`, `N` discards var 0) would be carrier-live yet not survive the
+pop, and NEITHER `hrow` (the cap isn't performed) NOR `hres` (it's intermediate, not in the result)
+precludes it — that would make this statement FALSE, exactly the wall `lwscg_returnEscape`'s comp binder
+arms sorried on. RESOLVED by the GRADE-COUPLING: `N` discarding var 0 forces the binding grade
+`q1 * q_or_1 q2 = 0`; with `q_or_1 q2 ≠ 0` (`q_or_1_ne_zero`) + `[NoZeroDivisors Mult]` this gives `q1 = 0`,
+so the head `ret`'s carrier gate `q1 ≠ 0` is OFF — the cap is DORMANT, no carrier obligation (the same
+coupling forces a discarding callee's arrow grade `q = 0` in `app`/`lam`). So every CARRIER-live cap is
+genuinely used downstream ⟹ performed (`hrow`) or escaped (`hres`). This typed-liveness + grade-coupling
+is exactly why the carrier closes the binder arms the typeless `LWSCg` flag-liveness could not.
+
+PROOF (PENDING — the next bounded grind): recurse via `LiveCapsResolveV.rec` over the carrier (`K` is a
+PARAMETER, not an index, so the pop is a clean structural recursion — unlike the subst). Value arms mirror
+`lwsvg_returnEscape` (`vcap` via `resolvesLabel_pop`); comp non-binder arms (`ret`/`force`/`lam`/`perform`/
+`unfold`) mirror `lwscg_returnEscape`'s proven arms; comp BINDER arms (`letC`/`app`/`case`/`split`/`handle`)
+thread `hrow`/`hres` to the sub-terms, discharging dead positions via the grade-coupling above. -/
+mutual
+theorem liveCapsResolveV_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label}
+    (hℓ : Handler.label hd = ℓ) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    {dv : HasVTy γ Γ v A} (hbo : ¬ VTy.labelOccurs ℓ A)
+    (h : LiveCapsResolveV (Frame.handleF g' hd :: K') dv) : LiveCapsResolveV K' dv := by
+  sorry
+theorem liveCapsResolveC_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label}
+    (hℓ : Handler.label hd = ℓ) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {φ : Eff}
+    {C : CTy Eff Mult} {dc : HasCTy γ Γ c φ C}
+    (hrow : ¬ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ) (hres : ¬ CTy.labelOccurs ℓ C)
+    (h : LiveCapsResolveC (Frame.handleF g' hd :: K') dc) : LiveCapsResolveC K' dc := by
+  sorry
+end
+
 /-- **GRADED liveness preservation — the NON-perform arms (Phase 2).** Given the pre-step graded invariant
 + typing + freshness, the post-step focus/stack stay graded-well-scoped. Discharged in Phase 2 by:
 PUSH/MINT graded restack (mechanical mirror of the §3.5 typeless `lwsc_restack` family); REDUCE via
