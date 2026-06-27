@@ -91,3 +91,35 @@ II.3.8's hypothesis (4)** (the strictly-decreasing variant on re-entry). If it d
 for the affine-resumption fragment by construction**, and multi-shot `r=ω` is then *honestly* the only place
 precision is provably unrecoverable. Blocked on: the binary LR (`krelS_append`/`crelK_fund`) is deferred to
 inc-6 (ADR-0058). Do it when that resumes, not before — the keystone is the live priority.
+
+## Source-verified follow-up (2026-06-27) — the variant is ALREADY in the code; #35 reframes
+The probe above was effectively run by *reading the real signatures* (not code-writing). Two facts,
+**verified against source**, close the mapping:
+- **`krelS_append` (`Bang/Compat.lean:1146`) already carries Cousot's variant.** `termination_by (m, Kᵢ.length)`
+  + `decreasing_by` with `Prod.Lex.right _ (by simp)` (structural, within-iterate, `m` fixed) + `Prod.Lex.left
+  _ _ hk` (the cross-iterate variant drop, `hk : k < m`). That lex measure **IS** Th II.3.8's `⟨W,≺⟩` with the
+  (3)/(4) descent split — verified, not built. The variant was always there; it just isn't exposed *as a grade*.
+- **bang's v1 handlers ARE the one-shot fragment** (verified): `state`/`transaction` reinstall + resume exactly
+  once (`Compat.lean:1244` the state-reinstall lemma; `:1080` throws=zero-shot, state/txn=one-shot). Genuine
+  multi-shot lives only in `CalcReify` (`vcont`). So the affine fragment is bang's built-in handler kinds, not a toy.
+
+**The reframe of #35 (the real advance):**
+- `throws` (r=0) + `state`/`transaction` (r=1) = the **affine fragment = grade-complete by construction** —
+  `krelS_append`'s existing recursion discharges Th II.3.8(4) (the `Prod.Lex.left hk` drop), modulo ONE new
+  conjunct: `r • gradeOf Sᵢ ⊑ gradeOf (Sᵢ ++ handleF h₁ :: K₁)`. At `r=1` the *multiplicity* is trivial (`1•` is
+  the unit), so the residual is purely the **stack-grade-under-append lemma** (`gradeOf` preserved by the
+  reinstall append) — a small lemma, NOT pure reflexivity.
+- **multi-shot (`CalcReify`) = provably ω.** Unbounded appends ⟹ no finite δ (Cousot II.3.9) for the
+  data-dependent case; AND bang's `{0,1,ω}` lattice rounds *any* ≥2 to ω regardless. **So #35's "general leg"
+  ambition resolves NEGATIVELY: ω is the honest answer; record it, don't chase a finite general grade.** (ADR-worthy.)
+
+**Calibrations (source-verified):** (a) the synthesis's "reduces to reflexivity" undersells — the residual is
+the `gradeOf`-append lemma, not nothing. (b) it put the residual sorry at `Compat.lean:1741`; that line is a
+**section-header comment, NOT a sorry** (the decomp-miss sorry is real but elsewhere — line-ref drifted). (c)
+"multi-shot ω via II.3.9" conflates truly-unbounded (genuine II.3.9, no finite δ) with bounded-≥2 (the lattice
+collapse) — both give ω in bang, but via different mechanisms.
+
+**Status / routing:** the one-shot grade-completion (`krelS_append_graded` + `gradeOf` + the append-preservation
+lemma) is **inc-6 work** — it builds on `krelS_append` / the Compat deep block, the binary LR DEFERRED to inc-6
+(ADR-0058), off the v1 (diagonal) critical path. Precisely specified for when inc-6 resumes. The
+**multi-shot-ω verdict should be recorded NOW** (#35 rescope / a short ADR) — it's a decision, not code.
