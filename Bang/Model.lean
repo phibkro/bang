@@ -1437,6 +1437,62 @@ theorem lwsk_restack_handleF (g : Nat) (hd : Handler) {K : EvalCtx} (hsb : Stack
           exact .stateF (lwsv_restack_handleF g hd hsb hs) (lwsk_restack_handleF g hd hsb hK)
       | transactionF hK => exact .transactionF (lwsk_restack_handleF g hd hsb hK)
 
+/-! ### §3′.5b — TYPELESS UNCONS (the REDUCE pop mechanic; the MIRROR of `lwsv_restack`).
+
+A cap resolving under a pushed NON-`handleF` frame still resolves once that frame is popped
+(`resolvesLabel_uncons` — `splitAtId` walks PAST a transparent head), so `LWSV`/`LWSC`/`LWSK` re-home
+DOWN past a `letF`/`appF` frame. This is the REDUCE direction (the continuation/stack drops back to the
+popped stack after a `ret`/`lam` β). `handleF` is EXCLUDED — popping a real handler can break a cap that
+resolved to it (the POP-escape arm, handled separately). The exact reverse of the restack family. -/
+mutual
+/-- `LWSV` re-homes DOWN past a popped non-`handleF` frame. -/
+theorem lwsv_uncons {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h)
+    {b : Bool} {v : Val} (h : LWSV (fr :: K) b v) : LWSV K b v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar => exact .vvar
+  | vcap_live hg => exact .vcap_live (resolvesLabel_uncons fr (fun m hd he => absurd he (hfr m hd)) hg)
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk hM => exact .vthunk (lwsc_uncons fr hfr hM)
+  | inl hv => exact .inl (lwsv_uncons fr hfr hv)
+  | inr hv => exact .inr (lwsv_uncons fr hfr hv)
+  | pair h1 h2 => exact .pair (lwsv_uncons fr hfr h1) (lwsv_uncons fr hfr h2)
+  | fold hv => exact .fold (lwsv_uncons fr hfr hv)
+/-- `LWSC` re-homes DOWN past a popped non-`handleF` frame. -/
+theorem lwsc_uncons {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h)
+    {b : Bool} {c : Comp} (h : LWSC (fr :: K) b c) : LWSC K b c := by
+  cases h with
+  | @ret b' v' q hv => exact .ret (q := q) (lwsv_uncons fr hfr hv)
+  | letC h1 h2 => exact .letC (lwsc_uncons fr hfr h1) (lwsc_uncons fr hfr h2)
+  | force hv => exact .force (lwsv_uncons fr hfr hv)
+  | lam hM => exact .lam (lwsc_uncons fr hfr hM)
+  | @app b' M' v' q h1 h2 => exact .app (q := q) (lwsc_uncons fr hfr h1) (lwsv_uncons fr hfr h2)
+  | @case b' v' N₁' N₂' q h1 h2 h3 =>
+      exact .case (q := q) (lwsv_uncons fr hfr h1) (lwsc_uncons fr hfr h2) (lwsc_uncons fr hfr h3)
+  | @split b' v' N' q h1 h2 => exact .split (q := q) (lwsv_uncons fr hfr h1) (lwsc_uncons fr hfr h2)
+  | unfold hv => exact .unfold (lwsv_uncons fr hfr hv)
+  | perform h1 h2 => exact .perform (lwsv_uncons fr hfr h1) (lwsv_uncons fr hfr h2)
+  | handleThrows hM => exact .handleThrows (lwsc_uncons fr hfr hM)
+  | handleState h1 h2 => exact .handleState (lwsv_uncons fr hfr h1) (lwsc_uncons fr hfr h2)
+  | handleTransaction hM => exact .handleTransaction (lwsc_uncons fr hfr hM)
+end
+
+/-- `LWSK` re-homes DOWN past a popped non-`handleF` frame (the REDUCE tail-uncons mechanic). -/
+theorem lwsk_uncons {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.handleF m h) :
+    ∀ {Sg : EvalCtx} {b : Bool}, LWSK (fr :: K) Sg b → LWSK K Sg b
+  | [], _, h => by cases h; exact .nil
+  | (Frame.letF _ :: _), _, h => by
+      cases h with | letF hN hK => exact .letF (lwsc_uncons fr hfr hN) (lwsk_uncons fr hfr hK)
+  | (Frame.appF _ :: _), _, h => by
+      cases h with
+      | @appF _ _ _ q hv hK => exact .appF (q := q) (lwsv_uncons fr hfr hv) (lwsk_uncons fr hfr hK)
+  | (Frame.handleF _ _ :: _), _, h => by
+      cases h with
+      | handleF hK => exact .handleF (lwsk_uncons fr hfr hK)
+      | stateF hs hK => exact .stateF (lwsv_uncons fr hfr hs) (lwsk_uncons fr hfr hK)
+      | transactionF hK => exact .transactionF (lwsk_uncons fr hfr hK)
+
 /-- The `Sgrade` BINDER law: descending under a binder shifts the cutoff `k → k+1`, conses the body grade
 (`q :: γ`), and shifts the substituted value's grade (`γ_v → 0 :: γ_v`, the `shift v` slot it doesn't use).
 `Sgrade` commutes with that cons — the spine of every binder arm of `lwscg_subst`. -/
@@ -1733,7 +1789,7 @@ TWO MATHEMATICALLY-FORCED HYPOTHESES (both ambient in the consumer via the typin
   • `hzsf : ZeroSumFree Mult` — a SURVIVING body var (`γ[i] ≠ 0`) stays live after the subst-add
     (`a + b ≠ 0` from `a ≠ 0`), the contrapositive of `ZeroSumFree`.
   • `hlen_v : γ_v.length = γ.length` — WITHOUT it the statement is FALSE (`Bang/LwscgLengthRefute`,
-    axiom-clean): the truncating `GradeVec.add` (`zipWith`) drops a live body var's grade slot when
+    machine-checked): the truncating `GradeVec.add` (`zipWith`) drops a live body var's grade slot when
     `γ_v` is shorter, and `force` has no `q`-gate to absorb it. The typed template carries this pin
     for free (`HasVTy γ_v Γ` + `HasCTy (ρ::γ) (A::Γ)`); the typeless port restores it explicitly.
 
@@ -1855,25 +1911,220 @@ theorem lwscg_of_typed {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} 
     exact .handleTransaction (lwscg_of_typed b hM (capsR_right hcaps))
 end
 
-/-- **OBLIGATION 2 — `WScfg` preservation by `Source.step` (the inc-5 crux).** `WScfg` =
-`HasCTy ∧ HasStack ∧ LWSC ∧ LWSK` (typeless cap-reachability `LWSC`/`LWSK` over the typing core). The
-TYPING half (`HasCTy`/`HasStack`) rides existing NonEscape-free preservation (`hasConfigTy_step`, factored
-from `preservation_proof`); the WELL-SCOPED half (`LWSC`/`LWSK`) is rebuilt per arm:
-  • PUSH / MINT — caps re-home under the pushed frame via `lwsc_restack` / `lwsv_restack_handleF` (DONE);
-    MINT's freshness rides `StackBelow` + `splitAtId`.
-  • REDUCE / MINT / DISPATCH — the focus β / cap-subst routes through the graded Coh layer: `lwscg_subst`
-    (this section's target) for the LIVE arg (`ρ ≠ 0`), and the discharge `lwscg_to_lwsck` + the typeless
-    `lwsck_subst` for the DEAD arg (`ρ = 0`, the var statically discarded).
-  • POP (`handleF g::K, ret v ↦ K, ret v`) — now GRADE-GATED (opt-3 landed): a discarding binder grades
-    its argument at `q = 0`, so the buried cap is statically dead ⇒ gated dormant (`b && decide (q ≠ 0)`)
-    ⇒ no resolution obligation. This DISSOLVES the refuted B-occ "arrow-guarded cap" wall (the
-    `¬LabelOccurs ℓ A` route was machine-refuted by `Bang.BoccRegress.escapeB_app`; the grade sees what
-    the answer type cannot).
-NAMED SORRY: the per-arm `LWSC`/`LWSK` preservation, pending `lwscg_subst` (above) + the typing-half
-`hasConfigTy_step`. -/
+/- **OBLIGATION 2 — `WScfg` preservation by `Source.step` (the inc-5 crux).** `WScfg` =
+`HasCTy ∧ HasStack ∧ LWSC ∧ LWSK ∧ WellCounted`. The TYPING half (`HasCTy`/`HasStack`) rides
+`hasConfigTy_step`; `WellCounted` rides `wellCounted_step`; the WELL-SCOPED half (`LWSC`/`LWSK`) is
+rebuilt per arm:
+  • PUSH (letC/app)  — caps re-home under the pushed transparent frame via `lwsc_restack`/`lwsk_restack`.
+  • MINT (handle)    — the minted cap resolves under its OWN freshly-pushed `handleF g` frame; the OLD
+    tail re-homes via `lwsc_restack_handleF`/`lwsk_restack_handleF` (freshness from `StackBelow`).
+  • REDUCE (letF/appF β, case/split) — the live arg is rebuilt at flag `true` from typing (PIECE 1,
+    `lwsvg_of_typed`/`lwsvg_to_lwsv`) then the typeless `lwsc_subst` plugs it into the continuation
+    (`lwsc_uncons`-ed past the popped transparent frame). The ONE focus sorry sits HERE
+    (`capsResolve_reduce_TODO`, the substituted value's caps).
+  • force/unfold     — the body/payload is directly `LWSC`-true; no subst.
+  • POP (handleF-ret) — FLAGGED (`lws_pop_TODO`): popping a real handler needs the n≠g' freshness the
+    typeless invariant discarded (the ⊥-row return-escape arm). See the report.
+  • DISPATCH (perform) — `lws_dispatch_TODO` (#35). -/
+
+/-- **NAMED SORRY (1 of the focus arms) — caps-resolve at REDUCE-subst.** Every cap in the substituted
+value `v` resolves on the (popped) stack `K`. Discharge from typing-performability + `LWSK` (the stack's
+installed handlers), NOT off `LWSV`-true (a thunk-buried cap is `LWSV`-true-dormant yet non-resolving —
+`Bang/CohSubstRefute.lean::wbad_not_reshaped`). Precedent: `handlesOp_of_hasConfigTy` (~Model:1177).
+Stated at any grade (`capsV` ignores the grade) so the closed-value `HasVTy` flows directly into PIECE 1. -/
+theorem capsResolve_reduce_TODO {K : EvalCtx} {γ : GradeVec Mult} {v : Val} {A : VTy Eff Mult}
+    (hv : HasVTy (Eff := Eff) (Mult := Mult) γ [] v A) (hWSK : LWSK K K true) :
+    ∀ p ∈ capsV v, ResolvesLabel K p.1 p.2 := by
+  sorry
+
+/-- **NAMED SORRY (the DISPATCH arm, #35).** `idDispatch` reinstalls/pops a handler on a resume; the
+resumed focus + reassembled stack stay well-scoped. DISPATCH resumption-grade arm, deferred to #35
+(the abort/tail/general multiplicity grading). -/
+theorem lws_dispatch_TODO {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label} {op : OpId}
+    {v : Val} {c' : Comp}
+    (hWSC : LWSC K true (Comp.perform (Val.vcap n ℓ) op v)) (hWSK : LWSK K K true)
+    (hWC : StackBelow g K) (hd : idDispatch K n ℓ op v = some (K', c')) :
+    LWSC K' true c' ∧ LWSK K' K' true := by
+  sorry
+
+/-- **FLAGGED (the POP-escape arm).** Pop a real `handleF g' hd` frame off the focus's `ret v` and the
+tail stack `K'`. UNLIKE the transparent `letF`/`appF` pop (`lwsc_uncons`/`lwsk_uncons`), removing a
+HANDLER can break a cap that resolved TO it. Closing this sorry-free needs the n≠g' freshness that the
+typeless `LWSC`/`LWSK` have DISCARDED (it lives in `LWSCp`/`LWSVp`, but there is no `LWSC → LWSCp` lift
+nor an `LWSK` pop in tree); per `scratch/DiagonalProbe.lean §POP-ESCAPE` this is the ⊥-row return-escape
+discipline — a typing co-invariant, NOT a typeless restack. See the handoff report. -/
+theorem lws_pop_TODO {g' : Nat} {hd : Handler} {K' : EvalCtx} {v : Val}
+    (hWSC : LWSC (Frame.handleF g' hd :: K') true (Comp.ret v))
+    (hWSK : LWSK (Frame.handleF g' hd :: K') (Frame.handleF g' hd :: K') true) :
+    LWSC K' true (Comp.ret v) ∧ LWSK K' K' true := by
+  sorry
+
 theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
     (hP : WScfg Co cfg) (hstep : Source.step cfg = some cfg') : WScfg Co cfg' := by
-  sorry
+  obtain ⟨g, K, c⟩ := cfg
+  obtain ⟨e, C, hfocus, hstack, hWSC, hWSK, hWC⟩ := hP
+  -- TYPING half (uniform via `hasConfigTy_step`); `eo' ≤ ⊥` pins `eo' = ⊥`.
+  obtain ⟨eo', hle, e', C', hf', hs'⟩ := hasConfigTy_step ⟨e, C, hfocus, hstack⟩ hstep
+  obtain rfl : eo' = ⊥ := le_bot_iff.mp hle
+  -- WellCounted half (uniform).
+  have hWCr : WellCounted cfg' := wellCounted_step hWC hstep
+  cases c with
+  | ret v =>
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | letF N =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        have hfr : ∀ m h, Frame.letF N ≠ Frame.handleF m h := by intro m h; simp
+        cases hWSK with
+        | letF hN hKtail =>
+          obtain ⟨γ', A, q0, he0, hC0, hγ0, hwv⟩ := hfocus.ret_inv
+          have hKt : LWSK K' K' true := lwsk_uncons (Frame.letF N) hfr hKtail
+          exact ⟨e', C', hf', hs',
+            lwsc_subst (lwsvg_to_lwsv (lwsvg_of_typed true hwv (capsResolve_reduce_TODO hwv hKt)))
+              (fun j => hwv.shift_closed j (by simp)) 0 (lwsc_uncons (Frame.letF N) hfr hN),
+            hKt, hWCr⟩
+      | appF w => simp [Source.step] at hstep
+      | handleF g' hd =>
+        -- POP-escape arm — flagged: see `lws_pop_TODO` / the report.
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        obtain ⟨hlwsc, hlwsk⟩ := lws_pop_TODO hWSC hWSK
+        exact ⟨e', C', hf', hs', hlwsc, hlwsk, hWCr⟩
+  | letC M N =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+    have hfr : ∀ m h, Frame.letF N ≠ Frame.handleF m h := by intro m h; simp
+    cases hWSC with
+    | letC hM hN =>
+      exact ⟨e', C', hf', hs', lwsc_restack (Frame.letF N) hfr hM,
+        .letF (lwsc_restack (Frame.letF N) hfr hN) (lwsk_restack (Frame.letF N) hfr hWSK), hWCr⟩
+  | app M w =>
+    simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+    have hfr : ∀ m h, Frame.appF w ≠ Frame.handleF m h := by intro m h; simp
+    cases hWSC with
+    | @app _ _ _ q hM hw =>
+      exact ⟨e', C', hf', hs', lwsc_restack (Frame.appF w) hfr hM,
+        .appF (q := q) (lwsv_restack (Frame.appF w) hfr hw) (lwsk_restack (Frame.appF w) hfr hWSK), hWCr⟩
+  | handle hh M =>
+    cases hh with
+    | throws ℓ =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | handleThrows hM =>
+        exact ⟨e', C', hf', hs',
+          lwsc_subst (.vcap_live ⟨[], Handler.throws ℓ, K, by simp [splitAtId], rfl⟩) (fun _ => rfl) 0
+            (lwsc_restack_handleF g (Handler.throws ℓ) hWC hM),
+          .handleF (lwsk_restack_handleF g (Handler.throws ℓ) hWC hWSK), hWCr⟩
+    | state ℓ s =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | handleState hs0 hM =>
+        exact ⟨e', C', hf', hs',
+          lwsc_subst (.vcap_live ⟨[], Handler.state ℓ s, K, by simp [splitAtId], rfl⟩) (fun _ => rfl) 0
+            (lwsc_restack_handleF g (Handler.state ℓ s) hWC hM),
+          .stateF (lwsv_restack_handleF g (Handler.state ℓ s) hWC hs0)
+            (lwsk_restack_handleF g (Handler.state ℓ s) hWC hWSK), hWCr⟩
+    | transaction ℓ Θ =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | handleTransaction hM =>
+        exact ⟨e', C', hf', hs',
+          lwsc_subst (.vcap_live ⟨[], Handler.transaction ℓ Θ, K, by simp [splitAtId], rfl⟩)
+            (fun _ => rfl) 0 (lwsc_restack_handleF g (Handler.transaction ℓ Θ) hWC hM),
+          .transactionF (lwsk_restack_handleF g (Handler.transaction ℓ Θ) hWC hWSK), hWCr⟩
+  | force w =>
+    cases w with
+    | vthunk M =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | force hv => cases hv with
+        | vthunk hM => exact ⟨e', C', hf', hs', hM, hWSK, hWCr⟩
+    | vunit | vint | vvar _ | vcap _ _ | inl _ | inr _ | pair _ _ | fold _ =>
+      simp [Source.step] at hstep
+  | lam M =>
+    cases K with
+    | nil => simp [Source.step] at hstep
+    | cons fr K' =>
+      cases fr with
+      | letF N => simp [Source.step] at hstep
+      | handleF g' hd => simp [Source.step] at hstep
+      | appF w =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        have hfr : ∀ m h, Frame.appF w ≠ Frame.handleF m h := by intro m h; simp
+        cases hWSC with
+        | lam hM =>
+          cases hWSK with
+          | @appF _ _ _ q hw hKtail =>
+            obtain ⟨qa, A, B, hCeq, hwty, hsub⟩ := hstack.appF_inv
+            have hKt : LWSK K' K' true := lwsk_uncons (Frame.appF w) hfr hKtail
+            exact ⟨e', C', hf', hs',
+              lwsc_subst (lwsvg_to_lwsv (lwsvg_of_typed true hwty (capsResolve_reduce_TODO hwty hKt)))
+                (fun j => hwty.shift_closed j (by simp)) 0 (lwsc_uncons (Frame.appF w) hfr hM),
+              hKt, hWCr⟩
+  | case v N₁ N₂ =>
+    cases v with
+    | inl a =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | @case _ _ _ _ q h1 h2 h3 =>
+        obtain ⟨γ_v, γ_N, q0, A, B, hγ0, hv, hN1, hN2⟩ := hfocus.case_inv
+        cases hv with
+        | inl ha =>
+          exact ⟨e', C', hf', hs',
+            lwsc_subst (lwsvg_to_lwsv (lwsvg_of_typed true ha (capsResolve_reduce_TODO ha hWSK)))
+              (fun j => ha.shift_closed j (by simp)) 0 h2, hWSK, hWCr⟩
+    | inr a =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | @case _ _ _ _ q h1 h2 h3 =>
+        obtain ⟨γ_v, γ_N, q0, A, B, hγ0, hv, hN1, hN2⟩ := hfocus.case_inv
+        cases hv with
+        | inr ha =>
+          exact ⟨e', C', hf', hs',
+            lwsc_subst (lwsvg_to_lwsv (lwsvg_of_typed true ha (capsResolve_reduce_TODO ha hWSK)))
+              (fun j => ha.shift_closed j (by simp)) 0 h3, hWSK, hWCr⟩
+    | vunit | vint | vvar _ | vcap _ _ | vthunk _ | pair _ _ | fold _ =>
+      simp [Source.step] at hstep
+  | split v N =>
+    cases v with
+    | pair a b =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | @split _ _ _ q h1 h2 =>
+        obtain ⟨γ_v, γ_N, q0, A, B, hγ0, hv, hN⟩ := hfocus.split_inv
+        cases hv with
+        | pair ha hb hγab =>
+          have hbc : Val.shift b = b := hb.shift_closed 0 (by simp)
+          have hbshift := hbc.symm ▸ hb
+          have hinner : LWSC K true (Comp.subst (Val.shift b) N) :=
+            lwsc_subst (lwsvg_to_lwsv (lwsvg_of_typed true hbshift (capsResolve_reduce_TODO hbshift hWSK)))
+              (fun j => by rw [hbc]; exact hb.shift_closed j (by simp)) 0 h2
+          exact ⟨e', C', hf', hs',
+            lwsc_subst (lwsvg_to_lwsv (lwsvg_of_typed true ha (capsResolve_reduce_TODO ha hWSK)))
+              (fun j => ha.shift_closed j (by simp)) 0 hinner, hWSK, hWCr⟩
+    | vunit | vint | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | fold _ =>
+      simp [Source.step] at hstep
+  | unfold v =>
+    cases v with
+    | fold a =>
+      simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+      cases hWSC with
+      | unfold hv => cases hv with
+        | fold ha => exact ⟨e', C', hf', hs', .ret (q := (0 : ℕ)) (lwsv_of_live _ ha), hWSK, hWCr⟩
+    | vunit | vint | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ =>
+      simp [Source.step] at hstep
+  | perform cv op v =>
+    cases cv with
+    | vcap n ℓ =>
+      simp only [Source.step, Option.map_eq_some_iff] at hstep
+      obtain ⟨⟨K', c'⟩, hd, hcfg⟩ := hstep
+      subst hcfg
+      obtain ⟨hlwsc, hlwsk⟩ := lws_dispatch_TODO hWSC hWSK hWC hd
+      exact ⟨e', C', hf', hs', hlwsc, hlwsk, hWCr⟩
+    | vunit | vint | vvar _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ =>
+      simp [Source.step] at hstep
+  | oom => simp [Source.step] at hstep
+  | wrong s => simp [Source.step] at hstep
 
 /-! ## §4 — THE DIAGONAL (assembled). -/
 
