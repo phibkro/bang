@@ -10,8 +10,8 @@
 
 > **★ ACTIVE DIRECTION (2026-06-27) — SOUNDNESS: grade-driven-liveness engine PORTED into the diagonal + the Coh
 > layer built; **task #45 RESOLVED** (case/split scrutinee gating) — the LIVE front is now coh_step + the assembly. The COMPILER's next two hops are
-> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `098cc98` (PUSHED; `Bang.Model` green
-> save two sorries: `lwscg_subst` + `wsCfg_step`). **WHERE IT STANDS:** engine (β bridge + POP wall + ⇒FocusResolves + seed)
+> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `957dce7` (PUSHED; `Bang.Model` green
+> save the lone `wsCfg_step` sorry; the full assembly is MAPPED, see task #44). **WHERE IT STANDS:** engine (β bridge + POP wall + ⇒FocusResolves + seed)
 > ported to all 18 formers, `WScfg` rides the typeless `LWSV/LWSC/LWSK`; typeless restack + MINT freshness; rig
 > bounds; the **Coh graded-mirror layer** (ADR-0060 (A+) — cap-bridge untouched, coherence a separate layer); the
 > discharge rig + all non-case/split arms. **task #45 RESOLVED (2026-06-27, `c63348b`, gate-verified):** NOT the
@@ -19,16 +19,23 @@
 > untypeable) — instead the `case`/`split` scrutinee now gates at `b ∧ decide(q≠0)`, the SAME gate every other
 > scaled position (ret/app/appF) already uses across all four invariant layers (LWSC/LWSCk/LWSCp/LWSCg); it was the
 > lone scaled position that never got it. The discharge `lwscg_to_lwsck` (+ `lwsvg_to_lwsvk` + the false-base pair)
-> is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). **LIVE FRONT — `coh_step` reshape VALIDATED, ~24-arm grind
-> remaining:** `lwscg_subst` (graded subst-preservation) was found UNSOUND as first stated (single-grade
-> `LWSVg γ_v true v`) — a 2-arm race surfaced it: arm-2's AXIOM-CLEAN refutation (the `CohSubstRefute` witness on the proof
-> branch, kept) proved it false, vindicating the reshape to `∀γ'b', LWSVg K γ' b' v` (necessary AND
-> machine-checked CONSUMABLE; `caps-resolve-in-K` is the boundary → #46). BANKED + gated: the reshaped statement +
-> graded flag-monotonicity foundation + `Sgrade_cons` binder spine + `hzsf:ZeroSumFree` (forced) + the length-free
-> Sgrade decision. REMAINING (mechanical, single-prover next session): ~4-6 length-free Sgrade lemmas + the ~24-arm
-> Sgrade induction → the `wsCfg_step` assembly (consumes #46's lift) → `type_safety` sorryAx-on-DISPATCH-only (#35).
-> Resume plan: tasks #44 (the grind) + #46 (the consumer-bridge + caps-resolve caveat). Handoff:
-> `/tmp/lang-bang-handoff-2026-06-27-cohstep-reshape.md`. **The
+> is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). **LIVE FRONT — the soundness ENDGAME, fully MAPPED + de-risked (the hard discoveries are done):**
+> `lwscg_subst` (graded subst-preservation) CLOSED axiom-clean (`2987bbd`) — but the KEY DISCOVERY is it's OFF the
+> critical path. Prototyping the CONSUMER (`reduce_live_preserves_lwsc`/`mint_preserves_lwsc`, gate-verified
+> `[propext,Quot.sound]`) showed the assembly's live-β `LWSC` preservation runs through the existence-lift **PIECE 1**
+> (`lwsvg_of_typed`/`lwscg_of_typed`, DONE `302ca8b`) + the typeless `lwsc_subst`, dead path via the projection
+> `lwscg_to_lwsck` — the graded `lwscg_subst` is called by NO arm. So the feared PIECE 2 (`∀γ'` occurrence-count
+> mutual, blocked by QTT non-cancellativity) fully DISSOLVED. **The endgame = the `wsCfg_step` assembly:** a
+> ~200-line per-arm build, EVERY arm pinned to a DONE lemma (PIECE 1 + typeless bridges + restack), over
+> `WScfg ∧ WellCounted` (extended `957dce7` for MINT id-freshness). TWO sorries remain: **caps-resolve** — the ONE
+> real obligation: `∀ p ∈ capsV v, ResolvesLabel K` at the REDUCE `v`, discharged from typing-performability + the
+> stack's `LWSK` (NOT off `LWSV`-true — a thunk-buried cap is `LWSV true`-dormant-inhabited, = `wbad`) — and
+> **DISPATCH** (#35, deferred). → `type_safety` sorryAx-on-DISPATCH-only. THREE refutation witnesses pin the design
+> (`CohSubstRefute` · `LwscgLengthRefute` · `LwscgOfTypedRefute`, kept, axiom-clean). RESUME: build the `wsCfg_step`
+> assembly per the **task #44 per-arm map** (mechanical, every mechanism a DONE lemma) → green save the 2 named
+> sorries → discharge caps-resolve → done. Handoff: `/tmp/lang-bang-handoff-2026-06-27-wscfg-endgame.md`. METHOD WIN:
+> the endgame went from "two hard problems" to "one mechanical build + one located obligation" by prototyping the
+> CONSUMER to read the interface off it instead of building the producer blind (memory `orchestrating-hard-formal-proof`). **The
 > soundness arc:** inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE —
 > a cap escapes a ⊥-typed program) → **ADR-0057 B-occ** → the `wsCfg_step` POP arm exposed the **deep B-occ lever
 > as machine-checked FALSE** (an arrow-guarded cap survives `app`-elimination into a `¬LabelOccurs` answer type;
