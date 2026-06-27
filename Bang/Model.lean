@@ -1433,6 +1433,19 @@ theorem lwsk_restack_handleF (g : Nat) (hd : Handler) {K : EvalCtx} (hsb : Stack
           exact .stateF (lwsv_restack_handleF g hd hsb hs) (lwsk_restack_handleF g hd hsb hK)
       | transactionF hK => exact .transactionF (lwsk_restack_handleF g hd hsb hK)
 
+/-- The `Sgrade` BINDER law: descending under a binder shifts the cutoff `k → k+1`, conses the body grade
+(`q :: γ`), and shifts the substituted value's grade (`γ_v → 0 :: γ_v`, the `shift v` slot it doesn't use).
+`Sgrade` commutes with that cons — the spine of every binder arm of `lwscg_subst`. -/
+theorem Sgrade_cons (γ_v : GradeVec Mult) (k : Nat) (q : Mult) (γ : GradeVec Mult) :
+    Sgrade (0 :: γ_v) (k + 1) (q :: γ) = q :: Sgrade γ_v k γ := by
+  unfold Sgrade slotGrade
+  rw [List.eraseIdx_cons_succ, List.getElem?_cons_succ]
+  show GradeVec.add (q :: γ.eraseIdx k) (GradeVec.smul _ (0 :: γ_v))
+    = q :: GradeVec.add (γ.eraseIdx k) (GradeVec.smul _ γ_v)
+  rw [GradeVec.smul, List.map_cons, mul_zero]
+  rw [GradeVec.add, List.zipWith_cons_cons, add_zero]
+  rfl
+
 /-- **coh_step / `lwscg_subst`** — the graded (Coh-layer) substitution-preservation consumed by the
 REDUCE/MINT/DISPATCH arms of `wsCfg_step`. The graded mirror of `subst_value_proof` (Metatheory): a closed
 value `v` substituted for var `0` of a body `c` graded `ρ :: γ` yields `Comp.subst v c` graded
