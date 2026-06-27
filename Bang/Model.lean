@@ -1911,6 +1911,108 @@ theorem lwscg_of_typed {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} 
     exact .handleTransaction (lwscg_of_typed b hM (capsR_right hcaps))
 end
 
+/-! ### §2′.8g — SPIKE (task #48): the ⊥-row return-escape coherence (POP-focus-live slice).
+
+**Standalone** (NOT wired into `wsCfg_step` — that needs the strengthened graded invariant). Tests
+whether the B-occ technique closes the POP focus: a value typed at the popped handler's answer type `A`
+with `¬LabelOccurs ℓ A` re-homes its scoping past the popped frame `handleF g' hd` (`hd : ℓ`). The HEART
+is the `vcap` leaf — a LIVE `vcap n ℓ'` has type `cap ℓ'`; `¬LabelOccurs ℓ A ⇒ ℓ ≠ ℓ'`; `n = g'` would
+force it to resolve to the head `hd : ℓ` (so `ℓ' = ℓ`), contradiction ⇒ `n ≠ g'` ⇒ `resolvesLabel_pop`.
+Dormant leaves are `lwsv_dormant_stack_indep`. The comp companion threads the ROW (`¬(ℓ ≤ φ)` + a
+perform's `ℓ' ≤ φ` ⇒ `ℓ' ≠ ℓ`) and the result type (`¬CTy.labelOccurs ℓ C`).
+
+SPIKE VERDICT (build-grounded): the technique CLOSES every value former + `ret`/`force`/`lam`/`perform`,
+but WALLS at the ELIMINATION formers `letC`/`app`/`case`/`split`: B-occ constrains only the comp's
+RESULT type `C`, never the CONSUMED intermediate (`letC`'s `M : F q1 A`, `app`'s arg `v : A`, the
+scrutinee `: sum/prod A B`), where a flag-`true` cap labeled `ℓ` can hide with NO `¬LabelOccurs` premise
+(exactly the `escapeB_app` arrow-blindness, at the lemma level). Those caps are the typed-DEAD ones the
+GRADE gates dormant — so the standalone TYPELESS lemma is insufficient; it needs the typed grade
+(`LWSVg`). `unfold`/`handle*` wall on orthogonal sublemmas (occ-monotonicity / local-handle threading),
+NOT the B-occ blindness. -/
+mutual
+theorem lwsv_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label}
+    (hℓ : Handler.label hd = ℓ) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val}
+    {A : VTy Eff Mult} {b : Bool} (d : HasVTy γ Γ v A) (hbo : ¬ VTy.labelOccurs ℓ A)
+    (h : LWSV (Frame.handleF g' hd :: K') b v) : LWSV K' b v := by
+  cases d with
+  | vunit => cases h with | vunit => exact .vunit
+  | vint => cases h with | vint => exact .vint
+  | vvar _ => cases h with | vvar => exact .vvar
+  | @vcap Γ n ℓ' =>
+    cases h with
+    | vcap_live hr =>
+      refine .vcap_live (resolvesLabel_pop ?_ hr)
+      intro hng; subst hng
+      obtain ⟨Kᵢ, hh, Kₒ, hsplit, hlbl⟩ := hr
+      rw [splitAtId, if_pos rfl] at hsplit
+      simp only [Option.some.injEq, Prod.mk.injEq] at hsplit
+      obtain ⟨_, rfl, _⟩ := hsplit
+      exact hbo (hℓ.symm.trans hlbl)
+    | vcap_dormant => exact .vcap_dormant
+  | @vthunk γ Γ M φ B hM =>
+    cases h with
+    | vthunk hc =>
+      exact .vthunk (lwsc_returnEscape hℓ hM (fun hx => hbo (Or.inl hx)) (fun hx => hbo (Or.inr hx)) hc)
+  | inl ha =>
+    cases h with | inl hsc => exact .inl (lwsv_returnEscape hℓ ha (fun hx => hbo (Or.inl hx)) hsc)
+  | inr ha =>
+    cases h with | inr hsc => exact .inr (lwsv_returnEscape hℓ ha (fun hx => hbo (Or.inr hx)) hsc)
+  | pair ha hc hγ =>
+    cases h with
+    | pair h1 h2 =>
+      exact .pair (lwsv_returnEscape hℓ ha (fun hx => hbo (Or.inl hx)) h1)
+        (lwsv_returnEscape hℓ hc (fun hx => hbo (Or.inr hx)) h2)
+  | @fold _ _ _ Ai ha =>
+    cases h with
+    | fold hsc => exact .fold (lwsv_returnEscape hℓ ha (fun hx => hbo (labelOccurs_unrollMu ℓ Ai hx)) hsc)
+theorem lwsc_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label}
+    (hℓ : Handler.label hd = ℓ) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp}
+    {φ : Eff} {C : CTy Eff Mult} {b : Bool} (d : HasCTy γ Γ c φ C)
+    (hrow : ¬ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ) (hres : ¬ CTy.labelOccurs ℓ C)
+    (h : LWSC (Frame.handleF g' hd :: K') b c) : LWSC K' b c := by
+  cases d with
+  | @ret γ γ' Γ v A q hv hγ =>
+    cases h with
+    | @ret _ _ q_tl hvsc => exact .ret (q := q_tl) (lwsv_returnEscape hℓ hv hres hvsc)
+  | force hv =>
+    cases h with
+    | force hvsc => exact .force (lwsv_returnEscape hℓ hv (fun hx => hx.elim hrow hres) hvsc)
+  | lam hM =>
+    cases h with
+    | lam hMsc => exact .lam (lwsc_returnEscape hℓ hM hrow (fun hx => hres (Or.inr hx)) hMsc)
+  | @perform γ_c γ_v Γ cv ℓ2 op v φ q A B hc hle hopA hopR hv =>
+    cases h with
+    | perform h1 h2 =>
+      refine .perform ?_ (lwsv_dormant_stack_indep h2)
+      exact lwsv_returnEscape hℓ hc (by intro hx; simp only [VTy.labelOccurs] at hx; subst hx; exact hrow hle) h1
+  | unfold hv =>
+    -- WALL (orthogonal): needs `labelOccurs ℓ A → labelOccurs ℓ (unrollMu A)` (the REVERSE of
+    -- `labelOccurs_unrollMu`); an occ-monotonicity sublemma, not the B-occ blindness.
+    sorry
+  | letC hM hN hγ =>
+    -- ★ THE WALL (B-occ blindness). `M : F q1 A`; the let-INTERMEDIATE `A` can mention `ℓ`, but B-occ
+    -- only gives `¬CTy.labelOccurs ℓ B` for the RESULT `B`. A flag-`true` cap labeled `ℓ` in `M`
+    -- (typeless-live; the typed grade `q1 * q_or_1 q2` may be 0) has NO `¬LabelOccurs` premise and
+    -- resolves to the popped head ⇒ non-poppable. Needs the typed grade (`LWSVg`). See escapeB_app.
+    sorry
+  | app hM hv hγ =>
+    -- ★ THE WALL: `app`'s argument `v : A` (and `M : arr q A B`'s domain `A`) is uncovered by the
+    -- result-type B-occ — the EXACT escapeB_app pattern (cap behind the arrow `app` eliminates).
+    sorry
+  | case hv hN₁ hN₂ hγ =>
+    -- ★ THE WALL: the scrutinee `v : sum A B` is uncovered by `¬CTy.labelOccurs ℓ C`.
+    sorry
+  | split hv hN hγ =>
+    -- ★ THE WALL: the scrutinee `v : prod A B` is uncovered by the result-type B-occ.
+    sorry
+  | handleThrows _ _ hM _ _ =>
+    -- WALL (orthogonal): a term-level `handle` discharges its OWN label; threading the local
+    -- discharge (`e ≤ ℓ_h ⊔ φ`) is separate machinery, not the B-occ blindness.
+    sorry
+  | handleState _ _ _ _ _ hs hM _ _ => sorry
+  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ => sorry
+end
+
 /- **OBLIGATION 2 — `WScfg` preservation by `Source.step` (the inc-5 crux).** `WScfg` =
 `HasCTy ∧ HasStack ∧ LWSC ∧ LWSK ∧ WellCounted`. The TYPING half (`HasCTy`/`HasStack`) rides
 `hasConfigTy_step`; `WellCounted` rides `wellCounted_step`; the WELL-SCOPED half (`LWSC`/`LWSK`) is
