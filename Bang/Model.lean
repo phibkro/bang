@@ -3608,6 +3608,14 @@ theorem liveCapsResolveV_vthunk_inv {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyC
   cases h with
   | vthunk hc => exact hc
 
+/-- Term-level vthunk inversion (`γ` free, so `cases` assigns the grade): any value carrier over a
+`vthunk c` typing yields a comp carrier over the body. Lets the comp-subst twin ride the value twin. -/
+theorem liveCapsResolveV_vthunk_termInv {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {φ : Eff} {B : CTy Eff Mult} (hw : HasVTy γ Γ (Val.vthunk c) (VTy.U φ B))
+    (h : LiveCapsResolveV K hw) : ∃ dc : HasCTy γ Γ c φ B, LiveCapsResolveC K dc := by
+  cases hw with
+  | vthunk dc => exact ⟨dc, liveCapsResolveV_vthunk_inv h⟩
+
 theorem liveCapsResolveC_weaken {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} {hc : HasCTy γ Γ c e B} (hcres : LiveCapsResolveC K hc)
     (k : Nat) (hk : k ≤ Γ.length) (A' : VTy Eff Mult) :
@@ -3683,10 +3691,11 @@ only at grade-LIVE value positions, supplying it from its own gate). -/
 theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mult}
     (Δ : TyCtx Eff Mult) {γ_v : GradeVec Mult} {v : Val} {A : VTy Eff Mult} {K : EvalCtx}
     {hv : HasVTy γ_v (Δ ++ Γ) v A}
-    (hcl : ∀ j, Val.shiftFrom j v = v) (hvres : LiveCapsResolveV K hv)
+    (hcl : ∀ j, Val.shiftFrom j v = v)
     {γ_w : GradeVec Mult} {w : Val} {A_w : VTy Eff Mult}
     {hw : HasVTy γ_w (Δ ++ A :: Γ) w A_w}
-    (hcov : (γ_w.eraseIdx Δ.length).length ≤ γ_v.length) (hwres : LiveCapsResolveV K hw) :
+    (hcov : (γ_w.eraseIdx Δ.length).length ≤ γ_v.length)
+    (hvgate : slotGrade γ_w Δ.length ≠ 0 → LiveCapsResolveV K hv) (hwres : LiveCapsResolveV K hw) :
     ∃ d' : HasVTy (Sgrade γ_v Δ.length γ_w) (Δ ++ Γ) (Val.substFrom Δ.length v w) A_w,
       LiveCapsResolveV K d' := by
   -- Recurse via the explicit mutual carrier recursor with the §3.7a motives (the `subst_gen` shape;
@@ -3694,7 +3703,7 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
   refine LiveCapsResolveV.rec (motive_1 := VcarrierSubstMotive K) (motive_2 := CcarrierSubstMotive K)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState ?handleTransaction
-    hwres Δ Γ A γ_v v hv hzsf hcl rfl hcov (fun _ => hvres)
+    hwres Δ Γ A γ_v v hv hzsf hcl rfl hcov hvgate
   case vunit =>
     intro Γ_w Δ' Γ' A' γ_v' v' hv' _ _ heq hcov' _
     subst heq
@@ -3879,14 +3888,213 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     have hcons : Sgrade (0 :: γ_v') (A_lam :: Δ').length (q :: γ) = q :: Sgrade γ_v' Δ'.length γ := by
       simp only [List.length_cons]; exact Sgrade_cons γ_v' Δ'.length q γ
     exact ⟨HasCTy.lam (hcons ▸ dM'), .lam (liveCapsResolveC_cast hcons hdM')⟩
-  case letC => sorry
-  case app => sorry
-  case case => sorry
-  case split => sorry
-  case perform => sorry
-  case handleThrows => sorry
-  case handleState => sorry
-  case handleTransaction => sorry
+  case app =>
+    intro γ γ₁ γ₂ Γ_i M w_i φ q A_i B_i dM dv hγ h1 h2 ih1 ih2
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst hγ; subst heq
+    rw [Comp.substFrom]
+    have hlen : γ₁.length = γ₂.length := by rw [dM.length_eq, dv.length_eq]
+    have hlens : γ₁.length = (q • γ₂).length := by rw [smul_hlength]; exact hlen
+    have hl1 : Δ'.length < γ₁.length := by
+      rw [dM.length_eq, List.length_append, List.length_cons]; omega
+    have hl2 : Δ'.length < (q • γ₂).length := by
+      rw [smul_hlength, dv.length_eq, List.length_append, List.length_cons]; omega
+    have hγ' : Sgrade γ_v' Δ'.length (γ₁ + q • γ₂)
+        = Sgrade γ_v' Δ'.length γ₁ + q • Sgrade γ_v' Δ'.length γ₂ := by
+      rw [Sgrade_hadd γ_v' Δ'.length hlens, Sgrade_hsmul]
+    obtain ⟨dM', hdM'⟩ := ih1 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' rfl (cov_add_left hlens hcov')
+      (fun hsg => hgate' (show slotGrade (GradeVec.add γ₁ (GradeVec.smul q γ₂)) Δ'.length ≠ 0 by
+        rw [slotGrade_add γ₁ (GradeVec.smul q γ₂) Δ'.length hl1 hl2]; intro hsum; exact hsg (hzsf' _ _ hsum).1))
+    refine ⟨HasCTy.app dM' (HasVTy.subst_gen Δ' hv' dv) hγ',
+      .app (dv := HasVTy.subst_gen Δ' hv' dv) (hγ := hγ') hdM' (fun hq => ?_)⟩
+    obtain ⟨dv', hdv'⟩ := ih2 hq Δ' Γ' A' γ_v' v' hv' hzsf' hcl' rfl
+      (cov_smul (cov_add_right hlens hcov'))
+      (fun hsg => hgate' (show slotGrade (GradeVec.add γ₁ (GradeVec.smul q γ₂)) Δ'.length ≠ 0 by
+        rw [slotGrade_add γ₁ (GradeVec.smul q γ₂) Δ'.length hl1 hl2, slotGrade_smul]
+        intro hsum; exact hsg ((mul_eq_zero.mp (hzsf' _ _ hsum).2).resolve_left hq)))
+    exact hdv'
+  case letC =>
+    intro γ γ₁ γ₂ Γ_i M N φ₁ φ₂ q1 q2 A_i B_i dM dN hγ h1 h2 ih1 ih2
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst hγ; subst heq
+    rw [Comp.substFrom]
+    have hlen : γ₁.length = γ₂.length := by
+      have := dN.length_eq; simp only [List.length_cons] at this; rw [dM.length_eq]; omega
+    have hlens : (q_or_1 q2 • γ₁).length = γ₂.length := by rw [smul_hlength]; exact hlen
+    have hl1 : Δ'.length < (q_or_1 q2 • γ₁).length := by
+      rw [smul_hlength, dM.length_eq, List.length_append, List.length_cons]; omega
+    have hl2 : Δ'.length < γ₂.length := by
+      rw [← hlen, dM.length_eq, List.length_append, List.length_cons]; omega
+    have hγ' : Sgrade γ_v' Δ'.length (q_or_1 q2 • γ₁ + γ₂)
+        = q_or_1 q2 • Sgrade γ_v' Δ'.length γ₁ + Sgrade γ_v' Δ'.length γ₂ := by
+      rw [Sgrade_hadd γ_v' Δ'.length hlens, Sgrade_hsmul]
+    obtain ⟨dM', hdM'⟩ := ih1 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' rfl
+      (cov_smul (cov_add_left hlens hcov'))
+      (fun hsg => hgate' (show slotGrade (GradeVec.add (GradeVec.smul (q_or_1 q2) γ₁) γ₂) Δ'.length ≠ 0 by
+        rw [slotGrade_add (GradeVec.smul (q_or_1 q2) γ₁) γ₂ Δ'.length hl1 hl2, slotGrade_smul]
+        intro hsum
+        exact hsg ((mul_eq_zero.mp (hzsf' _ _ hsum).1).resolve_left (q_or_1_ne_zero q2))))
+    obtain ⟨dN', hdN'⟩ := ih2 (A_i :: Δ') Γ' A' (0 :: γ_v') (Val.shift v')
+      (hv'.weaken 0 (Nat.zero_le _) A_i) hzsf'
+      (fun j => by rw [show Val.shift v' = v' from hcl' 0]; exact hcl' j) rfl (cov_cons (cov_add_right hlens hcov'))
+      (fun hs => liveCapsResolveV_weaken (hgate' (show slotGrade (GradeVec.add (GradeVec.smul (q_or_1 q2) γ₁) γ₂) Δ'.length ≠ 0 by
+        rw [List.length_cons, slotGrade_cons] at hs
+        rw [slotGrade_add (GradeVec.smul (q_or_1 q2) γ₁) γ₂ Δ'.length hl1 hl2]; intro hsum; exact hs (hzsf' _ _ hsum).2))
+        0 (Nat.zero_le _) A_i)
+    have hcons : Sgrade (0 :: γ_v') (A_i :: Δ').length (q1 * q_or_1 q2 :: γ₂)
+        = (q1 * q_or_1 q2) :: Sgrade γ_v' Δ'.length γ₂ := by
+      simp only [List.length_cons]; exact Sgrade_cons γ_v' Δ'.length (q1 * q_or_1 q2) γ₂
+    exact ⟨HasCTy.letC dM' (hcons ▸ dN') hγ',
+      .letC (hγ := hγ') hdM' (liveCapsResolveC_cast hcons hdN')⟩
+  case case =>
+    intro γ γ_s γ_N Γ_i sc N₁ N₂ φ q A_i B_i C_i ds dN₁ dN₂ hγ h1 h2 h3 ihs ih1 ih2
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst hγ; subst heq
+    rw [Comp.substFrom]
+    have hlen : γ_s.length = γ_N.length := by
+      have := dN₁.length_eq; simp only [List.length_cons] at this; rw [ds.length_eq]; omega
+    have hlens : (q • γ_s).length = γ_N.length := by rw [smul_hlength]; exact hlen
+    have hl1 : Δ'.length < (q • γ_s).length := by
+      rw [smul_hlength, ds.length_eq, List.length_append, List.length_cons]; omega
+    have hl2 : Δ'.length < γ_N.length := by
+      rw [← hlen, ds.length_eq, List.length_append, List.length_cons]; omega
+    have hγ' : Sgrade γ_v' Δ'.length (q • γ_s + γ_N)
+        = q • Sgrade γ_v' Δ'.length γ_s + Sgrade γ_v' Δ'.length γ_N := by
+      rw [Sgrade_hadd γ_v' Δ'.length hlens, Sgrade_hsmul]
+    have hcons : ∀ (X : VTy Eff Mult),
+        Sgrade (0 :: γ_v') (X :: Δ').length (q :: γ_N) = q :: Sgrade γ_v' Δ'.length γ_N := fun X => by
+      simp only [List.length_cons]; exact Sgrade_cons γ_v' Δ'.length q γ_N
+    have gate_N : ∀ {X : VTy Eff Mult},
+        slotGrade (q :: γ_N) (X :: Δ').length ≠ 0 → LiveCapsResolveV K (hv'.weaken 0 (Nat.zero_le _) X) :=
+      fun {X} hs => liveCapsResolveV_weaken (hgate' (show slotGrade (GradeVec.add (GradeVec.smul q γ_s) γ_N) Δ'.length ≠ 0 by
+        rw [List.length_cons, slotGrade_cons] at hs
+        rw [slotGrade_add (GradeVec.smul q γ_s) γ_N Δ'.length hl1 hl2]; intro hsum; exact hs (hzsf' _ _ hsum).2))
+        0 (Nat.zero_le _) X
+    obtain ⟨dN₁', hdN₁'⟩ := ih1 (A_i :: Δ') Γ' A' (0 :: γ_v') (Val.shift v')
+      (hv'.weaken 0 (Nat.zero_le _) A_i) hzsf'
+      (fun j => by rw [show Val.shift v' = v' from hcl' 0]; exact hcl' j) rfl (cov_cons (cov_add_right hlens hcov')) gate_N
+    obtain ⟨dN₂', hdN₂'⟩ := ih2 (B_i :: Δ') Γ' A' (0 :: γ_v') (Val.shift v')
+      (hv'.weaken 0 (Nat.zero_le _) B_i) hzsf'
+      (fun j => by rw [show Val.shift v' = v' from hcl' 0]; exact hcl' j) rfl (cov_cons (cov_add_right hlens hcov')) gate_N
+    refine ⟨HasCTy.case (HasVTy.subst_gen Δ' hv' ds) (hcons A_i ▸ dN₁') (hcons B_i ▸ dN₂') hγ',
+      .case (dv := HasVTy.subst_gen Δ' hv' ds) (dN1 := hcons A_i ▸ dN₁') (dN2 := hcons B_i ▸ dN₂')
+        (hγ := hγ') (fun hq => ?_) (liveCapsResolveC_cast (hcons A_i) hdN₁')
+        (liveCapsResolveC_cast (hcons B_i) hdN₂')⟩
+    obtain ⟨ds', hds'⟩ := ihs hq Δ' Γ' A' γ_v' v' hv' hzsf' hcl' rfl
+      (cov_smul (cov_add_left hlens hcov'))
+      (fun hsg => hgate' (show slotGrade (GradeVec.add (GradeVec.smul q γ_s) γ_N) Δ'.length ≠ 0 by
+        rw [slotGrade_add (GradeVec.smul q γ_s) γ_N Δ'.length hl1 hl2, slotGrade_smul]
+        intro hsum; exact hsg ((mul_eq_zero.mp (hzsf' _ _ hsum).1).resolve_left hq)))
+    exact hds'
+  case split =>
+    intro γ γ_s γ_N Γ_i sc N φ q A_i B_i C_i ds dN hγ h1 h2 ihs ihN
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst hγ; subst heq
+    rw [Comp.substFrom]
+    have hlen : γ_s.length = γ_N.length := by
+      have := dN.length_eq; simp only [List.length_cons] at this; rw [ds.length_eq]; omega
+    have hlens : (q • γ_s).length = γ_N.length := by rw [smul_hlength]; exact hlen
+    have hl1 : Δ'.length < (q • γ_s).length := by
+      rw [smul_hlength, ds.length_eq, List.length_append, List.length_cons]; omega
+    have hl2 : Δ'.length < γ_N.length := by
+      rw [← hlen, ds.length_eq, List.length_append, List.length_cons]; omega
+    have hγ' : Sgrade γ_v' Δ'.length (q • γ_s + γ_N)
+        = q • Sgrade γ_v' Δ'.length γ_s + Sgrade γ_v' Δ'.length γ_N := by
+      rw [Sgrade_hadd γ_v' Δ'.length hlens, Sgrade_hsmul]
+    have hsh2 : Val.shift (Val.shift v') = v' := by
+      simp only [Val.shift]; rw [hcl' 0]; exact hcl' 0
+    obtain ⟨dN', hdN'⟩ := ihN (B_i :: A_i :: Δ') Γ' A' (0 :: 0 :: γ_v') (Val.shift (Val.shift v'))
+      ((hv'.weaken 0 (Nat.zero_le _) A_i).weaken 0 (Nat.zero_le _) B_i) hzsf'
+      (fun j => by rw [hsh2]; exact hcl' j) rfl
+      (cov_cons (cov_cons (cov_add_right hlens hcov')))
+      (fun hs => by
+        rw [List.length_cons, List.length_cons, slotGrade_cons, slotGrade_cons] at hs
+        exact liveCapsResolveV_weaken (liveCapsResolveV_weaken
+          (hgate' (show slotGrade (GradeVec.add (GradeVec.smul q γ_s) γ_N) Δ'.length ≠ 0 by
+            rw [slotGrade_add (GradeVec.smul q γ_s) γ_N Δ'.length hl1 hl2]; intro hsum; exact hs (hzsf' _ _ hsum).2))
+          0 (Nat.zero_le _) A_i) 0 (Nat.zero_le _) B_i)
+    have hcons : Sgrade (0 :: 0 :: γ_v') (B_i :: A_i :: Δ').length (q :: q :: γ_N)
+        = q :: q :: Sgrade γ_v' Δ'.length γ_N := by
+      simp only [List.length_cons]
+      rw [show Δ'.length + 1 + 1 = (Δ'.length + 1) + 1 from rfl, Sgrade_cons, Sgrade_cons]
+    refine ⟨HasCTy.split (HasVTy.subst_gen Δ' hv' ds) (hcons ▸ dN') hγ',
+      .split (dv := HasVTy.subst_gen Δ' hv' ds) (dN := hcons ▸ dN') (hγ := hγ') (fun hq => ?_)
+        (liveCapsResolveC_cast hcons hdN')⟩
+    obtain ⟨ds', hds'⟩ := ihs hq Δ' Γ' A' γ_v' v' hv' hzsf' hcl' rfl
+      (cov_smul (cov_add_left hlens hcov'))
+      (fun hsg => hgate' (show slotGrade (GradeVec.add (GradeVec.smul q γ_s) γ_N) Δ'.length ≠ 0 by
+        rw [slotGrade_add (GradeVec.smul q γ_s) γ_N Δ'.length hl1 hl2, slotGrade_smul]
+        intro hsum; exact hsg ((mul_eq_zero.mp (hzsf' _ _ hsum).1).resolve_left hq)))
+    exact hds'
+  case perform =>
+    intro q γ_c γ_v Γ_i cp ℓ op w_i φ A_i B_i _q2 dc hle hopA hopR dvw h ih
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst heq
+    rw [Comp.substFrom]
+    have hlen : γ_v.length = γ_c.length := by rw [dvw.length_eq, dc.length_eq]
+    have hlens : (q • γ_v).length = γ_c.length := by rw [smul_hlength]; exact hlen
+    have hl1 : Δ'.length < (q • γ_v).length := by
+      rw [smul_hlength, dvw.length_eq, List.length_append, List.length_cons]; omega
+    have hl2 : Δ'.length < γ_c.length := by
+      rw [dc.length_eq, List.length_append, List.length_cons]; omega
+    obtain ⟨dc', hdc'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' rfl (cov_add_right hlens hcov')
+      (fun hsg => hgate' (show slotGrade (GradeVec.add (GradeVec.smul q γ_v) γ_c) Δ'.length ≠ 0 by
+        rw [slotGrade_add (GradeVec.smul q γ_v) γ_c Δ'.length hl1 hl2]; intro hsum; exact hsg (hzsf' _ _ hsum).2))
+    have hγ' : Sgrade γ_v' Δ'.length (q • γ_v + γ_c)
+        = q • Sgrade γ_v' Δ'.length γ_v + Sgrade γ_v' Δ'.length γ_c := by
+      rw [Sgrade_hadd γ_v' Δ'.length hlens, Sgrade_hsmul]
+    have key : LiveCapsResolveC K
+        (HasCTy.perform (q := q) dc' hle hopA hopR (HasVTy.subst_gen Δ' hv' dvw)) :=
+      .perform (q := q) dc' (hle := hle) (hopA := hopA) (hopR := hopR)
+        (HasVTy.subst_gen Δ' hv' dvw) hdc'
+    exact ⟨_, liveCapsResolveC_cast (K := K) hγ'.symm key⟩
+  case handleThrows =>
+    intro γ Γ_i ℓ M e φ q qc A_i hopA hint dM hle hbo h ih
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst heq
+    rw [Comp.substFrom, Handler.substFrom]
+    obtain ⟨dM', hdM'⟩ := ih (VTy.cap ℓ :: Δ') Γ' A' (0 :: γ_v') (Val.shift v')
+      (hv'.weaken 0 (Nat.zero_le _) (VTy.cap ℓ)) hzsf'
+      (fun j => by rw [show Val.shift v' = v' from hcl' 0]; exact hcl' j) rfl (cov_cons hcov')
+      (fun hs => liveCapsResolveV_weaken
+        (hgate' (by rw [List.length_cons, slotGrade_cons] at hs; exact hs)) 0 (Nat.zero_le _) (VTy.cap ℓ))
+    have hcons : Sgrade (0 :: γ_v') (VTy.cap ℓ :: Δ').length (qc :: γ) = qc :: Sgrade γ_v' Δ'.length γ := by
+      simp only [List.length_cons]; exact Sgrade_cons γ_v' Δ'.length qc γ
+    exact ⟨HasCTy.handleThrows hopA hint (hcons ▸ dM') hle hbo,
+      .handleThrows (hopA := hopA) (hint := hint) (hle := hle) (hbo := hbo)
+        (liveCapsResolveC_cast hcons hdM')⟩
+  case handleState =>
+    intro γ Γ_i ℓ s₀ M e φ q qc S A_i hga hgr hpa hpr hint dsv dM hle hbo hs h ihs ih
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst heq
+    rw [Comp.substFrom, Handler.substFrom]
+    have hsc : Val.substFrom Δ'.length v' s₀ = s₀ := dsv.subst_closed Δ'.length (Nat.zero_le _) v'
+    obtain ⟨dM', hdM'⟩ := ih (VTy.cap ℓ :: Δ') Γ' A' (0 :: γ_v') (Val.shift v')
+      (hv'.weaken 0 (Nat.zero_le _) (VTy.cap ℓ)) hzsf'
+      (fun j => by rw [show Val.shift v' = v' from hcl' 0]; exact hcl' j) rfl (cov_cons hcov')
+      (fun hsl => liveCapsResolveV_weaken
+        (hgate' (by rw [List.length_cons, slotGrade_cons] at hsl; exact hsl)) 0 (Nat.zero_le _) (VTy.cap ℓ))
+    have hcons : Sgrade (0 :: γ_v') (VTy.cap ℓ :: Δ').length (qc :: γ) = qc :: Sgrade γ_v' Δ'.length γ := by
+      simp only [List.length_cons]; exact Sgrade_cons γ_v' Δ'.length qc γ
+    exact ⟨HasCTy.handleState hga hgr hpa hpr hint (hsc.symm ▸ dsv) (hcons ▸ dM') hle hbo,
+      .handleState (dsv := hsc.symm ▸ dsv) (hga := hga) (hgr := hgr) (hpa := hpa) (hpr := hpr)
+        (hint := hint) (hle := hle) (hbo := hbo) (liveCapsResolveV_termCast hsc.symm hs)
+        (liveCapsResolveC_cast hcons hdM')⟩
+  case handleTransaction =>
+    intro γ Γ_i ℓ Θ₀ M e φ q qc A_i hna hnr hra hrr hwa hwr hint hcells dM hle hbo h ih
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst heq
+    rw [Comp.substFrom, Handler.substFrom]
+    obtain ⟨dM', hdM'⟩ := ih (VTy.cap ℓ :: Δ') Γ' A' (0 :: γ_v') (Val.shift v')
+      (hv'.weaken 0 (Nat.zero_le _) (VTy.cap ℓ)) hzsf'
+      (fun j => by rw [show Val.shift v' = v' from hcl' 0]; exact hcl' j) rfl (cov_cons hcov')
+      (fun hsl => liveCapsResolveV_weaken
+        (hgate' (by rw [List.length_cons, slotGrade_cons] at hsl; exact hsl)) 0 (Nat.zero_le _) (VTy.cap ℓ))
+    have hcons : Sgrade (0 :: γ_v') (VTy.cap ℓ :: Δ').length (qc :: γ) = qc :: Sgrade γ_v' Δ'.length γ := by
+      simp only [List.length_cons]; exact Sgrade_cons γ_v' Δ'.length qc γ
+    exact ⟨HasCTy.handleTransaction hna hnr hra hrr hwa hwr hint hcells (hcons ▸ dM') hle hbo,
+      .handleTransaction (hna := hna) (hnr := hnr) (hra := hra) (hrr := hrr) (hwa := hwa) (hwr := hwr)
+        (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo) (liveCapsResolveC_cast hcons hdM')⟩
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
 DEAD slot discharges via the dormant builder with NO `v`-clean. -/
@@ -3901,10 +4109,13 @@ theorem liveCapsResolveC_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     (hcres : LiveCapsResolveC K hc) :
     ∃ d' : HasCTy (Sgrade γ_v Δ.length γ_full) (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B,
       LiveCapsResolveC K d' := by
-  -- PLAN (mirror `lwscg_subst_gen` + carry the typing): induct on `hcres`; binder cases descend at
-  -- `Δ' = A₀ :: Δ`, level `|Δ|+1`, filler `shift v` graded `0 :: γ_v` (`Sgrade_cons`). Gated value
-  -- positions split on the local slot grade `q = 0` (dormant builder, no `v`) vs `≠ 0` (value layer).
-  sorry
+  -- WRITE-ONCE: the comp twin rides the value twin via a thunk-wrap. `vthunk c` is grade-transparent, so
+  -- `Sgrade Δ γ_full` and the gate transfer verbatim; `substFrom (vthunk c) = vthunk (substFrom c)`; the
+  -- resulting value carrier inverts (`vthunk_termInv`) to the comp carrier. The 21 recursor arms live
+  -- ONCE, in `liveCapsResolveV_subst_gen`.
+  obtain ⟨dth, hdth⟩ :=
+    liveCapsResolveV_subst_gen hzsf Δ hcl hcov hgate (LiveCapsResolveV.vthunk hcres)
+  exact liveCapsResolveV_vthunk_termInv dth hdth
 end
 
 /-- **GRADED liveness preservation — the NON-perform arms (Phase 2).** Given the pre-step graded invariant
