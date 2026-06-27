@@ -292,3 +292,20 @@ the 2 new sorries unconsumed so the diagonal axiom set is unchanged). PROVE is t
 - **SCOPE:** value layer 9 cases + comp layer 12, each an existential repack + grade plumbing. **Grind value-layer-first.**
 - **hcl watch-item** (refute-test in PHASE B threading): `v` closed should discharge via "reachable machine values are closed"
   at the live re-home sites; if a live site has non-closed `v`, the closedness hypothesis is too strong → revisit the signature.
+
+### PHASE A grind state (2026-06-27, `b8bb04b`) — recursor harness + 9 value arms + 2 comp arms; build-corrected twice
+The `cases hwres`+recursion approach is BUILD-PROVED IMPOSSIBLE (`4a4bb9a`): the carrier is indexed by a PROOF (`hw`),
+so the structural-recursion compiler can't extract a sub-derivation from a Prop-indexed sub-carrier. FIX = explicit recursor
++ motives (the `subst_gen` pattern). Lineage `4a4bb9a → 5d5c795 (VcarrierSubstMotive/CcarrierSubstMotive) → e2a8a86 (recursor wired, 21 sorried) → 83d6ce7/7a9414d/88e7a2a (9 value arms real) → 139b3af (gating fix) → b8bb04b (force/unfold comp arms)`.
+- **TWO build-corrections of shapes review missed** (the system working): (1) `hv` context was `Γ`, must be `Δ++Γ` to recurse
+  (`5b8be87`; consumer-identical at Δ=[]); (2) the value motive's `hvres` was UNCONDITIONAL but `force`/`unfold` enter the
+  value layer at `slotGrade=0` where the value is dormant ⟹ unconditional `hvres` is UNSATISFIABLE there ⟹ **gate the value
+  motive symmetric with comp** (`slotGrade γ₀ |Δ| ≠ 0 → hvres`, `139b3af`). vvar i=k still fires the gate (slotGrade(basis k)=1).
+- **State @ `b8bb04b`:** 9 gated value arms real + force/unfold comp arms compose (no probe-sorry). `#print axioms liveCapsResolveV_subst_gen` = `[propext, sorryAx, Classical.choice, Quot.sound]`, sorryAx from the **10 remaining comp arms** only. Independently gated (built + read the value arms).
+- **`liveCapsResolveV_weaken`** (needed for the BINDER comp arms — letC/lam/case/split/handle reshift `hv`→`A₀::Δ++Γ`):
+  refute-tested SOUND. Carrier-transfer-under-`HasVTy.weaken` is **closedness-INDEPENDENT** (weaken only shifts vvar indices
+  [carrier vvar leaf is obligation-free] + leaves caps untouched [closed → shiftFrom = id] ⟹ same `ResolvesLabel`). `hcl` is
+  needed for a DIFFERENT role (align the binder IH on `v` not `shift v`). Likely needs its own recursor/`∃ d'` (same Prop-index wall).
+- **Remaining → full carrier-subst lemma:** gated comp arms (ret/app/perform) · `liveCapsResolveV_weaken` · binders via it · the
+  comp twin via `LiveCapsResolveC.rec` (factor the 21 handlers). Then thread into `lwscg_returnEscape` + `lwsg_step_nonperform` (#4+#5)
+  → `type_safety` sorryAx-on-DISPATCH(#35)-only.
