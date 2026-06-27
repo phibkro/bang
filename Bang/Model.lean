@@ -3641,6 +3641,19 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
         rw [List.getElem?_append_right (by omega)]
         rwa [show i - Δ'.length = (i - 1 - Δ'.length) + 1 by omega, List.getElem?_cons_succ] at hmem
       exact ⟨HasVTy.vvar hmem', .vvar (h := hmem')⟩
+  -- ── COMP arms ──
+  case force =>
+    -- ungated value, grade passes through (force's γ₀ = the value's grade), so the comp gate is the
+    -- value-IH gate verbatim. (The gated value motive makes this compose — the fix that unblocked comp.)
+    intro γ Γ_i v_i φ B dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    rw [Comp.substFrom]
+    exact ⟨HasCTy.force dv', .force hdv'⟩
+  case unfold =>
+    intro γ Γ_i v_i A_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    rw [Comp.substFrom]
+    exact ⟨HasCTy.unfold dv', .unfold hdv'⟩
   all_goals sorry
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
