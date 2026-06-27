@@ -3401,6 +3401,67 @@ theorem liveCapsResolveK_rehome {g' : Nat} {hd : Handler} {K' : EvalCtx} :
         (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo)
         (ih (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
 
+/-! ### §3.7 — CARRIER SUBSTITUTION (ADR-0061, #51 PIECE 2 PHASE A — the SHARED #4+#5 core).
+
+The carrier mirror of `HasCTy.subst_gen` (`Bang/Metatheory.lean`): substituting a value `v` (carrier-clean
+in `K`) at de Bruijn level `|Δ|` into a carrier-clean term re-produces a carrier over the substituted
+typing. This is the term-liveness object the lead's steer fixes the proof axis to — it NEVER touches
+`labelOccurs` of any intermediate type; the dormant-thunk-cap case (`U {ℓ} Int`) is handled FOR FREE
+because the substituted var is a `vvar` (no carrier obligation) until it materializes.
+
+THE GRADE GATE (the #5 "dead positions discard `v`"): `v`'s carrier is required ONLY when the substituted
+slot is grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). At a DEAD slot the var occurs only behind dormant gates
+(`ret`/`app`/`case`/`split` at `q = 0`), so `v`'s caps are never demanded — the dormant builder discharges
+them with NO `v`-clean hypothesis. The VALUE layer takes `v`-clean unconditionally (its caller, the comp
+layer, only descends into a value position when that position is gate-LIVE).
+
+CONSUMER (PHASE B, NOT here): REDUCE arm of `lwsg_step_nonperform` (β/let-reduction substitutes the redex
+value at the top binder — `Δ = []`, `slotGrade = ρ`, the binder grade); and the `letC`/`app`/`case`/`split`
+walls of `lwscg_returnEscape` (the closed let-head `M`'s value flows to `N`'s var-0 — same subst).
+
+Existential output: the post-step focus typing in `lwsg_step_nonperform` is itself `∃ d'`, so producing a
+FRESH derivation `d'` of the substituted term (grade = `Sgrade`, matching `subst_value_proof`) + its carrier
+is exactly the consumer-facing shape; it avoids indexing the carrier over `subst_gen`'s opaque output. -/
+-- The shared `v`-side hypotheses for the mutual carrier-subst (mirrors `lwsvg_subst_gen`'s `v`-bundle):
+-- `v` typed `γ_v` over the post-erase context, CLOSED (`hcl`, for the shift-collapse under binders),
+-- and carrier-CLEAN in `K`. The clean witness is the TYPING-INDEXED `LiveCapsResolveV K hv` (single,
+-- coherent) — NOT the `∀ γ' b'` LWSVg regrade (`lwsvg_closed_regrade_refute`-flavoured, FALSE). That is
+-- the payoff of the carrier switch: at the VALUE layer the carrier is grade-independent, so `v`'s caps
+-- resolving in `K` transfers to every Sgrade-position without re-grading.
+mutual
+/-- VALUE carrier-subst (the `v`-clean witness is consumed unconditionally — the comp layer descends here
+only at grade-LIVE value positions, supplying it from its own gate). -/
+theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mult}
+    {γ_v : GradeVec Mult} {v : Val} {A : VTy Eff Mult} {K : EvalCtx} {hv : HasVTy γ_v Γ v A}
+    (hcl : ∀ j, Val.shiftFrom j v = v) (hvres : LiveCapsResolveV K hv)
+    (Δ : TyCtx Eff Mult) {γ_w : GradeVec Mult} {w : Val} {A_w : VTy Eff Mult}
+    (hw : HasVTy γ_w (Δ ++ A :: Γ) w A_w)
+    (hcov : (γ_w.eraseIdx Δ.length).length ≤ γ_v.length) (hwres : LiveCapsResolveV K hw) :
+    ∃ d' : HasVTy (Sgrade γ_v Δ.length γ_w) (Δ ++ Γ) (Val.substFrom Δ.length v w) A_w,
+      LiveCapsResolveV K d' := by
+  -- PLAN (mirror `lwsvg_subst_gen` + carry the typing existentially): induct on `hwres`; `vvar` at the
+  -- substituted slot ⇒ `v` re-graded to `Sgrade` (carrier = `hvres`); surviving `vvar` ⇒ `Sgrade_vvar_ne`
+  -- (hzsf); `vcap` closed (subst = id); `vthunk` → comp layer; `inl`/`inr`/`pair`/`fold` structural.
+  sorry
+/-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
+grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
+DEAD slot discharges via the dormant builder with NO `v`-clean. -/
+theorem liveCapsResolveC_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mult}
+    {γ_v : GradeVec Mult} {v : Val} {A : VTy Eff Mult} {K : EvalCtx} {hv : HasVTy γ_v Γ v A}
+    (hcl : ∀ j, Val.shiftFrom j v = v)
+    (Δ : TyCtx Eff Mult) {γ_full : GradeVec Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
+    (hc : HasCTy γ_full (Δ ++ A :: Γ) c e B)
+    (hcov : (γ_full.eraseIdx Δ.length).length ≤ γ_v.length)
+    (hgate : slotGrade γ_full Δ.length ≠ 0 → LiveCapsResolveV K hv)
+    (hcres : LiveCapsResolveC K hc) :
+    ∃ d' : HasCTy (Sgrade γ_v Δ.length γ_full) (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B,
+      LiveCapsResolveC K d' := by
+  -- PLAN (mirror `lwscg_subst_gen` + carry the typing): induct on `hcres`; binder cases descend at
+  -- `Δ' = A₀ :: Δ`, level `|Δ|+1`, filler `shift v` graded `0 :: γ_v` (`Sgrade_cons`). Gated value
+  -- positions split on the local slot grade `q = 0` (dormant builder, no `v`) vs `≠ 0` (value layer).
+  sorry
+end
+
 /-- **GRADED liveness preservation — the NON-perform arms (Phase 2).** Given the pre-step graded invariant
 + typing + freshness, the post-step focus/stack stay graded-well-scoped. Discharged in Phase 2 by:
 PUSH/MINT graded restack (mechanical mirror of the §3.5 typeless `lwsc_restack` family); REDUCE via
