@@ -742,3 +742,26 @@
              port-or-break test = does the GRADE abstraction preserve joins? (effect axis trivially does;
              the QTT semiring is the open question). See docs/notes/calculated-type-system-frontier.md.},
 }
+
+@inproceedings{ivaskovic-fscd20-dataflow-effects-graded-monads,
+  author    = {Iva\v{s}kovi\'{c}, Andrej and Mycroft, Alan and Orchard, Dominic},
+  title     = {Data-Flow Analyses as Effects and Graded Monads},
+  booktitle = {5th International Conference on Formal Structures for Computation and Deduction (FSCD 2020)},
+  series    = {LIPIcs},
+  year      = 2020,
+  note      = {PDF NOT YET FILED (synthesis only 2026-06-27; open-access on LIPIcs -- confirm exact title/DOI
+             on fetch). WELDS the AI side (Cousot) to the graded-monad side (Katsumata/Gaboardi): monotone
+             data-flow analyses = effect systems via algebras of TRANSFER FUNCTIONS (a pomonoid, seq = function
+             composition); effect system -> graded monad via a lifted McCarthy transformation; data-flow
+             equations = typing constraints solved by worklist/least-fixpoint. PUNCHLINE: effect QUANTALES are
+             too restrictive (distributivity excludes non-distributive analyses, e.g. constant propagation) --
+             recommends a pomonoid (D, <=, seq) + monotone seq + bounded-complete, NOT Gordon's quantale. For
+             bang: (i) bang's seq=join effects sit BELOW the quantale -- the catalog of flow-sensitive
+             expressivity the commutative corner costs (orthogonal to bang's handler-effects). (ii)
+             trivial-vs-refined grades (Sec 4.3.2): bang's grades are TRIVIAL (runtime-erased), ADR-0059 wants
+             them REFINED (compile-load-bearing) -- a useful lens, NOT literally the store-passing construction.
+             (iii) bang's Mult is a bare CommSemiring with NO order (only q_or_1) => grades CHECKED not INFERRED
+             at fixpoints (no <= to iterate) -- VERIFIED against source; reconciles the AI experiment (its
+             {0,1,w} diamond order was a CONSTRUCTED abstract domain, not bang's native grades).
+             See docs/notes/calculated-type-system-frontier.md.},
+}

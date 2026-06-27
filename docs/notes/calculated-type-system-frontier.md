@@ -124,6 +124,45 @@ question** — three roads (does-the-grade-fall-out · is-the-product-reduced ·
 booth. **This experiment is now DEPLOYED** (run the §II.6 recipe on a grade-bearing bang rule, check join-preservation
 of the grade `α`); findings → `docs/notes/calc-typer-experiment-findings.md` when it lands.
 
+## The full triangulation (6-paper close, 2026-06-27) — bang's position is now defensible, not accidental
+Ivašković–Mycroft–Orchard (`ivaskovic-fscd20-dataflow-effects-graded-monads`, FSCD'20) welds the two halves:
+data-flow analysis = effect system = graded monad, with **transfer functions as the shared substrate** (the
+Cousot fixpoint-iteration *is* the Katsumata graded bind). Its punchline — **effect quantales are too
+restrictive** (distributivity excludes non-distributive analyses like constant propagation); the right general
+structure is a pomonoid `(D,⊑,▷)`, not Gordon's quantale — *doesn't bite bang* (bang sits BELOW the quantale at
+`▷=⊔`), but it **catalogs what the commutative corner costs**: flow-sensitive expressivity (liveness,
+reaching-defs) — which is *orthogonal to bang's purpose* (handler-effects, not data-flow analyses), so it's a
+named non-loss, not a gap.
+
+**The verified correction this closes (my check, not the synthesis's):** the synthesis claims bang's grades have
+**no order**. Confirmed against source — `Bang.Mult` is a bare `CommSemiring` (the `q_or_1` floor is a function,
+not an order; the kernel's only `≤` is on *effects*, `labelEff ℓ ≤ φ`). This **reconciles** the apparent
+contradiction with the AI experiment: that experiment's `{0,1,ω}` diamond order was a **constructed abstract
+domain**, NOT bang's native grades. Consequence (the synthesis's sharpest point, now grounded): with no grade
+`⊑` to least-fixpoint over, **bang's grades must be CHECKED, never INFERRED, at loops** — structurally, by
+construction, mirroring the declarative-type-system / no-executable-checker stance. To even run Cousot's method
+on grades you would first have to *equip* `Mult` with the diamond order (an added construction).
+
+bang's full position, every clause a deliberate stance you can defend against the literature:
+> **Calculate a graded effect-and-coeffect system by construction, over a step-indexed logical relation, in the
+> commutative `▷=⊔` corner, with a non-idempotent grade semiring whose order is absent (so grades are checked,
+> not inferred).**
+
+| paper | gives bang | bang's deliberate departure |
+|---|---|---|
+| Cousot '24 | calculate rules by AI | idempotent lattices only; bang's grade `+` is non-idempotent |
+| Gordon (quantale) | effects-as-AI structure | bang sits *below* it (`▷=⊔`, decoupled axes) |
+| Ivašković '20 | dataflow=effects=graded; trivial→refined grades | bang grades trivial/erased + **no order** |
+| Katsumata '14 | the `▷`-monoid under `U_φ` | — (adopted) |
+| Gaboardi '16 | effect × coeffect | bang's exact two axes |
+| Timany '24 | logical soundness (`Crel`) | — (adopted) |
+
+**The two genuine frontiers** (where, across all six papers, the field is thinnest, and where bang does novel
+work): (1) **non-idempotent quantitative grading across fixpoints** (the `ω`-collapse / #35); (2)
+**checked-not-inferred at fixpoints** (no grade order). The one actionable near-term thread the data-flow paper
+surfaces: **trivial→refined grades** (its §4.3.2) is a useful *lens* for ADR-0059 (grades go from runtime-erased
+to compile-load-bearing) — a framing, not literally its store-passing construction; verify against ADR-0059.
+
 ## Status / gating
 Post-v1. The resumptive fragment gates on **#35** (grade-the-resumption); the binary LR it builds on is itself
 deferred (inc-6). **Not a reason to turn the wheel off the keystone.** Captured here so it's not lost.
