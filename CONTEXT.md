@@ -8,24 +8,25 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-27, late²) — SOUNDNESS: v1 `type_safety` is DOWN TO ONE KEYSTONE.**
-> Proof on `inc5-lr-reindex` @ `ac1629a` (PUSHED, build green, INDEPENDENTLY gate-verified); docs/design on `typed-static-r1`.
-> **The arc:** the typeless `wsCfg_step` POP arm walled (`escapeB_app` machine-refuted ⊥-row/B-occ — escape is grade-`q=0`-dead,
-> not row-absent), so `WScfg` was REGRADED (ADR-0061): typeless `LWSC/LWSK` → graded `LWSCg/LWSKg` + stratified freshness
-> (`CapsBelow`/`StratFresh`/`FreshCfg`). Skeleton landed (`cf5cb9f`); the v1-close grind then **closed #1 `freshCfg_step`**
-> (axiom-clean — FreshCfg gained the flat `∀p∈capsK K, p.1<g` freshness-completeness conjunct; the freshness FACT must be CARRIED,
-> since typing/LWSKg both bound nothing on dormant thunk-buried caps) and **#2 `lwskg_pop_fresh`** (axiom-clean), and **REFUTED
-> #3 `lwsvg_closed_regrade`** (scale-gates couple grade↔liveness even for CLOSED values — kept witness `d81515c`).
-> **THE REMAINING HARD KERNEL = ONE KEYSTONE (task #51): the coherent grade-sensitive subst.** Root: `WScfg` carries `LWSCg`
-> DECOUPLED from its bundled `HasCTy`, so a dead-binder (`q=0`) sub-term can be spuriously LIVE ⇒ a spurious cap only the GRADE
-> catches. Fix (carry-coherence — SOUND, no rebuild trap, no kernel change; pe-close's 4-step de-risked design): make WScfg's
-> `LWSCg` grade-aligned with `HasCTy`, seeded via `lwscg_of_typed` (caps-resolve VACUOUS at the VcapFree init), PRESERVED through
-> a **grade-sensitive coherent subst** (only LIVE caps resolve; dormant skip) — **#4-elimination-preservation and #5-assembly
-> UNIFY into this one subst.** Once it lands: eliminations close + assembly mechanical → `type_safety` sorryAx-on-DISPATCH(#35)-only.
-> De-risk: literature-confirmed UNARY grade-threading (Torczon OOPSLA'24 Cor 4.4), NOT a ⊤⊤-LR. Checkpoint `ac1629a`: #1/#2
-> axiom-clean, #3 refuted, `diagonal` = `[propext, sorryAx, Classical.choice, Quot.sound]` (sorryAx from #4/#5/#35 only). Tasks:
-> **#51** (the keystone, NEXT UNIT — fresh budget) · #47 (umbrella) · #46 (coh-layer, reopened). Kept guards:
-> `CohSubstRefute`/`LwscgLengthRefute`/`LwscgOfTypedRefute`/`BoccRegress`/`StateEscapeWitness`.
+> **★ ACTIVE DIRECTION (2026-06-27, late³) — SOUNDNESS: the coherence ENGINE is LANDED; the keystone CORE remains.**
+> Proof on `inc5-lr-reindex` @ `798f04e` (PUSHED, build green, INDEPENDENTLY gate-verified); docs/design on `typed-static-r1`.
+> **The arc:** typeless `wsCfg_step` POP walled (`escapeB_app` refuted ⊥-row/B-occ — escape is grade-`q=0`-dead, not row-absent),
+> so `WScfg` was REGRADED (ADR-0061): typeless → graded `LWSCg/LWSKg` + stratified freshness. The v1-close grind closed **#1
+> `freshCfg_step`** (axiom-clean; FreshCfg gained the flat `∀p∈capsK K, p.1<g` freshness-completeness conjunct) + **#2
+> `lwskg_pop_fresh`**, and **REFUTED #3 `lwsvg_closed_regrade`** (scale-gates couple grade↔liveness even for closed values — kept
+> witness `d81515c`). Then the keystone landed its FOUNDATION: the carried `LWSCg` was DECOUPLED from the bundled `HasCTy` (⇒
+> spurious-live caps only the grade catches), so **WScfg now carries `LiveCapsResolveC`+typing and DERIVES a coherent `LWSCg` by
+> construction** — the `of_typed_live` engine (grades=typing-grades; dead values route to `vcap_dormant`, no resolution). ENGINE +
+> RESHAPE are LANDED axiom-clean (`798f04e`): seed (`wellScoped_initial`) + positive (`focusResolves_of_wscfg`) SORRY-FREE over the
+> new carrier, #1/#2 survived (gate-verified `e64d80f`).
+> **THE REMAINING KEYSTONE CORE (task #51), TWO scoped pieces:** (1) **stack coherence** — `LiveCapsResolveK` mirroring the focus
+> carrier (option 1 APPROVED; PUSH maintains focus→stack, REDUCE/POP consume): coherence was missing its stack half (every other
+> layer — typing/liveness/freshness — is symmetric focus+stack); (2) **the SHARED grade-coupling re-homing lemma** closing BOTH the
+> `lwscg_returnEscape` letC/app/case/split walls (#4) AND the subst arm (#5) — they UNIFY into ONE (coherent grade-flow through
+> binders: `q=0`⇒dormant-omitted, `q≠0`⇒cap flows to the body var-0 ⇒ B-occ/row kills). De-risk: UNARY grade-threading (Torczon Cor
+> 4.4), NOT a ⊤⊤-LR. → then `lwsg_step_nonperform` closes → `type_safety` sorryAx-on-DISPATCH(#35)-only. Checkpoint `798f04e`:
+> 4 sorries, `diagonal`=`[propext, sorryAx, Classical.choice, Quot.sound]` (from #4/#5/#35). Tasks: **#51** (keystone core, NEXT
+> UNIT) · #47/#46. Kept guards: `CohSubstRefute`/`LwscgLengthRefute`/`LwscgOfTypedRefute`/`BoccRegress`/`StateEscapeWitness`/`d81515c`.
 > **★ STATE-ESCAPE = NO HOLE (this session):** a capability-via-state-cell escape is behaviourally real but HasCTy-UNTYPEABLE
 > (closed-state `HasVTy [] [] s₀ S` + VcapFree block it; witness `StateEscapeWitness`, axiom-clean) → `type_safety` true as stated.
 > Scoped capabilities (arXiv:2207.03402) is the POST-VcapFree (#18) generalization, costed in
