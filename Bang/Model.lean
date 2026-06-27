@@ -3422,6 +3422,23 @@ theorem liveCapsResolveK_rehome {g' : Nat} {hd : Handler} {K' : EvalCtx} :
         (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo)
         (ih (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
 
+/-- **VALUE substitution** (ADR-0061, #51 PHASE A — the dormant-value-position prerequisite). The value
+mirror of `HasCTy.subst_gen`, derived as a sound COROLLARY of it (single-source: no second proof of the
+subst logic) — substitute into `ret w` as a COMPUTATION, then invert the `ret` to extract the value
+typing. Used by the gated comp-subst arms (ret/app/case/split q=0 branch, perform's arg) where the
+substituted value's TYPING is needed without a carrier. -/
+theorem HasVTy.subst_gen (Δ : TyCtx Eff Mult) {Γ : TyCtx Eff Mult} {γ_v : GradeVec Mult} {v : Val}
+    {A : VTy Eff Mult} (hv : HasVTy γ_v (Δ ++ Γ) v A)
+    {γ_w : GradeVec Mult} {w : Val} {A_w : VTy Eff Mult} (hw : HasVTy γ_w (Δ ++ A :: Γ) w A_w) :
+    HasVTy (Sgrade γ_v Δ.length γ_w) (Δ ++ Γ) (Val.substFrom Δ.length v w) A_w := by
+  have hc : HasCTy γ_w (Δ ++ A :: Γ) (Comp.ret w) ⊥ (CTy.F 1 A_w) := HasCTy.ret hw (gv_one_smul γ_w).symm
+  have hsub : HasCTy (Sgrade γ_v Δ.length γ_w) (Δ ++ Γ)
+      (Comp.substFrom Δ.length v (Comp.ret w)) ⊥ (CTy.F 1 A_w) := HasCTy.subst_gen Δ hv hc
+  rw [Comp.substFrom] at hsub
+  generalize hg : Sgrade γ_v Δ.length γ_w = G at hsub ⊢
+  cases hsub with
+  | ret hw' hγ' => rw [gv_one_smul] at hγ'; rw [hγ']; exact hw'
+
 /-! ### §3.6b — CARRIER WEAKENING (ADR-0061, #51 PIECE 2 PHASE A — the BINDER prerequisite).
 
 The carrier mirror of `HasVTy.weaken`/`HasCTy.weaken` (Metatheory:530/644): inserting a fresh binder `A'`
