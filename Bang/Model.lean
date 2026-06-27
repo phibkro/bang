@@ -3486,12 +3486,12 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     (hcov : (γ_w.eraseIdx Δ.length).length ≤ γ_v.length) (hwres : LiveCapsResolveV K hw) :
     ∃ d' : HasVTy (Sgrade γ_v Δ.length γ_w) (Δ ++ Γ) (Val.substFrom Δ.length v w) A_w,
       LiveCapsResolveV K d' := by
-  -- FLAGGED (build-confirmed, hw explicit AND implicit both fail): the mutual `cases hwres` + recursive
-  -- call cannot compile — the carrier is indexed by a Prop (the typing `hw`), so the structural recursion
-  -- can't extract the sub-derivation as the recursive call's index (`γ_w` ≠ packed `γ✝`). RESOLUTION =
-  -- recurse on the TYPING via `HasVTy.rec` with the carrier in an explicit motive (the `subst_gen` shape:
-  -- `VsubstMotive`/`CsubstMotive` analogue). Per-case logic worked out; harness pending lead nod.
-  sorry
+  -- Recurse via the explicit mutual carrier recursor with the §3.7a motives (the `subst_gen` shape;
+  -- `cases hwres`+manual recursion is build-confirmed impossible for the Prop-indexed carrier).
+  refine LiveCapsResolveV.rec (motive_1 := VcarrierSubstMotive K) (motive_2 := CcarrierSubstMotive K)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    hwres Δ Γ A γ_v v hv hzsf hcl hvres rfl hcov
+  all_goals sorry
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
 DEAD slot discharges via the dormant builder with NO `v`-clean. -/
