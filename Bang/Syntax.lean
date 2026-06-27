@@ -90,10 +90,7 @@ ADR-0020: the five named side-conditions are GONE. `vvar`'s grade is the
 positional basis vector (`1` at the index, `0` elsewhere) — no `γ y = 0`
 freshness, no `(x,C) ∉ Γ` no-dup, no closedness; the cons `q :: γ` *structurally*
 pins the bound var's grade and shadows positionally. `q_or_1` (the let coeffect
-floor) survives — it is grade arithmetic, not a binder side-condition.
-
-Refinements still open: Q4 (handle — keeps the same-φ shape below; the
-label-removing rule is deferred), Q5 (up — omitted pending opArgTy/opResTy). -/
+floor) survives — it is grade arithmetic, not a binder side-condition. -/
 
 mutual
 inductive HasVTy : GradeVec Mult → TyCtx Eff Mult → Val → VTy Eff Mult → Prop where
@@ -208,14 +205,14 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B →
       HasVTy γ_v Γ v A →
       HasCTy ((q • γ_v) + γ_c) Γ (Comp.perform c op v) φ (CTy.F q B)
-  -- handleThrows (ADR-0022 D4/D5, throws-only — `state` deferred per Q12): the
+  -- handleThrows (ADR-0022 D4/D5, throws-only): the
   -- `throws ℓ` handler DISCHARGES label `ℓ` from the row. Body uses effect `e`
   -- within `ℓ ⊔ φ` (SUBSUMPTION — a `ret v` body has effect `⊥ ≤ ℓ ⊔ φ`); the
   -- derivation picks the residual `φ`, choosing `φ` without `ℓ` discharges `ℓ`.
   -- `opArg ℓ "raise" = opRes ℓ "raise"` (D5 throws clause inlined): raise returns
-  -- its payload as the block result, so arg type = result type. Handlers still
-  -- handle RETURNERS (`F`-typed, ADR-0021 C2). `handle (state …) M` is now UNtypable
-  -- (Q12 deferred); its `Source.step` reductions stay vacuous under typing.
+  -- its payload as the block result, so arg type = result type. Handlers handle
+  -- RETURNERS (`F`-typed, ADR-0021 C2). The resumptive `state`/`transaction` variants are
+  -- the `handleState`/`handleTransaction` rules below (ADR-0025/0030).
   | handleThrows : ∀ {γ Γ} {ℓ : Label} {M : Comp} {e φ : Eff} {q qc : Mult} {A : VTy Eff Mult},
       -- ANSWER-TYPE (ADR-0023): the raise payload type = the handle block's result type `A`. A
       -- zero-shot abort yields `ret payload : F q A`, so the payload must inhabit `A`. (The old
@@ -298,7 +295,8 @@ the corresponding `HasCTy` premises:
   - `letF N` : the `letC` continuation (`N` typed under one binder; total effect `e₁ ⊔ e₂`);
   - `appF v` : the `app` argument (effect unchanged: the function's effect IS the app's);
   - `handleF (throws ℓ)` : discharges `ℓ` (label-removing, ADR-0022 D4) with the answer-type +
-    interface premises of `handleThrows` (ADR-0023). A `handleF (state …)` frame is UNtypable (Q12). -/
+    interface premises of `handleThrows` (ADR-0023). `handleF (state …)` / `handleF (transaction …)`
+    frames mirror `handleState`/`handleTransaction` — the `stateF`/`transactionF` rules below (ADR-0025/0030). -/
 
 inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult → Prop where
   | nil : ∀ {e C}, HasStack [] e C e C

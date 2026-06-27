@@ -4,28 +4,6 @@
   per rule, each discharged by the matching lemma below. Proving all of these
   (in PROOF_ORDER) IS proving the fundamental theorem.
 
-  STATUS (Phase A part 1, 2026-06-21):
-    Stubbed — the previous content used Ctx/VTy/CTy as 0-arg types, but Phase A
-    part 1 made them (Eff Mult)-parametrized. The compat lemmas need:
-      (a) explicit Eff/Mult threading in every signature
-      (b) the ADR-0019 two-context shape: GradeVec γ (Finsupp +/•) + TyCtx Γ
-      (c) `U`, `F`, `ret`, etc. accessed as constructors (e.g. VTy.U, CTy.F, Comp.ret)
-      (d) helpers like `var`, `unit`, `lamC`, `forceC`, `bindC`, `opC`, `handleC`,
-          `HandlerRelated` to be either dropped (subsumed by Spec.lean's concrete
-          Comp constructors) or restated as helpers atop the concrete syntax.
-    Phase A part 2 will repopulate this file once Ctx arithmetic + the typing
-    judgments are concrete in Spec.lean.
-
-  Source map (preserved for the rewrite):
-    - 10 standard CBPV lemmas: compat_var, compat_unit, compat_thunk,
-      compat_force, compat_ret, compat_bind, compat_lam, compat_app
-    - 3 effect lemmas (Biernacki Lemmas 5–7, with `lift`/ρ DROPPED for set-rows):
-      compat_op, (NO compat_lift — deliberate), compat_handle [KEY]
-    - 3 graded structural lemmas: compat_sub_eff, compat_weaken, compat_split
-
-  Risk: all [STD]/recipe EXCEPT `compat_handle`, which is [KEY] — it is the heart
-  of the effect side and where `Srel` (the 𝒮 half of `Krel`) is actually used.
-  Prove `compat_handle` LAST per PROOF_ORDER.
 -/
 -- Compat is a proof module UPSTREAM of Spec (sibling to Metatheory): Spec wires its frozen
 -- `lr_fundamental`/`lr_sound` statements to the proofs assembled here (`:= lr_fundamental_proof`,
@@ -1502,8 +1480,9 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
 /-! ◊4.5b sub-block (f) — `splitAt`-DECOMPOSITION over `KrelS` (the producer-`up` enabler). With the
 `h₁ = h₂` handleF clause, `splitAt` fires IDENTICALLY on the two related stacks: the SAME catching
 handler `h` at the SAME position, and the OUTER tails `K₁ₒ, K₂ₒ` stay `KrelS`-related. The
-`krelS_staticSplit_decomp` (ADR-0045) form below SUPERSEDES the legacy `splitAt`-decomp — the
-handleF-MISS arm DISSOLVES under `staticSplit` (cap-counting, no `handlesOp` walk-past). -/
+`krelS_splitAtId_decomp` (ADR-0054/0055) form below supersedes the legacy `splitAt`-decomp — the
+handleF-MISS arm dissolves under IDENTITY dispatch (`splitAtId` matches the cap's generative id, no
+`handlesOp` walk-past). -/
 
 /-- ADR-0053: `KrelS`-related stacks have the SAME handler count. `KrelS` forces matching frame KINDS
 (`letF::letF`/`appF::appF`/`handleF::handleF`), so the handler skeletons coincide. This is what lets the
@@ -1762,12 +1741,12 @@ theorem HasVTy.scopedIn {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A 
 /-! ### B.5′ ◊4.5b — the migrated fundamental theorem (`vrelK_fund` / `crelK_fund`) over `CrelK`/`KrelS`
 
 The answer-typed migration of `vrel_fund`/`crel_fund`, wiring the `compatK_*` cores (sub-block c) over
-`EnvRelK`. STATUS (ADR-0053, the LR 5→2): all non-handler cases AND the 3 handler cases CLOSED — the
-absolute-cap representation dissolved the shift wall (`closeC_handle*` rewrite unshifted), so the arms
-close on their `compatK_handle*` cores. The ONLY remaining `sorry`s are the 2 ADR-0043 descents in
-`crelK_fund_up`: `hcatch` (cap-resolution at the producer-`up` edge) + the `:1801` cap>0 resume residual
-— the deferred 5→0 set. The Kripke continuation indices use `∀ m < n` at the letC/case/split seams (the
-`compatK_*` cores' ▷-guarded shape) and `∀ j ≤ n` would over-supply. -/
+`EnvRelK`. The non-handler cases and the 3 handler cases all CLOSE — the absolute-cap representation
+dissolved the shift wall (`closeC_handle*` rewrite unshifted), so the arms close on their
+`compatK_handle*` cores. The remaining obligations: `crelK_fund_up` holds ONE propagated `sorry` (the
+ADR-0056/0057 cap-escape / B-occ question, task #23), plus the `krelS_splitAtId_decomp` SKIP relocation
+residual. The Kripke continuation indices use `∀ m < n` at the letC/case/split seams (the `compatK_*`
+cores' ▷-guarded shape) and `∀ j ≤ n` would over-supply. -/
 mutual
 theorem vrelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
     (h : HasVTy γ Γ v A) :

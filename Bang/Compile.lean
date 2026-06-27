@@ -1538,23 +1538,23 @@ theorem compile_well_typed_proof {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
     Wasmfx.WellTyped (compileC c) :=
   Wasmfx.compileC_wellTyped c
 
-/-! ### `compile_forward_sim` — the heart (PURE fragment proven; gaps named)
+/-! ### `compile_forward_sim` — the heart (both legs proven)
 
 The forward simulation chains:
 
   Source.eval fuel c = done v
-    ──(reverse bridge: `source_eval_to_exec`, the ONE remaining gap)──▸
+    ──(reverse bridge: `source_eval_to_exec` / `evalD_complete_gen`, PROVEN)──▸
   ∃F, CalcVM.exec F (compile c []) [] [] = some [.ret v]
     ──(`exec_wexec_sim`, PROVEN)──▸
   wexec F (lowerCode (compile c [])) [] = some [compileV v]
     ──(`run` unfold)──▸
   Wasmfx.run F (compileC c) = done (compileV v)
 
-The middle and final legs are PROVEN. The first leg — `Source.eval` ⟹ `exec ∘
-compile` — is the reverse of the CalcVM bridge that IS proven
-(`evalD_agrees_source` goes `evalD ⟹ Source.eval`). It is a determinacy/
-completeness argument (both machines are deterministic and total-on-termination),
-left as a single named obligation. -/
+All three legs are PROVEN. The first leg — `Source.eval` ⟹ `exec ∘ compile` — is the
+reverse of the CalcVM bridge (`evalD_agrees_source` goes `evalD ⟹ Source.eval`); it is a
+determinacy/completeness argument (both machines are deterministic and
+total-on-termination), discharged via the converse simulation
+`evalD_complete`/`evalD_complete_gen`. -/
 
 /-! ### GAP 1 — the reverse CalcVM bridge (`Source.eval ⟹ exec`, pure fragment)
 
@@ -1847,8 +1847,8 @@ theorem Sim.handle {cx cy : Comp} (h : Sim cx cy) (hh : Handler) :
               simp only [CalcVM.evalD]; rw [ha]; exact hb
 
 /-- The plug-congruence: a focus simulation lifts through ANY frame stack — including `handleF`
-(via `Sim.handle`), now that `Sim` is store-parametric. Induction on `K`. The total context
-predicate `CtxOk` (admits handleF) replaces the old `PureCtx`. -/
+(via `Sim.handle`), now that `Sim` is store-parametric. Induction on `K`; the lift is
+unconditional over `K` — no context-purity predicate needed. -/
 theorem evalD_plug_sim : ∀ {K : Bang.EvalCtx} {cx cy : Comp}, Sim cx cy →
     ∀ {n r}, CalcVM.evalD n [] [] (plug K cy) = some r →
     ∃ m, CalcVM.evalD m [] [] (plug K cx) = some r
@@ -3209,24 +3209,15 @@ theorem compile_forward_sim_pure {c : Comp} {v : Val} {fuel : Nat}
   unfold Wasmfx.run
   rw [hb]
 
-/-- `compile_forward_sim` proof. The PURE fragment is PROVEN axiom-clean
-(`compile_forward_sim_pure`, GAP 1 closed). The remaining `sorry` is GAP 2: the
-NON-pure fragment (`up`/`handle`).
+/-- `compile_forward_sim` proof. BOTH branches are proven: the PURE fragment axiom-clean
+(`compile_forward_sim_pure`, GAP 1 closed) and the NON-pure fragment (`up`/`handle`) via the
+total reverse bridge `evalD_complete_gen` + `exec_wexec_sim_ok` (GAP 2 closed).
 
-  MODEL STATUS (this commit): the WASM model is now SOUND for handlers — `wexec`
-  re-`compile`s residual `subst …` THREADING the CalcVM continuation, so a
-  re-compiled `handle` body's `markH` captures the TRUE outer continuation (the
-  former stop-early abort defect is FIXED; the §7b probes are the build-enforced
-  witnesses, `wexec ≡ Source.eval` on handler programs incl. the ex-counterexample).
-
-  GAP 2 is now PURELY the PROOF extension (no model blocker): extend the two bridges
-  past the pure fragment —
-    · `evalD_complete_gen` (`PureCtx K`/`Comp.Pure c`-gated) to the `handleF`/`up`
-      arms, threading non-empty σ/τ stores (the proof currently runs at `[] []`);
-    · `exec_wexec_sim` (`CodePure`-gated) to its MARK/UNMARK/OP arms — the handler-
-      helper commutation lemmas (`wStateUpdate_comm`/`wUnwindFind_comm`) and
-      `injHStack` are already in place FOR these arms.
-  A distinct Milestone-B effort, not a localized fix. -/
+  MODEL STATUS: the WASM model is SOUND for handlers — `wexec` re-`compile`s residual
+  `subst …` THREADING the CalcVM continuation, so a re-compiled `handle` body's `markH`
+  captures the TRUE outer continuation (the former stop-early abort defect is FIXED; the §7b
+  probes are the build-enforced witnesses, `wexec ≡ Source.eval` on handler programs incl. the
+  ex-counterexample). -/
 theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
     (h : Source.eval fuel c = Result.done v) :
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := by
@@ -3257,9 +3248,9 @@ theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
 
 These probes pin `Wasmfx.run` (`wexec`) ≡ `Source.eval` (the kernel) on handler
 programs. They include the case that USED to be a counterexample — the residual-arm
-model defect — now AGREEING after the threaded-continuation fix (task #40).
+model defect — now AGREEING after the threaded-continuation fix.
 
-THE FORMER DEFECT (fixed at this commit): `wexec`'s SUBST/APP/CASE/SPLIT arms ran
+THE FORMER DEFECT (fixed by the threaded-continuation representation): `wexec`'s SUBST/APP/CASE/SPLIT arms ran
 `lowerCode (compile body []) ++ c`. When `body` contained a `handle`, `compile body
 []` baked the markH savedCode = `[]` (NOT the real outer continuation `c`); a zero-shot
 ABORT then resumed `[]` and STOPPED early. THE FIX (Lindley et al. 2025 §1.3 epilogue

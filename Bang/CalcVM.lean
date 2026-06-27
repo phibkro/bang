@@ -1518,7 +1518,7 @@ transforms `hs ↝ hsf`, the continuation `c` runs from `hsf`), with `Corr σ' h
 (the store mirrors the machine's active state frames, D3). The `up`/`handle (state)`
 cases use `stateUpdate_get`/`stateUpdate_put`/`Corr_install` to align the inline
 store service with the in-place HStack update. The `handle (throws)` catch is the
-zero-shot `THROW ↔ dispatch` correspondence (unchanged from O2, now σ-threaded).
+zero-shot `THROW ↔ dispatch` correspondence (now σ-threaded).
 Induction on the eval fuel `fe`. -/
 theorem sim : ∀ fe,
     (∀ M σ τ t σ' τ', evalD fe σ τ M = some (.term t, σ', τ') →
@@ -2461,23 +2461,6 @@ example : evalD 14 [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
     = some (.term (.ret (.vint 3)), [], []) := by rfl
 example : evalD 12 [] [] (.unfold (.fold (.vint 8)))
     = some (.term (.ret (.vint 8)), [], []) := by rfl
-
-/-! ## The D1-A bridge: `evalD ≡ Source.eval` (pure spine)
-
-The agreement that makes the substitution `evalD` worth calculating from (D1-A):
-the denotational big-step `evalD` agrees with the kernel's *type-safety-verified*
-small-step `Source.eval` (`Bang/Operational.lean`). Because both are substitution-
-based with a closed focus, the bridge is a plain big/small-step simulation — no
-cross-representation logical relation (the payoff of decision (b)).
-
-`run_evalD` is the simulation, forward to a concrete `Config.run` result (the
-fuel-alignment key, k2-playbook §1) over an arbitrary CK context `K`. Each `evalD`
-clause maps to the matching `Source.step` PUSH+REDUCE pair:
-`letC`→`letF`-frame, `app`→`appF`-frame, `force (vthunk)`→drop-the-thunk. The
-`evalD_agrees_source` corollary (`K = []`, terminal `ret v`) is the headline: an
-`evalD` that returns `v` is witnessed by `Source.eval … = .done v`, so the
-verified kernel's `type_safety` now backs the calculated machine's `ret`-results
-(invariant #1). Handlers/ADT eliminators extend this in later increments. -/
 
 /-! ## The D1-A bridge: `evalD ≡ Source.eval` (two-part, with handlers)
 
@@ -4297,7 +4280,7 @@ theorem run_evalD : ∀ fe,
 /-- **The D1-A bridge** (headline): when `evalD` says a closed computation returns
 `v`, the kernel's verified `Source.eval` agrees (`.done v`). Ties the calculated
 machine to the type-safety reference (invariant #1) — `Source.eval`'s `type_safety`
-now backs `evalD`'s `ret`-results. Pure spine; handlers/ADT elim later. -/
+now backs `evalD`'s `ret`-results. -/
 theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (σ' : SStore) (τ' : THeap)
     (h : evalD f [] [] M = some (.term (.ret v), σ', τ')) :
     ∃ F, Source.eval F M = Result.done v := by

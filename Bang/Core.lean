@@ -34,7 +34,7 @@ when forced), and the multiplicity / coeffect grade indexes the **returner**
 Torczon is the operational/Coq substrate; for the denotational backstop
 (graded monadic semantics + coherence of grading for CBPV) see
 mcdermott-fscd25-grading-cbpv — the semantic layer Torczon's development
-doesn't cover. Confirmed still-SOTA by the 2026-06-21 sweep.
+doesn't cover. Confirmed still-SOTA.
 
 EFFECT GRADE = `Lattice + OrderBot` (resolves Q1 in OPEN_QUESTIONS.md):
   - `⊥`     = no effects (the empty row)

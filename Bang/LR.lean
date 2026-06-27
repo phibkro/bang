@@ -47,8 +47,7 @@ idComp`) is delivered by the `[AddGroup Eff]` group structure in `group_recovers
 proof, NOT by an inverse-effect TERM. Materializing an inverse as a `Comp` would need
 either group-effect operations the kernel does not have or a 6th primitive (invariant
 #5) — so the honest faithful def keeps the scaffold pure and lets the relation carry
-the inversion. See FORK note in the report; revisit when group effects get term-level
-operations. -/
+the inversion. Revisit when group effects get term-level operations. -/
 def recover (_c : Comp) : Comp := idComp
 
 -- Computation-to-computation contexts (for ctxApprox). SINGLE SOURCE OF TRUTH
@@ -1225,8 +1224,7 @@ theorem converges_plug_iff (C : EvalCtx) (x : Comp) :
 
 /-- The head reduction at config level: `(g, C, seqComp (ret v) c)` runs to `(g, C, c)` after 2 steps.
 The two transitions (letC PUSH + let-bind) do NOT mint (no `handle`), so the counter `g` threads
-unchanged — this re-keys cleanly (no reshape). NAMED sorry for step 1; proven in step 2 alongside the
-metering spine. -/
+unchanged — this re-keys cleanly (no reshape). -/
 theorem seqComp_ret_run (v : Val) (c : Comp) (C : EvalCtx) (n g : Nat) :
     Config.run (n + 2) (g, C, seqComp (Comp.ret v) c) = Config.run n (g, C, c) := by
   -- `seqComp (ret v) c = letC (ret v) (shift c)`: step 1 PUSHes (`letC`→`letF (shift c)::C`, focus `ret
@@ -1933,13 +1931,6 @@ def closeV : List Val → Val → Val
 Structurally identical to `EnvRel` (Closed ∧ Closed ∧ rel ∧ rec); only the value relation is `VrelK`.
 The `crelK_fund`/`vrelK_fund` migration closes open terms over `EnvRelK`-related environments. -/
 
--- ADR-0045 (typed-LR re-key, Inc 0b): each filler also carries `Val.CapClosed` (the lexical-cap
--- analogue of `Val.Closed`). The `closeC` handler-distribution / substitution-commutation lemmas need
--- the closing-env fillers to be SHIFTCAP-invariant (so the `Val.shiftCap` a `handle` cap-binder
--- introduces vanishes — Compat.lean `closeC_handle*`/`*_swap_closed`). The machine's fillers ARE
--- cap-closed (every substituted `perform` names a stacked handler — the lexical-cap discipline), so this
--- is a faithful invariant, not a restriction; it is carried HERE so the fundamental theorem's binder
--- descent has it at every closing step.
 def EnvRelK {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop
   | [],      [],        []        => True

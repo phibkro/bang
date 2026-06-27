@@ -15,13 +15,6 @@
   THE THEOREMS ARE THE ACCEPTANCE CRITERIA. Every `sorry` is a backlog item;
   the `sorry` count is the burndown chart (`bash tools/burndown.sh`).
   See also `Bang/Audit.lean` for #print axioms per theorem.
-
-  STATUS (Phase A part 2 in progress):
-    - Module split landed
-    - Spec.lean axioms 44 → 37 (subst, Ctx, isReturn, HasVTy, HasCTy,
-      Source.step/eval all concrete in their modules)
-    - Theorem statements still all `sorry` (Phase B targets)
-    - See `docs/notes/OPEN_QUESTIONS.md` for deferred design decisions
 -/
 
 import Bang.Core
@@ -142,7 +135,7 @@ theorem zero_usage_erasable
   -- returner grade `q = 0`), so there is no structural / syntactic-non-occurrence shortcut (verified:
   -- both the "syntactic non-occurrence" and "syntactic subst-independence" readings are refuted by
   -- `ret (vvar 0)` at `q = 0`). The proof routes through the logical relation:
-  --   BLOCKER: needs `lr_fundamental` (PROOF_ORDER #1, still `sorry`) — instantiate `Crel`/`Vrel` at
+  --   BLOCKER: needs `lr_fundamental` (PROOF_ORDER #1, still partial — state/txn arms) — instantiate `Crel`/`Vrel` at
   --   the grade-0 slot to get observational irrelevance of the filler (Torczon proves erasure as a
   --   corollary of the fundamental property, `semtyping.v`). With `lr_sound`+`lr_fundamental` closed,
   --   this becomes: derive `Crel n B e (subst v₁ c) (subst v₂ c)` for all `n` from `_hc` (the 0-slot
@@ -171,10 +164,7 @@ theorem effect_sound
 --   identity extension). That is the FUNDAMENTAL-THEOREM direction — both halves of
 --   `Krel C C` (related values / related stuck-ops plugged into `C` co-converge) are
 --   context-CONGRUENCE, which `Crel` alone does not give (the `letF N :: C'` induction
---   case blocks on `N[v₁] ~ N[v₂]` needing `Crel`-relatedness from `Vrel v₁ v₂`). Hence
---   `lr_sound` and `lr_fundamental` are coupled (PROOF_ORDER #1 groups them): close
---   `lr_fundamental` (→ `Krel`-reflexivity as its identity instance), then
---   `lr_sound = lr_sound_closed ∘ (congruence of the observation context)`.
+--   case blocks on `N[v₁] ~ N[v₂]` needing `Crel`-relatedness from `Vrel v₁ v₂`).
 --   ◊4.5 (ADR-0039): full `lr_sound` over arbitrary `C` consumes `krel_refl`, whose handler-frame +
 --   μ-return cases sit in the deferred iso-recursive-▷ subsystem (needs IxFree ∀k≤n Kripke-monotone
 --   Crel/Krel/Srel — plain-Nat phrasing lacks the both-ways monotonicity; build-confirmed). The CLOSED

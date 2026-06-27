@@ -6,19 +6,17 @@ import Mathlib.Order.Lattice
 /-!
 # bang-lang effect rows, in Lean 4 + Mathlib
 
-Port of `oracle/src/Bang.EffectRow.fst`. The model is identical (idempotent sets
-of labels with an optional polymorphic tail), but representing the label set as
-`Finset` collapses two things that were real work in F*:
+The model is idempotent sets of labels with an optional polymorphic tail;
+representing the label set as `Finset` collapses two things that would otherwise
+be real work:
 
 * `canon_unique` (the keystone: extensional equality ⇒ syntactic equality on the
   canonical form) is now **definitional** — `Finset.ext` IS that statement.
 * the semilattice laws are **inherited** from Mathlib's `Finset` lattice
   instance (`(· ∪ ·)` is `⊔`, `∅` is `⊥`), not proved by hand.
 
-Honesty note: faithful in shape; not compiled in-sandbox. Spots that may need a
-nudge (a lemma rename or a one-line `by ext x; simp` fallback) are marked NUDGE.
-`tools/selfcheck.mjs` exercises this exact algorithm a third time and stays
-green, so the design is de-risked independent of the proofs.
+`tools/selfcheck.mjs` exercises this same algorithm and stays green, so the
+design is differential-tested independent of the proofs.
 -/
 
 namespace Bang.EffectRow
@@ -53,7 +51,7 @@ deriving DecidableEq
 -- NOTE: `Repr` was dropped here: `Finset.instRepr` is an `unsafe` declaration, so
 -- `deriving Repr` on a structure containing a `Finset` fails the kernel check
 -- (`uses unsafe declaration 'Finset.instRepr'`). Repr is unused — Main.lean
--- serialises via the custom `rowToJson`. This was a real NUDGE spot; it is fixed.
+-- serialises via the custom `rowToJson`.
 
 abbrev Subst := List (RVar × Row)
 
@@ -65,8 +63,7 @@ example : Lattice RowC  := inferInstance
 example : OrderBot RowC := inferInstance   -- ⊥ = ∅
 
 /-- The four laws the F* version proved by hand, here inherited as Mathlib
-lemmas. NUDGE: if any name has drifted, each is also closed by
-`by ext x; simp [or_comm]` / `[or_assoc]` etc. -/
+lemmas. (Each is also closable by `by ext x; simp [or_comm]` / `[or_assoc]`.) -/
 theorem union_comm  (a b : RowC)   : a ∪ b = b ∪ a            := Finset.union_comm a b
 theorem union_assoc (a b c : RowC) : a ∪ b ∪ c = a ∪ (b ∪ c)  := Finset.union_assoc a b c
 theorem union_self  (a : RowC)     : a ∪ a = a                := Finset.union_self a
