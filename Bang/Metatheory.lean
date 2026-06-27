@@ -353,15 +353,18 @@ is `Γ.take k ++ A' :: Γ.drop k`. We carry `k = Γ'.length` for some prefix spl
 generalized so binders can grow the prefix. -/
 
 /-- Insert grade 0 / type `A'` at cutoff `k` in a context. Helper notation. -/
-private abbrev insG (γ : GradeVec Mult) (k : Nat) : GradeVec Mult :=
+-- ADR-0061 (#51): `insG`/`insT` and their `•`/`+` reshape lemmas are EXPOSED (de-`private`d) so the
+-- carrier-weakening lemmas in `Bang/Model.lean` can name the weakened grade/context. Pure grade/context
+-- infra — no carrier dependency, so `Bang.Metatheory` stays carrier-agnostic.
+abbrev insG (γ : GradeVec Mult) (k : Nat) : GradeVec Mult :=
   γ.take k ++ (0 : Mult) :: γ.drop k
 
-private abbrev insT (Γ : TyCtx Eff Mult) (k : Nat) (A' : VTy Eff Mult) : TyCtx Eff Mult :=
+abbrev insT (Γ : TyCtx Eff Mult) (k : Nat) (A' : VTy Eff Mult) : TyCtx Eff Mult :=
   Γ.take k ++ A' :: Γ.drop k
 
 /-- `insG` commutes with scaling: inserting a 0 at `k` then scaling = scaling then
 inserting (since `q * 0 = 0`). -/
-private theorem insG_smul (q : Mult) (γ : GradeVec Mult) (k : Nat) :
+theorem insG_smul (q : Mult) (γ : GradeVec Mult) (k : Nat) :
     insG (GradeVec.smul q γ) k = GradeVec.smul q (insG γ k) := by
   show (GradeVec.smul q γ).take k ++ (0:Mult) :: (GradeVec.smul q γ).drop k
     = GradeVec.smul q (γ.take k ++ (0:Mult) :: γ.drop k)
@@ -370,7 +373,7 @@ private theorem insG_smul (q : Mult) (γ : GradeVec Mult) (k : Nat) :
 
 /-- `insG` commutes with addition when the two vectors agree in length (so the
 `take`/`drop` split lines up). -/
-private theorem insG_add (γ₁ γ₂ : GradeVec Mult) (k : Nat)
+theorem insG_add (γ₁ γ₂ : GradeVec Mult) (k : Nat)
     (hlen : γ₁.length = γ₂.length) :
     insG (GradeVec.add γ₁ γ₂) k = GradeVec.add (insG γ₁ k) (insG γ₂ k) := by
   unfold insG GradeVec.add
@@ -379,14 +382,14 @@ private theorem insG_add (γ₁ γ₂ : GradeVec Mult) (k : Nat)
     List.zipWith_cons_cons, zero_add]
 
 /-- Reshape lemma for the `letC` / `let`-style grade `(q' • γ₁) + γ₂`. -/
-private theorem insG_add_smul_aux (q : Mult) (γ₁ γ₂ : GradeVec Mult) (k : Nat)
+theorem insG_add_smul_aux (q : Mult) (γ₁ γ₂ : GradeVec Mult) (k : Nat)
     (h1 : γ₁.length = γ₂.length) :
     insG (GradeVec.add (GradeVec.smul q γ₁) γ₂) k
       = GradeVec.add (GradeVec.smul q (insG γ₁ k)) (insG γ₂ k) := by
   rw [insG_add _ _ _ (by rw [GradeVec.smul_length, h1]), insG_smul]
 
 /-- Reshape lemma for the `app`-style grade `γ₁ + (q • γ₂)`. -/
-private theorem insG_add_smul_aux' (q : Mult) (γ₁ γ₂ : GradeVec Mult) (k : Nat)
+theorem insG_add_smul_aux' (q : Mult) (γ₁ γ₂ : GradeVec Mult) (k : Nat)
     (h1 : γ₁.length = γ₂.length) :
     insG (GradeVec.add γ₁ (GradeVec.smul q γ₂)) k
       = GradeVec.add (insG γ₁ k) (GradeVec.smul q (insG γ₂ k)) := by

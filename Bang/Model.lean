@@ -3452,18 +3452,172 @@ consumes (it wants the carrier over the SPECIFIC weakened typing, not an existen
 PROOF (PENDING): the index changes (`hv → hv.weaken`), and `hv.weaken` is an opaque theorem-output, so the
 proof needs the `LiveCapsResolveV.rec` harness + per-arm transport via `HasVTy.weaken`'s constructor
 behaviour (the same recursor pattern as the carrier-subst, simpler — no grade-gate threading). -/
-mutual
+/-- Motive for the VALUE carrier-weaken recursor: the carrier is preserved under `HasVTy.weaken` at any
+cutoff `k`. Indexed (not existential): the consumer (subst binder arms) wants the carrier over the SPECIFIC
+weakened typing `hv.weaken k hk A'`. Closed via definitional proof-irrelevance (`HasVTy : Prop`) — each arm
+rebuilds the matching constructor; the opaque `hv.weaken` output is defeq (or grade-eq-cast) to it. -/
+def VweakenMotive (K : EvalCtx) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (hv : HasVTy γ Γ v A) (_ : LiveCapsResolveV K hv) : Prop :=
+  ∀ (k : Nat) (hk : k ≤ Γ.length) (A' : VTy Eff Mult), LiveCapsResolveV K (hv.weaken k hk A')
+
+def CweakenMotive (K : EvalCtx) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff}
+    {B : CTy Eff Mult} (hc : HasCTy γ Γ c e B) (_ : LiveCapsResolveC K hc) : Prop :=
+  ∀ (k : Nat) (hk : k ≤ Γ.length) (A' : VTy Eff Mult), LiveCapsResolveC K (hc.weaken k hk A')
+
+/-- Transport a value carrier along a grade equality (the leaf-arm cast: a `zeros`/`basis` grade weakened
+to `insG …` is provably-but-not-defeq equal, so the constructor carrier must be re-graded). -/
+theorem liveCapsResolveV_cast {K : EvalCtx} {γ γ' : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val}
+    {A : VTy Eff Mult} (hg : γ = γ') {hv : HasVTy γ Γ v A} (h : LiveCapsResolveV K hv) :
+    LiveCapsResolveV K (hg ▸ hv) := by subst hg; exact h
+
+theorem liveCapsResolveC_cast {K : EvalCtx} {γ γ' : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp}
+    {e : Eff} {B : CTy Eff Mult} (hg : γ = γ') {hc : HasCTy γ Γ c e B} (h : LiveCapsResolveC K hc) :
+    LiveCapsResolveC K (hg ▸ hc) := by subst hg; exact h
+
+/-- Transport a value carrier along a TERM equality (for the `handleState` closed-state re-typing:
+`shiftFrom k s₀ = s₀`). -/
+theorem liveCapsResolveV_termCast {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v v' : Val}
+    {A : VTy Eff Mult} (hv : v = v') {hw : HasVTy γ Γ v A} (h : LiveCapsResolveV K hw) :
+    LiveCapsResolveV K (hv ▸ hw) := by subst hv; exact h
+
+/-! Leaf inversions for the WEAKEN-OUTPUT term `Val.shiftFrom k (inert value)`: ANY typing of an inert
+value carries (the carrier follows the term, not the grade — so `γ` is FREE and `cases` assigns the stuck
+`insG`-grade). `revert hw; simp` dodges the dependent-motive trap (`hw` is a goal index); for `vvar` the
+shifted term is a stuck `if`, so `split` first. The `vcap` resolution is supplied by the source carrier
+(caps are closed: weaken leaves `n`/`ℓ` untouched). -/
+theorem liveCapsResolveV_weaken_vunit {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {A : VTy Eff Mult} (k : Nat) (hw : HasVTy γ Γ (Val.shiftFrom k Val.vunit) A) :
+    LiveCapsResolveV K hw := by
+  revert hw; simp only [Val.shiftFrom]; intro hw; cases hw; exact .vunit
+theorem liveCapsResolveV_weaken_vint {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {n : Int}
+    {A : VTy Eff Mult} (k : Nat) (hw : HasVTy γ Γ (Val.shiftFrom k (Val.vint n)) A) :
+    LiveCapsResolveV K hw := by
+  revert hw; simp only [Val.shiftFrom]; intro hw; cases hw; exact .vint
+theorem liveCapsResolveV_weaken_vcap {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {n : Nat}
+    {ℓ : Label} {A : VTy Eff Mult} (k : Nat) (hr : ResolvesLabel K n ℓ)
+    (hw : HasVTy γ Γ (Val.shiftFrom k (Val.vcap n ℓ)) A) : LiveCapsResolveV K hw := by
+  revert hw; simp only [Val.shiftFrom]; intro hw; cases hw; exact .vcap hr
+theorem liveCapsResolveV_weaken_vvar {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {i : Nat}
+    {A : VTy Eff Mult} (k : Nat) (hw : HasVTy γ Γ (Val.shiftFrom k (Val.vvar i)) A) :
+    LiveCapsResolveV K hw := by
+  revert hw; simp only [Val.shiftFrom]; split <;>
+    (intro hw; cases hw with | vvar hmem => exact LiveCapsResolveV.vvar (h := hmem))
+
+/-- `insG (zeros |Γ|) k = zeros |insT Γ k A'|` — inserting a 0 keeps an all-zeros grade all-zeros at the
+longer length (mirrors `HasVTy.weaken`'s `vunit`/`vcap` arithmetic). -/
+theorem insG_zeros_eq (Γ : TyCtx Eff Mult) (k : Nat) (A' : VTy Eff Mult) (hk : k ≤ Γ.length) :
+    insG (GradeVec.zeros Γ.length : GradeVec Mult) k
+      = (GradeVec.zeros (insT Γ k A').length : GradeVec Mult) := by
+  apply List.ext_getElem?
+  intro j
+  show ((GradeVec.zeros Γ.length).take k ++ (0:Mult) :: (GradeVec.zeros Γ.length).drop k)[j]?
+    = (GradeVec.zeros (insT Γ k A').length : GradeVec Mult)[j]?
+  rw [GradeVec.insert_get _ _ _ _ (by rw [GradeVec.zeros_length]; omega), GradeVec.zeros_get]
+  simp only [GradeVec.zeros_get]
+  have hl : (insT Γ k A').length = Γ.length + 1 := by
+    simp only [insT, List.length_append, List.length_cons, List.length_take, List.length_drop]; omega
+  rw [hl]
+  split_ifs <;> first | rfl | (exfalso; omega)
+
 theorem liveCapsResolveV_weaken {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} {hv : HasVTy γ Γ v A} (hvres : LiveCapsResolveV K hv)
     (k : Nat) (hk : k ≤ Γ.length) (A' : VTy Eff Mult) :
     LiveCapsResolveV K (hv.weaken k hk A') := by
-  sorry
+  refine LiveCapsResolveV.rec (motive_1 := VweakenMotive K) (motive_2 := CweakenMotive K)
+    ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
+    ?handleTransaction hvres k hk A'
+  -- ── VALUE arms ──
+  case vunit =>
+    intro Γ k hk A'
+    exact liveCapsResolveV_weaken_vunit k ((HasVTy.vunit (Γ := Γ)).weaken k hk A')
+  case vint =>
+    intro Γ n k hk A'
+    exact liveCapsResolveV_weaken_vint k ((HasVTy.vint (Γ := Γ) (n := n)).weaken k hk A')
+  case vvar =>
+    intro Γ i A hget k hk A'
+    exact liveCapsResolveV_weaken_vvar k ((HasVTy.vvar hget).weaken k hk A')
+  case vcap =>
+    intro Γ n ℓ hr k hk A'
+    exact liveCapsResolveV_weaken_vcap k hr ((HasVTy.vcap (Γ := Γ) (n := n) (ℓ := ℓ)).weaken k hk A')
+  case vthunk => intro γ Γ M φ B dM h ih k hk A'; exact .vthunk (ih k hk A')
+  case inl => intro γ Γ w A B dw h ih k hk A'; exact .inl (ih k hk A')
+  case inr => intro γ Γ w A B dw h ih k hk A'; exact .inr (ih k hk A')
+  case pair =>
+    intro γ γv γw Γ w₁ w₂ A B dw₁ dw₂ hγ h1 h2 ih1 ih2 k hk A'
+    subst hγ
+    exact .pair (hγ := insG_add γv γw k (by rw [dw₁.length_eq, dw₂.length_eq])) (ih1 k hk A') (ih2 k hk A')
+  case fold => intro γ Γ w A dw h ih k hk A'; exact .fold (ih k hk A')
+  -- ── COMP arms ──
+  case ret =>
+    intro γ γ' Γ w A q dw hγ h ih k hk A'
+    subst hγ
+    exact .ret (hγ := insG_smul q γ' k) (fun hq => ih hq k hk A')
+  case letC =>
+    intro γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B dM dN hγ h1 h2 ih1 ih2 k hk A'
+    subst hγ
+    exact .letC (hγ := insG_add_smul_aux (q_or_1 q2) γ₁ γ₂ k
+        (by have h1 := dM.length_eq; have h2 := dN.length_eq; simp at h2; omega))
+      (ih1 k hk A') (ih2 (k + 1) (Nat.succ_le_succ hk) A')
+  case force => intro γ Γ w φ B dw h ih k hk A'; exact .force (ih k hk A')
+  case lam => intro γ Γ M φ q A B dM h ih k hk A'; exact .lam (ih (k + 1) (Nat.succ_le_succ hk) A')
+  case app =>
+    intro γ γ₁ γ₂ Γ M w φ q A B dM dw hγ h1 h2 ih1 ih2 k hk A'
+    subst hγ
+    exact .app (hγ := insG_add_smul_aux' q γ₁ γ₂ k (by rw [dM.length_eq, dw.length_eq]))
+      (ih1 k hk A') (fun hq => ih2 hq k hk A')
+  case case =>
+    intro γ γv γN Γ w N₁ N₂ φ q A B C dw dN₁ dN₂ hγ h1 h2 h3 ih1 ih2 ih3 k hk A'
+    subst hγ
+    exact .case (hγ := insG_add_smul_aux q γv γN k (by rw [dw.length_eq]; have := dN₁.length_eq; simp at this ⊢; omega))
+      (fun hq => ih1 hq k hk A') (ih2 (k + 1) (Nat.succ_le_succ hk) A') (ih3 (k + 1) (Nat.succ_le_succ hk) A')
+  case split =>
+    intro γ γv γN Γ w N φ q A B C dw dN hγ h1 h2 ih1 ih2 k hk A'
+    subst hγ
+    exact .split (hγ := insG_add_smul_aux q γv γN k (by rw [dw.length_eq]; have := dN.length_eq; simp at this ⊢; omega))
+      (fun hq => ih1 hq k hk A') (ih2 (k + 2) (Nat.succ_le_succ (Nat.succ_le_succ hk)) A')
+  case unfold => intro γ Γ w A dw h ih k hk A'; exact .unfold (ih k hk A')
+  case perform =>
+    intro q γc γv Γ cv ℓ op w φ A B _q2 dc hle hopA hopR dw h ih k hk A'
+    convert LiveCapsResolveC.perform (q := q) (dc.weaken k hk A') (hle := hle) (hopA := hopA)
+      (hopR := hopR) (dw.weaken k hk A') (ih k hk A') using 2
+    exact insG_add_smul_aux q γv γc k (by rw [dw.length_eq, dc.length_eq])
+  case handleThrows =>
+    intro γ Γ ℓ M e φ q qc A hopA hint dM hle hbo h ih k hk A'
+    exact .handleThrows (hopA := hopA) (hint := hint) (hle := hle) (hbo := hbo)
+      (ih (k + 1) (Nat.succ_le_succ hk) A')
+  case handleState =>
+    intro γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hint dsv dM hle hbo hs h ihs ih k hk A'
+    -- the weaken output stores `shiftFrom k s₀` (= s₀ by closedness, ADR-0025); retype the closed state
+    -- there so the constructed carrier's term matches the goal's `Comp.shiftFrom k (handle …)` defeq.
+    have hsc : Val.shiftFrom k s₀ = s₀ := dsv.shift_closed k (Nat.zero_le k)
+    exact LiveCapsResolveC.handleState (dsv := hsc.symm ▸ dsv) (hga := hga) (hgr := hgr) (hpa := hpa)
+      (hpr := hpr) (hint := hint) (hle := hle) (hbo := hbo) (liveCapsResolveV_termCast hsc.symm hs)
+      (ih (k + 1) (Nat.succ_le_succ hk) A')
+  case handleTransaction =>
+    intro γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hint hcells dM hle hbo h ih k hk A'
+    exact .handleTransaction (hna := hna) (hnr := hnr) (hra := hra) (hrr := hrr) (hwa := hwa)
+      (hwr := hwr) (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo)
+      (ih (k + 1) (Nat.succ_le_succ hk) A')
+
+/-- Inversion: the only carrier over a `vthunk`-typing is `.vthunk`. Stated with `γ` FREE so dependent
+elimination can refute the other constructors (a stuck `insG`-grade index blocks `cases` otherwise). -/
+theorem liveCapsResolveV_vthunk_inv {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {M : Comp} {φ : Eff} {B : CTy Eff Mult} {dM : HasCTy γ Γ M φ B}
+    (h : LiveCapsResolveV K (HasVTy.vthunk dM)) : LiveCapsResolveC K dM := by
+  cases h with
+  | vthunk hc => exact hc
+
 theorem liveCapsResolveC_weaken {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {B : CTy Eff Mult} {hc : HasCTy γ Γ c e B} (hcres : LiveCapsResolveC K hc)
     (k : Nat) (hk : k ≤ Γ.length) (A' : VTy Eff Mult) :
     LiveCapsResolveC K (hc.weaken k hk A') := by
-  sorry
-end
+  -- Derive from the value lemma via a thunk-wrap: `vthunk c` is grade-transparent, so
+  -- `(HasVTy.vthunk hc).weaken = HasVTy.vthunk (hc.weaken)` (proof-irrelevant), then invert `.vthunk`.
+  have h := liveCapsResolveV_weaken (LiveCapsResolveV.vthunk hcres) k hk A'
+  have heq : (HasVTy.vthunk hc).weaken k hk A' = HasVTy.vthunk (hc.weaken k hk A') :=
+    Subsingleton.elim _ _
+  exact liveCapsResolveV_vthunk_inv (heq ▸ h)
 
 /-! ### §3.7 — CARRIER SUBSTITUTION (ADR-0061, #51 PIECE 2 PHASE A — the SHARED #4+#5 core).
 
