@@ -38,7 +38,12 @@ adr-check:
 
 # Build the Lean library. First time: pulls Mathlib oleans (multi-GB).
 build:
-    lake exe cache get && lake build
+    # #40: cache-get ONLY when mathlib oleans are absent (fresh setup). In a worktree
+    # that already has them, skip it — its "URL changed → re-clone" path deletes
+    # .lake/packages/mathlib and (with a shared .git/objects across worktrees) raced
+    # an auto-gc into corrupting the store on 2026-06-27. Memory: shared-worktree-git-autogc-corruption.
+    [ -e .lake/packages/mathlib/.lake/build ] || lake exe cache get
+    lake build
 
 # Static + dynamic audit gate (see tools/audit.sh).
 audit:
