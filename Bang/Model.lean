@@ -2666,6 +2666,44 @@ re-stated over the new invariant + builds. The sorry map:
   • `lwskg_pop_fresh`        — POP tail, via stratified freshness.  [Phase 2]
   • `handleF_bocc_inv`       — re-exposes the discarded answer-type B-occ for the POP arm.  [Phase 2] -/
 
+/-- ⚠ **REFUTATION (REFUTE-FIRST, kept regression).** `lwsvg_closed_regrade` AS STATED (`∀ γ' b'`) is
+FALSE. The doc's "no `vvar` leaves ⇒ γ-irrelevant" misses the SCALE gates: `ret`/`app`/`case`/`split`'s
+`decide(q≠0)` couples the AMBIENT grade to cap liveness even for a CLOSED value. Witness (`K = []`, a
+closed thunk holding a NON-resolving cap): `LWSVg [] [] true (vthunk (ret (vcap 0 0)))` holds via `ret`'s
+`q = 0` DORMANT gate, but `LWSVg [] [1] true …` does NOT — the nonzero target forces `q ≠ 0` ⇒ the cap
+must be `vcap_live` ⇒ `ResolvesLabel [] 0 0` = `splitAtId [] 0 = none`. So a closed-but-inner-dormant cap
+can't be re-graded live; the statement needs restatement (hereditary liveness, or the consumer's actual
+narrower need — `kernel`/lead call). Independent of the in-file `sorry` (the over-general claim is the
+hypothesis `H`). -/
+theorem lwsvg_closed_regrade_refute
+    (H : ∀ {K : EvalCtx} {γ0 : GradeVec Mult} {v : Val},
+         (∀ j, Val.shiftFrom j v = v) → LWSVg K γ0 true v →
+         ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg K γ' b' v) : False := by
+  have hcl : ∀ j, Val.shiftFrom j (Val.vthunk (Comp.ret (Val.vcap 0 0)))
+      = Val.vthunk (Comp.ret (Val.vcap 0 0)) := fun _ => rfl
+  have h0 : LWSVg ([] : EvalCtx) ([] : GradeVec Mult) true
+      (Val.vthunk (Comp.ret (Val.vcap 0 0))) := by
+    refine .vthunk (.ret (q := 0) (γ' := []) ?_ ?_)
+    · simp [GradeVec.smul, GradeVec.zeros]
+    · rw [show (true && decide ((0 : Mult) ≠ 0)) = false from by simp]; exact .vcap_dormant
+  have hbad := H hcl h0 [(1 : Mult)] true
+  cases hbad with
+  | vthunk hc =>
+    cases hc with
+    | @ret _ γ' _ _ q hγ hvc =>
+      have hlen : γ'.length = 1 := by
+        have h := congrArg List.length hγ
+        simp only [smul_length, List.length_cons, List.length_nil] at h; omega
+      obtain ⟨a, rfl⟩ := List.length_eq_one_iff.mp hlen
+      rw [show (q • [a] : GradeVec Mult) = [q * a] from by simp [GradeVec.smul]] at hγ
+      have h1 : (1 : Mult) = q * a := by simpa using hγ
+      have hq : q ≠ 0 := by rintro rfl; rw [zero_mul] at h1; exact one_ne_zero h1
+      rw [show (true && decide (q ≠ 0)) = true from by simp [hq]] at hvc
+      cases hvc with
+      | vcap_live hr =>
+        obtain ⟨Kᵢ, hh, Kₒ, hsp, _⟩ := hr
+        simp [splitAtId] at hsp
+
 /-- **lwsvg_closed_regrade (Phase 2 — the REDUCE workhorse generaliser; HARD-not-FALSE).** A CLOSED value
 LIVE at one grade is `LWSVg` at ANY grade/flag: γ-irrelevance (no `vvar` leaves to read the grade) +
 flag-weakening (live→dormant via `lwsvg_to_dormant`). This feeds `lwscg_subst`'s `∀ γ' b'` hypothesis from
