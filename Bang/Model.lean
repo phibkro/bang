@@ -3284,6 +3284,123 @@ theorem lwskg_pop_fresh {g' : Nat} {hd : Handler} {K' : EvalCtx} {γ : GradeVec 
     | transactionF hK => exact hK
   exact lwskg_rehome hK hck
 
+/-! ### §3.6′ — CARRIER pop re-homing (ADR-0061, the #51 PIECE-1 ripple). The `LiveCapsResolveC/V/K`
+mirror of `lws*g_pop_fresh`: re-home the carrier's RESOLUTION CONTEXT past a popped `handleF g'` frame,
+given every stored cap is `< g'` (so `≠ g'`). At a `vcap` leaf the freshness supplies `n ≠ g'` ⇒
+`resolvesLabel_pop`; the gated (`q = 0`) value positions carry a VACUOUS obligation, so they re-home for
+free; non-cap leaves are structural. This replaces `lwskg_pop_fresh` as the POP-tail building block now
+that `WScfg` carries `LiveCapsResolveK` (the decoupled `LWSKg` retired). -/
+mutual
+/-- `LiveCapsResolveV` re-homes its resolution context past a popped `handleF g'` frame (caps `≠ g'`). -/
+theorem liveCapsResolveV_pop {g' : Nat} {hd : Handler} {K' : EvalCtx}
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    {dv : HasVTy γ Γ v A} (h : LiveCapsResolveV (Frame.handleF g' hd :: K') dv)
+    (hng : ∀ p ∈ capsV v, p.1 ≠ g') : LiveCapsResolveV K' dv := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar Γ i A hmem => exact .vvar (h := hmem)
+  | @vcap Γ n ℓ hr => exact .vcap (resolvesLabel_pop (hng (n, ℓ) (by simp [capsV])) hr)
+  | @vthunk γ Γ M φ B dM h =>
+      exact .vthunk (liveCapsResolveC_pop h (fun p hp => hng p (by simpa only [capsV] using hp)))
+  | @inl γ Γ v A B dv h =>
+      exact .inl (liveCapsResolveV_pop h (fun p hp => hng p (by simpa only [capsV] using hp)))
+  | @inr γ Γ v A B dv h =>
+      exact .inr (liveCapsResolveV_pop h (fun p hp => hng p (by simpa only [capsV] using hp)))
+  | @pair γ γv γw Γ v w A B dv dw hγ h1 h2 =>
+      exact .pair (hγ := hγ)
+        (liveCapsResolveV_pop h1 (fun p hp => hng p (by simp only [capsV]; exact List.mem_append_left _ hp)))
+        (liveCapsResolveV_pop h2 (fun p hp => hng p (by simp only [capsV]; exact List.mem_append_right _ hp)))
+  | @fold γ Γ v A dv h =>
+      exact .fold (liveCapsResolveV_pop h (fun p hp => hng p (by simpa only [capsV] using hp)))
+/-- `LiveCapsResolveC` re-homes its resolution context past a popped `handleF g'` frame (caps `≠ g'`).
+The `q = 0` gated value positions (`ret`/`app`/`case`/`split`) re-home under the vacuous gate. -/
+theorem liveCapsResolveC_pop {g' : Nat} {hd : Handler} {K' : EvalCtx}
+    {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {φ : Eff} {C : CTy Eff Mult}
+    {dc : HasCTy γ Γ c φ C} (h : LiveCapsResolveC (Frame.handleF g' hd :: K') dc)
+    (hng : ∀ p ∈ capsC c, p.1 ≠ g') : LiveCapsResolveC K' dc := by
+  cases h with
+  | @ret γ γ' Γ v A q dv hγ hgate =>
+      exact .ret (hγ := hγ) (fun hq => liveCapsResolveV_pop (hgate hq)
+        (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B dM dN hγ h1 h2 =>
+      exact .letC (hγ := hγ)
+        (liveCapsResolveC_pop h1 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+        (liveCapsResolveC_pop h2 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | @force γ Γ v φ B dv h =>
+      exact .force (liveCapsResolveV_pop h (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | @lam γ Γ M φ q A B dM h =>
+      exact .lam (liveCapsResolveC_pop h (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | @app γ γ₁ γ₂ Γ M v φ q A B dM dv hγ h1 hgate =>
+      exact .app (hγ := hγ)
+        (liveCapsResolveC_pop h1 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+        (fun hq => liveCapsResolveV_pop (hgate hq)
+          (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C dv dN1 dN2 hγ hgate h2 h3 =>
+      exact .case (hγ := hγ)
+        (fun hq => liveCapsResolveV_pop (hgate hq)
+          (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ (List.mem_append_left _ hp))))
+        (liveCapsResolveC_pop h2
+          (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ (List.mem_append_right _ hp))))
+        (liveCapsResolveC_pop h3
+          (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | @split γ γ_v γ_N Γ v N φ q A B C dv dN hγ hgate h2 =>
+      exact .split (hγ := hγ)
+        (fun hq => liveCapsResolveV_pop (hgate hq)
+          (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+        (liveCapsResolveC_pop h2 (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+  | @unfold γ Γ v A dv h =>
+      exact .unfold (liveCapsResolveV_pop h (fun p hp => hng p (by simpa only [capsC] using hp)))
+  | @perform _ γ_c γ_v Γ cv ℓ op v φ A B q dc hle hopA hopR dv h =>
+      exact .perform (q := q) (hle := hle) (hopA := hopA) (hopR := hopR) dc dv
+        (liveCapsResolveV_pop h (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_left _ hp)))
+  | @handleThrows γ Γ ℓ M e φ q qc A hopA hint dM hle hbo h =>
+      exact .handleThrows (hopA := hopA) (hint := hint) (hle := hle) (hbo := hbo)
+        (liveCapsResolveC_pop h (fun p hp => hng p (by simpa only [capsC, capsH, List.nil_append] using hp)))
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hint dsv dM hle hbo hsr h =>
+      exact .handleState (hga := hga) (hgr := hgr) (hpa := hpa) (hpr := hpr) (hint := hint) (hle := hle) (hbo := hbo)
+        (liveCapsResolveV_pop hsr (fun p hp => hng p (by simp only [capsC, capsH]; exact List.mem_append_left _ hp)))
+        (liveCapsResolveC_pop h (fun p hp => hng p (by simp only [capsC, capsH]; exact List.mem_append_right _ hp)))
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hint hcells dM hle hbo h =>
+      exact .handleTransaction (hna := hna) (hnr := hnr) (hra := hra) (hrr := hrr) (hwa := hwa) (hwr := hwr)
+        (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo)
+        (liveCapsResolveC_pop h (fun p hp => hng p (by simp only [capsC]; exact List.mem_append_right _ hp)))
+end
+
+/-- Re-home a `LiveCapsResolveK`'s resolution context past a popped `handleF g'` frame: every stored cap
+on the scoped stack `Kfr` is `< g'` (`capsK Kfr`), so each frame's stored term re-homes
+(`liveCapsResolve*_pop`). The carrier mirror of `lwskg_rehome`; the scoped stack `dk` is unchanged. -/
+theorem liveCapsResolveK_rehome {g' : Nat} {hd : Handler} {K' : EvalCtx} :
+    ∀ {Kfr : EvalCtx} {ein : Eff} {Cin : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult}
+      {dk : HasStack Kfr ein Cin eo Co},
+      LiveCapsResolveK (Frame.handleF g' hd :: K') dk → (∀ p ∈ capsK Kfr, p.1 < g') →
+      LiveCapsResolveK K' dk := by
+  intro Kfr ein Cin eo Co dk h hck
+  induction h with
+  | nil => exact .nil
+  | @letF Kfr N e₁ e₂ eo q qk A B Co dN dK hN hK ih =>
+      exact .letF
+        (liveCapsResolveC_pop hN (fun p hp => by
+          have := hck p (by simp only [capsK]; exact List.mem_append_left _ hp); omega))
+        (ih (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
+  | @appF Kfr v e eo A B Co q dv dK hv hK ih =>
+      exact .appF
+        (fun hq => liveCapsResolveV_pop (hv hq) (fun p hp => by
+          have := hck p (by simp only [capsK]; exact List.mem_append_left _ hp); omega))
+        (ih (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
+  | @handleF Kfr n ℓ e φ eo q A Co hr hint hle hbo dK hK ih =>
+      exact .handleF (hr := hr) (hint := hint) (hle := hle) (hbo := hbo)
+        (ih (fun p hp => hck p (by simpa only [capsK, capsH, List.nil_append] using hp)))
+  | @stateF Kfr n ℓ s e φ eo q A S Co hga hgr hpa hpr hint ds hle hbo dK hsr hK ih =>
+      exact .stateF (hga := hga) (hgr := hgr) (hpa := hpa) (hpr := hpr) (hint := hint) (hle := hle) (hbo := hbo)
+        (liveCapsResolveV_pop hsr (fun p hp => by
+          have := hck p (by simp only [capsK, capsH]; exact List.mem_append_left _ hp); omega))
+        (ih (fun p hp => hck p (by simp only [capsK, capsH]; exact List.mem_append_right _ hp)))
+  | @transactionF Kfr n ℓ Θ e φ eo q A Co hna hnr hra hrr hwa hwr hint hcells hle hbo dK hK ih =>
+      exact .transactionF (hna := hna) (hnr := hnr) (hra := hra) (hrr := hrr) (hwa := hwa) (hwr := hwr)
+        (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo)
+        (ih (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
+
 /-- **GRADED liveness preservation — the NON-perform arms (Phase 2).** Given the pre-step graded invariant
 + typing + freshness, the post-step focus/stack stay graded-well-scoped. Discharged in Phase 2 by:
 PUSH/MINT graded restack (mechanical mirror of the §3.5 typeless `lwsc_restack` family); REDUCE via
