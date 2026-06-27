@@ -1743,6 +1743,106 @@ theorem lwscg_subst (hzsf : ZeroSumFree Mult)
   rw [hSg] at ih
   exact ih
 
+/-! ### §2′.8f — THE CONSUMER BRIDGE: the EXISTENCE-lift `HasVTy`/`HasCTy` ∧ caps-resolve → `LWSVg`/`LWSCg`.
+
+McDermott "Grading CBPV" §6 (FSCD'25): the lift is the EXISTENCE direction — produce ONE graded
+witness at `HasCTy`'s canonical grade — NOT the coherence ⊤⊤-LR. Cap-resolution is supplied as a
+SEPARATE side-condition (`∀ cap ∈ caps, ResolvesLabel K`), NOT recovered from the forgetful `LWSC`
+(whose existential `q'=0` storage gates lose it — machine-refuted, `scratch/LwscgOfTypedRefute`).
+Each arm reads the grade decomposition from the typing rule + supplies `LWSCg`'s (looser) constructor;
+the `vcap` leaf discharges `vcap_live` from caps-resolve; per-node `hlen`s come from `length_eq`. -/
+
+/-- caps-resolve transfers to the left of an append. -/
+theorem capsR_left {K : EvalCtx} {a b : List (Nat × Label)}
+    (h : ∀ p ∈ a ++ b, ResolvesLabel K p.1 p.2) : ∀ p ∈ a, ResolvesLabel K p.1 p.2 :=
+  fun p hp => h p (List.mem_append_left b hp)
+
+/-- caps-resolve transfers to the right of an append. -/
+theorem capsR_right {K : EvalCtx} {a b : List (Nat × Label)}
+    (h : ∀ p ∈ a ++ b, ResolvesLabel K p.1 p.2) : ∀ p ∈ b, ResolvesLabel K p.1 p.2 :=
+  fun p hp => h p (List.mem_append_right a hp)
+
+mutual
+/-- value lift: a well-typed value whose caps resolve in `K` is `LWSVg` at its typed grade, any flag. -/
+theorem lwsvg_of_typed {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val}
+    {A : VTy Eff Mult} (b : Bool) (d : HasVTy γ Γ v A)
+    (hcaps : ∀ p ∈ capsV v, ResolvesLabel K p.1 p.2) : LWSVg K γ b v := by
+  cases d with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar Γ i A hget =>
+    refine .vvar (fun _ => ?_)
+    have hi : i < Γ.length := by rw [List.getElem?_eq_some_iff] at hget; exact hget.1
+    rw [GradeVec.basis_getElem _ _ _ hi, if_pos rfl]
+    exact one_ne_zero
+  | @vcap Γ n ℓ =>
+    cases b with
+    | true => exact .vcap_live (hcaps (n, ℓ) (by simp [capsV]))
+    | false => exact .vcap_dormant
+  | vthunk hM => exact .vthunk (lwscg_of_typed b hM (by simpa only [capsV] using hcaps))
+  | inl hv => exact .inl (lwsvg_of_typed b hv (by simpa only [capsV] using hcaps))
+  | inr hv => exact .inr (lwsvg_of_typed b hv (by simpa only [capsV] using hcaps))
+  | @pair γ γ_v γ_w Γ a w A B hv hw hγ =>
+    subst hγ
+    simp only [capsV] at hcaps
+    exact .pair rfl (by rw [hv.length_eq, hw.length_eq])
+      (lwsvg_of_typed b hv (capsR_left hcaps)) (lwsvg_of_typed b hw (capsR_right hcaps))
+  | fold hv => exact .fold (lwsvg_of_typed b hv (by simpa only [capsV] using hcaps))
+/-- comp lift: a well-typed comp whose caps resolve in `K` is `LWSCg` at its typed grade, any flag. -/
+theorem lwscg_of_typed {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp}
+    {φ : Eff} {C : CTy Eff Mult} (b : Bool) (d : HasCTy γ Γ c φ C)
+    (hcaps : ∀ p ∈ capsC c, ResolvesLabel K p.1 p.2) : LWSCg K γ b c := by
+  cases d with
+  | @ret γ γ' Γ v A q hv hγ =>
+    subst hγ
+    exact .ret (q := q) rfl (lwsvg_of_typed _ hv (by simpa only [capsC] using hcaps))
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN hγ =>
+    subst hγ
+    simp only [capsC] at hcaps
+    exact .letC (q1 := q1) (q2 := q2) rfl
+      (by have h1 := hM.length_eq; have h2 := hN.length_eq;
+          simp only [List.length_cons] at h2; omega)
+      (lwscg_of_typed b hM (capsR_left hcaps)) (lwscg_of_typed b hN (capsR_right hcaps))
+  | force hv => exact .force (lwsvg_of_typed b hv (by simpa only [capsC] using hcaps))
+  | lam hM => exact .lam (lwscg_of_typed b hM (by simpa only [capsC] using hcaps))
+  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv hγ =>
+    subst hγ
+    simp only [capsC] at hcaps
+    exact .app (q := q) rfl (by rw [hM.length_eq, hv.length_eq])
+      (lwscg_of_typed b hM (capsR_left hcaps)) (lwsvg_of_typed _ hv (capsR_right hcaps))
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C hv hN₁ hN₂ hγ =>
+    subst hγ
+    simp only [capsC] at hcaps
+    refine .case (q := q) rfl
+      (by have h1 := hv.length_eq; have h2 := hN₁.length_eq;
+          simp only [List.length_cons] at h2; omega) ?_ ?_ ?_
+    · exact lwsvg_of_typed _ hv (capsR_left (capsR_left hcaps))
+    · exact lwscg_of_typed b hN₁ (capsR_right (capsR_left hcaps))
+    · exact lwscg_of_typed b hN₂ (capsR_right hcaps)
+  | @split γ γ_v γ_N Γ v N φ q A B C hv hN hγ =>
+    subst hγ
+    simp only [capsC] at hcaps
+    refine .split (q := q) rfl
+      (by have h1 := hv.length_eq; have h2 := hN.length_eq;
+          simp only [List.length_cons] at h2; omega) ?_ ?_
+    · exact lwsvg_of_typed _ hv (capsR_left hcaps)
+    · exact lwscg_of_typed b hN (capsR_right hcaps)
+  | unfold hv => exact .unfold (lwsvg_of_typed b hv (by simpa only [capsC] using hcaps))
+  | @perform γ_c γ_v Γ cv ℓ op v φ q A B hc hle hopA hopR hv =>
+    simp only [capsC] at hcaps
+    exact .perform (q := q) rfl (by rw [hv.length_eq, hc.length_eq])
+      (lwsvg_of_typed b hc (capsR_left hcaps)) (lwsvg_of_typed false hv (capsR_right hcaps))
+  | handleThrows _ _ hM _ _ =>
+    exact .handleThrows (lwscg_of_typed b hM (by simpa only [capsC, capsH, List.nil_append] using hcaps))
+  | handleState _ _ _ _ _ hs hM _ _ =>
+    simp only [capsC, capsH] at hcaps
+    exact .handleState (lwsvg_of_typed b hs (capsR_left hcaps))
+      (lwscg_of_typed b hM (capsR_right hcaps))
+  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ =>
+    simp only [capsC, capsH] at hcaps
+    exact .handleTransaction (lwscg_of_typed b hM (capsR_right hcaps))
+end
+
 /-- **OBLIGATION 2 — `WScfg` preservation by `Source.step` (the inc-5 crux).** `WScfg` =
 `HasCTy ∧ HasStack ∧ LWSC ∧ LWSK` (typeless cap-reachability `LWSC`/`LWSK` over the typing core). The
 TYPING half (`HasCTy`/`HasStack`) rides existing NonEscape-free preservation (`hasConfigTy_step`, factored
