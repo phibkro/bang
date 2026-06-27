@@ -1049,6 +1049,49 @@ theorem lwscg_to_lwsck {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp} 
   | handleTransaction h => exact .handleTransaction (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
 end
 
+/-! ### §2′.8c — graded FLAG-MONOTONICITY (`true` is strongest; weakens to any flag). Mirrors the typeless
+`lwsv_to_dormant`/`lwsv_of_live`, grade index threaded unchanged (the gate `b && decide (q ≠ 0)` collapses
+under `b := false`). Foundation for the `lwscg_subst` leaf (a live arg plugs into any occurrence flag). -/
+mutual
+theorem lwsvg_to_dormant {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {v : Val}
+    (h : LWSVg K γ b v) : LWSVg K γ false v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar _ => exact .vvar (by simp)
+  | vcap_live _ => exact .vcap_dormant
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk h => exact .vthunk (lwscg_to_dormant h)
+  | inl h => exact .inl (lwsvg_to_dormant h)
+  | inr h => exact .inr (lwsvg_to_dormant h)
+  | pair hγ hlen h1 h2 => exact .pair hγ hlen (lwsvg_to_dormant h1) (lwsvg_to_dormant h2)
+  | fold h => exact .fold (lwsvg_to_dormant h)
+theorem lwscg_to_dormant {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp}
+    (h : LWSCg K γ b c) : LWSCg K γ false c := by
+  cases h with
+  | ret hγ h => exact .ret hγ (by simpa using lwsvg_to_dormant h)
+  | letC hγ hlen h1 h2 => exact .letC hγ hlen (lwscg_to_dormant h1) (lwscg_to_dormant h2)
+  | force h => exact .force (lwsvg_to_dormant h)
+  | lam h => exact .lam (lwscg_to_dormant h)
+  | app hγ hlen h1 h2 => exact .app hγ hlen (lwscg_to_dormant h1) (by simpa using lwsvg_to_dormant h2)
+  | case hγ hlen h1 h2 h3 =>
+      exact .case hγ hlen (by simpa using lwsvg_to_dormant h1) (lwscg_to_dormant h2) (lwscg_to_dormant h3)
+  | split hγ hlen h1 h2 => exact .split hγ hlen (by simpa using lwsvg_to_dormant h1) (lwscg_to_dormant h2)
+  | unfold h => exact .unfold (lwsvg_to_dormant h)
+  | perform hγ hlen h1 h2 =>
+      exact .perform hγ hlen (lwsvg_to_dormant h1) (lwsvg_to_dormant h2)
+  | handleThrows h => exact .handleThrows (lwscg_to_dormant h)
+  | handleState hs h => exact .handleState (lwsvg_to_dormant hs) (lwscg_to_dormant h)
+  | handleTransaction h => exact .handleTransaction (lwscg_to_dormant h)
+end
+
+/-- A live value plugs into ANY occurrence flag (graded; `true` identity, `false` = `lwsvg_to_dormant`). -/
+theorem lwsvg_of_live {K : EvalCtx} {γ : GradeVec Mult} (b : Bool) {v : Val}
+    (h : LWSVg K γ true v) : LWSVg K γ b v := by
+  cases b
+  · exact lwsvg_to_dormant h
+  · exact h
+
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
 (`vcap`s arise only by minting). The diagonal's side-condition (the bare form is FALSE: a hand-written
@@ -1391,19 +1434,25 @@ theorem lwsk_restack_handleF (g : Nat) (hd : Handler) {K : EvalCtx} (hsb : Stack
       | transactionF hK => exact .transactionF (lwsk_restack_handleF g hd hsb hK)
 
 /-- **coh_step / `lwscg_subst`** — the graded (Coh-layer) substitution-preservation consumed by the
-REDUCE/MINT/DISPATCH arms of `wsCfg_step`. The graded mirror of `subst_value_proof` (Metatheory) crossed
-with the typeless live-arg `lwsc_subst`: a LIVE closed value `v` (graded `γ_v`) substituted for var `0`
-of a body `c` graded `ρ :: γ` yields `Comp.subst v c` graded `γ + ρ • γ_v`, preserving the reachability
-flag `b`. The `ρ = 0` (dead-arg) case is handled SEPARATELY by the discharge `lwscg_to_lwsck` + the
-typeless `lwsck_subst`; this is the live companion (`ρ ≠ 0`, but the single LIVE precondition is uniform —
-a live `v` also plugs into any dormant slot via `lwsvg`'s monotonicity).
+REDUCE/MINT/DISPATCH arms of `wsCfg_step`. The graded mirror of `subst_value_proof` (Metatheory): a closed
+value `v` substituted for var `0` of a body `c` graded `ρ :: γ` yields `Comp.subst v c` graded
+`γ + ρ • γ_v`, preserving the reachability flag `b`. The `ρ = 0` (dead-arg) case is handled SEPARATELY by
+the discharge `lwscg_to_lwsck` + the typeless `lwsck_subst`; this is the live companion (`ρ ≠ 0`).
 
-PROOF NOTE (for the grind, both arms): mirrors the mutual `lwsv_subst`/`lwsc_subst` (≈12 arms each) but
-graded. The induction needs a general-`k` inner form (`Comp.substFrom k v`, result grade `Sgrade γ_v k γ`
-à la `HasCTy.subst_gen` — the binders shift the cutoff `k` and cons the grade context); this k=0 form is
-the corollary the arms consume (`Δ = []` ⟹ `γ + ρ • γ_v`, matching `subst_value_proof`). -/
+WELL-SCOPING HYPOTHESIS (the reshape): `v` is well-scoped at ANY grade/flag (`∀ γ' b', LWSVg K γ' b' v`).
+The substituted `v` occurs ONLY at the `vvar k` leaves, so quantifying its scoping over the grade index
+DISSOLVES the closed-value REGRADE that the fixed-grade form (`LWSVg K γ_v true v`) forced at the leaf —
+the leaf becomes a direct application of `hvl`. The obligation that a CLOSED value satisfies this `∀`-form
+is RELOCATED to the consumer: a forward-build-from-typing (`HasCTy → LWSVg`), the natural content of the
+deferred lift (#46), NOT a regrade transform here.
+
+PROOF NOTE (the grind, both arms): mirrors the mutual `lwsv_subst`/`lwsc_subst` (≈12 arms each) but graded.
+The induction needs a general-`k` inner form (`Comp.substFrom k v`, result grade `Sgrade γ_v k γ` à la
+`HasCTy.subst_gen` — binders shift the cutoff `k` and cons the grade context); this k=0 form is the
+corollary the arms consume (`γ + ρ • γ_v`, matching `subst_value_proof`). The work is `Sgrade`/`slotGrade`
+arithmetic (push `eraseIdx`/`slotGrade` through `+`/`•`), now reachable from `Metatheory` C.2. -/
 theorem lwscg_subst {K : EvalCtx} {ρ : Mult} {γ γ_v : GradeVec Mult} {b : Bool} {v : Val} {c : Comp}
-    (hvl : LWSVg K γ_v true v) (hcl : ∀ j, Val.shiftFrom j v = v)
+    (hvl : ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg K γ' b' v) (hcl : ∀ j, Val.shiftFrom j v = v)
     (hc : LWSCg K (ρ :: γ) b c) :
     LWSCg K (γ + ρ • γ_v) b (Comp.subst v c) := by
   sorry

@@ -778,7 +778,7 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
 end
 
 /-- Grade at the substituted slot `k`, read off the derivation's grade vector. -/
-private def slotGrade (γ_full : GradeVec Mult) (k : Nat) : Mult :=
+def slotGrade (γ_full : GradeVec Mult) (k : Nat) : Mult :=
   (γ_full[k]?).getD 0
 
 /-! ### C.2 `eraseIdx` / `slotGrade` distribute over `+` and `•`
@@ -812,7 +812,7 @@ end GradeVec
 
 /-- `slotGrade (γ₁ + γ₂) k = slotGrade γ₁ k + slotGrade γ₂ k` when both vectors
 have length `> k` (so neither index is out of range). -/
-private theorem slotGrade_add (γ₁ γ₂ : GradeVec Mult) (k : Nat)
+theorem slotGrade_add (γ₁ γ₂ : GradeVec Mult) (k : Nat)
     (h1 : k < γ₁.length) (h2 : k < γ₂.length) :
     slotGrade (GradeVec.add γ₁ γ₂) k = slotGrade γ₁ k + slotGrade γ₂ k := by
   unfold slotGrade GradeVec.add
@@ -823,7 +823,7 @@ private theorem slotGrade_add (γ₁ γ₂ : GradeVec Mult) (k : Nat)
     · rw [List.getElem?_eq_none_iff] at hb; omega
     · simp
 
-private theorem slotGrade_smul (q : Mult) (γ : GradeVec Mult) (k : Nat) :
+theorem slotGrade_smul (q : Mult) (γ : GradeVec Mult) (k : Nat) :
     slotGrade (GradeVec.smul q γ) k = q * slotGrade γ k := by
   unfold slotGrade GradeVec.smul
   rw [List.getElem?_map]
@@ -833,12 +833,12 @@ private theorem slotGrade_smul (q : Mult) (γ : GradeVec Mult) (k : Nat) :
 
 /-- The substitution grade transform `S γ = eraseIdx k γ + slotGrade γ k • γ_v`,
 abbreviated for the homomorphism lemmas below. -/
-private def Sgrade (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mult) : GradeVec Mult :=
+def Sgrade (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mult) : GradeVec Mult :=
   GradeVec.add (γ.eraseIdx k) (GradeVec.smul (slotGrade γ k) γ_v)
 
 /-- `S` length: `(Sgrade γ_v k γ).length = γ.length - 1` when `k < γ.length` and
 `γ_v.length = γ.length - 1` (the value's grade matches the post-erase length). -/
-private theorem Sgrade_length (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mult)
+theorem Sgrade_length (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mult)
     (hk : k < γ.length) (hv : γ_v.length = γ.length - 1) :
     (Sgrade γ_v k γ).length = γ.length - 1 := by
   unfold Sgrade
@@ -846,7 +846,7 @@ private theorem Sgrade_length (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mu
     Nat.min_self]
 
 /-- `S` distributes over `+` (all vectors length-aligned, `> k`). -/
-private theorem Sgrade_add (γ_v : GradeVec Mult) (k : Nat) (γ₁ γ₂ : GradeVec Mult)
+theorem Sgrade_add (γ_v : GradeVec Mult) (k : Nat) (γ₁ γ₂ : GradeVec Mult)
     (h1 : k < γ₁.length) (h2 : k < γ₂.length) (hlen : γ₁.length = γ₂.length)
     (hv : γ_v.length = γ₁.length - 1) :
     Sgrade γ_v k (GradeVec.add γ₁ γ₂)
@@ -862,7 +862,7 @@ private theorem Sgrade_add (γ_v : GradeVec Mult) (k : Nat) (γ₁ γ₂ : Grade
     simp [add_comm, add_left_comm, add_assoc, add_mul]
 
 /-- `S` distributes over `•`. -/
-private theorem Sgrade_smul (γ_v : GradeVec Mult) (k : Nat) (q : Mult) (γ : GradeVec Mult) :
+theorem Sgrade_smul (γ_v : GradeVec Mult) (k : Nat) (q : Mult) (γ : GradeVec Mult) :
     Sgrade γ_v k (GradeVec.smul q γ) = GradeVec.smul q (Sgrade γ_v k γ) := by
   unfold Sgrade
   rw [GradeVec.eraseIdx_smul, slotGrade_smul, GradeVec.smul_add]
