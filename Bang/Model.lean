@@ -2200,7 +2200,18 @@ flag-weakening (live→dormant via `lwsvg_to_dormant`). This feeds `lwscg_subst`
 the SINGLE witness inverted off the carried focus `LWSCg` — eliminating the `capsResolve_reduce` (all-caps-
 resolve) obligation entirely. The witness MUST be live (`b0 = true`): from a DORMANT witness the claim is
 FALSE (`CohSubstRefute::wbad` — a dormant cap can't be made live); that case is the DEAD-arg path
-(`lwscg_to_lwsck` + `lwsck_subst`), not this. If a case forces caps-resolve, STOP + refute (kept witness). -/
+(`lwscg_to_lwsck` + `lwsck_subst`), not this. If a case forces caps-resolve, STOP + refute (kept witness).
+
+PROOF PLAN (derived; Torczon OOPSLA'24 Cor 4.4 / Thm 4.3 — a UNARY grade-threading predicate, NOT a ⊤⊤-LR):
+  • `b' = false` (dormant): `lwsvg_to_anyγ_false` (§2′.8a″, DONE) — every gate collapses, nothing reads γ.
+  • `b' = true` (live): the EXISTENTIAL-`pre` LIFT, generalised over a cutoff `k` (free vars < k):
+      `lwsvg_regrade_live (k) (free vars < k) (h : LWSVg γ0 true v) (δ) : ∃ pre, pre.length = k ∧
+         LWSVg (pre ++ δ) true v`.
+    The use-count problem DISSOLVES: at a `vvar i` leaf `pre = (1 at i)`; at an ADDITIVE split
+    (`pair`/`app`/`case`/`split`) the components' `pre`s ADD (`pre = pre_a + pre_b`), so a var used in K
+    places accumulates `pre[i] = K` bottom-up — no "split γ'[i] into K nonzeros" needed (the rig's
+    `NoZeroDivisors`/`ZeroSumFree`/`Nontrivial` carry the nonzeroness). Dead-gated sub-positions route to
+    `lwsvg_to_anyγ_false`. `lwsvg_closed_regrade` falls out at `k = 0` (`pre = []`, so `LWSVg δ true v`). -/
 theorem lwsvg_closed_regrade {K : EvalCtx} {γ0 : GradeVec Mult} {v : Val}
     (hcl : ∀ j, Val.shiftFrom j v = v) (h : LWSVg K γ0 true v) :
     ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg K γ' b' v := by
