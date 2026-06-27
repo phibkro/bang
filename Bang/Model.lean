@@ -1446,6 +1446,263 @@ theorem Sgrade_cons (γ_v : GradeVec Mult) (k : Nat) (q : Mult) (γ : GradeVec M
   rw [GradeVec.add, List.zipWith_cons_cons, add_zero]
   rfl
 
+/-! ### §2′.8c — the LENGTH-FREE `Sgrade` rig for `lwscg_subst`.
+
+The typeless `LWSCg` carries no `k < γ.length` pin (the `[]`-graded handler-state value forces
+`k` out of range under that sub-tree), so the length-BEARING Metatheory `Sgrade_add`/`slotGrade_add`
+(which demand `k < γ.length`) cannot be used directly. These length-free analogues need only the
+constructor's own `hlen` (the binary formers carry `γ₁.length = γ₂.length`). The substitution
+induction threads a COVERAGE invariant `(γ.eraseIdx k).length ≤ γ_v.length` (the value's grade
+covers the post-erase context) — which threads through every binder/binary node and is `0 ≤ _`
+free at the `[]`-graded handler-state leaf. `Sgrade_smul` is already length-free (Metatheory). -/
+
+/-- Length-free `slotGrade`/`+` split: equal lengths ⇒ `k` in range for both summands or neither. -/
+theorem slotGrade_add_free {γ₁ γ₂ : GradeVec Mult} {k : Nat} (hlen : γ₁.length = γ₂.length) :
+    slotGrade (GradeVec.add γ₁ γ₂) k = slotGrade γ₁ k + slotGrade γ₂ k := by
+  unfold slotGrade
+  rw [GradeVec.add, List.getElem?_zipWith]
+  cases ha : γ₁[k]? with
+  | none =>
+    have hb : γ₂[k]? = none := by rw [List.getElem?_eq_none_iff] at ha ⊢; omega
+    rw [hb]; simp
+  | some a =>
+    cases hb : γ₂[k]? with
+    | none =>
+      obtain ⟨hka, _⟩ := List.getElem?_eq_some_iff.mp ha
+      rw [List.getElem?_eq_none_iff] at hb; omega
+    | some b => simp
+
+/-- Length-free `Sgrade`/`+` distribution (needs only `γ₁.length = γ₂.length`). -/
+theorem Sgrade_add_free (γ_v : GradeVec Mult) (k : Nat) {γ₁ γ₂ : GradeVec Mult}
+    (hlen : γ₁.length = γ₂.length) :
+    Sgrade γ_v k (GradeVec.add γ₁ γ₂)
+      = GradeVec.add (Sgrade γ_v k γ₁) (Sgrade γ_v k γ₂) := by
+  unfold Sgrade
+  apply List.ext_getElem?
+  intro j
+  rw [GradeVec.eraseIdx_add _ _ _ hlen, slotGrade_add_free hlen]
+  simp only [GradeVec.add, GradeVec.smul, List.getElem?_zipWith, List.getElem?_map]
+  rcases (γ₁.eraseIdx k)[j]? with _ | x <;> rcases (γ₂.eraseIdx k)[j]? with _ | y <;>
+    rcases γ_v[j]? with _ | z <;>
+    simp [add_comm, add_left_comm, add_assoc, add_mul]
+
+/-- `Sgrade`/`•` in the `HSMul` notation the `LWSCg` constructors use (so `rw` matches `q • γ`). -/
+theorem Sgrade_hsmul (γ_v : GradeVec Mult) (k : Nat) (q : Mult) (γ : GradeVec Mult) :
+    Sgrade γ_v k (q • γ) = q • Sgrade γ_v k γ := Sgrade_smul γ_v k q γ
+
+/-- `Sgrade`/`+` in the `HAdd` notation the `LWSCg` constructors use (so `rw` matches `γ₁ + γ₂`). -/
+theorem Sgrade_hadd (γ_v : GradeVec Mult) (k : Nat) {γ₁ γ₂ : GradeVec Mult}
+    (hlen : γ₁.length = γ₂.length) :
+    Sgrade γ_v k (γ₁ + γ₂) = Sgrade γ_v k γ₁ + Sgrade γ_v k γ₂ := Sgrade_add_free γ_v k hlen
+
+/-- `•` length in `HSMul` notation (so the `hlen_s` side-conditions match the constructors' `q • γ`). -/
+theorem smul_hlength (q : Mult) (γ : GradeVec Mult) : (q • γ).length = γ.length :=
+  GradeVec.smul_length q γ
+
+/-- `Sgrade` of the empty grade is empty (the closed handler-state leaf). -/
+theorem Sgrade_nil (γ_v : GradeVec Mult) (k : Nat) :
+    Sgrade γ_v k ([] : GradeVec Mult) = [] := by
+  unfold Sgrade; rw [GradeVec.add]; simp
+
+/-- `Sgrade` length depends on `γ` only through its length, so equal-length grades give equal
+`Sgrade` lengths — the `hlen` reconstructed at each binary former. -/
+theorem Sgrade_length_eq (γ_v : GradeVec Mult) (k : Nat) {γ₁ γ₂ : GradeVec Mult}
+    (hlen : γ₁.length = γ₂.length) :
+    (Sgrade γ_v k γ₁).length = (Sgrade γ_v k γ₂).length := by
+  unfold Sgrade
+  simp only [GradeVec.add_length, GradeVec.smul_length, List.length_eraseIdx, hlen]
+
+/-- THE `vvar` LEAF (`ZeroSumFree`): a body variable that SURVIVES the erase (its grade slot is
+non-zero in `γ.eraseIdx k`) stays non-zero in `Sgrade γ_v k γ`. The added `slotGrade • γ_v` slot is
+in range (coverage `hcov`), so `a + β` with `a ≠ 0` is non-zero by `ZeroSumFree`. -/
+theorem Sgrade_vvar_ne (hzsf : ZeroSumFree Mult) {γ γ_v : GradeVec Mult} {k i' : Nat}
+    (hcov : (γ.eraseIdx k).length ≤ γ_v.length)
+    (hsurv : ((γ.eraseIdx k)[i']?).getD 0 ≠ 0) :
+    ((Sgrade γ_v k γ)[i']?).getD 0 ≠ 0 := by
+  unfold Sgrade
+  rw [GradeVec.add, List.getElem?_zipWith]
+  cases hA : (γ.eraseIdx k)[i']? with
+  | none => rw [hA] at hsurv; simp at hsurv
+  | some a =>
+    have ha : a ≠ 0 := by rw [hA] at hsurv; simpa using hsurv
+    have hi'A : i' < (γ.eraseIdx k).length := (List.getElem?_eq_some_iff.mp hA).1
+    have hi'v : i' < γ_v.length := lt_of_lt_of_le hi'A hcov
+    have hB : (GradeVec.smul (slotGrade γ k) γ_v)[i']?
+        = some (slotGrade γ k * γ_v[i']) := by
+      rw [GradeVec.smul, List.getElem?_map, List.getElem?_eq_getElem hi'v]; rfl
+    rw [hB]
+    simp only [Option.map₂_some_some, Option.getD_some]
+    intro hsum
+    exact ha (hzsf a (slotGrade γ k * γ_v[i']) hsum).1
+
+/-! ### §2′.8d — COVERAGE threading helpers. The substitution induction maintains
+`(γ.eraseIdx k).length ≤ γ_v.length` (the value's grade covers the post-erase context). Each
+former transfers it to its sub-derivations: `+`-left/right (equal-length summands ⇒ same erase
+length), `•` (length-preserving), and `::` (descend a binder: both sides grow by one). -/
+
+/-- Transfer coverage to the left summand of a `+`. -/
+theorem cov_add_left {γ_a γ_b γ_v : GradeVec Mult} {k : Nat} (hlen : γ_a.length = γ_b.length)
+    (hcov : ((GradeVec.add γ_a γ_b).eraseIdx k).length ≤ γ_v.length) :
+    (γ_a.eraseIdx k).length ≤ γ_v.length := by
+  rw [List.length_eraseIdx]
+  rwa [List.length_eraseIdx, GradeVec.add_length, ← hlen, Nat.min_self] at hcov
+
+/-- Transfer coverage to the right summand of a `+`. -/
+theorem cov_add_right {γ_a γ_b γ_v : GradeVec Mult} {k : Nat} (hlen : γ_a.length = γ_b.length)
+    (hcov : ((GradeVec.add γ_a γ_b).eraseIdx k).length ≤ γ_v.length) :
+    (γ_b.eraseIdx k).length ≤ γ_v.length := by
+  rw [List.length_eraseIdx]
+  rwa [List.length_eraseIdx, GradeVec.add_length, hlen, Nat.min_self] at hcov
+
+/-- Transfer coverage through a `•` (length-preserving). -/
+theorem cov_smul {q : Mult} {γ' γ_v : GradeVec Mult} {k : Nat}
+    (hcov : ((GradeVec.smul q γ').eraseIdx k).length ≤ γ_v.length) :
+    (γ'.eraseIdx k).length ≤ γ_v.length := by
+  rw [List.length_eraseIdx]
+  rwa [List.length_eraseIdx, GradeVec.smul_length] at hcov
+
+/-- Descend a binder: coverage at `γ` ⇒ coverage at `q :: γ`, cutoff `k+1`, value grade `0 :: γ_v`. -/
+theorem cov_cons {q : Mult} {γ_par γ_v : GradeVec Mult} {k : Nat}
+    (hcov : (γ_par.eraseIdx k).length ≤ γ_v.length) :
+    ((q :: γ_par).eraseIdx (k + 1)).length ≤ (0 :: γ_v).length := by
+  rw [List.eraseIdx_cons_succ, List.length_cons, List.length_cons]; omega
+
+/-! ### §2′.8e — THE MUTUAL substitution induction (general cutoff `k`, value grade `γ_v`).
+
+Mirrors the typeless `lwsv_subst`/`lwsc_subst` (≈12 + ≈12 arms) but tracks the grade transform
+`Sgrade γ_v k γ`. The `vvar k` (substituted) leaf is the DIRECT `hvl (Sgrade …) bu`; a surviving
+body var stays live by `Sgrade_vvar_ne` (ZeroSumFree); binders cons the grade via `Sgrade_cons`
+and the value's shift collapses via `hcl`. The `k = 0` corollary `lwscg_subst` follows. -/
+mutual
+theorem lwsvg_subst_gen {K : EvalCtx} {v : Val}
+    (hvl : ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg K γ' b' v)
+    (hcl : ∀ j, Val.shiftFrom j v = v) (hzsf : ZeroSumFree Mult)
+    (γ_v : GradeVec Mult) (k : Nat) {γ : GradeVec Mult} {bu : Bool} {u : Val}
+    (hcov : (γ.eraseIdx k).length ≤ γ_v.length)
+    (hu : LWSVg K γ bu u) :
+    LWSVg K (Sgrade γ_v k γ) bu (Val.substFrom k v u) := by
+  cases hu with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar _ _ i hgate =>
+    simp only [Val.substFrom]
+    by_cases hik : i = k
+    · rw [if_pos hik]; exact hvl (Sgrade γ_v k γ) bu
+    · rw [if_neg hik]
+      by_cases hgt : i > k
+      · rw [if_pos hgt]
+        refine .vvar (fun hb => Sgrade_vvar_ne hzsf hcov ?_)
+        rw [List.getElem?_eraseIdx, if_neg (by omega : ¬ (i - 1 < k)), show i - 1 + 1 = i from by omega]
+        exact hgate hb
+      · rw [if_neg hgt]
+        refine .vvar (fun hb => Sgrade_vvar_ne hzsf hcov ?_)
+        rw [List.getElem?_eraseIdx, if_pos (by omega : i < k)]
+        exact hgate hb
+  | vcap_live h => simp only [Val.substFrom]; exact .vcap_live h
+  | vcap_dormant => simp only [Val.substFrom]; exact .vcap_dormant
+  | vthunk h => exact .vthunk (lwscg_subst_gen hvl hcl hzsf γ_v k hcov h)
+  | inl h => exact .inl (lwsvg_subst_gen hvl hcl hzsf γ_v k hcov h)
+  | inr h => exact .inr (lwsvg_subst_gen hvl hcl hzsf γ_v k hcov h)
+  | @pair γ γ_a γ_b b a w hγ hlen h1 h2 =>
+    simp only [Val.substFrom]
+    subst hγ
+    exact .pair (Sgrade_add_free γ_v k hlen) (Sgrade_length_eq γ_v k hlen)
+      (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_add_left hlen hcov) h1)
+      (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_add_right hlen hcov) h2)
+  | fold h => exact .fold (lwsvg_subst_gen hvl hcl hzsf γ_v k hcov h)
+theorem lwscg_subst_gen {K : EvalCtx} {v : Val}
+    (hvl : ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg K γ' b' v)
+    (hcl : ∀ j, Val.shiftFrom j v = v) (hzsf : ZeroSumFree Mult)
+    (γ_v : GradeVec Mult) (k : Nat) {γ : GradeVec Mult} {bc : Bool} {c : Comp}
+    (hcov : (γ.eraseIdx k).length ≤ γ_v.length)
+    (hc : LWSCg K γ bc c) :
+    LWSCg K (Sgrade γ_v k γ) bc (Comp.substFrom k v c) := by
+  have hsh : Val.shift v = v := hcl 0
+  cases hc with
+  | @ret γ γ' b w q hγ h =>
+    simp only [Comp.substFrom]
+    subst hγ
+    rw [Sgrade_hsmul]
+    exact .ret (q := q) rfl (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_smul hcov) h)
+  | @letC γ γ₁ γ₂ b M N q1 q2 hγ hlen h1 h2 =>
+    simp only [Comp.substFrom, hsh]
+    subst hγ
+    have hlen_s : ((q_or_1 q2) • γ₁).length = γ₂.length := by
+      rw [smul_hlength]; exact hlen
+    rw [Sgrade_hadd γ_v k hlen_s, Sgrade_hsmul]
+    have ih2 := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1)
+      (cov_cons (cov_add_right hlen_s hcov)) h2
+    rw [Sgrade_cons] at ih2
+    exact .letC (q1 := q1) (q2 := q2) rfl (Sgrade_length_eq γ_v k hlen)
+      (lwscg_subst_gen hvl hcl hzsf γ_v k (cov_smul (cov_add_left hlen_s hcov)) h1) ih2
+  | force h => exact .force (lwsvg_subst_gen hvl hcl hzsf γ_v k hcov h)
+  | @lam γ b M q h =>
+    simp only [Comp.substFrom, hsh]
+    have ih := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1) (cov_cons hcov) h
+    rw [Sgrade_cons] at ih
+    exact .lam (q := q) ih
+  | @app γ γ₁ γ₂ b M w q hγ hlen h1 h2 =>
+    simp only [Comp.substFrom]
+    subst hγ
+    have hlen_s : γ₁.length = (q • γ₂).length := by
+      rw [smul_hlength]; exact hlen
+    rw [Sgrade_hadd γ_v k hlen_s, Sgrade_hsmul]
+    exact .app (q := q) rfl (Sgrade_length_eq γ_v k hlen)
+      (lwscg_subst_gen hvl hcl hzsf γ_v k (cov_add_left hlen_s hcov) h1)
+      (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_smul (cov_add_right hlen_s hcov)) h2)
+  | @case γ γ_s γ_N b w N₁ N₂ q hγ hlen h1 h2 h3 =>
+    simp only [Comp.substFrom, hsh]
+    subst hγ
+    have hlen_s : (q • γ_s).length = γ_N.length := by
+      rw [smul_hlength]; exact hlen
+    rw [Sgrade_hadd γ_v k hlen_s, Sgrade_hsmul]
+    have ih2 := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1)
+      (cov_cons (cov_add_right hlen_s hcov)) h2
+    have ih3 := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1)
+      (cov_cons (cov_add_right hlen_s hcov)) h3
+    rw [Sgrade_cons] at ih2 ih3
+    exact .case (q := q) rfl (Sgrade_length_eq γ_v k hlen)
+      (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_smul (cov_add_left hlen_s hcov)) h1) ih2 ih3
+  | @split γ γ_s γ_N b w N q hγ hlen h1 h2 =>
+    simp only [Comp.substFrom, hsh]
+    subst hγ
+    have hlen_s : (q • γ_s).length = γ_N.length := by
+      rw [smul_hlength]; exact hlen
+    rw [Sgrade_hadd γ_v k hlen_s, Sgrade_hsmul]
+    have ih2 := lwscg_subst_gen hvl hcl hzsf (0 :: 0 :: γ_v) (k + 2)
+      (cov_cons (cov_cons (cov_add_right hlen_s hcov))) h2
+    rw [Sgrade_cons, Sgrade_cons] at ih2
+    exact .split (q := q) rfl (Sgrade_length_eq γ_v k hlen)
+      (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_smul (cov_add_left hlen_s hcov)) h1) ih2
+  | unfold h => exact .unfold (lwsvg_subst_gen hvl hcl hzsf γ_v k hcov h)
+  | @perform γ γ_s γ_c b cv op w q hγ hlen h1 h2 =>
+    simp only [Comp.substFrom]
+    subst hγ
+    have hlen_s : (q • γ_s).length = γ_c.length := by
+      rw [smul_hlength]; exact hlen
+    rw [Sgrade_hadd γ_v k hlen_s, Sgrade_hsmul]
+    exact .perform (q := q) rfl (Sgrade_length_eq γ_v k hlen)
+      (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_add_right hlen_s hcov) h1)
+      (lwsvg_subst_gen hvl hcl hzsf γ_v k (cov_smul (cov_add_left hlen_s hcov)) h2)
+  | @handleThrows γ b ℓ M qc h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    have ih := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1) (cov_cons hcov) h
+    rw [Sgrade_cons] at ih
+    exact .handleThrows (qc := qc) ih
+  | @handleState γ b ℓ s M qc hs h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    have ihs := lwsvg_subst_gen hvl hcl hzsf γ_v k (by simp) hs
+    rw [Sgrade_nil] at ihs
+    have ih := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1) (cov_cons hcov) h
+    rw [Sgrade_cons] at ih
+    exact .handleState (qc := qc) ihs ih
+  | @handleTransaction γ b ℓ Θ M qc h =>
+    simp only [Comp.substFrom, Handler.substFrom, hsh]
+    have ih := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1) (cov_cons hcov) h
+    rw [Sgrade_cons] at ih
+    exact .handleTransaction (qc := qc) ih
+end
+
 /-- **coh_step / `lwscg_subst`** — the graded (Coh-layer) substitution-preservation consumed by the
 REDUCE/MINT/DISPATCH arms of `wsCfg_step`. The graded mirror of `subst_value_proof` (Metatheory): a closed
 value `v` substituted for var `0` of a body `c` graded `ρ :: γ` yields `Comp.subst v c` graded
@@ -1459,16 +1716,31 @@ the leaf becomes a direct application of `hvl`. The obligation that a CLOSED val
 is RELOCATED to the consumer: a forward-build-from-typing (`HasCTy → LWSVg`), the natural content of the
 deferred lift (#46), NOT a regrade transform here.
 
-PROOF NOTE (the grind, both arms): mirrors the mutual `lwsv_subst`/`lwsc_subst` (≈12 arms each) but graded.
-The induction needs a general-`k` inner form (`Comp.substFrom k v`, result grade `Sgrade γ_v k γ` à la
-`HasCTy.subst_gen` — binders shift the cutoff `k` and cons the grade context); this k=0 form is the
-corollary the arms consume (`γ + ρ • γ_v`, matching `subst_value_proof`). The work is `Sgrade`/`slotGrade`
-arithmetic (push `eraseIdx`/`slotGrade` through `+`/`•`), now reachable from `Metatheory` C.2. -/
-theorem lwscg_subst {K : EvalCtx} {ρ : Mult} {γ γ_v : GradeVec Mult} {b : Bool} {v : Val} {c : Comp}
+TWO MATHEMATICALLY-FORCED HYPOTHESES (both ambient in the consumer via the typing's `length_eq`):
+  • `hzsf : ZeroSumFree Mult` — a SURVIVING body var (`γ[i] ≠ 0`) stays live after the subst-add
+    (`a + b ≠ 0` from `a ≠ 0`), the contrapositive of `ZeroSumFree`.
+  • `hlen_v : γ_v.length = γ.length` — WITHOUT it the statement is FALSE (`Bang/LwscgLengthRefute`,
+    axiom-clean): the truncating `GradeVec.add` (`zipWith`) drops a live body var's grade slot when
+    `γ_v` is shorter, and `force` has no `q`-gate to absorb it. The typed template carries this pin
+    for free (`HasVTy γ_v Γ` + `HasCTy (ρ::γ) (A::Γ)`); the typeless port restores it explicitly.
+
+PROOF: the `k = 0` corollary of the mutual `lwsvg_subst_gen`/`lwscg_subst_gen` above, at
+`Sgrade γ_v 0 (ρ :: γ) = γ + ρ • γ_v`. -/
+theorem lwscg_subst (hzsf : ZeroSumFree Mult)
+    {K : EvalCtx} {ρ : Mult} {γ γ_v : GradeVec Mult} {b : Bool} {v : Val} {c : Comp}
     (hvl : ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg K γ' b' v) (hcl : ∀ j, Val.shiftFrom j v = v)
+    (hlen_v : γ_v.length = γ.length)
     (hc : LWSCg K (ρ :: γ) b c) :
     LWSCg K (γ + ρ • γ_v) b (Comp.subst v c) := by
-  sorry
+  have hcov : (((ρ :: γ).eraseIdx 0).length) ≤ γ_v.length := by
+    show (γ.length) ≤ γ_v.length
+    exact le_of_eq hlen_v.symm
+  have ih := lwscg_subst_gen hvl hcl hzsf γ_v 0 hcov hc
+  have hSg : Sgrade γ_v 0 (ρ :: γ) = γ + ρ • γ_v := by
+    show GradeVec.add ((ρ :: γ).eraseIdx 0) (GradeVec.smul (slotGrade (ρ :: γ) 0) γ_v) = γ + ρ • γ_v
+    rfl
+  rw [hSg] at ih
+  exact ih
 
 /-- **OBLIGATION 2 — `WScfg` preservation by `Source.step` (the inc-5 crux).** `WScfg` =
 `HasCTy ∧ HasStack ∧ LWSC ∧ LWSK` (typeless cap-reachability `LWSC`/`LWSK` over the typing core). The
