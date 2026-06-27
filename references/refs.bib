@@ -661,3 +661,19 @@
              for the resumptive LR.
              \url{https://iris-project.org/pdfs/2026-popl-blaze.pdf}},
 }
+
+@article{boruch-gruszecki-22-scoped-capabilities,
+  author  = {Boruch-Gruszecki, Aleksander and Brachth\"{a}user, Jonathan Immanuel and Lee, Edward and Lhot\'{a}k, Ond\v{r}ej and Odersky, Martin},
+  title   = {Scoped Capabilities for Polymorphic Effects},
+  journal = {arXiv preprint arXiv:2207.03402},
+  year    = 2022,
+  note    = {CC<:Box, the capture calculus behind Scala-3 capture checking. The #18
+             (drop-VcapFree) generalization for lang-bang: avoidance ((let), Prop 3.3)
+             GENERALIZES our B-occ (ADR-0057); capture-prediction cv (Lemma 4.11/4.14,
+             cv only SHRINKS under reduction) IS ADR-0060 grade-driven liveness rebuilt;
+             reference-dependent capture sets (\S5.2) cover state-escape. Soundness is
+             SYNTACTIC progress+preservation (Thm 4.6/4.8), NOT a logical relation.
+             Cost of full CC<:Box: subtyping + reference-dependent types + boxing (>= inc-5).
+             See docs/notes/scoped-capabilities-for-vcapfree-drop.md.
+             \url{https://arxiv.org/abs/2207.03402}},
+}

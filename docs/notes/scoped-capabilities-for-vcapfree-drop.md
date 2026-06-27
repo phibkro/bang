@@ -3,11 +3,11 @@
 > Design analysis, NOT a decision. Captures the `scopedcap-design` pass (2026-06-27) for when
 > task #18 ("make raw source `vcap` untypeable / drop the `VcapFree` precondition") is tackled.
 > Reference: arXiv:2207.03402, Boruch-Gruszecki/Brachthäuser/Lee/Lhoták/Odersky,
-> *Scoped Capabilities for Polymorphic Effects* (CC<:□ / capturing types). Add to `references/refs.bib`.
+> *Scoped Capabilities for Polymorphic Effects* (CC<:□ / capturing types) — `refs.bib` key `boruch-gruszecki-22-scoped-capabilities`.
 
 ## Why this exists: there is NO v1 soundness hole
 
-The `stateEscape` witness (`Bang/StateEscapeWitness.lean`, axiom-clean `stateEscape_not_typeable`)
+The `stateEscape` witness (the `StateEscapeWitness` module on `inc5-lr-reindex`, axiom-clean `stateEscape_not_typeable`)
 proved that capability-escape-via-state is **behaviourally real but HasCTy-UNTYPEABLE today**. So
 `type_safety` holds as stated for v1. The escape is blocked — it's a confirmed *guard*, not a hole.
 
@@ -47,7 +47,7 @@ The three premises (B-occ, grade, cap-free-cell) are **forward-compatible** with
 the empty-capture-set / monomorphic special case.
 
 ## Regression oracles (any change must keep all three untypeable + `#guard`-stuck)
-`Bang/StateEscapeWitness.lean::stateEscape` (state) · `Bang/BoccRegress.lean::escapeB` (surface) ·
+`StateEscapeWitness::stateEscape` (state, on `inc5-lr-reindex`) · `Bang/BoccRegress.lean::escapeB` (surface) ·
 `escapeB_app` (arrow). Under the cap-free-cell ADDITION, `stateEscape` becomes untypeable via the
 cap-free-`S` premise *independently of VcapFree*; `escapeB`/`escapeB_app` are untouched.
 
