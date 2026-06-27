@@ -1314,10 +1314,18 @@ resume needs: it lifts a handler-stored value into the focus (`ret s`), so its c
 `< g`. It is FLAT (not stratified like `StratFresh`), so a `put` storing a younger cap into an older
 state cell keeps it (`caps(w) < g` at put-time) WITHOUT the unsound `StratFresh` coupling that bounding
 `capsH` inside `CapsBelow` would impose. Strengthens (subsumes) the old `WellCounted` (`StackBelow`,
-ids-only). -/
+ids-only).
+
+The last conjunct is the **freshness-completeness conjunct** (ADR-0061 refinement, lead-approved): it
+asserts caps `< g` against the GLOBAL counter (true for everything minted-so-far), NOT `< n` per-handler,
+which is exactly what dodges the `StratFresh` coupling that makes the stratified `capsH`-in-`CapsBelow`
+form FALSE (a `put` legitimately stores a younger cap into an older state cell). `StratFresh`'s definition
+is UNTOUCHED — this is an ADDED conjunct. Preservation: `put w` ⇒ `caps w < g` by the focus-cap bound
+(counter unchanged); MINT pushes `handleF g` + `s₀` both `< g < g+1`; the seed `wellScoped_initial` is
+vacuous (`capsK [] = ∅`). TODO(ADR-0061): record the gained conjunct in the invariant's ADR. -/
 def FreshCfg : Config → Prop
   | (g, K, c) => CapsBelow g K ∧ (∀ p ∈ capsC c, p.1 < g) ∧ StratFresh K
-      ∧ (∀ p ∈ capsK K, p.1 < g)
+      ∧ (∀ p ∈ capsK K, p.1 < g)  -- freshness-completeness: every STORED cap `< g` (ADR-0061)
 
 /-! ### §3.0a — caps are SHIFT-invariant and SUBST-bounded (the focus-cap-bound mechanics for §3.0). -/
 
