@@ -39,7 +39,7 @@ layer_of() {
     Bang.Backend.*)  echo Backend;  return ;;    # path-derived (for the deferred moves)
   esac
   case "$1" in
-    Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Model|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress)
+    Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Model|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.CohSubstRefute|Bang.LwscgLengthRefute|Bang.LwscgOfTypedRefute|Bang.WsCfgInterfaceProbe)
       echo Core ;;
     Bang.CalcVM|Bang.Compile|Bang.CalcReify|Bang.CalcReifyRef|Bang.CalcReifySim)
       echo Backend ;;
