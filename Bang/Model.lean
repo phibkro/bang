@@ -1893,6 +1893,57 @@ inductive LiveCapsResolveC (K : EvalCtx) :
       LiveCapsResolveC K (HasCTy.handleTransaction hna hnr hra hrr hwa hwr hint hcells dM hle hbo)
 end
 
+/-- ADR-0061 (#51, the SYMMETRIC stack half): grade-sensitive caps-resolution over the STACK frames'
+stored terms (`letF`'s continuation, `appF`'s arg, `stateF`'s state). The coherence the decoupled
+`LWSKg` lacks — needed because REDUCE pulls a stack continuation `N` into the post-subst focus, so `N`'s
+TYPED-live caps must resolve. `appF`'s arg is gated by the arrow `q` (dead arg ⇒ dormant, mirroring
+`LWSKg.appF`); `letF`'s `N` is NOT gated (the continuation RUNS); `transactionF`'s `int` cells are
+cap-free (omitted). Resolution is in the FULL stack `K` (a superset context; frames above don't capture). -/
+inductive LiveCapsResolveK (K : EvalCtx) :
+    ∀ {Kfr : EvalCtx} {ein : Eff} {Cin : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult},
+      HasStack Kfr ein Cin eo Co → Prop
+  | nil {e C} : LiveCapsResolveK K (HasStack.nil (e := e) (C := C))
+  | letF {Kfr N e₁ e₂ eo q qk A B Co} {dN : HasCTy (qk :: []) [A] N e₂ B}
+      {dK : HasStack Kfr (e₁ ⊔ e₂) B eo Co}
+      (hN : LiveCapsResolveC K dN) (hK : LiveCapsResolveK K dK) :
+      LiveCapsResolveK K (HasStack.letF (q := q) dN dK)
+  | appF {Kfr v e eo A B Co} {q : Mult} {dv : HasVTy [] [] v A} {dK : HasStack Kfr e B eo Co}
+      (hv : q ≠ 0 → LiveCapsResolveV K dv) (hK : LiveCapsResolveK K dK) :
+      LiveCapsResolveK K (HasStack.appF (q := q) dv dK)
+  | handleF {Kfr n ℓ e φ eo q A Co}
+      {hr : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise"}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A}
+      {dK : HasStack Kfr φ (CTy.F q A) eo Co} (hK : LiveCapsResolveK K dK) :
+      LiveCapsResolveK K (HasStack.handleF (n := n) hr hint hle hbo dK)
+  | stateF {Kfr n ℓ s e φ eo q A S Co}
+      {hga : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit}
+      {hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S}
+      {hpa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S}
+      {hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put"}
+      {ds : HasVTy [] [] s S} {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A}
+      {dK : HasStack Kfr φ (CTy.F q A) eo Co}
+      (hs : LiveCapsResolveV K ds) (hK : LiveCapsResolveK K dK) :
+      LiveCapsResolveK K (HasStack.stateF (n := n) hga hgr hpa hpr hint ds hle hbo dK)
+  | transactionF {Kfr n ℓ Θ e φ eo q A Co}
+      {hna : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some (VTy.int : VTy Eff Mult)}
+      {hnr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some (VTy.int : VTy Eff Mult)}
+      {hra : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some (VTy.int : VTy Eff Mult)}
+      {hrr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some (VTy.int : VTy Eff Mult)}
+      {hwa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar"
+        = some (VTy.prod (VTy.int : VTy Eff Mult) VTy.int)}
+      {hwr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+        op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar"}
+      {hcells : ∀ cell ∈ Θ, HasVTy [] [] cell (VTy.int : VTy Eff Mult)}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A}
+      {dK : HasStack Kfr φ (CTy.F q A) eo Co} (hK : LiveCapsResolveK K dK) :
+      LiveCapsResolveK K (HasStack.transactionF (n := n) hna hnr hra hrr hwa hwr hint hcells hle hbo dK)
+
 /-! ### §2′.8f″ — the GRADE-SENSITIVE lift `lwscg_of_typed_live` (the engine).
 
 `lwsvg_of_typed_dormant`/`lwscg_of_typed_dormant`: at flag `false` EVERY gate collapses and EVERY cap
