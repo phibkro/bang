@@ -36,6 +36,21 @@ adr-index:
 adr-check:
     python3 tools/gen-adr-index.py --check
 
+# Regenerate the counterexample-registry index (docs/notes/counterexamples.md) from the
+# Bang/Counterexamples.lean manifest + each witness's doc-comment header. Drift = unrepresentable.
+counterexamples:
+    python3 tools/gen-cex-index.py
+
+# Gate the cex index: the generated region ≡ committed (pure-text, fast; in `just fitness`).
+# The live axiom gate is `just cex-axioms`; the build of the manifest re-verifies sorry-freeness.
+cex-check:
+    python3 tools/gen-cex-index.py --check
+
+# Counterexample-registry axiom report — `#print axioms` per headline witness theorem.
+# PASS ⟺ every set ⊆ { propext, Classical.choice, Quot.sound }. Mirrors `just axioms`/Audit.lean.
+cex-axioms:
+    lake env lean Bang/Counterexamples.lean
+
 # Build the Lean library. First time: pulls Mathlib oleans (multi-GB).
 build:
     lake exe cache get && lake build
@@ -58,6 +73,7 @@ fitness:
     bash tools/arch-check.sh
     bash tools/check-audit-sync.sh
     python3 tools/check-refs.py
+    python3 tools/gen-cex-index.py --check
 
 # Zero-dep Node sanity check on the row-unifier algorithm.
 selfcheck:

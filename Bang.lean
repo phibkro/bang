@@ -22,6 +22,11 @@ import Bang.Compat
 import Bang.Distribution
 import Bang.Audit
 
+-- Counterexample registry (the kept refutation/counterexample witnesses, as ONE
+-- target) — so the green witnesses ride the default `lake build` / `just verify`.
+-- Generated index: docs/notes/counterexamples.md (`just counterexamples`/`cex-check`).
+import Bang.Counterexamples
+
 -- Tracer bullet: surface → graded-CBPV Comp → Source.eval → value
 -- (PATH-tracer-bullet; additive surface layer, outside the verification spine).
 import Bang.Surface

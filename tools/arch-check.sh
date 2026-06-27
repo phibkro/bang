@@ -45,7 +45,7 @@ layer_of() {
       echo Backend ;;
     Bang.Surface|Bang.Surface.Trait)
       echo Frontend ;;
-    Bang.Spec|Bang.Audit|Bang.Distribution)
+    Bang.Spec|Bang.Audit|Bang.Distribution|Bang.Counterexamples)
       echo Apex ;;
     *)
       echo UNCLASSIFIED ;;
