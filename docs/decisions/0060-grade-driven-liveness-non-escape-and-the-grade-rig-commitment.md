@@ -122,18 +122,21 @@ DORMANT cap is stranded harmlessly (handled structurally by `decide(q≠0)`); a 
 label still forces `LabelOccurs ℓ A` and is excluded by the ADR-0057 B-occ premise. The two mechanisms
 compose; the fix EXTENDS B-occ.
 
-> **This decision's PROOF is OPEN — progress 2026-06-27, blocked on one kernel decision (task #45) →
-> `coh_step` → assembly; DISPATCH deferred (#35).** Build-confirmed axiom-clean ON `inc5-lr-reindex`
-> (`ad97a37`, `Bang.Model` green save the one `wsCfg_step` sorry): the full engine (live/dormant/mixed
+> **This decision's PROOF is OPEN — progress 2026-06-27, task #45 RESOLVED (`c63348b`) → `coh_step` →
+> assembly; DISPATCH deferred (#35).** Build-confirmed axiom-clean ON `inc5-lr-reindex`
+> (`c63348b`, `Bang.Model` green save the one `wsCfg_step` sorry): the full engine (live/dormant/mixed
 > β subst bridge + POP wall + `⇒FocusResolves` + seed) PORTED to all 18 formers and the typeless
 > `LWSV/LWSC/LWSK` invariant now carries `WScfg`; the typeless restack + MINT freshness; the rig bounds;
 > the **`Coh` graded-mirror layer** (`LWSVg/LWSCg/LWSKg` + projection — the (A+) decision: the cap-bridge
 > stays untouched, coherence is a SEPARATE layer, because (B-grade) would thread grade-arithmetic into
 > the proven bridge and regress it — build-probed); and the discharge **rig + all non-`case`/`split`
-> arms**. STILL OPEN: (i) **task #45** — the `case`/`split` scrutinee `q=0` grading gap blocks the
-> `LWSVk` discharge (`HasCTy.case` charges the inspected scrutinee `q•γ_v` with no `q≠0`); a kernel/Spec
-> decision. (ii) `coh_step` — the ~12-arm γ-preservation through `subst_value` (the multi-session crux).
-> (iii) the `wsCfg_step` ASSEMBLY (pure wiring per opt-3's arm-map). **Do not cite `type_safety` as
+> arms**. **Task #45 RESOLVED (`c63348b`, gate-verified):** the `case`/`split` scrutinee now gates at
+> `b ∧ decide(q≠0)` — the consistent-gating fix (option 2: the SAME gate ret/app/appF already use; the
+> scrutinee was the lone scaled position missing it), NOT the kernel `q≠0` restriction first weighed (that
+> would make a SOUND `q=0` 'inspect-tag-discard-payload' program untypeable). Kernel byte-identical; the
+> discharge `lwscg_to_lwsck` is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). STILL OPEN: (i) `coh_step`
+> — the ~12-arm γ-preservation through `subst_value` (the multi-session crux). (ii) the `wsCfg_step`
+> ASSEMBLY (pure wiring per opt-3's arm-map). **Do not cite `type_safety` as
 > `sorryAx`-clean until `wsCfg_step` closes green** — it does NOT yet; the lone `Bang.Model` sorry is
 > `wsCfg_step`. The decision is sound; the verification is the (now well-mapped) implementation.
 

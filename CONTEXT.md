@@ -9,15 +9,19 @@
 ## Position
 
 > **★ ACTIVE DIRECTION (2026-06-27) — SOUNDNESS: grade-driven-liveness engine PORTED into the diagonal + the Coh
-> layer built; blocked on ONE kernel decision (task #45) then coh_step + assembly. The COMPILER's next two hops are
-> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `ad97a37` (PUSHED; `Bang.Model` green
+> layer built; **task #45 RESOLVED** (case/split scrutinee gating) — the LIVE front is now coh_step + the assembly. The COMPILER's next two hops are
+> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `c63348b` (PUSHED; `Bang.Model` green
 > save the lone `wsCfg_step` sorry). **WHERE IT STANDS:** engine (β bridge + POP wall + ⇒FocusResolves + seed)
 > ported to all 18 formers, `WScfg` rides the typeless `LWSV/LWSC/LWSK`; typeless restack + MINT freshness; rig
 > bounds; the **Coh graded-mirror layer** (ADR-0060 (A+) — cap-bridge untouched, coherence a separate layer); the
-> discharge rig + all non-case/split arms. **BLOCKER = task #45:** the `case`/`split` `q=0` scrutinee grading gap
-> (`HasCTy.case` charges the inspected scrutinee `q•γ_v` with no `q≠0`) blocks the `LWSVk` discharge — a kernel/Spec
-> decision (kernel-engineer + opt-3). Then `coh_step` (~12-arm γ-preservation, the multi-session crux) → the
-> `wsCfg_step` assembly (pure wiring per opt-3's arm-map) → `type_safety` sorryAx-on-DISPATCH-only (#35). Handoff:
+> discharge rig + all non-case/split arms. **task #45 RESOLVED (2026-06-27, `c63348b`, gate-verified):** NOT the
+> kernel `q≠0` restriction first weighed (that would make a SOUND `q=0` 'inspect-tag-discard-payload' program
+> untypeable) — instead the `case`/`split` scrutinee now gates at `b ∧ decide(q≠0)`, the SAME gate every other
+> scaled position (ret/app/appF) already uses across all four invariant layers (LWSC/LWSCk/LWSCp/LWSCg); it was the
+> lone scaled position that never got it. The discharge `lwscg_to_lwsck` (+ `lwsvg_to_lwsvk` + the false-base pair)
+> is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). **LIVE FRONT:** `coh_step` (~12-arm γ-preservation, the
+> multi-session crux) → the `wsCfg_step` assembly (pure wiring per opt-3's arm-map) → `type_safety`
+> sorryAx-on-DISPATCH-only (#35). Handoff:
 > `/tmp/lang-bang-handoff-2026-06-27-soundness-checkpoint.md`. **The
 > soundness arc:** inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE —
 > a cap escapes a ⊥-typed program) → **ADR-0057 B-occ** → the `wsCfg_step` POP arm exposed the **deep B-occ lever
