@@ -92,7 +92,7 @@ fi
 # when check-refs matters most (a renamed/deleted file leaving dangling doc refs).
 # NOT covered by BANGLANG_SKIP_VERIFY_REASON (that is only for the slow/possibly-red
 # build); only `git commit --no-verify` bypasses them.
-echo "→ pre-commit: running just fitness (primitives · adr-links · arch-check · check-refs)"
+echo "→ pre-commit: running just fitness (primitives · adr-links · adr-check · arch-check · audit-sync · check-refs)"
 if ! nix develop --command just fitness > /tmp/bang-fitness.log 2>&1; then
   echo "❌ pre-commit: just fitness failed. Last 20 lines:"
   tail -20 /tmp/bang-fitness.log | sed 's/^/    /'
