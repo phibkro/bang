@@ -9,7 +9,7 @@
 
 ## Status
 
-Accepted, 2026-06-27. Records as a **closed design decision** the quantitative half of the "grade the
+Accepted (2026-06-27). Records as a **closed design decision** the quantitative half of the "grade the
 resumption" frontier (task #35). The qualitative half (effect discharge) and the affine grade-completion are
 engineering items routed to inc-6; the multi-shot ω boundary is closed here, not deferred.
 

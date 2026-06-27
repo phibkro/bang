@@ -55,11 +55,15 @@ wasmfx-probe:
     bash tools/wasmfx-probe.sh
 
 # Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
-# STM-only) + ADR index/link integrity + the import-direction V (ADR-0046/0047:
-# Core imports neither edge). Fast, no Lean build. Also run by `just audit`.
+# STM-only) + ADR link integrity + ADR decided-ledger currency (gen-adr-index
+# --check: README ≡ frontmatter, Status copies agree, Q⟺ADR) + the
+# import-direction V (ADR-0046/0047: Core imports neither edge). Fast, no Lean
+# build. Also run by `just audit`. adr-check is HERE (not just in `just verify`)
+# so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:
     bash tools/check-primitives.sh
     bash tools/check-adr-links.sh
+    python3 tools/gen-adr-index.py --check
     bash tools/arch-check.sh
     bash tools/check-audit-sync.sh
     python3 tools/check-refs.py
