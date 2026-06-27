@@ -302,9 +302,9 @@ inductive LWSC (K : EvalCtx) : Bool → Comp → Prop where
   | force {b v} (h : LWSV K b v) : LWSC K b (Comp.force v)
   | lam {b M} (h : LWSC K b M) : LWSC K b (Comp.lam M)
   | app {b M v q} (h1 : LWSC K b M) (h2 : LWSV K (b && decide (q ≠ 0)) v) : LWSC K b (Comp.app M v)
-  | case {b v N₁ N₂} (h1 : LWSV K b v) (h2 : LWSC K b N₁) (h3 : LWSC K b N₂) :
+  | case {b v N₁ N₂ q} (h1 : LWSV K (b && decide (q ≠ 0)) v) (h2 : LWSC K b N₁) (h3 : LWSC K b N₂) :
       LWSC K b (Comp.case v N₁ N₂)
-  | split {b v N} (h1 : LWSV K b v) (h2 : LWSC K b N) : LWSC K b (Comp.split v N)
+  | split {b v N q} (h1 : LWSV K (b && decide (q ≠ 0)) v) (h2 : LWSC K b N) : LWSC K b (Comp.split v N)
   | unfold {b v} (h : LWSV K b v) : LWSC K b (Comp.unfold v)
   | perform {b cv op v} (h1 : LWSV K b cv) (h2 : LWSV K false v) : LWSC K b (Comp.perform cv op v)
   | handleThrows {b ℓ M} (h : LWSC K b M) : LWSC K b (Comp.handle (Handler.throws ℓ) M)
@@ -350,8 +350,9 @@ theorem lwsc_to_dormant {K : EvalCtx} {b : Bool} {M : Comp} (h : LWSC K b M) : L
   | force h => exact .force (lwsv_to_dormant h)
   | lam h => exact .lam (lwsc_to_dormant h)
   | @app b M' v q h1 h2 => exact .app (q := q) (lwsc_to_dormant h1) (by simpa using lwsv_to_dormant h2)
-  | case h1 h2 h3 => exact .case (lwsv_to_dormant h1) (lwsc_to_dormant h2) (lwsc_to_dormant h3)
-  | split h1 h2 => exact .split (lwsv_to_dormant h1) (lwsc_to_dormant h2)
+  | case h1 h2 h3 =>
+      exact .case (q := 0) (by simpa using lwsv_to_dormant h1) (lwsc_to_dormant h2) (lwsc_to_dormant h3)
+  | split h1 h2 => exact .split (q := 0) (by simpa using lwsv_to_dormant h1) (lwsc_to_dormant h2)
   | unfold h => exact .unfold (lwsv_to_dormant h)
   | perform h1 h2 => exact .perform (lwsv_to_dormant h1) (lwsv_to_dormant h2)
   | handleThrows h => exact .handleThrows (lwsc_to_dormant h)
@@ -398,12 +399,13 @@ theorem lwsc_subst {K : EvalCtx} {w : Val} (hwl : LWSV K true w) (hcl : ∀ j, V
   | force h => exact .force (lwsv_subst hwl hcl k h)
   | lam h => simp only [Comp.substFrom, hsh]; exact .lam (lwsc_subst hwl hcl (k + 1) h)
   | app h1 h2 => exact .app (lwsc_subst hwl hcl k h1) (lwsv_subst hwl hcl k h2)
-  | case h1 h2 h3 =>
+  | @case b v N₁ N₂ q h1 h2 h3 =>
     simp only [Comp.substFrom, hsh]
-    exact .case (lwsv_subst hwl hcl k h1) (lwsc_subst hwl hcl (k + 1) h2) (lwsc_subst hwl hcl (k + 1) h3)
-  | split h1 h2 =>
+    exact .case (q := q) (lwsv_subst hwl hcl k h1) (lwsc_subst hwl hcl (k + 1) h2)
+      (lwsc_subst hwl hcl (k + 1) h3)
+  | @split b v N q h1 h2 =>
     simp only [Comp.substFrom, hsh]
-    exact .split (lwsv_subst hwl hcl k h1) (lwsc_subst hwl hcl (k + 2) h2)
+    exact .split (q := q) (lwsv_subst hwl hcl k h1) (lwsc_subst hwl hcl (k + 2) h2)
   | unfold h => exact .unfold (lwsv_subst hwl hcl k h)
   | perform h1 h2 => exact .perform (lwsv_subst hwl hcl k h1) (lwsv_subst hwl hcl k h2)
   | handleThrows h =>
@@ -450,11 +452,12 @@ theorem lwsc_subst_dormant {K : EvalCtx} {w : Val} (hwd : LWSV K false w)
     exact .app (q := q) (lwsc_subst_dormant hwd hcl k h1) (lwsv_subst_dormant hwd hcl k (by simpa using h2))
   | case h1 h2 h3 =>
     simp only [Comp.substFrom, hsh]
-    exact .case (lwsv_subst_dormant hwd hcl k h1) (lwsc_subst_dormant hwd hcl (k + 1) h2)
-      (lwsc_subst_dormant hwd hcl (k + 1) h3)
+    exact .case (q := 0) (lwsv_subst_dormant hwd hcl k (by simpa using h1))
+      (lwsc_subst_dormant hwd hcl (k + 1) h2) (lwsc_subst_dormant hwd hcl (k + 1) h3)
   | split h1 h2 =>
     simp only [Comp.substFrom, hsh]
-    exact .split (lwsv_subst_dormant hwd hcl k h1) (lwsc_subst_dormant hwd hcl (k + 2) h2)
+    exact .split (q := 0) (lwsv_subst_dormant hwd hcl k (by simpa using h1))
+      (lwsc_subst_dormant hwd hcl (k + 2) h2)
   | unfold h => exact .unfold (lwsv_subst_dormant hwd hcl k h)
   | perform h1 h2 => exact .perform (lwsv_subst_dormant hwd hcl k h1) (lwsv_subst_dormant hwd hcl k h2)
   | handleThrows h =>
@@ -490,8 +493,10 @@ theorem lwsc_dormant_stack_indep {K K' : EvalCtx} {M : Comp} (h : LWSC K false M
   | @app b M' v q h1 h2 =>
     exact .app (q := q) (lwsc_dormant_stack_indep h1) (by simpa using lwsv_dormant_stack_indep (by simpa using h2))
   | case h1 h2 h3 =>
-    exact .case (lwsv_dormant_stack_indep h1) (lwsc_dormant_stack_indep h2) (lwsc_dormant_stack_indep h3)
-  | split h1 h2 => exact .split (lwsv_dormant_stack_indep h1) (lwsc_dormant_stack_indep h2)
+    exact .case (q := 0) (lwsv_dormant_stack_indep (by simpa using h1))
+      (lwsc_dormant_stack_indep h2) (lwsc_dormant_stack_indep h3)
+  | split h1 h2 =>
+    exact .split (q := 0) (lwsv_dormant_stack_indep (by simpa using h1)) (lwsc_dormant_stack_indep h2)
   | unfold h => exact .unfold (lwsv_dormant_stack_indep h)
   | perform h1 h2 => exact .perform (lwsv_dormant_stack_indep h1) (lwsv_dormant_stack_indep h2)
   | handleThrows h => exact .handleThrows (lwsc_dormant_stack_indep h)
@@ -530,10 +535,10 @@ theorem lwsc_capFree {γ Γ c φ C} (K : EvalCtx) (b : Bool)
       exact .app (q := 0) (lwsc_capFree K b hM h.1) (lwsv_capFree K _ hv h.2)
   | case hv hN₁ hN₂ _ =>
       simp only [capsC, List.append_eq_nil_iff] at h
-      exact .case (lwsv_capFree K b hv h.1.1) (lwsc_capFree K b hN₁ h.1.2) (lwsc_capFree K b hN₂ h.2)
+      exact .case (q := 0) (lwsv_capFree K _ hv h.1.1) (lwsc_capFree K b hN₁ h.1.2) (lwsc_capFree K b hN₂ h.2)
   | split hv hN _ =>
       simp only [capsC, List.append_eq_nil_iff] at h
-      exact .split (lwsv_capFree K b hv h.1) (lwsc_capFree K b hN h.2)
+      exact .split (q := 0) (lwsv_capFree K _ hv h.1) (lwsc_capFree K b hN h.2)
   | unfold hv => exact .unfold (lwsv_capFree K b hv (by simpa only [capsC] using h))
   | perform hc _ _ _ hv =>
       simp only [capsC, List.append_eq_nil_iff] at h
@@ -583,9 +588,10 @@ inductive LWSCk (K : EvalCtx) : Nat → Bool → Comp → Prop where
   | lam {k b M} (h : LWSCk K (k + 1) b M) : LWSCk K k b (Comp.lam M)
   | app {k b M v q} (h1 : LWSCk K k b M) (h2 : LWSVk K k (b && decide (q ≠ 0)) v) :
       LWSCk K k b (Comp.app M v)
-  | case {k b v N₁ N₂} (h1 : LWSVk K k b v) (h2 : LWSCk K (k + 1) b N₁) (h3 : LWSCk K (k + 1) b N₂) :
-      LWSCk K k b (Comp.case v N₁ N₂)
-  | split {k b v N} (h1 : LWSVk K k b v) (h2 : LWSCk K (k + 2) b N) : LWSCk K k b (Comp.split v N)
+  | case {k b v N₁ N₂ q} (h1 : LWSVk K k (b && decide (q ≠ 0)) v) (h2 : LWSCk K (k + 1) b N₁)
+      (h3 : LWSCk K (k + 1) b N₂) : LWSCk K k b (Comp.case v N₁ N₂)
+  | split {k b v N q} (h1 : LWSVk K k (b && decide (q ≠ 0)) v) (h2 : LWSCk K (k + 2) b N) :
+      LWSCk K k b (Comp.split v N)
   | unfold {k b v} (h : LWSVk K k b v) : LWSCk K k b (Comp.unfold v)
   | perform {k b cv op v} (h1 : LWSVk K k b cv) (h2 : LWSVk K k false v) :
       LWSCk K k b (Comp.perform cv op v)
@@ -624,12 +630,13 @@ theorem lwsck_subst {K : EvalCtx} {w : Val} (hwd : LWSV K false w)
   | force h => exact .force (lwsvk_subst hwd hcl k h)
   | lam h => simp only [Comp.substFrom, hsh]; exact .lam (lwsck_subst hwd hcl (k + 1) h)
   | app h1 h2 => exact .app (lwsck_subst hwd hcl k h1) (lwsvk_subst hwd hcl k h2)
-  | case h1 h2 h3 =>
+  | @case _ _ _ _ _ q h1 h2 h3 =>
     simp only [Comp.substFrom, hsh]
-    exact .case (lwsvk_subst hwd hcl k h1) (lwsck_subst hwd hcl (k + 1) h2) (lwsck_subst hwd hcl (k + 1) h3)
-  | split h1 h2 =>
+    exact .case (q := q) (lwsvk_subst hwd hcl k h1) (lwsck_subst hwd hcl (k + 1) h2)
+      (lwsck_subst hwd hcl (k + 1) h3)
+  | @split _ _ _ _ q h1 h2 =>
     simp only [Comp.substFrom, hsh]
-    exact .split (lwsvk_subst hwd hcl k h1) (lwsck_subst hwd hcl (k + 2) h2)
+    exact .split (q := q) (lwsvk_subst hwd hcl k h1) (lwsck_subst hwd hcl (k + 2) h2)
   | unfold h => exact .unfold (lwsvk_subst hwd hcl k h)
   | perform h1 h2 => exact .perform (lwsvk_subst hwd hcl k h1) (lwsvk_subst hwd hcl k h2)
   | handleThrows h =>
@@ -675,9 +682,10 @@ inductive LWSCp (K : EvalCtx) (g : Nat) : Bool → Comp → Prop where
   | lam {b M} (h : LWSCp K g b M) : LWSCp K g b (Comp.lam M)
   | app {b M v q} (h1 : LWSCp K g b M) (h2 : LWSVp K g (b && decide (q ≠ 0)) v) :
       LWSCp K g b (Comp.app M v)
-  | case {b v N₁ N₂} (h1 : LWSVp K g b v) (h2 : LWSCp K g b N₁) (h3 : LWSCp K g b N₂) :
-      LWSCp K g b (Comp.case v N₁ N₂)
-  | split {b v N} (h1 : LWSVp K g b v) (h2 : LWSCp K g b N) : LWSCp K g b (Comp.split v N)
+  | case {b v N₁ N₂ q} (h1 : LWSVp K g (b && decide (q ≠ 0)) v) (h2 : LWSCp K g b N₁)
+      (h3 : LWSCp K g b N₂) : LWSCp K g b (Comp.case v N₁ N₂)
+  | split {b v N q} (h1 : LWSVp K g (b && decide (q ≠ 0)) v) (h2 : LWSCp K g b N) :
+      LWSCp K g b (Comp.split v N)
   | unfold {b v} (h : LWSVp K g b v) : LWSCp K g b (Comp.unfold v)
   | perform {b cv op v} (h1 : LWSVp K g b cv) (h2 : LWSVp K g false v) :
       LWSCp K g b (Comp.perform cv op v)
@@ -710,8 +718,9 @@ theorem lwscp_pop_restack {g : Nat} {hd : Handler} {K : EvalCtx} {b : Bool} {M :
   | force h => exact .force (lwsvp_pop_restack h)
   | lam h => exact .lam (lwscp_pop_restack h)
   | app h1 h2 => exact .app (lwscp_pop_restack h1) (lwsvp_pop_restack h2)
-  | case h1 h2 h3 => exact .case (lwsvp_pop_restack h1) (lwscp_pop_restack h2) (lwscp_pop_restack h3)
-  | split h1 h2 => exact .split (lwsvp_pop_restack h1) (lwscp_pop_restack h2)
+  | @case _ _ _ _ q h1 h2 h3 =>
+      exact .case (q := q) (lwsvp_pop_restack h1) (lwscp_pop_restack h2) (lwscp_pop_restack h3)
+  | @split _ _ _ q h1 h2 => exact .split (q := q) (lwsvp_pop_restack h1) (lwscp_pop_restack h2)
   | unfold h => exact .unfold (lwsvp_pop_restack h)
   | perform h1 h2 => exact .perform (lwsvp_pop_restack h1) (lwsvp_pop_restack h2)
   | handleThrows h => exact .handleThrows (lwscp_pop_restack h)
@@ -746,7 +755,7 @@ inductive LWSCg (K : EvalCtx) : GradeVec Mult → Bool → Comp → Prop where
   | ret {γ γ' : GradeVec Mult} {b v} {q : Mult} (hγ : γ = q • γ')
       (h : LWSVg K γ' (b && decide (q ≠ 0)) v) : LWSCg K γ b (Comp.ret v)
   | letC {γ γ₁ γ₂ : GradeVec Mult} {b M N} {q1 q2 : Mult}
-      (hγ : γ = (q_or_1 q2) • γ₁ + γ₂)
+      (hγ : γ = (q_or_1 q2) • γ₁ + γ₂) (hlen : γ₁.length = γ₂.length)
       (h1 : LWSCg K γ₁ b M) (h2 : LWSCg K ((q1 * q_or_1 q2) :: γ₂) b N) : LWSCg K γ b (Comp.letC M N)
   | force {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSCg K γ b (Comp.force v)
   | lam {γ : GradeVec Mult} {b M} {q : Mult} (h : LWSCg K (q :: γ) b M) : LWSCg K γ b (Comp.lam M)
@@ -755,11 +764,12 @@ inductive LWSCg (K : EvalCtx) : GradeVec Mult → Bool → Comp → Prop where
       (h1 : LWSCg K γ₁ b M) (h2 : LWSVg K γ₂ (b && decide (q ≠ 0)) v) : LWSCg K γ b (Comp.app M v)
   | case {γ γ_v γ_N : GradeVec Mult} {b v N₁ N₂} {q : Mult} (hγ : γ = q • γ_v + γ_N)
       (hlen : γ_v.length = γ_N.length)
-      (h1 : LWSVg K γ_v b v) (h2 : LWSCg K (q :: γ_N) b N₁) (h3 : LWSCg K (q :: γ_N) b N₂) :
-      LWSCg K γ b (Comp.case v N₁ N₂)
+      (h1 : LWSVg K γ_v (b && decide (q ≠ 0)) v) (h2 : LWSCg K (q :: γ_N) b N₁)
+      (h3 : LWSCg K (q :: γ_N) b N₂) : LWSCg K γ b (Comp.case v N₁ N₂)
   | split {γ γ_v γ_N : GradeVec Mult} {b v N} {q : Mult} (hγ : γ = q • γ_v + γ_N)
       (hlen : γ_v.length = γ_N.length)
-      (h1 : LWSVg K γ_v b v) (h2 : LWSCg K (q :: q :: γ_N) b N) : LWSCg K γ b (Comp.split v N)
+      (h1 : LWSVg K γ_v (b && decide (q ≠ 0)) v) (h2 : LWSCg K (q :: q :: γ_N) b N) :
+      LWSCg K γ b (Comp.split v N)
   | unfold {γ : GradeVec Mult} {b v} (h : LWSVg K γ b v) : LWSCg K γ b (Comp.unfold v)
   | perform {γ γ_v γ_c : GradeVec Mult} {b cv op v} {q : Mult} (hγ : γ = q • γ_v + γ_c)
       (hlen : γ_v.length = γ_c.length)
@@ -821,13 +831,16 @@ theorem lwscg_to_lwsc {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp}
     (h : LWSCg K γ b c) : LWSC K b c := by
   cases h with
   | @ret _ _ _ _ q _ h => exact .ret (q := gnat q) (by simpa only [decide_gnat] using lwsvg_to_lwsv h)
-  | letC _ h1 h2 => exact .letC (lwscg_to_lwsc h1) (lwscg_to_lwsc h2)
+  | letC _ _ h1 h2 => exact .letC (lwscg_to_lwsc h1) (lwscg_to_lwsc h2)
   | force h => exact .force (lwsvg_to_lwsv h)
   | lam h => exact .lam (lwscg_to_lwsc h)
   | @app _ _ _ _ _ _ q _ _ h1 h2 =>
       exact .app (q := gnat q) (lwscg_to_lwsc h1) (by simpa only [decide_gnat] using lwsvg_to_lwsv h2)
-  | case _ _ h1 h2 h3 => exact .case (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2) (lwscg_to_lwsc h3)
-  | split _ _ h1 h2 => exact .split (lwsvg_to_lwsv h1) (lwscg_to_lwsc h2)
+  | @case _ _ _ _ _ _ _ q _ _ h1 h2 h3 =>
+      exact .case (q := gnat q) (by simpa only [decide_gnat] using lwsvg_to_lwsv h1)
+        (lwscg_to_lwsc h2) (lwscg_to_lwsc h3)
+  | @split _ _ _ _ _ _ q _ _ h1 h2 =>
+      exact .split (q := gnat q) (by simpa only [decide_gnat] using lwsvg_to_lwsv h1) (lwscg_to_lwsc h2)
   | unfold h => exact .unfold (lwsvg_to_lwsv h)
   | perform _ _ h1 h2 => exact .perform (lwsvg_to_lwsv h1) (lwsvg_to_lwsv h2)
   | handleThrows h => exact .handleThrows (lwscg_to_lwsc h)
@@ -852,44 +865,189 @@ theorem lwskg_to_lwsk {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} :
 /-! ### §2′.8b — the q=0 β DISCHARGE `LWSCg → γ[k]=0 → LWSCk` (the rig + false-base + induction).
 
 `lwscg_to_lwsck` upgrades a coherent `LWSCg` to the substituted-var-`k`-dormant `LWSCk` (which feeds the
-green `lwsck_subst` at the dead-arg β step). Uses the `γ[k]? = some 0` form (opt-3's): the `some` carries
-in-range-ness, so the `+`-split needs NO grade-length tracking (zipWith is `some` only when both are). The
-rig routes `γ[k]=0` through scale-`0` nodes: `q • γ' = 0` at `k` ⟹ `q = 0` (gate ⟹ false ⟹ false-base) OR
-`γ'[k] = 0` (recurse); `γ_a + γ_b = 0` at `k` ⟹ both `0` (ZeroSumFree). -/
+green `lwsck_subst` at the dead-arg β step). Uses the `γ[k]?.getD 0 = 0` form — `some 0` OR out-of-range
+`none` (so the closed grade-`[]` handler-state value is covered with no special case). The `+`-split is
+length-pinned (`hlen` on every binary former, including `letC`'s, so `k` is in-range on both summands or
+neither). The rig routes `γ[k]=0` through scale-`0` nodes: `q • γ' = 0` at `k` ⟹ `q = 0` (gate ⟹ false ⟹
+`lwsvg_false_lwsvk`) OR `γ'[k] = 0` (recurse); `γ_a + γ_b = 0` at `k` ⟹ both `0` (`ZeroSumFree`). -/
 
-/-- `•`-scale split (`NoZeroDivisors`): a scaled grade is `0` at `k` ⟹ the scalar is `0` or the grade is. -/
-private theorem smul_some_zero {q : Mult} {γ : GradeVec Mult} {k : Nat}
-    (h : (q • γ)[k]? = some 0) : q = 0 ∨ γ[k]? = some 0 := by
+/-- `•`-scale preserves length (`GradeVec.smul = map`). -/
+private theorem smul_length {q : Mult} {γ : GradeVec Mult} : (q • γ).length = γ.length := by
+  rw [show (q • γ) = GradeVec.smul q γ from rfl, GradeVec.smul, List.length_map]
+
+/-- `q_or_1` is never `0`: the coeffect floor (`if q = 0 then 1 else q`); `1 ≠ 0` by `Nontrivial`. -/
+private theorem q_or_1_ne_zero (q : Mult) : q_or_1 q ≠ 0 := by
+  unfold q_or_1; split
+  · exact one_ne_zero
+  · assumption
+
+/-- `•`-scale split (`NoZeroDivisors`): a scaled grade is `0` at `k` ⟹ the scalar is `0` or the grade is.
+`getD 0` form: out-of-range (`none`) reads as `0`, so the `q = 0` disjunct or the recursive one always
+holds. -/
+private theorem smul_getD_zero {q : Mult} {γ : GradeVec Mult} {k : Nat}
+    (h : (q • γ)[k]?.getD 0 = 0) : q = 0 ∨ γ[k]?.getD 0 = 0 := by
   rw [show (q • γ) = GradeVec.smul q γ from rfl, GradeVec.smul, List.getElem?_map] at h
   cases hk : γ[k]? with
-  | none => rw [hk] at h; simp at h
+  | none => exact Or.inr (by simp)
   | some x =>
-    rw [hk] at h; simp only [Option.map_some, Option.some.injEq] at h
+    rw [hk] at h; simp only [Option.map_some, Option.getD_some] at h
     rcases mul_eq_zero.mp h with hq | hx
     · exact Or.inl hq
-    · exact Or.inr (by rw [hx])
+    · exact Or.inr (by simpa using hx)
 
-/-- `+`-split (`ZeroSumFree`): a sum-grade is `0` at `k` ⟹ BOTH summands are. The `some` forces both
-in-range (zipWith), so NO length hypothesis is needed. -/
-private theorem add_some_zero (hzsf : ZeroSumFree Mult) {γ_a γ_b : GradeVec Mult} {k : Nat}
-    (h : (γ_a + γ_b)[k]? = some 0) : γ_a[k]? = some 0 ∧ γ_b[k]? = some 0 := by
+/-- `+`-split (`ZeroSumFree`): a sum-grade is `0` at `k` ⟹ BOTH summands are. `getD 0` form needs the
+length hypothesis (`hlen`): equal lengths ⟹ `k` in range for both or neither (`none.getD 0 = 0`). -/
+private theorem add_getD_zero (hzsf : ZeroSumFree Mult) {γ_a γ_b : GradeVec Mult} {k : Nat}
+    (hlen : γ_a.length = γ_b.length) (h : (γ_a + γ_b)[k]?.getD 0 = 0) :
+    γ_a[k]?.getD 0 = 0 ∧ γ_b[k]?.getD 0 = 0 := by
   rw [show (γ_a + γ_b) = GradeVec.add γ_a γ_b from rfl, GradeVec.add, List.getElem?_zipWith] at h
   cases ha : γ_a[k]? with
-  | none => rw [ha] at h; simp at h
+  | none =>
+    have hb : γ_b[k]? = none := by rw [List.getElem?_eq_none_iff] at ha ⊢; omega
+    exact ⟨by simp, by simp [hb]⟩
   | some x =>
     cases hb : γ_b[k]? with
-    | none => rw [ha, hb] at h; simp at h
+    | none =>
+      obtain ⟨hka, _⟩ := List.getElem?_eq_some_iff.mp ha
+      rw [List.getElem?_eq_none_iff] at hb; omega
     | some y =>
-      rw [ha, hb] at h; simp only [Option.map₂_some_some, Option.some.injEq] at h
+      rw [ha, hb] at h; simp only [Option.map₂_some_some, Option.getD_some] at h
       obtain ⟨hx, hy⟩ := hzsf x y h
-      exact ⟨by rw [hx], by rw [hy]⟩
+      exact ⟨by simpa using hx, by simpa using hy⟩
 
-/-! THE DISCHARGE `lwscg_to_lwsck` (γ[k]=0 ⇒ LWSVk) is BLOCKED on an engine-internal gap at the
-`case`/`split` arms: their scrutinee is gated at flag `b` (not `b && decide(q≠0)`), so at scrutinee
-multiplicity `q = 0` the scrutinee is still LIVE while `γ[k]=0` no longer constrains its grade —
-`case (vvar k) …` at `q=0`, `b=true` then has no `LWSVk` (needs `vvar_k` at flag false). The rig
-above (`smul_some_zero`/`add_some_zero`, the `some 0` length-free split) is reusable; the discharge
-resumes once the case/split scrutinee gating is resolved (opt-3's LWSVk shape / kernel case-grading). -/
+/-! THE FALSE-BASE: a dormant (`flag = false`) `LWSVg`/`LWSCg` is var-`k`-dormant (`LWSVk`/`LWSCk`) at flag
+`false`, for ANY grade and `k`. This is the q=0 gate-collapse base (and `perform`'s always-dormant payload):
+a dormant value carries no liveness obligation, so the grade index is irrelevant — pure structural descent. -/
+mutual
+theorem lwsvg_false_lwsvk {K : EvalCtx} {γ : GradeVec Mult} {v : Val} (k : Nat)
+    (h : LWSVg K γ false v) : LWSVk K k false v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar _ _ i _ =>
+    by_cases hik : i = k
+    · subst hik; exact .vvar_k
+    · exact .vvar_other hik
+  | vcap_dormant => exact .vcap_dormant rfl
+  | vthunk h => exact .vthunk (lwscg_false_lwsck k h)
+  | inl h => exact .inl (lwsvg_false_lwsvk k h)
+  | inr h => exact .inr (lwsvg_false_lwsvk k h)
+  | pair _ _ h1 h2 => exact .pair (lwsvg_false_lwsvk k h1) (lwsvg_false_lwsvk k h2)
+  | fold h => exact .fold (lwsvg_false_lwsvk k h)
+theorem lwscg_false_lwsck {K : EvalCtx} {γ : GradeVec Mult} {c : Comp} (k : Nat)
+    (h : LWSCg K γ false c) : LWSCk K k false c := by
+  cases h with
+  | ret _ h => exact .ret (q := 0) (lwsvg_false_lwsvk k (by simpa using h))
+  | letC _ _ h1 h2 => exact .letC (lwscg_false_lwsck k h1) (lwscg_false_lwsck (k + 1) h2)
+  | force h => exact .force (lwsvg_false_lwsvk k h)
+  | lam h => exact .lam (lwscg_false_lwsck (k + 1) h)
+  | app _ _ h1 h2 =>
+      exact .app (q := 0) (lwscg_false_lwsck k h1) (lwsvg_false_lwsvk k (by simpa using h2))
+  | case _ _ h1 h2 h3 =>
+      exact .case (q := 0) (lwsvg_false_lwsvk k (by simpa using h1))
+        (lwscg_false_lwsck (k + 1) h2) (lwscg_false_lwsck (k + 1) h3)
+  | split _ _ h1 h2 =>
+      exact .split (q := 0) (lwsvg_false_lwsvk k (by simpa using h1)) (lwscg_false_lwsck (k + 2) h2)
+  | unfold h => exact .unfold (lwsvg_false_lwsvk k h)
+  | perform _ _ h1 h2 => exact .perform (lwsvg_false_lwsvk k h1) (lwsvg_false_lwsvk k h2)
+  | handleThrows h => exact .handleThrows (lwscg_false_lwsck (k + 1) h)
+  | handleState hs h => exact .handleState (lwsvg_false_lwsvk k hs) (lwscg_false_lwsck (k + 1) h)
+  | handleTransaction h => exact .handleTransaction (lwscg_false_lwsck (k + 1) h)
+end
+
+/-! **THE DISCHARGE.** A coherent `LWSVg`/`LWSCg` whose grade reads `0` at the substituted var `k`
+(`γ[k]?.getD 0 = 0` — `some 0` or out-of-range `none`) is var-`k`-dormant (`LWSVk`/`LWSCk`). The live
+`vvar k` clause is the crux: `LWSVg.vvar` demands `b = true → γ[k] ≠ 0`, which `hk` refutes, forcing
+`b = false` ⟹ `vvar_k`. The `+`/`•` grade structure routes via the rig; q=0 gates drop to the false-base. -/
+mutual
+theorem lwsvg_to_lwsvk {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {v : Val} (hzsf : ZeroSumFree Mult)
+    (k : Nat) (hk : γ[k]?.getD 0 = 0) (h : LWSVg K γ b v) : LWSVk K k b v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar γ b i hlive =>
+    by_cases hik : i = k
+    · subst hik
+      cases b with
+      | false => exact .vvar_k
+      | true => exact absurd hk (hlive rfl)
+    · exact .vvar_other hik
+  | vcap_live hr => exact .vcap_live hr rfl
+  | vcap_dormant => exact .vcap_dormant rfl
+  | vthunk h => exact .vthunk (lwscg_to_lwsck hzsf k hk h)
+  | inl h => exact .inl (lwsvg_to_lwsvk hzsf k hk h)
+  | inr h => exact .inr (lwsvg_to_lwsvk hzsf k hk h)
+  | @pair γ γ_v γ_w b a c hγ hlen h1 h2 =>
+    subst hγ
+    obtain ⟨hkv, hkw⟩ := add_getD_zero hzsf hlen hk
+    exact .pair (lwsvg_to_lwsvk hzsf k hkv h1) (lwsvg_to_lwsvk hzsf k hkw h2)
+  | fold h => exact .fold (lwsvg_to_lwsvk hzsf k hk h)
+/-- **THE DISCHARGE** (computation level). The `+`/`•` grade structure is routed by the rig: every binary
+former's `hlen` feeds `add_getD_zero`; every storage `q` feeds `smul_getD_zero` (`q = 0` ⟹ the gate is
+`false` ⟹ `lwsvg_false_lwsvk`; else the sub-grade is `0` ⟹ recurse). Binders shift `k`/cons the grade,
+so `(x :: γ)[k+1]? = γ[k]?` re-establishes `hk`. -/
+theorem lwscg_to_lwsck {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp} (hzsf : ZeroSumFree Mult)
+    (k : Nat) (hk : γ[k]?.getD 0 = 0) (h : LWSCg K γ b c) : LWSCk K k b c := by
+  cases h with
+  | @ret γ γ' b v q hγ h =>
+    subst hγ
+    refine .ret (q := gnat q) ?_
+    simp only [decide_gnat]
+    rcases smul_getD_zero hk with hq | hk'
+    · subst hq
+      have hf : (b && decide ((0 : Mult) ≠ 0)) = false := by simp
+      rw [hf]; rw [hf] at h; exact lwsvg_false_lwsvk k h
+    · exact lwsvg_to_lwsvk hzsf k hk' h
+  | @letC γ γ₁ γ₂ b M N q1 q2 hγ hlen h1 h2 =>
+    subst hγ
+    obtain ⟨hk1, hk2⟩ := add_getD_zero hzsf (by rw [smul_length]; exact hlen) hk
+    rcases smul_getD_zero hk1 with hq | hk1'
+    · exact absurd hq (q_or_1_ne_zero q2)
+    · exact .letC (lwscg_to_lwsck hzsf k hk1' h1) (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk2) h2)
+  | force h => exact .force (lwsvg_to_lwsvk hzsf k hk h)
+  | lam h => exact .lam (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
+  | @app γ γ₁ γ₂ b M v q hγ hlen h1 h2 =>
+    subst hγ
+    obtain ⟨hk1, hk2⟩ := add_getD_zero hzsf (by rw [smul_length]; exact hlen) hk
+    refine .app (q := gnat q) (lwscg_to_lwsck hzsf k hk1 h1) ?_
+    simp only [decide_gnat]
+    rcases smul_getD_zero hk2 with hq | hk2'
+    · subst hq
+      have hf : (b && decide ((0 : Mult) ≠ 0)) = false := by simp
+      rw [hf]; rw [hf] at h2; exact lwsvg_false_lwsvk k h2
+    · exact lwsvg_to_lwsvk hzsf k hk2' h2
+  | @case γ γ_v γ_N b v N₁ N₂ q hγ hlen h1 h2 h3 =>
+    subst hγ
+    obtain ⟨hkv, hkN⟩ := add_getD_zero hzsf (by rw [smul_length]; exact hlen) hk
+    refine .case (q := gnat q) ?_ (lwscg_to_lwsck hzsf (k + 1) (by simpa using hkN) h2)
+      (lwscg_to_lwsck hzsf (k + 1) (by simpa using hkN) h3)
+    simp only [decide_gnat]
+    rcases smul_getD_zero hkv with hq | hkv'
+    · subst hq
+      have hf : (b && decide ((0 : Mult) ≠ 0)) = false := by simp
+      rw [hf]; rw [hf] at h1; exact lwsvg_false_lwsvk k h1
+    · exact lwsvg_to_lwsvk hzsf k hkv' h1
+  | @split γ γ_v γ_N b v N q hγ hlen h1 h2 =>
+    subst hγ
+    obtain ⟨hkv, hkN⟩ := add_getD_zero hzsf (by rw [smul_length]; exact hlen) hk
+    refine .split (q := gnat q) ?_ (lwscg_to_lwsck hzsf (k + 2) (by simpa using hkN) h2)
+    simp only [decide_gnat]
+    rcases smul_getD_zero hkv with hq | hkv'
+    · subst hq
+      have hf : (b && decide ((0 : Mult) ≠ 0)) = false := by simp
+      rw [hf]; rw [hf] at h1; exact lwsvg_false_lwsvk k h1
+    · exact lwsvg_to_lwsvk hzsf k hkv' h1
+  | unfold h => exact .unfold (lwsvg_to_lwsvk hzsf k hk h)
+  | @perform γ γ_v γ_c b cv op v q hγ hlen h1 h2 =>
+    subst hγ
+    obtain ⟨_, hkc⟩ := add_getD_zero hzsf (by rw [smul_length]; exact hlen) hk
+    exact .perform (lwsvg_to_lwsvk hzsf k hkc h1) (lwsvg_false_lwsvk k h2)
+  | handleThrows h => exact .handleThrows (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
+  | handleState hs h =>
+      exact .handleState (lwsvg_to_lwsvk hzsf k (by simp) hs)
+        (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
+  | handleTransaction h => exact .handleTransaction (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
+end
 
 
 /-- A source program is `VcapFree` when it contains NO raw `vcap` literal — the elaborator invariant
@@ -1144,8 +1302,9 @@ theorem lwsc_restack {K : EvalCtx} (fr : Frame) (hfr : ∀ m h, fr ≠ Frame.han
   | force hv => exact .force (lwsv_restack fr hfr hv)
   | lam hM => exact .lam (lwsc_restack fr hfr hM)
   | @app b' M' v' q h1 h2 => exact .app (q := q) (lwsc_restack fr hfr h1) (lwsv_restack fr hfr h2)
-  | case h1 h2 h3 => exact .case (lwsv_restack fr hfr h1) (lwsc_restack fr hfr h2) (lwsc_restack fr hfr h3)
-  | split h1 h2 => exact .split (lwsv_restack fr hfr h1) (lwsc_restack fr hfr h2)
+  | @case b' v' N₁' N₂' q h1 h2 h3 =>
+      exact .case (q := q) (lwsv_restack fr hfr h1) (lwsc_restack fr hfr h2) (lwsc_restack fr hfr h3)
+  | @split b' v' N' q h1 h2 => exact .split (q := q) (lwsv_restack fr hfr h1) (lwsc_restack fr hfr h2)
   | unfold hv => exact .unfold (lwsv_restack fr hfr hv)
   | perform h1 h2 => exact .perform (lwsv_restack fr hfr h1) (lwsv_restack fr hfr h2)
   | handleThrows hM => exact .handleThrows (lwsc_restack fr hfr hM)
@@ -1200,10 +1359,11 @@ theorem lwsc_restack_handleF (g : Nat) (hd : Handler) {K : EvalCtx} (hsb : Stack
   | lam hM => exact .lam (lwsc_restack_handleF g hd hsb hM)
   | @app b' M' v' q h1 h2 =>
       exact .app (q := q) (lwsc_restack_handleF g hd hsb h1) (lwsv_restack_handleF g hd hsb h2)
-  | case h1 h2 h3 =>
-      exact .case (lwsv_restack_handleF g hd hsb h1) (lwsc_restack_handleF g hd hsb h2)
+  | @case b' v' N₁' N₂' q h1 h2 h3 =>
+      exact .case (q := q) (lwsv_restack_handleF g hd hsb h1) (lwsc_restack_handleF g hd hsb h2)
         (lwsc_restack_handleF g hd hsb h3)
-  | split h1 h2 => exact .split (lwsv_restack_handleF g hd hsb h1) (lwsc_restack_handleF g hd hsb h2)
+  | @split b' v' N' q h1 h2 =>
+      exact .split (q := q) (lwsv_restack_handleF g hd hsb h1) (lwsc_restack_handleF g hd hsb h2)
   | unfold hv => exact .unfold (lwsv_restack_handleF g hd hsb hv)
   | perform h1 h2 => exact .perform (lwsv_restack_handleF g hd hsb h1) (lwsv_restack_handleF g hd hsb h2)
   | handleThrows hM => exact .handleThrows (lwsc_restack_handleF g hd hsb hM)
