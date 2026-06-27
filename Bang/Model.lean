@@ -1454,7 +1454,15 @@ The typeless `LWSCg` carries no `k < γ.length` pin (the `[]`-graded handler-sta
 constructor's own `hlen` (the binary formers carry `γ₁.length = γ₂.length`). The substitution
 induction threads a COVERAGE invariant `(γ.eraseIdx k).length ≤ γ_v.length` (the value's grade
 covers the post-erase context) — which threads through every binder/binary node and is `0 ≤ _`
-free at the `[]`-graded handler-state leaf. `Sgrade_smul` is already length-free (Metatheory). -/
+free at the `[]`-graded handler-state leaf. `Sgrade_smul` is already length-free (Metatheory).
+
+NON-CANCELLATIVITY NOTE (constrains any future grade-REINDEX): `Mult` is `[CommSemiring]
+[NoZeroDivisors] [Nontrivial]` — NOT cancellative (concrete QTT: `ω·1 = ω = ω·ω`, `1 ≠ ω`; no
+`CancelCommMonoidWithZero`). So a closed value's `LWSVg` is NOT freely transportable across grades
+by un-scaling a `ret`/`app` budget (`q•x = q•y ⇏ x = y`); and over this rig `1` is not a sum of two
+non-zeros, so a shared bound var (`pair (vvar 0)(vvar 0)`) needs its binder slot graded the literal
+occurrence sum, not a reused unit. This is why the `∀γ'b'` closed-arg builder (`lwscg_subst`'s `hvl`,
+the consumer's job) is a genuine occurrence-count construction, not a grade-irrelevance one-liner. -/
 
 /-- Length-free `slotGrade`/`+` split: equal lengths ⇒ `k` in range for both summands or neither. -/
 theorem slotGrade_add_free {γ₁ γ₂ : GradeVec Mult} {k : Nat} (hlen : γ₁.length = γ₂.length) :
