@@ -3672,6 +3672,11 @@ def CcarrierSubstMotive (K : EvalCtx) {γ₀ : GradeVec Mult} {Γ' : TyCtx Eff M
     ∃ d' : HasCTy (Sgrade γ_v Δ.length γ₀) (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B,
       LiveCapsResolveC K d'
 
+/-- `slotGrade (q :: γ) (k+1) = slotGrade γ k` — the binder shifts the read index past the consed slot. -/
+theorem slotGrade_cons (q : Mult) (γ : GradeVec Mult) (k : Nat) :
+    slotGrade (q :: γ) (k + 1) = slotGrade γ k := by
+  unfold slotGrade; rw [List.getElem?_cons_succ]
+
 mutual
 /-- VALUE carrier-subst (the `v`-clean witness is consumed unconditionally — the comp layer descends here
 only at grade-LIVE value positions, supplying it from its own gate). -/
@@ -3851,7 +3856,37 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
     rw [Comp.substFrom]
     exact ⟨HasCTy.unfold dv', .unfold hdv'⟩
-  all_goals sorry
+  case ret =>
+    intro γ γ' Γ_i v_i A_i q dw hγ h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst hγ; subst heq
+    rw [Comp.substFrom]
+    refine ⟨HasCTy.ret (HasVTy.subst_gen Δ' hv' dw) (Sgrade_hsmul γ_v' Δ'.length q γ'),
+      .ret (dv := HasVTy.subst_gen Δ' hv' dw) (hγ := Sgrade_hsmul γ_v' Δ'.length q γ') (fun hq => ?_)⟩
+    obtain ⟨dw', hdw'⟩ := ih hq Δ' Γ' A' γ_v' v' hv' hzsf' hcl' rfl (cov_smul hcov')
+      (fun hs => hgate' (by
+        rw [show (q • γ' : GradeVec Mult) = GradeVec.smul q γ' from rfl, slotGrade_smul]
+        exact mul_ne_zero hq hs))
+    exact hdw'
+  case lam =>
+    intro γ Γ_i M φ q A_lam B dM h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' hgate'
+    subst heq
+    rw [Comp.substFrom]
+    obtain ⟨dM', hdM'⟩ := ih (A_lam :: Δ') Γ' A' (0 :: γ_v') (Val.shift v')
+      (hv'.weaken 0 (Nat.zero_le _) A_lam) hzsf'
+      (fun j => by rw [show Val.shift v' = v' from hcl' 0]; exact hcl' j) rfl (cov_cons hcov')
+      (fun hs => liveCapsResolveV_weaken
+        (hgate' (by rw [List.length_cons, slotGrade_cons] at hs; exact hs)) 0 (Nat.zero_le _) A_lam)
+    have hcons : Sgrade (0 :: γ_v') (A_lam :: Δ').length (q :: γ) = q :: Sgrade γ_v' Δ'.length γ := by
+      simp only [List.length_cons]; exact Sgrade_cons γ_v' Δ'.length q γ
+    exact ⟨HasCTy.lam (hcons ▸ dM'), .lam (liveCapsResolveC_cast hcons hdM')⟩
+  case letC => sorry
+  case app => sorry
+  case case => sorry
+  case split => sorry
+  case perform => sorry
+  case handleThrows => sorry
+  case handleState => sorry
+  case handleTransaction => sorry
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
 DEAD slot discharges via the dormant builder with NO `v`-clean. -/
