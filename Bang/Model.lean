@@ -3422,6 +3422,32 @@ theorem liveCapsResolveK_rehome {g' : Nat} {hd : Handler} {K' : EvalCtx} :
         (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo)
         (ih (fun p hp => hck p (by simp only [capsK]; exact List.mem_append_right _ hp)))
 
+/-! ### §3.6b — CARRIER WEAKENING (ADR-0061, #51 PIECE 2 PHASE A — the BINDER prerequisite).
+
+The carrier mirror of `HasVTy.weaken`/`HasCTy.weaken` (Metatheory:530/644): inserting a fresh binder `A'`
+at level `k` (shifting the term) PRESERVES the carrier. Needed by the comp-subst BINDER arms
+(letC/lam/case/split/handle): the recursor hands the comp IH at the SHIFTED context `A₀::Δ++Γ`, so the
+substituted value `v` must be re-typed there (`hv.weaken 0 …`) WITH its carrier — that's
+`liveCapsResolveV_weaken hvres`. REFUTE-TESTED sound (closedness-INDEPENDENT): `weaken` only shifts vvar
+INDICES (the `vvar` carrier leaf is obligation-free) and leaves vcaps UNTOUCHED (caps closed ⟹ shift = id),
+so every `ResolvesLabel K n ℓ` is identical. The INDEXED form (over `hv.weaken …`) is what the binder IH
+consumes (it wants the carrier over the SPECIFIC weakened typing, not an existential).
+PROOF (PENDING): the index changes (`hv → hv.weaken`), and `hv.weaken` is an opaque theorem-output, so the
+proof needs the `LiveCapsResolveV.rec` harness + per-arm transport via `HasVTy.weaken`'s constructor
+behaviour (the same recursor pattern as the carrier-subst, simpler — no grade-gate threading). -/
+mutual
+theorem liveCapsResolveV_weaken {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} {hv : HasVTy γ Γ v A} (hvres : LiveCapsResolveV K hv)
+    (k : Nat) (hk : k ≤ Γ.length) (A' : VTy Eff Mult) :
+    LiveCapsResolveV K (hv.weaken k hk A') := by
+  sorry
+theorem liveCapsResolveC_weaken {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {e : Eff} {B : CTy Eff Mult} {hc : HasCTy γ Γ c e B} (hcres : LiveCapsResolveC K hc)
+    (k : Nat) (hk : k ≤ Γ.length) (A' : VTy Eff Mult) :
+    LiveCapsResolveC K (hc.weaken k hk A') := by
+  sorry
+end
+
 /-! ### §3.7 — CARRIER SUBSTITUTION (ADR-0061, #51 PIECE 2 PHASE A — the SHARED #4+#5 core).
 
 The carrier mirror of `HasCTy.subst_gen` (`Bang/Metatheory.lean`): substituting a value `v` (carrier-clean
