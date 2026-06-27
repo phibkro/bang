@@ -2781,6 +2781,62 @@ theorem lwscg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff M
     exact .handleTransaction (lwscg_of_typed_live dM h)
 end
 
+/-! A cap-free (`capsV v = []`) typed value vacuously satisfies `LiveCapsResolveV` — no `vcap` leaf to
+discharge. The seed's `LiveCapsResolve` (the new coherence carrier) at a `VcapFree` initial config. -/
+mutual
+theorem liveCapsResolveV_of_noCaps {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} (d : HasVTy γ Γ v A) (h : capsV v = []) : LiveCapsResolveV K d := by
+  cases d with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar hget => exact .vvar (h := hget)
+  | vcap => simp [capsV] at h
+  | vthunk hM => exact .vthunk (liveCapsResolveC_of_noCaps hM (by simpa [capsV] using h))
+  | inl hv => exact .inl (liveCapsResolveV_of_noCaps hv (by simpa [capsV] using h))
+  | inr hv => exact .inr (liveCapsResolveV_of_noCaps hv (by simpa [capsV] using h))
+  | pair hv hw hγ =>
+    simp only [capsV, List.append_eq_nil_iff] at h
+    exact .pair (hγ := hγ) (liveCapsResolveV_of_noCaps hv h.1) (liveCapsResolveV_of_noCaps hw h.2)
+  | fold hv => exact .fold (liveCapsResolveV_of_noCaps hv (by simpa [capsV] using h))
+theorem liveCapsResolveC_of_noCaps {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {φ : Eff} {C : CTy Eff Mult} (d : HasCTy γ Γ c φ C) (h : capsC c = []) :
+    LiveCapsResolveC K d := by
+  cases d with
+  | ret hv hγ => exact .ret (hγ := hγ) (fun _ => liveCapsResolveV_of_noCaps hv (by simpa [capsC] using h))
+  | letC hM hN hγ =>
+    simp only [capsC, List.append_eq_nil_iff] at h
+    exact .letC (hγ := hγ) (liveCapsResolveC_of_noCaps hM h.1) (liveCapsResolveC_of_noCaps hN h.2)
+  | force hv => exact .force (liveCapsResolveV_of_noCaps hv (by simpa [capsC] using h))
+  | lam hM => exact .lam (liveCapsResolveC_of_noCaps hM (by simpa [capsC] using h))
+  | app hM hv hγ =>
+    simp only [capsC, List.append_eq_nil_iff] at h
+    exact .app (hγ := hγ) (liveCapsResolveC_of_noCaps hM h.1) (fun _ => liveCapsResolveV_of_noCaps hv h.2)
+  | case hv hN₁ hN₂ hγ =>
+    simp only [capsC, List.append_eq_nil_iff] at h
+    exact .case (hγ := hγ) (fun _ => liveCapsResolveV_of_noCaps hv h.1.1)
+      (liveCapsResolveC_of_noCaps hN₁ h.1.2) (liveCapsResolveC_of_noCaps hN₂ h.2)
+  | split hv hN hγ =>
+    simp only [capsC, List.append_eq_nil_iff] at h
+    exact .split (hγ := hγ) (fun _ => liveCapsResolveV_of_noCaps hv h.1) (liveCapsResolveC_of_noCaps hN h.2)
+  | unfold hv => exact .unfold (liveCapsResolveV_of_noCaps hv (by simpa [capsC] using h))
+  | @perform γ_c γ_v Γ cv ℓ op v φ q A B hc hle hopA hopR hv =>
+    simp only [capsC, List.append_eq_nil_iff] at h
+    exact .perform (q := q) (hle := hle) (hopA := hopA) (hopR := hopR) hc hv
+      (liveCapsResolveV_of_noCaps hc h.1)
+  | handleThrows hopA hint hM hle hbo =>
+    exact .handleThrows (hopA := hopA) (hint := hint) (hle := hle) (hbo := hbo)
+      (liveCapsResolveC_of_noCaps hM (by simpa [capsC, capsH] using h))
+  | handleState hga hgr hpa hpr hint hs hM hle hbo =>
+    simp only [capsC, capsH, List.append_eq_nil_iff] at h
+    exact .handleState (hga := hga) (hgr := hgr) (hpa := hpa) (hpr := hpr) (hint := hint)
+      (hle := hle) (hbo := hbo) (liveCapsResolveV_of_noCaps hs h.1) (liveCapsResolveC_of_noCaps hM h.2)
+  | handleTransaction hna hnr hra hrr hwa hwr hint hcells hM hle hbo =>
+    exact .handleTransaction (hna := hna) (hnr := hnr) (hra := hra) (hrr := hrr) (hwa := hwa)
+      (hwr := hwr) (hint := hint) (hcells := hcells) (hle := hle) (hbo := hbo)
+      (liveCapsResolveC_of_noCaps hM (by
+        simp only [capsC, capsH, List.append_eq_nil_iff] at h; exact h.2))
+end
+
 /-! **DE-RISK (#51 — the held-thunk-cap residual): CLOSED BY CONSTRUCTION in `lwscg_of_typed_live`.**
 The team-lead flagged "a live cap buried in a held unperformed thunk inside `M`" as the spot the design
 hand-waved. The mechanism is now machine-checked: `lwscg_of_typed_live`'s `ret`/`app`/`case`/`split`
