@@ -3556,6 +3556,80 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     rw [Val.substFrom]
     exact ⟨HasVTy.pair dv' dw' (Sgrade_add_free γ_v' Δ'.length hlen),
       .pair (hγ := Sgrade_add_free γ_v' Δ'.length hlen) hdv' hdw'⟩
+  case vvar =>
+    -- the substituted-slot split (mirrors `subst_vvar_case`): i<k survives (vvar i, `.vvar`),
+    -- i=k is the slot (term = v, grade γ_v, carrier = hvres'), i>k renumbers down (vvar (i-1), `.vvar`).
+    intro Γ_w i A₀ hmem Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    subst heq
+    have hkn : Δ'.length < (Δ' ++ A' :: Γ').length := by
+      simp only [List.length_append, List.length_cons]; omega
+    have hn : (Δ' ++ A' :: Γ').length = (Δ' ++ Γ').length + 1 := by
+      simp only [List.length_append, List.length_cons]; omega
+    have hlen_v : γ_v'.length = (Δ' ++ Γ').length := hv'.length_eq
+    have h0smul : GradeVec.smul (0 : Mult) γ_v' = GradeVec.zeros (Δ' ++ Γ').length := by
+      apply List.ext_getElem?; intro j
+      rw [GradeVec.smul, List.getElem?_map, GradeVec.zeros_get]
+      rcases hj : γ_v'[j]? with _ | a
+      · simp only [Option.map_none]; rw [List.getElem?_eq_none_iff] at hj
+        rw [if_neg (by rw [hv'.length_eq] at hj; omega)]
+      · simp only [Option.map_some]
+        have : j < γ_v'.length := by rw [List.getElem?_eq_some_iff] at hj; exact hj.1
+        rw [if_pos (by rw [hv'.length_eq] at this; omega), zero_mul]
+    rw [Val.substFrom]
+    rcases Nat.lt_trichotomy i Δ'.length with hlt | heq2 | hgt
+    · rw [if_neg (by omega), if_neg (by omega)]
+      have hslot : slotGrade (GradeVec.basis (Δ' ++ A' :: Γ').length i : GradeVec Mult) Δ'.length = 0 := by
+        unfold slotGrade; rw [GradeVec.basis_get, if_pos hkn, if_neg (by omega : Δ'.length ≠ i)]; rfl
+      have hSg : Sgrade γ_v' Δ'.length (GradeVec.basis (Δ' ++ A' :: Γ').length i)
+          = GradeVec.basis (Δ' ++ Γ').length i := by
+        unfold Sgrade
+        rw [hslot, h0smul, GradeVec.basis_eraseIdx _ _ _ hkn (by omega), hn, if_pos hlt]
+        simp only [Nat.add_sub_cancel]
+        apply List.ext_getElem?; intro j
+        simp only [GradeVec.add, List.getElem?_zipWith, GradeVec.basis_get, GradeVec.zeros_get]
+        split_ifs <;> simp [add_zero]
+      rw [hSg]
+      have hmem' : (Δ' ++ Γ')[i]? = some A₀ := by
+        rw [List.getElem?_append_left (by omega)] at hmem ⊢; exact hmem
+      exact ⟨HasVTy.vvar hmem', .vvar (h := hmem')⟩
+    · subst heq2; rw [if_pos rfl]
+      have hAA : A₀ = A' := by
+        rw [List.getElem?_append_right (by omega), Nat.sub_self] at hmem; simpa using hmem.symm
+      subst hAA
+      have hslot : slotGrade (GradeVec.basis (Δ' ++ A₀ :: Γ').length Δ'.length : GradeVec Mult) Δ'.length = 1 := by
+        unfold slotGrade; rw [GradeVec.basis_get, if_pos hkn]; simp
+      have herase : (GradeVec.basis (Δ' ++ A₀ :: Γ').length Δ'.length : GradeVec Mult).eraseIdx Δ'.length
+          = GradeVec.zeros (Δ' ++ Γ').length := by
+        apply List.ext_getElem?; intro j
+        rw [List.getElem?_eraseIdx, GradeVec.zeros_get]
+        by_cases hji : j < Δ'.length <;>
+          simp only [hji, if_true, if_false, GradeVec.basis_get]
+        · split_ifs <;> first | rfl | (exfalso; omega)
+        · split_ifs <;> first | rfl | (exfalso; omega)
+      have h1smul : GradeVec.smul (1 : Mult) γ_v' = γ_v' := by rw [GradeVec.smul]; simp
+      have hSg : Sgrade γ_v' Δ'.length (GradeVec.basis (Δ' ++ A₀ :: Γ').length Δ'.length) = γ_v' := by
+        unfold Sgrade
+        rw [hslot, herase, h1smul, show (Δ' ++ Γ').length = γ_v'.length from hlen_v.symm]
+        exact GradeVec.zeros_add γ_v'
+      rw [hSg]
+      exact ⟨hv', hvres'⟩
+    · rw [if_neg (by omega), if_pos hgt]
+      have hslot : slotGrade (GradeVec.basis (Δ' ++ A' :: Γ').length i : GradeVec Mult) Δ'.length = 0 := by
+        unfold slotGrade; rw [GradeVec.basis_get, if_pos hkn, if_neg (by omega : Δ'.length ≠ i)]; rfl
+      have hSg : Sgrade γ_v' Δ'.length (GradeVec.basis (Δ' ++ A' :: Γ').length i)
+          = GradeVec.basis (Δ' ++ Γ').length (i - 1) := by
+        unfold Sgrade
+        rw [hslot, h0smul, GradeVec.basis_eraseIdx _ _ _ hkn (by omega), hn, if_neg (by omega)]
+        simp only [Nat.add_sub_cancel]
+        apply List.ext_getElem?; intro j
+        simp only [GradeVec.add, List.getElem?_zipWith, GradeVec.basis_get, GradeVec.zeros_get]
+        split_ifs <;> simp [add_zero]
+      rw [hSg]
+      have hmem' : (Δ' ++ Γ')[i - 1]? = some A₀ := by
+        rw [List.getElem?_append_right (by omega)] at hmem
+        rw [List.getElem?_append_right (by omega)]
+        rwa [show i - Δ'.length = (i - 1 - Δ'.length) + 1 by omega, List.getElem?_cons_succ] at hmem
+      exact ⟨HasVTy.vvar hmem', .vvar (h := hmem')⟩
   all_goals sorry
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
