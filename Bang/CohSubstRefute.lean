@@ -1,19 +1,23 @@
 import Bang.Model
 
-/-! REGRESSION WITNESS — why `lwscg_subst` must take `(hvl : ∀ γ' b', LWSVg K γ' b' v)`,
-NOT the single-grade `LWSVg K γ_v true v`. `lwscg_subst_refuted` is an AXIOM-CLEAN
-(`[propext, Quot.sound]`, no sorryAx) proof that the SINGLE-GRADE shape is FALSE — it takes
-that exact type as a hypothesis `H` and derives `False`, so it stands independent of the live
-lemma's in-progress proof.
+/-! REGRESSION WITNESS — keep; do NOT revert `lwscg_subst` to the single-grade hypothesis.
+Regression rationale + machine-checked consumability verification for the RESHAPE of
+`lwscg_subst` (hyp `∀ γ' b', LWSVg K γ' b' v`). All theorems sorry-free, axiom-clean
+(`[propext, Quot.sound]`). Task #44/#46; ADR-0060.
 
-The counterexample: `w = vthunk (ret (vcap n ℓ))` is closed and LWSVg-live at grade `[0]`
-(inner cap dormant ⇒ `ret` budget `q=0` ⇒ zeros-headed), yet a well-scoped `c = ret (vvar 0)`
-can carry an OFF-DIAGONAL `vvar` grade `[1,1]` (nonzero away from the var it references — because
-`LWSVg.vvar`'s grade is only liveness-constrained, unlike `HasVTy.vvar`'s canonical basis). Under
-subst that junk must be absorbed by `w`, but `w` is structurally pinned to a zero head ⇒ the forced
-conclusion grade `[1]` is unrealizable. The `∀ γ' b'` reshape excludes exactly this: `w` does not
-satisfy it (at `(γ'=[1], b'=true)` the cap would have to resolve under `[]`, refuted by
-`not_resolves_nil`). DO NOT revert the hypothesis to the single-grade form. (ADR-0060; task #44/#46.) -/
+PART A (regression): the OLD statement (`LWSVg K γ_v true v`) was UNSOUND — `wbad =
+vthunk (ret (vcap n ℓ))` is gradeable only head-0 (its inner cap is dormant under a
+non-resolving K ⇒ ret budget 0), yet pairs with a ρ=1 context to force an impossible
+result grade. `lwscg_subst_refuted` derives `False` from the old type (axiom-clean).
+
+PART B (the reshape excludes it): `wbad_not_reshaped` — `wbad` FAILS the ∀-form, so
+the reshape precisely drops the unsound case.
+
+PART C (consumability): under a RESOLVING K, the SAME shape satisfies the ∀-form
+(`vgood_anyGrade`). The discriminating condition is cap-resolution; closed values have
+no free `vvar` (the only grade-sensitive constructor), so well-scoping is grade-free,
+gated only by cap-resolution (which is itself grade-insensitive — `vcap_live`'s grade
+is unconstrained). Hence no LIVE counterexample to the reshape exists. -/
 
 namespace Bang.Model
 
@@ -123,3 +127,73 @@ theorem lwscg_subst_refuted
     simp [GradeVec.smul, GradeVec.add]
   rw [hsubst, hgrade] at hout
   exact fact3 n ℓ hout
+
+/-! ## PART B — the reshape EXCLUDES the unsound case. -/
+
+/-- `wbad` FAILS the reshaped hypothesis: at `γ'=[1], b'=true` its cap would have to be
+live under `[]`, which `not_resolves_nil` forbids. So the reshape drops exactly the
+case Part A refutes. -/
+theorem wbad_not_reshaped (n : Nat) (ℓ : Label) :
+    ¬ (∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg [] γ' b' (wbad n ℓ)) := by
+  intro hall
+  have hv := hall [(1 : Mult)] true
+  have hc := lwsvg_vthunk_inv hv
+  obtain ⟨γ', q, hγ, hcap⟩ := lwscg_ret_inv hc
+  have hd : ([(1 : Mult)] : GradeVec Mult).head? = (q • γ').head? := by rw [hγ]
+  rw [head?_smul] at hd
+  obtain ⟨a, ha, hqa⟩ : ∃ a, γ'.head? = some a ∧ (1 : Mult) = q * a := by
+    cases hcc : γ'.head? with
+    | none => rw [hcc] at hd; simp at hd
+    | some a => rw [hcc] at hd; simp at hd; exact ⟨a, rfl, hd⟩
+  have hq : q ≠ 0 := by rintro rfl; rw [zero_mul] at hqa; exact one_ne_zero hqa
+  have e1 : decide (q ≠ 0) = true := decide_eq_true_eq.mpr hq
+  have hbig : (true && decide (q ≠ 0)) = true := by rw [e1]; rfl
+  exact not_resolves_nil n ℓ (lwsvg_vcap_live_resolves hcap hbig)
+
+/-! ## PART C — under a RESOLVING K, the same shape IS consumable (∀-form holds). -/
+
+/-- a stack that installs handler `n : ℓ`, so `(n, ℓ)` resolves. -/
+abbrev Kres (n : Nat) (ℓ : Label) : EvalCtx := [Frame.handleF n (Handler.throws ℓ)]
+
+theorem resolves_Kres (n : Nat) (ℓ : Label) : ResolvesLabel (Kres n ℓ) n ℓ := by
+  refine ⟨[], Handler.throws ℓ, [], ?_, rfl⟩
+  simp [splitAtId, Kres]
+
+/-- CONSUMABILITY (sorry-free): the thunk-wrapped cap — the exact shape that FAILS the
+∀-form under `[]` — satisfies it under a resolving K, at EVERY grade and flag. -/
+theorem vgood_anyGrade (n : Nat) (ℓ : Label) :
+    ∀ (γ' : GradeVec Mult) (b' : Bool), LWSVg (Kres n ℓ) γ' b' (wbad n ℓ) := by
+  intro γ' b'
+  refine LWSVg.vthunk (LWSCg.ret (q := 1) (γ' := γ') ?_ ?_)
+  · simp [GradeVec.smul]
+  · have e1 : decide ((1 : Mult) ≠ 0) = true := decide_eq_true_eq.mpr one_ne_zero
+    cases b' with
+    | true =>
+      rw [show (true && decide ((1 : Mult) ≠ 0)) = true by rw [e1]; rfl]
+      exact LWSVg.vcap_live (resolves_Kres n ℓ)
+    | false =>
+      rw [show (false && decide ((1 : Mult) ≠ 0)) = false by rfl]
+      exact LWSVg.vcap_dormant
+
+/-- CONSUMABILITY, harder shape: a PAIR of resolving caps wrapped in a thunk also meets
+the ∀-form — pair's grade split (`γ' = γ' + 0s`) composes at any target grade. -/
+theorem vpair_anyGrade (n : Nat) (ℓ : Label) :
+    ∀ (γ' : GradeVec Mult) (b' : Bool),
+      LWSVg (Kres n ℓ) γ' b' (Val.vthunk (Comp.ret (Val.pair (Val.vcap n ℓ) (Val.vcap n ℓ)))) := by
+  intro γ' b'
+  refine LWSVg.vthunk (LWSCg.ret (q := 1) (γ' := γ') ?_ ?_)
+  · simp [GradeVec.smul]
+  · have e1 : decide ((1 : Mult) ≠ 0) = true := decide_eq_true_eq.mpr one_ne_zero
+    have hb : (b' && decide ((1 : Mult) ≠ 0)) = b' := by rw [e1, Bool.and_true]
+    rw [hb]
+    -- pair split: γ' = γ' + zeros|γ'|  (`add_zeros`)
+    refine LWSVg.pair (γ_v := γ') (γ_w := GradeVec.zeros γ'.length) ?_ ?_ ?_ ?_
+    · show (γ' : GradeVec Mult) = GradeVec.add γ' (GradeVec.zeros γ'.length)
+      exact (GradeVec.add_zeros γ').symm
+    · simp
+    · cases b' with
+      | true => exact LWSVg.vcap_live (resolves_Kres n ℓ)
+      | false => exact LWSVg.vcap_dormant
+    · cases b' with
+      | true => exact LWSVg.vcap_live (resolves_Kres n ℓ)
+      | false => exact LWSVg.vcap_dormant
