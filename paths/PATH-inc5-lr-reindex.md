@@ -270,3 +270,25 @@ stratified freshness (`CapsBelow`/`StratFresh`/`FreshCfg`). The v1-close grind o
 - **Before the grind: refute-test the pinned carrier-subst IH** (the prior refutations lived on this axis). Flag
   kernel-engineer ONLY if a genuine HasCTy-grade-structure lemma surfaces (not expected — infra is present).
 - Worktree `lang-bang-inc5` @ `inc5-lr-reindex`. Deferred-on-inc5: the ADR-0061 invariant-evolution update (do at the keystone checkpoint).
+
+### PHASE A progress (2026-06-27, `ce69954`) — signature PINNED + shape-confirmed; PROVE mapped, grind in flight
+The carrier-subst lemma is **stated, refute-tested, and both shape choices confirmed** (banked `ce69954`, build green,
+the 2 new sorries unconsumed so the diagonal axiom set is unchanged). PROVE is the multi-session grind.
+- **Signature** `liveCapsResolveC_subst_gen` (in `Bang.Model`): `(hzsf : ZeroSumFree Mult)` + closed-`v` `hcl` +
+  `hgate : slotGrade γ_full |Δ| ≠ 0 → LiveCapsResolveV K hv` + `hcres : LiveCapsResolveC K hc` →
+  `∃ d' : HasCTy (Sgrade …) … , LiveCapsResolveC K d'`. Plus the mutual VALUE twin (`hvres` unconditional).
+  - **(A) GATE** (not unconditional v-clean): dead binder (slotGrade 0, via ZeroSumFree) discharges with no v, once, inside the lemma.
+  - **(B) EXISTENTIAL** (not indexing `subst_gen`'s opaque output): FORCED — emitting the carrier from `subst_gen` would
+    invert the import direction (`Bang.Metatheory` must stay carrier-agnostic; arch-check guards it). Consumer is `∃ d'` anyway.
+  - Refute-first found the `ZeroSumFree` need (without it, two live occs with cancelling grades fake a dead slot).
+- **PROVE structure** = port `lwscg_subst_gen` (`Bang/Model.lean :2575`) + carry typing existentially (obtain the recursive
+  `∃ d'`, repack via the HasVTy/HasCTy ctor + the carrier ctor). The typing-rebuild ~doubles the ~110-line template.
+- **Helper inventory** (most EXIST, reusable): `Sgrade_vvar_ne` (surviving-var leaf, hzsf) · `Sgrade_cons` (binder reshape) ·
+  `cov_add_*`/`cov_cons`/`cov_smul` (coverage threading) · `Sgrade_hadd`/`Sgrade_hsmul` (binary formers).
+  **ONE missing:** `Sgrade_zeros` (inert leaves vunit/vint/vcap, grade `zeros`) — pure `List.replicate`/`eraseIdx` plumbing,
+  needs the exact `List.eraseIdx_replicate`/`getElem?_replicate` names (loogle, ~10 min; NOT a design issue). Land it FIRST.
+- **Gated-position discharge (the crux, confirmed on paper):** at ret/app/case/split split on the LOCAL `q`. `q=0` → dormant
+  builder, no v. `q≠0` → derive `slotGrade γ_full |Δ| ≠ 0` from the local contribution via `hzsf` → fire `hgate` → v-clean.
+- **SCOPE:** value layer 9 cases + comp layer 12, each an existential repack + grade plumbing. **Grind value-layer-first.**
+- **hcl watch-item** (refute-test in PHASE B threading): `v` closed should discharge via "reachable machine values are closed"
+  at the live re-home sites; if a live site has non-closed `v`, the closedness hypothesis is too strong → revisit the signature.
