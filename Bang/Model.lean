@@ -1156,9 +1156,13 @@ end
 the focus + stack such that every PERFORMABLE cap resolves (`WSC` for the focus at its row `e`; `WSK` for
 the stack against the full `K`). Bundling the derivations existentially keeps `WScfg : Config → Prop`
 (the shape `nonEscape_of_fwd_invariant` consumes); the output effect is `⊥` (the diagonal's target). -/
+-- `WellCounted cfg` (= `StackBelow cfg.1 cfg.2.1`) is conjoined for MINT id-FRESHNESS (ADR-0055):
+-- the carried counter dominates every live handler id, so a minted `g` can't collide. It is the
+-- well-scoping of IDENTITIES — parallel to `LWSC`/`LWSK` for caps — not derivable from the
+-- typing/`LWSK` (which track cap-resolution, not id-counting), so the invariant must carry it.
 def WScfg (Co : CTy Eff Mult) (cfg : Config) : Prop :=
   ∃ (e : Eff) (C : CTy Eff Mult), HasCTy [] [] cfg.2.2 e C ∧ HasStack cfg.2.1 e C ⊥ Co
-    ∧ LWSC cfg.2.1 true cfg.2.2 ∧ LWSK cfg.2.1 cfg.2.1 true
+    ∧ LWSC cfg.2.1 true cfg.2.2 ∧ LWSK cfg.2.1 cfg.2.1 true ∧ WellCounted cfg
 
 /-- **SEED (GREEN).** A `VcapFree` closed program satisfies the typed-relative invariant at the initial
 config — no caps to resolve, the stack is empty. The typing derivations come from `hty`. -/
@@ -1167,7 +1171,7 @@ theorem wellScoped_initial (c : Comp) (hvf : VcapFree c) {Co : CTy Eff Mult}
   obtain ⟨e, C, hfocus, hstack⟩ := hty
   -- the stack is `[]`, so `hstack : HasStack [] e C ⊥ Co` must be `nil` (`e = ⊥`, `C = Co`).
   cases hstack
-  exact ⟨⊥, Co, hfocus, .nil, lwsc_capFree [] true hfocus hvf, .nil⟩
+  exact ⟨⊥, Co, hfocus, .nil, lwsc_capFree [] true hfocus hvf, .nil, trivial⟩
 
 /-- **OBLIGATION 1 — the op-in-interface typing inversion.** A `WellScoped`-resolved `perform (vcap n ℓ)
 op v` focus that types (`HasConfigTy … ⊥ …`) lands on a handler that HANDLES `(ℓ, op)`: `HasCTy.perform`
@@ -1197,7 +1201,7 @@ theorem handlesOp_of_hasConfigTy {Co : CTy Eff Mult} (cfg : Config)
 /-- `WScfg` carries the typing core: project out `HasConfigTy` (drop the `WSC`/`WSK` cap-resolution). -/
 theorem hasConfigTy_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (h : WScfg Co cfg) :
     HasConfigTy cfg ⊥ Co := by
-  obtain ⟨e, C, dc, dk, _, _⟩ := h; exact ⟨e, C, dc, dk⟩
+  obtain ⟨e, C, dc, dk, _, _, _⟩ := h; exact ⟨e, C, dc, dk⟩
 
 /-- A `perform (vcap n ℓ)` focus whose `WSC` holds at the focus row `e` resolves its cap's label: the
 typing gives `labelEff ℓ ≤ e` (performability), and `WSC`'s `vcap` gate then forces `ResolvesLabel`. -/
@@ -1217,7 +1221,7 @@ theorem resolvesLabel_of_wsc_perform {K : EvalCtx} {e : Eff}
 `WSC`'s `vcap` gate (`resolvesLabel_of_wsc_perform`); the op-membership from the typing core (`handlesOp_of_hasConfigTy`). -/
 theorem focusResolves_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (hWS : WScfg Co cfg) :
     FocusResolves cfg := by
-  obtain ⟨e, C, dc, dk, hWSC, _⟩ := hWS
+  obtain ⟨e, C, dc, dk, hWSC, _, _⟩ := hWS
   obtain ⟨g, K, c⟩ := cfg
   -- now `dc : HasCTy [] [] c e C`, `hWSC : LWSC K true c`; split STRUCTURALLY on the focus `c`. The
   -- cap-resolution comes from `LWSC`'s `vcap_live` gate (the focus is LIVE, `b = true`).
