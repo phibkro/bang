@@ -2541,6 +2541,110 @@ theorem lwscg_of_typed {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} 
     exact .handleTransaction (lwscg_of_typed b hM (capsR_right hcaps))
 end
 
+/-! ### §2′.8f′ — GRADE-SENSITIVE caps-resolution (the coherence carrier, ADR-0061 / #51 keystone).
+
+`LiveCapsResolveV`/`LiveCapsResolveC` recurse on the TYPING derivation and demand `ResolvesLabel` ONLY
+at cap leaves reachable through gate-LIVE storage positions (`q ≠ 0`). The dormant-gated leaves (a
+`ret`/`app`/`case`/`split` value at `q = 0`; a `perform` argument — always dormant) SKIP the
+obligation, mirroring the `LWSCg` storage gates `b && decide (q ≠ 0)` EXACTLY. Two facts make this the
+right carrier:
+  • `HasVTy`/`HasCTy` are `Prop`, so a `List`-valued `liveCaps` over the derivation would need large
+    elimination (illegal); a `Prop`-valued predicate is small elimination (legal). Hence a PREDICATE,
+    not a list.
+  • The grade-sensitivity is exactly what the all-caps `lwscg_of_typed` (§2′.8f) LACKS: it demands ALL
+    of `capsC c` resolve, FALSE post-pop for a typed-DEAD ℓ-cap (the ADR-0061 root). Here the dead cap
+    sits behind a `q = 0` gate ⇒ vacuous obligation.
+WScfg carries this + the typing, and DERIVES the coherent `LWSCg` via `lwscg_of_typed_live` (grades =
+typing grades by construction). #4 (returnEscape) + #5 (subst) UNIFY as "this predicate is preserved." -/
+-- An INDUCTIVE PREDICATE indexed by the typing derivation (not a recursive def): `HasVTy`/`HasCTy`
+-- are `Prop`, so a recursive def matching the derivation would need `brecOn` (Type elimination of a
+-- `Prop` ⇒ illegal). An inductive `Prop` indexed by a `Prop` has no such restriction. Each storage
+-- gate (`q ≠ 0 →`) mirrors `LWSCg`'s `b && decide (q ≠ 0)`: a typed-DEAD (`q = 0`) cap leaf SKIPS the
+-- `ResolvesLabel` obligation — exactly what the all-caps `lwscg_of_typed` lacks (the ADR-0061 root).
+mutual
+inductive LiveCapsResolveV (K : EvalCtx) :
+    ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}, HasVTy γ Γ v A → Prop
+  | vunit {Γ} : LiveCapsResolveV K (Γ := Γ) HasVTy.vunit
+  | vint {Γ n} : LiveCapsResolveV K (Γ := Γ) (HasVTy.vint (n := n))
+  | vvar {Γ i A} {h : Γ[i]? = some A} : LiveCapsResolveV K (HasVTy.vvar h)
+  | vcap {Γ n ℓ} (hr : ResolvesLabel K n ℓ) : LiveCapsResolveV K (HasVTy.vcap (Γ := Γ) (n := n) (ℓ := ℓ))
+  | vthunk {γ Γ M φ B} {dM : HasCTy γ Γ M φ B} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveV K (HasVTy.vthunk dM)
+  | inl {γ Γ v A B} {dv : HasVTy γ Γ v A} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveV K (HasVTy.inl (B := B) dv)
+  | inr {γ Γ v A B} {dv : HasVTy γ Γ v B} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveV K (HasVTy.inr (A := A) dv)
+  | pair {γ γv γw Γ v w A B} {dv : HasVTy γv Γ v A} {dw : HasVTy γw Γ w B} {hγ : γ = γv + γw}
+      (h1 : LiveCapsResolveV K dv) (h2 : LiveCapsResolveV K dw) :
+      LiveCapsResolveV K (HasVTy.pair dv dw hγ)
+  | fold {γ Γ v A} {dv : HasVTy γ Γ v (VTy.unrollMu A)} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveV K (HasVTy.fold dv)
+inductive LiveCapsResolveC (K : EvalCtx) :
+    ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {φ : Eff} {C : CTy Eff Mult},
+      HasCTy γ Γ c φ C → Prop
+  | ret {γ γ' Γ v A} {q : Mult} {dv : HasVTy γ' Γ v A} {hγ : γ = q • γ'}
+      (h : q ≠ 0 → LiveCapsResolveV K dv) : LiveCapsResolveC K (HasCTy.ret dv hγ)
+  | letC {γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B} {dM : HasCTy γ₁ Γ M φ₁ (CTy.F q1 A)}
+      {dN : HasCTy ((q1 * q_or_1 q2) :: γ₂) (A :: Γ) N φ₂ B} {hγ : γ = (q_or_1 q2) • γ₁ + γ₂}
+      (h1 : LiveCapsResolveC K dM) (h2 : LiveCapsResolveC K dN) :
+      LiveCapsResolveC K (HasCTy.letC dM dN hγ)
+  | force {γ Γ v φ B} {dv : HasVTy γ Γ v (VTy.U φ B)} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveC K (HasCTy.force dv)
+  | lam {γ Γ M φ q A B} {dM : HasCTy (q :: γ) (A :: Γ) M φ B} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.lam dM)
+  | app {γ γ₁ γ₂ Γ M v φ q A B} {dM : HasCTy γ₁ Γ M φ (CTy.arr q A B)} {dv : HasVTy γ₂ Γ v A}
+      {hγ : γ = γ₁ + q • γ₂}
+      (h1 : LiveCapsResolveC K dM) (h2 : q ≠ 0 → LiveCapsResolveV K dv) :
+      LiveCapsResolveC K (HasCTy.app dM dv hγ)
+  | case {γ γ_v γ_N Γ v N₁ N₂ φ q A B C} {dv : HasVTy γ_v Γ v (VTy.sum A B)}
+      {dN1 : HasCTy (q :: γ_N) (A :: Γ) N₁ φ C} {dN2 : HasCTy (q :: γ_N) (B :: Γ) N₂ φ C}
+      {hγ : γ = q • γ_v + γ_N}
+      (h1 : q ≠ 0 → LiveCapsResolveV K dv) (h2 : LiveCapsResolveC K dN1) (h3 : LiveCapsResolveC K dN2) :
+      LiveCapsResolveC K (HasCTy.case dv dN1 dN2 hγ)
+  | split {γ γ_v γ_N Γ v N φ q A B C} {dv : HasVTy γ_v Γ v (VTy.prod A B)}
+      {dN : HasCTy (q :: q :: γ_N) (B :: A :: Γ) N φ C} {hγ : γ = q • γ_v + γ_N}
+      (h1 : q ≠ 0 → LiveCapsResolveV K dv) (h2 : LiveCapsResolveC K dN) :
+      LiveCapsResolveC K (HasCTy.split dv dN hγ)
+  | unfold {γ Γ v A} {dv : HasVTy γ Γ v (VTy.mu A)} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveC K (HasCTy.unfold dv)
+  | perform {γ_c γ_v Γ cv ℓ op v φ A B} {q : Mult} {dc : HasVTy γ_c Γ cv (VTy.cap ℓ)}
+      {hle : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ}
+      {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A}
+      {hopR : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B} {dv : HasVTy γ_v Γ v A}
+      (h : LiveCapsResolveV K dc) :
+      LiveCapsResolveC K (HasCTy.perform dc hle hopA hopR dv)
+  | handleThrows {γ Γ ℓ M e φ q qc A} {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise"}
+      {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.handleThrows hopA hint dM hle hbo)
+  | handleState {γ Γ ℓ s₀ M e φ q qc S A} {hga : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit}
+      {hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S}
+      {hpa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S}
+      {hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put"}
+      {dsv : HasVTy [] [] s₀ S} {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A}
+      (hs : LiveCapsResolveV K dsv) (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.handleState hga hgr hpa hpr hint dsv dM hle hbo)
+  | handleTransaction {γ Γ ℓ Θ₀ M e φ q qc A}
+      {hna : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int}
+      {hnr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int}
+      {hra : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some VTy.int}
+      {hrr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some VTy.int}
+      {hwa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod VTy.int VTy.int)}
+      {hwr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+        op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar"}
+      {hcells : ∀ cell ∈ Θ₀, HasVTy [] [] cell VTy.int}
+      {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.handleTransaction hna hnr hra hrr hwa hwr hint hcells dM hle hbo)
+end
+
 /-- **SEED (GREEN).** A `VcapFree` closed program satisfies the GRADED invariant `WScfg` at the initial
 config — no caps to resolve (the graded lift's side-condition + the `FreshCfg` focus-cap bound are
 vacuous), the stack is empty (`LWSKg.nil`), the counter is `0` (`CapsBelow`/`StratFresh` trivial). The
