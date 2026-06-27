@@ -21,8 +21,8 @@
 > lone scaled position that never got it. The discharge `lwscg_to_lwsck` (+ `lwsvg_to_lwsvk` + the false-base pair)
 > is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). **LIVE FRONT — `coh_step` reshape VALIDATED, ~24-arm grind
 > remaining:** `lwscg_subst` (graded subst-preservation) was found UNSOUND as first stated (single-grade
-> `LWSVg γ_v true v`) — a 2-arm race surfaced it: arm-2's AXIOM-CLEAN refutation (`Bang/CohSubstRefute.lean`, a kept
-> regression witness) proved it false, vindicating the reshape to `∀γ'b', LWSVg K γ' b' v` (necessary AND
+> `LWSVg γ_v true v`) — a 2-arm race surfaced it: arm-2's AXIOM-CLEAN refutation (the `CohSubstRefute` witness on the proof
+> branch, kept) proved it false, vindicating the reshape to `∀γ'b', LWSVg K γ' b' v` (necessary AND
 > machine-checked CONSUMABLE; `caps-resolve-in-K` is the boundary → #46). BANKED + gated: the reshaped statement +
 > graded flag-monotonicity foundation + `Sgrade_cons` binder spine + `hzsf:ZeroSumFree` (forced) + the length-free
 > Sgrade decision. REMAINING (mechanical, single-prover next session): ~4-6 length-free Sgrade lemmas + the ~24-arm

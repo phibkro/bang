@@ -191,6 +191,32 @@ another agent. If still red after ~2–3 focused revision rounds, STOP and retur
 **compiler error + the precise blocker** (the missing lemma / definitional shape),
 not a fix you didn't verify. Require the artifact, never the say-so.
 
+## Refute before you grind — the statement is guilty until proven true
+
+On a hard lemma your FIRST move is not to prove it — it's to try to **refute** it. A
+confident "prove X" must trigger "is X even true / provable *as stated*?". A
+machine-checked refutation is a first-class deliverable, worth as much as a proof —
+and far cheaper than grinding a false statement for days.
+
+- **Build `False` from the statement taken as a HYPOTHESIS `H`** (so the refutation is
+  independent of any in-file `sorry`), gate it (`#print axioms` ⊆ allow-set), and KEEP
+  it as a committed **do-not-weaken regression witness**. A precise STOP at "this seems
+  false / unprovable" is a FINDING, not a failure — surface it (the statement may need a
+  missing hypothesis, or it's the `kernel-engineer`'s call).
+- **Do a build-grounded foundation read before writing a line** — check the actual
+  constructor gates / existentials. An existential gate that can be `0` where the typed
+  grade is nonzero makes a "forgetful → tight" lift *unprovable*; you catch that by
+  reading the def, not by grinding the proof.
+- **Separate STATEMENT-necessary hypotheses** (refutable — a witness proves they're
+  required, e.g. a missing length pin) **from PROOF-necessary ones** (the statement may
+  be true but your induction needs them — e.g. a `ZeroSumFree`-style rig condition true
+  over ℤ too; don't burn time trying to refute its absence, the grade-slack absorbs it).
+- This is not pessimism, it's the cheapest path: an afternoon refuting a false statement
+  beats a multi-session grind into it. (lang-bang ◊5: four unsound/unprovable statements
+  — a deep-occurrence lever, two substitution-lemma forms, an unprovable lift — were each
+  caught this way *before* any sank a grind. See the `CohSubstRefute` /
+  `LwscgLengthRefute` witnesses (on the proof branch) for the shape.)
+
 ## One worked exemplar — the axiom-clean close
 
 Canonical: **`no_accidental_handling`** (statement `Bang/Spec.lean`, proof

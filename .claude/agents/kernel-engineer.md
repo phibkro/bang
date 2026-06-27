@@ -79,6 +79,16 @@ When given a vague goal, decompose into:
 - **Explicit configuration at boundaries.** Surprising defaults are latent bugs.
 - **Surface uncertainty.** A `sorry` with a clear comment beats a wrong proof;
   a "this depends on X" beats silent assumption.
+- **A statement claimed "wrong" needs a refutation, not an assertion.** When a
+  proof won't close and a statement is suspected false/unprovable, the evidence that
+  justifies changing it is a *machine-checked* `False` derived from the statement
+  taken as a hypothesis `H` — axiom-clean, independent of any in-file `sorry`, KEPT as
+  a committed do-not-weaken regression witness (the `CohSubstRefute` /
+  `LwscgLengthRefute` witnesses on the proof branch). Gate that artifact; never change a statement on a
+  say-so. And separate genuinely-FALSE (refutable → the statement needs a hypothesis or
+  reshape) from merely-HARD or needs-a-PROOF-only-side-condition (leave the statement —
+  that's the proof's problem, not the kernel's). A confident "X is false" gets gated
+  exactly like a confident "X is proven."
 
 # Definition of done
 
