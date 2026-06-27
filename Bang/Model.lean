@@ -3489,8 +3489,57 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
   -- Recurse via the explicit mutual carrier recursor with the §3.7a motives (the `subst_gen` shape;
   -- `cases hwres`+manual recursion is build-confirmed impossible for the Prop-indexed carrier).
   refine LiveCapsResolveV.rec (motive_1 := VcarrierSubstMotive K) (motive_2 := CcarrierSubstMotive K)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState ?handleTransaction
     hwres Δ Γ A γ_v v hv hzsf hcl hvres rfl hcov
+  case vunit =>
+    intro Γ_w Δ' Γ' A' γ_v' v' hv' _ _ _ heq hcov'
+    subst heq
+    have hk : Δ'.length < (Δ' ++ A' :: Γ').length := by
+      simp only [List.length_append, List.length_cons]; omega
+    have hlen : γ_v'.length = (Δ' ++ A' :: Γ').length - 1 := by
+      rw [hv'.length_eq]; simp only [List.length_append, List.length_cons]; omega
+    have hcnt : (Δ' ++ A' :: Γ').length - 1 = (Δ' ++ Γ').length := by
+      simp only [List.length_append, List.length_cons]; omega
+    rw [Val.substFrom, Sgrade_zeros γ_v' Δ'.length _ hk hlen, hcnt]
+    exact ⟨HasVTy.vunit, .vunit⟩
+  case vint =>
+    intro Γ_w n Δ' Γ' A' γ_v' v' hv' _ _ _ heq hcov'
+    subst heq
+    have hk : Δ'.length < (Δ' ++ A' :: Γ').length := by
+      simp only [List.length_append, List.length_cons]; omega
+    have hlen : γ_v'.length = (Δ' ++ A' :: Γ').length - 1 := by
+      rw [hv'.length_eq]; simp only [List.length_append, List.length_cons]; omega
+    have hcnt : (Δ' ++ A' :: Γ').length - 1 = (Δ' ++ Γ').length := by
+      simp only [List.length_append, List.length_cons]; omega
+    rw [Val.substFrom, Sgrade_zeros γ_v' Δ'.length _ hk hlen, hcnt]
+    exact ⟨HasVTy.vint, .vint⟩
+  case vcap =>
+    intro Γ_w n ℓ hr Δ' Γ' A' γ_v' v' hv' _ _ _ heq hcov'
+    subst heq
+    have hk : Δ'.length < (Δ' ++ A' :: Γ').length := by
+      simp only [List.length_append, List.length_cons]; omega
+    have hlen : γ_v'.length = (Δ' ++ A' :: Γ').length - 1 := by
+      rw [hv'.length_eq]; simp only [List.length_append, List.length_cons]; omega
+    have hcnt : (Δ' ++ A' :: Γ').length - 1 = (Δ' ++ Γ').length := by
+      simp only [List.length_append, List.length_cons]; omega
+    rw [Val.substFrom, Sgrade_zeros γ_v' Δ'.length _ hk hlen, hcnt]
+    exact ⟨HasVTy.vcap, .vcap hr⟩
+  case inl =>
+    intro γ Γ_i v_i A_i B_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    rw [Val.substFrom]
+    exact ⟨HasVTy.inl dv', .inl hdv'⟩
+  case inr =>
+    intro γ Γ_i v_i A_i B_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    rw [Val.substFrom]
+    exact ⟨HasVTy.inr dv', .inr hdv'⟩
+  case fold =>
+    intro γ Γ_i v_i A_i dv h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    rw [Val.substFrom]
+    exact ⟨HasVTy.fold dv', .fold hdv'⟩
   all_goals sorry
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
