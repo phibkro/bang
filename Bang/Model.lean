@@ -2088,13 +2088,15 @@ each storage-`q` gate to the typed binder grade (vs. `LWSC`'s free `∃ q`), so 
 dormant (closing the 4 elimination walls + the REDUCE dead-arg); `FreshCfg` supplies the cap-id freshness
 the POP-tail needs. The output effect is `⊥` (the diagonal's target). -/
 def WScfg (Co : CTy Eff Mult) (cfg : Config) : Prop :=
-  ∃ (e : Eff) (C : CTy Eff Mult) (d : HasCTy [] [] cfg.2.2 e C), HasStack cfg.2.1 e C ⊥ Co
-    ∧ LiveCapsResolveC cfg.2.1 d
-    ∧ LWSKg cfg.2.1 cfg.2.1 ([] : GradeVec Mult) true ∧ FreshCfg cfg
--- ADR-0061 (#51 keystone): the carried scoping witness is the GRADE-SENSITIVE `LiveCapsResolveC` over
--- the bundled typing `d` (replacing the DECOUPLED `LWSCg … true c` existential). The coherent `LWSCg`
--- is DERIVED on demand via `lwscg_of_typed_live d _` (grades = typing grades by construction), closing
--- the spurious-live-cap hole: a typed-DEAD cap is dormant in the derived `LWSCg`, never demanded to resolve.
+  ∃ (e : Eff) (C : CTy Eff Mult) (d : HasCTy [] [] cfg.2.2 e C) (dk : HasStack cfg.2.1 e C ⊥ Co),
+    LiveCapsResolveC cfg.2.1 d
+    ∧ LiveCapsResolveK cfg.2.1 dk ∧ FreshCfg cfg
+-- ADR-0061 (#51 keystone): BOTH carried scoping witnesses are GRADE-SENSITIVE coherence carriers over
+-- the bundled typings `d`/`dk` (replacing the DECOUPLED `LWSCg`/`LWSKg true` existentials): the focus
+-- `LiveCapsResolveC` over `d` and the SYMMETRIC stack `LiveCapsResolveK` over `dk`. The coherent
+-- `LWSCg`/`LWSKg` are DERIVED on demand (grades = typing grades by construction), closing the
+-- spurious-live-cap hole on BOTH halves: a typed-DEAD cap is dormant in the derived view, never demanded
+-- to resolve. REDUCE pulls a stack continuation into the focus, so the stack carrier must be coherent too.
 
 -- **SEED (GREEN)** `wellScoped_initial` is defined just AFTER the graded lift `lwscg_of_typed` (§2′.8f)
 -- which it consumes — see below §2′.8f. (The lift sits after §3 in the file's dependency order.)
@@ -3294,13 +3296,13 @@ PUSH/MINT graded restack (mechanical mirror of the §3.5 typeless `lwsc_restack`
 theorem lwsg_step_nonperform {g : Nat} {K : EvalCtx} {c : Comp} {e : Eff} {C Co : CTy Eff Mult}
     {cfg' : Config}
     (hfocus : HasCTy (Eff := Eff) (Mult := Mult) [] [] c e C) (hstack : HasStack K e C ⊥ Co)
-    (hres : LiveCapsResolveC K hfocus) (hWSK : LWSKg K K ([] : GradeVec Mult) true)
+    (hres : LiveCapsResolveC K hfocus) (hresK : LiveCapsResolveK K hstack)
     (hfresh : FreshCfg (g, K, c))
     (hnp : ∀ n ℓ op v, c ≠ Comp.perform (Val.vcap n ℓ) op v)
     (hstep : Source.step (g, K, c) = some cfg') :
-    ∃ (e' : Eff) (C' : CTy Eff Mult) (d' : HasCTy [] [] cfg'.2.2 e' C'),
-      HasStack cfg'.2.1 e' C' ⊥ Co ∧ LiveCapsResolveC cfg'.2.1 d'
-        ∧ LWSKg cfg'.2.1 cfg'.2.1 ([] : GradeVec Mult) true := by
+    ∃ (e' : Eff) (C' : CTy Eff Mult) (d' : HasCTy [] [] cfg'.2.2 e' C')
+      (dk' : HasStack cfg'.2.1 e' C' ⊥ Co),
+      LiveCapsResolveC cfg'.2.1 d' ∧ LiveCapsResolveK cfg'.2.1 dk' := by
   sorry
 
 /-- **GRADED liveness preservation — the DISPATCH arm (#35).** `idDispatch` reinstalls/pops a handler on a
@@ -3311,29 +3313,30 @@ theorem lwsg_step_dispatch {g : Nat} {K : EvalCtx} {n : Nat} {ℓ : Label} {op :
     (hfocus : HasCTy (Eff := Eff) (Mult := Mult) [] [] (Comp.perform (Val.vcap n ℓ) op v) e C)
     (hstack : HasStack K e C ⊥ Co)
     (hres : LiveCapsResolveC K hfocus)
-    (hWSK : LWSKg K K ([] : GradeVec Mult) true)
+    (hresK : LiveCapsResolveK K hstack)
     (hfresh : FreshCfg (g, K, Comp.perform (Val.vcap n ℓ) op v))
     (hstep : Source.step (g, K, Comp.perform (Val.vcap n ℓ) op v) = some cfg') :
-    ∃ (e' : Eff) (C' : CTy Eff Mult) (d' : HasCTy [] [] cfg'.2.2 e' C'),
-      HasStack cfg'.2.1 e' C' ⊥ Co ∧ LiveCapsResolveC cfg'.2.1 d'
-        ∧ LWSKg cfg'.2.1 cfg'.2.1 ([] : GradeVec Mult) true := by
+    ∃ (e' : Eff) (C' : CTy Eff Mult) (d' : HasCTy [] [] cfg'.2.2 e' C')
+      (dk' : HasStack cfg'.2.1 e' C' ⊥ Co),
+      LiveCapsResolveC cfg'.2.1 d' ∧ LiveCapsResolveK cfg'.2.1 dk' := by
   sorry
 
 theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
     (hP : WScfg Co cfg) (hstep : Source.step cfg = some cfg') : WScfg Co cfg' := by
   obtain ⟨g, K, c⟩ := cfg
-  obtain ⟨e, C, hfocus, hstack, hres, hWSK, hfresh⟩ := hP
+  obtain ⟨e, C, hfocus, hstack, hres, hresK, hfresh⟩ := hP
   -- FRESHNESS half (uniform, §3.0).
   have hFreshr : FreshCfg cfg' := freshCfg_step (g, K, c) cfg' ⟨e, C, hfocus, hstack⟩ hfresh hstep
   -- WELL-SCOPED + TYPING half: route DISPATCH (perform-vcap, #35) vs every other arm. Each obligation
-  -- returns the post-step `WScfg`-tail (typing + `LiveCapsResolveC` + stack + `LWSKg`).
+  -- returns the post-step `WScfg`-tail (typing `d'` + `LiveCapsResolveC` over it + stack `dk'` +
+  -- `LiveCapsResolveK` over it).
   by_cases hperf : ∃ n ℓ op v, c = Comp.perform (Val.vcap n ℓ) op v
   · obtain ⟨n, ℓ, op, v, rfl⟩ := hperf
-    obtain ⟨e', C', d', hs', hres', hkg⟩ := lwsg_step_dispatch hfocus hstack hres hWSK hfresh hstep
-    exact ⟨e', C', d', hs', hres', hkg, hFreshr⟩
-  · obtain ⟨e', C', d', hs', hres', hkg⟩ := lwsg_step_nonperform hfocus hstack hres hWSK hfresh
+    obtain ⟨e', C', d', dk', hres', hkg⟩ := lwsg_step_dispatch hfocus hstack hres hresK hfresh hstep
+    exact ⟨e', C', d', dk', hres', hkg, hFreshr⟩
+  · obtain ⟨e', C', d', dk', hres', hkg⟩ := lwsg_step_nonperform hfocus hstack hres hresK hfresh
       (fun n ℓ op v hc => hperf ⟨n, ℓ, op, v, hc⟩) hstep
-    exact ⟨e', C', d', hs', hres', hkg, hFreshr⟩
+    exact ⟨e', C', d', dk', hres', hkg, hFreshr⟩
 
 /-! ## §4 — THE DIAGONAL (assembled). -/
 
