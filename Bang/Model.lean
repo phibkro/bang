@@ -1561,6 +1561,7 @@ theorem cov_smul {q : Mult} {γ' γ_v : GradeVec Mult} {k : Nat}
   rw [List.length_eraseIdx]
   rwa [List.length_eraseIdx, GradeVec.smul_length] at hcov
 
+omit [DecidableEq Mult] [NoZeroDivisors Mult] [Nontrivial Mult] in
 /-- Descend a binder: coverage at `γ` ⇒ coverage at `q :: γ`, cutoff `k+1`, value grade `0 :: γ_v`. -/
 theorem cov_cons {q : Mult} {γ_par γ_v : GradeVec Mult} {k : Nat}
     (hcov : (γ_par.eraseIdx k).length ≤ γ_v.length) :
