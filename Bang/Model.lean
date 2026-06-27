@@ -862,6 +862,51 @@ theorem lwskg_to_lwsk {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} :
       | stateF hs hK => exact .stateF (lwsvg_to_lwsv hs) (lwskg_to_lwsk hK)
       | transactionF hK => exact .transactionF (lwskg_to_lwsk hK)
 
+/-! ### §2′.8a′ — GRADED dormant-stack-independence (the `false`-flag value/comp re-homes to ANY stack).
+
+At flag `false` every storage gate `false && decide(q≠0)` collapses to `false`, so the whole sub-tree is
+dormant: no `vcap_live` (hence no `ResolvesLabel` reading the stack `K`), so it re-homes to any `K'`. The
+graded mirror of `lwsv_dormant_stack_indep` — consumed by `lwscg_returnEscape`'s `perform` arg + every
+elimination's typed-DEAD (gate-`false`) sub-case. -/
+mutual
+theorem lwsvg_dormant_stack_indep {K K' : EvalCtx} {γ : GradeVec Mult} {v : Val}
+    (h : LWSVg K γ false v) : LWSVg K' γ false v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar hh => exact .vvar hh
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk hc => exact .vthunk (lwscg_dormant_stack_indep hc)
+  | inl ha => exact .inl (lwsvg_dormant_stack_indep ha)
+  | inr ha => exact .inr (lwsvg_dormant_stack_indep ha)
+  | pair hγ hlen h1 h2 =>
+      exact .pair hγ hlen (lwsvg_dormant_stack_indep h1) (lwsvg_dormant_stack_indep h2)
+  | fold ha => exact .fold (lwsvg_dormant_stack_indep ha)
+theorem lwscg_dormant_stack_indep {K K' : EvalCtx} {γ : GradeVec Mult} {c : Comp}
+    (h : LWSCg K γ false c) : LWSCg K' γ false c := by
+  cases h with
+  | @ret _ _ _ _ q hγ hv =>
+      exact .ret (q := q) hγ (lwsvg_dormant_stack_indep (by simpa using hv))
+  | letC hγ hlen h1 h2 =>
+      exact .letC hγ hlen (lwscg_dormant_stack_indep h1) (lwscg_dormant_stack_indep h2)
+  | force hv => exact .force (lwsvg_dormant_stack_indep hv)
+  | lam hM => exact .lam (lwscg_dormant_stack_indep hM)
+  | @app _ _ _ _ _ _ q hγ hlen h1 h2 =>
+      exact .app (q := q) hγ hlen (lwscg_dormant_stack_indep h1) (lwsvg_dormant_stack_indep (by simpa using h2))
+  | @case _ _ _ _ _ _ _ q hγ hlen h1 h2 h3 =>
+      exact .case (q := q) hγ hlen (lwsvg_dormant_stack_indep (by simpa using h1))
+        (lwscg_dormant_stack_indep h2) (lwscg_dormant_stack_indep h3)
+  | @split _ _ _ _ _ _ q hγ hlen h1 h2 =>
+      exact .split (q := q) hγ hlen (lwsvg_dormant_stack_indep (by simpa using h1))
+        (lwscg_dormant_stack_indep h2)
+  | unfold hv => exact .unfold (lwsvg_dormant_stack_indep hv)
+  | perform hγ hlen h1 h2 =>
+      exact .perform hγ hlen (lwsvg_dormant_stack_indep h1) (lwsvg_dormant_stack_indep h2)
+  | handleThrows hM => exact .handleThrows (lwscg_dormant_stack_indep hM)
+  | handleState hs hM => exact .handleState (lwsvg_dormant_stack_indep hs) (lwscg_dormant_stack_indep hM)
+  | handleTransaction hM => exact .handleTransaction (lwscg_dormant_stack_indep hM)
+end
+
 /-! ### §2′.8b — the q=0 β DISCHARGE `LWSCg → γ[k]=0 → LWSCk` (the rig + false-base + induction).
 
 `lwscg_to_lwsck` upgrades a coherent `LWSCg` to the substituted-var-`k`-dormant `LWSCk` (which feeds the
@@ -2108,17 +2153,79 @@ theorem handleF_bocc_inv {g' : Nat} {hd : Handler} {K' : EvalCtx} {e : Eff} {C C
   | stateF _ _ _ _ _ _ _ hbocc _ => exact hbocc
   | transactionF _ _ _ _ _ _ _ _ _ hbocc _ => exact hbocc
 
-/-- **lwscg_returnEscape (Phase 2 — the POP focus arm, ⊥-row return-escape over the GRADE).** The graded
+/- **lwscg_returnEscape (Phase 2 — the POP focus arm, ⊥-row return-escape over the GRADE).** The graded
 restatement of the spike `lwsc_returnEscape` (above): a focus typed at the popped handler's answer type
 `C` with `¬labelOccurs ℓ C` re-homes its scoping past `handleF g' hd`. The spike's value-layer cases
-(`lwsv_returnEscape`) port directly; the 4 elimination WALLS (letC/app/case/split) NOW CLOSE because the
-typed-DEAD intermediate is GATE-dormant under `LWSCg` (`lwsvg … false`) ⇒ `lwsv_dormant_stack_indep`. -/
+(`lwsv_returnEscape`) port directly; the gated DEAD elimination sub-cases close via
+`lwsvg_dormant_stack_indep`; the LIVE/`letC` sub-cases need the grade-type-occurrence coherence. -/
+-- (①, lead-approved) the type-side grade `γ_ty` is DECOUPLED from the `LWSCg` grade `γ` (independent
+-- inductives; their grades diverge under binders/splits). `d` is used for TYPE STRUCTURE only.
+mutual
+theorem lwsvg_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label}
+    (hℓ : Handler.label hd = ℓ) {γ_ty : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val}
+    {A : VTy Eff Mult} {γ : GradeVec Mult} {b : Bool} (d : HasVTy γ_ty Γ v A)
+    (hbo : ¬ VTy.labelOccurs ℓ A) (h : LWSVg (Frame.handleF g' hd :: K') γ b v) : LWSVg K' γ b v := by
+  cases d with
+  | vunit => cases h with | vunit => exact .vunit
+  | vint => cases h with | vint => exact .vint
+  | vvar _ => cases h with | vvar hh => exact .vvar hh
+  | @vcap Γ n ℓ' =>
+    cases h with
+    | vcap_live hr =>
+      refine .vcap_live (resolvesLabel_pop ?_ hr)
+      intro hng; subst hng
+      obtain ⟨Kᵢ, hh, Kₒ, hsplit, hlbl⟩ := hr
+      rw [splitAtId, if_pos rfl] at hsplit
+      simp only [Option.some.injEq, Prod.mk.injEq] at hsplit
+      obtain ⟨_, rfl, _⟩ := hsplit
+      exact hbo (hℓ.symm.trans hlbl)
+    | vcap_dormant => exact .vcap_dormant
+  | @vthunk γt Γ M φ B hM =>
+    cases h with
+    | vthunk hc =>
+      exact .vthunk (lwscg_returnEscape hℓ hM (fun hx => hbo (Or.inl hx)) (fun hx => hbo (Or.inr hx)) hc)
+  | inl ha =>
+    cases h with | inl hsc => exact .inl (lwsvg_returnEscape hℓ ha (fun hx => hbo (Or.inl hx)) hsc)
+  | inr ha =>
+    cases h with | inr hsc => exact .inr (lwsvg_returnEscape hℓ ha (fun hx => hbo (Or.inr hx)) hsc)
+  | pair ha hcv hγt =>
+    cases h with
+    | pair hγg hleng h1 h2 =>
+      exact .pair hγg hleng (lwsvg_returnEscape hℓ ha (fun hx => hbo (Or.inl hx)) h1)
+        (lwsvg_returnEscape hℓ hcv (fun hx => hbo (Or.inr hx)) h2)
+  | @fold _ _ _ Ai ha =>
+    cases h with
+    | fold hsc => exact .fold (lwsvg_returnEscape hℓ ha (fun hx => hbo (labelOccurs_unrollMu ℓ Ai hx)) hsc)
 theorem lwscg_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label}
-    (hℓ : Handler.label hd = ℓ) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp}
-    {φ : Eff} {C : CTy Eff Mult} {b : Bool} (d : HasCTy γ Γ c φ C)
+    (hℓ : Handler.label hd = ℓ) {γ_ty : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp}
+    {φ : Eff} {C : CTy Eff Mult} {γ : GradeVec Mult} {b : Bool} (d : HasCTy γ_ty Γ c φ C)
     (hrow : ¬ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ) (hres : ¬ CTy.labelOccurs ℓ C)
     (h : LWSCg (Frame.handleF g' hd :: K') γ b c) : LWSCg K' γ b c := by
-  sorry
+  cases d with
+  | @ret γt γt' Γ v A q hv hγt =>
+    cases h with
+    | ret hγg hvsc => exact .ret hγg (lwsvg_returnEscape hℓ hv hres hvsc)
+  | force hv =>
+    cases h with
+    | force hvsc => exact .force (lwsvg_returnEscape hℓ hv (fun hx => hx.elim hrow hres) hvsc)
+  | lam hM =>
+    cases h with
+    | lam hMsc => exact .lam (lwscg_returnEscape hℓ hM hrow (fun hx => hres (Or.inr hx)) hMsc)
+  | @perform γtc γtv Γ cv ℓ2 op v φ q A B hc hle hopA hopR hv =>
+    cases h with
+    | perform hγg hleng h1 h2 =>
+      refine .perform hγg hleng ?_ (lwsvg_dormant_stack_indep h2)
+      exact lwsvg_returnEscape hℓ hc
+        (by intro hx; simp only [VTy.labelOccurs] at hx; subst hx; exact hrow hle) h1
+  | unfold hv => sorry
+  | letC hM hN hγt => sorry
+  | app hM hv hγt => sorry
+  | case hv hN₁ hN₂ hγt => sorry
+  | split hv hN hγt => sorry
+  | handleThrows _ _ hM _ _ => sorry
+  | handleState _ _ _ _ _ hs hM _ _ => sorry
+  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ => sorry
+end
 
 /-- **lwskg_pop_fresh (Phase 2 — the POP tail arm, via stratified freshness).** Popping `handleF g'` from
 the tail stack: every STORED cap in `K'` has id `< g'` (from `CapsBelow g' K'`, inverted off
