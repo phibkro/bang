@@ -723,3 +723,22 @@
              / logical-soundness (Timany 2024) intersection as open -- where bang sits.
              \url{https://arxiv.org/abs/2606.19686}},
 }
+
+@article{cousot-calculational-incorrectness-logics,
+  author  = {Cousot, Patrick},
+  title   = {Calculational Design of [In]Correctness Transformational Program Logics by Abstract Interpretation},
+  year    = 2024,
+  note    = {PDF NOT YET FILED (synthesis only as of 2026-06-27; likely POPL'24/PACMPL -- confirm on fetch).
+             Program logics as ABSTRACTIONS (Galois) of the relational semantics: derive proof rules
+             sound+complete BY CONSTRUCTION, no separate soundness proof; 40 logics = 9 composable
+             abstractions. Correctness = OVER-approx, incorrectness = UNDER-approx of the same Post;
+             healthiness conditions = consequences of alpha preserving JOINS. Recipe (Sec II.6):
+             semantics -> fixpoint form (fixpoint abstraction Th II.2.1) -> invariant/variant (fixpoint
+             induction) -> deductive rules (Aczel Sec II.5). KEY for bang: SN-FREE (lfp/gfp/bi-induction
+             handle nontermination directly) -- the general template that SbC (SN-restricted) is the
+             special case of. Step-indexing = ordinal fixpoint approximation (the Crel operational sibling;
+             known: guarded recursion / topos of trees). Over/under = may/MUST effects (the dual effect
+             logic). First-order imperative only -- the graded-CBPV port is unproven work. DECISIVE
+             port-or-break test = does the GRADE abstraction preserve joins? (effect axis trivially does;
+             the QTT semiring is the open question). See docs/notes/calculated-type-system-frontier.md.},
+}

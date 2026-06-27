@@ -92,6 +92,38 @@ resumption *multiplicity*; Gordon's is effect/type *mutual-definition*). (c) the
 effects (`▷ ≠ ⊔`) re-couple the axes (Gordon §6 iteration, non-unique fixed points), so bang's
 idempotent-effects choice is **load-bearing for the graded calculation's feasibility**, not a free simplification.
 
+## Cousot's calculational logic design (`cousot-calculational-incorrectness-logics`) — the SN-free template (the methodological keystone)
+This RE-FRAMES the whole frontier. Cousot derives PROGRAM LOGICS (Hoare, incorrectness, …) as Galois
+**abstractions of the relational semantics** `⟦S⟧`, and reads the proof rules off — sound+complete *by
+construction*, no separate soundness proof; "healthiness conditions" become consequences of `α` **preserving
+joins**. The recipe (§II.6): semantics → fixpoint form (fixpoint abstraction) → invariant/variant (fixpoint
+induction) → deductive rules (Aczel's lfp-of-rules correspondence).
+
+**Why it supersedes the SbC framing above:** Cousot assumes NO strong normalisation — `lfp`/`gfp`/bi-induction
+handle nontermination directly. So **SbC is the SN-restricted special case of Cousot's method**; bang threw
+away SN, so *Cousot* is the actual template, and step-indexed `Crel` is its operational realization (the
+correspondence step-index ≈ ordinal/guarded fixpoint approximation is established — Appel–McAllester, Birkedal's
+topos of trees). Two further correspondences: **over/under-approximation = may/MUST effects** (bang's rows are
+the may/over half; the must/under dual exists by construction — the unexplored direction Gordon's
+over-only AI doesn't give); and the **sets-vs-formulas gap** (Cousot uses sets-of-states, clean+complete; a
+*decidable syntactic* type system is the "formula" level with "no best abstraction") **names why bang's eventual
+decidable graded checker (inc-7) cannot be complete w.r.t. the semantic `Crel`** — a structural inevitability,
+not a design failure.
+
+**Calibrations (the synthesis reaches in three places):** (a) "Aczel = the SbC fixpoint, *same theorem*"
+overstates — it's the same *machinery* (typing relation = lfp of a rule functor + derive-by-abstraction),
+generic to inductive definitions, not literally one theorem. (b) the step-index ≈ ordinal-iterate correspondence
+is real but *already known*, and it's a *template/analogy* for #35 (resumption metering), NOT a derivation of
+the grade. (c) Cousot is FIRST-ORDER imperative (no higher-order, effects, or grades) — the port to graded CBPV
+is the unproven work, and the **reduced product** (§I.3.15.3) is the named machinery for the *coupled* effect×grade
+case (only needed if effects go ordered; idempotence keeps them decoupled today — see the Gordon section).
+
+**The decisive port-or-break test (sharpens the probe above):** Cousot's method rests on `α` **preserving joins**.
+The effect axis preserves them trivially (`α = ⊔`, idempotent). The **grade axis (QTT `+`/`×`) is the open
+question** — three roads (does-the-grade-fall-out · is-the-product-reduced · is-`α`-join-preserving) are one toll
+booth. **This experiment is now DEPLOYED** (run the §II.6 recipe on a grade-bearing bang rule, check join-preservation
+of the grade `α`); findings → `docs/notes/calc-typer-experiment-findings.md` when it lands.
+
 ## Status / gating
 Post-v1. The resumptive fragment gates on **#35** (grade-the-resumption); the binary LR it builds on is itself
 deferred (inc-6). **Not a reason to turn the wheel off the keystone.** Captured here so it's not lost.
