@@ -309,3 +309,22 @@ so the structural-recursion compiler can't extract a sub-derivation from a Prop-
 - **Remaining → full carrier-subst lemma:** gated comp arms (ret/app/perform) · `liveCapsResolveV_weaken` · binders via it · the
   comp twin via `LiveCapsResolveC.rec` (factor the 21 handlers). Then thread into `lwscg_returnEscape` + `lwsg_step_nonperform` (#4+#5)
   → `type_safety` sorryAx-on-DISPATCH(#35)-only.
+
+### Comp-half routing + findings (2026-06-27, `ff4109f`; grind handed to a fresh IC on branch `inc5-comp-grind`)
+PREREQ #1 DONE: **`HasVTy.subst_gen`** (value-subst, for dormant value positions / perform's arg) — proven `ff4109f` axiom-clean
+via the **ret-wrap** (subst into `ret w` through `HasCTy.subst_gen`, `generalize` the Sgrade index past the dependent-elim wall,
+invert the `ret`; single-source — reuses subst_gen as a black box). Eventual cleaner home = expose Metatheory's `motive_1` as a
+public `HasVTy.subst_gen` (option b) if value-subst gets reused.
+- **PREREQ #2 `liveCapsResolveV_weaken` — the one novel decision left.** The INDEXED form over `hv.weaken k hk A'` FAILS: `HasVTy.weaken`
+  is a THEOREM (opaque output, no constructor reduction), so recursor arms can't pattern-match it. RESOLUTION = **existential-controlled-output**
+  form (build a fresh weakened typing+carrier YOU control) — needs `insG`/`insT` (shifted grade/context ctors), currently `private` in
+  `Bang/Metatheory.lean` → expose them (~2-line private-removal, pure typing infra, carrier-agnostic-safe). Then the mutual V/C weaken recursor.
+- **FACTORING (fresh-IC finding, build-confirmed convergent review):** the comp twin `liveCapsResolveC_subst_gen` is NOT independent — the
+  mutual recursor's `motive_2` proves every comp arm. Factor the 21 arm-proofs as `private` lemmas; BOTH public theorems become one-liners
+  differing ONLY in the gate arg (V: `fun _ => hvres`; C: `hgate`). Avoids writing the 21 arms twice.
+- **In-file comp-arm template:** `lwscg_subst_gen` (`Bang/Model.lean:2632-2722`), the grade-indexed sibling — exact grade-reshaping skeleton
+  (Sgrade_hsmul/hadd/cons, cov_*, binder descent `(0::γ,k+1)`, split `(0::0::γ,k+2)`); helpers PUBLIC in Model. Comp arms = port ITS arms +
+  the `∃d'` typing-pairing (per the value `pair` arm) + gate-split. Hardest arm = `split` (double binder ⇒ weaken composed twice).
+- **Routing:** pe-coh-core (built the value half + prereq #1 + the map) STOOD DOWN; the fresh IC grinds `compfresh`/`inc5-comp-grind` off `ff4109f`
+  (inherits the value half + prereq #1) with the weaken-resolution + factoring. inc5-lr-reindex parked at `ff4109f`. Whichever branch closes the
+  full lemma (both twins real, axiom-clean) is gated + becomes the mainline; the other is the fallback.
