@@ -3540,6 +3540,22 @@ theorem liveCapsResolveV_subst_gen (hzsf : ZeroSumFree Mult) {Γ : TyCtx Eff Mul
     obtain ⟨dv', hdv'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
     rw [Val.substFrom]
     exact ⟨HasVTy.fold dv', .fold hdv'⟩
+  case vthunk =>
+    -- V→C crossing: the IH is the COMP motive (gate-shaped); supply gate = `fun _ => hvres'`.
+    intro γ Γ_i M φ B dM h ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    obtain ⟨dM', hdM'⟩ := ih Δ' Γ' A' γ_v' v' hv' hzsf' hcl' heq hcov' (fun _ => hvres')
+    rw [Val.substFrom]
+    exact ⟨HasVTy.vthunk dM', .vthunk hdM'⟩
+  case pair =>
+    intro γ γv γw Γ_i v_i w_i A_i B_i dv dw hγ h1 h2 ih1 ih2
+      Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq hcov'
+    subst hγ
+    have hlen : γv.length = γw.length := by rw [dv.length_eq, dw.length_eq]
+    obtain ⟨dv', hdv'⟩ := ih1 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq (cov_add_left hlen hcov')
+    obtain ⟨dw', hdw'⟩ := ih2 Δ' Γ' A' γ_v' v' hv' hzsf' hcl' hvres' heq (cov_add_right hlen hcov')
+    rw [Val.substFrom]
+    exact ⟨HasVTy.pair dv' dw' (Sgrade_add_free γ_v' Δ'.length hlen),
+      .pair (hγ := Sgrade_add_free γ_v' Δ'.length hlen) hdv' hdw'⟩
   all_goals sorry
 /-- COMP carrier-subst — the grade GATE: `v`-clean is demanded only when the substituted slot is
 grade-LIVE (`slotGrade γ_full |Δ| ≠ 0`). `hzsf` makes `slotGrade = 0 ⟹ all occurrences dormant`, so a
