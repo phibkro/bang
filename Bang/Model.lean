@@ -1390,58 +1390,40 @@ theorem lwsk_restack_handleF (g : Nat) (hd : Handler) {K : EvalCtx} (hsb : Stack
           exact .stateF (lwsv_restack_handleF g hd hsb hs) (lwsk_restack_handleF g hd hsb hK)
       | transactionF hK => exact .transactionF (lwsk_restack_handleF g hd hsb hK)
 
-/-- **OBLIGATION 2 — the MUTUAL preservation (the research crux, multi-session).** `WScfg` is preserved
-by every `Source.step`. `WScfg` = `HasCTy ∧ HasStack ∧ WSC ∧ WSK`: the TYPING half (`HasCTy`/`HasStack`)
-rides EXISTING preservation (`preservation_proof`, Metatheory — NonEscape-free); the NEW content is the
-`WSC`/`WSK` cap-resolution half, now invertible/buildable since they are TERM+TYPE indexed.
+/-- **coh_step / `lwscg_subst`** — the graded (Coh-layer) substitution-preservation consumed by the
+REDUCE/MINT/DISPATCH arms of `wsCfg_step`. The graded mirror of `subst_value_proof` (Metatheory) crossed
+with the typeless live-arg `lwsc_subst`: a LIVE closed value `v` (graded `γ_v`) substituted for var `0`
+of a body `c` graded `ρ :: γ` yields `Comp.subst v c` graded `γ + ρ • γ_v`, preserving the reachability
+flag `b`. The `ρ = 0` (dead-arg) case is handled SEPARATELY by the discharge `lwscg_to_lwsck` + the
+typeless `lwsck_subst`; this is the live companion (`ρ ≠ 0`, but the single LIVE precondition is uniform —
+a live `v` also plugs into any dormant slot via `lwsvg`'s monotonicity).
 
-SUPPORTING LEMMAS:
-  · ✓ DONE `resolvesLabel_cons` + `wsv_restack`/`wsc_restack` (§3.5) — `ResolvesLabel`/`WSV`/`WSC` re-home
-    under a pushed non-`handleF` frame (the PUSH/REDUCE mechanics). The MINT `handleF g` push needs the
-    freshness-keyed variant (`g` global-fresh ⇒ id ≠ any live cap, so `resolvesLabel_cons`'s side-condition
-    discharges via `WellCounted`/`splitAtId_fresh`).
-  · TODO `hasConfigTy_step` — factor the NonEscape-free TYPING preservation out of `preservation_proof`
-    (Metatheory:2038). Every leaf there is `⟨eo',hle,⟨HasConfigTy⟩,hnecfg'⟩`; `hnecfg'` is the ONLY
-    NonEscape use ⇒ drop the last tuple slot + the `hne`/`hnecfg'` lines ⇒ `HasConfigTy cfg eo Co → step →
-    ∃ eo' ≤ eo, HasConfigTy cfg' eo' Co`. ~300 lines, mechanical. THE gate for every arm's typing half.
-  · TODO `wsc_subst` — the cap-substitution lemma `WSV K ρ v A → WSC K ρ N … → WSC K ρ (subst v N) …`
-    (the `subst_value` analogue for caps; REDUCE/MINT/DISPATCH need it).
-  · TODO the B-occ lever (PROBE `scratch/WellScopedReshapeProbe.lean::surfaceCaps_labelOccurs`, promote it):
-    a surface `vcap _ ℓ` in `v : A` forces `LabelOccurs ℓ A` — feeds the POP arm + the μ-corner lemma
-    `labelOccurs (unrollMu A) → labelOccurs A` (the one seam left in the probe).
+PROOF NOTE (for the grind, both arms): mirrors the mutual `lwsv_subst`/`lwsc_subst` (≈12 arms each) but
+graded. The induction needs a general-`k` inner form (`Comp.substFrom k v`, result grade `Sgrade γ_v k γ`
+à la `HasCTy.subst_gen` — the binders shift the cutoff `k` and cons the grade context); this k=0 form is
+the corollary the arms consume (`Δ = []` ⟹ `γ + ρ • γ_v`, matching `subst_value_proof`). -/
+theorem lwscg_subst {K : EvalCtx} {ρ : Mult} {γ γ_v : GradeVec Mult} {b : Bool} {v : Val} {c : Comp}
+    (hvl : LWSVg K γ_v true v) (hcl : ∀ j, Val.shiftFrom j v = v)
+    (hc : LWSCg K (ρ :: γ) b c) :
+    LWSCg K (γ + ρ • γ_v) b (Comp.subst v c) := by
+  sorry
 
-THE ARMS (`Source.step`, Operational:455):
-  • PUSH (`letC M N ↦ letF N::K, M`, etc.): focus `WSC` splits (the letC `WSC` gives `WSC` of `M`); the
-    continuation `N` moves into a new `letF` frame ⇒ rebuild `WSK` with `WSK.letF`. The new frame is
-    fresh ⇒ `ResolvesLabel`-push re-homes the OLD caps. Mechanical given the supporting lemmas.
-  • REDUCE (`letF N::K, ret v ↦ K, subst v N`, β, etc.): the returned `v`'s `WSV` + the frame's stored
-    `WSC`(`N`) combine into the reduct's `WSC` THROUGH `subst` — needs a `WSC`-substitution lemma
-    (`WSV K ρ v A → WSC K ρ N … → WSC K ρ (subst v N) …`). The cap-substitution analogue of `subst_value`.
-  • MINT (`handle h M ↦ (g+1, handleF g h::K, subst (vcap g ℓ) M)`): the NEW `vcap g` resolves to the
-    just-pushed `handleF g` (`splitAtId (handleF g h::K) g = some([],h,K)`, label by construction) ⇒
-    `WSV`'s `vcap` gate holds; old caps survive `ResolvesLabel`-push. The handle-body `WSC` re-keys via
-    the cap-subst lemma at the new ambient `e` (the body row).
-  • DISPATCH (`perform (vcap n ℓ) ↦ idDispatch`): the resume/abort reduct's `WSC` is rebuilt from the
-    resolved handler's stored `WSC`/`WSV` (in `WSK`) + the returned value. Uses `WSC` (the cap resolves)
-    — why the invariants ride together.
-  • POP (`handleF g::K, ret v ↦ K, ret v`): THE crux — and the OPEN sub-case (the whole `sorry`).
-    ⚠ The sketched closure ("`¬LabelOccurs ℓ_f A` ⇒ every `ℓ_f`-cap in `v` is under a thunk whose row
-    excludes `ℓ_f`") is FALSE. The "deep B-occ lever" it relied on (`a performable cap at a thunk-row-φ
-    position in v:A ⟹ LabelOccurs ℓ A`) is REFUTED by `Bang.BoccRegress.escapeB_app`: wrap the escaping
-    `ℓ_f`-performing thunk `w : U {ℓ_f} (F 1 unit)` as the DISCARDED argument of `app (lam (ret vunit)) w`;
-    `app` ELIMINATES the arrow, so `A = U ⊥ (F 1 unit)` with `¬LabelOccurs ℓ_f A` — B-occ ADMITS it
-    (`escapeB_app_typeable`, qc = 0) — yet `w`'s thunk row `{ℓ_f}` makes the buried cap PERFORMABLE per
-    `WSV`. So `WScfg` is NOT POP-preserved with the current `WSV` gate. The program is SAFE (the `lam`
-    discards `w`, cap dead, never forced) — invariant-too-strong, NOT a soundness bug, NOT a Spec.lean
-    issue. A type-level B-occ premise on the answer type cannot see arrow-guarded latent caps (the info
-    is in the TERM, not `A`): the ADR-0041 later-modality territory. The fix is a WSV REDESIGN, decided
-    by the opt-1/2/3 spikes: (1) later/Kripke LR (caps behind → resolve "later"); (2) focus-reachability-
-    refined gate (require resolution only for caps that can reach a focus-perform); (3) grade-directed
-    gate (the discarding `lam` binds at `q = 0` ⇒ `qc = 0` ⇒ the cap is statically dead; gate on grade).
-NAMED SORRY: the mutual `WSC`/`WSK` preservation. The TYPING half rides `hasConfigTy_step` (DONE); the
-PUSH/REDUCE/MINT/DISPATCH cap-halves are mechanical given `wsc_subst` + the restack/`resolvesLabel_uncons`
-mechanics (`resolvesLabel_uncons` = the removal direction, DONE). The OPEN content is the POP arm above,
-blocked on the WSV redesign (the arrow-guarded-cap wall, build-pinned by `escapeB_app`). -/
+/-- **OBLIGATION 2 — `WScfg` preservation by `Source.step` (the inc-5 crux).** `WScfg` =
+`HasCTy ∧ HasStack ∧ LWSC ∧ LWSK` (typeless cap-reachability `LWSC`/`LWSK` over the typing core). The
+TYPING half (`HasCTy`/`HasStack`) rides existing NonEscape-free preservation (`hasConfigTy_step`, factored
+from `preservation_proof`); the WELL-SCOPED half (`LWSC`/`LWSK`) is rebuilt per arm:
+  • PUSH / MINT — caps re-home under the pushed frame via `lwsc_restack` / `lwsv_restack_handleF` (DONE);
+    MINT's freshness rides `StackBelow` + `splitAtId`.
+  • REDUCE / MINT / DISPATCH — the focus β / cap-subst routes through the graded Coh layer: `lwscg_subst`
+    (this section's target) for the LIVE arg (`ρ ≠ 0`), and the discharge `lwscg_to_lwsck` + the typeless
+    `lwsck_subst` for the DEAD arg (`ρ = 0`, the var statically discarded).
+  • POP (`handleF g::K, ret v ↦ K, ret v`) — now GRADE-GATED (opt-3 landed): a discarding binder grades
+    its argument at `q = 0`, so the buried cap is statically dead ⇒ gated dormant (`b && decide (q ≠ 0)`)
+    ⇒ no resolution obligation. This DISSOLVES the refuted B-occ "arrow-guarded cap" wall (the
+    `¬LabelOccurs ℓ A` route was machine-refuted by `Bang.BoccRegress.escapeB_app`; the grade sees what
+    the answer type cannot).
+NAMED SORRY: the per-arm `LWSC`/`LWSK` preservation, pending `lwscg_subst` (above) + the typing-half
+`hasConfigTy_step`. -/
 theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
     (hP : WScfg Co cfg) (hstep : Source.step cfg = some cfg') : WScfg Co cfg' := by
   sorry
