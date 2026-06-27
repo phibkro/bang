@@ -2097,9 +2097,16 @@ answer-type B-occ (`¬labelOccurs (label hd) C`) + the row separation (`¬ label
 `lwscg_returnEscape` consumes. -/
 theorem handleF_bocc_inv {g' : Nat} {hd : Handler} {K' : EvalCtx} {e : Eff} {C Co : CTy Eff Mult}
     (hs : HasStack (Frame.handleF g' hd :: K') e C ⊥ Co) :
-    ¬ CTy.labelOccurs (Handler.label hd) C
-      ∧ ¬ EffSig.labelEff (Eff := Eff) (Mult := Mult) (Handler.label hd) ≤ e := by
-  sorry
+    ¬ CTy.labelOccurs (Handler.label hd) C := by
+  -- (②, lead-approved) The row conjunct `¬(labelEff ℓ ≤ e)` was DROPPED: refutable for general `e`
+  -- (`e = labelEff ℓ`, `φ = ⊥` satisfies the frame premise yet makes it false — the handle body MAY
+  -- perform `ℓ`). The POP caller supplies `hrow` itself from `labelEff_ne_bot` at its `ret`-focus `e = ⊥`.
+  -- Expose the answer-type B-occ the frozen `handleF`/`handleAny_inv` discard: `C = F q A`,
+  -- `CTy.labelOccurs ℓ (F q A) = VTy.labelOccurs ℓ A = LabelOccurs ℓ A`, which the frame premise negates.
+  cases hs with
+  | handleF _ _ _ hbocc _ => exact hbocc
+  | stateF _ _ _ _ _ _ _ hbocc _ => exact hbocc
+  | transactionF _ _ _ _ _ _ _ _ _ hbocc _ => exact hbocc
 
 /-- **lwscg_returnEscape (Phase 2 — the POP focus arm, ⊥-row return-escape over the GRADE).** The graded
 restatement of the spike `lwsc_returnEscape` (above): a focus typed at the popped handler's answer type
