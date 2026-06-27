@@ -1789,6 +1789,247 @@ theorem freshCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
   | oom => simp [Source.step] at hstep
   | wrong s => simp [Source.step] at hstep
 
+/-! ### §2′.8f′ — GRADE-SENSITIVE caps-resolution (the coherence carrier, ADR-0061 / #51 keystone).
+
+`LiveCapsResolveV`/`LiveCapsResolveC` recurse on the TYPING derivation and demand `ResolvesLabel` ONLY
+at cap leaves reachable through gate-LIVE storage positions (`q ≠ 0`). The dormant-gated leaves (a
+`ret`/`app`/`case`/`split` value at `q = 0`; a `perform` argument — always dormant) SKIP the
+obligation, mirroring the `LWSCg` storage gates `b && decide (q ≠ 0)` EXACTLY. Two facts make this the
+right carrier:
+  • `HasVTy`/`HasCTy` are `Prop`, so a `List`-valued `liveCaps` over the derivation would need large
+    elimination (illegal); a `Prop`-valued predicate is small elimination (legal). Hence a PREDICATE,
+    not a list.
+  • The grade-sensitivity is exactly what the all-caps `lwscg_of_typed` (§2′.8f) LACKS: it demands ALL
+    of `capsC c` resolve, FALSE post-pop for a typed-DEAD ℓ-cap (the ADR-0061 root). Here the dead cap
+    sits behind a `q = 0` gate ⇒ vacuous obligation.
+WScfg carries this + the typing, and DERIVES the coherent `LWSCg` via `lwscg_of_typed_live` (grades =
+typing grades by construction). #4 (returnEscape) + #5 (subst) UNIFY as "this predicate is preserved." -/
+-- An INDUCTIVE PREDICATE indexed by the typing derivation (not a recursive def): `HasVTy`/`HasCTy`
+-- are `Prop`, so a recursive def matching the derivation would need `brecOn` (Type elimination of a
+-- `Prop` ⇒ illegal). An inductive `Prop` indexed by a `Prop` has no such restriction. Each storage
+-- gate (`q ≠ 0 →`) mirrors `LWSCg`'s `b && decide (q ≠ 0)`: a typed-DEAD (`q = 0`) cap leaf SKIPS the
+-- `ResolvesLabel` obligation — exactly what the all-caps `lwscg_of_typed` lacks (the ADR-0061 root).
+mutual
+inductive LiveCapsResolveV (K : EvalCtx) :
+    ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}, HasVTy γ Γ v A → Prop
+  | vunit {Γ} : LiveCapsResolveV K (Γ := Γ) HasVTy.vunit
+  | vint {Γ n} : LiveCapsResolveV K (Γ := Γ) (HasVTy.vint (n := n))
+  | vvar {Γ i A} {h : Γ[i]? = some A} : LiveCapsResolveV K (HasVTy.vvar h)
+  | vcap {Γ n ℓ} (hr : ResolvesLabel K n ℓ) : LiveCapsResolveV K (HasVTy.vcap (Γ := Γ) (n := n) (ℓ := ℓ))
+  | vthunk {γ Γ M φ B} {dM : HasCTy γ Γ M φ B} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveV K (HasVTy.vthunk dM)
+  | inl {γ Γ v A B} {dv : HasVTy γ Γ v A} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveV K (HasVTy.inl (B := B) dv)
+  | inr {γ Γ v A B} {dv : HasVTy γ Γ v B} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveV K (HasVTy.inr (A := A) dv)
+  | pair {γ γv γw Γ v w A B} {dv : HasVTy γv Γ v A} {dw : HasVTy γw Γ w B} {hγ : γ = γv + γw}
+      (h1 : LiveCapsResolveV K dv) (h2 : LiveCapsResolveV K dw) :
+      LiveCapsResolveV K (HasVTy.pair dv dw hγ)
+  | fold {γ Γ v A} {dv : HasVTy γ Γ v (VTy.unrollMu A)} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveV K (HasVTy.fold dv)
+inductive LiveCapsResolveC (K : EvalCtx) :
+    ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {φ : Eff} {C : CTy Eff Mult},
+      HasCTy γ Γ c φ C → Prop
+  | ret {γ γ' Γ v A} {q : Mult} {dv : HasVTy γ' Γ v A} {hγ : γ = q • γ'}
+      (h : q ≠ 0 → LiveCapsResolveV K dv) : LiveCapsResolveC K (HasCTy.ret dv hγ)
+  | letC {γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B} {dM : HasCTy γ₁ Γ M φ₁ (CTy.F q1 A)}
+      {dN : HasCTy ((q1 * q_or_1 q2) :: γ₂) (A :: Γ) N φ₂ B} {hγ : γ = (q_or_1 q2) • γ₁ + γ₂}
+      (h1 : LiveCapsResolveC K dM) (h2 : LiveCapsResolveC K dN) :
+      LiveCapsResolveC K (HasCTy.letC dM dN hγ)
+  | force {γ Γ v φ B} {dv : HasVTy γ Γ v (VTy.U φ B)} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveC K (HasCTy.force dv)
+  | lam {γ Γ M φ q A B} {dM : HasCTy (q :: γ) (A :: Γ) M φ B} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.lam dM)
+  | app {γ γ₁ γ₂ Γ M v φ q A B} {dM : HasCTy γ₁ Γ M φ (CTy.arr q A B)} {dv : HasVTy γ₂ Γ v A}
+      {hγ : γ = γ₁ + q • γ₂}
+      (h1 : LiveCapsResolveC K dM) (h2 : q ≠ 0 → LiveCapsResolveV K dv) :
+      LiveCapsResolveC K (HasCTy.app dM dv hγ)
+  | case {γ γ_v γ_N Γ v N₁ N₂ φ q A B C} {dv : HasVTy γ_v Γ v (VTy.sum A B)}
+      {dN1 : HasCTy (q :: γ_N) (A :: Γ) N₁ φ C} {dN2 : HasCTy (q :: γ_N) (B :: Γ) N₂ φ C}
+      {hγ : γ = q • γ_v + γ_N}
+      (h1 : q ≠ 0 → LiveCapsResolveV K dv) (h2 : LiveCapsResolveC K dN1) (h3 : LiveCapsResolveC K dN2) :
+      LiveCapsResolveC K (HasCTy.case dv dN1 dN2 hγ)
+  | split {γ γ_v γ_N Γ v N φ q A B C} {dv : HasVTy γ_v Γ v (VTy.prod A B)}
+      {dN : HasCTy (q :: q :: γ_N) (B :: A :: Γ) N φ C} {hγ : γ = q • γ_v + γ_N}
+      (h1 : q ≠ 0 → LiveCapsResolveV K dv) (h2 : LiveCapsResolveC K dN) :
+      LiveCapsResolveC K (HasCTy.split dv dN hγ)
+  | unfold {γ Γ v A} {dv : HasVTy γ Γ v (VTy.mu A)} (h : LiveCapsResolveV K dv) :
+      LiveCapsResolveC K (HasCTy.unfold dv)
+  | perform {γ_c γ_v Γ cv ℓ op v φ A B} {q : Mult} (dc : HasVTy γ_c Γ cv (VTy.cap ℓ))
+      {hle : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ}
+      {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A}
+      {hopR : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B} (dv : HasVTy γ_v Γ v A)
+      (h : LiveCapsResolveV K dc) :
+      LiveCapsResolveC K (HasCTy.perform dc hle hopA hopR dv)
+  | handleThrows {γ Γ ℓ M e φ q qc A} {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise"}
+      {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.handleThrows hopA hint dM hle hbo)
+  | handleState {γ Γ ℓ s₀ M e φ q qc S A} {hga : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit}
+      {hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S}
+      {hpa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S}
+      {hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put"}
+      {dsv : HasVTy [] [] s₀ S} {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A}
+      (hs : LiveCapsResolveV K dsv) (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.handleState hga hgr hpa hpr hint dsv dM hle hbo)
+  | handleTransaction {γ Γ ℓ Θ₀ M e φ q qc A}
+      {hna : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int}
+      {hnr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int}
+      {hra : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some VTy.int}
+      {hrr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some VTy.int}
+      {hwa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod VTy.int VTy.int)}
+      {hwr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit}
+      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+        op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar"}
+      {hcells : ∀ cell ∈ Θ₀, HasVTy [] [] cell VTy.int}
+      {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
+      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
+      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A} (h : LiveCapsResolveC K dM) :
+      LiveCapsResolveC K (HasCTy.handleTransaction hna hnr hra hrr hwa hwr hint hcells dM hle hbo)
+end
+
+/-! ### §2′.8f″ — the GRADE-SENSITIVE lift `lwscg_of_typed_live` (the engine).
+
+`lwsvg_of_typed_dormant`/`lwscg_of_typed_dormant`: at flag `false` EVERY gate collapses and EVERY cap
+is dormant, so a typed term is `LWSVg`/`LWSCg` at flag `false` with NO caps premise (the from-typing
+mirror of `lwsvg_to_anyγ_false`, but built straight from the typing for the `q = 0` dead branches).
+
+`lwsvg_of_typed_live`/`lwscg_of_typed_live`: at flag `true`, consume `LiveCapsResolve` to discharge the
+LIVE cap leaves, and route the dead-gated (`q = 0`) value positions through the dormant builder. The
+grade-sensitive replacement for the all-caps `lwscg_of_typed` (§2′.8f) — grades = typing grades by
+construction (coherence), live caps resolve, dead caps skipped. -/
+mutual
+theorem lwsvg_of_typed_dormant {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} (d : HasVTy γ Γ v A) : LWSVg K γ false v := by
+  cases d with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar _ => exact .vvar (by simp)
+  | vcap => exact .vcap_dormant
+  | vthunk hM => exact .vthunk (lwscg_of_typed_dormant hM)
+  | inl hv => exact .inl (lwsvg_of_typed_dormant hv)
+  | inr hv => exact .inr (lwsvg_of_typed_dormant hv)
+  | @pair γ γv γw Γ v w A B hv hw hγ =>
+    subst hγ
+    exact .pair rfl (by rw [hv.length_eq, hw.length_eq]) (lwsvg_of_typed_dormant hv)
+      (lwsvg_of_typed_dormant hw)
+  | fold hv => exact .fold (lwsvg_of_typed_dormant hv)
+theorem lwscg_of_typed_dormant {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {φ : Eff} {C : CTy Eff Mult} (d : HasCTy γ Γ c φ C) : LWSCg K γ false c := by
+  cases d with
+  | @ret γ γ' Γ v A q hv hγ =>
+    subst hγ; exact .ret (q := q) rfl (lwsvg_of_typed_dormant hv)
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN hγ =>
+    subst hγ
+    exact .letC (q1 := q1) (q2 := q2) rfl
+      (by have h1 := hM.length_eq; have h2 := hN.length_eq; simp only [List.length_cons] at h2; omega)
+      (lwscg_of_typed_dormant hM) (lwscg_of_typed_dormant hN)
+  | force hv => exact .force (lwsvg_of_typed_dormant hv)
+  | lam hM => exact .lam (lwscg_of_typed_dormant hM)
+  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv hγ =>
+    subst hγ
+    exact .app (q := q) rfl (by rw [hM.length_eq, hv.length_eq]) (lwscg_of_typed_dormant hM)
+      (lwsvg_of_typed_dormant hv)
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C hv hN₁ hN₂ hγ =>
+    subst hγ
+    exact .case (q := q) rfl
+      (by have h1 := hv.length_eq; have h2 := hN₁.length_eq; simp only [List.length_cons] at h2; omega)
+      (lwsvg_of_typed_dormant hv) (lwscg_of_typed_dormant hN₁) (lwscg_of_typed_dormant hN₂)
+  | @split γ γ_v γ_N Γ v N φ q A B C hv hN hγ =>
+    subst hγ
+    exact .split (q := q) rfl
+      (by have h1 := hv.length_eq; have h2 := hN.length_eq; simp only [List.length_cons] at h2; omega)
+      (lwsvg_of_typed_dormant hv) (lwscg_of_typed_dormant hN)
+  | unfold hv => exact .unfold (lwsvg_of_typed_dormant hv)
+  | @perform γ_c γ_v Γ cv ℓ op v φ q A B hc hle hopA hopR hv =>
+    exact .perform (q := q) rfl (by rw [hv.length_eq, hc.length_eq]) (lwsvg_of_typed_dormant hc)
+      (lwsvg_of_typed_dormant hv)
+  | handleThrows _ _ hM _ _ => exact .handleThrows (lwscg_of_typed_dormant hM)
+  | handleState _ _ _ _ _ hs hM _ _ =>
+    exact .handleState (lwsvg_of_typed_dormant hs) (lwscg_of_typed_dormant hM)
+  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ => exact .handleTransaction (lwscg_of_typed_dormant hM)
+end
+
+mutual
+theorem lwsvg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} (d : HasVTy γ Γ v A) (hres : LiveCapsResolveV K d) :
+    LWSVg K γ true v := by
+  -- invert `hres` (it is indexed by `d`, so its constructor pins `d`'s shape AND names the typing
+  -- sub-derivations via the `@`-pattern) — `cases d` would fail dependent elimination on the grade index.
+  cases hres with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar Γ i A hget =>
+    refine .vvar (fun _ => ?_)
+    have hi : i < Γ.length := by rw [List.getElem?_eq_some_iff] at hget; exact hget.1
+    rw [GradeVec.basis_getElem _ _ _ hi, if_pos rfl]; exact one_ne_zero
+  | vcap hr => exact .vcap_live hr
+  | @vthunk γ Γ M φ B dM h => exact .vthunk (lwscg_of_typed_live dM h)
+  | @inl γ Γ v A B dv h => exact .inl (lwsvg_of_typed_live dv h)
+  | @inr γ Γ v A B dv h => exact .inr (lwsvg_of_typed_live dv h)
+  | @pair γ γv γw Γ v w A B dv dw hγ h1 h2 =>
+    subst hγ
+    exact .pair rfl (by rw [dv.length_eq, dw.length_eq]) (lwsvg_of_typed_live dv h1)
+      (lwsvg_of_typed_live dw h2)
+  | @fold γ Γ v A dv h => exact .fold (lwsvg_of_typed_live dv h)
+theorem lwscg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {φ : Eff} {C : CTy Eff Mult} (d : HasCTy γ Γ c φ C) (hres : LiveCapsResolveC K d) :
+    LWSCg K γ true c := by
+  cases hres with
+  | @ret γ γ' Γ v A q dv hγ hgate =>
+    subst hγ
+    refine .ret (q := q) rfl ?_
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B dM dN hγ h1 h2 =>
+    subst hγ
+    exact .letC (q1 := q1) (q2 := q2) rfl
+      (by have l1 := dM.length_eq; have l2 := dN.length_eq; simp only [List.length_cons] at l2; omega)
+      (lwscg_of_typed_live dM h1) (lwscg_of_typed_live dN h2)
+  | @force γ Γ v φ B dv h => exact .force (lwsvg_of_typed_live dv h)
+  | @lam γ Γ M φ q A B dM h => exact .lam (lwscg_of_typed_live dM h)
+  | @app γ γ₁ γ₂ Γ M v φ q A B dM dv hγ h1 hgate =>
+    subst hγ
+    refine .app (q := q) rfl (by rw [dM.length_eq, dv.length_eq]) (lwscg_of_typed_live dM h1) ?_
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C dv dN1 dN2 hγ hgate h2 h3 =>
+    subst hγ
+    refine .case (q := q) rfl
+      (by have l1 := dv.length_eq; have l2 := dN1.length_eq; simp only [List.length_cons] at l2; omega)
+      ?_ (lwscg_of_typed_live dN1 h2) (lwscg_of_typed_live dN2 h3)
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @split γ γ_v γ_N Γ v N φ q A B C dv dN hγ hgate h2 =>
+    subst hγ
+    refine .split (q := q) rfl
+      (by have l1 := dv.length_eq; have l2 := dN.length_eq; simp only [List.length_cons] at l2; omega)
+      ?_ (lwscg_of_typed_live dN h2)
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @unfold γ Γ v A dv h => exact .unfold (lwsvg_of_typed_live dv h)
+  | perform dc dv h =>
+    -- non-`@` pattern: names only the EXPLICIT fields `dc dv h`; `q` infers from the grade `rfl`.
+    exact .perform rfl (by rw [dv.length_eq, dc.length_eq]) (lwsvg_of_typed_live dc h)
+      (lwsvg_of_typed_dormant dv)
+  | @handleThrows γ Γ ℓ M e φ q qc A hopA hint dM hle hbo h =>
+    exact .handleThrows (lwscg_of_typed_live dM h)
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hint dsv dM hle hbo hsr h =>
+    exact .handleState (lwsvg_of_typed_live dsv hsr) (lwscg_of_typed_live dM h)
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hint hcells dM hle hbo h =>
+    exact .handleTransaction (lwscg_of_typed_live dM h)
+end
+
+-- (engine moved above `WScfg` so the def can reference `LiveCapsResolveC` / `lwscg_of_typed_live`)
 /-- The COMBINED route-β invariant (ADR-0061 GRADED regrade of ADR-0057's typed-relative reshape): there
 EXIST typing derivations for the focus + stack such that the GRADED liveness holds — `LWSCg` for the
 focus (γ = `[]`, closed), `LWSKg` for the stack — PLUS the config freshness `FreshCfg`. The grade ties
@@ -1796,9 +2037,13 @@ each storage-`q` gate to the typed binder grade (vs. `LWSC`'s free `∃ q`), so 
 dormant (closing the 4 elimination walls + the REDUCE dead-arg); `FreshCfg` supplies the cap-id freshness
 the POP-tail needs. The output effect is `⊥` (the diagonal's target). -/
 def WScfg (Co : CTy Eff Mult) (cfg : Config) : Prop :=
-  ∃ (e : Eff) (C : CTy Eff Mult), HasCTy [] [] cfg.2.2 e C ∧ HasStack cfg.2.1 e C ⊥ Co
-    ∧ LWSCg cfg.2.1 ([] : GradeVec Mult) true cfg.2.2
+  ∃ (e : Eff) (C : CTy Eff Mult) (d : HasCTy [] [] cfg.2.2 e C), HasStack cfg.2.1 e C ⊥ Co
+    ∧ LiveCapsResolveC cfg.2.1 d
     ∧ LWSKg cfg.2.1 cfg.2.1 ([] : GradeVec Mult) true ∧ FreshCfg cfg
+-- ADR-0061 (#51 keystone): the carried scoping witness is the GRADE-SENSITIVE `LiveCapsResolveC` over
+-- the bundled typing `d` (replacing the DECOUPLED `LWSCg … true c` existential). The coherent `LWSCg`
+-- is DERIVED on demand via `lwscg_of_typed_live d _` (grades = typing grades by construction), closing
+-- the spurious-live-cap hole: a typed-DEAD cap is dormant in the derived `LWSCg`, never demanded to resolve.
 
 -- **SEED (GREEN)** `wellScoped_initial` is defined just AFTER the graded lift `lwscg_of_typed` (§2′.8f)
 -- which it consumes — see below §2′.8f. (The lift sits after §3 in the file's dependency order.)
@@ -1851,15 +2096,16 @@ theorem resolvesLabel_of_wsc_perform {K : EvalCtx} {e : Eff}
 `WSC`'s `vcap` gate (`resolvesLabel_of_wsc_perform`); the op-membership from the typing core (`handlesOp_of_hasConfigTy`). -/
 theorem focusResolves_of_wscfg {Co : CTy Eff Mult} (cfg : Config) (hWS : WScfg Co cfg) :
     FocusResolves cfg := by
-  obtain ⟨e, C, dc, dk, hWSC, _, _⟩ := hWS
+  obtain ⟨e, C, dc, dk, hres, _, _⟩ := hWS
   obtain ⟨g, K, c⟩ := cfg
-  -- now `dc : HasCTy [] [] c e C`, `hWSC : LWSC K true c`; split STRUCTURALLY on the focus `c`. The
-  -- cap-resolution comes from `LWSC`'s `vcap_live` gate (the focus is LIVE, `b = true`).
+  -- DERIVE the coherent `LWSC` (grades = typing grades) from `dc` + `hres` via `lwscg_of_typed_live`,
+  -- then project. Split STRUCTURALLY on the focus; cap-resolution comes from `vcap_live`.
+  have hWSC : LWSC K true c := lwscg_to_lwsc (lwscg_of_typed_live dc hres)
   cases c with
   | perform cv op v =>
       cases cv with
       | vcap n ℓ =>
-          obtain ⟨Kᵢ, h, Kₒ, hsplit, hlbl⟩ := lwsc_focus_resolves (lwscg_to_lwsc hWSC)
+          obtain ⟨Kᵢ, h, Kₒ, hsplit, hlbl⟩ := lwsc_focus_resolves hWSC
           exact ⟨Kᵢ, h, Kₒ, hsplit,
             handlesOp_of_hasConfigTy (g, K, _) ⟨e, C, dc, dk⟩ K n ℓ op v rfl Kᵢ h Kₒ hsplit hlbl⟩
       | vunit | vint | vvar _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ => trivial
@@ -2541,245 +2787,6 @@ theorem lwscg_of_typed {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} 
     exact .handleTransaction (lwscg_of_typed b hM (capsR_right hcaps))
 end
 
-/-! ### §2′.8f′ — GRADE-SENSITIVE caps-resolution (the coherence carrier, ADR-0061 / #51 keystone).
-
-`LiveCapsResolveV`/`LiveCapsResolveC` recurse on the TYPING derivation and demand `ResolvesLabel` ONLY
-at cap leaves reachable through gate-LIVE storage positions (`q ≠ 0`). The dormant-gated leaves (a
-`ret`/`app`/`case`/`split` value at `q = 0`; a `perform` argument — always dormant) SKIP the
-obligation, mirroring the `LWSCg` storage gates `b && decide (q ≠ 0)` EXACTLY. Two facts make this the
-right carrier:
-  • `HasVTy`/`HasCTy` are `Prop`, so a `List`-valued `liveCaps` over the derivation would need large
-    elimination (illegal); a `Prop`-valued predicate is small elimination (legal). Hence a PREDICATE,
-    not a list.
-  • The grade-sensitivity is exactly what the all-caps `lwscg_of_typed` (§2′.8f) LACKS: it demands ALL
-    of `capsC c` resolve, FALSE post-pop for a typed-DEAD ℓ-cap (the ADR-0061 root). Here the dead cap
-    sits behind a `q = 0` gate ⇒ vacuous obligation.
-WScfg carries this + the typing, and DERIVES the coherent `LWSCg` via `lwscg_of_typed_live` (grades =
-typing grades by construction). #4 (returnEscape) + #5 (subst) UNIFY as "this predicate is preserved." -/
--- An INDUCTIVE PREDICATE indexed by the typing derivation (not a recursive def): `HasVTy`/`HasCTy`
--- are `Prop`, so a recursive def matching the derivation would need `brecOn` (Type elimination of a
--- `Prop` ⇒ illegal). An inductive `Prop` indexed by a `Prop` has no such restriction. Each storage
--- gate (`q ≠ 0 →`) mirrors `LWSCg`'s `b && decide (q ≠ 0)`: a typed-DEAD (`q = 0`) cap leaf SKIPS the
--- `ResolvesLabel` obligation — exactly what the all-caps `lwscg_of_typed` lacks (the ADR-0061 root).
-mutual
-inductive LiveCapsResolveV (K : EvalCtx) :
-    ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}, HasVTy γ Γ v A → Prop
-  | vunit {Γ} : LiveCapsResolveV K (Γ := Γ) HasVTy.vunit
-  | vint {Γ n} : LiveCapsResolveV K (Γ := Γ) (HasVTy.vint (n := n))
-  | vvar {Γ i A} {h : Γ[i]? = some A} : LiveCapsResolveV K (HasVTy.vvar h)
-  | vcap {Γ n ℓ} (hr : ResolvesLabel K n ℓ) : LiveCapsResolveV K (HasVTy.vcap (Γ := Γ) (n := n) (ℓ := ℓ))
-  | vthunk {γ Γ M φ B} {dM : HasCTy γ Γ M φ B} (h : LiveCapsResolveC K dM) :
-      LiveCapsResolveV K (HasVTy.vthunk dM)
-  | inl {γ Γ v A B} {dv : HasVTy γ Γ v A} (h : LiveCapsResolveV K dv) :
-      LiveCapsResolveV K (HasVTy.inl (B := B) dv)
-  | inr {γ Γ v A B} {dv : HasVTy γ Γ v B} (h : LiveCapsResolveV K dv) :
-      LiveCapsResolveV K (HasVTy.inr (A := A) dv)
-  | pair {γ γv γw Γ v w A B} {dv : HasVTy γv Γ v A} {dw : HasVTy γw Γ w B} {hγ : γ = γv + γw}
-      (h1 : LiveCapsResolveV K dv) (h2 : LiveCapsResolveV K dw) :
-      LiveCapsResolveV K (HasVTy.pair dv dw hγ)
-  | fold {γ Γ v A} {dv : HasVTy γ Γ v (VTy.unrollMu A)} (h : LiveCapsResolveV K dv) :
-      LiveCapsResolveV K (HasVTy.fold dv)
-inductive LiveCapsResolveC (K : EvalCtx) :
-    ∀ {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {φ : Eff} {C : CTy Eff Mult},
-      HasCTy γ Γ c φ C → Prop
-  | ret {γ γ' Γ v A} {q : Mult} {dv : HasVTy γ' Γ v A} {hγ : γ = q • γ'}
-      (h : q ≠ 0 → LiveCapsResolveV K dv) : LiveCapsResolveC K (HasCTy.ret dv hγ)
-  | letC {γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B} {dM : HasCTy γ₁ Γ M φ₁ (CTy.F q1 A)}
-      {dN : HasCTy ((q1 * q_or_1 q2) :: γ₂) (A :: Γ) N φ₂ B} {hγ : γ = (q_or_1 q2) • γ₁ + γ₂}
-      (h1 : LiveCapsResolveC K dM) (h2 : LiveCapsResolveC K dN) :
-      LiveCapsResolveC K (HasCTy.letC dM dN hγ)
-  | force {γ Γ v φ B} {dv : HasVTy γ Γ v (VTy.U φ B)} (h : LiveCapsResolveV K dv) :
-      LiveCapsResolveC K (HasCTy.force dv)
-  | lam {γ Γ M φ q A B} {dM : HasCTy (q :: γ) (A :: Γ) M φ B} (h : LiveCapsResolveC K dM) :
-      LiveCapsResolveC K (HasCTy.lam dM)
-  | app {γ γ₁ γ₂ Γ M v φ q A B} {dM : HasCTy γ₁ Γ M φ (CTy.arr q A B)} {dv : HasVTy γ₂ Γ v A}
-      {hγ : γ = γ₁ + q • γ₂}
-      (h1 : LiveCapsResolveC K dM) (h2 : q ≠ 0 → LiveCapsResolveV K dv) :
-      LiveCapsResolveC K (HasCTy.app dM dv hγ)
-  | case {γ γ_v γ_N Γ v N₁ N₂ φ q A B C} {dv : HasVTy γ_v Γ v (VTy.sum A B)}
-      {dN1 : HasCTy (q :: γ_N) (A :: Γ) N₁ φ C} {dN2 : HasCTy (q :: γ_N) (B :: Γ) N₂ φ C}
-      {hγ : γ = q • γ_v + γ_N}
-      (h1 : q ≠ 0 → LiveCapsResolveV K dv) (h2 : LiveCapsResolveC K dN1) (h3 : LiveCapsResolveC K dN2) :
-      LiveCapsResolveC K (HasCTy.case dv dN1 dN2 hγ)
-  | split {γ γ_v γ_N Γ v N φ q A B C} {dv : HasVTy γ_v Γ v (VTy.prod A B)}
-      {dN : HasCTy (q :: q :: γ_N) (B :: A :: Γ) N φ C} {hγ : γ = q • γ_v + γ_N}
-      (h1 : q ≠ 0 → LiveCapsResolveV K dv) (h2 : LiveCapsResolveC K dN) :
-      LiveCapsResolveC K (HasCTy.split dv dN hγ)
-  | unfold {γ Γ v A} {dv : HasVTy γ Γ v (VTy.mu A)} (h : LiveCapsResolveV K dv) :
-      LiveCapsResolveC K (HasCTy.unfold dv)
-  | perform {γ_c γ_v Γ cv ℓ op v φ A B} {q : Mult} (dc : HasVTy γ_c Γ cv (VTy.cap ℓ))
-      {hle : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ}
-      {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A}
-      {hopR : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B} (dv : HasVTy γ_v Γ v A)
-      (h : LiveCapsResolveV K dc) :
-      LiveCapsResolveC K (HasCTy.perform dc hle hopA hopR dv)
-  | handleThrows {γ Γ ℓ M e φ q qc A} {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A}
-      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "raise"}
-      {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
-      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
-      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A} (h : LiveCapsResolveC K dM) :
-      LiveCapsResolveC K (HasCTy.handleThrows hopA hint dM hle hbo)
-  | handleState {γ Γ ℓ s₀ M e φ q qc S A} {hga : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "get" = some VTy.unit}
-      {hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S}
-      {hpa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S}
-      {hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit}
-      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B → op = "get" ∨ op = "put"}
-      {dsv : HasVTy [] [] s₀ S} {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
-      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
-      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A}
-      (hs : LiveCapsResolveV K dsv) (h : LiveCapsResolveC K dM) :
-      LiveCapsResolveC K (HasCTy.handleState hga hgr hpa hpr hint dsv dM hle hbo)
-  | handleTransaction {γ Γ ℓ Θ₀ M e φ q qc A}
-      {hna : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int}
-      {hnr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int}
-      {hra : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some VTy.int}
-      {hrr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some VTy.int}
-      {hwa : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some (VTy.prod VTy.int VTy.int)}
-      {hwr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "writeTVar" = some VTy.unit}
-      {hint : ∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
-        op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar"}
-      {hcells : ∀ cell ∈ Θ₀, HasVTy [] [] cell VTy.int}
-      {dM : HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A)}
-      {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
-      {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A} (h : LiveCapsResolveC K dM) :
-      LiveCapsResolveC K (HasCTy.handleTransaction hna hnr hra hrr hwa hwr hint hcells dM hle hbo)
-end
-
-/-! ### §2′.8f″ — the GRADE-SENSITIVE lift `lwscg_of_typed_live` (the engine).
-
-`lwsvg_of_typed_dormant`/`lwscg_of_typed_dormant`: at flag `false` EVERY gate collapses and EVERY cap
-is dormant, so a typed term is `LWSVg`/`LWSCg` at flag `false` with NO caps premise (the from-typing
-mirror of `lwsvg_to_anyγ_false`, but built straight from the typing for the `q = 0` dead branches).
-
-`lwsvg_of_typed_live`/`lwscg_of_typed_live`: at flag `true`, consume `LiveCapsResolve` to discharge the
-LIVE cap leaves, and route the dead-gated (`q = 0`) value positions through the dormant builder. The
-grade-sensitive replacement for the all-caps `lwscg_of_typed` (§2′.8f) — grades = typing grades by
-construction (coherence), live caps resolve, dead caps skipped. -/
-mutual
-theorem lwsvg_of_typed_dormant {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
-    {v : Val} {A : VTy Eff Mult} (d : HasVTy γ Γ v A) : LWSVg K γ false v := by
-  cases d with
-  | vunit => exact .vunit
-  | vint => exact .vint
-  | vvar _ => exact .vvar (by simp)
-  | vcap => exact .vcap_dormant
-  | vthunk hM => exact .vthunk (lwscg_of_typed_dormant hM)
-  | inl hv => exact .inl (lwsvg_of_typed_dormant hv)
-  | inr hv => exact .inr (lwsvg_of_typed_dormant hv)
-  | @pair γ γv γw Γ v w A B hv hw hγ =>
-    subst hγ
-    exact .pair rfl (by rw [hv.length_eq, hw.length_eq]) (lwsvg_of_typed_dormant hv)
-      (lwsvg_of_typed_dormant hw)
-  | fold hv => exact .fold (lwsvg_of_typed_dormant hv)
-theorem lwscg_of_typed_dormant {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
-    {c : Comp} {φ : Eff} {C : CTy Eff Mult} (d : HasCTy γ Γ c φ C) : LWSCg K γ false c := by
-  cases d with
-  | @ret γ γ' Γ v A q hv hγ =>
-    subst hγ; exact .ret (q := q) rfl (lwsvg_of_typed_dormant hv)
-  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN hγ =>
-    subst hγ
-    exact .letC (q1 := q1) (q2 := q2) rfl
-      (by have h1 := hM.length_eq; have h2 := hN.length_eq; simp only [List.length_cons] at h2; omega)
-      (lwscg_of_typed_dormant hM) (lwscg_of_typed_dormant hN)
-  | force hv => exact .force (lwsvg_of_typed_dormant hv)
-  | lam hM => exact .lam (lwscg_of_typed_dormant hM)
-  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv hγ =>
-    subst hγ
-    exact .app (q := q) rfl (by rw [hM.length_eq, hv.length_eq]) (lwscg_of_typed_dormant hM)
-      (lwsvg_of_typed_dormant hv)
-  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C hv hN₁ hN₂ hγ =>
-    subst hγ
-    exact .case (q := q) rfl
-      (by have h1 := hv.length_eq; have h2 := hN₁.length_eq; simp only [List.length_cons] at h2; omega)
-      (lwsvg_of_typed_dormant hv) (lwscg_of_typed_dormant hN₁) (lwscg_of_typed_dormant hN₂)
-  | @split γ γ_v γ_N Γ v N φ q A B C hv hN hγ =>
-    subst hγ
-    exact .split (q := q) rfl
-      (by have h1 := hv.length_eq; have h2 := hN.length_eq; simp only [List.length_cons] at h2; omega)
-      (lwsvg_of_typed_dormant hv) (lwscg_of_typed_dormant hN)
-  | unfold hv => exact .unfold (lwsvg_of_typed_dormant hv)
-  | @perform γ_c γ_v Γ cv ℓ op v φ q A B hc hle hopA hopR hv =>
-    exact .perform (q := q) rfl (by rw [hv.length_eq, hc.length_eq]) (lwsvg_of_typed_dormant hc)
-      (lwsvg_of_typed_dormant hv)
-  | handleThrows _ _ hM _ _ => exact .handleThrows (lwscg_of_typed_dormant hM)
-  | handleState _ _ _ _ _ hs hM _ _ =>
-    exact .handleState (lwsvg_of_typed_dormant hs) (lwscg_of_typed_dormant hM)
-  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ => exact .handleTransaction (lwscg_of_typed_dormant hM)
-end
-
-mutual
-theorem lwsvg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
-    {v : Val} {A : VTy Eff Mult} (d : HasVTy γ Γ v A) (hres : LiveCapsResolveV K d) :
-    LWSVg K γ true v := by
-  -- invert `hres` (it is indexed by `d`, so its constructor pins `d`'s shape AND names the typing
-  -- sub-derivations via the `@`-pattern) — `cases d` would fail dependent elimination on the grade index.
-  cases hres with
-  | vunit => exact .vunit
-  | vint => exact .vint
-  | @vvar Γ i A hget =>
-    refine .vvar (fun _ => ?_)
-    have hi : i < Γ.length := by rw [List.getElem?_eq_some_iff] at hget; exact hget.1
-    rw [GradeVec.basis_getElem _ _ _ hi, if_pos rfl]; exact one_ne_zero
-  | vcap hr => exact .vcap_live hr
-  | @vthunk γ Γ M φ B dM h => exact .vthunk (lwscg_of_typed_live dM h)
-  | @inl γ Γ v A B dv h => exact .inl (lwsvg_of_typed_live dv h)
-  | @inr γ Γ v A B dv h => exact .inr (lwsvg_of_typed_live dv h)
-  | @pair γ γv γw Γ v w A B dv dw hγ h1 h2 =>
-    subst hγ
-    exact .pair rfl (by rw [dv.length_eq, dw.length_eq]) (lwsvg_of_typed_live dv h1)
-      (lwsvg_of_typed_live dw h2)
-  | @fold γ Γ v A dv h => exact .fold (lwsvg_of_typed_live dv h)
-theorem lwscg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
-    {c : Comp} {φ : Eff} {C : CTy Eff Mult} (d : HasCTy γ Γ c φ C) (hres : LiveCapsResolveC K d) :
-    LWSCg K γ true c := by
-  cases hres with
-  | @ret γ γ' Γ v A q dv hγ hgate =>
-    subst hγ
-    refine .ret (q := q) rfl ?_
-    by_cases hq : q = 0
-    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
-    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
-  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B dM dN hγ h1 h2 =>
-    subst hγ
-    exact .letC (q1 := q1) (q2 := q2) rfl
-      (by have l1 := dM.length_eq; have l2 := dN.length_eq; simp only [List.length_cons] at l2; omega)
-      (lwscg_of_typed_live dM h1) (lwscg_of_typed_live dN h2)
-  | @force γ Γ v φ B dv h => exact .force (lwsvg_of_typed_live dv h)
-  | @lam γ Γ M φ q A B dM h => exact .lam (lwscg_of_typed_live dM h)
-  | @app γ γ₁ γ₂ Γ M v φ q A B dM dv hγ h1 hgate =>
-    subst hγ
-    refine .app (q := q) rfl (by rw [dM.length_eq, dv.length_eq]) (lwscg_of_typed_live dM h1) ?_
-    by_cases hq : q = 0
-    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
-    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
-  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C dv dN1 dN2 hγ hgate h2 h3 =>
-    subst hγ
-    refine .case (q := q) rfl
-      (by have l1 := dv.length_eq; have l2 := dN1.length_eq; simp only [List.length_cons] at l2; omega)
-      ?_ (lwscg_of_typed_live dN1 h2) (lwscg_of_typed_live dN2 h3)
-    by_cases hq : q = 0
-    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
-    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
-  | @split γ γ_v γ_N Γ v N φ q A B C dv dN hγ hgate h2 =>
-    subst hγ
-    refine .split (q := q) rfl
-      (by have l1 := dv.length_eq; have l2 := dN.length_eq; simp only [List.length_cons] at l2; omega)
-      ?_ (lwscg_of_typed_live dN h2)
-    by_cases hq : q = 0
-    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
-    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
-  | @unfold γ Γ v A dv h => exact .unfold (lwsvg_of_typed_live dv h)
-  | perform dc dv h =>
-    -- non-`@` pattern: names only the EXPLICIT fields `dc dv h`; `q` infers from the grade `rfl`.
-    exact .perform rfl (by rw [dv.length_eq, dc.length_eq]) (lwsvg_of_typed_live dc h)
-      (lwsvg_of_typed_dormant dv)
-  | @handleThrows γ Γ ℓ M e φ q qc A hopA hint dM hle hbo h =>
-    exact .handleThrows (lwscg_of_typed_live dM h)
-  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hint dsv dM hle hbo hsr h =>
-    exact .handleState (lwsvg_of_typed_live dsv hsr) (lwscg_of_typed_live dM h)
-  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hint hcells dM hle hbo h =>
-    exact .handleTransaction (lwscg_of_typed_live dM h)
-end
 
 /-! A cap-free (`capsV v = []`) typed value vacuously satisfies `LiveCapsResolveV` — no `vcap` leaf to
 discharge. The seed's `LiveCapsResolve` (the new coherence carrier) at a `VcapFree` initial config. -/
@@ -2859,9 +2866,9 @@ theorem wellScoped_initial (c : Comp) (hvf : VcapFree c) {Co : CTy Eff Mult}
   obtain ⟨e, C, hfocus, hstack⟩ := hty
   -- the stack is `[]`, so `hstack : HasStack [] e C ⊥ Co` must be `nil` (`e = ⊥`, `C = Co`).
   cases hstack
-  refine ⟨⊥, Co, hfocus, .nil, lwscg_of_typed true hfocus ?_, .nil, ?_⟩
-  · exact fun p hp => absurd (hvf ▸ hp) (by simp [GradeVec.zeros])
-  · exact ⟨trivial, fun p hp => absurd (hvf ▸ hp) (by simp [GradeVec.zeros]), trivial,
+  -- the carried scoping witness is now `LiveCapsResolveC` — VACUOUS at a `VcapFree` config.
+  refine ⟨⊥, Co, hfocus, .nil, liveCapsResolveC_of_noCaps hfocus hvf, .nil, ?_⟩
+  exact ⟨trivial, fun p hp => absurd (hvf ▸ hp) (by simp [GradeVec.zeros]), trivial,
       by intro p hp; simp [capsK] at hp⟩
 
 /-! ### §2′.8g — SPIKE (task #48): the ⊥-row return-escape coherence (POP-focus-live slice).
@@ -3247,47 +3254,53 @@ theorem lwskg_pop_fresh {g' : Nat} {hd : Handler} {K' : EvalCtx} {γ : GradeVec 
 PUSH/MINT graded restack (mechanical mirror of the §3.5 typeless `lwsc_restack` family); REDUCE via
 `lwsvg_closed_regrade` + `lwscg_subst` (live) / `lwscg_to_lwsck` + `lwsck_subst` (dead); POP via
 `lwscg_returnEscape` (focus) + `lwskg_pop_fresh` (tail) + `handleF_bocc_inv`; force/unfold direct. -/
+-- ADR-0061 (#51): the WELL-SCOPED preservation now produces the post-step `WScfg`-TAIL — a coherent
+-- typing `d'` + `LiveCapsResolveC` over it + the stack typing + `LWSKg`. (The bundled typing replaces
+-- the separate `hasConfigTy_step` call; the obligation's proof will route through it.) The keystone
+-- (`LiveCapsResolveC` preserved by subst/pop) lives HERE.
 theorem lwsg_step_nonperform {g : Nat} {K : EvalCtx} {c : Comp} {e : Eff} {C Co : CTy Eff Mult}
     {cfg' : Config}
     (hfocus : HasCTy (Eff := Eff) (Mult := Mult) [] [] c e C) (hstack : HasStack K e C ⊥ Co)
-    (hWSC : LWSCg K ([] : GradeVec Mult) true c) (hWSK : LWSKg K K ([] : GradeVec Mult) true)
+    (hres : LiveCapsResolveC K hfocus) (hWSK : LWSKg K K ([] : GradeVec Mult) true)
     (hfresh : FreshCfg (g, K, c))
     (hnp : ∀ n ℓ op v, c ≠ Comp.perform (Val.vcap n ℓ) op v)
     (hstep : Source.step (g, K, c) = some cfg') :
-    LWSCg cfg'.2.1 ([] : GradeVec Mult) true cfg'.2.2
-      ∧ LWSKg cfg'.2.1 cfg'.2.1 ([] : GradeVec Mult) true := by
+    ∃ (e' : Eff) (C' : CTy Eff Mult) (d' : HasCTy [] [] cfg'.2.2 e' C'),
+      HasStack cfg'.2.1 e' C' ⊥ Co ∧ LiveCapsResolveC cfg'.2.1 d'
+        ∧ LWSKg cfg'.2.1 cfg'.2.1 ([] : GradeVec Mult) true := by
   sorry
 
 /-- **GRADED liveness preservation — the DISPATCH arm (#35).** `idDispatch` reinstalls/pops a handler on a
 resume; the resumed focus + reassembled stack stay graded-well-scoped. Deferred to #35 (the abort/tail/
 general resumption-multiplicity grading — the "sorryAx-on-DISPATCH-only" endpoint of `type_safety`). -/
 theorem lwsg_step_dispatch {g : Nat} {K : EvalCtx} {n : Nat} {ℓ : Label} {op : OpId} {v : Val}
-    {cfg' : Config}
-    (hWSC : LWSCg K ([] : GradeVec Mult) true (Comp.perform (Val.vcap n ℓ) op v))
+    {e : Eff} {C Co : CTy Eff Mult} {cfg' : Config}
+    (hfocus : HasCTy (Eff := Eff) (Mult := Mult) [] [] (Comp.perform (Val.vcap n ℓ) op v) e C)
+    (hstack : HasStack K e C ⊥ Co)
+    (hres : LiveCapsResolveC K hfocus)
     (hWSK : LWSKg K K ([] : GradeVec Mult) true)
     (hfresh : FreshCfg (g, K, Comp.perform (Val.vcap n ℓ) op v))
     (hstep : Source.step (g, K, Comp.perform (Val.vcap n ℓ) op v) = some cfg') :
-    LWSCg cfg'.2.1 ([] : GradeVec Mult) true cfg'.2.2
-      ∧ LWSKg cfg'.2.1 cfg'.2.1 ([] : GradeVec Mult) true := by
+    ∃ (e' : Eff) (C' : CTy Eff Mult) (d' : HasCTy [] [] cfg'.2.2 e' C'),
+      HasStack cfg'.2.1 e' C' ⊥ Co ∧ LiveCapsResolveC cfg'.2.1 d'
+        ∧ LWSKg cfg'.2.1 cfg'.2.1 ([] : GradeVec Mult) true := by
   sorry
 
 theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
     (hP : WScfg Co cfg) (hstep : Source.step cfg = some cfg') : WScfg Co cfg' := by
   obtain ⟨g, K, c⟩ := cfg
-  obtain ⟨e, C, hfocus, hstack, hWSC, hWSK, hfresh⟩ := hP
-  -- TYPING half (uniform via `hasConfigTy_step`); `eo' ≤ ⊥` pins `eo' = ⊥`.
-  obtain ⟨eo', hle, e', C', hf', hs'⟩ := hasConfigTy_step ⟨e, C, hfocus, hstack⟩ hstep
-  obtain rfl : eo' = ⊥ := le_bot_iff.mp hle
+  obtain ⟨e, C, hfocus, hstack, hres, hWSK, hfresh⟩ := hP
   -- FRESHNESS half (uniform, §3.0).
   have hFreshr : FreshCfg cfg' := freshCfg_step (g, K, c) cfg' ⟨e, C, hfocus, hstack⟩ hfresh hstep
-  -- GRADED WELL-SCOPED half: route DISPATCH (perform-vcap, #35) vs every other arm (Phase 2 obligations).
+  -- WELL-SCOPED + TYPING half: route DISPATCH (perform-vcap, #35) vs every other arm. Each obligation
+  -- returns the post-step `WScfg`-tail (typing + `LiveCapsResolveC` + stack + `LWSKg`).
   by_cases hperf : ∃ n ℓ op v, c = Comp.perform (Val.vcap n ℓ) op v
   · obtain ⟨n, ℓ, op, v, rfl⟩ := hperf
-    obtain ⟨hcg, hkg⟩ := lwsg_step_dispatch hWSC hWSK hfresh hstep
-    exact ⟨e', C', hf', hs', hcg, hkg, hFreshr⟩
-  · obtain ⟨hcg, hkg⟩ := lwsg_step_nonperform hfocus hstack hWSC hWSK hfresh
+    obtain ⟨e', C', d', hs', hres', hkg⟩ := lwsg_step_dispatch hfocus hstack hres hWSK hfresh hstep
+    exact ⟨e', C', d', hs', hres', hkg, hFreshr⟩
+  · obtain ⟨e', C', d', hs', hres', hkg⟩ := lwsg_step_nonperform hfocus hstack hres hWSK hfresh
       (fun n ℓ op v hc => hperf ⟨n, ℓ, op, v, hc⟩) hstep
-    exact ⟨e', C', hf', hs', hcg, hkg, hFreshr⟩
+    exact ⟨e', C', d', hs', hres', hkg, hFreshr⟩
 
 /-! ## §4 — THE DIAGONAL (assembled). -/
 
