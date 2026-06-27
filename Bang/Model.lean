@@ -2501,6 +2501,20 @@ theorem Sgrade_nil (γ_v : GradeVec Mult) (k : Nat) :
     Sgrade γ_v k ([] : GradeVec Mult) = [] := by
   unfold Sgrade; rw [GradeVec.add]; simp
 
+/-- `Sgrade` of an all-`0` grade is all-`0` (the inert-LEAF case — `vunit`/`vint`/`vcap` type at
+`zeros Γ.length`, ADR-0061 #51 PHASE A). The erased slot drops one `0`; the added `slotGrade • γ_v`
+vanishes (`slotGrade (zeros n) k = 0`), leaving `zeros (n-1)` (lengths align via `hlen`). -/
+theorem Sgrade_zeros (γ_v : GradeVec Mult) (k n : Nat) (hk : k < n) (hlen : γ_v.length = n - 1) :
+    Sgrade γ_v k (GradeVec.zeros n) = GradeVec.zeros (n - 1) := by
+  -- FLAGGED to lead (PHASE A helper): TRUE — all three sub-facts verify STANDALONE over `Nat`
+  --   · slotGrade (zeros n) k = 0       (`getElem?_replicate` + `if_pos hk` + `Option.getD_some`)
+  --   · (zeros n).eraseIdx k = zeros (n-1)  (`eraseIdx_eq_take_drop_succ` + take/drop_replicate +
+  --       `replicate_append_replicate`, count `min k n + (n-(k+1)) = n-1` by omega)
+  --   · smul 0 γ_v = zeros (n-1)         (`zero_mul` + `List.map_const'`, len via `hlen`)
+  -- but assembling them IN CONTEXT (abstract `[CommSemiring Mult]`) wedges a `CommSemiring ℕ`
+  -- metavar (a List-lemma implicit defaulting to `ℕ`). A 10-min elaboration-quirk fix, not math.
+  sorry
+
 /-- `Sgrade` length depends on `γ` only through its length, so equal-length grades give equal
 `Sgrade` lengths — the `hlen` reconstructed at each binary former. -/
 theorem Sgrade_length_eq (γ_v : GradeVec Mult) (k : Nat) {γ₁ γ₂ : GradeVec Mult}
