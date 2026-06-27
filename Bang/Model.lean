@@ -4149,13 +4149,88 @@ theorem liveCapsResolveV_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {
     (hℓ : Handler.label hd = ℓ) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
     {dv : HasVTy γ Γ v A} (hbo : ¬ VTy.labelOccurs ℓ A)
     (h : LiveCapsResolveV (Frame.handleF g' hd :: K') dv) : LiveCapsResolveV K' dv := by
-  sorry
+  -- shape: mirror the proven typeless `lwsvg_returnEscape` (§2′.8g) over the CARRIER. `cases h`
+  -- (the carrier is indexed by `dv`, so the value-typing structure is refined per arm). The `vcap`
+  -- crux re-homes via `resolvesLabel_pop`, killing `n = g'` with `hbo` exactly as the template does.
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar Γ i A hmem => exact .vvar (h := hmem)
+  | @vcap Γ n ℓ' hr =>
+      refine .vcap (resolvesLabel_pop ?_ hr)
+      intro hng; subst hng
+      obtain ⟨Kᵢ, hh, Kₒ, hsplit, hlbl⟩ := hr
+      rw [splitAtId, if_pos rfl] at hsplit
+      simp only [Option.some.injEq, Prod.mk.injEq] at hsplit
+      obtain ⟨_, rfl, _⟩ := hsplit
+      exact hbo (hℓ.symm.trans hlbl)
+  | @vthunk γ Γ M φ B dM h =>
+      exact .vthunk (liveCapsResolveC_returnEscape hℓ
+        (fun hx => hbo (Or.inl hx)) (fun hx => hbo (Or.inr hx)) h)
+  | @inl γ Γ v A B dv h =>
+      exact .inl (liveCapsResolveV_returnEscape hℓ (fun hx => hbo (Or.inl hx)) h)
+  | @inr γ Γ v A B dv h =>
+      exact .inr (liveCapsResolveV_returnEscape hℓ (fun hx => hbo (Or.inr hx)) h)
+  | @pair γ γv γw Γ v w A B dv dw hγ h1 h2 =>
+      exact .pair (hγ := hγ)
+        (liveCapsResolveV_returnEscape hℓ (fun hx => hbo (Or.inl hx)) h1)
+        (liveCapsResolveV_returnEscape hℓ (fun hx => hbo (Or.inr hx)) h2)
+  | @fold γ Γ v A dv h =>
+      exact .fold (liveCapsResolveV_returnEscape hℓ (fun hx => hbo (labelOccurs_unrollMu ℓ A hx)) h)
 theorem liveCapsResolveC_returnEscape {g' : Nat} {hd : Handler} {K' : EvalCtx} {ℓ : Label}
     (hℓ : Handler.label hd = ℓ) {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {φ : Eff}
     {C : CTy Eff Mult} {dc : HasCTy γ Γ c φ C}
     (hrow : ¬ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ) (hres : ¬ CTy.labelOccurs ℓ C)
     (h : LiveCapsResolveC (Frame.handleF g' hd :: K') dc) : LiveCapsResolveC K' dc := by
-  sorry
+  -- shape: mirror `lwscg_returnEscape`'s PROVEN arms over the carrier. Non-binder arms
+  -- (ret/force/lam/perform/unfold) thread `hrow`/`hres` to the (gated) value sub-carrier exactly as
+  -- the typeless template; binder arms (letC/app/case/split/handle*) are the grade-coupling grind.
+  cases h with
+  | @ret γ γ' Γ v A q dv hγ hgate =>
+      exact .ret (hγ := hγ) (fun hq => liveCapsResolveV_returnEscape hℓ hres (hgate hq))
+  | @force γ Γ v φ B dv h =>
+      exact .force (liveCapsResolveV_returnEscape hℓ (fun hx => hx.elim hrow hres) h)
+  | @lam γ Γ M φ q A B dM h =>
+      exact .lam (liveCapsResolveC_returnEscape hℓ hrow (fun hx => hres (Or.inr hx)) h)
+  | @perform _ γ_c γ_v Γ cv ℓ2 op v φ A B q dc hle hopA hopR dv h =>
+      exact .perform (q := q) (hle := hle) (hopA := hopA) (hopR := hopR) dc dv
+        (liveCapsResolveV_returnEscape hℓ
+          (by intro hx; simp only [VTy.labelOccurs] at hx; subst hx; exact hrow hle) h)
+  | @unfold γ Γ v A dv h =>
+      -- ORTHOGONAL gap (NOT the containment wall): value v : mu A, result F 1 (unrollMu A). `hres`
+      -- gives ¬labelOccurs ℓ (unrollMu A); the value escape needs ¬labelOccurs ℓ (mu A) = ¬labelOccurs
+      -- ℓ A. Needs the REVERSE-μ monotonicity `labelOccurs ℓ A → labelOccurs ℓ (unrollMu A)` (the
+      -- converse of `vty_labelOccurs_tySubstFrom`; TRUE — subst touches only tvars, leaves cap-labels).
+      sorry
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B dM dN hγ h1 h2 =>
+      -- N : φ₂, B — result B covered by `hres`; row φ₂ ≤ φ₁⊔φ₂ covered by `hrow` (CLEAN).
+      -- M : φ₁, F q1 A — row φ₁ covered; but the let-INTERMEDIATE `A` is NOT covered by `hres`
+      -- (which is over the result `B`). THE WALL: a carrier-LIVE cap (q1 ≠ 0) of label ℓ in M's
+      -- return value sits in `A`, resolving to the popped `g'`. SOUND (it must propagate into N and
+      -- be performed ⇒ ℓ≤φ₂ ⊆ ℓ≤φ₁⊔φ₂ ✗hrow, or escape ⇒ labelOccurs ℓ B ✗hres), but the proof
+      -- needs the CAPABILITY-CONTAINMENT lemma: "var 0 : A graded-live in N : φ₂,B ⇒ ℓ≤φ₂ ∨
+      -- labelOccurs ℓ B" — a new induction over `dN`, NOT supplied by the carrier. q1 = 0 ⇒ gate off
+      -- (vacuous, this `hresM` unused); the live (q1≠0) case is the irreducible gap.
+      exact .letC (hγ := hγ)
+        (liveCapsResolveC_returnEscape hℓ (fun hx => hrow (le_trans hx le_sup_left))
+          (by sorry /- hresM : ¬ VTy.labelOccurs ℓ A — capability containment over `dN` -/) h1)
+        (liveCapsResolveC_returnEscape hℓ (fun hx => hrow (le_trans hx le_sup_right)) hres h2)
+  -- CONTAINMENT WALL (same as `letC` above — see that arm's comment). The eliminators consume an
+  -- INPUT type uncovered by the result-type `hres`: `app`'s domain `A` (gated by the arrow `q`),
+  -- `case`/`split`'s scrutinee `sum/prod A B` (gated by `q`). A graded-live (q≠0) cap of label ℓ
+  -- there resolves to the popped `g'`; SOUND only because an honest arrow/eliminator surfaces it in
+  -- the row (✗hrow) or result (✗hres) — the CAPABILITY-CONTAINMENT lemma the carrier does not supply.
+  -- (The branch/body sub-carriers — `app`/`case`/`split`'s comp positions — are CLEAN: same row+result.)
+  | @app γ γ₁ γ₂ Γ M v φ q A B dM dv hγ h1 hgate => sorry
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C dv dN1 dN2 hγ hgate h2 h3 => sorry
+  | @split γ γ_v γ_N Γ v N φ q A B C dv dN hγ hgate h2 => sorry
+  -- ORTHOGONAL gap (NOT containment): a term-level `handle` discharges its OWN label ℓ_h; the body
+  -- runs at row `e ≤ ℓ_h ⊔ φ`. Threading the local discharge (re-exposing the carried answer-type
+  -- B-occ `hbo` + the row separation) is separate machinery — the typeless `lwscg_returnEscape`
+  -- walled here too (3197-3199). The carried `hbo : ¬LabelOccurs ℓ_h A` gives the body's result B-occ.
+  | @handleThrows γ Γ ℓ M e φ q qc A hopA hint dM hle hbo h => sorry
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hint dsv dM hle hbo hsr h => sorry
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hint hcells dM hle hbo h => sorry
 end
 
 /-- **GRADED liveness preservation — the NON-perform arms (Phase 2).** Given the pre-step graded invariant
