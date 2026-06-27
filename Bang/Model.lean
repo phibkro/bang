@@ -3449,6 +3449,31 @@ is exactly the consumer-facing shape; it avoids indexing the carrier over `subst
 -- coherent) — NOT the `∀ γ' b'` LWSVg regrade (`lwsvg_closed_regrade_refute`-flavoured, FALSE). That is
 -- the payoff of the carrier switch: at the VALUE layer the carrier is grade-independent, so `v`'s caps
 -- resolving in `K` transfers to every Sgrade-position without re-grading.
+
+/-! ### §3.7a — the RECURSOR motives for the carrier-subst (ADR-0061, #51 PHASE A).
+
+The carrier `LiveCapsResolveV K hw` is indexed by a PROOF (the typing `hw`), so a `cases hwres` + manual
+recursive call cannot compile (the structural-recursion compiler can't extract the sub-derivation as the
+recursive index — build-confirmed). The fix mirrors `HasCTy.subst_gen`: recurse via the explicit mutual
+recursor with these motives carrying the `v`-bundle + `hcov`/gate + the ∃-output (the carrier analogue of
+`VsubstMotive`/`CsubstMotive`). The context `Γ'` is split as `Δ ++ A :: Γ` by the threaded hypothesis. -/
+def VcarrierSubstMotive (K : EvalCtx) {γ₀ : GradeVec Mult} {Γ' : TyCtx Eff Mult} {w : Val}
+    {A₀ : VTy Eff Mult} (hw : HasVTy γ₀ Γ' w A₀) (_ : LiveCapsResolveV K hw) : Prop :=
+  ∀ (Δ Γ : TyCtx Eff Mult) (A : VTy Eff Mult) (γ_v : GradeVec Mult) (v : Val)
+    (hv : HasVTy γ_v (Δ ++ Γ) v A), ZeroSumFree Mult → (∀ j, Val.shiftFrom j v = v) →
+    LiveCapsResolveV K hv → Γ' = Δ ++ A :: Γ → (γ₀.eraseIdx Δ.length).length ≤ γ_v.length →
+    ∃ d' : HasVTy (Sgrade γ_v Δ.length γ₀) (Δ ++ Γ) (Val.substFrom Δ.length v w) A₀,
+      LiveCapsResolveV K d'
+
+def CcarrierSubstMotive (K : EvalCtx) {γ₀ : GradeVec Mult} {Γ' : TyCtx Eff Mult} {c : Comp}
+    {e : Eff} {B : CTy Eff Mult} (hc : HasCTy γ₀ Γ' c e B) (_ : LiveCapsResolveC K hc) : Prop :=
+  ∀ (Δ Γ : TyCtx Eff Mult) (A : VTy Eff Mult) (γ_v : GradeVec Mult) (v : Val)
+    (hv : HasVTy γ_v (Δ ++ Γ) v A), ZeroSumFree Mult → (∀ j, Val.shiftFrom j v = v) →
+    Γ' = Δ ++ A :: Γ → (γ₀.eraseIdx Δ.length).length ≤ γ_v.length →
+    (slotGrade γ₀ Δ.length ≠ 0 → LiveCapsResolveV K hv) →
+    ∃ d' : HasCTy (Sgrade γ_v Δ.length γ₀) (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B,
+      LiveCapsResolveC K d'
+
 mutual
 /-- VALUE carrier-subst (the `v`-clean witness is consumed unconditionally — the comp layer descends here
 only at grade-LIVE value positions, supplying it from its own gate). -/
