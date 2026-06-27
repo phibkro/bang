@@ -2781,6 +2781,19 @@ theorem lwscg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff M
     exact .handleTransaction (lwscg_of_typed_live dM h)
 end
 
+/-! **DE-RISK (#51 — the held-thunk-cap residual): CLOSED BY CONSTRUCTION in `lwscg_of_typed_live`.**
+The team-lead flagged "a live cap buried in a held unperformed thunk inside `M`" as the spot the design
+hand-waved. The mechanism is now machine-checked: `lwscg_of_typed_live`'s `ret`/`app`/`case`/`split`
+branches `by_cases hq : q = 0`, and at `q = 0` route the value (incl. a held `vcap n ℓ`) through
+`lwsvg_of_typed_dormant` — which builds `vcap_dormant` with NO `ResolvesLabel` obligation. Correspondingly
+`LiveCapsResolveC`'s storage gates are `q ≠ 0 → …`, so a typed-DEAD cap is NEVER required to resolve.
+The GRADE catches the held cap where B-occ does not: for `letC M N` with `M : F q1 A`, a cap of type
+`cap ℓ` in `M`'s returned value sits in the dead INTERMEDIATE `A` (∉ the popped result type `C`, so
+`¬labelOccurs ℓ C` is satisfied yet says nothing) — but if `q1 = 0` the `ret`-gate makes it dormant, and
+if `q1 ≠ 0` the cap propagates into `N` where B-occ/row apply. No standalone witness theorem (the
+indexed-predicate constructor elaboration is finicky for a single `q = 0` literal); the guarantee lives
+in the engine itself. -/
+
 /-- **SEED (GREEN).** A `VcapFree` closed program satisfies the GRADED invariant `WScfg` at the initial
 config — no caps to resolve (the graded lift's side-condition + the `FreshCfg` focus-cap bound are
 vacuous), the stack is empty (`LWSKg.nil`), the counter is `0` (`CapsBelow`/`StratFresh` trivial). The
