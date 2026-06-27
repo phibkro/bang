@@ -9,10 +9,11 @@
 ## 0. The one-paragraph version
 
 bang-lang is a **lexical effect-handler language** whose compiler is **calculated, not hand-written**,
-and **verified by a logical relation** rather than tested. A program is graded-CBPV source; its meaning is
+and **verified against a reference** rather than tested. A program is graded-CBPV source; its meaning is
 a denotational `Source.eval`; a CalcVM is *derived* from `eval` by Bahr–Hutton equational calculation; and
-a WasmFX backend is the optimized output, proven contextually equivalent to the CalcVM by a Benton–Hur
-logical relation. Handler dispatch is **lexical** — a `perform` carries a first-class **capability value**
+a WasmFX backend is the optimized output, proven correct by an **annotated forward simulation**
+(`compile_forward_sim`, ADR-0035). (A separate biorthogonal/Benton–Hur logical relation proves ◊4
+*contextual equivalence* — not the compilation hop.) Handler dispatch is **lexical** — a `perform` carries a first-class **capability value**
 that names *one specific* handler by generative identity, not "the nearest dynamically-enclosing one."
 Right now the **source semantics + type safety** are the front being established (inc-1–5); the actual
 CalcVM→WasmFX compilation is largely **the next phase** (inc-6). So: same *dispatch model* as Lexa, a
@@ -28,7 +29,7 @@ CalcVM→WasmFX compilation is largely **the next phase** (inc-6). So: same *dis
      │  Bahr–Hutton calculation:  exec ∘ compile ≡ eval
      ▼
   CalcVM                 ← THE EXECUTABLE INTERPRETER (canonical operational meaning)  [IN-FLIGHT, red]
-     │  Benton–Hur logical relation:  compile_forward_sim
+     │  annotated forward simulation (ADR-0035):  compile_forward_sim
      ▼
   WasmFX module          ← THE OPTIMIZED COMPILER OUTPUT                          [PLANNED]
      │  wasm3 / wasmfx-runtime
@@ -36,10 +37,10 @@ CalcVM→WasmFX compilation is largely **the next phase** (inc-6). So: same *dis
   Observed values
 ```
 
-This is the **CakeML / Benton–Hur verified-compilation model**, with the front half replaced by
+This is the **CakeML-style verified-compilation model**, with the front half replaced by
 **Bahr–Hutton calculation** rather than a hand-designed IR (ADR-0016). Two distinct proof methodologies
-ride the two hops — *calculation* for source→CalcVM, *logical relation* for CalcVM→WasmFX — so neither is
-overloaded. Both are checked against `exec` (invariant #1: "proof rides the reference").
+ride the two hops — *calculation* for source→CalcVM, *annotated simulation* for CalcVM→WasmFX (ADR-0035) —
+so neither is overloaded. Both are checked against `exec` (invariant #1: "proof rides the reference").
 
 **The deliberate stance:** the machine is an **output of the calculation**, never hand-designed then
 justified after the fact (CLAUDE.md invariant #4). The CalcVM is *runnable today* — users run the spec,

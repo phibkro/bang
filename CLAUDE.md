@@ -44,10 +44,13 @@ its trigger arises.
 Two-hop verified compilation per **ADR-0016**:
 
 ```
-  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (Benton-Hur LR)
+  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (annotated simulation)
 ```
 
-The CalcVM is the executable spec; WasmFX is the verified compiler output.
+The CalcVM is the executable spec; WasmFX is the verified compiler output. The
+CalcVM→WasmFX hop is proven by **annotated forward simulation** (`compile_forward_sim`,
+ADR-0035) — NOT the biorthogonal/Benton–Hur LR, which proves ◊4 *contextual equivalence*
+(a separate theorem, the binary LR).
 ADRs 0003 and 0004 were deleted, subsumed by 0016. See `CONTEXT.md` for
 where the implementation stands; `docs/notes/k3-historical-status.md` for
 what the K3 work taught (preserved as input to the graded-CBPV port at ◊3).
