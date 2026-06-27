@@ -907,6 +907,77 @@ theorem lwscg_dormant_stack_indep {K K' : EvalCtx} {γ : GradeVec Mult} {c : Com
   | handleTransaction hM => exact .handleTransaction (lwscg_dormant_stack_indep hM)
 end
 
+/-! ### §2′.8a″ — ANY-γ DORMANT regrade (the `b' = false` half of `lwsvg_closed_regrade`).
+
+At flag `false` every gate `false && decide(q≠0)` collapses, every `vvar` gate is vacuous (`false → …`),
+and every `vcap` is dormant — so NOTHING reads the grade for liveness. Hence the value/comp is `LWSVg`/
+`LWSCg` at flag `false` for ANY target grade `γ'`: rebuild the grade equations freely (scaled positions
+via `1 • γ' = γ'`, additive via `γ' + zeros`). Feeds the `b'=false` branch + the gated-DEAD sub-positions
+of the `b'=true` branch. -/
+private theorem gv_one_smul (γ : GradeVec Mult) : (1 : Mult) • γ = γ := by
+  show GradeVec.smul 1 γ = γ
+  rw [GradeVec.smul]; simp [one_mul]
+mutual
+theorem lwsvg_to_anyγ_false {K : EvalCtx} {γ0 : GradeVec Mult} {b0 : Bool} {v : Val}
+    (h : LWSVg K γ0 b0 v) (γ' : GradeVec Mult) : LWSVg K γ' false v := by
+  cases h with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar _ => exact .vvar (by simp [GradeVec.zeros])
+  | vcap_live _ => exact .vcap_dormant
+  | vcap_dormant => exact .vcap_dormant
+  | vthunk hc => exact .vthunk (lwscg_to_anyγ_false hc γ')
+  | inl ha => exact .inl (lwsvg_to_anyγ_false ha γ')
+  | inr ha => exact .inr (lwsvg_to_anyγ_false ha γ')
+  | pair _ _ h1 h2 =>
+      exact .pair (GradeVec.add_zeros γ').symm (by simp [GradeVec.zeros]) (lwsvg_to_anyγ_false h1 γ')
+        (lwsvg_to_anyγ_false h2 (GradeVec.zeros γ'.length))
+  | fold ha => exact .fold (lwsvg_to_anyγ_false ha γ')
+theorem lwscg_to_anyγ_false {K : EvalCtx} {γ0 : GradeVec Mult} {b0 : Bool} {c : Comp}
+    (h : LWSCg K γ0 b0 c) (γ' : GradeVec Mult) : LWSCg K γ' false c := by
+  cases h with
+  | ret _ hv =>
+      exact .ret (q := 1) (gv_one_smul γ').symm (by simpa using lwsvg_to_anyγ_false hv γ')
+  | letC _ _ h1 h2 =>
+      have r1 := lwscg_to_anyγ_false h1 γ'
+      have r2 := lwscg_to_anyγ_false h2 ((0 : Mult) :: GradeVec.zeros γ'.length)
+      refine .letC (q1 := 0) (q2 := 1) (γ₁ := γ') (γ₂ := GradeVec.zeros γ'.length) ?_
+        (by simp [GradeVec.zeros]) r1 (by simpa using r2)
+      rw [show q_or_1 (1 : Mult) = 1 by simp [q_or_1], gv_one_smul]; exact (GradeVec.add_zeros γ').symm
+  | force hv => exact .force (lwsvg_to_anyγ_false hv γ')
+  | lam hM => exact .lam (q := 0) (lwscg_to_anyγ_false hM ((0 : Mult) :: γ'))
+  | app _ _ h1 h2 =>
+      have r1 := lwscg_to_anyγ_false h1 γ'
+      have r2 := lwsvg_to_anyγ_false h2 (GradeVec.zeros γ'.length)
+      refine .app (q := 1) (γ₁ := γ') (γ₂ := GradeVec.zeros γ'.length) ?_
+        (by simp [GradeVec.zeros]) r1 (by simpa using r2)
+      rw [gv_one_smul]; exact (GradeVec.add_zeros γ').symm
+  | case _ _ h1 h2 h3 =>
+      have r1 := lwsvg_to_anyγ_false h1 (GradeVec.zeros γ'.length)
+      have r2 := lwscg_to_anyγ_false h2 ((1 : Mult) :: γ')
+      have r3 := lwscg_to_anyγ_false h3 ((1 : Mult) :: γ')
+      refine .case (q := 1) (γ_v := GradeVec.zeros γ'.length) (γ_N := γ') ?_
+        (by simp [GradeVec.zeros]) (by simpa using r1) r2 r3
+      rw [gv_one_smul]; exact (GradeVec.zeros_add γ').symm
+  | split _ _ h1 h2 =>
+      have r1 := lwsvg_to_anyγ_false h1 (GradeVec.zeros γ'.length)
+      have r2 := lwscg_to_anyγ_false h2 ((1 : Mult) :: (1 : Mult) :: γ')
+      refine .split (q := 1) (γ_v := GradeVec.zeros γ'.length) (γ_N := γ') ?_
+        (by simp [GradeVec.zeros]) (by simpa using r1) r2
+      rw [gv_one_smul]; exact (GradeVec.zeros_add γ').symm
+  | unfold hv => exact .unfold (lwsvg_to_anyγ_false hv γ')
+  | perform _ _ h1 h2 =>
+      have r1 := lwsvg_to_anyγ_false h1 γ'
+      have r2 := lwsvg_to_anyγ_false h2 (GradeVec.zeros γ'.length)
+      refine .perform (q := 1) (γ_v := GradeVec.zeros γ'.length) (γ_c := γ') ?_
+        (by simp [GradeVec.zeros]) r1 (by simpa using r2)
+      rw [gv_one_smul]; exact (GradeVec.zeros_add γ').symm
+  | handleThrows hM => exact .handleThrows (qc := 0) (lwscg_to_anyγ_false hM ((0 : Mult) :: γ'))
+  | handleState hs hM =>
+      exact .handleState (qc := 0) (lwsvg_to_anyγ_false hs []) (lwscg_to_anyγ_false hM ((0 : Mult) :: γ'))
+  | handleTransaction hM => exact .handleTransaction (qc := 0) (lwscg_to_anyγ_false hM ((0 : Mult) :: γ'))
+end
+
 /-! ### §2′.8b — the q=0 β DISCHARGE `LWSCg → γ[k]=0 → LWSCk` (the rig + false-base + induction).
 
 `lwscg_to_lwsck` upgrades a coherent `LWSCg` to the substituted-var-`k`-dormant `LWSCk` (which feeds the
@@ -933,7 +1004,7 @@ private theorem smul_getD_zero {q : Mult} {γ : GradeVec Mult} {k : Nat}
     (h : (q • γ)[k]?.getD 0 = 0) : q = 0 ∨ γ[k]?.getD 0 = 0 := by
   rw [show (q • γ) = GradeVec.smul q γ from rfl, GradeVec.smul, List.getElem?_map] at h
   cases hk : γ[k]? with
-  | none => exact Or.inr (by simp)
+  | none => exact Or.inr (by simp [GradeVec.zeros])
   | some x =>
     rw [hk] at h; simp only [Option.map_some, Option.getD_some] at h
     rcases mul_eq_zero.mp h with hq | hx
@@ -1089,7 +1160,7 @@ theorem lwscg_to_lwsck {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {c : Comp} 
     exact .perform (lwsvg_to_lwsvk hzsf k hkc h1) (lwsvg_false_lwsvk k h2)
   | handleThrows h => exact .handleThrows (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
   | handleState hs h =>
-      exact .handleState (lwsvg_to_lwsvk hzsf k (by simp) hs)
+      exact .handleState (lwsvg_to_lwsvk hzsf k (by simp [GradeVec.zeros]) hs)
         (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
   | handleTransaction h => exact .handleTransaction (lwscg_to_lwsck hzsf (k + 1) (by simpa using hk) h)
 end
@@ -1103,7 +1174,7 @@ theorem lwsvg_to_dormant {K : EvalCtx} {γ : GradeVec Mult} {b : Bool} {v : Val}
   cases h with
   | vunit => exact .vunit
   | vint => exact .vint
-  | vvar _ => exact .vvar (by simp)
+  | vvar _ => exact .vvar (by simp [GradeVec.zeros])
   | vcap_live _ => exact .vcap_dormant
   | vcap_dormant => exact .vcap_dormant
   | vthunk h => exact .vthunk (lwscg_to_dormant h)
@@ -1840,7 +1911,7 @@ theorem lwscg_subst_gen {K : EvalCtx} {v : Val}
     exact .handleThrows (qc := qc) ih
   | @handleState γ b ℓ s M qc hs h =>
     simp only [Comp.substFrom, Handler.substFrom, hsh]
-    have ihs := lwsvg_subst_gen hvl hcl hzsf γ_v k (by simp) hs
+    have ihs := lwsvg_subst_gen hvl hcl hzsf γ_v k (by simp [GradeVec.zeros]) hs
     rw [Sgrade_nil] at ihs
     have ih := lwscg_subst_gen hvl hcl hzsf (0 :: γ_v) (k + 1) (cov_cons hcov) h
     rw [Sgrade_cons] at ih
@@ -2001,8 +2072,8 @@ theorem wellScoped_initial (c : Comp) (hvf : VcapFree c) {Co : CTy Eff Mult}
   -- the stack is `[]`, so `hstack : HasStack [] e C ⊥ Co` must be `nil` (`e = ⊥`, `C = Co`).
   cases hstack
   refine ⟨⊥, Co, hfocus, .nil, lwscg_of_typed true hfocus ?_, .nil, ?_⟩
-  · exact fun p hp => absurd (hvf ▸ hp) (by simp)
-  · exact ⟨trivial, fun p hp => absurd (hvf ▸ hp) (by simp), trivial⟩
+  · exact fun p hp => absurd (hvf ▸ hp) (by simp [GradeVec.zeros])
+  · exact ⟨trivial, fun p hp => absurd (hvf ▸ hp) (by simp [GradeVec.zeros]), trivial⟩
 
 /-! ### §2′.8g — SPIKE (task #48): the ⊥-row return-escape coherence (POP-focus-live slice).
 
