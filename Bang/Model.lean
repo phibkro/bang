@@ -2607,10 +2607,10 @@ inductive LiveCapsResolveC (K : EvalCtx) :
       LiveCapsResolveC K (HasCTy.split dv dN hγ)
   | unfold {γ Γ v A} {dv : HasVTy γ Γ v (VTy.mu A)} (h : LiveCapsResolveV K dv) :
       LiveCapsResolveC K (HasCTy.unfold dv)
-  | perform {γ_c γ_v Γ cv ℓ op v φ A B} {q : Mult} {dc : HasVTy γ_c Γ cv (VTy.cap ℓ)}
+  | perform {γ_c γ_v Γ cv ℓ op v φ A B} {q : Mult} (dc : HasVTy γ_c Γ cv (VTy.cap ℓ))
       {hle : EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ≤ φ}
       {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some A}
-      {hopR : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B} {dv : HasVTy γ_v Γ v A}
+      {hopR : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B} (dv : HasVTy γ_v Γ v A)
       (h : LiveCapsResolveV K dc) :
       LiveCapsResolveC K (HasCTy.perform dc hle hopA hopR dv)
   | handleThrows {γ Γ ℓ M e φ q qc A} {hopA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A}
@@ -2643,6 +2643,142 @@ inductive LiveCapsResolveC (K : EvalCtx) :
       {hle : e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ}
       {hbo : ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A} (h : LiveCapsResolveC K dM) :
       LiveCapsResolveC K (HasCTy.handleTransaction hna hnr hra hrr hwa hwr hint hcells dM hle hbo)
+end
+
+/-! ### §2′.8f″ — the GRADE-SENSITIVE lift `lwscg_of_typed_live` (the engine).
+
+`lwsvg_of_typed_dormant`/`lwscg_of_typed_dormant`: at flag `false` EVERY gate collapses and EVERY cap
+is dormant, so a typed term is `LWSVg`/`LWSCg` at flag `false` with NO caps premise (the from-typing
+mirror of `lwsvg_to_anyγ_false`, but built straight from the typing for the `q = 0` dead branches).
+
+`lwsvg_of_typed_live`/`lwscg_of_typed_live`: at flag `true`, consume `LiveCapsResolve` to discharge the
+LIVE cap leaves, and route the dead-gated (`q = 0`) value positions through the dormant builder. The
+grade-sensitive replacement for the all-caps `lwscg_of_typed` (§2′.8f) — grades = typing grades by
+construction (coherence), live caps resolve, dead caps skipped. -/
+mutual
+theorem lwsvg_of_typed_dormant {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} (d : HasVTy γ Γ v A) : LWSVg K γ false v := by
+  cases d with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | vvar _ => exact .vvar (by simp)
+  | vcap => exact .vcap_dormant
+  | vthunk hM => exact .vthunk (lwscg_of_typed_dormant hM)
+  | inl hv => exact .inl (lwsvg_of_typed_dormant hv)
+  | inr hv => exact .inr (lwsvg_of_typed_dormant hv)
+  | @pair γ γv γw Γ v w A B hv hw hγ =>
+    subst hγ
+    exact .pair rfl (by rw [hv.length_eq, hw.length_eq]) (lwsvg_of_typed_dormant hv)
+      (lwsvg_of_typed_dormant hw)
+  | fold hv => exact .fold (lwsvg_of_typed_dormant hv)
+theorem lwscg_of_typed_dormant {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {φ : Eff} {C : CTy Eff Mult} (d : HasCTy γ Γ c φ C) : LWSCg K γ false c := by
+  cases d with
+  | @ret γ γ' Γ v A q hv hγ =>
+    subst hγ; exact .ret (q := q) rfl (lwsvg_of_typed_dormant hv)
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B hM hN hγ =>
+    subst hγ
+    exact .letC (q1 := q1) (q2 := q2) rfl
+      (by have h1 := hM.length_eq; have h2 := hN.length_eq; simp only [List.length_cons] at h2; omega)
+      (lwscg_of_typed_dormant hM) (lwscg_of_typed_dormant hN)
+  | force hv => exact .force (lwsvg_of_typed_dormant hv)
+  | lam hM => exact .lam (lwscg_of_typed_dormant hM)
+  | @app γ γ₁ γ₂ Γ M v φ q A B hM hv hγ =>
+    subst hγ
+    exact .app (q := q) rfl (by rw [hM.length_eq, hv.length_eq]) (lwscg_of_typed_dormant hM)
+      (lwsvg_of_typed_dormant hv)
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C hv hN₁ hN₂ hγ =>
+    subst hγ
+    exact .case (q := q) rfl
+      (by have h1 := hv.length_eq; have h2 := hN₁.length_eq; simp only [List.length_cons] at h2; omega)
+      (lwsvg_of_typed_dormant hv) (lwscg_of_typed_dormant hN₁) (lwscg_of_typed_dormant hN₂)
+  | @split γ γ_v γ_N Γ v N φ q A B C hv hN hγ =>
+    subst hγ
+    exact .split (q := q) rfl
+      (by have h1 := hv.length_eq; have h2 := hN.length_eq; simp only [List.length_cons] at h2; omega)
+      (lwsvg_of_typed_dormant hv) (lwscg_of_typed_dormant hN)
+  | unfold hv => exact .unfold (lwsvg_of_typed_dormant hv)
+  | @perform γ_c γ_v Γ cv ℓ op v φ q A B hc hle hopA hopR hv =>
+    exact .perform (q := q) rfl (by rw [hv.length_eq, hc.length_eq]) (lwsvg_of_typed_dormant hc)
+      (lwsvg_of_typed_dormant hv)
+  | handleThrows _ _ hM _ _ => exact .handleThrows (lwscg_of_typed_dormant hM)
+  | handleState _ _ _ _ _ hs hM _ _ =>
+    exact .handleState (lwsvg_of_typed_dormant hs) (lwscg_of_typed_dormant hM)
+  | handleTransaction _ _ _ _ _ _ _ _ hM _ _ => exact .handleTransaction (lwscg_of_typed_dormant hM)
+end
+
+mutual
+theorem lwsvg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {v : Val} {A : VTy Eff Mult} (d : HasVTy γ Γ v A) (hres : LiveCapsResolveV K d) :
+    LWSVg K γ true v := by
+  -- invert `hres` (it is indexed by `d`, so its constructor pins `d`'s shape AND names the typing
+  -- sub-derivations via the `@`-pattern) — `cases d` would fail dependent elimination on the grade index.
+  cases hres with
+  | vunit => exact .vunit
+  | vint => exact .vint
+  | @vvar Γ i A hget =>
+    refine .vvar (fun _ => ?_)
+    have hi : i < Γ.length := by rw [List.getElem?_eq_some_iff] at hget; exact hget.1
+    rw [GradeVec.basis_getElem _ _ _ hi, if_pos rfl]; exact one_ne_zero
+  | vcap hr => exact .vcap_live hr
+  | @vthunk γ Γ M φ B dM h => exact .vthunk (lwscg_of_typed_live dM h)
+  | @inl γ Γ v A B dv h => exact .inl (lwsvg_of_typed_live dv h)
+  | @inr γ Γ v A B dv h => exact .inr (lwsvg_of_typed_live dv h)
+  | @pair γ γv γw Γ v w A B dv dw hγ h1 h2 =>
+    subst hγ
+    exact .pair rfl (by rw [dv.length_eq, dw.length_eq]) (lwsvg_of_typed_live dv h1)
+      (lwsvg_of_typed_live dw h2)
+  | @fold γ Γ v A dv h => exact .fold (lwsvg_of_typed_live dv h)
+theorem lwscg_of_typed_live {K : EvalCtx} {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+    {c : Comp} {φ : Eff} {C : CTy Eff Mult} (d : HasCTy γ Γ c φ C) (hres : LiveCapsResolveC K d) :
+    LWSCg K γ true c := by
+  cases hres with
+  | @ret γ γ' Γ v A q dv hγ hgate =>
+    subst hγ
+    refine .ret (q := q) rfl ?_
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @letC γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B dM dN hγ h1 h2 =>
+    subst hγ
+    exact .letC (q1 := q1) (q2 := q2) rfl
+      (by have l1 := dM.length_eq; have l2 := dN.length_eq; simp only [List.length_cons] at l2; omega)
+      (lwscg_of_typed_live dM h1) (lwscg_of_typed_live dN h2)
+  | @force γ Γ v φ B dv h => exact .force (lwsvg_of_typed_live dv h)
+  | @lam γ Γ M φ q A B dM h => exact .lam (lwscg_of_typed_live dM h)
+  | @app γ γ₁ γ₂ Γ M v φ q A B dM dv hγ h1 hgate =>
+    subst hγ
+    refine .app (q := q) rfl (by rw [dM.length_eq, dv.length_eq]) (lwscg_of_typed_live dM h1) ?_
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @case γ γ_v γ_N Γ v N₁ N₂ φ q A B C dv dN1 dN2 hγ hgate h2 h3 =>
+    subst hγ
+    refine .case (q := q) rfl
+      (by have l1 := dv.length_eq; have l2 := dN1.length_eq; simp only [List.length_cons] at l2; omega)
+      ?_ (lwscg_of_typed_live dN1 h2) (lwscg_of_typed_live dN2 h3)
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @split γ γ_v γ_N Γ v N φ q A B C dv dN hγ hgate h2 =>
+    subst hγ
+    refine .split (q := q) rfl
+      (by have l1 := dv.length_eq; have l2 := dN.length_eq; simp only [List.length_cons] at l2; omega)
+      ?_ (lwscg_of_typed_live dN h2)
+    by_cases hq : q = 0
+    · rw [show (true && decide (q ≠ 0)) = false by simp [hq]]; exact lwsvg_of_typed_dormant dv
+    · rw [show (true && decide (q ≠ 0)) = true by simp [hq]]; exact lwsvg_of_typed_live dv (hgate hq)
+  | @unfold γ Γ v A dv h => exact .unfold (lwsvg_of_typed_live dv h)
+  | perform dc dv h =>
+    -- non-`@` pattern: names only the EXPLICIT fields `dc dv h`; `q` infers from the grade `rfl`.
+    exact .perform rfl (by rw [dv.length_eq, dc.length_eq]) (lwsvg_of_typed_live dc h)
+      (lwsvg_of_typed_dormant dv)
+  | @handleThrows γ Γ ℓ M e φ q qc A hopA hint dM hle hbo h =>
+    exact .handleThrows (lwscg_of_typed_live dM h)
+  | @handleState γ Γ ℓ s₀ M e φ q qc S A hga hgr hpa hpr hint dsv dM hle hbo hsr h =>
+    exact .handleState (lwsvg_of_typed_live dsv hsr) (lwscg_of_typed_live dM h)
+  | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A hna hnr hra hrr hwa hwr hint hcells dM hle hbo h =>
+    exact .handleTransaction (lwscg_of_typed_live dM h)
 end
 
 /-- **SEED (GREEN).** A `VcapFree` closed program satisfies the GRADED invariant `WScfg` at the initial
