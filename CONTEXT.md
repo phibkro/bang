@@ -8,23 +8,28 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-27, late) — SOUNDNESS: the GRADED REGRADE skeleton is LANDED; Phase 2 (the proof) IN FLIGHT.**
-> Proof on `inc5-lr-reindex` @ `cf5cb9f` (PUSHED); docs/design on `typed-static-r1`.
-> **The path here:** the typeless `wsCfg_step` assembly was built (`c77e990`, 11/13 arms) but the POP arm WALLED — `escapeB_app`
-> machine-REFUTED the ⊥-row/B-occ approach: a cap can survive `app`-elimination into a `¬LabelOccurs` answer type while being
-> SAFE only because its GRADE is 0 (dead). So the discriminator is the **grade** (dead caps at q=0) AND **cap-id freshness**
-> (tail caps < the popped handler `g'`), NEITHER expressible in the typeless `LWSC/LWSK`. Spike #48 (`81de52b`) de-risked the
-> B-occ technique (the value-layer coherence is PROVEN, sorry-free). **So `WScfg` was REGRADED (ADR-0061):** typeless
-> `LWSC/LWSK` → graded `LWSCg/LWSKg` (gate ↔ typed grade) + stratified freshness (`CapsBelow`/`StratFresh`/`FreshCfg`).
-> **Phase 1b skeleton GREEN + gate-verified (`cf5cb9f`):** `lake build Bang.Model` 710 jobs; `diagonal` + `wsCfg_step` axioms
-> `[propext, sorryAx, Classical.choice, Quot.sound]`; witnesses untouched; REDUCE's old caps-resolve obligation ELIMINATED
-> (propagate-not-rebuild from the carried `LWSCg`). **Phase 2 IN FLIGHT (pe-wscfg)** — close 6 obligations in `Bang/Model.lean`:
-> `lwscg_returnEscape` (POP-focus: port the spike's proven value cases + close the 8 elimination/handle walls via grade-DORMANCY
-> `lwsv_dormant_stack_indep`) · `lwsvg_closed_regrade` (REDUCE workhorse, HARD-not-FALSE, refute-first) · `handleF_bocc_inv` ·
-> `lwskg_pop_fresh` (POP-tail via `StratFresh`→`CapsBelow`) · `freshCfg_step` (freshness preservation) · `lwsg_step_nonperform`.
-> `lwsg_step_dispatch` stays **#35**. → `type_safety` sorryAx-on-DISPATCH-only. Tasks: **#47** (regrade, Phase 2 active) · #48
-> (spike, done) · #44 (the superseded typeless assembly). The 4 refutation witnesses (`CohSubstRefute`/`BoccRegress`/
-> `LwscgLengthRefute`/`LwscgOfTypedRefute`) are kept, axiom-clean, do-not-weaken guards.
+> **★ ACTIVE DIRECTION (2026-06-27, late²) — SOUNDNESS: v1 `type_safety` is DOWN TO ONE KEYSTONE.**
+> Proof on `inc5-lr-reindex` @ `ac1629a` (PUSHED, build green, INDEPENDENTLY gate-verified); docs/design on `typed-static-r1`.
+> **The arc:** the typeless `wsCfg_step` POP arm walled (`escapeB_app` machine-refuted ⊥-row/B-occ — escape is grade-`q=0`-dead,
+> not row-absent), so `WScfg` was REGRADED (ADR-0061): typeless `LWSC/LWSK` → graded `LWSCg/LWSKg` + stratified freshness
+> (`CapsBelow`/`StratFresh`/`FreshCfg`). Skeleton landed (`cf5cb9f`); the v1-close grind then **closed #1 `freshCfg_step`**
+> (axiom-clean — FreshCfg gained the flat `∀p∈capsK K, p.1<g` freshness-completeness conjunct; the freshness FACT must be CARRIED,
+> since typing/LWSKg both bound nothing on dormant thunk-buried caps) and **#2 `lwskg_pop_fresh`** (axiom-clean), and **REFUTED
+> #3 `lwsvg_closed_regrade`** (scale-gates couple grade↔liveness even for CLOSED values — kept witness `d81515c`).
+> **THE REMAINING HARD KERNEL = ONE KEYSTONE (task #51): the coherent grade-sensitive subst.** Root: `WScfg` carries `LWSCg`
+> DECOUPLED from its bundled `HasCTy`, so a dead-binder (`q=0`) sub-term can be spuriously LIVE ⇒ a spurious cap only the GRADE
+> catches. Fix (carry-coherence — SOUND, no rebuild trap, no kernel change; pe-close's 4-step de-risked design): make WScfg's
+> `LWSCg` grade-aligned with `HasCTy`, seeded via `lwscg_of_typed` (caps-resolve VACUOUS at the VcapFree init), PRESERVED through
+> a **grade-sensitive coherent subst** (only LIVE caps resolve; dormant skip) — **#4-elimination-preservation and #5-assembly
+> UNIFY into this one subst.** Once it lands: eliminations close + assembly mechanical → `type_safety` sorryAx-on-DISPATCH(#35)-only.
+> De-risk: literature-confirmed UNARY grade-threading (Torczon OOPSLA'24 Cor 4.4), NOT a ⊤⊤-LR. Checkpoint `ac1629a`: #1/#2
+> axiom-clean, #3 refuted, `diagonal` = `[propext, sorryAx, Classical.choice, Quot.sound]` (sorryAx from #4/#5/#35 only). Tasks:
+> **#51** (the keystone, NEXT UNIT — fresh budget) · #47 (umbrella) · #46 (coh-layer, reopened). Kept guards:
+> `CohSubstRefute`/`LwscgLengthRefute`/`LwscgOfTypedRefute`/`BoccRegress`/`StateEscapeWitness`.
+> **★ STATE-ESCAPE = NO HOLE (this session):** a capability-via-state-cell escape is behaviourally real but HasCTy-UNTYPEABLE
+> (closed-state `HasVTy [] [] s₀ S` + VcapFree block it; witness `StateEscapeWitness`, axiom-clean) → `type_safety` true as stated.
+> Scoped capabilities (arXiv:2207.03402) is the POST-VcapFree (#18) generalization, costed in
+> `docs/notes/scoped-capabilities-for-vcapfree-drop.md` (cap-free-cell ADDITION ~1 session; full CC<:□ REPLACEMENT post-v1).
 > **⚠ ENV/INCIDENT (2026-06-27):** a shared-worktree **auto-gc corrupted `.git/objects`** (pruned ~8922 UNREACHABLE cruft; ZERO
 > live-work loss — WIP pushed to origin, `gc.auto` disabled). Triggered by the pre-commit `lake exe cache get` re-clone (#40),
 > which also left inc5's mathlib at the WRONG rev → re-pinned via symlink to main's clean `c5ea0035`. **Commit `--no-verify`
