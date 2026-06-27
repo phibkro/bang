@@ -10,8 +10,8 @@
 
 > **★ ACTIVE DIRECTION (2026-06-27) — SOUNDNESS: grade-driven-liveness engine PORTED into the diagonal + the Coh
 > layer built; **task #45 RESOLVED** (case/split scrutinee gating) — the LIVE front is now coh_step + the assembly. The COMPILER's next two hops are
-> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `c63348b` (PUSHED; `Bang.Model` green
-> save the lone `wsCfg_step` sorry). **WHERE IT STANDS:** engine (β bridge + POP wall + ⇒FocusResolves + seed)
+> DECIDED.** On `typed-static-r1` (docs/design); proof on `inc5-lr-reindex` @ `098cc98` (PUSHED; `Bang.Model` green
+> save two sorries: `lwscg_subst` + `wsCfg_step`). **WHERE IT STANDS:** engine (β bridge + POP wall + ⇒FocusResolves + seed)
 > ported to all 18 formers, `WScfg` rides the typeless `LWSV/LWSC/LWSK`; typeless restack + MINT freshness; rig
 > bounds; the **Coh graded-mirror layer** (ADR-0060 (A+) — cap-bridge untouched, coherence a separate layer); the
 > discharge rig + all non-case/split arms. **task #45 RESOLVED (2026-06-27, `c63348b`, gate-verified):** NOT the
@@ -19,10 +19,16 @@
 > untypeable) — instead the `case`/`split` scrutinee now gates at `b ∧ decide(q≠0)`, the SAME gate every other
 > scaled position (ret/app/appF) already uses across all four invariant layers (LWSC/LWSCk/LWSCp/LWSCg); it was the
 > lone scaled position that never got it. The discharge `lwscg_to_lwsck` (+ `lwsvg_to_lwsvk` + the false-base pair)
-> is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). **LIVE FRONT:** `coh_step` (~12-arm γ-preservation, the
-> multi-session crux) → the `wsCfg_step` assembly (pure wiring per opt-3's arm-map) → `type_safety`
-> sorryAx-on-DISPATCH-only (#35). Handoff:
-> `/tmp/lang-bang-handoff-2026-06-27-soundness-checkpoint.md`. **The
+> is WRITTEN + axiom-clean (⊆ {propext,Quot.sound}). **LIVE FRONT — `coh_step` reshape VALIDATED, ~24-arm grind
+> remaining:** `lwscg_subst` (graded subst-preservation) was found UNSOUND as first stated (single-grade
+> `LWSVg γ_v true v`) — a 2-arm race surfaced it: arm-2's AXIOM-CLEAN refutation (`Bang/CohSubstRefute.lean`, a kept
+> regression witness) proved it false, vindicating the reshape to `∀γ'b', LWSVg K γ' b' v` (necessary AND
+> machine-checked CONSUMABLE; `caps-resolve-in-K` is the boundary → #46). BANKED + gated: the reshaped statement +
+> graded flag-monotonicity foundation + `Sgrade_cons` binder spine + `hzsf:ZeroSumFree` (forced) + the length-free
+> Sgrade decision. REMAINING (mechanical, single-prover next session): ~4-6 length-free Sgrade lemmas + the ~24-arm
+> Sgrade induction → the `wsCfg_step` assembly (consumes #46's lift) → `type_safety` sorryAx-on-DISPATCH-only (#35).
+> Resume plan: tasks #44 (the grind) + #46 (the consumer-bridge + caps-resolve caveat). Handoff:
+> `/tmp/lang-bang-handoff-2026-06-27-cohstep-reshape.md`. **The
 > soundness arc:** inc-4 metatheory → ADR-0055 global-fresh → **ADR-0056** (the diagonal machine-checked FALSE —
 > a cap escapes a ⊥-typed program) → **ADR-0057 B-occ** → the `wsCfg_step` POP arm exposed the **deep B-occ lever
 > as machine-checked FALSE** (an arrow-guarded cap survives `app`-elimination into a `¬LabelOccurs` answer type;
