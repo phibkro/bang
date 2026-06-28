@@ -210,7 +210,7 @@ def evalD : Nat → SStore → THeap → Comp → Option (Outcome × SStore × T
   -- projection (state and txn op-sets are DISJOINT), so a label shared by both kinds resolves
   -- unambiguously — and the machine's `stateUpdate` (op-guarded {get,put}) / `txnUpdate` (op-guarded
   -- isTxnOp) stay in lockstep. Any other op, or a state/txn op with no active frame, raises (throws).
-  | Nat.succ _, σ, τ, .perform _ ℓ op v   =>
+  | Nat.succ _, σ, τ, .perform (.vcap _ ℓ) op v   =>
       if op = "get" then
         match σ.get? ℓ with
         | some s => some (.term (.ret s), σ, τ)                      -- get: return stored s, σ unchanged
@@ -338,7 +338,7 @@ def compile : Comp → Code → Code
   | .force (.vthunk M), c => compile M c
   | .app M v,           c => compile M (Instr.APP v :: c)
   | .handle h M,        c => Instr.MARK h c :: compile M (Instr.UNMARK :: c)
-  | .perform _ ℓ op v,  c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); 1a: cap ignored, OP stays label-dispatched; throws falls through to unwind
+  | .perform (.vcap _ ℓ) op v,  c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); U1 route-A: extract ℓ from the cap, OP stays label-dispatched; throws falls through to unwind
   -- case/split: erasure (`compile (case (inl v) N₁ N₂) c = compile (subst v N₁) c`) is what the
   -- calculation forces, but it is NON-structural (`subst v N₁` is not a subterm) — so, EXACTLY as
   -- `SUBST`/`APP` resolve the same non-structural `compile (subst …)`, defer it to a runtime instruction
@@ -1574,7 +1574,7 @@ theorem sim : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1586,6 +1586,7 @@ theorem sim : ∀ fe,
                 simp [Option.bind] at h
       | force a =>
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
               obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT M σ τ t σ' τ' h hs hC hT
@@ -1619,7 +1620,7 @@ theorem sim : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1627,9 +1628,13 @@ theorem sim : ∀ fe,
             | (.term .oom, _, _), h => simp [Option.bind] at h
             | (.term (.wrong a), _, _), h => simp [Option.bind] at h
             | (.raised ℓ op w, _, _), h => simp [Option.bind] at h
-      | perform _ ℓ op v =>
+      | perform cap op v =>
           -- RESUME (D1/D2/D4), OP-FIRST: get/put serviced against σ (state), txn ops against τ. Mirrored
           -- by stateUpdate (op-guard {get,put}) then txnUpdate (op-guard isTxnOp) on hs.
+          -- U1 (route-A): the cap is a value (`vcap n ℓ`); extract ℓ for the LABEL-dispatch body (a
+          -- non-vcap cap can't reduce in `evalD`, so those alternatives are vacuous via `h`).
+          obtain ⟨n, ℓ, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
+            cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
           simp only [evalD] at h
           by_cases hop : op = "get"
           · subst hop
@@ -1738,7 +1743,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1800,7 +1805,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1895,7 +1900,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -1909,6 +1914,7 @@ theorem sim : ∀ fe,
           -- ADT sum elim (Unit 6): closed-value scrutinee, PURE reduction. evalD reduces into a branch;
           -- the IH on `subst v branch` carries it; `CASE` exec re-compiles that branch (mirrors SUBST).
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | inl v =>
               simp only [evalD] at h
               obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v b) σ τ t σ' τ' h hs hC hT
@@ -1930,6 +1936,7 @@ theorem sim : ∀ fe,
       | split a b =>
           -- ADT product elim (Unit 6): DOUBLE subst (note the `shift`), mirroring the kernel.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | pair v w =>
               simp only [evalD] at h
               obtain ⟨hsf, hCf, hTf, hlenf, k⟩ :=
@@ -1947,6 +1954,7 @@ theorem sim : ∀ fe,
       | unfold a =>
           -- ADT μ elim (Unit 6): fold/unfold erase to `ret v`. Terminal — no recursion, no IH needed.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | fold v =>
               simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
               obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
@@ -1965,11 +1973,14 @@ theorem sim : ∀ fe,
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
-      | perform _ ℓ2 op2 v2 =>
+      | perform cap op2 v2 =>
           -- OP-FIRST raise: a `raised` from `up` means the op matched no resumptive frame — either a
           -- get/put with no state frame, a txn op with no txn frame, or a non-resumptive op. In ALL of
           -- these the machine's stateUpdate/txnUpdate both return none and the OP falls to the throw path.
           -- The net-effect is the identity (no store changed), so the existential HStack is `hs`.
+          -- U1 (route-A): unwrap the cap value to its label (non-vcap caps are vacuous via `h`).
+          obtain ⟨n2, ℓ2, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
+            cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
           simp only [evalD] at h
           -- A single helper closing every raise-subcase: stores unchanged ⇒ netEffect = hs, machine OP
           -- falls to unwindFind = throwOutcome.
@@ -2050,7 +2061,7 @@ theorem sim : ∀ fe,
             | (.term (.lam a), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2059,6 +2070,7 @@ theorem sim : ∀ fe,
             | (.term (.wrong a), _, _), h => simp [Option.bind] at h
       | force a =>
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
               obtain ⟨hpair, kR⟩ := ihR M σ τ ℓ op v σ' τ' h hs hC hT
@@ -2100,7 +2112,7 @@ theorem sim : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2160,7 +2172,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2204,7 +2216,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2262,7 +2274,7 @@ theorem sim : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -2272,6 +2284,7 @@ theorem sim : ∀ fe,
           -- ADT sum elim (Unit 6) raising: the chosen branch raises. `ihR` on `subst v branch` carries
           -- the at-raise triple + throwOutcome; the `CASE` exec bumps one fuel to re-compile the branch.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | inl sv =>
               simp only [evalD] at h
               obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv b) σ τ ℓ op v σ' τ' h hs hC hT
@@ -2291,6 +2304,7 @@ theorem sim : ∀ fe,
       | split a b =>
           -- ADT product elim (Unit 6) raising: DOUBLE subst, then the branch raises.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | pair sv sw =>
               simp only [evalD] at h
               obtain ⟨hpair, kR⟩ :=
@@ -2307,6 +2321,7 @@ theorem sim : ∀ fe,
       | unfold a =>
           -- ADT μ elim (Unit 6): always yields `term (ret v)` — never `raised`, so vacuous here.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | fold v => simp [evalD] at h
           | vunit => simp [evalD] at h
           | vint n => simp [evalD] at h
@@ -3616,7 +3631,7 @@ theorem run_evalD : ∀ fe,
             | (.term (.lam a), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3626,6 +3641,7 @@ theorem run_evalD : ∀ fe,
             | (.raised ℓ op w, _, _), h => simp [Option.bind] at h
       | force a =>
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
               obtain ⟨hCf, kf⟩ := ihT M σ τ t σ' τ' h K hCtx hTtx
@@ -3670,15 +3686,18 @@ theorem run_evalD : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
             | (.term .oom, _, _), h => simp [Option.bind] at h
             | (.term (.wrong a), _, _), h => simp [Option.bind] at h
             | (.raised ℓ op w, _, _), h => simp [Option.bind] at h
-      | perform _ ℓ2 op2 v2 =>
+      | perform cap op2 v2 =>
           -- OP-FIRST (mirrors evalD's up-arm + the kernel's handlesOp): get/put→σ, txnops→τ, else raise.
+          -- U1 (route-A): unwrap the cap to its label (RESIDUAL — this bridge arm is dispatch, U2/U3).
+          obtain ⟨n2, ℓ2, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
+            cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
           simp only [evalD] at h
           by_cases hop : op2 = "get"
           · subst hop
@@ -3792,7 +3811,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3829,7 +3848,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3887,7 +3906,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -3901,6 +3920,7 @@ theorem run_evalD : ∀ fe,
           -- ADT sum elim (Unit 6): the kernel `Source.step` reduces in place (Operational.lean 260-261).
           -- Mirror `force`: recurse via `ihT` on the reduced branch, then one `Source.step` bridges.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | inl v =>
               simp only [evalD] at h
               obtain ⟨hCf, kf⟩ := ihT (Comp.subst v b) σ τ t σ' τ' h K hCtx hTtx
@@ -3922,6 +3942,7 @@ theorem run_evalD : ∀ fe,
       | split a b =>
           -- ADT product elim (Unit 6): DOUBLE subst (Operational.lean 262).
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | pair v w =>
               simp only [evalD] at h
               obtain ⟨hCf, kf⟩ := ihT (Comp.subst v (Comp.subst (Val.shift w) b)) σ τ t σ' τ' h K hCtx hTtx
@@ -3939,6 +3960,7 @@ theorem run_evalD : ∀ fe,
           -- ADT μ elim (Unit 6): erases to `ret v` (Operational.lean 263). Terminal — no IH; bridge the
           -- one `Source.step` (fold/unfold) over the `ret`-terminal close, stores unchanged.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | fold v =>
               simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
               obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
@@ -3958,9 +3980,12 @@ theorem run_evalD : ∀ fe,
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
-      | perform _ ℓ2 op2 v2 =>
+      | perform cap op2 v2 =>
           -- OP-FIRST: the obligation fixes op = "raise", which is NOT get/put/txnop ⇒ evalD's up-arm
           -- falls to the final `raised ℓ2 "raise" v2` branch unconditionally; σ/τ unchanged.
+          -- U1 (route-A): unwrap the cap to its label (RESIDUAL — this bridge arm is dispatch, U2/U3).
+          obtain ⟨n2, ℓ2, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
+            cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
           simp only [evalD] at h
           by_cases hop : op2 = "get"
           · subst hop; simp only [if_pos rfl] at h
@@ -4033,7 +4058,7 @@ theorem run_evalD : ∀ fe,
             | (.term (.lam a), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4042,6 +4067,7 @@ theorem run_evalD : ∀ fe,
             | (.term (.wrong a), _, _), h => simp [Option.bind] at h
       | force a =>
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
               obtain ⟨hCf, kR⟩ := ihR M σ τ ℓ v σ' τ' h K hCtx hTtx
@@ -4101,7 +4127,7 @@ theorem run_evalD : ∀ fe,
             | (.term (.letC a b), _, _), h => simp [Option.bind] at h
             | (.term (.force a), _, _), h => simp [Option.bind] at h
             | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
             | (.term (.handle a b), _, _), h => simp [Option.bind] at h
             | (.term (.case a b d), _, _), h => simp [Option.bind] at h
             | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4144,7 +4170,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4182,7 +4208,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4220,7 +4246,7 @@ theorem run_evalD : ∀ fe,
                 | (.term (.letC a b), _, _), h => simp [Option.bind] at h
                 | (.term (.force a), _, _), h => simp [Option.bind] at h
                 | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform _ a b d), _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.handle a b), _, _), h => simp [Option.bind] at h
                 | (.term (.case a b d), _, _), h => simp [Option.bind] at h
                 | (.term (.split a b), _, _), h => simp [Option.bind] at h
@@ -4229,6 +4255,7 @@ theorem run_evalD : ∀ fe,
       | case a b d =>
           -- ADT sum elim (Unit 6) raising: branch raises; recurse via `ihR`, bridge one `Source.step`.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | inl sv =>
               simp only [evalD] at h
               obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv b) σ τ ℓ v σ' τ' h K hCtx hTtx
@@ -4250,6 +4277,7 @@ theorem run_evalD : ∀ fe,
       | split a b =>
           -- ADT product elim (Unit 6) raising: DOUBLE subst, then the branch raises.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | pair sv sw =>
               simp only [evalD] at h
               obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) σ τ ℓ v σ' τ' h K hCtx hTtx
@@ -4266,6 +4294,7 @@ theorem run_evalD : ∀ fe,
       | unfold a =>
           -- ADT μ elim (Unit 6): always `term (ret v)` — never `raised`, vacuous here.
           cases a with
+          | vcap n ℓ => simp [evalD] at h
           | fold v => simp [evalD] at h
           | vunit => simp [evalD] at h
           | vint x => simp [evalD] at h
