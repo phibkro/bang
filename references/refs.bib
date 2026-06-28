@@ -145,6 +145,33 @@
   doi     = {10.1017/S0956796817000120},
 }
 
+@inproceedings{bahr-hutton-icfp23-calculating-compilers-concurrency,
+  author    = {Bahr, Patrick and Hutton, Graham},
+  title     = {Calculating Compilers for Concurrency},
+  booktitle = {Proceedings of the ACM on Programming Languages (ICFP)},
+  volume    = 7,
+  year      = 2023,
+  % TODO: fetch PDF + verify doi. TO-FETCH (flagged 2026-06-28, route-B investigation).
+  % The CLOSEST published Bahr-Hutton work to bang's route-B handler-dispatch calculation:
+  % concurrency = scheduling/interleaving = CONTROL, the nearest calculated-compiler precedent
+  % for the cap-keyed dispatch (perform/handle/unwindFind) re-derivation. Cited as [4] in
+  % garby-haskell24 ("Calculating Compilers Effectively"), whose §6 names first-class HANDLERS
+  % as the open frontier bang occupies (README "nobody has calculated a handler compiler").
+}
+
+@techreport{ager-biernacki-danvy-midtgaard-03-interp-to-compiler-vm,
+  author      = {Ager, Mads Sig and Biernacki, Dariusz and Danvy, Olivier and Midtgaard, Jan},
+  title       = {From Interpreter to Compiler and Virtual Machine: A Functional Derivation},
+  institution = {BRICS, Department of Computer Science, University of Aarhus},
+  number      = {RS-03-14},
+  year        = 2003,
+  % TODO: fetch PDF. TO-FETCH (flagged 2026-06-28, route-B investigation).
+  % The DEFUNCTIONALIZATION/CPS route to deriving a VM from an interpreter (the alternative
+  % derivation discipline to Bahr-Hutton equational calculation). Cited as [1] in garby-haskell24.
+  % Relevant to how unwindFind's stack-search is derived (the dispatch as a defunctionalized
+  % continuation) — garby §6's "recursion operators rather than explicit induction" hint.
+}
+
 % ─── Verified compilation ────────────────────────────────────────────────────
 
 @inproceedings{benton-hur-icfp09-biorthogonality-step-indexing,
