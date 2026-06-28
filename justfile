@@ -68,10 +68,15 @@ fitness:
     bash tools/check-audit-sync.sh
     python3 tools/check-refs.py
     python3 tools/refs.py check
+    python3 tools/gen-gate-index.py --check
 
 # Reference library (refs.bib = single source of truth; index.json + the README block are derived).
 refs-index:
     python3 tools/refs.py build
+
+# Regenerate the gate-composition block in .claude/codebase-maintenance.md from the justfile recipes.
+gate-index:
+    python3 tools/gen-gate-index.py
 
 # Faceted retrieval over the library: `just refs capability-safety` (matches key/title/topic/grounds).
 refs QUERY:
