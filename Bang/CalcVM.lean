@@ -2966,38 +2966,39 @@ theorem CtxCorr_ctxNetEffect_pop_txn {σ1 : SStore} {τ1 : THeap} {n : Nat} {ℓ
       · unfold CtxTxnCorr at hT ⊢; simp only [ctxTxns, List.tail] at hT ⊢
         exact (List.cons.injEq _ _ _ _).mp hT |>.2
 
-/-- `splitAt` RECONSTRUCTS its input: `K = Kᵢ ++ handleF h :: Kₒ`. The decomposition is lossless —
-the inner prefix, the catching frame, and the outer suffix re-concatenate to `K`. Induction on `K`. -/
-theorem splitAt_reconstruct {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} :
+/-- `splitAtId` RECONSTRUCTS its input: `K = Kᵢ ++ handleF n h :: Kₒ` (route-B: the matched frame's
+IDENTITY `n` is preserved in the reconstruction — `splitAtId` matches `m = n`, so the re-installed frame
+carries `n`). The decomposition is lossless. Induction on `K`. -/
+theorem splitAtId_reconstruct {n : Nat} :
     ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {h : Handler},
-      Bang.splitAt K ℓ op = some (Kᵢ, h, Kₒ) → Kᵢ ++ Frame.handleF h :: Kₒ = K := by
+      Bang.splitAtId K n = some (Kᵢ, h, Kₒ) → Kᵢ ++ Frame.handleF n h :: Kₒ = K := by
   intro K
   induction K with
-  | nil => intro Kᵢ Kₒ h hs; simp [Bang.splitAt] at hs
+  | nil => intro Kᵢ Kₒ h hs; simp [Bang.splitAtId] at hs
   | cons fr K ih =>
     intro Kᵢ Kₒ h hs
     cases fr with
-    | handleF h0 =>
-        simp only [Bang.splitAt] at hs
-        by_cases hc : Bang.handlesOp h0 ℓ op = true
-        · rw [if_pos hc] at hs; simp only [Option.some.injEq, Prod.mk.injEq] at hs
+    | handleF m h0 =>
+        simp only [Bang.splitAtId] at hs
+        by_cases hc : m = n
+        · subst hc; rw [if_pos rfl] at hs; simp only [Option.some.injEq, Prod.mk.injEq] at hs
           obtain ⟨rfl, rfl, rfl⟩ := hs; simp
         · rw [if_neg hc] at hs
-          cases hsp : Bang.splitAt K ℓ op with
+          cases hsp : Bang.splitAtId K n with
           | none => rw [hsp] at hs; simp at hs
           | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
                       simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
                       obtain ⟨rfl, rfl, rfl⟩ := hs; simp only [List.cons_append]; rw [ih hsp]
     | letF N =>
-        simp only [Bang.splitAt] at hs
-        cases hsp : Bang.splitAt K ℓ op with
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
         | none => rw [hsp] at hs; simp at hs
         | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
                     simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
                     obtain ⟨rfl, rfl, rfl⟩ := hs; simp only [List.cons_append]; rw [ih hsp]
     | appF w =>
-        simp only [Bang.splitAt] at hs
-        cases hsp : Bang.splitAt K ℓ op with
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
         | none => rw [hsp] at hs; simp at hs
         | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
                     simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
