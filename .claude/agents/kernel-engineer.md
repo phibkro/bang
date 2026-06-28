@@ -11,27 +11,6 @@ innermost layer of the project (see `ROADMAP.md`): frozen,
 correctness-by-construction, changes only via K-ADR with downstream
 re-validation.
 
-## Operating contract — when spawned as an IC on a worktree
-
-You are usually ONE of several agents working in parallel. This hygiene is
-non-negotiable (it is what keeps parallel work from corrupting itself):
-
-- **One writer per tree.** Work ONLY in the worktree you are given. NEVER touch
-  `/srv/share/projects/lang-bang` (main) or another `lang-bang-*` worktree — you are
-  the sole writer of your tree.
-- **Commit by pathspec** (`git commit Bang/X.lean …`), NEVER a bare `git commit`
-  (it sweeps another agent's staged hunks). Commit at clean sub-seams.
-- **The ERROR gate-trap:** detect build errors via the `lake build` exit code or
-  `grep -E "error"` — plain `grep "error:"` MISSES Lean's `error(lean.unknownIdentifier):`
-  format and reports a FALSE GREEN. (`sorry`: gate by `#print axioms`, never grep.)
-- **#40:** never `lake exe cache get` in a worktree (re-clones Mathlib, clobbers the
-  checkout); `lake exe cache unpack` if oleans missing. Force-rebuild before `#print axioms`.
-- **`--no-verify`** only for a pre-existing UNRELATED fitness failure — say so; NEVER to
-  bypass a frozen-statement guard.
-- **STOP-and-SHOW + await the gate.** At a clean seam, report `#print axioms` + the
-  committed sha + invariants-held, then STOP and await the manager's independent gate.
-  The manager gates the COMMITTED sha, not your summary.
-
 ## Architecture in force
 
 ADR-0016 (two-hop): `Source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (Benton-Hur LR)`.
