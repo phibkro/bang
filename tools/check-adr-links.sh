@@ -71,14 +71,21 @@ if [ -n "$dead_links" ]; then
 fi
 
 # ── (C) refs ≡ files (FAIL on undocumented dangling) ─────────────────────────
-# Numbers mentioned as `ADR-NNNN` / `ADRs NNNN` / `ADR NNNN` anywhere in `Bang/` +
-# `docs/` (broader than just docs/decisions/ — that narrow scope is exactly how the
-# 0056/0057/0060 phantoms hid in code comments and notes with no decision record).
+# Numbers mentioned as `ADR-NNNN` / `ADRs NNNN` / `ADR NNNN` across the lang-bang
+# governance surface — `Bang/` + `docs/` + the orientation/governance docs (CONTEXT,
+# ROADMAP, CLAUDE, ONBOARDING, paths/, the maintenance instance). The earlier scope was
+# `Bang/`+`docs/` ONLY: that narrow scope is how the 0056/0057/0060 phantoms hid in
+# code/notes AND how ADR-0061 went phantom from CONTEXT/paths — the scan blind spot.
 # A ref is OK if it resolves to a file. Otherwise it must be DOCUMENTED history
 # (README "Recent culls" note or the template's `ADR-0123` placeholder) → informational.
 # Anything else is an UNDOCUMENTED dangling ref → exit 1.
+#   EXCLUDED: `.claude/skills/codebase-maintenance/instances/` — vendored dogfood copies of
+#   OTHER projects' maintenance instances (occupational-health, homelab) reference foreign
+#   ADR numbers unrelated to lang-bang's decision log; scanning them would false-match/fail.
 ref_roots=""
-for r in "$ROOT/Bang" "$ROOT/docs"; do
+for r in "$ROOT/Bang" "$ROOT/docs" "$ROOT/CONTEXT.md" "$ROOT/ROADMAP.md" \
+         "$ROOT/CLAUDE.md" "$ROOT/ONBOARDING.md" "$ROOT/paths" \
+         "$ROOT/.claude/codebase-maintenance.md"; do
   [ -e "$r" ] && ref_roots="$ref_roots $r"
 done
 refs="$(grep -rhoE 'ADRs?[- ][0-9]{4}|ADRs? [0-9]{4}' $ref_roots 2>/dev/null \
@@ -113,7 +120,7 @@ for n in $refs; do
 done
 
 if [ "$fail" -eq 0 ]; then
-  echo "adr-links: OK — index ↔ file bijection clean, in-repo links resolve, all ADR refs in Bang/+docs/ have files${noted:+ (documented-history notes above)}"
+  echo "adr-links: OK — index ↔ file bijection clean, in-repo links resolve, all ADR refs across the governance surface (Bang/+docs/+CONTEXT/ROADMAP/CLAUDE/ONBOARDING/paths) have files${noted:+ (documented-history notes above)}"
   exit 0
 fi
 exit 1
