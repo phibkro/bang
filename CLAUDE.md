@@ -102,6 +102,11 @@ language-level seam — a total prover interpreting a Turing-complete object lan
 | **`:` / `=`** | `:` introduces a binding (silent); `=` equates (live sync if RHS is a live description, sampled if `$`-forced). reactivity = equality over thunks (ADR-0005) |
 | **effect row** | the set of effects a function may perform, carried in its type after `with`. composes by union (join) |
 | **handler** | a value implementing an effect's operations; installed with a `with` block; runtimes are handlers |
+| **capability** (cap) `vcap n ℓ` | a value naming ONE specific handler *instance* — carries both its **identity** `n` and **label** `ℓ`; the selector a `perform` dispatches on |
+| **label** `ℓ` | an effect's *name* — the type-level tag the **effect row** tracks. Many handler instances can share a label |
+| **identity** `n` / `g` | a handler instance's *generative, globally-fresh* id (ADR-0055); what `idDispatch` matches at runtime (`g` = the fresh-id counter) |
+| **dispatch** | **identity-keyed** (runtime: match the cap's identity `n`), realizing **lexical** semantics (the cap names its lexically-enclosing handler) — NOT dynamic/nearest-label (the rejected stale `evalD`, ADR-0052). **Core principle: typing is by *label*, dispatch is by *identity*** — the gap the cap-escape soundness work turned on |
+| **escape** / `escapedCap` | a capability dispatched *after its handler popped* (e.g. captured in a thunk, forced past the handler). v1: a **defined fail-loud** terminal `escapedCap`, not `stuck` (ADR-0063); post-v1 made untypeable by scoped capability types |
 | **STM / TVar** | the one privileged primitive (its *concurrent* form; **v1 STM is a transactional handler** — ADR-0030, journal/retry/validation deferred to concurrency). transactional memory; TVars usable only inside `atomically` |
 | **oracle** | the verified reference an implementation is checked against |
 | **calculated VM** | the `(compile, Code, exec)` triple *derived* from `eval` by Bahr–Hutton equational reasoning |
