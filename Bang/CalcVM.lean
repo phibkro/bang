@@ -3553,6 +3553,76 @@ theorem dispatchRun_handleF_skip (f g n m : Nat) (h0 : Handler) (K : Bang.EvalCt
         Bang.Config.run_step f _ (by intro g' v' h; simp at h)]
     simp only [Source.step, dispatch_handleF_skip m h0 K n ℓ "raise" v hmn hs]
 
+/-- **`evalD_caplabelcoh`** (route-A propagation). `evalD` preserves `CapLabelCoh`/`FreshCfg` from the
+input config to the result config — contexts expressed as `ctxNetEffect K (current stores)` over a FIXED
+base `K`. This supplies the bridge's value-subst continuations (letC/app 2nd IH) their coherence premise
+WITHOUT a forward `StepStar` (which the contravariant run-IH cannot expose; `evalD_complete` is downstream
+in `Bang.Compile`). Each evalD reduction maps to a `Source.step` discharged by the committed
+`capLabelCoh_step`/`freshCfg_step` (AsmFX §7.1: the well-scoping invariant carried THROUGH each case). No
+`CtxCorr` (base-K + `ctxNetEffect` algebra suffices). Caps-only induction on `fe`. -/
+theorem evalD_caplabelcoh : ∀ (fe : Nat) (M : Comp) (g : Nat) (σ : SStore) (τ : THeap)
+    (t : Comp) (g' : Nat) (σ' : SStore) (τ' : THeap) (K : Bang.EvalCtx),
+    FreshCfg (g, ctxNetEffect K σ τ, M) → CapLabelCoh (g, ctxNetEffect K σ τ, M) →
+    evalD fe g σ τ M = some (.term t, g', σ', τ') →
+    FreshCfg (g', ctxNetEffect K σ' τ', t) ∧ CapLabelCoh (g', ctxNetEffect K σ' τ', t) := by
+  intro fe
+  induction fe with
+  | zero => intro M g σ τ t g' σ' τ' K _ _ h; simp [evalD] at h
+  | succ fe ih =>
+    intro M g σ τ t g' σ' τ' K hf hc h
+    cases M with
+    | ret v =>
+        simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+        obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+        exact ⟨hf, hc⟩
+    | letC M0 N =>
+        simp only [evalD] at h
+        cases hM : evalD fe g σ τ M0 with
+        | none => rw [hM] at h; simp at h
+        | some oM =>
+          rw [hM] at h
+          match oM, h with
+          | (.term (.ret v), g1, σ1, τ1), h =>
+              simp only [Option.bind_some] at h
+              have hcne : ∀ (s : SStore) (T : THeap),
+                  ctxNetEffect (Frame.letF N :: K) s T = Frame.letF N :: ctxNetEffect K s T :=
+                fun s T => ctxNetEffect_cons_nonframe s T (by intro n ℓ ss; simp) (by intro n ℓ Θ; simp)
+              -- PUSH: (g, ctxNetEffect K σ τ, letC M0 N) → (g, letF N :: ctxNetEffect K σ τ, M0)
+              have hpush : Source.step (g, ctxNetEffect K σ τ, Comp.letC M0 N)
+                  = some (g, Frame.letF N :: ctxNetEffect K σ τ, M0) := rfl
+              have hf1 := freshCfg_step _ _ hf hpush
+              have hc1 := capLabelCoh_step _ _ hf hc hpush
+              rw [← hcne σ τ] at hf1 hc1
+              obtain ⟨hf2, hc2⟩ := ih M0 g σ τ (.ret v) g1 σ1 τ1 (Frame.letF N :: K) hf1 hc1 hM
+              rw [hcne σ1 τ1] at hf2 hc2
+              -- POP: (g1, letF N :: ctxNetEffect K σ1 τ1, ret v) → (g1, ctxNetEffect K σ1 τ1, subst v N)
+              have hpop : Source.step (g1, Frame.letF N :: ctxNetEffect K σ1 τ1, Comp.ret v)
+                  = some (g1, ctxNetEffect K σ1 τ1, Comp.subst v N) := rfl
+              have hf3 := freshCfg_step _ _ hf2 hpop
+              have hc3 := capLabelCoh_step _ _ hf2 hc2 hpop
+              exact ih (Comp.subst v N) g1 σ1 τ1 t g' σ' τ' K hf3 hc3 h
+          | (.term (.lam a), _, _, _), h => simp [Option.bind] at h
+          | (.term (.force a), _, _, _), h => simp [Option.bind] at h
+          | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
+          | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
+          | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
+          | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
+          | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
+          | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
+          | (.term .oom, _, _, _), h => simp [Option.bind] at h
+          | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+          | (.raised n op w, _, _, _), h => simp [Option.bind] at h
+    | force w => sorry
+    | lam M0 => sorry
+    | app M0 w => sorry
+    | perform cv op v => sorry
+    | handle hh M0 => sorry
+    | case v N₁ N₂ => sorry
+    | split v N => sorry
+    | unfold v => sorry
+    | oom => simp [evalD] at h
+    | wrong s => simp [evalD] at h
+
 /-- (★bridge) the **two-part** `evalD ≡ Source.eval` simulation: a `term` part (M
 runs to its terminal under K) AND a `raised` part (M raises, dispatched by the
 kernel — the `THROW ↔ dispatch` correspondence). Subst-vs-subst, no cross-rep LR.
