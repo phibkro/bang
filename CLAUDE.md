@@ -109,7 +109,9 @@ language-level seam — a total prover interpreting a Turing-complete object lan
 | **escape** / `escapedCap` | a capability dispatched *after its handler popped* (e.g. captured in a thunk, forced past the handler). v1: a **defined fail-loud** terminal `escapedCap`, not `stuck` (ADR-0063); post-v1 made untypeable by scoped capability types |
 | **STM / TVar** | the one privileged primitive (its *concurrent* form; **v1 STM is a transactional handler** — ADR-0030, journal/retry/validation deferred to concurrency). transactional memory; TVars usable only inside `atomically` |
 | **oracle** | the verified reference an implementation is checked against |
-| **calculated VM** | the `(compile, Code, exec)` triple *derived* from `eval` by Bahr–Hutton equational reasoning |
+| **`Source.eval`** | the KERNEL — the handler-based CK semantics; the hop-1 oracle every other eval is checked against |
+| **`evalD`** (CalcVM reference) | the *middle* reference: the kernel's semantics with effects realized as explicit STATE (`SStore`+`THeap`), the Bahr–Hutton starting point. A stateful *lowering* of `Source.eval`; must agree with it (`evalD_agrees_source`). route-B re-derives it **cap-keyed** so it dispatches by identity, not nearest-label (ADR-0052) |
+| **calculated VM** | the `(compile, Code, exec)` triple *derived from `evalD`* by Bahr–Hutton equational reasoning (= the **executable spec**). The end-to-end `Agree` diff-test ties `exec∘compile` back to the kernel `Source.eval` |
 | **checkpoint (◊)** | a stable pose in the project map; see `ROADMAP.md` |
 | **PATH** | a unit of in-flight work between two checkpoints; see `paths/` |
 | **ADR** | architecture decision record; see `docs/decisions/` |
