@@ -29,8 +29,13 @@
 > fresh olean)**. NO `sorryAx`, **NO #35** — the reclassification dissolved the dispatch dependency (`type_safety'` rides
 > `hasConfigTy_step` PURE typing-preservation, not the WScfg/`lwsg_step` route). MEANINGFUL + non-vacuous: `progComp` (the refuting
 > witness) now SATISFIES `type_safety'` (`HasConfig'` ∧ `eval=.escapedCap≠.stuck`). Purely additive (old proofs + `Spec.lean`
-> untouched). **REMAINING = inc-6 (task #15), MECHANICAL:** re-point `Spec.lean`'s `HasConfig`/`progress`/`type_safety` onto the primed
-> proofs (Spec is CalcVM-blocked) + CalcVM `.escapedCap` accounting (inv #1). Vestigial `WScfg`/`returnEscape`/`#35`-machinery PARKED.
+> untouched). **REMAINING = inc-6 (task #15) — NOT mechanical (corrected 2026-06-28):** the Spec re-point (`HasConfig→HasConfig'`,
+> `progress`→3-disjunct, `type_safety`→`type_safety'_proof`) IS a mechanical tail, BUT it's blocked on the **CalcVM route-B
+> re-derivation** (the multi-session core that greens Spec's import) AND inc-5 (Compat). **inc-6 IS UNDERWAY** — scoped + literature-grounded
+> + de-risked GREEN + U1 done; **U2 (the `evalD` identity re-derivation) is running.** route-B = re-derive `evalD` as the denotation of the
+> identity kernel (a CALCULATION not a patch: signature-level `evalD` change + a ~1820-line bridge, NOT a re-key) + CalcVM `.escapedCap`
+> accounting (inv #1). SoT: **`paths/PATH-inc6-calcvm-route-b.md`** (method grounding + gated scope + U1–U4 + the green de-risk ladder).
+> Vestigial `WScfg`/`returnEscape`/`#35`-machinery PARKED.
 > **THE KEYSTONE (task #51) remains VALID** — the carrier-subst `liveCapsResolve{V,C}_subst_gen`+`…_weaken` (`da67c2d`, axiom-clean) is
 > real, but now OFF the critical path (the reclassification supersedes the `returnEscape` route it fed). Full detail: ADR-0063 +
 > `paths/PATH-inc5-lr-reindex.md`. Tasks: **#54** (Model-side block DONE; closure → inc-6) · #15 (inc-6 wiring) · #50 (reopened, post-v1) · #35/#36.
