@@ -233,11 +233,15 @@ dead-end pay rather than waste:
   nothing. A killed branch + its reason is a deliverable, the same as a closed lemma. (inc-6 raised:
   Route B was build-disproven — letC's `M0`-returns-then-`N`-raises branch needs `ihT` — which
   STEERED us to Route A; the infra was banked neutral, so the pivot cost ~zero.)
-- **Mutation = non-vacuity = counterexample, in one move.** To check a hypothesis is load-bearing
-  (not a vacuous statement / a test that can't fail): DROP it and confirm the proof BREAKS. The
-  mutated theorem being false IS the counterexample; the break IS the necessity proof — the same
-  operation (Learning-to-Disprove). Reach for it when a strengthened conclusion looks suspiciously
-  easy, or a hypothesis might be redundant.
+- **Necessity needs a refutation, NOT a build-break.** To check a hypothesis is load-bearing
+  (guard against a vacuous statement / a test that can't fail): the SOUND move is to build `False`
+  from the statement with that hypothesis dropped, and KEEP it as a committed do-not-weaken witness.
+  Do NOT "drop the hyp and watch the proof fail" — in this repo's statement/proof-separated headlines
+  (`theorem foo (…) : H1→H2→C := foo_proof`) a dropped binder type-mismatches `foo_proof` for EVERY
+  drop, load-bearing or not, so the break is uninformative (the test that can't fail). The only
+  *push-button* direction is detecting a REDUNDANT hypothesis (prove the mutant via `aesop`/`exact?`
+  — closes ⟹ redundant); necessity is the creative-refutation direction. (Learning-to-Disprove
+  formalizes the mutation; our sound analogue is the committed `H→False` witness in the axiom gate.)
 
 ## One worked exemplar — the axiom-clean close
 
