@@ -3004,75 +3004,42 @@ theorem splitAtId_reconstruct {n : Nat} :
                     simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
                     obtain ⟨rfl, rfl, rfl⟩ := hs; simp only [List.cons_append]; rw [ih hsp]
 
-/-- `splitAt` for a `get`/`put` on `ℓ` finds a `state ℓ s` frame whose stored `s` is exactly the
-nearest `ctxStates`-value (`(ctxStates K).get? ℓ`). Induction on `K`. -/
-theorem splitAt_state_value {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
-    (hop : op = "get" ∨ op = "put") :
-    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {s : Val},
-      Bang.splitAt K ℓ op = some (Kᵢ, Handler.state ℓ s, Kₒ) →
-        (ctxStates K).get? ℓ = some s := by
+/-- `splitAtId K n` landing on a `state ℓ' s` frame ⟹ the IDENTITY-keyed store has `s` at `n`:
+`(ctxStates K).get? n = some s`. Route-B: the value lookup is by identity `n`; the frame's label `ℓ'`
+is immaterial to the store projection. Induction on `K`. -/
+theorem splitAtId_state_value {n : Nat} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ' : Bang.EffectRow.Label} {s : Val},
+      Bang.splitAtId K n = some (Kᵢ, Handler.state ℓ' s, Kₒ) →
+        (ctxStates K).get? n = some s := by
   intro K
   induction K with
-  | nil => intro Kᵢ Kₒ s hs; simp [Bang.splitAt] at hs
+  | nil => intro Kᵢ Kₒ ℓ' s hs; simp [Bang.splitAtId] at hs
   | cons fr K ih =>
-    intro Kᵢ Kₒ s hs
+    intro Kᵢ Kₒ ℓ' s hs
     cases fr with
-    | handleF h0 =>
-        cases hh : h0 with
-        | state ℓ0 s0 =>
-            simp only [Bang.splitAt, hh] at hs
-            by_cases hc : fr.id = ℓ
-            · subst hc
-              have hcatch : Bang.handlesOp (Handler.state ℓ0 s0) ℓ0 op = true := by
-                cases hop with
-                | inl h => subst h; simp [Bang.handlesOp]
-                | inr h => subst h; simp [Bang.handlesOp]
-              rw [if_pos hcatch] at hs
-              simp only [Option.some.injEq, Prod.mk.injEq] at hs
-              obtain ⟨_, ⟨rfl, rfl⟩, _⟩ := hs
-              simp [ctxStates, SStore.get?, List.find?]
-            · have hnc : Bang.handlesOp (Handler.state ℓ0 s0) ℓ op = false := by
-                simp [Bang.handlesOp, hc]
-              rw [if_neg (by simp [hnc])] at hs
-              cases hsp : Bang.splitAt K ℓ op with
-              | none => rw [hsp] at hs; simp at hs
-              | some t =>
-                  obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
-                  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
-                  obtain ⟨_, rfl, _⟩ := hs
-                  have := ih hsp
-                  simpa [ctxStates, SStore.get?, List.find?, hc] using this
-        | throws ℓ0 =>
-            simp only [Bang.splitAt, hh] at hs
-            have hnc : Bang.handlesOp (Handler.throws ℓ0) ℓ op = false := by
-              cases hop with
-              | inl h => subst h; simp [Bang.handlesOp]
-              | inr h => subst h; simp [Bang.handlesOp]
-            rw [if_neg (by simp [hnc])] at hs
-            cases hsp : Bang.splitAt K ℓ op with
-            | none => rw [hsp] at hs; simp at hs
-            | some t =>
-                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
-                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
-                obtain ⟨_, rfl, _⟩ := hs
-                simpa [ctxStates] using ih hsp
-        | transaction ℓ0 Θ0 =>
-            simp only [Bang.splitAt, hh] at hs
-            have hnc : Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ op = false := by
-              cases hop with
-              | inl h => subst h; simp [Bang.handlesOp]
-              | inr h => subst h; simp [Bang.handlesOp]
-            rw [if_neg (by simp [hnc])] at hs
-            cases hsp : Bang.splitAt K ℓ op with
-            | none => rw [hsp] at hs; simp at hs
-            | some t =>
-                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
-                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
-                obtain ⟨_, rfl, _⟩ := hs
-                simpa [ctxStates] using ih hsp
+    | handleF m h0 =>
+        simp only [Bang.splitAtId] at hs
+        by_cases hc : m = n
+        · subst hc
+          rw [if_pos rfl] at hs
+          simp only [Option.some.injEq, Prod.mk.injEq] at hs
+          obtain ⟨_, rfl, _⟩ := hs
+          simp [ctxStates, SStore.get?, List.find?]
+        · rw [if_neg hc] at hs
+          cases hsp : Bang.splitAtId K n with
+          | none => rw [hsp] at hs; simp at hs
+          | some t =>
+              obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+              obtain ⟨_, rfl, _⟩ := hs
+              have hv := ih hsp
+              cases h0 with
+              | state ℓ0 s0 => simpa [ctxStates, SStore.get?, List.find?, hc] using hv
+              | throws ℓ0 => simpa [ctxStates] using hv
+              | transaction ℓ0 Θ0 => simpa [ctxStates] using hv
     | letF N =>
-        simp only [Bang.splitAt] at hs
-        cases hsp : Bang.splitAt K ℓ op with
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
         | none => rw [hsp] at hs; simp at hs
         | some t =>
             obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
@@ -3080,8 +3047,8 @@ theorem splitAt_state_value {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
             obtain ⟨_, rfl, _⟩ := hs
             simpa [ctxStates] using ih hsp
     | appF w =>
-        simp only [Bang.splitAt] at hs
-        cases hsp : Bang.splitAt K ℓ op with
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
         | none => rw [hsp] at hs; simp at hs
         | some t =>
             obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
@@ -3089,75 +3056,30 @@ theorem splitAt_state_value {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
             obtain ⟨_, rfl, _⟩ := hs
             simpa [ctxStates] using ih hsp
 
-/-- `splitAt` for a `get`/`put` on `ℓ` SUCCEEDS (finds a state frame) whenever `ℓ` has an active
-`state` frame, i.e. `(ctxStates K).get? ℓ = some s`. The existence companion of `splitAt_state_value`.
-Induction on `K`. -/
-theorem splitAt_state_some {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
-    (hop : op = "get" ∨ op = "put") :
-    ∀ {K : Bang.EvalCtx} {s : Val}, (ctxStates K).get? ℓ = some s →
-      ∃ Kᵢ Kₒ, Bang.splitAt K ℓ op = some (Kᵢ, Handler.state ℓ s, Kₒ) := by
-  intro K
-  induction K with
-  | nil => intro s hg; simp [ctxStates, SStore.get?] at hg
-  | cons fr K ih =>
-    intro s hg
-    cases fr with
-    | handleF h0 =>
-        cases h0 with
-        | state ℓ0 s0 =>
-            by_cases hc : fr.id = ℓ
-            · subst hc
-              simp only [ctxStates, SStore.get?, List.find?, decide_true, Option.map_some,
-                Option.some.injEq] at hg
-              subst hg
-              have hcatch : Bang.handlesOp (Handler.state ℓ0 s0) ℓ0 op = true := by
-                cases hop with
-                | inl h => subst h; simp [Bang.handlesOp]
-                | inr h => subst h; simp [Bang.handlesOp]
-              exact ⟨[], K, by simp only [Bang.splitAt, if_pos hcatch]⟩
-            · have hg' : (ctxStates K).get? ℓ = some s := by
-                simp only [ctxStates, SStore.get?, List.find?, hc, decide_false,
-                  Bool.false_eq_true, if_false] at hg; simpa [SStore.get?] using hg
-              obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-              have hnc : ¬ Bang.handlesOp (Handler.state ℓ0 s0) ℓ op = true := by
-                simp [Bang.handlesOp, hc]
-              exact ⟨Frame.handleF (Handler.state ℓ0 s0) :: Kᵢ, Kₒ, by
-                simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
-        | throws ℓ0 =>
-            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
-            obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-            have hnc : ¬ Bang.handlesOp (Handler.throws ℓ0) ℓ op = true := by
-              cases hop with
-              | inl h => subst h; simp [Bang.handlesOp]
-              | inr h => subst h; simp [Bang.handlesOp]
-            exact ⟨Frame.handleF (Handler.throws ℓ0) :: Kᵢ, Kₒ, by
-              simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
-        | transaction ℓ0 Θ0 =>
-            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
-            obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-            have hnc : ¬ Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ op = true := by
-              cases hop with
-              | inl h => subst h; simp [Bang.handlesOp]
-              | inr h => subst h; simp [Bang.handlesOp]
-            exact ⟨Frame.handleF (Handler.transaction ℓ0 Θ0) :: Kᵢ, Kₒ, by
-              simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
-    | letF N =>
-        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
-        obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-        exact ⟨Frame.letF N :: Kᵢ, Kₒ, by simp only [Bang.splitAt, hsp, Option.map_some]⟩
-    | appF w =>
-        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
-        obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-        exact ⟨Frame.appF w :: Kᵢ, Kₒ, by simp only [Bang.splitAt, hsp, Option.map_some]⟩
-
-/-- A `state`-`get` dispatch RESUMES in place: under `(ctxStates K).get? ℓ = some s`, the kernel finds
-the nearest `state ℓ s` frame and resumes `(K, .ret s)` — context structurally unchanged (same frame
-re-installed; `get` does not mutate). Via `splitAt_state_some` + `splitAt_reconstruct`. -/
-theorem dispatch_state_get {ℓ : Bang.EffectRow.Label} {v s : Val} {K : Bang.EvalCtx}
-    (hg : (ctxStates K).get? ℓ = some s) : Bang.dispatch K ℓ "get" v = some (K, .ret s) := by
-  obtain ⟨Kᵢ, Kₒ, hsp⟩ := splitAt_state_some (Or.inl rfl) hg
-  have hrec : Kᵢ ++ Frame.handleF (Handler.state ℓ s) :: Kₒ = K := splitAt_reconstruct hsp
-  simp only [Bang.dispatch, hsp, Option.bind_some, Bang.dispatchOn, beq_self_eq_true, if_true]
+/-- A `state`-`get` dispatch RESUMES in place (route-B). The cap resolves by IDENTITY
+(`CapResolves K n ℓ "get"` — holds by-mint: the cap `vcap n ℓ` names the handler `n`, whose label IS
+`ℓ`), and the identity-keyed store has `s` at `n`. `idDispatch` finds the `state ℓ s` frame and resumes
+`(K, .ret s)` — context structurally unchanged (`get` re-installs the same frame, does not mutate). The
+`handlesOp` label-guard is discharged by the resolution witness — NO `state_some`/`WellCounted` needed
+(the coherence comes IN via `CapResolves`, not derived from the store). Via `splitAtId_state_value` +
+`splitAtId_reconstruct`. -/
+theorem dispatch_state_get {n : Nat} {ℓ : Bang.EffectRow.Label} {v s : Val} {K : Bang.EvalCtx}
+    (hcr : Bang.CapResolves K n ℓ "get") (hg : (ctxStates K).get? n = some s) :
+    Bang.idDispatch K n ℓ "get" v = some (K, .ret s) := by
+  obtain ⟨Kᵢ, h, Kₒ, hsp, hho⟩ := hcr
+  -- a handler of `(ℓ, "get")` is a `state ℓ _` frame (throws/txn fail `handlesOp`).
+  obtain ⟨ℓ', s', rfl⟩ : ∃ ℓ' s', h = Handler.state ℓ' s' := by
+    cases h with
+    | state ℓ' s' => exact ⟨ℓ', s', rfl⟩
+    | throws _ => simp [Bang.handlesOp] at hho
+    | transaction _ _ => simp [Bang.handlesOp] at hho
+  -- the store value at `n` is the frame's `s'`; with `hg`, `s' = s`.
+  have hsv : (ctxStates K).get? n = some s' := splitAtId_state_value hsp
+  rw [hg] at hsv
+  obtain rfl : s = s' := Option.some.inj hsv
+  have hrec : Kᵢ ++ Frame.handleF n (Handler.state ℓ' s) :: Kₒ = K := splitAtId_reconstruct hsp
+  simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn,
+    beq_self_eq_true, if_true]
   rw [hrec]
 
 /-- A `state`-`put` dispatch RESUMES with the value updated: finds `state ℓ s`, reinstalls `state ℓ w`,
