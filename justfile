@@ -71,6 +71,7 @@ fitness:
     python3 tools/check-refs.py
     python3 tools/refs.py check
     python3 tools/gen-gate-index.py --check
+    python3 tools/gen-proof-state.py --check
 
 # Import-root coherence: every Bang/**/*.lean is imported in Bang.lean, except the
 # co-located `-- root-exclude:` allowlist (regression witnesses). Catches a new file
@@ -91,6 +92,12 @@ refs-index:
 # Regenerate the gate-composition block in .claude/codebase-maintenance.md from the justfile recipes.
 gate-index:
     python3 tools/gen-gate-index.py
+
+# Regenerate CONTEXT.md's proof-state block from the live axiom gate (Bang/Audit.lean
+# #print axioms + burndown + git). `--build` forces a fresh olean read (authoritative).
+# Tree-aware: reads the proof tree, writes the docs tree's CONTEXT.md.
+proof-state:
+    python3 tools/gen-proof-state.py --build
 
 # Faceted retrieval over the library: `just refs capability-safety` (matches key/title/topic/grounds).
 refs QUERY:
