@@ -464,9 +464,9 @@ def injHStack (hs : CalcVM.HStack) : HStack := hs.map injHFrame
 result value is the SAME `Bang.Val`, and the returned handler stack is the
 injection of exec's. These are what make the `opH` simulation arm a lockstep. -/
 
-theorem wStateUpdate_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) :
-    ∀ {hs : CalcVM.HStack} {r hs'}, CalcVM.stateUpdate ℓ op v hs = some (r, hs') →
-      wStateUpdate ℓ op v (injHStack hs) = some (r, injHStack hs') := by
+theorem wStateUpdate_comm (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
+    ∀ {hs : CalcVM.HStack} {r hs'}, CalcVM.stateUpdate n op v hs = some (r, hs') →
+      wStateUpdate n op v (injHStack hs) = some (r, injHStack hs') := by
   intro hs
   induction hs with
   | nil => intro r hs' h; simp [CalcVM.stateUpdate] at h
@@ -477,40 +477,42 @@ theorem wStateUpdate_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Ban
       cases hfr : fr.handler with
       | state ℓ0 s =>
           rw [hfr] at h
-          by_cases hℓ : ℓ0 = ℓ
-          · subst hℓ
+          by_cases hid : fr.id = n
+          · simp only [hid, if_pos rfl] at h
             by_cases hg : op = "get"
-            · subst hg; simp only [Prod.mk.injEq] at h
-              obtain ⟨rfl, rfl⟩ := h; simp [injHStack, injHFrame, hfr.symm]
-            · simp only [if_neg hg, if_pos rfl] at h ⊢
+            · subst hg; simp only [if_pos rfl, Prod.mk.injEq] at h
+              obtain ⟨rfl, rfl⟩ := h
+              simp [wStateUpdate, injHStack, injHFrame, hfr, hid]
+            · simp only [if_neg hg] at h
               by_cases hp : op = "put"
-              · subst hp; simp only [Prod.mk.injEq] at h
-                obtain ⟨rfl, rfl⟩ := h; simp [injHStack, injHFrame]
+              · subst hp; simp only [if_pos rfl, Prod.mk.injEq] at h
+                obtain ⟨rfl, rfl⟩ := h
+                simp [wStateUpdate, injHStack, injHFrame, hfr, hid, hg]
               · simp only [if_neg hp] at h; simp at h
-          · simp only [if_neg hℓ] at h ⊢
-            cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          · simp only [hid, if_neg hid] at h
+            cases hrec : CalcVM.stateUpdate n op v hs with
             | none => rw [hrec] at h; simp at h
             | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                         obtain ⟨rfl, rfl⟩ := h
-                        simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+                        simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr, hid]
       | throws ℓ0 =>
           rw [hfr] at h
-          cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          cases hrec : CalcVM.stateUpdate n op v hs with
           | none => rw [hrec] at h; simp at h
           | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                       obtain ⟨rfl, rfl⟩ := h
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
       | transaction ℓ0 Θ =>
           rw [hfr] at h
-          cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          cases hrec : CalcVM.stateUpdate n op v hs with
           | none => rw [hrec] at h; simp at h
           | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                       obtain ⟨rfl, rfl⟩ := h
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
 
-theorem wUnwindFind_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) :
-    ∀ {hs : CalcVM.HStack} {c' s' hs'}, CalcVM.unwindFind ℓ op hs = some (c', s', hs') →
-      wUnwindFind ℓ op (injHStack hs) = some (lowerCode c', injStack s', injHStack hs') := by
+theorem wUnwindFind_comm (n : Nat) (op : Bang.OpId) :
+    ∀ {hs : CalcVM.HStack} {c' s' hs'}, CalcVM.unwindFind n op hs = some (c', s', hs') →
+      wUnwindFind n op (injHStack hs) = some (lowerCode c', injStack s', injHStack hs') := by
   intro hs
   induction hs with
   | nil => intro c' s' hs' h; simp [CalcVM.unwindFind] at h
@@ -521,12 +523,12 @@ theorem wUnwindFind_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) :
       cases hfr : fr.handler with
       | throws ℓ0 =>
           rw [hfr] at h
-          by_cases hcond : ℓ0 = ℓ ∧ op = "raise"
+          by_cases hcond : fr.id = n ∧ op = "raise"
           · simp only [if_pos hcond] at h ⊢
             simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl, rfl⟩ := h; simp [injHStack, injHFrame]
           · simp only [if_neg hcond] at h ⊢
-            cases hrec : CalcVM.unwindFind ℓ op hs with
+            cases hrec : CalcVM.unwindFind n op hs with
             | none => rw [hrec] at h; simp at h
             | some p => obtain ⟨pc, ps, phs⟩ := p
                         rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
@@ -534,7 +536,7 @@ theorem wUnwindFind_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) :
                         simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
       | state ℓ0 s =>
           rw [hfr] at h
-          cases hrec : CalcVM.unwindFind ℓ op hs with
+          cases hrec : CalcVM.unwindFind n op hs with
           | none => rw [hrec] at h; simp at h
           | some p => obtain ⟨pc, ps, phs⟩ := p
                       rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
@@ -542,7 +544,7 @@ theorem wUnwindFind_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) :
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
       | transaction ℓ0 Θ =>
           rw [hfr] at h
-          cases hrec : CalcVM.unwindFind ℓ op hs with
+          cases hrec : CalcVM.unwindFind n op hs with
           | none => rw [hrec] at h; simp at h
           | some p => obtain ⟨pc, ps, phs⟩ := p
                       rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
@@ -792,21 +794,23 @@ theorem compile_ok_mem : ∀ (M : Comp) {c : CalcVM.Code}, (∀ i ∈ c, InstrOk
       rcases hi with rfl | hi
       · exact trivial
       · exact hc i hi
-  | .perform _ ℓ op v, c, hc => by
+  | .perform cap op v, c, hc => by
+      -- route-B: `compile (perform (vcap n ℓ) op v) c = OP n op v :: c` (OP is InstrOk), else `= c`.
+      intro i hi
+      cases cap with
+      | vcap m ℓ =>
+          simp only [CalcVM.compile, List.mem_cons] at hi
+          rcases hi with rfl | hi
+          · exact trivial
+          · exact hc i hi
+      | _ => exact hc i (by simpa only [CalcVM.compile] using hi)
+  | .handle hh M, c, hc => by
+      -- route-B: `compile (handle hh M) c = HANDLE hh M :: c` — DEFERS the raw body (no recursive
+      -- compile of M), and `InstrOk (HANDLE …) = True`, so the arm is the same shape as `.perform`/`.case`.
       intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
       rcases hi with rfl | hi
       · exact trivial
       · exact hc i hi
-  | .handle hh M, c, hc => by
-      intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
-      rcases hi with rfl | hi
-      · -- the MARK: savedCode = c is CodeOk (from hc via the iff); no handler constraint now
-        exact (CodeOk_iff_forall c).mpr hc
-      · refine compile_ok_mem M ?_ i hi
-        intro j hj; simp only [List.mem_cons] at hj
-        rcases hj with rfl | hj
-        · exact trivial
-        · exact hc j hj
   | .case w N₁ N₂, c, hc => by
       intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
       rcases hi with rfl | hi
@@ -890,15 +894,15 @@ def HFrameOk (fr : CalcVM.HFrame) : Prop := CodeOk fr.savedCode
 def HStackOk (hs : CalcVM.HStack) : Prop := ∀ fr ∈ hs, HFrameOk fr
 
 theorem exec_wexec_sim :
-    ∀ (f : Nat) (code : CalcVM.Code) (s s' : CalcVM.Stack) (hs : CalcVM.HStack),
+    ∀ (f g : Nat) (code : CalcVM.Code) (s s' : CalcVM.Stack) (hs : CalcVM.HStack),
       CodePure code → StackPure s → HStackPure hs →
-      CalcVM.exec f code s hs = some s' →
-      wexec f (lowerCode code) (injStack s) (injHStack hs) = some (injStack s') := by
+      CalcVM.exec f g code s hs = some s' →
+      wexec f g (lowerCode code) (injStack s) (injHStack hs) = some (injStack s') := by
   intro f
   induction f with
-  | zero => intro code s s' hs _ _ _ h; simp [CalcVM.exec] at h
+  | zero => intro g code s s' hs _ _ _ h; simp [CalcVM.exec] at h
   | succ f ih =>
-    intro code s s' hs hpure hsp hsph h
+    intro g code s s' hs hpure hsp hsph h
     cases code with
     | nil =>
         simp only [CalcVM.exec, Option.some.injEq] at h; subst h
@@ -911,7 +915,7 @@ theorem exec_wexec_sim :
             simp only [CalcVM.exec] at h
             have hv : Val.Pure v := by simpa only [InstrPure] using hi
             simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
-            exact ih c (.ret v :: s) s' hs hc
+            exact ih g c (.ret v :: s) s' hs hc
               (fun t ht => by
                 rcases List.mem_cons.mp ht with rfl | ht
                 · simpa only [TerminalPure] using hv
@@ -920,7 +924,7 @@ theorem exec_wexec_sim :
             simp only [CalcVM.exec] at h
             have hM : Comp.Pure M := by simpa only [InstrPure] using hi
             simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
-            exact ih c (.lam M :: s) s' hs hc
+            exact ih g c (.lam M :: s) s' hs hc
               (fun t ht => by
                 rcases List.mem_cons.mp ht with rfl | ht
                 · simpa only [TerminalPure] using hM
@@ -941,9 +945,9 @@ theorem exec_wexec_sim :
                       have := hsp (.ret v) (by simp); simpa only [TerminalPure] using this
                     have hsp0 : StackPure s0 := fun t ht => hsp t (List.mem_cons_of_mem _ ht)
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
+                    have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
                         = some (injStack s') :=
-                      ih _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
+                      ih g _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
                     simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
                     rw [compileV_recoverV]
                     simpa [injStack] using key
@@ -960,9 +964,9 @@ theorem exec_wexec_sim :
                       have := hsp (.lam N) (by simp); simpa only [TerminalPure] using this
                     have hsp0 : StackPure s0 := fun t ht => hsp t (List.mem_cons_of_mem _ ht)
                     have hpu : Comp.Pure (Comp.subst v N) := subst_pure hv hN
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
+                    have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
                         = some (injStack s') :=
-                      ih _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
+                      ih g _ s0 s' hs (compile_pure hpu hc) hsp0 hsph h
                     simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
                     simpa [injStack] using key
                 | _ => simp at h
@@ -974,15 +978,15 @@ theorem exec_wexec_sim :
             | inl v =>
                 have hpu : Comp.Pure (Comp.subst v N₁) :=
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.1
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
+                have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih g _ s s' hs (compile_pure hpu hc) hsp hsph h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | inr v =>
                 have hpu : Comp.Pure (Comp.subst v N₂) :=
                   subst_pure (by simpa only [Val.Pure] using hP.1) hP.2.2
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
+                have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih g _ s s' hs (compile_pure hpu hc) hsp hsph h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
@@ -994,8 +998,8 @@ theorem exec_wexec_sim :
                 have hpu : Comp.Pure (Comp.subst v (Comp.subst (Val.shift u) N)) := by
                   have hvw : Val.Pure v ∧ Val.Pure u := by simpa only [Val.Pure] using hP.1
                   exact subst_pure hvw.1 (subst_pure (Val.shiftFrom_pure 0 hvw.2) hP.2)
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih _ s s' hs (compile_pure hpu hc) hsp hsph h
+                have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih g _ s s' hs (compile_pure hpu hc) hsp hsph h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
@@ -1024,8 +1028,8 @@ theorem stateUpdate_hstackOk :
       cases hfrh : fr.handler with
       | state ℓ0 s =>
           rw [hfrh] at h
-          by_cases hℓ : ℓ0 = ℓ
-          · subst hℓ
+          by_cases hid : fr.id = ℓ
+          · simp only [hid, if_pos rfl] at h
             by_cases hg : op = "get"
             · subst hg; simp only [if_pos rfl, Option.some.injEq, Prod.mk.injEq] at h
               obtain ⟨_, rfl⟩ := h; exact hsh
@@ -1037,7 +1041,7 @@ theorem stateUpdate_hstackOk :
                 · exact hfr   -- savedCode unchanged by a put (only the handler value swaps)
                 · exact hsh0 fr2 hfr2
               · simp only [if_neg hp] at h; simp at h
-          · simp only [if_neg hℓ] at h
+          · simp only [hid, if_neg hid] at h
             cases hrec : CalcVM.stateUpdate ℓ op v hs with
             | none => rw [hrec] at h; simp at h
             | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
@@ -1080,16 +1084,16 @@ theorem txnUpdate_hstackOk :
       cases hfrh : fr.handler with
       | transaction ℓ0 Θ =>
           rw [hfrh] at h
-          by_cases hℓ : ℓ0 = ℓ
-          · subst hℓ
+          by_cases hid : fr.id = ℓ
+          · simp only [hid, if_pos rfl] at h
             by_cases ht : CalcVM.isTxnOp op
-            · simp only [if_pos rfl, ht, if_true] at h
+            · simp only [ht, if_true] at h
               obtain ⟨_, rfl⟩ := h
               intro fr2 hfr2; rcases List.mem_cons.mp hfr2 with rfl | hfr2
               · exact hfr   -- savedCode unchanged (only the txn heap Θ swaps)
               · exact hsh0 fr2 hfr2
-            · simp only [if_pos rfl, ht, if_false] at h; simp at h
-          · simp only [if_neg hℓ] at h
+            · simp only [ht, if_false] at h; simp at h
+          · simp only [hid, if_neg hid] at h
             cases hrec : CalcVM.txnUpdate ℓ op v hs with
             | none => rw [hrec] at h; simp at h
             | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
@@ -1117,9 +1121,9 @@ theorem txnUpdate_hstackOk :
                       · exact ih hsh0 hrec fr2 hfr2
 
 /-- `wStateUpdate = none` whenever `stateUpdate = none` (structurally identical helpers). -/
-theorem wStateUpdate_comm_none (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) :
-    ∀ {hs : CalcVM.HStack}, CalcVM.stateUpdate ℓ op v hs = none →
-      wStateUpdate ℓ op v (injHStack hs) = none := by
+theorem wStateUpdate_comm_none (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
+    ∀ {hs : CalcVM.HStack}, CalcVM.stateUpdate n op v hs = none →
+      wStateUpdate n op v (injHStack hs) = none := by
   intro hs
   induction hs with
   | nil => intro _; rfl
@@ -1130,35 +1134,35 @@ theorem wStateUpdate_comm_none (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v 
       cases hfr : fr.handler with
       | state ℓ0 s =>
           simp only [hfr] at h ⊢
-          by_cases hℓ : ℓ0 = ℓ
-          · subst hℓ
+          by_cases hid : fr.id = n
+          · simp only [hid, if_pos rfl] at h ⊢
             by_cases hg : op = "get"
             · subst hg; simp at h
-            · simp only [if_neg hg] at h
+            · simp only [if_neg hg] at h ⊢
               by_cases hp : op = "put"
               · subst hp; simp at h
-              · simp only [if_pos rfl, if_neg hg, if_neg hp] at h ⊢; rfl
-          · simp only [if_neg hℓ] at h ⊢
-            cases hrec : CalcVM.stateUpdate ℓ op v hs with
+              · simp only [if_neg hp] at h ⊢; rfl
+          · simp only [hid, if_neg hid] at h ⊢
+            cases hrec : CalcVM.stateUpdate n op v hs with
             | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
             | some p => rw [hrec] at h; simp at h
       | throws ℓ0 =>
           simp only [hfr] at h ⊢
-          cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          cases hrec : CalcVM.stateUpdate n op v hs with
           | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
           | some p => rw [hrec] at h; simp at h
       | transaction ℓ0 Θ =>
           simp only [hfr] at h ⊢
-          cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          cases hrec : CalcVM.stateUpdate n op v hs with
           | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
           | some p => rw [hrec] at h; simp at h
 
 /-- `wTxnUpdate` mirrors `txnUpdate` under `injHStack` (the resume case): the serviced value
 and the threaded-heap frame stack are the SAME, modulo injection. The `some`-commutation
 the txn-resume OP arm rides. -/
-theorem wTxnUpdate_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) :
-    ∀ {hs : CalcVM.HStack} {r hs'}, CalcVM.txnUpdate ℓ op v hs = some (r, hs') →
-      wTxnUpdate ℓ op v (injHStack hs) = some (r, injHStack hs') := by
+theorem wTxnUpdate_comm (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
+    ∀ {hs : CalcVM.HStack} {r hs'}, CalcVM.txnUpdate n op v hs = some (r, hs') →
+      wTxnUpdate n op v (injHStack hs) = some (r, injHStack hs') := by
   intro hs
   induction hs with
   | nil => intro r hs' h; simp [CalcVM.txnUpdate] at h
@@ -1169,29 +1173,29 @@ theorem wTxnUpdate_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.
       cases hfr : fr.handler with
       | transaction ℓ0 Θ =>
           simp only [hfr] at h ⊢
-          by_cases hℓ : ℓ0 = ℓ
-          · subst hℓ
+          by_cases hid : fr.id = n
+          · simp only [hid, if_pos rfl] at h ⊢
             by_cases ht : CalcVM.isTxnOp op
-            · simp only [if_pos rfl, ht, if_true] at h ⊢
+            · simp only [ht, if_true] at h ⊢
               obtain ⟨rfl, rfl⟩ := h
               simp [injHStack, injHFrame, hfr]
-            · simp only [if_pos rfl, ht, if_false] at h; simp at h
-          · simp only [if_neg hℓ] at h ⊢
-            cases hrec : CalcVM.txnUpdate ℓ op v hs with
+            · simp only [ht, if_false] at h; simp at h
+          · simp only [hid, if_neg hid] at h ⊢
+            cases hrec : CalcVM.txnUpdate n op v hs with
             | none => rw [hrec] at h; simp at h
             | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                         obtain ⟨rfl, rfl⟩ := h
                         simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
       | state ℓ0 s =>
           simp only [hfr] at h ⊢
-          cases hrec : CalcVM.txnUpdate ℓ op v hs with
+          cases hrec : CalcVM.txnUpdate n op v hs with
           | none => rw [hrec] at h; simp at h
           | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                       obtain ⟨rfl, rfl⟩ := h
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
       | throws ℓ0 =>
           simp only [hfr] at h ⊢
-          cases hrec : CalcVM.txnUpdate ℓ op v hs with
+          cases hrec : CalcVM.txnUpdate n op v hs with
           | none => rw [hrec] at h; simp at h
           | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                       obtain ⟨rfl, rfl⟩ := h
@@ -1199,9 +1203,9 @@ theorem wTxnUpdate_comm (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.
 
 /-- `wTxnUpdate = none` whenever `txnUpdate = none`. The `none`-commutation the dispatch needs
 to fall through from txn to abort. -/
-theorem wTxnUpdate_comm_none (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Bang.Val) :
-    ∀ {hs : CalcVM.HStack}, CalcVM.txnUpdate ℓ op v hs = none →
-      wTxnUpdate ℓ op v (injHStack hs) = none := by
+theorem wTxnUpdate_comm_none (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
+    ∀ {hs : CalcVM.HStack}, CalcVM.txnUpdate n op v hs = none →
+      wTxnUpdate n op v (injHStack hs) = none := by
   intro hs
   induction hs with
   | nil => intro _; rfl
@@ -1212,23 +1216,23 @@ theorem wTxnUpdate_comm_none (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : 
       cases hfr : fr.handler with
       | transaction ℓ0 Θ =>
           simp only [hfr] at h ⊢
-          by_cases hℓ : ℓ0 = ℓ
-          · subst hℓ
+          by_cases hid : fr.id = n
+          · simp only [hid, if_pos rfl] at h ⊢
             by_cases ht : CalcVM.isTxnOp op
-            · simp only [if_pos rfl, ht, if_true] at h; simp at h
-            · simp only [if_pos rfl, ht, if_false] at h ⊢; rfl
-          · simp only [if_neg hℓ] at h ⊢
-            cases hrec : CalcVM.txnUpdate ℓ op v hs with
+            · simp only [ht, if_true] at h; simp at h
+            · simp only [ht, if_false] at h ⊢; rfl
+          · simp only [hid, if_neg hid] at h ⊢
+            cases hrec : CalcVM.txnUpdate n op v hs with
             | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
             | some p => rw [hrec] at h; simp at h
       | state ℓ0 s =>
           simp only [hfr] at h ⊢
-          cases hrec : CalcVM.txnUpdate ℓ op v hs with
+          cases hrec : CalcVM.txnUpdate n op v hs with
           | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
           | some p => rw [hrec] at h; simp at h
       | throws ℓ0 =>
           simp only [hfr] at h ⊢
-          cases hrec : CalcVM.txnUpdate ℓ op v hs with
+          cases hrec : CalcVM.txnUpdate n op v hs with
           | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
           | some p => rw [hrec] at h; simp at h
 
@@ -1247,7 +1251,7 @@ theorem unwindFind_savedCode_codeOk :
       cases hfrh : fr.handler with
       | throws ℓ0 =>
           rw [hfrh] at h
-          by_cases hcatch : ℓ0 = ℓ ∧ op = "raise"
+          by_cases hcatch : fr.id = ℓ ∧ op = "raise"
           · simp only [if_pos hcatch, Option.some.injEq] at h
             obtain ⟨rfl, _, _⟩ := h; exact hfr
           · simp only [if_neg hcatch] at h; exact ih hsh0 h
@@ -1267,7 +1271,7 @@ theorem unwindFind_hstackOk :
       cases hfrh : fr.handler with
       | throws ℓ0 =>
           rw [hfrh] at h
-          by_cases hcatch : ℓ0 = ℓ ∧ op = "raise"
+          by_cases hcatch : fr.id = ℓ ∧ op = "raise"
           · simp only [if_pos hcatch, Option.some.injEq] at h
             obtain ⟨_, _, rfl⟩ := h; exact hsh0
           · simp only [if_neg hcatch] at h; exact ih hsh0 h
@@ -1286,15 +1290,15 @@ state-resume / txn-resume / abort, EXEC-IDENTICAL, discharged via the commutatio
 is a definitional lockstep under the injection. `THROW` is excluded by `InstrOk` (`compile`
 never emits it). The operand stack is unconstrained (injected pointwise by `injStack`). -/
 theorem exec_wexec_sim_ok :
-    ∀ (f : Nat) (code : CalcVM.Code) (s s' : CalcVM.Stack) (hs : CalcVM.HStack),
+    ∀ (f g : Nat) (code : CalcVM.Code) (s s' : CalcVM.Stack) (hs : CalcVM.HStack),
       CodeOk code → HStackOk hs →
-      CalcVM.exec f code s hs = some s' →
-      wexec f (lowerCode code) (injStack s) (injHStack hs) = some (injStack s') := by
+      CalcVM.exec f g code s hs = some s' →
+      wexec f g (lowerCode code) (injStack s) (injHStack hs) = some (injStack s') := by
   intro f
   induction f with
-  | zero => intro code s s' hs _ _ h; simp [CalcVM.exec] at h
+  | zero => intro g code s s' hs _ _ h; simp [CalcVM.exec] at h
   | succ f ih =>
-    intro code s s' hs hok hsh h
+    intro g code s s' hs hok hsh h
     cases code with
     | nil =>
         simp only [CalcVM.exec, Option.some.injEq] at h; subst h
@@ -1307,11 +1311,11 @@ theorem exec_wexec_sim_ok :
         | RET v =>
             simp only [CalcVM.exec] at h
             simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
-            exact ih c (.ret v :: s) s' hs hc hsh h
+            exact ih g c (.ret v :: s) s' hs hc hsh h
         | LAMI M =>
             simp only [CalcVM.exec] at h
             simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
-            exact ih c (.lam M :: s) s' hs hc hsh h
+            exact ih g c (.lam M :: s) s' hs hc hsh h
         | SUBST N =>
             simp only [CalcVM.exec] at h
             cases s with
@@ -1319,8 +1323,8 @@ theorem exec_wexec_sim_ok :
             | cons hd s0 =>
                 cases hd with
                 | ret v =>
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
-                        = some (injStack s') := ih _ s0 s' hs (compile_ok _ hc) hsh h
+                    have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
+                        = some (injStack s') := ih g _ s0 s' hs (compile_ok _ hc) hsh h
                     simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
                     rw [compileV_recoverV]
                     simpa [injStack] using key
@@ -1332,8 +1336,8 @@ theorem exec_wexec_sim_ok :
             | cons hd s0 =>
                 cases hd with
                 | lam N =>
-                    have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
-                        = some (injStack s') := ih _ s0 s' hs (compile_ok _ hc) hsh h
+                    have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
+                        = some (injStack s') := ih g _ s0 s' hs (compile_ok _ hc) hsh h
                     simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
                     simpa [injStack] using key
                 | _ => simp at h
@@ -1341,13 +1345,13 @@ theorem exec_wexec_sim_ok :
             simp only [CalcVM.exec] at h
             cases w with
             | inl v =>
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih _ s s' hs (compile_ok _ hc) hsh h
+                have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | inr v =>
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih _ s s' hs (compile_ok _ hc) hsh h
+                have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
@@ -1355,20 +1359,26 @@ theorem exec_wexec_sim_ok :
             simp only [CalcVM.exec] at h
             cases w with
             | pair v u =>
-                have key : wexec f (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih _ s s' hs (compile_ok _ hc) hsh h
+                have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) (injHStack hs)
+                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
-        | MARK hh cr =>
-            have hmark : CodeOk cr := by simpa only [InstrOk] using hi
+        -- route-B HANDLE (the spike-proven mint arm): exec mints id:=g, recurses at g+1, pushes
+        -- {id:=g,…}; wexec's markH arm does the IDENTICAL mint; injHFrame carries id:=g, so the pushed
+        -- frame is DEFINITIONALLY injHStack-related and the IH at g+1 on the recompiled body closes.
+        | HANDLE hh M =>
             simp only [CalcVM.exec] at h
             simp only [lowerCode, lowerInstr, wexec]
-            have hsh' : HStackOk ({ handler := hh, savedCode := cr, savedStack := s } :: hs) := by
+            have hcUnmark : CodeOk (CalcVM.Instr.UNMARK :: c) := ⟨trivial, hc⟩
+            have hsh' : HStackOk ({ id := g, handler := hh, savedCode := c, savedStack := s } :: hs) := by
               intro fr hfr; rcases List.mem_cons.mp hfr with rfl | hfr
-              · exact hmark
+              · exact hc
               · exact hsh fr hfr
-            have key := ih c s s' _ hc hsh' h
+            have key := ih (g+1)
+              (CalcVM.compile (Comp.subst (.vcap g hh.label) M) (CalcVM.Instr.UNMARK :: c))
+              s s' ({ id := g, handler := hh, savedCode := c, savedStack := s } :: hs)
+              (compile_ok _ hcUnmark) hsh' h
             simpa only [injHStack, injHFrame, List.map_cons] using key
         | UNMARK =>
             simp only [CalcVM.exec] at h
@@ -1377,45 +1387,45 @@ theorem exec_wexec_sim_ok :
             | cons fr hs' =>
                 have hsh' : HStackOk hs' := fun fr2 hfr2 => hsh fr2 (List.mem_cons_of_mem _ hfr2)
                 simp only [lowerCode, lowerInstr, wexec, injHStack, List.map_cons]
-                exact ih c s s' hs' hc hsh' h
-        | OP ℓ op v =>
-            -- 3-way dispatch, EXEC-IDENTICAL: stateUpdate → txnUpdate → unwindFind.
+                exact ih g c s s' hs' hc hsh' h
+        | OP n op v =>
+            -- 3-way dispatch, EXEC-IDENTICAL: stateUpdate → txnUpdate → unwindFind, by identity n.
             simp only [CalcVM.exec] at h
             simp only [lowerCode, lowerInstr, wexec]
-            cases hsu : CalcVM.stateUpdate ℓ op v hs with
+            cases hsu : CalcVM.stateUpdate n op v hs with
             | some p =>
                 obtain ⟨r, hs'⟩ := p
                 rw [hsu] at h; simp only at h
-                rw [wStateUpdate_comm ℓ op v hsu]
+                rw [wStateUpdate_comm n op v hsu]
                 have hsh' : HStackOk hs' := stateUpdate_hstackOk hsh hsu
-                have key := ih c (.ret r :: s) s' hs' hc hsh' h
+                have key := ih g c (.ret r :: s) s' hs' hc hsh' h
                 simpa only [injStack, injTerminal, List.map_cons] using key
             | none =>
                 rw [hsu] at h
-                rw [wStateUpdate_comm_none ℓ op v hsu]
-                cases htu : CalcVM.txnUpdate ℓ op v hs with
+                rw [wStateUpdate_comm_none n op v hsu]
+                cases htu : CalcVM.txnUpdate n op v hs with
                 | some p =>
                     obtain ⟨r, hs'⟩ := p
                     rw [htu] at h; simp only at h
-                    rw [wTxnUpdate_comm ℓ op v htu]
+                    rw [wTxnUpdate_comm n op v htu]
                     have hsh' : HStackOk hs' := txnUpdate_hstackOk hsh htu
-                    have key := ih c (.ret r :: s) s' hs' hc hsh' h
+                    have key := ih g c (.ret r :: s) s' hs' hc hsh' h
                     simpa only [injStack, injTerminal, List.map_cons] using key
                 | none =>
                     rw [htu] at h; simp only at h
-                    rw [wTxnUpdate_comm_none ℓ op v htu]
-                    cases huf : CalcVM.unwindFind ℓ op hs with
+                    rw [wTxnUpdate_comm_none n op v htu]
+                    cases huf : CalcVM.unwindFind n op hs with
                     | some q =>
                         obtain ⟨c', s2, hs2⟩ := q
                         rw [huf] at h; simp only at h
-                        rw [wUnwindFind_comm ℓ op huf]
+                        rw [wUnwindFind_comm n op huf]
                         have hsh2 : HStackOk hs2 := unwindFind_hstackOk hsh huf
                         have hcok2 : CodeOk c' := unwindFind_savedCode_codeOk hsh huf
-                        have key := ih c' (.ret v :: s2) s' hs2 hcok2 hsh2 h
+                        have key := ih g c' (.ret v :: s2) s' hs2 hcok2 hsh2 h
                         simpa only [injStack, injTerminal, List.map_cons] using key
                     | none =>
                         rw [huf] at h; simp at h
-        | THROW ℓ op v => exact absurd hi (by simp [InstrOk])
+        | THROW n op v => exact absurd hi (by simp [InstrOk])
 
 /-! ### Structural predicates (`WellTyped`, `MentionsLocal`)
 
@@ -1489,15 +1499,15 @@ theorem lowerCode_no_locals (code : CalcVM.Code) (j : Wasmfx.Instr)
     | LAMI M  => simp only [lowerCode, lowerInstr, List.mem_cons] at h
                  rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
                  · exact ih h
-    | MARK h0 cr => simp only [lowerCode, lowerInstr, List.mem_cons] at h
-                    rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
-                    · exact ih h
     | UNMARK  => simp only [lowerCode, lowerInstr, List.mem_cons] at h
                  rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
                  · exact ih h
-    | OP ℓ op v => simp only [lowerCode, lowerInstr, List.mem_cons] at h
+    | OP n op v => simp only [lowerCode, lowerInstr, List.mem_cons] at h
                    rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
                    · exact ih h
+    -- route-B HANDLE is a SUBSUMING singleton (`[markH h M c]`, the deferred-recompile rep) — not a local.
+    | HANDLE h0 M => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
+                     exact ⟨by intro k; simp, by intro k; simp⟩
     -- residual opcodes: a SINGLE subsuming instr (threaded-cont rep) — not a local.
     | SUBST N => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
                  exact ⟨by intro k; simp, by intro k; simp⟩
