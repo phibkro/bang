@@ -3082,65 +3082,50 @@ theorem dispatch_state_get {n : Nat} {ℓ : Bang.EffectRow.Label} {v s : Val} {K
     beq_self_eq_true, if_true]
   rw [hrec]
 
-/-- A `state`-`put` dispatch RESUMES with the value updated: finds `state ℓ s`, reinstalls `state ℓ w`,
-resumes `(updateCtxStates K ((ctxStates K).put ℓ w), .ret unit)` — the context `K` with ℓ's nearest
-state frame's value set to `w`. Induction on `K` (mirroring `splitAt`'s walk + `dispatchOn` put). -/
-theorem updateCtxStates_put_split {ℓ : Bang.EffectRow.Label} {w : Val} :
-    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {s : Val},
-      Bang.splitAt K ℓ "put" = some (Kᵢ, Handler.state ℓ s, Kₒ) →
-        updateCtxStates K ((ctxStates K).put ℓ w) = Kᵢ ++ Frame.handleF (Handler.state ℓ w) :: Kₒ := by
+/-- A `state`-`put` dispatch RESUMES with the value updated (route-B, IDENTITY-keyed): `splitAtId K n`
+finds `handleF n (state ℓ' s)`, reinstalls `handleF n (state ℓ' w)`, resumes with the context `K` whose
+`n`-keyed state value is set to `w` — i.e. `updateCtxStates K ((ctxStates K).put n w)`. The identity
+`n` selects the frame; the frame's own label `ℓ'` is immaterial to the store projection. Induction on
+`K`, mirroring `splitAtId_state_value`'s walk + `dispatchOn`'s put. -/
+theorem updateCtxStates_put_split {n : Nat} {w : Val} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ' : Bang.EffectRow.Label} {s : Val},
+      Bang.splitAtId K n = some (Kᵢ, Handler.state ℓ' s, Kₒ) →
+        updateCtxStates K ((ctxStates K).put n w) = Kᵢ ++ Frame.handleF n (Handler.state ℓ' w) :: Kₒ := by
   intro K
   induction K with
-  | nil => intro Kᵢ Kₒ s hsp; simp [Bang.splitAt] at hsp
+  | nil => intro Kᵢ Kₒ ℓ' s hsp; simp [Bang.splitAtId] at hsp
   | cons fr K ih =>
-    intro Kᵢ Kₒ s hsp
+    intro Kᵢ Kₒ ℓ' s hsp
     cases fr with
-    | handleF h0 =>
-        cases h0 with
-        | state ℓ0 s0 =>
-            by_cases hc : fr.id = ℓ
-            · subst hc
-              -- the head frame catches ⇒ splitAt = ([], state ℓ0 s0, K); put updates head value.
-              simp only [Bang.splitAt, Bang.handlesOp, beq_self_eq_true, Bool.or_true, Bool.and_true,
-                decide_true, if_true, Option.some.injEq, Prod.mk.injEq] at hsp
-              obtain ⟨rfl, _, rfl⟩ := hsp
-              simp only [ctxStates, SStore.put, if_true, updateCtxStates, List.nil_append]
-              rw [updateCtxStates_self rfl]
-            · -- head doesn't catch ⇒ splitAt recurses; put updates a DEEPER frame.
-              have hnc : ¬ Bang.handlesOp (Handler.state ℓ0 s0) ℓ "put" = true := by
-                simp [Bang.handlesOp, hc]
-              simp only [Bang.splitAt, if_neg hnc] at hsp
-              cases hsp2 : Bang.splitAt K ℓ "put" with
-              | none => rw [hsp2] at hsp; simp at hsp
-              | some t =>
-                  obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                  obtain ⟨rfl, rfl, rfl⟩ := hsp
-                  simp only [ctxStates, SStore.put, hc, if_false, updateCtxStates, List.cons_append]
+    | handleF m h0 =>
+        simp only [Bang.splitAtId] at hsp
+        by_cases hc : m = n
+        · subst hc
+          -- the head frame's identity is `n` ⇒ splitAtId = ([], state ℓ' s, K); put updates head value.
+          rw [if_pos rfl] at hsp
+          simp only [Option.some.injEq, Prod.mk.injEq] at hsp
+          obtain ⟨rfl, rfl, rfl⟩ := hsp
+          simp only [ctxStates, SStore.put, if_pos rfl, updateCtxStates, List.nil_append]
+          rw [updateCtxStates_self_aux]
+        · -- head identity ≠ `n` ⇒ splitAtId recurses; put updates a DEEPER frame.
+          rw [if_neg hc] at hsp
+          cases hsp2 : Bang.splitAtId K n with
+          | none => rw [hsp2] at hsp; simp at hsp
+          | some t =>
+              obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+              obtain ⟨rfl, rfl, rfl⟩ := hsp
+              cases h0 with
+              | state ℓ0 s0 =>
+                  simp only [ctxStates, SStore.put, if_neg hc, updateCtxStates, List.cons_append]
                   rw [ih hsp2]
-        | throws ℓ0 =>
-            have hnc : ¬ Bang.handlesOp (Handler.throws ℓ0) ℓ "put" = true := by simp [Bang.handlesOp]
-            simp only [Bang.splitAt, if_neg hnc] at hsp
-            cases hsp2 : Bang.splitAt K ℓ "put" with
-            | none => rw [hsp2] at hsp; simp at hsp
-            | some t =>
-                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                obtain ⟨rfl, rfl, rfl⟩ := hsp
-                simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
-        | transaction ℓ0 Θ0 =>
-            have hnc : ¬ Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ "put" = true := by simp [Bang.handlesOp]
-            simp only [Bang.splitAt, if_neg hnc] at hsp
-            cases hsp2 : Bang.splitAt K ℓ "put" with
-            | none => rw [hsp2] at hsp; simp at hsp
-            | some t =>
-                obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                obtain ⟨rfl, rfl, rfl⟩ := hsp
-                simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
+              | throws ℓ0 =>
+                  simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
+              | transaction ℓ0 Θ0 =>
+                  simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
     | letF N =>
-        simp only [Bang.splitAt] at hsp
-        cases hsp2 : Bang.splitAt K ℓ "put" with
+        simp only [Bang.splitAtId] at hsp
+        cases hsp2 : Bang.splitAtId K n with
         | none => rw [hsp2] at hsp; simp at hsp
         | some t =>
             obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
@@ -3148,8 +3133,8 @@ theorem updateCtxStates_put_split {ℓ : Bang.EffectRow.Label} {w : Val} :
             obtain ⟨rfl, rfl, rfl⟩ := hsp
             simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
     | appF w0 =>
-        simp only [Bang.splitAt] at hsp
-        cases hsp2 : Bang.splitAt K ℓ "put" with
+        simp only [Bang.splitAtId] at hsp
+        cases hsp2 : Bang.splitAtId K n with
         | none => rw [hsp2] at hsp; simp at hsp
         | some t =>
             obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
@@ -3157,107 +3142,114 @@ theorem updateCtxStates_put_split {ℓ : Bang.EffectRow.Label} {w : Val} :
             obtain ⟨rfl, rfl, rfl⟩ := hsp
             simp only [ctxStates, updateCtxStates, List.cons_append]; rw [ih hsp2]
 
-theorem dispatch_state_put {ℓ : Bang.EffectRow.Label} {w s : Val} {K : Bang.EvalCtx}
-    (hg : (ctxStates K).get? ℓ = some s) :
-    Bang.dispatch K ℓ "put" w
-      = some (updateCtxStates K ((ctxStates K).put ℓ w), .ret .vunit) := by
-  obtain ⟨Kᵢ, Kₒ, hsp⟩ := splitAt_state_some (Or.inr rfl) hg
+/-- A `state`-`put` dispatch RESUMES with the value updated (route-B): the cap resolves by IDENTITY
+(`CapResolves K n ℓ "put"`), `idDispatch` finds the `state ℓ' s'` frame, reinstalls `state ℓ' w`, and
+resumes `(updateCtxStates K ((ctxStates K).put n w), .ret unit)`. The `handlesOp` label-guard is
+discharged off the resolution witness (mirror of `dispatch_state_get`; via `updateCtxStates_put_split`). -/
+theorem dispatch_state_put {n : Nat} {ℓ : Bang.EffectRow.Label} {w s : Val} {K : Bang.EvalCtx}
+    (hcr : Bang.CapResolves K n ℓ "put") (hg : (ctxStates K).get? n = some s) :
+    Bang.idDispatch K n ℓ "put" w
+      = some (updateCtxStates K ((ctxStates K).put n w), .ret .vunit) := by
+  obtain ⟨Kᵢ, h, Kₒ, hsp, hho⟩ := hcr
+  obtain ⟨ℓ', s', rfl⟩ : ∃ ℓ' s', h = Handler.state ℓ' s' := by
+    cases h with
+    | state ℓ' s' => exact ⟨ℓ', s', rfl⟩
+    | throws _ => simp [Bang.handlesOp] at hho
+    | transaction _ _ => simp [Bang.handlesOp] at hho
   rw [updateCtxStates_put_split hsp]
-  simp only [Bang.dispatch, hsp, Option.bind_some, Bang.dispatchOn, beq_iff_eq,
+  simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn, beq_iff_eq,
     if_neg (by decide : ¬ ("put" = "get"))]
 
 /-- After a `put`, the resume context's `ctxStates` IS the put-updated store: `ctxStates
 (updateCtxStates K (σ.put ℓ w)) = (ctxStates K).put ℓ w` where σ = ctxStates K. The `CtxCorr`-
 preservation of a state `put` (the kernel `dispatchOn`-put restores the D3 correspondence). Via
 `updateCtxStates_put_split` + `ctxStates` of the split reconstruction. Induction on `K`. -/
-theorem ctxStates_updateCtxStates_put {ℓ : Bang.EffectRow.Label} {w : Val} :
-    ∀ {K : Bang.EvalCtx} {s : Val}, (ctxStates K).get? ℓ = some s →
-      ctxStates (updateCtxStates K ((ctxStates K).put ℓ w)) = (ctxStates K).put ℓ w := by
+theorem ctxStates_updateCtxStates_put {n : Nat} {w : Val} :
+    ∀ {K : Bang.EvalCtx} {s : Val}, (ctxStates K).get? n = some s →
+      ctxStates (updateCtxStates K ((ctxStates K).put n w)) = (ctxStates K).put n w := by
   intro K
   induction K with
   | nil => intro s hg; simp [ctxStates, SStore.get?] at hg
   | cons fr K ih =>
     intro s hg
     cases fr with
-    | handleF h0 =>
+    | handleF m h0 =>
         cases h0 with
         | state ℓ0 s0 =>
-            by_cases hc : fr.id = ℓ
+            by_cases hc : m = n
             · subst hc
               simp only [ctxStates, SStore.put, if_true, updateCtxStates]
               rw [updateCtxStates_self rfl]
-            · have hg' : (ctxStates K).get? ℓ = some s := by
+            · have hg' : (ctxStates K).get? n = some s := by
                 simp only [ctxStates, SStore.get?, List.find?, hc, decide_false,
                   Bool.false_eq_true, if_false] at hg; simpa [SStore.get?] using hg
-              simp only [ctxStates, SStore.put, hc, if_false, updateCtxStates]; rw [ih hg']
+              simp only [ctxStates, SStore.put, if_neg hc, updateCtxStates]; rw [ih hg']
         | throws ℓ0 =>
-            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+            have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
             simp only [ctxStates, updateCtxStates]; rw [ih hg']
         | transaction ℓ0 Θ0 =>
-            have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+            have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
             simp only [ctxStates, updateCtxStates]; rw [ih hg']
     | letF N =>
-        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+        have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
         simp only [ctxStates, updateCtxStates]; rw [ih hg']
     | appF v0 =>
-        have hg' : (ctxStates K).get? ℓ = some s := by simpa only [ctxStates] using hg
+        have hg' : (ctxStates K).get? n = some s := by simpa only [ctxStates] using hg
         simp only [ctxStates, updateCtxStates]; rw [ih hg']
 
 /-! ### Transaction kernel-dispatch lemmas (ADR-0031 D4): mirror of the `dispatch_state_*` set. -/
 
-/-- `splitAt` for a txn op on `ℓ` SUCCEEDS at a `transaction ℓ Θ` frame whenever `ℓ` has an active txn
-frame (`(ctxTxns K).get? ℓ = some Θ`). Mirror of `splitAt_state_some`. Induction on `K`. -/
-theorem splitAt_txn_some {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} (hop : isTxnOp op = true) :
-    ∀ {K : Bang.EvalCtx} {Θ : List Val}, (ctxTxns K).get? ℓ = some Θ →
-      ∃ Kᵢ Kₒ, Bang.splitAt K ℓ op = some (Kᵢ, Handler.transaction ℓ Θ, Kₒ) := by
+/-- `splitAtId K n` landing on a `transaction ℓ' Θ` frame ⟹ the IDENTITY-keyed txn-heap has `Θ` at
+`n`: `(ctxTxns K).get? n = some Θ`. Route-B txn mirror of `splitAtId_state_value` — the value lookup is
+by identity `n`; the frame's label `ℓ'` is immaterial to the heap projection. Induction on `K`. -/
+theorem splitAtId_txn_value {n : Nat} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ' : Bang.EffectRow.Label} {Θ : List Val},
+      Bang.splitAtId K n = some (Kᵢ, Handler.transaction ℓ' Θ, Kₒ) →
+        (ctxTxns K).get? n = some Θ := by
   intro K
   induction K with
-  | nil => intro Θ hg; simp [ctxTxns, THeap.get?] at hg
+  | nil => intro Kᵢ Kₒ ℓ' Θ hs; simp [Bang.splitAtId] at hs
   | cons fr K ih =>
-    intro Θ hg
+    intro Kᵢ Kₒ ℓ' Θ hs
     cases fr with
-    | handleF h0 =>
-        cases h0 with
-        | transaction ℓ0 Θ0 =>
-            by_cases hc : fr.id = ℓ
-            · subst hc
-              simp only [ctxTxns, THeap.get?, List.find?, decide_true, Option.map_some,
-                Option.some.injEq] at hg
-              subst hg
-              have hcatch : Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ0 op = true := by
-                simp only [Bang.handlesOp, beq_self_eq_true, true_and]
-                simp only [isTxnOp] at hop; exact hop
-              exact ⟨[], K, by simp only [Bang.splitAt, if_pos hcatch]⟩
-            · have hg' : (ctxTxns K).get? ℓ = some Θ := by
-                simp only [ctxTxns, THeap.get?, List.find?, hc, decide_false,
-                  Bool.false_eq_true, if_false] at hg; simpa [THeap.get?] using hg
-              obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-              have hnc : ¬ Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ op = true := by
-                simp [Bang.handlesOp, hc]
-              exact ⟨Frame.handleF (Handler.transaction ℓ0 Θ0) :: Kᵢ, Kₒ, by
-                simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
-        | state ℓ0 s0 =>
-            have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
-            obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-            have hnc : ¬ Bang.handlesOp (Handler.state ℓ0 s0) ℓ op = true := by
-              rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp]
-            exact ⟨Frame.handleF (Handler.state ℓ0 s0) :: Kᵢ, Kₒ, by
-              simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
-        | throws ℓ0 =>
-            have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
-            obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-            have hnc : ¬ Bang.handlesOp (Handler.throws ℓ0) ℓ op = true := by
-              rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp]
-            exact ⟨Frame.handleF (Handler.throws ℓ0) :: Kᵢ, Kₒ, by
-              simp only [Bang.splitAt, if_neg hnc, hsp, Option.map_some]⟩
+    | handleF m h0 =>
+        simp only [Bang.splitAtId] at hs
+        by_cases hc : m = n
+        · subst hc
+          rw [if_pos rfl] at hs
+          simp only [Option.some.injEq, Prod.mk.injEq] at hs
+          obtain ⟨_, rfl, _⟩ := hs
+          simp [ctxTxns, THeap.get?, List.find?]
+        · rw [if_neg hc] at hs
+          cases hsp : Bang.splitAtId K n with
+          | none => rw [hsp] at hs; simp at hs
+          | some t =>
+              obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+              obtain ⟨_, rfl, _⟩ := hs
+              have hv := ih hsp
+              cases h0 with
+              | transaction ℓ0 Θ0 => simpa [ctxTxns, THeap.get?, List.find?, hc] using hv
+              | state ℓ0 s0 => simpa [ctxTxns] using hv
+              | throws ℓ0 => simpa [ctxTxns] using hv
     | letF N =>
-        have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
-        obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-        exact ⟨Frame.letF N :: Kᵢ, Kₒ, by simp only [Bang.splitAt, hsp, Option.map_some]⟩
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
+        | none => rw [hsp] at hs; simp at hs
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+            obtain ⟨_, rfl, _⟩ := hs
+            simpa [ctxTxns] using ih hsp
     | appF w =>
-        have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
-        obtain ⟨Kᵢ, Kₒ, hsp⟩ := ih hg'
-        exact ⟨Frame.appF w :: Kᵢ, Kₒ, by simp only [Bang.splitAt, hsp, Option.map_some]⟩
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
+        | none => rw [hsp] at hs; simp at hs
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+            obtain ⟨_, rfl, _⟩ := hs
+            simpa [ctxTxns] using ih hsp
 
 /-- `updateCtxStates K (ctxStates K) = K` (the `rfl`-CtxCorr corollary of `updateCtxStates_self`). -/
 theorem updateCtxStates_self_aux {K : Bang.EvalCtx} : updateCtxStates K (ctxStates K) = K :=
@@ -3270,7 +3262,7 @@ theorem updateCtxTxns_self_aux : ∀ {K : Bang.EvalCtx}, updateCtxTxns K (ctxTxn
   | nil => rfl
   | cons fr K ih =>
     cases fr with
-    | handleF h =>
+    | handleF m h =>
         cases h with
         | transaction ℓ Θ => simp only [ctxTxns, updateCtxTxns]; rw [ih]
         | state ℓ s => simp only [ctxTxns, updateCtxTxns]; rw [ih]
@@ -3278,100 +3270,97 @@ theorem updateCtxTxns_self_aux : ∀ {K : Bang.EvalCtx}, updateCtxTxns K (ctxTxn
     | letF N => simp only [ctxTxns, updateCtxTxns]; rw [ih]
     | appF v => simp only [ctxTxns, updateCtxTxns]; rw [ih]
 
-/-- A txn dispatch reinstalls the serviced heap: `splitAt K ℓ op = (Kᵢ, transaction ℓ Θ, Kₒ)` ⇒
-`updateCtxTxns K ((ctxTxns K).put ℓ Θ') = Kᵢ ++ handleF (transaction ℓ Θ') :: Kₒ`. Mirror of
-`updateCtxStates_put_split`. Induction on `K`. -/
-theorem updateCtxTxns_service_split {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {Θ' : List Val}
-    (hop : isTxnOp op = true) :
-    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {Θ : List Val},
-      Bang.splitAt K ℓ op = some (Kᵢ, Handler.transaction ℓ Θ, Kₒ) →
-        updateCtxTxns K ((ctxTxns K).put ℓ Θ') = Kᵢ ++ Frame.handleF (Handler.transaction ℓ Θ') :: Kₒ := by
+/-- A txn dispatch reinstalls the serviced heap (route-B, IDENTITY-keyed): `splitAtId K n =
+(Kᵢ, transaction ℓ' Θ, Kₒ)` ⇒ `updateCtxTxns K ((ctxTxns K).put n Θ') = Kᵢ ++ handleF n
+(transaction ℓ' Θ') :: Kₒ`. Mirror of `updateCtxStates_put_split`. Induction on `K`. -/
+theorem updateCtxTxns_service_split {n : Nat} {Θ' : List Val} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ' : Bang.EffectRow.Label} {Θ : List Val},
+      Bang.splitAtId K n = some (Kᵢ, Handler.transaction ℓ' Θ, Kₒ) →
+        updateCtxTxns K ((ctxTxns K).put n Θ') = Kᵢ ++ Frame.handleF n (Handler.transaction ℓ' Θ') :: Kₒ := by
   intro K
   induction K with
-  | nil => intro Kᵢ Kₒ Θ hsp; simp [Bang.splitAt] at hsp
+  | nil => intro Kᵢ Kₒ ℓ' Θ hsp; simp [Bang.splitAtId] at hsp
   | cons fr K ih =>
-    intro Kᵢ Kₒ Θ hsp
+    intro Kᵢ Kₒ ℓ' Θ hsp
     cases fr with
-    | handleF h0 =>
-        cases h0 with
-        | transaction ℓ0 Θ0 =>
-            by_cases hc : fr.id = ℓ
-            · subst hc
-              have hco : Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ0 op = true := by
-                simp only [Bang.handlesOp, beq_self_eq_true, true_and]
-                rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp
-              simp only [Bang.splitAt, if_pos hco, Option.some.injEq, Prod.mk.injEq] at hsp
-              obtain ⟨rfl, hh, rfl⟩ := hsp
-              simp only [Handler.transaction.injEq] at hh; obtain ⟨_, rfl⟩ := hh
-              simp only [ctxTxns, THeap.put, if_true, updateCtxTxns, List.nil_append]
-              rw [updateCtxTxns_self_aux]
-            · have hnc : ¬ Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ op = true := by
-                simp [Bang.handlesOp, hc]
-              simp only [Bang.splitAt, if_neg hnc] at hsp
-              cases hsp2 : Bang.splitAt K ℓ op with
-              | none => rw [hsp2] at hsp; simp at hsp
-              | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                          simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                          obtain ⟨rfl, rfl, rfl⟩ := hsp
-                          simp only [ctxTxns, THeap.put, hc, if_false, updateCtxTxns, List.cons_append]
-                          rw [ih hsp2]
-        | state ℓ0 s0 =>
-            have hnc : ¬ Bang.handlesOp (Handler.state ℓ0 s0) ℓ op = true := by
-              rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp]
-            simp only [Bang.splitAt, if_neg hnc] at hsp
-            cases hsp2 : Bang.splitAt K ℓ op with
-            | none => rw [hsp2] at hsp; simp at hsp
-            | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                        obtain ⟨rfl, rfl, rfl⟩ := hsp
-                        simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
-        | throws ℓ0 =>
-            have hnc : ¬ Bang.handlesOp (Handler.throws ℓ0) ℓ op = true := by
-              rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp]
-            simp only [Bang.splitAt, if_neg hnc] at hsp
-            cases hsp2 : Bang.splitAt K ℓ op with
-            | none => rw [hsp2] at hsp; simp at hsp
-            | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                        obtain ⟨rfl, rfl, rfl⟩ := hsp
-                        simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
+    | handleF m h0 =>
+        simp only [Bang.splitAtId] at hsp
+        by_cases hc : m = n
+        · subst hc
+          rw [if_pos rfl] at hsp
+          simp only [Option.some.injEq, Prod.mk.injEq] at hsp
+          obtain ⟨rfl, rfl, rfl⟩ := hsp
+          have e1 : (ctxTxns (Frame.handleF n (Handler.transaction ℓ' Θ) :: K)).put n Θ'
+                    = (n, Θ') :: ctxTxns K := by simp [ctxTxns, THeap.put]
+          rw [e1]
+          show Frame.handleF n (Handler.transaction ℓ' Θ') :: updateCtxTxns K (ctxTxns K)
+                = [] ++ Frame.handleF n (Handler.transaction ℓ' Θ') :: K
+          rw [updateCtxTxns_self_aux, List.nil_append]
+        · rw [if_neg hc] at hsp
+          cases hsp2 : Bang.splitAtId K n with
+          | none => rw [hsp2] at hsp; simp at hsp
+          | some t =>
+              obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+              obtain ⟨rfl, rfl, rfl⟩ := hsp
+              cases h0 with
+              | transaction ℓ0 Θ0 =>
+                  simp only [ctxTxns, THeap.put, if_neg hc, updateCtxTxns, List.cons_append]
+                  rw [ih hsp2]
+              | state ℓ0 s0 =>
+                  simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
+              | throws ℓ0 =>
+                  simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
     | letF N =>
-        simp only [Bang.splitAt] at hsp
-        cases hsp2 : Bang.splitAt K ℓ op with
+        simp only [Bang.splitAtId] at hsp
+        cases hsp2 : Bang.splitAtId K n with
         | none => rw [hsp2] at hsp; simp at hsp
-        | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                    obtain ⟨rfl, rfl, rfl⟩ := hsp
-                    simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+            obtain ⟨rfl, rfl, rfl⟩ := hsp
+            simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
     | appF w0 =>
-        simp only [Bang.splitAt] at hsp
-        cases hsp2 : Bang.splitAt K ℓ op with
+        simp only [Bang.splitAtId] at hsp
+        cases hsp2 : Bang.splitAtId K n with
         | none => rw [hsp2] at hsp; simp at hsp
-        | some t => obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
-                    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
-                    obtain ⟨rfl, rfl, rfl⟩ := hsp
-                    simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp2] at hsp
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsp
+            obtain ⟨rfl, rfl, rfl⟩ := hsp
+            simp only [ctxTxns, updateCtxTxns, List.cons_append]; rw [ih hsp2]
 
 /-- A txn dispatch RESUMES with the heap serviced: finds `transaction ℓ Θ`, services via `txnService`,
 reinstalls `transaction ℓ Θ'`, resumes `(updateCtxTxns K ((ctxTxns K).put ℓ Θ'), .ret r)`. The kernel
 `dispatchOn` transaction arm, packaged against the EvalCtx projection. Mirror of `dispatch_state_put`. -/
-theorem dispatch_txn_service {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val} {K : Bang.EvalCtx}
-    {Θ : List Val} (hop : isTxnOp op = true) (hg : (ctxTxns K).get? ℓ = some Θ) :
-    Bang.dispatch K ℓ op v
-      = some (updateCtxTxns K ((ctxTxns K).put ℓ (txnService op v Θ).2), .ret (txnService op v Θ).1) := by
-  obtain ⟨Kᵢ, Kₒ, hsp⟩ := splitAt_txn_some hop hg
-  rw [updateCtxTxns_service_split hop hsp]
+theorem dispatch_txn_service {n : Nat} {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val}
+    {K : Bang.EvalCtx} {Θ : List Val} (hop : isTxnOp op = true) (hcr : Bang.CapResolves K n ℓ op)
+    (hg : (ctxTxns K).get? n = some Θ) :
+    Bang.idDispatch K n ℓ op v
+      = some (updateCtxTxns K ((ctxTxns K).put n (txnService op v Θ).2), .ret (txnService op v Θ).1) := by
+  obtain ⟨Kᵢ, h, Kₒ, hsp, hho⟩ := hcr
+  -- a handler catching a txn op is a `transaction` frame (state/throws fail `handlesOp` on txn ops).
+  obtain ⟨ℓ', Θ', rfl⟩ : ∃ ℓ' Θ', h = Handler.transaction ℓ' Θ' := by
+    cases h with
+    | transaction ℓ' Θ' => exact ⟨ℓ', Θ', rfl⟩
+    | state _ _ => rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp] at hho
+    | throws _ => rcases isTxnOp_iff.mp hop with rfl | rfl | rfl <;> simp [Bang.handlesOp] at hho
+  -- the heap value at `n` is the frame's `Θ'`; with `hg`, `Θ' = Θ`.
+  have hhv : (ctxTxns K).get? n = some Θ' := splitAtId_txn_value hsp
+  rw [hg] at hhv
+  obtain rfl : Θ = Θ' := Option.some.inj hhv
+  rw [updateCtxTxns_service_split hsp]
   -- unfold the kernel dispatchOn transaction arm and match txnService's (r, Θ').
   rcases isTxnOp_iff.mp hop with rfl | rfl | rfl
   · -- newTVar: (vint Θ.length, Θ ++ [v])
-    simp only [Bang.dispatch, hsp, Option.bind_some, Bang.dispatchOn, txnService,
+    simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn, txnService,
       beq_self_eq_true, if_true, if_pos rfl]
   · -- readTVar: (Θ.getD i (vint 0), Θ)
-    simp only [Bang.dispatch, hsp, Option.bind_some, Bang.dispatchOn, txnService,
+    simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn, txnService,
       (by decide : ("readTVar" == "newTVar") = false), beq_self_eq_true, Bool.false_eq_true,
       if_false, if_true, if_neg (by decide : ¬ ("readTVar" = "newTVar")), if_pos rfl]
   · -- writeTVar: (vunit, storeSet Θ i w) on a pair payload; vunit/Θ otherwise
-    simp only [Bang.dispatch, hsp, Option.bind_some, Bang.dispatchOn, txnService,
+    simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn, txnService,
       (by decide : ("writeTVar" == "newTVar") = false), (by decide : ("writeTVar" == "readTVar") = false),
       Bool.false_eq_true, if_false, if_neg (by decide : ¬ ("writeTVar" = "newTVar")),
       if_neg (by decide : ¬ ("writeTVar" = "readTVar"))]
@@ -3389,7 +3378,7 @@ theorem ctxStates_updateCtxTxns : ∀ (K : Bang.EvalCtx) (τ : THeap),
   | cons fr K ih =>
     intro τ
     cases fr with
-    | handleF h =>
+    | handleF m h =>
         cases h with
         | transaction ℓ Θ =>
             cases τ with
@@ -3403,37 +3392,37 @@ theorem ctxStates_updateCtxTxns : ∀ (K : Bang.EvalCtx) (τ : THeap),
 /-- After a txn service, the resume context's `ctxTxns` IS the put-updated heap-store: `ctxTxns
 (updateCtxTxns K (τ.put ℓ Θ')) = τ.put ℓ Θ'` where τ = ctxTxns K. The `CtxTxnCorr`-preservation of a
 txn resume. Mirror of `ctxStates_updateCtxStates_put`. Induction on `K`. -/
-theorem ctxTxns_updateCtxTxns_service {ℓ : Bang.EffectRow.Label} {Θ' : List Val} :
-    ∀ {K : Bang.EvalCtx} {Θ : List Val}, (ctxTxns K).get? ℓ = some Θ →
-      ctxTxns (updateCtxTxns K ((ctxTxns K).put ℓ Θ')) = (ctxTxns K).put ℓ Θ' := by
+theorem ctxTxns_updateCtxTxns_service {n : Nat} {Θ' : List Val} :
+    ∀ {K : Bang.EvalCtx} {Θ : List Val}, (ctxTxns K).get? n = some Θ →
+      ctxTxns (updateCtxTxns K ((ctxTxns K).put n Θ')) = (ctxTxns K).put n Θ' := by
   intro K
   induction K with
   | nil => intro Θ hg; simp [ctxTxns, THeap.get?] at hg
   | cons fr K ih =>
     intro Θ hg
     cases fr with
-    | handleF h0 =>
+    | handleF m h0 =>
         cases h0 with
         | transaction ℓ0 Θ0 =>
-            by_cases hc : fr.id = ℓ
+            by_cases hc : m = n
             · subst hc
               simp only [ctxTxns, THeap.put, if_true, updateCtxTxns]
               rw [updateCtxTxns_self_aux]
-            · have hg' : (ctxTxns K).get? ℓ = some Θ := by
+            · have hg' : (ctxTxns K).get? n = some Θ := by
                 simp only [ctxTxns, THeap.get?, List.find?, hc, decide_false,
                   Bool.false_eq_true, if_false] at hg; simpa [THeap.get?] using hg
-              simp only [ctxTxns, THeap.put, hc, if_false, updateCtxTxns]; rw [ih hg']
+              simp only [ctxTxns, THeap.put, if_neg hc, updateCtxTxns]; rw [ih hg']
         | state ℓ0 s0 =>
-            have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
+            have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
             simp only [ctxTxns, updateCtxTxns]; rw [ih hg']
         | throws ℓ0 =>
-            have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
+            have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
             simp only [ctxTxns, updateCtxTxns]; rw [ih hg']
     | letF N =>
-        have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
+        have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
         simp only [ctxTxns, updateCtxTxns]; rw [ih hg']
     | appF v0 =>
-        have hg' : (ctxTxns K).get? ℓ = some Θ := by simpa only [ctxTxns] using hg
+        have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
         simp only [ctxTxns, updateCtxTxns]; rw [ih hg']
 
 /-- A state service leaves the TXN projection unchanged (the mirror of `ctxStates_updateCtxTxns`). -/
@@ -3445,7 +3434,7 @@ theorem ctxTxns_updateCtxStates : ∀ (K : Bang.EvalCtx) (σ : SStore),
   | cons fr K ih =>
     intro σ
     cases fr with
-    | handleF h =>
+    | handleF m h =>
         cases h with
         | state ℓ s =>
             cases σ with
@@ -3466,7 +3455,7 @@ theorem splitAt_handles {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} :
   | cons fr K ih =>
     intro Kᵢ Kₒ h hs
     cases fr with
-    | handleF h0 =>
+    | handleF m h0 =>
         simp only [Bang.splitAt] at hs
         by_cases hc : Bang.handlesOp h0 ℓ op = true
         · rw [if_pos hc] at hs; simp only [Option.some.injEq] at hs
@@ -3501,45 +3490,50 @@ theorem splitAt_throws {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ : Bang.EffectRow.Label}
   | state ℓ0 s => simp [Bang.handlesOp] at hh
   | transaction ℓ0 Θ => simp [Bang.handlesOp] at hh
 
-/-- A `raise` propagating under a `letF` frame: same `Config.run` outcome (the abort
-discards the inner prefix the frame grows). Caught ⇒ throws (`splitAt_throws`) ⇒
-`dispatch_letF`; uncaught ⇒ both stuck. -/
-theorem dispatchRun_letF (n : Nat) (N : Comp) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label)
-    (v : Val) : dispatchRun n (Frame.letF N :: K) ℓ "raise" v = dispatchRun n K ℓ "raise" v := by
-  simp only [dispatchRun, Bang.Config.run, Source.step]
-  cases hsp : Bang.splitAt K ℓ "raise" with
-  | none => simp only [Bang.dispatch, Bang.splitAt, hsp, Option.map_none, Option.bind_none]
-  | some t =>
-      obtain ⟨Kᵢ, h, Kₒ⟩ := t
-      obtain ⟨ℓ0, rfl⟩ := splitAt_throws hsp
-      rw [dispatch_letF N K ℓ "raise" v hsp]
+/-- A `raise` propagating under a `letF` frame: same `Config.run` outcome (the abort discards the
+inner prefix the frame grows). Route-B: identity-keyed + THROWS-conditioned (`splitAtId K n` finds a
+`throws` frame — the only kind for which the prepended `letF` is discarded; state/txn KEEP `Kᵢ`). The
+single perform-step result is `idDispatch (letF N :: K) = idDispatch K` (`dispatch_letF`). -/
+theorem dispatchRun_letF (f g n : Nat) (N : Comp) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label)
+    (v : Val) {Kᵢ Kₒ : Bang.EvalCtx} {ℓ0 : Bang.EffectRow.Label}
+    (hs : Bang.splitAtId K n = some (Kᵢ, Handler.throws ℓ0, Kₒ)) :
+    dispatchRun f g n (Frame.letF N :: K) ℓ "raise" v = dispatchRun f g n K ℓ "raise" v := by
+  cases f with
+  | zero => rfl
+  | succ f =>
+    simp only [dispatchRun]
+    rw [Bang.Config.run_step f _ (by intro g' v' h; simp at h),
+        Bang.Config.run_step f _ (by intro g' v' h; simp at h)]
+    simp only [Source.step, dispatch_letF N K n ℓ "raise" v hs]
 
 /-- A `raise` propagating under an `appF` frame: same outcome (as `dispatchRun_letF`). -/
-theorem dispatchRun_appF (n : Nat) (w : Val) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label)
-    (v : Val) : dispatchRun n (Frame.appF w :: K) ℓ "raise" v = dispatchRun n K ℓ "raise" v := by
-  simp only [dispatchRun, Bang.Config.run, Source.step]
-  cases hsp : Bang.splitAt K ℓ "raise" with
-  | none => simp only [Bang.dispatch, Bang.splitAt, hsp, Option.map_none, Option.bind_none]
-  | some t =>
-      obtain ⟨Kᵢ, h, Kₒ⟩ := t
-      obtain ⟨ℓ0, rfl⟩ := splitAt_throws hsp
-      rw [dispatch_appF w K ℓ "raise" v hsp]
+theorem dispatchRun_appF (f g n : Nat) (w : Val) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label)
+    (v : Val) {Kᵢ Kₒ : Bang.EvalCtx} {ℓ0 : Bang.EffectRow.Label}
+    (hs : Bang.splitAtId K n = some (Kᵢ, Handler.throws ℓ0, Kₒ)) :
+    dispatchRun f g n (Frame.appF w :: K) ℓ "raise" v = dispatchRun f g n K ℓ "raise" v := by
+  cases f with
+  | zero => rfl
+  | succ f =>
+    simp only [dispatchRun]
+    rw [Bang.Config.run_step f _ (by intro g' v' h; simp at h),
+        Bang.Config.run_step f _ (by intro g' v' h; simp at h)]
+    simp only [Source.step, dispatch_appF w K n ℓ "raise" v hs]
 
-/-- A `raise` propagating PAST a NON-catching `handleF h0` frame: same `Config.run` outcome.
-The forwarded case of the bridge's `handle` raised arm (`dispatchRun_letF`/`appF` analog for the
-non-catching handler frame). Caught-below ⇒ `dispatch_handleF_skip`; uncaught ⇒ both stuck. -/
-theorem dispatchRun_handleF_skip (n : Nat) (h0 : Handler) (K : Bang.EvalCtx)
-    (ℓ : Bang.EffectRow.Label) (v : Val) (hnc : Bang.handlesOp h0 ℓ "raise" = false) :
-    dispatchRun n (Frame.handleF h0 :: K) ℓ "raise" v = dispatchRun n K ℓ "raise" v := by
-  simp only [dispatchRun, Bang.Config.run, Source.step]
-  cases hsp : Bang.splitAt K ℓ "raise" with
-  | none =>
-      simp only [Bang.dispatch, Bang.splitAt, hnc, Bool.false_eq_true, if_false, hsp,
-        Option.map_none, Option.bind_none]
-  | some t =>
-      obtain ⟨Kᵢ, h, Kₒ⟩ := t
-      obtain ⟨ℓ0, rfl⟩ := splitAt_throws hsp
-      rw [dispatch_handleF_skip h0 K ℓ "raise" v hnc hsp]
+/-- A `raise` propagating PAST a NON-matching `handleF m h0` frame (identity `m ≠ n`): same outcome.
+Route-B: the skip criterion is IDENTITY mismatch `m ≠ n` (not a label/op `handlesOp` test). The
+single perform-step result is `idDispatch (handleF m h0 :: K) = idDispatch K` (`dispatch_handleF_skip`),
+THROWS-conditioned by `hs` (the abort discards the prefix the frame grows). -/
+theorem dispatchRun_handleF_skip (f g n m : Nat) (h0 : Handler) (K : Bang.EvalCtx)
+    (ℓ : Bang.EffectRow.Label) (v : Val) {Kᵢ Kₒ : Bang.EvalCtx} {ℓ0 : Bang.EffectRow.Label}
+    (hmn : m ≠ n) (hs : Bang.splitAtId K n = some (Kᵢ, Handler.throws ℓ0, Kₒ)) :
+    dispatchRun f g n (Frame.handleF m h0 :: K) ℓ "raise" v = dispatchRun f g n K ℓ "raise" v := by
+  cases f with
+  | zero => rfl
+  | succ f =>
+    simp only [dispatchRun]
+    rw [Bang.Config.run_step f _ (by intro g' v' h; simp at h),
+        Bang.Config.run_step f _ (by intro g' v' h; simp at h)]
+    simp only [Source.step, dispatch_handleF_skip m h0 K n ℓ "raise" v hmn hs]
 
 /-- (★bridge) the **two-part** `evalD ≡ Source.eval` simulation: a `term` part (M
 runs to its terminal under K) AND a `raised` part (M raises, dispatched by the
