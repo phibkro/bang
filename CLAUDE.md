@@ -19,6 +19,7 @@ its trigger arises.
 | **Long-term checkpoint map** (◊1 → ◊6) | `ROADMAP.md` |
 | **First-time setup + reference table** | `ONBOARDING.md` |
 | **How work flows** (lifecycle + feedback loops + quality gates) | `docs/notes/development-lifecycle.md` |
+| **What an `incN` is** (the increment unit: scoped→de-risked→ground→done→merged) | `docs/notes/increment-lifecycle.md` |
 | **Codebase maintenance** (objects · rungs · cadence · debt-prevention) | `.claude/codebase-maintenance.md` |
 | **Active in-flight work** | `paths/PATH-*.md` |
 | **Architecture in force** | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` |

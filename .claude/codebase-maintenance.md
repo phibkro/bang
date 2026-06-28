@@ -148,6 +148,13 @@ Recently climbed (2026-06-28):
   drift; `--check` is in `just fitness`.
 - **Citation integrity** → **TEST** via `refs.py check` (every Lean `-- shape: <stem>` cite
   + every `grounds:ADR-NNNN` resolves; PDF↔key; sha256). Caught the mislabel class.
+- **Import-root coherence** → **TEST** via `check-bang-root.sh` (every `Bang/**/*.lean` imported
+  in `Bang.lean`, minus the co-located `-- root-exclude:` witness allowlist). Catches a new file
+  silently unbuilt → ungated. In `just fitness`.
+- **Orientation-doc SHA waypoints** → **TEST** via `check-sha-reachable.sh` (every backtick SHA in
+  CONTEXT/ROADMAP resolves to a commit; foreign hex → `tools/sha-allow.txt`). In `just fitness`.
+- **`incN` vocabulary undefined** → documented in `docs/notes/increment-lifecycle.md` (the increment
+  unit: scoped→de-risked→ground→done→merged; the inc-4…inc-7 re-key order). Indexed in CLAUDE.md.
 
 Still on survey, with a clear rung available:
 1. **Orientation-doc proof-state (CONTEXT/ROADMAP)** → PARTIAL GENERATE. The *proof-state*
