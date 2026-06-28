@@ -67,6 +67,19 @@ fitness:
     bash tools/arch-check.sh
     bash tools/check-audit-sync.sh
     python3 tools/check-refs.py
+    python3 tools/refs.py check
+
+# Reference library (refs.bib = single source of truth; index.json + the README block are derived).
+refs-index:
+    python3 tools/refs.py build
+
+# Faceted retrieval over the library: `just refs capability-safety` (matches key/title/topic/grounds).
+refs QUERY:
+    @python3 tools/refs.py query "{{QUERY}}"
+
+# Bibliography fitness (also run by `just fitness`): PDF↔key · grounds:ADR↔ADR · Lean cite↔key · sha256.
+check-bib:
+    python3 tools/refs.py check
 
 # Zero-dep Node sanity check on the row-unifier algorithm.
 selfcheck:

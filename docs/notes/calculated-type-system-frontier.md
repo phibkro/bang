@@ -92,7 +92,7 @@ resumption *multiplicity*; Gordon's is effect/type *mutual-definition*). (c) the
 effects (`▷ ≠ ⊔`) re-couple the axes (Gordon §6 iteration, non-unique fixed points), so bang's
 idempotent-effects choice is **load-bearing for the graded calculation's feasibility**, not a free simplification.
 
-## Cousot's calculational logic design (`cousot-calculational-incorrectness-logics`) — the SN-free template (the methodological keystone)
+## Cousot's calculational logic design (`cousot-popl24-calculational-incorrectness-logics`) — the SN-free template (the methodological keystone)
 This RE-FRAMES the whole frontier. Cousot derives PROGRAM LOGICS (Hoare, incorrectness, …) as Galois
 **abstractions of the relational semantics** `⟦S⟧`, and reads the proof rules off — sound+complete *by
 construction*, no separate soundness proof; "healthiness conditions" become consequences of `α` **preserving

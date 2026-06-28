@@ -5,6 +5,7 @@
 % ─── Effects & handlers ──────────────────────────────────────────────────────
 
 @inproceedings{biernacki-popl18-handle-with-care,
+  keywords = {topic:lr grounds:inv-1 role:substrate},
   author    = {Biernacki, Dariusz and Pir\'{o}g, Maciej and Polesiuk, Piotr and Sieczkowski, Filip},
   title     = {Handle with Care: Relational Interpretation of Algebraic Effects and Handlers},
   booktitle = {Proceedings of the ACM on Programming Languages (POPL)},
@@ -43,6 +44,7 @@
 % ─── Graded CBPV ─────────────────────────────────────────────────────────────
 
 @inproceedings{torczon-oopsla24-effects-coeffects,
+  keywords = {topic:graded-types role:substrate},
   author    = {Torczon, Cassia and Su\'{a}rez Acevedo, Emmanuel and Agrawal, Shubh and Velez-Ginorio, Joey and Weirich, Stephanie},
   title     = {Effects and Coeffects in Call-by-Push-Value},
   booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
@@ -62,6 +64,7 @@
 }
 
 @inproceedings{katsumata-popl14-parametric-effect-monads,
+  keywords = {topic:graded-types role:substrate},
   author    = {Katsumata, Shin-ya},
   title     = {Parametric Effect Monads and Semantics of Effect Systems},
   booktitle = {POPL},
@@ -98,6 +101,7 @@
 % ─── Calculated compilers ────────────────────────────────────────────────────
 
 @inproceedings{garby-haskell24-calculating-effectively,
+  keywords = {topic:calculation grounds:inv-4 role:substrate},
   author    = {Garby, Zac and Hutton, Graham and Bahr, Patrick},
   title     = {Calculating Compilers Effectively (Functional Pearl)},
   booktitle = {Proceedings of the 17th ACM SIGPLAN International Haskell Symposium},
@@ -146,6 +150,7 @@
 }
 
 @article{bahr-hutton-icfp23-calculating-compilers-concurrency,
+  keywords = {topic:calculation grounds:inv-4 role:confirmed-sota},
   author  = {Bahr, Patrick and Hutton, Graham},
   title   = {Calculating Compilers for Concurrency},
   journal = {Proceedings of the ACM on Programming Languages (ICFP)},
@@ -179,6 +184,7 @@
 % ─── Verified compilation ────────────────────────────────────────────────────
 
 @inproceedings{benton-hur-icfp09-biorthogonality-step-indexing,
+  keywords = {topic:lr role:substrate},
   author    = {Benton, Nick and Hur, Chung-Kil},
   title     = {Biorthogonality, Step-Indexing and Compiler Correctness},
   booktitle = {ICFP},
@@ -409,6 +415,7 @@
 % Relevance + integration verdicts are recorded in README.md "Integration findings".
 
 @article{yoshioka-icfp24-abstracting-effect-systems,
+  keywords = {topic:effect-algebra grounds:ADR-0001 role:confirmed-sota},
   author  = {Yoshioka, Takuma and Sekiyama, Taro and Igarashi, Atsushi},
   title   = {Abstracting Effect Systems for Algebraic Effect Handlers},
   journal = {Proceedings of the ACM on Programming Languages (ICFP)},
@@ -422,6 +429,7 @@
 }
 
 @article{zhang-popl19-abstraction-safe-tunneling,
+  keywords = {topic:capability-safety grounds:ADR-0024 role:confirmed-sota},
   author  = {Zhang, Yizhou and Myers, Andrew C.},
   title   = {Abstraction-Safe Effect Handlers via Tunneling},
   journal = {Proceedings of the ACM on Programming Languages (POPL)},
@@ -433,6 +441,7 @@
 }
 
 @inproceedings{mcdermott-fscd25-grading-cbpv,
+  keywords = {topic:graded-types role:confirmed-sota},
   author    = {McDermott, Dylan},
   title     = {Grading Call-By-Push-Value, Explicitly and Implicitly},
   booktitle = {10th International Conference on Formal Structures for Computation and Deduction (FSCD)},
@@ -465,6 +474,7 @@
 }
 
 @misc{legoupil-pldi26-iris-wasmfx,
+  keywords = {topic:wasmfx grounds:ADR-0035 role:substrate},
   author = {Legoupil, Maxime and Pedersen, Mathias and Birkedal, Lars and Lindley, Sam and Pichon-Pharabod, Jean},
   title  = {{Iris-WasmFX}: Modular Reasoning for Wasm Stack Switching},
   year   = 2025,
@@ -475,6 +485,7 @@
 }
 
 @misc{lindley-draft25-asmfx-handlers-all-the-way-down,
+  keywords = {topic:wasmfx topic:calculation role:frontier},
   author = {Lindley, Sam and others},
   title  = {Effect Handlers All the Way Down},
   year   = 2025,
@@ -486,6 +497,7 @@
 
 % ── transactions / STM (rung 3, ADR-0030) ──────────────────────────────
 @inproceedings{harris-ppopp05-composable-memory-transactions,
+  keywords = {topic:stm grounds:ADR-0030 role:substrate},
   author    = {Harris, Tim and Marlow, Simon and Peyton Jones, Simon and Herlihy, Maurice},
   title     = {Composable Memory Transactions},
   booktitle = {PPoPP 2005},
@@ -674,6 +686,7 @@
 }
 
 @article{devilhena-popl26-blaze,
+  keywords = {topic:lr role:frontier},
   author  = {de Vilhena, Paulo Em\'{\i}lio and van Collem, Simcha and Wright, Ines and Krebbers, Robbert},
   title   = {{blaze}: A Relational Separation Logic for Effect Handlers},
   journal = {Proceedings of the ACM on Programming Languages (POPL)},
@@ -694,6 +707,7 @@
 }
 
 @article{boruch-gruszecki-22-scoped-capabilities,
+  keywords = {topic:capability-safety grounds:ADR-0057 grounds:task-18 role:frontier},
   author  = {Boruch-Gruszecki, Aleksander and Brachth\"{a}user, Jonathan Immanuel and Lee, Edward and Lhot\'{a}k, Ond\v{r}ej and Odersky, Martin},
   title   = {Scoped Capabilities for Polymorphic Effects},
   journal = {arXiv preprint arXiv:2207.03402},
@@ -723,6 +737,8 @@
 }
 
 @article{brachthauser-oopsla20-effects-as-capabilities,
+  keywords = {topic:capability-safety grounds:task-18 role:frontier},
+  sha256 = {424a1be3377a7180731c8e1c9484d0d97dacc546aeab35aa4e9365bdfa172ae0},
   author  = {Brachth\"{a}user, Jonathan Immanuel and Schuster, Philipp and Ostermann, Klaus},
   title   = {Effects as Capabilities: Effect Handlers and Lightweight Effect Polymorphism},
   journal = {Proceedings of the ACM on Programming Languages (OOPSLA)},
@@ -737,6 +753,8 @@
 }
 
 @article{brachthauser-oopsla22-effects-capabilities-boxes,
+  sha256 = {c369c76d8541431fa04441ac2e4256b153299c6a2d9a7c1ed34e87db3dae560c},
+  keywords = {topic:capability-safety grounds:ADR-0063 grounds:task-18 role:frontier},
   author  = {Brachth\"{a}user, Jonathan Immanuel and Schuster, Philipp and Lee, Edward and Boruch-Gruszecki, Aleksander},
   title   = {Effects, Capabilities, and Boxes: From Scope-Based Reasoning to Type-Based Reasoning and Back},
   journal = {Proceedings of the ACM on Programming Languages (OOPSLA1)},
@@ -754,6 +772,8 @@
 }
 
 @article{tang-popl26-rows-capabilities-modal-effects,
+  sha256 = {d8995cd1c47dc5fbc5ed8c0bd2f8e1864f6e6bf2098c6399efd777ca988e08e8},
+  keywords = {topic:capability-safety topic:effect-algebra role:frontier},
   author  = {Tang, Wenhao and Lindley, Sam},
   title   = {Rows and Capabilities as Modal Effects},
   journal = {Proceedings of the ACM on Programming Languages (POPL)},
@@ -768,6 +788,8 @@
 }
 
 @misc{heijltjes-mfps25-fmc-iii-control,
+  sha256 = {a0917ce61e4c501e3405daec39fcbb9c079f66916e740403236e69e12e02bdfe},
+  keywords = {topic:calculation role:speculative},
   author = {Heijltjes, Willem},
   title  = {The Functional Machine Calculus {III}: Control},
   year   = 2025,
@@ -813,7 +835,7 @@
              \url{https://arxiv.org/abs/2606.19686}},
 }
 
-@article{cousot-calculational-incorrectness-logics,
+@article{cousot-popl24-calculational-incorrectness-logics,
   author  = {Cousot, Patrick},
   title   = {Calculational Design of [In]Correctness Transformational Program Logics by Abstract Interpretation},
   journal = {Proceedings of the ACM on Programming Languages},
