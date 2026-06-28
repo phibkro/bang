@@ -68,3 +68,7 @@ scratch/U5DetShortcut.lean
 # Sim.handle can't transport across route-B mint+subst). Lives on lang-bang-u5wasm @
 # inc6-u5-wasm, PATH §U5 forward-references it. Recover: `git show 82cc585:scratch/U5bSimSpike.lean`.
 scratch/U5bSimSpike.lean
+# scratch/U5bHandlerSpike.lean (bf097d3 — U5b-handler refute-watch PASSES: fuel IH absorbs
+# mint+subst, 5 *_composes + dispatch axiom-clean). On lang-bang-u5bhandler @ inc6-u5b-handler.
+# Recover: `git show bf097d3:scratch/U5bHandlerSpike.lean`.
+scratch/U5bHandlerSpike.lean
