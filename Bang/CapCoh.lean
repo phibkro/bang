@@ -1,5 +1,5 @@
 /-
-inc-6 U3 route-A — STAGE (a) DELIVERABLE (build-arbitrated, axiom-clean, #35-FREE).
+inc-6 U3 route-A — the label-coherence forward-invariant (Bang.CapCoh), build-arbitrated, axiom-clean, #35-FREE.
 
 The label-coherence forward-invariant `CapLabelCoh` + its `Source.step` preservation `capLabelCoh_step`,
 the premise `run_evalD` must carry (refuted absent: `CapLabelCohRefute.lean`). Resolves the
@@ -13,13 +13,17 @@ sorryAx. AXIOM GATE (force-rebuilt olean, `#print axioms` at file end):
   capLabelCoh_initial      : [propext, Quot.sound]                     -- VcapFree seed (vacuous)
   capLabelCoh_perform_label: [propext, Quot.sound]                     -- bridge-facing label extraction
 
-Namespaces CapCohProto/…Proto8 are scaffolding for incremental build; unify on promotion into a real
-Bang module (CalcVM imports it) at the THREADING stage (b). -/
+AsmFX §7.1 well-scoping-invariant analog: kernel dispatches by (identity,label), evalD by identity;
+the gap is bridged by THREADING this invariant, not by mirroring dispatch. `WeakCoh` is the vacuous-on-
+escape LABEL FACTOR of `CapResolves` (Operational:438) — `WeakCoh + store-supplied resolution ⟹
+CapResolves`, reassembled at the bridge perform arm. Imports Model (fallback: the caps/freshness layer
+lives there; an Operational-only relocation is a task-#17 restructure). -/
 import Bang.Model
 open Bang Bang.Model
 open Bang.EffectRow (Label)
 
-namespace Bang.CapCohProto
+namespace Bang.CapCoh
+
 
 /-- WeakCoh: vacuous-on-escape label coherence — the frame at identity `p.1`, IF present, has label `p.2`.
 Escaped caps (handler popped ⇒ splitAtId=none) impose nothing. This is the route-A premise leaf. -/
@@ -64,10 +68,7 @@ theorem weakCoh_cons {fr : Frame} {K : EvalCtx} {p : Nat × Label}
   · exact hhead h rfl
   · exact hK Kᵢ' h Kₒ hsp
 
-end Bang.CapCohProto
 
-namespace Bang.CapCohProto2
-open Bang.CapCohProto
 
 /-- `splitAtId` finds only a handleF whose id is `j`, so a successful split bounds `j` by any
 `CapsBelow g` on the stack. -/
@@ -109,10 +110,7 @@ theorem splitAtId_append_left_none {j : Nat} : ∀ {Kᵢ : EvalCtx} (K' : EvalCt
       simp only [List.cons_append, splitAtId, ih K' hnone, Option.map_map]
       cases splitAtId K' j <;> rfl
 
-end Bang.CapCohProto2
 
-namespace Bang.CapCohProto3
-open Bang.CapCohProto Bang.CapCohProto2
 
 /-- Replacing a frame's handler with a SAME-LABEL one preserves the label `splitAtId` finds at every id. -/
 theorem splitAtId_setHandler {n : Nat} {h h'' : Handler} (hlab : Handler.label h = Handler.label h'') :
@@ -175,10 +173,7 @@ theorem weakCoh_replace {Kᵢ Kₒ : EvalCtx} {n : Nat} {h h'' : Handler} {p : N
   obtain ⟨Ki'', Ko'', hr', hsp', hlr⟩ := splitAtId_setHandler hlab hs
   rw [← hlr]; exact hw Ki'' hr' Ko'' hsp'
 
-end Bang.CapCohProto3
 
-namespace Bang.CapCohProto4
-open Bang.CapCohProto Bang.CapCohProto2
 
 /-- The outer sub-stack of a stratified split is `CapsBelow` the matched id. -/
 theorem stratFresh_capsBelow_outer {n : Nat} {h : Handler} : ∀ {Kᵢ Kₒ : EvalCtx},
@@ -225,10 +220,7 @@ theorem weakCoh_outer {p : Nat × Label} {Kᵢ Kₒ : EvalCtx} {n : Nat} {h : Ha
   rw [e1, Option.map_some] at e2
   exact hw _ hr _ e2
 
-end Bang.CapCohProto4
 
-namespace Bang.CapCohProto5
-open Bang.CapCohProto Bang.CapCohProto2
 
 theorem weakCoh_letF {N : Comp} {K : EvalCtx} {p : Nat × Label}
     (hK : WeakCoh K p) : WeakCoh (Frame.letF N :: K) p := by
@@ -274,10 +266,7 @@ theorem weakCoh_mint_self {g : Nat} {K : EvalCtx} {hd : Handler} :
   simp only [splitAtId, if_pos rfl, Option.some.injEq, Prod.mk.injEq] at hs
   obtain ⟨_, rfl, _⟩ := hs; rfl
 
-end Bang.CapCohProto5
 
-namespace Bang.CapCohProto6
-open Bang.CapCohProto Bang.CapCohProto2 Bang.CapCohProto3 Bang.CapCohProto4
 
 /-- **DISPATCH coherence** (the resume/abort arm, the team-lead-flagged risk). A successful `idDispatch`
 preserves WeakCoh of the resumed focus + reassembled stack. Resume = same-LABEL handler replacement
@@ -363,11 +352,7 @@ theorem capCoh_idDispatch {g n : Nat} {ℓ : Label} {op : OpId} {v : Val} {K K' 
               · exact weakCoh_replace (by rfl) (wkA p (Or.inr (Or.inr h'')))
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
-end Bang.CapCohProto6
 
-namespace Bang.CapCohProto7
-open Bang.CapCohProto Bang.CapCohProto2 Bang.CapCohProto3 Bang.CapCohProto4
-open Bang.CapCohProto5 Bang.CapCohProto6
 
 /-- The route-A label-coherence carrier: every cap in the focus AND every stored cap is WeakCoh `K`. -/
 def CapLabelCoh : Config → Prop
@@ -497,10 +482,7 @@ theorem capLabelCoh_step (cfg cfg' : Config)
   | oom => simp [Source.step] at hstep
   | wrong s => simp [Source.step] at hstep
 
-end Bang.CapCohProto7
 
-namespace Bang.CapCohProto8
-open Bang.CapCohProto Bang.CapCohProto7
 
 /-- A `VcapFree` closed program is `CapLabelCoh` at its initial config (both conjuncts vacuous). -/
 theorem capLabelCoh_initial {c : Comp} (hvf : VcapFree c) : CapLabelCoh (0, [], c) := by
@@ -518,9 +500,4 @@ theorem capLabelCoh_perform_label {g n : Nat} {ℓ : Label} {op : OpId} {v : Val
   have hw : WeakCoh K (n, ℓ) := h.1 (n, ℓ) (by simp [capsC, capsV])
   exact hw Kᵢ hh Kₒ hs
 
-end Bang.CapCohProto8
-
--- ════ STAGE (a) AXIOM GATE ════
-#print axioms Bang.CapCohProto7.capLabelCoh_step
-#print axioms Bang.CapCohProto8.capLabelCoh_initial
-#print axioms Bang.CapCohProto8.capLabelCoh_perform_label
+end Bang.CapCoh
