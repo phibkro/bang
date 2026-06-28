@@ -688,8 +688,8 @@ theorem Corr_pop_nonstate {σ : SStore} {fr top : HFrame} {hs tail : HStack}
       | throws _ => rw [hfr, hth] at hsh; exact absurd hsh (by simp)
 
 /-- `stateUpdate`-put preserves `HMut` (it mutates one state-frame value in place). -/
-theorem HMut.of_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
-    ∀ {hs hs' : HStack} {r : Val}, stateUpdate ℓ "put" v hs = some (r, hs') → HMut hs hs' := by
+theorem HMut.of_stateUpdate_put {n : Nat} {v : Val} :
+    ∀ {hs hs' : HStack} {r : Val}, stateUpdate n "put" v hs = some (r, hs') → HMut hs hs' := by
   intro hs
   induction hs with
   | nil => intro hs' r hsu; simp [stateUpdate] at hsu
@@ -698,7 +698,7 @@ theorem HMut.of_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
     cases hh : fr.handler with
     | state ℓ0 s =>
         simp only [stateUpdate, hh] at hsu
-        by_cases hc : ℓ0 = ℓ
+        by_cases hc : fr.id = n
         · simp only [if_pos hc, if_neg (by decide : ¬ ("put" = "get")), Option.some.injEq,
             Prod.mk.injEq] at hsu
           obtain ⟨_, rfl⟩ := hsu
