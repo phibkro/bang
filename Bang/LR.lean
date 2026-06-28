@@ -1447,22 +1447,30 @@ def VrelK : Nat → VTy Eff Mult → Val → Val → Prop
 `D` is QUANTIFIED here (internal to `KrelS`), so the eventual `Crel` signature is byte-identical. -/
 def CrelK : Nat → CTy Eff Mult → Eff → Comp → Comp → Prop
   | n, C, ε, c₁, c₂ =>
-      ∀ (D : CTy Eff Mult) (K₁ K₂ : Stack), KrelS n C D ε K₁ K₂ →
-        -- machine-shaped (ADR-0054/0055): the observed config carries the fresh-id counter. The
-        -- canonical fresh counter for a stack `K` is `handlerCount K` (ids `0..hc-1` are live, `hc`
-        -- is next-fresh). CrelK/KrelS signatures are frozen, so the counter is DERIVED, not a param.
-        CoApproxC_le n (handlerCount K₁, K₁, c₁) (handlerCount K₂, K₂, c₂)
+      ∀ (g : Nat) (D : CTy Eff Mult) (K₁ K₂ : Stack), KrelS n C D ε g K₁ K₂ →
+        -- ADR-0058 route 1: carry the REAL fresh-id counter `g` (threaded into `KrelS`), NOT the
+        -- derived `handlerCount K`. `g` is quantified UNIVERSALLY here — alongside the internal `D` —
+        -- so `CrelK`'s external arity is unchanged and `abbrev Crel := CrelK` stays byte-identical.
+        -- The machine threads `g` monotonically: a `handleF` pop / `letF` reduce KEEPS `g`
+        -- (Operational:476); only MINT (`handle`) increments it. So both sides of the pop share the
+        -- SAME counter and `crelK_ret`'s handleF arm collapses to `coApproxC_le_reduce` — no density,
+        -- no `Canonical`, no `run_bump` (the wall CanonicalWallProbe identified, DISSOLVED).
+        CoApproxC_le n (g, K₁, c₁) (g, K₂, c₂)
   termination_by n C _ _ _ => (n, 2, 0, sizeOf C)
 /-- ◊4.5b answer-typed stack relation, STACK-STRUCTURAL. `C` = hole type, `D` = answer type (inert).
 DISCOVERY-IC FORM: SINGLE-BODY def + internal `match K₁, K₂` (the multi-clause form fights the
 unfolder); per-case `@[simp]` eq lemmas (`krelS_nil`/`letF`/`appF`/`handleF`) generated below. -/
-def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack → Prop
-  | n, C, D, ε, K₁, K₂ =>
+def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Nat → Stack → Stack → Prop
+  | n, C, D, ε, g, K₁, K₂ =>
       match K₁, K₂ with
       -- nil: hole type = answer type; observe related RETURNS (the biorthogonal base / return-half).
+      -- ADR-0058 route 1: the return observation carries the REAL counter `g` (threaded from `CrelK`),
+      -- not the literal `0` of the empty stack. The return-half is `g`-independent in content (a `ret`
+      -- at the empty stack converges at ANY counter), but carrying `g` keeps the signature uniform so
+      -- `crelK_ret`'s nil case lands at the SAME `g` the body observes.
       | [], [] =>
           C = D ∧ (∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
-            CoApproxC_le n (0, [], Comp.ret v₁) (0, [], Comp.ret v₂))
+            CoApproxC_le n (g, [], Comp.ret v₁) (g, [], Comp.ret v₂))
       -- letF: hole is a returner `F q A`; frame body ▷-guarded at `m < n`, tail at continuation B.
       -- The continuation's row `φ` is bound existentially, AND the TAIL is at `φ` (not the ambient ε):
       -- after a letF frame the tail observes the CONTINUATION's execution, so the row threading through
@@ -1473,11 +1481,11 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
           ∃ q A B φ, C = CTy.F q A ∧
             (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
               CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
-            ∧ KrelS n B D φ K₁' K₂'
+            ∧ KrelS n B D φ g K₁' K₂'
       -- appF: hole is an arrow `arr q A B`; cap is the appF arg, tail at codomain B.
       | (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂') =>
           ∃ q A B, C = CTy.arr q A B ∧
-            Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁' K₂'
+            Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε g K₁' K₂'
       -- handleF: tail recurses at the same hole type (handler return = identity, ADR-0023 Q6, so the
       -- block's returner type = the body's = the tail's hole type — `C` is preserved across the frame).
       -- ◊4.5b-append: the handlers are RELATED (`HandlerRel n`), not necessarily EQUAL. `HandlerRel`
@@ -1502,7 +1510,7 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
                ℓ₁ = ℓ₂ ∧ Θ₁.length = Θ₂.length ∧
                  ∀ i : Nat, i < Θ₁.length →
                    VrelK n (VTy.int : VTy Eff Mult) (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
-           | _, _ => False) ∧ KrelS n C D ε K₁' K₂'
+           | _, _ => False) ∧ KrelS n C D ε g K₁' K₂'
             -- ◊4.5b-append RESUME CONJUNCT (config-level re-expression of old `Srel` LR:554), now threading
             -- the CAPTURED CONTINUATION `Kᵢ`. state/txn dispatch KEEPS `Kᵢ` (Operational:295): the dispatched
             -- config is `(Kᵢ ++ handleF(state ℓ s')::Kₒ, ret r)`. The conjunct quantifies over a related
@@ -1519,7 +1527,10 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
                 Bang.handlesOp h₁ h₁.label op = true →
                 Val.Closed w₁ → Val.Closed w₂ →
                 (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
-                KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
+                -- ADR-0058 route 1: the captured continuation `Kᵢ` is observed at the SAME counter `g`
+                -- as the outer config — dispatch (splitAtId + reinstall) PRESERVES the fresh-id counter
+                -- (only MINT increments it), so the resume interaction threads `g` unchanged.
+                KrelS m Cᵢ C εᵢ g Kᵢ Kᵢ' →
                 -- the captured continuation's hole `Cᵢ` is a RETURNER at the op-RESULT type (the resume
                 -- value flows into `Kᵢ` there). state/txn need this for `crelK_ret` to bridge the resume
                 -- through `Kᵢ`; the producer supplies it from the `up` typing (Cᵢ = F q (opRes)). throws
@@ -1542,9 +1553,9 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Stack → Stack �
                 (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
                     cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
                     Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
-                    KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ'))
+                    KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ'))
       | _, _ => False
-termination_by n _ _ _ K _ => (n, 1, K.length, 0)
+termination_by n _ _ _ _ K _ => (n, 1, K.length, 0)
 decreasing_by
   -- Lex `(n, role, stackLen, sizeOf)`: every edge drops `n` (▷-thunk j<n / frame-body m<n / μ),
   -- `role` (CrelK→KrelS, KrelS→VrelK-cap), `stackLen` (tail), or `sizeOf` (VrelK sum/prod).
@@ -1555,24 +1566,24 @@ decreasing_by
 end
 
 -- DISCOVERY-IC per-case `@[simp]` equation lemmas (so downstream proofs unfold cleanly).
-@[simp] theorem krelS_nil {n : Nat} {C D : CTy Eff Mult} {ε : Eff} :
-    KrelS n C D ε [] [] ↔
+@[simp] theorem krelS_nil {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} :
+    KrelS n C D ε g [] [] ↔
       (C = D ∧ ∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
-        CoApproxC_le n (0, [], Comp.ret v₁) (0, [], Comp.ret v₂)) := by
+        CoApproxC_le n (g, [], Comp.ret v₁) (g, [], Comp.ret v₂)) := by
   rw [KrelS]
 
-@[simp] theorem krelS_letF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {N₁ N₂ : Comp} {K₁ K₂ : Stack} :
-    KrelS n C D ε (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) ↔
+@[simp] theorem krelS_letF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {N₁ N₂ : Comp} {K₁ K₂ : Stack} :
+    KrelS n C D ε g (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) ↔
       ∃ q A B φ, C = CTy.F q A ∧
         (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
           CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
-        ∧ KrelS n B D φ K₁ K₂ := by
+        ∧ KrelS n B D φ g K₁ K₂ := by
   rw [KrelS]
 
-@[simp] theorem krelS_appF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {w₁ w₂ : Val} {K₁ K₂ : Stack} :
-    KrelS n C D ε (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂) ↔
+@[simp] theorem krelS_appF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {w₁ w₂ : Val} {K₁ K₂ : Stack} :
+    KrelS n C D ε g (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂) ↔
       ∃ q A B, C = CTy.arr q A B ∧
-        Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε K₁ K₂ := by
+        Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε g K₁ K₂ := by
   rw [KrelS]
 
 /-- ◊4.5b-append the RELATIONAL handler condition (state lives IN the handler, related-not-equal). Fixes
@@ -1592,16 +1603,16 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
           VrelK (Eff := Eff) (Mult := Mult) n VTy.int (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
   | _, _ => False
 
-@[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {nh nh' : Nat} {h h' : Handler}
+@[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {nh nh' : Nat} {h h' : Handler}
     {K₁ K₂ : Stack} :
-    KrelS n C D ε (Frame.handleF nh h :: K₁) (Frame.handleF nh' h' :: K₂) ↔
-      (nh = nh' ∧ HandlerRel Eff Mult n h h' ∧ KrelS n C D ε K₁ K₂
+    KrelS n C D ε g (Frame.handleF nh h :: K₁) (Frame.handleF nh' h' :: K₂) ↔
+      (nh = nh' ∧ HandlerRel Eff Mult n h h' ∧ KrelS n C D ε g K₁ K₂
         ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
             Bang.handlesOp h h.label op = true →
             Val.Closed w₁ → Val.Closed w₂ →
             (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
-            KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
+            KrelS m Cᵢ C εᵢ g Kᵢ Kᵢ' →
             (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
               ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
             Bang.dispatchOn nh op w₁ (Kᵢ, h, K₁) = some cfg₁ →
@@ -1609,12 +1620,12 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
             (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
                 cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
                 Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
-                KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ'))) := by
+                KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ'))) := by
   cases h <;> cases h' <;> simp only [KrelS, HandlerRel]
 
 /-- ◊4.5b μ-floor: `CrelK 0` is VACUOUS (the metered obs at 0 — `ConvergesC_le 0` is `False`). -/
 theorem crelK_zero {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp} : CrelK 0 C ε c₁ c₂ := by
-  rw [CrelK]; intro D K₁ K₂ _ hconv; exact absurd hconv (not_convergesC_le_zero _)
+  rw [CrelK]; intro g D K₁ K₂ _ hconv; exact absurd hconv (not_convergesC_le_zero _)
 
 /-- ◊4.5b adequacy grounding: `CrelK n (F q A)` at the IDENTITY (nil) stack gives the whole-program
 return observation. The `D = C, K = []` instance (Biernacki Lemma 2 identity). The capstone of
@@ -1622,8 +1633,7 @@ sub-block (a): it is the bridge `CrelK → ⊑` that the eventual `lr_sound` con
 theorem crelK_adequacy_nil {n : Nat} {q : Mult} {A : VTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp}
     (h : CrelK n (CTy.F q A) ε c₁ c₂) : CoApproxC_le n (0, [], c₁) (0, [], c₂) := by
   rw [CrelK] at h
-  have := h (CTy.F q A) [] []
-  simp only [handlerCount] at this
+  have := h 0 (CTy.F q A) [] []
   apply this
   rw [krelS_nil]
   refine ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ?_⟩
@@ -1674,8 +1684,8 @@ termination_by (n, sizeOf A)
 /-- ◊4.5b `KrelS` DOWNWARD-CLOSURE — by induction on the stack. The metered nil return-half is monotone
 trivially (a `ret` converges at any index); the recursive cases weaken caps DOWN (`VrelK_mono`) and
 restrict the frame-body `∀ m <` and recurse on the (shorter) tail. -/
-theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} :
-    ∀ {K₁ K₂ : Stack}, m ≤ n → KrelS n C D ε K₁ K₂ → KrelS m C D ε K₁ K₂
+theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} :
+    ∀ {K₁ K₂ : Stack}, m ≤ n → KrelS n C D ε g K₁ K₂ → KrelS m C D ε g K₁ K₂
   | [], [], hmn, hK => by
       rw [krelS_nil] at hK ⊢
       exact ⟨hK.1, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
@@ -1720,8 +1730,8 @@ continuation row); the `letF` clause replaces `ε` by the continuation row `φ` 
 is then ε-MONOTONE (its `KrelS … ε'` premise weakens to `KrelS … ε`). -/
 /-- `KrelS` ANTITONE in ε. The `letF` tail is at the continuation row `φ` (ε-independent) so it passes
 through unchanged; the appF/handleF tails carry the ambient `ε` and recurse. -/
-theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
-    ∀ {K₁ K₂ : Stack}, ε ≤ ε' → KrelS n C D ε' K₁ K₂ → KrelS n C D ε K₁ K₂
+theorem KrelS_eff_anti {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} {g : Nat} :
+    ∀ {K₁ K₂ : Stack}, ε ≤ ε' → KrelS n C D ε' g K₁ K₂ → KrelS n C D ε g K₁ K₂
   | [], [], _, hK => by rw [krelS_nil] at hK ⊢; exact hK
   | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), _, hK => by
       -- the letF tail is at `φ` (ε-independent); the whole clause is ε-free ⇒ passes through unchanged.
@@ -1752,8 +1762,8 @@ direction. This is what discharges the handler ROW-CHANGE (`KrelS …φ → Krel
 in `krelS_refl`'s handleF/state/transaction arms — the SINGLE-ROW `KrelS` suffices (no two-row Biernacki
 `C⟦τ₁/ε₁{τ₂/ε₂⟧` needed), because the row carried past a handleF frame is inert at the relation level.
 shape: biernacki-popl18 §5.4 — set-row ρ-free collapse; the row only gates `Srel`, which this core drops. -/
-theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
-    ∀ {K₁ K₂ : Stack}, ε ≤ ε' → KrelS n C D ε K₁ K₂ → KrelS n C D ε' K₁ K₂
+theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} {g : Nat} :
+    ∀ {K₁ K₂ : Stack}, ε ≤ ε' → KrelS n C D ε g K₁ K₂ → KrelS n C D ε' g K₁ K₂
   | [], [], _, hK => by rw [krelS_nil] at hK ⊢; exact hK
   | (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), _, hK => by
       -- the letF tail is at `φ` (ε-independent); the whole clause is ε-free ⇒ passes through unchanged.
@@ -1779,8 +1789,8 @@ theorem KrelS_eff_mono {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} :
 anti+mono via the bottom row (`⊥ ≤ ε`, `⊥ ≤ ε'`). This is the lemma the handler ROW-DISCHARGE consumes
 in `krelS_refl`: the tail self-relates at the discharged row `φ` (IH), and the handleF frame demands it
 at the body row `e` (possibly `e ⊋ φ`) — invariance bridges them with no `φ`/`e` ordering hypothesis. -/
-theorem KrelS_eff_cast {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} {K₁ K₂ : Stack}
-    (hK : KrelS n C D ε K₁ K₂) : KrelS n C D ε' K₁ K₂ :=
+theorem KrelS_eff_cast {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} {g : Nat} {K₁ K₂ : Stack}
+    (hK : KrelS n C D ε g K₁ K₂) : KrelS n C D ε' g K₁ K₂ :=
   KrelS_eff_mono (bot_le : (⊥ : Eff) ≤ ε') (KrelS_eff_anti (bot_le : (⊥ : Eff) ≤ ε) hK)
 
 /-- `CrelK` MONOTONE in ε: a `KrelS … ε'` stack is (by `KrelS_eff_anti`) a `KrelS … ε` stack, so the
@@ -1788,8 +1798,8 @@ theorem KrelS_eff_cast {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} {K₁ K₂ 
 theorem CrelK_eff_mono {n : Nat} {C : CTy Eff Mult} {ε ε' : Eff} {c₁ c₂ : Comp}
     (hεε' : ε ≤ ε') (hC : CrelK n C ε c₁ c₂) : CrelK n C ε' c₁ c₂ := by
   rw [CrelK] at hC ⊢
-  intro D K₁ K₂ hK
-  exact hC D K₁ K₂ (KrelS_eff_anti hεε' hK)
+  intro g D K₁ K₂ hK
+  exact hC g D K₁ K₂ (KrelS_eff_anti hεε' hK)
 
 
 /-! ## 5.2′c ◊4.5b sub-block (c) — `CrelK` value/head-step lemmas
@@ -1817,27 +1827,24 @@ theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
     | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
       | unfold _ | oom | wrong _ => exact absurd hrun (by simp)
 
-/-- ◊4.5b `crelK_ret` (GUARDED form, ADR-0054/0055 density resolution, lead decision 2026-06-26): a
-`VrelK`-related RETURN co-behaves through every `KrelS`-related stack pair that is CANONICAL (dense ids
-`0..handlerCount-1`) — the runplug §4 canonical-observation made explicit. The density premises
-(`Canonical K₁/K₂` + the value's cap-scopedness `Val.CapsBelow 0`, i.e. the returned value carries no
-escaping cap) let the `handleF`-pop's `+1` counter shift discharge via `run_bump_converges` (the
-`run_rename` consumer). `CrelK`/`KrelS` stay FROZEN — the invariant is a consumer-supplied hypothesis
-on this supporting lemma; consumers (`crelK_fund`/`coApproxC_le_of_resumeDecomp`) build canonical stacks
-via `canonStack`/reshape (dispatch-reinstall preserves density) and supply it. The conclusion is the
-unfolded `CrelK` clause (`CoApproxC_le` at the machine-shaped config). -/
+/-- ◊4.5b `crelK_ret` (ADR-0058 ROUTE-1 form): a `VrelK`-related RETURN co-behaves through every
+`KrelS`-related stack pair, at the REAL threaded counter `g` (universally quantified). NO density
+premises (`Canonical`/`CapsBelow`) — they DISSOLVE under route 1: the machine threads `g` monotonically
+(`handleF`-pop and `letF`-reduce on a `ret` KEEP `g`, Operational:476), so both sides of every pop share
+the SAME counter `g` and the `+1` shift that the old frozen-counter form bridged via `run_bump_converges`
+NEVER ARISES. The handleF arm is exactly `scratch/CompatRoute1Spike.pop_route1`: one `coApproxC_le_reduce`
+from the tail `ih`. The conclusion is the unfolded route-1 `CrelK` clause (`CoApproxC_le` at `(g, K, …)`).
+shape: the counter-bridge half of the CanonicalWallProbe wall, collapsed by carrying the real counter. -/
 theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ : Val}
-    (D : CTy Eff Mult) (K₁ K₂ : Stack)
-    (hK : KrelS n (CTy.F q A) D e K₁ K₂)
-    (hcan₁ : RunPlugReshape.Canonical K₁) (hcan₂ : RunPlugReshape.Canonical K₂)
-    (hvcf₁ : RunPlugReshape.Val.CapsBelow 0 v₁) (hvcf₂ : RunPlugReshape.Val.CapsBelow 0 v₂)
+    (g : Nat) (D : CTy Eff Mult) (K₁ K₂ : Stack)
+    (hK : KrelS n (CTy.F q A) D e g K₁ K₂)
     (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂)
     (hv : VrelK n A v₁ v₂) :
-    CoApproxC_le n (handlerCount K₁, K₁, Comp.ret v₁) (handlerCount K₂, K₂, Comp.ret v₂) := by
+    CoApproxC_le n (g, K₁, Comp.ret v₁) (g, K₂, Comp.ret v₂) := by
   induction K₁ generalizing K₂ A v₁ v₂ e with
   | nil =>
       cases K₂ with
-      | nil => rw [krelS_nil] at hK; simpa only [handlerCount] using hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
+      | nil => rw [krelS_nil] at hK; exact hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
       | cons fr K₂' => simp only [KrelS] at hK
   | cons fr K₁' ih =>
       cases fr with
@@ -1852,60 +1859,32 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   cases n with
                   | zero => intro hconv; exact absurd hconv (not_convergesC_le_zero _)
                   | succ k =>
-                      -- letF reduce: `step (g, letF N₁::K₁', ret v₁) = (g, K₁', subst v₁ N₁)`, counter
-                      -- `handlerCount (letF N₁::K₁') = handlerCount K₁'` UNCHANGED (letF adds no handler),
-                      -- so the landed config's counter matches the `CrelK` body observation. No bump needed.
-                      simp only [handlerCount]
-                      refine coApproxC_le_anti_step rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
+                      -- letF reduce: `step (g, letF N₁::K₁', ret v₁) = (g, K₁', subst v₁ N₁)`, counter `g`
+                      -- UNCHANGED (letF adds no handler). Route 1: the landed config is at the SAME `g`.
+                      refine coApproxC_le_anti_step rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
                       have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ (VrelK_mono (Nat.le_succ k) hv)
                       rw [CrelK] at hCrel
-                      exact hCrel D K₁' K₂' (KrelS_mono (Nat.le_succ k) htail)
+                      exact hCrel g D K₁' K₂' (KrelS_mono (Nat.le_succ k) htail)
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
       | appF w₁ =>
-          simp only [handlerCount]
           intro hconv
-          exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
+          exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g' u; simp))
       | handleF nh₁ h₁ =>
           cases K₂ with
           | cons fr₂ K₂' =>
               cases fr₂ with
               | handleF nh₂ h₂ =>
-                  -- ◊inc-5 COUNTER-SHIFT, DISCHARGED (density resolution). handleF pass-through on `ret`:
-                  -- `step (g, handleF nh::K', ret v) = (g, K', ret v)` keeps the counter `g = handlerCount
-                  -- (handleF nh::K') = handlerCount K' + 1`, while the tail observation (`ih`) is at
-                  -- `handlerCount K'`. The `+1` is invisible because the config is CANONICAL: `Canonical K'`
-                  -- gives `StackBelow`/`CapsBelow (handlerCount K') K'` and the returned value carries no
-                  -- escaping cap (`CapsBelow 0`), so `run_bump_converges` (the `run_rename` consumer) bridges
-                  -- the two counters. The popped handler's id `nh` is dead and `handlerCount K'+1` is still
-                  -- fresh — now SECURED by the density invariant, not asserted.
-                  obtain ⟨_, hcan₁'⟩ := RunPlugReshape.Canonical_cons hcan₁
-                  obtain ⟨_, hcan₂'⟩ := RunPlugReshape.Canonical_cons hcan₂
+                  -- ROUTE-1 COLLAPSE (= `scratch/CompatRoute1Spike.pop_route1`). handleF pass-through on
+                  -- `ret`: `step (g, handleF nh::K', ret v) = (g, K', ret v)` keeps the counter `g`, so the
+                  -- reduct config is at the SAME `g` as the tail observation `ih`. ONE `coApproxC_le_reduce`
+                  -- from `ih` — NO density, NO `run_bump`, NO `Canonical`/`CapsBelow`.
                   rw [krelS_handleF] at hK
                   obtain ⟨_hid, _hHR, htail, _hres⟩ := hK
-                  have hih := ih K₂' htail hcan₁' hcan₂' hvcf₁ hvcf₂ hc₁ hc₂ hv
-                  -- pop both handleF frames (counter unchanged), landing at `(handlerCount K' + 1, K', ret v)`.
-                  simp only [handlerCount]
-                  refine coApproxC_le_reduce
-                    (cfg₁' := (handlerCount K₁' + 1, K₁', Comp.ret v₁))
-                    (cfg₂' := (handlerCount K₂' + 1, K₂', Comp.ret v₂))
-                    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
-                  -- the `+1` bump bridge, both sides, via `run_bump_converges`.
-                  have hSK₁ : RunPlugReshape.Stack.CapsBelow (handlerCount K₁') K₁' :=
-                    RunPlugReshape.Canonical.capsBelow hcan₁'
-                  have hSK₂ : RunPlugReshape.Stack.CapsBelow (handlerCount K₂') K₂' :=
-                    RunPlugReshape.Canonical.capsBelow hcan₂'
-                  have hcv₁ : RunPlugReshape.Comp.CapsBelow (handlerCount K₁') (Comp.ret v₁) := by
-                    simp only [RunPlugReshape.Comp.CapsBelow]
-                    exact RunPlugReshape.Val.CapsBelow_mono (Nat.zero_le _) hvcf₁
-                  have hcv₂ : RunPlugReshape.Comp.CapsBelow (handlerCount K₂') (Comp.ret v₂) := by
-                    simp only [RunPlugReshape.Comp.CapsBelow]
-                    exact RunPlugReshape.Val.CapsBelow_mono (Nat.zero_le _) hvcf₂
-                  intro hconv
-                  have hconv' : ConvergesC_le n (handlerCount K₁', K₁', Comp.ret v₁) :=
-                    (RunPlugReshape.run_bump_converges hSK₁ hcv₁).mp hconv
-                  obtain ⟨m, w, hrun⟩ := hih hconv'
-                  exact ⟨m, (RunPlugReshape.run_bump_converges hSK₂ hcv₂).mpr ⟨w, hrun⟩⟩
+                  have hih := ih K₂' htail hc₁ hc₂ hv
+                  exact coApproxC_le_reduce
+                    (cfg₁' := (g, K₁', Comp.ret v₁)) (cfg₂' := (g, K₂', Comp.ret v₂))
+                    rfl (by intro g' u; simp) rfl (by intro g' u; simp) hih
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
 
@@ -2050,8 +2029,8 @@ theorem not_convergesC_le_up_splitNone {j g : Nat} (K : Stack) (cap : Nat) (ℓ 
 at EVERY index (the metered nil return-half is monotone-trivial — no `n+1` needed, unlike the old
 `krel_nil_succ` whose stuck-half needed `Srel (n+1)`; `KrelS`'s nil has no stuck-half). -/
 theorem krelS_nil_succ {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult]
-    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (q : Mult) (A : VTy Eff Mult) (e : Eff) :
-    KrelS n (CTy.F q A) (CTy.F q A) e ([] : Stack) ([] : Stack) := by
+    [DecidableEq Mult] [EffSig Eff Mult] (n : Nat) (q : Mult) (A : VTy Eff Mult) (e : Eff) (g : Nat) :
+    KrelS n (CTy.F q A) (CTy.F q A) e g ([] : Stack) ([] : Stack) := by
   rw [krelS_nil]
   exact ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
 
@@ -2076,12 +2055,12 @@ theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemi
       have hC := h (f + 1)
       -- `Crel` is the abbrev for `CrelK`: `∀ D K₁ K₂, KrelS … → CoApproxC_le n (K₁,c₁) (K₂,c₂)`.
       rw [Crel, CrelK] at hC
-      -- the metered left premise: ConvergesC_le (f+1) (0, [], c₁), witnessed by hfuel
-      -- (`handlerCount [] = 0`, so the CrelK observation at the empty stack is the fresh config).
+      -- the metered left premise: ConvergesC_le (f+1) (0, [], c₁), witnessed by hfuel.
+      -- Route 1: instantiate the universally-quantified counter `g := 0` (the empty-stack fresh config).
       have hconv : ConvergesC_le (f + 1) (0, [], c₁) :=
         ⟨v, hfuel⟩
-      -- instantiate at the identity observation context: D = F q A, K₁ = K₂ = [] (krelS_nil_succ).
-      have hright := hC (CTy.F q A) [] [] (krelS_nil_succ (f + 1) q A e) hconv
+      -- instantiate at g = 0 and the identity observation context: D = F q A, K₁ = K₂ = [] (krelS_nil_succ).
+      have hright := hC 0 (CTy.F q A) [] [] (krelS_nil_succ (f + 1) q A e 0) hconv
       -- hright : ∃ m w, Config.run m ([], c₂) = done w  =  Converges c₂.
       obtain ⟨m, w, hm⟩ := hright
       exact ⟨m, w, hm⟩
