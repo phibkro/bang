@@ -62,6 +62,7 @@ wasmfx-probe:
 # so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:
     bash tools/check-primitives.sh
+    bash tools/check-bang-root.sh
     bash tools/check-adr-links.sh
     python3 tools/gen-adr-index.py --check
     bash tools/arch-check.sh
@@ -69,6 +70,12 @@ fitness:
     python3 tools/check-refs.py
     python3 tools/refs.py check
     python3 tools/gen-gate-index.py --check
+
+# Import-root coherence: every Bang/**/*.lean is imported in Bang.lean, except the
+# co-located `-- root-exclude:` allowlist (regression witnesses). Catches a new file
+# silently unbuilt (hence ungated). Also run by `just fitness`.
+check-bang-root:
+    bash tools/check-bang-root.sh
 
 # Reference library (refs.bib = single source of truth; index.json + the README block are derived).
 refs-index:

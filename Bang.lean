@@ -1,6 +1,10 @@
 -- Bang library root
 -- Re-exports every module of the `Bang` Lean library so `lake build` knows
 -- what to compile. Keep this file in sync when adding / removing modules.
+-- `tools/check-bang-root.sh` GATES that sync: every Bang/**/*.lean must be
+-- imported here, except the allowlist below (parsed from this very line).
+
+-- root-exclude: CapEscapeWitness LWRegress   (regression witnesses — built standalone via #guard, deliberately out of the build spine)
 
 -- K1: effect-row algebra (sound unifier)
 import Bang.EffectRow
