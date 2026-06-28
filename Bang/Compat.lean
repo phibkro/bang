@@ -1643,45 +1643,97 @@ theorem crelK_fund_up {n : Nat} {m : Nat} {ℓ : Label} {op : OpId} {q : Mult} {
   -- (the dissolution lemma `HasConfigTy ⟹ NonEscape` + the `CapsBelow` discharge it licenses).
   sorry
 
-/-- ◊4.5b the `handleThrows` compat core at `CrelK`. REFOCUS `(K, handle h M) ↦ (handleF h::K, M)`
-(one PUSH step), then run `M` (related at its body row `e`) through the handleF-extended stack, shown
-`KrelS`-related by `krelS_handleF_intro`. The block discharges `ℓ` from `e` to `φ`. ▷-free. -/
+/-- ADR-0058 route 1: `KrelS` is INDEPENDENT of the threaded fresh-id counter `g`. The counter only
+pins the nil return-half (discharged at ANY `g` by `⟨1,v₂,rfl⟩`, a `ret` converges regardless) and
+threads through the resume conjunct (recursively re-cast at `m < n`). MINT advances `g → g+1`, so
+running a handle body through the freshly pushed `handleF g` frame needs the ambient observation tail
+re-cast from the pre-MINT `g` to the post-MINT `g+1`. Well-founded on `(n, K₁.length)`: tail recursion
+drops the length at fixed `n`; the conjunct recursion drops `n` (`m < n`) at an arbitrary `Kᵢ`. -/
+theorem KrelS_g_cast : ∀ (n : Nat) {C D : CTy Eff Mult} {ε : Eff} (g g' : Nat) (K₁ K₂ : Stack),
+    KrelS n C D ε g K₁ K₂ → KrelS n C D ε g' K₁ K₂
+  | _, _, _, _, _, _, [], [], hK => by
+      rw [krelS_nil] at hK ⊢
+      exact ⟨hK.1, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+  | n, _, _, _, g, g', (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), hK => by
+      rw [krelS_letF] at hK ⊢
+      obtain ⟨q, A, B, φ, hC, hbody, htail⟩ := hK
+      exact ⟨q, A, B, φ, hC, hbody, KrelS_g_cast n g g' K₁' K₂' htail⟩
+  | n, _, _, _, g, g', (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂'), hK => by
+      rw [krelS_appF] at hK ⊢
+      obtain ⟨q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
+      exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, KrelS_g_cast n g g' K₁' K₂' htail⟩
+  | n, _, _, _, g, g', (Frame.handleF nh h :: K₁'), (Frame.handleF nh' h' :: K₂'), hK => by
+      rw [krelS_handleF] at hK ⊢
+      obtain ⟨hid, hh, htail, hres⟩ := hK
+      refine ⟨hid, hh, KrelS_g_cast n g g' K₁' K₂' htail, ?_⟩
+      intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
+      obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr, hSk⟩ :=
+        hres m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel
+          (KrelS_g_cast m g' g Kᵢ Kᵢ' hKi) hCᵢ hd₁ hd₂
+      exact ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr,
+        KrelS_g_cast m g g' Sᵢ Sᵢ' hSk⟩
+  | _, _, _, _, _, _, [], (_ :: _), hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, (_ :: _), [], hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.appF _ :: _), hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.handleF _ _ :: _), hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.letF _ :: _), hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.handleF _ _ :: _), hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.letF _ :: _), hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.appF _ :: _), hK => by simp only [KrelS] at hK
+termination_by n _ _ _ _ _ K₁ _ _ => (n, K₁.length)
+decreasing_by
+  all_goals simp_wf
+  · exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.left _ _ hm
+  · exact Prod.Lex.left _ _ hm
+
+/-- ◊4.5b the `handleThrows` compat core at `CrelK`, ADR-0054/0055 cap-binding. MINT
+`(g, K, handle (throws ℓ) M) ↦ (g+1, handleF g (throws ℓ)::K, subst (vcap g ℓ) M)` — the handle BINDS
+the capability `vcap g ℓ` at body var 0 (the SAME fresh `g` it pushes). So the premise is CAP-QUANTIFIED
+`∀ gid, CrelK … (subst (vcap gid ℓ) M₁) (subst (vcap gid ℓ) M₂)` (the body related under the cap binder,
+parallel `compatK_lam`); instantiated at the minted `gid := g`. The observation counter advances to
+`g+1`, so the ambient tail `hK` is re-cast `g → g+1` via `KrelS_g_cast`. The block discharges `ℓ` from
+`e` to `φ`. shape: biernacki-popl18 §5.4 (throws zero-shot arm). -/
 theorem compatK_handleThrows {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
     {M₁ M₂ : Comp}
     (hArg : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "raise" = some A)
-    (hM : CrelK n (CTy.F q A) e M₁ M₂) :
+    (hbody : ∀ gid, CrelK n (CTy.F q A) e
+      (Comp.subst (Val.vcap gid ℓ) M₁) (Comp.subst (Val.vcap gid ℓ) M₂)) :
     CrelK n (CTy.F q A) φ (Comp.handle (Handler.throws ℓ) M₁) (Comp.handle (Handler.throws ℓ) M₂) := by
   rw [CrelK]
-  intro D K₁ K₂ hK
+  intro g D K₁ K₂ hK
   refine coApproxC_le_reduce
-    (cfg₁' := (Frame.handleF (Handler.throws ℓ) :: K₁, M₁))
-    (cfg₂' := (Frame.handleF (Handler.throws ℓ) :: K₂, M₂))
-    rfl (by intro u; simp) rfl (by intro u; simp) ?_
-  rw [CrelK] at hM
-  refine hM D (Frame.handleF (Handler.throws ℓ) :: K₁) (Frame.handleF (Handler.throws ℓ) :: K₂)
-    (krelS_handleF_intro (by simp only [HandlerRel]) hK ?_)
+    (cfg₁' := (g + 1, Frame.handleF g (Handler.throws ℓ) :: K₁, Comp.subst (Val.vcap g ℓ) M₁))
+    (cfg₂' := (g + 1, Frame.handleF g (Handler.throws ℓ) :: K₂, Comp.subst (Val.vcap g ℓ) M₂))
+    rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
+  have hb := hbody g
+  rw [CrelK] at hb
+  refine hb (g + 1) D (Frame.handleF g (Handler.throws ℓ) :: K₁)
+    (Frame.handleF g (Handler.throws ℓ) :: K₂)
+    (krelS_handleF_intro (nh := g) (by simp only [HandlerRel])
+      (KrelS_g_cast n g (g + 1) K₁ K₂ hK) ?_)
   -- THROWS resume supply: `dispatchOn op w (Kᵢ, throws ℓ, Kⱼ) = (Kⱼ, ret w)` (zero-shot abort — Kᵢ
-  -- DISCARDED). The `handlesOp` guard forces `op = "raise"`, so `opArg ℓ "raise" = A` (hArg) gives
-  -- `VrelK m A w` from `hVrel`; the dispatched config relation IS the tail's return-half — `crelK_ret`
-  -- on the (downward-closed) tail `hK` at hole type `F q A`. The threaded `Kᵢ` is irrelevant for throws.
+  -- DISCARDED). `handlesOp` forces `op = "raise"`, so `opArg ℓ "raise" = A` (hArg) gives `VrelK m A w`;
+  -- the dispatched config IS the tail's return-half on the re-cast (`g+1`) tail at hole `F q A`.
   intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
-  -- `hcatch` (handlesOp (throws ℓ) ℓ op) forces `op = "raise"`.
   have hop : op = "raise" := by
     simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
   subst hop
   have hw : VrelK m A w₁ w₂ := hVrel A (by rw [Handler.label]; exact hArg)
-  -- dispatchOn throws ignores op AND Kᵢ: cfgⱼ = (Kⱼ, ret w). ◊4.5b-strengthen: SUPPLY the krel-carrying
-  -- decomposition — the dispatched config IS the tail `(K₁/K₂, ret w₁/w₂)`, with `w₁~w₂` at `A` (hw) and
-  -- the tail `K₁~K₂` related at hole `F q A` (hK, downward-closed via `KrelS_mono`).
   simp only [dispatchOn] at hd₁ hd₂
   obtain rfl := (Option.some.injEq _ _).mp hd₁.symm
   obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
-  exact ⟨q, A, w₁, w₂, K₁, K₂, φ, rfl, rfl, hcw₁, hcw₂, hw, KrelS_mono (le_of_lt hm) hK⟩
+  exact ⟨q, A, w₁, w₂, K₁, K₂, φ, rfl, rfl, hcw₁, hcw₂, hw,
+    KrelS_mono (le_of_lt hm) (KrelS_g_cast n g (g + 1) K₁ K₂ hK)⟩
 
-/-- ◊4.5b-append the `handleState` compat core at `CrelK`. REFOCUS `(K, handle (state ℓ s) M) ↦
-(handleF (state ℓ s)::K, M)`, then run `M` (related at body row `e`) through the reinstalling stack, shown
-`KrelS`-related by `krelS_state_reinstall` (the resumptive heart). The interface (get/put sig) + the stored
-state's self-relation `hsv` are threaded from the caller's `HasCTy.handleState` typing. -/
+/-- ◊4.5b-append the `handleState` compat core at `CrelK`, ADR-0054/0055 cap-binding. MINT
+`(g, K, handle (state ℓ s) M) ↦ (g+1, handleF g (state ℓ s)::K, subst (vcap g ℓ) M)`. CAP-QUANTIFIED
+premise `hbody` (cap binds body var 0, parallel `compatK_lam`); the reinstalling stack is shown
+`KrelS`-related at the minted frame id `g` and post-MINT counter `g+1` by `krelS_state_reinstall` (the
+resumptive heart), the ambient tail re-cast `g → g+1` via `KrelS_g_cast`. The interface (get/put sig) +
+the stored state's self-relation `hsv` are threaded from the caller's `HasCTy.handleState` typing. -/
 theorem compatK_handleState {n : Nat} {q : Mult} {A S : VTy Eff Mult} {e φ : Eff} {ℓ : Label} {s : Val}
     {M₁ M₂ : Comp}
     (hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S)
@@ -1689,21 +1741,27 @@ theorem compatK_handleState {n : Nat} {q : Mult} {A S : VTy Eff Mult} {e φ : Ef
     (hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit)
     (hrestrict : ∀ op s', Bang.handlesOp (Handler.state ℓ s') ℓ op = true → op = "get" ∨ op = "put")
     (hcs : Val.Closed s) (hsv : ∀ k, VrelK k S s s)
-    (hM : CrelK n (CTy.F q A) e M₁ M₂) :
+    (hbody : ∀ gid, CrelK n (CTy.F q A) e
+      (Comp.subst (Val.vcap gid ℓ) M₁) (Comp.subst (Val.vcap gid ℓ) M₂)) :
     CrelK n (CTy.F q A) φ (Comp.handle (Handler.state ℓ s) M₁) (Comp.handle (Handler.state ℓ s) M₂) := by
   rw [CrelK]
-  intro D K₁ K₂ hK
+  intro g D K₁ K₂ hK
   refine coApproxC_le_reduce
-    (cfg₁' := (Frame.handleF (Handler.state ℓ s) :: K₁, M₁))
-    (cfg₂' := (Frame.handleF (Handler.state ℓ s) :: K₂, M₂))
-    rfl (by intro u; simp) rfl (by intro u; simp) ?_
-  rw [CrelK] at hM
-  -- discharge the row `φ → e` (the handler block discharges `ℓ`); `KrelS_eff_cast` (ε inert in KrelS).
-  exact hM D (Frame.handleF (Handler.state ℓ s) :: K₁) (Frame.handleF (Handler.state ℓ s) :: K₂)
-    (krelS_state_reinstall hgr hp hpr hrestrict n s s hcs hcs (hsv n) K₁ K₂ (KrelS_eff_cast hK))
+    (cfg₁' := (g + 1, Frame.handleF g (Handler.state ℓ s) :: K₁, Comp.subst (Val.vcap g ℓ) M₁))
+    (cfg₂' := (g + 1, Frame.handleF g (Handler.state ℓ s) :: K₂, Comp.subst (Val.vcap g ℓ) M₂))
+    rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
+  have hb := hbody g
+  rw [CrelK] at hb
+  -- discharge the row `φ → e` (`KrelS_eff_cast`) + counter `g → g+1` (`KrelS_g_cast`) on the tail.
+  exact hb (g + 1) D (Frame.handleF g (Handler.state ℓ s) :: K₁)
+    (Frame.handleF g (Handler.state ℓ s) :: K₂)
+    (krelS_state_reinstall hgr hp hpr hrestrict g n s s hcs hcs (hsv n) K₁ K₂
+      (KrelS_g_cast n g (g + 1) K₁ K₂ (KrelS_eff_cast hK)))
 
-/-- ◊4.5b the `handleTransaction` compat core at `CrelK`. The multi-cell resumptive analogue — same
-handler-agnostic argument, closes like state/throws (`krelS_handleF_intro`); the heap `Θ` is arbitrary. -/
+/-- ◊4.5b the `handleTransaction` compat core at `CrelK`, ADR-0054/0055 cap-binding. The multi-cell
+resumptive analogue — same MINT shape (`handleF g (transaction ℓ Θ)::K`, `subst (vcap g ℓ)`, counter
+`g+1`); the cap-QUANTIFIED body runs through the reinstalling stack via `krelS_transaction_reinstall`,
+tail re-cast `g → g+1`. The heap `Θ` is arbitrary. -/
 theorem compatK_handleTransaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ : Eff} {ℓ : Label}
     {Θ : Store} {M₁ M₂ : Comp}
     (hnewA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int)
@@ -1716,19 +1774,22 @@ theorem compatK_handleTransaction {n : Nat} {q : Mult} {A : VTy Eff Mult} {e φ 
     (hrestrict : ∀ op Θ', Bang.handlesOp (Handler.transaction ℓ Θ') ℓ op = true →
       op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar")
     (hheap : HeapRel Eff Mult n Θ Θ)
-    (hM : CrelK n (CTy.F q A) e M₁ M₂) :
+    (hbody : ∀ gid, CrelK n (CTy.F q A) e
+      (Comp.subst (Val.vcap gid ℓ) M₁) (Comp.subst (Val.vcap gid ℓ) M₂)) :
     CrelK n (CTy.F q A) φ (Comp.handle (Handler.transaction ℓ Θ) M₁)
                           (Comp.handle (Handler.transaction ℓ Θ) M₂) := by
   rw [CrelK]
-  intro D K₁ K₂ hK
+  intro g D K₁ K₂ hK
   refine coApproxC_le_reduce
-    (cfg₁' := (Frame.handleF (Handler.transaction ℓ Θ) :: K₁, M₁))
-    (cfg₂' := (Frame.handleF (Handler.transaction ℓ Θ) :: K₂, M₂))
-    rfl (by intro u; simp) rfl (by intro u; simp) ?_
-  rw [CrelK] at hM
-  exact hM D (Frame.handleF (Handler.transaction ℓ Θ) :: K₁) (Frame.handleF (Handler.transaction ℓ Θ) :: K₂)
-    (krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict n Θ Θ hheap
-      K₁ K₂ (KrelS_eff_cast hK))
+    (cfg₁' := (g + 1, Frame.handleF g (Handler.transaction ℓ Θ) :: K₁, Comp.subst (Val.vcap g ℓ) M₁))
+    (cfg₂' := (g + 1, Frame.handleF g (Handler.transaction ℓ Θ) :: K₂, Comp.subst (Val.vcap g ℓ) M₂))
+    rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
+  have hb := hbody g
+  rw [CrelK] at hb
+  exact hb (g + 1) D (Frame.handleF g (Handler.transaction ℓ Θ) :: K₁)
+    (Frame.handleF g (Handler.transaction ℓ Θ) :: K₂)
+    (krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict g n Θ Θ hheap
+      K₁ K₂ (KrelS_g_cast n g (g + 1) K₁ K₂ (KrelS_eff_cast hK)))
 
 
 /-- A well-typed value is `ScopedIn Γ.length` (`HasVTy.shift_closed`: shifting at a cutoff `≥ Γ.length`
@@ -1891,7 +1952,7 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
           have hsa₂ : Val.Closed (closeV δ₂ a) :=
             closeV_closed_scoped hδ.closed_right (by have := ha.scopedIn; rwa [hδ.length_right])
           refine CrelK_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
-            ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩ ?_
+            ⟨fun _ _ => rfl, by intro u; simp⟩ ⟨fun _ _ => rfl, by intro u; simp⟩ ?_
           intro m hm
           rw [CrelK]; intro g D K₁ K₂ hK
           exact crelK_ret g D K₁ K₂ hK hsa₁ hsa₂ (vrelK_fund ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ))
@@ -1903,31 +1964,51 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
             closeV_closed_scoped hδ.closed_right (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
-  | @perform _ _ _cap ℓ op v φ q A B hℓ hArg hRes hv =>
+  | @perform _ _ _ c ℓ op v φ q A B hcap _hℓ hArg hRes hv =>
       -- ◊4.5b-append: the op-PRODUCER, now a THIN call to `crelK_fund_up` (extracted outside the mutual
       -- block so its match stays small enough for structural-recursion inference). `hvk` precomputed via
       -- `vrelK_fund hv` (the only mutual recursion); the rest is self-contained in `crelK_fund_up`.
+      -- ADR-0054: the cap argument `c : cap ℓ` closes to a LITERAL `vcap mid ℓ` (VrelK at cap forces the
+      -- same id both sides — `vrelK_fund hcap`), so the closed redex is `perform (vcap mid ℓ) op …`, the
+      -- exact shape `crelK_fund_up` consumes.
       intro n δ₁ δ₂ hδ
       rw [closeC_perform, closeC_perform]
+      have hck : VrelK n (VTy.cap ℓ) (closeV δ₁ c) (closeV δ₂ c) := vrelK_fund hcap n δ₁ δ₂ hδ
+      rw [VrelK] at hck
+      obtain ⟨mid, hc1, hc2⟩ := hck
+      rw [hc1, hc2]
       have hvk : VrelK n A (closeV δ₁ v) (closeV δ₂ v) := vrelK_fund hv n δ₁ δ₂ hδ
       have hcv₁ : Val.Closed (closeV δ₁ v) :=
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hcv₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact crelK_fund_up hArg hRes hcv₁ hcv₂ hvk
-  | @handleThrows _ _ ℓ M e φ q A hArg hIface hM hsub =>
+  | @handleThrows _ _ ℓ M e φ q qc A hArg _hIface hM _hsub _hBocc =>
       -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
-      -- resume). ADR-0053 CLOSED: with absolute caps, `closeC_handleThrows` rewrites to the UNSHIFTED
-      -- `closeC δ M` (no `δ.map shiftCap` — the de-Bruijn shift wall, ADR-0050, is DISSOLVED), so the IH
-      -- `crelK_fund hM n δ₁ δ₂` matches the `compatK_handleThrows` premise directly. The env-shift
-      -- cancellation the seam needed no longer arises (the shift is the identity).
+      -- resume). ADR-0054/0055: `handle` BINDS the capability — `closeC_handleThrows` rewrites to
+      -- `handle (throws ℓ) (closeCUnderBinders 1 δ M)` (body under ONE binder, var 0 = the cap). So the
+      -- `compatK_handleThrows` premise is CAP-QUANTIFIED `∀ gid, CrelK … (subst (vcap gid ℓ) …)`, supplied
+      -- by the IH `crelK_fund hM` on the env EXTENDED by `vcap gid ℓ` at the cap binder (PARALLEL `lam`,
+      -- bridged by `closeC_subst_comm`). The env-shift wall (ADR-0050) is dissolved: caps are absolute.
       intro n δ₁ δ₂ hδ
       rw [closeC_handleThrows, closeC_handleThrows]
-      exact compatK_handleThrows hArg (crelK_fund hM n δ₁ δ₂ hδ)
-  | @handleState _ _ ℓ s₀ M e φ q S A _hg hgr hp hpr hrestrict hs hM hsub =>
+      refine compatK_handleThrows (e := e) hArg (fun gid => ?_)
+      have hclosed : Val.Closed (Val.vcap gid ℓ) := fun k => rfl
+      rw [closeC_subst_comm hδ.closed_left hclosed, closeC_subst_comm hδ.closed_right hclosed]
+      have hδ' : EnvRelK n (VTy.cap ℓ :: Γ) (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) := by
+        rw [EnvRelK]
+        exact ⟨hclosed, hclosed,
+          (show VrelK n (VTy.cap ℓ) (Val.vcap gid ℓ) (Val.vcap gid ℓ) by
+            rw [VrelK]; exact ⟨gid, rfl, rfl⟩), hδ⟩
+      have := crelK_fund hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
+      rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
+           show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
+        at this
+  | @handleState _ _ ℓ s₀ M e φ q qc S A _hga hgr hp hpr _hrestrict hs hM _hsub _hBocc =>
       -- ◊4.5b-append: state-resume closes via `compatK_handleState` (→ `krelS_state_reinstall`, the
       -- resumptive heart). The stored state `s₀` is CLOSED (`HasVTy [] []`, so `closeV δᵢ s₀ = s₀`); its
-      -- self-relation `VrelK k S s₀ s₀` comes from `vrelK_fund hs` (the fundamental theorem on a closed value).
+      -- self-relation `VrelK k S s₀ s₀` comes from `vrelK_fund hs`. ADR-0054/0055: cap-binding premise via
+      -- the `vcap gid ℓ`-EXTENDED env (parallel `lam`, bridged by `closeC_subst_comm`).
       intro n δ₁ δ₂ hδ
       rw [closeC_handleState, closeC_handleState]
       have hcs₀ : Val.Closed s₀ := fun k => hs.shift_closed k (Nat.zero_le k)
@@ -1939,25 +2020,41 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
         fun op s' hc => by
           simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
           rcases hc.2 with rfl | rfl <;> simp
-      -- ADR-0053 CLOSED: `closeC_handleState` now rewrites to the UNSHIFTED `closeC δ M` (the de-Bruijn
-      -- shift wall, ADR-0050, is dissolved by absolute caps). The IH `crelK_fund hM` matches
-      -- `compatK_handleState`'s premise directly — no env-shift cancellation, no config-simulation.
-      exact compatK_handleState hgr hp hpr hrestrict' hcs₀ hsv (crelK_fund hM n δ₁ δ₂ hδ)
-  | @handleTransaction _ _ ℓ Θ₀ M e φ q A hnewA hnewR hreadA hreadR hwriteA hwriteR _ hcells hM hsub =>
+      refine compatK_handleState (e := e) hgr hp hpr hrestrict' hcs₀ hsv (fun gid => ?_)
+      have hclosed : Val.Closed (Val.vcap gid ℓ) := fun k => rfl
+      rw [closeC_subst_comm hδ.closed_left hclosed, closeC_subst_comm hδ.closed_right hclosed]
+      have hδ' : EnvRelK n (VTy.cap ℓ :: Γ) (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) := by
+        rw [EnvRelK]
+        exact ⟨hclosed, hclosed,
+          (show VrelK n (VTy.cap ℓ) (Val.vcap gid ℓ) (Val.vcap gid ℓ) by
+            rw [VrelK]; exact ⟨gid, rfl, rfl⟩), hδ⟩
+      have := crelK_fund hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
+      rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
+           show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
+        at this
+  | @handleTransaction _ _ ℓ Θ₀ M e φ q qc A hnewA hnewR hreadA hreadR hwriteA hwriteR _hrestrict hcells hM _hsub _hBocc =>
       -- ◊4.5b-append: transaction-resume via `compatK_handleTransaction` (→ `krelS_transaction_reinstall`).
-      -- `HeapRel n Θ₀ Θ₀` from `hcells` via `heapRel_self_of_cells_int` (NO `vrelK_fund` — int is base, so
-      -- this is NOT a recursive call on the side-condition `hcells`; that would break the block's recursion).
+      -- `HeapRel n Θ₀ Θ₀` from `hcells` via `heapRel_self_of_cells_int` (NO `vrelK_fund` — int is base).
+      -- ADR-0054/0055: cap-binding premise via the `vcap gid ℓ`-EXTENDED env (parallel `lam`).
       intro n δ₁ δ₂ hδ
       rw [closeC_handleTransaction, closeC_handleTransaction]
       have hrestrict' : ∀ op Θ', Bang.handlesOp (Handler.transaction ℓ Θ') ℓ op = true →
           op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar" := fun op Θ' hc => by
         simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc; tauto
-      -- ADR-0053 CLOSED: `closeC_handleTransaction` now rewrites to the UNSHIFTED `closeC δ M` (the
-      -- de-Bruijn shift wall, ADR-0050, is dissolved by absolute caps). `HeapRel n Θ₀ Θ₀` from `hcells`
-      -- (int cells, self-related). The IH `crelK_fund hM` matches `compatK_handleTransaction` directly.
       have hheap : HeapRel Eff Mult n Θ₀ Θ₀ := heapRel_self_of_cells_int n Θ₀ hcells
-      exact compatK_handleTransaction hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' hheap
-        (crelK_fund hM n δ₁ δ₂ hδ)
+      refine compatK_handleTransaction (e := e) hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' hheap
+        (fun gid => ?_)
+      have hclosed : Val.Closed (Val.vcap gid ℓ) := fun k => rfl
+      rw [closeC_subst_comm hδ.closed_left hclosed, closeC_subst_comm hδ.closed_right hclosed]
+      have hδ' : EnvRelK n (VTy.cap ℓ :: Γ) (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) := by
+        rw [EnvRelK]
+        exact ⟨hclosed, hclosed,
+          (show VrelK n (VTy.cap ℓ) (Val.vcap gid ℓ) (Val.vcap gid ℓ) by
+            rw [VrelK]; exact ⟨gid, rfl, rfl⟩), hδ⟩
+      have := crelK_fund hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
+      rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
+           show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
+        at this
 end
 
 
@@ -1968,18 +2065,18 @@ A well-typed stack is `KrelS`-self-related at answer type `Co` (the whole-progra
 `crelK_fund`/`vrelK_fund` for the continuation/arg self-relation; the handler arms reuse the closed
 `crelK_fund` handler cases (ADR-0053 5→2 — no handler-arm sorry here). -/
 theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo : Mult}
-    {Ao : VTy Eff Mult} (hCo : Co = CTy.F qo Ao)
-    (hC : HasStack C e B eo Co) : KrelS n B Co e C C := by
+    {Ao : VTy Eff Mult} {g : Nat} (hCo : Co = CTy.F qo Ao)
+    (hC : HasStack C e B eo Co) : KrelS n B Co e g C C := by
   induction hC with
   | @nil e' C' =>
       -- `B = C' = Co = F qo Ao` (`hCo`): the returner empty stack is `krelS_nil_succ`.
-      subst hCo; exact krelS_nil_succ n _ _ _
+      subst hCo; exact krelS_nil_succ n _ _ _ _
   | @letF K N e₁ e₂ eo q qk A B Co hN hK ihK =>
       -- HasStack.letF: tail `K` at the JOINED row `e₁⊔e₂` (ihK), continuation `N` at `e₂`, frame hole
       -- at `e₁`. Build the letF-extended `KrelS` at the joined row `e₁⊔e₂` (continuation row e₂ ≤ e₁⊔e₂),
       -- then WEAKEN the whole frame down to the goal's hole row `e₁` (`e₁ ≤ e₁⊔e₂`, antitone). The frame
       -- body self-relates the continuation `N` via `crelK_fund` (▷-guarded, ∀ m < n).
-      have hframe : KrelS n (CTy.F q A) Co (e₁ ⊔ e₂) (Frame.letF N :: K) (Frame.letF N :: K) := by
+      have hframe : KrelS n (CTy.F q A) Co (e₁ ⊔ e₂) g (Frame.letF N :: K) (Frame.letF N :: K) := by
         refine krelS_letF_intro (φ := e₂) le_sup_right ?_ (ihK hCo)
         intro m _hm v₁ v₂ hcv₁ hcv₂ hv
         have hδ' : EnvRelK m [A] [v₁] [v₂] := by
@@ -1994,7 +2091,7 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
         have := vrelK_fund hv n [] [] (EnvRelK_nil_iff n [] [] |>.mpr ⟨rfl, rfl⟩)
         rwa [closeV_closed hcv] at this
       exact krelS_appF_intro hcv hcv hvr (ihK hCo)
-  | @handleF K ℓ e φ eo q A Co hArg hIface hsub hK ihK =>
+  | @handleF K nh ℓ e φ eo q A Co hArg hIface hsub _hBocc hK ihK =>
       -- ◊4.5b sub-block f: the handler-frame self-relation = the ROW-DISCHARGE. `krelS_handleF` reduces the
       -- goal `KrelS …e (handleF::K)` to `KrelS …e K`; the IH gives the tail at the DISCHARGED row `φ`
       -- (`HasStack.handleF`: `K` is typed at `φ`, the frame at `e ≤ ℓ⊔φ`). `KrelS_eff_cast` bridges
@@ -2007,7 +2104,7 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- Kᵢ-threading resume conjunct: dispatch aborts to (K, ret w) (zero-shot, Kᵢ discarded) — `crelK_ret`
       -- on the self-related tail `ihK` closes it (the hVrel premise at C = F q A gives VrelK m A w).
       rw [krelS_handleF]
-      refine ⟨by simp only [HandlerRel], KrelS_eff_cast (ihK hCo), ?_⟩
+      refine ⟨rfl, by simp only [HandlerRel], KrelS_eff_cast (ihK hCo), ?_⟩
       intro m hm op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel _hKi _hCᵢ hd₁ hd₂
       have hop : op = "raise" := by
         simp only [Handler.label, handlesOp, Bool.and_eq_true, beq_iff_eq] at hcatch; exact hcatch.2
@@ -2020,7 +2117,7 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       -- self-related tail `K~K` at returner hole `F q A` (the discharged-row, downward-closed).
       exact ⟨q, A, w₁, w₂, K, K, φ, rfl, rfl, hcw₁, hcw₂, hw,
         KrelS_mono (le_of_lt hm) (KrelS_eff_cast (ihK hCo))⟩
-  | @stateF K ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub hK ihK =>
+  | @stateF K nh ℓ s e φ eo q A S Co hg hgr hp hpr hIface hcs hsub _hBocc hK ihK =>
       -- ◊4.5b-append: the state-frame self-relation IS `krelS_state_reinstall` at `s = s` (the same stored
       -- state both sides). The tail self-relates via `ihK` (cast `φ → e`); the interface + state typing come
       -- from the `stateF` binder. `hcs : HasVTy [] [] s S` ⇒ closed + `VrelK k S s s` (`vrelK_fund`).
@@ -2032,15 +2129,15 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
         fun op s' hc => by
           simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
           rcases hc.2 with rfl | rfl <;> simp
-      exact krelS_state_reinstall hgr hp hpr hrestrict' n s s hcss hcss (hsv n) K K
+      exact krelS_state_reinstall hgr hp hpr hrestrict' nh n s s hcss hcss (hsv n) K K
         (KrelS_eff_cast (ihK hCo))
-  | @transactionF K ℓ Θ e φ eo q A Co hnewA hnewR hreadA hreadR hwriteA hwriteR _ hcells hsub hK ihK =>
+  | @transactionF K nh ℓ Θ e φ eo q A Co hnewA hnewR hreadA hreadR hwriteA hwriteR _ hcells hsub _hBocc hK ihK =>
       -- ◊4.5b-append: transaction-frame self-relation IS `krelS_transaction_reinstall` at Θ=Θ; tail via
       -- `ihK` (cast φ→e); heap self-relation `HeapRel n Θ Θ` from `hcells` (all cells closed int).
       have hrestrict' : ∀ op Θ', Bang.handlesOp (Handler.transaction ℓ Θ') ℓ op = true →
           op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar" := fun op Θ' hc => by
         simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc; tauto
-      exact krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' n Θ Θ
+      exact krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' nh n Θ Θ
         (heapRel_self_of_cells_int n Θ hcells) K K (KrelS_eff_cast (ihK hCo))
 
 end Bang
