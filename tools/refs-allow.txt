@@ -49,3 +49,10 @@ Bang/ReturnEscapeRefute.lean
 # `inc5-comp-grind`, cited by paths/PATH-inc6-calcvm-route-b.md. Recover via
 # `git show inc5-comp-grind:scratch/RouteBShadowProbe.lean`.
 scratch/RouteBShadowProbe.lean
+
+# ── F. inc-6 U3 in-flight: the Route-A coherence carrier ──────────────────────────
+# Bang/CapCoh.lean lives on the `inc6-u3-bridge` worktree (committed 99790bd), not yet
+# merged to typed-static-r1. CONTEXT.md + PATH-inc6 forward-reference it as the active
+# U3 deliverable; the ref RESOLVES when U3 lands. Recover: `git show 99790bd:Bang/CapCoh.lean`.
+# REMOVE this entry once inc-6 merges and the file is in the working tree.
+Bang/CapCoh.lean
