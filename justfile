@@ -64,6 +64,7 @@ fitness:
     bash tools/check-primitives.sh
     bash tools/check-bang-root.sh
     bash tools/check-sha-reachable.sh
+    bash tools/check-paths.sh
     bash tools/check-adr-links.sh
     python3 tools/gen-adr-index.py --check
     bash tools/arch-check.sh
@@ -85,6 +86,10 @@ check-bang-root:
 # silently false). Foreign hex (other repos, package revs) → tools/sha-allow.txt.
 check-sha:
     bash tools/check-sha-reachable.sh
+
+# PATH lifecycle: every active paths/PATH-*.md is reachable from CONTEXT/ROADMAP (done → archive). Also run by fitness.
+check-paths:
+    bash tools/check-paths.sh
 
 # Reference library (refs.bib = single source of truth; index.json + the README block are derived).
 refs-index:
