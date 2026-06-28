@@ -1661,8 +1661,8 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
 the old frames by monotonicity; POP inverts the `StratFresh` head; PUSH/REDUCE re-home sub-stacks; the
 focus-cap bound rides because every reduct's caps are a subset of the redex's. Stack-structural ADR-0055
 preservation — mechanical but REAL (mint extends, pop inverts); SORRIED for Phase 2, NOT hand-waved. -/
-theorem freshCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
-    (hty : HasConfigTy cfg ⊥ Co) (h : FreshCfg cfg)
+theorem freshCfg_step (cfg cfg' : Config)
+    (h : FreshCfg cfg)
     (hstep : Source.step cfg = some cfg') : FreshCfg cfg' := by
   obtain ⟨g, K, c⟩ := cfg
   obtain ⟨hcb, hfc, hsf, hck⟩ := h
@@ -4275,7 +4275,7 @@ theorem wsCfg_step {Co : CTy Eff Mult} (cfg cfg' : Config)
   obtain ⟨g, K, c⟩ := cfg
   obtain ⟨e, C, hfocus, hstack, hres, hresK, hfresh⟩ := hP
   -- FRESHNESS half (uniform, §3.0).
-  have hFreshr : FreshCfg cfg' := freshCfg_step (g, K, c) cfg' ⟨e, C, hfocus, hstack⟩ hfresh hstep
+  have hFreshr : FreshCfg cfg' := freshCfg_step (g, K, c) cfg' hfresh hstep
   -- WELL-SCOPED + TYPING half: route DISPATCH (perform-vcap, #35) vs every other arm. Each obligation
   -- returns the post-step `WScfg`-tail (typing `d'` + `LiveCapsResolveC` over it + stack `dk'` +
   -- `LiveCapsResolveK` over it).

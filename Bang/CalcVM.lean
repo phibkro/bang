@@ -1,4 +1,5 @@
 import Bang.Operational
+import Bang.CapCoh
 
 /-!
 # CalcVM — the ◊3 graded-CBPV calculated machine (pure CBPV spine)
@@ -82,6 +83,8 @@ value. `compile_correct` is the `c = []`, `s = []` corollary, **proven** below.
 namespace Bang.CalcVM
 
 open Bang (Val Comp Frame Config Result)
+open Bang.CapCoh (WeakCoh CapLabelCoh capLabelCoh_step capLabelCoh_initial capLabelCoh_perform_label)
+open Bang.Model (FreshCfg freshCfg_step)
 
 /-! ## The state store (ADR-0031 D1): a 1:1 mirror of the active `state ℓ s` frames
 
