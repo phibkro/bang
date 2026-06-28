@@ -3982,7 +3982,66 @@ theorem run_evalD : ∀ fe,
                 simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
                   reduceCtorEq, false_and] at h
       | handle h0 M =>
-          sorry  -- U3 seam-2: handle-term route-B re-key (mint id, subst vcap, identity-keyed frames)
+          -- U3 seam-2: handle-term route-B re-key. MINT id := g, push the identity-keyed frame
+          -- `handleF g h0 :: K`, run the substituted body `M' = subst (vcap g h0.label) M` at g+1 (the
+          -- kernel MINT step). The body's at-term coherence pops to the outer net-effect context (the
+          -- `CtxCorr_ctxNetEffect_pop_*` lemmas) and the UNMARK step (handler-return = identity) transports
+          -- coherence/freshness down. Mirrors the proven U2 `sim` handle arm (1723) on the Config.run side.
+          simp only [evalD] at h
+          cases h0 with
+          | state ℓ0 s0 =>
+              simp only [Handler.label] at h
+              cases hM : evalD fe (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M) with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), g1, σ1, τ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+                    have hmint : Source.step (g, K, Comp.handle (Handler.state ℓ0 s0) M)
+                        = some (g+1, Frame.handleF g (Handler.state ℓ0 s0) :: K,
+                            Comp.subst (Val.vcap g ℓ0) M) := rfl
+                    have hCinstall : CtxCorr (σ.push g s0) (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
+                      CtxCorr_install hCtx
+                    have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
+                      CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+                    have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
+                    have hFreshInstall := freshCfg_step _ _ hFresh hmint
+                    obtain ⟨⟨hCM, hTM, hCohM, hFreshM⟩, kM⟩ :=
+                      ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ (.ret v) g1 σ1 τ1 hM
+                        (Frame.handleF g (Handler.state ℓ0 s0) :: K) hCinstall hTinstall hCohInstall hFreshInstall
+                    obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_state hCM hTM
+                    rw [hnetEq] at hCohM hFreshM
+                    have hunmark : Source.step (g1, Frame.handleF g
+                        (Handler.state ℓ0 (σ1.headD (default, default)).2) :: ctxNetEffect K σ1.tail τ1,
+                        Comp.ret v) = some (g1, ctxNetEffect K σ1.tail τ1, Comp.ret v) := rfl
+                    have hCohPop := capLabelCoh_step _ _ hFreshM hCohM hunmark
+                    have hFreshPop := freshCfg_step _ _ hFreshM hunmark
+                    refine ⟨⟨hCpop, hTpop, hCohPop, hFreshPop⟩, fun fuel r hr => ?_⟩
+                    have hstepRun : Config.run (fuel+1)
+                        (g1, ctxNetEffect (Frame.handleF g (Handler.state ℓ0 s0) :: K) σ1 τ1,
+                          Comp.ret v) = r := by
+                      rw [hnetEq]; simp only [Bang.Config.run, hunmark]; exact hr
+                    obtain ⟨F, hF⟩ := kM (fuel+1) r hstepRun
+                    exact ⟨F+1, by simp only [Bang.Config.run, hmint]; exact hF⟩
+                | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.raised n' op' w, _, _, _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+          | throws ℓ0 => sorry  -- U3 seam-2: handle-term throws arm (next sub-seam)
+          | transaction ℓ0 Θ => sorry  -- U3 seam-2: handle-term transaction arm (next sub-seam)
       | case a b d =>
           -- ADT sum elim (Unit 6): the kernel `Source.step` reduces in place (Operational.lean 260-261).
           -- Mirror `force`: recurse via `ihT` on the reduced branch, then one `Source.step` bridges.
