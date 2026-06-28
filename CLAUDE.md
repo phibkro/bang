@@ -156,6 +156,12 @@ Green means: lake build clean, axiom set per headline theorem ⊆ {`propext`,
 `Classical.choice`, `Quot.sound`}. If you can express a new invariant as a
 runnable check, do that instead of writing it in prose — checkable beats described.
 
+**Gate-traps (cause false-greens):** read errors via `lake build` exit code or
+`grep -E "error"` — plain `grep "error:"` MISSES `error(lean.unknownIdentifier):`;
+gate sorries via `#print axioms` / `just axioms`, NEVER `grep sorry` (false-positive on
+comment prose, false-negative on transitive deps). Gate the COMMITTED sha on a clean
+tree — never an agent's summary or a dirty worktree.
+
 ## When you make a decision
 
 If you make a choice that a future session could reasonably reverse or relitigate, **write an ADR** in `docs/decisions/` (copy the format of an existing one; `0016` is a good exemplar). Record the *rationale* and the *rejected alternatives*, not just the choice. Anti-drift is mostly anti-reversion, and reversion happens when the "why" is missing.
