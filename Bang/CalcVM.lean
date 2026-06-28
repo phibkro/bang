@@ -4040,7 +4040,95 @@ theorem run_evalD : ∀ fe,
                 | (.raised n' op' w, _, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
-          | throws ℓ0 => sorry  -- U3 seam-2: handle-term throws arm (next sub-seam)
+          | throws ℓ0 =>
+              -- throws install: no store push. A normal return pops the throws frame (UNMARK, like state
+              -- but stores pass through). A raise CAUGHT by THIS handler's identity g (op = "raise") aborts
+              -- to a `ret w` term — consumes the raised IH (`ihR`), the FIRST consumer of it in run_evalD.
+              simp only [Handler.label] at h
+              have hmint : Source.step (g, K, Comp.handle (Handler.throws ℓ0) M)
+                  = some (g+1, Frame.handleF g (Handler.throws ℓ0) :: K, Comp.subst (Val.vcap g ℓ0) M) := rfl
+              have hCinstall : CtxCorr σ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
+                CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
+              have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
+                CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+              have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
+              have hFreshInstall := freshCfg_step _ _ hFresh hmint
+              cases hM : evalD fe (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M) with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), g1, σ1, τ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+                    obtain ⟨⟨hCM, hTM, hCohM, hFreshM⟩, kM⟩ :=
+                      ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (.ret v) g1 σ1 τ1 hM
+                        (Frame.handleF g (Handler.throws ℓ0) :: K) hCinstall hTinstall hCohInstall hFreshInstall
+                    obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCM hTM
+                    rw [hnetEq] at hCohM hFreshM
+                    have hunmark : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
+                        Comp.ret v) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret v) := rfl
+                    have hCohPop := capLabelCoh_step _ _ hFreshM hCohM hunmark
+                    have hFreshPop := freshCfg_step _ _ hFreshM hunmark
+                    refine ⟨⟨hCpop, hTpop, hCohPop, hFreshPop⟩, fun fuel r hr => ?_⟩
+                    have hstepRun : Config.run (fuel+1)
+                        (g1, ctxNetEffect (Frame.handleF g (Handler.throws ℓ0) :: K) σ1 τ1, Comp.ret v) = r := by
+                      rw [hnetEq]; simp only [Bang.Config.run, hunmark]; exact hr
+                    obtain ⟨F, hF⟩ := kM (fuel+1) r hstepRun
+                    exact ⟨F+1, by simp only [Bang.Config.run, hmint]; exact hF⟩
+                | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+                    by_cases hc : ℓ' = g ∧ op' = "raise"
+                    · -- CAUGHT: M' raises to identity g (this handler), op "raise" ⇒ abort to `ret w`.
+                      simp only [Option.bind_some, if_pos hc, Option.some.injEq, Prod.mk.injEq,
+                        Outcome.term.injEq] at h
+                      obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+                      obtain ⟨hcn, rfl⟩ := hc; subst ℓ'
+                      obtain ⟨⟨hCr, hTr, hCohr, hFreshr⟩, kR⟩ :=
+                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ g "raise" w g1 σ1 τ1 hM
+                          (Frame.handleF g (Handler.throws ℓ0) :: K) hCinstall hTinstall hCohInstall hFreshInstall
+                      obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCr hTr
+                      rw [hnetEq] at hCohr hFreshr
+                      have hunmark : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
+                          Comp.ret w) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret w) := rfl
+                      have hCohPop := capLabelCoh_step _ _ hFreshr hCohr hunmark
+                      have hFreshPop := freshCfg_step _ _ hFreshr hunmark
+                      refine ⟨⟨hCpop, hTpop, hCohPop, hFreshPop⟩, fun fuel r hr => ?_⟩
+                      -- the kernel ABORT step: `perform (vcap g ℓ0) "raise" w` over the throws frame at id g
+                      -- resolves it (label ℓ0) and aborts to the outer context with `ret w`.
+                      have hsp : Bang.splitAtId (Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1) g
+                          = some ([], Handler.throws ℓ0, ctxNetEffect K σ1 τ1) := by simp [Bang.splitAtId]
+                      have hho : Bang.handlesOp (Handler.throws ℓ0) ℓ0 "raise" = true := by simp [Bang.handlesOp]
+                      have hid : Bang.idDispatch (Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1)
+                          g ℓ0 "raise" w = some (ctxNetEffect K σ1 τ1, Comp.ret w) := by
+                        simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn]
+                      have hstep_perf : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
+                          Comp.perform (Val.vcap g ℓ0) "raise" w) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret w) := by
+                        simp only [Source.step, hid, Option.map_some]
+                      have hlabel : labelOf (ctxNetEffect (Frame.handleF g (Handler.throws ℓ0) :: K) σ1 τ1) g = ℓ0 := by
+                        rw [hnetEq]; simp only [labelOf, hsp, Option.map_some, Option.getD_some, Handler.label]
+                      have hdr : dispatchRun (fuel+1) g1 g
+                          (ctxNetEffect (Frame.handleF g (Handler.throws ℓ0) :: K) σ1 τ1)
+                          (labelOf (ctxNetEffect (Frame.handleF g (Handler.throws ℓ0) :: K) σ1 τ1) g) "raise" w = r := by
+                        rw [hlabel, hnetEq]
+                        simp only [dispatchRun]
+                        rw [Bang.Config.run_step fuel _ (by intro gg vv hcontra; simp at hcontra)]
+                        simp only [hstep_perf]; exact hr
+                      obtain ⟨F, hF⟩ := kR (fuel+1) r hdr
+                      exact ⟨F+1, by simp only [Bang.Config.run, hmint]; exact hF⟩
+                    · simp only [Option.bind_some, if_neg hc, Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
           | transaction ℓ0 Θ =>
               -- MIRROR of the state arm on the τ side: install `handleF g (transaction ℓ0 Θ) :: K`,
               -- push the heap `τ.push g Θ`, run M' at g+1; a normal return POPs the heap (τ1.tail). Free
