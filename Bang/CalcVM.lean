@@ -2648,24 +2648,24 @@ def ctxNetEffect (K : Bang.EvalCtx) (σ : SStore) (τ : THeap) : Bang.EvalCtx :=
 
 /-- `updateCtxTxns` SKIPS a state-frame head; `updateCtxStates` SKIPS a txn-frame head — the two
 EvalCtx passes are independent (frame kinds disjoint). -/
-theorem updateCtxTxns_cons_state {ℓ : Bang.EffectRow.Label} {s : Val} {K : Bang.EvalCtx} (τ : THeap) :
-    updateCtxTxns (Frame.handleF (.state ℓ s) :: K) τ = Frame.handleF (.state ℓ s) :: updateCtxTxns K τ := by
+theorem updateCtxTxns_cons_state {n : Nat} {ℓ : Bang.EffectRow.Label} {s : Val} {K : Bang.EvalCtx} (τ : THeap) :
+    updateCtxTxns (Frame.handleF n (.state ℓ s) :: K) τ = Frame.handleF n (.state ℓ s) :: updateCtxTxns K τ := by
   simp only [updateCtxTxns]
 
-theorem updateCtxStates_cons_txn {ℓ : Bang.EffectRow.Label} {Θ : List Val} {K : Bang.EvalCtx} (σ : SStore) :
-    updateCtxStates (Frame.handleF (.transaction ℓ Θ) :: K) σ
-      = Frame.handleF (.transaction ℓ Θ) :: updateCtxStates K σ := by simp only [updateCtxStates]
+theorem updateCtxStates_cons_txn {n : Nat} {ℓ : Bang.EffectRow.Label} {Θ : List Val} {K : Bang.EvalCtx} (σ : SStore) :
+    updateCtxStates (Frame.handleF n (.transaction ℓ Θ) :: K) σ
+      = Frame.handleF n (.transaction ℓ Θ) :: updateCtxStates K σ := by simp only [updateCtxStates]
 
 /-- A non-frame (letF/appF/throws) head is transparent to BOTH passes. -/
 theorem ctxNetEffect_cons_nonframe {fr : Bang.Frame} {K : Bang.EvalCtx} (σ : SStore) (τ : THeap)
-    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s)) (hnt : ∀ ℓ Θ, fr ≠ Frame.handleF (.transaction ℓ Θ)) :
+    (hns : ∀ n ℓ s, fr ≠ Frame.handleF n (.state ℓ s)) (hnt : ∀ n ℓ Θ, fr ≠ Frame.handleF n (.transaction ℓ Θ)) :
     ctxNetEffect (fr :: K) σ τ = fr :: ctxNetEffect K σ τ := by
   unfold ctxNetEffect
   cases fr with
-  | handleF h =>
+  | handleF n h =>
       cases h with
-      | state ℓ s => exact absurd rfl (hns ℓ s)
-      | transaction ℓ Θ => exact absurd rfl (hnt ℓ Θ)
+      | state ℓ s => exact absurd rfl (hns n ℓ s)
+      | transaction ℓ Θ => exact absurd rfl (hnt n ℓ Θ)
       | throws ℓ => simp only [updateCtxStates, updateCtxTxns]
   | letF N => simp only [updateCtxStates, updateCtxTxns]
   | appF v => simp only [updateCtxStates, updateCtxTxns]
@@ -2692,13 +2692,13 @@ theorem ctxNetEffect_self {σ : SStore} {τ : THeap} {K : Bang.EvalCtx}
 
 /-- A non-txn frame carries no heap entry ⇒ `CtxTxnCorr` passes through its install. -/
 theorem CtxTxnCorr_cons_nontxn {τ : THeap} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hnt : ∀ ℓ Θ, fr ≠ Frame.handleF (.transaction ℓ Θ)) (hT : CtxTxnCorr τ K) :
+    (hnt : ∀ n ℓ Θ, fr ≠ Frame.handleF n (.transaction ℓ Θ)) (hT : CtxTxnCorr τ K) :
     CtxTxnCorr τ (fr :: K) := by
   unfold CtxTxnCorr at hT ⊢; rw [hT]
   cases fr with
-  | handleF h =>
+  | handleF n h =>
       cases h with
-      | transaction ℓ Θ => exact absurd rfl (hnt ℓ Θ)
+      | transaction ℓ Θ => exact absurd rfl (hnt n ℓ Θ)
       | state ℓ s => simp only [ctxTxns]
       | throws ℓ => simp only [ctxTxns]
   | letF N => simp only [ctxTxns]
@@ -2751,30 +2751,30 @@ theorem ctxNetEffect_ctxNetEffect : ∀ (K : Bang.EvalCtx) (σ1 : SStore) (τ1 :
 
 /-- After a non-frame install, `CtxCorr` over `ctxNetEffect (fr::K)` passes to `ctxNetEffect K`. -/
 theorem CtxCorr_ctxNetEffect_nonframe {σ' : SStore} {τ' : THeap} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s)) (hnt : ∀ ℓ Θ, fr ≠ Frame.handleF (.transaction ℓ Θ))
+    (hns : ∀ n ℓ s, fr ≠ Frame.handleF n (.state ℓ s)) (hnt : ∀ n ℓ Θ, fr ≠ Frame.handleF n (.transaction ℓ Θ))
     (hC : CtxCorr σ' (ctxNetEffect (fr :: K) σ' τ')) : CtxCorr σ' (ctxNetEffect K σ' τ') := by
   rw [ctxNetEffect_cons_nonframe σ' τ' hns hnt] at hC
   unfold CtxCorr at hC ⊢
   cases fr with
-  | handleF h =>
+  | handleF n h =>
       cases h with
-      | state ℓ s => exact absurd rfl (hns ℓ s)
-      | transaction ℓ Θ => exact absurd rfl (hnt ℓ Θ)
+      | state ℓ s => exact absurd rfl (hns n ℓ s)
+      | transaction ℓ Θ => exact absurd rfl (hnt n ℓ Θ)
       | throws ℓ => simpa only [ctxStates] using hC
   | letF N => simpa only [ctxStates] using hC
   | appF v => simpa only [ctxStates] using hC
 
 /-- After a non-frame install, `CtxTxnCorr` over `ctxNetEffect (fr::K)` passes to `ctxNetEffect K`. -/
 theorem CtxTxnCorr_ctxNetEffect_nonframe {σ' : SStore} {τ' : THeap} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s)) (hnt : ∀ ℓ Θ, fr ≠ Frame.handleF (.transaction ℓ Θ))
+    (hns : ∀ n ℓ s, fr ≠ Frame.handleF n (.state ℓ s)) (hnt : ∀ n ℓ Θ, fr ≠ Frame.handleF n (.transaction ℓ Θ))
     (hT : CtxTxnCorr τ' (ctxNetEffect (fr :: K) σ' τ')) : CtxTxnCorr τ' (ctxNetEffect K σ' τ') := by
   rw [ctxNetEffect_cons_nonframe σ' τ' hns hnt] at hT
   unfold CtxTxnCorr at hT ⊢
   cases fr with
-  | handleF h =>
+  | handleF n h =>
       cases h with
-      | state ℓ s => exact absurd rfl (hns ℓ s)
-      | transaction ℓ Θ => exact absurd rfl (hnt ℓ Θ)
+      | state ℓ s => exact absurd rfl (hns n ℓ s)
+      | transaction ℓ Θ => exact absurd rfl (hnt n ℓ Θ)
       | throws ℓ => simpa only [ctxTxns] using hT
   | letF N => simpa only [ctxTxns] using hT
   | appF v => simpa only [ctxTxns] using hT
@@ -2797,12 +2797,12 @@ theorem updateCtxStates_self {σ : SStore} {K : Bang.EvalCtx} (hC : CtxCorr σ K
 
 /-- A NON-state frame is transparent to `updateCtxStates`. -/
 theorem updateCtxStates_cons_nonstate {fr : Bang.Frame} {K : Bang.EvalCtx} (σ : SStore)
-    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s)) :
+    (hns : ∀ n ℓ s, fr ≠ Frame.handleF n (.state ℓ s)) :
     updateCtxStates (fr :: K) σ = fr :: updateCtxStates K σ := by
   cases fr with
-  | handleF h =>
+  | handleF n h =>
       cases h with
-      | state ℓ s => exact absurd rfl (hns ℓ s)
+      | state ℓ s => exact absurd rfl (hns n ℓ s)
       | throws ℓ => simp only [updateCtxStates]
       | transaction ℓ Θ => simp only [updateCtxStates]
   | letF N => simp only [updateCtxStates]
@@ -2838,13 +2838,13 @@ theorem updateCtxStates_updateCtxStates : ∀ {K : Bang.EvalCtx} (σ1 σ : SStor
 
 /-- A NON-state frame carries no store entry ⇒ `CtxCorr` passes through its install (and pop). -/
 theorem CtxCorr_cons_nonstate {σ : SStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s)) (hC : CtxCorr σ K) :
+    (hns : ∀ n ℓ s, fr ≠ Frame.handleF n (.state ℓ s)) (hC : CtxCorr σ K) :
     CtxCorr σ (fr :: K) := by
   unfold CtxCorr at hC ⊢; rw [hC]
   cases fr with
-  | handleF h =>
+  | handleF n h =>
       cases h with
-      | state ℓ s => exact absurd rfl (hns ℓ s)
+      | state ℓ s => exact absurd rfl (hns n ℓ s)
       | throws ℓ => simp only [ctxStates]
       | transaction ℓ Θ => simp only [ctxStates]
   | letF N => simp only [ctxStates]
@@ -2858,14 +2858,14 @@ theorem CtxCorr_install {σ : SStore} {ℓ : Bang.EffectRow.Label} {s : Val} {K 
 /-- `at-term/at-raise` non-state install: `updateCtxStates (fr :: K) σ' = fr :: updateCtxStates K σ'`
 and its `CtxCorr`/structure pass through (the non-state install case of the run_evalD spine). -/
 theorem CtxCorr_updateCtx_nonstate {σ' : SStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hns : ∀ ℓ s, fr ≠ Frame.handleF (.state ℓ s))
+    (hns : ∀ n ℓ s, fr ≠ Frame.handleF n (.state ℓ s))
     (hC : CtxCorr σ' (updateCtxStates (fr :: K) σ')) : CtxCorr σ' (updateCtxStates K σ') := by
   rw [updateCtxStates_cons_nonstate σ' hns] at hC
   unfold CtxCorr at hC ⊢
   cases fr with
-  | handleF h =>
+  | handleF n h =>
       cases h with
-      | state ℓ s => exact absurd rfl (hns ℓ s)
+      | state ℓ s => exact absurd rfl (hns n ℓ s)
       | throws ℓ => simpa only [ctxStates] using hC
       | transaction ℓ Θ => simpa only [ctxStates] using hC
   | letF N => simpa only [ctxStates] using hC
