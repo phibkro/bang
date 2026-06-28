@@ -2586,6 +2586,16 @@ arm, the `dispatchRun_*` prepend lemmas) is the route-B cluster-3 re-derivation 
 def dispatchRun (fuel g n : Nat) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId)
     (v : Val) : Bang.Result Val := Bang.Config.run fuel (g, K, .perform (.vcap n ℓ) op v)
 
+/-- The LABEL the capability identity `n` resolves to in `K` — the label of the frame `splitAtId K n`
+finds, or `default` if `n` doesn't resolve (escaped). Route-B U3: the bridge re-dispatches a `raised n`
+by IDENTITY, but the kernel's `idDispatch` fail-loud guard gates on `handlesOp h ℓ op` (the LABEL).
+`evalD`'s identity-only `raised` dropped the cap's label, so the bridge RECONSTRUCTS it here — a thin
+total projection over the existing `splitAtId` (NOT a new parallel store). The cap's real label IS the
+resolved frame's label (the mint pairs them), so `labelOf` recovers exactly what makes the gate fire at
+the catch; on escape both sides are `escapedCap` regardless of label, so the `default` is immaterial. -/
+def labelOf (K : Bang.EvalCtx) (n : Nat) : Bang.EffectRow.Label :=
+  ((Bang.splitAtId K n).map (fun t => t.2.1.label)).getD default
+
 /-! ### D3 store ↔ kernel-`EvalCtx` correspondence (state)
 
 The kernel resumes state in its `EvalCtx`: a `handleF (state ℓ s)` frame stores `s`, and `dispatch`
@@ -3540,36 +3550,37 @@ runs to its terminal under K) AND a `raised` part (M raises, dispatched by the
 kernel — the `THROW ↔ dispatch` correspondence). Subst-vs-subst, no cross-rep LR.
 Induction on the eval fuel `fe`. -/
 theorem run_evalD : ∀ fe,
-    (∀ M σ τ t σ' τ', evalD fe σ τ M = some (.term t, σ', τ') →
+    (∀ M g σ τ t g' σ' τ', evalD fe g σ τ M = some (.term t, g', σ', τ') →
       ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K →
         (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ')) ∧
-        ∀ (n : Nat) (r : Bang.Result Val),
-          Bang.Config.run n (ctxNetEffect K σ' τ', t) = r → ∃ F, Bang.Config.run F (K, M) = r)
-    ∧ (∀ M σ τ ℓ v σ' τ', evalD fe σ τ M = some (.raised ℓ "raise" v, σ', τ') →
+        ∀ (fuel : Nat) (r : Bang.Result Val),
+          Bang.Config.run fuel (g', ctxNetEffect K σ' τ', t) = r → ∃ F, Bang.Config.run F (g, K, M) = r)
+    ∧ (∀ M g σ τ n op v g' σ' τ', evalD fe g σ τ M = some (.raised n op v, g', σ', τ') →
       ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K →
         (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ')) ∧
-        ∀ (n : Nat) (r : Bang.Result Val),
-          dispatchRun n (ctxNetEffect K σ' τ') ℓ "raise" v = r → ∃ F, Bang.Config.run F (K, M) = r) := by
+        ∀ (fuel : Nat) (r : Bang.Result Val),
+          dispatchRun fuel g' n (ctxNetEffect K σ' τ') (labelOf (ctxNetEffect K σ' τ') n) op v = r →
+            ∃ F, Bang.Config.run F (g, K, M) = r) := by
   intro fe
   induction fe with
-  | zero => exact ⟨fun M σ τ t σ' τ' h => by simp [evalD] at h,
-                   fun M σ τ ℓ v σ' τ' h => by simp [evalD] at h⟩
+  | zero => exact ⟨fun M g σ τ t g' σ' τ' h => by simp [evalD] at h,
+                   fun M g σ τ n op v g' σ' τ' h => by simp [evalD] at h⟩
   | succ fe ih =>
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M σ τ t σ' τ' h K hCtx hTtx
+      intro M g σ τ t g' σ' τ' h K hCtx hTtx
       cases M with
       | ret v =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-          obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+          obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx⟩, fun n r hr => ⟨n, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | lam M =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-          obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+          obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx⟩, fun n r hr => ⟨n, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe σ τ M with
