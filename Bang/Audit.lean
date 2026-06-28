@@ -14,6 +14,7 @@
 import Bang.Spec
 import Bang.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
 import Bang.CalcVM    -- ◊3: the calculated-machine compile_correct (verification spine)
+import Bang.CapLabelCohRefute  -- inc-6 U3: route-B do-not-weaken refutation witness
 open Bang
 
 #print axioms lr_sound
@@ -44,3 +45,7 @@ open Bang
 -- O2 two-part forms (term ∧ raised); pin the shapes against silent regression.
 #print axioms Bang.CalcVM.sim
 #print axioms Bang.CalcVM.run_evalD
+-- inc-6 U3 route-B REFUTATION WITNESS (do-not-weaken): a state frame present at identity 0
+-- does NOT give `CapResolves` at the cap's label 2 — pins WHY `run_evalD`'s perform-term arm
+-- needs the cap-label-coherence premise (evalD dispatches by identity, kernel fail-louds on label).
+#print axioms refute_frame_present_but_no_capResolves

@@ -1,5 +1,11 @@
 /-
-DO-NOT-WEAKEN REGRESSION WITNESS (inc-6 U3, route A).
+  Bang/CapLabelCohRefute.lean — DO-NOT-WEAKEN REGRESSION WITNESS (inc-6 U3, route-B bridge).
+  ─────────────────────────────────────────────────────────────────────────────────
+  GATED: `refute_frame_present_but_no_capResolves` is listed in `Bang/Audit.lean`'s
+  `#print axioms` block, so weakening `run_evalD`'s cap-label-coherence premise (e.g.
+  dropping `CapResolves` / simplifying the perform-term arm) fails the axiom gate
+  (`lake env lean Bang/Audit.lean`), not just this file. Axiom-clean: [propext].
+  (Promoted from `scratch/CapLabelCohRefute.lean`, banked at e4f6b5a.)
 
 Documents WHY `run_evalD` must carry a cap-label-coherence premise — the identity-vs-label
 asymmetry that bites the perform-TERM arm where the raised arm's `labelOf` trick cannot save it.
