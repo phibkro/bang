@@ -3780,6 +3780,83 @@ theorem splitAtId_of_ctxStates_get {n : Nat} {s : Val} : ∀ {K : Bang.EvalCtx},
         obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
         exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
 
+/-- Txn mirror of `ctxStates_get_none_of_capsBelow`: `CapsBelow n K ⟹ (ctxTxns K).get? n = none`. -/
+theorem ctxTxns_get_none_of_capsBelow {n : Nat} : ∀ {K : Bang.EvalCtx},
+    Bang.Model.CapsBelow n K → (ctxTxns K).get? n = none := by
+  intro K
+  induction K with
+  | nil => intro _; rfl
+  | cons fr K ih =>
+    intro hcb
+    cases fr with
+    | handleF m h0 =>
+        simp only [Bang.Model.CapsBelow] at hcb
+        cases h0 with
+        | transaction ℓ0 Θ0 =>
+            have hmn : ¬ (m = n) := by omega
+            have he : (ctxTxns (Frame.handleF m (Handler.transaction ℓ0 Θ0) :: K)).get? n = (ctxTxns K).get? n := by
+              simp only [ctxTxns, THeap.get?, List.find?, hmn, decide_false, Bool.false_eq_true, if_false]
+            rw [he]; exact ih hcb.2
+        | state ℓ0 s0 => simp only [ctxTxns]; exact ih hcb.2
+        | throws ℓ0 => simp only [ctxTxns]; exact ih hcb.2
+    | letF N => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxTxns]; exact ih hcb.2
+    | appF w => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxTxns]; exact ih hcb.2
+
+/-- Txn mirror of `splitAtId_of_ctxStates_get` (the existence factor for txn ops): a live txn heap at id
+`n` reflects a live `transaction` frame at `n`; `StratFresh` rules out a same-id state/throws shadow. -/
+theorem splitAtId_of_ctxTxns_get {n : Nat} {Θ : List Val} : ∀ {K : Bang.EvalCtx},
+    Bang.Model.StratFresh K → (ctxTxns K).get? n = some Θ →
+      ∃ Kᵢ ℓ' Kₒ, Bang.splitAtId K n = some (Kᵢ, Handler.transaction ℓ' Θ, Kₒ) := by
+  intro K
+  induction K with
+  | nil => intro _ hg; simp [ctxTxns, THeap.get?] at hg
+  | cons fr K ih =>
+    intro hsf hg
+    cases fr with
+    | handleF m h0 =>
+        cases h0 with
+        | transaction ℓ0 Θ0 =>
+            by_cases hc : m = n
+            · subst hc
+              have hhead : (ctxTxns (Frame.handleF m (Handler.transaction ℓ0 Θ0) :: K)).get? m = some Θ0 := by
+                simp [ctxTxns, THeap.get?]
+              rw [hhead] at hg
+              obtain rfl : Θ = Θ0 := (Option.some.inj hg).symm
+              exact ⟨[], ℓ0, K, by simp [Bang.splitAtId]⟩
+            · have he : (ctxTxns (Frame.handleF m (Handler.transaction ℓ0 Θ0) :: K)).get? n = (ctxTxns K).get? n := by
+                simp only [ctxTxns, THeap.get?, List.find?, hc, decide_false, Bool.false_eq_true, if_false]
+              rw [he] at hg
+              simp only [Bang.Model.StratFresh] at hsf
+              obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg
+              exact ⟨Frame.handleF m (Handler.transaction ℓ0 Θ0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | state ℓ0 s0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxTxns_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.state ℓ0 s0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | throws ℓ0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxTxns_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.throws ℓ0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+    | letF N =>
+        simp only [Bang.Model.StratFresh] at hsf
+        have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
+        obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
+        exact ⟨Frame.letF N :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
+    | appF w =>
+        simp only [Bang.Model.StratFresh] at hsf
+        have hg' : (ctxTxns K).get? n = some Θ := by simpa only [ctxTxns] using hg
+        obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
+        exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
+
 /-- (★bridge) the **two-part** `evalD ≡ Source.eval` simulation: a `term` part (M
 runs to its terminal under K) AND a `raised` part (M raises, dispatched by the
 kernel — the `THROW ↔ dispatch` correspondence). Subst-vs-subst, no cross-rep LR.
@@ -4010,7 +4087,42 @@ theorem run_evalD : ∀ fe,
                   rw [hctxeq] at hr
                   simp only [Bang.Config.run, hstep]; exact hr
             · by_cases hopt : isTxnOp op2 = true
-              · sorry  -- U3 seam-3: txn perform-arm (needs the ctxTxns-side inverse lemma, mirror of get/put)
+              · simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
+                cases hgt : τ.get? n2 with
+                | none => rw [hgt] at h; simp at h
+                | some Θ =>
+                    rw [hgt] at h
+                    simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                    obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+                    have hgt' : (ctxTxns K).get? n2 = some Θ := by rw [← hTtx]; exact hgt
+                    obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxTxns_get hFresh.2.2.1 hgt'
+                    have hlab : ℓ' = ℓ2 := by
+                      have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
+                    have hcr : Bang.CapResolves K n2 ℓ2 op2 :=
+                      ⟨Kᵢ, Handler.transaction ℓ' Θ, Kₒ, hsp, by
+                        subst hlab; rcases isTxnOp_iff.mp hopt with rfl | rfl | rfl <;> simp [Bang.handlesOp]⟩
+                    have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op2 v2)
+                        = some (g, updateCtxTxns K ((ctxTxns K).put n2 (txnService op2 v2 Θ).2),
+                            Comp.ret (txnService op2 v2 Θ).1) := by
+                      simp only [Source.step, dispatch_txn_service hopt hcr hgt', Option.map_some]
+                    have hcoh' := capLabelCoh_step _ _ hFresh hCoh hstep
+                    have hfr' := freshCfg_step _ _ hFresh hstep
+                    subst hCtx; subst hTtx
+                    have hC' : ctxStates (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2))
+                        = ctxStates K := by
+                      unfold ctxNetEffect; rw [ctxStates_updateCtxTxns, updateCtxStates_self_aux]
+                    have hT' : ctxTxns (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2))
+                        = (ctxTxns K).put n2 (txnService op2 v2 Θ).2 := by
+                      unfold ctxNetEffect
+                      rw [show updateCtxStates K (ctxStates K) = K from updateCtxStates_self_aux]
+                      exact ctxTxns_updateCtxTxns_service hgt'
+                    have hctxeq : ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2)
+                        = updateCtxTxns K ((ctxTxns K).put n2 (txnService op2 v2 Θ).2) := by
+                      unfold ctxNetEffect; rw [updateCtxStates_self_aux]
+                    rw [← hctxeq] at hcoh' hfr'
+                    refine ⟨⟨hC'.symm, hT'.symm, hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
+                    rw [hctxeq] at hr
+                    simp only [Bang.Config.run, hstep]; exact hr
               · rw [Bool.not_eq_true] at hopt
                 simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
                   reduceCtorEq, false_and] at h
