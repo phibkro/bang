@@ -32,7 +32,11 @@
 > untouched). **REMAINING = inc-6 (task #15) — NOT mechanical (corrected 2026-06-28):** the Spec re-point (`HasConfig→HasConfig'`,
 > `progress`→3-disjunct, `type_safety`→`type_safety'_proof`) IS a mechanical tail, BUT it's blocked on the **CalcVM route-B
 > re-derivation** (the multi-session core that greens Spec's import) AND inc-5 (Compat). **inc-6 IS UNDERWAY** — scoped + literature-grounded
-> + de-risked GREEN + U1 done; **U2 (the `evalD` identity re-derivation) is running.** route-B = re-derive `evalD` as the denotation of the
+> + de-risked GREEN + U1 done; **U2 ~60% closed + BANKED at a clean seam (`13482ec`/`c82e95a`): the entire Corr block + exec infra + the sim
+> statement + term cases + the load-bearing handle-STATE all CLOSE (manager-gated, zero walls), and ★ the REFUTE-WATCH PASSES — the
+> HANDLE-defer-recompile lines up with the simulation IH, so route-B's hardest proof question is ANSWERED (no design risk left).** Remaining =
+> mechanical-intricate INCREMENTAL finish (handle-throws/transaction mirror · raised · compile_correct · Agree → the U2 gate, then U3 bridge),
+> a fresh-budget commission. route-B = re-derive `evalD` as the denotation of the
 > identity kernel (a CALCULATION not a patch: signature-level `evalD` change + a ~1820-line bridge, NOT a re-key) + CalcVM `.escapedCap`
 > accounting (inv #1). SoT: **`paths/PATH-inc6-calcvm-route-b.md`** (method grounding + gated scope + U1–U4 + the green de-risk ladder).
 > Vestigial `WScfg`/`returnEscape`/`#35`-machinery PARKED.
