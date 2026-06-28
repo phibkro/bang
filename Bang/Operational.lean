@@ -207,6 +207,11 @@ theorem Comp.subst_shift (v : Val) (c : Comp) : Comp.subst v (Comp.shift c) = c 
 inductive Result (α : Type) where
   | done : α → Result α
   | oom : Result α
+  -- ADR-0063: a capability that escapes its handler (forced after the handler pops ⇒ `idDispatch`
+  -- finds no frame) is a DEFINED fail-loud terminal, DISTINCT from `.stuck` — the kernel already
+  -- produces it (global-fresh minting), we name it. A well-typed `⊥` program never reaches `.stuck`;
+  -- it returns, diverges (`.oom`), or hits this defined capability-escape (OCaml-effects `Unhandled`).
+  | escapedCap : Result α
   | stuck : Result α
 
 /-! ### CK machine (ADR-0023) — deep handlers over `EvalCtx × Comp`.
@@ -533,14 +538,20 @@ def plug : EvalCtx → Comp → Comp
 theorem plug_cons (fr : Frame) (K : EvalCtx) (c : Comp) :
     plug (fr :: K) c = plug K (fr.wrapStep c) := by cases fr <;> rfl
 
-/-- Run a config to a returned value. `⟨g, [], ret v⟩` = done; `step = none` on a non-terminal = stuck. -/
+/-- Run a config to a returned value. `⟨g, [], ret v⟩` = done; `step = none` on a non-terminal classifies:
+a focus `perform (vcap n ℓ) op v` whose `idDispatch` finds NO frame is the DEFINED capability-escape
+(ADR-0063) ⟹ `.escapedCap`; every other `step = none` is genuine `.stuck`. (For that focus,
+`Source.step = (idDispatch …).map …`, so `step = none ⟺ idDispatch = none ⟺ the cap escaped.) -/
 def Config.run : Nat → Config → Result Val
   | 0, _              => .oom
   | _ + 1, (_, [], .ret v) => .done v
   | n + 1, cfg        =>
       match Source.step cfg with
       | some cfg' => Config.run n cfg'
-      | none      => .stuck
+      | none      =>
+          match cfg.2.2 with
+          | .perform (.vcap _ _) _ _ => .escapedCap
+          | _                        => .stuck
 
 /-- Source.eval: load the closed program into `⟨0, [], c⟩` (a FRESH machine: counter at 0, empty
 stack) and run. Signature unchanged (ADR-0023 D3); ADR-0055 only seeds the fresh-id counter at 0. -/
@@ -815,7 +826,9 @@ carries the fresh-id counter `g`, so the non-returning hypothesis quantifies ove
 theorem Config.run_step (n : Nat) (cfg : Config)
     (hne : ∀ g v, cfg ≠ (g, [], Comp.ret v)) :
     Config.run (n + 1) cfg =
-      (match Source.step cfg with | some cfg' => Config.run n cfg' | none => .stuck) := by
+      (match Source.step cfg with
+       | some cfg' => Config.run n cfg'
+       | none => match cfg.2.2 with | .perform (.vcap _ _) _ _ => .escapedCap | _ => .stuck) := by
   obtain ⟨g, K, c⟩ := cfg
   match K, c with
   | [], .ret v => exact absurd rfl (hne g v)
@@ -846,7 +859,7 @@ theorem Config.run_done_add (k : Nat) :
       rw [Config.run_step m cfg hret] at h
       rw [show m + 1 + k = (m + k) + 1 by omega, Config.run_step (m + k) cfg hret]
       cases hstep : Source.step cfg with
-      | none => rw [hstep] at h; exact absurd h (by simp)
+      | none => rw [hstep] at h; exact h
       | some cfg' =>
           rw [hstep] at h
           show Config.run (m + k) cfg' = Result.done w

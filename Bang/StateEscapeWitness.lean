@@ -36,10 +36,11 @@ def stateEscape : Comp :=
           (.perform (.vvar 1) "get" .vunit)
           (.perform (.vvar 0) "get" .vunit))))
 
-/-- BEHAVIOUR (compiled `#guard`): the escape is real — `stateEscape` runs STUCK. -/
-private def stateEscape_stuck : Bool :=
-  match Source.eval 500 stateEscape with | .stuck => true | _ => false
-#guard stateEscape_stuck
+/-- BEHAVIOUR (compiled `#guard`): the escape is real — `stateEscape` runs to the DEFINED
+capability-escape fail-loud `.escapedCap` (ADR-0063; was `.stuck` before the reclassification). -/
+private def stateEscape_escaped : Bool :=
+  match Source.eval 500 stateEscape with | .escapedCap => true | _ => false
+#guard stateEscape_escaped
 
 /-- **THE VERDICT: `stateEscape` is HasCTy-UNTYPEABLE** — for ANY `EffSig` (structural, no instance
 facts). Peeling the two outer `state` handles, the `state 1` cell's initial value `s₀ = vvar 0` must be

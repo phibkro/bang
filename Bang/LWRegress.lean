@@ -57,9 +57,11 @@ and forced at top level (no re-handler). The cap names the popped handler's iden
 def escapeB : Comp :=
   .letC (.handle (.state 1 .vunit) (.ret (.vthunk (.perform (.vvar 0) "get" .vunit))))
         (.force (.vvar 0))
-private def escapeB_stuck : Bool :=
-  match Source.eval 300 escapeB with | .stuck => true | _ => false
-#guard escapeB_stuck
+-- ADR-0063: the escape now lands in the DEFINED `.escapedCap` terminal (was `.stuck` before the
+-- reclassification) — the cap names the popped handler `0`, `idDispatch` finds no frame, fail-loud.
+private def escapeB_escaped : Bool :=
+  match Source.eval 300 escapeB with | .escapedCap => true | _ => false
+#guard escapeB_escaped
 
 /-- `¬ CapResolves [] 0 1 "get"` — the escaped cap names handler `0`, but the stack is empty
 (`splitAtId [] 0 = none`). The Prop-level twin of the `#guard` above. -/

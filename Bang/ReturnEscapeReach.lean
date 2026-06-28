@@ -14,10 +14,11 @@ form is UNTYPEABLE (the type system excludes it). `handleState`'s answer `A` is 
 laundered thunk. So the seal uses STATE throughout (as `progB`/`escapeB` do).
 
 - `progComp_typeable` : the source TYPECHECKS at a label-1-FREE row `⊥ ⊔ (⊥ ⊔ ⊥)`, result `F 1 unit`.
-- `#guard Source.eval progComp = .stuck` : it FAILS LOUD (the inner re-handler mints a fresh id; the
+- `#guard Source.eval progComp = .escapedCap` : it FAILS LOUD into the DEFINED capability-escape terminal
+  (ADR-0063; was `.stuck` before the reclassification — the inner re-handler mints a fresh id; the
   escaped `vcap 0` finds no `handleF 0` ⇒ `idDispatch = none`).
-A TYPEABLE program reaching STUCK = a `type_safety` PROGRESS violation ⇒ REACHABLE soundness gap at
-identity-dispatch (reopens #50/ADR-0057, the IdentityCollisionProbe "pending operator design call"). -/
+This typeable program reaching the defined escape (not `.done`) is exactly the `NonEscape`/progress content
+the inc-5 diagonal cannot establish from typing — the witness ADR-0063 reclassifies as defined behavior. -/
 
 namespace Bang.ReturnEscapeReach
 
@@ -51,13 +52,15 @@ def progComp : Comp :=
   Comp.letC (Comp.handle (Handler.state 1 Val.vunit) (Comp.ret (Val.vthunk Mcomp)))
             (Comp.force (Val.vvar 0))
 
--- BEHAVIORAL: the escape FAILS LOUD (stuck) under global-fresh minting.
-#guard (match Source.eval 300 progComp with | .stuck => true | _ => false)
+-- BEHAVIORAL: the escape FAILS LOUD into the DEFINED `.escapedCap` terminal (ADR-0063) under
+-- global-fresh minting (was `.stuck` before the reclassification).
+#guard (match Source.eval 300 progComp with | .escapedCap => true | _ => false)
 
 /-- **THE SEAL.** `progComp` TYPECHECKS — at a label-1-FREE row, result `F 1 unit`. The outer
 `state 1` handler's answer-type B-occ `¬ LabelOccurs 1 (U (⊥⊔⊥) (F 1 unit))` PASSES (the inner
 re-handle laundered label 1 out of the thunk's external type). With the `#guard` above, a TYPEABLE
-program reaches STUCK ⇒ `type_safety` progress is violated. -/
+program reaches the DEFINED capability-escape (`.escapedCap`, ADR-0063) — the progress content the
+inc-5 diagonal cannot establish from typing, hence reclassified as defined v1 behavior. -/
 theorem progComp_typeable :
     HasCTy (Eff := EffRow) (Mult := QTT) [] [] progComp (⊥ ⊔ (⊥ ⊔ ⊥)) (CTy.F 1 VTy.unit) := by
   have hint : ∀ op B, EffSig.opArg (Eff := EffRow) (Mult := QTT) 1 op = some B → op = "get" ∨ op = "put" := by
