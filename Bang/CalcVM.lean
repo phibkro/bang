@@ -1449,96 +1449,96 @@ end U2Sanity
 /-- Fuel monotonicity, one step (k2-playbook §2 bedrock): more fuel never changes a
 `some`. Induction on fuel, `cases` on the head instruction; `SUBST`/`APP`'s nested
 stack-match resolves the same way. -/
-theorem exec_succ : ∀ f c s hs r, exec f c s hs = some r → exec (f+1) c s hs = some r := by
+theorem exec_succ : ∀ f g c s hs r, exec f g c s hs = some r → exec (f+1) g c s hs = some r := by
   intro f
   induction f with
-  | zero => intro c s hs r h; simp [exec] at h
+  | zero => intro g c s hs r h; simp [exec] at h
   | succ f ih =>
-    intro c s hs r h
+    intro g c s hs r h
     cases c with
     | nil => simpa [exec] using h
     | cons i c =>
       cases i with
-      | RET v => simp only [exec] at h ⊢; exact ih _ _ _ _ h
-      | LAMI M => simp only [exec] at h ⊢; exact ih _ _ _ _ h
+      | RET v => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
+      | LAMI M => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
       | SUBST N =>
         simp only [exec] at h ⊢
         cases s with
         | nil => simp at h
         | cons hd s' => cases hd with
-          | ret v => simp only [] at h ⊢; exact ih _ _ _ _ h
+          | ret v => simp only [] at h ⊢; exact ih _ _ _ _ _ h
           | _ => simp at h
       | APP v =>
         simp only [exec] at h ⊢
         cases s with
         | nil => simp at h
         | cons hd s' => cases hd with
-          | lam N => simp only [] at h ⊢; exact ih _ _ _ _ h
+          | lam N => simp only [] at h ⊢; exact ih _ _ _ _ _ h
           | _ => simp at h
-      | MARK hh => simp only [exec] at h ⊢; exact ih _ _ _ _ h
+      | HANDLE hd M => simp only [exec] at h ⊢; exact ih _ _ _ _ _ h
       | UNMARK =>
         simp only [exec] at h ⊢
         cases hs with
         | nil => simp at h
-        | cons hd hs' => simp only [] at h ⊢; exact ih _ _ _ _ h
-      | THROW ℓ op v =>
+        | cons hd hs' => simp only [] at h ⊢; exact ih _ _ _ _ _ h
+      | THROW n op v =>
         simp only [exec] at h ⊢
-        cases hu : unwindFind ℓ op hs with
+        cases hu : unwindFind n op hs with
         | none => rw [hu] at h; simp at h
-        | some cs => obtain ⟨c', s', hs'⟩ := cs; rw [hu] at h; exact ih _ _ _ _ h
-      | OP ℓ op v =>
+        | some cs => obtain ⟨c', s', hs'⟩ := cs; rw [hu] at h; exact ih _ _ _ _ _ h
+      | OP n op v =>
         simp only [exec] at h ⊢
-        cases hsu : stateUpdate ℓ op v hs with
+        cases hsu : stateUpdate n op v hs with
         | some ru =>
           obtain ⟨r, hs'⟩ := ru
-          simp only [hsu] at h ⊢; exact ih _ _ _ _ h
+          simp only [hsu] at h ⊢; exact ih _ _ _ _ _ h
         | none =>
           simp only [hsu] at h ⊢
-          cases htu : txnUpdate ℓ op v hs with
+          cases htu : txnUpdate n op v hs with
           | some ru =>
             obtain ⟨r, hs'⟩ := ru
-            simp only [htu] at h ⊢; exact ih _ _ _ _ h
+            simp only [htu] at h ⊢; exact ih _ _ _ _ _ h
           | none =>
             simp only [htu] at h ⊢
-            cases hu : unwindFind ℓ op hs with
+            cases hu : unwindFind n op hs with
             | none => simp only [hu] at h; simp at h
-            | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ h
+            | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ _ h
       | CASE w N₁ N₂ =>
         simp only [exec] at h ⊢
         cases w with
-        | inl v => simp only [] at h ⊢; exact ih _ _ _ _ h
-        | inr v => simp only [] at h ⊢; exact ih _ _ _ _ h
+        | inl v => simp only [] at h ⊢; exact ih _ _ _ _ _ h
+        | inr v => simp only [] at h ⊢; exact ih _ _ _ _ _ h
         | _ => simp at h
       | SPLIT w N =>
         simp only [exec] at h ⊢
         cases w with
-        | pair v u => simp only [] at h ⊢; exact ih _ _ _ _ h
+        | pair v u => simp only [] at h ⊢; exact ih _ _ _ _ _ h
         | _ => simp at h
 
 /-- Fuel monotonicity, `≤` (k2-playbook §2): bump any sub-fuel to a common value. -/
-theorem exec_mono : ∀ f g c s hs r, f ≤ g → exec f c s hs = some r → exec g c s hs = some r := by
-  intro f g c s hs r hle h
+theorem exec_mono : ∀ f f2 g c s hs r, f ≤ f2 → exec f g c s hs = some r → exec f2 g c s hs = some r := by
+  intro f f2 g c s hs r hle h
   obtain ⟨k, rfl⟩ := Nat.le.dest hle
   clear hle
   induction k with
   | zero => simpa using h
-  | succ k ih => rw [Nat.add_succ]; exact exec_succ _ _ _ _ _ ih
+  | succ k ih => rw [Nat.add_succ]; exact exec_succ _ _ _ _ _ _ ih
 
 /-- The machine outcome of a `raised ℓ op v` hitting handler stack `hs`: unwind to
 the nearest catching frame and resume its saved continuation with `ret v` pushed
 (the abort), or `none` (uncaught). Factored out of `exec`'s THROW arm so the two-part
 `sim` can target it (CalcEff §throwOutcome). -/
-def throwOutcome (F : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Val)
+def throwOutcome (F g : Nat) (n : Nat) (op : Bang.OpId) (v : Val)
     (hs : HStack) : Option Stack :=
-  match unwindFind ℓ op hs with
-  | some (c', s', hs') => exec F c' (.ret v :: s') hs'
+  match unwindFind n op hs with
+  | some (c', s', hs') => exec F g c' (.ret v :: s') hs'
   | none               => none
 
 /-- A non-throws top frame (state/transaction) is SKIPPED by the throws unwind ⇒ `throwOutcome`
 is unchanged by prepending it (the abort target is found deeper). -/
-theorem throwOutcome_cons_nonthrows (F : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (v : Val)
+theorem throwOutcome_cons_nonthrows (F g : Nat) (n : Nat) (op : Bang.OpId) (v : Val)
     (fr : HFrame) (hs : HStack) (hnt : ∀ ℓ0, fr.handler ≠ Handler.throws ℓ0) :
-    throwOutcome F ℓ op v (fr :: hs) = throwOutcome F ℓ op v hs := by
+    throwOutcome F g n op v (fr :: hs) = throwOutcome F g n op v hs := by
   cases hh : fr.handler with
   | throws ℓ0 => exact absurd hh (hnt ℓ0)
   | state ℓ0 s => simp only [throwOutcome, unwindFind, hh]
