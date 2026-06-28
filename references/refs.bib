@@ -485,14 +485,22 @@
 }
 
 @misc{lindley-draft25-asmfx-handlers-all-the-way-down,
-  keywords = {topic:wasmfx topic:calculation role:frontier},
-  author = {Lindley, Sam and others},
+  keywords = {topic:wasmfx topic:calculation grounds:inc-6 role:frontier},
+  author = {Campbell, Brian and Lindley, Sam and Ricciotti, Wilmer and Stark, Ian},
   title  = {Effect Handlers All the Way Down},
   year   = 2025,
   note   = {Draft October 2025. Handler calculus (ASFX) → register machine
             (AsmFX); compiler correctness via an annotated simulation relation.
-            Nearest published twin of CalcVM→WasmFX.},
-  % TODO: confirm full author list + venue on publication.
+            Nearest published twin of CalcVM→WasmFX. §7.1: its simulation relation
+            s ≼ ŝ "essentially expresses a WELL-SCOPING INVARIANT" to bridge a
+            SCOPE-based source dispatch and an ADDRESS-based machine dispatch —
+            i.e. across a representational gap, thread a coherence invariant through
+            the simulation, do NOT make the machine mirror the source. This is the
+            literature grounding for inc-6 U3 Route A: bang's kernel dispatches by
+            (identity,label), evalD by identity (label-erased) — the SAME gap — so
+            run_evalD's premise = the forward-closure of CapResolves (cap-label =
+            frame-label), bang's analog of AsmFX's well-scoping invariant. (Route B,
+            making evalD label-faithful, is for NO rep-gap; not the method here.)},
 }
 
 % ── transactions / STM (rung 3, ADR-0030) ──────────────────────────────

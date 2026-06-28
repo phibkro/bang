@@ -503,7 +503,9 @@
       "wasmfx",
       "calculation"
     ],
-    "grounds": [],
+    "grounds": [
+      "inc-6"
+    ],
     "role": "frontier",
     "ondisk": true,
     "hop": "4-wasmfx",
