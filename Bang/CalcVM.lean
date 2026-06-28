@@ -1791,32 +1791,36 @@ theorem sim : ∀ fe,
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
           | throws ℓ0 =>
-              simp only at h
-              cases hM : evalD fe σ τ M with
+              -- route-B INSTALL a throws frame: MINT id := g, run the SUBSTITUTED body `M' = subst (vcap g
+              -- ℓ0) M` at g+1 (no store push — throws carries neither state nor heap). The machine's HANDLE
+              -- recompiles the SAME M' at g+1 under an `id:=g` throws frame; the IH on M' closes (refute-watch).
+              simp only [Handler.label] at h
+              cases hM : evalD fe (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.term (.ret v), σ1, τ1), h =>
+                | (.term (.ret v), g1, σ1, τ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
                       Outcome.term.injEq] at h
-                    obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+                    obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
                     -- throws-install + normal return: existential = `netEffect hs σ1 τ1` (throws carries
                     -- no state/heap ⇒ both stores pass through). Pop the throws frame (non-state, non-txn).
                     have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
-                        exec F2 cc (.ret v :: ss) (netEffect hs σ1 τ1) = some r2 →
-                        (∃ F', exec F' (compile M (Instr.UNMARK :: cc)) ss
-                          ({ handler := Handler.throws ℓ0, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        exec F2 g1 cc (.ret v :: ss) (netEffect hs σ1 τ1) = some r2 →
+                        (∃ F', exec F' (g+1) (compile (Comp.subst (Val.vcap g ℓ0) M) (Instr.UNMARK :: cc)) ss
+                          ({ id := g, handler := Handler.throws ℓ0, savedCode := cc, savedStack := ss } :: hs) = some r2)
                         ∧ Corr σ1 (netEffect hs σ1 τ1) ∧ TCorr τ1 (netEffect hs σ1 τ1)
                         ∧ HMut hs (netEffect hs σ1 τ1) := by
                       intro cc ss F2 r2 hr2
-                      set fr : HFrame := { handler := Handler.throws ℓ0, savedCode := cc, savedStack := ss }
+                      set fr : HFrame := { id := g, handler := Handler.throws ℓ0, savedCode := cc, savedStack := ss }
                         with hfrdef
                       have hns : ∀ ℓ s, fr.handler ≠ Handler.state ℓ s := by rw [hfrdef]; intro ℓ s; simp
                       have hnt : ∀ ℓ Θ, fr.handler ≠ Handler.transaction ℓ Θ := by rw [hfrdef]; intro ℓ Θ; simp
                       have hCinstall : Corr σ (fr :: hs) := Corr_install_nonstate fr hns hC
                       have hTinstall : TCorr τ (fr :: hs) := TCorr_install_nontxn fr hnt hT
-                      obtain ⟨hsM, hCM, hTM, hmutM, kM⟩ := ihT M σ τ (.ret v) σ1 τ1 hM (fr :: hs) hCinstall hTinstall
+                      obtain ⟨hsM, hCM, hTM, hmutM, kM⟩ :=
+                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (.ret v) g1 σ1 τ1 hM (fr :: hs) hCinstall hTinstall
                       obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
                         cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
                       have hCtail := Corr_pop_nonstate hns hmutM hCM
@@ -1828,33 +1832,33 @@ theorem sim : ∀ fe,
                         | state _ _ => simp [hth]
                         | throws _ => simp [hth]) hTM
                       have htaileq : tail = netEffect hs σ1 τ1 := updateStates_eq (HMut.tail hmutM) hCtail hTtail
-                      have hstep : exec (F2+1) (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
+                      have hstep : exec (F2+1) g1 (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
                         simp only [exec]; rw [htaileq]; exact hr2
                       exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
                         htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ (HMut.tail hmutM)⟩
                     obtain ⟨_, hCf, hTf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
                     refine ⟨netEffect hs σ1 τ1, hCf, hTf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
                     obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
-                    exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
-                | (.term (.lam M2), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-                | (.raised ℓ' op' w, σ1, τ1), h =>
-                    by_cases hc : fr.id = ℓ' ∧ op' = "raise"
+                    exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
+                | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+                    by_cases hc : ℓ' = g ∧ op' = "raise"
                     · simp only [Option.bind_some, if_pos hc, Option.some.injEq, Prod.mk.injEq,
                         Outcome.term.injEq] at h
-                      obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
-                      obtain ⟨rfl, rfl⟩ := hc
-                      -- caught: M raises `(ℓ0,raise)` ⇒ machine OP catches the throws frame, aborts to the
-                      -- MARK's saved (c2,s2) with `ret w`. The abort unwinds only the CONTINUATION; the
+                      obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+                      obtain ⟨hcn, rfl⟩ := hc; subst ℓ'
+                      -- caught: M' raises `(g,raise)` ⇒ machine OP catches the throws frame (id g), aborts to
+                      -- the HANDLE's saved (c2,s2) with `ret w`. The abort unwinds only the CONTINUATION; the
                       -- stores stay at the at-raise `σ1`/`τ1` (caught = at-raise, keeping outer puts/writes),
                       -- so the existential HStack is `netEffect hs σ1 τ1`. The outer triple over `hs` comes
                       -- from popping the throws install frame (non-state, non-txn) off the raised IH's triple.
@@ -1862,57 +1866,59 @@ theorem sim : ∀ fe,
                       have hnt0 : ∀ ℓ Θ, (Handler.throws ℓ0) ≠ Handler.transaction ℓ Θ := by intro ℓ Θ; simp
                       have htriple : Corr σ1 (netEffect hs σ1 τ1) ∧ TCorr τ1 (netEffect hs σ1 τ1)
                           ∧ HMut hs (netEffect hs σ1 τ1) := by
-                        set fr0 : HFrame := { handler := Handler.throws ℓ0, savedCode := [], savedStack := [] }
+                        set fr0 : HFrame := { id := g, handler := Handler.throws ℓ0, savedCode := [], savedStack := [] }
                         have hns : ∀ ℓ s, fr0.handler ≠ Handler.state ℓ s := hns0
                         have hnt : ∀ ℓ Θ, fr0.handler ≠ Handler.transaction ℓ Θ := hnt0
                         obtain ⟨⟨hCr, hTr, hmutr⟩, _⟩ :=
-                          ihR M σ τ ℓ0 "raise" w σ1 τ1 hM (fr0 :: hs)
+                          ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ g "raise" w g1 σ1 τ1 hM (fr0 :: hs)
                             (Corr_install_nonstate fr0 hns hC) (TCorr_install_nontxn fr0 hnt hT)
                         exact raisedTriple_pop_nontxn hns hnt hCr hTr hmutr
                       refine ⟨netEffect hs σ1 τ1, htriple.1, htriple.2.1, htriple.2.2, fun c2 s2 F2 r2 hr2 => ?_⟩
-                      set fr2 : HFrame := { handler := Handler.throws ℓ0, savedCode := c2, savedStack := s2 }
+                      set fr2 : HFrame := { id := g, handler := Handler.throws ℓ0, savedCode := c2, savedStack := s2 }
                         with hfrdef
                       have hCinstall2 : Corr σ (fr2 :: hs) := Corr_install_nonstate fr2 hns0 hC
                       have hTinstall2 : TCorr τ (fr2 :: hs) := TCorr_install_nontxn fr2 hnt0 hT
-                      obtain ⟨_, kR2⟩ := ihR M σ τ ℓ0 "raise" w σ1 τ1 hM (fr2 :: hs) hCinstall2 hTinstall2
-                      have hthrow : throwOutcome F2 ℓ0 "raise" w (netEffect (fr2 :: hs) σ1 τ1) = some r2 := by
+                      obtain ⟨_, kR2⟩ :=
+                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ g "raise" w g1 σ1 τ1 hM (fr2 :: hs) hCinstall2 hTinstall2
+                      have hthrow : throwOutcome F2 g1 g "raise" w (netEffect (fr2 :: hs) σ1 τ1) = some r2 := by
                         rw [netEffect_cons_throws (show fr2.handler = .throws ℓ0 from by rw [hfrdef])]
                         simp only [throwOutcome, unwindFind, hfrdef, and_self, if_true]; exact hr2
                       obtain ⟨F1, hF1⟩ := kR2 (Instr.UNMARK :: c2) s2 F2 r2 hthrow
-                      exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
+                      exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
                     · simp [Option.bind_some, if_neg hc] at h
           | transaction ℓ0 Θ =>
-              -- INSTALL a transaction frame: body runs under τ.push ℓ0 Θ / a pushed txn frame; on a
-              -- normal return POP the heap (τ1.tail). Mirror of the state install, on the τ side.
-              simp only at h
-              cases hM : evalD fe σ (τ.push ℓ0 Θ) M with
+              -- route-B INSTALL a transaction frame: MINT id := g, push (id ↦ Θ) on τ keyed by g, run the
+              -- SUBSTITUTED body `M' = subst (vcap g ℓ0) M` at g+1; on a normal return POP the heap (τ1.tail).
+              -- A MIRROR of the proven handle-state case, on the τ side (no σ push).
+              simp only [Handler.label] at h
+              cases hM : evalD fe (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.term (.ret v), σ1, τ1), h =>
+                | (.term (.ret v), g1, σ1, τ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
                       Outcome.term.injEq] at h
-                    obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+                    obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
                     have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
-                        exec F2 cc (.ret v :: ss) (netEffect hs σ1 τ1.tail) = some r2 →
-                        (∃ F', exec F' (compile M (Instr.UNMARK :: cc)) ss
-                          ({ handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        exec F2 g1 cc (.ret v :: ss) (netEffect hs σ1 τ1.tail) = some r2 →
+                        (∃ F', exec F' (g+1) (compile (Comp.subst (Val.vcap g ℓ0) M) (Instr.UNMARK :: cc)) ss
+                          ({ id := g, handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss } :: hs) = some r2)
                         ∧ Corr σ1 (netEffect hs σ1 τ1.tail) ∧ TCorr τ1.tail (netEffect hs σ1 τ1.tail)
                         ∧ HMut hs (netEffect hs σ1 τ1.tail) := by
                       intro cc ss F2 r2 hr2
-                      set fr : HFrame := { handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss }
+                      set fr : HFrame := { id := g, handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss }
                         with hfrdef
                       have hCinstall : Corr σ (fr :: hs) :=
                         Corr_install_nonstate fr (by rw [hfrdef]; intro ℓ s; simp) hC
-                      have hTinstall : TCorr (τ.push ℓ0 Θ) (fr :: hs) :=
+                      have hTinstall : TCorr (τ.push g Θ) (fr :: hs) :=
                         TCorr_install ℓ0 Θ fr (by rw [hfrdef]) hT
                       obtain ⟨hsM, hCM, hTM, hmutM, kM⟩ :=
-                        ihT M σ (τ.push ℓ0 Θ) (.ret v) σ1 τ1 hM (fr :: hs) hCinstall hTinstall
+                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ (τ.push g Θ) (.ret v) g1 σ1 τ1 hM (fr :: hs) hCinstall hTinstall
                       obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
                         cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
                       have htop : ∃ Θ', top.handler = .transaction ℓ0 Θ' := by
-                        have hh := hmutM.1.2.2
+                        have hh := hmutM.1.2.2.2
                         cases hth : top.handler with
                         | transaction ℓ1 Θ1 => rw [hfrdef, hth] at hh; simp only at hh; subst hh; exact ⟨Θ1, rfl⟩
                         | state _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
@@ -1923,26 +1929,26 @@ theorem sim : ∀ fe,
                         Corr_pop_nonstate (by rw [hfrdef]; intro ℓ s; simp) hmutM hCM
                       have htaileq : tail = netEffect hs σ1 τ1.tail :=
                         updateStates_eq (HMut.tail hmutM) hCtail hTtail
-                      have hstep : exec (F2+1) (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
+                      have hstep : exec (F2+1) g1 (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
                         simp only [exec]; rw [htaileq]; exact hr2
                       exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
                         htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ (HMut.tail hmutM)⟩
                     obtain ⟨_, hCf, hTf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
                     refine ⟨netEffect hs σ1 τ1.tail, hCf, hTf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
                     obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
-                    exact ⟨F1+1, by simp only [compile, exec]; exact hF1⟩
-                | (.term (.lam M2), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-                | (.raised ℓ' op' w, _, _), h =>
+                    exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
+                | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.raised ℓ' op' w, _, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
       | case a b d =>
@@ -1952,13 +1958,13 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | inl v =>
               simp only [evalD] at h
-              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v b) σ τ t σ' τ' h hs hC hT
+              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v b) g σ τ t g' σ' τ' h hs hC hT
               refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
               obtain ⟨F', hF'⟩ := k c s F r hr
               exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
           | inr v =>
               simp only [evalD] at h
-              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v d) σ τ t σ' τ' h hs hC hT
+              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v d) g σ τ t g' σ' τ' h hs hC hT
               refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
               obtain ⟨F', hF'⟩ := k c s F r hr
               exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
@@ -1975,7 +1981,7 @@ theorem sim : ∀ fe,
           | pair v w =>
               simp only [evalD] at h
               obtain ⟨hsf, hCf, hTf, hlenf, k⟩ :=
-                ihT (Comp.subst v (Comp.subst (Val.shift w) b)) σ τ t σ' τ' h hs hC hT
+                ihT (Comp.subst v (Comp.subst (Val.shift w) b)) g σ τ t g' σ' τ' h hs hC hT
               refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
               obtain ⟨F', hF'⟩ := k c s F r hr
               exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
@@ -1992,7 +1998,7 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | fold v =>
               simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-              obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+              obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
               exact ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
           | vunit => simp [evalD] at h
           | vint n => simp [evalD] at h
