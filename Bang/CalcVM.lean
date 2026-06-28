@@ -3705,12 +3705,16 @@ Induction on the eval fuel `fe`. -/
 theorem run_evalD : ∀ fe,
     (∀ M g σ τ t g' σ' τ', evalD fe g σ τ M = some (.term t, g', σ', τ') →
       ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K →
-        (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ')) ∧
+        CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
+        (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
+          CapLabelCoh (g', ctxNetEffect K σ' τ', t) ∧ FreshCfg (g', ctxNetEffect K σ' τ', t)) ∧
         ∀ (fuel : Nat) (r : Bang.Result Val),
           Bang.Config.run fuel (g', ctxNetEffect K σ' τ', t) = r → ∃ F, Bang.Config.run F (g, K, M) = r)
     ∧ (∀ M g σ τ n op v g' σ' τ', evalD fe g σ τ M = some (.raised n op v, g', σ', τ') →
       ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K →
-        (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ')) ∧
+        CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
+        (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
+          CapLabelCoh (g', ctxNetEffect K σ' τ', Comp.ret v) ∧ FreshCfg (g', ctxNetEffect K σ' τ', Comp.ret v)) ∧
         ∀ (fuel : Nat) (r : Bang.Result Val),
           dispatchRun fuel g' n (ctxNetEffect K σ' τ') (labelOf (ctxNetEffect K σ' τ') n) op v = r →
             ∃ F, Bang.Config.run F (g, K, M) = r) := by
@@ -3722,18 +3726,18 @@ theorem run_evalD : ∀ fe,
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M g σ τ t g' σ' τ' h K hCtx hTtx
+      intro M g σ τ t g' σ' τ' h K hCtx hTtx hCoh hFresh
       cases M with
       | ret v =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | lam M =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe g σ τ M with
@@ -3747,14 +3751,28 @@ theorem run_evalD : ∀ fe,
                   CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
                 have hTletF : CtxTxnCorr τ (Frame.letF N :: K) :=
                   CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                obtain ⟨⟨hCM, hTM⟩, kM⟩ := ihT M g σ τ (.ret v) g1 σ1 τ1 hM (Frame.letF N :: K) hCletF hTletF
+                -- PUSH the coherence/freshness through `Source.step (g,K,letC M N) → (g, letF N :: K, M)`.
+                have hpush : Source.step (g, K, Comp.letC M N) = some (g, Frame.letF N :: K, M) := rfl
+                have hFletF := freshCfg_step _ _ hFresh hpush
+                have hCletFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
+                obtain ⟨⟨hCM, hTM, hCohR, hFR⟩, kM⟩ :=
+                  ihT M g σ τ (.ret v) g1 σ1 τ1 hM (Frame.letF N :: K) hCletF hTletF hCletFcoh hFletF
                 have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
                   CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM
                 have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
                   CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTM
-                obtain ⟨⟨hCf, hTf⟩, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 t g' σ' τ' h (ctxNetEffect K σ1 τ1) hCM' hTM'
-                rw [ctxNetEffect_ctxNetEffect] at hCf hTf
-                refine ⟨⟨hCf, hTf⟩, fun fuel r hr => ?_⟩
+                -- POP: rewrite ret v's coherence to `letF N :: ctxNetEffect K σ1 τ1`, then step to `subst v N`.
+                have hcne : ctxNetEffect (Frame.letF N :: K) σ1 τ1 = Frame.letF N :: ctxNetEffect K σ1 τ1 :=
+                  ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
+                rw [hcne] at hCohR hFR
+                have hpop : Source.step (g1, Frame.letF N :: ctxNetEffect K σ1 τ1, Comp.ret v)
+                    = some (g1, ctxNetEffect K σ1 τ1, Comp.subst v N) := rfl
+                have hFsub := freshCfg_step _ _ hFR hpop
+                have hCsub := capLabelCoh_step _ _ hFR hCohR hpop
+                obtain ⟨⟨hCf, hTf, hCohF, hFF⟩, kN⟩ :=
+                  ihT (Comp.subst v N) g1 σ1 τ1 t g' σ' τ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hCsub hFsub
+                rw [ctxNetEffect_ctxNetEffect] at hCf hTf hCohF hFF
+                refine ⟨⟨hCf, hTf, hCohF, hFF⟩, fun fuel r hr => ?_⟩
                 obtain ⟨F2, hF2⟩ := kN fuel r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
                 have hstep : Bang.Config.run (F2+1) (g1, Frame.letF N :: ctxNetEffect K σ1 τ1, .ret v) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF2
@@ -3777,7 +3795,9 @@ theorem run_evalD : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
+              have hstep : Source.step (g, K, Comp.force (Val.vthunk M)) = some (g, K, M) := rfl
               obtain ⟨hCf, kf⟩ := ihT M g σ τ t g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hCf, fun fuel r hr => by
                 obtain ⟨F', hF'⟩ := kf fuel r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
@@ -3801,14 +3821,26 @@ theorem run_evalD : ∀ fe,
                   CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
                 have hTappF : CtxTxnCorr τ (Frame.appF v :: K) :=
                   CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                obtain ⟨⟨hCM, hTM⟩, kM⟩ := ihT M g σ τ (.lam N) g1 σ1 τ1 hM (Frame.appF v :: K) hCappF hTappF
+                have hpush : Source.step (g, K, Comp.app M v) = some (g, Frame.appF v :: K, M) := rfl
+                have hFappF := freshCfg_step _ _ hFresh hpush
+                have hCappFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
+                obtain ⟨⟨hCM, hTM, hCohR, hFR⟩, kM⟩ :=
+                  ihT M g σ τ (.lam N) g1 σ1 τ1 hM (Frame.appF v :: K) hCappF hTappF hCappFcoh hFappF
                 have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
                   CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM
                 have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
                   CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTM
-                obtain ⟨⟨hCf, hTf⟩, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 t g' σ' τ' h (ctxNetEffect K σ1 τ1) hCM' hTM'
-                rw [ctxNetEffect_ctxNetEffect] at hCf hTf
-                refine ⟨⟨hCf, hTf⟩, fun fuel r hr => ?_⟩
+                have hcne : ctxNetEffect (Frame.appF v :: K) σ1 τ1 = Frame.appF v :: ctxNetEffect K σ1 τ1 :=
+                  ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
+                rw [hcne] at hCohR hFR
+                have hpop : Source.step (g1, Frame.appF v :: ctxNetEffect K σ1 τ1, Comp.lam N)
+                    = some (g1, ctxNetEffect K σ1 τ1, Comp.subst v N) := rfl
+                have hFsub := freshCfg_step _ _ hFR hpop
+                have hCsub := capLabelCoh_step _ _ hFR hCohR hpop
+                obtain ⟨⟨hCf, hTf, hCohF, hFF⟩, kN⟩ :=
+                  ihT (Comp.subst v N) g1 σ1 τ1 t g' σ' τ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hCsub hFsub
+                rw [ctxNetEffect_ctxNetEffect] at hCf hTf hCohF hFF
+                refine ⟨⟨hCf, hTf, hCohF, hFF⟩, fun fuel r hr => ?_⟩
                 obtain ⟨F2, hF2⟩ := kN fuel r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
                 have hstep : Bang.Config.run (F2+1) (g1, Frame.appF v :: ctxNetEffect K σ1 τ1, .lam N) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF2
@@ -3827,228 +3859,9 @@ theorem run_evalD : ∀ fe,
             | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
             | (.raised n op w, _, _, _), h => simp [Option.bind] at h
       | perform cap op2 v2 =>
-          -- OP-FIRST (mirrors evalD's up-arm + the kernel's handlesOp): get/put→σ, txnops→τ, else raise.
-          -- U1 (route-A): unwrap the cap to its label (RESIDUAL — this bridge arm is dispatch, U2/U3).
-          obtain ⟨n2, ℓ2, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
-            cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
-          simp only [evalD] at h
-          by_cases hop : op2 = "get"
-          · subst hop
-            simp only [if_pos rfl] at h
-            cases hg : σ.get? ℓ2 with
-            | none => rw [hg] at h; simp at h
-            | some sv =>
-                rw [hg] at h
-                simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                obtain ⟨rfl, rfl, rfl⟩ := h
-                rw [ctxNetEffect_self hCtx hTtx]
-                refine ⟨⟨hCtx, hTtx⟩, fun n r hr => ?_⟩
-                have hgc : (ctxStates K).get? ℓ2 = some sv := by rw [← hCtx]; exact hg
-                refine ⟨n+1, ?_⟩
-                simp only [Bang.Config.run, Source.step, dispatch_state_get hgc]; exact hr
-          · by_cases hop2 : op2 = "put"
-            · subst hop2
-              simp only [if_neg (by decide : ¬ ("put" = "get")), if_pos rfl] at h
-              cases hg : σ.get? ℓ2 with
-              | none => rw [hg] at h; simp at h
-              | some sv =>
-                  rw [hg] at h
-                  simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                  obtain ⟨rfl, rfl, rfl⟩ := h
-                  -- σ = ctxStates K; the put-resume context mirrors the put-updated store. τ unchanged
-                  -- (state put doesn't touch txn frames), so ctxNetEffect threads it through.
-                  have hgc : (ctxStates K).get? ℓ2 = some sv := by rw [← hCtx]; exact hg
-                  subst hCtx; subst hTtx
-                  -- `ctxNetEffect K ((ctxStates K).put ℓ2 v2) (ctxTxns K)`: the state pass produces the
-                  -- put-resume context; the txn pass is the identity (its store mirrors K's txn frames,
-                  -- whose projection state-put leaves fixed).
-                  have hC' : ctxStates (ctxNetEffect K ((ctxStates K).put ℓ2 v2) (ctxTxns K))
-                      = (ctxStates K).put ℓ2 v2 := by
-                    unfold ctxNetEffect; rw [ctxStates_updateCtxTxns]
-                    exact ctxStates_updateCtxStates_put hgc
-                  have hT' : ctxTxns (ctxNetEffect K ((ctxStates K).put ℓ2 v2) (ctxTxns K)) = ctxTxns K := by
-                    unfold ctxNetEffect
-                    rw [show ctxTxns K = ctxTxns (updateCtxStates K ((ctxStates K).put ℓ2 v2)) from
-                      (ctxTxns_updateCtxStates K _).symm, updateCtxTxns_self_aux,
-                      ctxTxns_updateCtxStates]
-                  refine ⟨⟨hC'.symm, hT'.symm⟩, fun n r hr => ?_⟩
-                  refine ⟨n+1, ?_⟩
-                  -- the kernel put-resume runs on `updateCtxStates K (put)`; `ctxNetEffect` agrees because
-                  -- the txn pass is the identity on K's txn projection (state put untouched it).
-                  have hctxeq : ctxNetEffect K ((ctxStates K).put ℓ2 v2) (ctxTxns K)
-                      = updateCtxStates K ((ctxStates K).put ℓ2 v2) := by
-                    unfold ctxNetEffect
-                    rw [show ctxTxns K = ctxTxns (updateCtxStates K ((ctxStates K).put ℓ2 v2)) from
-                      (ctxTxns_updateCtxStates K _).symm, updateCtxTxns_self_aux]
-                  rw [hctxeq] at hr
-                  simp only [Bang.Config.run, Source.step, dispatch_state_put (w := v2) hgc]; exact hr
-            · by_cases hopt : isTxnOp op2 = true
-              · -- txn op: serviced against τ via the kernel's dispatchOn transaction arm (`dispatch_txn_service`).
-                simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
-                cases hgt : τ.get? ℓ2 with
-                | none => rw [hgt] at h; simp at h
-                | some Θ =>
-                    rw [hgt] at h
-                    simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                    obtain ⟨rfl, rfl, rfl⟩ := h
-                    subst hCtx; subst hTtx
-                    have hgt' : (ctxTxns K).get? ℓ2 = some Θ := hgt
-                    -- σ unchanged; τ threaded to (ctxTxns K).put ℓ2 Θ'. The resume context is the kernel's
-                    -- txn-service context, which ctxNetEffect reproduces (state pass identity, txn pass = put).
-                    have hC' : ctxStates (ctxNetEffect K (ctxStates K) ((ctxTxns K).put ℓ2 (txnService op2 v2 Θ).2))
-                        = ctxStates K := by
-                      unfold ctxNetEffect; rw [ctxStates_updateCtxTxns, updateCtxStates_self_aux]
-                    have hT' : ctxTxns (ctxNetEffect K (ctxStates K) ((ctxTxns K).put ℓ2 (txnService op2 v2 Θ).2))
-                        = (ctxTxns K).put ℓ2 (txnService op2 v2 Θ).2 := by
-                      unfold ctxNetEffect
-                      rw [show updateCtxStates K (ctxStates K) = K from updateCtxStates_self_aux]
-                      exact ctxTxns_updateCtxTxns_service hgt'
-                    refine ⟨⟨hC'.symm, hT'.symm⟩, fun n r hr => ?_⟩
-                    refine ⟨n+1, ?_⟩
-                    have hctxeq : ctxNetEffect K (ctxStates K) ((ctxTxns K).put ℓ2 (txnService op2 v2 Θ).2)
-                        = updateCtxTxns K ((ctxTxns K).put ℓ2 (txnService op2 v2 Θ).2) := by
-                      unfold ctxNetEffect; rw [updateCtxStates_self_aux]
-                    rw [hctxeq] at hr
-                    simp only [Bang.Config.run, Source.step, dispatch_txn_service hopt hgt']; exact hr
-              · rw [Bool.not_eq_true] at hopt
-                simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
-                  reduceCtorEq, false_and] at h
+          sorry  -- U3 seam-2: perform-term route-B re-key (identity-keyed σ.get? n + CapResolves)
       | handle h0 M =>
-          simp only [evalD] at h
-          cases h0 with
-          | state ℓ0 s0 =>
-              simp only at h
-              cases hM : evalD fe (σ.push ℓ0 s0) τ M with
-              | none => rw [hM] at h; simp at h
-              | some oM =>
-                rw [hM] at h
-                match oM, h with
-                | (.term (.ret v), σ1, τ1), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
-                      Outcome.term.injEq] at h
-                    obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
-                    have hCins : CtxCorr (σ.push ℓ0 s0) (Frame.handleF (.state ℓ0 s0) :: K) :=
-                      CtxCorr_install hCtx
-                    have hTins : CtxTxnCorr τ (Frame.handleF (.state ℓ0 s0) :: K) :=
-                      CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                    obtain ⟨⟨hCM, hTM⟩, kM⟩ := ihT M (σ.push ℓ0 s0) τ (.ret v) σ1 τ1 hM
-                      (Frame.handleF (.state ℓ0 s0) :: K) hCins hTins
-                    obtain ⟨hpop, hupd⟩ := CtxCorr_ctxNetEffect_pop_state hCM hTM
-                    refine ⟨hpop, fun n r hr => ?_⟩
-                    have hstep : Bang.Config.run (n+1)
-                        (ctxNetEffect (Frame.handleF (.state ℓ0 s0) :: K) σ1 τ1, .ret v) = r := by
-                      rw [hupd]; simp only [Bang.Config.run, Source.step]; exact hr
-                    obtain ⟨F1, hF1⟩ := kM (n+1) r hstep
-                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | (.term (.lam a), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-                | (.raised ℓ' op' w, _, _), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
-                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
-          | throws ℓ0 =>
-              simp only at h
-              cases hM : evalD fe σ τ M with
-              | none => rw [hM] at h; simp at h
-              | some oM =>
-                rw [hM] at h
-                match oM, h with
-                | (.term (.ret v), σ1, τ1), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
-                      Outcome.term.injEq] at h
-                    obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
-                    have hCins : CtxCorr σ (Frame.handleF (.throws ℓ0) :: K) :=
-                      CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                    have hTins : CtxTxnCorr τ (Frame.handleF (.throws ℓ0) :: K) :=
-                      CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                    obtain ⟨⟨hCM, hTM⟩, kM⟩ := ihT M σ τ (.ret v) σ1 τ1 hM (Frame.handleF (.throws ℓ0) :: K) hCins hTins
-                    obtain ⟨hpop, hupd⟩ := CtxCorr_ctxNetEffect_pop_throws hCM hTM
-                    refine ⟨hpop, fun n r hr => ?_⟩
-                    have hstep : Bang.Config.run (n+1)
-                        (ctxNetEffect (Frame.handleF (.throws ℓ0) :: K) σ1 τ1, .ret v) = r := by
-                      rw [hupd]; simp only [Bang.Config.run, Source.step]; exact hr
-                    obtain ⟨F1, hF1⟩ := kM (n+1) r hstep
-                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | (.term (.lam a), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-                | (.raised ℓ' op' w, σ1, τ1), h =>
-                    simp only [Option.bind_some] at h
-                    by_cases hk : ℓ0 = ℓ' ∧ op' = "raise"
-                    · simp only [if_pos hk, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                      obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
-                      obtain ⟨rfl, rfl⟩ := hk
-                      have hCins : CtxCorr σ (Frame.handleF (.throws ℓ0) :: K) :=
-                        CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                      have hTins : CtxTxnCorr τ (Frame.handleF (.throws ℓ0) :: K) :=
-                        CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                      obtain ⟨⟨hCM, hTM⟩, kR⟩ := ihR M σ τ ℓ0 w σ1 τ1 hM (Frame.handleF (.throws ℓ0) :: K) hCins hTins
-                      obtain ⟨hpop, hupd⟩ := CtxCorr_ctxNetEffect_pop_throws hCM hTM
-                      refine ⟨hpop, fun n r hr => ?_⟩
-                      have hd : dispatchRun n
-                          (Frame.handleF (.throws ℓ0) :: ctxNetEffect K σ1 τ1) ℓ0 "raise" w = r := by
-                        simp only [dispatchRun, Bang.Config.run, Source.step, Bang.dispatch,
-                          Bang.splitAt, Bang.handlesOp, beq_self_eq_true, Bool.and_true, decide_true,
-                          if_true, Option.bind_some, Bang.dispatchOn]
-                        simpa using hr
-                      rw [← hupd] at hd
-                      obtain ⟨F1, hF1⟩ := kR n r hd
-                      exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                    · simp [if_neg hk] at h
-          | transaction ℓ0 Θ =>
-              simp only at h
-              cases hM : evalD fe σ (τ.push ℓ0 Θ) M with
-              | none => rw [hM] at h; simp at h
-              | some oM =>
-                rw [hM] at h
-                match oM, h with
-                | (.term (.ret v), σ1, τ1), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
-                      Outcome.term.injEq] at h
-                    obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
-                    have hCins : CtxCorr σ (Frame.handleF (.transaction ℓ0 Θ) :: K) :=
-                      CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                    have hTins : CtxTxnCorr (τ.push ℓ0 Θ) (Frame.handleF (.transaction ℓ0 Θ) :: K) :=
-                      CtxTxnCorr_install hTtx
-                    obtain ⟨⟨hCM, hTM⟩, kM⟩ := ihT M σ (τ.push ℓ0 Θ) (.ret v) σ1 τ1 hM
-                      (Frame.handleF (.transaction ℓ0 Θ) :: K) hCins hTins
-                    obtain ⟨hpop, hupd⟩ := CtxCorr_ctxNetEffect_pop_txn hCM hTM
-                    refine ⟨hpop, fun n r hr => ?_⟩
-                    have hstep : Bang.Config.run (n+1)
-                        (ctxNetEffect (Frame.handleF (.transaction ℓ0 Θ) :: K) σ1 τ1, .ret v) = r := by
-                      rw [hupd]; simp only [Bang.Config.run, Source.step]; exact hr
-                    obtain ⟨F1, hF1⟩ := kM (n+1) r hstep
-                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | (.term (.lam a), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-                | (.raised ℓ' op' w, _, _), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
-                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+          sorry  -- U3 seam-2: handle-term route-B re-key (mint id, subst vcap, identity-keyed frames)
       | case a b d =>
           -- ADT sum elim (Unit 6): the kernel `Source.step` reduces in place (Operational.lean 260-261).
           -- Mirror `force`: recurse via `ihT` on the reduced branch, then one `Source.step` bridges.
@@ -4056,13 +3869,17 @@ theorem run_evalD : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | inl v =>
               simp only [evalD] at h
-              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v b) σ τ t σ' τ' h K hCtx hTtx
+              have hstep : Source.step (g, K, Comp.case (Val.inl v) b d) = some (g, K, Comp.subst v b) := rfl
+              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v b) g σ τ t g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hCf, fun n r hr => by
                 obtain ⟨F', hF'⟩ := kf n r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
           | inr v =>
               simp only [evalD] at h
-              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v d) σ τ t σ' τ' h K hCtx hTtx
+              have hstep : Source.step (g, K, Comp.case (Val.inr v) b d) = some (g, K, Comp.subst v d) := rfl
+              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v d) g σ τ t g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hCf, fun n r hr => by
                 obtain ⟨F', hF'⟩ := kf n r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
@@ -4078,7 +3895,10 @@ theorem run_evalD : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | pair v w =>
               simp only [evalD] at h
-              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v (Comp.subst (Val.shift w) b)) σ τ t σ' τ' h K hCtx hTtx
+              have hstep : Source.step (g, K, Comp.split (Val.pair v w) b)
+                  = some (g, K, Comp.subst v (Comp.subst (Val.shift w) b)) := rfl
+              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v (Comp.subst (Val.shift w) b)) g σ τ t g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hCf, fun n r hr => by
                 obtain ⟨F', hF'⟩ := kf n r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
@@ -4096,9 +3916,11 @@ theorem run_evalD : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | fold v =>
               simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-              obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
+              obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+              have hstep : Source.step (g, K, Comp.unfold (Val.fold v)) = some (g, K, Comp.ret v) := rfl
               rw [ctxNetEffect_self hCtx hTtx]
-              exact ⟨⟨hCtx, hTtx⟩, fun n r hr => ⟨n+1, by simp only [Bang.Config.run, Source.step]; exact hr⟩⟩
+              exact ⟨⟨hCtx, hTtx, capLabelCoh_step _ _ hFresh hCoh hstep, freshCfg_step _ _ hFresh hstep⟩,
+                fun n r hr => ⟨n+1, by simp only [Bang.Config.run, Source.step]; exact hr⟩⟩
           | vunit => simp [evalD] at h
           | vint x => simp [evalD] at h
           | vvar i => simp [evalD] at h
@@ -4108,348 +3930,28 @@ theorem run_evalD : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
-    · -- RAISED PART
-      intro M σ τ ℓ v σ' τ' h K hCtx hTtx
-      cases M with
-      | ret w => simp [evalD] at h
-      | lam M => simp [evalD] at h
-      | perform cap op2 v2 =>
-          -- OP-FIRST: the obligation fixes op = "raise", which is NOT get/put/txnop ⇒ evalD's up-arm
-          -- falls to the final `raised ℓ2 "raise" v2` branch unconditionally; σ/τ unchanged.
-          -- U1 (route-A): unwrap the cap to its label (RESIDUAL — this bridge arm is dispatch, U2/U3).
-          obtain ⟨n2, ℓ2, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
-            cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
-          simp only [evalD] at h
-          by_cases hop : op2 = "get"
-          · subst hop; simp only [if_pos rfl] at h
-            cases hg : σ.get? ℓ2 with
-            | none => rw [hg] at h; simp at h
-            | some sv => rw [hg] at h; simp at h
-          · by_cases hop2 : op2 = "put"
-            · subst hop2; simp only [if_neg (by decide : ¬ ("put" = "get")), if_pos rfl] at h
-              cases hg : σ.get? ℓ2 with
-              | none => rw [hg] at h; simp at h
-              | some sv => rw [hg] at h; simp at h
-            · by_cases hopt : isTxnOp op2 = true
-              · simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
-                cases hgt : τ.get? ℓ2 with
-                | none =>
-                    rw [hgt] at h
-                    simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨⟨_, hopeq, _⟩, _, _⟩ := h
-                    subst hopeq; simp [isTxnOp] at hopt
-                | some Θ => rw [hgt] at h; simp at h
-              · rw [Bool.not_eq_true] at hopt
-                simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
-                  Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩ := h
-                rw [ctxNetEffect_self hCtx hTtx]
-                refine ⟨⟨hCtx, hTtx⟩, fun n r hr => ⟨n+1, ?_⟩⟩
-                rw [dispatchRun_perform]; exact hr
-      | letC M N =>
-          simp only [evalD] at h
-          cases hM : evalD fe σ τ M with
-          | none => rw [hM] at h; simp at h
-          | some oM =>
-            rw [hM] at h
-            match oM, h with
-            | (.raised ℓ' op' w, σ1, τ1), h =>
-                simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩ := h
-                have hCletF : CtxCorr σ (Frame.letF N :: K) :=
-                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                have hTletF : CtxTxnCorr τ (Frame.letF N :: K) :=
-                  CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                obtain ⟨⟨hCM, hTM⟩, kR⟩ := ihR M σ τ ℓ' w σ1 τ1 hM (Frame.letF N :: K) hCletF hTletF
-                refine ⟨⟨CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM,
-                  CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTM⟩,
-                  fun n r hr => ?_⟩
-                obtain ⟨F1, hF1⟩ := kR n r (by
-                  rw [ctxNetEffect_cons_nonframe σ1 τ1 (by intro ℓ s; simp) (by intro ℓ Θ; simp),
-                    dispatchRun_letF]; exact hr)
-                exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | (.term (.ret v0), σ1, τ1), h =>
-                simp only [Option.bind_some] at h
-                have hCletF : CtxCorr σ (Frame.letF N :: K) :=
-                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                have hTletF : CtxTxnCorr τ (Frame.letF N :: K) :=
-                  CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                obtain ⟨⟨hCM, hTM⟩, kM⟩ := ihT M σ τ (.ret v0) σ1 τ1 hM (Frame.letF N :: K) hCletF hTletF
-                have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
-                  CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM
-                have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
-                  CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTM
-                obtain ⟨⟨hCf, hTf⟩, kR⟩ := ihR (Comp.subst v0 N) σ1 τ1 ℓ v σ' τ' h (ctxNetEffect K σ1 τ1) hCM' hTM'
-                rw [ctxNetEffect_ctxNetEffect] at hCf hTf
-                refine ⟨⟨hCf, hTf⟩, fun n r hr => ?_⟩
-                obtain ⟨F1, hF1⟩ := kR n r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
-                have hstep : Bang.Config.run (F1+1) (Frame.letF N :: ctxNetEffect K σ1 τ1, .ret v0) = r := by
-                  simp only [Bang.Config.run, Source.step]; exact hF1
-                rw [← ctxNetEffect_cons_nonframe σ1 τ1 (by intro ℓ s; simp) (by intro ℓ Θ; simp)] at hstep
-                obtain ⟨F2, hF2⟩ := kM (F1+1) r hstep
-                exact ⟨F2+1, by simp only [Bang.Config.run, Source.step]; exact hF2⟩
-            | (.term (.lam a), _, _), h => simp [Option.bind] at h
-            | (.term (.force a), _, _), h => simp [Option.bind] at h
-            | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-            | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-            | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-            | (.term (.split a b), _, _), h => simp [Option.bind] at h
-            | (.term (.unfold a), _, _), h => simp [Option.bind] at h
-            | (.term .oom, _, _), h => simp [Option.bind] at h
-            | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-      | force a =>
-          cases a with
-          | vcap n ℓ => simp [evalD] at h
-          | vthunk M =>
-              simp only [evalD] at h
-              obtain ⟨hCf, kR⟩ := ihR M σ τ ℓ v σ' τ' h K hCtx hTtx
-              exact ⟨hCf, fun n r hr => by
-                obtain ⟨F', hF'⟩ := kR n r hr
-                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
-          | vunit => simp [evalD] at h
-          | vint x => simp [evalD] at h
-          | vvar i => simp [evalD] at h
-          | inl w => simp [evalD] at h
-          | inr w => simp [evalD] at h
-          | pair w1 w2 => simp [evalD] at h
-          | fold w => simp [evalD] at h
-      | app M v0 =>
-          simp only [evalD] at h
-          cases hM : evalD fe σ τ M with
-          | none => rw [hM] at h; simp at h
-          | some oM =>
-            rw [hM] at h
-            match oM, h with
-            | (.raised ℓ' op' w, σ1, τ1), h =>
-                simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩ := h
-                have hCappF : CtxCorr σ (Frame.appF v0 :: K) :=
-                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                have hTappF : CtxTxnCorr τ (Frame.appF v0 :: K) :=
-                  CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                obtain ⟨⟨hCM, hTM⟩, kR⟩ := ihR M σ τ ℓ' w σ1 τ1 hM (Frame.appF v0 :: K) hCappF hTappF
-                refine ⟨⟨CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM,
-                  CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTM⟩,
-                  fun n r hr => ?_⟩
-                obtain ⟨F1, hF1⟩ := kR n r (by
-                  rw [ctxNetEffect_cons_nonframe σ1 τ1 (by intro ℓ s; simp) (by intro ℓ Θ; simp),
-                    dispatchRun_appF]; exact hr)
-                exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-            | (.term (.lam N), σ1, τ1), h =>
-                simp only [Option.bind_some] at h
-                have hCappF : CtxCorr σ (Frame.appF v0 :: K) :=
-                  CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                have hTappF : CtxTxnCorr τ (Frame.appF v0 :: K) :=
-                  CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                obtain ⟨⟨hCM, hTM⟩, kM⟩ := ihT M σ τ (.lam N) σ1 τ1 hM (Frame.appF v0 :: K) hCappF hTappF
-                have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
-                  CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM
-                have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
-                  CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTM
-                obtain ⟨⟨hCf, hTf⟩, kR⟩ := ihR (Comp.subst v0 N) σ1 τ1 ℓ v σ' τ' h (ctxNetEffect K σ1 τ1) hCM' hTM'
-                rw [ctxNetEffect_ctxNetEffect] at hCf hTf
-                refine ⟨⟨hCf, hTf⟩, fun n r hr => ?_⟩
-                obtain ⟨F1, hF1⟩ := kR n r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
-                have hstep : Bang.Config.run (F1+1) (Frame.appF v0 :: ctxNetEffect K σ1 τ1, .lam N) = r := by
-                  simp only [Bang.Config.run, Source.step]; exact hF1
-                rw [← ctxNetEffect_cons_nonframe σ1 τ1 (by intro ℓ s; simp) (by intro ℓ Θ; simp)] at hstep
-                obtain ⟨F2, hF2⟩ := kM (F1+1) r hstep
-                exact ⟨F2+1, by simp only [Bang.Config.run, Source.step]; exact hF2⟩
-            | (.term (.ret w), _, _), h => simp [Option.bind] at h
-            | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-            | (.term (.force a), _, _), h => simp [Option.bind] at h
-            | (.term (.app a b), _, _), h => simp [Option.bind] at h
-            | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-            | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-            | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-            | (.term (.split a b), _, _), h => simp [Option.bind] at h
-            | (.term .oom, _, _), h => simp [Option.bind] at h
-            | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-      | handle h0 M =>
-          simp only [evalD] at h
-          cases h0 with
-          | state ℓ0 s0 =>
-              simp only at h
-              cases hM : evalD fe (σ.push ℓ0 s0) τ M with
-              | none => rw [hM] at h; simp at h
-              | some oM =>
-                rw [hM] at h
-                match oM, h with
-                | (.raised ℓ' op' w, σ1, τ1), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
-                      Outcome.raised.injEq] at h
-                    -- evalD forwards `raised ℓ' op' w (σ1.tail, τ1)` (pops the pushed σ entry).
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩ := h
-                    have hCins : CtxCorr (σ.push ℓ0 s0) (Frame.handleF (.state ℓ0 s0) :: K) :=
-                      CtxCorr_install hCtx
-                    have hTins : CtxTxnCorr τ (Frame.handleF (.state ℓ0 s0) :: K) :=
-                      CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                    obtain ⟨⟨hCM, hTM⟩, kR⟩ := ihR M (σ.push ℓ0 s0) τ ℓ' w σ1 τ1 hM
-                      (Frame.handleF (.state ℓ0 s0) :: K) hCins hTins
-                    obtain ⟨hpop, hupd⟩ := CtxCorr_ctxNetEffect_pop_state hCM hTM
-                    refine ⟨hpop, fun n r hr => ?_⟩
-                    have hnc : Bang.handlesOp (Handler.state ℓ0 (σ1.headD (default, default)).2) ℓ' "raise"
-                        = false := by simp [Bang.handlesOp]
-                    have hd : dispatchRun n (ctxNetEffect (Frame.handleF (.state ℓ0 s0) :: K) σ1 τ1)
-                        ℓ' "raise" w = r := by
-                      rw [hupd, dispatchRun_handleF_skip n _ _ ℓ' w hnc]; exact hr
-                    obtain ⟨F1, hF1⟩ := kR n r hd
-                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | (.term (.ret v0), _, _), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
-                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
-                | (.term (.lam a), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-          | throws ℓ0 =>
-              simp only at h
-              cases hM : evalD fe σ τ M with
-              | none => rw [hM] at h; simp at h
-              | some oM =>
-                rw [hM] at h
-                match oM, h with
-                | (.raised ℓ' op' w, σ1, τ1), h =>
-                    simp only [Option.bind_some] at h
-                    by_cases hk : ℓ0 = ℓ' ∧ op' = "raise"
-                    · simp [if_pos hk] at h   -- caught ⇒ term, but h says raised: absurd
-                    · simp only [if_neg hk, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                      obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩ := h
-                      have hne : ℓ0 ≠ ℓ' := fun he => hk ⟨he, rfl⟩
-                      have hnc : Bang.handlesOp (Handler.throws ℓ0) ℓ' "raise" = false := by
-                        simp [Bang.handlesOp, hne]
-                      have hCins : CtxCorr σ (Frame.handleF (.throws ℓ0) :: K) :=
-                        CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                      have hTins : CtxTxnCorr τ (Frame.handleF (.throws ℓ0) :: K) :=
-                        CtxTxnCorr_cons_nontxn (by intro ℓ Θ; simp) hTtx
-                      obtain ⟨⟨hCM, hTM⟩, kR⟩ := ihR M σ τ ℓ' w σ1 τ1 hM (Frame.handleF (.throws ℓ0) :: K) hCins hTins
-                      obtain ⟨hpop, hupd⟩ := CtxCorr_ctxNetEffect_pop_throws hCM hTM
-                      refine ⟨hpop, fun n r hr => ?_⟩
-                      obtain ⟨F1, hF1⟩ := kR n r (by
-                        rw [hupd, dispatchRun_handleF_skip n (Handler.throws ℓ0) _ ℓ' w hnc]; exact hr)
-                      exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | (.term (.ret v0), _, _), h => simp [Option.bind] at h
-                | (.term (.lam a), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-          | transaction ℓ0 Θ =>
-              simp only at h
-              cases hM : evalD fe σ (τ.push ℓ0 Θ) M with
-              | none => rw [hM] at h; simp at h
-              | some oM =>
-                rw [hM] at h
-                match oM, h with
-                | (.raised ℓ' op' w, σ1, τ1), h =>
-                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
-                      Outcome.raised.injEq] at h
-                    -- raise FORWARDS past the txn frame (ℓ' ≠ ℓ0 or op' = raise on a different label);
-                    -- evalD pops the pushed heap (τ1.tail) — FREE ROLLBACK (the heap never commits).
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩ := h
-                    have hnc : Bang.handlesOp (Handler.transaction ℓ0 (τ1.headD (default, default)).2) ℓ' "raise" = false := by
-                      simp [Bang.handlesOp]
-                    have hCins : CtxCorr σ (Frame.handleF (.transaction ℓ0 Θ) :: K) :=
-                      CtxCorr_cons_nonstate (by intro ℓ s; simp) hCtx
-                    have hTins : CtxTxnCorr (τ.push ℓ0 Θ) (Frame.handleF (.transaction ℓ0 Θ) :: K) :=
-                      CtxTxnCorr_install hTtx
-                    obtain ⟨⟨hCM, hTM⟩, kR⟩ := ihR M σ (τ.push ℓ0 Θ) ℓ' w σ1 τ1 hM
-                      (Frame.handleF (.transaction ℓ0 Θ) :: K) hCins hTins
-                    obtain ⟨hpop, hupd⟩ := CtxCorr_ctxNetEffect_pop_txn hCM hTM
-                    refine ⟨hpop, fun n r hr => ?_⟩
-                    obtain ⟨F1, hF1⟩ := kR n r (by
-                      rw [hupd, dispatchRun_handleF_skip n _ _ ℓ' w hnc]
-                      exact hr)
-                    exact ⟨F1+1, by simp only [Bang.Config.run, Source.step]; exact hF1⟩
-                | (.term (.ret v0), _, _), h => simp [Option.bind] at h
-                | (.term (.lam a), _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _), h => simp [Option.bind] at h
-      | case a b d =>
-          -- ADT sum elim (Unit 6) raising: branch raises; recurse via `ihR`, bridge one `Source.step`.
-          cases a with
-          | vcap n ℓ => simp [evalD] at h
-          | inl sv =>
-              simp only [evalD] at h
-              obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv b) σ τ ℓ v σ' τ' h K hCtx hTtx
-              exact ⟨hCf, fun n r hr => by
-                obtain ⟨F', hF'⟩ := kR n r hr
-                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
-          | inr sv =>
-              simp only [evalD] at h
-              obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv d) σ τ ℓ v σ' τ' h K hCtx hTtx
-              exact ⟨hCf, fun n r hr => by
-                obtain ⟨F', hF'⟩ := kR n r hr
-                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
-          | vunit => simp [evalD] at h
-          | vint x => simp [evalD] at h
-          | vvar i => simp [evalD] at h
-          | vthunk M => simp [evalD] at h
-          | pair w1 w2 => simp [evalD] at h
-          | fold w => simp [evalD] at h
-      | split a b =>
-          -- ADT product elim (Unit 6) raising: DOUBLE subst, then the branch raises.
-          cases a with
-          | vcap n ℓ => simp [evalD] at h
-          | pair sv sw =>
-              simp only [evalD] at h
-              obtain ⟨hCf, kR⟩ := ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) σ τ ℓ v σ' τ' h K hCtx hTtx
-              exact ⟨hCf, fun n r hr => by
-                obtain ⟨F', hF'⟩ := kR n r hr
-                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
-          | vunit => simp [evalD] at h
-          | vint x => simp [evalD] at h
-          | vvar i => simp [evalD] at h
-          | vthunk M => simp [evalD] at h
-          | inl w => simp [evalD] at h
-          | inr w => simp [evalD] at h
-          | fold w => simp [evalD] at h
-      | unfold a =>
-          -- ADT μ elim (Unit 6): always `term (ret v)` — never `raised`, vacuous here.
-          cases a with
-          | vcap n ℓ => simp [evalD] at h
-          | fold v => simp [evalD] at h
-          | vunit => simp [evalD] at h
-          | vint x => simp [evalD] at h
-          | vvar i => simp [evalD] at h
-          | vthunk M => simp [evalD] at h
-          | inl w => simp [evalD] at h
-          | inr w => simp [evalD] at h
-          | pair w1 w2 => simp [evalD] at h
-      | oom => simp [evalD] at h
-      | wrong a => simp [evalD] at h
+    · -- RAISED PART (U3 seam-2: stale pre-g body replaced; route-B re-key + coherence deferred)
+      intro M g σ τ n op v g' σ' τ' h K hCtx hTtx hCoh hFresh
+      sorry
 
 /-- **The D1-A bridge** (headline): when `evalD` says a closed computation returns
 `v`, the kernel's verified `Source.eval` agrees (`.done v`). Ties the calculated
 machine to the type-safety reference (invariant #1) — `Source.eval`'s `type_safety`
 now backs `evalD`'s `ret`-results. -/
-theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (σ' : SStore) (τ' : THeap)
-    (h : evalD f [] [] M = some (.term (.ret v), σ', τ')) :
+theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+    (hvf : Bang.Model.VcapFree M)
+    (h : evalD f 0 [] [] M = some (.term (.ret v), g', σ', τ')) :
     ∃ F, Source.eval F M = Result.done v := by
   -- the empty stores mirror the empty kernel context (`CtxCorr [] []`/`CtxTxnCorr [] []` by `rfl`); a
-  -- closed program has no resumptive frames ⇒ `ctxNetEffect [] σ' τ' = []`, continuation at `([], ret v)`.
-  obtain ⟨_, k⟩ := (run_evalD f).1 M [] [] (.ret v) σ' τ' h [] rfl rfl
-  have hbase : Config.run 1 (ctxNetEffect [] σ' τ', .ret v) = Result.done v := by
+  -- closed program has no resumptive frames ⇒ `ctxNetEffect [] σ' τ' = []`, continuation at `(g', [], ret v)`.
+  -- `VcapFree` (closed source, route-B) seeds the label-coherence + freshness premises vacuously.
+  have hFresh : FreshCfg (0, [], M) := by
+    refine ⟨trivial, fun p hp => ?_, trivial, fun p hp => ?_⟩
+    · rw [Bang.Model.VcapFree] at hvf; rw [hvf] at hp; exact absurd hp (by simp)
+    · simp [Bang.Model.capsK] at hp
+  obtain ⟨_, k⟩ := (run_evalD f).1 M 0 [] [] (.ret v) g' σ' τ' h [] rfl rfl
+    (capLabelCoh_initial hvf) hFresh
+  have hbase : Config.run 1 (g', ctxNetEffect [] σ' τ', .ret v) = Result.done v := by
     simp only [ctxNetEffect, updateCtxStates, updateCtxTxns, Config.run]
   obtain ⟨F, hF⟩ := k 1 (Result.done v) hbase
   exact ⟨F, hF⟩
@@ -4459,7 +3961,7 @@ theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (σ' : SStore) (τ' :
 shape from the battery's *catching* throws cases; the full three-rep bridge witnessed at once. -/
 example :
     let M := Comp.handle (.throws 0) (.ret (.vint 7))
-    evalD 5 [] [] M = some (.term (.ret (.vint 7)), [], []) ∧ Agree 10 M (.vint 7) := by
+    evalD 5 0 [] [] M = some (.term (.ret (.vint 7)), 1, [], []) ∧ Agree 10 M (.vint 7) := by
   refine ⟨by rfl, by rfl, by rfl⟩
 
 end Bang.CalcVM
