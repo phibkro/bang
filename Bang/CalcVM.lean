@@ -2443,39 +2443,45 @@ example : Agree 12 (.force (.vthunk (.ret (.vint 9)))) (.vint 9) := ⟨by rfl, b
 
 -- ─── THROWS axis (caught + uncaught) ─────────────────────────────────────────
 
-/-- `handle (throws ℓ) (raise 7)` ⇒ `7` — the deep handler catches and aborts with the payload. -/
-example : Agree 20 (.handle (.throws 0) (.perform 0 0 "raise" (.vint 7))) (.vint 7) := ⟨by rfl, by rfl⟩
+/-- `handle (throws ℓ) (raise 7)` ⇒ `7` — the deep handler catches and aborts with the payload.
+route-B: the cap is the handle-bound `vvar 0` (resolved to `vcap g ℓ` at the mint). -/
+example : Agree 20 (.handle (.throws 0) (.perform (.vvar 0) "raise" (.vint 7))) (.vint 7) := ⟨by rfl, by rfl⟩
 
 /-- DEEP throws: `handle (throws ℓ) (let _ = raise 7 in 99)` ⇒ `7` — the handler reaches PAST a
 `letF` frame and DISCARDS the captured continuation (`99` is never returned). -/
-example : Agree 24 (.handle (.throws 0) (.letC (.perform 0 0 "raise" (.vint 7)) (.ret (.vint 99)))) (.vint 7) :=
+example : Agree 24 (.handle (.throws 0) (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99)))) (.vint 7) :=
   ⟨by rfl, by rfl⟩
 
 /-- UNCAUGHT `raise` (no handler in scope) yields NO observable value — so it falls OUTSIDE
-`Agree`. Both reps signal it: the machine gets STUCK (`exec = none`), the kernel returns
-`.stuck`. The axis is covered by asserting that shared stuckness (not a value agreement). -/
-example : exec 20 (compile (.perform 0 0 "raise" (.vint 7)) []) [] [] = none := by rfl
-example : Source.eval 20 (Comp.perform 0 0 "raise" (.vint 7)) = .stuck := by rfl
+`Agree`. Both reps signal it: the machine gets STUCK (`exec = none`), the kernel routes the
+free-`vcap` perform to the DEFINED terminal `.escapedCap` (ADR-0063 — a `perform (vcap …)` with
+no installed frame is a defined fail-loud escape, not genuine stuck). The axis is covered by
+asserting that shared non-value outcome. route-B: a FREE `vcap 0 0` (no frame with identity 0). -/
+example : exec 20 0 (compile (.perform (.vcap 0 0) "raise" (.vint 7)) []) [] [] = none := by rfl
+example : Source.eval 20 (Comp.perform (.vcap 0 0) "raise" (.vint 7)) = .escapedCap := by rfl
 
 -- ─── STATE axis (get-default / put-then-get / persist-past-caught-throw) ──────
 
 /-- `handle (state ℓ 5) (get ())` ⇒ `5` — read the initial state. -/
-example : Agree 40 (.handle (.state 1 (.vint 5)) (.perform 0 1 "get" .vunit)) (.vint 5) := ⟨by rfl, by rfl⟩
+example : Agree 40 (.handle (.state 1 (.vint 5)) (.perform (.vvar 0) "get" .vunit)) (.vint 5) := ⟨by rfl, by rfl⟩
 
 /-- `handle (state ℓ 0) (let _ = put 7 in get ())` ⇒ `7` — the RESUMPTIVE handler KEEPS the captured
-`letF` continuation and threads the store; `get` reads the `put`. -/
+`letF` continuation and threads the store; `get` reads the `put`. The `get` is under the `letC`
+binder, so the handle-bound cap is `vvar 1` there (the `put` in the `letC` head is `vvar 0`). -/
 example : Agree 80
-    (.handle (.state 1 (.vint 0)) (.letC (.perform 0 1 "put" (.vint 7)) (.perform 0 1 "get" .vunit)))
+    (.handle (.state 1 (.vint 0)) (.letC (.perform (.vvar 0) "put" (.vint 7)) (.perform (.vvar 1) "get" .vunit)))
     (.vint 7) := ⟨by rfl, by rfl⟩
 
 /-- OUTER STATE PERSISTS PAST A CAUGHT THROW: `handle (state ℓ 0) (put 7; handle (throws) (raise);
 get)` ⇒ `7`. The inner zero-shot throw is caught and discarded, but the outer resumptive store
-survives — `get` still sees the `put 7`. The interaction the resumptive/zero-shot split must get right. -/
+survives — `get` still sees the `put 7`. The interaction the resumptive/zero-shot split must get right.
+de Bruijn: outer state cap is `vvar 0` at `put`, `vvar 2` at `get` (two `letC` binders deep); the inner
+throws cap is its own handle's `vvar 0`. -/
 example : Agree 100
     (.handle (.state 1 (.vint 0))
-      (.letC (.perform 0 1 "put" (.vint 7))
-        (.letC (.handle (.throws 0) (.perform 0 0 "raise" .vunit))
-          (.perform 0 1 "get" .vunit))))
+      (.letC (.perform (.vvar 0) "put" (.vint 7))
+        (.letC (.handle (.throws 0) (.perform (.vvar 0) "raise" .vunit))
+          (.perform (.vvar 2) "get" .vunit))))
     (.vint 7) := ⟨by rfl, by rfl⟩
 
 -- ─── TRANSACTION axis (new+read heap-thread / abort-rollback) ─────────────────
@@ -2483,7 +2489,7 @@ example : Agree 100
 /-- `handle (transaction ℓ []) (newTVar 9; readTVar 0)` ⇒ `9` — allocate then read back; the heap
 threads through both ops (ADR-0031 D4). -/
 example : Agree 40
-    (.handle (.transaction 2 []) (.letC (.perform 0 2 "newTVar" (.vint 9)) (.perform 0 2 "readTVar" (.vvar 0))))
+    (.handle (.transaction 2 []) (.letC (.perform (.vvar 0) "newTVar" (.vint 9)) (.perform (.vvar 1) "readTVar" (.vvar 0))))
     (.vint 9) := ⟨by rfl, by rfl⟩
 
 /-- ABORT-ROLLBACK: an outer `throws` wraps `transaction (newTVar 100; writeTVar 0:=70; raise 100)`.
@@ -2493,9 +2499,9 @@ balance, the observable proof the write rolled back. -/
 example : Agree 80
     (.handle (.throws 0)
       (.handle (.transaction 2 [])
-        (.letC (.perform 0 2 "newTVar" (.vint 100))
-          (.letC (.perform 0 2 "writeTVar" (.pair (.vint 0) (.vint 70)))
-            (.perform 0 0 "raise" (.vint 100))))))
+        (.letC (.perform (.vvar 0) "newTVar" (.vint 100))
+          (.letC (.perform (.vvar 1) "writeTVar" (.pair (.vint 0) (.vint 70)))
+            (.perform (.vvar 3) "raise" (.vint 100))))))
     (.vint 100) := ⟨by rfl, by rfl⟩
 
 -- ─── ADT axis (case·inl / case·inr / split / unfold) ─────────────────────────
@@ -2519,12 +2525,12 @@ example : Agree 12 (.unfold (.fold (.vint 8))) (.vint 8) := ⟨by rfl, by rfl⟩
 
 -- The intermediate `evalD` rep agrees too (it sits between the two `Agree` sides): a sample across
 -- the ADT axis, documenting that the substitution `evalD` calculated-from is itself faithful.
-example : evalD 12 [] [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))
-    = some (.term (.ret (.vint 5)), [], []) := by rfl
-example : evalD 14 [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
-    = some (.term (.ret (.vint 3)), [], []) := by rfl
-example : evalD 12 [] [] (.unfold (.fold (.vint 8)))
-    = some (.term (.ret (.vint 8)), [], []) := by rfl
+example : evalD 12 0 [] [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))
+    = some (.term (.ret (.vint 5)), 0, [], []) := by rfl
+example : evalD 14 0 [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
+    = some (.term (.ret (.vint 3)), 0, [], []) := by rfl
+example : evalD 12 0 [] [] (.unfold (.fold (.vint 8)))
+    = some (.term (.ret (.vint 8)), 0, [], []) := by rfl
 
 /-! ## The D1-A bridge: `evalD ≡ Source.eval` (two-part, with handlers)
 
