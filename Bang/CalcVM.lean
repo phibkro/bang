@@ -3111,12 +3111,16 @@ theorem updateCtxStates_put_split {n : Nat} {w : Val} :
         simp only [Bang.splitAtId] at hsp
         by_cases hc : m = n
         · subst hc
-          -- the head frame's identity is `n` ⇒ splitAtId = ([], state ℓ' s, K); put updates head value.
+          -- `subst hc` (hc : m = n) eliminated `n`; the head frame's identity is now `m`.
           rw [if_pos rfl] at hsp
           simp only [Option.some.injEq, Prod.mk.injEq] at hsp
           obtain ⟨rfl, rfl, rfl⟩ := hsp
-          simp only [ctxStates, SStore.put, if_pos rfl, updateCtxStates, List.nil_append]
-          rw [updateCtxStates_self_aux]
+          have e1 : (ctxStates (Frame.handleF m (Handler.state ℓ' s) :: K)).put m w
+                    = (m, w) :: ctxStates K := by simp [ctxStates, SStore.put]
+          rw [e1]
+          show Frame.handleF m (Handler.state ℓ' w) :: updateCtxStates K (ctxStates K)
+                = [] ++ Frame.handleF m (Handler.state ℓ' w) :: K
+          rw [updateCtxStates_self (rfl : CtxCorr (ctxStates K) K), List.nil_append]
         · -- head identity ≠ `n` ⇒ splitAtId recurses; put updates a DEEPER frame.
           rw [if_neg hc] at hsp
           cases hsp2 : Bang.splitAtId K n with
@@ -3300,11 +3304,12 @@ theorem updateCtxTxns_service_split {n : Nat} {Θ' : List Val} :
           rw [if_pos rfl] at hsp
           simp only [Option.some.injEq, Prod.mk.injEq] at hsp
           obtain ⟨rfl, rfl, rfl⟩ := hsp
-          have e1 : (ctxTxns (Frame.handleF n (Handler.transaction ℓ' Θ) :: K)).put n Θ'
-                    = (n, Θ') :: ctxTxns K := by simp [ctxTxns, THeap.put]
+          -- `subst hc` (hc : m = n) eliminated `n`, so the head frame's identity is now `m`.
+          have e1 : (ctxTxns (Frame.handleF m (Handler.transaction ℓ' Θ) :: K)).put m Θ'
+                    = (m, Θ') :: ctxTxns K := by simp [ctxTxns, THeap.put]
           rw [e1]
-          show Frame.handleF n (Handler.transaction ℓ' Θ') :: updateCtxTxns K (ctxTxns K)
-                = [] ++ Frame.handleF n (Handler.transaction ℓ' Θ') :: K
+          show Frame.handleF m (Handler.transaction ℓ' Θ') :: updateCtxTxns K (ctxTxns K)
+                = [] ++ Frame.handleF m (Handler.transaction ℓ' Θ') :: K
           rw [updateCtxTxns_self_aux, List.nil_append]
         · rw [if_neg hc] at hsp
           cases hsp2 : Bang.splitAtId K n with
