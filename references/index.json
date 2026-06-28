@@ -767,6 +767,23 @@
     "sha256_pinned": ""
   },
   {
+    "key": "li-arxiv2603-learning-to-disprove",
+    "title": "Learning to Disprove: Formal Counterexample Generation with Large Language Models",
+    "year": "2026",
+    "doi": "",
+    "eprint": "2603.19514",
+    "topics": [
+      "counterexample",
+      "agentic-proving"
+    ],
+    "grounds": [],
+    "role": "frontier",
+    "ondisk": true,
+    "hop": "adjacent",
+    "path": "references/papers/adjacent/li-arxiv2603-learning-to-disprove.pdf",
+    "sha256_pinned": ""
+  },
+  {
     "key": "mokhov-jfp20-build-systems-a-la-carte",
     "title": "Build Systems \\`a la Carte: Theory and Practice",
     "year": "2020",

@@ -891,3 +891,23 @@
              {0,1,w} diamond order was a CONSTRUCTED abstract domain, not bang's native grades).
              See docs/notes/calculated-type-system-frontier.md.},
 }
+
+@misc{li-arxiv2603-learning-to-disprove,
+  keywords = {topic:counterexample topic:agentic-proving role:frontier},
+  author = {Li, Zenan and Li, Zhaoyu and Yang, Kaiyu and Ma, Xiaoxing and Su, Zhendong},
+  title  = {Learning to Disprove: Formal Counterexample Generation with Large Language Models},
+  year   = 2026,
+  eprint = {2603.19514},
+  archivePrefix = {arXiv},
+  note   = {ETH Zurich / Toronto / MiroMind / Nanjing. Formalizes COUNTEREXAMPLE GENERATION
+            as a first-class skill complementary to proof construction -- the refute-first
+            half our culture leans on, which the paper notes is underexplored in AI proving.
+            Key method: a SYMBOLIC MUTATION strategy -- drop a hypothesis from a proven
+            theorem (H1 -> H2 -> C), use the Lean prover to confirm the dropped hypothesis was
+            NECESSARY, yielding a false mutated_version (a counterexample target) plus a
+            dropped_hypothesis necessity obligation; multi-reward expert iteration over both.
+            Directly informs our gap 1 (automated counterexample search; cf. Surface's
+            test/StackVal idiom) AND gap 3 (hypothesis-necessity / non-vacuity testing) --
+            the mutation is BOTH at once. Situates plausible (Lean 4) + nitpick (Isabelle)
+            as the symbolic baselines. Operator-flagged 2026-06-28.},
+}
