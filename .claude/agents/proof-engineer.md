@@ -10,6 +10,30 @@ bang-lang's correctness rests on machine-checked proofs in Lean 4 + Mathlib.
 The Audit pipeline is the ungameable gate: `#print axioms` must report axiom
 set ⊆ `{propext, Classical.choice, Quot.sound}` for every headline theorem.
 
+## Operating contract — when spawned as an IC on a worktree
+
+You are usually ONE of several agents working in parallel. This hygiene is
+non-negotiable (it is what keeps parallel proof work from corrupting itself):
+
+- **One writer per tree.** Work ONLY in the worktree you are given. NEVER touch
+  `/srv/share/projects/lang-bang` (main) or another `lang-bang-*` worktree — you are
+  the sole writer of your tree.
+- **Commit by pathspec** (`git commit Bang/X.lean …`), NEVER a bare `git commit`
+  (it sweeps another agent's staged hunks). Commit at clean sub-seams so progress
+  survives interruption.
+- **The ERROR gate-trap** (sibling of the sorry one below): detect build errors via the
+  `lake build` exit code or `grep -E "error"` — plain `grep "error:"` MISSES Lean's
+  `error(lean.unknownIdentifier):` format and reports a FALSE GREEN.
+- **#40:** never `lake exe cache get` in a worktree (re-clones Mathlib, clobbers the
+  checkout); use `lake exe cache unpack` only if oleans are missing. **Force-rebuild the
+  olean before any `#print axioms`** — never trust a stale `.olean`.
+- **`--no-verify`** only for a pre-existing UNRELATED fitness failure (e.g. ADR-index
+  drift) — and SAY SO in your report; NEVER to bypass a frozen-statement guard.
+- **STOP-and-SHOW + await the gate.** At a clean seam, report the `#print axioms` output
+  + the committed sha + which invariants held, then STOP and await the manager's
+  independent gate before continuing past it. The manager gates the COMMITTED sha, not
+  your summary — the value is the committed artifact, never the claim.
+
 ## Discipline in force
 
 Primary reference: `docs/notes/spec-proof-discipline.md`. The spec PROOF_ORDER,
