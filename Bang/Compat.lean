@@ -837,21 +837,21 @@ related at every `m < n`. -/
 theorem CrelK_head_step {n : Nat} {B : CTy Eff Mult} {e : Eff} {c₁ c₁' c₂ c₂' : Comp}
     (h₁ : CIStep c₁ c₁') (h₂ : CIStep c₂ c₂')
     (hlater : ∀ m, m < n → CrelK m B e c₁' c₂') : CrelK n B e c₁ c₂ := by
-  rw [CrelK]; intro D K₁ K₂ hK hconv
-  have hstep₁ : Source.step (handlerCount K₁, K₁, c₁) = some (handlerCount K₁, K₁, c₁') :=
-    h₁.1 (handlerCount K₁) K₁
-  have hne₁ : ∀ g v, (handlerCount K₁, K₁, c₁) ≠ (g, [], Comp.ret v) := by intro g v; simp [h₁.2 v]
+  rw [CrelK]; intro g D K₁ K₂ hK hconv
+  have hstep₁ : Source.step (g, K₁, c₁) = some (g, K₁, c₁') :=
+    h₁.1 g K₁
+  have hne₁ : ∀ g' v, (g, K₁, c₁) ≠ (g', [], Comp.ret v) := by intro g' v; simp [h₁.2 v]
   cases n with
   | zero => exact absurd hconv (not_convergesC_le_zero _)
   | succ k =>
       rw [convergesC_le_step hstep₁ hne₁] at hconv
       have hCk : CrelK k B e c₁' c₂' := hlater k (Nat.lt_succ_self k)
       rw [CrelK] at hCk
-      have hKk : KrelS k B D e K₁ K₂ := KrelS_mono (Nat.le_succ k) hK
-      have hstep₂ : Source.step (handlerCount K₂, K₂, c₂) = some (handlerCount K₂, K₂, c₂') :=
-        h₂.1 (handlerCount K₂) K₂
-      have hne₂ : ∀ g v, (handlerCount K₂, K₂, c₂) ≠ (g, [], Comp.ret v) := by intro g v; simp [h₂.2 v]
-      exact converges_anti_step hstep₂ hne₂ (hCk D K₁ K₂ hKk hconv)
+      have hKk : KrelS k B D e g K₁ K₂ := KrelS_mono (Nat.le_succ k) hK
+      have hstep₂ : Source.step (g, K₂, c₂) = some (g, K₂, c₂') :=
+        h₂.1 g K₂
+      have hne₂ : ∀ g' v, (g, K₂, c₂) ≠ (g', [], Comp.ret v) := by intro g' v; simp [h₂.2 v]
+      exact converges_anti_step hstep₂ hne₂ (hCk g D K₁ K₂ hKk hconv)
 
 /-- ◊4.5b `force` of `VrelK`-related thunks. The U-clause is `∀ j < n, CrelK j` — exactly the `m < n`
 reducts `CrelK_head_step` consumes (cleaner than the old `∀ j ≤ n` + `le_of_lt`). -/
@@ -870,10 +870,14 @@ theorem crelK_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
     CrelK n (CTy.F 1 (VTy.unrollMu A)) e (Comp.unfold w₁) (Comp.unfold w₂) := by
   rw [VrelK] at hv
   obtain ⟨u₁, u₂, rfl, rfl, hu⟩ := hv
-  refine CrelK_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_
-    (fun m hm => crelK_ret hcw₁.fold_inv hcw₂.fold_inv (hu m hm))
+  refine CrelK_head_step (c₁' := Comp.ret u₁) (c₂' := Comp.ret u₂) ?_ ?_ ?_
   · exact ⟨fun _ _ => rfl, by intro v; simp⟩
   · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+  · -- ROUTE-1: `crelK_ret` gives the unfolded `CrelK` body at a specific `g`/observation context, so
+    -- unfold `CrelK m` and discharge per-config. Hole type `F 1 (unrollMu A)` (q = 1).
+    intro m hm
+    rw [CrelK]; intro g D K₁ K₂ hK
+    exact crelK_ret g D K₁ K₂ hK hcw₁.fold_inv hcw₂.fold_inv (hu m hm)
 
 
 /-! ### B.3′b `CrelK` frame extensions + `compat` cores (`letC`/`app`)
@@ -886,12 +890,12 @@ refocus the source redex (`letC`/`app` PUSH) and run the bound computation throu
 /-- ◊4.5b build a letF-extended `KrelS` from a continuation relation (`▷`-guarded, `∀ m < n`) + the
 ambient tail. The continuation row `φ ≤ ε`; the tail weakens `ε → φ` via `KrelS_eff_anti`. -/
 theorem krelS_letF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε φ : Eff}
-    {N₁ N₂ : Comp} {K₁ K₂ : Stack} (hφε : φ ≤ ε)
+    {g : Nat} {N₁ N₂ : Comp} {K₁ K₂ : Stack} (hφε : φ ≤ ε)
     (hN : ∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ →
       VrelK m A v₁ v₂ →
       CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
-    (hK : KrelS n B D ε K₁ K₂) :
-    KrelS n (CTy.F q A) D ε (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) := by
+    (hK : KrelS n B D ε g K₁ K₂) :
+    KrelS n (CTy.F q A) D ε g (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) := by
   rw [krelS_letF]
   exact ⟨q, A, B, φ, rfl, hN, KrelS_eff_anti hφε hK⟩
 
@@ -907,25 +911,25 @@ theorem compatK_letC {n : Nat} {q1 : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult}
       CrelK m B φ₂ (Comp.subst v₁ N₁') (Comp.subst v₂ N₂')) :
     CrelK n B (φ₁ ⊔ φ₂) (Comp.letC M₁ N₁') (Comp.letC M₂ N₂') := by
   rw [CrelK]
-  intro D K₁ K₂ hK
+  intro g D K₁ K₂ hK
   refine coApproxC_le_reduce
-    (cfg₁' := (handlerCount K₁, Frame.letF N₁' :: K₁, M₁))
-    (cfg₂' := (handlerCount K₂, Frame.letF N₂' :: K₂, M₂))
-    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
+    (cfg₁' := (g, Frame.letF N₁' :: K₁, M₁))
+    (cfg₂' := (g, Frame.letF N₂' :: K₂, M₂))
+    rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
   -- the letF-extended stack is `KrelS`-related at `(F q1 A, φ₁)`: tail at the block row φ₁⊔φ₂ weakens
   -- to the continuation row φ₂ (≤ φ₁⊔φ₂); `hM` (related at F q1 A, row φ₁) discharges the reduct.
-  have hKletF : KrelS n (CTy.F q1 A) D (φ₁ ⊔ φ₂) (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) :=
+  have hKletF : KrelS n (CTy.F q1 A) D (φ₁ ⊔ φ₂) g (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) :=
     krelS_letF_intro le_sup_right hN hK
   rw [CrelK] at hM
   -- `hM` is at row φ₁; the letF-extended stack is at φ₁⊔φ₂. Weaken the stack φ₁⊔φ₂ → φ₁ (antitone).
-  exact hM D (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) (KrelS_eff_anti le_sup_left hKletF)
+  exact hM g D (Frame.letF N₁' :: K₁) (Frame.letF N₂' :: K₂) (KrelS_eff_anti le_sup_left hKletF)
 
 /-- ◊4.5b build an appF-extended `KrelS` from a `VrelK`-related closed argument + the codomain tail.
 The appF frame doesn't bind a continuation row, so the tail stays at the ambient `ε` (no weakening). -/
 theorem krelS_appF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff Mult} {ε : Eff}
-    {v₁ v₂ : Val} {K₁ K₂ : Stack} (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂)
-    (hv : VrelK n A v₁ v₂) (hK : KrelS n B D ε K₁ K₂) :
-    KrelS n (CTy.arr q A B) D ε (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) := by
+    {g : Nat} {v₁ v₂ : Val} {K₁ K₂ : Stack} (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂)
+    (hv : VrelK n A v₁ v₂) (hK : KrelS n B D ε g K₁ K₂) :
+    KrelS n (CTy.arr q A B) D ε g (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) := by
   rw [krelS_appF]
   exact ⟨q, A, B, rfl, hcv₁, hcv₂, hv, hK⟩
 
@@ -939,13 +943,13 @@ theorem compatK_app {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
     (hv : VrelK n A v₁ v₂) :
     CrelK n B φ (Comp.app M₁ v₁) (Comp.app M₂ v₂) := by
   rw [CrelK]
-  intro D K₁ K₂ hK
+  intro g D K₁ K₂ hK
   refine coApproxC_le_reduce
-    (cfg₁' := (handlerCount K₁, Frame.appF v₁ :: K₁, M₁))
-    (cfg₂' := (handlerCount K₂, Frame.appF v₂ :: K₂, M₂))
-    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
+    (cfg₁' := (g, Frame.appF v₁ :: K₁, M₁))
+    (cfg₂' := (g, Frame.appF v₂ :: K₂, M₂))
+    rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
   rw [CrelK] at hM
-  exact hM D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hv hK)
+  exact hM g D (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) (krelS_appF_intro hcv₁ hcv₂ hv hK)
 
 /-- ◊4.5b the `lam` compat core at `CrelK` (the answer-typed `compat_lam`). A `lam` only β-reduces under
 an `appF` frame; other stacks are STUCK on a `lam` (observation vacuous). Stack induction: appF-headed
@@ -958,11 +962,11 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
       VrelK n A w₁ w₂ → CrelK n B φ (Comp.subst w₁ M₁') (Comp.subst w₂ M₂')) :
     CrelK n (CTy.arr q A B) φ (Comp.lam M₁') (Comp.lam M₂') := by
   rw [CrelK]
-  intro D K₁ K₂ hK
+  intro g D K₁ K₂ hK
   cases K₁ with
   | nil =>
       -- nil arrow: `([], lam M)` is STUCK (lam reduces only under appF). Vacuous.
-      intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
+      intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g' u; simp))
   | cons fr K₁' =>
       cases fr with
       | appF w₁ =>
@@ -975,12 +979,12 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
                   rw [CTy.arr.injEq] at hC; obtain ⟨rfl, rfl, rfl⟩ := hC
                   -- β `(appF w::K', lam M') ↦ (K', M'.subst w)`; body IH at the SAME index, non-dropping.
                   refine coApproxC_le_reduce
-                    (cfg₁' := (handlerCount K₁', K₁', Comp.subst w₁ M₁'))
-                    (cfg₂' := (handlerCount K₂', K₂', Comp.subst w₂ M₂'))
-                    rfl (by intro g u; simp) rfl (by intro g u; simp) ?_
+                    (cfg₁' := (g, K₁', Comp.subst w₁ M₁'))
+                    (cfg₂' := (g, K₂', Comp.subst w₂ M₂'))
+                    rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
                   have hb := hbody w₁ w₂ hcw₁ hcw₂ hw
                   rw [CrelK] at hb
-                  exact hb D K₁' K₂' htail
+                  exact hb g D K₁' K₂' htail
               | _ => simp only [KrelS] at hK
           | nil => simp only [KrelS] at hK
       | letF N₁ =>
@@ -993,7 +997,7 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
           | nil => simp only [KrelS] at hK
       | handleF h₁ =>
           -- handleF on a `lam`: `(handleF h::K, lam M)` is STUCK (handleF reduces only a `ret`). Vacuous.
-          intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g u; simp))
+          intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g' u; simp))
 
 /-- ◊4.5b the `case` (sum elim) compat core at `CrelK`. `case (inl u) ↦ N₁[u]` / `case (inr u) ↦ N₂[u]`
 are CISteps; the ▷-head-step needs the chosen branch related at every `m < n`, from the matching branch
@@ -1056,14 +1060,14 @@ tail + the Kᵢ-threading RESUME CONJUNCT. The body row `e` is arbitrary w.r.t. 
 The conjunct (dispatched-config co-convergence at `m < n`, threading the captured continuation `Kᵢ~Kᵢ'`)
 is SUPPLIED by the caller — throws via `crelK_ret` on the tail (zero-shot); state/txn via the resume
 relation through `Kᵢ`. -/
-theorem krelS_handleF_intro {n : Nat} {nh : Nat} {C D : CTy Eff Mult} {e φ : Eff} {h₁ h₂ : Handler}
-    {K₁ K₂ : Stack} (hHR : HandlerRel Eff Mult n h₁ h₂) (hK : KrelS n C D φ K₁ K₂)
+theorem krelS_handleF_intro {n : Nat} {nh : Nat} {C D : CTy Eff Mult} {e φ : Eff} {g : Nat} {h₁ h₂ : Handler}
+    {K₁ K₂ : Stack} (hHR : HandlerRel Eff Mult n h₁ h₂) (hK : KrelS n C D φ g K₁ K₂)
     (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
         Bang.handlesOp h₁ h₁.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK m Aop w₁ w₂) →
-        KrelS m Cᵢ C εᵢ Kᵢ Kᵢ' →
+        KrelS m Cᵢ C εᵢ g Kᵢ Kᵢ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
           ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
         Bang.dispatchOn nh op w₁ (Kᵢ, h₁, K₁) = some cfg₁ →
@@ -1071,8 +1075,8 @@ theorem krelS_handleF_intro {n : Nat} {nh : Nat} {C D : CTy Eff Mult} {e φ : Ef
         (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
             cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
             Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
-            KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ')) :
-    KrelS n C D e (Frame.handleF nh h₁ :: K₁) (Frame.handleF nh h₂ :: K₂) := by
+            KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) :
+    KrelS n C D e g (Frame.handleF nh h₁ :: K₁) (Frame.handleF nh h₂ :: K₂) := by
   rw [krelS_handleF]; exact ⟨rfl, hHR, KrelS_eff_cast hK, hres⟩
 
 /-- ◊4.5b-append DISPATCH-APPEND structural fact. `dispatchOn` over an outer stack `Kₒ ++ T` produces
@@ -1111,19 +1115,15 @@ resume conjunct concludes a DECOMPOSITION `cfgⱼ = (Sᵢ, ret rⱼ)` with `r₁
 at a returner hole). `crelK_ret` on the returned values, instantiated at the related stacks, recovers the
 plain `CoApproxC_le m cfg₁ cfg₂`. This is the T=[] consumer; the nested case appends a tail to `Sᵢ` first
 (via `krelS_append`) then runs the SAME `crelK_ret`. -/
--- ADR-0055/0057: the guarded `crelK_ret` consumer. The resume decomposition's stacks are CANONICAL
--- (consumers build them from canonical observation contexts via `splitAtId`/reshape) and the resumed
--- values are cap-scoped (`CapsBelow 0` — the value carries no escaping capability), so the bridge to
--- `CoApproxC_le` at the canonical counter `handlerCount Sᵢ` is the guarded `crelK_ret` directly.
+-- ADR-0058 ROUTE-1: the `crelK_ret` consumer, now at the THREADED counter `g`. NO density premises —
+-- both resume-decomposition configs observe at the SAME `g` (dispatch/reinstall preserves the counter),
+-- so `crelK_ret` (route-1 form) bridges the decomposition directly, no `Canonical`/`CapsBelow`/`run_bump`.
 theorem coApproxC_le_of_resumeDecomp {m : Nat} {qᵣ : Mult} {Aᵣ : VTy Eff Mult} {D : CTy Eff Mult}
-    {r₁ r₂ : Val} {Sᵢ Sᵢ' : Stack} {eₛ : Eff}
-    (hcan₁ : RunPlugReshape.Canonical Sᵢ) (hcan₂ : RunPlugReshape.Canonical Sᵢ')
-    (hvcf₁ : RunPlugReshape.Val.CapsBelow 0 r₁) (hvcf₂ : RunPlugReshape.Val.CapsBelow 0 r₂)
+    {g : Nat} {r₁ r₂ : Val} {Sᵢ Sᵢ' : Stack} {eₛ : Eff}
     (hcr₁ : Val.Closed r₁) (hcr₂ : Val.Closed r₂) (hr : VrelK m Aᵣ r₁ r₂)
-    (hS : KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ') :
-    CoApproxC_le m (Bang.handlerCount Sᵢ, Sᵢ, Comp.ret r₁)
-                   (Bang.handlerCount Sᵢ', Sᵢ', Comp.ret r₂) :=
-  crelK_ret D Sᵢ Sᵢ' hS hcan₁ hcan₂ hvcf₁ hvcf₂ hcr₁ hcr₂ hr
+    (hS : KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ') :
+    CoApproxC_le m (g, Sᵢ, Comp.ret r₁) (g, Sᵢ', Comp.ret r₂) :=
+  crelK_ret g D Sᵢ Sᵢ' hS hcr₁ hcr₂ hr
 
 /-- ◊4.5b-strengthen `HandlerRel` DOWNWARD-CLOSURE — the relational handler condition is monotone in its
 `VrelK`-stored state (state: one cell; transaction: pointwise heap; throws: index-independent label). The
@@ -1143,17 +1143,17 @@ Proven by induction on `Kᵢ` (structural, like `crelK_ret`/`KrelS_mono`): nil =
 letF/appF peel + reconstruct over the appended tail. The handleF-in-`Kᵢ` sub-case (a handler NESTED in
 the captured continuation) needs the resume-conjunct RELOCATED to the appended tail — same as the
 decomp-miss-wrap; one documented sorry. shape: biernacki-popl18 §5.4 Lemma 2 (config-level append). -/
-theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {h₁ h₂ : Handler}
+theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e' : Eff} {g : Nat} {h₁ h₂ : Handler}
     {Kᵢ Kᵢ' K₁ K₂ : Stack}
-    (hin : KrelS m Cᵢ Dᵢ εᵢ Kᵢ Kᵢ')
+    (hin : KrelS m Cᵢ Dᵢ εᵢ g Kᵢ Kᵢ')
     (hHR : HandlerRel Eff Mult m h₁ h₂)
-    (htail : KrelS m Dᵢ D' e' K₁ K₂)
+    (htail : KrelS m Dᵢ D' e' g K₁ K₂)
     (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ : CTy Eff Mult) (εⱼ : Eff)
               (Kⱼ Kⱼ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
         Bang.handlesOp h₁ h₁.label op = true →
         Val.Closed w₁ → Val.Closed w₂ →
         (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h₁.label op = some Aop → VrelK k Aop w₁ w₂) →
-        KrelS k Cⱼ Dᵢ εⱼ Kⱼ Kⱼ' →
+        KrelS k Cⱼ Dᵢ εⱼ g Kⱼ Kⱼ' →
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ →
           ∃ qᵣ, Cⱼ = CTy.F qᵣ Aᵣ) →
         Bang.dispatchOn nh op w₁ (Kⱼ, h₁, K₁) = some cfg₁ →
@@ -1161,8 +1161,8 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
         (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
             cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
             Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ ∧
-            KrelS k (CTy.F qᵣ Aᵣ) D' eₛ Sᵢ Sᵢ')) :
-    KrelS m Cᵢ D' εᵢ (Kᵢ ++ Frame.handleF nh h₁ :: K₁) (Kᵢ' ++ Frame.handleF nh h₂ :: K₂) := by
+            KrelS k (CTy.F qᵣ Aᵣ) D' eₛ g Sᵢ Sᵢ')) :
+    KrelS m Cᵢ D' εᵢ g (Kᵢ ++ Frame.handleF nh h₁ :: K₁) (Kᵢ' ++ Frame.handleF nh h₂ :: K₂) := by
   -- ◊4.5b-strengthen: WELL-FOUNDED recursion on `(m, Kᵢ.length)`. letF/appF recurse on the shorter
   -- `Kᵢ` (second component drops); the NESTED handleF case recurses at the DROPPED index `k < m` (first
   -- component drops) on the dispatched stack `Sᵢ` — which may be LONGER, but the step-index pays for it.
@@ -1248,14 +1248,15 @@ through the captured continuation `Kᵢ`, which `krelS_append`s onto the reinsta
 DROPPED index `m' < m` (the IH). The stored state `s` self-relates at `S` (hsv, from the caller's typing
 via `vrelK_fund`). shape: biernacki-popl18 §5.4 resumptive clause + the ▷-guarded reinstall. -/
 theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult} {φ : Eff} {ℓ : Label}
+    {g : Nat}
     (hgr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "get" = some S)
     (hp : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "put" = some S)
     (hpr : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "put" = some VTy.unit)
     (hrestrict : ∀ op s, Bang.handlesOp (Handler.state ℓ s) ℓ op = true → op = "get" ∨ op = "put") :
     ∀ (nh : Nat) m (s₁ s₂ : Val), Val.Closed s₁ → Val.Closed s₂ →
       VrelK m S s₁ s₂ →
-      ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ K₁ K₂ →
-      KrelS m (CTy.F q A) D φ (Frame.handleF nh (Handler.state ℓ s₁) :: K₁)
+      ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ g K₁ K₂ →
+      KrelS m (CTy.F q A) D φ g (Frame.handleF nh (Handler.state ℓ s₁) :: K₁)
                               (Frame.handleF nh (Handler.state ℓ s₂) :: K₂) := by
   -- GUARDED RECURSION on the index: the reinstalled handler (over the SAME tail, at the put-updated state
   -- pair) relates at the DROPPED index m' < m (the IH), supplying `krelS_append`'s resume conjunct.
@@ -1367,7 +1368,7 @@ with a heap). GUARDED RECURSION on the index; newTVar/readTVar/writeTVar reinsta
 `krelS_append`ed onto the reinstalled frame at the dropped index. Each op preserves `HeapRel` (int cells
 related = equal). All heap `getD` via the GetD-free `heap_getD_*`. -/
 theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff Mult} {φ : Eff}
-    {ℓ : Label}
+    {ℓ : Label} {g : Nat}
     (hnewA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int)
     (hnewR : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ "newTVar" = some VTy.int)
     (hreadA : EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ "readTVar" = some VTy.int)
@@ -1378,8 +1379,8 @@ theorem krelS_transaction_reinstall {q : Mult} {A : VTy Eff Mult} {D : CTy Eff M
     (hrestrict : ∀ op Θ', Bang.handlesOp (Handler.transaction ℓ Θ') ℓ op = true →
       op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar") :
     ∀ (nh : Nat) m (Θ₁ Θ₂ : Store), HeapRel Eff Mult m Θ₁ Θ₂ →
-      ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ K₁ K₂ →
-      KrelS m (CTy.F q A) D φ (Frame.handleF nh (Handler.transaction ℓ Θ₁) :: K₁)
+      ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ g K₁ K₂ →
+      KrelS m (CTy.F q A) D φ g (Frame.handleF nh (Handler.transaction ℓ Θ₁) :: K₁)
                               (Frame.handleF nh (Handler.transaction ℓ Θ₂) :: K₂) := by
   intro nh m
   induction m using Nat.strong_induction_on with
@@ -1488,17 +1489,17 @@ handleF-MISS arm dissolves under IDENTITY dispatch (`splitAtId` matches the cap'
 (`letF::letF`/`appF::appF`/`handleF::handleF`), so the handler skeletons coincide. This is what lets the
 ABSOLUTE level→index conversion `handlerCount K - 1 - cap` agree on `K₁` and `K₂` at the dispatch seam. -/
 theorem krelS_handlerCount_eq {n : Nat} :
-    ∀ {K₁ K₂ : Stack} {C D : CTy Eff Mult} {e : Eff},
-      KrelS n C D e K₁ K₂ → Bang.handlerCount K₁ = Bang.handlerCount K₂ := by
+    ∀ {K₁ K₂ : Stack} {C D : CTy Eff Mult} {e : Eff} {g : Nat},
+      KrelS n C D e g K₁ K₂ → Bang.handlerCount K₁ = Bang.handlerCount K₂ := by
   intro K₁
   induction K₁ with
   | nil =>
-      intro K₂ C D e hK
+      intro K₂ C D e g hK
       rcases K₂ with _ | ⟨fr, K⟩
       · rfl
       · simp only [KrelS] at hK
   | cons fr K₁' ih =>
-      intro K₂ C D e hK
+      intro K₂ C D e g hK
       rcases K₂ with _ | ⟨fr₂, K₂'⟩
       · cases fr <;> simp only [KrelS] at hK
       · cases fr <;> cases fr₂ <;>
@@ -1514,9 +1515,9 @@ theorem krelS_handlerCount_eq {n : Nat} :
              simp only [Bang.handlerCount]
              have := ih htail; omega)
 
-theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
+theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat}
     {K₁ K₂ : Stack} {nid : Nat} {K₁ᵢ K₁ₒ : Stack} {h : Handler}
-    (hK : KrelS n C D e K₁ K₂)
+    (hK : KrelS n C D e g K₁ K₂)
     (hsp : Bang.splitAtId K₁ nid = some (K₁ᵢ, h, K₁ₒ)) :
     -- ADR-0055: `splitAtId K₂ nid` fires at the SAME identity `nid` (the stacks share frame KINDS and,
     -- under canonical ids, the matching `handleF` ids — `krelS_handleF` forces `nh₁ = nh₂`) with a
@@ -1526,13 +1527,13 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
     -- non-catching handlers. (SKIP arm carries ONE documented relocation residual; see the sorry.)
     ∃ (K₂ᵢ K₂ₒ : Stack) (h' : Handler) (Dᵢ : CTy Eff Mult) (C' : CTy Eff Mult) (e' : Eff),
       Bang.splitAtId K₂ nid = some (K₂ᵢ, h', K₂ₒ) ∧ HandlerRel Eff Mult n h h' ∧
-      KrelS n C Dᵢ e K₁ᵢ K₂ᵢ ∧ KrelS n C' D e' K₁ₒ K₂ₒ
+      KrelS n C Dᵢ e g K₁ᵢ K₂ᵢ ∧ KrelS n C' D e' g K₁ₒ K₂ₒ
       ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' : CTy Eff Mult) (εᵢ' : Eff)
             (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
           Bang.handlesOp h h.label op' = true →
           Val.Closed w₁ → Val.Closed w₂ →
           (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
-          KrelS m Cᵢ' Dᵢ εᵢ' Kᵢ Kᵢ' →
+          KrelS m Cᵢ' Dᵢ εᵢ' g Kᵢ Kᵢ' →
           (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op' = some Aᵣ →
             ∃ qᵣ, Cᵢ' = CTy.F qᵣ Aᵣ) →
           Bang.dispatchOn nid op' w₁ (Kᵢ, h, K₁ₒ) = some cfg₁ →
@@ -1540,7 +1541,7 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff}
           (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
               cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
               Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
-              KrelS m (CTy.F qᵣ Aᵣ) D eₛ Sᵢ Sᵢ')) := by
+              KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) := by
   induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e with
   | nil => simp [Bang.splitAtId] at hsp
   | cons fr K₁' ih =>
@@ -1755,6 +1756,13 @@ theorem vrelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy
   cases h with
   | vunit => intro n δ₁ δ₂ _; rw [closeV_vunit, closeV_vunit, VrelK]; exact ⟨rfl, rfl⟩
   | vint  => intro n δ₁ δ₂ _; rw [closeV_vint, closeV_vint, VrelK]; exact ⟨_, rfl, rfl⟩
+  | @vcap _ nid ℓ =>
+      -- ADR-0054: a capability is a CLOSED absolute value `vcap nid ℓ` (no de-Bruijn var), so `closeV`
+      -- leaves it fixed. `VrelK` at `cap ℓ` forces the SAME id + label both sides — `⟨nid, rfl, rfl⟩`.
+      intro n δ₁ δ₂ _
+      have hcap : Val.Closed (Val.vcap nid ℓ) := fun k => rfl
+      rw [closeV_closed hcap, closeV_closed hcap, VrelK]
+      exact ⟨nid, rfl, rfl⟩
   | @vvar _ i _ hget =>
       intro n δ₁ δ₂ hδ
       have hlen₁ := hδ.length_left
@@ -1800,7 +1808,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hsc₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
-      exact crelK_ret hsc₁ hsc₂ (vrelK_fund hv n δ₁ δ₂ hδ)
+      -- ROUTE-1: `crelK_ret` gives the unfolded `CrelK` body per observation context; unfold + apply.
+      rw [CrelK]; intro g D K₁ K₂ hK
+      exact crelK_ret g D K₁ K₂ hK hsc₁ hsc₂ (vrelK_fund hv n δ₁ δ₂ hδ)
   | @letC _ _ _ _ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_letC, closeC_letC]
@@ -1881,8 +1891,10 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
           have hsa₂ : Val.Closed (closeV δ₂ a) :=
             closeV_closed_scoped hδ.closed_right (by have := ha.scopedIn; rwa [hδ.length_right])
           refine CrelK_head_step (c₁' := Comp.ret (closeV δ₁ a)) (c₂' := Comp.ret (closeV δ₂ a))
-            ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩
-            (fun m hm => crelK_ret hsa₁ hsa₂ (vrelK_fund ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ)))
+            ⟨fun K => rfl, by intro u; simp⟩ ⟨fun K => rfl, by intro u; simp⟩ ?_
+          intro m hm
+          rw [CrelK]; intro g D K₁ K₂ hK
+          exact crelK_ret g D K₁ K₂ hK hsa₁ hsa₂ (vrelK_fund ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ))
       | @vvar _ i _ hget =>
           have hsc₁ : Val.Closed (closeV δ₁ (Val.vvar i)) :=
             closeV_closed_scoped hδ.closed_left (by
