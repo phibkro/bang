@@ -36,3 +36,10 @@ Bang/StaticSpike.lean
 Bang/SetRowSpike.lean
 Bang/CapAssignSpike.lean
 Bang/TightSuite2.lean
+
+# ── D. Cross-branch regression witnesses (ADR-0063) ───────────────────────────────
+# The capability-escape witnesses live on the PROOF branch `inc5-comp-grind`, not yet on
+# this docs branch. They merge to main with the inc-5 kernel reshape (Result.escapedCap).
+# Cited by ADR-0063. Recover via `git show inc5-comp-grind:<path>`.
+Bang/ReturnEscapeReach.lean
+Bang/ReturnEscapeRefute.lean
