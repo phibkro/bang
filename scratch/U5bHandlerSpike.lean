@@ -28,6 +28,8 @@ dual of `run_evalD`'s handle arm (`Bang/CalcVM.lean:4262`/`4321`/`4410`).
 namespace Bang.CalcVM.U5bHandlerSpike
 open Bang (Val Comp Frame Config Result Handler)
 open Bang.CalcVM
+open Bang.CapCoh (CapLabelCoh capLabelCoh_step)
+open Bang.Model (FreshCfg freshCfg_step)
 
 /-- **STATE handler — the refute-watch core.** The fuel IH on the SUBSTITUTED body
 `subst (vcap g ℓ0) M` (at the minted counter `g+1`, pushed store `σ.push g s0`) composes
@@ -98,6 +100,62 @@ theorem perform_get_resolves
     evalD (f+1) g σ τ (Comp.perform (Val.vcap n ℓ) "get" v)
       = some (.term (.ret sv), g, σ, τ) := by
   simp only [evalD, if_true, hget]
+
+/-! ### Converse-of-`run_evalD` TERM-part — statement shape build-confirmed (trivial arms closed).
+
+The completeness spine's term part, stated as the inverse of `run_evalD`'s term part
+(`CalcVM.lean:3994`): from a whole-config `Config.run` to `.done v`, EXTRACT that the focus `M`
+runs (via `evalD`) to a term `t`, with `K`'s handlers reflected in σ/τ (`CtxCorr`/`CtxTxnCorr`)
+and the continuation `(g', ctxNetEffect K σ' τ', t)` still running to `.done v`. Strong induction
+on the Source fuel `F`.
+
+The `ret`/`lam` arms below BUILD-CONFIRM the statement shape (esp. that `ctxNetEffect_self`
+discharges the coherence/continuation clauses for a value focus — the same reuse `run_evalD`'s
+`ret` arm makes at 4026). The structural/handler/dispatch arms are `sorry` with the
+`run_evalD` line to MIRROR (inverted). -/
+theorem convTerm : ∀ (F : Nat) (M : Comp) (g : Nat) (σ : SStore) (τ : THeap)
+    (K : Bang.EvalCtx) (v : Val),
+    CtxCorr σ K → CtxTxnCorr τ K → CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
+    Config.run F (g, K, M) = Result.done v →
+    ∃ n g' σ' τ' t,
+      evalD n g σ τ M = some (.term t, g', σ', τ') ∧
+      CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
+      CapLabelCoh (g', ctxNetEffect K σ' τ', t) ∧ FreshCfg (g', ctxNetEffect K σ' τ', t) ∧
+      ∃ F', Config.run F' (g', ctxNetEffect K σ' τ', t) = Result.done v := by
+  intro F
+  induction F using Nat.strong_induction_on with
+  | _ F ih =>
+    intro M g σ τ K v hCtx hTtx hCoh hFresh hrun
+    cases F with
+    | zero => simp [Config.run] at hrun
+    | succ F' =>
+      cases M with
+      | ret w =>
+          -- value focus: evalD is immediate; ctxNetEffect_self collapses the net-effect to K, so the
+          -- coherence + continuation clauses are exactly the hypotheses (dual of run_evalD:4023).
+          refine ⟨1, g, σ, τ, .ret w, by simp [evalD], ?_, ?_, ?_, ?_, F'+1, ?_⟩
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCoh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hFresh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hrun
+      | lam M0 =>
+          refine ⟨1, g, σ, τ, .lam M0, by simp [evalD], ?_, ?_, ?_, ?_, F'+1, ?_⟩
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCoh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hFresh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hrun
+      | letC M0 N => sorry   -- MIRROR run_evalD:4033 (two ihT calls; continuation peels SUBST via run_step)
+      | force a => sorry     -- MIRROR run_evalD:4085 (vthunk: one ihT, run_step peels force)
+      | app M0 u => sorry    -- MIRROR run_evalD:4103
+      | handle h0 M0 => sorry -- MIRROR run_evalD:4262/4321/4410; handle arms via the *_composes lemmas above
+      | perform cap op u => sorry -- MIRROR run_evalD perform; dispatch via perform_*_resolves above
+      | case w N1 N2 => sorry  -- MIRROR run_evalD case arm
+      | split w N => sorry     -- MIRROR run_evalD split arm
+      | unfold w => sorry      -- MIRROR run_evalD unfold arm
+      | oom => sorry           -- absurd: Config.run of oom focus can't be done v
+      | wrong a => sorry       -- absurd
 
 end Bang.CalcVM.U5bHandlerSpike
 
