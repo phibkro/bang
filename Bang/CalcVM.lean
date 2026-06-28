@@ -370,14 +370,13 @@ catch a THROW here — they are SKIPPED by the unwind. This ALIGNS `unwindFind` 
 non-throws (state/transaction) program never has the machine THROW-abort while
 `evalD` forwards. A `MARK` may still carry any `Handler` (forward-compat for when
 resumptive handlers land), but only `throws` frames are abort targets. -/
-def unwindFind : Nat → HStack → Option (Code × Stack × HStack)
-  | _, []        => none
-  | n, fr :: hs =>
-      if fr.id = n then
-        match fr.handler with
-        | .throws _ => some (fr.savedCode, fr.savedStack, hs)   -- abort target: its OUTER continuation (Kₒ)
-        | _         => none   -- id matches but NOT a throws ⇒ not an abort target ⇒ stuck (mirrors evalD)
-      else unwindFind n hs    -- different id ⇒ discard (inner Kᵢ frame) and keep searching outward
+def unwindFind : Nat → Bang.OpId → HStack → Option (Code × Stack × HStack)
+  | _, _, []        => none
+  | n, op, fr :: hs =>
+      match fr.handler with
+      | .throws _ => if fr.id = n ∧ op = "raise" then some (fr.savedCode, fr.savedStack, hs)  -- abort to Kₒ
+                     else unwindFind n op hs
+      | _         => unwindFind n op hs   -- non-throws frame ⇒ skip (state/txn resume, handled elsewhere)
 
 /-- Find the nearest **state** frame for `ℓ` and service `get`/`put` IN PLACE (ADR-0031 D2,
 the resume analog of `unwindFind`). `get` returns the stored `s`, leaving `hs` unchanged; `put`
@@ -388,14 +387,14 @@ kernel's `dispatchOn` state arm (KEEP `Kᵢ`, reinstall a deep `state ℓ s'` fr
 def stateUpdate : Nat → Bang.OpId → Val → HStack → Option (Val × HStack)
   | _, _, _, []       => none
   | n, op, v, fr :: hs =>
-      if fr.id = n then
-        match fr.handler with
-        | .state ℓ0 s =>
+      match fr.handler with
+      | .state ℓ0 s =>
+          if fr.id = n then
             if op = "get" then some (s, fr :: hs)                                  -- get: return s, frame kept
             else if op = "put" then some (.vunit, { fr with handler := .state ℓ0 v } :: hs)  -- put: store v in place
             else none                                                             -- non-get/put on n ⇒ throws path
-        | _ => none                                                               -- id matches but not state ⇒ none
-      else (stateUpdate n op v hs).map (fun p => (p.1, fr :: p.2))                -- different id ⇒ keep frame, recurse
+          else (stateUpdate n op v hs).map (fun p => (p.1, fr :: p.2))            -- different id ⇒ keep, recurse
+      | _ => (stateUpdate n op v hs).map (fun p => (p.1, fr :: p.2))              -- non-state frame ⇒ keep, recurse
 
 /-- Find the nearest **transaction** frame for `ℓ` and service `newTVar`/`readTVar`/`writeTVar` IN
 PLACE (ADR-0031 D4, the list-heap analog of `stateUpdate`). Returns `(resultValue, hs')` where `hs'`
@@ -405,15 +404,15 @@ falls through to `unwindFind` (throws path). Mirrors `dispatchOn`'s transaction 
 def txnUpdate : Nat → Bang.OpId → Val → HStack → Option (Val × HStack)
   | _, _, _, []       => none
   | n, op, v, fr :: hs =>
-      if fr.id = n then
-        match fr.handler with
-        | .transaction ℓ0 Θ =>
+      match fr.handler with
+      | .transaction ℓ0 Θ =>
+          if fr.id = n then
             if isTxnOp op then
               let (r, Θ') := txnService op v Θ
               some (r, { fr with handler := .transaction ℓ0 Θ' } :: hs)            -- service: store Θ' in place
             else none                                                             -- non-txn op on n ⇒ throws path
-        | _ => none                                                               -- id matches but not txn ⇒ none
-      else (txnUpdate n op v hs).map (fun p => (p.1, fr :: p.2))                  -- different id ⇒ keep, recurse
+          else (txnUpdate n op v hs).map (fun p => (p.1, fr :: p.2))              -- different id ⇒ keep, recurse
+      | _ => (txnUpdate n op v hs).map (fun p => (p.1, fr :: p.2))                -- non-txn frame ⇒ keep, recurse
 
 /-! ### Store ↔ HStack correspondence (ADR-0031 D3): the invariant the resume proof rides
 
@@ -425,23 +424,25 @@ in-place service) to `SStore.get?`/`SStore.put` (the store's), so the `sim` `up`
 `handle (state)` cases close by a direct correspondence (D3), not a representation
 translation. -/
 
-/-- The nearest `state ℓ` frame's stored value in `hs` (the machine-side `SStore.get?`). -/
-def hsState : HStack → Bang.EffectRow.Label → Option Val
+/-- The state value of the `state` frame with IDENTITY `n` in `hs` (route-B: machine-side `SStore.get?`,
+keyed by identity). KIND-FIRST (mirrors `stateUpdate` + `evalD`'s state-only `σ.get?`): skip non-state
+frames, and at a state frame return its value if `id = n`. No id-uniqueness invariant needed. -/
+def hsState : HStack → Nat → Option Val
   | [],       _ => none
-  | fr :: hs, ℓ =>
+  | fr :: hs, n =>
       match fr.handler with
-      | .state ℓ0 s => if ℓ0 = ℓ then some s else hsState hs ℓ
-      | _           => hsState hs ℓ
+      | .state _ s => if fr.id = n then some s else hsState hs n
+      | _          => hsState hs n
 
-/-- Project the machine's HStack to the store it mirrors: the `state ℓ s` frames, in order,
-as `(ℓ, s)` entries (throws/transaction frames carry no state ⇒ skipped). This is the canonical
-store for a given HStack; `Corr` says `evalD`'s threaded store IS exactly this projection. -/
+/-- Project the machine's HStack to the store it mirrors: the `state` frames, in order, as
+`(id, s)` entries keyed by IDENTITY (throws/transaction frames carry no state ⇒ skipped). `Corr`
+says `evalD`'s threaded store IS exactly this projection. -/
 def hsStates : HStack → SStore
   | []        => []
   | fr :: hs  =>
       match fr.handler with
-      | .state ℓ0 s => (ℓ0, s) :: hsStates hs
-      | _           => hsStates hs
+      | .state _ s => (fr.id, s) :: hsStates hs
+      | _          => hsStates hs
 
 /-- The bridge invariant (D3), STRUCTURAL form: the denotational store IS the projection of the
 machine's active state frames. An equation (not just extensional agreement), so tail/push/pop go
@@ -469,22 +470,24 @@ def updateStates : HStack → SStore → HStack
 `SStore`. They are a SEPARATE projection from the state one (op-disjointness — see `THeap`): the
 state projection skips txn frames, the txn projection skips state frames, and no op crosses. -/
 
-/-- The nearest `transaction ℓ` frame's stored heap in `hs` (machine-side `THeap.get?`). -/
-def hsTxn : HStack → Bang.EffectRow.Label → Option (List Val)
+/-- The txn heap of the `transaction` frame with IDENTITY `n` in `hs` (route-B machine-side `THeap.get?`).
+KIND-FIRST (mirrors `txnUpdate`): skip non-txn frames, at a txn frame return its heap if `id = n`. -/
+def hsTxn : HStack → Nat → Option (List Val)
   | [],       _ => none
-  | fr :: hs, ℓ =>
+  | fr :: hs, n =>
       match fr.handler with
-      | .transaction ℓ0 Θ => if ℓ0 = ℓ then some Θ else hsTxn hs ℓ
-      | _                 => hsTxn hs ℓ
+      | .transaction _ Θ => if fr.id = n then some Θ else hsTxn hs n
+      | _                => hsTxn hs n
 
-/-- Project the HStack to the txn-heap store it mirrors: the `transaction ℓ Θ` frames, in order
-(state/throws frames carry no heap ⇒ skipped). `TCorr` says `evalD`'s threaded τ IS this projection. -/
+/-- Project the HStack to the txn-heap store it mirrors: the `transaction` frames, in order, as
+`(id, Θ)` entries keyed by IDENTITY (state/throws frames carry no heap ⇒ skipped). `TCorr` says
+`evalD`'s threaded τ IS this projection. -/
 def hsTxns : HStack → THeap
   | []        => []
   | fr :: hs  =>
       match fr.handler with
-      | .transaction ℓ0 Θ => (ℓ0, Θ) :: hsTxns hs
-      | _                 => hsTxns hs
+      | .transaction _ Θ => (fr.id, Θ) :: hsTxns hs
+      | _                => hsTxns hs
 
 /-- The bridge invariant (D4), STRUCTURAL form: `evalD`'s threaded τ IS the projection of the
 machine's active transaction frames. The list-heap analog of `Corr`. -/
@@ -503,27 +506,27 @@ def updateTxns : HStack → THeap → HStack
           | []           => fr :: updateTxns hs []     -- τ exhausted (unreachable under TCorr)
       | _ => fr :: updateTxns hs τ
 
-/-- `get?` of the projection reads the nearest state frame (ties `hsStates` back to `hsState`). -/
-theorem get?_hsStates : ∀ (hs : HStack) (ℓ : Bang.EffectRow.Label),
-    (hsStates hs).get? ℓ = hsState hs ℓ := by
+/-- `get?` of the projection reads the state frame with identity `n` (ties `hsStates` to `hsState`). -/
+theorem get?_hsStates : ∀ (hs : HStack) (n : Nat),
+    (hsStates hs).get? n = hsState hs n := by
   intro hs
   induction hs with
-  | nil => intro ℓ; rfl
+  | nil => intro n; rfl
   | cons fr hs ih =>
-    intro ℓ
+    intro n
     cases hh : fr.handler with
     | state ℓ0 s =>
         simp only [hsStates, hsState, hh]
-        by_cases hc : ℓ0 = ℓ
-        · subst hc; simp [SStore.get?, List.find?]
+        by_cases hc : fr.id = n
+        · simp [SStore.get?, List.find?, hc]
         · simp only [if_neg hc, SStore.get?, List.find?, hc, decide_false, Bool.false_eq_true,
-            if_false]; exact ih ℓ
-    | throws ℓ0 => simp only [hsStates, hsState, hh]; exact ih ℓ
-    | transaction ℓ0 Θ => simp only [hsStates, hsState, hh]; exact ih ℓ
+            if_false]; exact ih n
+    | throws ℓ0 => simp only [hsStates, hsState, hh]; exact ih n
+    | transaction ℓ0 Θ => simp only [hsStates, hsState, hh]; exact ih n
 
 /-- Under `Corr`, the store read equals the machine read. -/
-theorem Corr.get? {σ : SStore} {hs : HStack} (hC : Corr σ hs) (ℓ : Bang.EffectRow.Label) :
-    σ.get? ℓ = hsState hs ℓ := by rw [hC]; exact get?_hsStates hs ℓ
+theorem Corr.get? {σ : SStore} {hs : HStack} (hC : Corr σ hs) (n : Nat) :
+    σ.get? n = hsState hs n := by rw [hC]; exact get?_hsStates hs n
 
 /-- `SStore.put` hits at its own label when that label is BOUND (an active frame). Induction on σ. -/
 theorem SStore.get?_put_self : ∀ (σ : SStore) (ℓ : Bang.EffectRow.Label) (v s : Val),
@@ -563,8 +566,8 @@ theorem SStore.get?_put_ne : ∀ (σ : SStore) {ℓ ℓ' : Bang.EffectRow.Label}
 
 /-- `get` correspondence: when `hsState hs ℓ = some s`, the machine's `stateUpdate`
 returns `(s, hs)` unchanged (the deep frame is kept). Induction on `hs`. -/
-theorem stateUpdate_get {ℓ : Bang.EffectRow.Label} {v : Val} :
-    ∀ {hs : HStack} {s : Val}, hsState hs ℓ = some s → stateUpdate ℓ "get" v hs = some (s, hs) := by
+theorem stateUpdate_get {n : Nat} {v : Val} :
+    ∀ {hs : HStack} {s : Val}, hsState hs n = some s → stateUpdate n "get" v hs = some (s, hs) := by
   intro hs
   induction hs with
   | nil => intro s hg; simp [hsState] at hg
@@ -573,7 +576,7 @@ theorem stateUpdate_get {ℓ : Bang.EffectRow.Label} {v : Val} :
     cases hh : fr.handler with
     | state ℓ0 s0 =>
         simp only [hsState, hh] at hg
-        by_cases hc : ℓ0 = ℓ
+        by_cases hc : fr.id = n
         · simp only [if_pos hc, Option.some.injEq] at hg; subst hg
           simp [stateUpdate, hh, hc]
         · simp only [if_neg hc] at hg
@@ -589,10 +592,10 @@ theorem stateUpdate_get {ℓ : Bang.EffectRow.Label} {v : Val} :
 `(vunit, hs')` whose state-projection is exactly the store after an in-place `put` —
 `hsStates hs' = (hsStates hs).put ℓ v`. This is the structural `Corr`-preservation fact (D3): the
 machine's in-place HStack update mirrors the store's in-place `put`. Induction on `hs`. -/
-theorem stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
-    ∀ {hs : HStack} {s0 : Val}, hsState hs ℓ = some s0 →
-      ∃ hs', stateUpdate ℓ "put" v hs = some (.vunit, hs')
-        ∧ hsStates hs' = (hsStates hs).put ℓ v := by
+theorem stateUpdate_put {n : Nat} {v : Val} :
+    ∀ {hs : HStack} {s0 : Val}, hsState hs n = some s0 →
+      ∃ hs', stateUpdate n "put" v hs = some (.vunit, hs')
+        ∧ hsStates hs' = (hsStates hs).put n v := by
   intro hs
   induction hs with
   | nil => intro s0 hg; simp [hsState] at hg
@@ -600,12 +603,11 @@ theorem stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
     intro s0 hg
     cases hh : fr.handler with
     | state ℓ0 s0' =>
-        by_cases hc : ℓ0 = ℓ
+        by_cases hc : fr.id = n
         · -- found here: update this frame in place
-          subst hc
           refine ⟨{ fr with handler := .state ℓ0 v } :: hs, ?_, ?_⟩
-          · simp [stateUpdate, hh]
-          · simp [hsStates, hh, SStore.put]
+          · simp [stateUpdate, hh, hc]
+          · simp [hsStates, hh, SStore.put, hc]
         · -- not here: recurse
           simp only [hsState, hh, if_neg hc] at hg
           obtain ⟨hs', hsu, heq⟩ := ih hg
@@ -1391,8 +1393,8 @@ def exec : Nat → Nat → Code → Stack → HStack → Option Stack
       | []       => none
   -- THROW (route-B): unwind to the frame with IDENTITY n, DISCARDING the inner continuation; resume its
   -- saved OUTER continuation with `ret v` pushed (abort yields the payload).
-  | Nat.succ f, g, Instr.THROW n _ v :: _, _, hs =>
-      match unwindFind n hs with
+  | Nat.succ f, g, Instr.THROW n op v :: _, _, hs =>
+      match unwindFind n op hs with
       | some (c', s', hs') => exec f g c' (.ret v :: s') hs'   -- ABORT to (Kₒ, ret v), frame popped
       | none               => none                             -- uncaught = stuck
   -- OP (route-B): identity-keyed dispatch. Try `stateUpdate n` (state get/put, in-place resume), then
@@ -1404,7 +1406,7 @@ def exec : Nat → Nat → Code → Stack → HStack → Option Stack
           match txnUpdate n op v hs with
           | some (r, hs') => exec f g c (.ret r :: s) hs'      -- RESUME (txn): continue c with ret r
           | none =>                                            -- not a resumptive frame ⇒ throws abort
-              match unwindFind n hs with
+              match unwindFind n op hs with
               | some (c', s', hs') => exec f g c' (.ret v :: s') hs' -- ABORT to (Kₒ, ret v), c discarded
               | none               => none                     -- uncaught = stuck
   -- ADT eliminators (Unit 6): inspect the closed-value scrutinee in place, re-`compile` the chosen
