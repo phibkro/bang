@@ -784,6 +784,7 @@ def renameCfg (σ : Nat → Nat) : Config → Config
 def renameR (σ : Nat → Nat) : Result Val → Result Val
   | .done v => .done (renameV σ v)
   | .oom    => .oom
+  | .escapedCap => .escapedCap   -- ADR-0063: the defined capability-escape terminal renames to itself
   | .stuck  => .stuck
 
 /-- The machine counter is MONOTONE: a step never decreases it. -/
@@ -941,7 +942,14 @@ theorem run_rename (σ : Nat → Nat) (hσ : Function.Injective σ) :
       have hsucc : σ (g + 1) = σ g + 1 := hshift g (Nat.le_refl _)
       rw [step_rename σ hσ g K c hsucc]
       cases hstep : Source.step (g, K, c) with
-      | none => simp only [Option.map_none]; rfl
+      | none =>
+        -- ADR-0063: the `none` classification (`escapedCap` for a `perform (vcap …)` focus, else `stuck`)
+        -- commutes with renaming — `renameV` preserves the `vcap` shape, both terminals rename to self.
+        simp only [Option.map_none, renameCfg_eq]
+        cases c with
+        | perform cv op v => cases cv <;> simp [renameC, renameV, renameR]
+        | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
+          | unfold _ | oom | wrong _ => simp [renameC, renameV, renameR]
       | some cfg' =>
         simp only [Option.map_some]
         apply ih cfg'
@@ -1800,7 +1808,14 @@ theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
   rintro ⟨v, hrun⟩
   cases n with
   | zero => rw [show Config.run 0 cfg = Result.oom from rfl] at hrun; exact absurd hrun (by simp)
-  | succ k => rw [Config.run_step k cfg hne, hstep] at hrun; exact absurd hrun (by simp)
+  | succ k =>
+    -- ADR-0063: `step = none` ⟹ `Config.run` yields `escapedCap`/`stuck` (per the focus), never `done`.
+    rw [Config.run_step k cfg hne, hstep] at hrun
+    obtain ⟨g, K, c⟩ := cfg
+    cases c with
+    | perform cv op v => cases cv <;> exact absurd hrun (by simp)
+    | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
+      | unfold _ | oom | wrong _ => exact absurd hrun (by simp)
 
 /-- ◊4.5b `crelK_ret` (GUARDED form, ADR-0054/0055 density resolution, lead decision 2026-06-26): a
 `VrelK`-related RETURN co-behaves through every `KrelS`-related stack pair that is CANONICAL (dense ids

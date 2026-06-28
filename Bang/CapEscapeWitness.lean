@@ -59,10 +59,10 @@ theorem h_perform :
   show EffSig.labelEff (Eff := EffRow) (Mult := QTT) 1 ≤ ({1} : EffRow)
   simp [EffSig.labelEff, sigU]
 
-/-- The escape is STUCK on `Source.eval` and `¬ NonEscape` — the safety oracle lives in
-`Bang.LWRegress` (`escapeB_stuck` #guard + `escapeB_not_nonEscape`). Re-export the structural rejection
-here so this finding file is self-contained on the typed side. -/
-theorem escape_rejected : ¬ NonEscape ([], Bang.LWRegress.escapeB) :=
-  Bang.LWRegress.escapeB_not_nonEscape
+/-- ADR-0063: the escape is a DEFINED capability-escape — `Source.eval escapeB = .escapedCap` (the
+`escapeB_escaped` #guard) + `escapeB` satisfies the defined-escape-tolerant `NonEscape'`. Re-exported
+from `Bang.LWRegress` so this finding file is self-contained on the typed side. -/
+theorem escape_defined : NonEscape' (0, [], Bang.LWRegress.escapeB) :=
+  Bang.LWRegress.escapeB_nonEscape'
 
 end Bang.CapEscapeWitness

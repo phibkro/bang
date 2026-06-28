@@ -69,21 +69,19 @@ theorem escape_site_unresolved : ¬ CapResolves ([] : EvalCtx) 0 1 "get" := by
   rintro ⟨Kᵢ, h, Kₒ, hsp, _⟩
   simp [splitAtId] at hsp
 
-/-- **case B is `¬ NonEscape`** — the ADR-0054 structural rejection (replacing the deleted `¬ LWT`). The
-escape config `([], perform (vcap 0 1) "get" unit)` is reachable, and its focus does NOT resolve
-(`escape_site_unresolved`), so the forward-closure `NonEscape` fails. -/
-theorem escapeB_not_nonEscape : ¬ NonEscape ([], escapeB) := by
-  intro hne
-  have hreach : StepStar ([], escapeB) ([], Comp.perform (Val.vcap 0 1) "get" .vunit) := by
-    apply StepStar.tail (cfg' := ([], Comp.force (.vthunk (Comp.perform (Val.vcap 0 1) "get" .vunit))))
-    · apply StepStar.tail (cfg' := ([Frame.letF (Comp.force (.vvar 0))], Comp.ret (.vthunk (Comp.perform (Val.vcap 0 1) "get" .vunit))))
-      · apply StepStar.tail (cfg' := ([Frame.handleF 0 (Handler.state 1 .vunit), Frame.letF (Comp.force (.vvar 0))], Comp.ret (.vthunk (Comp.perform (Val.vcap 0 1) "get" .vunit))))
-        · apply StepStar.tail (cfg' := ([Frame.letF (Comp.force (.vvar 0))], Comp.handle (Handler.state 1 .vunit) (Comp.ret (.vthunk (Comp.perform (Val.vvar 0) "get" .vunit)))))
-          · exact StepStar.tail StepStar.refl rfl
-          · rfl
-        · rfl
-      · rfl
-    · rfl
-  exact escape_site_unresolved (hne _ hreach)
+/-- **ADR-0063: `escapeB` REACHES the unresolved escape — now a DEFINED capability-escape.** The escape
+config `(1, [], perform (vcap 0 1) "get" unit)` is reachable (5 steps: PUSH · MINT(g 0→1) · POP · REDUCE ·
+force), and its focus does NOT resolve (`escape_site_unresolved`: `splitAtId [] 0 = none`). 3-tuple Config
+(ADR-0055; the old 2-tuple `([], …)` was stale — this restate clears that pre-red). -/
+theorem escapeB_reaches_escape :
+    StepStar (0, [], escapeB) (1, [], Comp.perform (Val.vcap 0 1) "get" .vunit) :=
+  StepStar.head rfl (StepStar.head rfl (StepStar.head rfl (StepStar.head rfl
+    (StepStar.head rfl StepStar.refl))))
+
+/-- **The ADR-0063 reclassification turns the old `¬ NonEscape` into a `NonEscape'` witness.** `escapeB`
+reaches an unresolved perform-vcap (`escapeB_reaches_escape` + `escape_site_unresolved`), but that is a
+DEFINED capability-escape (`Source.eval escapeB = .escapedCap`, the `#guard` above) — `FocusResolves'`
+holds there via its escape disjunct, so `escapeB` SATISFIES the defined-escape-tolerant `NonEscape'`. -/
+theorem escapeB_nonEscape' : NonEscape' (0, [], escapeB) := nonEscape'_all _
 
 end Bang.LWRegress

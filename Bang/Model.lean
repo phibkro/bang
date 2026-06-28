@@ -4304,4 +4304,20 @@ theorem diagonal {c : Comp} {q : Mult} {A : VTy Eff Mult}
     rintro cfg cfg' hP hstep
     exact wsCfg_step cfg cfg' hP hstep
 
+/-- ★ **THE NON-ESCAPE DIAGONAL, ADR-0063** (inc-5 Phase 3 — the defined-escape reshape; SUPERSEDES the
+`WScfg`-carrier `diagonal` above). Once the capability-escape is a DEFINED terminal (`.escapedCap`),
+the focus obligation `FocusResolves'` (resolve OR defined-escape) is a TAUTOLOGY (`idDispatch = some ⟹
+CapResolves`), so `NonEscape'` holds unconditionally. The diagonal `HasConfigTy ⟹ NonEscape'` is thus
+DISCHARGED with NO `WScfg` carrier, NO `liveCapsResolveC_returnEscape` (build-REFUTED, `ReturnEscapeRefute`),
+and NO `lwsg_step_dispatch` (#35) dependency — the whole POP-preservation machinery the build-refuted
+returnEscape needed DISSOLVES. The safety content moves entirely to PROGRESS (typing: a well-typed `⊥`
+program steps, terminates, or hits a defined capability-escape — never genuine `.stuck`); the Spec-level
+`type_safety` re-proof over the new `Result.escapedCap` routing is the inc-6 task (`Spec → Compile →
+CalcVM`, currently pre-red). The sealed witness (`ReturnEscapeReach.progComp`) is the DEFINED branch of
+`FocusResolves'`, not a counterexample. -/
+theorem diagonal' {c : Comp} {q : Mult} {A : VTy Eff Mult}
+    (_hty : HasConfigTy (0, [], c) ⊥ (CTy.F q A)) (_hvf : VcapFree c) :
+    NonEscape' (0, [], c) :=
+  nonEscape'_all _
+
 end Bang.Model

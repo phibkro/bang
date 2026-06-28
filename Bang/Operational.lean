@@ -513,6 +513,51 @@ See ADR-0054 amendment + scratch/NonEscapeProbe.lean §3. -/
 def NonEscape (cfg : Config) : Prop :=
   ∀ cfg', StepStar cfg cfg' → FocusResolves cfg'
 
+/-- **ADR-0063 — the defined-escape-tolerant focus obligation.** A `perform (vcap …)` focus either
+RESOLVES (`CapResolves`, the dispatch step fires) OR is a DEFINED capability-escape (`idDispatch = none`,
+routed to `.escapedCap`, NOT genuine stuck). Since these are EXHAUSTIVE for a `vcap` perform
+(`idDispatch = some ⟹ CapResolves`), `FocusResolves'` holds at EVERY config — the non-escape obligation
+DISSOLVES once the escape is a defined terminal (the `liveCapsResolveC_returnEscape` POP-preservation, and
+the whole `WScfg` carrier it needed, are no longer required to derive non-escape). -/
+def FocusResolves' : Config → Prop
+  | (_, K, .perform (.vcap n ℓ) op v) => CapResolves K n ℓ op ∨ idDispatch K n ℓ op v = none
+  | _                                 => True
+
+/-- `idDispatch = some` extracts `CapResolves` (the `bind` succeeded ⟹ `splitAtId = some` ∧ `handlesOp`). -/
+theorem capResolves_of_idDispatch {K : EvalCtx} {n : Nat} {ℓ : Label} {op : OpId} {v : Val}
+    (h : idDispatch K n ℓ op v ≠ none) : CapResolves K n ℓ op := by
+  unfold idDispatch at h
+  cases hsplit : splitAtId K n with
+  | none => rw [hsplit] at h; simp at h
+  | some triple =>
+    obtain ⟨Kᵢ, hh, Kₒ⟩ := triple
+    rw [hsplit] at h
+    by_cases hho : handlesOp hh ℓ op = true
+    · exact ⟨Kᵢ, hh, Kₒ, hsplit, hho⟩
+    · simp only [Option.bind_some, Bool.not_eq_true] at h
+      rw [Bool.not_eq_true] at hho; rw [hho] at h; simp at h
+
+/-- `FocusResolves'` is a TAUTOLOGY — every config resolves or is a defined escape. -/
+theorem focusResolves'_all (cfg : Config) : FocusResolves' cfg := by
+  obtain ⟨g, K, c⟩ := cfg
+  match c with
+  | .perform (.vcap n ℓ) op v =>
+      by_cases hd : idDispatch K n ℓ op v = none
+      · exact Or.inr hd
+      · exact Or.inl (capResolves_of_idDispatch hd)
+  | .ret _ | .letC _ _ | .force _ | .lam _ | .app _ _ | .handle _ _ | .case _ _ _ | .split _ _
+  | .unfold _ | .oom | .wrong _ | .perform (.vunit) _ _ | .perform (.vint _) _ _
+  | .perform (.vvar _) _ _ | .perform (.vthunk _) _ _ | .perform (.inl _) _ _ | .perform (.inr _) _ _
+  | .perform (.pair _ _) _ _ | .perform (.fold _) _ _ => trivial
+
+/-- **ADR-0063 — the defined-escape-tolerant non-escape invariant.** Derivable from NOTHING (it's the
+forward closure of the tautology `FocusResolves'`): every reachable config resolves or is a defined
+capability-escape. This is what the inc-5 diagonal `HasConfigTy ⟹ NonEscape'` now reduces to. -/
+def NonEscape' (cfg : Config) : Prop :=
+  ∀ cfg', StepStar cfg cfg' → FocusResolves' cfg'
+
+theorem nonEscape'_all (cfg : Config) : NonEscape' cfg := fun cfg' _ => focusResolves'_all cfg'
+
 /-- **Configuration typing** (ADR-0054 COLLAPSE): the typing CORE (`HasConfigTy`) PLUS the `NonEscape`
 invariant (replacing the positional `LWConfig`, which is now subsumed by typing — the capability's `Cap ℓ`
 type carries the resolution). Folding it in HERE keeps the frozen `preservation`/`progress` statements —
