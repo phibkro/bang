@@ -3712,6 +3712,99 @@ theorem splitAtId_of_ctxTxns_get {n : Nat} {Θ : List Val} : ∀ {K : Bang.EvalC
         obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
         exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
 
+/-- **The non-resume invariant** (route-B, U3 raised). At identity `n`, op `op`, the context `K` does NOT
+RESUME: any frame `n` resolves to either fails the op (`handlesOp = false`, fail-loud) or is a `throws`
+(zero-shot abort). NEVER a resuming `state`/`txn` — which is exactly the shape `evalD` returns `raised`
+for (a resumptive op would be serviced inline → `term`). The `Handler.label h` argument is sound for ANY
+dispatched `ℓ`: `handlesOp h ℓ op = true` forces `ℓ = h.label` (`handlesOp_label`), so a resuming dispatch
+is ruled out regardless. This is what makes `idDispatch`/`Config.run` INVARIANT under prepending a frame
+to a raise's context (abort/fail discard the inner prefix; only a resume would keep it). -/
+def NoResume (K : Bang.EvalCtx) (n : Nat) (op : Bang.OpId) : Prop :=
+  ∀ Kᵢ h Kₒ, Bang.splitAtId K n = some (Kᵢ, h, Kₒ) →
+    Bang.handlesOp h (Handler.label h) op = false ∨ ∃ ℓh, h = Handler.throws ℓh
+
+/-- A successful split through a NON-matching head frame prepends that frame to the inner prefix. -/
+theorem splitAtId_cons_lift {fr : Bang.Frame} {K : Bang.EvalCtx} {n : Nat}
+    {Kᵢ : Bang.EvalCtx} {h : Handler} {Kₒ : Bang.EvalCtx}
+    (hfr : ∀ h0, fr ≠ Frame.handleF n h0)
+    (hsp : Bang.splitAtId K n = some (Kᵢ, h, Kₒ)) :
+    Bang.splitAtId (fr :: K) n = some (fr :: Kᵢ, h, Kₒ) := by
+  cases fr with
+  | handleF m h0 =>
+      have hmn : m ≠ n := fun he => hfr h0 (he ▸ rfl)
+      simp only [Bang.splitAtId, if_neg hmn, hsp, Option.map_some]
+  | letF N => simp only [Bang.splitAtId, hsp, Option.map_some]
+  | appF w => simp only [Bang.splitAtId, hsp, Option.map_some]
+
+/-- `NoResume` strips a NON-matching head frame (the matched handler `h` is unchanged, so its disjunct
+transfers). The propagation engine of `evalD_raised_noResume`. -/
+theorem noResume_strip_cons {fr : Bang.Frame} {K : Bang.EvalCtx} {n : Nat} {op : Bang.OpId}
+    (hfr : ∀ h0, fr ≠ Frame.handleF n h0) (hnr : NoResume (fr :: K) n op) : NoResume K n op := by
+  intro Kᵢ h Kₒ hsp; exact hnr (fr :: Kᵢ) h Kₒ (splitAtId_cons_lift hfr hsp)
+
+/-- `CapsBelow` survives the state-value overwrite (the frame IDS — all `CapsBelow` reads — are kept). -/
+theorem CapsBelow_updateCtxStates {g : Nat} : ∀ {K : Bang.EvalCtx} (σ : SStore),
+    Bang.Model.CapsBelow g K → Bang.Model.CapsBelow g (updateCtxStates K σ) := by
+  intro K
+  induction K with
+  | nil => intro σ _; exact trivial
+  | cons fr K ih =>
+      intro σ hcb
+      cases fr with
+      | handleF m h0 =>
+          cases h0 with
+          | state ℓ0 s0 =>
+              simp only [Bang.Model.CapsBelow] at hcb
+              cases σ with
+              | nil => exact ⟨hcb.1, ih [] hcb.2⟩
+              | cons p σ' => obtain ⟨_, w⟩ := p; exact ⟨hcb.1, ih σ' hcb.2⟩
+          | throws ℓ0 =>
+              simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxStates]
+              exact ⟨hcb.1, ih σ hcb.2⟩
+          | transaction ℓ0 Θ0 =>
+              simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxStates]
+              exact ⟨hcb.1, ih σ hcb.2⟩
+      | letF N =>
+          simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxStates]
+          exact ⟨hcb.1, ih σ hcb.2⟩
+      | appF w =>
+          simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxStates]
+          exact ⟨hcb.1, ih σ hcb.2⟩
+
+/-- `CapsBelow` survives the txn-heap overwrite (mirror of `CapsBelow_updateCtxStates`). -/
+theorem CapsBelow_updateCtxTxns {g : Nat} : ∀ {K : Bang.EvalCtx} (τ : THeap),
+    Bang.Model.CapsBelow g K → Bang.Model.CapsBelow g (updateCtxTxns K τ) := by
+  intro K
+  induction K with
+  | nil => intro τ _; exact trivial
+  | cons fr K ih =>
+      intro τ hcb
+      cases fr with
+      | handleF m h0 =>
+          cases h0 with
+          | transaction ℓ0 Θ0 =>
+              simp only [Bang.Model.CapsBelow] at hcb
+              cases τ with
+              | nil => exact ⟨hcb.1, ih [] hcb.2⟩
+              | cons p τ' => obtain ⟨_, Θ⟩ := p; exact ⟨hcb.1, ih τ' hcb.2⟩
+          | state ℓ0 s0 =>
+              simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxTxns]
+              exact ⟨hcb.1, ih τ hcb.2⟩
+          | throws ℓ0 =>
+              simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxTxns]
+              exact ⟨hcb.1, ih τ hcb.2⟩
+      | letF N =>
+          simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxTxns]
+          exact ⟨hcb.1, ih τ hcb.2⟩
+      | appF w =>
+          simp only [Bang.Model.CapsBelow] at hcb; simp only [updateCtxTxns]
+          exact ⟨hcb.1, ih τ hcb.2⟩
+
+/-- `CapsBelow` survives the combined net-effect (only stored values change; frame ids are kept). -/
+theorem CapsBelow_ctxNetEffect {g : Nat} {K : Bang.EvalCtx} (σ : SStore) (τ : THeap)
+    (h : Bang.Model.CapsBelow g K) : Bang.Model.CapsBelow g (ctxNetEffect K σ τ) := by
+  unfold ctxNetEffect; exact CapsBelow_updateCtxTxns τ (CapsBelow_updateCtxStates σ h)
+
 /-- An ESCAPED capability's label is immaterial to `Config.run`: when `splitAtId K n = none` the
 `idDispatch` short-circuits BEFORE reading the label, so `Source.step` is `none` for ANY label and the
 run lands on the same `escapedCap`/`oom` terminal. Used by `run_evalD`'s raised `perform` base case to
@@ -3729,6 +3822,92 @@ theorem run_perform_label_irrel {g : Nat} {K : Bang.EvalCtx} {n : Nat} {op : Ban
       simp [Bang.Source.step, Bang.idDispatch, hsplit]
     rw [Bang.Config.run_step f _ (by intro gg u; simp), Bang.Config.run_step f _ (by intro gg u; simp),
         h1, h2]
+
+/-- The dispatch core of the frame-strip: a split matched in `K` (prepended frame `fr`) dispatches
+identically — `handlesOp = false` ⇒ both `none`; a `throws` discards the inner prefix so the abort target
+is frame-invariant. RESUME is exactly what `NoResume` forbids. -/
+theorem idDispatch_prepend_eq {fr : Bang.Frame} {K : Bang.EvalCtx} {n : Nat} {ℓ : Bang.EffectRow.Label}
+    {op : Bang.OpId} {v : Val} {Kᵢ Kₒ : Bang.EvalCtx} {h : Handler}
+    (hspK : Bang.splitAtId K n = some (Kᵢ, h, Kₒ))
+    (hsplit : Bang.splitAtId (fr :: K) n = some (fr :: Kᵢ, h, Kₒ))
+    (hnr : NoResume K n op) :
+    Bang.idDispatch (fr :: K) n ℓ op v = Bang.idDispatch K n ℓ op v := by
+  simp only [Bang.idDispatch, hsplit, hspK, Option.bind_some]
+  rcases hnr Kᵢ h Kₒ hspK with hf | ⟨ℓh, rfl⟩
+  · by_cases hho : Bang.handlesOp h ℓ op = true
+    · exfalso; rw [Bang.handlesOp_label hho] at hf; rw [hf] at hho; exact absurd hho (by simp)
+    · rw [Bool.not_eq_true] at hho; rw [hho]; simp
+  · simp only [Bang.dispatchOn]
+
+/-- **The frame-strip for a raise** (route-B). `idDispatch` is INVARIANT under prepending a frame to a
+non-resuming context: a non-matching head (letF/appF/handleF m≠n) keeps the matched handler (`NoResume`
+makes the dispatch abort/fail, frame-blind); a matching head (`handleF n`, the n=g handle case) escapes on
+BOTH sides (the op fails the just-installed handler; `n` is fresh-absent below it). -/
+theorem idDispatch_cons_noResume {fr : Bang.Frame} {K : Bang.EvalCtx} {n : Nat}
+    {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val}
+    (hhead : ∀ h0, fr = Frame.handleF n h0 → Bang.handlesOp h0 ℓ op = false ∧ Bang.splitAtId K n = none)
+    (hnr : NoResume K n op) :
+    Bang.idDispatch (fr :: K) n ℓ op v = Bang.idDispatch K n ℓ op v := by
+  by_cases hfr : ∀ h0, fr ≠ Frame.handleF n h0
+  · cases hsp : Bang.splitAtId K n with
+    | none =>
+        have hnone : Bang.splitAtId (fr :: K) n = none := by
+          cases fr with
+          | handleF m h0 =>
+              have hmn : m ≠ n := fun he => (hfr h0) (he ▸ rfl)
+              simp only [Bang.splitAtId, if_neg hmn, hsp, Option.map_none]
+          | letF N => simp only [Bang.splitAtId, hsp, Option.map_none]
+          | appF w => simp only [Bang.splitAtId, hsp, Option.map_none]
+        simp only [Bang.idDispatch, hnone, hsp, Option.bind_none]
+    | some t =>
+        obtain ⟨Kᵢ, h, Kₒ⟩ := t
+        exact idDispatch_prepend_eq hsp (splitAtId_cons_lift hfr hsp) hnr
+  · push_neg at hfr
+    obtain ⟨h0, rfl⟩ := hfr
+    obtain ⟨hhof, hKnone⟩ := hhead h0 rfl
+    rw [show Bang.idDispatch K n ℓ op v = none from by simp [Bang.idDispatch, hKnone]]
+    simp [Bang.idDispatch, Bang.splitAtId, hhof]
+
+/-- `Config.run` lifts the `idDispatch` frame-strip to the whole run (same step ⇒ same successor / same
+fail-loud terminal). -/
+theorem run_perform_cons_eq {g : Nat} {fr : Bang.Frame} {K : Bang.EvalCtx} {n : Nat}
+    {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val}
+    (hid : Bang.idDispatch (fr :: K) n ℓ op v = Bang.idDispatch K n ℓ op v) (fuel : Nat) :
+    Bang.Config.run fuel (g, fr :: K, Comp.perform (Val.vcap n ℓ) op v)
+      = Bang.Config.run fuel (g, K, Comp.perform (Val.vcap n ℓ) op v) := by
+  cases fuel with
+  | zero => rfl
+  | succ f =>
+    rw [Bang.Config.run_step f _ (by intro gg u; simp), Bang.Config.run_step f _ (by intro gg u; simp)]
+    have hs1 : Bang.Source.step (g, fr :: K, Comp.perform (Val.vcap n ℓ) op v)
+        = (Bang.idDispatch (fr :: K) n ℓ op v).map (fun Kc => (g, Kc.1, Kc.2)) := rfl
+    have hs2 : Bang.Source.step (g, K, Comp.perform (Val.vcap n ℓ) op v)
+        = (Bang.idDispatch K n ℓ op v).map (fun Kc => (g, Kc.1, Kc.2)) := rfl
+    rw [hs1, hs2, hid]
+
+/-- `labelOf` skips a non-matching head frame (the resolved handler — hence its label — is unchanged). -/
+theorem labelOf_cons_ne {fr : Bang.Frame} {K : Bang.EvalCtx} {n : Nat}
+    (hfr : ∀ h0, fr ≠ Frame.handleF n h0) : labelOf (fr :: K) n = labelOf K n := by
+  cases hsp : Bang.splitAtId K n with
+  | none =>
+      have hnone : Bang.splitAtId (fr :: K) n = none := by
+        cases fr with
+        | handleF m h0 =>
+            have hmn : m ≠ n := fun he => (hfr h0) (he ▸ rfl)
+            simp only [Bang.splitAtId, if_neg hmn, hsp, Option.map_none]
+        | letF N => simp only [Bang.splitAtId, hsp, Option.map_none]
+        | appF w => simp only [Bang.splitAtId, hsp, Option.map_none]
+      simp only [labelOf, hnone, hsp]
+  | some t =>
+      obtain ⟨Kᵢ, h, Kₒ⟩ := t
+      simp only [labelOf, splitAtId_cons_lift hfr hsp, hsp, Option.map_some, Option.getD_some]
+
+/-- A fresh id `g` (strictly above every frame, `CapsBelow g K`) does not resolve in `K`. -/
+theorem splitAtId_none_of_capsBelow {g : Nat} {K : Bang.EvalCtx} (hcb : Bang.Model.CapsBelow g K) :
+    Bang.splitAtId K g = none := by
+  cases hsp : Bang.splitAtId K g with
+  | none => rfl
+  | some t => obtain ⟨Kᵢ, h, Kₒ⟩ := t; exact absurd (Bang.CapCoh.splitAtId_id_lt hcb hsp) (by omega)
 
 /-- (★bridge) the **two-part** `evalD ≡ Source.eval` simulation: a `term` part (M
 runs to its terminal under K) AND a `raised` part (M raises, dispatched by the
