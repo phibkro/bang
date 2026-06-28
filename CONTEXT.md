@@ -23,11 +23,14 @@
 > (the safety content RELOCATES there, provable); `type_safety` text unchanged (`eval ≠ .stuck`, escape moves out of `.stuck`).
 > Scoped/region capability types (untypeable-by-construction; arXiv:2207.03402, `docs/notes/scoped-capabilities-for-vcapfree-drop.md`)
 > = the **POST-v1** structural fix.
-> **RESHAPE STATUS:** LANDED + gated on `inc5-comp-grind` — kernel `Result.escapedCap` (`d745253`) + Model-side
-> `NonEscape'`/`FocusResolves'`/`diagonal'` SORRY-FREE `[propext, Quot.sound]` (`7d7ebf9`, green set 716 jobs). `diagonal'` = the
-> `NonEscape'` **tautology** = a correct BUILDING BLOCK, NOT `type_safety` closure. **REMAINING = inc-6 (task #15):** `Spec.lean`
-> untouched — swap `HasConfig`→`NonEscape'`, RESTATE `progress`, re-prove `type_safety`; + CalcVM `.escapedCap` accounting (inv #1).
-> Vestigial `WScfg`/`returnEscape`/`#35`-machinery PARKED (off-path, not deleted).
+> **RESHAPE STATUS — the v1 soundness PROOF CONTENT is DONE + gated, axiom-clean, #35-FREE.** On `inc5-comp-grind`: kernel
+> `Result.escapedCap` (`d745253`) + Model-side `NonEscape'`/`diagonal'` (`7d7ebf9`) + **`progress'_proof` `[propext, Quot.sound]` +
+> `type_safety'_proof` `[propext, Classical.choice, Quot.sound]` (`ef71972`, Metatheory, green/CalcVM-independent, manager-gated on a
+> fresh olean)**. NO `sorryAx`, **NO #35** — the reclassification dissolved the dispatch dependency (`type_safety'` rides
+> `hasConfigTy_step` PURE typing-preservation, not the WScfg/`lwsg_step` route). MEANINGFUL + non-vacuous: `progComp` (the refuting
+> witness) now SATISFIES `type_safety'` (`HasConfig'` ∧ `eval=.escapedCap≠.stuck`). Purely additive (old proofs + `Spec.lean`
+> untouched). **REMAINING = inc-6 (task #15), MECHANICAL:** re-point `Spec.lean`'s `HasConfig`/`progress`/`type_safety` onto the primed
+> proofs (Spec is CalcVM-blocked) + CalcVM `.escapedCap` accounting (inv #1). Vestigial `WScfg`/`returnEscape`/`#35`-machinery PARKED.
 > **THE KEYSTONE (task #51) remains VALID** — the carrier-subst `liveCapsResolve{V,C}_subst_gen`+`…_weaken` (`da67c2d`, axiom-clean) is
 > real, but now OFF the critical path (the reclassification supersedes the `returnEscape` route it fed). Full detail: ADR-0063 +
 > `paths/PATH-inc5-lr-reindex.md`. Tasks: **#54** (Model-side block DONE; closure → inc-6) · #15 (inc-6 wiring) · #50 (reopened, post-v1) · #35/#36.
