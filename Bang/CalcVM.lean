@@ -647,7 +647,10 @@ that was installed). -/
 heap. The transaction clause permits `Θ` to differ (ADR-0031 D4) exactly as the state clause
 permits the value to differ — a returning body may have mutated the heap via `writeTVar`. -/
 def FrameMut (a b : HFrame) : Prop :=
-  a.savedCode = b.savedCode ∧ a.savedStack = b.savedStack ∧
+  -- route-B: the body's net effect preserves the frame IDENTITY (minted once at HANDLE, never changed —
+  -- `stateUpdate`/`txnUpdate` use `{fr with handler := …}`, keeping `id`). This is what lets the
+  -- net-effect reconstruction (`updateStates_eq`) recover the exact HStack including its ids.
+  a.id = b.id ∧ a.savedCode = b.savedCode ∧ a.savedStack = b.savedStack ∧
     (match a.handler, b.handler with
      | .state ℓ1 _, .state ℓ2 _ => ℓ1 = ℓ2
      | .throws ℓ1, .throws ℓ2 => ℓ1 = ℓ2
@@ -664,7 +667,7 @@ def HMut : HStack → HStack → Prop
 theorem HMut.refl : ∀ hs, HMut hs hs
   | []      => trivial
   | fr :: hs => ⟨by
-      refine ⟨rfl, rfl, ?_⟩
+      refine ⟨rfl, rfl, rfl, ?_⟩
       cases fr.handler <;> simp, HMut.refl hs⟩
 
 /-- If the body was installed under a NON-state top frame (throws/transaction) and `HMut` holds,
@@ -672,7 +675,7 @@ the resulting top is also non-state ⇒ the projection drops it ⇒ `Corr` passe
 theorem Corr_pop_nonstate {σ : SStore} {fr top : HFrame} {hs tail : HStack}
     (hns : ∀ ℓ s, fr.handler ≠ .state ℓ s) (hmut : HMut (fr :: hs) (top :: tail))
     (hC : Corr σ (top :: tail)) : Corr σ tail := by
-  obtain ⟨⟨_, _, hsh⟩, _⟩ := hmut
+  obtain ⟨⟨_, _, _, hsh⟩, _⟩ := hmut
   unfold Corr at hC ⊢; rw [hC]
   cases hfr : fr.handler with
   | state ℓ1 s1 => exact absurd hfr (hns ℓ1 s1)
@@ -702,21 +705,21 @@ theorem HMut.of_stateUpdate_put {n : Nat} {v : Val} :
         · simp only [if_pos hc, if_neg (by decide : ¬ ("put" = "get")), Option.some.injEq,
             Prod.mk.injEq] at hsu
           obtain ⟨_, rfl⟩ := hsu
-          exact ⟨⟨rfl, rfl, by simp [hh]⟩, HMut.refl hs⟩
+          exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, HMut.refl hs⟩
         · simp only [if_neg hc, Option.map_eq_some_iff] at hsu
           obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
           simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
-          exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+          exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
     | throws ℓ0 =>
         simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
         obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
-        exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+        exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
     | transaction ℓ0 Θ =>
         simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
         obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
-        exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+        exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
 
 /-- `HMut` is transitive (chaining `letC`/`app` sub-runs). -/
 theorem HMut.trans : ∀ {x y z : HStack}, HMut x y → HMut y z → HMut x z := by
@@ -737,8 +740,8 @@ theorem HMut.trans : ∀ {x y z : HStack}, HMut x y → HMut y z → HMut x z :=
         | cons c z =>
           obtain ⟨hab, hxy⟩ := hxy
           obtain ⟨hbc, hyz⟩ := hyz
-          refine ⟨⟨hab.1.trans hbc.1, hab.2.1.trans hbc.2.1, ?_⟩, ih hxy hyz⟩
-          obtain ⟨_, _, h1⟩ := hab; obtain ⟨_, _, h2⟩ := hbc
+          refine ⟨⟨hab.1.trans hbc.1, hab.2.1.trans hbc.2.1, hab.2.2.1.trans hbc.2.2.1, ?_⟩, ih hxy hyz⟩
+          obtain ⟨_, _, _, h1⟩ := hab; obtain ⟨_, _, _, h2⟩ := hbc
           cases ha : a.handler <;> cases hb : b.handler <;> cases hc : c.handler <;>
             rw [ha, hb] at h1 <;> rw [hb, hc] at h2 <;> simp_all
 
@@ -783,7 +786,7 @@ theorem updateStates_eq : ∀ {hs k : HStack} {σ' : SStore} {τ' : THeap},
       | nil => simp [HMut] at hmut
       | cons fk k =>
         obtain ⟨hfm, hmut'⟩ := hmut
-        obtain ⟨hscode, hsstack, hsh⟩ := hfm
+        obtain ⟨hid, hscode, hsstack, hsh⟩ := hfm
         unfold Corr at hC; unfold TCorr at hT
         cases hfr : fr.handler with
         | state ℓ0 s0 =>
@@ -858,25 +861,25 @@ theorem HMut_netEffect : ∀ (hs : HStack) (σ : SStore) (τ : THeap), HMut hs (
             show HMut (fr :: hs) (updateTxns (updateStates (fr :: hs) []) τ)
             rw [show updateStates (fr :: hs) [] = fr :: updateStates hs [] from by simp only [updateStates, hfr]]
             rw [updateTxns_cons_state τ hfr]
-            exact ⟨⟨rfl, rfl, by simp [hfr]⟩, ih [] τ⟩
+            exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih [] τ⟩
         | cons p σ' =>
             obtain ⟨ℓq, wq⟩ := p
             show HMut (fr :: hs) (updateTxns (updateStates (fr :: hs) ((ℓq, wq) :: σ')) τ)
             rw [show updateStates (fr :: hs) ((ℓq, wq) :: σ') = { fr with handler := .state ℓ0 wq } :: updateStates hs σ' from by simp only [updateStates, hfr]]
             rw [updateTxns_cons_state τ (show ({ fr with handler := .state ℓ0 wq } : HFrame).handler = .state ℓ0 wq from rfl)]
-            exact ⟨⟨rfl, rfl, by simp [hfr]⟩, ih σ' τ⟩
+            exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih σ' τ⟩
     | throws ℓ0 =>
         simp only [netEffect, updateStates, hfr, updateTxns_cons_throws τ hfr]
-        exact ⟨⟨rfl, rfl, by simp [hfr]⟩, ih σ τ⟩
+        exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih σ τ⟩
     | transaction ℓ0 Θ0 =>
         cases τ with
         | nil =>
             simp only [netEffect, updateStates_cons_txn σ hfr, updateTxns, hfr]
-            exact ⟨⟨rfl, rfl, by simp [hfr]⟩, ih σ []⟩
+            exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih σ []⟩
         | cons p τ' =>
             obtain ⟨ℓq, Θq⟩ := p
             simp only [netEffect, updateStates_cons_txn σ hfr, updateTxns, hfr]
-            exact ⟨⟨rfl, rfl, by simp [hfr]⟩, ih σ τ'⟩
+            exact ⟨⟨rfl, rfl, rfl, by simp [hfr]⟩, ih σ τ'⟩
 
 /-- `netEffect` depends only on a HStack's FRAME STRUCTURE, not its stored values/heaps: `HMut`-
 related stacks net-update identically. The re-base that lets a `letC`/`app` raised chain restate the
@@ -1064,7 +1067,7 @@ theorem stateUpdate_none_of_non_getput (ℓ : Bang.EffectRow.Label) (v : Val) :
     intro op hng hnp
     cases hh : fr.handler with
     | state ℓ0 s =>
-        by_cases hc : ℓ0 = ℓ
+        by_cases hc : fr.id = ℓ
         · simp [stateUpdate, hh, hc, hng, hnp]
         · simp [stateUpdate, hh, hc, ih hng hnp]
     | throws ℓ0 => simp [stateUpdate, hh, ih hng hnp]
@@ -1082,7 +1085,7 @@ theorem stateUpdate_none_of_get?_none {ℓ : Bang.EffectRow.Label} {op : Bang.Op
     cases hh : fr.handler with
     | state ℓ0 s =>
         simp only [hsState, hh] at hns
-        by_cases hc : ℓ0 = ℓ
+        by_cases hc : fr.id = ℓ
         · simp [if_pos hc] at hns
         · simp only [if_neg hc] at hns
           simp [stateUpdate, hh, hc, ih hns]
@@ -1092,7 +1095,7 @@ theorem stateUpdate_none_of_get?_none {ℓ : Bang.EffectRow.Label} {op : Bang.Op
 /-- `Corr` is preserved by a `handle (state ℓ s)` install: PUSHING `(ℓ ↦ s)` on the store
 mirrors pushing a `state ℓ s` frame on the HStack. -/
 theorem Corr_install {σ : SStore} {hs : HStack} (ℓ : Bang.EffectRow.Label) (s : Val) (fr : HFrame)
-    (hfr : fr.handler = .state ℓ s) (hC : Corr σ hs) : Corr (σ.push ℓ s) (fr :: hs) := by
+    (hfr : fr.handler = .state ℓ s) (hC : Corr σ hs) : Corr (σ.push fr.id s) (fr :: hs) := by
   unfold Corr at hC ⊢; rw [hC]; simp [hsStates, hfr, SStore.push]
 
 /-- A NON-state frame (throws/transaction) carries no store entry: pushing it preserves `Corr`. -/
@@ -1123,8 +1126,8 @@ theorem get?_hsTxns : ∀ (hs : HStack) (ℓ : Bang.EffectRow.Label),
     cases hh : fr.handler with
     | transaction ℓ0 Θ =>
         simp only [hsTxns, hsTxn, hh]
-        by_cases hc : ℓ0 = ℓ
-        · subst hc; simp [THeap.get?, List.find?]
+        by_cases hc : fr.id = ℓ
+        · simp [THeap.get?, List.find?, hc]
         · simp only [if_neg hc, THeap.get?, List.find?, hc, decide_false, Bool.false_eq_true,
             if_false]; exact ih ℓ
     | state ℓ0 s => simp only [hsTxns, hsTxn, hh]; exact ih ℓ
@@ -1165,13 +1168,12 @@ theorem txnUpdate_service {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val
     intro Θ hg
     cases hh : fr.handler with
     | transaction ℓ0 Θ0 =>
-        by_cases hc : ℓ0 = ℓ
-        · subst hc
-          simp only [hsTxn, hh, ↓reduceIte, Option.some.injEq] at hg
+        by_cases hc : fr.id = ℓ
+        · simp only [hsTxn, hh, hc, ↓reduceIte, Option.some.injEq] at hg
           subst hg
           refine ⟨{ fr with handler := .transaction ℓ0 (txnService op v Θ0).2 } :: hs, ?_, ?_⟩
-          · simp only [txnUpdate, hh, ↓reduceIte, hop]
-          · simp [hsTxns, hh, THeap.put]
+          · simp only [txnUpdate, hh, hc, ↓reduceIte, hop]
+          · simp [hsTxns, hh, THeap.put, hc]
         · simp only [hsTxn, hh, if_neg hc] at hg
           obtain ⟨hs', hsu, heq⟩ := ih hg
           refine ⟨fr :: hs', ?_, ?_⟩
@@ -1202,7 +1204,7 @@ theorem txnUpdate_none_of_hsTxn_none {ℓ : Bang.EffectRow.Label} {op : Bang.OpI
     cases hh : fr.handler with
     | transaction ℓ0 Θ =>
         simp only [hsTxn, hh] at hns
-        by_cases hc : ℓ0 = ℓ
+        by_cases hc : fr.id = ℓ
         · simp [if_pos hc] at hns
         · simp only [if_neg hc] at hns
           simp [txnUpdate, hh, hc, ih hns]
@@ -1220,7 +1222,7 @@ theorem txnUpdate_none_of_non_txnop (ℓ : Bang.EffectRow.Label) (v : Val) :
     intro op hop
     cases hh : fr.handler with
     | transaction ℓ0 Θ =>
-        by_cases hc : ℓ0 = ℓ
+        by_cases hc : fr.id = ℓ
         · simp [txnUpdate, hh, hc, hop]
         · simp [txnUpdate, hh, hc, ih hop]
     | state ℓ0 s => simp [txnUpdate, hh, ih hop]
@@ -1229,7 +1231,7 @@ theorem txnUpdate_none_of_non_txnop (ℓ : Bang.EffectRow.Label) (v : Val) :
 /-- `TCorr` is preserved by a `handle (transaction ℓ Θ)` install: PUSHING `(ℓ ↦ Θ)` on the heap-store
 mirrors pushing a `transaction ℓ Θ` frame. -/
 theorem TCorr_install {τ : THeap} {hs : HStack} (ℓ : Bang.EffectRow.Label) (Θ : List Val) (fr : HFrame)
-    (hfr : fr.handler = .transaction ℓ Θ) (hT : TCorr τ hs) : TCorr (τ.push ℓ Θ) (fr :: hs) := by
+    (hfr : fr.handler = .transaction ℓ Θ) (hT : TCorr τ hs) : TCorr (τ.push fr.id Θ) (fr :: hs) := by
   unfold TCorr at hT ⊢; rw [hT]; simp [hsTxns, hfr, THeap.push]
 
 /-- A NON-txn frame (state/throws) carries no heap entry: pushing it preserves `TCorr`. -/
@@ -1272,12 +1274,11 @@ theorem hsStates_txnUpdate {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Va
     intro hs' r hsu
     cases hh : fr.handler with
     | transaction ℓ0 Θ =>
-        by_cases hc : ℓ0 = ℓ
-        · subst hc
-          by_cases hop : isTxnOp op = true
-          · simp only [txnUpdate, hh, ↓reduceIte, hop, Option.some.injEq] at hsu
+        by_cases hc : fr.id = ℓ
+        · by_cases hop : isTxnOp op = true
+          · simp only [txnUpdate, hh, hc, ↓reduceIte, hop, Option.some.injEq] at hsu
             obtain ⟨_, rfl⟩ := hsu; simp [hsStates, hh]
-          · simp only [txnUpdate, hh, ↓reduceIte, hop] at hsu; simp at hsu
+          · simp only [txnUpdate, hh, hc, ↓reduceIte, hop] at hsu; simp at hsu
         · simp only [txnUpdate, hh, if_neg hc, Option.map_eq_some_iff] at hsu
           obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
           simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
@@ -1308,27 +1309,26 @@ theorem HMut_of_txnUpdate {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val
     intro hs' r hsu
     cases hh : fr.handler with
     | transaction ℓ0 Θ =>
-        by_cases hc : ℓ0 = ℓ
-        · subst hc
-          by_cases hop : isTxnOp op = true
-          · simp only [txnUpdate, hh, ↓reduceIte, hop, Option.some.injEq] at hsu
+        by_cases hc : fr.id = ℓ
+        · by_cases hop : isTxnOp op = true
+          · simp only [txnUpdate, hh, hc, ↓reduceIte, hop, Option.some.injEq] at hsu
             obtain ⟨_, rfl⟩ := hsu
-            exact ⟨⟨rfl, rfl, by simp [hh]⟩, HMut.refl hs⟩
-          · simp only [txnUpdate, hh, ↓reduceIte, hop] at hsu; simp at hsu
+            exact ⟨⟨hc, rfl, rfl, by simp [hh]⟩, HMut.refl hs⟩
+          · simp only [txnUpdate, hh, hc, ↓reduceIte, hop] at hsu; simp at hsu
         · simp only [txnUpdate, hh, if_neg hc, Option.map_eq_some_iff] at hsu
           obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
           simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
-          exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+          exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
     | state ℓ0 s =>
         simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
         obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
-        exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+        exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
     | throws ℓ0 =>
         simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
         obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
-        exact ⟨⟨rfl, rfl, by simp [hh]⟩, ih hsu1⟩
+        exact ⟨⟨rfl, rfl, rfl, by simp [hh]⟩, ih hsu1⟩
 
 /-- `stateUpdate`-put leaves the TXN projection unchanged (a state op never touches a txn frame).
 The mirror of `hsStates_txnUpdate`. Induction on the `stateUpdate` recursion. -/
@@ -1341,9 +1341,8 @@ theorem hsTxns_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
     intro hs' r hsu
     cases hh : fr.handler with
     | state ℓ0 s =>
-        by_cases hc : ℓ0 = ℓ
-        · subst hc
-          simp only [stateUpdate, hh, ↓reduceIte, if_neg (by decide : ¬ ("put" = "get")),
+        by_cases hc : fr.id = ℓ
+        · simp only [stateUpdate, hh, hc, ↓reduceIte, if_neg (by decide : ¬ ("put" = "get")),
             Option.some.injEq] at hsu
           obtain ⟨_, rfl⟩ := hsu; simp [hsTxns, hh]
         · simp only [stateUpdate, hh, if_neg hc, Option.map_eq_some_iff] at hsu
@@ -1820,7 +1819,7 @@ theorem sim : ∀ fe,
                         cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
                       have hCtail := Corr_pop_nonstate hns hmutM hCM
                       have hTtail : TCorr τ1 tail := TCorr_pop_nontxn (by
-                        obtain ⟨⟨_, _, hsh⟩, _⟩ := hmutM
+                        obtain ⟨⟨_, _, _, hsh⟩, _⟩ := hmutM
                         intro ℓ Θ
                         cases hth : top.handler with
                         | transaction _ _ => rw [hfrdef, hth] at hsh; exact absurd hsh (by simp)
@@ -1847,7 +1846,7 @@ theorem sim : ∀ fe,
                 | (.term .oom, _, _), h => simp [Option.bind] at h
                 | (.term (.wrong a), _, _), h => simp [Option.bind] at h
                 | (.raised ℓ' op' w, σ1, τ1), h =>
-                    by_cases hc : ℓ0 = ℓ' ∧ op' = "raise"
+                    by_cases hc : fr.id = ℓ' ∧ op' = "raise"
                     · simp only [Option.bind_some, if_pos hc, Option.some.injEq, Prod.mk.injEq,
                         Outcome.term.injEq] at h
                       obtain ⟨ht, hσ, hτ⟩ := h; subst ht; subst hσ; subst hτ
@@ -3002,7 +3001,7 @@ theorem splitAt_state_value {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
         cases hh : h0 with
         | state ℓ0 s0 =>
             simp only [Bang.splitAt, hh] at hs
-            by_cases hc : ℓ0 = ℓ
+            by_cases hc : fr.id = ℓ
             · subst hc
               have hcatch : Bang.handlesOp (Handler.state ℓ0 s0) ℓ0 op = true := by
                 cases hop with
@@ -3086,7 +3085,7 @@ theorem splitAt_state_some {ℓ : Bang.EffectRow.Label} {op : Bang.OpId}
     | handleF h0 =>
         cases h0 with
         | state ℓ0 s0 =>
-            by_cases hc : ℓ0 = ℓ
+            by_cases hc : fr.id = ℓ
             · subst hc
               simp only [ctxStates, SStore.get?, List.find?, decide_true, Option.map_some,
                 Option.some.injEq] at hg
@@ -3157,7 +3156,7 @@ theorem updateCtxStates_put_split {ℓ : Bang.EffectRow.Label} {w : Val} :
     | handleF h0 =>
         cases h0 with
         | state ℓ0 s0 =>
-            by_cases hc : ℓ0 = ℓ
+            by_cases hc : fr.id = ℓ
             · subst hc
               -- the head frame catches ⇒ splitAt = ([], state ℓ0 s0, K); put updates head value.
               simp only [Bang.splitAt, Bang.handlesOp, beq_self_eq_true, Bool.or_true, Bool.and_true,
@@ -3241,7 +3240,7 @@ theorem ctxStates_updateCtxStates_put {ℓ : Bang.EffectRow.Label} {w : Val} :
     | handleF h0 =>
         cases h0 with
         | state ℓ0 s0 =>
-            by_cases hc : ℓ0 = ℓ
+            by_cases hc : fr.id = ℓ
             · subst hc
               simp only [ctxStates, SStore.put, if_true, updateCtxStates]
               rw [updateCtxStates_self rfl]
@@ -3278,7 +3277,7 @@ theorem splitAt_txn_some {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} (hop : is
     | handleF h0 =>
         cases h0 with
         | transaction ℓ0 Θ0 =>
-            by_cases hc : ℓ0 = ℓ
+            by_cases hc : fr.id = ℓ
             · subst hc
               simp only [ctxTxns, THeap.get?, List.find?, decide_true, Option.map_some,
                 Option.some.injEq] at hg
@@ -3354,7 +3353,7 @@ theorem updateCtxTxns_service_split {ℓ : Bang.EffectRow.Label} {op : Bang.OpId
     | handleF h0 =>
         cases h0 with
         | transaction ℓ0 Θ0 =>
-            by_cases hc : ℓ0 = ℓ
+            by_cases hc : fr.id = ℓ
             · subst hc
               have hco : Bang.handlesOp (Handler.transaction ℓ0 Θ0) ℓ0 op = true := by
                 simp only [Bang.handlesOp, beq_self_eq_true, true_and]
@@ -3474,7 +3473,7 @@ theorem ctxTxns_updateCtxTxns_service {ℓ : Bang.EffectRow.Label} {Θ' : List V
     | handleF h0 =>
         cases h0 with
         | transaction ℓ0 Θ0 =>
-            by_cases hc : ℓ0 = ℓ
+            by_cases hc : fr.id = ℓ
             · subst hc
               simp only [ctxTxns, THeap.put, if_true, updateCtxTxns]
               rw [updateCtxTxns_self_aux]
