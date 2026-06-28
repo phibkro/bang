@@ -882,6 +882,23 @@
     "sha256_pinned": ""
   },
   {
+    "key": "zhao-arxiv2603-lemma-discovery",
+    "title": "Lemma Discovery in Agentic Program Verification",
+    "year": "2026",
+    "doi": "",
+    "eprint": "2603.22114",
+    "topics": [
+      "agentic-proving",
+      "lemma-discovery"
+    ],
+    "grounds": [],
+    "role": "frontier",
+    "ondisk": true,
+    "hop": "adjacent",
+    "path": "references/papers/adjacent/zhao-arxiv2603-lemma-discovery.pdf",
+    "sha256_pinned": ""
+  },
+  {
     "key": "amin-rompf-popl17-definitional-interpreters",
     "title": "Type Soundness Proofs with Definitional Interpreters",
     "year": "2017",

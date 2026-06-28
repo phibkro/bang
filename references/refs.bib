@@ -911,3 +911,20 @@
             the mutation is BOTH at once. Situates plausible (Lean 4) + nitpick (Isabelle)
             as the symbolic baselines. Operator-flagged 2026-06-28.},
 }
+
+@misc{zhao-arxiv2603-lemma-discovery,
+  keywords = {topic:agentic-proving topic:lemma-discovery role:frontier},
+  author = {Zhao, Huan and Tu, Haoxin and Liu, Zhengyao and Rinard, Martin and Roychoudhury, Abhik},
+  title  = {Lemma Discovery in Agentic Program Verification},
+  year   = 2026,
+  eprint = {2603.22114},
+  archivePrefix = {arXiv},
+  note   = {NUS + MIT. Helper-lemma discovery (auxiliary lemmas that aid proving) is the main
+            bottleneck in agentic VC proving + the part existing proof agents cannot do. Key
+            insight: human proof engineers discover lemmas from PROGRAM COMPREHENSION (the
+            source/spec semantics), NOT directly from the verbose VC encoding. LemmaNet:
+            synthesize lemmas OFFLINE from source+spec, then ADAPT them ONLINE as the proof
+            unfolds. Relevant to the shared-lemma-cache investigation + our own hand-derived
+            helper-lemma practice (CtxCorr/CapLabelCoh/NoResume were each discovered from
+            semantic comprehension, exactly this thesis). Operator-flagged 2026-06-28.},
+}

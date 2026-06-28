@@ -217,6 +217,28 @@ and far cheaper than grinding a false statement for days.
   caught this way *before* any sank a grind. See the `CohSubstRefute` /
   `LwscgLengthRefute` witnesses (on the proof branch) for the shape.)
 
+## Refutation is SEARCH — eliminating a path steers you to the right one
+
+Refute-first is not only a truth-check; it is how you MAP the solution space. A machine-checked
+dead-end is a measurement that narrows where the proof can live — and unlike code, you cannot
+*patch* past a false statement or an un-inductive formulation, so every refutation is forced
+signal that steers direction. (This is now a recognized first-class skill in proof automation —
+see `references/papers/adjacent/li-arxiv2603-learning-to-disprove`.) Two practices make the
+dead-end pay rather than waste:
+
+- **Bank the eliminated branch.** When the build disproves an APPROACH (not just a statement) —
+  e.g. "a standalone helper for X is non-viable because case Y needs the term IH" — record it as a
+  **do-not-retry ledger entry** in the PATH, *with the why*, so a future session doesn't re-explore
+  it. And keep any infra you built **route-agnostic** so the pivot to the surviving path wastes
+  nothing. A killed branch + its reason is a deliverable, the same as a closed lemma. (inc-6 raised:
+  Route B was build-disproven — letC's `M0`-returns-then-`N`-raises branch needs `ihT` — which
+  STEERED us to Route A; the infra was banked neutral, so the pivot cost ~zero.)
+- **Mutation = non-vacuity = counterexample, in one move.** To check a hypothesis is load-bearing
+  (not a vacuous statement / a test that can't fail): DROP it and confirm the proof BREAKS. The
+  mutated theorem being false IS the counterexample; the break IS the necessity proof — the same
+  operation (Learning-to-Disprove). Reach for it when a strengthened conclusion looks suspiciously
+  easy, or a hypothesis might be redundant.
+
 ## One worked exemplar — the axiom-clean close
 
 Canonical: **`no_accidental_handling`** (statement `Bang/Spec.lean`, proof
