@@ -3612,14 +3612,89 @@ theorem evalD_caplabelcoh : ∀ (fe : Nat) (M : Comp) (g : Nat) (σ : SStore) (�
           | (.term .oom, _, _, _), h => simp [Option.bind] at h
           | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
           | (.raised n op w, _, _, _), h => simp [Option.bind] at h
-    | force w => sorry
-    | lam M0 => sorry
-    | app M0 w => sorry
+    | lam M0 =>
+        simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+        obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+        exact ⟨hf, hc⟩
+    | force w =>
+        cases w with
+        | vthunk M0 =>
+            simp only [evalD] at h
+            have hstep : Source.step (g, ctxNetEffect K σ τ, Comp.force (Val.vthunk M0))
+                = some (g, ctxNetEffect K σ τ, M0) := rfl
+            exact ih M0 g σ τ t g' σ' τ' K (freshCfg_step _ _ hf hstep) (capLabelCoh_step _ _ hf hc hstep) h
+        | vunit | vint _ | vvar _ | vcap _ _ | inl _ | inr _ | pair _ _ | fold _ => simp [evalD] at h
+    | unfold v =>
+        cases v with
+        | fold a =>
+            simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+            obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+            have hstep : Source.step (g, ctxNetEffect K σ τ, Comp.unfold (Val.fold a))
+                = some (g, ctxNetEffect K σ τ, Comp.ret a) := rfl
+            exact ⟨freshCfg_step _ _ hf hstep, capLabelCoh_step _ _ hf hc hstep⟩
+        | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ => simp [evalD] at h
+    | case v N₁ N₂ =>
+        cases v with
+        | inl a =>
+            simp only [evalD] at h
+            have hstep : Source.step (g, ctxNetEffect K σ τ, Comp.case (Val.inl a) N₁ N₂)
+                = some (g, ctxNetEffect K σ τ, Comp.subst a N₁) := rfl
+            exact ih (Comp.subst a N₁) g σ τ t g' σ' τ' K (freshCfg_step _ _ hf hstep)
+              (capLabelCoh_step _ _ hf hc hstep) h
+        | inr a =>
+            simp only [evalD] at h
+            have hstep : Source.step (g, ctxNetEffect K σ τ, Comp.case (Val.inr a) N₁ N₂)
+                = some (g, ctxNetEffect K σ τ, Comp.subst a N₂) := rfl
+            exact ih (Comp.subst a N₂) g σ τ t g' σ' τ' K (freshCfg_step _ _ hf hstep)
+              (capLabelCoh_step _ _ hf hc hstep) h
+        | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | pair _ _ | fold _ => simp [evalD] at h
+    | split v N =>
+        cases v with
+        | pair a b =>
+            simp only [evalD] at h
+            have hstep : Source.step (g, ctxNetEffect K σ τ, Comp.split (Val.pair a b) N)
+                = some (g, ctxNetEffect K σ τ, Comp.subst a (Comp.subst (Val.shift b) N)) := rfl
+            exact ih _ g σ τ t g' σ' τ' K (freshCfg_step _ _ hf hstep)
+              (capLabelCoh_step _ _ hf hc hstep) h
+        | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | fold _ => simp [evalD] at h
+    | app M0 w =>
+        simp only [evalD] at h
+        cases hM : evalD fe g σ τ M0 with
+        | none => rw [hM] at h; simp at h
+        | some oM =>
+          rw [hM] at h
+          match oM, h with
+          | (.term (.lam N), g1, σ1, τ1), h =>
+              simp only [Option.bind_some] at h
+              have hcne : ∀ (s : SStore) (T : THeap),
+                  ctxNetEffect (Frame.appF w :: K) s T = Frame.appF w :: ctxNetEffect K s T :=
+                fun s T => ctxNetEffect_cons_nonframe s T (by intro n ℓ ss; simp) (by intro n ℓ Θ; simp)
+              have hpush : Source.step (g, ctxNetEffect K σ τ, Comp.app M0 w)
+                  = some (g, Frame.appF w :: ctxNetEffect K σ τ, M0) := rfl
+              have hf1 := freshCfg_step _ _ hf hpush
+              have hc1 := capLabelCoh_step _ _ hf hc hpush
+              rw [← hcne σ τ] at hf1 hc1
+              obtain ⟨hf2, hc2⟩ := ih M0 g σ τ (.lam N) g1 σ1 τ1 (Frame.appF w :: K) hf1 hc1 hM
+              rw [hcne σ1 τ1] at hf2 hc2
+              have hpop : Source.step (g1, Frame.appF w :: ctxNetEffect K σ1 τ1, Comp.lam N)
+                  = some (g1, ctxNetEffect K σ1 τ1, Comp.subst w N) := rfl
+              have hf3 := freshCfg_step _ _ hf2 hpop
+              have hc3 := capLabelCoh_step _ _ hf2 hc2 hpop
+              exact ih (Comp.subst w N) g1 σ1 τ1 t g' σ' τ' K hf3 hc3 h
+          | (.term (.ret a), _, _, _), h => simp [Option.bind] at h
+          | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
+          | (.term (.force a), _, _, _), h => simp [Option.bind] at h
+          | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
+          | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
+          | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
+          | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
+          | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
+          | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
+          | (.term .oom, _, _, _), h => simp [Option.bind] at h
+          | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+          | (.raised n op w', _, _, _), h => simp [Option.bind] at h
     | perform cv op v => sorry
     | handle hh M0 => sorry
-    | case v N₁ N₂ => sorry
-    | split v N => sorry
-    | unfold v => sorry
     | oom => simp [evalD] at h
     | wrong s => simp [evalD] at h
 
