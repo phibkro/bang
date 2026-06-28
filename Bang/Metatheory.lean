@@ -2873,6 +2873,159 @@ theorem type_safety_proof
   rw [show Source.eval fuel c = Config.run fuel (0, [], c) from rfl]
   exact run_safe fuel (0, [], c) hcfg
 
+/-! ### E.5 progress'/type_safety' — the ADR-0063 reclassification (defined-escape terminal)
+
+The `.escapedCap` reshape relocates the (false, refuted) `returnEscape` non-escape obligation into a
+DEFINED terminal. `progress'` gains a third disjunct — a config is `isReturnConfig`, steps, OR is a
+`IsDefinedEscape` (a `perform (vcap …)` whose cap escaped its handler, `idDispatch = none`). The perform
+case falls straight out of `focusResolves'_all`'s tautology: `idDispatch = some ⟹ CapResolves ⟹ steps`,
+`idDispatch = none ⟹ IsDefinedEscape`. Every other case is byte-for-byte the existing `progress_proof`
+(those never consumed `NonEscape`). `type_safety'` then closes via `hasConfigTy_step` (pure typing
+preservation; `NonEscape'` is the free tautology `nonEscape'_all`, so it carries NO preservation burden)
++ the `.escapedCap ≠ .stuck` terminal. This is the PROOF content of the v1 soundness theorem, modulo the
+inc-6 swap of the frozen `Spec.lean` premises onto the primed forms. -/
+theorem progress'_proof
+    {cfg : Config} {q : Mult} {A : VTy Eff Mult} :
+    HasConfig' cfg ⊥ (CTy.F q A) →
+    isReturnConfig cfg ∨ (∃ cfg', Source.step cfg = some cfg') ∨ IsDefinedEscape cfg := by
+  rintro ⟨⟨e, C, hfocus, hstack⟩, _hne⟩
+  obtain ⟨g, K, M⟩ := cfg
+  cases M with
+  | letC M N => exact Or.inr (Or.inl ⟨(g, Frame.letF N :: K, M), by simp [Source.step]⟩)
+  | app M w => exact Or.inr (Or.inl ⟨(g, Frame.appF w :: K, M), by simp [Source.step]⟩)
+  | handle h M => exact Or.inr (Or.inl ⟨_, rfl⟩)
+  | force w =>
+    rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
+    · subst hweq; exact Or.inr (Or.inl ⟨(g, K, MT), by simp [Source.step]⟩)
+    · simp at hget
+  | perform c op v =>
+    -- ADR-0063: the focus types `c : Cap ℓ` (closed) ⇒ `c = vcap n ℓ` (canonical). `idDispatch` either
+    -- FIRES (`CapResolves`, by `capResolves_of_idDispatch`) → a step, OR is `none` → a DEFINED escape.
+    obtain ⟨ℓ, γ_c, hcap⟩ := hfocus.perform_cap_inv
+    obtain ⟨n, hceq⟩ := hcap.cap_canonical
+    subst hceq
+    by_cases hd : idDispatch K n ℓ op v = none
+    · exact Or.inr (Or.inr hd)
+    · exact Or.inr (Or.inl
+        (progress_perform_from_capResolves g K n ℓ op v (capResolves_of_idDispatch hd)))
+  | ret v =>
+    cases K with
+    | nil => exact Or.inl (by simp [isReturnConfig])
+    | cons fr K' =>
+      cases fr with
+      | letF N => exact Or.inr (Or.inl ⟨(g, K', Comp.subst v N), by simp [Source.step]⟩)
+      | handleF n h =>
+        cases h with
+        | throws ℓ => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
+        | state ℓ s => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
+        | transaction ℓ Θ => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
+      | appF w =>
+        obtain ⟨γ', A0, q0, he, hC, hγ, hwv⟩ := hfocus.ret_inv
+        obtain ⟨q', A', B', hCeq, _⟩ := hstack.appF_inv
+        rw [hC] at hCeq; exact absurd hCeq (by simp)
+  | lam M =>
+    obtain ⟨q', A', B', hC, hM⟩ := hfocus.lam_inv
+    subst hC
+    cases K with
+    | nil => cases hstack
+    | cons fr K' =>
+      cases fr with
+      | appF w => exact Or.inr (Or.inl ⟨(g, K', Comp.subst w M), by simp [Source.step]⟩)
+      | letF N =>
+        obtain ⟨q'', A'', e₂, qk, B'', hCeq, _⟩ := hstack.letF_inv
+        exact absurd hCeq (by simp)
+      | handleF n h =>
+        obtain ⟨φ, q'', A'', hCeq, _⟩ := hstack.handleAny_inv
+        exact absurd hCeq (by simp)
+  | case v N₁ N₂ =>
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN₁, hN₂⟩ := hfocus.case_inv
+    rcases hv.sum_canonical with ⟨a, hveq, _⟩ | ⟨a, hveq, _⟩
+    · subst hveq; exact Or.inr (Or.inl ⟨(g, K, Comp.subst a N₁), by simp [Source.step]⟩)
+    · subst hveq; exact Or.inr (Or.inl ⟨(g, K, Comp.subst a N₂), by simp [Source.step]⟩)
+  | split v N =>
+    obtain ⟨γ_v, γ_N, q, A, B, hγ, hv, hN⟩ := hfocus.split_inv
+    obtain ⟨γ_a, γ_b, a, b, hveq, _, _, _⟩ := hv.prod_canonical
+    subst hveq
+    exact Or.inr (Or.inl ⟨(g, K, Comp.subst a (Comp.subst (Val.shift b) N)), by simp [Source.step]⟩)
+  | unfold v =>
+    obtain ⟨A, _, _, hv⟩ := hfocus.unfold_inv
+    obtain ⟨a, hveq, _⟩ := hv.mu_canonical
+    subst hveq
+    exact Or.inr (Or.inl ⟨(g, K, Comp.ret a), by simp [Source.step]⟩)
+  | oom => exact absurd hfocus HasCTy.oom_untypable
+  | wrong s => exact absurd hfocus HasCTy.wrong_untypable
+
+/-- Config-level safety under the reclassification: a `HasConfig'`-typed config never runs to `.stuck`.
+The escape now lands in `.escapedCap` (a defined terminal ≠ `.stuck`), so the third progress' outcome is
+discharged by `run_escapedCap_of_definedEscape`; the step outcome rides `hasConfigTy_step` + the free
+`nonEscape'_all`. -/
+private theorem run_safe' {q : Mult} {A : VTy Eff Mult} :
+    ∀ (fuel : Nat) (cfg : Config),
+      HasConfig' cfg (⊥ : Eff) (CTy.F q A) → Config.run fuel cfg ≠ Result.stuck := by
+  intro fuel
+  induction fuel with
+  | zero => intro cfg _; simp [Config.run]
+  | succ n ih =>
+    intro cfg hcfg
+    rcases progress'_proof hcfg with hret | ⟨cfg', hstep⟩ | hesc
+    · -- isReturnConfig cfg ⇒ cfg = (g, [], ret v) ⇒ Config.run hits the `done` arm.
+      obtain ⟨g, K, M⟩ := cfg
+      cases K with
+      | cons fr K' => cases M <;> simp only [isReturnConfig] at hret
+      | nil =>
+        cases M with
+        | ret v => simp [Config.run]
+        | letC _ _ => simp only [isReturnConfig] at hret
+        | app _ _ => simp only [isReturnConfig] at hret
+        | handle _ _ => simp only [isReturnConfig] at hret
+        | force _ => simp only [isReturnConfig] at hret
+        | perform _ _ _ => simp only [isReturnConfig] at hret
+        | lam _ => simp only [isReturnConfig] at hret
+        | case _ _ _ => simp only [isReturnConfig] at hret
+        | split _ _ => simp only [isReturnConfig] at hret
+        | unfold _ => simp only [isReturnConfig] at hret
+        | oom => simp only [isReturnConfig] at hret
+        | wrong _ => simp only [isReturnConfig] at hret
+    · -- cfg steps; pure typing-preservation (`hasConfigTy_step`) + free `nonEscape'_all` re-seeds IH.
+      obtain ⟨hty, _⟩ := hcfg
+      obtain ⟨eo', hle, hty'⟩ := hasConfigTy_step hty hstep
+      rw [le_bot_iff] at hle; subst hle
+      have hcfg' : HasConfig' cfg' (⊥ : Eff) (CTy.F q A) := ⟨hty', nonEscape'_all cfg'⟩
+      obtain ⟨g, K, M⟩ := cfg
+      have hrun : Config.run (n + 1) (g, K, M) = Config.run n cfg' := by
+        cases K with
+        | cons fr K' => simp only [Config.run]; rw [hstep]
+        | nil =>
+          cases M with
+          | ret v => simp [Source.step] at hstep
+          | letC M N => simp only [Config.run]; rw [hstep]
+          | app M w => simp only [Config.run]; rw [hstep]
+          | handle hh M => simp only [Config.run]; rw [hstep]
+          | force w => simp only [Config.run]; rw [hstep]
+          | perform _ o w => simp only [Config.run]; rw [hstep]
+          | lam M => simp [Source.step] at hstep
+          | case v N₁ N₂ => simp only [Config.run]; rw [hstep]
+          | split v N => simp only [Config.run]; rw [hstep]
+          | unfold v => simp only [Config.run]; rw [hstep]
+          | oom => simp [Source.step] at hstep
+          | wrong s => simp [Source.step] at hstep
+      rw [hrun]
+      exact ih cfg' hcfg'
+    · -- defined-escape: `Config.run = .escapedCap ≠ .stuck` (terminal; no IH needed).
+      rw [run_escapedCap_of_definedEscape hesc]; simp
+
+/-- **ADR-0063 — the v1 soundness theorem's PROOF content, reclassified.** Over `HasConfig'` (typing +
+the free `NonEscape'`), `Source.eval` never returns `.stuck`: a well-typed program either terminates, runs
+forever, OOMs, or hits the DEFINED `.escapedCap` capability-escape terminal — never genuine stuck. inc-6
+swaps the frozen `Spec.lean` `type_safety` premise onto `HasConfig'` and re-proves the `progress`
+escape-disjunct there; this is that proof, reachable now in the green Metatheory module. -/
+theorem type_safety'_proof
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasConfig' (0, [], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
+  intro hcfg fuel
+  rw [show Source.eval fuel c = Config.run fuel (0, [], c) from rfl]
+  exact run_safe' fuel (0, [], c) hcfg
+
 /-! ## F. Abstraction-safety — no accidental handling (ADR-0024)
 
 The §0.5 abstraction-safety invariant, monomorphic half. In the label-indexed CK machine

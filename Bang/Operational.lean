@@ -565,6 +565,15 @@ stated over `HasConfig` — BYTE-IDENTICAL. -/
 def HasConfig [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
   HasConfigTy cfg eo Co ∧ NonEscape cfg
 
+/-- **ADR-0063 — the reclassified configuration typing.** Identical to `HasConfig` but pairing the typing
+CORE with the defined-escape-tolerant `NonEscape'` instead of `NonEscape`. Since `NonEscape'` is a
+TAUTOLOGY (`nonEscape'_all`), this is operationally just `HasConfigTy` — the structural non-escape burden
+is gone, absorbed into the `.escapedCap` defined terminal. `progress'`/`type_safety'` are stated over it;
+inc-6 swaps the frozen `Spec.lean` premises onto this. The OLD `HasConfig` stays parked (the binary-LR
+route still references its `NonEscape`). -/
+def HasConfig' [EffSig Eff Mult] (cfg : Config) (eo : Eff) (Co : CTy Eff Mult) : Prop :=
+  HasConfigTy cfg eo Co ∧ NonEscape' cfg
+
 /-- Fill a single frame's hole with a focus — the one-step node a `plug` builds for a frame, and
 the redex a PUSH step undoes (`step (K, fr.wrapStep c) = (fr :: K, c)`). -/
 def Frame.wrapStep : Frame → Comp → Comp
@@ -601,6 +610,37 @@ def Config.run : Nat → Config → Result Val
 /-- Source.eval: load the closed program into `⟨0, [], c⟩` (a FRESH machine: counter at 0, empty
 stack) and run. Signature unchanged (ADR-0023 D3); ADR-0055 only seeds the fresh-id counter at 0. -/
 def Source.eval (fuel : Nat) (c : Comp) : Result Val := Config.run fuel (0, [], c)
+
+/-- **ADR-0063 — the defined-escape configuration shape.** A config whose focus is a `perform (vcap n ℓ)`
+op whose `idDispatch` finds no handling frame (`= none`). Exactly the `Source.step = none` shape that
+`Config.run` routes to `.escapedCap` (a DEFINED terminal, not genuine stuck). This is the third outcome
+of `progress'` — the relocation of the old (false) `returnEscape` non-escape obligation into a defined
+result. -/
+def IsDefinedEscape : Config → Prop
+  | (_, K, .perform (.vcap n ℓ) op v) => idDispatch K n ℓ op v = none
+  | _                                 => False
+
+/-- A defined-escape config has no `Source.step` (its `idDispatch` is `none`, and `step` on a
+`perform (vcap …)` focus is exactly `(idDispatch …).map …`). -/
+theorem step_none_of_definedEscape {cfg : Config} (h : IsDefinedEscape cfg) :
+    Source.step cfg = none := by
+  obtain ⟨g, K, M⟩ := cfg
+  match M, h with
+  | .perform (.vcap n ℓ) op v, hd =>
+      show (idDispatch K n ℓ op v).map (fun (Kc : EvalCtx × Comp) => (g, Kc.1, Kc.2)) = none
+      rw [show idDispatch K n ℓ op v = none from hd]; rfl
+
+/-- A defined-escape config runs (at any positive fuel) to the `.escapedCap` defined terminal — NOT
+`.stuck`. The `Config.run` `none` arm classifies a `perform (vcap …)` focus as `.escapedCap`. -/
+theorem run_escapedCap_of_definedEscape {n : Nat} {cfg : Config} (h : IsDefinedEscape cfg) :
+    Config.run (n + 1) cfg = Result.escapedCap := by
+  obtain ⟨g, K, M⟩ := cfg
+  match M, h with
+  | .perform (.vcap nn ℓ) op v, hd =>
+      have hstep : Source.step (g, K, Comp.perform (Val.vcap nn ℓ) op v) = none :=
+        step_none_of_definedEscape (cfg := (g, K, Comp.perform (Val.vcap nn ℓ) op v)) hd
+      show Config.run (n + 1) (g, K, Comp.perform (Val.vcap nn ℓ) op v) = Result.escapedCap
+      simp only [Config.run, hstep]
 
 /-- **The non-escape preservation obligation (ADR-0054).** `NonEscape` is preserved by every
 `Source.step` transition. With `NonEscape` now the forward closure of `FocusResolves` over reachable
