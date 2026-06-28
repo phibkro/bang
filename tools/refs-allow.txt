@@ -56,3 +56,11 @@ scratch/RouteBShadowProbe.lean
 # U3 deliverable; the ref RESOLVES when U3 lands. Recover: `git show 99790bd:Bang/CapCoh.lean`.
 # REMOVE this entry once inc-6 merges and the file is in the working tree.
 Bang/CapCoh.lean
+
+# ── G. inc-6 U5 spikes (in-flight on the inc6-u5-wasm worktree) ──────────────────
+# scratch/U5GensymSpike.lean (c852f4b — the no-coherence-wall de-risk) +
+# scratch/U5DetShortcut.lean (7ed8da9 — the determinism-shortcut REFUTED, do-not-retry).
+# Live on lang-bang-u5wasm @ inc6-u5-wasm, not yet merged to typed-static-r1; PATH §U5
+# forward-references them. Recover: `git show <sha>:scratch/<file>`. REMOVE once U5 merges.
+scratch/U5GensymSpike.lean
+scratch/U5DetShortcut.lean
