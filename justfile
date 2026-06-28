@@ -63,6 +63,7 @@ wasmfx-probe:
 fitness:
     bash tools/check-primitives.sh
     bash tools/check-bang-root.sh
+    bash tools/check-sha-reachable.sh
     bash tools/check-adr-links.sh
     python3 tools/gen-adr-index.py --check
     bash tools/arch-check.sh
@@ -76,6 +77,12 @@ fitness:
 # silently unbuilt (hence ungated). Also run by `just fitness`.
 check-bang-root:
     bash tools/check-bang-root.sh
+
+# Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
+# CONTEXT.md/ROADMAP.md resolves to a real commit (a rebase/drop makes the prose
+# silently false). Foreign hex (other repos, package revs) → tools/sha-allow.txt.
+check-sha:
+    bash tools/check-sha-reachable.sh
 
 # Reference library (refs.bib = single source of truth; index.json + the README block are derived).
 refs-index:

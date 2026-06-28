@@ -1,0 +1,19 @@
+# tools/sha-allow.txt — backtick hex tokens that are NOT this repo's commits.
+#
+# Read by tools/check-sha-reachable.sh. CONTEXT.md / ROADMAP.md cite commit SHAs
+# as waypoints; the check verifies each resolves to a real commit object here. A
+# few cited hex tokens are FOREIGN (another repo's commit, a package rev, English
+# hex) — they will never resolve in this repo and would false-FAIL. Each is listed
+# here ONCE, with the reason. One token per line; `#` starts a comment.
+#
+# A NEW unresolved SHA fails the check; these are the documented exceptions. When
+# a cited SHA stops resolving because it was rebased/dropped, FIX the doc — do not
+# silence it here.
+
+# A mathlib *package* revision (not a lang-bang commit) — the rev inc5's lake
+# manifest was re-pinned to via symlink to main's clean mathlib (CONTEXT.md).
+c5ea0035
+
+# A commit SHA in the HOMELAB repo (/srv/share/projects/homelab), not this repo —
+# where the nix-managed general skill is committed (CONTEXT.md).
+c6746bc
