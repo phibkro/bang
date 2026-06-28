@@ -64,3 +64,7 @@ Bang/CapCoh.lean
 # forward-references them. Recover: `git show <sha>:scratch/<file>`. REMOVE once U5 merges.
 scratch/U5GensymSpike.lean
 scratch/U5DetShortcut.lean
+# scratch/U5bSimSpike.lean (82cc585 — the U5b refute-watch: the Sim-congruence WALL,
+# Sim.handle can't transport across route-B mint+subst). Lives on lang-bang-u5wasm @
+# inc6-u5-wasm, PATH §U5 forward-references it. Recover: `git show 82cc585:scratch/U5bSimSpike.lean`.
+scratch/U5bSimSpike.lean
