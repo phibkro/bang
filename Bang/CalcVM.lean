@@ -3712,6 +3712,24 @@ theorem splitAtId_of_ctxTxns_get {n : Nat} {Θ : List Val} : ∀ {K : Bang.EvalC
         obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
         exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
 
+/-- An ESCAPED capability's label is immaterial to `Config.run`: when `splitAtId K n = none` the
+`idDispatch` short-circuits BEFORE reading the label, so `Source.step` is `none` for ANY label and the
+run lands on the same `escapedCap`/`oom` terminal. Used by `run_evalD`'s raised `perform` base case to
+discharge the escape sub-case (where `labelOf K n = default ≠` the cap's stored `ℓ`). -/
+theorem run_perform_label_irrel {g : Nat} {K : Bang.EvalCtx} {n : Nat} {op : Bang.OpId} {v : Val}
+    (ℓ1 ℓ2 : Bang.EffectRow.Label) (hsplit : Bang.splitAtId K n = none) (fuel : Nat) :
+    Bang.Config.run fuel (g, K, Comp.perform (Val.vcap n ℓ1) op v)
+      = Bang.Config.run fuel (g, K, Comp.perform (Val.vcap n ℓ2) op v) := by
+  cases fuel with
+  | zero => rfl
+  | succ f =>
+    have h1 : Bang.Source.step (g, K, Comp.perform (Val.vcap n ℓ1) op v) = none := by
+      simp [Bang.Source.step, Bang.idDispatch, hsplit]
+    have h2 : Bang.Source.step (g, K, Comp.perform (Val.vcap n ℓ2) op v) = none := by
+      simp [Bang.Source.step, Bang.idDispatch, hsplit]
+    rw [Bang.Config.run_step f _ (by intro gg u; simp), Bang.Config.run_step f _ (by intro gg u; simp),
+        h1, h2]
+
 /-- (★bridge) the **two-part** `evalD ≡ Source.eval` simulation: a `term` part (M
 runs to its terminal under K) AND a `raised` part (M raises, dispatched by the
 kernel — the `THROW ↔ dispatch` correspondence). Subst-vs-subst, no cross-rep LR.
@@ -4251,9 +4269,170 @@ theorem run_evalD : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
-    · -- RAISED PART (U3 seam-2: stale pre-g body replaced; route-B re-key + coherence deferred)
+    · -- RAISED PART (U3 seam-3). Mirrors the U2 `sim` raised arm on the `Config.run`/`dispatchRun` side.
+      -- The conclusion folds `CapLabelCoh (g', ctxNetEffect K σ' τ', ret v)` (REFUTE-WATCH: CONFIRMED —
+      -- `capsV v ⊆ capsC` of the focus in every case, so the raised value's coherence is a sub-multiset of
+      -- the focus coherence the premise already carries). The continuation re-performs the op at the outer
+      -- context; the BASE (`perform`) case is the only place a raise originates, the rest propagate via `ihR`.
       intro M g σ τ n op v g' σ' τ' h K hCtx hTtx hCoh hFresh
-      sorry
+      cases M with
+      | ret w => simp [evalD] at h
+      | lam M => simp [evalD] at h
+      | perform cap op2 v2 =>
+          -- OP-FIRST raise (route-B, identity-keyed): the op matched NO resumptive frame at IDENTITY n2
+          -- (get/put with no state cell, txn op with no txn cell, or a non-resumptive op). The stores are
+          -- unchanged (g'=g, σ'=σ, τ'=τ ⇒ `ctxNetEffect K σ τ = K`), so the continuation's `dispatchRun`
+          -- RE-PERFORMS exactly the kernel's own `perform` — they agree up to the cap label, which `labelOf`
+          -- reconstructs (`= ℓ2` when the cap resolves, by `WeakCoh`; immaterial on escape, `run_perform_label_irrel`).
+          obtain ⟨n2, ℓ2, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
+            cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
+          simp only [evalD] at h
+          -- one helper closing every raise sub-case: conclusion (focus-cap-shrink) + continuation (label match/escape).
+          have close : ∀ (o : Bang.OpId),
+              (CtxCorr σ (ctxNetEffect K σ τ) ∧ CtxTxnCorr τ (ctxNetEffect K σ τ) ∧
+                CapLabelCoh (g, ctxNetEffect K σ τ, Comp.ret v2) ∧ FreshCfg (g, ctxNetEffect K σ τ, Comp.ret v2)) ∧
+              ∀ (fuel : Nat) (r : Bang.Result Val),
+                dispatchRun fuel g n2 (ctxNetEffect K σ τ) (labelOf (ctxNetEffect K σ τ) n2) o v2 = r →
+                  ∃ F, Bang.Config.run F (g, K, Comp.perform (Val.vcap n2 ℓ2) o v2) = r := by
+            intro o
+            rw [ctxNetEffect_self hCtx hTtx]
+            refine ⟨⟨hCtx, hTtx,
+              ⟨fun p hp => hCoh.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp), hCoh.2⟩,
+              ⟨hFresh.1, fun p hp => hFresh.2.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp),
+                hFresh.2.2.1, hFresh.2.2.2⟩⟩, fun fuel r hr => ?_⟩
+            simp only [dispatchRun] at hr
+            cases hsp : Bang.splitAtId K n2 with
+            | none =>
+                exact ⟨fuel, by rw [run_perform_label_irrel ℓ2 (labelOf K n2) hsp fuel]; exact hr⟩
+            | some t =>
+                obtain ⟨Kᵢ, hh, Kₒ⟩ := t
+                have hwk : Bang.CapCoh.WeakCoh K (n2, ℓ2) := hCoh.1 (n2, ℓ2) (by simp [Bang.Model.capsC, Bang.Model.capsV])
+                have hlab : labelOf K n2 = ℓ2 := by
+                  simp only [labelOf, hsp, Option.map_some, Option.getD_some]; exact hwk Kᵢ hh Kₒ hsp
+                rw [hlab] at hr; exact ⟨fuel, hr⟩
+          by_cases hop : op2 = "get"
+          · subst hop
+            simp only [if_pos rfl] at h
+            cases hg : σ.get? n2 with
+            | none =>
+                rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h; exact close _
+            | some sv => rw [hg] at h; simp at h
+          · by_cases hop2 : op2 = "put"
+            · subst hop2
+              simp only [if_neg (by decide : ¬ ("put" = "get")), if_pos rfl] at h
+              cases hg : σ.get? n2 with
+              | none =>
+                  rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                  obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h; exact close _
+              | some sv => rw [hg] at h; simp at h
+            · by_cases hopt : isTxnOp op2 = true
+              · simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
+                cases hgt : τ.get? n2 with
+                | none =>
+                    rw [hgt] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h; exact close _
+                | some Θ => rw [hgt] at h; simp at h
+              · rw [Bool.not_eq_true] at hopt
+                simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
+                  Outcome.raised.injEq] at h
+                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h; exact close _
+      | force a =>
+          cases a with
+          | vcap n ℓ => simp [evalD] at h
+          | vthunk M =>
+              simp only [evalD] at h
+              have hstep : Source.step (g, K, Comp.force (Val.vthunk M)) = some (g, K, M) := rfl
+              obtain ⟨hpair, kR⟩ := ihR M g σ τ n op v g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+              exact ⟨hpair, fun fuel r hr => by
+                obtain ⟨F', hF'⟩ := kR fuel r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | case a b d =>
+          cases a with
+          | vcap n ℓ => simp [evalD] at h
+          | inl sv =>
+              simp only [evalD] at h
+              have hstep : Source.step (g, K, Comp.case (Val.inl sv) b d) = some (g, K, Comp.subst sv b) := rfl
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv b) g σ τ n op v g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+              exact ⟨hpair, fun fuel r hr => by
+                obtain ⟨F', hF'⟩ := kR fuel r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | inr sv =>
+              simp only [evalD] at h
+              have hstep : Source.step (g, K, Comp.case (Val.inr sv) b d) = some (g, K, Comp.subst sv d) := rfl
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv d) g σ τ n op v g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+              exact ⟨hpair, fun fuel r hr => by
+                obtain ⟨F', hF'⟩ := kR fuel r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | split a b =>
+          cases a with
+          | vcap n ℓ => simp [evalD] at h
+          | pair sv sw =>
+              simp only [evalD] at h
+              have hstep : Source.step (g, K, Comp.split (Val.pair sv sw) b)
+                  = some (g, K, Comp.subst sv (Comp.subst (Val.shift sw) b)) := rfl
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) g σ τ n op v g' σ' τ' h K hCtx hTtx
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+              exact ⟨hpair, fun fuel r hr => by
+                obtain ⟨F', hF'⟩ := kR fuel r hr
+                exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | fold w => simp [evalD] at h
+      | unfold a =>
+          -- `unfold` always yields `term (ret v)` — never `raised`, so vacuous.
+          cases a with
+          | vcap n ℓ => simp [evalD] at h
+          | fold v => simp [evalD] at h
+          | vunit => simp [evalD] at h
+          | vint x => simp [evalD] at h
+          | vvar i => simp [evalD] at h
+          | vthunk M => simp [evalD] at h
+          | inl w => simp [evalD] at h
+          | inr w => simp [evalD] at h
+          | pair w1 w2 => simp [evalD] at h
+      | oom => simp [evalD] at h
+      | wrong a => simp [evalD] at h
+      | letC M N =>
+          -- WALL (frame-pushing propagation). `ihR M0 … (Frame.letF N :: K) …` delivers the continuation at
+          -- the FRAME-PUSHED context `ctxNetEffect (letF N :: K) σ1 τ1`; the obligation is at the OUTER
+          -- `ctxNetEffect K σ1 τ1`. Bridging needs `Config.run`-invariance under prepending `letF N` to the
+          -- perform-raise's context — TRUE only because a raise never RESUMES (the matched frame is none /
+          -- throws-abort / non-handling, never a resuming state/txn). That non-resume fact is PROOF-necessary
+          -- and is not derivable from the current conclusion. NEEDS: a `NoResume (ctxNetEffect K σ' τ') n op`
+          -- conjunct (raise target resolves only to none/throws/non-handling), co-induced into the raised
+          -- conclusion (base: store-miss via `splitAtId_state_value`/`_txn_value` inverse; propagation: frame-strip).
+          sorry
+      | app M v0 =>
+          -- WALL (same as letC): `ihR M0 … (Frame.appF v0 :: K) …` ⇒ frame-pushed context; needs the
+          -- `NoResume` frame-strip (appF). See `letC`.
+          sorry
+      | handle h0 M =>
+          -- WALL (same shape): the FORWARD subcases run `ihR` under `handleF g h0 :: K`; popping that frame
+          -- from the continuation needs the `NoResume` frame-strip (handleF, g ≠ n). The CAUGHT subcase
+          -- (throws, n=g ∧ op="raise") is the proven `ihR`-consumer pattern from handle-term and closes; only
+          -- the forwards wall. See `letC`.
+          sorry
 
 /-- **The D1-A bridge** (headline): when `evalD` says a closed computation returns
 `v`, the kernel's verified `Source.eval` agrees (`.done v`). Ties the calculated
