@@ -186,91 +186,89 @@ inline against the store and yield a `term`. `letC`/`app` short-circuit on `rais
 a `throws` `handle` catches it. -/
 inductive Outcome where
   | term   : Comp → Outcome                       -- normal terminal (ret v | lam M)
-  | raised : Bang.EffectRow.Label → Bang.OpId → Val → Outcome   -- a throws-`up` en route to its handler
+  -- route-B (ADR-0052): a `raised` propagates to its handler by IDENTITY `n` (the capability's
+  -- generative name), NOT by label — mirroring the kernel's `idDispatch`. The `handle` whose minted
+  -- id equals `n` catches it (throws abort); state/transaction frames forward it.
+  | raised : Nat → Bang.OpId → Val → Outcome      -- a throws-`up` en route to handler IDENTITY n
   deriving Inhabited
 
-def evalD : Nat → SStore → THeap → Comp → Option (Outcome × SStore × THeap)
-  | 0,          _, _, _            => none
-  | Nat.succ _, σ, τ, .ret v       => some (.term (.ret v), σ, τ)
-  | Nat.succ _, σ, τ, .lam M       => some (.term (.lam M), σ, τ)
-  | Nat.succ f, σ, τ, .letC M N    =>
-      (evalD f σ τ M).bind (fun p => match p with
-        | (.term (.ret v), σ', τ') => evalD f σ' τ' (Comp.subst v N) -- M : F _ ⇒ terminal is `ret v`
-        | (.term _, _, _)          => none                            -- ill-typed (letC of a lam)
-        | (.raised ℓ op w, σ', τ') => some (.raised ℓ op w, σ', τ'))  -- propagate the raise outward
-  | Nat.succ f, σ, τ, .force (.vthunk M) => evalD f σ τ M           -- force∘thunk = run the closed body
-  | Nat.succ f, σ, τ, .app M v     =>
-      (evalD f σ τ M).bind (fun p => match p with
-        | (.term (.lam N), σ', τ') => evalD f σ' τ' (Comp.subst v N) -- β: M ⇒ lam N, then N[v]
-        | (.term _, _, _)          => none                            -- ill-typed (app of a non-lam)
-        | (.raised ℓ op w, σ', τ') => some (.raised ℓ op w, σ', τ'))  -- propagate the raise outward
-  -- up ℓ op v: dispatch is OP-FIRST (mirroring the kernel's `handlesOp`, `Operational.lean`): a state
-  -- `get`/`put` resolves to the nearest `state ℓ` frame in σ; a transaction `newTVar`/`readTVar`/
-  -- `writeTVar` resolves to the nearest `transaction ℓ` frame in τ. The op-id alone selects the
-  -- projection (state and txn op-sets are DISJOINT), so a label shared by both kinds resolves
-  -- unambiguously — and the machine's `stateUpdate` (op-guarded {get,put}) / `txnUpdate` (op-guarded
-  -- isTxnOp) stay in lockstep. Any other op, or a state/txn op with no active frame, raises (throws).
-  | Nat.succ _, σ, τ, .perform (.vcap _ ℓ) op v   =>
+-- route-B (ADR-0052): `evalD` is the big-step denotation of the IDENTITY kernel. It threads the
+-- fresh-id counter `g` (in and out), MINTS+SUBSTITUTES `vcap g h.label` at `handle` (mirroring the
+-- kernel's `Source.step` handle-arm, Operational.lean:471), and keys both stores by the capability
+-- IDENTITY `n` (not the label). A `perform (vcap n …)` dispatches by `n` (mirroring `idDispatch`/
+-- `splitAtId`, :284/374); a `raised n …` propagates to the `handle` whose minted id equals `n`.
+-- The store key type is `Nat` (= `Label`), so `SStore`/`THeap` are reused with the key REINTERPRETED
+-- as an identity; identities are globally fresh (unique), so `get?`/`put` find the unique entry.
+def evalD : Nat → Nat → SStore → THeap → Comp → Option (Outcome × Nat × SStore × THeap)
+  | 0,          _, _, _, _         => none
+  | Nat.succ _, g, σ, τ, .ret v    => some (.term (.ret v), g, σ, τ)
+  | Nat.succ _, g, σ, τ, .lam M    => some (.term (.lam M), g, σ, τ)
+  | Nat.succ f, g, σ, τ, .letC M N =>
+      (evalD f g σ τ M).bind (fun p => match p with
+        | (.term (.ret v), g', σ', τ') => evalD f g' σ' τ' (Comp.subst v N) -- M : F _ ⇒ terminal is `ret v`
+        | (.term _, _, _, _)           => none                              -- ill-typed (letC of a lam)
+        | (.raised n op w, g', σ', τ') => some (.raised n op w, g', σ', τ')) -- propagate the raise outward
+  | Nat.succ f, g, σ, τ, .force (.vthunk M) => evalD f g σ τ M        -- force∘thunk = run the closed body
+  | Nat.succ f, g, σ, τ, .app M v  =>
+      (evalD f g σ τ M).bind (fun p => match p with
+        | (.term (.lam N), g', σ', τ') => evalD f g' σ' τ' (Comp.subst v N) -- β: M ⇒ lam N, then N[v]
+        | (.term _, _, _, _)           => none                              -- ill-typed (app of a non-lam)
+        | (.raised n op w, g', σ', τ') => some (.raised n op w, g', σ', τ')) -- propagate the raise outward
+  -- perform (vcap n ℓ) op v: dispatch BY IDENTITY n (route-B). `get`/`put` resolve the state cell at
+  -- key `n` in σ; `newTVar`/`readTVar`/`writeTVar` resolve the txn heap at key `n` in τ. A `raise` (or a
+  -- mis-typed op, or no active frame) propagates as `raised n op v` toward the handler with identity n.
+  | Nat.succ _, g, σ, τ, .perform (.vcap n _ℓ) op v   =>
       if op = "get" then
-        match σ.get? ℓ with
-        | some s => some (.term (.ret s), σ, τ)                      -- get: return stored s, σ unchanged
-        | none   => some (.raised ℓ op v, σ, τ)                      -- no state frame ⇒ throws path
+        match σ.get? n with
+        | some s => some (.term (.ret s), g, σ, τ)                   -- get: return stored s, σ unchanged
+        | none   => some (.raised n op v, g, σ, τ)                   -- no state frame for n ⇒ raise to n
       else if op = "put" then
-        match σ.get? ℓ with
-        | some _ => some (.term (.ret .vunit), σ.put ℓ v, τ)         -- put: thread s := v
-        | none   => some (.raised ℓ op v, σ, τ)
+        match σ.get? n with
+        | some _ => some (.term (.ret .vunit), g, σ.put n v, τ)      -- put: thread s := v at key n
+        | none   => some (.raised n op v, g, σ, τ)
       else if isTxnOp op then
-        match τ.get? ℓ with
+        match τ.get? n with
         | some Θ =>
             -- serviced against the heap: thread Θ := Θ' in place (mirrors the machine's txnUpdate).
             let (r, Θ') := txnService op v Θ
-            some (.term (.ret r), σ, τ.put ℓ Θ')
-        | none => some (.raised ℓ op v, σ, τ)                        -- no txn frame ⇒ throws path
-      else some (.raised ℓ op v, σ, τ)                               -- neither a state nor a txn op
-  -- handle h M: dispatch on the handler kind.
-  --  · state ℓ s : push (ℓ ↦ s) for M's extent; on a normal `ret v` RESTORE the outer σ
-  --    (lexical shadowing — D1); the handler-return is identity (Q6). A raise still forwards.
-  --  · transaction ℓ Θ : the list-heap analog (ADR-0031 D4). Push (ℓ ↦ Θ) on τ for M's extent; POP on
-  --    exit. Rollback is FREE: an abort is a foreign `throws` over a DIFFERENT label that escapes this
-  --    frame, so the threaded heap is discarded with the popped τ entry and never commits.
-  --  · throws ℓ0 : CATCH a `raised (ℓ0, "raise")` ⇒ yield the payload `term (ret w)` (zero-shot
-  --    abort, ADR-0023); else forward. Resumptive ops never reach here as `raised` (serviced inline).
-  | Nat.succ f, σ, τ, .handle h M  =>
+            some (.term (.ret r), g, σ, τ.put n Θ')
+        | none => some (.raised n op v, g, σ, τ)                     -- no txn frame for n ⇒ raise to n
+      else some (.raised n op v, g, σ, τ)                            -- raise / non-resumptive op
+  -- handle h M: MINT id := g, SUBSTITUTE `vcap id h.label` for the handle-bound var 0, recurse with g+1.
+  --  · state s : push (id ↦ s) on σ for M's extent; POP on exit; a raise FORWARDS (pop entry).
+  --  · transaction Θ : the list-heap analog (ADR-0031 D4); push (id ↦ Θ) on τ; POP on exit.
+  --  · throws : CATCH a `raised n` with n = id ∧ op = "raise" ⇒ yield `term (ret w)` (zero-shot abort,
+  --    ADR-0023). The at-raise stores σ'/τ' are KEPT (outer effects persist; inner frames already popped).
+  | Nat.succ f, g, σ, τ, .handle h M  =>
+      let id := g
+      let M' := Comp.subst (.vcap id h.label) M
       match h with
-      | .state ℓ s =>
-          (evalD f (σ.push ℓ s) τ M).bind (fun p => match p with
-            | (.term (.ret v), σ', τ') => some (.term (.ret v), σ'.tail, τ')  -- POP the pushed ℓ entry
-            | (.term _, _, _)          => none
-            | (.raised ℓ' op' w, σ', τ') => some (.raised ℓ' op' w, σ'.tail, τ')) -- forward; pop entry
-      | .transaction ℓ Θ =>
-          (evalD f σ (τ.push ℓ Θ) M).bind (fun p => match p with
-            | (.term (.ret v), σ', τ') => some (.term (.ret v), σ', τ'.tail)  -- POP the pushed ℓ heap
-            | (.term _, _, _)          => none
-            | (.raised ℓ' op' w, σ', τ') => some (.raised ℓ' op' w, σ', τ'.tail)) -- forward; pop heap
-      | .throws ℓ0 =>
-          (evalD f σ τ M).bind (fun p => match p with
-            | (.term (.ret v), σ', τ') => some (.term (.ret v), σ', τ')
-            | (.term _, _, _)          => none
-            | (.raised ℓ' op' w, σ', τ') =>
-                -- CAUGHT (zero-shot abort): discard the captured CONTINUATION (control unwinds to this
-                -- handler), but KEEP the at-raise stores `σ'`/`τ'`. The abort unwinds only `Kᵢ` (the
-                -- control between this throws handler and the raise point); the OUTER `state`/`transaction`
-                -- frames live in `Kₒ` and are NOT rewound (kernel `dispatchOn` THROW = `(Kₒ, ret v)` —
-                -- `Operational.lean`). So an outer `put`/`writeTVar` performed before a caught raise
-                -- PERSISTS. Inner `state`/`transaction` handles nested under this throws handler have
-                -- already popped their pushed entry on the way out (`handle` forwards a raise via the
-                -- tail), so `σ'`/`τ'` retain exactly the outer effects.
-                if ℓ0 = ℓ' ∧ op' = "raise" then some (.term (.ret w), σ', τ')
-                else some (.raised ℓ' op' w, σ', τ'))
-  -- ADT eliminators (Unit 6): PURE reductions — closed-value scrutinee, NO σ/τ threading change, NO
-  -- handler/raise interaction. Mirror the kernel's `Source.step` (`Operational.lean` 259-263) exactly:
-  -- `case`/`split` re-`subst` into a branch (recursing on fuel), `unfold` erases to `ret v`. The
-  -- `none` fall-through keeps the catch-all for ill-formed scrutinees (source-unreachable, well-typed).
-  | Nat.succ f, σ, τ, .case (.inl v) N₁ _  => evalD f σ τ (Comp.subst v N₁)
-  | Nat.succ f, σ, τ, .case (.inr v) _  N₂ => evalD f σ τ (Comp.subst v N₂)
-  | Nat.succ f, σ, τ, .split (.pair v w) N => evalD f σ τ (Comp.subst v (Comp.subst (Val.shift w) N))
-  | Nat.succ _, σ, τ, .unfold (.fold v)    => some (.term (.ret v), σ, τ)
-  | _,          _, _, _            => none                -- out of scope (ill-formed scrutinee)
+      | .state _ s =>
+          (evalD f (g+1) (σ.push id s) τ M').bind (fun p => match p with
+            | (.term (.ret v), g', σ', τ') => some (.term (.ret v), g', σ'.tail, τ')  -- POP the pushed id entry
+            | (.term _, _, _, _)           => none
+            | (.raised n op' w, g', σ', τ') => some (.raised n op' w, g', σ'.tail, τ')) -- forward; pop entry
+      | .transaction _ Θ =>
+          (evalD f (g+1) σ (τ.push id Θ) M').bind (fun p => match p with
+            | (.term (.ret v), g', σ', τ') => some (.term (.ret v), g', σ', τ'.tail)  -- POP the pushed id heap
+            | (.term _, _, _, _)           => none
+            | (.raised n op' w, g', σ', τ') => some (.raised n op' w, g', σ', τ'.tail)) -- forward; pop heap
+      | .throws _ =>
+          (evalD f (g+1) σ τ M').bind (fun p => match p with
+            | (.term (.ret v), g', σ', τ') => some (.term (.ret v), g', σ', τ')
+            | (.term _, _, _, _)           => none
+            | (.raised n op' w, g', σ', τ') =>
+                -- CAUGHT (zero-shot abort) iff the raise targets THIS handler's identity. Discard the
+                -- captured continuation; KEEP the at-raise stores σ'/τ' (outer put/writeTVar persists —
+                -- inner frames already popped on the way out). Else forward outward.
+                if n = id ∧ op' = "raise" then some (.term (.ret w), g', σ', τ')
+                else some (.raised n op' w, g', σ', τ'))
+  -- ADT eliminators (Unit 6): PURE reductions — closed-value scrutinee, no store/counter change.
+  | Nat.succ f, g, σ, τ, .case (.inl v) N₁ _  => evalD f g σ τ (Comp.subst v N₁)
+  | Nat.succ f, g, σ, τ, .case (.inr v) _  N₂ => evalD f g σ τ (Comp.subst v N₂)
+  | Nat.succ f, g, σ, τ, .split (.pair v w) N => evalD f g σ τ (Comp.subst v (Comp.subst (Val.shift w) N))
+  | Nat.succ _, g, σ, τ, .unfold (.fold v)    => some (.term (.ret v), g, σ, τ)
+  | _,          _, _, _, _         => none                -- out of scope (ill-formed scrutinee)
 
 /-! ## The machine — derived, not designed
 
@@ -293,20 +291,20 @@ inductive Instr where
   | LAMI  : Comp → Instr     -- push the terminal `lam M`
   | SUBST : Comp → Instr     -- pop `ret v`; compile+run `N[v]` before continuing
   | APP   : Val → Instr      -- pop `lam N`; compile+run `N[v]` before continuing
-  -- handler frames (deep handlers, throws-only, ADR-0023 abort). `MARK h` installs the
-  -- handler boundary (records the OUTER continuation to resume on abort); `UNMARK` pops
-  -- it (handler-return = identity, Q6); `THROW ℓ op v` unwinds to the nearest catching
-  -- `MARK`, DISCARDING the inner continuation (zero-shot abort) — the `splitAt`/`dispatch`
-  -- analog (shape (A), CalcEff template).
-  | MARK   : Handler → List Instr → Instr  -- install handler + the POST-handle resume code (abort target)
+  -- handler frames (route-B, ADR-0052). `HANDLE h M` DEFERS: it carries the RAW handler + RAW body so
+  -- that `exec`, at runtime, mints the fresh identity `g`, pushes the frame keyed by `g`, and RE-COMPILES
+  -- `subst (vcap g h.label) M` (the residual-recompile pattern of `SUBST`/`APP`/`CASE`). The body cannot
+  -- be pre-compiled because its `perform` caps are unresolved `vvar`s until the mint substitutes them —
+  -- the U1 finding. `UNMARK` pops the frame on a normal return (handler-return = identity, Q6). `THROW n
+  -- op v` unwinds to the frame with IDENTITY `n`, discarding the inner continuation (zero-shot abort).
+  | HANDLE : Handler → Comp → Instr  -- DEFER: exec mints id, pushes the frame, recompiles the subst body
   | UNMARK : Instr
-  | THROW  : Bang.EffectRow.Label → Bang.OpId → Val → Instr
-  -- OP (ADR-0031 D2): the RESUMPTIVE op instruction. `compile (up ℓ op v) c` emits `OP ℓ op v :: c`;
-  -- the inner continuation `c` IS Kᵢ and is KEPT (not discarded). On execution: find the nearest
-  -- `state ℓ` frame in `hs`, service `get`/`put` IN PLACE (push `ret s`/`ret unit`, update the frame's
-  -- stored state), and CONTINUE `c` (one-shot in-place resume, shape (A) — no continuation reified).
-  -- If `ℓ` is NOT a state frame (a throws label), fall through to the THROW/unwind path (zero-shot).
-  | OP     : Bang.EffectRow.Label → Bang.OpId → Val → Instr
+  | THROW  : Nat → Bang.OpId → Val → Instr   -- unwind to handler IDENTITY n (route-B)
+  -- OP (route-B): the dispatch instruction, keyed by capability IDENTITY `n`. `compile (perform (vcap n ℓ)
+  -- op v) c` emits `OP n op v :: c`; the inner continuation `c` IS Kᵢ and is KEPT for a resume. On
+  -- execution: resolve the state/txn frame with id `n` (`stateUpdate`/`txnUpdate`), service IN PLACE,
+  -- CONTINUE `c`; if `n` is not a resumptive frame, fall through to the `unwindFind`/abort path.
+  | OP     : Nat → Bang.OpId → Val → Instr
   -- ADT eliminators (Unit 6): same residual-`Comp`-in-instruction pattern as `SUBST`/`APP`. `compile`
   -- emits the instruction WITHOUT recursing into the branches (keeping `compile` structural); `exec`
   -- inspects the closed-value scrutinee and re-`compile`s the chosen branch at runtime (fuel-bounded).
@@ -321,10 +319,12 @@ shared value representation both `evalD` and `exec` produce, keeping correctness
 plain equality (no logical relation; k2-playbook §2). -/
 abbrev Stack := List Comp
 
-/-- A saved handler frame: the handler + the OUTER continuation (`Code` × `Stack`) to
-resume on a zero-shot abort (= the kernel's `Kₒ`). The inner continuation between the
-`up` and the `MARK` is DISCARDED on abort (throws are zero-shot), so it is NOT saved. -/
+/-- A saved handler frame: the minted IDENTITY `id` + the handler + the OUTER continuation
+(`Code` × `Stack`) to resume on a zero-shot abort (= the kernel's `Kₒ`). route-B: `id` is the
+frame's generative name — `unwindFind`/`stateUpdate`/`txnUpdate` resolve by it (mirroring
+`splitAtId`). The inner continuation is DISCARDED on abort (throws are zero-shot), so it is NOT saved. -/
 structure HFrame where
+  id         : Nat
   handler    : Handler
   savedCode  : Code
   savedStack : Stack
@@ -337,8 +337,12 @@ def compile : Comp → Code → Code
   | .letC M N,          c => compile M (Instr.SUBST N :: c)
   | .force (.vthunk M), c => compile M c
   | .app M v,           c => compile M (Instr.APP v :: c)
-  | .handle h M,        c => Instr.MARK h c :: compile M (Instr.UNMARK :: c)
-  | .perform (.vcap _ ℓ) op v,  c => Instr.OP ℓ op v :: c      -- RESUMPTIVE: `c` IS Kᵢ, KEPT (D2); U1 route-A: extract ℓ from the cap, OP stays label-dispatched; throws falls through to unwind
+  -- route-B: DEFER. The body's caps are unresolved `vvar`s until exec mints the id + substitutes, so
+  -- `HANDLE` carries the raw `h`+`M` and exec re-compiles `subst (vcap g h.label) M` (the SUBST/APP pattern).
+  | .handle h M,        c => Instr.HANDLE h M :: c
+  -- route-B: the cap is RESOLVED here (`vcap n ℓ`) because `compile` runs on the post-mint substituted
+  -- body (exec's HANDLE recompile), so `compile` reads the IDENTITY `n` and emits an identity-keyed `OP`.
+  | .perform (.vcap n _ℓ) op v,  c => Instr.OP n op v :: c     -- RESUMPTIVE: `c` IS Kᵢ, KEPT; dispatch by identity n
   -- case/split: erasure (`compile (case (inl v) N₁ N₂) c = compile (subst v N₁) c`) is what the
   -- calculation forces, but it is NON-structural (`subst v N₁` is not a subterm) — so, EXACTLY as
   -- `SUBST`/`APP` resolve the same non-structural `compile (subst …)`, defer it to a runtime instruction
@@ -366,13 +370,14 @@ catch a THROW here — they are SKIPPED by the unwind. This ALIGNS `unwindFind` 
 non-throws (state/transaction) program never has the machine THROW-abort while
 `evalD` forwards. A `MARK` may still carry any `Handler` (forward-compat for when
 resumptive handlers land), but only `throws` frames are abort targets. -/
-def unwindFind : Bang.EffectRow.Label → Bang.OpId → HStack → Option (Code × Stack × HStack)
-  | _, _, []        => none
-  | ℓ, op, fr :: hs =>
-      match fr.handler with
-      | .throws ℓ0 => if ℓ0 = ℓ ∧ op = "raise" then some (fr.savedCode, fr.savedStack, hs)
-                      else unwindFind ℓ op hs
-      | _          => unwindFind ℓ op hs   -- state/transaction RESUME — skip (handled by `stateUpdate`)
+def unwindFind : Nat → HStack → Option (Code × Stack × HStack)
+  | _, []        => none
+  | n, fr :: hs =>
+      if fr.id = n then
+        match fr.handler with
+        | .throws _ => some (fr.savedCode, fr.savedStack, hs)   -- abort target: its OUTER continuation (Kₒ)
+        | _         => none   -- id matches but NOT a throws ⇒ not an abort target ⇒ stuck (mirrors evalD)
+      else unwindFind n hs    -- different id ⇒ discard (inner Kᵢ frame) and keep searching outward
 
 /-- Find the nearest **state** frame for `ℓ` and service `get`/`put` IN PLACE (ADR-0031 D2,
 the resume analog of `unwindFind`). `get` returns the stored `s`, leaving `hs` unchanged; `put`
@@ -380,35 +385,35 @@ returns `unit` and UPDATES that frame's stored state to `v` **in `hs`** — the 
 (Kᵢ's handlers) are KEPT (deep handler). Returns `(resultValue, hs')`. `none` = no `state ℓ` frame
 (a throws label) ⇒ the caller falls through to `unwindFind`. PURE (no `exec` arg), mirroring the
 kernel's `dispatchOn` state arm (KEEP `Kᵢ`, reinstall a deep `state ℓ s'` frame). -/
-def stateUpdate : Bang.EffectRow.Label → Bang.OpId → Val → HStack → Option (Val × HStack)
+def stateUpdate : Nat → Bang.OpId → Val → HStack → Option (Val × HStack)
   | _, _, _, []       => none
-  | ℓ, op, v, fr :: hs =>
-      match fr.handler with
-      | .state ℓ0 s =>
-          if ℓ0 = ℓ then
+  | n, op, v, fr :: hs =>
+      if fr.id = n then
+        match fr.handler with
+        | .state ℓ0 s =>
             if op = "get" then some (s, fr :: hs)                                  -- get: return s, frame kept
             else if op = "put" then some (.vunit, { fr with handler := .state ℓ0 v } :: hs)  -- put: store v in place
-            else none                                                             -- non-get/put on ℓ ⇒ throws path (mirrors evalD)
-          else (stateUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))            -- different label ⇒ keep frame, recurse
-      | _ => (stateUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))              -- non-state frame ⇒ keep, recurse
+            else none                                                             -- non-get/put on n ⇒ throws path
+        | _ => none                                                               -- id matches but not state ⇒ none
+      else (stateUpdate n op v hs).map (fun p => (p.1, fr :: p.2))                -- different id ⇒ keep frame, recurse
 
 /-- Find the nearest **transaction** frame for `ℓ` and service `newTVar`/`readTVar`/`writeTVar` IN
 PLACE (ADR-0031 D4, the list-heap analog of `stateUpdate`). Returns `(resultValue, hs')` where `hs'`
 has that frame's heap updated to `txnService`'s threaded `Θ'`; the frames ABOVE it (Kᵢ's handlers)
 are KEPT (deep handler). `none` = no `transaction ℓ` frame OR a non-txn op on a txn label ⇒ the caller
 falls through to `unwindFind` (throws path). Mirrors `dispatchOn`'s transaction arm. -/
-def txnUpdate : Bang.EffectRow.Label → Bang.OpId → Val → HStack → Option (Val × HStack)
+def txnUpdate : Nat → Bang.OpId → Val → HStack → Option (Val × HStack)
   | _, _, _, []       => none
-  | ℓ, op, v, fr :: hs =>
-      match fr.handler with
-      | .transaction ℓ0 Θ =>
-          if ℓ0 = ℓ then
+  | n, op, v, fr :: hs =>
+      if fr.id = n then
+        match fr.handler with
+        | .transaction ℓ0 Θ =>
             if isTxnOp op then
               let (r, Θ') := txnService op v Θ
               some (r, { fr with handler := .transaction ℓ0 Θ' } :: hs)            -- service: store Θ' in place
-            else none                                                             -- non-txn op on ℓ ⇒ throws path
-          else (txnUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))              -- different label ⇒ keep, recurse
-      | _ => (txnUpdate ℓ op v hs).map (fun p => (p.1, fr :: p.2))                -- non-txn frame ⇒ keep, recurse
+            else none                                                             -- non-txn op on n ⇒ throws path
+        | _ => none                                                               -- id matches but not txn ⇒ none
+      else (txnUpdate n op v hs).map (fun p => (p.1, fr :: p.2))                  -- different id ⇒ keep, recurse
 
 /-! ### Store ↔ HStack correspondence (ADR-0031 D3): the invariant the resume proof rides
 
@@ -1358,58 +1363,85 @@ theorem hsTxns_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
 re-enter `compile` on the substituted body, `THROW` jumps via the pure `unwindFind`
 (both direct recursive calls — structural). Carries an `HStack` of installed
 handlers (deep dispatch). -/
-def exec : Nat → Code → Stack → HStack → Option Stack
-  | 0,          _,                  _, _  => none
-  | Nat.succ _, [],                 s, _  => some s
-  | Nat.succ f, Instr.RET v :: c,   s, hs => exec f c (.ret v :: s) hs
-  | Nat.succ f, Instr.LAMI M :: c,  s, hs => exec f c (.lam M :: s) hs
-  | Nat.succ f, Instr.SUBST N :: c, s, hs =>
+def exec : Nat → Nat → Code → Stack → HStack → Option Stack
+  | 0,          _, _,                  _, _  => none
+  | Nat.succ _, _, [],                 s, _  => some s
+  | Nat.succ f, g, Instr.RET v :: c,   s, hs => exec f g c (.ret v :: s) hs
+  | Nat.succ f, g, Instr.LAMI M :: c,  s, hs => exec f g c (.lam M :: s) hs
+  | Nat.succ f, g, Instr.SUBST N :: c, s, hs =>
       match s with
-      | .ret v :: s' => exec f (compile (Comp.subst v N) c) s' hs
+      | .ret v :: s' => exec f g (compile (Comp.subst v N) c) s' hs
       | _            => none
-  | Nat.succ f, Instr.APP v :: c, s, hs =>
+  | Nat.succ f, g, Instr.APP v :: c, s, hs =>
       match s with
-      | .lam N :: s' => exec f (compile (Comp.subst v N) c) s' hs
+      | .lam N :: s' => exec f g (compile (Comp.subst v N) c) s' hs
       | _            => none
-  -- MARK installs: record the OUTER continuation (this `c`, `s`) to resume on abort.
-  | Nat.succ f, Instr.MARK h cr :: c, s, hs =>
-      exec f c s ({ handler := h, savedCode := cr, savedStack := s } :: hs)
+  -- HANDLE (route-B): MINT id := g, push the frame (savedCode := this `c` = the abort target Kₒ), and
+  -- RE-COMPILE the substituted body `subst (vcap id h.label) M` before `UNMARK :: c`. The counter advances
+  -- to `g+1` (matching `evalD`'s handle-arm mint order). This is the SUBST/APP residual-recompile, now
+  -- carrying the runtime-minted cap so the body's `perform`s resolve to identity-keyed `OP`s.
+  | Nat.succ f, g, Instr.HANDLE h M :: c, s, hs =>
+      let id := g
+      exec f (g+1) (compile (Comp.subst (.vcap id h.label) M) (Instr.UNMARK :: c)) s
+        ({ id := id, handler := h, savedCode := c, savedStack := s } :: hs)
   -- UNMARK pops on normal return (handler-return = identity, Q6).
-  | Nat.succ f, Instr.UNMARK :: c, s, hs =>
+  | Nat.succ f, g, Instr.UNMARK :: c, s, hs =>
       match hs with
-      | _ :: hs' => exec f c s hs'
+      | _ :: hs' => exec f g c s hs'
       | []       => none
-  -- THROW unwinds to the nearest catching MARK, DISCARDING the inner continuation:
-  -- resume its saved OUTER continuation with `ret v` pushed (abort yields the payload).
-  | Nat.succ f, Instr.THROW ℓ op v :: _, _, hs =>
-      match unwindFind ℓ op hs with
-      | some (c', s', hs') => exec f c' (.ret v :: s') hs'   -- ABORT to (Kₒ, ret v), frame popped
-      | none               => none                            -- uncaught = stuck
-  -- OP (ADR-0031 D2): the RESUMPTIVE dispatch. Try `stateUpdate` first (state get/put, in-place,
-  -- CONTINUE `c` = Kᵢ with the result pushed — one-shot resume). If no state frame, fall through to
-  -- the THROW/unwind path (zero-shot abort, DISCARDING `c`). This unifies state-resume and throws-abort
-  -- in one instruction, matching the kernel's `dispatch` (= `splitAt >>= dispatchOn`).
-  | Nat.succ f, Instr.OP ℓ op v :: c, s, hs =>
-      match stateUpdate ℓ op v hs with
-      | some (r, hs') => exec f c (.ret r :: s) hs'            -- RESUME (state): continue c with ret r
+  -- THROW (route-B): unwind to the frame with IDENTITY n, DISCARDING the inner continuation; resume its
+  -- saved OUTER continuation with `ret v` pushed (abort yields the payload).
+  | Nat.succ f, g, Instr.THROW n _ v :: _, _, hs =>
+      match unwindFind n hs with
+      | some (c', s', hs') => exec f g c' (.ret v :: s') hs'   -- ABORT to (Kₒ, ret v), frame popped
+      | none               => none                             -- uncaught = stuck
+  -- OP (route-B): identity-keyed dispatch. Try `stateUpdate n` (state get/put, in-place resume), then
+  -- `txnUpdate n` (txn resume), then `unwindFind n` (throws abort, DISCARDING `c`). Mirrors `idDispatch`.
+  | Nat.succ f, g, Instr.OP n op v :: c, s, hs =>
+      match stateUpdate n op v hs with
+      | some (r, hs') => exec f g c (.ret r :: s) hs'          -- RESUME (state): continue c with ret r
       | none =>                                                -- not a state frame: try transaction
-          match txnUpdate ℓ op v hs with
-          | some (r, hs') => exec f c (.ret r :: s) hs'        -- RESUME (txn): continue c with ret r
+          match txnUpdate n op v hs with
+          | some (r, hs') => exec f g c (.ret r :: s) hs'      -- RESUME (txn): continue c with ret r
           | none =>                                            -- not a resumptive frame ⇒ throws abort
-              match unwindFind ℓ op hs with
-              | some (c', s', hs') => exec f c' (.ret v :: s') hs' -- ABORT to (Kₒ, ret v), c discarded
+              match unwindFind n hs with
+              | some (c', s', hs') => exec f g c' (.ret v :: s') hs' -- ABORT to (Kₒ, ret v), c discarded
               | none               => none                     -- uncaught = stuck
   -- ADT eliminators (Unit 6): inspect the closed-value scrutinee in place, re-`compile` the chosen
   -- branch[v] (fuel-bounded ⇒ terminating), mirroring the `SUBST` exec arm. PURE — no `hs` change.
-  | Nat.succ f, Instr.CASE w N₁ N₂ :: c, s, hs =>
+  | Nat.succ f, g, Instr.CASE w N₁ N₂ :: c, s, hs =>
       match w with
-      | .inl v => exec f (compile (Comp.subst v N₁) c) s hs
-      | .inr v => exec f (compile (Comp.subst v N₂) c) s hs
+      | .inl v => exec f g (compile (Comp.subst v N₁) c) s hs
+      | .inr v => exec f g (compile (Comp.subst v N₂) c) s hs
       | _      => none
-  | Nat.succ f, Instr.SPLIT w N :: c, s, hs =>
+  | Nat.succ f, g, Instr.SPLIT w N :: c, s, hs =>
       match w with
-      | .pair v u => exec f (compile (Comp.subst v (Comp.subst (Val.shift u) N)) c) s hs
+      | .pair v u => exec f g (compile (Comp.subst v (Comp.subst (Val.shift u) N)) c) s hs
       | _         => none
+
+/-! ### U2 Phase-2a sanity (TEMP — remove before Phase 2b): the re-derived identity-keyed `evalD`
+and `exec ∘ compile` compute the KERNEL's answer on the route-B witnesses (vs the stale label answer). -/
+section U2Sanity
+private def wGet : Comp :=
+  .handle (.state 1 (.vint 10)) (.handle (.state 1 (.vint 20)) (.perform (.vvar 1) "get" .vunit))
+private def wPutGetInner : Comp :=
+  .handle (.state 1 (.vint 10)) (.handle (.state 1 (.vint 20))
+    (.letC (.perform (.vvar 1) "put" (.vint 99)) (.perform (.vvar 1) "get" .vunit)))
+private def wReturnThrows : Comp := .handle (.throws 0) (.ret (.vint 7))
+private def evalDInt (M : Comp) : Option Int :=
+  match evalD 80 0 [] [] M with | some (.term (.ret (.vint n)), _, _, _) => some n | _ => none
+private def execInt (M : Comp) : Option Int :=
+  match exec 80 0 (compile M []) [] [] with | some [.ret (.vint n)] => some n | _ => none
+-- GET shadow: outer cap ⟹ 10 (route-B), NOT the nearest-label 20.
+#guard evalDInt wGet == some 10
+#guard execInt wGet == some 10
+-- PUT outer ; GET inner: the outer put lands on the IDENTITY cell ⟹ inner reads 20 (untouched).
+#guard evalDInt wPutGetInner == some 20
+#guard execInt wPutGetInner == some 20
+-- return-only throws: the vacuous frame pops cleanly ⟹ 7.
+#guard evalDInt wReturnThrows == some 7
+#guard execInt wReturnThrows == some 7
+end U2Sanity
 
 /-! ## The calculation is correct (proven) -/
 
