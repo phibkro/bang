@@ -2597,12 +2597,12 @@ threads it on `get`/`put` (KEEP `Kᵢ`, reinstall `handleF (state ℓ s')` — `
 `dispatchOn`). `evalD`'s store σ is the kernel side's `state` frames projected, exactly mirroring the
 machine-side `Corr σ hs`/`hsStates`/`updateStates` triad but over `EvalCtx`. -/
 
-/-- Project a kernel `EvalCtx` to the store it mirrors: the `handleF (state ℓ s)` frames, innermost
-first, as `(ℓ, s)` entries. The `Config.run`-side analog of `hsStates`. -/
+/-- Project a kernel `EvalCtx` to the store it mirrors: the `handleF n (state ℓ s)` frames, innermost
+first, as `(n, s)` entries keyed by IDENTITY (route-B). The `Config.run`-side analog of `hsStates`. -/
 def ctxStates : Bang.EvalCtx → SStore
-  | []                              => []
-  | Frame.handleF (.state ℓ s) :: K => (ℓ, s) :: ctxStates K
-  | _ :: K                          => ctxStates K
+  | []                                => []
+  | Frame.handleF n (.state _ s) :: K => (n, s) :: ctxStates K
+  | _ :: K                            => ctxStates K
 
 /-- The bridge's D3 invariant: `evalD`'s threaded store IS the kernel context's active state frames. -/
 def CtxCorr (σ : SStore) (K : Bang.EvalCtx) : Prop := σ = ctxStates K
@@ -2611,22 +2611,23 @@ def CtxCorr (σ : SStore) (K : Bang.EvalCtx) : Prop := σ = ctxStates K
 kernel context AFTER M's state ops have fired (the at-term/at-raise context the continuation runs on).
 The `Config.run`-side analog of `updateStates`; non-state frames pass through. -/
 def updateCtxStates : Bang.EvalCtx → SStore → Bang.EvalCtx
-  | [],                                  _ => []
-  | Frame.handleF (.state ℓ0 _) :: K, σ =>
+  | [],                                    _ => []
+  | Frame.handleF n (.state ℓ0 _) :: K, σ =>
       match σ with
-      | (_, v) :: σ' => Frame.handleF (.state ℓ0 v) :: updateCtxStates K σ'
-      | []           => Frame.handleF (.state ℓ0 default) :: updateCtxStates K []  -- σ-exhausted (∉ Corr)
-  | fr :: K,                             σ => fr :: updateCtxStates K σ
+      | (_, v) :: σ' => Frame.handleF n (.state ℓ0 v) :: updateCtxStates K σ'
+      | []           => Frame.handleF n (.state ℓ0 default) :: updateCtxStates K []  -- σ-exhausted (∉ Corr)
+  | fr :: K,                               σ => fr :: updateCtxStates K σ
 
 /-! ### Transaction EvalCtx-bridge (ADR-0031 D4): the `Config.run`-side mirror of the txn HStack bridge.
 Parallel `THeap` projection of the kernel context's `transaction` frames; same op-disjointness invariant
 as the machine side (see `THeap`). -/
 
-/-- Project a kernel `EvalCtx` to the txn-heap store it mirrors: the `handleF (transaction ℓ Θ)` frames. -/
+/-- Project a kernel `EvalCtx` to the txn-heap store it mirrors: the `handleF n (transaction ℓ Θ)`
+frames, as `(n, Θ)` entries keyed by IDENTITY (route-B). -/
 def ctxTxns : Bang.EvalCtx → THeap
-  | []                                    => []
-  | Frame.handleF (.transaction ℓ Θ) :: K => (ℓ, Θ) :: ctxTxns K
-  | _ :: K                                => ctxTxns K
+  | []                                      => []
+  | Frame.handleF n (.transaction _ Θ) :: K => (n, Θ) :: ctxTxns K
+  | _ :: K                                  => ctxTxns K
 
 /-- The D4 invariant on the kernel side: `evalD`'s threaded τ IS the context's active txn frames. -/
 def CtxTxnCorr (τ : THeap) (K : Bang.EvalCtx) : Prop := τ = ctxTxns K
@@ -2634,12 +2635,12 @@ def CtxTxnCorr (τ : THeap) (K : Bang.EvalCtx) : Prop := τ = ctxTxns K
 /-- Overwrite each `transaction` frame's heap in `K` with τ (consumed in order). The `Config.run`-side
 analog of `updateTxns`. -/
 def updateCtxTxns : Bang.EvalCtx → THeap → Bang.EvalCtx
-  | [],                                       _ => []
-  | Frame.handleF (.transaction ℓ0 _) :: K, τ =>
+  | [],                                         _ => []
+  | Frame.handleF n (.transaction ℓ0 _) :: K, τ =>
       match τ with
-      | (_, Θ) :: τ' => Frame.handleF (.transaction ℓ0 Θ) :: updateCtxTxns K τ'
-      | []           => Frame.handleF (.transaction ℓ0 default) :: updateCtxTxns K []
-  | fr :: K,                                  τ => fr :: updateCtxTxns K τ
+      | (_, Θ) :: τ' => Frame.handleF n (.transaction ℓ0 Θ) :: updateCtxTxns K τ'
+      | []           => Frame.handleF n (.transaction ℓ0 default) :: updateCtxTxns K []
+  | fr :: K,                                    τ => fr :: updateCtxTxns K τ
 
 /-- The combined kernel-side net-effect: state values from σ, then txn heaps from τ. -/
 def ctxNetEffect (K : Bang.EvalCtx) (σ : SStore) (τ : THeap) : Bang.EvalCtx :=
