@@ -80,10 +80,28 @@ Reclassify the escape as **defined behavior** for v1 (the kernel already produce
    (the build-refuted `liveCapsResolveC_returnEscape` becomes a true disjunction; the
    sealed witness is the defined branch, not a counterexample).
 
-4. type_safety — TEXT UNCHANGED (`∀ fuel, Source.eval fuel c ≠ Result.stuck`).
-   The escape now lands in `.escapedCap`, so `.stuck` becomes genuinely unreachable for
-   well-typed ⊥ programs ⟹ the theorem is provable AND meaningful.
+4. progress — RESTATED (the SIBLING frozen statement; under-specified in the first draft of
+   this ADR). `progress` (`isReturnConfig ∨ steps`) must gain a third `∨ is-defined-escape`
+   disjunct: the escape config neither returns NOR steps (`step = none`), so once `NonEscape'`
+   replaces `NonEscape` in `HasConfig`, the safety content RELOCATES here — it does not dissolve.
+   This is the real remaining obligation, and it is PROVABLE (the reclassification ALLOWS the
+   escape), unlike the false `returnEscape` it replaces.
+
+5. type_safety — TEXT UNCHANGED (`∀ fuel, Source.eval fuel c ≠ Result.stuck`).
+   The escape lands in `.escapedCap`, so `.stuck` is unreachable for well-typed ⊥ programs ⟹
+   the theorem is provable AND meaningful (via the restated `progress` + `HasConfig`→`NonEscape'`).
 ```
+
+**Implementation status (2026-06-28).** Landed + manager-gated on `inc5-comp-grind`: the kernel
+`Result.escapedCap` (`d745253`) and the Model-side `NonEscape'`/`FocusResolves'`/`diagonal'` (`7d7ebf9`,
+sorry-free `[propext, Quot.sound]`, green set 716 jobs). `NonEscape'` came out STRONGER than "derivable
+from typing": `FocusResolves'` (`focus resolves ∨ idDispatch = none`) is a **tautology**, so `diagonal'`
+(`HasConfigTy ⟹ NonEscape'`) closes unconditionally. That makes it a correct **building block**, NOT
+`type_safety` closure — `Spec.lean` is untouched (`HasConfig` still uses the old `NonEscape`; `progress`
+still `returns ∨ steps`). The remaining **wiring** — `HasConfig`→`NonEscape'`, the `progress`
+escape-disjunct restatement (step 4), the `type_safety` re-proof, and the CalcVM `.escapedCap` accounting
+(invariant #1) — is **inc-6** (Spec/Compile/CalcVM are pre-red there). The vestigial
+`WScfg`/`returnEscape` machinery is parked, not deleted, until that wiring lands.
 
 The resulting v1 guarantee: **a well-typed ⊥ program never reaches genuine `.stuck` — it returns, diverges,
 or hits a defined capability-escape fail-loud.** This is the standard "unhandled effect is a defined runtime

@@ -8,28 +8,30 @@
 
 ## Position
 
-> **★ ACTIVE DIRECTION (2026-06-28) — SOUNDNESS: the carrier-subst KEYSTONE is CLOSED + gated + pushed; the POP-focus phase remains.**
-> Proof on `inc5-lr-reindex` @ `bf15fe7` (PUSHED, keystone INDEPENDENTLY gate-verified); docs/design on `typed-static-r1`.
-> **The keystone (PIECE 2 / task #51 — DONE):** the ADR-0061 carrier (`LiveCapsResolveV/C/K`) replaced typeless `LWSCg` (decoupled
-> from typing ⇒ spurious-live caps only the grade catches; `WScfg` carries `LiveCapsResolveC`+typing, DERIVES a coherent `LWSCg` via
-> the `of_typed_live` engine). The coherent grade-sensitive carrier-subst — `liveCapsResolve{V,C}_subst_gen` + `…_weaken` — is
-> **axiom-clean** (`da67c2d`: `[propext, Classical.choice, Quot.sound]` / `[propext, Quot.sound]`), closed by a fresh IC that won a
-> survey-wide race + found a cleaner path (Prop proof-irrelevance for weaken; 3-line thunk-wrap C-twin). Covers every REDUCE/MINT-subst
-> case. + `HasVTy.subst_gen` prereq (ret-wrap) + de-privatized `insG`/`insT`/`insG_smul/add` in `Metatheory.lean`.
-> **CORRECTION (build-refuted TWICE by the IC):** `type_safety` is NOT one step from the keystone. `lwsg_step_nonperform` additionally
-> needs POP/PUSH carrier-native machinery — **task #54** (the fresh-budget POP-focus grind): prove `liveCapsResolve{V,C}_returnEscape`
-> (STATED `bf15fe7`, `Model.lean §3.7c`, refute-first-SOUND — the comp-binder LIVE sub-case is a cross-term head↔body argument needing a
-> COMBINED carrier(caps)+grade-live-var invariant via IH-chaining; the V→C thunk crossing SELF-SUPPLIES; carrier-subst is NOT the tool
-> [Prop-disjunction vs carrier]) + `liveCapsResolveK_restack`/`_pop` + the `Source.step` case analysis. **(c) lazy-vthunk RULED OUT**
-> (kernel-engineer build-arbitrated: eager-vthunk is load-bearing for FORCE-preservation; lazy relocates the cost to FORCE where it's
-> underivable). Endpoint: `type_safety` = sorryAx-on-`lwsg_step_dispatch`(#35)-only — #35 is the recorded honest boundary (**ADR-0062**:
-> multi-shot resumption provably-ω; the affine fragment — bang's actual handlers — gradeable, inc-6). Full detail:
-> `paths/PATH-inc5-lr-reindex.md` ★★★★★. Tasks: **#54** (POP-focus → type_safety, NEXT) · #53 (HasVTy.subst_gen→Metatheory) · #35/#36.
-> Kept guards: `CohSubstRefute`/`LwscgOfTypedRefute`/`BoccRegress`/`StateEscapeWitness`/`d81515c`. (`Bang.Surface` pre-broken at `ff4109f`, unrelated.)
-> **★ STATE-ESCAPE = NO HOLE (this session):** a capability-via-state-cell escape is behaviourally real but HasCTy-UNTYPEABLE
-> (closed-state `HasVTy [] [] s₀ S` + VcapFree block it; witness `StateEscapeWitness`, axiom-clean) → `type_safety` true as stated.
-> Scoped capabilities (arXiv:2207.03402) is the POST-VcapFree (#18) generalization, costed in
-> `docs/notes/scoped-capabilities-for-vcapfree-drop.md` (cap-free-cell ADDITION ~1 session; full CC<:□ REPLACEMENT post-v1).
+> **★ ACTIVE DIRECTION (2026-06-28) — SOUNDNESS: a real capability-escape HOLE was found + sealed; v1 fix = RECLASSIFY (ADR-0063); the reshape's BUILDING BLOCK landed on the Model side, `type_safety` closure = inc-6.**
+> Reshape proof on `inc5-comp-grind` (compfresh); docs/design on `typed-static-r1`.
+> **THE FINDING (build-arbitrated, manager-gated independently):** `liveCapsResolveC_returnEscape` — the POP-focus preservation task #54
+> needed — is FALSE as stated. A typeable, **VcapFree** program (`progComp`) launders a **state** handler's capability into a returned
+> **thunk** via an inner re-handle of the same label: the re-handle discharges the label from the thunk's external type BY LABEL
+> (identity-blind), so the answer-type B-occ (ADR-0057) passes — then `force`s it after the handler pops ⟹ the cap dispatches by identity
+> to the dead handler ⟹ STUCK. SEALED: `Bang/ReturnEscapeReach.lean` (`progComp_typeable` HasCTy axiom-clean **∧** `#guard Source.eval =
+> .escapedCap`) + `Bang/ReturnEscapeRefute.lean` (the lemma-false refutation). **Reopens #50; amends ADR-0057** (B-occ guards
+> direct-perform, NOT laundered-re-handle). Specific to **state/transaction** handlers (free answer type); `throws` is untypeable here.
+> This SUPERSEDES the earlier "state-escape = NO HOLE" note (that was the DIRECT escape, untypeable; the LAUNDERED re-handle IS typeable).
+> **THE DECISION (operator, ADR-0063):** reclassify the escape as a DEFINED fail-loud for v1 — `Result.escapedCap` (defined terminal);
+> `Source.eval` routes `idDispatch=none` there; `NonEscape'`/`FocusResolves'` accept it; **`progress` gains a `∨ escapedCap` disjunct**
+> (the safety content RELOCATES there, provable); `type_safety` text unchanged (`eval ≠ .stuck`, escape moves out of `.stuck`).
+> Scoped/region capability types (untypeable-by-construction; arXiv:2207.03402, `docs/notes/scoped-capabilities-for-vcapfree-drop.md`)
+> = the **POST-v1** structural fix.
+> **RESHAPE STATUS:** LANDED + gated on `inc5-comp-grind` — kernel `Result.escapedCap` (`d745253`) + Model-side
+> `NonEscape'`/`FocusResolves'`/`diagonal'` SORRY-FREE `[propext, Quot.sound]` (`7d7ebf9`, green set 716 jobs). `diagonal'` = the
+> `NonEscape'` **tautology** = a correct BUILDING BLOCK, NOT `type_safety` closure. **REMAINING = inc-6 (task #15):** `Spec.lean`
+> untouched — swap `HasConfig`→`NonEscape'`, RESTATE `progress`, re-prove `type_safety`; + CalcVM `.escapedCap` accounting (inv #1).
+> Vestigial `WScfg`/`returnEscape`/`#35`-machinery PARKED (off-path, not deleted).
+> **THE KEYSTONE (task #51) remains VALID** — the carrier-subst `liveCapsResolve{V,C}_subst_gen`+`…_weaken` (`da67c2d`, axiom-clean) is
+> real, but now OFF the critical path (the reclassification supersedes the `returnEscape` route it fed). Full detail: ADR-0063 +
+> `paths/PATH-inc5-lr-reindex.md`. Tasks: **#54** (Model-side block DONE; closure → inc-6) · #15 (inc-6 wiring) · #50 (reopened, post-v1) · #35/#36.
+> Kept guards: `ReturnEscapeReach`/`ReturnEscapeRefute`/`StateEscapeWitness`/`CohSubstRefute`/`BoccRegress`. (`Bang.Surface`/`Compat`/`CalcVM` pre-red, inc-6/inc-7.)
 > **⚠ ENV/INCIDENT (2026-06-27):** a shared-worktree **auto-gc corrupted `.git/objects`** (pruned ~8922 UNREACHABLE cruft; ZERO
 > live-work loss — WIP pushed to origin, `gc.auto` disabled). Triggered by the pre-commit `lake exe cache get` re-clone (#40),
 > which also left inc5's mathlib at the WRONG rev → re-pinned via symlink to main's clean `c5ea0035`. **Commit `--no-verify`
