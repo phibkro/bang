@@ -26,7 +26,18 @@ namespace Bang.CapCoh
 
 
 /-- WeakCoh: vacuous-on-escape label coherence — the frame at identity `p.1`, IF present, has label `p.2`.
-Escaped caps (handler popped ⇒ splitAtId=none) impose nothing. This is the route-A premise leaf. -/
+Escaped caps (handler popped ⇒ splitAtId=none) impose nothing. This is the route-A premise leaf.
+
+**DO NOT strengthen this toward `CapResolves`.** `WeakCoh` is deliberately the *vacuous-on-escape LABEL
+FACTOR* of `CapResolves` (Operational:438): `CapResolves K n ℓ op := ∃ frame ∧ handlesOp` factors as
+`(splitAtId finds a live frame) × (that frame's label = ℓ)`, and `WeakCoh` is ONLY the second factor.
+The bridge reassembles the FULL `CapResolves` at the perform seam — evalD's `σ.get? n = some` supplies
+the existence factor (a live state frame), `WeakCoh` supplies `ℓ'=ℓ` ⟹ `handlesOp` ⟹ `CapResolves` ⟹
+`dispatch_state_get`. The reason for the weakening is load-bearing: `CapResolves`' OWN forward-closure
+is `NonEscape`/`Model.diagonal`, which carries `sorryAx` (#35 — the existence/non-escape half needs the
+grade-dependent preservation). The label factor is grade-FREE, so threading `WeakCoh` (not `CapResolves`)
+is what makes `capLabelCoh_step` axiom-clean. Strengthening it back to demand existence reintroduces #35.
+(AsmFX §7.1 threads the same *weaker* well-scoping invariant + reassembles the dispatch fact at use.) -/
 def WeakCoh (K : EvalCtx) (p : Nat × Label) : Prop :=
   ∀ Kᵢ h Kₒ, splitAtId K p.1 = some (Kᵢ, h, Kₒ) → Handler.label h = p.2
 
