@@ -98,6 +98,11 @@ gate-index:
 import-graph:
     python3 tools/gen-import-graph.py
 
+# Validate the generated module-graph mermaid actually COMPILES (mmdc render). On-demand; the
+# build (`just import-graph`) also auto-compiles before writing, so a broken graph never lands.
+check-mermaid:
+    python3 tools/gen-import-graph.py --validate
+
 # Regenerate CONTEXT.md's proof-state block from the live axiom gate (Bang/Audit.lean
 # #print axioms + burndown + git). `--build` forces a fresh olean read (authoritative).
 # Tree-aware: reads the proof tree, writes the docs tree's CONTEXT.md.

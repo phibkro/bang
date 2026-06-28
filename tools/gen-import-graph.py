@@ -83,10 +83,13 @@ def render(mods):
         members = sorted(by_tier.get(t, []))
         if not members:
             continue
-        lines.append(f'  subgraph {t}["{TIER_LABEL[t]}"]')
+        # subgraph id is prefixed (`tier_…`) so it never collides with a node id
+        # (e.g. the `Core` module node vs a `Core` tier); `<br/>` is mermaid's line
+        # break — a literal newline in a node label breaks the parse.
+        lines.append(f'  subgraph tier_{t}["{TIER_LABEL[t]}"]')
         for m in members:
             loc, _ = mods[m]
-            lines.append(f'    {node_id(m)}["{m}\\n{loc}L · fan-in {fanin[m]}"]')
+            lines.append(f'    {node_id(m)}["{m}<br/>{loc}L · fan-in {fanin[m]}"]')
         lines.append("  end")
     # edges: importer --> imported (A → B means A imports B)
     for m, (_, imps) in sorted(mods.items()):
@@ -106,6 +109,33 @@ def splice(md, block):
     return re.sub(re.escape(GEN_BEGIN) + r".*?" + re.escape(GEN_END), block, md, flags=re.DOTALL)
 
 
+def validate_mermaid(block):
+    """Render the mermaid fence with `mmdc` — returns ('pass'|'fail'|'skip', msg).
+    `--check` only confirms the TEXT matches the import edges; THIS confirms the diagram
+    actually COMPILES (catches generator bugs like a raw newline in a label or a
+    subgraph-id ⟂ node-id clash — exactly the bug this check was added for)."""
+    import shutil
+    import subprocess
+    import tempfile
+    if not shutil.which("mmdc"):
+        return ("skip", "mmdc not on PATH (it's in the dev shell — `nix develop`); compile-check skipped")
+    m = re.search(r"```mermaid\n(.*?)\n```", block, re.DOTALL)
+    if not m:
+        return ("skip", "no mermaid fence in the generated block")
+    d = tempfile.mkdtemp()
+    mmd, cfg, svg = (os.path.join(d, x) for x in ("g.mmd", "pptr.json", "g.svg"))
+    open(mmd, "w").write(m.group(1))
+    open(cfg, "w").write('{"args":["--no-sandbox","--disable-gpu"]}')  # sandboxed env needs --no-sandbox
+    try:
+        r = subprocess.run(["mmdc", "-i", mmd, "-o", svg, "-p", cfg],
+                           capture_output=True, text=True, timeout=180)
+        ok = r.returncode == 0 and os.path.exists(svg)
+        return ("pass", "mermaid compiles (mmdc render OK)") if ok else \
+               ("fail", (r.stderr or r.stdout).strip()[-500:])
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def main():
     args = sys.argv[1:]
     mods = scan()
@@ -117,15 +147,29 @@ def main():
     if GEN_BEGIN not in md or GEN_END not in md:
         print(f"import-graph: {DOC} has no GEN markers — add them under §2 to enable.", file=sys.stderr)
         return 1
+
+    if "--validate" in args:  # compile the COMMITTED diagram
+        cm = re.search(re.escape(GEN_BEGIN) + r"(.*?)" + re.escape(GEN_END), md, re.DOTALL)
+        status, msg = validate_mermaid(cm.group(1) if cm else "")
+        print(f"── import-graph (mermaid compile) ──\n{status.upper()}: {msg}")
+        return 1 if status == "fail" else 0
+
     new = splice(md, block)
-    if "--check" in args:
+    if "--check" in args:  # drift only (fast, no mmdc — runs every commit)
         if new != md:
             print("── import-graph ──\nFAIL: core-overview.md §2 graph is stale — run `just import-graph`.")
             return 1
         print("── import-graph ──\nPASS: module graph ≡ the import edges.")
         return 0
+
+    # build: COMPILE the fresh diagram before persisting — never write a broken graph
+    status, msg = validate_mermaid(block)
+    if status == "fail":
+        print(f"── import-graph ──\nFAIL: generated mermaid does not compile (NOT written):\n{msg}")
+        return 1
     open(DOC, "w", encoding="utf-8").write(new)
-    print(f"import-graph: regenerated §2 graph ({len(mods)} modules).")
+    tail = "mermaid compiles ✓" if status == "pass" else f"(compile-check {status}: {msg})"
+    print(f"import-graph: regenerated §2 graph ({len(mods)} modules). {tail}")
     return 0
 
 
