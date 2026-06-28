@@ -1884,15 +1884,23 @@ theorem evalD_plug_unfold_pure {w' : Bang.Val} (K : Bang.EvalCtx) (hK : PureCtx 
     ∃ m, CalcVM.evalD m g [] [] (plug K (.unfold (.fold v))) = some (.term (.ret w'), g', [], []) :=
   evalD_plug_sim_pure hK (sim_unfold v) h
 
-/-- `evalD`-completeness for the FULL fragment (with handlers). ROUTE-B WALL: the handler
-fragment's `Sim.handle` congruence is unprovable under route-B handle-substitution (refute-watch
-`scratch/U5bSimSpike.lean`); this needs a Route-1 fuel-induction re-architecture (task #65). The
-PURE headline `source_eval_to_exec` does NOT route through this (it uses `evalD_complete_gen_pure`,
-which is sorry-free). -/
+/-- `evalD`-completeness for the FULL fragment (with handlers). ROUTE-B WALL: the route-A
+reverse bridge lifted a focus `Sim` through `K` via `evalD_plug_sim` (`Sim.handle` at handleF),
+but route-B's `handle` MINTS `id:=g` and SUBSTITUTES `vcap g ℓ` into the body before running it,
+so `Sim.handle` would need substitution-closure of the black-box `Sim` — which it lacks.
+Build-confirmed refute-watch: `scratch/U5bSimSpike.lean` (committed `82cc585`). The route-A
+congruence handler fragment (`Sim.handle`/`evalD_plug_sim`/`SimOn`/`SimShift(T).handle`/
+`sim_*_handle`/`evalD_plug_dispatch`) was DELETED — it is wrong-architecture for route-B and
+NOT fillable scaffolding (route-A versions preserved in git at the parent of `b67bff1`).
+FIX = recast as a FUEL induction mirroring the proven forward `sim` (`Bang/CalcVM.lean:1559`),
+whose IH applies to substituted bodies — a SEPARATE U2-scale unit, task #65 / PATH §U5b.
+The PURE headlines (`source_eval_to_exec`, `compile_forward_sim_pure`) do NOT route through this;
+they use the sorry-free `evalD_complete_gen_pure` (PureCtx forbids handleF, so the wall is moot). -/
 theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Bang.Val),
     Config.run F (0, K, c) = Result.done v →
     ∃ n g', CalcVM.evalD n 0 [] [] (plug K c) = some (.term (.ret v), g', [], []) := by
-  sorry -- WALL (task #65): route-B handle-subst breaks the Sim.handle congruence; needs fuel induction.
+  sorry -- WALL: route-B handle-subst breaks the Sim.handle congruence (witness 82cc585).
+        -- FIX = Route-1 fuel induction (mirror forward `sim`), task #65 / PATH §U5b. NOT fillable here.
 
 /-- The PURE-fragment reverse bridge (sorry-free), routing `compile_forward_sim_pure`. Same shape
 as the total `evalD_complete_gen` but `PureCtx`/`Comp.Pure`-gated, so the `up`/`handle`/`handleF`
