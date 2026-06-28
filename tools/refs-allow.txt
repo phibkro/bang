@@ -43,3 +43,9 @@ Bang/TightSuite2.lean
 # Cited by ADR-0063. Recover via `git show inc5-comp-grind:<path>`.
 Bang/ReturnEscapeReach.lean
 Bang/ReturnEscapeRefute.lean
+
+# ── E. Cross-branch inc-6 route-B de-risk spike ───────────────────────────────────
+# The shadow-witness spike (cap-keyed evalD' ≡ kernel) lives on the PROOF branch
+# `inc5-comp-grind`, cited by paths/PATH-inc6-calcvm-route-b.md. Recover via
+# `git show inc5-comp-grind:scratch/RouteBShadowProbe.lean`.
+scratch/RouteBShadowProbe.lean
