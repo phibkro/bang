@@ -39,6 +39,29 @@ Cite from Lean sources by **stem** (path-independent): `-- shape: biernacki-popl
 - `bauer-pretnar-algebraic-effects-and-handlers.pdf` — foundational tutorial; effect syntax and denotational semantics.
 - `tang-popl24-soundly-handling-linearity.pdf` — *(Pass-B)* control-flow linearity for multi-shot handlers; relevant to the CalcReify frontier and the `runState × throw` decision.
 
+### capability safety — preventing effect escape (the active soundness arc, task #18 / ADR-0063)
+
+*(new 2026-06-28)* The literature on making "a capability cannot outlive its handler" a **type-level**
+guarantee — the principled successor to ADR-0063's runtime `.escapedCap` fail-loud. The repo already
+holds the *general* capture calculus (`boruch-gruszecki-22-scoped-capabilities`, CC<:□ / Scala-3
+capture checking — see `docs/notes/scoped-capabilities-for-vcapfree-drop.md`); these add the
+effect-**handler**-native treatment from the same research family (shared authors Lee, Boruch-Gruszecki).
+
+- `brachthauser-oopsla22-effects-capabilities-boxes.pdf` — **System C** (OOPSLA'22). The handler
+  realization of CC<:□: capabilities are **second-class** (cannot be returned/stored ⇒ cannot escape);
+  a **`box`** lifts that restriction by tracking the **capture set** (which caps it holds) in the box's
+  type, so a returned/thunk-captured cap is provably un-forceable past its handler. **The principled
+  VcapFree-drop (task #18)**: bang's `progComp` launders a state-cap into a *returned thunk* — second-class
+  + boxes make exactly that ill-typed, converting ADR-0063's runtime catch into a typing guarantee.
+- `brachthauser-oopsla20-effects-as-capabilities.pdf` — **Effects as Capabilities** (OOPSLA'20). The
+  Effekt-language origin of the second-class-capabilities discipline (effect types = capabilities
+  required from context); System C's predecessor.
+- `tang-popl26-rows-capabilities-modal-effects.pdf` — Tang & Lindley (POPL'26, arXiv 2507.10301).
+  Unifies **row-based** (Koka) and **capability-based** (Effekt) effect systems as two modal disciplines
+  of one calculus. The framework that makes bang's core principle — **typing by *label* (rows), dispatch
+  by *identity* (capability)** — coherent rather than ad-hoc. Companion to *Modal Effect Types* (arXiv
+  2407.11816, still a bib-gap).
+
 ### transactions / STM (rung 3, ADR-0030) — *bib-only, fetch on demand*
 
 Added 2026-06-23 (the library had zero STM material). STM is a v1 kernel-layer paradigm (rung 3); these
@@ -84,7 +107,7 @@ sit bib-only like the STM block. Cite by key from `refs.bib`.
 - `proving-correctness-step-indexed.pdf` — additional step-indexed LR notes (provenance unverified).
 - `vanrooij-popl25-affect.pdf` — *(new 2026-06-21)* van Rooij & Krebbers, "Affect: An Affine Type and Effect System" (POPL 2025). Effect-**row** type system over a Hazel-style CBV calculus; combines one- and multi-shot handlers via affine continuations; **soundness via a unary Iris logical relation** (Coq). The closest published *effect-row* LR — the model template for the multi-shot-vs-mutable-state soundness pitfall bang-lang will hit. Substrate is Iris, not Biernacki-syntactic.
 - `devilhena-pottier-popl21-separation-logic-handlers` — *(new 2026-06-24, bib-only)* de Vilhena & Pottier, "A Separation Logic for Effect Handlers" (Hazel, POPL 2021). The Iris **foundation under Affect/blaze/Iris-WasmFX**: protocols relate an effect payload to a **resumption condition**; the deep-handler rule (§4.2.3) guards the recursive resumption premise with `⊲` and discharges it by **Löb induction** — but only because the deep handler reinstalls itself *inside* the resumption (one-shot only). The literature landmark for *where* the field needs a guard.
-- `devilhena-popl26-blaze` — *(new 2026-06-24, bib-only)* de Vilhena, van Collem, Wright & Krebbers, "blaze: A Relational Separation Logic for Effect Handlers" (POPL 2026). The **relational/binary handler-LR SOTA**. Its "**▷ is eliminable** [via greatest fixpoint, §7] / **model follows Biernacki['s] pure step-indexed construction** [§3]" statements are our **strongest published evidence that no-Iris Nat step-indexing suffices** for the resumptive LR (the config-level metered-`▷`). Caveats it flags: step-indexed non-transitivity (§2); later-credits only for multi-shot-over-mutable-state (§6).
+- `devilhena-popl26-blaze.pdf` — *(new 2026-06-24; PDF on disk 2026-06-28)* de Vilhena, van Collem, Wright & Krebbers, "blaze: A Relational Separation Logic for Effect Handlers" (POPL 2026). The **relational/binary handler-LR SOTA**. Its "**▷ is eliminable** [via greatest fixpoint, §7] / **model follows Biernacki['s] pure step-indexed construction** [§3]" statements are our **strongest published evidence that no-Iris Nat step-indexing suffices** for the resumptive LR (the config-level metered-`▷`). Caveats it flags: step-indexed non-transitivity (§2); later-credits only for multi-shot-over-mutable-state (§6).
 
 ## 4-wasmfx — WasmFX backend, stack switching, verified compilation into it (◊5)
 
@@ -100,6 +123,7 @@ sit bib-only like the STM block. Cite by key from `refs.bib`.
 - **Reversible / Frobenius**: `heunen-karvonen-reversible-monadic.pdf` (**`group_recovers` rests on this**), `compositional-reversible-2024.pdf`.
 - **Cost / AARA**: `chu-guo-hoffmann-oopsla26-aara-effects.pdf` — *(Pass-B)* AARA for algebraic effects; relevant if cost-grading is added as a third grade.
 - **Type theory**: `bove-dybjer-dependent-types-at-work.pdf`, `tang-hillerstrom-structural-subtyping-as-parametric-polymorphism.pdf` (justifies the `≤` order on rows), `wilshaw-hutton-flow-typing-lightweight-linearity.pdf`.
+- **Control calculi** *(speculative/post-v1)*: `heijltjes-mfps25-fmc-iii-control.pdf` — *(new 2026-06-28)* Heijltjes, "The Functional Machine Calculus III: Control" (MFPS 2025, arXiv 2510.07851). Control operators as FMC sequencing/choice in a machine calculus — a conceptual lens on handler dispatch as control, **adjacent** to route-B's "calculate a control compiler" (NOT a Bahr–Hutton calculation paper). Relevance unverified beyond the framing.
 - **Calculating type systems** *(post-v1 frontier)*: `garby-haskell25-calculated-typer.pdf` (calculate the type CHECKER via fold fusion) + `bahr-pearl25-sound-by-construction.pdf` (calculate the typing RELATION by solving soundness). Typing-side analogue of the calculated-compiler method (same Nottingham/ITU lineage as `2-calcvm/`); blocked for bang by strong-normalisation, but the method survives over the step-indexed `Crel`. See `docs/notes/calculated-type-system-frontier.md`.
 - **Partial evaluation / staging**: `jones-gomard-sestoft-partial-evaluation-book.pdf`, `taha-multi-stage-programming-thesis.pdf`, `williams-perugini-revisiting-futamura-projections.pdf`.
 - **PL semantics**: `hutton-jfp23-programming-language-semantics-1-2-3.pdf`.
@@ -182,7 +206,7 @@ Pass-A (LR spine + verified-compilation template) is **complete**. The
 2026-06-21 sweep pulled in seven Pass-B-adjacent papers (now on disk, marked
 *new* above). Remaining Pass-B, fetch when the relevant hop is worked:
 
-- Tang, Lindley. **Modal Effect Types** (OOPSLA 2025) — modal alternative to lacks-discipline. *(The deflating follow-up "Rows and Capabilities as Modal Effects" POPL'26 frames rows vs. modal as unifiable, not rival.)*
+- Tang, Lindley. **Modal Effect Types** (OOPSLA 2025) — modal alternative to lacks-discipline. *(The follow-up "Rows and Capabilities as Modal Effects" POPL'26 — which frames rows vs. capabilities as unifiable, not rival — is now on disk as `tang-popl26-rows-capabilities-modal-effects.pdf`, see the 1-kernel capability-safety block. Modal Effect Types itself remains the gap.)*
 - Balik et al. **Deciding Not to Decide** (ESOP 2026) — Coq-mechanized sound+complete effect inference over **set** rows; the propositional-logic-delay trick is a future asset if higher-rank effect polymorphism + inference is added.
 - de Vilhena. **Maze** (PhD work, 2022) — the multi-shot + heap-manipulation extension of Hazel (restricted frame rule); fetch only if the resumptive LR hits multi-shot-over-TVars. *(Hazel POPL'21 and blaze POPL'26 themselves are now cited — see the 3-lr section.)*
 - Biernacki et al. **Binders by Day, Labels by Night** (POPL 2020); Xie et al. **First-class Names for Effect Handlers** (OOPSLA 2022) — the named/generative-handler route to no-accidental-handling; compose *on top of* rows for same-label instance disambiguation (a finer problem than our label-disjointness).

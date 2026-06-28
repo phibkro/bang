@@ -722,6 +722,64 @@
                CBPV-spine eval might be). See docs/notes/calculated-type-system-frontier.md.},
 }
 
+@article{brachthauser-oopsla20-effects-as-capabilities,
+  author  = {Brachth\"{a}user, Jonathan Immanuel and Schuster, Philipp and Ostermann, Klaus},
+  title   = {Effects as Capabilities: Effect Handlers and Lightweight Effect Polymorphism},
+  journal = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  volume  = 4,
+  year    = 2020,
+  doi     = {10.1145/3428194},
+  % Origin of the SECOND-CLASS-capabilities discipline for effect HANDLERS: effect types = which
+  % capabilities a computation requires from context; capabilities cannot be returned/stored, so
+  % they cannot outlive their handler. The Effekt-language predecessor of System C (boxes), and the
+  % effect-handler-specific sibling of CC<:Box [boruch-gruszecki-22-scoped-capabilities]. Prior art
+  % for bang's cap-escape arc (progComp laundering, ADR-0063) and task #18.
+}
+
+@article{brachthauser-oopsla22-effects-capabilities-boxes,
+  author  = {Brachth\"{a}user, Jonathan Immanuel and Schuster, Philipp and Lee, Edward and Boruch-Gruszecki, Aleksander},
+  title   = {Effects, Capabilities, and Boxes: From Scope-Based Reasoning to Type-Based Reasoning and Back},
+  journal = {Proceedings of the ACM on Programming Languages (OOPSLA1)},
+  volume  = 6,
+  year    = 2022,
+  doi     = {10.1145/3527320},
+  % System C -- the effect-HANDLER realization of CC<:Box capturing types
+  % [boruch-gruszecki-22-scoped-capabilities] (shared authors Lee, Boruch-Gruszecki). Capabilities
+  % are second-class (cannot escape); a `box` lifts the restriction by tracking the captured caps
+  % (the CAPTURE SET / degree-of-impurity) in the box's type, so a returned/thunk-captured cap is
+  % provably un-usable past its handler. The principled VcapFree-drop (task #18): bang's progComp
+  % launders a cap into a RETURNED THUNK -- second-class + boxes make exactly that ill-typed. The
+  % notes doc docs/notes/scoped-capabilities-for-vcapfree-drop.md works the CC<:Box mapping; this is
+  % its handler-native counterpart.
+}
+
+@article{tang-popl26-rows-capabilities-modal-effects,
+  author  = {Tang, Wenhao and Lindley, Sam},
+  title   = {Rows and Capabilities as Modal Effects},
+  journal = {Proceedings of the ACM on Programming Languages (POPL)},
+  year    = 2026,
+  doi     = {10.1145/3776674},
+  eprint  = {2507.10301},
+  archivePrefix = {arXiv},
+  % Unifies row-based (Koka) and capability-based (Effekt) effect systems as two modal disciplines
+  % of one calculus; the modality decouples effect tracking from functions. The framework that makes
+  % bang's core principle -- "typing is by LABEL (rows), dispatch is by IDENTITY (capability)" --
+  % coherent rather than ad-hoc. Companion to Modal Effect Types (arXiv 2407.11816, still bib-gap).
+}
+
+@misc{heijltjes-mfps25-fmc-iii-control,
+  author = {Heijltjes, Willem},
+  title  = {The Functional Machine Calculus {III}: Control},
+  year   = 2025,
+  eprint = {2510.07851},
+  archivePrefix = {arXiv},
+  note   = {MFPS 2025 Preliminary Proceedings.
+            FMC control-calculus line (NOT Bahr-Hutton calculation). Models control operators as FMC
+            sequencing/choice in a machine calculus -- a conceptual lens on handler dispatch as
+            control, adjacent to route-B's "calculate a control compiler". Speculative/post-v1;
+            relevance unverified beyond the framing.},
+}
+
 @misc{bahr-pearl25-sound-by-construction,
   author    = {Bahr, Patrick and Garby, Zac and Hutton, Graham},
   title     = {Sound-By-Construction Type Systems (Functional Pearl)},
