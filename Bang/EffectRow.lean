@@ -1,4 +1,6 @@
-import Mathlib.Data.Finset.Basic
+module
+
+public import Mathlib.Data.Finset.Basic
 import Mathlib.Data.Finset.Lattice.Basic
 import Mathlib.Data.Finset.Sort
 import Mathlib.Order.Lattice
@@ -21,7 +23,7 @@ design is differential-tested independent of the proofs.
 
 namespace Bang.EffectRow
 
-abbrev Label := Nat
+public abbrev Label := Nat
 abbrev RVar  := Nat
 
 /-- The concrete effect-row carrier: a `Finset Label`. Mathlib gives this
@@ -38,7 +40,7 @@ is *exactly* the structure under which type-and-effect safety holds; and
 balik-esop26-deciding-not-to-decide independently adopts the same set/join
 semantics (Rocq-mechanized). The Q1 semiring→lattice switch moved toward
 consensus. -/
-abbrev EffRow := Finset Label
+public abbrev EffRow := Finset Label
 
 /-- A canonical row's label set. `Finset` is canonical by construction: there is
 no sorted/duplicate-free invariant to carry, and equality is extensional. -/
