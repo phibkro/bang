@@ -6,7 +6,7 @@
 #
 # The shape is a V with consumer tiers above an apex (verified from the import graph):
 #
-#             Spec · Audit · Distribution        ← APEX (rank 3): manifest + gate (imports anything)
+#       Spec · Audit · Distribution · Examples   ← APEX (rank 3): manifest + gate + worked-examples corpus (imports anything)
 #                       ▲
 #         Meta · Witness · Reify                 ← CONSUMERS (rank 2): proofs-about / witnesses
 #        (LR, BinaryLR)  (regress)  (CalcReify*)    reify the V; never imported BY it
@@ -50,7 +50,7 @@ layer_of() {
     Bang.Meta.*)     echo Meta;     return ;;
     Bang.Witness.*)  echo Witness;  return ;;
     Bang.Reify.*)    echo Reify;    return ;;
-    Bang.Spec|Bang.Audit|Bang.Distribution) echo Apex; return ;;
+    Bang.Spec|Bang.Audit|Bang.Distribution|Bang.Examples) echo Apex; return ;;
     *)               echo UNCLASSIFIED ;;
   esac
 }
