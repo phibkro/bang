@@ -895,6 +895,16 @@ REPRESENTATION CHOICE *upstream* of the Bahr–Hutton calculation, not forced by
 degrades locally and precisely here (the spike's recommended honest framing: "calculated except for two
 seams" — the cap representation, and the gensym discipline).
 
+**★ CONCRETE MANIFESTATION (2026-06-29, inc-5 route-1) — `lr_sound` (task #72).** The labelling rep surfaces
+this seam EARLIER than multi-shot: `lr_sound`'s adequacy needs to bridge `CrelK`'s observation of the RAW
+focus `(g, K, c)` to `converges_plug_iff`'s RESHAPED focus `capSubstInto C c` (the labelling rep pushes
+`C`'s frame caps INTO the focus; the raw RHS is provably FALSE — a raw `vvar`-cap focus is stuck). No
+`CrelK` instantiation bridges them (build-witness `scratch/AdequacySpike.lean` @ `7574a5b`; `crelK_adequacy_nil`
+for `C=[]` is CLEAN → it's specifically the arbitrary-context reshape). Two design options, both touching
+FROZEN LR defs: (a) re-shape `CrelK` to the reshaped config; (b) plug-congruence (= `crelK_fund_up`'s
+deferred direction). Under a **closure** rep this bridge would be a direct re-invoke (no reshape) — so the
+seam is rep-specific, exactly as this Q frames it. Tracked: task #72 + `CONTEXT.md` lead.
+
 **Detail** — the tradeoff:
 ```
                     labelling (name + search)        closure (capture + invoke)

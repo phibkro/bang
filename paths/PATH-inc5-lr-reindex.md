@@ -2,8 +2,15 @@
 
 > Re-key the step-indexed LR (`Bang/LR.lean` + `Bang/Compat.lean`) to the identity-dispatch + global-fresh
 > counter kernel, and close the initial-config NonEscape **diagonal**. First whole-LR green.
-> Branch `inc5-lr-reindex`. SoT = ADR-0054/0055 + this PATH. (Supersedes the archived `PATH-typed-lr-reindex`,
-> which was the reverted ADR-0053 absolute-caps era.)
+> SoT = ADR-0054/0055/0058 + this PATH. (Supersedes the archived `PATH-typed-lr-reindex`, the reverted
+> ADR-0053 absolute-caps era.)
+
+> **★★ CURRENT STATE (2026-06-29) — ROUTE-1 LANDED; the body below is SUPERSEDED HISTORY (kept for resume detail / git).** The detailed live state leads in `CONTEXT.md` + tasks #14 (done-arc) / #72 (the one open seam). One-screen:
+> - **ADR-0058 route-1 IMPLEMENTED** (un-freeze `CrelK`/`KrelS` → carry the real counter `g` INTERNALLY → `Crel`/`Spec` frozen-safe; `Canonical`/`CapsBelow`/`run_bump` DELETED; wall-halves `pop_route1`+`perform_escape_vacuous` axiom-clean). The dead `inc5-lr-reindex`/`inc5-comp-grind` branches are superseded; route-1 lives on the inc-6 line.
+> - **Bang.LR green+sorry-free (`7aa5ee1`) → Bang.Compat green (`89c8c08`, cap-binding `compatK_handle*` + novel `KrelS_g_cast` axiom-clean) → Bang.Spec green (`7574a5b`)** — all PUSHED, off `fd7a8d2`.
+> - **v1 SOUNDNESS HEADLINES CLEAN:** `progress` `[propext, Quot.sound]` + `type_safety` `[propext, Classical.choice, Quot.sound]` — sorryAx-FREE, #35-FREE (ADR-0063 re-point onto `progress'_proof`/`type_safety'_proof`).
+> - **THE ONE OPEN SEAM = `lr_sound`** (◊4 binary-LR contextual-equiv, SEPARATE from v1 soundness) = task #72: the labelling-vs-closure cap-rep seam (Q22) — route-1 `CrelK` raw-focus vs the correct reshaped `converges_plug_iff` (build-witness `scratch/AdequacySpike.lean`); design-first (CrelK-reshape vs plug-congruence); + a #35 post-v1 boundary.
+> - `Bang.Audit` still RED — blocked SOLELY by `Bang.Surface` (inc-7), NOT the soundness spine.
 
 ## Decisions — ALL build-arbitrated in de-risk (don't relitigate)
 - **Diagonal route β** (unary `WellScoped` reachability invariant; `nonEscape_of_fwd_invariant` proven green) —

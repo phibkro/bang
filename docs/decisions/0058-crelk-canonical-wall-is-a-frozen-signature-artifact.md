@@ -31,6 +31,13 @@ of a machine-checked reference relation (below). Implementation scheduled for **
 the compiler-correctness deliverable, not the soundness one — `type_safety`/`NonEscape` close via the
 diagonal, ADR-0056/0057, independently of this).
 
+**IMPLEMENTED (2026-06-29).** Route 1 landed: `CrelK`/`KrelS` carry the real counter `g` quantified
+*internally* (→ external `Crel` byte-identical, `Spec.lean` frozen-safe); `Canonical`/`CapsBelow`/`run_bump`
+DELETED; the two wall-halves proven axiom-clean (`pop_route1` counter-bridge, `perform_escape_vacuous`
+defined-escape vacuity). `Bang.LR` green+sorry-free (`7aa5ee1`) → `Bang.Compat` green (`89c8c08`). The
+ONE residual is the `lr_sound` adequacy reshape (the labelling-vs-closure seam, Q22 / task #72) — NOT the
+Canonical wall, which this ADR closed.
+
 ## Context
 
 ### The wall (task #33)
