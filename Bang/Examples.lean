@@ -82,6 +82,13 @@ Each parses the readable source, runs `Source.eval`, and checks `done (vint n)`.
 #guard runYieldsInt 80
   "state 0 in (let c = {get} in (let a = put 5 in (let b = put 9 in $c)))" 9
 
+-- A9b. LEXICAL CAPTURE (ADR-0052): the capability a thunk closes over names its
+-- LEXICALLY-enclosing handler, NOT the dynamically-nearest one. `{get}` is built
+-- under the OUTER `state 1`; forcing it INSIDE `state 2` still reads the OUTER cell.
+-- DYNAMIC (nearest-handler) dispatch would read 2 — it reads 1: dispatch-by-identity
+-- realizing lexical scope, the heart of the inc-5/6 soundness story, made observable.
+#guard runYieldsInt 80 "state 1 in (let c = {get} in (state 2 in $c))" 1
+
 -- A10. STM COMMIT (ADR-0030): inside `atomically`, allocate a TVar = 100, write
 -- 70, read it back — the heap is threaded, the write is visible. ⟶ 70.
 #guard runYieldsInt 200
