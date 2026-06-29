@@ -51,10 +51,10 @@ fi
 # ── 2. No hand-rolled `axiom` outside Bang/Spec.lean family ────────────
 staged_lean_strict=$(echo "$staged_lean" \
                      | grep -v '^Bang/Spec\.lean$' \
-                     | grep -v '^Bang/Syntax\.lean$' \
+                     | grep -v '^Bang/Typing\.lean$' \
                      | grep -v '^Bang/LR\.lean$' \
-                     | grep -v '^Bang/Operational\.lean$' \
-                     | grep -v '^Bang/Compile\.lean$' \
+                     | grep -v '^Bang/Semantics\.lean$' \
+                     | grep -v '^Bang/Wasm\.lean$' \
                      | grep -v '^Bang/Audit\.lean$' || true)
 if [ -n "$staged_lean_strict" ]; then
   bad=$(echo "$staged_lean_strict" | xargs -r grep -lE '^[[:space:]]*axiom\b' 2>/dev/null || true)

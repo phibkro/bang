@@ -20,9 +20,9 @@ module
 -- Subst (Comp.substFrom) and Dispatch (idDispatch/dispatchOn) — must be `meta
 -- import`ed in addition to the runtime `public import` (the Phase-1a escape for
 -- the cross-module #guard codegen wall; same shape as Bang/LWRegress.lean).
-meta import Bang.Operational.Subst
-meta import Bang.Operational.Dispatch
-public import Bang.Operational.Dispatch
+meta import Bang.Semantics.Subst
+meta import Bang.Semantics.Dispatch
+public import Bang.Semantics.Dispatch
 
 namespace Bang
 

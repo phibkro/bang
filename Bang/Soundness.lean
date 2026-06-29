@@ -10,9 +10,9 @@
 
 module
 
-public import Bang.Core
-public import Bang.Syntax
-public import Bang.Operational
+public import Bang.IR
+public import Bang.Typing
+public import Bang.Semantics
 
 namespace Bang
 
@@ -366,7 +366,7 @@ generalized so binders can grow the prefix. -/
 /-- Insert grade 0 / type `A'` at cutoff `k` in a context. Helper notation. -/
 -- ADR-0061 (#51): `insG`/`insT` and their `•`/`+` reshape lemmas are EXPOSED (de-`private`d) so the
 -- carrier-weakening lemmas in `Bang/Model.lean` can name the weakened grade/context. Pure grade/context
--- infra — no carrier dependency, so `Bang.Metatheory` stays carrier-agnostic.
+-- infra — no carrier dependency, so `Bang.Soundness` stays carrier-agnostic.
 abbrev insG (γ : GradeVec Mult) (k : Nat) : GradeVec Mult :=
   γ.take k ++ (0 : Mult) :: γ.drop k
 

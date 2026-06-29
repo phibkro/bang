@@ -17,9 +17,9 @@ file=$(echo "$input" | jq -r '.tool_input.file_path // empty' 2>/dev/null || ech
 
 # Only fire for Bang/*.lean files (the kernel we care about; not legacy Calc*)
 case "$file" in
-  */Bang/Spec.lean|*/Bang/Core.lean|*/Bang/Syntax.lean|*/Bang/Operational.lean| \
-  */Bang/LR.lean|*/Bang/Compile.lean|*/Bang/Mult.lean|*/Bang/Compat.lean| \
-  */Bang/Distribution.lean|*/Bang/Audit.lean|*/Bang/EffectRow.lean|*/Bang/Eval.lean)
+  */Bang/Spec.lean|*/Bang/IR.lean|*/Bang/Typing.lean|*/Bang/Semantics.lean| \
+  */Bang/LR.lean|*/Bang/Wasm.lean|*/Bang/Grade.lean|*/Bang/BinaryLR.lean| \
+  */Bang/Distribution.lean|*/Bang/Audit.lean|*/Bang/EffectRow.lean|*/Bang/Semantics/Eval.lean)
     ;;
   *) exit 0 ;;
 esac

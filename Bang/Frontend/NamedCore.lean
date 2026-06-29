@@ -24,7 +24,7 @@
         `elab`→`Source.eval` demos (by rfl, the ADR-0046 round-trip programs RUN).
 
   ARCHITECTURE (the V, not a line). This file lives in `Bang.Frontend` and imports
-  `Bang.Operational` (Core). Frontend DEPENDS ON Core; Core depends on NOTHING outward.
+  `Bang.Semantics` (Core). Frontend DEPENDS ON Core; Core depends on NOTHING outward.
   Data FLOWS Frontend → Core → Backend (text → IR → WASM); DEPENDENCIES point inward at
   Core. A linter/LSP/formatter consuming `NComp` therefore depends on Core alone — which
   is why this writable IR is the natural plugin surface (ADR-0047).
@@ -39,8 +39,8 @@
 module
 
 -- `#guard roundtrips …` runs `Source.eval` (compiled Operational) at the META phase → meta import.
-meta import Bang.Operational
-public import Bang.Operational
+meta import Bang.Semantics
+public import Bang.Semantics
 
 namespace Bang.Frontend
 

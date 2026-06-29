@@ -17,12 +17,12 @@
   the LWRegress behavioural+structural oracle (escapeB stuck + `¬ NonEscape`), this records that the
   TYPING permits the escape while `NonEscape` (a `type_safety` premise) is exactly what rules it out.
 
-  Imports ONLY `Bang.Operational` (+ `Bang.Mult`, `Bang.LWRegress`).
+  Imports ONLY `Bang.Semantics` (+ `Bang.Grade`, `Bang.LWRegress`).
 -/
 module
 
-public import Bang.Operational
-public import Bang.Mult
+public import Bang.Semantics
+public import Bang.Grade
 public import Bang.LWRegress
 
 namespace Bang.CapEscapeWitness

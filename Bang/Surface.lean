@@ -28,8 +28,8 @@ module
 -- → meta import. (The Plausible `#test` STACK-LAWS block — meta generators that build
 -- runtime values — could NOT live in a module; it was extracted to the non-module
 -- `Bang/Surface/PropTest.lean`, the documented tested-superset seam. Phase-1a finding.)
-meta import Bang.Operational
-public import Bang.Operational
+meta import Bang.Semantics
+public import Bang.Semantics
 
 namespace Bang.Surface
 

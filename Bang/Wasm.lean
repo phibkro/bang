@@ -36,10 +36,10 @@
 
 module
 
-public import Bang.Core
-public import Bang.Syntax
-public import Bang.Operational
-public import Bang.CalcVM
+public import Bang.IR
+public import Bang.Typing
+public import Bang.Semantics
+public import Bang.AbstractMachine
 
 namespace Bang
 

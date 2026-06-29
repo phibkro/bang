@@ -11,8 +11,8 @@
 
 module
 
-public import Bang.Core
-public import Bang.Syntax
+public import Bang.IR
+public import Bang.Typing
 
 namespace Bang
 

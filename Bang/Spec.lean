@@ -5,11 +5,11 @@
   Each module owns its DEFINITIONS; this file owns the CLAIMS.
 
   Module layout:
-    Bang.Core         types (Val, Comp, Handler, VTy, CTy, GradeVec, TyCtx, Frame)
-    Bang.Syntax       q_or_1, HasVTy/HasCTy (resource-enforcing), row well-formedness
-    Bang.Operational  subst, Source.step/eval, Trace, isReturn
+    Bang.IR         types (Val, Comp, Handler, VTy, CTy, GradeVec, TyCtx, Frame)
+    Bang.Typing       q_or_1, HasVTy/HasCTy (resource-enforcing), row well-formedness
+    Bang.Semantics  subst, Source.step/eval, Trace, isReturn
     Bang.LR           Stack, BaseRel, Vrel/Srel/Krel/Crel, NotEvaluated, recovery helpers
-    Bang.Compile      Wasmfx.* + compileC/compileV/compileHandler
+    Bang.Wasm      Wasmfx.* + compileC/compileV/compileHandler
     Bang.Spec         (this file) — re-exports + frozen theorem statements
 
   THE THEOREMS ARE THE ACCEPTANCE CRITERIA. Every `sorry` is a backlog item;
@@ -19,13 +19,13 @@
 
 module
 
-public import Bang.Core
-public import Bang.Syntax
-public import Bang.Operational
+public import Bang.IR
+public import Bang.Typing
+public import Bang.Semantics
 public import Bang.LR
-public import Bang.Compile
-public import Bang.Metatheory
-public import Bang.Compat   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
+public import Bang.Wasm
+public import Bang.Soundness
+public import Bang.BinaryLR   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
                      -- frozen `lr_fundamental`/`lr_sound` statements below via `:= …_proof`
 
 namespace Bang

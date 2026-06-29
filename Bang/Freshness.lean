@@ -21,7 +21,7 @@
 -/
 module
 
-public import Bang.Metatheory
+public import Bang.Soundness
 -- (was Model's transitive Mathlib dep; now explicit across the module boundary.)
 public import Mathlib.Data.Option.NAry
 

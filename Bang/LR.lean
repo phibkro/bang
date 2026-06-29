@@ -11,9 +11,9 @@
 
 module
 
-public import Bang.Core
-public import Bang.Syntax
-public import Bang.Operational
+public import Bang.IR
+public import Bang.Typing
+public import Bang.Semantics
 
 namespace Bang
 
@@ -221,7 +221,7 @@ reached config `reshape 0 [] C c`. The main lemma:
 plus the renaming-invariance BRIDGE the inc-5 LR consumes (`plug`/`reshape`/`splitAtId` commute with an
 injective id-renaming → the canonical-id config and the original-id config run to renamed-equal results).
 SoT for this block is the probe; it is re-homed here verbatim because `Bang/LR.lean` may import
-`Bang.Operational` directly (a scratch file could not import the §2/§3 renaming primitives). -/
+`Bang.Semantics` directly (a scratch file could not import the §2/§3 renaming primitives). -/
 namespace RunPlugReshape
 open Bang.EffectRow (Label)
 

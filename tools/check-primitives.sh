@@ -6,7 +6,7 @@
 # Invariant #3: "STM is the ONLY privileged kernel primitive."
 #
 # Those invariants are PROSE. This makes them STRUCTURAL: the kernel's term
-# alphabet is the constructor set of `Val` / `Comp` / `Handler` in Bang/Core.lean.
+# alphabet is the constructor set of `Val` / `Comp` / `Handler` in Bang/IR.lean.
 # We assert that set equals a maintained ALLOWLIST. A new constructor (a candidate
 # 6th primitive) therefore can't slip in silently — it makes this check RED until
 # someone edits the allowlist below, which is the visible, reviewed act the
@@ -17,11 +17,11 @@
 set -euo pipefail
 
 ROOT="${1:-.}"
-CORE="$ROOT/Bang/Core.lean"
+CORE="$ROOT/Bang/IR.lean"
 
 [ -f "$CORE" ] || { echo "FAIL: $CORE not found"; exit 1; }
 
-# ── The allowlist: the kernel's known term-syntax constructors (Bang/Core.lean §1.2).
+# ── The allowlist: the kernel's known term-syntax constructors (Bang/IR.lean §1.2).
 # Grouped by the five-primitive creed. Editing this list is a SPEC CHANGE (ADR).
 #
 #   thunk/force adjunction : vthunk · force

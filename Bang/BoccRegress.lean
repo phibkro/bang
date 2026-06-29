@@ -18,15 +18,15 @@
                                    STILL types under B-occ. B-occ rejects escape, not handlers.
 
   This is the oracle ADR-0056 asked for: "the fix must make `progB`/`escapeB` untypeable, then the
-  diagonal closes." Self-contained on `Bang.Metatheory` (the inversion lemmas); `escapeB` is inlined
+  diagonal closes." Self-contained on `Bang.Soundness` (the inversion lemmas); `escapeB` is inlined
   to match `Bang.LWRegress.escapeB` (whose behavioural oracle `escapeB_stuck`/`escapeB_not_nonEscape`
   records the stuck run — that file is pre-existing RED on the ADR-0055 `Config` reshape, so we do
   not depend on it). `sigU` is the same `{get,put} : unit → unit` signature as `CapEscapeWitness.sigU`.
 -/
 module
 
-public import Bang.Metatheory
-public import Bang.Mult
+public import Bang.Soundness
+public import Bang.Grade
 
 namespace Bang.BoccRegress
 

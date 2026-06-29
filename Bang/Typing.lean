@@ -1,7 +1,7 @@
 /-
   Bang/Syntax.lean — typing judgments + grade discipline + row well-formedness.
   ─────────────────────────────────────────────────────────────────────────────
-  Sits between Bang.Core (raw types) and Bang.Operational (executes terms).
+  Sits between Bang.IR (raw types) and Bang.Semantics (executes terms).
 
     §1.5 q_or_1 (the let-rule's `q || 1` coeffect floor)
     §1.6 HasVTy, HasCTy (mutual inductive Props — resource-enforcing, Q10/ADR-0019)
@@ -12,7 +12,7 @@
 
 module
 
-public import Bang.Core
+public import Bang.IR
 
 namespace Bang
 

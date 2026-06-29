@@ -16,16 +16,16 @@
   and resolves (the WC keystone-2c gap, pending an operator design call). The robust escape oracle is the
   DIRECT-FORCE form `escapeB` here: stuck + `¬ NonEscape`, independent of that design call.
 
-  Imports ONLY `Bang.Operational` + `Bang.Mult`.
+  Imports ONLY `Bang.Semantics` + `Bang.Grade`.
 -/
 module
 
 -- The #guards below run `Source.eval` (compiled Operational code) at the META phase,
 -- so Operational must be `meta import`ed in addition to the runtime import (Phase-1a
 -- escape for the cross-module #guard codegen wall).
-meta import Bang.Operational
-public import Bang.Operational
-public import Bang.Mult
+meta import Bang.Semantics
+public import Bang.Semantics
+public import Bang.Grade
 
 namespace Bang.LWRegress
 

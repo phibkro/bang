@@ -1,13 +1,23 @@
 module
 
-public import Bang.Operational
+public import Bang.Semantics
 public import Bang.CapCoh
 
 /-!
-# CalcVM — the ◊3 graded-CBPV calculated machine (pure CBPV spine)
+# AbstractMachine — the ◊3 graded-CBPV calculated machine (pure CBPV spine)
+
+INVARIANT #4 (pinned here): this is the **CALCULATED machine (Bahr–Hutton) — an
+OUTPUT of the derivation, NOT hand-designed**. The `(compile, Code, exec)` triple is
+*derived* from `evalD` by equational reasoning; we never hand-design the VM and then
+justify a compiler against it. `compile_correct` is the calculation's discharge.
+
+NOTE (Phase-2 rename seam): the FILE/module is `Bang.AbstractMachine`, but the
+`namespace` stays `Bang.CalcVM` — the four gated headlines (`compile_correct`,
+`evalD_agrees_source`, `sim`, `run_evalD`) keep their `Bang.CalcVM.*` qualified names
+so the Audit census stays byte-identical (the rename is module-only by design).
 
 The Bahr–Hutton calculation (ADR-0016, ADR-0017; invariant #4) ported ONCE to
-the new graded-CBPV `Comp`/`Val` (`Bang.Core`), replacing the K2 `Calc*.lean`
+the new graded-CBPV `Comp`/`Val` (`Bang.IR`), replacing the K2 `Calc*.lean`
 matrix over the old free-monad `Expr`/`Value`.
 
 This file lands the **pure CBPV spine** (`ret` · `letC` · `force`/`vthunk` ·

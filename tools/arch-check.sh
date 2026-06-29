@@ -37,12 +37,12 @@ layer_of() {
   case "$1" in
     Bang.Frontend.*)    echo Frontend; return ;;   # path-derived (already moved)
     Bang.Backend.*)     echo Backend;  return ;;    # path-derived (for the deferred moves)
-    Bang.Operational.*) echo Core;     return ;;    # the hub's 4 deep submodules (Subst/Dispatch/Kernel/Invariants)
+    Bang.Semantics.*) echo Core;       return ;;    # the hub's 4 deep submodules (Subst/Dispatch/Eval/Invariants)
   esac
   case "$1" in
-    Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Freshness|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.ReturnEscapeReach|Bang.StateEscapeWitness)
+    Bang.EffectRow|Bang.IR|Bang.Grade|Bang.Typing|Bang.Semantics|Bang.LR|Bang.BinaryLR|Bang.Soundness|Bang.Freshness|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.ReturnEscapeReach|Bang.StateEscapeWitness)
       echo Core ;;
-    Bang.CalcVM|Bang.Compile|Bang.CalcReify|Bang.CalcReifyRef|Bang.CalcReifySim)
+    Bang.AbstractMachine|Bang.Wasm|Bang.CalcReify|Bang.CalcReifyRef|Bang.CalcReifySim)
       echo Backend ;;
     Bang.Surface|Bang.Surface.Trait|Bang.Surface.PropTest)
       echo Frontend ;;
