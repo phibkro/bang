@@ -57,6 +57,7 @@ fitness:
     bash tools/check-adr-links.sh
     bash tools/arch-check.sh
     bash tools/check-audit-sync.sh
+    bash tools/check-all-modules.sh
     python3 tools/check-refs.py
 
 # Zero-dep Node sanity check on the row-unifier algorithm.
