@@ -38,6 +38,14 @@ fail=0
 # ── (A) file ↔ index bijection ───────────────────────────────────────────────
 # Files: every NNNN-*.md except the README itself.
 files="$(cd "$DIR" && ls | grep -E '^[0-9]{4}-.*\.md$' | grep -oE '^[0-9]{4}' | sort -u)"
+# ID uniqueness (#116): no two files may share one NNNN — the `sort -u` above would
+# otherwise HIDE the collision from the bijection (two ADR-0061s passed unseen for days).
+dup_ids="$(cd "$DIR" && ls | grep -E '^[0-9]{4}-.*\.md$' | grep -oE '^[0-9]{4}' | sort | uniq -d)"
+if [ -n "$dup_ids" ]; then
+  echo "FAIL: duplicate ADR number(s) — two files share one NNNN id:"
+  for id in $dup_ids; do printf '       %s → %s\n' "$id" "$(cd "$DIR" && echo "$id"-*.md)"; done
+  exit 1
+fi
 # Index rows: lines like `| [NNNN](NNNN-….md) | … |`.
 rows="$(grep -oE '^\| \[[0-9]{4}\]' "$README" | grep -oE '[0-9]{4}' | sort -u)"
 

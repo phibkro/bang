@@ -34,7 +34,6 @@
 | 18 | make raw source `vcap` untypeable (drop the `VcapFree` precondition) | proof | ready | soundness hardening; the post-v1 scoped-cap-types move |
 | 4 | add behavioral guards to the Audit gate | tooling | ready | re-confirm relevance vs the current gate |
 | 115 | **Bang/ dead-code sweep (~430 lines)** — zero-ref decls: type_safety_proof, 8 orphaned route-B sim lemmas (~160), private grade/coherence helpers, LR/BinaryLR dead lemmas | proof | ready | /simplify dead-code agent; **build + `#print axioms` census-gated per deletion** (proof-IC unit). ⚠ CONFLICT to resolve first: is `progress_proof`/`run_safe` dead (transitively) or live (`progress'_proof` reuses it)? — grep+build decides |
-| 116 | ADR-0061 duplicate — two DISTINCT decisions share the number (prefix-dedup hides it); renumber the later → 0064 + update refs, THEN add an ID-uniqueness leg to check-adr-links.sh | docs | ready | /simplify altitude; the lint is currently blind to this whole class |
 
 ## Hygiene (housekeeping, low-risk, do on a quiet tree)
 

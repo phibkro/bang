@@ -1,4 +1,4 @@
-# 0061 — Regrade `WScfg` to a carrier-indexed liveness invariant (`LiveCapsResolveV/C/K`), derived coherent from typing
+# 0064 — Regrade `WScfg` to a carrier-indexed liveness invariant (`LiveCapsResolveV/C/K`), derived coherent from typing
 
 <!-- adr-frontmatter -->
 
@@ -22,7 +22,14 @@
   (`liveCapsResolve{V,C}_returnEscape` + `lwsg_step_nonperform`) is tracked by **task #54**; the keystone
   is *not* one consumer-step from `type_safety` (build-refuted twice — the POP cross-term needs a combined
   carrier+grade-live-var invariant the subst lemma does not supply).
-- **Refines**: 0060, 0057, 0056
+- **Refines**: 0061, 0060, 0057, 0056
+
+> _Renumbered 0061→0064 (2026-06-30): this carrier-indexed regrade and ADR-0061 (the graded-flags
+> regrade) were both authored as "0061". By chronology the earlier graded-flags ADR keeps 0061; this is
+> the later refinement — it replaces the `LWSCg` flag-liveness with a typing-indexed carrier that makes
+> the spurious-live-cap state unrepresentable. Bare "ADR-0061" references in the code/docs name the
+> shared regrade concept and resolve correctly to the kept 0061._
+
 - **Depends-on**: 0054, 0001, 0018, 0016
 - **See-also**: 0055, 0058, 0062
 
