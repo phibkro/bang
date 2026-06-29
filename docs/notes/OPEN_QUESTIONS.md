@@ -841,7 +841,7 @@ serializability via linearizability — the mechanized exemplar.
 
 ---
 
-## Q22 — `orElse`: how does the alternative discard the first branch's writes?  · OPEN (rung-3 follow-on)
+## Q23 — `orElse`: how does the alternative discard the first branch's writes?  · OPEN (rung-3 follow-on)
 
 **Question**: `orElse a b` runs `a`, and if `a` aborts runs `b` — but `b` must run as if `a`'s **writes
 never happened** (Harris OR3). How does the kernel discard `a`'s transactional writes on fallthrough?

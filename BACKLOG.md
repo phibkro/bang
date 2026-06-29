@@ -32,7 +32,6 @@
 | 52 | VM calc spike: is identity-dispatch/gensym forced or introduced? | proof | open-question | OPEN_QUESTIONS Q22; the labelling-vs-closure fork |
 | 53 | promote `HasVTy.subst_gen` to `Soundness` (single-source value-subst) | proof | ready | refactor; do at keystone reconciliation |
 | 18 | make raw source `vcap` untypeable (drop the `VcapFree` precondition) | proof | ready | soundness hardening; the post-v1 scoped-cap-types move |
-| 73 | OPEN_QUESTIONS.md duplicate Q22 numbering (orElse + labelling-vs-closure) | docs | ready | small fix |
 | 4 | add behavioral guards to the Audit gate | tooling | ready | re-confirm relevance vs the current gate |
 | 115 | **Bang/ dead-code sweep (~430 lines)** — zero-ref decls: type_safety_proof, 8 orphaned route-B sim lemmas (~160), private grade/coherence helpers, LR/BinaryLR dead lemmas | proof | ready | /simplify dead-code agent; **build + `#print axioms` census-gated per deletion** (proof-IC unit). ⚠ CONFLICT to resolve first: is `progress_proof`/`run_safe` dead (transitively) or live (`progress'_proof` reuses it)? — grep+build decides |
 | 116 | ADR-0061 duplicate — two DISTINCT decisions share the number (prefix-dedup hides it); renumber the later → 0064 + update refs, THEN add an ID-uniqueness leg to check-adr-links.sh | docs | ready | /simplify altitude; the lint is currently blind to this whole class |
