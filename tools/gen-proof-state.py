@@ -134,8 +134,13 @@ def sorry_total(lean_root: str):
 
 
 def sha(lean_root: str) -> str:
-    res = run(["git", "-C", lean_root, "rev-parse", "--short", "HEAD"], lean_root)
-    return res[1].strip() if res and res[0] == 0 else "unknown"
+    # The proof-state's PROVENANCE = the last commit that touched the `Bang/` library
+    # (what could move the axiom census) — NOT `HEAD`. Embedding HEAD made the generated
+    # block self-invalidating: every docs/tooling commit moved HEAD, so `--check` went
+    # stale on a change that couldn't affect the proof-state. Anchoring to the last
+    # `Bang/` commit keeps the block green across non-proof commits (derivation-ladder fix).
+    res = run(["git", "-C", lean_root, "log", "-1", "--format=%h", "--", "Bang"], lean_root)
+    return res[1].strip() if res and res[0] == 0 and res[1].strip() else "unknown"
 
 
 def render(lean_root: str, report: dict[str, list[str]]) -> str:
