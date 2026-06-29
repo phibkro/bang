@@ -19,9 +19,11 @@
 
   Imports ONLY `Bang.Operational` (+ `Bang.Mult`, `Bang.LWRegress`).
 -/
-import Bang.Operational
-import Bang.Mult
-import Bang.LWRegress
+module
+
+public import Bang.Operational
+public import Bang.Mult
+public import Bang.LWRegress
 
 namespace Bang.CapEscapeWitness
 

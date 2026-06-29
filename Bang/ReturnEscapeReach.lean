@@ -1,5 +1,10 @@
-import Bang.Metatheory
-import Bang.Mult
+module
+
+-- `#guard Source.eval …` runs compiled Operational code at the META phase. Operational
+-- is only a transitive dep (via Metatheory), so `meta import` it directly for the #guard.
+meta import Bang.Operational
+public import Bang.Metatheory
+public import Bang.Mult
 
 /-! # ReturnEscapeReach — the TYPEABILITY SEAL for the laundered re-handle escape (#54).
 

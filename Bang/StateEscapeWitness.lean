@@ -1,6 +1,11 @@
-import Bang.Operational
-import Bang.Metatheory
-import Bang.Mult
+module
+
+-- `#guard stateEscape_escaped` runs `Source.eval` (compiled Operational) at the META
+-- phase → `meta import` Operational alongside the runtime import.
+meta import Bang.Operational
+public import Bang.Operational
+public import Bang.Metatheory
+public import Bang.Mult
 
 /-! # State-escape probe — the ③ verdict: BLOCKED by the closed-state discipline (task #50)
 

@@ -18,13 +18,23 @@
 
   Imports ONLY `Bang.Operational` + `Bang.Mult`.
 -/
-import Bang.Operational
-import Bang.Mult
+module
+
+-- The #guards below run `Source.eval` (compiled Operational code) at the META phase,
+-- so Operational must be `meta import`ed in addition to the runtime import (Phase-1a
+-- escape for the cross-module #guard codegen wall).
+meta import Bang.Operational
+public import Bang.Operational
+public import Bang.Mult
 
 namespace Bang.LWRegress
 
 open Bang
 open Bang.EffectRow (Label EffRow)
+
+-- Module reveal (Phase 1a). `@[expose] public section`: CapEscapeWitness consumes
+-- escapeB (a Comp def) + escapeB_nonEscape' / escapeB_not_nonEscape, so the body crosses.
+@[expose] public section
 
 /-! ### 1. case A — migration INTO an enclosing handler terminates reading its own state.
 
@@ -84,4 +94,5 @@ DEFINED capability-escape (`Source.eval escapeB = .escapedCap`, the `#guard` abo
 holds there via its escape disjunct, so `escapeB` SATISFIES the defined-escape-tolerant `NonEscape'`. -/
 theorem escapeB_nonEscape' : NonEscape' (0, [], escapeB) := nonEscape'_all _
 
+end -- public section
 end Bang.LWRegress
