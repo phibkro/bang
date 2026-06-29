@@ -34,12 +34,18 @@
   suspend/resume (NOT `throws`→`resume_throw`, unimplemented in Wasmtime
   #10248) — Milestone B. -/
 
-import Bang.Core
-import Bang.Syntax
-import Bang.Operational
-import Bang.CalcVM
+module
+
+public import Bang.Core
+public import Bang.Syntax
+public import Bang.Operational
+public import Bang.CalcVM
 
 namespace Bang
+
+-- Module reveal (Phase 1a). `@[expose] public section`: Compile's WasmFX AST + the
+-- forward-simulation defs are unfolded by downstream Spec (compile_forward_sim headline).
+@[expose] public section
 
 namespace Wasmfx
 
@@ -2151,4 +2157,5 @@ example : Wasmfx.run 50
     (compileC (.handle (.transaction 0 []) (.letC (.perform (.vvar 0) "newTVar" (.vint 5)) (.perform (.vvar 1) "readTVar" (.vint 0)))))
     = Result.done (.i32 5) := by rfl
 
+end -- public section
 end Bang

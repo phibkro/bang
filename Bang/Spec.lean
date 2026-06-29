@@ -17,16 +17,24 @@
   See also `Bang/Audit.lean` for #print axioms per theorem.
 -/
 
-import Bang.Core
-import Bang.Syntax
-import Bang.Operational
-import Bang.LR
-import Bang.Compile
-import Bang.Metatheory
-import Bang.Compat   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
+module
+
+public import Bang.Core
+public import Bang.Syntax
+public import Bang.Operational
+public import Bang.LR
+public import Bang.Compile
+public import Bang.Metatheory
+public import Bang.Compat   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
                      -- frozen `lr_fundamental`/`lr_sound` statements below via `:= …_proof`
 
 namespace Bang
+
+-- Module reveal (Phase 1a). `public section`: Spec holds the FROZEN headline statements
+-- that the (non-module) Audit gate reads via `#print axioms` — every theorem MUST stay
+-- public+reachable. No @[expose] needed (Spec has no downstream definitional consumers;
+-- Audit only names its theorems). Gate-critical: census must stay byte-identical.
+public section
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
@@ -298,4 +306,5 @@ theorem zero_grade_no_code
     ¬ Wasmfx.MentionsLocal (compileC c) 0 :=
   zero_grade_no_code_proof
 
+end -- public section
 end Bang

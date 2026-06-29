@@ -1,5 +1,7 @@
-import Bang.Operational
-import Bang.CapCoh
+module
+
+public import Bang.Operational
+public import Bang.CapCoh
 
 /-!
 # CalcVM — the ◊3 graded-CBPV calculated machine (pure CBPV spine)
@@ -85,6 +87,11 @@ namespace Bang.CalcVM
 open Bang (Val Comp Frame Config Result)
 open Bang.CapCoh (WeakCoh CapLabelCoh capLabelCoh_step capLabelCoh_initial capLabelCoh_perform_label)
 open Bang.Model (FreshCfg freshCfg_step)
+
+-- Module reveal (Phase 1a). `@[expose] public section`: CalcVM's machine defs (compile/exec/
+-- evalD/Code) and bridge lemmas are unfolded by downstream Compile + the Audit headlines
+-- (compile_correct/evalD_agrees_source/sim/run_evalD), so bodies cross the boundary.
+@[expose] public section
 
 /-! ## The state store (ADR-0031 D1): a 1:1 mirror of the active `state ℓ s` frames
 
@@ -1422,30 +1429,6 @@ def exec : Nat → Nat → Code → Stack → HStack → Option Stack
       match w with
       | .pair v u => exec f g (compile (Comp.subst v (Comp.subst (Val.shift u) N)) c) s hs
       | _         => none
-
-/-! ### U2 Phase-2a sanity (TEMP — remove before Phase 2b): the re-derived identity-keyed `evalD`
-and `exec ∘ compile` compute the KERNEL's answer on the route-B witnesses (vs the stale label answer). -/
-section U2Sanity
-private def wGet : Comp :=
-  .handle (.state 1 (.vint 10)) (.handle (.state 1 (.vint 20)) (.perform (.vvar 1) "get" .vunit))
-private def wPutGetInner : Comp :=
-  .handle (.state 1 (.vint 10)) (.handle (.state 1 (.vint 20))
-    (.letC (.perform (.vvar 1) "put" (.vint 99)) (.perform (.vvar 1) "get" .vunit)))
-private def wReturnThrows : Comp := .handle (.throws 0) (.ret (.vint 7))
-private def evalDInt (M : Comp) : Option Int :=
-  match evalD 80 0 [] [] M with | some (.term (.ret (.vint n)), _, _, _) => some n | _ => none
-private def execInt (M : Comp) : Option Int :=
-  match exec 80 0 (compile M []) [] [] with | some [.ret (.vint n)] => some n | _ => none
--- GET shadow: outer cap ⟹ 10 (route-B), NOT the nearest-label 20.
-#guard evalDInt wGet == some 10
-#guard execInt wGet == some 10
--- PUT outer ; GET inner: the outer put lands on the IDENTITY cell ⟹ inner reads 20 (untouched).
-#guard evalDInt wPutGetInner == some 20
-#guard execInt wPutGetInner == some 20
--- return-only throws: the vacuous frame pops cleanly ⟹ 7.
-#guard evalDInt wReturnThrows == some 7
-#guard execInt wReturnThrows == some 7
-end U2Sanity
 
 /-! ## The calculation is correct (proven) -/
 
@@ -5065,4 +5048,5 @@ example :
     evalD 5 0 [] [] M = some (.term (.ret (.vint 7)), 1, [], []) ∧ Agree 10 M (.vint 7) := by
   refine ⟨by rfl, by rfl, by rfl⟩
 
+end -- public section
 end Bang.CalcVM
