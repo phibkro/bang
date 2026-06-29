@@ -8,8 +8,10 @@
   zero_usage_erasable) live in Bang/Spec.lean.
 -/
 
-import Bang.Core
-import Bang.Syntax
+module
+
+public import Bang.Core
+public import Bang.Syntax
 
 namespace Bang
 
@@ -17,6 +19,14 @@ open Bang.EffectRow (Label)
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
+
+-- Operational is the load-bearing HUB (fan-in 9). The build reveals a genuine
+-- deep-module split: most declarations are interface, but a cohesive INTERNAL
+-- set (the wellCounted/stackBelow freshness theory + the subst-shift cancellation
+-- helper lemmas) has ZERO external consumers. The body opts into `public section`;
+-- the internals are individually marked `private` (search this file for `private`
+-- to read the hidden set — the deep-module win for the hub).
+public section
 
 
 /-! ### 1.3a Substitution (de Bruijn — ADR-0020)
@@ -159,7 +169,7 @@ theorem Val.substFrom_shiftFrom (k : Nat) (v : Val) :
         Val.substFrom_shiftFrom k v w₁, Val.substFrom_shiftFrom k v w₂]
   | .fold w      => by simp only [Val.shiftFrom, Val.substFrom, Val.substFrom_shiftFrom k v w]
 
-theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
+private theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
     ∀ t : Comp, Comp.substFrom k v (Comp.shiftFrom k t) = t
   | .ret w       => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
   | .letC M N    => by
@@ -188,7 +198,7 @@ theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
   | .oom         => rfl
   | .wrong _     => rfl
 
-theorem Handler.substFrom_shiftFrom (k : Nat) (v : Val) :
+private theorem Handler.substFrom_shiftFrom (k : Nat) (v : Val) :
     ∀ h : Handler, Handler.substFrom k v (Handler.shiftFrom k h) = h
   | .state ℓ s       => by simp only [Handler.shiftFrom, Handler.substFrom, Val.substFrom_shiftFrom k v s]
   | .throws _        => rfl
@@ -295,7 +305,7 @@ frame. Mirrors `splitAt`'s recursion: a `handleF h` frame must either CATCH `(�
 (`splitAt`-wrap-MISS) is exactly `¬ NoWrapMiss`: a non-catching `handleF` with a deeper catcher — the
 captured continuation then wraps that handler, the inverse-strip case `krelS_splitAt_decomp` cannot
 certify (answer-determinism FALSE). COVERED: every op caught by the NEAREST enclosing handler. -/
-def NoWrapMiss : EvalCtx → Label → OpId → Prop
+private def NoWrapMiss : EvalCtx → Label → OpId → Prop
   | [], _, _ => True
   | (.handleF _ h :: K), ℓ, op =>
       handlesOp h ℓ op = true ∨ splitAt K ℓ op = none
@@ -396,34 +406,34 @@ def handlerCount : EvalCtx → Nat
   | .letF _ :: K => handlerCount K
   | .appF _ :: K => handlerCount K
 
-@[simp] theorem handlerCount_letF (N : Comp) (K : EvalCtx) :
+@[simp] private theorem handlerCount_letF (N : Comp) (K : EvalCtx) :
     handlerCount (Frame.letF N :: K) = handlerCount K := rfl
-@[simp] theorem handlerCount_appF (v : Val) (K : EvalCtx) :
+@[simp] private theorem handlerCount_appF (v : Val) (K : EvalCtx) :
     handlerCount (Frame.appF v :: K) = handlerCount K := rfl
-@[simp] theorem handlerCount_handleF (n : Nat) (h : Handler) (K : EvalCtx) :
+@[simp] private theorem handlerCount_handleF (n : Nat) (h : Handler) (K : EvalCtx) :
     handlerCount (Frame.handleF n h :: K) = handlerCount K + 1 := rfl
 
 /-- The handler skeleton of a context: keep `handleF` frames (identity + handler), drop the
 cap-transparent `letF`/`appF` plumbing. -/
-def handlersOf : EvalCtx → EvalCtx
+private def handlersOf : EvalCtx → EvalCtx
   | [] => []
   | .handleF n h :: K => Frame.handleF n h :: handlersOf K
   | .letF _ :: K => handlersOf K
   | .appF _ :: K => handlersOf K
 
 /-- `handlersOf` distributes over append. -/
-theorem handlersOf_append (K K' : EvalCtx) : handlersOf (K ++ K') = handlersOf K ++ handlersOf K' := by
+private theorem handlersOf_append (K K' : EvalCtx) : handlersOf (K ++ K') = handlersOf K ++ handlersOf K' := by
   induction K with
   | nil => rfl
   | cons fr K ih => cases fr <;> simp only [handlersOf, List.cons_append, ih]
 
 /-- `handlersOf` preserves the handler count (it drops only `letF`/`appF`, keeps every `handleF`). -/
-theorem handlerCount_handlersOf (K : EvalCtx) : handlerCount (handlersOf K) = handlerCount K := by
+private theorem handlerCount_handlersOf (K : EvalCtx) : handlerCount (handlersOf K) = handlerCount K := by
   induction K with
   | nil => rfl
   | cons fr K ih => cases fr <;> simp [handlersOf, handlerCount, ih]
 
-theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
+private theorem handlerCount_eq_handlersOf_length (K : EvalCtx) :
     handlerCount K = (handlersOf K).length := by
   induction K with
   | nil => rfl
@@ -622,7 +632,7 @@ def IsDefinedEscape : Config → Prop
 
 /-- A defined-escape config has no `Source.step` (its `idDispatch` is `none`, and `step` on a
 `perform (vcap …)` focus is exactly `(idDispatch …).map …`). -/
-theorem step_none_of_definedEscape {cfg : Config} (h : IsDefinedEscape cfg) :
+private theorem step_none_of_definedEscape {cfg : Config} (h : IsDefinedEscape cfg) :
     Source.step cfg = none := by
   obtain ⟨g, K, M⟩ := cfg
   match M, h with
@@ -678,7 +688,7 @@ def WellCounted : Config → Prop
 
 /-- `StackBelow` is monotone in the counter — a larger counter still dominates. Lets the incremented
 `g+1` bound the OLD frames after a mint. -/
-theorem StackBelow_mono {g g' : Nat} (hle : g ≤ g') :
+private theorem StackBelow_mono {g g' : Nat} (hle : g ≤ g') :
     ∀ K, StackBelow g K → StackBelow g' K := by
   intro K hK
   induction K with
@@ -692,7 +702,7 @@ theorem StackBelow_mono {g g' : Nat} (hle : g ≤ g') :
 /-- **Freshness**: if every id on `K` is `< g`, then `splitAtId K g = none` — the fresh id `g` matches
 NO live frame. This kills the ADR-0054 collision: minting `g` then later resolving a cap named `g`
 finds ITS handler or nothing, never a same-depth impostor. shape: scratch/GlobalFreshProbe.lean. -/
-theorem splitAtId_fresh (g : Nat) (K : EvalCtx) (h : StackBelow g K) :
+private theorem splitAtId_fresh (g : Nat) (K : EvalCtx) (h : StackBelow g K) :
     splitAtId K g = none := by
   induction K with
   | nil => rfl
@@ -707,7 +717,7 @@ theorem splitAtId_fresh (g : Nat) (K : EvalCtx) (h : StackBelow g K) :
 
 /-- `StackBelow` distributes over `++` (every frame independently dominated). The reconstruction
 direction (`mpr`) is what rebuilds the resumed stack `Kᵢ ++ handleF n h' :: Kₒ` after a resume. -/
-theorem StackBelow_append (g : Nat) : ∀ (K1 K2 : EvalCtx),
+private theorem StackBelow_append (g : Nat) : ∀ (K1 K2 : EvalCtx),
     StackBelow g (K1 ++ K2) ↔ (StackBelow g K1 ∧ StackBelow g K2) := by
   intro K1 K2
   induction K1 with
@@ -795,7 +805,7 @@ theorem stackBelow_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
 /-- **`WellCounted` is preserved by `cstep`.** The mint arm pushes `handleF g` with counter `g+1` (old
 frames stay `< g < g+1` by mono; the new frame is `g < g+1`); every other arm keeps/shrinks the stack
 with an unchanged counter, or (dispatch) reinstalls an existing id (`stackBelow_idDispatch`). -/
-theorem wellCounted_step {cfg cfg' : Config}
+private theorem wellCounted_step {cfg cfg' : Config}
     (hwc : WellCounted cfg) (hstep : Source.step cfg = some cfg') : WellCounted cfg' := by
   obtain ⟨g, K, c⟩ := cfg
   have hwc' : StackBelow g K := hwc
@@ -867,7 +877,7 @@ theorem wellCounted_reachable {cfg cfg' : Config}
   | tail _ hstep ih => exact wellCounted_step ih hstep
 
 /-- The initial config `(0, [], c)` is `WellCounted` trivially (empty stack). The fresh-start seed. -/
-theorem wellCounted_initial (c : Comp) : WellCounted (0, [], c) := trivial
+private theorem wellCounted_initial (c : Comp) : WellCounted (0, [], c) := trivial
 
 /-! ### Lexical-cap regression demos (ADR-0045 amendment) — REAL artifacts, build-gated.
 
@@ -965,5 +975,7 @@ def isReturn : Comp → Prop
 -- is DEFINED in `Bang/LR.lean` (§5.0b), where the observational equivalence `≈` it is phrased over
 -- lives. A 0-graded var is still SUBSTITUTED syntactically (and type-checks — QTT permits 0-graded
 -- occurrences); only its *evaluation* is absent, so the faithful notion is semantic, not structural.
+
+end -- public section
 
 end Bang
