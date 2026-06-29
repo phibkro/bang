@@ -16,11 +16,14 @@ sorryAx. AXIOM GATE (force-rebuilt olean, `#print axioms` at file end):
 AsmFX §7.1 well-scoping-invariant analog: kernel dispatches by (identity,label), evalD by identity;
 the gap is bridged by THREADING this invariant, not by mirroring dispatch. `WeakCoh` is the vacuous-on-
 escape LABEL FACTOR of `CapResolves` (Operational:438) — `WeakCoh + store-supplied resolution ⟹
-CapResolves`, reassembled at the bridge perform arm. Imports Model (fallback: the caps/freshness layer
-lives there; an Operational-only relocation is a task-#17 restructure). -/
+CapResolves`, reassembled at the bridge perform arm. Imports `Bang.Freshness` for the caps/freshness
+layer (task #82 Phase 1b extracted it from the old `Bang/Model.lean`; this severs CapCoh→Model). -/
 module
 
-public import Bang.Model
+-- task #82 Phase 1b: CapCoh consumes ONLY the caps/freshness layer, which now lives in
+-- `Bang/Freshness.lean` (extracted from the old `Bang/Model.lean`). Importing Freshness (not
+-- Model) SEVERS the `Audit→CalcVM→CapCoh→Model` edge — Model leaves the gated closure.
+public import Bang.Freshness
 open Bang Bang.Model
 open Bang.EffectRow (Label)
 
