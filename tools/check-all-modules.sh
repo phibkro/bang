@@ -28,6 +28,10 @@ cd "$ROOT"
 #     irreducible — the property-test generators bridge compile-time sampling and runtime
 #     values — so this file cannot be a `module`. It IS the verified-spine / tested-
 #     superset seam made structural (the tested rung lives outside the module spine).
+#     TEMPORARY — retired by #80: when the stress-test / property-fuzz harness moves to a
+#     SEPARATE test target OUTSIDE Bang/, these Surface property-tests move with it and
+#     Bang/ becomes 0-exception, all-module. PropTest's location here is a way-station,
+#     not a permanent home — do not over-invest in it.
 ALLOWLIST="$(cat <<'EOF'
 Bang/Surface/PropTest.lean
 EOF

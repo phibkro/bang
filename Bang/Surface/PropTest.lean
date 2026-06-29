@@ -9,6 +9,11 @@
   the one documented non-module exception — and that is exactly the verified-spine /
   tested-superset seam made structural: the proptest rung lives outside the module spine.
 
+  TEMPORARY — retired by task #80: when the stress-test / property-fuzz harness lands in a
+  SEPARATE test target OUTSIDE Bang/, these Surface property-tests move there and Bang/
+  becomes 0-exception, all-module. This file is a way-station, not a permanent home; don't
+  over-invest in its location.
+
   Surface-proper is a `module`; this file `import`s it (non-module importing a module
   is fine) and re-opens its namespace, so the laws read `push`/`empty`/`pop`/`Source.eval`
   exactly as before. Behaviour is unchanged — the same three `#test`s, same generators.
