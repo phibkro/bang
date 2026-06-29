@@ -182,14 +182,16 @@ lang-bang/                  ← project root (Lean 4 conventions)
 ├── lake-manifest.json      ← dependency lock (Mathlib + plausible)
 ├── flake.nix .envrc        ← Nix dev shell
 ├── Makefile                ← just verify | build | audit | selfcheck | clean
-├── Bang/                   ← the Lean library
-│   ├── EffectRow.lean      ← row algebra + sound unifier (K1)
-│   ├── Eval.lean           ← reference interpreter (K2/K3) — graded-CBPV port at ◊2
-│   ├── Calc*.lean          ← K3 calculated machines (collapsing into one at ◊3; see ADR-0017)
-│   ├── Spec.lean           ← wasmfx spec (graded-CBPV + LR + WasmFX target)
-│   ├── Compat.lean         ← per-rule compatibility lemmas (Phase B targets)
+├── Bang/                   ← the Lean library (tier folders; `ls Bang/` reads as the architecture)
+│   ├── Frontend/           ← Surface · NamedCore (parse/elaborate → IR)
+│   ├── Core/               ← IR · Typing · Semantics · Grade · EffectRow · Freshness · CapCoh · Soundness
+│   ├── Backend/            ← AbstractMachine (calculated VM) · Wasm (verified target)
+│   ├── Meta/               ← LR · BinaryLR (the logical relations)
+│   ├── Witness/  Reify/    ← refute-witnesses · CalcReify
+│   ├── Spec.lean           ← wasmfx spec (graded-CBPV + LR + WasmFX target) — frozen acceptance criteria
 │   ├── Audit.lean          ← #print axioms gate
 │   └── Distribution.lean   ← semilattice / CALM asset (flagged conjecture)
+│   (authoritative module graph: GENERATED in docs/architecture/core-overview.md §2)
 ├── tools/
 │   ├── audit.sh            ← static cheats grep + lake build
 │   └── selfcheck.mjs       ← zero-dep Node smoke for the row unifier
