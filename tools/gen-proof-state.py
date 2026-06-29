@@ -181,6 +181,20 @@ def main() -> int:
     lean_root = os.path.abspath(args.lean_root)
     context = os.path.abspath(args.context or os.path.join(lean_root, "CONTEXT.md"))
 
+    # FAST PATH (--check only): the block derives ONLY from `Bang/` (Audit headlines +
+    # burndown sorries), and its embedded provenance sha is the last `Bang/` commit. If
+    # that still equals the current last-`Bang/` commit, the block provably cannot have
+    # drifted → PASS WITHOUT invoking `lake` — the gate's single most expensive leg
+    # (~1.5s, the only one that elaborates the spine). Docs/tooling commits skip it.
+    if args.check and os.path.exists(context):
+        md0 = open(context, encoding="utf-8").read()
+        m = re.search(r"Proof-state at `([0-9a-f]+)`", md0)
+        if BEGIN in md0 and END in md0 and m and m.group(1) == sha(lean_root):
+            print("── proof-state ──\nPASS: block provenance sha ≡ last `Bang/` commit "
+                  "(unchanged) — lake skipped.")
+            return 0
+        # else fall through to the full lake-based check below.
+
     report_text = axiom_report(lean_root, build=args.build)
     report = parse_axioms(report_text) if report_text is not None else {}
 

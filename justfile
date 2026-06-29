@@ -57,8 +57,10 @@ wasmfx-probe:
 # Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
 # STM-only) + ADR link integrity + ADR decided-ledger currency (gen-adr-index
 # --check: README ≡ frontmatter, Status copies agree, Q⟺ADR) + the
-# import-direction V (ADR-0046/0047: Core imports neither edge). Fast, no Lean
-# build. Also run by `just audit`. adr-check is HERE (not just in `just verify`)
+# import-direction V (ADR-0046/0047: Core imports neither edge). Fast: no Lean
+# build on docs/tooling commits — the proof-state leg elaborates Audit.lean ONLY
+# when `Bang/` actually moved (sha short-circuit). Also run by `just audit`.
+# adr-check is HERE (not just in `just verify`)
 # so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:
     bash tools/check-primitives.sh
@@ -75,11 +77,6 @@ fitness:
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
     python3 tools/gen-import-graph.py --check
-
-# Import-root coherence: every Bang/**/*.lean is imported in Bang.lean, except the
-# co-located `-- root-exclude:` allowlist (regression witnesses). Catches a new file
-# silently unbuilt (hence ungated). Also run by `just fitness`.
-check-bang-root:
 
 # Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
 # CONTEXT.md/ROADMAP.md resolves to a real commit (a rebase/drop makes the prose

@@ -16,7 +16,7 @@ echo "────────────────────────�
 
 total_s=0
 total_a=0
-for f in Bang/*.lean; do
+for f in $(find Bang -name '*.lean' | sort); do
   s=$(grep -cE '\bsorry\b' "$f" 2>/dev/null) || s=0
   a=$(grep -cE '^[[:space:]]*axiom\b' "$f" 2>/dev/null) || a=0
   t=$((s + a))
