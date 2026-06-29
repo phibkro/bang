@@ -38,11 +38,21 @@ adr-check:
 
 # Build the Lean library. First time: pulls Mathlib oleans (multi-GB).
 build:
-    # #40: cache-get ONLY when mathlib oleans are absent (fresh setup). In a worktree
-    # that already has them, skip it — its "URL changed → re-clone" path deletes
-    # .lake/packages/mathlib and (with a shared .git/objects across worktrees) raced
-    # an auto-gc into corrupting the store on 2026-06-27. Memory: shared-worktree-git-autogc-corruption.
-    [ -e .lake/packages/mathlib/.lake/build ] || lake exe cache get
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # #40b: NEVER `lake exe cache get` from a LINKED worktree — re-cloning Mathlib in a
+    # worktree corrupts the shared .git/objects (2026-06-27/-29). Create IC worktrees via
+    # tools/new-worktree.sh (it SEEDS .lake so this branch is never reached). Main checkout
+    # with oleans absent → cache-get is the legit first-setup path.
+    if [ ! -e .lake/packages/mathlib/.lake/build ]; then
+      if [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ]; then
+        echo "❌ #40b: this linked worktree has no seeded Mathlib oleans."
+        echo "   Spawn IC worktrees via tools/new-worktree.sh (seeds .lake), or 'lake exe cache unpack'."
+        echo "   Do NOT 'lake exe cache get' here — it corrupts the shared store."
+        exit 1
+      fi
+      lake exe cache get
+    fi
     lake build
 
 # Static + dynamic audit gate (see tools/audit.sh).

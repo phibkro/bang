@@ -21,7 +21,6 @@
 | # | item | type | status | links / notes |
 |---|------|------|--------|---------------|
 | 80 | stress-test harness — Comp generator + differential fuzz (B) | test | ready | **A DONE** (`Bang/Examples.lean`, 16 #guards, on main); B = the generator, retires the PropTest non-module exception |
-| 40b | **REAL #40 fix** — stale index-cache-tree ghost (NOT just gc.auto) | infra | ready | the gc.auto-0 fix was insufficient; root = `.devcontainer/e266fdc` ghost from `git add -A` post-merge. Fix: **pathspec-only adds (never `git add -A`)** · **seed `.lake` on IC-worktree create** (so first build never hits cache-get) · prune worktrees aggressively. Update the build recipe worktree-aware (cache unpack, never get). See [[shared-worktree-git-autogc-corruption]] |
 | 110 | bang REPL (interactive eval) | cli | queued | builds on #109 |
 | 111 | tree-sitter grammar → syntax highlighting | tooling | queued | `lang-bang-tree-sitter` worktree exists — check its state first |
 | 112 | elaborator error-message quality | surface | queued | ADR-0046/0047; touches Surface/NamedCore — gate carefully |
