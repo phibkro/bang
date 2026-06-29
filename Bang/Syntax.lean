@@ -10,7 +10,9 @@
   Theorem STATEMENTS live in Bang/Spec.lean.
 -/
 
-import Bang.Core
+module
+
+public import Bang.Core
 
 namespace Bang
 
@@ -19,6 +21,11 @@ open Bang.EffectRow (Label)
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 variable [EffSig Eff Mult]
+
+-- Syntax is the typing-judgment layer; the build reveals 100% public surface
+-- (HasVTy/HasCTy/HasStack + every predicate is consumed downstream — even the
+-- labelOccurs workers: 30/19 refs), so the whole body opts in via `public section`.
+public section
 
 
 /-! ### 1.5 The `q || 1` coeffect floor (`q_or_1`)
@@ -390,5 +397,7 @@ row `ε` (ADR-0018 rule 2, ADR-0024 D3): the instantiating row must avoid the fo
 monomorphic kernel has no `∀`-row binder, so the quantifier lives only as this `(q, L)` pair. -/
 def WfInst {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
     (_q : Eff → CTy Eff Mult) (L ε : Eff) : Prop := Disjoint ε L
+
+end -- public section
 
 end Bang
