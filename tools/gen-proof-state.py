@@ -160,8 +160,9 @@ def render(lean_root: str, report: dict[str, list[str]]) -> str:
     return "\n".join(lines)
 
 
+from genblock import splice as _splice  # the shared GEN-block primitive (#113)
 def splice(md: str, block: str) -> str:
-    return re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), block, md, flags=re.DOTALL)
+    return _splice(md, BEGIN, END, block)
 
 
 def buildable(report, lean_root) -> bool:

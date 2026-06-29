@@ -119,8 +119,9 @@ def render(recipes):
     return "\n".join(lines)
 
 
+from genblock import splice as _splice  # the shared GEN-block primitive (#113)
 def splice(md, block):
-    return re.sub(re.escape(GEN_BEGIN) + r".*?" + re.escape(GEN_END), block, md, flags=re.DOTALL)
+    return _splice(md, GEN_BEGIN, GEN_END, block)
 
 
 def main():
