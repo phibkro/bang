@@ -100,10 +100,10 @@ HasVTy (q .: γ) ... → HasCTy ... → HasCTy ... (subst at 0)
 - (+) `subst_value` and all metatheory statements shed their side-conditions;
   the kernel rules shed the `γ y = 0` / context-wf premises added in `e1e4920`.
 - (+) `preservation`/`progress`/`type_safety` proofs start from a clean base.
-- (−) **Rewrite scope** (the real cost): `Bang/Core.lean` (syntax + context),
-  `Bang/Operational.lean` (de Bruijn `subst` with shift/lift, `step`, `eval`),
-  `Bang/Syntax.lean` (all typing rules), `Bang/Spec.lean` (statements simplify),
-  `Bang/Metatheory.lean` (redo — the grade arithmetic and proof structure port;
+- (−) **Rewrite scope** (the real cost): `Bang/Core/IR.lean` (syntax + context),
+  `Bang/Core/Semantics.lean` (de Bruijn `subst` with shift/lift, `step`, `eval`),
+  `Bang/Core/Typing.lean` (all typing rules), `Bang/Spec.lean` (statements simplify),
+  `Bang/Core/Soundness.lean` (redo — the grade arithmetic and proof structure port;
   weakening becomes a shift lemma). ~ADR-0019-sized, concentrated in the kernel.
 - (−/~) **ADR-0019 partially superseded.** The Finsupp `Var →₀ Mult` grade-vector
   solved the *named*-key alignment problem; de Bruijn solves it positionally, so
@@ -113,7 +113,7 @@ HasVTy (q .: γ) ... → HasCTy ... → HasCTy ... (subst at 0)
 - (~) **Readability.** Terms become index-bearing. Mitigation: a pretty-printer /
   named-surface layer at the edges if needed (post-kernel); the kernel itself is
   read through proofs, where indices are fine.
-- (=) **Unaffected:** the effect-row unifier (`Bang/EffectRow.lean`, `Finset
+- (=) **Unaffected:** the effect-row unifier (`Bang/Core/EffectRow.lean`, `Finset
   Label`) and `tools/selfcheck.mjs` test the *row algebra*, not the term language.
   `OpId`/`Label` stay as-is. The legacy `Bang.Eval` / `Calc*` machines are a
   separate namespace and untouched.

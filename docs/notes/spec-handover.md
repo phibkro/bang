@@ -6,7 +6,7 @@
 
 ## The thin-interface principle
 
-The bang-lang verification (`Bang/Spec.lean` + `Bang/Compat.lean` + `Bang/Audit.lean`)
+The bang-lang verification (`Bang/Spec.lean` + `Bang/Meta/BinaryLR.lean` + `Bang/Audit.lean`)
 is a **thin interface** over a deep research/design effort. Its job: let the
 engineering phase build the Lean proof **without re-deriving any design**.
 Everything contestable has already been argued and frozen; what remains is
@@ -27,7 +27,7 @@ graph LR
 | File | Role |
 |---|---|
 | `Bang/Spec.lean` | The contract. Theorem **statements are frozen**; bodies are `sorry`. |
-| `Bang/Compat.lean` | `lr_fundamental` decomposed into one compatibility lemma per typing rule. |
+| `Bang/Meta/BinaryLR.lean` | `lr_fundamental` decomposed into one compatibility lemma per typing rule. |
 | `docs/notes/spec-proof-discipline.md` | Hard invariants, scope, phase order, PROOF_ORDER, definition of done. |
 | `Bang/Audit.lean` + `tools/audit.sh` | The ungameable gate: `#print axioms` + a grep CI. |
 | `.claude/agents/proof-engineer.md` | The persistent role that carries this discipline across sessions. |
@@ -57,7 +57,7 @@ graph LR
 1. **Phase A** — turn every `opaque` into a real definition; the `F e A` case
    of the LR is the crux (get it reviewed). Exit: `sorry` only in theorem bodies.
 2. **Phase B** — discharge in `PROOF_ORDER`: `lr_sound` / `lr_fundamental` (via
-   `Bang/Compat.lean`, `compat_handle` last) → `group_recovers` →
+   `Bang/Meta/BinaryLR.lean`, `compat_handle` last) → `group_recovers` →
    `compile_forward_sim` → `subst_value` → the `[STD]` block.
 3. **Port targets** are **Coq**: Torczon (cbpv-effects-coeffects), Biernacki
    (aleff-logrel), Benton–Hur. Lexa / AARA are paper-proven **strategy** refs.

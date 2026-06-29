@@ -1,6 +1,6 @@
 ---
 name: kernel-engineer
-description: Use for work on the bang-lang semantic kernel — graded-CBPV reference semantics (Bang/Spec.lean §0–§4, Bang/Operational.lean's Source.eval), effect-row algebra (Bang/EffectRow.lean), and the no_accidental_handling soundness obligation. Pair with proof-engineer when proof work is required. (Tools: Read, Edit, Write, Bash, Grep)
+description: Use for work on the bang-lang semantic kernel — graded-CBPV reference semantics (Bang/Spec.lean §0–§4, Bang/Core/Semantics.lean's Source.eval), effect-row algebra (Bang/Core/EffectRow.lean), and the no_accidental_handling soundness obligation. Pair with proof-engineer when proof work is required. (Tools: Read, Edit, Write, Bash, Grep)
 tools: Read, Edit, Write, Bash, Grep
 ---
 
@@ -22,13 +22,13 @@ meaning; WasmFX is verified output, not source-of-truth.
 | file | role |
 |------|------|
 | `Bang/Spec.lean` | the contract; theorem **statements** frozen (proofs live in `Metatheory`) |
-| `Bang/Core.lean` | graded-CBPV `Val`/`Comp`/`Handler`, types — the syntactic core (◊2) |
-| `Bang/Syntax.lean` | typing judgements `HasVTy`/`HasCTy` |
-| `Bang/Operational.lean` | `Source.step`/`Source.eval` — the CK machine; deep handlers (`splitAt`/`dispatchOn`) |
-| `Bang/Metatheory.lean` | the **proofs**: preservation/progress/type_safety/subst_value/no_accidental_handling |
-| `Bang/CalcVM.lean` | the ◊3 calculated machine (`evalD`, `compile`, `exec`, `compile_correct`) |
-| `Bang/EffectRow.lean` | row algebra with sound unifier |
-| `Bang/Compat.lean` | per-rule compatibility lemmas |
+| `Bang/Core/IR.lean` | graded-CBPV `Val`/`Comp`/`Handler`, types — the syntactic core (◊2) |
+| `Bang/Core/Typing.lean` | typing judgements `HasVTy`/`HasCTy` |
+| `Bang/Core/Semantics.lean` | `Source.step`/`Source.eval` — the CK machine; deep handlers (`splitAt`/`dispatchOn`) |
+| `Bang/Core/Soundness.lean` | the **proofs**: preservation/progress/type_safety/subst_value/no_accidental_handling |
+| `Bang/Backend/AbstractMachine.lean` | the ◊3 calculated machine (`evalD`, `compile`, `exec`, `compile_correct`) |
+| `Bang/Core/EffectRow.lean` | row algebra with sound unifier |
+| `Bang/Meta/BinaryLR.lean` | per-rule compatibility lemmas |
 | `Bang/Distribution.lean` | semilattice / CALM asset (flagged conjecture, not spine) |
 | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` | current architecture |
 | `docs/decisions/0001-effect-rows-as-finset-semilattice.md` | rows-as-sets commitment |
@@ -160,7 +160,7 @@ the artifact, never the say-so.
 
 ## One worked exemplar — calculate, don't design
 
-Canonical: **`compile_correct`** in `Bang/CalcVM.lean` (axiom-clean
+Canonical: **`compile_correct`** in `Bang/Backend/AbstractMachine.lean` (axiom-clean
 `[propext, Quot.sound]`). The shape that makes it correct-by-construction:
 
 ```

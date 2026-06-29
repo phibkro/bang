@@ -13,7 +13,7 @@
 ## Context
 
 The env-closed fundamental theorem (ADR-0034) relates an open computation to itself under
-`Vrel`-related closing environments (`EnvRel`/`closeC`, `Bang/LR.lean §5.2b`). The ◊4 resume
+`Vrel`-related closing environments (`EnvRel`/`closeC`, `Bang/Meta/LR.lean §5.2b`). The ◊4 resume
 point proposed adding a **closedness carrier to `EnvRel`** to discharge `closeC_subst_comm` —
 the substitution-descent lemma that unblocks every binder case of the induction.
 

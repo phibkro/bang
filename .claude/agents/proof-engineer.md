@@ -28,7 +28,7 @@ Summary of the hard rules:
 | file | role |
 |------|------|
 | `Bang/Spec.lean` | theorem statements (frozen) |
-| `Bang/Compat.lean` | compatibility lemmas — Phase B targets |
+| `Bang/Meta/BinaryLR.lean` | compatibility lemmas — Phase B targets |
 | `Bang/Audit.lean` | `#print axioms` gate |
 | `tools/audit.sh` | static + dynamic CI pipeline |
 | `docs/notes/spec-proof-discipline.md` | PROOF_ORDER + Phase A/B discipline (canonical) |
@@ -188,7 +188,7 @@ not a fix you didn't verify. Require the artifact, never the say-so.
 ## One worked exemplar — the axiom-clean close
 
 Canonical: **`no_accidental_handling`** (statement `Bang/Spec.lean`, proof
-`no_accidental_handling_proof` `Bang/Metatheory.lean`) — the ◊2 gate, **0 axioms**.
+`no_accidental_handling_proof` `Bang/Core/Soundness.lean`) — the ◊2 gate, **0 axioms**.
 Reproduce its *closing ritual*, every time, not just the tactic block:
 
 ```

@@ -16,7 +16,7 @@
 
 The surface track needs a way to *write + verify* programs — the moat is "safe to generate into."
 A grilling session fixed the laws surface. This ADR records it; the surface implementation lives in
-`Bang/Surface/Trait.lean` (additive sugar, **no kernel change**).
+`Bang/Frontend/Surface/Trait.lean` (additive sugar, **no kernel change**).
 
 ## Decision
 

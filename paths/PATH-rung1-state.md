@@ -46,7 +46,7 @@ the intended fix Q12 names.
 set ⊆ {propext, Classical.choice, Quot.sound}; do **not** regress `no_accidental_handling` (must stay
 0-axiom — the ◊2 gate).
 
-**S — surface (thin): extend `Bang/Surface.lean`.** Parse/lower `get`, `put e`, and a state-handler
+**S — surface (thin): extend `Bang/Frontend/Surface.lean`.** Parse/lower `get`, `put e`, and a state-handler
 form. Lower to `up ℓ "get"/"put"` + `Handler.state ℓ s₀`. Add a green state-cell demo from source
 text, à la rung 0.
 
@@ -88,9 +88,9 @@ as **ADR-0025** (K-ADR), tagged the crux.
 behaviour bit-identical to ADR-0023). Typing: `HasCTy.handleState` + `HasStack.stateF` (state IS now
 typable). `progress` is FULLY proven *including* state get/put dispatch (the live label is discharged
 by a frame whose interface catches the op). `no_accidental_handling` stays **0-axiom** (◊2 gate).
-The state CELL runs green: `Bang/Surface.lean` `stateCellComp` (`put 7; get ⟶ done 7`) by `rfl`.
+The state CELL runs green: `Bang/Frontend/Surface.lean` `stateCellComp` (`put 7; get ⟶ done 7`) by `rfl`.
 
-**What remains (2 marked RUNG1-OBLIGATIONs in `Bang/Metatheory.lean`):** `preservation`'s two
+**What remains (2 marked RUNG1-OBLIGATIONs in `Bang/Core/Soundness.lean`):** `preservation`'s two
 state-resume cases — typing the RESUMED stack `Kᵢ ++ handleF (state ℓ s') :: Kₒ` from the original
 `HasStack K`, re-typing the focus from the `up`'s result to `ret s`/`ret unit`. The hard core is a
 `dispatch_typed`-analog for `state` that KEEPS `Kᵢ` (re-installs the deep state frame) instead of
@@ -106,9 +106,9 @@ follow-on. A real *counter* (`get; put (get+1)`) still needs arithmetic `+` (a s
 ## POINTERS
 
 - Q12 (graded state handlers) + Q6 (resolved — CK machine) in `docs/notes/OPEN_QUESTIONS.md`.
-- Kernel: `Bang/Operational.lean` `dispatch` (the `.state _ _ => none` line is the gap) + `handlesOp`
-  (already recognizes `get`/`put`). `Bang/Core.lean` `Handler.state ℓ s`.
-- Typing: `Bang/Syntax.lean` handler typing; `Bang/Metatheory.lean` §E (config preservation/progress).
+- Kernel: `Bang/Core/Semantics.lean` `dispatch` (the `.state _ _ => none` line is the gap) + `handlesOp`
+  (already recognizes `get`/`put`). `Bang/Core/IR.lean` `Handler.state ℓ s`.
+- Typing: `Bang/Core/Typing.lean` handler typing; `Bang/Core/Soundness.lean` §E (config preservation/progress).
 - Pattern: **ADR-0023** (the throws CK machine) is the template — state is the SAME stack scan,
   KEEPING Kᵢ instead of discarding it.
-- Surface: `Bang/Surface.lean` (rung 0) — extend the parser + lowering.
+- Surface: `Bang/Frontend/Surface.lean` (rung 0) — extend the parser + lowering.

@@ -72,7 +72,7 @@ Discharge `sorry`s in `PROOF_ORDER`. After each: `lake build` + run
 
 1. **`lr_sound`, `lr_fundamental`** — the LR is the spine; nothing is
    legitimate until soundness holds. `lr_fundamental` decomposes into the
-   per-rule compatibility lemmas in `Bang/Compat.lean`; prove `compat_handle`
+   per-rule compatibility lemmas in `Bang/Meta/BinaryLR.lean`; prove `compat_handle`
    LAST (it is the `[KEY]` one that consumes `Srel`). The rest of Compat is
    mechanical.
 2. **`group_recovers`** — ✓ RESOLVED (the research gate fired, 2026-06-23, ADR-0032):
@@ -82,7 +82,7 @@ Discharge `sorry`s in `PROOF_ORDER`. After each: `lake build` + run
    (`all_or_nothing_abort`). The cheap closes `seq_unit` + `zero_usage_erasable` take this slot now.
 3. **`compile_forward_sim`** — the contribution. Fail fast if it won't go.
 4. **`subst_value`** — validates the CBPV "no σ-split" assumption. ✓ PROVEN
-   (de Bruijn, `Bang/Metatheory.lean`, axiom-clean).
+   (de Bruijn, `Bang/Core/Soundness.lean`, axiom-clean).
 5. **the `[STD]` block** (preservation · progress · type_safety) — ✓ PROVEN
    (2026-06-22, axiom-clean). ⚠ It was NOT "mechanical": proving `preservation`
    exposed 4 ways the Phase-A typing rules diverged from the Torczon port and made
@@ -116,7 +116,7 @@ The standard shape for a proof body in Bang/Spec.lean (or downstream
 modules implementing Phase B). Note: statement unchanged from the frozen
 PRD; only the body fills in.
 
-`subst_value` is now PROVEN on the de Bruijn base (`Bang/Metatheory.lean`,
+`subst_value` is now PROVEN on the de Bruijn base (`Bang/Core/Soundness.lean`,
 axiom-clean) — the real proof is a bottom-up lemma tree, not a single `induction`.
 The block below is kept only to ILLUSTRATE the pattern (intro → induction →
 case-by-case, technique cited, `sorry`-with-comment for blocked cases), using the
@@ -125,7 +125,7 @@ case-by-case, technique cited, `sorry`-with-comment for blocked cases), using th
 ```lean
 -- pattern: structural case-analysis on the typing derivation, technique cited.
 -- shape: torczon-oopsla24-effects-coeffects §graded-subst  (port: resource/CBPV/typing.v)
--- the REAL proof (and its weakening/grade-arithmetic lemmas) is in Bang/Metatheory.lean.
+-- the REAL proof (and its weakening/grade-arithmetic lemmas) is in Bang/Core/Soundness.lean.
 theorem subst_value
     (ρ : Mult) {γ γ_v : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {v : Val} {A : VTy Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult} :

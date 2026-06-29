@@ -37,7 +37,7 @@ Two facts settled the machine's shape:
 
 ## Decision
 
-Calculate a **flat generalised-continuation machine**, `Bang/CalcReify.lean`,
+Calculate a **flat generalised-continuation machine**, `Bang/Reify/CalcReify.lean`,
 following the Hillerström–Lindley–Atkey representation: the continuation `Kont` is a
 list of frames (`clause = some` ⇒ a handler frame; `clause = none` ⇒ a pure-return
 frame), and a **reified resumption is a captured prefix of that list**, held in a
@@ -95,12 +95,12 @@ the hand-built `Kont`/`Frame` splicing matches the textbook closure semantics.
 
 **Bisimulation — reference built + pure core proven.** The open theorem is now
 being attacked directly, in two committed, `sorry`-free pieces:
-- `Bang/CalcReifyRef.lean` — the denotational reference *exists in Lean*. The
+- `Bang/Reify/CalcReifyRef.lean` — the denotational reference *exists in Lean*. The
   positivity escape is concrete: **CBPV** (values vs computations split) + a **free
   monad** `Comp` whose resumption `Int → Comp` sits in *positive* position, plus
   fuel for the non-structural `k w` re-runs. It is `rfl`-validated against the same
   seven demonstrators — a second in-Lean cross-check.
-- `Bang/CalcReifySim.lean` — the **pure core** of the bisimulation: the
+- `Bang/Reify/CalcReifySim.lean` — the **pure core** of the bisimulation: the
   continuation-passing simulation (cf. `CalcCBN.sim`) for the `val`/`add`/`var`/
   `let` fragment, with the handler stack `K` and data stack carried as passengers,
   proven by structural induction (`pure_sim`/`pure_correct`). Crucially `eval_pure`/

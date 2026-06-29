@@ -114,7 +114,7 @@
                                      GATE MET (just verify green). RESIDUAL (non-gate):
                                      effect_sound (trace semantics → Q14), zero_usage → ◊4.
 ◊3 ✓ CalcVM ported (GATE MET)     ── 2026-06-23. K2 Calc* matrix collapsed into ONE
-                                     graded-CBPV calculated machine `Bang/CalcVM.lean`
+                                     graded-CBPV calculated machine `Bang/Backend/AbstractMachine.lean`
                                      (Bahr–Hutton, invariant #4): pure CBPV + deep
                                      handlers/throws + resumptive state + transaction
                                      + ADT elims. `exec ∘ compile ≡ eval` proven via
@@ -216,7 +216,7 @@
 ◊6   Release v0
 ```
 
-> **Product-spine note (2026-06-24):** the surface **trait/law loop** (`Bang/Surface/Trait.lean`) is
+> **Product-spine note (2026-06-24):** the surface **trait/law loop** (`Bang/Frontend/Surface/Trait.lean`) is
 > verified + GATED in the build graph (`3dbf819`) — eq→preorder→order + Int:Order proof-first, run via
 > `Source.eval` (ADR-0040). The TESTED rung now BINDS its check BY CONSTRUCTION (`39c7fbd`): a law false on
 > its sample is unconstructible (evidence = sample + kernel-checked `holds`), teeth mutation-tested.
@@ -310,11 +310,11 @@ Spec.lean axioms **44 → 36** (8 closed):
 
 **Q1 resolved (option a)**: Eff algebra switched from `[Semiring Eff]` to
 `[Lattice Eff] [OrderBot Eff]`. Concrete instance:
-`Bang.EffRow := Finset Label` (in `Bang/EffectRow.lean`). Operator changes:
+`Bang.EffRow := Finset Label` (in `Bang/Core/EffectRow.lean`). Operator changes:
 `0` → `⊥`, `+` → `⊔`, `l * e` → `l ⊔ e` in `no_accidental_handling`.
 
 **Q2 resolved**: `Mult` concretized as `Bang.QTT = {zero, one, omega}` with
-`CommSemiring` instance (`Bang/Mult.lean`). All Semiring laws via case
+`CommSemiring` instance (`Bang/Core/Grade.lean`). All Semiring laws via case
 analysis. Spec stays parametric in `[Semiring Mult]`; QTT is the default.
 
 **Operational-side headline theorems** (subst_value, preservation, progress,
@@ -334,7 +334,7 @@ product spine (PRD §7) parallel to the verification spine — see ROADMAP.md "P
 
 **Product spine (surface — the rungs; PRD §3.1):**
 - **rung 0 ✓ DONE** (`paths/PATH-tracer-bullet.md`) — surface → graded-CBPV `Comp` → `Source.eval` → a
-  VALUE. The language RUNS (pure + throws). `Bang/Surface.lean`: named AST + name→de-Bruijn lowering +
+  VALUE. The language RUNS (pure + throws). `Bang/Frontend/Surface.lean`: named AST + name→de-Bruijn lowering +
   fuel-total parser + `#guard`/`rfl` demos.
 - **rung 1 ✓ DONE** (`paths/PATH-rung1-state.md`) — first resumptive paradigm: State. `dispatch`
   RESUMES (ADR-0025; the closed CK focus dissolved Q12's grade tension — **no `ω`-restriction on `S`**).
@@ -434,11 +434,11 @@ it was false-as-stated + vacuous, and v1 rollback is the txn handler. `effect_so
 → ◊5.) **Foundation already landed (2026-06-23):** the LR relations are real
 WF defs (U1/U2), row-indexed (ADR-0033); only the proof bodies remain. Input:
 the now-ported CalcVM (◊3) + the step-indexed LR machinery sketched in
-`Bang/LR.lean` + the references (`references/papers/3-lr/`). The `zero_usage_erasable`
+`Bang/Meta/LR.lean` + the references (`references/papers/3-lr/`). The `zero_usage_erasable`
 and `effect_sound` residuals deferred from ◊2 also live here (LR-flavored).
 
 **◊3 — CalcVM ported — GATE MET (2026-06-23).** K2 Calc* matrix collapsed into one
-graded-CBPV calculated machine `Bang/CalcVM.lean` (Bahr–Hutton); `exec ∘ compile ≡ eval`
+graded-CBPV calculated machine `Bang/Backend/AbstractMachine.lean` (Bahr–Hutton); `exec ∘ compile ≡ eval`
 proven (`compile_correct` + the `evalD ≡ Source.eval` bridge); K2 matrix archived
 (ADR-0017); 16-case diff-test battery green; all axiom-clean. See Position block + the
 (now-complete) `paths/PATH-calcvm-port.md`.
@@ -463,9 +463,9 @@ DONE — Path B rule upgrade (Q10/Q3, ADR-0019):
 DONE — de Bruijn rewrite (ADR-0020, `411ed08`) + first STD theorem:
 [x] Core/Operational/Syntax/Spec rewritten to de Bruijn; 5 side-conditions GONE
 [x] subst_value PROVEN (`d72199e`) — axiom-clean, zero sorry; List carrier held
-    (length_eq lemma; no Fin n fallback). Machinery in Bang/Metatheory.lean.
+    (length_eq lemma; no Fin n fallback). Machinery in Bang/Core/Soundness.lean.
 
-DONE — STD block (ADR-0021, `Bang/Metatheory.lean` §E):
+DONE — STD block (ADR-0021, `Bang/Core/Soundness.lean` §E):
 [x] preservation — step-inversion lemmas + subst_value; the β cases needed the
     ADR-0021 lam-body-effect + CommSemiring fixes to make `e' ≤ e` hold
 [x] progress — generalized terminal motive (ret ∨ lam ∨ steps), specialized to F

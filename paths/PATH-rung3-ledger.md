@@ -74,9 +74,9 @@ then **surface IC** (ledger + law). Same triad + flow as rung 2.
   continuation — rollback) · ADR-0001/0018 (effect rows — the stm label).
 - Literature (`references/`, ADR-0030): Harris PPoPP'05 (the semantics — abort discards delta, keeps
   allocations), Guerraoui–Kapalka opacity (the upgrade target), Tomášek (STM-as-handler prior art).
-- Kernel: `Bang/Core.lean` (`Handler` — add `transaction`; `EffSig` — stm op sigs), `Bang/Operational.lean`
-  (`handlesOp` + resume dispatch — generalize state to a heap), `Bang/Syntax.lean` (typing),
-  `Bang/Metatheory.lean` (preservation/progress cases). Surface: `Bang/Surface.lean`. Pattern: rung 1
+- Kernel: `Bang/Core/IR.lean` (`Handler` — add `transaction`; `EffSig` — stm op sigs), `Bang/Core/Semantics.lean`
+  (`handlesOp` + resume dispatch — generalize state to a heap), `Bang/Core/Typing.lean` (typing),
+  `Bang/Core/Soundness.lean` (preservation/progress cases). Surface: `Bang/Frontend/Surface.lean`. Pattern: rung 1
   (state handler) is the template — read its commits + `dispatch_state_typed`.
 
 ## STATUS — ✓ GOAL MET (kernel + verified law), 2026-06-23

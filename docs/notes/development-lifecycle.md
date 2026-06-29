@@ -77,9 +77,9 @@ verify` when `just check Bang/Spec.lean` would have caught it in 2 seconds.
 | No `axiom` outside `Bang/Spec.lean` family | pre-commit hook | same |
 | `#print axioms` ⊆ {propext, Classical.choice, Quot.sound} | `Bang/Audit.lean` + `just axioms` | proof-engineer subagent |
 | Theorem statements frozen | discipline (proof-engineer) | `docs/notes/spec-proof-discipline.md` |
-| Rows = idempotent `Finset` | ADR-0001; type system | `Bang/Core.lean` (post-Q1: Lattice + OrderBot) |
+| Rows = idempotent `Finset` | ADR-0001; type system | `Bang/Core/IR.lean` (post-Q1: Lattice + OrderBot) |
 | Kernel = 5 primitives | ADR / CLAUDE.md invariant 5 | `CLAUDE.md` |
-| Every `Bang/**/*.lean` is a `module` (or an allowlisted exception) | `tools/check-all-modules.sh` (`just fitness`) | the inline exception allowlist (currently `Surface/PropTest.lean`, temp — retired by #80) |
+| Every `Bang/**/*.lean` is a `module` (or an allowlisted exception) | `tools/check-all-modules.sh` (`just fitness`) | the inline exception allowlist (currently `Bang/Frontend/Surface/PropTest.lean`, temp — retired by #80) |
 | ADR for reversible decisions | discipline + PR review | `docs/decisions/README.md` |
 | Open questions tracked (not silently dodged) | proof-engineer discipline | `docs/notes/OPEN_QUESTIONS.md` |
 | Single source of truth (no fact duplicated) | discipline + code review | this doc |

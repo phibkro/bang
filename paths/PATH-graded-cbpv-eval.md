@@ -62,7 +62,7 @@
       the de Bruijn base, ZERO `sorry`, axiom-clean {propext, Classical.choice,
       Quot.sound}. The List-length wall did NOT materialize — `HasCTy.length_eq`
       makes `γ.length = Γ.length` a theorem, so no `Fin n` fallback needed.
-      Lemma tree in `Bang/Metatheory.lean` (grade arithmetic · weakening/shift ·
+      Lemma tree in `Bang/Core/Soundness.lean` (grade arithmetic · weakening/shift ·
       Sgrade homomorphism · `subst_gen` via `HasCTy.rec`). Also fixed a
       `tools/check.sh` false-green (grep missed lake's path-prefixed errors).
 - [x] **STD block COMPLETE (2026-06-22)** — `preservation`, `progress`,
@@ -72,7 +72,7 @@
       body effect φ (the first cut emitted ⊥, making β-preservation false); handle
       restricted to F-typed bodies (general B breaks progress); `Mult` strengthened
       to `[CommSemiring]` (letC grade reshape needs `q1*q'=q'*q1`); `progress`
-      stated at `F q A` (false at general B). Machinery in `Bang/Metatheory.lean` §E:
+      stated at `F q A` (false at general B). Machinery in `Bang/Core/Soundness.lean` §E:
       `step_letC_inv`/`step_app_inv`/`step_handle_inv`, `preservation_proof`,
       `progress_gen`/`progress_proof`, `type_safety_proof`.
 - [~] **◊2 headline arc started (ADR-0022)**: Unit 1 (EffSig signatures) green; Unit 2
@@ -86,7 +86,7 @@
         own ADR when sub-usage becomes load-bearing (likely at preservation).
       - Q4 (handle) still same-φ; preservation/effect_sound will force the
         label-removing rule.
-      - `Bang/Metatheory.lean` (named) stays in git history as the de Bruijn
+      - `Bang/Core/Soundness.lean` (named) stays in git history as the de Bruijn
         evidence; it'll be rewritten, not extended.
 
 ## Design decisions resolved this path

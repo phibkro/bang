@@ -10,7 +10,7 @@
   → `[propext, sorryAx, Quot.sound]`; the 4 LR-relation axioms became WF defs; ◊2/◊3 gates not regressed).
 - **Date:** 2026-06-23
 - **Layer:** P (proof / spec — the step-indexed logical relation and the two headline statements over it).
-- **Supersedes:** the Phase-A stub signatures of `Crel`/`Krel`/`Srel` (`Bang/LR.lean` §5.2) and the
+- **Supersedes:** the Phase-A stub signatures of `Crel`/`Krel`/`Srel` (`Bang/Meta/LR.lean` §5.2) and the
   corresponding clauses of `lr_sound`/`lr_fundamental` (`Bang/Spec.lean`).
 - **Reference:** Biernacki et al. POPL'18 *Handle with Care* §5.1 Figs 6–9 (`E⟦τ/ε⟧` / `K⟦τ/ε⟧` indexed by
   type **and** row); ADR-0021/0023 (precedent: ◊2 statements tightened when a Phase-A stub met the real

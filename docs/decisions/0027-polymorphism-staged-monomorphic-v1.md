@@ -35,7 +35,7 @@ but carries undecidable inference (annotations everywhere) and entangles every o
    "paradigms as reusable libraries" becomes real (a State library generic in the state type). Sits on the
    ADR-0026 ladder's automatic rung (inference decidable ⇒ no annotation burden).
 3. **Ambitious — System F** (higher-rank / impredicative) + **effect-row polymorphism** (row variables
-   `⟨e | ε⟩` over the set-rows, **cashing the existing K1 sound unifier** in `Bang/EffectRow.lean`) +
+   `⟨e | ε⟩` over the set-rows, **cashing the existing K1 sound unifier** in `Bang/Core/EffectRow.lean`) +
    **grade polymorphism** (`∀ q. …`, Granule-level). Higher-rank inference is undecidable ⇒ annotations
    (the ADR-0026 explicit climb).
 

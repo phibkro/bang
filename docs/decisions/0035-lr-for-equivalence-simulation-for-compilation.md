@@ -14,7 +14,7 @@
 
 ◊4 proves the source-level equational theorems with a **biorthogonal step-indexed
 logical relation** (Biernacki POPL'18 + Benton–Hur ICFP'09): `Vrel`/`Crel`/`Krel`/`Srel`
-in `Bang/LR.lean`, where `Crel` is co-behaviour against *every* `Krel`-related stack
+in `Bang/Meta/LR.lean`, where `Crel` is co-behaviour against *every* `Krel`-related stack
 and `Krel` closes back over `Crel`/`Srel` (the ⊤⊤-closure).
 
 Lindley et al.'s **AsmFX — "Effect Handlers All the Way Down"** (Oct'25 draft,

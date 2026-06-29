@@ -87,7 +87,7 @@ mechanized step-by-step calculation; `CalcEff`/`CalcSt` exercise one-shot
 
 - The **effect-shape → composition map** above is THE algebraic insight
   to keep. It tells you, for a given handler shape, what runtime
-  apparatus is needed. Useful when designing `Bang/Operational.lean`'s
+  apparatus is needed. Useful when designing `Bang/Core/Semantics.lean`'s
   `Source.step` rules for new handler types.
 - The **fuel-bounded totality discipline** carries over: graded-CBPV
   `Source.eval` uses the same `Nat`-fuel pattern.

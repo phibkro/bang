@@ -9,7 +9,7 @@
 
 - **Status:** Accepted + **LANDED** (2026-06-23, this retirement commit) — `group_recovers` DELETED from
   `Bang/Spec.lean` §6 and its `#print axioms` line from `Bang/Audit.lean`. `≈` UNCHANGED (the whole point —
-  no LR-spine re-derivation). Supersedes the "group ⇒ rollback" row of ADR-0018's Trinity. NOTE: `Bang/LR.lean`'s
+  no LR-spine re-derivation). Supersedes the "group ⇒ rollback" row of ADR-0018's Trinity. NOTE: `Bang/Meta/LR.lean`'s
   §6 algebra (`seqComp`/`idComp`/`recover`) was concretized from axioms to defs by ◊4 U1 (`a58a396`) — so the
   spike's original "`LR.lean` UNCHANGED" framing is superseded; `recover` is now an unused def, retained pending
   a later cleanup.
@@ -27,13 +27,13 @@ theorem group_recovers [AddGroup Eff] {c : Comp} : seqComp c (recover c) ≈ idC
 stated inside a section with `variable {Eff} [Lattice Eff] [OrderBot Eff]`. So its full
 hypothesis set is `[Lattice Eff] [OrderBot Eff] [AddGroup Eff]`.
 
-The §6 recovery algebra is **defined**, not axiomatized (`Bang/LR.lean:34–46`):
+The §6 recovery algebra is **defined**, not axiomatized (`Bang/Meta/LR.lean:34–46`):
 - `seqComp c₁ c₂ := Comp.letC c₁ (Comp.shift c₂)`  — run `c₁`, discard its value, run `c₂`
 - `idComp := Comp.ret Val.vunit`                    — the pure no-op `ret ()`
 - `recover _c := idComp`                            — recovery scaffold is the IDENTITY
 
 `≈` is plain contextual equivalence over fuel-bounded convergence
-(`ctxEquiv`, `Bang/LR.lean`): quantify over all `Cxt = EvalCtx`, compare `Converges`.
+(`ctxEquiv`, `Bang/Meta/LR.lean`): quantify over all `Cxt = EvalCtx`, compare `Converges`.
 
 Unfolding the conclusion: `seqComp c (recover c) = seqComp c idComp = (c ; ret ())`.
 So the claim is **`(c ; ret ()) ≈ ret ()`** — "running `c`, discarding its result, then
@@ -42,7 +42,7 @@ returning unit, is observationally indistinguishable from just returning unit."
 ## The three findings (each sourced + machine-checked)
 
 ### 1. The conclusion is `Eff`-free; the `[AddGroup Eff]` hypothesis cannot reach it.
-`Comp` is a plain `inductive Comp : Type` (`Bang/Core.lean:91`) — **not parametric in
+`Comp` is a plain `inductive Comp : Type` (`Bang/Core/IR.lean:91`) — **not parametric in
 `Eff`**. `seqComp`/`recover`/`idComp : Comp → …` carry no `Eff`. So no instance on `Eff`
 can constrain the conclusion. `group_recovers` is therefore NOT dischargeable by exploiting
 the hypothesis — the hypothesis is inert. (This rules out a cheap ex-falso/vacuity close.)
@@ -52,14 +52,14 @@ the hypothesis — the hypothesis is inert. (This rules out a cheap ex-falso/vac
 any context where RHS does — or (b) performs an observable effect a context can witness.
 A genuine rollback law must SAY the effect of `c` is undone; this definition's `recover`
 discards `c` entirely and asserts `c` was unobservable. The `recover _c := idComp` comment
-(`Bang/LR.lean:38`) admits the inversion is meant to be "carried by the relation" — but `≈`
+(`Bang/Meta/LR.lean:38`) admits the inversion is meant to be "carried by the relation" — but `≈`
 has no group structure to carry it. **The proof gap is real and the statement-as-`≈` is wrong**,
 not merely hard.
 
 ### 3. The hypothesis triple is SATISFIABLE — but only by the trivial one-point effect algebra.
 Machine-checked (`nix develop`, Lean):
 - `AddGroup (Finset ℕ)` — **synthInstanceFailed**. The concrete `EffRow := Finset Label`
-  (`Bang/EffectRow.lean:43`) has **no** `AddGroup` instance, and none can exist nontrivially
+  (`Bang/Core/EffectRow.lean:43`) has **no** `AddGroup` instance, and none can exist nontrivially
   (Finset union is idempotent ⇒ no inverses). So for the SHIPPING effect type the theorem
   cannot be instantiated at all.
 - `[Lattice PUnit] [OrderBot PUnit] [AddGroup PUnit]` — **all synthesize** (OrderBot

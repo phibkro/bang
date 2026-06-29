@@ -59,7 +59,7 @@ HUMAN/AGENT ──► SUGAR SURFACE ──elaborate (infer)──► CANONICAL C
 
 ## Amendment (2026-06-25) — the canonical core IS named-explicit S-expressions
 
-Verified by round-tripping the actual kernel AST (`Bang/Core.lean`) against the rung programs. The
+Verified by round-tripping the actual kernel AST (`Bang/Core/IR.lean`) against the rung programs. The
 canonical core is a 1:1 S-expr serialization of the `Comp`/`Val`/`Handler` term + explicit type/grade
 annotations, with NAMED binders — `name → de-Bruijn` is the thinnest elaboration to the kernel term
 (where the proofs live). So the full stack is: `sugar surface → named-explicit core (S-expr) → de-Bruijn

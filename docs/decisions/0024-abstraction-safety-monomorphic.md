@@ -9,7 +9,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-22
 - **Layer:** K (kernel — the §0.5 effect-row well-formedness block; the ◊2 gate theorem)
-- **Resolves:** the ◊2 gate (`no_accidental_handling` proven); concretizes the `WfInst`/`RowAll`/`HandlesIntended` axioms (`Bang/Syntax.lean §0.5`)
+- **Resolves:** the ◊2 gate (`no_accidental_handling` proven); concretizes the `WfInst`/`RowAll`/`HandlesIntended` axioms (`Bang/Core/Typing.lean §0.5`)
 - **Builds on:** ADR-0018 (lacks-constraint discipline — the *why*), ADR-0023 (the label-indexed CK machine — the *mechanism* that discharges it)
 - **Reference:** Zhang–Myers POPL'19 (accidental handling / tunneling); Biernacki et al. POPL'18 §5.4 (the set-row fragment)
 

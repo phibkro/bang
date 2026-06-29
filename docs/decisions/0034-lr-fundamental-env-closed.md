@@ -35,7 +35,7 @@ lr_fundamental        : HasCTy γ Γ c e B → ∀ n δ₁ δ₂, EnvRel n Γ δ
 lr_fundamental_closed : HasCTy γ []  c e B → ∀ n,                       Crel n B e c c                  -- Γ=[] instance, empty env, closeC ε c = c
 ```
 - `EnvRel n Γ δ₁ δ₂` relates two closing substitutions pointwise by `Vrel` at each `Γ` slot; `closeC`/`closeV`
-  apply a closing substitution to a `Comp`/`Val`. These live in `Bang/LR.lean §5.2b` (relocated from Compat so
+  apply a closing substitution to a `Comp`/`Val`. These live in `Bang/Meta/LR.lean §5.2b` (relocated from Compat so
   the frozen `Spec.lean` statement can reference them — Spec imports LR, not Compat).
 - This IS "the fundamental theorem" as the LR literature means it; the bare `c c` was an under-specified stub.
 - The closed corollary is exactly what the spine consumes: `lr_sound`'s capstone needs `Krel`-reflexivity

@@ -14,7 +14,7 @@ Nothing of teammate lrA's touched (Operational/LR/Compat/Spec untouched; `git st
 
 - The tree is RED **downstream** (CalcVM/Surface, pending the LR re-key) — but the
   **CalcReify track builds**: `CalcReifyRef.lean` + `CalcReifySim.lean` elaborate green
-  and `sorry`-free (`just check Bang/CalcReifySim.lean` → only unused-simp warnings).
+  and `sorry`-free (`just check Bang/Reify/CalcReifySim.lean` → only unused-simp warnings).
 - `scratch/archive/MonadicRecast.lean` elaborates **against the real built dependencies** (not
   stubs). Only diagnostic: the single `sorry` at `deep_step_recurses` (line 132).
   `shallow_is_bind_mono` typechecks against the real `Bang.CalcReifySim.bind_mono` and is
@@ -27,7 +27,7 @@ Nothing of teammate lrA's touched (Operational/LR/Compat/Spec untouched; `git st
 
 **`perf_outcome_mono` was NEVER a Lean statement.** It existed only as a *doc-name* in
 three places: `docs/decisions/0015-…md:191`, `docs/notes/k2-calculation-playbook.md:523`,
-and a comment at `Bang/CalcReifySim.lean:1358`. No `theorem`/`sorry`/`admit` carried that
+and a comment at `Bang/Reify/CalcReifySim.lean:1358`. No `theorem`/`sorry`/`admit` carried that
 name. It is a *named-but-unformalized future obligation* (the (b) research gate of
 ADR-0015). This spike writes it out in Lean for the first time (`PerfOutcomeMono`,
 `scratch/archive/MonadicRecast.lean`). **This corrects the brief's premise** ("find its EXACT
@@ -35,8 +35,8 @@ statement / open goal / admitted").
 
 Two more brief corrections:
 - It's the **CalcReify track (ADR-0015)**, not "K2/K3" (those are legacy pre-pivot
-  machines). Live files: `Bang/CalcReify.lean` (machine `exec`), `Bang/CalcReifyRef.lean`
-  (reference `eval`, a CBPV+free-monad interpreter), `Bang/CalcReifySim.lean` (`RelV`).
+  machines). Live files: `Bang/Reify/CalcReify.lean` (machine `exec`), `Bang/Reify/CalcReifyRef.lean`
+  (reference `eval`, a CBPV+free-monad interpreter), `Bang/Reify/CalcReifySim.lean` (`RelV`).
 - The obligation **is** a monotonicity-in-index property — but in the **fuel** index,
   **UPWARD** (`f ≤ f' ⇒ outcome preserved`), the *opposite* of the paper's free `~idown`
   (downward), and with a **non-equality** codomain (a recursive bisimulation knot).

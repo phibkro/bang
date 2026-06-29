@@ -68,7 +68,7 @@ Direnv (`.envrc` uses `use flake`) auto-enters the dev shell on `cd` once
 For Phase A part 2 / Phase B work:
 
 ```bash
-# Edit Bang/Spec.lean or Bang/Compat.lean or Bang/Eval.lean ...
+# Edit Bang/Spec.lean or Bang/Meta/BinaryLR.lean or Bang/Eval.lean ...
 
 bash tools/check.sh Bang/Spec.lean     # fast: just this file's errors
 # repeat until clean

@@ -45,7 +45,7 @@ algebra is now:
   - `e₁ ⊔ e₂` = combined effects (join)
   - `≤`      = effect inclusion (sub-effecting)
 
-Concrete: `Bang.EffRow := Finset Label` (in `Bang/EffectRow.lean`).
+Concrete: `Bang.EffRow := Finset Label` (in `Bang/Core/EffectRow.lean`).
 Mathlib gives Finset the required Lattice + OrderBot instances natively.
 
 Knock-on effects:
@@ -62,7 +62,7 @@ Knock-on effects:
 
 ## Q2 — Mult = QTT concretization  · ✓ RESOLVED 2026-06-21
 
-**Resolution**: Concretized as `Bang.QTT` in `Bang/Mult.lean`. CommSemiring
+**Resolution**: Concretized as `Bang.QTT` in `Bang/Core/Grade.lean`. CommSemiring
 instance via case analysis (3 enum elements; proofs by `cases <;> rfl`).
 Build green on first try, smoke-tested via `tools/eval.sh`.
 
@@ -150,7 +150,7 @@ fails because handler doesn't discharge.
 ## Q5 — `up` typing rule + opArgTy/opResTy  · ✓ RESOLVED (ADR-0022 + ADR-0023)
 
 **Resolution (2026-06-22)**: Landed. Per-`(Label, OpId)` signatures via the `EffSig`
-typeclass; the `up` rule in `Bang/Syntax.lean`. ADR-0023 D6 made `opArg`/`opRes` **op-partial**
+typeclass; the `up` rule in `Bang/Core/Typing.lean`. ADR-0023 D6 made `opArg`/`opRes` **op-partial**
 (`Label → OpId → Option VTy`, `none` = not in the label's interface); the `up` rule now requires
 `opArg ℓ op = some A` / `opRes ℓ op = some B`. `preservation`/`progress`/`type_safety` are proven
 axiom-clean over the CK machine (ADR-0023), so the rule is non-vacuously exercised. Original
@@ -461,9 +461,9 @@ that dissolves the grade tension below — **no `ω`-restriction on the state ty
 (keeps `Kᵢ`, reinstalls a deep `state ℓ s'` frame); `get` returns the stored `s`, `put w` stores `w`.
 The stored/threaded state is always a CLOSED value (grade vector `[]`), so duplicating it at `get`
 costs zero variable budget for any `S`. Machine + typing (`HasCTy.handleState` / `HasStack.stateF`) +
-`progress` are axiom-clean and the state CELL (`put 7; get ⟶ 7`) runs green (`Bang/Surface.lean`).
+`progress` are axiom-clean and the state CELL (`put 7; get ⟶ 7`) runs green (`Bang/Frontend/Surface.lean`).
 The **preservation** state-resume cases (typing the resumed stack `Kᵢ ++ handleF (state ℓ s') :: Kₒ`)
-are marked `RUNG1-OBLIGATION` in `Bang/Metatheory.lean` for the proof-engineer. See **ADR-0025**.
+are marked `RUNG1-OBLIGATION` in `Bang/Core/Soundness.lean` for the proof-engineer. See **ADR-0025**.
 Original deliberation preserved below.
 
 **Question (historical)**: the `state` handler's `Source.step` reductions don't thread grades cleanly,
@@ -510,7 +510,7 @@ b of this entry) also landed as an `EffSig` law. Original deliberation preserved
 handler reduces only the `"raise"` **operation**. So `handle (throws ℓ) (up ℓ "get" v)` is
 well-typed (label `ℓ` is in the row) yet **stuck** (`Source.step`'s throws arm matches only
 `"raise"`), and `progress` cannot exclude it. This is the single `sorry` left in Unit 2
-(`Bang/Metatheory.lean` `progress_gen` handleThrows case); `preservation` + `up` + `handleThrows`
+(`Bang/Core/Soundness.lean` `progress_gen` handleThrows case); `preservation` + `up` + `handleThrows`
 are axiom-clean.
 
 **Why it matters**: `progress`/`type_safety` (now stated at `⊥`, ADR-0022 D3) are headline ◊2
@@ -798,7 +798,7 @@ implicit capture; de Bruijn). The *semantic* DSL mechanism already exists (effec
 little language per effect); this Q is about *syntactic* extension on top.
 
 **Options**: (1) elaboration-style hygienic macros expanding to core `Comp` (recommended; Lean 4 model
-— composes with the existing lowering pass in `Bang/Surface.lean`); (2) aliasing only (no new syntax —
+— composes with the existing lowering pass in `Bang/Frontend/Surface.lean`); (2) aliasing only (no new syntax —
 minimal, may be too weak for ergonomic DSLs); (3) full reader/notation extension (most powerful, most
 rope). The five-primitive invariant + "no new primitive if composite" is the *constraint*; the
 mechanism is the *choice*.

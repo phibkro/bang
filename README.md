@@ -18,7 +18,7 @@ Two-hop verified compilation (ADR-0016):
                                                               └─Benton-Hur LR─►  WasmFX
 ```
 
-The **graded-CBPV reference** (`Bang/Operational.lean`'s `Source.eval` +
+The **graded-CBPV reference** (`Bang/Core/Semantics.lean`'s `Source.eval` +
 `Bang/Spec.lean`) is the specification. The **CalcVM** is the executable interpreter — canonical
 operational meaning, derived by calculation, not designed. The **WasmFX
 backend** is the optimized compiler output, proven to preserve contextual
@@ -62,12 +62,12 @@ lake env lean Bang/Audit.lean   # the real gate — #print axioms
 
 ## Where things stand
 
-- **K1 unifier** proven (`Bang/EffectRow.lean`)
+- **K1 unifier** proven (`Bang/Core/EffectRow.lean`)
 - **K2 reference `eval`** — ported to the graded-CBPV kernel
-  (`Bang/Operational.lean`'s `Source.eval`) at ◊2; the K2 free-monad form is in git history
+  (`Bang/Core/Semantics.lean`'s `Source.eval`) at ◊2; the K2 free-monad form is in git history
 - **K3 calculated machines** (eight) — collapsed into one graded-CBPV machine
-  `Bang/CalcVM.lean` at ◊3 (see ADR-0017); the eight are in git history
-- **Wasmfx spec** in place (`Bang/Spec.lean`, `Bang/Compat.lean`,
+  `Bang/Backend/AbstractMachine.lean` at ◊3 (see ADR-0017); the eight are in git history
+- **Wasmfx spec** in place (`Bang/Spec.lean`, `Bang/Meta/BinaryLR.lean`,
   `Bang/Audit.lean`) — theorem statements frozen; proof bodies awaiting Phase A
   + Phase B per `docs/notes/spec-proof-discipline.md`
 

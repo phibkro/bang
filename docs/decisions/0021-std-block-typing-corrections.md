@@ -9,8 +9,8 @@
 - **Status:** Accepted
 - **Date:** 2026-06-22
 - **Layer:** K (kernel — typing rules, multiplicity algebra, theorem statements)
-- **Amends:** the Phase-A part-2 typing rules in `Bang/Syntax.lean` (the
-  "first cut" `lam`/`handle` rules) and the `Mult` bound in `Bang/Core.lean`
+- **Amends:** the Phase-A part-2 typing rules in `Bang/Core/Typing.lean` (the
+  "first cut" `lam`/`handle` rules) and the `Mult` bound in `Bang/Core/IR.lean`
 - **Advances:** OPEN_QUESTIONS Q4 (`handle` rule) — the F-type restriction lands
   here; the label-removing refinement stays deferred
 - **Related:** Torczon et al. OOPSLA 2024 — `effects/CBPV/typing.v` (effect

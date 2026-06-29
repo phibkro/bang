@@ -32,14 +32,14 @@ kernel — bigger than rung 1's single handler. Kernel-first, like rung 1, but w
 - `Val`: `+ inl`/`inr` (sum), `+ pair ⟨v,w⟩` (product), `+ fold` (μ).
 - `Comp`: `+ case` (sum elim), `+ split` (product elim), `+ unfold` (μ elim). `unfold (fold v) ↦ v`;
   fold/unfold ERASE at runtime.
-- Typing (`Bang/Syntax.lean`): `HasVTy`/`HasCTy` cases for the new formers + eliminators (syntactic
+- Typing (`Bang/Core/Typing.lean`): `HasVTy`/`HasCTy` cases for the new formers + eliminators (syntactic
   type-matching — the iso payoff).
-- Machine (`Bang/Operational.lean`): CK steps for `case`/`split`/`unfold` (push/reduce, like the
+- Machine (`Bang/Core/Semantics.lean`): CK steps for `case`/`split`/`unfold` (push/reduce, like the
   existing letC/app frames).
-- Metatheory (`Bang/Metatheory.lean`): extend `preservation`/`progress` with the new cases. Keep axiom
+- Metatheory (`Bang/Core/Soundness.lean`): extend `preservation`/`progress` with the new cases. Keep axiom
   set ⊆ {propext, Classical.choice, Quot.sound}; **`no_accidental_handling` stays 0-axiom** (◊2 gate).
 
-**L — library/surface (`Bang/Surface.lean`):** define `Stack = μX. 1 + (Int × X)`; `empty = fold (inl
+**L — library/surface (`Bang/Frontend/Surface.lean`):** define `Stack = μX. 1 + (Int × X)`; `empty = fold (inl
 unit)`; `push x s = fold (inr ⟨x, s⟩)`; `pop s = case (unfold s) …`. The surface hides `fold`/`unfold`
 in the `push`/`pop`/`empty` forms (a Q20 pseudoinstruction; the user writes `push`/`pop`, not coercions).
 Add `#guard`/`rfl` demos running a stack program from source text.
@@ -76,11 +76,11 @@ The L/Q19 layers are a follow-on (surface + `plausible`). NOT a surface-only iss
 - **ADR-0029** (iso-recursive ADTs — the decision + why iso) · ADR-0027 (monomorphic; μ ≠ poly) ·
   ADR-0026 (laws on the ladder) · ADR-0028 (adopt `plausible`; inductive=verified, coinductive→Div).
 - Q18 (resolved → ADR-0029), Q19 (laws surface — partial: discharge decided, syntax open).
-- Kernel: `Bang/Core.lean` (`VTy`/`Val`/`Comp` — extend), `Bang/Operational.lean` (CK machine — add
-  case/split/unfold steps), `Bang/Syntax.lean` (typing), `Bang/Metatheory.lean` §E (preservation/
+- Kernel: `Bang/Core/IR.lean` (`VTy`/`Val`/`Comp` — extend), `Bang/Core/Semantics.lean` (CK machine — add
+  case/split/unfold steps), `Bang/Core/Typing.lean` (typing), `Bang/Core/Soundness.lean` §E (preservation/
   progress — add cases). Pattern: rungs 0/1 added formers + machine steps + metatheory cases the same way.
 - `plausible`: already a `lake` dependency (`lake-manifest.json`); Lean's QuickCheck.
-- Surface: `Bang/Surface.lean` — add `Stack`/`push`/`pop`/`empty` + demos.
+- Surface: `Bang/Frontend/Surface.lean` — add `Stack`/`push`/`pop`/`empty` + demos.
 
 ## STATUS — ✓ DONE (2026-06-23)
 

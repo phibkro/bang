@@ -2,7 +2,7 @@
 
 > The thinnest end-to-end slice that makes bang-lang **run a program**. Pulled forward per PRD §7.
 > Status: **✓ DONE** (rung 0; 2026-06-23, commit `ff7bb9d`). The language RUNS — surface → graded-CBPV
-> `Comp` → `Source.eval` → a VALUE (pure + throws), in `Bang/Surface.lean`. Superseded as "next work"
+> `Comp` → `Source.eval` → a VALUE (pure + throws), in `Bang/Frontend/Surface.lean`. Superseded as "next work"
 > by rung 1 (✓) then rung 2; kept as the rung-0 record.
 
 ## GOAL (verifiable)
@@ -21,7 +21,7 @@ pattern from ADR-0023). When this is green, "bang-lang runs a program" is **true
 
 ## CONTEXT (facts; don't recompute)
 
-- The kernel TODAY (`Bang/Core.lean`, `Bang/Operational.lean`): graded-CBPV `Comp` (de Bruijn:
+- The kernel TODAY (`Bang/Core/IR.lean`, `Bang/Core/Semantics.lean`): graded-CBPV `Comp` (de Bruijn:
   `ret`/`letC`/`force`/`lam`/`app`/`up`/`handle`); `Source.eval : Nat → Comp → Result Val` is a
   fuel-driven **CK machine** with deep handlers (ADR-0023), proven type-safe for the **pure core +
   throws**. **State is deferred (Q12)** — so the first tracer bullet uses pure + throws, NOT `mut`.
@@ -50,7 +50,7 @@ a demo/test), it must not touch proven theorems.
 
 ## DELIVERABLE
 
-- A new surface module (e.g. `Bang/Surface.lean` or a `surface/` area) with the minimal parser +
+- A new surface module (e.g. `Bang/Frontend/Surface.lean` or a `surface/` area) with the minimal parser +
   lowering, plus a runnable demo/test (`native_decide`/`rfl` battery à la the ADR-0023 journeys)
   showing `source → value` green for ≥1 pure + ≥1 throws program.
 - `just verify` stays green (the new module builds; no spine theorem disturbed).
@@ -61,7 +61,7 @@ a demo/test), it must not touch proven theorems.
 ## POINTERS
 
 - PRD: `docs/PRD.md` §5 (eval-stage axis), §6 (v1 scope), §7 (this bullet).
-- Kernel: `Bang/Core.lean` (the `Comp` constructors), `Bang/Operational.lean` (`Source.eval`,
+- Kernel: `Bang/Core/IR.lean` (the `Comp` constructors), `Bang/Core/Semantics.lean` (`Source.eval`,
   `Source.step`, `handlesOp`, `dispatch`).
 - Pattern to copy: the ADR-0023 smoke tests (hand-built `Comp` → `Source.eval` → value via `rfl`) —
   see the commit `d12b436` description / `/tmp/machine_test.lean` shape.
@@ -72,7 +72,7 @@ a demo/test), it must not touch proven theorems.
 
 ## Finding (Stage 1+2)
 
-Status: **DONE** (2026-06-22). Module `Bang/Surface.lean` (~340 lines), wired into `Bang.lean`.
+Status: **DONE** (2026-06-22). Module `Bang/Frontend/Surface.lean` (~340 lines), wired into `Bang.lean`.
 The full pipeline `source String → Surf → Comp → Source.eval → Result Val` is green in the build.
 
 What the surface→`Comp` lowering REVEALED — the de-risking output:
@@ -116,7 +116,7 @@ What the surface→`Comp` lowering REVEALED — the de-risking output:
    site) so it is total and its output is inspectable. This is the same fuel discipline the machine
    already uses (`Config.run`).
 
-Green checks (all in `Bang/Surface.lean`, all in the build):
+Green checks (all in `Bang/Frontend/Surface.lean`, all in the build):
 - Stage 1 — `example : Source.eval 20 {pure,throws,deep}Comp = .done (.vint {3,7,7})`  · `by rfl`
 - Stage 1b — `example : lower <surf> = .ok <comp>` (×3)  · `by rfl`
 - Stage 2 — `#guard runYieldsInt 20 <src> {3,7,7}` (×3, from source text)

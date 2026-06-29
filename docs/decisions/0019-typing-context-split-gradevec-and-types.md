@@ -14,7 +14,7 @@
 
 ## Context
 
-`HasVTy` / `HasCTy` (Bang/Syntax.lean) judge over `Ctx := List (Var × Mult × VTy)` —
+`HasVTy` / `HasCTy` (Bang/Core/Typing.lean) judge over `Ctx := List (Var × Mult × VTy)` —
 the multiplicity glued to each binding. The Phase-A rules **carry but never
 enforce** the grade: `vvar` is `(∃ ρ, (x,ρ,A) ∈ Γ)` (ρ discarded); `ret`/`app`
 never scale or add grades. So `HasCTy` is **grade-insensitive** — and the graded
@@ -106,8 +106,8 @@ not pattern-match it yet. Deferring until they do would multiply the cost.
 - (+) Q10's rule upgrade becomes a mechanical port rather than a fight with the
   representation; `subst_value`'s `Γ + ρ·Δ` is `γ_Γ + ρ • γ_Δ` over `Finsupp`.
 - (+) Q3 is resolved (was "defer until proofs demand" — the proofs now demand it).
-- (−) Signature change to every `HasVTy`/`HasCTy` site: `Bang/Syntax.lean`
-  (definitions), `Bang/Spec.lean` + `Bang/Compat.lean` (statements). Bounded —
+- (−) Signature change to every `HasVTy`/`HasCTy` site: `Bang/Core/Typing.lean`
+  (definitions), `Bang/Spec.lean` + `Bang/Meta/BinaryLR.lean` (statements). Bounded —
   3 files, ~40 occurrences.
 - (−) `subst_value` and the grade-soundness statements get restated against the
   two-context signature (already `sorry`; no proof lost).

@@ -12,7 +12,7 @@ Static dispatch routes `perform cap ℓ op v` to the cap-th enclosing handler (A
 
 The open question: should the type system be made **label/capability-aware** (fold cap-resolution into `HasCTy.perform` — "approach A") *because* it might buy better error analysis, justifying the cost? Two surveys answered it (2026-06-25): an internal cost+current-state survey, and an external precedent survey of effect-handler type systems.
 
-The key current-state fact (`Bang/Metatheory.lean:523`): **`HasCTy.perform` is CAP-IRRELEVANT** — the rule constrains the row/grade/op, never the cap. A *separate* label+kind-aware predicate already carries resolution: `LWT`/`LWConfig` over `CapResolvesKind S cap ℓ op` (`Bang/Operational.lean:344,572,626`), folded into typing only at the `HasConfig` seam. **The project is already running approach B.** "A vs B" is really: push `CapResolvesKind` up into `HasCTy.perform`, or keep it a sibling predicate.
+The key current-state fact (`Bang/Core/Soundness.lean:523`): **`HasCTy.perform` is CAP-IRRELEVANT** — the rule constrains the row/grade/op, never the cap. A *separate* label+kind-aware predicate already carries resolution: `LWT`/`LWConfig` over `CapResolvesKind S cap ℓ op` (`Bang/Core/Semantics.lean:344,572,626`), folded into typing only at the `HasConfig` seam. **The project is already running approach B.** "A vs B" is really: push `CapResolvesKind` up into `HasCTy.perform`, or keep it a sibling predicate.
 
 ## Decision
 

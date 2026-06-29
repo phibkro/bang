@@ -23,7 +23,7 @@ The reference point is Biernacki et al. (POPL 2018, *Handle with Care*). Their g
 
 1. **Row variables carry a "lacks" constraint**: `∀(α # L). τ`, where `L` is a set of effect labels `α` may not contain. (Rémy / Links / Hillerström–Lindley style.)
 2. **Row instantiation is well-formed only when the instantiating row is disjoint from `L`.** Encoded in `Bang/Spec.lean §0.5` as `rowinst_requires_disjoint`.
-3. **No `lift` / `ρ`-map machinery.** `compat_lift` is deliberately omitted from `Bang/Compat.lean`.
+3. **No `lift` / `ρ`-map machinery.** `compat_lift` is deliberately omitted from `Bang/Meta/BinaryLR.lean`.
 
 ### Why the constraint is mandatory, not cosmetic
 
@@ -65,7 +65,7 @@ The same idempotence that *forces* the constrained-quantifier discipline also *d
 ## Related artifacts
 
 - `Bang/Spec.lean §0.5` — well-formedness rule + abstraction-safety invariant
-- `Bang/Compat.lean` — `compat_lift` deliberately omitted (comment line 96)
+- `Bang/Meta/BinaryLR.lean` — `compat_lift` deliberately omitted (comment line 96)
 - `Bang/Distribution.lean` — semilattice fact + CALM conjecture
 - `references/papers/effects-handlers/biernacki-popl18-handle-with-care.pdf` — §5.4 (set-row fragment); §I (group/Frobenius end of the spectrum)
 

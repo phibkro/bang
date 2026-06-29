@@ -104,7 +104,7 @@ shell.** Dispatch is the first, highest-value test case.
 ## Open boundaries
 
 1. **Dispatch: kernel or shell? — ANSWERED, GO (spike, task #13, 2026-06-25).** Build-gated verdict
-   (spike `static-dispatch-spike` @ `b1330db` — in git history; landed as `Bang/Operational.lean`'s
+   (spike `static-dispatch-spike` @ `b1330db` — in git history; landed as `Bang/Core/Semantics.lean`'s
    `staticSplit`/`perform cap`, lemmas `[propext, Quot.sound]`, 725 jobs
    green): a static-link kernel dispatch (`perform cap`, `staticSplit` — counts a de-Bruijn capability, **never
    calls `handlesOp` to decide skipping**) **dissolves the ADR-0043 edge structurally AND UNTYPED for cap=0**

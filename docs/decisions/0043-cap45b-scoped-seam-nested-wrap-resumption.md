@@ -33,7 +33,7 @@ relation-level primitive `NoWrapMiss` is landed; the sorryAx-zero close (which r
 
 ### What landed (relation level — `2b4479b`, whole-tree green)
 
-`Bang/Operational.lean` gains a standalone predicate:
+`Bang/Core/Semantics.lean` gains a standalone predicate:
 
 ```
 NoWrapMiss : EvalCtx → Label → OpId → Prop
@@ -56,7 +56,7 @@ at `e755afa`** — `NoWrapMiss` touches nothing else.
 - **EXCLUDED** (the narrow seam): resumption where the captured continuation **up to the catching
   handler contains a non-catching handler** — i.e. a dispatched op is caught by a handler that is
   **not** its nearest enclosing one (it "passes through" a shallower non-catching handler). This is
-  the single `krelS_splitAt_decomp` MISS sorry (`Bang/Compat.lean`), the ADR-0026 tested-descent
+  the single `krelS_splitAt_decomp` MISS sorry (`Bang/Meta/BinaryLR.lean`), the ADR-0026 tested-descent
   boundary: the catching-frame equivalence is fully verified; the pass-through edge is the documented
   descent.
 
@@ -105,7 +105,7 @@ A 5-agent design panel recommended **Architecture D** (literature-canonical type
 MISS rather than vacating it; scope as a PREMISE not an index, so the frozen statements survive;
 ~3–4 sessions): use `HasStack`'s answer-index to recover the junction answer type the MISS sorry says
 `KrelS` lacks. A bounded GO/NO-GO **build probe** (branch `typed-crelk-probe` @ `ffac1b0`,
-`Bang/Compat.lean` ~1466–1597) split the bet and the build cleanly arbitrated it:
+`Bang/Meta/BinaryLR.lean` ~1466–1597) split the bet and the build cleanly arbitrated it:
 
 - **Answer-projection half WORKS** — `hasStack_append_handleF_split` is PROVEN, `#print axioms` = `[propext]`.
   `HasStack` *does* carry the **bottom** junction answer `Dᵢ` invariantly down the left stack. The panel was right here.

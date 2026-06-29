@@ -40,3 +40,63 @@ The operator's framing: a tiered architecture with a unidirectional dependency, 
 - `Spec`/`Audit` are correctly seen as the apex (manifest + gate), not Core — they import across tiers; the fitness function exempts them.
 - The fitness function runs pre-build, so the architectural contract is enforced continuously, independent of the LR pivot's red tree.
 - A new module cannot be added without classifying its tier (an unclassified module fails `arch-check`) — the layer map stays complete by construction.
+
+## Amendment — Phase-2 restructure executed (2026-06-29)
+
+The deferred physical move (Decision §4) is **done**. The tree is now green
+(`lr_sound` `sorryAx` notwithstanding — the move preserves the exact axiom census),
+so the seam-first deferral has been discharged. Three units, each gated by a
+**byte-identical `#print axioms` census** (the ungameable proof the move changed no
+proof).
+
+### A. Dead-engine removal (#103)
+`Bang/Model.lean` (the 4323-line typeless soundness-diagonal engine, route-β) + its 5
+refute/probe witnesses (`LwscgLengthRefute`, `CohSubstRefute`, `LwscgOfTypedRefute`,
+`ReturnEscapeRefute`, `WsCfgInterfaceProbe`) were a **closed dead island** — out of the
+gated closure (ADR-0063 routed v1 soundness through typing-preservation, not the
+diagonal). Removal left the census byte-identical → machine-checked proof they were
+dead. Git preserves them; ADR-0061 (the retrospective record) cites the old path via
+`tools/refs-allow.txt`.
+
+### B. The rename slate (#108) — legibility by name
+`Core→IR · Operational→Semantics · CalcVM→AbstractMachine · Syntax→Typing ·
+Mult→Grade · Metatheory→Soundness · Compile→Wasm · Compat→BinaryLR`. Module/file
+renames only. **The census-gated theorem NAMESPACES are frozen**: `Bang.CalcVM.*`
+(4 headlines) and `Bang.Surface.*` keep their qualified names even though their
+modules became `AbstractMachine`/`Frontend.Surface` — a module-name ⊥ namespace seam,
+the only way to rename the module while keeping the census byte-identical.
+
+### C. Tier folders + path-derived enforcement
+Every module moved into its tier directory; module names `Bang.X → Bang.Tier.X`;
+imports rewritten; **no namespace touched** (so the census holds). Two tiers were
+ADDED beyond the original three:
+- `Bang.Meta` — the binary-LR / relational proofs (`LR`, `BinaryLR`): proofs ABOUT
+  the core that the gated kernel closure does NOT depend on.
+- `Bang.Witness` — the build-gated regression/escape witnesses.
+- `Bang.Reify` — the `CalcReify*` reification spike.
+`tools/arch-check.sh` `layer_of` is now **PATH-DERIVED** (the tier is read from the
+`Bang/<Tier>/` directory in the module path — GENERATE, not a hand-maintained map),
+with a **rank model**: Core=0 (sink) · Frontend=Backend=1 (incomparable siblings) ·
+Meta=Witness=Reify=2 (consumers) · Apex=3 (unrestricted). Forbidden = importing
+strictly upward, plus the Frontend⊥Backend cross-edge.
+
+### The Soundness→Core finding (an import the tiers REVEALED)
+The first tier sketch put `Soundness` (the syntactic STD metatheory:
+preservation/progress/type_safety + substitution) in `Meta`. The move revealed a
+**`Core → Meta` edge**: the gated kernel closure
+`Audit → Backend.AbstractMachine → Core.CapCoh → Core.Freshness → Soundness` DEPENDS
+on it. The dependency graph therefore FORCES Soundness Core-foundational — it is not a
+"proof about" that sits above the core, it is part of the core's own metatheory that
+the live caps/coherence layer consumes. Resolved by tiering **Soundness into Core**;
+`Meta` holds only the binary-LR. (Soundness imports only `Core.*`; no Core module
+imports `LR`/`BinaryLR` → the V holds by construction, path-derived.)
+
+### Encapsulation finding (the honest limit)
+Deep-module ENCAPSULATION (hiding implementation behind a narrow public interface,
+ADR-0026/0048 §Context) was **build-refuted for the proof spine**: the LR/metatheory
+modules are mutually-recursive proof developments whose lemmas reference each other's
+internals; a narrow public face strangles them. What the restructure DID buy is real
+and sufficient: **reveal** (module headers + privatized internals, Phase-1), the
+**verified/tested seam made structural** (the `Witness` tier + the `PropTest`
+module-exception), and **tier legibility** (the V enforced by directory structure).
+Encapsulation of the spine is not the win; the legible boundary is.

@@ -18,7 +18,7 @@
   wrong-op-same-label facet is independent and still needs op-partial signatures (D6 below).
 - **Builds on:** ADR-0019/0020 (graded de Bruijn context), ADR-0021 (the STD block + the
   effect-on-judgment discipline), ADR-0022 (operations + handlers). The `Frame`/`EvalCtx` ADT it
-  needs already exists (`Bang/Core.lean` §1.3, built for exactly this).
+  needs already exists (`Bang/Core/IR.lean` §1.3, built for exactly this).
 - **Reference:** Felleisen–Friedman CK/CEK; CBPV stack machine (Levy, *Call-by-Push-Value* ch. 3 —
   CBPV's stacks *are* evaluation contexts); Hillerström–Lindley handler dispatch (deep handlers
   search the frame stack for the nearest matching handler).

@@ -25,14 +25,14 @@ fiction). The foundation work (U1–U3) discharged the axioms + corrected the sp
 | **U3** | `group_recovers` research spike (PROOF_ORDER #2, early) | ✓ **DONE** → RETIRED (`fcb2f51`, ADR-0032). `≈` cleared — no side-condition |
 | **U4** | `seq_unit` + `NotEvaluated` def | ✓ **DONE (partial)** `53d2e1f`. `seq_unit` PROVEN axiom-clean (pure operational: autosubst β-identity `(shift c)[v]=c` + the `run_plug`/`converges_plug_iff` plug-run bridge — committed in LR.lean, reusable). `NotEvaluated` axiom→def (`∀ v₁ v₂, substFrom i v₁ c ≈ substFrom i v₂ c`). **`zero_usage` RE-SEQUENCED out** ↓ |
 | **U5** | `lr_sound` — closed-fragment adequacy | ✓ **DONE (partial)** `f548999`. `lr_sound_closed` (Crel ⇒ Converges-preservation at the EMPTY context) + `krel_nil_succ`/`converges_ret`/`not_converges_up_nil` PROVEN axiom-clean (§5.3). **FINDING:** full `lr_sound` (⊑ over arbitrary `C`) is COUPLED to `lr_fundamental` — it needs `Krel`-reflexivity `Krel n B e C C` (context-congruence), which IS the compatibility direction (verified: the `letF`/`handleF` frame cases block on `N[v₁]~N[v₂]` from `Vrel v₁ v₂`). So PROOF_ORDER #1 groups them for real. `lr_sound` body stays `sorry` (dependency note in Spec.lean). Becomes a short capstone ↓ |
-| **U6** | repopulate `Bang/Compat.lean` (16 lemmas) → `lr_fundamental` by induction over `HasCTy` | ▶ **NEXT** — the real PROOF_ORDER #1 risk + unblocks lr_sound. Fresh proof-engineer (LR thread near budget; relations externalized in committed LR.lean). `compat_handle` LAST (consumes `Srel`) — the `[KEY]` one; SEQUENTIAL handoff to kernel-engineer if it needs depth, NOT concurrent pairing (one writer per file) |
+| **U6** | repopulate `Bang/Meta/BinaryLR.lean` (16 lemmas) → `lr_fundamental` by induction over `HasCTy` | ▶ **NEXT** — the real PROOF_ORDER #1 risk + unblocks lr_sound. Fresh proof-engineer (LR thread near budget; relations externalized in committed LR.lean). `compat_handle` LAST (consumes `Srel`) — the `[KEY]` one; SEQUENTIAL handoff to kernel-engineer if it needs depth, NOT concurrent pairing (one writer per file) |
 | **U5′** | `lr_sound` capstone | pending U6. `lr_sound = lr_sound_closed ∘ (Krel-reflexivity, the identity instance of lr_fundamental)`. Short — → **LR thread** (owns §5.3 + the adequacy end) |
 | **U4′** | `zero_usage_erasable` (RE-SEQUENCED here, U4's finding) | pending U5/U6. **NOT a cheap close** — verified: the 0-graded var still occurs syntactically + type-checks (`ret (vvar 0)` at `q=0`), so both syntactic readings of `NotEvaluated` are FALSE; the faithful notion is irreducibly SEMANTIC (Torczon `semtyping.v`), a **corollary of the LR**. The `sorry` body documents the closing argument: instantiate `Crel`/`Vrel` at the 0-graded slot via `lr_fundamental`, then `lr_sound` for `⊑` both ways |
 | U7 | `effect_sound` | **DEFERRED → ◊5** (Q14 trace-semantics *design* decision, not a proof gap) |
 
 ## What's landed (the foundation)
 
-- **LR machinery DEFINED, axiom-clean.** `Bang/LR.lean`: helpers (U1) + the 4 relations (U2) are real
+- **LR machinery DEFINED, axiom-clean.** `Bang/Meta/LR.lean`: helpers (U1) + the 4 relations (U2) are real
   defs; `lr_sound`/`lr_fundamental` now `[propext, sorryAx, Quot.sound]` (only the proof bodies remain).
 - **Spec corrected + cleaned.** `Crel`/`Krel`/`Srel` row-indexed (faithful Biernacki τ/ε, ADR-0033);
   `group_recovers` deleted (ADR-0032). `≈`/`⊑` UNCHANGED — so U5/U6 target a stable equivalence.
@@ -63,7 +63,7 @@ ADR-0034 amendment, `closeC`/`closeV` commutation for non-binding formers).
    vanishes on closed `v`). **CONCRETE FIRST MOVE:** add a closedness carrier to `EnvRel` (or a parallel
    `EnvRelClosed`) — `Vrel`-values-closed is FALSE in general (a `vthunk` of an open comp can be
    `Vrel`-related), so thread it EXPLICITLY — then prove `closeC_letC`/`_lam`/`_case`/`_split` under it,
-   **reusing `Bang/Metatheory.lean`'s `HasVTy.shift_closed`/`subst_closed`** (closed-typed values are
+   **reusing `Bang/Core/Soundness.lean`'s `HasVTy.shift_closed`/`subst_closed`** (closed-typed values are
    shift/subst-invariant — exactly the vanishing-shift fact). [task #33]
 2. **Mutual value+comp fundamental induction** (`vrel_refl` + `crel_fund`, mutual via `vthunk`), each case
    → its compat core. Leaf cases (ret/force/up) ready; binder cases gated on (1). [task #31]

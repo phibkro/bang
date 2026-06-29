@@ -27,7 +27,7 @@ propagation is the deferred dial** (PRD §6; out of scope).
 
 - **NO new kernel primitive** (the thesis: reactivity is emergent). If you find you NEED one, STOP and
   report — that would contradict ADR-0005 and is a kernel decision (orchestrator).
-- **Surface (`Bang/Surface.lean`)**: durable reactive-cell demos (the probe, as `#guard`/`runYieldsInt`).
+- **Surface (`Bang/Frontend/Surface.lean`)**: durable reactive-cell demos (the probe, as `#guard`/`runYieldsInt`).
   Optionally a small helper making "reactive cell" readable (a thunk-over-get), but the existing
   `let c = {get}` + `$c` already expresses it — don't over-build.
 - **Law**: the liveness/freshness property. Prefer a Lean proof if it's a short corollary of the state
@@ -62,7 +62,7 @@ metatheory triad). Proof-engineer only if the liveness law is worth proving and 
 - **ADR-0005** (reactivity = equation over thunks; sampling = forcing; the decision this rung demonstrates)
   · ADR-0006 (explicit capture) · ADR-0025 (state handler — the cell `get`/`put` read/write).
 - PRD §3.1 rung 4 + §6 (reactivity falls out; the dial deferred).
-- `Bang/Surface.lean`: `runYieldsInt`/`runFrom`, the rung-1 `state`/`get`/`put` demos, the `{e}`/`$`
+- `Bang/Frontend/Surface.lean`: `runYieldsInt`/`runFrom`, the rung-1 `state`/`get`/`put` demos, the `{e}`/`$`
   thunk+force forms. Pattern: rung 1's State demos are the direct substrate.
 
 ## STATUS — ✓ DONE (2026-06-23), commit `b8c86cd`
