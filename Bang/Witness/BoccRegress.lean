@@ -25,8 +25,8 @@
 -/
 module
 
-public import Bang.Soundness
-public import Bang.Grade
+public import Bang.Core.Soundness
+public import Bang.Core.Grade
 
 namespace Bang.BoccRegress
 

@@ -12,7 +12,7 @@
 
 module
 
-public import Bang.IR
+public import Bang.Core.IR
 
 namespace Bang
 

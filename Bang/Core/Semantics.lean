@@ -9,7 +9,7 @@
     Bang.Semantics.Eval      Source.step / Source.eval / the CK machine
     Bang.Semantics.Invariants  WellCounted / StackBelow freshness (ADR-0055)
 
-  This barrel re-exports all four so `import Bang.Semantics; open Bang` keeps
+  This barrel re-exports all four so `import Bang.Core.Semantics; open Bang` keeps
   resolving the full public surface (Source.step, splitAtId, Comp.subst,
   handlesOp, dispatchOn, idDispatch, plug, NonEscape, HasConfig, CapResolves, …).
   Theorem STATEMENTS (preservation, progress, type_safety, effect_sound,
@@ -18,7 +18,7 @@
 
 module
 
-public import Bang.Semantics.Subst
-public import Bang.Semantics.Dispatch
-public import Bang.Semantics.Eval
-public import Bang.Semantics.Invariants
+public import Bang.Core.Semantics.Subst
+public import Bang.Core.Semantics.Dispatch
+public import Bang.Core.Semantics.Eval
+public import Bang.Core.Semantics.Invariants

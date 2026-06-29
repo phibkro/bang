@@ -19,7 +19,7 @@
   exactly as before. Behaviour is unchanged — the same three `#test`s, same generators.
 -/
 
-import Bang.Surface
+import Bang.Frontend.Surface
 import Plausible
 
 namespace Bang.Surface

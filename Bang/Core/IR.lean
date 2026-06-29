@@ -21,7 +21,7 @@ public import Mathlib.Algebra.Group.Defs
 public import Mathlib.Order.Lattice
 public import Mathlib.Data.Finset.Basic
 public import Mathlib.Data.List.Basic
-public import Bang.EffectRow
+public import Bang.Core.EffectRow
 
 namespace Bang
 

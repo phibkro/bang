@@ -36,10 +36,10 @@
 
 module
 
-public import Bang.IR
-public import Bang.Typing
-public import Bang.Semantics
-public import Bang.AbstractMachine
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
+public import Bang.Backend.AbstractMachine
 
 namespace Bang
 

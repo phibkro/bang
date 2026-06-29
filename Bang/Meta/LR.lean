@@ -11,9 +11,9 @@
 
 module
 
-public import Bang.IR
-public import Bang.Typing
-public import Bang.Semantics
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
 
 namespace Bang
 

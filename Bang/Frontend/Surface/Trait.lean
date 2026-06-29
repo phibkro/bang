@@ -39,8 +39,8 @@ module
 -- Trait's #guards/#eval run the law checkers (`runPair`, `Law.isVerified`, `fullReport`),
 -- which execute `Source.eval` (compiled Operational) at the META phase → meta import it
 -- (transitive dep via Surface).
-meta import Bang.Semantics
-public import Bang.Surface
+meta import Bang.Core.Semantics
+public import Bang.Frontend.Surface
 
 namespace Bang.Surface.Trait
 

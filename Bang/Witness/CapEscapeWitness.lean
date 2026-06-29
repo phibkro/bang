@@ -21,9 +21,9 @@
 -/
 module
 
-public import Bang.Semantics
-public import Bang.Grade
-public import Bang.LWRegress
+public import Bang.Core.Semantics
+public import Bang.Core.Grade
+public import Bang.Witness.LWRegress
 
 namespace Bang.CapEscapeWitness
 

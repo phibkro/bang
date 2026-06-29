@@ -23,9 +23,9 @@ module
 -- The #guards below run `Source.eval` (compiled Operational code) at the META phase,
 -- so Operational must be `meta import`ed in addition to the runtime import (Phase-1a
 -- escape for the cross-module #guard codegen wall).
-meta import Bang.Semantics
-public import Bang.Semantics
-public import Bang.Grade
+meta import Bang.Core.Semantics
+public import Bang.Core.Semantics
+public import Bang.Core.Grade
 
 namespace Bang.LWRegress
 

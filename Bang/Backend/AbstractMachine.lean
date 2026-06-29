@@ -1,7 +1,7 @@
 module
 
-public import Bang.Semantics
-public import Bang.CapCoh
+public import Bang.Core.Semantics
+public import Bang.Core.CapCoh
 
 /-!
 # AbstractMachine — the ◊3 graded-CBPV calculated machine (pure CBPV spine)

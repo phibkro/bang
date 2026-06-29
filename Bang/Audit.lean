@@ -17,8 +17,8 @@ module
 -- import` — `#print axioms` reads the environment's axiom metadata at elaboration. The
 -- gate (`lake env lean Bang/Audit.lean`) is verified to still emit the census as a module.
 public import Bang.Spec
-public import Bang.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
-public import Bang.AbstractMachine    -- ◊3: the calculated-machine compile_correct (verification spine)
+public import Bang.Frontend.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
+public import Bang.Backend.AbstractMachine    -- ◊3: the calculated-machine compile_correct (verification spine)
 open Bang
 
 #print axioms lr_sound

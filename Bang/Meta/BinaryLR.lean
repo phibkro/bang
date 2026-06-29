@@ -12,11 +12,11 @@
 -- Core/Syntax/Operational; LR adds the relations; neither imports Spec.
 module
 
-public import Bang.IR
-public import Bang.Typing
-public import Bang.Semantics
-public import Bang.LR
-public import Bang.Soundness
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
+public import Bang.Meta.LR
+public import Bang.Core.Soundness
 
 namespace Bang
 

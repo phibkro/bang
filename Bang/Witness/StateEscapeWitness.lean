@@ -2,10 +2,10 @@ module
 
 -- `#guard stateEscape_escaped` runs `Source.eval` (compiled Operational) at the META
 -- phase → `meta import` Operational alongside the runtime import.
-meta import Bang.Semantics
-public import Bang.Semantics
-public import Bang.Soundness
-public import Bang.Grade
+meta import Bang.Core.Semantics
+public import Bang.Core.Semantics
+public import Bang.Core.Soundness
+public import Bang.Core.Grade
 
 /-! # State-escape probe — the ③ verdict: BLOCKED by the closed-state discipline (task #50)
 

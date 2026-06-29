@@ -23,7 +23,7 @@ module
 -- task #82 Phase 1b: CapCoh consumes ONLY the caps/freshness layer, which now lives in
 -- `Bang/Freshness.lean` (extracted from the old `Bang/Model.lean`). Importing Freshness (not
 -- Model) SEVERS the `Audit→CalcVM→CapCoh→Model` edge — Model leaves the gated closure.
-public import Bang.Freshness
+public import Bang.Core.Freshness
 open Bang Bang.Model
 open Bang.EffectRow (Label)
 

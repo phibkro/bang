@@ -19,13 +19,13 @@
 
 module
 
-public import Bang.IR
-public import Bang.Typing
-public import Bang.Semantics
-public import Bang.LR
-public import Bang.Wasm
-public import Bang.Soundness
-public import Bang.BinaryLR   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
+public import Bang.Core.IR
+public import Bang.Core.Typing
+public import Bang.Core.Semantics
+public import Bang.Meta.LR
+public import Bang.Backend.Wasm
+public import Bang.Core.Soundness
+public import Bang.Meta.BinaryLR   -- the fundamental-theorem proofs (sibling to Metatheory); wired to the
                      -- frozen `lr_fundamental`/`lr_sound` statements below via `:= …_proof`
 
 namespace Bang

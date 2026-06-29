@@ -1,6 +1,6 @@
 module
 
-public import Bang.CalcReify
+public import Bang.Reify.CalcReify
 
 /-!
 # A denotational reference for the reification machine (`CalcReify`)

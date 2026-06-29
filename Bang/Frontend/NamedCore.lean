@@ -39,8 +39,8 @@
 module
 
 -- `#guard roundtrips …` runs `Source.eval` (compiled Operational) at the META phase → meta import.
-meta import Bang.Semantics
-public import Bang.Semantics
+meta import Bang.Core.Semantics
+public import Bang.Core.Semantics
 
 namespace Bang.Frontend
 

@@ -21,7 +21,7 @@ cd "$ROOT"
 # ── The exception allowlist: files that GENUINELY cannot be modules, with the reason.
 # Operator intent is ZERO exceptions; each line here is a reviewed, justified carve-out.
 #
-#   Bang/Surface/PropTest.lean
+#   Bang/Frontend/Surface/PropTest.lean
 #     The Plausible `#test` STACK-LAWS harness. Plausible's `Gen`/`Arbitrary` API is
 #     `meta` in v4.30, and a `meta` generator may not call the RUNTIME stack constructors
 #     (push/empty/pop) it must build samples from. That meta/runtime phase split is
@@ -33,7 +33,7 @@ cd "$ROOT"
 #     Bang/ becomes 0-exception, all-module. PropTest's location here is a way-station,
 #     not a permanent home — do not over-invest in it.
 ALLOWLIST="$(cat <<'EOF'
-Bang/Surface/PropTest.lean
+Bang/Frontend/Surface/PropTest.lean
 EOF
 )"
 

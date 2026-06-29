@@ -4,63 +4,77 @@
 # Enforces the layered architecture as a TESTED rung: drift in the dependency
 # direction becomes a build failure, not a convention to remember.
 #
-# The shape is a V with an apex (verified from the import graph):
+# The shape is a V with consumer tiers above an apex (verified from the import graph):
 #
-#             Spec · Audit · Distribution     ← APEX: manifest + gate (imports anything)
-#            ╱         │          ╲
-#     Frontend  ────► Core ◄────  Backend     ← the V
-#    (Surface,       (semantics  (CalcVM,
-#     NamedCore,      + IR; the   Compile,
-#     Trait)          SSoT)       CalcReify*)
+#             Spec · Audit · Distribution        ← APEX (rank 3): manifest + gate (imports anything)
+#                       ▲
+#         Meta · Witness · Reify                 ← CONSUMERS (rank 2): proofs-about / witnesses
+#        (LR, BinaryLR)  (regress)  (CalcReify*)    reify the V; never imported BY it
+#                       ▲
+#     Frontend  ────► Core ◄────  Backend         ← the V (rank 1 edges, rank-0 sink)
+#    (Surface,       (IR, Typing, (AbstractMachine,
+#     NamedCore)      Semantics,   Wasm)
+#                     Grade, Soundness,
+#                     Freshness, CapCoh — the SSoT)
 #
+# RANKS (the V enforced by DIRECTORY STRUCTURE — the tier dir IS the truth):
+#   Core = 0 (the sink: imports nothing outward) · Frontend = Backend = 1 (siblings) ·
+#   Meta = Witness = Reify = 2 (consumers) · Apex = 3 (unrestricted).
 # RULES (the only ones that keep the V from collapsing into a tangle):
-#   • Core      must NOT import Frontend or Backend   (Core is the sink — depends on nothing outward)
-#   • Frontend  must NOT import Backend               (the two edges meet only at Core)
-#   • Backend   must NOT import Frontend
-#   • Apex      is unrestricted (it aggregates the whole project)
+#   • importing strictly UPWARD (rank a < rank b) is forbidden — Core can't pull any
+#     outer tier; Frontend/Backend can't pull a consumer; consumers can't pull Apex.
+#   • Frontend ⊥ Backend (same rank, but the two edges meet ONLY at Core).
+#   Downward consumption is free: a consumer imports the V, Reify imports Backend, etc.
 #
 # Data FLOWS Frontend → Core → Backend (text → IR → WASM); DEPENDENCIES point
 # inward at Core. That inward-pointing V is what makes Core reusable and the
 # writable IR (Bang.Frontend.NamedCore) a clean plugin/LSP surface.
 #
-# LAYER ASSIGNMENT is path-derived where the files have moved
-# (Bang/Frontend/*, Bang/Backend/*) and a declared map otherwise — a temporary
-# CONVENTION rung that becomes GENERATE (path-derived) once the seam-first file
-# moves land (the moves are deferred until the pivot tree is green again).
+# LAYER ASSIGNMENT is PATH-DERIVED (GENERATE, not convention): the tier is read from
+# the `Bang/<Tier>/` directory in the module path (ADR-0048 §6). A new module lands in
+# the right layer by WHERE its file lives — drift is unrepresentable, not remembered.
+# NOTE (ADR-0048 amendment): Soundness (the syntactic STD metatheory) lives in Core, not
+# Meta — the gated kernel closure (AbstractMachine→CapCoh→Freshness→Soundness) depends on
+# it, so the dependency graph FORCES it Core-foundational; Meta holds only the binary-LR.
 set -euo pipefail
 
 ROOT="${1:-.}"
 cd "$ROOT"
 
-# ── layer of a dotted module name ────────────────────────────────────────────
+# ── layer of a dotted module name (PATH-DERIVED: the tier dir is the truth) ───
 layer_of() {
   case "$1" in
-    Bang.Frontend.*)    echo Frontend; return ;;   # path-derived (already moved)
-    Bang.Backend.*)     echo Backend;  return ;;    # path-derived (for the deferred moves)
-    Bang.Semantics.*) echo Core;       return ;;    # the hub's 4 deep submodules (Subst/Dispatch/Eval/Invariants)
+    Bang.Frontend.*) echo Frontend; return ;;
+    Bang.Core.*)     echo Core;     return ;;
+    Bang.Backend.*)  echo Backend;  return ;;
+    Bang.Meta.*)     echo Meta;     return ;;
+    Bang.Witness.*)  echo Witness;  return ;;
+    Bang.Reify.*)    echo Reify;    return ;;
+    Bang.Spec|Bang.Audit|Bang.Distribution) echo Apex; return ;;
+    *)               echo UNCLASSIFIED ;;
   esac
+}
+
+# ── rank of a tier (the V's partial order) ───────────────────────────────────
+rank() {
   case "$1" in
-    Bang.EffectRow|Bang.IR|Bang.Grade|Bang.Typing|Bang.Semantics|Bang.LR|Bang.BinaryLR|Bang.Soundness|Bang.Freshness|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.ReturnEscapeReach|Bang.StateEscapeWitness)
-      echo Core ;;
-    Bang.AbstractMachine|Bang.Wasm|Bang.CalcReify|Bang.CalcReifyRef|Bang.CalcReifySim)
-      echo Backend ;;
-    Bang.Surface|Bang.Surface.Trait|Bang.Surface.PropTest)
-      echo Frontend ;;
-    Bang.Spec|Bang.Audit|Bang.Distribution)
-      echo Apex ;;
-    *)
-      echo UNCLASSIFIED ;;
+    Core)               echo 0 ;;
+    Frontend|Backend)   echo 1 ;;
+    Meta|Witness|Reify) echo 2 ;;
+    Apex)               echo 3 ;;
+    *)                  echo 9 ;;
   esac
 }
 
 # ── is (importer-layer → imported-layer) forbidden? ──────────────────────────
 forbidden() {  # $1 = importer layer, $2 = imported layer
+  # the two V-edges are incomparable: they meet only at Core
   case "$1:$2" in
-    Core:Frontend|Core:Backend) return 0 ;;
-    Frontend:Backend)           return 0 ;;
-    Backend:Frontend)           return 0 ;;
-    *)                          return 1 ;;
+    Frontend:Backend|Backend:Frontend) return 0 ;;
   esac
+  # importing strictly upward is forbidden (Core is the sink; lower tiers can't pull higher)
+  [ "$(rank "$1")" -lt "$(rank "$2")" ] && return 0
+  return 1
 }
 
 violations=0

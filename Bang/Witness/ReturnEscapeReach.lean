@@ -2,9 +2,9 @@ module
 
 -- `#guard Source.eval …` runs compiled Operational code at the META phase. Operational
 -- is only a transitive dep (via Metatheory), so `meta import` it directly for the #guard.
-meta import Bang.Semantics
-public import Bang.Soundness
-public import Bang.Grade
+meta import Bang.Core.Semantics
+public import Bang.Core.Soundness
+public import Bang.Core.Grade
 
 /-! # ReturnEscapeReach — the TYPEABILITY SEAL for the laundered re-handle escape (#54).
 

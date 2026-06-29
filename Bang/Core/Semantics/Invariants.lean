@@ -13,7 +13,7 @@
 
 module
 
-public import Bang.Semantics.Eval
+public import Bang.Core.Semantics.Eval
 
 namespace Bang
 

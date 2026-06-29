@@ -12,7 +12,7 @@
 
 module
 
-public import Bang.Semantics.Subst
+public import Bang.Core.Semantics.Subst
 
 namespace Bang
 
