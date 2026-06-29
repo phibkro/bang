@@ -18,11 +18,18 @@ the gap is bridged by THREADING this invariant, not by mirroring dispatch. `Weak
 escape LABEL FACTOR of `CapResolves` (Operational:438) — `WeakCoh + store-supplied resolution ⟹
 CapResolves`, reassembled at the bridge perform arm. Imports Model (fallback: the caps/freshness layer
 lives there; an Operational-only relocation is a task-#17 restructure). -/
-import Bang.Model
+module
+
+public import Bang.Model
 open Bang Bang.Model
 open Bang.EffectRow (Label)
 
 namespace Bang.CapCoh
+
+-- Module reveal (Phase 1a). Only CalcVM imports this. `@[expose] public section`: CalcVM
+-- threads WeakCoh/CapLabelCoh and the splitAtId/weakCoh lemmas. The ~13-lemma splitAtId
+-- freshness theory with zero external refs is a private-able internal cluster (deferred).
+@[expose] public section
 
 
 /-- WeakCoh: vacuous-on-escape label coherence — the frame at identity `p.1`, IF present, has label `p.2`.
@@ -511,4 +518,5 @@ theorem capLabelCoh_perform_label {g n : Nat} {ℓ : Label} {op : OpId} {v : Val
   have hw : WeakCoh K (n, ℓ) := h.1 (n, ℓ) (by simp [capsC, capsV])
   exact hw Kᵢ hh Kₒ hs
 
+end -- public section
 end Bang.CapCoh

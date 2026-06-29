@@ -10,15 +10,22 @@
 -- exactly as `preservation := preservation_proof`). So we import the DEFINITION layers, not Spec
 -- (importing Spec would cycle once Spec imports Compat). Verified no cycle: Metatheory imports only
 -- Core/Syntax/Operational; LR adds the relations; neither imports Spec.
-import Bang.Core
-import Bang.Syntax
-import Bang.Operational
-import Bang.LR
-import Bang.Metatheory
+module
+
+public import Bang.Core
+public import Bang.Syntax
+public import Bang.Operational
+public import Bang.LR
+public import Bang.Metatheory
 
 namespace Bang
 
 open Bang.EffectRow (Label)
+
+-- Module reveal (Phase 1a). `@[expose] public section`: Compat's compatibility lemmas
+-- (the STD compat block, KrelS/CrelK machinery) are unfolded by downstream Spec, so
+-- bodies cross the boundary. Zero-external-ref proof-term lemmas → `private` (deferred).
+@[expose] public section
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
@@ -2140,4 +2147,5 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       exact krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' nh n Θ Θ
         (heapRel_self_of_cells_int n Θ hcells) K K (KrelS_eff_cast (ihK hCo))
 
+end -- public section
 end Bang
