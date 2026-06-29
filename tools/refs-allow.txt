@@ -83,3 +83,4 @@ scratch/AdequacySpike.lean
 # restructure merges. Recover: `git show 9097c96:<path>`.
 Bang/Surface/PropTest.lean
 tools/check-all-modules.sh
+Bang/Freshness.lean
