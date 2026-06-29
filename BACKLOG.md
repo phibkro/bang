@@ -33,7 +33,7 @@
 | 53 | promote `HasVTy.subst_gen` to `Soundness` (single-source value-subst) | proof | ready | refactor; do at keystone reconciliation |
 | 18 | make raw source `vcap` untypeable (drop the `VcapFree` precondition) | proof | ready | soundness hardening; the post-v1 scoped-cap-types move |
 | 4 | add behavioral guards to the Audit gate | tooling | ready | re-confirm relevance vs the current gate |
-| 115 | **Bang/ dead-code sweep (~430 lines)** — zero-ref decls: type_safety_proof, 8 orphaned route-B sim lemmas (~160), private grade/coherence helpers, LR/BinaryLR dead lemmas | proof | ready | /simplify dead-code agent; **build + `#print axioms` census-gated per deletion** (proof-IC unit). ⚠ CONFLICT to resolve first: is `progress_proof`/`run_safe` dead (transitively) or live (`progress'_proof` reuses it)? — grep+build decides |
+| 115 | Bang/ dead-code sweep — **DONE: #115a STD chain (148ln) + #115b 8 sim lemmas (153ln), census byte-identical**. REMAINING: private grade/coherence helpers (Soundness/CapCoh/Dispatch), LR/BinaryLR zero-ref lemmas, the vestigial `maxHeartbeats` on `crelK_fund_up` (~100ln, smaller batches) | proof | in-flight | each batch: verify zero-ref → delete → `lake build` + `#print axioms` census-identical. Conflict resolved: the unprimed STD trio WAS dead (build-confirmed) |
 
 ## Hygiene (housekeeping, low-risk, do on a quiet tree)
 
