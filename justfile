@@ -22,8 +22,10 @@ setup:
 orient:
     bash tools/orient.sh
 
-# Default verify gate — selfcheck + build + audit + ADR-ledger currency.
-verify: selfcheck build audit adr-check
+# Default verify gate — selfcheck + build + audit. `audit` now runs the full
+# `just fitness` bundle (#114), which already includes the ADR-ledger `--check`,
+# so a separate `adr-check` dep is redundant.
+verify: selfcheck build audit
 
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
