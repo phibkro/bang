@@ -38,8 +38,8 @@
 
 ## Hygiene (housekeeping, low-risk, do on a quiet tree)
 
-- Delete the now-redundant branches `consolidate-r104` + `typed-static-r1` (both ⊆ `main`).
-- Triage the 4 unpushed spike worktrees: `lang-bang-{compfresh,rename,runplug,shellspike}` — push-or-drop (hold local-only commits).
+- DONE: pruned 19 merged branches (local+remote, 36→19) + the corruption-ghost worktrees.
+- Triage the 17 remaining `--no-merged` branches (old spikes w/ unique commits) + the unpushed spike worktrees `lang-bang-{compfresh,rename,runplug,shellspike}` — push-or-drop (needs a call on whether the experiments are worth keeping).
 - `#19` (loogle re-clone hazard) appears resolved by the dependency removal merged to main — verify, then prune.
 
 ## /simplify follow-ups (2026-06-29 8-agent pass — minor + discussion)
