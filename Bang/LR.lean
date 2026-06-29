@@ -9,13 +9,21 @@
   Theorem STATEMENTS (lr_sound, lr_fundamental, seq_unit, group_recovers)
   live in Bang/Spec.lean. -/
 
-import Bang.Core
-import Bang.Syntax
-import Bang.Operational
+module
+
+public import Bang.Core
+public import Bang.Syntax
+public import Bang.Operational
 
 namespace Bang
 
 open Bang.EffectRow (Label)
+
+-- Module reveal (Phase 1a). `@[expose] public section`: LR's logical-relation defs
+-- (Vrel/Srel/Krel/Crel, ctxApprox, the RunPlugReshape machinery) are unfolded
+-- definitionally by downstream Compat/Spec, so bodies cross the boundary (Phase-1a
+-- finding). Zero-external-ref proof-term lemmas are individually `private` below.
+@[expose] public section
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
@@ -2065,4 +2073,5 @@ theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemi
       obtain ⟨m, w, hm⟩ := hright
       exact ⟨m, w, hm⟩
 
+end -- public section
 end Bang
