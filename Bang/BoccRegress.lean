@@ -23,8 +23,10 @@
   records the stuck run — that file is pre-existing RED on the ADR-0055 `Config` reshape, so we do
   not depend on it). `sigU` is the same `{get,put} : unit → unit` signature as `CapEscapeWitness.sigU`.
 -/
-import Bang.Metatheory
-import Bang.Mult
+module
+
+public import Bang.Metatheory
+public import Bang.Mult
 
 namespace Bang.BoccRegress
 
