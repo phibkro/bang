@@ -53,8 +53,8 @@ proof).
 `Bang/Model.lean` (the 4323-line typeless soundness-diagonal engine, route-β) + its 5
 refute/probe witnesses (`LwscgLengthRefute`, `CohSubstRefute`, `LwscgOfTypedRefute`,
 `ReturnEscapeRefute`, `WsCfgInterfaceProbe`) were a **closed dead island** — out of the
-gated closure (ADR-0063 routed v1 soundness through typing-preservation, not the
-diagonal). Removal left the census byte-identical → machine-checked proof they were
+gated closure (v1 soundness routes through typing-preservation `type_safety'`, not the
+route-β diagonal). Removal left the census byte-identical → machine-checked proof they were
 dead. Git preserves them; ADR-0061 (the retrospective record) cites the old path via
 `tools/refs-allow.txt`.
 
