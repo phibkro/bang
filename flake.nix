@@ -33,6 +33,7 @@
             pkgs.gmp # Lean runtime dep
             pkgs.nodejs_22 # for tools/selfcheck.mjs
             pkgs.poppler-utils # pdftotext for paper-reading scripts
+            pkgs.mermaid-cli # mmdc — validate the generated module-graph mermaid (gen-import-graph.py --validate)
           ];
           shellHook = ''
             echo "bang-lang — Lean 4 dev shell"

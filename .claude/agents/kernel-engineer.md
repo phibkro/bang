@@ -79,6 +79,16 @@ When given a vague goal, decompose into:
 - **Explicit configuration at boundaries.** Surprising defaults are latent bugs.
 - **Surface uncertainty.** A `sorry` with a clear comment beats a wrong proof;
   a "this depends on X" beats silent assumption.
+- **A statement claimed "wrong" needs a refutation, not an assertion.** When a
+  proof won't close and a statement is suspected false/unprovable, the evidence that
+  justifies changing it is a *machine-checked* `False` derived from the statement
+  taken as a hypothesis `H` — axiom-clean, independent of any in-file `sorry`, KEPT as
+  a committed do-not-weaken regression witness (the `CohSubstRefute` /
+  `LwscgLengthRefute` witnesses on the proof branch). Gate that artifact; never change a statement on a
+  say-so. And separate genuinely-FALSE (refutable → the statement needs a hypothesis or
+  reshape) from merely-HARD or needs-a-PROOF-only-side-condition (leave the statement —
+  that's the proof's problem, not the kernel's). A confident "X is false" gets gated
+  exactly like a confident "X is proven."
 
 # Definition of done
 
@@ -101,6 +111,12 @@ just verify          # selfcheck + build + audit
 just build           # lake exe cache get && lake build
 just audit           # bash tools/audit.sh (needs build first)
 ```
+
+**The `sorry`-signal is the axiom set, never a text grep.** `lake env lean … ` +
+`#print axioms` (or `lean_verify`) reads the proof TERM — *comment-immune* (`-- NO
+sorry` can't fool it) and *transitive* (a clean-looking lemma calling a `sorry`'d
+helper still reports `sorryAx`). `grep "sorry"` is neither: it false-positives on
+prose and false-negatives on dependencies. Never report a sorry-count from a source scan.
 
 # When you should hand off
 

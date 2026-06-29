@@ -14,13 +14,16 @@
 #   (B) FAIL — markdown link targets resolve. Every `](NNNN-….md)` link inside the
 #       decisions dir points to a file that exists → a dead in-repo link is breakage.
 #
-#   (C) WARN — cross-reference resolution. Every "ADR-NNNN" mentioned in prose either
-#       has a file, OR is documented history (the README "Recent culls" note, or the
-#       adr-template placeholder). Unknown dangling refs are REPORTED, not failed —
-#       deleted-ADR history (0003/0004/0010–0014) is intentional and pre-existing
-#       (the brief: report it, don't fail the build on pre-existing history).
+#   (C) FAIL — refs ≡ files. Every "ADR-NNNN" mentioned ANYWHERE in `Bang/` + `docs/`
+#       (not just docs/decisions/) must resolve to a `docs/decisions/NNNN-*.md` file,
+#       OR be documented history (deleted/collapsed ADRs 0003/0004/0010–0014, or the
+#       adr-template `ADR-0123` placeholder). An UNDOCUMENTED dangling ref is how the
+#       0056/0057/0060 phantoms accrued — a ref with no file and no allowlist entry →
+#       exit 1. `just adr-check` guards ledger ≡ files; this guards refs ≡ files (the
+#       gap that let phantom ADRs live in code/docs with no decision record). ADR-0042.
 #
-# Exit 1 only on (A)/(B). (C) prints WARN lines and still exits 0.
+# Exit 1 on (A)/(B)/(C). Documented-history refs in (C) print an informational note
+# and do NOT fail (they are the recorded, intentional culls).
 set -euo pipefail
 
 ROOT="${1:-.}"
@@ -67,12 +70,25 @@ if [ -n "$dead_links" ]; then
   fail=1
 fi
 
-# ── (C) cross-reference resolution (WARN-only) ───────────────────────────────
-# Numbers mentioned as `ADR-NNNN` / `ADRs NNNN` / `ADR NNNN`. A ref is OK if it
-# has a file. Otherwise it must be DOCUMENTED history: named in the README
-# "Recent culls" note, or the template's `ADR-0123` placeholder. Anything else
-# is reported as a genuine dangling cross-reference (still exit 0).
-refs="$(grep -rhoE 'ADRs?[- ][0-9]{4}|ADRs? [0-9]{4}' "$DIR"/*.md \
+# ── (C) refs ≡ files (FAIL on undocumented dangling) ─────────────────────────
+# Numbers mentioned as `ADR-NNNN` / `ADRs NNNN` / `ADR NNNN` across the lang-bang
+# governance surface — `Bang/` + `docs/` + the orientation/governance docs (CONTEXT,
+# ROADMAP, CLAUDE, ONBOARDING, paths/, the maintenance instance). The earlier scope was
+# `Bang/`+`docs/` ONLY: that narrow scope is how the 0056/0057/0060 phantoms hid in
+# code/notes AND how ADR-0061 went phantom from CONTEXT/paths — the scan blind spot.
+# A ref is OK if it resolves to a file. Otherwise it must be DOCUMENTED history
+# (README "Recent culls" note or the template's `ADR-0123` placeholder) → informational.
+# Anything else is an UNDOCUMENTED dangling ref → exit 1.
+#   EXCLUDED: `.claude/skills/codebase-maintenance/instances/` — vendored dogfood copies of
+#   OTHER projects' maintenance instances (occupational-health, homelab) reference foreign
+#   ADR numbers unrelated to lang-bang's decision log; scanning them would false-match/fail.
+ref_roots=""
+for r in "$ROOT/Bang" "$ROOT/docs" "$ROOT/CONTEXT.md" "$ROOT/ROADMAP.md" \
+         "$ROOT/CLAUDE.md" "$ROOT/ONBOARDING.md" "$ROOT/paths" \
+         "$ROOT/.claude/codebase-maintenance.md"; do
+  [ -e "$r" ] && ref_roots="$ref_roots $r"
+done
+refs="$(grep -rhoE 'ADRs?[- ][0-9]{4}|ADRs? [0-9]{4}' $ref_roots 2>/dev/null \
           | grep -oE '[0-9]{4}' | sort -u)"
 
 # Documented-history allowlist: the culls (0003/0004 deleted, 0010–0014 collapsed)
@@ -86,27 +102,25 @@ documented="0003
 0014
 0123"
 
-warned=0
+noted=0
 for n in $refs; do
   # Skip if any file starts with NNNN- (the ref resolves to a live ADR).
   if ls "$DIR/$n"-*.md >/dev/null 2>&1; then continue; fi
   if printf '%s\n' "$documented" | grep -qx "$n"; then
-    if [ "$warned" -eq 0 ]; then
-      echo "WARN: cross-references to ADRs with no file (documented history — see README 'Recent culls'):"
-      warned=1
+    if [ "$noted" -eq 0 ]; then
+      echo "note: refs to ADRs with no file (documented history — see README 'Recent culls'):"
+      noted=1
     fi
     echo "       ADR-$n (intentional: deleted/collapsed or template placeholder)"
   else
-    if [ "$warned" -eq 0 ]; then
-      echo "WARN: cross-references to ADRs with no file:"
-      warned=1
-    fi
-    echo "       ADR-$n (UNDOCUMENTED dangling ref — add to README culls note or fix)"
+    echo "FAIL: ADR-$n is referenced in Bang/ or docs/ but has NO docs/decisions/$n-*.md file"
+    echo "       (a phantom ADR — write the decision record, or add $n to the documented-history allowlist if intentionally culled)"
+    fail=1
   fi
 done
 
 if [ "$fail" -eq 0 ]; then
-  echo "adr-links: OK — index ↔ file bijection clean, all in-repo links resolve${warned:+ (see WARN above)}"
+  echo "adr-links: OK — index ↔ file bijection clean, in-repo links resolve, all ADR refs across the governance surface (Bang/+docs/+CONTEXT/ROADMAP/CLAUDE/ONBOARDING/paths) have files${noted:+ (documented-history notes above)}"
   exit 0
 fi
 exit 1

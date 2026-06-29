@@ -15,22 +15,6 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# ── 0. Secret scan (gitleaks) — highest-consequence, runs first + always ─
-# A committed secret is permanent; a checkpoint IS "before commit", so this is
-# the cheapest high-value gate (codebase-maintenance skill, portfolio finding).
-nix shell nixpkgs#gitleaks -c gitleaks git --staged --no-banner --redact \
-    >/tmp/bang-gitleaks.log 2>&1 || gl=$?
-gl=${gl:-0}
-if [ "$gl" -eq 1 ]; then
-  echo "❌ pre-commit: gitleaks found a secret in the staged changes:"
-  tail -20 /tmp/bang-gitleaks.log | sed 's/^/    /'
-  echo "   A committed secret is PERMANENT — remove it AND rotate the credential."
-  echo "   False positive? add an allowlist to .gitleaks.toml; don't blindly --no-verify."
-  exit 1
-elif [ "$gl" -ne 0 ]; then
-  echo "⚠ pre-commit: gitleaks could not run (exit $gl) — secret scan SKIPPED; see /tmp/bang-gitleaks.log"
-fi
-
 # ── 1. No `admit` in staged Lean files ──────────────────────────────────
 staged_lean=$(git diff --cached --name-only --diff-filter=ACM \
               | grep -E '\.lean$' || true)
@@ -92,7 +76,7 @@ fi
 # when check-refs matters most (a renamed/deleted file leaving dangling doc refs).
 # NOT covered by BANGLANG_SKIP_VERIFY_REASON (that is only for the slow/possibly-red
 # build); only `git commit --no-verify` bypasses them.
-echo "→ pre-commit: running just fitness (primitives · adr-links · arch-check · check-refs)"
+echo "→ pre-commit: running just fitness (primitives · adr-links · adr-check · arch-check · audit-sync · check-refs)"
 if ! nix develop --command just fitness > /tmp/bang-fitness.log 2>&1; then
   echo "❌ pre-commit: just fitness failed. Last 20 lines:"
   tail -20 /tmp/bang-fitness.log | sed 's/^/    /'

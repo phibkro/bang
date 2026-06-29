@@ -5,6 +5,7 @@
 % ─── Effects & handlers ──────────────────────────────────────────────────────
 
 @inproceedings{biernacki-popl18-handle-with-care,
+  keywords = {topic:lr grounds:inv-1 role:substrate},
   author    = {Biernacki, Dariusz and Pir\'{o}g, Maciej and Polesiuk, Piotr and Sieczkowski, Filip},
   title     = {Handle with Care: Relational Interpretation of Algebraic Effects and Handlers},
   booktitle = {Proceedings of the ACM on Programming Languages (POPL)},
@@ -43,6 +44,7 @@
 % ─── Graded CBPV ─────────────────────────────────────────────────────────────
 
 @inproceedings{torczon-oopsla24-effects-coeffects,
+  keywords = {topic:graded-types role:substrate},
   author    = {Torczon, Cassia and Su\'{a}rez Acevedo, Emmanuel and Agrawal, Shubh and Velez-Ginorio, Joey and Weirich, Stephanie},
   title     = {Effects and Coeffects in Call-by-Push-Value},
   booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
@@ -62,6 +64,7 @@
 }
 
 @inproceedings{katsumata-popl14-parametric-effect-monads,
+  keywords = {topic:graded-types role:substrate},
   author    = {Katsumata, Shin-ya},
   title     = {Parametric Effect Monads and Semantics of Effect Systems},
   booktitle = {POPL},
@@ -98,6 +101,7 @@
 % ─── Calculated compilers ────────────────────────────────────────────────────
 
 @inproceedings{garby-haskell24-calculating-effectively,
+  keywords = {topic:calculation grounds:inv-4 role:substrate},
   author    = {Garby, Zac and Hutton, Graham and Bahr, Patrick},
   title     = {Calculating Compilers Effectively (Functional Pearl)},
   booktitle = {Proceedings of the 17th ACM SIGPLAN International Haskell Symposium},
@@ -145,9 +149,42 @@
   doi     = {10.1017/S0956796817000120},
 }
 
+@article{bahr-hutton-icfp23-calculating-compilers-concurrency,
+  keywords = {topic:calculation grounds:inv-4 role:confirmed-sota},
+  author  = {Bahr, Patrick and Hutton, Graham},
+  title   = {Calculating Compilers for Concurrency},
+  journal = {Proceedings of the ACM on Programming Languages (ICFP)},
+  volume  = 7,
+  pages   = {Article 213},
+  year    = 2023,
+  doi     = {10.1145/3607855},
+  note    = {Filed references/papers/2-calcvm/bahr-hutton-icfp23-calculating-compilers-concurrency.pdf
+             (PACMPL 7:ICFP Art.213, 28pp — verified p.1). The CLOSEST published Bahr-Hutton work to
+             bang's route-B handler-dispatch calculation: CONCURRENCY = scheduling/non-determinism =
+             CONTROL. Key technique = a CODENSITY monad over CHOICE TREES (Chappe et al '23, a general
+             interaction-trees-style effect structure) — the codensity construction is what enables the
+             equational compiler calculation for control-heavy semantics. The nearest precedent for the
+             cap-keyed dispatch (perform/handle/unwindFind) re-derivation; cited [4] in garby-haskell24,
+             whose §6 names first-class HANDLERS as the open frontier bang occupies.}
+}
+
+@techreport{ager-biernacki-danvy-midtgaard-03-interp-to-compiler-vm,
+  author      = {Ager, Mads Sig and Biernacki, Dariusz and Danvy, Olivier and Midtgaard, Jan},
+  title       = {From Interpreter to Compiler and Virtual Machine: A Functional Derivation},
+  institution = {BRICS, Department of Computer Science, University of Aarhus},
+  number      = {RS-03-14},
+  year        = 2003,
+  note        = {Filed references/papers/2-calcvm/ager-biernacki-danvy-midtgaard-03-interp-to-compiler-vm.pdf.
+                 The DEFUNCTIONALIZATION/CPS route to deriving a VM from an interpreter (the alternative
+                 derivation discipline to Bahr-Hutton equational calculation). Cited [1] in garby-haskell24.
+                 Relevant to how unwindFind's stack-search is derived (the dispatch as a defunctionalized
+                 continuation) — garby §6's "recursion operators rather than explicit induction" hint.}
+}
+
 % ─── Verified compilation ────────────────────────────────────────────────────
 
 @inproceedings{benton-hur-icfp09-biorthogonality-step-indexing,
+  keywords = {topic:lr role:substrate},
   author    = {Benton, Nick and Hur, Chung-Kil},
   title     = {Biorthogonality, Step-Indexing and Compiler Correctness},
   booktitle = {ICFP},
@@ -378,6 +415,7 @@
 % Relevance + integration verdicts are recorded in README.md "Integration findings".
 
 @article{yoshioka-icfp24-abstracting-effect-systems,
+  keywords = {topic:effect-algebra grounds:ADR-0001 role:confirmed-sota},
   author  = {Yoshioka, Takuma and Sekiyama, Taro and Igarashi, Atsushi},
   title   = {Abstracting Effect Systems for Algebraic Effect Handlers},
   journal = {Proceedings of the ACM on Programming Languages (ICFP)},
@@ -391,6 +429,7 @@
 }
 
 @article{zhang-popl19-abstraction-safe-tunneling,
+  keywords = {topic:capability-safety grounds:ADR-0024 role:confirmed-sota},
   author  = {Zhang, Yizhou and Myers, Andrew C.},
   title   = {Abstraction-Safe Effect Handlers via Tunneling},
   journal = {Proceedings of the ACM on Programming Languages (POPL)},
@@ -402,6 +441,7 @@
 }
 
 @inproceedings{mcdermott-fscd25-grading-cbpv,
+  keywords = {topic:graded-types role:confirmed-sota},
   author    = {McDermott, Dylan},
   title     = {Grading Call-By-Push-Value, Explicitly and Implicitly},
   booktitle = {10th International Conference on Formal Structures for Computation and Deduction (FSCD)},
@@ -434,6 +474,7 @@
 }
 
 @misc{legoupil-pldi26-iris-wasmfx,
+  keywords = {topic:wasmfx grounds:ADR-0035 role:substrate},
   author = {Legoupil, Maxime and Pedersen, Mathias and Birkedal, Lars and Lindley, Sam and Pichon-Pharabod, Jean},
   title  = {{Iris-WasmFX}: Modular Reasoning for Wasm Stack Switching},
   year   = 2025,
@@ -444,17 +485,27 @@
 }
 
 @misc{lindley-draft25-asmfx-handlers-all-the-way-down,
-  author = {Lindley, Sam and others},
+  keywords = {topic:wasmfx topic:calculation grounds:inc-6 role:frontier},
+  author = {Campbell, Brian and Lindley, Sam and Ricciotti, Wilmer and Stark, Ian},
   title  = {Effect Handlers All the Way Down},
   year   = 2025,
   note   = {Draft October 2025. Handler calculus (ASFX) → register machine
             (AsmFX); compiler correctness via an annotated simulation relation.
-            Nearest published twin of CalcVM→WasmFX.},
-  % TODO: confirm full author list + venue on publication.
+            Nearest published twin of CalcVM→WasmFX. §7.1: its simulation relation
+            s ≼ ŝ "essentially expresses a WELL-SCOPING INVARIANT" to bridge a
+            SCOPE-based source dispatch and an ADDRESS-based machine dispatch —
+            i.e. across a representational gap, thread a coherence invariant through
+            the simulation, do NOT make the machine mirror the source. This is the
+            literature grounding for inc-6 U3 Route A: bang's kernel dispatches by
+            (identity,label), evalD by identity (label-erased) — the SAME gap — so
+            run_evalD's premise = the forward-closure of CapResolves (cap-label =
+            frame-label), bang's analog of AsmFX's well-scoping invariant. (Route B,
+            making evalD label-faithful, is for NO rep-gap; not the method here.)},
 }
 
 % ── transactions / STM (rung 3, ADR-0030) ──────────────────────────────
 @inproceedings{harris-ppopp05-composable-memory-transactions,
+  keywords = {topic:stm grounds:ADR-0030 role:substrate},
   author    = {Harris, Tim and Marlow, Simon and Peyton Jones, Simon and Herlihy, Maurice},
   title     = {Composable Memory Transactions},
   booktitle = {PPoPP 2005},
@@ -643,6 +694,7 @@
 }
 
 @article{devilhena-popl26-blaze,
+  keywords = {topic:lr role:frontier},
   author  = {de Vilhena, Paulo Em\'{\i}lio and van Collem, Simcha and Wright, Ines and Krebbers, Robbert},
   title   = {{blaze}: A Relational Separation Logic for Effect Handlers},
   journal = {Proceedings of the ACM on Programming Languages (POPL)},
@@ -660,4 +712,219 @@
              Strongest published evidence that no-Iris Nat step-indexing suffices
              for the resumptive LR.
              \url{https://iris-project.org/pdfs/2026-popl-blaze.pdf}},
+}
+
+@article{boruch-gruszecki-22-scoped-capabilities,
+  keywords = {topic:capability-safety grounds:ADR-0057 grounds:task-18 role:frontier},
+  author  = {Boruch-Gruszecki, Aleksander and Brachth\"{a}user, Jonathan Immanuel and Lee, Edward and Lhot\'{a}k, Ond\v{r}ej and Odersky, Martin},
+  title   = {Scoped Capabilities for Polymorphic Effects},
+  journal = {arXiv preprint arXiv:2207.03402},
+  year    = 2022,
+  note    = {CC<:Box, the capture calculus behind Scala-3 capture checking. The #18
+             (drop-VcapFree) generalization for lang-bang: avoidance ((let), Prop 3.3)
+             GENERALIZES our B-occ (ADR-0057); capture-prediction cv (Lemma 4.11/4.14,
+             cv only SHRINKS under reduction) IS ADR-0060 grade-driven liveness rebuilt;
+             reference-dependent capture sets (\S5.2) cover state-escape. Soundness is
+             SYNTACTIC progress+preservation (Thm 4.6/4.8), NOT a logical relation.
+             Cost of full CC<:Box: subtyping + reference-dependent types + boxing (>= inc-5).
+             See docs/notes/scoped-capabilities-for-vcapfree-drop.md.
+             \url{https://arxiv.org/abs/2207.03402}},
+}
+
+@inproceedings{garby-haskell25-calculated-typer,
+  author    = {Garby, Zac and Bahr, Patrick and Hutton, Graham},
+  title     = {The Calculated Typer (Functional Pearl)},
+  booktitle = {Proceedings of the 18th ACM SIGPLAN International Haskell Symposium (Haskell '25)},
+  year      = 2025,
+  doi       = {10.1145/3759164.3759346},
+  note      = {Derives the type CHECKER (an executable decision procedure) by fold fusion from a
+               behavioural spec — the typing-side analogue of the Bahr-Hutton calculated-compiler
+               method bang uses for CalcVM (invariant #4). CHECKING, not inference (inference deferred
+               to follow-up). Scope: semantics expressible as a fold (bang's CK machine isn't; the
+               CBPV-spine eval might be). See docs/notes/calculated-type-system-frontier.md.},
+}
+
+@article{brachthauser-oopsla20-effects-as-capabilities,
+  keywords = {topic:capability-safety grounds:task-18 role:frontier},
+  sha256 = {424a1be3377a7180731c8e1c9484d0d97dacc546aeab35aa4e9365bdfa172ae0},
+  author  = {Brachth\"{a}user, Jonathan Immanuel and Schuster, Philipp and Ostermann, Klaus},
+  title   = {Effects as Capabilities: Effect Handlers and Lightweight Effect Polymorphism},
+  journal = {Proceedings of the ACM on Programming Languages (OOPSLA)},
+  volume  = 4,
+  year    = 2020,
+  doi     = {10.1145/3428194},
+  % Origin of the SECOND-CLASS-capabilities discipline for effect HANDLERS: effect types = which
+  % capabilities a computation requires from context; capabilities cannot be returned/stored, so
+  % they cannot outlive their handler. The Effekt-language predecessor of System C (boxes), and the
+  % effect-handler-specific sibling of CC<:Box [boruch-gruszecki-22-scoped-capabilities]. Prior art
+  % for bang's cap-escape arc (progComp laundering, ADR-0063) and task #18.
+}
+
+@article{brachthauser-oopsla22-effects-capabilities-boxes,
+  sha256 = {c369c76d8541431fa04441ac2e4256b153299c6a2d9a7c1ed34e87db3dae560c},
+  keywords = {topic:capability-safety grounds:ADR-0063 grounds:task-18 role:frontier},
+  author  = {Brachth\"{a}user, Jonathan Immanuel and Schuster, Philipp and Lee, Edward and Boruch-Gruszecki, Aleksander},
+  title   = {Effects, Capabilities, and Boxes: From Scope-Based Reasoning to Type-Based Reasoning and Back},
+  journal = {Proceedings of the ACM on Programming Languages (OOPSLA1)},
+  volume  = 6,
+  year    = 2022,
+  doi     = {10.1145/3527320},
+  % System C -- the effect-HANDLER realization of CC<:Box capturing types
+  % [boruch-gruszecki-22-scoped-capabilities] (shared authors Lee, Boruch-Gruszecki). Capabilities
+  % are second-class (cannot escape); a `box` lifts the restriction by tracking the captured caps
+  % (the CAPTURE SET / degree-of-impurity) in the box's type, so a returned/thunk-captured cap is
+  % provably un-usable past its handler. The principled VcapFree-drop (task #18): bang's progComp
+  % launders a cap into a RETURNED THUNK -- second-class + boxes make exactly that ill-typed. The
+  % notes doc docs/notes/scoped-capabilities-for-vcapfree-drop.md works the CC<:Box mapping; this is
+  % its handler-native counterpart.
+}
+
+@article{tang-popl26-rows-capabilities-modal-effects,
+  sha256 = {d8995cd1c47dc5fbc5ed8c0bd2f8e1864f6e6bf2098c6399efd777ca988e08e8},
+  keywords = {topic:capability-safety topic:effect-algebra role:frontier},
+  author  = {Tang, Wenhao and Lindley, Sam},
+  title   = {Rows and Capabilities as Modal Effects},
+  journal = {Proceedings of the ACM on Programming Languages (POPL)},
+  year    = 2026,
+  doi     = {10.1145/3776674},
+  eprint  = {2507.10301},
+  archivePrefix = {arXiv},
+  % Unifies row-based (Koka) and capability-based (Effekt) effect systems as two modal disciplines
+  % of one calculus; the modality decouples effect tracking from functions. The framework that makes
+  % bang's core principle -- "typing is by LABEL (rows), dispatch is by IDENTITY (capability)" --
+  % coherent rather than ad-hoc. Companion to Modal Effect Types (arXiv 2407.11816, still bib-gap).
+}
+
+@misc{heijltjes-mfps25-fmc-iii-control,
+  sha256 = {a0917ce61e4c501e3405daec39fcbb9c079f66916e740403236e69e12e02bdfe},
+  keywords = {topic:calculation role:speculative},
+  author = {Heijltjes, Willem},
+  title  = {The Functional Machine Calculus {III}: Control},
+  year   = 2025,
+  eprint = {2510.07851},
+  archivePrefix = {arXiv},
+  note   = {MFPS 2025 Preliminary Proceedings.
+            FMC control-calculus line (NOT Bahr-Hutton calculation). Models control operators as FMC
+            sequencing/choice in a machine calculus -- a conceptual lens on handler dispatch as
+            control, adjacent to route-B's "calculate a control compiler". Speculative/post-v1;
+            relevance unverified beyond the framing.},
+}
+
+@misc{bahr-pearl25-sound-by-construction,
+  author    = {Bahr, Patrick and Garby, Zac and Hutton, Graham},
+  title     = {Sound-By-Construction Type Systems (Functional Pearl)},
+  year      = 2025,
+  note      = {Functional pearl; preprint (acmart class, no published venue/DOI located as of 2026-06-27).
+               Derives the typing RELATION by SOLVING the type-soundness property algebraically (like
+               solving an equation) — rules sound-by-construction, no separate soundness proof. Scope:
+               deterministic big-step + STRONG NORMALISATION (the blocker for bang's Div fragment; SbC's
+               exists-v.e-eval-v is vacuous on divergence). The "solve for the rule" move is the
+               typing-side analogue of bang's calculated CalcVM. Open frontier: does it survive over a
+               step-indexed relation (Crel) and DERIVE the grade coefficients rather than assert them?
+               See docs/notes/calculated-type-system-frontier.md.},
+}
+
+@article{gordon-arxiv2606-effect-systems-as-abstract-interpretations,
+  author  = {Gordon, Colin S.},
+  title   = {Effect Systems as Abstract Interpretations},
+  journal = {arXiv preprint arXiv:2606.19686},
+  year    = 2026,
+  note    = {Embeds Gordon's EFFECT QUANTALE (carrier + a join for branching + a partial monoid for
+             sequencing, Def 2.1, with the two distribution laws) as an abstract domain over
+             event-occurrence traces. Classifies bang as the DEGENERATE commutative-total effect quantale
+             (sequence = join: order-insensitive Finset effects; the easy corner, no MacNeille completion).
+             Load-bearing structural fact for the GRADED design: effect IDEMPOTENCE (phi-join-phi = phi)
+             DECOUPLES the effect and grade axes, so the letC product is direct (independent), NOT reduced
+             -- which keeps the quantitative calculation tractable; ordered effects (sequence != join)
+             would re-couple them via the Sec 6 iteration operator. Does SOUNDNESS, not DERIVATION (the
+             SbC complement); names continuation answer-type effect/type mutual-dependency as the hard
+             open case (adjacent to the #35 grade-the-resumption crux). Raises the abstract-interpretation
+             / logical-soundness (Timany 2024) intersection as open -- where bang sits.
+             \url{https://arxiv.org/abs/2606.19686}},
+}
+
+@article{cousot-popl24-calculational-incorrectness-logics,
+  author  = {Cousot, Patrick},
+  title   = {Calculational Design of [In]Correctness Transformational Program Logics by Abstract Interpretation},
+  journal = {Proceedings of the ACM on Programming Languages},
+  volume  = 8,
+  number  = {POPL},
+  pages   = {Article 7},
+  year    = 2024,
+  doi     = {10.1145/3632849},
+  note    = {Filed references/papers/adjacent/cousot-popl24-calculational-incorrectness-logics.pdf
+             (PACMPL 8(POPL), Art. 7, Jan 2024, 34pp -- venue verified from p.1).
+             Program logics as ABSTRACTIONS (Galois) of the relational semantics: derive proof rules
+             sound+complete BY CONSTRUCTION, no separate soundness proof; 40 logics = 9 composable
+             abstractions. Correctness = OVER-approx, incorrectness = UNDER-approx of the same Post;
+             healthiness conditions = consequences of alpha preserving JOINS. Recipe (Sec II.6):
+             semantics -> fixpoint form (fixpoint abstraction Th II.2.1) -> invariant/variant (fixpoint
+             induction) -> deductive rules (Aczel Sec II.5). KEY for bang: SN-FREE (lfp/gfp/bi-induction
+             handle nontermination directly) -- the general template that SbC (SN-restricted) is the
+             special case of. Step-indexing = ordinal fixpoint approximation (the Crel operational sibling;
+             known: guarded recursion / topos of trees). Over/under = may/MUST effects (the dual effect
+             logic). First-order imperative only -- the graded-CBPV port is unproven work. DECISIVE
+             port-or-break test = does the GRADE abstraction preserve joins? (effect axis trivially does;
+             the QTT semiring is the open question). See docs/notes/calculated-type-system-frontier.md.},
+}
+
+@inproceedings{ivaskovic-fscd20-dataflow-effects-graded-monads,
+  author    = {Iva\v{s}kovi\'{c}, Andrej and Mycroft, Alan and Orchard, Dominic},
+  title     = {Data-Flow Analyses as Effects and Graded Monads},
+  booktitle = {5th International Conference on Formal Structures for Computation and Deduction (FSCD 2020)},
+  series    = {LIPIcs},
+  year      = 2020,
+  doi       = {10.4230/LIPIcs.FSCD.2020.15},
+  note      = {Filed references/papers/1-kernel/ivaskovic-fscd20-dataflow-effects-graded-monads.pdf
+             (LIPIcs.FSCD.2020.15, open-access). WELDS the AI side (Cousot) to the graded-monad side (Katsumata/Gaboardi): monotone
+             data-flow analyses = effect systems via algebras of TRANSFER FUNCTIONS (a pomonoid, seq = function
+             composition); effect system -> graded monad via a lifted McCarthy transformation; data-flow
+             equations = typing constraints solved by worklist/least-fixpoint. PUNCHLINE: effect QUANTALES are
+             too restrictive (distributivity excludes non-distributive analyses, e.g. constant propagation) --
+             recommends a pomonoid (D, <=, seq) + monotone seq + bounded-complete, NOT Gordon's quantale. For
+             bang: (i) bang's seq=join effects sit BELOW the quantale -- the catalog of flow-sensitive
+             expressivity the commutative corner costs (orthogonal to bang's handler-effects). (ii)
+             trivial-vs-refined grades (Sec 4.3.2): bang's grades are TRIVIAL (runtime-erased), ADR-0059 wants
+             them REFINED (compile-load-bearing) -- a useful lens, NOT literally the store-passing construction.
+             (iii) bang's Mult is a bare CommSemiring with NO order (only q_or_1) => grades CHECKED not INFERRED
+             at fixpoints (no <= to iterate) -- VERIFIED against source; reconciles the AI experiment (its
+             {0,1,w} diamond order was a CONSTRUCTED abstract domain, not bang's native grades).
+             See docs/notes/calculated-type-system-frontier.md.},
+}
+
+@misc{li-arxiv2603-learning-to-disprove,
+  keywords = {topic:counterexample topic:agentic-proving role:frontier},
+  author = {Li, Zenan and Li, Zhaoyu and Yang, Kaiyu and Ma, Xiaoxing and Su, Zhendong},
+  title  = {Learning to Disprove: Formal Counterexample Generation with Large Language Models},
+  year   = 2026,
+  eprint = {2603.19514},
+  archivePrefix = {arXiv},
+  note   = {ETH Zurich / Toronto / MiroMind / Nanjing. Formalizes COUNTEREXAMPLE GENERATION
+            as a first-class skill complementary to proof construction -- the refute-first
+            half our culture leans on, which the paper notes is underexplored in AI proving.
+            Key method: a SYMBOLIC MUTATION strategy -- drop a hypothesis from a proven
+            theorem (H1 -> H2 -> C), use the Lean prover to confirm the dropped hypothesis was
+            NECESSARY, yielding a false mutated_version (a counterexample target) plus a
+            dropped_hypothesis necessity obligation; multi-reward expert iteration over both.
+            Directly informs our gap 1 (automated counterexample search; cf. Surface's
+            test/StackVal idiom) AND gap 3 (hypothesis-necessity / non-vacuity testing) --
+            the mutation is BOTH at once. Situates plausible (Lean 4) + nitpick (Isabelle)
+            as the symbolic baselines. Operator-flagged 2026-06-28.},
+}
+
+@misc{zhao-arxiv2603-lemma-discovery,
+  keywords = {topic:agentic-proving topic:lemma-discovery role:frontier},
+  author = {Zhao, Huan and Tu, Haoxin and Liu, Zhengyao and Rinard, Martin and Roychoudhury, Abhik},
+  title  = {Lemma Discovery in Agentic Program Verification},
+  year   = 2026,
+  eprint = {2603.22114},
+  archivePrefix = {arXiv},
+  note   = {NUS + MIT. Helper-lemma discovery (auxiliary lemmas that aid proving) is the main
+            bottleneck in agentic VC proving + the part existing proof agents cannot do. Key
+            insight: human proof engineers discover lemmas from PROGRAM COMPREHENSION (the
+            source/spec semantics), NOT directly from the verbose VC encoding. LemmaNet:
+            synthesize lemmas OFFLINE from source+spec, then ADAPT them ONLINE as the proof
+            unfolds. Relevant to the shared-lemma-cache investigation + our own hand-derived
+            helper-lemma practice (CtxCorr/CapLabelCoh/NoResume were each discovered from
+            semantic comprehension, exactly this thesis). Operator-flagged 2026-06-28.},
 }

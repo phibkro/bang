@@ -19,12 +19,14 @@ its trigger arises.
 | **Long-term checkpoint map** (◊1 → ◊6) | `ROADMAP.md` |
 | **First-time setup + reference table** | `ONBOARDING.md` |
 | **How work flows** (lifecycle + feedback loops + quality gates) | `docs/notes/development-lifecycle.md` |
+| **What an `incN` is** (the increment unit: scoped→de-risked→ground→done→merged) | `docs/notes/increment-lifecycle.md` |
 | **Codebase maintenance** (objects · rungs · cadence · debt-prevention) | `.claude/codebase-maintenance.md` |
 | **Active in-flight work** | `paths/PATH-*.md` |
 | **Architecture in force** | `docs/decisions/0016-two-hop-architecture-calcvm-and-wasmfx.md` |
 | **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
+| **Categorical reading** (objects/morphisms: graded `F⊣U` adjunction · graded monad = paradigm · handler-algebra · the two-hop functor) | `docs/notes/categorical-architecture.md` |
 | **Proof discipline** (PROOF_ORDER, sorry rules, axiom hygiene) | `docs/notes/spec-proof-discipline.md` |
 | **Why the wasmfx spec is engineer-ready** | `docs/notes/spec-handover.md` |
 | **Lean 4 tactics for this work** | `docs/notes/tactics-survey.md` |
@@ -35,7 +37,7 @@ its trigger arises.
 | **Original design thesis** (v0/v1; partially superseded by ADR-0016) | `docs/spec/bang-lang-design.md`, `docs/spec/bang-lang-description-value.md` |
 | **K-keyframe research roadmap** (complementary to ROADMAP.md) | `docs/roadmap/bang-northstar-roadmap.md` |
 | **References library** (cited papers + refs.bib) | `references/README.md` |
-| **Subagent roles** | `.claude/agents/{kernel-engineer,proof-engineer}.md` |
+| **Subagent roles** | `.claude/agents/{kernel-engineer,proof-engineer,lean-proof-auditor}.md` |
 | **Run any task** | `just` (lists recipes); see `justfile` |
 
 ## Architecture in force (third design revision)
@@ -43,10 +45,13 @@ its trigger arises.
 Two-hop verified compilation per **ADR-0016**:
 
 ```
-  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (Benton-Hur LR)
+  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (annotated simulation)
 ```
 
-The CalcVM is the executable spec; WasmFX is the verified compiler output.
+The CalcVM is the executable spec; WasmFX is the verified compiler output. The
+CalcVM→WasmFX hop is proven by **annotated forward simulation** (`compile_forward_sim`,
+ADR-0035) — NOT the biorthogonal/Benton–Hur LR, which proves ◊4 *contextual equivalence*
+(a separate theorem, the binary LR).
 ADRs 0003 and 0004 were deleted, subsumed by 0016. See `CONTEXT.md` for
 where the implementation stands; `docs/notes/k3-historical-status.md` for
 what the K3 work taught (preserved as input to the graded-CBPV port at ◊3).
@@ -98,9 +103,16 @@ language-level seam — a total prover interpreting a Turing-complete object lan
 | **`:` / `=`** | `:` introduces a binding (silent); `=` equates (live sync if RHS is a live description, sampled if `$`-forced). reactivity = equality over thunks (ADR-0005) |
 | **effect row** | the set of effects a function may perform, carried in its type after `with`. composes by union (join) |
 | **handler** | a value implementing an effect's operations; installed with a `with` block; runtimes are handlers |
+| **capability** (cap) `vcap n ℓ` | a value naming ONE specific handler *instance* — carries both its **identity** `n` and **label** `ℓ`; the selector a `perform` dispatches on |
+| **label** `ℓ` | an effect's *name* — the type-level tag the **effect row** tracks. Many handler instances can share a label |
+| **identity** `n` / `g` | a handler instance's *generative, globally-fresh* id (ADR-0055); what `idDispatch` matches at runtime (`g` = the fresh-id counter) |
+| **dispatch** | **identity-keyed** (runtime: match the cap's identity `n`), realizing **lexical** semantics (the cap names its lexically-enclosing handler) — NOT dynamic/nearest-label (the rejected stale `evalD`, ADR-0052). **Core principle: typing is by *label*, dispatch is by *identity*** — the gap the cap-escape soundness work turned on |
+| **escape** / `escapedCap` | a capability dispatched *after its handler popped* (e.g. captured in a thunk, forced past the handler). v1: a **defined fail-loud** terminal `escapedCap`, not `stuck` (ADR-0063); post-v1 made untypeable by scoped capability types |
 | **STM / TVar** | the one privileged primitive (its *concurrent* form; **v1 STM is a transactional handler** — ADR-0030, journal/retry/validation deferred to concurrency). transactional memory; TVars usable only inside `atomically` |
 | **oracle** | the verified reference an implementation is checked against |
-| **calculated VM** | the `(compile, Code, exec)` triple *derived* from `eval` by Bahr–Hutton equational reasoning |
+| **`Source.eval`** | the KERNEL — the handler-based CK semantics; the hop-1 oracle every other eval is checked against |
+| **`evalD`** (CalcVM reference) | the *middle* reference: the kernel's semantics with effects realized as explicit STATE (`SStore`+`THeap`), the Bahr–Hutton starting point. A stateful *lowering* of `Source.eval`; must agree with it (`evalD_agrees_source`). route-B re-derives it **cap-keyed** so it dispatches by identity, not nearest-label (ADR-0052) |
+| **calculated VM** | the `(compile, Code, exec)` triple *derived from `evalD`* by Bahr–Hutton equational reasoning (= the **executable spec**). The end-to-end `Agree` diff-test ties `exec∘compile` back to the kernel `Source.eval` |
 | **checkpoint (◊)** | a stable pose in the project map; see `ROADMAP.md` |
 | **PATH** | a unit of in-flight work between two checkpoints; see `paths/` |
 | **ADR** | architecture decision record; see `docs/decisions/` |
@@ -143,6 +155,12 @@ First `lake` build pulls Mathlib via `lake exe cache get` (network; minutes).
 Green means: lake build clean, axiom set per headline theorem ⊆ {`propext`,
 `Classical.choice`, `Quot.sound`}. If you can express a new invariant as a
 runnable check, do that instead of writing it in prose — checkable beats described.
+
+**Gate-traps (cause false-greens):** read errors via `lake build` exit code or
+`grep -E "error"` — plain `grep "error:"` MISSES `error(lean.unknownIdentifier):`;
+gate sorries via `#print axioms` / `just axioms`, NEVER `grep sorry` (false-positive on
+comment prose, false-negative on transitive deps). Gate the COMMITTED sha on a clean
+tree — never an agent's summary or a dirty worktree.
 
 ## When you make a decision
 

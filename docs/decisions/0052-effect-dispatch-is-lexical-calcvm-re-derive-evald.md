@@ -35,3 +35,11 @@ The cost (accepted): a multi-session Bahr–Hutton re-derivation touching the re
 
 ## Evidence
 - The build-proven witness + the three rejected-route assessments (diff-testability, relevance cost, scope-tracking size) — investigation thread 2026-06-25, captured in this ADR. The bounded route-B bridge diagnosis (re-key `dispatch K ℓ op` → cap-keyed via the kernel `staticSplit_*` family) is the starting point for the B implementation.
+
+## Amendment (2026-06-28, inc-6 prologue — scope corrected, decision unchanged)
+
+The **decision stands** (dispatch is lexical; re-derive `evalD` cap-keyed). Two corrections from the build-arbitrated inc-6 scoping (ke-calcvm-scope, manager-gated; full scope + unit plan in `paths/PATH-inc6-calcvm-route-b.md`):
+
+1. **Target kernel = IDENTITY, not absolute caps.** The Sequencing's "absolute-caps migration (ADR-0053) first" is moot — ADR-0053 was **superseded by ADR-0054/0055** (handler reference by generative identity + global-fresh). route-B now re-derives `evalD` against the **identity** kernel: dispatch by the generative id `n` (mirroring the green `idDispatch`/`splitAtId`, Operational.lean:284/374), not a level/cap integer.
+
+2. **route-B is BIGGER than the Evidence's "re-key `dispatch K ℓ op`" framing — it is a *signature-level re-derivation*, not a lookup swap.** `evalD` must thread the fresh-id counter `g`, MINT+substitute `vcap g h.label` at `handle`, and re-key its `SStore`/`THeap` from **label ℓ → identity n** — its *type grows* (`fuel → g → … → Option (Outcome × g' × …)`), rippling through every lemma, PLUS a **~1820-line bridge rebuild** (CalcVM.lean ~2483–4303: `ctxStates`/`CtxCorr`/`dispatchRun`/`run_evalD`/`evalD_agrees_source`) that is *latent past the line-2383 error halt*. By line-count it is mostly mechanical transfer (~3:1, the dispatch-agnostic `{RET,LAMI,SUBST,APP,CASE,SPLIT}` Code falls out unchanged); by **effort/risk it is mostly the dispatch re-derivation** (the novel `{MARK,UNMARK,THROW,OP}`+`unwindFind` identity-keyed Code + the bridge — invariant-#4's "evalD = denotation of the new kernel," the genuine Bahr–Hutton calculation, garby §6's open handler-compiler frontier). The wall-risk concentrates in `evalD_agrees_source` over the shadow witness — de-risked consumer-first by a shadow `#guard` before the multi-session grind.

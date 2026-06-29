@@ -38,7 +38,12 @@ adr-check:
 
 # Build the Lean library. First time: pulls Mathlib oleans (multi-GB).
 build:
-    lake exe cache get && lake build
+    # #40: cache-get ONLY when mathlib oleans are absent (fresh setup). In a worktree
+    # that already has them, skip it — its "URL changed → re-clone" path deletes
+    # .lake/packages/mathlib and (with a shared .git/objects across worktrees) raced
+    # an auto-gc into corrupting the store on 2026-06-27. Memory: shared-worktree-git-autogc-corruption.
+    [ -e .lake/packages/mathlib/.lake/build ] || lake exe cache get
+    lake build
 
 # Static + dynamic audit gate (see tools/audit.sh).
 audit:
@@ -50,15 +55,71 @@ wasmfx-probe:
     bash tools/wasmfx-probe.sh
 
 # Architecture fitness functions — CLAUDE.md Invariants #3/#5 (five primitives,
-# STM-only) + ADR index/link integrity + the import-direction V (ADR-0046/0047:
-# Core imports neither edge). Fast, no Lean build. Also run by `just audit`.
+# STM-only) + ADR link integrity + ADR decided-ledger currency (gen-adr-index
+# --check: README ≡ frontmatter, Status copies agree, Q⟺ADR) + the
+# import-direction V (ADR-0046/0047: Core imports neither edge). Fast, no Lean
+# build. Also run by `just audit`. adr-check is HERE (not just in `just verify`)
+# so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:
     bash tools/check-primitives.sh
+    bash tools/check-sha-reachable.sh
+    bash tools/check-paths.sh
     bash tools/check-adr-links.sh
+    python3 tools/gen-adr-index.py --check
     bash tools/arch-check.sh
     bash tools/check-audit-sync.sh
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
+    python3 tools/refs.py check
+    python3 tools/gen-gate-index.py --check
+    python3 tools/gen-proof-state.py --check
+    python3 tools/gen-import-graph.py --check
+
+# Import-root coherence: every Bang/**/*.lean is imported in Bang.lean, except the
+# co-located `-- root-exclude:` allowlist (regression witnesses). Catches a new file
+# silently unbuilt (hence ungated). Also run by `just fitness`.
+check-bang-root:
+
+# Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
+# CONTEXT.md/ROADMAP.md resolves to a real commit (a rebase/drop makes the prose
+# silently false). Foreign hex (other repos, package revs) → tools/sha-allow.txt.
+check-sha:
+    bash tools/check-sha-reachable.sh
+
+# PATH lifecycle: every active paths/PATH-*.md is reachable from CONTEXT/ROADMAP (done → archive). Also run by fitness.
+check-paths:
+    bash tools/check-paths.sh
+
+# Reference library (refs.bib = single source of truth; index.json + the README block are derived).
+refs-index:
+    python3 tools/refs.py build
+
+# Regenerate the gate-composition block in .claude/codebase-maintenance.md from the justfile recipes.
+gate-index:
+    python3 tools/gen-gate-index.py
+
+# Regenerate the module dependency graph (mermaid + fan-in) in docs/architecture/core-overview.md §2 from the import edges.
+import-graph:
+    python3 tools/gen-import-graph.py
+
+# Validate the generated module-graph mermaid actually COMPILES (mmdc render). On-demand; the
+# build (`just import-graph`) also auto-compiles before writing, so a broken graph never lands.
+check-mermaid:
+    python3 tools/gen-import-graph.py --validate
+
+# Regenerate CONTEXT.md's proof-state block from the live axiom gate (Bang/Audit.lean
+# #print axioms + burndown + git). `--build` forces a fresh olean read (authoritative).
+# Tree-aware: reads the proof tree, writes the docs tree's CONTEXT.md.
+proof-state:
+    python3 tools/gen-proof-state.py --build
+
+# Faceted retrieval over the library: `just refs capability-safety` (matches key/title/topic/grounds).
+refs QUERY:
+    @python3 tools/refs.py query "{{QUERY}}"
+
+# Bibliography fitness (also run by `just fitness`): PDF↔key · grounds:ADR↔ADR · Lean cite↔key · sha256.
+check-bib:
+    python3 tools/refs.py check
 
 # Zero-dep Node sanity check on the row-unifier algorithm.
 selfcheck:

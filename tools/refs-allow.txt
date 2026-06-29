@@ -44,3 +44,13 @@ Bang/TightSuite2.lean
 # only by the RETROSPECTIVE ADR-0061 (which records what the diagonal WAS). Recover
 # via `git show <pre-removal-sha>:Bang/Model.lean`.
 Bang/Model.lean
+# Bang/ReturnEscapeRefute.lean — one of the 5 diagonal refute witnesses removed in the
+# same #103 commit (7adcc39); cited retrospectively by ADR-0063 + PATH-inc5. Recover via
+# `git show 7adcc39~1:Bang/ReturnEscapeRefute.lean`.
+Bang/ReturnEscapeRefute.lean
+
+# ── E. Cross-branch inc-6 U5b-handler refute-watch spike ──────────────────────────
+# scratch/U5bHandlerSpike.lean (the U5b-handler refute-watch: fuel IH absorbs mint+subst,
+# 5 *_composes + dispatch axiom-clean) lives on the `inc6-u5b-handler` worktree, cited by
+# PATH-inc6 §U5. Not merged (a scratch de-risk spike, #65). Recover via `git show <sha>:scratch/U5bHandlerSpike.lean`.
+scratch/U5bHandlerSpike.lean

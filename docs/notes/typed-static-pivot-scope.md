@@ -85,7 +85,7 @@ place the research flags real friction.
 > `Nat` absent from the row premise; discharge stays the `⊔`-semilattice (idempotent + commutative); cap
 > well-scopedness is **decidable structural recursion** (`CapResolves`), **no rank-2 polymorphism**. The row
 > stays `Finset Label`; ordering lives on the stack. Tension side-stepped, no invariant-#2 cost. → pivot
-> committed in **ADR-0045** + `paths/PATH-typed-static-pivot.md`.
+> committed in **ADR-0045** + `paths/archive/PATH-typed-static-pivot.md`.
 
 ## Honest residue (from the spike)
 

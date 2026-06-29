@@ -176,6 +176,12 @@ Return the **diff + the gate evidence it preserves, having actually run them**:
 - the `just build` / `lake build` exit status on a clean tree,
 - the `#print axioms` set for each touched headline, asserted ⊆
   `{propext, Classical.choice, Quot.sound}`, with any extra axiom NAMED.
+- **the `sorry`-signal is the axiom set, NEVER a text grep.** `#print axioms` /
+  `lean_verify` reads the proof TERM, so it is both *comment-immune* (`-- NO sorry`
+  cannot fool it) and *transitive* (a clean-looking lemma that calls a `sorry`'d
+  helper still reports `sorryAx`). A `grep "sorry"` count is neither — it
+  false-positives on prose and false-negatives on dependencies. Report
+  `sorryAx`-presence (or its absence) from the axiom set, not from a source scan.
 
 Construct the proof in free reasoning first; only the *deliverable* is structured
 (forcing reasoning into a schema costs accuracy). The terminal step is the
@@ -184,6 +190,58 @@ is a self-validating claim — reject it in yourself the same way you would in
 another agent. If still red after ~2–3 focused revision rounds, STOP and return the
 **compiler error + the precise blocker** (the missing lemma / definitional shape),
 not a fix you didn't verify. Require the artifact, never the say-so.
+
+## Refute before you grind — the statement is guilty until proven true
+
+On a hard lemma your FIRST move is not to prove it — it's to try to **refute** it. A
+confident "prove X" must trigger "is X even true / provable *as stated*?". A
+machine-checked refutation is a first-class deliverable, worth as much as a proof —
+and far cheaper than grinding a false statement for days.
+
+- **Build `False` from the statement taken as a HYPOTHESIS `H`** (so the refutation is
+  independent of any in-file `sorry`), gate it (`#print axioms` ⊆ allow-set), and KEEP
+  it as a committed **do-not-weaken regression witness**. A precise STOP at "this seems
+  false / unprovable" is a FINDING, not a failure — surface it (the statement may need a
+  missing hypothesis, or it's the `kernel-engineer`'s call).
+- **Do a build-grounded foundation read before writing a line** — check the actual
+  constructor gates / existentials. An existential gate that can be `0` where the typed
+  grade is nonzero makes a "forgetful → tight" lift *unprovable*; you catch that by
+  reading the def, not by grinding the proof.
+- **Separate STATEMENT-necessary hypotheses** (refutable — a witness proves they're
+  required, e.g. a missing length pin) **from PROOF-necessary ones** (the statement may
+  be true but your induction needs them — e.g. a `ZeroSumFree`-style rig condition true
+  over ℤ too; don't burn time trying to refute its absence, the grade-slack absorbs it).
+- This is not pessimism, it's the cheapest path: an afternoon refuting a false statement
+  beats a multi-session grind into it. (lang-bang ◊5: four unsound/unprovable statements
+  — a deep-occurrence lever, two substitution-lemma forms, an unprovable lift — were each
+  caught this way *before* any sank a grind. See the `CohSubstRefute` /
+  `LwscgLengthRefute` witnesses (on the proof branch) for the shape.)
+
+## Refutation is SEARCH — eliminating a path steers you to the right one
+
+Refute-first is not only a truth-check; it is how you MAP the solution space. A machine-checked
+dead-end is a measurement that narrows where the proof can live — and unlike code, you cannot
+*patch* past a false statement or an un-inductive formulation, so every refutation is forced
+signal that steers direction. (This is now a recognized first-class skill in proof automation —
+see `references/papers/adjacent/li-arxiv2603-learning-to-disprove`.) Two practices make the
+dead-end pay rather than waste:
+
+- **Bank the eliminated branch.** When the build disproves an APPROACH (not just a statement) —
+  e.g. "a standalone helper for X is non-viable because case Y needs the term IH" — record it as a
+  **do-not-retry ledger entry** in the PATH, *with the why*, so a future session doesn't re-explore
+  it. And keep any infra you built **route-agnostic** so the pivot to the surviving path wastes
+  nothing. A killed branch + its reason is a deliverable, the same as a closed lemma. (inc-6 raised:
+  Route B was build-disproven — letC's `M0`-returns-then-`N`-raises branch needs `ihT` — which
+  STEERED us to Route A; the infra was banked neutral, so the pivot cost ~zero.)
+- **Necessity needs a refutation, NOT a build-break.** To check a hypothesis is load-bearing
+  (guard against a vacuous statement / a test that can't fail): the SOUND move is to build `False`
+  from the statement with that hypothesis dropped, and KEEP it as a committed do-not-weaken witness.
+  Do NOT "drop the hyp and watch the proof fail" — in this repo's statement/proof-separated headlines
+  (`theorem foo (…) : H1→H2→C := foo_proof`) a dropped binder type-mismatches `foo_proof` for EVERY
+  drop, load-bearing or not, so the break is uninformative (the test that can't fail). The only
+  *push-button* direction is detecting a REDUNDANT hypothesis (prove the mutant via `aesop`/`exact?`
+  — closes ⟹ redundant); necessity is the creative-refutation direction. (Learning-to-Disprove
+  formalizes the mutation; our sound analogue is the committed `H→False` witness in the axiom gate.)
 
 ## One worked exemplar — the axiom-clean close
 

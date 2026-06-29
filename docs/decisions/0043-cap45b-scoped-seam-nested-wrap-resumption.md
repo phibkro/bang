@@ -77,7 +77,7 @@ fundamental theorem's handle-arm pushes the focus's **own** handler (`handle h M
 Distinguishing the focus's **legitimately-pushed** handler from a **context wrap** requires the focus
 structure — a `CrelK` re-indexed by typing (`HasCTy`/`HasStack`), threaded through the whole mutual
 block and every frozen `Crel` consumer. That is the **pinned-index-reshape order of magnitude** and is
-deferred together with it as the **"nested-wrap resumption" kernel project** (see `paths/PATH-cap45-finish.md`).
+deferred together with it as the **"nested-wrap resumption" kernel project** (see `paths/archive/PATH-cap45-finish.md`).
 
 ## Rejected alternatives
 

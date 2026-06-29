@@ -81,7 +81,7 @@ dynamic search does and static dispatch does not.
 - Architecture = the kernel/shell/library layering (`kernel-shell-library.md`): static-link kernel (machine),
   dynamic-dispatch + rich types in the shell (user), ordinary code in the library. The runtime stays
   untyped-at-execution.
-- Implementation is **`paths/PATH-typed-static-pivot.md`** — the build sequence (cap/`staticSplit` kernel diff →
+- Implementation is **`paths/archive/PATH-typed-static-pivot.md`** — the build sequence (cap/`staticSplit` kernel diff →
   LR re-index `Vτ/Cτ/Tτ` → dynamic-as-shell-macro), each step build-gated.
 - Evidence: `static-dispatch-spike@b1330db`, `setrow-tension-spike@f92a504`, the two deep-research sweeps
   (`wf_60f94539-140`, `wf_9cda0b3f-5f2`), and the scope note.
@@ -90,7 +90,7 @@ dynamic search does and static dispatch does not.
 
 ## Amendment (2026-06-25) — the de-Bruijn cap is LEXICAL: `handle` is a cap-binder
 
-Implementing the pivot (`paths/PATH-typed-static-pivot.md`, Phase B) surfaced that ADR-0045's
+Implementing the pivot (`paths/archive/PATH-typed-static-pivot.md`, Phase B) surfaced that ADR-0045's
 "de-Bruijn capability into the runtime stack" carries an obligation the original decision left
 implicit: **a de-Bruijn index must be shifted under its binders.** The capability's binder is
 `handle`. The transitional B1 kernel (cap carried but `Comp.shiftFrom`/`substFrom` leaving it
@@ -197,4 +197,4 @@ relative to its enclosing-handler count. TWO naive framings were BUILD-REFUTED b
 
 The ◊4.5b MISS edge DISSOLVED by construction under `staticSplit` (cap-counting, no `handlesOp` walk-past) —
 the pivot's central thesis, build-verified (`krelS_staticSplit_decomp`, the `:1590` sorry deleted; one bounded
-cap>0 resume-relocation residual remains). See `paths/PATH-typed-lr-reindex.md` for the remaining-work map.
+cap>0 resume-relocation residual remains). See `paths/archive/PATH-typed-lr-reindex.md` for the remaining-work map.
