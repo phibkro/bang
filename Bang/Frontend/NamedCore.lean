@@ -58,17 +58,18 @@ inductive NVal where
   | pair  : NVal → NVal → NVal
   | fold  : NVal → NVal
 /-- A computation of the canonical core. Mirrors `Bang.Comp`. Binders carry NAMES
-(`lett`/`lam`/`case`-arms bind one; `split` binds two — fst then snd). The `perform`
-capability stays an EXPLICIT `Nat` (the "true shape"; cap inference is the sugar layer
-above, ADR-0045/0046). -/
+(`lett`/`lam`/`handle`/`case`-arms bind one; `split` binds two — fst then snd). The `perform`
+capability is now a named VALUE (ADR-0054: `Comp.perform : Val → OpId → Val` — the cap is a value,
+the label is recovered from its type, not stored in the term). `handle` BINDS a capability name (the
+kernel's `handle h M` binds a cap at de-Bruijn 0; the named mirror binds `x`). -/
 inductive NComp where
   | ret     : NVal → NComp
   | lett    : String → NComp → NComp → NComp       -- (let x  C C)  — name binds in the 2nd
   | force   : NVal → NComp
   | lam     : String → NComp → NComp               -- (lam x  C)
   | app     : NComp → NVal → NComp
-  | perform : Nat → Label → OpId → NVal → NComp     -- (perform cap L op V) — cap EXPLICIT
-  | handle  : NHandler → NComp → NComp
+  | perform : NVal → OpId → NVal → NComp            -- (perform cap op V) — cap is a named VALUE
+  | handle  : String → NHandler → NComp → NComp     -- (handle x H C) — binds the capability name x in C
   | case    : NVal → String → NComp → String → NComp → NComp   -- (case V (x C) (y C))
   | split   : String → String → NVal → NComp → NComp           -- (split (xfst ysnd) V C)
   | unfold  : NVal → NComp
@@ -109,8 +110,10 @@ def NComp.elab (env : List String) : NComp → Except String Comp
   | .force v        => do return .force (← NVal.elab env v)
   | .lam x m        => do return .lam (← NComp.elab (x :: env) m)
   | .app m v        => do return .app (← NComp.elab env m) (← NVal.elab env v)
-  | .perform k ℓ op v => do return .perform k ℓ op (← NVal.elab env v)
-  | .handle h c     => do return .handle (← NHandler.elab env h) (← NComp.elab env c)
+  | .perform cv op v => do return .perform (← NVal.elab env cv) op (← NVal.elab env v)
+  -- `handle x H C` binds the capability name `x` at index 0 in `C` (mirrors the kernel's
+  -- `handle h M` binding a cap at de-Bruijn 0): push `x` before elaborating the body.
+  | .handle x h c   => do return .handle (← NHandler.elab env h) (← NComp.elab (x :: env) c)
   | .case v x m y n => do
       return .case (← NVal.elab env v) (← NComp.elab (x :: env) m) (← NComp.elab (y :: env) n)
   -- `split` binds fst at de-Bruijn index 1, snd at index 0 (Core.lean §1.2), so the env
@@ -156,9 +159,9 @@ def NComp.print : NComp → String
   | .force v        => "(force " ++ NVal.print v ++ ")"
   | .lam x m        => "(lam " ++ x ++ " " ++ NComp.print m ++ ")"
   | .app m v        => "(app " ++ NComp.print m ++ " " ++ NVal.print v ++ ")"
-  | .perform k ℓ op v =>
-      "(perform " ++ toString k ++ " " ++ toString ℓ ++ " " ++ op ++ " " ++ NVal.print v ++ ")"
-  | .handle h c     => "(handle " ++ NHandler.print h ++ " " ++ NComp.print c ++ ")"
+  | .perform cv op v =>
+      "(perform " ++ NVal.print cv ++ " " ++ op ++ " " ++ NVal.print v ++ ")"
+  | .handle x h c   => "(handle " ++ x ++ " " ++ NHandler.print h ++ " " ++ NComp.print c ++ ")"
   | .case v x m y n =>
       "(case " ++ NVal.print v ++ " (" ++ x ++ " " ++ NComp.print m ++ ") ("
         ++ y ++ " " ++ NComp.print n ++ "))"
@@ -254,13 +257,11 @@ def parseC (fuel : Nat) (ts : List String) : Except String (NComp × List String
         let (m, r) ← parseC fuel r; let (v, r) ← parseV fuel r
         let r ← expectTok ")" r; return (.app m v, r)
     | "(" :: "perform" :: r => do
-        let (ks, r) ← takeTok r; let (ls, r) ← takeTok r; let (op, r) ← takeTok r
-        let some k := ks.toNat? | throw s!"parse: bad capability '{ks}'"
-        let some l := ls.toNat? | throw s!"parse: bad label '{ls}'"
-        let (v, r) ← parseV fuel r; let r ← expectTok ")" r; return (.perform k l op v, r)
+        let (cv, r) ← parseV fuel r; let (op, r) ← takeTok r
+        let (v, r) ← parseV fuel r; let r ← expectTok ")" r; return (.perform cv op v, r)
     | "(" :: "handle" :: r => do
-        let (h, r) ← parseH fuel r; let (c, r) ← parseC fuel r
-        let r ← expectTok ")" r; return (.handle h c, r)
+        let (x, r) ← takeTok r; let (h, r) ← parseH fuel r; let (c, r) ← parseC fuel r
+        let r ← expectTok ")" r; return (.handle x h c, r)
     | "(" :: "wrong" :: r => do
         let (s, r) ← takeTok r; let r ← expectTok ")" r; return (.wrong s, r)
     | "(" :: "case" :: r => do
@@ -340,26 +341,27 @@ def roundtrips (c : NComp) : Bool :=
   | .error _  => false
 
 -- The ADR-0046 round-trip programs, as canonical-core terms (labels: exn=0, state=1, stm=2).
+-- ADR-0054: each `handle` BINDS a capability NAME; the operations inside `perform` on that name.
 
-/-- `state-get`: `(handle (state 1 5) (perform 0 1 get unit))` ⟶ 5. -/
+/-- `state-get`: `(handle c (state 1 5) (perform c get unit))` ⟶ 5. -/
 def stateGet : NComp :=
-  .handle (.state 1 (.int 5)) (.perform 0 1 "get" .unit)
+  .handle "c" (.state 1 (.int 5)) (.perform (.var "c") "get" .unit)
 
 /-- `reactive cell`: an unmemoized thunk over a state cell; each force re-samples. ⟶ 5. -/
 def reactiveCell : NComp :=
-  .handle (.state 1 (.int 0))
-    (.lett "c" (.ret (.thunk (.perform 0 1 "get" .unit)))
-      (.lett "_" (.perform 0 1 "put" (.int 5))
+  .handle "k" (.state 1 (.int 0))
+    (.lett "c" (.ret (.thunk (.perform (.var "k") "get" .unit)))
+      (.lett "_" (.perform (.var "k") "put" (.int 5))
         (.force (.var "c"))))
 
-/-- `STM abort`: the abort `raise` has cap 1 — it reaches PAST the transaction (cap 0,
-innermost) to the `throws` one handler out, dropping the heap with it. ⟶ (100, 0). -/
+/-- `STM abort`: the abort `raise` names the OUTER `throws` capability `exn` — it reaches PAST the
+transaction (the inner `tx` cap), dropping the heap with it. ⟶ (100, 0). -/
 def stmAbort : NComp :=
-  .handle (.throws 0)
-    (.handle (.transaction 2 [])
-      (.lett "_" (.perform 0 2 "newTVar" (.int 100))
-        (.lett "_" (.perform 0 2 "writeTVar" (.pair (.int 0) (.int 70)))
-          (.perform 1 0 "raise" (.pair (.int 100) (.int 0))))))
+  .handle "exn" (.throws 0)
+    (.handle "tx" (.transaction 2 [])
+      (.lett "_" (.perform (.var "tx") "newTVar" (.int 100))
+        (.lett "_" (.perform (.var "tx") "writeTVar" (.pair (.int 0) (.int 70)))
+          (.perform (.var "exn") "raise" (.pair (.int 100) (.int 0))))))
 
 -- (a) STRUCTURAL gate: read ∘ print = id on each program.
 #guard roundtrips stateGet

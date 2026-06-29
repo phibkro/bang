@@ -35,7 +35,9 @@ open Bang
 #print axioms type_safety
 #print axioms no_accidental_handling
 #print axioms rowinst_requires_disjoint
-#print axioms all_or_nothing_abort
+-- `all_or_nothing_abort` (rung-3 atomicity) RETIRED in b8f2652 (ADR-0054 collapse: the ~1225-line
+-- positional-machinery purge deleted E.3 atomicity). v1 all-or-nothing rollback is now demonstrated
+-- by the Surface `ledgerAbort` #guard (the tested rung), not a spine theorem — so it leaves the gate.
 #print axioms effect_sound
 #print axioms zero_usage_erasable
 #print axioms Bang.Surface.cell_reflects_latest

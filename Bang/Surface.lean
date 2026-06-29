@@ -131,6 +131,25 @@ def lookup (env : List String) (x : String) : Except String Nat :=
   | some i => .ok i
   | none   => .error s!"unbound variable: {x}"
 
+/-! ### Capability binders (ADR-0054/0055)
+
+The kernel's `handle h M` now BINDS a capability value at de Bruijn index 0 in `M` (like `lam`):
+stepping a `handle` mints a fresh identity `g` and substitutes `vcap g h.label` for that var
+(`Source.step`, Operational.lean). An operation no longer carries a positional cap-id or a label —
+`perform : Val → OpId → Val` takes the CAPABILITY VALUE, and the label is recovered from the cap's
+type (`handlesOp` gates on it). The elaborator emits a `vvar` referencing the enclosing handler's
+binder (Core.lean: "the elaborator emits `vvar`, never `vcap`").
+
+Lowering threads the cap binder by pushing a RESERVED sentinel name onto `env` when entering a
+handler body, so intervening `lett`/`lam` binders shift it correctly and each operation resolves
+its enclosing handler by `lookup`. The sentinels start with `#` (never produced by `pIdent`, which
+rejects only keywords/punctuators — so in practice a source program cannot bind one; the tracer
+bullet's grammar has no `#`-led idents). One sentinel per handler KIND, so a `raise`/`get`/`new`
+each finds its own nearest handler even when kinds nest. -/
+def capExn   : String := "#exn"     -- the throws-handler cap binder
+def capState : String := "#state"   -- the state-handler cap binder
+def capStm   : String := "#stm"     -- the transaction-handler cap binder
+
 mutual
 /-- Lower a surface term that is in COMPUTATION position to a `Comp`. -/
 def lowerC (env : List String) : Surf → Except String Comp
@@ -141,15 +160,20 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .lett x e b => do return .letC (← lowerC env e) (← lowerC (x :: env) b)
   | .lam x b    => do return .lam (← lowerC (x :: env) b)
   | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
-  | .raise e    => do return .perform 0 exnLabel "raise" (← lowerV env e)
-  | .handle e   => do return .handle (.throws exnLabel) (← lowerC env e)
-  | .getS       => .ok (.perform 0 stateLabel "get" .vunit)
-  | .putS e     => do return .perform 0 stateLabel "put" (← lowerV env e)
-  | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC env e)
-  | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC env e)
-  | .newS e     => do return .perform 0 stmLabel "newTVar" (← lowerV env e)
-  | .readS e    => do return .perform 0 stmLabel "readTVar" (← lowerV env e)
-  | .writeS r w => do return .perform 0 stmLabel "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
+  -- `raise`/`get`/`put`/stm ops resolve the enclosing handler's cap binder by sentinel `lookup`,
+  -- then `perform` on that `vvar` (ADR-0054: cap is a value, label recovered from its type).
+  | .raise e    => do return .perform (.vvar (← lookup env capExn)) "raise" (← lowerV env e)
+  -- handlers BIND the cap at index 0: push the sentinel before lowering the body.
+  | .handle e   => do return .handle (.throws exnLabel) (← lowerC (capExn :: env) e)
+  | .getS       => do return .perform (.vvar (← lookup env capState)) "get" .vunit
+  | .putS e     => do return .perform (.vvar (← lookup env capState)) "put" (← lowerV env e)
+  -- the initial state `e0` is evaluated OUTSIDE the handler scope (it is the handler's payload, not
+  -- under the cap binder), so it lowers in `env`, not `capState :: env`.
+  | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC (capState :: env) e)
+  | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC (capStm :: env) e)
+  | .newS e     => do return .perform (.vvar (← lookup env capStm)) "newTVar" (← lowerV env e)
+  | .readS e    => do return .perform (.vvar (← lookup env capStm)) "readTVar" (← lowerV env e)
+  | .writeS r w => do return .perform (.vvar (← lookup env capStm)) "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -373,14 +397,16 @@ def runYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
 def pureComp : Comp := .letC (.ret (.vint 3)) (.ret (.vvar 0))
 example : Source.eval 20 pureComp = .done (.vint 3) := by rfl
 
-/-- throws: `handle (raise 7)` — the deep handler aborts with the payload. -/
-def throwsComp : Comp := .handle (.throws exnLabel) (.perform 0 exnLabel "raise" (.vint 7))
+/-- throws: `handle (raise 7)` — the deep handler aborts with the payload. The `handle` binds the
+cap at index 0; the `raise` directly under it references `vvar 0` (ADR-0054). -/
+def throwsComp : Comp := .handle (.throws exnLabel) (.perform (.vvar 0) "raise" (.vint 7))
 example : Source.eval 20 throwsComp = .done (.vint 7) := by rfl
 
 /-- deep-throws: `handle (let _ = raise 7 in 99)` — `99` is the discarded
-continuation; proves the deep handler reaches PAST a `letC` frame. -/
+continuation; proves the deep handler reaches PAST a `letC` frame. The `raise` is the `letC` HEAD
+(not under the `letC` binder), so the cap is still `vvar 0` (the handle binder). -/
 def deepComp : Comp :=
-  .handle (.throws exnLabel) (.letC (.perform 0 exnLabel "raise" (.vint 7)) (.ret (.vint 99)))
+  .handle (.throws exnLabel) (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99)))
 example : Source.eval 20 deepComp = .done (.vint 7) := by rfl
 
 /-- state CELL (rung 1, ADR-0025): `handle (state ℓ 0) (let _ = put 7 in get ())` ⟶ `7`.
@@ -389,12 +415,12 @@ captured `letC` continuation and threads the state, unlike `throws` which discar
 — `get; put (get+1)` — additionally needs arithmetic `+`, a separate K-ADR; out of scope.) -/
 def stateCellComp : Comp :=
   .handle (.state stateLabel (.vint 0))
-    (.letC (.perform 0 stateLabel "put" (.vint 7)) (.perform 0 stateLabel "get" .vunit))
+    (.letC (.perform (.vvar 0) "put" (.vint 7)) (.perform (.vvar 1) "get" .vunit))
 example : Source.eval 50 stateCellComp = .done (.vint 7) := by rfl
 
 /-- state GET-default: `handle (state ℓ 5) (get ())` ⟶ `5` (read the initial state). -/
 def stateGetComp : Comp :=
-  .handle (.state stateLabel (.vint 5)) (.perform 0 stateLabel "get" .vunit)
+  .handle (.state stateLabel (.vint 5)) (.perform (.vvar 0) "get" .vunit)
 example : Source.eval 50 stateGetComp = .done (.vint 5) := by rfl
 
 /-! ### STM ledger (rung 3, ADR-0030): the transactional moat demo.
@@ -410,22 +436,27 @@ so a "transfer" writes LITERAL post-transfer balances — the demo exercises the
 all-or-nothing ROLLBACK, not arithmetic (a counter needs `+`, a separate K-ADR). `#guard` (compiled),
 NOT `rfl`: kernel whnf over the machine is pathological under `rfl`. -/
 
-/-- Helpers building the raw stm `up`-operations (the surface `newTVar`/`readTVar`/`writeTVar`
-lowerings the L-phase IC will hide behind sugar). -/
-def stmNew (v : Val) : Comp := .perform 0 stmLabel "newTVar" v
-def stmRead (i : Int) : Comp := .perform 0 stmLabel "readTVar" (.vint i)
-def stmWrite (i : Int) (w : Val) : Comp := .perform 0 stmLabel "writeTVar" (.pair (.vint i) w)
+/-- Helpers building the raw stm operations (the surface `newTVar`/`readTVar`/`writeTVar`
+lowerings the L-phase IC will hide behind sugar). Each takes the CAPABILITY value `c` (ADR-0054):
+a `vvar` referencing the enclosing `transaction` handler's binder. The de Bruijn index varies with
+nesting depth, so the cap is a parameter, not baked in (`stmNew (.vvar 0)`, `stmRead (.vvar 4)`, …). -/
+def stmNew (c : Val) (v : Val) : Comp := .perform c "newTVar" v
+def stmRead (c : Val) (i : Int) : Comp := .perform c "readTVar" (.vint i)
+def stmWrite (c : Val) (i : Int) (w : Val) : Comp := .perform c "writeTVar" (.pair (.vint i) w)
 
 /-- COMMIT: `atomically (alloc A=100, B=0; A:=70; B:=30; read (A,B))` ⟶ `(70, 30)`.
 The heap is threaded through every op; the final reads see the committed writes. -/
+-- The `transaction` handle binds the stm cap at index 0; each nested `letC` HEAD sits one binder
+-- deeper than the last, so the cap climbs `vvar 0 → 1 → … → 5`. (The TVar heap indices `0`/`1` and
+-- the final result refs `vvar 1`/`vvar 0` are unaffected — the cap is the OUTERMOST binder.)
 def ledgerCommit : Comp :=
   .handle (.transaction stmLabel [])
-    (.letC (stmNew (.vint 100))            -- idx 0 = A (bind unused: A is statically TVar 0)
-      (.letC (stmNew (.vint 0))            -- idx 1 = B
-        (.letC (stmWrite 0 (.vint 70))     -- A := 70
-          (.letC (stmWrite 1 (.vint 30))   -- B := 30
-            (.letC (stmRead 0)             -- bind 0 ↦ A's balance
-              (.letC (stmRead 1)           -- bind 0 ↦ B's balance, A's now at idx 1
+    (.letC (stmNew (.vvar 0) (.vint 100))        -- idx 0 = A (bind unused: A is statically TVar 0)
+      (.letC (stmNew (.vvar 1) (.vint 0))        -- idx 1 = B
+        (.letC (stmWrite (.vvar 2) 0 (.vint 70))     -- A := 70
+          (.letC (stmWrite (.vvar 3) 1 (.vint 30))   -- B := 30
+            (.letC (stmRead (.vvar 4) 0)         -- bind 0 ↦ A's balance
+              (.letC (stmRead (.vvar 5) 1)       -- bind 0 ↦ B's balance, A's now at idx 1
                 (.ret (.pair (.vvar 1) (.vvar 0)))))))))   -- (A, B) = (70, 30)
 
 #guard (match Source.eval 200 ledgerCommit with
@@ -435,15 +466,19 @@ def ledgerCommit : Comp :=
 The `raise` is a foreign op to the `transaction` frame, so it ESCAPES it (ADR-0023 discards the
 captured continuation) — the write-delta `(70, 30)` never commits. The abort payload carries the
 ORIGINAL balances `(100, 0)`, the observable proof that the transaction rolled back. -/
+-- Outer `throws` binds the exn cap (idx 0 in its body); inner `transaction` binds the stm cap (idx 0
+-- in the inner body, exn cap now at idx 1 there). The stm ops climb `vvar 0 → 3`; the `raise` is the
+-- innermost `letC` continuation and reaches the OUTER exn cap past 4 `letC`s + the inner handle binder
+-- ⇒ `vvar 5`.
 def ledgerAbort : Comp :=
   .handle (.throws exnLabel)
     (.handle (.transaction stmLabel [])
-      (.letC (stmNew (.vint 100))
-        (.letC (stmNew (.vint 0))
-          (.letC (stmWrite 0 (.vint 70))      -- attempted write (rolled back on abort)
-            (.letC (stmWrite 1 (.vint 30))    -- attempted write (rolled back on abort)
+      (.letC (stmNew (.vvar 0) (.vint 100))
+        (.letC (stmNew (.vvar 1) (.vint 0))
+          (.letC (stmWrite (.vvar 2) 0 (.vint 70))      -- attempted write (rolled back on abort)
+            (.letC (stmWrite (.vvar 3) 1 (.vint 30))    -- attempted write (rolled back on abort)
               -- insufficient funds ⇒ abort with the ORIGINAL balances (100, 0).
-              (.perform 0 exnLabel "raise" (.pair (.vint 100) (.vint 0))))))))
+              (.perform (.vvar 5) "raise" (.pair (.vint 100) (.vint 0))))))))
 
 #guard (match Source.eval 200 ledgerAbort with
   | .done (.pair (.vint a) (.vint b)) => a == 100 && b == 0 | _ => false)
@@ -475,8 +510,8 @@ written value `v`: `state s0 in (let c = {get} in (let _ = put v in $c))`. de Br
 idx 0 after its binder, idx 1 after the `put`'s `let`, so `$c` is `force (vvar 1)`. -/
 def cellComp (s0 v : Int) : Comp :=
   .handle (.state stateLabel (.vint s0))
-    (.letC (.ret (.vthunk (.perform 0 stateLabel "get" .vunit)))      -- c = {get}   (idx 0)
-      (.letC (.perform 0 stateLabel "put" (.vint v))                  -- _ = put v
+    (.letC (.ret (.vthunk (.perform (.vvar 0) "get" .vunit)))         -- c = {get}   (idx 0); cap vvar 0
+      (.letC (.perform (.vvar 1) "put" (.vint v))                     -- _ = put v; under 1 letC ⇒ cap vvar 1
         (.force (.vvar 1))))                                   -- $c
 
 /-- **Liveness law (rung 4, ADR-0005):** a reactive cell always reflects the latest write.
@@ -514,7 +549,9 @@ def beqComp : Comp → Comp → Bool
   | .force a,      .force b      => beqVal a b
   | .lam a,        .lam b        => beqComp a b
   | .app a v,      .app b w      => beqComp a b && beqVal v w
-  | .perform c ℓ o v, .perform c' ℓ' o' w => c == c' && ℓ == ℓ' && o == o' && beqVal v w
+  -- ADR-0054: `perform c op v` — `c` is the CAPABILITY value (compare structurally), no positional
+  -- cap-id and no label (the label is recovered from `c`'s type, not stored in the term).
+  | .perform c o v, .perform c' o' w => beqVal c c' && o == o' && beqVal v w
   | .handle h a,   .handle h' b  => beqHandler h h' && beqComp a b
   | .case v a b,   .case w c d   => beqVal v w && beqComp a c && beqComp b d
   | .split v a,    .split w b    => beqVal v w && beqComp a b
