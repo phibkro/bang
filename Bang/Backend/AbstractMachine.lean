@@ -924,26 +924,6 @@ theorem updateStates_cons_nonstate {fr : HFrame} {hs : HStack} (σ : SStore)
   | throws ℓ => simp only [updateStates, hh]
   | transaction ℓ Θ => simp only [updateStates, hh]
 
-/-- The raised-part at-raise correspondence pops a NON-state install frame: a throws/transaction
-frame carries no store entry, so `Corr`/`HMut` over `fr::hs` (the body's at-raise pair) pass to the
-tail `hs` (the forwarded pair). The `sim` raised handle(throws)/handle(transaction) escape cases. -/
-theorem raisedPair_pop_nonstate {fr : HFrame} {hs : HStack} {σ' : SStore}
-    (hns : ∀ ℓ s, fr.handler ≠ .state ℓ s)
-    (hCr : Corr σ' (updateStates (fr :: hs) σ'))
-    (hmutr : HMut (fr :: hs) (updateStates (fr :: hs) σ')) :
-    Corr σ' (updateStates hs σ') ∧ HMut hs (updateStates hs σ') := by
-  have hupd : updateStates (fr :: hs) σ' = fr :: updateStates hs σ' :=
-    updateStates_cons_nonstate σ' hns
-  rw [hupd] at hCr hmutr
-  refine ⟨?_, HMut.tail hmutr⟩
-  -- `fr` non-state ⇒ its projection contributes nothing: `hsStates (fr :: t) = hsStates t`.
-  unfold Corr at hCr ⊢
-  have hproj : hsStates (fr :: updateStates hs σ') = hsStates (updateStates hs σ') := by
-    cases hh : fr.handler with
-    | state ℓ s => exact absurd hh (hns ℓ s)
-    | throws ℓ => simp only [hsStates, hh]
-    | transaction ℓ Θ => simp only [hsStates, hh]
-  rw [hproj] at hCr; exact hCr
 
 /-- `netEffect` distributes over a `throws`-frame head (it carries neither a state value nor a heap,
 so both passes skip it). Used to push the at-raise tail through the throws install in `sim`. -/
@@ -987,36 +967,6 @@ theorem raisedTriple_pop_nontxn {fr : HFrame} {hs : HStack} {σ' : SStore} {τ' 
       | throws ℓ => simp only [hsTxns, hh]
     rw [hproj] at hTr; exact hTr
 
-/-- The raised-part at-raise correspondence pops a `state` install frame: `handle (state ℓ0 s0)`'s
-forward of a raise pops the pushed entry (`σ'.tail`), and the machine skips the state frame on the
-throws-unwind. From the body's at-raise pair over `fr::hs` (`fr` a state frame) at store `σ'`, the
-forwarded pair over `hs` at `σ'.tail` follows. The `sim` raised handle(state) escape case. -/
-theorem raisedPair_pop_state {fr : HFrame} {hs : HStack} {σ' : SStore} {ℓ0 : Bang.EffectRow.Label}
-    {s0 : Val} (hfr : fr.handler = .state ℓ0 s0)
-    (hCr : Corr σ' (updateStates (fr :: hs) σ'))
-    (hmutr : HMut (fr :: hs) (updateStates (fr :: hs) σ')) :
-    Corr σ'.tail (updateStates hs σ'.tail) ∧ HMut hs (updateStates hs σ'.tail) := by
-  -- `Corr` forces `σ'` non-empty: its head IS `fr`'s entry. Destruct it.
-  cases σ' with
-  | nil =>
-      -- `updateStates (fr::hs) [] = fr :: updateStates hs []`; projection has `(ℓ0,s0)` ⇒ Corr says
-      -- `[] = (ℓ0,s0) :: …`, impossible.
-      exfalso
-      unfold Corr at hCr
-      rw [updateStates] at hCr; simp only [hfr] at hCr
-      rw [hsStates] at hCr; simp only [hfr] at hCr
-      exact (List.cons_ne_nil _ _ hCr.symm)
-  | cons p σ1' =>
-      obtain ⟨ℓa, wa⟩ := p
-      have hupd : updateStates (fr :: hs) ((ℓa, wa) :: σ1') =
-          { fr with handler := .state ℓ0 wa } :: updateStates hs σ1' := by
-        simp only [updateStates, hfr]
-      rw [hupd] at hCr hmutr
-      simp only [List.tail]
-      refine ⟨?_, HMut.tail hmutr⟩
-      unfold Corr at hCr ⊢
-      simp only [hsStates] at hCr
-      exact (List.cons.injEq _ _ _ _).mp hCr |>.2
 
 /-- The COMBINED (triple) raised-pop for a `state` install frame: pops `σ'.tail` (state side), `τ'`
 unchanged (a state frame carries no heap). The `sim` raised handle(state) escape case (triple form). -/
@@ -2810,33 +2760,6 @@ theorem updateCtxStates_cons_nonstate {fr : Bang.Frame} {K : Bang.EvalCtx} (σ :
   | letF N => simp only [updateCtxStates]
   | appF v => simp only [updateCtxStates]
 
-/-- `updateCtxStates` depends only on `K`'s STATE-FRAME STRUCTURE, which it preserves ⇒ it is
-idempotent in the K-slot: `updateCtxStates (updateCtxStates K σ1) σ = updateCtxStates K σ`. Lets the
-spine compose the at-M-term context with the continuation's update. Induction on `K`. -/
-theorem updateCtxStates_updateCtxStates : ∀ {K : Bang.EvalCtx} (σ1 σ : SStore),
-    updateCtxStates (updateCtxStates K σ1) σ = updateCtxStates K σ := by
-  intro K
-  induction K with
-  | nil => intro σ1 σ; rfl
-  | cons fr K ih =>
-    intro σ1 σ
-    cases fr with
-    | handleF n h =>
-        cases h with
-        | state ℓ s =>
-            cases σ1 with
-            | nil =>
-                cases σ with
-                | nil => simp only [updateCtxStates]; rw [ih]
-                | cons p σ' => simp only [updateCtxStates]; rw [ih]
-            | cons p1 σ1' =>
-                cases σ with
-                | nil => simp only [updateCtxStates]; rw [ih]
-                | cons p σ' => simp only [updateCtxStates]; rw [ih]
-        | throws ℓ => simp only [updateCtxStates]; rw [ih]
-        | transaction ℓ Θ => simp only [updateCtxStates]; rw [ih]
-    | letF N => simp only [updateCtxStates]; rw [ih]
-    | appF v => simp only [updateCtxStates]; rw [ih]
 
 /-- A NON-state frame carries no store entry ⇒ `CtxCorr` passes through its install (and pop). -/
 theorem CtxCorr_cons_nonstate {σ : SStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
@@ -2857,48 +2780,7 @@ theorem CtxCorr_install {σ : SStore} {n : Nat} {ℓ : Bang.EffectRow.Label} {s 
     (hC : CtxCorr σ K) : CtxCorr (σ.push n s) (Frame.handleF n (.state ℓ s) :: K) := by
   unfold CtxCorr at hC ⊢; rw [hC]; simp only [ctxStates, SStore.push]
 
-/-- `at-term/at-raise` non-state install: `updateCtxStates (fr :: K) σ' = fr :: updateCtxStates K σ'`
-and its `CtxCorr`/structure pass through (the non-state install case of the run_evalD spine). -/
-theorem CtxCorr_updateCtx_nonstate {σ' : SStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
-    (hns : ∀ n ℓ s, fr ≠ Frame.handleF n (.state ℓ s))
-    (hC : CtxCorr σ' (updateCtxStates (fr :: K) σ')) : CtxCorr σ' (updateCtxStates K σ') := by
-  rw [updateCtxStates_cons_nonstate σ' hns] at hC
-  unfold CtxCorr at hC ⊢
-  cases fr with
-  | handleF n h =>
-      cases h with
-      | state ℓ s => exact absurd rfl (hns n ℓ s)
-      | throws ℓ => simpa only [ctxStates] using hC
-      | transaction ℓ Θ => simpa only [ctxStates] using hC
-  | letF N => simpa only [ctxStates] using hC
-  | appF v => simpa only [ctxStates] using hC
 
-/-- `handle (state ℓ0)`-POP at-term correspondence: from the body's at-term `CtxCorr σ1 (updateCtxStates
-(handleF (state ℓ0 s0) :: K) σ1)`, the popped pair holds — `σ1.tail` covers `K` and the resume context
-after the handler-return is `updateCtxStates K σ1.tail`. The kernel `handleF _ :: K, ret v ↦ K, ret v`
-(handler-return = identity). Forces σ1 non-empty (its head IS the installed state frame). -/
-theorem CtxCorr_updateCtx_pop_state {σ1 : SStore} {n : Nat} {ℓ0 : Bang.EffectRow.Label} {s0 : Val}
-    {K : Bang.EvalCtx}
-    (hC : CtxCorr σ1 (updateCtxStates (Frame.handleF n (.state ℓ0 s0) :: K) σ1)) :
-    CtxCorr σ1.tail (updateCtxStates K σ1.tail) ∧
-      updateCtxStates (Frame.handleF n (.state ℓ0 s0) :: K) σ1
-        = Frame.handleF n (.state ℓ0 (σ1.headD (default, default)).2) :: updateCtxStates K σ1.tail := by
-  cases σ1 with
-  | nil =>
-      exfalso; unfold CtxCorr at hC
-      simp only [updateCtxStates, ctxStates] at hC
-      exact (List.cons_ne_nil _ _ hC.symm)
-  | cons p σ1' =>
-      obtain ⟨ℓa, wa⟩ := p
-      have hupd : updateCtxStates (Frame.handleF n (.state ℓ0 s0) :: K) ((ℓa, wa) :: σ1')
-          = Frame.handleF n (.state ℓ0 wa) :: updateCtxStates K σ1' := by
-        simp only [updateCtxStates]
-      rw [hupd] at hC
-      refine ⟨?_, ?_⟩
-      · unfold CtxCorr at hC ⊢
-        simp only [ctxStates, List.tail] at hC ⊢
-        exact (List.cons.injEq _ _ _ _).mp hC |>.2
-      · simp only [List.headD, List.tail]; exact hupd
 
 /-- `CtxTxnCorr` preserved by a `handle (transaction ℓ Θ)` install (PUSH `(ℓ↦Θ)` on τ). -/
 theorem CtxTxnCorr_install {τ : THeap} {n : Nat} {ℓ : Bang.EffectRow.Label} {Θ : List Val} {K : Bang.EvalCtx}
@@ -3492,14 +3374,6 @@ theorem splitAt_handles {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} :
                     simp only [Option.map_some, Option.some.injEq] at hs
                     obtain ⟨_, rfl, _⟩ := hs; exact ih hsp
 
-/-- For the `raise` op only `throws` catches, so `splitAt` returns a `throws` handler. -/
-theorem splitAt_throws {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ : Bang.EffectRow.Label} {h : Handler}
-    (hs : Bang.splitAt K ℓ "raise" = some (Kᵢ, h, Kₒ)) : ∃ ℓ0, h = Handler.throws ℓ0 := by
-  have hh := splitAt_handles hs
-  cases h with
-  | throws ℓ0 => exact ⟨ℓ0, rfl⟩
-  | state ℓ0 s => simp [Bang.handlesOp] at hh
-  | transaction ℓ0 Θ => simp [Bang.handlesOp] at hh
 
 /-- A `raise` propagating under a `letF` frame: same `Config.run` outcome (the abort discards the
 inner prefix the frame grows). Route-B: identity-keyed + THROWS-conditioned (`splitAtId K n` finds a
@@ -3517,34 +3391,7 @@ theorem dispatchRun_letF (f g n : Nat) (N : Comp) (K : Bang.EvalCtx) (ℓ : Bang
         Bang.Config.run_step f _ (by intro g' v' h; simp at h)]
     simp only [Source.step, dispatch_letF N K n ℓ "raise" v hs]
 
-/-- A `raise` propagating under an `appF` frame: same outcome (as `dispatchRun_letF`). -/
-theorem dispatchRun_appF (f g n : Nat) (w : Val) (K : Bang.EvalCtx) (ℓ : Bang.EffectRow.Label)
-    (v : Val) {Kᵢ Kₒ : Bang.EvalCtx} {ℓ0 : Bang.EffectRow.Label}
-    (hs : Bang.splitAtId K n = some (Kᵢ, Handler.throws ℓ0, Kₒ)) :
-    dispatchRun f g n (Frame.appF w :: K) ℓ "raise" v = dispatchRun f g n K ℓ "raise" v := by
-  cases f with
-  | zero => rfl
-  | succ f =>
-    simp only [dispatchRun]
-    rw [Bang.Config.run_step f _ (by intro g' v' h; simp at h),
-        Bang.Config.run_step f _ (by intro g' v' h; simp at h)]
-    simp only [Source.step, dispatch_appF w K n ℓ "raise" v hs]
 
-/-- A `raise` propagating PAST a NON-matching `handleF m h0` frame (identity `m ≠ n`): same outcome.
-Route-B: the skip criterion is IDENTITY mismatch `m ≠ n` (not a label/op `handlesOp` test). The
-single perform-step result is `idDispatch (handleF m h0 :: K) = idDispatch K` (`dispatch_handleF_skip`),
-THROWS-conditioned by `hs` (the abort discards the prefix the frame grows). -/
-theorem dispatchRun_handleF_skip (f g n m : Nat) (h0 : Handler) (K : Bang.EvalCtx)
-    (ℓ : Bang.EffectRow.Label) (v : Val) {Kᵢ Kₒ : Bang.EvalCtx} {ℓ0 : Bang.EffectRow.Label}
-    (hmn : m ≠ n) (hs : Bang.splitAtId K n = some (Kᵢ, Handler.throws ℓ0, Kₒ)) :
-    dispatchRun f g n (Frame.handleF m h0 :: K) ℓ "raise" v = dispatchRun f g n K ℓ "raise" v := by
-  cases f with
-  | zero => rfl
-  | succ f =>
-    simp only [dispatchRun]
-    rw [Bang.Config.run_step f _ (by intro g' v' h; simp at h),
-        Bang.Config.run_step f _ (by intro g' v' h; simp at h)]
-    simp only [Source.step, dispatch_handleF_skip m h0 K n ℓ "raise" v hmn hs]
 
 /-- No state cell at a key the stack keeps strictly below it: `CapsBelow n K ⟹ (ctxStates K).get? n = none`.
 The `ctxStates` keys are exactly the `handleF`-state ids, all `< n` under `CapsBelow`, so the lookup misses.

@@ -214,11 +214,16 @@ def main() -> int:
         if BEGIN not in md or END not in md:
             print(f"── proof-state ──\nFAIL: {context} has no GEN markers — run `just proof-state`.")
             return 1
-        if splice(md, block) != md:
+        # Compare CONTENT only — strip the volatile "Proof-state at `<sha>`" provenance
+        # line from both sides. The headlines + sorry count are the gated fact; the sha
+        # is informational and lags by one on a Bang-touching commit (the block can't
+        # embed its own not-yet-existing commit). Don't fail the gate on that lag.
+        strip = lambda s: re.sub(r"Proof-state at `[0-9a-f]+`", "Proof-state at `_`", s)
+        if strip(splice(md, block)) != strip(md):
             print("── proof-state ──\nFAIL: CONTEXT.md proof-state block is stale "
                   "— run `just proof-state`.")
             return 1
-        print("── proof-state ──\nPASS: proof-state block ≡ the live axiom gate.")
+        print("── proof-state ──\nPASS: proof-state content ≡ the live axiom gate.")
         return 0
 
     block = render(lean_root, report)
