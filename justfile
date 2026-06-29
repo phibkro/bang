@@ -62,6 +62,7 @@ wasmfx-probe:
 # so docs-only ADR commits — the normal case — get ledger-gated by the hook too.
 fitness:
     bash tools/check-primitives.sh
+    bash tools/check-git-hygiene.sh
     bash tools/check-sha-reachable.sh
     bash tools/check-paths.sh
     bash tools/check-adr-links.sh
