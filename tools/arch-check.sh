@@ -40,7 +40,7 @@ layer_of() {
     Bang.Operational.*) echo Core;     return ;;    # the hub's 4 deep submodules (Subst/Dispatch/Kernel/Invariants)
   esac
   case "$1" in
-    Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Model|Bang.Freshness|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.CohSubstRefute|Bang.LwscgLengthRefute|Bang.LwscgOfTypedRefute|Bang.WsCfgInterfaceProbe|Bang.ReturnEscapeReach|Bang.ReturnEscapeRefute|Bang.StateEscapeWitness)
+    Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Freshness|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.ReturnEscapeReach|Bang.StateEscapeWitness)
       echo Core ;;
     Bang.CalcVM|Bang.Compile|Bang.CalcReify|Bang.CalcReifyRef|Bang.CalcReifySim)
       echo Backend ;;

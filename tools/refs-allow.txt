@@ -36,3 +36,11 @@ Bang/StaticSpike.lean
 Bang/SetRowSpike.lean
 Bang/CapAssignSpike.lean
 Bang/TightSuite2.lean
+
+# ── D. The dead Model engine + soundness-diagonal (route-β, ADR-0063-abandoned) ────
+# Bang/Model.lean (the 4323-line typeless-diagonal engine) + its 5 refute/probe
+# witnesses were removed in Phase-2 restructure (#103): a closed dead island, out of
+# the gated closure, proven dead by a BYTE-IDENTICAL Audit census on removal. Cited
+# only by the RETROSPECTIVE ADR-0061 (which records what the diagonal WAS). Recover
+# via `git show <pre-removal-sha>:Bang/Model.lean`.
+Bang/Model.lean
