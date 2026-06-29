@@ -39,7 +39,7 @@ graph TD
     Core_Semantics_Eval["Core.Semantics.Eval<br/>375L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>246L · fan-in 0"]
     Core_Semantics_Subst["Core.Semantics.Subst<br/>212L · fan-in 0"]
-    Core_Soundness["Core.Soundness<br/>3089L · fan-in 0"]
+    Core_Soundness["Core.Soundness<br/>2941L · fan-in 0"]
     Core_Typing["Core.Typing<br/>404L · fan-in 0"]
     Examples["Examples<br/>141L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>714L · fan-in 1"]
@@ -80,7 +80,7 @@ graph TD
 | `Core.Semantics.Eval` | ? | 375 | 0 |
 | `Core.Semantics.Invariants` | ? | 246 | 0 |
 | `Core.Semantics.Subst` | ? | 212 | 0 |
-| `Core.Soundness` | ? | 3089 | 0 |
+| `Core.Soundness` | ? | 2941 | 0 |
 | `Core.Typing` | ? | 404 | 0 |
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 141 | 0 |
