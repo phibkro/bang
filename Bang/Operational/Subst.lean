@@ -5,7 +5,7 @@
     §1.3b  subst-after-shift cancellation (the autosubst β-identity)
 
   The substitution FOUNDATION of the operational hub — imported by Dispatch,
-  Kernel, Invariants. Split out of the former monolithic Bang/Operational.lean
+  Eval, Invariants. Split out of the former monolithic Bang/Operational.lean
   (the fan-in-11 hub) per core-overview.md §6; behavior-preserving MOVE.
 -/
 

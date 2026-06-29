@@ -146,7 +146,7 @@ ADR-0054 (the fix) live on, and the reason a representation change is forced rat
      Bang.Dispatch     (staticSplit/absSplit · handlesOp · the cap-resolution surface)
      Bang.Invariants   (LWT · LWConfig · HasConfig)
      Bang.Subst        (shiftFrom · substFrom · the closeC-mirrored substitution theory)
-  relocate Stack.plug / Cxt.plug  LR → the machine layer (Operational/Kernel), where Compile uses them
+  relocate Stack.plug / Cxt.plug  LR → the machine layer (Operational/Eval), where Compile uses them
   reorganise LR/Compat around logical units (value-rel · stack-rel · compat-lemmas), not def-vs-proof
   prune: legacy splitAt (6 modules) once dispatch settles; the orphaned WC helpers (CtxKindEq, hframes…)
 ```

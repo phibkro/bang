@@ -6,7 +6,7 @@
 
     Bang.Operational.Subst       de Bruijn substitution + shift (§1.3a/b)
     Bang.Operational.Dispatch    handlesOp / splitAtId / dispatchOn / idDispatch
-    Bang.Operational.Kernel      Source.step / Source.eval / the CK machine
+    Bang.Operational.Eval      Source.step / Source.eval / the CK machine
     Bang.Operational.Invariants  WellCounted / StackBelow freshness (ADR-0055)
 
   This barrel re-exports all four so `import Bang.Operational; open Bang` keeps
@@ -20,5 +20,5 @@ module
 
 public import Bang.Operational.Subst
 public import Bang.Operational.Dispatch
-public import Bang.Operational.Kernel
+public import Bang.Operational.Eval
 public import Bang.Operational.Invariants

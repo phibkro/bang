@@ -6,14 +6,14 @@
     wellCounted_step · wellCounted_reachable · wellCounted_initial
 
   The freshness-invariant concern of the operational hub (the cluster with no
-  external consumers beyond the LR diagonal). Imports Kernel (the invariant is
+  external consumers beyond the LR diagonal). Imports Eval (the invariant is
   preserved by Source.step). Split out of Bang/Operational.lean per
   core-overview.md §6; behavior-preserving MOVE.
 -/
 
 module
 
-public import Bang.Operational.Kernel
+public import Bang.Operational.Eval
 
 namespace Bang
 

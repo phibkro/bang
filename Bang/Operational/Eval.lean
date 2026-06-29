@@ -1,5 +1,5 @@
 /-
-  Bang/Operational/Kernel.lean — the CK machine (ADR-0023/0055).
+  Bang/Operational/Eval.lean — the CK machine (ADR-0023/0055).
   ─────────────────────────────────────────────────────────────────────────
     §2   Result · Source.step · StepStar · NonEscape(') · HasConfig(')
          plug · Config.run · Source.eval · IsDefinedEscape (ADR-0063)
