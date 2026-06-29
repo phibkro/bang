@@ -15,7 +15,9 @@
   freedom is the left end. Idempotence is what places bang-lang's `+` at the
   left.
 -/
-import Bang.Spec
+module
+
+public import Bang.Spec
 namespace Bang
 
 variable {Eff : Type} [Semiring Eff]
