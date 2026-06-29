@@ -12,6 +12,14 @@ name = "Bang"
 # same set. Replaces the former `Bang.lean` barrel (retired; nobody imports it).
 globs = ["Bang.+"]
 
+# The `bang` runner CLI (Tier-1 keystone). A LEAF exe: `Main.lean` lives at the
+# repo root (OUTSIDE the `Bang.+` glob), imports `Bang.Frontend.Surface`, and is
+# imported by nothing in `Bang/` — so the verified library + Audit gate are
+# unaffected. Run: `lake exe bang run <file.bang>` / `lake exe bang eval "<expr>"`.
+[[lean_exe]]
+name = "bang"
+root = "Main"
+
 # Mathlib gives us the Finset semilattice. The rev MUST match lean-toolchain:
 # the simplest reliable pin is to pick a Mathlib release tag and set
 # lean-toolchain to the Lean version THAT TAG uses (read its own lean-toolchain).
