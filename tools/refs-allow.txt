@@ -72,3 +72,7 @@ scratch/U5bSimSpike.lean
 # mint+subst, 5 *_composes + dispatch axiom-clean). On lang-bang-u5bhandler @ inc6-u5b-handler.
 # Recover: `git show bf097d3:scratch/U5bHandlerSpike.lean`.
 scratch/U5bHandlerSpike.lean
+# scratch/AdequacySpike.lean (7574a5b — the inc-5 lr_sound reshape-obstruction witness:
+# CrelK raw-focus vs reshaped converges_plug_iff does NOT bridge, build-confirmed). On
+# inc5-spec-repoint. Recover: `git show 7574a5b:scratch/AdequacySpike.lean`.
+scratch/AdequacySpike.lean
