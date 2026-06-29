@@ -128,7 +128,9 @@ echo '#check @Bang.Comp.handle' | bash tools/eval.sh
 echo '#print Bang.HasCTy' | bash tools/eval.sh
 ```
 
-Snippet runs with `import Bang; open Bang` prepended. Useful for
+Snippet runs with `import Bang.Audit; open Bang` prepended (`Bang.Audit` is the
+apex re-exporter — the former `import Bang` barrel was retired for the `Bang.+`
+lake glob). Useful for
 exploration without editing a file. AI agents / scripts can shell out
 here for programmatic Lean access without an MCP bridge.
 

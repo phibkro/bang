@@ -39,11 +39,11 @@ layer_of() {
     Bang.Backend.*)  echo Backend;  return ;;    # path-derived (for the deferred moves)
   esac
   case "$1" in
-    Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Model|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.CohSubstRefute|Bang.LwscgLengthRefute|Bang.LwscgOfTypedRefute|Bang.WsCfgInterfaceProbe|Bang.ReturnEscapeReach|Bang.ReturnEscapeRefute|Bang.StateEscapeWitness)
+    Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Model|Bang.Freshness|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.CohSubstRefute|Bang.LwscgLengthRefute|Bang.LwscgOfTypedRefute|Bang.WsCfgInterfaceProbe|Bang.ReturnEscapeReach|Bang.ReturnEscapeRefute|Bang.StateEscapeWitness)
       echo Core ;;
     Bang.CalcVM|Bang.Compile|Bang.CalcReify|Bang.CalcReifyRef|Bang.CalcReifySim)
       echo Backend ;;
-    Bang.Surface|Bang.Surface.Trait)
+    Bang.Surface|Bang.Surface.Trait|Bang.Surface.PropTest)
       echo Frontend ;;
     Bang.Spec|Bang.Audit|Bang.Distribution)
       echo Apex ;;

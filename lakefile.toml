@@ -3,6 +3,14 @@ defaultTargets = ["Bang"]
 
 [[lean_lib]]
 name = "Bang"
+# Build EVERY `Bang/**/*.lean` directly — no hand-maintained import barrel.
+# `Bang.+` is lake's `submodules` glob (all submodules of `Bang`, recursively,
+# but not a `Bang.lean` root — there is none). This makes the default `lake build`
+# (= the gate) the build closure: a new module, or a witness/refutation file, is
+# compiled by the gate the moment it lands — no "out-of-closure" coverage gap
+# (#81). `tools/check-all-modules.sh` enforces the module-header policy on the
+# same set. Replaces the former `Bang.lean` barrel (retired; nobody imports it).
+globs = ["Bang.+"]
 
 # Mathlib gives us the Finset semilattice. The rev MUST match lean-toolchain:
 # the simplest reliable pin is to pick a Mathlib release tag and set

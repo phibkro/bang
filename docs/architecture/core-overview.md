@@ -46,6 +46,24 @@ the **step-indexed logical relation** (`lr_sound`/`lr_fundamental`, the Compat l
 - **The "V" is real and enforced**: Frontend (Surface/Syntax/NamedCore) and Backend (CalcVM/Compile) cannot
   reach into each other; they meet only at Core.
 
+**Per-module role** (absorbed from the retired `Bang.lean` barrel; the build closure is now the
+`Bang.+` lake glob in `lakefile.toml`, not a hand-maintained import list):
+
+| module | role |
+|---|---|
+| `EffectRow` | K1: effect-row algebra (the sound unifier) |
+| `Core` · `Syntax` · `Operational` · `LR` · `Compile` · `Spec` | the Spec spine — `Spec` re-exports the rest (frozen theorems) |
+| `Mult` | concrete QTT instance of `[Semiring Mult]` |
+| `Metatheory` | syntactic metatheory: weakening + graded substitution (backs `subst_value`) |
+| `Compat` · `Distribution` | Phase B targets |
+| `Audit` | the `#print axioms` gate |
+| `Surface` | tracer bullet: surface → graded-CBPV `Comp` → `Source.eval` → value (additive layer, outside the spine) |
+| `Surface.Trait` | laws-as-algebraic-interfaces surface (ADR-0040): trait/impl + proof-first discharge ladder |
+| `Frontend.NamedCore` | the canonical core made WRITABLE (ADR-0046/0047): named S-expr IR + name→de-Bruijn elaboration |
+| `CalcReify` · `CalcReifyRef` · `CalcReifySim` · `CalcVM` | K3: the calculated machine (the paused reification frontier, ADR-0015) |
+| `Freshness` · `CapCoh` · `Model` | LIVE freshness layer + cap-coherence (`Model` engine/diagonal dead per ADR-0063, see §6) |
+| `*Regress` · `*Witness` · `*Refute` · `*Probe` | committed regression/refutation witnesses (the `H→False` do-not-weaken gate) — now in the build closure via the glob (#81) |
+
 ## 3. The coupling map — cross-cutting representations (the part that bites)
 
 A concern's *blast radius* is how many modules reference it, independent of the import graph:

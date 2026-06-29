@@ -6,7 +6,8 @@ set -euo pipefail
 ROOT="${1:-.}"
 
 # Project Lean sources only — exclude the lake build cache (Mathlib etc.).
-SCAN_DIRS=("$ROOT/Bang" "$ROOT/Bang.lean")
+# (No root `Bang.lean` barrel: the build closure is the `Bang.+` lake glob.)
+SCAN_DIRS=("$ROOT/Bang")
 
 fail() { echo "FAIL: $1"; exit 1; }
 
