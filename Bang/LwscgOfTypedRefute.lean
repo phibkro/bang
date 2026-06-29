@@ -1,4 +1,6 @@
-import Bang.Model
+module
+
+public import Bang.Model
 
 /-! REGRESSION WITNESS — keep; the existence-lift `lwscg_of_typed` (Bang/Model.lean) takes
 cap-resolution as a SEPARATE hypothesis (`∀ p ∈ capsC c, ResolvesLabel K …`), NOT from `LWSC`.

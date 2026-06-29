@@ -1,4 +1,6 @@
-import Bang.CalcReify
+module
+
+public import Bang.CalcReify
 
 /-!
 # A denotational reference for the reification machine (`CalcReify`)
@@ -40,6 +42,9 @@ asserted with `sorry`. This file is `sorry`-free: it asserts only what it proves
 namespace Bang.CalcReifyRef
 
 open Bang.CalcReify (Src)
+
+-- Module reveal (Phase 1a). `@[expose] public section`: CalcReifySim unfolds Comp/Entry/REnv.
+@[expose] public section
 
 /-- Free monad over `perform : Int ⇝ Int`. `perf p k` is "perform with payload
 `p`, then continue with the resumed value via `k`". The continuation `k : Int →
@@ -153,4 +158,5 @@ example : run 1000 (handle (perform (val 1)) bodyP) = none := by rfl
 
 end Demos
 
+end -- public section
 end Bang.CalcReifyRef

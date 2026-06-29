@@ -1,4 +1,6 @@
-import Bang.Model
+module
+
+public import Bang.Model
 
 /-! INTERFACE RECORD for the `wsCfg_step` LWSC-preservation half (#44/#46). These axiom-clean
 probes lock WHERE cap-resolution enters the assembly and confirm the graded subst `lwscg_subst`

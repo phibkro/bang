@@ -1,4 +1,6 @@
-import Bang.Model
+module
+
+public import Bang.Model
 
 /-! REGRESSION WITNESS — keep; do NOT remove the `(hlen_v : γ_v.length = γ.length)`
 hypothesis from `lwscg_subst`. Machine-checked proof that WITHOUT a length constraint

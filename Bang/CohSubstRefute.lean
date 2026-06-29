@@ -1,4 +1,6 @@
-import Bang.Model
+module
+
+public import Bang.Model
 
 /-! REGRESSION WITNESS — keep; do NOT revert `lwscg_subst` to the single-grade hypothesis.
 Regression rationale + machine-checked consumability verification for the RESHAPE of

@@ -33,7 +33,10 @@ namespace QTT
       1+0 = 1,  1+1 = ω,  1+ω = ω
       ω+0 = ω,  ω+1 = ω,  ω+ω = ω
 -/
-public def add : QTT → QTT → QTT
+-- `@[expose]`: the QTT rig's arithmetic body is computed against downstream (decide/rfl
+-- on concrete grades, e.g. the NoZeroDivisors/Nontrivial witnesses), so it must cross the
+-- module boundary (Phase-1a finding; same rationale as Core's GradeVec).
+@[expose] public def add : QTT → QTT → QTT
   | .zero, m       => m
   | m, .zero       => m
   | .one, .one     => .omega
@@ -44,7 +47,7 @@ public def add : QTT → QTT → QTT
       1 * x = x,   x * 1 = x
       ω * ω = ω
 -/
-public def mul : QTT → QTT → QTT
+@[expose] public def mul : QTT → QTT → QTT
   | .zero, _       => .zero
   | _, .zero       => .zero
   | .one, m        => m

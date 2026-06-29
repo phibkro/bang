@@ -1,5 +1,7 @@
-import Bang.Model
-import Bang.Mult
+module
+
+public import Bang.Model
+public import Bang.Mult
 
 /-! REGRESSION WITNESS — keep; build-arbitrated REFUTATION of `liveCapsResolveC_returnEscape`
 (Bang/Model.lean, the POP-focus carrier re-homing) AS STATED. The carrier `LiveCapsResolveC` is

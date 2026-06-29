@@ -1,3 +1,5 @@
+module
+
 /-!
 # K3 frontier: continuation **reification** — multi-shot / non-tail handlers
 
@@ -40,6 +42,10 @@ is a separate step).
 -/
 
 namespace Bang.CalcReify
+
+-- Module reveal (Phase 1a). `@[expose] public section`: CalcReifyRef/Sim unfold this
+-- module's Src/Comp/Entry defs definitionally, so bodies cross the boundary.
+@[expose] public section
 
 /-! ## Instructions, values, frames -/
 
@@ -259,4 +265,5 @@ example : run 1000 (letE (val 5) (handle (add (var 0) (resume (var 1) (val 3))) 
   rfl
 end Demos
 
+end -- public section
 end Bang.CalcReify

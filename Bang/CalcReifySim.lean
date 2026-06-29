@@ -1,5 +1,7 @@
-import Bang.CalcReify
-import Bang.CalcReifyRef
+module
+
+public import Bang.CalcReify
+public import Bang.CalcReifyRef
 
 /-!
 # Toward the reification bisimulation: the pure core
