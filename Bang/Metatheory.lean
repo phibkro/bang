@@ -84,7 +84,7 @@ variable {M : Type}
 
 /-- `ρ • (a + b) = ρ•a + ρ•b` — scalar distributes over zipWith-add.
 Holds unconditionally: both sides truncate to `min`. -/
-theorem smul_add [Mul M] [Add M] [LeftDistribClass M] (ρ : M) (γ₁ γ₂ : GradeVec M) :
+private theorem smul_add [Mul M] [Add M] [LeftDistribClass M] (ρ : M) (γ₁ γ₂ : GradeVec M) :
     GradeVec.smul ρ (GradeVec.add γ₁ γ₂)
       = GradeVec.add (GradeVec.smul ρ γ₁) (GradeVec.smul ρ γ₂) := by
   induction γ₁ generalizing γ₂ with
@@ -134,7 +134,7 @@ position `k = |prefix|`. They are the arithmetic core of the `vvar`/`vunit`
 cases of the weakening lemma. -/
 
 /-- `zeros (a+b) = zeros a ++ zeros b`. -/
-theorem zeros_append [Zero M] (a b : Nat) :
+private theorem zeros_append [Zero M] (a b : Nat) :
     (GradeVec.zeros (a + b) : GradeVec M) = GradeVec.zeros a ++ GradeVec.zeros b := by
   rw [GradeVec.zeros, GradeVec.zeros, GradeVec.zeros, List.replicate_add]
 
@@ -154,7 +154,7 @@ theorem zeros_get [Zero M] (n j : Nat) :
   rw [GradeVec.zeros, List.getElem?_replicate]
 
 /-- Congruence for the basis cell value under equivalent index conditions. -/
-theorem cell_congr {p q : Prop} [Decidable p] [Decidable q] (h : p ↔ q)
+private theorem cell_congr {p q : Prop} [Decidable p] [Decidable q] (h : p ↔ q)
     [Zero M] [One M] :
     (if p then (1 : M) else 0) = if q then (1 : M) else 0 := by
   simp only [h]
@@ -176,7 +176,7 @@ theorem insert_get {α : Type} (l : List α) (k : Nat) (x : α) (j : Nat) (hk : 
 
 /-- `basis n i` split at a prefix of length `k` (`k ≤ n`), inserting a 0 slot:
 the entry stays at `i` if `i < k`, else shifts to `i+1`. -/
-theorem basis_insert [Zero M] [One M] (n k i : Nat) (hk : k ≤ n) :
+private theorem basis_insert [Zero M] [One M] (n k i : Nat) (hk : k ≤ n) :
     (GradeVec.basis n i : GradeVec M).take k ++ (0 : M)
         :: (GradeVec.basis n i : GradeVec M).drop k
       = GradeVec.basis (n + 1) (if i < k then i else i + 1) := by
@@ -198,7 +198,7 @@ theorem basis_getElem [Zero M] [One M] (n i k : Nat) (hk : k < n) :
   rw [basis_get, if_pos hk]
 
 /-- `zeros n` entries are all `0`. -/
-theorem zeros_getElem [Zero M] (n k : Nat) (hk : k < n) :
+private theorem zeros_getElem [Zero M] (n k : Nat) (hk : k < n) :
     (GradeVec.zeros n : GradeVec M)[k]? = some (0 : M) := by
   rw [zeros_get, if_pos hk]
 
@@ -221,7 +221,7 @@ theorem basis_eraseIdx [Zero M] [One M] (n i k : Nat) (hk : k < n) (hik : i ≠ 
       | (symm; exact absurd rfl (by omega))
 
 /-- Erasing any position from `zeros n` gives `zeros (n-1)` (for `k < n`). -/
-theorem zeros_eraseIdx [Zero M] (n k : Nat) (hk : k < n) :
+private theorem zeros_eraseIdx [Zero M] (n k : Nat) (hk : k < n) :
     (GradeVec.zeros n : GradeVec M).eraseIdx k = GradeVec.zeros (n - 1) := by
   apply List.ext_getElem?
   intro j
@@ -435,7 +435,7 @@ theorem HasVTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Val.shiftFrom]; rw [hw₁.shift_closed k hk, hw₂.shift_closed k hk]
   | @fold γ Γ w A hw => simp only [Val.shiftFrom]; rw [hw.shift_closed k hk]
 
-theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+private theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {C : CTy Eff Mult} (h : HasCTy γ Γ c e C) (k : Nat) (hk : Γ.length ≤ k) :
     Comp.shiftFrom k c = c := by
   cases h with
@@ -494,7 +494,7 @@ theorem HasVTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Val.substFrom]; rw [hu₁.subst_closed k hk w, hu₂.subst_closed k hk w]
   | @fold γ Γ u A hu => simp only [Val.substFrom]; rw [hu.subst_closed k hk w]
 
-theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
+private theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     {c : Comp} {e : Eff} {C : CTy Eff Mult} (h : HasCTy γ Γ c e C) (k : Nat) (hk : Γ.length ≤ k)
     (w : Val) : Comp.substFrom k w c = c := by
   cases h with
@@ -801,7 +801,7 @@ theorem eraseIdx_add [Add M] (γ₁ γ₂ : GradeVec M) (k : Nat)
     List.zipWith_append (by rw [List.length_take, List.length_take, h])]
 
 /-- `eraseIdx` commutes with `•`. -/
-theorem eraseIdx_smul [Mul M] (q : M) (γ : GradeVec M) (k : Nat) :
+private theorem eraseIdx_smul [Mul M] (q : M) (γ : GradeVec M) (k : Nat) :
     (GradeVec.smul q γ).eraseIdx k = GradeVec.smul q (γ.eraseIdx k) := by
   unfold GradeVec.smul
   rw [List.eraseIdx_eq_take_drop_succ, List.eraseIdx_eq_take_drop_succ,
@@ -837,7 +837,7 @@ def Sgrade (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mult) : GradeVec Mult
 
 /-- `S` length: `(Sgrade γ_v k γ).length = γ.length - 1` when `k < γ.length` and
 `γ_v.length = γ.length - 1` (the value's grade matches the post-erase length). -/
-theorem Sgrade_length (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mult)
+private theorem Sgrade_length (γ_v : GradeVec Mult) (k : Nat) (γ : GradeVec Mult)
     (hk : k < γ.length) (hv : γ_v.length = γ.length - 1) :
     (Sgrade γ_v k γ).length = γ.length - 1 := by
   unfold Sgrade
@@ -1485,7 +1485,7 @@ free variables so the `cases` inside succeeds (only the EvalCtx index is constru
 shaped, which `cases` resolves by unification). The callers then avoid the
 dependent-elimination friction of `cases hstack` directly on a specialized focus type. -/
 
-theorem HasStack.letF_inv {N : Comp} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
+private theorem HasStack.letF_inv {N : Comp} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Frame.letF N :: K) e C eo Co →
     ∃ q A e₂ qk B, C = CTy.F q A ∧ HasCTy (qk :: []) [A] N e₂ B
@@ -1494,7 +1494,7 @@ theorem HasStack.letF_inv {N : Comp} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
   cases h with
   | @letF _ _ e₁ e₂ eo q qk A B Co hN hsub => exact ⟨q, A, e₂, qk, B, rfl, hN, hsub⟩
 
-theorem HasStack.appF_inv {w : Val} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
+private theorem HasStack.appF_inv {w : Val} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Frame.appF w :: K) e C eo Co →
     ∃ q A B, C = CTy.arr q A B ∧ HasVTy [] [] w A ∧ HasStack K e B eo Co := by
@@ -1504,7 +1504,7 @@ theorem HasStack.appF_inv {w : Val} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
 
 /-- Invert a `throws` handler frame (the focus type forces the handler to be `throws`, since the
 caller already knows `hdl = throws ℓ`). -/
-theorem HasStack.handleF_throws_inv {n : Nat} {ℓ : Label} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
+private theorem HasStack.handleF_throws_inv {n : Nat} {ℓ : Label} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Frame.handleF n (Handler.throws ℓ) :: K) e C eo Co →
     ∃ φ q A, C = CTy.F q A
@@ -1521,7 +1521,7 @@ theorem HasStack.handleF_throws_inv {n : Nat} {ℓ : Label} {K : EvalCtx} {e : E
 label, and the substack types `F q A` to the whole program. Used by the REDUCE-`handleF`-`ret` case
 (the handler return clause is the identity for both handler kinds, ADR-0023 Q6 / ADR-0025).
 ADR-0054: the frame carries the identity `n` (extra implicit). -/
-theorem HasStack.handleAny_inv {n : Nat} {hdl : Handler} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
+private theorem HasStack.handleAny_inv {n : Nat} {hdl : Handler} {K : EvalCtx} {e : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Frame.handleF n hdl :: K) e C eo Co →
     ∃ φ q A, C = CTy.F q A ∧ ∃ eo', eo' ≤ eo ∧ HasStack K φ (CTy.F q A) eo' Co := by
@@ -1562,7 +1562,7 @@ theorem HasCTy.letC_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @letC _ γ₁ γ₂ _ _ _ φ₁ φ₂ q1 q2 A B hM hN hγ =>
     exact ⟨γ₁, γ₂, φ₁, φ₂, q1, q2, A, rfl, hγ, hM, hN⟩
 
-theorem HasCTy.app_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.app_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {w : Val} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.app M w) e C →
     ∃ γ₁ γ₂ q A, γ0 = γ₁ + q • γ₂
@@ -1572,7 +1572,7 @@ theorem HasCTy.app_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @app _ γ₁ γ₂ _ _ _ φ q A B hM hw hγ =>
     exact ⟨γ₁, γ₂, q, A, hγ, hM, hw⟩
 
-theorem HasCTy.force_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.force_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {w : Val} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.force w) e C → HasVTy γ0 Γ0 w (VTy.U e C) := by
   intro h
@@ -1580,7 +1580,7 @@ theorem HasCTy.force_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @force _ _ _ φ B hw => exact hw
 
 /-- Invert a `U`-typed value: in any context it is `vthunk` or `vvar`. -/
-theorem HasVTy.U_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasVTy.U_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {w : Val} {φ : Eff} {B : CTy Eff Mult} :
     HasVTy γ0 Γ0 w (VTy.U φ B) →
     (∃ M, w = Val.vthunk M ∧ HasCTy γ0 Γ0 M φ B)
@@ -1590,7 +1590,7 @@ theorem HasVTy.U_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @vthunk γ Γ M φ' B' hM => exact Or.inl ⟨M, rfl, hM⟩
   | @vvar Γ i A hget => exact Or.inr ⟨i, rfl, hget, rfl⟩
 
-theorem HasCTy.handleThrows_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.handleThrows_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {ℓ : Label} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.handle (Handler.throws ℓ) M) e C →
     -- ADR-0054: handle BINDS the cap, so the body is typed under `cap ℓ :: Γ0` with grade `qc :: γ0`.
@@ -1625,7 +1625,7 @@ theorem HasCTy.handleState_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     exact ⟨e_body, q, qc, S, A, rfl, hga, hgr, hpa, hpr, hif, hs, hM, hle, hbocc⟩
 
 /-- Invert a `handle (transaction ℓ Θ₀) M` typing (ADR-0030). -/
-theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {ℓ : Label} {Θ₀ : List Val} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.handle (Handler.transaction ℓ Θ₀) M) e C →
     ∃ e_body q qc A, C = CTy.F q A
@@ -1647,7 +1647,7 @@ theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult
   | @handleTransaction _ _ _ _ _ e_body φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle hbocc =>
     exact ⟨e_body, q, qc, A, rfl, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle, hbocc⟩
 
-theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.lam M) e C →
     ∃ q A B, C = CTy.arr q A B ∧ HasCTy (q :: γ0) (A :: Γ0) M e B := by
@@ -1655,7 +1655,7 @@ theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   cases h with
   | @lam _ _ _ φ q A B hM => exact ⟨q, A, B, rfl, hM⟩
 
-theorem HasCTy.case_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.case_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {v : Val} {N₁ N₂ : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.case v N₁ N₂) e C →
     ∃ γ_v γ_N q A B, γ0 = q • γ_v + γ_N
@@ -1667,7 +1667,7 @@ theorem HasCTy.case_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @case _ γ_v γ_N _ _ _ _ φ q A B C hv hN₁ hN₂ hγ =>
     exact ⟨γ_v, γ_N, q, A, B, hγ, hv, hN₁, hN₂⟩
 
-theorem HasCTy.split_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.split_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {v : Val} {N : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.split v N) e C →
     ∃ γ_v γ_N q A B, γ0 = q • γ_v + γ_N
@@ -1678,7 +1678,7 @@ theorem HasCTy.split_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @split _ γ_v γ_N _ _ _ φ q A B C hv hN hγ =>
     exact ⟨γ_v, γ_N, q, A, B, hγ, hv, hN⟩
 
-theorem HasCTy.unfold_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.unfold_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {v : Val} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.unfold v) e C →
     ∃ A, e = ⊥ ∧ C = CTy.F 1 (VTy.unrollMu A) ∧ HasVTy γ0 Γ0 v (VTy.mu A) := by
@@ -1688,7 +1688,7 @@ theorem HasCTy.unfold_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
 
 /-- Canonical forms for a CLOSED sum value: `v : A + B` in the empty context is
 `inl a` or `inr a`. `vvar` is excluded ( `[][i]? = none`). -/
-theorem HasVTy.sum_canonical {γ0 : GradeVec Mult}
+private theorem HasVTy.sum_canonical {γ0 : GradeVec Mult}
     {v : Val} {A B : VTy Eff Mult} :
     HasVTy γ0 [] v (VTy.sum A B) →
     (∃ a, v = Val.inl a ∧ HasVTy γ0 [] a A)
@@ -1700,7 +1700,7 @@ theorem HasVTy.sum_canonical {γ0 : GradeVec Mult}
   | @vvar _ i _ hget => simp at hget
 
 /-- Canonical forms for a CLOSED product value: `v : A × B` is `pair a b`. -/
-theorem HasVTy.prod_canonical {γ0 : GradeVec Mult}
+private theorem HasVTy.prod_canonical {γ0 : GradeVec Mult}
     {v : Val} {A B : VTy Eff Mult} :
     HasVTy γ0 [] v (VTy.prod A B) →
     ∃ γ_a γ_b a b, v = Val.pair a b ∧ γ0 = γ_a + γ_b
@@ -1711,7 +1711,7 @@ theorem HasVTy.prod_canonical {γ0 : GradeVec Mult}
   | @vvar _ i _ hget => simp at hget
 
 /-- Canonical forms for a CLOSED μ value: `v : μX.A` is `fold a` with `a : unrollMu A`. -/
-theorem HasVTy.mu_canonical {γ0 : GradeVec Mult}
+private theorem HasVTy.mu_canonical {γ0 : GradeVec Mult}
     {v : Val} {A : VTy Eff Mult} :
     HasVTy γ0 [] v (VTy.mu A) →
     ∃ a, v = Val.fold a ∧ HasVTy γ0 [] a (VTy.unrollMu A) := by
@@ -1721,18 +1721,18 @@ theorem HasVTy.mu_canonical {γ0 : GradeVec Mult}
   | @vvar _ i _ hget => simp at hget
 
 /-- `oom`/`wrong` are untypable: no HasCTy rule. -/
-theorem HasCTy.oom_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.oom_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {e : Eff} {C : CTy Eff Mult} : ¬ HasCTy γ0 Γ0 Comp.oom e C := by
   intro h; cases h
 
-theorem HasCTy.wrong_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.wrong_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {s : String} {e : Eff} {C : CTy Eff Mult} : ¬ HasCTy γ0 Γ0 (Comp.wrong s) e C := by
   intro h; cases h
 
 /-- A focus typed at a smaller effect `e'` plugs into the same stack, with the
 whole-program effect only shrinking. Induction on `HasStack`; each frame is
 effect-monotone in its focus effect. -/
-theorem HasStack.weaken_eff {K : EvalCtx} {e e' : Eff} {C : CTy Eff Mult}
+private theorem HasStack.weaken_eff {K : EvalCtx} {e e' : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
     HasStack K e C eo Co → e' ≤ e → ∃ eo', eo' ≤ eo ∧ HasStack K e' C eo' Co := by
   intro hK
@@ -1776,7 +1776,7 @@ already located the boundary, so no `handlesOp`-driven search/skip recursion is 
 
 /-- THROWS abort re-typing (static). The boundary handler is a `throws ℓ'` frame; type the outer `Kₒ`
 at the throws answer type `A_h = opArg ℓ' "raise"`, whole-program effect `eo' ≤ eo`. Induct on `Kᵢ`. -/
-theorem HasStack.concat_throws_typed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {e : Eff} {C : CTy Eff Mult}
+private theorem HasStack.concat_throws_typed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {e : Eff} {C : CTy Eff Mult}
     {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Kᵢ ++ Frame.handleF n (Handler.throws ℓ') :: Kₒ) e C eo Co →
     ∃ q A_h eo', eo' ≤ eo
@@ -1803,7 +1803,7 @@ resumed stack at the SAME `e C`. Each `Kᵢ` frame is rebuilt by `cases hK` (so 
 incl. nested `state`/`transaction` frames — is preserved, not lost to `handleAny_inv`). This is the
 WellCapped-under-resume core: the resumed stack has the IDENTICAL frame skeleton (only `s↦s'` at one
 `handleF`), which is why the static cap of every buried perform still resolves. -/
-theorem HasStack.concat_state_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s s' : Val} {S : VTy Eff Mult}
+private theorem HasStack.concat_state_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s s' : Val} {S : VTy Eff Mult}
     {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Kᵢ ++ Frame.handleF n (Handler.state ℓ' s) :: Kₒ) e C eo Co →
     EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "get" = some S →
@@ -1842,7 +1842,7 @@ theorem HasStack.concat_state_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Lab
 boundary `transaction ℓ' Θ` frame is reinstalled as `transaction ℓ' Θ'` (any all-`int`-cells heap `Θ'`)
 over the same `Kᵢ`/`Kₒ`. The interface premises (facts about `ℓ'`'s `EffSig`, heap-invariant) are
 passed in to re-discharge the reinstalled frame. -/
-theorem HasStack.concat_transaction_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ Θ' : Store}
+private theorem HasStack.concat_transaction_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ Θ' : Store}
     {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Kᵢ ++ Frame.handleF n (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
     (∀ cell ∈ Θ', HasVTy [] [] cell (VTy.int : VTy Eff Mult)) →
@@ -1877,7 +1877,7 @@ theorem HasStack.concat_transaction_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ'
 /-- The boundary `state ℓ' s` frame (located by the cap) carries a CLOSED stored state of type
 `S = opRes ℓ' "get"` and the get/put interface signatures — read off by peeling `Kᵢ` to the boundary
 (`cases hK`). The static analogue of `splitAt_state_closed`, over the concat. -/
-theorem HasStack.concat_state_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s : Val} {e : Eff}
+private theorem HasStack.concat_state_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {s : Val} {e : Eff}
     {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Kᵢ ++ Frame.handleF n (Handler.state ℓ' s) :: Kₒ) e C eo Co →
     ∃ S, EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ' "get" = some S
@@ -1901,7 +1901,7 @@ theorem HasStack.concat_state_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Lab
 /-- The boundary `transaction ℓ' Θ` frame (located by the cap) carries a CLOSED all-`int` heap and the
 monomorphic-`int` stm interface signatures — read off by peeling `Kᵢ` to the boundary. The static
 analogue of `splitAt_transaction_store`, over the concat. -/
-theorem HasStack.concat_transaction_store {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ : Store} {e : Eff}
+private theorem HasStack.concat_transaction_store {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {Θ : Store} {e : Eff}
     {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
     HasStack (Kᵢ ++ Frame.handleF n (Handler.transaction ℓ' Θ) :: Kₒ) e C eo Co →
       EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ' "newTVar" = some VTy.int
@@ -2705,7 +2705,7 @@ theorem hasConfigTy_step
 
 /-- Expose the capability typing buried in a `perform` focus (the new ADR-0054 shape: the head is a
 `Cap ℓ` VALUE). Replaces the deleted positional `perform_inv` for the progress path. -/
-theorem HasCTy.perform_cap_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+private theorem HasCTy.perform_cap_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {c : Val} {op : OpId} {v : Val} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.perform c op v) e C → ∃ ℓ γ_c, HasVTy γ_c Γ0 c (VTy.cap ℓ) := by
   intro h
@@ -2713,7 +2713,7 @@ theorem HasCTy.perform_cap_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
   | @perform γ_c _ _ _ ℓ _ _ _ _ _ _ hcap _ _ _ _ => exact ⟨ℓ, γ_c, hcap⟩
 
 /-- `dispatchOn` is TOTAL — every handler kind / op branch returns `some`. shape: NonEscapeProbe §2. -/
-theorem dispatchOn_isSome (n : Nat) (op : OpId) (v : Val) (X : EvalCtx × Handler × EvalCtx) :
+private theorem dispatchOn_isSome (n : Nat) (op : OpId) (v : Val) (X : EvalCtx × Handler × EvalCtx) :
     ∃ cfg', dispatchOn n op v X = some cfg' := by
   obtain ⟨Kᵢ, h, Kₒ⟩ := X
   cases h <;>
@@ -2725,7 +2725,7 @@ theorem dispatchOn_isSome (n : Nat) (op : OpId) (v : Val) (X : EvalCtx × Handle
 
 /-- **PROGRESS'S PERFORM CASE** (probe §2): given `CapResolves K n ℓ op`, the `idDispatch` step fires —
 `splitAtId` finds the handling frame, the fail-loud `handlesOp` guard passes, and `dispatchOn` is total. -/
-theorem progress_perform_from_capResolves
+private theorem progress_perform_from_capResolves
     (g : Nat) (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val)
     (hr : CapResolves K n ℓ op) :
     ∃ cfg', Source.step (g, K, Comp.perform (Val.vcap n ℓ) op v) = some cfg' := by
@@ -2735,7 +2735,7 @@ theorem progress_perform_from_capResolves
   simp only [Source.step, idDispatch, hsplit, Option.bind_some, hhandles, if_true, hp,
     Option.map_some]
 
-theorem progress_proof
+private theorem progress_proof
     {cfg : Config} {q : Mult} {A : VTy Eff Mult} :
     HasConfig cfg ⊥ (CTy.F q A) →
     isReturnConfig cfg ∨ ∃ cfg', Source.step cfg = some cfg' := by
@@ -2877,7 +2877,7 @@ private theorem run_safe {q : Mult} {A : VTy Eff Mult} :
 forces `HasConfigTy ([], c) ⊥ (F q A) ≡ HasCTy [] [] c ⊥ (F q A)`, so this folds the old ADR-0045
 `LWConfig ([], c)` premise into `HasConfig`'s `NonEscape ([], c)` conjunct — the INITIAL-CONFIG obligation
 the ported LR discharges (inc 5). No raw cap-invariant premise surfaces; the proof is `run_safe` directly. -/
-theorem type_safety_proof
+private theorem type_safety_proof
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
     HasConfig (0, [], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck := by
   intro hcfg fuel
@@ -3051,7 +3051,7 @@ def HandlesWithin (l : Eff) (h : Handler) : Prop :=
 
 /-- A `throws ℓ₀` handler is scoped to its own label's row (discharges the `HandlesWithin`
 premise of `no_accidental_handling` for the only handler form; `state` extends it — Q12). -/
-theorem throws_handlesWithin (ℓ₀ : Label) :
+private theorem throws_handlesWithin (ℓ₀ : Label) :
     HandlesWithin (Eff := Eff) (Mult := Mult)
       (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ₀) (Handler.throws ℓ₀) := by
   intro ℓ' op hcatch

@@ -53,7 +53,7 @@ def WeakCoh (K : EvalCtx) (p : Nat × Label) : Prop :=
 
 /-- The driving decomposition: a successful split on `fr :: K` is either the head matching (a `handleF`
 whose id is `p.1`) or a deeper match in `K` returning the SAME handler. -/
-theorem splitAtId_cons_cases {fr : Frame} {K : EvalCtx} {n : Nat} {Kᵢ : EvalCtx} {h : Handler}
+private theorem splitAtId_cons_cases {fr : Frame} {K : EvalCtx} {n : Nat} {Kᵢ : EvalCtx} {h : Handler}
     {Kₒ : EvalCtx} (hs : splitAtId (fr :: K) n = some (Kᵢ, h, Kₒ)) :
     (fr = Frame.handleF n h ∧ Kᵢ = [] ∧ Kₒ = K)
     ∨ (∃ Kᵢ', splitAtId K n = some (Kᵢ', h, Kₒ)) := by
@@ -81,7 +81,7 @@ theorem splitAtId_cons_cases {fr : Frame} {K : EvalCtx} {n : Nat} {Kᵢ : EvalCt
     exact Or.inr ⟨Kᵢ', hsp⟩
 
 /-- WeakCoh under a non-matching cons (`p.1 ≠` the head id, or head is letF/appF): equivalent to K. -/
-theorem weakCoh_cons {fr : Frame} {K : EvalCtx} {p : Nat × Label}
+private theorem weakCoh_cons {fr : Frame} {K : EvalCtx} {p : Nat × Label}
     (hhead : ∀ hd, fr = Frame.handleF p.1 hd → Handler.label hd = p.2)
     (hK : WeakCoh K p) : WeakCoh (fr :: K) p := by
   intro Kᵢ h Kₒ hs
@@ -105,7 +105,7 @@ theorem splitAtId_id_lt {g j : Nat} : ∀ {K : EvalCtx} {Kᵢ Kₒ : EvalCtx} {h
     · cases fr <;> (simp only [CapsBelow] at hcb; exact ih hcb.2 hsp)
 
 /-- If `splitAtId Kᵢ j = none` (no live frame `j` in the prefix), a split of `Kᵢ ++ K'` passes to `K'`. -/
-theorem splitAtId_append_left_none {j : Nat} : ∀ {Kᵢ : EvalCtx} (K' : EvalCtx),
+private theorem splitAtId_append_left_none {j : Nat} : ∀ {Kᵢ : EvalCtx} (K' : EvalCtx),
     splitAtId Kᵢ j = none →
     splitAtId (Kᵢ ++ K') j = (splitAtId K' j).map (fun t => (Kᵢ ++ t.1, t.2.1, t.2.2)) := by
   intro Kᵢ
@@ -134,7 +134,7 @@ theorem splitAtId_append_left_none {j : Nat} : ∀ {Kᵢ : EvalCtx} (K' : EvalCt
 
 
 /-- Replacing a frame's handler with a SAME-LABEL one preserves the label `splitAtId` finds at every id. -/
-theorem splitAtId_setHandler {n : Nat} {h h'' : Handler} (hlab : Handler.label h = Handler.label h'') :
+private theorem splitAtId_setHandler {n : Nat} {h h'' : Handler} (hlab : Handler.label h = Handler.label h'') :
     ∀ {Kᵢ Kₒ : EvalCtx} {j : Nat} {Ki' Ko' : EvalCtx} {hr : Handler},
       splitAtId (Kᵢ ++ Frame.handleF n h'' :: Kₒ) j = some (Ki', hr, Ko') →
       ∃ Ki'' Ko'' hr', splitAtId (Kᵢ ++ Frame.handleF n h :: Kₒ) j = some (Ki'', hr', Ko'')
@@ -186,7 +186,7 @@ theorem splitAtId_setHandler {n : Nat} {h h'' : Handler} (hlab : Handler.label h
       exact ⟨Frame.appF w :: Ki'', Ko'', hr', by rw [hsp', Option.map_some], hlr⟩
 
 /-- WeakCoh transfers across a same-label handler replacement (the state `put` / txn resume). -/
-theorem weakCoh_replace {Kᵢ Kₒ : EvalCtx} {n : Nat} {h h'' : Handler} {p : Nat × Label}
+private theorem weakCoh_replace {Kᵢ Kₒ : EvalCtx} {n : Nat} {h h'' : Handler} {p : Nat × Label}
     (hlab : Handler.label h = Handler.label h'')
     (hw : WeakCoh (Kᵢ ++ Frame.handleF n h :: Kₒ) p) :
     WeakCoh (Kᵢ ++ Frame.handleF n h'' :: Kₒ) p := by
@@ -197,7 +197,7 @@ theorem weakCoh_replace {Kᵢ Kₒ : EvalCtx} {n : Nat} {h h'' : Handler} {p : N
 
 
 /-- The outer sub-stack of a stratified split is `CapsBelow` the matched id. -/
-theorem stratFresh_capsBelow_outer {n : Nat} {h : Handler} : ∀ {Kᵢ Kₒ : EvalCtx},
+private theorem stratFresh_capsBelow_outer {n : Nat} {h : Handler} : ∀ {Kᵢ Kₒ : EvalCtx},
     StratFresh (Kᵢ ++ Frame.handleF n h :: Kₒ) → CapsBelow n Kₒ := by
   intro Kᵢ
   induction Kᵢ with
@@ -210,7 +210,7 @@ theorem stratFresh_capsBelow_outer {n : Nat} {h : Handler} : ∀ {Kᵢ Kₒ : Ev
     | appF w => simp only [List.cons_append, StratFresh] at hsf; exact ih hsf
 
 /-- An id `j` below the matched frame `n` does not match any (older-than-`n`-dominating) prefix frame. -/
-theorem splitAtId_prefix_none {j n : Nat} {h : Handler} : ∀ {Kᵢ Kₒ : EvalCtx},
+private theorem splitAtId_prefix_none {j n : Nat} {h : Handler} : ∀ {Kᵢ Kₒ : EvalCtx},
     StratFresh (Kᵢ ++ Frame.handleF n h :: Kₒ) → j < n → splitAtId Kᵢ j = none := by
   intro Kᵢ
   induction Kᵢ with
@@ -228,7 +228,7 @@ theorem splitAtId_prefix_none {j n : Nat} {h : Handler} : ∀ {Kᵢ Kₒ : EvalC
                 simp only [splitAtId, ih hsf hjn, Option.map_none]
 
 /-- WeakCoh passes to the outer sub-stack on a `throws` ABORT (the inner prefix + matched frame pop). -/
-theorem weakCoh_outer {p : Nat × Label} {Kᵢ Kₒ : EvalCtx} {n : Nat} {h : Handler}
+private theorem weakCoh_outer {p : Nat × Label} {Kᵢ Kₒ : EvalCtx} {n : Nat} {h : Handler}
     (hsf : StratFresh (Kᵢ ++ Frame.handleF n h :: Kₒ))
     (hw : WeakCoh (Kᵢ ++ Frame.handleF n h :: Kₒ) p) : WeakCoh Kₒ p := by
   intro Ki' hr Ko' hs
@@ -243,14 +243,14 @@ theorem weakCoh_outer {p : Nat × Label} {Kᵢ Kₒ : EvalCtx} {n : Nat} {h : Ha
 
 
 
-theorem weakCoh_letF {N : Comp} {K : EvalCtx} {p : Nat × Label}
+private theorem weakCoh_letF {N : Comp} {K : EvalCtx} {p : Nat × Label}
     (hK : WeakCoh K p) : WeakCoh (Frame.letF N :: K) p := by
   intro Ki h Ko hs
   rcases splitAtId_cons_cases hs with ⟨hc, _, _⟩ | ⟨Ki', hsp⟩
   · exact absurd hc (by simp)
   · exact hK Ki' h Ko hsp
 
-theorem weakCoh_appF {w : Val} {K : EvalCtx} {p : Nat × Label}
+private theorem weakCoh_appF {w : Val} {K : EvalCtx} {p : Nat × Label}
     (hK : WeakCoh K p) : WeakCoh (Frame.appF w :: K) p := by
   intro Ki h Ko hs
   rcases splitAtId_cons_cases hs with ⟨hc, _, _⟩ | ⟨Ki', hsp⟩
@@ -267,7 +267,7 @@ theorem weakCoh_appF_inv {w : Val} {K : EvalCtx} {p : Nat × Label}
   intro Ki h Ko hs
   exact hw (Frame.appF w :: Ki) h Ko (by simp only [splitAtId, hs, Option.map_some])
 
-theorem weakCoh_handleF_fresh {g : Nat} {K : EvalCtx} {hd : Handler} {p : Nat × Label}
+private theorem weakCoh_handleF_fresh {g : Nat} {K : EvalCtx} {hd : Handler} {p : Nat × Label}
     (hlt : p.1 < g) (hK : WeakCoh K p) : WeakCoh (Frame.handleF g hd :: K) p := by
   intro Ki h Ko hs
   rcases splitAtId_cons_cases hs with ⟨hc, _, _⟩ | ⟨Ki', hsp⟩
@@ -281,7 +281,7 @@ theorem weakCoh_handleF_inv {g : Nat} {K : EvalCtx} {hd : Handler} {p : Nat × L
   exact hw (Frame.handleF g hd :: Ki) h Ko
     (by simp only [splitAtId, if_neg (by omega : ¬ g = p.1), hs, Option.map_some])
 
-theorem weakCoh_mint_self {g : Nat} {K : EvalCtx} {hd : Handler} :
+private theorem weakCoh_mint_self {g : Nat} {K : EvalCtx} {hd : Handler} :
     WeakCoh (Frame.handleF g hd :: K) (g, Handler.label hd) := by
   intro Ki h Ko hs
   simp only [splitAtId, if_pos rfl, Option.some.injEq, Prod.mk.injEq] at hs
@@ -292,7 +292,7 @@ theorem weakCoh_mint_self {g : Nat} {K : EvalCtx} {hd : Handler} :
 /-- **DISPATCH coherence** (the resume/abort arm, the team-lead-flagged risk). A successful `idDispatch`
 preserves WeakCoh of the resumed focus + reassembled stack. Resume = same-LABEL handler replacement
 (`weakCoh_replace`); abort = outer-shrink (`weakCoh_outer`). #35-free (no grades). -/
-theorem capCoh_idDispatch {g n : Nat} {ℓ : Label} {op : OpId} {v : Val} {K K' : EvalCtx} {c' : Comp}
+private theorem capCoh_idDispatch {g n : Nat} {ℓ : Label} {op : OpId} {v : Val} {K K' : EvalCtx} {c' : Comp}
     (hsf : StratFresh K) (hcb : CapsBelow g K)
     (hcv : ∀ p ∈ capsV v, WeakCoh K p) (hck : ∀ p ∈ capsK K, WeakCoh K p)
     (hd : idDispatch K n ℓ op v = some (K', c')) :
