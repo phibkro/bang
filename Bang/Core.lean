@@ -14,11 +14,14 @@
   modules. Theorem STATEMENTS live in Bang/Spec.lean.
 -/
 
-import Mathlib.Algebra.Order.Ring.Defs
-import Mathlib.Algebra.Group.Defs
-import Mathlib.Data.Finset.Basic
-import Mathlib.Data.List.Basic
-import Bang.EffectRow
+module
+
+public import Mathlib.Algebra.Order.Ring.Defs
+public import Mathlib.Algebra.Group.Defs
+public import Mathlib.Order.Lattice
+public import Mathlib.Data.Finset.Basic
+public import Mathlib.Data.List.Basic
+public import Bang.EffectRow
 
 namespace Bang
 
@@ -49,6 +52,10 @@ MULTIPLICITY GRADE = `Semiring`. Concrete instance: `Bang.QTT`
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
+-- Core is the type-level alphabet: every declaration below is consumed downstream
+-- (the build reveals 100% public surface — no file-level internal set), so the whole
+-- body opts into the module interface via `public section`.
+public section
 
 /-! ## 1. Syntax -/
 
@@ -340,5 +347,7 @@ state handler's `get`/`put`: `newTVar : A → TVarRef`, `readTVar : TVarRef → 
 heap of one element type), so `opArg`/`opRes` are total functions of the op name as before. The
 running `Source.eval` demo needs only the OPERATIONAL arms (Operational.lean); the signatures here
 gate TYPING (Syntax.lean `handleTransaction`). -/
+
+end -- public section
 
 end Bang
