@@ -26,7 +26,7 @@ variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 -- helper lemmas) has ZERO external consumers. The body opts into `public section`;
 -- the internals are individually marked `private` (search this file for `private`
 -- to read the hidden set — the deep-module win for the hub).
-public section
+@[expose] public section
 
 
 /-! ### 1.3a Substitution (de Bruijn — ADR-0020)

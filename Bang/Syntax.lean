@@ -25,7 +25,7 @@ variable [EffSig Eff Mult]
 -- Syntax is the typing-judgment layer; the build reveals 100% public surface
 -- (HasVTy/HasCTy/HasStack + every predicate is consumed downstream — even the
 -- labelOccurs workers: 30/19 refs), so the whole body opts in via `public section`.
-public section
+@[expose] public section
 
 
 /-! ### 1.5 The `q || 1` coeffect floor (`q_or_1`)

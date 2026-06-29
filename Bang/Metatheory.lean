@@ -8,13 +8,24 @@
   D substitution · E the STD block (preservation/progress/type_safety) · F abstraction-safety.
 -/
 
-import Bang.Core
-import Bang.Syntax
-import Bang.Operational
+module
+
+public import Bang.Core
+public import Bang.Syntax
+public import Bang.Operational
 
 namespace Bang
 
 open Bang.EffectRow (Label)
+
+-- Module reveal (Phase 1a): body opts into `public section`; the genuine INTERNAL
+-- set (grade-arithmetic helpers, inversion lemmas, the *_proof closure bodies whose
+-- frozen-statement wrappers live in Spec) is individually marked `private` below.
+-- @[simp]-rfl lemmas over recursive defs are kept private (Phase-0 Operational finding).
+-- `@[expose]`: this module's grade/typing defs (slotGrade/Sgrade/insG/…) are unfolded
+-- definitionally by downstream modules (Model/Compat/Spec), so bodies must cross the
+-- module boundary — the computational spine's bodies ARE its interface (Phase-1a finding).
+@[expose] public section
 
 variable {Eff  : Type} [Lattice Eff] [OrderBot Eff]
 variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
@@ -3073,4 +3084,5 @@ theorem rowinst_requires_disjoint_proof
     {q : Eff → CTy Eff Mult} {L ε : Eff} :
     WfInst q L ε → Disjoint ε L := id
 
+end -- public section
 end Bang

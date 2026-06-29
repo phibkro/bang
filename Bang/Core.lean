@@ -54,8 +54,10 @@ variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 -- Core is the type-level alphabet: every declaration below is consumed downstream
 -- (the build reveals 100% public surface — no file-level internal set), so the whole
--- body opts into the module interface via `public section`.
-public section
+-- body opts into the module interface via `public section`. `@[expose]`: Core is the
+-- computational alphabet — downstream modules unfold its defs (GradeVec arithmetic, μ-unroll,
+-- ty-subst) via rfl/simp across the module boundary, so bodies must be exposed (Phase-1a finding).
+@[expose] public section
 
 /-! ## 1. Syntax -/
 
