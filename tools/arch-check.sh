@@ -35,8 +35,9 @@ cd "$ROOT"
 # ── layer of a dotted module name ────────────────────────────────────────────
 layer_of() {
   case "$1" in
-    Bang.Frontend.*) echo Frontend; return ;;   # path-derived (already moved)
-    Bang.Backend.*)  echo Backend;  return ;;    # path-derived (for the deferred moves)
+    Bang.Frontend.*)    echo Frontend; return ;;   # path-derived (already moved)
+    Bang.Backend.*)     echo Backend;  return ;;    # path-derived (for the deferred moves)
+    Bang.Operational.*) echo Core;     return ;;    # the hub's 4 deep submodules (Subst/Dispatch/Kernel/Invariants)
   esac
   case "$1" in
     Bang.EffectRow|Bang.Core|Bang.Mult|Bang.Syntax|Bang.Operational|Bang.LR|Bang.Compat|Bang.Metatheory|Bang.Model|Bang.Freshness|Bang.CapCoh|Bang.CapEscapeWitness|Bang.LWRegress|Bang.BoccRegress|Bang.CohSubstRefute|Bang.LwscgLengthRefute|Bang.LwscgOfTypedRefute|Bang.WsCfgInterfaceProbe|Bang.ReturnEscapeReach|Bang.ReturnEscapeRefute|Bang.StateEscapeWitness)
