@@ -88,16 +88,21 @@ theorem preservation
     HasConfig cfg eo Co → Source.step cfg = some cfg' →
     ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := preservation_proof
 
--- [STD] Progress (ADR-0023, config-level). A config typed at whole-program effect
--- `⊥` (fully handled) and returner type `F q A` is either a returned config
--- `⟨[], ret v⟩` or it steps. Genuinely true for effectful programs now: a
--- `⟨K, up ℓ op v⟩` at `⊥` always has a handling frame in `K` (the label must be
--- discharged up the stack — `labelEff ℓ ≰ ⊥` — and op-partiality forces that
--- handler to catch `op`), so DISPATCH fires.
+-- [STD] Progress (ADR-0023 + ADR-0063, config-level). A config typed at whole-program
+-- effect `⊥` (fully handled) and returner type `F q A` is either a returned config
+-- `⟨[], ret v⟩`, it steps, OR it is a DEFINED capability-escape (`IsDefinedEscape`: a
+-- `perform (vcap n ℓ)` whose `idDispatch` finds no handling frame, routed to the defined
+-- `Result.escapedCap` terminal — NOT genuine stuck). ADR-0063 RECLASSIFICATION: the old
+-- two-way disjunct relocated the (false, refuted) `returnEscape` non-escape obligation; the
+-- third `IsDefinedEscape` disjunct absorbs it into a defined terminal. Stated over
+-- `HasConfig'` (typing CORE + the tautological `NonEscape'`), so the premise is discharged
+-- from typing ALONE — the old `HasConfig`'s `NonEscape` could not be (the `HasConfigTy ⟹
+-- NonEscape` diagonal is refuted). This is a FROZEN-STATEMENT CHANGE authorized by ADR-0063.
 theorem progress
     {cfg : Config} {q : Mult} {A : VTy Eff Mult} :
-    HasConfig cfg ⊥ (CTy.F q A) →
-    isReturnConfig cfg ∨ ∃ cfg', Source.step cfg = some cfg' := progress_proof
+    HasConfig' cfg ⊥ (CTy.F q A) →
+    isReturnConfig cfg ∨ (∃ cfg', Source.step cfg = some cfg') ∨ IsDefinedEscape cfg
+    := progress'_proof
 
 -- [STD] Safety = progress + preservation, fuel-lifted. Frozen statement (ADR-0023
 -- D3): `Source.eval`'s signature is unchanged (load ⟨[], c⟩, run, unload). The
@@ -110,10 +115,15 @@ theorem progress
 -- obligation the ported LR discharges, inc 5). No raw cap-invariant premise surfaces.
 -- ADR-0055: the initial config gains the fresh-id counter `0` (load into a FRESH machine); the
 -- counter is semantics-only and ignored by typing, so this is not a weakening.
+-- ADR-0063: stated over `HasConfig'` (typing CORE + tautological `NonEscape'`) — a well-typed
+-- program never runs to genuine `.stuck`; a capability escape lands in the DEFINED `.escapedCap`
+-- terminal (≠ `.stuck`), so the conclusion is unchanged. Swapping `HasConfig`→`HasConfig'` makes
+-- the premise discharge from typing alone (the `HasConfigTy ⟹ NonEscape` diagonal is refuted; the
+-- `NonEscape'` conjunct is the free tautology `nonEscape'_all`).
 theorem type_safety
     {c : Comp} {q : Mult} {A : VTy Eff Mult} :
-    HasConfig (0, [], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
-    := type_safety_proof
+    HasConfig' (0, [], c) ⊥ (CTy.F q A) → ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    := type_safety'_proof
 
 
 /-! ## 4. Grade soundness (the QTT payoff) -/
@@ -169,30 +179,45 @@ theorem effect_sound
 --   μ-return cases sit in the deferred iso-recursive-▷ subsystem (needs IxFree ∀k≤n Kripke-monotone
 --   Crel/Krel/Srel — plain-Nat phrasing lacks the both-ways monotonicity; build-confirmed). The CLOSED
 --   fragment (`lr_sound_closed`, F-typed) is DONE; the arbitrary-`C` closure is ◊4.5.
--- [KEY] Soundness: the LR implies contextual approximation. PROOF_ORDER #1. ◊4.5b (g): CLOSED via
--- `lr_sound_closed ∘ krelS_refl` over the now-TYPED `⊑` (the observation context restricted to those
--- `HasStack`-typed at the focus `(e, B)` — ADR decision (a), the standard contextual-equivalence
--- quantifier; the untyped form was a DEFECT under which `lr_sound` is FALSE). The proof: the typed `⊑`
--- hands us `hStack : HasStack C e B eo (F qo Ao)` for the observation context; `krelS_refl` turns it into
--- the IDENTITY EXTENSION `KrelS fuel B (F qo Ao) e C C`; `Crel = CrelK`'s biorthogonal closure then
--- co-converges the two configs at the witnessing fuel (the `lr_sound_closed` adequacy strip, generalized
--- from `C = []` to the typed `C`). Traces to `sorryAx` SOLELY via `krelS_refl`'s state/txn arms = the
--- `krelS_append` + ▷-metering research crux — NO introduced non-append sorry.
+-- [KEY][RISKY] Soundness: the LR implies contextual approximation. PROOF_ORDER #1. ◊4.5b (g): the typed
+-- `⊑` hands us `hStack : HasStack C e B eo (F qo Ao)`; `krelS_refl` turns it into the IDENTITY EXTENSION
+-- `KrelS fuel B (F qo Ao) e g C C`; instantiating `Crel = CrelK`'s biorthogonal closure at that self-
+-- relation gives the config co-convergence `CoApproxC_le fuel (g, C, c₁) (g, C, c₂)`.
 --   shape: benton-hur-icfp09 biorthogonal adequacy; pitts-step-indexed; ahmed-esop06 identity extension.
+--
+-- ◊inc-5 RESHAPE-↔-OBSERVATION OBSTRUCTION (build-confirmed, `scratch/AdequacySpike.lean`):
+-- the closure observes the RAW focus `(g, C, cᵢ)`, but `converges_plug_iff` — fixed (inc-5) to the
+-- machine-faithful RHS — observes the CAP-SUBSTITUTED, RESHAPED config
+-- `(handlerCount C, canonStack C cᵢ, capSubstInto C cᵢ)`, where `capSubstInto C cᵢ = applyCaps L cᵢ ≠ cᵢ`
+-- (the reshape pushes `C`'s minted `vcap`s into the focus at the handle binders). No `CrelK`
+-- instantiation can reach the substituted focus — the observed focus is STRUCTURALLY fixed to the raw
+-- `cᵢ` parameter — so the bridge is UNPROVABLE from `CrelK` alone whenever `cᵢ` uses `C`'s caps (i.e. for
+-- the effectful programs, the whole point). `AdequacySpike.adequacy_bridge_attempt2` build-confirms the
+-- bridge closes IFF `capSubstInto C cᵢ = cᵢ` — which excludes exactly the effectful case. This is the
+-- "id-agnosticism relational step" deferred at `LR.lean:converges_plug_iff` — an ARCHITECTURAL mismatch
+-- between the route-1 `CrelK` raw-focus observation and the machine's cap-substituting reshape (the
+-- labelling-vs-closure cap-rep seam, OPEN_QUESTIONS Q22 / ADR-0058 route-1). It is NOT a grind nor one of
+-- the two documented Compat boundaries; it is a definition-shape concern for the orchestrator/kernel.
+-- The `krelS_refl`-instantiated observation is kept in the proof term (so the axiom trace still records
+-- the intended `crelK_fund_up` + `krelS_splitAtId_decomp` dependencies); the SOLE residual is the
+-- reshape↔raw-focus bridge, held as a single named `sorry` pending the cap-rep reconciliation.
 theorem lr_sound
     {c₁ c₂ : Comp} {e : Eff} {B : CTy Eff Mult} :
     (∀ n, Crel n B e c₁ c₂) → ctxApprox (e := e) (B := B) c₁ c₂ := by
   intro hCrel C eo qo Ao hStack hconv
   -- typed `⊑`: `C` is `HasStack`-typed at the focus `(e, B)`, answer type `F qo Ao` (returner, ADR-0038).
-  -- Refocus both observations to the config level (`converges_plug_iff`).
   rw [Cxt.plug, converges_plug_iff] at hconv
   rw [Cxt.plug, converges_plug_iff]
   obtain ⟨fuel, w, hfuel⟩ := hconv
-  -- instantiate the biorthogonal closure `Crel = CrelK` at the witnessing fuel, observation context (C,C),
-  -- answer type `F qo Ao`. The self-relation `KrelS fuel B (F qo Ao) e C C` is `krelS_refl hStack`.
   have hC := hCrel fuel
   rw [show (Crel fuel B e c₁ c₂) = CrelK fuel B e c₁ c₂ from rfl, CrelK] at hC
-  exact hC (CTy.F qo Ao) C C (krelS_refl (n := fuel) rfl hStack) ⟨w, hfuel⟩
+  -- biorthogonal closure at the witnessing fuel, observation context `(C, C)` (`krelS_refl hStack`),
+  -- answer type `F qo Ao`, threaded counter `handlerCount C`. Yields the RAW-focus co-convergence.
+  have hobs := hC (handlerCount C) (CTy.F qo Ao) C C (krelS_refl (n := fuel) rfl hStack)
+  -- `hobs : CoApproxC_le fuel (handlerCount C, C, c₁) (handlerCount C, C, c₂)` — but the goal/`hfuel`
+  -- speak of the RESHAPED config `(handlerCount C, canonStack C cᵢ, capSubstInto C cᵢ)`. The reshape↔raw
+  -- bridge is the documented architectural obstruction above; held as the sole named residual.
+  sorry
 
 -- [KEY] Fundamental theorem (ADR-0034: env-closed Biernacki form). A well-typed OPEN computation
 -- relates to ITSELF under every pair of `Vrel`-related closing substitution environments. The bare
