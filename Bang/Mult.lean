@@ -16,11 +16,13 @@
   grade design rationale; ADR-0018 for the row-algebra context.
 -/
 
-import Mathlib.Algebra.Order.Ring.Defs
+module
+
+public import Mathlib.Algebra.Order.Ring.Defs
 
 namespace Bang
 
-inductive QTT : Type where
+public inductive QTT : Type where
   | zero | one | omega
   deriving DecidableEq, Repr, Inhabited
 
@@ -31,7 +33,7 @@ namespace QTT
       1+0 = 1,  1+1 = ω,  1+ω = ω
       ω+0 = ω,  ω+1 = ω,  ω+ω = ω
 -/
-def add : QTT → QTT → QTT
+public def add : QTT → QTT → QTT
   | .zero, m       => m
   | m, .zero       => m
   | .one, .one     => .omega
@@ -42,7 +44,7 @@ def add : QTT → QTT → QTT
       1 * x = x,   x * 1 = x
       ω * ω = ω
 -/
-def mul : QTT → QTT → QTT
+public def mul : QTT → QTT → QTT
   | .zero, _       => .zero
   | _, .zero       => .zero
   | .one, m        => m
@@ -51,14 +53,14 @@ def mul : QTT → QTT → QTT
 
 end QTT
 
-instance : Add QTT := ⟨QTT.add⟩
-instance : Mul QTT := ⟨QTT.mul⟩
-instance : Zero QTT := ⟨.zero⟩
-instance : One QTT := ⟨.one⟩
+public instance : Add QTT := ⟨QTT.add⟩
+public instance : Mul QTT := ⟨QTT.mul⟩
+public instance : Zero QTT := ⟨.zero⟩
+public instance : One QTT := ⟨.one⟩
 
 /-- QTT forms a commutative semiring. All laws by case analysis on the
 3-element enum. -/
-instance : CommSemiring QTT where
+public instance : CommSemiring QTT where
   add_assoc      := by intro a b c; cases a <;> cases b <;> cases c <;> rfl
   zero_add       := by intro a;     cases a <;> rfl
   add_zero       := by intro a;     cases a <;> rfl
