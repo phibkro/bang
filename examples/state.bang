@@ -1,0 +1,1 @@
+state 0 in (let c = {get} in (let z = put 5 in $c))
