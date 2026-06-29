@@ -28,11 +28,24 @@
   Transcribed from `scratch/DiagonalProbe.lean §B` (route β de-risked there). Standalone (not yet wired
   into `Bang.lean`/`Audit` — those depend on the still-red `Compat`/`Spec`; wire once the diagonal closes).
 -/
-import Bang.Metatheory
+module
+
+public import Bang.Metatheory
+-- Phase-1a finding: module boundaries surface implicit transitive Mathlib deps. This
+-- lemma (`Option.map₂_some_some`) was visible transitively pre-module; now it must be an
+-- explicit import to cross the public boundary.
+public import Mathlib.Data.Option.NAry
 
 namespace Bang.Model
 open Bang
 open Bang.EffectRow (Label)
+
+-- Module reveal (Phase 1a). `@[expose] public section`: Model's caps/freshness layer
+-- (FreshCfg/CapsBelow/splitAtId-adjacent, capsC/capsK) is unfolded by downstream CapCoh,
+-- so bodies cross the boundary (Phase-1a finding). NOTE the dead-verdict: the gated
+-- headlines reach Model only via Audit→CalcVM→CapCoh, and CapCoh consumes the freshness
+-- layer — NOT the sorry-carrying NonEscape diagonal (which stays internal to Model).
+@[expose] public section
 
 variable {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
   -- ADR-0060 ratified grade-rig commitment (only the dormant-arm discharge consumes these; QTT/ℕ qualify,
@@ -4320,4 +4333,5 @@ theorem diagonal' {c : Comp} {q : Mult} {A : VTy Eff Mult}
     NonEscape' (0, [], c) :=
   nonEscape'_all _
 
+end -- public section
 end Bang.Model
