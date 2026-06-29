@@ -76,3 +76,10 @@ scratch/U5bHandlerSpike.lean
 # CrelK raw-focus vs reshaped converges_plug_iff does NOT bridge, build-confirmed). On
 # inc5-spec-repoint. Recover: `git show 7574a5b:scratch/AdequacySpike.lean`.
 scratch/AdequacySpike.lean
+# ── H. inc-6/restructure: modules-everywhere artifacts (restructure-mod-phase0) ──────
+# Bang/Surface/PropTest.lean (extracted Plausible property-tests, TEMPORARY non-module) +
+# tools/check-all-modules.sh (the modules-everywhere fitness fn). Live on restructure-mod-phase0
+# @ 9097c96, not yet merged to typed-static-r1; CONTEXT forward-references them. REMOVE once the
+# restructure merges. Recover: `git show 9097c96:<path>`.
+Bang/Surface/PropTest.lean
+tools/check-all-modules.sh
