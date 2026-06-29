@@ -22,13 +22,23 @@
   FINDING in `paths/PATH-tracer-bullet.md`.
 -/
 
-import Bang.Operational
-import Plausible
+module
+
+-- Surface's remaining #guards run `Source.eval` (compiled Operational) at the META phase
+-- → meta import. (The Plausible `#test` STACK-LAWS block — meta generators that build
+-- runtime values — could NOT live in a module; it was extracted to the non-module
+-- `Bang/Surface/PropTest.lean`, the documented tested-superset seam. Phase-1a finding.)
+meta import Bang.Operational
+public import Bang.Operational
 
 namespace Bang.Surface
 
 open Bang
 open Bang.EffectRow (Label)
+
+-- Module reveal (Phase 1a). `@[expose] public section`: Audit gates cell_reflects_latest;
+-- Surface.Trait + the extracted PropTest consume push/empty/pop and the reactive/trait defs.
+@[expose] public section
 
 /-- The single concrete label the tracer bullet uses for `raise`/`handle`.
 `Label := Nat` (EffectRow.lean), so `0` is the simplest concrete value. The
@@ -626,100 +636,6 @@ def stackTop2Comp : Comp := pop (push 9 (push 7 empty))
 -- `pop empty` ⟶ `done (inl unit)` = none — the empty-stack branch fires.
 #guard (match Source.eval 50 (pop empty) with | .done (.inl .vunit) => true | _ => false)
 
-/-! ### Stage 1d — the STACK LAWS, property-tested via `plausible` (rung 2 Q19).
-
-THE moat demo, and the first use of the ADR-0026 *tested* rung (ADR-0028 adopts
-`plausible` — Lean's QuickCheck — at rung 2). The push/pop laws are stated OVER THE
-EVAL SEMANTICS (run through `Source.eval`) for arbitrary `Int x` and arbitrary
-bounded-depth `Stack Int` value `s`, then `#test`-ed: `#test` (= `#eval
-Testable.check`) SAMPLES the generators and THROWS at elaboration on a counter-example,
-so a false law FAILS THE BUILD. It admits no `sorry` (unlike `by plausible`) and is not
-a banned tactic — it is the compiled-evaluation idiom (same family as `#guard`), which
-is exactly the point of the tested rung: a real sampling test where a proof is not (yet)
-spent.
-
-`StackVal` wraps a `Val` so plausible's instance resolution (`SampleableExt` ←
-`Repr`/`Shrinkable`/`Arbitrary`) targets STACK values specifically, not arbitrary `Val`s.
-The generator builds `push`/`empty` to a depth bounded by the `Gen` size parameter, so
-every sample is a well-formed `Stack Int`. -/
-
-/-- A generated `Stack Int` value (a `Val` known to be `push`/`empty`-shaped). The wrapper
-exists so `Arbitrary`/`Repr`/`Shrinkable` resolve to the stack generator below, not to a
-generic `Val` instance (there is none). -/
-structure StackVal where
-  val : Val
-
-/-- Stack depth (number of pushes), for a readable `Repr` of a counter-example. -/
-def stackDepth : Val → Nat
-  | .fold (.inr (.pair _ rest)) => stackDepth rest + 1
-  | _                            => 0
-
-instance : Repr StackVal := ⟨fun s _ => s!"StackVal(depth={stackDepth s.val})"⟩
-
-open Plausible
-
-/-- Build a stack of EXACTLY `d` pushes (`vint`s drawn from the `Gen` size) on top of
-`empty`. Structural recursion on `d` — total, no fuel needed. -/
-def genStackOfDepth : Nat → Gen Val
-  | 0     => pure empty
-  | d + 1 => do
-      let n : Int ← Arbitrary.arbitrary
-      let rest ← genStackOfDepth d
-      pure (push n rest)
-
-/-- Arbitrary `Stack Int`: pick a depth in `0 … size` (bounded by the `Gen` size
-parameter), then fill it. Bounded depth keeps samples finite and `Source.eval`'s fuel
-sufficient. -/
-instance : Arbitrary StackVal where
-  arbitrary := do
-    let d ← Gen.choose Nat 0 (← Gen.getSize) (Nat.zero_le _)
-    return ⟨← genStackOfDepth d⟩
-
-/-- Shrink toward the empty stack by dropping the top element (one structural step). -/
-instance : Shrinkable StackVal where
-  shrink
-    | ⟨.fold (.inr (.pair _ rest))⟩ => [⟨rest⟩]
-    | _                              => []
-
-/-- Fuel for `Source.eval` in the laws: pops + pushes are O(depth); the size parameter
-caps depth at `plausible`'s `maxSize` (default 100), so this is comfortably above it. -/
-def lawFuel : Nat := 400
-
-/-- The popped result of `pop s`, read back from `Source.eval` (the eval semantics). -/
-def evalPop (s : Val) : Result Val := Source.eval lawFuel (pop s)
-
-/-- **Law 1 — push/pop round-trip:** `pop (push x s) = some (x, s)`. Over eval: popping
-a freshly-pushed stack yields `done (inr (pair (vint x) s))` — the pushed element AND the
-original stack, recovered. -/
-def roundTrip (x : Int) (s : StackVal) : Bool :=
-  match evalPop (push x s.val) with
-  | .done (.inr (.pair (.vint top) rest)) => top == x && (rest == s.val)
-  | _                                     => false
-
-/-- **Law 2 — pop empty = none:** `pop empty` yields `done (inl unit)`. (Constant, but
-stated as a property so it sits in the same tested suite.) -/
-def popEmptyNone : Bool :=
-  match evalPop empty with
-  | .done (.inl .vunit) => true
-  | _                   => false
-
-/-- **Law 3 — LIFO ordering:** `pop (push x (push y s))` exposes `x` first; popping the
-remaining stack then exposes `y`. The most recent push is the first pop. -/
-def lifo (x y : Int) (s : StackVal) : Bool :=
-  match evalPop (push x (push y s.val)) with
-  | .done (.inr (.pair (.vint top1) rest)) =>
-      top1 == x &&
-      (match evalPop rest with
-       | .done (.inr (.pair (.vint top2) rest2)) => top2 == y && (rest2 == s.val)
-       | _                                       => false)
-  | _ => false
-
--- The properties. `#test` SAMPLES and throws at elaboration on a counter-example
--- (build-fail); on success it logs "Unable to find a counter-example". No `sorry`.
-#test ∀ (x : Int) (s : StackVal), roundTrip x s = true
-#test popEmptyNone = true
-#test ∀ (x y : Int) (s : StackVal), lifo x y s = true
-
 /-! ### Stage 1b — the lowering of the hand-written surface ASTs matches Stage 1.
 
 This pins the §2 lowering (name→de-Bruijn pass) independently of the parser. -/
@@ -793,4 +709,5 @@ def parsesTo (src : String) (e : Surf) : Bool :=
   (.atomS (.lett "r" (.newS (.lit 100))
     (.lett "z" (.writeS (.var "r") (.lit 70)) (.readS (.var "r")))))
 
+end -- public section
 end Bang.Surface

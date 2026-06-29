@@ -11,9 +11,14 @@
   line below. `tools/check-audit-sync.sh` (run by `just fitness`) fails CI if a
   spine theorem is missing here, so a new headline theorem can't ship ungated.
 -/
-import Bang.Spec
-import Bang.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
-import Bang.CalcVM    -- ◊3: the calculated-machine compile_correct (verification spine)
+module
+
+-- Audit is pure `#print axioms` (no #guard/#eval executes code), so it needs no `meta
+-- import` — `#print axioms` reads the environment's axiom metadata at elaboration. The
+-- gate (`lake env lean Bang/Audit.lean`) is verified to still emit the census as a module.
+public import Bang.Spec
+public import Bang.Surface   -- rung 4: the reactive-cell liveness law (additive surface layer)
+public import Bang.CalcVM    -- ◊3: the calculated-machine compile_correct (verification spine)
 open Bang
 
 #print axioms lr_sound
