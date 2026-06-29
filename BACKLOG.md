@@ -11,7 +11,7 @@
 > `ROADMAP.md` owns the *◊ strategic map* · `OPEN_QUESTIONS.md` owns *deferred design
 > questions*. An item links those; it does not restate them.
 >
-> **Conventions:** IDs continue the historical `#N` sequence (next new = **#113**). `type`
+> **Conventions:** IDs continue the historical `#N` sequence (next new = **#117**). `type`
 > ∈ {proof, cli, test, tooling, infra, surface, docs}. `status` ∈ {in-flight, queued,
 > design-first, deferred, blocked, ready}. **No secrets / tokens / PII in this file** (repo
 > is private + history email-scrubbed, but keep it leak-safe regardless).
@@ -34,8 +34,6 @@
 | 18 | make raw source `vcap` untypeable (drop the `VcapFree` precondition) | proof | ready | soundness hardening; the post-v1 scoped-cap-types move |
 | 73 | OPEN_QUESTIONS.md duplicate Q22 numbering (orElse + labelling-vs-closure) | docs | ready | small fix |
 | 4 | add behavioral guards to the Audit gate | tooling | ready | re-confirm relevance vs the current gate |
-| 113 | a shared `genblock` helper (new `tools/` module) — extract the GEN-marker splice/`--check` boilerplate copy-pasted across 5 generators (adr-index, gate-index, import-graph, proof-state, refs) | tooling | ready | top /simplify finding (3 agents); one-construct-per-problem; build-free, test each generator |
-| 114 | `audit.sh` → call `just fitness` (SSoT) — it hand-duplicates a STALE subset (4 of 13 legs) + runs `lake build` twice per `.lean` commit | tooling | ready | /simplify; closes a latent gate-divergence hole |
 | 115 | **Bang/ dead-code sweep (~430 lines)** — zero-ref decls: type_safety_proof, 8 orphaned route-B sim lemmas (~160), private grade/coherence helpers, LR/BinaryLR dead lemmas | proof | ready | /simplify dead-code agent; **build + `#print axioms` census-gated per deletion** (proof-IC unit). ⚠ CONFLICT to resolve first: is `progress_proof`/`run_safe` dead (transitively) or live (`progress'_proof` reuses it)? — grep+build decides |
 | 116 | ADR-0061 duplicate — two DISTINCT decisions share the number (prefix-dedup hides it); renumber the later → 0064 + update refs, THEN add an ID-uniqueness leg to check-adr-links.sh | docs | ready | /simplify altitude; the lint is currently blind to this whole class |
 
@@ -47,7 +45,7 @@
 
 ## /simplify follow-ups (2026-06-29 8-agent pass — minor + discussion)
 
-APPLIED this pass: burndown recursive glob · proof-state `--check` sha short-circuit (gate 2.9s→0.93s) · dead `check-bang-root` recipe removed (`e337a68`). The table above carries the high-value items (#113–116). The rest:
+APPLIED: burndown recursive glob · proof-state `--check` sha short-circuit (gate 2.9s→0.93s) · dead `check-bang-root` recipe (`e337a68`) · **#113 genblock helper** (`69b4062`) · **#114 audit.sh→fitness SSoT + no double-build** (`cbe3abd`). Still open in the table: #115 (Bang/ dead-code), #116 (ADR-0061 dup). The rest:
 - **Minor reuse / DRY (build-free, low value):** a shared `tools/` bash lib (set-equality + a `status()` PASS/FAIL helper — 3 output vocabularies today) · one canonical "enumerate Bang/*.lean" helper (5 spellings) · unify the tier→layer source (`gen-import-graph.py` hardcoded `TIER` dict vs `arch-check.sh` path-derived) · two Reference-index tables (CLAUDE.md ↔ ONBOARDING.md) drift-watch · `Bang/Examples.lean`↔`Surface.lean` duplicate `#guard`s — pick one home (Bang/-touching, do with #115).
 - **Design-discussion → ADR (do NOT auto-apply):** the STATE/TXN parallel lemma families in `AbstractMachine.lean` (~40 mirror lemmas — `SStore`/`THeap` as one indexed-store abstraction) is the one genuine "should-have-generalized" but it's load-bearing on the ADR-0031 D3/D4 bridges → ADR-scale eval, not cleanup · record the in-repo-tracking + fitness-tooling-direction decisions as ADRs (currently prose-only; #98 would relitigate the latter with no recorded rationale).
 - **Trivial Bang/ tidies (with #115):** delete the vestigial `set_option maxHeartbeats 1000000 in` on the `sorry`-bodied `crelK_fund_up` (no-op) · `audit.sh:24-28` disabled axiom-check stub narrated as a comment → delete (the real gate is Audit.lean).
