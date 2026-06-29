@@ -36,7 +36,11 @@
   assumption the rung programs satisfy; the typed form will carry a quoted-string reader.
 -/
 
-import Bang.Operational
+module
+
+-- `#guard roundtrips …` runs `Source.eval` (compiled Operational) at the META phase → meta import.
+meta import Bang.Operational
+public import Bang.Operational
 
 namespace Bang.Frontend
 
