@@ -189,20 +189,46 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .lett x e b => do return .letC (← lowerC env e) (← lowerC (x :: env) b)
   | .lam x b    => do return .lam (← lowerC (x :: env) b)
   | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
-  -- `raise`/`get`/`put`/stm ops resolve the enclosing handler's cap binder by sentinel `lookup`,
-  -- then `perform` on that `vvar` (ADR-0054: cap is a value, label recovered from its type).
-  | .raise e    => do return .perform (.vvar (← lookup env capExn)) "raise" (← lowerV env e)
+  -- `raise`/`put`/stm ops resolve the enclosing handler's cap binder by sentinel `lookup`, then
+  -- `perform` on that `vvar` (ADR-0054). The ARGUMENT is value-position, but issue #26 A-NORMALIZES it:
+  -- an atom passes through directly (historical shape — Stage-1b `lower`-examples preserved); a
+  -- COMPUTATION (e.g. `get + 1`) is `letC`-bound, performed on `vvar 0`, with the cap index shifted by
+  -- the new binder. So `put (get + 1)`, `raise (x * 6)`, `write a (m - 30)` now work.
+  | .raise e    => do
+      let c ← lookup env capExn
+      match lowerV env e with
+      | .ok v    => return .perform (.vvar c) "raise" v
+      | .error _ => return .letC (← lowerC env e) (.perform (.vvar (c+1)) "raise" (.vvar 0))
   -- handlers BIND the cap at index 0: push the sentinel before lowering the body.
   | .handle e   => do return .handle (.throws exnLabel) (← lowerC (capExn :: env) e)
   | .getS       => do return .perform (.vvar (← lookup env capState)) "get" .vunit
-  | .putS e     => do return .perform (.vvar (← lookup env capState)) "put" (← lowerV env e)
+  | .putS e     => do
+      let c ← lookup env capState
+      match lowerV env e with
+      | .ok v    => return .perform (.vvar c) "put" v
+      | .error _ => return .letC (← lowerC env e) (.perform (.vvar (c+1)) "put" (.vvar 0))
   -- the initial state `e0` is evaluated OUTSIDE the handler scope (it is the handler's payload, not
   -- under the cap binder), so it lowers in `env`, not `capState :: env`.
   | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC (capState :: env) e)
   | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC (capStm :: env) e)
-  | .newS e     => do return .perform (.vvar (← lookup env capStm)) "newTVar" (← lowerV env e)
-  | .readS e    => do return .perform (.vvar (← lookup env capStm)) "readTVar" (← lowerV env e)
-  | .writeS r w => do return .perform (.vvar (← lookup env capStm)) "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
+  | .newS e     => do
+      let c ← lookup env capStm
+      match lowerV env e with
+      | .ok v    => return .perform (.vvar c) "newTVar" v
+      | .error _ => return .letC (← lowerC env e) (.perform (.vvar (c+1)) "newTVar" (.vvar 0))
+  | .readS e    => do
+      let c ← lookup env capStm
+      match lowerV env e with
+      | .ok v    => return .perform (.vvar c) "readTVar" v
+      | .error _ => return .letC (← lowerC env e) (.perform (.vvar (c+1)) "readTVar" (.vvar 0))
+  -- write: the TVar REF stays value-position (refs are atoms); only the written VALUE is A-normalized,
+  -- shifting the ref by the new binder when it is.
+  | .writeS r w => do
+      let c ← lookup env capStm
+      let rv ← lowerV env r
+      match lowerV env w with
+      | .ok wv   => return .perform (.vvar c) "writeTVar" (.pair rv wv)
+      | .error _ => return .letC (← lowerC env w) (.perform (.vvar (c+1)) "writeTVar" (.pair (Val.shift rv) (.vvar 0)))
   -- ADTs (issue #1). Intros in COMPUTATION position lower to `ret <val>` (atom-in-comp = ret);
   -- eliminators thread NAMED binders into the kernel's de-Bruijn `case`/`split`.
   | .inlS e     => do return .ret (.inl (← lowerV env e))

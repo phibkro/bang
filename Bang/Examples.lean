@@ -128,6 +128,27 @@ let-bound first — `put (get + 1)` is a value-position arg; see GitHub issue fo
 -- reads 9 and squares it. ⟶ 81. Derived reactivity falls straight out of thunks + the δ-rule.
 #guard runYieldsInt 80 "state 4 in (let c = {get * get} in (let z = put 9 in $c))" 81
 
+/-! ### A17–A19: arithmetic AS an effect-op argument (issue #26 part-1 — A-normalized lowering).
+
+`put`/`raise`/`write` take value-position arguments, but the lowering now A-normalizes a *computation*
+argument (let-bind it, perform on the bound value). So an effectful program reads naturally — no manual
+`let`-pyramid to thread the arithmetic out. (Part-2, `read a + 1` directly, still needs the parser
+precedence split — see the issue.) -/
+
+-- A17. THE INCREMENTING COUNTER — `put (get + 1)` writes a COMPUTED value back into the cell. The
+-- canonical mutable counter, finally one line: read, add one, store. `state N in (put (get+1); get)` ⟶ N+1.
+#guard runYieldsInt 80 "state 0 in (let z = put (get + 1) in get)" 1
+#guard runYieldsInt 80 "state 41 in (let z = put (get + 1) in get)" 42
+
+-- A18. GUARDED TRANSFER — overdraft check + a computed withdrawal `put (bal - 30)` in the else-branch,
+-- no let-binding needed for the arithmetic. balance 100 ≥ 30 ⟹ withdraw ⟹ 70.
+#guard runYieldsInt 80
+  "state 100 in (let bal = get in (if bal < 30 then bal else (let z = put (bal - 30) in get)))" 70
+
+-- A19. COMPUTED EXCEPTION PAYLOAD — `raise (x * 6)` performs the throw with a *computed* error value;
+-- the deep `handle` catches it. x = 7 < 10 ⟹ raise 42 ⟹ caught ⟹ 42.
+#guard runYieldsInt 80 "handle (let x = 7 in (if x < 10 then raise (x * 6) else x))" 42
+
 /-! ## B. Raw-`Comp` programs (structural `match` on `Result`)
 
 Sum/product (§A12/A13, issue #1) and arithmetic (issue #4 — now infix from source, see
