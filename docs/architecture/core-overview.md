@@ -41,8 +41,8 @@ graph TD
     Core_Semantics_Subst["Core.Semantics.Subst<br/>217L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>2954L · fan-in 0"]
     Core_Typing["Core.Typing<br/>404L · fan-in 0"]
-    Examples["Examples<br/>201L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>957L · fan-in 1"]
+    Examples["Examples<br/>216L · fan-in 0"]
+    Frontend_Surface["Frontend.Surface<br/>994L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>2160L · fan-in 0"]
@@ -66,7 +66,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 957 | 1 |
+| `Frontend.Surface` | ? | 994 | 1 |
 | `Audit` | Apex | 54 | 0 |
 | `Backend.AbstractMachine` | ? | 4914 | 0 |
 | `Backend.Wasm` | ? | 2165 | 0 |
@@ -83,7 +83,7 @@ graph TD
 | `Core.Soundness` | ? | 2954 | 0 |
 | `Core.Typing` | ? | 404 | 0 |
 | `Distribution` | Apex | 65 | 0 |
-| `Examples` | ? | 201 | 0 |
+| `Examples` | ? | 216 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |

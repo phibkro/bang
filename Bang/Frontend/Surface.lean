@@ -77,8 +77,14 @@ Grammar (the subset this tracer bullet covers):
              | 'write' atom atom                   -- write a TVar → up stmLabel "writeTVar" (pair ref val)
              | 'match' atom '{' arm arm '}'        -- sum elim → case (arms order-independent, opt commas)
              | 'let' '(' ident ',' ident ')' '=' expr 'in' expr  -- product elim → split
-             | app
+             | 'if' expr 'then' expr 'else' expr   -- conditional → case on Bool=1+1 (issue #4)
+             | 'do' '{' stmt (';' stmt)* '}'       -- sequential block → nested letC (issue #27)
+             | compare                             -- infix chain: compare → add/sub → mul/div → app (#4)
+    compare::= addsub (('<'|'==') addsub)*          -- comparisons (loosest infix; return Bool)
+    addsub ::= muldiv (('+'|'-') muldiv)*           -- additive
+    muldiv ::= app    (('*'|'/') app)*              -- multiplicative (tightest infix)
     app    ::= atom atom*                           -- juxtaposition → app (left assoc)
+    stmt   ::= ident '<-' expr | expr               -- do-statement: bind, or sequenced/result expr
     arm    ::= ('Left'|'Right') '(' ident ')' '->' expr  -- a match arm (binds the payload at idx 0)
     atom   ::= int                                  -- literal → ret (vint n)
              | ident                                -- variable → ret (vvar i)
@@ -286,11 +292,11 @@ Tokenizer: whitespace-separated, with the single-char punctuators
 `( ) { } $ !` split off so they need not be space-delimited; `=` and `=>` and
 keywords are ordinary tokens. -/
 
-/-- Split a source string into tokens. Punctuators `(){}$!,` are always their
+/-- Split a source string into tokens. Punctuators `(){}$!,;` are always their
 own token; everything else is a maximal run of non-space, non-punctuator chars
-(so `->` / `=>` / `=` and keywords are ordinary space-delimited tokens). -/
+(so `->` / `<-` / `=>` / `=` and keywords are ordinary space-delimited tokens). -/
 def tokenize (s : String) : List String :=
-  let punct := "(){}$!,".toList
+  let punct := "(){}$!,;".toList
   let rec go (cs : List Char) (cur : List Char) (acc : List String) : List String :=
     let flush (acc : List String) : List String :=
       if cur.isEmpty then acc else acc ++ [String.ofList cur.reverse]
@@ -324,6 +330,7 @@ def pIdent : P String
           || t = "state" || t = "get" || t = "put"
           || t = "atomically" || t = "new" || t = "read" || t = "write"
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
+          || t = "do" || t = "<-" || t = ";"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" then
         .error s!"expected an identifier, got keyword '{t}'"
@@ -414,6 +421,9 @@ def pExpr : Nat → P Surf
       let (_, ts) ← expect "else" ts
       let (els, ts) ← pExpr f ts
       .ok (.ifS cnd thn els, ts)
+  | f + 1, "do" :: ts => do             -- do { stmt ; … ; result } → nested letC (issue #27)
+      let (_, ts) ← expect "{" ts
+      pDo f ts
   | f + 1, ts => pCompare f ts          -- ▼ infix precedence chain (issue #4)
 
 /-- Parse an application chain: one or more atoms, left-associated. -/
@@ -432,7 +442,7 @@ def pAppLoop : Nat → Surf → P Surf
     | t :: _ =>
       if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" || t = "," || t = "->"
          || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
-         || t = "then" || t = "else" then
+         || t = "then" || t = "else" || t = ";" || t = "<-" then
         .ok (acc, ts)
       else
         match pAtom f ts with
@@ -473,6 +483,29 @@ def pMulDivLoop : Nat → Surf → P Surf
     | "*" :: r => do let (rhs, ts) ← pApp f r; pMulDivLoop f (.binopS .mul acc rhs) ts
     | "/" :: r => do let (rhs, ts) ← pApp f r; pMulDivLoop f (.binopS .div acc rhs) ts
     | _ => .ok (acc, ts)
+
+/-- Parse a `do`-block body (after `do {`), up to and including `}`. Each statement is `x <- e` (a
+binding) or a bare `e` (sequenced, value discarded); the LAST statement is the block's result. Desugars
+straight to nested `letC` — `x <- e ; rest` ↦ `let x = e in rest`, `e ; rest` ↦ `let #do = e in rest`,
+final `e` ↦ `e` (issue #27, surface sugar — no AST change). The `#do` discard name is unbindable by the
+grammar (it starts with `#`), so the sequenced value is held-then-shifted but never referenced. -/
+def pDo : Nat → P Surf
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts =>
+    match ts with
+    | "}" :: _ => .error "empty do block"
+    | x :: "<-" :: rest => do            -- binding statement: x <- e
+        let (e, ts) ← pExpr f rest
+        match ts with
+        | ";" :: ts => do let (body, ts) ← pDo f ts; .ok (.lett x e body, ts)
+        | "}" :: _  => .error "a do block must END in an expression, not a binding (x <- e)"
+        | _         => .error "expected ';' or '}' after a do-block statement"
+    | _ => do                            -- bare statement, or the final result
+        let (e, ts) ← pExpr f ts
+        match ts with
+        | ";" :: ts => do let (body, ts) ← pDo f ts; .ok (.lett "#do" e body, ts)
+        | "}" :: ts => .ok (e, ts)       -- the final statement is the block's value
+        | _         => .error "expected ';' or '}' after a do-block statement"
 
 /-- Parse one match arm `('Left'|'Right') '(' ident ')' '->' expr`. Returns the
 constructor name, the bound variable, and the arm body (used by `match` in `pExpr`). -/
@@ -529,9 +562,9 @@ def pAtom : Nat → P Surf
       if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
-              || t = "atomically" || t = "new" || t = "read" || t = "write"
+              || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do" || t = "<-"
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
-              || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ")" || t = "}" then
+              || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" then
         .error s!"unexpected '{t}' where an atom was expected"
       else .ok (.var t, ts)
   | _ + 1, [] => .error "unexpected end of input where an atom was expected"
@@ -951,6 +984,10 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are sp
 -- parse-shape checks: precedence is structural, not eval-coincidence.
 #guard parsesTo "a + b * c" (.binopS .add (.var "a") (.binopS .mul (.var "b") (.var "c")))
 #guard parsesTo "if c then t else e" (.ifS (.var "c") (.var "t") (.var "e"))
+
+-- do-notation (issue #27): `x <- e` → `lett x`, bare `e` → `lett "#do"`, last stmt = result.
+#guard runYieldsInt 30 "do { x <- 3; y <- 4; x + y }" 7
+#guard parsesTo "do { x <- a; b; c }" (.lett "x" (.var "a") (.lett "#do" (.var "b") (.var "c")))
 
 end -- public section
 end Bang.Surface
