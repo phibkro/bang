@@ -173,23 +173,19 @@ the annotation-free lowered `Comp`) could not lift. Mirrors `lowerC`/`lowerV`: `
 read a `Surf` as a computation, `synthSV`/`checkSV` as a value. Pure fragment (effect ops are ④). -/
 open Bang.Surface
 
-abbrev NCtx := List (String × VT)   -- named typing context, innermost first
-
-def nlookup : NCtx → String → Option VT
-  | [],          _ => none
-  | (y, A) :: r, x => if x = y then some A else nlookup r x
+abbrev NCtx := List (String × VT)   -- named typing context, innermost first (= `List.lookup` keys)
 
 /-- Interpret a surface `Ty` into BOTH its value reading (`.1`) and computation reading (`.2`) in one
 structural pass — `tArr`/`tThunk` are computations (`arr`/the wrapped `F`); a non-arrow as a value is
-itself, as a computation a returner `F`. One recursion (no mutual block, no termination obligation). -/
+itself, as a computation a returner `F` of that value type. One recursion (no mutual block, no
+termination obligation). -/
 def tyBoth : Ty → VT × CT
-  | .tInt      => (.int,  .F .omega .int)
-  | .tUnit     => (.unit, .F .omega .unit)
-  | .tSum  a b => let A := (tyBoth a).1; let B := (tyBoth b).1; (.sum A B,  .F .omega (.sum A B))
-  | .tProd a b => let A := (tyBoth a).1; let B := (tyBoth b).1; (.prod A B, .F .omega (.prod A B))
-  | .tThunk t  => let C := (tyBoth t).2; (.U ⊥ C, .F .omega (.U ⊥ C))
-  | .tArr  a b => let A := (tyBoth a).1; let C := (tyBoth b).2;
-                  let f : CT := .arr .omega A C; (.U ⊥ f, f)   -- a function VALUE is a thunked arrow
+  | .tInt      => let V : VT := .int;              (V, .F .omega V)
+  | .tUnit     => let V : VT := .unit;             (V, .F .omega V)
+  | .tSum  a b => let V : VT := .sum  (tyBoth a).1 (tyBoth b).1; (V, .F .omega V)
+  | .tProd a b => let V : VT := .prod (tyBoth a).1 (tyBoth b).1; (V, .F .omega V)
+  | .tThunk t  => let V : VT := .U ⊥ (tyBoth t).2; (V, .F .omega V)
+  | .tArr  a b => let f : CT := .arr .omega (tyBoth a).1 (tyBoth b).2; (.U ⊥ f, f)  -- fn VALUE = thunked arrow
 @[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
 @[inline] def ctyOf (t : Ty) : CT := (tyBoth t).2
 
@@ -206,7 +202,7 @@ mutual
 def synthSV (Γ : NCtx) (e : Surf) : Except String VT :=
   match e with
   | .lit _     => .ok .int
-  | .var x     => match nlookup Γ x with | some A => .ok A | none => .error s!"unbound variable {x}"
+  | .var x     => match Γ.lookup x with | some A => .ok A | none => .error s!"unbound variable {x}"
   | .thunk b   => do let (B, φ) ← synthSC Γ b; return .U φ B
   | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
   | .annotS b t => do let A := vtyOf t; let _ ← checkSV Γ b A; return A
@@ -222,8 +218,9 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Except String Unit :=
   | .inrS b,    .sum _ B  => checkSV Γ b B
   | .pairS a b, .prod A B => do let _ ← checkSV Γ a A; checkSV Γ b B
   | .annotS b t, expected => do
-      let _ ← checkSV Γ b (vtyOf t)
-      if vtyOf t = expected then .ok () else .error "ascription does not match expected type"
+      let A := vtyOf t
+      let _ ← checkSV Γ b A
+      if A = expected then .ok () else .error "ascription does not match expected type"
   | e, expected => do
       let A ← synthSV Γ e
       if A = expected then .ok () else .error "value type mismatch"
@@ -233,7 +230,7 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Except String Unit :=
 def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
   match e with
   | .lit _   => .ok (.F .omega .int, ⊥)
-  | .var x   => match nlookup Γ x with
+  | .var x   => match Γ.lookup x with
                 | some A => .ok (.F .omega A, ⊥)
                 | none   => .error s!"unbound variable {x}"
   | .thunk b => do let (B, φ) ← synthSC Γ b; return (.F .omega (.U φ B), ⊥)
@@ -278,8 +275,9 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Except String EffRow :=
   | .inrS b,    .F _ (.sum A B)  => do let _ ← checkSV Γ (.inrS b) (.sum A B); return ⊥
   | .pairS a b, .F _ (.prod A B) => do let _ ← checkSV Γ (.pairS a b) (.prod A B); return ⊥
   | .annotS b t, expected => do
-      let φ ← checkSC Γ b (ctyOf t)
-      if ctyOf t = expected then .ok φ else .error "ascription does not match expected type"
+      let C := ctyOf t
+      let φ ← checkSC Γ b C
+      if C = expected then .ok φ else .error "ascription does not match expected type"
   | e, expected => do
       let (B, φ) ← synthSC Γ e
       if B = expected then .ok φ else .error "computation type mismatch"
