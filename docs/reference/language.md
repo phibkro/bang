@@ -46,6 +46,62 @@ nothing here can drift from what the language actually does.
 | `Thunk T` | (a suspended computation value, the `U` former) |
 | `T ! {throws, …}` | effect-row annotation (names; checker maps to labels) |
 
+## Effect channels
+
+The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;
+an undischarged label surfaces in the inferred effect (see Examples → type display).
+
+| Label | Value | Channel |
+|---|---|---|
+| `exnLabel` | 0 | The single concrete label the tracer bullet uses for `raise`/`handle`. |
+| `stateLabel` | 1 | The state channel (rung 1, ADR-0025) — a DISTINCT label from `exnLabel`, so a state cell and an exception channel coexist without colliding. |
+| `stmLabel` | 2 | The STM channel (rung 3, ADR-0030) — a DISTINCT label from `exnLabel`/`stateLabel`, so a transactional heap, a state cell, and an exception channel coexist. |
+
+## Kernel primitives (the IR the surface lowers to)
+
+The graded-CBPV kernel — `Val` (values), `Comp` (computations), `Handler` (effect handlers).
+The surface is sugar over these; `Source.eval` (Bang/Core/IR.lean) is the reference semantics.
+
+### Values (`Val`)
+
+| Primitive | Signature | Notes |
+|---|---|---|
+| `vunit` | `Val` |  |
+| `vint` | `Int → Val` |  |
+| `vvar` | `Nat → Val` | de Bruijn index (0 = nearest binder) |
+| `vcap` | `Nat → Label → Val` |  |
+| `vthunk` | `Comp → Val` |  |
+| `inl` | `Val → Val` | sum intro (left)  : A → A + B |
+| `inr` | `Val → Val` | sum intro (right) : B → A + B |
+| `pair` | `Val → Val → Val` | product intro     : A → B → A × B |
+| `fold` | `Val → Val` | μ intro (= a constructor): T[μX.T/X] → μX.T |
+
+### Computations (`Comp`)
+
+| Primitive | Signature | Notes |
+|---|---|---|
+| `ret` | `Val → Comp` |  |
+| `letC` | `Comp → Comp → Comp` | letC M N: N binds index 0 (= M's value) |
+| `force` | `Val → Comp` |  |
+| `lam` | `Comp → Comp` | lam M: M binds index 0 (= the argument) |
+| `app` | `Comp → Val → Comp` |  |
+| `perform` | `Val → OpId → Val → Comp` |  |
+| `handle` | `Handler → Comp → Comp` |  |
+| `case` | `Val → Comp → Comp → Comp` | sum elim: case v N₁ N₂; each Nᵢ binds index 0 |
+| `split` | `Val → Comp → Comp` | product elim: split v N; N binds idx 1 (fst), idx 0 (snd) |
+| `unfold` | `Val → Comp` | μ elim (= a match): unfold (fold v) ↦ ret v |
+| `binop` | `BinOp → Val → Val → Comp` |  |
+| `oom` | `Comp` |  |
+| `wrong` | `String → Comp` |  |
+
+### Handlers (`Handler`)
+
+| Primitive | Signature | Notes |
+|---|---|---|
+| `state` | `Label → Val → Handler` |  |
+| `throws` | `Label → Handler` |  |
+| `transaction` | `Label → List Val → Handler` |  |
+
 ## Examples
 
 Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is the inferred type.

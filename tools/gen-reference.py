@@ -17,10 +17,44 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SURFACE = ROOT / "Bang/Frontend/Surface.lean"
+IR = ROOT / "Bang/Core/IR.lean"
 SOURCES = [ROOT / "Bang/Examples.lean", ROOT / "Bang/Frontend/TypeCheck.lean"]
 OUT = ROOT / "docs/reference/language.md"
 
 STR = r'"((?:[^"\\]|\\.)*)"'  # a Lean string literal (with escapes)
+
+
+def first_sentence(s):
+    s = re.sub(r"\s+", " ", s).strip()
+    m = re.match(r"(.*?\.)(?:\s|$)", s)
+    return (m.group(1) if m else s).strip()
+
+
+def extract_labels(text):
+    """(name, value, summary) for each `/-- … -/ def <name>Label : Label := <n>`."""
+    rows = []
+    for m in re.finditer(r"/--(.*?)-/\s*def\s+(\w+Label)\s*:\s*Label\s*:=\s*(\d+)", text, re.S):
+        rows.append((m.group(2), m.group(3), first_sentence(m.group(1))))
+    return rows
+
+
+def extract_constructors(text, name):
+    """(ctor, signature, comment) for `inductive <name>` (line-based; stops at the inductive's end)."""
+    rows, capturing = [], False
+    for line in text.splitlines():
+        s = line.strip()
+        if re.match(rf"inductive {name}\b", s):
+            capturing = True
+            continue
+        if not capturing:
+            continue
+        if s.startswith("|"):
+            cm = re.match(r"\|\s*(\w+)\s*:\s*([^-]*?)\s*(?:--\s*(.*))?$", s)
+            if cm:
+                rows.append((cm.group(1), cm.group(2).strip(), (cm.group(3) or "").strip()))
+        elif s.startswith(("deriving", "inductive", "end", "def", "@", "abbrev")):
+            break
+    return rows
 
 
 def extract_inductive(text, name):
@@ -107,6 +141,32 @@ def render():
     for _name, form, note in extract_inductive(surf, "Ty"):
         L.append(f"| `{form}` | {note} |")
     L.append("")
+
+    L.append("## Effect channels")
+    L.append("")
+    L.append("The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;")
+    L.append("an undischarged label surfaces in the inferred effect (see Examples → type display).")
+    L.append("")
+    L.append("| Label | Value | Channel |")
+    L.append("|---|---|---|")
+    for name, val, summ in extract_labels(surf):
+        L.append(f"| `{name}` | {val} | {summ} |")
+    L.append("")
+
+    L.append("## Kernel primitives (the IR the surface lowers to)")
+    L.append("")
+    L.append("The graded-CBPV kernel — `Val` (values), `Comp` (computations), `Handler` (effect handlers).")
+    L.append("The surface is sugar over these; `Source.eval` (Bang/Core/IR.lean) is the reference semantics.")
+    L.append("")
+    ir = IR.read_text()
+    for ind, heading in [("Val", "Values"), ("Comp", "Computations"), ("Handler", "Handlers")]:
+        L.append(f"### {heading} (`{ind}`)")
+        L.append("")
+        L.append("| Primitive | Signature | Notes |")
+        L.append("|---|---|---|")
+        for ctor, sig, note in extract_constructors(ir, ind):
+            L.append(f"| `{ctor}` | `{sig}` | {note} |")
+        L.append("")
 
     L.append("## Examples")
     L.append("")
