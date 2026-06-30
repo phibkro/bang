@@ -89,6 +89,7 @@ fitness:
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
     python3 tools/gen-import-graph.py --check
+    python3 tools/gen-changelog.py --check
 
 # Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
 # CONTEXT.md/ROADMAP.md resolves to a real commit (a rebase/drop makes the prose
@@ -111,6 +112,10 @@ gate-index:
 # Regenerate the module dependency graph (mermaid + fan-in) in docs/architecture/core-overview.md §2 from the import edges.
 import-graph:
     python3 tools/gen-import-graph.py
+
+# Regenerate CHANGELOG.md (product MVP increments) from conventional commits since the MVP baseline.
+changelog:
+    python3 tools/gen-changelog.py
 
 # Validate the generated module-graph mermaid actually COMPILES (mmdc render). On-demand; the
 # build (`just import-graph`) also auto-compiles before writing, so a broken graph never lands.
