@@ -109,6 +109,25 @@ Each parses the readable source, runs `Source.eval`, and checks `done (vint n)`.
 -- `b` = snd. Re-pairing swapped `(b, a)` and reading the first proves the binding order. ⟶ 4.
 #guard runYieldsInt 20 "let (a, b) = (3, 4) in (let (c, d) = (b, a) in c)" 4
 
+/-! ### A14–A16: ARITHMETIC COMPOSES with the other features (issue #4 × #1/#3/rung-4).
+
+Found by running real programs through `bang` after #4 landed: integer arithmetic threads through
+pure binding, the STM ledger, and reactive cells. (Arithmetic in an effect-op ARGUMENT must be
+let-bound first — `put (get + 1)` is a value-position arg; see GitHub issue for that rough edge.) -/
+
+-- A14. PURE arithmetic composition: `x² + y²` over two bindings. ⟶ 9 + 16 = 25.
+#guard runYieldsInt 30 "let x = 3 in let y = 4 in x * x + y * y" 25
+
+-- A15. STM × ARITHMETIC — the moat with REAL math (rung 3 × #4): a transactional bank transfer that
+-- COMPUTES the new balance (`100 - 30`), not a literal post-balance. read → subtract → write → read. ⟶ 70.
+#guard runYieldsInt 200
+  "atomically (let a = new 100 in (let bal = read a in (let bal2 = bal - 30 in (let z = write a bal2 in read a))))" 70
+
+-- A16. REACTIVE DERIVED CELL × ARITHMETIC (rung 4, ADR-0005 × #4): `c = {get * get}` is an unmemoized
+-- thunk computing the SQUARE of the live state. Each `$c` re-samples + recomputes; after `put 9`, forcing
+-- reads 9 and squares it. ⟶ 81. Derived reactivity falls straight out of thunks + the δ-rule.
+#guard runYieldsInt 80 "state 4 in (let c = {get * get} in (let z = put 9 in $c))" 81
+
 /-! ## B. Raw-`Comp` programs (structural `match` on `Result`)
 
 Sum/product (§A12/A13, issue #1) and arithmetic (issue #4 — now infix from source, see
