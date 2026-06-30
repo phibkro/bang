@@ -75,14 +75,20 @@ Grammar (the subset this tracer bullet covers):
              | 'new' atom                          -- allocate a TVar (rung 3) → up stmLabel "newTVar"
              | 'read' atom                         -- read a TVar → up stmLabel "readTVar"
              | 'write' atom atom                   -- write a TVar → up stmLabel "writeTVar" (pair ref val)
+             | 'match' atom '{' arm arm '}'        -- sum elim → case (arms order-independent, opt commas)
+             | 'let' '(' ident ',' ident ')' '=' expr 'in' expr  -- product elim → split
              | app
     app    ::= atom atom*                           -- juxtaposition → app (left assoc)
+    arm    ::= ('Left'|'Right') '(' ident ')' '->' expr  -- a match arm (binds the payload at idx 0)
     atom   ::= int                                  -- literal → ret (vint n)
              | ident                                -- variable → ret (vvar i)
              | 'get'                                -- read the state cell → up stateLabel "get" unit
              | '$' atom | '!' atom                  -- force a thunk → force
              | '{' expr '}'                         -- thunk a computation → vthunk
              | '(' expr ')'                         -- grouping
+             | '(' expr ',' expr ')'                -- product intro → pair
+             | 'Left' '(' expr ')'                  -- sum intro (left)  → inl
+             | 'Right' '(' expr ')'                 -- sum intro (right) → inr
 
 State (rung 1, ADR-0025) is a RESUMPTIVE handler on its own label (`stateLabel`,
 distinct from `exnLabel`). `state v in e` installs `Handler.state stateLabel v`
@@ -119,6 +125,15 @@ inductive Surf where
   | newS   : Surf → Surf                 -- new e     (allocate a TVar → up stmLabel "newTVar")
   | readS  : Surf → Surf                 -- read e    (read a TVar → up stmLabel "readTVar")
   | writeS : Surf → Surf → Surf          -- write r w (write a TVar → up stmLabel "writeTVar" (pair r w))
+  -- ADTs (issue #1): sum + product. Intros are values; eliminators carry NAMED binders
+  -- that lowering (§2) resolves to the kernel's de-Bruijn `case`/`split`.
+  | inlS   : Surf → Surf                 -- Left(e)   → inl  (sum intro, left)
+  | inrS   : Surf → Surf                 -- Right(e)  → inr  (sum intro, right)
+  | pairS  : Surf → Surf → Surf          -- (a, b)    → pair (product intro)
+  | matchS : Surf → String → Surf → String → Surf → Surf
+    -- match s { Left(x) -> e₁ , Right(y) -> e₂ }  → case  (x, y each bind at idx 0)
+  | splitS : String → String → Surf → Surf → Surf
+    -- let (a, b) = p in body  → split  (a = fst at idx 1, b = snd at idx 0)
   deriving Repr, Inhabited, DecidableEq
 
 
@@ -184,6 +199,19 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .newS e     => do return .perform (.vvar (← lookup env capStm)) "newTVar" (← lowerV env e)
   | .readS e    => do return .perform (.vvar (← lookup env capStm)) "readTVar" (← lowerV env e)
   | .writeS r w => do return .perform (.vvar (← lookup env capStm)) "writeTVar" (.pair (← lowerV env r) (← lowerV env w))
+  -- ADTs (issue #1). Intros in COMPUTATION position lower to `ret <val>` (atom-in-comp = ret);
+  -- eliminators thread NAMED binders into the kernel's de-Bruijn `case`/`split`.
+  | .inlS e     => do return .ret (.inl (← lowerV env e))
+  | .inrS e     => do return .ret (.inr (← lowerV env e))
+  | .pairS a b  => do return .ret (.pair (← lowerV env a) (← lowerV env b))
+  -- `case v N₁ N₂`: each branch binds its payload at idx 0 → push the arm's binder.
+  | .matchS s lx e1 ry e2 => do
+      return .case (← lowerV env s) (← lowerC (lx :: env) e1) (← lowerC (ry :: env) e2)
+  -- `split v N`: N binds idx 1 = fst, idx 0 = snd. `env` is innermost-first, so to put snd at
+  -- idx 0 and fst at idx 1 we cons snd LAST: `b :: a :: env` (a = fst, b = snd). Verified against
+  -- B2 (`prodSwap` reads vvar0 = snd, vvar1 = fst).
+  | .splitS a b p body => do
+      return .split (← lowerV env p) (← lowerC (b :: a :: env) body)
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -192,6 +220,10 @@ def lowerV (env : List String) : Surf → Except String Val
   | .lit n      => .ok (.vint n)
   | .var x      => do return .vvar (← lookup env x)
   | .thunk e    => do return .vthunk (← lowerC env e)
+  -- ADT intros are values (issue #1); the eliminators (match/split) are NOT — they hit the catch-all.
+  | .inlS e     => do return .inl (← lowerV env e)
+  | .inrS e     => do return .inr (← lowerV env e)
+  | .pairS a b  => do return .pair (← lowerV env a) (← lowerV env b)
   | _           => .error "expected a value (wrap a computation in braces)"
 end
 
@@ -208,10 +240,11 @@ Tokenizer: whitespace-separated, with the single-char punctuators
 `( ) { } $ !` split off so they need not be space-delimited; `=` and `=>` and
 keywords are ordinary tokens. -/
 
-/-- Split a source string into tokens. Punctuators `()[]{}$!` are always their
-own token; everything else is a maximal run of non-space, non-punctuator chars. -/
+/-- Split a source string into tokens. Punctuators `(){}$!,` are always their
+own token; everything else is a maximal run of non-space, non-punctuator chars
+(so `->` / `=>` / `=` and keywords are ordinary space-delimited tokens). -/
 def tokenize (s : String) : List String :=
-  let punct := "(){}$!".toList
+  let punct := "(){}$!,".toList
   let rec go (cs : List Char) (cur : List Char) (acc : List String) : List String :=
     let flush (acc : List String) : List String :=
       if cur.isEmpty then acc else acc ++ [String.ofList cur.reverse]
@@ -244,7 +277,8 @@ def pIdent : P String
       if t = "let" || t = "fun" || t = "handle" || t = "raise"
           || t = "state" || t = "get" || t = "put"
           || t = "atomically" || t = "new" || t = "read" || t = "write"
-          || t = "in" || t = "=" || t = "=>" then
+          || t = "match" || t = "Left" || t = "Right"
+          || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," then
         .error s!"expected an identifier, got keyword '{t}'"
       else .ok (t, ts)
   | [] => .error "expected an identifier, got end of input"
@@ -252,9 +286,9 @@ def pIdent : P String
 /-! The recursive-descent core is **fuel-driven total** recursion (not `partial`)
 so the demo `example`s reduce under `rfl` — a `partial def` is opaque to the
 kernel's definitional unfolding, which would block the green checks. Fuel bounds
-the descent depth; `tokenize`'s output length is a safe bound, and the demos
-pass `(tokenize src).length + 1`. The inner application `loop` also consumes
-fuel (one per consumed atom). -/
+the descent depth; `4·(tokenize output length) + 1` is a safe bound (see `parse`
+— each nesting level is a 3-call descent that may consume only one token). The
+inner application `loop` also consumes fuel (one per consumed atom). -/
 
 mutual
 /-- Parse a full expression (lowest precedence: let / fun / handle / raise / app).
@@ -264,6 +298,16 @@ Fuel is set generously at the call site (token count), so it never bites a
 well-formed program; it only bounds the descent. -/
 def pExpr : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
+  | f + 1, "let" :: "(" :: ts => do      -- product elim: let (a, b) = p in body
+      let (a, ts) ← pIdent ts
+      let (_, ts) ← expect "," ts
+      let (b, ts) ← pIdent ts
+      let (_, ts) ← expect ")" ts
+      let (_, ts) ← expect "=" ts
+      let (p, ts) ← pExpr f ts
+      let (_, ts) ← expect "in" ts
+      let (body, ts) ← pExpr f ts
+      .ok (.splitS a b p body, ts)
   | f + 1, "let" :: ts => do
       let (x, ts) ← pIdent ts
       let (_, ts) ← expect "=" ts
@@ -303,6 +347,19 @@ def pExpr : Nat → P Surf
       let (r, ts) ← pAtom f ts
       let (w, ts) ← pAtom f ts
       .ok (.writeS r w, ts)
+  | f + 1, "match" :: ts => do           -- sum elim: match s { Left(x) -> e₁ , Right(y) -> e₂ }
+      let (s, ts) ← pAtom f ts            -- scrutinee is an atom (value position); `let`-bind a comp
+      let (_, ts) ← expect "{" ts
+      let ((c1, x1, b1), ts) ← pArm f ts
+      let ts := (match ts with | "," :: r => r | _ => ts)   -- optional separator comma
+      let ((c2, x2, b2), ts) ← pArm f ts
+      let ts := (match ts with | "," :: r => r | _ => ts)   -- optional trailing comma
+      let (_, ts) ← expect "}" ts
+      -- arms are order-independent: slot Left→branch₁, Right→branch₂ (kernel `case` order).
+      match c1, c2 with
+      | "Left", "Right" => .ok (.matchS s x1 b1 x2 b2, ts)
+      | "Right", "Left" => .ok (.matchS s x2 b2 x1 b1, ts)
+      | _, _ => .error s!"match needs exactly one Left and one Right arm (got {c1}, {c2})"
   | f + 1, ts => pApp f ts
 
 /-- Parse an application chain: one or more atoms, left-associated. -/
@@ -319,20 +376,53 @@ def pAppLoop : Nat → Surf → P Surf
     match ts with
     | [] => .ok (acc, ts)
     | t :: _ =>
-      if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" then
+      if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" || t = "," || t = "->" then
         .ok (acc, ts)
       else
         match pAtom f ts with
         | .ok (a, ts') => pAppLoop f (.app acc a) ts'
         | .error _     => .ok (acc, ts)
 
+/-- Parse one match arm `('Left'|'Right') '(' ident ')' '->' expr`. Returns the
+constructor name, the bound variable, and the arm body (used by `match` in `pExpr`). -/
+def pArm : Nat → P (String × String × Surf)
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (ctor, ts) ← (match ts with
+        | "Left"  :: r => (.ok ("Left", r) : Except String (String × List String))
+        | "Right" :: r => .ok ("Right", r)
+        | t :: _ => .error s!"expected 'Left' or 'Right' starting a match arm, got '{t}'"
+        | []     => .error "expected a match arm, got end of input")
+      let (_, ts) ← expect "(" ts
+      let (x, ts) ← pIdent ts
+      let (_, ts) ← expect ")" ts
+      let (_, ts) ← expect "->" ts
+      let (body, ts) ← pExpr f ts
+      .ok ((ctor, x, body), ts)
+
 /-- Parse an atom (highest precedence). -/
 def pAtom : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
-  | f + 1, "(" :: ts => do
+  | f + 1, "(" :: ts => do               -- grouping `(e)` OR product intro `(a, b)`
+      let (e, ts) ← pExpr f ts
+      match ts with
+      | "," :: ts =>
+          let (e2, ts) ← pExpr f ts
+          let (_, ts) ← expect ")" ts
+          .ok (.pairS e e2, ts)
+      | _ =>
+          let (_, ts) ← expect ")" ts
+          .ok (e, ts)
+  | f + 1, "Left" :: ts => do            -- sum intro (left) → inl
+      let (_, ts) ← expect "(" ts
       let (e, ts) ← pExpr f ts
       let (_, ts) ← expect ")" ts
-      .ok (e, ts)
+      .ok (.inlS e, ts)
+  | f + 1, "Right" :: ts => do           -- sum intro (right) → inr
+      let (_, ts) ← expect "(" ts
+      let (e, ts) ← pExpr f ts
+      let (_, ts) ← expect ")" ts
+      .ok (.inrS e, ts)
   | f + 1, "{" :: ts => do
       let (e, ts) ← pExpr f ts
       let (_, ts) ← expect "}" ts
@@ -347,19 +437,23 @@ def pAtom : Nat → P Surf
   | _ + 1, t :: ts =>
       if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
-              || t = "state" || t = "put"
+              || t = "state" || t = "put" || t = "match"
               || t = "atomically" || t = "new" || t = "read" || t = "write"
-              || t = "in" || t = "=" || t = "=>" || t = ")" || t = "}" then
+              || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ")" || t = "}" then
         .error s!"unexpected '{t}' where an atom was expected"
       else .ok (.var t, ts)
   | _ + 1, [] => .error "unexpected end of input where an atom was expected"
 end
 
 /-- Parse a whole program: tokenize, parse one expression, require all tokens
-consumed. Fuel = token count + 1 (an upper bound on descent depth). -/
+consumed. Fuel = 4·(token count) + 1: each NESTING level costs a full
+`pExpr→pApp→pAtom` descent (≈3 fuel) yet may consume only one token (e.g.
+`Left(7)`, `(a, b)`, deeply-nested parens), so the bound must be a multiple of
+the token count, not `+1`. Generous by construction — it never bites a
+well-formed program (it only caps runaway recursion for totality). -/
 def parse (src : String) : Except String Surf := do
   let toks := tokenize src
-  let (e, rest) ← pExpr (toks.length + 1) toks
+  let (e, rest) ← pExpr (toks.length * 4 + 1) toks
   if rest.isEmpty then .ok e
   else .error s!"trailing tokens after expression: {rest}"
 
@@ -708,6 +802,43 @@ def parsesTo (src : String) (e : Surf) : Bool :=
 #guard parsesTo "atomically (let r = new 100 in (let z = write r 70 in read r))"
   (.atomS (.lett "r" (.newS (.lit 100))
     (.lett "z" (.writeS (.var "r") (.lit 70)) (.readS (.var "r")))))
+
+/-! ### Stage 2d — ADTs from source text (issue #1): sums + products, modern surface.
+
+The kernel sum/product (`inl`/`inr`/`pair`/`case`/`split`) are now SURFACEABLE — no
+hand-built `Comp`. Modern syntax: `Left`/`Right` build a sum, `(a, b)` a product,
+`match s { Left(x) -> … , Right(y) -> … }` eliminates a sum (arms order-independent),
+and `let (a, b) = p in …` destructures a product. `Left`/`Right` are the anonymous-sum
+core; named user variants (`Some`/`Ok`) need the type-declaration layer (a later issue). -/
+
+-- Lowering (Stage-1b style): the named surface tree lowers to the de-Bruijn `case`/`split`.
+-- `match Right(7) { Left(a) -> 0 , Right(x) -> x }` ⟶ `case (inr 7) (ret 0) (ret vvar0)`.
+example :
+    lower (.matchS (.inrS (.lit 7)) "a" (.lit 0) "x" (.var "x"))
+      = .ok (.case (.inr (.vint 7)) (.ret (.vint 0)) (.ret (.vvar 0))) := by rfl
+-- `let (a, b) = (3, 4) in a` lowers `split` with fst at idx 1 (`vvar 1`) — the binding-order pin.
+example :
+    lower (.splitS "a" "b" (.pairS (.lit 3) (.lit 4)) (.var "a"))
+      = .ok (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1))) := by rfl
+
+-- SUM, from source: `match` discriminates the tag and binds the payload.
+#guard runYieldsInt 20 "match Right(7) { Left(a) -> 0 , Right(x) -> x }" 7
+#guard runYieldsInt 20 "match Left(7) { Left(a) -> a , Right(x) -> 0 }" 7
+-- arms are order-independent: Right-first parses to the SAME `case`.
+#guard runYieldsInt 20 "match Left(7) { Right(x) -> 0 , Left(a) -> a }" 7
+
+-- PRODUCT, from source: destructure `(3, 4)`; `a` = fst = 3, `b` = snd = 4 (binding order).
+#guard runYieldsInt 20 "let (a, b) = (3, 4) in a" 3
+#guard runYieldsInt 20 "let (a, b) = (3, 4) in b" 4
+-- nested destructure + re-pair proves the swap round-trips: (3,4) → (b,a) = (4,3) → fst = 4.
+#guard runYieldsInt 20 "let (a, b) = (3, 4) in (let (c, d) = (b, a) in c)" 4
+
+-- Parse checks (Stage-2b style): the surface trees parse exactly as expected.
+#guard parsesTo "Left(7)" (.inlS (.lit 7))
+#guard parsesTo "(3, 4)" (.pairS (.lit 3) (.lit 4))
+#guard parsesTo "match s { Left(x) -> x , Right(y) -> y }"
+  (.matchS (.var "s") "x" (.var "x") "y" (.var "y"))
+#guard parsesTo "let (a, b) = p in a" (.splitS "a" "b" (.var "p") (.var "a"))
 
 end -- public section
 end Bang.Surface

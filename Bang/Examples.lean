@@ -19,7 +19,7 @@
     1. `runYieldsInt fuel "source" n` — parse the surface string, run, check it
        returns `done (vint n)`. PREFERRED where the parser covers the construct.
     2. structural `match Source.eval fuel term with …` on the raw `Result` — for
-       ADTs / handler-escape / non-int outcomes the surface parser cannot build.
+       μ-stack / handler-escape / non-int outcomes the surface parser cannot build.
 
   Coverage (one behavior class per `§`): pure let · shadowing · thunk/force ·
   lambda β · exceptions · state (resumptive) · reactive cell · STM commit/abort ·
@@ -101,38 +101,34 @@ Each parses the readable source, runs `Source.eval`, and checks `done (vint n)`.
 #guard runYieldsInt 200
   "handle (atomically (let r = new 100 in (let z = write r 70 in raise 100)))" 100
 
+-- A12. SUM / CASE (issue #1): `match` discriminates a tagged sum and binds the payload.
+-- `Right(7)` is the right injection; the `Right` arm fires, binding `x = 7`. ⟶ 7.
+#guard runYieldsInt 20 "match Right(7) { Left(a) -> 0 , Right(x) -> x }" 7
+
+-- A13. PRODUCT / SPLIT (issue #1): `let (a, b) = (3, 4)` destructures a pair, `a` = fst,
+-- `b` = snd. Re-pairing swapped `(b, a)` and reading the first proves the binding order. ⟶ 4.
+#guard runYieldsInt 20 "let (a, b) = (3, 4) in (let (c, d) = (b, a) in c)" 4
+
 /-! ## B. Raw-`Comp` programs (structural `match` on `Result`)
 
-The surface parser does not build ADTs (sum/product/μ) or a capability escape;
-these are written as hand-built `Comp` terms with the de-Bruijn indices noted.
-The `#guard` structurally matches the `Result Val` (no `BEq` on kernel types). -/
+Sum/product are now surfaceable (§A12/A13, issue #1); what remains hand-built is μ
+(`fold`/`unfold` — recursive data, issue #2) and the capability escape. These are
+written as `Comp` terms with the de-Bruijn indices noted; the `#guard` structurally
+matches the `Result Val` (no `BEq` on kernel types). -/
 
--- B1. SUM / CASE: `case (inr 7) { inl ⇒ 0 | inr x ⇒ x }` discriminates the tag
--- and runs the `inr` branch, binding the payload `7` at index 0. ⟶ done 7.
-def sumCase : Comp :=
-  .case (.inr (.vint 7)) (.ret (.vint 0)) (.ret (.vvar 0))
-#guard (match Source.eval 20 sumCase with | .done (.vint n) => n == 7 | _ => false)
-
--- B2. PRODUCT / SPLIT: destructure `(3, 4)` then REBUILD it swapped. `split`
--- binds the first component at index 1 and the second at index 0. ⟶ done (4, 3).
-def prodSwap : Comp :=
-  .split (.pair (.vint 3) (.vint 4)) (.ret (.pair (.vvar 0) (.vvar 1)))
-#guard (match Source.eval 20 prodSwap with
-  | .done (.pair (.vint a) (.vint b)) => a == 4 && b == 3 | _ => false)
-
--- B3. μ STACK — LIFO (rung 2, ADR-0029): `Stack = μX. 1 + (Int × X)`. `pop` is
+-- B1. μ STACK — LIFO (rung 2, ADR-0029): `Stack = μX. 1 + (Int × X)`. `pop` is
 -- `unfold`→`case`→`split` under the hood; the user sees only `empty`/`push`/`pop`
 -- (reused from `Bang.Surface`). Popping `push 9 (push 7 empty)` returns the most
 -- recent push on top: `some (9, …)` = `inr ⟨9, …⟩`. ⟶ done (inr (9, _)).
 #guard (match Source.eval 50 (pop (push 9 (push 7 empty))) with
   | .done (.inr (.pair (.vint n) _)) => n == 9 | _ => false)
 
--- B4. μ STACK — EMPTY: `pop empty` is the "none" of `1 + (Int × Stack)`,
+-- B2. μ STACK — EMPTY: `pop empty` is the "none" of `1 + (Int × Stack)`,
 -- i.e. `inl unit`. The empty-stack branch fires. ⟶ done (inl unit).
 #guard (match Source.eval 50 (pop empty) with
   | .done (.inl .vunit) => true | _ => false)
 
--- B5. CAPABILITY ESCAPE — FAIL-LOUD (ADR-0063): a `{get}` thunk captures its
+-- B3. CAPABILITY ESCAPE — FAIL-LOUD (ADR-0063): a `{get}` thunk captures its
 -- state handler's capability, is RETURNED out of the handler, then forced at top
 -- level where that handler has POPPED. The cap names a frame no longer on the
 -- stack, so dispatch finds nothing → the DEFINED terminal `.escapedCap` (NOT a
