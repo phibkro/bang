@@ -17,6 +17,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — ADR-0066 ③ — bidirectional-checker spike (pure fragment) (`6cef2ba`)
 - **surface** — ADR-0066 ②a — type-expression grammar + `(e : T)` ascription (`92114d4`)
 - **typecheck** — ADR-0066 ②b — Surf-level checker, lifts the no-annotation limitation (`bb39c34`)
+- **typecheck** — ADR-0066 ④ — effect-row inference + handler discharge (= #5) (`ec7638c`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

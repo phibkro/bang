@@ -355,4 +355,57 @@ surfaces in the row (the static "this computation can throw/touch state/stm" sig
 -- a type error INSIDE an effect op is still caught (raise of a non-Int payload).
 #guard (match check "handle (raise Left(0))" with | .error _ => true | _ => false)
 
+/-! ## Stage ④b — type DISPLAY (#5's "type display": effect rows made visible).
+
+Render the inferred `(CTy, EffRow)` back to surface notation, with the row shown as `! {throws, …}`.
+This is what makes effect-typed signatures legible: you run the checker and SEE `Int -> Int ! {throws}`. -/
+
+/-- Map an effect label back to its surface name (the inverse of the lowering's `exnLabel`/… choice). -/
+def effName (ℓ : Label) : String :=
+  if ℓ = exnLabel then "throws" else if ℓ = stateLabel then "state"
+  else if ℓ = stmLabel then "stm" else s!"e{ℓ}"
+
+/-- Render an effect row as `throws, state` by decidable membership of the known labels (computable —
+`Finset.toList` is noncomputable; the surface has exactly these three labels). -/
+def showRow (φ : EffRow) : String :=
+  String.intercalate ", " <|
+    (if exnLabel ∈ φ then [effName exnLabel] else []) ++
+    (if stateLabel ∈ φ then [effName stateLabel] else []) ++
+    (if stmLabel ∈ φ then [effName stmLabel] else [])
+
+mutual
+def showVTy : VT → String
+  | .int      => "Int"
+  | .unit     => "Unit"
+  | .sum a b  => s!"({showVTy a} + {showVTy b})"
+  | .prod a b => s!"({showVTy a} * {showVTy b})"
+  | .U φ b    => let r := showRow φ; s!"Thunk{if r.isEmpty then "" else s!"!\{{r}}"} {showCTy b}"
+  | .cap ℓ    => s!"Cap {ℓ}"
+  | .mu a     => s!"(mu. {showVTy a})"
+  | .tvar n   => s!"#{n}"
+def showCTy : CT → String
+  | .F _ a     => showVTy a                                   -- a returner displays as the value it yields
+  | .arr _ a b => s!"{showVTy a} -> {showCTy b}"
+end
+
+/-- Render a computation's full type: the value/arrow shape plus its effect row as a `! {…}` suffix. -/
+def showType (B : CT) (φ : EffRow) : String :=
+  let r := showRow φ
+  if r.isEmpty then showCTy B else s!"{showCTy B} ! \{{r}}"
+
+/-- End-to-end: parse + check a source string, then DISPLAY its type (or the error). -/
+def display (src : String) : String :=
+  match check src with
+  | .ok (B, φ) => showType B φ
+  | .error e   => s!"error: {e}"
+
+-- pure types show with no effect suffix; effectful ones surface their row.
+#guard display "( fun x => x : Int -> Int )"       == "Int -> Int"
+#guard display "( fun x => raise x : Int -> Int )" == "Int -> Int ! {throws}"
+#guard display "raise 7"                            == "Int ! {throws}"
+#guard display "handle (raise 7)"                   == "Int"
+#guard display "state 0 in get"                     == "Int"
+#guard display "(get)"                              == "Int ! {state}"
+#guard display "let x = 2 in x + 3"                 == "Int"
+
 end Bang.TypeCheck
