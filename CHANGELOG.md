@@ -12,5 +12,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 
 ### Features
 - **surface** — ADTs end-to-end — Left/Right/match + (a,b)/let-destructure (#1) (`96346ff`)
+- **arith** — infix arithmetic, comparisons & if over a verified δ-rule kernel (#4) (`f826dbc`)
 
 <!-- END GENERATED changelog -->
