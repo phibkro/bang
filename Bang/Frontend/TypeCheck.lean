@@ -164,4 +164,162 @@ example [EffSig EffRow QTT] : HasCTy (Eff := EffRow) (Mult := QTT)
   -- `ret`: HasVTy γ' [] (vint 3) int  (vint ⇒ γ' = zeros 0), and γ = ω • γ' (empty vectors).
   HasCTy.ret (q := QTT.omega) (HasVTy.vint (Γ := [])) (by decide)
 
+/-! ## Stage ②b — the `Surf`-LEVEL checker (consumes annotations, lifts the limitation).
+
+Bidirectional over the SURFACE (named contexts, BEFORE lowering — where annotations live). `annotS`
+drives check-mode: a `lam`/`Left`/`Right` checked against an expected type gets the info synthesis
+lacked, so ANNOTATED functions and injections now typecheck — exactly the limitation the spike (over
+the annotation-free lowered `Comp`) could not lift. Mirrors `lowerC`/`lowerV`: `synthSC`/`checkSC`
+read a `Surf` as a computation, `synthSV`/`checkSV` as a value. Pure fragment (effect ops are ④). -/
+open Bang.Surface
+
+abbrev NCtx := List (String × VT)   -- named typing context, innermost first
+
+def nlookup : NCtx → String → Option VT
+  | [],          _ => none
+  | (y, A) :: r, x => if x = y then some A else nlookup r x
+
+/-- Interpret a surface `Ty` into BOTH its value reading (`.1`) and computation reading (`.2`) in one
+structural pass — `tArr`/`tThunk` are computations (`arr`/the wrapped `F`); a non-arrow as a value is
+itself, as a computation a returner `F`. One recursion (no mutual block, no termination obligation). -/
+def tyBoth : Ty → VT × CT
+  | .tInt      => (.int,  .F .omega .int)
+  | .tUnit     => (.unit, .F .omega .unit)
+  | .tSum  a b => let A := (tyBoth a).1; let B := (tyBoth b).1; (.sum A B,  .F .omega (.sum A B))
+  | .tProd a b => let A := (tyBoth a).1; let B := (tyBoth b).1; (.prod A B, .F .omega (.prod A B))
+  | .tThunk t  => let C := (tyBoth t).2; (.U ⊥ C, .F .omega (.U ⊥ C))
+  | .tArr  a b => let A := (tyBoth a).1; let C := (tyBoth b).2;
+                  let f : CT := .arr .omega A C; (.U ⊥ f, f)   -- a function VALUE is a thunked arrow
+@[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
+@[inline] def ctyOf (t : Ty) : CT := (tyBoth t).2
+
+/-- Bool is `1 + 1` (ADR-0065); comparisons return it, arithmetic returns `Int`. -/
+def boolTy : VT := .sum .unit .unit
+def binopResTy : BinOp → VT
+  | .lt | .eq => boolTy
+  | _         => .int
+
+-- Termination: the rank (synth = 0, check = 1) breaks the `check t → synth t` subsumption tie, as
+-- in the spike; every other call is on a structural subterm of the `Surf`.
+mutual
+/-- Synthesize the value type of a `Surf` read as a VALUE. -/
+def synthSV (Γ : NCtx) (e : Surf) : Except String VT :=
+  match e with
+  | .lit _     => .ok .int
+  | .var x     => match nlookup Γ x with | some A => .ok A | none => .error s!"unbound variable {x}"
+  | .thunk b   => do let (B, φ) ← synthSC Γ b; return .U φ B
+  | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
+  | .annotS b t => do let A := vtyOf t; let _ ← checkSV Γ b A; return A
+  | .inlS _    => .error "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
+  | .inrS _    => .error "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  | _          => .error "not a value (wrap a computation in braces)"
+  termination_by (sizeOf e, 0)
+
+/-- Check a `Surf` read as a VALUE against an expected value type. -/
+def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Except String Unit :=
+  match e, expected with
+  | .inlS b,    .sum A _  => checkSV Γ b A
+  | .inrS b,    .sum _ B  => checkSV Γ b B
+  | .pairS a b, .prod A B => do let _ ← checkSV Γ a A; checkSV Γ b B
+  | .annotS b t, expected => do
+      let _ ← checkSV Γ b (vtyOf t)
+      if vtyOf t = expected then .ok () else .error "ascription does not match expected type"
+  | e, expected => do
+      let A ← synthSV Γ e
+      if A = expected then .ok () else .error "value type mismatch"
+  termination_by (sizeOf e, 2)
+
+/-- Synthesize the computation type + effect row of a `Surf` read as a COMPUTATION. -/
+def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
+  match e with
+  | .lit _   => .ok (.F .omega .int, ⊥)
+  | .var x   => match nlookup Γ x with
+                | some A => .ok (.F .omega A, ⊥)
+                | none   => .error s!"unbound variable {x}"
+  | .thunk b => do let (B, φ) ← synthSC Γ b; return (.F .omega (.U φ B), ⊥)
+  | .pairS a b => do return (.F .omega (.prod (← synthSV Γ a) (← synthSV Γ b)), ⊥)  -- value ⇒ ret
+  | .force b => do match (← synthSV Γ b) with
+                   | .U φ B => return (B, φ)
+                   | _      => .error "force: not a thunk"
+  | .lett x e b => do match (← synthSC Γ e) with
+                      | (.F _ A, φ₁) => do let (B, φ₂) ← synthSC ((x, A) :: Γ) b; return (B, φ₁ ⊔ φ₂)
+                      | _            => .error "let: head is not a returner"
+  | .app f a => do match (← synthSC Γ f) with
+                   | (.arr _ A B, φ) => do let _ ← checkSV Γ a A; return (B, φ)
+                   | _               => .error "app: callee is not a function"
+  | .binopS op a b => do
+      let _ ← checkSV Γ a .int; let _ ← checkSV Γ b .int
+      return (.F .omega (binopResTy op), ⊥)
+  | .ifS c t e => do
+      let _ ← checkSV Γ c boolTy
+      let (C, φ₁) ← synthSC Γ t
+      let φ₂ ← checkSC Γ e C
+      return (C, φ₁ ⊔ φ₂)
+  | .matchS s xl el xr er => do match (← synthSV Γ s) with
+      | .sum A B => do
+          let (C, φ₁) ← synthSC ((xl, A) :: Γ) el
+          let φ₂ ← checkSC ((xr, B) :: Γ) er C
+          return (C, φ₁ ⊔ φ₂)
+      | _ => .error "match: scrutinee is not a sum"
+  | .splitS a b p body => do match (← synthSV Γ p) with
+      | .prod A B => synthSC ((b, B) :: (a, A) :: Γ) body
+      | _ => .error "split: scrutinee is not a product"
+  | .annotS b t => do let C := ctyOf t; let φ ← checkSC Γ b C; return (C, φ)
+  | .lam _ _ => .error "fun needs an expected arrow type — annotate `(fun x => e : A -> B)`"
+  | _ => .error "out of the pure fragment (effect op — stage ④)"
+  termination_by (sizeOf e, 1)
+
+/-- Check a `Surf` read as a COMPUTATION against an expected computation type. -/
+def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Except String EffRow :=
+  match e, expected with
+  | .lam x b,   .arr _ A B => checkSC ((x, A) :: Γ) b B
+  -- value-constructors in computation position lower to `ret v` — check the value against `A` of `F A`.
+  | .inlS b,    .F _ (.sum A B)  => do let _ ← checkSV Γ (.inlS b) (.sum A B); return ⊥
+  | .inrS b,    .F _ (.sum A B)  => do let _ ← checkSV Γ (.inrS b) (.sum A B); return ⊥
+  | .pairS a b, .F _ (.prod A B) => do let _ ← checkSV Γ (.pairS a b) (.prod A B); return ⊥
+  | .annotS b t, expected => do
+      let φ ← checkSC Γ b (ctyOf t)
+      if ctyOf t = expected then .ok φ else .error "ascription does not match expected type"
+  | e, expected => do
+      let (B, φ) ← synthSC Γ e
+      if B = expected then .ok φ else .error "computation type mismatch"
+  termination_by (sizeOf e, 3)
+end
+
+/-- End-to-end at the SURFACE: parse a source string, then type-check it as a computation. -/
+def check (src : String) : Except String (CT × EffRow) := do
+  let e ← Bang.Surface.parse src
+  synthSC [] e
+
+/-! ## Validation ③ — the Surf checker types ANNOTATED programs the spike could not.
+
+The limitation lift: an annotated lambda/injection now type-checks, because the ascription feeds
+check-mode the type synthesis lacked. -/
+
+-- the annotated identity now CHECKS at `Int -> Int` (= arr ω int (F ω int)). (spike: couldn't synth `fun`.)
+#guard check "( fun x => x : Int -> Int )" == .ok (.arr .omega .int (.F .omega .int), ⊥)
+-- annotated injection now CHECKS at a sum type. (spike: couldn't synth bare `Left`.)
+#guard check "( Left(3) : Int + Int )" == .ok (.F .omega (.sum .int .int), ⊥)
+-- inference still flows where it can: application of an annotated function.
+#guard check "( fun x => x : Int -> Int ) 5" == .ok (.F .omega .int, ⊥)
+-- arithmetic + let, fully inferred (no annotation needed).
+#guard check "let x = 2 in x + 3" == .ok (.F .omega .int, ⊥)
+-- a comparison returns Bool = 1 + 1.
+#guard check "1 < 2" == .ok (.F .omega (.sum .unit .unit), ⊥)
+-- product destructure, inferred.
+#guard check "let p = (3, 4) in (let (a, b) = p in a)" == .ok (.F .omega .int, ⊥)
+
+-- REJECTIONS — the surface checker is sound:
+#guard (match check "1 + Left(0)" with | .error _ => true | _ => false)         -- non-Int operand
+#guard (match check "( fun x => x : Int -> Int ) Left(0)" with | .error _ => true | _ => false)  -- arg type
+#guard (match check "( 3 : Int + Int )" with | .error _ => true | _ => false)    -- 3 is not a sum
+
+/-! ## Validation ④ — the Surf checker AGREES with the spike's `Comp` checker on the lowering.
+
+For terms in the INTERSECTION of what both handle (the Comp spike is pure-fragment: no `binop`, no
+annotations), `synthSC e` on the surface and `synthC (lower e)` on its lowering agree — the
+through-lowering soundness chain, differential-tested. -/
+#guard (check "let x = 3 in x") == (infer "let x = 3 in x")
+#guard (check "let p = (3, 4) in (let (a, b) = p in a)") == (infer "let p = (3, 4) in (let (a, b) = p in a)")
+
 end Bang.TypeCheck
