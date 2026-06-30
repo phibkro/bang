@@ -165,6 +165,13 @@ effectful program reads like imperative code. -/
 -- A22. SEQUENCED bare statements: two `put`s in a row (values discarded), then `get`. ⟶ 9.
 #guard runYieldsInt 80 "state 0 in (do { put 5; put 9; get })" 9
 
+-- A23. THE WHOLE STACK in one program (do × STM × #4 arithmetic): a transactional bank transfer that
+-- reads like imperative code — allocate, read the balance, write the COMPUTED new balance, read it back.
+-- `atomically (do { a = new 100; bal = read a; write a (bal - 30); read a })` ⟶ 70. Still a verified
+-- CBPV kernel underneath; this is what "surface the verified kernel" looks like end-to-end.
+#guard runYieldsInt 200
+  "atomically (do { a = new 100; bal = read a; z = write a (bal - 30); read a })" 70
+
 /-! ## B. Raw-`Comp` programs (structural `match` on `Result`)
 
 Sum/product (§A12/A13, issue #1) and arithmetic (issue #4 — now infix from source, see
