@@ -214,8 +214,16 @@ def lowerC (env : List String) : Surf → Except String Comp
       | .ok v    => return .perform (.vvar c) "put" v
       | .error _ => return .letC (← lowerC env e) (.perform (.vvar (c+1)) "put" (.vvar 0))
   -- the initial state `e0` is evaluated OUTSIDE the handler scope (it is the handler's payload, not
-  -- under the cap binder), so it lowers in `env`, not `capState :: env`.
-  | .stateS e0 e => do return .handle (.state stateLabel (← lowerV env e0)) (← lowerC (capState :: env) e)
+  -- under the cap binder), so it lowers in `env`, not `capState :: env`. A-normalized (#29): a computed
+  -- initial value (`state (3 + 4) in …`) is `letC`-bound first; the handler reads it at `vvar 0`, and the
+  -- body lowers under both the e0 binder and the cap binder (`capState :: "#s0" :: env`).
+  | .stateS e0 e => do
+      match lowerV env e0 with
+      | .ok v    => return .handle (.state stateLabel v) (← lowerC (capState :: env) e)
+      | .error _ => do
+          let c0 ← lowerC env e0
+          let body ← lowerC (capState :: "#s0" :: env) e
+          return .letC c0 (.handle (.state stateLabel (.vvar 0)) body)
   | .atomS e    => do return .handle (.transaction stmLabel []) (← lowerC (capStm :: env) e)
   | .newS e     => do
       let c ← lookup env capStm

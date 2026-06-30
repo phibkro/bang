@@ -17,5 +17,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
+- **surface** — A-normalize ADT intros & eliminator scrutinees — value-restriction generalized (#29) (`e89e9c3`)
 
 <!-- END GENERATED changelog -->
