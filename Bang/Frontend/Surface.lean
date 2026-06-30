@@ -114,6 +114,19 @@ arguments are VALUE-position atoms (so a TVar ref is just an `int`, ADR-0030's
 force, `!` is actor-send in full bang — here we accept both as force for the
 subset, documented as a liquid surface choice). -/
 
+/-- Surface type expressions (ADR-0066 ②). A single grammar, NOT split into value/computation
+types — the checker interprets it into the kernel's `VTy`/`CTy` (`tArr` ⇒ a `CTy.arr`, everything
+else a `VTy`, with `F`/`U` wrapping inserted by the checker). Carried only by the ascription node
+`annotS`; erased at lowering (types never reach the kernel term). -/
+inductive Ty where
+  | tInt   : Ty                  -- Int
+  | tUnit  : Ty                  -- Unit
+  | tArr   : Ty → Ty → Ty        -- A -> B   (function; right-assoc)
+  | tSum   : Ty → Ty → Ty        -- A + B
+  | tProd  : Ty → Ty → Ty        -- A * B
+  | tThunk : Ty → Ty             -- Thunk T  (a suspended computation value, the `U` former)
+  deriving Repr, Inhabited, DecidableEq
+
 inductive Surf where
   | lit    : Int → Surf                 -- 3
   | var    : String → Surf              -- x
@@ -144,6 +157,7 @@ inductive Surf where
   -- the kernel `binop` takes VALUES); `if` is sugar over `case` on `Bool = 1+1`.
   | binopS : BinOp → Surf → Surf → Surf   -- a + b / a - b / a * b / a / b / a < b / a == b
   | ifS    : Surf → Surf → Surf → Surf    -- if c then t else e  → case c (false→e) (true→t)
+  | annotS : Surf → Ty → Surf             -- (e : T)   type ascription (ADR-0066 ②); erased at lowering
   deriving Repr, Inhabited, DecidableEq
 
 
@@ -194,6 +208,7 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .force e    => do return .force (← lowerV env e)
   | .lett x e b => do return .letC (← lowerC env e) (← lowerC (x :: env) b)
   | .lam x b    => do return .lam (← lowerC (x :: env) b)
+  | .annotS e _ => lowerC env e          -- ascription erased: types never reach the kernel term
   | .app f a    => do return .app (← lowerC env f) (← lowerV env a)
   -- `raise`/`put`/stm ops resolve the enclosing handler's cap binder by sentinel `lookup`, then
   -- `perform` on that `vvar` (ADR-0054). The ARGUMENT is value-position, but issue #26 A-NORMALIZES it:
@@ -308,6 +323,7 @@ def lowerV (env : List String) : Surf → Except String Val
   | .inlS e     => do return .inl (← lowerV env e)
   | .inrS e     => do return .inr (← lowerV env e)
   | .pairS a b  => do return .pair (← lowerV env a) (← lowerV env b)
+  | .annotS e _ => lowerV env e          -- ascription erased; lower the inner value
   | _           => .error "expected a value (wrap a computation in braces)"
 end
 
@@ -364,10 +380,50 @@ def pIdent : P String
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
           || t = "do" || t = ";"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
-          || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" then
+          || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
         .error s!"expected an identifier, got keyword '{t}'"
       else .ok (t, ts)
   | [] => .error "expected an identifier, got end of input"
+
+/-! ### Type-expression parser (ADR-0066 ②)
+
+Own fuel-driven recursion (types contain no expressions). Precedence: `->` (right-assoc, lowest)
+over `*` then `+` (left-assoc loops) over atoms (`Int`/`Unit`/`Thunk T`/`(T)`). Invoked only after
+a `:` ascription, so its keywords (`Int`, `Unit`, `Thunk`) never collide with value parsing. -/
+mutual
+def pTy : Nat → P Ty
+  | 0,     _  => .error "type parser out of fuel"
+  | f + 1, ts => do
+      let (a, ts) ← pTyAdd f ts
+      match ts with
+      | "->" :: ts => do let (b, ts) ← pTy f ts; .ok (.tArr a b, ts)   -- right-assoc
+      | _          => .ok (a, ts)
+def pTyAdd : Nat → P Ty                      -- A + B  (left-assoc, loosest after ->)
+  | 0,     _  => .error "type parser out of fuel"
+  | f + 1, ts => do let (a, ts) ← pTyMul f ts; pTyAddLoop f a ts
+def pTyAddLoop : Nat → Ty → P Ty
+  | 0,     a, ts          => .ok (a, ts)
+  | f + 1, a, "+" :: ts   => do let (b, ts) ← pTyMul f ts; pTyAddLoop f (.tSum a b) ts
+  | _ + 1, a, ts          => .ok (a, ts)
+def pTyMul : Nat → P Ty                      -- A * B  (left-assoc, binds tighter than +)
+  | 0,     _  => .error "type parser out of fuel"
+  | f + 1, ts => do let (a, ts) ← pTyAtom f ts; pTyMulLoop f a ts
+def pTyMulLoop : Nat → Ty → P Ty
+  | 0,     a, ts          => .ok (a, ts)
+  | f + 1, a, "*" :: ts   => do let (b, ts) ← pTyAtom f ts; pTyMulLoop f (.tProd a b) ts
+  | _ + 1, a, ts          => .ok (a, ts)
+def pTyAtom : Nat → P Ty
+  | 0,     _            => .error "type parser out of fuel"
+  | _ + 1, "Int" :: ts  => .ok (.tInt, ts)
+  | _ + 1, "Unit" :: ts => .ok (.tUnit, ts)
+  | f + 1, "Thunk" :: ts => do let (t, ts) ← pTyAtom f ts; .ok (.tThunk t, ts)
+  | f + 1, "(" :: ts    => do
+      let (t, ts) ← pTy f ts
+      let (_, ts) ← expect ")" ts
+      .ok (t, ts)
+  | _ + 1, t :: _       => .error s!"expected a type, got '{t}'"
+  | _ + 1, []           => .error "expected a type, got end of input"
+end
 
 /-! The recursive-descent core is **fuel-driven total** recursion (not `partial`)
 so the demo `example`s reduce under `rfl` — a `partial def` is opaque to the
@@ -567,6 +623,10 @@ def pAtom : Nat → P Surf
           let (e2, ts) ← pExpr f ts
           let (_, ts) ← expect ")" ts
           .ok (.pairS e e2, ts)
+      | ":" :: ts =>                      -- type ascription `(e : T)` → annotS (ADR-0066 ②)
+          let (t, ts) ← pTy f ts
+          let (_, ts) ← expect ")" ts
+          .ok (.annotS e t, ts)
       | _ =>
           let (_, ts) ← expect ")" ts
           .ok (e, ts)
@@ -597,7 +657,7 @@ def pAtom : Nat → P Surf
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
-              || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" then
+              || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
         .error s!"unexpected '{t}' where an atom was expected"
       else .ok (.var t, ts)
   | _ + 1, [] => .error "unexpected end of input where an atom was expected"

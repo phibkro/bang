@@ -133,6 +133,25 @@ def infer (src : String) : Except String (CT × EffRow) := do
 -- forcing a product component that is an `Int` is rejected (same force-not-a-thunk rule).
 #guard (match infer "let p = (3, 4) in (let (a, b) = p in $a)" with | .error _ => true | _ => false)
 
+/-! ## Stage ② foundation — type ascription `(e : T)` parses into `annotS` (ADR-0066 ②).
+
+The type-expression grammar + the ascription node are in place; the `Surf`-level checker that
+CONSUMES them (driving check-mode for lambdas) is the next unit. -/
+
+-- a function-typed ascription parses to `annotS` carrying the arrow type.
+#guard (match Bang.Surface.parse "( fun x => x : Int -> Int )" with
+        | .ok (.annotS (.lam "x" (.var "x")) (.tArr .tInt .tInt)) => true | _ => false)
+-- `->` is right-associative: `Int -> Int -> Int` = `Int -> (Int -> Int)`.
+#guard (match Bang.Surface.parse "( g : Int -> Int -> Int )" with
+        | .ok (.annotS (.var "g") (.tArr .tInt (.tArr .tInt .tInt))) => true | _ => false)
+-- `*` binds tighter than `+`; `Thunk` is an atom former.
+#guard (match Bang.Surface.parse "( p : Int * Int )" with
+        | .ok (.annotS (.var "p") (.tProd .tInt .tInt)) => true | _ => false)
+#guard (match Bang.Surface.parse "( k : Thunk Int + Unit )" with
+        | .ok (.annotS (.var "k") (.tSum (.tThunk .tInt) .tUnit)) => true | _ => false)
+-- ascription erases at lowering: the annotated identity still runs as the bare identity.
+#guard Bang.Surface.runYieldsInt 20 "( fun x => x : Int -> Int ) 5" 5
+
 /-! ## Validation ② — the kernel `HasCTy` AGREES with the checker's inferred type (the spec link).
 
 The checker says `infer "3" = F ω int`. The kernel confirms a real derivation exists at that type

@@ -14,6 +14,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — ADTs end-to-end — Left/Right/match + (a,b)/let-destructure (#1) (`96346ff`)
 - **arith** — infix arithmetic, comparisons & if over a verified δ-rule kernel (#4) (`f826dbc`)
 - **surface** — do-notation — sequential effectful statements (#27) (`e4fcd2b`)
+- **typecheck** — ADR-0066 ③ — bidirectional-checker spike (pure fragment) (`6cef2ba`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
