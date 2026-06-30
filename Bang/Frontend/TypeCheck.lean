@@ -170,7 +170,8 @@ Bidirectional over the SURFACE (named contexts, BEFORE lowering — where annota
 drives check-mode: a `lam`/`Left`/`Right` checked against an expected type gets the info synthesis
 lacked, so ANNOTATED functions and injections now typecheck — exactly the limitation the spike (over
 the annotation-free lowered `Comp`) could not lift. Mirrors `lowerC`/`lowerV`: `synthSC`/`checkSC`
-read a `Surf` as a computation, `synthSV`/`checkSV` as a value. Pure fragment (effect ops are ④). -/
+read a `Surf` as a computation, `synthSV`/`checkSV` as a value. Effect ops (④) infer rows now:
+each `perform` adds its label, each handler discharges it; `synthSC` ENUMERATES every constructor. -/
 open Bang.Surface
 
 abbrev NCtx := List (String × VT)   -- named typing context, innermost first (= `List.lookup` keys)
@@ -262,8 +263,24 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
       | .prod A B => synthSC ((b, B) :: (a, A) :: Γ) body
       | _ => .error "split: scrutinee is not a product"
   | .annotS b t => do let C := ctyOf t; let φ ← checkSC Γ b C; return (C, φ)
+  -- ── effects (ADR-0066 ④): each op ADDS its label to the row; handlers DISCHARGE it (`Finset.erase`).
+  -- v1 simplification (marked): operation payload/result types are fixed to the surface convention
+  -- (state cell + TVar contents + exn payload are `Int`, ADR-0030) — no payload-type threading yet.
+  | .raise e     => do let _ ← checkSV Γ e .int; return (.F .omega .int, {exnLabel})    -- result = payload (v1)
+  | .handle e    => do let (B, φ) ← synthSC Γ e; return (B, φ.erase exnLabel)            -- discharge throws
+  | .getS        => .ok (.F .omega .int, {stateLabel})
+  | .putS e      => do let _ ← checkSV Γ e .int; return (.F .omega .unit, {stateLabel})
+  | .stateS e0 e => do let _ ← checkSV Γ e0 .int; let (B, φ) ← synthSC Γ e; return (B, φ.erase stateLabel)
+  | .atomS e     => do let (B, φ) ← synthSC Γ e; return (B, φ.erase stmLabel)            -- discharge stm
+  | .newS e      => do let _ ← checkSV Γ e .int; return (.F .omega .int, {stmLabel})     -- TVar ref = Int (ADR-0030)
+  | .readS e     => do let _ ← checkSV Γ e .int; return (.F .omega .int, {stmLabel})
+  | .writeS r w  => do let _ ← checkSV Γ r .int; let _ ← checkSV Γ w .int; return (.F .omega .unit, {stmLabel})
+  -- check-mode-only intros: fail loud (synthesis has no expected type to drive them).
   | .lam _ _ => .error "fun needs an expected arrow type — annotate `(fun x => e : A -> B)`"
-  | _ => .error "out of the pure fragment (effect op — stage ④)"
+  | .inlS _  => .error "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
+  | .inrS _  => .error "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  -- NO catch-all: synthSC now ENUMERATES every Surf constructor, so a NEW feature fails to compile
+  -- here until it is typed — pipeline-completeness by construction (the operator's enforcement ask).
   termination_by (sizeOf e, 1)
 
 /-- Check a `Surf` read as a COMPUTATION against an expected computation type. -/
@@ -319,5 +336,23 @@ annotations), `synthSC e` on the surface and `synthC (lower e)` on its lowering 
 through-lowering soundness chain, differential-tested. -/
 #guard (check "let x = 3 in x") == (infer "let x = 3 in x")
 #guard (check "let p = (3, 4) in (let (a, b) = p in a)") == (infer "let p = (3, 4) in (let (a, b) = p in a)")
+
+/-! ## Validation ⑤ — effect-row inference + handler discharge (ADR-0066 ④ = #5).
+
+Each `perform` ADDS its label to the inferred row; each handler DISCHARGES it. An UNHANDLED effect
+surfaces in the row (the static "this computation can throw/touch state/stm" signal #5 is about). -/
+-- raise contributes {throws}; unhandled, it shows in the row.
+#guard check "raise 7" == .ok (.F .omega .int, {exnLabel})
+-- handle DISCHARGES throws → empty row.
+#guard check "handle (raise 7)" == .ok (.F .omega .int, ⊥)
+-- get contributes {state}; the state handler discharges it. (`(get)` — bare `get` hits the #31 quirk.)
+#guard check "(get)" == .ok (.F .omega .int, {stateLabel})
+#guard check "state 0 in get" == .ok (.F .omega .int, ⊥)
+-- a put;get sequence under `state`: the whole row is discharged.
+#guard check "state 0 in (let z = put 7 in get)" == .ok (.F .omega .int, ⊥)
+-- stm: `new` contributes {stm}; `atomically` discharges it.
+#guard check "atomically (new 0)" == .ok (.F .omega .int, ⊥)
+-- a type error INSIDE an effect op is still caught (raise of a non-Int payload).
+#guard (match check "handle (raise Left(0))" with | .error _ => true | _ => false)
 
 end Bang.TypeCheck
