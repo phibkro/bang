@@ -70,6 +70,13 @@ the offset to its binder (0 = nearest enclosing binder). -/
 
 abbrev OpId := String
 
+/-- Primitive binary operators on the `Int` base type (ADR-0065). NOT effect operations
+(those are `OpId` strings dispatched to handlers) — these are pure δ-rules: `binop` reduces
+in place like `case`/`split`/`unfold`. Arithmetic (`add`/`sub`/`mul`/`div`) returns `Int`;
+comparisons (`lt`/`eq`) return `Bool = 1+1` (a sum, ADR-0029). -/
+inductive BinOp | add | sub | mul | div | lt | eq
+  deriving Repr, Inhabited, DecidableEq
+
 
 /-! ### 1.2 Term syntax (CBPV value/computation split, de Bruijn — ADR-0020)
 
@@ -124,6 +131,9 @@ inductive Comp : Type where
   | case   : Val → Comp → Comp → Comp     -- sum elim: case v N₁ N₂; each Nᵢ binds index 0
   | split  : Val → Comp → Comp            -- product elim: split v N; N binds idx 1 (fst), idx 0 (snd)
   | unfold : Val → Comp                   -- μ elim (= a match): unfold (fold v) ↦ ret v
+  -- base-type δ-rule (ADR-0065): `binop op v w` — both operands are VALUES, reduces in place
+  -- like the eliminators above. Pure (⊥-row); `+ − × ÷ : Int→Int→Int`, `< == : Int→Int→Bool`.
+  | binop  : BinOp → Val → Val → Comp
   | oom    : Comp
   | wrong  : String → Comp
 inductive Handler : Type where
@@ -138,6 +148,23 @@ inductive Handler : Type where
   -- (invariant #5): a `Handler` constructor + effect ops, reusing the CK machinery.
   | transaction : Label → List Val → Handler
 end
+
+/-- The `Bool = 1 + 1` encoding (ADR-0065/0029): `true = inr unit`, `false = inl unit`. The single
+source of truth comparisons (`binop lt`/`eq`) and the surface `if`-sugar (`case c e t`) agree on. -/
+def boolVal : Bool → Val
+  | true  => .inr .vunit
+  | false => .inl .vunit
+
+/-- The δ-rule denotation of a `BinOp` on two integers (ADR-0065): arithmetic returns `vint`,
+comparisons return `boolVal`. Division by zero is Lean's total `Int` division (`a / 0 = 0`) — `div`
+stays PURE and total; a *checked* division is a post-v1 `throws`-effect, not a kernel concern. -/
+def BinOp.eval : BinOp → Int → Int → Val
+  | .add, a, b => .vint (a + b)
+  | .sub, a, b => .vint (a - b)
+  | .mul, a, b => .vint (a * b)
+  | .div, a, b => .vint (a / b)
+  | .lt,  a, b => boolVal (decide (a < b))
+  | .eq,  a, b => boolVal (decide (a = b))
 
 /-- `Store` — the transaction-scoped heap a `transaction` handler carries (ADR-0030). A TVar is
 an INDEX into this list (`Nat`, de-Bruijn-style); `newTVar` appends a cell (an allocation),

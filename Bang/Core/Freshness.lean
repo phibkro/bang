@@ -59,7 +59,11 @@ def capsC : Comp → List (Nat × Label)
   | .case v N₁ N₂ => capsV v ++ capsC N₁ ++ capsC N₂
   | .split v N    => capsV v ++ capsC N
   | .unfold v     => capsV v
-  | _             => []
+  | .binop _ v w  => capsV v ++ capsV w   -- δ-rule: caps of both operands (like perform)
+  -- ENUMERATE the no-cap leaves (no `| _ => []`): a future sub-term-bearing constructor must break
+  -- LOUDLY here, not silently drop its operands' caps (the latent default binop would have inherited).
+  | .oom          => []
+  | .wrong _      => []
 def capsH : Handler → List (Nat × Label)
   | .state _ s  => capsV s
   | .throws _   => []
@@ -173,6 +177,7 @@ theorem capsC_shiftFrom (j : Nat) (c : Comp) : capsC (Comp.shiftFrom j c) = caps
       rw [capsV_shiftFrom j w, capsC_shiftFrom (j+1) N₁, capsC_shiftFrom (j+1) N₂]
   | .split w N => simp only [Comp.shiftFrom, capsC]; rw [capsV_shiftFrom j w, capsC_shiftFrom (j+2) N]
   | .unfold w => simp only [Comp.shiftFrom, capsC]; exact capsV_shiftFrom j w
+  | .binop _ w₁ w₂ => simp only [Comp.shiftFrom, capsC]; rw [capsV_shiftFrom j w₁, capsV_shiftFrom j w₂]
   | .oom | .wrong _ => rfl
 theorem capsH_shiftFrom (j : Nat) (h : Handler) : capsH (Handler.shiftFrom j h) = capsH h := by
   match h with
@@ -210,6 +215,11 @@ theorem capsC_substFrom (k : Nat) (v : Val) (c : Comp) :
   | .ret w => intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢; exact capsV_substFrom k v w p hp
   | .force w => intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢; exact capsV_substFrom k v w p hp
   | .unfold w => intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢; exact capsV_substFrom k v w p hp
+  | .binop _ w₁ w₂ =>
+      intro p hp; simp only [Comp.substFrom, capsC, List.mem_append] at hp ⊢
+      rcases hp with h | h
+      · rcases capsV_substFrom k v w₁ p h with h' | h' <;> tauto
+      · rcases capsV_substFrom k v w₂ p h with h' | h' <;> tauto
   | .lam M =>
       intro p hp; simp only [Comp.substFrom, capsC] at hp ⊢
       rcases capsC_substFrom (k+1) (Val.shift v) M p hp with h | h
@@ -473,6 +483,12 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
                · exact hv p (by simp only [capsV, List.mem_append] at h' ⊢; tauto))
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
+/-- The `Bool=1+1` encoding (ADR-0065) is closed: it carries no capabilities. -/
+theorem capsV_boolVal (b : Bool) : capsV (boolVal b) = [] := by cases b <;> simp [boolVal, capsV]
+/-- A δ-rule result is a CLOSED value (vint or boolVal), so it carries no capabilities (ADR-0065). -/
+theorem capsV_binopEval (op : BinOp) (a b : Int) : capsV (BinOp.eval op a b) = [] := by
+  cases op <;> simp [BinOp.eval, capsV, capsV_boolVal]
+
 /-- **FRESHNESS PRESERVATION (Phase 2 — the freshness arm).** `FreshCfg` rides `Source.step`: MINT pushes
 `handleF g`, advances the counter to `g+1`, injects `vcap g` (the new focus cap `g < g+1`) and re-bounds
 the old frames by monotonicity; POP inverts the `StratFresh` head; PUSH/REDUCE re-home sub-stacks; the
@@ -589,6 +605,20 @@ theorem freshCfg_step (cfg cfg' : Config)
       exact ⟨hcb, fun p hp => hfc p (by simpa only [capsC, capsV] using hp), hsf, hck⟩
     | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ =>
       simp [Source.step] at hstep
+  | binop op v w =>
+    -- δ-rule: steps (on vint/vint) to `ret (op.eval …)`, a CLOSED reduct (no caps, `capsV_binopEval`);
+    -- the stack `K` is unchanged so field-1 (`hcb`) transfers, field-2 is vacuous (mirror case/split).
+    cases v with
+    | vint a =>
+      cases w with
+      | vint b =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        refine ⟨hcb, ?_, hsf, hck⟩
+        intro p hp; simp only [capsC, capsV_binopEval, List.not_mem_nil] at hp
+      | vunit | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ =>
+        simp [Source.step] at hstep
+    | vunit | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ =>
+      cases w <;> simp [Source.step] at hstep
   | perform cv op v =>
     -- DISPATCH (#freshness): the resumed stack reassembles `CapsBelow`/`StratFresh`/`capsK` and the
     -- resumed focus's caps are `< g` — ALL pure-structural via `freshStack_idDispatch`. The state-`get`

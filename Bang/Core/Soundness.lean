@@ -1729,6 +1729,14 @@ private theorem HasCTy.wrong_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mu
     {s : String} {e : Eff} {C : CTy Eff Mult} : ¬ HasCTy γ0 Γ0 (Comp.wrong s) e C := by
   intro h; cases h
 
+/-- `binop` is UNTYPEABLE in v1 (ADR-0065): the δ-rule has no `HasCTy` rule yet, so arithmetic runs
+(via `Source.eval`, diff-tested) but lives in the TESTED superset until the lawful-algebra layer types
+it (as `AddCommGroup Int`'s operation). A runtime-only focus, exactly like `oom`/`wrong`. -/
+private theorem HasCTy.binop_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {op : BinOp} {v w : Val} {e : Eff} {C : CTy Eff Mult} :
+    ¬ HasCTy γ0 Γ0 (Comp.binop op v w) e C := by
+  intro h; cases h
+
 /-- A focus typed at a smaller effect `e'` plugs into the same stack, with the
 whole-program effect only shrinking. Induction on `HasStack`; each frame is
 effect-monotone in its focus effect. -/
@@ -2367,6 +2375,7 @@ theorem preservation_proof
     exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩, hnecfg'⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
+  | binop _ _ _ => exact absurd hfocus HasCTy.binop_untypable
 
 /-- **The NonEscape-free TYPING preservation** — the gate for every `wsCfg_step` arm's typing half.
 A by-pathspec projection of `preservation_proof` (Metatheory:2038): identical per-case reconstruction,
@@ -2700,6 +2709,7 @@ theorem hasConfigTy_step
     exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
+  | binop _ _ _ => exact absurd hfocus HasCTy.binop_untypable
 
 /-! ### E.3 progress (config level, ADR-0023) -/
 
@@ -2817,6 +2827,7 @@ theorem progress'_proof
     exact Or.inr (Or.inl ⟨(g, K, Comp.ret a), by simp [Source.step]⟩)
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
+  | binop _ _ _ => exact absurd hfocus HasCTy.binop_untypable
 
 /-- Config-level safety under the reclassification: a `HasConfig'`-typed config never runs to `.stuck`.
 The escape now lands in `.escapedCap` (a defined terminal ≠ `.stuck`), so the third progress' outcome is
@@ -2847,6 +2858,7 @@ private theorem run_safe' {q : Mult} {A : VTy Eff Mult} :
         | case _ _ _ => simp only [isReturnConfig] at hret
         | split _ _ => simp only [isReturnConfig] at hret
         | unfold _ => simp only [isReturnConfig] at hret
+        | binop _ _ _ => simp only [isReturnConfig] at hret
         | oom => simp only [isReturnConfig] at hret
         | wrong _ => simp only [isReturnConfig] at hret
     · -- cfg steps; pure typing-preservation (`hasConfigTy_step`) + free `nonEscape'_all` re-seeds IH.
@@ -2870,6 +2882,7 @@ private theorem run_safe' {q : Mult} {A : VTy Eff Mult} :
           | case v N₁ N₂ => simp only [Config.run]; rw [hstep]
           | split v N => simp only [Config.run]; rw [hstep]
           | unfold v => simp only [Config.run]; rw [hstep]
+          | binop op v w => simp only [Config.run]; rw [hstep]  -- δ-rule steps in place (like case/split)
           | oom => simp [Source.step] at hstep
           | wrong s => simp [Source.step] at hstep
       rw [hrun]

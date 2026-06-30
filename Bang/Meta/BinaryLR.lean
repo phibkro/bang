@@ -282,6 +282,9 @@ theorem Comp.shiftFrom_substFrom_closed :
       Comp.shiftFrom k (Comp.substFrom i u t) = Comp.substFrom i u (Comp.shiftFrom (k + 1) t)
   | u, hu, k, i, hik, .ret w => by
       simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik w]
+  | u, hu, k, i, hik, .binop op a b => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Val.shiftFrom_substFrom_closed hu k i hik a, Val.shiftFrom_substFrom_closed hu k i hik b]
   | u, hu, k, i, hik, .letC M N => by
       simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
       rw [Comp.shiftFrom_substFrom_closed hu k i hik M,
@@ -625,6 +628,8 @@ theorem Comp.substFrom_swap_closed :
     ∀ {v w : Val}, Val.Closed v → Val.Closed w → ∀ (k : Nat) (t : Comp),
       Comp.substFrom k w (Comp.substFrom (k + 1) v t) = Comp.substFrom k v (Comp.substFrom k w t)
   | v, w, hv, hw, k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k u]
+  | v, w, hv, hw, k, .binop op a b => by
+      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed hv hw k a, Val.substFrom_swap_closed hv hw k b]
   | v, w, hv, hw, k, .letC M N => by
       simp only [Comp.substFrom, hv.shift, hw.shift]
       rw [Comp.substFrom_swap_closed hv hw k M, Comp.substFrom_swap_closed hv hw (k + 1) N]
@@ -720,6 +725,9 @@ theorem Comp.substFrom_swap_closed_ge :
     ∀ {u w : Val}, Val.Closed u → Val.Closed w → ∀ (i j : Nat), i ≤ j → ∀ (t : Comp),
       Comp.substFrom i w (Comp.substFrom (j + 1) u t) = Comp.substFrom j u (Comp.substFrom i w t)
   | u, w, hu, hw, i, j, hij, .ret t => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .binop op a b => by
+      simp only [Comp.substFrom]
+      rw [Val.substFrom_swap_closed_ge hu hw i j hij a, Val.substFrom_swap_closed_ge hu hw i j hij b]
   | u, w, hu, hw, i, j, hij, .letC M N => by
       simp only [Comp.substFrom, hu.shift, hw.shift]
       rw [Comp.substFrom_swap_closed_ge hu hw i j hij M,

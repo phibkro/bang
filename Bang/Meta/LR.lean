@@ -468,7 +468,11 @@ def renameC (σ : Nat → Nat) : Comp → Comp
   | .case v N₁ N₂ => .case (renameV σ v) (renameC σ N₁) (renameC σ N₂)
   | .split v N    => .split (renameV σ v) (renameC σ N)
   | .unfold v     => .unfold (renameV σ v)
-  | c             => c
+  | .binop op v w => .binop op (renameV σ v) (renameV σ w)  -- δ-rule: rename both operands (like case/split)
+  -- ENUMERATE the leaves (no `| _ => c` catch-all): a future Comp constructor with sub-terms must
+  -- then break LOUDLY here rather than silently inherit the wrong identity default (ADR-0065 review).
+  | .oom          => .oom
+  | .wrong s      => .wrong s
 def renameH (σ : Nat → Nat) : Handler → Handler
   | .state ℓ s  => .state ℓ (renameV σ s)
   | .throws ℓ   => .throws ℓ
@@ -568,6 +572,10 @@ theorem renameK_append (σ : Nat → Nat) (K K' : EvalCtx) :
     renameC σ (.split v N) = .split (renameV σ v) (renameC σ N) := by simp only [renameC]
 @[simp] theorem renameC_unfold (σ : Nat → Nat) (v : Val) :
     renameC σ (.unfold v) = .unfold (renameV σ v) := by simp only [renameC]
+@[simp] theorem renameC_binop (σ : Nat → Nat) (op : BinOp) (v w : Val) :
+    renameC σ (.binop op v w) = .binop op (renameV σ v) (renameV σ w) := by simp only [renameC]
+@[simp] theorem renameV_boolVal (σ : Nat → Nat) (b : Bool) : renameV σ (boolVal b) = boolVal b := by
+  cases b <;> simp [boolVal, renameV_inl, renameV_inr, renameV_vunit]
 @[simp] theorem renameC_oom (σ : Nat → Nat) : renameC σ .oom = .oom := by simp only [renameC]
 @[simp] theorem renameC_wrong (σ : Nat → Nat) (s : String) : renameC σ (.wrong s) = .wrong s := by
   simp only [renameC]
@@ -634,6 +642,7 @@ theorem renameC_shiftFrom (σ : Nat → Nat) (c : Nat) :
   | .split w N   => by
       simp only [Comp.shiftFrom, renameC_split, renameV_shiftFrom σ c w, renameC_shiftFrom σ (c + 2) N]
   | .unfold w    => by simp only [Comp.shiftFrom, renameC_unfold, renameV_shiftFrom σ c w]
+  | .binop op w₁ w₂ => by simp only [Comp.shiftFrom, renameC_binop, renameV_shiftFrom σ c w₁, renameV_shiftFrom σ c w₂]
   | .oom         => by simp only [Comp.shiftFrom, renameC_oom]
   | .wrong _     => by simp only [Comp.shiftFrom, renameC_wrong]
 theorem renameH_shiftFrom (σ : Nat → Nat) (c : Nat) :
@@ -698,6 +707,7 @@ theorem renameC_substFrom (σ : Nat → Nat) (k : Nat) (v : Val) :
       simp only [Comp.substFrom, renameC_split, renameV_substFrom σ k v w,
         renameC_substFrom σ (k + 2) (Val.shift (Val.shift v)) N, renameV_shift]
   | .unfold w    => by simp only [Comp.substFrom, renameC_unfold, renameV_substFrom σ k v w]
+  | .binop op w₁ w₂ => by simp only [Comp.substFrom, renameC_binop, renameV_substFrom σ k v w₁, renameV_substFrom σ k v w₂]
   | .oom         => by simp only [Comp.substFrom, renameC_oom]
   | .wrong _     => by simp only [Comp.substFrom, renameC_wrong]
 theorem renameH_substFrom (σ : Nat → Nat) (k : Nat) (v : Val) :
@@ -802,6 +812,8 @@ theorem step_counter_le {cfg cfg' : Config} (h : Source.step cfg = some cfg') : 
   | letC M N => simp only [Source.step, Option.some.injEq] at h; subst h; exact Nat.le_refl _
   | app M v => simp only [Source.step, Option.some.injEq] at h; subst h; exact Nat.le_refl _
   | handle hh M => simp only [Source.step, Option.some.injEq] at h; subst h; exact Nat.le_succ _
+  | binop op v w => cases v <;> cases w <;>
+      simp only [Source.step, Option.some.injEq, reduceCtorEq] at h <;> (try (subst h; exact Nat.le_refl _))
   | force w =>
     cases w <;> simp only [Source.step, Option.some.injEq, reduceCtorEq] at h <;>
       (try (subst h; exact Nat.le_refl _))
@@ -857,6 +869,12 @@ theorem step_rename (σ : Nat → Nat) (hσ : Function.Injective σ) (g : Nat) (
   | handle hh M =>
     simp only [renameCfg_eq, renameC_handle, Source.step, Option.map_some, renameK_cons,
       renameF_handleF, renameC_subst, renameV_vcap, renameH_label, hsucc]
+  | binop op v w =>
+    -- δ-rule: steps only on vint/vint, to `ret (op.eval a b)`; op.eval's result is a CLOSED value
+    -- (vint or boolVal = inl/inr unit), so renaming is the identity on it (cases op reduces it).
+    cases v <;> cases w <;> cases op <;>
+      simp [renameCfg_eq, renameC_binop, BinOp.eval, renameV_vint, renameV_boolVal, Source.step,
+        Option.map_some, Option.map_none]
   | force w =>
     cases w <;> simp only [renameCfg_eq, renameC_force, renameV_vthunk, renameV_vunit, renameV_vint,
       renameV_vvar, renameV_vcap, renameV_inl, renameV_inr, renameV_pair, renameV_fold, Source.step,
@@ -926,6 +944,7 @@ theorem renameCfg_ne_ret {σ : Nat → Nat} {cfg : Config} (hne : ∀ g v, cfg �
   | case _ _ _ => simp only [renameC_case, reduceCtorEq] at hcc
   | split _ _ => simp only [renameC_split, reduceCtorEq] at hcc
   | unfold _ => simp only [renameC_unfold, reduceCtorEq] at hcc
+  | binop _ _ _ => simp only [renameC_binop, reduceCtorEq] at hcc
   | oom => simp only [renameC_oom, reduceCtorEq] at hcc
   | wrong _ => simp only [renameC_wrong, reduceCtorEq] at hcc
 
@@ -957,7 +976,7 @@ theorem run_rename (σ : Nat → Nat) (hσ : Function.Injective σ) :
         cases c with
         | perform cv op v => cases cv <;> simp [renameC, renameV, renameR]
         | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
-          | unfold _ | oom | wrong _ => simp [renameC, renameV, renameR]
+          | unfold _ | binop _ _ _ | oom | wrong _ => simp [renameC, renameV, renameR]
       | some cfg' =>
         simp only [Option.map_some]
         apply ih cfg'
@@ -1023,7 +1042,11 @@ def Comp.CapsBelow (g : Nat) : Comp → Prop
   | .case v N₁ N₂ => Val.CapsBelow g v ∧ Comp.CapsBelow g N₁ ∧ Comp.CapsBelow g N₂
   | .split v N    => Val.CapsBelow g v ∧ Comp.CapsBelow g N
   | .unfold v     => Val.CapsBelow g v
-  | _             => True
+  | .binop _ v w  => Val.CapsBelow g v ∧ Val.CapsBelow g w  -- δ-rule: both operands (like split)
+  -- ENUMERATE the no-cap leaves (no `| _ => True`): a future sub-term-bearing constructor must break
+  -- LOUDLY here, not silently claim "no caps" (the latent default binop would have inherited).
+  | .oom          => True
+  | .wrong _      => True
 def Handler.CapsBelow (g : Nat) : Handler → Prop
   | .state _ s       => Val.CapsBelow g s
   | .throws _        => True
@@ -1083,6 +1106,7 @@ theorem Comp.CapsBelow_mono {g g' : Nat} (hgg : g ≤ g') :
   | .split v N,    h => by
       simp only [Comp.CapsBelow] at h ⊢; exact ⟨Val.CapsBelow_mono hgg h.1, Comp.CapsBelow_mono hgg h.2⟩
   | .unfold v,     h => by simp only [Comp.CapsBelow] at h ⊢; exact Val.CapsBelow_mono hgg h
+  | .binop _ v w,  h => by simp only [Comp.CapsBelow] at h ⊢; exact ⟨Val.CapsBelow_mono hgg h.1, Val.CapsBelow_mono hgg h.2⟩
   | .oom,          _ => by simp only [Comp.CapsBelow]
   | .wrong _,      _ => by simp only [Comp.CapsBelow]
 theorem Handler.CapsBelow_mono {g g' : Nat} (hgg : g ≤ g') :
@@ -1129,6 +1153,7 @@ theorem renameC_capsBelow {g : Nat} :
   | .split v N,    h => by
       simp only [Comp.CapsBelow] at h; simp only [renameC_split, renameV_capsBelow h.1, renameC_capsBelow h.2]
   | .unfold v,     h => by simp only [Comp.CapsBelow] at h; simp only [renameC_unfold, renameV_capsBelow h]
+  | .binop _ v w,  h => by simp only [Comp.CapsBelow] at h; simp only [renameC_binop, renameV_capsBelow h.1, renameV_capsBelow h.2]
   | .oom,          _ => by simp only [renameC_oom]
   | .wrong _,      _ => by simp only [renameC_wrong]
 theorem renameH_capsBelow {g : Nat} :
@@ -1833,7 +1858,7 @@ theorem not_convergesC_le_of_stuck {n : Nat} {cfg : Config}
     cases c with
     | perform cv op v => cases cv <;> exact absurd hrun (by simp)
     | ret _ | letC _ _ | force _ | lam _ | app _ _ | handle _ _ | case _ _ _ | split _ _
-      | unfold _ | oom | wrong _ => exact absurd hrun (by simp)
+      | unfold _ | binop _ _ _ | oom | wrong _ => exact absurd hrun (by simp)
 
 /-- ◊4.5b `crelK_ret` (ADR-0058 ROUTE-1 form): a `VrelK`-related RETURN co-behaves through every
 `KrelS`-related stack pair, at the REAL threaded counter `g` (universally quantified). NO density

@@ -836,6 +836,7 @@ theorem compile_ok_mem : ∀ (M : Comp) {c : CalcVM.Code}, (∀ i ∈ c, InstrOk
           · exact hc i hi
       | _ => simp only [CalcVM.compile]; exact hc
   | .oom, c, hc => by simp only [CalcVM.compile]; exact hc
+  | .binop _ _ _, c, hc => by simp only [CalcVM.compile]; exact hc   -- δ-rule: compile passes through (untyped)
   | .wrong s, c, hc => by simp only [CalcVM.compile]; exact hc
 
 /-- `compile M c` is `CodeOk` (THROW-free) whenever `c` is — for ANY source `M`. -/
@@ -1613,6 +1614,8 @@ theorem evalD_mono : ∀ (f g : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (c
     cases c with
     | ret v => simpa [CalcVM.evalD] using h
     | lam M => simpa [CalcVM.evalD] using h
+    | binop _ _ _ => simpa [CalcVM.evalD] using h   -- δ-rule: evalD has no binop arm (untyped) ⇒ none
+
     | force w =>
         cases w with
         | vthunk M => simp only [CalcVM.evalD] at h ⊢; exact ih g σ τ M r h

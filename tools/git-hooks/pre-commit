@@ -33,15 +33,18 @@ if [ -n "$staged_lean" ]; then
 fi
 
 # ── 2. No hand-rolled `axiom` outside Bang/Spec.lean family ────────────
+# NOTE: post-#108 tier-folder paths (the flat Bang/X.lean paths were stale after the restructure).
 staged_lean_strict=$(echo "$staged_lean" \
                      | grep -v '^Bang/Spec\.lean$' \
-                     | grep -v '^Bang/Typing\.lean$' \
-                     | grep -v '^Bang/LR\.lean$' \
-                     | grep -v '^Bang/Semantics\.lean$' \
-                     | grep -v '^Bang/Wasm\.lean$' \
+                     | grep -v '^Bang/Core/Typing\.lean$' \
+                     | grep -v '^Bang/Meta/LR\.lean$' \
+                     | grep -v '^Bang/Core/Semantics\.lean$' \
+                     | grep -v '^Bang/Core/Semantics/Eval\.lean$' \
+                     | grep -v '^Bang/Backend/Wasm\.lean$' \
                      | grep -v '^Bang/Audit\.lean$' || true)
 if [ -n "$staged_lean_strict" ]; then
-  bad=$(echo "$staged_lean_strict" | xargs -r grep -lE '^[[:space:]]*axiom\b' 2>/dev/null || true)
+  # Require `axiom` + whitespace (a real declaration) — `axiom\b` false-matched "axiom-clean" prose.
+  bad=$(echo "$staged_lean_strict" | xargs -r grep -lE '^[[:space:]]*axiom[[:space:]]' 2>/dev/null || true)
   if [ -n "$bad" ]; then
     echo "❌ pre-commit: hand-rolled axiom outside the Spec/Syntax/LR/Operational/Compile/Audit family:"
     echo "$bad" | sed 's/^/    /'

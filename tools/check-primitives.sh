@@ -29,6 +29,10 @@ CORE="$ROOT/Bang/Core/IR.lean"
 #   handlers (runtimes)    : handle · state · throws · transaction   (transaction = STM, ADR-0030)
 #   CBPV scaffolding       : vunit vint vvar vcap · ret letC lam app   (vcap = the capability identity value, ADR-0054 — a value former like vint, NOT a 6th primitive)
 #   ADT data layer (0029)  : inl inr pair fold · case split unfold
+#   base-type δ-rules (0065): binop   (Int +−×÷ / <== on the Int base type — NOT a 6th computational
+#                                      primitive; the eliminator of the `vint` base type, like case/split
+#                                      eliminate the ADT formers. ADR-0065. Untyped in v1 (tested superset);
+#                                      the lawful-algebra layer types it later as AddCommGroup Int's op.)
 #   error/divergence forms : oom wrong
 ALLOWLIST="$(cat <<'EOF'
 Val.vunit
@@ -50,6 +54,7 @@ Comp.handle
 Comp.case
 Comp.split
 Comp.unfold
+Comp.binop
 Comp.oom
 Comp.wrong
 Handler.state

@@ -97,6 +97,7 @@ def Source.step : Config → Option Config
   | (g, K, .case (.inr v) _ N₂)  => some (g, K, Comp.subst v N₂)   -- sum: right branch
   | (g, K, .split (.pair v w) N) => some (g, K, Comp.subst v (Comp.subst (Val.shift w) N))  -- product
   | (g, K, .unfold (.fold v))    => some (g, K, .ret v)            -- μ: fold/unfold erase
+  | (g, K, .binop op (.vint a) (.vint b)) => some (g, K, .ret (op.eval a b))  -- δ-rule (ADR-0065)
   -- DISPATCH (ADR-0054): IDENTITY — the capability `vcap n _` names handler `n`; match it, route by the
   -- resolved handler (`dispatchOn` reinstalls `handleF n` on a resumptive resume). The counter `g` is
   -- threaded UNCHANGED — a resume reuses the matched id, it never mints a fresh one.
@@ -164,7 +165,7 @@ theorem focusResolves'_all (cfg : Config) : FocusResolves' cfg := by
       · exact Or.inr hd
       · exact Or.inl (capResolves_of_idDispatch hd)
   | .ret _ | .letC _ _ | .force _ | .lam _ | .app _ _ | .handle _ _ | .case _ _ _ | .split _ _
-  | .unfold _ | .oom | .wrong _ | .perform (.vunit) _ _ | .perform (.vint _) _ _
+  | .unfold _ | .binop _ _ _ | .oom | .wrong _ | .perform (.vunit) _ _ | .perform (.vint _) _ _
   | .perform (.vvar _) _ _ | .perform (.vthunk _) _ _ | .perform (.inl _) _ _ | .perform (.inr _) _ _
   | .perform (.pair _ _) _ _ | .perform (.fold _) _ _ => trivial
 
@@ -321,7 +322,7 @@ theorem Config.run_step (n : Nat) (cfg : Config)
   match K, c with
   | [], .ret v => exact absurd rfl (hne g v)
   | [], .letC _ _ | [], .app _ _ | [], .handle _ _ | [], .force _ | [], .perform _ _ _
-  | [], .lam _ | [], .case _ _ _ | [], .split _ _ | [], .unfold _ | [], .oom | [], .wrong _
+  | [], .lam _ | [], .case _ _ _ | [], .split _ _ | [], .unfold _ | [], .binop _ _ _ | [], .oom | [], .wrong _
   | _ :: _, _ => rfl
 
 /-- Fuel monotonicity: a config that runs to `done w` keeps running to `done w` with MORE fuel.

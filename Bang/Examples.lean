@@ -111,10 +111,27 @@ Each parses the readable source, runs `Source.eval`, and checks `done (vint n)`.
 
 /-! ## B. Raw-`Comp` programs (structural `match` on `Result`)
 
-Sum/product are now surfaceable (§A12/A13, issue #1); what remains hand-built is μ
-(`fold`/`unfold` — recursive data, issue #2) and the capability escape. These are
-written as `Comp` terms with the de-Bruijn indices noted; the `#guard` structurally
-matches the `Result Val` (no `BEq` on kernel types). -/
+Sum/product (§A12/A13, issue #1) and arithmetic (issue #4 — now infix from source, see
+`Surface.lean` Stage 2e) are surfaceable; what remains hand-built is μ (`fold`/`unfold` —
+recursive data, issue #2) and the capability escape. The arithmetic guards below stay as
+hand-built `Comp` because they pin the *kernel δ-rule directly* (the reference, below the
+surface). These are written as `Comp` terms with the de-Bruijn indices noted; the `#guard`
+structurally matches the `Result Val` (no `BEq` on kernel types). -/
+
+-- B0a. ARITHMETIC (issue #4, ADR-0065): the `binop` δ-rule reduces two `vint` operands in
+-- place (no eval-context frame, like `case`/`split`). `3 + 4 ⟶ 7`, `6 × 7 ⟶ 42`, `10 − 3 ⟶ 7`.
+#guard (match Source.eval 20 (.binop .add (.vint 3) (.vint 4)) with | .done (.vint n) => n == 7 | _ => false)
+#guard (match Source.eval 20 (.binop .mul (.vint 6) (.vint 7)) with | .done (.vint n) => n == 42 | _ => false)
+#guard (match Source.eval 20 (.binop .sub (.vint 10) (.vint 3)) with | .done (.vint n) => n == 7 | _ => false)
+-- B0b. COMPARISON returns `Bool = 1 + 1` (ADR-0029/0065): `3 < 4 ⟶ true = inr unit`; `4 < 3 ⟶ false = inl unit`.
+#guard (match Source.eval 20 (.binop .lt (.vint 3) (.vint 4)) with | .done (.inr .vunit) => true | _ => false)
+#guard (match Source.eval 20 (.binop .lt (.vint 4) (.vint 3)) with | .done (.inl .vunit) => true | _ => false)
+-- B0c. A counter step `get + 1` over a state cell — the canonical motivating program (rung 1 × arithmetic).
+-- `state 5 in (binop add get 1)` ⟶ 6: `get` reads 5, the δ-rule adds 1. (Hand-built: `get` = perform.)
+#guard (match Source.eval 50
+    (.handle (.state stateLabel (.vint 5))
+      (.letC (.perform (.vvar 0) "get" .vunit) (.binop .add (.vvar 0) (.vint 1)))) with
+  | .done (.vint n) => n == 6 | _ => false)
 
 -- B1. μ STACK — LIFO (rung 2, ADR-0029): `Stack = μX. 1 + (Int × X)`. `pop` is
 -- `unfold`→`case`→`split` under the hood; the user sees only `empty`/`push`/`pop`

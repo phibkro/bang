@@ -1955,6 +1955,7 @@ theorem sim : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
+      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
     · -- RAISED PART
       intro M g σ τ ℓ op v g' σ' τ' h hs hC hT
       cases M with
@@ -2327,6 +2328,7 @@ theorem sim : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
+      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
 
 
 /-- Headline: compiling a closed computation and running it on the empty stack/store yields exactly
@@ -4369,6 +4371,7 @@ theorem run_evalD : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
+      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
     · -- RAISED PART (U3 seam-3). Mirrors the U2 `sim` raised arm on the `Config.run`/`dispatchRun` side.
       -- The conclusion folds `CapLabelCoh (g', ctxNetEffect K σ' τ', ret v)` (REFUTE-WATCH: CONFIRMED —
       -- `capsV v ⊆ capsC` of the focus in every case, so the raised value's coherence is a sub-multiset of
@@ -4543,6 +4546,7 @@ theorem run_evalD : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
+      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
       | letC M0 N =>
           -- TWO live sub-cases: (a) M0 raises → propagate; (b) M0 returns `ret v0`, then `subst v0 N` raises
           -- (needs `ihT` for the M0-store-alignment — the reason this MUST be co-induced with the term part).

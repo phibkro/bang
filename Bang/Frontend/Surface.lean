@@ -134,6 +134,10 @@ inductive Surf where
     -- match s { Left(x) -> e₁ , Right(y) -> e₂ }  → case  (x, y each bind at idx 0)
   | splitS : String → String → Surf → Surf → Surf
     -- let (a, b) = p in body  → split  (a = fst at idx 1, b = snd at idx 0)
+  -- arithmetic (issue #4, ADR-0065). Operands are ARBITRARY exprs (A-normalized at lowering, since
+  -- the kernel `binop` takes VALUES); `if` is sugar over `case` on `Bool = 1+1`.
+  | binopS : BinOp → Surf → Surf → Surf   -- a + b / a - b / a * b / a / b / a < b / a == b
+  | ifS    : Surf → Surf → Surf → Surf    -- if c then t else e  → case c (false→e) (true→t)
   deriving Repr, Inhabited, DecidableEq
 
 
@@ -212,6 +216,22 @@ def lowerC (env : List String) : Surf → Except String Comp
   -- B2 (`prodSwap` reads vvar0 = snd, vvar1 = fst).
   | .splitS a b p body => do
       return .split (← lowerV env p) (← lowerC (b :: a :: env) body)
+  -- ARITHMETIC (issue #4). A-NORMALIZE: the kernel `binop` needs VALUE operands, but `a`/`b` may be
+  -- computations (nested arithmetic, calls), so let-bind both — `a` at idx 1, `b` at idx 0 — then
+  -- `binop op (vvar 1) (vvar 0)`. Uniform: a literal lowers to `ret`, which `letC` binds fine. The
+  -- sentinel names (`#bl`) only shift de-Bruijn depth; the grammar can't bind a `#`-name.
+  | .binopS op a b => do
+      let ca ← lowerC env a
+      let cb ← lowerC ("#bl" :: env) b
+      return .letC ca (.letC cb (.binop op (.vvar 1) (.vvar 0)))
+  -- `if c then t else e`: A-normalize `c` (a comparison is a comp), then `case` on it. `Bool = 1+1`
+  -- (ADR-0065): `inl unit = false → e`, `inr unit = true → t`. Branches sit under 2 binders (the
+  -- condition `letC` + the `case` payload), so they lower in `env` shifted by 2.
+  | .ifS c t e => do
+      let cc ← lowerC env c
+      let ct ← lowerC ("#p" :: "#c" :: env) t
+      let ce ← lowerC ("#p" :: "#c" :: env) e
+      return .letC cc (.case (.vvar 0) ce ct)
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -277,8 +297,9 @@ def pIdent : P String
       if t = "let" || t = "fun" || t = "handle" || t = "raise"
           || t = "state" || t = "get" || t = "put"
           || t = "atomically" || t = "new" || t = "read" || t = "write"
-          || t = "match" || t = "Left" || t = "Right"
-          || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," then
+          || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
+          || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
+          || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" then
         .error s!"expected an identifier, got keyword '{t}'"
       else .ok (t, ts)
   | [] => .error "expected an identifier, got end of input"
@@ -360,7 +381,14 @@ def pExpr : Nat → P Surf
       | "Left", "Right" => .ok (.matchS s x1 b1 x2 b2, ts)
       | "Right", "Left" => .ok (.matchS s x2 b2 x1 b1, ts)
       | _, _ => .error s!"match needs exactly one Left and one Right arm (got {c1}, {c2})"
-  | f + 1, ts => pApp f ts
+  | f + 1, "if" :: ts => do            -- conditional: if c then t else e  (sugar over `case` on Bool)
+      let (cnd, ts) ← pExpr f ts
+      let (_, ts) ← expect "then" ts
+      let (thn, ts) ← pExpr f ts
+      let (_, ts) ← expect "else" ts
+      let (els, ts) ← pExpr f ts
+      .ok (.ifS cnd thn els, ts)
+  | f + 1, ts => pCompare f ts          -- ▼ infix precedence chain (issue #4)
 
 /-- Parse an application chain: one or more atoms, left-associated. -/
 def pApp : Nat → P Surf
@@ -376,12 +404,49 @@ def pAppLoop : Nat → Surf → P Surf
     match ts with
     | [] => .ok (acc, ts)
     | t :: _ =>
-      if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" || t = "," || t = "->" then
+      if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" || t = "," || t = "->"
+         || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
+         || t = "then" || t = "else" then
         .ok (acc, ts)
       else
         match pAtom f ts with
         | .ok (a, ts') => pAppLoop f (.app acc a) ts'
         | .error _     => .ok (acc, ts)
+
+/-- Infix arithmetic via precedence climbing (issue #4): `compare` (loosest) → `add/sub` →
+`mul/div` → `app` (tightest). Each level parses a higher-precedence term then left-folds its own
+operators. Operators are SPACE-DELIMITED ordinary tokens (`3 + 4`, `x < 3`), so `-` never clashes
+with the `->` match-arrow and no tokenizer change is needed. -/
+def pCompare : Nat → P Surf
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts => do let (lhs, ts) ← pAddSub f ts; pCompareLoop f lhs ts
+def pCompareLoop : Nat → Surf → P Surf
+  | 0,      acc, ts => .ok (acc, ts)
+  | f + 1, acc, ts =>
+    match ts with
+    | "<"  :: r => do let (rhs, ts) ← pAddSub f r; pCompareLoop f (.binopS .lt acc rhs) ts
+    | "==" :: r => do let (rhs, ts) ← pAddSub f r; pCompareLoop f (.binopS .eq acc rhs) ts
+    | _ => .ok (acc, ts)
+def pAddSub : Nat → P Surf
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts => do let (lhs, ts) ← pMulDiv f ts; pAddSubLoop f lhs ts
+def pAddSubLoop : Nat → Surf → P Surf
+  | 0,      acc, ts => .ok (acc, ts)
+  | f + 1, acc, ts =>
+    match ts with
+    | "+" :: r => do let (rhs, ts) ← pMulDiv f r; pAddSubLoop f (.binopS .add acc rhs) ts
+    | "-" :: r => do let (rhs, ts) ← pMulDiv f r; pAddSubLoop f (.binopS .sub acc rhs) ts
+    | _ => .ok (acc, ts)
+def pMulDiv : Nat → P Surf
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts => do let (lhs, ts) ← pApp f ts; pMulDivLoop f lhs ts
+def pMulDivLoop : Nat → Surf → P Surf
+  | 0,      acc, ts => .ok (acc, ts)
+  | f + 1, acc, ts =>
+    match ts with
+    | "*" :: r => do let (rhs, ts) ← pApp f r; pMulDivLoop f (.binopS .mul acc rhs) ts
+    | "/" :: r => do let (rhs, ts) ← pApp f r; pMulDivLoop f (.binopS .div acc rhs) ts
+    | _ => .ok (acc, ts)
 
 /-- Parse one match arm `('Left'|'Right') '(' ident ')' '->' expr`. Returns the
 constructor name, the bound variable, and the arm body (used by `match` in `pExpr`). -/
@@ -437,8 +502,9 @@ def pAtom : Nat → P Surf
   | _ + 1, t :: ts =>
       if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
-              || t = "state" || t = "put" || t = "match"
+              || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write"
+              || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ")" || t = "}" then
         .error s!"unexpected '{t}' where an atom was expected"
       else .ok (.var t, ts)
@@ -839,6 +905,26 @@ example :
 #guard parsesTo "match s { Left(x) -> x , Right(y) -> y }"
   (.matchS (.var "s") "x" (.var "x") "y" (.var "y"))
 #guard parsesTo "let (a, b) = p in a" (.splitS "a" "b" (.var "p") (.var "a"))
+
+/-! ### Stage 2e — arithmetic & `if` from source text (issue #4, ADR-0065).
+
+Infix `+ − × ÷` and `< ==` with C-style precedence (`*` tighter than `+`, both tighter than `<`),
+plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are space-delimited. -/
+
+#guard runYieldsInt 20 "3 + 4" 7
+#guard runYieldsInt 20 "2 + 3 * 4" 14            -- `*` binds tighter than `+`
+#guard runYieldsInt 20 "10 - 3 - 2" 5            -- left-associative
+#guard runYieldsInt 20 "(2 + 3) * 4" 20          -- parentheses override precedence
+#guard runYieldsInt 30 "let x = 5 in x + 1" 6    -- the counter step, from source text
+#guard runYieldsInt 30 "if 3 < 4 then 1 else 0" 1
+#guard runYieldsInt 30 "if 4 < 3 then 1 else 0" 0
+#guard runYieldsInt 30 "if 2 == 2 then 7 else 8" 7
+-- the canonical COUNTER over a live state cell — blocked since rung-1, now written from source:
+#guard runYieldsInt 50 "state 5 in (get + 1)" 6
+
+-- parse-shape checks: precedence is structural, not eval-coincidence.
+#guard parsesTo "a + b * c" (.binopS .add (.var "a") (.binopS .mul (.var "b") (.var "c")))
+#guard parsesTo "if c then t else e" (.ifS (.var "c") (.var "t") (.var "e"))
 
 end -- public section
 end Bang.Surface

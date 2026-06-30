@@ -224,6 +224,13 @@ private theorem wellCounted_step {cfg cfg' : Config}
       first
         | (simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc')
         | (simp [Source.step] at hstep)
+  | binop op v₁ v₂ =>
+    -- δ-rule: steps to `(g, K, ret …)` only when both operands are `vint` (same stack/counter);
+    -- every other operand shape is stuck, contradicting `hstep`.
+    cases v₁ <;> cases v₂ <;>
+      first
+        | (simp only [Source.step, Option.some.injEq] at hstep; subst hstep; exact hwc')
+        | (simp [Source.step] at hstep)
   | oom => simp [Source.step] at hstep
   | wrong s => simp [Source.step] at hstep
 

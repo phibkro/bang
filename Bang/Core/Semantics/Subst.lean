@@ -69,6 +69,7 @@ def Comp.shiftFrom (c : Nat) : Comp → Comp
   | .case w N₁ N₂ => .case (Val.shiftFrom c w) (Comp.shiftFrom (c + 1) N₁) (Comp.shiftFrom (c + 1) N₂)
   | .split w N   => .split (Val.shiftFrom c w) (Comp.shiftFrom (c + 2) N)
   | .unfold w    => .unfold (Val.shiftFrom c w)
+  | .binop op w₁ w₂ => .binop op (Val.shiftFrom c w₁) (Val.shiftFrom c w₂)  -- δ-rule: operands are values, no binders
   | .oom         => .oom
   | .wrong s     => .wrong s
 def Handler.shiftFrom (c : Nat) : Handler → Handler
@@ -118,6 +119,7 @@ def Comp.substFrom (k : Nat) (v : Val) : Comp → Comp
       (Comp.substFrom (k + 1) (Val.shift v) N₁) (Comp.substFrom (k + 1) (Val.shift v) N₂)
   | .split w N   => .split (Val.substFrom k v w) (Comp.substFrom (k + 2) (Val.shift (Val.shift v)) N)
   | .unfold w    => .unfold (Val.substFrom k v w)
+  | .binop op w₁ w₂ => .binop op (Val.substFrom k v w₁) (Val.substFrom k v w₂)  -- δ-rule: operands are values, no binders
   | .oom         => .oom
   | .wrong s     => .wrong s
 def Handler.substFrom (k : Nat) (v : Val) : Handler → Handler
@@ -189,6 +191,9 @@ private theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
       simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w,
         Comp.substFrom_shiftFrom (k + 2) (Val.shift (Val.shift v)) N]
   | .unfold w    => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
+  | .binop op w₁ w₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Val.substFrom_shiftFrom k v w₁, Val.substFrom_shiftFrom k v w₂]
   | .oom         => rfl
   | .wrong _     => rfl
 

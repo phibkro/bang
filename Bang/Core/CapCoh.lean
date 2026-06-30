@@ -492,6 +492,16 @@ theorem capLabelCoh_step (cfg cfg' : Config)
       simp only [Source.step, Option.some.injEq] at hstep; subst hstep
       exact ⟨fun p hp => hcc p (by simpa only [capsC, capsV] using hp), hck⟩
     | vunit | vint _ | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ => simp [Source.step] at hstep
+  | binop op v w =>
+    -- δ-rule: reduct `ret (op.eval …)` is closed (no caps, `capsV_binopEval`) ⇒ focus-coh vacuous.
+    cases v with
+    | vint a =>
+      cases w with
+      | vint b =>
+        simp only [Source.step, Option.some.injEq] at hstep; subst hstep
+        exact ⟨fun p hp => by simp only [capsC, capsV_binopEval, List.not_mem_nil] at hp, hck⟩
+      | vunit | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ => simp [Source.step] at hstep
+    | vunit | vvar _ | vcap _ _ | vthunk _ | inl _ | inr _ | pair _ _ | fold _ => cases w <;> simp [Source.step] at hstep
   | perform cv op v =>
     cases cv with
     | vcap n ℓ =>
