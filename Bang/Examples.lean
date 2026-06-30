@@ -151,15 +151,16 @@ precedence split — see the issue.) -/
 
 /-! ### A20–A22: `do`-notation (issue #27) — sequential effectful statements, desugaring to nested `letC`.
 
-`x <- e` binds, a bare `e` sequences (value discarded), the last statement is the result. Pure surface
-sugar; with #26 part-1 the canonical effectful program reads like imperative code. -/
+`x = e` binds (`=`, like `let` — CBPV has no monadic-vs-pure split, so no `<-`), a bare `e` sequences
+(value discarded), the last statement is the result. Pure surface sugar; with #26 part-1 the canonical
+effectful program reads like imperative code. -/
 
 -- A20. PURE do: binds then a result expression. ⟶ 3 + 4 = 7.
-#guard runYieldsInt 30 "do { x <- 3; y <- 4; x + y }" 7
+#guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
 
 -- A21. THE EFFECTFUL COUNTER, clean (do × state × #26): read into `x`, write `x + 1` (bare/sequenced),
 -- return the cell. Reads like `x = get(); set(x+1); return get()`. ⟶ 6.
-#guard runYieldsInt 80 "state 5 in (do { x <- get; put (x + 1); get })" 6
+#guard runYieldsInt 80 "state 5 in (do { x = get; put (x + 1); get })" 6
 
 -- A22. SEQUENCED bare statements: two `put`s in a row (values discarded), then `get`. ⟶ 9.
 #guard runYieldsInt 80 "state 0 in (do { put 5; put 9; get })" 9

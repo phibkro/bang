@@ -84,7 +84,7 @@ Grammar (the subset this tracer bullet covers):
     addsub ::= muldiv (('+'|'-') muldiv)*           -- additive
     muldiv ::= app    (('*'|'/') app)*              -- multiplicative (tightest infix)
     app    ::= atom atom*                           -- juxtaposition → app (left assoc)
-    stmt   ::= ident '<-' expr | expr               -- do-statement: bind, or sequenced/result expr
+    stmt   ::= ident '=' expr | expr                -- do-statement: bind (`=`, like let), or seq/result expr
     arm    ::= ('Left'|'Right') '(' ident ')' '->' expr  -- a match arm (binds the payload at idx 0)
     atom   ::= int                                  -- literal → ret (vint n)
              | ident                                -- variable → ret (vvar i)
@@ -330,7 +330,7 @@ def pIdent : P String
           || t = "state" || t = "get" || t = "put"
           || t = "atomically" || t = "new" || t = "read" || t = "write"
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
-          || t = "do" || t = "<-" || t = ";"
+          || t = "do" || t = ";"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" then
         .error s!"expected an identifier, got keyword '{t}'"
@@ -442,7 +442,7 @@ def pAppLoop : Nat → Surf → P Surf
     | t :: _ =>
       if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" || t = "," || t = "->"
          || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
-         || t = "then" || t = "else" || t = ";" || t = "<-" then
+         || t = "then" || t = "else" || t = ";" then
         .ok (acc, ts)
       else
         match pAtom f ts with
@@ -484,21 +484,22 @@ def pMulDivLoop : Nat → Surf → P Surf
     | "/" :: r => do let (rhs, ts) ← pApp f r; pMulDivLoop f (.binopS .div acc rhs) ts
     | _ => .ok (acc, ts)
 
-/-- Parse a `do`-block body (after `do {`), up to and including `}`. Each statement is `x <- e` (a
+/-- Parse a `do`-block body (after `do {`), up to and including `}`. Each statement is `x = e` (a
 binding) or a bare `e` (sequenced, value discarded); the LAST statement is the block's result. Desugars
-straight to nested `letC` — `x <- e ; rest` ↦ `let x = e in rest`, `e ; rest` ↦ `let #do = e in rest`,
-final `e` ↦ `e` (issue #27, surface sugar — no AST change). The `#do` discard name is unbindable by the
-grammar (it starts with `#`), so the sequenced value is held-then-shifted but never referenced. -/
+straight to nested `letC` — `x = e ; rest` ↦ `let x = e in rest`, `e ; rest` ↦ `let #do = e in rest`,
+final `e` ↦ `e` (issue #27, surface sugar — no AST change). Binding uses `=` (NOT a monadic `<-`): in
+CBPV `let`/`=` already IS the effectful sequencing bind, so a separate operator would be redundant. The
+`#do` discard name is unbindable by the grammar (it starts with `#`), held-then-shifted, never read. -/
 def pDo : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
     | "}" :: _ => .error "empty do block"
-    | x :: "<-" :: rest => do            -- binding statement: x <- e
+    | x :: "=" :: rest => do             -- binding statement: x = e
         let (e, ts) ← pExpr f rest
         match ts with
         | ";" :: ts => do let (body, ts) ← pDo f ts; .ok (.lett x e body, ts)
-        | "}" :: _  => .error "a do block must END in an expression, not a binding (x <- e)"
+        | "}" :: _  => .error "a do block must END in an expression, not a binding (x = e)"
         | _         => .error "expected ';' or '}' after a do-block statement"
     | _ => do                            -- bare statement, or the final result
         let (e, ts) ← pExpr f ts
@@ -562,7 +563,7 @@ def pAtom : Nat → P Surf
       if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
-              || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do" || t = "<-"
+              || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" then
         .error s!"unexpected '{t}' where an atom was expected"
@@ -985,9 +986,9 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are sp
 #guard parsesTo "a + b * c" (.binopS .add (.var "a") (.binopS .mul (.var "b") (.var "c")))
 #guard parsesTo "if c then t else e" (.ifS (.var "c") (.var "t") (.var "e"))
 
--- do-notation (issue #27): `x <- e` → `lett x`, bare `e` → `lett "#do"`, last stmt = result.
-#guard runYieldsInt 30 "do { x <- 3; y <- 4; x + y }" 7
-#guard parsesTo "do { x <- a; b; c }" (.lett "x" (.var "a") (.lett "#do" (.var "b") (.var "c")))
+-- do-notation (issue #27): `x = e` → `lett x`, bare `e` → `lett "#do"`, last stmt = result.
+#guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
+#guard parsesTo "do { x = a; b; c }" (.lett "x" (.var "a") (.lett "#do" (.var "b") (.var "c")))
 
 end -- public section
 end Bang.Surface

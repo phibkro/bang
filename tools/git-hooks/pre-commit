@@ -72,6 +72,18 @@ if [ -n "$staged_lean" ]; then
   fi
 fi
 
+# ── 3b. Auto-regenerate the CHANGELOG from conventional commits ─────────
+# The changelog is a DERIVATION of git history (the GENERATE rung), not a hand-maintained copy. Rather
+# than block a commit when it lags (a feat/fix commit can't include its OWN not-yet-existing entry — the
+# pre-commit's `git log` doesn't see the in-flight commit), we regenerate it here from ALREADY-committed
+# history and stage it. Net effect: it's always current-up-to-prior, the `--check` fitness leg below
+# always passes, and the in-flight commit's own entry lands automatically in the NEXT commit. No manual
+# `just changelog` dance, no blocking. (Idempotent: a no-op when nothing new to record.)
+if [ -f CHANGELOG.md ]; then
+  nix develop --command just changelog > /dev/null 2>&1 || true
+  git add CHANGELOG.md 2>/dev/null || true
+fi
+
 # ── 4. Fitness functions (fast, NO Lean build) — ALWAYS ────────────────
 # check-primitives · check-adr-links · arch-check (the import-direction V, ADR-0048)
 # · check-refs (stale *.md path/link references). These are cheap and need no build,
