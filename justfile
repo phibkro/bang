@@ -90,6 +90,7 @@ fitness:
     python3 tools/gen-proof-state.py --check
     python3 tools/gen-import-graph.py --check
     python3 tools/gen-changelog.py --check
+    python3 tools/gen-reference.py --check
 
 # Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
 # CONTEXT.md/ROADMAP.md resolves to a real commit (a rebase/drop makes the prose
@@ -116,6 +117,10 @@ import-graph:
 # Regenerate CHANGELOG.md (product MVP increments) from conventional commits since the MVP baseline.
 changelog:
     python3 tools/gen-changelog.py
+
+# Regenerate docs/reference/language.md from the Surf/Ty constructor comments + the verified #guard corpus.
+reference:
+    python3 tools/gen-reference.py
 
 # Validate the generated module-graph mermaid actually COMPILES (mmdc render). On-demand; the
 # build (`just import-graph`) also auto-compiles before writing, so a broken graph never lands.

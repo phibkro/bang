@@ -19,6 +19,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — ADR-0066 ②b — Surf-level checker, lifts the no-annotation limitation (`bb39c34`)
 - **typecheck** — ADR-0066 ④ — effect-row inference + handler discharge (= #5) (`ec7638c`)
 - **typecheck** — ADR-0066 ④b — type DISPLAY (#5's "type display": effect rows visible) (`2c536c6`)
+- **typecheck** — ADR-0066 ④b (writing) — effect signatures `! {ρ}`, enforced (#5 complete) (`858421b`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
