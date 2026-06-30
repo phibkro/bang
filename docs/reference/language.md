@@ -22,16 +22,16 @@ nothing here can drift from what the language actually does.
 | `handle e` |  |
 | `get` | (read the state cell) |
 | `put e` | (write the state cell) |
-| `state e0 in e (install state handler)` |  |
+| `state e0 in e` | (install the state handler) |
 | `atomically e` | (install the STM transaction handler) |
-| `new e` | (allocate a TVar → up stmLabel "newTVar") |
-| `read e` | (read a TVar → up stmLabel "readTVar") |
-| `write r w (write a TVar → up stmLabel "writeTVar" (pair r w))` |  |
-| `Left(e)` | → inl  (sum intro, left) |
-| `Right(e)` | → inr  (sum intro, right) |
-| `(a, b)` | → pair (product intro) |
-| `a + b / a - b / a * b / a / b / a < b / a == b` |  |
-| `if c then t else e` | → case c (false→e) (true→t) |
+| `new e` | (allocate a TVar) |
+| `read e` | (read a TVar) |
+| `write r w` | (write a TVar) |
+| `Left(e)` | (sum intro, left) |
+| `Right(e)` | (sum intro, right) |
+| `(a, b)` | (product intro) |
+| `a + b` | (arithmetic + - * /, comparison < ==) |
+| `if c then t else e` | (sugar over case on Bool = 1+1) |
 | `(e : T)` | type ascription (ADR-0066 ②); erased at lowering |
 
 ## Types

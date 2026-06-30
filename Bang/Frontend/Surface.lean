@@ -140,24 +140,24 @@ inductive Surf where
   | handle : Surf → Surf                 -- handle e
   | getS   : Surf                        -- get      (read the state cell)
   | putS   : Surf → Surf                 -- put e    (write the state cell)
-  | stateS : Surf → Surf → Surf          -- state e0 in e (install state handler)
+  | stateS : Surf → Surf → Surf          -- state e0 in e   (install the state handler)
   | atomS  : Surf → Surf                 -- atomically e  (install the STM transaction handler)
-  | newS   : Surf → Surf                 -- new e     (allocate a TVar → up stmLabel "newTVar")
-  | readS  : Surf → Surf                 -- read e    (read a TVar → up stmLabel "readTVar")
-  | writeS : Surf → Surf → Surf          -- write r w (write a TVar → up stmLabel "writeTVar" (pair r w))
+  | newS   : Surf → Surf                 -- new e   (allocate a TVar)
+  | readS  : Surf → Surf                 -- read e   (read a TVar)
+  | writeS : Surf → Surf → Surf          -- write r w   (write a TVar)
   -- ADTs (issue #1): sum + product. Intros are values; eliminators carry NAMED binders
   -- that lowering (§2) resolves to the kernel's de-Bruijn `case`/`split`.
-  | inlS   : Surf → Surf                 -- Left(e)   → inl  (sum intro, left)
-  | inrS   : Surf → Surf                 -- Right(e)  → inr  (sum intro, right)
-  | pairS  : Surf → Surf → Surf          -- (a, b)    → pair (product intro)
+  | inlS   : Surf → Surf                 -- Left(e)   (sum intro, left)
+  | inrS   : Surf → Surf                 -- Right(e)   (sum intro, right)
+  | pairS  : Surf → Surf → Surf          -- (a, b)   (product intro)
   | matchS : Surf → String → Surf → String → Surf → Surf
     -- match s { Left(x) -> e₁ , Right(y) -> e₂ }  → case  (x, y each bind at idx 0)
   | splitS : String → String → Surf → Surf → Surf
     -- let (a, b) = p in body  → split  (a = fst at idx 1, b = snd at idx 0)
   -- arithmetic (issue #4, ADR-0065). Operands are ARBITRARY exprs (A-normalized at lowering, since
   -- the kernel `binop` takes VALUES); `if` is sugar over `case` on `Bool = 1+1`.
-  | binopS : BinOp → Surf → Surf → Surf   -- a + b / a - b / a * b / a / b / a < b / a == b
-  | ifS    : Surf → Surf → Surf → Surf    -- if c then t else e  → case c (false→e) (true→t)
+  | binopS : BinOp → Surf → Surf → Surf   -- a + b   (arithmetic + - * /, comparison < ==)
+  | ifS    : Surf → Surf → Surf → Surf    -- if c then t else e   (sugar over case on Bool = 1+1)
   | annotS : Surf → Ty → Surf             -- (e : T)   type ascription (ADR-0066 ②); erased at lowering
   deriving Repr, Inhabited, DecidableEq
 
