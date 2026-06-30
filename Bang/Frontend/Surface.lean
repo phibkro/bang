@@ -125,6 +125,7 @@ inductive Ty where
   | tSum   : Ty → Ty → Ty        -- A + B
   | tProd  : Ty → Ty → Ty        -- A * B
   | tThunk : Ty → Ty             -- Thunk T  (a suspended computation value, the `U` former)
+  | tEff   : List String → Ty → Ty  -- T ! {throws, …}  effect-row annotation (names; checker maps to labels)
   deriving Repr, Inhabited, DecidableEq
 
 inductive Surf where
@@ -389,12 +390,28 @@ def pIdent : P String
 
 Own fuel-driven recursion (types contain no expressions). Precedence: `->` (right-assoc, lowest)
 over `*` then `+` (left-assoc loops) over atoms (`Int`/`Unit`/`Thunk T`/`(T)`). Invoked only after
-a `:` ascription, so its keywords (`Int`, `Unit`, `Thunk`) never collide with value parsing. -/
+a `:` ascription, so its keywords (`Int`, `Unit`, `Thunk`) never collide with value parsing.
+Effect annotation `T ! {throws, …}` is a postfix binding tighter than `->` (so `A -> B ! {ρ}` reads
+as `A -> (B ! {ρ})` — the latent effect is the codomain's). -/
+
+/-- After a `{`, parse `name (, name)* }` (or `}` for the empty row). Structural on the token list. -/
+def pEffRow : P (List String)
+  | "}" :: ts      => .ok ([], ts)
+  | n :: "}" :: ts => .ok ([n], ts)
+  | n :: "," :: ts => do let (rest, ts) ← pEffRow ts; .ok (n :: rest, ts)
+  | ts             => .error s!"malformed effect row at {ts}"
+
+/-- Optionally wrap an already-parsed type in `tEff` if a `! { … }` postfix follows. -/
+def pTyPostEff (a : Ty) : P Ty
+  | "!" :: "{" :: ts => do let (ns, ts) ← pEffRow ts; .ok (.tEff ns a, ts)
+  | ts               => .ok (a, ts)
+
 mutual
 def pTy : Nat → P Ty
   | 0,     _  => .error "type parser out of fuel"
   | f + 1, ts => do
       let (a, ts) ← pTyAdd f ts
+      let (a, ts) ← pTyPostEff a ts        -- optional `! {ρ}` (tighter than ->)
       match ts with
       | "->" :: ts => do let (b, ts) ← pTy f ts; .ok (.tArr a b, ts)   -- right-assoc
       | _          => .ok (a, ts)

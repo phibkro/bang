@@ -187,8 +187,23 @@ def tyBoth : Ty → VT × CT
   | .tProd a b => let V : VT := .prod (tyBoth a).1 (tyBoth b).1; (V, .F .omega V)
   | .tThunk t  => let V : VT := .U ⊥ (tyBoth t).2; (V, .F .omega V)
   | .tArr  a b => let f : CT := .arr .omega (tyBoth a).1 (tyBoth b).2; (.U ⊥ f, f)  -- fn VALUE = thunked arrow
+  | .tEff  _ t => tyBoth t        -- effect annotation is checker-level (effOf); dropped from the kernel type
 @[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
 @[inline] def ctyOf (t : Ty) : CT := (tyBoth t).2
+
+/-- Map effect NAMES to the kernel label row (the inverse of `effName`). -/
+def effNames (ns : List String) : EffRow :=
+  ns.foldl (fun acc n =>
+    if n = "throws" then insert exnLabel acc
+    else if n = "state" then insert stateLabel acc
+    else if n = "stm" then insert stmLabel acc else acc) ∅
+
+/-- The DECLARED effect bound of an ascribed type, if any (`none` = unconstrained, stay inferred —
+the optional-annotation philosophy). A function's bound is its codomain's. -/
+def effOf : Ty → Option EffRow
+  | .tEff ns _ => some (effNames ns)
+  | .tArr _ b  => effOf b
+  | _          => none
 
 /-- Bool is `1 + 1` (ADR-0065); comparisons return it, arithmetic returns `Int`. -/
 def boolTy : VT := .sum .unit .unit
@@ -262,7 +277,12 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
   | .splitS a b p body => do match (← synthSV Γ p) with
       | .prod A B => synthSC ((b, B) :: (a, A) :: Γ) body
       | _ => .error "split: scrutinee is not a product"
-  | .annotS b t => do let C := ctyOf t; let φ ← checkSC Γ b C; return (C, φ)
+  | .annotS b t => do
+      let C := ctyOf t
+      let φ ← checkSC Γ b C
+      match effOf t with                              -- declared row (if any) is an upper bound — ④b
+      | some ρ => if φ ⊆ ρ then return (C, φ) else .error "inferred effect exceeds the declared row"
+      | none   => return (C, φ)
   -- ── effects (ADR-0066 ④): each op ADDS its label to the row; handlers DISCHARGE it (`Finset.erase`).
   -- v1 simplification (marked): operation payload/result types are fixed to the surface convention
   -- (state cell + TVar contents + exn payload are `Int`, ADR-0030) — no payload-type threading yet.
@@ -294,7 +314,10 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Except String EffRow :=
   | .annotS b t, expected => do
       let C := ctyOf t
       let φ ← checkSC Γ b C
-      if C = expected then .ok φ else .error "ascription does not match expected type"
+      if C ≠ expected then .error "ascription does not match expected type"
+      else match effOf t with
+        | some ρ => if φ ⊆ ρ then .ok φ else .error "inferred effect exceeds the declared row"
+        | none   => .ok φ
   | e, expected => do
       let (B, φ) ← synthSC Γ e
       if B = expected then .ok φ else .error "computation type mismatch"
@@ -407,5 +430,20 @@ def display (src : String) : String :=
 #guard display "state 0 in get"                     == "Int"
 #guard display "(get)"                              == "Int ! {state}"
 #guard display "let x = 2 in x + 3"                 == "Int"
+
+/-! ## Stage ④b (writing) — effect SIGNATURES: declare `! {ρ}`, the checker enforces it (#5).
+
+A declared row is an UPPER BOUND (the inferred effect must be ⊆ it). No annotation = unconstrained
+(stay inferred) — the optional-annotation philosophy. So a signature is something you can RELY on. -/
+-- a declared row that COVERS the inferred effect passes (and the inferred effect is what displays).
+#guard display "( fun x => raise x : Int -> Int ! {throws} )" == "Int -> Int ! {throws}"
+-- a PURE function satisfies a may-throw signature (⊥ ⊆ {throws}).
+#guard display "( fun x => x : Int -> Int ! {throws} )" == "Int -> Int"
+-- declaring PURITY (`! {}`) for a throwing function is REJECTED — the signature is enforced.
+#guard (match check "( fun x => raise x : Int -> Int ! {} )" with | .error _ => true | _ => false)
+-- declaring the WRONG effect ({state} for a throwing fn) is REJECTED.
+#guard (match check "( fun x => raise x : Int -> Int ! {state} )" with | .error _ => true | _ => false)
+-- un-annotated arrow stays unconstrained: a throwing fn is fine, effect inferred + shown.
+#guard display "( fun x => raise x : Int -> Int )" == "Int -> Int ! {throws}"
 
 end Bang.TypeCheck
