@@ -235,19 +235,43 @@ def lowerC (env : List String) : Surf → Except String Comp
       match lowerV env w with
       | .ok wv   => return .perform (.vvar c) "writeTVar" (.pair rv wv)
       | .error _ => return .letC (← lowerC env w) (.perform (.vvar (c+1)) "writeTVar" (.pair (Val.shift rv) (.vvar 0)))
-  -- ADTs (issue #1). Intros in COMPUTATION position lower to `ret <val>` (atom-in-comp = ret);
-  -- eliminators thread NAMED binders into the kernel's de-Bruijn `case`/`split`.
-  | .inlS e     => do return .ret (.inl (← lowerV env e))
-  | .inrS e     => do return .ret (.inr (← lowerV env e))
-  | .pairS a b  => do return .ret (.pair (← lowerV env a) (← lowerV env b))
-  -- `case v N₁ N₂`: each branch binds its payload at idx 0 → push the arm's binder.
+  -- ADTs (issue #1). Intros lower to `ret <val>`; eliminators thread NAMED binders → de-Bruijn case/split.
+  -- VALUE-position args are A-NORMALIZED (issue #29): an atom passes through unchanged (old shape, so the
+  -- Stage-1b/2d lower-examples are preserved); a COMPUTATION (`Right(x / y)`, `match (if …){…}`) is
+  -- `letC`-bound and used at `vvar 0`, with the rest shifted by the new binder (#26 part-1, generalized).
+  | .inlS e     => do
+      match lowerV env e with
+      | .ok v    => return .ret (.inl v)
+      | .error _ => return .letC (← lowerC env e) (.ret (.inl (.vvar 0)))
+  | .inrS e     => do
+      match lowerV env e with
+      | .ok v    => return .ret (.inr v)
+      | .error _ => return .letC (← lowerC env e) (.ret (.inr (.vvar 0)))
+  | .pairS a b  => do
+      match lowerV env a, lowerV env b with
+      | .ok av, .ok bv => return .ret (.pair av bv)   -- both values: unchanged
+      | _, _ => do                                    -- ≥1 computation: bind both, pair vvar1/vvar0
+          let ca ← lowerC env a
+          let cb ← lowerC ("#pa" :: env) b
+          return .letC ca (.letC cb (.ret (.pair (.vvar 1) (.vvar 0))))
+  -- `case v N₁ N₂`: each branch binds its payload at idx 0 → push the arm's binder. A-normalize the
+  -- scrutinee: a computation `case`s on the bound `vvar 0`, branches lowered under the scrutinee binder.
   | .matchS s lx e1 ry e2 => do
-      return .case (← lowerV env s) (← lowerC (lx :: env) e1) (← lowerC (ry :: env) e2)
-  -- `split v N`: N binds idx 1 = fst, idx 0 = snd. `env` is innermost-first, so to put snd at
-  -- idx 0 and fst at idx 1 we cons snd LAST: `b :: a :: env` (a = fst, b = snd). Verified against
-  -- B2 (`prodSwap` reads vvar0 = snd, vvar1 = fst).
+      match lowerV env s with
+      | .ok v    => return .case v (← lowerC (lx :: env) e1) (← lowerC (ry :: env) e2)
+      | .error _ => do
+          let cs ← lowerC env s
+          let n1 ← lowerC (lx :: "#sc" :: env) e1
+          let n2 ← lowerC (ry :: "#sc" :: env) e2
+          return .letC cs (.case (.vvar 0) n1 n2)
+  -- `split v N`: N binds idx 1 = fst, idx 0 = snd → cons snd LAST (`b :: a :: env`). Verified vs B2.
   | .splitS a b p body => do
-      return .split (← lowerV env p) (← lowerC (b :: a :: env) body)
+      match lowerV env p with
+      | .ok v    => return .split v (← lowerC (b :: a :: env) body)
+      | .error _ => do
+          let cp ← lowerC env p
+          let n ← lowerC (b :: a :: "#sc" :: env) body
+          return .letC cp (.split (.vvar 0) n)
   -- ARITHMETIC (issue #4). A-NORMALIZE: the kernel `binop` needs VALUE operands, but `a`/`b` may be
   -- computations (nested arithmetic, calls), so let-bind both — `a` at idx 1, `b` at idx 0 — then
   -- `binop op (vvar 1) (vvar 0)`. Uniform: a literal lowers to `ret`, which `letC` binds fine. The

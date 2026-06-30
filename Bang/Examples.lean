@@ -172,6 +172,20 @@ effectful program reads like imperative code. -/
 #guard runYieldsInt 200
   "atomically (do { a = new 100; bal = read a; z = write a (bal - 30); read a })" 70
 
+/-! ### A24–A25: arithmetic/computations in ADT INTRO args & ELIMINATOR scrutinees (issue #29).
+
+The value-restriction A-normalization, generalized past effect-op args (#26) to `Left`/`Right`/pair
+intros and `match`/`split` scrutinees: a computed value can be injected or destructured directly. -/
+
+-- A24. SAFE DIVIDE as a Result: `Right(x / y)` injects a COMPUTED quotient, then `match` on the (computed)
+-- Result recovers it. y = 4 ≠ 0 ⟹ Right(20/4) ⟹ matched ⟹ 5. (The `if` scrutinee + `Right` arg both A-norm.)
+#guard runYieldsInt 50
+  "let x = 20 in (let y = 4 in (match (if y == 0 then Left(0) else Right(x / y)) { Left(e) -> 0 , Right(q) -> q }))" 5
+
+-- A25. DESTRUCTURE A COMPUTED PAIR: `let (a, b) = (if … then (3,4) else (5,6))` splits a value produced by
+-- a computation (the `split` scrutinee is A-normalized). 1 < 2 ⟹ (3,4) ⟹ a + b = 7.
+#guard runYieldsInt 50 "let (a, b) = (if 1 < 2 then (3, 4) else (5, 6)) in a + b" 7
+
 /-! ## B. Raw-`Comp` programs (structural `match` on `Result`)
 
 Sum/product (§A12/A13, issue #1) and arithmetic (issue #4 — now infix from source, see
