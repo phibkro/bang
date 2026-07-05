@@ -102,9 +102,12 @@ WAVE 1 — ERGONOMICS (make it pleasant; every item is a dogfooding pain point)
   #7  REPL                     — iteration speed (would have made dogfooding far faster)     [OPEN]
 
 WAVE 2 — THREE NORTH-STAR DIRECTIONS (operator sequences them; each design-first, ≈post-v1)
-  (a) RECURSION → "bang writes real programs / its own tools"
-        #42 recursive functions (fix + the Div row; Q28 marker) → strings → then a tokenizer,
-        a calculator interpreter, small toolchain tools become possible.
+  (a) RECURSION ✅ DONE (#42, ADR-0073) → then STRINGS → "bang writes real programs / its own tools"
+        Recursion landed end-to-end (#45 types+runs no-primitive · #41 reads naturally · let rec
+        user-facing · #46 Div type-visible · #47 termination checker → Div is PRECISE): μ-encoding,
+        verified kernel untouched. Q28 resolved. REMAINING for toolchain-capable: strings → then a
+        tokenizer, a calculator interpreter, small toolchain tools. Follow-ons: inductive `Nat`
+        (free total factorial now #47 landed — Q31), #48 effectful recursion, #47's measure/Nat lift.
   (b) POLYMORPHISM → "bang has a generic, lawful, verified stdlib"
         ADR-0027 stage 2 (HM) → generic containers + generic lawful traits → Q26 optics
         (the lawful-polymorphism north-star) → the HKT fork (Functor/Monad).
@@ -121,8 +124,8 @@ WAVE 3 — VERIFICATION COMPLETION (parallel, verification-spine layer)
   grades → compilation strategy · Q21 concurrency (the multikernel) · #16 U5b-handler
 ```
 
-**Wave 2 is the load-bearing steer.** Three directions, three identities: recursion (#42) → *toolchain-capable*
-(the dogfood verdict: "can't write tools yet — no recursion, no strings"); polymorphism (ADR-0027) → the
+**Wave 2 is the load-bearing steer.** Three directions, three identities: recursion (#42, ✅ DONE) → *toolchain-capable*
+(the dogfood verdict was "can't write tools yet — no recursion, no strings"; recursion now closed, **strings** is the remaining gap); polymorphism (ADR-0027) → the
 *generic lawful stdlib + optics thesis* (Q26); user-defined effects (#44) → *"paradigm is a value" made
 real* — the moat, and the most on-thesis though furthest. All substantial, design-first, roughly post-v1.
 The operator sequences them; not a default.
