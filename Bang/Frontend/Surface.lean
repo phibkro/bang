@@ -532,7 +532,22 @@ def pExpr : Nat → P Surf
   | f + 1, "do" :: ts => do             -- do { stmt ; … ; result } → nested letC (issue #27)
       let (_, ts) ← expect "{" ts
       pDo f ts
-  | f + 1, ts => pCompare f ts          -- ▼ infix precedence chain (issue #4)
+  | f + 1, ts => pImp f ts              -- ▼ infix precedence chain (issue #4; `=>` loosest, #39)
+
+/-- Implication `P => Q` (loosest infix, RIGHT-assoc — `p => q => r` = `p => (q => r)`), pure
+parse-level sugar: `let #p = P in (if #p then Q else 0 == 0)`. Bool-valued, so conditional LAWS
+read as written (`law trans(a,b,c): a < b => b < c => a < c`, #39); `fun x => e` is unaffected
+(its `=>` is consumed by the `fun` arm before this level sees it). The `#p` binder is
+grammar-unbindable (the `#do` precedent). -/
+def pImp : Nat → P Surf
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (lhs, ts) ← pCompare f ts
+      match ts with
+      | "=>" :: r => do
+          let (rhs, ts) ← pImp f r
+          .ok (.lett "#p" lhs (.ifS (.var "#p") rhs (.binopS .eq (.lit 0) (.lit 0))), ts)
+      | _ => .ok (lhs, ts)
 
 /-- Parse an application chain: one or more atoms, left-associated. -/
 def pApp : Nat → P Surf
@@ -685,14 +700,16 @@ def pAtom : Nat → P Surf
 end
 
 /-- Parse a whole program: tokenize, parse one expression, require all tokens
-consumed. Fuel = 4·(token count) + 1: each NESTING level costs a full
-`pExpr→pApp→pAtom` descent (≈3 fuel) yet may consume only one token (e.g.
-`Left(7)`, `(a, b)`, deeply-nested parens), so the bound must be a multiple of
-the token count, not `+1`. Generous by construction — it never bites a
+consumed. Fuel = 6·(token count) + 1: each NESTING level costs a full
+`pExpr→pImp→pCompare→pAddSub→pMulDiv→pApp→pAtom` descent (7 fuel) yet may
+consume only one token (e.g. `Left(7)`, `(a, b)`, deeply-nested parens), so the
+bound must be a multiple of the token count, not `+1` — and the multiplier must
+track the CHAIN DEPTH (4 sufficed for the 6-deep chain; `pImp` made it 7-deep,
+which starved `(3)` at ×4). Generous by construction — it never bites a
 well-formed program (it only caps runaway recursion for totality). -/
 def parse (src : String) : Except String Surf := do
   let toks := tokenize src
-  let (e, rest) ← pExpr (toks.length * 4 + 1) toks
+  let (e, rest) ← pExpr (toks.length * 6 + 1) toks
   if rest.isEmpty then .ok e
   else .error s!"trailing tokens after expression: {rest}"
 
@@ -837,7 +854,7 @@ def pDecls : Nat → P (List Decl)
 Same fuel bound as `parse`; a plain expression parses identically (`decls = []`). -/
 def parseProg (src : String) : Except String Prog := do
   let toks := tokenize src
-  let fuel := toks.length * 4 + 1
+  let fuel := toks.length * 6 + 1
   let (ds, ts) ← pDecls fuel toks
   let (e, rest) ← pExpr fuel ts
   if rest.isEmpty then .ok ⟨ds, e⟩
@@ -1249,6 +1266,19 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are sp
 -- do-notation (issue #27): `x = e` → `lett x`, bare `e` → `lett "#do"`, last stmt = result.
 #guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
 #guard parsesTo "do { x = a; b; c }" (.lett "x" (.var "a") (.lett "#do" (.var "b") (.var "c")))
+
+-- implication sugar (#39): `P => Q` desugars to `let #p = P in if #p then Q else 0 == 0`.
+#guard parsesTo "a < b => c"
+  (.lett "#p" (.binopS .lt (.var "a") (.var "b"))
+    (.ifS (.var "#p") (.var "c") (.binopS .eq (.lit 0) (.lit 0))))
+-- right-associative: `p => q => r` = `p => (q => r)` (inner `#p` shadows — names are per-scope).
+#guard parsesTo "p => q => r"
+  (.lett "#p" (.var "p")
+    (.ifS (.var "#p")
+      (.lett "#p" (.var "q") (.ifS (.var "#p") (.var "r") (.binopS .eq (.lit 0) (.lit 0))))
+      (.binopS .eq (.lit 0) (.lit 0))))
+-- a TRUE implication with a false premise runs to true (vacuous — 5 < 3 => anything).
+#guard runYieldsInt 30 "if (5 < 3 => 0 == 1) then 1 else 0" 1
 
 /-! ### Stage ⑤ — `trait`/`impl` declarations parse (issue #24 piece 1; ADR-0040 §5, ADR-0068).
 

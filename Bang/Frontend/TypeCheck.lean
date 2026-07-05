@@ -749,19 +749,21 @@ def intOrdProg (law : String) (body : String) : String :=
   "trait IntOrd { fn lt(a, b) -> (Unit + Unit) law " ++ law ++ " } " ++
   "impl IntOrd for Int { fn lt(a, b) = a < b } " ++ body
 
--- TRANSITIVITY from source: (a < b) → (b < c) → (a < c), 3 params, implication-encoded. GREEN.
-#guard (match checkLaws (intOrdProg
-    "trans(a, b, c): let p = a < b in (let q = b < c in (let r = a < c in (if p then (if q then r else 0 == 0) else 0 == 0)))" "0") with
+-- TRANSITIVITY from source, READ AS WRITTEN (the `=>` sugar, #39): 3 params, k-tuple sampled. GREEN.
+#guard (match checkLaws (intOrdProg "trans(a, b, c): a < b => b < c => a < c" "0") with
         | .ok [s] => s.startsWith "↓ IntOrd.trans"
         | _       => false)
 -- symmetry of `==`, premise NON-vacuous (the sample's diagonal pairs exercise it). GREEN.
-#guard (match checkLaws (intOrdProg
-    "sym(a, b): let p = a == b in (let q = b == a in (if p then q else 0 == 0))" "0") with
+#guard (match checkLaws (intOrdProg "sym(a, b): a == b => b == a" "0") with
         | .ok [s] => s.startsWith "↓ IntOrd.sym"
         | _       => false)
--- a FALSE conditional law is caught NON-vacuOUSLY: (a < b) → (b < a) fails on (0, 1). Fail-loud.
+-- the RAW if-encoding remains legal (what the sugar desugars to). GREEN.
 #guard (match checkLaws (intOrdProg
-    "antisym_bogus(a, b): let p = a < b in (if p then b < a else 0 == 0)" "0") with
+    "transRaw(a, b, c): let p = a < b in (let q = b < c in (let r = a < c in (if p then (if q then r else 0 == 0) else 0 == 0)))" "0") with
+        | .ok [s] => s.startsWith "↓ IntOrd.transRaw"
+        | _       => false)
+-- a FALSE conditional law is caught NON-vacuOUSLY: (a < b) => (b < a) fails on (0, 1). Fail-loud.
+#guard (match checkLaws (intOrdProg "antisym_bogus(a, b): a < b => b < a" "0") with
         | .error _ => true | _ => false)
 
 end Bang.TypeCheck
