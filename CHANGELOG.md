@@ -31,6 +31,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — bang run/eval use the TYPED pipeline — data/traits/named-caps now runnable (`8e46e0f`)
 - **reference** — GENERATE the grammar spec from the reified parser rules (#30 stage ③, closes #38) (`e8bb614`)
 - **surface** — whitespace-insensitive tokenizer — the dominant dogfood papercut, killed (#30 stage ④, ADR-0071) (`97221cc`)
+- **surface** — named-cap syntax 'state <init> as h in e' — drop 'with', fold binder into effect forms (ADR-0072) (`b4e59e3`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
