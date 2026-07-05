@@ -292,17 +292,15 @@ def compiledAgreesInt (fuel : Nat) (src : String) (n : Int) : Bool :=
 #guard compiledAgreesInt 2000 "atomically (let r = new 100 in (let z = write r 70 in read r))" 70
 #guard compiledAgreesInt 2000 "handle (atomically (let r = new 100 in (let z = write r 70 in raise 100)))" 100
 
--- C-BOUNDARY (build-enforced, issue #40): the calculated machine does NOT yet execute the
--- ADR-0065 δ-rules — `evalD` (the reference `compile`/`exec` are calculated from) has no
--- `binop` arm, so arithmetic WEDGES on the compiled engine (a stuck non-value machine state;
--- the CLI reports exit 5) while the oracle yields 7. Extending it is a re-DERIVATION, not an
--- exec patch (invariant #4). This guard PINS the boundary as "compiled produces anything BUT
--- the oracle's value": when binop lands in the machine it flips, forcing this doc + the CLI
--- help text to update.
-#guard (match Bang.Surface.parse "3 + 4" >>= Bang.Surface.lower with
-        | .ok c => (match Bang.CalcVM.exec 2000 0 (Bang.CalcVM.compile c []) [] [] with
-                    | some [.ret (.vint 7)] => false   -- ← binop LANDED: flip this guard (#40)
-                    | _                     => true)
-        | .error _ => false)
+-- C-BINOP (build-enforced, issue #40 CLOSED): the ADR-0065 δ-rule now lives in the calculated
+-- machine — `evalD` gained a `binop op (vint a) (vint b) ⇒ ret (op.eval a b)` arm that COLLAPSES
+-- onto `RET` in `compile` (NO new instruction; invariant #4 — the machine is the calculation's
+-- output). Arithmetic on `--compiled` now agrees with the oracle, so the old boundary guard flips
+-- to POSITIVE differential checks: plain arithmetic (with precedence) AND binop composed with the
+-- other effect channels (the composition `state 5 in (get + 1)` is exactly what exposed the gap).
+#guard compiledAgreesInt 2000 "3 + 4" 7
+#guard compiledAgreesInt 2000 "2 + 3 * 4" 14                        -- precedence: `*` binds tighter
+#guard compiledAgreesInt 2000 "state 5 in (get + 1)" 6             -- binop over the STATE channel
+#guard compiledAgreesInt 2000 "handle (7 + (raise 3))" 3          -- binop operand raises → caught
 
 end Bang.Examples

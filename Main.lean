@@ -110,9 +110,7 @@ def usage : String :=
   "ENGINE:\n" ++
   "  (default)    kernel oracle Source.eval\n" ++
   "  --compiled   the calculated machine exec∘compile (verified compiler output, ADR-0016)\n" ++
-  "               — same program, same value; failures collapse to exit 5\n" ++
-  "               v1 boundary: arithmetic (+ - * / < ==) is not yet in the calculated\n" ++
-  "               machine (issue #40) — such programs report exit 5 here; use the oracle\n\n" ++
+  "               — same program, same value; failures collapse to exit 5\n\n" ++
   "EXIT CODES:\n" ++
   "  0  done — value printed to stdout\n" ++
   "  1  usage / parse / lower error\n" ++

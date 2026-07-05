@@ -27,8 +27,8 @@ graph TD
     Frontend_NamedCore["Frontend.NamedCore<br/>386L · fan-in 0"]
   end
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
-    Backend_AbstractMachine["Backend.AbstractMachine<br/>4914L · fan-in 0"]
-    Backend_Wasm["Backend.Wasm<br/>2165L · fan-in 0"]
+    Backend_AbstractMachine["Backend.AbstractMachine<br/>4949L · fan-in 0"]
+    Backend_Wasm["Backend.Wasm<br/>2174L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>536L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
     Core_Freshness["Core.Freshness<br/>641L · fan-in 0"]
@@ -41,7 +41,7 @@ graph TD
     Core_Semantics_Subst["Core.Semantics.Subst<br/>217L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>2954L · fan-in 0"]
     Core_Typing["Core.Typing<br/>404L · fan-in 0"]
-    Examples["Examples<br/>309L · fan-in 0"]
+    Examples["Examples<br/>307L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>1539L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
@@ -69,8 +69,8 @@ graph TD
 |---|---|---|---|
 | `Frontend.Surface` | ? | 1539 | 1 |
 | `Audit` | Apex | 54 | 0 |
-| `Backend.AbstractMachine` | ? | 4914 | 0 |
-| `Backend.Wasm` | ? | 2165 | 0 |
+| `Backend.AbstractMachine` | ? | 4949 | 0 |
+| `Backend.Wasm` | ? | 2174 | 0 |
 | `Core.CapCoh` | ? | 536 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
 | `Core.Freshness` | ? | 641 | 0 |
@@ -84,7 +84,7 @@ graph TD
 | `Core.Soundness` | ? | 2954 | 0 |
 | `Core.Typing` | ? | 404 | 0 |
 | `Distribution` | Apex | 65 | 0 |
-| `Examples` | ? | 309 | 0 |
+| `Examples` | ? | 307 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |

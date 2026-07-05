@@ -288,6 +288,9 @@ def evalD : Nat → Nat → SStore → THeap → Comp → Option (Outcome × Nat
   | Nat.succ f, g, σ, τ, .case (.inr v) _  N₂ => evalD f g σ τ (Comp.subst v N₂)
   | Nat.succ f, g, σ, τ, .split (.pair v w) N => evalD f g σ τ (Comp.subst v (Comp.subst (Val.shift w) N))
   | Nat.succ _, g, σ, τ, .unfold (.fold v)    => some (.term (.ret v), g, σ, τ)
+  -- δ-rule (ADR-0065, #40): mirrors `Source.step` (`binop op (vint a) (vint b) ⇒ ret (op.eval a b)`).
+  -- PURE — no store/counter change; non-`vint` operands fall to the catch-all (stuck, like Source.step).
+  | Nat.succ _, g, σ, τ, .binop op (.vint a) (.vint b) => some (.term (.ret (op.eval a b)), g, σ, τ)
   | _,          _, _, _, _         => none                -- out of scope (ill-formed scrutinee)
 
 /-! ## The machine — derived, not designed
@@ -375,6 +378,11 @@ def compile : Comp → Code → Code
   -- calculation collapses it onto the existing `RET` — NO dedicated instruction (invariant #4: the
   -- machine is the calculation's output; an `UNFOLD` instr would be hand-added redundancy).
   | .unfold (.fold v), c => Instr.RET v :: c
+  -- δ-rule (#40): binop COLLAPSES onto `RET`, exactly like `unfold (fold v)`. The operands are CLOSED
+  -- vints whenever `compile` reaches a binop (the SUBST/APP/HANDLE/CASE residual-recompile discipline
+  -- substitutes every enclosing binder first), so `op.eval a b` is computable here — no dedicated
+  -- instruction (invariant #4: the calculation collapses a structural terminal-reduction onto RET).
+  | .binop op (.vint a) (.vint b), c => Instr.RET (op.eval a b) :: c
   | _,                  c => c               -- out of scope: emit nothing (residual; open/ill-formed)
 
 /-- Find the nearest **throws** frame catching `(ℓ, op)`: return its saved OUTER
@@ -1955,7 +1963,15 @@ theorem sim : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
-      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
+      | binop op v w =>
+          -- δ-rule (#40): on closed vints binop reduces to `term (ret (op.eval a b))` and collapses onto
+          -- `RET`, exactly like `unfold (fold v)` above; non-vint operands are `none` (false-by-contradiction).
+          cases v <;> cases w <;>
+            first
+            | (simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+               obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+               exact ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩)
+            | simp [evalD] at h
     · -- RAISED PART
       intro M g σ τ ℓ op v g' σ' τ' h hs hC hT
       cases M with
@@ -2328,7 +2344,10 @@ theorem sim : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
-      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
+      | binop op v w =>
+          -- δ-rule (#40): binop reduces to `term (ret (op.eval a b))` on closed vints, `none` otherwise —
+          -- NEVER `raised`, so every operand shape is false-by-contradiction here.
+          cases v <;> cases w <;> simp [evalD] at h
 
 
 /-- Headline: compiling a closed computation and running it on the empty stack/store yields exactly
@@ -4371,7 +4390,20 @@ theorem run_evalD : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
-      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
+      | binop op v w =>
+          -- δ-rule (#40): on closed vints binop erases to `ret (op.eval a b)`, one `Source.step` over the
+          -- `ret`-terminal close (stores unchanged), exactly like `unfold (fold v)`; non-vint operands `none`.
+          cases v <;> cases w <;>
+            first
+            | (rename_i a b
+               simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+               obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+               have hstep : Source.step (g, K, Comp.binop op (Val.vint a) (Val.vint b))
+                   = some (g, K, Comp.ret (op.eval a b)) := rfl
+               rw [ctxNetEffect_self hCtx hTtx]
+               exact ⟨⟨hCtx, hTtx, capLabelCoh_step _ _ hFresh hCoh hstep, freshCfg_step _ _ hFresh hstep⟩,
+                 fun n r hr => ⟨n+1, by simp only [Bang.Config.run, Source.step]; exact hr⟩⟩)
+            | simp [evalD] at h
     · -- RAISED PART (U3 seam-3). Mirrors the U2 `sim` raised arm on the `Config.run`/`dispatchRun` side.
       -- The conclusion folds `CapLabelCoh (g', ctxNetEffect K σ' τ', ret v)` (REFUTE-WATCH: CONFIRMED —
       -- `capsV v ⊆ capsC` of the focus in every case, so the raised value's coherence is a sub-multiset of
@@ -4546,7 +4578,10 @@ theorem run_evalD : ∀ fe,
           | pair w1 w2 => simp [evalD] at h
       | oom => simp [evalD] at h
       | wrong a => simp [evalD] at h
-      | binop _ _ _ => simp [evalD] at h   -- δ-rule: evalD has no binop arm (untyped) ⇒ `none`, h is false
+      | binop op v w =>
+          -- δ-rule (#40): binop reduces to `term (ret (op.eval a b))` on closed vints, `none` otherwise —
+          -- NEVER `raised`, so every operand shape is false-by-contradiction here.
+          cases v <;> cases w <;> simp [evalD] at h
       | letC M0 N =>
           -- TWO live sub-cases: (a) M0 raises → propagate; (b) M0 returns `ret v0`, then `subst v0 N` raises
           -- (needs `ihT` for the M0-store-alignment — the reason this MUST be co-induced with the term part).

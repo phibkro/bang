@@ -836,7 +836,16 @@ theorem compile_ok_mem : ∀ (M : Comp) {c : CalcVM.Code}, (∀ i ∈ c, InstrOk
           · exact hc i hi
       | _ => simp only [CalcVM.compile]; exact hc
   | .oom, c, hc => by simp only [CalcVM.compile]; exact hc
-  | .binop _ _ _, c, hc => by simp only [CalcVM.compile]; exact hc   -- δ-rule: compile passes through (untyped)
+  | .binop op v w, c, hc => by
+      -- δ-rule (#40): on closed vints `compile` emits `RET (op.eval a b) :: c` (RET is `InstrOk`, like the
+      -- `unfold (fold v)` arm); non-vint operands pass through to `c`.
+      cases v <;> cases w <;>
+        first
+        | (intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
+           rcases hi with rfl | hi
+           · exact trivial
+           · exact hc i hi)
+        | (simp only [CalcVM.compile]; exact hc)
   | .wrong s, c, hc => by simp only [CalcVM.compile]; exact hc
 
 /-- `compile M c` is `CodeOk` (THROW-free) whenever `c` is — for ANY source `M`. -/
@@ -1614,7 +1623,7 @@ theorem evalD_mono : ∀ (f g : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (c
     cases c with
     | ret v => simpa [CalcVM.evalD] using h
     | lam M => simpa [CalcVM.evalD] using h
-    | binop _ _ _ => simpa [CalcVM.evalD] using h   -- δ-rule: evalD has no binop arm (untyped) ⇒ none
+    | binop op v w => cases v <;> cases w <;> simpa [CalcVM.evalD] using h   -- δ-rule (#40): pure, fuel-invariant on closed vints; `none` otherwise
 
     | force w =>
         cases w with
