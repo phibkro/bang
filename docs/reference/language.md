@@ -33,6 +33,10 @@ nothing here can drift from what the language actually does.
 | `a + b` | (arithmetic + - * /, comparison < ==) |
 | `if c then t else e` | (sugar over case on Bool = 1+1) |
 | `(e : T)` | type ascription (ADR-0066 ②); erased at lowering |
+| `()` | the unit value literal |
+| `μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)` |  |
+| `μ elim` | (INTERNAL: emitted by named-match elaboration) |
+| `named-ctor match (parse-only; ELIMINATED by the elaborator —` |  |
 
 ## Types
 
@@ -45,6 +49,9 @@ nothing here can drift from what the language actually does.
 | `A * B` |  |
 | `Thunk T` | (a suspended computation value, the `U` former) |
 | `Self — the impl target, in trait op signatures (#24, ADR-0068)` |  |
+| `a declared data name (resolved against the decl env at elaboration, ADR-0069)` |  |
+| `μ former (INTERNAL — built by data-decl encoding, never parsed in v1)` |  |
+| `μ-bound de Bruijn type var (INTERNAL, ditto)` |  |
 | `T ! {throws, …}` | effect-row annotation (names; checker maps to labels) |
 
 ## Effect channels
