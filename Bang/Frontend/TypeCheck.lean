@@ -635,4 +635,105 @@ def vecProg (body : String) : String :=
 -- plain programs: the typed entry agrees with the decl-free checker.
 #guard checkProg "let x = 2 in x + 3" == check "let x = 2 in x + 3"
 
+/-! ## Stage ⑤c — source LAWS discharge on the tested rung (#24 piece 3; ADR-0068 decision 1).
+
+A parsed `law` is CHECKED against the verified interpreter: each sample tuple binds the law's
+params (implicitly `Self`-typed, like ops), the Bool-valued body is elaborated (operators resolve
+through the impls), lowered, and run via `Source.eval`; the law holds on its sample iff every run
+yields true. This is the v1 source-law CEILING — the tested rung, marked `↓` in the report (never
+silent); the VERIFIED rung stays Lean-level (`Surface/Trait.lean`'s `mkVerified` instances —
+Law-VALUE unification with that machinery awaits Trait's public interface reveal). A law FALSE on
+its sample is a fail-loud `checkLaws` error: unconstructible, the same teeth as `Trait.mkTested`. -/
+
+/-- Reify a sample `Val` back to surface syntax (the v1 sample domain: ints + products of them). -/
+def valToSurf : Val → Option Surf
+  | .vint n   => some (.lit n)
+  | .pair a b => do return .pairS (← valToSurf a) (← valToSurf b)
+  | _         => none
+
+/-- The sample pool for a value type — small on purpose (every element costs one interpreter
+run per law). -/
+def sampleVT : VT → List Val
+  | .int      => [.vint 0, .vint 1, .vint (-2), .vint 7]
+  | .prod A B => ((sampleVT A).flatMap fun a => (sampleVT B).map fun b => .pair a b).take 6
+  | _         => []
+
+/-- k-tuples over a pool (truncated cartesian power — a law's argument sample). -/
+def tuples : Nat → List Val → List (List Val)
+  | 0,     _    => [[]]
+  | k + 1, pool => ((tuples k pool).flatMap fun t => pool.map fun v => v :: t).take 12
+
+/-- Run ONE law instance: bind `params := args`, wrap the Bool-valued body in
+`let #r = body in if #r then 1 else 0` (encoding-agnostic truth read-back), elaborate
+(operators resolve), CHECK, lower, and run through `Source.eval`. -/
+def checkLawOn (env : InstEnv) (params : List String) (body : Surf) (args : List Val) : Bool :=
+  if params.length != args.length then false else
+  let wrapped := (params.zip args).foldr
+    (fun (pv : String × Val) acc =>
+      match valToSurf pv.2 with
+      | some s => .lett pv.1 s acc
+      | none   => acc)  -- unsupported sample value ⇒ unbound param ⇒ the check below fails loud
+    (Surf.lett "#r" body (.ifS (.var "#r") (.lit 1) (.lit 0)))
+  match (do
+      let e ← elabS env [] wrapped
+      let _ ← synthSC [] e
+      Bang.Surface.lower e) with
+  | .ok c    => match Source.eval 400 c with
+                | .done (.vint 1) => true
+                | _               => false
+  | .error _ => false
+
+/-- Check EVERY law of every trait against every impl of that trait, on a generated sample.
+Returns the discharge report — one `↓ …` line per law, the `Trait.dischargeReport` shape, so
+the tested-rung descent is VISIBLE (ADR-0068). A law false on its sample is a fail-loud error. -/
+def checkLaws (src : String) : Except String (List String) := do
+  let p ← parseProg src
+  let env ← buildEnv p.decls
+  let mut report : List String := []
+  for d in p.decls do
+    match d with
+    | .implD .. => pure ()
+    | .traitD tn _ laws =>
+        for other in p.decls do
+          match other with
+          | .traitD .. => pure ()
+          | .implD tn' τTy _ =>
+              if tn' == tn then
+                for l in laws do
+                  let sample := tuples l.params.length (sampleVT (vtyOf τTy))
+                  if sample.all (checkLawOn env l.params l.body) then
+                    report := report ++
+                      [s!"↓ {tn}.{l.name} @ {showVTy (vtyOf τTy)}: DESCENT [test ({sample.length} samples): source law — the ADR-0068 v1 ceiling] (tested)"]
+                  else
+                    throw s!"law {tn}.{l.name} FAILS on its sample for {showVTy (vtyOf τTy)}"
+  return report
+
+/-! ### Validation ⑦ — the northstar WITH its law: checked from source, rung displayed. -/
+
+/-- The full northstar prelude, parametrized by the law: `VecOps` (component-wise `add`, pair
+`eq`) for `(Int * Int)`, in let-normal form (pair components are values in CBPV). -/
+def vecOpsProg (law : String) (body : String) : String :=
+  "trait VecOps { fn add(a, b) -> Self " ++
+  "fn eq(a, b) -> (Unit + Unit) " ++
+  "law " ++ law ++ " } " ++
+  "impl VecOps for (Int * Int) { " ++
+  "fn add(p, q) = let (a, b) = p in (let (c, d) = q in (let x = a + c in (let y = b + d in (x, y)))) " ++
+  "fn eq(p, q) = let (a, b) = p in (let (c, d) = q in (let e = a == c in (if e then b == d else 0 == 1))) } " ++
+  body
+
+/-- The northstar program: the commutativity law + the pair instance. -/
+def vecLawProg (body : String) : String :=
+  vecOpsProg "comm(a, b): let s = a + b in (let t = b + a in s == t)" body
+
+-- the comm law DISCHARGES on the tested rung — sample-checked via Source.eval, descent VISIBLE.
+#guard (match checkLaws (vecLawProg "0") with
+        | .ok [s] => s.startsWith "↓ VecOps.comm @ (Int * Int): DESCENT"
+        | _       => false)
+-- the value path is undisturbed: the lawful program still computes (1,2)+(3,4) = (4,6).
+#guard runTypedYieldsInt 400 (vecLawProg "let s = (1, 2) + (3, 4) in (let (x, y) = s in x)") 4
+#guard runTypedYieldsInt 400 (vecLawProg "let s = (1, 2) + (3, 4) in (let (x, y) = s in y)") 6
+-- a FALSE law is UNCONSTRUCTIBLE: `a + b == a + a` fails its sample, fail-loud.
+#guard (match checkLaws (vecOpsProg "bogus(a, b): let s = a + b in (let t = a + a in s == t)" "0") with
+        | .error _ => true | _ => false)
+
 end Bang.TypeCheck

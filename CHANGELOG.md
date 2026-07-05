@@ -21,6 +21,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — ADR-0066 ④b — type DISPLAY (#5's "type display": effect rows visible) (`2c536c6`)
 - **typecheck** — ADR-0066 ④b (writing) — effect signatures `! {ρ}`, enforced (#5 complete) (`858421b`)
 - **surface** — trait/impl declarations parse — Prog = decl prelude + body (#24 piece 1, ADR-0068) (`d724f81`)
+- **typecheck** — type-directed operator resolution — the northstar runs (#24 piece 2, ADR-0068) (`63c7fb9`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
