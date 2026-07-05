@@ -8,9 +8,15 @@
 #       re-clones Mathlib + corrupts the shared store. This is the TRIGGER.
 #   (b) `git add -A` then stages a phantom cache-tree entry that gc prunes.
 # This script removes (a) at the source: it SEEDS .lake/packages from the main
-# checkout (symlink — the deps are read-only oleans; the worktree builds Bang/
-# into its OWN .lake/build), so the fresh worktree's build sees oleans present
-# and NEVER cache-gets. It also pins gc.auto=0 on the shared store.
+# checkout so the fresh worktree's build sees oleans present and NEVER
+# cache-gets. It also pins gc.auto=0 on the shared store.
+#
+# Seeding is a REFLINK COPY, not a symlink (2026-07-05 lesson): lake has a
+# "URL has changed; deleting … and cloning again" codepath that DELETES and
+# re-clones a package when the worktree's lake state disagrees — through a
+# symlink that lands on the SHARED copy and nukes oleans + git state for every
+# worktree at once (it did, twice in one day). A btrfs reflink copy is instant,
+# costs no disk until divergence, and makes the blast radius per-worktree.
 #
 # Usage (run from the MAIN checkout):  tools/new-worktree.sh <dir> <branch> [base]
 #   tools/new-worktree.sh ../lang-bang-foo foo-work main
@@ -37,15 +43,17 @@ gd="$(git rev-parse --git-dir)"; gcd="$(git rev-parse --git-common-dir)"
 
 git worktree add -b "$branch" "$dir" "$base"
 
-# Seed: symlink the dependency oleans so the worktree's first build finds them
-# present → the build recipe's cache-get line never fires. Bang/'s own build
-# artifacts go to the worktree's OWN .lake/build (lake creates it), not shared.
+# Seed: REFLINK-COPY the dependency tree so the worktree's first build finds
+# oleans present (no cache-get) AND owns its copy outright — a lake re-clone in
+# this worktree can only nuke ITSELF (see header). --reflink=auto: CoW-instant
+# on btrfs (this repo's fs), silently a real copy elsewhere. Bang/'s own build
+# artifacts go to the worktree's OWN .lake/build as before.
 mkdir -p "$dir/.lake"
-ln -s "$main_root/.lake/packages" "$dir/.lake/packages"
+cp -r --reflink=auto "$main_root/.lake/packages" "$dir/.lake/packages"
 
 git -C "$dir" config gc.auto 0
 git -C "$dir" config gc.autoDetach false
 
 echo "✓ worktree $dir  (branch $branch off $base)"
-echo "  .lake/packages → seeded (symlink to main) · gc.auto=0 · gc.autoDetach=false"
+echo "  .lake/packages → seeded (reflink copy, isolated) · gc.auto=0 · gc.autoDetach=false"
 echo "  → cd $dir && nix develop    [commit by pathspec; never 'lake exe cache get' here]"
