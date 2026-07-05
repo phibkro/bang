@@ -125,6 +125,7 @@ inductive Ty where
   | tSum   : Ty → Ty → Ty        -- A + B
   | tProd  : Ty → Ty → Ty        -- A * B
   | tThunk : Ty → Ty             -- Thunk T  (a suspended computation value, the `U` former)
+  | tSelf  : Ty                  -- Self — the impl target, in trait op signatures (#24, ADR-0068)
   | tEff   : List String → Ty → Ty  -- T ! {throws, …}  effect-row annotation (names; checker maps to labels)
   deriving Repr, Inhabited, DecidableEq
 
@@ -434,6 +435,7 @@ def pTyAtom : Nat → P Ty
   | 0,     _            => .error "type parser out of fuel"
   | _ + 1, "Int" :: ts  => .ok (.tInt, ts)
   | _ + 1, "Unit" :: ts => .ok (.tUnit, ts)
+  | _ + 1, "Self" :: ts => .ok (.tSelf, ts)
   | f + 1, "Thunk" :: ts => do let (t, ts) ← pTyAtom f ts; .ok (.tThunk t, ts)
   | f + 1, "(" :: ts    => do
       let (t, ts) ← pTy f ts

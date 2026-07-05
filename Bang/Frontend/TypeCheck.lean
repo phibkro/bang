@@ -18,6 +18,7 @@ module
 -- `#guard`s run the COMPILED checker over parsed source at the META phase → meta import
 -- (the cross-module `#guard` codegen wall; mirrors `Examples.lean`).
 meta import Bang.Frontend.Surface
+meta import Bang.Core.Semantics     -- runTypedYieldsInt's #guards execute Source.eval (Trait.lean precedent)
 meta import Bang.Core.Grade         -- QTT.omega must be META-accessible for the #guards
 public import Bang.Frontend.Surface
 public import Bang.Core.Typing
@@ -188,6 +189,8 @@ def tyBoth : Ty → VT × CT
   | .tThunk t  => let V : VT := .U ⊥ (tyBoth t).2; (V, .F .omega V)
   | .tArr  a b => let f : CT := .arr .omega (tyBoth a).1 (tyBoth b).2; (.U ⊥ f, f)  -- fn VALUE = thunked arrow
   | .tEff  _ t => tyBoth t        -- effect annotation is checker-level (effOf); dropped from the kernel type
+  | .tSelf     => let V : VT := .tvar 999; (V, .F .omega V)  -- POISON: `buildEnv` substitutes Self before
+                                  -- any tyBoth; a leaked Self surfaces as `#999`, never unifies
 @[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
 @[inline] def ctyOf (t : Ty) : CT := (tyBoth t).2
 
@@ -445,5 +448,191 @@ A declared row is an UPPER BOUND (the inferred effect must be ⊆ it). No annota
 #guard (match check "( fun x => raise x : Int -> Int ! {state} )" with | .error _ => true | _ => false)
 -- un-annotated arrow stays unconstrained: a throwing fn is fine, effect inferred + shown.
 #guard display "( fun x => raise x : Int -> Int )" == "Int -> Int ! {throws}"
+
+/-! ## Stage ⑤b — type-directed operator RESOLUTION (#24 piece 2; ADR-0068 decision 3).
+
+`a + b` on a non-Int operand type resolves to the matching `impl`'s op: `elabS` rewrites the
+`binopS` into an application of the impl's ANNOTATED lambda, so the existing checker machinery
+types the call site — zero new typing rules. The typed path is a NEW entry (`checkProg` /
+`displayProg` / `runTypedYieldsInt`); the untyped `parse → lower → eval` path is untouched.
+
+v1 conventions (monomorphic, ADR-0040/0027): an operator resolves through its trait-op NAME
+(`+` ↦ `add`, Rust-style); trait-op params are implicitly `Self`-typed; `Self` in the declared
+ret type is substituted by the impl target at env build; impl bodies are spliced RAW (kernel ops
+only — a nested trait-op inside one is reported by the checker at the unresolved binop). -/
+
+/-- The trait-op name an operator resolves through (`a + b` ⇒ the instance's `add`). -/
+def binopName : BinOp → String
+  | .add => "add" | .sub => "sub" | .mul => "mul" | .div => "div"
+  | .lt  => "lt"  | .eq  => "eq"
+
+/-- Substitute the impl TARGET for `Self` in a trait signature type (env-build time; `tyBoth`
+never sees a raw `tSelf`). Enumerated — a new `Ty` former fails here until handled. -/
+def substSelf (target : Ty) : Ty → Ty
+  | .tSelf     => target
+  | .tInt      => .tInt
+  | .tUnit     => .tUnit
+  | .tArr a b  => .tArr  (substSelf target a) (substSelf target b)
+  | .tSum a b  => .tSum  (substSelf target a) (substSelf target b)
+  | .tProd a b => .tProd (substSelf target a) (substSelf target b)
+  | .tThunk t  => .tThunk (substSelf target t)
+  | .tEff ns t => .tEff ns (substSelf target t)
+
+/-- One resolvable instance op: the resolution key (`opName` × structural `target`) plus what
+the elaborated call site needs (the impl's def + the annotation types). -/
+structure Inst where
+  opName   : String
+  target   : VT       -- the structural resolution key (ADR-0068 decision 2)
+  targetTy : Ty       -- the impl's declared target, for the elaborated annotation
+  retTy    : Ty       -- the trait sig's ret type, Self-substituted
+  opDef    : OpDef
+
+abbrev InstEnv := List Inst
+
+/-- Build the instance environment from a program's decl prelude. Fail-loud: an `impl` must
+name a declared trait; each `fn` must match a trait op signature (name + arity). -/
+def buildEnv (ds : List Decl) : Except String InstEnv := do
+  let traits := ds.filterMap fun
+    | .traitD n ops _ => some (n, ops)
+    | .implD ..       => none
+  let mut env : InstEnv := []
+  for d in ds do
+    match d with
+    | .traitD .. => pure ()
+    | .implD tn τTy ops =>
+        match traits.lookup tn with
+        | none => throw s!"impl of undeclared trait '{tn}'"
+        | some sigs =>
+            for od in ops do
+              match sigs.find? (fun s => s.name == od.name) with
+              | none => throw s!"impl '{tn}' defines '{od.name}', which is not an op of the trait"
+              | some sig =>
+                  if od.params.length != sig.params.length then
+                    throw s!"'{od.name}': impl has {od.params.length} params, the trait declares {sig.params.length}"
+                  env := env ++ [⟨od.name, vtyOf τTy, τTy, substSelf τTy sig.retTy, od⟩]
+  return env
+
+/-- Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
+instance env; every other constructor maps structurally (ENUMERATED — a new `Surf` form fails
+here until elaborated, the same completeness-by-construction as `synthSC`/`lowerC`). Binder arms
+extend `Γ` so operand types inside them synthesize — `lett` via `synthSC` on the elaborated head,
+`match`/`split` via the scrutinee's type; a BARE lam body is elaborated with its param unbound
+(resolution inside one needs an ascription, exactly like checking). -/
+def elabS (env : InstEnv) : NCtx → Surf → Except String Surf
+  | _, .lit n => .ok (.lit n)
+  | _, .var x => .ok (.var x)
+  | _, .getS  => .ok .getS
+  | Γ, .thunk b  => do return .thunk (← elabS env Γ b)
+  | Γ, .force b  => do return .force (← elabS env Γ b)
+  | Γ, .raise e  => do return .raise (← elabS env Γ e)
+  | Γ, .handle e => do return .handle (← elabS env Γ e)
+  | Γ, .putS e   => do return .putS (← elabS env Γ e)
+  | Γ, .atomS e  => do return .atomS (← elabS env Γ e)
+  | Γ, .newS e   => do return .newS (← elabS env Γ e)
+  | Γ, .readS e  => do return .readS (← elabS env Γ e)
+  | Γ, .inlS e   => do return .inlS (← elabS env Γ e)
+  | Γ, .inrS e   => do return .inrS (← elabS env Γ e)
+  | Γ, .stateS e0 e => do return .stateS (← elabS env Γ e0) (← elabS env Γ e)
+  | Γ, .writeS r w  => do return .writeS (← elabS env Γ r) (← elabS env Γ w)
+  | Γ, .pairS a b   => do return .pairS (← elabS env Γ a) (← elabS env Γ b)
+  | Γ, .app f a     => do return .app (← elabS env Γ f) (← elabS env Γ a)
+  | Γ, .ifS c t e   => do return .ifS (← elabS env Γ c) (← elabS env Γ t) (← elabS env Γ e)
+  | Γ, .lam x b     => do return .lam x (← elabS env Γ b)
+  | Γ, .lett x e b  => do
+      let e' ← elabS env Γ e
+      let Γ' := match synthSC Γ e' with
+        | .ok (.F _ A, _) => (x, A) :: Γ
+        | _               => Γ
+      return .lett x e' (← elabS env Γ' b)
+  | Γ, .matchS s xl el xr er => do
+      let s' ← elabS env Γ s
+      let (Γl, Γr) := match synthSV Γ s' with
+        | .ok (.sum A B) => ((xl, A) :: Γ, (xr, B) :: Γ)
+        | _              => (Γ, Γ)
+      return .matchS s' xl (← elabS env Γl el) xr (← elabS env Γr er)
+  | Γ, .splitS a b p body => do
+      let p' ← elabS env Γ p
+      let Γ' := match synthSV Γ p' with
+        | .ok (.prod A B) => (b, B) :: (a, A) :: Γ
+        | _               => Γ
+      return .splitS a b p' (← elabS env Γ' body)
+  | Γ, .annotS (.lam x b) t => do   -- an ascribed lam's body sees its param's type (as in checking)
+      let Γ' := match tyBoth t with
+        | (_, .arr _ A _) => (x, A) :: Γ
+        | _               => Γ
+      return .annotS (.lam x (← elabS env Γ' b)) t
+  | Γ, .annotS e t => do return .annotS (← elabS env Γ e) t
+  | Γ, .binopS op a b => do
+      let a' ← elabS env Γ a
+      let b' ← elabS env Γ b
+      match synthSV Γ a' with
+      | .ok .int  => return .binopS op a' b'   -- the kernel δ-rule path (ADR-0065), untouched
+      | .error _  => return .binopS op a' b'   -- non-value operand: leave it; the checker rules as today
+      | .ok τ =>
+          match env.find? (fun i => i.opName == binopName op && i.target == τ) with
+          | none => .error s!"no impl provides '{binopName op}' for {showVTy τ}"
+          | some inst =>
+              match inst.opDef.params with
+              | [p, q] =>
+                  let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
+                  return .app (.app (.annotS (.lam p (.lam q inst.opDef.body)) fnTy) a') b'
+              | _ => .error s!"'{inst.opDef.name}': operator resolution needs exactly 2 params (got {inst.opDef.params.length})"
+
+/-- Elaborate a whole program: build the instance env from the decl prelude, resolve the body. -/
+def elabProg (p : Prog) : Except String Surf := do
+  elabS (← buildEnv p.decls) [] p.body
+
+/-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
+def checkProg (src : String) : Except String (CT × EffRow) := do
+  synthSC [] (← Bang.Surface.parseProg src >>= elabProg)
+
+/-- Parse + elaborate + check + DISPLAY — the decl-aware, typed sibling of `display`. -/
+def displayProg (src : String) : String :=
+  match checkProg src with
+  | .ok (B, φ) => showType B φ
+  | .error e   => s!"error: {e}"
+
+/-- Parse + elaborate + CHECK + lower + RUN through `Source.eval`, expecting `vint n` — the
+typed sibling of `Surface.runYieldsInt` (which stays untyped and decl-free). The typed path
+checks BEFORE it runs. -/
+def runTypedYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
+  match (do
+      let e ← Bang.Surface.parseProg src >>= elabProg
+      let _ ← synthSC [] e
+      Bang.Surface.lower e) with
+  | .ok c => match Source.eval fuel c with
+             | .done (.vint m) => m == n
+             | _               => false
+  | .error _ => false
+
+/-! ### Validation ⑥ — the NORTHSTAR: `(1,2) + (3,4)`, resolved, typed, run via the oracle. -/
+
+/-- The demo prelude: an `Add` trait + its `(Int * Int)` instance (component-wise addition,
+written in let-normal form — pair components are VALUES in CBPV, so the sums are bound first). -/
+def vecProg (body : String) : String :=
+  "trait Add { fn add(a, b) -> Self } " ++
+  "impl Add for (Int * Int) { fn add(p, q) = " ++
+  "let (a, b) = p in (let (c, d) = q in (let x = a + c in (let y = b + d in (x, y)))) } " ++
+  body
+
+-- THE NORTHSTAR RUNS: (1,2) + (3,4) = (4,6), resolved through the impl, checked, run via Source.eval.
+#guard runTypedYieldsInt 200 (vecProg "let s = (1, 2) + (3, 4) in (let (x, y) = s in x)") 4
+#guard runTypedYieldsInt 200 (vecProg "let s = (1, 2) + (3, 4) in (let (x, y) = s in y)") 6
+-- the resolved operator DISPLAYS at the instance type.
+#guard displayProg (vecProg "(1, 2) + (3, 4)") == "(Int * Int)"
+-- resolution is TYPE-directed: Int operands still take the kernel δ-rule under the same decls.
+#guard runTypedYieldsInt 50 (vecProg "2 + 3") 5
+#guard displayProg (vecProg "1 + 2") == "Int"
+-- fail-loud: an operand type with NO impl.
+#guard (match checkProg "trait Add { fn add(a, b) -> Self } (1, 2) + (3, 4)" with
+        | .error _ => true | _ => false)
+-- fail-loud: an impl of an undeclared trait.
+#guard (match checkProg "impl Add for (Int * Int) { fn add(p, q) = p } 0" with
+        | .error _ => true | _ => false)
+-- fail-loud: an impl op that is not in the trait.
+#guard (match checkProg "trait Add { fn add(a, b) -> Self } impl Add for (Int * Int) { fn mul(p, q) = p } 0" with
+        | .error _ => true | _ => false)
+-- plain programs: the typed entry agrees with the decl-free checker.
+#guard checkProg "let x = 2 in x + 3" == check "let x = 2 in x + 3"
 
 end Bang.TypeCheck

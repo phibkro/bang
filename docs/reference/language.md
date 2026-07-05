@@ -44,6 +44,7 @@ nothing here can drift from what the language actually does.
 | `A + B` |  |
 | `A * B` |  |
 | `Thunk T` | (a suspended computation value, the `U` former) |
+| `Self — the impl target, in trait op signatures (#24, ADR-0068)` |  |
 | `T ! {throws, …}` | effect-row annotation (names; checker maps to labels) |
 
 ## Effect channels
