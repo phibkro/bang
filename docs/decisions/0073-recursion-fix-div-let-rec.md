@@ -72,12 +72,24 @@ The re-spike is **positive**: μ-encoded recursion (Landin's knot — `data Rec 
 fix-primitive fallback does NOT fire. Prerequisite #45 (checker check-mode completeness — push expected
 types into thunks) landed to unblock the higher-order payload.
 
-**Last ergonomic gap (not a mechanism issue):** the recursion currently needs the `if` CONDITION (and
-match scrutinee) A-normalized by hand — `let c = n == 0 in if c …` — because `synthSC`'s `ifS`/`matchD`
-expect a VALUE condition/scrutinee but `n == 0` is a binop (a computation). Same **#41** class (an
-elaborator auto-A-normalization, not a check arm). With the manual `let c`, μ-recursion is fully
-working; closing #41 makes it spellable naturally. That, plus the `let rec` surface sugar + the `Div`-row
-typing (§Decision 1-2), is the remaining recursion build — all surface/checker, no kernel.
+## IMPLEMENTATION STATUS (2026-07-05)
+
+- **§1 `let rec` surface — LANDED (`0f771c6`).** `let rec f : T = fun x => <body> in <cont>` desugars
+  (in `elabS`) to Landin's knot generalized per-function: `Rec = μX. Thunk(X -> T)` via raw
+  `tMu`/`tVar` (NOT a `data` decl — `let rec` is expression-level), `f : Thunk T` in scope in its own
+  body, called `($f) arg`. Emits only ordinary `Surf` — existing checker + kernel run it (invariant #5
+  preserved). Recursion is USER-FACING + natural: factorial 5 → 120, countdown-sum → 15, nested rec fns
+  → 16, unbounded → `oom` (CLI + `⑨e` guards). Enabled by extending #41's value-position A-norm to APP
+  ARGUMENTS (so `($sum)(n-1)` reads naturally). v1 choices: monomorphic + annotation-required
+  (`let rec f : T = …`), bare-`fun` RHS, `f : Thunk T`.
+- **§2 `Div`-row typing — DEFERRED → #46.** Recursion RUNS correctly (unbounded → `oom` = the Div
+  fragment at RUNTIME, §4); making `Div` type-VISIBLE is a genuine semantic-design fork (WHERE `Div`
+  sits in the codomain row, threaded through fold/unfold/force/app) — spiked + costed by checker45,
+  deferred per the escalation rule. Recursion is complete without it; #46 adds the type-level partiality
+  marker.
+
+Earlier note (the #41 gap, now CLOSED by `8e2e132`): μ-recursion needed the `if` condition
+A-normalized by hand; #41 fixed value-position A-normalization so it reads naturally.
 
 ## Revisit if
 
