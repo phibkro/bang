@@ -736,4 +736,32 @@ def vecLawProg (body : String) : String :=
 #guard (match checkLaws (vecOpsProg "bogus(a, b): let s = a + b in (let t = a + a in s == t)" "0") with
         | .error _ => true | _ => false)
 
+/-! ### Validation ⑧ — CONDITIONAL laws (transitivity-shaped) are NOT blocked.
+
+Implication `P → Q` encodes as `if P then Q else 0 == 0` (Bool-valued, so it is a legal law
+body today); `law trans(a, b, c)` is a 3-param law sampled as k-tuples. The `=>` sugar and
+premise-aware sampling (the truncated cartesian sample can leave a conditional law's premise
+rarely true — vacuity) are ergonomics follow-ups, not blockers. -/
+
+/-- An Int-target trait prelude, parametrized by the law (δ-rule ops carry the laws; the impl
+exists so `checkLaws` has a trait×impl pair to instantiate). -/
+def intOrdProg (law : String) (body : String) : String :=
+  "trait IntOrd { fn lt(a, b) -> (Unit + Unit) law " ++ law ++ " } " ++
+  "impl IntOrd for Int { fn lt(a, b) = a < b } " ++ body
+
+-- TRANSITIVITY from source: (a < b) → (b < c) → (a < c), 3 params, implication-encoded. GREEN.
+#guard (match checkLaws (intOrdProg
+    "trans(a, b, c): let p = a < b in (let q = b < c in (let r = a < c in (if p then (if q then r else 0 == 0) else 0 == 0)))" "0") with
+        | .ok [s] => s.startsWith "↓ IntOrd.trans"
+        | _       => false)
+-- symmetry of `==`, premise NON-vacuous (the sample's diagonal pairs exercise it). GREEN.
+#guard (match checkLaws (intOrdProg
+    "sym(a, b): let p = a == b in (let q = b == a in (if p then q else 0 == 0))" "0") with
+        | .ok [s] => s.startsWith "↓ IntOrd.sym"
+        | _       => false)
+-- a FALSE conditional law is caught NON-vacuOUSLY: (a < b) → (b < a) fails on (0, 1). Fail-loud.
+#guard (match checkLaws (intOrdProg
+    "antisym_bogus(a, b): let p = a < b in (if p then b < a else 0 == 0)" "0") with
+        | .error _ => true | _ => false)
+
 end Bang.TypeCheck
