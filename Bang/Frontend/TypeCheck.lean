@@ -634,6 +634,32 @@ def armsToList : DArms → List (String × List String × Surf)
   | .nil            => []
   | .cons c bs b r  => (c, bs, b) :: armsToList r
 
+/-- Syntactic value check — mirrors `Surface.lowerV`'s value-shaped constructors. A `thunk` is
+ALWAYS a value (its body is a separate computation), even a thunk of a check-mode-only `fun`; this
+is why the check is syntactic, not `synthSV`-based (a thunk-of-bare-`fun` neither `synthSV`s nor
+`synthSC`s, yet is a perfectly good value — the #45 `Box({fun x => x})` payload). -/
+def isValueSurf : Surf → Bool
+  | .lit _ | .var _ | .unitS | .thunk _ => true
+  | .inlS e | .inrS e | .foldS e        => isValueSurf e
+  | .pairS a b                          => isValueSurf a && isValueSurf b
+  | .annotS e _                         => isValueSurf e
+  | _                                   => false
+
+/-- A-normalize a VALUE-position subterm (#41), mirroring `lowerV`-or-`letC` in `Surface.lower` but
+at the NAMED elaboration layer (no de-Bruijn shift — a fresh binder just extends `Γ`). Returns the
+extended context, a `let`-prefix to wrap around the enclosing construct, and the value-`Surf` to use
+in the value slot: a syntactic value passes through (`id` prefix); a computation is bound under a
+fresh `#anf`-name (its returner payload type in `Γ`), lifting it ABOVE the construct (so e.g. a
+ctor's fold still wraps a VALUE). A non-returner is left for the checker; an untypeable RHS surfaces
+its REAL error, not a downstream "unbound variable" (the #41 diagnostic). Fresh names key on `Γ.length`
+and shadow innermost-first (as `lower`'s own sentinels do), so nested/sibling binds stay correct. -/
+def anfSplit (Γ : NCtx) (e' : Surf) : Except String (NCtx × (Surf → Surf) × Surf) :=
+  if isValueSurf e' then .ok (Γ, id, e')
+  else match synthSC Γ e' with
+    | .ok (.F _ A, _) => let nm := s!"#anf{Γ.length}"; .ok ((nm, A) :: Γ, (Surf.lett nm e' ·), .var nm)
+    | .ok _           => .ok (Γ, id, e')
+    | .error m        => .error m
+
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
 instance env, ctor intros + named matches through the data env (ADR-0069); every other
 constructor maps structurally (ENUMERATED — a new `Surf` form fails here until elaborated, the
@@ -664,7 +690,12 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | Γ, .inrS e   => do return .inrS (← elabS env Γ e)
   | Γ, .stateS e0 e => do return .stateS (← elabS env Γ e0) (← elabS env Γ e)
   | Γ, .writeS r w  => do return .writeS (← elabS env Γ r) (← elabS env Γ w)
-  | Γ, .pairS a b   => do return .pairS (← elabS env Γ a) (← elabS env Γ b)
+  | Γ, .pairS a b   => do                     -- A-normalize computation components (bare pair in comp position), #41
+      let a' ← elabS env Γ a
+      let b' ← elabS env Γ b
+      let (Γ1, wa, va) ← anfSplit Γ a'
+      let (_,  wb, vb) ← anfSplit Γ1 b'
+      return wa (wb (.pairS va vb))
   | Γ, .foldS b     => do return .foldS (← elabS env Γ b)
   | Γ, .unfoldS b   => do return .unfoldS (← elabS env Γ b)
   | Γ, .withCapS kind init name body => do   -- bind name : Cap ℓ so body operands synthesize (ADR-0070)
@@ -682,30 +713,43 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       return .dotPerform recv' op args'
   | Γ, .app (.var c) a => do                  -- ctor intro `Cons(e, …)` parses as application (ADR-0069)
       match env.ctors.lookup c with
-      | some ci => if ci.arity == 0 then .error s!"constructor '{c}' takes no arguments"
-                   else do return ctorIntro ci (← elabS env Γ a)
+      | some ci =>
+          if ci.arity == 0 then .error s!"constructor '{c}' takes no arguments"
+          else do
+            -- A-normalize the payload so the fold wraps a VALUE (computations lifted above, #41). A
+            -- multi-field payload is a `pairS` whose own arm already lifts its fields into a returner;
+            -- this bind then lifts that returner above the fold. Inner/outer `#anf` names may coincide
+            -- at equal depth but shadow innermost-first (as `lower`'s sentinels do), so it stays correct.
+            let a' ← elabS env Γ a
+            let (_, w, v) ← anfSplit Γ a'
+            return w (ctorIntro ci v)
       | none    => do return .app (.var c) (← elabS env Γ a)
   | Γ, .app f a     => do return .app (← elabS env Γ f) (← elabS env Γ a)
-  | Γ, .ifS c t e   => do return .ifS (← elabS env Γ c) (← elabS env Γ t) (← elabS env Γ e)
+  | Γ, .ifS c t e   => do                     -- A-normalize a computation condition (`n == 0`), #41
+      let c' ← elabS env Γ c
+      let (Γ1, wrap, cv) ← anfSplit Γ c'
+      return wrap (.ifS cv (← elabS env Γ1 t) (← elabS env Γ1 e))
   | Γ, .lam x b     => do return .lam x (← elabS env Γ b)
   | Γ, .lett x e b  => do
       let e' ← elabS env Γ e
-      let Γ' := match synthSC Γ e' with
-        | .ok (.F _ A, _) => (x, A) :: Γ
-        | _               => Γ
-      return .lett x e' (← elabS env Γ' b)
+      match synthSC Γ e' with                  -- report the RHS's REAL error, not a downstream unbound (#41)
+      | .ok (.F _ A, _) => return .lett x e' (← elabS env ((x, A) :: Γ) b)
+      | .ok (C, _)      => throw s!"let-binding '{x}': value is not a returner ({showType C ⊥}) — force it (${x}) or bind a value"
+      | .error m        => throw s!"let-binding '{x}': {m}"
   | Γ, .matchS s xl el xr er => do
       let s' ← elabS env Γ s
-      let (Γl, Γr) := match synthSV Γ s' with
-        | .ok (.sum A B) => ((xl, A) :: Γ, (xr, B) :: Γ)
-        | _              => (Γ, Γ)
-      return .matchS s' xl (← elabS env Γl el) xr (← elabS env Γr er)
+      let (Γ1, wrap, sv) ← anfSplit Γ s'       -- A-normalize a computation scrutinee, #41
+      let (Γl, Γr) := match synthSV Γ1 sv with
+        | .ok (.sum A B) => ((xl, A) :: Γ1, (xr, B) :: Γ1)
+        | _              => (Γ1, Γ1)
+      return wrap (.matchS sv xl (← elabS env Γl el) xr (← elabS env Γr er))
   | Γ, .splitS a b p body => do
-      let p' ← elabS env Γ p
-      let Γ' := match synthSV Γ p' with
-        | .ok (.prod A B) => (b, B) :: (a, A) :: Γ
-        | _               => Γ
-      return .splitS a b p' (← elabS env Γ' body)
+      let p0 ← elabS env Γ p
+      let (Γ1, wrap, p') ← anfSplit Γ p0       -- A-normalize a computation scrutinee, #41
+      let Γ' := match synthSV Γ1 p' with
+        | .ok (.prod A B) => (b, B) :: (a, A) :: Γ1
+        | _               => Γ1
+      return wrap (.splitS a b p' (← elabS env Γ' body))
   | Γ, .annotS (.lam x b) t => do   -- an ascribed lam's body sees its param's type (as in checking)
       let t' ← resolveTy env.aliases t         -- data names in user ascriptions close here (ADR-0069)
       let Γ' := match tyBoth t' with
@@ -714,7 +758,8 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       return .annotS (.lam x (← elabS env Γ' b)) t'
   | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.aliases t)
   | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
-      let s' ← elabS env Γ s
+      let s0 ← elabS env Γ s
+      let (Γ, wrap, s') ← anfSplit Γ s0        -- A-normalize a computation scrutinee, #41
       let arms' ← elabArms env Γ arms          -- bodies elaborated STRUCTURALLY (ctor-typed Γ)
       match armsToList arms' with
       | [] => .error "match needs at least one arm"
@@ -742,13 +787,17 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
                     if bs.length != ci.arity then
                       throw s!"'{cn}' arm binds {bs.length} variable(s), the constructor has arity {ci.arity}"
                     ordered := ordered ++ [(bs, body')]
-            return .lett "#u" (.unfoldS s') (buildMatch ordered "#u")
+            return wrap (.lett "#u" (.unfoldS s') (buildMatch ordered "#u"))
   | Γ, .binopS op a b => do
-      let a' ← elabS env Γ a
-      let b' ← elabS env Γ b
-      match synthSV Γ a' with
-      | .ok .int  => return .binopS op a' b'   -- the kernel δ-rule path (ADR-0065), untouched
-      | .error _  => return .binopS op a' b'   -- non-value operand: leave it; the checker rules as today
+      -- A-normalize computation operands (nested `a + c + 1`, `(V+V)+V`) to VALUES BEFORE dispatch —
+      -- both the kernel δ-rule and the trait resolver need value operands (#41). Atoms pass through.
+      let a0 ← elabS env Γ a
+      let b0 ← elabS env Γ b
+      let (Γ1, wa, a') ← anfSplit Γ a0
+      let (Γ2, wb, b') ← anfSplit Γ1 b0
+      match synthSV Γ2 a' with
+      | .ok .int  => return wa (wb (.binopS op a' b'))   -- the kernel δ-rule path (ADR-0065)
+      | .error _  => return wa (wb (.binopS op a' b'))   -- non-value operand: leave it; the checker rules
       | .ok τ =>
           match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
           | none => .error s!"no impl provides '{binopName op}' for {showVTy τ}"
@@ -756,7 +805,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
               match inst.params with
               | [p, q] =>
                   let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
-                  return .app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'
+                  return wa (wb (.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'))
               | _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
 
 /-- Elaborate named-match arm BODIES structurally over `DArms`, each under its ctor's
@@ -1073,13 +1122,13 @@ Landin's knot with NO new kernel primitive: `data Rec = Rec(Thunk (Rec -> Int ->
 self-occurrence — `Rec` in its own field's domain) + self-application (`match self { Rec(g) -> ($g)
 self … }`). The #45 check-mode fix is what lets the bare recursive `fun` payload type. A bounded
 countdown-SUM `5+4+3+2+1+0 = 15` TYPES and RUNS under fuel — the ADR-0073 "μ-encoding, no new
-primitive" mechanism, demonstrated. (The `if` CONDITION is A-normalized by hand — `let c = n == 0 in
-if c …` — because `synthSC`'s `ifS` rule expects a VALUE condition and `n == 0` is a computation: the
-sibling #41 gap, still open; auto-A-normalizing it would drop the manual `let c`.) -/
+primitive" mechanism, demonstrated. Spelled NATURALLY (`if n == 0 then …` directly, no manual `let c
+= n == 0`): the #41 A-normalization now lifts the computation condition, closing the last ergonomic
+gap between "recursion runs" and "recursion reads naturally". -/
 def recProg : String :=
   "data Rec = Rec(Thunk (Rec -> Int -> Int)) " ++
-  "let r = Rec({ ( fun self => ( fun n => let c = n == 0 in " ++
-  "(if c then 0 else (let m = n - 1 in (match self { Rec(g) -> let k = ($g) self m in n + k }))) " ++
+  "let r = Rec({ ( fun self => ( fun n => " ++
+  "(if n == 0 then 0 else (let m = n - 1 in (match self { Rec(g) -> let k = ($g) self m in n + k }))) " ++
   ": Int -> Int ) : Rec -> Int -> Int ) }) in "
 #guard runTypedYieldsInt 4000 (recProg ++ "(match r { Rec(g) -> ($g) r 5 })") 15
 #guard runTypedYieldsInt 4000 (recProg ++ "(match r { Rec(g) -> ($g) r 3 })") 6
@@ -1100,6 +1149,40 @@ def vecDataProg (body : String) : String :=
   "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> x }") 4
 #guard runTypedYieldsInt 800 (vecDataProg
   "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> y }") 6
+
+/-! ### Validation ⑨d — VALUE-POSITION A-normalization (#41): computations spelled NATURALLY.
+
+The typed path now A-normalizes computations in value positions (ctor args, match scrutinees, binop
+operands, `if` conditions) exactly as `Surface.lower` already does — the checker accepts what the
+oracle runs. Each of these FAILED before (`not a value` / a misleading `unbound variable`); now they
+type + run. The impl body writes `Vec(a + c, b + d)` DIRECTLY (no `let x = a+c in …` workaround). -/
+def vecNatProg (body : String) : String :=
+  "data Vec = Vec(Int, Int) trait Add { fn add(a, b) -> Self } " ++
+  "impl Add for Vec { fn add(p, q) = match p { Vec(a, b) -> match q { Vec(c, d) -> " ++
+  "Vec(a + c, b + d) } } } " ++ body
+-- computation in a ctor ARG: `Vec(a + c, b + d)` types (was "not a value" → "unbound v" cascade).
+#guard runTypedYieldsInt 800 (vecNatProg "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> x }") 4
+#guard runTypedYieldsInt 800 (vecNatProg "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> y }") 6
+-- computation as a match SCRUTINEE: `match (Vec(1,2) + Vec(3,4)) { … }` (was "not a value").
+#guard runTypedYieldsInt 800 (vecNatProg "match (Vec(1, 2) + Vec(3, 4)) { Vec(x, y) -> x }") 4
+-- CHAINED trait op `(V+V)+V` — a computation operand of `+`, A-normalized before impl dispatch.
+#guard runTypedYieldsInt 900 (vecNatProg
+  "let v = Vec(1, 2) + Vec(3, 4) + Vec(10, 20) in match v { Vec(x, y) -> x }") 14
+-- NESTED arithmetic in a ctor arg: `a + c + 1` (a binop with a binop operand).
+#guard runTypedYieldsInt 900
+  ("data Vec = Vec(Int, Int) trait Add { fn add(a, b) -> Self } " ++
+   "impl Add for Vec { fn add(p, q) = match p { Vec(a, b) -> match q { Vec(c, d) -> " ++
+   "Vec(a + c + 1, b + d) } } } let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> x }") 5
+-- computation as a SPLIT scrutinee: `let (x, y) = (Vec-ish product computation) in …`. Here the pair
+-- `(1 + 0, 2 + 0)` is a bare computation-product destructured directly (was "not a value").
+#guard runTypedYieldsInt 200 "let (x, y) = (1 + 0, 2 + 0) in x + y" 3
+-- the DIAGNOSTIC (#41 part 2, in the elaborator → `checkProg`): a let-RHS type error surfaces AS the
+-- RHS error, not a downstream "unbound m".
+#guard (match checkProg "let m = 1 + Left(0) in m" with
+        | .error e => e.startsWith "let-binding 'm':" | _ => false)
+-- a non-returner RHS (a bare function bound directly) reports "not a returner", not "unbound f".
+#guard (match checkProg "let f = ( fun x => x : Int -> Int ) in 0" with
+        | .error e => e.startsWith "let-binding 'f':" | _ => false)
 
 /-! ## Validation ⑩ — named capabilities are TYPED (#3, ADR-0070).
 
