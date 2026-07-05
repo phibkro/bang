@@ -38,8 +38,9 @@
 - [Q25 — Integer semantics: unbounded Int vs fixed-width](#q25--integer-semantics-unbounded-int-vs-fixed-width-width--overflow)  · ✓ RESOLVED (ADR-0067 — unbounded ℤ v1; width behind the oracle)
 - [Q26 — Optics as the lawful-polymorphism north-star (+ the HKT fork, + graded optics)](#q26--optics-as-the-lawful-polymorphism-north-star--the-hkt-fork--graded-optics)  · OPEN (gated on ADR-0027 stage 2)
 - [Q27 — Surfacing the grade axis: declare effect shape AND grade (resumption grade → compilation)](#q27--surfacing-the-grade-axis-declare-effect-shape-and-grade-resumption-grade--compilation)  · OPEN (surface the second axis; links #35/#36)
-- [Q28 — Recursion marker: reuse `rec` for data + functions, or keep them separate?](#q28--recursion-marker-reuse-rec-for-data--functions-or-keep-them-separate)  · OPEN (decide at the recursion bullet)
+- [Q28 — Recursion marker: reuse `rec` for data + functions, or keep them separate?](#q28--recursion-marker-reuse-rec-for-data--functions-or-keep-them-separate)  · ✓ RESOLVED (ADR-0073 — keep separate; unify at the `Div` row, `let rec` for functions)
 - [Q29 — Handler-application syntax: prefix binder vs postfix eliminator (the effect eliminator wants eliminator syntax)](#q29--handler-application-syntax-prefix-binder-vs-postfix-eliminator-the-effect-eliminator-wants-eliminator-syntax)  · OPEN (surface effect-model)
+- [Q30 — FBIP (Functional But In Place): static in-place reuse justified by the value-grade (verified enabler, compiled-path optimization)](#q30--fbip-functional-but-in-place-static-in-place-reuse-justified-by-the-value-grade-verified-enabler-compiled-path-optimization)  · OPEN (post-v1 perf; enabled by grades)
 
 > See also `design-space-map.md` (the survey) and **ADR-0026** (the correctness-ladder keystone that
 > resolved the proof-power dial, design-space #2).
@@ -1131,7 +1132,7 @@ use-case that wants linear (use-once) effect typing.
 
 ---
 
-## Q28 — Recursion marker: reuse `rec` for data + functions, or keep them separate?  · OPEN (decide at the recursion bullet)
+## Q28 — Recursion marker: reuse `rec` for data + functions, or keep them separate?  · ✓ RESOLVED 2026-07-05 → ADR-0073 (keep separate; `let rec` for functions, unify at the `Div` row)
 
 **Question**: when recursive FUNCTIONS land (the deferred `fix`/`Div` bullet), should the surface
 reuse ONE `rec` modifier for both recursive data types and recursive functions (one construct,
@@ -1230,6 +1231,59 @@ user handler is also an eliminator, so its syntax should follow whatever this de
 **Revisit signal**: taking up #44 (user-defined effects & handlers — settle handler *application*
 syntax as part of it); or agent/user ergonomics friction from the prefix-binder-dressed eliminator;
 or when the effect surface-model is deliberately chosen (Koka-lexical vs Effect-TS-environment lens).
+
+---
+
+## Q30 — FBIP (Functional But In Place): static in-place reuse justified by the value-grade (verified enabler, compiled-path optimization)  · OPEN (post-v1 perf; enabled by grades)
+
+**Question**: should BANG support FBIP — turning functional data updates (build a new constructor from
+an old one) into IN-PLACE memory reuse (O(1) instead of O(n) allocation) — and if so, HOW, given
+bang's verified-compilation discipline?
+
+**Why it matters** — FBIP (Koka / Perceus: Reinking-Xie-de Moura-Leijen) is what makes purely-functional
+data structures competitive with imperative ones: `map`/tree-update/etc. reuse the consumed
+constructor's memory instead of allocating. It is the perf story for a language whose data is
+immutable by default. The operator's intuition is right — **FBIP is a COMPILATION-PATH optimization,
+not a reference-semantics change**: a program with FBIP computes the SAME values (Source.eval, a pure
+functional interpreter, has no memory model), just with less allocation.
+
+**The bang-specific twist (load-bearing):** FBIP's CORRECTNESS requires UNIQUENESS — you may only reuse
+a constructor in place if its old value is DEAD (no other live reference). Koka proves this DYNAMICALLY
+(Perceus = precise reference counting at runtime). **BANG already has the type-level uniqueness: the
+value-GRADE** (QTT multiplicities 0/1/ω — the value-grade of Q27, `HasVTy`/`HasCTy`'s resource
+discipline). A value used LINEARLY (grade 1) is provably the last reference — EXACTLY FBIP's
+precondition. So bang's grade (a verified invariant) is the ENABLER for FBIP: "the constraint is
+generative" (SOUL) — the grade is what lets the reuse fire, PROVABLY. Potentially an ADVANTAGE over
+Koka: **STATIC grade-justified reuse** (compile-time, no runtime RC) vs Koka's dynamic RC-based FBIP.
+
+**Where it sits (the stratification):** the OPTIMIZATION is compiled-path (CalcVM→WasmFX / the
+runtime's memory reuse — invariant #7, performance second-class); the ENABLING INVARIANT is the
+verified value-grade (kernel-path). The grade is the SEAM — verified core (uniqueness) + optimized
+output (in-place reuse). This is the exact stratification pattern, applied to memory.
+
+**Detail / dependencies**:
+- Needs the value-GRADE surfaced/enforced (currently defaulted to ω, ADR-0066; Q27 is "surface the
+  grade axis"). FBIP wants the grade-1 (linear) case reliably tracked.
+- Interacts with the MEMORY MODEL (design-space-map #10: grades give use-once, not borrowing — FBIP is
+  the use-once payoff).
+- A verified FBIP would be a COMPILED-PATH proof: the reuse preserves the reference semantics *given*
+  the grade-1 uniqueness. Koka's Perceus is the reference (but RC-based, dynamic); the grade-based
+  static variant is the bang-native question.
+
+**Options**: (1) **static grade-justified reuse** (recommended direction — compile-time, no runtime
+RC, leans on bang's existing grades; the on-thesis version). (2) Perceus-style dynamic RC (Koka's
+proven approach; a runtime, not grade-based — less on-thesis but battle-tested). (3) no FBIP
+(functional-immutable, accept the allocation cost — invariant #7 says a slow correct path is fine
+until it touches the user).
+
+**Recommended**: record (1) as the direction; it's post-v1 perf, gated on the value-grade being real
+(Q27) and the memory-model choice (#10). Design-first when perf on immutable data actually bites.
+
+**Blocked on**: the value-grade surfaced + enforced (Q27); a memory-model decision (#10). Both post-v1.
+
+**Revisit signal**: perf pressure on immutable data-structure updates (map/tree/list rebuild); OR
+taking up Q27 (the grade axis) — FBIP is the concrete payoff that motivates surfacing the value-grade;
+OR the memory-model / borrowing decision (#10).
 
 ---
 
