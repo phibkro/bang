@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Spec handover — research/engineering interface
 
 > Distilled from the original `bang-lang-wasmfx/README.md` during the wasmfx

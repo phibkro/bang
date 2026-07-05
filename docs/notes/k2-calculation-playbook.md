@@ -1,3 +1,4 @@
+<!-- note-status: historical -->
 # K2 calculation — proof playbook
 
 > Hard-won technique for the Bahr–Hutton calculation in Lean. Read this before

@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Dev environment
 
 > How to set up + use the bang-lang dev tooling. Most things "just work"

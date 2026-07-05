@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Scoped capabilities — the #18 (drop-VcapFree) design record
 
 > Design analysis, NOT a decision. Captures the `scopedcap-design` pass (2026-06-27) for when

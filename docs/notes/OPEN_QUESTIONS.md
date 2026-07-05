@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Open questions — design decisions deferred
 
 > Questions that surfaced during work but were intentionally deferred. Each

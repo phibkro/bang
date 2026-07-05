@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Calculating the type system — a post-v1 research frontier
 
 > Banked 2026-06-27. Relationship of **Sound-By-Construction Type Systems** (Bahr/Garby/Hutton) and

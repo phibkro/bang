@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Lean 4 tactics + tooling survey (for bang-lang verification)
 
 > One-time research pass on what's useful in the contemporary Lean 4 ecosystem

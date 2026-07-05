@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Experiment: does Cousot's calculate-the-rules method port to bang's graded CBPV?
 
 > Run 2026-06-27 (the join-preservation experiment deployed from

@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Standard-library map — the third stratum
 
 > The stdlib is the THIRD tier of bang's stratification: **kernel → surface → stdlib**. It is

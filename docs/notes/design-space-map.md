@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Design-space map — the open language-design questions
 
 > A survey of the design/semantics questions bang must answer, across the lenses: systems languages,

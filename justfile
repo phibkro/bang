@@ -86,6 +86,7 @@ fitness:
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
     python3 tools/check-doc-hygiene.py --check
+    python3 tools/gen-notes-index.py --check
     python3 tools/refs.py check
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
@@ -114,6 +115,10 @@ gate-index:
 # Regenerate the module dependency graph (mermaid + fan-in) in docs/architecture/core-overview.md §2 from the import edges.
 import-graph:
     python3 tools/gen-import-graph.py
+
+# Regenerate docs/notes/README.md (the design-notes map) from each note's `note-status` frontmatter.
+notes-index:
+    python3 tools/gen-notes-index.py
 
 # Regenerate CHANGELOG.md (product MVP increments) from conventional commits since the MVP baseline.
 changelog:

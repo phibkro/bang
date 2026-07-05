@@ -35,6 +35,7 @@ ROOT = subprocess.run(["git", "rev-parse", "--show-toplevel"],
 ALLOW = os.path.join(ROOT, "tools", "docs-allow.txt")
 STALE_DAYS = 21
 STATUS_VOCAB = re.compile(r"\b(IN-FLIGHT|IN PROGRESS|TODO|RE-KEY|WIP|in flight)\b")
+NOTE_STATUS = re.compile(r"note-status:\s*(active|archival|historical)")
 
 # The entry docs — reachability roots. Anything a fresh agent loads first.
 ROOTS = ["CLAUDE.md", "AGENTS.md", "ONBOARDING.md", "CONTEXT.md", "ROADMAP.md",
@@ -93,46 +94,63 @@ def main():
         stack.extend(cites.get(cur, ()))
 
     allow = load_allow()
-    now = commit_epoch(".")  # HEAD time via the repo's latest commit
     now = int(subprocess.run(["git", "log", "-1", "--format=%ct"],
                              capture_output=True, text=True, cwd=ROOT).stdout.strip())
+    claude = texts.get("CLAUDE.md", "")
 
-    notes = sorted(f for f in files if f.startswith("docs/notes/"))
+    notes = sorted(f for f in files if f.startswith("docs/notes/")
+                   and os.path.basename(f) != "README.md")
     inbound = {f: sum(1 for g in files if f in cites[g]) for f in notes}
 
-    orphans, stale = [], []
-    print("── doc-hygiene (docs/notes reachability + staleness) ──")
-    print(f"{'age':>5} {'lines':>6} {'in':>3}  reach  doc")
+    orphans, stale, unstamped, unindexed = [], [], [], []
+    print("── doc-hygiene (docs/notes reachability · status · staleness) ──")
+    print(f"{'age':>5} {'lines':>6} {'in':>3}  {'status':<10} reach  doc")
     for f in notes:
         age = (now - commit_epoch(f)) // 86400
         lines = texts[f].count("\n") + 1
         reachable = f in seen
         bn = os.path.basename(f)
         allowed = bn in allow or f in allow
-        tag = "OK   " if reachable else ("archiv" if allowed else "ORPHAN")
+        m = NOTE_STATUS.search(texts[f].split("\n", 1)[0])
+        status = m.group(1) if m else "MISSING"
+        if not m:
+            unstamped.append(f)
+        # active notes MUST be pointed to by CLAUDE.md (the always-loaded working index)
+        if status == "active" and bn not in claude:
+            unindexed.append(f)
+        tag = "OK    " if reachable else ("archiv" if allowed else "ORPHAN")
         if not reachable and not allowed:
             orphans.append(f)
         if reachable and age > STALE_DAYS and STATUS_VOCAB.search(texts[f]):
             stale.append((f, age))
-        print(f"{age:>4}d {lines:>6} {inbound[f]:>3}  {tag}  {bn}")
+        print(f"{age:>4}d {lines:>6} {inbound[f]:>3}  {status:<10} {tag}  {bn}")
 
     if stale:
         print("\n⚠ soft-stale (status vocabulary + untouched >%dd — verify against reality):" % STALE_DAYS)
         for f, age in stale:
             print(f"    {age}d  {os.path.basename(f)}")
 
+    fail = False
+    if unstamped:
+        print("\nMISSING note-status frontmatter (add `<!-- note-status: active|archival|historical -->` on line 1):")
+        for f in unstamped:
+            print(f"    {f}")
+        fail = True
+    if unindexed:
+        print("\nACTIVE notes not pointed to by CLAUDE.md's reference index (add a row, or mark archival):")
+        for f in unindexed:
+            print(f"    {f}")
+        fail = True
     if orphans:
         print("\nORPHANS (unreachable from any entry doc, not allowlisted):")
         for f in orphans:
             print(f"    {f}")
-        print("Fix: link it from the CLAUDE.md reference index or a citing doc, "
-              "delete it (history lives in git), or add it to tools/docs-allow.txt "
-              "with a reason if it is an intentional archival terminal.")
-        if check:
-            return 1
-    else:
-        print("\nreachability: OK — every docs/notes/*.md is reachable or allowlisted.")
-    return 0
+        print("Fix: link it from the CLAUDE.md index or a citing doc, delete it (history lives "
+              "in git), or add it to tools/docs-allow.txt with a reason if it is a terminal.")
+        fail = True
+    if not fail:
+        print("\nhygiene: OK — every note is stamped, reachable, and (if active) indexed.")
+    return 1 if (fail and check) else 0
 
 
 if __name__ == "__main__":

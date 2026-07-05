@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Feasibility spike: recasting CalcReify's bisimulation into the Bahr–Hutton 2022 monadic frame
 
 **VERDICT: NO-GO** (against bang's *eager fuel* index — the cheap hypothesis).

@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # bang-lang compiler overview — how it works (for the Lexa comparison)
 
 > A comprehensive, citation-grounded map of how bang-lang compiles effect handlers, written to

@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Spec proof discipline
 
 > Reference doc for proof work against `Bang/Spec.lean`. Distilled from the

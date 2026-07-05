@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Kernel / Shell / Library — the layering of bang-lang
 
 > A framing to think *with*, not yet an ADR. Captures the three-tier model worked out 2026-06-25.

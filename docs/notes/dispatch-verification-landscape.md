@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Effect-handler dispatch × verification — the landscape, and consequences for bang-lang
 
 > Source: a fact-checked deep-research sweep (2026-06-25, workflow `wf_60f94539-140`; 107 agents,

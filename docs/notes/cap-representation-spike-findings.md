@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Cap-representation feasibility spike — findings (→ ADR-0053 GO on absolute caps)
 
 **VERDICT: GO on ABSOLUTE/LEVEL CAPS** (the 5→2). NO-GO on named handlers for v1.

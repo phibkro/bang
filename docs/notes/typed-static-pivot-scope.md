@@ -1,3 +1,4 @@
+<!-- note-status: archival -->
 # Scoping the typed + static-dispatch pivot
 
 > Synthesis of two fact-checked deep-research sweeps (`wf_60f94539-140`, `wf_9cda0b3f-5f2`) + a build-gated

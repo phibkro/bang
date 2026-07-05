@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # bang-lang development lifecycle
 
 > How work flows through the project. The frame for picking the right tool /

@@ -1,3 +1,4 @@
+<!-- note-status: historical -->
 # K3 historical status (pre-ADR-0016 narrative)
 
 > **Historical archive.** This was the K0–K3 playhead before the third

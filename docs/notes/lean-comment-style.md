@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Lean comment convention (BANG)
 
 > The project's adopted commenting/doc convention, grounded in the

@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # The categorical reading of bang's architecture
 
 > **Epistemic status — READING, not formalization.** The repo proves everything

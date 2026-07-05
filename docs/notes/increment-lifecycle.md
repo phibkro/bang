@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # the `incN` lifecycle
 
 > What an **increment** is, how one runs start-to-finish, and how the numbers
