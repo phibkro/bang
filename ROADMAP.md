@@ -93,13 +93,13 @@ end-to-end; both engines agree. Superseding the stale "rungs 0–4" framing abov
 
 ```
 WAVE 1 — ERGONOMICS (make it pleasant; every item is a dogfooding pain point)
-  #30 parser (IN FLIGHT — Pratt rule-table, ADR-0071):
-     ① operator loop → ② keyword rules → ③ generated grammar (#38) → ④ whitespace + `bang fmt` (Q24)
-     kills the DOMINANT papercut (whitespace-sensitivity) · fixes #31 (bare atoms) · #26
-     (arith-in-effect-arg) by construction · generates the grammar spec + tree-sitter (#9)
-  #41 checker A-normalization  — let-bind-computations bug (`V(a+c,b+d)`, `match (expr)`)
-  #10 elaborator error quality — the misleading "unbound m" (symptom, not cause)
-  #7  REPL                     — iteration speed (would have made dogfooding far faster)
+  #30 parser ✅ DONE (Pratt rule-table, ADR-0071/0072): ① operator loop · ② keyword rules ·
+     ③ generated grammar (closed #38 — self-documenting) · ④ whitespace-insensitive (papercut dead) ·
+     ②b decided B (principled regular-vs-CFG line) · ADR-0072 dropped `with` (state <init> as h in b).
+     STILL OPEN downstream: `bang fmt` canonical formatter (Q24) · tree-sitter (#9) · #31 (bare atoms).
+  #41 checker A-normalization  — let-bind-computations bug (`V(a+c,b+d)`, `match (expr)`)   [OPEN]
+  #10 elaborator error quality — the misleading "unbound m" (symptom, not cause)            [OPEN]
+  #7  REPL                     — iteration speed (would have made dogfooding far faster)     [OPEN]
 
 WAVE 2 — THREE NORTH-STAR DIRECTIONS (operator sequences them; each design-first, ≈post-v1)
   (a) RECURSION → "bang writes real programs / its own tools"
@@ -127,7 +127,7 @@ WAVE 3 — VERIFICATION COMPLETION (parallel, verification-spine layer)
 real* — the moat, and the most on-thesis though furthest. All substantial, design-first, roughly post-v1.
 The operator sequences them; not a default.
 
-### Pratt downstream — ready-to-dispatch units (once #30 ① lands)
+### Pratt downstream — ✅ ①②③④ ALL LANDED (this section is now historical)
 
 ```
 ② keyword rules      reify if/let/match/with/do as first-class Rules; retire the bespoke pExpr arms
