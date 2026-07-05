@@ -423,25 +423,35 @@ def lower (e : Surf) : Except String Comp := lowerC [] e
 Hand-rolled tokenizer + recursive descent. Deliberately small: no spans, no
 error recovery — a parse error is a `String`. The grammar is §1's block comment.
 
-Tokenizer: whitespace-separated, with the single-char punctuators
-`( ) { } $ !` split off so they need not be space-delimited; `=` and `=>` and
-keywords are ordinary tokens. -/
+Tokenizer: WHITESPACE-INSENSITIVE (ADR-0071 ④) — punctuators and operators (`+ - * / < = |`
+and the maximal-munch `== => ->`) self-separate, so `a+b`/`x=1`/`->Self` need no spaces; a
+spaced program tokenizes identically. Identifiers/numbers/keywords are the remaining maximal runs. -/
 
-/-- Split a source string into tokens. Punctuators `(){}$!,;` are always their
-own token; everything else is a maximal run of non-space, non-punctuator chars
-(so `->` / `<-` / `=>` / `=` and keywords are ordinary space-delimited tokens). -/
+/-- Split a source string into tokens — WHITESPACE-INSENSITIVE (ADR-0071 ④). Punctuators
+`(){}$!,;.` and the single-char operators `+ - * / < = |` are always their own token (no
+surrounding space needed); the multi-char operators `== => ->` are matched by MAXIMAL MUNCH,
+BEFORE their single-char prefixes (`==`/`=>` before `=`, `->` before `-`). Everything else is a
+maximal run of the remaining chars (identifiers, numbers, keywords). A spaced program tokenizes
+IDENTICALLY to its unspaced form: whitespace only ever separated tokens, and operators now
+self-separate (so `a+b`, `x=1`, `->Self`, `a==b` no longer glue). `<-` is not a token in this
+grammar (`do`-bind uses `=`), so `<` stays single-char; `:` stays space-delimited (not an operator
+the parser splits on). -/
 def tokenize (s : String) : List String :=
-  let punct := "(){}$!,;.".toList     -- `.` is the method-perform punctuator (ADR-0070)
+  let punct := "(){}$!,;.+*/<|".toList     -- punctuators (ADR-0070 `.`) + always-split single-char operators
   let rec go (cs : List Char) (cur : List Char) (acc : List String) : List String :=
     let flush (acc : List String) : List String :=
       if cur.isEmpty then acc else acc ++ [String.ofList cur.reverse]
+    let emit (acc : List String) (t : String) : List String := (flush acc) ++ [t]
     match cs with
     | [] => flush acc
+    | '=' :: '=' :: rest => go rest [] (emit acc "==")     -- maximal munch: `==` before `=`
+    | '=' :: '>' :: rest => go rest [] (emit acc "=>")     --               `=>` before `=`
+    | '-' :: '>' :: rest => go rest [] (emit acc "->")     --               `->` before `-`
     | c :: rest =>
       if c = ' ' || c = '\n' || c = '\t' || c = '\r' then
         go rest [] (flush acc)
-      else if punct.contains c then
-        go rest [] ((flush acc) ++ [String.ofList [c]])
+      else if c = '=' || c = '-' || punct.contains c then  -- single `=`/`-` (munch forms handled above), or a punct/op
+        go rest [] (emit acc (String.ofList [c]))
       else
         go rest (c :: cur) acc
   go s.toList [] []
@@ -1473,7 +1483,8 @@ example :
 /-! ### Stage 2e — arithmetic & `if` from source text (issue #4, ADR-0065).
 
 Infix `+ − × ÷` and `< ==` with C-style precedence (`*` tighter than `+`, both tighter than `<`),
-plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are space-delimited. -/
+plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Whitespace-insensitive (ADR-0071 ④):
+`a+b*c` tokenizes identically to `a + b * c`. -/
 
 #guard runYieldsInt 20 "3 + 4" 7
 #guard runYieldsInt 20 "2 + 3 * 4" 14            -- `*` binds tighter than `+`
@@ -1489,6 +1500,16 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are sp
 -- parse-shape checks: precedence is structural, not eval-coincidence.
 #guard parsesTo "a + b * c" (.binopS .add (.var "a") (.binopS .mul (.var "b") (.var "c")))
 #guard parsesTo "if c then t else e" (.ifS (.var "c") (.var "t") (.var "e"))
+
+-- ADR-0071 ④ — WHITESPACE-INSENSITIVE tokenization: an UNSPACED program tokenizes IDENTICALLY to
+-- its spaced twin above. `a+b*c` parses to the SAME tree as `a + b * c` (structural proof); the
+-- eval twins reuse their spaced counterparts' results. Maximal munch: `== => ->` before `= -`.
+#guard parsesTo "a+b*c" (.binopS .add (.var "a") (.binopS .mul (.var "b") (.var "c")))  -- ≡ "a + b * c"
+#guard runYieldsInt 20 "2+3*4" 14                 -- ≡ "2 + 3 * 4" (unspaced `+`/`*` split)
+#guard runYieldsInt 20 "10-3-2" 5                 -- ≡ "10 - 3 - 2" (unspaced `-` splits, left-assoc)
+#guard runYieldsInt 30 "let x=1 in x" 1           -- `x=1`: the let-binder `=` splits
+#guard runYieldsInt 30 "if 3<4 then 1 else 0" 1   -- `3<4`: `<` splits
+#guard runYieldsInt 20 "(fun x=>x : Int->Int) 5" 5  -- `=>` and `->` munch inside a type ascription (≡ spaced)
 
 -- do-notation (issue #27): `x = e` → `lett x`, bare `e` → `lett "#do"`, last stmt = result.
 #guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
