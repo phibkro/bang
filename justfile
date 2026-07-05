@@ -42,18 +42,17 @@ adr-check:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
-    # #40b: NEVER `lake exe cache get` from a LINKED worktree — re-cloning Mathlib in a
-    # worktree corrupts the shared .git/objects (2026-06-27/-29). Create IC worktrees via
-    # tools/new-worktree.sh (it SEEDS .lake so this branch is never reached). Main checkout
-    # with oleans absent → cache-get is the legit first-setup path.
-    if [ ! -e .lake/packages/mathlib/.lake/build ]; then
-      if [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ]; then
-        echo "❌ #40b: this linked worktree has no seeded Mathlib oleans."
-        echo "   Spawn IC worktrees via tools/new-worktree.sh (seeds .lake), or 'lake exe cache unpack'."
-        echo "   Do NOT 'lake exe cache get' here — it corrupts the shared store."
-        exit 1
-      fi
-      lake exe cache get
+    # Cache-get is the legit first-setup path ONLY on the MAIN checkout with oleans genuinely
+    # absent. In a LINKED worktree we NEVER cache-get (#40b: it re-clones Mathlib and corrupts the
+    # shared .git/objects, 2026-06-27/-29) — oleans come from the nix dev-shell (LEAN_PATH) or the
+    # reflink-seeded .lake (tools/new-worktree.sh), so we go straight to `lake build`. If oleans were
+    # truly missing it fails loud on its own, and the PreToolUse guard independently blocks any
+    # cache-get. The old `-e <local mathlib stub>` precondition FALSE-NEGATIVED in the nix setup
+    # (oleans are on LEAN_PATH, not the local dir) → it aborted worktree builds spuriously and forced
+    # --no-verify on IC commits (#43).
+    if [ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ] \
+       && [ ! -e .lake/packages/mathlib/.lake/build ]; then
+      lake exe cache get   # main checkout, first setup only
     fi
     lake build
 
