@@ -54,3 +54,12 @@ Bang/ReturnEscapeRefute.lean
 # 5 *_composes + dispatch axiom-clean) lives on the `inc6-u5b-handler` worktree, cited by
 # PATH-inc6 §U5. Not merged (a scratch de-risk spike, #65). Recover via `git show <sha>:scratch/U5bHandlerSpike.lean`.
 scratch/U5bHandlerSpike.lean
+
+# ── F. /tmp scratch counterexamples narrated by retrospective docs ─────────────────
+# ADR-0023 + two ARCHIVED PATHs cite one-shot /tmp/*.lean probes from their own sessions.
+# /tmp is volatile by construction (tmpfiles cleanup) — the refs existed when written,
+# and the docs are historical narrative, not current pointers. The probes' CONTENT is
+# reproduced/summarized inline in those docs; nothing to recover. Future docs: put
+# probes in scratch/ (tracked) if a doc will cite them.
+/tmp/cex_check.lean
+/tmp/machine_test.lean
