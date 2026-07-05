@@ -161,3 +161,79 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `( fun x => x : Int -> Int ! {throws} )` : `Int -> Int`  — a PURE function satisfies a may-throw signature (⊥ ⊆ {throws}).
 - `( fun x => raise x : Int -> Int )` : `Int -> Int ! {throws}`  — un-annotated arrow stays unconstrained: a throwing fn is fine, effect inferred + shown.
 
+## Programs & observation
+
+A **program** is a closed term of ground type — a `Comp` with no free variables whose
+value type is a base type (`Int`/`Unit`, or a sum/product of them). The CLI entry
+convention (`bang run` / `eval`, the `runYieldsInt` harness) accepts exactly these and
+reports the outcome of `Source.eval` (`Bang/Core/Semantics/Eval.lean`), the reference
+semantics.
+
+**Observable outcomes** are the constructors of the reference's `Result` type — nothing
+else about a run is observable:
+
+| Outcome | Meaning |
+|---|---|
+| `done v` | terminated with value `v` — at ground type, the observed answer |
+| `oom` | fuel exhausted — the v1 stand-in for divergence (the fuel-bounded `Div` fragment) |
+| `escapedCap` | a capability escaped its handler — a defined fail-loud terminal (ADR-0063) |
+| `stuck` | genuine stuck — a well-typed `⊥`-row program NEVER reaches it (`type_safety`) |
+
+This is the **same observation** the ◊4 contextual-equivalence work quantifies over:
+`lr_sound` holds two programs equivalent when they agree on this outcome (convergence at
+ground type) in every closing context. One definition, two consumers — the reference
+runner and the equivalence LR.
+
+## Conformance
+
+A **conforming implementation** of BANG agrees with the reference semantics `Source.eval`
+(`Bang/Core/Semantics/Eval.lean`) on the observation defined above, for every program in
+the **normative corpus**, and diverges only where the reference diverges.
+
+The normative corpus is the executable conformance suite:
+
+- **`Bang/Examples.lean`** — the curated worked-examples corpus; every `#guard` runs the
+  compiled kernel, so a false assertion fails `lake build`.
+- the **verified examples rendered in this reference** (the *Examples* section above) —
+  each a `lake build`-gated `#guard`.
+
+Because the oracle is mechanized and every example is build-gated, drift is a *failing
+diff*, not a judgement call — the top rung of the single-source-of-truth ladder
+(generate / test) applied to implementations. A third-party or AI-paved implementation is
+checkable by running the corpus against it: invariant #1 ("proof rides the reference;
+anything that runs is differential-tested against `Source.eval`") stated as a spec clause.
+
+## Errors & terminals
+
+BANG makes the choice most languages never do: **there is no undefined behavior.** Every
+reachable failure is a *defined, fail-loud* outcome. Against the C-standard trichotomy:
+
+| Class | In BANG |
+|---|---|
+| undefined behavior | **∅** — every reachable failure is a defined terminal |
+| unspecified behavior | **∅** — the reference semantics is deterministic |
+| implementation-defined | the **fuel bound** only (when `oom` is reported); integer width is *not* one — `Int` is unbounded ℤ, overflow never UB (ADR-0067) |
+
+**Static errors** reject a term before it is a program: parse errors, type errors, and
+effect-signature violations (an `! {ρ}` annotation that under-declares the inferred row).
+A rejected term never runs.
+
+**Runtime terminals** are the fail-loud outcomes of a run — the `Result` failure
+constructors (`Bang/Core/Semantics/Eval.lean`) plus the IR's explicit fail-loud marker
+(`Comp.wrong`, `Bang/Core/IR.lean`):
+
+| Terminal | When it arises | Corpus example / definition |
+|---|---|---|
+| `oom` | fuel exhausted before the program returned — the v1 divergence proxy | `Config.run` fuel-0 arm (`Bang/Core/Semantics/Eval.lean`) |
+| `escapedCap` | a first-class capability is forced after its handler has popped; dispatch finds no frame (ADR-0063) | `capEscape` `#guard` (`Bang/Examples.lean`) |
+| `wrong s` | an explicit IR abort — e.g. `wrong "elab-failed"` when elaboration fails (`Bang/Frontend/NamedCore.lean`) | `Comp.wrong` (`Bang/Core/IR.lean`) |
+
+The fourth `Result` outcome, `stuck` (genuine stuck), is **unreachable** for a well-typed
+`⊥`-row program — that is exactly what `type_safety` proves, and what "no undefined
+behavior" means: there is no reachable failure the semantics does not name.
+
+`escapedCap` is *defined* for v1, not silent corruption: the kernel's global-fresh
+capability minting guarantees an escaped cap resolves to no handler and fails loud
+(OCaml-effects' `Effect.Unhandled`). Post-v1 it becomes **untypeable** — scoped/region
+capability types (#21) make the escape unrepresentable rather than merely detected.
+
