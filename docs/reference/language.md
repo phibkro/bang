@@ -37,7 +37,7 @@ nothing here can drift from what the language actually does.
 | `μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)` |  |
 | `μ elim` | (INTERNAL: emitted by named-match elaboration) |
 | `named-ctor match (parse-only; ELIMINATED by the elaborator —` |  |
-| `with <kind> <init|unitS> as <name> in <body>` |  |
+| `state <init> as <name> in <body>` | (named cap; also `handle as h e` / `atomically as h e`, ADR-0072) |
 | `h.op(args) — perform op on the named cap` |  |
 
 ## Types
@@ -89,14 +89,14 @@ construct list is the Surface syntax table above.
 | Keyword | Form |
 |---|---|
 | `if` | `if <expr> then <expr> else <expr>` |
-| `handle` | `handle <expr>` |
-| `atomically` | `atomically <expr>` |
+| `handle` | `handle [as <ident>] <expr>` |
+| `atomically` | `atomically [as <ident>] <expr>` |
 | `raise` | `raise <atom>` |
 | `put` | `put <atom>` |
 | `new` | `new <atom>` |
 | `read` | `read <atom>` |
 | `write` | `write <atom> <atom>` |
-| `state` | `state <atom> in <expr>` |
+| `state` | `state <atom> [as <ident>] in <expr>` |
 | `fun` | `fun <ident> => <expr>` |
 | `let` | `let <ident> = <expr> in <expr>` |
 
@@ -216,7 +216,7 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `( fun x => raise x : Int -> Int )` : `Int -> Int ! {throws}`  — un-annotated arrow stays unconstrained: a throwing fn is fine, effect inferred + shown.
 ### Validation ⑩ — named capabilities are TYPED (#3, ADR-0070).
 
-- `with state 5 as h in h.get` : `Int`
+- `state 5 as h in h.get` : `Int`
 
 ## Programs & observation
 

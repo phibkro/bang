@@ -95,16 +95,16 @@ def extract_keyword_rules(text):
     """(keyword, form) for each reified `Rule` in `def keywordRule` (ADR-0071 ②).
 
     Renders the surface shape by walking the rule's `choices`: `.kw "x"`→`x`, `.refE`→`<expr>`,
-    `.refA`→`<atom>`, `.refI`→`<ident>`. The same rules `pRuleDrive` interprets, so the grammar
-    tracks the parser."""
+    `.refA`→`<atom>`, `.refI`→`<ident>`, `.optAs`→`[as <ident>]` (the optional named-cap binder,
+    ADR-0072). The same rules `pRuleDrive` interprets, so the grammar tracks the parser."""
     m = re.search(r"def keywordRule.*?\n(.*?)\n\s*\|\s*_\s*=>\s*none", text, re.S)
     if not m:
         sys.exit("gen-reference: could not locate `def keywordRule` — the keyword grammar is keyed off it.")
-    slot = {"refE": "<expr>", "refA": "<atom>", "refI": "<ident>"}
+    slot = {"refE": "<expr>", "refA": "<atom>", "refI": "<ident>", "optAs": "[as <ident>]"}
     rows = []
     for cm in re.finditer(r'\|\s*"([^"]+)"\s*=>\s*some\s*⟨\[(.*?)\]\s*,', m.group(1)):
         parts = []
-        for c in re.finditer(r'\.kw\s*"([^"]*)"|\.(refE|refA|refI)', cm.group(2)):
+        for c in re.finditer(r'\.kw\s*"([^"]*)"|\.(refE|refA|refI|optAs)', cm.group(2)):
             parts.append(c.group(1) if c.group(1) is not None else slot[c.group(2)])
         rows.append((cm.group(1), " ".join(parts)))
     return rows

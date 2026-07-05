@@ -1062,27 +1062,28 @@ def vecDataProg (body : String) : String :=
 
 /-! ## Validation ⑩ — named capabilities are TYPED (#3, ADR-0070).
 
-`with H as h` binds `h : Cap ℓ`; `h.op` performs (adding ℓ to the row); the handler discharges ℓ.
-The checker rejects a label mismatch or a non-cap receiver. Both the ambient and named forms are
-identity-dispatched; the type just now names the cap. -/
--- a handled named-state program is pure (the `with` discharges {state}).
-#guard check "with state 5 as h in h.get" == .ok (.F .omega .int, ⊥)
-#guard display "with state 5 as h in h.get" == "Int"
+`state <init> as h` (and `handle as h` / `atomically as h`, ADR-0072) binds `h : Cap ℓ`; `h.op`
+performs (adding ℓ to the row); the handler discharges ℓ. The checker rejects a label mismatch or a
+non-cap receiver. Both the ambient and named forms are identity-dispatched; the type just now names
+the cap. -/
+-- a handled named-state program is pure (the `as h` binder's handler discharges {state}).
+#guard check "state 5 as h in h.get" == .ok (.F .omega .int, ⊥)
+#guard display "state 5 as h in h.get" == "Int"
 -- the TWO-CELL demo type-checks AND runs to 3 (typed path) — ambient can't express it.
-#guard runTypedYieldsInt 90 "with state 1 as a in (with state 2 as b in (let x = a.get in (let y = b.get in x + y)))" 3
+#guard runTypedYieldsInt 90 "state 1 as a in (state 2 as b in (let x = a.get in (let y = b.get in x + y)))" 3
 -- put on a named cap, then get, still discharged.
-#guard runTypedYieldsInt 60 "with state 5 as h in (let z = h.put(7) in h.get)" 7
+#guard runTypedYieldsInt 60 "state 5 as h in (let z = h.put(7) in h.get)" 7
 -- a named transaction cap, fully handled.
-#guard displayProg "with atomically as t in (let r = t.new(100) in (let z = t.write(r, 70) in t.read(r)))" == "Int"
+#guard displayProg "atomically as t (let r = t.new(100) in (let z = t.write(r, 70) in t.read(r)))" == "Int"
 
 -- REJECTIONS — the cap checker is sound:
 -- label mismatch: a state cap has no `raise`.
-#guard (match check "with state 5 as h in h.raise(9)" with | .error _ => true | _ => false)
+#guard (match check "state 5 as h in h.raise(9)" with | .error _ => true | _ => false)
 -- non-cap receiver: an Int is not a capability.
 #guard (match check "let x = 3 in x.get" with | .error _ => true | _ => false)
 -- wrong arg type: put expects Int, given a sum.
-#guard (match check "with state 5 as h in h.put(Left(0))" with | .error _ => true | _ => false)
+#guard (match check "state 5 as h in h.put(Left(0))" with | .error _ => true | _ => false)
 -- unknown op on a valid cap.
-#guard (match check "with state 5 as h in h.frobnicate" with | .error _ => true | _ => false)
+#guard (match check "state 5 as h in h.frobnicate" with | .error _ => true | _ => false)
 
 end Bang.TypeCheck

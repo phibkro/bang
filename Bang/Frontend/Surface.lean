@@ -171,7 +171,7 @@ inductive Surf where
   | matchD : Surf → DArms → Surf          -- named-ctor match (parse-only; ELIMINATED by the elaborator —
                                           -- the untyped path fail-louds, data is a Prog-level feature)
   -- ── ADR-0070 (named capabilities) ──
-  | withCapS : String → Surf → String → Surf → Surf  -- with <kind> <init|unitS> as <name> in <body>
+  | withCapS : String → Surf → String → Surf → Surf  -- state <init> as <name> in <body>  (named cap; also `handle as h e` / `atomically as h e`, ADR-0072)
   | dotPerform : Surf → String → SurfArgs → Surf     -- h.op(args) — perform op on the named cap
 
 /-- A cap-op argument list, capped at the v1 arity (≤ 2: `write` is the only binary op). A mutual
@@ -477,7 +477,7 @@ def pIdent : P String
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
           || t = "do" || t = ";"
           || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
-          || t = "with" || t = "as" || t = "."
+          || t = "as" || t = "."
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
         .error s!"expected an identifier, got keyword '{t}'"
@@ -592,12 +592,17 @@ inductive Frag
   | name : String → Frag    -- an identifier (a binder)
 
 /-- One step of a rule: match a keyword, or parse a sub-kind (a full expression / an atom / an
-identifier). The three `ref` kinds mirror the sub-parsers the retired bespoke arms called. -/
+identifier), or the OPTIONAL `as <ident>` binder. The three `ref` kinds mirror the sub-parsers the
+retired bespoke arms called. `optAs` is the one OPTIONAL segment in the grammar (ADR-0072): the
+`as <ident>` capability binder on `state`/`handle`/`atomically` — present ⟹ pushes a `.name` frag,
+absent ⟹ pushes nothing. It is "optional" (present/absent), NOT alternation, so the rule stays
+grammar-regular (the reified/bespoke line, ADR-0071 ②b). -/
 inductive Choice
-  | kw   : String → Choice
-  | refE : Choice           -- parse a full expression (pExpr)
-  | refA : Choice           -- parse an atom (pAtom)
-  | refI : Choice           -- parse an identifier (pIdent)
+  | kw    : String → Choice
+  | refE  : Choice          -- parse a full expression (pExpr)
+  | refA  : Choice          -- parse an atom (pAtom)
+  | refI  : Choice          -- parse an identifier (pIdent)
+  | optAs : Choice          -- optionally match `as <ident>` — the named-capability binder (ADR-0072)
 
 /-- A keyword-led parsing rule: a linear choice sequence + a builder over the collected frags.
 `build` is total (`Except`); the choice sequence GUARANTEES the frag shape, so each rule's mismatch
@@ -613,10 +618,16 @@ elimination shares the keyword but is a different construct and stays a bespoke 
 def keywordRule : String → Option Rule
   | "if"         => some ⟨[.kw "if", .refE, .kw "then", .refE, .kw "else", .refE],
       fun | [.expr c, .expr t, .expr e] => .ok (.ifS c t e) | _ => .error "if: rule arity"⟩
-  | "handle"     => some ⟨[.kw "handle", .refE],
-      fun | [.expr e] => .ok (.handle e) | _ => .error "handle: rule arity"⟩
-  | "atomically" => some ⟨[.kw "atomically", .refE],
-      fun | [.expr e] => .ok (.atomS e) | _ => .error "atomically: rule arity"⟩
+  -- `handle`/`atomically`/`state` carry the OPTIONAL `as <ident>` binder (ADR-0072): absent ⟹ the
+  -- ambient form, present ⟹ the named-capability form (the same `withCapS` the old `with … as` emitted).
+  | "handle"     => some ⟨[.kw "handle", .optAs, .refE],
+      fun | [.expr e]          => .ok (.handle e)
+          | [.name h, .expr e] => .ok (.withCapS "throws" .unitS h e)
+          | _ => .error "handle: rule arity"⟩
+  | "atomically" => some ⟨[.kw "atomically", .optAs, .refE],
+      fun | [.expr e]          => .ok (.atomS e)
+          | [.name h, .expr e] => .ok (.withCapS "atomically" .unitS h e)
+          | _ => .error "atomically: rule arity"⟩
   | "raise"      => some ⟨[.kw "raise", .refA],
       fun | [.expr a] => .ok (.raise a) | _ => .error "raise: rule arity"⟩
   | "put"        => some ⟨[.kw "put", .refA],
@@ -627,8 +638,10 @@ def keywordRule : String → Option Rule
       fun | [.expr a] => .ok (.readS a) | _ => .error "read: rule arity"⟩
   | "write"      => some ⟨[.kw "write", .refA, .refA],
       fun | [.expr r, .expr w] => .ok (.writeS r w) | _ => .error "write: rule arity"⟩
-  | "state"      => some ⟨[.kw "state", .refA, .kw "in", .refE],
-      fun | [.expr e0, .expr e] => .ok (.stateS e0 e) | _ => .error "state: rule arity"⟩
+  | "state"      => some ⟨[.kw "state", .refA, .optAs, .kw "in", .refE],
+      fun | [.expr e0, .expr e]          => .ok (.stateS e0 e)
+          | [.expr e0, .name h, .expr e] => .ok (.withCapS "state" e0 h e)
+          | _ => .error "state: rule arity"⟩
   | "fun"        => some ⟨[.kw "fun", .refI, .kw "=>", .refE],
       fun | [.name x, .expr b] => .ok (.lam x b) | _ => .error "fun: rule arity"⟩
   | "let"        => some ⟨[.kw "let", .refI, .kw "=", .refE, .kw "in", .refE],
@@ -667,21 +680,9 @@ def pExpr : Nat → P Surf
   | f + 1, "do" :: ts => do             -- do { stmt ; … ; result } → nested letC (issue #27)
       let (_, ts) ← expect "{" ts
       pDo f ts
-  | f + 1, "with" :: "state" :: ts => do   -- named cap: with state <init> as <h> in <body> (ADR-0070)
-      let (init, ts) ← pOp 4 f ts            -- init is a value expr (minBP 4 admits + - * /, stops at < == => as)
-      let (_, ts) ← expect "as" ts
-      let (name, ts) ← pIdent ts
-      let (_, ts) ← expect "in" ts
-      let (body, ts) ← pExpr f ts
-      .ok (.withCapS "state" init name body, ts)
-  | f + 1, "with" :: kind :: "as" :: ts => do  -- with throws|atomically as <h> in <body>
-      if kind = "throws" || kind = "atomically" then do
-        let (name, ts) ← pIdent ts
-        let (_, ts) ← expect "in" ts
-        let (body, ts) ← pExpr f ts
-        .ok (.withCapS kind .unitS name body, ts)
-      else .error s!"with: expected a handler kind (state/throws/atomically), got '{kind}'"
-  | f + 1, "with" :: t => .error s!"with: expected 'state <init>' / 'throws' / 'atomically', got '{t.head?.getD "end"}'"
+  -- Named capabilities (ADR-0072): the `with … as` construct is GONE. `as <h>` is now an optional
+  -- binder folded into the reified `state`/`handle`/`atomically` rules (`keywordRule` + `optAs`), so
+  -- the named forms flow through the table below with no bespoke arm.
   -- ▼ single-keyword constructs (if/handle/atomically/raise/put/new/read/write/state/fun/let) are
   -- reified as `Rule`s (ADR-0071 ②): consult the table, else fall to the Pratt op loop (#4, #39, ①).
   | f + 1, ts =>
@@ -733,6 +734,12 @@ def pRuleDrive : Nat → (List Frag → Except String Surf) → List Choice → 
   | f + 1, build, .refE :: cs,  acc, ts => do let (e, ts) ← pExpr f ts;  pRuleDrive f build cs (.expr e :: acc) ts
   | f + 1, build, .refA :: cs,  acc, ts => do let (a, ts) ← pAtom f ts;  pRuleDrive f build cs (.expr a :: acc) ts
   | f + 1, build, .refI :: cs,  acc, ts => do let (x, ts) ← pIdent ts;   pRuleDrive f build cs (.name x :: acc) ts
+  -- optional `as <ident>` (ADR-0072): consume it and push a `.name` frag ONLY when the next token is
+  -- `as` (a reserved keyword, so never a variable); otherwise skip, leaving the ambient form. Regular.
+  | f + 1, build, .optAs :: cs, acc, ts =>
+      match ts with
+      | "as" :: rest => do let (h, ts) ← pIdent rest; pRuleDrive f build cs (.name h :: acc) ts
+      | _            => pRuleDrive f build cs acc ts
 
 /-- Parse an application chain: one or more DOTTED atoms, left-associated. -/
 def pApp : Nat → P Surf
@@ -892,7 +899,7 @@ def pAtom : Nat → P Surf
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
               || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
-              || t = "with" || t = "as" || t = "."
+              || t = "as" || t = "."
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
         .error s!"unexpected '{t}' where an atom was expected"
@@ -1515,26 +1522,28 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Whitespace-insen
 #guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
 #guard parsesTo "do { x = a; b; c }" (.lett "x" (.var "a") (.lett "#do" (.var "b") (.var "c")))
 
-/-! ### Stage 2f — NAMED capabilities from source text (issue #3, ADR-0070).
+/-! ### Stage 2f — NAMED capabilities from source text (issue #3, ADR-0070; spelling ADR-0072).
 
-`with <kind> as h in …` binds the handler's cap to `h`; `h.op(args)` performs on it. The headline
-is MULTIPLE COEXISTING instances — two state cells `a`/`b`, which the ambient (nearest-sentinel)
-`get` cannot reach. Dispatch is identity-keyed (ADR-0052/0055), so `a.get`/`b.get` hit their own
-cells. Runs via the untyped path (parse→lower→eval); the checker's `Cap` typing is in TypeCheck. -/
+A named handler is an optional `as <h>` binder on the effect form — `state <init> as <h> in <body>`,
+`handle as <h> <body>`, `atomically as <h> <body>` (ADR-0072 dropped the old `with … as`). `h.op(args)`
+performs on the bound cap. The headline is MULTIPLE COEXISTING instances — two state cells `a`/`b`,
+which the ambient (nearest-sentinel) `get` cannot reach. Dispatch is identity-keyed (ADR-0052/0055),
+so `a.get`/`b.get` hit their own cells. Runs via the untyped path (parse→lower→eval); the checker's
+`Cap` typing is in TypeCheck. The `withCapS` tree is UNCHANGED from ADR-0070 — only the surface spelling. -/
 -- a named state cap reads its cell.
-#guard runYieldsInt 50 "with state 5 as h in h.get" 5
+#guard runYieldsInt 50 "state 5 as h in h.get" 5
 -- put then get on the SAME named cap (resumptive).
-#guard runYieldsInt 60 "with state 5 as h in (let z = h.put(7) in h.get)" 7
+#guard runYieldsInt 60 "state 5 as h in (let z = h.put(7) in h.get)" 7
 -- ★ TWO state cells at once — the demo ambient `get` cannot write. a=1, b=2 ⟹ a.get + b.get = 3.
-#guard runYieldsInt 90 "with state 1 as a in (with state 2 as b in (let x = a.get in (let y = b.get in x + y)))" 3
+#guard runYieldsInt 90 "state 1 as a in (state 2 as b in (let x = a.get in (let y = b.get in x + y)))" 3
 -- the inner cell is INDEPENDENT: mutate b, a is untouched. a=10, b:=20 ⟹ a.get = 10.
-#guard runYieldsInt 120 "with state 10 as a in (with state 0 as b in (let z = b.put(20) in a.get))" 10
+#guard runYieldsInt 120 "state 10 as a in (state 0 as b in (let z = b.put(20) in a.get))" 10
 -- a named throws cap: h.raise aborts to its payload.
-#guard runYieldsInt 50 "with throws as h in h.raise(9)" 9
+#guard runYieldsInt 50 "handle as h h.raise(9)" 9
 -- a named transaction cap: new/write/read on `t` commit in-transaction.
-#guard runYieldsInt 90 "with atomically as t in (let r = t.new(100) in (let z = t.write(r, 70) in t.read(r)))" 70
--- parse shape: `with state <init> as h in body` + `h.op(arg)`.
-#guard parsesTo "with state 5 as h in h.get"
+#guard runYieldsInt 90 "atomically as t (let r = t.new(100) in (let z = t.write(r, 70) in t.read(r)))" 70
+-- parse shape: `state <init> as h in body` + `h.op(arg)`.
+#guard parsesTo "state 5 as h in h.get"
   (.withCapS "state" (.lit 5) "h" (.dotPerform (.var "h") "get" .none))
 #guard parsesTo "h.put(7)" (.dotPerform (.var "h") "put" (.one (.lit 7)))
 #guard parsesTo "t.write(r, w)" (.dotPerform (.var "t") "write" (.two (.var "r") (.var "w")))
