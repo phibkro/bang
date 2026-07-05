@@ -21,13 +21,13 @@
   The proof composes the PROVEN CalcVM bridge (`compile_correct`,
   `evalD_agrees_source`) with a lockstep `wexec ≈ exec` simulation: the WasmFX
   machine is a re-presentation of the calculated `exec` over a WASM value
-  representation (`Wasmfx.Val`, i32/unit/ref-tagged), with `compileV` the value
+  representation (`Wasmfx.Val`, int/unit/ref-tagged), with `compileV` the value
   injection. Reusing the calculated machine is exactly the two-hop discipline
   (invariant #4: the machine is the calculation's output, not hand-designed).
 
   ## Milestone A (this landing): the PURE CBPV spine
 
-  `ret · letC · force/vthunk · lam · app` + i32/unit literals. The WasmFX AST
+  `ret · letC · force/vthunk · lam · app` + int/unit literals. The WasmFX AST
   carries `nocont`/`cont` heap-type slots (CURRENT stack-switching Explainer
   shape) UNINHABITED, so Milestone B (`switch`/`resume`/`suspend` + one tag)
   lands with no AST migration. The tracer effect maps to a generator
@@ -69,12 +69,12 @@ inductive Ty where
   deriving DecidableEq, Repr, Inhabited
 
 /-- A WASM runtime value. The injection `compileV : Val → Wasmfx.Val` maps source
-values here: `vint n ↦ i32 n`, `vunit ↦ unit`, and every other (boxed/closure)
+values here: `vint n ↦ int n`, `vunit ↦ unit`, and every other (boxed/closure)
 former ↦ `boxed`/`clos`. The representation is GENUINELY distinct from `Val` — a
 `Wasmfx.run` step operates on this, not on `Comp`/`Val` — so the forward
 simulation is a real refinement, not an identity. -/
 inductive Val where
-  | i32   : Int → Val            -- i32.const n
+  | int   : Int → Val            -- integer (unbounded ℤ — ADR-0067; a future width ADR maps this to i32/i64.const)
   | unit  : Val                  -- ()
   | boxed : Bang.Val → Val       -- a boxed source value (sum/pair/fold payload)
   | clos  : Comp → Val           -- a closure (compiled `lam` body); funcref carrier
@@ -163,7 +163,7 @@ what makes the `wexec ≈ exec` simulation a tight structural induction. -/
 /-- Value injection. `vint`/`vunit` lower to native WASM scalars; `vthunk` to a
 closure; every other former boxes. -/
 def compileV : Bang.Val → Wasmfx.Val
-  | .vint n   => .i32 n
+  | .vint n   => .int n
   | .vunit    => .unit
   | .vthunk M => .clos M
   | v         => .boxed v
@@ -235,7 +235,7 @@ it makes the `wexec ≈ exec` simulation a clean structural induction. -/
 (`recoverV (compileV v) = v`, `compileV_recoverV`). The `bindS`/`callS` arms use
 it to re-`compile` the residual `subst` exactly as `exec`'s SUBST/APP arms do. -/
 def recoverV : Val → Bang.Val
-  | .i32 n   => .vint n
+  | .int n   => .vint n
   | .unit    => .vunit
   | .clos M  => .vthunk M
   | .boxed v => v
@@ -2125,7 +2125,7 @@ landed. -/
 -- state resume (no abort, savedCode unused): wexec ≡ kernel.
 example : Source.eval 50 (.handle (.state 0 (.vint 42)) (.perform (.vvar 0) "get" .vunit)) = Result.done (.vint 42) := by rfl
 example : Wasmfx.run 50 (compileC (.handle (.state 0 (.vint 42)) (.perform (.vvar 0) "get" .vunit)))
-    = Result.done (.i32 42) := by rfl
+    = Result.done (.int 42) := by rfl
 
 -- abort, outer cont = identity-on-the-value: wexec ≡ kernel (7).
 example : Source.eval 50
@@ -2133,7 +2133,7 @@ example : Source.eval 50
     = Result.done (.vint 7) := by rfl
 example : Wasmfx.run 50
     (compileC (.letC (.handle (.throws 0) (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99)))) (.ret (.vvar 0))))
-    = Result.done (.i32 7) := by rfl
+    = Result.done (.int 7) := by rfl
 
 -- ✓ THE FORMER COUNTEREXAMPLE — now AGREES. An APP β-residual produces a `handle` that
 -- ABORTS; the outer let-cont IGNORES the aborted value (7) and returns 100. The kernel returns
@@ -2146,7 +2146,7 @@ example : Source.eval 80
 example : Wasmfx.run 80
     (compileC (.letC (.app (.lam (.handle (.throws 0) (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99))))) .vunit)
                      (.force (.vthunk (.ret (.vint 100))))))
-    = Result.done (.i32 100)   -- ✓ SOUND: the threaded outer cont returns 100 (was i32 7 pre-fix)
+    = Result.done (.int 100)   -- ✓ SOUND: the threaded outer cont returns 100 (was int 7 pre-fix)
     := by rfl
 
 -- ✓ TRANSACTION RESUME — `wexec`'s new `wTxnUpdate` branch (operator ruling: verify txn). A
@@ -2158,7 +2158,7 @@ example : Source.eval 50
     = Result.done (.vint 5) := by rfl
 example : Wasmfx.run 50
     (compileC (.handle (.transaction 0 []) (.letC (.perform (.vvar 0) "newTVar" (.vint 5)) (.perform (.vvar 1) "readTVar" (.vint 0)))))
-    = Result.done (.i32 5) := by rfl
+    = Result.done (.int 5) := by rfl
 
 end -- public section
 end Bang
