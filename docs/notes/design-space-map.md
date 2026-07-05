@@ -17,6 +17,44 @@ product decisions (PRD); resumptive state (ADR-0025). The **proof-power dial is 
 superset + explicit seam**, at the correctness, tooling, and language levels (ADR-0028; resolves the
 meta-circular/totality wall via fuel-total or `Div`-tested `eval`).
 
+## The criticality ladder — no-language → language, every fork ranked
+
+The full pipeline of design forks, ranked by **reversal-cost × blast-radius** (kernel choices are
+near-irreversible; syntax is a formatter away). The operating model: decide the fork upfront (ADR),
+implementation paves the road between checkpoints. The meta-move that dissolves fork #3: pick ONE
+root semantics and DERIVE the other presentations with agreement proofs (`Source.eval` root →
+calculated machine → forward-sim'd WasmFX) — SSoT applied to semantics itself.
+
+```
+#   fork                                                        status
+──────────────────────────────────────────────────────────────────────────────────────────
+1   TRUST architecture — verified vs tested, the seam;          ✓ ADR-0026 (ladder) + ADR-0028
+    internal Curry-Howard vs external vs solver-backed            (core/superset/seam)
+2   SEMANTIC substrate — calculus, grades, thunk/force          ✓ graded CBPV · ADR-0007 ($-force)
+3   semantics PRESENTATION + proof method — root + derivations  ✓ def-interp root, calculated
+                                                                  machine (ADR-0009/0016), fwd
+                                                                  sim (ADR-0035)
+4   EFFECT discipline — monads vs rows+handlers vs caps;        ✓ ADR-0001 (rows-as-sets),
+    dispatch semantics                                            ADR-0052–0063 (lexical-by-identity)
+5   TYPE-power dial + polymorphism staging                      ✓ ADR-0026 · ADR-0027 · QTT (Q2)
+6   TOTALITY seam — total fragment vs Div, how marked           ✓ ADR-0028 (Div in row + fuel)
+7   COMPILATION architecture — target, hops, verified per hop   ✓ ADR-0016 (CalcVM → WasmFX)
+8   DATA types — iso/equi-recursive, ind/coind                  ✓ ADR-0029 (iso-recursive)
+9   LAWS/abstraction surface — traits + first-class laws        ◑ ADR-0040 mechanism; surface = #24
+10  MEMORY/resource model — borrowing beyond 0/1/ω grades       ✗ post-v1 (Rust/Austral/Vale)
+11  CONCURRENCY/runtime model — shared vs shared-nothing        ◑ multikernel direction (§ below);
+                                                                  Q21 gates the Iris bill
+12  MODULE system                                               ✗ post-v1 (ML functors, 1ML)
+13  INFERENCE — esp. grade inference                            ◑ bidirectional ✓ (ADR-0066);
+                                                                  grade inference ✗ (hard)
+14  METAPROGRAMMING / notation                                  ◑ Q20 (no-new-primitive set)
+15  SURFACE syntax / formatting                                 ◑ per tracer bullet; Q24
+```
+
+Open forks in priority order: **#9 (= #24, in flight) → #10 memory → #11/Q21 concurrency →
+#12 modules → #13 grade inference**. The rank order ≈ the order the project decided them —
+evidence the sequencing held.
+
 ## The big rocks (foundational — sequenced by the product ladder)
 
 ```
