@@ -264,6 +264,12 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Except String Unit :=
   | .pairS a b, .prod A B => do let _ ← checkSV Γ a A; checkSV Γ b B
   -- T_Fold mirrored (ADR-0069): `fold v : μ.A` ⇐ `v : A[μ.A/0]` — the kernel's own unrollMu.
   | .foldS b,   .mu A     => checkSV Γ b (VTy.unrollMu A)
+  -- T_Thunk mirrored (#45): push the expected computation type INTO the thunk body so check-mode-only
+  -- forms (a bare `fun`, `Left`, …) drive off it instead of synth failing. The declared `φ` is an
+  -- upper bound (over-approximating a thunk's latent effects is the safe direction), as in `annotS`.
+  | .thunk b,   .U φ B    => do
+      let φ' ← checkSC Γ b B
+      if φ' ⊆ φ then .ok () else .error "thunk body effect exceeds the declared bound"
   | .annotS b t, expected => do
       let A := vtyOf t
       let _ ← checkSV Γ b A
@@ -374,6 +380,7 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Except String EffRow :=
   | .inrS b,    .F _ (.sum A B)  => do let _ ← checkSV Γ (.inrS b) (.sum A B); return ⊥
   | .pairS a b, .F _ (.prod A B) => do let _ ← checkSV Γ (.pairS a b) (.prod A B); return ⊥
   | .foldS b,   .F _ (.mu A)     => do let _ ← checkSV Γ (.foldS b) (.mu A); return ⊥
+  | .thunk t,   .F _ (.U φ B)    => do let _ ← checkSV Γ (.thunk t) (.U φ B); return ⊥
   | .annotS b t, expected => do
       let C := ctyOf t
       let φ ← checkSC Γ b C
@@ -1042,6 +1049,40 @@ def listProg (body : String) : String :=
 #guard (match checkProg (listProg "let s = Nil in match s { Nil -> 0, Snoc(h, t) -> h }") with
         | .error _ => true | _ => false)
 #guard (match checkProg (listProg "Cons(7)") with | .error _ => true | _ => false)
+
+/-! ### Validation ⑨b — HIGHER-ORDER constructor payloads (#45): a `Thunk (Int -> Int)` field.
+
+The #45 gap: `checkSV` of a `.thunk` against a `.U` type SYNTHESIZED the thunk (failing on a bare
+`fun`, which is check-mode only) instead of pushing the expected computation type IN. These type +
+RUN the payload: build the `Box`, destruct it, FORCE the thunk, APPLY the function — the differential
+proof that the pushed-in check-mode produced a runnable higher-order value the kernel oracle agrees on.
+Before the fix these failed with `unbound variable b` (the `let`-RHS didn't type → the #41 cascade). -/
+def boxProg (body : String) : String := "data Box = Box(Thunk (Int -> Int)) " ++ body
+-- construct + destruct with a constant arm (the exact #45 reproduction): the RHS now types.
+#guard runTypedYieldsInt 200 (boxProg "let b = Box({fun x => x}) in match b { Box(g) -> 7 }") 7
+-- FORCE the thunked identity and APPLY it: `($g) 5` = 5.
+#guard runTypedYieldsInt 200 (boxProg "let b = Box({fun x => x}) in match b { Box(g) -> ($g) 5 }") 5
+-- a NON-identity payload proves the stored function is really run: `(fun x => x + 3) 5` = 8.
+#guard runTypedYieldsInt 200 (boxProg "let b = Box({fun x => x + 3}) in match b { Box(g) -> ($g) 5 }") 8
+-- the checkSC thunk arm (thunk in COMPUTATION position): an annotated thunk at top level, forced+applied.
+#guard runTypedYieldsInt 200 "let f = ( {fun x => x + 1} : Thunk (Int -> Int) ) in ($f) 41" 42
+
+/-! ### Validation ⑨c — μ-ENCODED RECURSION end-to-end (ADR-0073, gated on #45).
+
+Landin's knot with NO new kernel primitive: `data Rec = Rec(Thunk (Rec -> Int -> Int))` (a negative
+self-occurrence — `Rec` in its own field's domain) + self-application (`match self { Rec(g) -> ($g)
+self … }`). The #45 check-mode fix is what lets the bare recursive `fun` payload type. A bounded
+countdown-SUM `5+4+3+2+1+0 = 15` TYPES and RUNS under fuel — the ADR-0073 "μ-encoding, no new
+primitive" mechanism, demonstrated. (The `if` CONDITION is A-normalized by hand — `let c = n == 0 in
+if c …` — because `synthSC`'s `ifS` rule expects a VALUE condition and `n == 0` is a computation: the
+sibling #41 gap, still open; auto-A-normalizing it would drop the manual `let c`.) -/
+def recProg : String :=
+  "data Rec = Rec(Thunk (Rec -> Int -> Int)) " ++
+  "let r = Rec({ ( fun self => ( fun n => let c = n == 0 in " ++
+  "(if c then 0 else (let m = n - 1 in (match self { Rec(g) -> let k = ($g) self m in n + k }))) " ++
+  ": Int -> Int ) : Rec -> Int -> Int ) }) in "
+#guard runTypedYieldsInt 4000 (recProg ++ "(match r { Rec(g) -> ($g) r 5 })") 15
+#guard runTypedYieldsInt 4000 (recProg ++ "(match r { Rec(g) -> ($g) r 3 })") 6
 
 /-! ### The northstar, in its INTENDED spelling: `Vec` as a NAMED type (ADR-0069 consequence). -/
 
