@@ -82,11 +82,18 @@ types into thunks) landed to unblock the higher-order payload.
   → 16, unbounded → `oom` (CLI + `⑨e` guards). Enabled by extending #41's value-position A-norm to APP
   ARGUMENTS (so `($sum)(n-1)` reads naturally). v1 choices: monomorphic + annotation-required
   (`let rec f : T = …`), bare-`fun` RHS, `f : Thunk T`.
-- **§2 `Div`-row typing — DEFERRED → #46.** Recursion RUNS correctly (unbounded → `oom` = the Div
-  fragment at RUNTIME, §4); making `Div` type-VISIBLE is a genuine semantic-design fork (WHERE `Div`
-  sits in the codomain row, threaded through fold/unfold/force/app) — spiked + costed by checker45,
-  deferred per the escalation rule. Recursion is complete without it; #46 adds the type-level partiality
-  marker.
+- **§2 `Div`-row typing — LANDED (`0397adc`, #46, Option A).** `let rec`'s call-site result carries
+  `Div`: `($sum) 5 : Int ! {Div}` — the type-visible partiality. PLACEMENT: `U {Div}` (canonical —
+  effects ride the `U`/judgment, ADR-0019/0020), NOT the codomain (`A -> B ! {Div}`): the codomain call
+  was REFUTED against the source (effect annotations are upper bounds not forcing — guard 512; `tyBoth`
+  strips `tEff`; would break ④b). `divLabel := 3` is a never-performed/handled pure typing marker,
+  ERASED at lowering (`divMark`'s `lowerC` passes through) → runtime BYTE-UNCHANGED. **Option A**
+  (Div-marked on the OUTER knot only; inner self-calls typed pure ⊥) — a documented v1 UNDER-
+  APPROXIMATION (operationally sound: `Div` has no runtime semantics). Full inner+outer threading
+  (**Option B** — needs a row-carrying thunk TYPE) DEFERRED to the `⊥-row ⟹ terminates` soundness work,
+  where the representation should be driven by the proof. The `letRecRow` seam (v1 `{divLabel}`,
+  computed) is the single point **#47** (termination checker) flips to ⊥ for provably-terminating
+  recursion → the total fragment.
 
 Earlier note (the #41 gap, now CLOSED by `8e2e132`): μ-recursion needed the `if` condition
 A-normalized by hand; #41 fixed value-position A-normalization so it reads naturally.

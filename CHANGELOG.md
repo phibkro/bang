@@ -35,6 +35,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — check-mode completeness — push expected types into thunks; μ-recursion now types+runs (#45, closes #45) (`b42014a`)
 - **typecheck** — A-normalize value-position computations — recursion + lawful demos read naturally (#41, closes #41) (`8e2e132`)
 - **surface** — let rec — recursion is user-facing (ADR-0073 §1, μ-encoding, no new primitive) (`0f771c6`)
+- **typecheck** — Div-row — recursion's partiality is type-visible (#46, closes #46, ADR-0073 §2) (`0397adc`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
