@@ -84,6 +84,53 @@ This is the **one sanctioned exception** to "linear segments admit no parallelis
 spine is a *different layer* (surface) from the verification spine (kernel/compiler), so per rule 2
 (cross-layer paths run in parallel freely) it does not tangle the ◊-march.
 
+## Post-MVP direction — the sequence from here (2026-07-05)
+
+The **tracer-bullet MVP milestone is COMPLETE** (all 6 bullets: ADTs · recursive `data` · arithmetic ·
+effect-typed signatures · named capabilities · compiled path). The verified kernel is surfaced
+end-to-end; both engines agree. Superseding the stale "rungs 0–4" framing above. A **dogfooding pass**
+(2026-07-05, `bang eval` on real programs) then *use-attested* the priorities below.
+
+```
+WAVE 1 — ERGONOMICS (make it pleasant; every item is a dogfooding pain point)
+  #30 parser (IN FLIGHT — Pratt rule-table, ADR-0071):
+     ① operator loop → ② keyword rules → ③ generated grammar (#38) → ④ whitespace + `bang fmt` (Q24)
+     kills the DOMINANT papercut (whitespace-sensitivity) · fixes #31 (bare atoms) · #26
+     (arith-in-effect-arg) by construction · generates the grammar spec + tree-sitter (#9)
+  #41 checker A-normalization  — let-bind-computations bug (`V(a+c,b+d)`, `match (expr)`)
+  #10 elaborator error quality — the misleading "unbound m" (symptom, not cause)
+  #7  REPL                     — iteration speed (would have made dogfooding far faster)
+
+WAVE 2 — THE FORK (operator's steer: two different north-stars)
+  (a) RECURSION path → "bang writes real programs / its own tools"
+        #42 recursive functions (fix + the Div row; Q28 marker) → strings → then a tokenizer,
+        a calculator interpreter, small toolchain tools become possible. Design-first (ADR).
+  (b) POLYMORPHISM path → "bang has a generic, lawful, verified stdlib"
+        ADR-0027 stage 2 (HM) → generic containers + generic lawful traits → Q26 optics
+        (the lawful-polymorphism north-star) → the HKT fork (Functor/Monad). Design-first.
+
+WAVE 3 — VERIFICATION COMPLETION (parallel, verification-spine layer)
+  #15 lr_sound ◊4 seam (the one sorryAx-carried headline; design-first) · #17/Q27 resumption
+  grades → compilation strategy · Q21 concurrency (the multikernel) · #16 U5b-handler
+```
+
+**The Wave-2 fork is the load-bearing steer.** Recursion (#42) is the gate to *toolchain-capable* —
+the dogfood verdict was "can't write tools yet: no recursion, no strings." Polymorphism (ADR-0027) is
+the gate to the *generic lawful stdlib + optics thesis* (Q26). Both are substantial, design-first,
+and roughly post-v1; they advance **different** identities. This is the operator's call, not a
+sequencing default.
+
+### Pratt downstream — ready-to-dispatch units (once #30 ① lands)
+
+```
+② keyword rules      reify if/let/match/with/do as first-class Rules; retire the bespoke pExpr arms
+③ generated grammar  gen-reference.py grammar leg from the rule table (closes #38) — grammar can't drift
+④ whitespace + fmt   whitespace-insensitive tokenizer + `bang fmt` canonical form (Q24) — papercut killer
+#31 / #26            fold into ②/① (explicit "program start" rule; the precedence loop)
+```
+Each is guard-gated by the existing `parsesTo` corpus (behaviour-preserving) — dispatchable to an IC
+the moment stage ① merges.
+
 ## The layer × path model
 
 Three layers stack vertically. Each layer has its own **invariant discipline**
