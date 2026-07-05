@@ -75,6 +75,41 @@ def extract_inductive(text, name):
     return rows
 
 
+def extract_op_table(text):
+    """(op, leftBP, rightBP) for each `| "op" => some (lbp, rbp, …)` in `def opInfo` (ADR-0071 ①).
+
+    The precedence table is a pure function of this reified operator table — the same table the
+    Pratt loop (`pOp`) consults — so the doc cannot claim a precedence the parser doesn't have."""
+    m = re.search(r"def opInfo.*?\n(.*?)\n\s*\|\s*_\s*=>\s*none", text, re.S)
+    if not m:
+        sys.exit("gen-reference: could not locate `def opInfo` — the precedence table is keyed off it.")
+    rows = []
+    for line in m.group(1).splitlines():
+        cm = re.match(rf'\s*\|\s*{STR}\s*=>\s*some\s*\(\s*(\d+)\s*,\s*(\d+)\s*,', line)
+        if cm:
+            rows.append((cm.group(1), int(cm.group(2)), int(cm.group(3))))
+    return rows
+
+
+def extract_keyword_rules(text):
+    """(keyword, form) for each reified `Rule` in `def keywordRule` (ADR-0071 ②).
+
+    Renders the surface shape by walking the rule's `choices`: `.kw "x"`→`x`, `.refE`→`<expr>`,
+    `.refA`→`<atom>`, `.refI`→`<ident>`. The same rules `pRuleDrive` interprets, so the grammar
+    tracks the parser."""
+    m = re.search(r"def keywordRule.*?\n(.*?)\n\s*\|\s*_\s*=>\s*none", text, re.S)
+    if not m:
+        sys.exit("gen-reference: could not locate `def keywordRule` — the keyword grammar is keyed off it.")
+    slot = {"refE": "<expr>", "refA": "<atom>", "refI": "<ident>"}
+    rows = []
+    for cm in re.finditer(r'\|\s*"([^"]+)"\s*=>\s*some\s*⟨\[(.*?)\]\s*,', m.group(1)):
+        parts = []
+        for c in re.finditer(r'\.kw\s*"([^"]*)"|\.(refE|refA|refI)', cm.group(2)):
+            parts.append(c.group(1) if c.group(1) is not None else slot[c.group(2)])
+        rows.append((cm.group(1), " ".join(parts)))
+    return rows
+
+
 def extract_result_ctors(text):
     """Constructor names of `inductive Result` (the reference's observable-outcome type).
 
@@ -164,6 +199,38 @@ def render():
     L.append("|---|---|")
     for _name, form, note in extract_inductive(surf, "Ty"):
         L.append(f"| `{form}` | {note} |")
+    L.append("")
+
+    L.append("## Grammar")
+    L.append("")
+    L.append("GENERATED from the reified parser tables in `Bang/Frontend/Surface.lean` (ADR-0071):")
+    L.append("operator precedence from `opInfo`, keyword-led constructs from `keywordRule`. The parser")
+    L.append("consults these same tables, so this grammar cannot drift from what BANG actually parses.")
+    L.append("")
+    L.append("### Operator precedence")
+    L.append("")
+    L.append("Binding powers from `opInfo`, loosest first (higher BP binds tighter). Associativity is")
+    L.append("read off the powers: left-assoc ⟺ leftBP < rightBP, right-assoc ⟺ leftBP > rightBP.")
+    L.append("Application (juxtaposition) binds tighter than every operator below; `.`-method-perform")
+    L.append("tighter still.")
+    L.append("")
+    L.append("| Operator | leftBP | rightBP | Associativity |")
+    L.append("|---|---|---|---|")
+    for op, lbp, rbp in extract_op_table(surf):
+        assoc = "left" if lbp < rbp else "right" if lbp > rbp else "non"
+        L.append(f"| `{op}` | {lbp} | {rbp} | {assoc} |")
+    L.append("")
+    L.append("### Keyword-led constructs")
+    L.append("")
+    L.append("Each is a reified `Rule` (`keywordRule`): a linear sequence of keyword literals and")
+    L.append("sub-parses — `<expr>` a full expression, `<atom>` an atom, `<ident>` a bound name.")
+    L.append("Surface constructs not (yet) reified as rules are parsed by bespoke arms; the complete")
+    L.append("construct list is the Surface syntax table above.")
+    L.append("")
+    L.append("| Keyword | Form |")
+    L.append("|---|---|")
+    for kw, form in extract_keyword_rules(surf):
+        L.append(f"| `{kw}` | `{form}` |")
     L.append("")
 
     L.append("## Effect channels")

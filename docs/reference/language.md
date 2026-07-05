@@ -56,6 +56,50 @@ nothing here can drift from what the language actually does.
 | `μ-bound de Bruijn type var (INTERNAL, ditto)` |  |
 | `T ! {throws, …}` | effect-row annotation (names; checker maps to labels) |
 
+## Grammar
+
+GENERATED from the reified parser tables in `Bang/Frontend/Surface.lean` (ADR-0071):
+operator precedence from `opInfo`, keyword-led constructs from `keywordRule`. The parser
+consults these same tables, so this grammar cannot drift from what BANG actually parses.
+
+### Operator precedence
+
+Binding powers from `opInfo`, loosest first (higher BP binds tighter). Associativity is
+read off the powers: left-assoc ⟺ leftBP < rightBP, right-assoc ⟺ leftBP > rightBP.
+Application (juxtaposition) binds tighter than every operator below; `.`-method-perform
+tighter still.
+
+| Operator | leftBP | rightBP | Associativity |
+|---|---|---|---|
+| `=>` | 2 | 1 | right |
+| `<` | 3 | 4 | left |
+| `==` | 3 | 4 | left |
+| `+` | 5 | 6 | left |
+| `-` | 5 | 6 | left |
+| `*` | 7 | 8 | left |
+| `/` | 7 | 8 | left |
+
+### Keyword-led constructs
+
+Each is a reified `Rule` (`keywordRule`): a linear sequence of keyword literals and
+sub-parses — `<expr>` a full expression, `<atom>` an atom, `<ident>` a bound name.
+Surface constructs not (yet) reified as rules are parsed by bespoke arms; the complete
+construct list is the Surface syntax table above.
+
+| Keyword | Form |
+|---|---|
+| `if` | `if <expr> then <expr> else <expr>` |
+| `handle` | `handle <expr>` |
+| `atomically` | `atomically <expr>` |
+| `raise` | `raise <atom>` |
+| `put` | `put <atom>` |
+| `new` | `new <atom>` |
+| `read` | `read <atom>` |
+| `write` | `write <atom> <atom>` |
+| `state` | `state <atom> in <expr>` |
+| `fun` | `fun <ident> => <expr>` |
+| `let` | `let <ident> = <expr> in <expr>` |
+
 ## Effect channels
 
 The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;
