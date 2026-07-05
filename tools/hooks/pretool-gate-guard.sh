@@ -31,4 +31,16 @@ if printf '%s' "$cmd" | grep -qE 'lake +exe +cache +get'; then
   fi
 fi
 
+# Bare `git worktree add` → an UNSEEDED worktree, the #40b corruption vector (bit again
+# 2026-07-05: a bare-created IC worktree resurfaced the phantom-cache-tree wedge; memory
+# shared-worktree-git-autogc-corruption). The match is COMMAND-POSITION anchored (start,
+# or after && ; |) so a quoted mention inside an echo/commit message doesn't trip it —
+# same narrowness rationale as above. tools/new-worktree.sh invokes it internally via
+# its own script name, which this string-match never sees.
+if printf '%s' "$cmd" | grep -qE '(^|&&|;|\|)[[:space:]]*git +worktree +add'; then
+  jq -n --arg r "bare 'git worktree add' creates an UNSEEDED worktree — the #40b corruption vector (recurred 2026-07-05). Use: tools/new-worktree.sh <dir> <branch> [base] — it seeds .lake from the main checkout and pins gc.auto=0." \
+    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}' 2>/dev/null
+  exit 0
+fi
+
 exit 0
