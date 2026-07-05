@@ -38,6 +38,7 @@
 - [Q25 — Integer semantics: unbounded Int vs fixed-width](#q25--integer-semantics-unbounded-int-vs-fixed-width-width--overflow)  · ✓ RESOLVED (ADR-0067 — unbounded ℤ v1; width behind the oracle)
 - [Q26 — Optics as the lawful-polymorphism north-star (+ the HKT fork, + graded optics)](#q26--optics-as-the-lawful-polymorphism-north-star--the-hkt-fork--graded-optics)  · OPEN (gated on ADR-0027 stage 2)
 - [Q27 — Surfacing the grade axis: declare effect shape AND grade (resumption grade → compilation)](#q27--surfacing-the-grade-axis-declare-effect-shape-and-grade-resumption-grade--compilation)  · OPEN (surface the second axis; links #35/#36)
+- [Q28 — Recursion marker: reuse `rec` for data + functions, or keep them separate?](#q28--recursion-marker-reuse-rec-for-data--functions-or-keep-them-separate)  · OPEN (decide at the recursion bullet)
 
 > See also `design-space-map.md` (the survey) and **ADR-0026** (the correctness-ladder keystone that
 > resolved the proof-power dial, design-space #2).
@@ -1126,6 +1127,48 @@ resource use-case. The row stays a set (never option-graded-row).
 **Revisit signal**: #35/#36 landing (resumption grades in the machine); OR a compilation pass that
 wants to avoid continuation-copying for tail-resumptive handlers; OR a consumable-capability
 use-case that wants linear (use-once) effect typing.
+
+---
+
+## Q28 — Recursion marker: reuse `rec` for data + functions, or keep them separate?  · OPEN (decide at the recursion bullet)
+
+**Question**: when recursive FUNCTIONS land (the deferred `fix`/`Div` bullet), should the surface
+reuse ONE `rec` modifier for both recursive data types and recursive functions (one construct,
+multiple uses), the way some designs unify — or keep them distinct?
+
+**Why it matters**: it is the SOUL "one construct per problem" test applied to a case where the
+surface intuition (self-reference) tempts unification but the language's central axis pulls them
+apart. Getting it wrong hides the total/Div seam that IS bang's identity.
+
+**Detail** — the lean is: **keep them separate**, for three grounded reasons:
+```
+recursive DATA type          recursive FUNCTION
+structural / well-founded    general / may not terminate
+TOTAL (⊥-row, ADR-0029 μ)    DESCENDS into Div (fuel-bounded)   ← opposite sides of the seam
+a value-type former          a computation-level fixpoint (fix)
+```
+1. **Data needs no marker at all** — ADR-0069 auto-detects recursion (the type's own name in a
+   payload position IS the recursion, auto-μ-wrapped). A `rec` there is redundant.
+2. **Functions DO need a marker** — to bring the name into scope in its own body. Different NEEDS ⟹
+   not really one construct.
+3. **`rec` is the wrong cut even for functions** — the load-bearing distinction is STRUCTURAL
+   recursion (total, stays ⊥-row) vs GENERAL recursion (Div); `rec` blankets both.
+
+**The constructive unification** (more on-thesis than a shared keyword): unify at the EFFECT-ROW
+level — *recursion that can't be shown to terminate introduces `Div`*. Data contributes nothing
+(total by construction); function recursion contributes `Div` unless structural. The row carries the
+distinction (the generative constraint the type system reasons about), not a cosmetic keyword.
+
+**Options**: (1) **separate + row-level unification** (recommended: `data` marker-free; recursive
+functions signal generality via `Div` in the row). (2) shared `rec` modifier on both (surface
+uniformity, but conflates the seam). (3) Lean-style separate keywords (`inductive` vs a recursive
+`let`) — but bang's `data` already needs no keyword, so this is (1) without the row insight.
+
+**Blocked on**: the recursion/`fix` bullet existing at all (not yet implemented; deferred from
+ADR-0069's scope note). This is a design pin to apply THEN.
+
+**Revisit signal**: starting the recursion bullet (`fix` + the `Div` row); or a request for
+structural-recursion totality checking (which is where the structural-vs-general cut becomes real).
 
 ---
 
