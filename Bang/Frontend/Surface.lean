@@ -126,9 +126,13 @@ inductive Ty where
   | tProd  : Ty → Ty → Ty        -- A * B
   | tThunk : Ty → Ty             -- Thunk T  (a suspended computation value, the `U` former)
   | tSelf  : Ty                  -- Self — the impl target, in trait op signatures (#24, ADR-0068)
+  | tName  : String → Ty         -- a declared data name (resolved against the decl env at elaboration, ADR-0069)
+  | tMu    : Ty → Ty             -- μ former (INTERNAL — built by data-decl encoding, never parsed in v1)
+  | tVar   : Nat → Ty            -- μ-bound de Bruijn type var (INTERNAL, ditto)
   | tEff   : List String → Ty → Ty  -- T ! {throws, …}  effect-row annotation (names; checker maps to labels)
   deriving Repr, Inhabited, DecidableEq
 
+mutual
 inductive Surf where
   | lit    : Int → Surf                 -- 3
   | var    : String → Surf              -- x
@@ -160,7 +164,26 @@ inductive Surf where
   | binopS : BinOp → Surf → Surf → Surf   -- a + b   (arithmetic + - * /, comparison < ==)
   | ifS    : Surf → Surf → Surf → Surf    -- if c then t else e   (sugar over case on Bool = 1+1)
   | annotS : Surf → Ty → Surf             -- (e : T)   type ascription (ADR-0066 ②); erased at lowering
-  deriving Repr, Inhabited, DecidableEq
+  -- ── ADR-0069 (data declarations) ──
+  | unitS  : Surf                         -- ()   the unit value literal
+  | foldS  : Surf → Surf                  -- μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)
+  | unfoldS : Surf → Surf                 -- μ elim  (INTERNAL: emitted by named-match elaboration)
+  | matchD : Surf → DArms → Surf          -- named-ctor match (parse-only; ELIMINATED by the elaborator —
+                                          -- the untyped path fail-louds, data is a Prog-level feature)
+
+/-- Named-match arms `C(x, y) -> e` — a `Surf`-mutual list (not `List (… × Surf)`) so the
+`DecidableEq`/`Repr` derivations stay straightforward (the `VTy`/`CTy` precedent). -/
+inductive DArms where
+  | nil  : DArms
+  | cons : String → List String → Surf → DArms → DArms
+end
+
+deriving instance Repr, Inhabited, DecidableEq for Surf, DArms
+
+/-- Pack parsed match arms into `DArms` (the parser's list shape → the AST's mutual shape). -/
+def toDArms : List (String × List String × Surf) → DArms
+  | []                => .nil
+  | (c, bs, b) :: r   => .cons c bs b (toDArms r)
 
 
 /-! ## 2. Lowering `Surf → Comp` (the name→de-Bruijn pass)
@@ -313,6 +336,17 @@ def lowerC (env : List String) : Surf → Except String Comp
       let ct ← lowerC ("#p" :: "#c" :: env) t
       let ce ← lowerC ("#p" :: "#c" :: env) e
       return .letC cc (.case (.vvar 0) ce ct)
+  -- ── ADR-0069 ──
+  | .unitS => .ok (.ret .vunit)
+  | .foldS e => do                       -- μ intro; A-normalize a computation payload (the inlS idiom)
+      match lowerV env e with
+      | .ok v    => return .ret (.fold v)
+      | .error _ => return .letC (← lowerC env e) (.ret (.fold (.vvar 0)))
+  | .unfoldS e => do                     -- μ elim; same scrutinee idiom as `case`
+      match lowerV env e with
+      | .ok v    => return .unfold v
+      | .error _ => return .letC (← lowerC env e) (.unfold (.vvar 0))
+  | .matchD .. => .error "named match needs the typed path (data declarations, ADR-0069) — run via checkProg/runTyped"
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -325,6 +359,8 @@ def lowerV (env : List String) : Surf → Except String Val
   | .inlS e     => do return .inl (← lowerV env e)
   | .inrS e     => do return .inr (← lowerV env e)
   | .pairS a b  => do return .pair (← lowerV env a) (← lowerV env b)
+  | .unitS      => .ok .vunit
+  | .foldS e    => do return .fold (← lowerV env e)   -- μ intro is a value former (ADR-0069)
   | .annotS e _ => lowerV env e          -- ascription erased; lower the inner value
   | _           => .error "expected a value (wrap a computation in braces)"
 end
@@ -381,7 +417,7 @@ def pIdent : P String
           || t = "atomically" || t = "new" || t = "read" || t = "write"
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
           || t = "do" || t = ";"
-          || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law"
+          || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
         .error s!"expected an identifier, got keyword '{t}'"
@@ -441,7 +477,13 @@ def pTyAtom : Nat → P Ty
       let (t, ts) ← pTy f ts
       let (_, ts) ← expect ")" ts
       .ok (t, ts)
-  | _ + 1, t :: _       => .error s!"expected a type, got '{t}'"
+  | _ + 1, t :: ts      =>
+      -- a bare identifier in type position = a declared data name (ADR-0069); resolved (or
+      -- fail-louded) against the decl env at elaboration, so a typo is still an error — later.
+      if t = ")" || t = "}" || t = "(" || t = "{" || t = "," || t = ";" || t = "|"
+         || t = "->" || t = "+" || t = "*" || t = "!" || t = "=" || t = "in" || t = "=>" then
+        .error s!"expected a type, got '{t}'"
+      else .ok (.tName t, ts)
   | _ + 1, []           => .error "expected a type, got end of input"
 end
 
@@ -509,19 +551,17 @@ def pExpr : Nat → P Surf
       let (r, ts) ← pAtom f ts
       let (w, ts) ← pAtom f ts
       .ok (.writeS r w, ts)
-  | f + 1, "match" :: ts => do           -- sum elim: match s { Left(x) -> e₁ , Right(y) -> e₂ }
-      let (s, ts) ← pAtom f ts            -- scrutinee is an atom (value position); `let`-bind a comp
+  | f + 1, "match" :: ts => do           -- match s { arms } — anonymous sums (Left/Right → matchS)
+      let (s, ts) ← pAtom f ts            -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
       let (_, ts) ← expect "{" ts
-      let ((c1, x1, b1), ts) ← pArm f ts
-      let ts := (match ts with | "," :: r => r | _ => ts)   -- optional separator comma
-      let ((c2, x2, b2), ts) ← pArm f ts
-      let ts := (match ts with | "," :: r => r | _ => ts)   -- optional trailing comma
-      let (_, ts) ← expect "}" ts
-      -- arms are order-independent: slot Left→branch₁, Right→branch₂ (kernel `case` order).
-      match c1, c2 with
-      | "Left", "Right" => .ok (.matchS s x1 b1 x2 b2, ts)
-      | "Right", "Left" => .ok (.matchS s x2 b2 x1 b1, ts)
-      | _, _ => .error s!"match needs exactly one Left and one Right arm (got {c1}, {c2})"
+      let (arms, ts) ← pArms f ts
+      -- exactly the Left/Right pair (order-independent, 1 binder each) is the anonymous-sum
+      -- form — it stays `matchS` so the UNTYPED path keeps working. Anything else is a named
+      -- match, a typed-path (`Prog`) feature.
+      match arms with
+      | [("Left", [x1], b1), ("Right", [x2], b2)] => .ok (.matchS s x1 b1 x2 b2, ts)
+      | [("Right", [x2], b2), ("Left", [x1], b1)] => .ok (.matchS s x1 b1 x2 b2, ts)
+      | _ => .ok (.matchD s (toDArms arms), ts)
   | f + 1, "if" :: ts => do            -- conditional: if c then t else e  (sugar over `case` on Bool)
       let (cnd, ts) ← pExpr f ts
       let (_, ts) ← expect "then" ts
@@ -631,26 +671,45 @@ def pDo : Nat → P Surf
         | "}" :: ts => .ok (e, ts)       -- the final statement is the block's value
         | _         => .error "expected ';' or '}' after a do-block statement"
 
-/-- Parse one match arm `('Left'|'Right') '(' ident ')' '->' expr`. Returns the
-constructor name, the bound variable, and the arm body (used by `match` in `pExpr`). -/
-def pArm : Nat → P (String × String × Surf)
+/-- Parse one match arm `C -> e` · `C(x) -> e` · `C(x, y) -> e` (ctor name is `Left`/`Right` or
+any identifier — named data ctors, ADR-0069; payload arity ≤ 2 in v1, the tuple-grammar bound). -/
+def pArm : Nat → P (String × List String × Surf)
   | 0,      _ => .error "parser out of fuel"
   | f + 1, ts => do
       let (ctor, ts) ← (match ts with
         | "Left"  :: r => (.ok ("Left", r) : Except String (String × List String))
         | "Right" :: r => .ok ("Right", r)
-        | t :: _ => .error s!"expected 'Left' or 'Right' starting a match arm, got '{t}'"
-        | []     => .error "expected a match arm, got end of input")
-      let (_, ts) ← expect "(" ts
-      let (x, ts) ← pIdent ts
-      let (_, ts) ← expect ")" ts
+        | ts           => pIdent ts)
+      let (bs, ts) ← (match ts with
+        | "(" :: r => do
+            let (b1, ts) ← pIdent r
+            (match ts with
+             | ")" :: r2 => (.ok ([b1], r2) : Except String (List String × List String))
+             | "," :: r2 => do
+                 let (b2, ts) ← pIdent r2
+                 let (_, ts) ← expect ")" ts
+                 .ok ([b1, b2], ts)
+             | t :: _ => .error s!"expected ',' or ')' in a match-arm payload, got '{t}'"
+             | []     => .error "unterminated match-arm payload")
+        | ts => (.ok ([], ts) : Except String (List String × List String)))
       let (_, ts) ← expect "->" ts
       let (body, ts) ← pExpr f ts
-      .ok ((ctor, x, body), ts)
+      .ok ((ctor, bs, body), ts)
+
+/-- Parse match arms up to and including `}` (≥ 1 arm; `,` separators optional). -/
+def pArms : Nat → P (List (String × List String × Surf))
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts => do
+      let ((c, bs, b), ts) ← pArm f ts
+      let ts := (match ts with | "," :: r => r | _ => ts)   -- optional separator/trailing comma
+      match ts with
+      | "}" :: r => .ok ([(c, bs, b)], r)
+      | _        => do let (rest, ts) ← pArms f ts; .ok ((c, bs, b) :: rest, ts)
 
 /-- Parse an atom (highest precedence). -/
 def pAtom : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
+  | _ + 1, "(" :: ")" :: ts => .ok (.unitS, ts)   -- `()` — the unit value literal (ADR-0069)
   | f + 1, "(" :: ts => do               -- grouping `(e)` OR product intro `(a, b)`
       let (e, ts) ← pExpr f ts
       match ts with
@@ -691,7 +750,7 @@ def pAtom : Nat → P Surf
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
-              || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law"
+              || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
         .error s!"unexpected '{t}' where an atom was expected"
@@ -750,11 +809,12 @@ structure OpDef where
   body   : Surf
   deriving Repr, Inhabited, DecidableEq
 
-/-- A top-level declaration: a trait (ops + laws) or an impl (op definitions for a structural
-target type). -/
+/-- A top-level declaration: a trait (ops + laws), an impl (op definitions for a structural
+target type), or a data type (named constructors over sums·products·μ, ADR-0069). -/
 inductive Decl where
   | traitD : String → List OpSig → List LawDecl → Decl   -- trait N { fn … ; law … }
   | implD  : String → Ty → List OpDef → Decl             -- impl N for τ { fn … }
+  | dataD  : String → List (String × List Ty) → Decl     -- data N = C₀ | C₁(T, …) | …
   deriving Repr, Inhabited, DecidableEq
 
 /-- A whole program: the declaration prelude + the body expression (ADR-0068 decision 3). -/
@@ -821,9 +881,43 @@ def pImplMembers : Nat → P (List OpDef)
     | t :: _ => .error s!"expected 'fn' or '}' in an impl body, got '{t}'"
     | []     => .error "unterminated impl body"
 
-/-- One declaration: `trait N { … }` or `impl N for τ { … }`. -/
+/-- The comma-separated payload types of a constructor, up to and including `)`. -/
+def pCtorTysLoop : Nat → P (List Ty)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (t, ts) ← pTy f ts
+      match ts with
+      | "," :: r => do let (rest, ts) ← pCtorTysLoop f r; .ok (t :: rest, ts)
+      | ")" :: r => .ok ([t], r)
+      | t' :: _  => .error s!"expected ',' or ')' in a constructor payload, got '{t'}'"
+      | []       => .error "unterminated constructor payload"
+
+/-- One data constructor: `Name` (payload `Unit`) or `Name(T, …)` (arity ≤ 2 in v1). -/
+def pCtor : Nat → P (String × List Ty)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (n, ts) ← pIdent ts
+      match ts with
+      | "(" :: r => do let (tys, ts) ← pCtorTysLoop f r; .ok ((n, tys), ts)
+      | _        => .ok ((n, []), ts)
+
+/-- `|`-separated constructors (≥ 1). -/
+def pCtors : Nat → P (List (String × List Ty))
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (c, ts) ← pCtor f ts
+      match ts with
+      | "|" :: r => do let (rest, ts) ← pCtors f r; .ok (c :: rest, ts)
+      | _        => .ok ([c], ts)
+
+/-- One declaration: `trait N { … }`, `impl N for τ { … }`, or `data N = C | …`. -/
 def pDecl : Nat → P Decl
   | 0,     _  => .error "parser out of fuel"
+  | f + 1, "data" :: ts => do
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect "=" ts
+      let (cs, ts) ← pCtors f ts
+      .ok (.dataD n cs, ts)
   | f + 1, "trait" :: ts => do
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect "{" ts
@@ -844,7 +938,7 @@ def pDecls : Nat → P (List Decl)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
-    | "trait" :: _ | "impl" :: _ => do
+    | "trait" :: _ | "impl" :: _ | "data" :: _ => do
         let (d, ts) ← pDecl f ts
         let (ds, ts) ← pDecls f ts
         .ok (d :: ds, ts)

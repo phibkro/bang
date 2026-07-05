@@ -191,6 +191,10 @@ def tyBoth : Ty → VT × CT
   | .tEff  _ t => tyBoth t        -- effect annotation is checker-level (effOf); dropped from the kernel type
   | .tSelf     => let V : VT := .tvar 999; (V, .F .omega V)  -- POISON: `buildEnv` substitutes Self before
                                   -- any tyBoth; a leaked Self surfaces as `#999`, never unifies
+  | .tName _   => let V : VT := .tvar 998; (V, .F .omega V)  -- POISON: `resolveTy` closes names before
+                                  -- any tyBoth; a leaked name surfaces as `#998` (ADR-0069)
+  | .tMu b     => let V : VT := .mu (tyBoth b).1;  (V, .F .omega V)
+  | .tVar n    => let V : VT := .tvar n;           (V, .F .omega V)
 @[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
 @[inline] def ctyOf (t : Ty) : CT := (tyBoth t).2
 
@@ -224,9 +228,11 @@ def synthSV (Γ : NCtx) (e : Surf) : Except String VT :=
   | .var x     => match Γ.lookup x with | some A => .ok A | none => .error s!"unbound variable {x}"
   | .thunk b   => do let (B, φ) ← synthSC Γ b; return .U φ B
   | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
+  | .unitS     => .ok .unit
   | .annotS b t => do let A := vtyOf t; let _ ← checkSV Γ b A; return A
   | .inlS _    => .error "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
   | .inrS _    => .error "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  | .foldS _   => .error "fold needs an expected μ type — annotate (ctor elaboration provides it)"
   | _          => .error "not a value (wrap a computation in braces)"
   termination_by (sizeOf e, 0)
 
@@ -236,6 +242,8 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Except String Unit :=
   | .inlS b,    .sum A _  => checkSV Γ b A
   | .inrS b,    .sum _ B  => checkSV Γ b B
   | .pairS a b, .prod A B => do let _ ← checkSV Γ a A; checkSV Γ b B
+  -- T_Fold mirrored (ADR-0069): `fold v : μ.A` ⇐ `v : A[μ.A/0]` — the kernel's own unrollMu.
+  | .foldS b,   .mu A     => checkSV Γ b (VTy.unrollMu A)
   | .annotS b t, expected => do
       let A := vtyOf t
       let _ ← checkSV Γ b A
@@ -298,10 +306,17 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
   | .newS e      => do let _ ← checkSV Γ e .int; return (.F .omega .int, {stmLabel})     -- TVar ref = Int (ADR-0030)
   | .readS e     => do let _ ← checkSV Γ e .int; return (.F .omega .int, {stmLabel})
   | .writeS r w  => do let _ ← checkSV Γ r .int; let _ ← checkSV Γ w .int; return (.F .omega .unit, {stmLabel})
+  -- ── ADR-0069 (data) ──
+  | .unitS     => .ok (.F .omega .unit, ⊥)
+  | .unfoldS b => do match (← synthSV Γ b) with        -- T_Unfold mirrored: F 1 (A[μ.A/0]), pure
+                     | .mu A => .ok (.F 1 (VTy.unrollMu A), ⊥)
+                     | _     => .error "unfold: not a μ value"
+  | .matchD .. => .error "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
   -- check-mode-only intros: fail loud (synthesis has no expected type to drive them).
   | .lam _ _ => .error "fun needs an expected arrow type — annotate `(fun x => e : A -> B)`"
   | .inlS _  => .error "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
   | .inrS _  => .error "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  | .foldS _ => .error "fold needs an expected μ type — annotate (ctor elaboration provides it)"
   -- NO catch-all: synthSC now ENUMERATES every Surf constructor, so a NEW feature fails to compile
   -- here until it is typed — pipeline-completeness by construction (the operator's enforcement ask).
   termination_by (sizeOf e, 1)
@@ -314,6 +329,7 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Except String EffRow :=
   | .inlS b,    .F _ (.sum A B)  => do let _ ← checkSV Γ (.inlS b) (.sum A B); return ⊥
   | .inrS b,    .F _ (.sum A B)  => do let _ ← checkSV Γ (.inrS b) (.sum A B); return ⊥
   | .pairS a b, .F _ (.prod A B) => do let _ ← checkSV Γ (.pairS a b) (.prod A B); return ⊥
+  | .foldS b,   .F _ (.mu A)     => do let _ ← checkSV Γ (.foldS b) (.mu A); return ⊥
   | .annotS b t, expected => do
       let C := ctyOf t
       let φ ← checkSC Γ b C
@@ -472,6 +488,9 @@ def substSelf (target : Ty) : Ty → Ty
   | .tSelf     => target
   | .tInt      => .tInt
   | .tUnit     => .tUnit
+  | .tName n   => .tName n
+  | .tVar n    => .tVar n
+  | .tMu b     => .tMu   (substSelf target b)
   | .tArr a b  => .tArr  (substSelf target a) (substSelf target b)
   | .tSum a b  => .tSum  (substSelf target a) (substSelf target b)
   | .tProd a b => .tProd (substSelf target a) (substSelf target b)
@@ -479,49 +498,109 @@ def substSelf (target : Ty) : Ty → Ty
   | .tEff ns t => .tEff ns (substSelf target t)
 
 /-- One resolvable instance op: the resolution key (`opName` × structural `target`) plus what
-the elaborated call site needs (the impl's def + the annotation types). -/
+the elaborated call site needs. `body` is PRE-ELABORATED at env build (ADR-0069 upgraded
+piece-2's raw splice: nested ctors and earlier ops inside an impl body now resolve). -/
 structure Inst where
   opName   : String
   target   : VT       -- the structural resolution key (ADR-0068 decision 2)
   targetTy : Ty       -- the impl's declared target, for the elaborated annotation
   retTy    : Ty       -- the trait sig's ret type, Self-substituted
-  opDef    : OpDef
+  params   : List String
+  body     : Surf
 
 abbrev InstEnv := List Inst
 
-/-- Build the instance environment from a program's decl prelude. Fail-loud: an `impl` must
-name a declared trait; each `fn` must match a trait op signature (name + arity). -/
-def buildEnv (ds : List Decl) : Except String InstEnv := do
-  let traits := ds.filterMap fun
-    | .traitD n ops _ => some (n, ops)
-    | .implD ..       => none
-  let mut env : InstEnv := []
-  for d in ds do
-    match d with
-    | .traitD .. => pure ()
-    | .implD tn τTy ops =>
-        match traits.lookup tn with
-        | none => throw s!"impl of undeclared trait '{tn}'"
-        | some sigs =>
-            for od in ops do
-              match sigs.find? (fun s => s.name == od.name) with
-              | none => throw s!"impl '{tn}' defines '{od.name}', which is not an op of the trait"
-              | some sig =>
-                  if od.params.length != sig.params.length then
-                    throw s!"'{od.name}': impl has {od.params.length} params, the trait declares {sig.params.length}"
-                  env := env ++ [⟨od.name, vtyOf τTy, τTy, substSelf τTy sig.retTy, od⟩]
-  return env
+/-- One data constructor's elaboration record (ADR-0069). -/
+structure CtorInfo where
+  dataName      : String
+  idx           : Nat        -- position in decl order (the sum injection)
+  total         : Nat        -- constructor count (right-nested sum shape)
+  arity         : Nat        -- payload arity (≤ 2 in v1)
+  payloadClosed : List Ty    -- payload types, the data's own name resolved to the CLOSED μ
+  dataTy        : Ty         -- the closed μ type (`tMu body`)
 
-/-- Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
-instance env; every other constructor maps structurally (ENUMERATED — a new `Surf` form fails
-here until elaborated, the same completeness-by-construction as `synthSC`/`lowerC`). Binder arms
-extend `Γ` so operand types inside them synthesize — `lett` via `synthSC` on the elaborated head,
-`match`/`split` via the scrutinee's type; a BARE lam body is elaborated with its param unbound
-(resolution inside one needs an ascription, exactly like checking). -/
-def elabS (env : InstEnv) : NCtx → Surf → Except String Surf
+/-- The full elaboration environment: instance ops + data constructors + type aliases. -/
+structure ElabEnv where
+  insts   : InstEnv
+  ctors   : List (String × CtorInfo)
+  aliases : List (String × Ty)
+
+/-- Close a type over the alias env: every `tName` resolves or fail-louds. Enumerated. -/
+def resolveTy (aliases : List (String × Ty)) : Ty → Except String Ty
+  | .tName n   => match aliases.lookup n with
+                  | some t => .ok t
+                  | none   => .error s!"unknown type name '{n}'"
+  | .tInt      => .ok .tInt
+  | .tUnit     => .ok .tUnit
+  | .tSelf     => .ok .tSelf
+  | .tVar n    => .ok (.tVar n)
+  | .tMu b     => do return .tMu   (← resolveTy aliases b)
+  | .tArr a b  => do return .tArr  (← resolveTy aliases a) (← resolveTy aliases b)
+  | .tSum a b  => do return .tSum  (← resolveTy aliases a) (← resolveTy aliases b)
+  | .tProd a b => do return .tProd (← resolveTy aliases a) (← resolveTy aliases b)
+  | .tThunk t  => do return .tThunk (← resolveTy aliases t)
+  | .tEff ns t => do return .tEff ns (← resolveTy aliases t)
+
+/-- k-ary payload as a right-nested product (`[] ↦ Unit`, the 0-ary payload). -/
+def prodOfTys : List Ty → Ty
+  | []        => .tUnit
+  | [t]       => t
+  | t :: rest => .tProd t (prodOfTys rest)
+
+/-- N constructors as a right-nested sum in decl order. -/
+def sumOfTys : List Ty → Ty
+  | []        => .tUnit   -- unreachable (≥ 1 ctor enforced at env build)
+  | [t]       => t
+  | t :: rest => .tSum t (sumOfTys rest)
+
+/-- Inject a payload at ctor position `i` of `n` (right-nested sum; `n = 1` ⇒ no sum wrapper). -/
+def injSum : Nat → Nat → Surf → Surf
+  | 0,     1, p => p
+  | 0,     _, p => .inlS p
+  | i + 1, n, p => .inrS (injSum i (n - 1) p)
+
+/-- The elaborated ctor intro: the injected payload, μ-folded, ANNOTATED at the data type —
+check-mode then drives T_Fold via `unrollMu`; no new typing rule. -/
+def ctorIntro (ci : CtorInfo) (payload : Surf) : Surf :=
+  .annotS (.foldS (injSum ci.idx ci.total payload)) ci.dataTy
+
+/-- Bind a match arm's payload binders over the payload variable (arity ≤ 2). -/
+def bindPayload : List String → String → Surf → Surf
+  | [],       _, body => body
+  | [b],      v, body => .lett b (.var v) body
+  | [b1, b2], v, body => .splitS b1 b2 (.var v) body
+  | _,        _, body => body   -- arity ≤ 2 enforced at env build
+
+/-- Assemble the ordered (already-elaborated) match arms into the `matchS` chain over the
+unfolded scrutinee — the last ctor's payload is the bare right-nested-sum tail. -/
+def buildMatch : List (List String × Surf) → String → Surf
+  | [],              v => .var v   -- unreachable (≥ 1 ctor)
+  | [(bs, body)],    v => bindPayload bs v body
+  | (bs, body) :: r, v => .matchS (.var v) "#l" (bindPayload bs "#l" body) "#r" (buildMatch r "#r")
+
+/-- `DArms` back to the parser's list shape (for the elaborator's arm bookkeeping). -/
+def armsToList : DArms → List (String × List String × Surf)
+  | .nil            => []
+  | .cons c bs b r  => (c, bs, b) :: armsToList r
+
+/-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
+instance env, ctor intros + named matches through the data env (ADR-0069); every other
+constructor maps structurally (ENUMERATED — a new `Surf` form fails here until elaborated, the
+same completeness-by-construction as `synthSC`/`lowerC`). Binder arms extend `Γ` so operand
+types inside them synthesize — `lett` via `synthSC` on the elaborated head, `match`/`split` via
+the scrutinee's type; a BARE lam body is elaborated with its param unbound (resolution inside
+one needs an ascription, exactly like checking). -/
+mutual
+/-- The elaborator (see the section comment). Mutual with `elabArms` (named-match arm bodies). -/
+def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | _, .lit n => .ok (.lit n)
-  | _, .var x => .ok (.var x)
+  | _, .var x =>
+      match env.ctors.lookup x with           -- a 0-ary ctor use (`Nil`) IS an intro (ADR-0069)
+      | some ci => if ci.arity == 0 then .ok (ctorIntro ci .unitS)
+                   else .error s!"constructor '{x}' expects {ci.arity} argument(s)"
+      | none    => .ok (.var x)
   | _, .getS  => .ok .getS
+  | _, .unitS => .ok .unitS
   | Γ, .thunk b  => do return .thunk (← elabS env Γ b)
   | Γ, .force b  => do return .force (← elabS env Γ b)
   | Γ, .raise e  => do return .raise (← elabS env Γ e)
@@ -535,6 +614,13 @@ def elabS (env : InstEnv) : NCtx → Surf → Except String Surf
   | Γ, .stateS e0 e => do return .stateS (← elabS env Γ e0) (← elabS env Γ e)
   | Γ, .writeS r w  => do return .writeS (← elabS env Γ r) (← elabS env Γ w)
   | Γ, .pairS a b   => do return .pairS (← elabS env Γ a) (← elabS env Γ b)
+  | Γ, .foldS b     => do return .foldS (← elabS env Γ b)
+  | Γ, .unfoldS b   => do return .unfoldS (← elabS env Γ b)
+  | Γ, .app (.var c) a => do                  -- ctor intro `Cons(e, …)` parses as application (ADR-0069)
+      match env.ctors.lookup c with
+      | some ci => if ci.arity == 0 then .error s!"constructor '{c}' takes no arguments"
+                   else do return ctorIntro ci (← elabS env Γ a)
+      | none    => do return .app (.var c) (← elabS env Γ a)
   | Γ, .app f a     => do return .app (← elabS env Γ f) (← elabS env Γ a)
   | Γ, .ifS c t e   => do return .ifS (← elabS env Γ c) (← elabS env Γ t) (← elabS env Γ e)
   | Γ, .lam x b     => do return .lam x (← elabS env Γ b)
@@ -557,11 +643,42 @@ def elabS (env : InstEnv) : NCtx → Surf → Except String Surf
         | _               => Γ
       return .splitS a b p' (← elabS env Γ' body)
   | Γ, .annotS (.lam x b) t => do   -- an ascribed lam's body sees its param's type (as in checking)
-      let Γ' := match tyBoth t with
+      let t' ← resolveTy env.aliases t         -- data names in user ascriptions close here (ADR-0069)
+      let Γ' := match tyBoth t' with
         | (_, .arr _ A _) => (x, A) :: Γ
         | _               => Γ
-      return .annotS (.lam x (← elabS env Γ' b)) t
-  | Γ, .annotS e t => do return .annotS (← elabS env Γ e) t
+      return .annotS (.lam x (← elabS env Γ' b)) t'
+  | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.aliases t)
+  | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
+      let s' ← elabS env Γ s
+      let arms' ← elabArms env Γ arms          -- bodies elaborated STRUCTURALLY (ctor-typed Γ)
+      match armsToList arms' with
+      | [] => .error "match needs at least one arm"
+      | armsL@((c0, _, _) :: _) =>
+        match env.ctors.lookup c0 with
+        | none => .error s!"unknown constructor '{c0}' in match"
+        | some ci0 => do
+            let dcs := (env.ctors.filter (fun p => p.2.dataName == ci0.dataName)).map Prod.snd
+            let dcs := (dcs.toArray.qsort (fun a b => a.idx < b.idx)).toList
+            if armsL.length != dcs.length then
+              throw s!"match on {ci0.dataName}: {dcs.length} constructor(s), {armsL.length} arm(s)"
+            let expected := vtyOf ci0.dataTy
+            match synthSV Γ s' with
+            | .ok τ => if τ != expected then throw s!"match scrutinee is {showVTy τ}, not {ci0.dataName}"
+            | .error e => throw s!"match scrutinee: {e}"
+            -- order arms by ctor position (pure bookkeeping — no recursion below)
+            let mut ordered : List (List String × Surf) := []
+            for ci in dcs do
+              match env.ctors.find? (fun p => p.2.dataName == ci.dataName && p.2.idx == ci.idx) with
+              | none => throw "impossible: ctor without a name key"
+              | some (cn, _) =>
+                match armsL.find? (fun a => a.1 == cn) with
+                | none => throw s!"match on {ci0.dataName}: missing arm for '{cn}'"
+                | some (_, bs, body') => do
+                    if bs.length != ci.arity then
+                      throw s!"'{cn}' arm binds {bs.length} variable(s), the constructor has arity {ci.arity}"
+                    ordered := ordered ++ [(bs, body')]
+            return .lett "#u" (.unfoldS s') (buildMatch ordered "#u")
   | Γ, .binopS op a b => do
       let a' ← elabS env Γ a
       let b' ← elabS env Γ b
@@ -569,16 +686,82 @@ def elabS (env : InstEnv) : NCtx → Surf → Except String Surf
       | .ok .int  => return .binopS op a' b'   -- the kernel δ-rule path (ADR-0065), untouched
       | .error _  => return .binopS op a' b'   -- non-value operand: leave it; the checker rules as today
       | .ok τ =>
-          match env.find? (fun i => i.opName == binopName op && i.target == τ) with
+          match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
           | none => .error s!"no impl provides '{binopName op}' for {showVTy τ}"
           | some inst =>
-              match inst.opDef.params with
+              match inst.params with
               | [p, q] =>
                   let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
-                  return .app (.app (.annotS (.lam p (.lam q inst.opDef.body)) fnTy) a') b'
-              | _ => .error s!"'{inst.opDef.name}': operator resolution needs exactly 2 params (got {inst.opDef.params.length})"
+                  return .app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'
+              | _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
 
-/-- Elaborate a whole program: build the instance env from the decl prelude, resolve the body. -/
+/-- Elaborate named-match arm BODIES structurally over `DArms`, each under its ctor's
+payload-typed Γ (unknown ctor / wrong arity ⇒ un-extended Γ here; the `matchD` arm's
+validation fail-louds right after). -/
+def elabArms (env : ElabEnv) : NCtx → DArms → Except String DArms
+  | _, .nil => .ok .nil
+  | Γ, .cons c bs b r => do
+      let Γa := match env.ctors.lookup c with
+        | some ci =>
+            (match bs, ci.payloadClosed with
+             | [b1], [t1]         => (b1, vtyOf t1) :: Γ
+             | [b1, b2], [t1, t2] => (b2, vtyOf t2) :: (b1, vtyOf t1) :: Γ
+             | _, _               => Γ)
+        | none => Γ
+      let b' ← elabS env Γa b
+      let r' ← elabArms env Γ r
+      .ok (.cons c bs b' r')
+end
+
+/-- Build the elaboration environment from a program's decl prelude, IN ORDER (a data type may
+reference itself + earlier decls; forward references fail loud). Data: encode the μ body
+(self ↦ `tVar 0` — no surface μ syntax means self never sits under a nested binder, so depth 0
+is always right) and the closed binder-typing payloads (self ↦ the closed μ). Impls: resolve
+the target, validate against the trait (op name + param arity), and PRE-ELABORATE op bodies
+against the env-so-far — nested ctors and EARLIER ops resolve; a self-recursive op fail-louds
+as an unresolved operator (out of scope until `fix` lands, ADR-0069). -/
+def buildEnv (ds : List Decl) : Except String ElabEnv := do
+  let mut aliases : List (String × Ty) := []
+  let mut ctors   : List (String × CtorInfo) := []
+  let mut insts   : InstEnv := []
+  let mut traits  : List (String × List OpSig) := []
+  for d in ds do
+    match d with
+    | .dataD n cs => do
+        if cs.isEmpty then throw s!"data {n}: needs at least one constructor"
+        if (aliases.lookup n).isSome then throw s!"duplicate type name '{n}'"
+        let openPays ← cs.mapM (fun c => c.2.mapM (resolveTy ((n, Ty.tVar 0) :: aliases)))
+        let closed := Ty.tMu (sumOfTys (openPays.map prodOfTys))
+        let closedPays ← cs.mapM (fun c => c.2.mapM (resolveTy ((n, closed) :: aliases)))
+        aliases := (n, closed) :: aliases
+        let mut i := 0
+        for (c, cp) in cs.zip closedPays do
+          if (ctors.lookup c.1).isSome then throw s!"duplicate constructor '{c.1}'"
+          if cp.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
+          ctors := (c.1, ⟨n, i, cs.length, cp.length, cp, closed⟩) :: ctors
+          i := i + 1
+    | .traitD n sigs _ => traits := (n, sigs) :: traits
+    | .implD tn τTy ops =>
+        match traits.lookup tn with
+        | none => throw s!"impl of undeclared trait '{tn}'"
+        | some sigs => do
+            let τR ← resolveTy aliases τTy
+            for od in ops do
+              match sigs.find? (fun s => s.name == od.name) with
+              | none => throw s!"impl '{tn}' defines '{od.name}', which is not an op of the trait"
+              | some sig => do
+                  if od.params.length != sig.params.length then
+                    throw s!"'{od.name}': impl has {od.params.length} params, the trait declares {sig.params.length}"
+                  let retR ← resolveTy aliases (substSelf τR sig.retTy)
+                  let bodyΓ : NCtx := match od.params with
+                    | [p]    => [(p, vtyOf τR)]
+                    | [p, q] => [(q, vtyOf τR), (p, vtyOf τR)]
+                    | _      => []
+                  let ebody ← elabS ⟨insts, ctors, aliases⟩ bodyΓ od.body
+                  insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody⟩]
+  return ⟨insts, ctors, aliases⟩
+
+/-- Elaborate a whole program: build the elaboration env from the decl prelude, resolve the body. -/
 def elabProg (p : Prog) : Except String Surf := do
   elabS (← buildEnv p.decls) [] p.body
 
@@ -666,7 +849,7 @@ def tuples : Nat → List Val → List (List Val)
 /-- Run ONE law instance: bind `params := args`, wrap the Bool-valued body in
 `let #r = body in if #r then 1 else 0` (encoding-agnostic truth read-back), elaborate
 (operators resolve), CHECK, lower, and run through `Source.eval`. -/
-def checkLawOn (env : InstEnv) (params : List String) (body : Surf) (args : List Val) : Bool :=
+def checkLawOn (env : ElabEnv) (params : List String) (body : Surf) (args : List Val) : Bool :=
   if params.length != args.length then false else
   let wrapped := (params.zip args).foldr
     (fun (pv : String × Val) acc =>
@@ -693,19 +876,22 @@ def checkLaws (src : String) : Except String (List String) := do
   for d in p.decls do
     match d with
     | .implD .. => pure ()
+    | .dataD .. => pure ()
     | .traitD tn _ laws =>
         for other in p.decls do
           match other with
           | .traitD .. => pure ()
+          | .dataD ..  => pure ()
           | .implD tn' τTy _ =>
               if tn' == tn then
+                let τR ← resolveTy env.aliases τTy      -- named impl targets sample at the closed μ
                 for l in laws do
-                  let sample := tuples l.params.length (sampleVT (vtyOf τTy))
+                  let sample := tuples l.params.length (sampleVT (vtyOf τR))
                   if sample.all (checkLawOn env l.params l.body) then
                     report := report ++
-                      [s!"↓ {tn}.{l.name} @ {showVTy (vtyOf τTy)}: DESCENT [test ({sample.length} samples): source law — the ADR-0068 v1 ceiling] (tested)"]
+                      [s!"↓ {tn}.{l.name} @ {showVTy (vtyOf τR)}: DESCENT [test ({sample.length} samples): source law — the ADR-0068 v1 ceiling] (tested)"]
                   else
-                    throw s!"law {tn}.{l.name} FAILS on its sample for {showVTy (vtyOf τTy)}"
+                    throw s!"law {tn}.{l.name} FAILS on its sample for {showVTy (vtyOf τR)}"
   return report
 
 /-! ### Validation ⑦ — the northstar WITH its law: checked from source, rung displayed. -/
@@ -765,5 +951,46 @@ def intOrdProg (law : String) (body : String) : String :=
 -- a FALSE conditional law is caught NON-vacuOUSLY: (a < b) => (b < a) fails on (0, 1). Fail-loud.
 #guard (match checkLaws (intOrdProg "antisym_bogus(a, b): a < b => b < a" "0") with
         | .error _ => true | _ => false)
+
+/-! ## Validation ⑨ — `data` declarations end-to-end (#2, ADR-0069).
+
+Named constructors + named match, from source text, typed and run via the oracle. Recursive
+FUNCTIONS stay out of scope (fix + Div, a separate bullet) — the demos construct and destruct. -/
+
+def listProg (body : String) : String :=
+  "data IntList = Nil | Cons(Int, IntList) " ++ body
+
+-- construct + destruct a recursive value: head of Cons(7, Nil).
+#guard runTypedYieldsInt 400 (listProg "let s = Cons(7, Nil) in match s { Nil -> 0, Cons(h, t) -> h }") 7
+-- arms are order-independent (name-keyed, not positional).
+#guard runTypedYieldsInt 400 (listProg "let s = Cons(7, Nil) in match s { Cons(h, t) -> h, Nil -> 0 }") 7
+-- nested destructuring: the SECOND element of Cons(7, Cons(9, Nil)).
+#guard runTypedYieldsInt 600 (listProg
+  "let s = Cons(7, Cons(9, Nil)) in match s { Nil -> 0, Cons(h, t) -> match t { Nil -> h, Cons(h2, t2) -> h2 } }") 9
+-- the data type DISPLAYS as its structural μ (transparent alias, ADR-0069 decision 3).
+#guard displayProg (listProg "Cons(7, Nil)") == "(mu. (Unit + (Int * #0)))"
+-- fail-loud: a missing arm · an unknown ctor · payload-arity mismatch at the type level.
+#guard (match checkProg (listProg "let s = Nil in match s { Nil -> 0 }") with
+        | .error _ => true | _ => false)
+#guard (match checkProg (listProg "let s = Nil in match s { Nil -> 0, Snoc(h, t) -> h }") with
+        | .error _ => true | _ => false)
+#guard (match checkProg (listProg "Cons(7)") with | .error _ => true | _ => false)
+
+/-! ### The northstar, in its INTENDED spelling: `Vec` as a NAMED type (ADR-0069 consequence). -/
+
+def vecDataProg (body : String) : String :=
+  "data Vec = Vec(Int, Int) " ++
+  "trait Add { fn add(a, b) -> Self } " ++
+  "impl Add for Vec { fn add(p, q) = " ++
+  "match p { Vec(a, b) -> match q { Vec(c, d) -> " ++
+  "let x = a + c in (let y = b + d in Vec(x, y)) } } } " ++
+  body
+
+-- Vec(1,2) + Vec(3,4) = Vec(4,6) — named ctor intro, resolution through the NAMED impl target,
+-- ctor intro INSIDE the impl body (env-build pre-elaboration), named match to project.
+#guard runTypedYieldsInt 800 (vecDataProg
+  "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> x }") 4
+#guard runTypedYieldsInt 800 (vecDataProg
+  "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> y }") 6
 
 end Bang.TypeCheck
