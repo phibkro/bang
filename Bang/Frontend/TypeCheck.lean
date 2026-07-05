@@ -619,18 +619,128 @@ check-mode then drives T_Fold via `unrollMu`; no new typing rule. -/
 def ctorIntro (ci : CtorInfo) (payload : Surf) : Surf :=
   .annotS (.foldS (injSum ci.idx ci.total payload)) ci.dataTy
 
-/-- The effect row a `let rec` CALL-SITE carries (#46, ADR-0073 §2). v1: unconditionally `{divLabel}`
-— recursion may not terminate (the ADR-0028 total/`Div` seam, made type-visible). **THE #47 SEAM:** a
-termination checker makes this CONDITIONAL — return `⊥` when the argument's structural decrease is
-provable, so provably-total recursion stays in the total (⊥-row) fragment. Single computed point.
+/-- Shadow `bs` out of a subterm-tracking set, then (if `add`) re-introduce them AS subterms. Every
+binder shadows — a re-bound name is no longer the tracked parameter/subterm, which is what keeps the
+analysis SOUND under name-shadowing; only a match/split on a `matchable` scrutinee re-adds its pattern
+binders (they are strict subterms of the parameter). -/
+def shadowAdd (bs : List String) (add : Bool) (l : List String) : List String :=
+  let l' := l.filter (fun n => !bs.contains n)
+  if add then bs ++ l' else l'
 
-**UNDER-APPROXIMATION (v1, DELIBERATE — Option A, #46):** Div is seeded ONLY on the OUTER knot (what
-the user CALLS), so a `let rec`'s call-site row carries Div and it propagates to callers. The INNER
-recursive self-calls are typed pure `⊥`. This is operationally SOUND — Div has NO runtime semantics
-(`divMark` erases at lowering; execution is byte-identical) — and it keeps the μ-fold + the #45
-thunk-check arm untouched. Full inner+outer threading (self-calls Div-typed too) is Option B, deferred
-to the "⊥-row ⟹ terminates" totality-soundness work that would actually need that extra precision. -/
-def letRecRow (_name : String) (_funBody : Surf) : EffRow := {divLabel}
+/-- Is `s` a variable currently known to be the recursion parameter or a strict subterm of it (so
+matching it yields strict subterms)? Only a bare variable qualifies — matching a COMPUTED value gives
+no subterm-of-parameter guarantee. -/
+def scrutMatch (matchable : List String) : Surf → Bool
+  | .var v => matchable.contains v
+  | _      => false
+
+mutual
+/-- **The #47 structural-termination certifier — SOUND, deliberately incomplete.** `structOK name
+matchable subterms body` = `true` iff EVERY occurrence of the recursive function `name` in `body` is a
+call `($name) v` whose argument `v` is a STRICT SUBTERM of the recursion parameter — a field pattern-
+bound by `match`/`let (..)`-ing the parameter (or an already-established subterm). `matchable` tracks
+the parameter + its subterms (things you may match to descend); `subterms` tracks the strict subterms
+(the only legal recursive-call arguments). Well-founded by the FINITE DEPTH of a `data` value: each
+call strips ≥1 constructor, so no infinite descent.
+
+CONSERVATIVE BY CONSTRUCTION — the default is `false` (⟹ the caller keeps `Div`). Anything not
+manifestly structural is rejected: a bare `name`, a `$name` not applied to a subterm, a call on a
+non-subterm (`($f) x`, `($f)(n-1)` on `Int` — ℤ has no data-floor, ADR-0067), `name` passed as a value,
+or a match on a NON-parameter value (its fields are not subterms of the parameter). Sound under
+shadowing (every binder shadows via `shadowAdd`). Missing a terminating function (→ `Div`) is fine;
+certifying a diverging one is a SOUNDNESS BUG, so we never guess.
+
+DEFERRED (conservatively `Div`, each needs more than this syntactic check): multi-argument / curried
+recursion (`letRecRow` rejects a nested `fun`), lexicographic descent, well-founded numeric MEASURES
+(needs a `Nat`/floor type — ADR-0067's ℤ is unbounded), and subterm-aliasing through `let`. -/
+def structOK (name : String) (matchable subterms : List String) : Surf → Bool
+  | .lit _          => true
+  | .unitS          => true
+  | .getS           => true
+  | .var g          => g != name                    -- a bare `name` (used as a value) is non-structural
+  | .thunk e        => structOK name matchable subterms e
+  | .force (.var g) => g != name                    -- `$name` NOT immediately applied to a subterm → reject
+  | .force e        => structOK name matchable subterms e
+  | .app (.force (.var g)) a =>
+      if g == name then
+        match a with | .var v => subterms.contains v | _ => false   -- structural iff arg is a subterm var
+      else structOK name matchable subterms a                       -- callee `$g` (g ≠ name) is name-free
+  | .app f a        => structOK name matchable subterms f && structOK name matchable subterms a
+  -- Binders that RE-BIND the recursion name shadow it — `$name` there is NOT the recursion, so the
+  -- structural argument tells us nothing about it. REFUSE to certify (soundness > completeness).
+  | .lett v e b     => v != name && structOK name matchable subterms e &&
+                       structOK name (shadowAdd [v] false matchable) (shadowAdd [v] false subterms) b
+  | .lam v b        => v != name &&
+                       structOK name (shadowAdd [v] false matchable) (shadowAdd [v] false subterms) b
+  | .ifS c t e      => structOK name matchable subterms c && structOK name matchable subterms t
+                       && structOK name matchable subterms e
+  | .binopS _ a b   => structOK name matchable subterms a && structOK name matchable subterms b
+  | .pairS a b      => structOK name matchable subterms a && structOK name matchable subterms b
+  | .inlS e         => structOK name matchable subterms e
+  | .inrS e         => structOK name matchable subterms e
+  | .foldS e        => structOK name matchable subterms e
+  | .unfoldS e      => structOK name matchable subterms e
+  | .raise e        => structOK name matchable subterms e
+  | .handle e       => structOK name matchable subterms e
+  | .putS e         => structOK name matchable subterms e
+  | .stateS a b     => structOK name matchable subterms a && structOK name matchable subterms b
+  | .atomS e        => structOK name matchable subterms e
+  | .newS e         => structOK name matchable subterms e
+  | .readS e        => structOK name matchable subterms e
+  | .writeS a b     => structOK name matchable subterms a && structOK name matchable subterms b
+  | .annotS e _     => structOK name matchable subterms e
+  | .divMark e      => structOK name matchable subterms e
+  | .matchS s xl el xr er =>
+      xl != name && xr != name &&
+      let sm := scrutMatch matchable s
+      structOK name matchable subterms s &&
+      structOK name (shadowAdd [xl] sm matchable) (shadowAdd [xl] sm subterms) el &&
+      structOK name (shadowAdd [xr] sm matchable) (shadowAdd [xr] sm subterms) er
+  | .splitS a b p body =>
+      a != name && b != name &&
+      let sm := scrutMatch matchable p
+      structOK name matchable subterms p &&
+      structOK name (shadowAdd [a, b] sm matchable) (shadowAdd [a, b] sm subterms) body
+  | .matchD s arms  =>
+      structOK name matchable subterms s && structOKArms name matchable subterms (scrutMatch matchable s) arms
+  | .withCapS _ init v body =>
+      v != name && structOK name matchable subterms init &&
+      structOK name (shadowAdd [v] false matchable) (shadowAdd [v] false subterms) body
+  | .dotPerform recv _ args =>
+      structOK name matchable subterms recv && structOKArgs name matchable subterms args
+  | .letRecS gname _ fb bd =>                         -- nested let rec: a re-bound `gname` shadows our name
+      gname != name && structOK name matchable subterms fb && structOK name matchable subterms bd
+/-- Per-arm structural check: a matchable scrutinee (`sm`) makes each arm's pattern binders strict
+subterms of the parameter; a non-matchable one only shadows them. -/
+def structOKArms (name : String) (matchable subterms : List String) (sm : Bool) : DArms → Bool
+  | .nil => true
+  | .cons _ bs b r =>
+      !bs.contains name &&                            -- an arm binder shadowing the recursion name → reject
+      structOK name (shadowAdd bs sm matchable) (shadowAdd bs sm subterms) b &&
+      structOKArms name matchable subterms sm r
+def structOKArgs (name : String) (matchable subterms : List String) : SurfArgs → Bool
+  | .none    => true
+  | .one a   => structOK name matchable subterms a
+  | .two a b => structOK name matchable subterms a && structOK name matchable subterms b
+end
+
+/-- The effect row a `let rec` CALL-SITE carries (#46/#47, ADR-0073 §2). Recursion may not terminate —
+the ADR-0028 total/`Div` seam, made type-visible — UNLESS the #47 structural check (`structOK`) proves
+every recursive call descends on a strict `data` subterm, in which case the function is in the TOTAL
+fragment and carries `⊥` (no `Div`). SOUND, incomplete: an uncertified function conservatively keeps
+`{divLabel}` (it still RUNS, fuel-bounded — the `Div` escape hatch is what lets the check be aggressive
+without a rejection tax). v1 certifies SINGLE-parameter DIRECT structural recursion; measures /
+multi-arg / lexicographic are deferred (see `structOK`) — those stay `Div`.
+
+Placement note (#46, unchanged): `Div` is seeded on the OUTER knot only (`buildLetRec`); the inner
+self-calls are typed pure `⊥` (Option A) — operationally sound since `Div` has no runtime semantics. -/
+def letRecRow (name : String) (funBody : Surf) : EffRow :=
+  match funBody with
+  | .lam x body =>
+      match body with
+      | .lam _ _ => {divLabel}                                   -- curried / multi-arg: DEFERRED → Div
+      | _        => if structOK name [x] [] body then ∅ else {divLabel}
+  | _ => {divLabel}                                              -- not a `fun` literal → Div (conservative)
 
 /-- The μ-encoded fixpoint for `let rec f : T = <funBody'> in <bodyExpr'>` (ADR-0073; Landin's knot,
 NO new kernel primitive). `funBody'`/`bodyExpr'` are ALREADY elaborated (with `f : Thunk T` in scope).
@@ -1240,6 +1350,70 @@ call-site only (`letRecRow`'s documented under-approximation); #47 makes `letRec
 -- and a plain (non-rec) thunked function — same `Thunk (Int -> Int)` SHAPE as a `let rec`'s `f`, but
 -- bound by a normal `let` — its call stays ⊥ (Div is the `let rec` marker, not the thunk shape).
 #guard (match check "let f = ( {fun x => x + 1} : Thunk (Int -> Int) ) in ($f) 5" with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+
+/-! ### Validation ⑨g — STRUCTURAL termination ELIMINATES Div (ADR-0073 §2 refinement, #47).
+
+`structOK` certifies a `let rec` TOTAL (⊥-row, no Div) iff every recursive call descends on a strict
+`data` subterm of the parameter. SOUNDNESS is the contract: a genuinely-partial function must NEVER be
+certified. So the guards run BOTH ways — structural-on-`data` flips to ⊥ (and still RUNS identically),
+while Int recursion + adversarial structural-LOOKING-but-diverging cases STAY Div. -/
+def listRec (defn body : String) : String := "data List = Nil | Cons(Int, List) " ++ defn ++ " " ++ body
+def lenDef : String := "let rec len : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> 1 + ($len) t } in"
+def smDef  : String := "let rec sm : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> h + ($sm) t } in"
+-- CERTIFIED TOTAL: structural recursion on the List tail `t` (a Cons field) ⟹ ⊥-row, no Div.
+#guard (match checkProg (listRec lenDef "($len)(Cons(7, Cons(8, Cons(9, Nil))))") with
+        | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+#guard displayProg (listRec lenDef "($len)(Cons(7, Cons(8, Cons(9, Nil))))") == "Int"
+#guard (match checkProg (listRec smDef "($sm)(Cons(1, Cons(2, Nil)))") with
+        | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+-- and it STILL RUNS identically (⊥ vs Div is type-only): len [7,8,9] = 3, sm [1,2] = 3.
+#guard runTypedYieldsInt 2000 (listRec lenDef "($len)(Cons(7, Cons(8, Cons(9, Nil))))") 3
+#guard runTypedYieldsInt 2000 (listRec smDef  "($sm)(Cons(1, Cons(2, Nil)))") 3
+-- TRANSITIVE descent certifies too: recurse on `t2`, a subterm of `t`, a subterm of `xs` (nested match)
+-- — the second element, terminating, ⊥-row.
+#guard (match checkProg (listRec
+        "let rec sec : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> match t { Nil -> h, Cons(h2, t2) -> ($sec) t2 } } in"
+        "($sec)(Cons(5, Cons(6, Nil)))") with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+-- mixed calls: ONE structural + ONE on the parameter → the whole function stays Div (ANY bad call taints).
+#guard (match checkProg (listRec
+        "let rec f : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> ($f) t + ($f) xs } in" "($f)(Cons(1, Nil))")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- adversarial ⑤ (Div/effect CALLEE — the audit's case): a STRUCTURAL `let rec` (so `letRecRow` returns
+-- ⊥ for its OWN recursion) whose body CALLS a `Div` function `sum` is NOT silently typed total. The
+-- structural ⊥ verdict does NOT strip the callee's Div — instead the μ-knot's recursive thunk must be
+-- PURE (`recTy`'s `tThunk` ⟹ ⊥ bound), so a body carrying ANY latent effect (Div from `sum`, or throws
+-- from `raise` — both reject identically) EXCEEDS the bound and is REJECTED at type-check ("thunk body
+-- effect exceeds the declared bound"). SOUND: the diverging `f` is a TYPE ERROR, never a ⊥ verdict. This
+-- rejection is the #45 fold-payload check, INDEPENDENT of #47's ⊥/Div choice (a `let rec`-body-purity
+-- limit that predates #47); Div-PROPAGATION instead of rejection would need the deferred #46 Option B
+-- machinery (a recursive thunk that carries effects). (`bang eval` still RUNS it — the untyped superset.)
+#guard (match checkProg
+        ("data List = Nil | Cons(Int, List) let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in " ++
+         "(let rec f : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> ($sum) h + ($f) t } in ($f)(Cons(3, Nil)))")
+        with | .error _ => true | _ => false)
+-- SOUNDNESS — genuinely-partial functions are NOT certified (STAY Div):
+-- Int countdown DIVERGES on negative n (unbounded ℤ, no floor, ADR-0067) — `n-1` is no data subterm.
+#guard (match checkProg "let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in ($sum) 5"
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- adversarial ①: recurse on the RECONSTRUCTED value `Cons(h, t)` (= xs) — structural-LOOKING (matches a
+-- Cons) but the arg is a ctor application, not a bound subterm var → diverges → MUST stay Div.
+#guard (match checkProg (listRec
+        "let rec f : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> ($f)(Cons(h, t)) } in" "($f)(Cons(1, Nil))")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- adversarial ②: recurse on the PARAMETER unchanged in a branch — not a strict subterm → stays Div.
+#guard (match checkProg (listRec
+        "let rec f : List -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> ($f) xs } in" "($f)(Cons(1, Nil))")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- adversarial ③: recurse on a field of a DIFFERENT (let-bound) value, not the matched parameter → Div.
+#guard (match checkProg (listRec
+        "let rec f : List -> Int = fun xs => (let zs = Cons(0, xs) in match zs { Nil -> 0, Cons(h, t) -> ($f) t }) in" "($f)(Cons(1, Nil))")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- adversarial ④ (SHADOWING): the recursion name `f` is RE-BOUND by an inner `let f` — so `($f) t` is
+-- NOT the recursion, and the structural arg tells us nothing about it. If the inner `f` called a
+-- diverging function the whole thing would diverge, so certifying would be UNSOUND → refuse (stay Div).
+#guard (match checkProg (listRec
+        "let rec f : List -> Int = fun xs => (let f = ( {fun ys => 0} : Thunk (List -> Int) ) in match xs { Nil -> 0, Cons(h, t) -> ($f) t }) in" "($f)(Cons(1, Nil))")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
 
 /-! ### The northstar, in its INTENDED spelling: `Vec` as a NAMED type (ADR-0069 consequence). -/
 
