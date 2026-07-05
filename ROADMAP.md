@@ -101,24 +101,31 @@ WAVE 1 — ERGONOMICS (make it pleasant; every item is a dogfooding pain point)
   #10 elaborator error quality — the misleading "unbound m" (symptom, not cause)
   #7  REPL                     — iteration speed (would have made dogfooding far faster)
 
-WAVE 2 — THE FORK (operator's steer: two different north-stars)
-  (a) RECURSION path → "bang writes real programs / its own tools"
+WAVE 2 — THREE NORTH-STAR DIRECTIONS (operator sequences them; each design-first, ≈post-v1)
+  (a) RECURSION → "bang writes real programs / its own tools"
         #42 recursive functions (fix + the Div row; Q28 marker) → strings → then a tokenizer,
-        a calculator interpreter, small toolchain tools become possible. Design-first (ADR).
-  (b) POLYMORPHISM path → "bang has a generic, lawful, verified stdlib"
+        a calculator interpreter, small toolchain tools become possible.
+  (b) POLYMORPHISM → "bang has a generic, lawful, verified stdlib"
         ADR-0027 stage 2 (HM) → generic containers + generic lawful traits → Q26 optics
-        (the lawful-polymorphism north-star) → the HKT fork (Functor/Monad). Design-first.
+        (the lawful-polymorphism north-star) → the HKT fork (Functor/Monad).
+  (c) USER-DEFINED EFFECTS & HANDLERS → "paradigm is a value" MADE REAL — THE MOAT
+        #44: a GENERAL kernel handler (op→clause maps + continuation binding) + an `effect`
+        decl + a handler expression. The furthest (spine-touching: ripples to the calculated
+        machine + LR + soundness) but the most ON-THESIS — the three built-in effects are
+        scaffolding; the north-star claim is unproven until a user defines their own. The
+        machinery exists specialized (throws/state already capture+resume k); resumption
+        grades (#17/Q27) are its type cost.
 
 WAVE 3 — VERIFICATION COMPLETION (parallel, verification-spine layer)
   #15 lr_sound ◊4 seam (the one sorryAx-carried headline; design-first) · #17/Q27 resumption
   grades → compilation strategy · Q21 concurrency (the multikernel) · #16 U5b-handler
 ```
 
-**The Wave-2 fork is the load-bearing steer.** Recursion (#42) is the gate to *toolchain-capable* —
-the dogfood verdict was "can't write tools yet: no recursion, no strings." Polymorphism (ADR-0027) is
-the gate to the *generic lawful stdlib + optics thesis* (Q26). Both are substantial, design-first,
-and roughly post-v1; they advance **different** identities. This is the operator's call, not a
-sequencing default.
+**Wave 2 is the load-bearing steer.** Three directions, three identities: recursion (#42) → *toolchain-capable*
+(the dogfood verdict: "can't write tools yet — no recursion, no strings"); polymorphism (ADR-0027) → the
+*generic lawful stdlib + optics thesis* (Q26); user-defined effects (#44) → *"paradigm is a value" made
+real* — the moat, and the most on-thesis though furthest. All substantial, design-first, roughly post-v1.
+The operator sequences them; not a default.
 
 ### Pratt downstream — ready-to-dispatch units (once #30 ① lands)
 

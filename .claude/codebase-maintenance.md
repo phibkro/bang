@@ -133,6 +133,29 @@ Each debt category in this repo (proof · trust · oracle · SSoT · frozen-stat
 doc-drift · worktree-sprawl) maps to a maintenance-object row above and the guard that makes it
 unrepresentable; the instinct is the same across all of them.
 
+## IC workflow: reflink-worktree for edit+build, but the IC does NO git writes (2026-07-05 infra decision)
+
+**The recurring shared-store corruption is triggered by the IC's COMMIT into the shared `.git/objects`**
+(the index-cache-tree ghost surfaces at commit-tree-build; 4 incidents in one session, all recovered
+zero-loss — memory `shared-worktree-git-autogc-corruption`). The reflink seed (below) and #43 fixed the
+mathlib-reclone and cache-get vectors, but NOT this one. The proven-3× cure IS the default workflow:
+
+```
+IC:       work in a reflink worktree (tools/new-worktree.sh) — isolated EDIT + BUILD + GATE.
+          Build green, run the guards/fitness, copy the final file(s) to the SESSION SCRATCHPAD.
+          Then STOP and report the verified file path(s) + the gate results.  ← NO git add/commit/push.
+MANAGER:  read the IC's file(s) from the scratchpad (or the worktree), apply to the HEALTHY main tree
+          (sole writer), RE-GATE by building the landed content myself (the real gate — never the
+          IC's summary), commit by pathspec on main, push. Then `git worktree remove` the IC's tree.
+```
+
+Why: the IC never touches git ⟹ its index never corrupts ⟹ no incident. The manager's git writes are
+on main (healthy, timing-controlled). Cost: the manager re-builds on main — but I gate the landed
+content anyway, so it's not extra work, it's the gate. This SUPERSEDES the old "IC commits + pushes its
+branch; manager gates the sha + merges" brief for this shared-store setup. (A full per-IC CLONE would
+also isolate the object store and let the IC commit normally, at a disk cost — revisit if throughput
+demands parallel committing ICs; for a serialized single-writer-to-main flow, no-git-writes is simpler.)
+
 ## Worktree teardown safety (the designated SoT — memory `parallel-agent-writes-need-worktrees` homes this rule here)
 
 Worktree cleanup is a **destructive op**, and the multi-agent setup makes "is this worktree done?"
