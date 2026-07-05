@@ -94,6 +94,16 @@ types into thunks) landed to unblock the higher-order payload.
   where the representation should be driven by the proof. The `letRecRow` seam (v1 `{divLabel}`,
   computed) is the single point **#47** (termination checker) flips to ⊥ for provably-terminating
   recursion → the total fragment.
+- **§2 refinement `#47` — LANDED (`0f8e244`).** `letRecRow` now COMPUTES from the pre-desugar funBody:
+  `structOK` certifies ⊥ (total) iff every recursive call descends on a strict `data` SUBTERM of the
+  parameter (structural recursion; well-founded by finiteness). Structural folds (`len`/`sm`/transitive
+  `sec`) → ⊥; genuinely-partial recursion stays `Div` — incl. the Int countdown (unbounded ℤ has NO
+  floor → diverges on negatives, ADR-0067). SOUND (conservative default-`Div`; adversarial guards +
+  manager line-by-line audit). So **`Div` now means "couldn't prove termination," not "is recursive."**
+  DEFERRED (conservatively `Div`): numeric MEASURES (need a `Nat`/floor — Q31; inductive `Nat` would
+  make measure-recursion STRUCTURAL, certified free), multi-arg, lexicographic. Separate gap: effectful
+  recursion (a `let rec` body can't carry latent effects — rejected by the #45 fold-payload check;
+  fix = Option B) → **#48**.
 
 Earlier note (the #41 gap, now CLOSED by `8e2e132`): μ-recursion needed the `if` condition
 A-normalized by hand; #41 fixed value-position A-normalization so it reads naturally.

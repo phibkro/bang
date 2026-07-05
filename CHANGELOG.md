@@ -36,6 +36,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — A-normalize value-position computations — recursion + lawful demos read naturally (#41, closes #41) (`8e2e132`)
 - **surface** — let rec — recursion is user-facing (ADR-0073 §1, μ-encoding, no new primitive) (`0f771c6`)
 - **typecheck** — Div-row — recursion's partiality is type-visible (#46, closes #46, ADR-0073 §2) (`0397adc`)
+- **typecheck** — structural termination checker — Div is now PRECISE (#47, closes #47, ADR-0073 §2) (`0f8e244`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
