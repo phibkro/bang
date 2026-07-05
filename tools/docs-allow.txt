@@ -1,0 +1,15 @@
+# tools/docs-allow.txt — docs/notes/*.md that are intentionally UNREACHABLE.
+#
+# Read by tools/check-doc-hygiene.py. A note reachable from no entry doc (CLAUDE.md
+# index, ONBOARDING, an ADR, a PATH, or another reachable note) is an ORPHAN and
+# fails the check — UNLESS its basename is listed here with a reason. The
+# refs-allow.txt pattern applied to inbound reachability: an intentional terminal
+# doc is a greppable, reasoned entry, not a silent orphan.
+#
+# Prefer FIXING over allowlisting: link the note from the CLAUDE.md reference index
+# (if it is active reference) or from its governing ADR/PATH (if it is archival
+# input). Only a genuinely standalone terminal doc — reachable by design from
+# nothing — belongs here. History-only content should be DELETED (git preserves it),
+# not allowlisted.
+#
+# (empty — every docs/notes/*.md is currently reachable)

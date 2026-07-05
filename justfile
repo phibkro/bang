@@ -85,6 +85,7 @@ fitness:
     bash tools/check-audit-sync.sh
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
+    python3 tools/check-doc-hygiene.py --check
     python3 tools/refs.py check
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
