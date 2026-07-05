@@ -32,6 +32,7 @@
 -/
 
 import Bang.Frontend.Surface
+import Bang.Frontend.TypeCheck
 import Bang.Backend.AbstractMachine
 
 open Bang
@@ -88,12 +89,14 @@ The flag changes ONLY the execution engine — parse/lower errors are identical.
 `done` → stdout + 0; every failure outcome → a clear stderr line + a distinct
 nonzero code (fail-loud, ADR-0063). -/
 def runSource (compiled : Bool) (src : String) : IO UInt32 := do
-  match Bang.Surface.parse src with
-  | .error e => IO.eprintln s!"parse error: {e}"; pure 1
-  | .ok surf =>
-    match Bang.Surface.lower surf with
-    | .error e => IO.eprintln s!"lower error: {e}"; pure 1
-    | .ok c =>
+  -- The TYPED pipeline (ADR-0068/0069/0070): `parseProg` reads a `trait`/`impl`/`data`
+  -- declaration prelude + body; `elabProg` resolves data constructors, named matches, and
+  -- type-directed operators (`Vec + Vec`) into the kernel `Surf`; then lower + run. A plain
+  -- decl-free program parses to `⟨[], body⟩` and elaborates to itself, so this is a strict
+  -- superset of the old untyped path — no regression, and the whole MVP surface is now runnable.
+  match Bang.TypeCheck.elaborateToComp src with
+  | .error e => IO.eprintln s!"error: {e}"; pure 1
+  | .ok c =>
       if compiled then runCompiled c
       else
       match Bang.Source.eval defaultFuel c with

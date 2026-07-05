@@ -822,6 +822,16 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
 def elabProg (p : Prog) : Except String Surf := do
   elabS (← buildEnv p.decls) [] p.body
 
+/-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
+prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
+like `Vec + Vec`), and lower to a kernel `Comp` ready for `Source.eval`/the machine. A decl-free
+program parses to `⟨[], body⟩` and elaborates to itself, so this is a strict SUPERSET of the old
+`Surface.lower ∘ parse` runner path — the whole MVP surface becomes runnable from the CLI. -/
+public def elaborateToComp (src : String) : Except String Comp := do
+  let prog ← Bang.Surface.parseProg src
+  let e ← elabProg prog
+  Bang.Surface.lower e
+
 /-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
 def checkProg (src : String) : Except String (CT × EffRow) := do
   synthSC [] (← Bang.Surface.parseProg src >>= elabProg)

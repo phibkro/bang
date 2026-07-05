@@ -27,6 +27,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — data declarations — named ctors/match over sums·products·μ; Vec northstar in its intended spelling (#2, ADR-0069) (`a59cc48`)
 - **cli** — compiled path — bang run/eval --compiled runs exec∘compile, differentially gated (#6, closes #6) (`8d40928`)
 - **surface** — named capabilities — with H as h in e + h.op, two state cells at once (#3, closes #3, ADR-0070) (`dadafad`)
+- **calcvm** — binop δ-rule in the calculated machine — arithmetic on --compiled (#40, closes #40) (`d10f946`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
