@@ -338,6 +338,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
                      | .mu A => .ok (.F 1 (VTy.unrollMu A), ⊥)
                      | _     => .error "unfold: not a μ value"
   | .matchD .. => .error "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
+  | .letRecS .. => .error "let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (ADR-0073)"
   -- ── ADR-0070 (named capabilities) ──
   | .withCapS kind init name body => do
       match capKindLabel kind with
@@ -615,6 +616,19 @@ check-mode then drives T_Fold via `unrollMu`; no new typing rule. -/
 def ctorIntro (ci : CtorInfo) (payload : Surf) : Surf :=
   .annotS (.foldS (injSum ci.idx ci.total payload)) ci.dataTy
 
+/-- The μ-encoded fixpoint for `let rec f : T = <funBody'> in <bodyExpr'>` (ADR-0073; Landin's knot,
+NO new kernel primitive). `funBody'`/`bodyExpr'` are ALREADY elaborated (with `f : Thunk T` in scope).
+`Rec = μX. Thunk(X -> T)`; the self-knot `{ let #g = unfold sv in ($#g) sv } : Thunk T` reconstructs
+`f` from a self-value (`unfold` returns a RETURNER of the thunk, so it is let-bound before forcing —
+the #45 spike's shape). Emits only ordinary `Surf` the existing checker + kernel handle. -/
+def buildLetRec (name : String) (t' : Ty) (funBody' bodyExpr' : Surf) : Surf :=
+  let recTy : Ty := .tMu (.tThunk (.tArr (.tVar 0) t'))     -- μX. Thunk(X -> T)
+  let knot : String → Surf := fun sv =>
+    .thunk (.lett "#g" (.unfoldS (.var sv)) (.app (.force (.var "#g")) (.var sv)))
+  let inner : Surf := .annotS (.lam "#self" (.lett name (knot "#self") funBody')) (.tArr recTy t')
+  let recVal : Surf := .annotS (.foldS (.thunk inner)) recTy
+  .lett "#rec" recVal (.lett name (knot "#rec") bodyExpr')
+
 /-- Bind a match arm's payload binders over the payload variable (arity ≤ 2). -/
 def bindPayload : List String → String → Surf → Surf
   | [],       _, body => body
@@ -724,12 +738,36 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             let (_, w, v) ← anfSplit Γ a'
             return w (ctorIntro ci v)
       | none    => do return .app (.var c) (← elabS env Γ a)
-  | Γ, .app f a     => do return .app (← elabS env Γ f) (← elabS env Γ a)
+  | Γ, .app f a     => do                     -- A-normalize a computation ARGUMENT (`($f)(n-1)`), #41
+      let f' ← elabS env Γ f
+      let a' ← elabS env Γ a
+      let (_, wrap, av) ← anfSplit Γ a'
+      return wrap (.app f' av)
   | Γ, .ifS c t e   => do                     -- A-normalize a computation condition (`n == 0`), #41
       let c' ← elabS env Γ c
       let (Γ1, wrap, cv) ← anfSplit Γ c'
       return wrap (.ifS cv (← elabS env Γ1 t) (← elabS env Γ1 e))
   | Γ, .lam x b     => do return .lam x (← elabS env Γ b)
+  -- `let rec f : T = <fun> in <body>` → the μ-encoded fixpoint (Landin's knot, ADR-0073; NO new
+  -- kernel primitive — invariant #5). `Rec = μX. Thunk(X -> T)`; the self-knot `{ let #g = unfold sv
+  -- in ($#g) sv } : Thunk T` reconstructs `f` from a self-value, so `f : Thunk T` is in scope in its
+  -- OWN body (and the outer body) — call it as `($f) arg`. `unfold` is a RETURNER of the thunk, so it
+  -- is let-bound before forcing (the #45 spike's shape, generalized per-function; monomorphic + the
+  -- `: T` annotation drives check-mode on the recursive `fun`). The whole thing type-checks + lowers
+  -- through the EXISTING checker/kernel — the desugar emits only ordinary `Surf`.
+  | Γ, .letRecS name t (.lam pn pbody) bodyExpr => do
+      let t' ← resolveTy env.aliases t
+      let uT : VT := .U ⊥ (ctyOf t')                          -- f : Thunk T
+      let dom : VT := match tyBoth t' with                     -- the fun's param type (domain of T)
+        | (_, .arr _ A _) => A
+        | _               => .tvar 997                          -- POISON: T not a function → fails loud below
+      -- f in scope in its OWN body, param bound (the `: T` annotation drives the check); annotate the
+      -- user `fun` with `T` (its param already elaborated under `dom`, so re-check-mode is a no-op).
+      let pbody' ← elabS env ((pn, dom) :: (name, uT) :: Γ) pbody
+      let bodyExpr' ← elabS env ((name, uT) :: Γ) bodyExpr
+      return buildLetRec name t' (.annotS (.lam pn pbody') t') bodyExpr'
+  | _, .letRecS _ _ _ _ =>
+      .error "let rec requires a function literal: `let rec f : T = fun x => … in …` (ADR-0073)"
   | Γ, .lett x e b  => do
       let e' ← elabS env Γ e
       match synthSC Γ e' with                  -- report the RHS's REAL error, not a downstream unbound (#41)
@@ -1132,6 +1170,31 @@ def recProg : String :=
   ": Int -> Int ) : Rec -> Int -> Int ) }) in "
 #guard runTypedYieldsInt 4000 (recProg ++ "(match r { Rec(g) -> ($g) r 5 })") 15
 #guard runTypedYieldsInt 4000 (recProg ++ "(match r { Rec(g) -> ($g) r 3 })") 6
+
+/-! ### Validation ⑨e — `let rec` SURFACE SUGAR (ADR-0073 §1): recursion, user-spellable.
+
+`let rec f : T = <fun> in <body>` desugars (in `elabS`) to the μ-knot above — `Rec = μX. Thunk(X -> T)`
++ Landin self-application — so users write recursion directly, never the raw fold/unfold. `f : Thunk T`
+is in scope in its own body; call it `($f) arg`. Annotation-required + monomorphic (v1); NO new kernel
+primitive (invariant #5). Spelled NATURALLY (the recursive-call arg `($f)(n-1)` is a computation, now
+A-normalized like every other value position, #41). Div-row (ADR-0073 §2) is DEFERRED — see the ADR. -/
+-- countdown-sum 5+4+3+2+1+0 = 15, the recursive call written `($sum)(n - 1)` (computation arg).
+#guard runTypedYieldsInt 4000
+  "let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in ($sum) 5" 15
+-- factorial 5! = 120 (multiplicative recursion).
+#guard runTypedYieldsInt 4000
+  "let rec fac : Int -> Int = fun n => if n == 0 then 1 else n * ($fac)(n - 1) in ($fac) 5" 120
+-- a let-BOUND recursive-call arg is equivalent (the pre-#41 spelling still works).
+#guard runTypedYieldsInt 4000
+  "let rec sum : Int -> Int = fun n => if n == 0 then 0 else (let m = n - 1 in n + ($sum) m) in ($sum) 3" 6
+-- the desugar TYPES (checkProg ok); an UNBOUNDED recursion types too but ooms at runtime (the Div
+-- fragment — fuel-bounded reference, ADR-0073 §4): it types but does NOT yield.
+#guard (match checkProg
+  "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in ($loop) 0" with | .ok _ => true | _ => false)
+#guard (runTypedYieldsInt 500
+  "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in ($loop) 0" 0) == false
+-- non-function annotation fail-louds (the desugar needs a `fun` literal).
+#guard (match checkProg "let rec x : Int = 5 in x" with | .error _ => true | _ => false)
 
 /-! ### The northstar, in its INTENDED spelling: `Vec` as a NAMED type (ADR-0069 consequence). -/
 

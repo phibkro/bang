@@ -173,6 +173,8 @@ inductive Surf where
   -- ── ADR-0070 (named capabilities) ──
   | withCapS : String → Surf → String → Surf → Surf  -- state <init> as <name> in <body>  (named cap; also `handle as h e` / `atomically as h e`, ADR-0072)
   | dotPerform : Surf → String → SurfArgs → Surf     -- h.op(args) — perform op on the named cap
+  -- ── ADR-0073 (recursion) ──
+  | letRecS : String → Ty → Surf → Surf → Surf       -- let rec f : T = <fun> in <body>  (μ-knot; DESUGARED in elabS, typed-path only)
 
 /-- A cap-op argument list, capped at the v1 arity (≤ 2: `write` is the only binary op). A mutual
 inductive (not `List Surf`) so `Surf`'s `DecidableEq`/`Repr` derive — the `DArms` precedent. -/
@@ -366,6 +368,7 @@ def lowerC (env : List String) : Surf → Except String Comp
       | .ok v    => return .unfold v
       | .error _ => return .letC (← lowerC env e) (.unfold (.vvar 0))
   | .matchD .. => .error "named match needs the typed path (data declarations, ADR-0069) — run via checkProg/runTyped"
+  | .letRecS .. => .error "let rec needs the typed path (μ-encoded recursion, ADR-0073) — run via checkProg/runTyped"
   -- ── ADR-0070 (named capabilities) — `with` reuses the handler lowering with a USER name where the
   -- sentinel went; `h.op` is `perform (vvar h) op arg` (args A-normalized like the ambient ops). ──
   | .withCapS "state" init name body => do
@@ -666,6 +669,15 @@ def pExpr : Nat → P Surf
       let (_, ts) ← expect "in" ts
       let (body, ts) ← pExpr f ts
       .ok (.splitS a b p body, ts)
+  | f + 1, "let" :: "rec" :: ts => do    -- recursion: let rec f : T = <fun> in <body> (ADR-0073; annotation required)
+      let (name, ts) ← pIdent ts
+      let (_, ts) ← expect ":" ts
+      let (t, ts) ← pTy f ts
+      let (_, ts) ← expect "=" ts
+      let (e, ts) ← pExpr f ts
+      let (_, ts) ← expect "in" ts
+      let (body, ts) ← pExpr f ts
+      .ok (.letRecS name t e body, ts)
   | f + 1, "match" :: ts => do           -- match s { arms } — anonymous sums (Left/Right → matchS)
       let (s, ts) ← pAtom f ts            -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
       let (_, ts) ← expect "{" ts

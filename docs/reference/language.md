@@ -39,6 +39,7 @@ nothing here can drift from what the language actually does.
 | `named-ctor match (parse-only; ELIMINATED by the elaborator —` |  |
 | `state <init> as <name> in <body>` | (named cap; also `handle as h e` / `atomically as h e`, ADR-0072) |
 | `h.op(args) — perform op on the named cap` |  |
+| `let rec f : T = <fun> in <body>` | (μ-knot; DESUGARED in elabS, typed-path only) |
 
 ## Types
 
