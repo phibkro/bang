@@ -84,6 +84,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0064](0064-regrade-wscfg-to-carrier-indexed-liveness.md) | Accepted | Regrade `WScfg` to a carrier-indexed liveness invariant (`LiveCapsResolveV/C/K`), derived coherent from typing | The diagonal's preservation obligation `wsCfg_step` was carried by a **typeless** | — / — | — / — | — | — |
 | [0065](0065-arithmetic-base-type-delta-rules.md) | Accepted | Arithmetic & comparisons as base-type δ-rules (`Comp.binop`) — pure, ⊥-row | Integer arithmetic (`+ − × ÷`) and comparisons (`< ==`) enter the kernel as pure base-type δ-rules via ONE new computation form `Comp.binop : BinOp → Val → Val → Comp`, ⊥-row typed. Comparisons return `Bool = 1+1` (a sum), so `if` is surface sugar over `case`. A δ-rule is NOT a sixth computational primitive — invariant #5 governs effect/computation structure, not base-type operations. | — / — | — / — | — | [0029](0029-iso-recursive-adts.md), [0020](0020-de-bruijn-representation.md), [0007](0007-explicit-force-and-fixed-precedence.md) |
 | [0066](0066-surface-type-system.md) | Accepted | Surface type system — a bidirectional checker targeting the kernel `HasCTy` (tested-superset, grades-deferred) | The surface gains a TYPE LAYER — a bidirectional type-checker (`check ⇐` / `synth ⇒`) over the surface AST that produces typing conforming to the kernel's graded `HasVTy`/`HasCTy` relation. The relation stays the single source of truth; the checker is an ALGORITHM in the TESTED superset (its soundness vs `HasCTy` is differential-tested, not proven in v1). v1 checks type structure + effect rows; grades default to `ω` (grade-checking is a separable refinement). Unblocks #5 (effect-typed signatures), #24 (lawful algebra — type-directed operator resolution), #21 (scoped capability types). | — / — | — / — | — | [0019](0019-typing-context-split-gradevec-and-types.md), [0020](0020-de-bruijn-representation.md), [0028](0028-verified-core-tested-superset-stratification.md), [0029](0029-iso-recursive-adts.md) |
+| [0067](0067-integer-semantics-unbounded-v1.md) | Accepted | Integer semantics: unbounded ℤ in v1 — width is a verified optimization behind the oracle | v1 `Int` denotes unbounded ℤ — the oracle's existing δ-rule (ADR-0065 `Comp.binop` over Lean `Int`) IS the spec, so the decision costs zero proof rework. Overflow is never undefined (vacuous under ℤ; binding on any future width). Width, if ever introduced, enters through the ORACLE via a new K-ADR — never backend-decided. The Wasm model's misnamed `i32` constructor is renamed; real-Wasm emission (post-v1) ships bignum first, i64 as a later verified optimization. | — / — | — / — | Q25 | [0065](0065-arithmetic-base-type-delta-rules.md), [0016](0016-two-hop-architecture-calcvm-and-wasmfx.md) |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 
@@ -101,6 +102,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | Q17 | [0027](0027-polymorphism-staged-monomorphic-v1.md) |
 | Q18 | [0029](0029-iso-recursive-adts.md) |
 | Q19 | [0040](0040-laws-as-algebraic-interfaces-proof-first.md) |
+| Q25 | [0067](0067-integer-semantics-unbounded-v1.md) |
 
 <!-- END GENERATED ADR INDEX -->
 

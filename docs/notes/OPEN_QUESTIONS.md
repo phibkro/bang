@@ -30,7 +30,11 @@
 - [Q18 — Data types: ADTs, inductive/coinductive, law attachment](#q18--data-types-adts-inductivecoinductive-law-attachment)  · ✓ RESOLVED (ADR-0029 — iso-recursive sum/product/μ)
 - [Q19 — Typeclasses/traits with laws (ad-hoc polymorphism + the laws surface)](#q19--typeclassestraits-with-laws-ad-hoc-polymorphism--the-laws-surface)  · ✓ RESOLVED (ADR-0040)
 - [Q20 — Surface extensibility: pseudoinstructions via aliasing + macros](#q20--surface-extensibility-pseudoinstructions-via-aliasing--macros)  · OPEN
+- [Q21 — Concurrent STM: the privileged shared-heap upgrade](#q21--concurrent-stm-the-privileged-shared-heap-upgrade)  · OPEN (deferred from ADR-0030)
 - [Q22 — Capability representation: labelling vs closure (multi-shot fork)](#q22--capability-representation-labelling-vs-closure-multi-shot-fork)  · OPEN (revisit at multi-shot)
+- [Q23 — `orElse`: how does the alternative discard the first branch's writes?](#q23--orelse-how-does-the-alternative-discard-the-first-branchs-writes)  · OPEN (rung-3 follow-on)
+- [Q24 — Surface concrete-syntax discipline: canonical vs lenient](#q24--surface-concrete-syntax-discipline-canonical-formatter-normalized-vs-lenient)  · OPEN (surface-layer)
+- [Q25 — Integer semantics: unbounded Int vs fixed-width](#q25--integer-semantics-unbounded-int-vs-fixed-width-width--overflow)  · ✓ RESOLVED (ADR-0067 — unbounded ℤ v1; width behind the oracle)
 
 > See also `design-space-map.md` (the survey) and **ADR-0026** (the correctness-ladder keystone that
 > resolved the proof-power dial, design-space #2).
@@ -975,7 +979,7 @@ friction from non-canonical diffs.
 
 ---
 
-## Q25 — Integer semantics: unbounded Int vs fixed-width (width + overflow)  · OPEN (decide before #6)
+## Q25 — Integer semantics: unbounded Int vs fixed-width (width + overflow)  · ✓ RESOLVED 2026-07-05 → ADR-0067
 
 **Question**: what is the *specified* semantics of `Int` — arbitrary precision (what the kernel oracle
 computes today) or fixed-width (i32/i64) with a defined overflow behavior?
