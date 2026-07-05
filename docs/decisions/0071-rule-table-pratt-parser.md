@@ -81,6 +81,27 @@ output), it fixes the precedence-quirk papercuts, and the `parsesTo` corpus is t
   root.
 - The dogfooding papercuts (whitespace, atomic-scrutinee) are addressed at ① and ④.
 
+## Stage ②b decision (2026-07-05): B — the bespoke/reified line is PRINCIPLED, not a gap
+
+Stages ①–④ are complete. For ②b (reifying the last 4 constructs), the decision is **B: keep them
+bespoke.** The 4 — `with … as h`, `let (a,b)`, `match`, `do` — are the genuinely *context-free*
+constructs: they need grammar features the linear Rule DSL deliberately lacks (alternation on a
+shared prefix for `with`/`let(`; a BP-parameterized sub-parse for `with state`'s init; repeating
+sub-grammars for `match` arms / `do` statements). The reified/bespoke line therefore tracks a real
+grammar-class boundary — *regular-ish constructs are reified (and render as clean railroad/precedence
+spec); context-free ones stay hand-written*. Reifying them (C-full) would grow the DSL toward a
+CFG-in-data, defeating the "simple, generable spec" purpose (the ECOOP sweet spot). This is a
+FEATURE to document, not debt.
+
+**Note (syntax ↔ grammar-class): the hardest-to-reify construct (`with … as h in b`) is also the
+one flagged as awkward-reading — not a coincidence.** Awkward surface syntax and grammar-irregularity
+are usually the same problem. A syntax revision that folds the named-capability binder into the
+existing per-effect forms (e.g. `state 5 as h in e` instead of `with state 5 as h in e`) would read
+more naturally AND dissolve the bespoke `with` case (it becomes an optional `as <ident>` slot on the
+already-reified `state` rule — regular, not context-free). If the `with … as` syntax is revised (a
+surface-only change, no kernel/lowering impact — amends ADR-0070), ②b is REVISITED for the affected
+construct: the cleaner form may reify cleanly. Tracked as a design option for ADR-0070.
+
 ## Revisit if
 
 - The reified-rule representation forces a parse-tree change that breaks a `parsesTo` guard — that is

@@ -30,6 +30,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **calcvm** — binop δ-rule in the calculated machine — arithmetic on --compiled (#40, closes #40) (`d10f946`)
 - **cli** — bang run/eval use the TYPED pipeline — data/traits/named-caps now runnable (`8e46e0f`)
 - **reference** — GENERATE the grammar spec from the reified parser rules (#30 stage ③, closes #38) (`e8bb614`)
+- **surface** — whitespace-insensitive tokenizer — the dominant dogfood papercut, killed (#30 stage ④, ADR-0071) (`97221cc`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
