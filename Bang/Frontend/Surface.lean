@@ -439,6 +439,15 @@ Tokenizer: WHITESPACE-INSENSITIVE (ADR-0071 ④) — punctuators and operators (
 and the maximal-munch `== => ->`) self-separate, so `a+b`/`x=1`/`->Self` need no spaces; a
 spaced program tokenizes identically. Identifiers/numbers/keywords are the remaining maximal runs. -/
 
+/-- Scan a quoted literal body up to (not including) the unescaped closing `delim`, KEEPING escape
+sequences RAW (`\n` stays the two chars backslash-n) for the parser to decode. `none` = unterminated
+(ran off the end without a closing delimiter). Total — structural on the char list. (ADR-0074, #49) -/
+def scanQuoted (delim : Char) : List Char → List Char → Option (String × List Char)
+  | '\\' :: c :: rest, acc => scanQuoted delim rest (c :: '\\' :: acc)   -- keep an escape pair raw
+  | d :: rest,         acc => if d == delim then some (String.ofList acc.reverse, rest)
+                              else scanQuoted delim rest (d :: acc)
+  | [],                _   => none
+
 /-- Split a source string into tokens — WHITESPACE-INSENSITIVE (ADR-0071 ④). Punctuators
 `(){}$!,;.` and the single-char operators `+ - * / < = |` are always their own token (no
 surrounding space needed); the multi-char operators `== => ->` are matched by MAXIMAL MUNCH,
@@ -450,23 +459,37 @@ grammar (`do`-bind uses `=`), so `<` stays single-char; `:` stays space-delimite
 the parser splits on). -/
 def tokenize (s : String) : List String :=
   let punct := "(){}$!,;.+*/<|".toList     -- punctuators (ADR-0070 `.`) + always-split single-char operators
-  let rec go (cs : List Char) (cur : List Char) (acc : List String) : List String :=
+  -- FUEL-driven (not structural): string/char literal scanning consumes a multi-char span via
+  -- `scanQuoted`, so recursion is on a suffix `scanQuoted` returns, not a `cs` sub-pattern. Fuel =
+  -- length+1 ≥ steps (each step drops ≥1 char, decrements fuel by 1), so it never bites. (#49)
+  let rec go (fuel : Nat) (cs : List Char) (cur : List Char) (acc : List String) : List String :=
     let flush (acc : List String) : List String :=
       if cur.isEmpty then acc else acc ++ [String.ofList cur.reverse]
     let emit (acc : List String) (t : String) : List String := (flush acc) ++ [t]
-    match cs with
-    | [] => flush acc
-    | '=' :: '=' :: rest => go rest [] (emit acc "==")     -- maximal munch: `==` before `=`
-    | '=' :: '>' :: rest => go rest [] (emit acc "=>")     --               `=>` before `=`
-    | '-' :: '>' :: rest => go rest [] (emit acc "->")     --               `->` before `-`
-    | c :: rest =>
+    match fuel, cs with
+    | 0, _ => flush acc
+    | _, [] => flush acc
+    | f + 1, '=' :: '=' :: rest => go f rest [] (emit acc "==")     -- maximal munch: `==` before `=`
+    | f + 1, '=' :: '>' :: rest => go f rest [] (emit acc "=>")     --               `=>` before `=`
+    | f + 1, '-' :: '>' :: rest => go f rest [] (emit acc "->")     --               `->` before `-`
+    -- STRING / CHAR literals (ADR-0074): scan the whole quoted span as ONE token (spaces inside are
+    -- kept), delimiters preserved so `pAtom` can tell it apart; unterminated ⟹ a lone-delim token it rejects.
+    | f + 1, '"' :: rest =>
+        match scanQuoted '"' rest [] with
+        | some (raw, rest') => go f rest' [] (emit acc ("\"" ++ raw ++ "\""))
+        | none              => flush acc ++ ["\""]
+    | f + 1, '\'' :: rest =>
+        match scanQuoted '\'' rest [] with
+        | some (raw, rest') => go f rest' [] (emit acc ("'" ++ raw ++ "'"))
+        | none              => flush acc ++ ["'"]
+    | f + 1, c :: rest =>
       if c = ' ' || c = '\n' || c = '\t' || c = '\r' then
-        go rest [] (flush acc)
+        go f rest [] (flush acc)
       else if c = '=' || c = '-' || punct.contains c then  -- single `=`/`-` (munch forms handled above), or a punct/op
-        go rest [] (emit acc (String.ofList [c]))
+        go f rest [] (emit acc (String.ofList [c]))
       else
-        go rest (c :: cur) acc
-  go s.toList [] []
+        go f rest (c :: cur) acc
+  go (s.length + 1) s.toList [] []
 
 /-- Parser state = remaining token list. The parser is a function
 `List String → Except String (α × List String)`. -/
@@ -479,6 +502,23 @@ def expect (tok : String) : P Unit
 /-- Is `s` a non-negative integer literal? -/
 def isIntLit (s : String) : Bool :=
   !s.isEmpty && s.toList.all Char.isDigit
+
+/-- Decode the backslash escapes bang string/char literals support: `\n \t \" \' \\` (ADR-0074).
+An unknown `\x` passes the `x` through (permissive; a spec Non-Feature is silent, not an error). -/
+def decodeEsc : List Char → List Char
+  | '\\' :: 'n'  :: rest => '\n' :: decodeEsc rest
+  | '\\' :: 't'  :: rest => '\t' :: decodeEsc rest
+  | '\\' :: '"'  :: rest => '"'  :: decodeEsc rest
+  | '\\' :: '\'' :: rest => '\'' :: decodeEsc rest
+  | '\\' :: '\\' :: rest => '\\' :: decodeEsc rest
+  | c :: rest            => c :: decodeEsc rest
+  | []                   => []
+
+/-- Desugar a decoded char list to the `Str` ctor chain (ADR-0074): `"" ⟹ SNil`, `c :: cs ⟹
+SCons(Char <codepoint>, …)`. The ctors resolve against the injected `Char`/`Str` prelude (elabProg). -/
+def strToSurf : List Char → Surf
+  | []      => .var "SNil"
+  | c :: cs => .app (.var "SCons") (.pairS (.app (.var "Char") (.lit (Int.ofNat c.toNat))) (strToSurf cs))
 
 /-- Parse an identifier token (not a keyword/punctuator). Non-recursive. -/
 def pIdent : P String
@@ -915,7 +955,15 @@ def pAtom : Nat → P Surf
       .ok (.force a, ts)
   | _ + 1, "get" :: ts => .ok (.getS, ts)
   | _ + 1, t :: ts =>
-      if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
+      let tc := t.toList
+      -- STRING literal `"…"` → the `Str` ctor chain; CHAR literal `'c'` → `Char <codepoint>` (ADR-0074).
+      if tc.length ≥ 2 && tc.head? == some '"' && tc.getLast? == some '"' then
+        .ok (strToSurf (decodeEsc (tc.drop 1).dropLast), ts)
+      else if tc.length ≥ 2 && tc.head? == some '\'' && tc.getLast? == some '\'' then
+        match decodeEsc (tc.drop 1).dropLast with
+        | [c] => .ok (.app (.var "Char") (.lit (Int.ofNat c.toNat)), ts)
+        | _   => .error "char literal must be exactly one character (e.g. 'a')"
+      else if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"

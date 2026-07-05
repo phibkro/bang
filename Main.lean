@@ -53,10 +53,20 @@ as the fail-loud non-value below. This maps fuel across the two engines; it does
 NOT redefine either. -/
 def compiledFuel : Nat := 1000000
 
+/-- A `Str` value (ADR-0074, #49) — `SNil = fold (inl ())`, `SCons(Char cp, …) = fold (inr (fold cp,
+…))` — rendered to its glyphs (code points → chars). `none` if the value is not a char-list. Only a
+NON-EMPTY result is treated as a string by `valPretty` (an EMPTY char-list `fold (inl ())` is
+structurally identical to any nullary constructor like `Nil`, so it stays structural — no misrender). -/
+def asString : Val → Option String
+  | .fold (.inl .vunit) => some ""
+  | .fold (.inr (.pair (.fold (.vint cp)) rest)) =>
+      (asString rest).map (fun s => String.singleton (Char.ofNat cp.toNat) ++ s)
+  | _ => none
+
 /-- A readable, structural rendering of a kernel `Val`. Reused nowhere in the
 spine (kernel `Val` derives only `Inhabited`), so a small printer lives here.
 `vthunk` holds a `Comp`, not a `Val`, so it prints opaquely — the rest is a
-plain structural fold. -/
+plain structural fold. A NON-EMPTY `Str` value prints as its glyphs (ADR-0074). -/
 def valPretty : Val → String
   | .vunit      => "()"
   | .vint n     => toString n
@@ -66,7 +76,9 @@ def valPretty : Val → String
   | .inl v      => s!"inl {valPretty v}"
   | .inr v      => s!"inr {valPretty v}"
   | .pair a b   => s!"({valPretty a}, {valPretty b})"
-  | .fold v     => s!"fold {valPretty v}"
+  | .fold v     => match asString (.fold v) with
+                   | some s => if s.isEmpty then s!"fold {valPretty v}" else s
+                   | none   => s!"fold {valPretty v}"
 
 /-- Run a lowered `Comp` on the COMPILED engine: `exec ∘ compile`, the calculated
 abstract machine (`Bang.CalcVM`). Success is the terminal `some [ret v]` (the value

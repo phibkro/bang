@@ -1045,9 +1045,19 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
                   insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody⟩]
   return ⟨insts, ctors, aliases⟩
 
-/-- Elaborate a whole program: build the elaboration env from the decl prelude, resolve the body. -/
+/-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
+you can't mix a char and a number), `Str` = a monomorphic char-list. Injected before every program so
+string/char literals (`"hi"`, `'a'`) resolve, UNLESS the program declares `Char`/`Str` itself. Library
+code over `data` + `Int` — NO kernel primitive (invariant #5). -/
+def strPrelude : List Decl :=
+  [ .dataD "Char" [("Char", [.tInt])],
+    .dataD "Str"  [("SNil", []), ("SCons", [.tName "Char", .tName "Str"])] ]
+
+/-- Elaborate a whole program: inject the string prelude, build the elaboration env, resolve the body. -/
 def elabProg (p : Prog) : Except String Surf := do
-  elabS (← buildEnv p.decls) [] p.body
+  let declared := p.decls.filterMap (fun | .dataD n _ => some n | _ => none)
+  let prelude := strPrelude.filter (fun | .dataD n _ => !declared.contains n | _ => true)
+  elabS (← buildEnv (prelude ++ p.decls)) [] p.body
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
@@ -1414,6 +1424,27 @@ def smDef  : String := "let rec sm : List -> Int = fun xs => match xs { Nil -> 0
 #guard (match checkProg (listRec
         "let rec f : List -> Int = fun xs => (let f = ( {fun ys => 0} : Thunk (List -> Int) ) in match xs { Nil -> 0, Cons(h, t) -> ($f) t }) in" "($f)(Cons(1, Nil))")
         with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+
+/-! ### Validation ⑨h — STRINGS: `String = List Char` (ADR-0074, #49).
+
+`Char = Char(Int)` (a code point) + `Str = SNil | SCons(Char, Str)` are an INJECTED built-in prelude
+(`strPrelude`); string literals `"hi"` desugar (in `pAtom`) to `SCons(Char 104, …)` and char literals
+`'a'` to `Char 97`. `length` is a `let rec` structural fold over `Str` → #47-certified TOTAL (`Div ∉ ρ`
+— strings are total). All LIBRARY over `data` + `Int` — NO kernel primitive (invariant #5). -/
+def lengthDef : String :=
+  "let rec length : Str -> Int = fun s => match s { SNil -> 0, SCons(c, rest) -> 1 + ($length) rest } in "
+-- `length` runs over a string literal: "abc" → 3, "" → 0.
+#guard runTypedYieldsInt 3000 (lengthDef ++ "($length) \"abc\"") 3
+#guard runTypedYieldsInt 3000 (lengthDef ++ "($length) \"\"") 0
+-- escapes are decoded: "a\nb\tc" is FIVE code points (a · newline · b · tab · c), not seven chars.
+#guard runTypedYieldsInt 3000 (lengthDef ++ "($length) \"a\\nb\\tc\"") 5
+-- THE #47 PAYOFF: `length` over `Str` is structural recursion on the char-list ⟹ certified TOTAL, Div ∉ ρ.
+#guard (match checkProg (lengthDef ++ "($length) \"abc\"") with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+-- a char literal `'a'` is `Char 97`; destructuring recovers the code point.
+#guard runTypedYieldsInt 100 "match 'a' { Char(n) -> n }" 97
+#guard runTypedYieldsInt 100 "match '\\n' { Char(n) -> n }" 10   -- '\n' = code point 10
+-- a string literal TYPES as the `Str` data type (its structural μ), decl-free (the prelude is injected).
+#guard (match checkProg "\"hi\"" with | .ok _ => true | _ => false)
 
 /-! ### The northstar, in its INTENDED spelling: `Vec` as a NAMED type (ADR-0069 consequence). -/
 
