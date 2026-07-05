@@ -203,7 +203,8 @@ def effNames (ns : List String) : EffRow :=
   ns.foldl (fun acc n =>
     if n = "throws" then insert exnLabel acc
     else if n = "state" then insert stateLabel acc
-    else if n = "stm" then insert stmLabel acc else acc) ∅
+    else if n = "stm" then insert stmLabel acc
+    else if n = "Div" then insert divLabel acc else acc) ∅
 
 /-- The DECLARED effect bound of an ascribed type, if any (`none` = unconstrained, stay inferred —
 the optional-annotation philosophy). A function's bound is its codomain's. -/
@@ -339,6 +340,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
                      | _     => .error "unfold: not a μ value"
   | .matchD .. => .error "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
   | .letRecS .. => .error "let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (ADR-0073)"
+  | .divMark e => do let (B, φ) ← synthSC Γ e; return (B, insert divLabel φ)  -- #46: mark the row divergent
   -- ── ADR-0070 (named capabilities) ──
   | .withCapS kind init name body => do
       match capKindLabel kind with
@@ -457,15 +459,16 @@ This is what makes effect-typed signatures legible: you run the checker and SEE 
 /-- Map an effect label back to its surface name (the inverse of the lowering's `exnLabel`/… choice). -/
 def effName (ℓ : Label) : String :=
   if ℓ = exnLabel then "throws" else if ℓ = stateLabel then "state"
-  else if ℓ = stmLabel then "stm" else s!"e{ℓ}"
+  else if ℓ = stmLabel then "stm" else if ℓ = divLabel then "Div" else s!"e{ℓ}"
 
 /-- Render an effect row as `throws, state` by decidable membership of the known labels (computable —
-`Finset.toList` is noncomputable; the surface has exactly these three labels). -/
+`Finset.toList` is noncomputable; the surface has exactly these four labels: throws·state·stm·Div). -/
 def showRow (φ : EffRow) : String :=
   String.intercalate ", " <|
     (if exnLabel ∈ φ then [effName exnLabel] else []) ++
     (if stateLabel ∈ φ then [effName stateLabel] else []) ++
-    (if stmLabel ∈ φ then [effName stmLabel] else [])
+    (if stmLabel ∈ φ then [effName stmLabel] else []) ++
+    (if divLabel ∈ φ then [effName divLabel] else [])
 
 mutual
 def showVTy : VT → String
@@ -616,18 +619,36 @@ check-mode then drives T_Fold via `unrollMu`; no new typing rule. -/
 def ctorIntro (ci : CtorInfo) (payload : Surf) : Surf :=
   .annotS (.foldS (injSum ci.idx ci.total payload)) ci.dataTy
 
+/-- The effect row a `let rec` CALL-SITE carries (#46, ADR-0073 §2). v1: unconditionally `{divLabel}`
+— recursion may not terminate (the ADR-0028 total/`Div` seam, made type-visible). **THE #47 SEAM:** a
+termination checker makes this CONDITIONAL — return `⊥` when the argument's structural decrease is
+provable, so provably-total recursion stays in the total (⊥-row) fragment. Single computed point.
+
+**UNDER-APPROXIMATION (v1, DELIBERATE — Option A, #46):** Div is seeded ONLY on the OUTER knot (what
+the user CALLS), so a `let rec`'s call-site row carries Div and it propagates to callers. The INNER
+recursive self-calls are typed pure `⊥`. This is operationally SOUND — Div has NO runtime semantics
+(`divMark` erases at lowering; execution is byte-identical) — and it keeps the μ-fold + the #45
+thunk-check arm untouched. Full inner+outer threading (self-calls Div-typed too) is Option B, deferred
+to the "⊥-row ⟹ terminates" totality-soundness work that would actually need that extra precision. -/
+def letRecRow (_name : String) (_funBody : Surf) : EffRow := {divLabel}
+
 /-- The μ-encoded fixpoint for `let rec f : T = <funBody'> in <bodyExpr'>` (ADR-0073; Landin's knot,
 NO new kernel primitive). `funBody'`/`bodyExpr'` are ALREADY elaborated (with `f : Thunk T` in scope).
 `Rec = μX. Thunk(X -> T)`; the self-knot `{ let #g = unfold sv in ($#g) sv } : Thunk T` reconstructs
 `f` from a self-value (`unfold` returns a RETURNER of the thunk, so it is let-bound before forcing —
-the #45 spike's shape). Emits only ordinary `Surf` the existing checker + kernel handle. -/
-def buildLetRec (name : String) (t' : Ty) (funBody' bodyExpr' : Surf) : Surf :=
+the #45 spike's shape). The OUTER knot (the user's call-site binding) is `divMark`-wrapped when
+`recRow` is nonempty (see `letRecRow`) → `f : Thunk ! {Div} T`, so `($f) x : … ! {Div}` (Div rides the
+`U`/judgment per ADR-0019/0020, NOT the arrow). The INNER knot stays pure so `recTy`'s `tThunk` (⊥)
+annotation holds. Emits only ordinary `Surf` the existing checker + kernel handle. -/
+def buildLetRec (name : String) (t' : Ty) (funBody' bodyExpr' : Surf) (recRow : EffRow) : Surf :=
   let recTy : Ty := .tMu (.tThunk (.tArr (.tVar 0) t'))     -- μX. Thunk(X -> T)
-  let knot : String → Surf := fun sv =>
-    .thunk (.lett "#g" (.unfoldS (.var sv)) (.app (.force (.var "#g")) (.var sv)))
-  let inner : Surf := .annotS (.lam "#self" (.lett name (knot "#self") funBody')) (.tArr recTy t')
+  let knotBody : String → Surf := fun sv =>
+    .lett "#g" (.unfoldS (.var sv)) (.app (.force (.var "#g")) (.var sv))
+  let inner : Surf := .annotS (.lam "#self" (.lett name (.thunk (knotBody "#self")) funBody')) (.tArr recTy t')
   let recVal : Surf := .annotS (.foldS (.thunk inner)) recTy
-  .lett "#rec" recVal (.lett name (knot "#rec") bodyExpr')
+  let outerKnot : Surf :=                                     -- Div rides the outer (call-site) thunk
+    if divLabel ∈ recRow then .thunk (.divMark (knotBody "#rec")) else .thunk (knotBody "#rec")
+  .lett "#rec" recVal (.lett name outerKnot bodyExpr')
 
 /-- Bind a match arm's payload binders over the payload variable (arity ≤ 2). -/
 def bindPayload : List String → String → Surf → Surf
@@ -765,9 +786,11 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       -- user `fun` with `T` (its param already elaborated under `dom`, so re-check-mode is a no-op).
       let pbody' ← elabS env ((pn, dom) :: (name, uT) :: Γ) pbody
       let bodyExpr' ← elabS env ((name, uT) :: Γ) bodyExpr
-      return buildLetRec name t' (.annotS (.lam pn pbody') t') bodyExpr'
+      return buildLetRec name t' (.annotS (.lam pn pbody') t') bodyExpr' (letRecRow name (.lam pn pbody))
   | _, .letRecS _ _ _ _ =>
       .error "let rec requires a function literal: `let rec f : T = fun x => … in …` (ADR-0073)"
+  | _, .divMark _ =>
+      .error "divMark is internal (#46 let rec Div-marker) — it is EMITTED by the elaborator, never received"
   | Γ, .lett x e b  => do
       let e' ← elabS env Γ e
       match synthSC Γ e' with                  -- report the RHS's REAL error, not a downstream unbound (#41)
@@ -1195,6 +1218,28 @@ A-normalized like every other value position, #41). Div-row (ADR-0073 §2) is DE
   "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in ($loop) 0" 0) == false
 -- non-function annotation fail-louds (the desugar needs a `fun` literal).
 #guard (match checkProg "let rec x : Int = 5 in x" with | .error _ => true | _ => false)
+
+/-! ### Validation ⑨f — `Div` is TYPE-VISIBLE (ADR-0073 §2, #46): recursion's partiality in the row.
+
+A `let rec`'s CALL-SITE carries `{Div}` (the ADR-0028 total/`Div` seam, made type-visible; `Div` rides
+the `U`/judgment per ADR-0019/0020, so `($f) x : … ! {Div}`). RUNTIME is unchanged — `divMark` erases
+at lowering (the ⑨e `runTypedYieldsInt` guards above still yield 15/120/6). v1 seeds Div on the OUTER
+call-site only (`letRecRow`'s documented under-approximation); #47 makes `letRecRow` conditional. -/
+-- (a) a let rec's CALL-SITE row CONTAINS Div.
+#guard (match checkProg "let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in ($sum) 5"
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- and DISPLAYS it — the partiality is legible in the type.
+#guard displayProg "let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in ($sum) 5"
+        == "Int ! {Div}"
+-- (b) Div PROPAGATES — a continuation that BINDS-and-USES the recursive call inherits it (join over let).
+#guard (match checkProg "let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in (let x = ($sum) 5 in x + 1)"
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- (c) a NON-recursive function's call stays ⊥ — Div is ONLY for `let rec`, not all functions.
+#guard (match check "( fun x => x : Int -> Int ) 5" with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+#guard (match check "let x = 3 in x + 1" with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+-- and a plain (non-rec) thunked function — same `Thunk (Int -> Int)` SHAPE as a `let rec`'s `f`, but
+-- bound by a normal `let` — its call stays ⊥ (Div is the `let rec` marker, not the thunk shape).
+#guard (match check "let f = ( {fun x => x + 1} : Thunk (Int -> Int) ) in ($f) 5" with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
 
 /-! ### The northstar, in its INTENDED spelling: `Vec` as a NAMED type (ADR-0069 consequence). -/
 

@@ -55,6 +55,13 @@ transactional heap, a state cell, and an exception channel coexist. The `transac
 this label catches `newTVar`/`readTVar`/`writeTVar`. -/
 def stmLabel : Label := 2
 
+/-- The divergence channel (ADR-0073 §2, #46) — a DISTINCT label marking may-not-terminate. UNLIKE
+the other channels it is NEVER performed or handled: it has no operation and no handler (recursion's
+partiality has no runtime semantics — `Source.eval` just ooms). It is a pure TYPING marker, added to
+the row of a `let rec`'s CALL-SITES (the ADR-0028 total/`Div` stratification seam made type-visible),
+stripped at lowering (the kernel term never carries it). -/
+def divLabel : Label := 3
+
 
 /-! ## 1. Surface AST (named binders)
 
@@ -175,6 +182,7 @@ inductive Surf where
   | dotPerform : Surf → String → SurfArgs → Surf     -- h.op(args) — perform op on the named cap
   -- ── ADR-0073 (recursion) ──
   | letRecS : String → Ty → Surf → Surf → Surf       -- let rec f : T = <fun> in <body>  (μ-knot; DESUGARED in elabS, typed-path only)
+  | divMark : Surf → Surf                             -- INTERNAL (#46): adds {divLabel} to the wrapped computation's row; RUNTIME no-op (lowers to its child)
 
 /-- A cap-op argument list, capped at the v1 arity (≤ 2: `write` is the only binary op). A mutual
 inductive (not `List Surf`) so `Surf`'s `DecidableEq`/`Repr` derive — the `DArms` precedent. -/
@@ -369,6 +377,7 @@ def lowerC (env : List String) : Surf → Except String Comp
       | .error _ => return .letC (← lowerC env e) (.unfold (.vvar 0))
   | .matchD .. => .error "named match needs the typed path (data declarations, ADR-0069) — run via checkProg/runTyped"
   | .letRecS .. => .error "let rec needs the typed path (μ-encoded recursion, ADR-0073) — run via checkProg/runTyped"
+  | .divMark e => lowerC env e   -- #46: Div is a pure TYPING marker (no runtime semantics) — erase it
   -- ── ADR-0070 (named capabilities) — `with` reuses the handler lowering with a USER name where the
   -- sentinel went; `h.op` is `perform (vvar h) op arg` (args A-normalized like the ambient ops). ──
   | .withCapS "state" init name body => do

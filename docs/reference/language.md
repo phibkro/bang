@@ -40,6 +40,7 @@ nothing here can drift from what the language actually does.
 | `state <init> as <name> in <body>` | (named cap; also `handle as h e` / `atomically as h e`, ADR-0072) |
 | `h.op(args) — perform op on the named cap` |  |
 | `let rec f : T = <fun> in <body>` | (μ-knot; DESUGARED in elabS, typed-path only) |
+| `INTERNAL (#46): adds {divLabel} to the wrapped computation's row; RUNTIME no-op (lowers to its child)` |  |
 
 ## Types
 
@@ -111,6 +112,7 @@ an undischarged label surfaces in the inferred effect (see Examples → type dis
 | `exnLabel` | 0 | The single concrete label the tracer bullet uses for `raise`/`handle`. |
 | `stateLabel` | 1 | The state channel (rung 1, ADR-0025) — a DISTINCT label from `exnLabel`, so a state cell and an exception channel coexist without colliding. |
 | `stmLabel` | 2 | The STM channel (rung 3, ADR-0030) — a DISTINCT label from `exnLabel`/`stateLabel`, so a transactional heap, a state cell, and an exception channel coexist. |
+| `divLabel` | 3 | The divergence channel (ADR-0073 §2, #46) — a DISTINCT label marking may-not-terminate. |
 
 ## Kernel primitives (the IR the surface lowers to)
 
