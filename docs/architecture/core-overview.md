@@ -42,7 +42,7 @@ graph TD
     Core_Soundness["Core.Soundness<br/>2954L · fan-in 0"]
     Core_Typing["Core.Typing<br/>404L · fan-in 0"]
     Examples["Examples<br/>307L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>1535L · fan-in 1"]
+    Frontend_Surface["Frontend.Surface<br/>1575L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Frontend_TypeCheck["Frontend.TypeCheck<br/>1089L · fan-in 0"]
@@ -67,7 +67,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 1535 | 1 |
+| `Frontend.Surface` | ? | 1575 | 1 |
 | `Audit` | Apex | 54 | 0 |
 | `Backend.AbstractMachine` | ? | 4949 | 0 |
 | `Backend.Wasm` | ? | 2174 | 0 |

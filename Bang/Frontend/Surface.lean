@@ -560,6 +560,71 @@ def opInfo : String → Option (Nat × Nat × (Surf → Surf → Surf))
   | "/"  => some (7, 8, fun l r => .binopS .div l r)
   | _    => none
 
+/-! ### Reified keyword-led rules (ADR-0071 ②)
+
+Per §3 of the paper (Cheng-Parreaux, ECOOP'26): a keyword-led construct is a `Rule` — a linear
+sequence of `Choice`s (a `kw` to match-and-consume · a `refE`/`refA`/`refI` to parse a sub-kind)
+plus a `build` that assembles the collected fragments into a `Surf`. ONE driver (`pRuleDrive`)
+interprets any rule, so `pExpr`'s single-keyword arms retire into a table (`keywordRule`) the
+fallthrough consults. Multi-keyword / delegating constructs (`let (a,b)=`, `with … as`, `match`,
+`do`) stay bespoke — they don't fit a single-leading-keyword linear rule (see the fork note above
+each retained arm).
+
+The paper threads the builder as a curried continuation (`Ref`'s `f : (Tree, B) → A`); Lean needs
+STRUCTURAL recursion for totality (the demo `#guard`s must reduce), and a continuation `k e` is not
+a structural sub-term, so the builder is a `List Frag → …` over the collected fragments instead —
+the same rule DATA, but the driver recurses on the `Choice` list (fuel-decrementing) rather than on
+a closure. -/
+
+/-- A fragment collected while driving a rule: a parsed sub-expression, or a bound identifier. -/
+inductive Frag
+  | expr : Surf → Frag      -- an expr/atom sub-parse
+  | name : String → Frag    -- an identifier (a binder)
+
+/-- One step of a rule: match a keyword, or parse a sub-kind (a full expression / an atom / an
+identifier). The three `ref` kinds mirror the sub-parsers the retired bespoke arms called. -/
+inductive Choice
+  | kw   : String → Choice
+  | refE : Choice           -- parse a full expression (pExpr)
+  | refA : Choice           -- parse an atom (pAtom)
+  | refI : Choice           -- parse an identifier (pIdent)
+
+/-- A keyword-led parsing rule: a linear choice sequence + a builder over the collected frags.
+`build` is total (`Except`); the choice sequence GUARANTEES the frag shape, so each rule's mismatch
+branch is unreachable — it exists only because `List Frag` cannot be statically arity-constrained. -/
+structure Rule where
+  choices : List Choice
+  build   : List Frag → Except String Surf
+
+/-- The reified keyword rules (ADR-0071 ②). Keyed on the leading keyword; `pExpr`'s fallthrough
+consults this table. Each `build` produces the EXACT `Surf` the retired bespoke arm produced, so the
+`parsesTo` corpus is preserved. `let` here is the `let x = e in b` form; the `let (a,b) = …` product
+elimination shares the keyword but is a different construct and stays a bespoke `pExpr` arm. -/
+def keywordRule : String → Option Rule
+  | "if"         => some ⟨[.kw "if", .refE, .kw "then", .refE, .kw "else", .refE],
+      fun | [.expr c, .expr t, .expr e] => .ok (.ifS c t e) | _ => .error "if: rule arity"⟩
+  | "handle"     => some ⟨[.kw "handle", .refE],
+      fun | [.expr e] => .ok (.handle e) | _ => .error "handle: rule arity"⟩
+  | "atomically" => some ⟨[.kw "atomically", .refE],
+      fun | [.expr e] => .ok (.atomS e) | _ => .error "atomically: rule arity"⟩
+  | "raise"      => some ⟨[.kw "raise", .refA],
+      fun | [.expr a] => .ok (.raise a) | _ => .error "raise: rule arity"⟩
+  | "put"        => some ⟨[.kw "put", .refA],
+      fun | [.expr a] => .ok (.putS a) | _ => .error "put: rule arity"⟩
+  | "new"        => some ⟨[.kw "new", .refA],
+      fun | [.expr a] => .ok (.newS a) | _ => .error "new: rule arity"⟩
+  | "read"       => some ⟨[.kw "read", .refA],
+      fun | [.expr a] => .ok (.readS a) | _ => .error "read: rule arity"⟩
+  | "write"      => some ⟨[.kw "write", .refA, .refA],
+      fun | [.expr r, .expr w] => .ok (.writeS r w) | _ => .error "write: rule arity"⟩
+  | "state"      => some ⟨[.kw "state", .refA, .kw "in", .refE],
+      fun | [.expr e0, .expr e] => .ok (.stateS e0 e) | _ => .error "state: rule arity"⟩
+  | "fun"        => some ⟨[.kw "fun", .refI, .kw "=>", .refE],
+      fun | [.name x, .expr b] => .ok (.lam x b) | _ => .error "fun: rule arity"⟩
+  | "let"        => some ⟨[.kw "let", .refI, .kw "=", .refE, .kw "in", .refE],
+      fun | [.name x, .expr e1, .expr e2] => .ok (.lett x e1 e2) | _ => .error "let: rule arity"⟩
+  | _            => none
+
 mutual
 /-- Parse a full expression (lowest precedence: let / fun / handle / raise / app).
 The `Nat` is structural fuel — every recursive call passes the decremented `f`,
@@ -578,45 +643,6 @@ def pExpr : Nat → P Surf
       let (_, ts) ← expect "in" ts
       let (body, ts) ← pExpr f ts
       .ok (.splitS a b p body, ts)
-  | f + 1, "let" :: ts => do
-      let (x, ts) ← pIdent ts
-      let (_, ts) ← expect "=" ts
-      let (e1, ts) ← pExpr f ts
-      let (_, ts) ← expect "in" ts
-      let (e2, ts) ← pExpr f ts
-      .ok (.lett x e1 e2, ts)
-  | f + 1, "fun" :: ts => do
-      let (x, ts) ← pIdent ts
-      let (_, ts) ← expect "=>" ts
-      let (b, ts) ← pExpr f ts
-      .ok (.lam x b, ts)
-  | f + 1, "handle" :: ts => do
-      let (e, ts) ← pExpr f ts
-      .ok (.handle e, ts)
-  | f + 1, "raise" :: ts => do
-      let (a, ts) ← pAtom f ts
-      .ok (.raise a, ts)
-  | f + 1, "state" :: ts => do
-      let (e0, ts) ← pAtom f ts
-      let (_, ts) ← expect "in" ts
-      let (e, ts) ← pExpr f ts
-      .ok (.stateS e0 e, ts)
-  | f + 1, "put" :: ts => do
-      let (a, ts) ← pAtom f ts
-      .ok (.putS a, ts)
-  | f + 1, "atomically" :: ts => do
-      let (e, ts) ← pExpr f ts
-      .ok (.atomS e, ts)
-  | f + 1, "new" :: ts => do
-      let (a, ts) ← pAtom f ts
-      .ok (.newS a, ts)
-  | f + 1, "read" :: ts => do
-      let (a, ts) ← pAtom f ts
-      .ok (.readS a, ts)
-  | f + 1, "write" :: ts => do
-      let (r, ts) ← pAtom f ts
-      let (w, ts) ← pAtom f ts
-      .ok (.writeS r w, ts)
   | f + 1, "match" :: ts => do           -- match s { arms } — anonymous sums (Left/Right → matchS)
       let (s, ts) ← pAtom f ts            -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
       let (_, ts) ← expect "{" ts
@@ -628,13 +654,6 @@ def pExpr : Nat → P Surf
       | [("Left", [x1], b1), ("Right", [x2], b2)] => .ok (.matchS s x1 b1 x2 b2, ts)
       | [("Right", [x2], b2), ("Left", [x1], b1)] => .ok (.matchS s x1 b1 x2 b2, ts)
       | _ => .ok (.matchD s (toDArms arms), ts)
-  | f + 1, "if" :: ts => do            -- conditional: if c then t else e  (sugar over `case` on Bool)
-      let (cnd, ts) ← pExpr f ts
-      let (_, ts) ← expect "then" ts
-      let (thn, ts) ← pExpr f ts
-      let (_, ts) ← expect "else" ts
-      let (els, ts) ← pExpr f ts
-      .ok (.ifS cnd thn els, ts)
   | f + 1, "do" :: ts => do             -- do { stmt ; … ; result } → nested letC (issue #27)
       let (_, ts) ← expect "{" ts
       pDo f ts
@@ -653,7 +672,15 @@ def pExpr : Nat → P Surf
         .ok (.withCapS kind .unitS name body, ts)
       else .error s!"with: expected a handler kind (state/throws/atomically), got '{kind}'"
   | f + 1, "with" :: t => .error s!"with: expected 'state <init>' / 'throws' / 'atomically', got '{t.head?.getD "end"}'"
-  | f + 1, ts => pOp 0 f ts             -- ▼ one Pratt binding-power loop (issue #4; `=>` loosest, #39; ADR-0071 ①)
+  -- ▼ single-keyword constructs (if/handle/atomically/raise/put/new/read/write/state/fun/let) are
+  -- reified as `Rule`s (ADR-0071 ②): consult the table, else fall to the Pratt op loop (#4, #39, ①).
+  | f + 1, ts =>
+      match ts with
+      | tok :: _ =>
+          match keywordRule tok with
+          | some r => pRuleDrive f r.build r.choices [] ts
+          | none   => pOp 0 f ts
+      | []       => pOp 0 f ts
 
 /-- ONE Pratt binding-power loop over the reified operator table `opInfo` (ADR-0071 ①), replacing
 the fixed `=>`/`<`·`==`/`+`·`-`/`*`·`/` precedence chain. `minBP` is the incoming binding power: an
@@ -683,6 +710,19 @@ def pOpLoop : Nat → Nat → Surf → P Surf
           else .ok (acc, ts)
       | none => .ok (acc, ts)
     | [] => .ok (acc, ts)
+
+/-- Interpret a reified keyword rule (ADR-0071 ②): walk the `Choice`s left-to-right, matching
+keywords and collecting sub-parse frags, then `build` the result from the frags (in source order).
+Fuel decrements per step exactly like the rest of the descent, so the mutual's uniform
+fuel-measure covers it (total, no `partial`); sub-parses use the current fuel, mirroring the fuel
+the retired bespoke arms passed. -/
+def pRuleDrive : Nat → (List Frag → Except String Surf) → List Choice → List Frag → P Surf
+  | 0,     _,     _,            _,   _  => .error "parser out of fuel"
+  | _ + 1, build, [],           acc, ts => do let s ← build acc.reverse; .ok (s, ts)
+  | f + 1, build, .kw k :: cs,  acc, ts => do let (_, ts) ← expect k ts; pRuleDrive f build cs acc ts
+  | f + 1, build, .refE :: cs,  acc, ts => do let (e, ts) ← pExpr f ts;  pRuleDrive f build cs (.expr e :: acc) ts
+  | f + 1, build, .refA :: cs,  acc, ts => do let (a, ts) ← pAtom f ts;  pRuleDrive f build cs (.expr a :: acc) ts
+  | f + 1, build, .refI :: cs,  acc, ts => do let (x, ts) ← pIdent ts;   pRuleDrive f build cs (.name x :: acc) ts
 
 /-- Parse an application chain: one or more DOTTED atoms, left-associated. -/
 def pApp : Nat → P Surf
