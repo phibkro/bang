@@ -170,6 +170,16 @@ inductive Surf where
   | unfoldS : Surf → Surf                 -- μ elim  (INTERNAL: emitted by named-match elaboration)
   | matchD : Surf → DArms → Surf          -- named-ctor match (parse-only; ELIMINATED by the elaborator —
                                           -- the untyped path fail-louds, data is a Prog-level feature)
+  -- ── ADR-0070 (named capabilities) ──
+  | withCapS : String → Surf → String → Surf → Surf  -- with <kind> <init|unitS> as <name> in <body>
+  | dotPerform : Surf → String → SurfArgs → Surf     -- h.op(args) — perform op on the named cap
+
+/-- A cap-op argument list, capped at the v1 arity (≤ 2: `write` is the only binary op). A mutual
+inductive (not `List Surf`) so `Surf`'s `DecidableEq`/`Repr` derive — the `DArms` precedent. -/
+inductive SurfArgs where
+  | none : SurfArgs
+  | one  : Surf → SurfArgs
+  | two  : Surf → Surf → SurfArgs
 
 /-- Named-match arms `C(x, y) -> e` — a `Surf`-mutual list (not `List (… × Surf)`) so the
 `DecidableEq`/`Repr` derivations stay straightforward (the `VTy`/`CTy` precedent). -/
@@ -178,7 +188,7 @@ inductive DArms where
   | cons : String → List String → Surf → DArms → DArms
 end
 
-deriving instance Repr, Inhabited, DecidableEq for Surf, DArms
+deriving instance Repr, Inhabited, DecidableEq for Surf, DArms, SurfArgs
 
 /-- Pack parsed match arms into `DArms` (the parser's list shape → the AST's mutual shape). -/
 def toDArms : List (String × List String × Surf) → DArms
@@ -223,6 +233,15 @@ each finds its own nearest handler even when kinds nest. -/
 def capExn   : String := "#exn"     -- the throws-handler cap binder
 def capState : String := "#state"   -- the state-handler cap binder
 def capStm   : String := "#stm"     -- the transaction-handler cap binder
+
+/-- Map a surface cap-op name (`h.new`) to the kernel `OpId` (`newTVar`) — ADR-0070. The
+state/exn ops are already the kernel names; the stm ops abbreviate. Unknown names pass through
+(the checker rejects a label mismatch). -/
+def capOpKernel : String → String
+  | "new"   => "newTVar"
+  | "read"  => "readTVar"
+  | "write" => "writeTVar"
+  | op      => op
 
 mutual
 /-- Lower a surface term that is in COMPUTATION position to a `Comp`. -/
@@ -347,6 +366,36 @@ def lowerC (env : List String) : Surf → Except String Comp
       | .ok v    => return .unfold v
       | .error _ => return .letC (← lowerC env e) (.unfold (.vvar 0))
   | .matchD .. => .error "named match needs the typed path (data declarations, ADR-0069) — run via checkProg/runTyped"
+  -- ── ADR-0070 (named capabilities) — `with` reuses the handler lowering with a USER name where the
+  -- sentinel went; `h.op` is `perform (vvar h) op arg` (args A-normalized like the ambient ops). ──
+  | .withCapS "state" init name body => do
+      match lowerV env init with
+      | .ok v    => return .handle (.state stateLabel v) (← lowerC (name :: env) body)
+      | .error _ => do
+          let ci ← lowerC env init
+          let b  ← lowerC (name :: "#s0" :: env) body
+          return .letC ci (.handle (.state stateLabel (.vvar 0)) b)
+  | .withCapS "throws" _ name body => do
+      return .handle (.throws exnLabel) (← lowerC (name :: env) body)
+  | .withCapS "atomically" _ name body => do
+      return .handle (.transaction stmLabel []) (← lowerC (name :: env) body)
+  | .withCapS k _ _ _ => .error s!"with: unknown handler kind '{k}'"
+  | .dotPerform recv op .none      => do return .perform (← lowerV env recv) (capOpKernel op) .vunit
+  | .dotPerform recv op (.one a)   =>
+      match lowerV env a with
+      | .ok av   => do return .perform (← lowerV env recv) (capOpKernel op) av
+      | .error _ => do
+          let ca ← lowerC env a
+          let rv ← lowerV ("#arg" :: env) recv     -- cap shifted past the arg binder
+          return .letC ca (.perform rv (capOpKernel op) (.vvar 0))
+  | .dotPerform recv op (.two r w) => do
+      let rref ← lowerV env r
+      match lowerV env w with
+      | .ok wv   => do return .perform (← lowerV env recv) (capOpKernel op) (.pair rref wv)
+      | .error _ => do
+          let cw ← lowerC env w
+          let rv ← lowerV ("#w" :: env) recv
+          return .letC cw (.perform rv (capOpKernel op) (.pair (Val.shift rref) (.vvar 0)))
 
 /-- Lower a surface term that is in VALUE position to a `Val`. Only the
 value-shaped constructors are legal here; a computation in value position must
@@ -382,7 +431,7 @@ keywords are ordinary tokens. -/
 own token; everything else is a maximal run of non-space, non-punctuator chars
 (so `->` / `<-` / `=>` / `=` and keywords are ordinary space-delimited tokens). -/
 def tokenize (s : String) : List String :=
-  let punct := "(){}$!,;".toList
+  let punct := "(){}$!,;.".toList     -- `.` is the method-perform punctuator (ADR-0070)
   let rec go (cs : List Char) (cur : List Char) (acc : List String) : List String :=
     let flush (acc : List String) : List String :=
       if cur.isEmpty then acc else acc ++ [String.ofList cur.reverse]
@@ -418,6 +467,7 @@ def pIdent : P String
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
           || t = "do" || t = ";"
           || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
+          || t = "with" || t = "as" || t = "."
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
         .error s!"expected an identifier, got keyword '{t}'"
@@ -572,6 +622,21 @@ def pExpr : Nat → P Surf
   | f + 1, "do" :: ts => do             -- do { stmt ; … ; result } → nested letC (issue #27)
       let (_, ts) ← expect "{" ts
       pDo f ts
+  | f + 1, "with" :: "state" :: ts => do   -- named cap: with state <init> as <h> in <body> (ADR-0070)
+      let (init, ts) ← pAddSub f ts          -- init is a value expr (stops at `as`)
+      let (_, ts) ← expect "as" ts
+      let (name, ts) ← pIdent ts
+      let (_, ts) ← expect "in" ts
+      let (body, ts) ← pExpr f ts
+      .ok (.withCapS "state" init name body, ts)
+  | f + 1, "with" :: kind :: "as" :: ts => do  -- with throws|atomically as <h> in <body>
+      if kind = "throws" || kind = "atomically" then do
+        let (name, ts) ← pIdent ts
+        let (_, ts) ← expect "in" ts
+        let (body, ts) ← pExpr f ts
+        .ok (.withCapS kind .unitS name body, ts)
+      else .error s!"with: expected a handler kind (state/throws/atomically), got '{kind}'"
+  | f + 1, "with" :: t => .error s!"with: expected 'state <init>' / 'throws' / 'atomically', got '{t.head?.getD "end"}'"
   | f + 1, ts => pImp f ts              -- ▼ infix precedence chain (issue #4; `=>` loosest, #39)
 
 /-- Implication `P => Q` (loosest infix, RIGHT-assoc — `p => q => r` = `p => (q => r)`), pure
@@ -589,14 +654,14 @@ def pImp : Nat → P Surf
           .ok (.lett "#p" lhs (.ifS (.var "#p") rhs (.binopS .eq (.lit 0) (.lit 0))), ts)
       | _ => .ok (lhs, ts)
 
-/-- Parse an application chain: one or more atoms, left-associated. -/
+/-- Parse an application chain: one or more DOTTED atoms, left-associated. -/
 def pApp : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
   | f + 1, ts => do
-      let (head, ts) ← pAtom f ts
+      let (head, ts) ← pDotted f ts
       pAppLoop f head ts
 
-/-- The left-association loop of `pApp`: keep eating atoms while one can start. -/
+/-- The left-association loop of `pApp`: keep eating dotted atoms while one can start. -/
 def pAppLoop : Nat → Surf → P Surf
   | 0,      acc, ts => .ok (acc, ts)
   | f + 1, acc, ts =>
@@ -604,13 +669,44 @@ def pAppLoop : Nat → Surf → P Surf
     | [] => .ok (acc, ts)
     | t :: _ =>
       if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" || t = "," || t = "->"
-         || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
-         || t = "then" || t = "else" || t = ";" then
+         || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = "."
+         || t = "then" || t = "else" || t = ";" || t = "as" then
         .ok (acc, ts)
       else
-        match pAtom f ts with
+        match pDotted f ts with
         | .ok (a, ts') => pAppLoop f (.app acc a) ts'
         | .error _     => .ok (acc, ts)
+
+/-- An atom followed by zero+ method-performs `.op` / `.op(args)` (ADR-0070). Binds tighter than
+application, so `h.get + 1` = `(h.get) + 1` and `f h.get` = `f (h.get)`. -/
+def pDotted : Nat → P Surf
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ts => do let (a, ts) ← pAtom f ts; pDotLoop f a ts
+def pDotLoop : Nat → Surf → P Surf
+  | 0,      a, ts => .ok (a, ts)
+  | f + 1, a, ts =>
+    match ts with
+    | "." :: op :: "(" :: r => do
+        let (args, ts) ← pArgList f r
+        let sa ← (match args with
+          | []     => (.ok .none : Except String SurfArgs)
+          | [x]    => .ok (.one x)
+          | [x, y] => .ok (.two x y)
+          | _      => .error s!"cap op '{op}' takes at most 2 arguments (got {args.length})")
+        pDotLoop f (.dotPerform a op sa) ts
+    | "." :: op :: r        => pDotLoop f (.dotPerform a op .none) r   -- nullary (h.get)
+    | _                     => .ok (a, ts)
+/-- A parenthesized, comma-separated cap-op argument list (after the opening `(`). -/
+def pArgList : Nat → P (List Surf)
+  | 0,      _ => .error "parser out of fuel"
+  | f + 1, ")" :: r => .ok ([], r)
+  | f + 1, ts => do
+      let (e, ts) ← pExpr f ts
+      match ts with
+      | "," :: r => do let (rest, ts) ← pArgList f r; .ok (e :: rest, ts)
+      | ")" :: r => .ok ([e], r)
+      | t :: _   => .error s!"expected ',' or ')' in a cap-op argument list, got '{t}'"
+      | []       => .error "unterminated cap-op argument list"
 
 /-- Infix arithmetic via precedence climbing (issue #4): `compare` (loosest) → `add/sub` →
 `mul/div` → `app` (tightest). Each level parses a higher-precedence term then left-folds its own
@@ -751,6 +847,7 @@ def pAtom : Nat → P Surf
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
               || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
+              || t = "with" || t = "as" || t = "."
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
         .error s!"unexpected '{t}' where an atom was expected"
@@ -1360,6 +1457,30 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are sp
 -- do-notation (issue #27): `x = e` → `lett x`, bare `e` → `lett "#do"`, last stmt = result.
 #guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
 #guard parsesTo "do { x = a; b; c }" (.lett "x" (.var "a") (.lett "#do" (.var "b") (.var "c")))
+
+/-! ### Stage 2f — NAMED capabilities from source text (issue #3, ADR-0070).
+
+`with <kind> as h in …` binds the handler's cap to `h`; `h.op(args)` performs on it. The headline
+is MULTIPLE COEXISTING instances — two state cells `a`/`b`, which the ambient (nearest-sentinel)
+`get` cannot reach. Dispatch is identity-keyed (ADR-0052/0055), so `a.get`/`b.get` hit their own
+cells. Runs via the untyped path (parse→lower→eval); the checker's `Cap` typing is in TypeCheck. -/
+-- a named state cap reads its cell.
+#guard runYieldsInt 50 "with state 5 as h in h.get" 5
+-- put then get on the SAME named cap (resumptive).
+#guard runYieldsInt 60 "with state 5 as h in (let z = h.put(7) in h.get)" 7
+-- ★ TWO state cells at once — the demo ambient `get` cannot write. a=1, b=2 ⟹ a.get + b.get = 3.
+#guard runYieldsInt 90 "with state 1 as a in (with state 2 as b in (let x = a.get in (let y = b.get in x + y)))" 3
+-- the inner cell is INDEPENDENT: mutate b, a is untouched. a=10, b:=20 ⟹ a.get = 10.
+#guard runYieldsInt 120 "with state 10 as a in (with state 0 as b in (let z = b.put(20) in a.get))" 10
+-- a named throws cap: h.raise aborts to its payload.
+#guard runYieldsInt 50 "with throws as h in h.raise(9)" 9
+-- a named transaction cap: new/write/read on `t` commit in-transaction.
+#guard runYieldsInt 90 "with atomically as t in (let r = t.new(100) in (let z = t.write(r, 70) in t.read(r)))" 70
+-- parse shape: `with state <init> as h in body` + `h.op(arg)`.
+#guard parsesTo "with state 5 as h in h.get"
+  (.withCapS "state" (.lit 5) "h" (.dotPerform (.var "h") "get" .none))
+#guard parsesTo "h.put(7)" (.dotPerform (.var "h") "put" (.one (.lit 7)))
+#guard parsesTo "t.write(r, w)" (.dotPerform (.var "t") "write" (.two (.var "r") (.var "w")))
 
 -- implication sugar (#39): `P => Q` desugars to `let #p = P in if #p then Q else 0 == 0`.
 #guard parsesTo "a < b => c"

@@ -218,6 +218,26 @@ def binopResTy : BinOp → VT
   | .lt | .eq => boolTy
   | _         => .int
 
+/-- The label a `with <kind>` handler installs (its cap has type `Cap ℓ`). ADR-0070. -/
+def capKindLabel : String → Option Label
+  | "state"      => some stateLabel
+  | "throws"     => some exnLabel
+  | "atomically" => some stmLabel
+  | _            => none
+
+/-- A named cap op's signature: the label its receiver must carry · its argument value-types ·
+its result value-type (payloads fixed to `Int`, ADR-0030). `h.op` is well-typed iff the receiver
+is `Cap ℓ` with `ℓ` = the label here and the args check. -/
+def capOpSig : String → Option (Label × List VT × VT)
+  | "get"   => some (stateLabel, [],          .int)
+  | "put"   => some (stateLabel, [.int],      .unit)
+  | "raise" => some (exnLabel,   [.int],      .int)   -- result = the payload (v1, matches ambient)
+  | "new"   => some (stmLabel,   [.int],      .int)   -- TVar ref
+  | "read"  => some (stmLabel,   [.int],      .int)
+  | "write" => some (stmLabel,   [.int, .int], .unit)
+  | _       => none
+
+
 -- Termination: the rank (synth = 0, check = 1) breaks the `check t → synth t` subsumption tie, as
 -- in the spike; every other call is on a structural subterm of the `Surf`.
 mutual
@@ -312,6 +332,30 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
                      | .mu A => .ok (.F 1 (VTy.unrollMu A), ⊥)
                      | _     => .error "unfold: not a μ value"
   | .matchD .. => .error "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
+  -- ── ADR-0070 (named capabilities) ──
+  | .withCapS kind init name body => do
+      match capKindLabel kind with
+      | none => .error s!"with: unknown handler kind '{kind}'"
+      | some ℓ => do
+          if kind = "state" then let _ ← checkSV Γ init .int   -- the initial cell value is Int
+          let (B, φ) ← synthSC ((name, .cap ℓ) :: Γ) body       -- name : Cap ℓ in scope
+          return (B, φ.erase ℓ)                                 -- the handler DISCHARGES ℓ
+  | .dotPerform recv op args => do
+      match (← synthSV Γ recv) with
+      | .cap ℓ =>
+          match capOpSig op with
+          | none => .error s!"unknown capability op '{op}'"
+          | some (ℓ', argTys, resTy) =>
+              if ℓ != ℓ' then .error s!"cap op '{op}' expects a different capability (label mismatch)"
+              else
+                -- match SurfArgs to the op's arity: each arg is a syntactic subterm (termination).
+                match args, argTys with
+                | .none,    []       => .ok (.F .omega resTy, {ℓ})
+                | .one a,   [t]      => do let _ ← checkSV Γ a t; return (.F .omega resTy, {ℓ})
+                | .two a b, [t1, t2] => do let _ ← checkSV Γ a t1; let _ ← checkSV Γ b t2
+                                          return (.F .omega resTy, {ℓ})
+                | _, _ => .error s!"cap op '{op}' expects {argTys.length} argument(s)"
+      | _ => .error s!"cap op '{op}': receiver is not a capability value (Cap ℓ)"
   -- check-mode-only intros: fail loud (synthesis has no expected type to drive them).
   | .lam _ _ => .error "fun needs an expected arrow type — annotate `(fun x => e : A -> B)`"
   | .inlS _  => .error "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
@@ -616,6 +660,19 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | Γ, .pairS a b   => do return .pairS (← elabS env Γ a) (← elabS env Γ b)
   | Γ, .foldS b     => do return .foldS (← elabS env Γ b)
   | Γ, .unfoldS b   => do return .unfoldS (← elabS env Γ b)
+  | Γ, .withCapS kind init name body => do   -- bind name : Cap ℓ so body operands synthesize (ADR-0070)
+      let init' ← elabS env Γ init
+      let Γ' := match capKindLabel kind with
+        | some ℓ => (name, (.cap ℓ : VT)) :: Γ
+        | none   => Γ
+      return .withCapS kind init' name (← elabS env Γ' body)
+  | Γ, .dotPerform recv op args => do
+      let recv' ← elabS env Γ recv
+      let args' ← (match args with
+        | .none    => (pure .none : Except String SurfArgs)
+        | .one a   => do return .one (← elabS env Γ a)
+        | .two a b => do return .two (← elabS env Γ a) (← elabS env Γ b))
+      return .dotPerform recv' op args'
   | Γ, .app (.var c) a => do                  -- ctor intro `Cons(e, …)` parses as application (ADR-0069)
       match env.ctors.lookup c with
       | some ci => if ci.arity == 0 then .error s!"constructor '{c}' takes no arguments"
@@ -992,5 +1049,30 @@ def vecDataProg (body : String) : String :=
   "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> x }") 4
 #guard runTypedYieldsInt 800 (vecDataProg
   "let v = Vec(1, 2) + Vec(3, 4) in match v { Vec(x, y) -> y }") 6
+
+/-! ## Validation ⑩ — named capabilities are TYPED (#3, ADR-0070).
+
+`with H as h` binds `h : Cap ℓ`; `h.op` performs (adding ℓ to the row); the handler discharges ℓ.
+The checker rejects a label mismatch or a non-cap receiver. Both the ambient and named forms are
+identity-dispatched; the type just now names the cap. -/
+-- a handled named-state program is pure (the `with` discharges {state}).
+#guard check "with state 5 as h in h.get" == .ok (.F .omega .int, ⊥)
+#guard display "with state 5 as h in h.get" == "Int"
+-- the TWO-CELL demo type-checks AND runs to 3 (typed path) — ambient can't express it.
+#guard runTypedYieldsInt 90 "with state 1 as a in (with state 2 as b in (let x = a.get in (let y = b.get in x + y)))" 3
+-- put on a named cap, then get, still discharged.
+#guard runTypedYieldsInt 60 "with state 5 as h in (let z = h.put(7) in h.get)" 7
+-- a named transaction cap, fully handled.
+#guard displayProg "with atomically as t in (let r = t.new(100) in (let z = t.write(r, 70) in t.read(r)))" == "Int"
+
+-- REJECTIONS — the cap checker is sound:
+-- label mismatch: a state cap has no `raise`.
+#guard (match check "with state 5 as h in h.raise(9)" with | .error _ => true | _ => false)
+-- non-cap receiver: an Int is not a capability.
+#guard (match check "let x = 3 in x.get" with | .error _ => true | _ => false)
+-- wrong arg type: put expects Int, given a sum.
+#guard (match check "with state 5 as h in h.put(Left(0))" with | .error _ => true | _ => false)
+-- unknown op on a valid cap.
+#guard (match check "with state 5 as h in h.frobnicate" with | .error _ => true | _ => false)
 
 end Bang.TypeCheck

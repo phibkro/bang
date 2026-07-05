@@ -37,6 +37,8 @@ nothing here can drift from what the language actually does.
 | `μ intro (INTERNAL: emitted by ctor elaboration; check-mode only)` |  |
 | `μ elim` | (INTERNAL: emitted by named-match elaboration) |
 | `named-ctor match (parse-only; ELIMINATED by the elaborator —` |  |
+| `with <kind> <init|unitS> as <name> in <body>` |  |
+| `h.op(args) — perform op on the named cap` |  |
 
 ## Types
 
@@ -168,6 +170,9 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `( fun x => raise x : Int -> Int ! {throws} )` : `Int -> Int ! {throws}`  — a declared row that COVERS the inferred effect passes (and the inferred effect is what displays).
 - `( fun x => x : Int -> Int ! {throws} )` : `Int -> Int`  — a PURE function satisfies a may-throw signature (⊥ ⊆ {throws}).
 - `( fun x => raise x : Int -> Int )` : `Int -> Int ! {throws}`  — un-annotated arrow stays unconstrained: a throwing fn is fine, effect inferred + shown.
+### Validation ⑩ — named capabilities are TYPED (#3, ADR-0070).
+
+- `with state 5 as h in h.get` : `Int`
 
 ## Programs & observation
 
