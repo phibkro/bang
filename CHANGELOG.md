@@ -24,6 +24,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — type-directed operator resolution — the northstar runs (#24 piece 2, ADR-0068) (`63c7fb9`)
 - **typecheck** — source laws discharge on the tested rung — the northstar is LAWFUL (#24 piece 3, ADR-0068) (`d9276c0`)
 - **surface** — law implication sugar — conditional laws read as written (#39 part 1) (`d74325f`)
+- **surface** — data declarations — named ctors/match over sums·products·μ; Vec northstar in its intended spelling (#2, ADR-0069) (`a59cc48`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

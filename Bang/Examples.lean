@@ -35,6 +35,10 @@ module
 -- `Bang/Witness/LWRegress.lean`:23.
 meta import Bang.Frontend.Surface
 public import Bang.Frontend.Surface
+-- §C runs the CALCULATED machine `exec ∘ compile` (Bang.CalcVM) as the second
+-- engine in the differential `#guard`s. Apex (this file) may import Backend.
+meta import Bang.Backend.AbstractMachine
+public import Bang.Backend.AbstractMachine
 
 namespace Bang.Examples
 
@@ -233,5 +237,72 @@ def capEscape : Comp :=
     (.handle (.state stateLabel .vunit) (.ret (.vthunk (.perform (.vvar 0) "get" .vunit))))
     (.force (.vvar 0))
 #guard (match Source.eval 50 capEscape with | .escapedCap => true | _ => false)
+
+/-! ## C. Compiled-path differential guards — `exec ∘ compile ≡ Source.eval` (issue #6)
+
+The `bang run --compiled` engine runs the CALCULATED abstract machine (`Bang.CalcVM`,
+the verified compiler output of the two-hop architecture, ADR-0016) instead of the
+kernel oracle. `compile_correct` / `evalD_agrees_source` PROVE these engines agree in
+general; the guards below are the concrete cross-check that catches definitional drift,
+run on the SAME readable surface sources §A uses — so they exercise the full runner
+pipeline `parse → lower → compile → exec` that the CLI flag drives.
+
+`compiledAgreesInt` ties BOTH engines to one literal `n`: a false "they agree" is
+structurally unrepresentable (you cannot satisfy it with the two engines returning
+different values). A false guard FAILS `lake build` — the gate. Fuel is generous:
+`exec` counts machine-instruction steps (finer than `Source.eval`'s recursion depth),
+but both are monotone once terminated, so one over-supply serves both engines. -/
+
+/-- Compiled-path differential check: the calculated machine `exec ∘ compile` AND the
+kernel oracle `Source.eval` both yield exactly `vint n` for the lowered `src`. Mirrors
+`runYieldsInt`'s structural style — no `BEq` on kernel types. -/
+def compiledAgreesInt (fuel : Nat) (src : String) (n : Int) : Bool :=
+  match Bang.Surface.parse src with
+  | .error _ => false
+  | .ok surf =>
+    match Bang.Surface.lower surf with
+    | .error _ => false
+    | .ok c =>
+      (match Bang.CalcVM.exec fuel 0 (Bang.CalcVM.compile c []) [] [] with
+       | some [.ret (.vint m)] => m == n
+       | _                     => false)
+      &&
+      (match Source.eval fuel c with
+       | .done (.vint m) => m == n
+       | _               => false)
+
+-- C-PURE. let-binding (A1) and lambda β (A4): the compiled machine reduces `SUBST`/`APP`
+-- to the same value the oracle does.
+#guard compiledAgreesInt 2000 "let x = 3 in x" 3
+#guard compiledAgreesInt 2000 "(fun x => x) 5" 5
+
+-- C-THROWS. zero-shot `raise` caught by `handle` (A5), and the DEEP handler that discards
+-- the captured continuation (A6): the machine's `THROW`/`unwindFind` aborts to the same payload.
+#guard compiledAgreesInt 2000 "handle (raise 7)" 7
+#guard compiledAgreesInt 2000 "handle (let z = raise 7 in 99)" 7
+
+-- C-STATE. read-default (A7) and RESUMPTIVE put-then-get (A8): the machine's `OP`/`stateUpdate`
+-- resumes the continuation and threads the store exactly as the oracle's resumptive handler.
+#guard compiledAgreesInt 2000 "state 5 in get" 5
+#guard compiledAgreesInt 2000 "state 0 in (let z = put 7 in get)" 7
+
+-- C-STM. transaction commit (A10) and abort-ROLLBACK on a foreign throw (A11): the machine's
+-- `txnUpdate` threads the heap, and the zero-shot escape discards the uncommitted write — the
+-- observable `100` (original balance) proves the rollback, agreeing with the oracle.
+#guard compiledAgreesInt 2000 "atomically (let r = new 100 in (let z = write r 70 in read r))" 70
+#guard compiledAgreesInt 2000 "handle (atomically (let r = new 100 in (let z = write r 70 in raise 100)))" 100
+
+-- C-BOUNDARY (build-enforced, issue #40): the calculated machine does NOT yet execute the
+-- ADR-0065 δ-rules — `evalD` (the reference `compile`/`exec` are calculated from) has no
+-- `binop` arm, so arithmetic WEDGES on the compiled engine (a stuck non-value machine state;
+-- the CLI reports exit 5) while the oracle yields 7. Extending it is a re-DERIVATION, not an
+-- exec patch (invariant #4). This guard PINS the boundary as "compiled produces anything BUT
+-- the oracle's value": when binop lands in the machine it flips, forcing this doc + the CLI
+-- help text to update.
+#guard (match Bang.Surface.parse "3 + 4" >>= Bang.Surface.lower with
+        | .ok c => (match Bang.CalcVM.exec 2000 0 (Bang.CalcVM.compile c []) [] [] with
+                    | some [.ret (.vint 7)] => false   -- ← binop LANDED: flip this guard (#40)
+                    | _                     => true)
+        | .error _ => false)
 
 end Bang.Examples
