@@ -2,7 +2,7 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Accepted (direction; mechanism pending a re-spike)
+- **Status**: Accepted — MECHANISM CONFIRMED (μ-encoding, no new primitive; re-spike POSITIVE 2026-07-05 after #45)
 - **Summary**: Recursion enters as a surface `let rec` construct that the checker recognizes and types with `Div` in the effect row (the stratification seam made real — general recursion is the descent into the fuel-bounded fragment). MECHANISM: prefer a μ-types LIBRARY ENCODING of the fixpoint (no new kernel primitive — invariant #5 holds; the recursion spike #42 confirmed the kernel has the pieces: iso-recursive μ + thunks + arrows), gated on checker completeness (#45) which currently blocks the higher-order payload the encoding needs; a minimal `fix` kernel primitive is the FALLBACK if the encoding proves too fiddly to type/lower. v1 recursion runs under `Source.eval`'s existing fuel (deep recursion → `oom`); TCO is a DEFERRED verified machine optimization (invariant #7), unified with resumption grades (Q27/#17). Resolves Q28.
 - **Resolves**: Q28 (the recursion marker)
 - **Depends-on**: 0029, 0028, 0065
@@ -63,12 +63,21 @@ the raw μ-knot or a construct.
 - **TCO / structural-totality in v1** — perf + totality-refinement are second-class (invariant #7);
   ship recursion-that-ooms first.
 
-## Open (build-arbitrated) — the re-spike gate
+## RESOLVED (build-arbitrated) — the re-spike gate: POSITIVE (2026-07-05, after #45, `b42014a`)
 
-Before committing to "no new primitive": after #45 (checker completeness) lands, re-run the spike —
-does `let rec f = fun n => if n < 1 then 0 else n + $(f (n-1))`-style (or the raw μ-knot) TYPE and RUN
-to the right answer under fuel? YES ⟹ μ-encoding, invariant #5 preserved, this ADR's mechanism is
-final. NO ⟹ escalate to the fix-primitive fallback (a follow-on kernel ADR).
+The re-spike is **positive**: μ-encoded recursion (Landin's knot — `data Rec = Rec(Thunk (Rec -> Int
+-> Int))` + self-application) TYPES and RUNS end-to-end on the kernel's existing μ + `U` + arrows, with
+**NO new primitive** — bounded countdown-sum `5+4+3+2+1+0` → 15, unbounded → `oom` (build-gated
+`#guard`s in `TypeCheck.lean`). So the mechanism is **FINAL: μ-encoding, invariant #5 preserved**; the
+fix-primitive fallback does NOT fire. Prerequisite #45 (checker check-mode completeness — push expected
+types into thunks) landed to unblock the higher-order payload.
+
+**Last ergonomic gap (not a mechanism issue):** the recursion currently needs the `if` CONDITION (and
+match scrutinee) A-normalized by hand — `let c = n == 0 in if c …` — because `synthSC`'s `ifS`/`matchD`
+expect a VALUE condition/scrutinee but `n == 0` is a binop (a computation). Same **#41** class (an
+elaborator auto-A-normalization, not a check arm). With the manual `let c`, μ-recursion is fully
+working; closing #41 makes it spellable naturally. That, plus the `let rec` surface sugar + the `Div`-row
+typing (§Decision 1-2), is the remaining recursion build — all surface/checker, no kernel.
 
 ## Revisit if
 
