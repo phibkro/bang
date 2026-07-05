@@ -625,6 +625,23 @@
     "sha256_pinned": ""
   },
   {
+    "key": "cheng-parreaux-ecoop26-parsing",
+    "title": "A Simple Recipe for Writing Decent Recursive Descent Parsers",
+    "year": "2026",
+    "doi": "10.4230/LIPIcs.ECOOP.2026.30",
+    "eprint": "",
+    "topics": [
+      "surface-syntax",
+      "parsing"
+    ],
+    "grounds": [],
+    "role": "recipe",
+    "ondisk": true,
+    "hop": "adjacent",
+    "path": "references/papers/adjacent/cheng-parreaux-ecoop26-parsing.pdf",
+    "sha256_pinned": ""
+  },
+  {
     "key": "chu-guo-hoffmann-oopsla26-aara-effects",
     "title": "Handling Exceptions and Effects with Automatic Resource Analysis",
     "year": "2026",

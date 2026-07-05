@@ -928,3 +928,21 @@
             helper-lemma practice (CtxCorr/CapLabelCoh/NoResume were each discovered from
             semantic comprehension, exactly this thesis). Operator-flagged 2026-06-28.},
 }
+
+@inproceedings{cheng-parreaux-ecoop26-parsing,
+  keywords = {topic:surface-syntax topic:parsing role:recipe},
+  author = {Cheng, Luyu and Parreaux, Lionel},
+  title  = {A Simple Recipe for Writing Decent Recursive Descent Parsers},
+  booktitle = {40th European Conference on Object-Oriented Programming (ECOOP 2026)},
+  year   = 2026,
+  doi    = {10.4230/LIPIcs.ECOOP.2026.30},
+  note   = {HKUST. Pearl. Generalizes the Pratt operator table into FIRST-CLASS parsing
+            rules (Rule = choices: Keyword/Ref/End + left/right binding powers); the same
+            Pratt-shaped loop consults the reified rules, and the rule VALUES generate the
+            syntax spec mechanically (railroad diagrams + complete precedence table).
+            Scales to full Caml Light. THE shape for our #30 Pratt refactor: rule table as
+            SSoT root, parser behavior AND the language.md grammar section both generated
+            from it (GitHub #38, spec-shell grammar gap). Also unlocks Q24
+            (whitespace-insensitivity) + #9 (tree-sitter from the same table).
+            Operator-flagged 2026-07-05.},
+}
