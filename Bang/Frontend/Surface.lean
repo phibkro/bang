@@ -544,6 +544,22 @@ the descent depth; `4·(tokenize output length) + 1` is a safe bound (see `parse
 — each nesting level is a 3-call descent that may consume only one token). The
 inner application `loop` also consumes fuel (one per consumed atom). -/
 
+/-- The reified infix-operator table (ADR-0071 ①): each operator token maps to `(leftBP, rightBP,
+build)` — its binding powers and the `Surf` builder. Paper convention (higher BP binds tighter;
+left-assoc ⟹ `leftBP < rightBP`, right-assoc ⟹ `leftBP > rightBP`). Application (juxtaposition,
+tightest) has no token, so it is NOT here — it is `pOp`'s operand (`pApp`); `.`-postfix (tighter
+still) stays in `pDotted`. `=>` builds the `#p`/`ifS` implication desugar the old `pImp` did.
+Pure data, so `docs/reference` + the tree-sitter grammar can generate from this ONE root. -/
+def opInfo : String → Option (Nat × Nat × (Surf → Surf → Surf))
+  | "=>" => some (2, 1, fun l r => .lett "#p" l (.ifS (.var "#p") r (.binopS .eq (.lit 0) (.lit 0))))
+  | "<"  => some (3, 4, fun l r => .binopS .lt  l r)
+  | "==" => some (3, 4, fun l r => .binopS .eq  l r)
+  | "+"  => some (5, 6, fun l r => .binopS .add l r)
+  | "-"  => some (5, 6, fun l r => .binopS .sub l r)
+  | "*"  => some (7, 8, fun l r => .binopS .mul l r)
+  | "/"  => some (7, 8, fun l r => .binopS .div l r)
+  | _    => none
+
 mutual
 /-- Parse a full expression (lowest precedence: let / fun / handle / raise / app).
 The `Nat` is structural fuel — every recursive call passes the decremented `f`,
@@ -623,7 +639,7 @@ def pExpr : Nat → P Surf
       let (_, ts) ← expect "{" ts
       pDo f ts
   | f + 1, "with" :: "state" :: ts => do   -- named cap: with state <init> as <h> in <body> (ADR-0070)
-      let (init, ts) ← pAddSub f ts          -- init is a value expr (stops at `as`)
+      let (init, ts) ← pOp 4 f ts            -- init is a value expr (minBP 4 admits + - * /, stops at < == => as)
       let (_, ts) ← expect "as" ts
       let (name, ts) ← pIdent ts
       let (_, ts) ← expect "in" ts
@@ -637,22 +653,36 @@ def pExpr : Nat → P Surf
         .ok (.withCapS kind .unitS name body, ts)
       else .error s!"with: expected a handler kind (state/throws/atomically), got '{kind}'"
   | f + 1, "with" :: t => .error s!"with: expected 'state <init>' / 'throws' / 'atomically', got '{t.head?.getD "end"}'"
-  | f + 1, ts => pImp f ts              -- ▼ infix precedence chain (issue #4; `=>` loosest, #39)
+  | f + 1, ts => pOp 0 f ts             -- ▼ one Pratt binding-power loop (issue #4; `=>` loosest, #39; ADR-0071 ①)
 
-/-- Implication `P => Q` (loosest infix, RIGHT-assoc — `p => q => r` = `p => (q => r)`), pure
-parse-level sugar: `let #p = P in (if #p then Q else 0 == 0)`. Bool-valued, so conditional LAWS
-read as written (`law trans(a,b,c): a < b => b < c => a < c`, #39); `fun x => e` is unaffected
-(its `=>` is consumed by the `fun` arm before this level sees it). The `#p` binder is
-grammar-unbindable (the `#do` precedent). -/
-def pImp : Nat → P Surf
-  | 0,      _ => .error "parser out of fuel"
-  | f + 1, ts => do
-      let (lhs, ts) ← pCompare f ts
-      match ts with
-      | "=>" :: r => do
-          let (rhs, ts) ← pImp f r
-          .ok (.lett "#p" lhs (.ifS (.var "#p") rhs (.binopS .eq (.lit 0) (.lit 0))), ts)
-      | _ => .ok (lhs, ts)
+/-- ONE Pratt binding-power loop over the reified operator table `opInfo` (ADR-0071 ①), replacing
+the fixed `=>`/`<`·`==`/`+`·`-`/`*`·`/` precedence chain. `minBP` is the incoming binding power: an
+operand is `pApp` (application — the tightest operator, juxtaposition), then while the next token is
+an operator whose `leftBP > minBP`, consume it and recurse at its `rightBP` for the right operand.
+Left-assoc ops have `leftBP < rightBP` (so a same-precedence sibling STOPS the recursion and folds
+left); right-assoc ops have `leftBP > rightBP` (so the sibling RE-ENTERS and nests right). The
+build-fn (from `opInfo`) produces the exact `Surf` the old chain did — `=>` is still the `#p`/`ifS`
+desugar. Fuel-driven total (no `partial`), so the demo `#guard`s reduce. -/
+def pOp : Nat → Nat → P Surf
+  | _,     0,     _  => .error "parser out of fuel"
+  | minBP, f + 1, ts => do
+      let (lhs, ts) ← pApp f ts
+      pOpLoop minBP f lhs ts
+
+/-- The Pratt loop's tail: fold operators tighter than `minBP` onto `lhs`, left-to-right. -/
+def pOpLoop : Nat → Nat → Surf → P Surf
+  | _,     0,     acc, ts => .ok (acc, ts)
+  | minBP, f + 1, acc, ts =>
+    match ts with
+    | op :: rest =>
+      match opInfo op with
+      | some (lbp, rbp, build) =>
+          if lbp > minBP then do
+            let (rhs, ts) ← pOp rbp f rest
+            pOpLoop minBP f (build acc rhs) ts
+          else .ok (acc, ts)
+      | none => .ok (acc, ts)
+    | [] => .ok (acc, ts)
 
 /-- Parse an application chain: one or more DOTTED atoms, left-associated. -/
 def pApp : Nat → P Surf
@@ -707,41 +737,6 @@ def pArgList : Nat → P (List Surf)
       | ")" :: r => .ok ([e], r)
       | t :: _   => .error s!"expected ',' or ')' in a cap-op argument list, got '{t}'"
       | []       => .error "unterminated cap-op argument list"
-
-/-- Infix arithmetic via precedence climbing (issue #4): `compare` (loosest) → `add/sub` →
-`mul/div` → `app` (tightest). Each level parses a higher-precedence term then left-folds its own
-operators. Operators are SPACE-DELIMITED ordinary tokens (`3 + 4`, `x < 3`), so `-` never clashes
-with the `->` match-arrow and no tokenizer change is needed. -/
-def pCompare : Nat → P Surf
-  | 0,      _ => .error "parser out of fuel"
-  | f + 1, ts => do let (lhs, ts) ← pAddSub f ts; pCompareLoop f lhs ts
-def pCompareLoop : Nat → Surf → P Surf
-  | 0,      acc, ts => .ok (acc, ts)
-  | f + 1, acc, ts =>
-    match ts with
-    | "<"  :: r => do let (rhs, ts) ← pAddSub f r; pCompareLoop f (.binopS .lt acc rhs) ts
-    | "==" :: r => do let (rhs, ts) ← pAddSub f r; pCompareLoop f (.binopS .eq acc rhs) ts
-    | _ => .ok (acc, ts)
-def pAddSub : Nat → P Surf
-  | 0,      _ => .error "parser out of fuel"
-  | f + 1, ts => do let (lhs, ts) ← pMulDiv f ts; pAddSubLoop f lhs ts
-def pAddSubLoop : Nat → Surf → P Surf
-  | 0,      acc, ts => .ok (acc, ts)
-  | f + 1, acc, ts =>
-    match ts with
-    | "+" :: r => do let (rhs, ts) ← pMulDiv f r; pAddSubLoop f (.binopS .add acc rhs) ts
-    | "-" :: r => do let (rhs, ts) ← pMulDiv f r; pAddSubLoop f (.binopS .sub acc rhs) ts
-    | _ => .ok (acc, ts)
-def pMulDiv : Nat → P Surf
-  | 0,      _ => .error "parser out of fuel"
-  | f + 1, ts => do let (lhs, ts) ← pApp f ts; pMulDivLoop f lhs ts
-def pMulDivLoop : Nat → Surf → P Surf
-  | 0,      acc, ts => .ok (acc, ts)
-  | f + 1, acc, ts =>
-    match ts with
-    | "*" :: r => do let (rhs, ts) ← pApp f r; pMulDivLoop f (.binopS .mul acc rhs) ts
-    | "/" :: r => do let (rhs, ts) ← pApp f r; pMulDivLoop f (.binopS .div acc rhs) ts
-    | _ => .ok (acc, ts)
 
 /-- Parse a `do`-block body (after `do {`), up to and including `}`. Each statement is `x = e` (a
 binding) or a bare `e` (sequenced, value discarded); the LAST statement is the block's result. Desugars
@@ -856,13 +851,14 @@ def pAtom : Nat → P Surf
 end
 
 /-- Parse a whole program: tokenize, parse one expression, require all tokens
-consumed. Fuel = 6·(token count) + 1: each NESTING level costs a full
-`pExpr→pImp→pCompare→pAddSub→pMulDiv→pApp→pAtom` descent (7 fuel) yet may
-consume only one token (e.g. `Left(7)`, `(a, b)`, deeply-nested parens), so the
-bound must be a multiple of the token count, not `+1` — and the multiplier must
-track the CHAIN DEPTH (4 sufficed for the 6-deep chain; `pImp` made it 7-deep,
-which starved `(3)` at ×4). Generous by construction — it never bites a
-well-formed program (it only caps runaway recursion for totality). -/
+consumed. Fuel = 6·(token count) + 1: each NESTING level costs a
+`pExpr→pOp→pApp→pDotted→pAtom` descent plus the Pratt loop's `pOp→pOpLoop→pOp`
+step (2 fuel per operator), yet a level may consume only one token (e.g.
+`Left(7)`, `(a, b)`, deeply-nested parens), so the bound must be a multiple of
+the token count, not `+1`. ×6 is a generous over-approximation (the Pratt loop
+is SHALLOWER than the old 7-deep `pImp→pMulDiv` chain it replaced, so the bound
+that worked for that chain still holds) — it never bites a well-formed program
+(it only caps runaway recursion for totality). -/
 def parse (src : String) : Except String Surf := do
   let toks := tokenize src
   let (e, rest) ← pExpr (toks.length * 6 + 1) toks
