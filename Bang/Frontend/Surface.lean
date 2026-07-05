@@ -380,6 +380,7 @@ def pIdent : P String
           || t = "atomically" || t = "new" || t = "read" || t = "write"
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
           || t = "do" || t = ";"
+          || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
         .error s!"expected an identifier, got keyword '{t}'"
@@ -673,6 +674,7 @@ def pAtom : Nat → P Surf
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
+              || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law"
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
         .error s!"unexpected '{t}' where an atom was expected"
@@ -690,6 +692,153 @@ def parse (src : String) : Except String Surf := do
   let toks := tokenize src
   let (e, rest) ← pExpr (toks.length * 4 + 1) toks
   if rest.isEmpty then .ok e
+  else .error s!"trailing tokens after expression: {rest}"
+
+/-! ### Declarations — `trait` / `impl` (issue #24 piece 1; ADR-0040 §5, ADR-0068)
+
+A PROGRAM is a declaration prelude + a body expression (`Prog`), parsed by `parseProg`. The decl
+forms are DATA consumed by the type-directed elaborator (the next unit) — nothing here changes the
+untyped `parse → lower → eval` path. Grammar (Rust-ish, ADR-0040 §5):
+
+    trait Add { fn add(a, b) -> Int ; law comm(a, b): add a b == add b a }
+    impl Add for (Int * Int) { fn add(p, q) = p }
+    <body expression>
+
+v1 scope (ADR-0068): no trait hierarchy in source syntax; law bodies are Bool-valued expressions
+(equations via `==`); impl target types are STRUCTURAL (`pTy`). Member separators `;` are optional
+(the member keywords delimit, same convention as `match`'s optional comma). -/
+
+/-- A trait operation SIGNATURE: `fn add(a, b) -> Int`. -/
+structure OpSig where
+  name   : String
+  params : List String
+  retTy  : Ty
+  deriving Repr, Inhabited, DecidableEq
+
+/-- A trait LAW: `law comm(a, b): add a b == add b a`. `params` are the universally-quantified
+variables; `body` is a Bool-valued expression over them + the trait's ops. Pure syntax here —
+discharge (the ADR-0068 tested-rung elaboration) is the elaborator's job. -/
+structure LawDecl where
+  name   : String
+  params : List String
+  body   : Surf
+  deriving Repr, Inhabited, DecidableEq
+
+/-- An impl operation DEFINITION: `fn add(p, q) = e`. -/
+structure OpDef where
+  name   : String
+  params : List String
+  body   : Surf
+  deriving Repr, Inhabited, DecidableEq
+
+/-- A top-level declaration: a trait (ops + laws) or an impl (op definitions for a structural
+target type). -/
+inductive Decl where
+  | traitD : String → List OpSig → List LawDecl → Decl   -- trait N { fn … ; law … }
+  | implD  : String → Ty → List OpDef → Decl             -- impl N for τ { fn … }
+  deriving Repr, Inhabited, DecidableEq
+
+/-- A whole program: the declaration prelude + the body expression (ADR-0068 decision 3). -/
+structure Prog where
+  decls : List Decl
+  body  : Surf
+  deriving Repr, Inhabited, DecidableEq
+
+/-- The comma-separated tail of a parameter list, up to and including `)`. -/
+def pParamsLoop : Nat → P (List String)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (x, ts) ← pIdent ts
+      match ts with
+      | "," :: ts => do let (rest, ts) ← pParamsLoop f ts; .ok (x :: rest, ts)
+      | ")" :: ts => .ok ([x], ts)
+      | t :: _    => .error s!"expected ',' or ')' in a parameter list, got '{t}'"
+      | []        => .error "expected ',' or ')' in a parameter list, got end of input"
+
+/-- A parenthesized parameter list `( x , y , … )` (≥ 1 identifier). -/
+def pParams : Nat → P (List String)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts => do let (_, ts) ← expect "(" ts; pParamsLoop f ts
+
+/-- Trait members, up to and including `}`: `fn name(params) -> T` signatures and
+`law name(params): e` laws, in any order. -/
+def pTraitMembers : Nat → P (List OpSig × List LawDecl)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts =>
+    match ts with
+    | "}" :: ts => .ok (([], []), ts)
+    | ";" :: ts => pTraitMembers f ts
+    | "fn" :: ts => do
+        let (n, ts) ← pIdent ts
+        let (ps, ts) ← pParams f ts
+        let (_, ts) ← expect "->" ts
+        let (t, ts) ← pTy f ts
+        let ((ops, laws), ts) ← pTraitMembers f ts
+        .ok ((⟨n, ps, t⟩ :: ops, laws), ts)
+    | "law" :: ts => do
+        let (n, ts) ← pIdent ts
+        let (ps, ts) ← pParams f ts
+        let (_, ts) ← expect ":" ts
+        let (b, ts) ← pExpr f ts
+        let ((ops, laws), ts) ← pTraitMembers f ts
+        .ok ((ops, ⟨n, ps, b⟩ :: laws), ts)
+    | t :: _ => .error s!"expected 'fn', 'law', or '}' in a trait body, got '{t}'"
+    | []     => .error "unterminated trait body"
+
+/-- Impl members, up to and including `}`: `fn name(params) = e` definitions. -/
+def pImplMembers : Nat → P (List OpDef)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts =>
+    match ts with
+    | "}" :: ts => .ok ([], ts)
+    | ";" :: ts => pImplMembers f ts
+    | "fn" :: ts => do
+        let (n, ts) ← pIdent ts
+        let (ps, ts) ← pParams f ts
+        let (_, ts) ← expect "=" ts
+        let (b, ts) ← pExpr f ts
+        let (rest, ts) ← pImplMembers f ts
+        .ok (⟨n, ps, b⟩ :: rest, ts)
+    | t :: _ => .error s!"expected 'fn' or '}' in an impl body, got '{t}'"
+    | []     => .error "unterminated impl body"
+
+/-- One declaration: `trait N { … }` or `impl N for τ { … }`. -/
+def pDecl : Nat → P Decl
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, "trait" :: ts => do
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect "{" ts
+      let ((ops, laws), ts) ← pTraitMembers f ts
+      .ok (.traitD n ops laws, ts)
+  | f + 1, "impl" :: ts => do
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect "for" ts
+      let (t, ts) ← pTy f ts
+      let (_, ts) ← expect "{" ts
+      let (ops, ts) ← pImplMembers f ts
+      .ok (.implD n t ops, ts)
+  | _ + 1, t :: _ => .error s!"expected 'trait' or 'impl', got '{t}'"
+  | _ + 1, []     => .error "expected a declaration, got end of input"
+
+/-- The declaration prelude: zero or more decls (delimited by their leading keyword). -/
+def pDecls : Nat → P (List Decl)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts =>
+    match ts with
+    | "trait" :: _ | "impl" :: _ => do
+        let (d, ts) ← pDecl f ts
+        let (ds, ts) ← pDecls f ts
+        .ok (d :: ds, ts)
+    | _ => .ok ([], ts)
+
+/-- Parse a whole PROGRAM: the `trait`/`impl` declaration prelude, then the body expression.
+Same fuel bound as `parse`; a plain expression parses identically (`decls = []`). -/
+def parseProg (src : String) : Except String Prog := do
+  let toks := tokenize src
+  let fuel := toks.length * 4 + 1
+  let (ds, ts) ← pDecls fuel toks
+  let (e, rest) ← pExpr fuel ts
+  if rest.isEmpty then .ok ⟨ds, e⟩
   else .error s!"trailing tokens after expression: {rest}"
 
 
@@ -1098,6 +1247,45 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Operators are sp
 -- do-notation (issue #27): `x = e` → `lett x`, bare `e` → `lett "#do"`, last stmt = result.
 #guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
 #guard parsesTo "do { x = a; b; c }" (.lett "x" (.var "a") (.lett "#do" (.var "b") (.var "c")))
+
+/-! ### Stage ⑤ — `trait`/`impl` declarations parse (issue #24 piece 1; ADR-0040 §5, ADR-0068).
+
+A program is a decl PRELUDE + body (`Prog`, `parseProg`). Pure syntax: the decls are inert data
+until the type-directed elaborator (piece 2) consumes them; the untyped path (`parse`) is
+untouched. -/
+
+/-- Does `src` parse to exactly the program `p`? (`parsesTo`, lifted to `Prog`.) -/
+def progParsesTo (src : String) (p : Prog) : Bool :=
+  match parseProg src with
+  | .ok p' => decide (p' = p)
+  | .error _ => false
+
+-- a trait with an op signature and a law parses to its decl form (the law body is an EQUATION
+-- over the op, via `==` — Bool-valued, per ADR-0068's v1 law-body scope).
+#guard progParsesTo "trait Add { fn add(a, b) -> Int ; law comm(a, b): add a b == add b a } 0"
+  ⟨[.traitD "Add" [⟨"add", ["a", "b"], .tInt⟩]
+      [⟨"comm", ["a", "b"],
+        .binopS .eq (.app (.app (.var "add") (.var "a")) (.var "b"))
+                    (.app (.app (.var "add") (.var "b")) (.var "a"))⟩]],
+   .lit 0⟩
+-- an impl for a STRUCTURAL target type (ADR-0068 decision 2): the target is a `pTy`.
+#guard progParsesTo "impl Add for (Int * Int) { fn add(p, q) = p } 0"
+  ⟨[.implD "Add" (.tProd .tInt .tInt) [⟨"add", ["p", "q"], .var "p"⟩]], .lit 0⟩
+-- member separators are optional (keywords delimit): two ops, no semicolon.
+#guard progParsesTo "trait Ord { fn le(a, b) -> Int fn eq(a, b) -> Int } 0"
+  ⟨[.traitD "Ord" [⟨"le", ["a", "b"], .tInt⟩, ⟨"eq", ["a", "b"], .tInt⟩] []], .lit 0⟩
+-- the northstar program SHAPE parses end-to-end: trait + impl + a pair-addition body.
+#guard (match parseProg "trait Add { fn add(a, b) -> Int } impl Add for (Int * Int) { fn add(p, q) = p } (1, 2) + (3, 4)" with
+        | .ok p => p.decls.length == 2
+        | .error _ => false)
+-- with NO decls, `parseProg` agrees with `parse` — the untyped path is untouched.
+#guard (match parseProg "let x = 3 in x + 1", parse "let x = 3 in x + 1" with
+        | .ok p, .ok e => decide (p = ⟨[], e⟩)
+        | _, _ => false)
+-- the new keywords are RESERVED: using one as a binder fails loud.
+#guard (match parseProg "let fn = 3 in fn" with | .error _ => true | _ => false)
+-- a malformed trait body fails loud (an expression where 'fn'/'law'/'}' was expected).
+#guard (match parseProg "trait Add { 3 } 0" with | .error _ => true | _ => false)
 
 end -- public section
 end Bang.Surface
