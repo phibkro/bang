@@ -48,6 +48,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — curryBind — annotated higher-order compose ELABORATES+RUNS (ADR-0075 annotation-checked tier) (`4c380a4`)
 - **typecheck** — paramHole — bare curried lambdas elaborate; the bare-higher-order wall moves to the force-of-hole boundary (poly item-2-HM stage 1) (`8e3aa19`)
 - **cli** — located TYPE errors (post-hoc) — name-carrying type errors report line:col (#52 Stage B, ADR-0076) (`ef39165`)
+- **stdlib** — string stdlib — concat/reverse/eq injected into the prelude, available free (#49, closes the #50 reuse gap for first-order helpers) (`3fcdeba`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

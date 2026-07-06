@@ -19,7 +19,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SURFACE = ROOT / "Bang/Frontend/Surface.lean"
 IR = ROOT / "Bang/Core/IR.lean"
 EVAL = ROOT / "Bang/Core/Semantics/Eval.lean"
-SOURCES = [ROOT / "Bang/Examples.lean", ROOT / "Bang/Frontend/TypeCheck.lean"]
+TYPECHECK = ROOT / "Bang/Frontend/TypeCheck.lean"
+SOURCES = [ROOT / "Bang/Examples.lean", TYPECHECK]
 OUT = ROOT / "docs/reference/language.md"
 
 STR = r'"((?:[^"\\]|\\.)*)"'  # a Lean string literal (with escapes)
@@ -131,6 +132,28 @@ def extract_result_ctors(text):
         elif s.startswith(("deriving", "inductive", "end", "def", "@", "abbrev", "/-")):
             break
     return names
+
+
+def extract_stdlib(text):
+    """(name, sig) for each `stdlibFnSrcs` entry (TypeCheck.lean).
+
+    The single source is the list of `let rec … in 0` program strings injected in scope of every
+    program. Each entry's HEAD string literal begins `let[ rec] NAME[ : SIG] =` — NAME is always
+    derivable (the correct-by-construction part), SIG only when a top-level annotation is present
+    (concat/eq). `reverse` has none (an accumulator fold), so its cell points to the source rather
+    than hand-copying a signature that could drift."""
+    m = re.search(r"def stdlibFnSrcs\b.*?:=\s*\n\s*\[(.*?)\]\s*\n", text, re.S)
+    if not m:
+        sys.exit("gen-reference: could not locate `def stdlibFnSrcs` — the stdlib section is keyed off it.")
+    rows = []
+    # a HEAD is a string literal beginning `let ` — continuation strings begin `match`/`fun`/`SCons`.
+    for hm in re.finditer(r'"(let (?:rec )?\w+.*?)"', m.group(1)):
+        nm = re.match(r"let (?:rec )?(\w+)\s*(?::\s*([^=]+?))?\s*=", hm.group(1))
+        if nm:
+            rows.append((nm.group(1), nm.group(2).strip() if nm.group(2) else None))
+    if not rows:
+        sys.exit("gen-reference: `stdlibFnSrcs` parsed to no functions — the head-literal shape changed.")
+    return rows
 
 
 def parse_examples(path):
@@ -258,6 +281,23 @@ def render():
         for ctor, sig, note in extract_constructors(ir, ind):
             L.append(f"| `{ctor}` | `{sig}` | {note} |")
         L.append("")
+
+    L.append("## Standard library")
+    L.append("")
+    L.append("Library functions available FREE in every program — injected in scope like the `Char`/`Str`")
+    L.append("prelude, so no import is needed — sourced from `stdlibFnSrcs` (`Bang/Frontend/TypeCheck.lean`).")
+    L.append("They are `let rec` bindings, so call them with the **force convention**: `($concat) \"ab\" \"cd\"`,")
+    L.append("not bare `concat …`. A user binding of the same name shadows the injected one (lexical scope).")
+    L.append("")
+    L.append("| Function | Signature |")
+    L.append("|---|---|")
+    for name, sig in extract_stdlib(TYPECHECK.read_text()):
+        cell = f"`{sig}`" if sig else "— (no top-level annotation — see `stdlibFnSrcs`)"
+        L.append(f"| `{name}` | {cell} |")
+    L.append("")
+    L.append("Curried (multi-arg) `let rec`s type `… ! {Div}` — the #47 multi-arg gap (ADR-0073), a sound")
+    L.append("over-approximation: they terminate but the certifier can't prove it, so they run correctly.")
+    L.append("")
 
     L.append("## Examples")
     L.append("")

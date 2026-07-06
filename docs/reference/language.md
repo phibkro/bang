@@ -159,6 +159,22 @@ The surface is sugar over these; `Source.eval` (Bang/Core/IR.lean) is the refere
 | `throws` | `Label → Handler` |  |
 | `transaction` | `Label → List Val → Handler` |  |
 
+## Standard library
+
+Library functions available FREE in every program — injected in scope like the `Char`/`Str`
+prelude, so no import is needed — sourced from `stdlibFnSrcs` (`Bang/Frontend/TypeCheck.lean`).
+They are `let rec` bindings, so call them with the **force convention**: `($concat) "ab" "cd"`,
+not bare `concat …`. A user binding of the same name shadows the injected one (lexical scope).
+
+| Function | Signature |
+|---|---|
+| `concat` | `Str -> Str -> Str` |
+| `reverse` | — (no top-level annotation — see `stdlibFnSrcs`) |
+| `eq` | `Str -> Str -> Unit + Unit` |
+
+Curried (multi-arg) `let rec`s type `… ! {Div}` — the #47 multi-arg gap (ADR-0073), a sound
+over-approximation: they terminate but the certifier can't prove it, so they run correctly.
+
 ## Examples
 
 Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is the inferred type.
