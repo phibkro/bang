@@ -23,8 +23,8 @@ Decidability is the INVARIANT: un-annotated-undecidable = TYPE ERROR, never an u
 ```
 bite  unlocks                                          power     decid.        touches        status
 ──────────────────────────────────────────────────────────────────────────────────────────────────
-0   type vars + HM rank-1 inference                    HM        inferred      checker (leaf)  NEXT (spike)
-      id, const, compose; map over List a (pure)
+0   type vars + HM rank-1 inference                    HM        inferred      checker (leaf)  SPIKE ✅ / in-place NEXT
+      id, const, compose; map over List a (pure)       — spike `Bang/Frontend/HMSpike.lean` (e946adb): POSITIVE
 0b  ROW polymorphism (generic over effect rows)        HM+row    inferred      checker (leaf)  after 0
       map : ∀a b ρ. (a -> b ! ρ) -> List a -> List b ! ρ
 1   generic DATA types                                 HM        inferred      surface+checker after 0b
@@ -65,7 +65,17 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
 
 ## Status
 
-- **2026-07-06:** initiative established. ADR-0075 (architecture) + this PATH landed. **NEXT = bite-0
-  spike** (pure HM substrate — unification + generalization + mono elaboration). Not started.
+- **2026-07-06:** initiative established (ADR-0075 + this PATH). **Bite-0 SPIKE DONE — POSITIVE**
+  (`Bang/Frontend/HMSpike.lean`, `e946adb`; a standalone leaf, census untouched). The HM substrate
+  (type-var/scheme rep `HTy` = pure-CBPV + `hole`/unif-var + `rigid`/∀-var; `StateT (Except)`;
+  fuel-total unify/zonk/occurs; let-generalization + fresh-hole instantiation) lands cleanly on the
+  bidirectional checker. **Killer guard: `let id = {fun x=>x}` used at Int AND (Int*Int) → types + runs
+  (6); the DISCRIMINATOR — the SAME body with a `fun`-bound (mono) `id` → FAILS — proves generalization
+  is load-bearing.** Elaborate-to-mono is TRIVIAL (`Source.eval` untyped → erase-and-run, kernel
+  untouched). **NEXT = bite-0 IN-PLACE**: fold HM into `synthSC`/`synthSV` — a mechanical RESTRUCTURE
+  (checker types `VTy` structural-eq → `HTy`+holes+zonk; `Except` → `StateT`), NOT a case-add; the two
+  "annotate the `fun`" errors dissolve; generalization did NOT resist (a one-shape `.lett` insertion).
+  Then **bite 0b = row polymorphism** (rows are SETS, invariant #2 → open-row unification, Rémy/Leijen —
+  the bang-specific add). No spine work; ADR-0075 holds unrevised.
 - Motivation banked: #50 (the tokenizer's reusable-helper limit) is the concrete need; traits+laws
   (ADR-0068) work NOW but monomorphic — bite 2 makes them generic.
