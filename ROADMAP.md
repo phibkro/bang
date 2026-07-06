@@ -102,12 +102,13 @@ WAVE 1 — ERGONOMICS (make it pleasant; every item is a dogfooding pain point)
   #7  REPL                     — iteration speed (would have made dogfooding far faster)     [OPEN]
 
 WAVE 2 — THREE NORTH-STAR DIRECTIONS (operator sequences them; each design-first, ≈post-v1)
-  (a) RECURSION ✅ DONE (#42, ADR-0073) → then STRINGS → "bang writes real programs / its own tools"
-        Recursion landed end-to-end (#45 types+runs no-primitive · #41 reads naturally · let rec
-        user-facing · #46 Div type-visible · #47 termination checker → Div is PRECISE): μ-encoding,
-        verified kernel untouched. Q28 resolved. REMAINING for toolchain-capable: strings → then a
-        tokenizer, a calculator interpreter, small toolchain tools. Follow-ons: inductive `Nat`
-        (free total factorial now #47 landed — Q31), #48 effectful recursion, #47's measure/Nat lift.
+  (a) RECURSION ✅ DONE (#42, ADR-0073) → STRINGS foundation ✅ DONE (#49 st.1-2, ADR-0074) → toolchain tools
+        Recursion end-to-end (#45 no-primitive · #41 natural · let rec · #46 Div-visible · #47
+        termination checker → Div PRECISE); strings runnable (String=List Char spec, literals,
+        length total-certified, display). Verified kernel untouched. REMAINING for toolchain-capable:
+        #49 string stdlib (concat/reverse/eq/map — stage 3) → a TOKENIZER in bang (stage 5, the
+        "writes its own tools" proof). Follow-ons: inductive `Nat` (free total factorial via #47 — Q31),
+        #48 effectful recursion, packed-string runtime + Char refinement (ADR-0074 deferred / Q31).
   (b) POLYMORPHISM → "bang has a generic, lawful, verified stdlib"
         ADR-0027 stage 2 (HM) → generic containers + generic lawful traits → Q26 optics
         (the lawful-polymorphism north-star) → the HKT fork (Functor/Monad).
