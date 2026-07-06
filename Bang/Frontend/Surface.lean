@@ -1091,6 +1091,35 @@ def unboundLocated (src name : String) : Option (String × Span) :=
   | .error m => (locateToken src name).map (fun sp => (m, sp))
   | .ok _    => none
 
+/-- VIEW (post-hoc located TYPE errors, issue #52 Stage B): the generalization of `unboundLocated` for
+the `bang eval` type/elab error path. Many checker/elaborator messages NAME the offending construct —
+a bare variable (`unbound variable x`) or a single-quoted name (`unknown type name 'Foo'`, `constructor
+'Cons' expects …`, `no impl provides '+' for …`, `let-binding 'f': …`). This resolves that name to its
+source `Span` AFTER the fact via `locateToken`, WITHOUT annotating `Surf` (the per-node span tier — every
+mismatch at its exact node + LSP hover — stays deferred to the AST-annotation build). Extraction: the
+first single-quoted token if present, else the identifier after `unbound variable `. It locates the FIRST
+occurrence — exact for an unbound variable (never a binder site) and a good approximation elsewhere; a
+nested `let-binding 'f': <inner>` points at the outer binding `f`. Returns `none` (→ a plain, un-located
+message) when the message names no locatable token (e.g. `value type mismatch`) — those are the deferred
+per-node tier. -/
+public def locateInMsg (src msg : String) : Option Span :=
+  let candidate : Option String :=
+    match msg.splitOn "'" with
+    | _ :: name :: _ :: _ => some name                       -- first single-quoted token
+    | _ => if "unbound variable ".isPrefixOf msg
+           then some (msg.drop "unbound variable ".length).toString   -- the bare unbound identifier
+           else none
+  candidate.bind (locateToken src)
+
+-- POST-HOC located TYPE errors (issue #52 Stage B): the name a message carries resolves to its span.
+#guard (locateInMsg "let x = 3 in bar" "unbound variable bar").map (·.loc) == some "1:14"
+#guard (locateInMsg "match Nope(0) { Nope(a) -> a }" "unknown constructor 'Nope' in match").map (·.loc) == some "1:7"
+#guard (locateInMsg "1 + Left(0)" "no impl provides '+' for Left").map (·.loc) == some "1:3"
+-- a nested let-binding error points at the OUTER binding (the first quoted name).
+#guard (locateInMsg "let f = g in f" "let-binding 'f': unbound variable g").map (·.loc) == some "1:5"
+-- a message naming NO locatable token stays un-located (→ a plain message; the deferred per-node tier).
+#guard (locateInMsg "let x = 3 in $x" "value type mismatch") == none
+
 /-- Resolve a `PErr.rest` (the token list at failure) to a source `Span`. `rest` is a SUFFIX of
 `tokenize src`, so its head sits at index `length - rest.length`; the same index into
 `tokenizeSpanned` (same tokens, pinned by `#guard`) gives the offending token's span. `rest = []`

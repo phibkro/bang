@@ -1390,12 +1390,14 @@ ill-typed program is now REJECTED with a type error instead of running to a runt
 (realizing `type_safety`: well-typed ⟹ never stuck). This is `elaborateToComp` with the check
 inserted; the raw (check-free) `elaborateToComp` stays the `--no-typecheck` escape. The error carries
 an optional `Span`: a PARSE error is located (`some`, → `line:col`); an elaboration/type error is
-un-located (`none`) for now (located type errors are the #52 Stage B follow-on). -/
+POST-HOC located (`Surface.locateInMsg` — the message names a construct, a span-view finds it; #52
+Stage B) when it names a locatable token, else un-located (`none` → a plain message; the deferred
+per-node span tier). -/
 public def checkAndLower (src : String) : Except (String × Option Bang.Surface.Span) Comp := do
   let prog ← Bang.Surface.parseProgLocated src
-  let e ← (elabProg prog).mapError (fun m => (m, none))
-  let _ ← (runInferC (synthSC [] e)).mapError (fun m => (m, none))
-  (Bang.Surface.lower e).mapError (fun m => (m, none))
+  let e ← (elabProg prog).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
+  let _ ← (runInferC (synthSC [] e)).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
+  (Bang.Surface.lower e).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
 
 /-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
 def checkProg (src : String) : Except String (CT × EffRow) := do
