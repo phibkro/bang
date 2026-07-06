@@ -1,0 +1,9 @@
+data TokList = TNil | TCons(Str, TokList)
+let rec tokenize : Str -> TokList = fun s => match s {
+  SNil -> TCons(SNil, TNil),
+  SCons(c, rest) -> if (match c { Char(n) -> n == 32 })
+    then TCons(SNil, ($tokenize) rest)
+    else (match (($tokenize) rest) { TNil -> TCons(SCons(c, SNil), TNil), TCons(w, more) -> TCons(SCons(c, w), more) })
+} in
+let rec tokCount : TokList -> Int = fun tl => match tl { TNil -> 0, TCons(w, rest) -> 1 + ($tokCount) rest } in
+($tokCount) (($tokenize) "ab cd ef")

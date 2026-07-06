@@ -1446,6 +1446,33 @@ def lengthDef : String :=
 -- a string literal TYPES as the `Str` data type (its structural μ), decl-free (the prelude is injected).
 #guard (match checkProg "\"hi\"" with | .ok _ => true | _ => false)
 
+/-! ### Validation ⑨i — the DOGFOOD: a TOKENIZER written IN BANG (#49 stage 5, "bang writes its own
+tools"). `tokenize : Str -> TokList` splits a string on spaces, structurally recursing on the char-list
+tail (a subterm) and building tokens RIGHT-TO-LEFT — a space starts a fresh empty head token, a
+non-space is CONSed onto the head token of the recursive result (so tokens come out in order, no
+reverse needed). Structural ⟹ #47-certified TOTAL. All `let rec` folds over `data`, riding strings —
+NO kernel change. Edge policy: split-on-EVERY-space, so leading/trailing/consecutive spaces yield
+empty tokens (documented, not hidden; a `filter`-empties pass is stage-3 stdlib). -/
+def tokDefs : String :=
+  "data TokList = TNil | TCons(Str, TokList) " ++
+  "let rec tokenize : Str -> TokList = fun s => match s { SNil -> TCons(SNil, TNil), " ++
+  "SCons(c, rest) -> if (match c { Char(n) -> n == 32 }) then TCons(SNil, ($tokenize) rest) " ++
+  "else (match (($tokenize) rest) { TNil -> TCons(SCons(c, SNil), TNil), TCons(w, more) -> TCons(SCons(c, w), more) }) } in " ++
+  "let rec tokCount : TokList -> Int = fun tl => match tl { TNil -> 0, TCons(w, rest) -> 1 + ($tokCount) rest } in " ++
+  "let rec length : Str -> Int = fun s => match s { SNil -> 0, SCons(c, r) -> 1 + ($length) r } in "
+-- THE DOGFOOD RUNS: "ab cd ef" (3 words) → 3 tokens; a single word → 1; empty → 1 (one empty token).
+#guard runTypedYieldsInt 5000 (tokDefs ++ "($tokCount) (($tokenize) \"ab cd ef\")") 3
+#guard runTypedYieldsInt 5000 (tokDefs ++ "($tokCount) (($tokenize) \"abc\")") 1
+#guard runTypedYieldsInt 5000 (tokDefs ++ "($tokCount) (($tokenize) \"\")") 1
+-- edge (documented): a TRAILING space yields a trailing empty token (split-on-every-space) → 2.
+#guard runTypedYieldsInt 5000 (tokDefs ++ "($tokCount) (($tokenize) \"ab \")") 2
+-- token CONTENT is a real string: the FIRST token of "hi there" is "hi" (length 2), the SECOND "there" (5).
+#guard runTypedYieldsInt 5000 (tokDefs ++ "let toks = ($tokenize) \"hi there\" in (match toks { TNil -> 0, TCons(w, rest) -> ($length) w })") 2
+#guard runTypedYieldsInt 5000 (tokDefs ++ "let toks = ($tokenize) \"hi there\" in (match toks { TNil -> 0, TCons(w, rest) -> match rest { TNil -> 0, TCons(w2, more) -> ($length) w2 } })") 5
+-- THE #47 PAYOFF: the whole tokenizer pipeline is STRUCTURAL ⟹ certified TOTAL, Div ∉ ρ (strings are total).
+#guard (match checkProg (tokDefs ++ "($tokenize) \"ab cd\"") with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+#guard (match checkProg (tokDefs ++ "($tokCount) (($tokenize) \"ab cd\")") with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+
 /-! ### The northstar, in its INTENDED spelling: `Vec` as a NAMED type (ADR-0069 consequence). -/
 
 def vecDataProg (body : String) : String :=
