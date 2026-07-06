@@ -62,13 +62,25 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
   (`{…}`/lit/var/pair), else monomorphic. The ML soundness gate, in place before effect-typed poly. Guard
   (via `check`, the type checker): a non-value `if … then {fun} else {fun}` used at two types FAILS.
   Corpus + bite-0 poly guards UNCHANGED, kernel/census untouched.
-- **Item 2 COMPUTATION HOLES — ESCALATED (proven bigger than the hook).** A computation hole CANNOT ride
-  `CTy` the way a value hole rides `VTy.tvar` — grep-verified it COLLIDES with 57 `.F`/`.arr` matches
-  (esp. the 6+ sites extracting a value type from `.F _ A`: `anfSplit`, `elabS .lett`, `checkSC`). ⟹ item 2
-  is a proper **`IVTy`/`ICTy` inference-type re-rep** (`IVTy`=`VTy`+`vhole`, `ICTy`=`CTy`+`chole`; subst
-  binds both; `force` unifies vhole~`U ρ chole`; convert at boundaries), EFFORT ≈ the bite-0 in-place port.
-  Silver lining: this IS the correct-by-construction cleanup (a hole unrepresentable-as-μ-var, retires the
-  reserved-`tvar` smell for BOTH kinds). Payoff: `compose` types+runs. → its own fresh-context session.
+- **Item 2 COMPUTATION HOLES — PARTIALLY LANDED + RE-MAPPED (`4c380a4`; icty ran it, didn't reason it).**
+  - **ANNOTATION-CHECKED higher-order LANDED (`curryBind`):** the FIRST gate for `compose` is the
+    ELABORATOR, not the type system — `elabS .annotS (.lam)` bound only the OUTERMOST curried param, so a
+    nested `fun g`/`fun x` is unbound when `anfSplit` A-normalizes a computation arg (unbound `g`), BEFORE
+    any type-checking; an ANNOTATED compose fails identically. `curryBind` (peel the `fun`/`->` chain,
+    bind every param to its annotated domain) → annotated monomorphic higher-order `compose` ELABS+CHECKS+
+    RUNS (`(compose inc dbl) 5 = 11` via `bang eval`), ZERO type-system change (`($f)`/`($g)` force
+    CONCRETE thunks). ADR-0075's annotation-checked tier, reached.
+  - **HM-INFERRED higher-order (bare `fun f => fun g => …`) STILL needs the `IVTy`/`ICTy` re-rep** (grep-
+    proven: a computation hole can't ride `CTy` — collides with 57 `.F`/`.arr` matches; `IVTy`=`VTy`+`vhole`,
+    `ICTy`=`CTy`+`chole`, effort ≈ the in-place port; the correct-by-construction cleanup retiring the
+    reserved-`tvar` smell). **BUT the re-rep ALONE reaches no runnable program** — HM/bare compose ALSO
+    needs (a) `elabS .lam` (bare) binding params to fresh HOLES + a `binopS` hole-operand guard, and (b)
+    **THE SHARED ARCHITECTURAL FORK ⤵**.
+- **⭐ THE SHARED BLOCKER (icty's key finding) — thread ONE `Infer` state through elaborate+check.** Today
+  `anfSplit`'s per-site inference is a THROWAWAY `runInferC` (discards state), so a `chole`-typed `($g) x`
+  can't resolve coherently across elaborate→check. This is the SAME "one `Infer` state across
+  elaborate+check" fork flagged for item 3 (row vars). It blocks BOTH item-2-HM and item-3-row-vars. **DO
+  THIS FIRST** — it's the architectural unlock; the `IVTy`/`ICTy` re-rep + open-`IRow` then slot onto it.
 - **Item 3 ROW VARIABLES — ESCALATED (design pass, AFTER item 2).** Rows are `EffRow = Finset Label`
   (closed). Row-poly needs OPEN rows = `(Finset Label × Option RowVar)` (Rémy-style tail); unification
   `{throws}∪ρ₁ ~ {state}∪ρ₂` → fresh shared tail (set-rows make this SIMPLER than scoped labels — no order,

@@ -45,6 +45,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — located PARSE errors — the parser reports line:col (#52 Stage A, ADR-0076) (`77dec51`)
 - **cli** — bang eval TYPE-CHECKS before running — ill-typed is a type error, not runtime stuck (#51, closes #51, ADR-0076) (`553aaf7`)
 - **typecheck** — bare Left/Right injections SYNTHESIZE via an HM hole — closes the #51 raw-sum regression (#53, closes #53) (`6e51cd7`)
+- **typecheck** — curryBind — annotated higher-order compose ELABORATES+RUNS (ADR-0075 annotation-checked tier) (`4c380a4`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
