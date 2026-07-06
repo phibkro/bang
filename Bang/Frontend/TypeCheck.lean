@@ -175,7 +175,18 @@ read a `Surf` as a computation, `synthSV`/`checkSV` as a value. Effect ops (④)
 each `perform` adds its label, each handler discharges it; `synthSC` ENUMERATES every constructor. -/
 open Bang.Surface
 
-abbrev NCtx := List (String × VT)   -- named typing context, innermost first (= `List.lookup` keys)
+/-- A HINDLEY-MILNER type scheme `∀ (arity vars). body` (ADR-0075 bite-0). The quantified variables
+are the RIGID markers `rigidBase + 0 … rigidBase + arity-1` inside `body`; instantiation replaces
+each with a fresh unification HOLE. A MONOMORPHIC binding (a lambda / match / split parameter) is
+`⟨0, τ⟩` — no quantification, so `Coe VT Scheme` below lets every ordinary `(x, A) :: Γ` binding site
+stay UNCHANGED; only `let` (which generalizes) and the lookup consumers (which instantiate) differ. -/
+structure Scheme where
+  arity : Nat := 0
+  body  : VT
+
+instance : Coe VT Scheme := ⟨fun v => ⟨0, v⟩⟩
+
+abbrev NCtx := List (String × Scheme)   -- named typing context, innermost first (= `List.lookup` keys)
 
 /-- Interpret a surface `Ty` into BOTH its value reading (`.1`) and computation reading (`.2`) in one
 structural pass — `tArr`/`tThunk` are computations (`arr`/the wrapped `F`); a non-arrow as a value is
@@ -239,26 +250,220 @@ def capOpSig : String → Option (Label × List VT × VT)
   | _       => none
 
 
+/-! ## HM inference substrate (ADR-0075 bite-0) — unification + let-generalization.
+
+Holes and rigids ride the EXISTING `VTy.tvar : Nat` (so the checker stays in the kernel `VT`/`CT`
+algebra — no mirror type, minimal regression surface). Two RESERVED ranges keep them apart from the
+μ-recursion vars (small, 0-2) and the poison sentinels (997-999): a **hole** (`?n`, a unification
+variable) is `tvar (holeBase + n)`; a **rigid** (a ∀-bound scheme var) is `tvar (rigidBase + i)`.
+`bigFuel`-driven total recursion (the repo's parser idiom) — no cycles once occurs-check holds, but
+Lean can't see that, so fuel bounds every walk (never bites: the fresh counter tops out in the dozens).
+
+SCOPE (bite-0): holes are VALUE-level. A computation is never a bare hole (a `lam` builds `arr`, a
+returner builds `F`), so forcing a value-hole into an unknown computation (higher-order `compose`) is
+a DEFINED "annotate" error — computation-level holes are the bite-0b follow-on (`CTy` has no `tvar`). -/
+def holeBase  : Nat := 1000000
+def rigidBase : Nat := 2000000
+def bigFuel   : Nat := 1000000
+
+@[inline] def mkHole  (n : Nat) : VT := .tvar (holeBase + n)
+@[inline] def mkRigid (i : Nat) : VT := .tvar (rigidBase + i)
+/-- Is this a HOLE? (a `tvar` in the reserved hole range) → its hole-id. -/
+@[inline] def asHole : VT → Option Nat
+  | .tvar n => if holeBase ≤ n ∧ n < rigidBase then some (n - holeBase) else none
+  | _       => none
+
+/-- The unification state: a fresh-variable counter + the hole ⇒ type substitution. -/
+structure USt where
+  fresh : Nat := 0
+  subst : List (Nat × VT) := []
+
+abbrev Infer := StateT USt (Except String)
+
+/-- Mint a fresh unification hole. -/
+def freshHole : Infer VT := modifyGet (fun s => (mkHole s.fresh, { s with fresh := s.fresh + 1 }))
+/-- Assign hole `n := t`. -/
+def assign (n : Nat) (t : VT) : Infer Unit := modify (fun s => { s with subst := (n, t) :: s.subst })
+/-- One-hop lookup of a hole's binding. -/
+def hget (n : Nat) : Infer (Option VT) := do return (← get).subst.lookup n
+
+/-- Follow the hole chain at the TOP of a value type. -/
+def resolve (fuel : Nat) (t : VT) : Infer VT := do
+  match fuel with
+  | 0      => return t
+  | fu + 1 => match asHole t with
+              | some n => match (← hget n) with | some t' => resolve fu t' | none => return t
+              | none   => return t
+
+mutual
+/-- Deeply apply the substitution to a value type. -/
+def zonkV (fuel : Nat) (t : VT) : Infer VT := do
+  match fuel with
+  | 0      => return t
+  | fu + 1 =>
+    let t ← resolve (fu + 1) t
+    match t with
+    | .sum a b  => return .sum  (← zonkV fu a) (← zonkV fu b)
+    | .prod a b => return .prod (← zonkV fu a) (← zonkV fu b)
+    | .U φ b    => return .U φ (← zonkC fu b)
+    | .mu a     => return .mu (← zonkV fu a)
+    | other     => return other
+/-- Deeply apply the substitution to a computation type. -/
+def zonkC (fuel : Nat) (c : CT) : Infer CT := do
+  match fuel with
+  | 0      => return c
+  | fu + 1 => match c with
+    | .F q a     => return .F q (← zonkV fu a)
+    | .arr q a b => return .arr q (← zonkV fu a) (← zonkC fu b)
+end
+
+mutual
+/-- Does hole `n` occur in a (ZONKED) value type? The occurs-check that makes an infinite type a
+LOUD error, not a hang. -/
+def occursV (n : Nat) : VT → Bool
+  | .tvar m   => holeBase ≤ m ∧ m < rigidBase ∧ (m - holeBase) == n
+  | .sum a b  => occursV n a || occursV n b
+  | .prod a b => occursV n a || occursV n b
+  | .U _ b    => occursC n b
+  | .mu a     => occursV n a
+  | .int | .unit | .cap _ => false
+def occursC (n : Nat) : CT → Bool
+  | .F _ a     => occursV n a
+  | .arr _ a b => occursV n a || occursC n b
+end
+
+mutual
+/-- Unify two value types, extending the substitution. Rows/grades unify by EQUALITY (concrete in
+bite-0 — row variables are bite-0b). Occurs-check fails loud. MGU is the differential-tested contract
+(CLAUDE.md), not proven here. -/
+def unifyV (fuel : Nat) (a b : VT) : Infer Unit := do
+  match fuel with
+  | 0      => throw "unify: out of fuel"
+  | fu + 1 =>
+    let a ← resolve (fu + 1) a
+    let b ← resolve (fu + 1) b
+    match asHole a, asHole b with
+    | some n, some m => if n == m then return () else assign n b
+    | some n, _      => do if occursV n (← zonkV (fu + 1) b) then
+                             throw "occurs check: cannot construct an infinite type" else assign n b
+    | _, some m      => do if occursV m (← zonkV (fu + 1) a) then
+                             throw "occurs check: cannot construct an infinite type" else assign m a
+    | none, none =>
+      match a, b with
+      | .int, .int   => return ()
+      | .unit, .unit => return ()
+      | .cap ℓ, .cap ℓ' => if ℓ == ℓ' then return () else throw "cap label mismatch"
+      | .tvar n, .tvar m => if n == m then return () else throw "rigid/rec type-var mismatch"
+      | .sum a1 a2, .sum b1 b2   => do unifyV fu a1 b1; unifyV fu a2 b2
+      | .prod a1 a2, .prod b1 b2 => do unifyV fu a1 b1; unifyV fu a2 b2
+      | .mu a1, .mu b1           => unifyV fu a1 b1
+      | .U φ B, .U φ' B'         => if φ == φ' then unifyC fu B B' else throw "thunk row mismatch"
+      | _, _ => throw "type mismatch"
+def unifyC (fuel : Nat) (a b : CT) : Infer Unit := do
+  match fuel with
+  | 0      => throw "unify: out of fuel"
+  | fu + 1 =>
+    match a, b with
+    | .F q A, .F q' A'         => if q == q' then unifyV fu A A' else throw "returner grade mismatch"
+    | .arr q A B, .arr q' A' B' => if q == q' then do unifyV fu A A'; unifyC fu B B'
+                                   else throw "arrow grade mismatch"
+    | _, _ => throw "computation type mismatch"
+end
+
+mutual
+/-- Free holes of a (zonked) value type, left-to-right. -/
+def freeHolesV : VT → List Nat
+  | .tvar m   => if holeBase ≤ m ∧ m < rigidBase then [m - holeBase] else []
+  | .sum a b  => freeHolesV a ++ freeHolesV b
+  | .prod a b => freeHolesV a ++ freeHolesV b
+  | .U _ b    => freeHolesC b
+  | .mu a     => freeHolesV a
+  | .int | .unit | .cap _ => []
+def freeHolesC : CT → List Nat
+  | .F _ a     => freeHolesV a
+  | .arr _ a b => freeHolesV a ++ freeHolesC b
+end
+
+mutual
+/-- Replace each hole in `ms` with `rigid (its index)` — the generalization abstraction step. -/
+def abstractV (ms : List Nat) : VT → VT
+  | .tvar m   => if holeBase ≤ m ∧ m < rigidBase then (match ms.idxOf? (m - holeBase) with
+                   | some i => mkRigid i | none => .tvar m) else .tvar m
+  | .sum a b  => .sum  (abstractV ms a) (abstractV ms b)
+  | .prod a b => .prod (abstractV ms a) (abstractV ms b)
+  | .U φ b    => .U φ (abstractC ms b)
+  | .mu a     => .mu (abstractV ms a)
+  | t         => t
+def abstractC (ms : List Nat) : CT → CT
+  | .F q a     => .F q (abstractV ms a)
+  | .arr q a b => .arr q (abstractV ms a) (abstractC ms b)
+end
+
+mutual
+/-- Replace each `rigid i` with `insts[i]` — the instantiation step. -/
+def instV (insts : List VT) : VT → VT
+  | .tvar m   => if m ≥ rigidBase then insts.getD (m - rigidBase) (.tvar m) else .tvar m
+  | .sum a b  => .sum  (instV insts a) (instV insts b)
+  | .prod a b => .prod (instV insts a) (instV insts b)
+  | .U φ b    => .U φ (instC insts b)
+  | .mu a     => .mu (instV insts a)
+  | t         => t
+def instC (insts : List VT) : CT → CT
+  | .F q a     => .F q (instV insts a)
+  | .arr q a b => .arr q (instV insts a) (instC insts b)
+end
+
+/-- GENERALIZE `A` against `Γ`: quantify over the holes free in `A` but NOT free in the environment.
+The heart of let-polymorphism — `let`-bound names get a `∀`, lambda parameters do not. -/
+def generalize (Γ : NCtx) (A : VT) : Infer Scheme := do
+  let Az ← zonkV bigFuel A
+  let mut envHoles : List Nat := []
+  for (_, s) in Γ do
+    envHoles := envHoles ++ freeHolesV (← zonkV bigFuel s.body)
+  let genHoles := ((freeHolesV Az).filter (fun m => !envHoles.contains m)).eraseDups
+  return ⟨genHoles.length, abstractV genHoles Az⟩
+
+/-- INSTANTIATE a scheme with a fresh hole per quantified variable (independent holes per use-site). -/
+def instantiate (s : Scheme) : Infer VT := do
+  let mut insts : List VT := []
+  for _ in List.range s.arity do insts := insts ++ [← freshHole]
+  return instV insts s.body
+
+/-- Look a name up and instantiate its scheme (the `var` rule). -/
+def lookupInst (Γ : NCtx) (x : String) : Infer VT := do
+  match Γ.lookup x with
+  | some s => instantiate s
+  | none   => throw s!"unbound variable {x}"
+
+/-- Run an inference action from an empty state and zonk the resulting value type (the concrete
+answer the elaborator's resolution sites need). A leftover hole stays a `tvar` (harmless — the
+resolution match falls through). -/
+def runInferV (act : Infer VT) : Except String VT := (do zonkV bigFuel (← act)).run' {}
+/-- As `runInferV`, for a computation type + its row. -/
+def runInferC (act : Infer (CT × EffRow)) : Except String (CT × EffRow) :=
+  (do let (B, φ) ← act; return (← zonkC bigFuel B, φ)).run' {}
+
+
 -- Termination: the rank (synth = 0, check = 1) breaks the `check t → synth t` subsumption tie, as
 -- in the spike; every other call is on a structural subterm of the `Surf`.
 mutual
 /-- Synthesize the value type of a `Surf` read as a VALUE. -/
-def synthSV (Γ : NCtx) (e : Surf) : Except String VT :=
+def synthSV (Γ : NCtx) (e : Surf) : Infer VT :=
   match e with
-  | .lit _     => .ok .int
-  | .var x     => match Γ.lookup x with | some A => .ok A | none => .error s!"unbound variable {x}"
+  | .lit _     => return .int
+  | .var x     => lookupInst Γ x                       -- HM: instantiate the scheme with fresh holes
   | .thunk b   => do let (B, φ) ← synthSC Γ b; return .U φ B
   | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
-  | .unitS     => .ok .unit
+  | .unitS     => return .unit
   | .annotS b t => do let A := vtyOf t; let _ ← checkSV Γ b A; return A
-  | .inlS _    => .error "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
-  | .inrS _    => .error "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
-  | .foldS _   => .error "fold needs an expected μ type — annotate (ctor elaboration provides it)"
-  | _          => .error "not a value (wrap a computation in braces)"
+  | .inlS _    => throw "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
+  | .inrS _    => throw "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  | .foldS _   => throw "fold needs an expected μ type — annotate (ctor elaboration provides it)"
+  | _          => throw "not a value (wrap a computation in braces)"
   termination_by (sizeOf e, 0)
 
 /-- Check a `Surf` read as a VALUE against an expected value type. -/
-def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Except String Unit :=
+def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Infer Unit :=
   match e, expected with
   | .inlS b,    .sum A _  => checkSV Γ b A
   | .inrS b,    .sum _ B  => checkSV Γ b B
@@ -270,34 +475,52 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : VT) : Except String Unit :=
   -- upper bound (over-approximating a thunk's latent effects is the safe direction), as in `annotS`.
   | .thunk b,   .U φ B    => do
       let φ' ← checkSC Γ b B
-      if φ' ⊆ φ then .ok () else .error "thunk body effect exceeds the declared bound"
+      if φ' ⊆ φ then return () else throw "thunk body effect exceeds the declared bound"
   | .annotS b t, expected => do
       let A := vtyOf t
       let _ ← checkSV Γ b A
-      if A = expected then .ok () else .error "ascription does not match expected type"
+      unifyV bigFuel A expected                         -- HM subsumption (was structural `A = expected`)
   | e, expected => do
       let A ← synthSV Γ e
-      if A = expected then .ok () else .error "value type mismatch"
+      unifyV bigFuel A expected                         -- HM subsumption (was structural `A = expected`)
   termination_by (sizeOf e, 2)
 
 /-- Synthesize the computation type + effect row of a `Surf` read as a COMPUTATION. -/
-def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
+def synthSC (Γ : NCtx) (e : Surf) : Infer (CT × EffRow) :=
   match e with
-  | .lit _   => .ok (.F .omega .int, ⊥)
-  | .var x   => match Γ.lookup x with
-                | some A => .ok (.F .omega A, ⊥)
-                | none   => .error s!"unbound variable {x}"
+  | .lit _   => return (.F .omega .int, ⊥)
+  | .var x   => do return (.F .omega (← lookupInst Γ x), ⊥)   -- `ret` of the instantiated scheme
   | .thunk b => do let (B, φ) ← synthSC Γ b; return (.F .omega (.U φ B), ⊥)
   | .pairS a b => do return (.F .omega (.prod (← synthSV Γ a) (← synthSV Γ b)), ⊥)  -- value ⇒ ret
-  | .force b => do match (← synthSV Γ b) with
-                   | .U φ B => return (B, φ)
-                   | _      => .error "force: not a thunk"
-  | .lett x e b => do match (← synthSC Γ e) with
-                      | (.F _ A, φ₁) => do let (B, φ₂) ← synthSC ((x, A) :: Γ) b; return (B, φ₁ ⊔ φ₂)
-                      | _            => .error "let: head is not a returner"
-  | .app f a => do match (← synthSC Γ f) with
-                   | (.arr _ A B, φ) => do let _ ← checkSV Γ a A; return (B, φ)
-                   | _               => .error "app: callee is not a function"
+  -- force: the thunk's type must be `U φ B`. HM — resolve the head; a HOLE here is an un-annotatable
+  -- higher-order force (forcing a parametric thunk) → the defined bite-0 boundary (computation holes
+  -- are bite-0b, `CTy` has no `tvar`); a concrete non-thunk is the ordinary error.
+  | .force b => do
+      match (← resolve bigFuel (← synthSV Γ b)) with
+      | .U φ B => return (B, φ)
+      | other  => match asHole other with
+                  | some _ => throw "force: cannot infer this thunk's type — annotate (higher-order is bite-0b)"
+                  | none   => throw "force: not a thunk"
+  -- HM let-generalization: the RHS's value type `A` is generalized against `Γ` before binding, so a
+  -- `let`-bound name is polymorphic (instantiated fresh per use) — the heart of bite-0.
+  | .lett x e b => do
+      let (Ce, φ₁) ← synthSC Γ e
+      match Ce with
+      | .F _ A => do
+          let sch ← generalize Γ A
+          let (B, φ₂) ← synthSC ((x, sch) :: Γ) b
+          return (B, φ₁ ⊔ φ₂)
+      | _ => throw "let: head is not a returner"
+  -- HM: a bare unannotated `fun` invents a FRESH domain hole (the move the old checker couldn't make —
+  -- its "annotate the fun" error DISSOLVES). The lam's row is its body's, mirroring the checkSC lam arm.
+  | .lam x b => do
+      let a ← freshHole
+      let (B, φ) ← synthSC ((x, a) :: Γ) b
+      return (.arr .omega a B, φ)
+  | .app f a => do
+      match (← synthSC Γ f) with
+      | (.arr _ A B, φ) => do let _ ← checkSV Γ a A; return (B, φ)
+      | _               => throw "app: callee is not a function"
   | .binopS op a b => do
       let _ ← checkSV Γ a .int; let _ ← checkSV Γ b .int
       return (.F .omega (binopResTy op), ⊥)
@@ -306,27 +529,27 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
       let (C, φ₁) ← synthSC Γ t
       let φ₂ ← checkSC Γ e C
       return (C, φ₁ ⊔ φ₂)
-  | .matchS s xl el xr er => do match (← synthSV Γ s) with
+  | .matchS s xl el xr er => do match (← resolve bigFuel (← synthSV Γ s)) with
       | .sum A B => do
           let (C, φ₁) ← synthSC ((xl, A) :: Γ) el
           let φ₂ ← checkSC ((xr, B) :: Γ) er C
           return (C, φ₁ ⊔ φ₂)
-      | _ => .error "match: scrutinee is not a sum"
-  | .splitS a b p body => do match (← synthSV Γ p) with
+      | _ => throw "match: scrutinee is not a sum"
+  | .splitS a b p body => do match (← resolve bigFuel (← synthSV Γ p)) with
       | .prod A B => synthSC ((b, B) :: (a, A) :: Γ) body
-      | _ => .error "split: scrutinee is not a product"
+      | _ => throw "split: scrutinee is not a product"
   | .annotS b t => do
       let C := ctyOf t
       let φ ← checkSC Γ b C
       match effOf t with                              -- declared row (if any) is an upper bound — ④b
-      | some ρ => if φ ⊆ ρ then return (C, φ) else .error "inferred effect exceeds the declared row"
+      | some ρ => if φ ⊆ ρ then return (C, φ) else throw "inferred effect exceeds the declared row"
       | none   => return (C, φ)
   -- ── effects (ADR-0066 ④): each op ADDS its label to the row; handlers DISCHARGE it (`Finset.erase`).
   -- v1 simplification (marked): operation payload/result types are fixed to the surface convention
   -- (state cell + TVar contents + exn payload are `Int`, ADR-0030) — no payload-type threading yet.
   | .raise e     => do let _ ← checkSV Γ e .int; return (.F .omega .int, {exnLabel})    -- result = payload (v1)
   | .handle e    => do let (B, φ) ← synthSC Γ e; return (B, φ.erase exnLabel)            -- discharge throws
-  | .getS        => .ok (.F .omega .int, {stateLabel})
+  | .getS        => return (.F .omega .int, {stateLabel})
   | .putS e      => do let _ ← checkSV Γ e .int; return (.F .omega .unit, {stateLabel})
   | .stateS e0 e => do let _ ← checkSV Γ e0 .int; let (B, φ) ← synthSC Γ e; return (B, φ.erase stateLabel)
   | .atomS e     => do let (B, φ) ← synthSC Γ e; return (B, φ.erase stmLabel)            -- discharge stm
@@ -334,48 +557,48 @@ def synthSC (Γ : NCtx) (e : Surf) : Except String (CT × EffRow) :=
   | .readS e     => do let _ ← checkSV Γ e .int; return (.F .omega .int, {stmLabel})
   | .writeS r w  => do let _ ← checkSV Γ r .int; let _ ← checkSV Γ w .int; return (.F .omega .unit, {stmLabel})
   -- ── ADR-0069 (data) ──
-  | .unitS     => .ok (.F .omega .unit, ⊥)
-  | .unfoldS b => do match (← synthSV Γ b) with        -- T_Unfold mirrored: F 1 (A[μ.A/0]), pure
-                     | .mu A => .ok (.F 1 (VTy.unrollMu A), ⊥)
-                     | _     => .error "unfold: not a μ value"
-  | .matchD .. => .error "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
-  | .letRecS .. => .error "let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (ADR-0073)"
+  | .unitS     => return (.F .omega .unit, ⊥)
+  | .unfoldS b => do match (← resolve bigFuel (← synthSV Γ b)) with   -- T_Unfold mirrored: F 1 (A[μ.A/0]), pure
+                     | .mu A => return (.F 1 (VTy.unrollMu A), ⊥)
+                     | _     => throw "unfold: not a μ value"
+  | .matchD .. => throw "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
+  | .letRecS .. => throw "let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (ADR-0073)"
   | .divMark e => do let (B, φ) ← synthSC Γ e; return (B, insert divLabel φ)  -- #46: mark the row divergent
   -- ── ADR-0070 (named capabilities) ──
   | .withCapS kind init name body => do
       match capKindLabel kind with
-      | none => .error s!"with: unknown handler kind '{kind}'"
+      | none => throw s!"with: unknown handler kind '{kind}'"
       | some ℓ => do
           if kind = "state" then let _ ← checkSV Γ init .int   -- the initial cell value is Int
-          let (B, φ) ← synthSC ((name, .cap ℓ) :: Γ) body       -- name : Cap ℓ in scope
+          let capTy : VT := .cap ℓ
+          let (B, φ) ← synthSC ((name, capTy) :: Γ) body   -- name : Cap ℓ in scope
           return (B, φ.erase ℓ)                                 -- the handler DISCHARGES ℓ
   | .dotPerform recv op args => do
-      match (← synthSV Γ recv) with
+      match (← resolve bigFuel (← synthSV Γ recv)) with
       | .cap ℓ =>
           match capOpSig op with
-          | none => .error s!"unknown capability op '{op}'"
+          | none => throw s!"unknown capability op '{op}'"
           | some (ℓ', argTys, resTy) =>
-              if ℓ != ℓ' then .error s!"cap op '{op}' expects a different capability (label mismatch)"
+              if ℓ != ℓ' then throw s!"cap op '{op}' expects a different capability (label mismatch)"
               else
                 -- match SurfArgs to the op's arity: each arg is a syntactic subterm (termination).
                 match args, argTys with
-                | .none,    []       => .ok (.F .omega resTy, {ℓ})
+                | .none,    []       => return (.F .omega resTy, {ℓ})
                 | .one a,   [t]      => do let _ ← checkSV Γ a t; return (.F .omega resTy, {ℓ})
                 | .two a b, [t1, t2] => do let _ ← checkSV Γ a t1; let _ ← checkSV Γ b t2
                                           return (.F .omega resTy, {ℓ})
-                | _, _ => .error s!"cap op '{op}' expects {argTys.length} argument(s)"
-      | _ => .error s!"cap op '{op}': receiver is not a capability value (Cap ℓ)"
+                | _, _ => throw s!"cap op '{op}' expects {argTys.length} argument(s)"
+      | _ => throw s!"cap op '{op}': receiver is not a capability value (Cap ℓ)"
   -- check-mode-only intros: fail loud (synthesis has no expected type to drive them).
-  | .lam _ _ => .error "fun needs an expected arrow type — annotate `(fun x => e : A -> B)`"
-  | .inlS _  => .error "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
-  | .inrS _  => .error "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
-  | .foldS _ => .error "fold needs an expected μ type — annotate (ctor elaboration provides it)"
+  | .inlS _  => throw "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
+  | .inrS _  => throw "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  | .foldS _ => throw "fold needs an expected μ type — annotate (ctor elaboration provides it)"
   -- NO catch-all: synthSC now ENUMERATES every Surf constructor, so a NEW feature fails to compile
   -- here until it is typed — pipeline-completeness by construction (the operator's enforcement ask).
   termination_by (sizeOf e, 1)
 
 /-- Check a `Surf` read as a COMPUTATION against an expected computation type. -/
-def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Except String EffRow :=
+def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Infer EffRow :=
   match e, expected with
   | .lam x b,   .arr _ A B => checkSC ((x, A) :: Γ) b B
   -- value-constructors in computation position lower to `ret v` — check the value against `A` of `F A`.
@@ -387,20 +610,22 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : CT) : Except String EffRow :=
   | .annotS b t, expected => do
       let C := ctyOf t
       let φ ← checkSC Γ b C
-      if C ≠ expected then .error "ascription does not match expected type"
-      else match effOf t with
-        | some ρ => if φ ⊆ ρ then .ok φ else .error "inferred effect exceeds the declared row"
-        | none   => .ok φ
+      let _ ← unifyC bigFuel C expected                 -- HM subsumption (was structural `C ≠ expected`)
+      match effOf t with
+        | some ρ => if φ ⊆ ρ then return φ else throw "inferred effect exceeds the declared row"
+        | none   => return φ
   | e, expected => do
       let (B, φ) ← synthSC Γ e
-      if B = expected then .ok φ else .error "computation type mismatch"
+      let _ ← unifyC bigFuel B expected                 -- HM subsumption (was structural `B = expected`)
+      return φ
   termination_by (sizeOf e, 3)
 end
 
-/-- End-to-end at the SURFACE: parse a source string, then type-check it as a computation. -/
+/-- End-to-end at the SURFACE: parse a source string, then type-check it as a computation (running the
+inference monad + zonking so the reported type is hole-free for concrete programs). -/
 def check (src : String) : Except String (CT × EffRow) := do
   let e ← Bang.Surface.parse src
-  synthSC [] e
+  runInferC (synthSC [] e)
 
 /-! ## Validation ③ — the Surf checker types ANNOTATED programs the spike could not.
 
@@ -424,6 +649,33 @@ check-mode the type synthesis lacked. -/
 #guard (match check "1 + Left(0)" with | .error _ => true | _ => false)         -- non-Int operand
 #guard (match check "( fun x => x : Int -> Int ) Left(0)" with | .error _ => true | _ => false)  -- arg type
 #guard (match check "( 3 : Int + Int )" with | .error _ => true | _ => false)    -- 3 is not a sum
+
+/-! ## Validation ⑦ — HM inference + let-polymorphism (ADR-0075 bite-0, in-place).
+
+The spike's substrate, now folded into the PRODUCTION checker: a bare unannotated `fun` INFERS its
+domain (the old "annotate the fun" error DISSOLVED); a `let`-bound value is GENERALIZED and
+instantiated fresh per use, so ONE definition types at MULTIPLE types AND runs end-to-end through
+`bang eval` (`runTypedYieldsInt` = the real parse→elab→check→lower→`Source.eval` pipeline). -/
+
+-- a bare unannotated identity now SYNTHESIZES `∀a. a -> F a` (the dissolved error): domain hole = codomain hole.
+#guard (match check "fun x => x" with | .ok (.arr _ (.tvar a) (.F _ (.tvar b)), _) => a == b | _ => false)
+
+-- THE KILLER: one `let`-bound `id` used at Int AND at (Int * Int) in one program — TYPES (needs
+-- let-generalization; without it the second use clashes). The RUN guards (`runTypedYieldsInt`) live
+-- at the file's end, after that helper is defined — Validation ⑦b.
+def killerId : String :=
+  "let id = {fun x => x} in (let a = ($id) 5 in (let p = ($id) (1, 2) in (let (x, y) = p in a + x)))"
+#guard (match check killerId with | .ok _ => true | _ => false)
+
+-- `const = fun x => fun y => x` used at TWO types (Int×Int-agnostic 2nd arg) — TYPES.
+def killerConst : String :=
+  "let const = {fun x => fun y => x} in (let a = (($const) 5) 9 in (let b = (($const) 7) (1, 2) in a + b))"
+#guard (match check killerConst with | .ok _ => true | _ => false)
+
+-- FAIL-LOUD boundary: occurs / self-application `fun x => ($x) x` — forcing a param hole hits the
+-- bite-0 higher-order boundary (a value hole can't become a computation; `CTy` has no `tvar`) → a
+-- DEFINED error, never a hang or a wrong accept.
+#guard (match check "fun x => ($x) x" with | .error _ => true | _ => false)
 
 /-! ## Validation ④ — the Surf checker AGREES with the spike's `Comp` checker on the lowering.
 
@@ -800,7 +1052,7 @@ its REAL error, not a downstream "unbound variable" (the #41 diagnostic). Fresh 
 and shadow innermost-first (as `lower`'s own sentinels do), so nested/sibling binds stay correct. -/
 def anfSplit (Γ : NCtx) (e' : Surf) : Except String (NCtx × (Surf → Surf) × Surf) :=
   if isValueSurf e' then .ok (Γ, id, e')
-  else match synthSC Γ e' with
+  else match runInferC (synthSC Γ e') with
     | .ok (.F _ A, _) => let nm := s!"#anf{Γ.length}"; .ok ((nm, A) :: Γ, (Surf.lett nm e' ·), .var nm)
     | .ok _           => .ok (Γ, id, e')
     | .error m        => .error m
@@ -903,21 +1155,21 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       .error "divMark is internal (#46 let rec Div-marker) — it is EMITTED by the elaborator, never received"
   | Γ, .lett x e b  => do
       let e' ← elabS env Γ e
-      match synthSC Γ e' with                  -- report the RHS's REAL error, not a downstream unbound (#41)
+      match runInferC (synthSC Γ e') with      -- report the RHS's REAL error, not a downstream unbound (#41)
       | .ok (.F _ A, _) => return .lett x e' (← elabS env ((x, A) :: Γ) b)
       | .ok (C, _)      => throw s!"let-binding '{x}': value is not a returner ({showType C ⊥}) — force it (${x}) or bind a value"
       | .error m        => throw s!"let-binding '{x}': {m}"
   | Γ, .matchS s xl el xr er => do
       let s' ← elabS env Γ s
       let (Γ1, wrap, sv) ← anfSplit Γ s'       -- A-normalize a computation scrutinee, #41
-      let (Γl, Γr) := match synthSV Γ1 sv with
+      let (Γl, Γr) := match runInferV (synthSV Γ1 sv) with
         | .ok (.sum A B) => ((xl, A) :: Γ1, (xr, B) :: Γ1)
         | _              => (Γ1, Γ1)
       return wrap (.matchS sv xl (← elabS env Γl el) xr (← elabS env Γr er))
   | Γ, .splitS a b p body => do
       let p0 ← elabS env Γ p
       let (Γ1, wrap, p') ← anfSplit Γ p0       -- A-normalize a computation scrutinee, #41
-      let Γ' := match synthSV Γ1 p' with
+      let Γ' := match runInferV (synthSV Γ1 p') with
         | .ok (.prod A B) => (b, B) :: (a, A) :: Γ1
         | _               => Γ1
       return wrap (.splitS a b p' (← elabS env Γ' body))
@@ -943,7 +1195,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             if armsL.length != dcs.length then
               throw s!"match on {ci0.dataName}: {dcs.length} constructor(s), {armsL.length} arm(s)"
             let expected := vtyOf ci0.dataTy
-            match synthSV Γ s' with
+            match runInferV (synthSV Γ s') with
             | .ok τ => if τ != expected then throw s!"match scrutinee is {showVTy τ}, not {ci0.dataName}"
             | .error e => throw s!"match scrutinee: {e}"
             -- order arms by ctor position (pure bookkeeping — no recursion below)
@@ -966,7 +1218,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let b0 ← elabS env Γ b
       let (Γ1, wa, a') ← anfSplit Γ a0
       let (Γ2, wb, b') ← anfSplit Γ1 b0
-      match synthSV Γ2 a' with
+      match runInferV (synthSV Γ2 a') with
       | .ok .int  => return wa (wb (.binopS op a' b'))   -- the kernel δ-rule path (ADR-0065)
       | .error _  => return wa (wb (.binopS op a' b'))   -- non-value operand: leave it; the checker rules
       | .ok τ =>
@@ -1071,7 +1323,7 @@ public def elaborateToComp (src : String) : Except String Comp := do
 
 /-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
 def checkProg (src : String) : Except String (CT × EffRow) := do
-  synthSC [] (← Bang.Surface.parseProg src >>= elabProg)
+  runInferC (synthSC [] (← Bang.Surface.parseProg src >>= elabProg))
 
 /-- Parse + elaborate + check + DISPLAY — the decl-aware, typed sibling of `display`. -/
 def displayProg (src : String) : String :=
@@ -1085,7 +1337,7 @@ checks BEFORE it runs. -/
 def runTypedYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
   match (do
       let e ← Bang.Surface.parseProg src >>= elabProg
-      let _ ← synthSC [] e
+      let _ ← runInferC (synthSC [] e)
       Bang.Surface.lower e) with
   | .ok c => match Source.eval fuel c with
              | .done (.vint m) => m == n
@@ -1163,7 +1415,7 @@ def checkLawOn (env : ElabEnv) (params : List String) (body : Surf) (args : List
     (Surf.lett "#r" body (.ifS (.var "#r") (.lit 1) (.lit 0)))
   match (do
       let e ← elabS env [] wrapped
-      let _ ← synthSC [] e
+      let _ ← runInferC (synthSC [] e)
       Bang.Surface.lower e) with
   | .ok c    => match Source.eval 400 c with
                 | .done (.vint 1) => true
@@ -1549,5 +1801,21 @@ the cap. -/
 #guard (match check "state 5 as h in h.put(Left(0))" with | .error _ => true | _ => false)
 -- unknown op on a valid cap.
 #guard (match check "state 5 as h in h.frobnicate" with | .error _ => true | _ => false)
+
+/-! ## Validation ⑦b — HM polymorphism RUNS end-to-end (ADR-0075 bite-0, the real pipeline).
+
+`runTypedYieldsInt` = parse → elaborate → CHECK (the HM checker) → lower → `Source.eval`. So these
+guards prove the polymorphism PAYOFF through the SAME path `bang eval` uses — one `let`-bound generic
+definition, used at multiple types, checked and run to a value. (Defined here, after
+`runTypedYieldsInt` — the `check`-level typing guards are Validation ⑦ above.) -/
+-- id at Int AND (Int * Int): 5 + 1 = 6.
+#guard runTypedYieldsInt 200 killerId 6
+-- id at Int and Unit (independent instantiations): 5.
+#guard runTypedYieldsInt 200 "let id = {fun x => x} in (let a = ($id) 5 in (let u = ($id) () in a))" 5
+-- const at Int-arg and (Int*Int)-arg: 5 + 7 = 12.
+#guard runTypedYieldsInt 200 killerConst 12
+-- higher-order `compose` (forces parametric thunks) is the bite-0b follow-on — fail-loud (a value
+-- hole can't become a computation), NOT a wrong accept.
+#guard (match checkProg "let compose = {fun f => fun g => fun x => ($f) (($g) x)} in 0" with | .error _ => true | _ => false)
 
 end Bang.TypeCheck
