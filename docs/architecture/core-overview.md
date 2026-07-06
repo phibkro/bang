@@ -43,6 +43,7 @@ graph TD
     Core_Typing["Core.Typing<br/>404L · fan-in 0"]
     Examples["Examples<br/>307L · fan-in 0"]
     Frontend_HMSpike["Frontend.HMSpike<br/>399L · fan-in 0"]
+    Frontend_OutcomeSpike["Frontend.OutcomeSpike<br/>169L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>1831L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
@@ -88,6 +89,7 @@ graph TD
 | `Examples` | ? | 307 | 0 |
 | `Frontend.HMSpike` | ? | 399 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
+| `Frontend.OutcomeSpike` | ? | 169 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 1849 | 0 |
