@@ -267,6 +267,12 @@ def rigidBase : Nat := 2000000
 def bigFuel   : Nat := 1000000
 
 @[inline] def mkHole  (n : Nat) : VT := .tvar (holeBase + n)
+/-- A BARE-lambda parameter's placeholder hole (the HM higher-order path). Offset high into the hole
+range so it can never collide with a `freshHole` minted from `0` by a `synthSC`/`synthSV` run inside
+`anfSplit` (which starts each per-site inference from `fresh := 0`); `Γ.length` keeps nested params
+distinct. Recognized by `asHole` like any hole — a bare param is an unresolved type until the checker
+unifies it (or, higher-order, until it forces past the bite-0b computation-hole boundary). -/
+@[inline] def paramHole (depth : Nat) : VT := .tvar (holeBase + 500000 + depth)
 @[inline] def mkRigid (i : Nat) : VT := .tvar (rigidBase + i)
 /-- Is this a HOLE? (a `tvar` in the reserved hole range) → its hole-id. -/
 @[inline] def asHole : VT → Option Nat
@@ -1179,7 +1185,13 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let c' ← elabS env Γ c
       let (Γ1, wrap, cv) ← anfSplit Γ c'
       return wrap (.ifS cv (← elabS env Γ1 t) (← elabS env Γ1 e))
-  | Γ, .lam x b     => do return .lam x (← elabS env Γ b)
+  | Γ, .lam x b     => do
+      -- BARE (un-annotated) `fun x => …`: bind the param to a fresh HOLE so `anfSplit` inside the body
+      -- can synthesize a computation ARGUMENT's type (`($g) x`) instead of failing on an unbound param
+      -- (the HM-inferred higher-order path). An ALREADY-bound `x` (the annotated `curryBind` path) keeps
+      -- its concrete type — the hole is only for the bare case.
+      let Γ' := if (Γ.lookup x).isSome then Γ else (x, (⟨0, paramHole Γ.length⟩ : Scheme)) :: Γ
+      return .lam x (← elabS env Γ' b)
   -- `let rec f : T = <fun> in <body>` → the μ-encoded fixpoint (Landin's knot, ADR-0073; NO new
   -- kernel primitive — invariant #5). `Rec = μX. Thunk(X -> T)`; the self-knot `{ let #g = unfold sv
   -- in ($#g) sv } : Thunk T` reconstructs `f` from a self-value, so `f : Thunk T` is in scope in its
@@ -1269,6 +1281,9 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       | .ok .int  => return wa (wb (.binopS op a' b'))   -- the kernel δ-rule path (ADR-0065)
       | .error _  => return wa (wb (.binopS op a' b'))   -- non-value operand: leave it; the checker rules
       | .ok τ =>
+        match asHole τ with
+        | some _ => return wa (wb (.binopS op a' b'))     -- HOLE operand (bare-`fun` param): defer to the checker
+        | none =>
           match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
           | none => .error s!"no impl provides '{binopName op}' for {showVTy τ}"
           | some inst =>
@@ -1883,9 +1898,12 @@ definition, used at multiple types, checked and run to a value. (Defined here, a
 def composeAnnSrc := "let c = { ( fun f => fun g => fun x => ($f)(($g) x) : Thunk (Int -> Int) -> Thunk (Int -> Int) -> Int -> Int ) } in let inc = {fun x => x + 1} in let dbl = {fun x => x + x} in ((($c) inc) dbl) 5"
 #guard displayProg composeAnnSrc == "Int"
 #guard runTypedYieldsInt 500 composeAnnSrc 11
--- UNANNOTATED (HM-inferred) higher-order `compose` still fail-louds: the bare `fun f => fun g => …`
--- forces PARAMETRIC holes (`($f)`/`($g)` on values with no concrete type), which needs computation-
--- level holes (the ICTy re-rep) AND bare-lam param inference — the bite-0b follow-on, NOT a wrong accept.
+-- UNANNOTATED (HM-inferred) higher-order `compose` still fail-louds, but the wall has ADVANCED. Bare
+-- `fun`-params now bind to fresh `paramHole`s, so `anfSplit` synthesizes the body past the (former)
+-- "unbound variable g" and reaches the SOLE remaining blocker: FORCING a parametric hole (`($f)`/`($g)`
+-- on a value whose type is still a hole) — a DEFINED "annotate (higher-order is bite-0b)" error, NOT a
+-- wrong accept. Clearing it is the computation-level-hole (ICTy) re-rep: `force` a value-hole → `U ρ`
+-- of a computation hole, `app` a computation hole → `arr`. Until then, bare compose is a typed rejection.
 #guard (match checkProg "let compose = {fun f => fun g => fun x => ($f) (($g) x)} in 0" with | .error _ => true | _ => false)
 
 -- #53 — bare anonymous injections RUN end-to-end through the typed default path (CHECK precedes eval).
