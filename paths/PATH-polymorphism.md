@@ -96,9 +96,24 @@ All on the landed `HTy`+`Infer` substrate (`f063c78`), all still checker leaves:
    / pair)"; the insertion point is the `.lett` arm in `synthSC`, right before `generalize Γ A`. One predicate.
 3. **Row variables** (generic over effect rows). Rows are SETS (invariant #2 / ADR-0001 — idempotent,
    union=join), so a row var unifies via OPEN-ROW (Rémy/Leijen) differently from a type hole — the
-   genuinely bang-specific add. Must preserve set-rows. HOOK (hmspike): bite-0 runs a SEPARATE `Infer`
-   per `elabS` resolution site (`runInferV`/`runInferC`); row-poly that spans elaborate+check will want the
-   row unifier threaded through the SAME `Infer` state — plan that threading when adding open-row unification.
+   genuinely bang-specific add. HOOK (hmspike): bite-0 runs a SEPARATE `Infer` per `elabS` resolution
+   site (`runInferV`/`runInferC`); row-poly that spans elaborate+check wants the row unifier threaded
+   through the SAME `Infer` state.
+   **REP DECISION (manager, 2026-07-06) — a PARALLEL inference `IRow`, kernel `EffRow` UNTOUCHED.** SAME
+   pattern as poly item 2's `IVTy`/`ICTy` (and the unifying through-line): the KERNEL `EffRow = Finset
+   Label` stays CLOSED (invariant #2 preserved, no rippling `⊔`/`⊆`/`.erase ℓ` across the whole spine);
+   the INFERENCE layer gets `IRow = (Finset Label × Option RowVar)` (known labels + an optional
+   polymorphic tail) that EMBEDS a closed `EffRow` and ZONK-EXTRACTS to a closed `EffRow` at the boundary
+   (exactly as `IVTy` zonks to `VTy`). So the whole inference layer is one shape: parallel superset types
+   (`IVTy`/`ICTy`/`IRow`) that erase to the closed kernel types — consistent with ADR-0075 elaborate-to-mono.
+   Rejected: mutating `EffRow` to `(Finset × Option RowVar)` EVERYWHERE (touches the verified spine's row
+   algebra — over-broad; the inference `IRow` keeps it out of the kernel). Unification `{throws}∪ρ₁ ~
+   {state}∪ρ₂` → `ρ₁:={state}∪ρ₃`, `ρ₂:={throws}∪ρ₃` (fresh tail ρ₃); set-rows make it SIMPLER than
+   scoped labels (no order, idempotent — union handles dups free). Sub-detail for the build: handler
+   discharge `.erase ℓ` on an OPEN row (tail present) — the discharged ℓ is CONCRETE (the handler's
+   label) so remove it from the known part; the tail ρ carries an implicit ℓ-LACKS constraint (Rémy).
+   First cut may restrict to "ℓ in the known part, ρ built ℓ-free"; full lacks-constraints are the
+   refinement. VALUE RESTRICTION (item 1) is the prerequisite — in place.
 
 ## Open forks (decide when reached)
 
