@@ -1367,11 +1367,56 @@ def strPrelude : List Decl :=
   [ .dataD "Char" [("Char", [.tInt])],
     .dataD "Str"  [("SNil", []), ("SCons", [.tName "Char", .tName "Str"])] ]
 
-/-- Elaborate a whole program: inject the string prelude, build the elaboration env, resolve the body. -/
+/-- The built-in string STDLIB (ADR-0074, #49 stage 3): `concat`/`reverse`/`eq` as `let rec` folds
+over `Str`, injected in scope of EVERY program's body (closing the #50 reuse gap — a program shouldn't
+re-inline `concat` the way the tokenizer had to). Each fn is a source string ending in a placeholder
+body (`0`); `injectStdlib` parses it, keeps the `let rec` head, and re-roots it over the user body.
+Ordered `concat → reverse → eq` so `reverse` (which appends via `concat`) sees it. `concat`/`eq` are
+CURRIED so `letRecRow` types them `! {Div}` (multi-arg #47 gap, ADR-0073) — a sound over-approximation:
+they terminate but the certifier can't prove it. `reverse` picks up `Div` transitively (it calls
+`$concat`). Library over `data` + `let rec` — NO kernel change (invariant #5). -/
+def stdlibFnSrcs : List String :=
+  [ "let rec concat : Str -> Str -> Str = fun a => fun b => " ++
+      "match a { SNil -> b, SCons(c, t) -> SCons(c, ($concat) t b) } in 0",
+    -- `reverse` folds via an accumulator: a curried recursive `revApp` (nested in the thunk so it is
+    -- NOT exposed) threads the reversed prefix, and `reverse s = revApp SNil s`. A direct single-arg
+    -- `reverse` that appends via `$concat` does NOT type-check (buildLetRec's inner knot demands a
+    -- single-arg structural fold be self-contained — it can't call another `Div` fn), so the
+    -- accumulator is the working shape. `Div` (curried `revApp`) rides the result.
+    "let reverse = { let rec revApp : Str -> Str -> Str = fun acc => fun s => " ++
+      "match (s : Str) { SNil -> acc, SCons(c, t) -> ($revApp) (SCons(c, acc)) t } in " ++
+      "fun s => ($revApp) SNil s } in 0",
+    -- `eq` compares char-by-char; `Bool = Unit + Unit` (ADR-0065), `0==0` = true, `0==1` = false. The
+    -- SECOND curried param `b` needs a `(b : Str)` ascription so the named-match resolver sees its type
+    -- (curried params past the first aren't propagated into elaboration-time match resolution).
+    "let rec eq : Str -> Str -> Unit + Unit = fun a => fun b => " ++
+      "match a { SNil -> match (b : Str) { SNil -> 0 == 0, SCons(c2, t2) -> 0 == 1 }, " ++
+      "SCons(c, t) -> match (b : Str) { SNil -> 0 == 1, " ++
+      "SCons(c2, t2) -> if (match c { Char(n) -> match c2 { Char(m) -> n == m } }) " ++
+      "then ($eq) t t2 else 0 == 1 } } in 0" ]
+
+/-- Wrap `body` in the string-stdlib `let rec`s (see `stdlibFnSrcs`). INERT for programs that don't
+use them: each `let rec … in body` binds a THUNK (a value, `⊥`-row) — the program's row is the body's
+row, so an unused `Div`-typed stdlib fn adds NO effect (mirrors the unused `Char`/`Str` ctors). A
+user binding of the same name in the body simply SHADOWS the injected one (lexical scope). SKIPPED
+when the user redeclares `Str`/`Char` (the injected fns reference the prelude ctors, which the user's
+data may not provide) — same discipline as the data prelude's `declared` filter. -/
+def injectStdlib (declared : List String) (body : Surf) : Except String Surf := do
+  if declared.contains "Str" || declared.contains "Char" then
+    return body
+  let wraps ← stdlibFnSrcs.mapM (fun src => do
+    match ← Bang.Surface.parse src with
+    | .letRecS n t f _ => return (fun (b : Surf) => Surf.letRecS n t f b)
+    | .lett n rhs _    => return (fun (b : Surf) => Surf.lett n rhs b)
+    | _ => .error "string-stdlib prelude fn did not parse as a `let`/`let rec`")
+  return wraps.foldr (fun w acc => w acc) body
+
+/-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve the body. -/
 def elabProg (p : Prog) : Except String Surf := do
   let declared := p.decls.filterMap (fun | .dataD n _ => some n | _ => none)
   let prelude := strPrelude.filter (fun | .dataD n _ => !declared.contains n | _ => true)
-  elabS (← buildEnv (prelude ++ p.decls)) [] p.body
+  let body ← injectStdlib declared p.body
+  elabS (← buildEnv (prelude ++ p.decls)) [] body
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
@@ -1775,6 +1820,34 @@ def lengthDef : String :=
 #guard runTypedYieldsInt 100 "match '\\n' { Char(n) -> n }" 10   -- '\n' = code point 10
 -- a string literal TYPES as the `Str` data type (its structural μ), decl-free (the prelude is injected).
 #guard (match checkProg "\"hi\"" with | .ok _ => true | _ => false)
+
+/-! ### Validation ⑨h′ — the STRING STDLIB: `concat`/`reverse`/`eq` injected FREE (#49 stage 3, #50).
+
+`concat`/`reverse`/`eq` are `let rec` folds injected in scope of EVERY program (`stdlibFnSrcs`,
+`injectStdlib`), so a program uses them WITHOUT re-inlining (the #50 gap the tokenizer hit). All are
+`Div`-typed (curried `let rec` — the #47 multi-arg gap; they terminate, the certifier can't prove it).
+The wrapping is INERT for programs that don't use them: a `let rec … in body` binds a THUNK (a value,
+`⊥`-row), so the program's row is the body's — an unused stdlib fn adds NO effect (proven below:
+plain programs stay `Div ∉ ρ` and the WHOLE existing corpus is unchanged). -/
+-- `concat "ab" "cd"` runs → a real 4-char string (asserted via a locally-defined `length`).
+#guard runTypedYieldsInt 3000 (lengthDef ++ "($length) (($concat) \"ab\" \"cd\")") 4
+#guard runTypedYieldsInt 3000 (lengthDef ++ "($length) (($concat) \"\" \"cd\")") 2
+-- `reverse "abc"` runs (length preserved) AND reverses (its FIRST char is 'c' = code point 99).
+#guard runTypedYieldsInt 5000 (lengthDef ++ "($length) (($reverse) \"abc\")") 3
+#guard runTypedYieldsInt 5000 "match (($reverse) \"abc\") { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }" 99
+-- `eq` char-by-char: equal strings → true (then-branch), unequal (content OR length) → false.
+#guard runTypedYieldsInt 3000 "if (($eq) \"ab\" \"ab\") then 1 else 0" 1
+#guard runTypedYieldsInt 3000 "if (($eq) \"ab\" \"ba\") then 1 else 0" 0
+#guard runTypedYieldsInt 3000 "if (($eq) \"a\" \"ab\") then 1 else 0" 0
+#guard runTypedYieldsInt 3000 "if (($eq) \"\" \"\") then 1 else 0" 1
+-- USING the stdlib puts `Div` in the row (curried `let rec`, #47 gap) — the honest over-approximation.
+#guard (match checkProg "($concat) \"ab\" \"cd\"" with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- THE INERT PROOF: a program that does NOT use the stdlib is UNAFFECTED — its row has NO `Div`, and a
+-- pure `Int` program still types pure (the injected `let rec`s are dead-but-harmless, like the unused
+-- `Char`/`Str` ctors). This is what guarantees the existing corpus is unchanged.
+#guard (match checkProg "3" with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+#guard runTypedYieldsInt 100 "3" 3
+#guard (match checkProg (lengthDef ++ "($length) \"abc\"") with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
 
 /-! ### Validation ⑨i — the DOGFOOD: a TOKENIZER written IN BANG (#49 stage 5, "bang writes its own
 tools"). `tokenize : Str -> TokList` splits a string on spaces, structurally recursing on the char-list
