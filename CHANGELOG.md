@@ -43,6 +43,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — bite-0b item 1 — the ML VALUE RESTRICTION (soundness gate for effect-typed poly) (PATH-polymorphism) (`e6cdc93`)
 - **surface** — source spans — the IR carries source truth; located-error view (ADR-0076 Data-to-IR-to-Views) (`ff49adb`)
 - **surface** — located PARSE errors — the parser reports line:col (#52 Stage A, ADR-0076) (`77dec51`)
+- **cli** — bang eval TYPE-CHECKS before running — ill-typed is a type error, not runtime stuck (#51, closes #51, ADR-0076) (`553aaf7`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
