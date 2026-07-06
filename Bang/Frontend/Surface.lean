@@ -991,6 +991,95 @@ def parse (src : String) : Except String Surf := do
   if rest.isEmpty then .ok e
   else .error s!"trailing tokens after expression: {rest}"
 
+/-! ### Source spans (ADR-0076 #2 — the IR carries source truth; errors/LSP are VIEWS)
+
+The FOUNDATION step (deliberately minimal): positions ENTER at the tokenizer, so a downstream view
+can locate a token by `line:col`. Spans are FRONTEND metadata — ERASED before the kernel (the lowered
+`Comp` carries none), so kernel/`HasCTy`/`Source.eval` are UNTOUCHED. `tokenize` itself is UNCHANGED
+(parsing behaviour preserved, corpus tokenizes identically); `tokenizeSpanned` is the additive
+position-carrying sibling, pinned equal to `tokenize` by a `#guard` (the SSoT test rung — drift is
+caught at build). FULLY located parse/type errors (each error at its exact AST node) need spans
+threaded through the parser `P`-type + a `Spanned` Surf carrier — the LATER, bigger tier (see the
+FINDING at the bottom of this section). -/
+
+/-- A source location: a half-open `[start, end)` range in 1-based `line`/`col`. Frontend/IR metadata. -/
+structure Span where
+  line    : Nat        -- 1-based start line
+  col     : Nat        -- 1-based start column
+  endLine : Nat
+  endCol  : Nat
+  deriving Repr, DecidableEq, Inhabited
+
+/-- The human-facing `line:col` (start) — what an error view prints. -/
+def Span.loc (s : Span) : String := s!"{s.line}:{s.col}"
+
+/-- Tokenize WITH source spans: the same tokens as `tokenize` (pinned by `#guard` below), each paired
+with its `[start, end)` span. Positions thread through the identical scan — a newline resets column and
+bumps line; `advStr` advances over a multi-char token's (or a scanned string literal's) source chars,
+so spans stay correct across multi-line string literals. This is where source truth ENTERS the IR. -/
+def tokenizeSpanned (s : String) : List (String × Span) :=
+  let punct := "(){}$!,;.+*/<|".toList
+  let adv    : (Nat × Nat) → Char → (Nat × Nat) := fun p c => if c = '\n' then (p.1 + 1, 1) else (p.1, p.2 + 1)
+  let advStr : (Nat × Nat) → String → (Nat × Nat) := fun p str => str.toList.foldl adv p
+  let rec go (fuel : Nat) (cs : List Char) (pos : Nat × Nat)
+             (cur : List Char) (curStart : Nat × Nat)
+             (acc : List (String × Span)) : List (String × Span) :=
+    let flush (acc : List (String × Span)) : List (String × Span) :=
+      if cur.isEmpty then acc
+      else acc ++ [(String.ofList cur.reverse, ⟨curStart.1, curStart.2, pos.1, pos.2⟩)]
+    let emit (acc : List (String × Span)) (t : String) (p0 p1 : Nat × Nat) : List (String × Span) :=
+      (flush acc) ++ [(t, ⟨p0.1, p0.2, p1.1, p1.2⟩)]
+    match fuel, cs with
+    | 0, _ => flush acc
+    | _, [] => flush acc
+    | f + 1, '=' :: '=' :: rest => let p1 := advStr pos "=="; go f rest p1 [] pos (emit acc "==" pos p1)
+    | f + 1, '=' :: '>' :: rest => let p1 := advStr pos "=>"; go f rest p1 [] pos (emit acc "=>" pos p1)
+    | f + 1, '-' :: '>' :: rest => let p1 := advStr pos "->"; go f rest p1 [] pos (emit acc "->" pos p1)
+    | f + 1, '"' :: rest =>
+        match scanQuoted '"' rest [] with
+        | some (raw, rest') => let tok := "\"" ++ raw ++ "\""; let p1 := advStr pos tok
+                               go f rest' p1 [] pos (emit acc tok pos p1)
+        | none              => flush acc ++ [("\"", ⟨pos.1, pos.2, pos.1, pos.2 + 1⟩)]
+    | f + 1, '\'' :: rest =>
+        match scanQuoted '\'' rest [] with
+        | some (raw, rest') => let tok := "'" ++ raw ++ "'"; let p1 := advStr pos tok
+                               go f rest' p1 [] pos (emit acc tok pos p1)
+        | none              => flush acc ++ [("'", ⟨pos.1, pos.2, pos.1, pos.2 + 1⟩)]
+    | f + 1, c :: rest =>
+      let p1 := adv pos c
+      if c = ' ' || c = '\n' || c = '\t' || c = '\r' then
+        go f rest p1 [] pos (flush acc)
+      else if c = '=' || c = '-' || punct.contains c then
+        go f rest p1 [] pos (emit acc (String.ofList [c]) pos p1)
+      else
+        go f rest p1 (c :: cur) (if cur.isEmpty then pos else curStart) acc
+  go (s.length + 1) s.toList (1, 1) [] (1, 1) []
+
+/-- VIEW: locate the FIRST token equal to `name`, returning its span. -/
+def locateToken (src name : String) : Option Span :=
+  (tokenizeSpanned src).find? (fun p => p.1 == name) |>.map (·.2)
+
+/-- VIEW (the first located error): run parse→lower; on an unbound-variable error, pair the message
+with the variable's source span. Demonstrates errors-as-a-view over the spanned IR — the message is
+DATA, the span LOCATES it. (Full located errors — every parse/type error at its node — are the parser-
+threading tier; this shows the pattern on the one error that already names its identifier.) -/
+def unboundLocated (src name : String) : Option (String × Span) :=
+  match parse src >>= lower with
+  | .error m => (locateToken src name).map (fun sp => (m, sp))
+  | .ok _    => none
+
+-- CONSISTENCY (the SSoT test rung): `tokenizeSpanned` emits exactly `tokenize`'s tokens.
+#guard (tokenizeSpanned "let x = 3 in bar").map (·.1) == tokenize "let x = 3 in bar"
+#guard (tokenizeSpanned "fun x => x+1").map (·.1) == tokenize "fun x => x+1"
+#guard (tokenizeSpanned "match s { Left(x)->x, Right(y)->y }").map (·.1) == tokenize "match s { Left(x)->x, Right(y)->y }"
+-- POSITIONS: a token's line:col is correct, including across a newline and past a multi-char operator.
+#guard (locateToken "let x = 3 in bar" "bar").map (·.loc) == some "1:14"
+#guard (locateToken "let x =\n  y in y" "y").map (·.loc) == some "2:3"
+#guard (locateToken "a == b" "b").map (·.loc) == some "1:6"
+-- LOCATED ERROR (the view): an unbound variable reports its position.
+#guard (unboundLocated "let x = 3 in bar" "bar").map (fun p => p.2.loc) == some "1:14"
+#guard (match unboundLocated "let x = 3 in bar" "bar" with | some (m, _) => (m.splitOn "bar").length > 1 | none => false)
+
 /-! ### Declarations — `trait` / `impl` (issue #24 piece 1; ADR-0040 §5, ADR-0068)
 
 A PROGRAM is a declaration prelude + a body expression (`Prog`), parsed by `parseProg`. The decl
