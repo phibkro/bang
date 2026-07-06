@@ -491,12 +491,27 @@ def tokenize (s : String) : List String :=
         go f rest (c :: cur) acc
   go (s.length + 1) s.toList [] []
 
+/-- A LOCATED parse error (ADR-0076 #2 — errors are VIEWS over the spanned IR): a message plus the
+token list AT THE POINT OF FAILURE (its head is the offending token; `[]` = at/after end of input).
+`rest` is always a SUFFIX of `tokenize src` (the parser only ever drops tokens from the front), so
+`parseLocated` recovers the offending token's `Span` by index (`length - rest.length`). `parse`
+ERASES this to a bare `String` (behaviour-preserving); the internal combinators thread it. -/
+structure PErr where
+  msg  : String
+  rest : List String
+  deriving Repr
+
+/-- A bare message locates at end-of-input (`rest = []`). Lets the UNREACHABLE error sites (fuel
+exhaustion, rule-arity) stay `.error "…"` unchanged — only REACHABLE structural errors attach the
+current token list for a precise `line:col`. -/
+instance : Coe String PErr := ⟨fun m => ⟨m, []⟩⟩
+
 /-- Parser state = remaining token list. The parser is a function
-`List String → Except String (α × List String)`. -/
-abbrev P (α : Type) := List String → Except String (α × List String)
+`List String → Except PErr (α × List String)` — the error carries the failure position. -/
+abbrev P (α : Type) := List String → Except PErr (α × List String)
 
 def expect (tok : String) : P Unit
-  | t :: ts => if t = tok then .ok ((), ts) else .error s!"expected '{tok}', got '{t}'"
+  | t :: ts => if t = tok then .ok ((), ts) else .error ⟨s!"expected '{tok}', got '{t}'", t :: ts⟩
   | []      => .error s!"expected '{tok}', got end of input"
 
 /-- Is `s` a non-negative integer literal? -/
@@ -532,7 +547,7 @@ def pIdent : P String
           || t = "as" || t = "."
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
-        .error s!"expected an identifier, got keyword '{t}'"
+        .error ⟨s!"expected an identifier, got keyword '{t}'", t :: ts⟩
       else .ok (t, ts)
   | [] => .error "expected an identifier, got end of input"
 
@@ -549,7 +564,7 @@ def pEffRow : P (List String)
   | "}" :: ts      => .ok ([], ts)
   | n :: "}" :: ts => .ok ([n], ts)
   | n :: "," :: ts => do let (rest, ts) ← pEffRow ts; .ok (n :: rest, ts)
-  | ts             => .error s!"malformed effect row at {ts}"
+  | ts             => .error ⟨s!"malformed effect row at {ts}", ts⟩
 
 /-- Optionally wrap an already-parsed type in `tEff` if a `! { … }` postfix follows. -/
 def pTyPostEff (a : Ty) : P Ty
@@ -594,7 +609,7 @@ def pTyAtom : Nat → P Ty
       -- fail-louded) against the decl env at elaboration, so a typo is still an error — later.
       if t = ")" || t = "}" || t = "(" || t = "{" || t = "," || t = ";" || t = "|"
          || t = "->" || t = "+" || t = "*" || t = "!" || t = "=" || t = "in" || t = "=>" then
-        .error s!"expected a type, got '{t}'"
+        .error ⟨s!"expected a type, got '{t}'", t :: ts⟩
       else .ok (.tName t, ts)
   | _ + 1, []           => .error "expected a type, got end of input"
 end
@@ -790,7 +805,9 @@ fuel-measure covers it (total, no `partial`); sub-parses use the current fuel, m
 the retired bespoke arms passed. -/
 def pRuleDrive : Nat → (List Frag → Except String Surf) → List Choice → List Frag → P Surf
   | 0,     _,     _,            _,   _  => .error "parser out of fuel"
-  | _ + 1, build, [],           acc, ts => do let s ← build acc.reverse; .ok (s, ts)
+  | _ + 1, build, [],           acc, ts => do
+      let s ← (build acc.reverse).mapError (fun m => (⟨m, ts⟩ : PErr))   -- Rule.build stays `Except String`
+      .ok (s, ts)
   | f + 1, build, .kw k :: cs,  acc, ts => do let (_, ts) ← expect k ts; pRuleDrive f build cs acc ts
   | f + 1, build, .refE :: cs,  acc, ts => do let (e, ts) ← pExpr f ts;  pRuleDrive f build cs (.expr e :: acc) ts
   | f + 1, build, .refA :: cs,  acc, ts => do let (a, ts) ← pAtom f ts;  pRuleDrive f build cs (.expr a :: acc) ts
@@ -837,10 +854,10 @@ def pDotLoop : Nat → Surf → P Surf
     | "." :: op :: "(" :: r => do
         let (args, ts) ← pArgList f r
         let sa ← (match args with
-          | []     => (.ok .none : Except String SurfArgs)
+          | []     => (.ok .none : Except PErr SurfArgs)
           | [x]    => .ok (.one x)
           | [x, y] => .ok (.two x y)
-          | _      => .error s!"cap op '{op}' takes at most 2 arguments (got {args.length})")
+          | _      => .error ⟨s!"cap op '{op}' takes at most 2 arguments (got {args.length})", ts⟩)
         pDotLoop f (.dotPerform a op sa) ts
     | "." :: op :: r        => pDotLoop f (.dotPerform a op .none) r   -- nullary (h.get)
     | _                     => .ok (a, ts)
@@ -853,7 +870,7 @@ def pArgList : Nat → P (List Surf)
       match ts with
       | "," :: r => do let (rest, ts) ← pArgList f r; .ok (e :: rest, ts)
       | ")" :: r => .ok ([e], r)
-      | t :: _   => .error s!"expected ',' or ')' in a cap-op argument list, got '{t}'"
+      | t :: r   => .error ⟨s!"expected ',' or ')' in a cap-op argument list, got '{t}'", t :: r⟩
       | []       => .error "unterminated cap-op argument list"
 
 /-- Parse a `do`-block body (after `do {`), up to and including `}`. Each statement is `x = e` (a
@@ -866,19 +883,19 @@ def pDo : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
-    | "}" :: _ => .error "empty do block"
+    | "}" :: r => .error ⟨"empty do block", "}" :: r⟩
     | x :: "=" :: rest => do             -- binding statement: x = e
         let (e, ts) ← pExpr f rest
         match ts with
         | ";" :: ts => do let (body, ts) ← pDo f ts; .ok (.lett x e body, ts)
-        | "}" :: _  => .error "a do block must END in an expression, not a binding (x = e)"
-        | _         => .error "expected ';' or '}' after a do-block statement"
+        | "}" :: r  => .error ⟨"a do block must END in an expression, not a binding (x = e)", "}" :: r⟩
+        | ts        => .error ⟨"expected ';' or '}' after a do-block statement", ts⟩
     | _ => do                            -- bare statement, or the final result
         let (e, ts) ← pExpr f ts
         match ts with
         | ";" :: ts => do let (body, ts) ← pDo f ts; .ok (.lett "#do" e body, ts)
         | "}" :: ts => .ok (e, ts)       -- the final statement is the block's value
-        | _         => .error "expected ';' or '}' after a do-block statement"
+        | ts        => .error ⟨"expected ';' or '}' after a do-block statement", ts⟩
 
 /-- Parse one match arm `C -> e` · `C(x) -> e` · `C(x, y) -> e` (ctor name is `Left`/`Right` or
 any identifier — named data ctors, ADR-0069; payload arity ≤ 2 in v1, the tuple-grammar bound). -/
@@ -886,21 +903,21 @@ def pArm : Nat → P (String × List String × Surf)
   | 0,      _ => .error "parser out of fuel"
   | f + 1, ts => do
       let (ctor, ts) ← (match ts with
-        | "Left"  :: r => (.ok ("Left", r) : Except String (String × List String))
+        | "Left"  :: r => (.ok ("Left", r) : Except PErr (String × List String))
         | "Right" :: r => .ok ("Right", r)
         | ts           => pIdent ts)
       let (bs, ts) ← (match ts with
         | "(" :: r => do
             let (b1, ts) ← pIdent r
             (match ts with
-             | ")" :: r2 => (.ok ([b1], r2) : Except String (List String × List String))
+             | ")" :: r2 => (.ok ([b1], r2) : Except PErr (List String × List String))
              | "," :: r2 => do
                  let (b2, ts) ← pIdent r2
                  let (_, ts) ← expect ")" ts
                  .ok ([b1, b2], ts)
-             | t :: _ => .error s!"expected ',' or ')' in a match-arm payload, got '{t}'"
+             | t :: r => .error ⟨s!"expected ',' or ')' in a match-arm payload, got '{t}'", t :: r⟩
              | []     => .error "unterminated match-arm payload")
-        | ts => (.ok ([], ts) : Except String (List String × List String)))
+        | ts => (.ok ([], ts) : Except PErr (List String × List String)))
       let (_, ts) ← expect "->" ts
       let (body, ts) ← pExpr f ts
       .ok ((ctor, bs, body), ts)
@@ -962,7 +979,7 @@ def pAtom : Nat → P Surf
       else if tc.length ≥ 2 && tc.head? == some '\'' && tc.getLast? == some '\'' then
         match decodeEsc (tc.drop 1).dropLast with
         | [c] => .ok (.app (.var "Char") (.lit (Int.ofNat c.toNat)), ts)
-        | _   => .error "char literal must be exactly one character (e.g. 'a')"
+        | _   => .error ⟨"char literal must be exactly one character (e.g. 'a')", t :: ts⟩
       else if isIntLit t then .ok (.lit (Int.ofNat (t.toNat!)), ts)
       else if t = "let" || t = "fun" || t = "handle" || t = "raise"
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
@@ -971,7 +988,7 @@ def pAtom : Nat → P Surf
               || t = "as" || t = "."
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
-        .error s!"unexpected '{t}' where an atom was expected"
+        .error ⟨s!"unexpected '{t}' where an atom was expected", t :: ts⟩
       else .ok (.var t, ts)
   | _ + 1, [] => .error "unexpected end of input where an atom was expected"
 end
@@ -984,12 +1001,17 @@ step (2 fuel per operator), yet a level may consume only one token (e.g.
 the token count, not `+1`. ×6 is a generous over-approximation (the Pratt loop
 is SHALLOWER than the old 7-deep `pImp→pMulDiv` chain it replaced, so the bound
 that worked for that chain still holds) — it never bites a well-formed program
-(it only caps runaway recursion for totality). -/
-def parse (src : String) : Except String Surf := do
+(it only caps runaway recursion for totality).
+
+`parseE` is the LOCATED internal: errors carry a `PErr` (message + failure position). `parse` erases
+it to a bare `String` (behaviour-preserving); `parseLocated` (spans section) resolves it to a `Span`. -/
+def parseE (src : String) : Except PErr Surf := do
   let toks := tokenize src
   let (e, rest) ← pExpr (toks.length * 6 + 1) toks
   if rest.isEmpty then .ok e
-  else .error s!"trailing tokens after expression: {rest}"
+  else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
+
+def parse (src : String) : Except String Surf := (parseE src).mapError (·.msg)
 
 /-! ### Source spans (ADR-0076 #2 — the IR carries source truth; errors/LSP are VIEWS)
 
@@ -1068,6 +1090,24 @@ def unboundLocated (src name : String) : Option (String × Span) :=
   | .error m => (locateToken src name).map (fun sp => (m, sp))
   | .ok _    => none
 
+/-- Resolve a `PErr.rest` (the token list at failure) to a source `Span`. `rest` is a SUFFIX of
+`tokenize src`, so its head sits at index `length - rest.length`; the same index into
+`tokenizeSpanned` (same tokens, pinned by `#guard`) gives the offending token's span. `rest = []`
+(at/after end of input) locates a zero-width span at the position just past the last token. -/
+def spanOfRest (src : String) (rest : List String) : Option Span :=
+  let toks := tokenizeSpanned src
+  match rest with
+  | []     => toks.getLast?.map (fun p => let e := p.2; ⟨e.endLine, e.endCol, e.endLine, e.endCol⟩)
+  | _ :: _ => toks[toks.length - rest.length]?.map (·.2)
+
+/-- VIEW: the FULLY-located parse (ADR-0076 #2). Runs the internal `parseE` (which threads `PErr`
+through the ~30 combinators) and resolves each parse error to `(message, Span)` — every parse error at
+its exact token. `parse`'s bare-`String` result is `parseLocated` with the span dropped; both share
+one code path (SSoT). This is the substrate #51 (a stricter `bang eval` gate) needs to make a parse
+error a helpful `line:col`, not a wall. -/
+def parseLocated (src : String) : Except (String × Option Span) Surf :=
+  (parseE src).mapError (fun e => (e.msg, spanOfRest src e.rest))
+
 -- CONSISTENCY (the SSoT test rung): `tokenizeSpanned` emits exactly `tokenize`'s tokens.
 #guard (tokenizeSpanned "let x = 3 in bar").map (·.1) == tokenize "let x = 3 in bar"
 #guard (tokenizeSpanned "fun x => x+1").map (·.1) == tokenize "fun x => x+1"
@@ -1079,6 +1119,18 @@ def unboundLocated (src name : String) : Option (String × Span) :=
 -- LOCATED ERROR (the view): an unbound variable reports its position.
 #guard (unboundLocated "let x = 3 in bar" "bar").map (fun p => p.2.loc) == some "1:14"
 #guard (match unboundLocated "let x = 3 in bar" "bar" with | some (m, _) => (m.splitOn "bar").length > 1 | none => false)
+-- LOCATED PARSE ERRORS (issue #52, Stage A): a parse error reports the offending token's `line:col`.
+-- `expect` mismatch — the missing `=` in `let x <3> in x`: the `3` at col 7 is where a `=` was wanted.
+#guard (match parseLocated "let x 3 in x" with | .error (_, some sp) => sp.loc == "1:7" | _ => false)
+-- `pAtom` unexpected token — the stray `)` at col 5 in `1 + )` (an atom was expected there).
+#guard (match parseLocated "1 + )" with | .error (_, some sp) => sp.loc == "1:5" | _ => false)
+-- located across a NEWLINE: the reserved `in` used as an atom on line 2, col 3.
+#guard (match parseLocated "3 +\n  in" with | .error (_, some sp) => sp.loc == "2:3" | _ => false)
+-- a WELL-FORMED program is `.ok` through the located path too (parse behaviour preserved).
+#guard (match parseLocated "let x = 3 in x" with | .ok _ => true | _ => false)
+-- the message is preserved verbatim (the located view only ADDS a span; `parse` erases it).
+#guard (match parseLocated "1 + )", parse "1 + )" with
+        | .error (m, _), .error m' => m == m' | _, _ => false)
 
 /-! ### Declarations — `trait` / `impl` (issue #24 piece 1; ADR-0040 §5, ADR-0068)
 
@@ -1139,7 +1191,7 @@ def pParamsLoop : Nat → P (List String)
       match ts with
       | "," :: ts => do let (rest, ts) ← pParamsLoop f ts; .ok (x :: rest, ts)
       | ")" :: ts => .ok ([x], ts)
-      | t :: _    => .error s!"expected ',' or ')' in a parameter list, got '{t}'"
+      | t :: r    => .error ⟨s!"expected ',' or ')' in a parameter list, got '{t}'", t :: r⟩
       | []        => .error "expected ',' or ')' in a parameter list, got end of input"
 
 /-- A parenthesized parameter list `( x , y , … )` (≥ 1 identifier). -/
@@ -1169,7 +1221,7 @@ def pTraitMembers : Nat → P (List OpSig × List LawDecl)
         let (b, ts) ← pExpr f ts
         let ((ops, laws), ts) ← pTraitMembers f ts
         .ok ((ops, ⟨n, ps, b⟩ :: laws), ts)
-    | t :: _ => .error s!"expected 'fn', 'law', or '}' in a trait body, got '{t}'"
+    | t :: r => .error ⟨s!"expected 'fn', 'law', or '}' in a trait body, got '{t}'", t :: r⟩
     | []     => .error "unterminated trait body"
 
 /-- Impl members, up to and including `}`: `fn name(params) = e` definitions. -/
@@ -1186,7 +1238,7 @@ def pImplMembers : Nat → P (List OpDef)
         let (b, ts) ← pExpr f ts
         let (rest, ts) ← pImplMembers f ts
         .ok (⟨n, ps, b⟩ :: rest, ts)
-    | t :: _ => .error s!"expected 'fn' or '}' in an impl body, got '{t}'"
+    | t :: r => .error ⟨s!"expected 'fn' or '}' in an impl body, got '{t}'", t :: r⟩
     | []     => .error "unterminated impl body"
 
 /-- The comma-separated payload types of a constructor, up to and including `)`. -/
@@ -1197,7 +1249,7 @@ def pCtorTysLoop : Nat → P (List Ty)
       match ts with
       | "," :: r => do let (rest, ts) ← pCtorTysLoop f r; .ok (t :: rest, ts)
       | ")" :: r => .ok ([t], r)
-      | t' :: _  => .error s!"expected ',' or ')' in a constructor payload, got '{t'}'"
+      | t' :: r  => .error ⟨s!"expected ',' or ')' in a constructor payload, got '{t'}'", t' :: r⟩
       | []       => .error "unterminated constructor payload"
 
 /-- One data constructor: `Name` (payload `Unit`) or `Name(T, …)` (arity ≤ 2 in v1). -/
@@ -1238,7 +1290,7 @@ def pDecl : Nat → P Decl
       let (_, ts) ← expect "{" ts
       let (ops, ts) ← pImplMembers f ts
       .ok (.implD n t ops, ts)
-  | _ + 1, t :: _ => .error s!"expected 'trait' or 'impl', got '{t}'"
+  | _ + 1, t :: r => .error ⟨s!"expected 'trait' or 'impl', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
 /-- The declaration prelude: zero or more decls (delimited by their leading keyword). -/
@@ -1254,13 +1306,15 @@ def pDecls : Nat → P (List Decl)
 
 /-- Parse a whole PROGRAM: the `trait`/`impl` declaration prelude, then the body expression.
 Same fuel bound as `parse`; a plain expression parses identically (`decls = []`). -/
-def parseProg (src : String) : Except String Prog := do
+def parseProgE (src : String) : Except PErr Prog := do
   let toks := tokenize src
   let fuel := toks.length * 6 + 1
   let (ds, ts) ← pDecls fuel toks
   let (e, rest) ← pExpr fuel ts
   if rest.isEmpty then .ok ⟨ds, e⟩
-  else .error s!"trailing tokens after expression: {rest}"
+  else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
+
+def parseProg (src : String) : Except String Prog := (parseProgE src).mapError (·.msg)
 
 
 /-! ## 4. The end-to-end pipeline + green demo checks
