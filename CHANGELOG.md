@@ -37,6 +37,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — let rec — recursion is user-facing (ADR-0073 §1, μ-encoding, no new primitive) (`0f771c6`)
 - **typecheck** — Div-row — recursion's partiality is type-visible (#46, closes #46, ADR-0073 §2) (`0397adc`)
 - **typecheck** — structural termination checker — Div is now PRECISE (#47, closes #47, ADR-0073 §2) (`0f8e244`)
+- **surface** — strings — String = List Char spec, runnable end-to-end (ADR-0074 #49 stages 1-2+fold+display) (`a2025b5`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
