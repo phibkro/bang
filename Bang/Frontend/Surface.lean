@@ -1024,8 +1024,9 @@ caught at build). FULLY located parse/type errors (each error at its exact AST n
 threaded through the parser `P`-type + a `Spanned` Surf carrier — the LATER, bigger tier (see the
 FINDING at the bottom of this section). -/
 
-/-- A source location: a half-open `[start, end)` range in 1-based `line`/`col`. Frontend/IR metadata. -/
-structure Span where
+/-- A source location: a half-open `[start, end)` range in 1-based `line`/`col`. Frontend/IR metadata.
+PUBLIC so the `bang` CLI can print a located parse error's `line:col` (ADR-0076 #51/#52). -/
+public structure Span where
   line    : Nat        -- 1-based start line
   col     : Nat        -- 1-based start column
   endLine : Nat
@@ -1033,7 +1034,7 @@ structure Span where
   deriving Repr, DecidableEq, Inhabited
 
 /-- The human-facing `line:col` (start) — what an error view prints. -/
-def Span.loc (s : Span) : String := s!"{s.line}:{s.col}"
+public def Span.loc (s : Span) : String := s!"{s.line}:{s.col}"
 
 /-- Tokenize WITH source spans: the same tokens as `tokenize` (pinned by `#guard` below), each paired
 with its `[start, end)` span. Positions thread through the identical scan — a newline resets column and
@@ -1315,6 +1316,19 @@ def parseProgE (src : String) : Except PErr Prog := do
   else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
 
 def parseProg (src : String) : Except String Prog := (parseProgE src).mapError (·.msg)
+
+/-- VIEW: the FULLY-located PROGRAM parse — the decl-aware sibling of `parseLocated`. Resolves each
+`parseProgE` error to `(message, Span)` via `spanOfRest` (`parseProgE` tokenizes with `tokenize`, the
+exact list `spanOfRest` indexes). PUBLIC: the `bang` CLI parses through this so a syntax error prints
+`line:col` instead of a wall (ADR-0076 #51). `parseProg`'s bare-`String` result is this with the span
+dropped — one code path (SSoT). -/
+public def parseProgLocated (src : String) : Except (String × Option Span) Prog :=
+  (parseProgE src).mapError (fun e => (e.msg, spanOfRest src e.rest))
+
+-- located PROGRAM parse errors (ADR-0076 #51): a decl-prelude program reports the offending token's `line:col`.
+#guard (match parseProgLocated "let x 3 in x" with | .error (_, some sp) => sp.loc == "1:7" | _ => false)
+-- a well-formed program is `.ok` through the located path (a decl-free body parses to `⟨[], body⟩`).
+#guard (match parseProgLocated "let x = 3 in x" with | .ok _ => true | .error _ => false)
 
 
 /-! ## 4. The end-to-end pipeline + green demo checks

@@ -1334,6 +1334,20 @@ public def elaborateToComp (src : String) : Except String Comp := do
   let e ← elabProg prog
   Bang.Surface.lower e
 
+/-- PUBLIC typed runnable entry (the `bang` CLI's DEFAULT pipeline, ADR-0076 #51): parse (located) →
+elaborate → **TYPE-CHECK** → lower. The type-check is the same `synthSC`/`runInferC` the `#guard`
+gate uses (`check`/`checkProg`), so the run path and the guard path share ONE type gate (SSoT) — an
+ill-typed program is now REJECTED with a type error instead of running to a runtime `stuck`
+(realizing `type_safety`: well-typed ⟹ never stuck). This is `elaborateToComp` with the check
+inserted; the raw (check-free) `elaborateToComp` stays the `--no-typecheck` escape. The error carries
+an optional `Span`: a PARSE error is located (`some`, → `line:col`); an elaboration/type error is
+un-located (`none`) for now (located type errors are the #52 Stage B follow-on). -/
+public def checkAndLower (src : String) : Except (String × Option Bang.Surface.Span) Comp := do
+  let prog ← Bang.Surface.parseProgLocated src
+  let e ← (elabProg prog).mapError (fun m => (m, none))
+  let _ ← (runInferC (synthSC [] e)).mapError (fun m => (m, none))
+  (Bang.Surface.lower e).mapError (fun m => (m, none))
+
 /-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
 def checkProg (src : String) : Except String (CT × EffRow) := do
   runInferC (synthSC [] (← Bang.Surface.parseProg src >>= elabProg))

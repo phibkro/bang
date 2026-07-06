@@ -94,58 +94,73 @@ def runCompiled (c : Comp) : IO UInt32 := do
     IO.eprintln "compiled machine produced no value (out of fuel, escaped cap, or stuck)"
     pure 5
 
-/-- Run one source string through the whole pipeline, printing the outcome and
-returning the process exit code. `compiled` selects the engine (§ issue #6): the
-kernel oracle `Source.eval` (default) or the calculated machine `exec ∘ compile`.
-The flag changes ONLY the execution engine — parse/lower errors are identical.
-`done` → stdout + 0; every failure outcome → a clear stderr line + a distinct
-nonzero code (fail-loud, ADR-0063). -/
-def runSource (compiled : Bool) (src : String) : IO UInt32 := do
-  -- The TYPED pipeline (ADR-0068/0069/0070): `parseProg` reads a `trait`/`impl`/`data`
-  -- declaration prelude + body; `elabProg` resolves data constructors, named matches, and
-  -- type-directed operators (`Vec + Vec`) into the kernel `Surf`; then lower + run. A plain
-  -- decl-free program parses to `⟨[], body⟩` and elaborates to itself, so this is a strict
-  -- superset of the old untyped path — no regression, and the whole MVP surface is now runnable.
-  match Bang.TypeCheck.elaborateToComp src with
-  | .error e => IO.eprintln s!"error: {e}"; pure 1
-  | .ok c =>
-      if compiled then runCompiled c
-      else
-      match Bang.Source.eval defaultFuel c with
-      | .done v      => IO.println (valPretty v); pure 0
-      | .oom         => IO.eprintln "out of fuel"; pure 2
-      | .escapedCap  => IO.eprintln "capability escaped its handler"; pure 3
-      | .stuck       => IO.eprintln "stuck (ill-formed program)"; pure 4
+/-- Run a lowered `Comp` on the selected engine (§ issue #6): the kernel oracle `Source.eval`
+(default) or the calculated machine `exec ∘ compile` (`--compiled`). `done` → stdout + 0; every
+failure outcome → a clear stderr line + a distinct nonzero code (fail-loud, ADR-0063). -/
+def runComp (compiled : Bool) (c : Comp) : IO UInt32 := do
+  if compiled then runCompiled c
+  else
+  match Bang.Source.eval defaultFuel c with
+  | .done v      => IO.println (valPretty v); pure 0
+  | .oom         => IO.eprintln "out of fuel"; pure 2
+  | .escapedCap  => IO.eprintln "capability escaped its handler"; pure 3
+  | .stuck       => IO.eprintln "stuck (ill-formed program)"; pure 4
+
+/-- Run one source string through the whole pipeline, printing the outcome and returning the process
+exit code. `typecheck` selects the pipeline (ADR-0076 #51):
+
+  * DEFAULT — parse (located) → **TYPE-CHECK (reject on error)** → lower → run (`checkAndLower`).
+    An ill-typed program is caught as a TYPE ERROR before it runs, so the run path and the `#guard`
+    gate share ONE type gate (SSoT) and `type_safety` (well-typed ⟹ never stuck) is real for users.
+    A parse error is LOCATED (`error at line:col: …`); a type/elab error prints the checker's message.
+  * `--no-typecheck` — the raw erase-and-run path (`elaborateToComp`): parse → elaborate → lower →
+    run, NO type gate. Kept for oracle/differential testing (running an ill-typed program to observe
+    the defined runtime `stuck`/`escapedCap`, ADR-0063).
+
+`compiled` selects only the execution ENGINE and is orthogonal to `typecheck`. -/
+def runSource (typecheck compiled : Bool) (src : String) : IO UInt32 := do
+  if typecheck then
+    match Bang.TypeCheck.checkAndLower src with
+    | .error (m, some sp) => IO.eprintln s!"error at {sp.loc}: {m}"; pure 1
+    | .error (m, none)    => IO.eprintln s!"error: {m}"; pure 1
+    | .ok c               => runComp compiled c
+  else
+    match Bang.TypeCheck.elaborateToComp src with
+    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .ok c    => runComp compiled c
 
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
-  "  bang run  [--compiled] <file.bang>      run a bang program from a file\n" ++
-  "  bang eval [--compiled] \"<surface expr>\"  run a surface expression directly\n\n" ++
+  "  bang run  [FLAGS] <file.bang>      run a bang program from a file\n" ++
+  "  bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly\n\n" ++
+  "PIPELINE (default: type-check first):\n" ++
+  "  (default)        parse → TYPE-CHECK → lower → run; an ill-typed program is a TYPE ERROR\n" ++
+  "  --no-typecheck   raw erase-and-run (no type gate) — for oracle/differential testing\n\n" ++
   "ENGINE:\n" ++
   "  (default)    kernel oracle Source.eval\n" ++
   "  --compiled   the calculated machine exec∘compile (verified compiler output, ADR-0016)\n" ++
   "               — same program, same value; failures collapse to exit 5\n\n" ++
   "EXIT CODES:\n" ++
   "  0  done — value printed to stdout\n" ++
-  "  1  usage / parse / lower error\n" ++
+  "  1  usage / parse / elaboration / TYPE error\n" ++
   "  2  out of fuel (oom)              [oracle engine]\n" ++
   "  3  capability escaped its handler [oracle engine]\n" ++
-  "  4  stuck (ill-formed program)     [oracle engine]\n" ++
+  "  4  stuck (ill-formed program)     [oracle engine, --no-typecheck]\n" ++
   "  5  compiled machine produced no value (oom / escaped cap / stuck) [--compiled]"
 
 def main (args : List String) : IO UInt32 := do
   match args with
-  | ["run", "--compiled", file] =>
-    let src ← IO.FS.readFile ⟨file⟩
-    runSource true src
-  | ["run", file] =>
-    let src ← IO.FS.readFile ⟨file⟩
-    runSource false src
-  | ["eval", "--compiled", expr] =>
-    runSource true expr
-  | ["eval", expr] =>
-    runSource false expr
-  | _ =>
-    IO.eprintln usage
-    pure 1
+  | cmd :: rest =>
+    if cmd == "run" || cmd == "eval" then
+      -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
+      let compiled   := rest.contains "--compiled"
+      let typecheck  := !rest.contains "--no-typecheck"
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | [arg] =>
+        let src ← if cmd == "run" then IO.FS.readFile ⟨arg⟩ else pure arg
+        runSource typecheck compiled src
+      | _ => IO.eprintln usage; pure 1
+    else
+      IO.eprintln usage; pure 1
+  | _ => IO.eprintln usage; pure 1

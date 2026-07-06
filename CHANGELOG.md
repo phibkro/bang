@@ -42,6 +42,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — bite-0 HM polymorphism IN-PLACE — first-order let-poly runs via bang eval, corpus preserved (PATH-polymorphism, ADR-0075) (`f063c78`)
 - **typecheck** — bite-0b item 1 — the ML VALUE RESTRICTION (soundness gate for effect-typed poly) (PATH-polymorphism) (`e6cdc93`)
 - **surface** — source spans — the IR carries source truth; located-error view (ADR-0076 Data-to-IR-to-Views) (`ff49adb`)
+- **surface** — located PARSE errors — the parser reports line:col (#52 Stage A, ADR-0076) (`77dec51`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
