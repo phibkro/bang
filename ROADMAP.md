@@ -109,9 +109,12 @@ WAVE 2 — THREE NORTH-STAR DIRECTIONS (operator sequences them; each design-fir
         #49 string stdlib (concat/reverse/eq/map — stage 3) → a TOKENIZER in bang (stage 5, the
         "writes its own tools" proof). Follow-ons: inductive `Nat` (free total factorial via #47 — Q31),
         #48 effectful recursion, packed-string runtime + Char refinement (ADR-0074 deferred / Q31).
-  (b) POLYMORPHISM → "bang has a generic, lawful, verified stdlib"
-        ADR-0027 stage 2 (HM) → generic containers + generic lawful traits → Q26 optics
-        (the lawful-polymorphism north-star) → the HKT fork (Functor/Monad).
+  (b) POLYMORPHISM → "bang has a generic, lawful, verified stdlib" — INITIATIVE OPEN (`paths/PATH-polymorphism.md`)
+        ADR-0027 (staged) + **ADR-0075** (architecture: elaborate-to-mono → verified kernel UNTOUCHED,
+        bites 0-4 are checker leaves; bidirectional HM-inferred→annotation-checked→asserted decidability
+        stratification; row-poly first-class). Bite ladder: HM+row → generic data → generic traits+laws
+        (Q26 payoff) → higher-rank (System F, annotation-req) → HKT (Q26 optics) → dependent/refinement
+        (Q31). NEXT = the bite-0 pure-HM substrate spike. Motivated by #50 (the tokenizer helper limit).
   (c) USER-DEFINED EFFECTS & HANDLERS → "paradigm is a value" MADE REAL — THE MOAT
         #44: a GENERAL kernel handler (op→clause maps + continuation binding) + an `effect`
         decl + a handler expression. The furthest (spine-touching: ripples to the calculated
