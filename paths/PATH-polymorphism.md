@@ -56,9 +56,30 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
   fn over a `List a`; a use that SHOULD fail (occurs-check / unbound tyvar) fails loud.
 - Success ⟹ the substrate works, kernel untouched. Then bite 0b (row-poly) is the bang-specific add.
 
-## Bite 0b scope (now precise — the in-place rewrite mapped it)
+## Bite 0b status (2026-07-06): item 1 DONE; items 2+3 = grounded design findings → fresh sessions
 
-Three items, all on the landed `HTy`+`Infer` substrate (`f063c78`), all still checker leaves:
+- **Item 1 VALUE RESTRICTION — ✅ DONE (`e6cdc93`).** `synthSC .lett` generalizes only `if isValueSurf e`
+  (`{…}`/lit/var/pair), else monomorphic. The ML soundness gate, in place before effect-typed poly. Guard
+  (via `check`, the type checker): a non-value `if … then {fun} else {fun}` used at two types FAILS.
+  Corpus + bite-0 poly guards UNCHANGED, kernel/census untouched.
+- **Item 2 COMPUTATION HOLES — ESCALATED (proven bigger than the hook).** A computation hole CANNOT ride
+  `CTy` the way a value hole rides `VTy.tvar` — grep-verified it COLLIDES with 57 `.F`/`.arr` matches
+  (esp. the 6+ sites extracting a value type from `.F _ A`: `anfSplit`, `elabS .lett`, `checkSC`). ⟹ item 2
+  is a proper **`IVTy`/`ICTy` inference-type re-rep** (`IVTy`=`VTy`+`vhole`, `ICTy`=`CTy`+`chole`; subst
+  binds both; `force` unifies vhole~`U ρ chole`; convert at boundaries), EFFORT ≈ the bite-0 in-place port.
+  Silver lining: this IS the correct-by-construction cleanup (a hole unrepresentable-as-μ-var, retires the
+  reserved-`tvar` smell for BOTH kinds). Payoff: `compose` types+runs. → its own fresh-context session.
+- **Item 3 ROW VARIABLES — ESCALATED (design pass, AFTER item 2).** Rows are `EffRow = Finset Label`
+  (closed). Row-poly needs OPEN rows = `(Finset Label × Option RowVar)` (Rémy-style tail); unification
+  `{throws}∪ρ₁ ~ {state}∪ρ₂` → fresh shared tail (set-rows make this SIMPLER than scoped labels — no order,
+  union handles dups). Forks for the design pass: (a) does `EffRow` change EVERYWHERE (all `⊔`/`⊆`/`.erase ℓ`
+  handler-discharge threading) or stay an inference-only parallel `IRow` with embed/extract? (b) `.erase ℓ`
+  on an OPEN row (tail present) needs defined semantics. (c) value restriction (item 1) is the prerequisite —
+  now in place. Do AFTER item 2: the `IVTy`/`ICTy` infra is what `IRow` slots into.
+
+## Bite 0b scope (the three items, as the in-place rewrite + item-1 mapped them)
+
+All on the landed `HTy`+`Infer` substrate (`f063c78`), all still checker leaves:
 1. **Computation-level holes** (unlock higher-order — `compose`, HKT-lite). `CTy` has no `tvar` (kernel,
    forbidden), so add an INFERENCE-side computation type `ICTy` with holes, zonk to `CT` at the boundary
    (the sibling of the value-hole `HTy`). Today `force`-of-a-value-hole is a DEFINED fail-loud error
