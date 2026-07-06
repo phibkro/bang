@@ -1095,6 +1095,17 @@ def anfSplit (Γ : NCtx) (e' : Surf) : Except String (NCtx × (Surf → Surf) ×
     | .ok _           => .ok (Γ, id, e')
     | .error m        => .error m
 
+/-- Peel matching `fun`/`->` layers of an ASCRIBED curried lambda, binding EVERY parameter to its
+annotated domain — not just the outermost. So a nested `fun g => …` inside `(fun f => fun g => … :
+A -> B -> C)` also sees `g : B`; `elabS`'s `.lam` arm threads this extended `Γ` unchanged into the
+nested bodies, so `anfSplit` inside a curried fun can synthesize a computation ARGUMENT's type
+(`($g) x`) instead of failing on an unbound param. -/
+def curryBind : NCtx → Surf → Ty → NCtx
+  | Γ, e,        .tEff _ t   => curryBind Γ e t
+  | Γ, .lam x b, .tArr aT bT => curryBind ((x, (vtyOf aT : VT)) :: Γ) b bT
+  | Γ, _,        _           => Γ
+  termination_by _ _ t => sizeOf t
+
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
 instance env, ctor intros + named matches through the data env (ADR-0069); every other
 constructor maps structurally (ENUMERATED — a new `Surf` form fails here until elaborated, the
@@ -1213,10 +1224,8 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       return wrap (.splitS a b p' (← elabS env Γ' body))
   | Γ, .annotS (.lam x b) t => do   -- an ascribed lam's body sees its param's type (as in checking)
       let t' ← resolveTy env.aliases t         -- data names in user ascriptions close here (ADR-0069)
-      let Γ' := match tyBoth t' with
-        | (_, .arr _ A _) => (x, A) :: Γ
-        | _               => Γ
-      return .annotS (.lam x (← elabS env Γ' b)) t'
+      let Γ' := curryBind Γ (.lam x b) t'      -- bind EVERY curried param, not just the outermost
+      return .annotS (← elabS env Γ' (.lam x b)) t'
   | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.aliases t)
   | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
       let s0 ← elabS env Γ s
@@ -1866,8 +1875,17 @@ definition, used at multiple types, checked and run to a value. (Defined here, a
 #guard runTypedYieldsInt 200 "let id = {fun x => x} in (let a = ($id) 5 in (let u = ($id) () in a))" 5
 -- const at Int-arg and (Int*Int)-arg: 5 + 7 = 12.
 #guard runTypedYieldsInt 200 killerConst 12
--- higher-order `compose` (forces parametric thunks) is the bite-0b follow-on — fail-loud (a value
--- hole can't become a computation), NOT a wrong accept.
+-- ANNOTATED higher-order `compose` — TYPES + RUNS. The ascription binds EVERY curried param
+-- (`curryBind`), so `anfSplit` inside the nested `fun g`/`fun x` can synthesize the computation
+-- argument `($g) x` (previously a fail-loud "unbound variable g" at elaboration). `inc ∘ dbl` at 5 =
+-- inc(dbl(5)) = inc(10) = 11. `($f)`/`($g)` force CONCRETE thunks, so no computation hole is needed —
+-- annotation-checked monomorphic higher-order (the inferred/HM higher-order tier is the ICTy follow-on).
+def composeAnnSrc := "let c = { ( fun f => fun g => fun x => ($f)(($g) x) : Thunk (Int -> Int) -> Thunk (Int -> Int) -> Int -> Int ) } in let inc = {fun x => x + 1} in let dbl = {fun x => x + x} in ((($c) inc) dbl) 5"
+#guard displayProg composeAnnSrc == "Int"
+#guard runTypedYieldsInt 500 composeAnnSrc 11
+-- UNANNOTATED (HM-inferred) higher-order `compose` still fail-louds: the bare `fun f => fun g => …`
+-- forces PARAMETRIC holes (`($f)`/`($g)` on values with no concrete type), which needs computation-
+-- level holes (the ICTy re-rep) AND bare-lam param inference — the bite-0b follow-on, NOT a wrong accept.
 #guard (match checkProg "let compose = {fun f => fun g => fun x => ($f) (($g) x)} in 0" with | .error _ => true | _ => false)
 
 -- #53 — bare anonymous injections RUN end-to-end through the typed default path (CHECK precedes eval).
