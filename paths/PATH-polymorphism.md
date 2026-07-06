@@ -63,15 +63,21 @@ Three items, all on the landed `HTy`+`Infer` substrate (`f063c78`), all still ch
    forbidden), so add an INFERENCE-side computation type `ICTy` with holes, zonk to `CT` at the boundary
    (the sibling of the value-hole `HTy`). Today `force`-of-a-value-hole is a DEFINED fail-loud error
    ("annotate — higher-order is 0b"), never a wrong accept — so this is an EXTENSION, not a soundness fix.
+   HOOK (hmspike): smallest unblock = a tiny `ICTy` (F/arr + a `chole`); `force` unifies a value-hole with
+   `U ρ (chole)`; zonk `ICTy → CT` at the boundary. This is ALSO the moment the correct-by-construction
+   `ITy`/`ICTy` rep pays off — do it here rather than extending the reserved-`tvar` ranges further.
 2. **⚠ VALUE RESTRICTION (a SOUNDNESS gate for 0b).** Bite-0 generalizes any `let`-RHS holes — SOUND
    today because poly values are syntactic values (`{fun…}` thunks) and effectful RHS have concrete
    types (no holes to over-generalize) + effects can't escape a `let` scope (state discharged, TVars
    `atomically`-confined). But 0b (effect-typed / escaping poly) MUST restrict generalization to
    syntactic VALUES before it can over-generalize an effectful RHS — the classic ML value restriction.
-   Do NOT ship 0b without it.
+   Do NOT ship 0b without it. HOOK (hmspike): gate on "RHS is a syntactic value (`{…}` thunk / lit / var
+   / pair)"; the insertion point is the `.lett` arm in `synthSC`, right before `generalize Γ A`. One predicate.
 3. **Row variables** (generic over effect rows). Rows are SETS (invariant #2 / ADR-0001 — idempotent,
    union=join), so a row var unifies via OPEN-ROW (Rémy/Leijen) differently from a type hole — the
-   genuinely bang-specific add. Must preserve set-rows.
+   genuinely bang-specific add. Must preserve set-rows. HOOK (hmspike): bite-0 runs a SEPARATE `Infer`
+   per `elabS` resolution site (`runInferV`/`runInferC`); row-poly that spans elaborate+check will want the
+   row unifier threaded through the SAME `Infer` state — plan that threading when adding open-row unification.
 
 ## Open forks (decide when reached)
 
