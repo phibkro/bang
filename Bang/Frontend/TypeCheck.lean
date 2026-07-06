@@ -444,6 +444,18 @@ def runInferC (act : Infer (CT × EffRow)) : Except String (CT × EffRow) :=
   (do let (B, φ) ← act; return (← zonkC bigFuel B, φ)).run' {}
 
 
+/-- Syntactic value check — mirrors `Surface.lowerV`'s value-shaped constructors. A `thunk` is
+ALWAYS a value (its body is a separate computation), even a thunk of a check-mode-only `fun`; this
+is why the check is syntactic, not `synthSV`-based (a thunk-of-bare-`fun` neither `synthSV`s nor
+`synthSC`s, yet is a perfectly good value — the #45 `Box({fun x => x})` payload). Also the
+VALUE-RESTRICTION predicate (bite-0b): only a syntactic value's `let`-type is generalized. -/
+def isValueSurf : Surf → Bool
+  | .lit _ | .var _ | .unitS | .thunk _ => true
+  | .inlS e | .inrS e | .foldS e        => isValueSurf e
+  | .pairS a b                          => isValueSurf a && isValueSurf b
+  | .annotS e _                         => isValueSurf e
+  | _                                   => false
+
 -- Termination: the rank (synth = 0, check = 1) breaks the `check t → synth t` subsumption tie, as
 -- in the spike; every other call is on a structural subterm of the `Surf`.
 mutual
@@ -507,7 +519,12 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (CT × EffRow) :=
       let (Ce, φ₁) ← synthSC Γ e
       match Ce with
       | .F _ A => do
-          let sch ← generalize Γ A
+          -- VALUE RESTRICTION (bite-0b soundness gate): generalize ONLY a syntactic-value RHS
+          -- (`{…}`/lit/var/pair — `isValueSurf`). A computation/effectful RHS stays MONOMORPHIC, so a
+          -- latent effect can never escape a `let` disguised as a polymorphic type variable (the classic
+          -- ML unsoundness). Must precede effect-typed poly (row vars) — an effectful returner with a
+          -- would-be type var is exactly the trap. Pure/value RHS (the id/const case) still generalizes.
+          let sch ← if isValueSurf e then generalize Γ A else pure (⟨0, A⟩ : Scheme)
           let (B, φ₂) ← synthSC ((x, sch) :: Γ) b
           return (B, φ₁ ⊔ φ₂)
       | _ => throw "let: head is not a returner"
@@ -676,6 +693,12 @@ def killerConst : String :=
 -- bite-0 higher-order boundary (a value hole can't become a computation; `CTy` has no `tvar`) → a
 -- DEFINED error, never a hang or a wrong accept.
 #guard (match check "fun x => ($x) x" with | .error _ => true | _ => false)
+
+-- VALUE RESTRICTION (bite-0b soundness gate): a NON-value `let`-RHS (here an `if` returning a
+-- function — a computation, not a syntactic value) stays MONOMORPHIC, so using it at TWO types
+-- FAILS. Contrast the `let id = {fun…}` value case above, which DOES generalize. This is the guard
+-- that must hold before effect-typed poly can generalize an effectful returner (the ML value restriction).
+#guard (match check "let f = (if 1 < 2 then {fun x => x} else {fun x => x}) in (let a = ($f) 5 in (let p = ($f) (1, 2) in (let (x, y) = p in a + x)))" with | .error _ => true | _ => false)
 
 /-! ## Validation ④ — the Surf checker AGREES with the spike's `Comp` checker on the lowering.
 
@@ -1031,16 +1054,6 @@ def armsToList : DArms → List (String × List String × Surf)
   | .nil            => []
   | .cons c bs b r  => (c, bs, b) :: armsToList r
 
-/-- Syntactic value check — mirrors `Surface.lowerV`'s value-shaped constructors. A `thunk` is
-ALWAYS a value (its body is a separate computation), even a thunk of a check-mode-only `fun`; this
-is why the check is syntactic, not `synthSV`-based (a thunk-of-bare-`fun` neither `synthSV`s nor
-`synthSC`s, yet is a perfectly good value — the #45 `Box({fun x => x})` payload). -/
-def isValueSurf : Surf → Bool
-  | .lit _ | .var _ | .unitS | .thunk _ => true
-  | .inlS e | .inrS e | .foldS e        => isValueSurf e
-  | .pairS a b                          => isValueSurf a && isValueSurf b
-  | .annotS e _                         => isValueSurf e
-  | _                                   => false
 
 /-- A-normalize a VALUE-position subterm (#41), mirroring `lowerV`-or-`letC` in `Surface.lower` but
 at the NAMED elaboration layer (no de-Bruijn shift — a fresh binder just extends `Γ`). Returns the
