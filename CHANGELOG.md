@@ -39,6 +39,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — structural termination checker — Div is now PRECISE (#47, closes #47, ADR-0073 §2) (`0f8e244`)
 - **surface** — strings — String = List Char spec, runnable end-to-end (ADR-0074 #49 stages 1-2+fold+display) (`a2025b5`)
 - **examples** — a tokenizer WRITTEN IN BANG — 'writes its own tools', #47-total, ZERO compiler change (#49 stage 5) (`ce6d738`)
+- **typecheck** — bite-0 HM polymorphism IN-PLACE — first-order let-poly runs via bang eval, corpus preserved (PATH-polymorphism, ADR-0075) (`f063c78`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

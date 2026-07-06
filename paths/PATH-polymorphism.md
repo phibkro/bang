@@ -23,8 +23,9 @@ Decidability is the INVARIANT: un-annotated-undecidable = TYPE ERROR, never an u
 ```
 bite  unlocks                                          power     decid.        touches        status
 ──────────────────────────────────────────────────────────────────────────────────────────────────
-0   type vars + HM rank-1 inference                    HM        inferred      checker (leaf)  SPIKE ✅ / in-place NEXT
-      id, const, compose; map over List a (pure)       — spike `Bang/Frontend/HMSpike.lean` (e946adb): POSITIVE
+0   type vars + HM rank-1 inference                    HM        inferred      checker (leaf)  ✅ DONE (f063c78)
+      id, const (first-order let-poly) — RUNS via bang eval; spike `HMSpike.lean` (e946adb) + in-place (f063c78)
+      DEFERRED to 0b: higher-order compose (needs computation-level holes), value restriction, row vars
 0b  ROW polymorphism (generic over effect rows)        HM+row    inferred      checker (leaf)  after 0
       map : ∀a b ρ. (a -> b ! ρ) -> List a -> List b ! ρ
 1   generic DATA types                                 HM        inferred      surface+checker after 0b
@@ -55,13 +56,31 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
   fn over a `List a`; a use that SHOULD fail (occurs-check / unbound tyvar) fails loud.
 - Success ⟹ the substrate works, kernel untouched. Then bite 0b (row-poly) is the bang-specific add.
 
+## Bite 0b scope (now precise — the in-place rewrite mapped it)
+
+Three items, all on the landed `HTy`+`Infer` substrate (`f063c78`), all still checker leaves:
+1. **Computation-level holes** (unlock higher-order — `compose`, HKT-lite). `CTy` has no `tvar` (kernel,
+   forbidden), so add an INFERENCE-side computation type `ICTy` with holes, zonk to `CT` at the boundary
+   (the sibling of the value-hole `HTy`). Today `force`-of-a-value-hole is a DEFINED fail-loud error
+   ("annotate — higher-order is 0b"), never a wrong accept — so this is an EXTENSION, not a soundness fix.
+2. **⚠ VALUE RESTRICTION (a SOUNDNESS gate for 0b).** Bite-0 generalizes any `let`-RHS holes — SOUND
+   today because poly values are syntactic values (`{fun…}` thunks) and effectful RHS have concrete
+   types (no holes to over-generalize) + effects can't escape a `let` scope (state discharged, TVars
+   `atomically`-confined). But 0b (effect-typed / escaping poly) MUST restrict generalization to
+   syntactic VALUES before it can over-generalize an effectful RHS — the classic ML value restriction.
+   Do NOT ship 0b without it.
+3. **Row variables** (generic over effect rows). Rows are SETS (invariant #2 / ADR-0001 — idempotent,
+   union=join), so a row var unifies via OPEN-ROW (Rémy/Leijen) differently from a type hole — the
+   genuinely bang-specific add. Must preserve set-rows.
+
 ## Open forks (decide when reached)
 
 1. **Bite 2: dictionary-passing vs monomorphization** — dict-passing (Haskell; separate compilation,
    effect-system-idiomatic) vs monomorphization (Rust; simpler, faster, code-size cost). Both mono-kernel.
-2. **Row-poly representation** — how effect-row variables unify (Rémy rows vs Leijen scoped labels)
-   given bang's rows are SETS (invariant #2 / ADR-0001 — idempotent, union=join). Must preserve set-rows.
-3. **Bite 5: type-level computation** — the one place that may reach the verified spine (Q31).
+2. **Bite 5: type-level computation** — the one place that may reach the verified spine (Q31).
+3. **Hole encoding cleanup** — bite-0 rides `VTy.tvar` reserved ranges (pragmatic, lowest-regression);
+   the correct-by-construction alt (a separate `ITy` where a hole is unrepresentable-as-μ-var) is the
+   natural cleanup once 0b adds `ICTy` anyway.
 
 ## Status
 
@@ -72,10 +91,16 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
   bidirectional checker. **Killer guard: `let id = {fun x=>x}` used at Int AND (Int*Int) → types + runs
   (6); the DISCRIMINATOR — the SAME body with a `fun`-bound (mono) `id` → FAILS — proves generalization
   is load-bearing.** Elaborate-to-mono is TRIVIAL (`Source.eval` untyped → erase-and-run, kernel
-  untouched). **NEXT = bite-0 IN-PLACE**: fold HM into `synthSC`/`synthSV` — a mechanical RESTRUCTURE
-  (checker types `VTy` structural-eq → `HTy`+holes+zonk; `Except` → `StateT`), NOT a case-add; the two
-  "annotate the `fun`" errors dissolve; generalization did NOT resist (a one-shape `.lett` insertion).
-  Then **bite 0b = row polymorphism** (rows are SETS, invariant #2 → open-row unification, Rémy/Leijen —
-  the bang-specific add). No spine work; ADR-0075 holds unrevised.
+  untouched).
+- **Bite-0 IN-PLACE DONE — POSITIVE (`f063c78`).** HM folded into the production `synthSC`/`synthSV`/
+  `checkSC`/`checkSV` (`Except` → `Infer = StateT USt (Except)`; `A=expected` → `unifyV/unifyC` subsumption;
+  `let` → generalize the RHS value type; bare `fun` → fresh domain hole [the annotate-the-fun errors
+  DISSOLVED]; holes/rigids ride `VTy.tvar` RESERVED RANGES → no mirror type = lowest regression surface;
+  zonk-at-boundary so trait/data/binop resolution + reported types are always CONCRETE). **First-order
+  let-poly (`id`/`const`) RUNS via `bang eval`** (`let id = {fun x=>x}` at two types → 6/41 — the standalone
+  spike couldn't). **Regression oracle HELD**: 136 existing #guards UNCHANGED + 8 poly; broad real-journey
+  green (arithmetic/recursion/strings/Vec/caps/handle/tokenizer); kernel/`HasCTy`/`Source.eval` UNTOUCHED
+  (primitives OK 25 ctors, census stable, leaf fan-in 0). Honest boundary: higher-order `compose` DEFERRED
+  (fail-loud, NOT wrong-accept) → 0b. **NEXT = bite 0b** (see scope below). No spine work; ADR-0075 unrevised.
 - Motivation banked: #50 (the tokenizer's reusable-helper limit) is the concrete need; traits+laws
   (ADR-0068) work NOW but monomorphic — bite 2 makes them generic.
