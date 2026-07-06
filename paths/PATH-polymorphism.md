@@ -70,17 +70,27 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
     bind every param to its annotated domain) → annotated monomorphic higher-order `compose` ELABS+CHECKS+
     RUNS (`(compose inc dbl) 5 = 11` via `bang eval`), ZERO type-system change (`($f)`/`($g)` force
     CONCRETE thunks). ADR-0075's annotation-checked tier, reached.
-  - **HM-INFERRED higher-order (bare `fun f => fun g => …`) STILL needs the `IVTy`/`ICTy` re-rep** (grep-
-    proven: a computation hole can't ride `CTy` — collides with 57 `.F`/`.arr` matches; `IVTy`=`VTy`+`vhole`,
-    `ICTy`=`CTy`+`chole`, effort ≈ the in-place port; the correct-by-construction cleanup retiring the
-    reserved-`tvar` smell). **BUT the re-rep ALONE reaches no runnable program** — HM/bare compose ALSO
-    needs (a) `elabS .lam` (bare) binding params to fresh HOLES + a `binopS` hole-operand guard, and (b)
-    **THE SHARED ARCHITECTURAL FORK ⤵**.
-- **⭐ THE SHARED BLOCKER (icty's key finding) — thread ONE `Infer` state through elaborate+check.** Today
-  `anfSplit`'s per-site inference is a THROWAWAY `runInferC` (discards state), so a `chole`-typed `($g) x`
-  can't resolve coherently across elaborate→check. This is the SAME "one `Infer` state across
-  elaborate+check" fork flagged for item 3 (row vars). It blocks BOTH item-2-HM and item-3-row-vars. **DO
-  THIS FIRST** — it's the architectural unlock; the `IVTy`/`ICTy` re-rep + open-`IRow` then slot onto it.
+  - **HM-INFERRED higher-order — STAGE 1 LANDED (`paramHole`, `8e3aa19`); the wall MOVED to the type
+    boundary.** `paramHole` binds bare `.lam` params to a fresh hole so `anfSplit` synthesizes a
+    computation-arg body (`($g) x`) — bind-only-if-unbound so `curryBind`'s annotated path keeps concrete
+    types; + a `binopS` hole-operand guard. EFFECT: bare `compose`'s error moved from "unbound variable g"
+    (confusing) → "force: cannot infer this thunk's type — annotate" (honest). Corpus green.
+  - **REMAINING = the `IVTy`/`ICTy` re-rep** (grep-proven forced: a computation hole can't ride `CTy` —
+    collides with 57 `.F`/`.arr`; `IVTy`=`VTy`+`vhole`, `ICTy`=`CTy`+`chole`; effort ≈ the in-place port,
+    a genuine multi-session re-rep of resolve/zonk/occurs/unify/synth*/check*/generalize + a zonk-extract
+    boundary; all in `TypeCheck.lean`, kernel never sees it). Build-grounded Stage-2 spec (hmho, in order):
+    (a) `synthSC .force` value-hole → `U ρ chole` (not throw); (b) `app` of a `chole` callee → unify `arr`;
+    (c) `anfSplit`'s `.ok (.F _ A)` match only A-normalizes F-returners — a `chole` result needs `lower` to
+    handle an inline computation app-arg (or extend the A-norm). Then bare `compose` types+runs.
+- **⚠ PLAN CORRECTION (hmho, grounded — supersedes icty's "shared threading = standalone Stage-1 unlock"
+  for item 2):** the elaborate+check `Infer`-threading is NOT a standalone item-2 unlock. Per-site
+  deterministic `paramHole`s suffice to move the wall (the FINAL check `synthSC [] e` already runs in ONE
+  coherent `Infer` state; elaboration-phase holes are discarded — elaboration outputs hole-free `Surf`).
+  The threading is load-bearing ONLY INSIDE the ICTy re-rep, for `chole` COHERENCE across `anfSplit` sites
+  (Stage-2 wall (c)) — do it THERE, not first. Standalone threading is INERT for item-2 (advances no
+  runnable program; force-of-hole walls regardless). For **item 3 (row vars)** the threading is a SEPARATE
+  question (row-poly genuinely spans elaborate+check) — reassess when it's built; don't assume item-2's
+  correction transfers.
 - **Item 3 ROW VARIABLES — ESCALATED (design pass, AFTER item 2).** Rows are `EffRow = Finset Label`
   (closed). Row-poly needs OPEN rows = `(Finset Label × Option RowVar)` (Rémy-style tail); unification
   `{throws}∪ρ₁ ~ {state}∪ρ₂` → fresh shared tail (set-rows make this SIMPLER than scoped labels — no order,
