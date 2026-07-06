@@ -468,8 +468,11 @@ def synthSV (Γ : NCtx) (e : Surf) : Infer VT :=
   | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
   | .unitS     => return .unit
   | .annotS b t => do let A := vtyOf t; let _ ← checkSV Γ b A; return A
-  | .inlS _    => throw "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
-  | .inrS _    => throw "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  -- HM (#53): a bare anonymous injection SYNTHESIZES with a fresh hole for the UNFILLED variant.
+  -- `Left(e) : A + ?b` (`e : A`), `Right(e) : ?a + B` (`e : B`); unification resolves the hole from
+  -- context (match arms / annotation / use site). Check mode (with an expected sum) is still preferred.
+  | .inlS e    => do let A ← synthSV Γ e; return .sum A (← freshHole)
+  | .inrS e    => do let B ← synthSV Γ e; return .sum (← freshHole) B
   | .foldS _   => throw "fold needs an expected μ type — annotate (ctor elaboration provides it)"
   | _          => throw "not a value (wrap a computation in braces)"
   termination_by (sizeOf e, 0)
@@ -606,9 +609,11 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (CT × EffRow) :=
                                           return (.F .omega resTy, {ℓ})
                 | _, _ => throw s!"cap op '{op}' expects {argTys.length} argument(s)"
       | _ => throw s!"cap op '{op}': receiver is not a capability value (Cap ℓ)"
-  -- check-mode-only intros: fail loud (synthesis has no expected type to drive them).
-  | .inlS _  => throw "Left(_) needs an expected sum type — annotate `(Left e : A + B)`"
-  | .inrS _  => throw "Right(_) needs an expected sum type — annotate `(Right e : A + B)`"
+  -- HM (#53): a bare anonymous injection in COMPUTATION position lowers to `ret (inj v)` — a value ⇒
+  -- ret, with a fresh hole for the unfilled variant (mirrors the `synthSV` arm and `pairS` here).
+  -- `fold` still needs an expected μ type (its unrolling is not a hole the unifier can invent).
+  | .inlS p => do return (.F .omega (.sum (← synthSV Γ p) (← freshHole)), ⊥)
+  | .inrS p => do return (.F .omega (.sum (← freshHole) (← synthSV Γ p)), ⊥)
   | .foldS _ => throw "fold needs an expected μ type — annotate (ctor elaboration provides it)"
   -- NO catch-all: synthSC now ENUMERATES every Surf constructor, so a NEW feature fails to compile
   -- here until it is typed — pipeline-completeness by construction (the operator's enforcement ask).
@@ -662,10 +667,30 @@ check-mode the type synthesis lacked. -/
 -- product destructure, inferred.
 #guard check "let p = (3, 4) in (let (a, b) = p in a)" == .ok (.F .omega .int, ⊥)
 
--- REJECTIONS — the surface checker is sound:
+-- #53 — a BARE anonymous injection now SYNTHESIZES (fresh hole for the unfilled variant), so idiomatic
+-- raw-sum code type-checks WITHOUT an annotation on the typed-default path (surfaced by #51's check-first).
+-- match over a bare `Right(7)`: the scrutinee's Left-variant hole is discarded ⇒ the RESULT is hole-free.
+#guard check "match Right(7) { Left(a) -> 0, Right(x) -> x }" == .ok (.F .omega .int, ⊥)
+-- let-bound bare injection: the value RHS generalizes over the phantom variant; the match resolves it.
+#guard (match check "let x = Right(7) in match x { Left(a) -> 0, Right(x) -> x }" with
+        | .ok (.F .omega .int, _) => true | _ => false)
+-- the phantom variant RESOLVES from the OTHER match arm's use (Left(3); the Right arm forces it to Int).
+#guard check "match Left(3) { Left(a) -> a, Right(x) -> x }" == .ok (.F .omega .int, ⊥)
+-- the ANNOTATED form is UNCHANGED — check mode (with an expected sum) is still preferred over synth.
+#guard check "( Left(3) : Int + Int )" == .ok (.F .omega (.sum .int .int), ⊥)
+-- a bare TOP-LEVEL injection with no resolving context types as a POLYMORPHIC sum: the filled variant
+-- is concrete, the unfilled stays a hole (a `tvar` in the reserved hole range) — legitimate HM
+-- polymorphism (`Int + ∀b. b`), NOT a wrong accept (it erases-and-runs as a well-formed `Left` value).
+#guard (match check "Left(3)"  with | .ok (.F _ (.sum .int (.tvar _)), _) => true | _ => false)
+#guard (match check "Right(3)" with | .ok (.F _ (.sum (.tvar _) .int), _) => true | _ => false)
+
+-- REJECTIONS — the surface checker is sound (the synth hole never rescues an ILL-typed program:
+-- an injection forced into a concrete NON-sum type still fails via `unifyV`):
 #guard (match check "1 + Left(0)" with | .error _ => true | _ => false)         -- non-Int operand
 #guard (match check "( fun x => x : Int -> Int ) Left(0)" with | .error _ => true | _ => false)  -- arg type
 #guard (match check "( 3 : Int + Int )" with | .error _ => true | _ => false)    -- 3 is not a sum
+-- mismatched match arms are STILL caught: Left arm returns Int, Right arm a product ⇒ unify fails.
+#guard (match check "match Right(7) { Left(a) -> 0, Right(x) -> (x, x) }" with | .error _ => true | _ => false)
 
 /-! ## Validation ⑦ — HM inference + let-polymorphism (ADR-0075 bite-0, in-place).
 
@@ -1844,5 +1869,10 @@ definition, used at multiple types, checked and run to a value. (Defined here, a
 -- higher-order `compose` (forces parametric thunks) is the bite-0b follow-on — fail-loud (a value
 -- hole can't become a computation), NOT a wrong accept.
 #guard (match checkProg "let compose = {fun f => fun g => fun x => ($f) (($g) x)} in 0" with | .error _ => true | _ => false)
+
+-- #53 — bare anonymous injections RUN end-to-end through the typed default path (CHECK precedes eval).
+#guard runTypedYieldsInt 20 "match Right(7) { Left(a) -> 0, Right(x) -> x }" 7
+#guard runTypedYieldsInt 20 "let x = Right(7) in match x { Left(a) -> 0, Right(x) -> x }" 7
+#guard runTypedYieldsInt 20 "match Left(3) { Left(a) -> a, Right(x) -> x }" 3
 
 end Bang.TypeCheck
