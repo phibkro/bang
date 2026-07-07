@@ -58,6 +58,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — bounded generic functions over traits — fold : Monoid a => List a -> a, monomorphized (polymorphism bite-2) (`f463011`)
 - **typecheck** — annotation-free generic introduction — the parser library goes fully generic (#55, closes #55) (`a462728`)
 - **typecheck** — Option/Result universal prelude + Either-as-built-in-sum + the first witnessed isomorphisms (`1ac850a`)
+- **typecheck** — bite-3 HKT Stage C — concrete-use Functor RUNS (fmap inc (Some 5)→6); A+B HK-unify substrate built, not yet wired (`7d887c2`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
