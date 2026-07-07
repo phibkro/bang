@@ -23,7 +23,7 @@
 
 ## By area
 
-### type-system (10)
+### type-system (12)
 
 - **[Q2 — Mult = QTT concretization](Q2-mult-qtt-concretization.md)** — concretize the multiplicity semiring as QTT (0/1/ω); the spec stays parametric in Mult · _decided_  
   ties: —
@@ -45,6 +45,10 @@
   ties: Q27, ADR-0027, ADR-0067, ADR-0073
 - **[Q36 — Gradual correctness / prototyping mode: typed holes, run-with-warnings, the coarse-vs-fine escape-hatch gap](Q36-gradual-correctness.md)** — surface + tooling; the vague-spec / exploratory end of the gradient · _open_  
   ties: Q31, Q35, ADR-0026, ADR-0073, ADR-0067
+- **[Q41 — Type isomorphism — how to check two types are isomorphic and convert between them (types-as-algebra: derive structural isos, law-check witnessed ones)](Q41-type-isomorphism-types-as-algebra-derive-vs-witness.md)** — A type iso is a lawful inverse pair (to/from with from∘to=id, to∘from=id). Two ways: STRUCTURAL — types-as-algebra (sum=+, product=×, Unit=1, Void=0 semiring), normalize both + compare, DERIVE the iso; WITNESSED — user gives to/from, property-test the laws (the bite-2 trait-law mechanism). Option a ≅ Either Unit a, Result e a ≅ Either e a are structural. · _open_  
+  ties: Q31, ADR-0081, ADR-0068, ADR-0069
+- **[Q42 — Proving in bang — parametricity gives free substitutability NOW; Curry-Howard/dependent types make bang a prover LATER](Q42-proving-in-bang-parametricity-now-curry-howard-later.md)** — Two levels of proof. Substitutability/uniformity: FREE from parametricity (Reynolds' abstraction theorem — a parametric client can't distinguish instances of an interface; the type IS the proof), already latent in bang's polymorphism. Arbitrary propositions: needs dependent types (Curry-Howard: propositions-as-types, proofs-as-programs) — the Q31 far end, where a bang program IS a proof. · _open_  
+  ties: Q31, Q41, ADR-0075, ADR-0081
 
 ### effects (16)
 
@@ -123,7 +127,7 @@
 The `· ✓ RESOLVED (ADR-…)` / `· ◑ PARTIAL` markers below are the Q⟺ADR ledger `gen-adr-index.py` reads —
 derived from each question's `resolved-by` frontmatter, so a resolution has a single home.
 
-### open (24)
+### open (26)
 
 - [Q7 — Operation names as strings vs symbolic enum](Q7-operation-names-string-vs-enum.md)  · OPEN
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](Q9-wasmfx-target-drift.md)  · OPEN
@@ -149,6 +153,8 @@ derived from each question's `resolved-by` frontmatter, so a resolution has a si
 - [Q38 — module ≟ trait ≟ effect ≟ capability: one interface+implementation construct, dialed by resumption grade?](Q38-module-trait-effect-capability.md)  · OPEN
 - [Q39 — What is IO? — the software↔hardware capability contract as a family of typed effects](Q39-what-is-io-software-hardware-capability-contract.md)  · OPEN
 - [Q40 — Compilation strategy for the dynamic escape hatch — static-first; dispatch cold, JIT-monomorphize hot](Q40-compilation-strategy-static-first-dispatch-cold-jit-hot.md)  · OPEN
+- [Q41 — Type isomorphism — how to check two types are isomorphic and convert between them (types-as-algebra: derive structural isos, law-check witnessed ones)](Q41-type-isomorphism-types-as-algebra-derive-vs-witness.md)  · OPEN
+- [Q42 — Proving in bang — parametricity gives free substitutability NOW; Curry-Howard/dependent types make bang a prover LATER](Q42-proving-in-bang-parametricity-now-curry-howard-later.md)  · OPEN
 
 ### partial (1)
 
@@ -220,6 +226,8 @@ graph LR
   Q38["Q38 · module-trait-effect-capability"]:::q
   Q39["Q39 · what-is-io-software-hardware-capability-contract"]:::q
   Q40["Q40 · compilation-strategy-static-first-dispatch-cold-jit-hot"]:::q
+  Q41["Q41 · type-isomorphism-types-as-algebra-derive-vs-witness"]:::q
+  Q42["Q42 · proving-in-bang-parametricity-now-curry-howard-later"]:::q
   ADR_0001["ADR-0001"]:::adr
   ADR_0032["ADR-0032"]:::adr
   ADR_0019["ADR-0019"]:::adr
@@ -260,6 +268,7 @@ graph LR
   ADR_0068["ADR-0068"]:::adr
   ADR_0075["ADR-0075"]:::adr
   ADR_0080["ADR-0080"]:::adr
+  ADR_0081["ADR-0081"]:::adr
   Q1 --> Q8
   Q1 --> ADR_0001
   Q1 --> ADR_0032
@@ -384,6 +393,14 @@ graph LR
   Q40 --> Q39
   Q40 --> ADR_0080
   Q40 --> ADR_0075
+  Q41 --> Q31
+  Q41 --> ADR_0081
+  Q41 --> ADR_0068
+  Q41 --> ADR_0069
+  Q42 --> Q31
+  Q42 --> Q41
+  Q42 --> ADR_0075
+  Q42 --> ADR_0081
   classDef q fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
   classDef extq fill:#eef2ff,stroke:#6366f1,color:#312e81;
   classDef adr fill:#f1f5f9,stroke:#64748b,color:#334155;
