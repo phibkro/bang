@@ -24,18 +24,9 @@ oracle/_build/
 
 # generated dashboard (CI regenerates via .github/workflows/pages.yml)
 _site/
-diff --git a/.gitignore b/.gitignore
-index 63241cc..b60fc77 100644
---- a/.gitignore
-+++ b/.gitignore
-@@ -24,3 +24,10 @@ oracle/_build/
- 
- # generated dashboard (CI regenerates via .github/workflows/pages.yml)
- _site/
-+
-+# vocs docs site: commit sources only (package.json, vocs.config.ts, sync-docs.mjs,
-+# bun.lock); node_modules, build output, cache, and the generated page farm are derived
-+site/node_modules/
-+site/dist/
-+site/.vocs/
-+site/src/
+# vocs docs site: commit sources only (package.json, vocs.config.ts, sync-docs.mjs, bun.lock);
+# node_modules, build output, cache, and the generated page farm are derived
+site/node_modules/
+site/dist/
+site/.vocs/
+site/src/
