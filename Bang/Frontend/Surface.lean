@@ -1306,6 +1306,7 @@ def pTraitMembers : Nat → P (List OpSig × List LawDecl)
     match ts with
     | "}" :: ts => .ok (([], []), ts)
     | ";" :: ts => pTraitMembers f ts
+    | "," :: ts => pTraitMembers f ts                              -- HKT: comma-separated method sigs (`pure : …, bind : …`)
     | "fn" :: ts => do
         let (n, ts) ← pIdent ts
         let (ps, ts) ← pParams f ts
@@ -1334,6 +1335,7 @@ def pImplMembers : Nat → P (List OpDef)
     match ts with
     | "}" :: ts => .ok ([], ts)
     | ";" :: ts => pImplMembers f ts
+    | "," :: ts => pImplMembers f ts                              -- HKT: comma-separated impl defs (`fn pure … , fn bind …`)
     | "fn" :: ts => do
         let (n, ts) ← pIdent ts
         let (ps, ts) ← pParams f ts

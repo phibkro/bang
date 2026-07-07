@@ -1798,41 +1798,66 @@ elaboration. Running it first means `elabS` only ever elaborates structural subt
 wrappers are part of that input) — so `elabS` stays TOTAL (no env-pull during elab, no `partial`).
 Fuel-bounded (idiomatic here — `resolveTyG`/`monoData`/the parser all bound their descent this way);
 `bigFuel` from `elabProg` dwarfs any real AST depth. Every node maps structurally (ENUMERATED — a new
-`Surf` former fails here until handled), recursing into children; an expanded use's arg is expanded first. -/
-def expandBFns (env : ElabEnv) : Nat → Surf → Except String Surf
+`Surf` former fails here until handled), recursing into children; an expanded use's arg is expanded first.
+
+`carrier?` is the ENCLOSING monadic carrier hint (ADR-0082 Stage D): inside `bind M { fun x => … }` at
+`Monad Option`, the continuation is expanded with `carrier? = some "Option"`, so a BARE (un-annotated)
+`pure e` / `bind …` in it fixes its carrier from the hint rather than a per-call `: Option _` annotation
+(the ergonomics payoff). Propagated uniformly to children; only a bare HK-method spine CONSUMES it (a
+data ctor / ordinary app ignores it). An explicit annotation still wins — the `annotS` arm sets the
+carrier from the annotation. Un-fixable (`carrier? = none`, no annotation) ⟹ the use is left for the
+checker, which fails loud (decidability descent, never a guess). -/
+def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Except String Surf
   | 0,     _ => .error "bounded-fn expansion out of fuel"
   | _ + 1, .lit n     => .ok (.lit n)
   | _ + 1, .var x     => .ok (.var x)
   | _ + 1, .unitS     => .ok .unitS
   | _ + 1, .getS      => .ok .getS
-  | f + 1, .thunk e   => do return .thunk (← expandBFns env f e)
-  | f + 1, .force e   => do return .force (← expandBFns env f e)
-  | f + 1, .raise e   => do return .raise (← expandBFns env f e)
-  | f + 1, .handle e  => do return .handle (← expandBFns env f e)
-  | f + 1, .putS e    => do return .putS (← expandBFns env f e)
-  | f + 1, .atomS e   => do return .atomS (← expandBFns env f e)
-  | f + 1, .newS e    => do return .newS (← expandBFns env f e)
-  | f + 1, .readS e   => do return .readS (← expandBFns env f e)
-  | f + 1, .inlS e    => do return .inlS (← expandBFns env f e)
-  | f + 1, .inrS e    => do return .inrS (← expandBFns env f e)
-  | f + 1, .foldS e   => do return .foldS (← expandBFns env f e)
-  | f + 1, .unfoldS e => do return .unfoldS (← expandBFns env f e)
-  | f + 1, .divMark e => do return .divMark (← expandBFns env f e)
-  | f + 1, .lam x b   => do return .lam x (← expandBFns env f b)
-  | f + 1, .lett x e b   => do return .lett x (← expandBFns env f e) (← expandBFns env f b)
-  | f + 1, .app g a      => do return .app (← expandBFns env f g) (← expandBFns env f a)
-  | f + 1, .stateS a b   => do return .stateS (← expandBFns env f a) (← expandBFns env f b)
-  | f + 1, .writeS a b   => do return .writeS (← expandBFns env f a) (← expandBFns env f b)
-  | f + 1, .pairS a b    => do return .pairS (← expandBFns env f a) (← expandBFns env f b)
-  | f + 1, .binopS op a b => do return .binopS op (← expandBFns env f a) (← expandBFns env f b)
-  | f + 1, .ifS c t e    => do return .ifS (← expandBFns env f c) (← expandBFns env f t) (← expandBFns env f e)
-  | f + 1, .splitS a b p body => do return .splitS a b (← expandBFns env f p) (← expandBFns env f body)
+  | f + 1, .thunk e   => do return .thunk (← expandBFns env carrier? f e)
+  | f + 1, .force e   => do return .force (← expandBFns env carrier? f e)
+  | f + 1, .raise e   => do return .raise (← expandBFns env carrier? f e)
+  | f + 1, .handle e  => do return .handle (← expandBFns env carrier? f e)
+  | f + 1, .putS e    => do return .putS (← expandBFns env carrier? f e)
+  | f + 1, .atomS e   => do return .atomS (← expandBFns env carrier? f e)
+  | f + 1, .newS e    => do return .newS (← expandBFns env carrier? f e)
+  | f + 1, .readS e   => do return .readS (← expandBFns env carrier? f e)
+  | f + 1, .inlS e    => do return .inlS (← expandBFns env carrier? f e)
+  | f + 1, .inrS e    => do return .inrS (← expandBFns env carrier? f e)
+  | f + 1, .foldS e   => do return .foldS (← expandBFns env carrier? f e)
+  | f + 1, .unfoldS e => do return .unfoldS (← expandBFns env carrier? f e)
+  | f + 1, .divMark e => do return .divMark (← expandBFns env carrier? f e)
+  | f + 1, .lam x b   => do return .lam x (← expandBFns env carrier? f b)
+  | f + 1, .lett x e b   => do return .lett x (← expandBFns env carrier? f e) (← expandBFns env carrier? f b)
+  | f + 1, .app g a      => do
+      -- HKT Stage D (ADR-0082): a BARE HK-method spine `bind M K` / `pure e` under an enclosing carrier
+      -- hint splices at that carrier WITHOUT a per-call annotation (the ergonomics payoff). Anything else
+      -- (partial spine, non-HK head, no carrier) recurses structurally.
+      match carrier?, appSpine (.app g a) with
+      | some ctor, some (op, args) =>
+          match env.hktMethodOf.lookup op with
+          | some tn =>
+              match env.hktImpls.find? (fun i => i.traitName == tn && i.ctorName == ctor) with
+              | some impl =>
+                  match impl.ops.find? (fun od => od.name == op) with
+                  | some od =>
+                      if args.length == od.params.length then hktMethodSplice env carrier? f op ctor od args none
+                      else do return .app (← expandBFns env carrier? f g) (← expandBFns env carrier? f a)
+                  | none => do return .app (← expandBFns env carrier? f g) (← expandBFns env carrier? f a)
+              | none => throw s!"no impl of '{tn}' for '{ctor}' — the higher-kinded method '{op}' is unresolved"
+          | none => do return .app (← expandBFns env carrier? f g) (← expandBFns env carrier? f a)
+      | _, _ => do return .app (← expandBFns env carrier? f g) (← expandBFns env carrier? f a)
+  | f + 1, .stateS a b   => do return .stateS (← expandBFns env carrier? f a) (← expandBFns env carrier? f b)
+  | f + 1, .writeS a b   => do return .writeS (← expandBFns env carrier? f a) (← expandBFns env carrier? f b)
+  | f + 1, .pairS a b    => do return .pairS (← expandBFns env carrier? f a) (← expandBFns env carrier? f b)
+  | f + 1, .binopS op a b => do return .binopS op (← expandBFns env carrier? f a) (← expandBFns env carrier? f b)
+  | f + 1, .ifS c t e    => do return .ifS (← expandBFns env carrier? f c) (← expandBFns env carrier? f t) (← expandBFns env carrier? f e)
+  | f + 1, .splitS a b p body => do return .splitS a b (← expandBFns env carrier? f p) (← expandBFns env carrier? f body)
   | f + 1, .matchS s xl el xr er => do
-      return .matchS (← expandBFns env f s) xl (← expandBFns env f el) xr (← expandBFns env f er)
-  | f + 1, .withCapS k init n body => do return .withCapS k (← expandBFns env f init) n (← expandBFns env f body)
-  | f + 1, .letRecS n t fn b => do return .letRecS n t (← expandBFns env f fn) (← expandBFns env f b)
-  | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env f recv) op (← expandArgs env f args)
-  | f + 1, .matchD s arms => do return .matchD (← expandBFns env f s) (← expandArms env f arms)
+      return .matchS (← expandBFns env carrier? f s) xl (← expandBFns env carrier? f el) xr (← expandBFns env carrier? f er)
+  | f + 1, .withCapS k init n body => do return .withCapS k (← expandBFns env carrier? f init) n (← expandBFns env carrier? f body)
+  | f + 1, .letRecS n t fn b => do return .letRecS n t (← expandBFns env carrier? f fn) (← expandBFns env carrier? f b)
+  | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env carrier? f recv) op (← expandArgs env carrier? f args)
+  | f + 1, .matchD s arms => do return .matchD (← expandBFns env carrier? f s) (← expandArms env carrier? f arms)
   | f + 1, .annotS e t => do
       -- HKT (ADR-0082): a higher-kinded METHOD call `(fmap inc x : Option Int)` — the result annotation
       -- fixes the carrier constructor (`f := Option`), so we resolve the `Functor Option` impl and SPLICE
@@ -1853,40 +1878,53 @@ def expandBFns (env : ElabEnv) : Nat → Surf → Except String Surf
                       | some od =>
                           if args.length != od.params.length then
                             throw s!"'{op}' at '{ctor}': applied to {args.length} args, the impl takes {od.params.length}"
-                          let body' ← expandBFns env f od.body
-                          let args' ← expandList env f args
-                          let call := args'.foldl (fun acc a => Surf.app acc a) (Surf.force (Surf.var op))
-                          return Surf.lett op (.thunk (funFromParams od.params body')) (.annotS call t)
+                          hktMethodSplice env carrier? f op ctor od args (some t)
           | none =>
               match env.bfns.lookup op with
               | some bfn =>                                       -- a bounded-fn use `(fold arg : T)` (bite-2/HKT)
-                  let args' ← expandList env f args
+                  let args' ← expandList env carrier? f args
                   match env.hktTraits.lookup bfn.traitName with
                   | some _ => hktBfnWrapper env bfn t args'       -- HK bound (`where Functor f`): Case B
                   | none   => match args' with                   -- ordinary bound (`where Monoid a`): bite-2 (single arg)
                               | [arg] => bfnWrapper env bfn t arg
-                              | _     => do return .annotS (← expandBFns env f e) t
-              | none => do return .annotS (← expandBFns env f e) t
-      | none => do return .annotS (← expandBFns env f e) t
+                              | _     => do return .annotS (← expandBFns env carrier? f e) t
+              | none => do return .annotS (← expandBFns env carrier? f e) t
+      | none => do return .annotS (← expandBFns env carrier? f e) t
+
+/-- Splice one resolved HK-method use to a monomorphic local (ADR-0082): `let op = { fun params => body }
+in (call : t?)`. The impl's `body` is concrete (expanded carrier-free); the ARGS are expanded under
+`some ctor` so nested un-annotated `pure`/`bind` in a continuation resolve at THIS carrier (Stage D
+threading). `ann? = some t` keeps the result annotation (Case A / annotated use); `none` relies on the
+annotation-free ctor intro (`Some x`) to infer the element type at the concrete carrier (bare use).
+(`_carrier?` is inert — the resolved `ctor` IS the carrier here; the param stays only to align the
+mutual block's argument positions for termination inference.) -/
+def hktMethodSplice (env : ElabEnv) (_carrier? : Option String) (f : Nat)
+    (op ctor : String) (od : Bang.Surface.OpDef) (args : List Surf) (ann? : Option Ty) :
+    Except String Surf := do
+  let body' ← expandBFns env none f od.body
+  let args' ← expandList env (some ctor) f args
+  let call := args'.foldl (fun acc a => Surf.app acc a) (Surf.force (Surf.var op))
+  return Surf.lett op (.thunk (funFromParams od.params body'))
+    (match ann? with | some t => .annotS call t | none => call)
 
 /-- `SurfArgs` expansion (cap-op arguments). -/
-def expandArgs (env : ElabEnv) : Nat → SurfArgs → Except String SurfArgs
+def expandArgs (env : ElabEnv) (carrier? : Option String) : Nat → SurfArgs → Except String SurfArgs
   | 0,     _        => .error "bounded-fn expansion out of fuel"
   | _ + 1, .none    => .ok .none
-  | f + 1, .one a   => do return .one (← expandBFns env f a)
-  | f + 1, .two a b => do return .two (← expandBFns env f a) (← expandBFns env f b)
+  | f + 1, .one a   => do return .one (← expandBFns env carrier? f a)
+  | f + 1, .two a b => do return .two (← expandBFns env carrier? f a) (← expandBFns env carrier? f b)
 
 /-- Expand a list of `Surf` (HK method args), explicit recursion so termination stays fuel-visible. -/
-def expandList (env : ElabEnv) : Nat → List Surf → Except String (List Surf)
+def expandList (env : ElabEnv) (carrier? : Option String) : Nat → List Surf → Except String (List Surf)
   | 0,     _         => .error "bounded-fn expansion out of fuel"
   | _ + 1, []        => .ok []
-  | f + 1, a :: rest => do return (← expandBFns env f a) :: (← expandList env f rest)
+  | f + 1, a :: rest => do return (← expandBFns env carrier? f a) :: (← expandList env carrier? f rest)
 
 /-- `DArms` expansion (named-match arm bodies). -/
-def expandArms (env : ElabEnv) : Nat → DArms → Except String DArms
+def expandArms (env : ElabEnv) (carrier? : Option String) : Nat → DArms → Except String DArms
   | 0,     _             => .error "bounded-fn expansion out of fuel"
   | _ + 1, .nil          => .ok .nil
-  | f + 1, .cons c bs b r => do return .cons c bs (← expandBFns env f b) (← expandArms env f r)
+  | f + 1, .cons c bs b r => do return .cons c bs (← expandBFns env carrier? f b) (← expandArms env carrier? f r)
 end
 
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
@@ -2374,7 +2412,7 @@ def elabProg (p : Prog) : Except String Surf := do
   let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
   let body ← injectStdlib declared p.body
   let env ← buildEnv (prelude ++ p.decls)
-  elabS env [] (← expandBFns env bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
+  elabS env [] (← expandBFns env none bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
@@ -3189,5 +3227,83 @@ a constructor, so `Int Int` is unrepresentable. -/
 #guard (match checkProg "trait Bad f { op : f a b -> Int } 0" with | .error _ => true | .ok _ => false)
 -- `Int Int` is rejected (`Int` is the base type `tInt`, not a `tApp` head — unrepresentable as an application).
 #guard (match checkProg "let x = (3 : Int Int) in x" with | .error _ => true | .ok _ => false)
+
+/-! ## Stage ⑤e-D — MONAD (bite-3 Stage D, ADR-0082): the daily-driver payoff. `trait Monad m` over a
+CONSTRUCTOR, `pure : a → m a` + `bind : m a → (a → m b) → m b`, and an `impl Monad for Option`. Two
+mechanisms compose here: (1) the Stage-C HK-method dispatch (a use `(bind M K : Option Int)` fixes the
+carrier `m := Option` from the result annotation, resolves `Monad Option`, splices `bind`'s body); (2)
+CARRIER THREADING — inside `bind M { fun x => … }` the continuation is expanded under the enclosing
+`Option` hint, so a BARE `pure e` / `bind …` in it fixes its carrier WITHOUT a per-call `: Option _`
+annotation (the error-propagation ergonomics — no annotation pyramid, no match pyramid). `pure`'s carrier
+is fixed by: its own annotation, OR the enclosing `bind` hint; un-fixable ⟹ fail-loud (annotation
+required — decidability descent, ADR-0075). Monomorphizes to `mu` per use; kernel untouched. -/
+def monadOption : String :=
+  "trait Monad m { pure : a -> m a, bind : m a -> (a -> m b) -> m b } " ++
+  "impl Monad for Option { fn pure(x) = Some(x), fn bind(x, f) = match x { None -> None, Some(v) -> ($f) v } } "
+
+-- ⭐ THE CHAIN (ADR-0082 Stage D demo 1): `pure`/`bind` sequenced, 12 threaded through the match. Only the
+-- OUTER bind is annotated; inner `bind`/`pure` fix their carrier from the `Monad Option` hint (threading).
+#guard runTypedYieldsInt 4000 (monadOption ++
+  "match (bind (Some(5)) { fun x => bind (Some(x+1)) { fun y => pure(y*2) } } : Option Int) { None -> 0, Some(w) -> w }") 12
+-- ⭐ SHORT-CIRCUIT (demo 2): the error-propagation payoff — `bind None _ ⇒ None`, `f` never runs, NO match
+-- pyramid. Inner `pure` un-annotated (carrier threaded from the outer bind).
+#guard runTypedYieldsInt 3000 (monadOption ++
+  "match (bind (None : Option Int) { fun x => pure(x+1) } : Option Int) { None -> 0, Some(w) -> w }") 0
+-- annotated form also runs (every method carries its own `: Option Int`) — the explicit-annotation fallback.
+#guard runTypedYieldsInt 4000 (monadOption ++
+  "match (bind (Some(5)) { fun x => (bind (Some(x+1)) { fun y => (pure(y*2) : Option Int) } : Option Int) } : Option Int) { None -> 0, Some(w) -> w }") 12
+-- pure alone, annotated.
+#guard runTypedYieldsInt 3000 (monadOption ++ "match (pure(5) : Option Int) { None -> 0, Some(w) -> w }") 5
+-- fail-loud (demo 3): a `Monad` method at a carrier with NO impl (`Monad Result` undeclared) ⟹ elab/type error.
+#guard (match checkProg (monadOption ++
+  "match (bind (Ok(5) : Result Int Int) { fun x => (pure(x+1) : Result Int Int) } : Result Int Int) { Err(e) -> e, Ok(w) -> w }") with
+        | .error _ => true | .ok _ => false)
+
+/-! ### Monad LAWS (ADR-0068/0082 tested rung): Bool-equations discharged by evaluation at `Option`. Each
+compares LHS/RHS `Option Int` structurally (`optEqLaw`), yielding `1` iff the law holds on its sample. -/
+/-- Structural `Option Int` equality of two ANNOTATED expressions, `⇒ 1` iff equal (the law-sample
+verdict). Both sides are DIRECT match scrutinees (the RHS is duplicated per outer arm rather than
+let-bound — an `Option Int` computation let-bound then matched loses its concrete μ at elaboration). -/
+def optEqLaw (lhs rhs : String) : String :=
+  "match " ++ lhs ++ " { None -> match " ++ rhs ++ " { None -> 1, Some(b) -> 0 }, " ++
+  "Some(a) -> match " ++ rhs ++ " { None -> 0, Some(b) -> if a == b then 1 else 0 } }"
+-- LEFT identity: `bind (pure a) f = f a` (a := 5, f := λx. Some(x*3)).
+#guard runTypedYieldsInt 5000 (monadOption ++ "let f = { fun x => (pure(x*3) : Option Int) } in " ++
+  optEqLaw "(bind (pure(5)) f : Option Int)" "(($f) 5 : Option Int)") 1
+-- RIGHT identity: `bind m pure = m` (m := Some 7).
+#guard runTypedYieldsInt 5000 (monadOption ++
+  optEqLaw "(bind (Some(7)) { fun x => pure(x) } : Option Int)" "(Some(7) : Option Int)") 1
+-- ASSOCIATIVITY: `bind (bind m f) g = bind m (fun x => bind (f x) g)` (m := Some 5, f := λx.Some(x+1), g := λy.Some(y*10)).
+#guard runTypedYieldsInt 8000 (monadOption ++
+  "let f = { fun x => (pure(x+1) : Option Int) } in let g = { fun y => (pure(y*10) : Option Int) } in " ++
+  optEqLaw "(bind (bind (Some(5)) f) g : Option Int)"
+           "(bind (Some(5)) { fun x => bind (($f) x) g } : Option Int)") 1
+
+/-! ### SHOWPIECE — `Parser` as a `Monad` (ADR-0082 Stage D / Q26/Q39). The parser-combinators example's
+`Parser` is a bare `Thunk (Str → Option (a × Str))` (a type alias, no ctor head to key an HK impl on); to
+make sequencing BE `bind`, `Parser` must be NOMINAL — `data Parser a = Parser(…)` (the constructor-vs-alias
+finding for HK instances, ADR-0082 "seam to watch"). With that, `impl Monad for Parser` gives do-notation:
+`bind digit { fun a => bind digit { fun b => pure(a*10+b) } }` sequences two digit-parsers, the second's
+result depending on the first — monomorphized to `mu`, carrier threaded (only the outer `bind` annotated),
+RUN via the oracle. This is the handler-agnostic, law-conformant interface made concrete on a real parser. -/
+def parserMonad : String :=
+  "data Parser a = Parser(Thunk (Str -> Option (a * Str))) " ++
+  "trait Monad m { pure : a -> m a, bind : m a -> (a -> m b) -> m b } " ++
+  "impl Monad for Parser { " ++
+  "fn pure(x) = Parser({ fun s => Some((x, s)) }), " ++
+  "fn bind(p, f) = Parser({ fun s => match p { Parser(g) -> match (($g) s) { " ++
+  "None -> None, Some(r) -> let (v, rest) = r in match (($f) v) { Parser(h) -> (($h) rest) } } } }) } " ++
+  "let isDigit = { fun n => if 47 < n then (if n < 58 then 0 == 0 else 0 == 1) else 0 == 1 } in " ++
+  "let digit = Parser({ fun s => match (s : Str) { SNil -> None, " ++
+  "SCons(c, rest) -> match c { Char(n) -> if (($isDigit) n) then Some((n - 48, rest)) else None } } }) in "
+-- ⭐ TWO-DIGIT PARSER as a monad: `bind digit (fun a => bind digit (fun b => pure(a*10+b)))` on "34" ⇒ 34.
+-- The second parse is SEQUENCED after (and independent of) the first via `bind`; `pure` lifts the result.
+#guard runTypedYieldsInt 8000 (parserMonad ++
+  "match (bind digit { fun a => bind digit { fun b => pure(a * 10 + b) } } : Parser Int) " ++
+  "{ Parser(g) -> match (($g) \"34\") { None -> 0, Some(r) -> let (v, rest) = r in v } }") 34
+-- short-input short-circuit: only ONE digit available ⇒ the second `digit` fails ⇒ the whole parse is `None`.
+#guard runTypedYieldsInt 8000 (parserMonad ++
+  "match (bind digit { fun a => bind digit { fun b => pure(a * 10 + b) } } : Parser Int) " ++
+  "{ Parser(g) -> match (($g) \"3\") { None -> 0, Some(r) -> let (v, rest) = r in v } }") 0
 
 end Bang.TypeCheck
