@@ -59,5 +59,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **hooks** — gate-guard denies bare 'git worktree add' — the actual 2026-07-05 vector (#13, #40b) (`0ab0c87`)
 - **worktree** — reflink-copy .lake/packages, not symlink — a lake re-clone can only nuke itself (#40) (`154021a`)
 - **build** — cache-get only on main checkout, not via a local-stub precondition (#43, closes #43) (`ae78f22`)
+- **gitignore** — clean the vocs stanza — a diff-format patch had been dumped in verbatim (`285e31e`)
 
 <!-- END GENERATED changelog -->

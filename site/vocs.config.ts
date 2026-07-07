@@ -9,10 +9,14 @@ export default defineConfig({
   basePath: '/bang',
   // GitHub Pages is a static-only host: emit plain HTML/JS/CSS (no server runtime).
   renderStrategy: 'full-static',
-  // Our repo markdown uses GitHub-style relative `*.md` links; Vocs routes drop
-  // the `.md`, so its dead-link check flags them. Warn (don't fail) — a rewrite
-  // pass in sync-docs.mjs could make them extensionless later.
+  // sync-docs.mjs rewrites relative `*.md` links to extensionless + flattens
+  // [[wikilinks]], so most now resolve as Vocs routes. Kept at 'warn': some
+  // cross-doc question links (e.g. the OPEN_QUESTIONS ties) route through
+  // subdirs that don't fully resolve — not worth failing the build over.
   checkDeadlinks: 'warn',
+  // Cross-link to the progress dashboard (a static page merged in by CI at
+  // /bang/dashboard/ — outside Vocs's routes, so a full-URL external link).
+  topNav: [{ text: 'Dashboard ↗', link: 'https://phibkro.github.io/bang/dashboard/' }],
   // Sidebar is hand-curated (mirrors CLAUDE.md reference index). Pages
   // themselves are symlinks to the repo's real markdown (see sync-docs.mjs).
   sidebar: [

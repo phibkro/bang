@@ -45,6 +45,9 @@ const dirs = {
 function mdxSafe(src) {
   // Drop HTML comments everywhere (MDX has no `<!-- -->`); they're doc-internal.
   src = src.replace(/<!--[\s\S]*?-->/g, '')
+  // Flatten [[wikilinks]] -> plain text (whole-text: they wrap across lines in our
+  // prose). Ours point at auto-memory slugs, not site pages, so they'd be dead links.
+  src = src.replace(/\[\[([^\]]+?)\]\]/g, '$1')
   const out = []
   let inFence = false
   let fenceTok = ''
@@ -58,9 +61,17 @@ function mdxSafe(src) {
       continue
     }
     if (inFence) { out.push(line); continue }
-    out.push(escapeProse(line))
+    out.push(escapeProse(rewriteLinks(line)))
   }
   return out.join('\n')
+}
+
+// Rewrite for Vocs routing: relative `*.md` links -> extensionless (Vocs drops the
+// `.md` from routes, so `[x](foo.md)` would 404 — `[x](foo)` resolves). Skip external
+// (`http`) and pure-anchor (`#`) targets. ([[wikilinks]] are flattened globally in
+// mdxSafe, since they wrap across lines.)
+function rewriteLinks(line) {
+  return line.replace(/\]\((?!https?:|#)([^)]+?)\.md(#[^)]*)?\)/g, ']($1$2)')
 }
 
 // Escape MDX's JSX/expression triggers (`<`, `{`). MDX does NOT parse JSX inside
