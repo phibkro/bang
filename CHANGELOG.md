@@ -51,6 +51,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **stdlib** — string stdlib — concat/reverse/eq injected into the prelude, available free (#49, closes the #50 reuse gap for first-order helpers) (`3fcdeba`)
 - **tooling** — progress dashboard → GitHub Pages — a generated glanceable tracker (ADR-0077 product face) (`839358f`)
 - **tooling** — dashboard is a PWA — installable, offline, app-like (manifest + service worker + icons) (`0938d28`)
+- **site** — pre-render mermaid to static SVG — draw the graphs, no client loop (`b9ec56b`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
