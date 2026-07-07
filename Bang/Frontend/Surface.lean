@@ -563,7 +563,7 @@ def pIdent : P String
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
           || t = "do" || t = ";"
           || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
-          || t = "as" || t = "."
+          || t = "as" || t = "." || t = "where"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
         .error ⟨s!"expected an identifier, got keyword '{t}'", t :: ts⟩
@@ -618,7 +618,7 @@ def pTyMulLoop : Nat → Ty → P Ty
 -- the tokens that continue an enclosing type or end it. A bare identifier (`a`, `List`), `Int`/`Unit`/…,
 -- and `(` (a parenthesized arg, `List (Int * Int)`) all START an atom.
 def isTyAtomStart : String → Bool
-  | ")" | "}" | "{" | "," | ";" | "|" | "->" | "+" | "*" | "!" | "=" | "in" | "=>" => false
+  | ")" | "}" | "{" | "," | ";" | "|" | "->" | "+" | "*" | "!" | "=" | "in" | "=>" | "where" => false
   | _ => true
 def pTyAtom1 : Nat → P Ty                     -- ONE atom, no trailing application (args of an application)
   | 0,     _            => .error "type parser out of fuel"
@@ -1252,6 +1252,9 @@ inductive Decl where
   | traitD : String → List OpSig → List LawDecl → Decl   -- trait N { fn … ; law … }
   | implD  : String → Ty → List OpDef → Decl             -- impl N for τ { fn … }
   | dataD  : String → List String → List (String × List Ty) → Decl  -- data N ā = C₀ | C₁(T, …) | …  (ā = type params, [] = monomorphic; ADR-0069 generic)
+  | fnD    : String → List String → Ty → String → String → Surf → Decl
+    -- `fn name(params) : declaredTy where Trait tyVar = body` — a BOUNDED generic function
+    -- (`fold : Monoid a => List a -> a`); monomorphized per concrete use (bite-2, ADR-0080).
   deriving Repr, Inhabited, DecidableEq
 
 /-- A whole program: the declaration prelude + the body expression (ADR-0068 decision 3). -/
@@ -1271,10 +1274,14 @@ def pParamsLoop : Nat → P (List String)
       | t :: r    => .error ⟨s!"expected ',' or ')' in a parameter list, got '{t}'", t :: r⟩
       | []        => .error "expected ',' or ')' in a parameter list, got end of input"
 
-/-- A parenthesized parameter list `( x , y , … )` (≥ 1 identifier). -/
+/-- A parenthesized parameter list `( x , y , … )` (`()` = a nullary op, e.g. `fn empty()`). -/
 def pParams : Nat → P (List String)
   | 0,     _  => .error "parser out of fuel"
-  | f + 1, ts => do let (_, ts) ← expect "(" ts; pParamsLoop f ts
+  | f + 1, ts => do
+      let (_, ts) ← expect "(" ts
+      match ts with
+      | ")" :: ts => .ok ([], ts)          -- nullary: `empty()` (a value op — Monoid's identity, #55)
+      | _         => pParamsLoop f ts
 
 /-- Trait members, up to and including `}`: `fn name(params) -> T` signatures and
 `law name(params): e` laws, in any order. -/
@@ -1377,7 +1384,18 @@ def pDecl : Nat → P Decl
       let (_, ts) ← expect "{" ts
       let (ops, ts) ← pImplMembers f ts
       .ok (.implD n t ops, ts)
-  | _ + 1, t :: r => .error ⟨s!"expected 'trait' or 'impl', got '{t}'", t :: r⟩
+  | f + 1, "fn" :: ts => do                    -- bounded generic function (bite-2, ADR-0080)
+      let (n, ts) ← pIdent ts
+      let (ps, ts) ← pParams f ts
+      let (_, ts) ← expect ":" ts
+      let (ty, ts) ← pTy f ts                  -- declared type, mentioning the bound var (`List a -> a`)
+      let (_, ts) ← expect "where" ts
+      let (tr, ts) ← pIdent ts                 -- the bound: `Trait tyVar` (`Monoid a`)
+      let (tv, ts) ← pIdent ts
+      let (_, ts) ← expect "=" ts
+      let (b, ts) ← pExpr f ts                 -- body (self-delimiting: end it at a `match`/`)` before the next decl)
+      .ok (.fnD n ps ty tr tv b, ts)
+  | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', or 'fn', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
 /-- The declaration prelude: zero or more decls (delimited by their leading keyword). -/
@@ -1385,7 +1403,7 @@ def pDecls : Nat → P (List Decl)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
-    | "trait" :: _ | "impl" :: _ | "data" :: _ => do
+    | "trait" :: _ | "impl" :: _ | "data" :: _ | "fn" :: _ => do
         let (d, ts) ← pDecl f ts
         let (ds, ts) ← pDecls f ts
         .ok (d :: ds, ts)

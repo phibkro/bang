@@ -1021,6 +1021,40 @@ def substSelf (target : Ty) : Ty → Ty
   | .tThunk t  => .tThunk (substSelf target t)
   | .tEff ns t => .tEff ns (substSelf target t)
 
+/-- Substitute the concrete carrier `T` for a bound type VARIABLE `tv` in a bounded-fn's declared
+type (`List a -> a` at `a := Int` ⟹ `List Int -> Int`). A `.tName tv` is the bound var; any other
+`.tName` is a real data name, left for `resolveTy`. Enumerated (a new `Ty` former fails here). -/
+def substTyVar (tv : String) (target : Ty) : Ty → Ty
+  | .tName n   => if n == tv then target else .tName n
+  | .tApp n (.one a)   => .tApp n (.one (substTyVar tv target a))
+  | .tApp n (.two a b) => .tApp n (.two (substTyVar tv target a) (substTyVar tv target b))
+  | .tSelf     => .tSelf
+  | .tInt      => .tInt
+  | .tUnit     => .tUnit
+  | .tVar n    => .tVar n
+  | .tMu b     => .tMu   (substTyVar tv target b)
+  | .tArr a b  => .tArr  (substTyVar tv target a) (substTyVar tv target b)
+  | .tSum a b  => .tSum  (substTyVar tv target a) (substTyVar tv target b)
+  | .tProd a b => .tProd (substTyVar tv target a) (substTyVar tv target b)
+  | .tThunk t  => .tThunk (substTyVar tv target t)
+  | .tEff ns t => .tEff ns (substTyVar tv target t)
+
+/-- Right-nested arrow type from a param count + result (`mkArrs 2 T r = T -> T -> r`). -/
+def mkArrs : Nat → Ty → Ty → Ty
+  | 0,     _, r => r
+  | n + 1, d, r => .tArr d (mkArrs n d r)
+
+/-- Peel `n` domain arrows off a type, returning the tail result type (`stripArrows 1 (List a -> a) = a`). -/
+def stripArrows : Nat → Ty → Ty
+  | 0,     t          => t
+  | n + 1, .tArr _ b  => stripArrows n b
+  | _ + 1, t          => t   -- fewer arrows than params: return what's left (a shape error the checker catches)
+
+/-- Curried lambda from a param-name list over a body (`[x, y] ↦ fun x => fun y => body`). -/
+def funFromParams : List String → Surf → Surf
+  | [],      body => body
+  | p :: ps, body => .lam p (funFromParams ps body)
+
 /-- One resolvable instance op: the resolution key (`opName` × structural `target`) plus what
 the elaborated call site needs. `body` is PRE-ELABORATED at env build (ADR-0069 upgraded
 piece-2's raw splice: nested ctors and earlier ops inside an impl body now resolve). -/
@@ -1056,12 +1090,42 @@ structure GenData where
   params : List String
   ctors  : List (String × List Ty)
 
-/-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls. -/
+/-- A bounded generic function template (bite-2, ADR-0080): `fn fold(xs) : List a -> a where Monoid a
+= …`. Stored RAW (its type mentions the bound var `tyVar`, its body references the trait's ops by
+name + itself recursively); monomorphized per concrete use by substituting `tyVar := T` and splicing
+the resolved `Trait T` instance's ops. -/
+structure BoundedFn where
+  name       : String
+  params     : List String
+  declaredTy : Ty
+  traitName  : String
+  tyVar      : String
+  body       : Surf
+
+/-- One impl op kept in RAW (un-elaborated) form, with the trait sig's `Self`-based ret type — so a
+bounded-fn monomorphization can re-elaborate it at a concrete carrier `T` (its trait ops resolve at
+`T`, exactly as `buildEnv`'s pre-elaboration does). -/
+structure RawOp where
+  name   : String
+  params : List String
+  body   : Surf
+  retTy  : Ty          -- the trait sig's ret type (`Self`-based; `Self ↦ T` at use)
+
+/-- One impl kept RAW + keyed by its resolved carrier, for bounded-fn instance resolution. -/
+structure RawImpl where
+  traitName : String
+  targetVT  : VT
+  ops       : List RawOp
+
+/-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls
++ bounded generic functions + raw impls (for bounded-fn monomorphization). -/
 structure ElabEnv where
-  insts   : InstEnv
-  ctors   : List (String × CtorInfo)
-  aliases : List (String × Ty)
-  gen     : List (String × GenData) := []
+  insts    : InstEnv
+  ctors    : List (String × CtorInfo)
+  aliases  : List (String × Ty)
+  gen      : List (String × GenData) := []
+  bfns     : List (String × BoundedFn) := []
+  rawImpls : List RawImpl := []
 
 /-- k-ary payload as a right-nested product (`[] ↦ Unit`, the 0-ary payload). -/
 def prodOfTys : List Ty → Ty
@@ -1415,6 +1479,96 @@ def curryBind : NCtx → Surf → Ty → NCtx
   | Γ, _,        _           => Γ
   termination_by _ _ t => sizeOf t
 
+/-- Build the RAW monomorphic wrapper for one bounded-fn use `(fold arg : T)` (bite-2, ADR-0080). The
+result annotation `t` fixes the carrier (v1 requires the declared result type to BE the bound var — the
+fold shape `… -> a`); we resolve the `Trait T` instance and emit: the instance's ops in a prologue
+(0-ary `empty` ⟹ a value binding; n-ary `combine` ⟹ an annotated function thunk) around a concrete
+`let rec name : declaredTy[tyVar := T] = fun … = body in (\$name) arg`. This is PURE `Surf` (no
+elaboration) — `elabS` later resolves the spliced trait ops AT the concrete `T` (exactly as `buildEnv`'s
+impl pre-elaboration) and desugars the `let rec` (ADR-0073), all on structural subterms so it stays
+TOTAL. A MISSING `Trait T` instance ⟹ a loud error (the bound is unsatisfied). -/
+def bfnWrapper (env : ElabEnv) (bfn : BoundedFn) (t : Ty) (arg : Surf) : Except String Surf := do
+  let resTy := stripArrows bfn.params.length bfn.declaredTy
+  if resTy != Ty.tName bfn.tyVar then
+    throw s!"bounded fn '{bfn.traitName} {bfn.tyVar}': v1 fixes the carrier from the RESULT annotation, so the declared result type must be '{bfn.tyVar}' (the fold shape); got a different result type"
+  let Tv := vtyOf (← resolveTy env.gen env.aliases t)         -- the annotation IS the carrier T
+  let some rimpl := env.rawImpls.find? (fun r => r.traitName == bfn.traitName && r.targetVT == Tv)
+    | throw s!"no impl of '{bfn.traitName}' for {showVTy Tv} — the bound '{bfn.traitName} {bfn.tyVar}' is unsatisfied"
+  let recTy   := substTyVar bfn.tyVar t bfn.declaredTy        -- `List a -> a` ↦ `List T -> T`
+  let recCore := Surf.letRecS bfn.name recTy (funFromParams bfn.params bfn.body)
+                   (.app (.force (.var bfn.name)) arg)         -- `let rec fold : … = … in ($fold) arg`
+  return rimpl.ops.foldr (fun op acc =>
+      if op.params.isEmpty then                                -- 0-ary op (`empty`) ⟹ a value binding
+        Surf.lett op.name (.annotS op.body t) acc
+      else                                                     -- n-ary op (`combine`) ⟹ an annotated fn thunk
+        let fnTy := mkArrs op.params.length t (substSelf t op.retTy)
+        Surf.lett op.name (.thunk (.annotS (funFromParams op.params op.body) fnTy)) acc)
+    recCore
+
+mutual
+/-- Bounded-fn EXPANSION pre-pass (bite-2, ADR-0080): a PURE `Surf → Surf` rewrite that replaces every
+bounded-fn use `(fold arg : T)` with its monomorphic wrapper (`bfnWrapper`) BEFORE type-directed
+elaboration. Running it first means `elabS` only ever elaborates structural subterms of its input (the
+wrappers are part of that input) — so `elabS` stays TOTAL (no env-pull during elab, no `partial`).
+Fuel-bounded (idiomatic here — `resolveTyG`/`monoData`/the parser all bound their descent this way);
+`bigFuel` from `elabProg` dwarfs any real AST depth. Every node maps structurally (ENUMERATED — a new
+`Surf` former fails here until handled), recursing into children; an expanded use's arg is expanded first. -/
+def expandBFns (env : ElabEnv) : Nat → Surf → Except String Surf
+  | 0,     _ => .error "bounded-fn expansion out of fuel"
+  | _ + 1, .lit n     => .ok (.lit n)
+  | _ + 1, .var x     => .ok (.var x)
+  | _ + 1, .unitS     => .ok .unitS
+  | _ + 1, .getS      => .ok .getS
+  | f + 1, .thunk e   => do return .thunk (← expandBFns env f e)
+  | f + 1, .force e   => do return .force (← expandBFns env f e)
+  | f + 1, .raise e   => do return .raise (← expandBFns env f e)
+  | f + 1, .handle e  => do return .handle (← expandBFns env f e)
+  | f + 1, .putS e    => do return .putS (← expandBFns env f e)
+  | f + 1, .atomS e   => do return .atomS (← expandBFns env f e)
+  | f + 1, .newS e    => do return .newS (← expandBFns env f e)
+  | f + 1, .readS e   => do return .readS (← expandBFns env f e)
+  | f + 1, .inlS e    => do return .inlS (← expandBFns env f e)
+  | f + 1, .inrS e    => do return .inrS (← expandBFns env f e)
+  | f + 1, .foldS e   => do return .foldS (← expandBFns env f e)
+  | f + 1, .unfoldS e => do return .unfoldS (← expandBFns env f e)
+  | f + 1, .divMark e => do return .divMark (← expandBFns env f e)
+  | f + 1, .lam x b   => do return .lam x (← expandBFns env f b)
+  | f + 1, .lett x e b   => do return .lett x (← expandBFns env f e) (← expandBFns env f b)
+  | f + 1, .app g a      => do return .app (← expandBFns env f g) (← expandBFns env f a)
+  | f + 1, .stateS a b   => do return .stateS (← expandBFns env f a) (← expandBFns env f b)
+  | f + 1, .writeS a b   => do return .writeS (← expandBFns env f a) (← expandBFns env f b)
+  | f + 1, .pairS a b    => do return .pairS (← expandBFns env f a) (← expandBFns env f b)
+  | f + 1, .binopS op a b => do return .binopS op (← expandBFns env f a) (← expandBFns env f b)
+  | f + 1, .ifS c t e    => do return .ifS (← expandBFns env f c) (← expandBFns env f t) (← expandBFns env f e)
+  | f + 1, .splitS a b p body => do return .splitS a b (← expandBFns env f p) (← expandBFns env f body)
+  | f + 1, .matchS s xl el xr er => do
+      return .matchS (← expandBFns env f s) xl (← expandBFns env f el) xr (← expandBFns env f er)
+  | f + 1, .withCapS k init n body => do return .withCapS k (← expandBFns env f init) n (← expandBFns env f body)
+  | f + 1, .letRecS n t fn b => do return .letRecS n t (← expandBFns env f fn) (← expandBFns env f b)
+  | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env f recv) op (← expandArgs env f args)
+  | f + 1, .matchD s arms => do return .matchD (← expandBFns env f s) (← expandArms env f arms)
+  | f + 1, .annotS e t => do
+      match e with
+      | .app (.var fn) arg =>                                   -- a bounded-fn use `(fold arg : T)`?
+          match env.bfns.lookup fn with
+          | some bfn => bfnWrapper env bfn t (← expandBFns env f arg)
+          | none     => do return .annotS (← expandBFns env f e) t
+      | _ => do return .annotS (← expandBFns env f e) t
+
+/-- `SurfArgs` expansion (cap-op arguments). -/
+def expandArgs (env : ElabEnv) : Nat → SurfArgs → Except String SurfArgs
+  | 0,     _        => .error "bounded-fn expansion out of fuel"
+  | _ + 1, .none    => .ok .none
+  | f + 1, .one a   => do return .one (← expandBFns env f a)
+  | f + 1, .two a b => do return .two (← expandBFns env f a) (← expandBFns env f b)
+
+/-- `DArms` expansion (named-match arm bodies). -/
+def expandArms (env : ElabEnv) : Nat → DArms → Except String DArms
+  | 0,     _             => .error "bounded-fn expansion out of fuel"
+  | _ + 1, .nil          => .ok .nil
+  | f + 1, .cons c bs b r => do return .cons c bs (← expandBFns env f b) (← expandArms env f r)
+end
+
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
 instance env, ctor intros + named matches through the data env (ADR-0069); every other
 constructor maps structurally (ENUMERATED — a new `Surf` form fails here until elaborated, the
@@ -1662,6 +1816,8 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut insts   : InstEnv := []
   let mut traits  : List (String × List OpSig) := []
   let mut gen     : List (String × GenData) := []
+  let mut bfns    : List (String × BoundedFn) := []
+  let mut rawImpls : List RawImpl := []
   for d in ds do
     match d with
     | .dataD n [] cs => do                       -- MONOMORPHIC: byte-identical to the ADR-0069 path
@@ -1694,6 +1850,7 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
         | none => throw s!"impl of undeclared trait '{tn}'"
         | some sigs => do
             let τR ← resolveTy gen aliases τTy
+            let mut rawOps : List RawOp := []
             for od in ops do
               match sigs.find? (fun s => s.name == od.name) with
               | none => throw s!"impl '{tn}' defines '{od.name}', which is not an op of the trait"
@@ -1701,13 +1858,17 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
                   if od.params.length != sig.params.length then
                     throw s!"'{od.name}': impl has {od.params.length} params, the trait declares {sig.params.length}"
                   let retR ← resolveTy gen aliases (substSelf τR sig.retTy)
-                  let bodyΓ : NCtx := match od.params with
-                    | [p]    => [(p, embV (vtyOf τR))]
-                    | [p, q] => [(q, embV (vtyOf τR)), (p, embV (vtyOf τR))]
-                    | _      => []
-                  let ebody ← elabS ⟨insts, ctors, aliases, gen⟩ bodyΓ od.body
+                  -- op params are all `Self`-typed (v1 convention); a 0-ary op (`empty`) has none.
+                  let bodyΓ : NCtx := od.params.map (fun p => (p, embV (vtyOf τR)))
+                  let ebody ← elabS ⟨insts, ctors, aliases, gen, [], []⟩ bodyΓ od.body
                   insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody⟩]
-  return ⟨insts, ctors, aliases, gen⟩
+                  rawOps := rawOps ++ [⟨od.name, od.params, od.body, sig.retTy⟩]   -- RAW, for bounded-fn monomorphization
+            rawImpls := rawImpls ++ [⟨tn, vtyOf τR, rawOps⟩]
+    | .fnD n ps ty tr tv b =>                    -- bounded generic function (bite-2, ADR-0080)
+        if (traits.lookup tr).isNone then throw s!"fn '{n}': bound trait '{tr}' is not declared"
+        if (bfns.lookup n).isSome then throw s!"duplicate function '{n}'"
+        bfns := (n, ⟨n, ps, ty, tr, tv, b⟩) :: bfns
+  return ⟨insts, ctors, aliases, gen, bfns, rawImpls⟩
 
 /-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
 you can't mix a char and a number), `Str` = a monomorphic char-list. Injected before every program so
@@ -1766,7 +1927,8 @@ def elabProg (p : Prog) : Except String Surf := do
   let declared := p.decls.filterMap (fun | .dataD n _ _ => some n | _ => none)
   let prelude := strPrelude.filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
   let body ← injectStdlib declared p.body
-  elabS (← buildEnv (prelude ++ p.decls)) [] body
+  let env ← buildEnv (prelude ++ p.decls)
+  elabS env [] (← expandBFns env bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
@@ -1906,11 +2068,13 @@ def checkLaws (src : String) : Except String (List String) := do
     match d with
     | .implD .. => pure ()
     | .dataD .. => pure ()
+    | .fnD ..   => pure ()
     | .traitD tn _ laws =>
         for other in p.decls do
           match other with
           | .traitD .. => pure ()
           | .dataD ..  => pure ()
+          | .fnD ..    => pure ()
           | .implD tn' τTy _ =>
               if tn' == tn then
                 let τR ← resolveTy env.gen env.aliases τTy      -- named impl targets sample at the closed μ
@@ -2388,5 +2552,46 @@ def genPair :=
 -- Honest boundary: an UNANNOTATED generic ctor in synth position fails loud ("annotate"), never a wrong
 -- accept — the ADR-0075 annotation-checked tier. (A bare `Cons(1, Nil)` has no expected μ.)
 #guard (match checkProg "data List a = Nil | Cons(a, List a) Cons(1, Nil)" with | .error _ => true | .ok _ => false)
+
+/-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
+MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic
+function; at a concrete use `(sum xs : Int)` the result annotation fixes the carrier, the `Monoid Int`
+instance is resolved, and its ops (`empty = 0`, `combine = +`) are spliced into a concrete `let rec`
+that RUNS. The dict-vs-mono fork (ADR-0075) is decided for MONOMORPHIZATION — consistent with bite-1's
+`monoData` + the raw-splice trait model; kernel untouched (elaborate-to-mono). -/
+
+/-- The Int-Monoid prelude + the bounded `sum` (`fold` over any `Monoid a`). -/
+def monoidInt : String :=
+  "data List a = Nil | Cons(a, List a) " ++
+  "trait Monoid { fn empty() -> Self  fn combine(x, y) -> Self } " ++
+  "impl Monoid for Int { fn empty() = 0  fn combine(x, y) = x + y } " ++
+  "fn sum(xs) : List a -> a where Monoid a = match xs { Nil -> empty, Cons(h, t) -> ($combine) h (($sum) t) } "
+
+-- THE PAYOFF: the bounded `sum` over the Int Monoid — `sum [1,2,3]` = 6 (empty 0, combine +), RUN via the oracle.
+#guard runTypedYieldsInt 4000 (monoidInt ++ "(sum (Cons(1, Cons(2, Cons(3, Nil))) : List Int) : Int)") 6
+-- the empty list folds to the Monoid identity `empty` = 0.
+#guard runTypedYieldsInt 2000 (monoidInt ++ "(sum (Nil : List Int) : Int)") 0
+
+/-- Two Monoid instances (Int + component-wise `(Int * Int)`) sharing ONE bounded `sum`. -/
+def monoidTwo : String :=
+  "data List a = Nil | Cons(a, List a) " ++
+  "trait Monoid { fn empty() -> Self  fn combine(x, y) -> Self } " ++
+  "impl Monoid for Int { fn empty() = 0  fn combine(x, y) = x + y } " ++
+  "impl Monoid for (Int * Int) { fn empty() = (0, 0)  fn combine(x, y) = let (a, b) = x in (let (c, d) = y in (a + c, b + d)) } " ++
+  "fn sum(xs) : List a -> a where Monoid a = match xs { Nil -> empty, Cons(h, t) -> ($combine) h (($sum) t) } "
+
+-- GENERICITY PROOF: the SAME bounded `sum` at TWO carriers in ONE program — Int (→6) and (Int*Int) (→(4,6)).
+-- `6 + 4 + 6 = 16`, so one generic `fold` monomorphized to two distinct instances both RUN.
+#guard runTypedYieldsInt 6000 (monoidTwo ++
+  "let a = (sum (Cons(1, Cons(2, Cons(3, Nil))) : List Int) : Int) in " ++
+  "let vs = (Cons((1, 2), Cons((3, 4), Nil)) : List (Int * Int)) in " ++
+  "let p = (sum vs : (Int * Int)) in let (m, n) = p in a + m + n") 16
+
+-- fail-loud: MISSING instance. `sum` bounded by Monoid used at `(Int*Int)` with NO such impl ⟹ type error.
+#guard (match checkProg (monoidInt ++ "let vs = (Cons((1, 2), Nil) : List (Int * Int)) in (sum vs : (Int * Int))") with
+        | .error _ => true | .ok _ => false)
+-- fail-loud: a bound trait that is not declared.
+#guard (match checkProg "data List a = Nil | Cons(a, List a) fn f(xs) : List a -> a where Bogus a = match xs { Nil -> 0, Cons(h, t) -> 1 } 0" with
+        | .error _ => true | .ok _ => false)
 
 end Bang.TypeCheck
