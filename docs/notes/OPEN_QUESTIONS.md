@@ -96,7 +96,7 @@
 - **[Q35 — Force ergonomics: auto-force a thunk-of-function at the call site; reserve visible `$` for meaningful observation](Q35-force-ergonomics.md)** — surface ergonomics; sugar, no kernel change · _open_  
   ties: Q29, Q33, ADR-0007, ADR-0030, ADR-0073
 
-### tooling (4)
+### tooling (5)
 
 - **[Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](Q9-wasmfx-target-drift.md)** — the verified compiler TARGET drifted (OOPSLA'23 → Phase-3); pin-to-engine at ◊5, not the paper · _open_  
   ties: ADR-0016, ADR-0035
@@ -106,6 +106,8 @@
   ties: Q27, Q30, Q31, ADR-0074
 - **[Q34 — Module-system + tooling SURFACE forks (file-vs-block · qualified-vs-open · visibility · the hashing boundary) — architecture pinned by ADR-0076](Q34-module-system-tooling-forks.md)** — the concrete module-system surface forks (granularity · imports · visibility · hashing · LSP); architecture pinned by ADR-0076 · _open_  
   ties: Q32, Q33, ADR-0046, ADR-0047, ADR-0076
+- **[Q40 — Compilation strategy for the dynamic escape hatch — static-first; dispatch cold, JIT-monomorphize hot](Q40-compilation-strategy-static-first-dispatch-cold-jit-hot.md)** — Stay static (AOT elaborate-to-mono) by default for perf + static analysis + compile-time soundness; for runtime-known types, dispatch one-offs cheaply and JIT-monomorphize ONLY hot+type-stable sites (tiered, profile-guided); JIT-mono = the same elaborate-to-mono run late, still targeting the verified kernel · _open_  
+  ties: Q37, Q39, ADR-0080, ADR-0075
 
 ### meta (3)
 
@@ -121,7 +123,7 @@
 The `· ✓ RESOLVED (ADR-…)` / `· ◑ PARTIAL` markers below are the Q⟺ADR ledger `gen-adr-index.py` reads —
 derived from each question's `resolved-by` frontmatter, so a resolution has a single home.
 
-### open (23)
+### open (24)
 
 - [Q7 — Operation names as strings vs symbolic enum](Q7-operation-names-string-vs-enum.md)  · OPEN
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](Q9-wasmfx-target-drift.md)  · OPEN
@@ -146,6 +148,7 @@ derived from each question's `resolved-by` frontmatter, so a resolution has a si
 - [Q37 — FFI as a typed EFFECT: the external-boundary seam (schema-declared contract · capability security · the road to OS/distributed)](Q37-ffi-as-effect.md)  · OPEN
 - [Q38 — module ≟ trait ≟ effect ≟ capability: one interface+implementation construct, dialed by resumption grade?](Q38-module-trait-effect-capability.md)  · OPEN
 - [Q39 — What is IO? — the software↔hardware capability contract as a family of typed effects](Q39-what-is-io-software-hardware-capability-contract.md)  · OPEN
+- [Q40 — Compilation strategy for the dynamic escape hatch — static-first; dispatch cold, JIT-monomorphize hot](Q40-compilation-strategy-static-first-dispatch-cold-jit-hot.md)  · OPEN
 
 ### partial (1)
 
@@ -216,6 +219,7 @@ graph LR
   Q37["Q37 · ffi-as-effect"]:::q
   Q38["Q38 · module-trait-effect-capability"]:::q
   Q39["Q39 · what-is-io-software-hardware-capability-contract"]:::q
+  Q40["Q40 · compilation-strategy-static-first-dispatch-cold-jit-hot"]:::q
   ADR_0001["ADR-0001"]:::adr
   ADR_0032["ADR-0032"]:::adr
   ADR_0019["ADR-0019"]:::adr
@@ -255,6 +259,7 @@ graph LR
   ADR_0076["ADR-0076"]:::adr
   ADR_0068["ADR-0068"]:::adr
   ADR_0075["ADR-0075"]:::adr
+  ADR_0080["ADR-0080"]:::adr
   Q1 --> Q8
   Q1 --> ADR_0001
   Q1 --> ADR_0032
@@ -375,6 +380,10 @@ graph LR
   Q39 --> Q33
   Q39 --> ADR_0030
   Q39 --> ADR_0075
+  Q40 --> Q37
+  Q40 --> Q39
+  Q40 --> ADR_0080
+  Q40 --> ADR_0075
   classDef q fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
   classDef extq fill:#eef2ff,stroke:#6366f1,color:#312e81;
   classDef adr fill:#f1f5f9,stroke:#64748b,color:#334155;
