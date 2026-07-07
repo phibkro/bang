@@ -65,13 +65,16 @@ bite  unlocks                                          power     decid.        t
       Functor for Option`, `fmap inc (Some 5)→Some 6`) → D (Monad/Parser + laws). Real work = piece 4 (poly methods:
       generalize/instantiate ∘ mono-per-carrier + Self-as-applied-ctor). Stage D needs the Option/Result/Either
       prelude (Task #9) as carriers.
-      ▶ STATUS (`7d887c2`, hktA): **Stage C DONE** — concrete-use `impl Functor for Option`, `fmap inc (Some 5) :
-      Option Int ⇒ 6` RUNS via MONOMORPHIZATION (Case A = the bite-2 bfnWrapper move keyed on a ctor name),
-      confirming HKT is mono-additive. **Stages A+B (`IVTy.tcon1` + kinds-as-arity + injectivity unify) BUILT +
-      unit-tested (synthetic guards) but NOT yet wired** into the checker main flow — the additive substrate for
-      **Case B (abstract-over-f) = the NEXT rung**. Case-B seam (hktA): keep named apps as `tcon1`, don't mono to
-      `mu` at embVInst/resolveTy (mu erases the ctor name injectivity needs). Then Stage D (Monad/Parser/laws).
-      Kernel/census UNTOUCHED; elaborator TOTAL; corpus 6/6.
+      ▶ STATUS: **Case A (Stage C, `7d887c2`) + Case B (`c27bdb4`) BOTH DONE.** Case A: concrete-use `fmap inc
+      (Some 5) : Option Int ⇒ 6`. Case B: abstract-over-f `fn twice … where Functor f` RUNS at TWO Functors
+      (Option AND Box, summed ⇒ 14 — the write-once payoff). **FINDING (hktB): the tcon1-vs-mu seam was NOT
+      crossed — it need not be.** Whole-program mono means `twice` monomorphizes per use at the Surf pre-pass
+      (`hktCtorHead`/`hktMatch`/`substCarrierHead`/`hktBfnWrapper` in `expandBFns`) — the injectivity decomp is
+      structural, BEFORE the checker; embVInst/resolveTy UNTOUCHED, concrete-collapse byte-identical. So the
+      **`IVTy.tcon1` checker substrate (A+B) is confirmed NOT NEEDED for whole-program HKT** — only pulled by
+      separate-compilation (= the dict-passing trigger ADR-0080/0082 defers). **A+B is now a PRUNE CANDIDATE**
+      (dead in v1). NEXT = **Stage D (Monad/`>>=`/`pure` + Parser-as-monad + laws)** — the ergonomics payoff,
+      expected to ride the same pre-pass mono. Kernel/census UNTOUCHED; elaborator TOTAL; corpus 6/6.
 5   dependent / refinement                             dependent annotation +  checker (Q31), later (Q31)
       Vec n · {n : Int // P n}  — needs the TOTAL fragment (#47) for decidable type-level  MAYBE spine
 ```
