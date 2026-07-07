@@ -73,8 +73,12 @@ bite  unlocks                                          power     decid.        t
       structural, BEFORE the checker; embVInst/resolveTy UNTOUCHED, concrete-collapse byte-identical. So the
       **`IVTy.tcon1` checker substrate (A+B) is confirmed NOT NEEDED for whole-program HKT** — only pulled by
       separate-compilation (= the dict-passing trigger ADR-0080/0082 defers). **A+B is now a PRUNE CANDIDATE**
-      (dead in v1). NEXT = **Stage D (Monad/`>>=`/`pure` + Parser-as-monad + laws)** — the ergonomics payoff,
-      expected to ride the same pre-pass mono. Kernel/census UNTOUCHED; elaborator TOTAL; corpus 6/6.
+      (dead in v1). **Stage D DONE (`cea8ae2`, hktD): Monad complete** — `impl Monad for Option` chain⇒12,
+      short-circuit⇒None, laws 3/3, + **Parser-as-monad** do-notation ("34"⇒34); rode the same pre-pass mono
+      (no tcon1); `pure` carrier-fixed by annotation OR a `carrier?` hint. Findings: Parser-as-monad needs a
+      NOMINAL `data Parser a` (alias has no ctor head — confirms the ctor-vs-alias seam); let-bound monadic
+      values lose their μ (workaround: inline the match). **THE POLYMORPHISM LADDER IS COMPLETE** (bite-0→bite-3
+      Monad, kernel UNTOUCHED throughout). NEXT = the **A+B tcon1 prune** (the immediate cleanup) · Item 3 row-poly.
 5   dependent / refinement                             dependent annotation +  checker (Q31), later (Q31)
       Vec n · {n : Int // P n}  — needs the TOTAL fragment (#47) for decidable type-level  MAYBE spine
 ```
