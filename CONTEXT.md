@@ -31,8 +31,9 @@ kernel/census UNTOUCHED the entire arc** (frontend leaves, 25 constructors, 16 h
   Option/Result + Either-as-built-in-sum + first witnessed isomorphisms (ADR-0083) ·
   **bite-3 HKT** Functor (Case A `fmap (Some 5)⇒6` · Case B `twice` at 2 Functors⇒14) +
   **Monad** (chain⇒12 · short-circuit⇒None · laws 3/3 · Parser-as-monad do-notation "34"⇒34) — ADR-0082.
-- **NEXT:** A+B `tcon1` substrate **prune** (ADR-0082 prune-test — confirmed dead in v1; the immediate cleanup) ·
-  **Item 3** effect row-polymorphism · the **IO/net prong** (Q37 FFI-as-effect / Q39 what-is-IO / Q40 compilation-strategy).
+- ✅ A+B `tcon1` substrate **PRUNED** (`54f1e2b`, −75 LOC — dead code confirmed dead by removal; HKT tier stayed green).
+- **NEXT:** **Item 3** effect row-polymorphism (a parser generic over its effect row — the residual frontier) ·
+  the **IO/net prong** (Q37 FFI-as-effect / Q39 what-is-IO / Q40 compilation-strategy → a `{Net}` effect → the web server).
 
 Active path: **`paths/PATH-polymorphism.md`**. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (Q1–Q42).
 
