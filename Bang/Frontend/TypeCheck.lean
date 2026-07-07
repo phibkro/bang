@@ -813,6 +813,14 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × EffRow) :=
           let (C, φ₁) ← synthSC ((xl, A) :: Γ) el
           let φ₂ ← checkSC ((xr, B) :: Γ) er C
           return (C, φ₁ ⊔ φ₂)
+      -- an unresolved hole scrutinee: a Left/Right match REQUIRES a sum, so invent `?A + ?B` and unify
+      -- (the principal type — mirrors `.splitS`'s `.vhole ⟹ prod` #55 move). Lets a bare-sum eliminator
+      -- over an unannotated param (`bimap`/`eitherToResult`/`eitherToOption` in the generic prelude) type.
+      | .vhole n  => do let A ← freshHole; let B ← freshHole
+                        assign n (.sum A B)
+                        let (C, φ₁) ← synthSC ((xl, A) :: Γ) el
+                        let φ₂ ← checkSC ((xr, B) :: Γ) er C
+                        return (C, φ₁ ⊔ φ₂)
       | _ => throw "match: scrutinee is not a sum"
   | .splitS a b p body => do match (← resolve bigFuel (← synthSV Γ p)) with
       | .prod A B => synthSC ((b, B) :: (a, A) :: Γ) body
@@ -1710,8 +1718,10 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | Γ, .atomS e  => do return .atomS (← elabS env Γ e)
   | Γ, .newS e   => do return .newS (← elabS env Γ e)
   | Γ, .readS e  => do return .readS (← elabS env Γ e)
-  | Γ, .inlS e   => do return .inlS (← elabS env Γ e)
-  | Γ, .inrS e   => do return .inrS (← elabS env Γ e)
+  -- A-normalize a computation payload (#41), as `.pairS` does: `Left(($g) e)` ⟹ `let #anf = ($g) e in
+  -- Left(#anf)`, so the sum injection gets a VALUE payload (a bare `Left(value)` is unchanged).
+  | Γ, .inlS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.inlS v)
+  | Γ, .inrS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.inrS v)
   | Γ, .stateS e0 e => do return .stateS (← elabS env Γ e0) (← elabS env Γ e)
   | Γ, .writeS r w  => do return .writeS (← elabS env Γ r) (← elabS env Γ w)
   | Γ, .pairS a b   => do                     -- A-normalize computation components (bare pair in comp position), #41
@@ -1800,7 +1810,11 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let (Γ1, wrap, sv) ← anfSplit Γ s'       -- A-normalize a computation scrutinee, #41
       let (Γl, Γr) := match runInferV (synthSV Γ1 sv) with
         | .ok (.sum A B) => ((xl, embV A) :: Γ1, (xr, embV B) :: Γ1)
-        | _              => (Γ1, Γ1)
+        -- the scrutinee's sum structure isn't known yet (a bare-sum eliminator over an unannotated
+        -- param — `bimap`/`eitherToResult` in the generic prelude). Bind each binder to a placeholder
+        -- hole so the body elaborates; the CHECKER's `matchS` invents the sum (`.vhole ⟹ sum`) and
+        -- unifies — the exact `.splitS` #55 move for products.
+        | _              => ((xl, (paramHole Γ1.length : IVTy)) :: Γ1, (xr, (paramHole (Γ1.length + 1) : IVTy)) :: Γ1)
       return wrap (.matchS sv xl (← elabS env Γl el) xr (← elabS env Γr er))
   | Γ, .splitS a b p body => do
       let p0 ← elabS env Γ p
@@ -1999,6 +2013,19 @@ def strPrelude : List Decl :=
   [ .dataD "Char" [] [("Char", [.tInt])],
     .dataD "Str"  [] [("SNil", []), ("SCons", [.tName "Char", .tName "Str"])] ]
 
+/-- The built-in GENERIC prelude: the universal tagged-sum types, injected before every program so
+`Some`/`None`/`Ok`/`Err` resolve with NO declaration (enabled by generic data — ADR-0079 — plus
+annotation-free introduction — ADR-0081/#55). `Option a` is nullable/`Maybe`; `Result e a` is
+Rust-style success/error (`Ok` = success), two type params (the v1 arity-≤2 ceiling, ADR-0079).
+`Either e a` is NOT here: it IS the built-in binary sum `e + a` — `Left`/`Right`/`match` are already
+reserved surface primitives for it (Surface.pIdent), so `Either` needs no data decl (one construct per
+problem — the isos below convert between `Result`/`Option` and this built-in sum). Each type is
+filtered out (like `Str`/`Char`) when the user redeclares it. Library over `data` — NO kernel
+primitive (invariant #5). -/
+def genericPrelude : List Decl :=
+  [ .dataD "Option" ["a"]      [("None", []),           ("Some",  [.tName "a"])],
+    .dataD "Result" ["e", "a"] [("Err",  [.tName "e"]), ("Ok",    [.tName "a"])] ]
+
 /-- The built-in string STDLIB (ADR-0074, #49 stage 3): `concat`/`reverse`/`eq` as `let rec` folds
 over `Str`, injected in scope of EVERY program's body (closing the #50 reuse gap — a program shouldn't
 re-inline `concat` the way the tokenizer had to). Each fn is a source string ending in a placeholder
@@ -2033,20 +2060,94 @@ row, so an unused `Div`-typed stdlib fn adds NO effect (mirrors the unused `Char
 user binding of the same name in the body simply SHADOWS the injected one (lexical scope). SKIPPED
 when the user redeclares `Str`/`Char` (the injected fns reference the prelude ctors, which the user's
 data may not provide) — same discipline as the data prelude's `declared` filter. -/
-def injectStdlib (declared : List String) (body : Surf) : Except String Surf := do
-  if declared.contains "Str" || declared.contains "Char" then
-    return body
-  let wraps ← stdlibFnSrcs.mapM (fun src => do
+def wrapFnSrcs (srcs : List String) (body : Surf) : Except String Surf := do
+  let wraps ← srcs.mapM (fun src => do
     match ← Bang.Surface.parse src with
     | .letRecS n t f _ => return (fun (b : Surf) => Surf.letRecS n t f b)
     | .lett n rhs _    => return (fun (b : Surf) => Surf.lett n rhs b)
-    | _ => .error "string-stdlib prelude fn did not parse as a `let`/`let rec`")
+    | _ => .error "prelude fn did not parse as a `let`/`let rec`")
   return wraps.foldr (fun w acc => w acc) body
+
+/-! Does `nm` occur as a free-ish variable reference anywhere in `e` (`surfUsesVar`)? A syntactic
+over-approximation (ignores shadowing — a shadowed use just over-injects, costing a little fuel, never
+wrong). Used to inject a generic-prelude fn ONLY when the program mentions it, so an unused combinator
+costs NO eval fuel (keeping tight-fuel programs green — the string stdlib's `let rec`s are cheap enough
+to stay unconditional, these 7 are not in aggregate). -/
+mutual
+def surfUsesVar (nm : String) : Surf → Bool
+  | .var x                         => x == nm
+  | .lit _ | .getS | .unitS        => false
+  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => surfUsesVar nm e
+  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
+  | .binopS _ a b                  => surfUsesVar nm a || surfUsesVar nm b
+  | .matchS s _ l _ r              => surfUsesVar nm s || surfUsesVar nm l || surfUsesVar nm r
+  | .ifS c t e                     => surfUsesVar nm c || surfUsesVar nm t || surfUsesVar nm e
+  | .matchD s arms                 => surfUsesVar nm s || dArmsUseVar nm arms
+  | .withCapS _ i _ b              => surfUsesVar nm i || surfUsesVar nm b
+  | .dotPerform r _ .none          => surfUsesVar nm r
+  | .dotPerform r _ (.one a)       => surfUsesVar nm r || surfUsesVar nm a
+  | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
+  | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
+def dArmsUseVar (nm : String) : DArms → Bool
+  | .nil            => false
+  | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
+end
+
+/-- The GENERIC-prelude functions (`genericPrelude` types + the built-in sum `Either`, ADR-0081
+annotation-free): per-type maps + the isomorphism conversions, injected in scope of EVERY program's
+body — `Option`/`Result`/`Either` come with their combinators built in (the #50 reuse discipline).
+Plain `let`s binding THUNKS ⟹ ⊥-row VALUES, so they're INERT for programs that don't use them (unlike
+the `Div`-typed string stdlib): an unused prelude fn adds NO effect and leaves a pure program pure.
+`mapOption`/`mapResult` are higher-order over generic data (ADR-0081 #55: `match` recovers the
+scrutinee's type from its arm ctors, `Some(($f) x)` constructs annotation-free); `bimap` + the isos
+range over the built-in sum (`Either = e + a`). The four `*To*` functions WITNESS the `Result ≅ Either`
+and `Option ≅ Either Unit` isos — their round-trips (`from ∘ to = id`) are property-tested below. -/
+def genericPreludeFnSrcs : List String :=
+  [ -- `mapOption f : Option a -> Option b` — map the payload; `None` passes through.
+    "let mapOption = { fun f => fun o => match o { None -> None, Some(x) -> Some(($f) x) } } in 0",
+    -- `mapResult f : Result e a -> Result e b` — map the SUCCESS side (`Ok`); an `Err` passes through
+    -- (Rust's `Result::map`). The error type `e` is untouched.
+    "let mapResult = { fun f => fun r => match r { Err(e) -> Err(e), Ok(a) -> Ok(($f) a) } } in 0",
+    -- `bimap g f : (e + a) -> (f + b)` — the BIFUNCTOR map over the built-in sum (`Either`): `g` over
+    -- `Left`, `f` over `Right` (both sides, unlike `mapResult`'s success-only).
+    "let bimap = { fun g => fun f => fun x => match x { Left(e) -> Left(($g) e), Right(a) -> Right(($f) a) } } in 0",
+    -- `resultToEither : Result e a -> (e + a)` — `Err ↦ Left`, `Ok ↦ Right` (the iso `to`).
+    "let resultToEither = { fun r => match r { Err(e) -> Left(e), Ok(a) -> Right(a) } } in 0",
+    -- `eitherToResult : (e + a) -> Result e a` — `Left ↦ Err`, `Right ↦ Ok` (the iso `from`).
+    "let eitherToResult = { fun x => match x { Left(e) -> Err(e), Right(a) -> Ok(a) } } in 0",
+    -- `optionToEither : Option a -> (Unit + a)` — `None ↦ Left(())`, `Some ↦ Right` (`Option ≅ Either Unit`).
+    "let optionToEither = { fun o => match o { None -> Left(()), Some(a) -> Right(a) } } in 0",
+    -- `eitherToOption : (Unit + a) -> Option a` — `Left ↦ None`, `Right ↦ Some` (the `from`).
+    "let eitherToOption = { fun x => match x { Left(u) -> None, Right(a) -> Some(a) } } in 0" ]
+
+/-- Wrap `body` with each generic-prelude fn (`genericPreludeFnSrcs`) ONLY if `body` mentions its name.
+The fns are mutually independent (none calls another), so checking the raw user body is complete. -/
+def wrapGenericFns (body : Surf) : Except String Surf := do
+  let mut wraps : List (Surf → Surf) := []
+  for src in genericPreludeFnSrcs do
+    match ← Bang.Surface.parse src with
+    | .lett n rhs _ => if surfUsesVar n body then wraps := wraps ++ [fun (b : Surf) => Surf.lett n rhs b]
+    | _ => .error "generic prelude fn did not parse as a `let`"
+  return wraps.foldr (fun w acc => w acc) body
+
+/-- Inject the injected-in-scope prelude FUNCTIONS: the `Div`-typed string stdlib
+(`concat`/`reverse`/`eq`, `stdlibFnSrcs`) — SKIPPED when the user redeclares `Str`/`Char` (the fns
+reference the prelude ctors) — and the ⊥-row generic-prelude combinators (`genericPreludeFnSrcs`) —
+SKIPPED when the user redeclares ANY of `Option`/`Result`/`Either` (they take over those types). The
+two bundles are independent (the generic combinators reference no string types), so they gate
+separately. A user binding of the same name in the body simply SHADOWS the injected one. -/
+def injectStdlib (declared : List String) (body : Surf) : Except String Surf := do
+  let body ← if declared.contains "Option" || declared.contains "Result"
+             then pure body else wrapGenericFns body
+  if declared.contains "Str" || declared.contains "Char" then
+    return body
+  wrapFnSrcs stdlibFnSrcs body
 
 /-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve the body. -/
 def elabProg (p : Prog) : Except String Surf := do
   let declared := p.decls.filterMap (fun | .dataD n _ _ => some n | _ => none)
-  let prelude := strPrelude.filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
+  let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
   let body ← injectStdlib declared p.body
   let env ← buildEnv (prelude ++ p.decls)
   elabS env [] (← expandBFns env bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
@@ -2086,6 +2187,7 @@ def displayProg (src : String) : String :=
   match checkProg src with
   | .ok (B, φ) => showType B φ
   | .error e   => s!"error: {e}"
+
 
 /-- Parse + elaborate + CHECK + lower + RUN through `Source.eval`, expecting `vint n` — the
 typed sibling of `Surface.runYieldsInt` (which stays untyped and decl-free). The typed path
@@ -2702,6 +2804,35 @@ def genPair :=
    "let mapP = { fun f => fun p => fun s => match (($p) s) { None -> None, " ++
    "Some(r) -> let (v, rest) = r in let w = ($f) v in Some((w, rest)) } } in " ++
    "match (($mapP) {fun v => v + 10} {fun s => Some((7, s))} \"x\") { None -> 0, Some(r) -> let (v, rest) = r in v }") 17
+
+/-! ### Validation ⑨j — the GENERIC PRELUDE: `Option`/`Result` + their maps + the ISO round-trips vs
+the built-in sum `Either` (injected globally, `genericPrelude` + `genericPreludeFnSrcs`). The tagged-sum
+data types and their combinators are available with NO `data` declaration — `Some`/`Ok`/`Err` resolve
+against the injected prelude the way `"hi"` resolves against `Str`; `Left`/`Right` are the primitive
+sum (`Either = e + a`, no decl). The `*To*` conversions witness the `Result ≅ Either` and
+`Option ≅ Either Unit` isomorphisms; the round-trip guards (`from ∘ to = id` on samples) are the FIRST
+witnessed-iso laws made real through `Source.eval`. -/
+-- `Option`/`Result` + their constructors used with NO declaration (the prelude injection). A bare-ctor
+-- scrutinee is parenthesized (`match (Some(5)) …`) — the parser's match-scrutinee slot (as in the
+-- ADR-0079/0081 generic-data guards above).
+#guard runTypedYieldsInt 800 "match (Some(5)) { None -> 0, Some(v) -> v }" 5
+#guard runTypedYieldsInt 800 "match (Ok(7)) { Err(e) -> e, Ok(a) -> a }" 7
+#guard runTypedYieldsInt 800 "match (Err(3)) { Err(e) -> e, Ok(a) -> a }" 3
+-- the INJECTED maps (`mapOption`/`mapResult`/`bimap`), used with no local definition.
+#guard runTypedYieldsInt 1000 "match (($mapOption) {fun z => z + 1} (Some(4))) { None -> 0, Some(v) -> v }" 5
+#guard runTypedYieldsInt 1000 "match (($mapResult) {fun z => z + 1} (Ok(4))) { Err(e) -> e, Ok(v) -> v }" 5
+-- `mapResult` passes an `Err` through untouched (maps the success side only).
+#guard runTypedYieldsInt 1000 "match (($mapResult) {fun z => z + 1} (Err(9))) { Err(e) -> e, Ok(v) -> v }" 9
+-- `bimap g f` maps BOTH sides: `f` over `Right`, `g` over `Left`.
+#guard runTypedYieldsInt 1000 "match (($bimap) {fun e => e + 100} {fun a => a + 1} (Right(4))) { Left(e) -> e, Right(a) -> a }" 5
+#guard runTypedYieldsInt 1000 "match (($bimap) {fun e => e + 100} {fun a => a + 1} (Left(4))) { Left(e) -> e, Right(a) -> a }" 104
+-- ⭐ THE ISO ROUND-TRIPS (`from ∘ to = id`): the first WITNESSED isomorphisms, checked via `Source.eval`.
+-- `eitherToResult ∘ resultToEither = id` on `Ok`/`Err` (Result ≅ Either). Sentinel 99 = round-trip broke.
+#guard runTypedYieldsInt 1200 "match (($eitherToResult) (($resultToEither) (Ok(5)))) { Err(e) -> 99, Ok(a) -> a }" 5
+#guard runTypedYieldsInt 1200 "match (($eitherToResult) (($resultToEither) (Err(3)))) { Err(e) -> e, Ok(a) -> 99 }" 3
+-- `eitherToOption ∘ optionToEither = id` on `Some`/`None` (Option ≅ Either Unit).
+#guard runTypedYieldsInt 1200 "match (($eitherToOption) (($optionToEither) (Some(7)))) { None -> 99, Some(v) -> v }" 7
+#guard runTypedYieldsInt 1200 "match (($eitherToOption) (($optionToEither) (None : Option Int))) { None -> 0, Some(v) -> v }" 0
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic

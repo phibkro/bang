@@ -29,9 +29,10 @@ the element type is *inferred* from the fields (see *How #55 lifts the walls*).
 | `andThen`  | `Parser Int -> Parser Int -> Parser Int` | sequencing (bind); value = sum |
 | `many`     | `Parser Int -> Str -> Int`               | recursive fold (zero-or-more) |
 
-- **Generic data, annotation-free** — `data Option a` constructed at `Option (Int *
-  Str)`, `Option ((Int*Int) * Str)`, … with **no** `: Option …` at any site; the
-  instantiation is inferred from the constructor's fields (#55).
+- **Generic data, annotation-free** — the built-in **prelude** `Option a` (no local
+  `data` decl needed) constructed at `Option (Int * Str)`, `Option ((Int*Int) * Str)`,
+  … with **no** `: Option …` at any site; the instantiation is inferred from the
+  constructor's fields (#55).
 - **Higher-order polymorphism** — every combinator takes thunked parsers/functions
   and applies them; `digit = mapP sub48 (satisfy isDigit)` composes two combinators.
 - **Genericity witness** — the ONE `mapP` is reused at result type `(Int * Int)`

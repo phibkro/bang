@@ -1,4 +1,3 @@
-data Option a = None | Some(a)
 let isDigit = { fun n => if 47 < n then (if n < 58 then 0 == 0 else 0 == 1) else 0 == 1 } in
 let sub48   = { fun n => n - 48 } in
 let satisfy = { fun pred => fun s => match (s : Str) {
