@@ -8,6 +8,12 @@
 > built in each rep), see `docs/roadmap/bang-northstar-roadmap.md`. The two
 > abstractions complement each other: keyframes say *what*, this roadmap says
 > *when paths can fork*.
+>
+> For the **PRODUCT axis** — real programs as checkpoints and the features each
+> one pulls into existence (a demand-driven dependency DAG that grounds features
+> in the projects that need them), see `docs/roadmap/project-roadmap.md`. This
+> ◊-map answers *"is it correct?"*; that one answers *"what can you build, and
+> why that feature next?"*
 
 ## North star
 
