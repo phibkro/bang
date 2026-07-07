@@ -68,6 +68,15 @@ spectrum, cheapest first:
   a Node/Astro build toolchain. Auto-rebuilds on push via Actions.
 - **Incremental feedback:** GitHub Actions posts a status update on each landing (issue-close / PR-merge /
   milestone-complete) — the notification pulse — and the site rebuilds.
+- **Doc-SITE generator (DEFERRED — only when the docs go multi-page as the ADR-0077 product face; the
+  dashboard is a separate single page, already live):** candidates, all taking git-native markdown+frontmatter
+  (respects ADR-0078) → a static site on Pages: **Astro Starlight** (mature, big plugin ecosystem incl.
+  `starlight-llms-txt` → llms.txt / `starlight-md-txt` → raw-markdown URLs — concrete agent-friendliness) ·
+  **vocs** ("Minimal Docs for Agents & Humans" — wevm/viem team; minimal, MDX, TS-Twoslash, agent-branded —
+  its ethos matches our human-or-agent thesis; Twoslash is TS-specific so less of an edge for `.bang`) · plain
+  Astro content-collections. All add a Node toolchain — hence deferred until multi-page. **CHEAP AGENT WIN
+  available NOW, no SSG:** generate an **`llms.txt`** (the emerging LLM-doc-index standard) from the git docs —
+  same generator pattern as `gen-questions-index`.
 
 ## The graph (projects ▸ the features they pull ▸ what they stress)
 
