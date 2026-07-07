@@ -30,3 +30,4 @@ site/node_modules/
 site/dist/
 site/.vocs/
 site/src/
+site/public/

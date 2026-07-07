@@ -60,5 +60,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **worktree** — reflink-copy .lake/packages, not symlink — a lake re-clone can only nuke itself (#40) (`154021a`)
 - **build** — cache-get only on main checkout, not via a local-stub precondition (#43, closes #43) (`ae78f22`)
 - **gitignore** — clean the vocs stanza — a diff-format patch had been dumped in verbatim (`285e31e`)
+- **site** — strip mermaid on the docs site — vocs client Mermaid component infinite-reloads (`ade33cb`)
 
 <!-- END GENERATED changelog -->

@@ -31,6 +31,10 @@ jobs:
         run: |
           cd site
           bun install --frozen-lockfile
+          # mmdc (mermaid-cli) pre-renders diagrams to static SVG — needs a headless
+          # browser. bun blocks postinstall, so install it explicitly (site's puppeteer,
+          # matching mermaid-cli's version). Falls back to pointer-notes if this fails.
+          bunx puppeteer browsers install chrome-headless-shell
           bun run build
 
       - name: Generate progress dashboard → /bang/dashboard/

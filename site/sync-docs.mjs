@@ -11,13 +11,23 @@
 //   README.md    -> index.md            => /
 //   <NAME>.md    -> <name>.md  (root)   => /<name>
 //   docs/<dir>/* -> <dir>/*             => /<dir>/<file>
-import { mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
+import { mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync, mkdtempSync } from 'node:fs'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..')
 const pagesDir = join(siteDir, 'src', 'pages')
+// Pre-rendered mermaid SVGs land here; vite copies site/public → the site root,
+// served under basePath. vocs does NOT rewrite markdown-image src with basePath
+// (it does for links/its own assets), so we prepend it ourselves — read from the
+// vocs config (single source of truth, no second copy of the deploy path).
+const mermaidDir = join(siteDir, 'public', 'mermaid')
+const basePath = (readFileSync(join(siteDir, 'vocs.config.ts'), 'utf8')
+  .match(/basePath:\s*['"]([^'"]*)['"]/)?.[1]) ?? ''
 
 const rootFiles = {
   'index.md': 'README.md',
@@ -48,12 +58,6 @@ function mdxSafe(src) {
   // Flatten [[wikilinks]] -> plain text (whole-text: they wrap across lines in our
   // prose). Ours point at auto-memory slugs, not site pages, so they'd be dead links.
   src = src.replace(/\[\[([^\]]+?)\]\]/g, '$1')
-  // Vocs renders mermaid via a CLIENT component whose render effect loops on our
-  // pages (colorScheme-keyed useEffect → infinite re-render, the "reload" bug). Strip
-  // the fences with a pointer — mermaid renders natively in the GitHub source. (A
-  // build-time pre-render to static SVG could restore them on the site later.)
-  src = src.replace(/```mermaid\b[\s\S]*?```/g,
-    '> 📊 _Mermaid diagram omitted on the docs site — view it rendered in the repository source._')
   const out = []
   let inFence = false
   let fenceTok = ''
@@ -69,7 +73,51 @@ function mdxSafe(src) {
     if (inFence) { out.push(line); continue }
     out.push(escapeProse(rewriteLinks(line)))
   }
-  return out.join('\n')
+  // Vocs's CLIENT mermaid component's render effect loops on our pages
+  // (colorScheme-keyed useEffect → infinite re-render, the "reload" bug). Instead
+  // of shipping the component, PRE-RENDER each ```mermaid fence to a static SVG at
+  // build time (mmdc) written to public/mermaid, and embed it with a core-markdown
+  // image `![](/mermaid/<hash>.svg)`. The diagram is DRAWN into the static HTML (no
+  // client component, no loop), and it's regenerated from the mermaid source each
+  // build so it can't drift (SSoT). Markdown-image (not a raw `<img>`) is required:
+  // vocs runs no rehype-raw, so a raw HTML `<img>` node is dropped — a markdown
+  // image is first-class and always renders. Run LAST, so the emitted `![](…)` line
+  // is not touched by the escapeProse pass.
+  return out.join('\n').replace(/```mermaid[^\n]*\n([\s\S]*?)```/g, (_m, code) => {
+    const rel = renderMermaid(code)
+    if (!rel) {
+      return '> 📊 _Mermaid diagram omitted on the docs site — view it rendered in the repository source._'
+    }
+    return `![diagram](${rel})`
+  })
+}
+
+// Render a mermaid source to an SVG under public/mermaid/<hash>.svg (hash of the
+// source → stable name + dedup) and return its site-root path for a markdown image.
+// mmdc is the mermaid-cli (dev shell / a site devDep). One fixed theme — a static
+// SVG can't follow the site's dark/light toggle — so `default` + a white background
+// reads legibly under BOTH modes (dark text on a white card). Returns null on
+// failure so the caller falls back to the pointer note for just THAT diagram
+// (never breaks the build).
+function renderMermaid(code) {
+  const hash = createHash('sha256').update(code).digest('hex').slice(0, 16)
+  const dest = join(mermaidDir, `${hash}.svg`)
+  mkdirSync(mermaidDir, { recursive: true })
+  const d = mkdtempSync(join(tmpdir(), 'mmd-'))
+  const mmd = join(d, 'g.mmd')
+  const cfg = join(d, 'pptr.json')
+  writeFileSync(mmd, code)
+  writeFileSync(cfg, '{"args":["--no-sandbox","--disable-gpu"]}') // headless chromium in CI/sandbox
+  try {
+    execFileSync('mmdc', ['-i', mmd, '-o', dest, '-p', cfg, '-t', 'default', '-b', 'white'],
+      { stdio: 'pipe', timeout: 180000 })
+    return `${basePath}/mermaid/${hash}.svg`
+  } catch (e) {
+    console.warn(`sync-docs: mermaid render failed, falling back to pointer note: ${String(e.stderr || e.message).slice(-300)}`)
+    return null
+  } finally {
+    rmSync(d, { recursive: true, force: true })
+  }
 }
 
 // Rewrite for Vocs routing: relative `*.md` links -> extensionless (Vocs drops the
@@ -114,6 +162,8 @@ function emitTree(srcDir, destDir) {
 
 rmSync(pagesDir, { recursive: true, force: true })
 mkdirSync(pagesDir, { recursive: true })
+// Reset the pre-rendered mermaid SVGs too, so a removed/edited diagram leaves no orphan.
+rmSync(mermaidDir, { recursive: true, force: true })
 for (const [page, src] of Object.entries(rootFiles)) {
   try { emit(join(repoRoot, src), join(pagesDir, page)) }
   catch { console.warn(`skip missing ${src}`) }
