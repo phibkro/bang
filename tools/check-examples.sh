@@ -15,11 +15,12 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 bang=".lake/build/bin/bang"
 
-# Build the runner if it is missing (build noise → stderr; keep stdout clean).
-if [ ! -x "$bang" ]; then
-  echo "building bang runner…" >&2
-  lake build bang >&2
-fi
+# ALWAYS (re)build the runner — incremental, a no-op when current. Guarding on
+# "missing" let a STALE exe through: `just build` (= `lake build`, the library)
+# does NOT rebuild the exe, so a present-but-stale binary produced false results
+# (a new example false-failing, or an old one false-passing). Build noise → stderr.
+echo "building bang runner…" >&2
+lake build bang >&2
 
 pass=0
 fail=0
