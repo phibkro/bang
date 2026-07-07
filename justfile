@@ -22,10 +22,16 @@ setup:
 orient:
     bash tools/orient.sh
 
-# Default verify gate — selfcheck + build + audit. `audit` now runs the full
-# `just fitness` bundle (#114), which already includes the ADR-ledger `--check`,
-# so a separate `adr-check` dep is redundant.
-verify: selfcheck build audit
+# Default verify gate — selfcheck + build + example-run oracle + audit. `audit`
+# now runs the full `just fitness` bundle (#114), which already includes the
+# ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
+verify: selfcheck build check-examples audit
+
+# Run every examples/<project>/main.bang and diff stdout against expected.txt —
+# the end-to-end run oracle for whole bang programs (supersedes per-example
+# #guards). Depends on `build` for the `bang` runner (verify runs build first).
+check-examples:
+    bash tools/check-examples.sh
 
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
