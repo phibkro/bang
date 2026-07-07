@@ -24,7 +24,7 @@ design is differential-tested independent of the proofs.
 namespace Bang.EffectRow
 
 public abbrev Label := Nat
-abbrev RVar  := Nat
+public abbrev RVar  := Nat
 
 /-- The concrete effect-row carrier: a `Finset Label`. Mathlib gives this
 type `Lattice`, `OrderBot`, and `DistribLattice` instances natively (join
@@ -44,9 +44,9 @@ public abbrev EffRow := Finset Label
 
 /-- A canonical row's label set. `Finset` is canonical by construction: there is
 no sorted/duplicate-free invariant to carry, and equality is extensional. -/
-abbrev RowC := Finset Label
+public abbrev RowC := Finset Label
 
-structure Row where
+public structure Row where
   labels : RowC
   tail   : Option RVar
 deriving DecidableEq
@@ -55,7 +55,7 @@ deriving DecidableEq
 -- (`uses unsafe declaration 'Finset.instRepr'`). Repr is unused — Main.lean
 -- serialises via the custom `rowToJson`.
 
-abbrev Subst := List (RVar × Row)
+public abbrev Subst := List (RVar × Row)
 
 /-! ## The algebra is Mathlib's Finset join-semilattice -/
 
@@ -79,12 +79,12 @@ theorem canon_unique (a b : RowC) (h : ∀ x, x ∈ a ↔ x ∈ b) : a = b :=
 
 /-! ## The unifier (Rémy/Pottier specialised to idempotent set-rows) -/
 
-def lookupVar (r : RVar) (s : Subst) : Option Row :=
+public def lookupVar (r : RVar) (s : Subst) : Option Row :=
   (s.find? (fun b => b.1 = r)).map (·.2)
 
 /-- Apply a substitution to a row. Fuel guarantees termination; well-formed
 oracle output is acyclic and resolves within `s.length + 1`. -/
-def applyR (fuel : Nat) (s : Subst) (r : Row) : Row :=
+public def applyR (fuel : Nat) (s : Subst) (r : Row) : Row :=
   match r.tail with
   | none   => r
   | some v =>
@@ -106,7 +106,7 @@ open/closed   : closed side can't grow, so the open side's fixed labels must be 
 open/open     : one fresh tail var; each tail absorbs the other side's exclusive
                 labels plus the shared fresh tail
 -/
-def unify (fresh : RVar) (r1 r2 : Row) : Option Subst :=
+public def unify (fresh : RVar) (r1 r2 : Row) : Option Subst :=
   match r1.tail, r2.tail with
   | none, none =>
       if r1.labels = r2.labels then some [] else none

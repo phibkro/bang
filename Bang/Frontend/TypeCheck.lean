@@ -26,7 +26,7 @@ public import Bang.Core.Grade      -- QTT (the concrete grade rig)
 
 namespace Bang.TypeCheck
 open Bang
-open Bang.EffectRow (EffRow Label)
+open Bang.EffectRow (EffRow Label Row)
 
 /-- The concrete instantiation the surface uses: effect rows are `Finset Label`, grades are QTT. -/
 abbrev VT := VTy EffRow QTT
@@ -200,24 +200,21 @@ FRESH unification hole at the annotation site (so no marker `tvar` ever survives
 substitution / unrolling). -/
 def paramBase : Nat := 3000000
 
-/-- An OPEN effect row for the inference layer (ADR-0075 bite-0b item 3, row polymorphism). A closed
-kernel `EffRow = Finset Label` (invariant #2) `emb`s to `⟨φ, none⟩` and zonk-EXTRACTS back to `.known`
-(exactly as `IVTy` zonks to `VTy`) — the KERNEL row algebra is UNTOUCHED; this parallel `IRow` is the
-sibling of the value-hole `IVTy`/comp-hole `ICTy` supersets. `tail = some v`: `v < rigidBase` is a
-UNIFICATION row var (bound in `USt.rsubst`), `v ≥ rigidBase` is a ∀-scheme RIGID row var (a quantified
-`∀ρ`); `tail = none` is a closed row. The unify/resolve algorithm below MIRRORS the proven-sound
-`Bang.EffectRow.unify`/`applyR` (`unify_sound`), which sits dormant in the kernel + is
-differential-tested by `tools/selfcheck.mjs` — see the row-poly report's SSoT finding. -/
-structure IRow where
-  known : Finset Label
-  tail  : Option Nat := none
+/-! The inference layer's OPEN effect row IS the proven-sound kernel `Bang.EffectRow.Row` (ADR-0075
+bite-0b item 3, row polymorphism; SSoT per #57). A closed kernel `EffRow = Finset Label` (invariant #2)
+`emb`s to `⟨φ, none⟩` and zonk-EXTRACTS back to `.labels` (exactly as `IVTy` zonks to `VTy`) — the KERNEL
+row algebra is UNTOUCHED; this `Row` is the same one `unify`/`applyR` (`unify_sound`) operate on. `tail =
+some v`: `v < rigidBase` is a UNIFICATION row var (bound in `USt.rsubst`), `v ≥ rigidBase` is a ∀-scheme
+RIGID row var (a quantified `∀ρ`); `tail = none` is a closed row. `unifyRow`/`resolveRow` below are thin
+monadic wrappers that DELEGATE to the proven `EffectRow.unify`/`applyR` (dormant in the kernel +
+differential-tested by `tools/selfcheck.mjs`) — no mirror. -/
 
 /-- The pure/empty inference row (`⊥`). -/
-def botR : IRow := ⟨∅, none⟩
+def botR : Row := ⟨∅, none⟩
 /-- A single-label closed inference row (`{ℓ}`). -/
-def singR (ℓ : Label) : IRow := ⟨{ℓ}, none⟩
-/-- Inject a closed kernel `EffRow` into `IRow`. -/
-def embRow (φ : EffRow) : IRow := ⟨φ, none⟩
+def singR (ℓ : Label) : Row := ⟨{ℓ}, none⟩
+/-- Inject a closed kernel `EffRow` into `Row`. -/
+def embRow (φ : EffRow) : Row := ⟨φ, none⟩
 
 mutual
 /-- A value inference type: a kernel `VTy` shape plus unification `vhole`s. `tvar` still carries BOTH
@@ -228,7 +225,7 @@ inductive IVTy where
   | unit  : IVTy
   | sum   : IVTy → IVTy → IVTy
   | prod  : IVTy → IVTy → IVTy
-  | U     : IRow → ICTy → IVTy
+  | U     : Row → ICTy → IVTy
   | mu    : IVTy → IVTy
   | tvar  : Nat → IVTy
   | cap   : Label → IVTy
@@ -267,7 +264,7 @@ def extractV : IVTy → Except String VT
   | .prod a b => do return .prod (← extractV a) (← extractV b)
   -- an UNCONSTRAINED polymorphic tail zonk-EXTRACTS to its known labels (⊥-default): a residual row var
   -- means "no effects forced" for a monomorphic run, exactly as a residual value hole → reserved tvar.
-  | .U r b    => do return .U r.known (← extractC b)
+  | .U r b    => do return .U r.labels (← extractC b)
   | .mu a     => do return .mu (← extractV a)
   | .tvar n   => .ok (.tvar n)
   | .cap ℓ    => .ok (.cap ℓ)
@@ -381,7 +378,7 @@ structure USt where
   fresh  : Nat := 0
   subst  : List (Nat × IVTy) := []
   csubst : List (Nat × ICTy) := []
-  rsubst : List (Nat × IRow) := []   -- row-variable substitution (bite-0b item 3)
+  rsubst : List (Nat × Row) := []   -- row-variable substitution (bite-0b item 3); = EffectRow.Subst
 
 abbrev Infer := StateT USt (Except String)
 
@@ -399,80 +396,68 @@ def hget (n : Nat) : Infer (Option IVTy) := do return (← get).subst.lookup n
 def hgetC (n : Nat) : Infer (Option ICTy) := do return (← get).csubst.lookup n
 
 /-! ### Row-variable inference (bite-0b item 3) — open-row unification threaded through `USt.rsubst`.
-The algorithm MIRRORS the proven-sound `Bang.EffectRow.unify`/`applyR` (`unify_sound`) — set-rows make
-this SIMPLER than scoped labels (no order, `∪` handles dups). The KERNEL `EffRow = Finset Label` is
-untouched; row vars live ONLY here. -/
+`resolveRow`/`unifyRow` DELEGATE to the proven-sound `Bang.EffectRow.applyR`/`unify` (`unify_sound`) — a
+thin monadic shell that carries `rsubst` as the pure `Subst` and installs `unify`'s result bindings
+(SSoT per #57; the algorithm is the kernel's, differential-tested by `tools/selfcheck.mjs`). The KERNEL
+`EffRow = Finset Label` is untouched; row vars live ONLY here. -/
 
 /-- Mint a fresh row-variable id (shares the `fresh` counter; row ids live in `rsubst`, disjoint from
 value/comp holes). -/
 def freshRVar : Infer Nat := modifyGet (fun s => (s.fresh, { s with fresh := s.fresh + 1 }))
 /-- A fresh, empty-known OPEN row `∅ ∪ ρ`. -/
-def freshRow : Infer IRow := do return ⟨∅, some (← freshRVar)⟩
+def freshRow : Infer Row := do return ⟨∅, some (← freshRVar)⟩
 /-- Bind row var `v := r`. -/
-def rassign (v : Nat) (r : IRow) : Infer Unit := modify (fun s => { s with rsubst := (v, r) :: s.rsubst })
+def rassign (v : Nat) (r : Row) : Infer Unit := modify (fun s => { s with rsubst := (v, r) :: s.rsubst })
 
-/-- Resolve a row against `rsubst` (the `applyR` mirror): follow the tail chain, unioning known labels. -/
-def resolveRow (fuel : Nat) (r : IRow) : Infer IRow := do
-  match r.tail with
-  | none   => return r
-  | some v => match fuel with
-    | 0      => return r
-    | fu + 1 => match (← get).rsubst.lookup v with
-      | none    => return r
-      | some r' => do let rr ← resolveRow fu r'; return ⟨r.known ∪ rr.known, rr.tail⟩
+/-- Resolve a row against `rsubst` — delegates to the proven `EffectRow.applyR` (`rsubst` IS its `Subst`). -/
+def resolveRow (fuel : Nat) (r : Row) : Infer Row := do
+  return EffectRow.applyR fuel (← get).rsubst r
 
-/-- Open-row unification (the `EffectRow.unify` mirror, resolve-first for HM threading). Closed/closed =
-label-set equality; open/closed = the open side's fixed labels must be a subset, bind its tail to the
-rest; open/open = a fresh shared tail each side absorbs the other's exclusive labels. MGU is the
-differential-tested contract (CLAUDE.md), not proven here. -/
-def unifyRow (fuel : Nat) (a b : IRow) : Infer Unit := do
+/-- Open-row unification: resolve both sides, then delegate to the proven-sound `EffectRow.unify` and
+install its result substitution. `unify` needs a fresh tail var only in the open/open-DISTINCT case, so
+that is the sole case that mints one (preserving the fresh-counter trajectory of the former mirror). MGU
+is the differential-tested contract (CLAUDE.md); soundness is `EffectRow.unify_sound`. -/
+def unifyRow (fuel : Nat) (a b : Row) : Infer Unit := do
   let a ← resolveRow fuel a
   let b ← resolveRow fuel b
-  match a.tail, b.tail with
-  | none,    none    => if a.known == b.known then return () else throw "effect row mismatch"
-  | some v,  none    => if a.known ⊆ b.known then rassign v ⟨b.known \ a.known, none⟩
-                        else throw "effect row mismatch (open row carries a label the closed row lacks)"
-  | none,    some v  => if b.known ⊆ a.known then rassign v ⟨a.known \ b.known, none⟩
-                        else throw "effect row mismatch (open row carries a label the closed row lacks)"
-  | some v1, some v2 =>
-      if v1 == v2 then (if a.known == b.known then return ()
-                        else throw "effect row mismatch (shared tail, differing known labels)")
-      else do
-        let f ← freshRVar
-        rassign v1 ⟨b.known \ a.known, some f⟩
-        rassign v2 ⟨a.known \ b.known, some f⟩
+  let fresh ← match a.tail, b.tail with
+    | some v1, some v2 => if v1 == v2 then pure 0 else freshRVar
+    | _,       _       => pure 0
+  match EffectRow.unify fresh a b with
+  | some s => for (v, r) in s do rassign v r
+  | none   => throw "effect row mismatch"
 
 /-- Join two rows (the effect-`⊔`). Two DISTINCT open tails are COLLAPSED to one (the single-ρ first cut,
 ADR-0075 item 3): `compose`'s body `($f)(($g) x)` joins `ρf ⊔ ρg` — collapsing forces one shared row var,
 yielding `∀ρ. …!ρ…`. FINDING (documented): this rejects composing functions at DIFFERENT effect rows (that
 needs independent tails + a real join, i.e. full Rémy lacks-constraints). Sound (over-approximates), incomplete. -/
-def joinRow (fuel : Nat) (a b : IRow) : Infer IRow := do
+def joinRow (fuel : Nat) (a b : Row) : Infer Row := do
   let a ← resolveRow fuel a
   let b ← resolveRow fuel b
   match a.tail, b.tail with
-  | none,    none    => return ⟨a.known ∪ b.known, none⟩
-  | some v,  none    => return ⟨a.known ∪ b.known, some v⟩
-  | none,    some v  => return ⟨a.known ∪ b.known, some v⟩
+  | none,    none    => return ⟨a.labels ∪ b.labels, none⟩
+  | some v,  none    => return ⟨a.labels ∪ b.labels, some v⟩
+  | none,    some v  => return ⟨a.labels ∪ b.labels, some v⟩
   | some v1, some v2 =>
-      if v1 == v2 then return ⟨a.known ∪ b.known, some v1⟩
-      else do rassign v2 ⟨∅, some v1⟩; return ⟨a.known ∪ b.known, some v1⟩
+      if v1 == v2 then return ⟨a.labels ∪ b.labels, some v1⟩
+      else do rassign v2 ⟨∅, some v1⟩; return ⟨a.labels ∪ b.labels, some v1⟩
 
 /-- Remove a CONCRETE (handler) label from a row's known part (the `.erase ℓ` mirror). First cut: the tail
 carries an implicit ℓ-LACKS constraint (Rémy) that is NOT enforced — full lacks-constraints are the
 deferred refinement. -/
-def eraseRow (fuel : Nat) (ℓ : Label) (r : IRow) : Infer IRow := do
-  let r ← resolveRow fuel r; return ⟨r.known.erase ℓ, r.tail⟩
+def eraseRow (fuel : Nat) (ℓ : Label) (r : Row) : Infer Row := do
+  let r ← resolveRow fuel r; return ⟨r.labels.erase ℓ, r.tail⟩
 /-- Insert a concrete label into a row's known part (the `insert ℓ` mirror; e.g. `divMark`). -/
-def insertRow (fuel : Nat) (ℓ : Label) (r : IRow) : Infer IRow := do
-  let r ← resolveRow fuel r; return ⟨insert ℓ r.known, r.tail⟩
+def insertRow (fuel : Nat) (ℓ : Label) (r : Row) : Infer Row := do
+  let r ← resolveRow fuel r; return ⟨insert ℓ r.labels, r.tail⟩
 /-- Is the (resolved) row `a` within the DECLARED bound `b` (concrete, from an annotation)? An
 UNCONSTRAINED open tail on `a` defaults to ⊥ (contributes no labels) — the same "higher-order row = ⊥"
 assumption the pre-row-poly checker baked in by hardcoding ⊥ on forced-thunk rows, so this is behaviour-
 preserving on the existing corpus; full lacks-constraints on the tail are the deferred refinement. -/
-def subRow (fuel : Nat) (a b : IRow) : Infer Bool := do
+def subRow (fuel : Nat) (a b : Row) : Infer Bool := do
   let a ← resolveRow fuel a
   let b ← resolveRow fuel b
-  return a.known ⊆ b.known
+  return a.labels ⊆ b.labels
 
 /-- Follow the value-hole chain at the TOP of a value type. -/
 def resolve (fuel : Nat) (t : IVTy) : Infer IVTy := do
@@ -637,7 +622,7 @@ in the TAIL field, disjoint from value rigids (which ride it in `tvar`). -/
 mutual
 def abstractRowsV (rs : List Nat) : IVTy → IVTy
   | .U r b    => .U (match r.tail with
-                     | some v => (match rs.idxOf? v with | some i => ⟨r.known, some (rigidBase + i)⟩ | none => r)
+                     | some v => (match rs.idxOf? v with | some i => ⟨r.labels, some (rigidBase + i)⟩ | none => r)
                      | none   => r) (abstractRowsC rs b)
   | .sum a b  => .sum  (abstractRowsV rs a) (abstractRowsV rs b)
   | .prod a b => .prod (abstractRowsV rs a) (abstractRowsV rs b)
@@ -649,18 +634,18 @@ def abstractRowsC (rs : List Nat) : ICTy → ICTy
   | c          => c
 end
 mutual
-def instRowsV (insts : List IRow) : IVTy → IVTy
+def instRowsV (insts : List Row) : IVTy → IVTy
   | .U r b    => .U (match r.tail with
                      | some v => if v ≥ rigidBase then
                                    (match insts[v - rigidBase]? with
-                                    | some ri => ⟨r.known ∪ ri.known, ri.tail⟩ | none => r)
+                                    | some ri => ⟨r.labels ∪ ri.labels, ri.tail⟩ | none => r)
                                  else r
                      | none   => r) (instRowsC insts b)
   | .sum a b  => .sum  (instRowsV insts a) (instRowsV insts b)
   | .prod a b => .prod (instRowsV insts a) (instRowsV insts b)
   | .mu a     => .mu (instRowsV insts a)
   | t         => t
-def instRowsC (insts : List IRow) : ICTy → ICTy
+def instRowsC (insts : List Row) : ICTy → ICTy
   | .F q a     => .F q (instRowsV insts a)
   | .arr q a b => .arr q (instRowsV insts a) (instRowsC insts b)
   | c          => c
@@ -724,7 +709,7 @@ var (independent per use-site). -/
 def instantiate (s : Scheme) : Infer IVTy := do
   let mut insts : List IVTy := []
   for _ in List.range s.arity do insts := insts ++ [← freshHole]
-  let mut rinsts : List IRow := []
+  let mut rinsts : List Row := []
   for _ in List.range s.rowArity do rinsts := rinsts ++ [← freshRow]
   return instRowsV rinsts (instV insts s.body)
 
@@ -842,14 +827,14 @@ def runInferV (act : Infer IVTy) : Except String VT := do
   let iv ← (do zonkV bigFuel (← act)).run' {}
   extractV iv
 /-- As `runInferV`, for a computation type + its row. -/
-def runInferC (act : Infer (ICTy × IRow)) : Except String (CT × EffRow) := do
-  let (Bz, φ) ← (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).known)).run' {}
+def runInferC (act : Infer (ICTy × Row)) : Except String (CT × EffRow) := do
+  let (Bz, φ) ← (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).labels)).run' {}
   return (← extractC Bz, φ)
 /-- As `runInferC`, but keep the ZONKED `ICTy` (no extraction) — for the elaborator's chole-tolerant
 returner probes (`anfSplit`, `let`-RHS), which must inspect a higher-order result WITHOUT failing on a
 still-open computation hole. -/
-def zonkInferC (act : Infer (ICTy × IRow)) : Except String (ICTy × EffRow) :=
-  (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).known)).run' {}
+def zonkInferC (act : Infer (ICTy × Row)) : Except String (ICTy × EffRow) :=
+  (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).labels)).run' {}
 
 
 /-- Syntactic value check — mirrors `Surface.lowerV`'s value-shaped constructors. A `thunk` is
@@ -872,7 +857,7 @@ def synthSV (Γ : NCtx) (e : Surf) : Infer IVTy :=
   match e with
   | .lit _     => return .int
   | .var x     => lookupInst Γ x                       -- HM: instantiate the scheme with fresh holes
-  | .thunk b   => do let (B, φ) ← synthSC Γ b; return .U φ B   -- φ : IRow — the body's (possibly poly) row
+  | .thunk b   => do let (B, φ) ← synthSC Γ b; return .U φ B   -- φ : Row — the body's (possibly poly) row
   | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
   | .unitS     => return .unit
   | .annotS b t => do let A ← embVInst t; let _ ← checkSV Γ b A; return A
@@ -909,8 +894,8 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : IVTy) : Infer Unit :=
   termination_by (sizeOf e, 2)
 
 /-- Synthesize the computation type + effect row of a `Surf` read as a COMPUTATION. The row is an
-`IRow` (bite-0b item 3): an OPEN row when the computation is effect-polymorphic (`compose`'s body). -/
-def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × IRow) :=
+`Row` (bite-0b item 3): an OPEN row when the computation is effect-polymorphic (`compose`'s body). -/
+def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
   match e with
   | .lit _   => return (.F .omega .int, botR)
   | .var x   => do return (.F .omega (← lookupInst Γ x), botR)   -- `ret` of the instantiated scheme
@@ -1050,7 +1035,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × IRow) :=
   termination_by (sizeOf e, 1)
 
 /-- Check a `Surf` read as a COMPUTATION against an expected computation type. -/
-def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer IRow :=
+def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer Row :=
   match e, expected with
   | .lam x b,   .arr _ A B => checkSC ((x, A) :: Γ) b B
   -- value-constructors in computation position lower to `ret v` — check the value against `A` of `F A`.
@@ -3097,7 +3082,7 @@ def composeTwoSrc := "let compose = {fun f => fun g => fun x => ($f)(($g) x)} in
 `compose : ∀ρ. (b→c!ρ)→(a→b!ρ)→(a→c!ρ)` (the effect analog of the type-poly two-instance demos). It's
 used at TWO rows in ONE program — pure `⊥` (`inc∘dbl`) AND a non-`⊥` `{Div}` row (`countdown∘countdown`,
 a `let rec` the termination checker can't certify, ADR-0073) — and RUNS. The row var is `let`-GENERALIZED
-(kernel `EffRow` UNTOUCHED; the poly lives in the parallel inference `IRow`), so each use instantiates a
+(kernel `EffRow` UNTOUCHED; the poly lives in the parallel inference `Row`), so each use instantiates a
 FRESH ρ: `r1` pins ρ:=⊥, `r2` pins ρ:={Div}, and they COEXIST — that coexistence IS the row polymorphism
 (without generalizing ρ, `r1`'s ⊥ would clash with `r2`'s {Div} on a shared tail). -/
 def rowPolyDivSrc := "let rec countdown : Int -> Int = fun n => if n < 1 then 7 else ($countdown)(n - 1) in let compose = {fun p => fun q => fun x => ($p)(($q) x)} in let inc = {fun x => x + 1} in let dbl = {fun x => x + x} in let r1 = ((($compose) inc) dbl) 5 in let r2 = ((($compose) countdown) countdown) 3 in r1 + r2"

@@ -47,7 +47,7 @@ graph TD
     Frontend_Surface["Frontend.Surface<br/>1967L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>3415L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>3400L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>2160L · fan-in 0"]
     Meta_LR["Meta.LR<br/>2103L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
@@ -92,7 +92,7 @@ graph TD
 | `Frontend.OutcomeSpike` | ? | 169 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 3415 | 0 |
+| `Frontend.TypeCheck` | ? | 3400 | 0 |
 | `Meta.BinaryLR` | ? | 2160 | 0 |
 | `Meta.LR` | ? | 2103 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |
