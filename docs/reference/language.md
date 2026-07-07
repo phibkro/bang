@@ -54,6 +54,7 @@ nothing here can drift from what the language actually does.
 | `Thunk T` | (a suspended computation value, the `U` former) |
 | `Self — the impl target, in trait op signatures (#24, ADR-0068)` |  |
 | `a declared data name (resolved against the decl env at elaboration, ADR-0069)` |  |
+| `a generic data name applied to type args: `List Int` (ADR-0069 generic, bite-1; arity ≤ 2)` |  |
 | `μ former (INTERNAL — built by data-decl encoding, never parsed in v1)` |  |
 | `μ-bound de Bruijn type var (INTERNAL, ditto)` |  |
 | `T ! {throws, …}` | effect-row annotation (names; checker maps to labels) |

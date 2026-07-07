@@ -121,10 +121,11 @@ arguments are VALUE-position atoms (so a TVar ref is just an `int`, ADR-0030's
 force, `!` is actor-send in full bang — here we accept both as force for the
 subset, documented as a liquid surface choice). -/
 
-/-- Surface type expressions (ADR-0066 ②). A single grammar, NOT split into value/computation
+/-! Surface type expressions (ADR-0066 ②). A single grammar, NOT split into value/computation
 types — the checker interprets it into the kernel's `VTy`/`CTy` (`tArr` ⇒ a `CTy.arr`, everything
 else a `VTy`, with `F`/`U` wrapping inserted by the checker). Carried only by the ascription node
 `annotS`; erased at lowering (types never reach the kernel term). -/
+mutual
 inductive Ty where
   | tInt   : Ty                  -- Int
   | tUnit  : Ty                  -- Unit
@@ -134,10 +135,28 @@ inductive Ty where
   | tThunk : Ty → Ty             -- Thunk T  (a suspended computation value, the `U` former)
   | tSelf  : Ty                  -- Self — the impl target, in trait op signatures (#24, ADR-0068)
   | tName  : String → Ty         -- a declared data name (resolved against the decl env at elaboration, ADR-0069)
+  | tApp   : String → TyArgs → Ty  -- a generic data name applied to type args: `List Int` (ADR-0069 generic, bite-1; arity ≤ 2)
   | tMu    : Ty → Ty             -- μ former (INTERNAL — built by data-decl encoding, never parsed in v1)
   | tVar   : Nat → Ty            -- μ-bound de Bruijn type var (INTERNAL, ditto)
   | tEff   : List String → Ty → Ty  -- T ! {throws, …}  effect-row annotation (names; checker maps to labels)
-  deriving Repr, Inhabited, DecidableEq
+/-- Type-application arguments, capped at the v1 arity (≤ 2: `Pair a b`, `Either a b`). A mutual
+inductive (not `List Ty`) so `Ty`'s `DecidableEq`/`Repr` derive — the `DArms`/`SurfArgs` precedent. -/
+inductive TyArgs where
+  | one  : Ty → TyArgs
+  | two  : Ty → Ty → TyArgs
+end
+deriving instance Repr, DecidableEq for Ty, TyArgs
+instance : Inhabited Ty := ⟨.tInt⟩
+instance : Inhabited TyArgs := ⟨.one .tInt⟩
+
+/-- Type-application args as a list (the resolver/monomorphizer consumes them positionally). -/
+def TyArgs.toList : TyArgs → List Ty
+  | .one a   => [a]
+  | .two a b => [a, b]
+/-- Map a pure type transform over the args (`substSelf`, structural rewrites). -/
+def TyArgs.map (f : Ty → Ty) : TyArgs → TyArgs
+  | .one a   => .one (f a)
+  | .two a b => .two (f a) (f b)
 
 mutual
 inductive Surf where
@@ -594,12 +613,19 @@ def pTyMulLoop : Nat → Ty → P Ty
   | 0,     a, ts          => .ok (a, ts)
   | f + 1, a, "*" :: ts   => do let (b, ts) ← pTyAtom f ts; pTyMulLoop f (.tProd a b) ts
   | _ + 1, a, ts          => .ok (a, ts)
-def pTyAtom : Nat → P Ty
+-- Can `t` START a type atom? (⟹ a candidate type-application ARGUMENT after a data name.) Every
+-- separator/operator token is NOT an atom start, so application stops at `*`/`+`/`->`/`)`/… — exactly
+-- the tokens that continue an enclosing type or end it. A bare identifier (`a`, `List`), `Int`/`Unit`/…,
+-- and `(` (a parenthesized arg, `List (Int * Int)`) all START an atom.
+def isTyAtomStart : String → Bool
+  | ")" | "}" | "{" | "," | ";" | "|" | "->" | "+" | "*" | "!" | "=" | "in" | "=>" => false
+  | _ => true
+def pTyAtom1 : Nat → P Ty                     -- ONE atom, no trailing application (args of an application)
   | 0,     _            => .error "type parser out of fuel"
   | _ + 1, "Int" :: ts  => .ok (.tInt, ts)
   | _ + 1, "Unit" :: ts => .ok (.tUnit, ts)
   | _ + 1, "Self" :: ts => .ok (.tSelf, ts)
-  | f + 1, "Thunk" :: ts => do let (t, ts) ← pTyAtom f ts; .ok (.tThunk t, ts)
+  | f + 1, "Thunk" :: ts => do let (t, ts) ← pTyAtom1 f ts; .ok (.tThunk t, ts)
   | f + 1, "(" :: ts    => do
       let (t, ts) ← pTy f ts
       let (_, ts) ← expect ")" ts
@@ -607,11 +633,32 @@ def pTyAtom : Nat → P Ty
   | _ + 1, t :: ts      =>
       -- a bare identifier in type position = a declared data name (ADR-0069); resolved (or
       -- fail-louded) against the decl env at elaboration, so a typo is still an error — later.
-      if t = ")" || t = "}" || t = "(" || t = "{" || t = "," || t = ";" || t = "|"
-         || t = "->" || t = "+" || t = "*" || t = "!" || t = "=" || t = "in" || t = "=>" then
-        .error ⟨s!"expected a type, got '{t}'", t :: ts⟩
-      else .ok (.tName t, ts)
+      if isTyAtomStart t then .ok (.tName t, ts)
+      else .error ⟨s!"expected a type, got '{t}'", t :: ts⟩
   | _ + 1, []           => .error "expected a type, got end of input"
+-- Greedy trailing type ARGUMENTS after a data name (`List Int a` ⇒ args `[Int, a]`); each is ONE atom
+-- (`List (Map k v)` needs parens), application tightest, stops at the first non-atom token.
+def pTyArgs : Nat → P (List Ty)
+  | 0,     ts => .ok ([], ts)   -- fuel out ⟹ no more args (the head already parsed; safe)
+  | f + 1, ts => match ts with
+    | t :: _ => if isTyAtomStart t then
+                  do let (a, ts) ← pTyAtom1 f ts; let (rest, ts) ← pTyArgs f ts; .ok (a :: rest, ts)
+                else .ok ([], ts)
+    | []     => .ok ([], ts)
+-- A type atom = one atom, then (if it is a bare NAME) any trailing atom args ⇒ a type APPLICATION.
+def pTyAtom : Nat → P Ty
+  | 0,     _  => .error "type parser out of fuel"
+  | f + 1, ts => do
+      let (a, ts) ← pTyAtom1 f ts
+      match a with
+      | .tName n => do
+          let (args, ts) ← pTyArgs f ts
+          match args with
+          | []     => .ok (.tName n, ts)
+          | [a]    => .ok (.tApp n (.one a), ts)
+          | [a, b] => .ok (.tApp n (.two a b), ts)
+          | _      => .error ⟨s!"type application '{n} …' takes ≤ 2 arguments in v1", ts⟩
+      | _        => .ok (a, ts)
 end
 
 /-! The recursive-descent core is **fuel-driven total** recursion (not `partial`)
@@ -1204,7 +1251,7 @@ target type), or a data type (named constructors over sums·products·μ, ADR-00
 inductive Decl where
   | traitD : String → List OpSig → List LawDecl → Decl   -- trait N { fn … ; law … }
   | implD  : String → Ty → List OpDef → Decl             -- impl N for τ { fn … }
-  | dataD  : String → List (String × List Ty) → Decl     -- data N = C₀ | C₁(T, …) | …
+  | dataD  : String → List String → List (String × List Ty) → Decl  -- data N ā = C₀ | C₁(T, …) | …  (ā = type params, [] = monomorphic; ADR-0069 generic)
   deriving Repr, Inhabited, DecidableEq
 
 /-- A whole program: the declaration prelude + the body expression (ADR-0068 decision 3). -/
@@ -1300,14 +1347,24 @@ def pCtors : Nat → P (List (String × List Ty))
       | "|" :: r => do let (rest, ts) ← pCtors f r; .ok (c :: rest, ts)
       | _        => .ok ([c], ts)
 
-/-- One declaration: `trait N { … }`, `impl N for τ { … }`, or `data N = C | …`. -/
+/-- Type parameters after a data name, up to (not consuming) `=`: `data List a b = …` ⇒ `[a, b]`. Each
+is a bare lowercase-by-convention identifier (not enforced); `[]` for a monomorphic `data N = …`. -/
+def pDataParams : Nat → P (List String)
+  | 0,     ts => .ok ([], ts)
+  | f + 1, ts => match ts with
+    | "=" :: _ => .ok ([], ts)
+    | p :: r   => do let (rest, ts) ← pDataParams f r; .ok (p :: rest, ts)
+    | []       => .error "unterminated data declaration (expected '=')"
+
+/-- One declaration: `trait N { … }`, `impl N for τ { … }`, or `data N ā = C | …`. -/
 def pDecl : Nat → P Decl
   | 0,     _  => .error "parser out of fuel"
   | f + 1, "data" :: ts => do
       let (n, ts) ← pIdent ts
+      let (ps, ts) ← pDataParams f ts        -- type params before `=` (`data List a`); [] = monomorphic
       let (_, ts) ← expect "=" ts
       let (cs, ts) ← pCtors f ts
-      .ok (.dataD n cs, ts)
+      .ok (.dataD n ps cs, ts)
   | f + 1, "trait" :: ts => do
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect "{" ts

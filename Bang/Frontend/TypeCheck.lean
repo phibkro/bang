@@ -290,6 +290,7 @@ def tyBoth : Ty → VT × CT
                                   -- any tyBoth; a leaked Self surfaces as `#999`, never unifies
   | .tName _   => let V : VT := .tvar 998; (V, .F .omega V)  -- POISON: `resolveTy` closes names before
                                   -- any tyBoth; a leaked name surfaces as `#998` (ADR-0069)
+  | .tApp _ _  => let V : VT := .tvar 996; (V, .F .omega V)  -- POISON: `resolveTy` monomorphizes tApp first (bite-1)
   | .tMu b     => let V : VT := .mu (tyBoth b).1;  (V, .F .omega V)
   | .tVar n    => let V : VT := .tvar n;           (V, .F .omega V)
 @[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
@@ -1010,6 +1011,8 @@ def substSelf (target : Ty) : Ty → Ty
   | .tInt      => .tInt
   | .tUnit     => .tUnit
   | .tName n   => .tName n
+  | .tApp n (.one a)   => .tApp n (.one (substSelf target a))              -- inlined (termination sees the subterms)
+  | .tApp n (.two a b) => .tApp n (.two (substSelf target a) (substSelf target b))
   | .tVar n    => .tVar n
   | .tMu b     => .tMu   (substSelf target b)
   | .tArr a b  => .tArr  (substSelf target a) (substSelf target b)
@@ -1031,36 +1034,34 @@ structure Inst where
 
 abbrev InstEnv := List Inst
 
-/-- One data constructor's elaboration record (ADR-0069). -/
+/-- One data constructor's elaboration record (ADR-0069). For a GENERIC data type (`params ≠ []`,
+ADR-0069 bite-1) `payloadClosed`/`dataTy` are placeholders (a generic ctor has no ONE closed type —
+it is monomorphized per use); the concrete μ is built from `params`/`payloadGen` at the use site by
+`monoData`, gated on `params.isEmpty`. -/
 structure CtorInfo where
   dataName      : String
   idx           : Nat        -- position in decl order (the sum injection)
   total         : Nat        -- constructor count (right-nested sum shape)
   arity         : Nat        -- payload arity (≤ 2 in v1)
-  payloadClosed : List Ty    -- payload types, the data's own name resolved to the CLOSED μ
-  dataTy        : Ty         -- the closed μ type (`tMu body`)
+  payloadClosed : List Ty    -- MONOMORPHIC: payload types, the data's own name resolved to the CLOSED μ
+  dataTy        : Ty         -- MONOMORPHIC: the closed μ type (`tMu body`)
+  params        : List String := []   -- GENERIC type params ([] = monomorphic; ADR-0069 bite-1)
+  payloadGen    : List Ty    := []    -- GENERIC: this ctor's SURFACE payload template (params as `tName`, self as `tApp`)
 
-/-- The full elaboration environment: instance ops + data constructors + type aliases. -/
+/-- A GENERIC data declaration's template (ADR-0069 bite-1): its type params + each ctor's surface
+payload types (params free as `tName`, self-reference as `tApp Name params`). Monomorphized to a
+closed μ by `monoData` per concrete instantiation (`List Int` ↦ `μX. Unit + (Int × X)`). Only
+generic (`params ≠ []`) decls live here; monomorphic decls stay in `aliases` (byte-identical path). -/
+structure GenData where
+  params : List String
+  ctors  : List (String × List Ty)
+
+/-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls. -/
 structure ElabEnv where
   insts   : InstEnv
   ctors   : List (String × CtorInfo)
   aliases : List (String × Ty)
-
-/-- Close a type over the alias env: every `tName` resolves or fail-louds. Enumerated. -/
-def resolveTy (aliases : List (String × Ty)) : Ty → Except String Ty
-  | .tName n   => match aliases.lookup n with
-                  | some t => .ok t
-                  | none   => .error s!"unknown type name '{n}'"
-  | .tInt      => .ok .tInt
-  | .tUnit     => .ok .tUnit
-  | .tSelf     => .ok .tSelf
-  | .tVar n    => .ok (.tVar n)
-  | .tMu b     => do return .tMu   (← resolveTy aliases b)
-  | .tArr a b  => do return .tArr  (← resolveTy aliases a) (← resolveTy aliases b)
-  | .tSum a b  => do return .tSum  (← resolveTy aliases a) (← resolveTy aliases b)
-  | .tProd a b => do return .tProd (← resolveTy aliases a) (← resolveTy aliases b)
-  | .tThunk t  => do return .tThunk (← resolveTy aliases t)
-  | .tEff ns t => do return .tEff ns (← resolveTy aliases t)
+  gen     : List (String × GenData) := []
 
 /-- k-ary payload as a right-nested product (`[] ↦ Unit`, the 0-ary payload). -/
 def prodOfTys : List Ty → Ty
@@ -1073,6 +1074,86 @@ def sumOfTys : List Ty → Ty
   | []        => .tUnit   -- unreachable (≥ 1 ctor enforced at env build)
   | [t]       => t
   | t :: rest => .tSum t (sumOfTys rest)
+
+/-- Are these already-parsed type-application args EXACTLY the decl's own params (in order)? — the
+self-recursion test (`data List a` sees `List a` in a payload ⟹ the μ-bound var, not a re-instantiation;
+ADR-0069 bite-1). A nested DIFFERENT instantiation (`List (List a)`, `Rose`) is NOT self — v1 monomorphizes
+it via `monoData` instead (finite: it references an EARLIER decl). -/
+def argsAreParams (params : List String) : List Ty → Bool
+  | []      => params == []
+  | ty :: rest => match params with
+                  | p :: ps => (ty == .tName p) && argsAreParams ps rest
+                  | []      => false
+
+mutual
+/-- Monomorphize `name argTys` to its CLOSED μ (ADR-0069 bite-1). `List Int` ↦ `μX. Unit + (Int × X)`:
+substitute the args for the decl's params in every ctor payload (self-reference ↦ the μ-bound var 0),
+right-nest into sum/product, μ-wrap. Fuel bounds decl-nesting depth (a cyclic generic instantiation
+fail-louds). The kernel only ever sees this closed μ (elaborate-to-mono; kernel untouched). -/
+def monoData (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → String → List Ty → Except String Ty
+  | 0,        _,    _      => .error "type monomorphization out of fuel (cyclic generic instantiation?)"
+  | fuel + 1, name, argTys => do
+      match gen.lookup name with
+      | none    => .error s!"unknown generic type '{name}'"
+      | some gd =>
+        if gd.params.length != argTys.length then
+          .error s!"type '{name}' expects {gd.params.length} argument(s), got {argTys.length}"
+        else do
+          let σ := gd.params.zip argTys
+          let openPays ← gd.ctors.mapM (fun c =>
+            c.2.mapM (resolveTyG gen aliases fuel σ (some (name, gd.params))))
+          return .tMu (sumOfTys (openPays.map prodOfTys))
+
+/-- Resolve a type in a GENERIC template context: `σ` substitutes params for concrete args, `self?`
+identifies the recursive self-application (↦ the μ-bound `tVar 0` — v1 has no nested self-binders so
+depth is always 0, ADR-0069). A `tApp` of ANOTHER (or the same, different-args) generic name recurses
+through `monoData`. `tName`s resolve param → σ, else the monomorphic alias env. -/
+def resolveTyG (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → List (String × Ty) → Option (String × List String) → Ty → Except String Ty
+  | 0,        _, _,     _  => .error "type resolution out of fuel"
+  | fuel + 1, σ, self?, ty =>
+    match ty with
+    | .tName n   =>
+        match σ.lookup n with
+        | some t => .ok t                                    -- a type PARAM → its concrete arg
+        | none   =>
+          match self? with
+          | some (sn, []) => if n == sn then .ok (.tVar 0)   -- NULLARY self (monomorphic self-ref)
+                             else resolveName gen aliases n
+          | _             => resolveName gen aliases n
+    | .tApp n args =>
+        match self? with
+        | some (sn, sps) =>
+            if n == sn && argsAreParams sps args.toList then .ok (.tVar 0)   -- self-recursion → μ-bound var
+            else do let args' ← args.toList.mapM (resolveTyG gen aliases fuel σ self?)
+                    monoData gen aliases fuel n args'
+        | none => do let args' ← args.toList.mapM (resolveTyG gen aliases fuel σ self?)
+                     monoData gen aliases fuel n args'
+    | .tInt      => .ok .tInt
+    | .tUnit     => .ok .tUnit
+    | .tSelf     => .ok .tSelf
+    | .tVar n    => .ok (.tVar n)
+    | .tMu b     => do return .tMu   (← resolveTyG gen aliases fuel σ self? b)
+    | .tArr a b  => do return .tArr  (← resolveTyG gen aliases fuel σ self? a) (← resolveTyG gen aliases fuel σ self? b)
+    | .tSum a b  => do return .tSum  (← resolveTyG gen aliases fuel σ self? a) (← resolveTyG gen aliases fuel σ self? b)
+    | .tProd a b => do return .tProd (← resolveTyG gen aliases fuel σ self? a) (← resolveTyG gen aliases fuel σ self? b)
+    | .tThunk t  => do return .tThunk (← resolveTyG gen aliases fuel σ self? t)
+    | .tEff ns t => do return .tEff ns (← resolveTyG gen aliases fuel σ self? t)
+
+/-- A bare type NAME: a monomorphic alias, else fail-loud (a generic name used WITHOUT args, or a typo). -/
+def resolveName (gen : List (String × GenData)) (aliases : List (String × Ty)) (n : String) : Except String Ty :=
+  match aliases.lookup n with
+  | some t => .ok t
+  | none   => match gen.lookup n with
+              | some _ => .error s!"generic type '{n}' needs type argument(s) (`{n} …`)"
+              | none   => .error s!"unknown type name '{n}'"
+end
+
+/-- Close a type over the elaboration env: monomorphic names via `aliases`, generic applications
+(`List Int`) monomorphized via `monoData` (ADR-0069 bite-1). The public entry (σ empty, no self). -/
+def resolveTy (gen : List (String × GenData)) (aliases : List (String × Ty)) (t : Ty) : Except String Ty :=
+  resolveTyG gen aliases 1000 [] none t
 
 /-- Inject a payload at ctor position `i` of `n` (right-nested sum; `n = 1` ⇒ no sum wrapper). -/
 def injSum : Nat → Nat → Surf → Surf
@@ -1245,6 +1326,38 @@ def armsToList : DArms → List (String × List String × Surf)
   | .nil            => []
   | .cons c bs b r  => (c, bs, b) :: armsToList r
 
+/-- Navigate to ctor position `i` of `n` in a right-nested-sum payload (`n = 1` ⇒ the whole thing is
+the single ctor's payload) — the eliminator dual of `injSum` (ADR-0069 bite-1, generic match). -/
+def navSum : Nat → Nat → VT → Option VT
+  | _,     1, p            => some p
+  | 0,     _, .sum p _     => some p
+  | i + 1, n, .sum _ rest  => navSum i (n - 1) rest
+  | _,     _, _            => none
+
+/-- Split a k-ary right-nested product payload into its field types (`splitProd`'s dual of `prodOfTys`;
+`arity 0` ⇒ `[]` for a `Unit` payload). -/
+def splitProd : Nat → VT → List VT
+  | 0,     _              => []
+  | 1,     p              => [p]
+  | k + 1, .prod a rest   => a :: splitProd k rest
+  | _,     p              => [p]
+
+/-- GENERIC-match binder types (ADR-0069 bite-1): from the CONCRETE scrutinee μ (`τ = μX. Unit +
+(Int × X)`), unroll + navigate each ctor's payload to its field types — so `Cons(h, t)` on a `List Int`
+binds `h : Int`, `t : List Int`. The kernel's own `VTy.unrollMu` does the substitution; the checker
+would derive the same types at typing, but the ELABORATOR needs them so `anfSplit` inside an arm can
+synthesize a computation (`($length) t`). Returns a per-ctor-NAME table. Empty if `τ` isn't a μ. -/
+def genBinderTable (ctors : List (String × CtorInfo)) (dataName : String) (τ : VT) :
+    List (String × List IVTy) :=
+  match τ with
+  | .mu body =>
+      let unrolled := VTy.unrollMu body
+      (ctors.filter (fun p => p.2.dataName == dataName)).filterMap (fun (cn, ci) =>
+        match navSum ci.idx ci.total unrolled with
+        | some pay => some (cn, (splitProd ci.arity pay).map embV)
+        | none     => none)
+  | _ => []
+
 
 /-- A-normalize a VALUE-position subterm (#41), mirroring `lowerV`-or-`letC` in `Surface.lower` but
 at the NAMED elaboration layer (no de-Bruijn shift — a fresh binder just extends `Γ`). Returns the
@@ -1315,7 +1428,12 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | _, .lit n => .ok (.lit n)
   | _, .var x =>
       match env.ctors.lookup x with           -- a 0-ary ctor use (`Nil`) IS an intro (ADR-0069)
-      | some ci => if ci.arity == 0 then .ok (ctorIntro ci .unitS)
+      | some ci => if ci.arity == 0 then
+                     -- GENERIC (bite-1): a BARE fold, no eager annotation — the element type is unknown
+                     -- here, so check-mode from an enclosing annotation drives the concrete μ. Monomorphic:
+                     -- the concrete `ci.dataTy` annotation, exactly as ADR-0069.
+                     if ci.params.isEmpty then .ok (ctorIntro ci .unitS)
+                     else .ok (Surf.foldS (injSum ci.idx ci.total .unitS))
                    else .error s!"constructor '{x}' expects {ci.arity} argument(s)"
       | none    => .ok (.var x)
   | _, .getS  => .ok .getS
@@ -1364,7 +1482,9 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             -- at equal depth but shadow innermost-first (as `lower`'s sentinels do), so it stays correct.
             let a' ← elabS env Γ a
             let (_, w, v) ← anfSplit Γ a'
-            return w (ctorIntro ci v)
+            -- GENERIC (bite-1): a BARE fold (no annotation) — check-mode drives the concrete element type.
+            if ci.params.isEmpty then return w (ctorIntro ci v)
+            else return w (Surf.foldS (injSum ci.idx ci.total v))
       | none    => do return .app (.var c) (← elabS env Γ a)
   | Γ, .app f a     => do                     -- A-normalize a computation ARGUMENT (`($f)(n-1)`), #41
       let f' ← elabS env Γ f
@@ -1390,7 +1510,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   -- `: T` annotation drives check-mode on the recursive `fun`). The whole thing type-checks + lowers
   -- through the EXISTING checker/kernel — the desugar emits only ordinary `Surf`.
   | Γ, .letRecS name t (.lam pn pbody) bodyExpr => do
-      let t' ← resolveTy env.aliases t
+      let t' ← resolveTy env.gen env.aliases t
       let uT : IVTy := .U ⊥ (embC (ctyOf t'))                  -- f : Thunk T
       let dom : IVTy := match tyBoth t' with                   -- the fun's param type (domain of T)
         | (_, .arr _ A _) => embV A
@@ -1425,14 +1545,26 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
         | _               => Γ1
       return wrap (.splitS a b p' (← elabS env Γ' body))
   | Γ, .annotS (.lam x b) t => do   -- an ascribed lam's body sees its param's type (as in checking)
-      let t' ← resolveTy env.aliases t         -- data names in user ascriptions close here (ADR-0069)
+      let t' ← resolveTy env.gen env.aliases t         -- data names in user ascriptions close here (ADR-0069)
       let Γ' := curryBind Γ (.lam x b) t'      -- bind EVERY curried param, not just the outermost
       return .annotS (← elabS env Γ' (.lam x b)) t'
-  | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.aliases t)
+  | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.gen env.aliases t)
   | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
       let s0 ← elabS env Γ s
       let (Γ, wrap, s') ← anfSplit Γ s0        -- A-normalize a computation scrutinee, #41
-      let arms' ← elabArms env Γ arms          -- bodies elaborated STRUCTURALLY (ctor-typed Γ)
+      -- GENERIC (bite-1): derive concrete arm-binder types from the CONCRETE scrutinee μ, so an arm's
+      -- `anfSplit` can synthesize a computation (`($length) t`). Monomorphic ctors ⟹ empty table (elabArms
+      -- falls back to `payloadClosed`, unchanged). A scrutinee we can't yet infer ⟹ empty (the checker catches).
+      let binderTys : List (String × List IVTy) := match armsToList arms with
+        | (c0, _, _) :: _ =>
+            match env.ctors.lookup c0 with
+            | some ci0 => if ci0.params.isEmpty then []
+                          else match runInferV (synthSV Γ s') with
+                               | .ok τ    => genBinderTable env.ctors ci0.dataName τ
+                               | .error _ => []
+            | none => []
+        | [] => []
+      let arms' ← elabArms env binderTys Γ arms   -- bodies elaborated under ctor-typed Γ
       match armsToList arms' with
       | [] => .error "match needs at least one arm"
       | armsL@((c0, _, _) :: _) =>
@@ -1443,9 +1575,17 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             let dcs := (dcs.toArray.qsort (fun a b => a.idx < b.idx)).toList
             if armsL.length != dcs.length then
               throw s!"match on {ci0.dataName}: {dcs.length} constructor(s), {armsL.length} arm(s)"
-            let expected := vtyOf ci0.dataTy
+            -- GENERIC (bite-1): the scrutinee is a CONCRETE instantiation (`μX. Unit + (Int × X)`), which
+            -- can't equal the placeholder `ci0.dataTy` — accept any μ of the right variant count; the arm
+            -- binders are typed by the CHECKER from the concrete unrolled μ (`#u = unfold s'`). Monomorphic:
+            -- the exact structural equality of ADR-0069, unchanged.
             match runInferV (synthSV Γ s') with
-            | .ok τ => if τ != expected then throw s!"match scrutinee is {showVTy τ}, not {ci0.dataName}"
+            | .ok τ =>
+                if ci0.params.isEmpty then
+                  if τ != vtyOf ci0.dataTy then throw s!"match scrutinee is {showVTy τ}, not {ci0.dataName}"
+                else match τ with
+                     | .mu _ => pure ()
+                     | _     => throw s!"match scrutinee is {showVTy τ}, not a {ci0.dataName}"
             | .error e => throw s!"match scrutinee: {e}"
             -- order arms by ctor position (pure bookkeeping — no recursion below)
             let mut ordered : List (List String × Surf) := []
@@ -1486,18 +1626,26 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
 /-- Elaborate named-match arm BODIES structurally over `DArms`, each under its ctor's
 payload-typed Γ (unknown ctor / wrong arity ⇒ un-extended Γ here; the `matchD` arm's
 validation fail-louds right after). -/
-def elabArms (env : ElabEnv) : NCtx → DArms → Except String DArms
+def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx → DArms → Except String DArms
   | _, .nil => .ok .nil
   | Γ, .cons c bs b r => do
-      let Γa := match env.ctors.lookup c with
-        | some ci =>
-            (match bs, ci.payloadClosed with
-             | [b1], [t1]         => (b1, embV (vtyOf t1)) :: Γ
-             | [b1, b2], [t1, t2] => (b2, embV (vtyOf t2)) :: (b1, embV (vtyOf t1)) :: Γ
+      let Γa := match binderTys.lookup c with
+        -- GENERIC (bite-1): concrete field types derived from the scrutinee's μ (`genBinderTable`).
+        | some tys =>
+            (match bs, tys with
+             | [b1], [t1]         => (b1, (t1 : Scheme)) :: Γ
+             | [b1, b2], [t1, t2] => (b2, (t2 : Scheme)) :: (b1, (t1 : Scheme)) :: Γ
              | _, _               => Γ)
-        | none => Γ
+        -- MONOMORPHIC: the ctor's own closed payload types (ADR-0069), unchanged.
+        | none => match env.ctors.lookup c with
+          | some ci =>
+              (match bs, ci.payloadClosed with
+               | [b1], [t1]         => (b1, embV (vtyOf t1)) :: Γ
+               | [b1, b2], [t1, t2] => (b2, embV (vtyOf t2)) :: (b1, embV (vtyOf t1)) :: Γ
+               | _, _               => Γ)
+          | none => Γ
       let b' ← elabS env Γa b
-      let r' ← elabArms env Γ r
+      let r' ← elabArms env binderTys Γ r
       .ok (.cons c bs b' r')
 end
 
@@ -1513,49 +1661,61 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut ctors   : List (String × CtorInfo) := []
   let mut insts   : InstEnv := []
   let mut traits  : List (String × List OpSig) := []
+  let mut gen     : List (String × GenData) := []
   for d in ds do
     match d with
-    | .dataD n cs => do
+    | .dataD n [] cs => do                       -- MONOMORPHIC: byte-identical to the ADR-0069 path
         if cs.isEmpty then throw s!"data {n}: needs at least one constructor"
-        if (aliases.lookup n).isSome then throw s!"duplicate type name '{n}'"
-        let openPays ← cs.mapM (fun c => c.2.mapM (resolveTy ((n, Ty.tVar 0) :: aliases)))
+        if (aliases.lookup n).isSome || (gen.lookup n).isSome then throw s!"duplicate type name '{n}'"
+        let openPays ← cs.mapM (fun c => c.2.mapM (resolveTy gen ((n, Ty.tVar 0) :: aliases)))
         let closed := Ty.tMu (sumOfTys (openPays.map prodOfTys))
-        let closedPays ← cs.mapM (fun c => c.2.mapM (resolveTy ((n, closed) :: aliases)))
+        let closedPays ← cs.mapM (fun c => c.2.mapM (resolveTy gen ((n, closed) :: aliases)))
         aliases := (n, closed) :: aliases
         let mut i := 0
         for (c, cp) in cs.zip closedPays do
           if (ctors.lookup c.1).isSome then throw s!"duplicate constructor '{c.1}'"
           if cp.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
-          ctors := (c.1, ⟨n, i, cs.length, cp.length, cp, closed⟩) :: ctors
+          ctors := (c.1, ⟨n, i, cs.length, cp.length, cp, closed, [], []⟩) :: ctors
+          i := i + 1
+    | .dataD n params cs => do                   -- GENERIC (ADR-0069 bite-1): register the TEMPLATE; ctors monomorphize per use
+        if cs.isEmpty then throw s!"data {n}: needs at least one constructor"
+        if (aliases.lookup n).isSome || (gen.lookup n).isSome then throw s!"duplicate type name '{n}'"
+        if params.eraseDups.length != params.length then throw s!"data {n}: duplicate type parameter"
+        gen := (n, ⟨params, cs⟩) :: gen
+        let mut i := 0
+        for c in cs do
+          if (ctors.lookup c.1).isSome then throw s!"duplicate constructor '{c.1}'"
+          if c.2.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
+          ctors := (c.1, ⟨n, i, cs.length, c.2.length, [], .tUnit, params, c.2⟩) :: ctors
           i := i + 1
     | .traitD n sigs _ => traits := (n, sigs) :: traits
     | .implD tn τTy ops =>
         match traits.lookup tn with
         | none => throw s!"impl of undeclared trait '{tn}'"
         | some sigs => do
-            let τR ← resolveTy aliases τTy
+            let τR ← resolveTy gen aliases τTy
             for od in ops do
               match sigs.find? (fun s => s.name == od.name) with
               | none => throw s!"impl '{tn}' defines '{od.name}', which is not an op of the trait"
               | some sig => do
                   if od.params.length != sig.params.length then
                     throw s!"'{od.name}': impl has {od.params.length} params, the trait declares {sig.params.length}"
-                  let retR ← resolveTy aliases (substSelf τR sig.retTy)
+                  let retR ← resolveTy gen aliases (substSelf τR sig.retTy)
                   let bodyΓ : NCtx := match od.params with
                     | [p]    => [(p, embV (vtyOf τR))]
                     | [p, q] => [(q, embV (vtyOf τR)), (p, embV (vtyOf τR))]
                     | _      => []
-                  let ebody ← elabS ⟨insts, ctors, aliases⟩ bodyΓ od.body
+                  let ebody ← elabS ⟨insts, ctors, aliases, gen⟩ bodyΓ od.body
                   insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody⟩]
-  return ⟨insts, ctors, aliases⟩
+  return ⟨insts, ctors, aliases, gen⟩
 
 /-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
 you can't mix a char and a number), `Str` = a monomorphic char-list. Injected before every program so
 string/char literals (`"hi"`, `'a'`) resolve, UNLESS the program declares `Char`/`Str` itself. Library
 code over `data` + `Int` — NO kernel primitive (invariant #5). -/
 def strPrelude : List Decl :=
-  [ .dataD "Char" [("Char", [.tInt])],
-    .dataD "Str"  [("SNil", []), ("SCons", [.tName "Char", .tName "Str"])] ]
+  [ .dataD "Char" [] [("Char", [.tInt])],
+    .dataD "Str"  [] [("SNil", []), ("SCons", [.tName "Char", .tName "Str"])] ]
 
 /-- The built-in string STDLIB (ADR-0074, #49 stage 3): `concat`/`reverse`/`eq` as `let rec` folds
 over `Str`, injected in scope of EVERY program's body (closing the #50 reuse gap — a program shouldn't
@@ -1603,8 +1763,8 @@ def injectStdlib (declared : List String) (body : Surf) : Except String Surf := 
 
 /-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve the body. -/
 def elabProg (p : Prog) : Except String Surf := do
-  let declared := p.decls.filterMap (fun | .dataD n _ => some n | _ => none)
-  let prelude := strPrelude.filter (fun | .dataD n _ => !declared.contains n | _ => true)
+  let declared := p.decls.filterMap (fun | .dataD n _ _ => some n | _ => none)
+  let prelude := strPrelude.filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
   let body ← injectStdlib declared p.body
   elabS (← buildEnv (prelude ++ p.decls)) [] body
 
@@ -1753,7 +1913,7 @@ def checkLaws (src : String) : Except String (List String) := do
           | .dataD ..  => pure ()
           | .implD tn' τTy _ =>
               if tn' == tn then
-                let τR ← resolveTy env.aliases τTy      -- named impl targets sample at the closed μ
+                let τR ← resolveTy env.gen env.aliases τTy      -- named impl targets sample at the closed μ
                 for l in laws do
                   let sample := tuples l.params.length (sampleVT (vtyOf τR))
                   if sample.all (checkLawOn env l.params l.body) then
@@ -2185,5 +2345,48 @@ def composeTwoSrc := "let compose = {fun f => fun g => fun x => ($f)(($g) x)} in
 #guard runTypedYieldsInt 20 "match Right(7) { Left(a) -> 0, Right(x) -> x }" 7
 #guard runTypedYieldsInt 20 "let x = Right(7) in match x { Left(a) -> 0, Right(x) -> x }" 7
 #guard runTypedYieldsInt 20 "match Left(3) { Left(a) -> a, Right(x) -> x }" 3
+
+/-! ### GENERIC data types (ADR-0069 bite-1) — `data List a` monomorphized per concrete instantiation.
+The kernel only ever sees the closed μ (`List Int` ↦ `μX. Unit + (Int × X)`); a generic ctor elaborates
+to a BARE `fold` whose element type an enclosing annotation drives (elaborate-to-mono, kernel untouched). -/
+
+-- ⭐ The keystone: `data List a` PARSES, and a `List Int` program TYPES + RUNS via `bang eval`.
+-- `length` over `Cons(1, Cons(2, Cons(3, Nil))) : List Int` = 3. The `: List Int` annotation drives the
+-- concrete μ through the nested bare folds; `length`'s match binders (`h : Int`, `t : List Int`) are
+-- typed by the checker from the unrolled scrutinee.
+def genListLen :=
+  "data List a = Nil | Cons(a, List a) " ++
+  "let rec length : List Int -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> 1 + ($length) t } in " ++
+  "($length) (Cons(1, Cons(2, Cons(3, Nil))) : List Int)"
+#guard runTypedYieldsInt 2000 genListLen 3
+
+-- `sum` uses the ELEMENT binder `h : Int` (not just the tail) — proves the checker types the payload
+-- field from the concrete instantiation. 10 + 20 + 5 = 35.
+def genListSum :=
+  "data List a = Nil | Cons(a, List a) " ++
+  "let rec sum : List Int -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> h + ($sum) t } in " ++
+  "($sum) (Cons(10, Cons(20, Cons(5, Nil))) : List Int)"
+#guard runTypedYieldsInt 2000 genListSum 35
+
+-- ⭐ POLYMORPHIC data: the SAME `data List a` decl at TWO distinct element types in ONE program —
+-- `List Int` AND `List (Int * Int)`, each with its own monomorphic consumer. 2 + 1 = 3. Proves the
+-- decl is generic (not a single monomorphized instance).
+def genListTwoTypes :=
+  "data List a = Nil | Cons(a, List a) " ++
+  "let rec lenI : List Int -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> 1 + ($lenI) t } in " ++
+  "let rec lenP : List (Int * Int) -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> 1 + ($lenP) t } in " ++
+  "let a = ($lenI) (Cons(1, Cons(2, Nil)) : List Int) in " ++
+  "let b = ($lenP) (Cons((7, 8), Nil) : List (Int * Int)) in a + b"
+#guard runTypedYieldsInt 3000 genListTwoTypes 3
+
+-- A GENERIC type with TWO params: `data Pair a b = P(a, b)` at `Pair Int (Int * Int)`, projected.
+def genPair :=
+  "data Pair a b = P(a, b) " ++
+  "let p = (P(4, (1, 2)) : Pair Int (Int * Int)) in match p { P(x, y) -> let (m, n) = y in x + m + n }"
+#guard runTypedYieldsInt 800 genPair 7
+
+-- Honest boundary: an UNANNOTATED generic ctor in synth position fails loud ("annotate"), never a wrong
+-- accept — the ADR-0075 annotation-checked tier. (A bare `Cons(1, Nil)` has no expected μ.)
+#guard (match checkProg "data List a = Nil | Cons(a, List a) Cons(1, Nil)" with | .error _ => true | .ok _ => false)
 
 end Bang.TypeCheck
