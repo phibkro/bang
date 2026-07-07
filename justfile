@@ -132,6 +132,10 @@ changelog:
 reference:
     python3 tools/gen-reference.py
 
+# Regenerate _site/index.html — the glanceable progress dashboard (milestones + ◊-map + proof-state + pulse).
+dashboard:
+    python3 tools/gen-dashboard.py
+
 # Validate the generated module-graph mermaid actually COMPILES (mmdc render). On-demand; the
 # build (`just import-graph`) also auto-compiles before writing, so a broken graph never lands.
 check-mermaid:

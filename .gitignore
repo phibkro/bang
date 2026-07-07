@@ -21,3 +21,6 @@ oracle/_build/
 
 # macOS
 .DS_Store
+
+# generated dashboard (CI regenerates via .github/workflows/pages.yml)
+_site/
