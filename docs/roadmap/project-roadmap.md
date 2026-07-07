@@ -26,6 +26,21 @@ no project pulling it is a signal to question the feature, not schedule it.
 generated DAG; bang's own roadmap is bang-shaped). A project is DONE when its required features land
 AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
 
+## Committed sequence (decided 2026-07-07)
+
+```
+1  ▸ PARSER-COMBINATOR LIBRARY   ← THE NEXT MILESTONE. The acceptance test for the polymorphism in
+     flight — commits the plan to: finish the ICTy re-rep (bare higher-order) + bite-1 generic data,
+     with a parser-combinator library as the proof. The tokenizer's generalization (retires its own
+     #50 mono-limit finding). Self-hosting payoff: bang's parser as a bang library.
+2  ▸ SPREADSHEET (reactivity)     next candidate — lights up the distinctive DORMANT feature. NB the
+     reactive MECHANISM is already proven (`reactiveCell` runs + a liveness law in the Audit gate,
+     ADR-0005); the project EXTENDS it to a reactive-programming surface (not build-from-scratch).
+     Rehearses incremental compilation (same hash-staleness shape, ADR-0076).
+── wishlist (further out, roughly in dependency order) ──
+   kv-store (STM — full payoff needs post-v1 concurrency) · web server · graphics (2048) · OS/distributed
+```
+
 ## The graph (projects ▸ the features they pull ▸ what they stress)
 
 ```
