@@ -35,12 +35,14 @@ bite  unlocks                                          power     decid.        t
       μX.Unit+(Int×X)) · match navigates via kernel unrollMu. Payoff: genListLen→3, genListSum→35,
       genListTwoTypes→3 (POLYMORPHIC, one decl at two element types). Additive (mono data unchanged, Vec→10);
       kernel/census UNTOUCHED. NOTE (item 3, higher-order bite-0b): higher-order compose landed at b6c66a6.
-      ⚠ FOLLOW-ON (demand-proven by the parser-combinator library, `examples/parser-combinators/`, `a306815`):
-      intro is ANNOTATION-DRIVEN — a generic COMBINATOR can't CONSTRUCT generic data (`Some((f a, rest)) :
-      Option (b×Str)` where `b` is a type var → bare ctor in synth fails "annotate", can't annotate a type
-      var). So the library is monomorphic-in-result (Int), not fully-generic `Parser a`. FIX = **annotation-
-      FREE generic introduction** (infer instantiation from ctor FIELD types) — **#55, the #50-successor**;
-      the blocker for a fully-generic `Parser a` / a fully-generic combinator stdlib.
+      ✅ FOLLOW-ON DONE (#55, ADR-0081, `a462728`, annofree): **annotation-FREE generic introduction** — a
+      generic ctor IS a polymorphic function (`Some : ∀a. a → Option a`); in synth it infers the instantiation
+      from FIELD types via HM (template-μ markers → `embVInst` fresh holes → unify against fields), NOT
+      monoData. All 3 parser walls lifted (construction-in-synth · match-through-higher-order-parser via
+      arm-ctor recovery · computation-in-ctor-arg via `splitS` hole→prod). PAYOFF: `examples/parser-combinators`
+      now GENERIC — `mapP : (a→b) → Parser a → Parser b` reused at `(Int×Int)` (`b≠a`), runs→35. Elaborator
+      TOTAL; kernel/census UNTOUCHED. Residual = value-generic combining combinators (expressible, demo choice)
+      + effect row-poly (Item 3, orthogonal).
 2   generic TRAITS + bounds (typeclasses + laws)       HM+bound  inferred      checker+elab    ✅ DONE (f463011)
       trait Monoid a; fold : Monoid a => List a -> a   ← the generic-lawful-stdlib payoff (Q26)
       LANDED (gentraits, ADR-0080): bounded `fn sum(xs) : List a -> a where Monoid a`; bound resolves the

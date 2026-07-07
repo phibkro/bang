@@ -56,6 +56,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — generic data types — data List a, monomorphized to the kernel (polymorphism bite-1) (`3698367`)
 - **examples** — parser-combinator library + examples/<project>/ structure + a run-oracle (the polymorphism acceptance test) (`a306815`)
 - **typecheck** — bounded generic functions over traits — fold : Monoid a => List a -> a, monomorphized (polymorphism bite-2) (`f463011`)
+- **typecheck** — annotation-free generic introduction — the parser library goes fully generic (#55, closes #55) (`a462728`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
