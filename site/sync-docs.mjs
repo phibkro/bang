@@ -48,6 +48,12 @@ function mdxSafe(src) {
   // Flatten [[wikilinks]] -> plain text (whole-text: they wrap across lines in our
   // prose). Ours point at auto-memory slugs, not site pages, so they'd be dead links.
   src = src.replace(/\[\[([^\]]+?)\]\]/g, '$1')
+  // Vocs renders mermaid via a CLIENT component whose render effect loops on our
+  // pages (colorScheme-keyed useEffect → infinite re-render, the "reload" bug). Strip
+  // the fences with a pointer — mermaid renders natively in the GitHub source. (A
+  // build-time pre-render to static SVG could restore them on the site later.)
+  src = src.replace(/```mermaid\b[\s\S]*?```/g,
+    '> 📊 _Mermaid diagram omitted on the docs site — view it rendered in the repository source._')
   const out = []
   let inFence = false
   let fenceTok = ''
