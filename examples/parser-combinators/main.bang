@@ -2,30 +2,27 @@ data Option a = None | Some(a)
 let isDigit = { fun n => if 47 < n then (if n < 58 then 0 == 0 else 0 == 1) else 0 == 1 } in
 let sub48   = { fun n => n - 48 } in
 let satisfy = { fun pred => fun s => match (s : Str) {
-  SNil -> (None : Option (Int * Str)),
+  SNil -> None,
   SCons(c, rest) -> match c { Char(n) ->
-    if (($pred) n) then (Some((n, rest)) : Option (Int * Str))
-    else (None : Option (Int * Str)) } } } in
+    if (($pred) n) then Some((n, rest)) else None } } } in
 let char = { fun code => ($satisfy) { fun n => n == code } } in
-let mapP = { fun f => fun p => fun s => match (($p) s : Option (Int * Str)) {
-  None -> (None : Option (Int * Str)),
-  Some(r) -> let (v, rest) = r in let w = (($f) v : Int) in
-             (Some((w, rest)) : Option (Int * Str)) } } in
-let orElse = { fun p => fun q => fun s => match (($p) s : Option (Int * Str)) {
+let mapP = { fun f => fun p => fun s => match (($p) s) {
+  None -> None,
+  Some(r) -> let (v, rest) = r in let w = ($f) v in Some((w, rest)) } } in
+let orElse = { fun p => fun q => fun s => match (($p) s) {
   None -> (($q) s),
-  Some(r) -> (Some(r) : Option (Int * Str)) } } in
-let andThen = { fun p => fun q => fun s => match (($p) s : Option (Int * Str)) {
-  None -> (None : Option (Int * Str)),
-  Some(r1) -> let (v1, rest1) = r1 in match (($q) rest1 : Option (Int * Str)) {
-    None -> (None : Option (Int * Str)),
-    Some(r2) -> let (v2, rest2) = r2 in let sm = (v1 + v2 : Int) in
-                (Some((sm, rest2)) : Option (Int * Str)) } } } in
+  Some(r) -> Some(r) } } in
+let andThen = { fun p => fun q => fun s => match (($p) s) {
+  None -> None,
+  Some(r1) -> let (v1, rest1) = r1 in match (($q) rest1) {
+    None -> None,
+    Some(r2) -> let (v2, rest2) = r2 in let sm = v1 + v2 in Some((sm, rest2)) } } } in
 let rec many : Thunk (Str -> Option (Int * Str)) -> Str -> Int = fun p => fun s =>
-  match (($p) s : Option (Int * Str)) {
+  match (($p) s) {
     None -> 0,
     Some(r) -> let (v, rest) = r in 1 + ($many) p rest } in
 let firstVal = { fun p => fun s =>
-  match (($p) s : Option (Int * Str)) { None -> 0, Some(r) -> let (v, rest) = r in v } } in
+  match (($p) s) { None -> 0, Some(r) -> let (v, rest) = r in v } } in
 let digit = { ($mapP) sub48 { ($satisfy) isDigit } } in
 let nDigits = ($many) digit "42abc" in
 let firstDigit = ($firstVal) digit "7" in
@@ -33,4 +30,7 @@ let choiceP = { ($orElse) { ($char) 122 } digit } in
 let choice = ($firstVal) choiceP "9x" in
 let seqP = { ($andThen) digit digit } in
 let seqSum = ($firstVal) seqP "34" in
-nDigits + firstDigit + choice + seqSum
+let toPair = { fun v => (v, v) } in
+let pairP = { ($mapP) toPair digit } in
+let pairSum = match (($pairP) "5") { None -> 0, Some(r) -> let (pv, rest) = r in let (x, y) = pv in x + y } in
+nDigits + firstDigit + choice + seqSum + pairSum

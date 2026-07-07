@@ -1,78 +1,88 @@
 # parser-combinators
 
 A **parser-combinator library written in bang** — the acceptance test for the
-polymorphism milestone (ADR-0075 higher-order + ADR-0079 generic data). It
-proves the two new capabilities *compose into a real reusable library*.
+polymorphism milestone (ADR-0075 higher-order + ADR-0079 generic data + **#55
+annotation-free generic introduction**). It proves the capabilities *compose into
+a real reusable library with GENERIC combinators that RUN*.
 
 ## What it is
 
 A parser is a thunked function
 
 ```
-Parser = Thunk (Str -> Option (Int * Str))
+Parser a = Thunk (Str -> Option (a * Str))
 ```
 
 consume a prefix of the input, return `Some((value, rest))` on success or `None`
-on failure. Result values are `Int` (this is a **monomorphic-at-Int** library —
-see *What walled* for why the result type is not itself generic).
+on failure. With #55 the result type is **itself generic** (`Parser a`): `mapP`
+and `orElse` are `∀ a b`, and every `Some(…)` is built with **no annotation** —
+the element type is *inferred* from the fields (see *How #55 lifts the walls*).
 
 ## What it demonstrates
 
 | combinator | signature | capability exercised |
 |---|---|---|
-| `satisfy`  | `(Int -> Bool) -> Parser`            | higher-order (predicate → parser) |
-| `char`     | `Int -> Parser`                      | specialization of `satisfy` |
-| `mapP`     | `(Int -> Int) -> Parser -> Parser`   | higher-order (function → parser → parser) |
-| `orElse`   | `Parser -> Parser -> Parser`         | ordered choice `<\|>` |
-| `andThen`  | `Parser -> Parser -> Parser`         | sequencing (bind); value = sum |
-| `many`     | `Parser -> Str -> Int`               | recursive fold (zero-or-more) |
+| `satisfy`  | `(Int -> Bool) -> Parser Int`            | higher-order (predicate → parser) |
+| `char`     | `Int -> Parser Int`                      | specialization of `satisfy` |
+| `mapP`     | `(a -> b) -> Parser a -> Parser b`       | **fully generic** map (b inferred, no annotation) |
+| `orElse`   | `Parser a -> Parser a -> Parser a`       | **generic** ordered choice `<\|>` |
+| `andThen`  | `Parser Int -> Parser Int -> Parser Int` | sequencing (bind); value = sum |
+| `many`     | `Parser Int -> Str -> Int`               | recursive fold (zero-or-more) |
 
-- **Generic data** — `data Option a` used at `Option (Int * Str)` *and* `Option Int`;
-  products `(Int * Str)`; `Str = List Char`.
+- **Generic data, annotation-free** — `data Option a` constructed at `Option (Int *
+  Str)`, `Option ((Int*Int) * Str)`, … with **no** `: Option …` at any site; the
+  instantiation is inferred from the constructor's fields (#55).
 - **Higher-order polymorphism** — every combinator takes thunked parsers/functions
   and applies them; `digit = mapP sub48 (satisfy isDigit)` composes two combinators.
+- **Genericity witness** — the ONE `mapP` is reused at result type `(Int * Int)`
+  (`pairP = mapP {fun v => (v, v)} digit`), proving `Parser a → Parser b` with `b ≠ a`.
 
-The demo runs four parses and sums them:
+The demo runs the parses and sums them:
 
 ```
-many digit "42abc"                    -> 2   (counts digits 4,2)
-firstVal digit "7"                    -> 7   (digit value, not code point)
-firstVal (orElse (char 'z') digit) "9x" -> 9 ('z' fails, falls to digit)
-firstVal (andThen digit digit) "34"   -> 7   (3 + 4)
-                                     sum = 25
+many digit "42abc"                      -> 2   (counts digits 4,2)
+firstVal digit "7"                      -> 7   (digit value, not code point)
+firstVal (orElse (char 'z') digit) "9x" -> 9   ('z' fails, falls to digit)
+firstVal (andThen digit digit) "34"     -> 7   (3 + 4)
+pairP "5" (mapP at b := Int*Int)        -> 10  (5 + 5, the genericity witness)
+                                     sum = 35
 ```
 
 ## How to run
 
 ```
 nix develop            # dev shell (lake on PATH)
-lake exe bang run examples/parser-combinators/main.bang    # -> 25
+lake exe bang run examples/parser-combinators/main.bang    # -> 35
 ```
 
-or via the gate: `just check-examples` (diffs stdout against `expected.txt`).
+`bang run` is the TYPED pipeline (`checkAndLower`, ADR-0076) — the generic
+combinators **type-check** before they run. Or via the gate: `just check-examples`
+(diffs stdout against `expected.txt`).
 
-## What walled (the finding for the next #50)
+## How #55 lifts the walls (the ADR-0079 follow-on)
 
-The library is **monomorphic in the result type** (`Int`), not fully generic
-(`Parser a`). Two limits of the current polymorphism, both from ADR-0079's
-**annotation-driven generic-data introduction**:
+The prior version was **monomorphic-at-Int** because a generic combinator could
+not construct generic data without a placeable annotation. Three walls, now lifted:
 
-1. **A generic combinator cannot construct generic data.** A truly generic
-   `map : (a -> b) -> Parser a -> Parser b` must build `Some((f a, rest)) : Option (b * Str)`
-   — but `b` is a *type variable*, and a bare generic constructor in synth
-   position fails loud (`fold needs an expected μ type — annotate`). You cannot
-   annotate with a type variable, and **annotation-free introduction is deferred**
-   (ADR-0079 "Rejected/staged"). So combinators are pinned to a concrete result
-   type where every construction site *can* carry a concrete annotation.
+1. **Generic-ctor construction in synth position** — a bare `Some(x)` / `Cons(1,
+   Nil)` now types: the instantiation is inferred by unifying the *fields* against
+   the ctor's template μ (params → fresh holes). A ctor is `∀a. …`, instantiated
+   like any polymorphic function. So `Some((w, rest))` with `w : b` synthesizes
+   `Option (b * Str)` — `b` a type variable, no annotation.
+2. **Match through a higher-order parser** — matching `($p) s` (whose `Option`
+   structure is behind the `p` hole) works: the `match` recovers the scrutinee's
+   data type from its arm constructors (`None`/`Some` ⟹ `Option`) and unifies a
+   template μ back onto the parser argument. So `mapP`/`orElse`/`andThen` inspect a
+   generic parser result with no `: Option (Int * Str)`.
+3. **Computation nested in a ctor arg** — `Some((($f) v, rest))` A-normalizes the
+   computation and its (generic) product field is split into fresh holes, so no
+   explicit `let w = (($f) v : Int)` is needed to place the type.
 
-2. **Check-mode does not thread through `match`/`if` arms, nor into a
-   constructor argument that is itself a computation.** Every construction site
-   needs its *own* explicit `(… : Option (Int * Str))`, and a computation nested
-   directly in a constructor arg (`Some((($f) v, rest))`, `Some((v1 + v2, …))`)
-   must be **let-bound first** (`let w = (($f) v : Int) in Some((w, rest))`) — the
-   binding is where the type lands. This is the ADR-0075 computation-hole boundary.
+### Residual (still needs annotation)
 
-**The feature that unblocks a fully generic `Parser a`:** annotation-free generic
-introduction (infer the element type from the constructor's field types at the
-intro site), which would let generic combinators construct `Some`/pairs without a
-placeable annotation. That is the next bite of PATH-polymorphism.
+`andThen`/`many`/`firstVal` stay Int-specialized here — not a generic-data wall but
+because they *combine values with `+`* or return a numeric default (`0`), which
+fixes the element to `Int`. A fully value-generic `andThen : Parser a -> Parser b
+-> Parser (a * b)` is expressible (returns a pair instead of a sum); it is left
+Int-shaped to keep the demo's numeric result. The one genuine frontier is **effect
+row-polymorphism** (item 3) — orthogonal to #55.

@@ -192,6 +192,13 @@ force), never a wrong accept. -/
 def holeBase  : Nat := 1000000
 def rigidBase : Nat := 2000000
 def bigFuel   : Nat := 1000000
+/-- Base for a GENERIC-ctor template's type-PARAM markers (`data Option a`'s `a` ⟹ `.tVar (paramBase+0)`,
+ADR-0079 annotation-FREE intro, #55). A distinct range ABOVE `rigidBase`/`holeBase` so a param marker
+is unambiguously NOT a μ-recursion var (0-2), a ∀-scheme rigid, or a hole. Markers exist ONLY inside the
+template `Ty` an annotation-free generic ctor carries; `embVInst`/`embCInst` turn EVERY marker into a
+FRESH unification hole at the annotation site (so no marker `tvar` ever survives into the checker's
+substitution / unrolling). -/
+def paramBase : Nat := 3000000
 
 mutual
 /-- A value inference type: a kernel `VTy` shape plus unification `vhole`s. `tvar` still carries BOTH
@@ -570,12 +577,97 @@ def lookupInst (Γ : NCtx) (x : String) : Infer IVTy := do
   | some s => instantiate s
   | none   => throw s!"unbound variable {x}"
 
-/-- μ-unroll an `IVTy` μ-BODY (concrete data types only — resolved `data` decls are hole-free). Extract
-to the kernel, apply the kernel's own `VTy.unrollMu`, re-embed. -/
-def unrollI (A : IVTy) : Infer IVTy := do
-  match extractV A with
-  | .ok Ak    => return embV (VTy.unrollMu Ak)
-  | .error e  => throw s!"unrollMu on a non-concrete μ: {e}"
+/-! IVTy-native μ-substitution — a faithful mirror of the kernel's `VTy.tyShiftFrom`/`tySubstFrom`
+(`Bang/Core/IR.lean`) that PRESERVES `vhole`/`chole` (which the extract-to-kernel round-trip would
+freeze into reserved-range `tvar`s). On a hole-free `IVTy` it agrees byte-for-byte with the kernel
+(same shift/subst/renumber), so it is a safe drop-in; the hole-preserving behaviour is what lets an
+annotation-FREE generic ctor (`Some(x)`, #55) unroll a μ whose element type is still an unsolved hole. -/
+mutual
+def ivShiftV (k : Nat) : IVTy → IVTy
+  | .int      => .int
+  | .unit     => .unit
+  | .cap ℓ    => .cap ℓ
+  | .vhole n  => .vhole n
+  | .tvar i   => if i ≥ k then .tvar (i + 1) else .tvar i
+  | .sum a b  => .sum  (ivShiftV k a) (ivShiftV k b)
+  | .prod a b => .prod (ivShiftV k a) (ivShiftV k b)
+  | .U φ b    => .U φ (ivShiftC k b)
+  | .mu a     => .mu (ivShiftV (k + 1) a)
+def ivShiftC (k : Nat) : ICTy → ICTy
+  | .F q a     => .F q (ivShiftV k a)
+  | .arr q a b => .arr q (ivShiftV k a) (ivShiftC k b)
+  | .chole n   => .chole n
+end
+mutual
+def ivSubstV (k : Nat) (T : IVTy) : IVTy → IVTy
+  | .int      => .int
+  | .unit     => .unit
+  | .cap ℓ    => .cap ℓ
+  | .vhole n  => .vhole n
+  | .tvar i   => if i = k then T else if i > k then .tvar (i - 1) else .tvar i
+  | .sum a b  => .sum  (ivSubstV k T a) (ivSubstV k T b)
+  | .prod a b => .prod (ivSubstV k T a) (ivSubstV k T b)
+  | .U φ b    => .U φ (ivSubstC k T b)
+  | .mu a     => .mu (ivSubstV (k + 1) (ivShiftV 0 T) a)
+def ivSubstC (k : Nat) (T : IVTy) : ICTy → ICTy
+  | .F q a     => .F q (ivSubstV k T a)
+  | .arr q a b => .arr q (ivSubstV k T a) (ivSubstC k T b)
+  | .chole n   => .chole n
+end
+
+/-- μ-unroll an `IVTy` μ-BODY: `A[μX.A / X]`, filling the nearest recursion var (index 0) with the whole
+`μX.A` — the IVTy mirror of the kernel's `VTy.unrollMu`, hole-preserving (see `ivSubstV`). -/
+def unrollI (A : IVTy) : Infer IVTy := return ivSubstV 0 (.mu A) A
+
+/-! ## Annotation-FREE generic-ctor instantiation (ADR-0079 follow-on, #55).
+
+A generic ctor elaborates to `annotS (foldS (inj v)) template`, where `template : Ty` is the ctor's
+closed μ with each type PARAM left as a marker `.tVar (paramBase + i)`. When the annotation is EMBEDDED
+into the checker (`embVInst`/`embCInst`), every marker becomes a FRESH unification hole — so the ctor's
+concrete instantiation is INFERRED by unifying the field expressions against the (hole-carrying) μ,
+rather than requiring a concrete `: Option Int` annotation. A concrete-use fills the holes; a use inside
+a polymorphic function leaves them, and `let`-generalization abstracts them (real HM over generic data). -/
+mutual
+def collectMarkersV : IVTy → List Nat
+  | .tvar n   => if n ≥ paramBase then [n] else []
+  | .sum a b  => collectMarkersV a ++ collectMarkersV b
+  | .prod a b => collectMarkersV a ++ collectMarkersV b
+  | .U _ b    => collectMarkersC b
+  | .mu a     => collectMarkersV a
+  | _         => []
+def collectMarkersC : ICTy → List Nat
+  | .F _ a     => collectMarkersV a
+  | .arr _ a b => collectMarkersV a ++ collectMarkersC b
+  | _          => []
+end
+mutual
+def substMarkersV (m : List (Nat × IVTy)) : IVTy → IVTy
+  | .tvar n   => match m.lookup n with | some t => t | none => .tvar n
+  | .sum a b  => .sum  (substMarkersV m a) (substMarkersV m b)
+  | .prod a b => .prod (substMarkersV m a) (substMarkersV m b)
+  | .U φ b    => .U φ (substMarkersC m b)
+  | .mu a     => .mu (substMarkersV m a)
+  | t         => t
+def substMarkersC (m : List (Nat × IVTy)) : ICTy → ICTy
+  | .F q a     => .F q (substMarkersV m a)
+  | .arr q a b => .arr q (substMarkersV m a) (substMarkersC m b)
+  | c          => c
+end
+
+/-- Embed a value annotation, replacing each generic-ctor param MARKER with a fresh unification hole
+(consistent per marker index). A marker-free annotation (every ordinary user/`let rec`/trait type) is
+byte-identically `embV (vtyOf t)` — the substitution map is empty, so behaviour is unchanged. -/
+def embVInst (t : Ty) : Infer IVTy := do
+  let A := embV (vtyOf t)
+  let marks := (collectMarkersV A).eraseDups
+  let m ← marks.mapM (fun n => do return (n, ← freshHole))
+  return substMarkersV m A
+/-- As `embVInst`, for a computation annotation (`ctyOf t = F ω (μ…)` for a generic-ctor value type). -/
+def embCInst (t : Ty) : Infer ICTy := do
+  let C := embC (ctyOf t)
+  let marks := (collectMarkersC C).eraseDups
+  let m ← marks.mapM (fun n => do return (n, ← freshHole))
+  return substMarkersC m C
 
 /-- Expect a RETURNER: resolve `c` to `.F q A`; a bare `chole` is unified with `F ω ?` (a returner of a
 fresh value hole) — the returner-context rule that lets `let x = ($g) y in …` bind `x` when `($g) y`'s
@@ -626,7 +718,7 @@ def synthSV (Γ : NCtx) (e : Surf) : Infer IVTy :=
   | .thunk b   => do let (B, φ) ← synthSC Γ b; return .U φ B
   | .pairS a b => do return .prod (← synthSV Γ a) (← synthSV Γ b)
   | .unitS     => return .unit
-  | .annotS b t => do let A := embV (vtyOf t); let _ ← checkSV Γ b A; return A
+  | .annotS b t => do let A ← embVInst t; let _ ← checkSV Γ b A; return A
   -- HM (#53): a bare anonymous injection SYNTHESIZES with a fresh hole for the UNFILLED variant.
   -- `Left(e) : A + ?b` (`e : A`), `Right(e) : ?a + B` (`e : B`); unification resolves the hole from
   -- context (match arms / annotation / use site). Check mode (with an expected sum) is still preferred.
@@ -651,7 +743,7 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : IVTy) : Infer Unit :=
       let φ' ← checkSC Γ b B
       if φ' ⊆ φ then return () else throw "thunk body effect exceeds the declared bound"
   | .annotS b t, expected => do
-      let A := embV (vtyOf t)
+      let A ← embVInst t
       let _ ← checkSV Γ b A
       unifyV bigFuel A expected                         -- HM subsumption (was structural `A = expected`)
   | e, expected => do
@@ -724,9 +816,14 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × EffRow) :=
       | _ => throw "match: scrutinee is not a sum"
   | .splitS a b p body => do match (← resolve bigFuel (← synthSV Γ p)) with
       | .prod A B => synthSC ((b, B) :: (a, A) :: Γ) body
+      -- #55: the scrutinee is an unresolved hole (a generic Option's element `a := (v * rest)` not yet
+      -- solved). A split REQUIRES a product, so invent `?A × ?B` and unify — the principal type (mirrors
+      -- the `.vhole ⟹ U`/`.chole ⟹ arr` moves for force/app). The fields' types flow from the body.
+      | .vhole n  => do let A ← freshHole; let B ← freshHole
+                        assign n (.prod A B); synthSC ((b, B) :: (a, A) :: Γ) body
       | _ => throw "split: scrutinee is not a product"
   | .annotS b t => do
-      let C := embC (ctyOf t)
+      let C ← embCInst t
       let φ ← checkSC Γ b C
       match effOf t with                              -- declared row (if any) is an upper bound — ④b
       | some ρ => if φ ⊆ ρ then return (C, φ) else throw "inferred effect exceeds the declared row"
@@ -797,7 +894,7 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer EffRow :=
   | .foldS b,   .F _ (.mu A)     => do let _ ← checkSV Γ (.foldS b) (.mu A); return ⊥
   | .thunk t,   .F _ (.U φ B)    => do let _ ← checkSV Γ (.thunk t) (.U φ B); return ⊥
   | .annotS b t, expected => do
-      let C := embC (ctyOf t)
+      let C ← embCInst t
       let φ ← checkSC Γ b C
       let _ ← unifyC bigFuel C expected                 -- HM subsumption (was structural `C ≠ expected`)
       match effOf t with
@@ -1230,6 +1327,18 @@ check-mode then drives T_Fold via `unrollMu`; no new typing rule. -/
 def ctorIntro (ci : CtorInfo) (payload : Surf) : Surf :=
   .annotS (.foldS (injSum ci.idx ci.total payload)) ci.dataTy
 
+/-- A GENERIC ctor intro (ADR-0079 annotation-FREE, #55): the same μ-folded injection, ANNOTATED at the
+data type's TEMPLATE μ — its type params left as markers `.tVar (paramBase + i)`. `embVInst` turns each
+marker into a fresh hole when the checker embeds the annotation, so the concrete element type is INFERRED
+by unifying the fields (no user `: List Int` needed). Built by reusing `monoData` with the params fed
+back as marker args (`data List a` at args `[â]` ⟹ `μX. Unit + (â × X)`). -/
+def genTemplateTy (env : ElabEnv) (ci : CtorInfo) : Except String Ty :=
+  let markers := (List.range ci.params.length).map (fun i => Ty.tVar (paramBase + i))
+  monoData env.gen env.aliases 1000 ci.dataName markers
+
+def genCtorIntro (env : ElabEnv) (ci : CtorInfo) (payload : Surf) : Except String Surf := do
+  return .annotS (.foldS (injSum ci.idx ci.total payload)) (← genTemplateTy env ci)
+
 /-- Shadow `bs` out of a subterm-tracking set, then (if `add`) re-introduce them AS subterms. Every
 binder shadows — a re-bound name is no longer the tracked parameter/subterm, which is what keeps the
 analysis SOUND under name-shadowing; only a match/split on a `matchable` scrutinee re-adds its pattern
@@ -1583,11 +1692,12 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | _, .var x =>
       match env.ctors.lookup x with           -- a 0-ary ctor use (`Nil`) IS an intro (ADR-0069)
       | some ci => if ci.arity == 0 then
-                     -- GENERIC (bite-1): a BARE fold, no eager annotation — the element type is unknown
-                     -- here, so check-mode from an enclosing annotation drives the concrete μ. Monomorphic:
-                     -- the concrete `ci.dataTy` annotation, exactly as ADR-0069.
+                     -- GENERIC (bite-1/#55): the ctor's TEMPLATE μ (params as markers) — `embVInst` mints
+                     -- fresh holes at the annotation, so the element type is INFERRED from context (an
+                     -- enclosing concrete annotation OR the fields), no user `: Option Int` required.
+                     -- Monomorphic: the concrete `ci.dataTy` annotation, exactly as ADR-0069.
                      if ci.params.isEmpty then .ok (ctorIntro ci .unitS)
-                     else .ok (Surf.foldS (injSum ci.idx ci.total .unitS))
+                     else genCtorIntro env ci .unitS
                    else .error s!"constructor '{x}' expects {ci.arity} argument(s)"
       | none    => .ok (.var x)
   | _, .getS  => .ok .getS
@@ -1636,9 +1746,10 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             -- at equal depth but shadow innermost-first (as `lower`'s sentinels do), so it stays correct.
             let a' ← elabS env Γ a
             let (_, w, v) ← anfSplit Γ a'
-            -- GENERIC (bite-1): a BARE fold (no annotation) — check-mode drives the concrete element type.
+            -- GENERIC (bite-1/#55): the TEMPLATE μ (params as markers) — `embVInst` mints fresh holes, so
+            -- the element type is INFERRED from the fields (`Cons(1, Nil)` ⟹ `a := Int`, no annotation).
             if ci.params.isEmpty then return w (ctorIntro ci v)
-            else return w (Surf.foldS (injSum ci.idx ci.total v))
+            else return w (← genCtorIntro env ci v)
       | none    => do return .app (.var c) (← elabS env Γ a)
   | Γ, .app f a     => do                     -- A-normalize a computation ARGUMENT (`($f)(n-1)`), #41
       let f' ← elabS env Γ f
@@ -1696,7 +1807,10 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let (Γ1, wrap, p') ← anfSplit Γ p0       -- A-normalize a computation scrutinee, #41
       let Γ' := match runInferV (synthSV Γ1 p') with
         | .ok (.prod A B) => (b, embV B) :: (a, embV A) :: Γ1
-        | _               => Γ1
+        -- #55: the scrutinee's product structure isn't known yet (a generic Option's element `a` bound to
+        -- `(v * rest)`, still an opaque marker at elaboration). Bind the fields to placeholder holes so the
+        -- body elaborates; the CHECKER's `splitS` invents the product (`.vhole ⟹ prod`) and unifies.
+        | _               => (b, (paramHole (Γ1.length + 1) : IVTy)) :: (a, (paramHole Γ1.length : IVTy)) :: Γ1
       return wrap (.splitS a b p' (← elabS env Γ' body))
   | Γ, .annotS (.lam x b) t => do   -- an ascribed lam's body sees its param's type (as in checking)
       let t' ← resolveTy env.gen env.aliases t         -- data names in user ascriptions close here (ADR-0069)
@@ -1705,19 +1819,26 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.gen env.aliases t)
   | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
       let s0 ← elabS env Γ s
-      let (Γ, wrap, s') ← anfSplit Γ s0        -- A-normalize a computation scrutinee, #41
+      let (Γ, wrap, s0') ← anfSplit Γ s0       -- A-normalize a computation scrutinee, #41
       -- GENERIC (bite-1): derive concrete arm-binder types from the CONCRETE scrutinee μ, so an arm's
       -- `anfSplit` can synthesize a computation (`($length) t`). Monomorphic ctors ⟹ empty table (elabArms
-      -- falls back to `payloadClosed`, unchanged). A scrutinee we can't yet infer ⟹ empty (the checker catches).
-      let binderTys : List (String × List IVTy) := match armsToList arms with
+      -- falls back to `payloadClosed`, unchanged).
+      -- #55 wall 2: when the scrutinee's type isn't YET a concrete μ (it is a bare higher-order param or
+      -- result — `($p) s`, a bare `o`), ANNOTATE it with the arm ctor's TEMPLATE μ (params as markers).
+      -- `embVInst` mints fresh param holes at the check, so the scrutinee's `Option`/`List` STRUCTURE is
+      -- recovered (and unified back onto the higher-order param), letting a generic `map`/`orElse` match
+      -- through a parser argument with NO concrete `: Option (Int * Str)` annotation.
+      let (s', binderTys) ← (match armsToList arms with
         | (c0, _, _) :: _ =>
             match env.ctors.lookup c0 with
-            | some ci0 => if ci0.params.isEmpty then []
-                          else match runInferV (synthSV Γ s') with
-                               | .ok τ    => genBinderTable env.ctors ci0.dataName τ
-                               | .error _ => []
-            | none => []
-        | [] => []
+            | some ci0 =>
+                if ci0.params.isEmpty then pure (s0', ([] : List (String × List IVTy)))
+                else match runInferV (synthSV Γ s0') with
+                     | .ok τ@(.mu _) => pure (s0', genBinderTable env.ctors ci0.dataName τ)   -- concrete: bite-1
+                     | _ => do let tmpl ← genTemplateTy env ci0                                -- unknown: template-drive
+                               pure (.annotS s0' tmpl, genBinderTable env.ctors ci0.dataName (vtyOf tmpl))
+            | none => pure (s0', [])
+        | [] => pure (s0', ([] : List (String × List IVTy))))
       let arms' ← elabArms env binderTys Γ arms   -- bodies elaborated under ctor-typed Γ
       match armsToList arms' with
       | [] => .error "match needs at least one arm"
@@ -2549,9 +2670,38 @@ def genPair :=
   "let p = (P(4, (1, 2)) : Pair Int (Int * Int)) in match p { P(x, y) -> let (m, n) = y in x + m + n }"
 #guard runTypedYieldsInt 800 genPair 7
 
--- Honest boundary: an UNANNOTATED generic ctor in synth position fails loud ("annotate"), never a wrong
--- accept — the ADR-0075 annotation-checked tier. (A bare `Cons(1, Nil)` has no expected μ.)
-#guard (match checkProg "data List a = Nil | Cons(a, List a) Cons(1, Nil)" with | .error _ => true | .ok _ => false)
+-- ⭐ ANNOTATION-FREE generic introduction (ADR-0079 follow-on, #55): a bare `Cons(1, Nil)` in SYNTH
+-- position now TYPES + RUNS — the instantiation `a := Int` is INFERRED from the field `1 : Int` (the
+-- element type flows into the template μ's marker-hole; the nested `Nil` is driven to `List Int` by the
+-- solved μ). No `: List Int` annotation. Consumed by a `match` to yield an Int the run-oracle can check.
+#guard runTypedYieldsInt 800 "data List a = Nil | Cons(a, List a) match (Cons(7, Nil)) { Nil -> 0, Cons(h, t) -> h }" 7
+-- `Some(x)` where `x : Int` ⟹ `Option Int`, no annotation; destructured to its payload.
+#guard runTypedYieldsInt 400 "data Option a = None | Some(a) match (Some(5)) { None -> 0, Some(v) -> v }" 5
+-- annotation-free is ADDITIVE: the SAME decl still accepts an explicit `: List Int` (ADR-0079 check-mode).
+#guard runTypedYieldsInt 800 "data List a = Nil | Cons(a, List a) match (Cons(7, Nil) : List Int) { Nil -> 0, Cons(h, t) -> h }" 7
+-- the inference is TWO-LEVEL: the element type is itself a generic instantiation — `Cons(1, Nil)` as the
+-- head of `Cons(Cons(1,Nil), Nil)`, all annotation-free (the `let rec`'s sig fixes only the OUTER `List
+-- (List Int)`; the inner `Cons(1,Nil)` infers `List Int` from its own field). length-of-outer = 1.
+#guard runTypedYieldsInt 1500 ("data List a = Nil | Cons(a, List a) " ++
+  "let rec len : List (List Int) -> Int = fun xs => match xs { Nil -> 0, Cons(h, t) -> 1 + ($len) t } in " ++
+  "($len) (Cons(Cons(1, Nil), Nil))") 1
+
+-- ⭐ THE PARSER-LIBRARY PAYOFF (#55 walls 2+3): a GENERIC combinator that CONSTRUCTS generic data.
+-- `omap : (a->b) -> Option a -> Option b` matches a generic value AND rebuilds `Some(($f) x)` — the ONE
+-- definition, no annotation. The scrutinee's `Option` structure is recovered from the arm ctors (`None`/
+-- `Some` ⟹ `Option`) and unified onto the higher-order `o`. Used here at `a := Int, b := Int` ⟹ 5.
+#guard runTypedYieldsInt 800
+  ("data Option a = None | Some(a) " ++
+   "let omap = { fun f => fun o => match o { None -> None, Some(x) -> Some(($f) x) } } in " ++
+   "match (($omap) {fun z => z + 1} (Some(4))) { None -> 0, Some(v) -> v }") 5
+-- MATCH THROUGH A HIGHER-ORDER PARSER + a generic PRODUCT split (wall 3): a `mapP` matching `($p) s`,
+-- splitting the generic element `r` into `(v, rest)`, rebuilding `Some((w, rest))` — all annotation-free.
+-- `mapP {+10} {s ↦ Some((7,s))} "x"` ⟹ Some((17, "x")); firstVal ⟹ 17.
+#guard runTypedYieldsInt 1200
+  ("data Option a = None | Some(a) " ++
+   "let mapP = { fun f => fun p => fun s => match (($p) s) { None -> None, " ++
+   "Some(r) -> let (v, rest) = r in let w = ($f) v in Some((w, rest)) } } in " ++
+   "match (($mapP) {fun v => v + 10} {fun s => Some((7, s))} \"x\") { None -> 0, Some(r) -> let (v, rest) = r in v }") 17
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic
