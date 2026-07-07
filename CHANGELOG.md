@@ -53,6 +53,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tooling** — dashboard is a PWA — installable, offline, app-like (manifest + service worker + icons) (`0938d28`)
 - **site** — pre-render mermaid to static SVG — draw the graphs, no client loop (`b9ec56b`)
 - **typecheck** — IVTy/ICTy re-rep — bare HM-inferred higher-order compose types+runs+polymorphic (the parser-combinator keystone) (`b6c66a6`)
+- **typecheck** — generic data types — data List a, monomorphized to the kernel (polymorphism bite-1) (`3698367`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

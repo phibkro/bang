@@ -28,8 +28,13 @@ bite  unlocks                                          power     decid.        t
       DEFERRED to 0b: higher-order compose (needs computation-level holes), value restriction, row vars
 0b  ROW polymorphism (generic over effect rows)        HM+row    inferred      checker (leaf)  after 0
       map : ∀a b ρ. (a -> b ! ρ) -> List a -> List b ! ρ
-1   generic DATA types                                 HM        inferred      surface+checker after 0b
+1   generic DATA types                                 HM        inferred      surface+checker ✅ DONE (3698367)
       data List a = Nil | Cons(a, List a) — subsumes StrList/IntList/TokList; String = List Char literal
+      LANDED (gendata): Ty.tApp (List Int, arity ≤2) · polymorphic ctors (∀a. …) riding IVTy generalize/
+      instantiate · monoData monomorphizes each concrete instantiation to a closed ADR-0069 μ (List Int ↦
+      μX.Unit+(Int×X)) · match navigates via kernel unrollMu. Payoff: genListLen→3, genListSum→35,
+      genListTwoTypes→3 (POLYMORPHIC, one decl at two element types). Additive (mono data unchanged, Vec→10);
+      kernel/census UNTOUCHED. NOTE (item 3, higher-order bite-0b): higher-order compose landed at b6c66a6.
 2   generic TRAITS + bounds (typeclasses + laws)       HM+bound  inferred      checker+elab    after 1
       trait Monoid a; fold : Monoid a => List a -> a   ← the generic-lawful-stdlib payoff (Q26)
       ⚠ FORK: dictionary-passing vs monomorphization (both elaborate-to-mono; ADR-0075 defers to here)
