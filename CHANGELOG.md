@@ -62,6 +62,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — bite-3 HKT Case B — abstract-over-f RUNS at TWO Functors (the write-once payoff) (`c27bdb4`)
 - **skills** — /doc-smells — detect + fix doc smells; wire into codebase-maintenance G2 (`1494fec`)
 - **typecheck** — bite-3 Stage D — Monad (the last polymorphism rung); Option monad + Parser-as-monad + laws (`cea8ae2`)
+- **typecheck** — Item 3 effect row-polymorphism — compose generic over its effect row (the last frontier) (`5d0a32f`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

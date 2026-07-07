@@ -147,6 +147,12 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
   runnable program; force-of-hole walls regardless). For **item 3 (row vars)** the threading is a SEPARATE
   question (row-poly genuinely spans elaborate+check) — reassess when it's built; don't assume item-2's
   correction transfers.
+- **Item 3 ROW VARIABLES — ✅ DONE (`5d0a32f`, rowpoly).** `compose : ∀ρ. (b→c!ρ)→(a→b!ρ)→(a→c!ρ)` runs at
+  ⊥ AND {Div} in one program (→18) — parallel inference `IRow`, kernel `EffRow` CLOSED + UNTOUCHED; unifyRow =
+  set-row Rémy; force-of-unknown-thunk mints a fresh row var (the enabler). FINDINGS: **#56** single-ρ first cut
+  (mixing pure+effectful needs subeffecting / full Rémy) · **#57** a PROVEN open-row unifier sits dormant in
+  `Bang/Core/EffectRow.lean` → the inference unifier is a mirror; consolidate (public+reuse) = SSoT + proven (operator
+  decision, touches Core). Below = the original escalation notes (design now realized).
 - **Item 3 ROW VARIABLES — ESCALATED (design pass, AFTER item 2).** Rows are `EffRow = Finset Label`
   (closed). Row-poly needs OPEN rows = `(Finset Label × Option RowVar)` (Rémy-style tail); unification
   `{throws}∪ρ₁ ~ {state}∪ρ₂` → fresh shared tail (set-rows make this SIMPLER than scoped labels — no order,
