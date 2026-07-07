@@ -53,6 +53,22 @@ AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
 - **complete the ledger migration** — Q1–Q34 into OKF files, `OPEN_QUESTIONS.md` a fully generated
   multi-view index (in flight).
 
+**Visual progress tracker + doc site (the operator's glanceable, low-reading view · ADR-0077 product face):**
+A "video-game tracker" — a GENERATED VIEW over data we already have (proof-state · the project-DAG · the
+question ledger · GitHub issues/milestones via `gh`), rendered VISUALLY: a progress MAP (◊-map + this DAG as
+a level-map: done ✓ / current / locked) · HEALTH BARS (proof-state headlines clean, burndown) · a QUEST LOG
+(issues under milestones) · a PULSE feed (recent landings / CHANGELOG — the Linear-pulse analog). Build
+spectrum, cheapest first:
+- **Zero-build TODAY (GitHub-native):** Projects (v2) roadmap/board + Milestones (one per PROJECT, progress
+  bars) + the Insights → **Pulse** tab (merged PRs, closed issues — the activity pulse). Glanceable, no new
+  dependency. The immediate tracker.
+- **Custom dashboard site (richer, game-like):** an **Astro** site (content-collections — the surveyed
+  state-of-art: typed frontmatter → validated → generated) on **GitHub Pages**, rendering BOTH the
+  structured docs (the product face) AND a dashboard page (the level-map / health-bars / pulse). Cost: adds
+  a Node/Astro build toolchain. Auto-rebuilds on push via Actions.
+- **Incremental feedback:** GitHub Actions posts a status update on each landing (issue-close / PR-merge /
+  milestone-complete) — the notification pulse — and the site rebuilds.
+
 ## The graph (projects ▸ the features they pull ▸ what they stress)
 
 ```
