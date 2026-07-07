@@ -87,6 +87,7 @@ fitness:
     python3 tools/check-doc-hygiene.py --check
     python3 tools/gen-notes-index.py --check
     python3 tools/gen-questions-index.py --check
+    python3 tools/gen-llms-txt.py --check
     python3 tools/refs.py check
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
@@ -123,6 +124,10 @@ notes-index:
 # Regenerate docs/notes/OPEN_QUESTIONS.md (multi-view ledger + validated tie-graph) from the OKF question files.
 questions-index:
     python3 tools/gen-questions-index.py
+
+# Regenerate llms.txt (the LLM-doc-index, llmstxt.org) from CLAUDE.md's reference index.
+llms-txt:
+    python3 tools/gen-llms-txt.py
 
 # Regenerate CHANGELOG.md (product MVP increments) from conventional commits since the MVP baseline.
 changelog:
