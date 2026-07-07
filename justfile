@@ -86,6 +86,7 @@ fitness:
     python3 tools/check-refs.py
     python3 tools/check-doc-hygiene.py --check
     python3 tools/gen-notes-index.py --check
+    python3 tools/gen-questions-index.py --check
     python3 tools/refs.py check
     python3 tools/gen-gate-index.py --check
     python3 tools/gen-proof-state.py --check
@@ -118,6 +119,10 @@ import-graph:
 # Regenerate docs/notes/README.md (the design-notes map) from each note's `note-status` frontmatter.
 notes-index:
     python3 tools/gen-notes-index.py
+
+# Regenerate docs/notes/questions/INDEX.md (grouped index + validated tie-graph) from the OKF question files.
+questions-index:
+    python3 tools/gen-questions-index.py
 
 # Regenerate CHANGELOG.md (product MVP increments) from conventional commits since the MVP baseline.
 changelog:

@@ -105,36 +105,9 @@ def render(mods):
     return "\n".join(lines)
 
 
-from genblock import splice as _splice  # the shared GEN-block primitive (#113)
+from genblock import splice as _splice, validate_mermaid  # shared primitives (#113)
 def splice(md, block):
     return _splice(md, GEN_BEGIN, GEN_END, block)
-
-
-def validate_mermaid(block):
-    """Render the mermaid fence with `mmdc` — returns ('pass'|'fail'|'skip', msg).
-    `--check` only confirms the TEXT matches the import edges; THIS confirms the diagram
-    actually COMPILES (catches generator bugs like a raw newline in a label or a
-    subgraph-id ⟂ node-id clash — exactly the bug this check was added for)."""
-    import shutil
-    import subprocess
-    import tempfile
-    if not shutil.which("mmdc"):
-        return ("skip", "mmdc not on PATH (it's in the dev shell — `nix develop`); compile-check skipped")
-    m = re.search(r"```mermaid\n(.*?)\n```", block, re.DOTALL)
-    if not m:
-        return ("skip", "no mermaid fence in the generated block")
-    d = tempfile.mkdtemp()
-    mmd, cfg, svg = (os.path.join(d, x) for x in ("g.mmd", "pptr.json", "g.svg"))
-    open(mmd, "w").write(m.group(1))
-    open(cfg, "w").write('{"args":["--no-sandbox","--disable-gpu"]}')  # sandboxed env needs --no-sandbox
-    try:
-        r = subprocess.run(["mmdc", "-i", mmd, "-o", svg, "-p", cfg],
-                           capture_output=True, text=True, timeout=180)
-        ok = r.returncode == 0 and os.path.exists(svg)
-        return ("pass", "mermaid compiles (mmdc render OK)") if ok else \
-               ("fail", (r.stderr or r.stdout).strip()[-500:])
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
 
 
 def main():

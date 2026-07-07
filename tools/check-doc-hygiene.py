@@ -99,6 +99,7 @@ def main():
     claude = texts.get("CLAUDE.md", "")
 
     notes = sorted(f for f in files if f.startswith("docs/notes/")
+                   and not f.startswith("docs/notes/questions/")  # self-governed OKF sub-ledger: gen-questions-index owns its own index + tie-validation
                    and os.path.basename(f) != "README.md")
     inbound = {f: sum(1 for g in files if f in cites[g]) for f in notes}
 
