@@ -41,9 +41,14 @@ bite  unlocks                                          power     decid.        t
       var). So the library is monomorphic-in-result (Int), not fully-generic `Parser a`. FIX = **annotation-
       FREE generic introduction** (infer instantiation from ctor FIELD types) — **#55, the #50-successor**;
       the blocker for a fully-generic `Parser a` / a fully-generic combinator stdlib.
-2   generic TRAITS + bounds (typeclasses + laws)       HM+bound  inferred      checker+elab    after 1
+2   generic TRAITS + bounds (typeclasses + laws)       HM+bound  inferred      checker+elab    ✅ DONE (f463011)
       trait Monoid a; fold : Monoid a => List a -> a   ← the generic-lawful-stdlib payoff (Q26)
-      ⚠ FORK: dictionary-passing vs monomorphization (both elaborate-to-mono; ADR-0075 defers to here)
+      LANDED (gentraits, ADR-0080): bounded `fn sum(xs) : List a -> a where Monoid a`; bound resolves the
+      concrete instance, monomorphized per carrier (impl ops spliced raw). ⚠ FORK DECIDED = **MONOMORPHIZATION**
+      (mono did NOT wall — two-instance genericity →16; dict-passing = revisit trigger for separate-compilation/
+      first-class-instances). Bounded-fn expansion = a PURE fuel-bounded pre-pass (`expandBFns`) so elabS stays
+      TOTAL (no partial). Laws preserved. #55 boundary: CONSUMING only (construction defers to #55). Payoff:
+      sum Int Monoid→6, two-instance→16, missing-instance fail-loud. Kernel/census UNTOUCHED.
 3   higher-rank (System F)                             System F  ANNOTATION    checker (bidir) later
       (∀a. a -> a) -> …  — first-class polymorphic values; annotation at the rank boundary
 4   higher-kinded (Fω / HKT)                           Fω        annotation    checker+elab    later (Q26)

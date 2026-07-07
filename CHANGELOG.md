@@ -55,6 +55,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — IVTy/ICTy re-rep — bare HM-inferred higher-order compose types+runs+polymorphic (the parser-combinator keystone) (`b6c66a6`)
 - **typecheck** — generic data types — data List a, monomorphized to the kernel (polymorphism bite-1) (`3698367`)
 - **examples** — parser-combinator library + examples/<project>/ structure + a run-oracle (the polymorphism acceptance test) (`a306815`)
+- **typecheck** — bounded generic functions over traits — fold : Monoid a => List a -> a, monomorphized (polymorphism bite-2) (`f463011`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
