@@ -46,7 +46,7 @@
 - **[Q36 — Gradual correctness / prototyping mode: typed holes, run-with-warnings, the coarse-vs-fine escape-hatch gap](Q36-gradual-correctness.md)** — surface + tooling; the vague-spec / exploratory end of the gradient · _open_  
   ties: Q31, Q35, ADR-0026, ADR-0073, ADR-0067
 
-### effects (15)
+### effects (16)
 
 - **[Q1 — Eff algebra: Semiring vs Lattice](Q1-eff-algebra-semiring-vs-lattice.md)** — effect algebra — switched to Lattice+OrderBot (⊥ / ⊔ / ≤); rows are a join-semilattice · _decided_  
   ties: Q8, ADR-0001, ADR-0032
@@ -78,6 +78,8 @@
   ties: Q36, Q33, Q38, ADR-0026, ADR-0030
 - **[Q38 — module ≟ trait ≟ effect ≟ capability: one interface+implementation construct, dialed by resumption grade?](Q38-module-trait-effect-capability.md)** — deep unification; stress-test, don't decide a priori · _open_  
   ties: Q27, Q34, Q37, ADR-0068
+- **[Q39 — What is IO? — the software↔hardware capability contract as a family of typed effects](Q39-what-is-io-software-hardware-capability-contract.md)** — IO is not a primitive but the family of program↔world effects; each is a typed interface + handler; the software↔hardware contract IS the effect interface; the net interface first (web-server-demanded); HKT makes contracts implementation-agnostic + lawful · _open_  
+  ties: Q37, Q30, Q33, ADR-0030, ADR-0075
 
 ### surface (6)
 
@@ -119,7 +121,7 @@
 The `· ✓ RESOLVED (ADR-…)` / `· ◑ PARTIAL` markers below are the Q⟺ADR ledger `gen-adr-index.py` reads —
 derived from each question's `resolved-by` frontmatter, so a resolution has a single home.
 
-### open (22)
+### open (23)
 
 - [Q7 — Operation names as strings vs symbolic enum](Q7-operation-names-string-vs-enum.md)  · OPEN
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](Q9-wasmfx-target-drift.md)  · OPEN
@@ -143,6 +145,7 @@ derived from each question's `resolved-by` frontmatter, so a resolution has a si
 - [Q36 — Gradual correctness / prototyping mode: typed holes, run-with-warnings, the coarse-vs-fine escape-hatch gap](Q36-gradual-correctness.md)  · OPEN
 - [Q37 — FFI as a typed EFFECT: the external-boundary seam (schema-declared contract · capability security · the road to OS/distributed)](Q37-ffi-as-effect.md)  · OPEN
 - [Q38 — module ≟ trait ≟ effect ≟ capability: one interface+implementation construct, dialed by resumption grade?](Q38-module-trait-effect-capability.md)  · OPEN
+- [Q39 — What is IO? — the software↔hardware capability contract as a family of typed effects](Q39-what-is-io-software-hardware-capability-contract.md)  · OPEN
 
 ### partial (1)
 
@@ -212,6 +215,7 @@ graph LR
   Q36["Q36 · gradual-correctness"]:::q
   Q37["Q37 · ffi-as-effect"]:::q
   Q38["Q38 · module-trait-effect-capability"]:::q
+  Q39["Q39 · what-is-io-software-hardware-capability-contract"]:::q
   ADR_0001["ADR-0001"]:::adr
   ADR_0032["ADR-0032"]:::adr
   ADR_0019["ADR-0019"]:::adr
@@ -250,6 +254,7 @@ graph LR
   ADR_0047["ADR-0047"]:::adr
   ADR_0076["ADR-0076"]:::adr
   ADR_0068["ADR-0068"]:::adr
+  ADR_0075["ADR-0075"]:::adr
   Q1 --> Q8
   Q1 --> ADR_0001
   Q1 --> ADR_0032
@@ -365,6 +370,11 @@ graph LR
   Q38 --> Q34
   Q38 --> Q37
   Q38 --> ADR_0068
+  Q39 --> Q37
+  Q39 --> Q30
+  Q39 --> Q33
+  Q39 --> ADR_0030
+  Q39 --> ADR_0075
   classDef q fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
   classDef extq fill:#eef2ff,stroke:#6366f1,color:#312e81;
   classDef adr fill:#f1f5f9,stroke:#64748b,color:#334155;
