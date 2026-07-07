@@ -1,0 +1,16 @@
+{
+  "name": "bang-docs-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node sync-docs.mjs",
+    "dev": "node sync-docs.mjs && vocs dev",
+    "build": "node sync-docs.mjs && vocs build",
+    "preview": "vocs preview"
+  },
+  "dependencies": {
+    "vocs": "^2.3.3",
+    "waku": "^1.0.0-beta.6",
+    "vite": "^8.1.3"
+  }
+}

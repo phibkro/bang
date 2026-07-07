@@ -50,6 +50,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — located TYPE errors (post-hoc) — name-carrying type errors report line:col (#52 Stage B, ADR-0076) (`ef39165`)
 - **stdlib** — string stdlib — concat/reverse/eq injected into the prelude, available free (#49, closes the #50 reuse gap for first-order helpers) (`3fcdeba`)
 - **tooling** — progress dashboard → GitHub Pages — a generated glanceable tracker (ADR-0077 product face) (`839358f`)
+- **tooling** — dashboard is a PWA — installable, offline, app-like (manifest + service worker + icons) (`0938d28`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

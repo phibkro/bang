@@ -1,5 +1,8 @@
 name: Pages
 
+# Builds the vocs docs site at /bang/ and merges the progress dashboard at /bang/dashboard/,
+# then deploys the combined tree to GitHub Pages on every push to main.
+
 on:
   push:
     branches: [main]
@@ -19,17 +22,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Generate dashboard
+
+      - name: Build vocs docs site (→ site/dist/public, basePath /bang)
+        run: |
+          cd site
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Generate progress dashboard → /bang/dashboard/
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 tools/gen-dashboard.py
+        run: |
+          python3 tools/gen-dashboard.py           # writes _site/ (dashboard + PWA files, relative paths)
+          mkdir -p site/dist/public/dashboard
+          cp -r _site/* site/dist/public/dashboard/
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: site/dist/public
 
   deploy:
     needs: build
