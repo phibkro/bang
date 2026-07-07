@@ -1223,12 +1223,27 @@ v1 scope (ADR-0068): no trait hierarchy in source syntax; law bodies are Bool-va
 (equations via `==`); impl target types are STRUCTURAL (`pTy`). Member separators `;` are optional
 (the member keywords delimit, same convention as `match`'s optional comma). -/
 
-/-- A trait operation SIGNATURE: `fn add(a, b) -> Int`. -/
+/-- A trait operation SIGNATURE. Two surface forms, one record:
+    · `fn add(a, b) -> Int` — params-all-`Self` (bite-2): `params` names them, `retTy` is the result,
+      `methodTy` = `Self → … → retTy` (built by `selfArrows`).
+    · `fmap : (a → b) → f a → f b` — a FULL method type (HKT, ADR-0082): `params = []`, `methodTy` is the
+      parsed type, `retTy` its final result (`peelArrows`). The impl's `fn`-def supplies the param NAMES. -/
 structure OpSig where
-  name   : String
-  params : List String
-  retTy  : Ty
+  name     : String
+  params   : List String
+  retTy    : Ty
+  methodTy : Ty
   deriving Repr, Inhabited, DecidableEq
+
+/-- `Self → Self → … → r` with `n` `Self` domains — the full type of a bite-2 params-all-`Self` op. -/
+def selfArrows : Nat → Ty → Ty
+  | 0,     r => r
+  | n + 1, r => .tArr .tSelf (selfArrows n r)
+
+/-- Peel every leading arrow, returning the final result type (`(a→b) → f a → f b` ↦ `f b`). -/
+def peelArrows : Ty → Ty
+  | .tArr _ b => peelArrows b
+  | t         => t
 
 /-- A trait LAW: `law comm(a, b): add a b == add b a`. `params` are the universally-quantified
 variables; `body` is a Bool-valued expression over them + the trait's ops. Pure syntax here —
@@ -1249,7 +1264,7 @@ structure OpDef where
 /-- A top-level declaration: a trait (ops + laws), an impl (op definitions for a structural
 target type), or a data type (named constructors over sums·products·μ, ADR-0069). -/
 inductive Decl where
-  | traitD : String → List OpSig → List LawDecl → Decl   -- trait N { fn … ; law … }
+  | traitD : String → List String → List OpSig → List LawDecl → Decl   -- trait N ā { fn … ; law … } (ā = HK trait params, [] = Self-only bite-2 trait)
   | implD  : String → Ty → List OpDef → Decl             -- impl N for τ { fn … }
   | dataD  : String → List String → List (String × List Ty) → Decl  -- data N ā = C₀ | C₁(T, …) | …  (ā = type params, [] = monomorphic; ADR-0069 generic)
   | fnD    : String → List String → Ty → String → String → Surf → Decl
@@ -1297,7 +1312,7 @@ def pTraitMembers : Nat → P (List OpSig × List LawDecl)
         let (_, ts) ← expect "->" ts
         let (t, ts) ← pTy f ts
         let ((ops, laws), ts) ← pTraitMembers f ts
-        .ok ((⟨n, ps, t⟩ :: ops, laws), ts)
+        .ok ((⟨n, ps, t, selfArrows ps.length t⟩ :: ops, laws), ts)   -- params-all-Self (bite-2)
     | "law" :: ts => do
         let (n, ts) ← pIdent ts
         let (ps, ts) ← pParams f ts
@@ -1305,7 +1320,11 @@ def pTraitMembers : Nat → P (List OpSig × List LawDecl)
         let (b, ts) ← pExpr f ts
         let ((ops, laws), ts) ← pTraitMembers f ts
         .ok ((ops, ⟨n, ps, b⟩ :: laws), ts)
-    | t :: r => .error ⟨s!"expected 'fn', 'law', or '}' in a trait body, got '{t}'", t :: r⟩
+    | n :: ":" :: ts => do                                         -- HKT (ADR-0082): `fmap : (a→b) → f a → f b`
+        let (t, ts) ← pTy f ts
+        let ((ops, laws), ts) ← pTraitMembers f ts
+        .ok ((⟨n, [], peelArrows t, t⟩ :: ops, laws), ts)
+    | t :: r => .error ⟨s!"expected 'fn', 'law', a `name :` signature, or '}' in a trait body, got '{t}'", t :: r⟩
     | []     => .error "unterminated trait body"
 
 /-- Impl members, up to and including `}`: `fn name(params) = e` definitions. -/
@@ -1363,6 +1382,15 @@ def pDataParams : Nat → P (List String)
     | p :: r   => do let (rest, ts) ← pDataParams f r; .ok (p :: rest, ts)
     | []       => .error "unterminated data declaration (expected '=')"
 
+/-- HK trait parameters after a trait name, up to (not consuming) `{`: `trait Functor f {` ⇒ `[f]`.
+Each is a bare identifier (the constructor-kinded var, ADR-0082); `[]` for a Self-only bite-2 trait. -/
+def pTraitParams : Nat → P (List String)
+  | 0,     ts => .ok ([], ts)
+  | f + 1, ts => match ts with
+    | "{" :: _ => .ok ([], ts)
+    | p :: r   => do let (rest, ts) ← pTraitParams f r; .ok (p :: rest, ts)
+    | []       => .error "unterminated trait declaration (expected '{')"
+
 /-- One declaration: `trait N { … }`, `impl N for τ { … }`, or `data N ā = C | …`. -/
 def pDecl : Nat → P Decl
   | 0,     _  => .error "parser out of fuel"
@@ -1374,9 +1402,10 @@ def pDecl : Nat → P Decl
       .ok (.dataD n ps cs, ts)
   | f + 1, "trait" :: ts => do
       let (n, ts) ← pIdent ts
+      let (ps, ts) ← pTraitParams f ts        -- HK trait params before `{` (`trait Functor f`); [] = Self-only
       let (_, ts) ← expect "{" ts
       let ((ops, laws), ts) ← pTraitMembers f ts
-      .ok (.traitD n ops laws, ts)
+      .ok (.traitD n ps ops laws, ts)
   | f + 1, "impl" :: ts => do
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect "for" ts
@@ -1906,7 +1935,7 @@ def progParsesTo (src : String) (p : Prog) : Bool :=
 -- a trait with an op signature and a law parses to its decl form (the law body is an EQUATION
 -- over the op, via `==` — Bool-valued, per ADR-0068's v1 law-body scope).
 #guard progParsesTo "trait Add { fn add(a, b) -> Int ; law comm(a, b): add a b == add b a } 0"
-  ⟨[.traitD "Add" [⟨"add", ["a", "b"], .tInt⟩]
+  ⟨[.traitD "Add" [] [⟨"add", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩]
       [⟨"comm", ["a", "b"],
         .binopS .eq (.app (.app (.var "add") (.var "a")) (.var "b"))
                     (.app (.app (.var "add") (.var "b")) (.var "a"))⟩]],
@@ -1916,7 +1945,8 @@ def progParsesTo (src : String) (p : Prog) : Bool :=
   ⟨[.implD "Add" (.tProd .tInt .tInt) [⟨"add", ["p", "q"], .var "p"⟩]], .lit 0⟩
 -- member separators are optional (keywords delimit): two ops, no semicolon.
 #guard progParsesTo "trait Ord { fn le(a, b) -> Int fn eq(a, b) -> Int } 0"
-  ⟨[.traitD "Ord" [⟨"le", ["a", "b"], .tInt⟩, ⟨"eq", ["a", "b"], .tInt⟩] []], .lit 0⟩
+  ⟨[.traitD "Ord" [] [⟨"le", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩,
+                      ⟨"eq", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩] []], .lit 0⟩
 -- the northstar program SHAPE parses end-to-end: trait + impl + a pair-addition body.
 #guard (match parseProg "trait Add { fn add(a, b) -> Int } impl Add for (Int * Int) { fn add(p, q) = p } (1, 2) + (3, 4)" with
         | .ok p => p.decls.length == 2

@@ -200,10 +200,22 @@ FRESH unification hole at the annotation site (so no marker `tvar` ever survives
 substitution / unrolling). -/
 def paramBase : Nat := 3000000
 
+/-- The HEAD of a higher-kinded application `f a` (ADR-0082 piece 2). Under elaborate-to-mono an HK hole
+always solves to a concrete constructor NAME at the use, never an arbitrary type function — so the head is
+one of: a solved constructor `name` (`Option`), an unsolved HK unification `hole` (the trait param `f`
+before it is pinned), or a generalized HK `rigid`. Kept in a SEPARATE namespace from value `vhole`s (an HK
+hole solves to a `ConHead`, a value hole to an `IVTy`). -/
+inductive ConHead where
+  | name  : String → ConHead
+  | hole  : Nat → ConHead
+  | rigid : Nat → ConHead
+  deriving DecidableEq, BEq, Repr
+
 mutual
 /-- A value inference type: a kernel `VTy` shape plus unification `vhole`s. `tvar` still carries BOTH
 the μ-recursion vars (0-2) and the ∀-scheme RIGIDs (`rigidBase + i`); only unification holes moved to
-the proper `vhole` constructor. -/
+the proper `vhole` constructor. `tcon1` is a HIGHER-KINDED application `f a` (v1 arity 1 — Functor/Monad;
+arity ≥2 HK is deferred, ADR-0082), whose head can be a constructor name, an HK hole, or an HK rigid. -/
 inductive IVTy where
   | int   : IVTy
   | unit  : IVTy
@@ -214,6 +226,7 @@ inductive IVTy where
   | tvar  : Nat → IVTy
   | cap   : Label → IVTy
   | vhole : Nat → IVTy
+  | tcon1 : ConHead → IVTy → IVTy
 /-- A computation inference type: a kernel `CTy` shape plus unification `chole`s. -/
 inductive ICTy where
   | F     : QTT → IVTy → ICTy
@@ -251,6 +264,7 @@ def extractV : IVTy → Except String VT
   | .tvar n   => .ok (.tvar n)
   | .cap ℓ    => .ok (.cap ℓ)
   | .vhole n  => .ok (.tvar (holeBase + n))
+  | .tcon1 _ _ => .error "residual higher-kinded application reached the kernel boundary — annotate the carrier (the HK type was never pinned to a concrete constructor)"
 def extractC : ICTy → Except String CT
   | .F q a     => do return .F q (← extractV a)
   | .arr q a b => do return .arr q (← extractV a) (← extractC b)
@@ -359,6 +373,7 @@ structure USt where
   fresh  : Nat := 0
   subst  : List (Nat × IVTy) := []
   csubst : List (Nat × ICTy) := []
+  hsubst : List (Nat × ConHead) := []   -- HK head-hole bindings (ADR-0082): a `ConHead.hole n` ↦ a solved head
 
 abbrev Infer := StateT USt (Except String)
 
@@ -374,6 +389,15 @@ def assignC (n : Nat) (t : ICTy) : Infer Unit := modify (fun s => { s with csubs
 def hget (n : Nat) : Infer (Option IVTy) := do return (← get).subst.lookup n
 /-- One-hop lookup of a comp hole's binding. -/
 def hgetC (n : Nat) : Infer (Option ICTy) := do return (← get).csubst.lookup n
+/-- Assign HK head-hole `n := h`. -/
+def assignHead (n : Nat) (h : ConHead) : Infer Unit := modify (fun s => { s with hsubst := (n, h) :: s.hsubst })
+/-- Follow the HK head-hole chain to a name or an unbound hole (fuel-bounded, like `resolve`). -/
+def resolveHead (fuel : Nat) (h : ConHead) : Infer ConHead := do
+  match fuel with
+  | 0      => return h
+  | fu + 1 => match h with
+              | .hole n => match (← get).hsubst.lookup n with | some h' => resolveHead fu h' | none => return h
+              | _       => return h
 
 /-- Follow the value-hole chain at the TOP of a value type. -/
 def resolve (fuel : Nat) (t : IVTy) : Infer IVTy := do
@@ -402,6 +426,7 @@ def zonkV (fuel : Nat) (t : IVTy) : Infer IVTy := do
     | .prod a b => return .prod (← zonkV fu a) (← zonkV fu b)
     | .U φ b    => return .U φ (← zonkC fu b)
     | .mu a     => return .mu (← zonkV fu a)
+    | .tcon1 h a => return .tcon1 (← resolveHead fu h) (← zonkV fu a)
     | other     => return other
 /-- Deeply apply the substitution to a computation type. -/
 def zonkC (fuel : Nat) (c : ICTy) : Infer ICTy := do
@@ -424,6 +449,7 @@ def occVinV (n : Nat) : IVTy → Bool
   | .prod a b => occVinV n a || occVinV n b
   | .U _ b    => occVinC n b
   | .mu a     => occVinV n a
+  | .tcon1 _ a => occVinV n a          -- head is an HK hole (separate namespace); a value hole can only be in the arg
   | _         => false
 def occVinC (n : Nat) : ICTy → Bool
   | .F _ a     => occVinV n a
@@ -438,6 +464,7 @@ def occCinV (n : Nat) : IVTy → Bool
   | .prod a b => occCinV n a || occCinV n b
   | .U _ b    => occCinC n b
   | .mu a     => occCinV n a
+  | .tcon1 _ a => occCinV n a
   | _         => false
 def occCinC (n : Nat) : ICTy → Bool
   | .chole m   => m == n
@@ -445,10 +472,27 @@ def occCinC (n : Nat) : ICTy → Bool
   | .arr _ a b => occCinV n a || occCinC n b
 end
 
+/-- Unify two HK application HEADS (ADR-0082 Stage B): an unsolved HK hole binds to the other head (a
+name or a hole), two names must be EQUAL (constructor injectivity), two rigids must match. This is the
+decidable fragment — bang constructors are injective (no type families), so a head is a rigid name or a
+metavar, never a reducing function. -/
+def unifyHead (fuel : Nat) (h1 h2 : ConHead) : Infer Unit := do
+  let h1 ← resolveHead fuel h1
+  let h2 ← resolveHead fuel h2
+  match h1, h2 with
+  | .hole n, .hole m   => if n == m then pure () else assignHead n (.hole m)
+  | .hole n, _         => assignHead n h2
+  | _,       .hole m   => assignHead m h1
+  | .name n, .name m   => if n == m then pure () else throw s!"higher-kinded constructor mismatch: '{n}' vs '{m}'"
+  | .rigid n, .rigid m => if n == m then pure () else throw "higher-kinded rigid mismatch"
+  | _, _               => throw "higher-kinded head mismatch (a constructor vs a rigid)"
+
 mutual
 /-- Unify two value types, extending the substitution. Rows/grades unify by EQUALITY (concrete in
 bite-0 — row variables are item 3). Occurs-check fails loud. MGU is the differential-tested contract
-(CLAUDE.md), not proven here. -/
+(CLAUDE.md), not proven here. HK applications (`tcon1`) unify by CONSTRUCTOR-INJECTIVITY decomposition
+(`f a ~ Option Int` ⟹ `f := Option`, `a := Int`); an HK application against a non-application (`f a ~ Int`)
+is OUTSIDE the decidable fragment ⟹ a fail-loud annotation-required descent, never an unsound guess (ADR-0082). -/
 def unifyV (fuel : Nat) (a b : IVTy) : Infer Unit := do
   match fuel with
   | 0      => throw "unify: out of fuel"
@@ -469,6 +513,11 @@ def unifyV (fuel : Nat) (a b : IVTy) : Infer Unit := do
     | .prod a1 a2, .prod b1 b2 => do unifyV fu a1 b1; unifyV fu a2 b2
     | .mu a1, .mu b1           => unifyV fu a1 b1
     | .U φ B, .U φ' B'         => if φ == φ' then unifyC fu B B' else throw "thunk row mismatch"
+    -- HK injectivity decomposition (Stage B): heads unify (HK-hole binds), then args pairwise.
+    | .tcon1 h1 a1, .tcon1 h2 a2 => do unifyHead (fu + 1) h1 h2; unifyV fu a1 a2
+    -- `f a ~ Int` / `f a ~ (A × B)` etc.: outside the injectivity fragment ⟹ annotation-required descent.
+    | .tcon1 _ _, _ => throw "higher-kinded type `f a` does not unify with a non-application type — annotate (outside the decidable injectivity fragment, ADR-0082)"
+    | _, .tcon1 _ _ => throw "higher-kinded type `f a` does not unify with a non-application type — annotate (outside the decidable injectivity fragment, ADR-0082)"
     | _, _ => throw "type mismatch"
 def unifyC (fuel : Nat) (a b : ICTy) : Infer Unit := do
   match fuel with
@@ -496,6 +545,7 @@ def freeHolesV : IVTy → List Nat
   | .prod a b => freeHolesV a ++ freeHolesV b
   | .U _ b    => freeHolesC b
   | .mu a     => freeHolesV a
+  | .tcon1 _ a => freeHolesV a          -- HK head holes are a SEPARATE namespace (not value holes)
   | _         => []
 def freeHolesC : ICTy → List Nat
   | .F _ a     => freeHolesV a
@@ -510,6 +560,7 @@ def freeCholesV : IVTy → List Nat
   | .prod a b => freeCholesV a ++ freeCholesV b
   | .U _ b    => freeCholesC b
   | .mu a     => freeCholesV a
+  | .tcon1 _ a => freeCholesV a
   | _         => []
 def freeCholesC : ICTy → List Nat
   | .chole m   => [m]
@@ -525,6 +576,7 @@ def abstractV (ms : List Nat) : IVTy → IVTy
   | .prod a b => .prod (abstractV ms a) (abstractV ms b)
   | .U φ b    => .U φ (abstractC ms b)
   | .mu a     => .mu (abstractV ms a)
+  | .tcon1 h a => .tcon1 h (abstractV ms a)   -- abstract value holes in the arg; HK head-hole generalization is deferred
   | t         => t
 def abstractC (ms : List Nat) : ICTy → ICTy
   | .F q a     => .F q (abstractV ms a)
@@ -540,6 +592,7 @@ def instV (insts : List IVTy) : IVTy → IVTy
   | .prod a b => .prod (instV insts a) (instV insts b)
   | .U φ b    => .U φ (instC insts b)
   | .mu a     => .mu (instV insts a)
+  | .tcon1 h a => .tcon1 h (instV insts a)
   | t         => t
 def instC (insts : List IVTy) : ICTy → ICTy
   | .F q a     => .F q (instV insts a)
@@ -593,6 +646,7 @@ def ivShiftV (k : Nat) : IVTy → IVTy
   | .prod a b => .prod (ivShiftV k a) (ivShiftV k b)
   | .U φ b    => .U φ (ivShiftC k b)
   | .mu a     => .mu (ivShiftV (k + 1) a)
+  | .tcon1 h a => .tcon1 h (ivShiftV k a)
 def ivShiftC (k : Nat) : ICTy → ICTy
   | .F q a     => .F q (ivShiftV k a)
   | .arr q a b => .arr q (ivShiftV k a) (ivShiftC k b)
@@ -609,6 +663,7 @@ def ivSubstV (k : Nat) (T : IVTy) : IVTy → IVTy
   | .prod a b => .prod (ivSubstV k T a) (ivSubstV k T b)
   | .U φ b    => .U φ (ivSubstC k T b)
   | .mu a     => .mu (ivSubstV (k + 1) (ivShiftV 0 T) a)
+  | .tcon1 h a => .tcon1 h (ivSubstV k T a)
 def ivSubstC (k : Nat) (T : IVTy) : ICTy → ICTy
   | .F q a     => .F q (ivSubstV k T a)
   | .arr q a b => .arr q (ivSubstV k T a) (ivSubstC k T b)
@@ -634,6 +689,7 @@ def collectMarkersV : IVTy → List Nat
   | .prod a b => collectMarkersV a ++ collectMarkersV b
   | .U _ b    => collectMarkersC b
   | .mu a     => collectMarkersV a
+  | .tcon1 _ a => collectMarkersV a
   | _         => []
 def collectMarkersC : ICTy → List Nat
   | .F _ a     => collectMarkersV a
@@ -647,6 +703,7 @@ def substMarkersV (m : List (Nat × IVTy)) : IVTy → IVTy
   | .prod a b => .prod (substMarkersV m a) (substMarkersV m b)
   | .U φ b    => .U φ (substMarkersC m b)
   | .mu a     => .mu (substMarkersV m a)
+  | .tcon1 h a => .tcon1 h (substMarkersV m a)
   | t         => t
 def substMarkersC (m : List (Nat × IVTy)) : ICTy → ICTy
   | .F q a     => .F q (substMarkersV m a)
@@ -1160,6 +1217,49 @@ def funFromParams : List String → Surf → Surf
   | [],      body => body
   | p :: ps, body => .lam p (funFromParams ps body)
 
+/-! ## HKT helpers (ADR-0082): kind-check · carrier-head extraction · application spine. -/
+
+/-- KIND-CHECK a trait method's type against the trait's constructor-kinded parameters (Stage A). v1 kinds
+are ARITY: a trait param `f` is `Type→Type` (arity 1), so an applied `f a` is well-formed but `f a b`
+(arity 2) is a kind error. Structural over `Ty` (`TyArgs` inlined for termination, like `substSelf`);
+non-application formers just recurse. A method var (`a`, `b`) or data name applied wrongly is NOT checked
+here (needs the decl env) — the injectivity unifier (Stage B) catches the rest. -/
+def kindCheckTy (params : List String) : Ty → Except String Unit
+  | .tApp n (.one a)   => do
+      if params.contains n then pure () else pure ()          -- arity-1 use of a trait param: well-kinded
+      kindCheckTy params a
+  | .tApp n (.two a b) => do
+      if params.contains n then
+        throw s!"kind error: trait parameter '{n}' is applied to 2 arguments (v1 kind ceiling is arity 1, `{n} a`)"
+      kindCheckTy params a; kindCheckTy params b
+  | .tArr a b  => do kindCheckTy params a; kindCheckTy params b
+  | .tSum a b  => do kindCheckTy params a; kindCheckTy params b
+  | .tProd a b => do kindCheckTy params a; kindCheckTy params b
+  | .tThunk t  => kindCheckTy params t
+  | .tMu t     => kindCheckTy params t
+  | .tEff _ t  => kindCheckTy params t
+  | _          => pure ()
+
+/-- The carrier CONSTRUCTOR name at the head of an impl target / result annotation (`Option Int` ↦ `Option`,
+`Option` ↦ `Option`). The key an HK impl resolves on (ADR-0082 §4). -/
+def hktCtorHead : Ty → Option String
+  | .tName n  => some n
+  | .tApp n _ => some n
+  | .tEff _ t => hktCtorHead t
+  | _         => none
+
+/-- Does a trait's op-sig list contain an op of this name? -/
+def sigsHasOp : Option (List OpSig) → String → Bool
+  | some sigs, nm => sigs.any (fun s => s.name == nm)
+  | none,      _  => false
+
+/-- The head variable + argument list of a left-nested application spine (`f a b` ↦ `some ("f", [a, b])`),
+`none` if the head is not a bare variable. Used to recognize an HK method call `fmap inc x`. -/
+def appSpine : Surf → Option (String × List Surf)
+  | .var x   => some (x, [])
+  | .app f a => (appSpine f).map (fun (h, as) => (h, as ++ [a]))
+  | _        => none
+
 /-- One resolvable instance op: the resolution key (`opName` × structural `target`) plus what
 the elaborated call site needs. `body` is PRE-ELABORATED at env build (ADR-0069 upgraded
 piece-2's raw splice: nested ctors and earlier ops inside an impl body now resolve). -/
@@ -1222,8 +1322,16 @@ structure RawImpl where
   targetVT  : VT
   ops       : List RawOp
 
+/-- One higher-kinded impl (ADR-0082), kept keyed on the carrier CONSTRUCTOR NAME (`Functor Option` ⟹
+`ctorName = "Option"`) rather than a resolved carrier VT — an HK carrier (`Option`, arity 1) has no
+closed VT until applied. `ops` are the impl's op defs, spliced monomorphically at each concrete use. -/
+structure HktImpl where
+  traitName : String
+  ctorName  : String
+  ops       : List Bang.Surface.OpDef
+
 /-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls
-+ bounded generic functions + raw impls (for bounded-fn monomorphization). -/
++ bounded generic functions + raw impls (for bounded-fn monomorphization) + higher-kinded traits/impls. -/
 structure ElabEnv where
   insts    : InstEnv
   ctors    : List (String × CtorInfo)
@@ -1231,6 +1339,9 @@ structure ElabEnv where
   gen      : List (String × GenData) := []
   bfns     : List (String × BoundedFn) := []
   rawImpls : List RawImpl := []
+  hktTraits   : List (String × List String) := []   -- HK trait NAME × its constructor-kinded params (`Functor` ↦ `["f"]`)
+  hktMethodOf : List (String × String) := []         -- HK method opName × its trait name (`fmap` ↦ `Functor`)
+  hktImpls    : List HktImpl := []                    -- HK impls, keyed by carrier ctor name
 
 /-- k-ary payload as a right-nested product (`[] ↦ Unit`, the 0-ary payload). -/
 def prodOfTys : List Ty → Ty
@@ -1665,12 +1776,37 @@ def expandBFns (env : ElabEnv) : Nat → Surf → Except String Surf
   | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env f recv) op (← expandArgs env f args)
   | f + 1, .matchD s arms => do return .matchD (← expandBFns env f s) (← expandArms env f arms)
   | f + 1, .annotS e t => do
-      match e with
-      | .app (.var fn) arg =>                                   -- a bounded-fn use `(fold arg : T)`?
-          match env.bfns.lookup fn with
-          | some bfn => bfnWrapper env bfn t (← expandBFns env f arg)
-          | none     => do return .annotS (← expandBFns env f e) t
-      | _ => do return .annotS (← expandBFns env f e) t
+      -- HKT (ADR-0082): a higher-kinded METHOD call `(fmap inc x : Option Int)` — the result annotation
+      -- fixes the carrier constructor (`f := Option`), so we resolve the `Functor Option` impl and SPLICE
+      -- its `fmap` body as a monomorphic local (the bite-2 `bfnWrapper` move keyed on a ctor NAME). The
+      -- spliced body then type-checks + runs with the ordinary generic-data machinery — kernel untouched.
+      match appSpine e with
+      | some (op, args) =>
+          match env.hktMethodOf.lookup op with
+          | some tn =>
+              match hktCtorHead t with
+              | none => throw s!"'{op}': cannot determine the carrier constructor from the result annotation — annotate the use with `C …`"
+              | some ctor =>
+                  match env.hktImpls.find? (fun i => i.traitName == tn && i.ctorName == ctor) with
+                  | none => throw s!"no impl of '{tn}' for '{ctor}' — the higher-kinded method '{op}' is unresolved"
+                  | some impl =>
+                      match impl.ops.find? (fun od => od.name == op) with
+                      | none => throw s!"impl of '{tn}' for '{ctor}' does not define '{op}'"
+                      | some od =>
+                          if args.length != od.params.length then
+                            throw s!"'{op}' at '{ctor}': applied to {args.length} args, the impl takes {od.params.length}"
+                          let body' ← expandBFns env f od.body
+                          let args' ← expandList env f args
+                          let call := args'.foldl (fun acc a => Surf.app acc a) (Surf.force (Surf.var op))
+                          return Surf.lett op (.thunk (funFromParams od.params body')) (.annotS call t)
+          | none =>
+              match e with
+              | .app (.var fn) arg =>                             -- a bounded-fn use `(fold arg : T)`? (bite-2)
+                  match env.bfns.lookup fn with
+                  | some bfn => bfnWrapper env bfn t (← expandBFns env f arg)
+                  | none     => do return .annotS (← expandBFns env f e) t
+              | _ => do return .annotS (← expandBFns env f e) t
+      | none => do return .annotS (← expandBFns env f e) t
 
 /-- `SurfArgs` expansion (cap-op arguments). -/
 def expandArgs (env : ElabEnv) : Nat → SurfArgs → Except String SurfArgs
@@ -1678,6 +1814,12 @@ def expandArgs (env : ElabEnv) : Nat → SurfArgs → Except String SurfArgs
   | _ + 1, .none    => .ok .none
   | f + 1, .one a   => do return .one (← expandBFns env f a)
   | f + 1, .two a b => do return .two (← expandBFns env f a) (← expandBFns env f b)
+
+/-- Expand a list of `Surf` (HK method args), explicit recursion so termination stays fuel-visible. -/
+def expandList (env : ElabEnv) : Nat → List Surf → Except String (List Surf)
+  | 0,     _         => .error "bounded-fn expansion out of fuel"
+  | _ + 1, []        => .ok []
+  | f + 1, a :: rest => do return (← expandBFns env f a) :: (← expandList env f rest)
 
 /-- `DArms` expansion (named-match arm bodies). -/
 def expandArms (env : ElabEnv) : Nat → DArms → Except String DArms
@@ -1953,6 +2095,9 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut gen     : List (String × GenData) := []
   let mut bfns    : List (String × BoundedFn) := []
   let mut rawImpls : List RawImpl := []
+  let mut hktTraits   : List (String × List String) := []
+  let mut hktMethodOf : List (String × String) := []
+  let mut hktImpls    : List HktImpl := []
   for d in ds do
     match d with
     | .dataD n [] cs => do                       -- MONOMORPHIC: byte-identical to the ADR-0069 path
@@ -1979,8 +2124,26 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
           if c.2.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
           ctors := (c.1, ⟨n, i, cs.length, c.2.length, [], .tUnit, params, c.2⟩) :: ctors
           i := i + 1
-    | .traitD n sigs _ => traits := (n, sigs) :: traits
+    | .traitD n params sigs _ => do
+        traits := (n, sigs) :: traits
+        if !params.isEmpty then                       -- HKT (ADR-0082): a constructor-kinded trait
+          if params.length != 1 then throw s!"trait {n}: v1 supports exactly one constructor-kinded parameter"
+          -- kind-check every method sig: an applied trait-param `f a` must be arity-1, `Int Int` etc. rejected
+          for sig in sigs do
+            kindCheckTy params sig.methodTy
+          hktTraits := (n, params) :: hktTraits
+          for sig in sigs do hktMethodOf := (sig.name, n) :: hktMethodOf
     | .implD tn τTy ops =>
+        match hktTraits.lookup tn with
+        | some _ => do                                 -- HKT (ADR-0082): key the impl on the carrier CONSTRUCTOR name
+            let ctor ← match hktCtorHead τTy with
+              | some c => pure c
+              | none   => throw s!"impl '{tn}': the carrier must be a constructor name (`impl {tn} for Option`)"
+            for od in ops do
+              if !(sigsHasOp (traits.lookup tn) od.name) then
+                throw s!"impl '{tn}' defines '{od.name}', which is not an op of the trait"
+            hktImpls := hktImpls ++ [⟨tn, ctor, ops⟩]
+        | none =>
         match traits.lookup tn with
         | none => throw s!"impl of undeclared trait '{tn}'"
         | some sigs => do
@@ -1995,7 +2158,7 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
                   let retR ← resolveTy gen aliases (substSelf τR sig.retTy)
                   -- op params are all `Self`-typed (v1 convention); a 0-ary op (`empty`) has none.
                   let bodyΓ : NCtx := od.params.map (fun p => (p, embV (vtyOf τR)))
-                  let ebody ← elabS ⟨insts, ctors, aliases, gen, [], []⟩ bodyΓ od.body
+                  let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], []⟩ bodyΓ od.body
                   insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody⟩]
                   rawOps := rawOps ++ [⟨od.name, od.params, od.body, sig.retTy⟩]   -- RAW, for bounded-fn monomorphization
             rawImpls := rawImpls ++ [⟨tn, vtyOf τR, rawOps⟩]
@@ -2003,7 +2166,7 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
         if (traits.lookup tr).isNone then throw s!"fn '{n}': bound trait '{tr}' is not declared"
         if (bfns.lookup n).isSome then throw s!"duplicate function '{n}'"
         bfns := (n, ⟨n, ps, ty, tr, tv, b⟩) :: bfns
-  return ⟨insts, ctors, aliases, gen, bfns, rawImpls⟩
+  return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls⟩
 
 /-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
 you can't mix a char and a number), `Str` = a monomorphic char-list. Injected before every program so
@@ -2292,14 +2455,14 @@ def checkLaws (src : String) : Except String (List String) := do
     | .implD .. => pure ()
     | .dataD .. => pure ()
     | .fnD ..   => pure ()
-    | .traitD tn _ laws =>
+    | .traitD tn _ _ laws =>
         for other in p.decls do
           match other with
           | .traitD .. => pure ()
           | .dataD ..  => pure ()
           | .fnD ..    => pure ()
           | .implD tn' τTy _ =>
-              if tn' == tn then
+              if tn' == tn && !laws.isEmpty then                -- HK-trait laws are Stage D; Self-only path unchanged
                 let τR ← resolveTy env.gen env.aliases τTy      -- named impl targets sample at the closed μ
                 for l in laws do
                   let sample := tuples l.params.length (sampleVT (vtyOf τR))
@@ -2874,5 +3037,58 @@ def monoidTwo : String :=
 -- fail-loud: a bound trait that is not declared.
 #guard (match checkProg "data List a = Nil | Cons(a, List a) fn f(xs) : List a -> a where Bogus a = match xs { Nil -> 0, Cons(h, t) -> 1 } 0" with
         | .error _ => true | .ok _ => false)
+
+/-! ## Stage ⑤e — HIGHER-KINDED types (bite-3, ADR-0082): the FIRST running `Functor`. A trait whose
+parameter `f` is a CONSTRUCTOR (`Type→Type`), a method polymorphic in `a`/`b`, and an `impl Functor for
+Option`. At the concrete use `fmap inc (Some 5) : Option Int` the RESULT annotation fixes the carrier
+constructor (`f := Option`), the `Functor Option` impl resolves BY CONSTRUCTOR NAME, and its `fmap` body
+splices in monomorphically — the bite-2 `bfnWrapper` move keyed on a constructor instead of a type. The
+spliced body then type-checks + RUNS with the ordinary generic-data machinery; the kernel never learns
+about kinds (elaborate-to-mono, invariant #5 preserved). -/
+
+/-- `trait Functor f` + `impl Functor for Option` over the prelude `Option` (ADR-0083). -/
+def functorOption : String :=
+  "trait Functor f { fmap : (a -> b) -> f a -> f b } " ++
+  "impl Functor for Option { fn fmap(g, x) = match x { None -> None, Some(v) -> Some(($g) v) } } "
+
+-- ⭐ THE DEMO (ADR-0082 Stage C): `fmap inc (Some 5) : Option Int ⇒ Some 6`, RUN via the oracle. `inc`
+-- increments; `fmap` over `Option` maps the `Some` payload. The `match` extracts the `6`.
+#guard runTypedYieldsInt 3000 (functorOption ++
+  "let inc = { fun n => n + 1 } in match (fmap inc (Some(5)) : Option Int) { None -> 0, Some(w) -> w }") 6
+-- `fmap` over `None` maps nothing — the structure is preserved. `⇒ None`, so the match yields the sentinel 0.
+#guard runTypedYieldsInt 3000 (functorOption ++
+  "let inc = { fun n => n + 1 } in match (fmap inc (None : Option Int) : Option Int) { None -> 0, Some(w) -> w }") 0
+-- fail-loud: a `Functor` method used at a carrier with NO impl (`Functor Result` is undeclared) ⟹ type/elab error.
+#guard (match checkProg (functorOption ++
+  "let inc = { fun n => n + 1 } in match (fmap inc (Ok(5) : Result Int Int) : Result Int Int) { Err(e) -> e, Ok(w) -> w }") with
+        | .error _ => true | .ok _ => false)
+
+/-! ### Stage B HK UNIFICATION (ADR-0082 piece 3): constructor-injectivity decomposition. Run `unifyV`
+on synthetic HK types and read back the head-hole substitution. -/
+/-- Unify `a` and `b`, returning the resulting HK head-substitution (`f := Option`) or the error. -/
+def runUnifyHsubst (a b : IVTy) : Except String (List (Nat × ConHead)) :=
+  match (do unifyV bigFuel a b; return (← get).hsubst : Infer (List (Nat × ConHead))).run {} with
+  | .ok (r, _) => .ok r
+  | .error e   => .error e
+-- `f a ~ Option Int` DECOMPOSES: the head hole `f` binds to the constructor `Option` (injectivity).
+#guard (match runUnifyHsubst (.tcon1 (.hole 0) (.vhole 1)) (.tcon1 (.name "Option") .int) with
+        | .ok hs => hs.lookup 0 == some (.name "Option")
+        | .error _ => false)
+-- and the argument decomposes too: `f Int ~ Option a` solves the arg hole `a := Int` (checked by success).
+#guard (match runUnifyHsubst (.tcon1 (.name "Option") .int) (.tcon1 (.hole 0) (.vhole 1)) with
+        | .ok _ => true | .error _ => false)
+-- `f a ~ Int` is OUTSIDE the decidable injectivity fragment ⟹ fail-loud "annotate", NEVER an unsound guess.
+#guard (match runUnifyHsubst (.tcon1 (.hole 0) (.vhole 1)) .int with
+        | .error _ => true | .ok _ => false)
+
+/-! ### Stage A KIND-CHECK (ADR-0082 piece 1): kinds-as-arity. A trait parameter `f` is `Type→Type`
+(arity 1), so `f a` is well-kinded but `f a b` (arity 2) is a kind error; a base type like `Int` is not
+a constructor, so `Int Int` is unrepresentable. -/
+-- WELL-KINDED: `Functor f` with `f a`/`f b` (arity-1 uses) builds + checks (body `0`).
+#guard (match checkProg (functorOption ++ "0") with | .ok _ => true | .error _ => false)
+-- KIND ERROR: a trait param applied at arity 2 (`f a b`) exceeds the v1 arity-1 kind ceiling — fail-loud.
+#guard (match checkProg "trait Bad f { op : f a b -> Int } 0" with | .error _ => true | .ok _ => false)
+-- `Int Int` is rejected (`Int` is the base type `tInt`, not a `tApp` head — unrepresentable as an application).
+#guard (match checkProg "let x = (3 : Int Int) in x" with | .error _ => true | .ok _ => false)
 
 end Bang.TypeCheck
