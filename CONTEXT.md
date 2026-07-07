@@ -34,10 +34,12 @@ kernel/census UNTOUCHED the entire arc** (frontend leaves, 25 constructors, 16 h
 - ✅ A+B `tcon1` substrate **PRUNED** (`54f1e2b`, −75 LOC — dead code confirmed dead by removal).
 - ✅ **Item 3** effect ROW-POLYMORPHISM (`5d0a32f`) — `compose : ∀ρ.…` runs at ⊥ AND {Div} (→18); parallel
   inference `IRow`, kernel `EffRow` CLOSED + untouched. **THE POLYMORPHISM ARC IS FULLY CLOSED** (bite-0→bite-3
-  Monad + row-poly, kernel untouched throughout). Follow-ups filed: **#56** single-ρ (subeffecting/full-Rémy) · **#57**
-  SSoT-consolidate the row-unifier onto the proven dormant `Core/EffectRow.unify` (operator decision — touches Core).
+  Monad + row-poly, kernel untouched throughout). Follow-up: **#56** single-ρ (subeffecting/full-Rémy). **#57
+  DONE** (`713eb3c`) — inference row-unifier now REUSES the proven kernel `EffectRow.unify` (SSoT; mirror gone);
+  a visibility-only Core touch, census byte-identical (manager-verified per-headline) — the ONLY Core touch of the
+  session, and it was free.
 - **NEXT:** the **IO/net prong** (Q37 FFI-as-effect / Q39 what-is-IO / Q40 compilation-strategy → a `{Net}` effect →
-  the web server — needs a runtime, post-v1) · OR **#57** the SSoT consolidation (a small proven-unifier reuse).
+  the web server — needs a runtime, post-v1) · OR bank the win.
 
 Active path: **`paths/PATH-polymorphism.md`**. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (Q1–Q42).
 
