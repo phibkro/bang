@@ -10,7 +10,7 @@
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
-- [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) — Open questions — design decisions deferred
+- [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) — Open questions — the design-question ledger
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment

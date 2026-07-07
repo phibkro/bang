@@ -120,7 +120,7 @@ import-graph:
 notes-index:
     python3 tools/gen-notes-index.py
 
-# Regenerate docs/notes/questions/INDEX.md (grouped index + validated tie-graph) from the OKF question files.
+# Regenerate docs/notes/OPEN_QUESTIONS.md (multi-view ledger + validated tie-graph) from the OKF question files.
 questions-index:
     python3 tools/gen-questions-index.py
 
