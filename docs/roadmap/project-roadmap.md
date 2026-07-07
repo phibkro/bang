@@ -41,6 +41,18 @@ AND it runs (a `#guard`ed example, like `examples/tokenizer.bang`).
    kv-store (STM — full payoff needs post-v1 concurrency) · web server · graphics (2048) · OS/distributed
 ```
 
+**Near-term tooling (docs-as-data · ADR-0078):**
+- **the gh-BRIDGE** — extend `gen-questions-index` to RESOLVE `see-also: [#N]` issue-edges via `gh`
+  (validate the issue exists, pull live title/open-closed status, render it in the tie-graph beside Q- and
+  ADR-nodes). Makes issues ↔ questions ↔ ADRs ONE queryable graph from two stores (git docs + GitHub
+  issues) — no third tool. The unification move of ADR-0078.
+- **CI gate (GitHub Actions)** — run `just verify` / `just fitness` on every PR, so "gate the committed
+  content" is platform-enforced, not just local.
+- **GitHub Milestones ↔ this DAG** — one milestone per PROJECT (tokenizer ✓ · parser-combinator · …), so
+  the product-axis checkpoints live in GitHub too; issues group under them.
+- **complete the ledger migration** — Q1–Q34 into OKF files, `OPEN_QUESTIONS.md` a fully generated
+  multi-view index (in flight).
+
 ## The graph (projects ▸ the features they pull ▸ what they stress)
 
 ```
