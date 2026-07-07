@@ -18,6 +18,7 @@ its trigger arises.
 | **Current session position** (where we are RIGHT NOW) | `CONTEXT.md` |
 | **Long-term checkpoint map** (◊1 → ◊6) | `ROADMAP.md` |
 | **First-time setup + reference table** | `ONBOARDING.md` |
+| **How to contribute** (workflow · where docs live · agent write-discipline) | `CONTRIBUTING.md` |
 | **How work flows** (lifecycle + feedback loops + quality gates) | `docs/notes/development-lifecycle.md` |
 | **What an `incN` is** (the increment unit: scoped→de-risked→ground→done→merged) | `docs/notes/increment-lifecycle.md` |
 | **Codebase maintenance** (objects · rungs · cadence · debt-prevention) | `.claude/codebase-maintenance.md` |
