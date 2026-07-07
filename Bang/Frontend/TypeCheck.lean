@@ -200,22 +200,10 @@ FRESH unification hole at the annotation site (so no marker `tvar` ever survives
 substitution / unrolling). -/
 def paramBase : Nat := 3000000
 
-/-- The HEAD of a higher-kinded application `f a` (ADR-0082 piece 2). Under elaborate-to-mono an HK hole
-always solves to a concrete constructor NAME at the use, never an arbitrary type function — so the head is
-one of: a solved constructor `name` (`Option`), an unsolved HK unification `hole` (the trait param `f`
-before it is pinned), or a generalized HK `rigid`. Kept in a SEPARATE namespace from value `vhole`s (an HK
-hole solves to a `ConHead`, a value hole to an `IVTy`). -/
-inductive ConHead where
-  | name  : String → ConHead
-  | hole  : Nat → ConHead
-  | rigid : Nat → ConHead
-  deriving DecidableEq, BEq, Repr
-
 mutual
 /-- A value inference type: a kernel `VTy` shape plus unification `vhole`s. `tvar` still carries BOTH
 the μ-recursion vars (0-2) and the ∀-scheme RIGIDs (`rigidBase + i`); only unification holes moved to
-the proper `vhole` constructor. `tcon1` is a HIGHER-KINDED application `f a` (v1 arity 1 — Functor/Monad;
-arity ≥2 HK is deferred, ADR-0082), whose head can be a constructor name, an HK hole, or an HK rigid. -/
+the proper `vhole` constructor. -/
 inductive IVTy where
   | int   : IVTy
   | unit  : IVTy
@@ -226,7 +214,6 @@ inductive IVTy where
   | tvar  : Nat → IVTy
   | cap   : Label → IVTy
   | vhole : Nat → IVTy
-  | tcon1 : ConHead → IVTy → IVTy
 /-- A computation inference type: a kernel `CTy` shape plus unification `chole`s. -/
 inductive ICTy where
   | F     : QTT → IVTy → ICTy
@@ -264,7 +251,6 @@ def extractV : IVTy → Except String VT
   | .tvar n   => .ok (.tvar n)
   | .cap ℓ    => .ok (.cap ℓ)
   | .vhole n  => .ok (.tvar (holeBase + n))
-  | .tcon1 _ _ => .error "residual higher-kinded application reached the kernel boundary — annotate the carrier (the HK type was never pinned to a concrete constructor)"
 def extractC : ICTy → Except String CT
   | .F q a     => do return .F q (← extractV a)
   | .arr q a b => do return .arr q (← extractV a) (← extractC b)
@@ -373,7 +359,6 @@ structure USt where
   fresh  : Nat := 0
   subst  : List (Nat × IVTy) := []
   csubst : List (Nat × ICTy) := []
-  hsubst : List (Nat × ConHead) := []   -- HK head-hole bindings (ADR-0082): a `ConHead.hole n` ↦ a solved head
 
 abbrev Infer := StateT USt (Except String)
 
@@ -389,15 +374,6 @@ def assignC (n : Nat) (t : ICTy) : Infer Unit := modify (fun s => { s with csubs
 def hget (n : Nat) : Infer (Option IVTy) := do return (← get).subst.lookup n
 /-- One-hop lookup of a comp hole's binding. -/
 def hgetC (n : Nat) : Infer (Option ICTy) := do return (← get).csubst.lookup n
-/-- Assign HK head-hole `n := h`. -/
-def assignHead (n : Nat) (h : ConHead) : Infer Unit := modify (fun s => { s with hsubst := (n, h) :: s.hsubst })
-/-- Follow the HK head-hole chain to a name or an unbound hole (fuel-bounded, like `resolve`). -/
-def resolveHead (fuel : Nat) (h : ConHead) : Infer ConHead := do
-  match fuel with
-  | 0      => return h
-  | fu + 1 => match h with
-              | .hole n => match (← get).hsubst.lookup n with | some h' => resolveHead fu h' | none => return h
-              | _       => return h
 
 /-- Follow the value-hole chain at the TOP of a value type. -/
 def resolve (fuel : Nat) (t : IVTy) : Infer IVTy := do
@@ -426,7 +402,6 @@ def zonkV (fuel : Nat) (t : IVTy) : Infer IVTy := do
     | .prod a b => return .prod (← zonkV fu a) (← zonkV fu b)
     | .U φ b    => return .U φ (← zonkC fu b)
     | .mu a     => return .mu (← zonkV fu a)
-    | .tcon1 h a => return .tcon1 (← resolveHead fu h) (← zonkV fu a)
     | other     => return other
 /-- Deeply apply the substitution to a computation type. -/
 def zonkC (fuel : Nat) (c : ICTy) : Infer ICTy := do
@@ -449,7 +424,6 @@ def occVinV (n : Nat) : IVTy → Bool
   | .prod a b => occVinV n a || occVinV n b
   | .U _ b    => occVinC n b
   | .mu a     => occVinV n a
-  | .tcon1 _ a => occVinV n a          -- head is an HK hole (separate namespace); a value hole can only be in the arg
   | _         => false
 def occVinC (n : Nat) : ICTy → Bool
   | .F _ a     => occVinV n a
@@ -464,7 +438,6 @@ def occCinV (n : Nat) : IVTy → Bool
   | .prod a b => occCinV n a || occCinV n b
   | .U _ b    => occCinC n b
   | .mu a     => occCinV n a
-  | .tcon1 _ a => occCinV n a
   | _         => false
 def occCinC (n : Nat) : ICTy → Bool
   | .chole m   => m == n
@@ -472,27 +445,10 @@ def occCinC (n : Nat) : ICTy → Bool
   | .arr _ a b => occCinV n a || occCinC n b
 end
 
-/-- Unify two HK application HEADS (ADR-0082 Stage B): an unsolved HK hole binds to the other head (a
-name or a hole), two names must be EQUAL (constructor injectivity), two rigids must match. This is the
-decidable fragment — bang constructors are injective (no type families), so a head is a rigid name or a
-metavar, never a reducing function. -/
-def unifyHead (fuel : Nat) (h1 h2 : ConHead) : Infer Unit := do
-  let h1 ← resolveHead fuel h1
-  let h2 ← resolveHead fuel h2
-  match h1, h2 with
-  | .hole n, .hole m   => if n == m then pure () else assignHead n (.hole m)
-  | .hole n, _         => assignHead n h2
-  | _,       .hole m   => assignHead m h1
-  | .name n, .name m   => if n == m then pure () else throw s!"higher-kinded constructor mismatch: '{n}' vs '{m}'"
-  | .rigid n, .rigid m => if n == m then pure () else throw "higher-kinded rigid mismatch"
-  | _, _               => throw "higher-kinded head mismatch (a constructor vs a rigid)"
-
 mutual
 /-- Unify two value types, extending the substitution. Rows/grades unify by EQUALITY (concrete in
 bite-0 — row variables are item 3). Occurs-check fails loud. MGU is the differential-tested contract
-(CLAUDE.md), not proven here. HK applications (`tcon1`) unify by CONSTRUCTOR-INJECTIVITY decomposition
-(`f a ~ Option Int` ⟹ `f := Option`, `a := Int`); an HK application against a non-application (`f a ~ Int`)
-is OUTSIDE the decidable fragment ⟹ a fail-loud annotation-required descent, never an unsound guess (ADR-0082). -/
+(CLAUDE.md), not proven here. -/
 def unifyV (fuel : Nat) (a b : IVTy) : Infer Unit := do
   match fuel with
   | 0      => throw "unify: out of fuel"
@@ -513,11 +469,6 @@ def unifyV (fuel : Nat) (a b : IVTy) : Infer Unit := do
     | .prod a1 a2, .prod b1 b2 => do unifyV fu a1 b1; unifyV fu a2 b2
     | .mu a1, .mu b1           => unifyV fu a1 b1
     | .U φ B, .U φ' B'         => if φ == φ' then unifyC fu B B' else throw "thunk row mismatch"
-    -- HK injectivity decomposition (Stage B): heads unify (HK-hole binds), then args pairwise.
-    | .tcon1 h1 a1, .tcon1 h2 a2 => do unifyHead (fu + 1) h1 h2; unifyV fu a1 a2
-    -- `f a ~ Int` / `f a ~ (A × B)` etc.: outside the injectivity fragment ⟹ annotation-required descent.
-    | .tcon1 _ _, _ => throw "higher-kinded type `f a` does not unify with a non-application type — annotate (outside the decidable injectivity fragment, ADR-0082)"
-    | _, .tcon1 _ _ => throw "higher-kinded type `f a` does not unify with a non-application type — annotate (outside the decidable injectivity fragment, ADR-0082)"
     | _, _ => throw "type mismatch"
 def unifyC (fuel : Nat) (a b : ICTy) : Infer Unit := do
   match fuel with
@@ -545,7 +496,6 @@ def freeHolesV : IVTy → List Nat
   | .prod a b => freeHolesV a ++ freeHolesV b
   | .U _ b    => freeHolesC b
   | .mu a     => freeHolesV a
-  | .tcon1 _ a => freeHolesV a          -- HK head holes are a SEPARATE namespace (not value holes)
   | _         => []
 def freeHolesC : ICTy → List Nat
   | .F _ a     => freeHolesV a
@@ -560,7 +510,6 @@ def freeCholesV : IVTy → List Nat
   | .prod a b => freeCholesV a ++ freeCholesV b
   | .U _ b    => freeCholesC b
   | .mu a     => freeCholesV a
-  | .tcon1 _ a => freeCholesV a
   | _         => []
 def freeCholesC : ICTy → List Nat
   | .chole m   => [m]
@@ -576,7 +525,6 @@ def abstractV (ms : List Nat) : IVTy → IVTy
   | .prod a b => .prod (abstractV ms a) (abstractV ms b)
   | .U φ b    => .U φ (abstractC ms b)
   | .mu a     => .mu (abstractV ms a)
-  | .tcon1 h a => .tcon1 h (abstractV ms a)   -- abstract value holes in the arg; HK head-hole generalization is deferred
   | t         => t
 def abstractC (ms : List Nat) : ICTy → ICTy
   | .F q a     => .F q (abstractV ms a)
@@ -592,7 +540,6 @@ def instV (insts : List IVTy) : IVTy → IVTy
   | .prod a b => .prod (instV insts a) (instV insts b)
   | .U φ b    => .U φ (instC insts b)
   | .mu a     => .mu (instV insts a)
-  | .tcon1 h a => .tcon1 h (instV insts a)
   | t         => t
 def instC (insts : List IVTy) : ICTy → ICTy
   | .F q a     => .F q (instV insts a)
@@ -646,7 +593,6 @@ def ivShiftV (k : Nat) : IVTy → IVTy
   | .prod a b => .prod (ivShiftV k a) (ivShiftV k b)
   | .U φ b    => .U φ (ivShiftC k b)
   | .mu a     => .mu (ivShiftV (k + 1) a)
-  | .tcon1 h a => .tcon1 h (ivShiftV k a)
 def ivShiftC (k : Nat) : ICTy → ICTy
   | .F q a     => .F q (ivShiftV k a)
   | .arr q a b => .arr q (ivShiftV k a) (ivShiftC k b)
@@ -663,7 +609,6 @@ def ivSubstV (k : Nat) (T : IVTy) : IVTy → IVTy
   | .prod a b => .prod (ivSubstV k T a) (ivSubstV k T b)
   | .U φ b    => .U φ (ivSubstC k T b)
   | .mu a     => .mu (ivSubstV (k + 1) (ivShiftV 0 T) a)
-  | .tcon1 h a => .tcon1 h (ivSubstV k T a)
 def ivSubstC (k : Nat) (T : IVTy) : ICTy → ICTy
   | .F q a     => .F q (ivSubstV k T a)
   | .arr q a b => .arr q (ivSubstV k T a) (ivSubstC k T b)
@@ -689,7 +634,6 @@ def collectMarkersV : IVTy → List Nat
   | .prod a b => collectMarkersV a ++ collectMarkersV b
   | .U _ b    => collectMarkersC b
   | .mu a     => collectMarkersV a
-  | .tcon1 _ a => collectMarkersV a
   | _         => []
 def collectMarkersC : ICTy → List Nat
   | .F _ a     => collectMarkersV a
@@ -703,7 +647,6 @@ def substMarkersV (m : List (Nat × IVTy)) : IVTy → IVTy
   | .prod a b => .prod (substMarkersV m a) (substMarkersV m b)
   | .U φ b    => .U φ (substMarkersC m b)
   | .mu a     => .mu (substMarkersV m a)
-  | .tcon1 h a => .tcon1 h (substMarkersV m a)
   | t         => t
 def substMarkersC (m : List (Nat × IVTy)) : ICTy → ICTy
   | .F q a     => .F q (substMarkersV m a)
@@ -1776,8 +1719,8 @@ result pattern (`f a`) against the annotation (`Option Int` ⟹ `a := Int`, `hkt
 into the declared type — `substCarrierHead` (the HK head `f ↦ Option`) then `substTyVar` (each `a ↦ Int`)
 — giving a fully concrete `recTy`, and SPLICE the resolved `Functor Option` impl's ops as unannotated
 local thunks (their types inferred from the concrete `recTy` at each use, exactly as the Stage-C Case-A
-method splice). The abstract carrier NEVER reaches the kernel as `tcon1`: it is monomorphized to `mu` here,
-per concrete use, because bang is whole-program (ADR-0082 §5). Missing impl ⟹ loud (the bound is unmet). -/
+method splice). The abstract carrier NEVER reaches the kernel as a residual HK application: it is
+monomorphized to `mu` here, per concrete use, because bang is whole-program (ADR-0082 §5). Missing impl ⟹ loud (the bound is unmet). -/
 def hktBfnWrapper (env : ElabEnv) (bfn : BoundedFn) (t : Ty) (args : List Surf) : Except String Surf := do
   let some ctor := hktCtorHead t
     | throw s!"bounded fn '{bfn.name}' ({bfn.traitName} {bfn.tyVar}): cannot determine the carrier constructor from the result annotation — annotate the use with `C …`"
@@ -3167,7 +3110,7 @@ def functorOption : String :=
 constructor — `f` is ABSTRACT in its body, `fmap` dispatched through the `Functor f` bound. At the use
 `twice inc (Some 5) : Option Int` the result annotation pins `f := Option` (injectivity head-solution) and
 `a := Int` (arg match), the `Functor Option` impl is spliced, and the whole thing monomorphizes to `mu`
-and RUNS. This is the "write once, works for any Functor" payoff — the tcon1 substrate realized at the
+and RUNS. This is the "write once, works for any Functor" payoff — HKT realized at the
 Surf pre-pass (whole-program mono, kernel untouched). -/
 def functorTwice : String :=
   "trait Functor f { fmap : (a -> b) -> f a -> f b } " ++
@@ -3198,24 +3141,6 @@ def functorTwiceTwo : String :=
 -- fail-loud: abstract-over-f used at a carrier with NO `Functor` impl (`Functor Result` undeclared) ⟹ error.
 #guard (match checkProg (functorTwice ++
   "let inc = { fun n => n + 1 } in match (twice inc (Ok(5) : Result Int Int) : Result Int Int) { Err(e) -> e, Ok(w) -> w }") with
-        | .error _ => true | .ok _ => false)
-
-/-! ### Stage B HK UNIFICATION (ADR-0082 piece 3): constructor-injectivity decomposition. Run `unifyV`
-on synthetic HK types and read back the head-hole substitution. -/
-/-- Unify `a` and `b`, returning the resulting HK head-substitution (`f := Option`) or the error. -/
-def runUnifyHsubst (a b : IVTy) : Except String (List (Nat × ConHead)) :=
-  match (do unifyV bigFuel a b; return (← get).hsubst : Infer (List (Nat × ConHead))).run {} with
-  | .ok (r, _) => .ok r
-  | .error e   => .error e
--- `f a ~ Option Int` DECOMPOSES: the head hole `f` binds to the constructor `Option` (injectivity).
-#guard (match runUnifyHsubst (.tcon1 (.hole 0) (.vhole 1)) (.tcon1 (.name "Option") .int) with
-        | .ok hs => hs.lookup 0 == some (.name "Option")
-        | .error _ => false)
--- and the argument decomposes too: `f Int ~ Option a` solves the arg hole `a := Int` (checked by success).
-#guard (match runUnifyHsubst (.tcon1 (.name "Option") .int) (.tcon1 (.hole 0) (.vhole 1)) with
-        | .ok _ => true | .error _ => false)
--- `f a ~ Int` is OUTSIDE the decidable injectivity fragment ⟹ fail-loud "annotate", NEVER an unsound guess.
-#guard (match runUnifyHsubst (.tcon1 (.hole 0) (.vhole 1)) .int with
         | .error _ => true | .ok _ => false)
 
 /-! ### Stage A KIND-CHECK (ADR-0082 piece 1): kinds-as-arity. A trait parameter `f` is `Type→Type`
