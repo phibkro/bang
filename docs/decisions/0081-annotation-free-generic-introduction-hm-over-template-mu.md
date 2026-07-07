@@ -69,3 +69,8 @@ GENERIC — `mapP : (a→b) → Parser a → Parser b` reused at result `(Int×I
 
 Value-generic combining combinators are wanted (`andThen → Parser (a×b)` — expressible now, just not in the
 demo); OR effect row-polymorphism is taken up (Item 3) for parsers generic over their effect row.
+
+**Seam to watch** (not a today-problem): the match-through-a-higher-order-parser move recovers the
+scrutinee's data type from the FIRST arm's constructor — sound while constructor names are globally unique
+per data decl, but if two data types ever share a constructor name, that heuristic needs the disambiguation
+the checker already carries (thread the expected type / all-arms-agree instead of first-arm-wins).
