@@ -101,6 +101,12 @@ kinds / monad transformers are needed (build the explicit `Kind` inductive); OR 
 the injectivity fragment must be accepted without annotation (it must not — that would break the decidability
 invariant; the correct response is to require the annotation).
 
+**A+B prune-test (hktB):** the `IVTy.tcon1` substrate + its synthetic Stage-A/B unify/kind guards may be
+DELETED once the honest test holds — *does any v1 path need a generic function type-checked ONCE?* While the
+answer stays NO (whole-program, no separate compilation, no first-class existential constructors) the
+substrate is dead and can go. If a future rung ever wants once-checked generics, that is the SAME trigger as
+dict-passing — revive the two together.
+
 **Seam to watch:** instance resolution re-keys on the constructor NAME; sound while a constructor name maps to
 one data decl. If HK instances for two constructors ever collide on a shared method name resolved by
 first-match, thread the expected constructor through (the same disambiguation ADR-0081's "seam to watch"
