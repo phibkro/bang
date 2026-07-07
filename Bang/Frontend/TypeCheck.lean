@@ -1248,6 +1248,40 @@ def hktCtorHead : Ty → Option String
   | .tEff _ t => hktCtorHead t
   | _         => none
 
+/-- Substitute the carrier CONSTRUCTOR name for a higher-kinded bound var at every `tApp` HEAD (ADR-0082
+Case B): `f a ↦ Option a` when the bound var `v = "f"` and the resolved carrier `ctor = "Option"`. The
+carrier var appears only as an application head (arity 1, `f a`), never as a bare `tName` — that's an
+ordinary tyvar, substituted by `substTyVar`. This is the *surface-level* realization of injectivity's
+`f := Option`: monomorphize the abstract carrier once it's pinned at a concrete use. -/
+def substCarrierHead (v ctor : String) : Ty → Ty
+  | .tApp n (.one a)   => .tApp (if n == v then ctor else n) (.one (substCarrierHead v ctor a))
+  | .tApp n (.two a b) => .tApp (if n == v then ctor else n) (.two (substCarrierHead v ctor a) (substCarrierHead v ctor b))
+  | .tArr a b  => .tArr  (substCarrierHead v ctor a) (substCarrierHead v ctor b)
+  | .tSum a b  => .tSum  (substCarrierHead v ctor a) (substCarrierHead v ctor b)
+  | .tProd a b => .tProd (substCarrierHead v ctor a) (substCarrierHead v ctor b)
+  | .tThunk t  => .tThunk (substCarrierHead v ctor t)
+  | .tMu t     => .tMu    (substCarrierHead v ctor t)
+  | .tEff ns t => .tEff ns (substCarrierHead v ctor t)
+  | t          => t
+
+/-- Match a bounded-fn RESULT-type pattern (`f a`) against the concrete result annotation (`Option Int`),
+collecting the ORDINARY tyvar bindings (`a ↦ Int`) — the injectivity-decomposition of ADR-0082 Stage B,
+realized structurally at the Surf pre-pass (the carrier head `f := Option` is read off separately by
+`hktCtorHead`; here we peel the arg positions). A `tName` in the pattern is a tyvar bound to the concrete
+arg; every other former recurses in parallel. Non-aligning shapes contribute nothing (a later resolve/
+kind-check catches a genuinely ill-typed use). -/
+def hktMatch : Ty → Ty → List (String × Ty)
+  | .tName v,           c                 => [(v, c)]
+  | .tApp _ (.one p),   .tApp _ (.one c)  => hktMatch p c
+  | .tApp _ (.two p q), .tApp _ (.two c d) => hktMatch p c ++ hktMatch q d
+  | .tArr p q,          .tArr c d         => hktMatch p c ++ hktMatch q d
+  | .tProd p q,         .tProd c d        => hktMatch p c ++ hktMatch q d
+  | .tSum p q,          .tSum c d         => hktMatch p c ++ hktMatch q d
+  | .tThunk p,          .tThunk c         => hktMatch p c
+  | .tEff _ p,          c                 => hktMatch p c
+  | p,                  .tEff _ c         => hktMatch p c
+  | _,                  _                 => []
+
 /-- Does a trait's op-sig list contain an op of this name? -/
 def sigsHasOp : Option (List OpSig) → String → Bool
   | some sigs, nm => sigs.any (fun s => s.name == nm)
@@ -1733,6 +1767,30 @@ def bfnWrapper (env : ElabEnv) (bfn : BoundedFn) (t : Ty) (arg : Surf) : Except 
         Surf.lett op.name (.thunk (.annotS (funFromParams op.params op.body) fnTy)) acc)
     recCore
 
+/-- Build the monomorphic wrapper for one HIGHER-KINDED bounded-fn use (ADR-0082 Case B, abstract-over-f):
+`(twice inc (Some 5) : Option Int)` where `twice(g, x) : (a -> a) -> f a -> f a where Functor f`. This is
+`bfnWrapper` re-keyed on a carrier CONSTRUCTOR instead of a carrier VT — the difference the whole Case-B
+seam turns on. The result annotation pins the abstract `f` to a concrete constructor (`f := Option`, by
+`hktCtorHead` = the injectivity head-solution); the remaining ordinary tyvars are read off by matching the
+result pattern (`f a`) against the annotation (`Option Int` ⟹ `a := Int`, `hktMatch`). We substitute BOTH
+into the declared type — `substCarrierHead` (the HK head `f ↦ Option`) then `substTyVar` (each `a ↦ Int`)
+— giving a fully concrete `recTy`, and SPLICE the resolved `Functor Option` impl's ops as unannotated
+local thunks (their types inferred from the concrete `recTy` at each use, exactly as the Stage-C Case-A
+method splice). The abstract carrier NEVER reaches the kernel as `tcon1`: it is monomorphized to `mu` here,
+per concrete use, because bang is whole-program (ADR-0082 §5). Missing impl ⟹ loud (the bound is unmet). -/
+def hktBfnWrapper (env : ElabEnv) (bfn : BoundedFn) (t : Ty) (args : List Surf) : Except String Surf := do
+  let some ctor := hktCtorHead t
+    | throw s!"bounded fn '{bfn.name}' ({bfn.traitName} {bfn.tyVar}): cannot determine the carrier constructor from the result annotation — annotate the use with `C …`"
+  let some impl := env.hktImpls.find? (fun i => i.traitName == bfn.traitName && i.ctorName == ctor)
+    | throw s!"no impl of '{bfn.traitName}' for '{ctor}' — the bound '{bfn.traitName} {bfn.tyVar}' is unsatisfied"
+  let resPat := stripArrows bfn.params.length bfn.declaredTy
+  let recTy  := (hktMatch resPat t).foldl (fun ty (v, cty) => substTyVar v cty ty)
+                  (substCarrierHead bfn.tyVar ctor bfn.declaredTy)
+  let recCore := Surf.letRecS bfn.name recTy (funFromParams bfn.params bfn.body)
+                   (args.foldl (fun acc a => Surf.app acc a) (.force (.var bfn.name)))
+  return impl.ops.foldr (fun od acc =>
+      Surf.lett od.name (.thunk (funFromParams od.params od.body)) acc) recCore
+
 mutual
 /-- Bounded-fn EXPANSION pre-pass (bite-2, ADR-0080): a PURE `Surf → Surf` rewrite that replaces every
 bounded-fn use `(fold arg : T)` with its monomorphic wrapper (`bfnWrapper`) BEFORE type-directed
@@ -1800,12 +1858,15 @@ def expandBFns (env : ElabEnv) : Nat → Surf → Except String Surf
                           let call := args'.foldl (fun acc a => Surf.app acc a) (Surf.force (Surf.var op))
                           return Surf.lett op (.thunk (funFromParams od.params body')) (.annotS call t)
           | none =>
-              match e with
-              | .app (.var fn) arg =>                             -- a bounded-fn use `(fold arg : T)`? (bite-2)
-                  match env.bfns.lookup fn with
-                  | some bfn => bfnWrapper env bfn t (← expandBFns env f arg)
-                  | none     => do return .annotS (← expandBFns env f e) t
-              | _ => do return .annotS (← expandBFns env f e) t
+              match env.bfns.lookup op with
+              | some bfn =>                                       -- a bounded-fn use `(fold arg : T)` (bite-2/HKT)
+                  let args' ← expandList env f args
+                  match env.hktTraits.lookup bfn.traitName with
+                  | some _ => hktBfnWrapper env bfn t args'       -- HK bound (`where Functor f`): Case B
+                  | none   => match args' with                   -- ordinary bound (`where Monoid a`): bite-2 (single arg)
+                              | [arg] => bfnWrapper env bfn t arg
+                              | _     => do return .annotS (← expandBFns env f e) t
+              | none => do return .annotS (← expandBFns env f e) t
       | none => do return .annotS (← expandBFns env f e) t
 
 /-- `SurfArgs` expansion (cap-op arguments). -/
@@ -3061,6 +3122,44 @@ def functorOption : String :=
 -- fail-loud: a `Functor` method used at a carrier with NO impl (`Functor Result` is undeclared) ⟹ type/elab error.
 #guard (match checkProg (functorOption ++
   "let inc = { fun n => n + 1 } in match (fmap inc (Ok(5) : Result Int Int) : Result Int Int) { Err(e) -> e, Ok(w) -> w }") with
+        | .error _ => true | .ok _ => false)
+
+/-! ### Stage ⑤e-B — ABSTRACT-OVER-f (bite-3 Case B, ADR-0082 §5): a function GENERIC over ANY `Functor`.
+`twice(g, x) : (a -> a) -> f a -> f a where Functor f = ($fmap) g (($fmap) g x)` never names a concrete
+constructor — `f` is ABSTRACT in its body, `fmap` dispatched through the `Functor f` bound. At the use
+`twice inc (Some 5) : Option Int` the result annotation pins `f := Option` (injectivity head-solution) and
+`a := Int` (arg match), the `Functor Option` impl is spliced, and the whole thing monomorphizes to `mu`
+and RUNS. This is the "write once, works for any Functor" payoff — the tcon1 substrate realized at the
+Surf pre-pass (whole-program mono, kernel untouched). -/
+def functorTwice : String :=
+  "trait Functor f { fmap : (a -> b) -> f a -> f b } " ++
+  "impl Functor for Option { fn fmap(g, x) = match x { None -> None, Some(v) -> Some(($g) v) } } " ++
+  "fn twice(g, x) : (a -> a) -> f a -> f a where Functor f = ($fmap) g (($fmap) g x) "
+
+-- ⭐ THE CASE-B DEMO: `twice inc (Some 5) ⇒ Some 7` — `inc` applied twice THROUGH an ABSTRACT Functor `f`.
+#guard runTypedYieldsInt 4000 (functorTwice ++
+  "let inc = { fun n => n + 1 } in match (twice inc (Some(5)) : Option Int) { None -> 0, Some(w) -> w }") 7
+-- abstract `f` over `None` preserves structure — `twice inc None ⇒ None`, the match yields the sentinel 0.
+#guard runTypedYieldsInt 4000 (functorTwice ++
+  "let inc = { fun n => n + 1 } in match (twice inc (None : Option Int) : Option Int) { None -> 0, Some(w) -> w }") 0
+
+/-- GENERICITY PROOF: a SECOND `Functor` (`Box`) + the SAME `twice` at BOTH carriers — the write-once payoff. -/
+def functorTwiceTwo : String :=
+  "data Box a = Box(a) " ++
+  "trait Functor f { fmap : (a -> b) -> f a -> f b } " ++
+  "impl Functor for Option { fn fmap(g, x) = match x { None -> None, Some(v) -> Some(($g) v) } } " ++
+  "impl Functor for Box { fn fmap(g, x) = match x { Box(v) -> Box(($g) v) } } " ++
+  "fn twice(g, x) : (a -> a) -> f a -> f a where Functor f = ($fmap) g (($fmap) g x) "
+
+-- ONE generic `twice` at TWO Functors: `Some 5 ⇒ Some 7` (7) AND `Box 5 ⇒ Box 7` (7), summed = 14.
+#guard runTypedYieldsInt 6000 (functorTwiceTwo ++
+  "let inc = { fun n => n + 1 } in " ++
+  "let o = match (twice inc (Some(5)) : Option Int) { None -> 0, Some(w) -> w } in " ++
+  "let b = match (twice inc (Box(5)) : Box Int) { Box(w) -> w } in o + b") 14
+
+-- fail-loud: abstract-over-f used at a carrier with NO `Functor` impl (`Functor Result` undeclared) ⟹ error.
+#guard (match checkProg (functorTwice ++
+  "let inc = { fun n => n + 1 } in match (twice inc (Ok(5) : Result Int Int) : Result Int Int) { Err(e) -> e, Ok(w) -> w }") with
         | .error _ => true | .ok _ => false)
 
 /-! ### Stage B HK UNIFICATION (ADR-0082 piece 3): constructor-injectivity decomposition. Run `unifyV`
