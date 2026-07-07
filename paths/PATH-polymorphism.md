@@ -35,6 +35,12 @@ bite  unlocks                                          power     decid.        t
       μX.Unit+(Int×X)) · match navigates via kernel unrollMu. Payoff: genListLen→3, genListSum→35,
       genListTwoTypes→3 (POLYMORPHIC, one decl at two element types). Additive (mono data unchanged, Vec→10);
       kernel/census UNTOUCHED. NOTE (item 3, higher-order bite-0b): higher-order compose landed at b6c66a6.
+      ⚠ FOLLOW-ON (demand-proven by the parser-combinator library, `examples/parser-combinators/`, `a306815`):
+      intro is ANNOTATION-DRIVEN — a generic COMBINATOR can't CONSTRUCT generic data (`Some((f a, rest)) :
+      Option (b×Str)` where `b` is a type var → bare ctor in synth fails "annotate", can't annotate a type
+      var). So the library is monomorphic-in-result (Int), not fully-generic `Parser a`. FIX = **annotation-
+      FREE generic introduction** (infer instantiation from ctor FIELD types) — **#55, the #50-successor**;
+      the blocker for a fully-generic `Parser a` / a fully-generic combinator stdlib.
 2   generic TRAITS + bounds (typeclasses + laws)       HM+bound  inferred      checker+elab    after 1
       trait Monoid a; fold : Monoid a => List a -> a   ← the generic-lawful-stdlib payoff (Q26)
       ⚠ FORK: dictionary-passing vs monomorphization (both elaborate-to-mono; ADR-0075 defers to here)
