@@ -75,13 +75,27 @@ Prove the HM substrate lands on the bidirectional checker + elaborates to mono k
     computation-arg body (`($g) x`) — bind-only-if-unbound so `curryBind`'s annotated path keeps concrete
     types; + a `binopS` hole-operand guard. EFFECT: bare `compose`'s error moved from "unbound variable g"
     (confusing) → "force: cannot infer this thunk's type — annotate" (honest). Corpus green.
-  - **REMAINING = the `IVTy`/`ICTy` re-rep** (grep-proven forced: a computation hole can't ride `CTy` —
-    collides with 57 `.F`/`.arr`; `IVTy`=`VTy`+`vhole`, `ICTy`=`CTy`+`chole`; effort ≈ the in-place port,
-    a genuine multi-session re-rep of resolve/zonk/occurs/unify/synth*/check*/generalize + a zonk-extract
-    boundary; all in `TypeCheck.lean`, kernel never sees it). Build-grounded Stage-2 spec (hmho, in order):
-    (a) `synthSC .force` value-hole → `U ρ chole` (not throw); (b) `app` of a `chole` callee → unify `arr`;
-    (c) `anfSplit`'s `.ok (.F _ A)` match only A-normalizes F-returners — a `chole` result needs `lower` to
-    handle an inline computation app-arg (or extend the A-norm). Then bare `compose` types+runs.
+  - **✅ DONE — the `IVTy`/`ICTy` re-rep LANDED (`b6c66a6`, icty2).** Bare HM-inferred higher-order
+    `compose` TYPES + RUNS (→11) + is POLYMORPHIC at two types (→14, middle-Int + middle-Unit, one
+    program). `IVTy`=`VTy`+`vhole`, `ICTy`=`CTy`+`chole` (mutual inductives, same ctor names → synth*/check*
+    re-resolve by expected-type); subst binds both; a value hole bound to `U ⊥ (chole)` makes
+    force-of-unknown-thunk representable — force-memoization + concrete-thunk coupling FALL OUT of `unifyV`
+    (the forced-side-map is the illegal state the rep eliminates). Re-repped resolve/zonk/occurs/unify/
+    freeHoles/abstract/inst/generalize + `embV`/`embC`/`extractV`/`extractC` at boundaries (kernel never
+    sees a hole). Stage-2 arms (a)/(b)/(c) as specced. **Whole-repo build EXIT 0, 174 guards, census
+    UNCHANGED (16 headlines trusted-three, audit green) — kernel untouched, pure tested-superset.**
+    LIMITATIONS (documented, in-code): pure-thunk only (the `⊥` row in arm (a) → effectful `compose` needs
+    row-poly, item 3); chole-default is a heuristic (unpinned result → `F ω ?`, the returner assumption).
+  - **⚠ FINDING — the plan-correction's threading prediction was WRONG (icty2, empirically).** The
+    Infer-threading was NOT load-bearing for chole coherence: each `anfSplit` site lifts its chole
+    independently + the final check re-infers coherently. The ACTUAL load-bearing fix was **`elabBind`** —
+    ELABORATION binds `let`-names monomorphically embedding raw hole-ids from a throwaway inference; a later
+    throwaway restarts its fresh counter at 0 → its holes COLLIDE with the embedded ids → spurious
+    unification (symptom: `compose` at ONE type worked, at TWO threw "let-binding: type mismatch" during
+    ELABORATION, not the final check). Fix: close each elaboration `let`-binding into a proper Scheme
+    (default choles, abstract free holes to rigids) so every use instantiates fresh — mirroring the final
+    check. A latent elaboration bug the re-rep EXPOSED (bite-0 never produced hole-typed let-bindings used
+    polymorphically). Threading remains a SEPARATE question for item 3 (row-poly).
 - **⚠ PLAN CORRECTION (hmho, grounded — supersedes icty's "shared threading = standalone Stage-1 unlock"
   for item 2):** the elaborate+check `Infer`-threading is NOT a standalone item-2 unlock. Per-site
   deterministic `paramHole`s suffice to move the wall (the FINAL check `synthSC [] e` already runs in ONE
