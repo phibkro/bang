@@ -53,8 +53,18 @@ bite  unlocks                                          power     decid.        t
       sum Int Monoid→6, two-instance→16, missing-instance fail-loud. Kernel/census UNTOUCHED.
 3   higher-rank (System F)                             System F  ANNOTATION    checker (bidir) later
       (∀a. a -> a) -> …  — first-class polymorphic values; annotation at the rank boundary
-4   higher-kinded (Fω / HKT)                           Fω        annotation    checker+elab    later (Q26)
+4   higher-kinded (Fω / HKT)                           Fω        annotation    checker+elab    SCOPED (ADR-0082 Proposed)
       trait Functor f; map : ∀a b. (a -> b) -> f a -> f b  ← "any iterable"; optics northstar
+      SCOPE (hktscope, ADR-0082 Proposed): size **L — a 3-4 stage TIER, not one dispatch** (~bite-0b). Load-bearing
+      finding: **MONO, ADDITIVE — ADR-0080 NOT re-opened** (f is concrete at every whole-program use = the bite-2
+      bfnWrapper move keyed on a ctor NAME; dict-passing pulled only by existentials/separate-compilation, neither
+      in v1). Zero kernel change. Decidable HK-unification for FREE via constructor-INJECTIVITY (bang has no type
+      families — the absence buys decidability); outside the fragment = annotation-required. Kinds = ARITY (Nat),
+      explicit `Kind` inductive DEFERRED (only transformers need it). STAGING: A (HK substrate: arity-kind + IVTy.tcon
+      HK-holes) → B (HK unify: injectivity decomp) → C (trait Functor f + mono-per-ctor; smallest slice = `impl
+      Functor for Option`, `fmap inc (Some 5)→Some 6`) → D (Monad/Parser + laws). Real work = piece 4 (poly methods:
+      generalize/instantiate ∘ mono-per-carrier + Self-as-applied-ctor). Stage D needs the Option/Result/Either
+      prelude (Task #9) as carriers. Ready to start Stage A after prelude lands + go-ahead.
 5   dependent / refinement                             dependent annotation +  checker (Q31), later (Q31)
       Vec n · {n : Int // P n}  — needs the TOTAL fragment (#47) for decidable type-level  MAYBE spine
 ```
