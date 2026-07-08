@@ -946,8 +946,109 @@ theorem evalD_complete_gen_full : ∀ F,
                   rw [run_perform_pop_handleF hcbpop hNRr' hhof F1] at hcont
                   exact hcont
           | throws ℓ0 =>
-              -- throws: no store push; normal return pops; a raise to identity g op "raise" is CAUGHT.
-              sorry
+              -- throws: no store push. Normal return pops the frame. A raise to identity g op "raise" is
+              -- CAUGHT (→ term(ret w), zero-shot abort); any other raise is FORWARDED. Mirror run_evalD:4948.
+              have hmint : Source.step (g, K, Comp.handle (Handler.throws ℓ0) M0)
+                  = some (g+1, Frame.handleF g (Handler.throws ℓ0) :: K, Comp.subst (Val.vcap g ℓ0) M0) := rfl
+              have hCinstall : CtxCorr σ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
+                CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
+              have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
+                CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+              have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
+              have hFreshInstall := freshCfg_step _ _ hFresh hmint
+              have hrun' : Config.run F' (g+1, Frame.handleF g (Handler.throws ℓ0) :: K,
+                  Comp.subst (Val.vcap g ℓ0) M0) = Result.done v := by
+                have hs := Config.run_step F' (g, K, Comp.handle (Handler.throws ℓ0) M0)
+                  (by intro gg vv hc; simp at hc)
+                rw [hmint] at hs; simp only at hs; rw [← hs]; exact hrun
+              obtain ⟨n, g1, σ1, τ1, hbody⟩ := ih F' (by omega) (Comp.subst (Val.vcap g ℓ0) M0) (g+1)
+                σ τ (Frame.handleF g (Handler.throws ℓ0) :: K) v
+                hCinstall hTinstall hCohInstall hFreshInstall hrun'
+              rcases hbody with ⟨t, hev, hCf, hTf, hCohf, hFf, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, F1, hF1le, hcont⟩
+              · -- body normal return: pop the throws frame → term(ret v0). Stores pass through.
+                rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
+                · obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCf hTf
+                  rw [hnetEq] at hCohf hFf hcont
+                  have hunmark : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
+                      Comp.ret v0) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret v0) := rfl
+                  have hCohPop := capLabelCoh_step _ _ hFf hCohf hunmark
+                  have hFreshPop := freshCfg_step _ _ hFf hunmark
+                  have hcont'' : ∃ Fs, Fs < F' ∧ Config.run Fs (g1, ctxNetEffect K σ1 τ1, Comp.ret v0)
+                      = Result.done v := by
+                    cases F1 with
+                    | zero => simp [Config.run] at hcont
+                    | succ F1' =>
+                        have := Config.run_step F1' (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
+                          Comp.ret v0) (by intro gg vv hc; simp at hc)
+                        rw [hunmark] at this; rw [this] at hcont; exact ⟨F1', by omega, hcont⟩
+                  obtain ⟨Fs, hFslt, hFs⟩ := hcont''
+                  refine ⟨n+1, g1, σ1, τ1, Or.inl ⟨.ret v0, ?_, hCpop, hTpop, hCohPop, hFreshPop, Fs, by omega, hFs⟩⟩
+                  exact handle_throws_normal_composes n g σ τ ℓ0 M0 v0 g1 σ1 τ1 hev
+                · exfalso
+                  obtain ⟨⟨_, _⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCf hTf
+                  rw [hnetEq] at hcont
+                  cases F1 with
+                  | zero => simp [Config.run] at hcont
+                  | succ F1' =>
+                      rw [Config.run_step F1' _ (by intro gg vv hc; simp at hc)] at hcont
+                      simp [Source.step, Config.run] at hcont
+              · -- body raised: CAUGHT (nn=g ∧ oop="raise") → term(ret vv); else FORWARDED → raised.
+                by_cases hk : nn = g ∧ oop = "raise"
+                · obtain ⟨hng, hno⟩ := hk; subst nn; subst oop
+                  -- CAUGHT: zero-shot abort to term(ret vv), stores kept (σ1/τ1). Continuation = the
+                  -- kernel's own abort step (perform (vcap g ℓ0) "raise" vv over the throws frame → ret vv).
+                  obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCf hTf
+                  rw [hnetEq] at hCohf hFf hcont hNR
+                  have hsp : Bang.splitAtId (Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1) g
+                      = some ([], Handler.throws ℓ0, ctxNetEffect K σ1 τ1) := by simp [Bang.splitAtId]
+                  have hho : Bang.handlesOp (Handler.throws ℓ0) ℓ0 "raise" = true := by simp [Bang.handlesOp]
+                  have hid : Bang.idDispatch (Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1)
+                      g ℓ0 "raise" vv = some (ctxNetEffect K σ1 τ1, Comp.ret vv) := by
+                    simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn]
+                  have hstep_perf : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
+                      Comp.perform (Val.vcap g ℓ0) "raise" vv) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret vv) := by
+                    simp only [Source.step, hid, Option.map_some]
+                  have hlabel : labelOf (Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1) g = ℓ0 := by
+                    simp only [labelOf, hsp, Option.map_some, Option.getD_some, Handler.label]
+                  -- hcont is dispatchRun over the throws-installed context; it aborts to ret vv then runs.
+                  have hcont' : ∃ Fs, Fs < F' ∧ Config.run Fs (g1, ctxNetEffect K σ1 τ1, Comp.ret vv)
+                      = Result.done v := by
+                    simp only [dispatchRun, hlabel] at hcont
+                    cases F1 with
+                    | zero => simp [Config.run] at hcont
+                    | succ F1' =>
+                        rw [Config.run_step F1' _ (by intro gg vv2 hc; simp at hc), hstep_perf] at hcont
+                        exact ⟨F1', by omega, hcont⟩
+                  obtain ⟨Fs, hFslt, hFs⟩ := hcont'
+                  -- pop the throws frame's coherence to the outer context (UNMARK-style, ret focus).
+                  have hunmark : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
+                      Comp.ret vv) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret vv) := rfl
+                  have hCohPop := capLabelCoh_step _ _ hFf hCohf hunmark
+                  have hFreshPop := freshCfg_step _ _ hFf hunmark
+                  refine ⟨n+1, g1, σ1, τ1, Or.inl ⟨.ret vv, ?_, hCpop, hTpop, hCohPop, hFreshPop, Fs, by omega, hFs⟩⟩
+                  exact handle_throws_caught_composes n g σ τ ℓ0 M0 vv g1 σ1 τ1 hev
+                · -- FORWARDED: raise to nn≠g or oop≠"raise"; propagate, strip the handleF-g frame.
+                  obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCf hTf
+                  rw [hnetEq] at hCohf hFf hNR
+                  have hcbpop : Bang.Model.CapsBelow g (ctxNetEffect K σ1 τ1) :=
+                    CapsBelow_ctxNetEffect _ _ hFresh.1
+                  have hCohr' := capLabelCoh_pop_handleF hcbpop hCohf
+                  have hFreshr' := freshCfg_pop_handleF hFf
+                  have hNRr' : NoResume (ctxNetEffect K σ1 τ1) nn oop := by
+                    by_cases hℓg : nn = g
+                    · subst hℓg; intro Kᵢ h Kₒ hsp
+                      exact absurd hsp (by rw [splitAtId_none_of_capsBelow hcbpop]; simp)
+                    · exact noResume_strip_cons (by intro h0 he; exact hℓg ((Frame.handleF.inj he).1.symm)) hNR
+                  have hhof : nn = g → Bang.handlesOp (Handler.throws ℓ0) (Handler.label (Handler.throws ℓ0)) oop = false := by
+                    intro hgl
+                    have hnr : oop ≠ "raise" := fun he => hk ⟨hgl, he⟩
+                    simp [Handler.label, Bang.handlesOp, hnr]
+                  refine ⟨n+1, g1, σ1, τ1, Or.inr ⟨nn, oop, vv, ?_, hCpop, hTpop, hCohr', hFreshr', hNRr', F1, by omega, ?_⟩⟩
+                  · exact handle_throws_forward_composes n g σ τ ℓ0 M0 nn oop vv g1 σ1 τ1 hk hev
+                  · rw [hnetEq] at hcont
+                    simp only [dispatchRun] at hcont ⊢
+                    rw [run_perform_pop_handleF hcbpop hNRr' hhof F1] at hcont
+                    exact hcont
           | transaction ℓ0 Θ =>
               -- txn: push τ.push g Θ, pop τ1.tail (free rollback). Mirror the state arm on the τ side.
               have hmint : Source.step (g, K, Comp.handle (Handler.transaction ℓ0 Θ) M0)
