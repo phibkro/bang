@@ -1,0 +1,405 @@
+import Bang.Backend.AbstractMachine
+
+/-! # U5b-handler — converse-of-run_evalD completeness spine (scratch).
+
+Single strengthened statement, DISJUNCTIVE conclusion over evalD's two outcomes
+(term / raised) — the converse unifies what run_evalD splits by hypothesis.
+Strong induction on Source `Config.run` fuel F; case on focus M. -/
+
+namespace Bang.CalcVM
+open Bang (Val Comp Frame Config Result Handler)
+open Bang.CapCoh (CapLabelCoh capLabelCoh_step)
+open Bang.Model (FreshCfg freshCfg_step)
+
+/-- Fuel monotonicity for `evalD` (the `evalD` analog of `exec_succ`/`exec_mono`): more fuel
+never changes a `some`. Needed by the converse spine, which COMBINES two `evalD` sub-runs at
+different fuels (e.g. letC binds M0 at `n`, subst-N at `ns`) — run_evalD never needs this because
+it inducts on `evalD` fuel directly. Induction on the smaller fuel, `cases` on the focus `M`. -/
+theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (r : Outcome × Nat × SStore × THeap),
+    evalD f g σ τ M = some r → evalD (f+1) g σ τ M = some r := by
+  intro f
+  induction f with
+  | zero => intro g σ τ M r h; simp [evalD] at h
+  | succ f ih =>
+    intro g σ τ M r h
+    cases M with
+    | ret w => simpa [evalD] using h
+    | lam M0 => simpa [evalD] using h
+    | letC M0 N =>
+        simp only [evalD] at h ⊢
+        cases hM0 : evalD f g σ τ M0 with
+        | none => rw [hM0] at h; simp at h
+        | some p =>
+            rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
+            obtain ⟨o, g1, σ1, τ1⟩ := p
+            cases o with
+            | term t => cases t with
+              | ret v0 => simp only [Option.bind_some] at h ⊢; exact ih _ _ _ _ _ h
+              | _ => simp only [Option.bind_some] at h ⊢; exact h
+            | raised n op w => simp only [Option.bind_some] at h ⊢; exact h
+    | force a =>
+        cases a with
+        | vthunk M0 => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
+        | _ => simp [evalD] at h ⊢ <;> exact h
+    | app M0 u =>
+        simp only [evalD] at h ⊢
+        cases hM0 : evalD f g σ τ M0 with
+        | none => rw [hM0] at h; simp at h
+        | some p =>
+            rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
+            obtain ⟨o, g1, σ1, τ1⟩ := p
+            cases o with
+            | term t => cases t with
+              | lam N => simp only [Option.bind_some] at h ⊢; exact ih _ _ _ _ _ h
+              | _ => simp only [Option.bind_some] at h ⊢; exact h
+            | raised n op w => simp only [Option.bind_some] at h ⊢; exact h
+    | perform cap op u =>
+        -- perform is FUEL-AGNOSTIC (no recursion): the `f+1` and `f+2` clauses are byte-identical.
+        cases cap with
+        | vcap n ℓ => simp only [evalD] at h ⊢; exact h
+        | _ => simp [evalD] at h ⊢ <;> exact h
+    | handle h0 M0 =>
+        cases h0 with
+        | custom _ _ _ => simp [evalD] at h
+        | state ℓ0 s0 =>
+            simp only [evalD, Handler.label] at h ⊢
+            cases hM0 : evalD f (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
+                obtain ⟨o, g1, σ1, τ1⟩ := p
+                cases o with
+                | term t => cases t with
+                  | ret v0 => simpa using h
+                  | _ => simpa using h
+                | raised n op w => simpa using h
+        | transaction ℓ0 Θ =>
+            simp only [evalD, Handler.label] at h ⊢
+            cases hM0 : evalD f (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
+                obtain ⟨o, g1, σ1, τ1⟩ := p
+                cases o with
+                | term t => cases t with
+                  | ret v0 => simpa using h
+                  | _ => simpa using h
+                | raised n op w => simpa using h
+        | throws ℓ0 =>
+            simp only [evalD, Handler.label] at h ⊢
+            cases hM0 : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
+                obtain ⟨o, g1, σ1, τ1⟩ := p
+                cases o with
+                | term t => cases t with
+                  | ret v0 => simpa using h
+                  | _ => simpa using h
+                | raised n op w =>
+                    by_cases hc : n = g ∧ op = "raise"
+                    · simp only [Option.bind_some, if_pos hc] at h ⊢; exact h
+                    · simp only [Option.bind_some, if_neg hc] at h ⊢; exact h
+    | case a N1 N2 =>
+        cases a with
+        | inl v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
+        | inr v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
+        | _ => simp [evalD] at h ⊢ <;> exact h
+    | split a N =>
+        cases a with
+        | pair v w => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
+        | _ => simp [evalD] at h ⊢ <;> exact h
+    | unfold a =>
+        cases a with
+        | fold v => simpa [evalD] using h
+        | _ => simp [evalD] at h ⊢ <;> exact h
+    | binop op a b =>
+        cases a <;> cases b <;> (simp only [evalD] at h ⊢ <;> exact h)
+    | oom => simp [evalD] at h
+    | wrong a => simp [evalD] at h
+
+theorem evalD_fuel_mono {f g : Nat} {σ : SStore} {τ : THeap} {M : Comp}
+    {r : Outcome × Nat × SStore × THeap} {f2 : Nat}
+    (h : evalD f g σ τ M = some r) (hle : f ≤ f2) : evalD f2 g σ τ M = some r := by
+  obtain ⟨k, rfl⟩ := Nat.le.dest hle
+  clear hle
+  induction k with
+  | zero => simpa using h
+  | succ k ih => rw [show f + (k+1) = (f + k) + 1 by omega]; exact evalD_succ _ _ _ _ _ _ ih
+
+/-- `evalD`'s `.term` outcome is always a TERMINAL computation — `ret v` or `lam M0` (the two
+values of CBPV). Every `evalD` clause that yields `.term t` yields one of these; the sequencing
+clauses (`letC`/`app`) recurse. Needed by the converse's letC/app term arms to discharge the
+non-terminal `t` cases that `cases t` would otherwise leave open. Induction on fuel, `cases` on `M`. -/
+theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp)
+    (t : Comp) (g' : Nat) (σ' : SStore) (τ' : THeap),
+    evalD f g σ τ M = some (.term t, g', σ', τ') →
+    (∃ v, t = Comp.ret v) ∨ (∃ M0, t = Comp.lam M0) := by
+  intro f
+  induction f with
+  | zero => intro g σ τ M t g' σ' τ' h; simp [evalD] at h
+  | succ f ih =>
+    intro g σ τ M t g' σ' τ' h
+    cases M with
+    | ret w => simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+               exact Or.inl ⟨w, h.1.symm⟩
+    | lam M0 => simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                exact Or.inr ⟨M0, h.1.symm⟩
+    | letC M0 N =>
+        simp only [evalD] at h
+        cases hM0 : evalD f g σ τ M0 with
+        | none => rw [hM0] at h; simp at h
+        | some p =>
+            rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+            cases o with
+            | term tt => cases tt with
+              | ret v0 => simp only [Option.bind_some] at h; exact ih _ _ _ _ _ _ _ _ h
+              | _ => simp [Option.bind_some] at h
+            | raised n op w => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                               exact absurd h.1 (by simp)
+    | force a =>
+        cases a with
+        | vthunk M0 => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
+        | _ => simp [evalD] at h
+    | app M0 u =>
+        simp only [evalD] at h
+        cases hM0 : evalD f g σ τ M0 with
+        | none => rw [hM0] at h; simp at h
+        | some p =>
+            rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+            cases o with
+            | term tt => cases tt with
+              | lam N => simp only [Option.bind_some] at h; exact ih _ _ _ _ _ _ _ _ h
+              | _ => simp [Option.bind_some] at h
+            | raised n op w => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                               exact absurd h.1 (by simp)
+    | perform cap op u =>
+        cases cap with
+        | vcap n ℓ =>
+            -- perform's `.term` result (get/put/txn success) is always `ret`; failures are `.raised`.
+            simp only [evalD] at h
+            by_cases hg : op = "get"
+            · rw [if_pos hg] at h
+              cases hσ : σ.get? n with
+              | some sv => rw [hσ] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                           exact Or.inl ⟨sv, h.1.symm⟩
+              | none => rw [hσ] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h; exact absurd h.1 (by simp)
+            · by_cases hp : op = "put"
+              · rw [if_neg hg, if_pos hp] at h
+                cases hσ : σ.get? n with
+                | some sv => rw [hσ] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                             exact Or.inl ⟨_, h.1.symm⟩
+                | none => rw [hσ] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h; exact absurd h.1 (by simp)
+              · by_cases ht : isTxnOp op = true
+                · rw [if_neg hg, if_neg hp, if_pos ht] at h
+                  cases hτ : τ.get? n with
+                  | some Θ => rw [hτ] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                              exact Or.inl ⟨_, h.1.symm⟩
+                  | none => rw [hτ] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h; exact absurd h.1 (by simp)
+                · rw [Bool.not_eq_true] at ht
+                  rw [if_neg hg, if_neg hp, if_neg (by rw [ht]; simp)] at h
+                  simp only [Option.some.injEq, Prod.mk.injEq] at h
+                  exact absurd h.1 (by simp)
+        | _ => simp [evalD] at h
+    | handle h0 M0 =>
+        cases h0 with
+        | custom _ _ _ => simp [evalD] at h
+        | state ℓ0 s0 =>
+            simp only [evalD, Handler.label] at h
+            cases hM0 : evalD f (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+                cases o with
+                | term tt => cases tt with
+                  | ret v0 => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                                Outcome.term.injEq] at h; exact Or.inl ⟨v0, h.1.symm⟩
+                  | _ => simp [Option.bind_some] at h
+                | raised n op w => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                                   exact absurd h.1 (by simp)
+        | transaction ℓ0 Θ =>
+            simp only [evalD, Handler.label] at h
+            cases hM0 : evalD f (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+                cases o with
+                | term tt => cases tt with
+                  | ret v0 => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                                Outcome.term.injEq] at h; exact Or.inl ⟨v0, h.1.symm⟩
+                  | _ => simp [Option.bind_some] at h
+                | raised n op w => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                                   exact absurd h.1 (by simp)
+        | throws ℓ0 =>
+            simp only [evalD, Handler.label] at h
+            cases hM0 : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+                cases o with
+                | term tt => cases tt with
+                  | ret v0 => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                                Outcome.term.injEq] at h; exact Or.inl ⟨v0, h.1.symm⟩
+                  | _ => simp [Option.bind_some] at h
+                | raised n op w =>
+                    by_cases hc : n = g ∧ op = "raise"
+                    · simp only [Option.bind_some, if_pos hc, Option.some.injEq, Prod.mk.injEq,
+                        Outcome.term.injEq] at h; exact Or.inl ⟨w, h.1.symm⟩
+                    · simp only [Option.bind_some, if_neg hc, Option.some.injEq, Prod.mk.injEq] at h
+                      exact absurd h.1 (by simp)
+    | case a N1 N2 =>
+        cases a with
+        | inl v => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
+        | inr v => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
+        | _ => simp [evalD] at h
+    | split a N =>
+        cases a with
+        | pair v w => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
+        | _ => simp [evalD] at h
+    | unfold a =>
+        cases a with
+        | fold v => simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                    exact Or.inl ⟨v, h.1.symm⟩
+        | _ => simp [evalD] at h
+    | binop op a b =>
+        cases a <;> cases b <;>
+          first
+          | (simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+             exact Or.inl ⟨_, h.1.symm⟩)
+          | simp [evalD] at h
+    | oom => simp [evalD] at h
+    | wrong a => simp [evalD] at h
+
+/-- The disjunctive outcome-agreement the converse produces for a focus `M` under `K`, with the
+CONTINUATION run's fuel BOUNDED by the input fuel `F` (`F' ≤ F`). The bound is the fuel-decrease
+bookkeeping the sequencing arms (letC/app) need: M0's terminated-run leftover bounds the subst-run,
+which must be `< F` to reapply the strong-induction IH. -/
+def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (K : Bang.EvalCtx) (v : Val) : Prop :=
+  ∃ n g' σ' τ',
+    (∃ t, evalD n g σ τ M = some (.term t, g', σ', τ') ∧
+      CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
+      CapLabelCoh (g', ctxNetEffect K σ' τ', t) ∧ FreshCfg (g', ctxNetEffect K σ' τ', t) ∧
+      ∃ F', F' ≤ F ∧ Config.run F' (g', ctxNetEffect K σ' τ', t) = Result.done v)
+    ∨
+    (∃ nn oop vv, evalD n g σ τ M = some (.raised nn oop vv, g', σ', τ') ∧
+      CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
+      CapLabelCoh (g', ctxNetEffect K σ' τ', Comp.ret vv) ∧
+      FreshCfg (g', ctxNetEffect K σ' τ', Comp.ret vv) ∧
+      NoResume (ctxNetEffect K σ' τ') nn oop ∧
+      ∃ F', F' ≤ F ∧ dispatchRun F' g' nn (ctxNetEffect K σ' τ') (labelOf (ctxNetEffect K σ' τ') nn) oop vv
+              = Result.done v)
+
+set_option maxHeartbeats 1000000 in
+theorem evalD_complete_gen_full : ∀ F,
+    ∀ (M : Comp) (g : Nat) (σ : SStore) (τ : THeap) (K : Bang.EvalCtx) (v : Val),
+      CtxCorr σ K → CtxTxnCorr τ K → CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
+      Config.run F (g, K, M) = Result.done v →
+      CompletesTo F g σ τ M K v := by
+  intro F
+  induction F using Nat.strong_induction_on with
+  | _ F ih =>
+    intro M g σ τ K v hCtx hTtx hCoh hFresh hrun
+    cases F with
+    | zero => simp [Config.run] at hrun
+    | succ F' =>
+      cases M with
+      | ret w =>
+          refine ⟨1, g, σ, τ, Or.inl ⟨.ret w, by simp [evalD], ?_, ?_, ?_, ?_, F'+1, le_rfl, ?_⟩⟩
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCoh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hFresh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hrun
+      | lam M0 =>
+          refine ⟨1, g, σ, τ, Or.inl ⟨.lam M0, by simp [evalD], ?_, ?_, ?_, ?_, F'+1, le_rfl, ?_⟩⟩
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hCoh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hFresh
+          · rw [ctxNetEffect_self hCtx hTtx]; exact hrun
+      | letC M0 N =>
+          -- Source steps (g,K,letC M0 N) → (g, letF N::K, M0). IH on focus M0 under letF N::K.
+          have hpush : Source.step (g, K, Comp.letC M0 N) = some (g, Frame.letF N :: K, M0) := rfl
+          have hCletF : CtxCorr σ (Frame.letF N :: K) := CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
+          have hTletF : CtxTxnCorr τ (Frame.letF N :: K) := CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+          have hCohletF := capLabelCoh_step _ _ hFresh hCoh hpush
+          have hFletF := freshCfg_step _ _ hFresh hpush
+          have hrun' : Config.run F' (g, Frame.letF N :: K, M0) = Result.done v := by
+            have hs := Config.run_step F' (g, K, Comp.letC M0 N) (by intro gg vv hc; simp at hc)
+            rw [hpush] at hs; simp only at hs; rw [← hs]; exact hrun
+          obtain ⟨n, g1, σ1, τ1, hM0⟩ := ih F' (by omega) M0 g σ τ (Frame.letF N :: K) v hCletF hTletF hCohletF hFletF hrun'
+          rcases hM0 with ⟨t, hev, hCf, hTf, hCohf, hFf, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, F1, hF1le, hcont⟩
+          · -- M0 terminated. t must be ret v0 (letF continuation pops ret). Recurse on subst.
+            -- ctxNetEffect (letF N::K) = letF N :: ctxNetEffect K, so the letF frame is exposed.
+            have hcne : ctxNetEffect (Frame.letF N :: K) σ1 τ1 = Frame.letF N :: ctxNetEffect K σ1 τ1 :=
+              ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
+            rw [hcne] at hCohf hFf hcont
+            -- t is a terminal (ret / lam). letF only reduces on a ret; a lam under letF is stuck.
+            rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
+            ·
+                have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
+                  CtxCorr_ctxNetEffect_nonframe (by intro n ℓ s; simp) (by intro n ℓ Θ; simp) hCf
+                have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
+                  CtxTxnCorr_ctxNetEffect_nonframe (by intro n ℓ s; simp) (by intro n ℓ Θ; simp) hTf
+                have hpop : Source.step (g1, Frame.letF N :: ctxNetEffect K σ1 τ1, Comp.ret v0)
+                    = some (g1, ctxNetEffect K σ1 τ1, Comp.subst v0 N) := rfl
+                have hFsub := freshCfg_step _ _ hFf hpop
+                have hCsub := capLabelCoh_step _ _ hFf hCohf hpop
+                -- peel the ret step off the continuation run — the leftover Fs < F' < F (fuel-decrease).
+                have hcont' : Config.run F1 (g1, Frame.letF N :: ctxNetEffect K σ1 τ1, Comp.ret v0) = Result.done v := hcont
+                have hsub_run : ∃ Fs, Fs < F' ∧ Config.run Fs (g1, ctxNetEffect K σ1 τ1, Comp.subst v0 N) = Result.done v := by
+                  cases F1 with
+                  | zero => simp [Config.run] at hcont'
+                  | succ F1' =>
+                      have := Config.run_step F1' (g1, Frame.letF N :: ctxNetEffect K σ1 τ1, Comp.ret v0)
+                        (by intro gg vv hc; simp at hc)
+                      rw [hpop] at this; rw [this] at hcont'; exact ⟨F1', by omega, hcont'⟩
+                obtain ⟨Fs, hFslt, hFs⟩ := hsub_run
+                obtain ⟨ns, gs, σs, τs, hsub⟩ :=
+                  ih Fs (by omega) (Comp.subst v0 N) g1 σ1 τ1 (ctxNetEffect K σ1 τ1) v hCM' hTM' hCsub hFsub hFs
+                -- whole letC evalD = evalD M0 (ret v0) then evalD (subst v0 N).
+                refine ⟨max n ns + 1, gs, σs, τs, ?_⟩
+                rcases hsub with ⟨ts, hevs, hCs, hTs, hCohs, hFsF, Fc, hFcle, hcs⟩ | ⟨nn2, oop2, vv2, hevs, hCs, hTs, hCohs, hFsF, hNR2, Fc, hFcle, hcs⟩
+                · left
+                  refine ⟨ts, ?_, ?_, ?_, ?_, ?_, Fc, by omega, ?_⟩
+                  · rw [show max n ns + 1 = (max n ns) + 1 from rfl]
+                    simp only [evalD]
+                    rw [evalD_fuel_mono hev (Nat.le_max_left n ns)]
+                    simp only [Option.bind_some]
+                    exact evalD_fuel_mono hevs (Nat.le_max_right n ns)
+                  · rw [ctxNetEffect_ctxNetEffect] at hCs; exact hCs
+                  · rw [ctxNetEffect_ctxNetEffect] at hTs; exact hTs
+                  · rw [ctxNetEffect_ctxNetEffect] at hCohs; exact hCohs
+                  · rw [ctxNetEffect_ctxNetEffect] at hFsF; exact hFsF
+                  · rw [ctxNetEffect_ctxNetEffect] at hcs; exact hcs
+                · right
+                  refine ⟨nn2, oop2, vv2, ?_, ?_, ?_, ?_, ?_, ?_, Fc, by omega, ?_⟩
+                  · rw [show max n ns + 1 = (max n ns) + 1 from rfl]
+                    simp only [evalD]
+                    rw [evalD_fuel_mono hev (Nat.le_max_left n ns)]
+                    simp only [Option.bind_some]
+                    exact evalD_fuel_mono hevs (Nat.le_max_right n ns)
+                  · rw [ctxNetEffect_ctxNetEffect] at hCs; exact hCs
+                  · rw [ctxNetEffect_ctxNetEffect] at hTs; exact hTs
+                  · rw [ctxNetEffect_ctxNetEffect] at hCohs; exact hCohs
+                  · rw [ctxNetEffect_ctxNetEffect] at hFsF; exact hFsF
+                  · rw [ctxNetEffect_ctxNetEffect] at hNR2; exact hNR2
+                  · rw [ctxNetEffect_ctxNetEffect] at hcs; exact hcs
+            · -- lam terminal under letF: Config.run gets stuck, contradicting hcont = done.
+                exfalso
+                cases F1 with
+                | zero => simp [Config.run] at hcont
+                | succ F1' =>
+                    rw [Config.run_step F1' _ (by intro gg vv hc; simp at hc)] at hcont
+                    simp [Source.step, Config.run] at hcont
+          · -- M0 raised. The raise propagates out of letC unchanged (evalD's letC raised arm); the
+            -- continuation is the SAME dispatchRun (letF frame is peeled by the raise, doesn't affect it).
+            have hcne : ctxNetEffect (Frame.letF N :: K) σ1 τ1 = Frame.letF N :: ctxNetEffect K σ1 τ1 :=
+              ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
+            -- ctxNetEffect over letF is nonframe, so it equals the K-version up to the letF prefix; but the
+            -- raised conclusion's coherence/NoResume/dispatchRun are stated over ctxNetEffect K, and letF is
+            -- transparent to splitAtId/labelOf/dispatch. Push the letF-frame transparency through.
+            sorry
+      | _ => sorry
+
+end Bang.CalcVM
