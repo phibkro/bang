@@ -38,8 +38,15 @@ kernel/census UNTOUCHED the entire arc** (frontend leaves, 25 constructors, 16 h
   DONE** (`713eb3c`) — inference row-unifier now REUSES the proven kernel `EffectRow.unify` (SSoT; mirror gone);
   a visibility-only Core touch, census byte-identical (manager-verified per-headline) — the ONLY Core touch of the
   session, and it was free.
-- **NEXT:** the **IO/net prong** (Q37 FFI-as-effect / Q39 what-is-IO / Q40 compilation-strategy → a `{Net}` effect →
-  the web server — needs a runtime, post-v1) · OR bank the win.
+
+**#44 USER-DEFINED EFFECTS arc STARTED — the moat, the first verified-spine work since the MVP (ADR-0085: general
+`Handler.custom`, coexist, one-shot v1).** The IO/net prong (ADR-0084) gated on this. **Stage 1 DONE (`d84aeae`):
+`Handler.custom` rep + the ADDITIVE ripple — the verified spine REOPENED and stayed axiom-clean** (census 25→26, the
++1 custom; every previously-clean headline still ⊆ trusted-three, NO new sorryAx; Spec.lean frozen statements
+untouched — the ADR-0085 additive-ripple bet CONFIRMED at the kernel). custom is INERT+UNTYPED so far. **NEXT: Stage 2**
+(dispatch/eval — custom actually dispatches + resumes on `Source.eval`) → **Stage 3** (typing) = a RUNNING user-defined
+effect (the moat visible). Then the multi-session proof grind: **Stage 4** calc-machine (HIGH, entangled with pending
+route-B ADR-0052) → 5 LR → 6 soundness → 7 surface. Staging + risk in `paths/`/ADR-0085.
 
 Active path: **`paths/PATH-polymorphism.md`**. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (Q1–Q42).
 
