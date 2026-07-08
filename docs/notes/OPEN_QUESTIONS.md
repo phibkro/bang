@@ -38,7 +38,7 @@
 - **[Q25 — Integer semantics: unbounded Int vs fixed-width (width + overflow)](Q25-integer-semantics-unbounded-vs-fixed-width.md)** — spec Int = unbounded ℤ v1 (matches the oracle); width lives behind the oracle, a later verified opt · _decided_  
   ties: ADR-0063, ADR-0065, ADR-0067
 - **[Q26 — Optics as the lawful-polymorphism north-star (+ the HKT fork, + graded optics)](Q26-optics-lawful-polymorphism.md)** — optics (lens/prism/traversal) as law-carrying stdlib; forces the HKT/F_ω fork; graded optics · _open_  
-  ties: Q27, ADR-0027, ADR-0040, ADR-0069
+  ties: Q27, ADR-0027, ADR-0040, ADR-0069, ADR-0082
 - **[Q27 — Surfacing the grade axis: declare effect shape AND grade (resumption grade → compilation)](Q27-surfacing-the-grade-axis.md)** — declare the effect ROW + the GRADE; surface the resumption grade (→ the compilation strategy) · _open_  
   ties: Q30, ADR-0001, ADR-0066
 - **[Q31 — Refinement types surface / quotient-proposition underlying: `Nat`, decidable checking, and the road to dependent types](Q31-refinement-types-quotient-props.md)** — refinement types (surface) over quotient-truncated decidable props (kernel); the road to dependent types · _open_  
@@ -46,7 +46,7 @@
 - **[Q36 — Gradual correctness / prototyping mode: typed holes, run-with-warnings, the coarse-vs-fine escape-hatch gap](Q36-gradual-correctness.md)** — surface + tooling; the vague-spec / exploratory end of the gradient · _open_  
   ties: Q31, Q35, ADR-0026, ADR-0073, ADR-0067
 - **[Q41 — Type isomorphism — how to check two types are isomorphic and convert between them (types-as-algebra: derive structural isos, law-check witnessed ones)](Q41-type-isomorphism-types-as-algebra-derive-vs-witness.md)** — A type iso is a lawful inverse pair (to/from with from∘to=id, to∘from=id). Two ways: STRUCTURAL — types-as-algebra (sum=+, product=×, Unit=1, Void=0 semiring), normalize both + compare, DERIVE the iso; WITNESSED — user gives to/from, property-test the laws (the bite-2 trait-law mechanism). Option a ≅ Either Unit a, Result e a ≅ Either e a are structural. · _open_  
-  ties: Q31, ADR-0081, ADR-0068, ADR-0069
+  ties: Q31, ADR-0081, ADR-0068, ADR-0069, ADR-0083
 - **[Q42 — Proving in bang — parametricity gives free substitutability NOW; Curry-Howard/dependent types make bang a prover LATER](Q42-proving-in-bang-parametricity-now-curry-howard-later.md)** — Two levels of proof. Substitutability/uniformity: FREE from parametricity (Reynolds' abstraction theorem — a parametric client can't distinguish instances of an interface; the type IS the proof), already latent in bang's polymorphism. Arbitrary propositions: needs dependent types (Curry-Howard: propositions-as-types, proofs-as-programs) — the Q31 far end, where a bang program IS a proof. · _open_  
   ties: Q31, Q41, ADR-0075, ADR-0081
 
@@ -257,6 +257,7 @@ graph LR
   ADR_0065["ADR-0065"]:::adr
   ADR_0067["ADR-0067"]:::adr
   ADR_0069["ADR-0069"]:::adr
+  ADR_0082["ADR-0082"]:::adr
   ADR_0073["ADR-0073"]:::adr
   ADR_0070["ADR-0070"]:::adr
   ADR_0071["ADR-0071"]:::adr
@@ -269,6 +270,7 @@ graph LR
   ADR_0075["ADR-0075"]:::adr
   ADR_0080["ADR-0080"]:::adr
   ADR_0081["ADR-0081"]:::adr
+  ADR_0083["ADR-0083"]:::adr
   Q1 --> Q8
   Q1 --> ADR_0001
   Q1 --> ADR_0032
@@ -334,6 +336,7 @@ graph LR
   Q26 --> ADR_0027
   Q26 --> ADR_0040
   Q26 --> ADR_0069
+  Q26 --> ADR_0082
   Q27 --> Q30
   Q27 --> ADR_0001
   Q27 --> ADR_0066
@@ -397,6 +400,7 @@ graph LR
   Q41 --> ADR_0081
   Q41 --> ADR_0068
   Q41 --> ADR_0069
+  Q41 --> ADR_0083
   Q42 --> Q31
   Q42 --> Q41
   Q42 --> ADR_0075

@@ -8,6 +8,10 @@
 node_modules/
 .pnpm-store/
 
+# Python (tools/ generators — bytecode cache re-dirties the tree each run)
+__pycache__/
+*.pyc
+
 # F* / OCaml alternate oracle build
 oracle/_build/
 *.checked

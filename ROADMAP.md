@@ -64,7 +64,7 @@ proofs that observed behavior equals what the reference semantics says.
 | ◊4 | **LR foundation (non-▷ fragment)** · **gate ✓ scoped (2026-06-24, ADR-0039)** | `lr_fundamental` proven for the **non-▷ fragment** (pure CBPV · functions · non-recursive ADTs · throws); the cohesive **▷-subsystem** (μ fold/unfold · `up` · resumptive state/txn handlers) → **◊4.5**. (`group_recovers` RETIRED — ADR-0032.) | ✅ scoped gate met: `lr_fundamental` reads the real proof, `sorryAx` ONLY from the documented ▷-subsystem; ◊2 (`no_accidental_handling` 0-axiom, STD trusted-three) + ◊3 (CalcVM trusted-three) held; arrow clause = peeling+F-restriction (ADR-0038), closed-value carrier (ADR-0036). `lr_sound_closed` (F-typed) proven; `lr_sound`(arbitrary-C)/`zero_usage` → ◊4.5. `effect_sound` (Q14) → ◊5 |
 | ◊4.5 | **LR ▷-subsystem** · **✓ SCOPED-SEAM LANDED + MERGED into main @ `4c77ba8` (2026-06-24, gated 724 jobs); sorryAx-zero PROBED NO-GO under DYNAMIC dispatch → PIVOT to typed+static (ADR-0045) DISSOLVES the edge** | Answer-typed KrelS rebuild + (g) migration (frozen `Crel:=CrelK`) + `lr_sound` over typed ⊑ + μ fold/unfold + `up` + throws/state/txn resumptive composition ALL closed end-to-end. The resume-through-a-wrap edge is the ONE documented `krelS_splitAt_decomp` sorry (ADR-0026 descent; **ADR-0043**). `NoWrapMiss` predicate banked = the right primitive | **BROAD moat, NOT sorryAx-zero:** `lr_sound`/`lr_fundamental` hold for ALL contexts (incl. state-over-throws + legit stacking) modulo the single documented resume-edge sorry. The cheap typed-CrelK close (Architecture D) was BUILD-PROBED (`typed-crelk-probe@ffac1b0`) and is **NO-GO**: `HasStack` pins the bottom answer but the strip's intermediate `KrelS` hole can't be typed (no `KrelS⇒HasStack` bridge; LR one-way) — D only relocates the leak. Only the heavy index-everything reshape remains (4–7 sessions + frozen break, not worth one edge). **Seam was verified-final FOR THE DYNAMIC KERNEL; ADR-0045 pivots to typed+static dispatch, which DISSOLVES the edge** (build-gated — it was an artifact of dynamic dispatch; see CONTEXT ★ ACTIVE DIRECTION + `paths/archive/PATH-typed-static-pivot.md`). Merged cleanly (only README conflicted → regenerated; ADR-0043 re-frontmattered to the 0042 schema). |
 | ◊5 | **Compiler v0** · **✓ DONE, IN MAIN (`0e5e28d`, 2026-06-24) — trusted-three over ALL handlers, exceeds the trivial-fragment gate** | `compile_forward_sim` proven for a trivial fragment; WasmFX module type concrete | Round-trip test by fragment (corrected 2026-06-23, ADR-0035/0036 recon): **pure-arith** `.bang` → ANY engine incl. wasm3; **one-handler** `.bang` → **Wasmtime** `Config::wasm_stack_switching` (x86-64; wasm3 has NO stack-switching). Pick a **suspend/resume** effect (state/generator) for the tracer, NOT `throws` — `throws` lowers to `resume_throw`, unlanded in Wasmtime (#10248). Same value as `Source.eval`. |
-| ◊6 | **Release v0** | Three parallel paths from ◊5 converged into a releasable artifact | Public release tag + paper drafts for the three theorems (`lr_fundamental`, `compile_forward_sim`, `group_recovers`/its resolution) |
+| ◊6 | **Release v0** | Three parallel paths from ◊5 converged into a releasable artifact | Public release tag + paper drafts for the theorems (`lr_fundamental`, `compile_forward_sim`, and the ◊4 group-recovery *resolution* — ADR-0032, the theorem itself retired) |
 
 ## Product spine — pulled forward (PRD §7)
 
@@ -90,55 +90,36 @@ This is the **one sanctioned exception** to "linear segments admit no parallelis
 spine is a *different layer* (surface) from the verification spine (kernel/compiler), so per rule 2
 (cross-layer paths run in parallel freely) it does not tangle the ◊-march.
 
-## Post-MVP direction — the sequence from here (2026-07-05)
+## Post-MVP direction — the tracks from here (stable map; live edge in `CONTEXT.md`)
 
-The **tracer-bullet MVP milestone is COMPLETE** (all 6 bullets: ADTs · recursive `data` · arithmetic ·
-effect-typed signatures · named capabilities · compiled path). The verified kernel is surfaced
-end-to-end; both engines agree. Superseding the stale "rungs 0–4" framing above. A **dogfooding pass**
-(2026-07-05, `bang eval` on real programs) then *use-attested* the priorities below.
+The tracer-bullet MVP is COMPLETE (ADTs · recursive `data` · arithmetic · effect-typed signatures ·
+named capabilities · compiled path) — the verified kernel surfaced end-to-end, both engines agree.
+Below are the stable tracks. **For where we are RIGHT NOW, read `CONTEXT.md`** — this section is the
+map, not the cursor (re-implementing the live edge here is what drifts it).
 
 ```
-WAVE 1 — ERGONOMICS (make it pleasant; every item is a dogfooding pain point)
-  #30 parser ✅ DONE (Pratt rule-table, ADR-0071/0072): ① operator loop · ② keyword rules ·
-     ③ generated grammar (closed #38 — self-documenting) · ④ whitespace-insensitive (papercut dead) ·
-     ②b decided B (principled regular-vs-CFG line) · ADR-0072 dropped `with` (state <init> as h in b).
-     STILL OPEN downstream: `bang fmt` canonical formatter (Q24) · tree-sitter (#9) · #31 (bare atoms).
-  #41 checker A-normalization  — let-bind-computations bug (`V(a+c,b+d)`, `match (expr)`)   [OPEN]
-  #10 elaborator error quality — the misleading "unbound m" (symptom, not cause)            [OPEN]
-  #7  REPL                     — iteration speed (would have made dogfooding far faster)     [OPEN]
+ERGONOMICS (dogfooding pain points)
+  #30 parser ✅ (Pratt rule-table, ADR-0071/0072). Downstream OPEN: `bang fmt` (Q24) · tree-sitter (#9) · #31.
+  #41 checker A-normalization · #10 elaborator error quality · #7 REPL                       [OPEN]
 
-WAVE 2 — THREE NORTH-STAR DIRECTIONS (operator sequences them; each design-first, ≈post-v1)
-  (a) RECURSION ✅ DONE (#42, ADR-0073) → STRINGS foundation ✅ DONE (#49 st.1-2, ADR-0074) → toolchain tools
-        Recursion end-to-end (#45 no-primitive · #41 natural · let rec · #46 Div-visible · #47
-        termination checker → Div PRECISE); strings runnable (String=List Char spec, literals,
-        length total-certified, display). Verified kernel untouched. REMAINING for toolchain-capable:
-        #49 string stdlib (concat/reverse/eq/map — stage 3) → a TOKENIZER in bang (stage 5, the
-        "writes its own tools" proof). Follow-ons: inductive `Nat` (free total factorial via #47 — Q31),
-        #48 effectful recursion, packed-string runtime + Char refinement (ADR-0074 deferred / Q31).
-  (b) POLYMORPHISM → "bang has a generic, lawful, verified stdlib" — INITIATIVE OPEN (`paths/PATH-polymorphism.md`)
-        ADR-0027 (staged) + **ADR-0075** (architecture: elaborate-to-mono → verified kernel UNTOUCHED,
-        bites 0-4 are checker leaves; bidirectional HM-inferred→annotation-checked→asserted decidability
-        stratification; row-poly first-class). Bite ladder: HM+row → generic data → generic traits+laws
-        (Q26 payoff) → higher-rank (System F, annotation-req) → HKT (Q26 optics) → dependent/refinement
-        (Q31). NEXT = the bite-0 pure-HM substrate spike. Motivated by #50 (the tokenizer helper limit).
-  (c) USER-DEFINED EFFECTS & HANDLERS → "paradigm is a value" MADE REAL — THE MOAT
-        #44: a GENERAL kernel handler (op→clause maps + continuation binding) + an `effect`
-        decl + a handler expression. The furthest (spine-touching: ripples to the calculated
-        machine + LR + soundness) but the most ON-THESIS — the three built-in effects are
-        scaffolding; the north-star claim is unproven until a user defines their own. The
-        machinery exists specialized (throws/state already capture+resume k); resumption
-        grades (#17/Q27) are its type cost.
+THREE NORTH-STAR TRACKS (each design-first, ≈post-v1; the operator sequences them, not a default)
+  (a) TOOLCHAIN-CAPABLE ✅ CLOSED — recursion (#42, ADR-0073) → strings (#49, ADR-0074) →
+        a tokenizer WRITTEN IN BANG (#49 stage 5, `ce6d738`; zero compiler change). Verified kernel
+        untouched. Follow-ons: inductive `Nat` (Q31) · #48 effectful recursion · packed-string runtime
+        + Char refinement (ADR-0074 deferred).
+  (b) POLYMORPHISM ✅ CLOSED (`cea8ae2`) — the generic, lawful, verified stdlib: HM → generic data
+        (ADR-0079) → bounded traits (ADR-0080) → annotation-free intro (ADR-0081) → HKT Functor+Monad
+        (ADR-0082) + prelude Option/Result/Either (ADR-0083) + effect row-poly (`5d0a32f`), all
+        elaborate-to-mono (ADR-0075) — verified kernel UNTOUCHED the entire arc. Forward frontier: optics (Q26).
+  (c) USER-DEFINED EFFECTS & HANDLERS ⟳ STARTED — "paradigm is a value" MADE REAL, THE MOAT.
+        #44 (ADR-0085): a general kernel handler + `effect` decl + handler expression. Stage 1 landed
+        (`d84aeae`, additive ripple, census axiom-clean); Stage 2 banked. Spine-touching (ripples to the
+        calculated machine + LR + soundness) + furthest-reaching — the current edge (see `CONTEXT.md`).
 
-WAVE 3 — VERIFICATION COMPLETION (parallel, verification-spine layer)
+VERIFICATION COMPLETION (parallel, verification-spine layer)
   #15 lr_sound ◊4 seam (the one sorryAx-carried headline; design-first) · #17/Q27 resumption
   grades → compilation strategy · Q21 concurrency (the multikernel) · #16 U5b-handler
 ```
-
-**Wave 2 is the load-bearing steer.** Three directions, three identities: recursion (#42, ✅ DONE) → *toolchain-capable*
-(the dogfood verdict was "can't write tools yet — no recursion, no strings"; recursion now closed, **strings** is the remaining gap); polymorphism (ADR-0027) → the
-*generic lawful stdlib + optics thesis* (Q26); user-defined effects (#44) → *"paradigm is a value" made
-real* — the moat, and the most on-thesis though furthest. All substantial, design-first, roughly post-v1.
-The operator sequences them; not a default.
 
 ### Pratt downstream — ✅ ①②③④ ALL LANDED (this section is now historical)
 

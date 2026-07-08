@@ -5,7 +5,7 @@ description: "the concrete module-system surface forks (granularity · imports �
 status: open
 area: tooling
 ties: ["Q32", "Q33", "ADR-0046", "ADR-0047", "ADR-0076"]
-see-also: ["paths/PATH-polymorphism.md"]
+see-also: ["paths/archive/PATH-polymorphism.md"]
 ---
 **Question**: the concrete SURFACE decisions for the module system + tooling, once it's built. The
 ARCHITECTURE is pinned (**ADR-0076**: modules elaborate to the flat kernel · the compiler is a queryable

@@ -4,9 +4,12 @@ title: "Optics as the lawful-polymorphism north-star (+ the HKT fork, + graded o
 description: "optics (lens/prism/traversal) as law-carrying stdlib; forces the HKT/F_ω fork; graded optics"
 status: open
 area: type-system
-ties: ["Q27", "ADR-0027", "ADR-0040", "ADR-0069"]
+ties: ["Q27", "ADR-0027", "ADR-0040", "ADR-0069", "ADR-0082"]
 see-also: ["docs/notes/stdlib-map.md"]
 ---
+**Status note**: the HKT sub-fork is CLOSED (**ADR-0082**, Functor+Monad shipped); the
+optics-as-stdlib northstar below keeps this question OPEN.
+
 **Question**: when and how does bang provide **optics** — composable, first-class, law-carrying
 accessors (lens for products, prism for sums, traversal) — as STDLIB, given they gate on the
 polymorphism lift and force an unrecorded higher-kinded-types decision?

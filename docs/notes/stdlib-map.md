@@ -7,7 +7,7 @@
 > to build, gated by the type-system power it needs. A living map, not a spec. Established 2026-07-05.
 >
 > Companion: `docs/notes/design-space-map.md` (the language-design forks) · ADR-0027 (the
-> polymorphism staging this catalogue is gated on) · ADR-0040 (lawful traits) · ADR-0069 (data decls).
+> polymorphism staging — now SHIPPED via ADR-0075) · ADR-0040 (lawful traits) · ADR-0069 (data decls).
 
 ## The three strata (the load-bearing frame)
 
@@ -27,27 +27,27 @@ exceptions, generators, `lens`), bang provides as library values over the kernel
 a stdlib abstraction isn't buildable today is the **type-system power** its generic form needs —
 which is exactly ADR-0027's staging axis.
 
-## The gating axis — type-system power (mirrors ADR-0027 + one unrecorded fork)
+## The gating axis — type-system power (mirrors ADR-0027; the poly ladder is now SHIPPED)
 
 ```
-rung                       provides                          unlocks in the stdlib
-──────────────────────────────────────────────────────────────────────────────────────────────
-monomorphic (NOW)          concrete data + lawful traits     concrete Option/Result/List/Stack for
-  ADR-0040/0069            on FIXED types                    ONE type · the Eq→Order hierarchy on Int
-HM (ADR-0027 stage 2)      ∀a parametric poly + generic      generic Option a / List a / Pair a b ·
-                           single-param lawful classes       single-param Monoid/Ord/Semigroup a ·
-                                                             map/fold/filter · concrete lawful lens
-System F (stage 3)         higher-rank ∀                     concrete generic optics (Lens s t a b)
-HKT / F_ω  ⚠ UNRECORDED    type-CONSTRUCTOR variables        Functor/Applicative/Monad/Traversable ·
-  FORK (Q26)               f : *→* in a class                van-Laarhoven + profunctor optics
-graded / effect (native)   effect rows in the interface      generic handler runtimes · GRADED optics
+rung                       provides                          unlocks in the stdlib          status
+──────────────────────────────────────────────────────────────────────────────────────────────────────
+monomorphic                concrete data + lawful traits     concrete Option/Result/List/Stack ·      ✅
+  ADR-0040/0069            on FIXED types                    the Eq→Order hierarchy on Int
+HM + row-poly              ∀a parametric poly + generic      generic Option a / List a / Pair a b ·   ✅ cea8ae2
+  ADR-0027 stage 2         single-param lawful classes +     single-param Monoid/Ord/Semigroup a ·      ADR-0079/0080/0081
+  (5d0a32f)                effect-row variables              map/fold/filter · effect-generic combinators
+System F (stage 3)         higher-rank ∀                     concrete generic optics (Lens s t a b)   ○ frontier
+HKT — DECIDED (ADR-0082)   type-CONSTRUCTOR variables        Functor/Applicative/Monad/Traversable ·  ✅ Functor+Monad
+                           f : *→* in a class                van-Laarhoven + profunctor optics          (Applic./Trav./optics TODO)
+graded / effect (native)   effect rows in the interface      generic handler runtimes · GRADED optics  ○ research (Q26)
                            (bang already has this in kernel)  (research; Q26)
 ```
 
-**The HKT fork is the pivot.** Functor, Monad, Traversable, and profunctor optics ALL need to abstract
-over a type constructor — beyond ADR-0027's System F ambition. It is one decision, first named in
-**Q26**; decide it once, deliberately, when the first generic container or optic forces it — not
-speculatively.
+**The HKT fork is DECIDED — ADR-0082** (Functor + Monad shipped; monomorphize kinds-as-arity). Functor,
+Monad, Traversable, and profunctor optics all abstract over a type constructor `f : *→*` — the decision
+**Q26** first named. Applicative/Traversable and the van-Laarhoven/profunctor optics ride the same rung
+and remain the forward frontier (Q26).
 
 ## The catalogue
 
@@ -61,13 +61,12 @@ ADR-0040's tested rung — a stdlib of *lawful* abstractions is the differentiat
 abstraction        laws                         rung        status / notes
 ────────────────────────────────────────────────────────────────────────────────────
 Bool = 1+1         boolean algebra              mono        ✅ (ADR-0065; if = sugar over case)
-Option/Maybe       —                            mono→HM     ◑ monomorphic via `data Opt = None | Some(Int)`
-                                                              NOW; generic `Option a` needs HM
-Result/Either      —                            mono→HM     ◑ same shape as Option
-List a             (functor/monoid laws once     mono→HM     ◑ IntList built (ADR-0069); generic + map/
-                    Functor lands)                            fold need HM, Foldable/Traversable need HKT
+Option/Maybe       —                            HM          ✅ generic `Option a` — prelude (ADR-0083)
+Result/Either      —                            HM          ✅ generic + Either-as-builtin-sum (ADR-0083)
+List a             functor/monoid/fold laws      HM/HKT      ✅ generic `List a` + map/fold/filter (ADR-0079);
+                                                              Foldable/Traversable ride HKT (ADR-0082)
 Stack / Queue      LIFO/FIFO behavioral          mono        ✅ IntStack (Surface demo) · Queue TODO
-Map / Set          lookup/insert laws            HM+Ord      ○ needs generic Ord (HM) + a tree/assoc impl
+Map / Set          lookup/insert laws            HM+Ord      ○ generic Ord now available (HM); tree/assoc impl TODO
 Vec (fixed)        AddCommGroup                  mono        ✅ `data Vec = Vec(Int,Int)` + Add (ADR-0069)
 ```
 
@@ -77,11 +76,11 @@ Vec (fixed)        AddCommGroup                  mono        ✅ `data Vec = Vec
 abstraction              laws                              rung      status
 ──────────────────────────────────────────────────────────────────────────────────
 Eq / Preorder / Order    refl·sym / +trans / +antisym      mono      ✅ Trait.lean (Int instance)
-Semigroup / Monoid       assoc / +identity                 mono→HM   ○ monomorphic buildable; generic = HM
+Semigroup / Monoid       assoc / +identity                 HM        ✅ generic bounded traits (ADR-0080)
 AddCommGroup / Ring       group + distributivity            mono      ◑ Int's ops exist (ADR-0065/67 = ℤ);
                                                                         the trait hierarchy TODO
-Functor / Applicative / Monad   the functor/monad laws      HKT ⚠     ○ blocked on the Q26 HKT fork
-Foldable / Traversable   naturality / linearity            HKT ⚠     ○ same
+Functor / Applicative / Monad   the functor/monad laws      HKT       ✅ Functor + Monad (ADR-0082); Applicative TODO
+Foldable / Traversable   naturality / linearity            HKT       ◑ HKT decided (ADR-0082); impl TODO
 ```
 
 ### C. Effect / handler runtimes — "runtimes are values"
@@ -132,21 +131,23 @@ serializable thunks     ships code @ the data (Unison-like)             Distribu
 `Bool` + arithmetic + comparisons (ADR-0065) · the `Eq→Preorder→Order` trait hierarchy + `Int`
 instance + `OrderedPair` (`Bang/Frontend/Surface/Trait.lean`) · `IntList` + `IntStack` (ADR-0069 +
 the Surface Stack demo) · `Vec` + `Add` (the ADR-0069 northstar) · the reactive cell (`=`, ADR-0005)
-· the STM transaction handler + ledger (ADR-0030) · the state / throws kernel handlers. Monomorphic
-`Option`/`Result` are expressible via `data` decls TODAY (they just aren't generic yet).
+· the STM transaction handler + ledger (ADR-0030) · the state / throws kernel handlers.
+**The polymorphism ladder SHIPPED (`cea8ae2`), all elaborate-to-mono (ADR-0075) over the UNTOUCHED
+kernel:** generic `Option`/`Result`/`Either` (prelude, ADR-0083, + first witnessed isomorphisms) ·
+generic data `List a`/`Pair` + map/fold/filter (ADR-0079) · bounded generic traits incl. `Monoid`
+(ADR-0080) · annotation-free generic intro (ADR-0081) · HKT `Functor` + `Monad` with laws (ADR-0082)
+· effect row-polymorphism (`5d0a32f`).
 
 ## Sequencing (what unlocks what)
 
 ```
-NOW (mono)        concrete lawful accessors · Monoid/Ring hierarchy on Int · monomorphic Option/Result
-HM (stage 2)      generic Option/List/Pair · single-param Monoid/Ord · map/fold/filter · GENERIC lawful
-                    lens (the ADR-0027-validating demo — Q26)
-System F (stage3) concrete generic optics · higher-rank combinators
-HKT decision ⚠    Functor/Monad/Traversable · van-Laarhoven & profunctor optics — ONE fork (Q26),
-                    decide when the first generic container/optic forces it, not before
-native/graded     generic handler runtimes · graded optics (research)
+✅ SHIPPED       generic Option/List/Pair · map/fold/filter · Monoid/Ord bounded traits · HKT Functor+
+                   Monad (ADR-0079/0080/0081/0082/0083) · effect row-poly — all elaborate-to-mono (ADR-0075)
+System F         concrete generic optics · higher-rank combinators — the forward frontier
+HKT — DECIDED    Applicative/Traversable · van-Laarhoven & profunctor optics ride the ADR-0082 rung (Q26)
+native/graded    generic handler runtimes · graded optics (research)
 ```
 
 The instinct throughout: a stdlib abstraction is LIBRARY code (invariant #5). If you find yourself
-wanting to add a keyword for it, stop — the kernel already supports it; what's missing is only the
-type-system power to write its *generic* form, and that's the ADR-0027 ladder, not a language feature.
+wanting to add a keyword for it, stop — the kernel already supports it; the type-system power to write
+its *generic* form is the ADR-0027 ladder (now SHIPPED via ADR-0075), not a language feature.

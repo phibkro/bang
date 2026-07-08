@@ -6,13 +6,15 @@ status: decided
 area: type-system
 resolved-by: ["ADR-0027"]
 ties: ["Q18", "Q19", "ADR-0001", "ADR-0027"]
-see-also: []
+see-also: ["ADR-0075"]
 ---
-**Resolution**: **Staged across three tiers; v1 takes only the first.** (1) v1/MVP = **monomorphic**
-(no type/row/grade variables; rung 2's stack is `Stack Int`, not `Stack a`); (2) next = **Hindley-Milner**
-(rank-1, decidable inference — where "paradigms as libraries" becomes real); (3) ambitious = **System F**
-+ effect-row variables `⟨e | ε⟩` (cashing the K1 unifier) + grade polymorphism. See **ADR-0027**.
-Original deliberation preserved below.
+**Resolution**: **Staged across three tiers** — all now realized as inference+elaboration over the
+monomorphic kernel (**ADR-0075**, elaborate-to-mono; the ladder closed `cea8ae2`). (1) v1/MVP =
+**monomorphic** (no type/row/grade variables; rung 2's stack is `Stack Int`, not `Stack a`); (2)
+**Hindley-Milner** (rank-1, decidable inference — where "paradigms as libraries" becomes real), plus
+effect **row-polymorphism** (`5d0a32f`); (3) **System F** + effect-row variables `⟨e | ε⟩` (cashing the
+K1 unifier) + grade polymorphism. See **ADR-0027** (the staging) and **ADR-0075** (the realizing
+architecture). Original deliberation preserved below.
 
 **Question**: the kernel type syntax (`VTy = unit | int | U eff cty`; `CTy = F mult vty | arr …`) is
 **monomorphic** — no type variables, no effect-row variables. How does bang express parametric

@@ -2,7 +2,7 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Accepted (the architecture for the polymorphism initiative; bites are staged — see `paths/PATH-polymorphism.md`)
+- **Status**: Accepted (the architecture for the polymorphism initiative — now COMPLETE, `cea8ae2`; the staged bites are archived at `paths/archive/PATH-polymorphism.md`)
 - **Summary**: Polymorphism is realized as inference + elaboration in the CHECKER (a tested superset), NOT as a System F kernel — generic surface code ELABORATES to MONOMORPHIC kernel terms (monomorphization / dictionary-passing), so the verified kernel (`Source.eval`/`HasCTy`/soundness) stays UNTOUCHED, census-stable (the ADR-0026 stratification: verified core + tested superset, seam = elaboration). Type establishment is BIDIRECTIONAL and stratified by DECIDABILITY: HM-INFERRED where decidable (no annotation) → ANNOTATION-CHECKED where inference is undecidable (higher-rank / dependent — the user gives the intended type, checking is decidable) → ASSERTED/postulated (can't check — the escape hatch). Decidability is the invariant: an un-annotated undecidable term is a TYPE ERROR, never an unsound guess — the annotation is the explicit-descent marker (the type-system analog of `Div`). Row-polymorphism (over effect rows, and eventually grades — ADR-0027) is first-class from the first bite.
 - **Depends-on**: 0027, 0026
 - **Relates-to**: Q26 (HKT/optics — bites 3-4), Q27 (grade variables), Q31 (dependent/refinement — bite 5, may touch the spine), #50 (the dogfood motivation — reusable generic helpers)
@@ -25,7 +25,7 @@ it DOESN'T (for bites 0-4), and so the type-establishment discipline is decidabl
 1. **ELABORATE-TO-MONO, not a System F kernel.** Polymorphism lives in the CHECKER + ELABORATOR (a
    tested superset). Generic surface code elaborates to MONOMORPHIC kernel terms — via monomorphization
    (instantiate each generic use to a concrete type, Rust-style) or dictionary-passing (Haskell-style;
-   the bite-2 fork, deferred to `PATH-polymorphism.md`). The kernel (`Source.eval`, `HasCTy`, the LR,
+   the bite-2 fork, deferred to `paths/archive/PATH-polymorphism.md`). The kernel (`Source.eval`, `HasCTy`, the LR,
    soundness, CalcVM) is UNTOUCHED and census-stable. **Seam** = the elaboration; **tested** = the
    elaborated monomorphic term kernel-typechecks + runs correctly (differential, like the current
    checker). Rejected: a System F kernel (the LR/soundness/CalcVM would carry type vars — spine work,
@@ -59,7 +59,7 @@ it DOESN'T (for bites 0-4), and so the type-establishment discipline is decidabl
 - **Deferring row-polymorphism** — makes generic `map`/`fold` useless in an effectful language.
 - **Committing dict-passing vs monomorphization now** — the bite-2 fork (separate compilation + code
   size vs simplicity + speed; dict-passing is more effect-system-idiomatic, monomorphization simpler).
-  Both elaborate-to-mono, so this ADR holds either way; decide at bite 2 (`PATH-polymorphism.md`).
+  Both elaborate-to-mono, so this ADR holds either way; decide at bite 2 (`paths/archive/PATH-polymorphism.md`).
 
 ## Consequences
 
@@ -67,7 +67,7 @@ it DOESN'T (for bites 0-4), and so the type-establishment discipline is decidabl
   held through recursion + strings CONTINUES. This is the big de-risk: no spine work for generics.
 - Bite 5 (dependent/refinement, Q31) MAY reach the spine (type-level computation needs the total
   fragment #47) — its own decision when reached.
-- The initiative is multi-session; `paths/PATH-polymorphism.md` is the tracker (bite ladder + status +
+- The initiative is multi-session; `paths/archive/PATH-polymorphism.md` is the tracker (bite ladder + status +
   the open forks). Each bite gets a spike (de-risk the mechanism first, à la recursion) then an ADR.
 
 ## Revisit if

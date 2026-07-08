@@ -4,7 +4,7 @@ title: "Type isomorphism — how to check two types are isomorphic and convert b
 description: "A type iso is a lawful inverse pair (to/from with from∘to=id, to∘from=id). Two ways: STRUCTURAL — types-as-algebra (sum=+, product=×, Unit=1, Void=0 semiring), normalize both + compare, DERIVE the iso; WITNESSED — user gives to/from, property-test the laws (the bite-2 trait-law mechanism). Option a ≅ Either Unit a, Result e a ≅ Either e a are structural."
 status: open
 area: type-system
-ties: ["Q31", "ADR-0081", "ADR-0068", "ADR-0069"]
+ties: ["Q31", "ADR-0081", "ADR-0068", "ADR-0069", "ADR-0083"]
 see-also: ["Fiore et al. — decidable type isomorphism", "the schema-as-derived-codec thread (Q37/native validation)", "prelude Option/Result/Either isos", "Curry-Howard (Q42)"]
 ---
 
