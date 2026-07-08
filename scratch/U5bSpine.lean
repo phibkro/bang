@@ -614,11 +614,71 @@ theorem evalD_complete_gen_full : ∀ F,
             · by_cases hop2 : op = "put"
               · subst hop2
                 cases hg : σ.get? n2 with
-                | some sv => sorry  -- put-hit: mirror run_evalD:4198 (state put, K→updateCtxStates)
+                | some sv =>
+                    -- put-hit: evalD → term(ret vunit) with σ.put; kernel → ret vunit, K→updateCtxStates.
+                    have hgc : (ctxStates K).get? n2 = some sv := by rw [← hCtx]; exact hg
+                    obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxStates_get hFresh.2.2.1 hgc
+                    have hlab : ℓ' = ℓ2 := by
+                      have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
+                    have hcr : Bang.CapResolves K n2 ℓ2 "put" :=
+                      ⟨Kᵢ, Handler.state ℓ' sv, Kₒ, hsp, by subst hlab; simp [Bang.handlesOp]⟩
+                    have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) "put" u)
+                        = some (g, updateCtxStates K ((ctxStates K).put n2 u), Comp.ret .vunit) := by
+                      simp only [Source.step, dispatch_state_put (w := u) hcr hgc, Option.map_some]
+                    have hcoh' := capLabelCoh_step _ _ hFresh hCoh hstep
+                    have hfr' := freshCfg_step _ _ hFresh hstep
+                    have hctxeq : ctxNetEffect K (σ.put n2 u) τ = updateCtxStates K ((ctxStates K).put n2 u) := by
+                      rw [hCtx, hTtx]; unfold ctxNetEffect
+                      rw [show ctxTxns K = ctxTxns (updateCtxStates K ((ctxStates K).put n2 u)) from
+                        (ctxTxns_updateCtxStates K _).symm, updateCtxTxns_self_aux]
+                    have hrun' : Config.run F' (g, updateCtxStates K ((ctxStates K).put n2 u), Comp.ret .vunit)
+                        = Result.done v := by
+                      have hs := Config.run_step F' (g, K, Comp.perform (Val.vcap n2 ℓ2) "put" u)
+                        (by intro gg vv hc; simp at hc)
+                      rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+                    refine ⟨1, g, σ.put n2 u, τ, Or.inl ⟨.ret .vunit, ?_, ?_, ?_, ?_, ?_, F', by omega, ?_⟩⟩
+                    · show evalD 1 g σ τ (Comp.perform (Val.vcap n2 ℓ2) "put" u) = _
+                      simp only [evalD, if_neg (by decide : ¬ ("put" = "get")), if_true]; rw [hg]
+                    · rw [hctxeq, hCtx]; simp only [CtxCorr]; rw [ctxStates_updateCtxStates_put hgc]
+                    · rw [hctxeq, hTtx]; simp only [CtxTxnCorr]; rw [ctxTxns_updateCtxStates]
+                    · rw [hctxeq]; exact hcoh'
+                    · rw [hctxeq]; exact hfr'
+                    · rw [hctxeq]; exact hrun'
                 | none => sorry     -- put-miss: raise (mirror get-miss)
               · by_cases hopt : isTxnOp op = true
                 · cases hgt : τ.get? n2 with
-                  | some Θ => sorry  -- txn-hit: mirror run_evalD:4232
+                  | some Θ =>
+                      -- txn-hit: evalD → term(ret r) with τ.put; kernel dispatch_txn_service, K→updateCtxTxns.
+                      have hgt' : (ctxTxns K).get? n2 = some Θ := by rw [← hTtx]; exact hgt
+                      obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxTxns_get hFresh.2.2.1 hgt'
+                      have hlab : ℓ' = ℓ2 := by
+                        have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
+                      have hcr : Bang.CapResolves K n2 ℓ2 op :=
+                        ⟨Kᵢ, Handler.transaction ℓ' Θ, Kₒ, hsp, by
+                          subst hlab; rcases isTxnOp_iff.mp hopt with rfl | rfl | rfl <;> simp [Bang.handlesOp]⟩
+                      have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op u)
+                          = some (g, updateCtxTxns K ((ctxTxns K).put n2 (txnService op u Θ).2),
+                              Comp.ret (txnService op u Θ).1) := by
+                        simp only [Source.step, dispatch_txn_service hopt hcr hgt', Option.map_some]
+                      have hcoh' := capLabelCoh_step _ _ hFresh hCoh hstep
+                      have hfr' := freshCfg_step _ _ hFresh hstep
+                      have hctxeq : ctxNetEffect K σ (τ.put n2 (txnService op u Θ).2)
+                          = updateCtxTxns K ((ctxTxns K).put n2 (txnService op u Θ).2) := by
+                        rw [hCtx, hTtx]; unfold ctxNetEffect; rw [updateCtxStates_self_aux]
+                      have hrun' : Config.run F' (g, updateCtxTxns K ((ctxTxns K).put n2 (txnService op u Θ).2),
+                          Comp.ret (txnService op u Θ).1) = Result.done v := by
+                        have hs := Config.run_step F' (g, K, Comp.perform (Val.vcap n2 ℓ2) op u)
+                          (by intro gg vv hc; simp at hc)
+                        rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+                      refine ⟨1, g, σ, τ.put n2 (txnService op u Θ).2,
+                        Or.inl ⟨.ret (txnService op u Θ).1, ?_, ?_, ?_, ?_, ?_, F', by omega, ?_⟩⟩
+                      · show evalD 1 g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) = _
+                        simp only [evalD, if_neg hop, if_neg hop2, hopt, if_true]; rw [hgt]
+                      · rw [hctxeq, hCtx]; simp only [CtxCorr]; rw [ctxStates_updateCtxTxns]
+                      · rw [hctxeq, hTtx]; simp only [CtxTxnCorr]; rw [ctxTxns_updateCtxTxns_service hgt']
+                      · rw [hctxeq]; exact hcoh'
+                      · rw [hctxeq]; exact hfr'
+                      · rw [hctxeq]; exact hrun'
                   | none => sorry    -- txn-miss: raise
                 · sorry  -- non-resumptive op: raise (mirror run_evalD:4647)
           | _ =>
