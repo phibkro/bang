@@ -76,5 +76,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **gitignore** — clean the vocs stanza — a diff-format patch had been dumped in verbatim (`285e31e`)
 - **site** — strip mermaid on the docs site — vocs client Mermaid component infinite-reloads (`ade33cb`)
 - **examples** — check-examples always rebuilds the bang exe — kills the stale-binary gate-trap (`c947809`)
+- **ci** — set the git gc posture in the runner clone (`2bc9566`)
 
 <!-- END GENERATED changelog -->

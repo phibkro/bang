@@ -44,17 +44,17 @@ ENTRY_RE = re.compile(
     r"^(?P<sha>[0-9a-f]+)\x1f(?P<type>[a-z]+)(\((?P<scope>[^)]+)\))?(?P<bang>!)?: (?P<subject>.+)$")
 
 
-def commits(root: str) -> list[str]:
+def commits(root: str, end: str = "HEAD") -> list[str]:
     """Conventional-commit subjects since the MVP baseline, oldest-first."""
     res = subprocess.run(
-        ["git", "-C", root, "log", f"{BASELINE}..HEAD", "--reverse", "--format=%h\x1f%s"],
+        ["git", "-C", root, "log", f"{BASELINE}..{end}", "--reverse", "--format=%h\x1f%s"],
         capture_output=True, text=True)
     return res.stdout.splitlines() if res.returncode == 0 else []
 
 
-def entries(root: str) -> dict[str, list[tuple]]:
+def entries(root: str, end: str = "HEAD") -> dict[str, list[tuple]]:
     buckets: dict[str, list[tuple]] = {t: [] for t, _ in SECTIONS}
-    for line in commits(root):
+    for line in commits(root, end):
         m = ENTRY_RE.match(line)
         if not m or m.group("type") not in buckets:
             continue
@@ -63,8 +63,8 @@ def entries(root: str) -> dict[str, list[tuple]]:
     return buckets
 
 
-def render(root: str) -> str:
-    b = entries(root)
+def render(root: str, end: str = "HEAD") -> str:
+    b = entries(root, end)
     out = [BEGIN, "", "## Unreleased", ""]
     populated = False
     for t, heading in SECTIONS:
@@ -112,11 +112,19 @@ def main() -> int:
         return 1
 
     if args.check:
-        if splice(md, block) != md:
-            print("── changelog ──\nFAIL: CHANGELOG.md is stale — run `just changelog`.")
-            return 1
-        print("── changelog ──\nPASS: CHANGELOG.md ≡ the conventional commits.")
-        return 0
+        if splice(md, block) == md:
+            print("── changelog ──\nPASS: CHANGELOG.md ≡ the conventional commits.")
+            return 0
+        # The fixpoint tolerance: a commit cannot contain a changelog that includes
+        # itself, so the pre-commit hook's maintainable invariant is file ≡ render(parent).
+        # A checkout is therefore legitimately ONE commit behind (the self-hash lag);
+        # accept HEAD~1, still fail at two-or-more behind (genuine staleness).
+        if splice(md, render(root, "HEAD~1")) == md:
+            print("── changelog ──\nPASS: CHANGELOG.md ≡ the commits as of HEAD~1 "
+                  "(the self-hash fixpoint lag — resyncs on the next `just changelog`).")
+            return 0
+        print("── changelog ──\nFAIL: CHANGELOG.md is stale (≥2 commits behind) — run `just changelog`.")
+        return 1
 
     open(path, "w", encoding="utf-8").write(splice(md, block))
     print(f"changelog: regenerated the block in {os.path.relpath(path, root)}.")
