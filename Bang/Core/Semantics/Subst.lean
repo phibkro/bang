@@ -81,6 +81,12 @@ def Handler.shiftFrom (c : Nat) : Handler → Handler
   -- well-founded recursion, breaking the `rfl`-reduction the kernel demos + metatheory rely on. The
   -- identity is SOUND for closed heaps (the only heaps a well-typed `transaction` frame carries).
   | .transaction ℓ Θ => .transaction ℓ Θ
+  -- custom (ADR-0085 #44 STAGE 1): IDENTITY, like `transaction`. The carried param + clause `Comp`s are
+  -- treated as CLOSED (the CK focus is always closed, ADR-0025/0030), so shift is the identity — and,
+  -- as with `transaction`'s heap, descending (here into a `OpId → Option Comp` FUNCTION) would force the
+  -- mutual `shiftFrom` block onto well-founded recursion, breaking the `rfl`-reduction the kernel relies
+  -- on. Sound this stage: custom is untyped (stage 3), so no typed program's substitution observes it.
+  | .custom ℓ p clauses => .custom ℓ p clauses
 end
 
 /-- `Val.shift = Val.shiftFrom 0` — push a closed-ish value under one binder. -/
@@ -128,6 +134,11 @@ def Handler.substFrom (k : Nat) (v : Val) : Handler → Handler
   -- heap cells are CLOSED ⇒ subst is the identity; leave `Θ` untouched (keeps structural recursion,
   -- so the `substFrom` family still reduces by `rfl`). Sound for closed heaps (ADR-0030).
   | .transaction ℓ Θ => .transaction ℓ Θ
+  -- custom (ADR-0085 #44 STAGE 1): IDENTITY, like `transaction` — the carried param + clauses are
+  -- treated as closed (keeps the `substFrom` family structurally `rfl`-reducing; descending into the
+  -- `OpId → Option Comp` function would break it). Sound this stage: custom is untyped, unobservable
+  -- by any typed program's substitution. Real param/clause substitution is a stage-2/3 concern.
+  | .custom ℓ p clauses => .custom ℓ p clauses
 end
 
 /-- The head-redex substitution `c[v]`: fill the nearest binder (index 0)
@@ -203,6 +214,8 @@ private theorem Handler.substFrom_shiftFrom (k : Nat) (v : Val) :
   | .throws _        => rfl
   -- heap left untouched by both shift and subst (closed cells, ADR-0030) ⇒ identity is definitional.
   | .transaction _ _ => rfl
+  -- custom: both shift and subst are the identity (ADR-0085 stage 1) ⇒ round-trip is definitional.
+  | .custom _ _ _    => rfl
 end
 
 /-- `(Comp.shift c).subst v = c` — the cutoff-0 instance of `Comp.substFrom_shiftFrom`, the exact

@@ -515,6 +515,13 @@ theorem wStateUpdate_comm (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
           | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                       obtain ⟨rfl, rfl⟩ := h
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+      | custom ℓ0 cp cl =>   -- custom = non-state, stateUpdate catch-all (ADR-0085 stage 1)
+          rw [hfr] at h
+          cases hrec : CalcVM.stateUpdate n op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
 
 theorem wUnwindFind_comm (n : Nat) (op : Bang.OpId) :
     ∀ {hs : CalcVM.HStack} {c' s' hs'}, CalcVM.unwindFind n op hs = some (c', s', hs') →
@@ -549,6 +556,14 @@ theorem wUnwindFind_comm (n : Nat) (op : Bang.OpId) :
                       obtain ⟨rfl, rfl, rfl⟩ := h
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
       | transaction ℓ0 Θ =>
+          rw [hfr] at h
+          cases hrec : CalcVM.unwindFind n op hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => obtain ⟨pc, ps, phs⟩ := p
+                      rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨rfl, rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
+      | custom ℓ0 cp cl =>   -- custom = non-throws, unwindFind catch-all (ADR-0085 stage 1)
           rw [hfr] at h
           cases hrec : CalcVM.unwindFind n op hs with
           | none => rw [hrec] at h; simp at h
@@ -1083,6 +1098,15 @@ theorem stateUpdate_hstackOk :
                       intro fr2 hfr2; rcases List.mem_cons.mp hfr2 with rfl | hfr2
                       · exact hfr
                       · exact ih hsh0 hrec fr2 hfr2
+      | custom ℓ0 cp cl =>   -- custom = non-state, stateUpdate catch-all (ADR-0085 stage 1)
+          rw [hfrh] at h
+          cases hrec : CalcVM.stateUpdate ℓ op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      intro fr2 hfr2; rcases List.mem_cons.mp hfr2 with rfl | hfr2
+                      · exact hfr
+                      · exact ih hsh0 hrec fr2 hfr2
 
 /-- `txnUpdate` preserves `HStackOk` (same shape as `stateUpdate`: it swaps a `transaction`
 frame's stored HEAP, not its `savedCode`). -/
@@ -1135,6 +1159,15 @@ theorem txnUpdate_hstackOk :
                       intro fr2 hfr2; rcases List.mem_cons.mp hfr2 with rfl | hfr2
                       · exact hfr
                       · exact ih hsh0 hrec fr2 hfr2
+      | custom ℓ0 cp cl =>   -- custom = non-txn, txnUpdate catch-all (ADR-0085 stage 1)
+          rw [hfrh] at h
+          cases hrec : CalcVM.txnUpdate ℓ op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      intro fr2 hfr2; rcases List.mem_cons.mp hfr2 with rfl | hfr2
+                      · exact hfr
+                      · exact ih hsh0 hrec fr2 hfr2
 
 /-- `wStateUpdate = none` whenever `stateUpdate = none` (structurally identical helpers). -/
 theorem wStateUpdate_comm_none (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
@@ -1168,6 +1201,11 @@ theorem wStateUpdate_comm_none (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
           | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
           | some p => rw [hrec] at h; simp at h
       | transaction ℓ0 Θ =>
+          simp only [hfr] at h ⊢
+          cases hrec : CalcVM.stateUpdate n op v hs with
+          | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
+          | some p => rw [hrec] at h; simp at h
+      | custom ℓ0 cp cl =>   -- custom = non-state, stateUpdate catch-all (ADR-0085 stage 1)
           simp only [hfr] at h ⊢
           cases hrec : CalcVM.stateUpdate n op v hs with
           | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
@@ -1216,6 +1254,13 @@ theorem wTxnUpdate_comm (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
           | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
                       obtain ⟨rfl, rfl⟩ := h
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+      | custom ℓ0 cp cl =>   -- custom = non-txn, txnUpdate catch-all (ADR-0085 stage 1)
+          simp only [hfr] at h ⊢
+          cases hrec : CalcVM.txnUpdate n op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some p => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
 
 /-- `wTxnUpdate = none` whenever `txnUpdate = none`. The `none`-commutation the dispatch needs
 to fall through from txn to abort. -/
@@ -1251,6 +1296,11 @@ theorem wTxnUpdate_comm_none (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
           cases hrec : CalcVM.txnUpdate n op v hs with
           | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
           | some p => rw [hrec] at h; simp at h
+      | custom ℓ0 cp cl =>   -- custom = non-txn, txnUpdate catch-all (ADR-0085 stage 1)
+          simp only [hfr] at h ⊢
+          cases hrec : CalcVM.txnUpdate n op v hs with
+          | none => simp only [injHStack] at ih ⊢; rw [ih hrec]; rfl
+          | some p => rw [hrec] at h; simp at h
 
 /-- `unwindFind` returns a saved frame's `savedCode`, which is `CodeOk` (the frame was `HFrameOk`). -/
 theorem unwindFind_savedCode_codeOk :
@@ -1273,6 +1323,7 @@ theorem unwindFind_savedCode_codeOk :
           · simp only [if_neg hcatch] at h; exact ih hsh0 h
       | state ℓ0 s => rw [hfrh] at h; exact ih hsh0 h
       | transaction ℓ0 Θ => rw [hfrh] at h; exact ih hsh0 h
+      | custom ℓ0 cp cl => rw [hfrh] at h; exact ih hsh0 h   -- custom = non-throws, unwindFind catch-all (ADR-0085 stage 1)
 
 theorem unwindFind_hstackOk :
     ∀ {hs : CalcVM.HStack} {c' s' hs'}, HStackOk hs →
@@ -1293,6 +1344,7 @@ theorem unwindFind_hstackOk :
           · simp only [if_neg hcatch] at h; exact ih hsh0 h
       | state ℓ0 s => rw [hfrh] at h; exact ih hsh0 h
       | transaction ℓ0 Θ => rw [hfrh] at h; exact ih hsh0 h
+      | custom ℓ0 cp cl => rw [hfrh] at h; exact ih hsh0 h   -- custom = non-throws, unwindFind catch-all (ADR-0085 stage 1)
 
 /-! #### The handler-capable simulation `exec ⟹ wexec` (Piece A — FULL handler set)
 
@@ -1658,6 +1710,7 @@ theorem evalD_mono : ∀ (f g : Nat) (σ : CalcVM.SStore) (τ : CalcVM.THeap) (c
     | perform cap op v => cases cap <;> simp only [CalcVM.evalD] at h ⊢ <;> exact h
     | handle hh M =>
         cases hh with
+        | custom _ _ _ => simp [CalcVM.evalD] at h   -- CalcVM.evalD custom = none ⇒ `= some` absurd (ADR-0085 stage 1)
         | state ℓ s =>
             simp only [CalcVM.evalD, Handler.label] at h ⊢
             cases hM : CalcVM.evalD f (g+1) (σ.push g s) τ (Comp.subst (Val.vcap g ℓ) M) with

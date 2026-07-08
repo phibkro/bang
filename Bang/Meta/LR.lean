@@ -477,6 +477,7 @@ def renameH (σ : Nat → Nat) : Handler → Handler
   | .state ℓ s  => .state ℓ (renameV σ s)
   | .throws ℓ   => .throws ℓ
   | .transaction ℓ Θ => .transaction ℓ (Θ.map (renameV σ))
+  | .custom ℓ p cl => .custom ℓ p cl    -- ADR-0085 stage 1: identity (param/clauses treated closed, like subst)
 end
 
 def renameF (σ : Nat → Nat) : Frame → Frame
@@ -586,6 +587,8 @@ theorem renameK_append (σ : Nat → Nat) (K K' : EvalCtx) :
   simp only [renameH]
 @[simp] theorem renameH_transaction (σ : Nat → Nat) (ℓ : Label) (Θ : List Val) :
     renameH σ (.transaction ℓ Θ) = .transaction ℓ (Θ.map (renameV σ)) := by simp only [renameH]
+@[simp] theorem renameH_custom (σ : Nat → Nat) (ℓ : Label) (p : Val) (cl : OpId → Option Comp) :
+    renameH σ (.custom ℓ p cl) = .custom ℓ p cl := by simp only [renameH]
 
 @[simp] theorem renameF_letF (σ : Nat → Nat) (N : Comp) : renameF σ (.letF N) = .letF (renameC σ N) := rfl
 @[simp] theorem renameF_appF (σ : Nat → Nat) (v : Val) : renameF σ (.appF v) = .appF (renameV σ v) := rfl
@@ -599,7 +602,7 @@ theorem renameK_append (σ : Nat → Nat) (K K' : EvalCtx) :
 /-- `handlesOp` is invariant under `renameH` (it reads only the label + op-kind, not payloads/ids). -/
 @[simp] theorem handlesOp_renameH (σ : Nat → Nat) (h : Handler) (ℓ : Label) (op : OpId) :
     handlesOp (renameH σ h) ℓ op = handlesOp h ℓ op := by
-  cases h <;> simp only [renameH_state, renameH_throws, renameH_transaction, handlesOp]
+  cases h <;> simp only [renameH_state, renameH_throws, renameH_transaction, renameH_custom, handlesOp]
 
 /-! Renaming COMMUTES with `shiftFrom`/`substFrom` (relabels only `vcap` ids; shift/subst touch only
 de Bruijn indices). Standard mutual structural induction. -/
@@ -650,6 +653,7 @@ theorem renameH_shiftFrom (σ : Nat → Nat) (c : Nat) :
   | .state ℓ s       => by simp only [Handler.shiftFrom, renameH_state, renameV_shiftFrom σ c s]
   | .throws _        => by simp only [Handler.shiftFrom, renameH_throws]
   | .transaction _ _ => by simp only [Handler.shiftFrom, renameH_transaction]
+  | .custom _ _ _    => by simp only [Handler.shiftFrom, renameH_custom]    -- both identity on custom (ADR-0085 stage 1)
 end
 
 /-- renaming commutes with the cutoff-0 `shift`. -/
@@ -715,6 +719,7 @@ theorem renameH_substFrom (σ : Nat → Nat) (k : Nat) (v : Val) :
   | .state ℓ s       => by simp only [Handler.substFrom, renameH_state, renameV_substFrom σ k v s]
   | .throws _        => by simp only [Handler.substFrom, renameH_throws]
   | .transaction _ _ => by simp only [Handler.substFrom, renameH_transaction]
+  | .custom _ _ _    => by simp only [Handler.substFrom, renameH_custom]    -- both identity on custom (ADR-0085 stage 1)
 end
 
 /-- renaming commutes with the head-redex `subst`. -/
@@ -773,6 +778,9 @@ theorem dispatchOn_rename (σ : Nat → Nat) (n : Nat) (op : OpId) (v : Val)
             renameV_inl, renameV_inr, renameV_pair, renameV_fold, renameH_transaction, dispatchOn,
             if_neg hnew, if_neg hread, Option.map_some, renameK_append, renameK_cons,
             renameF_handleF, renameH_transaction, renameC_ret, tvarIdx_renameV, storeSet_map]
+  | custom ℓ p cl =>
+    -- custom's `dispatchOn` is `none` (ADR-0085 stage 1, inert); renaming maps `none` to `none`.
+    simp only [renameH_custom, dispatchOn, Option.map_none]
 
 /-- **`idDispatch` commutes with an injective renaming.** -/
 theorem idDispatch_rename (σ : Nat → Nat) (hσ : Function.Injective σ)
@@ -1051,6 +1059,7 @@ def Handler.CapsBelow (g : Nat) : Handler → Prop
   | .state _ s       => Val.CapsBelow g s
   | .throws _        => True
   | .transaction _ Θ => ∀ x ∈ Θ, Val.CapsBelow g x
+  | .custom _ _ _    => True    -- ADR-0085 stage 1: custom is inert/untyped ⇒ no cap-scope constraint (like throws)
 end
 
 /-- Frame cap-scopedness: the `handleF` id AND the frame's stored sub-terms are `< g`. -/
@@ -1115,6 +1124,7 @@ theorem Handler.CapsBelow_mono {g g' : Nat} (hgg : g ≤ g') :
   | .throws _,        _ => by simp only [Handler.CapsBelow]
   | .transaction _ Θ, h => by
       simp only [Handler.CapsBelow] at h ⊢; exact fun x hx => Val.CapsBelow_mono hgg (h x hx)
+  | .custom _ _ _,    _ => by simp only [Handler.CapsBelow]   -- goal `True` (like throws)
 end
 
 /-! `bumpσ g` is a FIXPOINT on a `CapsBelow g` term: every cap `< g` is fixed by `bumpσ g`. (The
@@ -1167,6 +1177,7 @@ theorem renameH_capsBelow {g : Nat} :
       have hmap : Θ.map (renameV (bumpσ g)) = Θ.map id :=
         List.map_congr_left (fun x hx => renameV_capsBelow (hh x hx))
       rw [hmap, List.map_id]
+  | .custom _ _ _,    _  => by simp only [renameH_custom]   -- renameH identity on custom (ADR-0085 stage 1)
 end
 
 /-- `bumpσ g` is a fixpoint on a `Stack.CapsBelow g` stack. -/

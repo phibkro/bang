@@ -68,6 +68,9 @@ def capsH : Handler → List (Nat × Label)
   | .state _ s  => capsV s
   | .throws _   => []
   | .transaction _ Θ => Θ.flatMap capsV
+  -- custom (ADR-0085 stage 1): inert/untyped ⇒ no reachable config contains it, and shift/subst are the
+  -- identity on it (no cap ever flows through), so `[]` (contributes no caps) is sound — like `throws`.
+  | .custom _ _ _ => []
 end
 
 def capsK : EvalCtx → List (Nat × Label)
@@ -184,6 +187,7 @@ theorem capsH_shiftFrom (j : Nat) (h : Handler) : capsH (Handler.shiftFrom j h) 
   | .state _ s => simp only [Handler.shiftFrom, capsH]; exact capsV_shiftFrom j s
   | .throws _ => rfl
   | .transaction _ _ => rfl
+  | .custom _ _ _ => rfl    -- capsH = [] and shiftFrom identity (ADR-0085 stage 1)
 end
 
 mutual
@@ -273,6 +277,7 @@ theorem capsH_substFrom (k : Nat) (v : Val) (h : Handler) :
   | .state _ s => intro p hp; simp only [Handler.substFrom, capsH] at hp ⊢; exact capsV_substFrom k v s p hp
   | .throws _ => intro p hp; simp [Handler.substFrom, capsH] at hp
   | .transaction _ _ => intro p hp; exact Or.inl hp
+  | .custom _ _ _ => intro p hp; simp [Handler.substFrom, capsH] at hp    -- capsH = [] ⇒ hp : p ∈ [] absurd
 end
 
 /-! ### §3.0b — DISPATCH-arm freshness: the resumed stack + focus stay `< g`. Richer mirror of
@@ -481,6 +486,9 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
             | (rcases capsV_set_mem hp with h' | h'                            -- `writeTVar`: set cell
                · exact hch p h'
                · exact hv p (by simp only [capsV, List.mem_append] at h' ⊢; tauto))
+    | custom ℓ' p cl =>
+      -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
+      exact absurd hk (by simp [handlesOp])
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- The `Bool=1+1` encoding (ADR-0065) is closed: it carries no capabilities. -/

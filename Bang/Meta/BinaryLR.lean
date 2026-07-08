@@ -328,6 +328,7 @@ theorem Handler.shiftFrom_substFrom_closed :
       simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closed hu k i hik s]
   | _, _, _, _, _, .throws _ => rfl
   | _, _, _, _, _, .transaction _ _ => rfl
+  | _, _, _, _, _, .custom _ _ _ => rfl   -- shift/subst both identity on custom (ADR-0085 stage 1)
 end
 
 /-- `v` is SCOPED IN `m`: no free de Bruijn index `≥ m` is exposed (`shiftFrom k` fixes `v` for `k ≥ m`).
@@ -665,6 +666,7 @@ theorem Handler.substFrom_swap_closed :
   | v, w, hv, hw, k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed hv hw k s]
   | _, _, _, _, _, .throws _ => rfl
   | _, _, _, _, _, .transaction _ _ => rfl
+  | _, _, _, _, _, .custom _ _ _ => rfl   -- subst identity on custom (ADR-0085 stage 1)
 end
 
 /-! ### B.1c′ NON-ADJACENT substitution-swap (for the d=2 `split` descent)
@@ -769,6 +771,7 @@ theorem Handler.substFrom_swap_closed_ge :
       simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_ge hu hw i j hij s]
   | _, _, _, _, _, _, _, .throws _ => rfl
   | _, _, _, _, _, _, _, .transaction _ _ => rfl
+  | _, _, _, _, _, _, _, .custom _ _ _ => rfl   -- subst identity on custom (ADR-0085 stage 1)
 end
 
 /-! ### B.1d The substitution-descent crux (`closeC_subst_comm`)
@@ -1124,6 +1127,9 @@ theorem dispatchOn_append_outer (n : Nat) (op : OpId) (v : Val) (Kᵢ : Stack) (
           cases v <;>
             (simp only [] at hd ⊢; obtain rfl := (Option.some.injEq _ _).mp hd.symm;
              simp [List.append_assoc])
+  | custom _ _ _ =>
+      -- custom's `dispatchOn` is `none` (ADR-0085 stage 1), so the hypothesis `hd : … = some cfg` is absurd.
+      simp [dispatchOn] at hd
 
 /-- ◊4.5b-strengthen the krel-carrying resume CONCLUSION → `CoApproxC_le`. The strengthened handleF
 resume conjunct concludes a DECOMPOSITION `cfgⱼ = (Sᵢ, ret rⱼ)` with `r₁~r₂` (VrelK) + `Sᵢ~Sᵢ'` (KrelS
@@ -1220,11 +1226,15 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
         | throws _ => exact ⟨_, rfl⟩
         | state _ _ => rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
         | transaction _ _ => unfold dispatchOn; split_ifs <;> first | exact ⟨_, rfl⟩ | (cases w₁ <;> exact ⟨_, rfl⟩)
+        -- custom is untyped/inert (ADR-0085 stage 1): `HandlerRel m (.custom …) hh₂ = False` refutes `hHRtop`.
+        | custom _ _ _ => exact absurd hHRtop (by simp [HandlerRel])
       obtain ⟨cfgᵢ₂, hdi₂⟩ : ∃ c, Bang.dispatchOn mh₁ op w₂ (Kⱼ', hh₂, Kᵢ'rest) = some c := by
         cases hh₂ with
         | throws _ => exact ⟨_, rfl⟩
         | state _ _ => rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
         | transaction _ _ => unfold dispatchOn; split_ifs <;> first | exact ⟨_, rfl⟩ | (cases w₂ <;> exact ⟨_, rfl⟩)
+        -- custom hh₂: `HandlerRel m hh₁ (.custom …)` needs hh₁ concrete to reduce to `False` — case it, then refute.
+        | custom _ _ _ => cases hh₁ <;> exact absurd hHRtop (by simp [HandlerRel])
       have hlift₁ := dispatchOn_append_outer mh₁ op w₁ Kⱼ hh₁ Kᵢrest (Frame.handleF nh h₁ :: K₁) hdi₁
       have hlift₂ := dispatchOn_append_outer mh₁ op w₂ Kⱼ' hh₂ Kᵢ'rest (Frame.handleF nh h₂ :: K₂) hdi₂
       rw [hd₁] at hlift₁; rw [hd₂] at hlift₂

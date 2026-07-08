@@ -28,6 +28,7 @@ def Handler.label : Handler → Label
   | .throws ℓ => ℓ
   | .state ℓ _ => ℓ
   | .transaction ℓ _ => ℓ
+  | .custom ℓ _ _ => ℓ         -- ADR-0085: the custom handler's label (its first field), like the others
 
 /-- Does handler `h` catch operation `(ℓ, op)`? -/
 def handlesOp : Handler → Label → OpId → Bool
@@ -36,12 +37,21 @@ def handlesOp : Handler → Label → OpId → Bool
   -- transaction (ADR-0030): catches the three stm ops on its own label.
   | .transaction ℓ' _, ℓ, op =>
       (ℓ' = ℓ) && (op == "newTVar" || op == "readTVar" || op == "writeTVar")
+  -- custom (ADR-0085 #44 STAGE 1): INERT — services nothing yet. `false` means a `perform` never
+  -- routes to a `.custom` frame, so no dispatch/resumption is needed this stage (that is stage 2).
+  -- SOUND because custom is untyped (stage 3), so no well-typed program contains it — the `false`
+  -- can never be observed by `progress`/`type_safety` on a typed config.
+  | .custom _ _ _, _, _ => false
 
 /-- `handlesOp` forces the label match: a catching handler's `label` IS the dispatched `ℓ`. -/
 theorem handlesOp_label {h : Handler} {ℓ : Label} {op : OpId} (hc : handlesOp h ℓ op = true) :
     h.label = ℓ := by
   cases h <;> simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hc <;>
-    simp only [Handler.label] <;> exact hc.1
+    simp only [Handler.label] <;>
+    -- built-ins: `hc.1` is the label equality; custom: `hc : false = true` is absurd (inert, stage 1).
+    first
+      | exact hc.1
+      | exact (Bool.false_ne_true hc).elim
 
 /-- Split a stack at the nearest frame catching `(ℓ, op)`: returns `(Kᵢ, h, Kₒ)` with
 `K = Kᵢ ++ handleF h :: Kₒ`, `Kᵢ` containing no catching frame (the inner captured continuation),
@@ -150,6 +160,11 @@ def dispatchOn (n : Nat) (op : OpId) (v : Val) :
                 some (Kᵢ ++ Frame.handleF n (.transaction ℓ' (storeSet Θ ((tvarIdx iv).getD 0) w)) :: Kₒ,
                       .ret .vunit)
             | _ => some (Kᵢ ++ Frame.handleF n (.transaction ℓ' Θ) :: Kₒ, .ret .vunit)
+      -- custom (ADR-0085 #44 STAGE 1): INERT — `none` (no dispatch defined yet, that is stage 2).
+      -- UNREACHABLE on the verified path: `idDispatch` guards on `handlesOp h ℓ op` (= `false` for
+      -- custom) BEFORE calling `dispatchOn`, so a `.custom` frame is never routed here; total-function
+      -- exhaustiveness alone demands the arm. Real one-shot resume/abort dispatch is stage 2.
+      | .custom _ _ _ => none
 
 /-- ADR-0054: the kernel's effect dispatch — resolve the capability's IDENTITY `n`, then route the
 matched `(Kᵢ, h, Kₒ)` through `dispatchOn n` (which reinstalls `handleF n` on a resumptive RESUME). -/

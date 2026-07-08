@@ -147,6 +147,17 @@ inductive Handler : Type where
   -- commits) while allocations are kept by the heap's append-only growth. NOT a 6th primitive
   -- (invariant #5): a `Handler` constructor + effect ops, reusing the CK machinery.
   | transaction : Label → List Val → Handler
+  -- custom ℓ p clauses (ADR-0085, #44 stage 1): the GENERAL user-defined-effect handler — a label,
+  -- a carried parameter `p` (a closed `Val`, like `state`'s `s` / `transaction`'s `Θ`), and a per-op
+  -- CLAUSE MAP `OpId → Option Comp` (`some` = this handler services `op`; the `Comp` binds the param at
+  -- index 1 and the operation argument at index 0, returning the resumption value — one-shot v1, D2).
+  -- This GENERALIZES the built-in triple (still one of the five primitives, invariant #5 — a 4th
+  -- CONSTRUCTOR of `Handler`, NOT a 6th primitive; ADR-0084 rejected a bespoke `| net` on this ground).
+  -- STAGE 1 is REP ONLY: `custom` is INERT (services nothing — `handlesOp (.custom …) = false`) and
+  -- UNTYPED (no `handleCustom` rule yet), so no well-typed program contains it; real dispatch is stage 2,
+  -- typing stage 3, the DERIVED calc-machine arm stage 4. Coexist keeps the three built-ins' arms
+  -- byte-identical — the ripple is ADDITIVE (a new match case), never a re-freeze of the census.
+  | custom : Label → Val → (OpId → Option Comp) → Handler
 end
 
 /-- The `Bool = 1 + 1` encoding (ADR-0065/0029): `true = inr unit`, `false = inl unit`. The single

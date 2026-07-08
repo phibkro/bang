@@ -26,7 +26,7 @@ CORE="$ROOT/Bang/Core/IR.lean"
 #
 #   thunk/force adjunction : vthunk · force
 #   effect rows + ops      : perform            (a labelled operation; rows live in types, EffectRow.lean. ADR-0045: renamed from `up`. ADR-0054: now `perform c op v` — the target handler is named by a CAPABILITY value `c`, not a positional cap)
-#   handlers (runtimes)    : handle · state · throws · transaction   (transaction = STM, ADR-0030)
+#   handlers (runtimes)    : handle · state · throws · transaction · custom   (transaction = STM, ADR-0030; custom = the general user-defined-effect handler, ADR-0085/#44 — a 4th CONSTRUCTOR of the ONE handler primitive, NOT a 6th primitive)
 #   CBPV scaffolding       : vunit vint vvar vcap · ret letC lam app   (vcap = the capability identity value, ADR-0054 — a value former like vint, NOT a 6th primitive)
 #   ADT data layer (0029)  : inl inr pair fold · case split unfold
 #   base-type δ-rules (0065): binop   (Int +−×÷ / <== on the Int base type — NOT a 6th computational
@@ -60,6 +60,7 @@ Comp.wrong
 Handler.state
 Handler.throws
 Handler.transaction
+Handler.custom
 EOF
 )"
 

@@ -1647,6 +1647,16 @@ private theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx 
   | @handleTransaction _ _ _ _ _ e_body φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle hbocc =>
     exact ⟨e_body, q, qc, A, rfl, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle, hbocc⟩
 
+/-- **`handle (custom …) M` is UNTYPABLE (ADR-0085 #44 stage 1).** `custom` has NO typing rule
+(`handleCustom` is stage 3), so the three handle rules (`handleThrows`/`handleState`/`handleTransaction`)
+each carry a built-in handler in the index and none unify with `Handler.custom` — `cases` on the
+derivation eliminates all of them, leaving no case. This is what keeps the trusted-three axiom-clean
+while `custom` stays inert: no well-typed program contains a `custom` handler. -/
+private theorem HasCTy.handle_custom_uninhabited {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+    {ℓ : Label} {p : Val} {cl : OpId → Option Comp} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
+    HasCTy γ0 Γ0 (Comp.handle (Handler.custom ℓ p cl) M) e C → False := by
+  intro h; cases h
+
 private theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.lam M) e C →
@@ -2211,6 +2221,9 @@ theorem preservation_proof
             ⟨⊥, CTy.F q VTy.unit,
               HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
               hsub''⟩, hnecfg'⟩
+      | custom ℓ' p cl =>
+        -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
+        exact absurd hk (by simp [handlesOp])
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2271,6 +2284,10 @@ theorem preservation_proof
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus',
           HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hstack⟩, hnecfg'⟩
+    | custom ℓ p cl =>
+      -- custom is UNTYPED (ADR-0085 stage 1): `handle (.custom …) M` has no typing, so `hfocus` is
+      -- uninhabitable — the handle-install case never fires on a well-typed custom.
+      exact (hfocus.handle_custom_uninhabited).elim
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
@@ -2545,6 +2562,9 @@ theorem hasConfigTy_step
             ⟨⊥, CTy.F q VTy.unit,
               HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
               hsub''⟩⟩
+      | custom ℓ' p cl =>
+        -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
+        exact absurd hk (by simp [handlesOp])
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2605,6 +2625,10 @@ theorem hasConfigTy_step
       exact ⟨eo, le_refl _,
         ⟨e_body, CTy.F q A, hfocus',
           HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hstack⟩⟩
+    | custom ℓ p cl =>
+      -- custom is UNTYPED (ADR-0085 stage 1): `handle (.custom …) M` has no typing, so `hfocus`
+      -- is uninhabitable — the handle-install case never fires on a well-typed custom.
+      exact (hfocus.handle_custom_uninhabited).elim
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
@@ -2722,16 +2746,20 @@ private theorem HasCTy.perform_cap_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mu
   cases h with
   | @perform γ_c _ _ _ ℓ _ _ _ _ _ _ hcap _ _ _ _ => exact ⟨ℓ, γ_c, hcap⟩
 
-/-- `dispatchOn` is TOTAL — every handler kind / op branch returns `some`. shape: NonEscapeProbe §2. -/
-private theorem dispatchOn_isSome (n : Nat) (op : OpId) (v : Val) (X : EvalCtx × Handler × EvalCtx) :
+/-- `dispatchOn` returns `some` on every handler that ACTUALLY HANDLES `(ℓ, op)` (ADR-0085: the
+built-in triple is total; `custom` services nothing this stage, so its `handlesOp` guard is `false` and
+this lemma's `hh` hypothesis excludes it — the caller always has `handlesOp` in scope). shape: NonEscapeProbe §2. -/
+private theorem dispatchOn_isSome (n : Nat) (ℓ : Label) (op : OpId) (v : Val) (X : EvalCtx × Handler × EvalCtx)
+    (hh : handlesOp X.2.1 ℓ op = true) :
     ∃ cfg', dispatchOn n op v X = some cfg' := by
   obtain ⟨Kᵢ, h, Kₒ⟩ := X
-  cases h <;>
-    simp only [dispatchOn] <;>
-    (first
-      | exact ⟨_, rfl⟩
-      | (split <;> exact ⟨_, rfl⟩)
-      | (repeat' first | split | exact ⟨_, rfl⟩))
+  cases h with
+  | throws _ => exact ⟨_, rfl⟩
+  | state _ _ => simp only [dispatchOn]; split <;> exact ⟨_, rfl⟩
+  | transaction _ _ => simp only [dispatchOn]; (repeat' first | split | exact ⟨_, rfl⟩)
+  -- custom: `handlesOp (.custom …) = false` (ADR-0085 stage 1) refutes `hh`; dispatchOn is `none` here
+  -- but this case is unreachable — the caller only reaches dispatch on a handler that passes `handlesOp`.
+  | custom _ _ _ => exact absurd hh (by simp [handlesOp])
 
 /-- **PROGRESS'S PERFORM CASE** (probe §2): given `CapResolves K n ℓ op`, the `idDispatch` step fires —
 `splitAtId` finds the handling frame, the fail-loud `handlesOp` guard passes, and `dispatchOn` is total. -/
@@ -2740,7 +2768,7 @@ private theorem progress_perform_from_capResolves
     (hr : CapResolves K n ℓ op) :
     ∃ cfg', Source.step (g, K, Comp.perform (Val.vcap n ℓ) op v) = some cfg' := by
   obtain ⟨Kᵢ, h, Kₒ, hsplit, hhandles⟩ := hr
-  obtain ⟨p, hp⟩ := dispatchOn_isSome n op v (Kᵢ, h, Kₒ)
+  obtain ⟨p, hp⟩ := dispatchOn_isSome n ℓ op v (Kᵢ, h, Kₒ) hhandles
   refine ⟨(g, p.1, p.2), ?_⟩
   simp only [Source.step, idDispatch, hsplit, Option.bind_some, hhandles, if_true, hp,
     Option.map_some]
@@ -2792,6 +2820,8 @@ theorem progress'_proof
         | throws ℓ => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
         | state ℓ s => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
         | transaction ℓ Θ => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
+        -- return-pop is handler-kind-agnostic (Source.step's `handleF _ _ :: K, ret v` arm): custom pops too.
+        | custom ℓ p cl => exact Or.inr (Or.inl ⟨(g, K', Comp.ret v), by simp [Source.step]⟩)
       | appF w =>
         obtain ⟨γ', A0, q0, he, hC, hγ, hwv⟩ := hfocus.ret_inv
         obtain ⟨q', A', B', hCeq, _⟩ := hstack.appF_inv

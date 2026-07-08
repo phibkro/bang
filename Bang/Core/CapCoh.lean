@@ -371,6 +371,9 @@ private theorem capCoh_idDispatch {g n : Nat} {ℓ : Label} {op : OpId} {v : Val
                    · exact weakCoh_replace (by rfl) (wkA p (Or.inr (Or.inl (by simpa only [capsH] using h3))))
                    · exact weakCoh_replace (by rfl) (wkV p (by simp only [capsV, List.mem_append] at h3 ⊢; tauto)))
               · exact weakCoh_replace (by rfl) (wkA p (Or.inr (Or.inr h'')))
+    | custom ℓ' p cl =>
+      -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
+      exact absurd hk (by simp [handlesOp])
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 
