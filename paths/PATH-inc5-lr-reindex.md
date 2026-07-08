@@ -30,15 +30,28 @@
 - **The soundness payoff is the diagonal, NOT the binary LR** — the LR is contextual equivalence,
   a separate deliverable.
 
-## THE WALL (why deferred) — Canonical/density, an OPERATOR fork
-`crelK_ret`'s handleF-pop `+1` bridge needs `Canonical` (dense ids), but frozen `CrelK` quantifies
-over ARBITRARY KrelS-related stacks, and **KrelS does not imply Canonical** (sparse gensym ids).
-Build-confirmed at `e909e73` (`scratch/CanonicalWallProbe.lean`): route 3 (B-occ ⇒ density) and
-route 4 (drop the guard) BOTH FAIL — B-occ is orthogonal to density; the guard is load-bearing at
-the pop. **Remaining routes, operator decision required:**
-1. `CrelK`/`KrelS` quantify over `Canonical` — FROZEN Crel/Spec change + ADR + STATEMENT_CHANGE_OK.
-2. A Canonical-reachability lemma — hard; `lr_sound` instantiates `CrelK` at observation contexts
-   via `krelS_refl`, which needs its own Canonical supply through the mutual block.
+## THE TWO WALLS (why deferred) — distinct obligations, one likely joint fix
+
+**(W1) `lr_sound`'s SOLE residual — the reshape↔raw-focus adequacy bridge (task #72, Q22).**
+The authoritative statement is IN the frozen Spec (`Bang/Spec.lean:196-211`): `CrelK`'s biorthogonal
+closure observes the RAW focus `(g, C, cᵢ)` but the machine-faithful `converges_plug_iff` observes the
+cap-substituted RESHAPE `(handlerCount C, canonStack C cᵢ, capSubstInto C cᵢ)`; build-confirmed
+(`scratch/AdequacySpike.lean`) the bridge closes IFF `capSubstInto C cᵢ = cᵢ` — excluding exactly the
+effectful case. An ARCHITECTURAL definition-shape fork (CrelK-reshape vs plug-congruence), not a grind.
+
+**(W2) `lr_fundamental` (= `crelK_fund`) state/txn producer arms — the `krelS_append` + ▷-metering
+crux, where the Canonical/density wall bites**: `crelK_ret`'s handleF-pop `+1` bridge needs
+`Canonical` (dense ids); frozen `CrelK` quantifies over ARBITRARY KrelS stacks, and **KrelS does not
+imply Canonical** (sparse gensym ids). Build-confirmed `e909e73` (`scratch/CanonicalWallProbe.lean`):
+B-occ⇒density and drop-the-guard BOTH fail.
+
+**The convergence hypothesis (falsifiable, probe before committing):** ONE frozen-statement change —
+`CrelK`/`KrelS` observing the CANONICAL RESHAPED config — plausibly dissolves BOTH: the W1 bridge
+becomes definitional (observation ≡ what `converges_plug_iff` produces) and W2's density holds
+by-construction (`canonStack` is dense). Cost: ADR + STATEMENT_CHANGE_OK + re-threading the
+BinaryLR mutual block (multi-session). Alternatives: W1-only plug-congruence route (raw-focus
+`converges_plug_iff` form — the "id-agnosticism relational step"); W2-only Canonical-reachability
+lemma (hard — `krelS_refl` needs its own Canonical supply). Decision memo: issue #15.
 
 ## Do-not-retry ledger (each build-refuted; witnesses kept)
 - Type-occurrence Γ-premises for non-escape (the `U {ℓ} Int` dormant-cap case refutes them; the
