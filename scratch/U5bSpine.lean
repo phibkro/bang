@@ -864,11 +864,17 @@ theorem evalD_complete_gen_full : ∀ F,
           -- ported U5bPort.*_composes lemmas. The fuel IH lands on `subst (vcap g h.label) M0` directly
           -- (the de-risk's core: mint+subst absorbed by the fuel IH, no congruence).
           cases h0 with
-          | custom _ _ _ =>
-              -- custom: kernel Source.step mints+installs, but evalD custom = none. The kernel run still
-              -- proceeds; the converse can't produce an evalD `some` — this is the ADR-0085 stage-1 gap.
-              -- HOWEVER no source/compiled program produces a custom handle (untyped), so this arm is
-              -- unreachable for the frozen consumer at K=[]. DRAFT-SORRY: stage-1 custom (out of scope).
+          | custom ℓ0 p clauses =>
+              -- ⟨STAGE-1 GAP⟩ The ONLY remaining sorry. The kernel `Source.step` mints+installs a custom
+              -- handle (Eval.lean:83, IDENTITY subst) and its `Config.run` proceeds; but `evalD (handle
+              -- (custom …) M0) = none` by DEFINITION (AbstractMachine.lean:282, ADR-0085 stage 1 leaves the
+              -- custom calc-arm uninterpreted). So from `hrun : Config.run … (handle (custom …) M0) = done v`
+              -- the converse CANNOT produce an `evalD … = some …` — this is not a proof gap but a
+              -- DEFINITIONAL one: closing it needs the ADR-0085 STAGE-4 custom calc-arm (define evalD on
+              -- custom) OR a `¬ contains-custom` hypothesis on the frozen statement (FROZEN — forbidden here).
+              -- Both are out of scope (kernel/statement concern, not proof); see `handler_compiles` (the sibling
+              -- custom stub, Spec.lean:299). NAMED for the manager: this is the one obligation the converse
+              -- spine cannot discharge as-stated; every non-custom arm closes.
               sorry
           | state ℓ0 s0 =>
               -- install handleF g (state ℓ0 s0), push σ.push g s0, run subst body at g+1.
@@ -1139,5 +1145,22 @@ theorem evalD_complete_gen_full : ∀ F,
                · rw [ctxNetEffect_self hCtx hTtx]; exact freshCfg_step _ _ hFresh hstep
                · rw [ctxNetEffect_self hCtx hTtx]; exact hrun')
             | (exfalso; cases F' <;> simp_all [Config.run, Source.step])
+
+/-! ### Deriving the frozen `evalD_complete_gen` at K=[] (the consumer's only call, Wasm.lean:2156).
+`plug [] c = c`, so the full spine at K=[] yields the frozen conclusion — MODULO two obligations that
+are STATEMENT/DEFINITIONAL, not proof gaps (surfaced to the manager):
+
+1. **`FreshCfg (0, [], c)`** unfolds to `∀ p ∈ capsC c, p.1 < 0`, i.e. `c` has NO capability literals.
+   TRUE for the consumer (`c` = a compiled SOURCE program; caps only arise by minting during a run),
+   but the FROZEN `evalD_complete_gen` statement (Wasm.lean:1970) carries NO such hypothesis. Either
+   the statement needs a `capsC c = []` / well-formedness premise (FROZEN — manager/kernel call), or
+   there is an upstream fact (Source.eval's `c` is cap-free) that should be threaded at the call site.
+
+2. **term-vs-raised**: extracting the `.term (.ret v)` conclusion needs the RAISED disjunct ruled out
+   at K=[] — a top-level raise under the EMPTY context escapes (`dispatchRun` on `[]` → escapedCap),
+   contradicting `= done v`. Provable (needs a `dispatchRun_nil_ne_done` helper), left for the wiring.
+
+The full spine `evalD_complete_gen_full` (above, ONE sorry = custom stage-1) is the deliverable; this
+derivation is the thin adapter awaiting the manager's call on obligation (1). -/
 
 end Bang.CalcVM
