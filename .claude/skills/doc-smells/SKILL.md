@@ -12,6 +12,15 @@ below is a symptom of that one disease (a fact stuck on the **survey** rung when
 derivation-strength ladder** (`generate > test > survey`) — pull each fact up a rung, don't
 "write it better."
 
+**On conflict, the truth is in the ROOTS — never the prose.** When two docs disagree, or a doc
+disagrees with reality, do NOT average them, trust the more-recent-looking one, or reach for
+memory. Resolve against the **code** (what it actually does *now* — build it, run it, read the
+def) and **git history** (what actually happened, and when — the commit/sha is the record, not
+the doc's retelling of it). A fix is only trustworthy if it *cites the root* it's grounded in
+(the ADR, the commit, the def) — a correction you can't trace to code or git is just a new
+guess replacing an old one. This is the same discipline as gating committed content over a
+summary: **observe the referent, don't relitigate against another derivation.**
+
 ## Smell catalog (doc smell ⟷ code smell ⟷ fix)
 
 | Doc smell | ⟷ Code smell | Detect signal | Fix (climb the rung) |
