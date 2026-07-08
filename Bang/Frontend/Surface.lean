@@ -742,16 +742,10 @@ def keywordRule : String → Option Rule
       fun | [.expr e]          => .ok (.atomS e)
           | [.name h, .expr e] => .ok (.withCapS "atomically" .unitS h e)
           | _ => .error "atomically: rule arity"⟩
-  | "raise"      => some ⟨[.kw "raise", .refA],
-      fun | [.expr a] => .ok (.raise a) | _ => .error "raise: rule arity"⟩
-  | "put"        => some ⟨[.kw "put", .refA],
-      fun | [.expr a] => .ok (.putS a) | _ => .error "put: rule arity"⟩
-  | "new"        => some ⟨[.kw "new", .refA],
-      fun | [.expr a] => .ok (.newS a) | _ => .error "new: rule arity"⟩
-  | "read"       => some ⟨[.kw "read", .refA],
-      fun | [.expr a] => .ok (.readS a) | _ => .error "read: rule arity"⟩
-  | "write"      => some ⟨[.kw "write", .refA, .refA],
-      fun | [.expr r, .expr w] => .ok (.writeS r w) | _ => .error "write: rule arity"⟩
+  -- `raise`/`put`/`new`/`read`/`write` are NO LONGER keyword rules: they are prefix-application forms
+  -- parsed in `pApp` at application precedence (like the atom `get`), so their result feeds the Pratt
+  -- operator chain — `read a - 30` parses as `(read a) - 30` (#26 part-2). A keyword rule returns
+  -- BEFORE the operator loop, which is exactly the bug.
   | "state"      => some ⟨[.kw "state", .refA, .optAs, .kw "in", .refE],
       fun | [.expr e0, .expr e]          => .ok (.stateS e0 e)
           | [.expr e0, .name h, .expr e] => .ok (.withCapS "state" e0 h e)
@@ -866,9 +860,20 @@ def pRuleDrive : Nat → (List Frag → Except String Surf) → List Choice → 
       | "as" :: rest => do let (h, ts) ← pIdent rest; pRuleDrive f build cs (.name h :: acc) ts
       | _            => pRuleDrive f build cs acc ts
 
-/-- Parse an application chain: one or more DOTTED atoms, left-associated. -/
+/-- Parse an application chain: one or more DOTTED atoms, left-associated. The EFFECT OPS
+(`raise`/`put`/`new`/`read`/`write`) are prefix-application forms parsed HERE, at application
+precedence — like the nullary atom `get` — so their result feeds the Pratt operator chain (`pOp`).
+That is what makes `read a - 30` parse as `(read a) - 30` and `write a (read a - 30)` accept the
+operator (#26 part-2). Each op takes atom argument(s) (`pAtom`), matching the retired `keywordRule`
+`.refA` shape, so the `parsesTo` corpus is preserved; a parenthesized computation `(get + 1)` is an
+atom, so `put (get + 1)` still works. -/
 def pApp : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
+  | f + 1, "raise" :: ts => do let (a, ts) ← pAtom f ts; pAppLoop f (.raise a) ts
+  | f + 1, "put"   :: ts => do let (a, ts) ← pAtom f ts; pAppLoop f (.putS a)  ts
+  | f + 1, "new"   :: ts => do let (a, ts) ← pAtom f ts; pAppLoop f (.newS a)  ts
+  | f + 1, "read"  :: ts => do let (a, ts) ← pAtom f ts; pAppLoop f (.readS a) ts
+  | f + 1, "write" :: ts => do let (r, ts) ← pAtom f ts; let (w, ts) ← pAtom f ts; pAppLoop f (.writeS r w) ts
   | f + 1, ts => do
       let (head, ts) ← pDotted f ts
       pAppLoop f head ts
@@ -1902,6 +1907,14 @@ def parsesTo (src : String) (e : Surf) : Bool :=
 #guard parsesTo "atomically (let r = new 100 in (let z = write r 70 in read r))"
   (.atomS (.lett "r" (.newS (.lit 100))
     (.lett "z" (.writeS (.var "r") (.lit 70)) (.readS (.var "r")))))
+-- #26 part-2: the effect ops are application-precedence prefix forms (like `get`), so their result
+-- FEEDS the Pratt operator chain. `read a - 30` parses as `(read a) - 30`, NOT `read (a - 30)` — the
+-- op binds tighter than `-`. Before the fix this was a keyword rule that returned before the operator
+-- ("expected ')', got '-'"). `-` is `binopS Sub`; verify the tree, not just that it parses.
+#guard parsesTo "read a - 30" (.binopS .sub (.readS (.var "a")) (.lit 30))
+#guard parsesTo "new a + 1"   (.binopS .add (.newS (.var "a")) (.lit 1))
+#guard parsesTo "write a (read a - 30)"
+  (.writeS (.var "a") (.binopS .sub (.readS (.var "a")) (.lit 30)))
 
 /-! ### Stage 2d — ADTs from source text (issue #1): sums + products, modern surface.
 

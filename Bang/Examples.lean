@@ -153,23 +153,40 @@ precedence split — see the issue.) -/
 -- the deep `handle` catches it. x = 7 < 10 ⟹ raise 42 ⟹ caught ⟹ 42.
 #guard runYieldsInt 80 "handle (let x = 7 in (if x < 10 then raise (x * 6) else x))" 42
 
-/-! ### A20–A22: `do`-notation (issue #27) — sequential effectful statements, desugaring to nested `letC`.
+/-! ### A20–A21: an effect op FEEDS the operator chain (issue #26 part-2 — parser precedence).
+
+`raise`/`put`/`new`/`read`/`write` now parse at application precedence (like the atom `get`), so their
+result is an operand of `+ - * /` — `read a - 30` is `(read a) - 30`, not a parse error. Combined with
+part-1's A-normalized op arguments, arithmetic and effects compose in BOTH directions: an op result INTO
+an expression (A20), and a computation INTO an op argument (A21). -/
+
+-- A20. OP RESULT IN AN OPERATOR CHAIN — `read a - 30` reads the TVar (100) and subtracts. Before the
+-- precedence fix this was "expected ')', got '-'". atomically ⟹ 100 - 30 ⟹ 70.
+#guard runYieldsInt 80 "atomically (let a = new 100 in read a - 30)" 70
+#guard runYieldsInt 80 "atomically (let a = new 5 in read a + 1)" 6
+
+-- A21. BOTH FIXES AT ONCE — `write a (read a - 30)`: the op result `read a` feeds `-` (part-2), and the
+-- whole computation `read a - 30` is the value-position arg of `write` (part-1, A-normalized). Store the
+-- computed balance, read it back: 100 - 30 ⟹ 70. (Also the effect-op-arith example project.)
+#guard runYieldsInt 80 "atomically (let a = new 100 in (let z = write a (read a - 30) in read a))" 70
+
+/-! ### A22–A25: `do`-notation (issue #27) — sequential effectful statements, desugaring to nested `letC`.
 
 `x = e` binds (`=`, like `let` — CBPV has no monadic-vs-pure split, so no `<-`), a bare `e` sequences
 (value discarded), the last statement is the result. Pure surface sugar; with #26 part-1 the canonical
 effectful program reads like imperative code. -/
 
--- A20. PURE do: binds then a result expression. ⟶ 3 + 4 = 7.
+-- A22. PURE do: binds then a result expression. ⟶ 3 + 4 = 7.
 #guard runYieldsInt 30 "do { x = 3; y = 4; x + y }" 7
 
--- A21. THE EFFECTFUL COUNTER, clean (do × state × #26): read into `x`, write `x + 1` (bare/sequenced),
+-- A23. THE EFFECTFUL COUNTER, clean (do × state × #26): read into `x`, write `x + 1` (bare/sequenced),
 -- return the cell. Reads like `x = get(); set(x+1); return get()`. ⟶ 6.
 #guard runYieldsInt 80 "state 5 in (do { x = get; put (x + 1); get })" 6
 
--- A22. SEQUENCED bare statements: two `put`s in a row (values discarded), then `get`. ⟶ 9.
+-- A24. SEQUENCED bare statements: two `put`s in a row (values discarded), then `get`. ⟶ 9.
 #guard runYieldsInt 80 "state 0 in (do { put 5; put 9; get })" 9
 
--- A23. THE WHOLE STACK in one program (do × STM × #4 arithmetic): a transactional bank transfer that
+-- A25. THE WHOLE STACK in one program (do × STM × #4 arithmetic): a transactional bank transfer that
 -- reads like imperative code — allocate, read the balance, write the COMPUTED new balance, read it back.
 -- `atomically (do { a = new 100; bal = read a; write a (bal - 30); read a })` ⟶ 70. Still a verified
 -- CBPV kernel underneath; this is what "surface the verified kernel" looks like end-to-end.

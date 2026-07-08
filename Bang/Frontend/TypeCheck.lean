@@ -2041,18 +2041,30 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | _, .unitS => .ok .unitS
   | Γ, .thunk b  => do return .thunk (← elabS env Γ b)
   | Γ, .force b  => do return .force (← elabS env Γ b)
-  | Γ, .raise e  => do return .raise (← elabS env Γ e)
+  -- A-normalize a computation ARGUMENT (#26 part-2), as `.pairS` does: an effect op's arg is
+  -- VALUE-position (`checkSV … .int`), so `put (get + 1)` ⟹ `let #anf = get + 1 in put #anf`. A bare
+  -- value arg passes through unchanged (`anfSplit`'s `id` prefix), matching `Surface.lower`.
+  | Γ, .raise e  => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.raise v)
   | Γ, .handle e => do return .handle (← elabS env Γ e)
-  | Γ, .putS e   => do return .putS (← elabS env Γ e)
+  | Γ, .putS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.putS v)
   | Γ, .atomS e  => do return .atomS (← elabS env Γ e)
-  | Γ, .newS e   => do return .newS (← elabS env Γ e)
-  | Γ, .readS e  => do return .readS (← elabS env Γ e)
+  | Γ, .newS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.newS v)
+  | Γ, .readS e  => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.readS v)
   -- A-normalize a computation payload (#41), as `.pairS` does: `Left(($g) e)` ⟹ `let #anf = ($g) e in
   -- Left(#anf)`, so the sum injection gets a VALUE payload (a bare `Left(value)` is unchanged).
   | Γ, .inlS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.inlS v)
   | Γ, .inrS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.inrS v)
-  | Γ, .stateS e0 e => do return .stateS (← elabS env Γ e0) (← elabS env Γ e)
-  | Γ, .writeS r w  => do return .writeS (← elabS env Γ r) (← elabS env Γ w)
+  -- state's INITIAL value is value-position (`checkSV e0 .int`) too — A-normalize it like the ops.
+  | Γ, .stateS e0 e => do
+      let e0' ← elabS env Γ e0
+      let (Γ1, w, v0) ← anfSplit Γ e0'
+      return w (.stateS v0 (← elabS env Γ1 e))
+  | Γ, .writeS r w  => do
+      let r' ← elabS env Γ r
+      let w' ← elabS env Γ w
+      let (Γ1, wr, rv) ← anfSplit Γ r'
+      let (_,  ww, wv) ← anfSplit Γ1 w'
+      return wr (ww (.writeS rv wv))
   | Γ, .pairS a b   => do                     -- A-normalize computation components (bare pair in comp position), #41
       let a' ← elabS env Γ a
       let b' ← elabS env Γ b

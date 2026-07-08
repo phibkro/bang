@@ -1,0 +1,1 @@
+atomically (let a = new 100 in (let z = write a (read a - 30) in read a))

@@ -94,11 +94,6 @@ construct list is the Surface syntax table above.
 | `if` | `if <expr> then <expr> else <expr>` |
 | `handle` | `handle [as <ident>] <expr>` |
 | `atomically` | `atomically [as <ident>] <expr>` |
-| `raise` | `raise <atom>` |
-| `put` | `put <atom>` |
-| `new` | `new <atom>` |
-| `read` | `read <atom>` |
-| `write` | `write <atom> <atom>` |
 | `state` | `state <atom> [as <ident>] in <expr>` |
 | `fun` | `fun <ident> => <expr>` |
 | `let` | `let <ident> = <expr> in <expr>` |
@@ -208,11 +203,16 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `state 41 in (let z = put (get + 1) in get)` ⟹ `42`
 - `state 100 in (let bal = get in (if bal < 30 then bal else (let z = put (bal - 30) in get)))` ⟹ `70`  — no let-binding needed for the arithmetic. balance 100 ≥ 30 ⟹ withdraw ⟹ 70.
 - `handle (let x = 7 in (if x < 10 then raise (x * 6) else x))` ⟹ `42`  — the deep `handle` catches it. x = 7 < 10 ⟹ raise 42 ⟹ caught ⟹ 42.
-### A20–A22: `do`-notation (issue #27) — sequential effectful statements, desugaring to nested `letC`.
+### A20–A21: an effect op FEEDS the operator chain (issue #26 part-2 — parser precedence).
 
-- `do { x = 3; y = 4; x + y }` ⟹ `7`  — A20. PURE do: binds then a result expression. ⟶ 3 + 4 = 7.
+- `atomically (let a = new 100 in read a - 30)` ⟹ `70`  — precedence fix this was "expected ')', got '-'". atomically ⟹ 100 - 30 ⟹ 70.
+- `atomically (let a = new 5 in read a + 1)` ⟹ `6`
+- `atomically (let a = new 100 in (let z = write a (read a - 30) in read a))` ⟹ `70`  — computed balance, read it back: 100 - 30 ⟹ 70. (Also the effect-op-arith example project.)
+### A22–A25: `do`-notation (issue #27) — sequential effectful statements, desugaring to nested `letC`.
+
+- `do { x = 3; y = 4; x + y }` ⟹ `7`  — A22. PURE do: binds then a result expression. ⟶ 3 + 4 = 7.
 - `state 5 in (do { x = get; put (x + 1); get })` ⟹ `6`  — return the cell. Reads like `x = get(); set(x+1); return get()`. ⟶ 6.
-- `state 0 in (do { put 5; put 9; get })` ⟹ `9`  — A22. SEQUENCED bare statements: two `put`s in a row (values discarded), then `get`. ⟶ 9.
+- `state 0 in (do { put 5; put 9; get })` ⟹ `9`  — A24. SEQUENCED bare statements: two `put`s in a row (values discarded), then `get`. ⟶ 9.
 - `atomically (do { a = new 100; bal = read a; z = write a (bal - 30); read a })` ⟹ `70`  — CBPV kernel underneath; this is what "surface the verified kernel" looks like end-to-end.
 ### A24–A25: arithmetic/computations in ADT INTRO args & ELIMINATOR scrutinees (issue #29).
 
