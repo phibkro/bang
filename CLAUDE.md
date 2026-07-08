@@ -27,6 +27,7 @@ its trigger arises.
 | **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
+| **Feedback-loop audit** (loops by radius; refresh at each ◊ — `check-loop-audit.sh` enforces) | `docs/notes/loop-audit.md` |
 | **Standard-library map** (the third stratum: reusable abstractions as library code, gated by type-power) | `docs/notes/stdlib-map.md` |
 | **All design notes** (the exhaustive map of `docs/notes/`, grouped by status — generated) | `docs/notes/README.md` |
 | **Categorical reading** (objects/morphisms: graded `F⊣U` adjunction · graded monad = paradigm · handler-algebra · the two-hop functor) | `docs/notes/categorical-architecture.md` |

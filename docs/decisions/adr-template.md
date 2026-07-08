@@ -13,6 +13,14 @@ informed: {list everyone who is kept up-to-date on progress; and with whom there
 
 {Describe the context and problem statement, e.g., in free form using two to three sentences or in the form of an illustrative story. You may want to articulate the problem in form of a question. Consider adding links to collaboration boards or issue management systems. Make the scope of the decision explicit, for instance, by calling out or pointing at structural architecture elements (components, connectors, ...).}
 
+<!-- Optional, for S/C-ADRs at a build-vs-adopt fork (Wardley evolution check).
+     Add to the adr-frontmatter block as `- **Evolution**: genesis | custom |
+     commodity → build | adopt`. Genesis (novel, differentiating — e.g. the
+     calculated handler compiler) is built in-house; commodity (users expect it,
+     nobody chooses bang for it — e.g. LSP, fmt, tree-sitter) is adopted
+     wholesale, not designed. The line makes "we hand-built a commodity" visible
+     in the generated ledger instead of discovered in retrospect. -->
+
 <!-- This is an optional element. Feel free to remove. -->
 ## Decision Drivers
 

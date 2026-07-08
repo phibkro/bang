@@ -84,6 +84,7 @@ fitness:
     bash tools/check-git-hygiene.sh
     bash tools/check-sha-reachable.sh
     bash tools/check-paths.sh
+    bash tools/check-loop-audit.sh
     bash tools/check-adr-links.sh
     python3 tools/gen-adr-index.py --check
     bash tools/arch-check.sh
@@ -91,6 +92,7 @@ fitness:
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
     python3 tools/check-doc-hygiene.py --check
+    python3 tools/check-context-claims.py
     python3 tools/gen-notes-index.py --check
     python3 tools/gen-questions-index.py --check
     python3 tools/gen-llms-txt.py --check

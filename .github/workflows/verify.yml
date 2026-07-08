@@ -1,0 +1,53 @@
+name: Verify
+
+# The verification gate, in CI — the same gate run locally (`nix develop -c just verify`),
+# so a red main is visible beyond the desk. Two legs:
+#   1. `just verify`  — selfcheck + lake build + check-examples + audit (which runs `just fitness`)
+#   2. `gen-proof-state.py --check --build` — asserts CONTEXT.md's committed proof-state block
+#      ≡ a fresh force-rebuilt render of the axiom gate. This is the REGRESSION detector:
+#      a newly-flagged headline (new sorryAx) drifts the block and fails CI, while the
+#      documented flagged set passes. (Gate-trap note: exit codes, never grep — the tools
+#      already encode this.)
+# First run is slow (nix store + elan toolchain + Mathlib oleans); caches cover repeats.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # fitness legs read git history (sha reachability, changelog)
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Cache elan toolchain + Mathlib oleans
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            .lake
+          key: lean-${{ runner.os }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}
+          restore-keys: lean-${{ runner.os }}-
+
+      - name: just verify (selfcheck + build + examples + audit)
+        run: nix develop --command just verify
+
+      - name: Axiom census (per-headline `#print axioms`, for the log)
+        run: nix develop --command just axioms
+
+      - name: Proof-state regression gate (committed block ≡ fresh render)
+        run: nix develop --command python3 tools/gen-proof-state.py --check --build

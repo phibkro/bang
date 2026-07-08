@@ -8,6 +8,9 @@
 #            orientation docs (link it). The G2 "stale PATH" survey-residue, climbed.
 #   DUP    — a PATH present in BOTH paths/ and paths/archive/ (a copy-not-move bug;
 #            two copies of the same doc that can disagree).
+#   NOTOC  — an active PATH missing the "## Feeds the constraint" section (the TOC
+#            judgment gate: name the binding constraint this path feeds, with a
+#            citation). Archived paths are exempt (historical).
 # The glob matches only PATH-*.md (README.md / _template.md are scaffolding, skipped).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -21,6 +24,9 @@ for f in paths/PATH-*.md; do
   fi
   if [ -e "paths/archive/$b" ]; then
     issues+="DUP     $b — in BOTH paths/ and paths/archive/ (copy-not-move)\n"
+  fi
+  if ! grep -q '^## Feeds the constraint' "$f"; then
+    issues+="NOTOC   $f — missing '## Feeds the constraint' (name the binding constraint + citation; see _template.md)\n"
   fi
 done
 
