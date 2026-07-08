@@ -372,8 +372,30 @@ private theorem capCoh_idDispatch {g n : Nat} {ℓ : Label} {op : OpId} {v : Val
                    · exact weakCoh_replace (by rfl) (wkV p (by simp only [capsV, List.mem_append] at h3 ⊢; tauto)))
               · exact weakCoh_replace (by rfl) (wkA p (Or.inr (Or.inr h'')))
     | custom ℓ' p cl =>
-      -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
-      exact absurd hk (by simp [handlesOp])
+      -- custom (ADR-0085 stage 2): ONE-SHOT resume. dispatchOn reinstalls the frame IDENTICALLY (K' = K,
+      -- read-only param), so reassembled-stack coherence (2) mirrors `state`; resume-focus coherence (1)
+      -- splits (capsC_substFrom) into arg caps (wkV), param caps (capsH custom = capsV p, via wkA), and the
+      -- CLAUSE's own literal caps — the last UNTRACKABLE by `capsH` (the clause map is an opaque function).
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+      obtain ⟨_, hsome⟩ := hk
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
+      obtain ⟨rfl, rfl⟩ := hd2
+      refine ⟨?_, ?_⟩
+      · intro q hq
+        rcases capsC_substFrom 0 p _ q hq with h' | h'
+        · rcases capsC_substFrom 0 (Val.shift v) clause q h' with h'' | h''
+          · -- q ∈ capsC clause: the clause's OWN literal caps. UNTRACKED — see the capCoh blocker note.
+            sorry
+          · rw [capsV_shiftFrom] at h''; exact wkV q h''
+        · exact wkA q (Or.inr (Or.inl (by simpa only [capsH] using h')))
+      · intro q hq
+        rw [capsK_append] at hq; simp only [capsK, capsH] at hq
+        rcases List.mem_append.mp hq with h' | h'
+        · exact wkA q (Or.inl h')
+        · rcases List.mem_append.mp h' with h'' | h''
+          · exact wkA q (Or.inr (Or.inl (by simpa only [capsH] using h'')))
+          · exact wkA q (Or.inr (Or.inr h''))
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 

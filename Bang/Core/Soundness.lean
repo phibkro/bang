@@ -1946,6 +1946,28 @@ private theorem HasStack.concat_transaction_store {n : Nat} {Kᵢ Kₒ : EvalCtx
     | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
 
+/-- **A `custom` frame CANNOT sit on a well-typed stack (ADR-0085 #44 stage 2).** `HasStack` has only
+`letF`/`appF`/`handleF`/`stateF`/`transactionF` constructors — NO `customF` (custom stays UNTYPED until
+stage 3). So a `HasStack` derivation over a stack containing `handleF n (Handler.custom …)` is
+uninhabitable: `cases` on the boundary frame's `HasStack` finds no matching constructor. This is the
+DISPATCH-side analogue of `handle_custom_uninhabited` (the handle-INSTALL side): it lets the perform
+dispatch case discharge the now-REAL `custom` arm VACUOUSLY on the typed path — a well-typed config never
+carries a custom frame, so the custom dynamics (`handlesOp`/`dispatchOn` now real, stage 2) are never
+observed by `preservation`/`progress`. Induct on `Kᵢ` to reach the boundary. -/
+private theorem HasStack.concat_custom_absurd {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {p : Val}
+    {cl : OpId → Option Comp} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo Co → False := by
+  induction Kᵢ generalizing e C with
+  | nil => intro hK; simp only [List.nil_append] at hK; cases hK
+  | cons fr Kᵢ ih =>
+    intro hK; simp only [List.cons_append] at hK
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub => exact ih hsub
+    | @appF _ _ _ _ q A B _ hv hsub => exact ih hsub
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+
 /-! ### E.1d STEP-5: identity-dispatch decomposition (`splitAtId_decomp`) -/
 
 /-- **The identity-dispatch decomposition.** A successful `splitAtId` certifies the stack is
@@ -2222,8 +2244,11 @@ theorem preservation_proof
               HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
               hsub''⟩, hnecfg'⟩
       | custom ℓ' p cl =>
-        -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
-        exact absurd hk (by simp [handlesOp])
+        -- custom (ADR-0085 stage 2): dispatch is now REAL, but a `custom` frame CANNOT sit on a well-typed
+        -- stack — `HasStack` has no `customF` constructor (custom untyped until stage 3). So `hstack`,
+        -- which types `Kᵢ ++ handleF n (custom …) :: Kₒ`, is uninhabitable. VACUOUS on the typed path: the
+        -- now-real custom dynamics are never observed by preservation on a well-typed config.
+        exact hstack.concat_custom_absurd.elim
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2563,8 +2588,11 @@ theorem hasConfigTy_step
               HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
               hsub''⟩⟩
       | custom ℓ' p cl =>
-        -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
-        exact absurd hk (by simp [handlesOp])
+        -- custom (ADR-0085 stage 2): dispatch is now REAL, but a `custom` frame CANNOT sit on a well-typed
+        -- stack — `HasStack` has no `customF` constructor (custom untyped until stage 3). So `hstack`,
+        -- which types `Kᵢ ++ handleF n (custom …) :: Kₒ`, is uninhabitable. VACUOUS on the typed path: the
+        -- now-real custom dynamics are never observed by preservation on a well-typed config.
+        exact hstack.concat_custom_absurd.elim
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2757,9 +2785,14 @@ private theorem dispatchOn_isSome (n : Nat) (ℓ : Label) (op : OpId) (v : Val) 
   | throws _ => exact ⟨_, rfl⟩
   | state _ _ => simp only [dispatchOn]; split <;> exact ⟨_, rfl⟩
   | transaction _ _ => simp only [dispatchOn]; (repeat' first | split | exact ⟨_, rfl⟩)
-  -- custom: `handlesOp (.custom …) = false` (ADR-0085 stage 1) refutes `hh`; dispatchOn is `none` here
-  -- but this case is unreachable — the caller only reaches dispatch on a handler that passes `handlesOp`.
-  | custom _ _ _ => exact absurd hh (by simp [handlesOp])
+  -- custom (ADR-0085 stage 2): dispatchOn is TOTAL on custom too — `handlesOp = true` forces
+  -- `(cl op).isSome`, so the clause lookup succeeds and the one-shot resume `some` is produced. Real,
+  -- additive (the built-in triple's totality generalized to the clause map).
+  | custom ℓ' p cl =>
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hh
+      obtain ⟨_, hsome⟩ := hh
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      simp only [dispatchOn, hcl]; exact ⟨_, rfl⟩
 
 /-- **PROGRESS'S PERFORM CASE** (probe §2): given `CapResolves K n ℓ op`, the `idDispatch` step fires —
 `splitAtId` finds the handling frame, the fail-loud `handlesOp` guard passes, and `dispatchOn` is total. -/

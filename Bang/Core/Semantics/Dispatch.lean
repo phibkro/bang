@@ -37,11 +37,12 @@ def handlesOp : Handler → Label → OpId → Bool
   -- transaction (ADR-0030): catches the three stm ops on its own label.
   | .transaction ℓ' _, ℓ, op =>
       (ℓ' = ℓ) && (op == "newTVar" || op == "readTVar" || op == "writeTVar")
-  -- custom (ADR-0085 #44 STAGE 1): INERT — services nothing yet. `false` means a `perform` never
-  -- routes to a `.custom` frame, so no dispatch/resumption is needed this stage (that is stage 2).
-  -- SOUND because custom is untyped (stage 3), so no well-typed program contains it — the `false`
-  -- can never be observed by `progress`/`type_safety` on a typed config.
-  | .custom _ _ _, _, _ => false
+  -- custom (ADR-0085 #44 STAGE 2): REAL — the general user-defined-effect handler services `op` iff its
+  -- label matches AND its per-op CLAUSE MAP has an entry (`(clauses op).isSome`). Mirrors the built-ins'
+  -- shape (label-match `&&` op-membership), generalized from a hardcoded op-string set to the user's
+  -- clause map. Still UNTYPED (stage 3), so no well-typed program routes here (the typed soundness
+  -- proofs discharge custom via `HasStack` having no `customF` frame — `concat_custom_absurd`).
+  | .custom ℓ' _ clauses, ℓ, op => (ℓ' = ℓ) && (clauses op).isSome
 
 /-- `handlesOp` forces the label match: a catching handler's `label` IS the dispatched `ℓ`. -/
 theorem handlesOp_label {h : Handler} {ℓ : Label} {op : OpId} (hc : handlesOp h ℓ op = true) :
@@ -160,11 +161,27 @@ def dispatchOn (n : Nat) (op : OpId) (v : Val) :
                 some (Kᵢ ++ Frame.handleF n (.transaction ℓ' (storeSet Θ ((tvarIdx iv).getD 0) w)) :: Kₒ,
                       .ret .vunit)
             | _ => some (Kᵢ ++ Frame.handleF n (.transaction ℓ' Θ) :: Kₒ, .ret .vunit)
-      -- custom (ADR-0085 #44 STAGE 1): INERT — `none` (no dispatch defined yet, that is stage 2).
-      -- UNREACHABLE on the verified path: `idDispatch` guards on `handlesOp h ℓ op` (= `false` for
-      -- custom) BEFORE calling `dispatchOn`, so a `.custom` frame is never routed here; total-function
-      -- exhaustiveness alone demands the arm. Real one-shot resume/abort dispatch is stage 2.
-      | .custom _ _ _ => none
+      -- custom (ADR-0085 #44 STAGE 2): ONE-SHOT TAIL-RESUMPTIVE resume (D2). The `state` mechanism
+      -- (ADR-0025) generalized — USER clause logic where get/put's hardcode was. Look up the op's clause
+      -- (guaranteed `some` here: `idDispatch`'s fail-loud `handlesOp` guard already forced
+      -- `(clauses op).isSome`), then RESUME `Kᵢ` with the clause's RESULT and reinstall a deep
+      -- `handleF n (custom ℓ' p clauses)` frame (so nested ops are handled too), exactly `state`'s resume
+      -- STACK SHAPE. The clause is the RESUME FOCUS: it binds the carried param `p` at index 1 and the
+      -- operation ARGUMENT `v` at index 0 (both CLOSED — the focus is always closed), and computes in TAIL
+      -- position the value that resumes `Kᵢ` (`resume` is implicit-at-tail — the clause returns a value
+      -- that flows into `Kᵢ`, no first-class continuation needed, so labelling/Q22 stays untouched). The
+      -- reinstalled param is `p` UNCHANGED: v1 is a READ-ONLY param (reader/config/Net — `get`-like);
+      -- put-like param MUTATION (thread `(result, p')`) needs the stage-4 denotational machine (which can
+      -- run the clause and split its result) or first-class `k`, both DEFERRED. Zero-shot abort is the
+      -- `throws` built-in coexisting (ADR-0085 "throws generalized"), not a closed custom clause (which,
+      -- resuming-at-tail, cannot itself discard `Kᵢ`). Substitution mirrors `split` (idx1 then idx0):
+      -- `subst p (subst (shift v) clause)` = `clause[param@1 := p, arg@0 := v]`.
+      | .custom ℓ' p clauses =>
+          match clauses op with
+          | some clause =>
+              some (Kᵢ ++ Frame.handleF n (.custom ℓ' p clauses) :: Kₒ,
+                    Comp.subst p (Comp.subst (Val.shift v) clause))
+          | none => none   -- UNREACHABLE: the `handlesOp` guard forced `(clauses op).isSome` before here.
 
 /-- ADR-0054: the kernel's effect dispatch — resolve the capability's IDENTITY `n`, then route the
 matched `(Kᵢ, h, Kₒ)` through `dispatchOn n` (which reinstalls `handleF n` on a resumptive RESUME). -/

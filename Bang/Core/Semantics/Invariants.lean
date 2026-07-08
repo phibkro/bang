@@ -161,9 +161,16 @@ theorem stackBelow_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
           obtain ⟨rfl, _⟩ := hd2
           exact (StackBelow_append g Kᵢ _).mpr ⟨hsbi, hng, hsbo⟩
     | custom ℓ' p cl =>
-      -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`,
-      -- so this dispatch branch is unreachable — vacuous.
-      exact absurd hk (by simp [handlesOp])
+      -- custom (ADR-0085 stage 2): ONE-SHOT resume — dispatchOn reinstalls the deep frame over the SAME
+      -- `Kᵢ`/`Kₒ` (`Kᵢ ++ handleF n (custom …) :: Kₒ`), the ADR-0025 state stack shape. StackBelow is
+      -- preserved EXACTLY as for `state`: the reassembled stack's every id is `< g`. Real (non-vacuous),
+      -- additive, mirrors the state arm.
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+      obtain ⟨_, hsome⟩ := hk
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
+      obtain ⟨rfl, _⟩ := hd2
+      exact (StackBelow_append g Kᵢ _).mpr ⟨hsbi, hng, hsbo⟩
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- **`WellCounted` is preserved by `cstep`.** The mint arm pushes `handleF g` with counter `g+1` (old

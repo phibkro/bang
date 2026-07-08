@@ -779,8 +779,15 @@ theorem dispatchOn_rename (σ : Nat → Nat) (n : Nat) (op : OpId) (v : Val)
             if_neg hnew, if_neg hread, Option.map_some, renameK_append, renameK_cons,
             renameF_handleF, renameH_transaction, renameC_ret, tvarIdx_renameV, storeSet_map]
   | custom ℓ p cl =>
-    -- custom's `dispatchOn` is `none` (ADR-0085 stage 1, inert); renaming maps `none` to `none`.
-    simp only [renameH_custom, dispatchOn, Option.map_none]
+    -- custom (ADR-0085 stage 2): dispatchOn is now a REAL one-shot resume. `renameH` is the IDENTITY on
+    -- custom (Stage 1), so the renamed frame keeps the UN-renamed param `p` + clause `cl`, while the RHS
+    -- renames them (via `renameC_substFrom`) — the arm holds only when `p`/`cl` are rename-invariant. This
+    -- is FIXABLE (unlike the capsH blocker): make `renameH` traverse the clause map by post-composition
+    -- (`fun op => (cl op).map (renameC σ)`) and rename the param. Left as the renaming residual (the map
+    -- fix ripples through renameH_shiftFrom/substFrom + CapsBelow, out of stage-2 scope).
+    cases hcl : cl op with
+    | none => simp only [renameH_custom, dispatchOn, hcl, Option.map_none]
+    | some clause => sorry
 
 /-- **`idDispatch` commutes with an injective renaming.** -/
 theorem idDispatch_rename (σ : Nat → Nat) (hσ : Function.Injective σ)

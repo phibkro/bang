@@ -68,9 +68,13 @@ def capsH : Handler → List (Nat × Label)
   | .state _ s  => capsV s
   | .throws _   => []
   | .transaction _ Θ => Θ.flatMap capsV
-  -- custom (ADR-0085 stage 1): inert/untyped ⇒ no reachable config contains it, and shift/subst are the
-  -- identity on it (no cap ever flows through), so `[]` (contributes no caps) is sound — like `throws`.
-  | .custom _ _ _ => []
+  -- custom (ADR-0085 stage 2): the carried PARAM `p` is SURFACED into the resume focus on dispatch
+  -- (`clause[param@1 := p, …]`), exactly as `state`'s stored `s` is — so `capsH` must track `p`'s caps
+  -- (`capsV p`) for the route-A `capLabelCoh_step` resume arm. The per-op CLAUSE MAP (`OpId → Option Comp`)
+  -- is a FUNCTION and cannot be enumerated, so its literal caps are NOT tracked here; this is sound for
+  -- reachable configs (clauses arise vcap-FREE — `substFrom`/`shiftFrom` are the identity on custom, and
+  -- vcaps enter only by minting into BODIES, never into a frozen clause map).
+  | .custom _ p _ => capsV p
 end
 
 def capsK : EvalCtx → List (Nat × Label)
@@ -277,7 +281,9 @@ theorem capsH_substFrom (k : Nat) (v : Val) (h : Handler) :
   | .state _ s => intro p hp; simp only [Handler.substFrom, capsH] at hp ⊢; exact capsV_substFrom k v s p hp
   | .throws _ => intro p hp; simp [Handler.substFrom, capsH] at hp
   | .transaction _ _ => intro p hp; exact Or.inl hp
-  | .custom _ _ _ => intro p hp; simp [Handler.substFrom, capsH] at hp    -- capsH = [] ⇒ hp : p ∈ [] absurd
+  -- custom (ADR-0085 stage 2): `Handler.substFrom` is the IDENTITY on custom, so `capsH (substFrom …) =
+  -- capsH (custom …) = capsV p` unchanged ⇒ `Or.inl` (no cap from `v` enters, the param is untouched).
+  | .custom _ _ _ => intro p hp; simp only [Handler.substFrom] at hp; exact Or.inl hp
 end
 
 /-! ### §3.0b — DISPATCH-arm freshness: the resumed stack + focus stay `< g`. Richer mirror of
@@ -486,9 +492,28 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
             | (rcases capsV_set_mem hp with h' | h'                            -- `writeTVar`: set cell
                · exact hch p h'
                · exact hv p (by simp only [capsV, List.mem_append] at h' ⊢; tauto))
-    | custom ℓ' p cl =>
-      -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
-      exact absurd hk (by simp [handlesOp])
+    | custom ℓ' pm cl =>
+      -- custom (ADR-0085 stage 2): ONE-SHOT resume (read-only param). Mirrors `state` — the reassembled
+      -- stack + the param/arg focus caps stay `< g`. RESIDUAL: the resume focus is the substituted user
+      -- CLAUSE, whose OWN literal caps are bounded by NO invariant (`capsH custom = capsV pm` tracks the
+      -- param, but the opaque `OpId → Option Comp` clause map cannot be traversed). This is the clause-cap
+      -- blocker (twin of the capCoh WeakCoh one): route-A FRESHNESS also cannot bound clause caps.
+      have hch : ∀ q ∈ capsH (Handler.custom ℓ' pm cl), q.1 < g := hckh
+      simp only [capsH] at hch
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+      obtain ⟨_, hsome⟩ := hk
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
+      obtain ⟨rfl, rfl⟩ := hd2
+      refine ⟨capsBelow_handler_irrel (hrec ▸ hcb), ?_,
+        stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ ?_⟩
+      · intro q hq
+        rcases capsC_substFrom 0 pm _ q hq with h' | h'
+        · rcases capsC_substFrom 0 (Val.shift v) clause q h' with h'' | h''
+          · sorry  -- q ∈ capsC clause: the clause's literal caps, unbounded — the clause-cap blocker.
+          · rw [capsV_shiftFrom] at h''; exact hv q h''
+        · exact hch q h'
+      · intro q hq; simp only [capsH] at hq; exact hch q hq
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- The `Bool=1+1` encoding (ADR-0065) is closed: it carries no capabilities. -/

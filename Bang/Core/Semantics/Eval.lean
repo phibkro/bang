@@ -308,6 +308,44 @@ private def capMigrateInternal : Comp :=
     (.vthunk (.handle (.state 1 (.vint 7)) (.perform (.vvar 0) "get" .vunit)))
 #guard yieldsInt 200 capMigrateInternal 7
 
+/-! ### ADR-0085 #44 STAGE 2 — user-defined-effect (`Handler.custom`) dispatch + one-shot resume demos.
+
+KERNEL-LEVEL `#guard`s (the surface is stage 7): a `Handler.custom` value is hand-built with a clause
+map, installed with `handle`, and run via `Source.eval` — the UNTYPED kernel interpreter needs no typing
+rule (custom stays untyped until stage 3). These are the stage-2 gate: they show the general handler is
+LIVE at the kernel. `Source.eval` is `Config.run` over `Source.step`, INDEPENDENT of the route-A cap
+metatheory — so the DISPATCH + RESUME semantics are demonstrable here regardless of the metatheory. -/
+
+/-- The `{Reader}`-style clause map: `read x` resumes with `x + p` (arg@0 + param@1). A one-shot
+tail-resumptive clause carrying a config param `p` — reader / `{Net}`-config / logging, the v1 sweet spot
+(read-only param). Other ops are unserviced (`none`). -/
+private def readerClauses : OpId → Option Comp
+  | "read" => some (.binop .add (.vvar 0) (.vvar 1))   -- resume with arg@0 + param@1
+  | _      => none
+
+/-- **(a) DISPATCH + ONE-SHOT RESUME.** A custom handler (label 1, param `100`) services `read 5` by
+running the clause `arg + param = 5 + 100 = 105`, RESUMING the `letC` continuation with `105`; the
+continuation `105 + 1 = 106` then runs AFTER the clause (the one-shot resume — the continuation IS
+reached). Mirrors `state`'s `get`, with USER clause logic in place of the hardcoded read. -/
+private def customResume : Comp :=
+  .handle (.custom 1 (.vint 100) readerClauses)
+    (.letC (.perform (.vvar 0) "read" (.vint 5))     -- custom cap = var0; read 5 ⤳ resume 105
+      (.binop .add (.vvar 0) (.vint 1)))             -- continuation runs on 105 ⤳ 106
+#guard yieldsInt 200 customResume 106
+
+/-- **(b) ZERO-SHOT ABORT, coexisting with `throws` (ADR-0085 "throws generalized").** A v1 custom clause
+resumes at tail and (being closed) cannot itself discard the continuation, so abort is the `throws`
+built-in COEXISTING: a custom handler frame (label 1) sits BETWEEN the `raise` and its `throws` handler
+(label 2). The `raise 42` aborts PAST the custom frame to the throws handler — the read continuation
+never runs — yielding `42`. Shows real custom dispatch does NOT break the zero-shot abort of a coexisting
+built-in (the coexist payoff). -/
+private def customAbortCoexist : Comp :=
+  .handle (.throws 2)                                          -- throws cap = var0
+    (.handle (.custom 1 (.vint 100) readerClauses)             -- custom cap = var0, throws cap ⤳ var1
+      (.letC (.perform (.vvar 1) "raise" (.vint 42))           -- raise 42 ⤳ ABORT past the custom frame
+        (.perform (.vvar 0) "read" (.vint 5))))                -- never reached (aborted)
+#guard yieldsInt 200 customAbortCoexist 42
+
 /-- `Config.run` unfolds one step on a NON-returning config: when `cfg` is not `(g, [], ret v)` the
 machine takes a `Source.step`. Bridges the equation compiler's overlapping `(_, [], ret v)` /
 catch-all arms so callers can reason about a single transition. ADR-0055: the returned config now
