@@ -6,10 +6,11 @@ import Bang.Core.Freshness
 PRECISE CLAIM (corrected — does NOT overclaim "unsound-as-stated"): a program with a BURIED
 (never-forced) capability literal evaluates to `done`, yet its `capsC` is non-empty AND
 `FreshCfg (0,[],c)` is FALSE. So the cap-free premise is **premise-necessary for the evalD-bridge
-proof ARCHITECTURE** (its only known route cannot reach such c — FreshCfg fails). It does NOT show
-`compile_forward_sim` is FALSE on cWitness: the thunk is never forced, so the WASM side plausibly
-ALSO completes — the HEADLINE may be TRUE-but-UNPROVABLE-WITHOUT-THE-PREMISE on this class. The
-Wasm-side check below tests exactly that. Do-not-weaken regression witness. -/
+proof ARCHITECTURE / BRIDGE ROUTE** (its only known route cannot reach such c — FreshCfg fails). It
+does NOT show `compile_forward_sim` is FALSE on cWitness: the thunk is never forced, and check (4)
+below CONFIRMS the WASM side ALSO completes cWitness — so the HEADLINE is TRUE-but-UNPROVABLE-
+WITHOUT-THE-PREMISE on this class (headline truth on the vcap class: plausibly-true, here confirmed
+for this witness). Do-not-weaken regression witness. -/
 
 namespace Bang.VcapFreeRefute
 open Bang (Val Comp)
