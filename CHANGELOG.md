@@ -78,5 +78,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **examples** — check-examples always rebuilds the bang exe — kills the stale-binary gate-trap (`c947809`)
 - **ci** — set the git gc posture in the runner clone (`2bc9566`)
 - **tooling** — gen-changelog --check tolerates the self-hash fixpoint lag (`730632e`)
+- **surface** — arithmetic composes as an effect-op argument (closes #26) (`db85ad7`)
 
 <!-- END GENERATED changelog -->
