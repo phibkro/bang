@@ -8,7 +8,7 @@ Strong induction on Source `Config.run` fuel F; case on focus M. -/
 
 namespace Bang.CalcVM
 open Bang (Val Comp Frame Config Result Handler)
-open Bang.CapCoh (CapLabelCoh capLabelCoh_step)
+open Bang.CapCoh (CapLabelCoh capLabelCoh_step capLabelCoh_perform_label)
 open Bang.Model (FreshCfg freshCfg_step)
 
 /-- Fuel monotonicity for `evalD` (the `evalD` analog of `exec_succ`/`exec_mono`): more fuel
@@ -577,11 +577,53 @@ theorem evalD_complete_gen_full : ∀ F,
             -- frame-transparency as the letC raised sub-case; do both together once the pattern is pinned.
             sorry
       | perform cap op u =>
-          -- DRAFT-SORRY (unverified): MIRROR run_evalD perform (AbstractMachine.lean:4159 term / 4562 raised).
-          -- The BASE case where a raise originates. Dispatch by identity via perform_*_resolves (ported in
-          -- U5bPort); the store-hit → term(ret sv) with the same-K close; the store-miss → raised n op u with
-          -- NoResume from the miss + dispatchRun re-performs at the outer context (labelOf reconstructs ℓ).
-          sorry
+          -- BASE case (where a raise originates). Dispatch by IDENTITY: evalD resolves the state/txn
+          -- store at key n2 directly. STORE-HIT → term(ret …) same-K close (mirror run_evalD:4159).
+          -- STORE-MISS → raised n2 op u, NoResume from the miss, dispatchRun re-performs (mirror 4562).
+          cases cap with
+          | vcap n2 ℓ2 =>
+            by_cases hop : op = "get"
+            · subst hop
+              cases hg : σ.get? n2 with
+              | some sv =>
+                  -- get-hit: evalD → term(ret sv); kernel dispatch_state_get → ret sv, SAME K.
+                  have hgc : (ctxStates K).get? n2 = some sv := by rw [← hCtx]; exact hg
+                  obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxStates_get hFresh.2.2.1 hgc
+                  have hlab : ℓ' = ℓ2 := by
+                    have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
+                  have hcr : Bang.CapResolves K n2 ℓ2 "get" :=
+                    ⟨Kᵢ, Handler.state ℓ' sv, Kₒ, hsp, by subst hlab; simp [Bang.handlesOp]⟩
+                  have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) "get" u)
+                      = some (g, K, Comp.ret sv) := by
+                    simp only [Source.step, dispatch_state_get hcr hgc, Option.map_some]
+                  have hrun' : Config.run F' (g, K, Comp.ret sv) = Result.done v := by
+                    have hs := Config.run_step F' (g, K, Comp.perform (Val.vcap n2 ℓ2) "get" u)
+                      (by intro gg vv hc; simp at hc)
+                    rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+                  refine ⟨1, g, σ, τ, Or.inl ⟨.ret sv, ?_, ?_, ?_, ?_, ?_, F', by omega, ?_⟩⟩
+                  · show evalD 1 g σ τ (Comp.perform (Val.vcap n2 ℓ2) "get" u) = _
+                    simp only [evalD, if_true]; rw [hg]
+                  · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+                  · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+                  · rw [ctxNetEffect_self hCtx hTtx]; exact capLabelCoh_step _ _ hFresh hCoh hstep
+                  · rw [ctxNetEffect_self hCtx hTtx]; exact freshCfg_step _ _ hFresh hstep
+                  · rw [ctxNetEffect_self hCtx hTtx]; exact hrun'
+              | none =>
+                  -- get-miss: evalD → raised n2 "get" u; NoResume; dispatchRun re-performs (label-irrel/match).
+                  sorry
+            · by_cases hop2 : op = "put"
+              · subst hop2
+                cases hg : σ.get? n2 with
+                | some sv => sorry  -- put-hit: mirror run_evalD:4198 (state put, K→updateCtxStates)
+                | none => sorry     -- put-miss: raise (mirror get-miss)
+              · by_cases hopt : isTxnOp op = true
+                · cases hgt : τ.get? n2 with
+                  | some Θ => sorry  -- txn-hit: mirror run_evalD:4232
+                  | none => sorry    -- txn-miss: raise
+                · sorry  -- non-resumptive op: raise (mirror run_evalD:4647)
+          | _ =>
+              -- non-cap perform: evalD = none, so Config.run is stuck ≠ done (absurd).
+              exfalso; cases F' <;> simp_all [Config.run, Source.step]
       | handle h0 M0 =>
           -- DRAFT-SORRY (unverified): MIRROR run_evalD handle arms (AbstractMachine.lean:4268 state / 4328
           -- throws / 4417 txn). Close via the ported *_composes lemmas (U5bPort): the fuel IH lands on the
