@@ -43,10 +43,16 @@ kernel/census UNTOUCHED the entire arc** (frontend leaves, 25 constructors, 16 h
 `Handler.custom`, coexist, one-shot v1).** The IO/net prong (ADR-0084) gated on this. **Stage 1 DONE (`d84aeae`):
 `Handler.custom` rep + the ADDITIVE ripple — the verified spine REOPENED and stayed axiom-clean** (census 25→26, the
 +1 custom; every previously-clean headline still ⊆ trusted-three, NO new sorryAx; Spec.lean frozen statements
-untouched — the ADR-0085 additive-ripple bet CONFIRMED at the kernel). custom is INERT+UNTYPED so far. **NEXT: Stage 2**
-(dispatch/eval — custom actually dispatches + resumes on `Source.eval`) → **Stage 3** (typing) = a RUNNING user-defined
-effect (the moat visible). Then the multi-session proof grind: **Stage 4** calc-machine (HIGH, entangled with pending
-route-B ADR-0052) → 5 LR → 6 soundness → 7 surface. Staging + risk in `paths/`/ADR-0085.
+untouched — the ADR-0085 additive-ripple bet CONFIRMED at the kernel). custom is INERT+UNTYPED. **Stage 2 —
+SEMANTICS + typed-soundness PROVEN-IN-ISOLATION but BANKED/DEFERRED** (WIP `origin/gh44s2`; ADR-0085 status has the
+full finding). Dispatch+one-shot-resume works (custom→106, abort→42), trusted-three vacuous-clean — BUT the coexist
+rep's opaque clause map (`OpId → Option Comp`) defeats `capsH`'s cap-collection, so landing it regresses the CLEAN
+route-A CalcVM headlines (`run_evalD`/`sim`); the fix (a `VcapFree`-clause invariant threaded through route-A/B) is
+ENTANGLED WITH THE PENDING route-B (ADR-0052). **⟹ the running-user-effect milestone is GATED on the route-A/route-B
+metatheory (≈ Stage 4), a future DEDICATED arc — not a quick 1→2→3.** Operator BANKED here (2026-07-08). **RESUME #44
+from:** resolve route-B (ADR-0052) + thread the VcapFree-clause invariant, starting from `origin/gh44s2` (Stage-2
+semantics) — then Stages 3(typing)→4(calc-machine)→5(LR)→6(soundness)→7(surface). The IO/net prong (ADR-0084) waits
+on this.
 
 Active path: **`paths/PATH-polymorphism.md`**. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (Q1–Q42).
 
