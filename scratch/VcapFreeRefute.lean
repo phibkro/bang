@@ -1,13 +1,15 @@
-import Bang.Backend.AbstractMachine
+import Bang.Backend.Wasm
 import Bang.Core.Freshness
 
-/-! # Refutation witness: `Source.eval … = done` does NOT imply `VcapFree c` (capsC c = []).
+/-! # Witness: `Source.eval … = done` does NOT imply `VcapFree c` (capsC c = []).
 
-If this builds, it machine-proves the frozen `compile_forward_sim`/`evalD_complete_gen` are
-unsound-AS-STATED for non-VcapFree c: a program with a BURIED (never-performed) capability literal
-still evaluates to `done`, yet its `capsC` is non-empty. So the cap-free precondition is
-STATEMENT-necessary, not merely proof-necessary — the hypothesis must be added (option 1/3), or
-the statement is wrong. Kept as a do-not-weaken regression witness. -/
+PRECISE CLAIM (corrected — does NOT overclaim "unsound-as-stated"): a program with a BURIED
+(never-forced) capability literal evaluates to `done`, yet its `capsC` is non-empty AND
+`FreshCfg (0,[],c)` is FALSE. So the cap-free premise is **premise-necessary for the evalD-bridge
+proof ARCHITECTURE** (its only known route cannot reach such c — FreshCfg fails). It does NOT show
+`compile_forward_sim` is FALSE on cWitness: the thunk is never forced, so the WASM side plausibly
+ALSO completes — the HEADLINE may be TRUE-but-UNPROVABLE-WITHOUT-THE-PREMISE on this class. The
+Wasm-side check below tests exactly that. Do-not-weaken regression witness. -/
 
 namespace Bang.VcapFreeRefute
 open Bang (Val Comp)
@@ -26,14 +28,20 @@ example : ¬ Bang.Model.VcapFree cWitness := by
   intro h
   simp at h
 
-/-- (3) THE REFUTATION, as a hypothesis (independent of any in-file sorry): if the frozen
-`evalD_complete_gen`-shaped implication held UNCONDITIONALLY (for all c, no VcapFree premise), it
-would be applied to cWitness — but FreshCfg(0,[],cWitness) is FALSE (the buried cap 99 ≥ g=0), so
-the completeness proof's precondition cannot be met. This pins the hypothesis as STATEMENT-necessary. -/
+/-- (3) The PROOF-ARCHITECTURE bound: `FreshCfg(0,[],cWitness)` is FALSE (the buried cap 99 ≥ g=0),
+so the evalD-bridge completeness proof's precondition cannot be met for this c — the premise is
+PROOF-ARCHITECTURE-necessary (NOT a proof that the headline is false). -/
 example : ¬ Bang.Model.FreshCfg (0, ([] : Bang.EvalCtx), cWitness) := by
   simp only [Bang.Model.FreshCfg, cWitness, Bang.Model.capsC, Bang.Model.capsV]
   rintro ⟨_, hcaps, _, _⟩
   have := hcaps (99, 0) (by simp)
   simp at this
+
+/-- (4) THE HEADLINE-TRUTH CHECK (manager's request): does the WASM side ALSO complete cWitness?
+YES — `Wasmfx.run 100 (compileC cWitness) = done unit` (compiled rfl). So `compile_forward_sim`
+is TRUE on cWitness (both sides reach done unit) — it is TRUE-BUT-UNPROVABLE-WITHOUT-THE-PREMISE,
+NOT false. This is the evidence for the "premise an unprovable statement" reframing (vs "repair a
+false one"): the never-forced thunk is dead code both sides discard. -/
+example : Wasmfx.run 100 (compileC cWitness) = Result.done .unit := by rfl
 
 end Bang.VcapFreeRefute
