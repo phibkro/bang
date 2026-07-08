@@ -11,6 +11,56 @@ open Bang (Val Comp Frame Config Result Handler)
 open Bang.CapCoh (CapLabelCoh capLabelCoh_step capLabelCoh_perform_label)
 open Bang.Model (FreshCfg freshCfg_step)
 
+/-! ### Ported de-risk lemmas (U5bPort) — the handler-kind `*_composes` bridges (0-delta port).
+The fuel IH on the SUBSTITUTED body composes through `evalD`'s handle clause to the whole-handle
+node — for each handler kind. No substitution-closure of a black-box relation (the route-A wall). -/
+
+theorem handle_state_composes
+    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (s0 : Val) (M : Comp)
+    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+    (hbody : evalD f (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ')) :
+    evalD (f+1) g σ τ (Comp.handle (Handler.state ℓ0 s0) M)
+               = some (.term (.ret v0), g', σ'.tail, τ') := by
+  simp only [evalD, Handler.label, hbody, Option.bind_some]
+
+theorem handle_txn_composes
+    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (Θ : List Val) (M : Comp)
+    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+    (hbody : evalD f (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ')) :
+    evalD (f+1) g σ τ (Comp.handle (Handler.transaction ℓ0 Θ) M)
+               = some (.term (.ret v0), g', σ', τ'.tail) := by
+  simp only [evalD, Handler.label, hbody, Option.bind_some]
+
+theorem handle_throws_normal_composes
+    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
+    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+    (hbody : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ')) :
+    evalD (f+1) g σ τ (Comp.handle (Handler.throws ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ') := by
+  simp only [evalD, Handler.label, hbody, Option.bind_some]
+
+theorem handle_throws_caught_composes
+    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
+    (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+    (hbody : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.raised g "raise" w, g', σ', τ')) :
+    evalD (f+1) g σ τ (Comp.handle (Handler.throws ℓ0) M)
+               = some (.term (.ret w), g', σ', τ') := by
+  simp only [evalD, Handler.label, hbody, Option.bind_some, and_self, if_true]
+
+theorem handle_throws_forward_composes
+    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
+    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+    (hne : ¬ (n = g ∧ op = "raise"))
+    (hbody : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.raised n op w, g', σ', τ')) :
+    evalD (f+1) g σ τ (Comp.handle (Handler.throws ℓ0) M)
+               = some (.raised n op w, g', σ', τ') := by
+  simp only [evalD, Handler.label, hbody, Option.bind_some, if_neg hne]
+
 /-- Fuel monotonicity for `evalD` (the `evalD` analog of `exec_succ`/`exec_mono`): more fuel
 never changes a `some`. Needed by the converse spine, which COMBINES two `evalD` sub-runs at
 different fuels (e.g. letC binds M0 at `n`, subst-N at `ns`) — run_evalD never needs this because
@@ -761,11 +811,75 @@ theorem evalD_complete_gen_full : ∀ F,
               -- non-cap perform: evalD = none, so Config.run is stuck ≠ done (absurd).
               exfalso; cases F' <;> simp_all [Config.run, Source.step]
       | handle h0 M0 =>
-          -- DRAFT-SORRY (unverified): MIRROR run_evalD handle arms (AbstractMachine.lean:4268 state / 4328
-          -- throws / 4417 txn). Close via the ported *_composes lemmas (U5bPort): the fuel IH lands on the
-          -- substituted body `subst (vcap g h.label) M0` at (g+1, pushed store); the mint+subst is absorbed
-          -- by the fuel IH (the de-risk's core finding). custom = none ⇒ hrun-absurd.
-          sorry
+          -- MIRROR run_evalD handle arms (state 4268 / throws 4328 / txn 4417). Mint id:=g, install the
+          -- handleF g h0 frame, run the substituted body via IH; compose the whole-handle evalD via the
+          -- ported U5bPort.*_composes lemmas. The fuel IH lands on `subst (vcap g h.label) M0` directly
+          -- (the de-risk's core: mint+subst absorbed by the fuel IH, no congruence).
+          cases h0 with
+          | custom _ _ _ =>
+              -- custom: kernel Source.step mints+installs, but evalD custom = none. The kernel run still
+              -- proceeds; the converse can't produce an evalD `some` — this is the ADR-0085 stage-1 gap.
+              -- HOWEVER no source/compiled program produces a custom handle (untyped), so this arm is
+              -- unreachable for the frozen consumer at K=[]. DRAFT-SORRY: stage-1 custom (out of scope).
+              sorry
+          | state ℓ0 s0 =>
+              -- install handleF g (state ℓ0 s0), push σ.push g s0, run subst body at g+1.
+              have hmint : Source.step (g, K, Comp.handle (Handler.state ℓ0 s0) M0)
+                  = some (g+1, Frame.handleF g (Handler.state ℓ0 s0) :: K, Comp.subst (Val.vcap g ℓ0) M0) := rfl
+              have hCinstall : CtxCorr (σ.push g s0) (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
+                CtxCorr_install hCtx
+              have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
+                CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+              have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
+              have hFreshInstall := freshCfg_step _ _ hFresh hmint
+              have hrun' : Config.run F' (g+1, Frame.handleF g (Handler.state ℓ0 s0) :: K,
+                  Comp.subst (Val.vcap g ℓ0) M0) = Result.done v := by
+                have hs := Config.run_step F' (g, K, Comp.handle (Handler.state ℓ0 s0) M0)
+                  (by intro gg vv hc; simp at hc)
+                rw [hmint] at hs; simp only at hs; rw [← hs]; exact hrun
+              obtain ⟨n, g1, σ1, τ1, hbody⟩ := ih F' (by omega) (Comp.subst (Val.vcap g ℓ0) M0) (g+1)
+                (σ.push g s0) τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) v
+                hCinstall hTinstall hCohInstall hFreshInstall hrun'
+              rcases hbody with ⟨t, hev, hCf, hTf, hCohf, hFf, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, F1, hF1le, hcont⟩
+              · -- body terminates: t = ret v0 (evalD_term_shape; lam under handleF is stuck).
+                rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
+                · -- POP the state frame: whole handle → term(ret v0), σ1.tail. Compose via handle_state_composes.
+                  obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_state hCf hTf
+                  rw [hnetEq] at hCohf hFf hcont
+                  have hunmark : Source.step (g1, Frame.handleF g
+                      (Handler.state ℓ0 (σ1.headD (default, default)).2) :: ctxNetEffect K σ1.tail τ1,
+                      Comp.ret v0) = some (g1, ctxNetEffect K σ1.tail τ1, Comp.ret v0) := rfl
+                  have hCohPop := capLabelCoh_step _ _ hFf hCohf hunmark
+                  have hFreshPop := freshCfg_step _ _ hFf hunmark
+                  have hcont'' : ∃ Fs, Fs < F' ∧ Config.run Fs (g1, ctxNetEffect K σ1.tail τ1, Comp.ret v0)
+                      = Result.done v := by
+                    cases F1 with
+                    | zero => simp [Config.run] at hcont
+                    | succ F1' =>
+                        have := Config.run_step F1' (g1, Frame.handleF g
+                          (Handler.state ℓ0 (σ1.headD (default, default)).2) :: ctxNetEffect K σ1.tail τ1,
+                          Comp.ret v0) (by intro gg vv hc; simp at hc)
+                        rw [hunmark] at this; rw [this] at hcont; exact ⟨F1', by omega, hcont⟩
+                  obtain ⟨Fs, hFslt, hFs⟩ := hcont''
+                  refine ⟨n+1, g1, σ1.tail, τ1, Or.inl ⟨.ret v0, ?_, hCpop, hTpop, hCohPop, hFreshPop, Fs, by omega, hFs⟩⟩
+                  exact handle_state_composes n g σ τ ℓ0 s0 M0 v0 g1 σ1 τ1 hev
+                · -- lam under handleF-state (UNMARK expects ret): stuck ⟹ hcont-absurd.
+                  exfalso
+                  obtain ⟨⟨_, _⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_state hCf hTf
+                  rw [hnetEq] at hcont
+                  cases F1 with
+                  | zero => simp [Config.run] at hcont
+                  | succ F1' =>
+                      rw [Config.run_step F1' _ (by intro gg vv hc; simp at hc)] at hcont
+                      simp [Source.step, Config.run] at hcont
+              · -- body raises: DRAFT-SORRY (state forwards the raise; mirror run_evalD:4325 raised-forward).
+                sorry
+          | throws ℓ0 =>
+              -- throws: no store push; normal return pops; a raise to identity g op "raise" is CAUGHT.
+              sorry
+          | transaction ℓ0 Θ =>
+              -- txn: push τ.push g Θ, pop τ1.tail on return (free rollback). Mirror state on the τ side.
+              sorry
       | oom => exfalso; cases F' <;> simp_all [Config.run, Source.step]
       | wrong a => exfalso; cases F' <;> simp_all [Config.run, Source.step]
       | binop op a b =>
