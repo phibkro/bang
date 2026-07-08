@@ -1496,12 +1496,69 @@ def runFrom (fuel : Nat) (src : String) : Result Val :=
   | .ok c    => Source.eval fuel c
   | .error _ => .stuck
 
-/-- Does running `src` yield exactly `done (vint n)`? A `Bool` so `#guard` can
-check string-driven runs without a `BEq` on kernel types. -/
+/-! ### The `Outcome` assertion layer (issue #54).
+
+The bespoke `runYieldsInt` PROJECTS the pipeline result onto ONE outcome and collapses everything
+else to `false`, so a failure shows "not `n`" but never WHICH terminal (a wrong value / `oom` /
+`stuck` / `escapedCap` are indistinguishable) and the exceptional terminals have no systematic
+assertion. `Outcome` models the FULL pipeline result space as one total sum; the bespoke helpers are
+re-derived as thin projections of it (`runYieldsInt` below; `runTypedYieldsInt` in `TypeCheck`), so
+the whole `#guard` corpus rides ONE assertion construct. It REUSES the production entry points
+(`runFrom` here, `checkAndLower`/`elaborateToComp` in `TypeCheck`) — it does NOT reimplement the
+pipeline.
+
+The REAL terminals, grounded in the source (NOT invented):
+  · `Source.eval : … → Result Val`  where  `Result = done Val | oom | escapedCap | stuck` (Eval.lean).
+  · two PRE-eval stage failures on the typed path: a located PARSE error (with a `Span`) and an
+    elaboration/TYPE error. The untyped `runFrom` collapses both to `.stuck`, so `runOutcomeFrom`
+    only ever produces `yields | oom | escaped | stuck`; `parseErr`/`typeErr` are reachable only
+    through the typed runners in `TypeCheck`. -/
+inductive Outcome where
+  | parseErr : Option Span → String → Outcome   -- located parse error (span from `parseProgLocated`)
+  | typeErr  : String → Outcome                 -- elaboration or type error (un-located in v1 ⇒ no span)
+  | yields   : Val → Outcome                    -- `Result.done v`
+  | oom      : Outcome                           -- `Result.oom`   (fuel exhausted / divergence)
+  | escaped  : Outcome                           -- `Result.escapedCap` (ADR-0063 capability-escape)
+  | stuck    : Outcome                           -- `Result.stuck` (genuine stuck)
+
+-- (`Outcome.beq` / `BEq Outcome` / `outcomeIs` need `BEq Val`, defined later in this file; they
+-- follow the `BEq Val` instance below.)
+
+/-- The kernel `Result` → `Outcome` (the eval-terminal half; total over all four `Result` ctors). -/
+def evalToOutcome : Result Val → Outcome
+  | .done v     => .yields v
+  | .oom        => .oom
+  | .escapedCap => .escaped
+  | .stuck      => .stuck
+
+/-- The UNTYPED run (`parse >>= lower`, then eval) as a structured `Outcome`. Mirrors `runFrom`:
+a parse/lower error is already collapsed to `.stuck` there, so this never returns `parseErr`/
+`typeErr` (those are the typed runners' terminals). -/
+def runOutcomeFrom (fuel : Nat) (src : String) : Outcome :=
+  evalToOutcome (runFrom fuel src)
+
+/-- Does the untyped run yield exactly `vint n`? A projection of `runOutcomeFrom` (matches the `vint`
+and compares `Int`s — no `BEq Val` needed, so it lands before the `BEq Val` instance). -/
+def assertYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
+  match runOutcomeFrom fuel src with | .yields (.vint m) => m == n | _ => false
+
+/-- Does the untyped run get STUCK? (No oracle before; now systematic.) -/
+def assertStuck (fuel : Nat) (src : String) : Bool :=
+  match runOutcomeFrom fuel src with | .stuck => true | _ => false
+
+/-- Does the untyped run hit the ADR-0063 capability-escape terminal? -/
+def assertEscaped (fuel : Nat) (src : String) : Bool :=
+  match runOutcomeFrom fuel src with | .escaped => true | _ => false
+
+/-- Does the untyped run exhaust fuel (`oom`)? -/
+def assertOom (fuel : Nat) (src : String) : Bool :=
+  match runOutcomeFrom fuel src with | .oom => true | _ => false
+
+/-- Does running `src` yield exactly `done (vint n)`? A `Bool` so `#guard` can check string-driven
+runs without a `BEq` on kernel types. Now a thin PROJECTION of the `Outcome` layer (issue #54):
+`runFrom` is untouched, so behaviour is identical — the green corpus below is the build-gated proof. -/
 def runYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
-  match runFrom fuel src with
-  | .done (.vint m) => m == n
-  | _               => false
+  assertYieldsInt fuel src n
 
 /-! ### Stage 1 — hand-built `Comp` ASTs run to a value. -/
 
@@ -1617,6 +1674,18 @@ These demos run the cell from SOURCE TEXT — a live `{get}` cell whose `$c` ref
 -- No write: forcing the cell reads the INITIAL state (0) — a live read, not a stale snapshot.
 #guard runYieldsInt 80 "state 0 in (let c = {get} in $c)" 0
 
+/-! ### Exceptional terminals — the `Outcome` layer's NEW capability (issue #54).
+
+`runYieldsInt` could only ever say "not a value"; the exceptional `Result` terminals had NO
+systematic assertion. These name them directly on the untyped `runFrom` path. -/
+
+-- STUCK: force a NON-thunk (`$3`) — `force` on a `vint` has no WHNF rule ⇒ the `.stuck` terminal.
+#guard assertStuck 20 "$3"
+-- ESCAPED (ADR-0063): a capability captured in a thunk and forced PAST its handler. `state 0 in {get}`
+-- yields the thunk `{get}`; binding it OUT of the `state` scope and forcing (`$c`) dispatches `get`
+-- after the `state` frame popped ⇒ the DEFINED `escapedCap` terminal (not `stuck`).
+#guard assertEscaped 80 "let c = (state 0 in {get}) in $c"
+
 /-- The reactive cell at the `Comp` level, parameterised by initial state `s0` and the
 written value `v`: `state s0 in (let c = {get} in (let _ = put v in $c))`. de Bruijn: `c` is
 idx 0 after its binder, idx 1 after the `put`'s `let`, so `$c` is `force (vvar 1)`. -/
@@ -1683,6 +1752,29 @@ def beqStore : List Val → List Val → Bool
 end
 
 instance : BEq Val := ⟨beqVal⟩
+
+/-! ### `Outcome` structural equality (issue #54) — the total `#guard` comparison.
+
+Lands here (after `BEq Val`) because comparing `yields` payloads needs it. `Val` exposes only `BEq`
+(not `DecidableEq`), so `deriving BEq` on `Outcome` can't fire; hand-written. -/
+def Outcome.beq : Outcome → Outcome → Bool
+  | .parseErr s1 m1, .parseErr s2 m2 =>
+      -- `Span` derives `DecidableEq` (not `BEq`), so compare its fields, not `s1 == s2`.
+      (match s1, s2 with
+       | some a, some b => a.line == b.line && a.col == b.col && a.endLine == b.endLine && a.endCol == b.endCol
+       | none,   none   => true
+       | _,      _      => false) && m1 == m2
+  | .typeErr m1, .typeErr m2 => m1 == m2
+  | .yields v1,  .yields v2  => v1 == v2
+  | .oom,        .oom        => true
+  | .escaped,    .escaped    => true
+  | .stuck,      .stuck      => true
+  | _,           _           => false
+
+instance : BEq Outcome := ⟨Outcome.beq⟩
+
+/-- The total comparison a `#guard` checks (the typed runners in `TypeCheck` project through this). -/
+def outcomeIs (o expected : Outcome) : Bool := o == expected
 
 
 /-! ### Stage 1c — the surface `Stack` (rung 2 L, ADR-0029): the first moat demo.

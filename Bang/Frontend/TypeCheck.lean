@@ -2539,18 +2539,67 @@ def displayProg (src : String) : String :=
   | .error e   => s!"error: {e}"
 
 
-/-- Parse + elaborate + CHECK + lower + RUN through `Source.eval`, expecting `vint n` — the
-typed sibling of `Surface.runYieldsInt` (which stays untyped and decl-free). The typed path
-checks BEFORE it runs. -/
+/-! ### The TYPED face of the `Outcome` layer (issue #54).
+
+The `Outcome` ADT + `evalToOutcome`/`outcomeIs` live in `Surface` (over the untyped `runFrom`). Here
+they get the TWO typed runners, reusing the production entries (`checkAndLower`/`elaborateToComp`) as
+SSoT. The split is FORCED by type safety: a well-typed program NEVER goes `.stuck` (`type_safety`:
+progress), so `.stuck` is reachable ONLY through the raw (`--no-typecheck`) path — the `Outcome` layer
+makes that stratification seam directly assertable. -/
+
+/-- TYPED pipeline (the production default, `checkAndLower`). A parse error keeps its `Span` (`some`);
+an elaboration/type error is `typeErr`. Never returns `.stuck` (type safety). -/
+def runOutcome (fuel : Nat) (src : String) : Outcome :=
+  match checkAndLower src with
+  | .error (m, some sp) => .parseErr (some sp) m
+  | .error (m, none)    => .typeErr m
+  | .ok c               => evalToOutcome (Source.eval fuel c)
+
+/-- UNTYPED escape (`--no-typecheck`, `elaborateToComp`): no type gate, so `.stuck`/`.escaped` are
+reachable. `elaborateToComp` parses un-located, so a parse error here carries no span. -/
+def runOutcomeRaw (fuel : Nat) (src : String) : Outcome :=
+  match elaborateToComp src with
+  | .error m => .parseErr none m
+  | .ok c    => evalToOutcome (Source.eval fuel c)
+
+/-- Does the typed run report a TYPE error? -/
+def assertTypeError (fuel : Nat) (src : String) : Bool :=
+  match runOutcome fuel src with | .typeErr _ => true | _ => false
+
+/-- Does the typed run report a located PARSE error at `line:col`? -/
+def assertParseErrorAt (fuel : Nat) (src : String) (line col : Nat) : Bool :=
+  match runOutcome fuel src with | .parseErr (some sp) _ => sp.line == line && sp.col == col | _ => false
+
+/-- Does the typed run exhaust fuel (`oom`)? Reachable through the type gate (a well-typed diverging
+program). -/
+def assertTypedOom (fuel : Nat) (src : String) : Bool :=
+  match runOutcome fuel src with | .oom => true | _ => false
+
+/-- Parse + elaborate + CHECK + lower + RUN through `Source.eval`, expecting `vint n` — the typed
+sibling of `Surface.runYieldsInt` (which stays untyped and decl-free). The typed path checks BEFORE
+it runs. Now a thin PROJECTION of the `Outcome` layer (issue #54) over the SAME typed path (so
+behaviour is identical — the green corpus is the build-gated proof). -/
 def runTypedYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
   match (do
       let e ← Bang.Surface.parseProg src >>= elabProg
       let _ ← runInferC (synthSC [] e)
       Bang.Surface.lower e) with
-  | .ok c => match Source.eval fuel c with
-             | .done (.vint m) => m == n
-             | _               => false
+  | .ok c => outcomeIs (evalToOutcome (Source.eval fuel c)) (.yields (.vint n))
   | .error _ => false
+
+/-! #### Exceptional / error terminals — the typed `Outcome` layer's NEW capability (issue #54). -/
+
+-- a TYPE error: `1 + Left(0)` — the sum injection can't be added to an Int (elaborator rejects).
+#guard assertTypeError 20 "1 + Left(0)"
+-- a located PARSE error: `let x 3 in x` — the missing `=` (the `3` sits where `=` was wanted) at 1:7.
+#guard assertParseErrorAt 20 "let x 3 in x" 1 7
+-- an OOM: an unbounded recursion (types fine ⇒ the typed path reaches it) under bounded fuel.
+#guard assertTypedOom 60 "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in ($loop) 0"
+-- a STUCK: force a NON-thunk (`$3`) — rejected by the type gate, so run RAW (`--no-typecheck`).
+#guard (match runOutcomeRaw 20 "$3" with | .stuck => true | _ => false)
+-- the typed projection is STRICTLY MORE INFORMATIVE than `runTypedYieldsInt`: where the bespoke
+-- helper says only `false`, the `Outcome` names the actual terminal (here: a type error).
+#guard (runTypedYieldsInt 20 "1 + Left(0)" 0 == false) && assertTypeError 20 "1 + Left(0)"
 
 /-! ### Validation ⑥ — the NORTHSTAR: `(1,2) + (3,4)`, resolved, typed, run via the oracle. -/
 

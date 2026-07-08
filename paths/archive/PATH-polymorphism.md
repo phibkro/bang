@@ -24,7 +24,7 @@ Decidability is the INVARIANT: un-annotated-undecidable = TYPE ERROR, never an u
 bite  unlocks                                          power     decid.        touches        status
 ──────────────────────────────────────────────────────────────────────────────────────────────────
 0   type vars + HM rank-1 inference                    HM        inferred      checker (leaf)  ✅ DONE (f063c78)
-      id, const (first-order let-poly) — RUNS via bang eval; spike `HMSpike.lean` (e946adb) + in-place (f063c78)
+      id, const (first-order let-poly) — RUNS via bang eval; spike `HMSpike.lean` (e946adb, since adopted in-place + deleted) + in-place (f063c78)
       DEFERRED to 0b: higher-order compose (needs computation-level holes), value restriction, row vars
 0b  ROW polymorphism (generic over effect rows)        HM+row    inferred      checker (leaf)  after 0
       map : ∀a b ρ. (a -> b ! ρ) -> List a -> List b ! ρ
@@ -211,7 +211,7 @@ All on the landed `HTy`+`Infer` substrate (`f063c78`), all still checker leaves:
 ## Status
 
 - **2026-07-06:** initiative established (ADR-0075 + this PATH). **Bite-0 SPIKE DONE — POSITIVE**
-  (`Bang/Frontend/HMSpike.lean`, `e946adb`; a standalone leaf, census untouched). The HM substrate
+  (spike `e946adb`, since adopted in-place and deleted; was a standalone leaf, census untouched). The HM substrate
   (type-var/scheme rep `HTy` = pure-CBPV + `hole`/unif-var + `rigid`/∀-var; `StateT (Except)`;
   fuel-total unify/zonk/occurs; let-generalization + fresh-hole instantiation) lands cleanly on the
   bidirectional checker. **Killer guard: `let id = {fun x=>x}` used at Int AND (Int*Int) → types + runs

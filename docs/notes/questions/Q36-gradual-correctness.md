@@ -5,7 +5,7 @@ description: "surface + tooling; the vague-spec / exploratory end of the gradien
 status: open
 area: type-system
 ties: ["Q31", "Q35", "ADR-0026", "ADR-0073", "ADR-0067"]
-see-also: ["#51", "OutcomeSpike"]
+see-also: ["#51", "#54"]
 ---
 **Question**: how does bang support PROTOTYPING — a vague or absent spec, exploratory code — beyond
 today's COARSE escape hatches? bang is a correctness-BY-CONSTRUCTION toolchain, which looks hostile to
@@ -47,8 +47,8 @@ posture per SOUL "surprising default = latent bug"); the hatches are EXPLICIT, s
 work is the natural pairing; both are surface/checker/CLI leaves, kernel untouched). The gradual/dynamic
 region is a bigger type-system question (post-polymorphism).
 
-**Revisit signal**: real prototyping friction (all-or-nothing `--no-typecheck` bites); OR the Outcome-ADT
-assertion layer is built (add the `?`-hole terminal alongside it); OR a gradual-typing direction is taken
+**Revisit signal**: real prototyping friction (all-or-nothing `--no-typecheck` bites); OR the `?`-hole
+terminal is added to the (now-built) `Outcome` layer; OR a gradual-typing direction is taken
 up. Ties [[Q31 refinement types]] (the other end — MORE precision), ADR-0026 (stratification = the
 gradient), ADR-0073/ADR-0067 (`Div` = the termination hatch), #51 (`--no-typecheck`), the Outcome-ADT
-assertion work (`OutcomeSpike`), [[Q35 force ergonomics]] (sibling surface-ergonomics fork).
+assertion work (the live `Outcome` layer, issue #54), [[Q35 force ergonomics]] (sibling surface-ergonomics fork).
