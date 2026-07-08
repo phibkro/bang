@@ -516,18 +516,29 @@ theorem evalD_complete_gen_full : ∀ F,
                 | succ F1' =>
                     rw [Config.run_step F1' _ (by intro gg vv hc; simp at hc)] at hcont
                     simp [Source.step, Config.run] at hcont
-          · -- M0 raised. The raise propagates out of letC unchanged (evalD's letC raised arm); the
-            -- continuation is the SAME dispatchRun (letF frame is peeled by the raise, doesn't affect it).
+          · -- M0 raised → evalD (letC M0 N) propagates it (letC raised arm). Strip the letF frame from
+            -- the raised conclusion (splitAtId/labelOf/dispatch are letF-transparent). Mirror run_evalD:4747.
+            have hns : ∀ h0 : Handler, Frame.letF N ≠ Frame.handleF nn h0 := by intro h0; simp
             have hcne : ctxNetEffect (Frame.letF N :: K) σ1 τ1 = Frame.letF N :: ctxNetEffect K σ1 τ1 :=
               ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
-            -- ctxNetEffect over letF is nonframe, so it equals the K-version up to the letF prefix; but the
-            -- raised conclusion's coherence/NoResume/dispatchRun are stated over ctxNetEffect K, and letF is
-            -- transparent to splitAtId/labelOf/dispatch. Push the letF-frame transparency through.
-            -- DRAFT-SORRY (unverified — build-env blocked): MIRROR run_evalD letC raised propagation
-            -- (AbstractMachine.lean:4090 — the raise propagates past letF; evalD's letC raised arm returns
-            -- `some (.raised n op w, ...)` unchanged). The letF frame is transparent to the raised
-            -- conclusion because splitAtId/labelOf/dispatchRun ignore letF frames (nonframe).
-            sorry
+            have hCr' := CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCf
+            have hTr' := CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTf
+            rw [hcne] at hCohf hFf hNR
+            have hCohr' := capLabelCoh_pop_letF hCohf
+            have hFreshr' := freshCfg_pop_letF hFf
+            have hNRr' := noResume_strip_cons hns hNR
+            refine ⟨n+1, g1, σ1, τ1, Or.inr ⟨nn, oop, vv, ?_, hCr', hTr', hCohr', hFreshr', hNRr', F1, by omega, ?_⟩⟩
+            · -- evalD (n+1) (letC M0 N) binds on evalD n M0 = raised (propagate).
+              simp only [evalD]; rw [hev]; simp only [Option.bind_some]
+            · -- The IH continuation hcont is over ctxNetEffect (letF N::K); strip the letF frame to get the
+              -- goal over ctxNetEffect K (frame-transparent: idDispatch_cons_noResume + labelOf_cons_ne).
+              have hidEq := idDispatch_cons_noResume (fr := Frame.letF N) (K := ctxNetEffect K σ1 τ1)
+                (ℓ := labelOf (ctxNetEffect K σ1 τ1) nn) (op := oop) (v := vv) (by intro h0; simp) hNRr'
+              have hlbl := labelOf_cons_ne (fr := Frame.letF N) (K := ctxNetEffect K σ1 τ1) (n := nn) hns
+              rw [hcne, hlbl] at hcont
+              simp only [dispatchRun] at hcont ⊢
+              rw [run_perform_cons_eq hidEq F1] at hcont
+              exact hcont
       | force a =>
           -- force (vthunk M0): Source steps (g,K,force(vthunk M0)) → (g,K,M0); evalD force = evalD M0.
           cases a with
@@ -683,9 +694,26 @@ theorem evalD_complete_gen_full : ∀ F,
                 · rw [ctxNetEffect_ctxNetEffect] at hFsF; exact hFsF
                 · rw [ctxNetEffect_ctxNetEffect] at hNR2; exact hNR2
                 · rw [ctxNetEffect_ctxNetEffect] at hcs; exact hcs
-          · -- M0 raised — propagates past appF (evalD app raised arm). DRAFT-SORRY: same letF/appF
-            -- frame-transparency as the letC raised sub-case; do both together once the pattern is pinned.
-            sorry
+          · -- M0 raised → evalD (app M0 u) propagates it. Strip the appF frame (frame-transparent).
+            -- Identical to letC-raised, s/letF N/appF u, s/pop_letF/pop_appF. Mirror run_evalD:4804.
+            have hns : ∀ h0 : Handler, Frame.appF u ≠ Frame.handleF nn h0 := by intro h0; simp
+            have hcne : ctxNetEffect (Frame.appF u :: K) σ1 τ1 = Frame.appF u :: ctxNetEffect K σ1 τ1 :=
+              ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
+            have hCr' := CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCf
+            have hTr' := CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hTf
+            rw [hcne] at hCohf hFf hNR
+            have hCohr' := capLabelCoh_pop_appF hCohf
+            have hFreshr' := freshCfg_pop_appF hFf
+            have hNRr' := noResume_strip_cons hns hNR
+            refine ⟨n+1, g1, σ1, τ1, Or.inr ⟨nn, oop, vv, ?_, hCr', hTr', hCohr', hFreshr', hNRr', F1, by omega, ?_⟩⟩
+            · simp only [evalD]; rw [hev]; simp only [Option.bind_some]
+            · have hidEq := idDispatch_cons_noResume (fr := Frame.appF u) (K := ctxNetEffect K σ1 τ1)
+                (ℓ := labelOf (ctxNetEffect K σ1 τ1) nn) (op := oop) (v := vv) (by intro h0; simp) hNRr'
+              have hlbl := labelOf_cons_ne (fr := Frame.appF u) (K := ctxNetEffect K σ1 τ1) (n := nn) hns
+              rw [hcne, hlbl] at hcont
+              simp only [dispatchRun] at hcont ⊢
+              rw [run_perform_cons_eq hidEq F1] at hcont
+              exact hcont
       | perform cap op u =>
           -- BASE case (where a raise originates). Dispatch by IDENTITY: evalD resolves the state/txn
           -- store at key n2 directly. STORE-HIT → term(ret …) same-K close (mirror run_evalD:4159).
