@@ -64,6 +64,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **typecheck** — bite-3 Stage D — Monad (the last polymorphism rung); Option monad + Parser-as-monad + laws (`cea8ae2`)
 - **typecheck** — Item 3 effect row-polymorphism — compose generic over its effect row (the last frontier) (`5d0a32f`)
 - **kernel** — #44 Stage 1 — Handler.custom rep (the general handler ctor); additive ripple, census stays axiom-clean (`d84aeae`)
+- **gates** — analysis quality gates wired into the lifecycle hooks (`f60472a`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

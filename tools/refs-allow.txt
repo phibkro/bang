@@ -55,6 +55,18 @@ Bang/ReturnEscapeRefute.lean
 # PATH-inc6 §U5. Not merged (a scratch de-risk spike, #65). Recover via `git show <sha>:scratch/U5bHandlerSpike.lean`.
 scratch/U5bHandlerSpike.lean
 
+# ── G. Pre-tier-restructure module names (the PATH resume-briefs' old→new map) ─────
+# The flat Bang/*.lean modules were re-tiered into Core/Backend/Meta/Frontend (last seen
+# at `defae6d`). PATH-inc5/inc6 (deferred-work resume briefs, 2026-07-08 slim) carry an
+# explicit old→new mapping TABLE so their git-history strata stay navigable — the old
+# names are the table's KEYS, intentionally historical. Recover: `git show defae6d:Bang/<file>`.
+Bang/LR.lean
+Bang/Compat.lean
+Bang/Metatheory.lean
+Bang/Operational.lean
+Bang/CalcVM.lean
+Bang/Compile.lean
+
 # ── F. /tmp scratch counterexamples narrated by retrospective docs ─────────────────
 # ADR-0023 + two ARCHIVED PATHs cite one-shot /tmp/*.lean probes from their own sessions.
 # /tmp is volatile by construction (tmpfiles cleanup) — the refs existed when written,

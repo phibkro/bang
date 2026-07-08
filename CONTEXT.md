@@ -35,12 +35,14 @@ untouched — the ADR-0085 additive-ripple bet CONFIRMED at the kernel). custom 
 SEMANTICS + typed-soundness PROVEN-IN-ISOLATION but BANKED/DEFERRED** (WIP `origin/gh44s2`; ADR-0085 status has the
 full finding). Dispatch+one-shot-resume works (custom→106, abort→42), trusted-three vacuous-clean — BUT the coexist
 rep's opaque clause map (`OpId → Option Comp`) defeats `capsH`'s cap-collection, so landing it regresses the CLEAN
-route-A CalcVM headlines (`run_evalD`/`sim`); the fix (a `VcapFree`-clause invariant threaded through route-A/B) is
-ENTANGLED WITH THE PENDING route-B (ADR-0052). **⟹ the running-user-effect milestone is GATED on the route-A/route-B
-metatheory (≈ Stage 4), a future DEDICATED arc — not a quick 1→2→3.** Operator BANKED here (2026-07-08). **RESUME #44
-from:** resolve route-B (ADR-0052) + thread the VcapFree-clause invariant, starting from `origin/gh44s2` (Stage-2
-semantics) — then Stages 3(typing)→4(calc-machine)→5(LR)→6(soundness)→7(surface). The IO/net prong (ADR-0084) waits
-on this.
+CalcVM coherence headlines (`run_evalD`/`sim`). **Precision on what's pending (route-B ADR-0052 itself LANDED — main's
+machine IS identity-keyed, bridge headlines axiom-clean):** the open metatheory is (i) the machine coherence layer
+(`CapLabelCoh`/`FreshCfg`/`capsH`) generalized for `custom` via a `VcapFree`-clause invariant, (ii) U5b-handler
+completeness (`compile_forward_sim`, PATH-inc6), (iii) the binary-LR re-index (`lr_sound`, PATH-inc5). **⟹ the
+running-user-effect milestone is GATED on that tail (≈ Stage 4), a future DEDICATED arc — not a quick 1→2→3.**
+Operator BANKED here (2026-07-08). **RESUME #44 from `origin/gh44s2`:** design-first ADR for the VcapFree-clause
+invariant threading, then Stages 3(typing)→4(calc-machine)→5(LR)→6(soundness)→7(surface). The IO/net prong
+(ADR-0084) waits on this.
 
 Active edge: **#44 / ADR-0085** (banked; no separate PATH — tracked in the ADR + the lead above). Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (Q1–Q42).
 

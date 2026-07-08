@@ -3,13 +3,13 @@
 <!-- adr-frontmatter -->
 
 - **Status**: Proposed
-- **Summary**: #44 (user-defined effects — the moat: "paradigm and runtime are values") is blocked at the KERNEL, not the surface — the `Handler` type is a CLOSED triple (`state`/`throws`/`transaction`, `Bang/Core/IR.lean`) with operations hardcoded in `handlesOp`/`dispatchOn`. The **performer side is ALREADY general** (`perform`/`up` routes through `EffSig.opArg/opRes` — any label, any op; `EffSig` already IS the user-effect interface), so #44 is a HANDLER-side generalization. **Decision: COEXIST — add a fourth `Handler.custom : Label → Val → (OpId → Option Comp)` constructor ALONGSIDE the three built-ins, NOT collapse them into instances of it; scope v1 to ONE-SHOT tail-resumptive clauses (multi-shot deferred to Q22/Q27).** Coexist QUARANTINES the soundness risk behind the constructor seam (the project's own stratification principle): the trusted-three (`preservation`/`progress`/`type_safety`) can stay axiom-clean because their frozen statements are CONSTRUCTOR-AGNOSTIC (no Spec.lean statement changes — the ripple is ~424 ADDITIVE proof cases, not a re-freeze), and any gap that won't close lives in the NEW `custom` cases WITHOUT regressing the built-ins' clean census. **Rejected: INSTANCES (Option A — one `custom` ctor, the three derived from it)** — truer to minimality but routes the currently-CLEAN trusted-three THROUGH unproven general-handler soundness, risking a census regression; kept as a LATER census-preserving refactor once the general soundness + multi-shot grade (Q27) are settled. The single riskiest obligation is **invariant #4 — the calculated-machine re-derivation** (generalize `SStore`/`THeap` → a param store, DERIVE the custom `evalD`/`compile`/`exec` arm), entangled with the still-pending route-B (ADR-0052).
+- **Summary**: #44 (user-defined effects — the moat: "paradigm and runtime are values") is blocked at the KERNEL, not the surface — the `Handler` type is a CLOSED triple (`state`/`throws`/`transaction`, `Bang/Core/IR.lean`) with operations hardcoded in `handlesOp`/`dispatchOn`. The **performer side is ALREADY general** (`perform`/`up` routes through `EffSig.opArg/opRes` — any label, any op; `EffSig` already IS the user-effect interface), so #44 is a HANDLER-side generalization. **Decision: COEXIST — add a fourth `Handler.custom : Label → Val → (OpId → Option Comp)` constructor ALONGSIDE the three built-ins, NOT collapse them into instances of it; scope v1 to ONE-SHOT tail-resumptive clauses (multi-shot deferred to Q22/Q27).** Coexist QUARANTINES the soundness risk behind the constructor seam (the project's own stratification principle): the trusted-three (`preservation`/`progress`/`type_safety`) can stay axiom-clean because their frozen statements are CONSTRUCTOR-AGNOSTIC (no Spec.lean statement changes — the ripple is ~424 ADDITIVE proof cases, not a re-freeze), and any gap that won't close lives in the NEW `custom` cases WITHOUT regressing the built-ins' clean census. **Rejected: INSTANCES (Option A — one `custom` ctor, the three derived from it)** — truer to minimality but routes the currently-CLEAN trusted-three THROUGH unproven general-handler soundness, risking a census regression; kept as a LATER census-preserving refactor once the general soundness + multi-shot grade (Q27) are settled. The single riskiest obligation is **invariant #4 — the calculated-machine re-derivation** (generalize `SStore`/`THeap` → a param store, DERIVE the custom `evalD`/`compile`/`exec` arm), entangled with the route-B metatheory TAIL (ADR-0052's core LANDED — see Amendment 2026-07-08; U5b-handler completeness + the binary-LR re-index + the coherence-layer generalization remain).
 - **Depends-on**: 0022, 0023, 0025, 0052, 0054, 0055, 0063, 0070
 - **Relates-to**: 0084 (networking = a small INSTANCE of #44 — this is its kernel gate), 0030 (STM = the transaction built-in this generalizes), Q39 (effects-as-typed-interfaces thesis), Q22 (labelling-vs-closure cap-rep — the multi-shot fork this DEFERS), Q27 (resumption grades — the type cost that later admits multi-shot), #44 (the issue)
 
 - **Status:** Proposed — design-first pass (2026-07-07); staged implementation begun.
   - **Stage 1 DONE (`d84aeae`)** — `Handler.custom` rep + the ADDITIVE ripple; census 25→26, trusted-three axiom-clean, frozen statements untouched (the additive-ripple bet CONFIRMED while custom is inert+untyped).
-  - **Stage 2 — SEMANTICS + typed-soundness proven-IN-ISOLATION, but the full census gate is BLOCKED (a real finding, gh44s2; WIP on branch `origin/gh44s2`).** The dispatch+one-shot-resume semantics work (kernel `#guard`s: custom `read 5`⤳clause `5+100`⤳continuation `+1` = **106**; zero-shot abort via a coexisting `throws` = **42**), and the TYPED trusted-three stay VACUOUS-CLEAN (new lemma `HasStack.concat_custom_absurd` — a custom frame can't sit on a typed stack). **BUT making dispatch real regresses the UNTYPED route-A CalcVM metatheory** that the CLEAN headlines `run_evalD`/`sim`/`compile_correct` carry: `CapLabelCoh`/`FreshCfg` are stated over ANY config and must BOUND a config's caps via `capsH : Handler → List (Nat × Label)` — but the coexist rep's clause map is an **opaque `OpId → Option Comp`**, whose caps CANNOT be collected into a finite `List` (the domain isn't enumerable). So `capsH` can't bound clause caps → a `sorry` there would taint the currently-clean CalcVM headlines. **The fix = a `custom-clauses-are-VcapFree` well-formedness invariant threaded through `CapLabelCoh`+`FreshCfg`+the route-A/B AbstractMachine proofs** (it IS preserved — `substFrom` identity on custom + a VcapFree seed ⟹ `capsC clause = []` closes the residuals — plus `.map` traversal for `renameH`/`substFrom`/`shiftFrom` + a no-custom-in-machine lemma). **This is multi-file, gated, and ENTANGLED WITH THE PENDING route-B (ADR-0052)** — i.e. the "riskiest single obligation" this ADR named for Stage 4 surfaces ALREADY at Stage 2. **CONSEQUENCE: the running-user-effect milestone (Stages 1–3) is GATED on the route-A/route-B metatheory (≈ Stage 4), not a quick 1→2→3.** `read`-side (read-only param) works; `put`-like mutation needs the Stage-4 denotational machine / first-class `k`.
+  - **Stage 2 — SEMANTICS + typed-soundness proven-IN-ISOLATION, but the full census gate is BLOCKED (a real finding, gh44s2; WIP on branch `origin/gh44s2`).** The dispatch+one-shot-resume semantics work (kernel `#guard`s: custom `read 5`⤳clause `5+100`⤳continuation `+1` = **106**; zero-shot abort via a coexisting `throws` = **42**), and the TYPED trusted-three stay VACUOUS-CLEAN (new lemma `HasStack.concat_custom_absurd` — a custom frame can't sit on a typed stack). **BUT making dispatch real regresses the UNTYPED route-A CalcVM metatheory** that the CLEAN headlines `run_evalD`/`sim`/`compile_correct` carry: `CapLabelCoh`/`FreshCfg` are stated over ANY config and must BOUND a config's caps via `capsH : Handler → List (Nat × Label)` — but the coexist rep's clause map is an **opaque `OpId → Option Comp`**, whose caps CANNOT be collected into a finite `List` (the domain isn't enumerable). So `capsH` can't bound clause caps → a `sorry` there would taint the currently-clean CalcVM headlines. **The fix = a `custom-clauses-are-VcapFree` well-formedness invariant threaded through `CapLabelCoh`+`FreshCfg`+the route-A/B AbstractMachine proofs** (it IS preserved — `substFrom` identity on custom + a VcapFree seed ⟹ `capsC clause = []` closes the residuals — plus `.map` traversal for `renameH`/`substFrom`/`shiftFrom` + a no-custom-in-machine lemma). **This is multi-file, gated, and ENTANGLED WITH THE ROUTE-B METATHEORY TAIL (ADR-0052 core landed — see Amendment 2026-07-08)** — i.e. the "riskiest single obligation" this ADR named for Stage 4 surfaces ALREADY at Stage 2. **CONSEQUENCE: the running-user-effect milestone (Stages 1–3) is GATED on that metatheory tail (≈ Stage 4), not a quick 1→2→3.** `read`-side (read-only param) works; `put`-like mutation needs the Stage-4 denotational machine / first-class `k`.
 - **Date:** 2026-07-07
 - **Layer:** K (kernel — the `Handler` primitive + its metatheory). **Tag: K-ADR** (semantic; frozen-statement-adjacent but NON-changing — see §Soundness).
 - **Builds on:** ADR-0022 (the `up`/`perform` rule + EffSig op-interface — already general), ADR-0023 (the CK machine + deep dispatch), ADR-0025 (resumptive state: keep Kᵢ, reinstall the frame, the closed-focus grade discipline — the mechanism the one-shot custom clause GENERALIZES), ADR-0030/0031 (STM as a transactional handler + its calc-machine store — the second resumptive instance), ADR-0052 (route-B: the calc-machine identity-keyed re-derivation this entangles with), ADR-0054/0055 (identity dispatch + global-fresh — preserved unchanged), ADR-0063 (`escapedCap` — the custom escape terminal, unchanged), ADR-0070/0072 (named-cap surface — the `handle … with` lowering starting point).
@@ -87,9 +87,10 @@ become param-carrying instances (the natural place for the eventual D5 collapse)
 instruction must FALL OUT of the `evalD` RHS (the `compile_correct` exemplar discipline,
 `AbstractMachine.lean:296` "the machine — derived, not designed"). `compile_correct`
 (`exec∘compile ≡ evalD`) + `evalD_agrees_source` are re-proven for the custom arm. **This is
-sequenced WITH / AFTER route-B (ADR-0052), which is itself still pending** — the machine already
-disagrees with the kernel on shadow programs; #44's arm must be derived against the identity-keyed
-route-B machine, generally.
+sequenced WITH the route-B metatheory TAIL (ADR-0052's core is LANDED: main's machine is
+identity-keyed and `run_evalD`/`sim`/`compile_correct`/`evalD_agrees_source` are axiom-clean;
+what remains is U5b-handler completeness + the binary-LR re-index — see Amendment 2026-07-08)** —
+#44's arm must be derived against that identity-keyed machine, generally.
 
 ### D4 — the surface (frontend leaf)
 
@@ -187,12 +188,30 @@ route-B). Runner-up: multi-shot soundness IF v1 scope creeps past one-shot (miti
 
 ## Revisit if
 
-- Route-B (ADR-0052) lands → stage 4 becomes concretely schedulable against the identity-keyed
-  machine; finalize the custom arm's derivation then.
+- The route-B metatheory tail closes (U5b-handler completeness + the binary-LR re-index +
+  the `VcapFree`-clause coherence generalization) → stage 4 becomes concretely schedulable
+  against the identity-keyed machine; finalize the custom arm's derivation then.
 - Q22 (closure cap-rep) / Q27 (resumption grades) resolve → v1's one-shot pin (D2) can lift to
   multi-shot, and D5 (the Option-A collapse) becomes a safe refactor.
 - The general-handler soundness is proven axiom-clean AND multi-shot settles → collapse the three
   built-ins into `custom` instances (D5), moving to the minimal end-state.
+
+## Amendment (2026-07-08 — route-B status corrected; decision unchanged)
+
+As authored (2026-07-07), D3 and the Summary called route-B (ADR-0052) "still pending" and claimed
+"the machine already disagrees with the kernel on shadow programs." **Both were stale at authoring
+— carried over from ADR-0052's own text without re-checking main.** Ground truth (code + gate, not
+prose): the route-B re-derivation LANDED — `Bang/Backend/AbstractMachine.lean` documents `evalD` as
+the big-step denotation of the IDENTITY kernel (dispatch by `splitAtId`-analog, mint+subst `vcap` at
+handle), and the bridge headlines `run_evalD` / `sim` / `compile_correct` / `evalD_agrees_source` are
+**axiom-clean on main** (Audit census @ `f826dbc`) — the shadow-program disagreement is resolved, not
+open. What "pending" truthfully denotes is the route-B metatheory **tail**: (i) U5b-handler
+completeness (`compile_forward_sim`'s documented sorryAx — `paths/PATH-inc6-calcvm-route-b.md`),
+(ii) the binary-LR re-index (`lr_sound` cluster — `paths/PATH-inc5-lr-reindex.md`), (iii) THIS ADR's
+Stage-2 finding: the coherence layer (`CapLabelCoh`/`FreshCfg`/`capsH`) generalized for `custom` via
+the `VcapFree`-clause invariant. The staging, risk ranking, and D1–D5 are unchanged; only the
+sequencing target is now precise. (Drift caught by the 2026-07-08 firsthand survey; the
+`check-context-claims.py` fitness leg added the same day guards the CONTEXT-side recurrence.)
 
 ## Evidence
 
