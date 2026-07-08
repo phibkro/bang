@@ -16,7 +16,11 @@ product decisions (PRD); resumptive state (ADR-0025). The **proof-power dial is 
 **correctness is a dispatched ladder, kernel = semantics, checkers = pluggable** (ADR-0026). The
 **tech-stack division + the total/partial stratification** are decided too — **verified core + tested
 superset + explicit seam**, at the correctness, tooling, and language levels (ADR-0028; resolves the
-meta-circular/totality wall via fuel-total or `Div`-tested `eval`).
+meta-circular/totality wall via fuel-total or `Div`-tested `eval`). The **polymorphism ladder is now
+SHIPPED** — elaborate-to-mono (ADR-0075): bite-0 HM → generic data (ADR-0079) → bounded traits (ADR-0080)
+→ annotation-free intro (ADR-0081) → HKT Functor+Monad (ADR-0082) → prelude Option/Result + witnessed
+isomorphisms (ADR-0083) → effect row-polymorphism (`cea8ae2`); the kernel stayed monomorphic + axiom-clean
+throughout (the only Core touch was #57's free SSoT row-unifier consolidation).
 
 ## The criticality ladder — no-language → language, every fork ranked
 
@@ -52,7 +56,7 @@ calculated machine → forward-sim'd WasmFX) — SSoT applied to semantics itsel
 15  SURFACE syntax / formatting                                 ◑ per tracer bullet; Q24
 ```
 
-Open forks in priority order: **#9 (= #24, in flight) → #10 memory → #11/Q21 concurrency →
+Open forks in priority order: **#9 (= #24 laws-surface, mechanism landed ADR-0068/0080) → #10 memory → #11/Q21 concurrency →
 #12 modules → #13 grade inference**. The rank order ≈ the order the project decided them —
 evidence the sequencing held.
 
@@ -61,9 +65,9 @@ evidence the sequencing held.
 ```
 #  question                       bang's lean / status        closest neighbours           where
 ─────────────────────────────────────────────────────────────────────────────────────────────────
-1  POLYMORPHISM + effect-row      ✓ STAGED — ADR-0027         Koka, Frank, Eff, OCaml 5,   Q17 →
-   polymorphism                   (monomorphic v1 → HM →       Helium, Links                ADR-0027
-   `map : (a →/e b) → …/e`        System F + rows + grades)    → HM forced at reuse/HOFs (rung 3+)
+1  POLYMORPHISM + effect-row      ✓ SHIPPED — ADR-0075/0082    Koka, Frank, Eff, OCaml 5,   Q17 →
+   polymorphism                   (elaborate-to-mono: HM →      Helium, Links                ADR-0075
+   `map : (a →/e b) → …/e`        generic data → traits → HKT Functor+Monad → row-poly, `cea8ae2`)
 2  the PROOF-POWER dial           ✓ DECIDED — ADR-0026         F*, Liquid Haskell, Dafny,   ADR-0026
    (verify how much, how)         (dispatched ladder)          Verus / Agda,Idris,Lean / Granule
 3  the LAWS surface (the moat):   ◑ mechanism decided          algebraic-effect eqns        Q19
@@ -77,10 +81,11 @@ evidence the sequencing held.
 ```
 
 **#2 is the keystone and it's decided (ADR-0026).** It cascades: #3/#5 (the laws surface) inherit the
-ladder's "assert + property-test by default, climb on demand". **#1 is staged (ADR-0027** — monomorphic
-v1, HM next, System F ambitious**)**. **#4 is resolved (ADR-0029** — iso-recursive ADTs**)**. So **all
-four big rocks are now decided**; #3/#5 (the laws *surface*, Q19) remain partially open (discharge
-decided via the ladder; user-facing law syntax still open).
+ladder's "assert + property-test by default, climb on demand". **#1 is SHIPPED (ADR-0075/0082** — the whole
+ladder landed `cea8ae2`: HM → generic data → bounded traits → HKT Functor+Monad → effect row-poly, all
+elaborate-to-mono**)**. **#4 is resolved (ADR-0029** — iso-recursive ADTs**)**. So **all four big rocks are
+now decided**; #3/#5 (the laws *surface*, Q19) remain partially open — the laws MECHANISM landed (ADR-0068
+trait wiring + ADR-0080 bounded traits); user-facing law syntax still open.
 
 ## By lens (secondary — mostly deferrable, captured here not as individual Q's)
 
