@@ -289,6 +289,20 @@ def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (K : B
       ∃ F', F' ≤ F ∧ dispatchRun F' g' nn (ctxNetEffect K σ' τ') (labelOf (ctxNetEffect K σ' τ') nn) oop vv
               = Result.done v)
 
+/-- A SAME-`K` single-reduction bridge for `CompletesTo`: if `M` reduces to `M'` in ONE `evalD`
+step (`evalD (f+1) g σ τ M = evalD f g σ τ M'` for all f) AND ONE matching `Source.step`
+(`(g,K,M) → (g,K,M')`), then `CompletesTo` for `M'` lifts to `M`. Covers force/case/split/unfold
+(the pure same-context reductions); the evalD-step-equality is discharged per-constructor by `rfl`. -/
+theorem completesTo_reduce {F g : Nat} {σ : SStore} {τ : THeap} {M M' : Comp} {K : Bang.EvalCtx} {v : Val}
+    (hevD : ∀ f, evalD (f+1) g σ τ M = evalD f g σ τ M')
+    (hstep : Source.step (g, K, M) = some (g, K, M'))
+    (hM' : CompletesTo F g σ τ M' K v) : CompletesTo (F+1) g σ τ M K v := by
+  obtain ⟨n, g', σ', τ', hd⟩ := hM'
+  refine ⟨n+1, g', σ', τ', ?_⟩
+  rcases hd with ⟨t, hev, hCf, hTf, hCohf, hFf, F', hF'le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, F', hF'le, hcont⟩
+  · exact Or.inl ⟨t, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, F', by omega, hcont⟩
+  · exact Or.inr ⟨nn, oop, vv, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, hNR, F', by omega, hcont⟩
+
 set_option maxHeartbeats 1000000 in
 theorem evalD_complete_gen_full : ∀ F,
     ∀ (M : Comp) (g : Nat) (σ : SStore) (τ : THeap) (K : Bang.EvalCtx) (v : Val),
@@ -399,7 +413,133 @@ theorem evalD_complete_gen_full : ∀ F,
             -- ctxNetEffect over letF is nonframe, so it equals the K-version up to the letF prefix; but the
             -- raised conclusion's coherence/NoResume/dispatchRun are stated over ctxNetEffect K, and letF is
             -- transparent to splitAtId/labelOf/dispatch. Push the letF-frame transparency through.
+            -- DRAFT-SORRY (unverified — build-env blocked): MIRROR run_evalD letC raised propagation
+            -- (AbstractMachine.lean:4090 — the raise propagates past letF; evalD's letC raised arm returns
+            -- `some (.raised n op w, ...)` unchanged). The letF frame is transparent to the raised
+            -- conclusion because splitAtId/labelOf/dispatchRun ignore letF frames (nonframe).
             sorry
-      | _ => sorry
+      | force a =>
+          -- force (vthunk M0): Source steps (g,K,force(vthunk M0)) → (g,K,M0); evalD force = evalD M0.
+          cases a with
+          | vthunk M0 =>
+              have hstep : Source.step (g, K, Comp.force (Val.vthunk M0)) = some (g, K, M0) := rfl
+              have hrun' : Config.run F' (g, K, M0) = Result.done v := by
+                have hs := Config.run_step F' (g, K, Comp.force (Val.vthunk M0)) (by intro gg vv hc; simp at hc)
+                rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+              exact completesTo_reduce (fun f => rfl) hstep
+                (ih F' (by omega) M0 g σ τ K v hCtx hTtx
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hrun')
+          | vcap _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vunit => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vint _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vvar _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | inl _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | inr _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | pair _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | fold _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+      | case a N1 N2 =>
+          cases a with
+          | inl w =>
+              have hstep : Source.step (g, K, Comp.case (Val.inl w) N1 N2) = some (g, K, Comp.subst w N1) := rfl
+              have hrun' : Config.run F' (g, K, Comp.subst w N1) = Result.done v := by
+                have hs := Config.run_step F' (g, K, Comp.case (Val.inl w) N1 N2) (by intro gg vv hc; simp at hc)
+                rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+              exact completesTo_reduce (fun f => rfl) hstep
+                (ih F' (by omega) (Comp.subst w N1) g σ τ K v hCtx hTtx
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hrun')
+          | inr w =>
+              have hstep : Source.step (g, K, Comp.case (Val.inr w) N1 N2) = some (g, K, Comp.subst w N2) := rfl
+              have hrun' : Config.run F' (g, K, Comp.subst w N2) = Result.done v := by
+                have hs := Config.run_step F' (g, K, Comp.case (Val.inr w) N1 N2) (by intro gg vv hc; simp at hc)
+                rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+              exact completesTo_reduce (fun f => rfl) hstep
+                (ih F' (by omega) (Comp.subst w N2) g σ τ K v hCtx hTtx
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hrun')
+          | vcap _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vunit => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vint _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vvar _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vthunk _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | pair _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | fold _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+      | split a N =>
+          cases a with
+          | pair w u =>
+              have hstep : Source.step (g, K, Comp.split (Val.pair w u) N)
+                  = some (g, K, Comp.subst w (Comp.subst (Val.shift u) N)) := rfl
+              have hrun' : Config.run F' (g, K, Comp.subst w (Comp.subst (Val.shift u) N)) = Result.done v := by
+                have hs := Config.run_step F' (g, K, Comp.split (Val.pair w u) N) (by intro gg vv hc; simp at hc)
+                rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+              exact completesTo_reduce (fun f => rfl) hstep
+                (ih F' (by omega) (Comp.subst w (Comp.subst (Val.shift u) N)) g σ τ K v hCtx hTtx
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hrun')
+          | vcap _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vunit => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vint _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vvar _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vthunk _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | inl _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | inr _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | fold _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+      | unfold a =>
+          cases a with
+          | fold w =>
+              -- unfold (fold w) → ret w (terminal). evalD returns .term (.ret w) directly; the
+              -- continuation `Config.run F' (g,K,ret w)` follows by peeling the one fold-step off hrun.
+              have hstep : Source.step (g, K, Comp.unfold (Val.fold w)) = some (g, K, Comp.ret w) := rfl
+              have hrun' : Config.run F' (g, K, Comp.ret w) = Result.done v := by
+                have hs := Config.run_step F' (g, K, Comp.unfold (Val.fold w)) (by intro gg vv hc; simp at hc)
+                rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+              refine ⟨1, g, σ, τ, Or.inl ⟨.ret w, by simp [evalD], ?_, ?_, ?_, ?_, F', by omega, ?_⟩⟩
+              · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+              · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+              · rw [ctxNetEffect_self hCtx hTtx]; exact capLabelCoh_step _ _ hFresh hCoh hstep
+              · rw [ctxNetEffect_self hCtx hTtx]; exact freshCfg_step _ _ hFresh hstep
+              · rw [ctxNetEffect_self hCtx hTtx]; exact hrun'
+          | vcap _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vunit => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vint _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vvar _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | vthunk _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | inl _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | inr _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+          | pair _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+      | app M0 u =>
+          -- DRAFT-SORRY (unverified): MIRROR run_evalD app TERM arm (AbstractMachine.lean:4109) — the
+          -- sequencing sibling of letC: Source pushes appF, IH on M0 gives lam N (via evalD_term_shape),
+          -- peel appF → subst u N, recurse at strictly-smaller fuel; bind composes via evalD_fuel_mono.
+          -- Structurally IDENTICAL to the letC-term arm already closed, s/letF/appF, s/ret v0/lam N.
+          sorry
+      | perform cap op u =>
+          -- DRAFT-SORRY (unverified): MIRROR run_evalD perform (AbstractMachine.lean:4159 term / 4562 raised).
+          -- The BASE case where a raise originates. Dispatch by identity via perform_*_resolves (ported in
+          -- U5bPort); the store-hit → term(ret sv) with the same-K close; the store-miss → raised n op u with
+          -- NoResume from the miss + dispatchRun re-performs at the outer context (labelOf reconstructs ℓ).
+          sorry
+      | handle h0 M0 =>
+          -- DRAFT-SORRY (unverified): MIRROR run_evalD handle arms (AbstractMachine.lean:4268 state / 4328
+          -- throws / 4417 txn). Close via the ported *_composes lemmas (U5bPort): the fuel IH lands on the
+          -- substituted body `subst (vcap g h.label) M0` at (g+1, pushed store); the mint+subst is absorbed
+          -- by the fuel IH (the de-risk's core finding). custom = none ⇒ hrun-absurd.
+          sorry
+      | oom => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+      | wrong a => exfalso; cases F' <;> simp_all [Config.run, Source.step]
+      | binop op a b =>
+          cases a <;> cases b <;>
+            first
+            | (rename_i x y
+               have hstep : Source.step (g, K, Comp.binop op (Val.vint x) (Val.vint y))
+                   = some (g, K, Comp.ret (op.eval x y)) := rfl
+               have hrun' : Config.run F' (g, K, Comp.ret (op.eval x y)) = Result.done v := by
+                 have hs := Config.run_step F' (g, K, Comp.binop op (Val.vint x) (Val.vint y))
+                   (by intro gg vv hc; simp at hc)
+                 rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
+               refine ⟨1, g, σ, τ, Or.inl ⟨.ret (op.eval x y), by simp [evalD], ?_, ?_, ?_, ?_, F', by omega, ?_⟩⟩
+               · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+               · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+               · rw [ctxNetEffect_self hCtx hTtx]; exact capLabelCoh_step _ _ hFresh hCoh hstep
+               · rw [ctxNetEffect_self hCtx hTtx]; exact freshCfg_step _ _ hFresh hstep
+               · rw [ctxNetEffect_self hCtx hTtx]; exact hrun')
+            | (exfalso; cases F' <;> simp_all [Config.run, Source.step])
 
 end Bang.CalcVM
