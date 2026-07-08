@@ -505,11 +505,77 @@ theorem evalD_complete_gen_full : ∀ F,
           | inr _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
           | pair _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
       | app M0 u =>
-          -- DRAFT-SORRY (unverified): MIRROR run_evalD app TERM arm (AbstractMachine.lean:4109) — the
-          -- sequencing sibling of letC: Source pushes appF, IH on M0 gives lam N (via evalD_term_shape),
-          -- peel appF → subst u N, recurse at strictly-smaller fuel; bind composes via evalD_fuel_mono.
-          -- Structurally IDENTICAL to the letC-term arm already closed, s/letF/appF, s/ret v0/lam N.
-          sorry
+          -- sequencing sibling of letC (s/letF/appF, s/ret v0/lam N): Source pushes appF, IH on M0
+          -- gives lam N (evalD_term_shape), peel appF → subst u N, recurse at strictly-smaller fuel.
+          have hpush : Source.step (g, K, Comp.app M0 u) = some (g, Frame.appF u :: K, M0) := rfl
+          have hCappF : CtxCorr σ (Frame.appF u :: K) := CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
+          have hTappF : CtxTxnCorr τ (Frame.appF u :: K) := CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+          have hCohappF := capLabelCoh_step _ _ hFresh hCoh hpush
+          have hFappF := freshCfg_step _ _ hFresh hpush
+          have hrun' : Config.run F' (g, Frame.appF u :: K, M0) = Result.done v := by
+            have hs := Config.run_step F' (g, K, Comp.app M0 u) (by intro gg vv hc; simp at hc)
+            rw [hpush] at hs; simp only at hs; rw [← hs]; exact hrun
+          obtain ⟨n, g1, σ1, τ1, hM0⟩ := ih F' (by omega) M0 g σ τ (Frame.appF u :: K) v hCappF hTappF hCohappF hFappF hrun'
+          rcases hM0 with ⟨t, hev, hCf, hTf, hCohf, hFf, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, F1, hF1le, hcont⟩
+          · have hcne : ctxNetEffect (Frame.appF u :: K) σ1 τ1 = Frame.appF u :: ctxNetEffect K σ1 τ1 :=
+              ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
+            rw [hcne] at hCohf hFf hcont
+            -- t is a terminal (ret / lam); appF only reduces on a lam; a ret under appF is stuck.
+            rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
+            · -- ret terminal under appF: Config.run stuck, contradicting hcont = done.
+              exfalso
+              cases F1 with
+              | zero => simp [Config.run] at hcont
+              | succ F1' =>
+                  rw [Config.run_step F1' _ (by intro gg vv hc; simp at hc)] at hcont
+                  simp [Source.step, Config.run] at hcont
+            · have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
+                CtxCorr_ctxNetEffect_nonframe (by intro n ℓ s; simp) (by intro n ℓ Θ; simp) hCf
+              have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
+                CtxTxnCorr_ctxNetEffect_nonframe (by intro n ℓ s; simp) (by intro n ℓ Θ; simp) hTf
+              have hpop : Source.step (g1, Frame.appF u :: ctxNetEffect K σ1 τ1, Comp.lam M2)
+                  = some (g1, ctxNetEffect K σ1 τ1, Comp.subst u M2) := rfl
+              have hFsub := freshCfg_step _ _ hFf hpop
+              have hCsub := capLabelCoh_step _ _ hFf hCohf hpop
+              have hcont' : Config.run F1 (g1, Frame.appF u :: ctxNetEffect K σ1 τ1, Comp.lam M2) = Result.done v := hcont
+              have hsub_run : ∃ Fs, Fs < F' ∧ Config.run Fs (g1, ctxNetEffect K σ1 τ1, Comp.subst u M2) = Result.done v := by
+                cases F1 with
+                | zero => simp [Config.run] at hcont'
+                | succ F1' =>
+                    have := Config.run_step F1' (g1, Frame.appF u :: ctxNetEffect K σ1 τ1, Comp.lam M2)
+                      (by intro gg vv hc; simp at hc)
+                    rw [hpop] at this; rw [this] at hcont'; exact ⟨F1', by omega, hcont'⟩
+              obtain ⟨Fs, hFslt, hFs⟩ := hsub_run
+              obtain ⟨ns, gs, σs, τs, hsub⟩ :=
+                ih Fs (by omega) (Comp.subst u M2) g1 σ1 τ1 (ctxNetEffect K σ1 τ1) v hCM' hTM' hCsub hFsub hFs
+              refine ⟨max n ns + 1, gs, σs, τs, ?_⟩
+              rcases hsub with ⟨ts, hevs, hCs, hTs, hCohs, hFsF, Fc, hFcle, hcs⟩ | ⟨nn2, oop2, vv2, hevs, hCs, hTs, hCohs, hFsF, hNR2, Fc, hFcle, hcs⟩
+              · left
+                refine ⟨ts, ?_, ?_, ?_, ?_, ?_, Fc, by omega, ?_⟩
+                · simp only [evalD]
+                  rw [evalD_fuel_mono hev (Nat.le_max_left n ns)]
+                  simp only [Option.bind_some]
+                  exact evalD_fuel_mono hevs (Nat.le_max_right n ns)
+                · rw [ctxNetEffect_ctxNetEffect] at hCs; exact hCs
+                · rw [ctxNetEffect_ctxNetEffect] at hTs; exact hTs
+                · rw [ctxNetEffect_ctxNetEffect] at hCohs; exact hCohs
+                · rw [ctxNetEffect_ctxNetEffect] at hFsF; exact hFsF
+                · rw [ctxNetEffect_ctxNetEffect] at hcs; exact hcs
+              · right
+                refine ⟨nn2, oop2, vv2, ?_, ?_, ?_, ?_, ?_, ?_, Fc, by omega, ?_⟩
+                · simp only [evalD]
+                  rw [evalD_fuel_mono hev (Nat.le_max_left n ns)]
+                  simp only [Option.bind_some]
+                  exact evalD_fuel_mono hevs (Nat.le_max_right n ns)
+                · rw [ctxNetEffect_ctxNetEffect] at hCs; exact hCs
+                · rw [ctxNetEffect_ctxNetEffect] at hTs; exact hTs
+                · rw [ctxNetEffect_ctxNetEffect] at hCohs; exact hCohs
+                · rw [ctxNetEffect_ctxNetEffect] at hFsF; exact hFsF
+                · rw [ctxNetEffect_ctxNetEffect] at hNR2; exact hNR2
+                · rw [ctxNetEffect_ctxNetEffect] at hcs; exact hcs
+          · -- M0 raised — propagates past appF (evalD app raised arm). DRAFT-SORRY: same letF/appF
+            -- frame-transparency as the letC raised sub-case; do both together once the pattern is pinned.
+            sorry
       | perform cap op u =>
           -- DRAFT-SORRY (unverified): MIRROR run_evalD perform (AbstractMachine.lean:4159 term / 4562 raised).
           -- The BASE case where a raise originates. Dispatch by identity via perform_*_resolves (ported in
