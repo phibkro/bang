@@ -303,6 +303,66 @@ theorem completesTo_reduce {F g : Nat} {σ : SStore} {τ : THeap} {M M' : Comp} 
   · exact Or.inl ⟨t, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, F', by omega, hcont⟩
   · exact Or.inr ⟨nn, oop, vv, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, hNR, F', by omega, hcont⟩
 
+/-- The perform RAISE base case (converse of `run_evalD`'s `close` helper, AbstractMachine.lean:4573):
+a `perform (vcap n2 ℓ2) op u` whose op resolves NO resumptive frame at identity `n2` (state-miss or
+non-get/put; txn-miss or non-txn) yields `evalD → raised n2 op u` (stores unchanged), and its
+`dispatchRun` continuation IS the kernel's own `Config.run` on the perform (label reconstructed by
+`labelOf`, or irrelevant on escape). `NoResume` follows: any frame that resolves is throws (abort) or
+fails the op. -/
+theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {K : Bang.EvalCtx}
+    {n2 : Nat} {ℓ2 : Bang.EffectRow.Label} {op : Bang.OpId} {u v : Val}
+    (hCtx : CtxCorr σ K) (hTtx : CtxTxnCorr τ K)
+    (hCoh : CapLabelCoh (g, K, Comp.perform (Val.vcap n2 ℓ2) op u))
+    (hFresh : FreshCfg (g, K, Comp.perform (Val.vcap n2 ℓ2) op u))
+    (hrun : Config.run (F+1) (g, K, Comp.perform (Val.vcap n2 ℓ2) op u) = Result.done v)
+    (hst : (ctxStates K).get? n2 = none ∨ (op ≠ "get" ∧ op ≠ "put"))
+    (htx : (ctxTxns K).get? n2 = none ∨ isTxnOp op = false)
+    (hev : evalD 1 g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) = some (.raised n2 op u, g, σ, τ)) :
+    CompletesTo (F+1) g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) K v := by
+  refine ⟨1, g, σ, τ, Or.inr ⟨n2, op, u, hev, ?_, ?_, ?_, ?_, ?_, F+1, by omega, ?_⟩⟩
+  · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
+  · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+  · rw [ctxNetEffect_self hCtx hTtx]
+    exact ⟨fun p hp => hCoh.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp), hCoh.2⟩
+  · rw [ctxNetEffect_self hCtx hTtx]
+    exact ⟨hFresh.1, fun p hp => hFresh.2.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp),
+      hFresh.2.2.1, hFresh.2.2.2⟩
+  · -- NoResume K n2 op: any resolved frame is throws (abort) or fails the op (miss rules out resuming kind).
+    rw [ctxNetEffect_self hCtx hTtx]
+    intro Kᵢ hh Kₒ hsp
+    cases hh with
+    | throws ℓ' => exact Or.inr ⟨ℓ', rfl⟩
+    | state ℓ' s =>
+        rcases hst with hmiss | ⟨hng, hnp⟩
+        · exfalso; rw [splitAtId_state_value hsp] at hmiss; exact absurd hmiss (by simp)
+        · left
+          have e1 : (op == "get") = false := by simpa using hng
+          have e2 : (op == "put") = false := by simpa using hnp
+          simp [Handler.label, Bang.handlesOp, e1, e2]
+    | transaction ℓ' Θ =>
+        rcases htx with hmiss | hnt
+        · exfalso; rw [splitAtId_txn_value hsp] at hmiss; exact absurd hmiss (by simp)
+        · left
+          simp only [isTxnOp, Bool.or_eq_false_iff] at hnt
+          obtain ⟨⟨ea, eb⟩, ec⟩ := hnt
+          simp only [Handler.label, Bang.handlesOp]
+          simp [show (op == "newTVar") = false from by simpa using ea,
+            show (op == "readTVar") = false from by simpa using eb,
+            show (op == "writeTVar") = false from by simpa using ec]
+    | custom ℓ' p cl => left; simp [Bang.handlesOp]
+  · -- dispatchRun continuation = the kernel's own Config.run on the perform (label reconstructed).
+    rw [ctxNetEffect_self hCtx hTtx]
+    simp only [dispatchRun]
+    cases hsp : Bang.splitAtId K n2 with
+    | none =>
+        rw [run_perform_label_irrel (labelOf K n2) ℓ2 hsp (F+1)]; exact hrun
+    | some t =>
+        obtain ⟨Kᵢ, hh, Kₒ⟩ := t
+        have hwk : Bang.CapCoh.WeakCoh K (n2, ℓ2) := hCoh.1 (n2, ℓ2) (by simp [Bang.Model.capsC, Bang.Model.capsV])
+        have hlab : labelOf K n2 = ℓ2 := by
+          simp only [labelOf, hsp, Option.map_some, Option.getD_some]; exact hwk Kᵢ hh Kₒ hsp
+        rw [hlab]; exact hrun
+
 set_option maxHeartbeats 1000000 in
 theorem evalD_complete_gen_full : ∀ F,
     ∀ (M : Comp) (g : Nat) (σ : SStore) (τ : THeap) (K : Bang.EvalCtx) (v : Val),
@@ -609,8 +669,11 @@ theorem evalD_complete_gen_full : ∀ F,
                   · rw [ctxNetEffect_self hCtx hTtx]; exact freshCfg_step _ _ hFresh hstep
                   · rw [ctxNetEffect_self hCtx hTtx]; exact hrun'
               | none =>
-                  -- get-miss: evalD → raised n2 "get" u; NoResume; dispatchRun re-performs (label-irrel/match).
-                  sorry
+                  -- get-miss: evalD → raised n2 "get" u; NoResume from the state-miss; dispatchRun
+                  -- re-performs at the outer K (label-irrel on escape, label-match on resolve).
+                  exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
+                    (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide))
+                    (by show evalD 1 g σ τ _ = _; simp only [evalD, if_true]; rw [hg])
             · by_cases hop2 : op = "put"
               · subst hop2
                 cases hg : σ.get? n2 with
@@ -644,7 +707,11 @@ theorem evalD_complete_gen_full : ∀ F,
                     · rw [hctxeq]; exact hcoh'
                     · rw [hctxeq]; exact hfr'
                     · rw [hctxeq]; exact hrun'
-                | none => sorry     -- put-miss: raise (mirror get-miss)
+                | none =>
+                    exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
+                      (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide))
+                      (by show evalD 1 g σ τ _ = _
+                          simp only [evalD, if_neg (by decide : ¬ ("put" = "get")), if_true]; rw [hg])
               · by_cases hopt : isTxnOp op = true
                 · cases hgt : τ.get? n2 with
                   | some Θ =>
@@ -679,8 +746,17 @@ theorem evalD_complete_gen_full : ∀ F,
                       · rw [hctxeq]; exact hcoh'
                       · rw [hctxeq]; exact hfr'
                       · rw [hctxeq]; exact hrun'
-                  | none => sorry    -- txn-miss: raise
-                · sorry  -- non-resumptive op: raise (mirror run_evalD:4647)
+                  | none =>
+                      exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
+                        (Or.inr ⟨hop, hop2⟩) (Or.inl (by rw [← hTtx]; exact hgt))
+                        (by show evalD 1 g σ τ _ = _
+                            simp only [evalD, if_neg hop, if_neg hop2, hopt, if_true]; rw [hgt])
+                · -- non-resumptive op (not get/put/txn): evalD → raised directly.
+                  rw [Bool.not_eq_true] at hopt
+                  exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
+                    (Or.inr ⟨hop, hop2⟩) (Or.inr hopt)
+                    (by show evalD 1 g σ τ _ = _
+                        simp only [evalD, if_neg hop, if_neg hop2, hopt, Bool.false_eq_true, if_false])
           | _ =>
               -- non-cap perform: evalD = none, so Config.run is stuck ≠ done (absurd).
               exfalso; cases F' <;> simp_all [Config.run, Source.step]
