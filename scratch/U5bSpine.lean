@@ -1161,6 +1161,66 @@ are STATEMENT/DEFINITIONAL, not proof gaps (surfaced to the manager):
    contradicting `= done v`. Provable (needs a `dispatchRun_nil_ne_done` helper), left for the wiring.
 
 The full spine `evalD_complete_gen_full` (above, ONE sorry = custom stage-1) is the deliverable; this
-derivation is the thin adapter awaiting the manager's call on obligation (1). -/
+derivation is the thin adapter. Obligation (2) is discharged by the manager's ruling (option (a)):
+the consumer's `c` is a compiled SOURCE program, hence cap-free — threaded as a `capsC c = []`
+premise on the K=[] instance (the frozen `evalD_complete_gen` at Wasm.lean:1970 is the general form;
+the consumer only calls it at K=[], and a cap-free source `c` is exactly what `Source.eval` feeds). -/
+
+/-- A raise at the EMPTY context escapes: `dispatchRun` on `[]` performs `vcap nn ℓ` which resolves
+NO frame (`splitAtId [] = none`), so `Source.step` is `none` and `Config.run` yields `escapedCap`
+(never `done`). Rules out the RAISED disjunct at K=[] (obligation 3). -/
+theorem dispatchRun_nil_ne_done (F g nn : Nat) (ℓ : Bang.EffectRow.Label) (op : Bang.OpId) (w v : Val) :
+    dispatchRun F g nn [] ℓ op w ≠ Result.done v := by
+  simp only [dispatchRun]
+  cases F with
+  | zero => simp [Config.run]
+  | succ F' =>
+      rw [Config.run_step F' _ (by intro gg vv hc; simp at hc)]
+      have hstep : Source.step (g, ([] : Bang.EvalCtx), Comp.perform (Val.vcap nn ℓ) op w) = none := by
+        simp [Source.step, Bang.idDispatch, Bang.splitAtId]
+      rw [hstep]; simp
+
+/-- The frozen `evalD_complete_gen` at K=[] for a cap-free source program (obligation 2 via option (a)).
+`plug [] c = c`; the full spine at K=[] yields the term disjunct (the raised one escapes, obligation 3). -/
+theorem evalD_complete_gen_nil (F : Nat) (c : Comp) (v : Val)
+    (hcapfree : Bang.Model.capsC c = [])
+    (hrun : Config.run F (0, [], c) = Result.done v) :
+    ∃ n g', evalD n 0 [] [] c = some (.term (.ret v), g', [], []) := by
+  have hCtx : CtxCorr [] ([] : Bang.EvalCtx) := rfl
+  have hTtx : CtxTxnCorr [] ([] : Bang.EvalCtx) := rfl
+  have hCoh : CapLabelCoh (0, ([] : Bang.EvalCtx), c) := by
+    refine ⟨fun p hp => ?_, fun p hp => ?_⟩
+    · rw [hcapfree] at hp; simp at hp
+    · simp [Bang.Model.capsK] at hp
+  have hFresh : FreshCfg (0, ([] : Bang.EvalCtx), c) := by
+    refine ⟨trivial, fun p hp => ?_, trivial, fun p hp => ?_⟩
+    · rw [hcapfree] at hp; simp at hp
+    · simp [Bang.Model.capsK] at hp
+  obtain ⟨n, g', σ', τ', hd⟩ := evalD_complete_gen_full F c 0 [] [] [] v hCtx hTtx hCoh hFresh hrun
+  have hne : ctxNetEffect [] σ' τ' = [] := by simp only [ctxNetEffect, updateCtxStates, updateCtxTxns]
+  rcases hd with ⟨t, hev, hCf, hTf, _, _, F', _, hcont⟩ | ⟨nn, oop, vv, hev, _, _, _, _, _, F', _, hcont⟩
+  · -- term disjunct. At K=[], ctxNetEffect [] σ' τ' = [], so CtxCorr/CtxTxnCorr force σ'=τ'=[].
+    rw [hne] at hCf hTf hcont
+    have hσ : σ' = [] := hCf
+    have hτ : τ' = [] := hTf
+    subst hσ; subst hτ
+    -- t is ret/lam; only `ret v0` can Config.run to `done` under []; and then v0 = v.
+    rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
+    · -- Config.run F' (g', [], ret v0) = done v ⇒ v0 = v (done arm reads the ret payload).
+      have hv0 : v0 = v := by
+        cases F' with
+        | zero => simp [Config.run] at hcont
+        | succ F'' => simp only [Config.run, Result.done.injEq] at hcont; exact hcont
+      subst hv0; exact ⟨n, g', hev⟩
+    · -- lam under []: Config.run is stuck (not a done shape), contradicting = done v.
+      exfalso
+      cases F' with
+      | zero => simp [Config.run] at hcont
+      | succ F'' =>
+          rw [Config.run_step F'' _ (by intro gg vv hc; simp at hc)] at hcont
+          simp [Source.step, Config.run] at hcont
+  · -- raised disjunct at K=[]: dispatchRun on [] escapes, contradicting = done v (obligation 3).
+    rw [hne] at hcont
+    exact absurd hcont (dispatchRun_nil_ne_done F' g' nn (labelOf [] nn) oop vv v)
 
 end Bang.CalcVM
