@@ -18,7 +18,21 @@ finite rep via a 4-line `capsCls_find?` lemma; census unchanged (7 flagged), eve
 still ⊆ trusted-three. No fallback needed. Slice-3 finding (rung-2 scope, provable-not-false):
 dispatch activation breaks 4 `AbstractMachine` arms + 1 BinaryLR arm that assume the resolver of a
 built-in op IS the built-in handler — closable by threading `StratFresh`/id-uniqueness into those
-internal (non-frozen) lemma signatures. **Rung 2 in flight** (`feat-44-rung2`).
+internal (non-frozen) lemma signatures.
+
+**Rung-2 VERDICT (2026-07-09, landed on main `0c6ba99`+`6413281`, manager-gated on a clean
+checkout of `c889305`): the census gate that stopped `gh44s2` PASSES with REAL dispatch.**
+Custom dispatch live (`cls.find?`, one-shot tail resume + throws-abort coexisting, both Stage-2
+`#guard`s compiled green); census unchanged (7 flagged), every clean headline ⊆ trusted-three.
+The rung-2 wall (NoResume unprovable for a custom frame on the clean `run_evalD` path) was
+closed by **`NoCustomFrame K`** — a structural frame-kind scaffolding premise on
+`run_evalD`/`perform_miss_raises`/`evalD_complete_gen_full` (ADR-0086 premise-lifecycle
+pattern, third application; manager ruling (A) over giving evalD a hand-designed custom arm,
+which would collapse Stage 4 into rung-2 un-calculated — invariant #4). **Named expiry: ADR-0085
+Stage 4**, when the machine's custom arm is DERIVED and the machine speaks custom. One banked
+residual off the clean census: `dispatchOn_rename`'s custom arm carries a doc-commented sorry
+(feeds only the already-flagged `lr_sound`; the renameH `.map` cascade is the #15 LR-reindex's
+shape — owner: PATH-inc5). **ADR-0085 Stage 2 is LANDED; the arc proceeds to Stages 3–7.**
 
 - **Layer:** K (kernel — the `Handler.custom` constructor's argument type). Stage-1's rep is landed but INERT and UNTYPED (no well-typed program contains it; `capsH`/dispatch arms are vacuous or `[]`), so this is a **pre-activation rep change, not a re-freeze**: no frozen statement mentions the clause map's type, and the ~424-site coexist ripple re-touches only the custom arms (byte-identical built-ins stay byte-identical).
 

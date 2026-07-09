@@ -2,17 +2,18 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: The v1 canonical formatter (`Bang/Frontend/Format.lean`, #58) is FLAT (single-line): it prints one deterministic line per `Surf`/`Ty`/`Decl`/`Prog`, with minimal-parenthesization driven by the shared `opInfo` precedence table (ADR-0071) and two corpus `#guard` laws (`roundTripsOn` = the AST never changes; `idempotentOn` = fmt-of-fmt is a no-op). Multi-line/wrapped layout was left open. This ADR settles HOW multi-line layout is added. **Decision: build the layout on Lean's host `Std.Format` — a Wadler Doc algebra (`group`/`nest`/`line`/`align`/`fill`, `pretty (width := 120)`) already in the toolchain — rather than hand-roll a second Wadler kernel (option B) or adopt the Final Pretty Printer's extensible-monadic architecture (option C, whose novelty — proportional fonts, interactive presentations, Web — is orthogonal to bang's monospace-`.bang`-file target). The printer stays ZERO-CONFIG (one fixed width constant, no user knobs — the gofmt/dart_style/black consensus, and the generative constraint that gives a canonical formatter its whole value). The two existing laws EXTEND unchanged: `roundTripsOn`/`idempotentOn` are stated over the parsed `Prog`, independent of whether the printed text is one line or many, so multi-line output must still satisfy both #guards. `examples/` are NOT reformatted by this ADR (the corpus's teaching role — hand-written idiomatic style — is preserved; a corpus entry is verbatim source, and reformatting it would destroy the very variety the round-trip #guards exercise). CLI `-w`/in-place is DEFERRED to a follow-up (the #58 CLI half wires `bang fmt` to stdout first).** Rejected: (B) hand-rolled Wadler kernel — a second layout engine beside `Std.Format`, violating one-construct-per-problem, buying `#guard`-able Doc laws bang doesn't need on a fan-in-0 leaf; (C) Final Pretty Printer — pays for extensibility bang's target makes moot; (biparsers/FliPpr, rung 3) — solve EXACT printing (recover source text), the deliberate opposite of bang's CANONICAL printing, at the cost of a full Pratt-parser rewrite. Layout engine is the recommendation; the width VALUE (survey recommends 80/2-space) is a preference the operator rules.
 - **Depends-on**: 0046, 0071
 - **Relates-to**: 0026 (the stratification seam this rides), #58, #30 (the Pratt-rule-table refactor the parser side tracks), #14 (the fuzz generator that could property-test the laws)
 
 ## Status
 
-Proposed (2026-07-08). The multi-line layout rung of #58 is DESIGNED but not built; this ADR is the
-research-grounded design input (survey: `docs/notes/formatting-survey.md`). The **operator rules on
-acceptance and on the width value** — this ADR recommends one option with named costs; it does not
-self-accept.
+Accepted (2026-07-09, operator ruling: "Accept all, 100"). The multi-line layout rung of #58 is
+DESIGNED but not built; this ADR is the research-grounded design input (survey:
+`docs/notes/formatting-survey.md`). **Width VALUE ruled by the operator: `defWidth := 100`,
+`indent := 2`** — the middle path between the survey's 80 (diff-pane classic) and Lean's
+host-default 120; per D-zero-config it is a fixed module constant, never a knob.
 
 ## Context
 
@@ -84,7 +85,8 @@ the AST — no input-format influence (ADR-0046).
 ### D3 — Width: one fixed constant, ZERO user knobs
 
 The printer takes NO width option from the user. One module-level constant governs all rendering.
-Recommended value: **80 columns, `indent := 2`** (terminal/diff-friendly, the gofmt/dart_style/black
+**RULED value (operator, 2026-07-09): 100 columns, `indent := 2`.** The survey's recommendation
+was: **80 columns, `indent := 2`** (terminal/diff-friendly, the gofmt/dart_style/black
 classic; more conservative than Lean's editor-oriented `defWidth := 120`). This VALUE is the
 operator's preference call; the DECISION is that it is a fixed constant, not a knob (survey §4:
 zero-config is the generative constraint that gives a canonical formatter its value — every knob

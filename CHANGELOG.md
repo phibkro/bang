@@ -79,6 +79,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tooling** — test-fmt joins the default verify chain (`85a04e1`)
 - **frontend** — effectful let-rec recursion via declared-row thunk type (ADR-0088, #48) (`fb94daf`)
 - **kernel** — ADR-0087 rung-1 — finite-list custom rep + honest capsH (slices 1-2) (`0c6ba99`)
+- **kernel** — ADR-0087 rung-2 — Stage-2 custom dispatch REAL on the finite rep, census clean (`6413281`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

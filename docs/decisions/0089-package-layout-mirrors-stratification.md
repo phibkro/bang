@@ -2,15 +2,16 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: The repo has outgrown "one lib + a CLI": the tested superset now spans a parser/elaborator/formatter frontend, a REPL-bearing CLI, a witness layer (differential fuzz #14, outcome-oracle #54), and non-Lean tooling — while the verified spine stays the proof-budget core. The stratification seam (verified core / tested superset, ADR-0026/0028) is currently enforced one rung DOWN the derivation ladder: `tools/arch-check.sh` **tests** that `Bang/Frontend` has fan-in 0 from the spine. **Decision: restructure into a multi-package Lake workspace whose dependency arrows ARE the stratification — `bang-spine` (Core+Backend+Meta+Spec+Audit, the only Mathlib consumer) ← `bang-frontend` ← `bang-witness`, with the `bang` exe atop frontend — so a spine module importing the frontend becomes UNBUILDABLE (a require-cycle error), not merely a red script.** Module NAMES do not change (imports stay `Bang.Core.…`/`Bang.Frontend.…`), so the churn is lakefile surgery + CI/cache plumbing, not an import rewrite. Crucially rejected as insufficient: splitting into multiple `[[lean_lib]]`s **inside one package** — Lake resolves imports package-wide regardless of lib membership, so that split is organizational cosmetics at the same enforcement rung we already occupy. Also rejected: multi-REPO split (kills the shared proof context, atomic cross-strata commits, and the single `just verify` gate for zero added enforcement over a workspace). **Timing: entry-gated on the #44 rung-2 landing** — the spine is mid-surgery (`feat-44-rung2`); restructuring under it would force a rebase across a package boundary.
 - **Depends-on**: 0026, 0028, 0016
 - **Relates-to**: the stratification principle (CLAUDE.md), `tools/arch-check.sh` (the check this supersedes-in-part), #58/#59 (the tool growth that motivates it)
 
 ## Status
 
-Proposed (2026-07-09) — awaiting operator ruling. **Entry gate: #44 rung-2 landed on main** (one
-spine-surgery at a time; the workspace cut is a whole-tree refactor).
+Accepted (2026-07-09, operator ruling same day). **Entry gate: #44 rung-2 landed on main** (one
+spine-surgery at a time; the workspace cut is a whole-tree refactor) — the gate OPENED the same
+day (rung-2 landed at the census-clean gate); execution is a dedicated unit, not started yet.
 
 - **Layer:** build/tooling only. No Lean statement changes; the axiom gate and census are
   unaffected (Audit stays in the spine package, gating the same theorems).

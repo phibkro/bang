@@ -26,24 +26,19 @@ all elaborate-to-mono (ADR-0075) over the verified kernel/census UNTOUCHED (axio
 only Core touch was #57's free SSoT row-unifier consolidation, `713eb3c`). See `CHANGELOG.md` + the
 archived `paths/archive/PATH-polymorphism.md`; ADR-0079/0080/0081/0082/0083 are the rungs.
 
-**Current edge — #44 USER-DEFINED EFFECTS — the moat, the first verified-spine work since the MVP (ADR-0085: general
-`Handler.custom`, coexist, one-shot v1).** The IO/net prong (ADR-0084) gated on this. **Stage 1 DONE (`d84aeae`):
-`Handler.custom` rep + the ADDITIVE ripple — the verified spine REOPENED and stayed axiom-clean** (census 25→26, the
-+1 custom; every previously-clean headline still ⊆ trusted-three, NO new sorryAx; Spec.lean frozen statements
-untouched — the ADR-0085 additive-ripple bet CONFIRMED at the kernel). custom is INERT+UNTYPED. **Stage 2 —
-SEMANTICS + typed-soundness PROVEN-IN-ISOLATION but BANKED/DEFERRED** (WIP `origin/gh44s2`; ADR-0085 status has the
-full finding). Dispatch+one-shot-resume works (custom→106, abort→42), trusted-three vacuous-clean — BUT the coexist
-rep's opaque clause map (`OpId → Option Comp`) defeats `capsH`'s cap-collection, so landing it regresses the CLEAN
-CalcVM coherence headlines (`run_evalD`/`sim`). **The route-B metatheory tail has SHRUNK to one item:** U5b-handler
-completeness is DONE (`compile_forward_sim` sorryAx-ZERO under the ADR-0086 premised re-freeze, `d13e0af`; #16 closed)
-and the binary-LR re-index is operator-ruled DEFERRED (#15: D-now/A-probe-later, PATH-inc5). What remains for #44 is
-exactly (i): the machine coherence layer (`CapLabelCoh`/`FreshCfg`/`capsH`) generalized for `custom` — **ADR-0087
-(Accepted 2026-07-09) dissolves the `capsH` wall by REPRESENTATION, not invariant threading:** clauses become a finite
-`List (OpId × Comp)`, cap-enumeration turns structural, and the coherence statements gain NO premise (`CustomFree`,
-ADR-0086 scaffolding, is inherited then retired). **⟹ the running-user-effect milestone is GATED on that (≈ Stage 4),
-a DEDICATED arc.** **The rung-1 probe (ADR-0087 D4) is IN FLIGHT** (worktree `lang-bang-p44`): re-rep + honest `capsH`
-+ the `capLabelCoh_step` custom slice; its verdict gates rung 2 (the full `origin/gh44s2` rebase), then Stages
-3(typing)→4(calc-machine)→5(LR)→6(soundness)→7(surface). The IO/net prong (ADR-0084) waits on this.
+**Current edge — #44 USER-DEFINED EFFECTS — the moat (ADR-0085: general `Handler.custom`, coexist, one-shot v1).**
+**STAGE 2 IS LANDED (`0c6ba99`+`6413281`, 2026-07-09): custom dispatch is REAL on main and the spine stayed clean** —
+the ADR-0087 finite clause rep (`List (OpId × Comp)`, cap-enumeration structural, NO coherence premise) + one-shot
+tail resume + coexisting throws-abort; both Stage-2 `#guard`s compiled green (custom read→106, abort→42); census
+UNCHANGED (16 clean / 7 flagged), every clean headline ⊆ trusted-three. **The census gate that stopped `gh44s2`
+PASSES.** Two scaffolding premises carry the staging, each with a NAMED EXPIRY at ADR-0085 Stage 4: `CustomFree`
+(ADR-0086) and `NoCustomFrame` (ADR-0087 rung-2 status — the machine doesn't speak custom until its arm is DERIVED).
+One banked residual: `dispatchOn_rename` custom-arm sorry, off the clean census, owner #15/PATH-inc5. **The edge is
+now Stages 3→7:** 3 (TYPING: `effect`-decl rows, typed custom-handle) → 4 (CALC-MACHINE: derive evalD's custom arm,
+drop BOTH scaffolding premises — a consumer-safe strengthening) → 5 (LR) → 6 (soundness) → 7 (surface: `effect` /
+`handle … with { … }`). Stage 3 is design-adjacent (user-row typing; the Q-ledger applies); Stage 4 is the
+calculated-machine unit. The IO/net prong (ADR-0084) unblocks at Stage 7. Binary-LR re-index stays operator-ruled
+DEFERRED (#15: D-now/A-probe-later, PATH-inc5).
 
 Active edge: **#44 / ADR-0085** (banked; no separate PATH — tracked in the ADR + the lead above). Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (Q1–Q42).
 
