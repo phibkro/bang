@@ -100,7 +100,7 @@
 - **[Q35 — Force ergonomics: auto-force a thunk-of-function at the call site; reserve visible `$` for meaningful observation](Q35-force-ergonomics.md)** — surface ergonomics; sugar, no kernel change · _open_  
   ties: Q29, Q33, ADR-0007, ADR-0030, ADR-0073
 
-### tooling (5)
+### tooling (6)
 
 - **[Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](Q9-wasmfx-target-drift.md)** — the verified compiler TARGET drifted (OOPSLA'23 → Phase-3); pin-to-engine at ◊5, not the paper · _open_  
   ties: ADR-0016, ADR-0035
@@ -112,6 +112,8 @@
   ties: Q32, Q33, ADR-0046, ADR-0047, ADR-0076
 - **[Q40 — Compilation strategy for the dynamic escape hatch — static-first; dispatch cold, JIT-monomorphize hot](Q40-compilation-strategy-static-first-dispatch-cold-jit-hot.md)** — Stay static (AOT elaborate-to-mono) by default for perf + static analysis + compile-time soundness; for runtime-known types, dispatch one-offs cheaply and JIT-monomorphize ONLY hot+type-stable sites (tiered, profile-guided); JIT-mono = the same elaborate-to-mono run late, still targeting the verified kernel · _open_  
   ties: Q37, Q39, ADR-0080, ADR-0075
+- **[Q43 — Proof export: laws fuzzed by default, PROVABLE on demand (#prove → a Lean goal over the elaborated term)](Q43-proof-export-laws-provable-on-demand.md)** — the stratification seam surfaced into user programs — one law construct, two rigor rungs; content-addressed proof cache · _open_  
+  ties: Q34, ADR-0068, ADR-0076, ADR-0093
 
 ### meta (3)
 
@@ -127,7 +129,7 @@
 The `· ✓ RESOLVED (ADR-…)` / `· ◑ PARTIAL` markers below are the Q⟺ADR ledger `gen-adr-index.py` reads —
 derived from each question's `resolved-by` frontmatter, so a resolution has a single home.
 
-### open (26)
+### open (27)
 
 - [Q7 — Operation names as strings vs symbolic enum](Q7-operation-names-string-vs-enum.md)  · OPEN
 - [Q9 — WasmFX target drift: frozen OOPSLA'23 syntax vs Phase-3 standard](Q9-wasmfx-target-drift.md)  · OPEN
@@ -155,6 +157,7 @@ derived from each question's `resolved-by` frontmatter, so a resolution has a si
 - [Q40 — Compilation strategy for the dynamic escape hatch — static-first; dispatch cold, JIT-monomorphize hot](Q40-compilation-strategy-static-first-dispatch-cold-jit-hot.md)  · OPEN
 - [Q41 — Type isomorphism — how to check two types are isomorphic and convert between them (types-as-algebra: derive structural isos, law-check witnessed ones)](Q41-type-isomorphism-types-as-algebra-derive-vs-witness.md)  · OPEN
 - [Q42 — Proving in bang — parametricity gives free substitutability NOW; Curry-Howard/dependent types make bang a prover LATER](Q42-proving-in-bang-parametricity-now-curry-howard-later.md)  · OPEN
+- [Q43 — Proof export: laws fuzzed by default, PROVABLE on demand (#prove → a Lean goal over the elaborated term)](Q43-proof-export-laws-provable-on-demand.md)  · OPEN
 
 ### partial (1)
 
@@ -228,6 +231,7 @@ graph LR
   Q40["Q40 · compilation-strategy-static-first-dispatch-cold-jit-hot"]:::q
   Q41["Q41 · type-isomorphism-types-as-algebra-derive-vs-witness"]:::q
   Q42["Q42 · proving-in-bang-parametricity-now-curry-howard-later"]:::q
+  Q43["Q43 · proof-export-laws-provable-on-demand"]:::q
   ADR_0001["ADR-0001"]:::adr
   ADR_0032["ADR-0032"]:::adr
   ADR_0019["ADR-0019"]:::adr
@@ -271,6 +275,7 @@ graph LR
   ADR_0080["ADR-0080"]:::adr
   ADR_0081["ADR-0081"]:::adr
   ADR_0083["ADR-0083"]:::adr
+  ADR_0093["ADR-0093"]:::adr
   Q1 --> Q8
   Q1 --> ADR_0001
   Q1 --> ADR_0032
@@ -405,6 +410,10 @@ graph LR
   Q42 --> Q41
   Q42 --> ADR_0075
   Q42 --> ADR_0081
+  Q43 --> Q34
+  Q43 --> ADR_0068
+  Q43 --> ADR_0076
+  Q43 --> ADR_0093
   classDef q fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
   classDef extq fill:#eef2ff,stroke:#6366f1,color:#312e81;
   classDef adr fill:#f1f5f9,stroke:#64748b,color:#334155;
