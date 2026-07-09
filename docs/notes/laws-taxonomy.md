@@ -80,3 +80,41 @@ Not a scoped unit. It decides nothing; it names the pattern so Q38's ADR and eve
 "track X in types?" fork can cite one criterion instead of re-deriving it. First consumers:
 the Stage-7 surface ADR (Q38), the monotonicity-grade implementation (post-v1), and the
 handler-theory law-checking idea (backlog until Stage 7 lands).
+
+## 5 · User-definable axes (operator direction, 2026-07-10)
+
+> "If they're the same underlying pattern, the same machinery should support them all with
+> different semantics." — Yes. The abstraction is a **user-defined grade axis**:
+
+```
+1. an ALGEBRA        the grade lattice/ordered semiring (join = composition)   ← user declares
+2. LEAF assignments  which grade each op carries                               ← user annotates
+3. PROPAGATION       fold the algebra along composition                        ← GENERIC (GradeVec,
+                                                                                 the distinct-lattice ruling)
+```
+
+Users already extend one lattice today: a user `effect` decl (ADR-0092) adds POINTS to the
+row's powerset lattice. Axes generalize that to new DIMENSIONS. Shipped precedent: **F# units
+of measure** (user abelian group, type-level fold, zero semantic proof); Granule (security
+lattices); taint = powerset; cost = ℕ semiring; monotonicity = the two-point lattice.
+
+**The bootstrap:** an axis is admissible iff its algebra's own laws hold — assoc/comm/idem/
+join-monotonicity are MODEL-shaped leaf laws, so the law machinery is the admissibility gate:
+`lawInstancesOf` discovers them, `bang test` fuzzes, Q43 proves (total fragment — covered by
+the total-only ruling). Laws gate grades; grades transport laws — §1's two halves close into
+a loop.
+
+**The soundness split (pricing):**
+- **FREE tier** — axes whose meaning is "over-approximation of the trace fold" (taint, cost,
+  units, the row itself): the fundamental lemma is proved ONCE, parametrically over
+  `[Lattice G]` (Katsumata graded-monad semantics; the same shape as row soundness).
+  One hard meta-level Lean proof, amortized over every future axis.
+- **PRICED tier** — axes claiming behavior beyond the trace (monotonicity: a fact about the
+  function's extension): owe a per-axis bridge proof (trace-fold ⇒ semantic claim), exported
+  as a Lean obligation. Supported, opt-in, honestly expensive.
+
+**The caveat, from banked evidence:** the rq38 census shows surface unifications pay at the
+implementation layer — so unify the MACHINERY (one propagation engine + one law gate), keep
+`trait`/`effect`/`axis` as separate surface declarations until the Stage-7 stress test rules.
+Kernel invariant #5 untouched: axes are elaborator/type-layer; the five primitives never
+learn they exist.
