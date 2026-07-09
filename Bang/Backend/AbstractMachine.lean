@@ -2888,31 +2888,40 @@ theorem sim : ∀ fe,
               -- route-B INSTALL (raised): MINT id := g, run M' = subst (vcap g ℓ0) M at g+1 under σ.push g s0;
               -- a raise FORWARDS, popping the pushed σ entry (σ1.tail). The frame's id is g.
               simp only [Handler.label] at h
-              cases hM : evalD fe (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M) with
+              cases hM : evalD fe (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
                       Outcome.raised.injEq] at h
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                    -- at-raise TRIPLE: one IH over a dummy install frame, popped through the state frame.
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                    -- at-raise 4-TUPLE: one IH over a dummy install frame, popped through the state frame.
+                    -- κ passes unchanged (state install doesn't touch custom frames); CCorr pops noncustom.
                     have htriple : Corr σ1.tail (netEffect hs σ1.tail τ1) ∧ TCorr τ1 (netEffect hs σ1.tail τ1)
-                        ∧ HMut hs (netEffect hs σ1.tail τ1) := by
+                        ∧ CCorr κ1 (netEffect hs σ1.tail τ1) ∧ HMut hs (netEffect hs σ1.tail τ1) := by
                       set fr0 : HFrame := { id := g, handler := Handler.state ℓ0 s0, savedCode := [], savedStack := [] }
                         with hfr0
-                      obtain ⟨⟨hCr, hTr, hmutr⟩, _⟩ :=
-                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ ℓ' op' w g1 σ1 τ1 hM (fr0 :: hs)
+                      obtain ⟨⟨hCr, hTr, hKr, hmutr⟩, _⟩ :=
+                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ κ ℓ' op' w g1 σ1 τ1 κ1 hM (fr0 :: hs)
                           (Corr_install ℓ0 s0 fr0 (by rw [hfr0]) hC)
                           (TCorr_install_nontxn fr0 (by rw [hfr0]; intro ℓ Θ; simp) hT)
-                      exact raisedTriple_pop_state (by rw [hfr0]) hCr hTr hmutr
+                          (CCorr_install_noncustom fr0 (by rw [hfr0]; intro ℓ p cls; simp) hK)
+                      obtain ⟨hCt, hTt, hMt⟩ := raisedTriple_pop_state (by rw [hfr0]) hCr hTr hmutr
+                      refine ⟨hCt, hTt, ?_, hMt⟩
+                      -- κ1 mirrors netEffect (state-frame :: hs); state install/net-effect keeps custom frames.
+                      rw [show netEffect (fr0 :: hs) σ1 τ1 = _ from rfl] at hKr
+                      have hproj : hsCustoms (netEffect (fr0 :: hs) σ1 τ1) = hsCustoms (netEffect hs σ1.tail τ1) := by
+                        rw [hsCustoms_netEffect, hsCustoms_netEffect]; simp only [hfr0, hsCustoms]
+                      unfold CCorr at hKr ⊢; rw [hKr, hproj]
                     refine ⟨htriple, fun c s F r hr => ?_⟩
                     set fr : HFrame := { id := g, handler := Handler.state ℓ0 s0, savedCode := c, savedStack := s }
                       with hfrdef
-                    obtain ⟨_, kR⟩ := ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ ℓ' op' w g1 σ1 τ1 hM (fr :: hs)
+                    obtain ⟨_, kR⟩ := ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ κ ℓ' op' w g1 σ1 τ1 κ1 hM (fr :: hs)
                       (Corr_install ℓ0 s0 fr (by rw [hfrdef]) hC)
                       (TCorr_install_nontxn fr (by rw [hfrdef]; intro ℓ Θ; simp) hT)
+                      (CCorr_install_noncustom fr (by rw [hfrdef]; intro ℓ p cls; simp) hK)
                     have hfwd : throwOutcome F g1 ℓ' op' w (netEffect (fr :: hs) σ1 τ1) = some r := by
                       have hskip : throwOutcome F g1 ℓ' op' w (netEffect (fr :: hs) σ1 τ1)
                           = throwOutcome F g1 ℓ' op' w (netEffect hs σ1.tail τ1) := by
@@ -2929,7 +2938,7 @@ theorem sim : ∀ fe,
                       rw [hskip]; exact hr
                     obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
                     exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
-                | (.term (.ret v0), _, _, _), h =>
+                | (.term (.ret v0), _, _, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
                 | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
