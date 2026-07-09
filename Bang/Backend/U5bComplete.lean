@@ -162,69 +162,69 @@ The fuel IH on the SUBSTITUTED body composes through `evalD`'s handle clause to 
 node — for each handler kind. No substitution-closure of a black-box relation (the route-A wall). -/
 
 theorem handle_state_composes
-    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (s0 : Val) (M : Comp)
-    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
-    (hbody : evalD f (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M)
-               = some (.term (.ret v0), g', σ', τ')) :
-    evalD (f+1) g σ τ (Comp.handle (Handler.state ℓ0 s0) M)
-               = some (.term (.ret v0), g', σ'.tail, τ') := by
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (s0 : Val) (M : Comp)
+    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.state ℓ0 s0) M)
+               = some (.term (.ret v0), g', σ'.tail, τ', κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some]
 
 theorem handle_txn_composes
-    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (Θ : List Val) (M : Comp)
-    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
-    (hbody : evalD f (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M)
-               = some (.term (.ret v0), g', σ', τ')) :
-    evalD (f+1) g σ τ (Comp.handle (Handler.transaction ℓ0 Θ) M)
-               = some (.term (.ret v0), g', σ', τ'.tail) := by
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (Θ : List Val) (M : Comp)
+    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.transaction ℓ0 Θ) M)
+               = some (.term (.ret v0), g', σ', τ'.tail, κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some]
 
 theorem handle_throws_normal_composes
-    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
-    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
-    (hbody : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M)
-               = some (.term (.ret v0), g', σ', τ')) :
-    evalD (f+1) g σ τ (Comp.handle (Handler.throws ℓ0) M)
-               = some (.term (.ret v0), g', σ', τ') := by
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
+    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.throws ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ', κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some]
 
 theorem handle_throws_caught_composes
-    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
-    (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
-    (hbody : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M)
-               = some (.raised g "raise" w, g', σ', τ')) :
-    evalD (f+1) g σ τ (Comp.handle (Handler.throws ℓ0) M)
-               = some (.term (.ret w), g', σ', τ') := by
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
+    (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.raised g "raise" w, g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.throws ℓ0) M)
+               = some (.term (.ret w), g', σ', τ', κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some, and_self, if_true]
 
 theorem handle_throws_forward_composes
-    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
-    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (M : Comp)
+    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
     (hne : ¬ (n = g ∧ op = "raise"))
-    (hbody : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M)
-               = some (.raised n op w, g', σ', τ')) :
-    evalD (f+1) g σ τ (Comp.handle (Handler.throws ℓ0) M)
-               = some (.raised n op w, g', σ', τ') := by
+    (hbody : evalD f (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.raised n op w, g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.throws ℓ0) M)
+               = some (.raised n op w, g', σ', τ', κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some, if_neg hne]
 
 /-- STATE handler forwards a raise (body raised → whole handle raises, pop σ'.tail). -/
 theorem handle_state_forward
-    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (s0 : Val) (M : Comp)
-    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
-    (hbody : evalD f (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M)
-               = some (.raised n op w, g', σ', τ')) :
-    evalD (f+1) g σ τ (Comp.handle (Handler.state ℓ0 s0) M)
-               = some (.raised n op w, g', σ'.tail, τ') := by
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (s0 : Val) (M : Comp)
+    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.raised n op w, g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.state ℓ0 s0) M)
+               = some (.raised n op w, g', σ'.tail, τ', κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some]
 
 /-- TRANSACTION handler forwards a raise (body raised → whole handle raises, pop τ'.tail). -/
 theorem handle_txn_forward
-    (f g : Nat) (σ : SStore) (τ : THeap) (ℓ0 : Bang.EffectRow.Label) (Θ : List Val) (M : Comp)
-    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
-    (hbody : evalD f (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M)
-               = some (.raised n op w, g', σ', τ')) :
-    evalD (f+1) g σ τ (Comp.handle (Handler.transaction ℓ0 Θ) M)
-               = some (.raised n op w, g', σ', τ'.tail) := by
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (Θ : List Val) (M : Comp)
+    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.raised n op w, g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.transaction ℓ0 Θ) M)
+               = some (.raised n op w, g', σ', τ'.tail, κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some]
 
 /-- Fuel monotonicity for `evalD` (the `evalD` analog of `exec_succ`/`exec_mono`): more fuel
