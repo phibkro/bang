@@ -261,6 +261,28 @@ def render():
         L.append(f"| `{kw}` | `{form}` |")
     L.append("")
 
+    if "def pLetBindings" not in surf:
+        sys.exit(
+            "gen-reference: `pLetBindings` not found in Surface.lean — the `let` note below is "
+            "keyed off it (issue #68)."
+        )
+    L.append("`let` is NOT in the table above (issue #68): its multi-binding sugar needs a")
+    L.append("repeated-group grammar the fixed linear `Rule`/`Choice` shape can't express, so —")
+    L.append("like `let (a,b) = …`, `let rec`, `match`, `do` — it is a bespoke `pExpr` arm instead.")
+    L.append("`let x = e1; y = e2; … in body` binds SEQUENTIALLY (a later binding sees every")
+    L.append("earlier one; an earlier binding can never see a later one) and desugars to the")
+    L.append("IDENTICAL nested chain a hand-written `let x = e1 in let y = e2 in … in body` already")
+    L.append("produces — no new AST node, elaborate-away. **Contrast with Haskell's `let`-block**,")
+    L.append("which is mutually recursive: bang's plain `let` stays non-recursive by convention")
+    L.append("(`let rec` is the only recursion marker, and it has no multi-binding form), so")
+    L.append("sequential-not-recursive is the reading consistent with the rest of the surface.")
+    L.append("**`bang fmt` always prints the FULLY EXPANDED chain** (one `let … in` per binding),")
+    L.append("never the `;`-sugar — the same reason it can't preserve comments (issue #62): once")
+    L.append("parsed, a sugar-derived chain and a hand-written one are the SAME `Surf` tree, with")
+    L.append("no signal left to tell them apart, so there is nothing for the printer to choose")
+    L.append("between (a deliberate v1 answer, not an oversight).")
+    L.append("")
+
     if '"-\' :: \'-\' :: rest' not in surf and "'-' :: '-' :: rest" not in surf:
         sys.exit(
             "gen-reference: `tokenize`'s `--` line-comment arm not found in Surface.lean — "
