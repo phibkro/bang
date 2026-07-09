@@ -5991,9 +5991,7 @@ theorem run_evalD : ∀ fe,
                 simp only [hopt, Bool.false_eq_true, if_false, Option.some.injEq, Prod.mk.injEq,
                   Outcome.raised.injEq] at h
                 obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
-                have hop : op2 ≠ "get" := by intro he; rw [he] at hopt; simp [isTxnOp] at hopt
-                have hop2 : op2 ≠ "put" := by intro he; rw [he] at hopt; simp [isTxnOp] at hopt
-                -- n2 resolves in τ (txn frame) ⇒ absent from κ by StratFresh id-uniqueness.
+                -- n2 resolves in τ (txn frame) ⇒ absent from σ (hg) and κ (StratFresh id-uniqueness).
                 have htc := hTtx ▸ hgt
                 exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr hopt)
                   (by intro p cl hc; exact absurd hc (by rw [ctxCustoms_get_none_of_ctxTxns_some hFresh.2.2.1 htc]; simp))
@@ -6063,16 +6061,16 @@ theorem run_evalD : ∀ fe,
           | inl sv =>
               simp only [evalD] at h
               have hstep : Source.step (g, K, Comp.case (Val.inl sv) b d) = some (g, K, Comp.subst sv b) := rfl
-              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv b) g σ τ n op v g' σ' τ' h K hCtx hTtx
-                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv b) g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hpair, fun fuel r hr => by
                 obtain ⟨F', hF'⟩ := kR fuel r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
           | inr sv =>
               simp only [evalD] at h
               have hstep : Source.step (g, K, Comp.case (Val.inr sv) b d) = some (g, K, Comp.subst sv d) := rfl
-              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv d) g σ τ n op v g' σ' τ' h K hCtx hTtx
-                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv d) g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hpair, fun fuel r hr => by
                 obtain ⟨F', hF'⟩ := kR fuel r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
@@ -6089,8 +6087,8 @@ theorem run_evalD : ∀ fe,
               simp only [evalD] at h
               have hstep : Source.step (g, K, Comp.split (Val.pair sv sw) b)
                   = some (g, K, Comp.subst sv (Comp.subst (Val.shift sw) b)) := rfl
-              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) g σ τ n op v g' σ' τ' h K hCtx hTtx
-                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hpair, fun fuel r hr => by
                 obtain ⟨F', hF'⟩ := kR fuel r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
