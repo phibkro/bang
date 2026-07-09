@@ -41,6 +41,7 @@ its trigger arises.
 | **Lean 4 tactics for this work** | `docs/notes/tactics-survey.md` |
 | **K2/K3 calculation proof patterns** (legacy) | `docs/notes/k2-calculation-playbook.md` |
 | **K3 historical status** (pre-pivot narrative + composition-mechanism map) | `docs/notes/k3-historical-status.md` |
+| **Issue #61 perf diagnosis** (the "hang" = per-step `Comp.subst` cost; substitution vs environment reference semantics) | `docs/notes/hang-61-diagnosis.md` |
 | **Dev environment** (Nix flake, scripts, gotchas) | `docs/notes/dev-env.md` |
 | **Comment/doc convention** (Mathlib-grounded; `just symbols` for navigation) | `docs/notes/lean-comment-style.md` |
 | **Original design thesis** (v0/v1; partially superseded by ADR-0016) | `docs/spec/bang-lang-design.md`, `docs/spec/bang-lang-description-value.md` |

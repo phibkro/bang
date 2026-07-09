@@ -37,6 +37,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/notes/tactics-survey.md](docs/notes/tactics-survey.md) — Lean 4 tactics for this work
 - [docs/notes/k2-calculation-playbook.md](docs/notes/k2-calculation-playbook.md) — K2/K3 calculation proof patterns (legacy)
 - [docs/notes/k3-historical-status.md](docs/notes/k3-historical-status.md) — K3 historical status (pre-pivot narrative + composition-mechanism map)
+- [docs/notes/hang-61-diagnosis.md](docs/notes/hang-61-diagnosis.md) — Issue #61 perf diagnosis (the "hang" = per-step Comp.subst cost; substitution vs environment reference semantics)
 - [docs/notes/dev-env.md](docs/notes/dev-env.md) — Dev environment (Nix flake, scripts, gotchas)
 - [docs/notes/lean-comment-style.md](docs/notes/lean-comment-style.md) — Comment/doc convention (Mathlib-grounded; just symbols for navigation)
 - [docs/spec/bang-lang-design.md, docs/spec/bang-lang-description-value.md](docs/spec/bang-lang-design.md, docs/spec/bang-lang-description-value.md) — Original design thesis (v0/v1; partially superseded by ADR-0016)
