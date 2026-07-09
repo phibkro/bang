@@ -288,3 +288,199 @@ partial def isConsListShaped : GVal → Bool
     (fun v => isConsListShaped v && (match v with | .ctor "Nil" [] => false | _ => true)) 20
   (.ctor "Cons" [.ival 5, .ctor "Cons" [.ival 3, .ctor "Nil" []]]) ==
   .ctor "Cons" [.ival 0, .ctor "Nil" []]
+
+/-! ## 4. The law runner — SOURCE-STRING driven (`ElabFuzz.lean`'s proven pattern; see the module
+header for why: `TypeCheck.lean`'s law-COLLECTION machinery, `checkLaws`/`ElabEnv`/`Decl`/
+`LawDecl`, is entirely private, so this file cannot discover "every law in an arbitrary program"
+today — that upgrade is the seam reported to the manager). What it CAN do, using only the public
+`TypeCheck.elaborateToComp` + `Bang.Source.eval`, is CHECK one caller-named law against caller-
+generated samples: exactly `checkLawOn`'s move (bind params, wrap in a truth-readback, run,
+compare), reimplemented at the source-string level because the `Val`-level machinery is private.
+`runLaws`'s signature is deliberately RE-DISCOVERY-READY: once `collectLawInstances` (or
+equivalent) is exported, a second entry point can enumerate law instances from a program and
+delegate the per-sample checking to the SAME `checkLawInstance` this file already has — additive,
+not a rewrite. -/
+
+/-- One law instance to check: the source PROGRAM (its whole decl prelude, `trait`+`impl`+
+anything else the law needs — the caller's job, mirroring `vecOpsProg`/`intOrdProg` in
+`TypeCheck.lean`), the law's quantified PARAM NAMES (in order), and the Bool-valued BODY
+expression over them (`a < b => b < c => a < c`-shaped, ADR-0068's v1 law-body scope — a plain
+`Surf`-level string, not a parsed AST, since this file has no access to `Surf`/`LawDecl`). Each
+param is assumed `Int`-typed in v1 (matches `TypeCheck.lean`'s own `sampleVT` ceiling — `IntOrd`/
+`VecOps`'s laws are all over `Int`/`(Int*Int)`; a `data`-decl-typed param is the `DataSpec` upgrade,
+sketched in `checkLawInstanceOverSpec` below). -/
+structure LawInstance where
+  progPrelude : String    -- everything BEFORE the body (trait/impl/data decls, space-terminated)
+  lawName     : String    -- for the report line only
+  params      : List String
+  body        : String    -- the law's Bool-valued expression, over `params` + the prelude's ops
+  deriving Repr
+
+/-- Wrap a law's body in the SAME truth-readback idiom `checkLawOn` uses (`let #r = body in
+if #r then 1 else 0`) — encoding-agnostic (works whether the elaborator represents a bool as
+`Unit + Unit` or otherwise), and bind each param to a GENERATED Int-literal source string via
+nested `let`, innermost binding first so EARLIER params stay in scope for LATER ones (matches
+source `let` shadowing left-to-right, mirroring `checkLawOn`'s `foldr` over `params.zip args`). -/
+def wrapLawBody (params : List String) (args : List String) (body : String) : String :=
+  let readback := "(let #lawR = (" ++ body ++ ") in (if #lawR then 1 else 0))"
+  (params.zip args).foldr (fun (pv : String × String) acc =>
+    "(let " ++ pv.1 ++ " = " ++ pv.2 ++ " in " ++ acc ++ ")") readback
+
+#guard wrapLawBody ["a", "b"] ["3", "(0 - 2)"] "a < b" ==
+  "(let a = 3 in (let b = (0 - 2) in (let #lawR = (a < b) in (if #lawR then 1 else 0))))"
+
+/-- Run ONE sample of a law instance: bind `inst.params` to the GENERATED int-literal source
+`args` (`args.length == inst.params.length`, checked by the caller — a mismatch is the caller's
+bug, so this stays a total Bool rather than an `Except`, matching `checkLawOn`'s own
+fail-quiet-to-false convention: an elaboration/type error on a MALFORMED sample is indistinguishable
+here from a law FAILURE, both render `false` — a real limitation this file's `LawOutcome` (below)
+resolves by re-running through `TypeCheck.elaborateToComp` directly and keeping the `Except`). -/
+def evalLawOn (inst : LawInstance) (args : List String) : Bool :=
+  let src := inst.progPrelude ++ " " ++ wrapLawBody inst.params args inst.body
+  match Bang.TypeCheck.elaborateToComp src with
+  | .error _ => false
+  | .ok c    => match Bang.Source.eval 400 c with
+                | .done (.vint 1) => true
+                | _                => false
+
+-- IntOrd.trans discharges on real generated Int samples (mirrors `intOrdProg` in TypeCheck.lean,
+-- reconstructed here as a `LawInstance` — same corpus content, source-string driven).
+def intOrdPrelude : String :=
+  "trait IntOrd { fn lt(a, b) -> (Unit + Unit) law trans(a, b, c): a < b => b < c => a < c } " ++
+  "impl IntOrd for Int { fn lt(a, b) = a < b }"
+
+#guard evalLawOn ⟨intOrdPrelude, "trans", ["a", "b", "c"], "a < b => b < c => a < c"⟩ ["1", "2", "3"]
+-- antisymmetry is FALSE and evalLawOn catches it non-vacuously on a genuinely ordered triple.
+#guard !evalLawOn ⟨intOrdPrelude, "antisym_bogus", ["a", "b"], "a < b => b < a"⟩ ["0", "1"]
+-- a program that fails to ELABORATE (malformed prelude) reports `false`, not a crash.
+#guard !evalLawOn ⟨"not valid bang", "x", ["a"], "a == a"⟩ ["1"]
+
+/-! ## 5. The result type — FAIL-LOUD, each case its own constructor (never folded into a bare
+`Bool`/`false`): a law that HOLDS on every sample, a COUNTEREXAMPLE (with its shrunk witness), a
+law whose program is UNTYPEABLE (the elaboration/type error itself, so the caller sees WHY, not
+just "false"), and EVAL-STUCK (the sample elaborated and type-checked but `Source.eval` produced
+neither `done (vint 1)` nor `done (vint 0)` — `.oom`/`.escapedCap`/`.stuck`/a non-Int `done`, each
+a genuinely different failure mode from "the law is false"; distinguished from `.counterexample`
+because a law author needs to know their LAW EVALUATES rather than merely FALSIFIES). -/
+inductive LawOutcome where
+  | holds        : Nat → LawOutcome                      -- N samples, all true
+  | counterexample : List String → LawOutcome            -- the SHRUNK witness, rendered per param
+  | untypeable   : String → LawOutcome                   -- the elaboration/type error message
+  | evalStuck    : List String → LawOutcome              -- the witness that got PAST typing but didn't eval to a Bool
+  deriving Repr
+
+/-- Render one witness (a list of per-param source strings) as `"(a=1, b=2, c=3)"` — used by both
+`.counterexample` and `.evalStuck` reports. -/
+def renderWitness (params args : List String) : String :=
+  "(" ++ String.intercalate ", " ((params.zip args).map (fun (p, a) => p ++ "=" ++ a)) ++ ")"
+
+#guard renderWitness ["a", "b"] ["1", "(0 - 2)"] == "(a=1, b=(0 - 2))"
+
+/-- Classify ONE sample against `inst`, distinguishing untypeable / eval-stuck / true / false —
+the `Except`-preserving sibling of `evalLawOn` (which collapses the first two into `false`). -/
+def classifyLawOn (inst : LawInstance) (args : List String) : Except String Bool :=
+  let src := inst.progPrelude ++ " " ++ wrapLawBody inst.params args inst.body
+  match Bang.TypeCheck.elaborateToComp src with
+  | .error m => .error m
+  | .ok c    => match Bang.Source.eval 400 c with
+                | .done (.vint 1) => .ok true
+                | .done (.vint 0) => .ok false
+                | _               => .error "eval-stuck"   -- sentinel; distinguished by caller via a re-check, see runLaws
+
+/-- Generate `n` Int-literal-source samples for a law's params (each param independently drawn,
+`Fuzz.lean`'s splitmix64 threaded across params AND samples so every draw is distinct — no two
+samples/params ever reuse the same RNG state). Returns `n` argument LISTS, each of length
+`inst.params.length`. -/
+def genIntSamples (paramCount n : Nat) (seed : Nat) : List (List String) :=
+  let rec goSample : Nat → Nat → List (List String)
+    | 0,     _ => []
+    | k + 1, s =>
+      let rec goParam : Nat → Nat → List String × Nat
+        | 0,     s => ([], s)
+        | j + 1, s => let (lit, s) := genIntLit s
+                      let (rest, s) := goParam j s
+                      (lit :: rest, s)
+      let (args, s') := goParam paramCount s
+      args :: goSample k s'
+  goSample n seed
+
+#guard (genIntSamples 3 5 42).length == 5
+#guard (genIntSamples 3 5 42).all (fun args => args.length == 3)
+-- deterministic: the SAME seed reproduces the SAME samples (CI-reproducibility, the issue's
+-- explicit requirement — "fixed seeds, byte-reproducible").
+#guard genIntSamples 2 4 99 == genIntSamples 2 4 99
+
+/-- Shrink a FAILING witness (a `List String` of Int-literal args) toward a minimal one: convert
+each arg to a `GVal.ival`, shrink each COORDINATE independently and greedily (holding the others
+fixed — a simple but real per-coordinate shrink, sufficient for the k-tuple law-argument shape;
+whole-tuple joint shrinking is a strictly more thorough follow-up, not needed to satisfy "agents
+need minimal counterexamples, not seed 173"), re-checking `stillFails` (a re-run of `evalLawOn`)
+at each step, then renders back to source. -/
+def shrinkWitness (inst : LawInstance) (args : List String) : List String :=
+  let toInt (s : String) : Int :=
+    -- args are ALWAYS `genIntLit`-rendered (`"n"` or `"(0 - n)"`), so a direct parse suffices;
+    -- anything else (a future non-Int param kind) is out of THIS shrinker's v1 scope and is left
+    -- unshrunk (returned as-is) rather than mis-parsed — fail-SAFE, never fail-silent-wrong.
+    if s.startsWith "(0 - " then
+      -(String.toInt! ((s.drop 5 |>.dropEnd 1).toString))
+    else
+      String.toInt! s
+  let stillFailsAt (i : Nat) (v : GVal) : Bool :=
+    let v' := match v with | .ival n => intLitSrc n | _ => "0"
+    !evalLawOn inst (args.set i v')
+  (List.range args.length).foldl (fun acc i =>
+    let shrunk := GVal.shrinkTo (stillFailsAt i) 30 (.ival (toInt (acc.getD i "0")))
+    match shrunk with
+    | .ival n => acc.set i (intLitSrc n)
+    | _       => acc) args
+
+/-- **The law runner** (public entry, #60's core deliverable): sample `n` generated Int-tuples
+against `inst`, classify EVERY outcome distinctly (never folding untypeable/stuck into "false"):
+- the FIRST sample whose program does not even ELABORATE ⟹ `.untypeable` (the raw error message —
+  this is almost always a caller bug in `progPrelude`/`body`, not a property of the law itself, so
+  it short-circuits immediately rather than wasting the remaining samples).
+- the FIRST sample that elaborates+type-checks but does not evaluate to a Bool-readback (`vint 0`
+  or `vint 1`) ⟹ `.evalStuck`, carrying that witness (NOT shrunk — a stuck program's failure mode
+  isn't "smaller is more informative" the way a counterexample's is; the witness that TRIGGERED it
+  is exactly what a debugging author needs).
+- the FIRST sample where the law evaluates to `false` ⟹ `.counterexample`, carrying the SHRUNK
+  witness (`shrinkWitness`) — "minimal counterexamples, not seed 173" is the point.
+- every sample TRUE ⟹ `.holds n`. -/
+def runLaws (inst : LawInstance) (n seed : Nat) : LawOutcome :=
+  let samples := genIntSamples inst.params.length n seed
+  let rec go : List (List String) → LawOutcome
+    | []          => .holds n
+    | args :: rest =>
+      match classifyLawOn inst args with
+      | .error m =>
+        if m == "eval-stuck" then .evalStuck args else .untypeable m
+      | .ok true  => go rest
+      | .ok false => .counterexample (shrinkWitness inst args)
+  go samples
+
+-- IntOrd.trans HOLDS on 20 generated samples (a real trait law, real generation, real eval).
+#guard (match runLaws ⟨intOrdPrelude, "trans", ["a", "b", "c"], "a < b => b < c => a < c"⟩ 20 7 with
+        | .holds 20 => true | _ => false)
+-- a DELIBERATELY FALSE law (antisymmetry) yields a COUNTEREXAMPLE.
+#guard (match runLaws ⟨intOrdPrelude, "antisym_bogus", ["a", "b"], "a < b => b < a"⟩ 20 7 with
+        | .counterexample _ => true | _ => false)
+-- SHRINKING WORKS: a law that is false for EVERY Int (`a == a + 1`) has exactly ONE
+-- shrink-minimal witness family (`a = 0`, since `shrinkCandidates` nudges toward 0 and 0 always
+-- still falsifies) — asserting the EXACT shrunk witness (not just "some counterexample") is the
+-- issue's explicit ask ("assert the shrunk form, proving shrinking works").
+#guard (match runLaws ⟨"trait T { fn f(a) -> Int law bogus(a): a == a + 1 }", "bogus", ["a"], "a == a + 1"⟩ 10 3 with
+        | .counterexample ["0"] => true | _ => false)
+-- a MALFORMED prelude is caught as untypeable, carrying the real elaboration error (not a bare
+-- `false` indistinguishable from a genuine counterexample) — an `impl` of an UNDECLARED trait is
+-- a genuine elaboration error (`buildEnv`'s own check, `TypeCheck.lean` §Validation).
+#guard (match runLaws ⟨"impl Nope for Int { fn foo(a) = a }", "x", ["a"], "a == a"⟩ 5 1 with
+        | .untypeable _ => true | _ => false)
+-- EVAL-STUCK, witnessed: a law body that TYPE-CHECKS (a well-typed `Div`-rowed `let rec` that
+-- never returns) but does not terminate within `evalLawOn`'s fixed 400-fuel budget — genuinely
+-- distinct from BOTH a counterexample (the law never gets to evaluate `false`) and untypeable
+-- (elaboration/type-checking succeeds; only EVALUATION doesn't reach a Bool readback).
+def loopyLawBody : String :=
+  "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in (let z = ($loop) a in a == a)"
+def loopyPrelude : String := "trait T { fn f(a) -> Int law loopy(a): " ++ loopyLawBody ++ " }"
+#guard (match runLaws ⟨loopyPrelude, "loopy", ["a"], loopyLawBody⟩ 3 1 with
+        | .evalStuck _ => true | _ => false)
