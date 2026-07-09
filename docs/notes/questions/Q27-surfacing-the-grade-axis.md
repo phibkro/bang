@@ -66,3 +66,24 @@ resource use-case. The row stays a set (never option-graded-row).
 **Revisit signal**: #35/#36 landing (resumption grades in the machine); OR a compilation pass that
 wants to avoid continuation-copying for tail-resumptive handlers; OR a consumable-capability
 use-case that wants linear (use-once) effect typing.
+
+## Operator input (2026-07-09): the three-channel surface + the k-grade unification
+
+Two additions from the operator (Effect TS analogy — errors tracked in a channel separate from
+dependencies; does that generalize to resumption grades?):
+
+1. **Resumption grade = the QTT grade of the continuation binder.** A clause that aborts uses
+   `k` at `zero`; tail-resume at `one`; multi-shot at `omega` — the SAME rig (`Bang/Core/Grade.lean`)
+   that grades every other binding. No third mechanism: when clauses get first-class `k`
+   (post-ADR-0092-D5 / multi-shot), the existing grade machinery checks resumption multiplicity
+   for free. v1 hardcodes tail-resume (`k` at `one`, implicit).
+2. **Three-channel row display**: partition the row by the handled effect's declared grade —
+   `A ! { aborts: throws | uses: state, Net | forks: amb }`. Each channel stays a set (pointwise
+   lattice product — invariant #2 intact). The payoff is the COMPILER SEAM this question already
+   names: an empty ω-channel statically licenses the cheap labelling cap-rep + one-shot machine
+   path (the Q22 fork avoided), the same stratification move as the total/`Div` seam. Requires
+   the `effect` decl to DECLARE its grade (per-label by declaration — explicit-over-inferred,
+   the agent-first lens), since grade is intrinsically per-handler.
+
+Cost note: the ω-channel is empty by construction until Q22 multi-shot lands, so the trichotomy
+can ship as display/declaration sugar before it constrains anything.
