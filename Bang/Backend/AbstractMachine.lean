@@ -853,6 +853,67 @@ theorem StoresBelow.nil {g : Nat} : StoresBelow g [] [] [] :=
 theorem StoresDisjoint.nil : StoresDisjoint [] [] [] :=
   fun _ => ⟨fun h => absurd rfl h, fun h => absurd rfl h, fun h => absurd rfl h⟩
 
+-- POP: a key present in `tail` is present in the whole list (tail keys ⊆ list keys). `get?` = `find?`,
+-- so `tail.get? m ≠ none → list.get? m ≠ none` (a deeper match implies SOME match on the cons).
+theorem SStore.tail_get?_ne_none {σ : SStore} {m : Nat} (h : SStore.get? σ.tail m ≠ none) :
+    SStore.get? σ m ≠ none := by
+  cases σ with
+  | nil => exact h
+  | cons p σ' =>
+      obtain ⟨ℓ0, w⟩ := p
+      simp only [List.tail] at h
+      by_cases hm : ℓ0 = m
+      · subst hm; simp [SStore.get?, List.find?]
+      · simp only [SStore.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]; exact h
+theorem THeap.tail_get?_ne_none {τ : THeap} {m : Nat} (h : THeap.get? τ.tail m ≠ none) :
+    THeap.get? τ m ≠ none := by
+  cases τ with
+  | nil => exact h
+  | cons p τ' =>
+      obtain ⟨ℓ0, w⟩ := p
+      simp only [List.tail] at h
+      by_cases hm : ℓ0 = m
+      · subst hm; simp [THeap.get?, List.find?]
+      · simp only [THeap.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]; exact h
+theorem CStore.tail_get?_ne_none {κ : CStore} {m : Nat} (h : CStore.get? κ.tail m ≠ none) :
+    CStore.get? κ m ≠ none := by
+  cases κ with
+  | nil => exact h
+  | cons p κ' =>
+      obtain ⟨ℓ0, pc⟩ := p
+      simp only [List.tail] at h
+      by_cases hm : ℓ0 = m
+      · subst hm; simp [CStore.get?, List.find?]
+      · simp only [CStore.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]; exact h
+
+theorem StoresBelow.tail_state {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore}
+    (h : StoresBelow g σ τ κ) : StoresBelow g σ.tail τ κ :=
+  ⟨fun m hm => h.1 m (SStore.tail_get?_ne_none hm), h.2.1, h.2.2⟩
+theorem StoresBelow.tail_txn {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore}
+    (h : StoresBelow g σ τ κ) : StoresBelow g σ τ.tail κ :=
+  ⟨h.1, fun m hm => h.2.1 m (THeap.tail_get?_ne_none hm), h.2.2⟩
+theorem StoresBelow.tail_custom {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore}
+    (h : StoresBelow g σ τ κ) : StoresBelow g σ τ κ.tail :=
+  ⟨h.1, h.2.1, fun m hm => h.2.2 m (CStore.tail_get?_ne_none hm)⟩
+theorem StoresDisjoint.tail_state {σ : SStore} {τ : THeap} {κ : CStore}
+    (h : StoresDisjoint σ τ κ) : StoresDisjoint σ.tail τ κ := by
+  intro m
+  refine ⟨fun hne => (h m).1 (SStore.tail_get?_ne_none hne), fun hne => ?_, fun hne => ?_⟩
+  · exact ⟨by by_contra hc; exact (SStore.tail_get?_ne_none hc) ((h m).2.1 hne).1, ((h m).2.1 hne).2⟩
+  · exact ⟨by by_contra hc; exact (SStore.tail_get?_ne_none hc) ((h m).2.2 hne).1, ((h m).2.2 hne).2⟩
+theorem StoresDisjoint.tail_txn {σ : SStore} {τ : THeap} {κ : CStore}
+    (h : StoresDisjoint σ τ κ) : StoresDisjoint σ τ.tail κ := by
+  intro m
+  refine ⟨fun hne => ?_, fun hne => (h m).2.1 (THeap.tail_get?_ne_none hne), fun hne => ?_⟩
+  · exact ⟨by by_contra hc; exact (THeap.tail_get?_ne_none hc) ((h m).1 hne).1, ((h m).1 hne).2⟩
+  · exact ⟨((h m).2.2 hne).1, by by_contra hc; exact (THeap.tail_get?_ne_none hc) ((h m).2.2 hne).2⟩
+theorem StoresDisjoint.tail_custom {σ : SStore} {τ : THeap} {κ : CStore}
+    (h : StoresDisjoint σ τ κ) : StoresDisjoint σ τ κ.tail := by
+  intro m
+  refine ⟨fun hne => ?_, fun hne => ?_, fun hne => (h m).2.2 (CStore.tail_get?_ne_none hne)⟩
+  · exact ⟨((h m).1 hne).1, by by_contra hc; exact (CStore.tail_get?_ne_none hc) ((h m).1 hne).2⟩
+  · exact ⟨((h m).2.1 hne).1, by by_contra hc; exact (CStore.tail_get?_ne_none hc) ((h m).2.1 hne).2⟩
+
 /-- Overwrite each `custom` frame's stored payload in `hs` with the head of `κ` (consumed in order).
 Since the custom param is READ-ONLY (v1), the head payload EQUALS the frame's own under `CCorr`, so
 this is effectively identity — but stated in the `updateStates`/`updateTxns` shape for the uniform
@@ -2202,13 +2263,20 @@ Induction on the eval fuel `fe`. -/
 theorem sim : ∀ fe,
     (∀ M g σ τ κ t g' σ' τ' κ', evalD fe g σ τ κ M = some (.term t, g', σ', τ', κ') →
       ∀ hs, Corr σ hs → TCorr τ hs → CCorr κ hs →
+        -- correspondence-side bridge invariants (NOT program premises): stores keyed below `g` and
+        -- pairwise-disjoint — every reachable config satisfies both by generative freshness. Threaded
+        -- (with the POST-M output copies) so the id-first fail-loud raise sub-cases rule out a same-id
+        -- cross-kind shadow; trivial at the empty-store entry.
+        StoresBelow g σ τ κ → StoresDisjoint σ τ κ →
         ∃ hsf, Corr σ' hsf ∧ TCorr τ' hsf ∧ CCorr κ' hsf ∧ HMut hs hsf ∧
+          StoresBelow g' σ' τ' κ' ∧ StoresDisjoint σ' τ' κ' ∧
           -- route-B: the continuation `c` runs from the POST-M counter `g'` (exec threaded g→g' through
           -- M's HANDLE mints), the whole body `compile M c` runs from the PRE-M counter `g`.
           ∀ c s F r, exec F g' c (t :: s) hsf = some r →
             ∃ F', exec F' g (compile M c) s hs = some r)
     ∧ (∀ M g σ τ κ n op v g' σ' τ' κ', evalD fe g σ τ κ M = some (.raised n op v, g', σ', τ', κ') →
       ∀ hs, Corr σ hs → TCorr τ hs → CCorr κ hs →
+        StoresBelow g σ τ κ → StoresDisjoint σ τ κ →
         -- the at-raise HStack `netEffect hs σ' τ'` mirrors the at-raise stores σ'/τ' (D3/D4) and is a
         -- value/heap-mutation of the at-handle `hs` — threaded so the throws-CAUGHT term subcase can
         -- name it as its existential witness (an outer put/writeTVar before a caught raise persists).
@@ -2226,16 +2294,16 @@ theorem sim : ∀ fe,
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M g σ τ κ t g' σ' τ' κ' h hs hC hT hK
+      intro M g σ τ κ t g' σ' τ' κ' h hs hC hT hK hSB hSD
       cases M with
       | ret v =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
-          exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
+          exact ⟨hs, hC, hT, hK, HMut.refl hs, hSB, hSD, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
       | lam M =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
-          exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
+          exact ⟨hs, hC, hT, hK, HMut.refl hs, hSB, hSD, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe g σ τ κ M with
@@ -2245,9 +2313,9 @@ theorem sim : ∀ fe,
             match oM, h with
             | (.term (.ret v), g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨hsM, hCM, hTM, hKM, hlenM, kM⟩ := ihT M g σ τ κ (.ret v) g1 σ1 τ1 κ1 hM hs hC hT hK
-                obtain ⟨hsf, hCf, hTf, hKf, hlenf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h hsM hCM hTM hKM
-                refine ⟨hsf, hCf, hTf, hKf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
+                obtain ⟨hsM, hCM, hTM, hKM, hlenM, hSBM, hSDM, kM⟩ := ihT M g σ τ κ (.ret v) g1 σ1 τ1 κ1 hM hs hC hT hK hSB hSD
+                obtain ⟨hsf, hCf, hTf, hKf, hlenf, hSBf, hSDf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h hsM hCM hTM hKM hSBM hSDM
+                refine ⟨hsf, hCf, hTf, hKf, HMut.trans hlenM hlenf, hSBf, hSDf, fun c s F r hr => ?_⟩
                 obtain ⟨F1, hF1⟩ := kN c s F r hr
                 have hstep : exec (F1+1) g1 (Instr.SUBST N :: c) (.ret v :: s) hsM = some r := by
                   simp only [exec]; exact hF1
@@ -2272,8 +2340,8 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
-              obtain ⟨hsf, hCf, hTf, hKf, hlenf, k⟩ := ihT M g σ τ κ t g' σ' τ' κ' h hs hC hT hK
-              exact ⟨hsf, hCf, hTf, hKf, hlenf, fun c s F r hr => by
+              obtain ⟨hsf, hCf, hTf, hKf, hlenf, hSBf, hSDf, k⟩ := ihT M g σ τ κ t g' σ' τ' κ' h hs hC hT hK hSB hSD
+              exact ⟨hsf, hCf, hTf, hKf, hlenf, hSBf, hSDf, fun c s F r hr => by
                 obtain ⟨F', hF'⟩ := k c s F r hr; exact ⟨F', by simpa only [compile] using hF'⟩⟩
           | vunit => simp [evalD] at h
           | vint n => simp [evalD] at h
@@ -2291,9 +2359,9 @@ theorem sim : ∀ fe,
             match oM, h with
             | (.term (.lam N), g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨hsM, hCM, hTM, hKM, hlenM, kM⟩ := ihT M g σ τ κ (.lam N) g1 σ1 τ1 κ1 hM hs hC hT hK
-                obtain ⟨hsf, hCf, hTf, hKf, hlenf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h hsM hCM hTM hKM
-                refine ⟨hsf, hCf, hTf, hKf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
+                obtain ⟨hsM, hCM, hTM, hKM, hlenM, hSBM, hSDM, kM⟩ := ihT M g σ τ κ (.lam N) g1 σ1 τ1 κ1 hM hs hC hT hK hSB hSD
+                obtain ⟨hsf, hCf, hTf, hKf, hlenf, hSBf, hSDf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h hsM hCM hTM hKM hSBM hSDM
+                refine ⟨hsf, hCf, hTf, hKf, HMut.trans hlenM hlenf, hSBf, hSDf, fun c s F r hr => ?_⟩
                 obtain ⟨F1, hF1⟩ := kN c s F r hr
                 have hstep : exec (F1+1) g1 (Instr.APP v :: c) (.lam N :: s) hsM = some r := by
                   simp only [exec]; exact hF1
@@ -2330,7 +2398,7 @@ theorem sim : ∀ fe,
                 simp only [if_pos rfl, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
                 obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                 have hgState : hsState hs n = some sv := by rw [← Corr.get? hC n]; exact hg
-                refine ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, ?_⟩⟩
+                refine ⟨hs, hC, hT, hK, HMut.refl hs, hSB, hSD, fun c s F r hr => ⟨F+1, ?_⟩⟩
                 simp only [compile, exec, stateUpdate_get hgState]; exact hr
               · by_cases hop2 : op = "put"
                 · subst hop2
@@ -2339,7 +2407,8 @@ theorem sim : ∀ fe,
                   obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                   have hgState : hsState hs n = some sv := by rw [← Corr.get? hC n]; exact hg
                   obtain ⟨hs', hsu, heq⟩ := stateUpdate_put (v := v) hgState
-                  refine ⟨hs', Corr_put hC heq, ?_, ?_, HMut.of_stateUpdate_put hsu, fun c s F r hr => ⟨F+1, ?_⟩⟩
+                  refine ⟨hs', Corr_put hC heq, ?_, ?_, HMut.of_stateUpdate_put hsu,
+                    hSB.put_state, hSD.put_state, fun c s F r hr => ⟨F+1, ?_⟩⟩
                   · unfold TCorr; rw [hsTxns_stateUpdate_put hsu, ← hT]
                   · -- CCorr rides: stateUpdate_put rewrites a state-frame value, never a custom frame.
                     unfold CCorr; rw [hsCustoms_stateUpdate_put hsu, ← hK]
@@ -2361,7 +2430,7 @@ theorem sim : ∀ fe,
                 have hop2 : op ≠ "put" := by intro he; rw [he] at hopt; simp [isTxnOp] at hopt
                 obtain ⟨hs', hsu, heq⟩ := txnUpdate_service (v := v) hopt hgTxn
                 refine ⟨hs', Corr_txnUpdate_eq hsu hC, ?_, ?_, HMut_of_txnUpdate hsu,
-                  fun c s F r hr => ⟨F+1, ?_⟩⟩
+                  hSB.put_txn, hSD.put_txn, fun c s F r hr => ⟨F+1, ?_⟩⟩
                 · unfold TCorr; rw [heq, ← hT]
                 · -- CCorr rides: txnUpdate rewrites a txn-frame heap, never a custom frame.
                   unfold CCorr; rw [hsCustoms_txnUpdate hsu, ← hK]
@@ -2388,9 +2457,9 @@ theorem sim : ∀ fe,
                   -- the machine finds the custom frame (κ.get? n = hsCustom via CCorr) and runs the
                   -- SAME clause body via customUpdate, then exec continues c. Recurse via ihT on the body.
                   have hgCustom : hsCustom hs n = some (p, cls) := by rw [← CCorr.get? hK n]; exact hck
-                  obtain ⟨hsf, hCf, hTf, hKf, hlenf, kBody⟩ :=
-                    ihT (Comp.subst p (Comp.subst (Val.shift v) clause.2)) g σ τ κ t g' σ' τ' κ' h hs hC hT hK
-                  refine ⟨hsf, hCf, hTf, hKf, hlenf, fun c s F r hr => ?_⟩
+                  obtain ⟨hsf, hCf, hTf, hKf, hlenf, hSBf, hSDf, kBody⟩ :=
+                    ihT (Comp.subst p (Comp.subst (Val.shift v) clause.2)) g σ τ κ t g' σ' τ' κ' h hs hC hT hK hSB hSD
+                  refine ⟨hsf, hCf, hTf, hKf, hlenf, hSBf, hSDf, fun c s F r hr => ?_⟩
                   obtain ⟨F', hF'⟩ := kBody c s F r hr
                   -- exec: OP n op v ⇒ stateUpdate none (n not in σ), txnUpdate none (n not in τ),
                   -- customUpdate = some (body, hs). The machine now dispatches id-first (no isBuiltinOp).
@@ -2438,8 +2507,9 @@ theorem sim : ∀ fe,
                         TCorr_install_nontxn fr (by rw [hfrdef]; intro ℓ Θ; simp) hT
                       have hKinstall : CCorr (κ.push g p0 cls0) (fr :: hs) :=
                         CCorr_install ℓ0 p0 cls0 fr (by rw [hfrdef]) hK
-                      obtain ⟨hsM, hCM, hTM, hKM, hmutM, kM⟩ :=
+                      obtain ⟨hsM, hCM, hTM, hKM, hmutM, hSBM, hSDM, kM⟩ :=
                         ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.push g p0 cls0) (.ret v) g1 σ1 τ1 κ1 hM (fr :: hs) hCinstall hTinstall hKinstall
+                          hSB.push_custom (hSD.push_custom hSB)
                       obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
                         cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
                       have htop : ∃ p' cls', top.handler = .custom ℓ0 p' cls' := by
@@ -2815,7 +2885,7 @@ theorem sim : ∀ fe,
                exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩)
             | simp [evalD] at h
     · -- RAISED PART
-      intro M g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK
+      intro M g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK hSB hSD
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
