@@ -5220,6 +5220,33 @@ def WfCustomHeap (τ : THeap) : Prop := ∀ e ∈ τ, ∀ w ∈ e.2, WfCustomVal
 theorem WfCustomStore.nil : WfCustomStore [] := fun e he => absurd he (by simp)
 theorem WfCustomHeap.nil : WfCustomHeap [] := fun e he => absurd he (by simp)
 
+theorem WfCustomStore.tail {σ : SStore} (hσ : WfCustomStore σ) : WfCustomStore σ.tail := by
+  cases σ with
+  | nil => exact WfCustomStore.nil
+  | cons hd σ' => intro e he; exact hσ e (List.mem_cons_of_mem _ he)
+theorem WfCustomHeap.tail {τ : THeap} (hτ : WfCustomHeap τ) : WfCustomHeap τ.tail := by
+  cases τ with
+  | nil => exact WfCustomHeap.nil
+  | cons hd τ' => intro e he w hw; exact hτ e (List.mem_cons_of_mem _ he) w hw
+
+/-- Pushing a `WfCustomVal` state cell keeps `WfCustomStore` (`SStore.push n v = (n,v) :: σ`). -/
+theorem WfCustomStore.push {σ : SStore} {n : Bang.EffectRow.Label} {v : Val}
+    (hσ : WfCustomStore σ) (hv : WfCustomVal v) : WfCustomStore (σ.push n v) := by
+  intro e he
+  rw [SStore.push] at he
+  rcases List.mem_cons.mp he with h | h
+  · rw [h]; exact hv
+  · exact hσ e h
+
+/-- Pushing a `WfCustomVal`-celled txn heap keeps `WfCustomHeap` (`THeap.push n Θ = (n,Θ) :: τ`). -/
+theorem WfCustomHeap.push {τ : THeap} {n : Bang.EffectRow.Label} {Θ : List Val}
+    (hτ : WfCustomHeap τ) (hΘ : ∀ w ∈ Θ, WfCustomVal w) : WfCustomHeap (τ.push n Θ) := by
+  intro e he w hw
+  rw [THeap.push] at he
+  rcases List.mem_cons.mp he with h | h
+  · rw [h] at hw; exact hΘ w hw
+  · exact hτ e h w hw
+
 /-- A `get` returns a stored value, which is `WfCustomVal` under `WfCustomStore`. -/
 theorem WfCustomStore.get {σ : SStore} {n : Bang.EffectRow.Label} {sv : Val}
     (hσ : WfCustomStore σ) (hg : σ.get? n = some sv) : WfCustomVal sv := by
@@ -5343,6 +5370,17 @@ theorem WfCustomComp.split_body {v : Val} {N : Comp} (h : WfCustomComp (Comp.spl
 theorem WfCustomComp.handle_body {hd : Handler} {M : Comp} (h : WfCustomComp (Comp.handle hd M)) :
     WfCustomComp M :=
   fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
+/-- The state handler's stored value is `WfCustomVal` (its ops sit in `customOpsH (state ℓ s) = customOpsV s`). -/
+theorem WfCustomComp.handle_state_val {ℓ : Bang.EffectRow.Label} {s : Val} {M : Comp}
+    (h : WfCustomComp (Comp.handle (Handler.state ℓ s) M)) : WfCustomVal s :=
+  fun op hop => h op (by simp only [customOpsC, customOpsH]; exact List.mem_append_left _ hop)
+/-- The txn handler's heap cells are `WfCustomVal` (their ops sit in `customOpsH (transaction ℓ Θ) =
+Θ.flatMap customOpsV`). -/
+theorem WfCustomComp.handle_txn_heap {ℓ : Bang.EffectRow.Label} {Θ : List Val} {M : Comp}
+    (h : WfCustomComp (Comp.handle (Handler.transaction ℓ Θ) M)) : ∀ w ∈ Θ, WfCustomVal w :=
+  fun w hw op hop => h op (by
+    simp only [customOpsC, customOpsH]
+    exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨w, hw, hop⟩))
 
 /-- A clause body's ops land in the clause-list's `customOpsCls` (the enumerability that bounds them). -/
 theorem customOpsCls_mem_of {cls : List (Bang.OpId × Comp)} {c : Bang.OpId × Comp} (hc : c ∈ cls) :
@@ -6213,20 +6251,27 @@ theorem run_evalD : ∀ fe,
                       CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
                     have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
                     have hFreshInstall := freshCfg_step _ _ hFresh hmint
-                    obtain ⟨⟨hCM, hTM, hKM, hCohM, hFreshM⟩, kM⟩ :=
+                    have hWfInstall : WfCustomOps (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
+                      hWfK.cons_noncustom (by intro n ℓ p cls; simp)
+                    have hWfMbody : WfCustomComp (Comp.subst (Val.vcap g ℓ0) M) :=
+                      hWfM.handle_body.subst WfCustomVal.vcap
+                    obtain ⟨⟨hCM, hTM, hKM, hWftM, hWfσM, hWfτM, hCohM, hFreshM⟩, kM⟩ :=
                       ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ κ (.ret v) g1 σ1 τ1 κ1 hM
-                        (Frame.handleF g (Handler.state ℓ0 s0) :: K) hCinstall hTinstall hKinstall hCohInstall hFreshInstall
+                        (Frame.handleF g (Handler.state ℓ0 s0) :: K) hCinstall hTinstall hKinstall
+                        ⟨hWfInstall, hWfMbody⟩ (hWfσ.push hWfM.handle_state_val) hWfτ hCohInstall hFreshInstall
                     obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_state hCM hTM
                     have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1.tail τ1) := by
                       unfold CCtxCorr at hKM ⊢
-                      rw [hKM, hnetEq, ctxCustoms_ctxNetEffect, ctxCustoms_ctxNetEffect]; rfl
+                      rw [hKM, ctxCustoms_ctxNetEffect, ctxCustoms_ctxNetEffect]; simp only [ctxCustoms]
                     rw [hnetEq] at hCohM hFreshM
                     have hunmark : Source.step (g1, Frame.handleF g
                         (Handler.state ℓ0 (σ1.headD (default, default)).2) :: ctxNetEffect K σ1.tail τ1,
                         Comp.ret v) = some (g1, ctxNetEffect K σ1.tail τ1, Comp.ret v) := rfl
                     have hCohPop := capLabelCoh_step _ _ hFreshM hCohM hunmark
                     have hFreshPop := freshCfg_step _ _ hFreshM hunmark
-                    refine ⟨⟨hCpop, hTpop, hKpop, hCohPop, hFreshPop⟩, fun fuel r hr => ?_⟩
+                    -- state POPS the pushed cell: σ' = σ1.tail (wf tail of the body's wf store); τ' = τ1.
+                    refine ⟨⟨hCpop, hTpop, hKpop, hWftM, hWfσM.tail, hWfτM, hCohPop, hFreshPop⟩,
+                      fun fuel r hr => ?_⟩
                     have hstepRun : Config.run (fuel+1)
                         (g1, ctxNetEffect (Frame.handleF g (Handler.state ℓ0 s0) :: K) σ1 τ1,
                           Comp.ret v) = r := by
