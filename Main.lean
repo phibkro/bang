@@ -34,6 +34,7 @@
 import Bang.Frontend.Surface
 import Bang.Frontend.TypeCheck
 import Bang.Frontend.Format
+import Bang.Frontend.Diagnostics
 import Bang.Backend.AbstractMachine
 
 open Bang
@@ -140,6 +141,47 @@ def runFmt (src : String) : IO UInt32 := do
   | .error e  => IO.eprintln s!"error: {e}"; pure 1
   | .ok out   => IO.println out; pure 0
 
+/-- Run `bang check --json`: `Bang.Diagnostics.checkJson` printed as exactly ONE JSON object on
+stdout, newline-terminated (via `IO.println`), nothing else on stdout — agent-facing (#59). Exit
+code is `ok:true → 0`, `ok:false → 1` (diagnostics present). Cheap re-parse of `ok` from the
+rendered string (`"ok":true` is a fixed prefix `checkJson` always emits first, ADR-46: the schema
+IS the contract) rather than exposing a second entry point from `Diagnostics` — keeps `checkJson`'s
+public surface at ONE function. -/
+def runCheckJson (src : String) : IO UInt32 := do
+  let out := Bang.Diagnostics.checkJson src
+  IO.println out
+  pure (if out.startsWith "{\"ok\":true" then 0 else 1)
+
+/-- Run `bang check` (human-readable, no `--json`): the SAME typed pipeline (`checkAndLower`) the
+default `bang run`/`eval` use, reporting only PASS/FAIL — no value is produced (unlike `run`,
+`check` never evaluates). Mirrors `runSource`'s DEFAULT arm's error rendering (`error at L:C: …` /
+`error: …`) so a human reading `bang check`'s failure sees the identical message `bang run` would
+have failed with. -/
+def runCheckHuman (src : String) : IO UInt32 := do
+  match Bang.TypeCheck.checkAndLower src with
+  | .error (m, some sp) => IO.eprintln s!"error at {sp.loc}: {m}"; pure 1
+  | .error (m, none)    => IO.eprintln s!"error: {m}"; pure 1
+  | .ok _               => IO.println "ok"; pure 0
+
+/-- `bang check [FLAGS] [<file.bang>]` (issue #59): type-check ONLY (no run), human-readable by
+default or `--json` for the agent-facing structured schema (`Bang.Diagnostics`). Reads a file if
+given, else stdin (mirrors `fmt`'s file-or-stdin convention).
+
+EXIT CODES (the `--json` contract; the human path reuses 0/1 and never emits 2 — a human already
+sees the read failure as the SAME uncaught-IO-exception report every other subcommand gives): `0`
+ok, `1` diagnostics present, `2` TOOL error (the file could not be read) — caught HERE via `<|>`
+(the `:load` idiom, §REPL) so it lands on stderr with NOTHING written to stdout, never folded into
+the JSON (a tool error is not a diagnostic — the pipeline never even ran). -/
+def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
+  match file with
+  | none      =>
+    let src ← (← IO.getStdin).readToEnd
+    if json then runCheckJson src else runCheckHuman src
+  | some path =>
+    match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
+    | none     => IO.eprintln s!"error: could not read file '{path}'"; pure 2
+    | some src => if json then runCheckJson src else runCheckHuman src
+
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
@@ -147,6 +189,8 @@ def usage : String :=
   "  bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly\n" ++
   "  bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)\n" ++
   "  bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file\n\n" ++
+  "  bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file\n" ++
+  "             --json                  emit agent-facing structured JSON diagnostics on stdout\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
   "  (default)        parse → TYPE-CHECK → lower → run; an ill-typed program is a TYPE ERROR\n" ++
   "  --no-typecheck   raw erase-and-run (no type gate) — for oracle/differential testing\n\n" ++
@@ -160,7 +204,11 @@ def usage : String :=
   "  2  out of fuel (oom)              [oracle engine]\n" ++
   "  3  capability escaped its handler [oracle engine]\n" ++
   "  4  stuck (ill-formed program)     [oracle engine, --no-typecheck]\n" ++
-  "  5  compiled machine produced no value (oom / escaped cap / stuck) [--compiled]"
+  "  5  compiled machine produced no value (oom / escaped cap / stuck) [--compiled]\n\n" ++
+  "EXIT CODES [bang check --json]:\n" ++
+  "  0  ok:true  — the program type-checks\n" ++
+  "  1  ok:false — diagnostics present (see the JSON on stdout)\n" ++
+  "  2  tool error (e.g. unreadable file) — reported on stderr, never folded into the JSON"
 
 /-! ## The REPL (issue #7)
 
@@ -323,6 +371,13 @@ def main (args : List String) : IO UInt32 := do
       match rest with
       | []      => runFmt (← (← IO.getStdin).readToEnd)   -- `bang fmt` with no file: read stdin
       | [arg]   => runFmt (← IO.FS.readFile ⟨arg⟩)
+      | _       => IO.eprintln usage; pure 1
+    else if cmd == "check" then
+      -- `--json` may appear anywhere before the single optional positional; anything else is usage.
+      let json := rest.contains "--json"
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | []      => runCheck json none        -- `bang check [--json]` with no file: read stdin
+      | [arg]   => runCheck json (some arg)
       | _       => IO.eprintln usage; pure 1
     else
       IO.eprintln usage; pure 1
