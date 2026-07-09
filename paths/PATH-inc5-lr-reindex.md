@@ -53,6 +53,11 @@ BinaryLR mutual block (multi-session). Alternatives: W1-only plug-congruence rou
 `converges_plug_iff` form — the "id-agnosticism relational step"); W2-only Canonical-reachability
 lemma (hard — `krelS_refl` needs its own Canonical supply). Decision memo: issue #15.
 
+**OPERATOR RULING (2026-07-09, on #15): D now, A later.** Stay deferred (blocks nothing —
+v1 soundness clean; #44 Stage 5 gated at the built-ins' frontier). Resume trigger = #44
+Stage 5 or the ◊6 paper wanting `lr_fundamental`; then run option A **probe-first** (a
+bounded scratch spike of the canonical-reshape `CrelK′` before any frozen re-thread).
+
 ## Do-not-retry ledger (each build-refuted; witnesses kept)
 - Type-occurrence Γ-premises for non-escape (the `U {ℓ} Int` dormant-cap case refutes them; the
   CARRIER axis is the one that works).
