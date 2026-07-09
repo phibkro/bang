@@ -297,12 +297,13 @@ def showProg (p : Prog) : String :=
 fail-loud parse error every other entry point gives — no silent pass-through of malformed source
 (ADR-0046: deterministic function or a loud error, never a guess). -/
 
-/-- Format a single bare expression (no decl prelude) — what `bang eval "…"` accepts. -/
-def fmtExpr (src : String) : Except String String :=
+/-- Format a single bare expression (no decl prelude) — what `bang eval "…"` accepts.
+`public`: the CLI (Main.lean, outside this module) wires `bang fmt` against these. -/
+public def fmtExpr (src : String) : Except String String :=
   (parse src).map showSurf
 
 /-- Format a whole program (decls + body) — what `bang fmt <file.bang>` reads. -/
-def fmtProg (src : String) : Except String String :=
+public def fmtProg (src : String) : Except String String :=
   (parseProg src).map showProg
 
 /-! ## 6. The two laws, as decidable predicates over a program string
