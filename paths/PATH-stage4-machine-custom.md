@@ -88,14 +88,14 @@ whole unit as one fresh-session atomic commit (ADR-0085's "L / weeks, spine-touc
   `hsCustoms`/`CCorr`/`updateCustoms` + `get?_hsCustoms`/`CCorr.get?`/`customUpdate_service` +
   `CCorr_install`/`CCorr_install_noncustom`/`CCorr_pop_custom`/`CCorr_pop_noncustom` +
   `hsCustoms_stateUpdate_put`/`hsCustoms_txnUpdate`/`hsCustoms_netEffect`. All compile.
-- **(c) `sim`** — **TERM PART DONE** (`e77d75c`); **RAISED PART ~70% done** (`3399346`). Statement threads
-  `κ`/`CCorr`. DONE raised cases: perform (get/put/txn via `close`+`Or.inl`; custom-op raise via
-  `Or.inr customUpdate_none_of_{hsCustom_none,clause_miss}`; **custom CLAUSE-BODY-RAISES** via `ihR` on
-  the clause body — a real case: a custom clause that itself performs a raise), letC, force, app.
-  **REMAINING raised cases (resume here):** the `handle` raise-FORWARD block (custom/state/txn/throws) +
-  case/split. KEY REUSE: `raisedTriple_pop_nontxn` ALREADY handles a custom frame (`AbstractMachine.lean:1190`)
-  — use it for the custom raise-forward's σ/τ triple + a `CCorr_pop_custom` for κ. The op-priority
-  resolution (A) is LANDED: `isBuiltinOp` guards the `exec` OP arm (`c1fba11`). `compile_correct` rides `sim`.
+- **(c) `sim` — FULLY DONE** (`313ecc7`): the entire two-part simulation (term + raised) κ-threaded and
+  proven, incl. ALL novel custom cases: perform-service (inline clause ↔ `customUpdate`), perform-raise
+  (no-frame/clause-miss via `customUpdate_none_of_*`), **custom clause-body-RAISES** (a custom clause that
+  itself performs a raise, via `ihR` on the clause body), custom handle install/pop, custom handle
+  raise-FORWARD. The op-priority resolution (A) is LANDED (`isBuiltinOp` guards the `exec` OP arm,
+  `c1fba11`). KEY REUSE confirmed: `raisedTriple_pop_nontxn` handles custom frames (`:1190`).
+- **`compile_correct` — DONE** (`f603941`, rides `sim`). **Agree diff-test battery — DONE** (`2a8d962`,
+  the direct `evalD` examples gain the empty custom store).
 - **(d) `run_evalD` (~1080 lines)** — thread `κ`; **DROP `NoCustomFrame`**; prove the custom `handle`
   case (recurse `M'` with pushed κ-entry; `CtxCorr`/`CapLabelCoh`/`FreshCfg`/`NoResume` over a custom
   frame in `K`) and the custom `perform` case (inline-service resolves; `NoResume` now via the REAL
