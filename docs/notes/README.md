@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (12)
+## active (13)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -15,6 +15,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
+- [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
