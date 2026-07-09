@@ -7,18 +7,29 @@
   (ZERO config, no options; ADR-0046 "elaboration is deterministic-or-loud" extends
   naturally to "printing is deterministic-or-not-done").
 
-  v1 is a FLAT (single-line) printer: every corpus example today is written on one line
-  or a hand-wrapped multi-line style with no consistent convention (`examples/parser-combinators`
-  column-aligns `let`s, `examples/tokenizer` wraps long match arms, `examples/state` is one
-  line) — so there is no majority multi-line house style to ride yet. A flat printer is also
-  the form whose laws are cheapest to make watertight: minimal-parenthesization from the SAME
-  precedence table the parser consults (`opInfo`, ADR-0071) is what the round-trip law tests
-  directly. Multi-line/wrapped layout is a follow-up rung (issue #58 leaves it open), not a v1
-  requirement.
+  Multi-line layout (ADR-0090, 2026-07-09 operator ruling: "Accept all, 100"): the printer
+  builds a `Std.Format` DOCUMENT (Wadler Doc algebra, already in the Lean toolchain —
+  `Init/Data/Format/Basic.lean`, self-cited to *A Prettier Printer*) rather than a `String`
+  directly, and renders it via `Std.Format.pretty (width := defWidth)`. This ADDS multi-line
+  layout WITHOUT hand-rolling a second Wadler kernel (one-construct-per-problem) and WITHOUT
+  a user-facing width knob (D3: one fixed module constant, zero config — the same
+  gofmt/dart_style/black lesson the header above already follows for parenthesization).
+  `defWidth := 100`, `defIndent := 2` are the operator-ruled values (ADR-0090 D3) — the middle
+  path between the survey's 80 (diff-pane classic) and Lean's host-default 120.
+
+  The minimal-parenthesization logic (`parenIf`/`sParenIf`, driven by `opInfo`, ADR-0071) is
+  UNCHANGED — it still decides WHETHER a paren is needed, exactly mirroring the parser's
+  precedence table. What changed is the OUTPUT TYPE: printer functions build `Std.Format`
+  documents (`text`/`append`/`group`/`nest`/`line`) instead of `String`s, so parens are `text`
+  and breaks are `group`/`nest`/`line` — the two concerns compose without either one knowing
+  about the other (ADR-0090 D1). `examples/*/main.bang` is NOT reformatted by this change (D6);
+  only `fmt`'s OUTPUT changes, gated by the `#guard`s below (§7), not by rewriting the corpus.
 
   This is a LEAF module (`Bang/Frontend/*`, fan-in 0 from the verified spine — the arch-check
   invariant): it reads `Surf`/`Ty`/`Decl`/`Prog` from `Bang.Frontend.Surface` and the `BinOp`
-  spellings from `Bang.Core.IR`, and produces only strings. No kernel/typing-rule change.
+  spellings from `Bang.Core.IR`, and produces only strings (via `Std.Format`, host code on the
+  tested-superset side of the ADR-0026 seam — the verified kernel never imports it). No
+  kernel/typing-rule change.
 -/
 module
 
@@ -32,6 +43,7 @@ public import Bang.Frontend.Surface
 namespace Bang.Format
 
 open Bang.Surface
+open Std (Format)
 
 /-! The two laws this module exists to prove (as `#guard`s over the corpus, at the bottom):
 
@@ -41,7 +53,31 @@ open Bang.Surface
 `fmt` here operates on the PARSED `Surf`/`Prog`, not raw source text — "format" means
 "canonical print of the AST", so both laws are really about the printer being a canonical
 representative of its input's parse, which is what makes them checkable without re-parsing
-the printed output through a second oracle. -/
+the printed output through a second oracle. Both laws are AGNOSTIC to line structure (ADR-0090
+D4): they are stated over the parsed `Prog`, so multi-line output must satisfy them exactly as
+the v1 flat output did — a break decision that depended on anything but width+AST would show up
+as an `idempotentOn` failure (the second `fmt` sees different input text, not the same AST). -/
+
+/-! ## 0. Width — the ONE fixed module constant (ADR-0090 D3, zero-config)
+
+Operator-ruled (2026-07-09): 100 columns, 2-space indent — no user-facing knob, no CLI flag.
+Every `pretty` call in this module goes through `render`, which is the ONLY place `defWidth`/
+`defIndent` are consulted, so changing the constant changes ALL output uniformly (single source
+of truth for the layout budget). -/
+
+/-- Canonical rendering width — ADR-0090 D3 operator ruling. Fixed; never a knob. -/
+def defWidth : Nat := 100
+
+/-- Canonical nest increment — ADR-0090 D3 operator ruling (matches Lean-host `Std.Format.defIndent`). -/
+def defIndent : Int := 2
+
+/-- Render a `Format` document to its canonical string — the ONE place `pretty`/`defWidth` are
+called, so every printer entry point renders through the same budget. -/
+def render (f : Format) : String := Format.pretty f defWidth
+
+/-- `nest` at the canonical indent (mirrors `Std.Format.nestD`, pinned to OUR constant rather than
+the host's `defIndent`, since D3 rules our own value). -/
+def nestD (f : Format) : Format := Format.nest defIndent f
 
 /-! ## 1. Binary operator spellings
 
@@ -64,7 +100,13 @@ def binOpTok : Bang.BinOp → String
 Mirrors `pTy`'s precedence exactly (loosest → tightest: `->` (right-assoc) > `+` (left-assoc) >
 `*` (left-assoc) > atom/application), so a printed type re-parses to the same `Ty` with no
 extra parens needed EXCEPT where precedence would otherwise change the parse — the classic
-minimal-parenthesization printer, one precedence level per printer function. -/
+minimal-parenthesization printer, one precedence level per printer function.
+
+Types stay on ONE line: D2's break table names `let`/`fun`/`if`/`match`/decl-body/application/
+tuple as the multi-line nodes — a `Ty` is not among them (the corpus has no type long enough to
+need wrapping, and a type's constituents are themselves short atoms/names). `fmtTy` therefore
+still returns `String`, exactly as v1; it is lifted to `Format` (`Format.text`) only at its use
+sites inside `Surf`/`Decl` printing. -/
 
 /-- Precedence tiers, loosest first — mirrors `pTy`/`pTyAdd`/`pTyMul`/`pTyAtom`. -/
 inductive TyPrec | arr | add | mul | atom
@@ -100,7 +142,7 @@ end
 /-- Top-level entry: a type prints at the loosest tier (no defensive outer parens). -/
 def showTy (t : Ty) : String := fmtTy .arr t
 
-/-! ## 3. Surface expression printer
+/-! ## 3. Surface expression printer — now a `Std.Format` DOCUMENT builder (ADR-0090 D1/D2)
 
 Precedence tiers mirror the Pratt table (`opInfo`, ADR-0071 — loosest first): `=>`-desugar
 never round-trips through `Ty`/`Surf` printing (it only appears mid-parse, never in a parsed
@@ -108,7 +150,20 @@ tree — `pOp` immediately folds it into `lett`/`ifS`), `<`/`==` (comparison, le
 real tier, then `+`/`-` (left-assoc), then `*`/`/` (left-assoc), then application (juxtaposition,
 no token), tightest. Keyword-led forms (`let`, `if`, `match`, …) and atoms sit at `atom` tier —
 they are self-delimiting (parens never needed around them EXCEPT as an application head/operand
-per the grammar, handled by `atom`'s own callers demanding `.atom`). -/
+per the grammar, handled by `atom`'s own callers demanding `.atom`).
+
+D2's canonical break table, as implemented below:
+  · `let x = e in b` / `let rec` / `let (a,b) = p in b` — `group`, break before `in`, body `b`
+    at BASE indent (NOT nested: the corpus's dominant let-chain-is-a-sequence idiom — a chain of
+    lets reads as a flat sequence, not a staircase).
+  · `fun x => b` — `group`, break after `=>`, body nested `+defIndent`.
+  · `if c then t else e` — `group`, break before `then`/`else`, arms nested `+defIndent`.
+  · `match s { arms }` — `group`, break after `{`, one arm per line nested `+defIndent`, `}` at base.
+  · application spines / binops — `group` the whole spine; argument boundaries are plain spaces
+    (juxtaposition has no natural break token in bang's grammar — unlike a comma-list, breaking
+    mid-spine would need a continuation marker the grammar doesn't have, so the spine breaks only
+    at its OWN top join, same shape as a binop chain).
+  · tuples `(a, b)`, ctor calls `C(a, b)` — `group`, break after the comma when over width. -/
 
 inductive SPrec | cmp | add | mul | app | atom
   deriving DecidableEq
@@ -116,8 +171,16 @@ inductive SPrec | cmp | add | mul | app | atom
 def SPrec.level : SPrec → Nat
   | .cmp => 0 | .add => 1 | .mul => 2 | .app => 3 | .atom => 4
 
+/-- Text-level paren wrap (used where the wrapped content is itself still plain text, e.g. inside
+a `Format.text` literal or a defensively-printed internal node). -/
 def sParenIf (need own : SPrec) (s : String) : String :=
   if own.level < need.level then s!"({s})" else s
+
+/-- `Format`-level paren wrap — the direct analogue of `sParenIf` over documents: wraps `f` in
+literal `(`/`)` `text` nodes (never re-groups/re-nests `f`, so a parenthesized sub-document keeps
+whatever internal breaks it already chose). -/
+def fParenIf (need own : SPrec) (f : Format) : Format :=
+  if own.level < need.level then Format.text "(" ++ f ++ Format.text ")" else f
 
 /-- Render a data-ctor call `SCons(a, b)` (an `.app f (.pairS a b)`) using call syntax when `f`'s
 head IS a bare capitalized-or-lowercase identifier applied to a literal-tuple payload — the exact
@@ -153,103 +216,169 @@ partial def asStringLit : Surf → Option String
       some (escapeCodepoint n ++ restStr)
   | _ => none
 
+/-- A comma-separated `Format` list, `group`ed so it breaks after commas (only) when the whole
+group doesn't fit — the D2 tuple/ctor-call/param-list shape. `align`-free (base-column-relative
+via the surrounding `nest`), matching D2's "break after commas when over width". No leading/
+trailing space — callers that need `(…)`/`{…}` wrapping compose it with `fmtTupleGroup`/
+`fmtBraceBlock`, which supply their own boundary spacing. -/
+def fmtCommaGroup (items : List Format) : Format :=
+  Format.group (Format.joinSep items ("," ++ Format.line))
+
+/-- `(items, …)` — a tuple/ctor-call/param payload: `group`ed, breaks after commas, no space
+just inside the parens even when flat (`(a, b)` not `( a, b )`, matching v1's flat spelling). -/
+def fmtTupleGroup (l r : String) (items : List Format) : Format :=
+  Format.group (Format.nest defIndent (Format.text l ++ fmtCommaGroup items) ++ Format.text r)
+
+/-- A `{ … }` BLOCK body (D2's `match`/`data`/`trait`/`impl` shape): breaks after `{` onto a
+nested `+defIndent` line per item (comma-separated), then an UNINDENTED line before the closing
+`}` — the classic Wadler "wrap block" (contrast `fmtTupleGroup`, which keeps the closer flush
+against the last item). When flat, renders `{ item, item }` (one space padding either side,
+matching v1's `"\{ {body} }"` spelling). -/
+def fmtBraceBlock (items : List Format) : Format :=
+  Format.group (
+    Format.text "{" ++ Format.nest defIndent (Format.line ++ fmtCommaGroup items)
+      ++ Format.line ++ Format.text "}")
+
 mutual
-partial def fmtSurf (need : SPrec) : Surf → String
-  | .lit n   => if n < 0 then s!"({n})" else toString n   -- the tokenizer has no unary '-': defensive only
-  | .var x   => x
-  | .unitS   => "()"
-  | .getS    => "get"
-  | .thunk e => s!"\{{fmtSurf .cmp e}}"
-  | .force e => s!"${fmtSurf .atom e}"
-  | .lett x e b => sParenIf need .cmp s!"let {x} = {fmtSurf .cmp e} in {fmtSurf .cmp b}"
-  | .lam x b    => sParenIf need .cmp s!"fun {x} => {fmtSurf .cmp b}"
+partial def fmtSurf (need : SPrec) : Surf → Format
+  | .lit n   => Format.text (if n < 0 then s!"({n})" else toString n)   -- the tokenizer has no unary '-': defensive only
+  | .var x   => Format.text x
+  | .unitS   => Format.text "()"
+  | .getS    => Format.text "get"
+  | .thunk e => Format.text "{" ++ fmtSurf .cmp e ++ Format.text "}"
+  | .force e => Format.text "$" ++ fmtSurf .atom e
+  -- `let … in …` (D2): break before `in`, body at BASE indent (not nested) — a let-CHAIN reads as
+  -- a flat sequence, matching the corpus's dominant idiom. `nest 0` keeps the group's OWN break
+  -- (before `in`) indented by `defIndent` (the bound value can wrap), while the continuation `b`
+  -- sits flush at the enclosing level.
+  | .lett x e b =>
+      fParenIf need .cmp <|
+        Format.group (nestD (Format.text s!"let {x} = " ++ fmtSurf .cmp e ++ Format.line ++ Format.text "in")
+          ++ Format.line) ++ fmtSurf .cmp b
+  | .lam x b    =>
+      fParenIf need .cmp <|
+        Format.group (Format.text s!"fun {x} =>" ++ nestD (Format.line ++ fmtSurf .cmp b))
   -- `f(a, b)`-style ctor calls print `f`+the tuple with NO space (`SCons(a, b)`), matching the corpus
   -- (`examples/tokenizer`'s `TCons(SNil, TNil)`). But `SCons(a, b)` is STILL structurally `f (a, b)` —
   -- one juxtaposed atom (`f`) then another (the parenthesized pair) — so it is `.app`-tier, NOT atomic:
   -- as an application ARGUMENT (`g SCons(a, b)`) it would re-tokenize as `g SCons (a, b)` = `(g SCons)
   -- (a, b)`, a DIFFERENT tree (found by the round-trip law over the string-stdlib/tokenizer corpus —
-  -- the exact failure this comment documents). Must `sParenIf need .app` like plain application.
+  -- the exact failure this comment documents). Must `fParenIf need .app` like plain application.
   | e@(.app f a)    =>
       -- STRING-LITERAL recovery (ADR-0074): a non-empty `SCons(Char n, …)` chain prints back as
       -- `"…"` — a pure print-side sugar, checked FIRST (before the general ctor-call/app cases).
       -- A genuine LITERAL is a true grammar ATOM (one token), so it never needs defensive parens.
       match asStringLit e with
-      | some s => "\"" ++ s ++ "\""
+      | some s => Format.text ("\"" ++ s ++ "\"")
       | none   =>
       match a with
       | .pairS a1 a2 =>
+          let tuple := fmtTupleGroup "(" ")" [fmtSurf .cmp a1, fmtSurf .cmp a2]
           match isCtorHead f with
-          | some n => sParenIf need .app s!"{n}({fmtSurf .cmp a1}, {fmtSurf .cmp a2})"   -- ctor-call: SCons(a, b)
-          | none   => sParenIf need .app s!"{fmtSurf .app f} ({fmtSurf .cmp a1}, {fmtSurf .cmp a2})"
-      | _ => sParenIf need .app s!"{fmtSurf .app f} {fmtSurf .atom a}"
+          | some n => fParenIf need .app (Format.text n ++ tuple)                          -- ctor-call: SCons(a, b)
+          | none   => fParenIf need .app (fmtSurf .app f ++ Format.text " " ++ tuple)
+      | _ => fParenIf need .app (Format.group (fmtSurf .app f ++ Format.line ++ fmtSurf .atom a))
   -- `raise`/`put`/`new`/`read`/`write` parse in APPLICATION position (`pApp`, atom arguments) — their
   -- own printed form IS an atom, so `need` may demand `.atom` and still print bare (`raise 7`, applied
   -- as `f (raise 7)`, needs parens the caller already supplies via `.app`'s arg tier). Their ARGUMENTS,
   -- though, are atom-tier (`pAtom`), so a non-atomic argument (e.g. `raise (let x = 3 in x)`) must be
   -- parenthesized — handled by printing the argument at `.atom` need, which the argument's own
-  -- `sParenIf` resolves.
-  | .raise e => sParenIf need .app s!"raise {fmtSurf .atom e}"
-  | .putS e   => sParenIf need .app s!"put {fmtSurf .atom e}"
-  | .newS e   => sParenIf need .app s!"new {fmtSurf .atom e}"
-  | .readS e  => sParenIf need .app s!"read {fmtSurf .atom e}"
-  | .writeS r w => sParenIf need .app s!"write {fmtSurf .atom r} {fmtSurf .atom w}"
+  -- `fParenIf` resolves.
+  | .raise e => fParenIf need .app (Format.text "raise " ++ fmtSurf .atom e)
+  | .putS e   => fParenIf need .app (Format.text "put " ++ fmtSurf .atom e)
+  | .newS e   => fParenIf need .app (Format.text "new " ++ fmtSurf .atom e)
+  | .readS e  => fParenIf need .app (Format.text "read " ++ fmtSurf .atom e)
+  | .writeS r w => fParenIf need .app (Format.text "write " ++ fmtSurf .atom r ++ Format.text " " ++ fmtSurf .atom w)
   -- `handle`/`atomically` parse a FULL expression body (`.refE` in `keywordRule`) at `pExpr` top level —
   -- unlike `raise`/`put`/…, they are NOT reachable from inside `pApp`'s atom slot without explicit
   -- parens, so their OWN printed form is loosest-tier (`.cmp`), parenthesizing whenever `need` is
   -- anything tighter (matches `.lett`/`.lam`/`.ifS`/`.matchS`/keyword forms below).
-  | .handle e => sParenIf need .cmp s!"handle {fmtSurf .atom e}"
-  | .stateS e0 e => sParenIf need .cmp s!"state {fmtSurf .atom e0} in {fmtSurf .cmp e}"
-  | .atomS e  => sParenIf need .cmp s!"atomically {fmtSurf .atom e}"
-  | .inlS e   => s!"Left({fmtSurf .cmp e})"
-  | .inrS e   => s!"Right({fmtSurf .cmp e})"
-  | .pairS a b => s!"({fmtSurf .cmp a}, {fmtSurf .cmp b})"
+  | .handle e => fParenIf need .cmp (Format.text "handle " ++ fmtSurf .atom e)
+  -- `state e0 in e` (D2, same `let … in` shape as `.lett`): break before `in`, body at BASE indent.
+  | .stateS e0 e =>
+      fParenIf need .cmp <|
+        Format.group (nestD (Format.text "state " ++ fmtSurf .atom e0 ++ Format.line ++ Format.text "in")
+          ++ Format.line) ++ fmtSurf .cmp e
+  | .atomS e  => fParenIf need .cmp (Format.text "atomically " ++ fmtSurf .atom e)
+  | .inlS e   => Format.text "Left(" ++ fmtSurf .cmp e ++ Format.text ")"
+  | .inrS e   => Format.text "Right(" ++ fmtSurf .cmp e ++ Format.text ")"
+  | .pairS a b => fmtTupleGroup "(" ")" [fmtSurf .cmp a, fmtSurf .cmp b]
   | .matchS s lx e1 rx e2 =>
-      sParenIf need .cmp s!"match {fmtSurf .atom s} \{ Left({lx}) -> {fmtSurf .cmp e1}, Right({rx}) -> {fmtSurf .cmp e2} }"
+      fParenIf need .cmp <|
+        Format.text "match " ++ fmtSurf .atom s ++ Format.text " " ++
+          fmtBraceBlock
+            [ Format.text s!"Left({lx}) -> " ++ fmtSurf .cmp e1
+            , Format.text s!"Right({rx}) -> " ++ fmtSurf .cmp e2 ]
   | .splitS a b p body =>
-      sParenIf need .cmp s!"let ({a}, {b}) = {fmtSurf .cmp p} in {fmtSurf .cmp body}"
+      fParenIf need .cmp <|
+        Format.group (nestD (Format.text s!"let ({a}, {b}) = " ++ fmtSurf .cmp p ++ Format.line ++ Format.text "in")
+          ++ Format.line) ++ fmtSurf .cmp body
   | .binopS op a b =>
       match op with
-      | .lt | .eq => sParenIf need .cmp s!"{fmtSurf .add a} {binOpTok op} {fmtSurf .add b}"
-      | .add | .sub => sParenIf need .add s!"{fmtSurf .add a} {binOpTok op} {fmtSurf .mul b}"
-      | .mul | .div => sParenIf need .mul s!"{fmtSurf .mul a} {binOpTok op} {fmtSurf .app b}"
-  | .ifS c t e => sParenIf need .cmp s!"if {fmtSurf .cmp c} then {fmtSurf .cmp t} else {fmtSurf .cmp e}"
-  | .annotS e t => s!"({fmtSurf .cmp e} : {showTy t})"
-  | .foldS e   => s!"(fold {fmtSurf .atom e})"                              -- INTERNAL; printed defensively
-  | .unfoldS e => s!"(unfold {fmtSurf .atom e})"                           -- INTERNAL; ditto
-  | .matchD s arms => sParenIf need .cmp s!"match {fmtSurf .atom s} \{ {fmtDArms arms} }"
+      | .lt | .eq => fParenIf need .cmp (Format.group (fmtSurf .add a ++ Format.text s!" {binOpTok op}" ++ Format.line ++ fmtSurf .add b))
+      | .add | .sub => fParenIf need .add (Format.group (fmtSurf .add a ++ Format.text s!" {binOpTok op}" ++ Format.line ++ fmtSurf .mul b))
+      | .mul | .div => fParenIf need .mul (Format.group (fmtSurf .mul a ++ Format.text s!" {binOpTok op}" ++ Format.line ++ fmtSurf .app b))
+  -- `if c then t else e` (D2): break before `then`/`else`, arms nested +2.
+  | .ifS c t e =>
+      fParenIf need .cmp <|
+        Format.group (
+          Format.text "if " ++ fmtSurf .cmp c
+            ++ nestD (Format.line ++ Format.text "then " ++ fmtSurf .cmp t
+                        ++ Format.line ++ Format.text "else " ++ fmtSurf .cmp e))
+  | .annotS e t => Format.text "(" ++ fmtSurf .cmp e ++ Format.text s!" : {showTy t})"
+  | .foldS e   => Format.text "(fold " ++ fmtSurf .atom e ++ Format.text ")"                              -- INTERNAL; printed defensively
+  | .unfoldS e => Format.text "(unfold " ++ fmtSurf .atom e ++ Format.text ")"                           -- INTERNAL; ditto
+  -- `match s { arms }` (D2): break after `{`, one arm per line nested +2, `}` at base.
+  | .matchD s arms =>
+      fParenIf need .cmp <|
+        Format.text "match " ++ fmtSurf .atom s ++ Format.text " " ++
+          fmtBraceBlock (fmtDArmList arms)
   -- `withCapS`'s internal `kind` tag is `"throws"`/`"state"`/`"atomically"` (`lowerC`'s cap-binder
   -- names), but the SURFACE keyword for `"throws"` is `handle` (ADR-0072's `handle as h e`, not
   -- `throws as h e` — there is no `throws` keyword in the grammar). `"state"`/`"atomically"` already
   -- match their surface spelling. All three bodies are `.refE` (a full expression, `keywordRule`),
   -- so `body` prints at `.cmp`, matching `handle`/`atomically`/`state`.
   | .withCapS kind e0 h body =>
-      sParenIf need .cmp <|
-        if kind = "state" then s!"state {fmtSurf .atom e0} as {h} in {fmtSurf .cmp body}"
-        else if kind = "throws" then s!"handle as {h} {fmtSurf .cmp body}"
-        else s!"{kind} as {h} {fmtSurf .cmp body}"
+      fParenIf need .cmp <|
+        if kind = "state" then
+          Format.group (nestD (Format.text s!"state " ++ fmtSurf .atom e0 ++ Format.text s!" as {h}" ++ Format.line ++ Format.text "in")
+            ++ Format.line) ++ fmtSurf .cmp body
+        else if kind = "throws" then
+          Format.text s!"handle as {h} " ++ fmtSurf .cmp body
+        else
+          Format.text s!"{kind} as {h} " ++ fmtSurf .cmp body
   -- `h.op(args)` is parsed by `pDotLoop`, invoked FROM `pDotted` right after `pAtom` — the whole
   -- chain result is itself an atom (feeds `pAppLoop`/`pOp` same as any other atom), so it never
   -- needs defensive parens even at `.atom` need.
   | .dotPerform recv op args =>
       match args with
-      | .none      => s!"{fmtSurf .atom recv}.{op}"
-      | .one a     => s!"{fmtSurf .atom recv}.{op}({fmtSurf .cmp a})"
-      | .two a b   => s!"{fmtSurf .atom recv}.{op}({fmtSurf .cmp a}, {fmtSurf .cmp b})"
+      | .none      => fmtSurf .atom recv ++ Format.text s!".{op}"
+      | .one a     => fmtSurf .atom recv ++ Format.text s!".{op}" ++ fmtTupleGroup "(" ")" [fmtSurf .cmp a]
+      | .two a b   => fmtSurf .atom recv ++ Format.text s!".{op}" ++ fmtTupleGroup "(" ")" [fmtSurf .cmp a, fmtSurf .cmp b]
   | .letRecS f ty body b =>
-      sParenIf need .cmp s!"let rec {f} : {showTy ty} = {fmtSurf .cmp body} in {fmtSurf .cmp b}"
+      fParenIf need .cmp <|
+        Format.group (nestD (Format.text s!"let rec {f} : {showTy ty} = " ++ fmtSurf .cmp body ++ Format.line ++ Format.text "in")
+          ++ Format.line) ++ fmtSurf .cmp b
   | .divMark e => fmtSurf need e                                          -- INTERNAL marker; transparent to printing
-partial def fmtDArms : DArms → String
-  | .nil            => ""
-  | .cons c [] b .nil        => s!"{c} -> {fmtSurf .cmp b}"
-  | .cons c bs b .nil        => s!"{c}({String.intercalate ", " bs}) -> {fmtSurf .cmp b}"
-  | .cons c [] b rest        => s!"{c} -> {fmtSurf .cmp b}, {fmtDArms rest}"
-  | .cons c bs b rest        => s!"{c}({String.intercalate ", " bs}) -> {fmtSurf .cmp b}, {fmtDArms rest}"
+/-- One `matchD` arm as a `Format` document (no trailing separator — `fmtCommaGroup`'s `joinSep`
+supplies `,` + line between arms, matching D2's "one arm per line"). -/
+partial def fmtDArm : String → List String → Surf → Format
+  | c, [], b    => Format.text s!"{c} -> " ++ fmtSurf .cmp b
+  | c, bs, b    => Format.text s!"{c}({String.intercalate ", " bs}) -> " ++ fmtSurf .cmp b
+partial def fmtDArmList : DArms → List Format
+  | .nil            => []
+  | .cons c bs b rest => fmtDArm c bs b :: fmtDArmList rest
 end
 
-/-- Top-level entry: an expression prints at the loosest tier (no defensive outer parens). -/
-def showSurf (e : Surf) : String := fmtSurf .cmp e
+/-- Top-level entry: an expression prints at the loosest tier (no defensive outer parens), rendered
+through the ONE canonical width (`render`, `defWidth`/`defIndent`). -/
+def showSurf (e : Surf) : String := render (fmtSurf .cmp e)
 
-/-! ## 4. Declaration + program printer -/
+/-! ## 4. Declaration + program printer
+
+`data`/`trait`/`impl` bodies (D2): one ctor/op/clause per line when the decl doesn't fit,
+`|`/`;` at line starts. Declarations are ALWAYS top-level (never nested inside an expression), so
+their groups render relative to column 0 — `nestD` gives the +2 D2 asks for on the wrapped lines. -/
 
 def fmtCtors : List (String × List Ty) → String
   | []              => ""
@@ -257,6 +386,16 @@ def fmtCtors : List (String × List Ty) → String
   | [(c, ts)]       => s!"{c}({String.intercalate ", " (ts.map showTy)})"
   | (c, []) :: rest => s!"{c} | {fmtCtors rest}"
   | (c, ts) :: rest => s!"{c}({String.intercalate ", " (ts.map showTy)}) | {fmtCtors rest}"
+
+/-- `data`'s ctor list as a `Format` list — one ctor per element, `|` prefixed on every element
+AFTER the first so `fmtCommaGroup`-style `joinSep` can space/break it uniformly (D2: `|` at line
+starts on the wrapped form). -/
+def fmtCtorDoc : (String × List Ty) → Format
+  | (c, [])  => Format.text c
+  | (c, ts)  => Format.text s!"{c}({String.intercalate ", " (ts.map showTy)})"
+
+def fmtCtorList (cs : List (String × List Ty)) : Format :=
+  Format.group (Format.joinSep (cs.map fmtCtorDoc) (Format.line ++ Format.text "| "))
 
 def fmtOpSig (s : OpSig) : String :=
   if s.params.isEmpty then s!"fn {s.name} : {showTy s.methodTy}"
@@ -268,27 +407,46 @@ def fmtLawDecl (l : LawDecl) : String :=
 def fmtOpDef (d : OpDef) : String :=
   s!"fn {d.name}({String.intercalate ", " d.params}) = {showSurf d.body}"
 
-/-- One declaration, on one line — a `#`-comment-free canonical rendering (comments are not part
-of `Surf`/`Decl`, ADR-0046: the surface has no semantics of its own beyond its elaboration, and a
-comment carries none, so it is out of scope for this AST-driven printer). -/
-def fmtDecl : Decl → String
+/-- `trait`/`impl` member lists (D2): one member per line when the decl doesn't fit, `;` at line
+starts (matching the flat separator's own `"; "` token — only the BREAK point differs). Uses the
+same wrap-block shape as `fmtBraceBlock`, with `;` in place of `,` as the join token. -/
+def fmtMemberBlock (members : List String) : Format :=
+  let sep : Format := ";" ++ Format.line
+  Format.group (
+    Format.text "{" ++ Format.nest defIndent (Format.line ++ Format.joinSep (members.map Format.text) sep)
+      ++ Format.line ++ Format.text "}")
+
+/-- One declaration — flat when it fits in `defWidth`, one member/ctor per line (D2) when it
+doesn't. `data`/`trait`/`impl` bodies use `fmtCtorList`/`fmtMemberBlock` (the D2 multi-line decl
+shape); `fnD` is comment-free canonical rendering (comments are not part of `Surf`/`Decl`,
+ADR-0046: the surface has no semantics of its own beyond its elaboration, and a comment carries
+none, so it is out of scope for this AST-driven printer). -/
+def fmtDeclDoc : Decl → Format
   | .dataD n ps cs   =>
       let params := if ps.isEmpty then "" else " " ++ String.intercalate " " ps
-      s!"data {n}{params} = {fmtCtors cs}"
+      Format.text s!"data {n}{params} = " ++ fmtCtorList cs
   | .traitD n ps ops laws =>
       let params := if ps.isEmpty then "" else " " ++ String.intercalate " " ps
-      let body := String.intercalate "; " ((ops.map fmtOpSig) ++ (laws.map fmtLawDecl))
-      s!"trait {n}{params} \{ {body} }"
+      let body := (ops.map fmtOpSig) ++ (laws.map fmtLawDecl)
+      Format.text s!"trait {n}{params} " ++ fmtMemberBlock body
   | .implD n t ops   =>
-      s!"impl {n} for {showTy t} \{ {String.intercalate "; " (ops.map fmtOpDef)} }"
+      Format.text s!"impl {n} for {showTy t} " ++ fmtMemberBlock (ops.map fmtOpDef)
   | .fnD n ps ty tr tv body =>
-      s!"fn {n}({String.intercalate ", " ps}) : {showTy ty} where {tr} {tv} = {showSurf body}"
+      Format.group (nestD (
+        Format.text s!"fn {n}({String.intercalate ", " ps}) : {showTy ty} where {tr} {tv} ="
+          ++ Format.line ++ fmtSurf .cmp body))
+
+def fmtDecl (d : Decl) : String := render (fmtDeclDoc d)
 
 /-- A whole program: each decl on its own line, then the body expression. Matches every
-`examples/*/main.bang` today (`data …` / `let rec …` lines followed by the body). -/
+`examples/*/main.bang` today (`data …` / `let rec …` lines followed by the body). Declarations
+are separated by HARD newlines (`Format.line` inside a `group` would let them share a line if
+they fit — decls are always meant one-per-line, so this uses literal `"\n"` text exactly as v1's
+`String.intercalate` did, preserved unchanged since D2 does not name declaration SEPARATION as a
+group/break point, only each decl's OWN internal layout). -/
 def showProg (p : Prog) : String :=
-  let declLines := p.decls.map fmtDecl
-  String.intercalate "\n" (declLines ++ [showSurf p.body])
+  let declDocs := p.decls.map fmtDeclDoc
+  render (Format.joinSep (declDocs ++ [fmtSurf .cmp p.body]) (Format.text "\n"))
 
 /-! ## 5. `fmt` — the two public entry points `bang fmt` wraps
 
@@ -339,6 +497,20 @@ def roundTripsOn (src : String) : Bool :=
           match parseProg out with
           | .error _ => false
           | .ok p1 => p0 == p1
+
+/-- Canonicity: two DIFFERENT source strings that parse to the SAME AST must format to the SAME
+output — the operational meaning of "canonical" (ADR-0090's D2 preamble: the multi-line shape is
+a pure function of the AST, no input-format influence). `false` if either fails to parse, or if
+they parse to different ASTs (not what this predicate is testing), or if their formatted outputs
+differ. -/
+def canonicalOn (src1 src2 : String) : Bool :=
+  match parseProg src1, parseProg src2 with
+  | .ok p1, .ok p2 =>
+      if p1 != p2 then false else
+      match fmtProg src1, fmtProg src2 with
+      | .ok out1, .ok out2 => out1 == out2
+      | _, _ => false
+  | _, _ => false
 
 end Bang.Format
 
@@ -446,3 +618,54 @@ open Bang.Format in
 open Bang.Format in
 #guard roundTripsOn "data Pair = Mk(Int, Int)\nlet f = fun x => x in\n($f) (Mk(1, 2))"
        && idempotentOn "data Pair = Mk(Int, Int)\nlet f = fun x => x in\n($f) (Mk(1, 2))"
+
+/-! ## 8. Multi-line layout guards (ADR-0090) — flat-when-fits, breaks-when-not, canonicity
+
+D4 requires the two laws above to extend unchanged to multi-line output (checked by the corpus
+`#guard`s just above, all still passing with the new `Std.Format`-based printer). These NEW guards
+additionally pin the LAYOUT itself: a program that fits `defWidth` stays ONE line (`group`
+semantics), a program that doesn't gets the D2 canonical multi-line shape (pinned byte-for-byte so
+a layout regression shows as a diff here), and two differently-formatted inputs parsing to the same
+AST must format to the IDENTICAL output (canonicity — what "canonical" operationally means). -/
+
+-- flat-when-fits: `examples/state/main.bang`'s program easily fits `defWidth := 100` on one line —
+-- multi-line layout must not introduce a break where the flat printer had none.
+open Bang.Format in
+#guard fmtProg "state 0 in let c = {get} in let z = put 5 in $c"
+       == .ok "state 0 in let c = {get} in let z = put 5 in $c"
+
+-- a long let-chain (each RHS individually short, but the CHAIN as a whole exceeds `defWidth`) must
+-- break at each `let … in` per D2 (break before `in`, body at BASE indent — a flat sequence, not a
+-- staircase). Expected string pinned byte-for-byte against `defWidth := 100`.
+open Bang.Format in
+#guard fmtProg "let aVeryLongVariableName1 = 111111111 in let aVeryLongVariableName2 = 222222222 in let aVeryLongVariableName3 = 333333333 in aVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
+       == .ok "let aVeryLongVariableName1 = 111111111\n  in\nlet aVeryLongVariableName2 = 222222222\n  in\nlet aVeryLongVariableName3 = 333333333\n  in\naVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
+
+-- idempotency + round-trip must ALSO hold on the wide let-chain above (the load-bearing case: a
+-- break-decision that depended on input line-structure, not width+AST, would show up here first).
+open Bang.Format in
+#guard roundTripsOn "let aVeryLongVariableName1 = 111111111 in let aVeryLongVariableName2 = 222222222 in let aVeryLongVariableName3 = 333333333 in aVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
+       && idempotentOn "let aVeryLongVariableName1 = 111111111 in let aVeryLongVariableName2 = 222222222 in let aVeryLongVariableName3 = 333333333 in aVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
+
+-- a wide `match` (arms individually short, whole group exceeds `defWidth`) breaks after `{`, one
+-- arm per line nested +2, `}` at base — D2's match shape.
+open Bang.Format in
+#guard fmtProg "match Right(777777777) { Left(aVeryLongBindingName) -> aVeryLongBindingName + 1111111111, Right(anotherLongBindingName) -> anotherLongBindingName + 2222222222 }"
+       == .ok "match Right(777777777) {\n  Left(aVeryLongBindingName) -> aVeryLongBindingName + 1111111111,\n  Right(anotherLongBindingName) -> anotherLongBindingName + 2222222222\n}"
+
+-- canonicity: two DIFFERENTLY-FORMATTED source strings (one hand-wrapped multi-line, one
+-- collapsed to a single line) that parse to the SAME `Prog` must format to the SAME output — the
+-- operational definition of "canonical" (D2 preamble: the shape is a pure function of the AST, no
+-- input-format influence). Uses the wide let-chain from above, re-written with different manual
+-- line breaks/indentation on the source side.
+open Bang.Format in
+#guard canonicalOn
+  "let aVeryLongVariableName1 = 111111111 in let aVeryLongVariableName2 = 222222222 in let aVeryLongVariableName3 = 333333333 in aVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
+  "let aVeryLongVariableName1 = 111111111 in\n  let aVeryLongVariableName2 = 222222222 in\n    let aVeryLongVariableName3 = 333333333\n      in aVeryLongVariableName1 + aVeryLongVariableName2\n         + aVeryLongVariableName3"
+
+-- canonicity, flat case: two differently-SPACED single-line inputs of the small `state` program
+-- above must ALSO agree (the flat-when-fits path is canonical too, not just the multi-line path).
+open Bang.Format in
+#guard canonicalOn
+  "state 0 in let c = {get} in let z = put 5 in $c"
+  "state  0   in  let c = { get }  in  let  z  =  put  5  in  $c"
