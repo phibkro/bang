@@ -289,6 +289,60 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
       -- B-occ (ADR-0057): the handled label may not occur in the answer type `A`.
       ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasCTy γ Γ (Comp.handle (Handler.transaction ℓ Θ₀) M) φ (CTy.F q A)
+  -- handleCustom (ADR-0092 D3, #44 STAGE 3): the TYPED user-defined-effect handler. Mirrors
+  -- `handleState`/`handleTransaction` — discharges label `ℓ`, binds the capability, carries the B-occ
+  -- anti-escape premise, and the body runs at `e ≤ labelEff ℓ ⊔ φ`. What generalizes the built-ins is
+  -- the CLAUSE LIST typing (`HasClauses` below, a mutual auxiliary — a clause LIST needs a variable
+  -- number of clause sub-derivations, which a plain `∀…∃…` premise cannot express inside the inductive
+  -- without tripping the nested-`Exists` positivity check; the mutual `nil`/`cons` inductive is the
+  -- standard resolution). ONE-SHOT TAIL-RESUMPTIVE, READ-ONLY param (D5 defers update).
+  --
+  -- THE RET-SHAPE (ADR-0092 D4 grade wall + operator ruling): each v1 clause body is `ret w` — it resumes
+  -- with the VALUE `w : opRes ℓ op` fed back to the captured continuation `Kᵢ`. This is NOT a free choice:
+  -- the resume focus `ret (w[param:=p, arg:=v])` must plug into `Kᵢ` at the PERFORM's returner type
+  -- `F q_perf (opRes ℓ op)`, where `q_perf` is FREE (a closed perform's `q • γ_v = []` for any q). A
+  -- general effectful clause body carries a FIXED grade and cannot adapt to `q_perf`; only the ret-shape
+  -- can, because `HasCTy.ret` re-derives the grade from the (closed) payload for ANY q_perf — the exact
+  -- grade-freedom the built-in state/throws/txn arms already use (their resume focus is likewise
+  -- `ret <closed val>`, the identity return-clause). So the ret-shape is the honest v1 analogue of the
+  -- built-ins, and "do effectful work before resuming" is the deferred D5/first-class-`k` generalization.
+  -- The carried param `p : P` is CLOSED (the grade discipline, like `state`'s `s₀`); each clause binds
+  -- `param@1 : P, arg@0 : opArg ℓ op` (the landed binder discipline, `Dispatch.dispatchOn` custom arm).
+  | handleCustom : ∀ {γ Γ} {ℓ : Label} {p : Val} {clauses : List (OpId × Comp)} {M : Comp}
+        {e φ : Eff} {q qc : Mult} {P A : VTy Eff Mult},
+      HasClauses ℓ P clauses →
+      -- INTERFACE COVERAGE (ADR-0092 D3, the custom analogue of the built-ins' `hiface` op-set pin):
+      -- every op in `ℓ`'s interface has a clause, so a dispatched interface op never sticks. For a
+      -- user label this holds by construction (D2: the program-derived `EffSig` makes `opArg ℓ op = some`
+      -- iff `op` is a declared/clause op). This is the semantic half of custom PROGRESS.
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+        (clauses.find? (·.1 == op)).isSome) →
+      -- THE GRADE DISCIPLINE: the carried param is a CLOSED value of type `P` (like `state`'s `s₀`).
+      HasVTy [] [] p P →
+      -- ADR-0054: `handle` binds the capability (`Cap ℓ` at index 0, multiplicity `qc`).
+      HasCTy (qc :: γ) (VTy.cap ℓ :: Γ) M e (CTy.F q A) →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      -- B-occ (ADR-0057): the handled label may not occur in the answer type `A`.
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
+      HasCTy γ Γ (Comp.handle (Handler.custom ℓ p clauses) M) φ (CTy.F q A)
+-- HasClauses (ADR-0092 D3, ret-shape v1): the clause-list typing for `handleCustom`. `HasClauses ℓ P
+-- clauses` iff EVERY `(op, body)` in `clauses` is a RETURN-shaped clause `body = ret w` with `op` in
+-- `ℓ`'s interface (`opArg`/`opRes` some) and the resumed VALUE `w : opRes ℓ op` under `[opArg@0, P@1]`.
+-- `nil`/`cons` structure. The RET SHAPE is v1's crux (ADR-0092 D4 wall + operator ruling): a clause
+-- resumes with the VALUE `ret w`, exactly the built-ins' identity return-clause (state/throws/txn all
+-- resume `ret <closed val>`), so the resume focus re-types at the PERFORM's free returner grade via
+-- `HasCTy.ret`'s grade-freedom — a general effectful body would pin the grade and the resume couldn't
+-- adapt (the answer-grade obligation the mono system can't source). φ ("does effectful work before
+-- resuming") + param-mutation are the D5/first-class-k generalization, already deferred. Since `w` is a
+-- VALUE (inert), no ambient-effect row is needed — `HasClauses` carries no `φ`/`e_op`.
+inductive HasClauses : Label → VTy Eff Mult → List (OpId × Comp) → Prop where
+  | nil : ∀ {ℓ P}, HasClauses ℓ P []
+  | cons : ∀ {ℓ P op w rest} {opA opR : VTy Eff Mult} {qa qp : Mult},
+      EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some opA →
+      EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some opR →
+      HasVTy (qa :: qp :: []) (opA :: P :: []) w opR →
+      HasClauses ℓ P rest →
+      HasClauses ℓ P ((op, Comp.ret w) :: rest)
 end
 
 
@@ -359,6 +413,21 @@ inductive HasStack : EvalCtx → Eff → CTy Eff Mult → Eff → CTy Eff Mult �
       ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
       HasStack K φ (CTy.F q A) eo Co →
       HasStack (Frame.handleF n (Handler.transaction ℓ Θ) :: K) e (CTy.F q A) eo Co
+  -- customF (ADR-0092 D3, #44 STAGE 3): the frame twin of `HasCTy.handleCustom` — a reinstalled
+  -- typed `custom ℓ p clauses` frame on the stack (what `Dispatch.dispatchOn`'s custom resume
+  -- reinstalls). Mirrors `stateF`/`transactionF`: discharges `ℓ`, the clause-list interface typed
+  -- pointwise, the carried param `p` CLOSED of type `P` (the grade discipline), B-occ on the answer.
+  -- This is what makes a typed custom frame able to sit on a well-typed stack — retiring
+  -- `concat_custom_absurd` (Soundness.lean) in favour of real `concat_custom_closed`/`_resume` arms.
+  | customF : ∀ {K n ℓ p clauses e φ eo q} {P A : VTy Eff Mult} {Co},
+      HasClauses ℓ P clauses →
+      (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+        (clauses.find? (·.1 == op)).isSome) →
+      HasVTy [] [] p P →
+      e ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ φ →
+      ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A →
+      HasStack K φ (CTy.F q A) eo Co →
+      HasStack (Frame.handleF n (Handler.custom ℓ p clauses) :: K) e (CTy.F q A) eo Co
 
 /-- A config is *returned* iff it is `⟨[], ret v⟩` — a value with no work left on the stack. -/
 def isReturnConfig : Config → Prop

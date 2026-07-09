@@ -249,9 +249,10 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasCTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
+    (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
-    ?handleTransaction h
+    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
@@ -262,6 +263,13 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   case pair => intro γ γ_v γ_w Γ w₁ w₂ A B _ _ hγ ihv ihw; subst hγ
                simp only [hadd_eq_add, GradeVec.add_length, ihv, ihw, Nat.min_self]
   case fold => intro γ Γ w A _ ih; exact ih
+  -- ADR-0092: `handleCustom` binds the cap (mult `qc`) like the built-in handles; strip the cons.
+  -- The `HasClauses` motive is `True`, so `clausesNil`/`clausesCons` are trivial.
+  case handleCustom =>
+    intro γ Γ ℓ p cl M e φ q qc P A _hcl _hcov _hp _hM hle hbocc _ihcl _ihp ihM
+    exact Nat.succ.inj (by simpa only [List.length_cons] using ihM)
+  case clausesNil => intros; trivial
+  case clausesCons => intros; trivial
   case ret => intro γ γ' Γ w A q _ hγ ih; subst hγ
               simp only [hsmul_eq_smul, GradeVec.smul_length]; exact ih
   case letC => intro γ γ₁ γ₂ Γ M N φ₁ φ₂ q1 q2 A B _ _ hγ ihM ihN; subst hγ
@@ -304,9 +312,10 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   refine HasVTy.rec
     (motive_1 := fun γ Γ _ _ _ => γ.length = Γ.length)
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
+    (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
-    ?handleTransaction h
+    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
   case vvar => intro Γ i A hget; simp
@@ -351,6 +360,11 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   case handleTransaction =>
     intro γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ _ _ _ _ _ ihM
     simp only [List.length_cons] at ihM; exact Nat.succ.inj ihM
+  case handleCustom =>
+    intro γ Γ ℓ p cl M e φ q qc P A _hcl _hcov _hp _hM hle hbocc _ihcl _ihp ihM
+    exact Nat.succ.inj (by simpa only [List.length_cons] using ihM)
+  case clausesNil => intros; trivial
+  case clausesCons => intros; trivial
 
 /-! ## C. Weakening / shift  (port of `renaming.v` `shift_wb` case)
 
@@ -472,6 +486,10 @@ private theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     -- `Handler.shiftFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH at k+1.
     simp only [Comp.shiftFrom, Handler.shiftFrom]
     rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
+  | @handleCustom γ Γ ℓ p cl M e φ q qc P A _ _ _ hM _ _ =>
+    -- ADR-0092: `Handler.shiftFrom` is IDENTITY on `.custom` (closed param + clauses); body at k+1.
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    rw [hM.shift_closed (k + 1) (by simp only [List.length_cons]; omega)]
 end
 
 mutual
@@ -530,6 +548,10 @@ private theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
       hs.subst_closed k (Nat.zero_le k) w]
   | @handleTransaction γ Γ ℓ Θ₀ M e φ q qc A _ _ _ _ _ _ _ hcells hM _ _ =>
     -- `Handler.substFrom` leaves the heap untouched (closed cells, ADR-0030); body fixed by IH at k+1.
+    simp only [Comp.substFrom, Handler.substFrom]
+    rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w)]
+  | @handleCustom γ Γ ℓ p cl M e φ q qc P A _ _ _ hM _ _ =>
+    -- ADR-0092: `Handler.substFrom` is IDENTITY on `.custom` (closed param + clauses); body at k+1.
     simp only [Comp.substFrom, Handler.substFrom]
     rw [hM.subst_closed (k + 1) (by simp only [List.length_cons]; omega) (Val.shift w)]
 end
@@ -774,6 +796,15 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
     rw [hctx, hgr2] at hM'
     exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells hM' hle hbocc
+  | @handleCustom γ Γ ℓ p cl M e φ q qc P A hcl hcov hp hM hle hbocc =>
+    -- ADR-0092: `Handler.shiftFrom` is IDENTITY on `.custom` (closed param + clauses, independent of Γ),
+    -- so the `HasClauses`/param premises pass through unchanged; only the body weakens under the cap (k+1).
+    simp only [Comp.shiftFrom, Handler.shiftFrom]
+    have hM' := hM.weaken (k + 1) (by simp only [List.length_cons]; omega) A'
+    have hctx : insT (VTy.cap ℓ :: Γ) (k + 1) A' = VTy.cap ℓ :: insT Γ k A' := by unfold insT; rfl
+    have hgr2 : insG (qc :: γ) (k + 1) = qc :: insG γ k := by unfold insG; rfl
+    rw [hctx, hgr2] at hM'
+    exact HasCTy.handleCustom hcl hcov hp hM' hle hbocc
 end
 
 /-- Grade at the substituted slot `k`, read off the derivation's grade vector. -/
@@ -1308,9 +1339,10 @@ theorem HasCTy.subst_gen
            (Δ ++ Γ) (Comp.substFrom Δ.length v c) e B := by
   refine HasCTy.rec
     (motive_1 := VsubstMotive) (motive_2 := CsubstMotive)
+    (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
     ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
-    ?handleTransaction
+    ?handleTransaction ?handleCustom ?clausesNil ?clausesCons
     hc Δ Γ A γ_v v rfl hv
   case vunit =>
     intro Γ₀ Δ Γ A γ_v v hΓ hv
@@ -1447,6 +1479,18 @@ theorem HasCTy.subst_gen
     rw [Comp.substFrom, Handler.substFrom]
     exact HasCTy.handleTransaction hna hnr hra hrr hwa hwr hif hcells
       (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle hbocc
+  case handleCustom =>
+    -- ADR-0092: subst through a typed custom handler. `Handler.substFrom` is IDENTITY on `.custom`
+    -- (Subst.lean, the stage-1 rep decision that becomes SOUND at stage 3: the clause bodies type under
+    -- the CLOSED `[opArg, P]` context and the param `p` is CLOSED, so neither has a free ambient var to
+    -- substitute — the `HasClauses`/param premises pass through verbatim). Only the body `M` descends
+    -- under the cap binder, exactly like `handleState`/`handleTransaction`.
+    intro γ Γ₀ ℓ p cl M e φ q qc P A₀ hcl hcov hp hM hle hbocc _hclIH _hpIH ihM Δ Γ A γ_v v hΓ hv
+    subst hΓ
+    rw [Comp.substFrom, Handler.substFrom]
+    exact HasCTy.handleCustom hcl hcov hp (subst_handle_body Δ Γ A γ_v v hv hM ihM) hle hbocc
+  case clausesNil => intros; trivial
+  case clausesCons => intros; trivial
 
 /-- The frozen `subst_value` statement, derived from `subst_gen` at `k = 0`.
 At `Δ = []`: `eraseIdx 0 (ρ :: γ) = γ`, `slotGrade (ρ::γ) 0 = ρ`, and
@@ -1531,6 +1575,8 @@ private theorem HasStack.handleAny_inv {n : Nat} {hdl : Handler} {K : EvalCtx} {
   | @stateF _ _ _ _ _ φ eo q A S Co hga hgr hpa hpr hif hs hdis _ hsub =>
     exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
   | @transactionF _ _ _ _ _ φ eo q A Co hna hnr hra hrr hwa hwr hif hcells hdis _ hsub =>
+    exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
+  | @customF _ _ _ _ _ _ φ eo q P A Co hcl hcov hp hdis _ hsub =>
     exact ⟨φ, q, A, rfl, eo, le_refl _, hsub⟩
 
 /-! ### E.0b Closed-focus HasCTy inversion lemmas (Γ = [], γ = [])
@@ -1647,15 +1693,25 @@ private theorem HasCTy.handleTransaction_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx 
   | @handleTransaction _ _ _ _ _ e_body φ q qc A hna hnr hra hrr hwa hwr hif hcells hM hle hbocc =>
     exact ⟨e_body, q, qc, A, rfl, hna, hnr, hra, hrr, hwa, hwr, hif, hcells, hM, hle, hbocc⟩
 
-/-- **`handle (custom …) M` is UNTYPABLE (ADR-0085 #44 stage 1).** `custom` has NO typing rule
-(`handleCustom` is stage 3), so the three handle rules (`handleThrows`/`handleState`/`handleTransaction`)
-each carry a built-in handler in the index and none unify with `Handler.custom` — `cases` on the
-derivation eliminates all of them, leaving no case. This is what keeps the trusted-three axiom-clean
-while `custom` stays inert: no well-typed program contains a `custom` handler. -/
-private theorem HasCTy.handle_custom_uninhabited {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+/-- **Invert a typed `handle (custom ℓ p cl) M` (ADR-0092 D3).** Mirrors `handleState_inv`: the answer
+type is `F q A`, the clause list types (`HasClauses`), the param `p` is a CLOSED `P`, the body `M` runs
+under the bound cap at `e_body ≤ labelEff ℓ ⊔ φ`, and B-occ holds. Replaces the (now-false, stage-1)
+`handle_custom_uninhabited` — custom is TYPABLE at stage 3. -/
+private theorem HasCTy.handleCustom_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {ℓ : Label} {p : Val} {cl : List (OpId × Comp)} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
-    HasCTy γ0 Γ0 (Comp.handle (Handler.custom ℓ p cl) M) e C → False := by
-  intro h; cases h
+    HasCTy γ0 Γ0 (Comp.handle (Handler.custom ℓ p cl) M) e C →
+    ∃ (e_body : Eff) (q qc : Mult) (P A : VTy Eff Mult), C = CTy.F q A
+      ∧ HasClauses ℓ P cl
+      ∧ (∀ op B, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some B →
+          (cl.find? (·.1 == op)).isSome)
+      ∧ HasVTy [] [] p P
+      ∧ HasCTy (qc :: γ0) (VTy.cap ℓ :: Γ0) M e_body (CTy.F q A)
+      ∧ e_body ≤ EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ ⊔ e
+      ∧ ¬ LabelOccurs (Eff := Eff) (Mult := Mult) ℓ A := by
+  intro h
+  cases h with
+  | @handleCustom _ _ _ _ _ _ e_body φ q qc P A hcl hcov hp hM hle hbocc =>
+    exact ⟨e_body, q, qc, P, A, rfl, hcl, hcov, hp, hM, hle, hbocc⟩
 
 private theorem HasCTy.lam_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {M : Comp} {e : Eff} {C : CTy Eff Mult} :
@@ -1778,6 +1834,10 @@ private theorem HasStack.weaken_eff {K : EvalCtx} {e e' : Eff} {C : CTy Eff Mult
     intro hle
     exact ⟨eo, le_refl _,
       HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells (le_trans hle hdis) hbocc hsub⟩
+  | @customF K n ℓ p cl e φ eo q P A Co hcl hcov hp hdis hbocc hsub ih =>
+    -- ADR-0092: rebuild the same custom frame at the narrowed focus effect.
+    intro hle
+    exact ⟨eo, le_refl _, HasStack.customF hcl hcov hp (le_trans hle hdis) hbocc hsub⟩
 
 /-! ### E.1c label-blind concat decomposition (the STATIC re-typing core, ADR-0045 1b → ADR-0054 STEP-5)
 
@@ -1814,6 +1874,7 @@ private theorem HasStack.concat_throws_typed {n : Nat} {Kᵢ Kₒ : EvalCtx} {�
     | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
     | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle _ hsub => exact ih hsub
 
 /-- STATE resume re-typing (static). The boundary handler is a `state ℓ' s` frame; reinstall a
 `state ℓ' s'` frame (any closed `s' : S`, `S = opRes ℓ' "get"`) over the same `Kᵢ`/`Kₒ`, re-typing the
@@ -1855,6 +1916,9 @@ private theorem HasStack.concat_state_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {�
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub'⟩
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle hbocc hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.customF hcl hcov hp hle hbocc hsub'⟩
 
 /-- TRANSACTION resume re-typing (static), the multi-cell analogue of `concat_state_resume`. The
 boundary `transaction ℓ' Θ` frame is reinstalled as `transaction ℓ' Θ'` (any all-`int`-cells heap `Θ'`)
@@ -1891,6 +1955,9 @@ private theorem HasStack.concat_transaction_resume {n : Nat} {Kᵢ Kₒ : EvalCt
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
       obtain ⟨eo', hleo, hsub'⟩ := ih hsub
       exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub'⟩
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle hbocc hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.customF hcl hcov hp hle hbocc hsub'⟩
 
 /-- The boundary `state ℓ' s` frame (located by the cap) carries a CLOSED stored state of type
 `S = opRes ℓ' "get"` and the get/put interface signatures — read off by peeling `Kᵢ` to the boundary
@@ -1915,6 +1982,7 @@ private theorem HasStack.concat_state_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {�
     | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
     | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle _ hsub => exact ih hsub
 
 /-- The boundary `transaction ℓ' Θ` frame (located by the cap) carries a CLOSED all-`int` heap and the
 monomorphic-`int` stm interface signatures — read off by peeling `Kᵢ` to the boundary. The static
@@ -1945,21 +2013,23 @@ private theorem HasStack.concat_transaction_store {n : Nat} {Kᵢ Kₒ : EvalCtx
     | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
     | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle _ hsub => exact ih hsub
 
-/-- **A `custom` frame CANNOT sit on a well-typed stack (ADR-0085 #44 stage 2, ADR-0087 finite rep).**
-`HasStack` has only `letF`/`appF`/`handleF`/`stateF`/`transactionF` constructors — NO `customF` (custom
-stays UNTYPED until stage 3). So a `HasStack` derivation over a stack containing
-`handleF n (Handler.custom …)` is uninhabitable: `cases` on the boundary frame's `HasStack` finds no
-matching constructor. This is the DISPATCH-side analogue of `handle_custom_uninhabited` (the
-handle-INSTALL side): it lets the perform dispatch case discharge the now-REAL `custom` arm VACUOUSLY on
-the typed path — a well-typed config never carries a custom frame, so the custom dynamics
-(`handlesOp`/`dispatchOn` now real, stage 2) are never observed by `preservation`/`progress`. Induct on
-`Kᵢ` to reach the boundary. -/
-private theorem HasStack.concat_custom_absurd {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {p : Val}
+/-- **The boundary `custom ℓ' p cl` frame (located by the cap) carries the CLAUSE typing, the CLOSED
+param `p : P`, the discharge relation, and B-occ (ADR-0092 D4).** The custom analogue of
+`concat_state_closed`: peel `Kᵢ` to the boundary and read off the `customF` frame's premises. The
+returned `φ` is the reinstalled frame's residual row (the substack's incoming effect). This is what the
+perform-dispatch custom arm needs to re-type the resume focus. -/
+private theorem HasStack.concat_custom_closed {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {p : Val}
     {cl : List (OpId × Comp)} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
-    HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo Co → False := by
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo Co →
+    ∃ (P : VTy Eff Mult),
+      HasClauses ℓ' P cl ∧ HasVTy [] [] p P := by
   induction Kᵢ generalizing e C with
-  | nil => intro hK; simp only [List.nil_append] at hK; cases hK
+  | nil =>
+    intro hK; simp only [List.nil_append] at hK
+    cases hK with
+    | @customF _ _ _ _ _ _ φ _ q P A _ hcl hcov hp hle hbocc hsub => exact ⟨P, hcl, hp⟩
   | cons fr Kᵢ ih =>
     intro hK; simp only [List.cons_append] at hK
     cases hK with
@@ -1968,6 +2038,98 @@ private theorem HasStack.concat_custom_absurd {n : Nat} {Kᵢ Kₒ : EvalCtx} {�
     | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
     | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle _ hsub => exact ih hsub
+
+/-- **CUSTOM resume re-typing (static, ADR-0092 D4).** The custom analogue of `concat_state_resume`:
+the boundary `custom ℓ' p cl` frame is reinstalled UNCHANGED (v1 is READ-ONLY param — the resume keeps
+`p`/`cl`, exactly `Dispatch.dispatchOn`'s custom arm), re-typing the resumed stack at the SAME `e C`.
+Each `Kᵢ` frame is rebuilt by `cases hK`, so the frame skeleton is preserved. -/
+private theorem HasStack.concat_custom_resume {n : Nat} {Kᵢ Kₒ : EvalCtx} {ℓ' : Label} {p : Val}
+    {cl : List (OpId × Comp)} {e : Eff} {C : CTy Eff Mult} {eo : Eff} {Co : CTy Eff Mult} :
+    HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo Co →
+    ∃ eo', eo' ≤ eo
+      ∧ HasStack (Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cl) :: Kₒ) e C eo' Co := by
+  intro hK
+  induction Kᵢ generalizing e C with
+  | nil =>
+    simp only [List.nil_append] at hK ⊢
+    exact ⟨eo, le_refl _, hK⟩
+  | cons fr Kᵢ ih =>
+    simp only [List.cons_append] at hK ⊢
+    cases hK with
+    | @letF _ _ _ e₂ _ q qk A B _ hN hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.letF hN hsub'⟩
+    | @appF _ _ _ _ q A B _ hv hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.appF hv hsub'⟩
+    | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle hbocc hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.handleF hraise hiface hle hbocc hsub'⟩
+    | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle hbocc hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.stateF hga hgr hpa hpr hif hs hle hbocc hsub'⟩
+    | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hsub'⟩
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle hbocc hsub =>
+      obtain ⟨eo', hleo, hsub'⟩ := ih hsub
+      exact ⟨eo', hleo, HasStack.customF hcl hcov hp hle hbocc hsub'⟩
+
+/-- **A clause found by `find?` is a well-typed ret-clause (ADR-0092 D4, ret-shape v1).** From
+`HasClauses ℓ P cl` and the membership of a clause `(op', body)` in `cl` (as returned by `dispatchOn`'s
+`find?`), the body IS a `ret w` with the resumed VALUE `w : opRes ℓ op'` under `[opArg ℓ op', P]`.
+Recurse on the list, matching the found clause against the head. -/
+private theorem HasClauses.mem_typed {ℓ : Label} {P : VTy Eff Mult} :
+    ∀ {cl : List (OpId × Comp)}, HasClauses ℓ P cl → ∀ {op' : OpId} {body : Comp},
+      (op', body) ∈ cl →
+      ∃ (opA opR : VTy Eff Mult) (qa qp : Mult) (w : Val),
+        body = Comp.ret w
+        ∧ EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op' = some opA
+        ∧ EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op' = some opR
+        ∧ HasVTy (qa :: qp :: []) (opA :: P :: []) w opR
+  | [], _, _, _, hmem => by simp at hmem
+  | (_ :: _), h, op', body, hmem => by
+    cases h with
+    | @cons _ _ op w rest opA opR qa qp hoa hor hw htail =>
+      rcases List.mem_cons.mp hmem with heq | htl
+      · obtain ⟨ho, hb⟩ := Prod.mk.injEq .. ▸ heq
+        subst ho; subst hb; exact ⟨opA, opR, qa, qp, w, rfl, hoa, hor, hw⟩
+      · exact HasClauses.mem_typed htail htl
+
+/-- **The custom ret-clause resume focus re-types at the PERFORM's ARBITRARY grade (ADR-0092 D4).** Given
+the resumed VALUE `w : opR` under `[opArg, P]` and the two CLOSED substituends (`p : P`, `v : opArg`), the
+resume focus `subst p (subst (shift v) (ret w)) = ret (w[p,v])` types at `F q_perf opR` over the EMPTY
+context for ANY returner grade `q_perf` — the ret-shape's grade-freedom (`HasCTy.ret`) is exactly what
+lets the resume adapt to the perform's free grade, the same mechanism the state/throws arms use. The
+value substitution is the double `subst_value_proof` restricted to a value payload
+(scratch/CustomRetGradeProbe.lean `custom_ret_resume_any_grade`). -/
+private theorem custom_resume_focus_types
+    {P opA opR : VTy Eff Mult} {q_perf qa qp : Mult} {p v w : Val}
+    (hp : HasVTy (Eff := Eff) (Mult := Mult) [] [] p P)
+    (hv : HasVTy (Eff := Eff) (Mult := Mult) [] [] v opA)
+    (hw : HasVTy (qa :: qp :: []) (opA :: P :: []) w opR) :
+    HasCTy [] [] (Comp.subst p (Comp.subst (Val.shift v) (Comp.ret w))) ⊥ (CTy.F q_perf opR) := by
+  have hvw : HasVTy (Eff := Eff) (Mult := Mult) [0] (P :: []) (Val.shift v) opA := by
+    have := hv.weaken 0 (Nat.zero_le _) P
+    simpa [Val.shift, insT, insG, GradeVec.zeros] using this
+  -- type the substituted `ret w` at the CLAUSE's own grade first (double subst_value_proof on `ret w`).
+  have H : HasCTy (qa :: qp :: []) (opA :: P :: []) (Comp.ret w) ⊥ (CTy.F 1 opR) :=
+    HasCTy.ret hw (by simp [hsmul_eq_smul, GradeVec.smul])
+  have hinner := subst_value_proof qa hvw H
+  simp only [hsmul_eq_smul, GradeVec.smul_cons, GradeVec.smul_nil, hadd_eq_add,
+    GradeVec.add_cons, GradeVec.add_nil_left, mul_zero, add_zero] at hinner
+  have houter := subst_value_proof qp hp hinner
+  simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add,
+    GradeVec.add_nil_left, GradeVec.add_nil_right] at houter
+  -- houter : HasCTy [] [] (subst p (subst (shift v) (ret w))) ⊥ (F 1 opR); the focus IS `ret <closed>`.
+  -- invert the ret, then re-`ret` at the ARBITRARY q_perf (ret's grade-freedom on a closed payload).
+  obtain ⟨γ', A0, q0, _heff, hCeq, _hγ0, hval⟩ := houter.ret_inv
+  obtain ⟨_hq0, hA0⟩ := CTy.F.injEq .. ▸ hCeq
+  subst hA0
+  have hγ'nil : γ' = [] := by have := hval.length_eq; simpa using this
+  subst hγ'nil
+  exact HasCTy.ret hval (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros])
 
 /-! ### E.1d STEP-5: identity-dispatch decomposition (`splitAtId_decomp`) -/
 
@@ -2040,6 +2202,13 @@ theorem HasStack.handlesOp_of_split {n : Nat} {h : Handler} {Kᵢ Kₒ : EvalCtx
         have hℓ : ℓ' = ℓ := by simpa only [Handler.label] using hlbl
         subst hℓ
         rcases hif op A hop with h | h | h <;> subst h <;> simp [handlesOp]
+    | @customF _ _ ℓ' _ _ _ _ _ _ P A' _ hcl hcov hp hle hbocc hsub =>
+        -- ADR-0092: custom HANDLES `(ℓ, op)` iff `op` is in the clause list — the interface COVERAGE
+        -- premise `hcov` gives exactly that from `opArg ℓ op = some A`.
+        have hℓ : ℓ' = ℓ := by simpa only [Handler.label] using hlbl
+        subst hℓ
+        simp only [handlesOp, Bool.and_eq_true, beq_self_eq_true, decide_true, true_and]
+        exact hcov op A hop
   | cons fr Kᵢ ih =>
     simp only [List.cons_append] at hstack
     cases hstack with
@@ -2048,6 +2217,7 @@ theorem HasStack.handlesOp_of_split {n : Nat} {h : Handler} {Kᵢ Kₒ : EvalCtx
     | @handleF _ _ ℓ'' _ φ _ q A _ hraise hiface hle _ hsub => exact ih hsub
     | @stateF _ _ ℓ'' s₀ _ φ _ q A S₀ _ hga hgr hpa hpr hif hs hle _ hsub => exact ih hsub
     | @transactionF _ _ ℓ'' Θ₀ _ φ _ q A _ hna hnr hra hrr hwa hwr hif hcells hle _ hsub => exact ih hsub
+    | @customF _ _ ℓ'' _ _ _ φ _ q P A _ hcl hcov hp hle _ hsub => exact ih hsub
 
 /-- Full `perform` focus inversion (ADR-0054 shape): exposes the cap typing, the op interface, and the
 argument typing. The re-typing the preservation perform case threads. -/
@@ -2245,11 +2415,31 @@ theorem preservation_proof
               HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
               hsub''⟩, hnecfg'⟩
       | custom ℓ' p cl =>
-        -- custom (ADR-0085 stage 2, ADR-0087 finite rep): dispatch is now REAL, but a `custom` frame
-        -- CANNOT sit on a well-typed stack — `HasStack` has no `customF` constructor (custom untyped until
-        -- stage 3). So `hstack`, which types `Kᵢ ++ handleF n (custom …) :: Kₒ`, is uninhabitable. VACUOUS
-        -- on the typed path: the now-real custom dynamics are never observed by preservation.
-        exact hstack.concat_custom_absurd.elim
+        -- ADR-0092 D4 (ret-shape v1): the REAL custom-dispatch resume. `handlesOp` gives `ℓ'=ℓ` + the
+        -- found clause; `concat_custom_closed` reads off the clause list + closed param; `mem_typed`
+        -- exposes the found clause as `ret w` with `w : opR = B`; the resume focus
+        -- `subst p (subst (shift v) (ret w)) = ret (w[p,v])` re-types at the PERFORM's grade `q`
+        -- (`custom_resume_focus_types`, ret-freedom), and `concat_custom_resume` reinstalls the frame so `Kᵢ` plugs.
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+        obtain ⟨hℓ, hfound⟩ := hk; subst hℓ
+        obtain ⟨clause, hcl_eq⟩ := Option.isSome_iff_exists.mp hfound
+        simp only [dispatchOn, hcl_eq, Option.some.injEq] at hstep2
+        subst hstep2
+        obtain ⟨P, hclauses, hp⟩ := hstack.concat_custom_closed
+        have hclause_mem : clause ∈ cl := List.mem_of_find?_eq_some hcl_eq
+        have hclause_op : clause.1 = op := by
+          have := List.find?_some hcl_eq; simpa [beq_iff_eq] using this
+        obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=
+          hclauses.mem_typed (op' := clause.1) (body := clause.2) (by rw [Prod.mk.eta]; exact hclause_mem)
+        rw [hclause_op] at hoa hor
+        have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
+        have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
+        subst hAopA; subst hBopR
+        rw [hbeq] at hnecfg' ⊢
+        have hfocus_ty := custom_resume_focus_types (q_perf := q) hp hwv hw
+        obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
+        obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+        exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩, hnecfg'⟩
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2311,9 +2501,16 @@ theorem preservation_proof
         ⟨e_body, CTy.F q A, hfocus',
           HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hstack⟩, hnecfg'⟩
     | custom ℓ p cl =>
-      -- custom is UNTYPED (ADR-0085 stage 1): `handle (.custom …) M` has no typing, so `hfocus` is
-      -- uninhabitable — the handle-install case never fires on a well-typed custom.
-      exact (hfocus.handle_custom_uninhabited).elim
+      -- ADR-0092: PUSH a TYPED custom handle. Mirrors the state/transaction install: invert
+      -- `handleCustom`, substitute the fresh cap into the body, install a `customF` frame.
+      simp only [Source.step, Handler.label, Option.some.injEq] at hstep
+      subst hstep
+      obtain ⟨e_body, q, qc, P, A, hC, hcl, hcov, hp, hM, hle, hbocc⟩ := hfocus.handleCustom_inv
+      subst hC
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
+      exact ⟨eo, le_refl _,
+        ⟨e_body, CTy.F q A, hfocus', HasStack.customF hcl hcov hp hle hbocc hstack⟩, hnecfg'⟩
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
@@ -2589,11 +2786,27 @@ theorem hasConfigTy_step
               HasCTy.ret HasVTy.vunit (by simp [hsmul_eq_smul, GradeVec.smul, GradeVec.zeros]),
               hsub''⟩⟩
       | custom ℓ' p cl =>
-        -- custom (ADR-0085 stage 2, ADR-0087 finite rep): dispatch is now REAL, but a `custom` frame
-        -- CANNOT sit on a well-typed stack — `HasStack` has no `customF` constructor (custom untyped until
-        -- stage 3). So `hstack`, which types `Kᵢ ++ handleF n (custom …) :: Kₒ`, is uninhabitable. VACUOUS
-        -- on the typed path: the now-real custom dynamics are never observed by preservation.
-        exact hstack.concat_custom_absurd.elim
+        -- ADR-0092 D4 (ret-shape v1): the REAL custom-dispatch resume (mirrors the preservation arm; no `hnecfg'`).
+        simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+        obtain ⟨hℓ, hfound⟩ := hk; subst hℓ
+        obtain ⟨clause, hcl_eq⟩ := Option.isSome_iff_exists.mp hfound
+        simp only [dispatchOn, hcl_eq, Option.some.injEq] at hstep2
+        subst hstep2
+        obtain ⟨P, hclauses, hp⟩ := hstack.concat_custom_closed
+        have hclause_mem : clause ∈ cl := List.mem_of_find?_eq_some hcl_eq
+        have hclause_op : clause.1 = op := by
+          have := List.find?_some hcl_eq; simpa [beq_iff_eq] using this
+        obtain ⟨opA, opR, qa, qp, w, hbeq, hoa, hor, hw⟩ :=
+          hclauses.mem_typed (op' := clause.1) (body := clause.2) (by rw [Prod.mk.eta]; exact hclause_mem)
+        rw [hclause_op] at hoa hor
+        have hAopA : A = opA := by rw [hopArg] at hoa; exact Option.some.inj hoa
+        have hBopR : B = opR := by rw [hopRes] at hor; exact Option.some.inj hor
+        subst hAopA; subst hBopR
+        rw [hbeq]
+        have hfocus_ty := custom_resume_focus_types (q_perf := q) hp hwv hw
+        obtain ⟨eo', hleo, hsub'⟩ := hstack.concat_custom_resume
+        obtain ⟨eo'', hleo', hsub''⟩ := hsub'.weaken_eff (bot_le)
+        exact ⟨eo'', le_trans hleo' hleo, ⟨⊥, CTy.F q B, hfocus_ty, hsub''⟩⟩
     · rw [if_neg hk] at hstep2; exact absurd hstep2 (by simp)
   | letC M N =>
     -- PUSH letC
@@ -2655,9 +2868,15 @@ theorem hasConfigTy_step
         ⟨e_body, CTy.F q A, hfocus',
           HasStack.transactionF hna hnr hra hrr hwa hwr hif hcells hle hbocc hstack⟩⟩
     | custom ℓ p cl =>
-      -- custom is UNTYPED (ADR-0085 stage 1): `handle (.custom …) M` has no typing, so `hfocus`
-      -- is uninhabitable — the handle-install case never fires on a well-typed custom.
-      exact (hfocus.handle_custom_uninhabited).elim
+      -- ADR-0092: PUSH a TYPED custom handle (mirrors the state/transaction install; no `hnecfg'` here).
+      simp only [Source.step, Handler.label, Option.some.injEq] at hstep
+      subst hstep
+      obtain ⟨e_body, q, qc, P, A, hC, hcl, hcov, hp, hM, hle, hbocc⟩ := hfocus.handleCustom_inv
+      subst hC
+      have hfocus' := subst_value_proof qc (HasVTy.vcap (n := g) (ℓ := ℓ)) hM
+      simp only [hsmul_eq_smul, GradeVec.smul_nil, hadd_eq_add, GradeVec.add_nil_left] at hfocus'
+      exact ⟨eo, le_refl _,
+        ⟨e_body, CTy.F q A, hfocus', HasStack.customF hcl hcov hp hle hbocc hstack⟩⟩
   | force w =>
     -- PUSH force: focus typing forces w = vthunk M
     rcases hfocus.force_inv.U_inv with ⟨MT, hweq, hMT⟩ | ⟨i, hweq, hget, _⟩
