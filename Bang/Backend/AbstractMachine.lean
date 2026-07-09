@@ -4625,6 +4625,103 @@ theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId �
         obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
         exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
 
+/-- If `splitAtId K n` resolves to a `custom ℓ' p cl` frame, the custom store has that entry at key
+`n`: `(ctxCustoms K).get? n = some (p, cl)`. Route-B custom mirror of `splitAtId_state_value`/
+`splitAtId_txn_value` — the value lookup is by identity `n`; the frame's label `ℓ'` is immaterial to
+the custom projection. Induction on `K`. -/
+theorem splitAtId_custom_value {n : Nat} :
+    ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {ℓ' : Bang.EffectRow.Label} {p : Val} {cl : List (Bang.OpId × Comp)},
+      Bang.splitAtId K n = some (Kᵢ, Handler.custom ℓ' p cl, Kₒ) →
+        (ctxCustoms K).get? n = some (p, cl) := by
+  intro K
+  induction K with
+  | nil => intro Kᵢ Kₒ ℓ' p cl hs; simp [Bang.splitAtId] at hs
+  | cons fr K ih =>
+    intro Kᵢ Kₒ ℓ' p cl hs
+    cases fr with
+    | handleF m h0 =>
+        simp only [Bang.splitAtId] at hs
+        by_cases hc : m = n
+        · subst hc
+          rw [if_pos rfl] at hs
+          simp only [Option.some.injEq, Prod.mk.injEq] at hs
+          obtain ⟨_, rfl, _⟩ := hs
+          simp [ctxCustoms, CStore.get?, List.find?]
+        · rw [if_neg hc] at hs
+          cases hsp : Bang.splitAtId K n with
+          | none => rw [hsp] at hs; simp at hs
+          | some t =>
+              obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+              obtain ⟨_, rfl, _⟩ := hs
+              have hv := ih hsp
+              cases h0 with
+              | custom ℓ0 p0 cl0 => simpa [ctxCustoms, CStore.get?, List.find?, hc] using hv
+              | state ℓ0 s0 => simpa [ctxCustoms] using hv
+              | throws ℓ0 => simpa [ctxCustoms] using hv
+              | transaction ℓ0 Θ0 => simpa [ctxCustoms] using hv
+    | letF N =>
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
+        | none => rw [hsp] at hs; simp at hs
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+            obtain ⟨_, rfl, _⟩ := hs
+            simpa [ctxCustoms] using ih hsp
+    | appF w =>
+        simp only [Bang.splitAtId] at hs
+        cases hsp : Bang.splitAtId K n with
+        | none => rw [hsp] at hs; simp at hs
+        | some t =>
+            obtain ⟨Ki, h', Ko⟩ := t; rw [hsp] at hs
+            simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+            obtain ⟨_, rfl, _⟩ := hs
+            simpa [ctxCustoms] using ih hsp
+
+/-! ### K-side store-DISJOINTNESS corollary of `StratFresh` (the id-first raise-arm ground).
+
+Under id-first dispatch, a `perform (vcap n2 _)` whose identity resolves in ONE per-kind store must be
+absent from the OTHERS — else the fail-loud raise (`evalD`) and the machine could diverge. On the `K`
+side (`run_evalD`, which carries `StratFresh`) this is the store-level corollary the run threads directly:
+a state cell at `n` ⇒ `splitAtId` finds a STATE frame there (`splitAtId_of_ctxStates_get`); a same-id txn
+cell would make `splitAtId` ALSO return a TXN frame (`splitAtId_of_ctxTxns_get`) — but `splitAtId` is a
+function, so the two results coincide, and a state frame is not a txn frame. `StratFresh` supplies the
+id-uniqueness the existence lemmas need. (K-side twin of the machine-hs disjointness.) -/
+theorem ctxTxns_get_none_of_ctxStates_some {n : Nat} {s : Val} {K : Bang.EvalCtx}
+    (hsf : Bang.Model.StratFresh K) (hs : (ctxStates K).get? n = some s) : (ctxTxns K).get? n = none := by
+  cases hgt : (ctxTxns K).get? n with
+  | none => rfl
+  | some Θ =>
+      exfalso
+      obtain ⟨Kᵢ, ℓs, Kₒ, hsps⟩ := splitAtId_of_ctxStates_get hsf hs
+      obtain ⟨Kᵢ', ℓt, Kₒ', hspt⟩ := splitAtId_of_ctxTxns_get hsf hgt
+      rw [hsps] at hspt; simp at hspt
+
+theorem ctxCustoms_get_none_of_ctxStates_some {n : Nat} {s : Val} {K : Bang.EvalCtx}
+    (hsf : Bang.Model.StratFresh K) (hs : (ctxStates K).get? n = some s) :
+    (ctxCustoms K).get? n = none := by
+  cases hgc : (ctxCustoms K).get? n with
+  | none => rfl
+  | some pcl =>
+      exfalso
+      obtain ⟨p, cl⟩ := pcl
+      obtain ⟨Kᵢ, ℓs, Kₒ, hsps⟩ := splitAtId_of_ctxStates_get hsf hs
+      obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
+      rw [hsps] at hspc; simp at hspc
+
+theorem ctxCustoms_get_none_of_ctxTxns_some {n : Nat} {Θ : List Val} {K : Bang.EvalCtx}
+    (hsf : Bang.Model.StratFresh K) (ht : (ctxTxns K).get? n = some Θ) :
+    (ctxCustoms K).get? n = none := by
+  cases hgc : (ctxCustoms K).get? n with
+  | none => rfl
+  | some pcl =>
+      exfalso
+      obtain ⟨p, cl⟩ := pcl
+      obtain ⟨Kᵢ, ℓt, Kₒ, hspt⟩ := splitAtId_of_ctxTxns_get hsf ht
+      obtain ⟨Kᵢ', ℓc, Kₒ', hspc⟩ := splitAtId_of_ctxCustoms_get hsf hgc
+      rw [hspt] at hspc; simp at hspc
+
 /-- **The custom-dispatch bridge** (route-B, Stage-4 perform-arm): a custom op serviced by `evalD`'s inline
 clause-service corresponds to the kernel `idDispatch` running the clause body against the SAME context `K`
 (the custom frame is REINSTALLED in place — `dispatchOn`'s custom arm keeps it live). The store read
@@ -5806,19 +5903,23 @@ theorem run_evalD : ∀ fe,
             cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
           simp only [evalD] at h
           -- one helper closing every raise sub-case: conclusion (focus-cap-shrink + NoResume from store-miss)
-          -- + continuation (label match/escape). The store-miss hyps rule out the resuming-kind frame.
+          -- + continuation (label match/escape). The store-miss hyps rule out the resuming-kind frame. ID-FIRST:
+          -- a THIRD custom disjunct (no custom cell OR the op misses the clause list) — the now-REAL custom
+          -- dispatch, no longer excluded by NoCustomFrame; `splitAtId_custom_value` mirrors state/txn.
           have close : ∀ (o : Bang.OpId),
               ((ctxStates K).get? n2 = none ∨ (o ≠ "get" ∧ o ≠ "put")) →
               ((ctxTxns K).get? n2 = none ∨ isTxnOp o = false) →
+              (∀ p cl, (ctxCustoms K).get? n2 = some (p, cl) → (cl.find? (·.1 == o)).isNone) →
               (CtxCorr σ (ctxNetEffect K σ τ) ∧ CtxTxnCorr τ (ctxNetEffect K σ τ) ∧
+                CCtxCorr κ (ctxNetEffect K σ τ) ∧
                 CapLabelCoh (g, ctxNetEffect K σ τ, Comp.ret v2) ∧ FreshCfg (g, ctxNetEffect K σ τ, Comp.ret v2) ∧
                 NoResume (ctxNetEffect K σ τ) n2 o) ∧
               ∀ (fuel : Nat) (r : Bang.Result Val),
                 dispatchRun fuel g n2 (ctxNetEffect K σ τ) (labelOf (ctxNetEffect K σ τ) n2) o v2 = r →
                   ∃ F, Bang.Config.run F (g, K, Comp.perform (Val.vcap n2 ℓ2) o v2) = r := by
-            intro o hst htx
+            intro o hst htx hcus
             rw [ctxNetEffect_self hCtx hTtx]
-            refine ⟨⟨hCtx, hTtx,
+            refine ⟨⟨hCtx, hTtx, hCK,
               ⟨fun p hp => hCoh.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp), hCoh.2⟩,
               ⟨hFresh.1, fun p hp => hFresh.2.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp),
                 hFresh.2.2.1, hFresh.2.2.2⟩, ?_⟩, fun fuel r hr => ?_⟩
@@ -5845,9 +5946,12 @@ theorem run_evalD : ∀ fe,
                       show (o == "readTVar") = false from by simpa using eb,
                       show (o == "writeTVar") = false from by simpa using ec]
               | custom ℓ' p cl =>
-                  -- ADR-0087 rung-2: a custom frame can't sit in `K` (`NoCustomFrame`, the scaffolding
-                  -- premise) — the now-REAL custom dispatch is never observed by the Stage-2/3 machine.
-                  exact (hncf.not_custom hsp).elim
+                  -- id-first: a custom frame CAN sit in K now. It fails to handle `o` — the clause list misses
+                  -- (`hcus` at the resolved custom cell `splitAtId_custom_value`) ⇒ handlesOp = false ⇒ no resume.
+                  left
+                  have hmiss := hcus p cl (splitAtId_custom_value hsp)
+                  simp only [Handler.label, Bang.handlesOp, Option.isNone_iff_eq_none.mp hmiss,
+                    Option.isSome_none, Bool.and_false]
             · simp only [dispatchRun] at hr
               cases hsp : Bang.splitAtId K n2 with
               | none =>
@@ -5858,37 +5962,83 @@ theorem run_evalD : ∀ fe,
                   have hlab : labelOf K n2 = ℓ2 := by
                     simp only [labelOf, hsp, Option.map_some, Option.getD_some]; exact hwk Kᵢ hh Kₒ hsp
                   rw [hlab] at hr; exact ⟨fuel, hr⟩
-          by_cases hop : op2 = "get"
-          · subst hop
-            simp only [if_pos rfl] at h
-            cases hg : σ.get? n2 with
-            | none =>
-                rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide))
-            | some sv => rw [hg] at h; simp at h
-          · by_cases hop2 : op2 = "put"
-            · subst hop2
-              simp only [if_neg (by decide : ¬ ("put" = "get")), if_pos rfl] at h
-              cases hg : σ.get? n2 with
-              | none =>
-                  rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                  obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                  exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide))
-              | some sv => rw [hg] at h; simp at h
-            · by_cases hopt : isTxnOp op2 = true
-              · simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
-                cases hgt : τ.get? n2 with
-                | none =>
-                    rw [hgt] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                    exact close _ (Or.inr ⟨hop, hop2⟩) (Or.inl (by rw [← hTtx]; exact hgt))
-                | some Θ => rw [hgt] at h; simp at h
+          -- ID-FIRST raise (route-B): n2 resolves in NO store, or its resolved-kind frame fails op2 (fail-loud).
+          -- Case-split on the store the identity resolves in (σ→τ→κ), mirroring the id-first evalD raise arm.
+          cases hg : σ.get? n2 with
+          | some sv =>
+              rw [hg] at h
+              -- state frame at n2: get/put SERVICE (term), so a raise needs op ∉ {get,put}.
+              by_cases hop : op2 = "get"
+              · subst hop; simp only [if_pos rfl] at h; simp at h
+              · by_cases hop2 : op2 = "put"
+                · subst hop2; simp only [if_neg (by decide : ¬ ("put" = "get")), if_pos rfl] at h; simp at h
+                · simp only [if_neg hop, if_neg hop2, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                  obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                  -- n2 resolves in σ (state frame) ⇒ absent from τ/κ by StratFresh id-uniqueness
+                  -- (ctxStates_some_ctxTxns_none / _ctxCustoms_none — the K-side store-disjointness corollary).
+                  have hsc := hCtx ▸ hg
+                  exact close _ (Or.inr ⟨hop, hop2⟩)
+                    (Or.inl (ctxTxns_get_none_of_ctxStates_some hFresh.2.2.1 hsc))
+                    (by intro p cl hc; exact absurd hc (by rw [ctxCustoms_get_none_of_ctxStates_some hFresh.2.2.1 hsc]; simp))
+          | none =>
+          rw [hg] at h
+          cases hgt : τ.get? n2 with
+          | some Θ =>
+              rw [hgt] at h
+              by_cases hopt : isTxnOp op2 = true
+              · simp only [hopt, if_true] at h; simp at h
               · rw [Bool.not_eq_true] at hopt
-                simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
+                simp only [hopt, Bool.false_eq_true, if_false, Option.some.injEq, Prod.mk.injEq,
                   Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                exact close _ (Or.inr ⟨hop, hop2⟩) (Or.inr hopt)
+                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                have hop : op2 ≠ "get" := by intro he; rw [he] at hopt; simp [isTxnOp] at hopt
+                have hop2 : op2 ≠ "put" := by intro he; rw [he] at hopt; simp [isTxnOp] at hopt
+                -- n2 resolves in τ (txn frame) ⇒ absent from κ by StratFresh id-uniqueness.
+                have htc := hTtx ▸ hgt
+                exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr hopt)
+                  (by intro p cl hc; exact absurd hc (by rw [ctxCustoms_get_none_of_ctxTxns_some hFresh.2.2.1 htc]; simp))
+          | none =>
+          rw [hgt] at h
+          cases hck : κ.get? n2 with
+          | none =>
+              simp only [hck, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+              obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+              exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inl (by rw [← hTtx]; exact hgt))
+                (by intro p cl hc; rw [← hCK] at hc; rw [hck] at hc; exact absurd hc (by simp))
+          | some pcls =>
+              obtain ⟨p, cls⟩ := pcls
+              rw [hck] at h
+              cases hcl : cls.find? (·.1 == op2) with
+              | some clause =>
+                  -- clause HIT ⇒ evalD SERVICES (recurses) ⇒ raise came from the clause body; recurse via ihR.
+                  simp only [hcl] at h
+                  have hgc : (ctxCustoms K).get? n2 = some (p, cls) := by rw [← hCK]; exact hck
+                  obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxCustoms_get hFresh.2.2.1 hgc
+                  have hlab : ℓ' = ℓ2 := by
+                    have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
+                  have hho : Bang.handlesOp (Handler.custom ℓ' p cls) ℓ2 op2 = true := by
+                    subst hlab
+                    have hsome : ((cls.find? (·.1 == op2)).isSome) = true := by rw [hcl]; rfl
+                    simp only [Bang.handlesOp, hsome, Bool.and_true, decide_true]
+                  have hcr : Bang.CapResolves K n2 ℓ2 op2 := ⟨Kᵢ, Handler.custom ℓ' p cls, Kₒ, hsp, hho⟩
+                  have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op2 v2)
+                      = some (g, K, Comp.subst p (Comp.subst (Val.shift v2) clause.2)) := by
+                    simp only [Source.step, dispatch_custom hFresh.2.2.1 hcr hgc hcl, Option.map_some]
+                  have hCsub := capLabelCoh_step _ _ hFresh hCoh hstep
+                  have hFsub := freshCfg_step _ _ hFresh hstep
+                  obtain ⟨hpair, kR⟩ :=
+                    ihR (Comp.subst p (Comp.subst (Val.shift v2) clause.2)) g σ τ κ n op v g' σ' τ' κ' h
+                      K hCtx hTtx hCK hCsub hFsub
+                  exact ⟨hpair, fun fuel r hr => by
+                    obtain ⟨F1, hF1⟩ := kR fuel r hr
+                    exact ⟨F1+1, by simp only [Bang.Config.run, hstep]; exact hF1⟩⟩
+              | none =>
+                  simp only [hcl, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                  obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                  exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inl (by rw [← hTtx]; exact hgt))
+                    (by intro p' cl' hc'; rw [← hCK] at hc'; rw [hck] at hc'
+                        simp only [Option.some.injEq, Prod.mk.injEq] at hc'
+                        obtain ⟨rfl, rfl⟩ := hc'; rw [Option.isNone_iff_eq_none]; exact hcl)
       | force a =>
           cases a with
           | vcap n ℓ => simp [evalD] at h
