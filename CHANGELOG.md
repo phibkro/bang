@@ -85,6 +85,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — #59 slice 2 — bang check [--json] subcommand + 0/1/2 exit contract (`dfc73de`)
 - **tooling** — test-check-json joins the default verify chain (`2599b80`)
 - **frontend** — structOK single-fixed-slot multi-arg/accumulator descent (ADR-0091, #50) (`dbca210`)
+- **kernel** — ADR-0092 D3/D4 — typed custom-handle rule + soundness arms (#44 Stage 3) (`13726c0`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

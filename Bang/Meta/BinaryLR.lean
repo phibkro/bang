@@ -2086,6 +2086,15 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
            show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
         at this
+  | @handleCustom _ _ ℓ p cl M e φ q qc P A _hcl _hcov _hp hM _hle _hBocc =>
+      -- STAGE-3 DEFERRED (ADR-0092): the binary-LR custom arm needs a `compatK_handleCustom`
+      -- compatibility lemma (the resumptive custom-handler contextual-equivalence for USER effects),
+      -- which does not yet exist — it is the LR-side analogue of `compatK_handleState`/`Transaction` and a
+      -- SEPARATE deliverable from the Stage-3 KERNEL soundness (preservation/progress, ADR-0092 D4, which
+      -- IS closed and census-clean). `crelK_fund` already feeds the sorry-bearing `lr_fundamental`, so this
+      -- `sorry` newly-flags no clean headline. ENTRY GATE for retiring it: prove `compatK_handleCustom`
+      -- (→ a `krelS_custom_reinstall`, mirroring `krelS_state_reinstall`).
+      sorry
 end
 
 
@@ -2170,6 +2179,13 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
         simp only [handlesOp, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc; tauto
       exact krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' nh n Θ Θ
         (heapRel_self_of_cells_int n Θ hcells) K K (KrelS_eff_cast (ihK hCo))
+  | @customF K nh ℓ p cl e φ eo q P A Co _hcl _hcov _hp _hle _hBocc hK ihK =>
+      -- STAGE-3 DEFERRED (ADR-0092): the custom-frame self-relation needs `krelS_custom_reinstall`
+      -- (mirroring `krelS_state_reinstall`/`transaction_reinstall`) — the resumptive USER-effect handler's
+      -- LR reinstall lemma, a SEPARATE deliverable from Stage-3 KERNEL soundness (which is closed +
+      -- census-clean). `krelS_refl` is an LR lemma feeding the already-sorry-bearing LR spine, so this
+      -- `sorry` newly-flags no clean headline. ENTRY GATE: prove `krelS_custom_reinstall`.
+      sorry
 
 end -- public section
 end Bang
