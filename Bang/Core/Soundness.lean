@@ -1653,7 +1653,7 @@ each carry a built-in handler in the index and none unify with `Handler.custom` 
 derivation eliminates all of them, leaving no case. This is what keeps the trusted-three axiom-clean
 while `custom` stays inert: no well-typed program contains a `custom` handler. -/
 private theorem HasCTy.handle_custom_uninhabited {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
-    {ℓ : Label} {p : Val} {cl : OpId → Option Comp} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
+    {ℓ : Label} {p : Val} {cl : List (OpId × Comp)} {M : Comp} {e : Eff} {C : CTy Eff Mult} :
     HasCTy γ0 Γ0 (Comp.handle (Handler.custom ℓ p cl) M) e C → False := by
   intro h; cases h
 

@@ -20,7 +20,7 @@ open Bang (Val Comp Handler)
 
 /-- (A) custom handle, body RETURNS: BOTH sides reach done 5 (WASM HANDLE mints+pops generically,
 matching the kernel). Frozen headline HOLDS here — not a refutation. -/
-def cTrivial : Comp := .handle (Handler.custom 0 .vunit (fun _ => none)) (.ret (.vint 5))
+def cTrivial : Comp := .handle (Handler.custom 0 .vunit []) (.ret (.vint 5))
 example : Source.eval 50 cTrivial = Result.done (.vint 5) := by rfl
 example : Wasmfx.run 100 (compileC cTrivial) = Result.done (.int 5) := by rfl
 
@@ -28,7 +28,7 @@ example : Wasmfx.run 100 (compileC cTrivial) = Result.done (.int 5) := by rfl
 INERT (handlesOp custom = false ⇒ idDispatch none ⇒ the perform ESCAPES). So the frozen headline's
 HYPOTHESIS `Source.eval = done` is FALSE ⇒ the implication is VACUOUS, not violated. -/
 def cPerform : Comp :=
-  .handle (Handler.custom 0 .vunit (fun op => if op == "myop" then some (.ret (.vint 7)) else none))
+  .handle (Handler.custom 0 .vunit [("myop", .ret (.vint 7))])
     (.perform (.vvar 0) "myop" .vunit)
 example : Source.eval 50 cPerform = Result.escapedCap := by rfl
 

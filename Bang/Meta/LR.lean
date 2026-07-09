@@ -587,7 +587,7 @@ theorem renameK_append (σ : Nat → Nat) (K K' : EvalCtx) :
   simp only [renameH]
 @[simp] theorem renameH_transaction (σ : Nat → Nat) (ℓ : Label) (Θ : List Val) :
     renameH σ (.transaction ℓ Θ) = .transaction ℓ (Θ.map (renameV σ)) := by simp only [renameH]
-@[simp] theorem renameH_custom (σ : Nat → Nat) (ℓ : Label) (p : Val) (cl : OpId → Option Comp) :
+@[simp] theorem renameH_custom (σ : Nat → Nat) (ℓ : Label) (p : Val) (cl : List (OpId × Comp)) :
     renameH σ (.custom ℓ p cl) = .custom ℓ p cl := by simp only [renameH]
 
 @[simp] theorem renameF_letF (σ : Nat → Nat) (N : Comp) : renameF σ (.letF N) = .letF (renameC σ N) := rfl
