@@ -107,6 +107,16 @@ Comments are **stripped before parsing**, so they carry no meaning to check/run 
 **not preserved by `bang fmt`** — a formatted file drops any comments in its input. There
 is no block-comment form.
 
+**Unary minus**: `-e` desugars to `0 - e` (the same binary-`-` AST node — no new
+surface constructor), binding to ONE atom — tighter than every binary operator, so
+`-x + 1` reads as `(-x) + 1` and `-x * y` as `(-x) * y`, matching mainstream convention.
+A bare (unparenthesized) application argument goes to the BINARY reading instead: `f -1`
+parses as `f - 1`, not `f` applied to `-1` — parenthesize for the unary reading (`f (-1)`)
+the same disambiguation every language with juxtaposition-application + infix `-` makes.
+**Interacts with line comments**: `--` wins maximal munch over two `-` tokens, so `3--10`
+is `3` followed by a DROPPED line comment (`--10`), not `3 - (-10)` — write `3 - -10` or
+`3-(-10)` (a space or parens before the second `-`) to get subtraction of a negative.
+
 ## Effect channels
 
 The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;
