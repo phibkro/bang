@@ -90,6 +90,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **dogfood** — examples/json — value-subset JSON parser/printer in bang (`920521a`)
 - **kernel** — ADR-0092 D3/D4 — typed custom-handle rule + soundness arms (#44 Stage 3) (`125b383`)
 - **tooling** — just regen-all — the write-side twin of the fitness legs (`e8fbd2d`)
+- **witness** — ElabFuzz — source-level fuzz harness for the elaborator (tier 3) (`c3432b9`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
