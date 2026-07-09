@@ -232,6 +232,18 @@ def effOf : Ty → Option EffRow
   | .tArr _ b  => effOf b
   | _          => none
 
+/-- A user `effect` decl's ALLOCATED label + resolved op signatures (ADR-0092 D1/D2). `label` is
+`4 + declIndex` among the program's `effect` decls (deterministic by decl order, ADR-0046 — see
+`buildEnv`). `ops` maps each declared op name to its resolved `(argTy?, resTy)` — `argTy? = none`
+for a 0-ary op (a bare result-type signature, `op : ResTy`), `some A` for the v1 single-arg arrow
+(`op : ArgTy -> ResTy`). This IS the surface-side analogue of the kernel's `[EffSig]` typeclass
+(`Bang/Core/IR.lean`) — a per-program, program-DERIVED, total finite instance the elaborator
+constructs and consults; the kernel itself never sees effect NAMES (label-agnostic, `Label = Nat`,
+D1's "kernel never learns names"). -/
+structure EffectInfo where
+  label : Label
+  ops   : List (String × Option VT × VT)   -- (opName, argTy?, resTy)
+
 /-- Map an effect label back to its surface name (the inverse of the lowering's `exnLabel`/… choice).
 Moved ahead of `checkSV` (below) so the thunk-row mismatch error (ADR-0088) can name the offending
 effect instead of a bare "exceeds the bound". -/
@@ -240,13 +252,19 @@ def effName (ℓ : Label) : String :=
   else if ℓ = stmLabel then "stm" else if ℓ = divLabel then "Div" else s!"e{ℓ}"
 
 /-- Render an effect row as `throws, state` by decidable membership of the known labels (computable —
-`Finset.toList` is noncomputable; the surface has exactly these four labels: throws·state·stm·Div). -/
-def showRow (φ : EffRow) : String :=
+`Finset.toList` is noncomputable; the four BUILT-IN labels throws·state·stm·Div are always checked).
+`effects` (ADR-0092 D2, default `[]`) additionally names any DECLARED user-effect label present in
+`φ` by its SOURCE name (e.g. `Net`, not the kernel's bare `e4`) — the same finite-known-set pattern
+as the built-ins, extended over the program's OWN declared labels instead of a fixed four; a caller
+with no `ElabEnv` in scope (`display`, the decl-free path) passes nothing and gets the pre-ADR-0092
+behavior byte-identical. -/
+def showRow (φ : EffRow) (effects : List (String × EffectInfo) := []) : String :=
   String.intercalate ", " <|
     (if exnLabel ∈ φ then [effName exnLabel] else []) ++
     (if stateLabel ∈ φ then [effName stateLabel] else []) ++
     (if stmLabel ∈ φ then [effName stmLabel] else []) ++
-    (if divLabel ∈ φ then [effName divLabel] else [])
+    (if divLabel ∈ φ then [effName divLabel] else []) ++
+    (effects.filterMap (fun (n, ei) => if ei.label ∈ φ then some n else none))
 
 mutual
 /-- A value inference type: a kernel `VTy` shape plus unification `vhole`s. `tvar` still carries BOTH
@@ -399,12 +417,19 @@ vars) still ride `tvar` (`rigidBase`-offset), so generalize/instantiate touch on
 `bigFuel`-driven total recursion (the repo's parser idiom) — no cycles once occurs-check holds, but
 Lean can't see that, so fuel bounds every walk (never bites: the fresh counter tops out in the dozens). -/
 
-/-- The unification state: a fresh-variable counter + the value-hole and comp-hole substitutions. -/
+/-- The unification state: a fresh-variable counter + the value-hole and comp-hole substitutions
++ the program's user-EFFECT table (ADR-0092 D2 — READ-ONLY here: `buildEnv` populates it once
+before inference starts; nothing during a run ever mutates `effects`, it just rides the state
+monad because `Infer`'s mutual family has no separate reader-style environment parameter — the
+established `synthSC`/`checkSC`/… signatures take only `Γ : NCtx`, and re-threading `ElabEnv`
+through every one of them would be a far larger diff than piggybacking on the state already
+passed implicitly everywhere). -/
 structure USt where
-  fresh  : Nat := 0
-  subst  : List (Nat × IVTy) := []
-  csubst : List (Nat × ICTy) := []
-  rsubst : List (Nat × Row) := []   -- row-variable substitution (bite-0b item 3); = EffectRow.Subst
+  fresh   : Nat := 0
+  subst   : List (Nat × IVTy) := []
+  csubst  : List (Nat × ICTy) := []
+  rsubst  : List (Nat × Row) := []   -- row-variable substitution (bite-0b item 3); = EffectRow.Subst
+  effects : List (String × EffectInfo) := []   -- ADR-0092 D2: name ↦ label + op sigs, seeded once
 
 abbrev Infer := StateT USt (Except String)
 
@@ -852,15 +877,22 @@ reserved-range `tvar`; a residual comp hole fails loud. -/
 def runInferV (act : Infer IVTy) : Except String VT := do
   let iv ← (do zonkV bigFuel (← act)).run' {}
   extractV iv
-/-- As `runInferV`, for a computation type + its row. -/
-def runInferC (act : Infer (ICTy × Row)) : Except String (CT × EffRow) := do
-  let (Bz, φ) ← (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).labels)).run' {}
-  return (← extractC Bz, φ)
 /-- As `runInferC`, but keep the ZONKED `ICTy` (no extraction) — for the elaborator's chole-tolerant
 returner probes (`anfSplit`, `let`-RHS), which must inspect a higher-order result WITHOUT failing on a
 still-open computation hole. -/
 def zonkInferC (act : Infer (ICTy × Row)) : Except String (ICTy × EffRow) :=
   (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).labels)).run' {}
+/-- Run an inference action, zonk, and zonk-EXTRACT to a kernel `CTy` + effect row. `effects` seeds
+`USt`'s user-effect table (ADR-0092 D2, default `[]` — every PRE-existing call site is decl-free or
+doesn't need `.dotPerform` against a user effect, so it stays behaviour-identical); callers that DO
+have a built `ElabEnv` (`checkProg`/`checkAndLower`/`runTypedYieldsInt`) pass `env.effects` so the
+type-checker's `.dotPerform` arm can resolve a user op by `(label, op)`. -/
+def runInferC (act : Infer (ICTy × Row)) (effects : List (String × EffectInfo) := []) :
+    Except String (CT × EffRow) := do
+  let (Bz, φ) ←
+    (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).labels)).run'
+      { effects := effects }
+  return (← extractC Bz, φ)
 
 
 /-- Syntactic value check — mirrors `Surface.lowerV`'s value-shaped constructors. A `thunk` is
@@ -1056,18 +1088,44 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
   | .dotPerform recv op args => do
       match (← resolve bigFuel (← synthSV Γ recv)) with
       | .cap ℓ =>
-          match capOpSig op with
-          | none => throw s!"unknown capability op '{op}'"
-          | some (ℓ', argTys, resTy) =>
-              if ℓ != ℓ' then throw s!"cap op '{op}' expects a different capability (label mismatch)"
-              else
-                -- match SurfArgs to the op's arity: each arg is a syntactic subterm (termination).
-                match args, argTys with
-                | .none,    []       => return (.F .omega (embV resTy), singR ℓ)
-                | .one a,   [t]      => do let _ ← checkSV Γ a (embV t); return (.F .omega (embV resTy), singR ℓ)
-                | .two a b, [t1, t2] => do let _ ← checkSV Γ a (embV t1); let _ ← checkSV Γ b (embV t2)
-                                          return (.F .omega (embV resTy), singR ℓ)
-                | _, _ => throw s!"cap op '{op}' expects {argTys.length} argument(s)"
+          -- ADR-0092 D1/D2: dispatch on the RECEIVER'S label first (`ℓ < 4` ⟹ built-in, `ℓ ≥ 4` ⟹ a
+          -- user effect) — NOT on the op name. `capOpSig` is keyed globally by name only (sound for
+          -- the four fixed built-ins, which never collide with EACH OTHER), but a user `effect` may
+          -- freely reuse a built-in op NAME (`read`/`get`/…) on its own distinct label — checking
+          -- `capOpSig op` before the label would let a same-named user op be wrongly shadowed by an
+          -- unrelated built-in's signature (found live: `effect Net { read : … }` collided with the
+          -- STM `read` op before this fix). Label-first makes the two tables genuinely disjoint.
+          if ℓ < 4 then
+            match capOpSig op with
+            | none => throw s!"unknown capability op '{op}'"
+            | some (ℓ', argTys, resTy) =>
+                if ℓ != ℓ' then throw s!"cap op '{op}' expects a different capability (label mismatch)"
+                else
+                  -- match SurfArgs to the op's arity: each arg is a syntactic subterm (termination).
+                  match args, argTys with
+                  | .none,    []       => return (.F .omega (embV resTy), singR ℓ)
+                  | .one a,   [t]      => do let _ ← checkSV Γ a (embV t); return (.F .omega (embV resTy), singR ℓ)
+                  | .two a b, [t1, t2] => do let _ ← checkSV Γ a (embV t1); let _ ← checkSV Γ b (embV t2)
+                                            return (.F .omega (embV resTy), singR ℓ)
+                  | _, _ => throw s!"cap op '{op}' expects {argTys.length} argument(s)"
+          else
+              -- D2: total lookup over declared (ℓ, op) pairs; an undeclared op at a DECLARED user
+              -- label is an ELABORATION error (never a kernel stuck — the program-derived instance
+              -- is total BY CONSTRUCTION over what it declares, so "no entry" here is a genuine
+              -- source error, not a gap to guess through).
+              let effs ← (do return (← get).effects)
+              match effs.find? (fun (_, ei) => ei.label == ℓ) with
+              | none => throw s!"cap op '{op}': receiver's capability label is not a declared effect"
+              | some (effName, ei) =>
+                  match ei.ops.find? (fun (n, _, _) => n == op) with
+                  | none => throw s!"unknown operation '{op}' for effect '{effName}'"
+                  | some (_, argTy?, resTy) =>
+                      match args, argTy? with
+                      | .none,  none   => return (.F .omega (embV resTy), singR ℓ)
+                      | .one a, some t => do let _ ← checkSV Γ a (embV t); return (.F .omega (embV resTy), singR ℓ)
+                      | .none,  some _ => throw s!"effect '{effName}' op '{op}' expects 1 argument(s), got 0"
+                      | .one _, none   => throw s!"effect '{effName}' op '{op}' expects 0 argument(s), got 1"
+                      | .two .., _     => throw s!"effect '{effName}' op '{op}': v1 supports at most 1 argument"
       | _ => throw s!"cap op '{op}': receiver is not a capability value (Cap ℓ)"
   -- HM (#53): a bare anonymous injection in COMPUTATION position lowers to `ret (inj v)` — a value ⇒
   -- ret, with a fresh hole for the unfilled variant (mirrors the `synthSV` arm and `pairS` here).
@@ -1232,9 +1290,11 @@ def showCTy : CT → String
   | .arr _ a b => s!"{showVTy a} -> {showCTy b}"
 end
 
-/-- Render a computation's full type: the value/arrow shape plus its effect row as a `! {…}` suffix. -/
-def showType (B : CT) (φ : EffRow) : String :=
-  let r := showRow φ
+/-- Render a computation's full type: the value/arrow shape plus its effect row as a `! {…}` suffix.
+`effects` (ADR-0092 D2, default `[]`) names any declared user-effect label present in the row —
+see `showRow`. -/
+def showType (B : CT) (φ : EffRow) (effects : List (String × EffectInfo) := []) : String :=
+  let r := showRow φ effects
   if r.isEmpty then showCTy B else s!"{showCTy B} ! \{{r}}"
 
 /-- End-to-end: parse + check a source string, then DISPLAY its type (or the error). -/
@@ -1483,7 +1543,8 @@ structure HktImpl where
   ops       : List Bang.Surface.OpDef
 
 /-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls
-+ bounded generic functions + raw impls (for bounded-fn monomorphization) + higher-kinded traits/impls. -/
++ bounded generic functions + raw impls (for bounded-fn monomorphization) + higher-kinded traits/impls
++ user EFFECT decls (ADR-0092 D1/D2 — name ↦ allocated label + op signatures). -/
 structure ElabEnv where
   insts    : InstEnv
   ctors    : List (String × CtorInfo)
@@ -1494,6 +1555,7 @@ structure ElabEnv where
   hktTraits   : List (String × List String) := []   -- HK trait NAME × its constructor-kinded params (`Functor` ↦ `["f"]`)
   hktMethodOf : List (String × String) := []         -- HK method opName × its trait name (`fmap` ↦ `Functor`)
   hktImpls    : List HktImpl := []                    -- HK impls, keyed by carrier ctor name
+  effects     : List (String × EffectInfo) := []      -- ADR-0092 D1/D2: effect NAME ↦ its label + op sigs
 
 /-- k-ary payload as a right-nested product (`[] ↦ Unit`, the 0-ary payload). -/
 def prodOfTys : List Ty → Ty
@@ -2463,6 +2525,7 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut hktTraits   : List (String × List String) := []
   let mut hktMethodOf : List (String × String) := []
   let mut hktImpls    : List HktImpl := []
+  let mut effects     : List (String × EffectInfo) := []
   for d in ds do
     match d with
     | .dataD n [] cs => do                       -- MONOMORPHIC: byte-identical to the ADR-0069 path
@@ -2523,7 +2586,7 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
                   let retR ← resolveTy gen aliases (substSelf τR sig.retTy)
                   -- op params are all `Self`-typed (v1 convention); a 0-ary op (`empty`) has none.
                   let bodyΓ : NCtx := od.params.map (fun p => (p, embV (vtyOf τR)))
-                  let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], []⟩ bodyΓ od.body
+                  let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], [], []⟩ bodyΓ od.body
                   insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody⟩]
                   rawOps := rawOps ++ [⟨od.name, od.params, od.body, sig.retTy⟩]   -- RAW, for bounded-fn monomorphization
             rawImpls := rawImpls ++ [⟨tn, vtyOf τR, rawOps⟩]
@@ -2531,7 +2594,32 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
         if (traits.lookup tr).isNone then throw s!"fn '{n}': bound trait '{tr}' is not declared"
         if (bfns.lookup n).isSome then throw s!"duplicate function '{n}'"
         bfns := (n, ⟨n, ps, ty, tr, tv, b⟩) :: bfns
-  return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls⟩
+    | .effectD n ops => do                       -- ADR-0092 D1/D2: `effect N { op : ArgTy -> ResTy, … }`
+        -- D1: duplicate EFFECT names are a LOUD elaboration error (op-name duplicates within one
+        -- block are already caught at PARSE time, `pEffectMembers`) — naming both conflicting sites
+        -- isn't possible with only a name here (the parser doesn't carry spans this deep), so the
+        -- message names the effect; ADR-0076's span-view still locates the token by name downstream.
+        if (effects.lookup n).isSome then throw s!"duplicate effect '{n}'"
+        if ops.isEmpty then throw s!"effect {n}: needs at least one operation"
+        -- D1: label := 4 + declIndex, deterministic by EFFECT-decl order (the four built-ins keep
+        -- 0-3; `effects.length` is exactly "how many effect decls processed so far", so this is
+        -- stable under interleaving with data/trait/impl/fn decls — only relative EFFECT order
+        -- matters, matching D1's "decl order" (the effect sub-sequence, not the whole decl list).
+        let ℓ : Label := 4 + effects.length
+        -- D2: resolve each op's declared Ty into (argTy?, resTy) — a bare type is 0-ary; a single
+        -- arrow `A -> B` is v1's one-arg op (ADR-0085 D4's sketch); anything else (a multi-arrow,
+        -- `A -> B -> C`) is OUT of v1 scope and fail-louds rather than silently truncating.
+        let mut opSigs : List (String × Option VT × VT) := []
+        for (opName, ty) in ops do
+          let tyR ← resolveTy gen aliases ty
+          match tyR with
+          | .tArr a b =>
+              match tyBoth b with
+              | (_, .F _ resV) => opSigs := opSigs ++ [(opName, some (vtyOf a), resV)]
+              | (_, .arr ..)   => throw s!"effect {n}: op '{opName}' is multi-argument — v1 supports only a single `ArgTy -> ResTy` arrow"
+          | _ => opSigs := opSigs ++ [(opName, none, vtyOf tyR)]
+        effects := (n, ⟨ℓ, opSigs⟩) :: effects
+  return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls, effects⟩
 
 /-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
 you can't mix a char and a number), `Str` = a monomorphic char-list. Injected before every program so
@@ -2672,13 +2760,18 @@ def injectStdlib (declared : List String) (body : Surf) : Except String Surf := 
     return body
   wrapFnSrcs stdlibFnSrcs body
 
-/-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve the body. -/
-def elabProg (p : Prog) : Except String Surf := do
+/-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve
+the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the type-checker's
+`.dotPerform` arm needs the program's user-effect table to resolve a `perform` against a declared
+`effect`'s op, and `synthSC`/`checkSC` have no separate `ElabEnv` parameter (see `USt.effects`'s
+comment) — so `elabProg`'s caller threads the pair into `runInferC`. -/
+def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) := do
   let declared := p.decls.filterMap (fun | .dataD n _ _ => some n | _ => none)
   let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
   let body ← injectStdlib declared p.body
   let env ← buildEnv (prelude ++ p.decls)
-  elabS env [] (← expandBFns env none bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
+  let e ← elabS env [] (← expandBFns env none bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
+  return (e, env.effects)
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
@@ -2687,7 +2780,7 @@ program parses to `⟨[], body⟩` and elaborates to itself, so this is a strict
 `Surface.lower ∘ parse` runner path — the whole MVP surface becomes runnable from the CLI. -/
 public def elaborateToComp (src : String) : Except String Comp := do
   let prog ← Bang.Surface.parseProg src
-  let e ← elabProg prog
+  let (e, _) ← elabProg prog
   Bang.Surface.lower e
 
 /-- PUBLIC typed runnable entry (the `bang` CLI's DEFAULT pipeline, ADR-0076 #51): parse (located) →
@@ -2702,19 +2795,49 @@ Stage B) when it names a locatable token, else un-located (`none` → a plain me
 per-node span tier). -/
 public def checkAndLower (src : String) : Except (String × Option Bang.Surface.Span) Comp := do
   let prog ← Bang.Surface.parseProgLocated src
-  let e ← (elabProg prog).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
-  let _ ← (runInferC (synthSC [] e)).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
+  let (e, effects) ← (elabProg prog).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
+  let _ ← (runInferC (synthSC [] e) effects).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
   (Bang.Surface.lower e).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
 
 /-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
 def checkProg (src : String) : Except String (CT × EffRow) := do
-  runInferC (synthSC [] (← Bang.Surface.parseProg src >>= elabProg))
+  let (e, effects) ← Bang.Surface.parseProg src >>= elabProg
+  runInferC (synthSC [] e) effects
 
-/-- Parse + elaborate + check + DISPLAY — the decl-aware, typed sibling of `display`. -/
+/-- Parse + elaborate + check + DISPLAY — the decl-aware, typed sibling of `display`. Re-derives
+`effects` alongside the checked type (rather than widening `checkProg`'s established `(CT ×
+EffRow)` return type, which `typeStringOfProg`/the REPL's `:t` already depend on) so a DECLARED
+user-effect label in the row renders by its SOURCE name (ADR-0092 D2), not silently vanishing. -/
 def displayProg (src : String) : String :=
-  match checkProg src with
-  | .ok (B, φ) => showType B φ
-  | .error e   => s!"error: {e}"
+  match (do
+      let (e, effects) ← Bang.Surface.parseProg src >>= elabProg
+      let (B, φ) ← runInferC (synthSC [] e) effects
+      return (B, φ, effects)) with
+  | .ok (B, φ, effects) => showType B φ effects
+  | .error e            => s!"error: {e}"
+
+/-- TEST-ONLY (ADR-0092 D1/D2, no surface syntax): type `perform` (`.dotPerform`) against a
+DECLARED user effect under a HYPOTHETICAL capability binding `capName : Cap ℓ` — the D3 typed
+custom-HANDLE rule (the sibling kernel lane's work) is what would normally introduce such a
+binding via `handle e with Effect { … }`; until it lands, this internal helper is what lets D1/D2
+be asserted end-to-end: "the performer side is already general" (ADR-0092's own grounding fact)
+means `.dotPerform`'s typing arm needs NOTHING from D3 to run correctly — it only needs a `Cap ℓ`
+in scope, however that binding arrives. `declsSrc` supplies the `effect` decl(s) (+ any `data` the
+op signatures reference); `effectName`/`capName` name the effect and the hypothetical binder;
+`exprSrc` is the `.dotPerform`-shaped body (`capName.op(args)` or `capName.op`), checked under
+`Γ = [(capName, Cap ℓ)]` where `ℓ` is `effectName`'s ALLOCATED label. -/
+def checkPerformUnderCap (declsSrc effectName capName exprSrc : String) :
+    Except String (CT × EffRow) := do
+  let declsProg ← Bang.Surface.parseProg declsSrc
+  if declsProg.body != .lit 0 then throw "checkPerformUnderCap: declsSrc must be decls-only (end in a placeholder `0`)"
+  let env ← buildEnv declsProg.decls
+  match env.effects.lookup effectName with
+  | none => throw s!"checkPerformUnderCap: effect '{effectName}' is not declared in declsSrc"
+  | some ei => do
+      let bodyE ← Bang.Surface.parse exprSrc
+      let capTy : IVTy := .cap ei.label
+      let ebody ← elabS env [(capName, capTy)] bodyE
+      runInferC (synthSC [(capName, capTy)] ebody) env.effects
 
 /-- PUBLIC face of the checker for external tools (the REPL's `:t`, #7): the rendered
 `type ! row` of a checked program, or the check error as `.error`. Thin wrapper —
@@ -2766,8 +2889,8 @@ it runs. Now a thin PROJECTION of the `Outcome` layer (issue #54) over the SAME 
 behaviour is identical — the green corpus is the build-gated proof). -/
 def runTypedYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
   match (do
-      let e ← Bang.Surface.parseProg src >>= elabProg
-      let _ ← runInferC (synthSC [] e)
+      let (e, effects) ← Bang.Surface.parseProg src >>= elabProg
+      let _ ← runInferC (synthSC [] e) effects
       Bang.Surface.lower e) with
   | .ok c => outcomeIs (evalToOutcome (Source.eval fuel c)) (.yields (.vint n))
   | .error _ => false
@@ -2912,12 +3035,14 @@ def checkLaws (src : String) : Except String (List String) := do
     | .implD .. => pure ()
     | .dataD .. => pure ()
     | .fnD ..   => pure ()
+    | .effectD .. => pure ()   -- ADR-0092: no laws attached to an effect decl
     | .traitD tn _ _ laws =>
         for other in p.decls do
           match other with
           | .traitD .. => pure ()
           | .dataD ..  => pure ()
           | .fnD ..    => pure ()
+          | .effectD .. => pure ()   -- ADR-0092: ditto
           | .implD tn' τTy _ =>
               if tn' == tn && !laws.isEmpty then                -- HK-trait laws are Stage D; Self-only path unchanged
                 let τR ← resolveTy env.gen env.aliases τTy      -- named impl targets sample at the closed μ
@@ -3858,5 +3983,91 @@ def parserMonad : String :=
 #guard runTypedYieldsInt 8000 (parserMonad ++
   "match (bind digit { fun a => bind digit { fun b => pure(a * 10 + b) } } : Parser Int) " ++
   "{ Parser(g) -> match (($g) \"3\") { None -> 0, Some(r) -> let (v, rest) = r in v } }") 0
+
+/-! ### Validation ⑨k — USER EFFECTS: label allocation + program-derived typing (ADR-0092 D1/D2, #44).
+
+`effect Net { read : Int -> Str, … }` declares a named interface; the elaborator allocates its label
+(`4 + declIndex` among `effect` decls, D1) and builds a total finite `(label, op) ↦ (argTy?, resTy)`
+lookup (D2 — the surface-side analogue of the kernel's `[EffSig]`). `perform` (`h.op(...)`) against a
+`Cap ℓ` receiver TYPES against this table exactly like the four built-ins — the kernel needs NOTHING
+new for this (ADR-0092's own grounding fact: "the performer side is already general"). The typed
+custom-HANDLE rule that would normally introduce a `Cap ℓ` binding (`handle e with Net { … }`) is D3
+(a sibling kernel lane, not yet landed), so these guards assert TYPES under `checkPerformUnderCap`'s
+hypothetical binding, not runs — v1 can DECLARE + PERFORM a user effect but nothing in-language
+discharges it yet. -/
+
+-- (a) label allocation: the FIRST `effect` decl gets label 4 (right after the four built-ins).
+#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with
+            | .ok env => (env.effects.lookup "Net").map EffectInfo.label == some 4
+            | .error _ => false)
+        | .error _ => false)
+-- and the SECOND effect decl gets label 5 (deterministic by EFFECT-decl order, ADR-0046).
+#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int } effect Db { query : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with
+            | .ok env => (env.effects.lookup "Net").map EffectInfo.label == some 4
+                      && (env.effects.lookup "Db").map EffectInfo.label == some 5
+            | .error _ => false)
+        | .error _ => false)
+-- determinism is PER-SOURCE (same program twice → same labels); reordering the two decls in the
+-- SOURCE assigns the labels the other way — this is FINE and expected, not a determinism bug (the
+-- guard above already fixes one order; this one fixes the swap, both internally consistent).
+#guard (match Bang.Surface.parseProg "effect Db { query : Int -> Int } effect Net { read : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with
+            | .ok env => (env.effects.lookup "Db").map EffectInfo.label == some 4
+                      && (env.effects.lookup "Net").map EffectInfo.label == some 5
+            | .error _ => false)
+        | .error _ => false)
+
+-- (b) LOUD errors — duplicate effect name (D1).
+#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int } effect Net { write : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
+        | .error _ => false)
+-- duplicate OP name within one effect block — caught at PARSE time (`pEffectMembers`).
+#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int, read : Int -> Int } 0" with
+        | .error _ => true | .ok _ => false)
+-- an effect with NO operations is rejected (an empty interface names nothing to perform).
+#guard (match Bang.Surface.parseProg "effect Empty { } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
+        | .error _ => false)
+
+-- (c) `perform` TYPES against a declared effect's op — the D2 payoff. A 1-ary op (`read : Int ->
+-- Int`) checks its argument and returns the declared result type, the row gaining the op's label.
+#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read(5)" with
+        | .ok (B, φ) => showCTy B == "Int" && (4 : Label) ∈ φ | .error _ => false)
+-- and the row DISPLAYS the effect's SOURCE name, not a bare kernel label (`showRow`'s D2 extension).
+#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read(5)" with
+        | .ok (_, φ) => showRow φ [("Net", ⟨4, []⟩)] == "Net" | .error _ => false)
+-- a 0-ary op (a bare result type, no arrow) types with no argument.
+#guard (match checkPerformUnderCap "effect Ping { ping : Int } 0" "Ping" "h" "h.ping" with
+        | .ok (B, φ) => showCTy B == "Int" && (4 : Label) ∈ φ | .error _ => false)
+-- an op's ARGUMENT is CHECKED against its declared type (a type mismatch rejects).
+#guard (match checkPerformUnderCap "data Pair = Mk(Int, Int) effect Net { read : Int -> Int } 0" "Net" "h" "h.read(Mk(1, 2))" with
+        | .error _ => true | .ok _ => false)
+-- a declared DATA type as an op's arg/result works too (D2's "declared data types" scope) — round-
+-- trips a value through a user op untouched.
+#guard (match checkPerformUnderCap "data Pair = Mk(Int, Int) effect Net { echo : Pair -> Pair } 0" "Net" "h" "h.echo(Mk(1, 2))" with
+        | .ok (B, φ) => showCTy B == "(mu. (Int * Int))" && (4 : Label) ∈ φ | .error _ => false)
+
+-- (d) NEGATIVE — an UNDECLARED op at a DECLARED user label is an ELABORATION error (D2: total by
+-- construction over what's declared; "no entry" is a genuine source error, never a kernel stuck).
+#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.write(5)" with
+        | .error _ => true | .ok _ => false)
+-- wrong ARITY (0 args supplied to a 1-ary op) rejects with a named-arity message.
+#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read" with
+        | .error m => (m.splitOn "expects 1 argument").length > 1 | .ok _ => false)
+-- and the reverse (1 arg supplied to a 0-ary op).
+#guard (match checkPerformUnderCap "effect Ping { ping : Int } 0" "Ping" "h" "h.ping(5)" with
+        | .error m => (m.splitOn "expects 0 argument").length > 1 | .ok _ => false)
+-- a user op name that COLLIDES with a built-in op name (`read`) does NOT get shadowed by the
+-- built-in's signature — dispatch is by the RECEIVER'S label (D1: `ℓ < 4` ⟹ built-in, `ℓ ≥ 4` ⟹
+-- user), never by op name alone. This is the exact regression this file's `.dotPerform` comment
+-- documents finding live during development.
+#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read(5)" with
+        | .ok _ => true | .error _ => false)
+-- a `perform` on an UNDECLARED effect label (no `effect` decl at all) still rejects exactly as
+-- before ADR-0092 (the pre-existing "not a capability value" / label-mismatch path is unaffected
+-- for decl-free programs — checked via the ordinary `checkProg` path, no hypothetical cap needed).
+#guard (match checkProg "state 5 as h in h.get" with | .ok _ => true | .error _ => false)
 
 end Bang.TypeCheck
