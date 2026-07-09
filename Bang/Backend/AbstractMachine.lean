@@ -5651,7 +5651,7 @@ theorem run_evalD : ∀ fe,
               -- push the heap `τ.push g Θ`, run M' at g+1; a normal return POPs the heap (τ1.tail). Free
               -- rollback — the popped heap is discarded with the frame.
               simp only [Handler.label] at h
-              cases hM : evalD fe (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M) with
+              cases hM : evalD fe (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
@@ -5740,8 +5740,8 @@ theorem run_evalD : ∀ fe,
               simp only [evalD] at h
               have hstep : Source.step (g, K, Comp.split (Val.pair v w) b)
                   = some (g, K, Comp.subst v (Comp.subst (Val.shift w) b)) := rfl
-              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v (Comp.subst (Val.shift w) b)) g σ τ t g' σ' τ' h K hCtx hTtx
-                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
+              obtain ⟨hCf, kf⟩ := ihT (Comp.subst v (Comp.subst (Val.shift w) b)) g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hCf, fun n r hr => by
                 obtain ⟨F', hF'⟩ := kf n r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
@@ -5759,10 +5759,10 @@ theorem run_evalD : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | fold v =>
               simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-              obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+              obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
               have hstep : Source.step (g, K, Comp.unfold (Val.fold v)) = some (g, K, Comp.ret v) := rfl
               rw [ctxNetEffect_self hCtx hTtx]
-              exact ⟨⟨hCtx, hTtx, capLabelCoh_step _ _ hFresh hCoh hstep, freshCfg_step _ _ hFresh hstep⟩,
+              exact ⟨⟨hCtx, hTtx, hCK, capLabelCoh_step _ _ hFresh hCoh hstep, freshCfg_step _ _ hFresh hstep⟩,
                 fun n r hr => ⟨n+1, by simp only [Bang.Config.run, Source.step]; exact hr⟩⟩
           | vunit => simp [evalD] at h
           | vint x => simp [evalD] at h
@@ -5780,11 +5780,11 @@ theorem run_evalD : ∀ fe,
             first
             | (rename_i a b
                simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-               obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+               obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
                have hstep : Source.step (g, K, Comp.binop op (Val.vint a) (Val.vint b))
                    = some (g, K, Comp.ret (op.eval a b)) := rfl
                rw [ctxNetEffect_self hCtx hTtx]
-               exact ⟨⟨hCtx, hTtx, capLabelCoh_step _ _ hFresh hCoh hstep, freshCfg_step _ _ hFresh hstep⟩,
+               exact ⟨⟨hCtx, hTtx, hCK, capLabelCoh_step _ _ hFresh hCoh hstep, freshCfg_step _ _ hFresh hstep⟩,
                  fun n r hr => ⟨n+1, by simp only [Bang.Config.run, Source.step]; exact hr⟩⟩)
             | simp [evalD] at h
     · -- RAISED PART (U3 seam-3). Mirrors the U2 `sim` raised arm on the `Config.run`/`dispatchRun` side.
@@ -5792,7 +5792,7 @@ theorem run_evalD : ∀ fe,
       -- `capsV v ⊆ capsC` of the focus in every case, so the raised value's coherence is a sub-multiset of
       -- the focus coherence the premise already carries). The continuation re-performs the op at the outer
       -- context; the BASE (`perform`) case is the only place a raise originates, the rest propagate via `ihR`.
-      intro M g σ τ n op v g' σ' τ' h K hCtx hTtx hCoh hFresh hncf
+      intro M g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK hCoh hFresh
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
