@@ -5326,6 +5326,9 @@ theorem WfCustomComp.app_body {M : Comp} {v : Val} (h : WfCustomComp (Comp.app M
   fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_left _ hop)
 theorem WfCustomComp.app_arg {M : Comp} {v : Val} (h : WfCustomComp (Comp.app M v)) : WfCustomVal v :=
   fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
+theorem WfCustomComp.perform_arg {c : Val} {op2 : Bang.OpId} {v : Val}
+    (h : WfCustomComp (Comp.perform c op2 v)) : WfCustomVal v :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
 theorem WfCustomComp.force_thunk {M : Comp} (h : WfCustomComp (Comp.force (Val.vthunk M))) : WfCustomComp M :=
   fun op hop => h op (by simp only [customOpsC, customOpsV]; exact hop)
 theorem WfCustomComp.case_left {v : Val} {N₁ N₂ : Comp} (h : WfCustomComp (Comp.case v N₁ N₂)) : WfCustomComp N₁ :=
@@ -5708,12 +5711,12 @@ theorem run_evalD : ∀ fe,
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx, hCK, hWfM, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx, hCK, hWfM, hWfσ, hWfτ, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | lam M =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx, hCK, hWfM, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx, hCK, hWfM, hWfσ, hWfτ, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe g σ τ κ M with
@@ -5733,9 +5736,9 @@ theorem run_evalD : ∀ fe,
                 have hpush : Source.step (g, K, Comp.letC M N) = some (g, Frame.letF N :: K, M) := rfl
                 have hFletF := freshCfg_step _ _ hFresh hpush
                 have hCletFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
-                obtain ⟨⟨hCM, hTM, hKM, hWftM, hCohR, hFR⟩, kM⟩ :=
+                obtain ⟨⟨hCM, hTM, hKM, hWftM, hWfσM, hWfτM, hCohR, hFR⟩, kM⟩ :=
                   ihT M g σ τ κ (.ret v) g1 σ1 τ1 κ1 hM (Frame.letF N :: K) hCletF hTletF hKletF
-                    ⟨hWfK.cons_noncustom (by intro n ℓ p cls; simp), hWfM.letC_left⟩ hCletFcoh hFletF
+                    ⟨hWfK.cons_noncustom (by intro n ℓ p cls; simp), hWfM.letC_left⟩ hWfσ hWfτ hCletFcoh hFletF
                 -- `hWftM : WfCustomComp (ret v)` IS `WfCustomVal v` (customOpsC (ret v) = customOpsV v),
                 -- exactly what the N-run's `subst v` needs (the returned value carries no builtin-op custom).
                 have hWfvV : WfCustomVal v := fun op hop => hWftM op (by simpa only [customOpsC] using hop)
@@ -5754,11 +5757,11 @@ theorem run_evalD : ∀ fe,
                     = some (g1, ctxNetEffect K σ1 τ1, Comp.subst v N) := rfl
                 have hFsub := freshCfg_step _ _ hFR hpop
                 have hCsub := capLabelCoh_step _ _ hFR hCohR hpop
-                obtain ⟨⟨hCf, hTf, hKf, hWftF, hCohF, hFF⟩, kN⟩ :=
+                obtain ⟨⟨hCf, hTf, hKf, hWftF, hWfσF, hWfτF, hCohF, hFF⟩, kN⟩ :=
                   ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hKM'
-                    ⟨hWfK.ctxNetEffect σ1 τ1, hWfM.letC_right.subst hWfvV⟩ hCsub hFsub
+                    ⟨hWfK.ctxNetEffect σ1 τ1, hWfM.letC_right.subst hWfvV⟩ hWfσM hWfτM hCsub hFsub
                 rw [ctxNetEffect_ctxNetEffect] at hCf hTf hKf hCohF hFF
-                refine ⟨⟨hCf, hTf, hKf, hWftF, hCohF, hFF⟩, fun fuel r hr => ?_⟩
+                refine ⟨⟨hCf, hTf, hKf, hWftF, hWfσF, hWfτF, hCohF, hFF⟩, fun fuel r hr => ?_⟩
                 obtain ⟨F2, hF2⟩ := kN fuel r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
                 have hstep : Bang.Config.run (F2+1) (g1, Frame.letF N :: ctxNetEffect K σ1 τ1, .ret v) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF2
@@ -5783,7 +5786,7 @@ theorem run_evalD : ∀ fe,
               simp only [evalD] at h
               have hstep : Source.step (g, K, Comp.force (Val.vthunk M)) = some (g, K, M) := rfl
               obtain ⟨hCf, kf⟩ := ihT M g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK ⟨hWfK, hWfM.force_thunk⟩
-                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+                hWfσ hWfτ (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hCf, fun fuel r hr => by
                 obtain ⟨F', hF'⟩ := kf fuel r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
@@ -5812,9 +5815,9 @@ theorem run_evalD : ∀ fe,
                 have hpush : Source.step (g, K, Comp.app M v) = some (g, Frame.appF v :: K, M) := rfl
                 have hFappF := freshCfg_step _ _ hFresh hpush
                 have hCappFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
-                obtain ⟨⟨hCM, hTM, hKM, hWftM, hCohR, hFR⟩, kM⟩ :=
+                obtain ⟨⟨hCM, hTM, hKM, hWftM, hWfσM, hWfτM, hCohR, hFR⟩, kM⟩ :=
                   ihT M g σ τ κ (.lam N) g1 σ1 τ1 κ1 hM (Frame.appF v :: K) hCappF hTappF hKappF
-                    ⟨hWfK.cons_noncustom (by intro n ℓ p cls; simp), hWfM.app_body⟩ hCappFcoh hFappF
+                    ⟨hWfK.cons_noncustom (by intro n ℓ p cls; simp), hWfM.app_body⟩ hWfσ hWfτ hCappFcoh hFappF
                 -- `hWftM : WfCustomComp (lam N)` = `WfCustomComp N`; the arg `v` is `WfCustomVal` via `hWfM`.
                 have hWfN : WfCustomComp N := fun op hop => hWftM op (by simpa only [customOpsC] using hop)
                 have hWfvV : WfCustomVal v := hWfM.app_arg
@@ -5832,11 +5835,11 @@ theorem run_evalD : ∀ fe,
                     = some (g1, ctxNetEffect K σ1 τ1, Comp.subst v N) := rfl
                 have hFsub := freshCfg_step _ _ hFR hpop
                 have hCsub := capLabelCoh_step _ _ hFR hCohR hpop
-                obtain ⟨⟨hCf, hTf, hKf, hWftF, hCohF, hFF⟩, kN⟩ :=
+                obtain ⟨⟨hCf, hTf, hKf, hWftF, hWfσF, hWfτF, hCohF, hFF⟩, kN⟩ :=
                   ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hKM'
-                    ⟨hWfK.ctxNetEffect σ1 τ1, hWfN.subst hWfvV⟩ hCsub hFsub
+                    ⟨hWfK.ctxNetEffect σ1 τ1, hWfN.subst hWfvV⟩ hWfσM hWfτM hCsub hFsub
                 rw [ctxNetEffect_ctxNetEffect] at hCf hTf hKf hCohF hFF
-                refine ⟨⟨hCf, hTf, hKf, hWftF, hCohF, hFF⟩, fun fuel r hr => ?_⟩
+                refine ⟨⟨hCf, hTf, hKf, hWftF, hWfσF, hWfτF, hCohF, hFF⟩, fun fuel r hr => ?_⟩
                 obtain ⟨F2, hF2⟩ := kN fuel r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
                 have hstep : Bang.Config.run (F2+1) (g1, Frame.appF v :: ctxNetEffect K σ1 τ1, .lam N) = r := by
                   simp only [Bang.Config.run, Source.step]; exact hF2
@@ -5882,7 +5885,10 @@ theorem run_evalD : ∀ fe,
                     = some (g, K, Comp.ret sv) := by
                   simp only [Source.step, dispatch_state_get hFresh.2.2.1 hcr hgc, Option.map_some]
                 rw [ctxNetEffect_self hCtx hTtx]
-                refine ⟨⟨hCtx, hTtx, hCK, capLabelCoh_step _ _ hFresh hCoh hstep,
+                -- `t = ret sv`; `WfCustomComp (ret sv) = WfCustomVal sv`, from `hWfσ.get` (the stored value).
+                have hWfvSv : WfCustomComp (Comp.ret sv) := fun op hop =>
+                  (hWfσ.get hg) op (by simpa only [customOpsC] using hop)
+                refine ⟨⟨hCtx, hTtx, hCK, hWfvSv, hWfσ, hWfτ, capLabelCoh_step _ _ hFresh hCoh hstep,
                   freshCfg_step _ _ hFresh hstep⟩, fun fuel r hr => ⟨fuel+1, ?_⟩⟩
                 simp only [Bang.Config.run, hstep]; exact hr
           · by_cases hop2 : op2 = "put"
@@ -5907,6 +5913,10 @@ theorem run_evalD : ∀ fe,
                   have hfr' := freshCfg_step _ _ hFresh hstep
                   have hK' : CCtxCorr κ (ctxNetEffect K ((ctxStates K).put n2 v2) (ctxTxns K)) := by
                     unfold CCtxCorr at hCK ⊢; rw [hCK, ctxCustoms_ctxNetEffect]
+                  -- put stores `v2` (WfCustomVal via the focus); WfCustomStore rides; τ unchanged; t = ret unit.
+                  have hWfσ' : WfCustomStore (σ.put n2 v2) := hWfσ.put hWfM.perform_arg
+                  have hWftU : WfCustomComp (Comp.ret .vunit) := fun op hop => by
+                    simp only [customOpsC, customOpsV, List.not_mem_nil] at hop
                   subst hCtx; subst hTtx
                   have hC' : ctxStates (ctxNetEffect K ((ctxStates K).put n2 v2) (ctxTxns K))
                       = (ctxStates K).put n2 v2 := by
@@ -5921,8 +5931,8 @@ theorem run_evalD : ∀ fe,
                     unfold ctxNetEffect
                     rw [show ctxTxns K = ctxTxns (updateCtxStates K ((ctxStates K).put n2 v2)) from
                       (ctxTxns_updateCtxStates K _).symm, updateCtxTxns_self_aux]
-                  rw [← hctxeq] at hcoh' hfr' hK'
-                  refine ⟨⟨hC'.symm, hT'.symm, hK', hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
+                  rw [← hctxeq] at hcoh' hfr'
+                  refine ⟨⟨hC'.symm, hT'.symm, hK', hWftU, hWfσ', hWfτ, hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
                   rw [hctxeq] at hr
                   simp only [Bang.Config.run, hstep]; exact hr
             · by_cases hopt : isTxnOp op2 = true
