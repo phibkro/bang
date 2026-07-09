@@ -107,6 +107,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **lang** — bang check is resolver-aware (issue #59 final slice, ADR-0093) (`6d69580`)
 - **lexer** — line comments `--` to end-of-line (#62) (`7efde28`)
 - **cli** — --help/--version + human error messages for every exit (#66, #67) (`709781d`)
+- **surface** — unary minus (#64) (`7a55ad6`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
