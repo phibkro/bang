@@ -4971,6 +4971,7 @@ custom frames AND the focus's custom handlers are all op-disjoint. -/
 def WfCustomCfg : Config → Prop
   | (_, K, M) => WfCustomOps K ∧ WfCustomComp M
 
+
 /-- A `custom` handler's clauses key only non-builtin ops when the whole handler is `WfCustomComp`-clean in
 a focus that installs it — extracted from `customOpsH`. -/
 theorem wfCustomComp_custom_clauses {ℓ : Bang.EffectRow.Label} {p : Val} {cls : List (Bang.OpId × Comp)}
@@ -5202,6 +5203,118 @@ theorem WfCustomComp.subst {M : Comp} {v : Val} (hv : WfCustomVal v) (h : WfCust
   rcases List.mem_append.mp (customOpsC_substFrom_subset 0 v M op hop) with h' | h'
   · exact h op h'
   · exact hv op h'
+
+/-! ### Store-side op-disjointness — the value-preservation layer
+
+A `perform get`/`readTVar` RETURNS a value read from the store, so for the value-preservation conclusion
+(`WfCustomComp t`) to hold, the STORED values must themselves be op-disjoint. `WfCustomStore`/`WfCustomHeap`
+carry that: every state cell / every txn heap cell is `WfCustomVal`. Preserved because every value ENTERING
+the store (`put`'s payload, `newTVar`/`writeTVar`'s payload) is the perform's ARGUMENT — a subterm of the
+`WfCustomComp` focus, hence `WfCustomVal`. All elaborator-discharged. -/
+def WfCustomStore (σ : SStore) : Prop := ∀ e ∈ σ, WfCustomVal e.2
+def WfCustomHeap (τ : THeap) : Prop := ∀ e ∈ τ, ∀ w ∈ e.2, WfCustomVal w
+
+theorem WfCustomStore.nil : WfCustomStore [] := fun e he => absurd he (by simp)
+theorem WfCustomHeap.nil : WfCustomHeap [] := fun e he => absurd he (by simp)
+
+/-- A `get` returns a stored value, which is `WfCustomVal` under `WfCustomStore`. -/
+theorem WfCustomStore.get {σ : SStore} {n : Bang.EffectRow.Label} {sv : Val}
+    (hσ : WfCustomStore σ) (hg : σ.get? n = some sv) : WfCustomVal sv := by
+  -- `get?` returns the `.2` of a `find?`-matched entry, which is a member of σ.
+  unfold SStore.get? at hg
+  rcases Option.map_eq_some_iff.mp hg with ⟨e, hfind, hev⟩
+  exact hev ▸ hσ e (List.mem_of_find?_eq_some hfind)
+
+/-- `put`'s payload `v` (the perform arg, `WfCustomVal`) keeps `WfCustomStore` (it OVERWRITES a cell). -/
+theorem WfCustomStore.put {σ : SStore} {n : Bang.EffectRow.Label} {v : Val}
+    (hσ : WfCustomStore σ) (hv : WfCustomVal v) : WfCustomStore (σ.put n v) := by
+  intro e he
+  induction σ with
+  | nil => simp [SStore.put] at he
+  | cons hd σ' ih =>
+    obtain ⟨ℓ0, w⟩ := hd
+    by_cases hc : ℓ0 = n
+    · rw [SStore.put, if_pos hc] at he
+      rcases List.mem_cons.mp he with h | h
+      · rw [h]; exact hv
+      · exact hσ e (List.mem_cons_of_mem _ h)
+    · rw [SStore.put, if_neg hc] at he
+      rcases List.mem_cons.mp he with h | h
+      · rw [h]; exact hσ (ℓ0, w) (List.mem_cons_self ..)
+      · exact ih (fun e0 he0 => hσ e0 (List.mem_cons_of_mem _ he0)) h
+
+/-- A `readTVar` returns a HEAP CELL value, `WfCustomVal` under `WfCustomHeap` (or the `vint 0` default). -/
+theorem WfCustomHeap.getD {τ : THeap} {n : Bang.EffectRow.Label} {Θ : List Val}
+    (hτ : WfCustomHeap τ) (hg : τ.get? n = some Θ) (i : Nat) : WfCustomVal (Θ.getD i (.vint 0)) := by
+  -- Θ is the heap at `n`, a member's `.2`; `getD` is either a cell (∈ Θ, WfCustomVal) or the default.
+  have hΘ : ∀ w ∈ Θ, WfCustomVal w := by
+    unfold THeap.get? at hg
+    rcases Option.map_eq_some_iff.mp hg with ⟨e, hfind, hev⟩
+    have hmem := List.mem_of_find?_eq_some hfind
+    intro w hw; exact hτ e hmem w (hev ▸ hw)
+  rw [List.getD_eq_getElem?_getD]
+  cases hgi : Θ[i]? with
+  | none => simp only [Option.getD_none]; intro op hop; simp only [customOpsV, List.not_mem_nil] at hop
+  | some w => simp only [Option.getD_some]; exact hΘ w (List.mem_of_getElem? hgi)
+
+/-- `txnService`'s RESULT value is `WfCustomVal` (newTVar → vint; readTVar → heap cell; writeTVar → unit). -/
+theorem wfCustomVal_txnService_result {op : Bang.OpId} {v : Val} {Θ : List Val} {τ : THeap}
+    {n : Bang.EffectRow.Label} (hτ : WfCustomHeap τ) (hg : τ.get? n = some Θ) (hopt : isTxnOp op = true) :
+    WfCustomVal (txnService op v Θ).1 := by
+  rcases isTxnOp_iff.mp hopt with rfl | rfl | rfl
+  · -- newTVar → (vint Θ.length, _): a vint (no custom ops).
+    simp only [txnService, ↓reduceIte]; intro op hop; simp only [customOpsV, List.not_mem_nil] at hop
+  · -- readTVar → (Θ.getD i (vint 0), Θ): a heap cell.
+    simp only [txnService, show ("readTVar" = "newTVar") = False by simp, ↓reduceIte]
+    exact hτ.getD hg _
+  · -- writeTVar → (vunit, _): unit (no custom ops).
+    simp only [txnService, show ("writeTVar" = "newTVar") = False by simp,
+      show ("writeTVar" = "readTVar") = False by simp, ↓reduceIte]
+    split <;> (intro op hop; simp only [customOpsV, List.not_mem_nil] at hop)
+
+/-- Overwriting a heap cell at `n` with a heap value whose cells are all `WfCustomVal` keeps
+`WfCustomHeap`. Induction on τ (the put walks the spine). -/
+theorem WfCustomHeap.put {τ : THeap} {n : Bang.EffectRow.Label} {Θ' : List Val}
+    (hτ : WfCustomHeap τ) (hΘ' : ∀ w ∈ Θ', WfCustomVal w) : WfCustomHeap (τ.put n Θ') := by
+  intro e he w hw
+  induction τ with
+  | nil => simp [THeap.put] at he
+  | cons hd τ' ih =>
+    obtain ⟨ℓ0, Θ0⟩ := hd
+    have hτ' : WfCustomHeap τ' := fun e0 he0 w0 hw0 => hτ e0 (List.mem_cons_of_mem _ he0) w0 hw0
+    by_cases hc : ℓ0 = n
+    · rw [THeap.put, if_pos hc] at he
+      rcases List.mem_cons.mp he with h | h
+      · rw [h] at hw; exact hΘ' w hw
+      · exact hτ e (List.mem_cons_of_mem _ h) w hw
+    · rw [THeap.put, if_neg hc] at he
+      rcases List.mem_cons.mp he with h | h
+      · exact hτ e (h ▸ List.mem_cons_self ..) w hw
+      · exact ih hτ' h
+
+/-- `txnService`'s new HEAP is `WfCustomHeap`-safe when the payload `v` is `WfCustomVal` (newTVar appends
+`v`; writeTVar storeSets `v`'s components; readTVar leaves Θ). Then `THeap.put` keeps `WfCustomHeap`. -/
+theorem WfCustomHeap.txnPut {τ : THeap} {n : Bang.EffectRow.Label} {op : Bang.OpId} {v : Val} {Θ : List Val}
+    (hτ : WfCustomHeap τ) (hg : τ.get? n = some Θ) (hv : WfCustomVal v) :
+    WfCustomHeap (τ.put n (txnService op v Θ).2) := by
+  have hΘ : ∀ w ∈ Θ, WfCustomVal w := by
+    unfold THeap.get? at hg
+    rcases Option.map_eq_some_iff.mp hg with ⟨e, hfind, hev⟩
+    intro w hw; exact hτ e (List.mem_of_find?_eq_some hfind) w (hev ▸ hw)
+  refine hτ.put (fun w hw => ?_)
+  -- the new heap for `n` is `(txnService op v Θ).2`: old Θ cells or `v`'s components, all WfCustomVal.
+  unfold txnService at hw
+  split at hw
+  · rcases List.mem_append.mp hw with h | h
+    · exact hΘ w h
+    · rw [List.mem_singleton.mp h]; exact hv
+  · split at hw
+    · exact hΘ w hw
+    · split at hw
+      · rcases List.mem_or_eq_of_mem_set hw with h | h
+        · exact hΘ w h
+        · rw [h]; exact fun op hop => hv op (by simp only [customOpsV, List.mem_append]; exact Or.inr hop)
+      · exact hΘ w hw
 
 /-- `WfCustomComp` monotone into the `letC`/`app`/`case`/`split`/`handle`/`force`-thunk subterms
 (op-keys are a union; `customOpsC (force (vthunk M)) = customOpsV (vthunk M) = customOpsC M`). -/
