@@ -62,6 +62,7 @@ graph TD
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>99L · fan-in 0"]
     Witness_LawTest["Witness.LawTest<br/>555L · fan-in 0"]
+    Witness_ProofExport["Witness.ProofExport<br/>343L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
     Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
@@ -115,6 +116,7 @@ graph TD
 | `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.LWRegress` | ? | 99 | 0 |
 | `Witness.LawTest` | ? | 555 | 0 |
+| `Witness.ProofExport` | ? | 343 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.StateEscapeWitness` | ? | 73 | 0 |
 | `Witness.VcapFreeRefute` | ? | 55 | 0 |
