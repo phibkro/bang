@@ -1,4 +1,10 @@
 <!-- note-status: active -->
+> **RULED (operator, 2026-07-09): §6's coverage fork = TOTAL-ONLY.** `#prove` on a Div-rowed
+> law is a TYPE error — proof-eligibility is typed; Div laws stay on the fuzzed rung, visibly.
+> The arm-C north-star (fuel-free via `Source.eval ↔ StepStar` adequacy) remains the later
+> coverage extension. Ruled alongside: Q43-R1 (export-goal-with-sorry) is CARVED OUT of the
+> post-v1 distribution axis — it may slot into v1.x as verification-ladder work.
+
 # Proof export (Q43) — design survey: a bang `law` becomes a Lean proof goal, proved once, cached
 
 > Successor to the Q43 sketch in `verification-ladder.md` ("The genuinely novel rung: proof

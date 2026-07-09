@@ -1,5 +1,15 @@
 <!-- note-status: active -->
 # CALM as a grade — can monotonicity be a coeffect in bang's row system?
+> **RULED (operator, 2026-07-09): fork (2) = REUSE the graded-row mechanism with a DISTINCT
+> monotonicity lattice** (not folded into the 0/1/ω Mult channel — different semiring), pending
+> the `EffSig` parametricity check named in §ADR-INPUTS. Fork (1) resolved by the
+> distributed-story ruling (post-v1 + Q43-R1 carve-out). **Operator clarification worth
+> preserving: monotonicity is LAW-SHAPED at the leaves** (`∀ a b, a ⊑ b → f a ⊑ f b` — a
+> conditional law, ADR-0068 corpus shape, fuzzable today and total-fragment-provable under the
+> Q43 total-only ruling); the grade adds only COMPOSITION — the type system as the paid-once
+> composition lemma transporting leaf laws to whole-program coordination-freedom. Trust bottoms
+> out in laws; the grade is bookkeeping that transports the license.
+
 
 > Research lane rcalm (2026-07-09). Answers `distributed-story.md` §2 rung 3: can CALM's
 > *"consistency ⟺ logical monotonicity"* be carried as a GRADE/coeffect in bang's effect-row

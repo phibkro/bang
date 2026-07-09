@@ -1,5 +1,8 @@
 <!-- note-status: active -->
 # The distributed-systems story — nondeterminism as an effect, the runtime as a handler
+> **RULED (operator, 2026-07-09): the axis is POST-V1, confirmed — with one carve-out:
+> Q43-R1 (proof-export skeleton) is verification-ladder work and may land in v1.x.**
+
 
 > Direction input (operator, 2026-07-09): "prove non-deterministic systems — distributed
 > systems, consensus protocols, CRDTs, the CALM theorem. A KV store becomes the hello world
