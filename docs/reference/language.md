@@ -244,9 +244,92 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `( fun x => raise x : Int -> Int ! {throws} )` : `Int -> Int ! {throws}`  — a declared row that COVERS the inferred effect passes (and the inferred effect is what displays).
 - `( fun x => x : Int -> Int ! {throws} )` : `Int -> Int`  — a PURE function satisfies a may-throw signature (⊥ ⊆ {throws}).
 - `( fun x => raise x : Int -> Int )` : `Int -> Int ! {throws}`  — un-annotated arrow stays unconstrained: a throwing fn is fine, effect inferred + shown.
+### Exceptional / error terminals — the typed `Outcome` layer's NEW capability (issue #54).
+
+- `1 + Left(0)` ⟹ `0`  — helper says only `false`, the `Outcome` names the actual terminal (here: a type error).
+### Validation ⑨b — HIGHER-ORDER constructor payloads (#45): a `Thunk (Int -> Int)` field.
+
+- `let f = ( {fun x => x + 1} : Thunk (Int -> Int) ) in ($f) 41` ⟹ `42`  — the checkSC thunk arm (thunk in COMPUTATION position): an annotated thunk at top level, forced+applied.
+### Validation ⑨e — `let rec` SURFACE SUGAR (ADR-0073 §1): recursion, user-spellable.
+
+- `let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in ($sum) 5` ⟹ `15`  — countdown-sum 5+4+3+2+1+0 = 15, the recursive call written `($sum)(n - 1)` (computation arg).
+- `let rec fac : Int -> Int = fun n => if n == 0 then 1 else n * ($fac)(n - 1) in ($fac) 5` ⟹ `120`  — factorial 5! = 120 (multiplicative recursion).
+- `let rec sum : Int -> Int = fun n => if n == 0 then 0 else (let m = n - 1 in n + ($sum) m) in ($sum) 3` ⟹ `6`  — a let-BOUND recursive-call arg is equivalent (the pre-#41 spelling still works).
+- `let rec loop : Int -> Int = fun n => ($loop)(n + 1) in ($loop) 0` ⟹ `0`
+### Validation ⑨i — EFFECTFUL recursion via a DECLARED row (ADR-0088, #48).
+
+- `handle (let rec f : Int -> Int ! {throws} = fun n => if n == 0 then raise 99 else ($f)(n - 1) in ($f) 3)` ⟹ `99`  — is scoped where installed, not where called — the state/8/design-doc convention).
+- `state 0 in (let rec loop : Int -> Int ! {state} = fun n => if n == 0 then get else (let z = put (get + 1) in ($loop)(n - 1)) in ($loop) 3)` ⟹ `3`  — the ambient `state` handler across recursive calls.
+### Validation ⑨h — STRINGS: `String = List Char` (ADR-0074, #49).
+
+- `match 'a' { Char(n) -> n }` ⟹ `97`  — a char literal `'a'` is `Char 97`; destructuring recovers the code point.
+- `match '\\n' { Char(n) -> n }` ⟹ `10`
+### Validation ⑨h′ — the STRING STDLIB: `concat`/`reverse`/`eq` injected FREE (#49 stage 3, #50).
+
+- `match (($reverse) \"abc\") { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }` ⟹ `99`
+- `if (($eq) \"ab\" \"ab\") then 1 else 0` ⟹ `1`  — `eq` char-by-char: equal strings → true (then-branch), unequal (content OR length) → false.
+- `if (($eq) \"ab\" \"ba\") then 1 else 0` ⟹ `0`
+- `if (($eq) \"a\" \"ab\") then 1 else 0` ⟹ `0`
+- `if (($eq) \"\" \"\") then 1 else 0` ⟹ `1`
+- `3` ⟹ `3`
+### Strings & Characters (issue #65: the stranger-test's documented blind spot).
+
+- `match \"ab\" { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }` ⟹ `97`  — IDIOM 1 (match a string): destructure `SNil`/`SCons(Char(n), rest)` to read its first code point.
+- `match \"\" { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }` ⟹ `0`  — IDIOM 1, the empty string: `SNil` (no `SCons` to destructure).
+- `match (Char 97) { Char(n) -> n }` ⟹ `97`  — IDIOM 2 (build a char from a code point): `Char <n>` introduces; round-tripping recovers `n`.
+- `match ' ' { Char(n) -> n }` ⟹ `32`  — IDIOM 3 (common code point constants, all ASCII per the codepoint-encoding note above): space.
+- `match '0' { Char(n) -> n }` ⟹ `48`  — IDIOM 3: the digit range '0'-'9'.
+- `match '9' { Char(n) -> n }` ⟹ `57`
+- `match 'a' { Char(n) -> n }` ⟹ `97`  — IDIOM 3: the lowercase letter range 'a'-'z'.
+- `match 'z' { Char(n) -> n }` ⟹ `122`
+- `match 'A' { Char(n) -> n }` ⟹ `65`  — IDIOM 3: the uppercase letter range 'A'-'Z'.
+- `match 'Z' { Char(n) -> n }` ⟹ `90`
+- `match (($concat) \"foo\" \"bar\") { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }` ⟹ `102`  — the injected STDLIB (free in every program, no import needed — `stdlibFnSrcs` above): `concat`.
+- `if (($eq) \"cat\" \"cat\") then 1 else 0` ⟹ `1`  — the injected STDLIB: `eq`, structural string equality.
+- `if (($eq) \"cat\" \"dog\") then 1 else 0` ⟹ `0`
+### Validation ⑨d — VALUE-POSITION A-normalization (#41): computations spelled NATURALLY.
+
+- `let (x, y) = (1 + 0, 2 + 0) in x + y` ⟹ `3`  — `(1 + 0, 2 + 0)` is a bare computation-product destructured directly (was "not a value").
 ### Validation ⑩ — named capabilities are TYPED (#3, ADR-0070).
 
 - `state 5 as h in h.get` : `Int`
+- `state 1 as a in (state 2 as b in (let x = a.get in (let y = b.get in x + y)))` ⟹ `3`  — the TWO-CELL demo type-checks AND runs to 3 (typed path) — ambient can't express it.
+- `state 5 as h in (let z = h.put(7) in h.get)` ⟹ `7`  — put on a named cap, then get, still discharged.
+### Validation ⑦b — HM polymorphism RUNS end-to-end (ADR-0075 bite-0, the real pipeline).
+
+- `let id = {fun x => x} in (let a = ($id) 5 in (let u = ($id) () in a))` ⟹ `5`  — id at Int and Unit (independent instantiations): 5.
+### EFFECT ROW-POLYMORPHISM (ADR-0075 bite-0b item 3) — ONE `compose`, generic over its effect row.
+
+- `match Right(7) { Left(a) -> 0, Right(x) -> x }` ⟹ `7`  — #53 — bare anonymous injections RUN end-to-end through the typed default path (CHECK precedes eval).
+- `let x = Right(7) in match x { Left(a) -> 0, Right(x) -> x }` ⟹ `7`
+- `match Left(3) { Left(a) -> a, Right(x) -> x }` ⟹ `3`
+### GENERIC data types (ADR-0069 bite-1) — `data List a` monomorphized per concrete instantiation.
+
+- `data List a = Nil | Cons(a, List a) match (Cons(7, Nil)) { Nil -> 0, Cons(h, t) -> h }` ⟹ `7`  — solved μ). No `: List Int` annotation. Consumed by a `match` to yield an Int the run-oracle can check.
+- `data Option a = None | Some(a) match (Some(5)) { None -> 0, Some(v) -> v }` ⟹ `5`  — `Some(x)` where `x : Int` ⟹ `Option Int`, no annotation; destructured to its payload.
+- `data List a = Nil | Cons(a, List a) match (Cons(7, Nil) : List Int) { Nil -> 0, Cons(h, t) -> h }` ⟹ `7`  — annotation-free is ADDITIVE: the SAME decl still accepts an explicit `: List Int` (ADR-0079 check-mode).
+### Validation ⑨j — the GENERIC PRELUDE: `Option`/`Result` + their maps + the ISO round-trips vs
+
+- `match (Some(5)) { None -> 0, Some(v) -> v }` ⟹ `5`  — ADR-0079/0081 generic-data guards above).
+- `match (Ok(7)) { Err(e) -> e, Ok(a) -> a }` ⟹ `7`
+- `match (Err(3)) { Err(e) -> e, Ok(a) -> a }` ⟹ `3`
+- `match (($mapOption) {fun z => z + 1} (Some(4))) { None -> 0, Some(v) -> v }` ⟹ `5`  — the INJECTED maps (`mapOption`/`mapResult`/`bimap`), used with no local definition.
+- `match (($mapResult) {fun z => z + 1} (Ok(4))) { Err(e) -> e, Ok(v) -> v }` ⟹ `5`
+- `match (($mapResult) {fun z => z + 1} (Err(9))) { Err(e) -> e, Ok(v) -> v }` ⟹ `9`  — `mapResult` passes an `Err` through untouched (maps the success side only).
+- `match (($bimap) {fun e => e + 100} {fun a => a + 1} (Right(4))) { Left(e) -> e, Right(a) -> a }` ⟹ `5`  — `bimap g f` maps BOTH sides: `f` over `Right`, `g` over `Left`.
+- `match (($bimap) {fun e => e + 100} {fun a => a + 1} (Left(4))) { Left(e) -> e, Right(a) -> a }` ⟹ `104`
+- `match (($eitherToResult) (($resultToEither) (Ok(5)))) { Err(e) -> 99, Ok(a) -> a }` ⟹ `5`  — `eitherToResult ∘ resultToEither = id` on `Ok`/`Err` (Result ≅ Either). Sentinel 99 = round-trip broke.
+- `match (($eitherToResult) (($resultToEither) (Err(3)))) { Err(e) -> e, Ok(a) -> 99 }` ⟹ `3`
+- `match (($eitherToOption) (($optionToEither) (Some(7)))) { None -> 99, Some(v) -> v }` ⟹ `7`  — `eitherToOption ∘ optionToEither = id` on `Some`/`None` (Option ≅ Either Unit).
+- `match (($eitherToOption) (($optionToEither) (None : Option Int))) { None -> 0, Some(v) -> v }` ⟹ `0`
+### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
+
+- `let x = 3 data Marker = M x + 1` ⟹ `4`  — otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.
+- `let x = 3 data Marker = M let y = x + 1 data Marker2 = M2 x + y` ⟹ `7`  — plays after `x`'s own binding.
+- `let rec fact : Int -> Int ! {Div} = fun n => if n < 2 then 1 else n * ($fact (n - 1)) data Marker = M let call = ($fact) 5 data Marker2 = M2 call` ⟹ `120`  — its own decl, avoiding both this and the earlier literal-adjacency traps in one move.
+- `data Pair = Mk(Int, Int) let p = Mk(3, 4) match (p : Pair) { Mk(a, b) -> a + b }` ⟹ `7`  — `let`/`let rec` decls compose with OTHER decl kinds (`data`), interleaved.
+- `let main = 42 data Marker = M main` ⟹ `42`  — form has no special elaboration path (D5: no main-only special case).
+- `let x : Int = 3 data Marker = M x + 1` ⟹ `4`  — REAL type checker (a wrong ascription, e.g. `let x : Unit = 3`, would be caught below).
 
 ## Programs & observation
 
