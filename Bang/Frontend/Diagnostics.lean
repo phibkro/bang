@@ -63,8 +63,11 @@ def jsonEscChar (c : Char) : String :=
 
 /-- A JSON string LITERAL (quotes included) for arbitrary input — total over every `String`,
 including one containing `"`/`\`/control characters. The schema's byte-stability rests on this
-being the ONLY place a `String` becomes JSON text. -/
-def jsonStr (s : String) : String :=
+being the ONLY place a `String` becomes JSON text. `public`: `Main.lean`'s resolver-aware `bang
+check --json` (ADR-0093 follow-up ruling) reuses this to render a MODULE-RESOLUTION failure (a
+stage `checkJson`'s own pipeline never sees, since resolution happens before any source string
+exists to hand it) into the SAME schema, rather than hand-rolling a second escaper. -/
+public def jsonStr (s : String) : String :=
   "\"" ++ String.join (s.toList.map jsonEscChar) ++ "\""
 
 #guard jsonStr "plain" == "\"plain\""

@@ -297,15 +297,58 @@ def runCheckHuman (src : String) : IO UInt32 := do
   | .error (m, none)    => IO.eprintln s!"error: {m}"; pure 1
   | .ok _               => IO.println "ok"; pure 0
 
+/-- One `ok:false` diagnostic JSON object for the `Prog`-taking check path (`code` always `"type"`,
+`span` always `null` — see `runCheck`'s doc comment for why: no stage split, no source text to
+locate into). Built with `++` (not `s!"..."`), matching `Diagnostics.spanJson`/`Diagnostic.toJson`'s
+own convention — Lean's string interpolation escapes a literal `{` as `\{`, not `{{`, which makes a
+hand-written JSON-brace literal read backwards; plain concatenation sidesteps the ambiguity entirely
+(the SAME reason those two functions avoid `s!`). -/
+def checkFailJson (msg : String) : String :=
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"msg\":" ++
+    Bang.Diagnostics.jsonStr msg ++ ",\"span\":null}]}"
+
 /-- `bang check [FLAGS] [<file.bang>]` (issue #59): type-check ONLY (no run), human-readable by
 default or `--json` for the agent-facing structured schema (`Bang.Diagnostics`). Reads a file if
 given, else stdin (mirrors `fmt`'s file-or-stdin convention).
 
+RESOLVER-AWARE (ADR-0093 follow-up ruling, 2026-07-09): a FILE argument goes through the SAME
+`resolveEntryFile` (import/use resolution + D5 entry-rule) `bang run` uses — the agent-first
+rationale is direct: `check --json` is the tool an agent actually calls to lint a program, so if it
+can't see imports, an agent cannot lint a multi-file project at all. The resolved `Prog` is checked
+DIRECTLY via `TypeCheck.checkAndLowerProg` (the SAME `Prog`-taking pipeline `run` uses) — NOT
+re-stringified through `Bang.Format.showProg` and re-parsed by the string-taking `checkJson`. This
+print-then-reparse route was tried first and found UNSOUND: `resolveEntryFile` already applies D5's
+entry rule (`applyEntryRule`, rewriting `body := Surf.var "main"` when a `main` decl exists), so the
+rendered text carries BOTH the `let main = …` decl AND a separate trailing `main` reference — a
+shape no hand-authored file has, and one the grammar cannot always tell apart from an application
+(`let main = 0` then a lone `main` line re-tokenizes as `0 main`, silently parsed as one expression,
+per the SAME literal-adjacency class `Prog.isLibrary` already guards elsewhere — `#guard`ed below as
+a regression). Calling `checkAndLowerProg` on the in-memory `Prog` sidesteps the round-trip
+entirely — exactly the trade `checkAndLowerProg`'s own doc comment already recommends over
+print-then-reparse. The cost: no `Diagnostics`-schema `Diagnostic`/`span` structure for this path (a
+merged multi-file `Prog` has no contiguous source `checkAndLowerProg` could span into either — see
+its doc comment), so the JSON here is hand-assembled to the SAME schema `checkJson` emits (`code`
+always `"type"`, `span` always `null` — `checkAndLowerProg` gives no stage/location split), reusing
+`Bang.Diagnostics.jsonStr` for the one string that needs JSON-escaping (the error message) rather
+than a second hand-rolled escaper. `Bang.Frontend.Diagnostics` needed no NEW entry point — `jsonStr`
+was already there, just previously private; see its doc comment for why marking it `public` was the
+minimal correct move over a second implementation. STDIN input is NOT resolver-aware (no file path
+to resolve relative to, matching `eval`'s same limitation on `bang run`) and stays on the ORIGINAL
+string-based `checkJson`/`checkAndLower` path (full span support, unaffected by any of the above).
+
+KNOWN v1 LIMITATION (documented here + the usage text, follow-up tracked under this ADR's own
+issue): a resolved multi-file program's diagnostic never carries a `span` (`null` always) — no
+line/col at all, not even a merged-source coordinate, since the `Prog`-taking pipeline has no source
+text to index into. File-aware span mapping (spans that name which file, with per-file coordinates)
+is a named follow-up, not solved by this ruling.
+
 EXIT CODES (the `--json` contract; the human path reuses 0/1 and never emits 2 — a human already
 sees the read failure as the SAME uncaught-IO-exception report every other subcommand gives): `0`
-ok, `1` diagnostics present, `2` TOOL error (the file could not be read) — caught HERE via `<|>`
-(the `:load` idiom, §REPL) so it lands on stderr with NOTHING written to stdout, never folded into
-the JSON (a tool error is not a diagnostic — the pipeline never even ran). -/
+ok, `1` diagnostics present OR a resolution failure (missing import, cycle, private access — the
+SAME exit `bang run` gives a resolution error, ADR-0093 D1-D5), `2` TOOL error (the ENTRY file
+itself could not be read) — caught HERE via `<|>` (the `:load` idiom, §REPL) so it lands on stderr
+with NOTHING written to stdout, never folded into the JSON (a tool error is not a diagnostic — the
+pipeline never even ran). -/
 def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
   match file with
   | none      =>
@@ -314,7 +357,19 @@ def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
   | some path =>
     match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
     | none     => IO.eprintln s!"error: could not read file '{path}'"; pure 2
-    | some src => if json then runCheckJson src else runCheckHuman src
+    | some _   =>
+        match ← resolveEntryFile path with
+        | .error e   =>
+            if json then IO.println (checkFailJson e) else IO.eprintln s!"error: {e}"
+            pure 1
+        | .ok merged =>
+            match Bang.TypeCheck.checkAndLowerProg merged with
+            | .error e =>
+                if json then IO.println (checkFailJson e) else IO.eprintln s!"error: {e}"
+                pure 1
+            | .ok _ =>
+                if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
+                pure 0
 
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
@@ -342,7 +397,11 @@ def usage : String :=
   "EXIT CODES [bang check --json]:\n" ++
   "  0  ok:true  — the program type-checks\n" ++
   "  1  ok:false — diagnostics present (see the JSON on stdout)\n" ++
-  "  2  tool error (e.g. unreadable file) — reported on stderr, never folded into the JSON"
+  "  2  tool error (e.g. unreadable file) — reported on stderr, never folded into the JSON\n\n" ++
+  "  NOTE: a <file.bang> with imports/uses is resolved the SAME way `bang run` resolves it, before\n" ++
+  "  type-checking, so a multi-file project's imports are visible to `check`. KNOWN v1 LIMITATION:\n" ++
+  "  a diagnostic from a resolved multi-file program always has \"span\":null — no line/col — since\n" ++
+  "  the resolved program has no single source text to locate into (follow-up: file-aware spans)."
 
 /-! ## The REPL (issue #7)
 

@@ -479,7 +479,13 @@ one-per-line, so this uses literal `"\n"` text exactly as v1's `String.intercala
 unchanged since D2 does not name declaration SEPARATION as a group/break point, only each decl's
 OWN internal layout). A library-mode program (D5: decls-only, placeholder `.lit 0` body) prints
 its header+decls only — `Main.lean`'s entry-mode detection decides whether a bare `0` is real,
-not this printer; re-parsing that output still round-trips to the SAME `Prog` either way. -/
+not this printer; re-parsing that output still round-trips to the SAME `Prog` either way. NOT
+`public` — the only consumer is `fmtProg` below, in this same module; `Main.lean`'s resolver-aware
+`bang check` (ADR-0093 follow-up ruling) was tried against a print-then-reparse of a MERGED `Prog`
+through this function and found unsound (`applyEntryRule`'s synthesized `body := Surf.var "main"`
+prints as a bare trailing atom immediately after a `main`-decl ending in one, which re-tokenizes as
+ONE application) — it instead calls `TypeCheck.checkAndLowerProg` directly on the `Prog`, never
+re-stringifying, so this function never sees a resolver-merged `Prog` in practice. -/
 def showProg (p : Prog) : String :=
   let headerDocs := (p.imports.map fmtImport) ++ (p.uses.map fmtUse)
   let declDocs := p.decls.map (fmtDeclPub p.pubNames)
