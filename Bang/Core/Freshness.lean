@@ -48,6 +48,7 @@ def capsV : Val → List (Nat × Label)
   | .pair a b   => capsV a ++ capsV b
   | .fold v     => capsV v
   | _           => []
+  termination_by v => sizeOf v
 def capsC : Comp → List (Nat × Label)
   | .ret v        => capsV v
   | .letC M N     => capsC M ++ capsC N
@@ -64,13 +65,30 @@ def capsC : Comp → List (Nat × Label)
   -- LOUDLY here, not silently drop its operands' caps (the latent default binop would have inherited).
   | .oom          => []
   | .wrong _      => []
+  termination_by c => sizeOf c
 def capsH : Handler → List (Nat × Label)
   | .state _ s  => capsV s
   | .throws _   => []
   | .transaction _ Θ => Θ.flatMap capsV
-  -- custom (ADR-0085 stage 1): inert/untyped ⇒ no reachable config contains it, and shift/subst are the
-  -- identity on it (no cap ever flows through), so `[]` (contributes no caps) is sound — like `throws`.
-  | .custom _ _ _ => []
+  -- custom (ADR-0087 finite rep): the caps are STRUCTURAL — the carried param's caps ++ every clause
+  -- body's caps. Honest and total, the sibling of `state`'s `capsV s` and `transaction`'s `Θ.flatMap capsV`.
+  -- This is the D2 bet: with clauses enumerable, `CapLabelCoh`/`FreshCfg` bound custom's caps by the SAME
+  -- per-step machinery as the built-ins — no threaded well-formedness premise (the ADR-0085 wall dissolved).
+  -- The clause bodies are traversed via `capsCls` (a separate mutual member recursing on the list spine)
+  -- because `List (OpId × Comp)` is a nested-inductive occurrence of `Comp` the structural checker cannot
+  -- thread automatically; the `sizeOf` measure justifies the descent. Equation lemmas
+  -- (`simp only [capsH]`/`[capsCls]`) are still generated.
+  | .custom _ p cls => capsV p ++ capsCls cls
+  termination_by h => sizeOf h
+/-- Caps of a custom handler's clause list — recurses on the list spine; each body `c.2` is a
+`sizeOf`-subterm of the clause list (ADR-0087). -/
+def capsCls : List (OpId × Comp) → List (Nat × Label)
+  | [] => []
+  | c :: rest => capsC c.2 ++ capsCls rest
+  termination_by cls => sizeOf cls
+  decreasing_by
+    · simp_wf; cases c with | mk op body => simp only [Prod.mk.sizeOf_spec]; omega
+    · simp_wf; omega
 end
 
 def capsK : EvalCtx → List (Nat × Label)
@@ -187,7 +205,7 @@ theorem capsH_shiftFrom (j : Nat) (h : Handler) : capsH (Handler.shiftFrom j h) 
   | .state _ s => simp only [Handler.shiftFrom, capsH]; exact capsV_shiftFrom j s
   | .throws _ => rfl
   | .transaction _ _ => rfl
-  | .custom _ _ _ => rfl    -- capsH = [] and shiftFrom identity (ADR-0085 stage 1)
+  | .custom _ _ _ => rfl    -- shiftFrom is identity on custom (clauses closed) ⇒ capsH round-trips (ADR-0087)
 end
 
 mutual
@@ -277,7 +295,9 @@ theorem capsH_substFrom (k : Nat) (v : Val) (h : Handler) :
   | .state _ s => intro p hp; simp only [Handler.substFrom, capsH] at hp ⊢; exact capsV_substFrom k v s p hp
   | .throws _ => intro p hp; simp [Handler.substFrom, capsH] at hp
   | .transaction _ _ => intro p hp; exact Or.inl hp
-  | .custom _ _ _ => intro p hp; simp [Handler.substFrom, capsH] at hp    -- capsH = [] ⇒ hp : p ∈ [] absurd
+  -- custom: `Handler.substFrom` is the IDENTITY (clauses closed, Stage-1), so `capsH (subst …) = capsH h`
+  -- ⇒ every cap of the result is already a cap of `h` (ADR-0087: capsH is honest but subst is inert here).
+  | .custom _ _ _ => intro p hp; exact Or.inl hp
 end
 
 /-! ### §3.0b — DISPATCH-arm freshness: the resumed stack + focus stay `< g`. Richer mirror of
