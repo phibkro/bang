@@ -2942,7 +2942,7 @@ def qualifyDeclBody (modName : String) (names : List String) : Decl → Decl :=
   | .implD n t ops        =>
       .implD n (qTy t) (ops.map (fun o => { o with body := qualifyVars modName names o.body }))
   | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyVars modName names b)
-  | .letD n e             => .letD n (qualifyVars modName names e)
+  | .letD n ty e          => .letD n (ty.map qTy) (qualifyVars modName names e)
   | .letRecD n t e        => .letRecD n (qTy t) (qualifyVars modName names e)
 
 /-- Rename a `Decl`'s OWN top-level name (and a `data`'s ctors) to its qualified form — the
@@ -2960,7 +2960,7 @@ def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
   | .traitD n ps ops laws => .traitD (qualifyName modName n) ps ops laws
   | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
   | .fnD n ps ty tr tv b  => .fnD (qualifyName modName n) ps ty tr tv b
-  | .letD n e             => .letD (qualifyName modName n) e
+  | .letD n ty e          => .letD (qualifyName modName n) ty e
   | .letRecD n t e        => .letRecD (qualifyName modName n) t e
 
 /-- Qualify a whole parsed module `Prog`: every top-level name (`moduleTopNames`) becomes
@@ -3115,10 +3115,10 @@ def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog
     | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners qTy l.body }))
     | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners qTy o.body }))
     | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b)
-    | .letD n e             => .letD n (qualifyDotAccess importNames ctorOwners qTy e)
+    | .letD n ty e          => .letD n (ty.map qTy) (qualifyDotAccess importNames ctorOwners qTy e)
     | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners qTy e))
   let body := qualifyDotAccess importNames ctorOwners qTy p.body
-  let aliasDecls : List Decl := usedPlainFns.map (fun (n, modName) => .letD n (Surf.var (qualifyName modName n)))
+  let aliasDecls : List Decl := usedPlainFns.map (fun (n, modName) => .letD n none (Surf.var (qualifyName modName n)))
   { p with decls := aliasDecls ++ decls, body := body }
 
 /-- Merge the entry program `p` with its resolved imports (`resolved : List (String × Prog)`,
@@ -3200,7 +3200,7 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
     | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners qTy l.body }))
     | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners qTy o.body }))
     | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b)
-    | .letD n e             => .letD n (qualifyDotAccess importNames ctorOwners qTy e)
+    | .letD n ty e          => .letD n (ty.map qTy) (qualifyDotAccess importNames ctorOwners qTy e)
     | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners qTy e))
   let body := qualifyDotAccess importNames ctorOwners qTy p.body
   -- `use`-hoisted plain-fn aliases are injected as `letD` decls at the FRONT of the entry file's
@@ -3210,7 +3210,7 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
   -- order regardless of origin, so prepending here gives the alias the OUTERMOST scope — every
   -- other decl and the body see it, exactly matching where a `use` line sits in source (always
   -- before every decl it can affect, per the header-then-decls grammar).
-  let aliasDecls : List Decl := usedPlainFns.map (fun (n, modName) => .letD n (Surf.var (qualifyName modName n)))
+  let aliasDecls : List Decl := usedPlainFns.map (fun (n, modName) => .letD n none (Surf.var (qualifyName modName n)))
   return { imports := [], uses := [], pubNames := p.pubNames, decls := mergedDecls ++ aliasDecls ++ entryDecls,
             body := body, isLibrary := p.isLibrary }
 
@@ -3227,7 +3227,7 @@ for `buildEnv`. -/
 def foldLetDecls (ds : List Decl) (tail : Surf) : List Decl × Surf :=
   let nonLetDecls := ds.filter (fun d => match d with | .letD .. | .letRecD .. => false | _ => true)
   let body := ds.foldr (fun d acc => match d with
-    | .letD n e      => Surf.lett n e acc
+    | .letD n ty e   => Surf.lett n (match ty with | some t => Surf.annotS e t | none => e) acc
     | .letRecD n t e => Surf.letRecS n t e acc
     | _              => acc) tail
   (nonLetDecls, body)
@@ -4804,6 +4804,12 @@ only prove the AST shape) — this is the "does the ADR's own payoff actually ha
 -- REFERENCES it in its trailing body runs exactly like any other `let`, proving the entry-point
 -- form has no special elaboration path (D5: no main-only special case).
 #guard runTypedYieldsInt 50 "let main = 42 data Marker = M main" 42
+-- the OPTIONAL type ascription (D5 ruling point (c)) actually type-checks + runs — an `Int`-typed
+-- `let x : Int = 3` is not just accepted structurally, the ascription round-trips through the
+-- REAL type checker (a wrong ascription, e.g. `let x : Unit = 3`, would be caught below).
+#guard runTypedYieldsInt 50 "let x : Int = 3 data Marker = M x + 1" 4
+#guard (match Bang.TypeCheck.checkAndLower "let x : Unit = 3 data Marker = M x" with
+        | .error _ => true | .ok _ => false)
 
 -- `use`-hoisting a `pub let rec` plain function: the merged program's `use`-bound function
 -- reference agrees with a hand-inlined `let double = lib_double in …` form (the SAME `use`-wrap

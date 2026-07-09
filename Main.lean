@@ -176,7 +176,7 @@ loud error (ADR-0046, no silent precedence); NEITHER ⟹ a pure library file —
 a loud error naming that fact, not a silent "prints 0". -/
 def applyEntryRule (p : Prog) : Except String Prog :=
   let hasMain := p.decls.any (fun d => match d with
-    | .letD n _ | .letRecD n _ _ => n == "main"
+    | .letD n _ _ | .letRecD n _ _ => n == "main"
     | _ => false)
   match hasMain, p.isLibrary with
   | true,  true  => .ok { p with body := Surf.var "main", isLibrary := false }   -- program mode

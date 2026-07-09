@@ -1288,14 +1288,18 @@ inductive Decl where
     -- type) or a single `ArgTy -> ResTy` arrow (v1 monomorphic single-arg ops, matching the
     -- ADR-0085 D4 sketch `read : Int -> Str`). Multi-arg ops are OUT of v1 scope (not sketched by
     -- the ADR; a later bite can generalize the same way `capOpSig`'s ≤2-arity does for built-ins).
-  | letD    : String → Surf → Decl
-    -- `let name = expr` (NO trailing `in`) — a top-level PLAIN BINDING (ADR-0093 D5 operator
-    -- ruling, 2026-07-09: the GENERAL form, not a main-only special case). Disambiguated from the
-    -- script-mode `let name = expr in body` by the ABSENCE of `in` after `expr` — deterministic
-    -- lookahead (`pDecl`'s `pLetDeclOrBail`), never a guess (ADR-0046). Desugars at `Prog`-assembly
-    -- time (`foldLetDecls`) to nested `Surf.lett`s wrapping the body — the SAME "wrap the body in a
-    -- let" idiom `wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s `use`-hoist already use, so this is
-    -- not a new mechanism, just its first SURFACE-visible (parseable, `pub`-able, formattable) use.
+  | letD    : String → Option Ty → Surf → Decl
+    -- `let name = expr` or `let name : Ty = expr` (NO trailing `in`) — a top-level PLAIN BINDING
+    -- (ADR-0093 D5 operator ruling, 2026-07-09: the GENERAL form, not a main-only special case).
+    -- The type ascription is OPTIONAL on plain `let` (ruling point (c) — required on `let rec`
+    -- exactly as at expression level, ADR-0073). Disambiguated from the script-mode `let name =
+    -- expr in body` by the ABSENCE of `in` after `expr` — deterministic lookahead (`isLetDecl`),
+    -- never a guess (ADR-0046). Desugars at `Prog`-assembly time (`foldLetDecls`) to nested
+    -- `Surf.lett`s wrapping the body (the ascription, when present, becomes an `annotS` around the
+    -- bound expression — mirroring how an expression-level `(e : T)` ascription already works) —
+    -- the SAME "wrap the body in a let" idiom `wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s
+    -- `use`-hoist already use, so this is not a new mechanism, just its first SURFACE-visible
+    -- (parseable, `pub`-able, formattable) use.
   | letRecD : String → Ty → Surf → Decl
     -- `let rec name : T = expr` (NO trailing `in`) — the recursive sibling, mirroring `letRecS`'s
     -- shape (ADR-0073's mandatory type annotation) at decl scope. `main` is now literally `let main
@@ -1314,7 +1318,7 @@ def Decl.name : Decl → String
   | .dataD n _ _       => n
   | .fnD n _ _ _ _ _   => n
   | .effectD n _       => n
-  | .letD n _          => n
+  | .letD n _ _        => n
   | .letRecD n _ _     => n
 
 /-- One `import` line: `import tokenizer` — brings `tokenizer` into scope as a qualifier prefix
@@ -1536,11 +1540,18 @@ def pDecl : Nat → P Decl
       let (_, ts) ← expect "=" ts
       let (e, ts) ← pExpr f ts
       .ok (.letRecD n t e, ts)
-  | f + 1, "let" :: ts => do                   -- ADR-0093 D5 (operator ruling): `let name = expr` (no `in`)
+  | f + 1, "let" :: ts => do                   -- ADR-0093 D5 (operator ruling): `let name [: Ty] = expr` (no `in`)
       let (n, ts) ← pIdent ts
-      let (_, ts) ← expect "=" ts
-      let (e, ts) ← pExpr f ts
-      .ok (.letD n e, ts)
+      match ts with
+      | ":" :: ts => do
+          let (t, ts) ← pTy f ts
+          let (_, ts) ← expect "=" ts
+          let (e, ts) ← pExpr f ts
+          .ok (.letD n (some t) e, ts)
+      | _ => do
+          let (_, ts) ← expect "=" ts
+          let (e, ts) ← pExpr f ts
+          .ok (.letD n none e, ts)
   | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', 'effect', or 'let', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
@@ -1579,11 +1590,19 @@ def isLetDecl (fuel : Nat) (ts : List String) : Bool :=
   | "let" :: nts => Id.run <| do
       match pIdent nts with
       | .error _ => pure false
-      | .ok (_, nts) => match expect "=" nts with
-        | .error _ => pure false
-        | .ok (_, nts) => match pExpr fuel nts with
+      | .ok (_, nts) =>
+          -- the optional `: Ty` ascription (D5 ruling point (c)) — skip it in the lookahead the
+          -- SAME way `pDecl`'s own parse does, so the two never disagree on where `=` starts.
+          let nts := match nts with
+            | ":" :: rest => match pTy fuel rest with
+                | .ok (_, rest') => rest'
+                | .error _       => nts   -- malformed ascription: let the REAL parse surface the error
+            | _ => nts
+          match expect "=" nts with
           | .error _ => pure false
-          | .ok (_, rest) => pure (rest.head? != some "in")
+          | .ok (_, nts) => match pExpr fuel nts with
+            | .error _ => pure false
+            | .ok (_, rest) => pure (rest.head? != some "in")
   | _ => false
 
 /-- One declaration, `pub`-prefixable (ADR-0093 D3): `pub data …`, `pub fn …`, etc. mark the decl
@@ -2353,10 +2372,10 @@ trailing `in` (`isLetDecl`'s deterministic lookahead). -/
 -- around — `let x = 3 0` would parse `3 0` as an application, swallowing the `0` into `x`'s bound
 -- expression rather than leaving it as a separate trailing body.
 #guard progParsesTo "let x = 3 data Hidden = HNull 0"
-  { decls := [.letD "x" (.lit 3), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
+  { decls := [.letD "x" none (.lit 3), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
 -- `pub let` exports it (D3's uniform `pub`-prefix machinery, now covering the NEW decl kind too).
 #guard progParsesTo "pub let x = 3 data Hidden = HNull 0"
-  { pubNames := ["x"], decls := [.letD "x" (.lit 3), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
+  { pubNames := ["x"], decls := [.letD "x" none (.lit 3), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
 -- `let rec name : T = expr` (no `in`) parses as the recursive decl sibling.
 #guard progParsesTo "let rec f : Int -> Int = fun n => n data Hidden = HNull 0"
   { decls := [.letRecD "f" (.tArr .tInt .tInt) (.lam "n" (.var "n")), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
@@ -2366,7 +2385,7 @@ trailing `in` (`isLetDecl`'s deterministic lookahead). -/
     body := .lit 0 }
 -- MULTIPLE let decls compose, in order, mixed with other decl kinds.
 #guard progParsesTo "let x = (3) data Hidden = HNull let y = 4 data Extra = ENull 0"
-  { decls := [.letD "x" (.lit 3), .dataD "Hidden" [] [("HNull", [])], .letD "y" (.lit 4),
+  { decls := [.letD "x" none (.lit 3), .dataD "Hidden" [] [("HNull", [])], .letD "y" none (.lit 4),
               .dataD "Extra" [] [("ENull", [])]],
     body := .lit 0 }
 -- the SAME source text with a trailing `in` is UNCHANGED script-mode behavior (D5's own point:
@@ -2377,10 +2396,17 @@ trailing `in` (`isLetDecl`'s deterministic lookahead). -/
         | _, _ => false)
 -- a decls-ONLY file using a plain `let` (library mode, D5's third case, no trailing body at all).
 #guard progParsesTo "let x = 3"
-  { decls := [.letD "x" (.lit 3)], body := .lit 0, isLibrary := true }
+  { decls := [.letD "x" none (.lit 3)], body := .lit 0, isLibrary := true }
 -- `main` is now literally a `let` decl — no special keyword, exactly the ruling's point.
 #guard progParsesTo "let main = 42"
-  { decls := [.letD "main" (.lit 42)], body := .lit 0, isLibrary := true }
+  { decls := [.letD "main" none (.lit 42)], body := .lit 0, isLibrary := true }
+-- the OPTIONAL type ascription on plain `let` (D5 ruling point (c)): `let name : Ty = expr`.
+#guard progParsesTo "let x : Int = 3"
+  { decls := [.letD "x" (some .tInt) (.lit 3)], body := .lit 0, isLibrary := true }
+-- WITHOUT the ascription, the decl still carries `none` (not a parse of `x` as a type — the `:`
+-- is what triggers the ascription branch, so its ABSENCE must not be confused with a malformed one).
+#guard progParsesTo "let x = 3"
+  { decls := [.letD "x" none (.lit 3)], body := .lit 0, isLibrary := true }
 -- REGRESSION (caught dogfooding the JSON split): `pub`/`import`/`use` were reserved in `pIdent`
 -- (blocking their use as BINDERS) but NOT in `pAtom`'s OWN separate reserved-word list — so a
 -- `let`-decl's bound expression, followed immediately by a SECOND `pub let ...` decl, silently
@@ -2388,7 +2414,7 @@ trailing `in` (`isLetDecl`'s deterministic lookahead). -/
 -- there. Two adjacent `pub let` decls now correctly parse as TWO decls, not one decl whose body
 -- absorbed the next decl's leading keyword.
 #guard progParsesTo "pub let x = 3 pub let y = 4"
-  { pubNames := ["x", "y"], decls := [.letD "x" (.lit 3), .letD "y" (.lit 4)], body := .lit 0, isLibrary := true }
+  { pubNames := ["x", "y"], decls := [.letD "x" none (.lit 3), .letD "y" none (.lit 4)], body := .lit 0, isLibrary := true }
 
 end -- public section
 end Bang.Surface

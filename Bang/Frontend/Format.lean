@@ -445,9 +445,14 @@ def fmtDeclDoc : Decl → Format
   | .effectD n ops =>    -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }` — same member-block
                           -- shape as trait/impl (D2's flat-vs-wrapped rule applies uniformly).
       Format.text s!"effect {n} " ++ fmtMemberBlock (ops.map fmtEffectOp)
-  | .letD n e =>          -- ADR-0093 D5 (operator ruling): `let name = expr` — NO trailing `in`,
-                          -- the one visible difference from the ordinary `let`/EXPRESSION printer.
-      Format.group (nestD (Format.text s!"let {n} =" ++ Format.line ++ fmtSurf .cmp e))
+  | .letD n ty e =>       -- ADR-0093 D5 (operator ruling): `let name [: Ty] = expr` — NO trailing
+                          -- `in`, the one visible difference from the ordinary `let`/EXPRESSION
+                          -- printer. The OPTIONAL ascription (ruling point (c)) prints only when
+                          -- present — an omitted one round-trips to `none` either way (Surface.lean).
+      let head := match ty with
+        | some t => s!"let {n} : {showTy t} ="
+        | none   => s!"let {n} ="
+      Format.group (nestD (Format.text head ++ Format.line ++ fmtSurf .cmp e))
   | .letRecD n t e =>     -- `let rec name : T = expr` — the recursive sibling, same no-`in` shape.
       Format.group (nestD (Format.text s!"let rec {n} : {showTy t} =" ++ Format.line ++ fmtSurf .cmp e))
 
@@ -772,3 +777,6 @@ open Bang.Format in
 -- `main` is just a `let` decl now — no special form, so it round-trips through the SAME guard.
 open Bang.Format in
 #guard roundTripsOn "let main = 42" && idempotentOn "let main = 42"
+-- the OPTIONAL type ascription on plain `let` (D5 ruling point (c)) round-trips too.
+open Bang.Format in
+#guard roundTripsOn "let x : Int = 3" && idempotentOn "let x : Int = 3"
