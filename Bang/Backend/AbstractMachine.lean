@@ -2408,21 +2408,21 @@ theorem sim : ∀ fe,
               -- SUBSTITUTED body `M' = subst (vcap g ℓ0) M` at g+1; on a normal return POP the heap (τ1.tail).
               -- A MIRROR of the proven handle-state case, on the τ side (no σ push).
               simp only [Handler.label] at h
-              cases hM : evalD fe (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M) with
+              cases hM : evalD fe (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.term (.ret v), g1, σ1, τ1), h =>
+                | (.term (.ret v), g1, σ1, τ1, κ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
                       Outcome.term.injEq] at h
-                    obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
+                    obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
                     have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
                         exec F2 g1 cc (.ret v :: ss) (netEffect hs σ1 τ1.tail) = some r2 →
                         (∃ F', exec F' (g+1) (compile (Comp.subst (Val.vcap g ℓ0) M) (Instr.UNMARK :: cc)) ss
                           ({ id := g, handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss } :: hs) = some r2)
                         ∧ Corr σ1 (netEffect hs σ1 τ1.tail) ∧ TCorr τ1.tail (netEffect hs σ1 τ1.tail)
-                        ∧ HMut hs (netEffect hs σ1 τ1.tail) := by
+                        ∧ CCorr κ1 (netEffect hs σ1 τ1.tail) ∧ HMut hs (netEffect hs σ1 τ1.tail) := by
                       intro cc ss F2 r2 hr2
                       set fr : HFrame := { id := g, handler := Handler.transaction ℓ0 Θ, savedCode := cc, savedStack := ss }
                         with hfrdef
@@ -2430,8 +2430,10 @@ theorem sim : ∀ fe,
                         Corr_install_nonstate fr (by rw [hfrdef]; intro ℓ s; simp) hC
                       have hTinstall : TCorr (τ.push g Θ) (fr :: hs) :=
                         TCorr_install ℓ0 Θ fr (by rw [hfrdef]) hT
-                      obtain ⟨hsM, hCM, hTM, hmutM, kM⟩ :=
-                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ (τ.push g Θ) (.ret v) g1 σ1 τ1 hM (fr :: hs) hCinstall hTinstall
+                      have hKinstall : CCorr κ (fr :: hs) :=
+                        CCorr_install_noncustom fr (by rw [hfrdef]; intro ℓ p cls; simp) hK
+                      obtain ⟨hsM, hCM, hTM, hKM, hmutM, kM⟩ :=
+                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ (τ.push g Θ) κ (.ret v) g1 σ1 τ1 κ1 hM (fr :: hs) hCinstall hTinstall hKinstall
                       obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
                         cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
                       have htop : ∃ Θ', top.handler = .transaction ℓ0 Θ' := by
@@ -2440,19 +2442,21 @@ theorem sim : ∀ fe,
                         | transaction ℓ1 Θ1 => rw [hfrdef, hth] at hh; simp only at hh; subst hh; exact ⟨Θ1, rfl⟩
                         | state _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
-                        | custom _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut txn/custom = False (ADR-0085 stage 1)
+                        | custom _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut txn/custom = False
                       obtain ⟨Θ', hts⟩ := htop
                       have hTtail := TCorr_pop_txn hts hTM
                       have hCtail : Corr σ1 tail :=
                         Corr_pop_nonstate (by rw [hfrdef]; intro ℓ s; simp) hmutM hCM
+                      have hKtail : CCorr κ1 tail :=
+                        CCorr_pop_noncustom (by rw [hts]; intro ℓ p cls; simp) hKM
                       have htaileq : tail = netEffect hs σ1 τ1.tail :=
                         updateStates_eq (HMut.tail hmutM) hCtail hTtail
                       have hstep : exec (F2+1) g1 (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
                         simp only [exec]; rw [htaileq]; exact hr2
                       exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
-                        htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ (HMut.tail hmutM)⟩
-                    obtain ⟨_, hCf, hTf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
-                    refine ⟨netEffect hs σ1 τ1.tail, hCf, hTf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
+                        htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ hKtail, htaileq ▸ (HMut.tail hmutM)⟩
+                    obtain ⟨_, hCf, hTf, hKf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
+                    refine ⟨netEffect hs σ1 τ1.tail, hCf, hTf, hKf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
                     obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
                     exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
                 | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
@@ -2466,7 +2470,7 @@ theorem sim : ∀ fe,
                 | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
                 | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
                 | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
-                | (.raised ℓ' op' w, _, _, _), h =>
+                | (.raised ℓ' op' w, _, _, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
       | case a b d =>
@@ -2476,14 +2480,14 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | inl v =>
               simp only [evalD] at h
-              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v b) g σ τ t g' σ' τ' h hs hC hT
-              refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
+              obtain ⟨hsf, hCf, hTf, hKf, hlenf, k⟩ := ihT (Comp.subst v b) g σ τ κ t g' σ' τ' κ' h hs hC hT hK
+              refine ⟨hsf, hCf, hTf, hKf, hlenf, fun c s F r hr => ?_⟩
               obtain ⟨F', hF'⟩ := k c s F r hr
               exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
           | inr v =>
               simp only [evalD] at h
-              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT (Comp.subst v d) g σ τ t g' σ' τ' h hs hC hT
-              refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
+              obtain ⟨hsf, hCf, hTf, hKf, hlenf, k⟩ := ihT (Comp.subst v d) g σ τ κ t g' σ' τ' κ' h hs hC hT hK
+              refine ⟨hsf, hCf, hTf, hKf, hlenf, fun c s F r hr => ?_⟩
               obtain ⟨F', hF'⟩ := k c s F r hr
               exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
           | vunit => simp [evalD] at h
@@ -2498,9 +2502,9 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | pair v w =>
               simp only [evalD] at h
-              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ :=
-                ihT (Comp.subst v (Comp.subst (Val.shift w) b)) g σ τ t g' σ' τ' h hs hC hT
-              refine ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => ?_⟩
+              obtain ⟨hsf, hCf, hTf, hKf, hlenf, k⟩ :=
+                ihT (Comp.subst v (Comp.subst (Val.shift w) b)) g σ τ κ t g' σ' τ' κ' h hs hC hT hK
+              refine ⟨hsf, hCf, hTf, hKf, hlenf, fun c s F r hr => ?_⟩
               obtain ⟨F', hF'⟩ := k c s F r hr
               exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩
           | vunit => simp [evalD] at h
@@ -2516,8 +2520,8 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | fold v =>
               simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-              obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
-              exact ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
+              obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
+              exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
           | vunit => simp [evalD] at h
           | vint n => simp [evalD] at h
           | vvar i => simp [evalD] at h
@@ -2533,8 +2537,8 @@ theorem sim : ∀ fe,
           cases v <;> cases w <;>
             first
             | (simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-               obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
-               exact ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩)
+               obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
+               exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩)
             | simp [evalD] at h
     · -- RAISED PART
       intro M g σ τ ℓ op v g' σ' τ' h hs hC hT
