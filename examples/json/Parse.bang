@@ -1,0 +1,203 @@
+import Json
+pub let isDigit = {fun n => if 47 < n then if n < 58 then 0 == 0 else 0 == 1 else 0 == 1}
+pub let isWs = {fun n =>
+    if n == 32
+      then 0 == 0
+      else if n == 10
+        then 0 == 0
+        else if n == 9 then 0 == 0 else if n == 13 then 0 == 0 else 0 == 1}
+pub let rec dropWs : Str -> Str = fun s =>
+    match (s : Str) {
+      SNil -> SNil,
+      SCons(c, rest) -> match c { Char(n) -> if $isWs n then $dropWs rest else SCons(c, rest) }
+    }
+pub let rec litMatch : Str -> Str -> Option Str = fun pat =>
+    fun input =>
+      match (pat : Str) {
+        SNil -> Some input,
+        SCons(pc, prest) -> match (input : Str) {
+          SNil -> None,
+          SCons(ic, irest) -> match pc {
+            Char(pn) -> match ic { Char(inn) -> if pn == inn then $litMatch prest irest else None }
+          }
+        }
+      }
+pub let rec parseValue : Str -> Option (Json_Json * Str) ! {Div} = fun s0 =>
+    let s = $dropWs s0
+      in
+    match (s : Str) {
+      SNil -> None,
+      SCons(c0, restA) -> match c0 {
+        Char(code) -> if code == 110
+          then match ($litMatch "null" s) { None -> None, Some(r) -> Some(Json.JNull, r) }
+          else if code == 116
+            then match ($litMatch "true" s) { None -> None, Some(r) -> Some(Json.JBool 1, r) }
+            else if code == 102
+              then match ($litMatch "false" s) { None -> None, Some(r) -> Some(Json.JBool 0, r) }
+              else if code == 34
+                then let rec scanStr : Str -> Option (Str * Str) = fun t =>
+                    match (t : Str) {
+                      SNil -> None,
+                      SCons(c, rest) -> match c {
+                        Char(n) -> if n == 34
+                          then Some(SNil, rest)
+                          else if n == 92
+                            then match (rest : Str) {
+                              SNil -> None,
+                              SCons(ec, erest) -> match ec {
+                                Char(en) -> let decoded = {if en == 110
+                                    then 10
+                                    else if en == 116
+                                      then 9
+                                      else if en == 34 then 34 else if en == 92 then 92 else en}
+                                  in
+                                match ($scanStr
+                                erest) {
+                                  None -> None,
+                                  Some(p) -> let (chars, r2) = p
+                                    in
+                                  Some(SCons(Char $decoded, chars), r2)
+                                }
+                              }
+                            }
+                            else match ($scanStr
+                            rest) {
+                              None -> None,
+                              Some(p) -> let (chars, r2) = p in Some(SCons(c, chars), r2)
+                            }
+                      }
+                    }
+                  in
+                match ($scanStr
+                restA) { None -> None, Some(p) -> let (str, r) = p in Some(Json.JStr str, r) }
+                else if $isDigit code
+                  then let rec scanDigits : Str -> Option (Int * Str) = fun t =>
+                      match (t : Str) {
+                        SNil -> None,
+                        SCons(c, rest) -> match c {
+                          Char(n) -> if $isDigit n
+                            then match ($scanDigits
+                            rest) {
+                              None -> Some(n - 48, rest),
+                              Some(p) -> let (v, r2) = p in Some((n - 48) * 10 + v, r2)
+                            }
+                            else None
+                        }
+                      }
+                    in
+                  match ($scanDigits
+                  s) { None -> None, Some(p) -> let (v, r) = p in Some(Json.JInt v, r) }
+                  else if code == 91
+                    then let rec parseElems : Str -> Option (Json_Json * Str) ! {Div} = fun t0 =>
+                        let t = $dropWs t0
+                          in
+                        match (t : Str) {
+                          SNil -> None,
+                          SCons(cc, _) -> match cc {
+                            Char(ccode) -> if ccode == 93
+                              then Some(Json.JNilL, t)
+                              else match ($parseValue
+                              t) {
+                                None -> None,
+                                Some(p) -> let (v, r1) = p
+                                  in
+                                let r1w = $dropWs r1
+                                  in
+                                match (r1w : Str) {
+                                  SNil -> None,
+                                  SCons(sep, r2) -> match sep {
+                                    Char(sn) -> if sn == 44
+                                      then match ($parseElems
+                                      r2) {
+                                        None -> None,
+                                        Some(pp) -> let (tailJ, r3) = pp
+                                          in
+                                        Some(Json.JCons(v, tailJ), r3)
+                                      }
+                                      else if sn == 93 then Some(Json.JCons(v, Json.JNilL), r2) else None
+                                  }
+                                }
+                              }
+                          }
+                        }
+                      in
+                    match ($parseElems
+                    restA) { None -> None, Some(p) -> let (elems, r) = p in Some(Json.JArr elems, r) }
+                    else if code == 123
+                      then let keyOf = {fun kj =>
+                          match (kj : Json_Json) {
+                            Json_JNull -> None,
+                            Json_JBool(x) -> None,
+                            Json_JInt(x) -> None,
+                            Json_JStr(key) -> Some key,
+                            Json_JArr(x) -> None,
+                            Json_JObj(x) -> None,
+                            Json_JCons(a, b) -> None,
+                            Json_JNilL -> None,
+                            Json_JField(k, v) -> None
+                          }}
+                        in
+                      let rec parseFields : Str -> Option (Json_Json * Str) ! {Div} = fun t0 =>
+                          let t = $dropWs t0
+                            in
+                          match (t : Str) {
+                            SNil -> None,
+                            SCons(cc, _) -> match cc {
+                              Char(ccode) -> if ccode == 125
+                                then Some(Json.JNilL, t)
+                                else match ($parseValue
+                                t) {
+                                  None -> None,
+                                  Some(kp) -> let (keyJ, rk) = kp
+                                    in
+                                  match ($keyOf
+                                  keyJ) {
+                                    None -> None,
+                                    Some(key) -> let rkw = $dropWs rk
+                                      in
+                                    match (rkw : Str) {
+                                      SNil -> None,
+                                      SCons(colonC, rk2) -> match colonC {
+                                        Char(cn) -> if cn == 58
+                                          then match ($parseValue
+                                          rk2) {
+                                            None -> None,
+                                            Some(vp) -> let (valJ, rf) = vp
+                                              in
+                                            let fieldJ = {Json.JField(key, valJ)}
+                                              in
+                                            let rfw = $dropWs rf
+                                              in
+                                            match (rfw : Str) {
+                                              SNil -> None,
+                                              SCons(sep, rf2) -> match sep {
+                                                Char(sn) -> if sn == 44
+                                                  then match ($parseFields
+                                                  rf2) {
+                                                    None -> None,
+                                                    Some(pp) -> let (tailJ, r3) = pp
+                                                      in
+                                                    Some(Json.JCons($fieldJ, tailJ), r3)
+                                                  }
+                                                  else if sn == 125
+                                                    then Some(Json.JCons($fieldJ, Json.JNilL), rf2)
+                                                    else None
+                                              }
+                                            }
+                                          }
+                                          else None
+                                      }
+                                    }
+                                  }
+                                }
+                            }
+                          }
+                        in
+                      match ($parseFields
+                      restA) {
+                        None -> None, Some(p) -> let (fields, r) = p in Some(Json.JObj fields, r)
+                      }
+                      else None
+      }
+    }
+pub let parseTop = {fun s => match ($parseValue s) { None -> Json.JNull, Some(p) -> let (v, rest) = p in v }}

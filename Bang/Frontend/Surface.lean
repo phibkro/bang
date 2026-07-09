@@ -1040,6 +1040,7 @@ def pAtom : Nat → P Surf
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
               || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
               || t = "effect"
+              || t = "import" || t = "use" || t = "pub"
               || t = "as" || t = "."
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
@@ -2380,6 +2381,14 @@ trailing `in` (`isLetDecl`'s deterministic lookahead). -/
 -- `main` is now literally a `let` decl — no special keyword, exactly the ruling's point.
 #guard progParsesTo "let main = 42"
   { decls := [.letD "main" (.lit 42)], body := .lit 0, isLibrary := true }
+-- REGRESSION (caught dogfooding the JSON split): `pub`/`import`/`use` were reserved in `pIdent`
+-- (blocking their use as BINDERS) but NOT in `pAtom`'s OWN separate reserved-word list — so a
+-- `let`-decl's bound expression, followed immediately by a SECOND `pub let ...` decl, silently
+-- swallowed the `pub` keyword as an APPLICATION ARGUMENT (`{fun n => …} pub`) instead of stopping
+-- there. Two adjacent `pub let` decls now correctly parse as TWO decls, not one decl whose body
+-- absorbed the next decl's leading keyword.
+#guard progParsesTo "pub let x = 3 pub let y = 4"
+  { pubNames := ["x", "y"], decls := [.letD "x" (.lit 3), .letD "y" (.lit 4)], body := .lit 0, isLibrary := true }
 
 end -- public section
 end Bang.Surface

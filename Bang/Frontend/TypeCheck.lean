@@ -2975,6 +2975,7 @@ def qualifyModule (modName : String) (usedCtors : List String) (p : Prog) : Prog
     decls := p.decls.map (fun d => qualifyDeclName modName usedCtors (qualifyDeclBody modName names d))
     body  := qualifyVars modName names p.body }
 
+
 /-- Does `p`'s header only reference NAMES the resolved module set actually exports (D3 — private
 by default)? Returns the first violation as `(modName, name)` if `use tokenizer (secret)` names a
 non-`pub` decl of `tokenizer` — the loud error names BOTH the module and the specific private name
@@ -3079,6 +3080,47 @@ def qualifyDArmsAccess (imports : List String) (ctorOwners : List (String × Str
       .cons c' ps (qualifyDotAccess imports ctorOwners qTy b) (qualifyDArmsAccess imports ctorOwners qTy rest)
 end
 
+/-- Rewrite a MODULE's OWN bare qualified access (`Json.JNull`) to ITS OWN imports/uses, BEFORE
+`qualifyModule` renames the module's own top-level names. A transitively-imported module (e.g.
+`Print.bang`, itself `import Json`-ing) is loaded by `Main.lean`'s resolver as a RAW, unqualified
+`Prog` — its own `Json.JNull` reference is still `.dotPerform (.var "Json") "JNull" .none` when
+`mergeModules` sees it, since only the ENTRY file's bare access used to get this treatment. Without
+this pass, a transitively-imported module's own qualified references are never rewritten, and its
+merged decl body still names the UNQUALIFIED `Json` — an "unbound variable" at elaboration, caught
+dogfooding the JSON split (`examples/json/Print.bang`, which imports `Json` for `Json.JNull` etc).
+`resolved` is the GLOBAL resolution list (every module knows every OTHER module's ctor/data-type
+ownership regardless of who imports what — the rewrite target is universal, only the SOURCE
+module's own `imports`/`uses` decide what's eligible to rewrite FROM inside it). -/
+def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog :=
+  let usedNamesLiteral := p.uses.flatMap (fun u => u.names)
+  let usedNames := usedNamesLiteral ++ resolved.flatMap (fun (_, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .dataD n _ cs => if usedNamesLiteral.contains n then cs.map (·.1) else []
+      | _             => []))
+  let importNames := p.imports.map (·.modName) ++ p.uses.map (·.modName)
+  let allCtorOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .dataD _ _ cs => cs.map (fun (c, _) => (c, modName))
+      | _             => []))
+  let ctorOwners := allCtorOwners.filter (fun (c, _) => !usedNames.contains c)
+  let dataTyOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
+    modP.decls.flatMap (fun d => match d with | .dataD n _ _ => [(n, modName)] | _ => []))
+  let qTy := qualifyTyName dataTyOwners usedNames
+  let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
+    u.names.filterMap (fun n =>
+      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome then none else some (n, u.modName)))
+  let decls := p.decls.map (fun d => match d with
+    | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
+    | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+    | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners qTy l.body }))
+    | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners qTy o.body }))
+    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b)
+    | .letD n e             => .letD n (qualifyDotAccess importNames ctorOwners qTy e)
+    | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners qTy e))
+  let body := qualifyDotAccess importNames ctorOwners qTy p.body
+  let aliasDecls : List Decl := usedPlainFns.map (fun (n, modName) => .letD n (Surf.var (qualifyName modName n)))
+  { p with decls := aliasDecls ++ decls, body := body }
+
 /-- Merge the entry program `p` with its resolved imports (`resolved : List (String × Prog)`,
 UNQUALIFIED as parsed, in DEPENDENCY order — each module before anything that imports it, so a
 transitive import's own quals are already applied to it by the time it's folded in): qualify each
@@ -3111,7 +3153,14 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
       | _             => []))
   let mut mergedDecls : List Decl := []
   for (modName, modP) in resolved do
-    let modQ := qualifyModule modName usedNames modP
+    -- FIRST rewrite `modP`'s OWN bare qualified access to ITS OWN imports (`qualifyModuleOwnImports`
+    -- — a transitively-imported module can itself `import` something, e.g. `Print.bang` importing
+    -- `Json`; without this pass its `Json.JNull` reference stays unrewritten and becomes an unbound
+    -- variable once merged), THEN rewrite ITS OWN top-level names to their qualified form
+    -- (`qualifyModule` — so `modP`'s reference to `Json.JNull` — now `Json_JNull` — is NOT
+    -- re-qualified a second time as if `Json_JNull` were one of `modP`'s OWN names).
+    let modOwn := qualifyModuleOwnImports resolved modP
+    let modQ := qualifyModule modName usedNames modOwn
     -- EVERY decl of an imported module is merged in (private ones included) — a private decl must
     -- still be REACHABLE so another decl of the SAME module (already merged) can call it. D3's
     -- visibility is enforced at the NAME-EXPOSURE boundary (`firstPrivateUse` above, gating what
@@ -4704,6 +4753,24 @@ def runMergedYieldsInt (fuel : Nat) (p : Prog) : Option Int :=
   match mergeModules [("calc", modP)] entryP with
   | .error _ => false
   | .ok merged => runMergedYieldsInt 200 merged == some 15
+
+-- REGRESSION (caught dogfooding the JSON split, `examples/json/Print.bang`): a TRANSITIVELY-
+-- imported module's OWN `import`/qualified access must ALSO be rewritten, not just the entry
+-- file's. `printer` (imported by the entry file) itself `import`s `boxmod` and references
+-- `boxmod.wrap` — without `qualifyModuleOwnImports`, `printer`'s merged body still names the
+-- UNQUALIFIED `boxmod`, an unbound-variable error once merged.
+#guard
+  let boxModP : Prog := (Bang.Surface.parseProg "pub data Box = Wrap(Int)").toOption.get!
+  -- `printer`'s OWN bare qualified access to `boxmod.Wrap` (a VALUE-position ctor CALL, the exact
+  -- shape `Print.bang`'s `Json.JNull` reference broke on) must be rewritten to `boxmod_Wrap` when
+  -- `printer` itself is qualified — this is `qualifyModuleOwnImports`'s load-bearing case.
+  let printerModP : Prog := (Bang.Surface.parseProg
+    "import boxmod pub let build = {boxmod.Wrap 7}").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg
+    "import printer match ($(printer.build) : boxmod_Box) { Wrap(n) -> n }").toOption.get!
+  match mergeModules [("boxmod", boxModP), ("printer", printerModP)] entryP with
+  | .error _ => false
+  | .ok merged => runMergedYieldsInt 200 merged == some 7
 
 /-! ### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
 

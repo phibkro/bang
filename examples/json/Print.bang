@@ -1,0 +1,77 @@
+import Json
+pub let rec intToStr : Int -> Str = fun n =>
+    if n < 10
+      then SCons(Char (n + 48), SNil)
+      else $concat ($intToStr (n / 10)) (SCons(Char (n - n / 10 * 10 + 48), SNil))
+pub let rec printJson : Json_Json -> Str ! {Div} = fun j =>
+    match (j : Json_Json) {
+      Json_JNull -> "null",
+      Json_JBool(b) -> if b == 0 then "false" else "true",
+      Json_JInt(n) -> $intToStr n,
+      Json_JStr(s) -> $concat "\"" ($concat s "\""),
+      Json_JArr(l) -> let rec printElems : Json_Json -> Str ! {Div} = fun ll =>
+          match (ll : Json_Json) {
+            Json_JNilL -> SNil,
+            Json_JCons(h, t) -> let hStr = $printJson h
+              in
+            match (t : Json_Json) {
+              Json_JNilL -> hStr,
+              Json_JNull -> $concat hStr ($concat "," ($printElems t)),
+              Json_JBool(x) -> $concat hStr ($concat "," ($printElems t)),
+              Json_JInt(x) -> $concat hStr ($concat "," ($printElems t)),
+              Json_JStr(x) -> $concat hStr ($concat "," ($printElems t)),
+              Json_JArr(x) -> $concat hStr ($concat "," ($printElems t)),
+              Json_JObj(x) -> $concat hStr ($concat "," ($printElems t)),
+              Json_JCons(x, y) -> $concat hStr ($concat "," ($printElems t)),
+              Json_JField(x, y) -> $concat hStr ($concat "," ($printElems t))
+            },
+            Json_JNull -> SNil,
+            Json_JBool(x) -> SNil,
+            Json_JInt(x) -> SNil,
+            Json_JStr(x) -> SNil,
+            Json_JArr(x) -> SNil,
+            Json_JObj(x) -> SNil,
+            Json_JField(x, y) -> SNil
+          }
+        in
+      $concat "[" ($concat ($printElems l) "]"),
+      Json_JObj(l) -> let rec printFields : Json_Json -> Str ! {Div} = fun ll =>
+          match (ll : Json_Json) {
+            Json_JNilL -> SNil,
+            Json_JCons(h, t) -> let hStr = {match (h : Json_Json) {
+                Json_JField(k, v) -> $concat "\"" ($concat k ($concat "\":" ($printJson v))),
+                Json_JNull -> SNil,
+                Json_JBool(x) -> SNil,
+                Json_JInt(x) -> SNil,
+                Json_JStr(x) -> SNil,
+                Json_JArr(x) -> SNil,
+                Json_JObj(x) -> SNil,
+                Json_JCons(x, y) -> SNil,
+                Json_JNilL -> SNil
+              }}
+              in
+            match (t : Json_Json) {
+              Json_JNilL -> $hStr,
+              Json_JNull -> $concat $hStr ($concat "," ($printFields t)),
+              Json_JBool(x) -> $concat $hStr ($concat "," ($printFields t)),
+              Json_JInt(x) -> $concat $hStr ($concat "," ($printFields t)),
+              Json_JStr(x) -> $concat $hStr ($concat "," ($printFields t)),
+              Json_JArr(x) -> $concat $hStr ($concat "," ($printFields t)),
+              Json_JObj(x) -> $concat $hStr ($concat "," ($printFields t)),
+              Json_JCons(x, y) -> $concat $hStr ($concat "," ($printFields t)),
+              Json_JField(x, y) -> $concat $hStr ($concat "," ($printFields t))
+            },
+            Json_JNull -> SNil,
+            Json_JBool(x) -> SNil,
+            Json_JInt(x) -> SNil,
+            Json_JStr(x) -> SNil,
+            Json_JArr(x) -> SNil,
+            Json_JObj(x) -> SNil,
+            Json_JField(x, y) -> SNil
+          }
+        in
+      $concat "{" ($concat ($printFields l) "}"),
+      Json_JCons(h, t) -> SNil,
+      Json_JNilL -> SNil,
+      Json_JField(k, v) -> SNil
+    }

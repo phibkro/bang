@@ -1,0 +1,9 @@
+pub data Json = JNull
+| JBool(Int)
+| JInt(Int)
+| JStr(Str)
+| JArr(Json)
+| JObj(Json)
+| JCons(Json, Json)
+| JNilL
+| JField(Str, Json)
