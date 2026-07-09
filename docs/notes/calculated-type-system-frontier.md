@@ -6,6 +6,12 @@
 > they point at. **Post-v1; OFF the keystone/inc-6 critical path.** SoT for the "calculate the type system"
 > idea. refs.bib: `bahr-pearl25-sound-by-construction`, `garby-haskell25-calculated-typer` (+ the compiler sibling
 > `garby-haskell24-calculating-effectively`).
+>
+> **SCOPE SPLIT (read this first):** this doc is SoT for calculating the **declarative typing RELATION**
+> (`HasCTy` rules, over the deferred binary-LR soundness route — grade axis = #35). The complementary
+> question — calculating the **algorithmic CHECKER** (`TypeCheck.lean`) from that relation, plus the
+> frontend trust-map and the near-term elaborator fuzz-harness — is in
+> `docs/notes/calculated-typer-survey.md` (2026-07-09). RELATION-calc here; CHECKER-calc there.
 
 ## The two papers (same Nottingham/ITU calculational lineage as our CalcVM)
 - **Sound-By-Construction Type Systems** (Bahr, Garby, Hutton — functional pearl, Agda): derives the TYPING

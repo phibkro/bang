@@ -824,6 +824,54 @@
                See docs/notes/calculated-type-system-frontier.md.},
 }
 
+@article{xie-icfp21-generalized-evidence-passing,
+  author  = {Xie, Ningning and Leijen, Daan},
+  title   = {Generalized Evidence Passing for Effect Handlers: Efficient Compilation of Effect Handlers to C},
+  journal = {Proceedings of the ACM on Programming Languages (ICFP)},
+  volume  = 5,
+  year    = 2021,
+  doi     = {10.1145/3473576},
+  note    = {The performer-side compilation story: an EVIDENCE VECTOR (one entry per effect in the row,
+             pushed down the evaluation context) turns `perform op` from a stack SEARCH for the innermost
+             handler into a LOCAL O(1) lookup (Sec 2.5, 3.1) — the single `perform` rule's two costs
+             (Searching + Capturing) are split, and evidence kills the search. Canonical (constant-time
+             lookup, Koka's choice) vs insertion-ordered (cheap to build, linear lookup) vectors, Sec 2.5.
+             Tail-resumptive ops evaluate IN-PLACE, avoiding the yield/resume cycle entirely. The STATIC
+             analogue of bang's identity-keyed dispatch: bang types by LABEL / dispatches by IDENTITY at
+             runtime via `splitAtId` (a search); where the row is concrete, the same evidence-vector move
+             would replace that search — assessed in docs/notes/calculated-typer-survey.md §c. Row-typed
+             framework required (evidence shape = the row).},
+}
+
+@inproceedings{dunfield-krishnaswami-bidirectional-survey,
+  author    = {Dunfield, Jana and Krishnaswami, Neelakantan R.},
+  title     = {Bidirectional Typing},
+  booktitle = {ACM Computing Surveys},
+  year      = 2021,
+  doi       = {10.1145/3450952},
+  note      = {The reference survey for bidirectional typing (synth/check mode split; introductions check,
+               eliminations synth; annotations are the mode-switch points). bang's pure-fragment checker
+               (`synthV`/`checkV`/`synthC`/`checkC`, TypeCheck.lean:51-110) IS textbook bidirectional (its
+               own comment cites this). The Calculated Typer derives a MODE-LESS recursive checker (a fold);
+               the relationship (calculation interacts with bidirectionality by fixing the recursion's
+               shape) is assessed in docs/notes/calculated-typer-survey.md §a.},
+}
+
+@misc{boruch-gruszecki-oopsla25-capless-reach-capabilities,
+  author = {Xu, Yichen and Boruch-Gruszecki, Aleksander and Odersky, Martin},
+  title  = {Ergonomic and Expressive Capture Tracking over Generic Data Structures (System Capless)},
+  year   = 2025,
+  note    = {The current Scala capture-checking line (Odersky's Caprese project): a value's type carries a
+             CAPTURE SET over-approximating the capabilities it may use; an empty capture set = pure. System
+             Capless adds REACH capabilities to track caps embedded in generic containers (the gap that
+             blocked scaling to the collections library). The capability-manifest DUAL of bang's rows: Scala
+             puts the cap set ON THE VALUE TYPE (a value carries its caps), bang puts effect labels IN THE
+             ROW (a computation's type carries its effects); both make "which capabilities can this thing
+             use" type-visible. Relevant to bang's cap-escape arc (second-class caps cannot outlive their
+             handler) and the capability-manifest direction; assessed in calculated-typer-survey.md. Sibling
+             of the effect-handler-native line [brachthauser-oopsla22-effects-capabilities-boxes].},
+}
+
 @article{gordon-arxiv2606-effect-systems-as-abstract-interpretations,
   author  = {Gordon, Colin S.},
   title   = {Effect Systems as Abstract Interpretations},
