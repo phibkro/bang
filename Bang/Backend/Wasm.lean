@@ -40,6 +40,8 @@ public import Bang.Core.IR
 public import Bang.Core.Typing
 public import Bang.Core.Semantics
 public import Bang.Backend.AbstractMachine
+public import Bang.Core.Freshness
+public import Bang.Backend.U5bComplete
 
 namespace Bang
 
@@ -1955,23 +1957,25 @@ theorem evalD_plug_unfold_pure {w' : Bang.Val} (K : Bang.EvalCtx) (hK : PureCtx 
     ∃ m, CalcVM.evalD m g [] [] (plug K (.unfold (.fold v))) = some (.term (.ret w'), g', [], []) :=
   evalD_plug_sim_pure hK (sim_unfold v) h
 
-/-- `evalD`-completeness for the FULL fragment (with handlers). ROUTE-B WALL: the route-A
-reverse bridge lifted a focus `Sim` through `K` via `evalD_plug_sim` (`Sim.handle` at handleF),
-but route-B's `handle` MINTS `id:=g` and SUBSTITUTES `vcap g ℓ` into the body before running it,
-so `Sim.handle` would need substitution-closure of the black-box `Sim` — which it lacks.
-Build-confirmed refute-watch: `scratch/U5bSimSpike.lean` (committed `82cc585`). The route-A
-congruence handler fragment (`Sim.handle`/`evalD_plug_sim`/`SimOn`/`SimShift(T).handle`/
-`sim_*_handle`/`evalD_plug_dispatch`) was DELETED — it is wrong-architecture for route-B and
-NOT fillable scaffolding (route-A versions preserved in git at the parent of `b67bff1`).
-FIX = recast as a FUEL induction mirroring the proven forward `sim` (`Bang/CalcVM.lean:1559`),
-whose IH applies to substituted bodies — a SEPARATE U2-scale unit, task #65 / PATH §U5b.
-The PURE headlines (`source_eval_to_exec`, `compile_forward_sim_pure`) do NOT route through this;
-they use the sorry-free `evalD_complete_gen_pure` (PureCtx forbids handleF, so the wall is moot). -/
-theorem evalD_complete_gen : ∀ (F : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Bang.Val),
-    Config.run F (0, K, c) = Result.done v →
-    ∃ n g', CalcVM.evalD n 0 [] [] (plug K c) = some (.term (.ret v), g', [], []) := by
-  sorry -- WALL: route-B handle-subst breaks the Sim.handle congruence (witness 82cc585).
-        -- FIX = Route-1 fuel induction (mirror forward `sim`), task #65 / PATH §U5b. NOT fillable here.
+
+-- The U5b completeness spine (evalD_complete_gen_full / evalD_complete_gen_nil) lives in
+-- Bang.Backend.U5bComplete (imported above); see ADR-0086.
+
+
+
+/-- `evalD`-completeness for the FULL fragment (with handlers) — the converse of `run_evalD`,
+now DISCHARGED by the route-B completeness spine above (`CalcVM.evalD_complete_gen_nil`), premised
+on `VcapFree c` + `CustomFree c` per ADR-0086. The consumer calls this only at `K = []` on a
+compiled SOURCE program `c`, which is `VcapFree` (caps only mint during a run) and `CustomFree`
+(no surface form emits `custom` until ADR-0085 Stage 7). Both premises are dropped downstream —
+`CustomFree` at Stage 4 (the derived custom machine arm), `VcapFree` at #21 (scoped cap types).
+The former ROUTE-B WALL (route-A `Sim.handle` congruence, witness `82cc585`) is superseded: the
+spine is a fuel-strong-induction converse, exactly the recast the wall comment prescribed. -/
+theorem evalD_complete_gen (F : Nat) (c : Comp) (v : Bang.Val)
+    (hvf : Bang.Model.VcapFree c) (hcf : Bang.CustomFree.CFComp c)
+    (hrun : Config.run F (0, [], c) = Result.done v) :
+    ∃ n g', CalcVM.evalD n 0 [] [] c = some (.term (.ret v), g', [], []) :=
+  CalcVM.evalD_complete_gen_nil F c v hvf hcf hrun
 
 /-- The PURE-fragment reverse bridge (sorry-free), routing `compile_forward_sim_pure`. Same shape
 as the total `evalD_complete_gen` but `PureCtx`/`Comp.Pure`-gated, so the `up`/`handle`/`handleF`
@@ -2143,18 +2147,17 @@ total reverse bridge `evalD_complete_gen` + `exec_wexec_sim_ok` (GAP 2 closed).
   probes are the build-enforced witnesses, `wexec ≡ Source.eval` on handler programs incl. the
   ex-counterexample). -/
 theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
+    (hvf : Bang.Model.VcapFree c) (hcf : Bang.CustomFree.CFComp c)
     (h : Source.eval fuel c = Result.done v) :
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) := by
   by_cases hpure : Wasmfx.Comp.Pure c
   · -- PURE fragment: GAP 1 closed, axiom-clean.
     exact compile_forward_sim_pure hpure h
-  · -- NON-pure (handlers): GAP 2 CLOSED — re-wire of the now-TOTAL reverse bridge
-    -- (`evalD_complete_gen`, the dispatch transfer closed it) through the HANDLER-COMPLETE
-    -- WASM lowering (`exec_wexec_sim_ok`, drops `CodePure`, MARK/UNMARK/OP arms proven). Mirrors
-    -- the pure arm with the `_ok`/total versions; `Source.eval = Config.run ([],·)` definitionally.
+  · -- NON-pure (handlers): GAP 2 CLOSED — the route-B completeness spine (`evalD_complete_gen`,
+    -- premised VcapFree + CustomFree per ADR-0086) feeds the HANDLER-COMPLETE WASM lowering
+    -- (`exec_wexec_sim_ok`). `Source.eval = Config.run ([],·)` definitionally.
     have hrun : Config.run fuel (0, [], c) = Result.done v := h
-    obtain ⟨n, g', hn⟩ := evalD_complete_gen fuel [] c v hrun
-    rw [show plug [] c = c from rfl] at hn
+    obtain ⟨n, g', hn⟩ := evalD_complete_gen fuel c v hvf hcf hrun
     obtain ⟨F, hexec⟩ := CalcVM.compile_correct n c (.ret v) g' [] [] hn
     have hCodeOk : Wasmfx.CodeOk (CalcVM.compile c []) :=
       Wasmfx.compile_ok c ((Wasmfx.CodeOk_iff_forall []).mpr (by intro i hi; simp at hi))

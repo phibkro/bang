@@ -28,7 +28,8 @@ graph TD
   end
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
     Backend_AbstractMachine["Backend.AbstractMachine<br/>5097L · fan-in 0"]
-    Backend_Wasm["Backend.Wasm<br/>2227L · fan-in 0"]
+    Backend_U5bComplete["Backend.U5bComplete<br/>1407L · fan-in 0"]
+    Backend_Wasm["Backend.Wasm<br/>2230L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>539L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
     Core_Freshness["Core.Freshness<br/>770L · fan-in 0"]
@@ -70,7 +71,8 @@ graph TD
 | `Frontend.Surface` | ? | 2059 | 1 |
 | `Audit` | Apex | 54 | 0 |
 | `Backend.AbstractMachine` | ? | 5097 | 0 |
-| `Backend.Wasm` | ? | 2227 | 0 |
+| `Backend.U5bComplete` | ? | 1407 | 0 |
+| `Backend.Wasm` | ? | 2230 | 0 |
 | `Core.CapCoh` | ? | 539 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
 | `Core.Freshness` | ? | 770 | 0 |
