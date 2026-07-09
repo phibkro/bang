@@ -535,6 +535,7 @@ theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {K : Bang.Eva
     (hrun : Config.run (F+1) (g, K, Comp.perform (Val.vcap n2 ℓ2) op u) = Result.done v)
     (hst : (ctxStates K).get? n2 = none ∨ (op ≠ "get" ∧ op ≠ "put"))
     (htx : (ctxTxns K).get? n2 = none ∨ isTxnOp op = false)
+    (hncf : NoCustomFrame K)
     (hCFu : CFVal u) (hCFσ : CFStore σ) (hCFτ : CFHeap τ)
     (hev : evalD 1 g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) = some (.raised n2 op u, g, σ, τ)) :
     CompletesTo (F+1) g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) K v := by
@@ -568,7 +569,7 @@ theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {K : Bang.Eva
           simp [show (op == "newTVar") = false from by simpa using ea,
             show (op == "readTVar") = false from by simpa using eb,
             show (op == "writeTVar") = false from by simpa using ec]
-    | custom ℓ' p cl => left; simp [Bang.handlesOp]
+    | custom ℓ' p cl => exact (hncf.not_custom hsp).elim   -- ADR-0087 rung-2: no custom frame in K
   · -- dispatchRun continuation = the kernel's own Config.run on the perform (label reconstructed).
     rw [ctxNetEffect_self hCtx hTtx]
     simp only [dispatchRun]
@@ -586,13 +587,14 @@ set_option maxHeartbeats 1000000 in
 theorem evalD_complete_gen_full : ∀ F,
     ∀ (M : Comp) (g : Nat) (σ : SStore) (τ : THeap) (K : Bang.EvalCtx) (v : Val),
       CtxCorr σ K → CtxTxnCorr τ K → CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
+      NoCustomFrame K →
       CFComp M → CFStore σ → CFHeap τ →
       Config.run F (g, K, M) = Result.done v →
       CompletesTo F g σ τ M K v := by
   intro F
   induction F using Nat.strong_induction_on with
   | _ F ih =>
-    intro M g σ τ K v hCtx hTtx hCoh hFresh hCF hCFσ hCFτ hrun
+    intro M g σ τ K v hCtx hTtx hCoh hFresh hncf hCF hCFσ hCFτ hrun
     cases F with
     | zero => simp [Config.run] at hrun
     | succ F' =>
@@ -623,7 +625,7 @@ theorem evalD_complete_gen_full : ∀ F,
             rw [hpush] at hs; simp only at hs; rw [← hs]; exact hrun
           simp only [CFComp] at hCF
           obtain ⟨hCFM0, hCFN⟩ := hCF
-          obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hM0⟩ := ih F' (by omega) M0 g σ τ (Frame.letF N :: K) v hCletF hTletF hCohletF hFletF hCFM0 hCFσ hCFτ hrun'
+          obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hM0⟩ := ih F' (by omega) M0 g σ τ (Frame.letF N :: K) v hCletF hTletF hCohletF hFletF hncf.cons_letF hCFM0 hCFσ hCFτ hrun'
           rcases hM0 with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F1, hF1le, hcont⟩
           · -- M0 terminated. t must be ret v0 (letF continuation pops ret). Recurse on subst.
             -- ctxNetEffect (letF N::K) = letF N :: ctxNetEffect K, so the letF frame is exposed.
@@ -653,7 +655,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 obtain ⟨Fs, hFslt, hFs⟩ := hsub_run
                 have hCFsub : CFComp (Comp.subst v0 N) := CFComp_subst (CFVal_of_CFComp_ret hCFt) hCFN
                 obtain ⟨ns, gs, σs, τs, hCFσs, hCFτs, hsub⟩ :=
-                  ih Fs (by omega) (Comp.subst v0 N) g1 σ1 τ1 (ctxNetEffect K σ1 τ1) v hCM' hTM' hCsub hFsub hCFsub hCFσ1 hCFτ1 hFs
+                  ih Fs (by omega) (Comp.subst v0 N) g1 σ1 τ1 (ctxNetEffect K σ1 τ1) v hCM' hTM' hCsub hFsub (hncf.ctxNetEffect σ1 τ1) hCFsub hCFσ1 hCFτ1 hFs
                 -- whole letC evalD = evalD M0 (ret v0) then evalD (subst v0 N).
                 refine ⟨max n ns + 1, gs, σs, τs, hCFσs, hCFτs, ?_⟩
                 rcases hsub with ⟨ts, hevs, hCs, hTs, hCohs, hFsF, hCFts, Fc, hFcle, hcs⟩ | ⟨nn2, oop2, vv2, hevs, hCs, hTs, hCohs, hFsF, hNR2, hCFv2, Fc, hFcle, hcs⟩
@@ -722,7 +724,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
               exact completesTo_reduce (fun f => rfl) hstep
                 (ih F' (by omega) M0 g σ τ K v hCtx hTtx
-                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
                   (by simpa only [CFComp, CFVal] using hCF) hCFσ hCFτ hrun')
           | vcap _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
           | vunit => exfalso; cases F' <;> simp_all [Config.run, Source.step]
@@ -743,7 +745,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
               exact completesTo_reduce (fun f => rfl) hstep
                 (ih F' (by omega) (Comp.subst w N1) g σ τ K v hCtx hTtx
-                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
                   (CFComp_subst hCFw hCFN1) hCFσ hCFτ hrun')
           | inr w =>
               simp only [CFComp, CFVal] at hCF
@@ -754,7 +756,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
               exact completesTo_reduce (fun f => rfl) hstep
                 (ih F' (by omega) (Comp.subst w N2) g σ τ K v hCtx hTtx
-                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
                   (CFComp_subst hCFw hCFN2) hCFσ hCFτ hrun')
           | vcap _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
           | vunit => exfalso; cases F' <;> simp_all [Config.run, Source.step]
@@ -775,7 +777,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 rw [hstep] at hs; simp only at hs; rw [← hs]; exact hrun
               exact completesTo_reduce (fun f => rfl) hstep
                 (ih F' (by omega) (Comp.subst w (Comp.subst (Val.shift u) N)) g σ τ K v hCtx hTtx
-                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
+                  (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
                   (CFComp_subst hCFw
                     (CFComp_subst (CFVal_shiftFrom 0 hCFu) hCFN)) hCFσ hCFτ hrun')
           | vcap _ _ => exfalso; cases F' <;> simp_all [Config.run, Source.step]
@@ -822,7 +824,7 @@ theorem evalD_complete_gen_full : ∀ F,
             rw [hpush] at hs; simp only at hs; rw [← hs]; exact hrun
           simp only [CFComp] at hCF
           obtain ⟨hCFM0, hCFu⟩ := hCF
-          obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hM0⟩ := ih F' (by omega) M0 g σ τ (Frame.appF u :: K) v hCappF hTappF hCohappF hFappF hCFM0 hCFσ hCFτ hrun'
+          obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hM0⟩ := ih F' (by omega) M0 g σ τ (Frame.appF u :: K) v hCappF hTappF hCohappF hFappF hncf.cons_appF hCFM0 hCFσ hCFτ hrun'
           rcases hM0 with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F1, hF1le, hcont⟩
           · have hcne : ctxNetEffect (Frame.appF u :: K) σ1 τ1 = Frame.appF u :: ctxNetEffect K σ1 τ1 :=
               ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
@@ -855,7 +857,7 @@ theorem evalD_complete_gen_full : ∀ F,
               obtain ⟨Fs, hFslt, hFs⟩ := hsub_run
               have hCFsub : CFComp (Comp.subst u M2) := CFComp_subst hCFu (show CFComp M2 by simpa only [CFComp] using hCFt)
               obtain ⟨ns, gs, σs, τs, hCFσs, hCFτs, hsub⟩ :=
-                ih Fs (by omega) (Comp.subst u M2) g1 σ1 τ1 (ctxNetEffect K σ1 τ1) v hCM' hTM' hCsub hFsub hCFsub hCFσ1 hCFτ1 hFs
+                ih Fs (by omega) (Comp.subst u M2) g1 σ1 τ1 (ctxNetEffect K σ1 τ1) v hCM' hTM' hCsub hFsub (hncf.ctxNetEffect σ1 τ1) hCFsub hCFσ1 hCFτ1 hFs
               refine ⟨max n ns + 1, gs, σs, τs, hCFσs, hCFτs, ?_⟩
               rcases hsub with ⟨ts, hevs, hCs, hTs, hCohs, hFsF, hCFts, Fc, hFcle, hcs⟩ | ⟨nn2, oop2, vv2, hevs, hCs, hTs, hCohs, hFsF, hNR2, hCFv2, Fc, hFcle, hcs⟩
               · left
@@ -922,7 +924,7 @@ theorem evalD_complete_gen_full : ∀ F,
                     ⟨Kᵢ, Handler.state ℓ' sv, Kₒ, hsp, by subst hlab; simp [Bang.handlesOp]⟩
                   have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) "get" u)
                       = some (g, K, Comp.ret sv) := by
-                    simp only [Source.step, dispatch_state_get hcr hgc, Option.map_some]
+                    simp only [Source.step, dispatch_state_get hFresh.2.2.1 hcr hgc, Option.map_some]
                   have hrun' : Config.run F' (g, K, Comp.ret sv) = Result.done v := by
                     have hs := Config.run_step F' (g, K, Comp.perform (Val.vcap n2 ℓ2) "get" u)
                       (by intro gg vv hc; simp at hc)
@@ -939,7 +941,7 @@ theorem evalD_complete_gen_full : ∀ F,
                   -- get-miss: evalD → raised n2 "get" u; NoResume from the state-miss; dispatchRun
                   -- re-performs at the outer K (label-irrel on escape, label-match on resolve).
                   exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
-                    (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide)) hCFu hCFσ hCFτ
+                    (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide)) hncf hCFu hCFσ hCFτ
                     (by show evalD 1 g σ τ _ = _; simp only [evalD, if_true]; rw [hg])
             · by_cases hop2 : op = "put"
               · subst hop2
@@ -954,7 +956,7 @@ theorem evalD_complete_gen_full : ∀ F,
                       ⟨Kᵢ, Handler.state ℓ' sv, Kₒ, hsp, by subst hlab; simp [Bang.handlesOp]⟩
                     have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) "put" u)
                         = some (g, updateCtxStates K ((ctxStates K).put n2 u), Comp.ret .vunit) := by
-                      simp only [Source.step, dispatch_state_put (w := u) hcr hgc, Option.map_some]
+                      simp only [Source.step, dispatch_state_put hFresh.2.2.1 (w := u) hcr hgc, Option.map_some]
                     have hcoh' := capLabelCoh_step _ _ hFresh hCoh hstep
                     have hfr' := freshCfg_step _ _ hFresh hstep
                     have hctxeq : ctxNetEffect K (σ.put n2 u) τ = updateCtxStates K ((ctxStates K).put n2 u) := by
@@ -977,7 +979,7 @@ theorem evalD_complete_gen_full : ∀ F,
                     · rw [hctxeq]; exact hrun'
                 | none =>
                     exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
-                      (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide)) hCFu hCFσ hCFτ
+                      (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide)) hncf hCFu hCFσ hCFτ
                       (by show evalD 1 g σ τ _ = _
                           simp only [evalD, if_neg (by decide : ¬ ("put" = "get")), if_true]; rw [hg])
               · by_cases hopt : isTxnOp op = true
@@ -994,7 +996,7 @@ theorem evalD_complete_gen_full : ∀ F,
                       have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op u)
                           = some (g, updateCtxTxns K ((ctxTxns K).put n2 (txnService op u Θ).2),
                               Comp.ret (txnService op u Θ).1) := by
-                        simp only [Source.step, dispatch_txn_service hopt hcr hgt', Option.map_some]
+                        simp only [Source.step, dispatch_txn_service hFresh.2.2.1 hopt hcr hgt', Option.map_some]
                       have hcoh' := capLabelCoh_step _ _ hFresh hCoh hstep
                       have hfr' := freshCfg_step _ _ hFresh hstep
                       have hctxeq : ctxNetEffect K σ (τ.put n2 (txnService op u Θ).2)
@@ -1018,13 +1020,13 @@ theorem evalD_complete_gen_full : ∀ F,
                       · rw [hctxeq]; exact hrun'
                   | none =>
                       exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
-                        (Or.inr ⟨hop, hop2⟩) (Or.inl (by rw [← hTtx]; exact hgt)) hCFu hCFσ hCFτ
+                        (Or.inr ⟨hop, hop2⟩) (Or.inl (by rw [← hTtx]; exact hgt)) hncf hCFu hCFσ hCFτ
                         (by show evalD 1 g σ τ _ = _
                             simp only [evalD, if_neg hop, if_neg hop2, hopt, if_true]; rw [hgt])
                 · -- non-resumptive op (not get/put/txn): evalD → raised directly.
                   rw [Bool.not_eq_true] at hopt
                   exact perform_miss_raises hCtx hTtx hCoh hFresh hrun
-                    (Or.inr ⟨hop, hop2⟩) (Or.inr hopt) hCFu hCFσ hCFτ
+                    (Or.inr ⟨hop, hop2⟩) (Or.inr hopt) hncf hCFu hCFσ hCFτ
                     (by show evalD 1 g σ τ _ = _
                         simp only [evalD, if_neg hop, if_neg hop2, hopt, Bool.false_eq_true, if_false])
           | _ =>
@@ -1064,7 +1066,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 rw [hmint] at hs; simp only at hs; rw [← hs]; exact hrun
               obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hbody⟩ := ih F' (by omega) (Comp.subst (Val.vcap g ℓ0) M0) (g+1)
                 (σ.push g s0) τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) v
-                hCinstall hTinstall hCohInstall hFreshInstall hCFbody hCFσinstall hCFτ hrun'
+                hCinstall hTinstall hCohInstall hFreshInstall (hncf.cons_handleF (by intro ℓ p cl; simp)) hCFbody hCFσinstall hCFτ hrun'
               rcases hbody with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F1, hF1le, hcont⟩
               · -- body terminates: t = ret v0 (evalD_term_shape; lam under handleF is stuck).
                 rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
@@ -1142,7 +1144,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 rw [hmint] at hs; simp only at hs; rw [← hs]; exact hrun
               obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hbody⟩ := ih F' (by omega) (Comp.subst (Val.vcap g ℓ0) M0) (g+1)
                 σ τ (Frame.handleF g (Handler.throws ℓ0) :: K) v
-                hCinstall hTinstall hCohInstall hFreshInstall hCFbody hCFσ hCFτ hrun'
+                hCinstall hTinstall hCohInstall hFreshInstall (hncf.cons_handleF (by intro ℓ p cl; simp)) hCFbody hCFσ hCFτ hrun'
               rcases hbody with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F1, hF1le, hcont⟩
               · -- body normal return: pop the throws frame → term(ret v0). Stores pass through.
                 rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
@@ -1249,7 +1251,7 @@ theorem evalD_complete_gen_full : ∀ F,
                 rw [hmint] at hs; simp only at hs; rw [← hs]; exact hrun
               obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hbody⟩ := ih F' (by omega) (Comp.subst (Val.vcap g ℓ0) M0) (g+1)
                 σ (τ.push g Θ) (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) v
-                hCinstall hTinstall hCohInstall hFreshInstall hCFbody hCFσ hCFτinstall hrun'
+                hCinstall hTinstall hCohInstall hFreshInstall (hncf.cons_handleF (by intro ℓ p cl; simp)) hCFbody hCFσ hCFτinstall hrun'
               rcases hbody with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F1, hF1le, hcont⟩
               · rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
                 · obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_txn hCf hTf
@@ -1375,7 +1377,7 @@ theorem evalD_complete_gen_nil (F : Nat) (c : Comp) (v : Val)
     · rw [hcapfree] at hp; simp at hp
     · simp [Bang.Model.capsK] at hp
   obtain ⟨n, g', σ', τ', _, _, hd⟩ :=
-    evalD_complete_gen_full F c 0 [] [] [] v hCtx hTtx hCoh hFresh hCFc CFStore_nil CFHeap_nil hrun
+    evalD_complete_gen_full F c 0 [] [] [] v hCtx hTtx hCoh hFresh (by trivial : NoCustomFrame []) hCFc CFStore_nil CFHeap_nil hrun
   have hne : ctxNetEffect [] σ' τ' = [] := by simp only [ctxNetEffect, updateCtxStates, updateCtxTxns]
   rcases hd with ⟨t, hev, hCf, hTf, _, _, _, F', _, hcont⟩ | ⟨nn, oop, vv, hev, _, _, _, _, _, _, F', _, hcont⟩
   · -- term disjunct. At K=[], ctxNetEffect [] σ' τ' = [], so CtxCorr/CtxTxnCorr force σ'=τ'=[].

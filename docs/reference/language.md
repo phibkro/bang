@@ -154,7 +154,7 @@ The surface is sugar over these; `Source.eval` (Bang/Core/IR.lean) is the refere
 | `state` | `Label → Val → Handler` |  |
 | `throws` | `Label → Handler` |  |
 | `transaction` | `Label → List Val → Handler` |  |
-| `custom` | `Label → Val → (OpId → Option Comp) → Handler` |  |
+| `custom` | `Label → Val → List (OpId × Comp) → Handler` |  |
 
 ## Standard library
 
