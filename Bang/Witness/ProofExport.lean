@@ -21,13 +21,12 @@
   touches NO `TypeCheck.lean`/`Surface.lean` internals and NO `Main.lean`/CLI surface (the `#prove`
   pragma + `proofs/` writer + report line are named FOLLOW-UP slices).
 
-  TOTAL-ONLY, THE FALLBACK ROUTE (reported to the manager): the clean check is "the law body's row =
-  ⊥", which wants the raw `EffRow` — `TypeCheck.checkProg` returns it but is not yet `public`. Until
-  a one-line `public` marker lands, this file reads totality off `typeStringOfProg` on the
-  CONCRETE-ARGS-wrapped body (`"Int"` ⟹ total; any `"! {…}"` suffix ⟹ non-total, the row named in the
-  suffix). Sound for the total-only predicate (`showType` emits the suffix IFF `showRow φ` is
-  non-empty IFF `φ ≠ ∅`), but `showType`-format-fragile; the structured `φ.isEmpty` swap is the
-  named follow-up once `checkProg` is public.
+  TOTAL-ONLY, THE STRUCTURED CHECK: "the law body's row = ⊥" is read off the RAW `EffRow` via the
+  public `TypeCheck.checkProgRow` (a minimal row projection of `checkProg`, landed for exactly this
+  gate). The predicate is `decide (φ = ∅)`, immune to any pretty-printer formatting; a
+  non-⊥ row is REJECTED with the row named from the public built-in label constants
+  (`Bang.Surface.{exn,state,stm,div}Label`). (The earlier string-suffix reading of `typeStringOfProg`
+  is retired — the structured `EffRow` decision replaces it.)
 -/
 
 module
@@ -226,21 +225,33 @@ def lamWrap (params : List String) (body : String) : String :=
 def applyArgs (compSrc : String) (k : Nat) : String :=
   (List.range k).foldl (fun acc i => s!"(Bang.Comp.app {acc} (Bang.Val.vint a{i}))") compSrc
 
-/-- Read totality off the CONCRETE-ARGS-wrapped body via the public `typeStringOfProg` (the fallback
-route — see the module header). `.ok ()` if the row is ⊥ (rendered type has NO `! {…}` suffix), else
-`.error <row named>`. Concrete args are `0`s (the row is arg-independent for a well-typed body). -/
+/-- Name a non-⊥ effect row from the FOUR public built-in label constants (`Bang.Surface.*Label`,
+in Surface's `@[expose] public section`). Uses ONLY decidable membership (`ℓ ∈ φ`) — the exact
+computable idiom `showRow` uses (`Finset.toList`/`.card` are noncomputable, so unavailable in the
+`#guard`-compiled path). `showRow`/`effName` themselves are not public; this is a local renderer over
+the same known labels. A declared user-effect label (`≥ 4`) has no public name here, so a purely
+user-effect row renders empty — harmless, since the row is rejected on `¬(φ = ∅)`, not on the name. -/
+def namedRow (φ : Bang.EffectRow.EffRow) : String :=
+  String.intercalate ", " (
+    (if Bang.Surface.exnLabel ∈ φ then ["throws"] else []) ++
+    (if Bang.Surface.stateLabel ∈ φ then ["state"] else []) ++
+    (if Bang.Surface.stmLabel ∈ φ then ["stm"] else []) ++
+    (if Bang.Surface.divLabel ∈ φ then ["Div"] else []))
+
+/-- Read totality STRUCTURALLY off the CONCRETE-ARGS-wrapped body via the public `checkProgRow`
+(landed for exactly this gate — `origin/main` `checkProgRow`). `.ok ()` iff the law body's row is ⊥
+(`decide (φ = ∅)` — `Finset`'s computable `DecidableEq`, NOT the noncomputable `.card`), else
+`.error <row named>`. This REPLACES the earlier string-suffix fallback: the decision is now on the
+raw `EffRow`, immune to `showType`/pretty-printer formatting. Concrete args are `0`s (the row is
+arg-independent for a well-typed body). -/
 def totalityCheck (inp : LawInput) : Except String Unit :=
   let zeros := inp.params.map (fun _ => "0")
   let concreteProg := inp.prelude ++ " " ++ LawTest.wrapLawBody inp.params zeros inp.body
-  match Bang.TypeCheck.typeStringOfProg concreteProg with
+  match Bang.TypeCheck.checkProgRow concreteProg with
   | .error m => .error s!"law '{inp.lawName}' does not type-check: {m}"
-  | .ok tyStr =>
-    match tyStr.splitOn " ! {" with
-    | [_]        => .ok ()
-    | _ :: rest  =>
-      let row := (String.intercalate " ! {" rest).dropEnd 1
-      .error s!"law '{inp.lawName}' is NOT total (row = \{{row}}): proof-eligibility is typed — a non-⊥-row law stays on the fuzzed rung (total-only ruling)"
-    | []         => .ok ()
+  | .ok φ =>
+    if decide (φ = ∅) then .ok ()
+    else .error s!"law '{inp.lawName}' is NOT total (row = \{{namedRow φ}}): proof-eligibility is typed — a non-⊥-row law stays on the fuzzed rung (total-only ruling)"
 
 /-- **The goal emitter (R1's deliverable).** Elaborate the lambda-wrapped law body to its closed
 kernel `Comp`, REJECT it if non-total (typed rejection, row named), else emit the arm-B goal artifact
