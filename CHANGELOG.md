@@ -108,5 +108,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **hooks** — cache-get guard — deny whenever linked worktrees exist (evasion fix) (`45b3d2d`)
 - **frontend** — mark fmtExpr/fmtProg public — the CLI wiring face of the formatter (`8244112`)
 - **frontend** — #59 — namespace Bang.Diagnostics (was bare top-level) (`c66fd79`)
+- **tooling** — exclude gen-proof-state from regen-all — build-dependent (toolmap finding) (`6034c60`)
 
 <!-- END GENERATED changelog -->

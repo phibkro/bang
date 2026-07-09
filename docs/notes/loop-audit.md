@@ -22,7 +22,7 @@ _Position: post-MVP · ◊5 completeness closed (ADR-0086, `d13e0af`) · #44 Sta
 | doc fitness (`just fitness` generated legs) | days | ✔ (+ prose-claim leg 2026-07-08) |
 | **— the desk's edge —** | | |
 | CI on main (`.github/workflows/verify.yml`) | per-push | ✔ live — 4 green runs incl. `.lean` builds; 3 real catches (gc posture, changelog fixpoint, guard evasion) before its first green |
-| a user running bang | — | ✘ absent (LICENSE landed 2026-07-09 — Apache-2.0; outsider install path still missing) |
+| a user running bang | per-◊ (stranger test) | ◑ OPENED 2026-07-09 — LICENSE + install path landed; stranger-test round 1 ran (8.5/10, see stranger-test-1.md); still no ORGANIC outside user |
 | external review (paper, peers) | — | ✘ absent (◊6 names paper drafts; none started) |
 | performance measurement | — | ✘ absent (invariant #7 defers it; unquantified) |
 
