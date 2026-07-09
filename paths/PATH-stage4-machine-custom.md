@@ -138,7 +138,16 @@ whole unit as one fresh-session atomic commit (ADR-0085's "L / weeks, spine-touc
 - **Multi-shot / first-class `k` — OUT OF SCOPE (Q22/Q27).** If the calculation seems to demand
   `CalcReify`/closure cap-rep, STOP-and-SHOW (the labelling-vs-closure fork).
 
-## OPEN DESIGN QUESTION surfaced by the sim RAISED part (op-priority vs frame-priority)
+## DESIGN QUESTION — RESOLVED(A) (op-priority vs frame-priority) — operator-approved 2026-07-09
+**Resolution A APPROVED** (operator ruling): the machine's `isBuiltinOp` guard on the `exec` OP arm is
+the derivation-faithful image of evalD's op-priority perform arm (invariant #4). Evidence pinning the
+fork against regression: the `Agree 200 (handle (state 5 7) (handle (custom keyed-"get") (get on state
+cap)))` = 7 `#guard` in the (i) battery (`AbstractMachine.lean`, right after the state-get example) —
+a built-in `get` is serviced by the state frame, the like-named custom `"get"` clause is BYPASSED; both
+`exec∘compile` and `Source.eval` yield 7. Kernel-verified now; the `Agree` half validates when the
+module greens (post run_evalD). Original analysis (kept for the record):
+
+
 `evalD`'s perform arm is OP-PRIORITY: `if get / elif put / elif isTxnOp / else custom`. So a built-in
 op (e.g. `get`) that finds no state frame RAISES — it NEVER reaches the custom arm. The machine's `exec`
 OP arm is currently FRAME-PRIORITY: stateUpdate → txnUpdate → customUpdate → unwindFind. For a `get`
@@ -167,12 +176,21 @@ cleanly. (A) makes them trivial (`customUpdate` guarded off for built-ins).
   projections — the mechanical siblings for `ctxCustoms`/`updateCtxCustoms`.
 
 ## Status
-- [x] Started 2026-07-09 (s4 lane)
-- [x] In flight: DONE — refute-first de-risk (4 witnesses green, `scratch/CustomArmShadowProbe.lean`,
-      pushed `3562cc2`); the derived arm banked (`scratch/stage4-evalD-custom-arm.patch`, pushed
-      `80a522f`); the coupled-unit + atomic-threading findings characterized (this doc).
-- [ ] Blockers: NONE technical — the unit is a fresh-full-budget atomic grind (a–j). It cannot start
-      half-depleted (a half-re-keyed `run_evalD` doesn't move the gate). Open on a fresh session.
+- [x] Started 2026-07-09 (s4 lane).
+- [x] De-risk DONE (`3562cc2`): 4 witnesses green (`scratch/CustomArmShadowProbe.lean`).
+- [x] **FORWARD DIRECTION DONE + compiling** (through commit with the op-priority `#guard`, on
+      `feat-44-stage4`): (a) evalD custom arm + CStore · (b) all bridge machinery + machine `exec` custom
+      dispatch (h) · (c) **`sim` FULLY PROVEN** — the two-part simulation with EVERY novel custom case
+      (perform inline-clause-service, perform-raise, custom clause-body-RAISES, custom handle install/pop,
+      custom handle raise-FORWARD) · `compile_correct` · the Agree diff-test battery + the op-priority
+      regression `#guard`. Op-priority resolution (A) is APPROVED + guard-pinned.
+- [ ] **RESUME HERE (converse tail, fresh full budget):** (d) `run_evalD` — see §Plan (d) for the
+      ASSESSED wall (31 `NoCustomFrame` uses; custom handle needs a NEW proof; PREREQ = build the
+      EvalCtx-side `ctxCustoms` bridge FIRST; the HStack-side `CCorr` family + `raisedTriple_pop_nontxn`
+      (handles custom frames, `:1190`) are templates). Then (e) `evalD_agrees_source` · (f) Wasm + drop
+      `CustomFree` · (g) U5b · (i) custom `exec∘compile` `#guard`s (custom→106, abort→42) · (j) census.
+- [ ] Blockers: the module is RED at the `run_evalD` wall (`AbstractMachine.lean:4813`) — expected
+      (atomic re-thread). Gates only on the final green sha. Do NOT start (d) half-depleted.
 - [ ] Completed: —
 
 ## Owner

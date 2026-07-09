@@ -3211,6 +3211,18 @@ example : Source.eval 20 (Comp.perform (.vcap 0 0) "raise" (.vint 7)) = .escaped
 /-- `handle (state ℓ 5) (get ())` ⇒ `5` — read the initial state. -/
 example : Agree 40 (.handle (.state 1 (.vint 5)) (.perform (.vvar 0) "get" .vunit)) (.vint 5) := ⟨by rfl, by rfl⟩
 
+/-- **OP-PRIORITY regression (ADR-0085 Stage 4, resolution A — pins the fork, not just the prose).**
+A custom handler keyed with the BUILT-IN op `"get"` sits INSIDE a `state` frame; `get` performed on the
+STATE cap is serviced by the STATE frame (⇒ `7`), and the inner custom `"get"` clause is BYPASSED. This
+witnesses that `evalD`'s op-priority (`if get / elif put / elif isTxnOp / else custom`) and the machine's
+`isBuiltinOp` guard AGREE: a built-in op is NEVER served by a like-named custom clause. Were the guard
+absent (frame-priority), the machine's OP arm could hit the custom `"get"` clause and diverge from
+`evalD`. Both sides yield `7` — the raise/builtin path wins, exactly as the calculation demands. -/
+example : Agree 200
+    (.handle (.state 5 (.vint 7))
+      (.handle (.custom 1 (.vint 100) [("get", .binop .add (.vvar 0) (.vvar 1))])
+        (.perform (.vvar 1) "get" .vunit))) (.vint 7) := ⟨by rfl, by rfl⟩
+
 /-- `handle (state ℓ 0) (let _ = put 7 in get ())` ⇒ `7` — the RESUMPTIVE handler KEEPS the captured
 `letF` continuation and threads the store; `get` reads the `put`. The `get` is under the `letC`
 binder, so the handle-bound cap is `vvar 1` there (the `put` in the `letC` head is `vvar 0`). -/
