@@ -45,7 +45,7 @@ graph TD
     Examples["Examples<br/>324L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>198L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>789L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>2501L · fan-in 1"]
+    Frontend_Surface["Frontend.Surface<br/>2566L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Frontend_TypeCheck["Frontend.TypeCheck<br/>4879L · fan-in 0"]
@@ -76,7 +76,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 2501 | 1 |
+| `Frontend.Surface` | ? | 2566 | 1 |
 | `Audit` | Apex | 54 | 0 |
 | `Backend.AbstractMachine` | ? | 5235 | 0 |
 | `Backend.U5bComplete` | ? | 1409 | 0 |

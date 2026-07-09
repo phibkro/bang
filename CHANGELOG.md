@@ -109,6 +109,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — --help/--version + human error messages for every exit (#66, #67) (`709781d`)
 - **surface** — unary minus (#64) (`7a55ad6`)
 - **cli** — bang test — wire the LawTest/lawInstancesOf seam (#60) (`88e550a`)
+- **surface** — multi-binding let sugar (#68) (`44c0939`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
