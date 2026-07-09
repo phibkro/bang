@@ -4058,6 +4058,43 @@ close; `reverse` staying `Div` here is the CORRECT conservative verdict, not a b
 #guard runTypedYieldsInt 100 "3" 3
 #guard (match checkProg (lengthDef ++ "($length) \"abc\"") with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
 
+/-! ### Strings & Characters (issue #65: the stranger-test's documented blind spot).
+The generated reference had NO Str/Char/string-literal coverage — every string fact was
+reverse-engineered from example source (strip the examples and ship-ability dropped 8.5→4/10).
+Self-contained (no `lengthDef`-style prelude prepend) so `tools/gen-reference.py` picks each one
+up as a plain `runTypedYieldsInt N "src" val` example — these ARE the reference-doc content, not
+a second hand-copied set. Every fact here is a CITE, not a claim: run through `bang eval` first,
+then pinned as a `#guard` (never the reverse).
+
+CODEPOINT ENCODING (closing GAP B — the stranger's guess): `Char.toNat` (Lean 4 stdlib) is a
+Unicode SCALAR VALUE, not an ASCII byte — `'é'` (U+00E9) yields 233, not a UTF-8 byte sequence.
+Every literal in this corpus happens to fall in the ASCII range (0–127) because that is what the
+examples need, NOT because the mechanism enforces it — stating "ASCII" would be an overclaim the
+reference must not repeat. -/
+
+-- IDIOM 1 (match a string): destructure `SNil`/`SCons(Char(n), rest)` to read its first code point.
+#guard runTypedYieldsInt 100 "match \"ab\" { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }" 97
+-- IDIOM 1, the empty string: `SNil` (no `SCons` to destructure).
+#guard runTypedYieldsInt 100 "match \"\" { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }" 0
+-- IDIOM 2 (build a char from a code point): `Char <n>` introduces; round-tripping recovers `n`.
+#guard runTypedYieldsInt 100 "match (Char 97) { Char(n) -> n }" 97
+-- IDIOM 3 (common code point constants, all ASCII per the codepoint-encoding note above): space.
+#guard runTypedYieldsInt 100 "match ' ' { Char(n) -> n }" 32
+-- IDIOM 3: the digit range '0'-'9'.
+#guard runTypedYieldsInt 100 "match '0' { Char(n) -> n }" 48
+#guard runTypedYieldsInt 100 "match '9' { Char(n) -> n }" 57
+-- IDIOM 3: the lowercase letter range 'a'-'z'.
+#guard runTypedYieldsInt 100 "match 'a' { Char(n) -> n }" 97
+#guard runTypedYieldsInt 100 "match 'z' { Char(n) -> n }" 122
+-- IDIOM 3: the uppercase letter range 'A'-'Z'.
+#guard runTypedYieldsInt 100 "match 'A' { Char(n) -> n }" 65
+#guard runTypedYieldsInt 100 "match 'Z' { Char(n) -> n }" 90
+-- the injected STDLIB (free in every program, no import needed — `stdlibFnSrcs` above): `concat`.
+#guard runTypedYieldsInt 3000 "match (($concat) \"foo\" \"bar\") { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }" 102
+-- the injected STDLIB: `eq`, structural string equality.
+#guard runTypedYieldsInt 3000 "if (($eq) \"cat\" \"cat\") then 1 else 0" 1
+#guard runTypedYieldsInt 3000 "if (($eq) \"cat\" \"dog\") then 1 else 0" 0
+
 /-! ### Validation ⑨i — the DOGFOOD: a TOKENIZER written IN BANG (#49 stage 5, "bang writes its own
 tools"). `tokenize : Str -> TokList` splits a string on spaces, structurally recursing on the char-list
 tail (a subterm) and building tokens RIGHT-TO-LEFT — a space starts a fresh empty head token, a

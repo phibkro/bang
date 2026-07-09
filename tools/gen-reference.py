@@ -181,7 +181,11 @@ def parse_examples(path):
                     break
                 stmt += " " + nxt
                 j += 1
-            mv = re.search(rf"runYieldsInt\s+\d+\s+{STR}\s+(-?\d+)", stmt)
+            # `runYieldsInt` (untyped `parse >>= lower` pipeline) and `runTypedYieldsInt` (the
+            # TypeCheck.lean pipeline, string-prelude-injected — needed for any Str/Char example)
+            # are the SAME (fuel, src, expected) shape over two different pipelines; either is a
+            # "value" example.
+            mv = re.search(rf"run(?:Typed)?YieldsInt\s+\d+\s+{STR}\s+(-?\d+)", stmt)
             if mv:
                 out.append((section, comment, "value", mv.group(1), mv.group(2)))
             mt = re.search(rf"display\s+{STR}\s*==\s*{STR}", stmt)
