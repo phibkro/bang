@@ -112,4 +112,44 @@ private def customAbortCoexist : Comp :=
 #guard yieldsIntC 200 customResume 106
 #guard yieldsIntC 200 customAbortCoexist 42
 
+/-! ## §2 — stress the run_evalD-side risks (nested custom + clause-performs-effect).
+
+The run_evalD induction, once NoCustomFrame drops, must handle a custom frame SITTING IN K under a
+perform deep in a sub-eval, and the NoResume 5th conjunct (a raise never resumes) must survive a
+custom frame forwarding it. Probe both against the kernel. -/
+
+/-- (c) NESTED custom: an inner custom (label 3, param 10) whose clause reads via an OUTER custom
+(label 1, param 100). Tests: the clause body itself performs an effect serviced by a DIFFERENT live
+custom frame (deep-handler recursion at the residual row). Kernel: read3 x = (read1 x) ... let's keep
+it simple — inner clause resumes with arg+param, outer likewise; two frames coexist. -/
+private def innerClauses : List (OpId × Comp) :=
+  [("tick", .binop .add (.vvar 0) (.vvar 1))]   -- tick a = a + param
+
+-- indices: in the letC continuation (under +1 binder), letC-result=var0, inner-cap=var1, outer-cap=var2.
+private def nestedCustom : Comp :=
+  .handle (.custom 1 (.vint 100) readerClauses)              -- outer: read, cap ⤳ var1 in body
+    (.handle (.custom 3 (.vint 10) innerClauses)             -- inner: tick, cap ⤳ var0 in body
+      (.letC (.perform (.vvar 0) "tick" (.vint 5))           -- tick 5 ⤳ 5+10 = 15
+        (.perform (.vvar 2) "read" (.vvar 0))))              -- read 15 ⤳ 15+100 = 115
+
+#guard yieldsIntC 200 nestedCustom 115
+
+/-- (d) custom frame FORWARDS a raise (NoResume risk): a raise (label 2, throws) targeting an OUTER
+throws must propagate PAST a live custom frame unresumed. Same as customAbortCoexist but the custom
+frame is BETWEEN and the throws is OUTERMOST — verifies the custom `handle` arm forwards a raised
+outcome (pop entry) without accidentally servicing/resuming it. -/
+-- indices: in the letC continuation, custom-cap=var1, throws-cap=var2.
+private def customForwardsRaise : Comp :=
+  .handle (.throws 2)
+    (.handle (.custom 1 (.vint 100) readerClauses)
+      (.letC (.perform (.vvar 0) "read" (.vint 5))    -- read 5 ⤳ 105 (custom services)
+        (.perform (.vvar 2) "raise" (.vint 77))))     -- THEN raise 77 ⤳ abort past custom to throws
+#guard yieldsIntC 200 customForwardsRaise 77
+
+/-- kernel-side confirmation the §2 witnesses are the real ones (Source.eval is public). -/
+private def kInt (fuel : Nat) (c : Comp) (n : Int) : Bool :=
+  match Source.eval fuel c with | .done (.vint m) => m == n | _ => false
+#guard kInt 200 nestedCustom 115
+#guard kInt 200 customForwardsRaise 77
+
 end CustomArmShadowProbe
