@@ -6,11 +6,12 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (15)
+## active (16)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
 - [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) — Open questions — the design-question ledger
+- [`calculated-typer-survey.md`](calculated-typer-survey.md) — Calculated type CHECKING — design inputs for a future ADR
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
