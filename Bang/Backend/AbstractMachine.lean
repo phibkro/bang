@@ -1392,6 +1392,41 @@ theorem customUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
         simp only [hsCustom, hh] at hc
         simp only [customUpdate, hh, ih hc hcl, Option.map_some]
 
+/-- Installing a `custom` frame pushes its `(p, cls)` onto the custom store (the `handle (custom)`
+INSTALL — analog of `Corr_install`). -/
+theorem CCorr_install {κ : CStore} {hs : HStack} (ℓ : Bang.EffectRow.Label) (p : Val)
+    (cls : List (Bang.OpId × Comp)) (fr : HFrame) (hfr : fr.handler = .custom ℓ p cls) (hK : CCorr κ hs) :
+    CCorr (κ.push fr.id p cls) (fr :: hs) := by
+  unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr, CStore.push]
+
+/-- A NON-custom frame (state/throws/transaction) carries no clause entry: pushing it preserves `CCorr`. -/
+theorem CCorr_install_noncustom {κ : CStore} {hs : HStack} (fr : HFrame)
+    (hnc : ∀ ℓ p cls, fr.handler ≠ .custom ℓ p cls) (hK : CCorr κ hs) : CCorr κ (fr :: hs) := by
+  unfold CCorr at hK ⊢; rw [hK]
+  cases hh : fr.handler with
+  | custom ℓ0 p cl => exact absurd hh (hnc ℓ0 p cl)
+  | state ℓ0 s => simp [hsCustoms, hh]
+  | throws ℓ0 => simp [hsCustoms, hh]
+  | transaction ℓ0 Θ => simp [hsCustoms, hh]
+
+/-- `CCorr` for the tail when the top is a `custom` frame (the `handle (custom)` POP): the store's
+tail mirrors the HStack's tail. -/
+theorem CCorr_pop_custom {κ : CStore} {fr : HFrame} {hs : HStack} {ℓ0 : Bang.EffectRow.Label}
+    {p : Val} {cls : List (Bang.OpId × Comp)} (hfr : fr.handler = .custom ℓ0 p cls)
+    (hK : CCorr κ (fr :: hs)) : CCorr κ.tail hs := by
+  unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr]
+
+/-- `CCorr` rides the POP of a NON-custom top frame (state/throws/txn): the custom projection skips it,
+so the store is unchanged (analog of `Corr_pop_nonstate`). -/
+theorem CCorr_pop_noncustom {κ : CStore} {fr top : HFrame} {hs tail : HStack}
+    (hnc : ∀ ℓ p cls, top.handler ≠ .custom ℓ p cls) (hK : CCorr κ (top :: tail)) : CCorr κ tail := by
+  unfold CCorr at hK ⊢; rw [hK]
+  cases hh : top.handler with
+  | custom ℓ0 p cl => exact absurd hh (hnc ℓ0 p cl)
+  | state ℓ0 s => simp [hsCustoms, hh]
+  | throws ℓ0 => simp [hsCustoms, hh]
+  | transaction ℓ0 Θ => simp [hsCustoms, hh]
+
 /-- `THeap.put` hits at its own label when bound. Induction on τ. -/
 theorem THeap.get?_put_self : ∀ (τ : THeap) (ℓ : Bang.EffectRow.Label) (Θ : List Val) (Θ0 : List Val),
     τ.get? ℓ = some Θ0 → (τ.put ℓ Θ).get? ℓ = some Θ := by
