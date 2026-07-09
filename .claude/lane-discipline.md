@@ -1,0 +1,75 @@
+# Lane discipline — the standing rules for IC lanes
+
+> Extracted 2026-07-09 from a day of briefs that each restated this block (SSoT move: briefs
+> now CITE this doc and add only unit-specific scope). Every rule below was load-bearing in a
+> real incident; none is ceremony. The manager's briefs may tighten these per-unit, never
+> loosen them.
+
+## Setup & writing
+
+- Work ONLY in your assigned full clone (`tools/new-worktree.sh` clone mode — own git store).
+  `nix develop` for all lake/just. NEVER `lake exe cache get`, in any form (the seeded
+  `.lake/packages` is your olean source; missing oleans → report, don't fetch).
+- **One writer per file.** Your brief names your files; another lane's files are read-only.
+  Needing an export from a file you don't own → implement against what IS public and REPORT
+  the exact missing signature (the manager lands one-line `public` markers, or grants a
+  surgical markers-only commit).
+- Commit by PATHSPEC, never `-A`. Push every green slice to your origin branch — pushed WIP
+  is the safety net; unpushed work dies with sessions.
+- **Verify sole-writer before your first edit**: clean tree, HEAD == the brief's base sha ==
+  origin; note a key file's md5, wait 60s, re-check. Movement → STOP and report.
+
+## Gates & evidence
+
+- `lake build` EXIT 0, unpiped, per slice. Sorries gate via `#print axioms`/`just axioms` on
+  force-rebuilt oleans — NEVER grep-for-sorry. Kernel census untouchable unless your brief
+  says otherwise; `check-primitives.sh` = 26 ctors.
+- **Falsify every new guard/test**: break the mechanism (stash-revert, flipped expected,
+  broken comparator), confirm the failure names the right thing AND the run reaches
+  completion (a truncated test run reads as green — guard `$(cmd|cmd)` captures under
+  pipefail; assert the final check count).
+- Gate claims on the CLEAN COMMITTED sha, timestamped, re-verified within a minute of
+  reporting. The manager re-gates on a fresh clone; your evidence is the first gate, not
+  the last.
+- Pipe long command output to files and read/grep those — never `| tail`/`| head` an
+  expensive run's output away.
+
+## Documentation responsibility (who writes what)
+
+- **You write point-of-WORK truth**: inline doc-comments at definition sites (entry gates,
+  deferral notes, invariant framings — to the shape the brief specifies), design/findings
+  notes, commit messages carrying your evidence, issue findings-comments.
+- **You never write point-of-DECISION truth**: ADR statuses/amendments, CONTEXT.md's lead,
+  PATH banked-item ledgers, issue lifecycle (close/re-scope), loop-audit — manager-only.
+  Flag what belongs there; don't write it.
+- **Product docs ride the feature slice**: if your change alters user-visible behavior
+  (syntax, CLI, errors), the corresponding product doc/example/reference change lands IN THE
+  SAME SLICE, gated — docs-after-code is how references rot.
+- **Generated files** (CHANGELOG, core-overview, notes/README, llms.txt, …): regen only what
+  YOUR branch's fitness requires to stay green, in SEPARATE clearly-labeled commits (never
+  mixed with content) — the manager drops/replaces them at landing, where all derived docs
+  regenerate once against main.
+
+## Communication (the durable-channel protocol)
+
+- **Rulings live on your TASK's description** (TaskGet it) — inboxes drop and reorder
+  messages; the board re-delivers. Waiting on a ruling → check the task first, then ask.
+- Timestamp claims; report per pushed slice (one line is fine mid-grind); NEVER end a turn
+  without a pushed slice or a one-line status. Received an instruction that seems stale or
+  contradicts a newer one? Say so — don't silently execute the older.
+- STOP-and-SHOW within ~30min of a wall outside your brief's characterization: the exact
+  obligation, the options you see, your recommendation. A refutation or a
+  premise-that-won't-hold is a first-class deliverable.
+
+## Handoff (the atomic protocol)
+
+- A lane transfer is a transaction: (1) all outstanding instructions settled, (2) the
+  predecessor sends the LITERAL phrase "RELEASED — will not touch the tree again", (3) only
+  then does a successor exist, with the base sha pinned in its founding brief and a
+  base-moved resync procedure.
+- Self-monitored stop criterion on long grinds: continue while region-commits land clean;
+  on CHURN (re-doing a region, thrashing), stop AT A REGION BOUNDARY, push, update the PATH
+  resume-point to the exact next step, send the release phrase.
+- Atomic re-threads may push RED WIP (label it, use the sanctioned skip-verify reason);
+  atomicity governs what may LAND, not what may reach origin. Never end a session on an
+  unpushed red spine.
