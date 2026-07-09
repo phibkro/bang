@@ -216,6 +216,38 @@ def singR (ℓ : Label) : Row := ⟨{ℓ}, none⟩
 /-- Inject a closed kernel `EffRow` into `Row`. -/
 def embRow (φ : EffRow) : Row := ⟨φ, none⟩
 
+/-- Map effect NAMES to the kernel label row (the inverse of `effName`). Moved ahead of `tyBoth`
+(below) so `tyBoth`'s `tThunk`/`tArr` arms can read a declared row via `effOf` (ADR-0088 D1). -/
+def effNames (ns : List String) : EffRow :=
+  ns.foldl (fun acc n =>
+    if n = "throws" then insert exnLabel acc
+    else if n = "state" then insert stateLabel acc
+    else if n = "stm" then insert stmLabel acc
+    else if n = "Div" then insert divLabel acc else acc) ∅
+
+/-- The DECLARED effect bound of an ascribed type, if any (`none` = unconstrained, stay inferred —
+the optional-annotation philosophy). A function's bound is its codomain's. -/
+def effOf : Ty → Option EffRow
+  | .tEff ns _ => some (effNames ns)
+  | .tArr _ b  => effOf b
+  | _          => none
+
+/-- Map an effect label back to its surface name (the inverse of the lowering's `exnLabel`/… choice).
+Moved ahead of `checkSV` (below) so the thunk-row mismatch error (ADR-0088) can name the offending
+effect instead of a bare "exceeds the bound". -/
+def effName (ℓ : Label) : String :=
+  if ℓ = exnLabel then "throws" else if ℓ = stateLabel then "state"
+  else if ℓ = stmLabel then "stm" else if ℓ = divLabel then "Div" else s!"e{ℓ}"
+
+/-- Render an effect row as `throws, state` by decidable membership of the known labels (computable —
+`Finset.toList` is noncomputable; the surface has exactly these four labels: throws·state·stm·Div). -/
+def showRow (φ : EffRow) : String :=
+  String.intercalate ", " <|
+    (if exnLabel ∈ φ then [effName exnLabel] else []) ++
+    (if stateLabel ∈ φ then [effName stateLabel] else []) ++
+    (if stmLabel ∈ φ then [effName stmLabel] else []) ++
+    (if divLabel ∈ φ then [effName divLabel] else [])
+
 mutual
 /-- A value inference type: a kernel `VTy` shape plus unification `vhole`s. `tvar` still carries BOTH
 the μ-recursion vars (0-2) and the ∀-scheme RIGIDs (`rigidBase + i`); only unification holes moved to
@@ -303,14 +335,23 @@ abbrev NCtx := List (String × Scheme)   -- named typing context, innermost firs
 /-- Interpret a surface `Ty` into BOTH its value reading (`.1`) and computation reading (`.2`) in one
 structural pass — `tArr`/`tThunk` are computations (`arr`/the wrapped `F`); a non-arrow as a value is
 itself, as a computation a returner `F` of that value type. One recursion (no mutual block, no
-termination obligation). -/
+termination obligation).
+
+`tThunk`'s wrapping `.U` row (ADR-0088 D1, #48): the row a THUNK carries is whatever `! {ρ}` the
+wrapped type itself declares (`effOf`, e.g. `Thunk (Int -> Int ! {throws})`'s row is `{throws}`,
+read off the arrow's codomain) — ⊥ when none is declared (D2: absent annotation ⟹ ∅, backward
+compatible with every non-effectful `Thunk`/function value already in the corpus). This is what lets
+`checkSV`'s generic `.thunk b, .U φ B` arm (the #45 fold-payload check, unchanged) accept a
+`let rec`'s self-knot once its `recTy` declares a row — the row-carrying recursive thunk type IS
+this general mechanism, not a recursion-specific special case. -/
 def tyBoth : Ty → VT × CT
   | .tInt      => let V : VT := .int;              (V, .F .omega V)
   | .tUnit     => let V : VT := .unit;             (V, .F .omega V)
   | .tSum  a b => let V : VT := .sum  (tyBoth a).1 (tyBoth b).1; (V, .F .omega V)
   | .tProd a b => let V : VT := .prod (tyBoth a).1 (tyBoth b).1; (V, .F .omega V)
-  | .tThunk t  => let V : VT := .U ⊥ (tyBoth t).2; (V, .F .omega V)
-  | .tArr  a b => let f : CT := .arr .omega (tyBoth a).1 (tyBoth b).2; (.U ⊥ f, f)  -- fn VALUE = thunked arrow
+  | .tThunk t  => let V : VT := .U ((effOf t).getD ∅) (tyBoth t).2; (V, .F .omega V)
+  | .tArr  a b => let f : CT := .arr .omega (tyBoth a).1 (tyBoth b).2
+                  (.U ((effOf b).getD ∅) f, f)                        -- fn VALUE = thunked arrow, ITS OWN row
   | .tEff  _ t => tyBoth t        -- effect annotation is checker-level (effOf); dropped from the kernel type
   | .tSelf     => let V : VT := .tvar 999; (V, .F .omega V)  -- POISON: `buildEnv` substitutes Self before
                                   -- any tyBoth; a leaked Self surfaces as `#999`, never unifies
@@ -321,21 +362,6 @@ def tyBoth : Ty → VT × CT
   | .tVar n    => let V : VT := .tvar n;           (V, .F .omega V)
 @[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
 @[inline] def ctyOf (t : Ty) : CT := (tyBoth t).2
-
-/-- Map effect NAMES to the kernel label row (the inverse of `effName`). -/
-def effNames (ns : List String) : EffRow :=
-  ns.foldl (fun acc n =>
-    if n = "throws" then insert exnLabel acc
-    else if n = "state" then insert stateLabel acc
-    else if n = "stm" then insert stmLabel acc
-    else if n = "Div" then insert divLabel acc else acc) ∅
-
-/-- The DECLARED effect bound of an ascribed type, if any (`none` = unconstrained, stay inferred —
-the optional-annotation philosophy). A function's bound is its codomain's. -/
-def effOf : Ty → Option EffRow
-  | .tEff ns _ => some (effNames ns)
-  | .tArr _ b  => effOf b
-  | _          => none
 
 /-- Bool is `1 + 1` (ADR-0065); comparisons return it, arithmetic returns `Int`. (An `IVTy` — it
 feeds the inference layer directly.) -/
@@ -892,9 +918,17 @@ def checkSV (Γ : NCtx) (e : Surf) (expected : IVTy) : Infer Unit :=
   -- T_Thunk mirrored (#45): push the expected computation type INTO the thunk body so check-mode-only
   -- forms (a bare `fun`, `Left`, …) drive off it instead of synth failing. The declared `φ` is an
   -- upper bound (over-approximating a thunk's latent effects is the safe direction), as in `annotS`.
+  -- ADR-0088 (#48): name the OFFENDING effect(s) + the declared bound (agent-first: explicit, concise
+  -- over a bare "exceeds the bound") — this is the site a `let rec` body with an undeclared effect
+  -- (or any thunk-shaped mismatch) hits, so the message earns its keep across both call sites.
   | .thunk b,   .U φ B    => do
       let φ' ← checkSC Γ b B
-      if (← subRow bigFuel φ' φ) then return () else throw "thunk body effect exceeds the declared bound"
+      if (← subRow bigFuel φ' φ) then return ()
+      else do
+        let φ'r ← resolveRow bigFuel φ'
+        let φr  ← resolveRow bigFuel φ
+        let excess := φ'r.labels \ φr.labels
+        throw s!"thunk body performs \{{showRow excess}}, exceeding its declared bound \{{showRow φr.labels}}"
   | .annotS b t, expected => do
       let A ← embVInst t
       let _ ← checkSV Γ b A
@@ -1180,21 +1214,8 @@ surfaces in the row (the static "this computation can throw/touch state/stm" sig
 /-! ## Stage ④b — type DISPLAY (#5's "type display": effect rows made visible).
 
 Render the inferred `(CTy, EffRow)` back to surface notation, with the row shown as `! {throws, …}`.
-This is what makes effect-typed signatures legible: you run the checker and SEE `Int -> Int ! {throws}`. -/
-
-/-- Map an effect label back to its surface name (the inverse of the lowering's `exnLabel`/… choice). -/
-def effName (ℓ : Label) : String :=
-  if ℓ = exnLabel then "throws" else if ℓ = stateLabel then "state"
-  else if ℓ = stmLabel then "stm" else if ℓ = divLabel then "Div" else s!"e{ℓ}"
-
-/-- Render an effect row as `throws, state` by decidable membership of the known labels (computable —
-`Finset.toList` is noncomputable; the surface has exactly these four labels: throws·state·stm·Div). -/
-def showRow (φ : EffRow) : String :=
-  String.intercalate ", " <|
-    (if exnLabel ∈ φ then [effName exnLabel] else []) ++
-    (if stateLabel ∈ φ then [effName stateLabel] else []) ++
-    (if stmLabel ∈ φ then [effName stmLabel] else []) ++
-    (if divLabel ∈ φ then [effName divLabel] else [])
+This is what makes effect-typed signatures legible: you run the checker and SEE `Int -> Int ! {throws}`.
+(`effName`/`showRow` moved ahead of `checkSV`, above — same definitions.) -/
 
 mutual
 def showVTy : VT → String
@@ -3001,6 +3022,73 @@ def smDef  : String := "let rec sm : List -> Int = fun xs => match xs { Nil -> 0
 #guard (match checkProg (listRec
         "let rec f : List -> Int = fun xs => (let f = ( {fun ys => 0} : Thunk (List -> Int) ) in match xs { Nil -> 0, Cons(h, t) -> ($f) t }) in" "($f)(Cons(1, Nil))")
         with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+
+/-! ### Validation ⑨i — EFFECTFUL recursion via a DECLARED row (ADR-0088, #48).
+
+`let rec f : T = …` may now declare a row on `T`'s codomain (`let rec f : Int -> Int ! {throws} = …`),
+lifting adversarial ⑤'s rejection: the body is checked `φ_body ⊆ ρ` (the SAME `#45` thunk-row check
+above, now generalized — `tyBoth`'s `tThunk`/`tArr` arms read `effOf` instead of hardcoding ⊥, D1) —
+inner self-calls type at ρ too (D3), so a recursive `raise`/`get`/`put`/… is no longer a type error
+when its row is declared. Absent `! {…}` stays ⊥ (D2 — every guard above this section is UNCHANGED
+behavior, the backward-compatibility contract). -/
+-- (a) the ADR's own repro: a recursive `raise`, declared `{throws}`, RUNS (caught by the enclosing
+-- `handle`) instead of rejecting. `handle` must lexically enclose the WHOLE `let rec` (its cap binder
+-- is scoped where installed, not where called — the state/8/design-doc convention).
+#guard runTypedYieldsInt 4000
+  "handle (let rec f : Int -> Int ! {throws} = fun n => if n == 0 then raise 99 else ($f)(n - 1) in ($f) 3)" 99
+-- and the type DISPLAYS `Div` at the call-site (#46/#47: `n - 1` is not a data-subterm descent,
+-- so `structOK` stays conservative and `Div` still shows — the declared `{throws}` and the
+-- STRUCTURAL `Div` are ORTHOGONAL, exactly D3's claim; case (c) below shows the row WITHOUT Div
+-- once the body genuinely IS structural).
+#guard displayProg
+  "handle (let rec f : Int -> Int ! {throws} = fun n => if n == 0 then raise 99 else ($f)(n - 1) in ($f) 3)"
+  == "Int ! {Div}"
+-- (b) a state-carrying recursion (a different effect than throws) — the accumulator threads through
+-- the ambient `state` handler across recursive calls.
+#guard runTypedYieldsInt 4000
+  "state 0 in (let rec loop : Int -> Int ! {state} = fun n => if n == 0 then get else (let z = put (get + 1) in ($loop)(n - 1)) in ($loop) 3)"
+  3
+-- (c) structOK COMPOSES with a declared row (D3's headline claim): a STRUCTURALLY-terminating body
+-- (recursion on the List tail `t`, certified total by #47) that ALSO performs a declared `{throws}`
+-- types as EXACTLY `{throws}` — NOT `{throws, Div}` — because `structOK`'s ⊥ verdict for the
+-- recursion's OWN termination still applies orthogonally; the row only adds the DECLARED effect.
+#guard (match checkProg (listRec
+        "let rec sm : List -> Int ! {throws} = fun xs => match xs { Nil -> 0, Cons(h, t) -> if h == 0 then raise 999 else h + ($sm) t } in"
+        "($sm)(Cons(1, Cons(2, Nil)))")
+        with | .ok (_, ρ) => divLabel ∉ ρ ∧ exnLabel ∈ ρ | _ => false)
+#guard displayProg (listRec
+        "let rec sm : List -> Int ! {throws} = fun xs => match xs { Nil -> 0, Cons(h, t) -> if h == 0 then raise 999 else h + ($sm) t } in"
+        "($sm)(Cons(1, Cons(2, Nil)))")
+        == "Int ! {throws}"
+-- and it RUNS: catches the recursive raise on the zero element (999), same as the untyped shape.
+-- `handle` must lexically enclose the WHOLE `let rec … in …` (its cap binder is scoped where
+-- installed, not where called — the same rule case (a) documents; `raise`'s cap-lookup resolves
+-- lexically through the `let rec` desugar's nested `#g`/self-knot binders, so a `handle` OUTSIDE
+-- the `let rec` — even wrapping only the trailing call — cannot see it: `unbound variable: #exn`).
+-- `data` decls are Prog-level only (never nest inside an expression, so `handle (…)` cannot wrap
+-- `listRec`'s `data List = …` prelude) — written directly (not via `listRec`) so `handle (` opens
+-- right where the BODY starts, after the decl, wrapping the whole `let rec … in …`.
+#guard runTypedYieldsInt 2000
+  ("data List = Nil | Cons(Int, List) handle (let rec sm : List -> Int ! {throws} = " ++
+   "fun xs => match xs { Nil -> 0, Cons(h, t) -> if h == 0 then raise 999 else h + ($sm) t } in " ++
+   "($sm)(Cons(1, Cons(0, Nil))))")
+  999
+-- (d) NEGATIVE — the adversarial ⑤ shape (a `let rec` body performing an UNDECLARED effect) still
+-- REJECTS exactly as before ADR-0088 (D2's backward-compat contract): no `! {…}` ⟹ ρ = ∅, so a
+-- `raise` in the body exceeds the (empty) declared bound.
+#guard (match checkProg
+  "let rec f : Int -> Int = fun n => if n == 0 then raise 99 else ($f)(n - 1) in handle (($f) 3)"
+  with | .error _ => true | _ => false)
+-- and the error NAMES the offending effect + the declared bound (agent-first: explicit, concise —
+-- not a bare "exceeds the declared bound").
+#guard (match checkProg
+  "let rec f : Int -> Int = fun n => if n == 0 then raise 99 else ($f)(n - 1) in handle (($f) 3)"
+  with | .error m => (m.splitOn "performs {throws}").length > 1 | _ => false)
+-- (e) a DECLARED row that under-covers the body's REAL effects still rejects (the row is a checked
+-- upper bound, not a trusted annotation) — declaring `{state}` does not license a `raise`.
+#guard (match checkProg
+  "let rec f : Int -> Int ! {state} = fun n => if n == 0 then raise 99 else ($f)(n - 1) in handle (($f) 3)"
+  with | .error _ => true | _ => false)
 
 /-! ### Validation ⑨h — STRINGS: `String = List Char` (ADR-0074, #49).
 
