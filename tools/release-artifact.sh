@@ -24,22 +24,33 @@ ASSET="bang-${VERSION}-${TRIPLE}"
 OUT="$ROOT/dist/$ASSET"
 mkdir -p "$ROOT/dist"
 
-# --- 1. strip + size report --------------------------------------------------------
+# --- 1. strip + de-nix the ELF loader path -----------------------------------------
+# The Lean/nix-built binary hardcodes NIX-STORE ABSOLUTE PATHS in its ELF interpreter
+# (`/nix/store/…/ld-linux-x86-64.so.2`) and RPATH. It links only glibc + libgcc_s (the
+# ldd-verified fact), but by nix-store PATH — so on a generic-glibc distro (Ubuntu,
+# Debian, Fedora: the very strangers install.sh targets) it fails "No such file or
+# directory" because that loader path doesn't exist off a nix store. Re-point the
+# interpreter at the DISTRO-STANDARD loader and drop the nix RPATH so the standard
+# library search path resolves libc/libgcc_s. This is what makes the Release binary
+# portable, not just runnable-on-the-CI-runner. (The smoke set below runs on the
+# resulting binary, so a de-nix that broke it would fail loud before any upload.)
 size() { stat -c %s "$1"; }
 UNSTRIPPED_SRC_BYTES="$(size "$BUILT")"
 cp "$BUILT" "$OUT"
 strip "$OUT"
+patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath "$OUT"
 STRIPPED_BYTES="$(size "$OUT")"
 
 human() { numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "$1 bytes"; }
 echo "── artifact size ──"
 echo "  unstripped: $(human "$UNSTRIPPED_SRC_BYTES")  ($UNSTRIPPED_SRC_BYTES bytes)"
 echo "  stripped:   $(human "$STRIPPED_BYTES")  ($STRIPPED_BYTES bytes)"
+echo "  ELF interp: $(patchelf --print-interpreter "$OUT")  (distro-standard, de-nixed)"
 
-# --- 2. smoke the STRIPPED binary --------------------------------------------------
-# The proof that stripping preserved behaviour. Each check is fail-loud: a wrong value
-# or a wrong exit code aborts the whole script (set -e), so the artifact is never
-# declared good on a regressed binary.
+# --- 2. smoke the STRIPPED + de-nixed binary ---------------------------------------
+# The proof that stripping + the interpreter rewrite preserved behaviour. Each check is
+# fail-loud: a wrong value or a wrong exit code aborts the whole script (set -e), so the
+# artifact is never declared good on a regressed binary.
 echo "── smoke (stripped binary) ──"
 
 smoke_eq() { # <label> <expected> <actual>
