@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=justfile,gen-changelog.py runs-in=hook
 # pre-commit hook — invariants checked before each commit.
 # Installation: bash tools/install-hooks.sh
 #

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=Bang/**/*.lean runs-in=fitness
 # check-all-modules.sh — structural fitness for the module-system migration (Phase 1a).
 #
 # POLICY (operator, modules-everywhere): every `Bang/**/*.lean` must carry a Lean

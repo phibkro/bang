@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=Bang/**/*.lean,Bang/Audit.lean runs-in=verify
 # audit.sh — belt-and-suspenders CI guard. The real guarantee is Audit.lean
 # (#print axioms); this just catches the obvious cheats fast and cheaply.
 set -euo pipefail

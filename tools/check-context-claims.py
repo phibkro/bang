@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=check couples=CONTEXT.md,gen-proof-state.py runs-in=fitness
 """check-context-claims.py — CONTEXT prose vs the generated proof-state (drift gate).
 
 CONTEXT.md's proof-state BLOCK is generated (gen-proof-state.py); the NARRATIVE above

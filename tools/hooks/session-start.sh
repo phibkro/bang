@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=workflow couples=orient.sh runs-in=hook
 # SessionStart hook — print orient so the agent lands oriented.
 # Wired in .claude/settings.json under hooks.SessionStart.
 #

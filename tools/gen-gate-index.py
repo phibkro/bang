@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=justfile,.claude/codebase-maintenance.md,genblock.py runs-in=fitness
 """gen-gate-index.py — the gate composition, generated from the justfile (the root).
 
 The quality gates are DEFINED in `justfile` recipes (`verify`/`fitness`); their

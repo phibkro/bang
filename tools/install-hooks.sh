@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=workflow couples=git-hooks/pre-commit runs-in=manual
 # install-hooks.sh — link tracked git hooks into .git/hooks/
 # Run once after cloning: bash tools/install-hooks.sh
 # Skip a hook on demand: git commit --no-verify

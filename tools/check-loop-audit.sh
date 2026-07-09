@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=docs/notes/loop-audit.md,ROADMAP.md runs-in=fitness
 # check-loop-audit.sh — loop-audit freshness fitness function.
 #
 # docs/notes/loop-audit.md is the judgment-tier instrument (feedback loops by radius,

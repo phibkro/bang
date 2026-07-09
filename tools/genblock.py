@@ -1,3 +1,4 @@
+# tool: role=gen couples=gen-gate-index.py,gen-import-graph.py,gen-proof-state.py,gen-questions-index.py runs-in=manual
 """genblock.py — shared generator primitives.
 
 Two things generators copy-pasted, now with one home each:

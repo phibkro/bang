@@ -1,4 +1,5 @@
 // selfcheck.mjs -- zero-dependency third implementation + property checks.
+// tool: role=test couples=none runs-in=verify
 //
 // Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed.
 // If this passes, the F* lemmas (`canon_unique`, `unify_sound`) are stated over

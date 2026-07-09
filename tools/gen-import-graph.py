@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=Bang/**/*.lean,docs/architecture/core-overview.md,genblock.py runs-in=fitness
 """gen-import-graph.py — the module dependency graph, generated from the `import` edges.
 
 `docs/architecture/core-overview.md` §2 carried a HAND-DRAWN module graph that drifted

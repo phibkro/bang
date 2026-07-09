@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=test couples=examples/*/main.bang,examples/*/expected.txt runs-in=verify
 # check-examples.sh — the RUN-oracle gate for the bang example projects.
 #
 # For each examples/<project>/main.bang, run it through the `bang` runner and

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=CHANGELOG.md runs-in=fitness
 """gen-changelog.py — generate CHANGELOG.md from conventional commits (the GENERATE rung).
 
 The changelog is a DERIVATION of git history, NOT a hand-maintained second copy — that would

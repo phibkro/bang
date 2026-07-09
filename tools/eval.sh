@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=workflow couples=Bang/Audit.lean runs-in=manual
 # eval.sh — submit a Lean snippet, get its elaborator output.
 #
 # Usage:

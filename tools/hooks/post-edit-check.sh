@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=check.sh runs-in=hook
 # Claude Code PostToolUse hook for Edit/Write of Lean files.
 #
 # Wired in `.claude/settings.json` to fire after Edit/Write tool calls.

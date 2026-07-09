@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=check couples=*.md,refs-allow.txt runs-in=fitness
 """check-refs.py — the stale cross-reference fitness function.
 
 Climbs doc→file references from CONVENTION (hand-maintained) to TEST: a markdown

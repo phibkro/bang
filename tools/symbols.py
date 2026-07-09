@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=Bang/**/*.lean runs-in=manual
 """symbols.py — a generated symbol index for the Lean source (the navigation gap-fill).
 
 General code-intelligence tools (tilth/stacklit) don't support Lean 4, so this is the

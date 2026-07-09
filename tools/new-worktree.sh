@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=workflow couples=none runs-in=manual
 # new-worktree.sh — the ONE blessed way to spawn an isolated IC checkout (#40b).
 # ──────────────────────────────────────────────────────────────────────────────
 # DEFAULT MODE IS NOW A FULL LOCAL CLONE (2026-07-09). The linked-worktree mode

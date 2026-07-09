@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=docs/decisions/*.md,docs/decisions/README.md,docs/notes/OPEN_QUESTIONS.md runs-in=fitness
 """gen-adr-index.py — generate the ADR decided-ledger from per-ADR frontmatter.
 
 The ledger (the index table + the resolved-questions table in

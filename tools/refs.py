@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=references/refs.bib,references/index.json,references/README.md,refs-allow.txt runs-in=fitness
 """refs.py — the reference library as a generated, queried, tested derivation.
 
 `references/refs.bib` is the SINGLE SOURCE OF TRUTH. Everything else is derived:

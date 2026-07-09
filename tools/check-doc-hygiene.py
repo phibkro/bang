@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=check couples=docs/notes/*.md,docs-allow.txt runs-in=fitness
 """check-doc-hygiene.py — the doc-reachability / staleness fitness function.
 
 The DUAL of `check-refs.py`. That tool checks OUTBOUND links (a doc's references
