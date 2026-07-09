@@ -3271,12 +3271,12 @@ example : Agree 12 (.unfold (.fold (.vint 8))) (.vint 8) := ⟨by rfl, by rfl⟩
 
 -- The intermediate `evalD` rep agrees too (it sits between the two `Agree` sides): a sample across
 -- the ADT axis, documenting that the substitution `evalD` calculated-from is itself faithful.
-example : evalD 12 0 [] [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))
-    = some (.term (.ret (.vint 5)), 0, [], []) := by rfl
-example : evalD 14 0 [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
-    = some (.term (.ret (.vint 3)), 0, [], []) := by rfl
-example : evalD 12 0 [] [] (.unfold (.fold (.vint 8)))
-    = some (.term (.ret (.vint 8)), 0, [], []) := by rfl
+example : evalD 12 0 [] [] [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))
+    = some (.term (.ret (.vint 5)), 0, [], [], []) := by rfl
+example : evalD 14 0 [] [] [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))
+    = some (.term (.ret (.vint 3)), 0, [], [], []) := by rfl
+example : evalD 12 0 [] [] [] (.unfold (.fold (.vint 8)))
+    = some (.term (.ret (.vint 8)), 0, [], [], []) := by rfl
 
 /-! ## The D1-A bridge: `evalD ≡ Source.eval` (two-part, with handlers)
 
@@ -5912,7 +5912,7 @@ theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (g' : Nat) (σ' : SSt
 shape from the battery's *catching* throws cases; the full three-rep bridge witnessed at once. -/
 example :
     let M := Comp.handle (.throws 0) (.ret (.vint 7))
-    evalD 5 0 [] [] M = some (.term (.ret (.vint 7)), 1, [], []) ∧ Agree 10 M (.vint 7) := by
+    evalD 5 0 [] [] [] M = some (.term (.ret (.vint 7)), 1, [], []) ∧ Agree 10 M (.vint 7) := by
   refine ⟨by rfl, by rfl, by rfl⟩
 
 end -- public section
