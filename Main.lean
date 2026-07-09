@@ -133,7 +133,8 @@ def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
   "  bang run  [FLAGS] <file.bang>      run a bang program from a file\n" ++
-  "  bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly\n\n" ++
+  "  bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly\n" ++
+  "  bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
   "  (default)        parse → TYPE-CHECK → lower → run; an ill-typed program is a TYPE ERROR\n" ++
   "  --no-typecheck   raw erase-and-run (no type gate) — for oracle/differential testing\n\n" ++
@@ -149,6 +150,134 @@ def usage : String :=
   "  4  stuck (ill-formed program)     [oracle engine, --no-typecheck]\n" ++
   "  5  compiled machine produced no value (oom / escaped cap / stuck) [--compiled]"
 
+/-! ## The REPL (issue #7)
+
+A read-eval-print loop over the SAME production pipeline `runSource` wraps (parse → type-check →
+lower → run) — no bespoke evaluation path, so the REPL can never disagree with `bang run`/`bang
+eval` on a given program. Two things a loop needs that a one-shot runner doesn't:
+
+  1. **multi-line input** (issue #52 span errors, `--compiled`, etc. all reuse `runSource` as-is).
+  2. **definition persistence across turns** — the one piece of state a REPL adds.
+
+### Persistence is textual, by design
+
+`Prog.body` (`Bang/Frontend/Surface.lean`) is ONE expression — a bang program has no top-level
+"define and stop" form, only `let x = e1 in e2`. Nothing exposed to this LEAF lets us extend a
+type/elaboration CONTEXT incrementally (`checkAndLower`/`elaborateToComp` are the only `public`
+entries in `Bang.Frontend.TypeCheck`, and both take a whole source string). So a persisted
+definition is `:let x = <expr>` — a REPL-only command, deliberately NOT bare `let x = <expr>`
+(the surface's `let` always demands `in <body>`, so a body-less `let` would be a grammar change,
+which this lane does not own) — and persistence itself is accomplished by re-wrapping every
+subsequent turn's source in the accumulated bindings before handing the WHOLE string to
+`runSource`, oldest-first so later definitions may shadow earlier ones:
+
+    :let x = 3        →  binding "x" "3" recorded, nothing printed
+    :let y = x + 1     →  binding "y" "x + 1" recorded (sees "x" via the wrap)
+    y * 2              →  runs "let x = 3 in let y = x + 1 in y * 2" through runSource → 8
+
+This is a real re-elaboration each turn (not a cache), so it is exactly as sound as the one-shot
+CLI: any `#guard`/example in the build that pins `checkAndLower`/`runSource` behavior pins this too. -/
+
+/-- One persisted REPL definition: `:let x = e` records `("x", "e")` (unparsed source text — the
+wrap re-parses it fresh each turn, so a later `:let` shadowing an earlier name, or referencing one,
+behaves exactly like nested `let`, textually). -/
+abbrev ReplBinding := String × String
+
+/-- Wrap a tail expression in all persisted bindings, OLDEST first, so `:let` order = nesting order
+(a later binding can see an earlier one; `let b1 in let b2 in … in tail`). Pure string composition —
+no parser/typechecker touched, so this needs no hook beyond `runSource`. -/
+def wrapBindings (binds : List ReplBinding) (tail : String) : String :=
+  binds.foldr (fun (x, e) acc => s!"let {x} = ({e}) in {acc}") tail
+
+/-- `:let x = e` splits on the FIRST top-level `=`. We don't have the tokenizer (not `public` from
+this leaf — see the missing-hook note in the REPL header comment), so this is a conservative
+character split over `List Char` (sidesteps `String.Pos`/`String.Slice` entirely): the first `=`
+that is not part of `==`/`<=`/`>=`/`!=` — those are the only multi-char operators containing `=` in
+the surface grammar (`Bang/Frontend/Surface.lean` `BinOp`/tokenizer). Good enough for `:let name =
+expr` (name is a bare identifier, never itself containing `=`); a false split inside a MORE deeply
+nested comparison on the RHS is theoretically possible but `:let` bodies in practice are the same
+shape as ordinary `let` right-hand sides. -/
+def splitLetCmd (s : String) : Option (String × String) := Id.run do
+  let chars := s.toList
+  let n := chars.length
+  for i in [0:n] do
+    if chars[i]! == '=' then
+      let prevOk := i == 0 || (chars[i-1]! != '<' && chars[i-1]! != '>' && chars[i-1]! != '=' && chars[i-1]! != '!')
+      let nextOk := i + 1 >= n || chars[i+1]! != '='
+      if prevOk && nextOk then
+        let name := (String.ofList (chars.take i)).trimAscii.toString
+        let rhs  := (String.ofList (chars.drop (i+1))).trimAscii.toString
+        if name.length > 0 && rhs.length > 0 then
+          return some (name, rhs)
+  return none
+
+/-- REPL help text for `:help`/`:?`. -/
+def replHelp : String :=
+  "commands:\n" ++
+  "  :t <expr>, :type <expr>   NOT YET SUPPORTED — see the missing-hook note (Main.lean)\n" ++
+  "  :let <name> = <expr>      persist a definition for the rest of the session\n" ++
+  "  :load <file>              run a file's contents as one turn (not persisted)\n" ++
+  "  :help, :?                 this text\n" ++
+  "  :q, :quit                 exit (also Ctrl-D / EOF)\n" ++
+  "  <expr>                    evaluate against all persisted definitions and print the result"
+
+/-- Evaluate one line of REPL input against the accumulated bindings, returning the (possibly
+updated) bindings and the exit code of whatever ran (`0` for a silent `:let`/`:help`/comment/blank
+line, so a piped session's exit code reflects only the last REAL evaluation — see `runRepl`). -/
+def replStep (typecheck compiled : Bool) (binds : List ReplBinding) (line : String) :
+    IO (List ReplBinding × UInt32) := do
+  let line := line.trimAscii.toString
+  if line.isEmpty then
+    return (binds, 0)
+  else if line == ":q" || line == ":quit" then
+    return (binds, 0)  -- caller checks for this via the sentinel below; see runRepl
+  else if line == ":help" || line == ":?" then
+    IO.println replHelp; return (binds, 0)
+  else if line.startsWith ":t" then
+    IO.eprintln "error: `:t` needs a public type-display export from Bang.Frontend.TypeCheck (displayProg/showType are not `public` in this module) — not yet wired, see Main.lean's REPL header comment"
+    return (binds, 1)
+  else if line.startsWith ":load" then
+    let path := (line.drop 5).toString.trimAscii.toString
+    if path.isEmpty then
+      IO.eprintln "error: `:load` expects `:load <file>`"; return (binds, 1)
+    else match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
+    | none     => IO.eprintln s!"error: could not read file '{path}'"; return (binds, 1)
+    | some src =>
+      let code ← runSource typecheck compiled (wrapBindings binds src)
+      return (binds, code)
+  else if line.startsWith ":let" then
+    match splitLetCmd (line.drop 4).toString with
+    | none => IO.eprintln "error: `:let` expects `:let <name> = <expr>`"; return (binds, 1)
+    | some (name, rhs) => return (binds ++ [(name, rhs)], 0)
+  else if line.startsWith ":" then
+    IO.eprintln s!"error: unknown command '{line}' (:help for the list)"; return (binds, 1)
+  else
+    let code ← runSource typecheck compiled (wrapBindings binds line)
+    return (binds, code)
+
+/-- The interactive/piped loop: read a line, `replStep`, repeat until `:q`/`:quit`/EOF. Works
+identically whether stdin is a terminal or a pipe (`echo 'expr' | bang repl` runs each line and
+exits on EOF) — `IO.FS.Stream.getLine` doesn't care which; that is what makes the non-interactive
+(agent-driven) use case work for free, per the operator's agent-first framing. Tracks the exit
+code of the LAST line that actually ran (silent lines don't overwrite it), so a piped single-expr
+session's exit code matches `bang eval`'s for the same program. -/
+partial def runRepl (typecheck compiled : Bool) : IO UInt32 := do
+  let stdin ← IO.getStdin
+  let isTty ← stdin.isTty
+  let rec loop (binds : List ReplBinding) (lastCode : UInt32) : IO UInt32 := do
+    if isTty then IO.eprint "bang> " -- prompt to STDERR so piped stdout stays clean for scripting
+    let line ← stdin.getLine
+    if line.isEmpty then
+      return lastCode -- EOF (Ctrl-D / end of piped input)
+    else
+      let trimmed := line.trimAscii.toString
+      if trimmed == ":q" || trimmed == ":quit" then
+        return lastCode
+      else
+        let (binds', code) ← replStep typecheck compiled binds line
+        loop binds' code
+  loop [] 0
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | cmd :: rest =>
@@ -161,6 +290,10 @@ def main (args : List String) : IO UInt32 := do
         let src ← if cmd == "run" then IO.FS.readFile ⟨arg⟩ else pure arg
         runSource typecheck compiled src
       | _ => IO.eprintln usage; pure 1
+    else if cmd == "repl" then
+      let compiled  := rest.contains "--compiled"
+      let typecheck := !rest.contains "--no-typecheck"
+      runRepl typecheck compiled
     else
       IO.eprintln usage; pure 1
   | _ => IO.eprintln usage; pure 1

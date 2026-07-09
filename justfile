@@ -33,6 +33,14 @@ verify: selfcheck build check-examples audit
 check-examples:
     bash tools/check-examples.sh
 
+# Non-interactive gate for `bang repl` (issue #7): pipes scripted transcripts
+# through the binary and asserts stdout/stderr/exit-code, mirroring
+# check-examples.sh's shape. NOT yet wired into the default `verify` chain
+# (a cross-cutting gate-composition change is out of this lane's file
+# ownership) — run explicitly, or ask to have it added to `verify`.
+test-repl:
+    bash tools/test-repl.sh
+
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
 adr-index:
