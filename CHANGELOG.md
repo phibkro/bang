@@ -87,6 +87,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — structOK single-fixed-slot multi-arg/accumulator descent (ADR-0091, #50) (`dbca210`)
 - **frontend** — ADR-0092 D1/D2 — effect decls, label allocation, program-derived EffSig (#44) (`844931f`)
 - **frontend** — reserve built-in op names in effect decls (ADR-0092 follow-up) (`88e0f55`)
+- **dogfood** — examples/json — value-subset JSON parser/printer in bang (`920521a`)
+- **kernel** — ADR-0092 D3/D4 — typed custom-handle rule + soundness arms (#44 Stage 3) (`125b383`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

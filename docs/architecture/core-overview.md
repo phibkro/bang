@@ -40,8 +40,8 @@ graph TD
     Core_Semantics_Eval["Core.Semantics.Eval<br/>415L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
     Core_Semantics_Subst["Core.Semantics.Subst<br/>230L · fan-in 0"]
-    Core_Soundness["Core.Soundness<br/>3018L · fan-in 0"]
-    Core_Typing["Core.Typing<br/>404L · fan-in 0"]
+    Core_Soundness["Core.Soundness<br/>3237L · fan-in 0"]
+    Core_Typing["Core.Typing<br/>479L · fan-in 0"]
     Examples["Examples<br/>324L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>195L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>707L · fan-in 0"]
@@ -49,7 +49,7 @@ graph TD
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Frontend_TypeCheck["Frontend.TypeCheck<br/>4152L · fan-in 0"]
-    Meta_BinaryLR["Meta.BinaryLR<br/>2176L · fan-in 0"]
+    Meta_BinaryLR["Meta.BinaryLR<br/>2192L · fan-in 0"]
     Meta_LR["Meta.LR<br/>2122L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
     Reify_CalcReifyRef["Reify.CalcReifyRef<br/>163L · fan-in 0"]
@@ -89,8 +89,8 @@ graph TD
 | `Core.Semantics.Eval` | ? | 415 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
 | `Core.Semantics.Subst` | ? | 230 | 0 |
-| `Core.Soundness` | ? | 3018 | 0 |
-| `Core.Typing` | ? | 404 | 0 |
+| `Core.Soundness` | ? | 3237 | 0 |
+| `Core.Typing` | ? | 479 | 0 |
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 324 | 0 |
 | `Frontend.Diagnostics` | ? | 195 | 0 |
@@ -99,7 +99,7 @@ graph TD
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 4152 | 0 |
-| `Meta.BinaryLR` | ? | 2176 | 0 |
+| `Meta.BinaryLR` | ? | 2192 | 0 |
 | `Meta.LR` | ? | 2122 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
