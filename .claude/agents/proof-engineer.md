@@ -2,6 +2,7 @@
 name: proof-engineer
 description: Use for Lean proof work — discharging sorrys, axiom hygiene, well-founded recursion, step-indexed logical relations, bisimulation, calculation proofs. Pair with kernel-engineer or compiler-engineer when the proof concerns their domain. (Tools: Read, Edit, Bash, Grep)
 tools: Read, Edit, Bash, Grep
+model: opus
 ---
 
 # Context — domain knowledge

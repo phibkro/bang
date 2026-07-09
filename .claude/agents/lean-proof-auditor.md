@@ -2,6 +2,7 @@
 name: lean-proof-auditor
 description: Read-only adversarial verifier of a Lean proof's SOUNDNESS in bang-lang. Use to refute-first a just-closed proof before more stacks on it — verify the foundation, not build it. Produces FINDINGS only (no edits). Knows the axiom gate, the gate-traps, and the typing-by-label/dispatch-by-identity gap. (Tools: Read, Grep, Glob, Bash)
 tools: Read, Grep, Glob, Bash
+model: opus
 ---
 
 # Context — the refuter role

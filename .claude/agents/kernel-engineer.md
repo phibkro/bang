@@ -2,6 +2,7 @@
 name: kernel-engineer
 description: Use for work on the bang-lang semantic kernel — graded-CBPV reference semantics (Bang/Spec.lean §0–§4, Bang/Core/Semantics.lean's Source.eval), effect-row algebra (Bang/Core/EffectRow.lean), and the no_accidental_handling soundness obligation. Pair with proof-engineer when proof work is required. (Tools: Read, Edit, Write, Bash, Grep)
 tools: Read, Edit, Write, Bash, Grep
+model: opus
 ---
 
 # Context — domain knowledge
