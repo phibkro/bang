@@ -305,6 +305,25 @@
     "year": "2023",
     "doi": "10.1145/3591259",
     "eprint": "",
+    "topics": [
+      "env-semantics"
+    ],
+    "grounds": [
+      "issue-61",
+      "inv-4"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": true,
+    "hop": "2-calcvm",
+    "path": "references/papers/2-calcvm/kanabar-pldi23-purecake.pdf",
+    "sha256_pinned": ""
+  },
+  {
+    "key": "kanabar-pldi23-purecake",
+    "title": "PureCake: A Verified Compiler for a Lazy Functional Language",
+    "year": "2023",
+    "doi": "10.1145/3591259",
+    "eprint": "",
     "topics": [],
     "grounds": [],
     "role": "",
@@ -1180,6 +1199,42 @@
     "topics": [],
     "grounds": [],
     "role": "",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "vanhorn-might-icfp10-abstracting-abstract-machines",
+    "title": "Abstracting Abstract Machines",
+    "year": "2010",
+    "doi": "10.1145/1863543.1863553",
+    "eprint": "",
+    "topics": [
+      "env-semantics"
+    ],
+    "grounds": [
+      "inv-4"
+    ],
+    "role": "substrate",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "wadler-kokke-plfa-bigstep",
+    "title": "Programming Language Foundations in Agda: BigStep --- Big-step semantics of untyped lambda calculus",
+    "year": "2022",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "env-semantics"
+    ],
+    "grounds": [
+      "issue-61"
+    ],
+    "role": "confirmed-sota",
     "ondisk": false,
     "hop": null,
     "path": null,
