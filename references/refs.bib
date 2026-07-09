@@ -4,13 +4,43 @@
 
 % ─── Effects & handlers ──────────────────────────────────────────────────────
 
+@misc{kobayashi-kameyama-aplas25-oneshot-expressiveness,
+  keywords = {topic:multishot role:frontier},
+  author = {Kobayashi, Kentaro and Kameyama, Yukiyoshi},
+  title  = {Expressive Power of One-Shot Control Operators and Coroutines},
+  year   = 2025,
+  doi    = {10.48550/arXiv.2509.11901},
+  note   = {Full version of the APLAS 2025 paper. Rigorous Felleisen-macro-expressiveness comparison
+             among ONE-SHOT control operators (one-shot effect handlers, one-shot delimited control,
+             asymmetric coroutines). Key result for Q22: one-shot effect handlers + one-shot
+             delimited control are macro-expressible BY asymmetric coroutines but NOT vice versa —
+             a genuine expressiveness gap, so "one-shot + explicit copy" is NOT free syntactic sugar;
+             recovering the ω patterns (amb/backtracking/generators) is a real, non-macro cost. The
+             formal grounding for why bang's ω-channel (Q27), if it ships, is a genuinely distinct
+             capability worth typing separately. Assessed in docs/notes/multishot-survey.md §1.
+             \url{https://arxiv.org/abs/2509.11901}},
+}
+
 @inproceedings{biernacki-popl18-handle-with-care,
-  keywords = {topic:lr grounds:inv-1 role:substrate},
+  keywords = {topic:lr topic:multishot grounds:inv-1 role:substrate},
   author    = {Biernacki, Dariusz and Pir\'{o}g, Maciej and Polesiuk, Piotr and Sieczkowski, Filip},
   title     = {Handle with Care: Relational Interpretation of Algebraic Effects and Handlers},
   booktitle = {Proceedings of the ACM on Programming Languages (POPL)},
   year      = 2018,
   doi       = {10.1145/3158096},
+  note    = {The canonical step-indexed, biorthogonal (⊤⊤-closed) logical relation for a CBV
+             calculus with algebraic-effect handlers + row-polymorphic effect types — the
+             literature line bang's binary LR (◊4 contextual equivalence) descends from. Its
+             handlers are FULL (multi-shot): the continuation-value relation quantifies over
+             resumptions invoked ANY number of times, so the LR is closed under a captured
+             continuation being re-entered — the resumption is a first-class related VALUE, not a
+             one-use frame. The verification-tax datum for Q22: this is what a multi-shot LR
+             already costs even WITHOUT bang's identity-dispatch reshape; going multi-shot means
+             the continuation relation must survive re-entry (heap/store framing across each
+             re-invoke), which one-shot's reinstall-inside-resumption sidesteps
+             (cf. devilhena-pottier-popl21 §4.2.3 — the Löb/later-modality guard that only closes
+             because the deep handler reinstalls INSIDE the resumption). Assessed in
+             docs/notes/multishot-survey.md §verification-tax.},
 }
 
 @article{bauer-pretnar-algebraic-effects-and-handlers,
@@ -281,11 +311,21 @@
 }
 
 @inproceedings{ma-oopsla25-zero-overhead-handlers,
+  keywords = {topic:multishot topic:compilation role:frontier},
   author    = {Ma, Cong and Ge, Zhaoyi and Jung, Max and Zhang, Yizhou},
   title     = {Zero-Overhead Lexical Effect Handlers},
   booktitle = {Proceedings of the ACM on Programming Languages (OOPSLA)},
   year      = 2025,
   doi       = {10.1145/3763177},
+  note    = {Compiles LEXICALLY-scoped effect handlers to code with no residual overhead when the
+             continuation is not captured — the compilation payoff of the Q27 resumption-grade
+             thesis, realized. The seam bang wants: when a handler is tail-resumptive / one-shot
+             the compiler emits a plain call+return (no continuation reification), reserving the
+             expensive resumable-closure path for the genuinely multi-shot case. Lexical scoping
+             (the cap names its lexically-enclosing handler) is EXACTLY bang's identity-dispatch
+             semantics (ADR-0054: typing by label, dispatch by identity = lexical). Evidence that
+             the empty-ω-channel optimization (Q27's compiler seam) is a real, measured technique,
+             not a hypothesis. Assessed in docs/notes/multishot-survey.md §grades.},
 }
 
 % ─── Reversible / Frobenius ──────────────────────────────────────────────────
@@ -320,11 +360,22 @@
 % ─── WasmFX target (cont.) ───────────────────────────────────────────────────
 
 @misc{emrich-hillerstrom-continuing-stack-switching-wasmtime,
+  keywords = {topic:wasmfx topic:multishot role:substrate},
   author = {Emrich, Frank and Hillerstr\"{o}m, Daniel},
   title  = {Continuing Stack Switching in Wasmtime},
-  year   = 2024,
-  note   = {WebAssembly Workshop talk proposal},
-  % TODO: verify exact venue / proceedings reference
+  year   = 2025,
+  note   = {WebAssembly Workshop 2025 talk. Reports the production Wasmtime implementation of the
+             WasmFX stack-switching proposal (\url{https://wasmfx.dev}) — bang's OWN ◊6 backend
+             target. THE backend constraint for Q22: WasmFX continuations are SINGLE-SHOT (aka
+             linear) BY CONSTRUCTION — resume/resume_throw/cont.bind DESTRUCTIVELY consume the
+             continuation object (any second use traps), which is exactly what lets the runtime use
+             reference counting instead of a GC and avoid stack copying. Multi-shot is EXPLICITLY
+             out of the current proposal ("none of the critical use cases require multi-shot") and
+             is deferred to a hypothetical future `cont clone` instruction. So bang's backend
+             natively supports one-shot at zero copy cost and offers NO cheap multi-shot primitive
+             — the machine-design constraint the CalcReify probe must respect regardless of the
+             kernel choice. Assessed in docs/notes/multishot-survey.md §wasmfx-constraint.},
+  % venue: WebAssembly Workshop (WAW) 2025, co-located with PLDI'25.
 }
 
 % ─── Type theory ─────────────────────────────────────────────────────────────

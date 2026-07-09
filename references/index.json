@@ -411,7 +411,8 @@
     "doi": "10.1145/3158096",
     "eprint": "",
     "topics": [
-      "lr"
+      "lr",
+      "multishot"
     ],
     "grounds": [
       "inv-1"
@@ -483,12 +484,15 @@
   {
     "key": "emrich-hillerstrom-continuing-stack-switching-wasmtime",
     "title": "Continuing Stack Switching in Wasmtime",
-    "year": "2024",
+    "year": "2025",
     "doi": "",
     "eprint": "",
-    "topics": [],
+    "topics": [
+      "wasmfx",
+      "multishot"
+    ],
     "grounds": [],
-    "role": "",
+    "role": "substrate",
     "ondisk": true,
     "hop": "4-wasmfx",
     "path": "references/papers/4-wasmfx/emrich-hillerstrom-continuing-stack-switching-wasmtime.pdf",
@@ -551,9 +555,12 @@
     "year": "2025",
     "doi": "10.1145/3763177",
     "eprint": "",
-    "topics": [],
+    "topics": [
+      "multishot",
+      "compilation"
+    ],
     "grounds": [],
-    "role": "",
+    "role": "frontier",
     "ondisk": true,
     "hop": "4-wasmfx",
     "path": "references/papers/4-wasmfx/ma-oopsla25-zero-overhead-handlers.pdf",
@@ -1129,6 +1136,22 @@
       "ADR-0030"
     ],
     "role": "substrate",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "kobayashi-kameyama-aplas25-oneshot-expressiveness",
+    "title": "Expressive Power of One-Shot Control Operators and Coroutines",
+    "year": "2025",
+    "doi": "10.48550/arXiv.2509.11901",
+    "eprint": "",
+    "topics": [
+      "multishot"
+    ],
+    "grounds": [],
+    "role": "frontier",
     "ondisk": false,
     "hop": null,
     "path": null,

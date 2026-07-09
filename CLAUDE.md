@@ -28,6 +28,7 @@ its trigger arises.
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
 | **structOK multi-arg descent design** (#50 · the ADR-0091 fork's full analysis) | `docs/notes/structok-multiarg-design.md` |
+| **Multi-shot survey** (Q22/Q27 · one-shot-precedent · WasmFX backend constraint · verification-tax · the labelling-vs-closure verdict-shape) | `docs/notes/multishot-survey.md` |
 | **Verification ladder** (agent-speed quality gates · HoTT verdict · Q43 proof-export) | `docs/notes/verification-ladder.md` |
 | **Dogfood: JSON parser findings** (#61 blocker · module-shape needs · what worked) | `docs/notes/dogfood-json-findings.md` |
 | **Env-semantics survey** (#61 fix · substitution-vs-environment fork · keep spec, env in the machine) | `docs/notes/envsem-survey.md` |

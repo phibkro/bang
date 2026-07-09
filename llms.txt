@@ -24,6 +24,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/notes/OPEN_QUESTIONS.md](docs/notes/OPEN_QUESTIONS.md) — Deferred design questions
 - [docs/notes/design-space-map.md](docs/notes/design-space-map.md) — Design-space survey (open language-design questions + neighbour languages)
 - [docs/notes/structok-multiarg-design.md](docs/notes/structok-multiarg-design.md) — structOK multi-arg descent design (#50 · the ADR-0091 fork's full analysis)
+- [docs/notes/multishot-survey.md](docs/notes/multishot-survey.md) — Multi-shot survey (Q22/Q27 · one-shot-precedent · WasmFX backend constraint · verification-tax · the labelling-vs-closure verdict-shape)
 - [docs/notes/verification-ladder.md](docs/notes/verification-ladder.md) — Verification ladder (agent-speed quality gates · HoTT verdict · Q43 proof-export)
 - [docs/notes/dogfood-json-findings.md](docs/notes/dogfood-json-findings.md) — Dogfood: JSON parser findings (#61 blocker · module-shape needs · what worked)
 - [docs/notes/envsem-survey.md](docs/notes/envsem-survey.md) — Env-semantics survey (#61 fix · substitution-vs-environment fork · keep spec, env in the machine)
