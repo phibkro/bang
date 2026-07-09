@@ -11,21 +11,17 @@
   job is to generalize it: `data`-decl-derived generators (not just Int/prod), splitmix64
   sampling (not a fixed pool), and shrinking (none today).
 
-  THE ACCESS SEAM (reported to the manager, not guessed around): `checkLaws` and everything it
-  needs (`Decl`, `LawDecl`, `Prog`, `ElabEnv`, `buildEnv`, `CtorInfo`, `sampleVT`, `tuples`,
-  `checkLawOn`) are ALL private to `TypeCheck.lean`/`Surface.lean` — that file's public surface is
-  exactly `elaborateToComp` / `checkAndLower` / `typeStringOfProg` (+ `Surface.parseProgLocated`/
-  `locateInMsg`/`Span`), none of which expose the decl prelude to a leaf module. Per the mission's
-  constraint (don't edit TypeCheck.lean/Surface.lean; report the exact gap), this file does NOT
-  block on that export landing: it follows `Bang/Witness/ElabFuzz.lean`'s PROVEN, already-in-tree
-  pattern for exactly this situation — generate SOURCE-LEVEL BANG STRINGS (a full `trait`/`impl`/
-  `law` program, its law body's params substituted with generated-literal source text) and drive
-  them through the PUBLIC frontend entries (`TypeCheck.elaborateToComp`, `Core.Semantics.Eval.
-  Source.eval`) — a leaf module with fan-in 0 FROM `Bang/Frontend/*`, calling only its public
-  entries, exactly ElabFuzz's own justification. This is a STRICT UPGRADE path, not a workaround:
-  once `TypeCheck.lean` exposes `collectLawInstances`/`checkLawOn`-equivalent (the ask sent to the
-  manager), `runLaws` below gains a second discovery mode ("find every law in THIS program") on
-  top of today's "check the law THIS harness is told about" — additive, no rewrite.
+  THE ACCESS SEAM — RESOLVED (#60, two landed exports): `checkLaws`'s internals were originally
+  entirely private to `TypeCheck.lean`/`Surface.lean`. Two additive, behavior-preserving exports
+  since landed: `TypeCheck.lawInstancesOf (src) : Except String (List (String × String × List
+  String × String))` (trait name × law name × params × body-as-SOURCE-TEXT, one entry per
+  trait-law×matching-impl pair — a thin projection of `checkLaws`'s own decl walk, `Surf`/`Ty`-free
+  by construction) is the DISCOVERY surface `runLawsFromSource` below drives; the earlier broader
+  markers (`ElabEnv`/`buildEnv`/`checkLawOn`/`sampleVT`/`VT`, etc.) remain available but are NOT
+  needed by this file, which stays entirely SOURCE-STRING-level per `ElabFuzz.lean`'s proven
+  pattern — generate/derive Bang source text and drive it through the PUBLIC frontend entries
+  (`TypeCheck.elaborateToComp`, `Core.Semantics.Eval.Source.eval`, `TypeCheck.lawInstancesOf`) — a
+  leaf module with fan-in 0 FROM `Bang/Frontend/*`, calling only its public entries.
 
   NON-META, BY CONSTRUCTION: same reasoning as `Fuzz.lean`/`ElabFuzz.lean` — this file reuses
   `Fuzz.lean`'s hand-rolled splitmix64 (`Rng.step`/`Rng.nextMod`) rather than re-deriving a THIRD
@@ -484,3 +480,75 @@ def loopyLawBody : String :=
 def loopyPrelude : String := "trait T { fn f(a) -> Int law loopy(a): " ++ loopyLawBody ++ " }"
 #guard (match runLaws ⟨loopyPrelude, "loopy", ["a"], loopyLawBody⟩ 3 1 with
         | .evalStuck _ => true | _ => false)
+
+/-! ## 6. Discovery mode — auto-find every law in a REAL program (`TypeCheck.lawInstancesOf`,
+#60's landed seam), replacing "check the law you're told about" with "find every law yourself".
+Each discovered instance becomes a `LawInstance` whose `progPrelude` is the WHOLE original source
+(the trait+impl decls it needs are already there — `elaborateToComp` re-elaborating the same decls
+once per law instance is cheap relative to one interpreter run per sample, and keeps this file from
+needing its own decl-subsetting logic, which `lawInstancesOf` deliberately doesn't expose either). -/
+
+/-- One discovered law instance's outcome, tagged with WHICH trait/law it came from (so a report
+over several discovered laws can name each one — `runLaws`'s own `LawOutcome` says nothing about
+identity, correctly: a caller-supplied `LawInstance` already carries `lawName`, but a multi-law
+DISCOVERY run needs the trait name too, since two traits can share a law name). -/
+structure NamedOutcome where
+  traitName : String
+  lawName   : String
+  outcome   : LawOutcome
+  deriving Repr
+
+/-- **Discovery entry (public, #60):** find every law instance in a program made of `decls`
+(the trait/impl prelude, NO trailing body — `lawInstancesOf` needs a full parseable program, so
+this appends a throwaway `0` body ONLY for that discovery pass; `runLaws`'s own per-sample
+programs are built from `decls` directly, matching `LawInstance.progPrelude`'s own contract of
+"everything BEFORE the body" — passing a decls+body string as a `progPrelude` would let
+`evalLawOn`'s own body-splice land AFTER an already-present body, parsing as a bogus application
+rather than two statements, exactly the bug this signature design avoids by construction). Each
+discovered instance is `runLaws`-checked against `n` generated samples (seed offset by POSITION
+so two laws in the same program never draw the identical sample sequence). A `lawInstancesOf`
+failure (malformed decls) short-circuits with that same error — no partial discovery silently
+swallowed. -/
+def runLawsFromSource (decls : String) (n seed : Nat) : Except String (List NamedOutcome) := do
+  let instances ← Bang.TypeCheck.lawInstancesOf (decls ++ " 0")
+  return (instances.zip (List.range instances.length)).map
+    (fun ((tn, ln, params, body), i) =>
+      ⟨tn, ln, runLaws ⟨decls, ln, params, body⟩ n (seed + i)⟩)
+
+/-- The `VecOps` northstar DECLS ONLY (mirrors `TypeCheck.lean`'s own `vecOpsProg`/`vecLawProg` —
+same content, reconstructed locally since those are internal test helpers, not exported; NO
+trailing body here — unlike the single-trait `#guard`s elsewhere in this file, the multi-trait
+tests below need to APPEND a second trait's decls before the one shared body, so the body is
+supplied once, by the caller, at the very end). Component-wise `add`/`eq` over `(Int * Int)`,
+parametrized by the law so both a TRUE and a FALSE law variant can be exercised. -/
+def vecOpsDecls (law : String) : String :=
+  "trait VecOps { fn add(a, b) -> Self " ++
+  "fn eq(a, b) -> (Unit + Unit) " ++
+  "law " ++ law ++ " } " ++
+  "impl VecOps for (Int * Int) { " ++
+  "fn add(p, q) = let (a, b) = p in (let (c, d) = q in (let x = a + c in (let y = b + d in (x, y)))) " ++
+  "fn eq(p, q) = let (a, b) = p in (let (c, d) = q in (let e = a == c in (if e then b == d else 0 == 1))) }"
+
+def vecCommLaw : String := "comm(a, b): let s = a + b in (let t = b + a in s == t)"
+def vecBogusLaw : String := "bogus(a, b): let s = a + b in (let t = a + a in s == t)"
+
+-- a SINGLE-law program: discovery finds exactly the one instance, and it HOLDS (VecOps.comm is a
+-- real, true law — the same corpus program `TypeCheck.lean`'s own `#guard`s check).
+#guard (match runLawsFromSource (vecOpsDecls vecCommLaw) 20 7 with
+        | .ok [⟨"VecOps", "comm", .holds 20⟩] => true | _ => false)
+-- a MULTI-TRAIT program: discovery finds BOTH instances, in program order, each classified
+-- independently — VecOps.comm holds, IntOrd.trans holds (both real true laws).
+#guard (match runLawsFromSource
+    (vecOpsDecls vecCommLaw ++ " " ++ intOrdPrelude) 20 7 with
+        | .ok [⟨"VecOps", "comm", .holds 20⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
+        | _ => false)
+-- a MULTI-TRAIT program where ONE law is deliberately FALSE: discovery still finds both, and only
+-- the false one reports a counterexample — proving per-law classification doesn't cross-contaminate.
+#guard (match runLawsFromSource
+    (vecOpsDecls vecBogusLaw ++ " " ++ intOrdPrelude) 20 7 with
+        | .ok [⟨"VecOps", "bogus", .counterexample _⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
+        | _ => false)
+-- a program with NO trait laws at all discovers an EMPTY list (not an error) — vacuously fine.
+#guard (match runLawsFromSource "" 20 7 with | .ok [] => true | _ => false)
+-- a malformed decls prelude propagates lawInstancesOf's OWN error, not a bare crash.
+#guard (match runLawsFromSource "trait { " 20 7 with | .error _ => true | .ok _ => false)
