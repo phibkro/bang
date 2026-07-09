@@ -67,6 +67,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **gates** — analysis quality gates wired into the lifecycle hooks (`f60472a`)
 - **spec+backend** — compile_forward_sim sorryAx-ZERO — premised re-freeze + completeness spine (ADR-0086, closes #16) (`d13e0af`)
 - **agents** — compiler-engineer + surface-engineer roles; record #15 ruling (D-now/A-later) (`24cc670`)
+- **surface** — locate structural-mismatch errors via nameHint (#52 stage-B tier) (`95710a4`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
