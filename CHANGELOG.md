@@ -94,6 +94,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **examples** — caesar — the stranger test's cipher joins the oracle corpus (`08027e5`)
 - **witness** — LawTest derived generators + shrinking (#60 slice 1) (`510965a`)
 - **witness** — LawTest law runner over source-generated samples (#60 slice 2) (`5ea0228`)
+- **witness** — LawTest discovery entry over lawInstancesOf (#60 slice 3) (`2aeed3f`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
