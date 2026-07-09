@@ -67,7 +67,8 @@ regen-all:
     python3 tools/gen-import-graph.py
     python3 tools/gen-changelog.py
     python3 tools/gen-reference.py
-    python3 tools/gen-proof-state.py
+    # gen-proof-state EXCLUDED: build-dependent — in a build-less clone it emits a FALSE
+    # census block into CONTEXT.md (toolmap finding 2026-07-09). Use `just proof-state` after a build.
 
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
