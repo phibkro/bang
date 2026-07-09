@@ -9,7 +9,30 @@
 
 ## Status
 
-Accepted (2026-07-09, operator ruling same day — after the dogfood evidence landed and confirmed
+Accepted — **and LANDED on main (`7a95dfa`..`6d69580`, 2026-07-09 — 9 commits, gated on a fresh
+clone: full build green, test-modules 27/27, test-check-json 22/22, kernel census 26 ctors and
+axiom census both unchanged). As-landed refinements, each build- or oracle-forced:**
+
+- **D5 point (c) mechanism:** optional type ascription on plain `let` decls threads an
+  `Option Ty` through `Decl.letD` and desugars to a `Surf.annotS` wrap — the same mechanism an
+  ordinary `(e : T)` uses, no new construct. `isLetDecl`'s lookahead skips the optional `: Ty`
+  so decl-vs-script disambiguation cannot disagree with the real parse. Falsified by discarding
+  the ascription (an ill-typed `let x : Unit = 3` then wrongly checks).
+- **Grammar finding (reference material for #65):** effectful qualified calls need
+  `$(mod.op) arg` — `$mod.op arg` parses as `($mod).op`.
+- **Resolver-aware `bang check`:** resolves the entry file exactly as `run` does and checks the
+  merged `Prog` DIRECTLY (not print-then-reparse, which is unsound — a D5-synthesized `main`
+  body can re-tokenize as one application with the preceding decl). Known v1 limitation,
+  documented in the usage text: diagnostics for imported content carry `"span":null`;
+  per-file span mapping is a named follow-up.
+- **One-line deviation, accepted at gate:** `Diagnostics.lean`'s existing `jsonStr` escaper
+  flipped `public` so the resolver-failure JSON path reuses it (one construct per problem
+  beats a duplicate escaper; visibility-only, no new dependency edge).
+- The transitive-import qualification fix and the `use`-hoists-ctors-with-their-type rule
+  (ADR-0069 interaction) were both caught by the merge≡hand-qualification differential oracle
+  during implementation.
+
+Originally Accepted (2026-07-09, operator ruling same day — after the dogfood evidence landed and confirmed
 the design point-for-point: the JSON unit wanted exactly file-shaped modules
 (Json/Parse/Print/main), needed no circularity, wanted tokenizer reuse by import, and suffered
 the flat-scope shadowing pain that `use`-scoping removes; see

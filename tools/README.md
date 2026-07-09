@@ -50,7 +50,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh` | Claude Code PostToolUse hook for Edit/Write of Lean files |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 
-## test (6)
+## test (7)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -60,6 +60,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`selfcheck.mjs`](selfcheck.mjs) | `verify` | — | Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed |
 | [`test-check-json.sh`](test-check-json.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang check [--json]` (issue #59) |
 | [`test-fmt.sh`](test-fmt.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang fmt` (issue #58's CLI half) |
+| [`test-modules.sh`](test-modules.sh) | `manual` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 

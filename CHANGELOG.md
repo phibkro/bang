@@ -97,6 +97,14 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **release** — tag-triggered binary-release workflow + strip/smoke recipe (`92772c3`)
 - **release** — curl-able install.sh + README distribution section (`30d308a`)
 - **witness** — LawTest discovery entry over lawInstancesOf (#60 slice 3) (`1918903`)
+- **frontend** — ADR-0093 D1/D2/D3 parsing — import/use header, pub prefix (`7a95dfa`)
+- **frontend** — ADR-0093 D1/D2/D3 formatter arms — import/use/pub printers (`4cec19b`)
+- **frontend** — ADR-0093 D2/D3/D4 module-merge core — qualify + visibility + differential oracle (`e00d0ca`)
+- **cli** — ADR-0093 D1 — Main.lean module resolver (import/use file walk) (`8037c1b`)
+- **lang** — ADR-0093 D5 (operator ruling) — top-level let/let-rec decls, main as a plain binding (`5b5a5c1`)
+- **examples** — ADR-0093 first multi-file project — examples/json split (`9419517`)
+- **lang** — ADR-0093 D5 ruling point (c) — optional type ascription on plain let (`6e82851`)
+- **lang** — bang check is resolver-aware (issue #59 final slice, ADR-0093) (`6d69580`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
