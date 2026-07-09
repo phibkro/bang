@@ -445,6 +445,11 @@ def fmtDeclDoc : Decl → Format
   | .effectD n ops =>    -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }` — same member-block
                           -- shape as trait/impl (D2's flat-vs-wrapped rule applies uniformly).
       Format.text s!"effect {n} " ++ fmtMemberBlock (ops.map fmtEffectOp)
+  | .letD n e =>          -- ADR-0093 D5 (operator ruling): `let name = expr` — NO trailing `in`,
+                          -- the one visible difference from the ordinary `let`/EXPRESSION printer.
+      Format.group (nestD (Format.text s!"let {n} =" ++ Format.line ++ fmtSurf .cmp e))
+  | .letRecD n t e =>     -- `let rec name : T = expr` — the recursive sibling, same no-`in` shape.
+      Format.group (nestD (Format.text s!"let rec {n} : {showTy t} =" ++ Format.line ++ fmtSurf .cmp e))
 
 def fmtDecl (d : Decl) : String := render (fmtDeclDoc d)
 
@@ -473,7 +478,13 @@ not this printer; re-parsing that output still round-trips to the SAME `Prog` ei
 def showProg (p : Prog) : String :=
   let headerDocs := (p.imports.map fmtImport) ++ (p.uses.map fmtUse)
   let declDocs := p.decls.map (fmtDeclPub p.pubNames)
-  render (Format.joinSep (headerDocs ++ declDocs ++ [fmtSurf .cmp p.body]) (Format.text "\n"))
+  -- `p.isLibrary` ⟹ `p.body` is the UNOBSERVABLE `.lit 0` placeholder (D5's third case) — printing
+  -- it would append a REAL trailing `0` a re-parse cannot tell apart from the placeholder, and
+  -- worse, a bare-atom-ending decl (`let main = 42`) would swallow that `0` as an APPLICATION
+  -- argument (the SAME literal-adjacency ambiguity the `fn`-body corpus already works around) —
+  -- so a genuine library file prints its header + decls ONLY, matching what it parsed FROM.
+  let tailDocs := if p.isLibrary then [] else [fmtSurf .cmp p.body]
+  render (Format.joinSep (headerDocs ++ declDocs ++ tailDocs) (Format.text "\n"))
 
 /-! ## 5. `fmt` — the two public entry points `bang fmt` wraps
 
@@ -747,3 +758,17 @@ open Bang.Format in
 open Bang.Format in
 #guard roundTripsOn "import a use b (c) pub data Json = JNull 0"
        && idempotentOn "import a use b (c) pub data Json = JNull 0"
+
+-- ADR-0093 D5 (operator ruling): top-level `let`/`let rec` DECLS round-trip + are idempotent —
+-- the general binding form subsuming both plain-function exports and `main`.
+open Bang.Format in
+#guard roundTripsOn "let x = 3 data Hidden = HNull 0" && idempotentOn "let x = 3 data Hidden = HNull 0"
+open Bang.Format in
+#guard roundTripsOn "let rec f : Int -> Int = fun n => n data Hidden = HNull 0"
+       && idempotentOn "let rec f : Int -> Int = fun n => n data Hidden = HNull 0"
+-- `pub let`/`pub let rec` round-trip too (D3's uniform `pub` machinery over the new decl kind).
+open Bang.Format in
+#guard roundTripsOn "pub let x = 3 data Hidden = HNull 0" && idempotentOn "pub let x = 3 data Hidden = HNull 0"
+-- `main` is just a `let` decl now — no special form, so it round-trips through the SAME guard.
+open Bang.Format in
+#guard roundTripsOn "let main = 42" && idempotentOn "let main = 42"

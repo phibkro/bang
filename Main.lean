@@ -164,13 +164,34 @@ partial def resolveModule (root : System.FilePath) (modName : String) (path : Sy
         | .ok stNew => st' := stNew
       return .ok { st' with resolved := st'.resolved ++ [(modName, prog)], visiting := st.visiting }
 
+/-- ADR-0093 D5's entry rule, applied to the FULLY MERGED entry `Prog` (so it sees the right-most
+picture: every imported decl is already folded in by the time this runs, but a `main` decl only
+D5 cares about must be the ENTRY FILE's OWN — an imported module cannot silently become the
+program via a same-named `main` it happens to export, matching "the runtime, not an importer,
+invokes it"). Four cases: `main` present + library mode (no trailing expr) ⟹ PROGRAM mode — the
+body becomes a bare reference to `main` (CBPV: `Surf.lett`-bound names are directly available, no
+`$`-force needed, matching how every OTHER `let`-decl reference in the corpus already reads); `main`
+absent + script mode (a real trailing expr) ⟹ unchanged (today's whole corpus); BOTH present ⟹ a
+loud error (ADR-0046, no silent precedence); NEITHER ⟹ a pure library file — running it directly is
+a loud error naming that fact, not a silent "prints 0". -/
+def applyEntryRule (p : Prog) : Except String Prog :=
+  let hasMain := p.decls.any (fun d => match d with
+    | .letD n _ | .letRecD n _ _ => n == "main"
+    | _ => false)
+  match hasMain, p.isLibrary with
+  | true,  true  => .ok { p with body := Surf.var "main", isLibrary := false }   -- program mode
+  | false, false => .ok p                                                        -- script mode, unchanged
+  | true,  false => .error "both a `main` decl and a trailing expression are present — ADR-0093 D5 forbids silent precedence (remove one)"
+  | false, true  => .error "this file is a library (no `main` decl, no trailing expression) — nothing to run; import it from an entry file instead"
+
 /-- The full D1 resolution + D2/D3/D4 merge, from an entry FILE: parse it, resolve every
 `import`/`use` it names (transitively, same-dir-then-root, cycle-checked), then `mergeModules` the
 result into ONE flat `Prog` ready for `checkAndLowerProg`. A resolved import's OWN path is
 re-probed via `resolveModulePath` (not the naive `dir/name.bang` `resolveModule` builds directly)
 ONLY at the top level, matching D1's exact documented search order; nested imports resolve relative
 to THEIR OWN file's directory (the natural reading of "same directory as the importing file" — a
-transitively-imported module's imports are relative to IT, not the original entry file). -/
+transitively-imported module's imports are relative to IT, not the original entry file). The D5
+entry rule (`applyEntryRule`) is applied LAST, to the fully-merged result. -/
 def resolveEntryFile (path : String) : IO (Except String Prog) := do
   let entryPath : System.FilePath := ⟨path⟩
   let root ← IO.currentDir
@@ -179,7 +200,7 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
   match Bang.Surface.parseProg entrySrc with
   | .error m => return .error s!"parse error: {m}"
   | .ok entryProg =>
-      if entryProg.imports.isEmpty && entryProg.uses.isEmpty then return .ok entryProg
+      if entryProg.imports.isEmpty && entryProg.uses.isEmpty then return applyEntryRule entryProg
       let dir := entryPath.parent.getD root
       let mut st : ResolveState := {}
       for imp in entryProg.imports do
@@ -204,7 +225,7 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
             | .ok stNew => st := stNew
       match Bang.TypeCheck.mergeModules st.resolved entryProg with
       | .error e     => return .error e
-      | .ok merged   => return .ok merged
+      | .ok merged   => return applyEntryRule merged
 
 /-- Run one source string through the whole pipeline, printing the outcome and returning the process
 exit code. `typecheck` selects the pipeline (ADR-0076 #51):

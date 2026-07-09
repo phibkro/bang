@@ -159,6 +159,43 @@ got_out="$("$bang" run "$fixdir/shadow_user.bang" 2>/dev/null)" && got_exit=0 ||
 check "same-dir-shadows-root-stdout" "$got_out" "9"
 check "same-dir-shadows-root-exit" "$got_exit" "0"
 
+# ── ADR-0093 D5 (operator ruling): the entry-mode rule — a decl named `main` is the whole point of
+# the ruling ("main is literally a let decl, no special form"). Four cases: program mode (main +
+# library-mode-otherwise), script mode (unchanged corpus), both present (loud error), neither
+# (loud error — a library run directly). ──
+cat > "$fixdir/lib_for_main.bang" <<'BANG'
+pub let rec double : Int -> Int = fun n => n + n
+BANG
+cat > "$fixdir/entry_program_mode.bang" <<'BANG'
+use lib_for_main (double)
+let main = ($double) 21
+BANG
+got_out="$("$bang" run "$fixdir/entry_program_mode.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "d5-program-mode-stdout" "$got_out" "42"
+check "d5-program-mode-exit" "$got_exit" "0"
+
+cat > "$fixdir/entry_script_mode.bang" <<'BANG'
+let x = 3 in x + 1
+BANG
+got_out="$("$bang" run "$fixdir/entry_script_mode.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "d5-script-mode-stdout" "$got_out" "4"
+check "d5-script-mode-exit" "$got_exit" "0"
+
+cat > "$fixdir/entry_both.bang" <<'BANG'
+let main = 42
+let x = 3 in x
+BANG
+got_err="$("$bang" run "$fixdir/entry_both.bang" 2>&1 >/dev/null)" && got_err_exit=0 || got_err_exit=$?
+check "d5-both-present-exit" "$got_err_exit" "1"
+check_contains "d5-both-present-names-main" "$got_err" "main"
+
+cat > "$fixdir/entry_library.bang" <<'BANG'
+pub let x = 3
+BANG
+got_err="$("$bang" run "$fixdir/entry_library.bang" 2>&1 >/dev/null)" && got_err_exit=0 || got_err_exit=$?
+check "d5-library-mode-exit" "$got_err_exit" "1"
+check_contains "d5-library-mode-says-library" "$got_err" "library"
+
 echo "──────────────────────────────"
 echo "modules: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

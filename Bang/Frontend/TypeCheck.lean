@@ -2664,6 +2664,16 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
               | (_, .arr ..)   => throw s!"effect {n}: op '{opName}' is multi-argument — v1 supports only a single `ArgTy -> ResTy` arrow"
           | _ => opSigs := opSigs ++ [(opName, none, vtyOf tyR)]
         effects := (n, ⟨ℓ, opSigs⟩) :: effects
+    | .letD .. | .letRecD .. => pure ()
+      -- ADR-0093 D5 (operator ruling): a top-level `let`/`let rec` DECL is a BINDER, not a static
+      -- environment entry like `data`/`trait`/`effect` — it never enters `ElabEnv` at all. Instead
+      -- it is desugared BEFORE `buildEnv` ever runs (`foldLetDecls`, below) into nested
+      -- `Surf.lett`/`Surf.letRecS` wrapping the trailing body — the SAME "wrap the body in a let"
+      -- idiom `wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s `use`-hoist already use. By the time
+      -- `buildEnv` sees a decl list, every `letD`/`letRecD` has ALREADY been folded into `p.body`
+      -- (see `elabProg`'s new pre-pass) — this arm exists only so the match stays exhaustive for
+      -- a caller that hands `buildEnv` a RAW (pre-fold) decl list (the `mergeModules` internals,
+      -- which qualify `letD`/`letRecD` bodies before folding happens).
   return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls, effects⟩
 
 /-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
@@ -2932,6 +2942,8 @@ def qualifyDeclBody (modName : String) (names : List String) : Decl → Decl :=
   | .implD n t ops        =>
       .implD n (qTy t) (ops.map (fun o => { o with body := qualifyVars modName names o.body }))
   | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyVars modName names b)
+  | .letD n e             => .letD n (qualifyVars modName names e)
+  | .letRecD n t e        => .letRecD n (qTy t) (qualifyVars modName names e)
 
 /-- Rename a `Decl`'s OWN top-level name (and a `data`'s ctors) to its qualified form — the
 "declaration side" of qualification, paired with `qualifyDeclBody`'s "reference side". A ctor
@@ -2948,6 +2960,8 @@ def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
   | .traitD n ps ops laws => .traitD (qualifyName modName n) ps ops laws
   | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
   | .fnD n ps ty tr tv b  => .fnD (qualifyName modName n) ps ty tr tv b
+  | .letD n e             => .letD (qualifyName modName n) e
+  | .letRecD n t e        => .letRecD (qualifyName modName n) t e
 
 /-- Qualify a whole parsed module `Prog`: every top-level name (`moduleTopNames`) becomes
 `modname_name`, everywhere in every decl body AND the trailing body expression — EXCEPT a ctor this
@@ -3136,10 +3150,38 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
     | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
     | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners qTy l.body }))
     | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners qTy o.body }))
-    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b))
+    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b)
+    | .letD n e             => .letD n (qualifyDotAccess importNames ctorOwners qTy e)
+    | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners qTy e))
   let body := qualifyDotAccess importNames ctorOwners qTy p.body
-  let body := usedPlainFns.foldr (fun (n, modName) acc => Surf.lett n (Surf.var (qualifyName modName n)) acc) body
-  return { imports := [], uses := [], pubNames := p.pubNames, decls := mergedDecls ++ entryDecls, body := body }
+  -- `use`-hoisted plain-fn aliases are injected as `letD` decls at the FRONT of the entry file's
+  -- own decls (not wrapped only around `p.body`) — a `use`d name must be visible from WITHIN
+  -- another entry-file decl too (e.g. a top-level `let main = ($double) 21`, ADR-0093 D5's own
+  -- payoff case), not just the trailing body. `foldLetDecls` (elabProg) folds ALL `letD`s in decl
+  -- order regardless of origin, so prepending here gives the alias the OUTERMOST scope — every
+  -- other decl and the body see it, exactly matching where a `use` line sits in source (always
+  -- before every decl it can affect, per the header-then-decls grammar).
+  let aliasDecls : List Decl := usedPlainFns.map (fun (n, modName) => .letD n (Surf.var (qualifyName modName n)))
+  return { imports := [], uses := [], pubNames := p.pubNames, decls := mergedDecls ++ aliasDecls ++ entryDecls,
+            body := body, isLibrary := p.isLibrary }
+
+/-! Fold every `letD`/`letRecD` in `ds` into `tail`, RIGHTMOST-first (a `foldr`), producing nested
+`Surf.lett`/`Surf.letRecS` wrapping `tail` — the SAME "wrap the body in a let" idiom
+`wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s `use`-hoist already use (ADR-0093 D5, operator
+ruling: `let`/`let rec` decls are BINDERS, never static environment entries — this is their ONLY
+elaboration path; `buildEnv` no-ops on them by construction). Decl ORDER is preserved: an earlier
+`let` is the OUTER binder (so a later decl, or the tail, can reference it) — `foldr` with the LIST
+in its original order does exactly this (`foldr f z [a, b, c] = f a (f b (f c z))`, so `a`'s
+`lett`/`letRecS` wraps EVERYTHING after it, `b`'s wraps what's after IT, etc.), matching ordinary
+nested-`let` scoping. Non-let decls pass through unchanged in a SEPARATE list (returned alongside)
+for `buildEnv`. -/
+def foldLetDecls (ds : List Decl) (tail : Surf) : List Decl × Surf :=
+  let nonLetDecls := ds.filter (fun d => match d with | .letD .. | .letRecD .. => false | _ => true)
+  let body := ds.foldr (fun d acc => match d with
+    | .letD n e      => Surf.lett n e acc
+    | .letRecD n t e => Surf.letRecS n t e acc
+    | _              => acc) tail
+  (nonLetDecls, body)
 
 /-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve
 the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the type-checker's
@@ -3147,10 +3189,11 @@ the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — 
 `effect`'s op, and `synthSC`/`checkSC` have no separate `ElabEnv` parameter (see `USt.effects`'s
 comment) — so `elabProg`'s caller threads the pair into `runInferC`. -/
 def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) := do
-  let declared := p.decls.filterMap (fun | .dataD n _ _ => some n | _ => none)
+  let (nonLetDecls, foldedBody) := foldLetDecls p.decls p.body
+  let declared := nonLetDecls.filterMap (fun | .dataD n _ _ => some n | _ => none)
   let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
-  let body ← injectStdlib declared p.body
-  let env ← buildEnv (prelude ++ p.decls)
+  let body ← injectStdlib declared foldedBody
+  let env ← buildEnv (prelude ++ nonLetDecls)
   let e ← elabS env [] (← expandBFns env none bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
   return (e, env.effects)
 
@@ -3444,6 +3487,8 @@ def checkLaws (src : String) : Except String (List String) := do
     | .dataD .. => pure ()
     | .fnD ..   => pure ()
     | .effectD .. => pure ()   -- ADR-0092: no laws attached to an effect decl
+    | .letD .. => pure ()      -- ADR-0093 D5: no laws attached to a plain let/let-rec decl either
+    | .letRecD .. => pure ()
     | .traitD tn _ _ laws =>
         for other in p.decls do
           match other with
@@ -3451,6 +3496,8 @@ def checkLaws (src : String) : Except String (List String) := do
           | .dataD ..  => pure ()
           | .fnD ..    => pure ()
           | .effectD .. => pure ()   -- ADR-0092: ditto
+          | .letD .. => pure ()
+          | .letRecD .. => pure ()
           | .implD tn' τTy _ =>
               if tn' == tn && !laws.isEmpty then                -- HK-trait laws are Stage D; Self-only path unchanged
                 let τR ← resolveTy env.gen env.aliases τTy      -- named impl targets sample at the closed μ
@@ -4657,5 +4704,65 @@ def runMergedYieldsInt (fuel : Nat) (p : Prog) : Option Int :=
   match mergeModules [("calc", modP)] entryP with
   | .error _ => false
   | .ok merged => runMergedYieldsInt 200 merged == some 15
+
+/-! ### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
+
+`foldLetDecls`'s desugaring is proven end-to-end via `runTypedYieldsInt` (parse → elaborate →
+type-check → lower → `Source.eval`), not just structurally (the `parsesTo`/round-trip guards above
+only prove the AST shape) — this is the "does the ADR's own payoff actually happen" check. -/
+
+-- a single top-level `let` decl, referenced by the trailing body. `data Marker` terminates the
+-- bound expression before the body — a bare literal FOLLOWED by an identifier (`3 x`) would
+-- otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.
+#guard runTypedYieldsInt 50 "let x = 3 data Marker = M x + 1" 4
+-- MULTIPLE let decls, in order — a later one sees an earlier one (nested-let scoping). A second
+-- `data` decl (a reserved keyword, never a valid application-argument atom) terminates `y`'s bound
+-- expression before the trailing `x + y` — the same disambiguating role `data Marker` already
+-- plays after `x`'s own binding.
+#guard runTypedYieldsInt 50 "let x = 3 data Marker = M let y = x + 1 data Marker2 = M2 x + y" 7
+-- a top-level `let rec` decl recurses, exactly like the expression-level `let rec` it desugars to
+-- (ADR-0073's declared-row discipline carries over unchanged — same `Div` row). `data Marker`
+-- terminates the bound expression before the trailing call (the SAME "value followed by another
+-- atom parses as application" ambiguity this whole file's `let`-decl corpus works around).
+-- `data Marker = M` (bare ctor, no payload — a payload-carrying `M(...)` would instead have its
+-- FOLLOWING `(` swallowed as a ctor-payload TYPE, not a value application; the separator here must
+-- be follow-by-a-KEYWORD, not follow-by-`(`) then `let call = …` isolates the recursive CALL as
+-- its own decl, avoiding both this and the earlier literal-adjacency traps in one move.
+#guard runTypedYieldsInt 200
+  "let rec fact : Int -> Int ! {Div} = fun n => if n < 2 then 1 else n * ($fact (n - 1)) data Marker = M let call = ($fact) 5 data Marker2 = M2 call" 120
+-- `let`/`let rec` decls compose with OTHER decl kinds (`data`), interleaved.
+#guard runTypedYieldsInt 50
+  "data Pair = Mk(Int, Int) let p = Mk(3, 4) match (p : Pair) { Mk(a, b) -> a + b }" 7
+-- `main` is now literally a `let` decl (D5's whole point) — a script that DEFINES `main` and then
+-- REFERENCES it in its trailing body runs exactly like any other `let`, proving the entry-point
+-- form has no special elaboration path (D5: no main-only special case).
+#guard runTypedYieldsInt 50 "let main = 42 data Marker = M main" 42
+
+-- `use`-hoisting a `pub let rec` plain function: the merged program's `use`-bound function
+-- reference agrees with a hand-inlined `let double = lib_double in …` form (the SAME `use`-wrap
+-- mechanism `mergeModules` already applies to a ctor covers a plain fn too, via the OPPOSITE
+-- mechanism — a fn IS a first-class value, so it gets the `let`-alias a ctor cannot use).
+#guard
+  let modP : Prog := (Bang.Surface.parseProg "pub let rec double : Int -> Int = fun n => n + n").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "use lib (double) ($double) 21").toOption.get!
+  match mergeModules [("lib", modP)] entryP with
+  | .error _ => false
+  | .ok merged => runMergedYieldsInt 200 merged == some 42
+
+-- the SAME `use`-hoisted plain function, referenced from WITHIN another entry-file `letD` DECL
+-- (not just the trailing body) — the exact `main.bang` shape D5 exists for: `let main = ($double)
+-- 21` must see the `use`-hoisted `double` alias. Caught a REAL bug: the alias was originally
+-- wrapped only around `p.body`, so a decl-scoped reference (like a `let main`) couldn't see it —
+-- fixed by injecting the alias as a `letD` PREPENDED to the entry decls (outermost scope, so
+-- `foldLetDecls` wraps everything after it, decls included).
+#guard
+  let modP : Prog := (Bang.Surface.parseProg "pub let rec double : Int -> Int = fun n => n + n").toOption.get!
+  -- library mode (D5's third case) is NOT what makes `main` OBSERVABLE — its `body` is the
+  -- unobservable `.lit 0` placeholder, so a decl-scoped test needs a REAL trailing body that
+  -- references `main`, exactly like the earlier "main is a let decl" runtime guard does.
+  let entryP : Prog := (Bang.Surface.parseProg "use lib (double) let main = ($double) 21 data Marker = M main").toOption.get!
+  match mergeModules [("lib", modP)] entryP with
+  | .error _ => false
+  | .ok merged => runMergedYieldsInt 200 merged == some 42
 
 end Bang.TypeCheck

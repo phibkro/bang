@@ -1287,6 +1287,18 @@ inductive Decl where
     -- type) or a single `ArgTy -> ResTy` arrow (v1 monomorphic single-arg ops, matching the
     -- ADR-0085 D4 sketch `read : Int -> Str`). Multi-arg ops are OUT of v1 scope (not sketched by
     -- the ADR; a later bite can generalize the same way `capOpSig`'s ≤2-arity does for built-ins).
+  | letD    : String → Surf → Decl
+    -- `let name = expr` (NO trailing `in`) — a top-level PLAIN BINDING (ADR-0093 D5 operator
+    -- ruling, 2026-07-09: the GENERAL form, not a main-only special case). Disambiguated from the
+    -- script-mode `let name = expr in body` by the ABSENCE of `in` after `expr` — deterministic
+    -- lookahead (`pDecl`'s `pLetDeclOrBail`), never a guess (ADR-0046). Desugars at `Prog`-assembly
+    -- time (`foldLetDecls`) to nested `Surf.lett`s wrapping the body — the SAME "wrap the body in a
+    -- let" idiom `wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s `use`-hoist already use, so this is
+    -- not a new mechanism, just its first SURFACE-visible (parseable, `pub`-able, formattable) use.
+  | letRecD : String → Ty → Surf → Decl
+    -- `let rec name : T = expr` (NO trailing `in`) — the recursive sibling, mirroring `letRecS`'s
+    -- shape (ADR-0073's mandatory type annotation) at decl scope. `main` is now literally `let main
+    -- = <body>` or `let rec main : T = <body>` — no special-cased entry-point form (D5, as ruled).
   deriving Repr, Inhabited, DecidableEq
 
 /-- A declaration's NAME, for `pub`-set membership and module qualification (ADR-0093 D2/D3/D4) —
@@ -1301,6 +1313,8 @@ def Decl.name : Decl → String
   | .dataD n _ _       => n
   | .fnD n _ _ _ _ _   => n
   | .effectD n _       => n
+  | .letD n _          => n
+  | .letRecD n _ _     => n
 
 /-- One `import` line: `import tokenizer` — brings `tokenizer` into scope as a qualifier prefix
 (`tokenizer.lex`), no names hoisted unqualified. `modName` is the bare stem (no `.bang`, no path) —
@@ -1329,6 +1343,14 @@ structure Prog where
   pubNames : List String     := []
   decls    : List Decl
   body     : Surf
+  isLibrary : Bool := false
+    -- `true` ⟺ no trailing body expression was present (D5's third case) — `body` then carries the
+    -- UNOBSERVABLE `.lit 0` placeholder. Needed so `showProg` (Format.lean) can tell a genuine
+    -- library file apart from a SCRIPT-mode program whose real body happens to BE `.lit 0` — without
+    -- this, printing the placeholder unconditionally can round-trip to a DIFFERENT program when a
+    -- top-level `let`'s bound expression is a bare atom (`let main = 42`, followed by the printed
+    -- placeholder `0`, re-parses `42 0` as an APPLICATION — the same literal-adjacency ambiguity
+    -- the `fn`-body corpus already works around, but here it strikes the FORMATTER's own output).
   deriving Repr, Inhabited, DecidableEq
 
 /-- The comma-separated tail of a parameter list, up to and including `)`. -/
@@ -1506,14 +1528,61 @@ def pDecl : Nat → P Decl
       let (_, ts) ← expect "{" ts
       let (ops, ts) ← pEffectMembers f ts
       .ok (.effectD n ops, ts)
-  | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', or 'effect', got '{t}'", t :: r⟩
+  | f + 1, "let" :: "rec" :: ts => do          -- ADR-0093 D5 (operator ruling): `let rec name : T = expr`
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect ":" ts
+      let (t, ts) ← pTy f ts
+      let (_, ts) ← expect "=" ts
+      let (e, ts) ← pExpr f ts
+      .ok (.letRecD n t e, ts)
+  | f + 1, "let" :: ts => do                   -- ADR-0093 D5 (operator ruling): `let name = expr` (no `in`)
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect "=" ts
+      let (e, ts) ← pExpr f ts
+      .ok (.letD n e, ts)
+  | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', 'effect', or 'let', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
 /-- Is `t` a decl-leading keyword (with or without a `pub` prefix already stripped)? Named once so
 `pDecls`'s lookahead and `pDecl`'s `pub`-arm dispatch a single shared list (ADR-0093 D3: `pub` is
-accepted before every decl keyword). -/
+accepted before every decl keyword). `let` is DELIBERATELY excluded here — it is ambiguous with the
+script-mode `let x = e in body` form, so its decl-vs-body disambiguation is `pDecls`'s OWN job
+(`isLetDecl`, below), not a static membership test. -/
 def isDeclStart : String → Bool
   | "trait" | "impl" | "data" | "fn" | "effect" => true
+  | _ => false
+
+/-- Does a `let`/`let rec` at the HEAD of `ts` parse as a top-level DECL (no trailing `in`), or is it
+the script-mode `let … in …` body form? ADR-0093 D5 operator ruling (2026-07-09): disambiguate by
+the presence of `in` AFTER the bound expression — deterministic lookahead, never a guess (ADR-0046).
+Implemented by actually parsing the `let`/`let rec` HEAD (name, optional `: Ty`, `=`, the bound expr
+— `pExpr` is already self-delimiting, so it stops cleanly at whatever token follows) and checking
+that token: `in` ⟹ script mode (`none`, `pDecls` must NOT consume this — the caller re-parses the
+SAME prefix as the trailing body via `pExpr`), anything else ⟹ a genuine decl (`some`, cheaply
+re-derived by `pDecl` immediately after — reparsing here is simpler and no more costly than a
+backtracking combinator would be, since `pExpr`'s work is O(expr length) either way). -/
+def isLetDecl (fuel : Nat) (ts : List String) : Bool :=
+  match ts with
+  | "let" :: "rec" :: nts => Id.run <| do
+      match pIdent nts with
+      | .error _ => pure false
+      | .ok (_, nts) => match expect ":" nts with
+        | .error _ => pure false
+        | .ok (_, nts) => match pTy fuel nts with
+          | .error _ => pure false
+          | .ok (_, nts) => match expect "=" nts with
+            | .error _ => pure false
+            | .ok (_, nts) => match pExpr fuel nts with
+              | .error _ => pure false
+              | .ok (_, rest) => pure (rest.head? != some "in")
+  | "let" :: nts => Id.run <| do
+      match pIdent nts with
+      | .error _ => pure false
+      | .ok (_, nts) => match expect "=" nts with
+        | .error _ => pure false
+        | .ok (_, nts) => match pExpr fuel nts with
+          | .error _ => pure false
+          | .ok (_, rest) => pure (rest.head? != some "in")
   | _ => false
 
 /-- One declaration, `pub`-prefixable (ADR-0093 D3): `pub data …`, `pub fn …`, etc. mark the decl
@@ -1524,21 +1593,32 @@ def pDeclPub : Nat → P (Decl × Bool)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, "pub" :: ts =>
       if let some t := ts.head? then
-        if isDeclStart t then do let (d, ts) ← pDecl f ts; .ok ((d, true), ts)
+        if isDeclStart t || isLetDecl f ts then do let (d, ts) ← pDecl f ts; .ok ((d, true), ts)
         else .error ⟨s!"expected a declaration after 'pub', got '{t}'", ts⟩
       else .error "expected a declaration after 'pub', got end of input"
   | f + 1, ts => do let (d, ts) ← pDecl f ts; .ok ((d, false), ts)
 
 /-- The declaration prelude: zero or more (optionally `pub`-prefixed) decls, delimited by their
-leading keyword. Returns the decls plus the accumulated `pub` name set. -/
+leading keyword. Returns the decls plus the accumulated `pub` name set. A `let`/`let rec` decl is
+included ONLY when `isLetDecl` confirms it is not the script-mode body form (ADR-0093 D5) — checked
+BEFORE consuming anything, so a script-mode `let … in …` correctly falls through to `.ok (([], []),
+ts)` with `ts` UNCONSUMED, letting `parseProgE`'s `pExpr fuel ts` parse it as the trailing body. -/
 def pDecls : Nat → P (List Decl × List String)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
-    | "pub" :: _ => do
+    | "pub" :: rest =>
+      if (rest.head?.map isDeclStart).getD false || isLetDecl f rest then do
         let ((d, isPub), ts) ← pDeclPub f ts
         let ((ds, pubs), ts) ← pDecls f ts
         .ok ((d :: ds, if isPub then d.name :: pubs else pubs), ts)
+      else .ok (([], []), ts)
+    | "let" :: _ =>
+      if isLetDecl f ts then do
+        let ((d, isPub), ts) ← pDeclPub f ts
+        let ((ds, pubs), ts) ← pDecls f ts
+        .ok ((d :: ds, if isPub then d.name :: pubs else pubs), ts)
+      else .ok (([], []), ts)
     | t :: _ =>
       if isDeclStart t then do
         let ((d, isPub), ts) ← pDeclPub f ts
@@ -1601,10 +1681,10 @@ def parseProgE (src : String) : Except PErr Prog := do
   let fuel := toks.length * 6 + 1
   let ((imps, uses), ts) ← pHeader fuel toks
   let ((ds, pubs), ts) ← pDecls fuel ts
-  if ts.isEmpty then .ok ⟨imps, uses, pubs, ds, .lit 0⟩    -- library mode: no trailing expr (D5)
+  if ts.isEmpty then .ok ⟨imps, uses, pubs, ds, .lit 0, true⟩    -- library mode: no trailing expr (D5)
   else
     let (e, rest) ← pExpr fuel ts
-    if rest.isEmpty then .ok ⟨imps, uses, pubs, ds, e⟩
+    if rest.isEmpty then .ok ⟨imps, uses, pubs, ds, e, false⟩
     else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
 
 def parseProg (src : String) : Except String Prog := (parseProgE src).mapError (·.msg)
@@ -2247,16 +2327,59 @@ def progParsesTo (src : String) (p : Prog) : Bool :=
 -- placeholder body is `.lit 0` (unobservable — a library file is never itself RUN as a script;
 -- `Main.lean`'s entry-mode detection, not this parser, decides what "no body" MEANS operationally).
 #guard progParsesTo "data Json = JNull"
-  { decls := [.dataD "Json" [] [("JNull", [])]], body := .lit 0 }
+  { decls := [.dataD "Json" [] [("JNull", [])]], body := .lit 0, isLibrary := true }
 -- `import`/`use`/`pub` are RESERVED: using one as a binder fails loud (ADR-0046, matching the
 -- existing `let fn = …` reservation guard above).
 #guard (match parseProg "let import = 3 in import" with | .error _ => true | _ => false)
 #guard (match parseProg "let use = 3 in use" with | .error _ => true | _ => false)
 #guard (match parseProg "let pub = 3 in pub" with | .error _ => true | _ => false)
--- `pub` before a non-decl keyword fails loud (naming what followed, not a silent no-op).
+-- `pub` before a SCRIPT-MODE `let … in …` (not a decl — `in` follows) fails loud: `pub` cannot
+-- prefix the trailing body expression (ADR-0093 D5's operator ruling changed `let` from
+-- unconditionally-not-a-decl to CONDITIONALLY a decl, so this guard's shape changed — it now
+-- probes the disambiguator's OTHER branch, `isLetDecl` returning false because `in` follows).
 #guard (match parseProg "pub let x = 3 in x" with | .error _ => true | _ => false)
 -- `use` missing its name-list parens fails loud, not a silent partial parse.
 #guard (match parseProg "use tokenizer 0" with | .error _ => true | _ => false)
+
+/-! ### Stage ⑦ — top-level `let`/`let rec` DECLS (ADR-0093 D5, operator ruling 2026-07-09): the
+GENERAL binding form subsuming both plain-function module exports and the `main` entry point — no
+main-only special case. Disambiguated from the script-mode `let … in …` body by the ABSENCE of a
+trailing `in` (`isLetDecl`'s deterministic lookahead). -/
+
+-- a top-level `let name = expr` (no `in`) parses as a decl, not a script-mode body. The bound
+-- expression is followed by ANOTHER decl keyword (not a bare literal) to avoid the SAME "value
+-- followed by another atom parses as application" ambiguity the `fn`-body corpus already works
+-- around — `let x = 3 0` would parse `3 0` as an application, swallowing the `0` into `x`'s bound
+-- expression rather than leaving it as a separate trailing body.
+#guard progParsesTo "let x = 3 data Hidden = HNull 0"
+  { decls := [.letD "x" (.lit 3), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
+-- `pub let` exports it (D3's uniform `pub`-prefix machinery, now covering the NEW decl kind too).
+#guard progParsesTo "pub let x = 3 data Hidden = HNull 0"
+  { pubNames := ["x"], decls := [.letD "x" (.lit 3), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
+-- `let rec name : T = expr` (no `in`) parses as the recursive decl sibling.
+#guard progParsesTo "let rec f : Int -> Int = fun n => n data Hidden = HNull 0"
+  { decls := [.letRecD "f" (.tArr .tInt .tInt) (.lam "n" (.var "n")), .dataD "Hidden" [] [("HNull", [])]], body := .lit 0 }
+#guard progParsesTo "pub let rec f : Int -> Int = fun n => n data Hidden = HNull 0"
+  { pubNames := ["f"],
+    decls := [.letRecD "f" (.tArr .tInt .tInt) (.lam "n" (.var "n")), .dataD "Hidden" [] [("HNull", [])]],
+    body := .lit 0 }
+-- MULTIPLE let decls compose, in order, mixed with other decl kinds.
+#guard progParsesTo "let x = (3) data Hidden = HNull let y = 4 data Extra = ENull 0"
+  { decls := [.letD "x" (.lit 3), .dataD "Hidden" [] [("HNull", [])], .letD "y" (.lit 4),
+              .dataD "Extra" [] [("ENull", [])]],
+    body := .lit 0 }
+-- the SAME source text with a trailing `in` is UNCHANGED script-mode behavior (D5's own point:
+-- the disambiguator must not touch the existing corpus) — `let x = 3 in x + 1` still parses as a
+-- decl-free program whose body is that whole `let … in …` expression, byte-identical to before.
+#guard (match parseProg "let x = 3 in x + 1", parse "let x = 3 in x + 1" with
+        | .ok p, .ok e => decide (p = { decls := [], body := e })
+        | _, _ => false)
+-- a decls-ONLY file using a plain `let` (library mode, D5's third case, no trailing body at all).
+#guard progParsesTo "let x = 3"
+  { decls := [.letD "x" (.lit 3)], body := .lit 0, isLibrary := true }
+-- `main` is now literally a `let` decl — no special keyword, exactly the ruling's point.
+#guard progParsesTo "let main = 42"
+  { decls := [.letD "main" (.lit 42)], body := .lit 0, isLibrary := true }
 
 end -- public section
 end Bang.Surface
