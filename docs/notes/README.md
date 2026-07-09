@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (22)
+## active (23)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -16,6 +16,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
+- [`distributed-story.md`](distributed-story.md) — The distributed-systems story — nondeterminism as an effect, the runtime as a handler
 - [`dogfood-json-findings.md`](dogfood-json-findings.md) — Dogfood findings — a JSON parser/printer written in bang
 - [`envsem-survey.md`](envsem-survey.md) — Environment / closure semantics — the design-space survey for #61's fix
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
