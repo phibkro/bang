@@ -1043,6 +1043,47 @@ overwriting each value/heap with the one it already has. (`updateStates_eq` at `
 theorem updateStates_self {σ : SStore} {τ : THeap} {hs : HStack} (hC : Corr σ hs) (hT : TCorr τ hs) :
     netEffect hs σ τ = hs := (updateStates_eq (HMut.refl hs) hC hT).symm
 
+/-- `updateStates` preserves the CUSTOM projection: rewriting state-frame values never touches custom
+frames (op-disjointness), so `hsCustoms` is invariant. -/
+theorem hsCustoms_updateStates : ∀ (hs : HStack) (σ : SStore),
+    hsCustoms (updateStates hs σ) = hsCustoms hs := by
+  intro hs
+  induction hs with
+  | nil => intro σ; rfl
+  | cons fr hs ih =>
+    intro σ
+    cases hh : fr.handler with
+    | state ℓ0 s =>
+        cases σ with
+        | nil => simp only [updateStates, hh, hsCustoms]; rw [ih]
+        | cons p σ' => simp only [updateStates, hh, hsCustoms]; rw [ih]
+    | throws ℓ0 => simp only [updateStates, hh, hsCustoms]; rw [ih]
+    | transaction ℓ0 Θ => simp only [updateStates, hh, hsCustoms]; rw [ih]
+    | custom ℓ0 p cl => simp only [updateStates, hh, hsCustoms]; rw [ih]
+
+/-- `updateTxns` preserves the CUSTOM projection (op-disjointness — analog of `hsCustoms_updateStates`). -/
+theorem hsCustoms_updateTxns : ∀ (hs : HStack) (τ : THeap),
+    hsCustoms (updateTxns hs τ) = hsCustoms hs := by
+  intro hs
+  induction hs with
+  | nil => intro τ; rfl
+  | cons fr hs ih =>
+    intro τ
+    cases hh : fr.handler with
+    | transaction ℓ0 Θ =>
+        cases τ with
+        | nil => simp only [updateTxns, hh, hsCustoms]; rw [ih]
+        | cons p τ' => simp only [updateTxns, hh, hsCustoms]; rw [ih]
+    | state ℓ0 s => simp only [updateTxns, hh, hsCustoms]; rw [ih]
+    | throws ℓ0 => simp only [updateTxns, hh, hsCustoms]; rw [ih]
+    | custom ℓ0 p cl => simp only [updateTxns, hh, hsCustoms]; rw [ih]
+
+/-- `netEffect` preserves the custom projection: it only rewrites state/txn payloads, so the custom
+store κ mirrors the net-effect HStack exactly as it mirrored the pre-effect one (`CCorr` rides). -/
+theorem hsCustoms_netEffect (hs : HStack) (σ : SStore) (τ : THeap) :
+    hsCustoms (netEffect hs σ τ) = hsCustoms hs := by
+  simp only [netEffect]; rw [hsCustoms_updateTxns, hsCustoms_updateStates]
+
 
 /-- `netEffect k σ τ` is `HMut`-related to `k`: net-update mutates state values / txn heaps in place,
 preserving frame structure. -/
