@@ -36,6 +36,7 @@ import Bang.Frontend.TypeCheck
 import Bang.Frontend.Format
 import Bang.Frontend.Diagnostics
 import Bang.Backend.AbstractMachine
+import Bang.Witness.LawTest
 
 open Bang
 open Bang.Surface
@@ -409,6 +410,82 @@ def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
                 if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
                 pure 0
 
+/-- Default sample count and RNG seed for `bang test` — fixed (not randomized per-run) so a CI
+run is byte-reproducible (`Bang.LawTest.genIntSamples`'s own documented requirement: "the SAME
+seed reproduces the SAME samples"). 30 samples is a generous default for the Int-tuple shrinking
+`Bang.LawTest` already does per-law; a future `--samples N`/`--seed N` flag is the natural
+follow-up if a law needs more, not added speculatively here. -/
+def testSamples : Nat := 30
+def testSeed : Nat := 7
+
+/-- Render one `NamedOutcome` as a human-readable report line + whether it counts as a PASS for
+the exit-code tally. `PASS`/`FAIL`/`ERROR` mirror `check --json`'s plain-English severity
+naming; a counterexample/eval-stuck witness prints via `renderWitness` WITHOUT parameter names
+(`NamedOutcome` doesn't carry `params` — only `LawInstance` does, and `runLawsFromSource`
+doesn't surface it back to the caller — a positional witness list is still actionable and this
+avoids widening `NamedOutcome`'s public shape for a cosmetic label). -/
+def renderOutcome (o : Bang.LawTest.NamedOutcome) : String × Bool :=
+  let name := s!"{o.traitName}.{o.lawName}"
+  match o.outcome with
+  | .holds n           => (s!"✓ {name} — PASS ({n} samples)", true)
+  | .counterexample ws => (s!"✗ {name} — FAIL — counterexample {ws}", false)
+  | .untypeable m       => (s!"✗ {name} — ERROR — {m}", false)
+  | .evalStuck ws       => (s!"✗ {name} — STUCK — witness {ws} did not evaluate to a Bool", false)
+
+/-- `bang test [<file.bang>]` (#60's CLI wiring): discover EVERY trait-law instance in a program
+(`Bang.LawTest.runLawsFromSource`, the landed #60 discovery seam) and sample-check each one,
+reporting per-law PASS/FAIL/ERROR/STUCK. Reads a file if given, else stdin (mirrors `fmt`/`check`'s
+file-or-stdin convention). NOT resolver-aware (like `eval`/stdin `check`, not `run`'s file path) —
+`Bang.LawTest.runLawsFromSource` operates on a raw decls-string, and no multi-file law-discovery
+need has arisen yet; a resolver-aware upgrade is the natural follow-up if one does.
+
+DECLS-ONLY INPUT, ENFORCED (a real footgun found while writing this slice's own manual test):
+`runLawsFromSource` appends ITS OWN throwaway `0` body for discovery, and its per-sample test
+programs splice `progPrelude` (== the WHOLE input string) directly against a SEPARATE generated
+readback body. A file that ALREADY ends in a trailing expression (an ordinary bang program's
+usual shape — even a bare `0`) glues onto that spliced body as a second, adjacent expression —
+the SAME literal-adjacency trap `runCheck`'s own doc comment warns about elsewhere — and every
+law silently reports STUCK (`0 (let a = ... in ...)`, applying a literal to a computation) with
+NO indication the input shape, not the law, is the problem. Pre-checked here via `parseProg` +
+`Prog.isLibrary` (true ⟺ no trailing body) BEFORE ever calling `runLawsFromSource`, so the error
+names the actual cause instead of a confusing blanket STUCK on every discovered law.
+
+EXIT CODES: `0` every discovered law holds (including the vacuous "no laws found" case — #60's own
+`runLawsFromSource "" ...` guard: zero laws is not a failure); `1` at least one law
+FAILED/ERRORED/STUCK, the input has a trailing body (the decls-only check above), OR the source
+didn't even elaborate for discovery (`lawInstancesOf`'s own error, e.g. malformed decls) — the
+SAME "usage/parse/elaboration error" code every other subcommand uses for a source-level failure;
+`2` the file could not be read (the `check`/`:load` convention: a tool error is not a diagnostic). -/
+def runTest (file : Option String) : IO UInt32 := do
+  let src ← match file with
+    | none      => (← IO.getStdin).readToEnd
+    | some path =>
+      match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
+      | none   => IO.eprintln s!"error: could not read file '{path}'"; return 2
+      | some s => pure s
+  match Bang.Surface.parseProg src with
+  | .error e => IO.eprintln s!"error: parse error: {e}"; return 1
+  | .ok p    =>
+    if !p.isLibrary then
+      IO.eprintln <|
+        "error: `bang test` expects a DECLS-ONLY file (trait/impl declarations, no trailing " ++
+        "expression) — the runner supplies its own throwaway body internally; a trailing " ++
+        "expression here silently corrupts every discovered law's test program. Remove the " ++
+        "trailing expression (the file should end after the last decl's closing brace)."
+      return 1
+    match Bang.LawTest.runLawsFromSource src testSamples testSeed with
+    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .ok []   => IO.println "no trait laws found (0 discovered)"; pure 0
+    | .ok outcomes =>
+      let rendered := outcomes.map renderOutcome
+      for (line, _) in rendered do IO.println line
+      let allHold := rendered.all Prod.snd
+      let n := outcomes.length
+      let passed := (rendered.filter Prod.snd).length
+      IO.println s!"──────────────────────────────"
+      IO.println s!"laws: {passed}/{n} passed"
+      pure (if allHold then 0 else 1)
+
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
@@ -418,6 +495,10 @@ def usage : String :=
   "  bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file\n\n" ++
   "  bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file\n" ++
   "             --json                  emit agent-facing structured JSON diagnostics on stdout\n\n" ++
+  "  bang test [<file.bang>]            discover + sample-check every trait law (issue #60);\n" ++
+  "                                     reads stdin if no file; reports per-law PASS/FAIL/ERROR/STUCK.\n" ++
+  "                                     INPUT MUST BE DECLS-ONLY (no trailing expression) — the\n" ++
+  "                                     runner supplies its own body internally.\n\n" ++
   "  bang --help, -h                    print this text and exit 0\n" ++
   "  bang --version, -v                 print the version and exit 0\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
@@ -631,6 +712,12 @@ def main (args : List String) : IO UInt32 := do
       match rest.filter (fun a => !("--".isPrefixOf a)) with
       | []      => runCheck json none        -- `bang check [--json]` with no file: read stdin
       | [arg]   => runCheck json (some arg)
+      | _       => IO.eprintln usage; pure 1
+    else if cmd == "test" then
+      -- no flags this slice (no `--samples`/`--seed`, a natural follow-up, not added speculatively).
+      match rest with
+      | []      => runTest none        -- `bang test` with no file: read stdin
+      | [arg]   => runTest (some arg)
       | _       => IO.eprintln usage; pure 1
     else
       IO.eprintln usage; pure 1

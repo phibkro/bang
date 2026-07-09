@@ -25,7 +25,7 @@ orient:
 # Default verify gate — selfcheck + build + example-run oracle + REPL transcripts
 # + audit. `audit` now runs the full `just fitness` bundle (#114), which already
 # includes the ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
-verify: selfcheck build check-examples test-repl test-fmt test-check-json test-cli audit
+verify: selfcheck build check-examples test-repl test-fmt test-check-json test-cli test-law audit
 
 # Run every examples/<project>/main.bang and diff stdout against expected.txt —
 # the end-to-end run oracle for whole bang programs (supersedes per-example
@@ -59,6 +59,15 @@ test-check-json:
 # its exit code. Part of the default `verify` chain.
 test-cli:
     bash tools/test-cli.sh
+
+# Gate for `bang test` (#60's CLI wiring over the landed LawTest/lawInstancesOf
+# seam): a real true trait law (PASS), a deliberately false one (FAIL +
+# counterexample), no-laws-found (vacuous success), and the decls-only-input
+# footgun this slice's own manual testing found (a trailing expression
+# silently corrupts every discovered law's report — caught before it does).
+# Part of the default `verify` chain.
+test-law:
+    bash tools/test-law.sh
 
 # Regenerate EVERY derived artifact in one shot — the write-side twin of the fitness
 # checks. Run before committing anything that touches generators' inputs; kills the
