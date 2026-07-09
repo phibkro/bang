@@ -31,14 +31,18 @@ archived `paths/archive/PATH-polymorphism.md`; ADR-0079/0080/0081/0082/0083 are 
 the ADR-0087 finite clause rep (`List (OpId × Comp)`, cap-enumeration structural, NO coherence premise) + one-shot
 tail resume + coexisting throws-abort; both Stage-2 `#guard`s compiled green (custom read→106, abort→42); census
 UNCHANGED (16 clean / 7 flagged), every clean headline ⊆ trusted-three. **The census gate that stopped `gh44s2`
-PASSES.** Two scaffolding premises carry the staging, each with a NAMED EXPIRY at ADR-0085 Stage 4: `CustomFree`
-(ADR-0086) and `NoCustomFrame` (ADR-0087 rung-2 status — the machine doesn't speak custom until its arm is DERIVED).
-One banked residual: `dispatchOn_rename` custom-arm sorry, off the clean census, owner #15/PATH-inc5. **The edge is
-now Stages 3→7:** 3 (TYPING: `effect`-decl rows, typed custom-handle) → 4 (CALC-MACHINE: derive evalD's custom arm,
-drop BOTH scaffolding premises — a consumer-safe strengthening) → 5 (LR) → 6 (soundness) → 7 (surface: `effect` /
-`handle … with { … }`). Stage 3 is design-adjacent (user-row typing; the Q-ledger applies); Stage 4 is the
-calculated-machine unit. The IO/net prong (ADR-0084) unblocks at Stage 7. Binary-LR re-index stays operator-ruled
-DEFERRED (#15: D-now/A-probe-later, PATH-inc5).
+PASSES.** **STAGE 3 IS ALSO LANDED (same day): both halves** — the elaborator half (`844931f`+`88e0f55`: `effect`
+decls parse, labels allocate ℓ≥4 deterministically, program-derived EffSig types performs at user labels, rows show
+user names; v1 restriction: builtin op names RESERVED in effect decls) and the kernel half (`125b383`..`06dbf9e`:
+`HasCTy.handleCustom` + `HasStack.customF` — the first typed user-effect rule; v1 clause bodies are the RET-SHAPE
+per the answer-grade wall, ADR-0092 §D3-as-landed; `concat_custom_absurd` retired by real arms; census
+byte-identical). **The edge is Stage 4 (IN FLIGHT, `feat-44-stage4`): derive evalD's custom arm ID-FIRST (operator
+ruling 2026-07-09, issue #62 — dispatch by store-holding identity, matching the kernel unconditionally), drop BOTH
+scaffolding premises (`CustomFree`, `NoCustomFrame`) — `compile_forward_sim` returns to VcapFree-only.** Then
+5 (LR: three pre-registered debts in PATH-inc5 — compatK_handleCustom + krelS_custom_reinstall + dispatchOn_rename)
+→ 6 (soundness composition) → 7 (surface `handle … with { … }` — where the Q38 unification stress-test runs). The
+IO/net prong (ADR-0084) unblocks at Stage 7. Modules v1 (ADR-0093, Accepted) implements in parallel — the frontend
+is orthogonal to the spine work. Binary-LR re-index stays DEFERRED (#15: D-now/A-probe-later, PATH-inc5).
 
 Active edge: **#44 / ADR-0085** (banked; no separate PATH — tracked in the ADR + the lead above). Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (Q1–Q42).
 
