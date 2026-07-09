@@ -72,6 +72,11 @@ bounded scratch spike of the canonical-reshape `CrelK′` before any frozen re-t
 - **KrelS `splitAtId` decomp** (Units 1+2; the MISS answer-type-determinism wall DISSOLVED —
   `splitAtId` never tests `handlesOp`). One documented SKIP-relocation residual.
 - `seq_unit_proof` residual (cap-subst-commutes, off the critical path) — the `seq_unit` flag.
+- **`dispatchOn_rename` custom arm (BANKED HERE 2026-07-09, #44 rung-2):** one doc-commented
+  sorry in `Bang/Meta/LR.lean` — `renameH` is identity-on-custom while the RHS renames p+clauses;
+  the clean fix is the `.map` clause traversal + its ~15-lemma renameH_shiftFrom/substFrom ripple
+  (nested-inductive termination twin of `capsCls`), which is THIS path's re-index shape. Feeds
+  only the flagged `lr_sound`; manager-ruled banked at the rung-2 landing (ADR-0087 §Status).
 
 ## Resume protocol
 Design-first: an ADR deciding route 1 vs 2 BEFORE any proof work (route 1 touches frozen

@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: post-MVP · ◊5 completeness closed (ADR-0086, `d13e0af`) · edge = #44 banked, gated on the Stage-4 coherence generalization · 2026-07-09._
+_Position: post-MVP · ◊5 completeness closed (ADR-0086, `d13e0af`) · #44 Stage 2 LANDED census-clean (ADR-0087 rungs, `6413281`) · edge = Stages 3→7 (typing → derived machine arm → LR → soundness → surface) · 2026-07-09._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
