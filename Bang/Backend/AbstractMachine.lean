@@ -1417,8 +1417,9 @@ theorem CCorr_pop_custom {κ : CStore} {fr : HFrame} {hs : HStack} {ℓ0 : Bang.
   unfold CCorr at hK ⊢; rw [hK]; simp [hsCustoms, hfr]
 
 /-- `CCorr` rides the POP of a NON-custom top frame (state/throws/txn): the custom projection skips it,
-so the store is unchanged (analog of `Corr_pop_nonstate`). -/
-theorem CCorr_pop_noncustom {κ : CStore} {fr top : HFrame} {hs tail : HStack}
+so the store is unchanged (analog of `Corr_pop_nonstate`, but no `HMut` needed — CCorr projects the
+top directly). -/
+theorem CCorr_pop_noncustom {κ : CStore} {top : HFrame} {tail : HStack}
     (hnc : ∀ ℓ p cls, top.handler ≠ .custom ℓ p cls) (hK : CCorr κ (top :: tail)) : CCorr κ tail := by
   unfold CCorr at hK ⊢; rw [hK]
   cases hh : top.handler with
@@ -2130,60 +2131,64 @@ theorem sim : ∀ fe,
       | handle h0 M =>
           simp only [evalD] at h
           cases h0 with
-          | custom _ _ _ => simp at h   -- evalD custom = none (ADR-0085 stage 1) ⇒ `= some` hypothesis absurd
-          | state ℓ0 s0 =>
-              -- route-B INSTALL a state frame: MINT id := g, push (id ↦ s0) keyed by g, run the SUBSTITUTED
-              -- body `M' = subst (vcap g ℓ0) M` at g+1. The machine's HANDLE recompiles the SAME M' at g+1
-              -- under an `id:=g` frame — the HANDLE-defer-recompile lining up with the IH (the refute-watch).
+          | custom ℓ0 p0 cls0 =>
+              -- route-B INSTALL a custom frame (ADR-0085 Stage 4): MINT id := g, push (id ↦ (p0,cls0)) on κ,
+              -- run the SUBSTITUTED body M' = subst (vcap g ℓ0) M at g+1. The machine's HANDLE recompiles the
+              -- SAME M' at g+1 under an `id:=g` custom frame. Custom carries NO state/txn payload ⇒ Corr/TCorr
+              -- pass through (like throws); CCorr installs/pops the κ entry (like state does for σ). The
+              -- clause-service happens at the perform arm (already proven), not here — this is pure install/pop.
               simp only [Handler.label] at h
-              cases hM : evalD fe (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M) with
+              cases hM : evalD fe (g+1) σ τ (κ.push g p0 cls0) (Comp.subst (Val.vcap g ℓ0) M) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.term (.ret v), g1, σ1, τ1), h =>
+                | (.term (.ret v), g1, σ1, τ1, κ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
                       Outcome.term.injEq] at h
-                    obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
-                    -- The existential = `netEffect hs σ1.tail τ1`. `body cc ss` runs M' under the REAL frame
-                    -- `{id:=g, state ℓ0 s0, cc, ss}` (g+1) and shows its popped tail IS the net effect.
+                    obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
+                    -- existential = `netEffect hs σ1 τ1` (custom carries no state/heap ⇒ both pass through).
+                    -- The custom frame is popped; κ1.tail mirrors it.
                     have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
-                        exec F2 g1 cc (.ret v :: ss) (netEffect hs σ1.tail τ1) = some r2 →
+                        exec F2 g1 cc (.ret v :: ss) (netEffect hs σ1 τ1) = some r2 →
                         (∃ F', exec F' (g+1) (compile (Comp.subst (Val.vcap g ℓ0) M) (Instr.UNMARK :: cc)) ss
-                          ({ id := g, handler := Handler.state ℓ0 s0, savedCode := cc, savedStack := ss } :: hs) = some r2)
-                        ∧ Corr σ1.tail (netEffect hs σ1.tail τ1) ∧ TCorr τ1 (netEffect hs σ1.tail τ1)
-                        ∧ HMut hs (netEffect hs σ1.tail τ1) := by
+                          ({ id := g, handler := Handler.custom ℓ0 p0 cls0, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        ∧ Corr σ1 (netEffect hs σ1 τ1) ∧ TCorr τ1 (netEffect hs σ1 τ1)
+                        ∧ CCorr κ1.tail (netEffect hs σ1 τ1) ∧ HMut hs (netEffect hs σ1 τ1) := by
                       intro cc ss F2 r2 hr2
-                      set fr : HFrame := { id := g, handler := Handler.state ℓ0 s0, savedCode := cc, savedStack := ss }
+                      set fr : HFrame := { id := g, handler := Handler.custom ℓ0 p0 cls0, savedCode := cc, savedStack := ss }
                         with hfrdef
-                      have hCinstall : Corr (σ.push g s0) (fr :: hs) :=
-                        Corr_install ℓ0 s0 fr (by rw [hfrdef]) hC
+                      have hCinstall : Corr σ (fr :: hs) :=
+                        Corr_install_nonstate fr (by rw [hfrdef]; intro ℓ s; simp) hC
                       have hTinstall : TCorr τ (fr :: hs) :=
                         TCorr_install_nontxn fr (by rw [hfrdef]; intro ℓ Θ; simp) hT
-                      obtain ⟨hsM, hCM, hTM, hmutM, kM⟩ :=
-                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ (.ret v) g1 σ1 τ1 hM (fr :: hs) hCinstall hTinstall
+                      have hKinstall : CCorr (κ.push g p0 cls0) (fr :: hs) :=
+                        CCorr_install ℓ0 p0 cls0 fr (by rw [hfrdef]) hK
+                      obtain ⟨hsM, hCM, hTM, hKM, hmutM, kM⟩ :=
+                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.push g p0 cls0) (.ret v) g1 σ1 τ1 κ1 hM (fr :: hs) hCinstall hTinstall hKinstall
                       obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
                         cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
-                      have htop : ∃ s', top.handler = .state ℓ0 s' := by
+                      have htop : ∃ p' cls', top.handler = .custom ℓ0 p' cls' := by
                         have hh := hmutM.1.2.2.2
                         cases hth : top.handler with
-                        | state ℓ1 s1 => rw [hfrdef, hth] at hh; simp only at hh; subst hh; exact ⟨s1, rfl⟩
+                        | custom ℓ1 p1 cls1 => rw [hfrdef, hth] at hh; simp only at hh; obtain ⟨rfl, _, _⟩ := hh; exact ⟨p1, cls1, rfl⟩
+                        | state _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
                         | transaction _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
-                        | custom _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut state/custom = False (ADR-0085 stage 1)
-                      obtain ⟨s', hts⟩ := htop
-                      have hCtail := Corr_pop_state hts hCM
+                      obtain ⟨p', cls', hts⟩ := htop
+                      have hCtail : Corr σ1 tail :=
+                        Corr_pop_nonstate (fr := fr) (by rw [hfrdef]; intro ℓ s; simp) hmutM hCM
                       have hTtail : TCorr τ1 tail :=
                         TCorr_pop_nontxn (by rw [hts]; intro ℓ Θ; simp) hTM
-                      have htaileq : tail = netEffect hs σ1.tail τ1 :=
+                      have hKtail : CCorr κ1.tail tail := CCorr_pop_custom hts hKM
+                      have htaileq : tail = netEffect hs σ1 τ1 :=
                         updateStates_eq (HMut.tail hmutM) hCtail hTtail
-                      -- the body's terminal config `top :: tail`; UNMARK pops `top` ⇒ run `cc` from `tail` at g1.
                       have hstep : exec (F2+1) g1 (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
                         simp only [exec]; rw [htaileq]; exact hr2
                       exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
-                        htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ (HMut.tail hmutM)⟩
-                    obtain ⟨_, hCf, hTf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
-                    refine ⟨netEffect hs σ1.tail τ1, hCf, hTf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
+                        htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ hKtail, htaileq ▸ (HMut.tail hmutM)⟩
+                    obtain ⟨_, hCf, hTf, hKf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
+                    refine ⟨netEffect hs σ1 τ1, hCf, hTf, hKf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
                     obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
                     exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
                 | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
@@ -2197,7 +2202,83 @@ theorem sim : ∀ fe,
                 | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
                 | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
                 | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
-                | (.raised n' op' w, _, _, _), h =>
+                | (.raised n' op' w, _, _, _, _), h =>
+                    -- body raises past the custom frame (custom never catches a throws-raise) ⇒ forwards ⇒
+                    -- raised, contradicting the term part.
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+          | state ℓ0 s0 =>
+              -- route-B INSTALL a state frame: MINT id := g, push (id ↦ s0) keyed by g, run the SUBSTITUTED
+              -- body `M' = subst (vcap g ℓ0) M` at g+1. The machine's HANDLE recompiles the SAME M' at g+1
+              -- under an `id:=g` frame — the HANDLE-defer-recompile lining up with the IH (the refute-watch).
+              simp only [Handler.label] at h
+              cases hM : evalD fe (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M) with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.term (.ret v), g1, σ1, τ1, κ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.term.injEq] at h
+                    obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
+                    -- The existential = `netEffect hs σ1.tail τ1`. `body cc ss` runs M' under the REAL frame
+                    -- `{id:=g, state ℓ0 s0, cc, ss}` (g+1) and shows its popped tail IS the net effect.
+                    -- κ threads UNCHANGED (state install doesn't touch custom frames; CCorr rides).
+                    have body : ∀ (cc : Code) (ss : Stack) (F2 r2 : _),
+                        exec F2 g1 cc (.ret v :: ss) (netEffect hs σ1.tail τ1) = some r2 →
+                        (∃ F', exec F' (g+1) (compile (Comp.subst (Val.vcap g ℓ0) M) (Instr.UNMARK :: cc)) ss
+                          ({ id := g, handler := Handler.state ℓ0 s0, savedCode := cc, savedStack := ss } :: hs) = some r2)
+                        ∧ Corr σ1.tail (netEffect hs σ1.tail τ1) ∧ TCorr τ1 (netEffect hs σ1.tail τ1)
+                        ∧ CCorr κ1 (netEffect hs σ1.tail τ1) ∧ HMut hs (netEffect hs σ1.tail τ1) := by
+                      intro cc ss F2 r2 hr2
+                      set fr : HFrame := { id := g, handler := Handler.state ℓ0 s0, savedCode := cc, savedStack := ss }
+                        with hfrdef
+                      have hCinstall : Corr (σ.push g s0) (fr :: hs) :=
+                        Corr_install ℓ0 s0 fr (by rw [hfrdef]) hC
+                      have hTinstall : TCorr τ (fr :: hs) :=
+                        TCorr_install_nontxn fr (by rw [hfrdef]; intro ℓ Θ; simp) hT
+                      have hKinstall : CCorr κ (fr :: hs) :=
+                        CCorr_install_noncustom fr (by rw [hfrdef]; intro ℓ p cls; simp) hK
+                      obtain ⟨hsM, hCM, hTM, hKM, hmutM, kM⟩ :=
+                        ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) (σ.push g s0) τ κ (.ret v) g1 σ1 τ1 κ1 hM (fr :: hs) hCinstall hTinstall hKinstall
+                      obtain ⟨top, tail, rfl⟩ : ∃ top tail, hsM = top :: tail := by
+                        cases hsM with | nil => simp [HMut, hfrdef] at hmutM | cons a b => exact ⟨a, b, rfl⟩
+                      have htop : ∃ s', top.handler = .state ℓ0 s' := by
+                        have hh := hmutM.1.2.2.2
+                        cases hth : top.handler with
+                        | state ℓ1 s1 => rw [hfrdef, hth] at hh; simp only at hh; subst hh; exact ⟨s1, rfl⟩
+                        | throws _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                        | transaction _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)
+                        | custom _ _ _ => rw [hfrdef, hth] at hh; exact absurd hh (by simp)   -- FrameMut state/custom = False
+                      obtain ⟨s', hts⟩ := htop
+                      have hCtail := Corr_pop_state hts hCM
+                      have hTtail : TCorr τ1 tail :=
+                        TCorr_pop_nontxn (by rw [hts]; intro ℓ Θ; simp) hTM
+                      have hKtail : CCorr κ1 tail :=
+                        CCorr_pop_noncustom (by rw [hts]; intro ℓ p cls; simp) hKM
+                      have htaileq : tail = netEffect hs σ1.tail τ1 :=
+                        updateStates_eq (HMut.tail hmutM) hCtail hTtail
+                      -- the body's terminal config `top :: tail`; UNMARK pops `top` ⇒ run `cc` from `tail` at g1.
+                      have hstep : exec (F2+1) g1 (Instr.UNMARK :: cc) (.ret v :: ss) (top :: tail) = some r2 := by
+                        simp only [exec]; rw [htaileq]; exact hr2
+                      exact ⟨kM (Instr.UNMARK :: cc) ss (F2+1) r2 hstep,
+                        htaileq ▸ hCtail, htaileq ▸ hTtail, htaileq ▸ hKtail, htaileq ▸ (HMut.tail hmutM)⟩
+                    obtain ⟨_, hCf, hTf, hKf, hmutf⟩ := body [] [] 1 [.ret v] (by simp only [exec])
+                    refine ⟨netEffect hs σ1.tail τ1, hCf, hTf, hKf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
+                    obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
+                    exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
+                | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
+                | (.raised n' op' w, _, _, _, _), h =>
                     -- body raises past the state frame (state never catches) ⇒ handle forwards ⇒ raised,
                     -- contradicting the term part.
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
