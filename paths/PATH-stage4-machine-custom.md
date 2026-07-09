@@ -148,6 +148,23 @@ whole unit as one fresh-session atomic commit (ADR-0085's "L / weeks, spine-touc
 - Agent: s4 (compiler-engineer, `feat-44-stage4`). Resume same lane; this doc + the banked patch make it
   work whether the s4 thread is resumed or a fresh s4 opens.
 
+## WIP-push protocol (the next session needs this — this unit is ATOMIC)
+Because there is NO green intermediate (both findings above), the fresh session works a long red
+stretch across `sim`/`run_evalD`/Wasm/U5b before the first re-compile. That is expected and sanctioned:
+- **Intermediate commits on `feat-44-stage4` MAY be red** (the build does not compile mid-thread). To
+  commit them, skip ONLY the slow/possibly-red build leg with
+  `BANGLANG_SKIP_VERIFY_REASON="stage4 atomic re-thread WIP, final sha gates clean" git commit …`
+  (the pre-commit fitness/drift checks STILL run — `tools/git-hooks/pre-commit:109`; this env var gates
+  only the `just verify` build, not the ledger/arch checks). Push WIP freely to bank against a lost tree.
+- **The LANDING gate is UNCHANGED**: the manager gates the FINAL sha on a clean clone — `just verify`
+  EXIT 0 unpiped + `just axioms` (every touched clean headline ⊆ trusted-three, `NoCustomFrame`/
+  `CustomFree` OFF the named headlines) + the Agree/`#guard` battery (incl. the new custom→106 /
+  abort→42 through `exec∘compile`) + Witness/Fuzz/AgreeOutcome green. A red WIP commit NEVER lands as
+  the gate sha; only the green final does.
+- **Atomicity still holds**: bank WIP for safety, but do NOT declare the unit done until the whole file
+  group re-compiles green. A half-re-keyed `run_evalD` induction pushed red is a checkpoint, not a
+  deliverable.
+
 ## Notes
 - All frozen-statement changes in this unit are pre-authorized premise-DROPS (ADR-0086 `CustomFree`,
   ADR-0087 `NoCustomFrame`) — consumer-safe strengthenings, no `STATEMENT_CHANGE_OK`. Anything ELSE
