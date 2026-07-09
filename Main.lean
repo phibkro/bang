@@ -33,6 +33,7 @@
 
 import Bang.Frontend.Surface
 import Bang.Frontend.TypeCheck
+import Bang.Frontend.Format
 import Bang.Backend.AbstractMachine
 
 open Bang
@@ -129,12 +130,23 @@ def runSource (typecheck compiled : Bool) (src : String) : IO UInt32 := do
     | .error e => IO.eprintln s!"error: {e}"; pure 1
     | .ok c    => runComp compiled c
 
+/-- Run `bang fmt`: format a whole program (decls + body, `Bang.Format.fmtProg`) and print the
+canonical form to stdout. `.error` → stderr + exit 1, the SAME convention `runSource`'s parse-error
+arm uses (a fmt failure IS a parse failure — `fmtProg` round-trips through the ordinary parser,
+ADR-0046: never a silent guess on unparsable input). No `-w` (in-place write) this slice — print
+only; in-place writing is a separate decision the team lead is holding. -/
+def runFmt (src : String) : IO UInt32 := do
+  match Bang.Format.fmtProg src with
+  | .error e  => IO.eprintln s!"error: {e}"; pure 1
+  | .ok out   => IO.println out; pure 0
+
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
   "  bang run  [FLAGS] <file.bang>      run a bang program from a file\n" ++
   "  bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly\n" ++
-  "  bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)\n\n" ++
+  "  bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)\n" ++
+  "  bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
   "  (default)        parse → TYPE-CHECK → lower → run; an ill-typed program is a TYPE ERROR\n" ++
   "  --no-typecheck   raw erase-and-run (no type gate) — for oracle/differential testing\n\n" ++
@@ -306,6 +318,12 @@ def main (args : List String) : IO UInt32 := do
       let compiled  := rest.contains "--compiled"
       let typecheck := !rest.contains "--no-typecheck"
       runRepl typecheck compiled
+    else if cmd == "fmt" then
+      -- no `--` flags this slice (no `-w`, per the team lead's hold); any non-positional is usage.
+      match rest with
+      | []      => runFmt (← (← IO.getStdin).readToEnd)   -- `bang fmt` with no file: read stdin
+      | [arg]   => runFmt (← IO.FS.readFile ⟨arg⟩)
+      | _       => IO.eprintln usage; pure 1
     else
       IO.eprintln usage; pure 1
   | _ => IO.eprintln usage; pure 1
