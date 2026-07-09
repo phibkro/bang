@@ -6543,19 +6543,19 @@ theorem run_evalD : ∀ fe,
 `v`, the kernel's verified `Source.eval` agrees (`.done v`). Ties the calculated
 machine to the type-safety reference (invariant #1) — `Source.eval`'s `type_safety`
 now backs `evalD`'s `ret`-results. -/
-theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (g' : Nat) (σ' : SStore) (τ' : THeap)
+theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
     (hvf : Bang.Model.VcapFree M)
-    (h : evalD f 0 [] [] M = some (.term (.ret v), g', σ', τ')) :
+    (h : evalD f 0 [] [] [] M = some (.term (.ret v), g', σ', τ', κ')) :
     ∃ F, Source.eval F M = Result.done v := by
-  -- the empty stores mirror the empty kernel context (`CtxCorr [] []`/`CtxTxnCorr [] []` by `rfl`); a
-  -- closed program has no resumptive frames ⇒ `ctxNetEffect [] σ' τ' = []`, continuation at `(g', [], ret v)`.
-  -- `VcapFree` (closed source, route-B) seeds the label-coherence + freshness premises vacuously.
+  -- the empty stores mirror the empty kernel context (`CtxCorr [] []`/`CtxTxnCorr [] []`/`CCtxCorr [] []`
+  -- by `rfl`); a closed program has no resumptive frames ⇒ `ctxNetEffect [] σ' τ' = []`, continuation at
+  -- `(g', [], ret v)`. `VcapFree` (closed source, route-B) seeds label-coherence + freshness vacuously.
   have hFresh : FreshCfg (0, [], M) := by
     refine ⟨trivial, fun p hp => ?_, trivial, fun p hp => ?_⟩
     · rw [Bang.Model.VcapFree] at hvf; rw [hvf] at hp; exact absurd hp (by simp)
     · simp [Bang.Model.capsK] at hp
-  obtain ⟨_, k⟩ := (run_evalD f).1 M 0 [] [] (.ret v) g' σ' τ' h [] rfl rfl
-    (capLabelCoh_initial hvf) hFresh (by trivial : NoCustomFrame [])
+  obtain ⟨_, k⟩ := (run_evalD f).1 M 0 [] [] [] (.ret v) g' σ' τ' κ' h [] rfl rfl rfl
+    (capLabelCoh_initial hvf) hFresh
   have hbase : Config.run 1 (g', ctxNetEffect [] σ' τ', .ret v) = Result.done v := by
     simp only [ctxNetEffect, updateCtxStates, updateCtxTxns, Config.run]
   obtain ⟨F, hF⟩ := k 1 (Result.done v) hbase
@@ -6566,8 +6566,8 @@ theorem evalD_agrees_source (f : Nat) (M : Comp) (v : Val) (g' : Nat) (σ' : SSt
 shape from the battery's *catching* throws cases; the full three-rep bridge witnessed at once. -/
 example :
     let M := Comp.handle (.throws 0) (.ret (.vint 7))
-    evalD 5 0 [] [] [] M = some (.term (.ret (.vint 7)), 1, [], []) ∧ Agree 10 M (.vint 7) := by
-  refine ⟨by rfl, by rfl, by rfl⟩
+    evalD 5 0 [] [] [] M = some (.term (.ret (.vint 7)), 1, [], [], []) ∧ Agree 10 M (.vint 7) := by
+  refine ⟨by rfl, by rfl⟩
 
 end -- public section
 end Bang.CalcVM
