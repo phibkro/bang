@@ -71,11 +71,12 @@ diagnostics). `bang --help` lists flags and exit codes. Pass `--compiled` to run
 the *verified calculated machine* instead of the kernel oracle — same program,
 same value (ADR-0016).
 
-**Cold-start cost.** The one-time `cache get` downloads Mathlib's prebuilt
-`.olean` files (~2 GB from the Lean community CDN); `lake build bang` then
-compiles the bang library + runner. Budget **~10–20 min** on a cold machine
-(network-bound for the fetch, CPU-bound for the build); a warm rebuild of just
-the runner is ~2 min. Mathlib is a *build-time* dependency only — the resulting
+**Cold-start cost.** Measured from a fresh clone: `cache get` ~2 min (decompresses
+Mathlib's prebuilt `.olean` files; **add several minutes to download ~2 GB from the
+Lean community CDN if your nix store doesn't already have them**), then `lake build
+bang` ~4 min (compiles the bang library + runner). Budget **~10–15 min** on a cold
+machine (network-bound for the fetch, CPU-bound for the build); a warm rebuild of
+just the runner is ~2 min. Mathlib is a *build-time* dependency only — the resulting
 `bang` binary is native and links nothing but glibc.
 
 > A pure `nix build .#bang` / `nix run github:phibkro/bang` is **not yet
