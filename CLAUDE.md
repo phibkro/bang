@@ -41,7 +41,7 @@ its trigger arises.
 | **Original design thesis** (v0/v1; partially superseded by ADR-0016) | `docs/spec/bang-lang-design.md`, `docs/spec/bang-lang-description-value.md` |
 | **K-keyframe research roadmap** (complementary to ROADMAP.md) | `docs/roadmap/bang-northstar-roadmap.md` |
 | **References library** (cited papers + refs.bib) | `references/README.md` |
-| **Subagent roles** | `.claude/agents/{kernel-engineer,proof-engineer,lean-proof-auditor}.md` |
+| **Subagent roles** (models pinned in frontmatter) | `.claude/agents/{kernel,proof,compiler,surface}-engineer.md` + `lean-proof-auditor.md` |
 | **Run any task** | `just` (lists recipes); see `justfile` |
 
 ## Architecture in force (third design revision)

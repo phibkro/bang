@@ -37,6 +37,6 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/spec/bang-lang-design.md, docs/spec/bang-lang-description-value.md](docs/spec/bang-lang-design.md, docs/spec/bang-lang-description-value.md) — Original design thesis (v0/v1; partially superseded by ADR-0016)
 - [docs/roadmap/bang-northstar-roadmap.md](docs/roadmap/bang-northstar-roadmap.md) — K-keyframe research roadmap (complementary to ROADMAP.md)
 - [references/README.md](references/README.md) — References library (cited papers + refs.bib)
-- [.claude/agents/{kernel-engineer,proof-engineer,lean-proof-auditor}.md](.claude/agents/{kernel-engineer,proof-engineer,lean-proof-auditor}.md) — Subagent roles
+- [.claude/agents/{kernel,proof,compiler,surface}-engineer.md + lean-proof-auditor.md](.claude/agents/{kernel,proof,compiler,surface}-engineer.md + lean-proof-auditor.md) — Subagent roles (models pinned in frontmatter)
 - `just (lists recipes); see justfile` — Run any task
 

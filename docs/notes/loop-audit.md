@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: post-MVP · polymorphism arc closed (`cea8ae2`) · edge = #44 banked at Stage 1/2 (ADR-0085) · 2026-07-08._
+_Position: post-MVP · ◊5 completeness closed (ADR-0086, `d13e0af`) · edge = #44 banked, gated on the Stage-4 coherence generalization · 2026-07-09._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
@@ -20,7 +20,7 @@ _Position: post-MVP · polymorphism arc closed (`cea8ae2`) · edge = #44 banked 
 | increment gate · banking discipline | days | ✔ caught #44 Stage-2 pre-land |
 | doc fitness (`just fitness` generated legs) | days | ✔ (+ prose-claim leg 2026-07-08) |
 | **— the desk's edge —** | | |
-| CI on main (`.github/workflows/verify.yml`) | per-push | ◑ NEW 2026-07-08 — first runs unproven |
+| CI on main (`.github/workflows/verify.yml`) | per-push | ✔ live — 4 green runs incl. `.lean` builds; 3 real catches (gc posture, changelog fixpoint, guard evasion) before its first green |
 | a user running bang | — | ✘ absent (no LICENSE, no outsider install path) |
 | external review (paper, peers) | — | ✘ absent (◊6 names paper drafts; none started) |
 | performance measurement | — | ✘ absent (invariant #7 defers it; unquantified) |

@@ -63,7 +63,7 @@ proofs that observed behavior equals what the reference semantics says.
 | ◊3 | **CalcVM ported** · **gate ✓ (2026-06-23)** | Calc* machines collapsed into one graded-CBPV calculated machine; `exec ∘ compile ≡ eval` still proven | ✅ gate met: unified `Bang/Backend/AbstractMachine.lean` (pure CBPV + deep handlers/throws + resumptive state + transaction + ADT elims), `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` axiom-clean ⊆ {propext, Classical.choice, Quot.sound}; K2 matrix (8 Calc* + Eval) retired to git history (`87d5aeb`, ADR-0017); 16-case 5-axis diff-test battery (`Agree`, all `rfl`, 0-axiom) green; `just verify` 723 jobs. ◊2 gate held 0-axiom throughout |
 | ◊4 | **LR foundation (non-▷ fragment)** · **gate ✓ scoped (2026-06-24, ADR-0039)** | `lr_fundamental` proven for the **non-▷ fragment** (pure CBPV · functions · non-recursive ADTs · throws); the cohesive **▷-subsystem** (μ fold/unfold · `up` · resumptive state/txn handlers) → **◊4.5**. (`group_recovers` RETIRED — ADR-0032.) | ✅ scoped gate met: `lr_fundamental` reads the real proof, `sorryAx` ONLY from the documented ▷-subsystem; ◊2 (`no_accidental_handling` 0-axiom, STD trusted-three) + ◊3 (CalcVM trusted-three) held; arrow clause = peeling+F-restriction (ADR-0038), closed-value carrier (ADR-0036). `lr_sound_closed` (F-typed) proven; `lr_sound`(arbitrary-C)/`zero_usage` → ◊4.5. `effect_sound` (Q14) → ◊5 |
 | ◊4.5 | **LR ▷-subsystem** · **✓ SCOPED-SEAM LANDED + MERGED into main @ `4c77ba8` (2026-06-24, gated 724 jobs); sorryAx-zero PROBED NO-GO under DYNAMIC dispatch → PIVOT to typed+static (ADR-0045) DISSOLVES the edge** | Answer-typed KrelS rebuild + (g) migration (frozen `Crel:=CrelK`) + `lr_sound` over typed ⊑ + μ fold/unfold + `up` + throws/state/txn resumptive composition ALL closed end-to-end. The resume-through-a-wrap edge is the ONE documented `krelS_splitAt_decomp` sorry (ADR-0026 descent; **ADR-0043**). `NoWrapMiss` predicate banked = the right primitive | **BROAD moat, NOT sorryAx-zero:** `lr_sound`/`lr_fundamental` hold for ALL contexts (incl. state-over-throws + legit stacking) modulo the single documented resume-edge sorry. The cheap typed-CrelK close (Architecture D) was BUILD-PROBED (`typed-crelk-probe@ffac1b0`) and is **NO-GO**: `HasStack` pins the bottom answer but the strip's intermediate `KrelS` hole can't be typed (no `KrelS⇒HasStack` bridge; LR one-way) — D only relocates the leak. Only the heavy index-everything reshape remains (4–7 sessions + frozen break, not worth one edge). **Seam was verified-final FOR THE DYNAMIC KERNEL; ADR-0045 pivots to typed+static dispatch, which DISSOLVES the edge** (build-gated — it was an artifact of dynamic dispatch; see CONTEXT ★ ACTIVE DIRECTION + `paths/archive/PATH-typed-static-pivot.md`). Merged cleanly (only README conflicted → regenerated; ADR-0043 re-frontmattered to the 0042 schema). |
-| ◊5 | **Compiler v0** · **✓ DONE, IN MAIN (`0e5e28d`, 2026-06-24) — trusted-three over ALL handlers, exceeds the trivial-fragment gate** | `compile_forward_sim` proven for a trivial fragment; WasmFX module type concrete | Round-trip test by fragment (corrected 2026-06-23, ADR-0035/0036 recon): **pure-arith** `.bang` → ANY engine incl. wasm3; **one-handler** `.bang` → **Wasmtime** `Config::wasm_stack_switching` (x86-64; wasm3 has NO stack-switching). Pick a **suspend/resume** effect (state/generator) for the tracer, NOT `throws` — `throws` lowers to `resume_throw`, unlanded in Wasmtime (#10248). Same value as `Source.eval`. |
+| ◊5 | **Compiler v0** · **✓ DONE, IN MAIN (`0e5e28d`, 2026-06-24); COMPLETENESS closed 2026-07-09: `compile_forward_sim` sorryAx-ZERO under the ADR-0086 premised re-freeze (`VcapFree ∧ CustomFree`, `d13e0af`)** | `compile_forward_sim` proven for a trivial fragment; WasmFX module type concrete | Round-trip test by fragment (corrected 2026-06-23, ADR-0035/0036 recon): **pure-arith** `.bang` → ANY engine incl. wasm3; **one-handler** `.bang` → **Wasmtime** `Config::wasm_stack_switching` (x86-64; wasm3 has NO stack-switching). Pick a **suspend/resume** effect (state/generator) for the tracer, NOT `throws` — `throws` lowers to `resume_throw`, unlanded in Wasmtime (#10248). Same value as `Source.eval`. |
 | ◊6 | **Release v0** | Three parallel paths from ◊5 converged into a releasable artifact | Public release tag + paper drafts for the theorems (`lr_fundamental`, `compile_forward_sim`, and the ◊4 group-recovery *resolution* — ADR-0032, the theorem itself retired) + **the validation gate** (verification ≠ validation): LICENSE present · ≥1 outsider ran an `examples/` project unassisted · ≥3 outsider-filed issues (the first external feedback loop — see `docs/notes/loop-audit.md`) |
 
 ## Product spine — pulled forward (PRD §7)
@@ -117,8 +117,9 @@ THREE NORTH-STAR TRACKS (each design-first, ≈post-v1; the operator sequences t
         calculated machine + LR + soundness) + furthest-reaching — the current edge (see `CONTEXT.md`).
 
 VERIFICATION COMPLETION (parallel, verification-spine layer)
-  #15 lr_sound ◊4 seam (the one sorryAx-carried headline; design-first) · #17/Q27 resumption
-  grades → compilation strategy · Q21 concurrency (the multikernel) · #16 U5b-handler
+  #15 lr_sound ◊4 seam — OPERATOR-RULED deferred (D-now/A-probe-later, 2026-07-09; PATH-inc5)
+  #16 U5b-handler ✅ CLOSED (ADR-0086 premised re-freeze) · #17/Q27 resumption grades →
+  compilation strategy · Q21 concurrency (the multikernel)
 ```
 
 ### Pratt downstream — ✅ ①②③④ ALL LANDED (this section is now historical)
@@ -260,9 +261,10 @@ lang-bang/                  ← project root (Lean 4 conventions)
 │       ├── spec-handover.md           ← thin-interface framing
 │       └── k2-calculation-playbook.md ← calculation proof patterns
 ├── references/             ← cited papers + refs.bib + index
-└── .claude/agents/         ← domain-specific subagent definitions
-    ├── kernel-engineer.md
-    └── proof-engineer.md   ← (compiler / surface / librarian: defined on activation)
+└── .claude/agents/         ← domain-specific subagent definitions (models pinned in frontmatter)
+    ├── kernel-engineer.md  proof-engineer.md  lean-proof-auditor.md   (opus)
+    ├── compiler-engineer.md (opus) · surface-engineer.md (sonnet)     ← activated 2026-07-09
+    └── (librarian: defined on activation)
 ```
 
 **Amnesiac team model**: a fresh agent reads `CLAUDE.md` → `CONTEXT.md` →

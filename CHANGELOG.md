@@ -66,6 +66,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **kernel** — #44 Stage 1 — Handler.custom rep (the general handler ctor); additive ripple, census stays axiom-clean (`d84aeae`)
 - **gates** — analysis quality gates wired into the lifecycle hooks (`f60472a`)
 - **spec+backend** — compile_forward_sim sorryAx-ZERO — premised re-freeze + completeness spine (ADR-0086, closes #16) (`d13e0af`)
+- **agents** — compiler-engineer + surface-engineer roles; record #15 ruling (D-now/A-later) (`24cc670`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

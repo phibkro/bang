@@ -207,7 +207,7 @@ the big-step denotation of the IDENTITY kernel (dispatch by `splitAtId`-analog, 
 handle), and the bridge headlines `run_evalD` / `sim` / `compile_correct` / `evalD_agrees_source` are
 **axiom-clean on main** (Audit census @ `f826dbc`) — the shadow-program disagreement is resolved, not
 open. What "pending" truthfully denotes is the route-B metatheory **tail**: (i) U5b-handler
-completeness (`compile_forward_sim`'s documented sorryAx — `paths/PATH-inc6-calcvm-route-b.md`),
+completeness (`compile_forward_sim`'s documented sorryAx — `paths/archive/PATH-inc6-calcvm-route-b.md`),
 (ii) the binary-LR re-index (`lr_sound` cluster — `paths/PATH-inc5-lr-reindex.md`), (iii) THIS ADR's
 Stage-2 finding: the coherence layer (`CapLabelCoh`/`FreshCfg`/`capsH`) generalized for `custom` via
 the `VcapFree`-clause invariant. The staging, risk ranking, and D1–D5 are unchanged; only the

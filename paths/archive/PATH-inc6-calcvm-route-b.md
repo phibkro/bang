@@ -1,6 +1,12 @@
-# PATH — inc-6: CalcVM route-B — CORE LANDED; remaining = U5b-handler completeness
+# PATH — inc-6: CalcVM route-B — ✓ COMPLETE (archived 2026-07-09)
 
-> **Status brief.** The ADR-0052 route-B re-derivation is **DONE and on main**: `evalD` is the
+> **✓ CLOSED.** Route-B landed on main AND U5b-handler completeness closed via the ADR-0086
+> premised re-freeze (`d13e0af`): `compile_forward_sim` is sorryAx-ZERO, #16 closed, CI-green.
+> Kept as the method-grounding + do-not-retry archive; the LIVE method pack now lives in
+> `.claude/agents/compiler-engineer.md`. Derivation history: git (`9bcb5ec` and earlier) +
+> archival branches `origin/inc6-u5b2` / `origin/inc6-wirein`.
+
+> **Status brief (as of closing).** The ADR-0052 route-B re-derivation is **DONE and on main**: `evalD` is the
 > big-step denotation of the IDENTITY kernel (mint+subst `vcap` at handle, `g`-threaded,
 > identity-keyed stores), and the bridge headlines `run_evalD` / `sim` / `compile_correct` /
 > `evalD_agrees_source` are **axiom-clean** (Audit census). What this PATH still owns is the ONE

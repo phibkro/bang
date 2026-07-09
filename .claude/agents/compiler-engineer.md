@@ -51,7 +51,7 @@ scaffolding DROPPED at ADR-0085 Stage 4 — a consumer-safe strengthening).
 | `Bang/Backend/Wasm.lean` | the WASM hop: `wexec`, `exec_wexec_sim`, `compile_forward_sim_proof` |
 | `Bang/Backend/U5bComplete.lean` | the converse completeness spine + `CompletesTo` |
 | `Bang/Core/CapCoh.lean` | the coherence carrier + per-step preservation |
-| `paths/PATH-inc6-calcvm-route-b.md` | do-not-retry ledger + method grounding |
+| `paths/archive/PATH-inc6-calcvm-route-b.md` | do-not-retry ledger + method grounding (✓ archived) |
 | `docs/decisions/0052/0085/0086` | dispatch-is-lexical · custom coexist · the premised re-freeze |
 
 # Constraints (hard — never violate)

@@ -34,11 +34,12 @@ untouched — the ADR-0085 additive-ripple bet CONFIRMED at the kernel). custom 
 SEMANTICS + typed-soundness PROVEN-IN-ISOLATION but BANKED/DEFERRED** (WIP `origin/gh44s2`; ADR-0085 status has the
 full finding). Dispatch+one-shot-resume works (custom→106, abort→42), trusted-three vacuous-clean — BUT the coexist
 rep's opaque clause map (`OpId → Option Comp`) defeats `capsH`'s cap-collection, so landing it regresses the CLEAN
-CalcVM coherence headlines (`run_evalD`/`sim`). **Precision on what's pending (route-B ADR-0052 itself LANDED — main's
-machine IS identity-keyed, bridge headlines axiom-clean):** the open metatheory is (i) the machine coherence layer
-(`CapLabelCoh`/`FreshCfg`/`capsH`) generalized for `custom` via a `VcapFree`-clause invariant, (ii) U5b-handler
-completeness (`compile_forward_sim`, PATH-inc6), (iii) the binary-LR re-index (`lr_sound`, PATH-inc5). **⟹ the
-running-user-effect milestone is GATED on that tail (≈ Stage 4), a future DEDICATED arc — not a quick 1→2→3.**
+CalcVM coherence headlines (`run_evalD`/`sim`). **The route-B metatheory tail has SHRUNK to one item:** U5b-handler
+completeness is DONE (`compile_forward_sim` sorryAx-ZERO under the ADR-0086 premised re-freeze, `d13e0af`; #16 closed)
+and the binary-LR re-index is operator-ruled DEFERRED (#15: D-now/A-probe-later, PATH-inc5). What remains for #44 is
+exactly (i): the machine coherence layer (`CapLabelCoh`/`FreshCfg`/`capsH`) generalized for `custom` via a
+`VcapFree`-clause invariant — `CustomFree` (ADR-0086 scaffolding, `Bang/Core/Freshness.lean`) is machinery Stage 4
+inherits then retires. **⟹ the running-user-effect milestone is GATED on that (≈ Stage 4), a DEDICATED arc.**
 Operator BANKED here (2026-07-08). **RESUME #44 from `origin/gh44s2`:** design-first ADR for the VcapFree-clause
 invariant threading, then Stages 3(typing)→4(calc-machine)→5(LR)→6(soundness)→7(surface). The IO/net prong
 (ADR-0084) waits on this.
@@ -54,7 +55,7 @@ Active edge: **#44 / ADR-0085** (banked; no separate PATH — tracked in the ADR
 | the ◊ checkpoint map | `ROADMAP.md` |
 | decisions (why-we-chose-X) | `docs/decisions/` (generated `README.md` index) |
 | in-flight work | `paths/PATH-*.md` |
-| deferred proof-spine (◊4 `lr_sound` seam · ◊5 U5b-handler) | `paths/PATH-inc5-lr-reindex.md` · `paths/PATH-inc6-calcvm-route-b.md` |
+| deferred proof-spine (◊4 `lr_sound` seam — #15 ruled D-now/A-later) | `paths/PATH-inc5-lr-reindex.md` |
 | deferred design questions | `docs/notes/OPEN_QUESTIONS.md` (generated ledger) |
 | subagent roles | `.claude/agents/` |
 | what's-open (issues, milestones) | GitHub Issues — github.com/phibkro/bang |

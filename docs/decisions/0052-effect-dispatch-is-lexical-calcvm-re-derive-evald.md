@@ -38,7 +38,7 @@ The cost (accepted): a multi-session Bahr–Hutton re-derivation touching the re
 
 ## Amendment (2026-06-28, inc-6 prologue — scope corrected, decision unchanged)
 
-The **decision stands** (dispatch is lexical; re-derive `evalD` cap-keyed). Two corrections from the build-arbitrated inc-6 scoping (ke-calcvm-scope, manager-gated; full scope + unit plan in `paths/PATH-inc6-calcvm-route-b.md`):
+The **decision stands** (dispatch is lexical; re-derive `evalD` cap-keyed). Two corrections from the build-arbitrated inc-6 scoping (ke-calcvm-scope, manager-gated; full scope + unit plan in `paths/archive/PATH-inc6-calcvm-route-b.md`):
 
 1. **Target kernel = IDENTITY, not absolute caps.** The Sequencing's "absolute-caps migration (ADR-0053) first" is moot — ADR-0053 was **superseded by ADR-0054/0055** (handler reference by generative identity + global-fresh). route-B now re-derives `evalD` against the **identity** kernel: dispatch by the generative id `n` (mirroring the green `idDispatch`/`splitAtId`, Operational.lean:284/374), not a level/cap integer.
 
