@@ -214,12 +214,21 @@ def splitLetCmd (s : String) : Option (String × String) := Id.run do
 /-- REPL help text for `:help`/`:?`. -/
 def replHelp : String :=
   "commands:\n" ++
-  "  :t <expr>, :type <expr>   NOT YET SUPPORTED — see the missing-hook note (Main.lean)\n" ++
+  "  :t <expr>, :type <expr>   show the checked type ! effect row of <expr>\n" ++
   "  :let <name> = <expr>      persist a definition for the rest of the session\n" ++
   "  :load <file>              run a file's contents as one turn (not persisted)\n" ++
   "  :help, :?                 this text\n" ++
   "  :q, :quit                 exit (also Ctrl-D / EOF)\n" ++
   "  <expr>                    evaluate against all persisted definitions and print the result"
+
+/-- `:t <expr>` / `:type <expr>` — strip the recognized prefix, returning the tail (may be empty,
+which the caller reports as a usage error). `":t"`/`":type"` are matched as exact prefixes (not
+`startsWith ":t"`, which would also swallow `:type` under the shorter alias) so each reports its
+OWN leftover tail correctly. -/
+def stripTPrefix (line : String) : Option String :=
+  if line.startsWith ":type" then some ((line.drop 5).toString.trimAscii.toString)
+  else if line.startsWith ":t" then some ((line.drop 2).toString.trimAscii.toString)
+  else none
 
 /-- Evaluate one line of REPL input against the accumulated bindings, returning the (possibly
 updated) bindings and the exit code of whatever ran (`0` for a silent `:let`/`:help`/comment/blank
@@ -233,9 +242,12 @@ def replStep (typecheck compiled : Bool) (binds : List ReplBinding) (line : Stri
     return (binds, 0)  -- caller checks for this via the sentinel below; see runRepl
   else if line == ":help" || line == ":?" then
     IO.println replHelp; return (binds, 0)
-  else if line.startsWith ":t" then
-    IO.eprintln "error: `:t` needs a public type-display export from Bang.Frontend.TypeCheck (displayProg/showType are not `public` in this module) — not yet wired, see Main.lean's REPL header comment"
-    return (binds, 1)
+  else if let some tail := stripTPrefix line then
+    if tail.isEmpty then
+      IO.eprintln "error: `:t`/`:type` expects `:t <expr>`"; return (binds, 1)
+    else match Bang.TypeCheck.typeStringOfProg (wrapBindings binds tail) with
+    | .ok tyStr  => IO.println tyStr; return (binds, 0)
+    | .error msg => IO.eprintln s!"error: {msg}"; return (binds, 1)
   else if line.startsWith ":load" then
     let path := (line.drop 5).toString.trimAscii.toString
     if path.isEmpty then
