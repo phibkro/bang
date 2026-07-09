@@ -202,6 +202,17 @@ inductive Surf where
   -- ── ADR-0073 (recursion) ──
   | letRecS : String → Ty → Surf → Surf → Surf       -- let rec f : T = <fun> in <body>  (μ-knot; DESUGARED in elabS, typed-path only)
   | divMark : Surf → Surf                             -- INTERNAL (#46): adds {divLabel} to the wrapped computation's row; RUNTIME no-op (lowers to its child)
+  -- ── issue #68 (multi-binding let sugar) ──
+  | lettMulti : LetBindings → Surf → Surf
+    -- let x = e1; y = e2; … in body  — a SUGAR MARKER (like `divMark`): semantically transparent
+    -- everywhere except the PRINTER, which uses it to distinguish "the author wrote `;`-sugar"
+    -- from "the author wrote out a nested `let..in` chain by hand" (the operator's #68 ruling: fmt
+    -- prints the sugar for sugar-parsed input, but does NOT auto-collapse a hand-written chain —
+    -- and once desugared to plain nested `.lett`, that distinction has NO surviving signal, so the
+    -- marker IS the signal). `desugarLettMulti` (below) turns it into the identical nested `.lett`
+    -- chain a hand-written pyramid produces; every OTHER consumer (lowering, the typed elaborator,
+    -- qualification/renaming passes) calls that FIRST and never pattern-matches `.lettMulti` itself
+    -- — the parser produces it, the printer consumes it directly, everything in between erases it.
 
 /-- A cap-op argument list, capped at the v1 arity (≤ 2: `write` is the only binary op). A mutual
 inductive (not `List Surf`) so `Surf`'s `DecidableEq`/`Repr` derive — the `DArms` precedent. -/
@@ -215,14 +226,96 @@ inductive SurfArgs where
 inductive DArms where
   | nil  : DArms
   | cons : String → List String → Surf → DArms → DArms
+
+/-- The `;`-separated binding list of issue #68's multi-binding `let` sugar — a `Surf`-mutual list
+(the SAME reason `DArms` is one, not `List (String × Surf)`): keeps `Surf`'s `DecidableEq`/`Repr`
+derivations straightforward. ORDER is binding order (`cons` prepends the FIRST-parsed binding at
+the head — see `toLetBindings`), matching how `desugarLettMulti`'s `foldr`-equivalent nests them. -/
+inductive LetBindings where
+  | nil  : LetBindings
+  | cons : String → Surf → LetBindings → LetBindings
 end
 
-deriving instance Repr, Inhabited, DecidableEq for Surf, DArms, SurfArgs
+deriving instance Repr, Inhabited, DecidableEq for Surf, DArms, SurfArgs, LetBindings
 
 /-- Pack parsed match arms into `DArms` (the parser's list shape → the AST's mutual shape). -/
 def toDArms : List (String × List String × Surf) → DArms
   | []                => .nil
   | (c, bs, b) :: r   => .cons c bs b (toDArms r)
+
+/-- Pack the parser's `List (String × Surf)` binding list into the mutual-inductive `LetBindings`
+shape (the `toDArms` precedent, same reason). -/
+def toLetBindings : List (String × Surf) → LetBindings
+  | []            => .nil
+  | (n, e) :: r   => .cons n e (toLetBindings r)
+
+/-- Desugar `.lettMulti binds body` to the IDENTICAL nested `.lett` chain a hand-written
+`let x = e1 in let y = e2 in … in body` already produces — a ONE-LEVEL unfold (does NOT itself
+recurse into `binds`'s/`body`'s own sub-trees; `eraseLettMulti` below is the FULL tree-wide pass
+that ALSO uses this at the leaf). -/
+def desugarLettMulti : LetBindings → Surf → Surf
+  | .nil,          body => body
+  | .cons n e rest, body => .lett n e (desugarLettMulti rest body)
+
+#guard desugarLettMulti .nil (.var "body") == .var "body"
+#guard desugarLettMulti (.cons "x" (.lit 3) .nil) (.var "x") == .lett "x" (.lit 3) (.var "x")
+#guard desugarLettMulti (.cons "x" (.lit 3) (.cons "y" (.lit 4) .nil)) (.var "x")
+  == .lett "x" (.lit 3) (.lett "y" (.lit 4) (.var "x"))
+
+-- The FULL tree-wide erasure of lettMulti (issue #68).
+mutual
+def eraseLettMulti : Surf → Surf
+  | .lit n       => .lit n
+  | .var x       => .var x
+  | .thunk e     => .thunk (eraseLettMulti e)
+  | .force e     => .force (eraseLettMulti e)
+  | .lett n a b  => .lett n (eraseLettMulti a) (eraseLettMulti b)
+  | .lam n e     => .lam n (eraseLettMulti e)
+  | .app a b     => .app (eraseLettMulti a) (eraseLettMulti b)
+  | .raise e     => .raise (eraseLettMulti e)
+  | .handle e    => .handle (eraseLettMulti e)
+  | .getS        => .getS
+  | .putS e      => .putS (eraseLettMulti e)
+  | .stateS a b  => .stateS (eraseLettMulti a) (eraseLettMulti b)
+  | .atomS e     => .atomS (eraseLettMulti e)
+  | .newS e      => .newS (eraseLettMulti e)
+  | .readS e     => .readS (eraseLettMulti e)
+  | .writeS a b  => .writeS (eraseLettMulti a) (eraseLettMulti b)
+  | .inlS e      => .inlS (eraseLettMulti e)
+  | .inrS e      => .inrS (eraseLettMulti e)
+  | .pairS a b   => .pairS (eraseLettMulti a) (eraseLettMulti b)
+  | .matchS s lx e1 ry e2 => .matchS (eraseLettMulti s) lx (eraseLettMulti e1) ry (eraseLettMulti e2)
+  | .splitS a b p body    => .splitS a b (eraseLettMulti p) (eraseLettMulti body)
+  | .binopS op a b => .binopS op (eraseLettMulti a) (eraseLettMulti b)
+  | .ifS c t e     => .ifS (eraseLettMulti c) (eraseLettMulti t) (eraseLettMulti e)
+  | .annotS e t    => .annotS (eraseLettMulti e) t
+  | .unitS         => .unitS
+  | .foldS e       => .foldS (eraseLettMulti e)
+  | .unfoldS e     => .unfoldS (eraseLettMulti e)
+  | .matchD s arms => .matchD (eraseLettMulti s) (eraseLettMultiDArms arms)
+  | .withCapS k i n b => .withCapS k (eraseLettMulti i) n (eraseLettMulti b)
+  | .dotPerform r op .none      => .dotPerform (eraseLettMulti r) op .none
+  | .dotPerform r op (.one a)   => .dotPerform (eraseLettMulti r) op (.one (eraseLettMulti a))
+  | .dotPerform r op (.two a b) => .dotPerform (eraseLettMulti r) op (.two (eraseLettMulti a) (eraseLettMulti b))
+  | .letRecS n t f b => .letRecS n t (eraseLettMulti f) (eraseLettMulti b)
+  | .divMark e     => .divMark (eraseLettMulti e)
+  | .lettMulti binds body => desugarLettMulti (eraseLettMultiBindings binds) (eraseLettMulti body)
+def eraseLettMultiDArms : DArms → DArms
+  | .nil              => .nil
+  | .cons c ps b rest  => .cons c ps (eraseLettMulti b) (eraseLettMultiDArms rest)
+def eraseLettMultiBindings : LetBindings → LetBindings
+  | .nil            => .nil
+  | .cons n e rest  => .cons n (eraseLettMulti e) (eraseLettMultiBindings rest)
+end
+
+#guard eraseLettMulti (.lit 3) == .lit 3
+#guard eraseLettMulti (.lettMulti (.cons "x" (.lit 3) (.cons "y" (.lit 4) .nil)) (.var "x"))
+  == .lett "x" (.lit 3) (.lett "y" (.lit 4) (.var "x"))
+-- a NESTED occurrence (inside a `fun` body, not at the tree root) is ALSO erased.
+#guard eraseLettMulti (.lam "z" (.lettMulti (.cons "x" (.lit 3) (.cons "y" (.lit 4) .nil)) (.var "x")))
+  == .lam "z" (.lett "x" (.lit 3) (.lett "y" (.lit 4) (.var "x")))
+-- a plain single-binding `.lett` (never sugar) passes through UNCHANGED.
+#guard eraseLettMulti (.lett "x" (.lit 3) (.var "x")) == .lett "x" (.lit 3) (.var "x")
 
 
 /-! ## 2. Lowering `Surf → Comp` (the name→de-Bruijn pass)
@@ -397,6 +490,17 @@ def lowerC (env : List String) : Surf → Except String Comp
   | .matchD .. => .error "named match needs the typed path (data declarations, ADR-0069) — run via checkProg/runTyped"
   | .letRecS .. => .error "let rec needs the typed path (μ-encoded recursion, ADR-0073) — run via checkProg/runTyped"
   | .divMark e => lowerC env e   -- #46: Div is a pure TYPING marker (no runtime semantics) — erase it
+  -- `.lettMulti` (issue #68) should NEVER reach `lowerC`: every entry point (`lower` below,
+  -- `elabProg`) calls `eraseLettMulti` FIRST, resolving every occurrence (root or nested) to plain
+  -- `.lett` chains before lowering/elaboration ever runs — matching `letRecS`/`matchD`'s own
+  -- "needs the typed/pre-pass path" fail-loud convention immediately above. Calling `lowerC`
+  -- recursively on the desugared term from INSIDE `lowerC`'s own match was tried first and
+  -- rejected: Lean's structural-recursion checker can't see the desugared output as a subterm of
+  -- the `.lettMulti` input, which pushed the WHOLE mutual group to well-founded recursion — that
+  -- broke the file's `rfl`-based Stage-1b pinning examples (well-founded output doesn't reduce
+  -- definitionally the way structural-recursion output does). Pre-erasing at the entry point
+  -- keeps `lowerC` itself simple structural recursion, untouched.
+  | .lettMulti .. => .error "unreachable: .lettMulti must be pre-erased by eraseLettMulti before lowering (issue #68)"
   -- ── ADR-0070 (named capabilities) — `with` reuses the handler lowering with a USER name where the
   -- sentinel went; `h.op` is `perform (vvar h) op arg` (args A-normalized like the ambient ops). ──
   | .withCapS "state" init name body => do
@@ -445,8 +549,11 @@ def lowerV (env : List String) : Surf → Except String Val
   | _           => .error "expected a value (wrap a computation in braces)"
 end
 
-/-- Lower a closed surface program. -/
-def lower (e : Surf) : Except String Comp := lowerC [] e
+/-- Lower a closed surface program. `eraseLettMulti` FIRST (issue #68): resolves every `.lettMulti`
+sugar marker — root or nested — to plain `.lett` chains before `lowerC` ever runs (see its own
+`.lettMulti` arm's doc comment for why lowering can't handle the marker directly). A no-op on any
+tree with no sugar in it (the overwhelmingly common case), so this adds no observable cost there. -/
+def lower (e : Surf) : Except String Comp := lowerC [] (eraseLettMulti e)
 
 
 /-! ## 3. Minimal parser `String → Except String Surf`
@@ -814,7 +921,12 @@ def pExpr : Nat → P Surf
       let (bindings, ts) ← pLetBindings f ts
       let (_, ts) ← expect "in" ts
       let (body, ts) ← pExpr f ts
-      .ok (((name, e) :: bindings).foldr (fun (n, e') acc => .lett n e' acc) body, ts)
+      -- `bindings = []` (no `;`) is the PLAIN single-binding form — was never sugar, stays a bare
+      -- `.lett` exactly as before #68 (zero behavior change for the overwhelmingly common case,
+      -- and the printer never needs to special-case it). Only a NON-EMPTY tail is the sugar marker.
+      match bindings with
+      | [] => .ok (.lett name e body, ts)
+      | _  => .ok (.lettMulti (toLetBindings ((name, e) :: bindings)) body, ts)
   | f + 1, "match" :: ts => do           -- match s { arms } — anonymous sums (Left/Right → matchS)
       let (s, ts) ← pAtom f ts            -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
       let (_, ts) ← expect "{" ts
@@ -1802,6 +1914,31 @@ def parseProgE (src : String) : Except PErr Prog := do
 
 def parseProg (src : String) : Except String Prog := (parseProgE src).mapError (·.msg)
 
+/-- Erase `.lettMulti` (issue #68) from EVERY `Surf`-carrying field of a `Decl` — the `Decl`-level
+sibling of `eraseLettMulti`, mirroring `TypeCheck.lean`'s `qualifyDeclBody`'s exact per-variant
+walk (the proven precedent for "map a `Surf`-recursive pass over every `Decl` field"). Needed
+because a top-level `let`/`trait`/`impl`/`fn` decl's OWN bound expression can equally contain the
+sugar, not just a program's trailing body. -/
+def eraseLettMultiDecl : Decl → Decl
+  | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := eraseLettMulti l.body }))
+  | .implD n t ops        => .implD n t (ops.map (fun o => { o with body := eraseLettMulti o.body }))
+  | .dataD n ps cs        => .dataD n ps cs
+  | .effectD n ops        => .effectD n ops
+  | .fnD n ps ty tr tv b  => .fnD n ps ty tr tv (eraseLettMulti b)
+  | .letD n ty e          => .letD n ty (eraseLettMulti e)
+  | .letRecD n t e        => .letRecD n t (eraseLettMulti e)
+
+/-- Erase `.lettMulti` from a WHOLE parsed `Prog` — every decl's body (`eraseLettMultiDecl`) plus
+the program's own trailing `body`. The ONE place this runs for the typed pipeline: `elabProg`'s
+very first line (`Bang.Frontend.TypeCheck`), before `foldLetDecls`/`expandBFns`/`elabS`/qualification
+ever see the tree — so none of THOSE functions need their own `.lettMulti` arm; they only ever
+see the sugar already resolved, matching `letRecS`/`matchD`'s "should be pre-resolved" convention. -/
+def eraseLettMultiProg (p : Prog) : Prog :=
+  { p with decls := p.decls.map eraseLettMultiDecl, body := eraseLettMulti p.body }
+
+#guard (eraseLettMultiProg { decls := [.letD "x" none (.lettMulti (.cons "a" (.lit 1) (.cons "b" (.lit 2) .nil)) (.binopS .add (.var "a") (.var "b")))], body := .lit 0, isLibrary := true }).decls
+  == [.letD "x" none (.lett "a" (.lit 1) (.lett "b" (.lit 2) (.binopS .add (.var "a") (.var "b"))))]
+
 /-- VIEW: the FULLY-located PROGRAM parse — the decl-aware sibling of `parseLocated`. Resolves each
 `parseProgE` error to `(message, Span)` via `spanOfRest` (`parseProgE` tokenizes with `tokenize`, the
 exact list `spanOfRest` indexes). PUBLIC: the `bang` CLI parses through this so a syntax error prints
@@ -2243,12 +2380,21 @@ def parsesTo (src : String) (e : Surf) : Bool :=
   | .error _ => false
 
 #guard parsesTo "let x = 3 in x" (.lett "x" (.lit 3) (.var "x"))
--- MULTI-BINDING LET SUGAR (issue #68): `let x = e1; y = e2 in body` desugars to the IDENTICAL
--- nested `.lett` chain a hand-written `let x = e1 in let y = e2 in body` produces — tree-checked,
--- not just parse-success, so a future regression that silently changes the nesting order (or
--- picks a DIFFERENT desugaring, e.g. a new AST node) is caught here.
-#guard parsesTo "let x = 3; y = 4 in x + y" (.lett "x" (.lit 3) (.lett "y" (.lit 4) (.binopS .add (.var "x") (.var "y"))))
-#guard parsesTo "let a = 1; b = 2; c = 3 in a" (.lett "a" (.lit 1) (.lett "b" (.lit 2) (.lett "c" (.lit 3) (.var "a"))))
+-- MULTI-BINDING LET SUGAR (issue #68): `let x = e1; y = e2 in body` parses to `.lettMulti` — the
+-- SUGAR MARKER (not a bare `.lett` chain), which is what lets `bang fmt` distinguish it from a
+-- hand-written nested chain (the operator's ruling). Tree-checked, not just parse-success.
+#guard parsesTo "let x = 3; y = 4 in x + y"
+  (.lettMulti (.cons "x" (.lit 3) (.cons "y" (.lit 4) .nil)) (.binopS .add (.var "x") (.var "y")))
+#guard parsesTo "let a = 1; b = 2; c = 3 in a"
+  (.lettMulti (.cons "a" (.lit 1) (.cons "b" (.lit 2) (.cons "c" (.lit 3) .nil))) (.var "a"))
+-- `eraseLettMulti` recovers the IDENTICAL nested `.lett` chain a hand-written pyramid produces —
+-- the semantic-equivalence half of the guard (every consumer but the printer sees THIS shape).
+#guard (match parse "let x = 3; y = 4 in x + y" with
+        | .ok e => eraseLettMulti e == .lett "x" (.lit 3) (.lett "y" (.lit 4) (.binopS .add (.var "x") (.var "y")))
+        | .error _ => false)
+#guard (match parse "let a = 1; b = 2; c = 3 in a" with
+        | .ok e => eraseLettMulti e == .lett "a" (.lit 1) (.lett "b" (.lit 2) (.lett "c" (.lit 3) (.var "a")))
+        | .error _ => false)
 -- the n=1 case (no `;`) parses to the SAME tree the plain single-binding form always has —
 -- confirms the sugar's base case did not accidentally change existing behavior.
 #guard runYieldsInt 20 "let x = 3; y = 4 in x + y" 7

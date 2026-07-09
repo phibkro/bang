@@ -1080,6 +1080,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
                      | _     => throw s!"unfold: not a μ value{nameHint b}"
   | .matchD .. => throw "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
   | .letRecS .. => throw "let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (ADR-0073)"
+  | .lettMulti .. => throw "let-sugar (`;`) is erased by elabProg — reaching the checker means elabProg didn't run (issue #68)"
   | .divMark e => do let (B, φ) ← synthSC Γ e; return (B, ← insertRow bigFuel divLabel φ)  -- #46: mark the row divergent
   -- ── ADR-0070 (named capabilities) ──
   | .withCapS kind init name body => do
@@ -1865,6 +1866,7 @@ def structOKRest (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : N
       structOK fuel name slots targetIdx recv && structOKArgs fuel name slots targetIdx args
   | .letRecS gname _ fb bd =>                     -- nested let rec: a re-bound `gname` shadows our name
       gname != name && structOK fuel name slots targetIdx fb && structOK fuel name slots targetIdx bd
+  | .lettMulti .. => false  -- unreachable in practice (elabProg erases #68's sugar first); refuse to certify (soundness > completeness)
 /-- Per-arm structural check: a matchable scrutinee (`sm`) makes each arm's pattern binders strict
 subterms of the parameter; a non-matchable one only shadows them. -/
 def structOKArms (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) (sm : Bool) :
@@ -2194,6 +2196,7 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   | f + 1, .letRecS n t fn b => do return .letRecS n t (← expandBFns env carrier? f fn) (← expandBFns env carrier? f b)
   | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env carrier? f recv) op (← expandArgs env carrier? f args)
   | f + 1, .matchD s arms => do return .matchD (← expandBFns env carrier? f s) (← expandArms env carrier? f arms)
+  | f + 1, .lettMulti binds b => do return .lettMulti (← expandLetBindings env carrier? f binds) (← expandBFns env carrier? f b)
   | f + 1, .annotS e t => do
       -- HKT (ADR-0082): a higher-kinded METHOD call `(fmap inc x : Option Int)` — the result annotation
       -- fixes the carrier constructor (`f := Option`), so we resolve the `Functor Option` impl and SPLICE
@@ -2261,6 +2264,12 @@ def expandArms (env : ElabEnv) (carrier? : Option String) : Nat → DArms → Ex
   | 0,     _             => .error "bounded-fn expansion out of fuel"
   | _ + 1, .nil          => .ok .nil
   | f + 1, .cons c bs b r => do return .cons c bs (← expandBFns env carrier? f b) (← expandArms env carrier? f r)
+
+/-- `LetBindings` expansion (issue #68's `;`-binding list). -/
+def expandLetBindings (env : ElabEnv) (carrier? : Option String) : Nat → LetBindings → Except String LetBindings
+  | 0,     _              => .error "bounded-fn expansion out of fuel"
+  | _ + 1, .nil           => .ok .nil
+  | f + 1, .cons n e rest => do return .cons n (← expandBFns env carrier? f e) (← expandLetBindings env carrier? f rest)
 end
 
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
@@ -2388,6 +2397,8 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       .error "let rec requires a function literal: `let rec f : T = fun x => … in …` (ADR-0073)"
   | _, .divMark _ =>
       .error "divMark is internal (#46 let rec Div-marker) — it is EMITTED by the elaborator, never received"
+  | _, .lettMulti .. =>
+      .error "let-sugar (`;`, issue #68) is erased by elabProg before elabS ever runs — reaching here is a bug"
   | Γ, .lett x e b  => do
       let e' ← elabS env Γ e
       match elabBind Γ e' with                 -- report the RHS's REAL error, not a downstream unbound (#41)
@@ -2760,9 +2771,13 @@ def surfUsesVar (nm : String) : Surf → Bool
   | .dotPerform r _ (.one a)       => surfUsesVar nm r || surfUsesVar nm a
   | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
   | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
+  | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
 def dArmsUseVar (nm : String) : DArms → Bool
   | .nil            => false
   | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
+def letBindingsUseVar (nm : String) : LetBindings → Bool
+  | .nil            => false
+  | .cons _ e rest  => surfUsesVar nm e || letBindingsUseVar nm rest
 end
 
 /-- The GENERIC-prelude functions (`genericPrelude` types + the built-in sum `Either`, ADR-0081
@@ -2888,10 +2903,32 @@ def qualifyVars (modName : String) (names : List String) : Surf → Surf
   | .letRecS n t f b => if names.contains n then .letRecS n t f b
                          else .letRecS n t (qualifyVars modName names f) (qualifyVars modName names b)
   | .divMark e     => .divMark (qualifyVars modName names e)
+  | .lettMulti binds b =>
+      -- issue #68: SEQUENTIAL shadowing through the `;`-chain — mirrors `.lett`'s OWN rule (a
+      -- binding matching one of `names` shadows it for everything AFTER, including `b`), just
+      -- threaded across `LetBindings.cons` instead of nested `.lett`s. `qualifyLetBindingsVars`
+      -- returns whether ANY binding shadowed (⟹ stop qualifying `b`, matching `.lett`'s own arm).
+      let (binds', shadowed) := qualifyLetBindingsVars modName names binds
+      .lettMulti binds' (if shadowed then b else qualifyVars modName names b)
 def qualifyDArmsVars (modName : String) (names : List String) : DArms → DArms
   | .nil              => .nil
   | .cons c ps b rest =>
       .cons c ps (if ps.any names.contains then b else qualifyVars modName names b) (qualifyDArmsVars modName names rest)
+/-- Qualify a `;`-binding chain (issue #68), threading shadowing sequentially: once a binding's
+name matches one of `names`, EVERY later binding's RHS (and the eventual body) stops being
+qualified — mirroring `.lett`'s own "shadowed past `n`" rule, applied binding-by-binding. Each
+binding's OWN RHS `e` is always qualified (it is evaluated in the OUTER scope, before its own
+name is bound — the same reading `.lett`'s `a` gets). Returns the qualified chain plus whether
+shadowing was ever triggered (the caller uses this to decide `body`'s own qualification, matching
+`.lett`'s `if names.contains n then … b … else …`). -/
+def qualifyLetBindingsVars (modName : String) (names : List String) : LetBindings → LetBindings × Bool
+  | .nil            => (.nil, false)
+  | .cons n e rest  =>
+      let e' := qualifyVars modName names e
+      if names.contains n then (.cons n e' rest, true)   -- shadowed from HERE on: rest stays UNqualified
+      else
+        let (rest', shadowed) := qualifyLetBindingsVars modName names rest
+        (.cons n e' rest', shadowed)
 end
 
 /-! Rename a `Ty.tName`/`Ty.tApp` occurrence of an imported `data` type to its qualified form
@@ -3067,6 +3104,7 @@ def qualifyDotAccess (imports : List String) (ctorOwners : List (String × Strin
   | .withCapS k i n b           => .withCapS k (qualifyDotAccess imports ctorOwners qTy i) n (qualifyDotAccess imports ctorOwners qTy b)
   | .letRecS n t f b            => .letRecS n (qTy t) (qualifyDotAccess imports ctorOwners qTy f) (qualifyDotAccess imports ctorOwners qTy b)
   | .divMark e                  => .divMark (qualifyDotAccess imports ctorOwners qTy e)
+  | .lettMulti binds b           => .lettMulti (qualifyLetBindingsAccess imports ctorOwners qTy binds) (qualifyDotAccess imports ctorOwners qTy b)
 def qualifyDotAccessArgs (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : SurfArgs → SurfArgs
   | .none      => .none
   | .one a     => .one (qualifyDotAccess imports ctorOwners qTy a)
@@ -3078,6 +3116,9 @@ def qualifyDArmsAccess (imports : List String) (ctorOwners : List (String × Str
         | some modName => qualifyName modName c
         | none         => c
       .cons c' ps (qualifyDotAccess imports ctorOwners qTy b) (qualifyDArmsAccess imports ctorOwners qTy rest)
+def qualifyLetBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : LetBindings → LetBindings
+  | .nil            => .nil
+  | .cons n e rest  => .cons n (qualifyDotAccess imports ctorOwners qTy e) (qualifyLetBindingsAccess imports ctorOwners qTy rest)
 end
 
 /-- Rewrite a MODULE's OWN bare qualified access (`Json.JNull`) to ITS OWN imports/uses, BEFORE
@@ -3236,8 +3277,18 @@ def foldLetDecls (ds : List Decl) (tail : Surf) : List Decl × Surf :=
 the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the type-checker's
 `.dotPerform` arm needs the program's user-effect table to resolve a `perform` against a declared
 `effect`'s op, and `synthSC`/`checkSC` have no separate `ElabEnv` parameter (see `USt.effects`'s
-comment) — so `elabProg`'s caller threads the pair into `runInferC`. -/
+comment) — so `elabProg`'s caller threads the pair into `runInferC`.
+
+`eraseLettMultiProg` FIRST (issue #68): resolves every `.lettMulti` sugar marker — in any decl's
+body or the program's own trailing body — to plain `.lett` chains before ANY of `foldLetDecls`/
+`expandBFns`/`elabS`/qualification ever run. This is why none of those functions (nor `synthSC`/
+`structOKRest`) have their own `.lettMulti` arm: by the time they see a real program, there is
+none left in the tree (matching `letRecS`/`matchD`'s own "pre-resolved, reaching here is a bug"
+convention) — only `Bang.Format` (the printer) and the module-qualification passes that run
+BEFORE this (`qualifyVars`/`qualifyDotAccess`/`surfUsesVar`, on raw per-file `Surf` before
+`mergeModules` hands a merged `Prog` here) need to see through the marker transparently. -/
 def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) := do
+  let p := Bang.Surface.eraseLettMultiProg p
   let (nonLetDecls, foldedBody) := foldLetDecls p.decls p.body
   let declared := nonLetDecls.filterMap (fun | .dataD n _ _ => some n | _ => none)
   let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)

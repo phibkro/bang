@@ -255,6 +255,15 @@ partial def fmtSurf (need : SPrec) : Surf → Format
       fParenIf need .cmp <|
         Format.group (nestD (Format.text s!"let {x} = " ++ fmtSurf .cmp e ++ Format.line ++ Format.text "in")
           ++ Format.line) ++ fmtSurf .cmp b
+  -- MULTI-BINDING LET SUGAR (issue #68): `.lettMulti` is the SUGAR MARKER, printed BACK as
+  -- `;`-sugar — one `let` keyword, one binding per line (`; ` joins them), THEN `in` — the whole
+  -- point of the marker existing: a hand-written nested `let..in` chain never carries it (it's
+  -- always plain `.lett`, printed by the arm above), so fmt can print sugar for sugar-parsed
+  -- input WITHOUT auto-collapsing a hand-written chain into it (the operator's #68 ruling).
+  | .lettMulti binds b =>
+      fParenIf need .cmp <|
+        Format.group (nestD (Format.text "let " ++ fmtLetBindings binds ++ Format.line ++ Format.text "in")
+          ++ Format.line) ++ fmtSurf .cmp b
   | .lam x b    =>
       fParenIf need .cmp <|
         Format.group (Format.text s!"fun {x} =>" ++ nestD (Format.line ++ fmtSurf .cmp b))
@@ -360,6 +369,13 @@ partial def fmtSurf (need : SPrec) : Surf → Format
         Format.group (nestD (Format.text s!"let rec {f} : {showTy ty} = " ++ fmtSurf .cmp body ++ Format.line ++ Format.text "in")
           ++ Format.line) ++ fmtSurf .cmp b
   | .divMark e => fmtSurf need e                                          -- INTERNAL marker; transparent to printing
+/-- `.lettMulti`'s `;`-separated binding list (issue #68): `x = e1; y = e2; …`, ONE line, joined
+by `; ` (not one-per-line — the whole point of the sugar is compactness; contrast the EXPANDED
+`.lett` chain's one-`let..in`-per-line convention above). -/
+partial def fmtLetBindings : LetBindings → Format
+  | .nil               => Format.nil
+  | .cons n e .nil      => Format.text s!"{n} = " ++ fmtSurf .cmp e
+  | .cons n e rest      => Format.text s!"{n} = " ++ fmtSurf .cmp e ++ Format.text "; " ++ fmtLetBindings rest
 /-- One `matchD` arm as a `Format` document (no trailing separator — `fmtCommaGroup`'s `joinSep`
 supplies `,` + line between arms, matching D2's "one arm per line"). -/
 partial def fmtDArm : String → List String → Surf → Format
@@ -786,3 +802,22 @@ open Bang.Format in
 -- the OPTIONAL type ascription on plain `let` (D5 ruling point (c)) round-trips too.
 open Bang.Format in
 #guard roundTripsOn "let x : Int = 3" && idempotentOn "let x : Int = 3"
+
+/-! ### Multi-binding `let` sugar (issue #68): fmt PRINTS the sugar for sugar-parsed input, does
+NOT auto-collapse a hand-written chain — the operator's exact ruling, verified here (not just
+documented) since the `.lettMulti` marker (`Bang.Surface`) is the mechanism that makes it possible:
+a sugar-parsed `Surf` carries the marker; a hand-written nested `.lett` chain never does. -/
+
+-- round-trips + idempotent, same as every other decl-level form above.
+open Bang.Format in
+#guard roundTripsOn "let x = 3; y = 4 in x + y" && idempotentOn "let x = 3; y = 4 in x + y"
+open Bang.Format in
+#guard roundTripsOn "let a = 1; b = 2; c = 3 in a" && idempotentOn "let a = 1; b = 2; c = 3 in a"
+
+-- THE RULING'S EXACT ASK: sugar-parsed input prints BACK as sugar (the `;` form), not expanded.
+open Bang.Format in
+#guard fmtExpr "let x = 3; y = 4 in x + y" == .ok "let x = 3; y = 4 in x + y"
+-- … but a HAND-WRITTEN nested chain is NOT auto-collapsed into the sugar — it round-trips as
+-- itself, the two forms staying genuinely distinct through fmt (not just parse-equivalent).
+open Bang.Format in
+#guard fmtExpr "let x = 3 in let y = 4 in x + y" == .ok "let x = 3 in let y = 4 in x + y"

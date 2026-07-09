@@ -101,17 +101,16 @@ construct list is the Surface syntax table above.
 repeated-group grammar the fixed linear `Rule`/`Choice` shape can't express, so —
 like `let (a,b) = …`, `let rec`, `match`, `do` — it is a bespoke `pExpr` arm instead.
 `let x = e1; y = e2; … in body` binds SEQUENTIALLY (a later binding sees every
-earlier one; an earlier binding can never see a later one) and desugars to the
-IDENTICAL nested chain a hand-written `let x = e1 in let y = e2 in … in body` already
-produces — no new AST node, elaborate-away. **Contrast with Haskell's `let`-block**,
-which is mutually recursive: bang's plain `let` stays non-recursive by convention
-(`let rec` is the only recursion marker, and it has no multi-binding form), so
-sequential-not-recursive is the reading consistent with the rest of the surface.
-**`bang fmt` always prints the FULLY EXPANDED chain** (one `let … in` per binding),
-never the `;`-sugar — the same reason it can't preserve comments (issue #62): once
-parsed, a sugar-derived chain and a hand-written one are the SAME `Surf` tree, with
-no signal left to tell them apart, so there is nothing for the printer to choose
-between (a deliberate v1 answer, not an oversight).
+earlier one; an earlier binding can never see a later one). **Contrast with Haskell's
+`let`-block**, which is mutually recursive: bang's plain `let` stays non-recursive by
+convention (`let rec` is the only recursion marker, and it has no multi-binding form),
+so sequential-not-recursive is the reading consistent with the rest of the surface.
+Semantically it ELABORATES to the IDENTICAL nested chain a hand-written
+`let x = e1 in let y = e2 in … in body` already produces (a thin `.lettMulti` SUGAR
+MARKER, erased before typing/lowering ever run — zero new semantics). The marker
+exists so **`bang fmt` can tell the two apart**: it PRINTS the sugar back for
+sugar-parsed input, but does NOT auto-collapse a hand-written nested chain into it —
+the two forms stay genuinely distinct through a round-trip, each printing as itself.
 
 ### Lexical notes
 
