@@ -43,14 +43,53 @@ ROADMAP.md               long-term map of checkpoints (◊1 → ◊6)
 CONTEXT.md               volatile current position on the map
 ```
 
-## Quickstart
+## Run a bang program
+
+You need [Nix](https://nixos.org/download) with flakes enabled — nothing else
+(no Lean, no elan; the dev shell brings the exact toolchain). Copy-paste, from a
+fresh checkout:
+
+```bash
+git clone https://github.com/phibkro/bang.git
+cd bang
+nix develop -c lake exe cache get   # fetch Mathlib oleans (~2 GB, one-time)
+nix develop -c lake build bang      # compile the `bang` runner
+./.lake/build/bin/bang eval "1 + 2"
+# → 3
+```
+
+Run a program from a file (there are ready examples in `examples/`):
+
+```bash
+./.lake/build/bin/bang run examples/state/main.bang
+# → 5
+```
+
+Other subcommands: `bang repl` (interactive), `bang fmt <file>` (canonical
+form), `bang check <file>` (type-check only, `--json` for structured
+diagnostics). `bang --help` lists flags and exit codes. Pass `--compiled` to run
+the *verified calculated machine* instead of the kernel oracle — same program,
+same value (ADR-0016).
+
+**Cold-start cost.** The one-time `cache get` downloads Mathlib's prebuilt
+`.olean` files (~2 GB from the Lean community CDN); `lake build bang` then
+compiles the bang library + runner. Budget **~10–20 min** on a cold machine
+(network-bound for the fetch, CPU-bound for the build); a warm rebuild of just
+the runner is ~2 min. Mathlib is a *build-time* dependency only — the resulting
+`bang` binary is native and links nothing but glibc.
+
+> A pure `nix build .#bang` / `nix run github:phibkro/bang` is **not yet
+> available**: it would require Mathlib present as oleans inside the nix build
+> sandbox (a multi-GB source build, or a fixed-output cache fetch), which isn't
+> wired up. Tracked as a follow-up — see [issue below](#packaging-follow-up).
+> Until then, the `nix develop` path above is the supported install.
+
+## Verify the proofs (contributors)
 
 ```bash
 nix develop          # dev shell with Lean via elan
 just verify          # selfcheck + lake build + tools/audit.sh
 ```
-
-First `lake` build pulls Mathlib (`lake exe cache get`; network, minutes).
 
 Piecemeal:
 ```bash
@@ -85,3 +124,30 @@ See `CONTEXT.md` for live state, blockers, and active paths.
    invoke `proof-engineer`. Both are at `.claude/agents/`.
 4. When you make a decision a future session could reasonably reverse, write
    an ADR (copy the format of an existing one; tag layer K / C / S).
+
+## Packaging follow-up
+
+`nix run github:phibkro/bang -- eval "1 + 2"` (a pure flake `package`/`app`
+output) is the target that would let a stranger run bang with a single command,
+no clone. It is **not yet wired up**. What blocks it, for whoever picks it up:
+
+- The `bang` exe imports `Bang.Frontend.Surface`, which transitively pulls in
+  four `Bang/Core/*` modules that `import Mathlib` (Finset semilattice for effect
+  rows). So **Mathlib is a build-time dependency** — its `.olean` files must be
+  present before `lake build bang` runs.
+- The exe's *runtime* closure is tiny (native binary, links only glibc +
+  libgcc_s — Lean statically links its runtime; no gmp, no oleans). So the only
+  hard part is the build.
+- Two candidate pure paths, both non-trivial:
+  1. **Build Mathlib from source** in the derivation — correct but multi-GB
+     closure and hours of compile; needs `lean4-nix`
+     (`github:lenianiva/lean4-nix`) to express lake deps as derivations.
+  2. **Fixed-output derivation that runs `lake exe cache get`** — fetches the
+     prebuilt oleans from the Lean CDN (network is allowed in an FOD), then a
+     second derivation runs `lake build bang`. Lighter, but fragile: the FOD hash
+     must be pinned and re-pinned when the cache changes.
+- Wrapping a *pre-built* binary in a `nix run` app is **not** acceptable (there
+  is no binary hosting, and it wouldn't be reproducible).
+
+Until one of those lands, the `nix develop -c lake build bang` path in
+[Run a bang program](#run-a-bang-program) is the supported install.
