@@ -1,0 +1,290 @@
+/-
+  Bang/Witness/LawTest.lean — `bang test`'s CORE (#60): the law runner + derived generators +
+  shrinking, as a plain module with NO CLI wiring (that is a follow-up slice, exactly like
+  `fmt`/`check`'s own subcommand landings).
+  ───────────────────────────────────────────────────────────────────────────────────────────
+  GROUND TRUTH (this file's design rests on it): laws are TRAIT laws only (ADR-0068) — there is
+  no free-standing `law` declaration. `Bang/Frontend/TypeCheck.lean` already has a hand-rolled
+  predecessor, `checkLaws` (+ `checkLawOn`/`sampleVT`/`tuples`/`valToSurf`), that walks a
+  program's decl prelude, builds a FIXED small literal pool per value type, and sample-checks
+  each trait law via `Source.eval`. This is exactly the "tested rung" ADR-0068 describes; #60's
+  job is to generalize it: `data`-decl-derived generators (not just Int/prod), splitmix64
+  sampling (not a fixed pool), and shrinking (none today).
+
+  THE ACCESS SEAM (reported to the manager, not guessed around): `checkLaws` and everything it
+  needs (`Decl`, `LawDecl`, `Prog`, `ElabEnv`, `buildEnv`, `CtorInfo`, `sampleVT`, `tuples`,
+  `checkLawOn`) are ALL private to `TypeCheck.lean`/`Surface.lean` — that file's public surface is
+  exactly `elaborateToComp` / `checkAndLower` / `typeStringOfProg` (+ `Surface.parseProgLocated`/
+  `locateInMsg`/`Span`), none of which expose the decl prelude to a leaf module. Per the mission's
+  constraint (don't edit TypeCheck.lean/Surface.lean; report the exact gap), this file does NOT
+  block on that export landing: it follows `Bang/Witness/ElabFuzz.lean`'s PROVEN, already-in-tree
+  pattern for exactly this situation — generate SOURCE-LEVEL BANG STRINGS (a full `trait`/`impl`/
+  `law` program, its law body's params substituted with generated-literal source text) and drive
+  them through the PUBLIC frontend entries (`TypeCheck.elaborateToComp`, `Core.Semantics.Eval.
+  Source.eval`) — a leaf module with fan-in 0 FROM `Bang/Frontend/*`, calling only its public
+  entries, exactly ElabFuzz's own justification. This is a STRICT UPGRADE path, not a workaround:
+  once `TypeCheck.lean` exposes `collectLawInstances`/`checkLawOn`-equivalent (the ask sent to the
+  manager), `runLaws` below gains a second discovery mode ("find every law in THIS program") on
+  top of today's "check the law THIS harness is told about" — additive, no rewrite.
+
+  NON-META, BY CONSTRUCTION: same reasoning as `Fuzz.lean`/`ElabFuzz.lean` — this file reuses
+  `Fuzz.lean`'s hand-rolled splitmix64 (`Rng.step`/`Rng.nextMod`) rather than re-deriving a THIRD
+  PRNG (one construct per problem), and stays a plain `module` (no `Plausible.Gen`, which is
+  `public meta section` and cannot call the runtime frontend entries in the same phase).
+-/
+
+module
+
+meta import Bang.Frontend.TypeCheck
+meta import Bang.Core.Semantics
+meta import Bang.Witness.Fuzz
+public import Bang.Frontend.TypeCheck
+public import Bang.Core.Semantics
+public import Bang.Witness.Fuzz
+
+namespace Bang.LawTest
+
+open Bang.Fuzz (Rng.step Rng.nextMod)
+
+@[expose] public section
+
+/-! ## 1. Derived generators — a `data` decl's own shape as its generator SPEC.
+
+Only the shapes an author can actually write in a `data` decl need generating: sums of products
+of `Int`/named-ctor recursion, arity ≤ 2 per ctor (v1's own bound, `Surface.lean` §`dataD`). This
+harness works at the SOURCE level (`ElabFuzz`'s move) so a "value" here is source text for a
+constructor application, not a kernel `Val` — the law runner splices it directly into the law
+body's param position. -/
+
+/-- One constructor a derived generator can produce: its SOURCE name + how many `Int`-typed
+payload slots it carries (v1 arity ≤ 2, `Surface.lean`'s `dataD` ceiling) + whether a payload
+slot recurses into the SAME data type (so depth-bounded self-application terminates generation,
+mirroring `Fuzz.lean`'s `fuel`-decrementing discipline). `.int`/`.recur` are the only payload
+kinds a v1 `data` decl's constructor can carry beyond `Int` literals and self-recursion — a
+richer payload alphabet (a NAMED different data type nested inside another) is a natural
+extension or the seam, not built here (kept honest: this harness targets the common law-bearing
+shapes the existing `VecOps`/`IntOrd` corpus already exercises, `Int` and products of `Int`). -/
+inductive PayloadKind | int | recur
+  deriving Repr, DecidableEq
+
+/-- A generator SPEC for one `data` decl: its name + each constructor's (name, payload kinds).
+`dataDeclSrc` renders it back to the `data N = C₀(...) | C₁(...) | ...` source the law program's
+prelude carries; `genValueOf` uses the SAME spec to generate a matching value — spec and source
+render from ONE structure, so they cannot drift (the single-source-of-truth move). -/
+structure DataSpec where
+  name  : String
+  ctors : List (String × List PayloadKind)
+  deriving Repr, DecidableEq
+
+/-- Render a `DataSpec` back to its `data` declaration source text. -/
+def DataSpec.toSrc (d : DataSpec) : String :=
+  let ctorSrc := fun (c : String × List PayloadKind) =>
+    match c.2 with
+    | [] => c.1
+    | ps => c.1 ++ "(" ++ String.intercalate ", " (ps.map (fun
+              | .int   => "Int"
+              | .recur => d.name)) ++ ")"
+  "data " ++ d.name ++ " = " ++ String.intercalate " | " (d.ctors.map ctorSrc)
+
+-- a monomorphic Int-payload sum renders to legal `data` source.
+#guard DataSpec.toSrc ⟨"Box", [("BLeft", [.int]), ("BRight", [.int])]⟩ == "data Box = BLeft(Int) | BRight(Int)"
+-- a self-recursive ctor (a `List`-shaped spec) renders `Cons(Int, IntList)`.
+#guard DataSpec.toSrc ⟨"IntList", [("Nil", []), ("Cons", [.int, .recur])]⟩ ==
+  "data IntList = Nil | Cons(Int, IntList)"
+
+/-- Render an `Int` as valid bang SOURCE syntax. bang's tokenizer has no unary minus (only
+unsigned digit literals — confirmed missing feature, `ElabFuzz.lean`'s own `intLitSrc` hit the
+identical wall), so a bare `toString (-3)` is a PARSE error, not a type error; `(0 - n)` is legal
+source producing the same `Int` value. Not imported from `ElabFuzz.lean` (that helper is not
+`public`, and pulling in the whole module for one five-line helper would be a needless coupling —
+"one construct per problem" cuts the other way for a genuinely tiny, self-contained fix). -/
+def intLitSrc (n : Int) : String :=
+  if n < 0 then s!"(0 - {(-n)})" else toString n
+
+#guard intLitSrc 3 == "3"
+#guard intLitSrc (-3) == "(0 - 3)"
+#guard intLitSrc 0 == "0"
+
+/-- Generate a small signed `Int` LITERAL, source-rendered. Range matches `Fuzz.lean`'s `genVal`/
+`ElabFuzz`'s `genIntExpr` (`[-10, 10]`), a small spread that still exercises negative/zero/positive
+law instances. -/
+def genIntLit (s : Nat) : String × Nat :=
+  let (s, n) := Rng.nextMod s 21
+  let v : Int := (n : Int) - 10
+  (intLitSrc v, s)
+
+/-- Generate a VALUE matching one `DataSpec`, depth-bounded by `fuel` (decremented on every
+`.recur` payload — the generation-terminates-by-construction discipline `Fuzz.lean`'s `genVal`/
+`genComp` both use). At `fuel = 0` a `.recur` slot falls back to the FIRST non-recursive
+constructor (never absent in a well-formed spec — `data` requires ≥ 1 ctor and a base case is
+what makes the type inhabited at all, mirroring `dataD`'s own "needs at least one constructor"
+elaboration-time check) so generation cannot dead-end. Returns the constructor APPLICATION as
+source text (`"BLeft(3)"`, `"Cons(2, Cons(-1, Nil))"`). -/
+partial def genValueOf (spec : DataSpec) (fuel : Nat) (s : Nat) : String × Nat :=
+  let baseCtor := spec.ctors.find? (fun c => !c.2.contains .recur)
+  let (s, ci) := Rng.nextMod s spec.ctors.length
+  let chosen := spec.ctors.getD ci (spec.ctors.getD 0 ("_", []))
+  let (name, pays) :=
+    if fuel = 0 then
+      match baseCtor with
+      | some c => c
+      | none   => chosen   -- no non-recursive ctor exists (spec itself infinite); fuel 0 degrades to 1 anyway below
+    else chosen
+  match pays with
+  | [] => (name, s)
+  | ps =>
+    let rec goArgs : List PayloadKind → Nat → String × List String × Nat
+      | [],      s => ("", [], s)
+      | p :: rest, s =>
+        let (argSrc, s) := match p with
+          | .int   => genIntLit s
+          | .recur => genValueOf spec (fuel - 1 |>.min fuel) s   -- strictly decreasing when fuel > 0 (fuel=0 handled above)
+        let (_, restArgs, s) := goArgs rest s
+        ("", argSrc :: restArgs, s)
+    let (_, args, s) := goArgs ps s
+    (name ++ "(" ++ String.intercalate ", " args ++ ")", s)
+
+-- a pure-Int ctor: exactly one of the two names, an Int literal payload, no recursion.
+#guard ((genValueOf ⟨"Box", [("BLeft", [.int]), ("BRight", [.int])]⟩ 3 7).1.startsWith "BLeft(") ||
+       ((genValueOf ⟨"Box", [("BLeft", [.int]), ("BRight", [.int])]⟩ 3 7).1.startsWith "BRight(")
+-- depth-0 fuel on a self-recursive spec degrades to the BASE constructor (`Nil`), never loops.
+#guard (genValueOf ⟨"IntList", [("Nil", []), ("Cons", [.int, .recur])]⟩ 0 1).1 == "Nil"
+-- fuel > 0 CAN reach a `Cons`, and its recursive tail is itself well-formed IntList source
+-- (either `Nil` or another `Cons(...)`) — checked by parsing it (§3 reuses `elaborateToComp`).
+#guard ((genValueOf ⟨"IntList", [("Nil", []), ("Cons", [.int, .recur])]⟩ 4 3).1.startsWith "Cons(") ||
+       ((genValueOf ⟨"IntList", [("Nil", []), ("Cons", [.int, .recur])]⟩ 4 3).1 == "Nil")
+
+/-! ## 2. A generated VALUE TREE — the shrinking domain. Shrinking operates on the STRUCTURE
+(which ctor, which sub-values), not the rendered string, so "try an earlier constructor" / "shrink
+an Int toward 0" / "drop a recursive layer" are structural rewrites, re-rendered to source only at
+the end. This mirrors the issue's prescribed shrink moves exactly (drop list elements ≈ drop a
+recursive layer; shrink ints toward 0; prefer earlier ctors). -/
+
+/-- A generated value, kept STRUCTURED (not yet rendered) so shrinking can rewrite it before a
+single final `render` pass. `.ival` is a leaf Int; `.ctor` is one constructor application (name +
+its sub-values, in payload order) — this is the ONLY shape `genValueOf`'s output needs to be
+re-expressed as, since every non-Int payload slot is itself a same-spec value or absent. -/
+inductive GVal where
+  | ival : Int → GVal
+  | ctor : String → List GVal → GVal
+  deriving Repr, BEq
+
+instance : Inhabited GVal := ⟨.ival 0⟩
+
+/-- Render a `GVal` back to bang source text (the inverse of the structural view — `ival`
+through `intLitSrc` for the same negative-literal reason as `genIntLit`, `ctor` with no payload
+rendering bare (a nullary constructor is just its name, `dataD`'s own convention). -/
+partial def GVal.toSrc : GVal → String
+  | .ival n     => intLitSrc n
+  | .ctor n []  => n
+  | .ctor n ps  => n ++ "(" ++ String.intercalate ", " (ps.map GVal.toSrc) ++ ")"
+
+/-- Generate a STRUCTURED value for a spec (the `GVal` sibling of `genValueOf`, same fuel
+discipline) — shrinking works on this; `genValueOf` (source-only) stays for the case a caller
+wants text directly without ever shrinking. -/
+partial def genGValOf (spec : DataSpec) (fuel : Nat) (s : Nat) : GVal × Nat :=
+  let baseCtor := spec.ctors.find? (fun c => !c.2.contains .recur)
+  let (s, ci) := Rng.nextMod s spec.ctors.length
+  let chosen := spec.ctors.getD ci (spec.ctors.getD 0 ("_", []))
+  let (name, pays) := if fuel = 0 then (baseCtor.getD chosen) else chosen
+  match pays with
+  | [] => (.ctor name [], s)
+  | ps =>
+    let rec goArgs : List PayloadKind → Nat → List GVal × Nat
+      | [],        s => ([], s)
+      | p :: rest, s =>
+        let (v, s) := match p with
+          | .int   => let (s, n) := Rng.nextMod s 21; (GVal.ival ((n : Int) - 10), s)
+          | .recur => genGValOf spec (fuel - 1 |>.min fuel) s
+        let (restVs, s) := goArgs rest s
+        (v :: restVs, s)
+    let (args, s) := goArgs ps s
+    (.ctor name args, s)
+
+-- structured generation renders IDENTICALLY to the source-only path on the same seed/fuel
+-- (one spec, one generation walk — `genValueOf`/`genGValOf` must agree, checked directly).
+#guard (genGValOf ⟨"Box", [("BLeft", [.int]), ("BRight", [.int])]⟩ 3 7).1.toSrc ==
+       (genValueOf ⟨"Box", [("BLeft", [.int]), ("BRight", [.int])]⟩ 3 7).1
+
+/-! ## 3. Shrinking — greedy, structural, re-checked at every candidate (issue's prescribed
+moves: drop a recursive layer / shrink an Int toward 0 / prefer an earlier constructor). `shrink1`
+proposes ONE step smaller than `v`; `shrinkTo` repeatedly applies whichever proposal the caller's
+predicate (a re-check of the SAME failing law) still falsifies, greedily, until no proposal
+shrinks further — a basic but real shrinker (not "seed 173"), bounded by construction (`shrink1`
+always proposes something STRICTLY smaller in constructor-count + Int-magnitude, so the greedy
+loop terminates; `fuel` caps the loop as defensive belt-and-braces against a shrink1 bug). -/
+
+/-- One structural size measure — constructor-application count PLUS Int magnitude (so a leaf
+`.ival` shrinking toward 0 still counts as strictly smaller; constructor-count ALONE is blind to
+that, since `.ival 19` and `.ival 9` are both a single "node"). Drives loop termination in
+`shrinkTo` below. -/
+partial def GVal.size : GVal → Nat
+  | .ival n    => 1 + n.natAbs
+  | .ctor _ ps => 1 + (ps.map GVal.size).foldl (· + ·) 0
+
+/-- Every ONE-STEP-SMALLER candidate for `v`: an Int nudged toward 0, OR (for a `ctor`) each
+immediate sub-value substituted in place of the whole node (the "drop a layer" move — replacing
+`Cons(3, Nil)` by its own payload `Nil`), OR the SAME constructor with one payload slot shrunk,
+keeping the rest fixed. A caller re-checks every candidate against the (still-failing) law before
+accepting it (`shrinkTo` below) — an ill-typed substitution (e.g. dropping to a sub-value of a
+different shape than the whole node expects) simply fails to elaborate/type-check downstream and
+is skipped, never silently accepted, so this generator does not need its own static type tag to
+stay safe. -/
+partial def GVal.shrinkCandidates : GVal → List GVal
+  | .ival n =>
+    if n == 0 then []
+    else
+      let halved : Int := n / 2
+      (if n != 0 then [GVal.ival 0] else []) ++ (if halved != n then [GVal.ival halved] else [])
+  | .ctor name ps =>
+    -- (a) each immediate sub-value stands in for the whole node ("drop a layer").
+    ps ++
+    -- (b) the SAME constructor with exactly one payload slot shrunk one step, rest fixed.
+    (List.range ps.length).flatMap (fun i =>
+      (ps.getD i (.ival 0)).shrinkCandidates.map (fun v' => .ctor name (ps.set i v')))
+
+-- an Int shrinks toward 0 (and eventually terminates: no candidates once it IS 0).
+#guard (GVal.ival 7).shrinkCandidates == [GVal.ival 0, GVal.ival 3]
+#guard (GVal.ival 0).shrinkCandidates == []
+-- a `Cons(3, Nil)`-shaped node offers EACH immediate sub-value ("drop a layer": `3` or `Nil`),
+-- PLUS the same ctor with the Int slot shrunk toward 0 (both `0` and the halved `1`) — the
+-- `Nil` slot itself offers no candidates (empty payload, nothing to shrink).
+#guard (GVal.ctor "Cons" [.ival 3, .ctor "Nil" []]).shrinkCandidates ==
+  [.ival 3, .ctor "Nil" [],
+   .ctor "Cons" [.ival 0, .ctor "Nil" []], .ctor "Cons" [.ival 1, .ctor "Nil" []]]
+
+/-- Greedily shrink `v` against a still-failing predicate `stillFails` (typically "does the law
+still produce a counterexample on this value"): repeatedly replace `v` by the FIRST candidate
+(smallest-first-in-list, since `shrinkCandidates` lists "drop a layer" before "shrink one slot")
+that still satisfies `stillFails`, until no candidate does. `fuel` bounds the loop (belt-and-
+braces against a `shrinkCandidates` bug that fails to strictly decrease `GVal.size`; every real
+step DOES decrease size, so this terminates long before `fuel` in practice). -/
+partial def GVal.shrinkTo (stillFails : GVal → Bool) (fuel : Nat) (v : GVal) : GVal :=
+  match fuel with
+  | 0 => v
+  | fuel + 1 =>
+    match v.shrinkCandidates.find? stillFails with
+    | some v' => if v'.size < v.size then GVal.shrinkTo stillFails fuel v' else v
+    | none    => v
+
+-- shrinking a failing-Int-property ("n != 0") down to its minimal counterexample: any nonzero
+-- seed shrinks to `ival 1` (the smallest nonzero value `shrinkCandidates` can reach: 0 is
+-- REJECTED by `stillFails`, so the loop lands on the least nonzero candidate it can find).
+#guard GVal.shrinkTo (fun v => match v with | .ival n => n != 0 | _ => false) 20 (.ival 19) == .ival 1
+/-- A `GVal` is `Cons`/`Nil`-SHAPED (the "drop a layer" move can propose a bare `.ival` in place
+of a whole list node — `GVal` carries no static type tag, per `shrinkCandidates`'s own docstring —
+so a realistic `stillFails` predicate for a list-shaped property must reject anything that is no
+longer list-shaped, exactly as a real law-check would when the candidate's RENDERED source fails
+to elaborate/type-check against the law's declared param type). -/
+partial def isConsListShaped : GVal → Bool
+  | .ctor "Nil" []    => true
+  | .ctor "Cons" [_, tail] => isConsListShaped tail
+  | _                 => false
+
+-- shrinking a failing list-nonempty property ("this Cons/Nil value is not Nil"), GUARDED to stay
+-- list-shaped (the realistic predicate, see `isConsListShaped`): drops straight to the smallest
+-- failing sub-structure — a single-element list (one Cons wrapping Nil).
+#guard GVal.shrinkTo
+    (fun v => isConsListShaped v && (match v with | .ctor "Nil" [] => false | _ => true)) 20
+  (.ctor "Cons" [.ival 5, .ctor "Cons" [.ival 3, .ctor "Nil" []]]) ==
+  .ctor "Cons" [.ival 0, .ctor "Nil" []]
