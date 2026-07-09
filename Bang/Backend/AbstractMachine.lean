@@ -4373,6 +4373,241 @@ theorem ctxTxns_updateCtxStates : ∀ (K : Bang.EvalCtx) (σ : SStore),
     | letF N => simp only [updateCtxStates, ctxTxns]; exact ih σ
     | appF v => simp only [updateCtxStates, ctxTxns]; exact ih σ
 
+/-! ### Custom EvalCtx-bridge (ADR-0085 Stage 4): the `Config.run`-side mirror of the custom HStack bridge.
+
+`ctxCustoms`/`CCtxCorr` are the EvalCtx analogs of `hsCustoms`/`CCorr` — projecting the kernel context's
+`custom` frames into the `CStore` `evalD` threads. Because the custom param is READ-ONLY (v1), `ctxNetEffect`
+(which only rewrites state VALUES and txn HEAPS) never touches custom frames, so `ctxCustoms (ctxNetEffect
+K σ τ) = ctxCustoms K` — the custom projection is INVARIANT under the net-effect rebuild (no `updateCtxCustoms`
+sibling is needed; there is nothing to overwrite). This makes `CCtxCorr` ride install/pop/net-effect with the
+op-disjointness argument, the exact mirror of the HStack-side `CCorr` family. -/
+
+/-- Project a kernel `EvalCtx` to the custom store it mirrors: the `handleF n (custom ℓ p cls)` frames,
+innermost first, as `(n, (p, cls))` entries keyed by IDENTITY (route-B). The `Config.run`-side analog of
+`hsCustoms`; state/throws/txn frames carry no clause payload ⇒ skipped. -/
+def ctxCustoms : Bang.EvalCtx → CStore
+  | []                                       => []
+  | Frame.handleF n (.custom _ p cls) :: K   => (n, (p, cls)) :: ctxCustoms K
+  | _ :: K                                   => ctxCustoms K
+
+/-- The Stage-4 invariant on the kernel side: `evalD`'s threaded κ IS the context's active custom frames.
+The `Config.run`-side analog of `CCorr`. -/
+def CCtxCorr (κ : CStore) (K : Bang.EvalCtx) : Prop := κ = ctxCustoms K
+
+/-- `updateCtxStates` only rewrites STATE-frame values ⇒ the custom projection is invariant. -/
+theorem ctxCustoms_updateCtxStates : ∀ (K : Bang.EvalCtx) (σ : SStore),
+    ctxCustoms (updateCtxStates K σ) = ctxCustoms K := by
+  intro K
+  induction K with
+  | nil => intro σ; rfl
+  | cons fr K ih =>
+    intro σ
+    cases fr with
+    | handleF m h =>
+        cases h with
+        | state ℓ s =>
+            cases σ with
+            | nil => simp only [updateCtxStates, ctxCustoms]; exact ih []
+            | cons p σ' => simp only [updateCtxStates, ctxCustoms]; exact ih σ'
+        | transaction ℓ Θ => simp only [updateCtxStates, ctxCustoms]; rw [ih σ]
+        | throws ℓ => simp only [updateCtxStates, ctxCustoms]; exact ih σ
+        | custom ℓ p cl => simp only [updateCtxStates, ctxCustoms]; rw [ih σ]
+    | letF N => simp only [updateCtxStates, ctxCustoms]; exact ih σ
+    | appF v => simp only [updateCtxStates, ctxCustoms]; exact ih σ
+
+/-- `updateCtxTxns` only rewrites TXN-frame heaps ⇒ the custom projection is invariant. -/
+theorem ctxCustoms_updateCtxTxns : ∀ (K : Bang.EvalCtx) (τ : THeap),
+    ctxCustoms (updateCtxTxns K τ) = ctxCustoms K := by
+  intro K
+  induction K with
+  | nil => intro τ; rfl
+  | cons fr K ih =>
+    intro τ
+    cases fr with
+    | handleF m h =>
+        cases h with
+        | transaction ℓ Θ =>
+            cases τ with
+            | nil => simp only [updateCtxTxns, ctxCustoms]; exact ih []
+            | cons p τ' => simp only [updateCtxTxns, ctxCustoms]; exact ih τ'
+        | state ℓ s => simp only [updateCtxTxns, ctxCustoms]; rw [ih τ]
+        | throws ℓ => simp only [updateCtxTxns, ctxCustoms]; exact ih τ
+        | custom ℓ p cl => simp only [updateCtxTxns, ctxCustoms]; rw [ih τ]
+    | letF N => simp only [updateCtxTxns, ctxCustoms]; exact ih τ
+    | appF v => simp only [updateCtxTxns, ctxCustoms]; exact ih τ
+
+/-- The custom projection is INVARIANT under the full net-effect rebuild (both value passes touch only
+state/txn frames). The `Config.run`-side analog of `hsCustoms_netEffect`. -/
+theorem ctxCustoms_ctxNetEffect (K : Bang.EvalCtx) (σ : SStore) (τ : THeap) :
+    ctxCustoms (ctxNetEffect K σ τ) = ctxCustoms K := by
+  unfold ctxNetEffect
+  rw [ctxCustoms_updateCtxTxns, ctxCustoms_updateCtxStates]
+
+/-- `CCtxCorr` rides the net-effect rebuild (custom projection invariant). -/
+theorem CCtxCorr_ctxNetEffect {κ : CStore} {K : Bang.EvalCtx} (σ : SStore) (τ : THeap)
+    (hK : CCtxCorr κ K) : CCtxCorr κ (ctxNetEffect K σ τ) := by
+  unfold CCtxCorr at hK ⊢; rw [hK, ctxCustoms_ctxNetEffect]
+
+/-- Installing a `custom` frame PUSHES its `(p, cls)` onto the custom store — `CCtxCorr` preserved. The
+`Config.run`-side analog of `CCorr_install`. -/
+theorem CCtxCorr_install {κ : CStore} {n : Nat} {ℓ : Bang.EffectRow.Label} {p : Val}
+    {cls : List (Bang.OpId × Comp)} {K : Bang.EvalCtx} (hK : CCtxCorr κ K) :
+    CCtxCorr (κ.push n p cls) (Frame.handleF n (.custom ℓ p cls) :: K) := by
+  unfold CCtxCorr at hK ⊢; rw [hK]; simp only [ctxCustoms, CStore.push]
+
+/-- A NON-custom handler/non-frame head carries no clause entry: pushing it preserves `CCtxCorr`. -/
+theorem CCtxCorr_cons_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
+    (hnc : ∀ n ℓ p cls, fr ≠ Frame.handleF n (.custom ℓ p cls)) (hK : CCtxCorr κ K) :
+    CCtxCorr κ (fr :: K) := by
+  unfold CCtxCorr at hK ⊢; rw [hK]
+  cases fr with
+  | handleF m h =>
+      cases h with
+      | state ℓ0 s => simp only [ctxCustoms]
+      | throws ℓ0 => simp only [ctxCustoms]
+      | transaction ℓ0 Θ => simp only [ctxCustoms]
+      | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
+  | letF N => simp only [ctxCustoms]
+  | appF w => simp only [ctxCustoms]
+
+/-- `CCtxCorr` for the tail when the top is a `custom` frame (the `handle (custom)` POP): the store's
+head entry pops with the frame. The `Config.run`-side analog of `CCorr_pop_custom`. -/
+theorem CCtxCorr_pop_custom {κ : CStore} {n : Nat} {ℓ0 : Bang.EffectRow.Label} {p : Val}
+    {cls : List (Bang.OpId × Comp)} {K : Bang.EvalCtx}
+    (hK : CCtxCorr κ (Frame.handleF n (.custom ℓ0 p cls) :: K)) : CCtxCorr κ.tail K := by
+  unfold CCtxCorr at hK ⊢; rw [hK]; simp only [ctxCustoms, List.tail]
+
+/-- `CCtxCorr` rides the POP of a NON-custom top frame: the custom projection skips it. -/
+theorem CCtxCorr_pop_noncustom {κ : CStore} {fr : Bang.Frame} {K : Bang.EvalCtx}
+    (hnc : ∀ n ℓ p cls, fr ≠ Frame.handleF n (.custom ℓ p cls))
+    (hK : CCtxCorr κ (fr :: K)) : CCtxCorr κ K := by
+  unfold CCtxCorr at hK ⊢; rw [hK]
+  cases fr with
+  | handleF m h =>
+      cases h with
+      | state ℓ0 s => simp only [ctxCustoms]
+      | throws ℓ0 => simp only [ctxCustoms]
+      | transaction ℓ0 Θ => simp only [ctxCustoms]
+      | custom ℓ0 p cl => exact absurd rfl (hnc m ℓ0 p cl)
+  | letF N => simp only [ctxCustoms]
+  | appF w => simp only [ctxCustoms]
+
+/-- No custom cell at a key the stack keeps strictly below it: `CapsBelow n K ⟹ (ctxCustoms K).get? n =
+none`. Mirror of `ctxStates_get_none_of_capsBelow` — the ids of custom frames are all `< n`, so the lookup
+misses. Used by `splitAtId_of_ctxCustoms_get` to refute a same-id non-custom shadow. -/
+theorem ctxCustoms_get_none_of_capsBelow {n : Nat} : ∀ {K : Bang.EvalCtx},
+    Bang.Model.CapsBelow n K → (ctxCustoms K).get? n = none := by
+  intro K
+  induction K with
+  | nil => intro _; rfl
+  | cons fr K ih =>
+    intro hcb
+    cases fr with
+    | handleF m h0 =>
+        simp only [Bang.Model.CapsBelow] at hcb
+        cases h0 with
+        | custom ℓ0 p cl =>
+            have hmn : ¬ (m = n) := by omega
+            have he : (ctxCustoms (Frame.handleF m (Handler.custom ℓ0 p cl) :: K)).get? n
+                = (ctxCustoms K).get? n := by
+              simp only [ctxCustoms, CStore.get?, List.find?, hmn, decide_false, Bool.false_eq_true, if_false]
+            rw [he]; exact ih hcb.2
+        | state ℓ0 s0 => simp only [ctxCustoms]; exact ih hcb.2
+        | throws ℓ0 => simp only [ctxCustoms]; exact ih hcb.2
+        | transaction ℓ0 Θ0 => simp only [ctxCustoms]; exact ih hcb.2
+    | letF N => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxCustoms]; exact ih hcb.2
+    | appF w => simp only [Bang.Model.CapsBelow] at hcb; simp only [ctxCustoms]; exact ih hcb.2
+
+/-- **The existence factor for custom ops** (route-B, the Stage-4 perform-arm bridge): a live custom
+`(p, cls)` at identity `n` in the store reflects a live `custom` frame at `n` on the stack. `StratFresh`
+(id-uniqueness) rules out a same-id state/throws/txn shadow. Mirror of `splitAtId_of_ctxStates_get`. -/
+theorem splitAtId_of_ctxCustoms_get {n : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
+    ∀ {K : Bang.EvalCtx}, Bang.Model.StratFresh K → (ctxCustoms K).get? n = some (p, cls) →
+      ∃ Kᵢ ℓ' Kₒ, Bang.splitAtId K n = some (Kᵢ, Handler.custom ℓ' p cls, Kₒ) := by
+  intro K
+  induction K with
+  | nil => intro _ hg; simp [ctxCustoms, CStore.get?] at hg
+  | cons fr K ih =>
+    intro hsf hg
+    cases fr with
+    | handleF m h0 =>
+        cases h0 with
+        | custom ℓ0 p0 cl0 =>
+            by_cases hc : m = n
+            · subst hc
+              have hhead : (ctxCustoms (Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: K)).get? m
+                  = some (p0, cl0) := by simp [ctxCustoms, CStore.get?]
+              rw [hhead] at hg
+              obtain ⟨rfl, rfl⟩ : p = p0 ∧ cls = cl0 := by
+                have := Option.some.inj hg; simp only [Prod.mk.injEq] at this; exact ⟨this.1.symm, this.2.symm⟩
+              exact ⟨[], ℓ0, K, by simp [Bang.splitAtId]⟩
+            · have he : (ctxCustoms (Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: K)).get? n
+                  = (ctxCustoms K).get? n := by
+                simp only [ctxCustoms, CStore.get?, List.find?, hc, decide_false, Bool.false_eq_true, if_false]
+              rw [he] at hg
+              simp only [Bang.Model.StratFresh] at hsf
+              obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg
+              exact ⟨Frame.handleF m (Handler.custom ℓ0 p0 cl0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | state ℓ0 s0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.state ℓ0 s0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | throws ℓ0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.throws ℓ0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+        | transaction ℓ0 Θ0 =>
+            simp only [Bang.Model.StratFresh] at hsf
+            have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+            by_cases hc : m = n
+            · subst hc; rw [ctxCustoms_get_none_of_capsBelow hsf.1] at hg'; simp at hg'
+            · obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf.2 hg'
+              exact ⟨Frame.handleF m (Handler.transaction ℓ0 Θ0) :: Ki, ℓ', Ko, by
+                simp only [Bang.splitAtId, if_neg hc, hsp, Option.map_some]⟩
+    | letF N =>
+        simp only [Bang.Model.StratFresh] at hsf
+        have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+        obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
+        exact ⟨Frame.letF N :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
+    | appF w =>
+        simp only [Bang.Model.StratFresh] at hsf
+        have hg' : (ctxCustoms K).get? n = some (p, cls) := by simpa only [ctxCustoms] using hg
+        obtain ⟨Ki, ℓ', Ko, hsp⟩ := ih hsf hg'
+        exact ⟨Frame.appF w :: Ki, ℓ', Ko, by simp only [Bang.splitAtId, hsp, Option.map_some]⟩
+
+/-- **The custom-dispatch bridge** (route-B, Stage-4 perform-arm): a custom op serviced by `evalD`'s inline
+clause-service corresponds to the kernel `idDispatch` running the clause body against the SAME context `K`
+(the custom frame is REINSTALLED in place — `dispatchOn`'s custom arm keeps it live). The store read
+`(ctxCustoms K).get? n = some (p, cls)` + `cls.find? op = some clause` witness a live custom frame at `n`
+(`splitAtId_of_ctxCustoms_get`), which is deterministically the resolved frame; `capLabelCoh_perform_label`
+(supplied by the caller via `CapResolves`) gives the label match. Mirror of `dispatch_state_get`, but the
+resume FOCUS is the clause body (not `ret s`). -/
+theorem dispatch_custom {n : Nat} {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} {v p : Val}
+    {cls : List (Bang.OpId × Comp)} {clause : Bang.OpId × Comp} {K : Bang.EvalCtx}
+    (hsf : Bang.Model.StratFresh K) (hcr : Bang.CapResolves K n ℓ op)
+    (hg : (ctxCustoms K).get? n = some (p, cls)) (hcl : cls.find? (·.1 == op) = some clause) :
+    Bang.idDispatch K n ℓ op v = some (K, Comp.subst p (Comp.subst (Val.shift v) clause.2)) := by
+  obtain ⟨Kᵢ, h, Kₒ, hsp, hho⟩ := hcr
+  -- the resolved frame is the live custom frame (id-uniqueness): the store read reflects a custom frame at
+  -- `n` (`splitAtId_of_ctxCustoms_get`), `splitAtId` deterministic ⇒ it IS `h`; a non-custom `h` is absurd.
+  obtain ⟨ℓ', rfl⟩ : ∃ ℓ', h = Handler.custom ℓ' p cls := by
+    obtain ⟨Kᵢ2, ℓ2, Kₒ2, hsp2⟩ := splitAtId_of_ctxCustoms_get hsf hg
+    rw [hsp] at hsp2
+    simp only [Option.some.injEq, Prod.mk.injEq] at hsp2
+    obtain ⟨_, rfl, _⟩ := hsp2; exact ⟨ℓ2, rfl⟩
+  have hrec : Kᵢ ++ Frame.handleF n (Handler.custom ℓ' p cls) :: Kₒ = K := splitAtId_reconstruct hsp
+  simp only [Bang.idDispatch, hsp, Option.bind_some, hho, if_true, Bang.dispatchOn, hcl]
+  rw [hrec]
+
 /-- `splitAt` returns a handler that actually catches `(ℓ, op)` (induction on `K`). -/
 theorem splitAt_handles {ℓ : Bang.EffectRow.Label} {op : Bang.OpId} :
     ∀ {K Kᵢ Kₒ : Bang.EvalCtx} {h : Handler},
