@@ -178,7 +178,7 @@ disagree on whether a program may RETURN a capability-carrying value. Build-sett
 **Consequence:** the untyped `LWConfig` STD block is sound + complete for the FORCED-thunk fragment
 (PUSH · force · β-redexes · letF-ret of cap-free values · handleF-ret by construction · progress); the
 RETURN-ESCAPE case is a typed-LR obligation (the documented scoped lemma
-`preservation_returnEscape_TODO`). The `perform`-dispatch resume-TYPING (a separate, known-tractable
+`preservation_returnEscape`). The `perform`-dispatch resume-TYPING (a separate, known-tractable
 `dispatch`↦`staticDispatch` re-keying) is scoped as `preservation_perform_typing_TODO`. NO v1
 expressivity loss: the ledger + every rung (pure/throws/deep/state/cell/STM) are accepted; only
 capability-ESCAPES are ill-typed. `progress`/`handleF_ret` stay axiom-clean.

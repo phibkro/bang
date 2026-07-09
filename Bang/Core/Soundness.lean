@@ -2057,11 +2057,11 @@ theorem preservation_proof
     HasConfig cfg eo Co → Source.step cfg = some cfg' →
     ∃ eo', eo' ≤ eo ∧ HasConfig cfg' eo' Co := by
   -- ADR-0054: `HasConfig = HasConfigTy ∧ NonEscape`. The TYPING core (`HasConfigTy`) is proven per-case
-  -- below. `NonEscape` of the reduct (`hnecfg'`) is preserved BY CONSTRUCTION (`preservation_returnEscape_TODO`,
+  -- below. `NonEscape` of the reduct (`hnecfg'`) is preserved BY CONSTRUCTION (`preservation_returnEscape`,
   -- Operational.lean). The DISPATCH (`perform`) reduct re-typing is discharged below via
   -- `splitAtId_decomp` + the E.1c concat re-typing lemmas.
   rintro ⟨⟨e, C, hfocus, hstack⟩, hne⟩ hstep
-  have hnecfg' : NonEscape cfg' := preservation_returnEscape_TODO hne hstep
+  have hnecfg' : NonEscape cfg' := preservation_returnEscape hne hstep
   obtain ⟨g, K, M⟩ := cfg
   cases M with
   | ret v =>

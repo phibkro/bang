@@ -51,7 +51,7 @@ the wall — it spares the ~87 Metatheory / 72 Operational `CapResolves`/`static
 
 ### Why root-level is SOUND
 A cap-carrying thunk **cannot escape its handler** (the `LWT` return-escape gate, ADR-0045 (D) /
-`preservation_returnEscape_TODO`), so a pending `perform`'s target handler is always still on the stack
+`preservation_returnEscape`), so a pending `perform`'s target handler is always still on the stack
 when it fires; migration only pushes handlers ABOVE the target, never pops below it. The kernel runs only
 CLOSED configs (`Source.eval` loads `([], c)`), so stack-bottom = program root = a well-defined anchor.
 Author-site assignment for OPEN terms is the shell elaborator's job (the downstream consistency
@@ -78,7 +78,7 @@ return-context discipline, dispatch-direction-independent). The runtime stuck→
 `progB_ill_typed` (the surviving invariant). The well-typed `capMigrate` guards (→ 5/9) are preserved
 verbatim.
 
-**Consequence flagged:** `preservation_returnEscape_TODO`'s priority ROSE. Under de-Bruijn, a
+**Consequence flagged:** `preservation_returnEscape`'s priority ROSE. Under de-Bruijn, a
 typing-slipping escape would have STUCK (a runtime net); under absolute caps it resolves silently, so that
 sorry is now the **sole** line for escape behaviour. Closing it is higher-priority than before.
 
@@ -111,7 +111,7 @@ sorry is now the **sole** line for escape behaviour. Closing it is higher-priori
   an operator design direction — a scoped paired unit, not end-of-session work. The `WCComp.substFrom` consumer's specific need (the FILLER `v` at Δ=[], caps
   targeting `Sg`) is the SAFE case — but the keystone's general recursion into thunk-internal handles hits
   the unsafe case. The consumer seam (Stage-2a) is discharged; the keystone proof carries the 2c seam. It
-  feeds only `WellCapped → LWConfig → preservation/progress`, behind `preservation_returnEscape_TODO`; the
+  feeds only `WellCapped → LWConfig → preservation/progress`, behind `preservation_returnEscape`; the
   LR 5→2 is independent (Compat has zero `WCComp` refs).
 - CalcVM stays RED (deferred route-B, ADR-0052) — orthogonal; the cap is label-dispatched there.
 

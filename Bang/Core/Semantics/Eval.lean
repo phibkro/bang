@@ -268,7 +268,7 @@ reachable from `cfg` by prepending the step (`StepStar.head`), so `cfg`'s closur
 no LR — the type-directed escape discrimination lives in `FocusResolves`, the cap-resolution obligation.
 The one remaining LR-carried direction is the INITIAL config (`well-typed ([],c) → NonEscape ([],c)`),
 not this preservation step. See ADR-0054 amendment + scratch/NonEscapeProbe.lean §3. -/
-theorem preservation_returnEscape_TODO
+theorem preservation_returnEscape
     {cfg cfg' : Config} (hne : NonEscape cfg) (hstep : Source.step cfg = some cfg') :
     NonEscape cfg' :=
   fun cfg'' hreach => hne cfg'' (StepStar.head hstep hreach)

@@ -74,7 +74,7 @@ Two facts pin the channel:
 
 An *assumed* soundness rationale, build-refuted. ADR-0054 asserted escape was "ruled out by the EXISTING
 `LWT` non-escape gate, NOT by second-class thunks." ADR-0056 build-refuted that: the gate
-(`NonEscape`-as-`FocusResolves`, `preservation_returnEscape_TODO`) only checks *resolves-to-something*,
+(`NonEscape`-as-`FocusResolves`, `preservation_returnEscape`) only checks *resolves-to-something*,
 never *the escaping value names a live handler*. The intent of ADR-0054 was right ("ruled out by
 typing"); the **missing typing rule** is what this ADR supplies.
 

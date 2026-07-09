@@ -3,7 +3,7 @@
 <!-- adr-frontmatter -->
 
 - **Status**: Accepted
-- **Summary**: Reverse ADR-0053's absolute caps (build-verified UNSOUND: a first-class thunk that locally handles its own effect, forced under an unrelated handler, mis-dispatches its own `perform` to the outer handler — a well-typed, `LWConfig`-valid program evaluating to a wrong-typed value). Root cause is structural: a SINGLE INTEGER cap cannot be both migration-stable and shift-free, and `closeC ≡ Comp.subst` couples them (a substitution-time shift for migration soundness re-shifts `closeC_handle*` = the ADR-0050 LR wall). Fix (deep-research-grounded, Lexa/Effekt/Koka): the `perform`'s handler reference is a generative IDENTITY (a fresh label/capability travelling WITH the thunk), and any handler-crossing re-base is carried as explicit DATA on the value, not proof-internal index arithmetic. Identity-as-value needs NO 6th primitive (a label/capability is an ordinary value; `handler` already primitive) — refining ADR-0044's hesitation. Keep the step-indexed LR (route B, Effekt System Ξ shows lexical capability-passing admits a closeable LR); Leroy forward-simulation (Lexa, no LR) is a recorded alternative. First-class-thunk escape is ruled out by the EXISTING `LWT` non-escape gate (`preservation_returnEscape_TODO`), not by second-class thunks. Representation redesign in SHAPE (Core/Syntax + VM dispatch re-derivation); replaces an unsound kernel, not an upgrade.
+- **Summary**: Reverse ADR-0053's absolute caps (build-verified UNSOUND: a first-class thunk that locally handles its own effect, forced under an unrelated handler, mis-dispatches its own `perform` to the outer handler — a well-typed, `LWConfig`-valid program evaluating to a wrong-typed value). Root cause is structural: a SINGLE INTEGER cap cannot be both migration-stable and shift-free, and `closeC ≡ Comp.subst` couples them (a substitution-time shift for migration soundness re-shifts `closeC_handle*` = the ADR-0050 LR wall). Fix (deep-research-grounded, Lexa/Effekt/Koka): the `perform`'s handler reference is a generative IDENTITY (a fresh label/capability travelling WITH the thunk), and any handler-crossing re-base is carried as explicit DATA on the value, not proof-internal index arithmetic. Identity-as-value needs NO 6th primitive (a label/capability is an ordinary value; `handler` already primitive) — refining ADR-0044's hesitation. Keep the step-indexed LR (route B, Effekt System Ξ shows lexical capability-passing admits a closeable LR); Leroy forward-simulation (Lexa, no LR) is a recorded alternative. First-class-thunk escape is ruled out by the EXISTING `LWT` non-escape gate (`preservation_returnEscape`), not by second-class thunks. Representation redesign in SHAPE (Core/Syntax + VM dispatch re-derivation); replaces an unsound kernel, not an upgrade.
 - **Supersedes**: 0053
 - **Depends-on**: 0044, 0045, 0046, 0050, 0052, 0053, 0016
 - **See-also**: 0023, 0024, 0030
@@ -75,7 +75,7 @@ carried as explicit DATA on the value — not a single integer counted from anyw
 - **First-class-thunk escape = the EXISTING `LWT` non-escape gate.** A thunk whose target identity has
   escaped its handler's extent → stuck unless ruled out by typing. We already have the gate: the two-
   context `LWT S R` discipline (a returned value's caps must resolve where it LANDS) — closing
-  `preservation_returnEscape_TODO` IS this. We do NOT make thunks second-class (Effekt's 2020 move,
+  `preservation_returnEscape` IS this. We do NOT make thunks second-class (Effekt's 2020 move,
   incompatible with BANG's first-class thunks). Effekt's System C boxing (capture-set types, OOPSLA'22)
   is the recorded post-v1 expressiveness upgrade if escaped capabilities must be re-usable.
 
@@ -97,7 +97,7 @@ HasConfig = HasConfigTy ∧ NonEscape        — NonEscape = capabilities don't 
 ```
 The ENTIRE positional well-cappedness machinery dissolves (the WC keystone — the session-long hard piece —
 `absResolvesKind`/`CapResolves`/`staticSplit`/`absSplit` and the shift theory are DELETED). The sole
-remaining structural obligation is **non-escape**, which IS the existing `preservation_returnEscape_TODO`,
+remaining structural obligation is **non-escape**, which IS the existing `preservation_returnEscape`,
 now promoted from one clause to the whole invariant. Mirrors the research (Effekt: capability-passing makes
 resolution lexical, not a runtime-searched invariant). The exact `NonEscape` definition is the inc-4
 metatheory crux (revealed by what `preservation`/`progress` need; the thunk-escape case is the subtle part,
@@ -111,7 +111,7 @@ gated as before). Frozen-statement-safe: `preservation`/`progress`/`type_safety`
   below-insert). These pin the ADR-0053 hole so a future "fixed" claim is gated against a run, not prose.
 - Implementation fitness (future): a generative-identity `perform` dispatches CORRECTLY on the
   `migrate vFragile` witness; the re-established `closeC_handle*` distribute without a positional shift;
-  `#print axioms lr_sound` re-closes to the descent set; `preservation_returnEscape_TODO` discharges via
+  `#print axioms lr_sound` re-closes to the descent set; `preservation_returnEscape` discharges via
   the `LWT` gate. The `capMigrate` suite gains an **insert-below-target** case (the gap that hid this).
 
 ## Rejected alternatives
