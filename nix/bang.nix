@@ -35,7 +35,7 @@
   # Hash of the official Lean release tarball for `leanVersion` (see re-pin above).
   toolchainHash ? "sha256-Ta10FBwsEZyhqmJmVr6DuOFCOK+6lycf178es/CBsxk=",
   # Hash of the `lake exe cache get` output tree (see re-pin above).
-  depsHash ? "sha256-+cLIWkSbmet+BFGDfXwuMC4Mf4Hrh6tVgXWBVZ4Z6UQ=",
+  depsHash ? pkgs.lib.fakeHash,
 }:
 
 let
@@ -126,6 +126,25 @@ let
       # inputs (hash-map iteration order); batteries' OLEANS stay untouched.
       find $out/packages/batteries -name '*.export.trace' -delete
       find $out/packages/batteries -name '*.barrel.trace' -delete
+
+      # ── store-reference scrub (FOD hermeticity) ──
+      # An FOD MUST NOT reference other store paths (its hash is content-only).
+      # nixpkgs `patchShebangs` rewrites the `#!/usr/bin/env bash` line of every
+      # `scripts/*.sh` in mathlib/batteries to a `/nix/store/…-bash` shebang — the
+      # ONLY store references cache-get leaves. These are mathlib/batteries dev/CI
+      # helpers (lint, bench, adaptation-PR); `lake build bang` never runs them, so
+      # drop the whole `scripts/` tree per package.
+      find $out/packages -maxdepth 2 -type d -name scripts -prune -exec rm -rf {} +
+
+      # Fail LOUD if any store reference survives — a stale mathlib rev could add a
+      # store-ref outside scripts/, which nix would otherwise reject much later with
+      # the opaque "fixed-output derivations must not reference store paths". This
+      # turns that into a located, actionable failure at the point of the leak.
+      if grep -rlI '/nix/store/[a-z0-9]\{32\}-' $out/packages 2>/dev/null | grep -q .; then
+        echo "ERROR: deps FOD still references store paths after scrub:" >&2
+        grep -rlI '/nix/store/[a-z0-9]\{32\}-' $out/packages >&2
+        exit 1
+      fi
     '';
   });
 
