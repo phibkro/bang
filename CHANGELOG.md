@@ -91,6 +91,9 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **kernel** — ADR-0092 D3/D4 — typed custom-handle rule + soundness arms (#44 Stage 3) (`125b383`)
 - **tooling** — just regen-all — the write-side twin of the fitness legs (`e8fbd2d`)
 - **witness** — ElabFuzz — source-level fuzz harness for the elaborator (tier 3) (`c3432b9`)
+- **examples** — caesar — the stranger test's cipher joins the oracle corpus (`08027e5`)
+- **witness** — LawTest derived generators + shrinking (#60 slice 1) (`510965a`)
+- **witness** — LawTest law runner over source-generated samples (#60 slice 2) (`5ea0228`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
