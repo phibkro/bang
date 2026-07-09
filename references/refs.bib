@@ -200,6 +200,66 @@
   doi       = {10.1145/2535838.2535841},
 }
 
+@inproceedings{kanabar-pldi23-purecake,
+  keywords = {topic:env-semantics grounds:issue-61 grounds:inv-4 role:confirmed-sota},
+  author    = {Kanabar, Hrutvik and Vivien, Samuel and Abrahamsson, Oskar and Myreen, Magnus O. and Norrish, Michael and {\AA}man Pohjola, Johannes and Zanetti, Riccardo},
+  title     = {{PureCake}: A Verified Compiler for a Lazy Functional Language},
+  booktitle = {PLDI},
+  year      = 2023,
+  doi       = {10.1145/3591259},
+  note      = {Operator lane renv (#61 env-semantics research), 2026-07-09. THE load-bearing parallel
+              for bang's substitution-vs-environment fork. PureCake's verified back end is a stack of
+              intermediate languages: PureLang (call-by-name, SUBSTITUTION semantics — the spec) →
+              ThunkLang (call-by-value, SUBSTITUTION, with delay/force = bang's thunk/$) → EnvLang
+              (call-by-value, ENVIRONMENT semantics) → StateLang (impure, environment, CESK). The
+              substitution→environment switch is a SINGLE compiler pass, and the paper calls EnvLang
+              "only a minor stepping stone … closely mirrors ThunkLang, except its semantics relies on
+              environments rather than substitution" (§5.3) — i.e. the switch is IL-LOCAL and cheap,
+              NOT a spec rewrite. Directly answers bang's Q3: keep Source.eval as the substitution SPEC,
+              introduce environments in a LOWER machine with a correspondence proof; the two-hop
+              architecture absorbs the change. Bonus (Q4 interim): StateLang compiles delay/force to a
+              two-element thunk-ARRAY (flag + payload) so repeated force is memoized — this breaks
+              step-count monotonicity, forcing them to prove the pass by BOTH forward AND backward
+              simulation (§5.4). See docs/notes/envsem-survey.md.}
+}
+
+@inproceedings{vanhorn-might-icfp10-abstracting-abstract-machines,
+  keywords = {topic:env-semantics grounds:inv-4 role:substrate},
+  author    = {Van Horn, David and Might, Matthew},
+  title     = {Abstracting Abstract Machines},
+  booktitle = {ICFP},
+  year      = 2010,
+  doi       = {10.1145/1863543.1863553},
+  note      = {Operator lane renv (#61 env-semantics research), 2026-07-09. The canonical modern
+              reference for the CEK/CESK family (Felleisen-Friedman). Two facts ground bang's fork:
+              (1) the CEK is environment-based — "environments are finite maps from variables to
+              closures" — and models substitution WITHOUT rebuilding the term (O(1) lookup vs bang's
+              O(body-size) Comp.subst); the CESK* adds a store mapping variables to addresses, a heap.
+              (2) These machines are DERIVED from the standard reduction semantics — "extensionally
+              equivalent but more realistic … amenable to efficient implementation." That derivation
+              discipline IS bang's invariant #4 (the machine is CALCULATED, not hand-designed): the
+              env-machine is the calculated output of evalD, not a rival spec. Sits alongside
+              ager-biernacki-danvy-midtgaard-03 (the defunctionalization route to the same VM).
+              See docs/notes/envsem-survey.md.}
+}
+
+@misc{wadler-kokke-plfa-bigstep,
+  keywords = {topic:env-semantics grounds:issue-61 role:confirmed-sota},
+  author    = {Wadler, Philip and Kokke, Wen and Siek, Jeremy G.},
+  title     = {{Programming Language Foundations in Agda}: BigStep --- Big-step semantics of untyped lambda calculus},
+  howpublished = {\url{https://plfa.github.io/BigStep/}},
+  year      = 2022,
+  note      = {Operator lane renv (#61 env-semantics research), 2026-07-09. The mechanized EXEMPLAR for
+              bang's Q3 correspondence proof: PLFA's BigStep chapter defines an environment-based
+              big-step machine (values = closures `clos M γ`) and proves it equivalent to substitution
+              reduction. The load-bearing lemma `⇓→—↠×≈`: "if γ ⊢ M ⇓ V and γ ≈ₑ σ, then subst σ M —↠ N
+              and V ≈ N". The correspondence relation `γ ≈ₑ σ` says "for any variable x, the closure γ x
+              is equivalent to the term σ x" — the environment-well-formedness invariant bang would owe.
+              PLFA's own remark on cost: "as is often necessary, one must generalize the statement to get
+              the induction to go through" (generalize from empty env to arbitrary γ + the ≈ₑ premise).
+              This is a proof PATTERN bang can copy, not invent. See docs/notes/envsem-survey.md.}
+}
+
 % ─── WasmFX target ───────────────────────────────────────────────────────────
 
 @inproceedings{phipps-costin-pacmpl23-continuing-webassembly,
