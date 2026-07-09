@@ -563,6 +563,7 @@ def pIdent : P String
           || t = "match" || t = "Left" || t = "Right" || t = "if" || t = "then" || t = "else"
           || t = "do" || t = ";"
           || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
+          || t = "effect"
           || t = "as" || t = "." || t = "where"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
@@ -1037,6 +1038,7 @@ def pAtom : Nat → P Surf
               || t = "state" || t = "put" || t = "match" || t = "if" || t = "then" || t = "else"
               || t = "atomically" || t = "new" || t = "read" || t = "write" || t = "do"
               || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
+              || t = "effect"
               || t = "as" || t = "."
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":" then
@@ -1267,7 +1269,9 @@ structure OpDef where
   deriving Repr, Inhabited, DecidableEq
 
 /-- A top-level declaration: a trait (ops + laws), an impl (op definitions for a structural
-target type), or a data type (named constructors over sums·products·μ, ADR-0069). -/
+target type), a data type (named constructors over sums·products·μ, ADR-0069), or a user EFFECT
+(ADR-0092 D1/D2 — a named interface of ops, each `name : ArgTy -> ResTy`; the elaborator allocates
+its label and builds the program-derived `EffSig` instance, no kernel change). -/
 inductive Decl where
   | traitD : String → List String → List OpSig → List LawDecl → Decl   -- trait N ā { fn … ; law … } (ā = HK trait params, [] = Self-only bite-2 trait)
   | implD  : String → Ty → List OpDef → Decl             -- impl N for τ { fn … }
@@ -1275,6 +1279,13 @@ inductive Decl where
   | fnD    : String → List String → Ty → String → String → Surf → Decl
     -- `fn name(params) : declaredTy where Trait tyVar = body` — a BOUNDED generic function
     -- (`fold : Monoid a => List a -> a`); monomorphized per concrete use (bite-2, ADR-0080).
+  | effectD : String → List (String × Ty) → Decl
+    -- `effect N { op1 : ArgTy -> ResTy, op2 : ResTy2, … }` (ADR-0092 D1) — a NAMED interface; each
+    -- op's declared `Ty` is EITHER a bare result type (0-ary, `Unit` is Rust-`fn()`'s analogue —
+    -- v1 requires an explicit arrow for any op taking an argument, no 0-ary sugar beyond a bare
+    -- type) or a single `ArgTy -> ResTy` arrow (v1 monomorphic single-arg ops, matching the
+    -- ADR-0085 D4 sketch `read : Int -> Str`). Multi-arg ops are OUT of v1 scope (not sketched by
+    -- the ADR; a later bite can generalize the same way `capOpSig`'s ≤2-arity does for built-ins).
   deriving Repr, Inhabited, DecidableEq
 
 /-- A whole program: the declaration prelude + the body expression (ADR-0068 decision 3). -/
@@ -1350,6 +1361,28 @@ def pImplMembers : Nat → P (List OpDef)
         .ok (⟨n, ps, b⟩ :: rest, ts)
     | t :: r => .error ⟨s!"expected 'fn' or '}' in an impl body, got '{t}'", t :: r⟩
     | []     => .error "unterminated impl body"
+
+/-- Effect members, up to and including `}`: `name : Ty` signatures, comma- or `;`-separated
+(ADR-0092 D1) — the SAME `n : T` shape `pTraitMembers`'s HKT arm already parses, reused verbatim
+(one construct per problem: a signature list is a signature list). Duplicate op NAMES within one
+`effect` block are a parse-time LOUD error (ADR-0046) — caught here, before elaboration ever sees
+them, so the error names the effect immediately rather than surfacing later as a silent overwrite
+in the elaborator's op table. -/
+def pEffectMembers : Nat → P (List (String × Ty))
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, ts =>
+    match ts with
+    | "}" :: ts => .ok ([], ts)
+    | ";" :: ts => pEffectMembers f ts
+    | "," :: ts => pEffectMembers f ts
+    | n :: ":" :: ts => do
+        let (t, ts) ← pTy f ts
+        let (rest, ts) ← pEffectMembers f ts
+        if rest.any (fun (n', _) => n' == n) then
+          .error ⟨s!"effect: duplicate operation '{n}'", ts⟩
+        else .ok ((n, t) :: rest, ts)
+    | t :: r => .error ⟨s!"expected a `name : Ty` operation signature or '}' in an effect body, got '{t}'", t :: r⟩
+    | []     => .error "unterminated effect body"
 
 /-- The comma-separated payload types of a constructor, up to and including `)`. -/
 def pCtorTysLoop : Nat → P (List Ty)
@@ -1431,7 +1464,12 @@ def pDecl : Nat → P Decl
       let (_, ts) ← expect "=" ts
       let (b, ts) ← pExpr f ts                 -- body (self-delimiting: end it at a `match`/`)` before the next decl)
       .ok (.fnD n ps ty tr tv b, ts)
-  | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', or 'fn', got '{t}'", t :: r⟩
+  | f + 1, "effect" :: ts => do                -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }`
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect "{" ts
+      let (ops, ts) ← pEffectMembers f ts
+      .ok (.effectD n ops, ts)
+  | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', or 'effect', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
 /-- The declaration prelude: zero or more decls (delimited by their leading keyword). -/
@@ -1439,7 +1477,7 @@ def pDecls : Nat → P (List Decl)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
-    | "trait" :: _ | "impl" :: _ | "data" :: _ | "fn" :: _ => do
+    | "trait" :: _ | "impl" :: _ | "data" :: _ | "fn" :: _ | "effect" :: _ => do
         let (d, ts) ← pDecl f ts
         let (ds, ts) ← pDecls f ts
         .ok (d :: ds, ts)

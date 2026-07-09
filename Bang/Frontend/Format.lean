@@ -407,6 +407,11 @@ def fmtLawDecl (l : LawDecl) : String :=
 def fmtOpDef (d : OpDef) : String :=
   s!"fn {d.name}({String.intercalate ", " d.params}) = {showSurf d.body}"
 
+/-- One `effect` op signature (ADR-0092 D1) — `name : Ty`, the exact source shape `pEffectMembers`
+parses (no `fn`/params-list wrapper, unlike a trait op). -/
+def fmtEffectOp (op : String × Ty) : String :=
+  s!"{op.1} : {showTy op.2}"
+
 /-- `trait`/`impl` member lists (D2): one member per line when the decl doesn't fit, `;` at line
 starts (matching the flat separator's own `"; "` token — only the BREAK point differs). Uses the
 same wrap-block shape as `fmtBraceBlock`, with `;` in place of `,` as the join token. -/
@@ -435,6 +440,9 @@ def fmtDeclDoc : Decl → Format
       Format.group (nestD (
         Format.text s!"fn {n}({String.intercalate ", " ps}) : {showTy ty} where {tr} {tv} ="
           ++ Format.line ++ fmtSurf .cmp body))
+  | .effectD n ops =>    -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }` — same member-block
+                          -- shape as trait/impl (D2's flat-vs-wrapped rule applies uniformly).
+      Format.text s!"effect {n} " ++ fmtMemberBlock (ops.map fmtEffectOp)
 
 def fmtDecl (d : Decl) : String := render (fmtDeclDoc d)
 
@@ -669,3 +677,30 @@ open Bang.Format in
 #guard canonicalOn
   "state 0 in let c = {get} in let z = put 5 in $c"
   "state  0   in  let c = { get }  in  let  z  =  put  5  in  $c"
+
+-- `effect` decls (ADR-0092 D1): a single-op interface round-trips + idempotent, same member-block
+-- shape as trait/impl.
+open Bang.Format in
+#guard roundTripsOn "effect Net { read : Int -> Int } 0" && idempotentOn "effect Net { read : Int -> Int } 0"
+-- a multi-op effect, comma-separated in source, round-trips too (the parser's `,`/`;` separators
+-- are both accepted on input; the printer picks ONE canonical join token — zero-config, D2's own
+-- "gofmt precedent, no options" carried over from Format.lean's original design).
+open Bang.Format in
+#guard roundTripsOn "effect Net { read : Int -> Int, write : Int -> Unit } 0"
+       && idempotentOn "effect Net { read : Int -> Int, write : Int -> Unit } 0"
+-- a 0-ary op (a bare result type, no arrow) round-trips too.
+open Bang.Format in
+#guard roundTripsOn "effect Ping { ping : Int } 0" && idempotentOn "effect Ping { ping : Int } 0"
+-- MULTIPLE effect decls in one program (label-allocation-relevant — the printer must preserve
+-- DECL ORDER, since ADR-0092 D1's label allocation is order-dependent; a printer that silently
+-- reordered decls would be a SILENT source-of-truth change, not just a style choice).
+open Bang.Format in
+#guard roundTripsOn "effect Net { read : Int -> Int } effect Db { query : Int -> Int } 0"
+       && idempotentOn "effect Net { read : Int -> Int } effect Db { query : Int -> Int } 0"
+-- a WIDE effect (op count forces the multi-line member-block wrap, D2's break rule) round-trips +
+-- idempotent too — the same falsification concern the wide let-chain/match cases above test for.
+open Bang.Format in
+#guard roundTripsOn
+  "effect BigNet { readOp : Int -> Int, writeOp : Int -> Int, queryOp : Int -> Int, pingOp : Int -> Int, closeOp : Int -> Int } 0"
+       && idempotentOn
+  "effect BigNet { readOp : Int -> Int, writeOp : Int -> Int, queryOp : Int -> Int, pingOp : Int -> Int, closeOp : Int -> Int } 0"
