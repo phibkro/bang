@@ -3078,12 +3078,12 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | inl sv =>
               simp only [evalD] at h
-              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv b) g σ τ ℓ op v g' σ' τ' h hs hC hT
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv b) g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK
               exact ⟨hpair, fun c s F r hr => by
                 obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩⟩
           | inr sv =>
               simp only [evalD] at h
-              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv d) g σ τ ℓ op v g' σ' τ' h hs hC hT
+              obtain ⟨hpair, kR⟩ := ihR (Comp.subst sv d) g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK
               exact ⟨hpair, fun c s F r hr => by
                 obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩⟩
           | vunit => simp [evalD] at h
@@ -3099,7 +3099,7 @@ theorem sim : ∀ fe,
           | pair sv sw =>
               simp only [evalD] at h
               obtain ⟨hpair, kR⟩ :=
-                ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) g σ τ ℓ op v g' σ' τ' h hs hC hT
+                ihR (Comp.subst sv (Comp.subst (Val.shift sw) b)) g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK
               exact ⟨hpair, fun c s F r hr => by
                 obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F'+1, by simp only [compile, exec]; exact hF'⟩⟩
           | vunit => simp [evalD] at h
