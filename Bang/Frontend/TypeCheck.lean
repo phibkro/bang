@@ -1095,6 +1095,10 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
           -- `capOpSig op` before the label would let a same-named user op be wrongly shadowed by an
           -- unrelated built-in's signature (found live: `effect Net { read : … }` collided with the
           -- STM `read` op before this fix). Label-first makes the two tables genuinely disjoint.
+          -- (A same-named user effect is now ALSO rejected one step earlier, at `effect` decl
+          -- elaboration — `buildEnv`'s `.effectD` case — since built-in names are RESERVED v1-wide,
+          -- closing a separate elaborator/MACHINE consistency gap; this dispatch fix stays correct
+          -- and load-bearing regardless, it's what makes that reservation actually sound to rely on.)
           if ℓ < 4 then
             match capOpSig op with
             | none => throw s!"unknown capability op '{op}'"
@@ -2601,6 +2605,28 @@ def buildEnv (ds : List Decl) : Except String ElabEnv := do
         -- message names the effect; ADR-0076's span-view still locates the token by name downstream.
         if (effects.lookup n).isSome then throw s!"duplicate effect '{n}'"
         if ops.isEmpty then throw s!"effect {n}: needs at least one operation"
+        -- BUILT-IN op names are RESERVED in an `effect` decl, v1 (operator ruling, follow-up to
+        -- D1/D2's initial landing). Root cause: the label-first `.dotPerform` dispatch fix (this
+        -- file) makes elaboration correctly type a user op sharing a built-in's NAME (dispatch is
+        -- by the receiver's LABEL, not the op name) — but the MACHINE side (`Bang/Core`, the s4
+        -- lane's op-priority guard: a built-in op is never served by a custom clause) has an
+        -- INDEPENDENT name-keyed check that does not know about user labels. A user effect named
+        -- `get`/`put`/`raise`/`new`/`read`/`write` would therefore TYPE fine here but could
+        -- diverge from the machine at runtime once D3/D4 land the typed custom-handle — a typed-
+        -- program/machine gap, exactly the class the Agree differential battery exists to catch,
+        -- currently UNWITNESSED for user effects. Closing it AT THE SURFACE, by construction, is
+        -- cheaper than coordinating two independent name checks across lanes: reserving the names
+        -- here makes the collision UNREPRESENTABLE in any elaborated program, so the machine's
+        -- guard is vacuously safe for everything that type-checks. `capOpSig` (this file) is the
+        -- SINGLE SOURCE OF TRUTH for "which names are built-in" — checked directly (`.isSome`),
+        -- never a hand-copied name list, so a future built-in op addition can't silently desync
+        -- this reservation from what `.dotPerform`'s built-in arm actually recognizes.
+        -- DEFERRED: real per-effect NAMESPACING (so `Net.get` and the built-in `get` coexist) is
+        -- the Q34/Q38 module-interface work's territory, not this ADR's — this reservation is the
+        -- v1 stopgap, not the final design.
+        for (opName, _) in ops do
+          if (capOpSig opName).isSome then
+            throw s!"effect {n}: op '{opName}' is reserved by a built-in effect (v1 restriction — see ADR-0092)"
         -- D1: label := 4 + declIndex, deterministic by EFFECT-decl order (the four built-ins keep
         -- 0-3; `effects.length` is exactly "how many effect decls processed so far", so this is
         -- stable under interleaving with data/trait/impl/fn decls — only relative EFFECT order
@@ -3986,24 +4012,28 @@ def parserMonad : String :=
 
 /-! ### Validation ⑨k — USER EFFECTS: label allocation + program-derived typing (ADR-0092 D1/D2, #44).
 
-`effect Net { read : Int -> Str, … }` declares a named interface; the elaborator allocates its label
-(`4 + declIndex` among `effect` decls, D1) and builds a total finite `(label, op) ↦ (argTy?, resTy)`
-lookup (D2 — the surface-side analogue of the kernel's `[EffSig]`). `perform` (`h.op(...)`) against a
-`Cap ℓ` receiver TYPES against this table exactly like the four built-ins — the kernel needs NOTHING
-new for this (ADR-0092's own grounding fact: "the performer side is already general"). The typed
-custom-HANDLE rule that would normally introduce a `Cap ℓ` binding (`handle e with Net { … }`) is D3
-(a sibling kernel lane, not yet landed), so these guards assert TYPES under `checkPerformUnderCap`'s
-hypothetical binding, not runs — v1 can DECLARE + PERFORM a user effect but nothing in-language
-discharges it yet. -/
+`effect Net { read4 : Int -> Str, … }` declares a named interface; the elaborator allocates its
+label (`4 + declIndex` among `effect` decls, D1) and builds a total finite `(label, op) ↦
+(argTy?, resTy)` lookup (D2 — the surface-side analogue of the kernel's `[EffSig]`). `perform`
+(`h.op(...)`) against a `Cap ℓ` receiver TYPES against this table exactly like the four built-ins —
+the kernel needs NOTHING new for this (ADR-0092's own grounding fact: "the performer side is
+already general"). The typed custom-HANDLE rule that would normally introduce a `Cap ℓ` binding
+(`handle e with Net { … }`) is D3 (a sibling kernel lane, not yet landed), so these guards assert
+TYPES under `checkPerformUnderCap`'s hypothetical binding, not runs — v1 can DECLARE + PERFORM a
+user effect but nothing in-language discharges it yet.
+
+Op names used below are deliberately NON-colliding with the four built-ins (`read4`/`query`/`ping`/
+`echo`/…, not `read`/`get`/`put`/`raise`/`new`/`write`) — see the RESERVED-NAME follow-up ruling
+just below: a built-in-NAMED user op is a v1 LOUD error, so a positive test can no longer use one. -/
 
 -- (a) label allocation: the FIRST `effect` decl gets label 4 (right after the four built-ins).
-#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int } 0" with
+#guard (match Bang.Surface.parseProg "effect Net { read4 : Int -> Int } 0" with
         | .ok p => (match buildEnv p.decls with
             | .ok env => (env.effects.lookup "Net").map EffectInfo.label == some 4
             | .error _ => false)
         | .error _ => false)
 -- and the SECOND effect decl gets label 5 (deterministic by EFFECT-decl order, ADR-0046).
-#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int } effect Db { query : Int -> Int } 0" with
+#guard (match Bang.Surface.parseProg "effect Net { read4 : Int -> Int } effect Db { query : Int -> Int } 0" with
         | .ok p => (match buildEnv p.decls with
             | .ok env => (env.effects.lookup "Net").map EffectInfo.label == some 4
                       && (env.effects.lookup "Db").map EffectInfo.label == some 5
@@ -4012,7 +4042,7 @@ discharges it yet. -/
 -- determinism is PER-SOURCE (same program twice → same labels); reordering the two decls in the
 -- SOURCE assigns the labels the other way — this is FINE and expected, not a determinism bug (the
 -- guard above already fixes one order; this one fixes the swap, both internally consistent).
-#guard (match Bang.Surface.parseProg "effect Db { query : Int -> Int } effect Net { read : Int -> Int } 0" with
+#guard (match Bang.Surface.parseProg "effect Db { query : Int -> Int } effect Net { read4 : Int -> Int } 0" with
         | .ok p => (match buildEnv p.decls with
             | .ok env => (env.effects.lookup "Db").map EffectInfo.label == some 4
                       && (env.effects.lookup "Net").map EffectInfo.label == some 5
@@ -4020,29 +4050,29 @@ discharges it yet. -/
         | .error _ => false)
 
 -- (b) LOUD errors — duplicate effect name (D1).
-#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int } effect Net { write : Int -> Int } 0" with
+#guard (match Bang.Surface.parseProg "effect Net { read4 : Int -> Int } effect Net { write4 : Int -> Int } 0" with
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
         | .error _ => false)
 -- duplicate OP name within one effect block — caught at PARSE time (`pEffectMembers`).
-#guard (match Bang.Surface.parseProg "effect Net { read : Int -> Int, read : Int -> Int } 0" with
+#guard (match Bang.Surface.parseProg "effect Net { read4 : Int -> Int, read4 : Int -> Int } 0" with
         | .error _ => true | .ok _ => false)
 -- an effect with NO operations is rejected (an empty interface names nothing to perform).
 #guard (match Bang.Surface.parseProg "effect Empty { } 0" with
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
         | .error _ => false)
 
--- (c) `perform` TYPES against a declared effect's op — the D2 payoff. A 1-ary op (`read : Int ->
+-- (c) `perform` TYPES against a declared effect's op — the D2 payoff. A 1-ary op (`read4 : Int ->
 -- Int`) checks its argument and returns the declared result type, the row gaining the op's label.
-#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read(5)" with
+#guard (match checkPerformUnderCap "effect Net { read4 : Int -> Int } 0" "Net" "h" "h.read4(5)" with
         | .ok (B, φ) => showCTy B == "Int" && (4 : Label) ∈ φ | .error _ => false)
 -- and the row DISPLAYS the effect's SOURCE name, not a bare kernel label (`showRow`'s D2 extension).
-#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read(5)" with
+#guard (match checkPerformUnderCap "effect Net { read4 : Int -> Int } 0" "Net" "h" "h.read4(5)" with
         | .ok (_, φ) => showRow φ [("Net", ⟨4, []⟩)] == "Net" | .error _ => false)
 -- a 0-ary op (a bare result type, no arrow) types with no argument.
 #guard (match checkPerformUnderCap "effect Ping { ping : Int } 0" "Ping" "h" "h.ping" with
         | .ok (B, φ) => showCTy B == "Int" && (4 : Label) ∈ φ | .error _ => false)
 -- an op's ARGUMENT is CHECKED against its declared type (a type mismatch rejects).
-#guard (match checkPerformUnderCap "data Pair = Mk(Int, Int) effect Net { read : Int -> Int } 0" "Net" "h" "h.read(Mk(1, 2))" with
+#guard (match checkPerformUnderCap "data Pair = Mk(Int, Int) effect Net { read4 : Int -> Int } 0" "Net" "h" "h.read4(Mk(1, 2))" with
         | .error _ => true | .ok _ => false)
 -- a declared DATA type as an op's arg/result works too (D2's "declared data types" scope) — round-
 -- trips a value through a user op untouched.
@@ -4051,23 +4081,71 @@ discharges it yet. -/
 
 -- (d) NEGATIVE — an UNDECLARED op at a DECLARED user label is an ELABORATION error (D2: total by
 -- construction over what's declared; "no entry" is a genuine source error, never a kernel stuck).
-#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.write(5)" with
+#guard (match checkPerformUnderCap "effect Net { read4 : Int -> Int } 0" "Net" "h" "h.write4(5)" with
         | .error _ => true | .ok _ => false)
 -- wrong ARITY (0 args supplied to a 1-ary op) rejects with a named-arity message.
-#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read" with
+#guard (match checkPerformUnderCap "effect Net { read4 : Int -> Int } 0" "Net" "h" "h.read4" with
         | .error m => (m.splitOn "expects 1 argument").length > 1 | .ok _ => false)
 -- and the reverse (1 arg supplied to a 0-ary op).
 #guard (match checkPerformUnderCap "effect Ping { ping : Int } 0" "Ping" "h" "h.ping(5)" with
         | .error m => (m.splitOn "expects 0 argument").length > 1 | .ok _ => false)
--- a user op name that COLLIDES with a built-in op name (`read`) does NOT get shadowed by the
--- built-in's signature — dispatch is by the RECEIVER'S label (D1: `ℓ < 4` ⟹ built-in, `ℓ ≥ 4` ⟹
--- user), never by op name alone. This is the exact regression this file's `.dotPerform` comment
--- documents finding live during development.
-#guard (match checkPerformUnderCap "effect Net { read : Int -> Int } 0" "Net" "h" "h.read(5)" with
+-- a NON-colliding user op name TYPES fine (the positive control the reservation check below is
+-- contrasted against) — dispatch is by the RECEIVER'S label (D1: `ℓ < 4` ⟹ built-in, `ℓ ≥ 4` ⟹
+-- user), never by op name alone; this is the mechanism the label-first `.dotPerform` fix landed
+-- for, still exercised here even though the exact colliding-name case (`read`) is now rejected
+-- one step earlier, at DECLARATION time, by the reservation rule immediately below.
+#guard (match checkPerformUnderCap "effect Net { read4 : Int -> Int } 0" "Net" "h" "h.read4(5)" with
         | .ok _ => true | .error _ => false)
 -- a `perform` on an UNDECLARED effect label (no `effect` decl at all) still rejects exactly as
 -- before ADR-0092 (the pre-existing "not a capability value" / label-mismatch path is unaffected
 -- for decl-free programs — checked via the ordinary `checkProg` path, no hypothetical cap needed).
 #guard (match checkProg "state 5 as h in h.get" with | .ok _ => true | .error _ => false)
+
+/-! ### Validation ⑨l — BUILT-IN op names are RESERVED in `effect` decls (v1 follow-up ruling).
+
+An `effect` decl whose op name collides with ANY built-in op (`capOpSig`'s own table is the SINGLE
+SOURCE OF TRUTH checked here — never a hand-copied name list, so a future built-in addition can't
+silently desync this reservation from what `.dotPerform`'s built-in arm recognizes) is a LOUD
+elaboration error. Root cause this closes: the label-first `.dotPerform` fix makes ELABORATION
+correctly type a user op sharing a built-in's name (dispatch is by label, not name) — but the
+MACHINE side (`Bang/Core`, the s4 lane's op-priority guard) has an INDEPENDENT name-keyed check
+that a built-in op is never served by a custom clause. A same-named user effect would therefore
+TYPE here but could diverge from the machine at runtime once D3/D4 land — a typed-program/machine
+gap, exactly the class the Agree differential battery exists to catch. Reserving the names makes
+the collision UNREPRESENTABLE in any elaborated program (the elaborator/machine consistency holds
+BY CONSTRUCTION, not by two independently-maintained checks agreeing). DEFERRED: real per-effect
+NAMESPACING (so a user `Net.get` and the built-in `get` could coexist) is the Q34/Q38
+module-interface work's territory — this reservation is the v1 stopgap, not the final design. -/
+-- a built-in-named op (`get`, the state built-in) is REJECTED at effect-decl elaboration time.
+#guard (match Bang.Surface.parseProg "effect Gt { get : Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
+        | .error _ => false)
+-- the error NAMES the offending op + the v1-restriction pointer (agent-first: explicit, concise).
+#guard (match Bang.Surface.parseProg "effect Gt { get : Int } 0" with
+        | .ok p => (match buildEnv p.decls with
+            | .error m => (m.splitOn "'get' is reserved").length > 1 | .ok _ => false)
+        | .error _ => false)
+-- every OTHER built-in op name is reserved too (`put`/`raise`/`new`/`read`/`write` — the whole
+-- `capOpSig` table, not just `get`), confirming the check is `capOpSig`-driven, not a partial list.
+#guard (match Bang.Surface.parseProg "effect A { put : Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+#guard (match Bang.Surface.parseProg "effect B { raise : Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+#guard (match Bang.Surface.parseProg "effect C { new : Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+#guard (match Bang.Surface.parseProg "effect D { read : Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+#guard (match Bang.Surface.parseProg "effect E { write : Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+-- a NON-colliding name (`read4`, not `read`) is ACCEPTED — the reservation is precise (built-in
+-- names only), not an over-broad rejection of anything superficially similar.
+#guard (match Bang.Surface.parseProg "effect Net { read4 : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .ok _ => true | .error _ => false)
+        | .error _ => false)
+-- a MIXED effect (one reserved name among several non-colliding ones) still rejects — reservation
+-- is per-OP, not skipped once the decl has at least one safe name.
+#guard (match Bang.Surface.parseProg "effect Mixed { read4 : Int -> Int, get : Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
+        | .error _ => false)
 
 end Bang.TypeCheck
