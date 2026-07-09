@@ -1,0 +1,12 @@
+let rec go : Str -> Int ! {Div} = fun s =>
+    let d1 = {fun x => x + 1} in
+    let d2 = {fun x => x + 2} in
+    let d3 = {fun x => x + 3} in
+    let d4 = {fun x => x + 4} in
+    let d5 = {fun x => x + 5} in
+    let d6 = {fun x => x + 6} in
+    let d7 = {fun x => x + 7} in
+    let d8 = {fun x => x + 8} in
+    match (s : Str) { SNil -> 0, SCons(c, rest) -> $go rest }
+  in
+$go "aaaaaaaaaa"

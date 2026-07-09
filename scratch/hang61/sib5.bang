@@ -1,0 +1,22 @@
+let rec outer : Str -> Int ! {Div} = fun s =>
+    let rec a : Str -> Int ! {Div} = fun t =>
+        match (t : Str) { SNil -> 0, SCons(c, rest) -> $outer rest }
+      in
+    let rec b : Str -> Int ! {Div} = fun t =>
+        match (t : Str) { SNil -> 1, SCons(c, rest) -> $outer rest }
+      in
+    let rec d : Str -> Int ! {Div} = fun t =>
+        match (t : Str) { SNil -> 2, SCons(c, rest) -> $outer rest }
+      in
+    let rec e : Str -> Int ! {Div} = fun t =>
+        match (t : Str) { SNil -> 3, SCons(c, rest) -> $outer rest }
+      in
+    let rec f : Str -> Int ! {Div} = fun t =>
+        match (t : Str) { SNil -> 4, SCons(c, rest) -> $outer rest }
+      in
+    match (s : Str) {
+      SNil -> 0,
+      SCons(c, rest) -> $a rest + $b rest + $d rest + $e rest + $f rest
+    }
+  in
+$outer "ab"

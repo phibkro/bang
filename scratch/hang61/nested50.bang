@@ -1,0 +1,10 @@
+let rec outer : Str -> Int ! {Div} = fun s =>
+    match (s : Str) {
+      SNil -> 0,
+      SCons(c, rest2) -> let rec inn : Str -> Int ! {Div} = fun u =>
+        match (u : Str) { SNil -> $outer rest2, SCons(ic, ir) -> $inn ir }
+      in
+      $inn "bbbbb"
+    }
+  in
+$outer "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
