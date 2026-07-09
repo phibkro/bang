@@ -30,6 +30,19 @@ your rigor is your rung." Full context + the evaluated-and-set-aside HoTT questi
 - Un-discharged `#prove` = a named, visible debt (the proof-state block pattern), never a
   silent pass — the law still fuzzes meanwhile.
 
+**The mechanics (operator discussion 2026-07-09) — why bang gets this nearly for free**: the
+elaborated program IS a Lean value (the kernel AST is a Lean inductive), and the evaluator that
+runs it (`Source.eval`) is the same function the theorem quantifies over — no encoding gap, no
+second semantics; the oracle and the proof subject are one construct. `bang prove --emit`
+writes a `.lean` artifact: the elaborated terms quoted verbatim + the goal
+(`∀ args, WT → ∃ v, Evals lhs v ∧ Evals rhs v`) + `sorry`; a prover (agent or human)
+discharges it with the whole spine's lemma library in scope; the cache keys on
+hash(terms + goal). Statement form follows the ROW: total fragment (⊥, structOK-certified) →
+clean value equality (termination provable); Div fragment → partial correctness / up-to-fuel;
+the ◊4 binary LR (contextual equivalence) is the eventual gold-standard relation. Lifecycle is
+fail-loud in every state: undischarged = named visible debt (still fuzzing), discharged =
+cached, edited = hash-miss = reopened red automatically.
+
 **Forks to settle at design time**: goal shape (over `Source.eval` at fuel — how is the fuel
 quantified? partiality via the Div seam?); where proofs LIVE (in-repo .lean files keyed by
 hash? a proofs/ dir?); what fragment is exportable v1 (⊥-row total fragment first — the
