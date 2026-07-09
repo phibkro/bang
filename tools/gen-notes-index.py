@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=docs/notes/*.md,docs/notes/README.md runs-in=fitness
 """gen-notes-index.py — generate docs/notes/README.md, the notes map.
 
 The GENERATE-rung twin of check-doc-hygiene's TEST rung. `docs/notes/` is a flat

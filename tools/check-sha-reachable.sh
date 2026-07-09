@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=CONTEXT.md,ROADMAP.md,sha-allow.txt runs-in=fitness
 # check-sha-reachable.sh — orientation-doc SHA reachability fitness function.
 # ──────────────────────────────────────────────────────────────────────────────
 # CONTEXT.md and ROADMAP.md cite commit SHAs as waypoints ("banked at `91a6515`",

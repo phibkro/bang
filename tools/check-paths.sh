@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=paths/PATH-*.md,CONTEXT.md,ROADMAP.md runs-in=fitness
 # check-paths.sh — PATH lifecycle fitness function.
 #
 # A `paths/PATH-*.md` is a unit of in-flight work (CLAUDE.md). When its work lands

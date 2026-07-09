@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=test couples=examples/*/main.bang runs-in=verify
 # test-fmt.sh — the non-interactive gate for `bang fmt` (issue #58's CLI half).
 #
 # Mirrors test-repl.sh's shape (build once, exercise the binary, diff, tally pass/fail). The

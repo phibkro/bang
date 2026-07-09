@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=workflow couples=burndown.sh,paths/PATH-*.md,CONTEXT.md runs-in=manual
 # orient.sh — one-shot orient for fresh sessions.
 # Used by `just orient` AND the SessionStart Claude Code hook.
 #

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=Bang/Spec.lean,Bang/Audit.lean runs-in=fitness
 # check-audit-sync.sh — keep the soundness gate ≡ the headline-theorem set.
 #
 # The maintenance instance flagged: Audit.lean's `#print axioms` list is

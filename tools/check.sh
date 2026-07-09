@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=Bang/**/*.lean runs-in=manual
 # check.sh — fast per-file Lean error check.
 # Usage:
 #   bash tools/check.sh                    # full lake build (incremental)

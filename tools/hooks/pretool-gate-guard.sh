@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=new-worktree.sh runs-in=hook
 # PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun
 # that clobbered worktrees in multi-agent proof sessions: `lake exe cache get` run from
 # inside a linked git worktree (it re-clones Mathlib and clobbers the checkout — #40).

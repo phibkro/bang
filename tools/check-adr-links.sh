@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=docs/decisions/*.md runs-in=fitness
 # check-adr-links.sh — ADR integrity lint for docs/decisions/.
 #
 # The maintenance instance flagged: this repo DELETED ADR-0003/0004 (and collapsed

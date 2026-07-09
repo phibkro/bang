@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=Bang/Audit.lean,burndown.sh,CONTEXT.md,genblock.py runs-in=fitness
 """gen-proof-state.py — generate CONTEXT.md's proof-state line from the gate (the root).
 
 CONTEXT.md hand-maintains a "proof-state" summary (which headline theorems are

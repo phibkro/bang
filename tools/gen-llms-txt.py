@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=CLAUDE.md,llms.txt runs-in=fitness
 """gen-llms-txt.py — generate llms.txt (the LLM-doc-index standard, llmstxt.org).
 
 A CURATED, agent-friendly index at the repo root pointing an LLM at the key docs.

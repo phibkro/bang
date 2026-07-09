@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=docs/notes/questions/*.md,docs/notes/OPEN_QUESTIONS.md,genblock.py runs-in=fitness
 """gen-questions-index.py — the design-question ledger, generated from the OKF files.
 
 `docs/notes/questions/*.md` is a flat folder of one-question-per-file notes, each

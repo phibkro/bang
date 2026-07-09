@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=ROADMAP.md,CONTEXT.md,CHANGELOG.md,_site/index.html runs-in=manual
 """Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages).
 
 A GENERATED VIEW over data the repo already owns (single-source-of-truth, generate rung):

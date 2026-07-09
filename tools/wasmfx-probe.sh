@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=test couples=test/wasmfx/generator.wat runs-in=manual
 # ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs
 # a stack-switching suspend/resume generator on x86_64 Linux. This is leg #2's
 # foundation (the real-engine diff-test oracle) and the single biggest external

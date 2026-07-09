@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=test couples=none runs-in=verify
 # test-repl.sh — the non-interactive gate for `bang repl` (issue #7).
 #
 # The REPL is agent-facing (piped stdin, no TTY), so its test surface IS a

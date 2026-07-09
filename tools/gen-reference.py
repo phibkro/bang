@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# tool: role=gen couples=Bang/Frontend/Surface.lean,docs/reference/language.md runs-in=fitness
 """Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained.
 
 Sources of truth (the generate rung of the derivation ladder):

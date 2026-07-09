@@ -59,6 +59,7 @@ test-check-json:
 regen-all:
     python3 tools/gen-adr-index.py
     python3 tools/gen-notes-index.py
+    python3 tools/gen-tools-index.py
     python3 tools/gen-questions-index.py
     python3 tools/gen-llms-txt.py
     python3 tools/refs.py build
@@ -129,6 +130,7 @@ fitness:
     python3 tools/check-doc-hygiene.py --check
     python3 tools/check-context-claims.py
     python3 tools/gen-notes-index.py --check
+    python3 tools/gen-tools-index.py --check
     python3 tools/gen-questions-index.py --check
     python3 tools/gen-llms-txt.py --check
     python3 tools/refs.py check
@@ -163,6 +165,10 @@ import-graph:
 # Regenerate docs/notes/README.md (the design-notes map) from each note's `note-status` frontmatter.
 notes-index:
     python3 tools/gen-notes-index.py
+
+# Regenerate tools/README.md (the flat-tools map) from each script's `# tool:` header.
+tools-index:
+    python3 tools/gen-tools-index.py
 
 # Regenerate docs/notes/OPEN_QUESTIONS.md (multi-view ledger + validated tie-graph) from the OKF question files.
 questions-index:

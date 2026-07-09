@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=test couples=examples/*/main.bang runs-in=verify
 # test-check-json.sh — the non-interactive gate for `bang check [--json]` (issue #59).
 #
 # Mirrors test-fmt.sh/test-repl.sh's shape (build once, exercise the binary, diff, tally

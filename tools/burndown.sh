@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=check couples=Bang/**/*.lean runs-in=manual
 # burndown.sh — Phase B burndown chart.
 # Counts pending `sorry` (theorem-body stubs) and `axiom` (signature stubs)
 # per Lean file in Bang/, plus a total.

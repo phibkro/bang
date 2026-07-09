@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# tool: role=workflow couples=install-hooks.sh runs-in=manual
 # setup.sh — first-time bootstrap for a fresh clone.
 # Usage: just setup
 #
