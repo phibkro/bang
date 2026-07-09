@@ -4825,6 +4825,452 @@ theorem NoCustomFrame.not_custom {K : Bang.EvalCtx} (h : NoCustomFrame K)
         simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, rfl⟩ := heq
         exact ih h.tail hsp'
 
+/-! ### `WfCustomOps` — op-disjointness of custom clauses (the proof-side of the surface reservation)
+
+The kernel dispatches perform IDENTITY-first (`idDispatch` → `handlesOp` on whatever frame sits at `n`),
+while `evalD` dispatches OP-first (`if get / elif put / elif isTxnOp / else custom`). They DIVERGE on
+one class: a `perform (vcap n ℓ) op v` where op is a BUILTIN name (`get`/`put`/TVar-family) but the frame
+at `n` is a `custom ℓ p cls` with a clause KEYED that builtin name — the kernel SERVICES the clause,
+`evalD` RAISES (probe-confirmed, `scratch/OpPriorityProbe.lean`). `WfCustomOps K` rules this out: every
+custom frame in `K` keys only NON-builtin ops. This is the PROOF-SIDE encoding of the SURFACE reservation
+(ADR-0092: the elaborator rejects an `effect` decl naming a reserved op `get`/`put`/`raise`/TVar-family
+with a loud error), so it holds by construction for every elaborated program — the exact analog of
+`VcapFree` (surface never emits raw `vcap`). It REPLACES the vacuous `NoCustomFrame` scaffolding (which
+forbade custom frames entirely) with the strictly-weaker "custom allowed, op-disjoint" — a net
+strengthening of every consumer (ADR-0086 premise-lifecycle; `CustomFree` → `WfCustomOps` swap). -/
+def WfCustomOps : Bang.EvalCtx → Prop
+  | [] => True
+  | Frame.handleF _ (.custom _ _ cls) :: K =>
+      (∀ c ∈ cls, isBuiltinOp c.1 = false) ∧ WfCustomOps K
+  | _ :: K => WfCustomOps K
+
+/-- `WfCustomOps` passes to the tail. -/
+theorem WfCustomOps.tail {fr : Bang.Frame} {K : Bang.EvalCtx} (h : WfCustomOps (fr :: K)) :
+    WfCustomOps K := by
+  cases fr with
+  | handleF m hd => cases hd <;> first | exact h | exact h.2
+  | letF N => exact h
+  | appF w => exact h
+
+/-- Pushing a NON-custom handler/non-frame head preserves `WfCustomOps`. -/
+theorem WfCustomOps.cons_noncustom {fr : Bang.Frame} {K : Bang.EvalCtx}
+    (hnc : ∀ n ℓ p cls, fr ≠ Frame.handleF n (.custom ℓ p cls)) (h : WfCustomOps K) :
+    WfCustomOps (fr :: K) := by
+  cases fr with
+  | handleF m hd =>
+      cases hd with
+      | custom ℓ p cl => exact absurd rfl (hnc m ℓ p cl)
+      | _ => exact h
+  | letF N => exact h
+  | appF w => exact h
+
+/-- Pushing a custom frame whose clauses are builtin-op-disjoint preserves `WfCustomOps`. -/
+theorem WfCustomOps.cons_custom {n : Nat} {ℓ : Bang.EffectRow.Label} {p : Val}
+    {cls : List (Bang.OpId × Comp)} {K : Bang.EvalCtx}
+    (hcl : ∀ c ∈ cls, isBuiltinOp c.1 = false) (h : WfCustomOps K) :
+    WfCustomOps (Frame.handleF n (.custom ℓ p cls) :: K) := ⟨hcl, h⟩
+
+/-- `updateCtxStates` rewrites only state-frame VALUES, never clause lists ⇒ `WfCustomOps` rides. -/
+theorem WfCustomOps.updateCtxStates {K : Bang.EvalCtx} (σ : SStore) (h : WfCustomOps K) :
+    WfCustomOps (updateCtxStates K σ) := by
+  induction K generalizing σ with
+  | nil => exact h
+  | cons fr K ih =>
+    cases fr with
+    | handleF m hd =>
+        cases hd with
+        | state ℓ0 s0 =>
+            cases σ with
+            | nil => exact ih [] h.tail
+            | cons hd σ' => obtain ⟨_, v⟩ := hd; exact ih σ' h.tail
+        | throws ℓ0 => exact ih σ h.tail
+        | transaction ℓ0 Θ0 => exact ih σ h.tail
+        | custom ℓ0 p cl => exact ⟨h.1, ih σ h.2⟩
+    | letF N => exact ih σ h
+    | appF w => exact ih σ h
+
+/-- `updateCtxTxns` rewrites only txn-frame HEAPS, never clause lists ⇒ `WfCustomOps` rides. -/
+theorem WfCustomOps.updateCtxTxns {K : Bang.EvalCtx} (τ : THeap) (h : WfCustomOps K) :
+    WfCustomOps (updateCtxTxns K τ) := by
+  induction K generalizing τ with
+  | nil => exact h
+  | cons fr K ih =>
+    cases fr with
+    | handleF m hd =>
+        cases hd with
+        | transaction ℓ0 Θ0 =>
+            cases τ with
+            | nil => exact ih [] h.tail
+            | cons hd τ' => obtain ⟨_, Θv⟩ := hd; exact ih τ' h.tail
+        | state ℓ0 s0 => exact ih τ h.tail
+        | throws ℓ0 => exact ih τ h.tail
+        | custom ℓ0 p cl => exact ⟨h.1, ih τ h.2⟩
+    | letF N => exact ih τ h
+    | appF w => exact ih τ h
+
+/-- `WfCustomOps` rides the full net-effect rebuild (both value passes leave clause lists untouched). -/
+theorem WfCustomOps.ctxNetEffect {K : Bang.EvalCtx} (σ : SStore) (τ : THeap) (h : WfCustomOps K) :
+    WfCustomOps (ctxNetEffect K σ τ) :=
+  (h.updateCtxStates σ).updateCtxTxns τ
+
+/-! ### `WfCustomComp` — the FOCUS-side op-disjointness (custom handlers in a `Comp`)
+
+The context-side `WfCustomOps K` needs a focus-side companion: a `handle (custom ℓ p cls) M` in the focus
+MINTS a custom frame into `K`, so its `cls` must be op-disjoint for `WfCustomOps` preservation. `customOpsC`
+collects every custom-handler clause OP-KEY reachable in a `Comp` (the OpId analog of `capsC`, ADR-0087's
+finite-rep traversal); `WfCustomComp c` says they are all non-builtin. Because custom handlers are INERT
+under `subst`/`shift` (v1 closed clauses — `Handler.substFrom (custom …) = custom …`), `customOpsC` is
+substitution-STABLE, so `WfCustomComp` rides the mint's `subst (vcap g ℓ) M` for free. -/
+mutual
+def customOpsV : Val → List Bang.OpId
+  | .vthunk c => customOpsC c
+  | .inl v    => customOpsV v
+  | .inr v    => customOpsV v
+  | .pair a b => customOpsV a ++ customOpsV b
+  | .fold v   => customOpsV v
+  | _         => []
+  termination_by v => sizeOf v
+def customOpsC : Comp → List Bang.OpId
+  | .ret v        => customOpsV v
+  | .letC M N     => customOpsC M ++ customOpsC N
+  | .force v      => customOpsV v
+  | .lam M        => customOpsC M
+  | .app M v      => customOpsC M ++ customOpsV v
+  | .perform c _ v => customOpsV c ++ customOpsV v
+  | .handle h M   => customOpsH h ++ customOpsC M
+  | .case v N₁ N₂ => customOpsV v ++ customOpsC N₁ ++ customOpsC N₂
+  | .split v N    => customOpsV v ++ customOpsC N
+  | .unfold v     => customOpsV v
+  | .binop _ v w  => customOpsV v ++ customOpsV w
+  | .oom          => []
+  | .wrong _      => []
+  termination_by c => sizeOf c
+def customOpsH : Handler → List Bang.OpId
+  | .state _ s  => customOpsV s
+  | .throws _   => []
+  | .transaction _ Θ => Θ.flatMap customOpsV
+  | .custom _ p cls => customOpsV p ++ cls.map (·.1) ++ customOpsCls cls
+  termination_by h => sizeOf h
+/-- Custom clause OP-keys, recursing on the list spine + each clause body (nested-inductive descent). -/
+def customOpsCls : List (Bang.OpId × Comp) → List Bang.OpId
+  | [] => []
+  | c :: rest => customOpsC c.2 ++ customOpsCls rest
+  termination_by cls => sizeOf cls
+  decreasing_by
+    · simp_wf; cases c with | mk op body => simp only [Prod.mk.sizeOf_spec]; omega
+    · simp_wf; omega
+end
+
+/-- A source program is `WfCustomComp` when every custom-handler clause it contains keys only NON-builtin
+ops — the FOCUS-side of the surface reservation (ADR-0092). Elaborator-discharged (a user `effect` decl
+never names get/put/raise/TVar-family). The direct analog of `VcapFree` (`capsC c = []`). -/
+def WfCustomComp (c : Comp) : Prop := ∀ op ∈ customOpsC c, isBuiltinOp op = false
+
+/-- The config-level predicate threaded through `run_evalD` (like `CapLabelCoh`/`FreshCfg`): the context's
+custom frames AND the focus's custom handlers are all op-disjoint. -/
+def WfCustomCfg : Config → Prop
+  | (_, K, M) => WfCustomOps K ∧ WfCustomComp M
+
+/-- A `custom` handler's clauses key only non-builtin ops when the whole handler is `WfCustomComp`-clean in
+a focus that installs it — extracted from `customOpsH`. -/
+theorem wfCustomComp_custom_clauses {ℓ : Bang.EffectRow.Label} {p : Val} {cls : List (Bang.OpId × Comp)}
+    {M : Comp} (h : WfCustomComp (Comp.handle (Handler.custom ℓ p cls) M)) :
+    ∀ c ∈ cls, isBuiltinOp c.1 = false := by
+  intro c hc
+  apply h
+  simp only [customOpsC, customOpsH]
+  -- `++` left-assoc: customOpsH = (customOpsV p ++ cls.map (·.1)) ++ customOpsCls cls; the whole handle =
+  -- customOpsH ++ customOpsC M. `c.1 ∈ cls.map (·.1)` ⇒ left of the outer, right of the p-summand.
+  exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ (List.mem_map_of_mem hc)))
+
+/-- A value is `WfCustomVal` when every custom handler REACHABLE inside it (through thunks) keys only
+non-builtin ops — the value-level analog of `WfCustomComp` (`customOpsV v` bounds them). Substituting
+a `WfCustomVal` into a `WfCustomComp` keeps it `WfCustomComp`. Note a raw `vcap`/`vunit`/`vint`/`vvar`
+is trivially `WfCustomVal` (`customOpsV = []`) — the mint's `subst (vcap g ℓ)` is always safe. -/
+def WfCustomVal (v : Val) : Prop := ∀ op ∈ customOpsV v, isBuiltinOp op = false
+
+theorem WfCustomVal.vcap {n : Nat} {ℓ : Bang.EffectRow.Label} : WfCustomVal (Val.vcap n ℓ) := by
+  intro op hop; simp only [customOpsV] at hop; exact absurd hop (by simp)
+
+-- `customOps{V,C}` are INVARIANT under `shiftFrom` — shifting only renames variables; custom handlers
+-- are inert and no subterm is added/removed. Mutual structural recursion on Val/Comp.
+mutual
+/-- `customOpsV` is invariant under `shiftFrom` (variable renaming; custom handlers inert). -/
+theorem customOpsV_shiftFrom (k : Nat) (V : Val) : customOpsV (Val.shiftFrom k V) = customOpsV V := by
+  match V with
+  | .vcap n ℓ => simp only [Val.shiftFrom, customOpsV]
+  | .vthunk c => simp only [Val.shiftFrom, customOpsV, customOpsC_shiftFrom k c]
+  | .inl v => simp only [Val.shiftFrom, customOpsV, customOpsV_shiftFrom k v]
+  | .inr v => simp only [Val.shiftFrom, customOpsV, customOpsV_shiftFrom k v]
+  | .pair a b => simp only [Val.shiftFrom, customOpsV, customOpsV_shiftFrom k a, customOpsV_shiftFrom k b]
+  | .fold v => simp only [Val.shiftFrom, customOpsV, customOpsV_shiftFrom k v]
+  | .vunit => simp only [Val.shiftFrom, customOpsV]
+  | .vint n => simp only [Val.shiftFrom, customOpsV]
+  | .vvar i => simp only [Val.shiftFrom]; split <;> simp only [customOpsV]
+  termination_by sizeOf V
+  decreasing_by all_goals (first | (simp_wf; omega) | simp_wf)
+theorem customOpsC_shiftFrom (k : Nat) (M : Comp) : customOpsC (Comp.shiftFrom k M) = customOpsC M := by
+  match M with
+  | .ret v => simp only [Comp.shiftFrom, customOpsC, customOpsV_shiftFrom k v]
+  | .letC M N => simp only [Comp.shiftFrom, customOpsC, customOpsC_shiftFrom k M, customOpsC_shiftFrom (k+1) N]
+  | .force v => simp only [Comp.shiftFrom, customOpsC, customOpsV_shiftFrom k v]
+  | .lam M => simp only [Comp.shiftFrom, customOpsC, customOpsC_shiftFrom (k+1) M]
+  | .app M v => simp only [Comp.shiftFrom, customOpsC, customOpsC_shiftFrom k M, customOpsV_shiftFrom k v]
+  | .perform c op v => simp only [Comp.shiftFrom, customOpsC, customOpsV_shiftFrom k c, customOpsV_shiftFrom k v]
+  | .handle hd M =>
+      cases hd with
+      | state ℓ s => simp only [Comp.shiftFrom, Handler.shiftFrom, customOpsC, customOpsH,
+          customOpsC_shiftFrom (k+1) M, customOpsV_shiftFrom k s]
+      | throws ℓ => simp only [Comp.shiftFrom, Handler.shiftFrom, customOpsC, customOpsH,
+          customOpsC_shiftFrom (k+1) M]
+      | transaction ℓ Θ =>
+          -- txn heap IDENTITY under shiftFrom (closed cells, ADR-0030) ⇒ heap op-keys unchanged.
+          simp only [Comp.shiftFrom, Handler.shiftFrom, customOpsC, customOpsH,
+            customOpsC_shiftFrom (k+1) M]
+      | custom ℓ p cls => simp only [Comp.shiftFrom, Handler.shiftFrom, customOpsC,
+          customOpsC_shiftFrom (k+1) M]
+  | .case v N₁ N₂ => simp only [Comp.shiftFrom, customOpsC, customOpsV_shiftFrom k v,
+      customOpsC_shiftFrom (k+1) N₁, customOpsC_shiftFrom (k+1) N₂]
+  | .split v N => simp only [Comp.shiftFrom, customOpsC, customOpsV_shiftFrom k v,
+      customOpsC_shiftFrom (k+2) N]
+  | .unfold v => simp only [Comp.shiftFrom, customOpsC, customOpsV_shiftFrom k v]
+  | .binop op v w => simp only [Comp.shiftFrom, customOpsC, customOpsV_shiftFrom k v, customOpsV_shiftFrom k w]
+  | .oom => simp only [Comp.shiftFrom, customOpsC]
+  | .wrong s => simp only [Comp.shiftFrom, customOpsC]
+  termination_by sizeOf M
+  decreasing_by all_goals (first | (simp_wf; omega) | simp_wf)
+end
+
+theorem customOpsV_shift {u : Val} : customOpsV (Val.shift u) = customOpsV u :=
+  customOpsV_shiftFrom 0 u
+
+-- `customOps{V,C}` under `substFrom` is bounded by the term's op-keys PLUS the substituted value's:
+-- `customOpsC (substFrom k u M) ⊆ customOpsC M ++ customOpsV u`. Custom handlers are inert under subst
+-- (op-keys unchanged), and a `vvar` may be replaced by `u` (contributing `customOpsV u`).
+mutual
+/-- `customOpsV (substFrom k u V) ⊆ customOpsV V ++ customOpsV u`. -/
+theorem customOpsV_substFrom_subset (k : Nat) (u : Val) (V : Val) :
+    ∀ op ∈ customOpsV (Val.substFrom k u V), op ∈ customOpsV V ++ customOpsV u := by
+  intro op hop
+  match V with
+  | .vcap n ℓ => simp only [Val.substFrom, customOpsV, List.not_mem_nil] at hop
+  | .vthunk c =>
+      simp only [Val.substFrom, customOpsV] at hop ⊢
+      exact customOpsC_substFrom_subset k u c op hop
+  | .inl v => simp only [Val.substFrom, customOpsV] at hop ⊢; exact customOpsV_substFrom_subset k u v op hop
+  | .inr v => simp only [Val.substFrom, customOpsV] at hop ⊢; exact customOpsV_substFrom_subset k u v op hop
+  | .pair a b =>
+      simp only [Val.substFrom, customOpsV, List.mem_append] at hop ⊢
+      rcases hop with ha | hb
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u a op ha) with h | h
+        · exact Or.inl (Or.inl h)
+        · exact Or.inr h
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u b op hb) with h | h
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr h
+  | .fold v => simp only [Val.substFrom, customOpsV] at hop ⊢; exact customOpsV_substFrom_subset k u v op hop
+  | .vunit => simp only [Val.substFrom, customOpsV, List.not_mem_nil] at hop
+  | .vint n => simp only [Val.substFrom, customOpsV, List.not_mem_nil] at hop
+  | .vvar i =>
+      -- the ONLY place `u` enters: `i = k` replaces the var by `u`; else a `vvar` (no op-keys).
+      simp only [Val.substFrom] at hop
+      split at hop
+      · exact List.mem_append_right _ hop
+      · split at hop <;> simp only [customOpsV, List.not_mem_nil] at hop
+  termination_by sizeOf V
+  decreasing_by all_goals (first | (simp_wf; omega) | simp_wf)
+theorem customOpsC_substFrom_subset (k : Nat) (u : Val) (M : Comp) :
+    ∀ op ∈ customOpsC (Comp.substFrom k u M), op ∈ customOpsC M ++ customOpsV u := by
+  intro op hop
+  match M with
+  | .ret v =>
+      simp only [Comp.substFrom, customOpsC] at hop ⊢; exact customOpsV_substFrom_subset k u v op hop
+  | .letC M N =>
+      simp only [Comp.substFrom, customOpsC, List.mem_append] at hop ⊢
+      rcases hop with hM | hN
+      · rcases List.mem_append.mp (customOpsC_substFrom_subset k u M op hM) with h | h
+        · exact Or.inl (Or.inl h)
+        · exact Or.inr h
+      · rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) N op hN) with h | h
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr (customOpsV_shift ▸ h)
+  | .force v =>
+      simp only [Comp.substFrom, customOpsC] at hop ⊢; exact customOpsV_substFrom_subset k u v op hop
+  | .lam M =>
+      simp only [Comp.substFrom, customOpsC] at hop ⊢
+      rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) M op hop) with h | h
+      · exact List.mem_append_left _ h
+      · exact List.mem_append_right _ (customOpsV_shift ▸ h)
+  | .app M v =>
+      simp only [Comp.substFrom, customOpsC, List.mem_append] at hop ⊢
+      rcases hop with hM | hv
+      · rcases List.mem_append.mp (customOpsC_substFrom_subset k u M op hM) with h | h
+        · exact Or.inl (Or.inl h)
+        · exact Or.inr h
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u v op hv) with h | h
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr h
+  | .perform c op2 v =>
+      simp only [Comp.substFrom, customOpsC, List.mem_append] at hop ⊢
+      rcases hop with hc | hv
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u c op hc) with h | h
+        · exact Or.inl (Or.inl h)
+        · exact Or.inr h
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u v op hv) with h | h
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr h
+  | .handle hd M =>
+      cases hd with
+      | state ℓ s =>
+          simp only [Comp.substFrom, Handler.substFrom, customOpsC, customOpsH, List.mem_append] at hop ⊢
+          rcases hop with hs | hM
+          · rcases List.mem_append.mp (customOpsV_substFrom_subset k u s op hs) with h | h
+            · exact Or.inl (Or.inl h)
+            · exact Or.inr h
+          · rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) M op hM) with h | h
+            · exact Or.inl (Or.inr h)
+            · exact Or.inr (customOpsV_shift ▸ h)
+      | throws ℓ =>
+          simp only [Comp.substFrom, Handler.substFrom, customOpsC, customOpsH, List.nil_append] at hop ⊢
+          rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) M op hop) with h | h
+          · exact List.mem_append_left _ h
+          · exact List.mem_append_right _ (customOpsV_shift ▸ h)
+      | transaction ℓ Θ =>
+          -- txn heap is IDENTITY under substFrom (closed cells, ADR-0030) ⇒ the heap op-keys are unchanged;
+          -- only the body recurses.
+          simp only [Comp.substFrom, Handler.substFrom, customOpsC, customOpsH, List.mem_append] at hop ⊢
+          rcases hop with hΘ | hM
+          · exact Or.inl (Or.inl hΘ)
+          · rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) M op hM) with h | h
+            · exact Or.inl (Or.inr h)
+            · exact Or.inr (customOpsV_shift ▸ h)
+      | custom ℓ p cls =>
+          -- custom handler INERT under substFrom ⇒ its op-keys unchanged; only the body recurses.
+          simp only [Comp.substFrom, Handler.substFrom, customOpsC, List.mem_append] at hop ⊢
+          rcases hop with hh | hM
+          · exact Or.inl (Or.inl hh)
+          · rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) M op hM) with h | h
+            · exact Or.inl (Or.inr h)
+            · exact Or.inr (customOpsV_shift ▸ h)
+  | .case v N₁ N₂ =>
+      simp only [Comp.substFrom, customOpsC, List.mem_append] at hop ⊢
+      rcases hop with (hv | hN₁) | hN₂
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u v op hv) with h | h
+        · exact Or.inl (Or.inl (Or.inl h))
+        · exact Or.inr h
+      · rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) N₁ op hN₁) with h | h
+        · exact Or.inl (Or.inl (Or.inr h))
+        · exact Or.inr (customOpsV_shift ▸ h)
+      · rcases List.mem_append.mp (customOpsC_substFrom_subset (k+1) (Val.shift u) N₂ op hN₂) with h | h
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr (customOpsV_shift ▸ h)
+  | .split v N =>
+      simp only [Comp.substFrom, customOpsC, List.mem_append] at hop ⊢
+      rcases hop with hv | hN
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u v op hv) with h | h
+        · exact Or.inl (Or.inl h)
+        · exact Or.inr h
+      · rcases List.mem_append.mp (customOpsC_substFrom_subset (k+2) (Val.shift (Val.shift u)) N op hN) with h | h
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr (customOpsV_shift ▸ customOpsV_shift ▸ h)
+  | .unfold v =>
+      simp only [Comp.substFrom, customOpsC] at hop ⊢; exact customOpsV_substFrom_subset k u v op hop
+  | .binop op2 v w =>
+      simp only [Comp.substFrom, customOpsC, List.mem_append] at hop ⊢
+      rcases hop with hv | hw
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u v op hv) with h | h
+        · exact Or.inl (Or.inl h)
+        · exact Or.inr h
+      · rcases List.mem_append.mp (customOpsV_substFrom_subset k u w op hw) with h | h
+        · exact Or.inl (Or.inr h)
+        · exact Or.inr h
+  | .oom => simp only [Comp.substFrom, customOpsC, List.not_mem_nil] at hop
+  | .wrong s => simp only [Comp.substFrom, customOpsC, List.not_mem_nil] at hop
+  termination_by sizeOf M
+  decreasing_by
+    all_goals simp_wf
+    all_goals first
+      | omega
+      | (next hd => cases hd <;> simp_all <;> omega)
+      | (rename_i hd; cases hd <;> simp_all <;> omega)
+end
+
+/-- `WfCustomComp` rides `subst` of a `WfCustomVal` (in particular a `vcap` — the mint's substitution). -/
+theorem WfCustomComp.subst {M : Comp} {v : Val} (hv : WfCustomVal v) (h : WfCustomComp M) :
+    WfCustomComp (Comp.subst v M) := by
+  intro op hop
+  rcases List.mem_append.mp (customOpsC_substFrom_subset 0 v M op hop) with h' | h'
+  · exact h op h'
+  · exact hv op h'
+
+/-- `WfCustomComp` monotone into the `letC`/`app`/`case`/`split`/`handle`/`force`-thunk subterms
+(op-keys are a union; `customOpsC (force (vthunk M)) = customOpsV (vthunk M) = customOpsC M`). -/
+theorem WfCustomComp.letC_left {M N : Comp} (h : WfCustomComp (Comp.letC M N)) : WfCustomComp M :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_left _ hop)
+theorem WfCustomComp.letC_right {M N : Comp} (h : WfCustomComp (Comp.letC M N)) : WfCustomComp N :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
+theorem WfCustomComp.app_body {M : Comp} {v : Val} (h : WfCustomComp (Comp.app M v)) : WfCustomComp M :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_left _ hop)
+theorem WfCustomComp.force_thunk {M : Comp} (h : WfCustomComp (Comp.force (Val.vthunk M))) : WfCustomComp M :=
+  fun op hop => h op (by simp only [customOpsC, customOpsV]; exact hop)
+theorem WfCustomComp.case_left {v : Val} {N₁ N₂ : Comp} (h : WfCustomComp (Comp.case v N₁ N₂)) : WfCustomComp N₁ :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_left _ (List.mem_append_right _ hop))
+theorem WfCustomComp.case_right {v : Val} {N₁ N₂ : Comp} (h : WfCustomComp (Comp.case v N₁ N₂)) : WfCustomComp N₂ :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
+theorem WfCustomComp.split_body {v : Val} {N : Comp} (h : WfCustomComp (Comp.split v N)) : WfCustomComp N :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
+theorem WfCustomComp.handle_body {hd : Handler} {M : Comp} (h : WfCustomComp (Comp.handle hd M)) :
+    WfCustomComp M :=
+  fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
+
+/-- **The op-priority discharge**: a custom frame resolved at `n` under `WfCustomOps` keys no builtin op,
+so a builtin op's clause lookup MISSES. This is what replaces `NoCustomFrame.not_custom` — instead of
+"no custom frame here," it is "the custom frame here can't serve a builtin op." The custom-miss the raised
+`close` helper needs for the get/put/txn cases. -/
+theorem WfCustomOps.custom_clause_miss {K : Bang.EvalCtx} (h : WfCustomOps K)
+    {n : Nat} {Kᵢ : Bang.EvalCtx} {ℓ' : Bang.EffectRow.Label} {p : Val} {cl : List (OpId × Comp)}
+    {Kₒ : Bang.EvalCtx} {op : Bang.OpId} (hbi : isBuiltinOp op = true)
+    (hsp : Bang.splitAtId K n = some (Kᵢ, Handler.custom ℓ' p cl, Kₒ)) :
+    cl.find? (·.1 == op) = none := by
+  -- the resolved custom frame is FROM K (`splitAtId`), so its clause list is one of the `WfCustomOps`
+  -- conjuncts ⇒ every clause key is non-builtin ⇒ no clause matches the builtin `op`.
+  have hcl : ∀ c ∈ cl, isBuiltinOp c.1 = false := by
+    induction K generalizing Kᵢ Kₒ with
+    | nil => simp [Bang.splitAtId] at hsp
+    | cons fr K ih =>
+      cases fr with
+      | handleF m hd =>
+          simp only [Bang.splitAtId] at hsp
+          by_cases hmn : m = n
+          · rw [if_pos hmn] at hsp
+            simp only [Option.some.injEq, Prod.mk.injEq] at hsp
+            obtain ⟨_, heq, _⟩ := hsp
+            cases hd with
+            | custom ℓ0 p0 cl0 =>
+                simp only [Handler.custom.injEq] at heq; obtain ⟨_, _, rfl⟩ := heq; exact h.1
+            | state ℓ0 s0 => simp only [reduceCtorEq] at heq
+            | throws ℓ0 => simp only [reduceCtorEq] at heq
+            | transaction ℓ0 Θ0 => simp only [reduceCtorEq] at heq
+          · rw [if_neg hmn, Option.map_eq_some_iff] at hsp
+            obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+            simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, rfl⟩ := heq
+            exact ih h.tail hsp'
+      | letF N =>
+          simp only [Bang.splitAtId, Option.map_eq_some_iff] at hsp
+          obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+          simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, rfl⟩ := heq
+          exact ih h.tail hsp'
+      | appF w =>
+          simp only [Bang.splitAtId, Option.map_eq_some_iff] at hsp
+          obtain ⟨⟨Kᵢ', h', Kₒ'⟩, hsp', heq⟩ := hsp
+          simp only [Prod.mk.injEq] at heq; obtain ⟨_, rfl, rfl⟩ := heq
+          exact ih h.tail hsp'
+  -- no clause keys `op` (all keys non-builtin, `op` builtin) ⇒ `find?` misses.
+  rw [List.find?_eq_none]
+  intro c hc heq
+  simp only [beq_iff_eq] at heq
+  have := hcl c hc; rw [heq] at this; rw [hbi] at this; exact absurd this (by simp)
+
 /-- **The non-resume invariant** (route-B, U3 raised). At identity `n`, op `op`, the context `K` does NOT
 RESUME: any frame `n` resolves to either fails the op (`handlesOp = false`, fail-loud) or is a `throws`
 (zero-shot abort). NEVER a resuming `state`/`txn` — which is exactly the shape `evalD` returns `raised`
@@ -5111,7 +5557,7 @@ kernel — the `THROW ↔ dispatch` correspondence). Subst-vs-subst, no cross-re
 Induction on the eval fuel `fe`. -/
 theorem run_evalD : ∀ fe,
     (∀ M g σ τ κ t g' σ' τ' κ', evalD fe g σ τ κ M = some (.term t, g', σ', τ', κ') →
-      ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K → CCtxCorr κ K →
+      ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K → CCtxCorr κ K → WfCustomCfg (g, K, M) →
         CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
         (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
           CCtxCorr κ' (ctxNetEffect K σ' τ') ∧
@@ -5119,7 +5565,7 @@ theorem run_evalD : ∀ fe,
         ∀ (fuel : Nat) (r : Bang.Result Val),
           Bang.Config.run fuel (g', ctxNetEffect K σ' τ', t) = r → ∃ F, Bang.Config.run F (g, K, M) = r)
     ∧ (∀ M g σ τ κ n op v g' σ' τ' κ', evalD fe g σ τ κ M = some (.raised n op v, g', σ', τ', κ') →
-      ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K → CCtxCorr κ K →
+      ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K → CCtxCorr κ K → WfCustomCfg (g, K, M) →
         CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
         -- route-A 5th conjunct (build-proven necessary, route-B disproven): a raise NEVER RESUMES — the
         -- target `n` resolves only to none/throws/non-handling in the net-effect context. This is what makes
@@ -5139,7 +5585,8 @@ theorem run_evalD : ∀ fe,
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK hCoh hFresh
+      intro M g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK hWf hCoh hFresh
+      obtain ⟨hWfK, hWfM⟩ := hWf
       cases M with
       | ret v =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
@@ -5173,7 +5620,8 @@ theorem run_evalD : ∀ fe,
                 have hFletF := freshCfg_step _ _ hFresh hpush
                 have hCletFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
                 obtain ⟨⟨hCM, hTM, hKM, hCohR, hFR⟩, kM⟩ :=
-                  ihT M g σ τ κ (.ret v) g1 σ1 τ1 κ1 hM (Frame.letF N :: K) hCletF hTletF hKletF hCletFcoh hFletF
+                  ihT M g σ τ κ (.ret v) g1 σ1 τ1 κ1 hM (Frame.letF N :: K) hCletF hTletF hKletF
+                    ⟨hWfK.cons_noncustom (by intro n ℓ p cls; simp), hWfM.letC_left⟩ hCletFcoh hFletF
                 have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
                   CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM
                 have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
@@ -5190,7 +5638,8 @@ theorem run_evalD : ∀ fe,
                 have hFsub := freshCfg_step _ _ hFR hpop
                 have hCsub := capLabelCoh_step _ _ hFR hCohR hpop
                 obtain ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, kN⟩ :=
-                  ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hKM' hCsub hFsub
+                  ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hKM'
+                    ⟨hWfK.ctxNetEffect σ1 τ1, hWfM.letC_right.subst v⟩ hCsub hFsub
                 rw [ctxNetEffect_ctxNetEffect] at hCf hTf hKf hCohF hFF
                 refine ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, fun fuel r hr => ?_⟩
                 obtain ⟨F2, hF2⟩ := kN fuel r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
@@ -5216,7 +5665,7 @@ theorem run_evalD : ∀ fe,
           | vthunk M =>
               simp only [evalD] at h
               have hstep : Source.step (g, K, Comp.force (Val.vthunk M)) = some (g, K, M) := rfl
-              obtain ⟨hCf, kf⟩ := ihT M g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK
+              obtain ⟨hCf, kf⟩ := ihT M g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK hWf
                 (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hCf, fun fuel r hr => by
                 obtain ⟨F', hF'⟩ := kf fuel r hr
@@ -5247,7 +5696,8 @@ theorem run_evalD : ∀ fe,
                 have hFappF := freshCfg_step _ _ hFresh hpush
                 have hCappFcoh := capLabelCoh_step _ _ hFresh hCoh hpush
                 obtain ⟨⟨hCM, hTM, hKM, hCohR, hFR⟩, kM⟩ :=
-                  ihT M g σ τ κ (.lam N) g1 σ1 τ1 κ1 hM (Frame.appF v :: K) hCappF hTappF hKappF hCappFcoh hFappF
+                  ihT M g σ τ κ (.lam N) g1 σ1 τ1 κ1 hM (Frame.appF v :: K) hCappF hTappF hKappF
+                    (hWf.cons_noncustom (by intro n ℓ p cls; simp)) hCappFcoh hFappF
                 have hCM' : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
                   CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp) hCM
                 have hTM' : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
@@ -5263,7 +5713,8 @@ theorem run_evalD : ∀ fe,
                 have hFsub := freshCfg_step _ _ hFR hpop
                 have hCsub := capLabelCoh_step _ _ hFR hCohR hpop
                 obtain ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, kN⟩ :=
-                  ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hKM' hCsub hFsub
+                  ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h (ctxNetEffect K σ1 τ1) hCM' hTM' hKM'
+                    (hWf.ctxNetEffect σ1 τ1) hCsub hFsub
                 rw [ctxNetEffect_ctxNetEffect] at hCf hTf hKf hCohF hFF
                 refine ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, fun fuel r hr => ?_⟩
                 obtain ⟨F2, hF2⟩ := kN fuel r (by rw [ctxNetEffect_ctxNetEffect]; exact hr)
@@ -5427,7 +5878,7 @@ theorem run_evalD : ∀ fe,
                         have hFsub := freshCfg_step _ _ hFresh hstep
                         obtain ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, kBody⟩ :=
                           ihT (Comp.subst p (Comp.subst (Val.shift v2) clause.2)) g σ τ κ t g' σ' τ' κ' h
-                            K hCtx hTtx hCK hCsub hFsub
+                            K hCtx hTtx hCK hWf hCsub hFsub
                         refine ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, fun fuel r hr => ?_⟩
                         obtain ⟨F, hF⟩ := kBody fuel r hr
                         exact ⟨F+1, by simp only [Bang.Config.run, hstep]; exact hF⟩
@@ -5812,7 +6263,8 @@ theorem run_evalD : ∀ fe,
       -- `capsV v ⊆ capsC` of the focus in every case, so the raised value's coherence is a sub-multiset of
       -- the focus coherence the premise already carries). The continuation re-performs the op at the outer
       -- context; the BASE (`perform`) case is the only place a raise originates, the rest propagate via `ihR`.
-      intro M g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK hCoh hFresh
+      intro M g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK hWf hCoh hFresh
+      obtain ⟨hWfK, hWfM⟩ := hWf
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
