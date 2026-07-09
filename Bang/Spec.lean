@@ -285,11 +285,17 @@ theorem compile_well_typed
     HasCTy [] [] c e (CTy.F q A) → Wasmfx.WellTyped (compileC c) :=
   compile_well_typed_proof
 
--- [KEY][RISKY] Forward simulation — the heart of the contribution. PROVEN for the
--- PURE CBPV fragment (Milestone A) modulo the reverse CalcVM bridge
--- `source_eval_to_exec` (gap 1) + the non-pure fragment (gap 2, Milestone B). The
--- `exec ⟹ wexec` simulation (`exec_wexec_sim`) is fully proven.
+-- [KEY] Forward simulation — the heart of the contribution. PROVEN sorryAx-free for the FULL
+-- fragment (handlers included), premised on `VcapFree c` + `CustomFree c` (ADR-0086). Both
+-- premises are vacuous for every elaborator-produced program (the elaborator emits `vvar`, never
+-- raw `vcap`; no surface form emits `Handler.custom` until ADR-0085 Stage 7), so the product-facing
+-- meaning of ◊5 is unchanged. `CustomFree` is TEMPORARY scaffolding — ADR-0085 Stage 4 (the derived
+-- custom machine arm) DROPS it (a consumer-safe strengthening). `VcapFree` persists until #21
+-- (scoped capability types) makes a raw source `vcap` untypeable. The PURE arm routes through the
+-- always-sorry-free `compile_forward_sim_pure`; the handler arm through the U5b completeness spine
+-- (`evalD_complete_gen`, `Bang.Backend.U5bComplete`).
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
+    Bang.Model.VcapFree c → Bang.CustomFree.CFComp c →
     Source.eval fuel c = Result.done v →
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) :=
   compile_forward_sim_proof

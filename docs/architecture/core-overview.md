@@ -28,10 +28,11 @@ graph TD
   end
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
     Backend_AbstractMachine["Backend.AbstractMachine<br/>5097L · fan-in 0"]
-    Backend_Wasm["Backend.Wasm<br/>2227L · fan-in 0"]
+    Backend_U5bComplete["Backend.U5bComplete<br/>1407L · fan-in 0"]
+    Backend_Wasm["Backend.Wasm<br/>2230L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>539L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
-    Core_Freshness["Core.Freshness<br/>649L · fan-in 0"]
+    Core_Freshness["Core.Freshness<br/>770L · fan-in 0"]
     Core_Grade["Core.Grade<br/>82L · fan-in 0"]
     Core_IR["Core.IR<br/>394L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
@@ -53,14 +54,16 @@ graph TD
     Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
     Witness_BoccRegress["Witness.BoccRegress<br/>260L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>71L · fan-in 0"]
+    Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>38L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>99L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
+    Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
   end
   subgraph tier_Apex["Apex — verification spine + gate"]
     Audit["Audit<br/>54L · fan-in 0"]
     Distribution["Distribution<br/>65L · fan-in 0"]
-    Spec["Spec<br/>311L · fan-in 0"]
+    Spec["Spec<br/>317L · fan-in 0"]
   end
   Frontend_Surface_PropTest --> Frontend_Surface
 ```
@@ -70,10 +73,11 @@ graph TD
 | `Frontend.Surface` | ? | 2072 | 1 |
 | `Audit` | Apex | 54 | 0 |
 | `Backend.AbstractMachine` | ? | 5097 | 0 |
-| `Backend.Wasm` | ? | 2227 | 0 |
+| `Backend.U5bComplete` | ? | 1407 | 0 |
+| `Backend.Wasm` | ? | 2230 | 0 |
 | `Core.CapCoh` | ? | 539 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
-| `Core.Freshness` | ? | 649 | 0 |
+| `Core.Freshness` | ? | 770 | 0 |
 | `Core.Grade` | ? | 82 | 0 |
 | `Core.IR` | ? | 394 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
@@ -94,12 +98,14 @@ graph TD
 | `Reify.CalcReify` | ? | 270 | 0 |
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 311 | 0 |
+| `Spec` | Apex | 317 | 0 |
 | `Witness.BoccRegress` | ? | 260 | 0 |
 | `Witness.CapEscapeWitness` | ? | 71 | 0 |
+| `Witness.CustomStage1Refute` | ? | 38 | 0 |
 | `Witness.LWRegress` | ? | 99 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.StateEscapeWitness` | ? | 73 | 0 |
+| `Witness.VcapFreeRefute` | ? | 55 | 0 |
 <!-- END GENERATED import-graph -->
 
 **What the shape reveals** (from `import` DAG + per-symbol reference counts):

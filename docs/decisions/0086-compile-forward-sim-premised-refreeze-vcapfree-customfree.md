@@ -108,9 +108,10 @@ proven @ `3783d4d`) is PROMOTED from scratch into a Core module per arch-check p
 
 ## Evidence
 
-Machine-checked witnesses `scratch/VcapFreeRefute.lean` (corrected characterization @ `e24b005`:
-premise-necessary + headline-true) and `scratch/CustomStage1Refute.lean` (@ `3b03927`: no
-refutation, headline-true, proof-gap-only) on `origin/inc6-u5b2`; the completeness spine + K=[]
+Machine-checked witnesses — now census-protected at `Bang/Witness/VcapFreeRefute.lean` (corrected
+characterization: premise-necessary + headline-true) and `Bang/Witness/CustomStage1Refute.lean`
+(no refutation, headline-true, proof-gap-only); born on `origin/inc6-u5b2` (@ `e24b005` /
+`3b03927`, landed with the wire-in); the completeness spine + K=[]
 adapter + `CustomFree` machinery (@ `3783d4d`, manager-gated on committed content: EXIT 0, exactly
 1 custom sorry); unchanged-clean census on `compile_forward_sim_pure` / `source_eval_to_exec` /
 `CalcVM.sim` / `CalcVM.run_evalD` throughout. Frozen-statement read of Spec.lean:292 (raw-`Comp`
