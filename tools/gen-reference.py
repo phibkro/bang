@@ -276,6 +276,22 @@ def render():
     L.append("is no block-comment form.")
     L.append("")
 
+    if 'f + 1, "-" :: ts => do' not in surf:
+        sys.exit(
+            "gen-reference: the unary-minus `pAtom` arm not found in Surface.lean — the "
+            "Lexical notes section below is keyed off it (issue #64)."
+        )
+    L.append("**Unary minus**: `-e` desugars to `0 - e` (the same binary-`-` AST node — no new")
+    L.append("surface constructor), binding to ONE atom — tighter than every binary operator, so")
+    L.append("`-x + 1` reads as `(-x) + 1` and `-x * y` as `(-x) * y`, matching mainstream convention.")
+    L.append("A bare (unparenthesized) application argument goes to the BINARY reading instead: `f -1`")
+    L.append("parses as `f - 1`, not `f` applied to `-1` — parenthesize for the unary reading (`f (-1)`)")
+    L.append("the same disambiguation every language with juxtaposition-application + infix `-` makes.")
+    L.append("**Interacts with line comments**: `--` wins maximal munch over two `-` tokens, so `3--10`")
+    L.append("is `3` followed by a DROPPED line comment (`--10`), not `3 - (-10)` — write `3 - -10` or")
+    L.append("`3-(-10)` (a space or parens before the second `-`) to get subtraction of a negative.")
+    L.append("")
+
     L.append("## Effect channels")
     L.append("")
     L.append("The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;")

@@ -1036,6 +1036,14 @@ def pAtom : Nat → P Surf
   | f + 1, "!" :: ts => do
       let (a, ts) ← pAtom f ts
       .ok (.force a, ts)
+  -- UNARY MINUS (issue #64): `-e` desugars to `0 - e` — the SAME `.binopS .sub` node binary `-`
+  -- already produces (opInfo `"-"`), so no new AST shape / lowering / typing rule is needed. Binds
+  -- to ONE atom, exactly like `$`/`!` immediately above (so `-f 5` is `(-f) 5`, matching how `$f 5`
+  -- is already `($f) 5` — confirmed by that pair's own runtime behavior, not assumed): tighter than
+  -- application is the WRONG frame here, since `pAtom` feeds `pApp`'s loop the same way `$`/`!` do.
+  | f + 1, "-" :: ts => do
+      let (a, ts) ← pAtom f ts
+      .ok (.binopS .sub (.lit 0) a, ts)
   | _ + 1, "get" :: ts => .ok (.getS, ts)
   | _ + 1, t :: ts =>
       let tc := t.toList
@@ -2265,6 +2273,32 @@ plus `if c then t else e` as sugar over `case` on `Bool = 1+1`. Whitespace-insen
 #guard runYieldsInt 30 "if 3 < 4 then 1 else 0" 1
 #guard runYieldsInt 30 "if 4 < 3 then 1 else 0" 0
 #guard runYieldsInt 30 "if 2 == 2 then 7 else 8" 7
+
+-- UNARY MINUS (issue #64): `-e` desugars to `0 - e` (the same `.binopS .sub` node binary `-`
+-- produces), so it binds to ONE atom — tighter than every binary operator, matching `-x + 1` and
+-- `-x * y`'s conventional reading in every mainstream language.
+#guard runYieldsInt 20 "-10" (-10)                    -- a negative literal at top level
+#guard runYieldsInt 30 "let x = 5 in -x" (-5)         -- a bound variable
+#guard runYieldsInt 30 "let x = 5 in -x + 1" (-4)      -- binds TIGHTER than `+`: (-x) + 1, not -(x+1)
+#guard runYieldsInt 30 "let x = 5 in -x * 2" (-10)     -- binds TIGHTER than `*`: (-x) * 2
+#guard runYieldsInt 20 "- -10" 10                     -- double negation
+#guard runYieldsInt 20 "3 - -10" 13                   -- binary minus, unary minus as its RHS
+#guard runYieldsInt 20 "3-(-10)" 13                   -- the same, unspaced + parenthesized
+-- an unparenthesized bare application argument goes to the BINARY reading, not unary — the
+-- Pratt loop's application-stop-set treats a bare `-` as "hand back to the enclosing binary
+-- chain" (this is the conventional disambiguation every language with juxtaposition-application
+-- + infix `-` makes; parenthesize the argument for the unary reading: `f (-1)`, not `f -1`).
+#guard (match parse "let f = fun x => x in f -1" with
+        | .ok (.app (.var "f") _) => false  -- would mean "f applied to -1" — NOT what this parses as
+        | .ok _ => true                     -- "f - 1" (binary), the actual/correct parse
+        | .error _ => false)
+-- tree-checked (not just parse-success): `-10` really is `0 - 10`, the SAME shape binary `-`
+-- produces — no bespoke unary-minus AST node exists.
+#guard parsesTo "-10" (.binopS .sub (.lit 0) (.lit 10))
+#guard parsesTo "-x" (.binopS .sub (.lit 0) (.var "x"))
+#guard parsesTo "- -10" (.binopS .sub (.lit 0) (.binopS .sub (.lit 0) (.lit 10)))
+#guard parsesTo "3 - -10" (.binopS .sub (.lit 3) (.binopS .sub (.lit 0) (.lit 10)))
+
 -- the canonical COUNTER over a live state cell — blocked since rung-1, now written from source:
 #guard runYieldsInt 50 "state 5 in (get + 1)" 6
 
