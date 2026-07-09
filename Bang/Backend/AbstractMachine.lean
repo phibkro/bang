@@ -5560,7 +5560,7 @@ theorem run_evalD : ∀ fe,
       ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K → CCtxCorr κ K → WfCustomCfg (g, K, M) →
         CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
         (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
-          CCtxCorr κ' (ctxNetEffect K σ' τ') ∧
+          CCtxCorr κ' (ctxNetEffect K σ' τ') ∧ WfCustomComp t ∧
           CapLabelCoh (g', ctxNetEffect K σ' τ', t) ∧ FreshCfg (g', ctxNetEffect K σ' τ', t)) ∧
         ∀ (fuel : Nat) (r : Bang.Result Val),
           Bang.Config.run fuel (g', ctxNetEffect K σ' τ', t) = r → ∃ F, Bang.Config.run F (g, K, M) = r)
@@ -5571,7 +5571,7 @@ theorem run_evalD : ∀ fe,
         -- target `n` resolves only to none/throws/non-handling in the net-effect context. This is what makes
         -- the continuation's `Config.run` frame-INVARIANT under the letF/appF/handleF the propagation cases push.
         (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
-          CCtxCorr κ' (ctxNetEffect K σ' τ') ∧
+          CCtxCorr κ' (ctxNetEffect K σ' τ') ∧ WfCustomVal v ∧
           CapLabelCoh (g', ctxNetEffect K σ' τ', Comp.ret v) ∧ FreshCfg (g', ctxNetEffect K σ' τ', Comp.ret v) ∧
           NoResume (ctxNetEffect K σ' τ') n op) ∧
         ∀ (fuel : Nat) (r : Bang.Result Val),
@@ -5592,14 +5592,12 @@ theorem run_evalD : ∀ fe,
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx, CCtxCorr_ctxNetEffect _ _ (hCtx ▸ hTtx ▸ hCK), hCoh, hFresh⟩,
-            fun fuel r hr => ⟨fuel, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx, hCK, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | lam M =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx, CCtxCorr_ctxNetEffect _ _ (hCtx ▸ hTtx ▸ hCK), hCoh, hFresh⟩,
-            fun fuel r hr => ⟨fuel, hr⟩⟩
+          exact ⟨⟨hCtx, hTtx, hCK, hCoh, hFresh⟩, fun fuel r hr => ⟨fuel, hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe g σ τ κ M with
