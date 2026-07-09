@@ -1358,21 +1358,30 @@ source has `CFHandler (.custom) = False`), and the HStack pushes only those hand
 `customUpdate` always misses. Discharged at the call site where `hs = []` and the code is
 `compile` of a `CustomFree` source. -/
 
-/-- A single instruction is DEEP custom-free: its carried residual `Comp`s are `CFComp` (so a runtime
-recompile of `SUBST`/`CASE`/`SPLIT`/`HANDLE`-body stays custom-free) and its `HANDLE` handler is not
-`custom` (so it installs no custom frame). Every non-`Comp`-carrying instruction is trivially fine.
-This is the code-side image of source `CFComp`, established by `compile_noCustom_mem`. -/
+/-- A single instruction is DEEP custom-free: every residual `Comp`/`Val` it carries is custom-free
+(so a runtime recompile of `SUBST`/`APP`/`CASE`/`SPLIT`/`HANDLE`-body, and every terminal it pushes,
+stays custom-free) and its `HANDLE` handler is not `custom` (installs no custom frame). This is the
+code-side image of source `CFComp`, established by `compile_noCustom_mem`; the carried-`Val` clauses
+are what let the stack-terminals-`CFComp` invariant survive `RET`/`APP`. -/
 def NoCustomInstr : CalcVM.Instr → Prop
+  | .RET v                   => Bang.CustomFree.CFVal v
   | .LAMI M                  => Bang.CustomFree.CFComp M
   | .SUBST N                 => Bang.CustomFree.CFComp N
+  | .APP v                   => Bang.CustomFree.CFVal v
   | .HANDLE (.custom _ _ _) _ => False
   | .HANDLE _ M              => Bang.CustomFree.CFComp M
-  | .CASE _ N₁ N₂            => Bang.CustomFree.CFComp N₁ ∧ Bang.CustomFree.CFComp N₂
-  | .SPLIT _ N               => Bang.CustomFree.CFComp N
+  | .CASE w N₁ N₂            => Bang.CustomFree.CFVal w ∧ Bang.CustomFree.CFComp N₁ ∧ Bang.CustomFree.CFComp N₂
+  | .SPLIT w N               => Bang.CustomFree.CFVal w ∧ Bang.CustomFree.CFComp N
   | _                         => True
 
-/-- A frame is custom-free iff its handler is not `custom`. -/
-def NoCustomHFrame (fr : CalcVM.HFrame) : Prop := ∀ ℓ p cl, fr.handler ≠ Handler.custom ℓ p cl
+/-- A frame is DEEP custom-free: its handler is not `custom` (installs no custom frame), its stored
+state value / txn heap is `CFVal` (so a resume that pushes it keeps the stack custom-free), and its
+saved continuation-stack terminals are `CFComp` (so an abort that restores them stays custom-free). -/
+def NoCustomHFrame (fr : CalcVM.HFrame) : Prop :=
+  (∀ ℓ p cl, fr.handler ≠ Handler.custom ℓ p cl)
+  ∧ (∀ ℓ s, fr.handler = Handler.state ℓ s → Bang.CustomFree.CFVal s)
+  ∧ (∀ ℓ Θ, fr.handler = Handler.transaction ℓ Θ → ∀ w ∈ Θ, Bang.CustomFree.CFVal w)
+  ∧ (∀ t ∈ fr.savedStack, Bang.CustomFree.CFComp t)
 
 /-- No custom frame anywhere in the HStack ⇒ `customUpdate` misses at every id: the recursion walks
 non-custom frames (which it skips) to `[]` (which returns `none`). -/
@@ -1386,7 +1395,7 @@ theorem customUpdate_none_of_noCustom {n : Nat} {op : Bang.OpId} {v : Bang.Val} 
       have hfr : NoCustomHFrame fr := hnc fr (by simp)
       have hrec : CalcVM.customUpdate n op v hs = none := ih (fun fr2 h2 => hnc fr2 (List.mem_cons_of_mem _ h2))
       cases hfrh : fr.handler with
-      | custom ℓ0 p cl => exact absurd hfrh (hfr ℓ0 p cl)
+      | custom ℓ0 p cl => exact absurd hfrh (hfr.1 ℓ0 p cl)
       | state _ _        => rw [CalcVM.customUpdate, hfrh, hrec]; rfl
       | throws _         => rw [CalcVM.customUpdate, hfrh, hrec]; rfl
       | transaction _ _  => rw [CalcVM.customUpdate, hfrh, hrec]; rfl
@@ -1395,10 +1404,10 @@ theorem customUpdate_none_of_noCustom {n : Nat} {op : Bang.OpId} {v : Bang.Val} 
 `compile_ok_mem`; the `handle` case uses `CFHandler (.custom …) = False`. -/
 theorem compile_noCustom_mem : ∀ (M : Comp) {c : CalcVM.Code}, Bang.CustomFree.CFComp M →
     (∀ i ∈ c, NoCustomInstr i) → ∀ i ∈ CalcVM.compile M c, NoCustomInstr i
-  | .ret v, c, _, hc => by
+  | .ret v, c, hcf, hc => by
       intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
       rcases hi with rfl | hi
-      · exact trivial
+      · show Bang.CustomFree.CFVal v; simpa [Bang.CustomFree.CFComp] using hcf
       · exact hc i hi
   | .lam M, c, hcf, hc => by
       intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
@@ -1423,7 +1432,7 @@ theorem compile_noCustom_mem : ∀ (M : Comp) {c : CalcVM.Code}, Bang.CustomFree
       refine compile_noCustom_mem M hcf.1 ?_
       intro i hi; simp only [List.mem_cons] at hi
       rcases hi with rfl | hi
-      · exact trivial
+      · show Bang.CustomFree.CFVal w; exact hcf.2
       · exact hc i hi
   | .perform cap op v, c, _, hc => by
       intro i hi
@@ -1449,20 +1458,21 @@ theorem compile_noCustom_mem : ∀ (M : Comp) {c : CalcVM.Code}, Bang.CustomFree
       simp only [Bang.CustomFree.CFComp] at hcf
       intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
       rcases hi with rfl | hi
-      · show Bang.CustomFree.CFComp N₁ ∧ Bang.CustomFree.CFComp N₂; exact ⟨hcf.2.1, hcf.2.2⟩
+      · show Bang.CustomFree.CFVal w ∧ Bang.CustomFree.CFComp N₁ ∧ Bang.CustomFree.CFComp N₂
+        exact ⟨hcf.1, hcf.2.1, hcf.2.2⟩
       · exact hc i hi
   | .split w N, c, hcf, hc => by
       simp only [Bang.CustomFree.CFComp] at hcf
       intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
       rcases hi with rfl | hi
-      · show Bang.CustomFree.CFComp N; exact hcf.2
+      · show Bang.CustomFree.CFVal w ∧ Bang.CustomFree.CFComp N; exact ⟨hcf.1, hcf.2⟩
       · exact hc i hi
-  | .unfold w, c, _, hc => by
+  | .unfold w, c, hcf, hc => by
       cases w with
       | fold v =>
           intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
           rcases hi with rfl | hi
-          · exact trivial
+          · show Bang.CustomFree.CFVal v; simpa [Bang.CustomFree.CFComp, Bang.CustomFree.CFVal] using hcf
           · exact hc i hi
       | _ => simp only [CalcVM.compile]; exact hc
   | .binop op a b, c, _, hc => by
@@ -1470,9 +1480,9 @@ theorem compile_noCustom_mem : ∀ (M : Comp) {c : CalcVM.Code}, Bang.CustomFree
         first
         | (intro i hi; simp only [CalcVM.compile, List.mem_cons] at hi
            rcases hi with rfl | hi
-           · exact trivial
+           · show NoCustomInstr (CalcVM.Instr.RET _); simp only [NoCustomInstr]; simp [Bang.CustomFree.CFVal]
            · exact hc i hi)
-        | (simp only [CalcVM.compile]; exact hc)
+        | (intro i hi; simpa only [CalcVM.compile] using hc i hi)
   | .oom, c, _, hc => by simp only [CalcVM.compile]; exact hc
   | .wrong s, c, _, hc => by simp only [CalcVM.compile]; exact hc
 
@@ -1494,14 +1504,19 @@ theorem exec_wexec_sim_ok :
       -- HStack holds no custom frame, so `CalcVM.exec`'s OP custom clause-service never fires — `wexec`
       -- (no `wCustomUpdate` mirror this unit) stays a definitional lockstep. Discharged at the call
       -- site from `compile_noCustom_mem` (CFComp source) + `hs = []`.
-      (∀ i ∈ code, NoCustomInstr i) → (∀ fr ∈ hs, NoCustomHFrame fr) →
+      -- Three custom-freedom invariants, all preserved by exec and dischargeable at the CFComp call
+      -- site: (1) the code emits no custom HANDLE + its carried Comps/Vals are custom-free; (2) the
+      -- stack terminals are CFComp (a popped `ret v`/`lam N` re-substitutes custom-free); (3) the
+      -- HStack has no custom frame (so `customUpdate` misses and the OP custom clause-service never fires).
+      (∀ i ∈ code, NoCustomInstr i) → (∀ t ∈ s, Bang.CustomFree.CFComp t) →
+      (∀ fr ∈ hs, NoCustomHFrame fr) →
       CalcVM.exec f g code s hs = some s' →
       wexec f g (lowerCode code) (injStack s) (injHStack hs) = some (injStack s') := by
   intro f
   induction f with
-  | zero => intro g code s s' hs _ _ _ _ h; simp [CalcVM.exec] at h
+  | zero => intro g code s s' hs _ _ _ _ _ h; simp [CalcVM.exec] at h
   | succ f ih =>
-    intro g code s s' hs hok hsh hncc hnch h
+    intro g code s s' hs hok hsh hncc hncs hnch h
     cases code with
     | nil =>
         simp only [CalcVM.exec, Option.some.injEq] at h; subst h
@@ -1516,11 +1531,19 @@ theorem exec_wexec_sim_ok :
         | RET v =>
             simp only [CalcVM.exec] at h
             simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
-            exact ih g c (.ret v :: s) s' hs hc hsh hcc hnch h
+            refine ih g c (.ret v :: s) s' hs hc hsh hcc ?_ hnch h
+            intro t ht; rcases List.mem_cons.mp ht with rfl | ht
+            · show Bang.CustomFree.CFComp (Comp.ret v)
+              simpa only [Bang.CustomFree.CFComp] using (hnci : Bang.CustomFree.CFVal v)
+            · exact hncs t ht
         | LAMI M =>
             simp only [CalcVM.exec] at h
             simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
-            exact ih g c (.lam M :: s) s' hs hc hsh hcc hnch h
+            refine ih g c (.lam M :: s) s' hs hc hsh hcc ?_ hnch h
+            intro t ht; rcases List.mem_cons.mp ht with rfl | ht
+            · show Bang.CustomFree.CFComp (Comp.lam M)
+              simpa only [Bang.CustomFree.CFComp] using (hnci : Bang.CustomFree.CFComp M)
+            · exact hncs t ht
         | SUBST N =>
             simp only [CalcVM.exec] at h
             cases s with
@@ -1528,8 +1551,13 @@ theorem exec_wexec_sim_ok :
             | cons hd s0 =>
                 cases hd with
                 | ret v =>
+                    have hCFv : Bang.CustomFree.CFVal v := by
+                      have := hncs (Comp.ret v) (by simp); simpa [Bang.CustomFree.CFComp] using this
+                    have hs0 : ∀ t ∈ s0, Bang.CustomFree.CFComp t := fun t ht => hncs t (List.mem_cons_of_mem _ ht)
+                    have hncSub : ∀ i ∈ CalcVM.compile (Comp.subst v N) c, NoCustomInstr i :=
+                      compile_noCustom_mem _ (Bang.CustomFree.CFComp_subst hCFv hnci) hcc
                     have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
-                        = some (injStack s') := ih g _ s0 s' hs (compile_ok _ hc) hsh h
+                        = some (injStack s') := ih g _ s0 s' hs (compile_ok _ hc) hsh hncSub hs0 hnch h
                     simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
                     rw [compileV_recoverV]
                     simpa [injStack] using key
@@ -1541,8 +1569,14 @@ theorem exec_wexec_sim_ok :
             | cons hd s0 =>
                 cases hd with
                 | lam N =>
+                    have hCFlam : Bang.CustomFree.CFComp (Comp.lam N) := hncs (Comp.lam N) (by simp)
+                    have hCFN : Bang.CustomFree.CFComp N := by simpa [Bang.CustomFree.CFComp] using hCFlam
+                    have hCFv : Bang.CustomFree.CFVal v := hnci
+                    have hs0 : ∀ t ∈ s0, Bang.CustomFree.CFComp t := fun t ht => hncs t (List.mem_cons_of_mem _ ht)
+                    have hncSub : ∀ i ∈ CalcVM.compile (Comp.subst v N) c, NoCustomInstr i :=
+                      compile_noCustom_mem _ (Bang.CustomFree.CFComp_subst hCFv hCFN) hcc
                     have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N) c)) (injStack s0) (injHStack hs)
-                        = some (injStack s') := ih g _ s0 s' hs (compile_ok _ hc) hsh h
+                        = some (injStack s') := ih g _ s0 s' hs (compile_ok _ hc) hsh hncSub hs0 hnch h
                     simp only [lowerCode, lowerInstr, wexec, injStack, injTerminal, List.map_cons]
                     simpa [injStack] using key
                 | _ => simp at h
@@ -1550,13 +1584,21 @@ theorem exec_wexec_sim_ok :
             simp only [CalcVM.exec] at h
             cases w with
             | inl v =>
+                have hCFv : Bang.CustomFree.CFVal v := by
+                  have := hnci.1; simpa [Bang.CustomFree.CFVal] using this
+                have hncSub : ∀ i ∈ CalcVM.compile (Comp.subst v N₁) c, NoCustomInstr i :=
+                  compile_noCustom_mem _ (Bang.CustomFree.CFComp_subst hCFv hnci.2.1) hcc
                 have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N₁) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh h
+                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh hncSub hncs hnch h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | inr v =>
+                have hCFv : Bang.CustomFree.CFVal v := by
+                  have := hnci.1; simpa [Bang.CustomFree.CFVal] using this
+                have hncSub : ∀ i ∈ CalcVM.compile (Comp.subst v N₂) c, NoCustomInstr i :=
+                  compile_noCustom_mem _ (Bang.CustomFree.CFComp_subst hCFv hnci.2.2) hcc
                 have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v N₂) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh h
+                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh hncSub hncs hnch h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
@@ -1564,8 +1606,14 @@ theorem exec_wexec_sim_ok :
             simp only [CalcVM.exec] at h
             cases w with
             | pair v u =>
+                have hCFpair : Bang.CustomFree.CFVal v ∧ Bang.CustomFree.CFVal u := by
+                  have := hnci.1; simpa [Bang.CustomFree.CFVal] using this
+                have hncSub : ∀ i ∈ CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c, NoCustomInstr i :=
+                  compile_noCustom_mem _
+                    (Bang.CustomFree.CFComp_subst hCFpair.1
+                      (Bang.CustomFree.CFComp_subst (Bang.CustomFree.CFVal_shiftFrom 0 hCFpair.2) hnci.2)) hcc
                 have key : wexec f g (lowerCode (CalcVM.compile (Comp.subst v (Comp.subst (Val.shift u) N)) c)) (injStack s) (injHStack hs)
-                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh h
+                    = some (injStack s') := ih g _ s s' hs (compile_ok _ hc) hsh hncSub hncs hnch h
                 simp only [lowerCode, lowerInstr, wexec, injStack]
                 simpa [injStack] using key
             | _ => simp [CalcVM.exec] at h
@@ -1580,10 +1628,27 @@ theorem exec_wexec_sim_ok :
               intro fr hfr; rcases List.mem_cons.mp hfr with rfl | hfr
               · exact hc
               · exact hsh fr hfr
+            -- hh is not custom (else `hnci : NoCustomInstr (HANDLE hh M)` is False), so the pushed frame
+            -- is `NoCustomHFrame` and `CFComp M` holds; the recompiled subst-body stays custom-free.
+            have hhnc : ∀ ℓ p cl, hh ≠ Handler.custom ℓ p cl := by
+              intro ℓ p cl heq; rw [heq] at hnci; exact hnci
+            have hCFM : Bang.CustomFree.CFComp M := by
+              cases hh with
+              | custom _ _ _ => exact absurd rfl (hhnc _ _ _)
+              | state _ _ => exact hnci
+              | throws _ => exact hnci
+              | transaction _ _ => exact hnci
+            have hncBody : ∀ i ∈ CalcVM.compile (Comp.subst (.vcap g hh.label) M) (CalcVM.Instr.UNMARK :: c), NoCustomInstr i :=
+              compile_noCustom_mem _ (Bang.CustomFree.CFComp_subst (by simp [Bang.CustomFree.CFVal]) hCFM)
+                (fun j hj => by rcases List.mem_cons.mp hj with rfl | hj; · exact trivial; · exact hcc j hj)
+            have hnchPush : ∀ fr ∈ ({ id := g, handler := hh, savedCode := c, savedStack := s } :: hs), NoCustomHFrame fr := by
+              intro fr hfr; rcases List.mem_cons.mp hfr with rfl | hfr
+              · exact hhnc
+              · exact hnch fr hfr
             have key := ih (g+1)
               (CalcVM.compile (Comp.subst (.vcap g hh.label) M) (CalcVM.Instr.UNMARK :: c))
               s s' ({ id := g, handler := hh, savedCode := c, savedStack := s } :: hs)
-              (compile_ok _ hcUnmark) hsh' h
+              (compile_ok _ hcUnmark) hsh' hncBody hncs hnchPush h
             simpa only [injHStack, injHFrame, List.map_cons] using key
         | UNMARK =>
             simp only [CalcVM.exec] at h
@@ -1591,8 +1656,9 @@ theorem exec_wexec_sim_ok :
             | nil => simp at h
             | cons fr hs' =>
                 have hsh' : HStackOk hs' := fun fr2 hfr2 => hsh fr2 (List.mem_cons_of_mem _ hfr2)
+                have hnch' : ∀ fr2 ∈ hs', NoCustomHFrame fr2 := fun fr2 hfr2 => hnch fr2 (List.mem_cons_of_mem _ hfr2)
                 simp only [lowerCode, lowerInstr, wexec, injHStack, List.map_cons]
-                exact ih g c s s' hs' hc hsh' h
+                exact ih g c s s' hs' hc hsh' hcc hncs hnch' h
         | OP n op v =>
             -- 3-way dispatch, EXEC-IDENTICAL: stateUpdate → txnUpdate → unwindFind, by identity n.
             simp only [CalcVM.exec] at h
