@@ -127,6 +127,24 @@ whole unit as one fresh-session atomic commit (ADR-0085's "L / weeks, spine-touc
 - **Multi-shot / first-class `k` — OUT OF SCOPE (Q22/Q27).** If the calculation seems to demand
   `CalcReify`/closure cap-rep, STOP-and-SHOW (the labelling-vs-closure fork).
 
+## OPEN DESIGN QUESTION surfaced by the sim RAISED part (op-priority vs frame-priority)
+`evalD`'s perform arm is OP-PRIORITY: `if get / elif put / elif isTxnOp / else custom`. So a built-in
+op (e.g. `get`) that finds no state frame RAISES — it NEVER reaches the custom arm. The machine's `exec`
+OP arm is currently FRAME-PRIORITY: stateUpdate → txnUpdate → customUpdate → unwindFind. For a `get`
+that raised (no state frame), the machine reaches `customUpdate n "get" v hs` — and if a custom frame at
+`n` had a clause keyed `"get"`, it would SERVICE it, DIVERGING from evalD (which raised). Two clean
+resolutions (pick before finishing the raised part):
+- **(A) mirror evalD's op-priority in the exec OP arm** — guard the customUpdate call by
+  `¬(op = "get" ∨ op = "put" ∨ isTxnOp op)`, so the machine reaches custom only in evalD's `else`. This
+  is the DERIVATION-FAITHFUL move (the machine falls out of evalD's RHS, invariant #4) and needs no
+  cross-frame op-disjointness assumption. Cost: re-touch the `exec` OP arm + `exec_succ` OP case + the
+  term-part custom perform case's `hcu` witness. RECOMMENDED.
+- **(B) assume/enforce op-disjointness** — custom clause lists never key built-in ops, so
+  `customUpdate n "get" v hs = none` holds. Needs the invariant THREADED (a `WfCustomOps` predicate on
+  the HStack), reintroducing exactly the premise-creep ADR-0087 dissolved. NOT recommended.
+Until resolved, the sim RAISED part's `customUpdate_none_of_*` lemmas (for built-in ops) can't be proven
+cleanly. (A) makes them trivial (`customUpdate` guarded off for built-ins).
+
 ## Rung-2 lemma templates the induction re-prove leans on (predecessor's ground)
 - `capsCls_find?` (`Bang/Core/Freshness.lean:106`) — a `find?`-matched clause's caps land in `capsCls`
   (the honest custom `capsH` bounds them). The custom `CapLabelCoh` preservation at the perform seam
