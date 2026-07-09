@@ -130,5 +130,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tooling** — exclude gen-proof-state from regen-all — build-dependent (toolmap finding) (`6034c60`)
 - **release** — install.sh distinguishes no-releases-yet from network failure (`5b6ee00`)
 - **release** — de-nix the ELF loader path so the binary runs off a nix store (`8826266`)
+- **surface** — let-sugar fmt preserves the marker instead of expanding (#68 follow-up) (`c97bc73`)
 
 <!-- END GENERATED changelog -->
