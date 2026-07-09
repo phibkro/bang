@@ -113,5 +113,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — #59 — namespace Bang.Diagnostics (was bare top-level) (`c66fd79`)
 - **tooling** — exclude gen-proof-state from regen-all — build-dependent (toolmap finding) (`6034c60`)
 - **release** — install.sh distinguishes no-releases-yet from network failure (`478118a`)
+- **release** — de-nix the ELF loader path so the binary runs off a nix store (`da18598`)
 
 <!-- END GENERATED changelog -->
