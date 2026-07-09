@@ -5344,6 +5344,38 @@ theorem WfCustomComp.handle_body {hd : Handler} {M : Comp} (h : WfCustomComp (Co
     WfCustomComp M :=
   fun op hop => h op (by simp only [customOpsC]; exact List.mem_append_right _ hop)
 
+/-- A clause body's ops land in the clause-list's `customOpsCls` (the enumerability that bounds them). -/
+theorem customOpsCls_mem_of {cls : List (Bang.OpId × Comp)} {c : Bang.OpId × Comp} (hc : c ∈ cls) :
+    ∀ op ∈ customOpsC c.2, op ∈ customOpsCls cls := by
+  induction cls with
+  | nil => simp at hc
+  | cons hd rest ih =>
+    intro op hop
+    rcases List.mem_cons.mp hc with h' | h'
+    · subst h'; exact (by simp only [customOpsCls]; exact List.mem_append_left _ hop)
+    · exact (by simp only [customOpsCls]; exact List.mem_append_right _ (ih h' op hop))
+
+/-- The `cons_custom` install args (clause KEYS+BODIES op-disjoint, PARAM op-disjoint) extracted from a
+`WfCustomComp (handle (custom ℓ p cls) M)` focus — what the custom-handle INSTALL needs to keep
+`WfCustomOps` on the extended context. -/
+theorem WfCustomComp.custom_install_ops {ℓ : Bang.EffectRow.Label} {p : Val} {cls : List (Bang.OpId × Comp)}
+    {M : Comp} (h : WfCustomComp (Comp.handle (Handler.custom ℓ p cls) M)) :
+    (∀ c ∈ cls, isBuiltinOp c.1 = false ∧ ∀ op ∈ customOpsC c.2, isBuiltinOp op = false)
+      ∧ (∀ op ∈ customOpsV p, isBuiltinOp op = false) := by
+  refine ⟨fun c hc => ⟨?_, fun op hop => ?_⟩, fun op hop => ?_⟩
+  · -- c.1 ∈ cls.map (·.1) ⊆ customOpsH ⊆ the handle's ops.
+    refine h c.1 ?_
+    simp only [customOpsC, customOpsH]
+    exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ (List.mem_map_of_mem hc)))
+  · -- op ∈ customOpsC c.2 ⊆ customOpsCls cls ⊆ customOpsH ⊆ the handle's ops.
+    refine h op ?_
+    simp only [customOpsC, customOpsH]
+    exact List.mem_append_left _ (List.mem_append_right _ (customOpsCls_mem_of hc op hop))
+  · -- op ∈ customOpsV p ⊆ customOpsH ⊆ the handle's ops.
+    refine h op ?_
+    simp only [customOpsC, customOpsH]
+    exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ hop))
+
 /-- **The op-priority discharge**: a custom frame resolved at `n` under `WfCustomOps` keys no builtin op,
 so a builtin op's clause lookup MISSES. This is what replaces `NoCustomFrame.not_custom` — instead of
 "no custom frame here," it is "the custom frame here can't serve a builtin op." The custom-miss the raised
@@ -6061,9 +6093,10 @@ theorem run_evalD : ∀ fe,
                         -- handler), the arg `v2` from the focus. So the custom-service IH gets a WfCustom focus.
                         obtain ⟨hWfBody, hWfP⟩ := hWfK.custom_service_wf hsp hcl
                         have hWfvV2 : WfCustomVal v2 := hWfM.perform_arg
+                        have hWfShiftV2 : WfCustomVal (Val.shift v2) := fun op hop =>
+                          hWfvV2 op (customOpsV_shift ▸ hop)
                         have hWfFocus : WfCustomComp (Comp.subst p (Comp.subst (Val.shift v2) clause.2)) :=
-                          ((show WfCustomComp clause.2 from hWfBody).subst
-                            (show WfCustomVal (Val.shift v2) from customOpsV_shift ▸ hWfvV2)).subst hWfP
+                          ((show WfCustomComp clause.2 from hWfBody).subst hWfShiftV2).subst hWfP
                         obtain ⟨⟨hCf, hTf, hKf, hWftF, hWfσF, hWfτF, hCohF, hFF⟩, kBody⟩ :=
                           ihT (Comp.subst p (Comp.subst (Val.shift v2) clause.2)) g σ τ κ t g' σ' τ' κ' h
                             K hCtx hTtx hCK ⟨hWfK, hWfFocus⟩ hWfσ hWfτ hCsub hFsub
@@ -6105,19 +6138,25 @@ theorem run_evalD : ∀ fe,
                       CCtxCorr_install hCK
                     have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
                     have hFreshInstall := freshCfg_step _ _ hFresh hmint
-                    obtain ⟨⟨hCM, hTM, hKM, hCohM, hFreshM⟩, kM⟩ :=
+                    -- WfCustomOps rides the custom install: the focus handler's clause bodies+param are
+                    -- op-disjoint (`hWfM.custom_install_ops`); the substituted body is WfCustom (vcap subst).
+                    obtain ⟨hInsCl, hInsP⟩ := hWfM.custom_install_ops
+                    have hWfInstall : WfCustomOps (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) :=
+                      hWfK.cons_custom hInsCl hInsP
+                    have hWfMbody : WfCustomComp (Comp.subst (Val.vcap g ℓ0) M) :=
+                      hWfM.handle_body.subst WfCustomVal.vcap
+                    obtain ⟨⟨hCM, hTM, hKM, hWftM, hWfσM, hWfτM, hCohM, hFreshM⟩, kM⟩ :=
                       ihT (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.push g p0 cls0) (.ret v) g1 σ1 τ1 κ1 hM
-                        (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) hCinstall hTinstall hKinstall hCohInstall hFreshInstall
+                        (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) hCinstall hTinstall hKinstall
+                        ⟨hWfInstall, hWfMbody⟩ hWfσ hWfτ hCohInstall hFreshInstall
                     -- custom carries no state/txn ⇒ the outer net-effect context = `ctxNetEffect K σ1 τ1`.
                     have hnetEq : ctxNetEffect (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) σ1 τ1
                         = Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: ctxNetEffect K σ1 τ1 :=
                       ctxNetEffect_cons_nonframe σ1 τ1 (by intro n ℓ s; simp) (by intro n ℓ Θ; simp)
                     have hCpop : CtxCorr σ1 (ctxNetEffect K σ1 τ1) :=
-                      CtxCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp)
-                        (hnetEq ▸ hCM)
+                      CtxCorr_ctxNetEffect_nonframe (by intro n ℓ s; simp) (by intro n ℓ Θ; simp) hCM
                     have hTpop : CtxTxnCorr τ1 (ctxNetEffect K σ1 τ1) :=
-                      CtxTxnCorr_ctxNetEffect_nonframe (by intro ℓ s; simp) (by intro ℓ Θ; simp)
-                        (hnetEq ▸ hTM)
+                      CtxTxnCorr_ctxNetEffect_nonframe (by intro n ℓ s; simp) (by intro n ℓ Θ; simp) hTM
                     -- κ1 pops: `ctxCustoms` of the installed net-effect drops the head custom entry.
                     have hKpop : CCtxCorr κ1.tail (ctxNetEffect K σ1 τ1) := by
                       have : CCtxCorr κ1 (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: ctxNetEffect K σ1 τ1) :=
@@ -6128,7 +6167,7 @@ theorem run_evalD : ∀ fe,
                         Comp.ret v) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret v) := rfl
                     have hCohPop := capLabelCoh_step _ _ hFreshM hCohM hunmark
                     have hFreshPop := freshCfg_step _ _ hFreshM hunmark
-                    refine ⟨⟨hCpop, hTpop, hKpop, hCohPop, hFreshPop⟩, fun fuel r hr => ?_⟩
+                    refine ⟨⟨hCpop, hTpop, hKpop, hWftM, hWfσM, hWfτM, hCohPop, hFreshPop⟩, fun fuel r hr => ?_⟩
                     have hstepRun : Config.run (fuel+1)
                         (g1, ctxNetEffect (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) σ1 τ1,
                           Comp.ret v) = r := by
