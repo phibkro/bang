@@ -5895,8 +5895,8 @@ theorem run_evalD : ∀ fe,
           | vthunk M =>
               simp only [evalD] at h
               have hstep : Source.step (g, K, Comp.force (Val.vthunk M)) = some (g, K, M) := rfl
-              obtain ⟨hpair, kR⟩ := ihR M g σ τ n op v g' σ' τ' h K hCtx hTtx
-                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep) hncf
+              obtain ⟨hpair, kR⟩ := ihR M g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK
+                (capLabelCoh_step _ _ hFresh hCoh hstep) (freshCfg_step _ _ hFresh hstep)
               exact ⟨hpair, fun fuel r hr => by
                 obtain ⟨F', hF'⟩ := kR fuel r hr
                 exact ⟨F'+1, by simp only [Bang.Config.run, Source.step]; exact hF'⟩⟩
