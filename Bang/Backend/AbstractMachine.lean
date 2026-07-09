@@ -5254,22 +5254,27 @@ theorem run_evalD : ∀ fe,
             | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
             | (.raised n op w, _, _, _, _), h => simp [Option.bind] at h
       | perform cap op2 v2 =>
-          -- OP-FIRST (route-B, IDENTITY-keyed). The coherence premise (CapLabelCoh) + freshness (FreshCfg)
-          -- reassemble `CapResolves` at the perform seam: the store-read supplies the live state frame
-          -- (`splitAtId_of_ctxStates_get`), `capLabelCoh_perform_label` supplies the label match. The
-          -- kernel step is then `dispatch_state_{get,put}`; `capLabelCoh_step`/`freshCfg_step` carry the
-          -- folded coherence onto the resumed `ret`.
+          -- ID-FIRST (route-B, IDENTITY-keyed). The IDENTITY n2 — which per-kind store holds it (σ/τ/κ,
+          -- disjoint by FreshCfg/StratFresh) — picks the arm; the op selects the operation within the
+          -- resolved frame; an op the resolved kind can't handle RAISES (fail-loud, the handlesOp image).
+          -- The coherence premise (CapLabelCoh) + freshness (FreshCfg) reassemble `CapResolves` at the
+          -- perform seam: the store-read supplies the live frame (`splitAtId_of_ctx*_get`),
+          -- `capLabelCoh_perform_label` supplies the label match; the kernel step is
+          -- `dispatch_state_{get,put}` / `dispatch_txn_service` / `dispatch_custom`; `capLabelCoh_step`/
+          -- `freshCfg_step` carry the folded coherence onto the resumed focus. (The store-disjointness is
+          -- discharged LOCALLY via the ctx*_get_none_of_capsBelow triple where needed — no cross-store
+          -- shadow can arise under StratFresh.)
           obtain ⟨n2, ℓ2, rfl⟩ : ∃ n ℓ, cap = Val.vcap n ℓ := by
             cases cap <;> first | exact ⟨_, _, rfl⟩ | simp [evalD] at h
           simp only [evalD] at h
-          by_cases hop : op2 = "get"
-          · subst hop
-            simp only [if_pos rfl] at h
-            cases hg : σ.get? n2 with
-            | none => rw [hg] at h; simp at h
-            | some sv =>
-                rw [hg] at h
-                simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+          -- n2 resolves against σ first (evalD's `match σ.get? n2`).
+          cases hg : σ.get? n2 with
+          | some sv =>
+              rw [hg] at h
+              -- state frame at n2: op ∈ {get, put} services; any other op RAISES (⇒ term absurd).
+              by_cases hop : op2 = "get"
+              · subst hop
+                simp only [if_pos rfl, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
                 obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                 have hgc : (ctxStates K).get? n2 = some sv := by rw [← hCtx]; exact hg
                 obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxStates_get hFresh.2.2.1 hgc
@@ -5284,14 +5289,10 @@ theorem run_evalD : ∀ fe,
                 refine ⟨⟨hCtx, hTtx, hCK, capLabelCoh_step _ _ hFresh hCoh hstep,
                   freshCfg_step _ _ hFresh hstep⟩, fun fuel r hr => ⟨fuel+1, ?_⟩⟩
                 simp only [Bang.Config.run, hstep]; exact hr
-          · by_cases hop2 : op2 = "put"
-            · subst hop2
-              simp only [if_neg (by decide : ¬ ("put" = "get")), if_pos rfl] at h
-              cases hg : σ.get? n2 with
-              | none => rw [hg] at h; simp at h
-              | some sv =>
-                  rw [hg] at h
-                  simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+              · by_cases hop2 : op2 = "put"
+                · subst hop2
+                  simp only [if_neg (by decide : ¬ ("put" = "get")), if_pos rfl,
+                    Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
                   obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                   have hgc : (ctxStates K).get? n2 = some sv := by rw [← hCtx]; exact hg
                   obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxStates_get hFresh.2.2.1 hgc
@@ -5324,83 +5325,87 @@ theorem run_evalD : ∀ fe,
                   refine ⟨⟨hC'.symm, hT'.symm, hK', hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
                   rw [hctxeq] at hr
                   simp only [Bang.Config.run, hstep]; exact hr
-            · by_cases hopt : isTxnOp op2 = true
-              · simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
-                cases hgt : τ.get? n2 with
-                | none => rw [hgt] at h; simp at h
-                | some Θ =>
-                    rw [hgt] at h
-                    simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
-                    have hgt' : (ctxTxns K).get? n2 = some Θ := by rw [← hTtx]; exact hgt
-                    obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxTxns_get hFresh.2.2.1 hgt'
-                    have hlab : ℓ' = ℓ2 := by
-                      have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
-                    have hcr : Bang.CapResolves K n2 ℓ2 op2 :=
-                      ⟨Kᵢ, Handler.transaction ℓ' Θ, Kₒ, hsp, by
-                        subst hlab; rcases isTxnOp_iff.mp hopt with rfl | rfl | rfl <;> simp [Bang.handlesOp]⟩
-                    have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op2 v2)
-                        = some (g, updateCtxTxns K ((ctxTxns K).put n2 (txnService op2 v2 Θ).2),
-                            Comp.ret (txnService op2 v2 Θ).1) := by
-                      simp only [Source.step, dispatch_txn_service hFresh.2.2.1 hopt hcr hgt', Option.map_some]
-                    have hcoh' := capLabelCoh_step _ _ hFresh hCoh hstep
-                    have hfr' := freshCfg_step _ _ hFresh hstep
-                    have hK' : CCtxCorr κ (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2)) := by
-                      unfold CCtxCorr at hCK ⊢; rw [hCK, ctxCustoms_ctxNetEffect]
-                    subst hCtx; subst hTtx
-                    have hC' : ctxStates (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2))
-                        = ctxStates K := by
-                      unfold ctxNetEffect; rw [ctxStates_updateCtxTxns, updateCtxStates_self_aux]
-                    have hT' : ctxTxns (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2))
-                        = (ctxTxns K).put n2 (txnService op2 v2 Θ).2 := by
-                      unfold ctxNetEffect
-                      rw [show updateCtxStates K (ctxStates K) = K from updateCtxStates_self_aux]
-                      exact ctxTxns_updateCtxTxns_service hgt'
-                    have hctxeq : ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2)
-                        = updateCtxTxns K ((ctxTxns K).put n2 (txnService op2 v2 Θ).2) := by
-                      unfold ctxNetEffect; rw [updateCtxStates_self_aux]
-                    rw [← hctxeq] at hcoh' hfr' hK'
-                    refine ⟨⟨hC'.symm, hT'.symm, hK', hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
-                    rw [hctxeq] at hr
-                    simp only [Bang.Config.run, hstep]; exact hr
-              · -- CUSTOM op (ADR-0085 Stage 4): evalD INLINE-SERVICES the clause body against the SAME
-                -- store (κ unchanged, frame stays live). Route-B: the store read `κ.get? n2 = some (p,cls)`
-                -- + `cls.find? op` witness a live custom frame at `n2` in K (`splitAtId_of_ctxCustoms_get`);
-                -- the kernel `dispatch_custom` runs the SAME clause body against K. Recurse via `ihT` on the
-                -- clause body (K/σ/τ/κ unchanged), then one perform-step bridges. Mirror of the sim custom
-                -- perform-service arm on the `Config.run` side.
-                rw [Bool.not_eq_true] at hopt
-                simp only [if_neg hop, if_neg hop2, hopt, Bool.false_eq_true, if_false] at h
-                cases hck : κ.get? n2 with
-                | none => rw [hck] at h; simp at h   -- no custom frame ⇒ evalD raises ⇒ term absurd
-                | some pcls =>
-                    obtain ⟨p, cls⟩ := pcls
-                    simp only [hck] at h
-                    cases hcl : cls.find? (·.1 == op2) with
-                    | none => simp only [hcl] at h; simp at h   -- op unserviced ⇒ raise ⇒ term absurd
-                    | some clause =>
-                        simp only [hcl] at h
-                        have hgc : (ctxCustoms K).get? n2 = some (p, cls) := by rw [← hCK]; exact hck
-                        obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxCustoms_get hFresh.2.2.1 hgc
-                        have hlab : ℓ' = ℓ2 := by
-                          have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
-                        have hho : Bang.handlesOp (Handler.custom ℓ' p cls) ℓ2 op2 = true := by
-                          subst hlab
-                          -- the clause exists ⇒ handlesOp fires (op ∈ the clause keys, label matches)
-                          have hsome : ((cls.find? (·.1 == op2)).isSome) = true := by rw [hcl]; rfl
-                          simp only [Bang.handlesOp, hsome, Bool.and_true, decide_true]
-                        have hcr : Bang.CapResolves K n2 ℓ2 op2 := ⟨Kᵢ, Handler.custom ℓ' p cls, Kₒ, hsp, hho⟩
-                        have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op2 v2)
-                            = some (g, K, Comp.subst p (Comp.subst (Val.shift v2) clause.2)) := by
-                          simp only [Source.step, dispatch_custom hFresh.2.2.1 hcr hgc hcl, Option.map_some]
-                        have hCsub := capLabelCoh_step _ _ hFresh hCoh hstep
-                        have hFsub := freshCfg_step _ _ hFresh hstep
-                        obtain ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, kBody⟩ :=
-                          ihT (Comp.subst p (Comp.subst (Val.shift v2) clause.2)) g σ τ κ t g' σ' τ' κ' h
-                            K hCtx hTtx hCK hCsub hFsub
-                        refine ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, fun fuel r hr => ?_⟩
-                        obtain ⟨F, hF⟩ := kBody fuel r hr
-                        exact ⟨F+1, by simp only [Bang.Config.run, hstep]; exact hF⟩
+                · -- op the state frame can't handle ⇒ evalD RAISES ⇒ term absurd.
+                  simp only [if_neg hop, if_neg hop2] at h; simp at h
+          | none =>
+          rw [hg] at h
+          cases hgt : τ.get? n2 with
+          | some Θ =>
+              rw [hgt] at h
+              -- txn frame at n2: an stm op services; any other op RAISES (⇒ term absurd).
+              by_cases hopt : isTxnOp op2 = true
+              · simp only [hopt, if_true, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
+                obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
+                have hgt' : (ctxTxns K).get? n2 = some Θ := by rw [← hTtx]; exact hgt
+                obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxTxns_get hFresh.2.2.1 hgt'
+                have hlab : ℓ' = ℓ2 := by
+                  have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
+                have hcr : Bang.CapResolves K n2 ℓ2 op2 :=
+                  ⟨Kᵢ, Handler.transaction ℓ' Θ, Kₒ, hsp, by
+                    subst hlab; rcases isTxnOp_iff.mp hopt with rfl | rfl | rfl <;> simp [Bang.handlesOp]⟩
+                have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op2 v2)
+                    = some (g, updateCtxTxns K ((ctxTxns K).put n2 (txnService op2 v2 Θ).2),
+                        Comp.ret (txnService op2 v2 Θ).1) := by
+                  simp only [Source.step, dispatch_txn_service hFresh.2.2.1 hopt hcr hgt', Option.map_some]
+                have hcoh' := capLabelCoh_step _ _ hFresh hCoh hstep
+                have hfr' := freshCfg_step _ _ hFresh hstep
+                have hK' : CCtxCorr κ (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2)) := by
+                  unfold CCtxCorr at hCK ⊢; rw [hCK, ctxCustoms_ctxNetEffect]
+                subst hCtx; subst hTtx
+                have hC' : ctxStates (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2))
+                    = ctxStates K := by
+                  unfold ctxNetEffect; rw [ctxStates_updateCtxTxns, updateCtxStates_self_aux]
+                have hT' : ctxTxns (ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2))
+                    = (ctxTxns K).put n2 (txnService op2 v2 Θ).2 := by
+                  unfold ctxNetEffect
+                  rw [show updateCtxStates K (ctxStates K) = K from updateCtxStates_self_aux]
+                  exact ctxTxns_updateCtxTxns_service hgt'
+                have hctxeq : ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2)
+                    = updateCtxTxns K ((ctxTxns K).put n2 (txnService op2 v2 Θ).2) := by
+                  unfold ctxNetEffect; rw [updateCtxStates_self_aux]
+                rw [← hctxeq] at hcoh' hfr' hK'
+                refine ⟨⟨hC'.symm, hT'.symm, hK', hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
+                rw [hctxeq] at hr
+                simp only [Bang.Config.run, hstep]; exact hr
+              · -- op the txn frame can't handle ⇒ evalD RAISES ⇒ term absurd.
+                rw [Bool.not_eq_true] at hopt; simp only [hopt, Bool.false_eq_true, if_false] at h; simp at h
+          | none =>
+          rw [hgt] at h
+          -- CUSTOM op (ADR-0085 Stage 4): evalD INLINE-SERVICES the clause body against the SAME store (κ
+          -- unchanged, frame stays live). Route-B: the store read `κ.get? n2 = some (p,cls)` + `cls.find? op`
+          -- witness a live custom frame at `n2` in K (`splitAtId_of_ctxCustoms_get`); the kernel
+          -- `dispatch_custom` runs the SAME clause body against K. Recurse via `ihT` on the clause body
+          -- (K/σ/τ/κ unchanged), then one perform-step bridges. Mirror of the sim custom perform-service arm.
+          cases hck : κ.get? n2 with
+          | none => rw [hck] at h; simp at h   -- n2 in no store ⇒ evalD raises ⇒ term absurd
+          | some pcls =>
+              obtain ⟨p, cls⟩ := pcls
+              rw [hck] at h
+              cases hcl : cls.find? (·.1 == op2) with
+              | none => simp only [hcl] at h; simp at h   -- op unserviced ⇒ raise ⇒ term absurd
+              | some clause =>
+                  simp only [hcl] at h
+                  have hgc : (ctxCustoms K).get? n2 = some (p, cls) := by rw [← hCK]; exact hck
+                  obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxCustoms_get hFresh.2.2.1 hgc
+                  have hlab : ℓ' = ℓ2 := by
+                    have := capLabelCoh_perform_label hCoh hsp; simpa [Handler.label] using this
+                  have hho : Bang.handlesOp (Handler.custom ℓ' p cls) ℓ2 op2 = true := by
+                    subst hlab
+                    -- the clause exists ⇒ handlesOp fires (op ∈ the clause keys, label matches)
+                    have hsome : ((cls.find? (·.1 == op2)).isSome) = true := by rw [hcl]; rfl
+                    simp only [Bang.handlesOp, hsome, Bool.and_true, decide_true]
+                  have hcr : Bang.CapResolves K n2 ℓ2 op2 := ⟨Kᵢ, Handler.custom ℓ' p cls, Kₒ, hsp, hho⟩
+                  have hstep : Source.step (g, K, Comp.perform (Val.vcap n2 ℓ2) op2 v2)
+                      = some (g, K, Comp.subst p (Comp.subst (Val.shift v2) clause.2)) := by
+                    simp only [Source.step, dispatch_custom hFresh.2.2.1 hcr hgc hcl, Option.map_some]
+                  have hCsub := capLabelCoh_step _ _ hFresh hCoh hstep
+                  have hFsub := freshCfg_step _ _ hFresh hstep
+                  obtain ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, kBody⟩ :=
+                    ihT (Comp.subst p (Comp.subst (Val.shift v2) clause.2)) g σ τ κ t g' σ' τ' κ' h
+                      K hCtx hTtx hCK hCsub hFsub
+                  refine ⟨⟨hCf, hTf, hKf, hCohF, hFF⟩, fun fuel r hr => ?_⟩
+                  obtain ⟨F, hF⟩ := kBody fuel r hr
+                  exact ⟨F+1, by simp only [Bang.Config.run, hstep]; exact hF⟩
       | handle h0 M =>
           -- U3 seam-2: handle-term route-B re-key. MINT id := g, push the identity-keyed frame
           -- `handleF g h0 :: K`, run the substituted body `M' = subst (vcap g h0.label) M` at g+1 (the
