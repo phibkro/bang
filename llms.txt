@@ -32,6 +32,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/notes/loop-audit.md](docs/notes/loop-audit.md) — Feedback-loop audit (loops by radius; refresh at each ◊ — check-loop-audit.sh enforces)
 - [docs/notes/stdlib-map.md](docs/notes/stdlib-map.md) — Standard-library map (the third stratum: reusable abstractions as library code, gated by type-power)
 - [docs/notes/formatting-survey.md](docs/notes/formatting-survey.md) — Formatting-techniques survey (the canonical formatter #58: three-rung map · exact-vs-canonical · layout engine · zero-config)
+- [docs/notes/q38-handler-surface-survey.md](docs/notes/q38-handler-surface-survey.md) — Handler-surface + unification survey (Q38/Stage-7: the handler-syntax census · module≟trait≟effect unification attempts + failure modes · grade-as-dial prior art · ADR-inputs)
 - [docs/notes/README.md](docs/notes/README.md) — All design notes (the exhaustive map of docs/notes/, grouped by status — generated)
 - [docs/notes/categorical-architecture.md](docs/notes/categorical-architecture.md) — Categorical reading (objects/morphisms: graded F⊣U adjunction · graded monad = paradigm · handler-algebra · the two-hop functor)
 - [docs/notes/spec-proof-discipline.md](docs/notes/spec-proof-discipline.md) — Proof discipline (PROOF_ORDER, sorry rules, axiom hygiene)

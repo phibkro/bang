@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (20)
+## active (21)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -23,6 +23,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
+- [`q38-handler-surface-survey.md`](q38-handler-surface-survey.md) — Handler surface + the module≟trait≟effect unification — empirical design inputs (Q38 / Stage-7)
 - [`spec-handover.md`](spec-handover.md) — Spec handover — research/engineering interface
 - [`spec-proof-discipline.md`](spec-proof-discipline.md) — Spec proof discipline
 - [`stdlib-map.md`](stdlib-map.md) — Standard-library map — the third stratum

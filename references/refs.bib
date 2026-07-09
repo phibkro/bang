@@ -855,6 +855,55 @@
   % coherent rather than ad-hoc. Companion to Modal Effect Types (arXiv 2407.11816, still bib-gap).
 }
 
+@inproceedings{lindley-icfp17-do-be-do-be-do,
+  keywords = {topic:effect-handlers role:frontier},
+  author  = {Lindley, Sam and McBride, Conor and McLaughlin, Craig},
+  title   = {Do Be Do Be Do},
+  booktitle = {Proceedings of the 44th ACM SIGPLAN Symposium on Principles of Programming Languages (POPL)},
+  year    = 2017,
+  doi     = {10.1145/3009837.3009897},
+  eprint  = {1611.09259},
+  archivePrefix = {arXiv},
+  % Frank: the language that UNIFIES functions and handlers into ONE construct (the "operator"). A
+  % function is the special case of an operator interpreting no commands; a multihandler interprets
+  % commands from several arguments at once. No separate `handle` keyword, no explicit `resume` (the
+  % continuation is applied implicitly by direct-style call). The strongest empirical answer to Q38's
+  % "one construct?" on the EFFECT side (operators = functions + handlers), and the interface bang's
+  % ret-shape one-shot clause degrades to (an operator that tail-applies its continuation). Effect
+  % polymorphism without effect variables in source. See docs/notes/q38-handler-surface-survey.md.
+}
+
+@inproceedings{rossberg-icfp15-1ml,
+  keywords = {topic:module-system role:frontier},
+  author  = {Rossberg, Andreas},
+  title   = {{1ML} -- Core and Modules United (F-ing First-Class Modules)},
+  booktitle = {Proceedings of the 20th ACM SIGPLAN International Conference on Functional Programming (ICFP)},
+  year    = 2015,
+  doi     = {10.1145/2784731.2784738},
+  % The empirical UNIFICATION precedent for Q38 on the MODULE side: modules, functions, functors, and
+  % type constructors collapse into ONE first-class construct (structures = records = tuples). The
+  % cost it PAID -- the lesson for bang's unification stress-test: unification forced impredicative
+  % System-F, whose inference is UNDECIDABLE, so quantifier intro/elim must be programmer-annotated
+  % (never inferred). Evidence that "unify the interface construct" costs inference completeness --
+  % exactly ADR-0092 D3's answer-GRADE wall seen from the module side. See q38-handler-surface-survey.md.
+}
+
+@inproceedings{leijen-esop14-koka-row-effects,
+  keywords = {topic:effect-algebra topic:effect-handlers role:frontier},
+  author  = {Leijen, Daan},
+  title   = {Koka: Programming with Row-Polymorphic Effect Types},
+  booktitle = {Mathematically Structured Functional Programming (MSFP)},
+  year    = 2014,
+  eprint  = {1406.2061},
+  archivePrefix = {arXiv},
+  % Koka's row-polymorphic effect types + the `fun`/`ctl`/`final ctl` operation-shape distinction that
+  % SURFACES the resumption grade at the handler clause (fun = tail-resumptive/one-shot, ctl = general
+  % first-class k, final ctl = zero-shot/abort). The shipped prior art for Q27's "declare the resumption
+  % grade" thesis: the grade is per-OPERATION-shape, declared at the effect decl, and it licenses the
+  % cheaper compile (fun ops need no continuation copy). The keyword bang's `effect`-decl grade channel
+  % (Q27 operator input) most directly mirrors. Scoped labels = rows-as-sets kin. See q38-...-survey.md.
+}
+
 @misc{heijltjes-mfps25-fmc-iii-control,
   sha256 = {a0917ce61e4c501e3405daec39fcbb9c079f66916e740403236e69e12e02bdfe},
   keywords = {topic:calculation role:speculative},
