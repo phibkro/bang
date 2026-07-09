@@ -3300,6 +3300,12 @@ def checkProg (src : String) : Except String (CT × EffRow) := do
   let (e, effects) ← Bang.Surface.parseProg src >>= elabProg
   runInferC (synthSC [] e) effects
 
+/-- The ROW of a checked program — the minimal public projection of `checkProg` (whose full
+`CT × EffRow` return references the module-private `CT`). Consumers: the Q43 proof-export
+total-only gate (`φ = ∅` ⟺ proof-eligible) needs exactly the row, structurally. -/
+public def checkProgRow (src : String) : Except String EffRow :=
+  (checkProg src).map (·.2)
+
 /-- Parse + elaborate + check + DISPLAY — the decl-aware, typed sibling of `display`. Re-derives
 `effects` alongside the checked type (rather than widening `checkProg`'s established `(CT ×
 EffRow)` return type, which `typeStringOfProg`/the REPL's `:t` already depend on) so a DECLARED
