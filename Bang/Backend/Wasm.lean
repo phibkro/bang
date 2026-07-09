@@ -2004,7 +2004,7 @@ spine is a fuel-strong-induction converse, exactly the recast the wall comment p
 theorem evalD_complete_gen (F : Nat) (c : Comp) (v : Bang.Val)
     (hvf : Bang.Model.VcapFree c) (hcf : Bang.CustomFree.CFComp c)
     (hrun : Config.run F (0, [], c) = Result.done v) :
-    ∃ n g', CalcVM.evalD n 0 [] [] c = some (.term (.ret v), g', [], []) :=
+    ∃ n g', CalcVM.evalD n 0 [] [] [] c = some (.term (.ret v), g', [], [], []) :=
   CalcVM.evalD_complete_gen_nil F c v hvf hcf hrun
 
 /-- The PURE-fragment reverse bridge (sorry-free), routing `compile_forward_sim_pure`. Same shape
@@ -2014,7 +2014,7 @@ AXIOM-CLEAN (it never routes through the dispatch sorry). -/
 theorem evalD_complete_gen_pure : ∀ (F gg : Nat) (K : Bang.EvalCtx) (c : Comp) (v : Bang.Val),
     PureCtx K → Wasmfx.Comp.Pure c →
     Config.run F (gg, K, c) = Result.done v →
-    ∃ n g', CalcVM.evalD n gg [] [] (plug K c) = some (.term (.ret v), g', [], []) := by
+    ∃ n g', CalcVM.evalD n gg [] [] [] (plug K c) = some (.term (.ret v), g', [], [], []) := by
   intro F
   induction F using Nat.strong_induction_on with
   | _ F ih =>
@@ -2132,7 +2132,7 @@ theorem evalD_complete_gen_pure : ∀ (F gg : Nat) (K : Bang.EvalCtx) (c : Comp)
 ∃ n g', evalD n 0 [] [] c = some(.term(.ret v), g', [],[])`. The `K = []` instance. -/
 theorem evalD_complete (F : Nat) (c : Comp) (v : Bang.Val)
     (hpure : Wasmfx.Comp.Pure c) (h : Source.eval F c = Result.done v) :
-    ∃ n g', CalcVM.evalD n 0 [] [] c = some (.term (.ret v), g', [], []) := by
+    ∃ n g', CalcVM.evalD n 0 [] [] [] c = some (.term (.ret v), g', [], [], []) := by
   have := evalD_complete_gen_pure F 0 [] c v (by simp [PureCtx]) hpure h
   simpa [plug] using this
 
@@ -2141,7 +2141,7 @@ theorem source_eval_to_exec (c : Comp) (v : Bang.Val) (fuel : Nat)
     (h : Source.eval fuel c = Result.done v) :
     ∃ F, CalcVM.exec F 0 (CalcVM.compile c []) [] [] = some [.ret v] := by
   obtain ⟨n, g', hn⟩ := evalD_complete fuel c v hpure h
-  exact CalcVM.compile_correct n c (.ret v) g' [] [] hn
+  exact CalcVM.compile_correct n c (.ret v) g' [] [] [] hn
 
 /-- **GAP 1 CLOSED** — the forward simulation, PROVEN and AXIOM-CLEAN
 (⊆ {propext, Classical.choice, Quot.sound}) for the PURE CBPV fragment. Chains
@@ -2188,7 +2188,7 @@ theorem compile_forward_sim_proof {c : Comp} {v : Val} {fuel : Nat}
     -- (`exec_wexec_sim_ok`). `Source.eval = Config.run ([],·)` definitionally.
     have hrun : Config.run fuel (0, [], c) = Result.done v := h
     obtain ⟨n, g', hn⟩ := evalD_complete_gen fuel c v hvf hcf hrun
-    obtain ⟨F, hexec⟩ := CalcVM.compile_correct n c (.ret v) g' [] [] hn
+    obtain ⟨F, hexec⟩ := CalcVM.compile_correct n c (.ret v) g' [] [] [] hn
     have hCodeOk : Wasmfx.CodeOk (CalcVM.compile c []) :=
       Wasmfx.compile_ok c ((Wasmfx.CodeOk_iff_forall []).mpr (by intro i hi; simp at hi))
     have hHsOk : Wasmfx.HStackOk ([] : CalcVM.HStack) := by intro fr hfr; simp at hfr
