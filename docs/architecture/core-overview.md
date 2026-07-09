@@ -31,7 +31,7 @@ graph TD
     Backend_Wasm["Backend.Wasm<br/>2227L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>539L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
-    Core_Freshness["Core.Freshness<br/>649L · fan-in 0"]
+    Core_Freshness["Core.Freshness<br/>770L · fan-in 0"]
     Core_Grade["Core.Grade<br/>82L · fan-in 0"]
     Core_IR["Core.IR<br/>394L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
@@ -73,7 +73,7 @@ graph TD
 | `Backend.Wasm` | ? | 2227 | 0 |
 | `Core.CapCoh` | ? | 539 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
-| `Core.Freshness` | ? | 649 | 0 |
+| `Core.Freshness` | ? | 770 | 0 |
 | `Core.Grade` | ? | 82 | 0 |
 | `Core.IR` | ? | 394 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
