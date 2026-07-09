@@ -56,7 +56,7 @@ graph TD
     Witness_BoccRegress["Witness.BoccRegress<br/>260L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>71L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>38L · fan-in 0"]
-    Witness_Fuzz["Witness.Fuzz<br/>287L · fan-in 0"]
+    Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>99L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
@@ -105,7 +105,7 @@ graph TD
 | `Witness.BoccRegress` | ? | 260 | 0 |
 | `Witness.CapEscapeWitness` | ? | 71 | 0 |
 | `Witness.CustomStage1Refute` | ? | 38 | 0 |
-| `Witness.Fuzz` | ? | 287 | 0 |
+| `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.LWRegress` | ? | 99 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.StateEscapeWitness` | ? | 73 | 0 |

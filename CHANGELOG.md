@@ -71,6 +71,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **witness** — #14 differential fuzz — Source.eval vs exec∘compile, 200 seeded samples (`ac20df2`)
 - **tooling** — new-worktree.sh defaults to FULL LOCAL CLONE — own object store per IC (`2e2c0c5`)
 - **cli** — bang REPL — interactive read-eval-print loop (issue #7) (`e478234`)
+- **cli** — REPL landing companions — test-repl joins the verify chain; public typeStringOfProg for :t (`02eca0f`)
+- **witness** — #54 outcome-differential — total agreement over Result, not just done (`0d405fd`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
