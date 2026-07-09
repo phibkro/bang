@@ -64,12 +64,27 @@ check "eof-quits" "1+1" "2" "0"
 
 # ── :help prints the command list, runs nothing, exits 0 ──
 check "help" ":help\n" "commands:
-  :t <expr>, :type <expr>   NOT YET SUPPORTED — see the missing-hook note (Main.lean)
+  :t <expr>, :type <expr>   show the checked type ! effect row of <expr>
   :let <name> = <expr>      persist a definition for the rest of the session
   :load <file>              run a file's contents as one turn (not persisted)
   :help, :?                 this text
   :q, :quit                 exit (also Ctrl-D / EOF)
   <expr>                    evaluate against all persisted definitions and print the result" "0"
+
+# ── :t / :type happy path — the rendered `showType` string (Bang.Frontend.TypeCheck.typeStringOfProg) ──
+check "type-happy-path" ":t 1 + 2\n" "Int" "0"
+check "type-alias" ":type 1 + 2\n" "Int" "0"
+
+# ── :t with no expr fails loud (own message, not a generic usage wall) ──
+check_stderr "type-no-expr" ":t\n" "\`:t\`/\`:type\` expects" "1"
+
+# ── :t surfaces a type/elaboration error through the SAME checker as evaluation ──
+check_stderr "type-error" ":t unboundvar\n" "unbound variable unboundvar" "1"
+
+# ── :let then :t — a persisted binding must be visible to :t exactly like it is to evaluation
+# (both route through the SAME wrapBindings mechanism, so this is also a same-prelude regression
+# check between the eval path and the type-display path) ──
+check "type-sees-let-binding" ":let x = 3\n:t x + 1\n" "Int" "0"
 
 # ── a bad :let (missing '=') fails loud with ITS OWN message, not a generic usage wall ──
 check_stderr "bad-let" ":let\n" "\`:let\` expects" "1"
