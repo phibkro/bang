@@ -1625,112 +1625,246 @@ def scrutMatch (matchable : List String) : Surf → Bool
   | .var v => matchable.contains v
   | _      => false
 
+/-- One SLOT's tracking state (ADR-0091 #50): `matchable` = the parameter/subterms you may match to
+descend, `subterms` = the strict subterms (the only legal recursive-call arguments FOR THIS SLOT).
+`structOK` v1 (single-arg) is `Slot × Slot` inline; the multi-slot generalization below makes it a
+`List Slot`, ONE per curried/tupled recursion parameter, indexed left-to-right. -/
+abbrev Slot := List String × List String
+
+/-- Shadow a binder out of EVERY slot uniformly (ADR-0091): a binder that re-binds some name `n`
+shadows `n` out of whichever slot(s) currently track it — at most one slot ever contains a given
+name (they partition the recursion's parameters), so this is exactly `shadowAdd` applied
+slot-by-slot, safe to broadcast across the whole list. -/
+def shadowAddAll (bs : List String) (add : Bool) (slots : List Slot) : List Slot :=
+  slots.map (fun (m, s) => (shadowAdd bs add m, shadowAdd bs add s))
+
+/-- The union of every slot's `matchable` set — `scrutMatch`'s "is this a tracked variable" query
+does not need to know WHICH slot a variable belongs to (a match/split on it re-adds its binders to
+THAT slot only, via `shadowAddAll`'s uniform broadcast — a name lives in at most one slot, so
+broadcasting is safe: shadowing removes it from every slot, matchable-readd only applies where the
+scrutinee's OWN name was actually tracked). -/
+def matchableUnion (slots : List Slot) : List String := (slots.map Prod.fst).flatten
+
+/-- Recognize a recursive-call SPINE rooted at `name`: unwind curried application
+`($name) v1 v2 … vn` (peeling `.app`s outside-in, so the OUTERMOST `.app`'s argument is the LAST
+element) or the single-tupled `($name) (v1, v2)` (ADR-0091: `pairS` is binary in the grammar, so an
+n>2-ary tupled call is the user's own right-nested `(v1, (v2, v3))` — flattened here one level, deeper
+nesting is out of scope: no corpus example needs more than a 2-tuple accumulator). Returns `none` if
+`e` is not a call on `name` at all (so the generic `structOK` arms handle it structurally). -/
+def callSpine (name : String) : Surf → Option (List Surf)
+  | .app (.force (.var g)) a =>
+      if g == name then
+        match a with
+        | .pairS a1 a2 => some [a1, a2]     -- the tupled single-slot-pair call shape
+        | _            => some [a]          -- a plain single-arg call (v1 arm's shape, unchanged)
+      else none
+  | .app f a =>
+      -- peel a curried spine: `(($name) v1 v2) v3` ⟹ recurse on `($name) v1 v2`, append `v3`.
+      match callSpine name f with
+      | some args => some (args ++ [a])
+      | none      => none
+  | _ => none
+
 mutual
-/-- **The #47 structural-termination certifier — SOUND, deliberately incomplete.** `structOK name
-matchable subterms body` = `true` iff EVERY occurrence of the recursive function `name` in `body` is a
-call `($name) v` whose argument `v` is a STRICT SUBTERM of the recursion parameter — a field pattern-
-bound by `match`/`let (..)`-ing the parameter (or an already-established subterm). `matchable` tracks
-the parameter + its subterms (things you may match to descend); `subterms` tracks the strict subterms
-(the only legal recursive-call arguments). Well-founded by the FINITE DEPTH of a `data` value: each
-call strips ≥1 constructor, so no infinite descent.
+/-- **The #47/#50 structural-termination certifier — SOUND, deliberately incomplete.** `structOK
+name slots targetIdx body` = `true` iff EVERY occurrence of the recursive function `name` in `body`
+is a call whose FULL argument spine `v1 … vn` (curried `($name) v1 v2 … vn` OR the single tupled
+`($name) (v1, v2, …, vn)`, ADR-0091 treats both identically) has `slots.length = n` and the argument
+at `targetIdx` is a STRICT SUBTERM of the slot-`targetIdx` recursion parameter — a field
+pattern-bound by `match`/`let (..)`-ing that parameter (or an already-established subterm of it).
+Every OTHER slot's argument rides free (checked only for `name`-misuse, via the ordinary recursive
+call below) — an accumulator may be any well-typed expression, not just a passthrough.
+
+`targetIdx` is FIXED for the whole certification pass (ADR-0091 D: "the SAME slot at every call
+site", not inferred per-call) — `letRecMultiOK` (below) tries each index in turn and accepts the
+function iff SOME single fixed index certifies every call. Single-arg recursion is the `slots =
+[one slot]`, `targetIdx = 0` special case — this generalizes #47's original checker, not replaces
+it (the one-slot instantiation is definitionally identical to the pre-ADR-0091 `structOK`).
 
 CONSERVATIVE BY CONSTRUCTION — the default is `false` (⟹ the caller keeps `Div`). Anything not
-manifestly structural is rejected: a bare `name`, a `$name` not applied to a subterm, a call on a
-non-subterm (`($f) x`, `($f)(n-1)` on `Int` — ℤ has no data-floor, ADR-0067), `name` passed as a value,
-or a match on a NON-parameter value (its fields are not subterms of the parameter). Sound under
-shadowing (every binder shadows via `shadowAdd`). Missing a terminating function (→ `Div`) is fine;
-certifying a diverging one is a SOUNDNESS BUG, so we never guess.
+manifestly structural is rejected: a bare `name`, a `$name` not applied to subterms, a call whose
+arity doesn't match `slots.length`, a call on a non-subterm at `targetIdx` (`($f) x`, `($f)(n-1)` on
+`Int` — ℤ has no data-floor, ADR-0067), `name` passed as a value, or a match on a NON-parameter
+value. Sound under shadowing (every binder shadows via `shadowAddAll`). Missing a terminating
+function (→ `Div`) is fine; certifying a diverging one is a SOUNDNESS BUG, so we never guess.
 
-DEFERRED (conservatively `Div`, each needs more than this syntactic check): multi-argument / curried
-recursion (`letRecRow` rejects a nested `fun`), lexicographic descent, well-founded numeric MEASURES
-(needs a `Nat`/floor type — ADR-0067's ℤ is unbounded), and subterm-aliasing through `let`. -/
-def structOK (name : String) (matchable subterms : List String) : Surf → Bool
+DEFERRED (conservatively `Div`, each needs more than this syntactic check): full LEXICOGRAPHIC
+descent (≥2 slots required to decrease, ranked — ADR-0091 names this (B), rejected for v1: no
+corpus example needs it), well-founded numeric MEASURES (needs a `Nat`/floor type — ADR-0067's ℤ is
+unbounded — ADR-0091's (C), tracked behind Q31), and subterm-aliasing through `let`. -/
+-- EXPLICIT FUEL (the `expandBFns` idiom, TypeCheck.lean's established shape for a heterogeneous
+-- mutual block spanning `Surf`/`List Surf`/`DArms`/`SurfArgs` — `sizeOf`-based structural inference
+-- cannot find one measure across all four target types, so termination is fuel-visible instead,
+-- exactly as every other cross-type mutual traversal in this file). Fuel-exhaustion returns `false`
+-- (the SAME conservative default as every other unrecognized shape — under-certifies, never guesses;
+-- fuel is set generously at the `letRecRow` call site so it never bites a well-formed program, only
+-- caps runaway recursion for totality, per this file's own fuel convention).
+def structOK (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) (e : Surf) : Bool :=
+  match fuel with
+  | 0      => false
+  | fu + 1 =>
+  -- The recursive-call recognizer runs FIRST (ADR-0091): unwind a CURRIED spine `($name) v1 v2
+  -- … vn` or the single-tupled `($name) (v1, …, vn)` via `callSpine`; a recognized call short-
+  -- circuits the rest of the match (which handles every OTHER `Surf` shape, `.app` included — an
+  -- `.app` that `callSpine` did NOT recognize as a call on `name`, e.g. `($g) x` with `g ≠ name`,
+  -- falls through to the ordinary `.app` arm below unchanged from #47's original checker).
+  match callSpine name e with
+  | some args =>
+      if args.length != slots.length then false     -- arity mismatch with the declared recursion → reject
+      else structOKSpine fu name slots targetIdx 0 args
+  | none => structOKRest fu name slots targetIdx e
+/-- Check a recognized recursive-call SPINE's arguments against `slots`, ONE designated `targetIdx`
+requiring a strict-subterm bare variable, every other position checked only for `name`-misuse
+(an accumulator may be any well-typed expression). `i` is the current position (0-indexed,
+threaded explicitly — no `List.enum`/`zipIdx` dependency needed). -/
+def structOKSpine (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) (i : Nat) :
+    List Surf → Bool
+  | []      => true
+  | a :: as =>
+      (if i == targetIdx then
+        match a with | .var v => (slots.getD i ([], [])).2.contains v | _ => false
+      else structOK fuel name slots targetIdx a)
+      && structOKSpine fuel name slots targetIdx (i + 1) as
+/-- Every `Surf` shape that is NOT a recognized recursive-call spine — #47's original per-constructor
+match, unchanged except `matchable`/`subterms : List String` → `slots : List Slot` threaded
+uniformly (`shadowAddAll` broadcasts a shadow across every slot; `matchableUnion` reads the union for
+`scrutMatch`'s membership query, since a name lives in at most one slot). -/
+def structOKRest (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) : Surf → Bool
   | .lit _          => true
   | .unitS          => true
   | .getS           => true
   | .var g          => g != name                    -- a bare `name` (used as a value) is non-structural
-  | .thunk e        => structOK name matchable subterms e
-  | .force (.var g) => g != name                    -- `$name` NOT immediately applied to a subterm → reject
-  | .force e        => structOK name matchable subterms e
-  | .app (.force (.var g)) a =>
-      if g == name then
-        match a with | .var v => subterms.contains v | _ => false   -- structural iff arg is a subterm var
-      else structOK name matchable subterms a                       -- callee `$g` (g ≠ name) is name-free
-  | .app f a        => structOK name matchable subterms f && structOK name matchable subterms a
+  | .thunk e        => structOK fuel name slots targetIdx e
+  | .force (.var g) => g != name                    -- `$name` NOT immediately applied to args → reject
+  | .force e        => structOK fuel name slots targetIdx e
+  | .app f a        => structOK fuel name slots targetIdx f && structOK fuel name slots targetIdx a
   -- Binders that RE-BIND the recursion name shadow it — `$name` there is NOT the recursion, so the
   -- structural argument tells us nothing about it. REFUSE to certify (soundness > completeness).
-  | .lett v e b     => v != name && structOK name matchable subterms e &&
-                       structOK name (shadowAdd [v] false matchable) (shadowAdd [v] false subterms) b
+  | .lett v ev b    => v != name && structOK fuel name slots targetIdx ev &&
+                       structOK fuel name (shadowAddAll [v] false slots) targetIdx b
   | .lam v b        => v != name &&
-                       structOK name (shadowAdd [v] false matchable) (shadowAdd [v] false subterms) b
-  | .ifS c t e      => structOK name matchable subterms c && structOK name matchable subterms t
-                       && structOK name matchable subterms e
-  | .binopS _ a b   => structOK name matchable subterms a && structOK name matchable subterms b
-  | .pairS a b      => structOK name matchable subterms a && structOK name matchable subterms b
-  | .inlS e         => structOK name matchable subterms e
-  | .inrS e         => structOK name matchable subterms e
-  | .foldS e        => structOK name matchable subterms e
-  | .unfoldS e      => structOK name matchable subterms e
-  | .raise e        => structOK name matchable subterms e
-  | .handle e       => structOK name matchable subterms e
-  | .putS e         => structOK name matchable subterms e
-  | .stateS a b     => structOK name matchable subterms a && structOK name matchable subterms b
-  | .atomS e        => structOK name matchable subterms e
-  | .newS e         => structOK name matchable subterms e
-  | .readS e        => structOK name matchable subterms e
-  | .writeS a b     => structOK name matchable subterms a && structOK name matchable subterms b
-  | .annotS e _     => structOK name matchable subterms e
-  | .divMark e      => structOK name matchable subterms e
+                       structOK fuel name (shadowAddAll [v] false slots) targetIdx b
+  | .ifS c t el     => structOK fuel name slots targetIdx c && structOK fuel name slots targetIdx t
+                       && structOK fuel name slots targetIdx el
+  | .binopS _ a b   => structOK fuel name slots targetIdx a && structOK fuel name slots targetIdx b
+  | .pairS a b      => structOK fuel name slots targetIdx a && structOK fuel name slots targetIdx b
+  | .inlS e'        => structOK fuel name slots targetIdx e'
+  | .inrS e'        => structOK fuel name slots targetIdx e'
+  | .foldS e'       => structOK fuel name slots targetIdx e'
+  | .unfoldS e'     => structOK fuel name slots targetIdx e'
+  | .raise e'       => structOK fuel name slots targetIdx e'
+  | .handle e'      => structOK fuel name slots targetIdx e'
+  | .putS e'        => structOK fuel name slots targetIdx e'
+  | .stateS a b     => structOK fuel name slots targetIdx a && structOK fuel name slots targetIdx b
+  | .atomS e'       => structOK fuel name slots targetIdx e'
+  | .newS e'        => structOK fuel name slots targetIdx e'
+  | .readS e'       => structOK fuel name slots targetIdx e'
+  | .writeS a b     => structOK fuel name slots targetIdx a && structOK fuel name slots targetIdx b
+  | .annotS e' _    => structOK fuel name slots targetIdx e'
+  | .divMark e'     => structOK fuel name slots targetIdx e'
   | .matchS s xl el xr er =>
       xl != name && xr != name &&
-      let sm := scrutMatch matchable s
-      structOK name matchable subterms s &&
-      structOK name (shadowAdd [xl] sm matchable) (shadowAdd [xl] sm subterms) el &&
-      structOK name (shadowAdd [xr] sm matchable) (shadowAdd [xr] sm subterms) er
+      let sm := scrutMatch (matchableUnion slots) s
+      structOK fuel name slots targetIdx s &&
+      structOK fuel name (shadowAddAll [xl] sm slots) targetIdx el &&
+      structOK fuel name (shadowAddAll [xr] sm slots) targetIdx er
   | .splitS a b p body =>
       a != name && b != name &&
-      let sm := scrutMatch matchable p
-      structOK name matchable subterms p &&
-      structOK name (shadowAdd [a, b] sm matchable) (shadowAdd [a, b] sm subterms) body
+      let sm := scrutMatch (matchableUnion slots) p
+      structOK fuel name slots targetIdx p &&
+      structOK fuel name (shadowAddAll [a, b] sm slots) targetIdx body
   | .matchD s arms  =>
-      structOK name matchable subterms s && structOKArms name matchable subterms (scrutMatch matchable s) arms
+      structOK fuel name slots targetIdx s &&
+      structOKArms fuel name slots targetIdx (scrutMatch (matchableUnion slots) s) arms
   | .withCapS _ init v body =>
-      v != name && structOK name matchable subterms init &&
-      structOK name (shadowAdd [v] false matchable) (shadowAdd [v] false subterms) body
+      v != name && structOK fuel name slots targetIdx init &&
+      structOK fuel name (shadowAddAll [v] false slots) targetIdx body
   | .dotPerform recv _ args =>
-      structOK name matchable subterms recv && structOKArgs name matchable subterms args
-  | .letRecS gname _ fb bd =>                         -- nested let rec: a re-bound `gname` shadows our name
-      gname != name && structOK name matchable subterms fb && structOK name matchable subterms bd
+      structOK fuel name slots targetIdx recv && structOKArgs fuel name slots targetIdx args
+  | .letRecS gname _ fb bd =>                     -- nested let rec: a re-bound `gname` shadows our name
+      gname != name && structOK fuel name slots targetIdx fb && structOK fuel name slots targetIdx bd
 /-- Per-arm structural check: a matchable scrutinee (`sm`) makes each arm's pattern binders strict
 subterms of the parameter; a non-matchable one only shadows them. -/
-def structOKArms (name : String) (matchable subterms : List String) (sm : Bool) : DArms → Bool
+def structOKArms (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) (sm : Bool) :
+    DArms → Bool
   | .nil => true
   | .cons _ bs b r =>
       !bs.contains name &&                            -- an arm binder shadowing the recursion name → reject
-      structOK name (shadowAdd bs sm matchable) (shadowAdd bs sm subterms) b &&
-      structOKArms name matchable subterms sm r
-def structOKArgs (name : String) (matchable subterms : List String) : SurfArgs → Bool
+      structOK fuel name (shadowAddAll bs sm slots) targetIdx b &&
+      structOKArms fuel name slots targetIdx sm r
+def structOKArgs (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) : SurfArgs → Bool
   | .none    => true
-  | .one a   => structOK name matchable subterms a
-  | .two a b => structOK name matchable subterms a && structOK name matchable subterms b
+  | .one a   => structOK fuel name slots targetIdx a
+  | .two a b => structOK fuel name slots targetIdx a && structOK fuel name slots targetIdx b
 end
 
-/-- The effect row a `let rec` CALL-SITE carries (#46/#47, ADR-0073 §2). Recursion may not terminate —
-the ADR-0028 total/`Div` seam, made type-visible — UNLESS the #47 structural check (`structOK`) proves
-every recursive call descends on a strict `data` subterm, in which case the function is in the TOTAL
-fragment and carries `⊥` (no `Div`). SOUND, incomplete: an uncertified function conservatively keeps
-`{divLabel}` (it still RUNS, fuel-bounded — the `Div` escape hatch is what lets the check be aggressive
-without a rejection tax). v1 certifies SINGLE-parameter DIRECT structural recursion; measures /
-multi-arg / lexicographic are deferred (see `structOK`) — those stay `Div`.
+/-- Peel a CURRIED lambda chain (`fun x1 => fun x2 => … => fun xn => body`) into its parameter list
++ innermost body (ADR-0091 #50). `n = 1` is the pre-ADR-0091 single-arg shape, unchanged; `n > 1` is
+the newly-certifiable curried-accumulator shape. Fuel-bounded (structural on `Surf`, matches every
+other elaborator traversal's discipline) though `Surf` nesting from a SOURCE `let rec` is bounded by
+the program text, so this always terminates in practice — the fuel is a totality formality. -/
+def peelCurried : Nat → Surf → List String × Surf
+  | 0,     body        => ([], body)
+  | _+1,   .lam x body =>
+      let (rest, inner) := peelCurried 1000000 body   -- fuel doesn't shrink meaningfully deeper than
+      (x :: rest, inner)                              -- source nesting, so re-seed generously each hop
+  | _+1,   body         => ([], body)
+
+/-- Detect the TUPLE-accumulator shape (ADR-0091 #50, the design note's second corpus example):
+`fun p => let (x1, x2) = p in rest`, a SINGLE parameter immediately destructured. If matched,
+returns the two destructured binder names + the REST of the body past the split (so `structOK`
+below runs on `rest`, never re-seeing the `splitS` node — its slots already reflect the split, and
+re-processing it through the generic `.splitS` arm would harmlessly re-derive the same shadowing
+but is redundant, so this consumes it once, at seed time). `none` if the single param is NOT
+immediately split — that stays the pre-ADR-0091 one-slot shape (a plain single-arg `let rec`). -/
+def peelTupleSplit : Surf → Option (String × String × Surf)
+  | .splitS a b (.var _) rest => some (a, b, rest)
+  | _                         => none
+
+/-- Seed ONE slot per curried parameter (`[x1], [x2], …`, each starting with empty `subterms` — a
+bare parameter is matchable but not yet a proven subterm of itself). -/
+def seedSlots (params : List String) : List Slot := params.map (fun x => ([x], []))
+
+/-- The effect row a `let rec` CALL-SITE carries (#46/#47/#50, ADR-0073 §2, ADR-0091). Recursion may
+not terminate — the ADR-0028 total/`Div` seam, made type-visible — UNLESS the structural check
+(`structOK`) proves every recursive call descends on a strict `data` subterm at ONE FIXED slot,
+in which case the function is in the TOTAL fragment and carries `⊥` (no `Div`). SOUND, incomplete:
+an uncertified function conservatively keeps `{divLabel}` (it still RUNS, fuel-bounded — the `Div`
+escape hatch is what lets the check be aggressive without a rejection tax).
+
+ADR-0091 lifts the v1 single-parameter-only restriction: a CURRIED `let rec f = fun x1 => … => fun
+xn => body` seeds `n` slots (one per parameter, `peelCurried`) and tries EVERY `targetIdx` in
+`[0, n)` in turn (`slots.length.fold`-style linear search below) — the function certifies iff SOME
+single fixed index makes every recursive call's argument at that index a strict subterm, with every
+OTHER call argument checked only for `name`-misuse (an accumulator, #50's motivating case). A
+lexicographic requirement (≥2 slots decreasing together, ranked) is explicitly OUT of this search —
+ADR-0091 (B), rejected — so trying each index independently, not jointly, is the intended search
+space, not an approximation of a richer one. Measures / lexicographic remain deferred (see
+`structOK`'s doc comment) — those stay `Div`.
 
 Placement note (#46, unchanged): `Div` is seeded on the OUTER knot only (`buildLetRec`); the inner
 self-calls are typed pure `⊥` (Option A) — operationally sound since `Div` has no runtime semantics. -/
 def letRecRow (name : String) (funBody : Surf) : EffRow :=
   match funBody with
-  | .lam x body =>
-      match body with
-      | .lam _ _ => {divLabel}                                   -- curried / multi-arg: DEFERRED → Div
-      | _        => if structOK name [x] [] body then ∅ else {divLabel}
+  | .lam _ _ =>
+      let (params, curriedBody) := peelCurried 1000000 funBody
+      -- The TUPLE shape only applies to a lone parameter (`fun p => let (a,b) = p in …`) — a
+      -- curried multi-param `let rec` whose LAST param happens to be split is the curried shape
+      -- with an ordinary internal `splitS`, handled generically by `structOK`'s existing arm; only
+      -- `params.length == 1` is ambiguous between "a plain single struct-arg fn" and "a tupled
+      -- pair-accumulator fn", so only there does `peelTupleSplit` get a look.
+      let (slots, body) := match params, peelTupleSplit curriedBody with
+        | [_], some (a, b, rest) => (seedSlots [a, b], rest)
+        | _,   _                 => (seedSlots params, curriedBody)
+      -- linear search over target slots (ADR-0091 D: fixed index per pass, tried independently —
+      -- NOT jointly, that would be lexicographic descent, explicitly deferred). First hit wins; a
+      -- multi-slot-certifiable function is certified via its LOWEST such index (any would do —
+      -- soundness doesn't depend on which one, only that SOME fixed one works end to end). Fuel
+      -- generous per this file's convention (a token-count-proportional bound would need threading
+      -- the source size here; a flat large constant never bites a well-formed `let rec` body, only
+      -- caps runaway recursion for totality — the SAME role `parseE`'s `toks.length * 6 + 1` plays,
+      -- sized up since this walks a already-small elaborated AST, not raw tokens).
+      if (List.range slots.length).any (fun i => structOK 1000000 name slots i body) then ∅ else {divLabel}
   | _ => {divLabel}                                              -- not a `fun` literal → Div (conservative)
 
 /-- The μ-encoded fixpoint for `let rec f : T = <funBody'> in <bodyExpr'>` (ADR-0073; Landin's knot,
@@ -3090,6 +3224,107 @@ behavior, the backward-compatibility contract). -/
   "let rec f : Int -> Int ! {state} = fun n => if n == 0 then raise 99 else ($f)(n - 1) in handle (($f) 3)"
   with | .error _ => true | _ => false)
 
+/-! ### Validation ⑨j — MULTI-ARG / ACCUMULATOR structural descent (ADR-0091, #50).
+
+`structOK` now certifies a CURRIED `let rec f = fun x1 => … => fun xn => body` or a single TUPLED
+`let rec f = fun p => let (x1, x2) = p in body` as TOTAL (⊥-row) when ONE fixed slot index strictly
+decreases on EVERY recursive call, with every other slot riding free (an accumulator). This is the
+design note's (`docs/notes/structok-multiarg-design.md`) two motivating shapes, reconstructed exactly
+from the tokenizer's AVOIDED naive form (`ce6d738`'s commit message) — pre-ADR-0091 both RAN correctly
+but typed `Div`; this section proves both now certify `⊥` AND still run identically. -/
+def listRecA (defn body : String) : String := "data L = LNil | LCons(Int, L) " ++ defn ++ " " ++ body
+-- (a) the CURRIED accumulator shape: descent on slot 0 (`xs`), `acc` (slot 1) rides free.
+def curriedAccDef : String :=
+  "let rec sumAcc : L -> Int -> Int = fun xs => fun acc => " ++
+  "match xs { LNil -> acc, LCons(h, t) -> ($sumAcc) t (acc + h) } in"
+#guard (match checkProg (listRecA curriedAccDef "($sumAcc) (LCons(1, LCons(2, LCons(3, LNil)))) 0")
+        with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+#guard displayProg (listRecA curriedAccDef "($sumAcc) (LCons(1, LCons(2, LCons(3, LNil)))) 0") == "Int"
+#guard runTypedYieldsInt 3000 (listRecA curriedAccDef "($sumAcc) (LCons(1, LCons(2, LCons(3, LNil)))) 0") 6
+-- (b) the TUPLED accumulator shape: a single parameter `p`, split into `(xs, acc)`, same descent.
+def tupleAccDef : String :=
+  "let rec sumAccT : (L * Int) -> Int = fun p => let (xs, acc) = p in " ++
+  "match xs { LNil -> acc, LCons(h, t) -> ($sumAccT) (t, acc + h) } in"
+#guard (match checkProg (listRecA tupleAccDef "($sumAccT) (LCons(1, LCons(2, LCons(3, LNil))), 0)")
+        with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+#guard displayProg (listRecA tupleAccDef "($sumAccT) (LCons(1, LCons(2, LCons(3, LNil))), 0)") == "Int"
+#guard runTypedYieldsInt 3000 (listRecA tupleAccDef "($sumAccT) (LCons(1, LCons(2, LCons(3, LNil))), 0)") 6
+-- (c) NEGATIVE — certification must not LEAK through a non-structural callee (the design note's
+-- own soundness check): a total `wrap` calling a GENUINELY `Div`-carrying curried helper (one that
+-- recurses on its ACCUMULATOR, not the structural argument — `badAcc` below, deliberately NOT the
+-- certified `sumAcc`, whose helper is now honestly total and so would not exercise the leak check)
+-- WITHOUT itself declaring `{Div}` still REJECTS (`structOK` never certifies a call to a DIFFERENT
+-- function's name as descending — it only checks for `name`-misuse there).
+def badAccDef : String :=
+  "let rec badAcc : L -> Int -> Int = fun xs => fun n => " ++
+  "if n == 0 then 0 else ($badAcc) xs (n - 1) in"
+#guard (match checkProg
+  (listRecA (badAccDef ++
+    " let rec wrap : L -> Int = fun xs => ($badAcc) xs 3 in") "($wrap) (LCons(1, LNil))")
+  with | .error _ => true | _ => false)
+-- and DECLARING `{Div}` on both makes the SAME shape run (no leak — the caller pays the honest cost).
+#guard runTypedYieldsInt 3000
+  (listRecA ("let rec badAcc : L -> Int -> Int ! {Div} = fun xs => fun n => " ++
+    "if n == 0 then 0 else ($badAcc) xs (n - 1) in " ++
+    "let rec wrap : L -> Int ! {Div} = fun xs => ($badAcc) xs 3 in") "($wrap) (LCons(1, LCons(2, LCons(3, LNil))))")
+  0
+-- (d) DEFAULT-DID-NOT-FLIP — at least one still-`Div` negative case, unrelated to the extension
+-- (a curried fn recursing on the ACCUMULATOR instead of the structural argument — slot 1's `n`
+-- decreases arithmetically, not structurally; slot 0's `xs` is UNCHANGED every call, so NEITHER
+-- slot certifies — every `targetIdx` in the ADR-0091 search fails, correctly staying `Div`).
+def curriedBadDef : String :=
+  "let rec f : L -> Int -> Int = fun xs => fun n => " ++
+  "if n == 0 then 0 else ($f) xs (n - 1) in"
+#guard (match checkProg (listRecA curriedBadDef "($f) (LCons(1, LNil)) 3")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- ADVERSARIAL ①–④ PORTED to curried form (the design note's §3.3 obligation: every single-arg
+-- adversarial guard needs a multi-arg analogue, since a fixed-slot search must reject each on its
+-- OWN designated slot exactly as the single-arg checker did — a slot that fails structurally must
+-- still fail when it is one of several, not be rescued by an unrelated free-riding accumulator).
+-- ①: recurse on a RECONSTRUCTED value at the target slot — structural-LOOKING, not a bound subterm.
+#guard (match checkProg (listRecA
+        ("let rec f : L -> Int -> Int = fun xs => fun acc => " ++
+         "match xs { LNil -> acc, LCons(h, t) -> ($f) (LCons(h, t)) acc } in")
+        "($f) (LCons(1, LNil)) 0")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- ②: recurse on the target-slot PARAMETER unchanged in a branch — not a strict subterm.
+#guard (match checkProg (listRecA
+        ("let rec f : L -> Int -> Int = fun xs => fun acc => " ++
+         "match xs { LNil -> acc, LCons(h, t) -> ($f) xs acc } in")
+        "($f) (LCons(1, LNil)) 0")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- ③: recurse on a field of a DIFFERENT (let-bound) value at the target slot, not the matched param.
+#guard (match checkProg (listRecA
+        ("let rec f : L -> Int -> Int = fun xs => fun acc => " ++
+         "(let zs = LCons(0, xs) in match zs { LNil -> acc, LCons(h, t) -> ($f) t acc }) in")
+        "($f) (LCons(1, LNil)) 0")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- ④ (SHADOWING): the recursion name `f` is RE-BOUND by an inner `let f` — the structural arg at
+-- either slot tells us nothing about the shadowed reference, so BOTH slots must refuse.
+#guard (match checkProg (listRecA
+        ("let rec f : L -> Int -> Int = fun xs => fun acc => " ++
+         "(let f = ( {fun ys => fun a => 0} : Thunk (L -> Int -> Int) ) in " ++
+         "match xs { LNil -> acc, LCons(h, t) -> ($f) t acc }) in")
+        "($f) (LCons(1, LNil)) 0")
+        with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- ⑤ PORTED: a curried STRUCTURAL `let rec` (slot 0 certifiably descends) whose body CALLS a `Div`
+-- helper is still REJECTED, not silently stripped of the callee's Div (the #45 fold-payload check,
+-- independent of the ⊥/Div choice — same as the single-arg ⑤ above, now through a 2-slot function).
+#guard (match checkProg
+        ("data L = LNil | LCons(Int, L) let rec sum : Int -> Int = fun n => if n == 0 then 0 else n + ($sum)(n - 1) in " ++
+         "(let rec f : L -> Int -> Int = fun xs => fun acc => " ++
+         "match xs { LNil -> acc, LCons(h, t) -> ($f) t (acc + ($sum) h) } in ($f) (LCons(3, LNil)) 0)")
+        with | .error _ => true | _ => false)
+-- arity mismatch — a call with the WRONG number of arguments never certifies (defensive: the
+-- elaborator's own type-checking would catch a genuine arity error long before `structOK` runs,
+-- but `structOK`'s own arity guard, `callSpine`'s recognized-length ≠ `slots.length`, must reject
+-- rather than crash/miscompare — this asserts that guard fires, not merely that SOME error surfaces).
+#guard (match checkProg (listRecA
+        ("let rec f : L -> Int -> Int = fun xs => fun acc => " ++
+         "match xs { LNil -> acc, LCons(h, t) -> ($f) t } in")
+        "($f) (LCons(1, LNil)) 0")
+        with | .error _ => true | _ => false)
+
 /-! ### Validation ⑨h — STRINGS: `String = List Char` (ADR-0074, #49).
 
 `Char = Char(Int)` (a code point) + `Str = SNil | SCons(Char, Str)` are an INJECTED built-in prelude
@@ -3114,11 +3349,26 @@ def lengthDef : String :=
 /-! ### Validation ⑨h′ — the STRING STDLIB: `concat`/`reverse`/`eq` injected FREE (#49 stage 3, #50).
 
 `concat`/`reverse`/`eq` are `let rec` folds injected in scope of EVERY program (`stdlibFnSrcs`,
-`injectStdlib`), so a program uses them WITHOUT re-inlining (the #50 gap the tokenizer hit). All are
-`Div`-typed (curried `let rec` — the #47 multi-arg gap; they terminate, the certifier can't prove it).
-The wrapping is INERT for programs that don't use them: a `let rec … in body` binds a THUNK (a value,
-`⊥`-row), so the program's row is the body's — an unused stdlib fn adds NO effect (proven below:
-plain programs stay `Div ∉ ρ` and the WHOLE existing corpus is unchanged). -/
+`injectStdlib`), so a program uses them WITHOUT re-inlining (the #50 gap the tokenizer hit). Pre-
+ADR-0091, ALL were `Div`-typed (curried `let rec` — the old #47 multi-arg gap; they terminate, the
+old single-slot certifier couldn't prove it). ADR-0091's single-fixed-slot descent now CERTIFIES
+`concat`/`eq` as TOTAL directly (`⊥`-row, `Div ∉ ρ`) — this is #47's own stated contract working as
+designed ("Div should mean couldn't prove termination, not is recursive"), not a regression: both
+match their FIRST curried param (`a`/`a`) and recurse on its strict subterm (`t`) at that SAME slot
+on every call, with the second param (`b`) riding free — EXACTLY ADR-0091's motivating shape. This
+flips the pre-ADR-0091 guard below from `divLabel ∈ ρ` to `divLabel ∉ ρ` (see the falsification note
+there).
+
+`reverse` STAYS `Div` (unchanged, confirmed by re-testing after the extension) — its internal
+`revApp` needs a `(s : Str)` SCRUTINEE ASCRIPTION on its match (a pre-existing, SEPARATE gap: a
+curried param past the first isn't otherwise propagated into elaboration-time match resolution,
+issue #50 point 3 — without it `revApp` doesn't elaborate AT ALL, "match scrutinee is #…, not
+Str"). `scrutMatch` (this file) only recognizes a BARE `.var` scrutinee, not an `.annotS`-wrapped
+one, so the ascribed `match (s : Str) { … }` never re-adds `c`/`t` as slot-1 subterms — `structOK`
+correctly stays conservative (`false`) rather than guess through the ascription. This is a genuine,
+separate limitation (`scrutMatch` seeing through `.annotS` is a small, orthogonal, clearly-sound
+follow-up — an ascription never changes WHAT the scrutinee is) that ADR-0091 does not claim to
+close; `reverse` staying `Div` here is the CORRECT conservative verdict, not a bug in this unit. -/
 -- `concat "ab" "cd"` runs → a real 4-char string (asserted via a locally-defined `length`).
 #guard runTypedYieldsInt 3000 (lengthDef ++ "($length) (($concat) \"ab\" \"cd\")") 4
 #guard runTypedYieldsInt 3000 (lengthDef ++ "($length) (($concat) \"\" \"cd\")") 2
@@ -3130,8 +3380,18 @@ plain programs stay `Div ∉ ρ` and the WHOLE existing corpus is unchanged). -/
 #guard runTypedYieldsInt 3000 "if (($eq) \"ab\" \"ba\") then 1 else 0" 0
 #guard runTypedYieldsInt 3000 "if (($eq) \"a\" \"ab\") then 1 else 0" 0
 #guard runTypedYieldsInt 3000 "if (($eq) \"\" \"\") then 1 else 0" 1
--- USING the stdlib puts `Div` in the row (curried `let rec`, #47 gap) — the honest over-approximation.
-#guard (match checkProg "($concat) \"ab\" \"cd\"" with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- ADR-0091: USING `concat` no longer forces `Div` — the checker now certifies its curried-accumulator
+-- shape directly (slot 0 descends on `a`'s strict subterm `t`; slot 1's `b` rides free every call).
+-- FALSIFIED (documented, not asserted here — see the multi-arg regression corpus below for the
+-- load-bearing falsification pass): reverting the `structOK`/`letRecRow` extension makes this assert
+-- `divLabel ∈ ρ` again (the pre-ADR-0091 behavior) — this guard is the exact site that pins the
+-- new, more-precise verdict; a future regression here is a FINDING (the certifier got LESS precise).
+#guard (match checkProg "($concat) \"ab\" \"cd\"" with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+#guard (match checkProg "($eq) \"ab\" \"cd\"" with | .ok (_, ρ) => divLabel ∉ ρ | _ => false)
+-- `reverse` stays Div (the scrutinee-ascription gap above) — a genuine, documented remaining
+-- conservatism, not a soundness bug: it terminates, still runs correctly (guards above), the
+-- certifier just can't SEE it through the ascription this unit does not touch.
+#guard (match checkProg "($reverse) \"ab\"" with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
 -- THE INERT PROOF: a program that does NOT use the stdlib is UNAFFECTED — its row has NO `Div`, and a
 -- pure `Int` program still types pure (the injected `let rec`s are dead-but-harmless, like the unused
 -- `Char`/`Str` ctors). This is what guarantees the existing corpus is unchanged.
