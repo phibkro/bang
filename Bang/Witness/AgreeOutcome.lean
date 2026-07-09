@@ -51,11 +51,22 @@ raw `none`, never a reason). Rather than adding a machine-side tag (a NEW exec a
 invariant-#4 trap this lane must not fall into), the classifier below OBSERVES: does more
 fuel change the answer? `exec_mono` (AbstractMachine.lean) already proves fuel-monotonicity
 for the `some` case, so "still `none` at generously-more fuel" is a legitimate structural
-signal that the `none` at the ORIGINAL fuel was not fuel exhaustion. -/
+signal that the `none` at the ORIGINAL fuel was not fuel exhaustion.
+
+FAILURE POLARITY of the `slack` bound: `slack` is finite, so this classifier is an
+APPROXIMATION, not a proof — a program that genuinely needs more than `fuel + slack` extra
+steps to reach `.done` would be MISCLASSIFIED as escape-or-stuck (`.inr false`) instead of
+`.oom`. This is fail-LOUD, never fail-silent: `agreeOutcome` would then compare that
+misclassification against the kernel's OWN `Source.eval fuel M` (also under-fueled, so also
+NOT `.done`) — the mismatch is between "genuinely oom" and "looks stuck", both non-`done`,
+so the worst case is a `#guard` FAILING on a case that should have passed with more slack
+(a red build demanding a bigger `slack`), never a `#guard` PASSING on a real divergence. A
+false negative here is loud and actionable; there is no false-positive path. -/
 
 /-- Fuel headroom for the "is it just under-fueled?" re-check — an order of magnitude past
 any `#guard` case's own `fuel` below, well past what any curated/generated program in this
-module's battery needs to settle (kernel-side confirmed by the paired `Source.eval` calls). -/
+module's battery needs to settle (kernel-side confirmed by the paired `Source.eval` calls).
+See the FAILURE POLARITY note above: too small a `slack` fails loud, never silently. -/
 def slack : Nat := 2000
 
 /-- The machine-side outcome, computed OBSERVATIONALLY (no new `exec` tag):
