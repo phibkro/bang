@@ -5133,13 +5133,13 @@ theorem run_evalD : ∀ fe,
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx, CCtxCorr_ctxNetEffect _ _ (hCtx ▸ hTtx ▸ hCK), hCoh, hFresh⟩,
+          exact ⟨⟨hCtx, hTtx, hCK, hCoh, hFresh⟩,
             fun fuel r hr => ⟨fuel, hr⟩⟩
       | lam M =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
           obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
           rw [ctxNetEffect_self hCtx hTtx]
-          exact ⟨⟨hCtx, hTtx, CCtxCorr_ctxNetEffect _ _ (hCtx ▸ hTtx ▸ hCK), hCoh, hFresh⟩,
+          exact ⟨⟨hCtx, hTtx, hCK, hCoh, hFresh⟩,
             fun fuel r hr => ⟨fuel, hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
@@ -5521,8 +5521,7 @@ theorem run_evalD : ∀ fe,
                     have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1.tail τ1) := by
                       unfold CCtxCorr at hKM ⊢
                       rw [hKM, hnetEq]
-                      simp only [ctxCustoms]
-                      rw [ctxCustoms_ctxNetEffect, ctxCustoms_ctxNetEffect]
+                      simp only [ctxCustoms, ctxCustoms_ctxNetEffect]
                     rw [hnetEq] at hCohM hFreshM
                     have hunmark : Source.step (g1, Frame.handleF g
                         (Handler.state ℓ0 (σ1.headD (default, default)).2) :: ctxNetEffect K σ1.tail τ1,
@@ -5580,8 +5579,7 @@ theorem run_evalD : ∀ fe,
                     obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCM hTM
                     have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1 τ1) := by
                       unfold CCtxCorr at hKM ⊢
-                      rw [hKM, hnetEq]; simp only [ctxCustoms]
-                      rw [ctxCustoms_ctxNetEffect, ctxCustoms_ctxNetEffect]
+                      rw [hKM, hnetEq]; simp only [ctxCustoms, ctxCustoms_ctxNetEffect]
                     rw [hnetEq] at hCohM hFreshM
                     have hunmark : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
                         Comp.ret v) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret v) := rfl
@@ -5617,8 +5615,7 @@ theorem run_evalD : ∀ fe,
                       obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCr hTr
                       have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1 τ1) := by
                         unfold CCtxCorr at hKr ⊢
-                        rw [hKr, hnetEq]; simp only [ctxCustoms]
-                        rw [ctxCustoms_ctxNetEffect, ctxCustoms_ctxNetEffect]
+                        rw [hKr, hnetEq]; simp only [ctxCustoms, ctxCustoms_ctxNetEffect]
                       rw [hnetEq] at hCohr hFreshr
                       have hunmark : Source.step (g1, Frame.handleF g (Handler.throws ℓ0) :: ctxNetEffect K σ1 τ1,
                           Comp.ret w) = some (g1, ctxNetEffect K σ1 τ1, Comp.ret w) := rfl
@@ -5680,8 +5677,7 @@ theorem run_evalD : ∀ fe,
                     obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_txn hCM hTM
                     have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1 τ1.tail) := by
                       unfold CCtxCorr at hKM ⊢
-                      rw [hKM, hnetEq]; simp only [ctxCustoms]
-                      rw [ctxCustoms_ctxNetEffect, ctxCustoms_ctxNetEffect]
+                      rw [hKM, hnetEq]; simp only [ctxCustoms, ctxCustoms_ctxNetEffect]
                     rw [hnetEq] at hCohM hFreshM
                     have hunmark : Source.step (g1, Frame.handleF g
                         (Handler.transaction ℓ0 (τ1.headD (default, default)).2) :: ctxNetEffect K σ1 τ1.tail,
