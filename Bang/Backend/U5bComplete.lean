@@ -537,16 +537,16 @@ theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CSto
 CONTINUATION run's fuel BOUNDED by the input fuel `F` (`F' ≤ F`). The bound is the fuel-decrease
 bookkeeping the sequencing arms (letC/app) need: M0's terminated-run leftover bounds the subst-run,
 which must be `< F` to reapply the strong-induction IH. -/
-def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (K : Bang.EvalCtx) (v : Val) : Prop :=
-  ∃ n g' σ' τ',
+def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M : Comp) (K : Bang.EvalCtx) (v : Val) : Prop :=
+  ∃ n g' σ' τ' κ',
     CFStore σ' ∧ CFHeap τ' ∧
-    ((∃ t, evalD n g σ τ M = some (.term t, g', σ', τ') ∧
+    ((∃ t, evalD n g σ τ κ M = some (.term t, g', σ', τ', κ') ∧
       CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
       CapLabelCoh (g', ctxNetEffect K σ' τ', t) ∧ FreshCfg (g', ctxNetEffect K σ' τ', t) ∧
       CFComp t ∧
       ∃ F', F' ≤ F ∧ Config.run F' (g', ctxNetEffect K σ' τ', t) = Result.done v)
     ∨
-    (∃ nn oop vv, evalD n g σ τ M = some (.raised nn oop vv, g', σ', τ') ∧
+    (∃ nn oop vv, evalD n g σ τ κ M = some (.raised nn oop vv, g', σ', τ', κ') ∧
       CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
       CapLabelCoh (g', ctxNetEffect K σ' τ', Comp.ret vv) ∧
       FreshCfg (g', ctxNetEffect K σ' τ', Comp.ret vv) ∧
@@ -558,12 +558,12 @@ def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (K : B
 step (`evalD (f+1) g σ τ M = evalD f g σ τ M'` for all f) AND ONE matching `Source.step`
 (`(g,K,M) → (g,K,M')`), then `CompletesTo` for `M'` lifts to `M`. Covers force/case/split/unfold
 (the pure same-context reductions); the evalD-step-equality is discharged per-constructor by `rfl`. -/
-theorem completesTo_reduce {F g : Nat} {σ : SStore} {τ : THeap} {M M' : Comp} {K : Bang.EvalCtx} {v : Val}
-    (hevD : ∀ f, evalD (f+1) g σ τ M = evalD f g σ τ M')
+theorem completesTo_reduce {F g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {M M' : Comp} {K : Bang.EvalCtx} {v : Val}
+    (hevD : ∀ f, evalD (f+1) g σ τ κ M = evalD f g σ τ κ M')
     (hstep : Source.step (g, K, M) = some (g, K, M'))
-    (hM' : CompletesTo F g σ τ M' K v) : CompletesTo (F+1) g σ τ M K v := by
-  obtain ⟨n, g', σ', τ', hCFσ', hCFτ', hd⟩ := hM'
-  refine ⟨n+1, g', σ', τ', hCFσ', hCFτ', ?_⟩
+    (hM' : CompletesTo F g σ τ κ M' K v) : CompletesTo (F+1) g σ τ κ M K v := by
+  obtain ⟨n, g', σ', τ', κ', hCFσ', hCFτ', hd⟩ := hM'
+  refine ⟨n+1, g', σ', τ', κ', hCFσ', hCFτ', ?_⟩
   rcases hd with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F', hF'le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F', hF'le, hcont⟩
   · exact Or.inl ⟨t, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, hCFt, F', by omega, hcont⟩
   · exact Or.inr ⟨nn, oop, vv, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F', by omega, hcont⟩
@@ -574,7 +574,7 @@ non-get/put; txn-miss or non-txn) yields `evalD → raised n2 op u` (stores unch
 `dispatchRun` continuation IS the kernel's own `Config.run` on the perform (label reconstructed by
 `labelOf`, or irrelevant on escape). `NoResume` follows: any frame that resolves is throws (abort) or
 fails the op. -/
-theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {K : Bang.EvalCtx}
+theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {K : Bang.EvalCtx}
     {n2 : Nat} {ℓ2 : Bang.EffectRow.Label} {op : Bang.OpId} {u v : Val}
     (hCtx : CtxCorr σ K) (hTtx : CtxTxnCorr τ K)
     (hCoh : CapLabelCoh (g, K, Comp.perform (Val.vcap n2 ℓ2) op u))
@@ -584,9 +584,9 @@ theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {K : Bang.Eva
     (htx : (ctxTxns K).get? n2 = none ∨ isTxnOp op = false)
     (hncf : NoCustomFrame K)
     (hCFu : CFVal u) (hCFσ : CFStore σ) (hCFτ : CFHeap τ)
-    (hev : evalD 1 g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) = some (.raised n2 op u, g, σ, τ)) :
-    CompletesTo (F+1) g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) K v := by
-  refine ⟨1, g, σ, τ, hCFσ, hCFτ, Or.inr ⟨n2, op, u, hev, ?_, ?_, ?_, ?_, ?_, hCFu, F+1, by omega, ?_⟩⟩
+    (hev : evalD 1 g σ τ κ (Comp.perform (Val.vcap n2 ℓ2) op u) = some (.raised n2 op u, g, σ, τ, κ)) :
+    CompletesTo (F+1) g σ τ κ (Comp.perform (Val.vcap n2 ℓ2) op u) K v := by
+  refine ⟨1, g, σ, τ, κ, hCFσ, hCFτ, Or.inr ⟨n2, op, u, hev, ?_, ?_, ?_, ?_, ?_, hCFu, F+1, by omega, ?_⟩⟩
   · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
   · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
   · rw [ctxNetEffect_self hCtx hTtx]
