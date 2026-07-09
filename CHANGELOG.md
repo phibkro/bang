@@ -90,5 +90,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tooling** — gen-changelog --check tolerates the self-hash fixpoint lag (`730632e`)
 - **surface** — arithmetic composes as an effect-op argument (closes #26) (`db85ad7`)
 - **hooks** — cache-get guard — deny whenever linked worktrees exist (evasion fix) (`45b3d2d`)
+- **frontend** — mark fmtExpr/fmtProg public — the CLI wiring face of the formatter (`8244112`)
 
 <!-- END GENERATED changelog -->

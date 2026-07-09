@@ -916,6 +916,38 @@
     "sha256_pinned": ""
   },
   {
+    "key": "christiansen-darais-ma-final-pretty-printer",
+    "title": "The Final Pretty Printer",
+    "year": "2016",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "tooling"
+    ],
+    "grounds": [],
+    "role": "substrate",
+    "ondisk": true,
+    "hop": "christiansen-darais-ma-final-pretty-printer.pdf",
+    "path": "references/papers/christiansen-darais-ma-final-pretty-printer.pdf",
+    "sha256_pinned": ""
+  },
+  {
+    "key": "xie-schrijvers-hu-popl25-biparsers",
+    "title": "Biparsers: Exact Printing for Data Synchronisation",
+    "year": "2025",
+    "doi": "10.1145/3704910",
+    "eprint": "",
+    "topics": [
+      "tooling"
+    ],
+    "grounds": [],
+    "role": "substrate",
+    "ondisk": true,
+    "hop": "xie-schrijvers-hu-popl25-biparsers.pdf",
+    "path": "references/papers/xie-schrijvers-hu-popl25-biparsers.pdf",
+    "sha256_pinned": ""
+  },
+  {
     "key": "amin-rompf-popl17-definitional-interpreters",
     "title": "Type Soundness Proofs with Definitional Interpreters",
     "year": "2017",

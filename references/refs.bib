@@ -348,6 +348,31 @@
 
 % ─── Tooling (provers, solvers, package managers) ────────────────────────────
 
+@inproceedings{xie-schrijvers-hu-popl25-biparsers,
+  keywords  = {topic:tooling role:substrate},
+  author    = {Xie, Ruifeng and Schrijvers, Tom and Hu, Zhenjiang},
+  title     = {Biparsers: Exact Printing for Data Synchronisation},
+  booktitle = {Proceedings of the ACM on Programming Languages (POPL)},
+  year      = 2025,
+  doi       = {10.1145/3704910},
+  note      = {Parser+printer as a lens; exact printing with non-injective parsers.
+               Operator-supplied 2026-07-09 as input to the #58 multi-line formatter
+               design pass (ADR-0090 draft). NB: bang's formatter is CANONICAL
+               (AST-only, destroys input layout) — the opposite goal of exact
+               printing; read for what the lens laws still teach.},
+}
+
+@unpublished{christiansen-darais-ma-final-pretty-printer,
+  keywords = {topic:tooling role:substrate},
+  author   = {Christiansen, David and Darais, David and Ma, Weixi},
+  title    = {The Final Pretty Printer},
+  year     = 2016,
+  note     = {Draft (PL'17 footer). Extensible, effectful pretty printing beyond the
+              Hughes/Wadler monospace-batch assumptions; correctness derived from the
+              laws of standard functional abstractions. Operator-supplied 2026-07-09,
+              same #58 design pass as [[xie-schrijvers-hu-popl25-biparsers]].},
+}
+
 @inproceedings{de-moura-ullrich-lean4-system-description,
   author    = {de Moura, Leonardo and Ullrich, Sebastian},
   title     = {The {Lean 4} Theorem Prover and Programming Language (System Description)},
