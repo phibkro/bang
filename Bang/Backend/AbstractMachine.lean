@@ -520,6 +520,20 @@ def customUpdate : Nat → Bang.OpId → Val → HStack → Option (Comp × HSta
           else (customUpdate n op v hs).map (fun q => (q.1, fr :: q.2))          -- different id ⇒ keep, recurse
       | _ => (customUpdate n op v hs).map (fun q => (q.1, fr :: q.2))            -- non-custom frame ⇒ keep, recurse
 
+/-- Is `op` a BUILT-IN op (state get/put or a transaction op)? `evalD`'s perform arm dispatches
+OP-PRIORITY — `if get / elif put / elif isTxnOp / else custom` — so a built-in op NEVER reaches the
+custom arm. The machine's OP arm mirrors this: it only consults `customUpdate` when `op` is NOT built-in,
+so a built-in op that misses its store raises (never accidentally served by a custom clause keyed with a
+built-in name). This is the DERIVATION-FAITHFUL guard (invariant #4: the machine falls out of evalD's
+control flow), NOT a threaded op-disjointness premise (ADR-0087 §op-priority). -/
+def isBuiltinOp (op : Bang.OpId) : Bool := op = "get" || op = "put" || isTxnOp op
+
+/-- `evalD`'s custom perform arm is reached exactly when `op` is not a built-in (`isBuiltinOp op = false`);
+this ties the machine guard to evalD's `else`-branch condition. -/
+theorem isBuiltinOp_iff {op : Bang.OpId} :
+    isBuiltinOp op = false ↔ (op ≠ "get" ∧ op ≠ "put" ∧ isTxnOp op = false) := by
+  simp only [isBuiltinOp, Bool.or_eq_false_iff, decide_eq_false_iff_not, and_assoc]
+
 /-! ### Store ↔ HStack correspondence (ADR-0031 D3): the invariant the resume proof rides
 
 `hsState hs ℓ` reads the nearest `state ℓ` frame's stored value out of the machine's
@@ -1792,17 +1806,24 @@ def exec : Nat → Nat → Code → Stack → HStack → Option Stack
       | none =>                                                -- not a state frame: try transaction
           match txnUpdate n op v hs with
           | some (r, hs') => exec f g c (.ret r :: s) hs'      -- RESUME (txn): continue c with ret r
-          | none =>                                            -- not a txn frame: try custom (ADR-0085 Stage 4)
-              match customUpdate n op v hs with
-              -- RESUME (custom): re-compile the clause body and run it BEFORE `c` (the resume continuation),
-              -- against the unchanged `hs` (frame kept live). Mirrors `evalD`'s inline clause-service sub-eval:
-              -- the clause computes in tail position the value that resumes `c`. DERIVED from the perform-custom
-              -- RHS (invariant #4): where evalD runs `evalD … κ clauseBody`, exec runs `compile clauseBody c`.
-              | some (body, hs') => exec f g (compile body c) s hs'
-              | none =>                                        -- not a resumptive frame ⇒ throws abort
-                  match unwindFind n op hs with
-                  | some (c', s', hs') => exec f g c' (.ret v :: s') hs' -- ABORT to (Kₒ, ret v), c discarded
-                  | none               => none                 -- uncaught = stuck
+          | none =>                                            -- not a txn frame
+              -- OP-PRIORITY guard (ADR-0085 Stage 4, mirrors evalD's `if get/elif put/elif isTxnOp/else`):
+              -- consult custom ONLY for a non-built-in op, so a built-in op that missed its store raises
+              -- (never served by a custom clause keyed with a built-in name). Faithful to evalD's control flow.
+              if isBuiltinOp op then
+                match unwindFind n op hs with                  -- built-in op, no store frame ⇒ throws abort
+                | some (c', s', hs') => exec f g c' (.ret v :: s') hs'
+                | none               => none
+              else
+                match customUpdate n op v hs with              -- non-built-in ⇒ try custom (Stage 4)
+                -- RESUME (custom): re-compile the clause body and run it BEFORE `c` (the resume continuation),
+                -- against the unchanged `hs` (frame kept live). Mirrors evalD's inline clause-service sub-eval:
+                -- where evalD runs `evalD … κ clauseBody`, exec runs `compile clauseBody c` (invariant #4).
+                | some (body, hs') => exec f g (compile body c) s hs'
+                | none =>                                       -- no custom frame / unserviced clause ⇒ abort
+                    match unwindFind n op hs with
+                    | some (c', s', hs') => exec f g c' (.ret v :: s') hs'
+                    | none               => none               -- uncaught = stuck
   -- ADT eliminators (Unit 6): inspect the closed-value scrutinee in place, re-`compile` the chosen
   -- branch[v] (fuel-bounded ⇒ terminating), mirroring the `SUBST` exec arm. PURE — no `hs` change.
   | Nat.succ f, g, Instr.CASE w N₁ N₂ :: c, s, hs =>
@@ -1871,15 +1892,21 @@ theorem exec_succ : ∀ f g c s hs r, exec f g c s hs = some r → exec (f+1) g 
             simp only [htu] at h ⊢; exact ih _ _ _ _ _ h
           | none =>
             simp only [htu] at h ⊢
-            cases hcu : customUpdate n op v hs with
-            | some ru =>
-              obtain ⟨body, hs'⟩ := ru
-              simp only [hcu] at h ⊢; exact ih _ _ _ _ _ h
-            | none =>
-              simp only [hcu] at h ⊢
+            by_cases hbi : isBuiltinOp op
+            · simp only [hbi, if_true] at h ⊢
               cases hu : unwindFind n op hs with
               | none => simp only [hu] at h; simp at h
               | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ _ h
+            · simp only [hbi, Bool.false_eq_true, if_false] at h ⊢
+              cases hcu : customUpdate n op v hs with
+              | some ru =>
+                obtain ⟨body, hs'⟩ := ru
+                simp only [hcu] at h ⊢; exact ih _ _ _ _ _ h
+              | none =>
+                simp only [hcu] at h ⊢
+                cases hu : unwindFind n op hs with
+                | none => simp only [hu] at h; simp at h
+                | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ _ h
       | CASE w N₁ N₂ =>
         simp only [exec] at h ⊢
         cases w with
@@ -2127,7 +2154,9 @@ theorem sim : ∀ fe,
                         have hcu : customUpdate n op v hs
                             = some (Comp.subst p (Comp.subst (Val.shift v) clause.2), hs) :=
                           customUpdate_service hgCustom hcl
-                        exact ⟨F'+1, by simp only [compile, exec, hns, hnt, hcu]; exact hF'⟩
+                        have hbi : isBuiltinOp op = false := isBuiltinOp_iff.mpr ⟨hop, hop2, hopt⟩
+                        exact ⟨F'+1, by simp only [compile, exec, hns, hnt, hbi, Bool.false_eq_true,
+                          if_false, hcu]; exact hF'⟩
       | handle h0 M =>
           simp only [evalD] at h
           cases h0 with
@@ -2541,7 +2570,7 @@ theorem sim : ∀ fe,
                exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩)
             | simp [evalD] at h
     · -- RAISED PART
-      intro M g σ τ ℓ op v g' σ' τ' h hs hC hT
+      intro M g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK
       cases M with
       | ret w => simp [evalD] at h
       | lam M => simp [evalD] at h
@@ -2558,13 +2587,14 @@ theorem sim : ∀ fe,
           -- A single helper closing every raise-subcase: stores unchanged ⇒ netEffect = hs, machine OP
           -- (dispatch identity n2) falls to unwindFind = throwOutcome.
           have close : ∀ (hns : stateUpdate n2 op2 v2 hs = none) (hnt : txnUpdate n2 op2 v2 hs = none),
-              (Corr σ (netEffect hs σ τ) ∧ TCorr τ (netEffect hs σ τ) ∧ HMut hs (netEffect hs σ τ)) ∧
+              (Corr σ (netEffect hs σ τ) ∧ TCorr τ (netEffect hs σ τ) ∧ CCorr κ (netEffect hs σ τ) ∧
+                HMut hs (netEffect hs σ τ)) ∧
               ∀ c s F r, throwOutcome F g n2 op2 v2 (netEffect hs σ τ) = some r →
                 ∃ F', exec F' g (compile (.perform (.vcap n2 ℓ2) op2 v2) c) s hs = some r := by
             intro hns hnt
             have hus : netEffect hs σ τ = hs := updateStates_self hC hT
-            refine ⟨⟨by rw [hus]; exact hC, by rw [hus]; exact hT, by rw [hus]; exact HMut.refl hs⟩,
-              fun c s F r hr => ?_⟩
+            refine ⟨⟨by rw [hus]; exact hC, by rw [hus]; exact hT, by rw [hus]; exact hK,
+              by rw [hus]; exact HMut.refl hs⟩, fun c s F r hr => ?_⟩
             rw [hus] at hr
             refine ⟨F+1, ?_⟩
             simp only [compile, exec, hns, hnt]
