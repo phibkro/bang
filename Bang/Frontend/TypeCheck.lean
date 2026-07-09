@@ -849,6 +849,17 @@ def isValueSurf : Surf → Bool
   | .annotS e _                         => isValueSurf e
   | _                                   => false
 
+/-- Post-hoc error location, cheap tier (issue #52 Stage B, option-2 sweep): when the offending
+Surf sub-term is a BARE variable, name it in the message so `Surface.locateInMsg` resolves a real
+source span (`locateToken` finds the token by name). A compound sub-term (`$($f) x`, a nested
+`match`, …) has no single source token to point at without the deferred `Spanned`-`Surf` tier, so it
+stays silent — a message with no nameable token is the documented, tested un-located case
+(`locateInMsg … == none`), not a bug. This only ADDS a quoted name to messages that had none; no
+existing message text changes for a non-`.var` sub-term. -/
+def nameHint : Surf → String
+  | .var x => s!" ('{x}')"
+  | _      => ""
+
 -- Termination: the rank (synth = 0, check = 1) breaks the `check t → synth t` subsumption tie, as
 -- in the spike; every other call is on a structural subterm of the `Surf`.
 mutual
@@ -910,7 +921,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
       match (← resolve bigFuel (← synthSV Γ b)) with
       | .U φ B    => return (B, φ)
       | .vhole n  => do let C ← freshCHole; let ρ ← freshRow; assign n (.U ρ C); return (C, ρ)
-      | _         => throw "force: not a thunk"
+      | _         => throw s!"force: not a thunk{nameHint b}"
   -- HM let-generalization: the RHS's value type `A` is generalized against `Γ` before binding, so a
   -- `let`-bound name is polymorphic (instantiated fresh per use) — the heart of bite-0.
   | .lett x e b => do
@@ -942,7 +953,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
           assignC n (.arr .omega A B)
           let _ ← checkSV Γ a A
           return (B, φ)
-      | _          => throw "app: callee is not a function"
+      | _          => throw s!"app: callee is not a function{nameHint f}"
   | .binopS op a b => do
       let _ ← checkSV Γ a .int; let _ ← checkSV Γ b .int
       return (.F .omega (binopResTy op), botR)
@@ -964,7 +975,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
                         let (C, φ₁) ← synthSC ((xl, A) :: Γ) el
                         let φ₂ ← checkSC ((xr, B) :: Γ) er C
                         return (C, ← joinRow bigFuel φ₁ φ₂)
-      | _ => throw "match: scrutinee is not a sum"
+      | _ => throw s!"match: scrutinee is not a sum{nameHint s}"
   | .splitS a b p body => do match (← resolve bigFuel (← synthSV Γ p)) with
       | .prod A B => synthSC ((b, B) :: (a, A) :: Γ) body
       -- #55: the scrutinee is an unresolved hole (a generic Option's element `a := (v * rest)` not yet
@@ -972,7 +983,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
       -- the `.vhole ⟹ U`/`.chole ⟹ arr` moves for force/app). The fields' types flow from the body.
       | .vhole n  => do let A ← freshHole; let B ← freshHole
                         assign n (.prod A B); synthSC ((b, B) :: (a, A) :: Γ) body
-      | _ => throw "split: scrutinee is not a product"
+      | _ => throw s!"split: scrutinee is not a product{nameHint p}"
   | .annotS b t => do
       let C ← embCInst t
       let φ ← checkSC Γ b C
@@ -995,7 +1006,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
   | .unitS     => return (.F .omega .unit, botR)
   | .unfoldS b => do match (← resolve bigFuel (← synthSV Γ b)) with   -- T_Unfold mirrored: F 1 (A[μ.A/0]), pure
                      | .mu A => do let U ← unrollI A; return (.F 1 U, botR)
-                     | _     => throw "unfold: not a μ value"
+                     | _     => throw s!"unfold: not a μ value{nameHint b}"
   | .matchD .. => throw "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
   | .letRecS .. => throw "let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (ADR-0073)"
   | .divMark e => do let (B, φ) ← synthSC Γ e; return (B, ← insertRow bigFuel divLabel φ)  -- #46: mark the row divergent
@@ -2612,6 +2623,42 @@ def runTypedYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
 -- the typed projection is STRICTLY MORE INFORMATIVE than `runTypedYieldsInt`: where the bespoke
 -- helper says only `false`, the `Outcome` names the actual terminal (here: a type error).
 #guard (runTypedYieldsInt 20 "1 + Left(0)" 0 == false) && assertTypeError 20 "1 + Left(0)"
+
+/-! #### issue #52 Stage B (option-2 sweep): structural mismatches NAME their bare-variable operand,
+so `checkAndLower`'s `.error (m, none)` (an un-located message) becomes `.error (m, some span)` for
+the common case — the offending term IS a plain variable, not a compound expression. Each pair below
+runs the SAME program through `checkAndLower` twice: the message now carries the quoted name (was
+bare), and `Surface.locateInMsg` resolves it to the variable's exact source span (this is the real
+producer, not a hand-picked `(src, msg)` pair — the `Surface.lean:1173` sentinel stays a pure-function
+unit test of the fallback, decoupled from any actual program). -/
+
+-- `force: not a thunk` — forcing a plain Int variable now names it, locatable at its bind site.
+#guard (match checkAndLower "let x = 3 in $x" with
+        | .error (m, _) => (m.splitOn "'x'").length > 1
+        | .ok _ => false)
+#guard (match checkAndLower "let x = 3 in $x" with
+        | .error (m, _) => (Bang.Surface.locateInMsg "let x = 3 in $x" m).map (·.loc) == some "1:5"
+        | .ok _ => false)
+-- `app: callee is not a function` — applying a plain Int variable names it.
+#guard (match checkAndLower "let f = 3 in f 5" with
+        | .error (m, _) => (Bang.Surface.locateInMsg "let f = 3 in f 5" m).map (·.loc) == some "1:5"
+        | .ok _ => false)
+-- `match: scrutinee is not a sum` — matching a plain Int variable names it.
+#guard (match checkAndLower "let x = 3 in match x { Left(a) -> a, Right(b) -> b }" with
+        | .error (m, _) =>
+            (Bang.Surface.locateInMsg "let x = 3 in match x { Left(a) -> a, Right(b) -> b }" m).isSome
+        | .ok _ => false)
+-- `split: scrutinee is not a product` — destructuring a plain Int variable names it.
+#guard (match checkAndLower "let p = 3 in let (a, b) = p in a" with
+        | .error (m, _) => (Bang.Surface.locateInMsg "let p = 3 in let (a, b) = p in a" m).isSome
+        | .ok _ => false)
+-- a COMPOUND (non-`.var`) operand stays un-located (the honest, documented residual): forcing a
+-- literal PAIR `(1, 2)` is rejected (not a thunk), but the force target is a `pairS`, not a bare
+-- variable — `nameHint` correctly contributes nothing, so the message carries no quoted name and
+-- `locateInMsg` reports `none` (the fallback the Stage-B doc comment describes, not a regression).
+#guard (match checkAndLower "$(1, 2)" with
+        | .error (m, _) => (Bang.Surface.locateInMsg "$(1, 2)" m) == none
+        | .ok _ => false)
 
 /-! ### Validation ⑥ — the NORTHSTAR: `(1,2) + (3,4)`, resolved, typed, run via the oracle. -/
 
