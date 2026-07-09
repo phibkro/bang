@@ -2,15 +2,18 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: Q34's revisit signal has fired — the dogfood arc reached multi-file need (a JSON parser wanting the tokenizer's machinery; the operator names modules as the pending blocker for real projects). The ARCHITECTURE is already pinned (ADR-0076, Accepted: modules elaborate to the FLAT kernel · the compiler is a queryable service · the module DAG is acyclic + generated); this ADR decides Q34's v1 SURFACE forks inside those pins. **Decision: (D1) one module = one FILE — `import tokenizer` resolves `tokenizer.bang` relative to the importing file (then a project root); the module's name IS its filename, no module header, no blocks; (D2) qualified access by default (`tokenizer.lex input`) + EXPLICIT selective `use tokenizer (lex, Token)` — no glob/open-all import exists (implicit namespace pollution is the anti-agent-first move; a `use` collision is a LOUD error, ADR-0046); (D3, operator-amended 2026-07-09) declarations are PRIVATE by default; `pub` marks a declaration exported (riding the Rust convention — the dominant pattern-match for exactly this semantics). Private-by-default is the consistent agent-first choice: the module's interface is DECLARED at the definition site, nothing exports by accident, and `use`/qualified access can only name what the author deliberately revealed (the Q34 interface-reveal lesson, made structural); (D4) semantics = whole-program elaboration: imports parse + merge with name-qualification at the Surf level, THEN the existing single-program pipeline runs unchanged — the kernel never learns modules exist (the ADR-0075/0088/0091 elaborate-away move, fourth application); import cycles are a loud error (the 0076 DAG pin); the prelude stays the one always-open implicit module.** **Q38 posture (deliberate): v1 mints NO new interface construct** — a module is a file, not a signature; the module≟trait≟effect unification stress-test stays fully open for Stage 7, when the `effect` declaration surface (ADR-0092/0085-D4) either converges with `trait` syntax or diverges-documented. **Deferred per Q34's own sequencing**: the stdlib partition (prelude scales for now), the hashing boundary + incremental build, the LSP query surface (its non-deferrable prerequisite — spans in the checker — already landed via #52/#59). **Rejected**: module blocks (Lean-style `module { }` — nesting no v1 program needs; not foreclosed, a file is trivially one block); glob imports (`use tokenizer *` — resolution becomes context-dependent, breaking both ADR-0046 determinism and agent pattern-matching); an `export (…)` LIST as the visibility mechanism (a second place to look — the def site should carry its own visibility; kept conceivable as future sugar over `pub`); default-PUBLIC (the draft's original D3, operator-rejected — exports-by-accident and an undeclared interface).
 - **Depends-on**: 0076 (the pinned architecture), 0075 (elaborate-to-mono precedent), 0046 (deterministic-or-loud resolution)
-- **Relates-to**: Q34 (this decides its forks 1–3; 4–6 stay deferred), Q38 (posture: keep the unification testable, decide nothing), #33 (dogfood), ADR-0092/Stage-7 (the effect-decl surface that will test Q38), the dogfood lane's in-flight friction findings note (path linked here at acceptance, once it lands)
+- **Relates-to**: Q34 (this decides its forks 1–3; 4–6 stay deferred), Q38 (posture: keep the unification testable, decide nothing), #33 (dogfood), ADR-0092/Stage-7 (the effect-decl surface that will test Q38), `docs/notes/dogfood-json-findings.md` (the confirming evidence)
 
 ## Status
 
-Proposed (2026-07-09, drafted while the dogfood lane runs — its module-shaped friction findings
-feed this ADR's final form before implementation). Awaiting operator ruling. Implementation is
+Accepted (2026-07-09, operator ruling same day — after the dogfood evidence landed and confirmed
+the design point-for-point: the JSON unit wanted exactly file-shaped modules
+(Json/Parse/Print/main), needed no circularity, wanted tokenizer reuse by import, and suffered
+the flat-scope shadowing pain that `use`-scoping removes; see
+`docs/notes/dogfood-json-findings.md`). Implementation is
 elaborator + CLI work (`Surface.lean` import parsing · `TypeCheck.lean` decl-merge — queue
 behind current TypeCheck ownership; `Main.lean` file resolution), zero kernel surface.
 
@@ -85,5 +88,4 @@ example project. Same stratification as everything else: the tested superset rid
 
 ADR-0076 (the pinned architecture + generative-constraints rationale), Q34 (the fork list +
 "revisit signal: users write multi-file programs" — fired 2026-07-09), Q38 (the
-keep-it-testable directive), ADR-0075/0088/0091 (three prior elaborate-away wins), the
-dogfood lane's in-flight findings note (concrete multi-file friction shapes; linked at acceptance).
+keep-it-testable directive), ADR-0075/0088/0091 (three prior elaborate-away wins), `docs/notes/dogfood-json-findings.md` (the concrete multi-file friction shapes that confirmed D1/D2).
