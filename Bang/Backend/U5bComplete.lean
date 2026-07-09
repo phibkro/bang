@@ -231,59 +231,89 @@ theorem handle_txn_forward
 never changes a `some`. Needed by the converse spine, which COMBINES two `evalD` sub-runs at
 different fuels (e.g. letC binds M0 at `n`, subst-N at `ns`) — run_evalD never needs this because
 it inducts on `evalD` fuel directly. Induction on the smaller fuel, `cases` on the focus `M`. -/
-theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (r : Outcome × Nat × SStore × THeap),
-    evalD f g σ τ M = some r → evalD (f+1) g σ τ M = some r := by
+theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M : Comp)
+    (r : Outcome × Nat × SStore × THeap × CStore),
+    evalD f g σ τ κ M = some r → evalD (f+1) g σ τ κ M = some r := by
   intro f
   induction f with
-  | zero => intro g σ τ M r h; simp [evalD] at h
+  | zero => intro g σ τ κ M r h; simp [evalD] at h
   | succ f ih =>
-    intro g σ τ M r h
+    intro g σ τ κ M r h
     cases M with
     | ret w => simpa [evalD] using h
     | lam M0 => simpa [evalD] using h
     | letC M0 N =>
         simp only [evalD] at h ⊢
-        cases hM0 : evalD f g σ τ M0 with
+        cases hM0 : evalD f g σ τ κ M0 with
         | none => rw [hM0] at h; simp at h
         | some p =>
-            rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
-            obtain ⟨o, g1, σ1, τ1⟩ := p
+            rw [hM0] at h; rw [ih _ _ _ _ _ _ hM0]
+            obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
             cases o with
             | term t => cases t with
-              | ret v0 => simp only [Option.bind_some] at h ⊢; exact ih _ _ _ _ _ h
+              | ret v0 => simp only [Option.bind_some] at h ⊢; exact ih _ _ _ _ _ _ h
               | _ => simp only [Option.bind_some] at h ⊢; exact h
             | raised n op w => simp only [Option.bind_some] at h ⊢; exact h
     | force a =>
         cases a with
-        | vthunk M0 => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
+        | vthunk M0 => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
         | _ => simp [evalD] at h ⊢ <;> exact h
     | app M0 u =>
         simp only [evalD] at h ⊢
-        cases hM0 : evalD f g σ τ M0 with
+        cases hM0 : evalD f g σ τ κ M0 with
         | none => rw [hM0] at h; simp at h
         | some p =>
-            rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
-            obtain ⟨o, g1, σ1, τ1⟩ := p
+            rw [hM0] at h; rw [ih _ _ _ _ _ _ hM0]
+            obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
             cases o with
             | term t => cases t with
-              | lam N => simp only [Option.bind_some] at h ⊢; exact ih _ _ _ _ _ h
+              | lam N => simp only [Option.bind_some] at h ⊢; exact ih _ _ _ _ _ _ h
               | _ => simp only [Option.bind_some] at h ⊢; exact h
             | raised n op w => simp only [Option.bind_some] at h ⊢; exact h
     | perform cap op u =>
-        -- perform is FUEL-AGNOSTIC (no recursion): the `f+1` and `f+2` clauses are byte-identical.
+        -- perform: get/put/txn are fuel-AGNOSTIC (no recursion); the CUSTOM else-branch INLINE-SERVICES and
+        -- recurses on the clause body (fuel-DEPENDENT), so it needs the IH.
         cases cap with
-        | vcap n ℓ => simp only [evalD] at h ⊢; exact h
+        | vcap n ℓ =>
+            simp only [evalD] at h ⊢
+            by_cases hg : op = "get"
+            · subst hg; simpa only [if_pos rfl] using h
+            · by_cases hp : op = "put"
+              · subst hp; simpa only [if_neg (by decide : ¬("put" = "get")), if_pos rfl] using h
+              · by_cases ht : isTxnOp op = true
+                · simpa only [if_neg hg, if_neg hp, ht, if_true] using h
+                · rw [Bool.not_eq_true] at ht
+                  simp only [if_neg hg, if_neg hp, ht, Bool.false_eq_true, if_false] at h ⊢
+                  cases hck : κ.get? n with
+                  | none => simp only [hck] at h ⊢; exact h
+                  | some pcls =>
+                      obtain ⟨pp, cls⟩ := pcls
+                      simp only [hck] at h ⊢
+                      cases hcl : cls.find? (·.1 == op) with
+                      | none => simp only [hcl] at h ⊢; exact h
+                      | some clause => simp only [hcl] at h ⊢; exact ih _ _ _ _ _ _ h
         | _ => simp [evalD] at h ⊢ <;> exact h
     | handle h0 M0 =>
         cases h0 with
-        | custom _ _ _ => simp [evalD] at h
-        | state ℓ0 s0 =>
+        | custom ℓ0 p0 cls0 =>
             simp only [evalD, Handler.label] at h ⊢
-            cases hM0 : evalD f (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            cases hM0 : evalD f (g+1) σ τ (κ.push g p0 cls0) (Comp.subst (Val.vcap g ℓ0) M0) with
             | none => rw [hM0] at h; simp at h
             | some p =>
-                rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
-                obtain ⟨o, g1, σ1, τ1⟩ := p
+                rw [hM0] at h; rw [ih _ _ _ _ _ _ hM0]
+                obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
+                cases o with
+                | term t => cases t with
+                  | ret v0 => simpa using h
+                  | _ => simpa using h
+                | raised n op w => simpa using h
+        | state ℓ0 s0 =>
+            simp only [evalD, Handler.label] at h ⊢
+            cases hM0 : evalD f (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; rw [ih _ _ _ _ _ _ hM0]
+                obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
                 cases o with
                 | term t => cases t with
                   | ret v0 => simpa using h
@@ -291,11 +321,11 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (r : 
                 | raised n op w => simpa using h
         | transaction ℓ0 Θ =>
             simp only [evalD, Handler.label] at h ⊢
-            cases hM0 : evalD f (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M0) with
+            cases hM0 : evalD f (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M0) with
             | none => rw [hM0] at h; simp at h
             | some p =>
-                rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
-                obtain ⟨o, g1, σ1, τ1⟩ := p
+                rw [hM0] at h; rw [ih _ _ _ _ _ _ hM0]
+                obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
                 cases o with
                 | term t => cases t with
                   | ret v0 => simpa using h
@@ -303,11 +333,11 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (r : 
                 | raised n op w => simpa using h
         | throws ℓ0 =>
             simp only [evalD, Handler.label] at h ⊢
-            cases hM0 : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            cases hM0 : evalD f (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
             | none => rw [hM0] at h; simp at h
             | some p =>
-                rw [hM0] at h; rw [ih _ _ _ _ _ hM0]
-                obtain ⟨o, g1, σ1, τ1⟩ := p
+                rw [hM0] at h; rw [ih _ _ _ _ _ _ hM0]
+                obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
                 cases o with
                 | term t => cases t with
                   | ret v0 => simpa using h
@@ -318,12 +348,12 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (r : 
                     · simp only [Option.bind_some, if_neg hc] at h ⊢; exact h
     | case a N1 N2 =>
         cases a with
-        | inl v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
-        | inr v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
+        | inl v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
+        | inr v => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
         | _ => simp [evalD] at h ⊢ <;> exact h
     | split a N =>
         cases a with
-        | pair v w => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ h
+        | pair v w => simp only [evalD] at h ⊢; exact ih _ _ _ _ _ _ h
         | _ => simp [evalD] at h ⊢ <;> exact h
     | unfold a =>
         cases a with
@@ -334,14 +364,14 @@ theorem evalD_succ : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (r : 
     | oom => simp [evalD] at h
     | wrong a => simp [evalD] at h
 
-theorem evalD_fuel_mono {f g : Nat} {σ : SStore} {τ : THeap} {M : Comp}
-    {r : Outcome × Nat × SStore × THeap} {f2 : Nat}
-    (h : evalD f g σ τ M = some r) (hle : f ≤ f2) : evalD f2 g σ τ M = some r := by
+theorem evalD_fuel_mono {f g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {M : Comp}
+    {r : Outcome × Nat × SStore × THeap × CStore} {f2 : Nat}
+    (h : evalD f g σ τ κ M = some r) (hle : f ≤ f2) : evalD f2 g σ τ κ M = some r := by
   obtain ⟨k, rfl⟩ := Nat.le.dest hle
   clear hle
   induction k with
   | zero => simpa using h
-  | succ k ih => rw [show f + (k+1) = (f + k) + 1 by omega]; exact evalD_succ _ _ _ _ _ _ ih
+  | succ k ih => rw [show f + (k+1) = (f + k) + 1 by omega]; exact evalD_succ _ _ _ _ _ _ _ ih
 
 /-- `evalD`'s `.term` outcome is always a TERMINAL computation — `ret v` or `lam M0` (the two
 values of CBPV). Every `evalD` clause that yields `.term t` yields one of these; the sequencing

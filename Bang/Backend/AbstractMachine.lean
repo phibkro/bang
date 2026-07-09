@@ -4883,7 +4883,13 @@ custom frame in `K` keys only NON-builtin ops. This is the PROOF-SIDE encoding o
 with a loud error), so it holds by construction for every elaborated program — the exact analog of
 `VcapFree` (surface never emits raw `vcap`). It REPLACES the vacuous `NoCustomFrame` scaffolding (which
 forbade custom frames entirely) with the strictly-weaker "custom allowed, op-disjoint" — a net
-strengthening of every consumer (ADR-0086 premise-lifecycle; `CustomFree` → `WfCustomOps` swap). -/
+strengthening of every consumer (ADR-0086 premise-lifecycle; `CustomFree` → `WfCustomOps` swap).
+
+RETIREMENT PATH (named, not permanent): this premise is retired entirely if/when `evalD` goes IDENTITY-first
+(dispatching by which per-kind store holds the identity — the stores are disjoint by `StratFresh`, so it
+agrees with the kernel's `idDispatch` UNCONDITIONALLY, no premise anywhere; the op-first shape was correct
+only while custom was inert, `op-first ≡ id-first` when no custom frame can occur — the named follow-up),
+or when op-namespacing (Q34/Q38) makes the surface reservation obsolete. Filed as follow-up, not rejected. -/
 def WfCustomOps : Bang.EvalCtx → Prop
   | [] => True
   | Frame.handleF _ (.custom _ p cls) :: K =>
