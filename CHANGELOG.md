@@ -77,6 +77,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — canonical formatter core (Bang/Frontend/Format.lean, #58) (`aaaf544`)
 - **cli** — wire `bang fmt` against fmtProg (#58 CLI half) (`299c4bc`)
 - **tooling** — test-fmt joins the default verify chain (`85a04e1`)
+- **frontend** — effectful let-rec recursion via declared-row thunk type (ADR-0088, #48) (`fb94daf`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
