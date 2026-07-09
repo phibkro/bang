@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (23)
+## active (24)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -25,6 +25,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
 - [`multishot-survey.md`](multishot-survey.md) — Multi-shot resumption — empirical design inputs for the Q22 cap-rep fork
+- [`proof-export-survey.md`](proof-export-survey.md) — Proof export (Q43) — design survey: a bang `law` becomes a Lean proof goal, proved once, cached
 - [`q38-handler-surface-survey.md`](q38-handler-surface-survey.md) — Handler surface + the module≟trait≟effect unification — empirical design inputs (Q38 / Stage-7)
 - [`spec-handover.md`](spec-handover.md) — Spec handover — research/engineering interface
 - [`spec-proof-discipline.md`](spec-proof-discipline.md) — Spec proof discipline
