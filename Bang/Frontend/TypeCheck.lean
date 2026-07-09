@@ -28,8 +28,10 @@ namespace Bang.TypeCheck
 open Bang
 open Bang.EffectRow (EffRow Label Row)
 
-/-- The concrete instantiation the surface uses: effect rows are `Finset Label`, grades are QTT. -/
-abbrev VT := VTy EffRow QTT
+/-- The concrete instantiation the surface uses: effect rows are `Finset Label`, grades are QTT.
+`VT` is PUBLIC (#60 seam): forced by `sampleVT`/`checkLawOn`'s signatures — additive visibility
+only, no behavior change. -/
+public abbrev VT := VTy EffRow QTT
 abbrev CT := CTy EffRow QTT
 abbrev Ctx := List VT      -- positional type context (de Bruijn, innermost first)
 
@@ -239,8 +241,9 @@ for a 0-ary op (a bare result-type signature, `op : ResTy`), `some A` for the v1
 (`op : ArgTy -> ResTy`). This IS the surface-side analogue of the kernel's `[EffSig]` typeclass
 (`Bang/Core/IR.lean`) — a per-program, program-DERIVED, total finite instance the elaborator
 constructs and consults; the kernel itself never sees effect NAMES (label-agnostic, `Label = Nat`,
-D1's "kernel never learns names"). -/
-structure EffectInfo where
+D1's "kernel never learns names"). PUBLIC (#60 seam): forced by `ElabEnv`'s field type —
+additive visibility only, no behavior change. -/
+public structure EffectInfo where
   label : Label
   ops   : List (String × Option VT × VT)   -- (opName, argTy?, resTy)
 
@@ -1478,8 +1481,9 @@ def appSpine : Surf → Option (String × List Surf)
 
 /-- One resolvable instance op: the resolution key (`opName` × structural `target`) plus what
 the elaborated call site needs. `body` is PRE-ELABORATED at env build (ADR-0069 upgraded
-piece-2's raw splice: nested ctors and earlier ops inside an impl body now resolve). -/
-structure Inst where
+piece-2's raw splice: nested ctors and earlier ops inside an impl body now resolve). PUBLIC
+(#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior change. -/
+public structure Inst where
   opName   : String
   target   : VT       -- the structural resolution key (ADR-0068 decision 2)
   targetTy : Ty       -- the impl's declared target, for the elaborated annotation
@@ -1487,13 +1491,14 @@ structure Inst where
   params   : List String
   body     : Surf
 
-abbrev InstEnv := List Inst
+public abbrev InstEnv := List Inst
 
 /-- One data constructor's elaboration record (ADR-0069). For a GENERIC data type (`params ≠ []`,
 ADR-0069 bite-1) `payloadClosed`/`dataTy` are placeholders (a generic ctor has no ONE closed type —
 it is monomorphized per use); the concrete μ is built from `params`/`payloadGen` at the use site by
-`monoData`, gated on `params.isEmpty`. -/
-structure CtorInfo where
+`monoData`, gated on `params.isEmpty`. PUBLIC (#60 seam): forced by `ElabEnv`'s field type —
+additive visibility only, no behavior change. -/
+public structure CtorInfo where
   dataName      : String
   idx           : Nat        -- position in decl order (the sum injection)
   total         : Nat        -- constructor count (right-nested sum shape)
@@ -1506,16 +1511,19 @@ structure CtorInfo where
 /-- A GENERIC data declaration's template (ADR-0069 bite-1): its type params + each ctor's surface
 payload types (params free as `tName`, self-reference as `tApp Name params`). Monomorphized to a
 closed μ by `monoData` per concrete instantiation (`List Int` ↦ `μX. Unit + (Int × X)`). Only
-generic (`params ≠ []`) decls live here; monomorphic decls stay in `aliases` (byte-identical path). -/
-structure GenData where
+generic (`params ≠ []`) decls live here; monomorphic decls stay in `aliases` (byte-identical path).
+PUBLIC (#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior
+change. -/
+public structure GenData where
   params : List String
   ctors  : List (String × List Ty)
 
 /-- A bounded generic function template (bite-2, ADR-0080): `fn fold(xs) : List a -> a where Monoid a
 = …`. Stored RAW (its type mentions the bound var `tyVar`, its body references the trait's ops by
 name + itself recursively); monomorphized per concrete use by substituting `tyVar := T` and splicing
-the resolved `Trait T` instance's ops. -/
-structure BoundedFn where
+the resolved `Trait T` instance's ops. PUBLIC (#60 seam): forced by `ElabEnv`'s field type —
+additive visibility only, no behavior change. -/
+public structure BoundedFn where
   name       : String
   params     : List String
   declaredTy : Ty
@@ -1525,31 +1533,37 @@ structure BoundedFn where
 
 /-- One impl op kept in RAW (un-elaborated) form, with the trait sig's `Self`-based ret type — so a
 bounded-fn monomorphization can re-elaborate it at a concrete carrier `T` (its trait ops resolve at
-`T`, exactly as `buildEnv`'s pre-elaboration does). -/
-structure RawOp where
+`T`, exactly as `buildEnv`'s pre-elaboration does). PUBLIC (#60 seam): forced by `RawImpl`'s field
+type — additive visibility only, no behavior change. -/
+public structure RawOp where
   name   : String
   params : List String
   body   : Surf
   retTy  : Ty          -- the trait sig's ret type (`Self`-based; `Self ↦ T` at use)
 
-/-- One impl kept RAW + keyed by its resolved carrier, for bounded-fn instance resolution. -/
-structure RawImpl where
+/-- One impl kept RAW + keyed by its resolved carrier, for bounded-fn instance resolution. PUBLIC
+(#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior change. -/
+public structure RawImpl where
   traitName : String
   targetVT  : VT
   ops       : List RawOp
 
 /-- One higher-kinded impl (ADR-0082), kept keyed on the carrier CONSTRUCTOR NAME (`Functor Option` ⟹
 `ctorName = "Option"`) rather than a resolved carrier VT — an HK carrier (`Option`, arity 1) has no
-closed VT until applied. `ops` are the impl's op defs, spliced monomorphically at each concrete use. -/
-structure HktImpl where
+closed VT until applied. `ops` are the impl's op defs, spliced monomorphically at each concrete use.
+PUBLIC (#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior
+change. -/
+public structure HktImpl where
   traitName : String
   ctorName  : String
   ops       : List Bang.Surface.OpDef
 
 /-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls
 + bounded generic functions + raw impls (for bounded-fn monomorphization) + higher-kinded traits/impls
-+ user EFFECT decls (ADR-0092 D1/D2 — name ↦ allocated label + op signatures). -/
-structure ElabEnv where
++ user EFFECT decls (ADR-0092 D1/D2 — name ↦ allocated label + op signatures). PUBLIC (#60 seam):
+the law-runner harness needs a real, constructed `ElabEnv` to drive `checkLawOn` — additive
+visibility only, no behavior change. -/
+public structure ElabEnv where
   insts    : InstEnv
   ctors    : List (String × CtorInfo)
   aliases  : List (String × Ty)
@@ -2517,8 +2531,11 @@ reference itself + earlier decls; forward references fail loud). Data: encode th
 is always right) and the closed binder-typing payloads (self ↦ the closed μ). Impls: resolve
 the target, validate against the trait (op name + param arity), and PRE-ELABORATE op bodies
 against the env-so-far — nested ctors and EARLIER ops resolve; a self-recursive op fail-louds
-as an unresolved operator (out of scope until `fix` lands, ADR-0069). -/
-def buildEnv (ds : List Decl) : Except String ElabEnv := do
+as an unresolved operator (out of scope until `fix` lands, ADR-0069). PUBLIC (#60 seam): the
+law-runner harness needs a real `ElabEnv` (trait/impl-derived) to drive `checkLawOn`, and this
+is the only constructor of one from a parsed decl list — no behavior change, additive visibility
+only. -/
+public def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut aliases : List (String × Ty) := []
   let mut ctors   : List (String × CtorInfo) := []
   let mut insts   : InstEnv := []
@@ -3018,8 +3035,9 @@ def valToSurf : Val → Option Surf
   | _         => none
 
 /-- The sample pool for a value type — small on purpose (every element costs one interpreter
-run per law). -/
-def sampleVT : VT → List Val
+run per law). PUBLIC (#60 seam): the law-runner harness (`Bang.Witness.LawTest`) reuses this as
+its Int/prod sample source rather than re-deriving one; no behavior change. -/
+public def sampleVT : VT → List Val
   | .int      => [.vint 0, .vint 1, .vint (-2), .vint 7]
   | .prod A B => ((sampleVT A).flatMap fun a => (sampleVT B).map fun b => .pair a b).take 6
   | _         => []
@@ -3031,8 +3049,11 @@ def tuples : Nat → List Val → List (List Val)
 
 /-- Run ONE law instance: bind `params := args`, wrap the Bool-valued body in
 `let #r = body in if #r then 1 else 0` (encoding-agnostic truth read-back), elaborate
-(operators resolve), CHECK, lower, and run through `Source.eval`. -/
-def checkLawOn (env : ElabEnv) (params : List String) (body : Surf) (args : List Val) : Bool :=
+(operators resolve), CHECK, lower, and run through `Source.eval`. PUBLIC (#60 seam): this is
+the exact per-sample check the law-runner harness (`Bang.Witness.LawTest`) needs to reuse rather
+than re-derive (build-on-checkLawOn-don't-rederive) — no behavior change, additive visibility
+only. -/
+public def checkLawOn (env : ElabEnv) (params : List String) (body : Surf) (args : List Val) : Bool :=
   if params.length != args.length then false else
   let wrapped := (params.zip args).foldr
     (fun (pv : String × Val) acc =>
