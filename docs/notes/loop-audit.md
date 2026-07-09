@@ -17,6 +17,7 @@ _Position: post-MVP · ◊5 completeness closed (ADR-0086, `d13e0af`) · edge = 
 | `lake build` · `#guard` oracles | minutes | ✔ excellent |
 | axiom gate (`just axioms`, Audit.lean census) | minutes | ✔ ungameable by design |
 | refute-first witnesses (`Bang/Witness/`) | hours | ✔ institutionalized |
+| differential fuzz (`Bang/Witness/Fuzz.lean`, #14) | per-build | ✔ NEW 2026-07-09 — 200 seeded samples, handler-fragment-biased, `#guard`-gated (a counterexample is a red build) |
 | increment gate · banking discipline | days | ✔ caught #44 Stage-2 pre-land |
 | doc fitness (`just fitness` generated legs) | days | ✔ (+ prose-claim leg 2026-07-08) |
 | **— the desk's edge —** | | |
