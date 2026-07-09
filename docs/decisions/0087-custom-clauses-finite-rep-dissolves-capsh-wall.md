@@ -11,6 +11,15 @@
 
 Accepted (2026-07-09, operator ruling same day) — the **entry gate for the #44 resume arc** is OPEN: rung-1 probe first (D4). Supersedes ADR-0085's Stage-2 invariant SKETCH (its staged plan otherwise stands; see §Staging).
 
+**Rung-1 VERDICT (2026-07-09, `probe-44-finite-rep` @ `39ae9bd`, manager-gated on a clean
+checkout): D2 CONFIRMED.** The two `gh44s2` clause-cap sorries (`capCoh_idDispatch`,
+`freshStack_idDispatch`, both stuck on `q ∈ capsC clause` under the opaque map) CLOSE under the
+finite rep via a 4-line `capsCls_find?` lemma; census unchanged (7 flagged), every clean headline
+still ⊆ trusted-three. No fallback needed. Slice-3 finding (rung-2 scope, provable-not-false):
+dispatch activation breaks 4 `AbstractMachine` arms + 1 BinaryLR arm that assume the resolver of a
+built-in op IS the built-in handler — closable by threading `StratFresh`/id-uniqueness into those
+internal (non-frozen) lemma signatures. **Rung 2 in flight** (`feat-44-rung2`).
+
 - **Layer:** K (kernel — the `Handler.custom` constructor's argument type). Stage-1's rep is landed but INERT and UNTYPED (no well-typed program contains it; `capsH`/dispatch arms are vacuous or `[]`), so this is a **pre-activation rep change, not a re-freeze**: no frozen statement mentions the clause map's type, and the ~424-site coexist ripple re-touches only the custom arms (byte-identical built-ins stay byte-identical).
 
 ## Context
