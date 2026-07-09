@@ -82,14 +82,16 @@ whole unit as one fresh-session atomic commit (ADR-0085's "L / weeks, spine-touc
 
 ## The atomic unit (dependency-ordered; (a) is banked, rest OPEN)
 - **(a) `evalD` custom arm + `CStore`** — DONE, banked at `scratch/stage4-evalD-custom-arm.patch`.
-  `git apply` it to reinstate. (When resuming: apply, then start (b).)
-- **(b) `Corr` machinery** — add `ctxCustoms` (sibling of `ctxStates`/`ctxTxns`), `CCorr`/`CustomCorr`,
-  `updateCtxCustoms`, and the inversion lemmas `splitAtId_of_ctxCustoms_get` + `dispatch_custom_*`
-  (siblings of the rung-2 **absurd** arms — which now become REAL proofs). Templates: the predecessor's
-  `capsCls_find?` + the `ctxStates`/`splitAtId_of_ctxStates_get` state-side lemmas.
-- **(c) `sim`** — thread `κ` + `Corr`-custom through the term+raised parts; the custom `handle`/`perform`
-  CASES become real (were vacuous via `evalD custom = none` / non-state catch-all). `compile_correct`
-  rides `sim`.
+  `git apply` it to reinstate. **DONE + LANDED (applied on main, `2167217`)** — no longer needs apply.
+- **(b) `Corr` machinery** — DONE (`15555c0`+`d748fe6`). Machine-side: `customUpdate` (HStack analog of
+  `stateUpdate`/`txnUpdate`) + the `exec` OP custom-dispatch arm (`2167217`). Bridge: `hsCustom`/
+  `hsCustoms`/`CCorr`/`updateCustoms` + `get?_hsCustoms`/`CCorr.get?`/`customUpdate_service` +
+  `CCorr_install`/`CCorr_install_noncustom`/`CCorr_pop_custom`/`CCorr_pop_noncustom` +
+  `hsCustoms_stateUpdate_put`/`hsCustoms_txnUpdate`/`hsCustoms_netEffect`. All compile.
+- **(c) `sim`** — **TERM PART DONE** (`e77d75c`): statement threads `κ`/`CCorr`; all cases proven incl.
+  the NOVEL custom `perform` (inline clause-service ↔ `customUpdate`) + custom `handle` (install/pop κ).
+  **RAISED PART = IN FLIGHT** (next: `intro` +κ/κ'/hK, the perform/letC/app raise-forward cases,
+  `raisedTriple_pop_nontxn` may need a CCorr extension). `compile_correct` rides `sim`.
 - **(d) `run_evalD` (~1080 lines)** — thread `κ`; **DROP `NoCustomFrame`**; prove the custom `handle`
   case (recurse `M'` with pushed κ-entry; `CtxCorr`/`CapLabelCoh`/`FreshCfg`/`NoResume` over a custom
   frame in `K`) and the custom `perform` case (inline-service resolves; `NoResume` now via the REAL
