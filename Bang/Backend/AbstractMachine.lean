@@ -1171,6 +1171,16 @@ theorem netEffect_cons_throws {fr : HFrame} {hs : HStack} {σ : SStore} {τ : TH
   rw [updateStates_cons_nonstate σ (by rw [hfr]; intro ℓ s; simp)]
   exact updateTxns_cons_throws τ hfr
 
+/-- `netEffect` on a `custom` head frame: custom carries neither state nor heap (op-disjoint), so both
+value passes skip it (analog of `netEffect_cons_throws`). Used by the sim raised custom-forward case. -/
+theorem netEffect_cons_custom {fr : HFrame} {hs : HStack} {σ : SStore} {τ : THeap}
+    {ℓ0 : Bang.EffectRow.Label} {p0 : Val} {cls0 : List (Bang.OpId × Comp)}
+    (hfr : fr.handler = .custom ℓ0 p0 cls0) :
+    netEffect (fr :: hs) σ τ = fr :: netEffect hs σ τ := by
+  unfold netEffect
+  rw [updateStates_cons_nonstate σ (by rw [hfr]; intro ℓ s; simp)]
+  simp only [updateTxns, hfr]
+
 /-- The raised-part at-raise correspondence pops a NON-state, NON-txn (throws) install frame from the
 COMBINED net-effect triple: a throws frame carries neither store entry, so `Corr`/`TCorr`/`HMut` over
 `netEffect (fr::hs) σ' τ'` pass to the tail. The `sim` raised handle(throws) escape case (triple form). -/
@@ -2816,7 +2826,64 @@ theorem sim : ∀ fe,
       | handle h0 M =>
           simp only [evalD] at h
           cases h0 with
-          | custom _ _ _ => simp at h   -- evalD custom = none (ADR-0085 stage 1) ⇒ `= some` hypothesis absurd
+          | custom ℓ0 p0 cls0 =>
+              -- route-B INSTALL (raised, FORWARD): MINT id := g, push (id↦(p0,cls0)) on κ, run M' at g+1;
+              -- a raise FORWARDS past the custom frame (custom never catches a throws-raise), popping the
+              -- pushed κ entry (κ1.tail). Custom carries no state/heap ⇒ σ/τ pass through. Mirrors the throws
+              -- FORWARD case with a κ push/pop.
+              simp only [Handler.label] at h
+              cases hM : evalD fe (g+1) σ τ (κ.push g p0 cls0) (Comp.subst (Val.vcap g ℓ0) M) with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                      Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                    have hns0 : ∀ ℓ s, (Handler.custom ℓ0 p0 cls0) ≠ Handler.state ℓ s := by intro ℓ s; simp
+                    have hnt0 : ∀ ℓ Θ, (Handler.custom ℓ0 p0 cls0) ≠ Handler.transaction ℓ Θ := by intro ℓ Θ; simp
+                    have htriple : Corr σ1 (netEffect hs σ1 τ1) ∧ TCorr τ1 (netEffect hs σ1 τ1)
+                        ∧ CCorr κ1.tail (netEffect hs σ1 τ1) ∧ HMut hs (netEffect hs σ1 τ1) := by
+                      set fr0 : HFrame := { id := g, handler := Handler.custom ℓ0 p0 cls0, savedCode := [], savedStack := [] }
+                        with hfr0
+                      obtain ⟨⟨hCr, hTr, hKr, hmutr⟩, _⟩ :=
+                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.push g p0 cls0) ℓ' op' w g1 σ1 τ1 κ1 hM (fr0 :: hs)
+                          (Corr_install_nonstate fr0 (by rw [hfr0]; exact hns0) hC)
+                          (TCorr_install_nontxn fr0 (by rw [hfr0]; exact hnt0) hT)
+                          (CCorr_install ℓ0 p0 cls0 fr0 (by rw [hfr0]) hK)
+                      obtain ⟨hCt, hTt, hMt⟩ := raisedTriple_pop_nontxn (by rw [hfr0]; exact hns0)
+                        (by rw [hfr0]; exact hnt0) hCr hTr hmutr
+                      refine ⟨hCt, hTt, ?_, hMt⟩
+                      rw [netEffect_cons_custom (show fr0.handler = .custom ℓ0 p0 cls0 from rfl)] at hKr
+                      exact CCorr_pop_custom (show fr0.handler = .custom ℓ0 p0 cls0 from rfl) hKr
+                    refine ⟨htriple, fun c s F r hr => ?_⟩
+                    set fr : HFrame := { id := g, handler := Handler.custom ℓ0 p0 cls0, savedCode := c, savedStack := s }
+                      with hfrdef
+                    obtain ⟨_, kR⟩ := ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ τ (κ.push g p0 cls0) ℓ' op' w g1 σ1 τ1 κ1 hM (fr :: hs)
+                      (Corr_install_nonstate fr (by rw [hfrdef]; exact hns0) hC)
+                      (TCorr_install_nontxn fr (by rw [hfrdef]; exact hnt0) hT)
+                      (CCorr_install ℓ0 p0 cls0 fr (by rw [hfrdef]) hK)
+                    have hfwd : throwOutcome F g1 ℓ' op' w (netEffect (fr :: hs) σ1 τ1) = some r := by
+                      rw [netEffect_cons_custom (show fr.handler = .custom ℓ0 p0 cls0 from by rw [hfrdef])]
+                      rw [throwOutcome_cons_nonthrows _ _ _ _ _ _ _ (by rw [hfrdef]; intro ℓ; simp)]
+                      exact hr
+                    obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
+                    exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
+                | (.term (.ret v0), _, _, _, _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+                | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
           | state ℓ0 s0 =>
               -- route-B INSTALL (raised): MINT id := g, run M' = subst (vcap g ℓ0) M at g+1 under σ.push g s0;
               -- a raise FORWARDS, popping the pushed σ entry (σ1.tail). The frame's id is g.
