@@ -27,8 +27,10 @@ case "$os/$arch" in
 esac
 
 # --- pick the download tool --------------------------------------------------------
+# `fetch` for the API (tolerates a 404 body — the expected "no releases yet" case),
+# `fetch_hard` for the binary download (fails loudly on any HTTP error).
 if command -v curl >/dev/null 2>&1; then
-  fetch() { curl -fsSL "$1"; }
+  fetch() { curl -sSL "$1"; }
   fetch_to() { curl -fsSL -o "$2" "$1"; }
 elif command -v wget >/dev/null 2>&1; then
   fetch() { wget -qO- "$1"; }
@@ -41,10 +43,13 @@ fi
 # HOUSE GOTCHA: under `set -o pipefail`, `x="$(cmd | cmd)"` dies silently if the first
 # stage fails (SIGPIPE / non-zero swallowed by the assignment). Capture the raw body
 # FIRST (its own guarded line so a network failure is a loud error), THEN parse it.
+# We do NOT use curl -f here: `/releases/latest` 404s when there are simply no releases
+# yet (the expected pre-first-tag state), and we want to report THAT (build-from-source)
+# rather than "the network is down". A real network failure fails the assignment below.
 api="https://api.github.com/repos/$REPO/releases/latest"
 body=""
 if ! body="$(fetch "$api")"; then
-  err "could not reach the GitHub releases API ($api)."
+  err "could not reach the GitHub releases API ($api) — check your network."
 fi
 
 asset="$BIN_NAME-$triple"
