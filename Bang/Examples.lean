@@ -320,4 +320,45 @@ def compiledAgreesInt (fuel : Nat) (src : String) (n : Int) : Bool :=
 #guard compiledAgreesInt 2000 "state 5 in (get + 1)" 6             -- binop over the STATE channel
 #guard compiledAgreesInt 2000 "handle (7 + (raise 3))" 3          -- binop operand raises → caught
 
+-- C-CUSTOM (ADR-0085 Stage 4 — user-defined effects through the COMPILED path). The custom
+-- clause-service arm now closes `exec_wexec_sim_ok`'s custom-freedom seam; these two guards tie
+-- `exec ∘ compile` back to `Source.eval` on the general `Handler.custom`. The surface has no custom
+-- syntax yet (Stage 7), so the programs are hand-built at the `Comp` IR level (mirroring the kernel
+-- `#guard`s in `Core/Semantics/Eval.lean`, now also driven through the calculated machine). The
+-- `readerClauses` clause resumes with `arg@0 + param@1`; dispatch is first-match-wins.
+private def customReaderClauses : List (Bang.OpId × Comp) :=
+  [("read", .binop .add (.vvar 0) (.vvar 1))]
+
+/-- Custom DISPATCH + one-shot RESUME: `read 5` runs the clause `5 + 100 = 105`, resumes the `letC`
+continuation `105 + 1 = 106`. The calculated machine's `customUpdate` clause-service agrees with the
+kernel's resumptive dispatch. -/
+private def customResume : Comp :=
+  .handle (.custom 1 (.vint 100) customReaderClauses)
+    (.letC (.perform (.vvar 0) "read" (.vint 5))
+      (.binop .add (.vvar 0) (.vint 1)))
+
+/-- Custom ABORT coexisting with `throws`: a custom frame (label 1) sits between `raise 42` and its
+`throws` handler (label 2); the abort discards the custom frame and the read continuation, yielding
+`42`. The machine's `unwindFind` skips the custom frame exactly as the kernel does. -/
+private def customAbortCoexist : Comp :=
+  .handle (.throws 2)
+    (.handle (.custom 1 (.vint 100) customReaderClauses)
+      (.letC (.perform (.vvar 1) "raise" (.vint 42))
+        (.perform (.vvar 0) "read" (.vint 5))))
+
+/-- Direct-`Comp` differential check (custom effects have no surface syntax): the calculated machine
+`exec ∘ compile` AND the kernel oracle `Source.eval` both yield exactly `vint n`. Mirrors
+`compiledAgreesInt`, bypassing the surface parse/lower. -/
+private def compiledAgreesC (fuel : Nat) (c : Comp) (n : Int) : Bool :=
+  (match Bang.CalcVM.exec fuel 0 (Bang.CalcVM.compile c []) [] [] with
+   | some [.ret (.vint m)] => m == n
+   | _                     => false)
+  &&
+  (match Source.eval fuel c with
+   | .done (.vint m) => m == n
+   | _               => false)
+
+#guard compiledAgreesC 2000 customResume 106
+#guard compiledAgreesC 2000 customAbortCoexist 42
+
 end Bang.Examples
