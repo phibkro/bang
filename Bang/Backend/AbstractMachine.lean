@@ -6280,7 +6280,74 @@ theorem run_evalD : ∀ fe,
           -- ℓ'=g); then the MINT step. `hcbpop` (freshness) supplies the `ℓ'=g` escape.
           simp only [evalD] at h
           cases h0 with
-          | custom _ _ _ => simp at h   -- evalD custom = none (ADR-0085 stage 1) ⇒ `= some` hypothesis absurd
+          | custom ℓ0 p0 cls0 =>
+              -- FORWARD a raise past a custom frame (ADR-0085 Stage 4): custom NEVER catches a throws-raise,
+              -- so the body's raise propagates out. MINT `handleF g (custom ℓ0 p0 cls0)`, run M' at g+1; on a
+              -- raise POP the κ entry (CCtxCorr_pop_custom) + the σ/τ pass-through pop; bridge the continuation
+              -- across the popped frame (run_perform_pop_handleF); then MINT. Mirror of the state FORWARD arm.
+              simp only [Handler.label] at h
+              have hmint : Source.step (g, K, Comp.handle (Handler.custom ℓ0 p0 cls0) M0)
+                  = some (g+1, Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K, Comp.subst (Val.vcap g ℓ0) M0) := rfl
+              have hCinstall : CtxCorr σ (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) :=
+                CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
+              have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) :=
+                CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+              have hKinstall : CCtxCorr (κ.push g p0 cls0) (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) :=
+                CCtxCorr_install hCK
+              have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
+              have hFreshInstall := freshCfg_step _ _ hFresh hmint
+              cases hM : evalD fe (g+1) σ τ (κ.push g p0 cls0) (Comp.subst (Val.vcap g ℓ0) M0) with
+              | none => rw [hM] at h; simp at h
+              | some oM =>
+                rw [hM] at h
+                match oM, h with
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                    obtain ⟨⟨hCr, hTr, hKr, hCohr, hFreshr, hNRr⟩, kR⟩ :=
+                      ihR (Comp.subst (Val.vcap g ℓ0) M0) (g+1) σ τ (κ.push g p0 cls0) ℓ' op' w g1 σ1 τ1 κ1 hM
+                        (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) hCinstall hTinstall hKinstall hCohInstall hFreshInstall
+                    obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_custom hCr hTr
+                    have hKpop : CCtxCorr κ1.tail (ctxNetEffect K σ1 τ1) := by
+                      rw [hnetEq] at hKr; exact CCtxCorr_pop_custom hKr
+                    rw [hnetEq] at hCohr hFreshr hNRr
+                    have hcbpop : Bang.Model.CapsBelow g (ctxNetEffect K σ1 τ1) := CapsBelow_ctxNetEffect _ _ hFresh.1
+                    have hCohr' := capLabelCoh_pop_handleF hcbpop hCohr
+                    have hFreshr' := freshCfg_pop_handleF hFreshr
+                    have hNRr' : NoResume (ctxNetEffect K σ1 τ1) ℓ' op' := by
+                      by_cases hℓg : ℓ' = g
+                      · subst hℓg; intro Kᵢ h Kₒ hsp
+                        exact absurd hsp (by rw [splitAtId_none_of_capsBelow hcbpop]; simp)
+                      · exact noResume_strip_cons (by intro h0 he; exact hℓg ((Frame.handleF.inj he).1.symm)) hNRr
+                    refine ⟨⟨hCpop, hTpop, hKpop, hCohr', hFreshr', hNRr'⟩, fun fuel r hr => ?_⟩
+                    have hhof : ℓ' = g → Bang.handlesOp (Handler.custom ℓ0 p0 cls0)
+                        (Handler.label (Handler.custom ℓ0 p0 cls0)) op' = false := by
+                      intro hgl; subst hgl
+                      rcases hNRr [] (Handler.custom ℓ0 p0 cls0) (ctxNetEffect K σ1 τ1)
+                        (by simp [Bang.splitAtId]) with hf | ⟨_, he⟩
+                      · exact hf
+                      · exact absurd he (by simp)
+                    have hkr : dispatchRun fuel g1 ℓ' (ctxNetEffect (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) σ1 τ1)
+                        (labelOf (ctxNetEffect (Frame.handleF g (Handler.custom ℓ0 p0 cls0) :: K) σ1 τ1) ℓ') op' w = r := by
+                      rw [hnetEq]; simp only [dispatchRun]
+                      rw [run_perform_pop_handleF hcbpop hNRr' hhof fuel]
+                      simp only [dispatchRun] at hr; exact hr
+                    obtain ⟨F, hF⟩ := kR fuel r hkr
+                    exact ⟨F+1, by simp only [Bang.Config.run, hmint]; exact hF⟩
+                | (.term (.ret v0), _, _, _, _), h =>
+                    simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                    obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
+                | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
           | state ℓ0 s0 =>
               simp only [Handler.label] at h
               have hmint : Source.step (g, K, Comp.handle (Handler.state ℓ0 s0) M0)
@@ -6288,21 +6355,24 @@ theorem run_evalD : ∀ fe,
               have hCinstall : CtxCorr (σ.push g s0) (Frame.handleF g (Handler.state ℓ0 s0) :: K) := CtxCorr_install hCtx
               have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
                 CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+              have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.state ℓ0 s0) :: K) :=
+                CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
               have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
               have hFreshInstall := freshCfg_step _ _ hFresh hmint
-              cases hM : evalD fe (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M0) with
+              cases hM : evalD fe (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                    obtain ⟨⟨hCr, hTr, hCohr, hFreshr, hNRr⟩, kR⟩ :=
-                      ihR (Comp.subst (Val.vcap g ℓ0) M0) (g+1) (σ.push g s0) τ ℓ' op' w g1 σ1 τ1 hM
-                        (Frame.handleF g (Handler.state ℓ0 s0) :: K) hCinstall hTinstall hCohInstall hFreshInstall
-                        (hncf.cons_handleF (by intro ℓ p cl; simp))
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                    obtain ⟨⟨hCr, hTr, hKr, hCohr, hFreshr, hNRr⟩, kR⟩ :=
+                      ihR (Comp.subst (Val.vcap g ℓ0) M0) (g+1) (σ.push g s0) τ κ ℓ' op' w g1 σ1 τ1 κ1 hM
+                        (Frame.handleF g (Handler.state ℓ0 s0) :: K) hCinstall hTinstall hKinstall hCohInstall hFreshInstall
                     obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_state hCr hTr
+                    have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1.tail τ1) := by
+                      unfold CCtxCorr at hKr ⊢; rw [hKr, hnetEq]; simp only [ctxCustoms, ctxCustoms_ctxNetEffect]
                     rw [hnetEq] at hCohr hFreshr hNRr
                     have hcbpop : Bang.Model.CapsBelow g (ctxNetEffect K σ1.tail τ1) := CapsBelow_ctxNetEffect _ _ hFresh.1
                     have hCohr' := capLabelCoh_pop_handleF hcbpop hCohr
@@ -6312,7 +6382,7 @@ theorem run_evalD : ∀ fe,
                       · subst hℓg; intro Kᵢ h Kₒ hsp
                         exact absurd hsp (by rw [splitAtId_none_of_capsBelow hcbpop]; simp)
                       · exact noResume_strip_cons (by intro h0 he; exact hℓg ((Frame.handleF.inj he).1.symm)) hNRr
-                    refine ⟨⟨hCpop, hTpop, hCohr', hFreshr', hNRr'⟩, fun fuel r hr => ?_⟩
+                    refine ⟨⟨hCpop, hTpop, hKpop, hCohr', hFreshr', hNRr'⟩, fun fuel r hr => ?_⟩
                     have hhof : ℓ' = g → Bang.handlesOp (Handler.state ℓ0 (σ1.headD (default, default)).2)
                         (Handler.label (Handler.state ℓ0 (σ1.headD (default, default)).2)) op' = false := by
                       intro hgl; subst hgl
@@ -6349,24 +6419,27 @@ theorem run_evalD : ∀ fe,
                 CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
               have hTinstall : CtxTxnCorr τ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
                 CtxTxnCorr_cons_nontxn (by intro n ℓ Θ; simp) hTtx
+              have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.throws ℓ0) :: K) :=
+                CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
               have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
               have hFreshInstall := freshCfg_step _ _ hFresh hmint
-              cases hM : evalD fe (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M0) with
+              cases hM : evalD fe (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
                     simp only [Option.bind_some] at h
                     by_cases hk : ℓ' = g ∧ op' = "raise"
                     · simp [if_pos hk] at h
                     · simp only [if_neg hk, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                      obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                      obtain ⟨⟨hCr, hTr, hCohr, hFreshr, hNRr⟩, kR⟩ :=
-                        ihR (Comp.subst (Val.vcap g ℓ0) M0) (g+1) σ τ ℓ' op' w g1 σ1 τ1 hM
-                          (Frame.handleF g (Handler.throws ℓ0) :: K) hCinstall hTinstall hCohInstall hFreshInstall
-                          (hncf.cons_handleF (by intro ℓ p cl; simp))
+                      obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                      obtain ⟨⟨hCr, hTr, hKr, hCohr, hFreshr, hNRr⟩, kR⟩ :=
+                        ihR (Comp.subst (Val.vcap g ℓ0) M0) (g+1) σ τ κ ℓ' op' w g1 σ1 τ1 κ1 hM
+                          (Frame.handleF g (Handler.throws ℓ0) :: K) hCinstall hTinstall hKinstall hCohInstall hFreshInstall
                       obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_throws hCr hTr
+                      have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1 τ1) := by
+                        unfold CCtxCorr at hKr ⊢; rw [hKr, hnetEq]; simp only [ctxCustoms, ctxCustoms_ctxNetEffect]
                       rw [hnetEq] at hCohr hFreshr hNRr
                       have hcbpop : Bang.Model.CapsBelow g (ctxNetEffect K σ1 τ1) := CapsBelow_ctxNetEffect _ _ hFresh.1
                       have hCohr' := capLabelCoh_pop_handleF hcbpop hCohr
@@ -6376,7 +6449,7 @@ theorem run_evalD : ∀ fe,
                         · subst hℓg; intro Kᵢ h Kₒ hsp
                           exact absurd hsp (by rw [splitAtId_none_of_capsBelow hcbpop]; simp)
                         · exact noResume_strip_cons (by intro h0 he; exact hℓg ((Frame.handleF.inj he).1.symm)) hNRr
-                      refine ⟨⟨hCpop, hTpop, hCohr', hFreshr', hNRr'⟩, fun fuel r hr => ?_⟩
+                      refine ⟨⟨hCpop, hTpop, hKpop, hCohr', hFreshr', hNRr'⟩, fun fuel r hr => ?_⟩
                       have hhof : ℓ' = g → Bang.handlesOp (Handler.throws ℓ0)
                           (Handler.label (Handler.throws ℓ0)) op' = false := by
                         intro hgl
@@ -6409,21 +6482,24 @@ theorem run_evalD : ∀ fe,
                 CtxCorr_cons_nonstate (by intro n ℓ s; simp) hCtx
               have hTinstall : CtxTxnCorr (τ.push g Θ) (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) :=
                 CtxTxnCorr_install hTtx
+              have hKinstall : CCtxCorr κ (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) :=
+                CCtxCorr_cons_noncustom (by intro n ℓ p cls; simp) hCK
               have hCohInstall := capLabelCoh_step _ _ hFresh hCoh hmint
               have hFreshInstall := freshCfg_step _ _ hFresh hmint
-              cases hM : evalD fe (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M0) with
+              cases hM : evalD fe (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M0) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                    obtain ⟨⟨hCr, hTr, hCohr, hFreshr, hNRr⟩, kR⟩ :=
-                      ihR (Comp.subst (Val.vcap g ℓ0) M0) (g+1) σ (τ.push g Θ) ℓ' op' w g1 σ1 τ1 hM
-                        (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) hCinstall hTinstall hCohInstall hFreshInstall
-                        (hncf.cons_handleF (by intro ℓ p cl; simp))
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                    obtain ⟨⟨hCr, hTr, hKr, hCohr, hFreshr, hNRr⟩, kR⟩ :=
+                      ihR (Comp.subst (Val.vcap g ℓ0) M0) (g+1) σ (τ.push g Θ) κ ℓ' op' w g1 σ1 τ1 κ1 hM
+                        (Frame.handleF g (Handler.transaction ℓ0 Θ) :: K) hCinstall hTinstall hKinstall hCohInstall hFreshInstall
                     obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_txn hCr hTr
+                    have hKpop : CCtxCorr κ1 (ctxNetEffect K σ1 τ1.tail) := by
+                      unfold CCtxCorr at hKr ⊢; rw [hKr, hnetEq]; simp only [ctxCustoms, ctxCustoms_ctxNetEffect]
                     rw [hnetEq] at hCohr hFreshr hNRr
                     have hcbpop : Bang.Model.CapsBelow g (ctxNetEffect K σ1 τ1.tail) := CapsBelow_ctxNetEffect _ _ hFresh.1
                     have hCohr' := capLabelCoh_pop_handleF hcbpop hCohr
@@ -6433,7 +6509,7 @@ theorem run_evalD : ∀ fe,
                       · subst hℓg; intro Kᵢ h Kₒ hsp
                         exact absurd hsp (by rw [splitAtId_none_of_capsBelow hcbpop]; simp)
                       · exact noResume_strip_cons (by intro h0 he; exact hℓg ((Frame.handleF.inj he).1.symm)) hNRr
-                    refine ⟨⟨hCpop, hTpop, hCohr', hFreshr', hNRr'⟩, fun fuel r hr => ?_⟩
+                    refine ⟨⟨hCpop, hTpop, hKpop, hCohr', hFreshr', hNRr'⟩, fun fuel r hr => ?_⟩
                     have hhof : ℓ' = g → Bang.handlesOp (Handler.transaction ℓ0 (τ1.headD (default, default)).2)
                         (Handler.label (Handler.transaction ℓ0 (τ1.headD (default, default)).2)) op' = false := by
                       intro hgl; subst hgl
