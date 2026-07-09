@@ -305,9 +305,15 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   -- can, because `HasCTy.ret` re-derives the grade from the (closed) payload for ANY q_perf — the exact
   -- grade-freedom the built-in state/throws/txn arms already use (their resume focus is likewise
   -- `ret <closed val>`, the identity return-clause). So the ret-shape is the honest v1 analogue of the
-  -- built-ins, and "do effectful work before resuming" is the deferred D5/first-class-`k` generalization.
-  -- The carried param `p : P` is CLOSED (the grade discipline, like `state`'s `s₀`); each clause binds
-  -- `param@1 : P, arg@0 : opArg ℓ op` (the landed binder discipline, `Dispatch.dispatchOn` custom arm).
+  -- built-ins. Effectful/computing clause bodies are the D5/first-class-`k` generalization — ENTRY GATE:
+  -- the answer-grade re-typing obligation (`scratch/CustomRetGradeProbe.lean`), which is exactly what a
+  -- general (fixed-grade) body cannot discharge (no `F q → F q'` re-grading lemma exists, so a ∀q' premise
+  -- would collapse to value-returning bodies anyway — it would be the ret-shape wearing polymorphism the
+  -- mono elaborator can't source). ROW CONSEQUENCE of the ret-shape: `ret w` is EFFECT-FREE, so there is
+  -- no clause effect `φ'` to join — the conclusion is `A ! φ` (the `ℓ`-discharged residual), with NO `⊔ φ'`
+  -- term (contrast the general D3 sketch's `(φ \ ℓ) ⊔ φ'`). The carried param `p : P` is CLOSED (the grade
+  -- discipline, like `state`'s `s₀`); each clause binds `param@1 : P, arg@0 : opArg ℓ op` (the landed
+  -- binder discipline, `Dispatch.dispatchOn` custom arm).
   | handleCustom : ∀ {γ Γ} {ℓ : Label} {p : Val} {clauses : List (OpId × Comp)} {M : Comp}
         {e φ : Eff} {q qc : Mult} {P A : VTy Eff Mult},
       HasClauses ℓ P clauses →
