@@ -79,5 +79,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **ci** — set the git gc posture in the runner clone (`2bc9566`)
 - **tooling** — gen-changelog --check tolerates the self-hash fixpoint lag (`730632e`)
 - **surface** — arithmetic composes as an effect-op argument (closes #26) (`db85ad7`)
+- **hooks** — cache-get guard — deny whenever linked worktrees exist (evasion fix) (`45b3d2d`)
 
 <!-- END GENERATED changelog -->

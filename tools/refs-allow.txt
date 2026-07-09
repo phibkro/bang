@@ -49,6 +49,13 @@ Bang/Model.lean
 # `git show 7adcc39~1:Bang/ReturnEscapeRefute.lean`.
 Bang/ReturnEscapeRefute.lean
 
+# ── E2. Cross-branch #16/ADR-0086 boundary witnesses ──────────────────────────────
+# The two machine-checked witnesses grounding ADR-0086's premised re-freeze live on
+# `origin/inc6-u5b2` (not yet merged; they land with the task-#11 wire-in unit).
+# Recover: `git show origin/inc6-u5b2:scratch/<file>`.
+scratch/VcapFreeRefute.lean
+scratch/CustomStage1Refute.lean
+
 # ── E. Cross-branch inc-6 U5b-handler refute-watch spike ──────────────────────────
 # scratch/U5bHandlerSpike.lean (the U5b-handler refute-watch: fuel IH absorbs mint+subst,
 # 5 *_composes + dispatch axiom-clean) lives on the `inc6-u5b-handler` worktree, cited by
