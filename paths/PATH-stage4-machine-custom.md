@@ -214,6 +214,56 @@ stretch across `sim`/`run_evalD`/Wasm/U5b before the first re-compile. That is e
   group re-compiles green. A half-re-keyed `run_evalD` induction pushed red is a checkpoint, not a
   deliverable.
 
+## FINDINGS — op-priority (A) SUPERSEDED by operator ruling (3) id-first; the id-uniqueness wall (2026-07-09)
+
+> This branch (`feat-44-stage4`) is the RECORDED FALLBACK; it does NOT land. The mainline Stage-4 lane
+> is `feat-44-stage4-idfirst` (clone `lang-bang-s4x`), which implements the operator's route (3). This
+> section records the wall that motivated (3) — worth writing down verbatim, per the lead's ruling.
+
+**What superseded (A).** The §DESIGN QUESTION above ruled (A): mirror evalD's OP-PRIORITY perform arm
+in the machine (`isBuiltinOp` guards the `exec` OP arm). The operator later ruled that op-priority is an
+UNFAITHFUL lowering of the kernel: `Source.step`'s `idDispatch` is ID-FIRST — it resolves the cap's
+identity to ONE frame (via `splitAtId`), then a `handlesOp` gate, then `dispatchOn`; the op name never
+disambiguates WHICH frame. Route (3): re-derive evalD's perform arm id-first — `match σ.get? n, τ.get? n,
+κ.get? n` (which per-kind store holds the identity, disjoint by StratFresh), then op-within-kind — and
+drop the machine's `isBuiltinOp` prefilter. A custom frame keyed `"get"`, addressed by identity, SERVICES
+its clause (the exact opposite of (A)'s bypass). No `WfCustomOps`; no store-value premise chain.
+
+**The id-uniqueness wall (route-independent, load-bearing for TRUTH — not proof convenience).** Under
+id-first, the `sim` (evalD↔machine) correspondence is FALSE without machine-hs cross-kind id-uniqueness.
+Witness, verbatim:
+
+    hs = [ state-frame  id=n2 (s := …) ]      -- shallower
+         [ txn-frame    id=n2 (Θ := …) ]      -- SAME identity n2, deeper
+    perform (vcap n2 ℓ) "newTVar" v            -- a txn op, addressed to n2
+
+    evalD:   σ.get? n2 = some s  → STATE arm → op ∉ {get, put} → RAISE n2 "newTVar" v
+    machine: stateUpdate n2 "newTVar" v hs = none  (state frame, wrong op ⇒ `else none`)
+             txnUpdate   n2 "newTVar" v hs        walks PAST the state frame, finds the
+                                                  same-id txn shadow, SERVICES it → RESUME
+    RAISE (evalD) vs RESUME (machine) = divergence.
+
+Why op-first (A) hid it: the op-name prefilter never resolved by store-membership, so it never exposed a
+same-id cross-kind shadow. `Corr`/`TCorr`/`CCorr` are projection EQUALITIES (`σ = hsStates hs`, …) that
+do NOT forbid the pathological same-id-different-kind `hs`. INDEPENDENTLY CORROBORATED: the mainline lane
+(`feat-44-stage4-idfirst`) hit this identical gap with the identical witness from a separate id-first
+rework — evidence the invariant is real, not an artifact of one derivation.
+
+**Resolution (mainline, lead-ruled 2026-07-09).** `sim` gains the CONJUNCTION `StoresBelow g ∧
+StoresDisjoint`: `StoresDisjoint` = no identity in two per-kind stores (the id-uniqueness premise);
+`StoresBelow` = every store identity `< g` (the fresh counter — the machine twin of `WellCounted`,
+needed for push-stability of the conjunction). Threaded STRUCTURALLY from `FreshCfg` (the discharge),
+stated as a `sim` premise (the form). Trivially true at the empty-store entry configs ⇒ consumers
+(`compile_correct`/`Agree`) discharge it for free. INTERNAL to `sim` — headlines stay VcapFree-only;
+nothing frozen moves. The machine-reshape alternative (make the OP arm mutually-exclusive by
+construction) was REJECTED: larger churn, and the invariant is real on both sides already — state it,
+don't rebuild the machine around it.
+
+**This fallback's state.** `feat-44-stage4` tip `761299a` carries: the complete axiom-clean (1')
+forward half (WfCustomOps route, earlier in history) AND a partial route-(3) id-first attempt (evalD/
+exec/sim-term id-first green; sim-raised reshaped but RED at this wall, banked as sanctioned WIP). It is
+the recovery branch if (3) hits an unforeseeable wall; it will not merge.
+
 ## Notes
 - All frozen-statement changes in this unit are pre-authorized premise-DROPS (ADR-0086 `CustomFree`,
   ADR-0087 `NoCustomFrame`) — consumer-safe strengthenings, no `STATEMENT_CHANGE_OK`. Anything ELSE
