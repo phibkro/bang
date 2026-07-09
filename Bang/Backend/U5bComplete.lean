@@ -377,15 +377,15 @@ theorem evalD_fuel_mono {f g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {M 
 values of CBPV). Every `evalD` clause that yields `.term t` yields one of these; the sequencing
 clauses (`letC`/`app`) recurse. Needed by the converse's letC/app term arms to discharge the
 non-terminal `t` cases that `cases t` would otherwise leave open. Induction on fuel, `cases` on `M`. -/
-theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp)
-    (t : Comp) (g' : Nat) (σ' : SStore) (τ' : THeap),
-    evalD f g σ τ M = some (.term t, g', σ', τ') →
+theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M : Comp)
+    (t : Comp) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore),
+    evalD f g σ τ κ M = some (.term t, g', σ', τ', κ') →
     (∃ v, t = Comp.ret v) ∨ (∃ M0, t = Comp.lam M0) := by
   intro f
   induction f with
-  | zero => intro g σ τ M t g' σ' τ' h; simp [evalD] at h
+  | zero => intro g σ τ κ M t g' σ' τ' κ' h; simp [evalD] at h
   | succ f ih =>
-    intro g σ τ M t g' σ' τ' h
+    intro g σ τ κ M t g' σ' τ' κ' h
     cases M with
     | ret w => simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
                exact Or.inl ⟨w, h.1.symm⟩
@@ -393,36 +393,36 @@ theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp)
                 exact Or.inr ⟨M0, h.1.symm⟩
     | letC M0 N =>
         simp only [evalD] at h
-        cases hM0 : evalD f g σ τ M0 with
+        cases hM0 : evalD f g σ τ κ M0 with
         | none => rw [hM0] at h; simp at h
         | some p =>
-            rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+            rw [hM0] at h; obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
             cases o with
             | term tt => cases tt with
-              | ret v0 => simp only [Option.bind_some] at h; exact ih _ _ _ _ _ _ _ _ h
+              | ret v0 => simp only [Option.bind_some] at h; exact ih _ _ _ _ _ _ _ _ _ _ h
               | _ => simp [Option.bind_some] at h
             | raised n op w => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                                exact absurd h.1 (by simp)
     | force a =>
         cases a with
-        | vthunk M0 => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
+        | vthunk M0 => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ _ _ h
         | _ => simp [evalD] at h
     | app M0 u =>
         simp only [evalD] at h
-        cases hM0 : evalD f g σ τ M0 with
+        cases hM0 : evalD f g σ τ κ M0 with
         | none => rw [hM0] at h; simp at h
         | some p =>
-            rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+            rw [hM0] at h; obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
             cases o with
             | term tt => cases tt with
-              | lam N => simp only [Option.bind_some] at h; exact ih _ _ _ _ _ _ _ _ h
+              | lam N => simp only [Option.bind_some] at h; exact ih _ _ _ _ _ _ _ _ _ _ h
               | _ => simp [Option.bind_some] at h
             | raised n op w => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                                exact absurd h.1 (by simp)
     | perform cap op u =>
         cases cap with
         | vcap n ℓ =>
-            -- perform's `.term` result (get/put/txn success) is always `ret`; failures are `.raised`.
+            -- perform's `.term` result (get/put/txn success, or a custom clause that returns ret) is `ret`.
             simp only [evalD] at h
             by_cases hg : op = "get"
             · rw [if_pos hg] at h
@@ -444,18 +444,35 @@ theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp)
                   | none => rw [hτ] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h; exact absurd h.1 (by simp)
                 · rw [Bool.not_eq_true] at ht
                   rw [if_neg hg, if_neg hp, if_neg (by rw [ht]; simp)] at h
-                  simp only [Option.some.injEq, Prod.mk.injEq] at h
-                  exact absurd h.1 (by simp)
+                  cases hck : κ.get? n with
+                  | none => simp only [hck, Option.some.injEq, Prod.mk.injEq] at h; exact absurd h.1 (by simp)
+                  | some pcls =>
+                      obtain ⟨pp, cls⟩ := pcls; simp only [hck] at h
+                      cases hcl : cls.find? (·.1 == op) with
+                      | none => simp only [hcl, Option.some.injEq, Prod.mk.injEq] at h; exact absurd h.1 (by simp)
+                      | some clause => simp only [hcl] at h; exact ih _ _ _ _ _ _ _ _ _ _ h
         | _ => simp [evalD] at h
     | handle h0 M0 =>
         cases h0 with
-        | custom _ _ _ => simp [evalD] at h
-        | state ℓ0 s0 =>
+        | custom ℓ0 p0 cls0 =>
             simp only [evalD, Handler.label] at h
-            cases hM0 : evalD f (g+1) (σ.push g s0) τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            cases hM0 : evalD f (g+1) σ τ (κ.push g p0 cls0) (Comp.subst (Val.vcap g ℓ0) M0) with
             | none => rw [hM0] at h; simp at h
             | some p =>
-                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
+                cases o with
+                | term tt => cases tt with
+                  | ret v0 => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                                Outcome.term.injEq] at h; exact Or.inl ⟨v0, h.1.symm⟩
+                  | _ => simp [Option.bind_some] at h
+                | raised n op w => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+                                   exact absurd h.1 (by simp)
+        | state ℓ0 s0 =>
+            simp only [evalD, Handler.label] at h
+            cases hM0 : evalD f (g+1) (σ.push g s0) τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
+            | none => rw [hM0] at h; simp at h
+            | some p =>
+                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
                 cases o with
                 | term tt => cases tt with
                   | ret v0 => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
@@ -465,10 +482,10 @@ theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp)
                                    exact absurd h.1 (by simp)
         | transaction ℓ0 Θ =>
             simp only [evalD, Handler.label] at h
-            cases hM0 : evalD f (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M0) with
+            cases hM0 : evalD f (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M0) with
             | none => rw [hM0] at h; simp at h
             | some p =>
-                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
                 cases o with
                 | term tt => cases tt with
                   | ret v0 => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
@@ -478,10 +495,10 @@ theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp)
                                    exact absurd h.1 (by simp)
         | throws ℓ0 =>
             simp only [evalD, Handler.label] at h
-            cases hM0 : evalD f (g+1) σ τ (Comp.subst (Val.vcap g ℓ0) M0) with
+            cases hM0 : evalD f (g+1) σ τ κ (Comp.subst (Val.vcap g ℓ0) M0) with
             | none => rw [hM0] at h; simp at h
             | some p =>
-                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1⟩ := p
+                rw [hM0] at h; obtain ⟨o, g1, σ1, τ1, κ1⟩ := p
                 cases o with
                 | term tt => cases tt with
                   | ret v0 => simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
@@ -495,12 +512,12 @@ theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (M : Comp)
                       exact absurd h.1 (by simp)
     | case a N1 N2 =>
         cases a with
-        | inl v => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
-        | inr v => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
+        | inl v => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ _ _ h
+        | inr v => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ _ _ h
         | _ => simp [evalD] at h
     | split a N =>
         cases a with
-        | pair v w => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ h
+        | pair v w => simp only [evalD] at h; exact ih _ _ _ _ _ _ _ _ _ _ h
         | _ => simp [evalD] at h
     | unfold a =>
         cases a with
