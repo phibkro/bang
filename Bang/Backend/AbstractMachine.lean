@@ -5339,7 +5339,7 @@ theorem run_evalD : ∀ fe,
                     unfold ctxNetEffect
                     rw [show ctxTxns K = ctxTxns (updateCtxStates K ((ctxStates K).put n2 v2)) from
                       (ctxTxns_updateCtxStates K _).symm, updateCtxTxns_self_aux]
-                  rw [← hctxeq] at hcoh' hfr' hK'
+                  rw [← hctxeq] at hcoh' hfr'
                   refine ⟨⟨hC'.symm, hT'.symm, hK', hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
                   rw [hctxeq] at hr
                   simp only [Bang.Config.run, hstep]; exact hr
@@ -5381,7 +5381,7 @@ theorem run_evalD : ∀ fe,
                 have hctxeq : ctxNetEffect K (ctxStates K) ((ctxTxns K).put n2 (txnService op2 v2 Θ).2)
                     = updateCtxTxns K ((ctxTxns K).put n2 (txnService op2 v2 Θ).2) := by
                   unfold ctxNetEffect; rw [updateCtxStates_self_aux]
-                rw [← hctxeq] at hcoh' hfr' hK'
+                rw [← hctxeq] at hcoh' hfr'
                 refine ⟨⟨hC'.symm, hT'.symm, hK', hcoh', hfr'⟩, fun n r hr => ⟨n+1, ?_⟩⟩
                 rw [hctxeq] at hr
                 simp only [Bang.Config.run, hstep]; exact hr
