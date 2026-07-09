@@ -1361,6 +1361,37 @@ theorem get?_hsCustoms : ∀ (hs : HStack) (n : Nat),
 theorem CCorr.get? {κ : CStore} {hs : HStack} (hK : CCorr κ hs) (n : Nat) :
     κ.get? n = hsCustom hs n := by rw [hK]; exact get?_hsCustoms hs n
 
+/-- The custom-service correspondence (ADR-0085 Stage 4, the user-effect analog of `stateUpdate_get`):
+when `hsCustom hs n = some (p, cls)` (a live custom frame `n`) and `op`'s clause is `clause`,
+`customUpdate` returns the clause body to run and the SAME `hs` (frame kept live). This is what aligns
+the machine's `OP`-arm custom dispatch with `evalD`'s inline clause-service. -/
+theorem customUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
+    {cls : List (Bang.OpId × Comp)} {clause : Bang.OpId × Comp} :
+    ∀ {hs : HStack}, hsCustom hs n = some (p, cls) → cls.find? (·.1 == op) = some clause →
+      customUpdate n op v hs = some (Comp.subst p (Comp.subst (Val.shift v) clause.2), hs) := by
+  intro hs
+  induction hs with
+  | nil => intro hc _; simp [hsCustom] at hc
+  | cons fr hs ih =>
+    intro hc hcl
+    cases hh : fr.handler with
+    | custom ℓ0 p0 cls0 =>
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨rfl, rfl⟩ := hc
+          simp only [customUpdate, hh, hid, ↓reduceIte, hcl]
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          simp only [customUpdate, hh, if_neg hid, ih hc hcl, Option.map_some]
+    | state ℓ0 s =>
+        simp only [hsCustom, hh] at hc
+        simp only [customUpdate, hh, ih hc hcl, Option.map_some]
+    | throws ℓ0 =>
+        simp only [hsCustom, hh] at hc
+        simp only [customUpdate, hh, ih hc hcl, Option.map_some]
+    | transaction ℓ0 Θ =>
+        simp only [hsCustom, hh] at hc
+        simp only [customUpdate, hh, ih hc hcl, Option.map_some]
+
 /-- `THeap.put` hits at its own label when bound. Induction on τ. -/
 theorem THeap.get?_put_self : ∀ (τ : THeap) (ℓ : Bang.EffectRow.Label) (Θ : List Val) (Θ0 : List Val),
     τ.get? ℓ = some Θ0 → (τ.put ℓ Θ).get? ℓ = some Θ := by
@@ -1603,11 +1634,83 @@ theorem hsTxns_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
         obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         simp only [hsTxns, hh]; rw [ih hsu1]
-    | custom ℓ0 p cl =>   -- custom = non-state frame: stateUpdate/hsTxns catch-all (like throws) (ADR-0085 stage 1)
+    | custom ℓ0 p cl =>   -- custom = non-state frame: stateUpdate recurses; hsTxns skips custom (ADR-0085 stage 1)
         simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
         obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
         simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
         simp only [hsTxns, hh]; exact ih hsu1
+
+/-- `stateUpdate`'s `put` preserves the CUSTOM projection (op-disjointness — analog of
+`hsTxns_stateUpdate_put`): a state-frame value rewrite never touches a custom frame's payload. -/
+theorem hsCustoms_stateUpdate_put {ℓ : Bang.EffectRow.Label} {v : Val} :
+    ∀ {hs hs' : HStack} {r : Val}, stateUpdate ℓ "put" v hs = some (r, hs') → hsCustoms hs' = hsCustoms hs := by
+  intro hs
+  induction hs with
+  | nil => intro hs' r hsu; simp [stateUpdate] at hsu
+  | cons fr hs ih =>
+    intro hs' r hsu
+    cases hh : fr.handler with
+    | state ℓ0 s =>
+        by_cases hc : fr.id = ℓ
+        · simp only [stateUpdate, hh, hc, ↓reduceIte, if_neg (by decide : ¬ ("put" = "get")),
+            Option.some.injEq] at hsu
+          obtain ⟨_, rfl⟩ := hsu; simp [hsCustoms, hh]
+        · simp only [stateUpdate, hh, if_neg hc, Option.map_eq_some_iff] at hsu
+          obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+          simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+          simp only [hsCustoms, hh]; exact ih hsu1
+    | throws ℓ0 =>
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; exact ih hsu1
+    | transaction ℓ0 Θ =>
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; exact ih hsu1
+    | custom ℓ0 p cl =>   -- custom frame: stateUpdate recurses; hsCustoms KEEPS this frame's entry, rest by ih
+        simp only [stateUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; rw [ih hsu1]
+
+/-- `txnUpdate`'s service preserves the CUSTOM projection (op-disjointness): a txn-heap rewrite never
+touches a custom frame's payload. Analog of `hsCustoms_stateUpdate_put` for the txn side. -/
+theorem hsCustoms_txnUpdate {n : Nat} {op : Bang.OpId} {v : Val} :
+    ∀ {hs hs' : HStack} {r : Val}, txnUpdate n op v hs = some (r, hs') → hsCustoms hs' = hsCustoms hs := by
+  intro hs
+  induction hs with
+  | nil => intro hs' r hsu; simp [txnUpdate] at hsu
+  | cons fr hs ih =>
+    intro hs' r hsu
+    cases hh : fr.handler with
+    | transaction ℓ0 Θ =>
+        by_cases hc : fr.id = n
+        · simp only [txnUpdate, hh, hc, ↓reduceIte] at hsu
+          by_cases hto : isTxnOp op
+          · simp only [hto, ↓reduceIte, Option.some.injEq] at hsu
+            obtain ⟨_, rfl⟩ := hsu; simp [hsCustoms, hh]
+          · simp only [hto, Bool.false_eq_true, ↓reduceIte] at hsu; exact absurd hsu (by simp)
+        · simp only [txnUpdate, hh, if_neg hc, Option.map_eq_some_iff] at hsu
+          obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+          simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+          simp only [hsCustoms, hh]; exact ih hsu1
+    | state ℓ0 s =>
+        simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; exact ih hsu1
+    | throws ℓ0 =>
+        simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; exact ih hsu1
+    | custom ℓ0 p cl =>
+        simp only [txnUpdate, hh, Option.map_eq_some_iff] at hsu
+        obtain ⟨⟨r1, hs1⟩, hsu1, hpeq⟩ := hsu
+        simp only [Prod.mk.injEq] at hpeq; obtain ⟨_, rfl⟩ := hpeq
+        simp only [hsCustoms, hh]; rw [ih hsu1]
 
 /-- The machine. Structurally recursive on the fuel (k2-playbook §3); `SUBST`/`APP`
 re-enter `compile` on the substituted body, `THROW` jumps via the pure `unwindFind`
@@ -1793,68 +1896,70 @@ store service with the in-place HStack update. The `handle (throws)` catch is th
 zero-shot `THROW ↔ dispatch` correspondence (now σ-threaded).
 Induction on the eval fuel `fe`. -/
 theorem sim : ∀ fe,
-    (∀ M g σ τ t g' σ' τ', evalD fe g σ τ M = some (.term t, g', σ', τ') →
-      ∀ hs, Corr σ hs → TCorr τ hs →
-        ∃ hsf, Corr σ' hsf ∧ TCorr τ' hsf ∧ HMut hs hsf ∧
+    (∀ M g σ τ κ t g' σ' τ' κ', evalD fe g σ τ κ M = some (.term t, g', σ', τ', κ') →
+      ∀ hs, Corr σ hs → TCorr τ hs → CCorr κ hs →
+        ∃ hsf, Corr σ' hsf ∧ TCorr τ' hsf ∧ CCorr κ' hsf ∧ HMut hs hsf ∧
           -- route-B: the continuation `c` runs from the POST-M counter `g'` (exec threaded g→g' through
           -- M's HANDLE mints), the whole body `compile M c` runs from the PRE-M counter `g`.
           ∀ c s F r, exec F g' c (t :: s) hsf = some r →
             ∃ F', exec F' g (compile M c) s hs = some r)
-    ∧ (∀ M g σ τ n op v g' σ' τ', evalD fe g σ τ M = some (.raised n op v, g', σ', τ') →
-      ∀ hs, Corr σ hs → TCorr τ hs →
+    ∧ (∀ M g σ τ κ n op v g' σ' τ' κ', evalD fe g σ τ κ M = some (.raised n op v, g', σ', τ', κ') →
+      ∀ hs, Corr σ hs → TCorr τ hs → CCorr κ hs →
         -- the at-raise HStack `netEffect hs σ' τ'` mirrors the at-raise stores σ'/τ' (D3/D4) and is a
         -- value/heap-mutation of the at-handle `hs` — threaded so the throws-CAUGHT term subcase can
         -- name it as its existential witness (an outer put/writeTVar before a caught raise persists).
-        (Corr σ' (netEffect hs σ' τ') ∧ TCorr τ' (netEffect hs σ' τ') ∧ HMut hs (netEffect hs σ' τ')) ∧
+        -- κ' mirrors it too (`hsCustoms_netEffect`: netEffect leaves custom frames untouched).
+        (Corr σ' (netEffect hs σ' τ') ∧ TCorr τ' (netEffect hs σ' τ') ∧ CCorr κ' (netEffect hs σ' τ') ∧
+          HMut hs (netEffect hs σ' τ')) ∧
         ∀ c s F r, throwOutcome F g' n op v (netEffect hs σ' τ') = some r →
         ∃ F', exec F' g (compile M c) s hs = some r) := by
   intro fe
   induction fe with
   | zero =>
-      exact ⟨fun M g σ τ t g' σ' τ' h => by simp [evalD] at h,
-             fun M g σ τ n op v g' σ' τ' h => by simp [evalD] at h⟩
+      exact ⟨fun M g σ τ κ t g' σ' τ' κ' h => by simp [evalD] at h,
+             fun M g σ τ κ n op v g' σ' τ' κ' h => by simp [evalD] at h⟩
   | succ fe ih =>
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M g σ τ t g' σ' τ' h hs hC hT
+      intro M g σ τ κ t g' σ' τ' κ' h hs hC hT hK
       cases M with
       | ret v =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-          obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
-          exact ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
+          obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
+          exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
       | lam M =>
           simp only [evalD, Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-          obtain ⟨ht, hg, hσ, hτ⟩ := h; subst ht; subst hg; subst hσ; subst hτ
-          exact ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
+          obtain ⟨ht, hg, hσ, hτ, hκ⟩ := h; subst ht; subst hg; subst hσ; subst hτ; subst hκ
+          exact ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, by simp only [compile, exec]; exact hr⟩⟩
       | letC M N =>
           simp only [evalD] at h
-          cases hM : evalD fe g σ τ M with
+          cases hM : evalD fe g σ τ κ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | (.term (.ret v), g1, σ1, τ1), h =>
+            | (.term (.ret v), g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨hsM, hCM, hTM, hlenM, kM⟩ := ihT M g σ τ (.ret v) g1 σ1 τ1 hM hs hC hT
-                obtain ⟨hsf, hCf, hTf, hlenf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 t g' σ' τ' h hsM hCM hTM
-                refine ⟨hsf, hCf, hTf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
+                obtain ⟨hsM, hCM, hTM, hKM, hlenM, kM⟩ := ihT M g σ τ κ (.ret v) g1 σ1 τ1 κ1 hM hs hC hT hK
+                obtain ⟨hsf, hCf, hTf, hKf, hlenf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h hsM hCM hTM hKM
+                refine ⟨hsf, hCf, hTf, hKf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
                 obtain ⟨F1, hF1⟩ := kN c s F r hr
                 have hstep : exec (F1+1) g1 (Instr.SUBST N :: c) (.ret v :: s) hsM = some r := by
                   simp only [exec]; exact hF1
                 obtain ⟨F2, hF2⟩ := kM (Instr.SUBST N :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
-            | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-            | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-            | (.term .oom, _, _, _), h => simp [Option.bind] at h
-            | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+            | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
             | (.raised n op w, _, _, _), h =>
                 -- letC propagates a raise: evalD (letC M N) = raised ⇒ h : raised = term, absurd
                 simp [Option.bind] at h
@@ -1863,8 +1968,8 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
-              obtain ⟨hsf, hCf, hTf, hlenf, k⟩ := ihT M g σ τ t g' σ' τ' h hs hC hT
-              exact ⟨hsf, hCf, hTf, hlenf, fun c s F r hr => by
+              obtain ⟨hsf, hCf, hTf, hKf, hlenf, k⟩ := ihT M g σ τ κ t g' σ' τ' κ' h hs hC hT hK
+              exact ⟨hsf, hCf, hTf, hKf, hlenf, fun c s F r hr => by
                 obtain ⟨F', hF'⟩ := k c s F r hr; exact ⟨F', by simpa only [compile] using hF'⟩⟩
           | vunit => simp [evalD] at h
           | vint n => simp [evalD] at h
@@ -1875,33 +1980,33 @@ theorem sim : ∀ fe,
           | fold w => simp [evalD] at h
       | app M v =>
           simp only [evalD] at h
-          cases hM : evalD fe g σ τ M with
+          cases hM : evalD fe g σ τ κ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | (.term (.lam N), g1, σ1, τ1), h =>
+            | (.term (.lam N), g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨hsM, hCM, hTM, hlenM, kM⟩ := ihT M g σ τ (.lam N) g1 σ1 τ1 hM hs hC hT
-                obtain ⟨hsf, hCf, hTf, hlenf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 t g' σ' τ' h hsM hCM hTM
-                refine ⟨hsf, hCf, hTf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
+                obtain ⟨hsM, hCM, hTM, hKM, hlenM, kM⟩ := ihT M g σ τ κ (.lam N) g1 σ1 τ1 κ1 hM hs hC hT hK
+                obtain ⟨hsf, hCf, hTf, hKf, hlenf, kN⟩ := ihT (Comp.subst v N) g1 σ1 τ1 κ1 t g' σ' τ' κ' h hsM hCM hTM hKM
+                refine ⟨hsf, hCf, hTf, hKf, HMut.trans hlenM hlenf, fun c s F r hr => ?_⟩
                 obtain ⟨F1, hF1⟩ := kN c s F r hr
                 have hstep : exec (F1+1) g1 (Instr.APP v :: c) (.lam N :: s) hsM = some r := by
                   simp only [exec]; exact hF1
                 obtain ⟨F2, hF2⟩ := kM (Instr.APP v :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | (.term (.ret w), _, _, _), h => simp [Option.bind] at h
-            | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-            | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-            | (.term .oom, _, _, _), h => simp [Option.bind] at h
-            | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
-            | (.raised n op w, _, _, _), h => simp [Option.bind] at h
+            | (.term (.ret w), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
+            | (.raised n op w, _, _, _, _), h => simp [Option.bind] at h
       | perform cap op v =>
           -- route-B: dispatch BY IDENTITY n. RESUME (D1/D2/D4), OP-FIRST: get/put serviced against σ at
           -- key n (state), txn ops against τ at key n. Mirrored by stateUpdate/txnUpdate (id-keyed) on hs.
@@ -1917,9 +2022,9 @@ theorem sim : ∀ fe,
             | some sv =>
                 rw [hg] at h
                 simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+                obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                 have hgState : hsState hs n = some sv := by rw [← Corr.get? hC n]; exact hg
-                refine ⟨hs, hC, hT, HMut.refl hs, fun c s F r hr => ⟨F+1, ?_⟩⟩
+                refine ⟨hs, hC, hT, hK, HMut.refl hs, fun c s F r hr => ⟨F+1, ?_⟩⟩
                 simp only [compile, exec, stateUpdate_get hgState]; exact hr
           · by_cases hop2 : op = "put"
             · subst hop2
@@ -1929,11 +2034,13 @@ theorem sim : ∀ fe,
               | some sv =>
                   rw [hg] at h
                   simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                  obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+                  obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                   have hgState : hsState hs n = some sv := by rw [← Corr.get? hC n]; exact hg
                   obtain ⟨hs', hsu, heq⟩ := stateUpdate_put (v := v) hgState
-                  refine ⟨hs', Corr_put hC heq, ?_, HMut.of_stateUpdate_put hsu, fun c s F r hr => ⟨F+1, ?_⟩⟩
+                  refine ⟨hs', Corr_put hC heq, ?_, ?_, HMut.of_stateUpdate_put hsu, fun c s F r hr => ⟨F+1, ?_⟩⟩
                   · unfold TCorr; rw [hsTxns_stateUpdate_put hsu, ← hT]
+                  · -- CCorr rides: stateUpdate_put rewrites a state-frame value, never a custom frame.
+                    unfold CCorr; rw [hsCustoms_stateUpdate_put hsu, ← hK]
                   · simp only [compile, exec, hsu]; exact hr
             · by_cases hopt : isTxnOp op = true
               · -- txn op: t = ret r, σ' = σ, τ' = τ.put n Θ'. Machine: stateUpdate none (not get/put) ⇒ txnUpdate.
@@ -1943,19 +2050,48 @@ theorem sim : ∀ fe,
                 | some Θ =>
                     rw [hgt] at h
                     simp only [Option.some.injEq, Prod.mk.injEq, Outcome.term.injEq] at h
-                    obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+                    obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := h
                     have hgTxn : hsTxn hs n = some Θ := by rw [← TCorr.get? hT n]; exact hgt
                     obtain ⟨hs', hsu, heq⟩ := txnUpdate_service (v := v) hopt hgTxn
-                    refine ⟨hs', Corr_txnUpdate_eq hsu hC, ?_, HMut_of_txnUpdate hsu,
+                    refine ⟨hs', Corr_txnUpdate_eq hsu hC, ?_, ?_, HMut_of_txnUpdate hsu,
                       fun c s F r hr => ⟨F+1, ?_⟩⟩
                     · unfold TCorr; rw [heq, ← hT]
+                    · -- CCorr rides: txnUpdate rewrites a txn-frame heap, never a custom frame.
+                      unfold CCorr; rw [hsCustoms_txnUpdate hsu, ← hK]
                     · have hns : stateUpdate n op v hs = none :=
                         stateUpdate_none_of_non_getput n v hs hop hop2
                       simp only [compile, exec, hns, hsu]; exact hr
-              · -- neither a state nor a txn op: evalD raises ⇒ term part contradiction.
+              · -- neither a state nor a txn op (ADR-0085 Stage 4): CUSTOM service, OR a raise if no custom
+                -- frame / unserviced op. evalD's perform arm looks up `κ.get? n`; the machine's OP arm falls
+                -- through stateUpdate/txnUpdate (both none here) to customUpdate.
                 rw [Bool.not_eq_true] at hopt
-                simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq,
-                  Prod.mk.injEq, reduceCtorEq, false_and] at h
+                simp only [if_neg hop, if_neg hop2, hopt, Bool.false_eq_true, if_false] at h
+                cases hck : κ.get? n with
+                | none => rw [hck] at h; simp at h   -- no custom frame for n ⇒ evalD raises ⇒ term absurd
+                | some pcls =>
+                    obtain ⟨p, cls⟩ := pcls
+                    simp only [hck] at h
+                    cases hcl : cls.find? (·.1 == op) with
+                    | none => simp only [hcl] at h; simp at h   -- op unserviced ⇒ raise ⇒ term absurd
+                    | some clause =>
+                        -- SERVICE: evalD ran `evalD fe g σ τ κ (subst p (subst (shift v) clause.2))` = term t.
+                        simp only [hcl] at h
+                        -- the machine finds the custom frame (κ.get? n = hsCustom via CCorr) and runs the
+                        -- SAME clause body via customUpdate, then exec continues c. Recurse via ihT on the body.
+                        have hgCustom : hsCustom hs n = some (p, cls) := by rw [← CCorr.get? hK n]; exact hck
+                        obtain ⟨hsf, hCf, hTf, hKf, hlenf, kBody⟩ :=
+                          ihT (Comp.subst p (Comp.subst (Val.shift v) clause.2)) g σ τ κ t g' σ' τ' κ' h hs hC hT hK
+                        refine ⟨hsf, hCf, hTf, hKf, hlenf, fun c s F r hr => ?_⟩
+                        obtain ⟨F', hF'⟩ := kBody c s F r hr
+                        -- exec: OP n op v ⇒ stateUpdate none, txnUpdate none, customUpdate = some (body, hs).
+                        have hns : stateUpdate n op v hs = none :=
+                          stateUpdate_none_of_non_getput n v hs hop hop2
+                        have hnt : txnUpdate n op v hs = none :=
+                          txnUpdate_none_of_non_txnop n v hs hopt
+                        have hcu : customUpdate n op v hs
+                            = some (Comp.subst p (Comp.subst (Val.shift v) clause.2), hs) :=
+                          customUpdate_service hgCustom hcl
+                        exact ⟨F'+1, by simp only [compile, exec, hns, hnt, hcu]; exact hF'⟩
       | handle h0 M =>
           simp only [evalD] at h
           cases h0 with
@@ -2015,17 +2151,17 @@ theorem sim : ∀ fe,
                     refine ⟨netEffect hs σ1.tail τ1, hCf, hTf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
                     obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
                     exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
-                | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
                 | (.raised n' op' w, _, _, _), h =>
                     -- body raises past the state frame (state never catches) ⇒ handle forwards ⇒ raised,
                     -- contradicting the term part.
@@ -2082,17 +2218,17 @@ theorem sim : ∀ fe,
                     refine ⟨netEffect hs σ1 τ1, hCf, hTf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
                     obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
                     exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
-                | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
                 | (.raised ℓ' op' w, g1, σ1, τ1), h =>
                     by_cases hc : ℓ' = g ∧ op' = "raise"
                     · simp only [Option.bind_some, if_pos hc, Option.some.injEq, Prod.mk.injEq,
@@ -2180,17 +2316,17 @@ theorem sim : ∀ fe,
                     refine ⟨netEffect hs σ1 τ1.tail, hCf, hTf, hmutf, fun c2 s2 F2 r2 hr2 => ?_⟩
                     obtain ⟨⟨F1, hF1⟩, _, _⟩ := body c2 s2 F2 r2 hr2
                     exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
-                | (.term (.lam M2), _, _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.lam M2), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
                 | (.raised ℓ' op' w, _, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
@@ -2327,7 +2463,7 @@ theorem sim : ∀ fe,
                   (txnUpdate_none_of_non_txnop ℓ v hs hopt)
       | letC M N =>
           simp only [evalD] at h
-          cases hM : evalD fe g σ τ M with
+          cases hM : evalD fe g σ τ κ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
@@ -2352,16 +2488,16 @@ theorem sim : ∀ fe,
                   simp only [exec]; exact hF1
                 obtain ⟨F2, hF2⟩ := kM (Instr.SUBST N :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | (.term (.lam a), _, _, _), h => simp [Option.bind] at h
-            | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-            | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-            | (.term .oom, _, _, _), h => simp [Option.bind] at h
-            | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+            | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
       | force a =>
           cases a with
           | vcap n ℓ => simp [evalD] at h
@@ -2379,7 +2515,7 @@ theorem sim : ∀ fe,
           | fold w => simp [evalD] at h
       | app M v0 =>
           simp only [evalD] at h
-          cases hM : evalD fe g σ τ M with
+          cases hM : evalD fe g σ τ κ M with
           | none => rw [hM] at h; simp at h
           | some oM =>
             rw [hM] at h
@@ -2402,17 +2538,17 @@ theorem sim : ∀ fe,
                   simp only [exec]; exact hF1
                 obtain ⟨F2, hF2⟩ := kM (Instr.APP v0 :: c) s (F1+1) r hstep
                 exact ⟨F2, by simpa [compile] using hF2⟩
-            | (.term (.ret w), _, _, _), h => simp [Option.bind] at h
-            | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-            | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-            | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-            | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-            | (.term .oom, _, _, _), h => simp [Option.bind] at h
-            | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+            | (.term (.ret w), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+            | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+            | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
       | handle h0 M =>
           simp only [evalD] at h
           cases h0 with
@@ -2465,17 +2601,17 @@ theorem sim : ∀ fe,
                 | (.term (.ret v0), _, _, _), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
                     obtain ⟨hr', _⟩ := h; exact absurd hr' (by simp)
-                | (.term (.lam a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _, _), h => simp [Option.bind] at h
-                | (.term (.wrong a), _, _, _), h => simp [Option.bind] at h
+                | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.wrong a), _, _, _, _), h => simp [Option.bind] at h
           | throws ℓ0 =>
               -- route-B INSTALL (raised, FORWARD): MINT id := g, run M' at g+1; the throws frame CATCHES
               -- only its own identity g (id-keyed) — a raise with ℓ' ≠ g (or op' ≠ "raise") FORWARDS past it.
@@ -2511,17 +2647,17 @@ theorem sim : ∀ fe,
                         simp only [throwOutcome, unwindFind, hfrdef, if_neg hknf]; exact hr
                       obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
                       exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
-                | (.term (.ret v0), _, _, _), h => simp [Option.bind] at h
-                | (.term (.lam a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _, _), h => simp [Option.bind] at h
+                | (.term (.ret v0), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
           | transaction ℓ0 Θ =>
               -- route-B INSTALL (raised, FORWARD): MINT id := g, push τ.push g Θ, run M' at g+1; a raise
               -- FORWARDS, popping the pushed heap (τ1.tail) — ROLLBACK IS FREE (ADR-0031 D4). Mirror of state.
@@ -2571,17 +2707,17 @@ theorem sim : ∀ fe,
                       rw [hskip]; exact hr
                     obtain ⟨F1, hF1⟩ := kR (Instr.UNMARK :: c) s F r hfwd
                     exact ⟨F1+1, by simp only [compile, exec, Handler.label]; exact hF1⟩
-                | (.term (.ret v0), _, _, _), h => simp [Option.bind] at h
-                | (.term (.lam a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.letC a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.force a), _, _, _), h => simp [Option.bind] at h
-                | (.term (.app a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.perform a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.handle a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.case a b d), _, _, _), h => simp [Option.bind] at h
-                | (.term (.split a b), _, _, _), h => simp [Option.bind] at h
-                | (.term (.unfold a), _, _, _), h => simp [Option.bind] at h
-                | (.term .oom, _, _, _), h => simp [Option.bind] at h
+                | (.term (.ret v0), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.lam a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.letC a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.force a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.app a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.perform a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.handle a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.case a b d), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.split a b), _, _, _, _), h => simp [Option.bind] at h
+                | (.term (.unfold a), _, _, _, _), h => simp [Option.bind] at h
+                | (.term .oom, _, _, _, _), h => simp [Option.bind] at h
       | case a b d =>
           -- ADT sum elim (Unit 6) raising: the chosen branch raises. `ihR` on `subst v branch` carries
           -- the at-raise triple + throwOutcome; the `CASE` exec bumps one fuel to re-compile the branch.
