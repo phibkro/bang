@@ -53,6 +53,19 @@ generated DAG, content-addressing later); what remained were Q34's surface forks
   is the ADR-0076 payoff LATER (content-addressed, falls out of immutability); v1 recompiles
   the world, which at dogfood scale costs nothing (invariant #7).
 
+- **D5 — entrypoint (operator fork, ruled 2026-07-09): `main` is a magic NAME, not a keyword.**
+  A decl named `main` marks the file runnable (riding the C/Go/Rust convention — a keyword would
+  be novel syntax for non-novel semantics, against the lens). The trailing-expression form STAYS
+  as script mode (the REPL/eval/one-liner path and today's whole corpus); `main`-decl present →
+  program mode; BOTH present → loud error (ADR-0046, no silent precedence); neither → a pure
+  library file. `main` needs no `pub` (the runtime, not an importer, invokes it). **The pinned
+  payoff — main's row is the program's capability MANIFEST**: `bang run` is the use site where
+  the runtime installs handlers for exactly `main`'s declared row, so "runtime is a handler
+  installed at the use site" (the kernel thesis) becomes the CLI's actual contract. Today that
+  row can only be `⊥`/`{Div}`; when Stage 7 + ADR-0084 land IO, a row the runtime can't provide
+  is a LOUD TYPE ERROR at the boundary — the program's powers become a checked fact of its
+  signature. (This D pins the direction; the manifest-checking mechanics land with ADR-0084.)
+
 ## The v1 oracle
 
 `elaborate(import-merged files) ≡ elaborate(hand-concatenated-and-qualified single file)` —
