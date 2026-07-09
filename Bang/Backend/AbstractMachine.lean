@@ -2690,20 +2690,41 @@ theorem sim : ∀ fe,
                 | none =>
                     simp only [hck, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
                     obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
-                    exact close (stateUpdate_none_of_non_getput ℓ v hs hop hop2)
-                      (txnUpdate_none_of_non_txnop ℓ v hs hopt)
-                      (Or.inr (customUpdate_none_of_hsCustom_none (CCorr.get? hK ℓ ▸ hck)))
+                    exact close (stateUpdate_none_of_non_getput n2 v2 hs hop hop2)
+                      (txnUpdate_none_of_non_txnop n2 v2 hs hopt)
+                      (Or.inr (customUpdate_none_of_hsCustom_none (CCorr.get? hK n2 ▸ hck)))
                 | some pcls =>
                     obtain ⟨p, cls⟩ := pcls
                     simp only [hck] at h
                     cases hcl : cls.find? (·.1 == op2) with
-                    | some clause => simp only [hcl] at h; simp at h   -- clause hit ⇒ term not raise: vacuous
+                    | some clause =>
+                        -- clause HIT but the raise propagates: the custom CLAUSE BODY itself raises (deep-handler
+                        -- recursion at the residual row). evalD ran `evalD … κ clauseBody = raised`; the machine's
+                        -- OP arm serviced via customUpdate ⇒ `exec (compile clauseBody) c`, which raises. Recurse
+                        -- via ihR on the clause body against the LIVE stores (κ unchanged, frame kept).
+                        simp only [hcl] at h
+                        have hgCustom : hsCustom hs n2 = some (p, cls) := by rw [← CCorr.get? hK n2]; exact hck
+                        have hbif : isBuiltinOp op2 = false := isBuiltinOp_iff.mpr ⟨hop, hop2, hopt⟩
+                        have hns : stateUpdate n2 op2 v2 hs = none :=
+                          stateUpdate_none_of_non_getput n2 v2 hs hop hop2
+                        have hnt : txnUpdate n2 op2 v2 hs = none :=
+                          txnUpdate_none_of_non_txnop n2 v2 hs hopt
+                        have hcu : customUpdate n2 op2 v2 hs
+                            = some (Comp.subst p (Comp.subst (Val.shift v2) clause.2), hs) :=
+                          customUpdate_service hgCustom hcl
+                        obtain ⟨hpair, kR⟩ :=
+                          ihR (Comp.subst p (Comp.subst (Val.shift v2) clause.2)) g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK
+                        exact ⟨hpair, fun c s F r hr => by
+                          obtain ⟨F1, hF1⟩ := kR c s F r hr
+                          exact ⟨F1+1, by
+                            simp only [compile, exec, hns, hnt, hbif, Bool.false_eq_true, if_false, hcu]
+                            exact hF1⟩⟩
                     | none =>
                         simp only [hcl, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
                         obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
-                        exact close (stateUpdate_none_of_non_getput ℓ v hs hop hop2)
-                          (txnUpdate_none_of_non_txnop ℓ v hs hopt)
-                          (Or.inr (customUpdate_none_of_clause_miss (CCorr.get? hK ℓ ▸ hck) hcl))
+                        exact close (stateUpdate_none_of_non_getput n2 v2 hs hop hop2)
+                          (txnUpdate_none_of_non_txnop n2 v2 hs hopt)
+                          (Or.inr (customUpdate_none_of_clause_miss (CCorr.get? hK n2 ▸ hck) hcl))
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe g σ τ κ M with
@@ -2711,21 +2732,21 @@ theorem sim : ∀ fe,
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+            | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                obtain ⟨hpair, kR⟩ := ihR M g σ τ ℓ' op' w g1 σ1 τ1 hM hs hC hT
+                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                obtain ⟨hpair, kR⟩ := ihR M g σ τ κ ℓ' op' w g1 σ1 τ1 κ1 hM hs hC hT hK
                 exact ⟨hpair, fun c s F r hr => by
                   obtain ⟨F1, hF1⟩ := kR (Instr.SUBST N :: c) s F r hr
                   exact ⟨F1, by simpa [compile] using hF1⟩⟩
-            | (.term (.ret v0), g1, σ1, τ1), h =>
+            | (.term (.ret v0), g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨hsM, hCM, hTM, hmutM, kM⟩ := ihT M g σ τ (.ret v0) g1 σ1 τ1 hM hs hC hT
+                obtain ⟨hsM, hCM, hTM, hKM, hmutM, kM⟩ := ihT M g σ τ κ (.ret v0) g1 σ1 τ1 κ1 hM hs hC hT hK
                 -- the inner raise is over hsM (HMut hs); re-base via `netEffect_congr_HMut` so the inner
                 -- `ihR` over `netEffect hsM σ' τ'` reuses the outer `hr` over `netEffect hs σ' τ'`.
-                obtain ⟨⟨hCr, hTr, hmutr⟩, kR⟩ := ihR (Comp.subst v0 N) g1 σ1 τ1 ℓ op v g' σ' τ' h hsM hCM hTM
+                obtain ⟨⟨hCr, hTr, hKr, hmutr⟩, kR⟩ := ihR (Comp.subst v0 N) g1 σ1 τ1 κ1 ℓ op v g' σ' τ' κ' h hsM hCM hTM hKM
                 have hreb : netEffect hsM σ' τ' = netEffect hs σ' τ' := netEffect_congr_HMut σ' τ' hmutM hCr hTr
-                refine ⟨⟨hreb ▸ hCr, hreb ▸ hTr, HMut.trans hmutM (hreb ▸ hmutr)⟩, fun c s F r hr => ?_⟩
+                refine ⟨⟨hreb ▸ hCr, hreb ▸ hTr, hreb ▸ hKr, HMut.trans hmutM (hreb ▸ hmutr)⟩, fun c s F r hr => ?_⟩
                 obtain ⟨F1, hF1⟩ := kR c s F r (by rw [hreb]; exact hr)
                 have hstep : exec (F1+1) g1 (Instr.SUBST N :: c) (.ret v0 :: s) hsM = some r := by
                   simp only [exec]; exact hF1
@@ -2746,7 +2767,7 @@ theorem sim : ∀ fe,
           | vcap n ℓ => simp [evalD] at h
           | vthunk M =>
               simp only [evalD] at h
-              obtain ⟨hpair, kR⟩ := ihR M g σ τ ℓ op v g' σ' τ' h hs hC hT
+              obtain ⟨hpair, kR⟩ := ihR M g σ τ κ ℓ op v g' σ' τ' κ' h hs hC hT hK
               exact ⟨hpair, fun c s F r hr => by
                 obtain ⟨F', hF'⟩ := kR c s F r hr; exact ⟨F', by simpa only [compile] using hF'⟩⟩
           | vunit => simp [evalD] at h
@@ -2763,19 +2784,19 @@ theorem sim : ∀ fe,
           | some oM =>
             rw [hM] at h
             match oM, h with
-            | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+            | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                obtain ⟨hpair, kR⟩ := ihR M g σ τ ℓ' op' w g1 σ1 τ1 hM hs hC hT
+                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                obtain ⟨hpair, kR⟩ := ihR M g σ τ κ ℓ' op' w g1 σ1 τ1 κ1 hM hs hC hT hK
                 exact ⟨hpair, fun c s F r hr => by
                   obtain ⟨F1, hF1⟩ := kR (Instr.APP v0 :: c) s F r hr
                   exact ⟨F1, by simpa [compile] using hF1⟩⟩
-            | (.term (.lam N), g1, σ1, τ1), h =>
+            | (.term (.lam N), g1, σ1, τ1, κ1), h =>
                 simp only [Option.bind_some] at h
-                obtain ⟨hsM, hCM, hTM, hmutM, kM⟩ := ihT M g σ τ (.lam N) g1 σ1 τ1 hM hs hC hT
-                obtain ⟨⟨hCr, hTr, hmutr⟩, kR⟩ := ihR (Comp.subst v0 N) g1 σ1 τ1 ℓ op v g' σ' τ' h hsM hCM hTM
+                obtain ⟨hsM, hCM, hTM, hKM, hmutM, kM⟩ := ihT M g σ τ κ (.lam N) g1 σ1 τ1 κ1 hM hs hC hT hK
+                obtain ⟨⟨hCr, hTr, hKr, hmutr⟩, kR⟩ := ihR (Comp.subst v0 N) g1 σ1 τ1 κ1 ℓ op v g' σ' τ' κ' h hsM hCM hTM hKM
                 have hreb : netEffect hsM σ' τ' = netEffect hs σ' τ' := netEffect_congr_HMut σ' τ' hmutM hCr hTr
-                refine ⟨⟨hreb ▸ hCr, hreb ▸ hTr, HMut.trans hmutM (hreb ▸ hmutr)⟩, fun c s F r hr => ?_⟩
+                refine ⟨⟨hreb ▸ hCr, hreb ▸ hTr, hreb ▸ hKr, HMut.trans hmutM (hreb ▸ hmutr)⟩, fun c s F r hr => ?_⟩
                 obtain ⟨F1, hF1⟩ := kR c s F r (by rw [hreb]; exact hr)
                 have hstep : exec (F1+1) g1 (Instr.APP v0 :: c) (.lam N :: s) hsM = some r := by
                   simp only [exec]; exact hF1
