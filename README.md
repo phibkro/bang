@@ -100,11 +100,20 @@ machine (network-bound for the fetch, CPU-bound for the build); a warm rebuild o
 just the runner is ~2 min. Mathlib is a *build-time* dependency only — the resulting
 `bang` binary is native and links nothing but glibc.
 
-> A pure `nix build .#bang` / `nix run github:phibkro/bang` is **not yet
-> available**: it would require Mathlib present as oleans inside the nix build
-> sandbox (a multi-GB source build, or a fixed-output cache fetch), which isn't
-> wired up. Tracked as a follow-up — see [issue below](#packaging-follow-up).
-> Until then, the `nix develop` path above is the supported install.
+### Zero-clone: `nix run` (x86_64-linux)
+
+No clone, no dev shell — one command runs bang from the flake:
+
+```bash
+nix run github:phibkro/bang -- eval "1 + 2"
+# → 3
+nix run github:phibkro/bang -- run examples/caesar/main.bang
+```
+
+`nix build github:phibkro/bang#bang` produces the native binary at
+`result/bin/bang`. See [Packaging](#packaging) for how this stays reproducible.
+(x86_64-linux only — the packaging fetches the linux Lean release; other systems
+use the `nix develop` path above.)
 
 ## Verify the proofs (contributors)
 
@@ -147,29 +156,55 @@ See `CONTEXT.md` for live state, blockers, and active paths.
 4. When you make a decision a future session could reasonably reverse, write
    an ADR (copy the format of an existing one; tag layer K / C / S).
 
-## Packaging follow-up
+## Packaging
 
-`nix run github:phibkro/bang -- eval "1 + 2"` (a pure flake `package`/`app`
-output) is the target that would let a stranger run bang with a single command,
-no clone. It is **not yet wired up**. What blocks it, for whoever picks it up:
+The flake packages `bang` as a pure, reproducible `nix build .#bang` / `nix run`
+app (issue #63), so a stranger runs it with no clone. All logic lives in
+[`nix/bang.nix`](nix/bang.nix); the flake wires it to `packages.{default,bang}`
+and `apps.default` on x86_64-linux.
 
-- The `bang` exe imports `Bang.Frontend.Surface`, which transitively pulls in
-  four `Bang/Core/*` modules that `import Mathlib` (Finset semilattice for effect
-  rows). So **Mathlib is a build-time dependency** — its `.olean` files must be
-  present before `lake build bang` runs.
-- The exe's *runtime* closure is tiny (native binary, links only glibc +
-  libgcc_s — Lean statically links its runtime; no gmp, no oleans). So the only
-  hard part is the build.
-- Two candidate pure paths, both non-trivial:
-  1. **Build Mathlib from source** in the derivation — correct but multi-GB
-     closure and hours of compile; needs `lean4-nix`
-     (`github:lenianiva/lean4-nix`) to express lake deps as derivations.
-  2. **Fixed-output derivation that runs `lake exe cache get`** — fetches the
-     prebuilt oleans from the Lean CDN (network is allowed in an FOD), then a
-     second derivation runs `lake build bang`. Lighter, but fragile: the FOD hash
-     must be pinned and re-pinned when the cache changes.
-- Wrapping a *pre-built* binary in a `nix run` app is **not** acceptable (there
-  is no binary hosting, and it wouldn't be reproducible).
+**Why it takes three derivations.** The `bang` exe transitively imports four
+`Bang/Core/*` modules that `import Mathlib`, so Mathlib `.olean`s must exist
+*before* `lake build bang`. Building Mathlib from source is multi-GB / hours;
+instead we fetch the prebuilt oleans the way the dev shell does (`lake exe cache
+get`, Lean's CDN). Network is forbidden in a pure derivation, so that fetch lives
+in a **fixed-output derivation** (network allowed, output pinned by hash); a
+second **pure** derivation runs `lake build bang` offline against it. The exe's
+runtime closure is trivial (glibc + libgcc_s; Lean statically links its runtime).
 
-Until one of those lands, the `nix develop -c lake build bang` path in
-[Run a bang program](#run-a-bang-program) is the supported install.
+| derivation | what it does |
+|---|---|
+| `toolchain` | official Lean release, autoPatchelf'd to run on Nix |
+| `deps` (FOD) | `lake exe cache get` → the resolved `.lake/packages` tree, network-gated, hash-pinned; a determinism scrub drops the cache-tool metadata + `scripts/` (whose patched shebangs would otherwise make the FOD reference store paths) |
+| `bang` (pure) | offline `lake build bang` against toolchain + deps |
+
+### Re-pinning the FOD hash
+
+The `deps` FOD is pinned by `depsHash` in `nix/bang.nix`. It goes stale whenever
+the resolved dependency set changes — a Mathlib rev bump in `lake-manifest.json`,
+or a `lean-toolchain` bump (which also moves `toolchainHash`). A stale hash fails
+**loud** with nix's `hash mismatch … got: <new>`; that error line *is* the re-pin
+instruction:
+
+```bash
+# 1. set the stale hash to fakeHash in nix/bang.nix:
+#      depsHash ? pkgs.lib.fakeHash;
+# 2. build once; nix prints the real hash:
+nix build .#deps 2>&1 | grep got:
+#      got:    sha256-…
+# 3. paste that value back as depsHash and rebuild:
+nix build .#bang
+```
+
+For a `lean-toolchain` bump, do the same for `toolchainHash` first (bump
+`leanVersion`/url, set `toolchainHash = lib.fakeHash`, build, copy `got:`), then
+re-pin `depsHash` (the toolchain change moves the resolved deps).
+
+> **Reproducibility guard.** `lake exe cache get` compiles Mathlib's own `cache`
+> tool locally, which leaves a few non-deterministic artifacts (link-time hash-map
+> order). The FOD scrubs them — critically `bin/cache.hash`, the sole leak that
+> made two independent builds disagree. It also drops the `scripts/` trees, whose
+> nixpkgs-patched `#!/nix/store/…-bash` shebangs are the only store references
+> cache-get leaves (illegal in an FOD). A fail-loud guard aborts the build, naming
+> the offending files, if any store reference survives — so a future Mathlib rev
+> that adds one fails visibly instead of with nix's opaque late rejection.
