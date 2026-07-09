@@ -16,8 +16,32 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+
+        # Pure packaging (issue #63). Only x86_64-linux: the toolchain derivation
+        # fetches the linux Lean release tarball. Other systems get the dev shell
+        # only (build from source via `nix develop`).
+        bangPkgs =
+          if system == "x86_64-linux" then
+            import ./nix/bang.nix { inherit pkgs; src = self; }
+          else
+            null;
       in
       {
+        packages = pkgs.lib.optionalAttrs (bangPkgs != null) {
+          default = bangPkgs.bang;
+          bang = bangPkgs.bang;
+          # Exposed for re-pinning / debugging the two-stage build.
+          deps = bangPkgs.deps;
+          toolchain = bangPkgs.toolchain;
+        };
+
+        apps = pkgs.lib.optionalAttrs (bangPkgs != null) {
+          default = {
+            type = "app";
+            program = "${bangPkgs.bang}/bin/bang";
+          };
+        };
+
         # Lean 4 dev shell.
         # elan resolves the toolchain from lean-toolchain on first use.
         # Mathlib oleans pulled via `lake exe cache get` (Azure CDN; multi-GB).
