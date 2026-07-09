@@ -46,3 +46,24 @@ queryability) is the only near-term steer. All post-v1.
 (build the module system); OR a content-addressed store / incremental compile / IDE integration is taken
 up (the tooling — the ADR-0076 generative-constraints payoff). Ties ADR-0076, [[Q32 memoization]],
 [[Q33 memory model]], PATH-polymorphism.
+
+## Operator input (2026-07-09): three consumers converge + the reusable-engine framing
+
+With ADR-0093 (modules) Accepted, THREE accepted directions now want the SAME content-addressed
+infrastructure: incremental compile (ADR-0076), the Q43 proof cache (#prove results keyed by
+elaborated-term hash), and the #60 test cache (law verdicts re-run only when their module's
+hash moves). Fork 5's build tool is therefore a SHARED SUBSTRATE, not a speed optimization.
+
+**Operator directive: design it as ONE reusable abstraction, not per-problem reimplementations.**
+The generic shape (prior art: "Build Systems à la Carte" — Mokhov/Mitchell/Peyton Jones, build
+system = scheduler × rebuilder over a memoized query store; Salsa — already in ADR-0076's
+lineage): query = pure function of content-hashed inputs · staleness = hash inequality ·
+dependency DAG discovered during execution. Instances become thin: compile, prove, test,
+fmt-check — and note the repo's OWN tools/ already hand-rolls ~15 instances of this pattern
+(every `gen-*.py --check` fitness leg is a staleness query); the engine would subsume them.
+
+**The self-hosting observation**: the engine's correctness precondition (queries pure in their
+hashed inputs) IS bang's language guarantee — so post-modules+IO the engine is a natural BANG
+program: the ADR-0076 generative-constraints thesis applied one level up, and the strongest
+dogfood available. Sequencing unchanged (build when compile times / Q43 / #60 bite first);
+this note pins the SHAPE the eventual unit must take.
