@@ -1969,21 +1969,16 @@ theorem exec_succ : ∀ f g c s hs r, exec f g c s hs = some r → exec (f+1) g 
             simp only [htu] at h ⊢; exact ih _ _ _ _ _ h
           | none =>
             simp only [htu] at h ⊢
-            by_cases hbi : isBuiltinOp op
-            · simp only [hbi, if_true] at h ⊢
+            -- id-first exec OP arm: no isBuiltinOp branch — customUpdate then unwindFind.
+            cases hcu : customUpdate n op v hs with
+            | some ru =>
+              obtain ⟨body, hs'⟩ := ru
+              simp only [hcu] at h ⊢; exact ih _ _ _ _ _ h
+            | none =>
+              simp only [hcu] at h ⊢
               cases hu : unwindFind n op hs with
               | none => simp only [hu] at h; simp at h
               | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ _ h
-            · simp only [hbi, Bool.false_eq_true, if_false] at h ⊢
-              cases hcu : customUpdate n op v hs with
-              | some ru =>
-                obtain ⟨body, hs'⟩ := ru
-                simp only [hcu] at h ⊢; exact ih _ _ _ _ _ h
-              | none =>
-                simp only [hcu] at h ⊢
-                cases hu : unwindFind n op hs with
-                | none => simp only [hu] at h; simp at h
-                | some cs => obtain ⟨c', s', hs'⟩ := cs; simp only [hu] at h ⊢; exact ih _ _ _ _ _ h
       | CASE w N₁ N₂ =>
         simp only [exec] at h ⊢
         cases w with
