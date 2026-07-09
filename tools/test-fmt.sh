@@ -82,6 +82,24 @@ got_argerr_exit=0
 "$bang" fmt a.bang b.bang >/dev/null 2>&1 || got_argerr_exit=$?
 check "too-many-args-exit" "$got_argerr_exit" "1"
 
+# ── COMMENT metamorphic sanity (issue #62): fmt(commented) == fmt(uncommented twin) ──
+# `--` line comments are lexer-stripped BEFORE parsing (documented, not silent — see the
+# reference's Lexical notes section), so a commented program's canonical form must be
+# byte-identical to its uncommented twin's — the comment can never leak into the printed output.
+commented=$'-- leading whole-line comment\nlet x = 3 -- trailing on the binding\nin\n  -- indented whole-line comment\n  let y = 4 -- trailing again\n  in x + y -- final trailing, no newline after'
+uncommented=$'\nlet x = 3 \nin\n  \n  let y = 4 \n  in x + y '
+got_commented="$(printf '%s' "$commented" | "$bang" fmt 2>/dev/null)" || true
+got_uncommented="$(printf '%s' "$uncommented" | "$bang" fmt 2>/dev/null)" || true
+check "comment-metamorphic-fmt" "$got_commented" "$got_uncommented"
+# and the commented program still RUNS to the same value the uncommented twin does (`run`
+# takes a FILE arg, unlike `fmt`/`check` — no stdin form — so write it out first).
+commented_tmp="$(mktemp /tmp/bang-comment-test-XXXXXX.bang)"
+trap 'rm -f "$commented_tmp"' EXIT
+printf '%s' "$commented" > "$commented_tmp"
+got_commented_run="$("$bang" run "$commented_tmp" 2>/dev/null)" && got_commented_run_exit=0 || got_commented_run_exit=$?
+check "comment-metamorphic-run" "$got_commented_run" "7"
+check "comment-metamorphic-run-exit" "$got_commented_run_exit" "0"
+
 echo "──────────────────────────────"
 echo "fmt: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

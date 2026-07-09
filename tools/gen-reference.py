@@ -257,6 +257,21 @@ def render():
         L.append(f"| `{kw}` | `{form}` |")
     L.append("")
 
+    if '"-\' :: \'-\' :: rest' not in surf and "'-' :: '-' :: rest" not in surf:
+        sys.exit(
+            "gen-reference: `tokenize`'s `--` line-comment arm not found in Surface.lean — "
+            "the Lexical notes section below is keyed off it (issue #62)."
+        )
+    L.append("### Lexical notes")
+    L.append("")
+    L.append("**Line comments**: `--` runs to end-of-line (or end-of-input) and is dropped by the")
+    L.append("lexer — no token, no source span (issue #62). `--` wins maximal munch over the")
+    L.append("single-char `-` and the `->` arrow, so a comment can follow either without escaping.")
+    L.append("Comments are **stripped before parsing**, so they carry no meaning to check/run and are")
+    L.append("**not preserved by `bang fmt`** — a formatted file drops any comments in its input. There")
+    L.append("is no block-comment form.")
+    L.append("")
+
     L.append("## Effect channels")
     L.append("")
     L.append("The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;")

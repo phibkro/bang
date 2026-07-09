@@ -470,12 +470,16 @@ def scanQuoted (delim : Char) : List Char → List Char → Option (String × Li
 /-- Split a source string into tokens — WHITESPACE-INSENSITIVE (ADR-0071 ④). Punctuators
 `(){}$!,;.` and the single-char operators `+ - * / < = |` are always their own token (no
 surrounding space needed); the multi-char operators `== => ->` are matched by MAXIMAL MUNCH,
-BEFORE their single-char prefixes (`==`/`=>` before `=`, `->` before `-`). Everything else is a
-maximal run of the remaining chars (identifiers, numbers, keywords). A spaced program tokenizes
-IDENTICALLY to its unspaced form: whitespace only ever separated tokens, and operators now
-self-separate (so `a+b`, `x=1`, `->Self`, `a==b` no longer glue). `<-` is not a token in this
-grammar (`do`-bind uses `=`), so `<` stays single-char; `:` stays space-delimited (not an operator
-the parser splits on). -/
+BEFORE their single-char prefixes (`==`/`=>` before `=`, `->` before `-`). A `--` runs a LINE
+COMMENT: everything up to (not including) the next `\n`, or end-of-input, is dropped — no token
+is emitted (comments are lexer-stripped, not preserved into the token stream; issue #62,
+ruling: all three independent stranger-test victims reached for `--` unprompted, so the syntax
+rides that pattern-match rather than picking a novel marker). `--` is matched BEFORE the bare
+`-`/`->` arms (maximal munch again: two dashes beat one). Everything else is a maximal run of the
+remaining chars (identifiers, numbers, keywords). A spaced program tokenizes IDENTICALLY to its
+unspaced form: whitespace only ever separated tokens, and operators now self-separate (so `a+b`,
+`x=1`, `->Self`, `a==b` no longer glue). `<-` is not a token in this grammar (`do`-bind uses `=`),
+so `<` stays single-char; `:` stays space-delimited (not an operator the parser splits on). -/
 def tokenize (s : String) : List String :=
   let punct := "(){}$!,;.+*/<|".toList     -- punctuators (ADR-0070 `.`) + always-split single-char operators
   -- FUEL-driven (not structural): string/char literal scanning consumes a multi-char span via
@@ -485,9 +489,17 @@ def tokenize (s : String) : List String :=
     let flush (acc : List String) : List String :=
       if cur.isEmpty then acc else acc ++ [String.ofList cur.reverse]
     let emit (acc : List String) (t : String) : List String := (flush acc) ++ [t]
+    -- drop chars up to (not incl.) the next '\n', or end-of-input — the comment body itself.
+    let rec dropLine (fuel2 : Nat) (cs2 : List Char) : List Char :=
+      match fuel2, cs2 with
+      | 0, _ => cs2
+      | _, [] => []
+      | _, '\n' :: _ => cs2
+      | f2 + 1, _ :: rest => dropLine f2 rest
     match fuel, cs with
     | 0, _ => flush acc
     | _, [] => flush acc
+    | f + 1, '-' :: '-' :: rest => go f (dropLine f rest) [] (flush acc)   -- `--` line comment: dropped, no token
     | f + 1, '=' :: '=' :: rest => go f rest [] (emit acc "==")     -- maximal munch: `==` before `=`
     | f + 1, '=' :: '>' :: rest => go f rest [] (emit acc "=>")     --               `=>` before `=`
     | f + 1, '-' :: '>' :: rest => go f rest [] (emit acc "->")     --               `->` before `-`
@@ -1108,9 +1120,19 @@ def tokenizeSpanned (s : String) : List (String × Span) :=
       else acc ++ [(String.ofList cur.reverse, ⟨curStart.1, curStart.2, pos.1, pos.2⟩)]
     let emit (acc : List (String × Span)) (t : String) (p0 p1 : Nat × Nat) : List (String × Span) :=
       (flush acc) ++ [(t, ⟨p0.1, p0.2, p1.1, p1.2⟩)]
+    -- drop chars (advancing pos) up to (not incl.) the next '\n', or end-of-input.
+    let rec dropLine (fuel2 : Nat) (cs2 : List Char) (pos2 : Nat × Nat) : List Char × (Nat × Nat) :=
+      match fuel2, cs2 with
+      | 0, _ => (cs2, pos2)
+      | _, [] => ([], pos2)
+      | _, '\n' :: _ => (cs2, pos2)
+      | f2 + 1, c :: rest => dropLine f2 rest (adv pos2 c)
     match fuel, cs with
     | 0, _ => flush acc
     | _, [] => flush acc
+    | f + 1, '-' :: '-' :: rest =>
+        let (rest', pos') := dropLine f rest (adv (adv pos '-') '-')
+        go f rest' pos' [] pos (flush acc)          -- `--` line comment: dropped, no token
     | f + 1, '=' :: '=' :: rest => let p1 := advStr pos "=="; go f rest p1 [] pos (emit acc "==" pos p1)
     | f + 1, '=' :: '>' :: rest => let p1 := advStr pos "=>"; go f rest p1 [] pos (emit acc "=>" pos p1)
     | f + 1, '-' :: '>' :: rest => let p1 := advStr pos "->"; go f rest p1 [] pos (emit acc "->" pos p1)
@@ -1217,6 +1239,30 @@ def parseLocated (src : String) : Except (String × Option Span) Surf :=
 -- the message is preserved verbatim (the located view only ADDS a span; `parse` erases it).
 #guard (match parseLocated "1 + )", parse "1 + )" with
         | .error (m, _), .error m' => m == m' | _, _ => false)
+
+-- LINE COMMENTS (issue #62): `--` runs to end-of-line and is DROPPED — no token, no span.
+#guard tokenize "let x = 3 -- the answer\nin x" == tokenize "let x = 3 \nin x"
+#guard tokenize "-- a whole-line comment\nlet x = 3 in x" == tokenize "let x = 3 in x"
+#guard tokenize "let x = 3 in x -- trailing, no newline after" == tokenize "let x = 3 in x "
+-- a comment does not need a following newline to close (end-of-input closes it too).
+#guard tokenize "let x = 3 in x --" == tokenize "let x = 3 in x "
+-- `--` beats the single `-` / `->` munch forms (maximal munch: two dashes before one).
+#guard tokenize "x -- >x" == tokenize "x "
+#guard tokenize "1 -> -- not an arrow, a comment\n2" == tokenize "1 -> \n2"
+-- `tokenizeSpanned` drops the SAME tokens (no span for the comment) — the SSoT pin extends.
+#guard (tokenizeSpanned "let x = 3 -- note\nin x").map (·.1) == tokenize "let x = 3 -- note\nin x"
+-- a token AFTER a comment reports its position on the FOLLOWING line, not inside the comment.
+#guard (locateToken "let x = 3 -- note\nin x" "in").map (·.loc) == some "2:1"
+-- a token on the SAME line, after a same-line comment closed by end-of-input, is unreachable
+-- (the comment eats the rest of the line) — but a token on a line the comment does NOT touch
+-- still locates correctly, showing comments don't perturb prior positions.
+#guard (locateToken "let x = 3\n-- a comment line\nin x" "in").map (·.loc) == some "3:1"
+-- METAMORPHIC (fmt-sanity #62): a commented program parses to the IDENTICAL `Surf` as its
+-- uncommented twin — `--` is purely a lexical no-op on the parse result (and hence, since
+-- `lower` is a pure function of `Surf`, on meaning too). `Comp` has no `BEq`, so the check
+-- stops at the `Surf` the tokens elaborate to — the load-bearing rung for a lexer change.
+#guard parse "let x = 3 -- three\nin x" == parse "let x = 3 \nin x"
+#guard parse "-- leading comment\nlet f = fun x => x in f 1 -- trailing" == parse "\nlet f = fun x => x in f 1 "
 
 /-! ### Declarations — `trait` / `impl` (issue #24 piece 1; ADR-0040 §5, ADR-0068)
 

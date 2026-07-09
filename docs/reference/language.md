@@ -98,6 +98,15 @@ construct list is the Surface syntax table above.
 | `fun` | `fun <ident> => <expr>` |
 | `let` | `let <ident> = <expr> in <expr>` |
 
+### Lexical notes
+
+**Line comments**: `--` runs to end-of-line (or end-of-input) and is dropped by the
+lexer — no token, no source span (issue #62). `--` wins maximal munch over the
+single-char `-` and the `->` arrow, so a comment can follow either without escaping.
+Comments are **stripped before parsing**, so they carry no meaning to check/run and are
+**not preserved by `bang fmt`** — a formatted file drops any comments in its input. There
+is no block-comment form.
+
 ## Effect channels
 
 The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;
