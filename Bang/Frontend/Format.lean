@@ -448,15 +448,32 @@ def fmtDeclDoc : Decl → Format
 
 def fmtDecl (d : Decl) : String := render (fmtDeclDoc d)
 
-/-- A whole program: each decl on its own line, then the body expression. Matches every
-`examples/*/main.bang` today (`data …` / `let rec …` lines followed by the body). Declarations
-are separated by HARD newlines (`Format.line` inside a `group` would let them share a line if
-they fit — decls are always meant one-per-line, so this uses literal `"\n"` text exactly as v1's
-`String.intercalate` did, preserved unchanged since D2 does not name declaration SEPARATION as a
-group/break point, only each decl's OWN internal layout). -/
+/-- One `import name` line (ADR-0093 D1). -/
+def fmtImport (i : ImportDecl) : Format := Format.text s!"import {i.modName}"
+
+/-- One `use name (a, b, C)` line (ADR-0093 D2). -/
+def fmtUse (u : UseDecl) : Format :=
+  Format.text s!"use {u.modName} ({String.intercalate ", " u.names})"
+
+/-- One decl, `pub`-prefixed iff its name is in `pubNames` (ADR-0093 D3) — `pubNames` is a flat
+set on `Prog`, not a per-`Decl` field (see `Prog.pubNames`'s doc comment), so the printer
+re-attaches the prefix here rather than `fmtDeclDoc` carrying it. -/
+def fmtDeclPub (pubNames : List String) (d : Decl) : Format :=
+  if pubNames.contains d.name then Format.text "pub " ++ fmtDeclDoc d else fmtDeclDoc d
+
+/-- A whole program: the `import`/`use` header (ADR-0093 D1/D2), then each decl on its own line
+(`pub`-prefixed per D3), then the body expression. Matches every `examples/*/main.bang` today
+(`data …` / `let rec …` lines followed by the body). Declarations are separated by HARD newlines
+(`Format.line` inside a `group` would let them share a line if they fit — decls are always meant
+one-per-line, so this uses literal `"\n"` text exactly as v1's `String.intercalate` did, preserved
+unchanged since D2 does not name declaration SEPARATION as a group/break point, only each decl's
+OWN internal layout). A library-mode program (D5: decls-only, placeholder `.lit 0` body) prints
+its header+decls only — `Main.lean`'s entry-mode detection decides whether a bare `0` is real,
+not this printer; re-parsing that output still round-trips to the SAME `Prog` either way. -/
 def showProg (p : Prog) : String :=
-  let declDocs := p.decls.map fmtDeclDoc
-  render (Format.joinSep (declDocs ++ [fmtSurf .cmp p.body]) (Format.text "\n"))
+  let headerDocs := (p.imports.map fmtImport) ++ (p.uses.map fmtUse)
+  let declDocs := p.decls.map (fmtDeclPub p.pubNames)
+  render (Format.joinSep (headerDocs ++ declDocs ++ [fmtSurf .cmp p.body]) (Format.text "\n"))
 
 /-! ## 5. `fmt` — the two public entry points `bang fmt` wraps
 
@@ -706,3 +723,27 @@ open Bang.Format in
   "effect BigNet { readOp : Int -> Int, writeOp : Int -> Int, queryOp : Int -> Int, pingOp : Int -> Int, closeOp : Int -> Int } 0"
        && idempotentOn
   "effect BigNet { readOp : Int -> Int, writeOp : Int -> Int, queryOp : Int -> Int, pingOp : Int -> Int, closeOp : Int -> Int } 0"
+
+-- ADR-0093 D1/D2/D3: `import`/`use`/`pub` round-trip + are idempotent.
+open Bang.Format in
+#guard roundTripsOn "import tokenizer 0" && idempotentOn "import tokenizer 0"
+open Bang.Format in
+#guard roundTripsOn "use tokenizer (lex, Token) 0" && idempotentOn "use tokenizer (lex, Token) 0"
+-- both header forms, several of each, preserve ORDER (import-then-use here; the printer emits
+-- imports before uses regardless of source interleaving — see the falsification note below).
+open Bang.Format in
+#guard roundTripsOn "import a import b use c (d, e) 0" && idempotentOn "import a import b use c (d, e) 0"
+-- `pub` round-trips on every decl kind it can prefix.
+open Bang.Format in
+#guard roundTripsOn "pub data Json = JNull" && idempotentOn "pub data Json = JNull"
+open Bang.Format in
+#guard roundTripsOn "pub effect Net { read4 : Int -> Int } 0" && idempotentOn "pub effect Net { read4 : Int -> Int } 0"
+-- a MIX of pub and private decls in one program preserves each decl's OWN visibility (the printer
+-- must not leak `pub` onto a private neighbor, nor drop it from the one that has it).
+open Bang.Format in
+#guard roundTripsOn "pub data Json = JNull data Hidden = HNull 0"
+       && idempotentOn "pub data Json = JNull data Hidden = HNull 0"
+-- header + pub decls + body compose end-to-end (the split-json shape this ADR exists to enable).
+open Bang.Format in
+#guard roundTripsOn "import a use b (c) pub data Json = JNull 0"
+       && idempotentOn "import a use b (c) pub data Json = JNull 0"
