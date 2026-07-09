@@ -5463,6 +5463,21 @@ theorem WfCustomOps.custom_clause_miss {K : Bang.EvalCtx} (h : WfCustomOps K)
   simp only [beq_iff_eq] at heq
   have := hcl c hc; rw [heq] at this; rw [hbi] at this; exact absurd this (by simp)
 
+/-- A builtin op finds NO clause in ANY custom frame reachable via `ctxCustoms` (op-disjointness) —
+the `close` helper's third (custom-miss) argument for the get/put/txn raise cases. -/
+theorem WfCustomOps.close_custom_miss {K : Bang.EvalCtx} (h : WfCustomOps K)
+    (hsf : Bang.Model.StratFresh K) {n : Nat} {op : Bang.OpId} (hbi : isBuiltinOp op = true) :
+    (ctxCustoms K).get? n = none ∨
+      (∀ p cl, (ctxCustoms K).get? n = some (p, cl) → cl.find? (·.1 == op) = none) := by
+  cases hg : (ctxCustoms K).get? n with
+  | none => exact Or.inl hg
+  | some pcl =>
+      obtain ⟨p, cl⟩ := pcl
+      refine Or.inr (fun p' cl' hg' => ?_)
+      rw [hg] at hg'; simp only [Option.some.injEq, Prod.mk.injEq] at hg'; obtain ⟨rfl, rfl⟩ := hg'
+      obtain ⟨Kᵢ, ℓ', Kₒ, hsp⟩ := splitAtId_of_ctxCustoms_get hsf hg
+      exact h.custom_clause_miss hbi hsp
+
 /-- The clause-body + param op-disjointness at a resolved custom frame (the custom-SERVICE case's focus
 `subst p (subst (shift v) clause.2)` is op-disjoint). Extracted from `WfCustomOps K` via `splitAtId`. -/
 theorem WfCustomOps.custom_service_wf {K : Bang.EvalCtx} (h : WfCustomOps K)
@@ -6591,7 +6606,7 @@ theorem run_evalD : ∀ fe,
               ((ctxCustoms K).get? n2 = none ∨ (∀ p cl, (ctxCustoms K).get? n2 = some (p, cl) →
                 cl.find? (·.1 == o) = none)) →
               (CtxCorr σ (ctxNetEffect K σ τ) ∧ CtxTxnCorr τ (ctxNetEffect K σ τ) ∧
-                CCtxCorr κ (ctxNetEffect K σ τ) ∧
+                CCtxCorr κ (ctxNetEffect K σ τ) ∧ WfCustomVal v2 ∧ WfCustomStore σ ∧ WfCustomHeap τ ∧
                 CapLabelCoh (g, ctxNetEffect K σ τ, Comp.ret v2) ∧ FreshCfg (g, ctxNetEffect K σ τ, Comp.ret v2) ∧
                 NoResume (ctxNetEffect K σ τ) n2 o) ∧
               ∀ (fuel : Nat) (r : Bang.Result Val),
@@ -6599,7 +6614,7 @@ theorem run_evalD : ∀ fe,
                   ∃ F, Bang.Config.run F (g, K, Comp.perform (Val.vcap n2 ℓ2) o v2) = r := by
             intro o hst htx hcus
             rw [ctxNetEffect_self hCtx hTtx]
-            refine ⟨⟨hCtx, hTtx, hCtx ▸ hTtx ▸ hCK,
+            refine ⟨⟨hCtx, hTtx, hCK, hWfM.perform_arg, hWfσ, hWfτ,
               ⟨fun p hp => hCoh.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp), hCoh.2⟩,
               ⟨hFresh.1, fun p hp => hFresh.2.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp),
                 hFresh.2.2.1, hFresh.2.2.2⟩, ?_⟩, fun fuel r hr => ?_⟩
@@ -6653,6 +6668,7 @@ theorem run_evalD : ∀ fe,
                 rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
                 obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
                 exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide))
+                  (hWfK.close_custom_miss hFresh.2.2.1 (by decide))
             | some sv => rw [hg] at h; simp at h
           · by_cases hop2 : op2 = "put"
             · subst hop2
@@ -6662,6 +6678,7 @@ theorem run_evalD : ∀ fe,
                   rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
                   obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
                   exact close _ (Or.inl (by rw [← hCtx]; exact hg)) (Or.inr (by decide))
+                    (hWfK.close_custom_miss hFresh.2.2.1 (by decide))
               | some sv => rw [hg] at h; simp at h
             · by_cases hopt : isTxnOp op2 = true
               · simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
@@ -6670,12 +6687,30 @@ theorem run_evalD : ∀ fe,
                     rw [hgt] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
                     obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
                     exact close _ (Or.inr ⟨hop, hop2⟩) (Or.inl (by rw [← hTtx]; exact hgt))
+                      (hWfK.close_custom_miss hFresh.2.2.1 (by simp only [isBuiltinOp, hopt]; simp))
                 | some Θ => rw [hgt] at h; simp at h
               · rw [Bool.not_eq_true] at hopt
-                simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
-                  Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                exact close _ (Or.inr ⟨hop, hop2⟩) (Or.inr hopt)
+                simp only [if_neg hop, if_neg hop2, hopt, Bool.false_eq_true, if_false] at h
+                -- custom op RAISE: no custom frame at n2, OR its clauses don't serve op2 (from κ.get?/find?).
+                -- The custom-miss for `close` reads directly off the evalD raise: κ.get? n2 = none, or the
+                -- clause find misses. `CCtxCorr` ties κ to `ctxCustoms K`.
+                cases hck : κ.get? n2 with
+                | none =>
+                    simp only [hck, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
+                    refine close _ (Or.inr ⟨hop, hop2⟩) (Or.inr hopt) (Or.inl ?_)
+                    rw [← hCK]; exact hck
+                | some pcls =>
+                    obtain ⟨p, cls⟩ := pcls
+                    simp only [hck] at h
+                    cases hcl : cls.find? (·.1 == op2) with
+                    | none =>
+                        simp only [hcl, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                        obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
+                        refine close _ (Or.inr ⟨hop, hop2⟩) (Or.inr hopt) (Or.inr (fun p' cl' hg' => ?_))
+                        rw [← hCK, hck] at hg'; simp only [Option.some.injEq, Prod.mk.injEq] at hg'
+                        obtain ⟨rfl, rfl⟩ := hg'; exact hcl
+                    | some clause => simp only [hcl] at h; simp at h   -- serviced ⇒ term, not raised: absurd
       | force a =>
           cases a with
           | vcap n ℓ => simp [evalD] at h
