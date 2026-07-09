@@ -632,29 +632,29 @@ theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {κ : CStore}
 
 set_option maxHeartbeats 1000000 in
 theorem evalD_complete_gen_full : ∀ F,
-    ∀ (M : Comp) (g : Nat) (σ : SStore) (τ : THeap) (K : Bang.EvalCtx) (v : Val),
+    ∀ (M : Comp) (g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (K : Bang.EvalCtx) (v : Val),
       CtxCorr σ K → CtxTxnCorr τ K → CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
       NoCustomFrame K →
       CFComp M → CFStore σ → CFHeap τ →
       Config.run F (g, K, M) = Result.done v →
-      CompletesTo F g σ τ M K v := by
+      CompletesTo F g σ τ κ M K v := by
   intro F
   induction F using Nat.strong_induction_on with
   | _ F ih =>
-    intro M g σ τ K v hCtx hTtx hCoh hFresh hncf hCF hCFσ hCFτ hrun
+    intro M g σ τ κ K v hCtx hTtx hCoh hFresh hncf hCF hCFσ hCFτ hrun
     cases F with
     | zero => simp [Config.run] at hrun
     | succ F' =>
       cases M with
       | ret w =>
-          refine ⟨1, g, σ, τ, hCFσ, hCFτ, Or.inl ⟨.ret w, by simp [evalD], ?_, ?_, ?_, ?_, hCF, F'+1, le_rfl, ?_⟩⟩
+          refine ⟨1, g, σ, τ, κ, hCFσ, hCFτ, Or.inl ⟨.ret w, by simp [evalD], ?_, ?_, ?_, ?_, hCF, F'+1, le_rfl, ?_⟩⟩
           · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
           · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
           · rw [ctxNetEffect_self hCtx hTtx]; exact hCoh
           · rw [ctxNetEffect_self hCtx hTtx]; exact hFresh
           · rw [ctxNetEffect_self hCtx hTtx]; exact hrun
       | lam M0 =>
-          refine ⟨1, g, σ, τ, hCFσ, hCFτ, Or.inl ⟨.lam M0, by simp [evalD], ?_, ?_, ?_, ?_, hCF, F'+1, le_rfl, ?_⟩⟩
+          refine ⟨1, g, σ, τ, κ, hCFσ, hCFτ, Or.inl ⟨.lam M0, by simp [evalD], ?_, ?_, ?_, ?_, hCF, F'+1, le_rfl, ?_⟩⟩
           · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
           · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
           · rw [ctxNetEffect_self hCtx hTtx]; exact hCoh
