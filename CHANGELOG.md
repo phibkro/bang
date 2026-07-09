@@ -92,6 +92,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tooling** — just regen-all — the write-side twin of the fitness legs (`e8fbd2d`)
 - **witness** — ElabFuzz — source-level fuzz harness for the elaborator (tier 3) (`c3432b9`)
 - **examples** — caesar — the stranger test's cipher joins the oracle corpus (`08027e5`)
+- **witness** — LawTest derived generators + shrinking (#60 slice 1) (`b10ab55`)
+- **witness** — LawTest law runner over source-generated samples (#60 slice 2) (`61d6a1e`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
