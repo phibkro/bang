@@ -3133,11 +3133,11 @@ theorem sim : ∀ fe,
 `[t]` where `evalD n [] M = some (.term t, σ')` (the convergent spine, now over the resumptive-state
 store-thread). `compile_correct` analogue of `Bang.Calc`; the `c=[]`, `s=[]`, `hs=[]` corollary of
 `sim` (`Corr [] []` holds by `rfl`, the empty store mirrors the empty HStack). -/
-theorem compile_correct (n : Nat) (M : Comp) (t : Comp) (g' : Nat) (σ' : SStore) (τ' : THeap)
-    (h : evalD n 0 [] [] M = some (.term t, g', σ', τ')) :
+theorem compile_correct (n : Nat) (M : Comp) (t : Comp) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (h : evalD n 0 [] [] [] M = some (.term t, g', σ', τ', κ')) :
     ∃ F, exec F 0 (compile M []) [] [] = some [t] := by
   have hbase : exec 1 g' [] (t :: []) [] = some [t] := by simp [exec]
-  obtain ⟨hsf, _, _, hmutf, k⟩ := (sim n).1 M 0 [] [] t g' σ' τ' h [] rfl rfl
+  obtain ⟨hsf, _, _, _, hmutf, k⟩ := (sim n).1 M 0 [] [] [] t g' σ' τ' κ' h [] rfl rfl rfl
   -- HMut [] hsf forces hsf = [] (a closed program at empty HStack ends at empty), so the continuation
   -- runs on the empty stack — `hbase`.
   have hempty : hsf = [] := by cases hsf with | nil => rfl | cons => simp [HMut] at hmutf
