@@ -62,7 +62,19 @@ made real for effects the language authors never named.
   ops at a user label are an ELABORATION error, never a kernel stuck). The metatheory's
   `[EffSig]` parametricity means `preservation`/`progress`/`type_safety` hold at this instance
   with NO new op-side proof.
-- **D3 — the typed custom-handle rule.** Shape (mirroring `handleThrows`/`handleState`):
+- **D3 — the typed custom-handle rule — AS LANDED (two probe-caught refinements, 2026-07-09;
+  evidence = three committed probes: scratch/CustomResumeProbe.lean, CustomRetGradeProbe.lean,
+  CustomGradeForkProbe.lean):** (i) the clause obligation is an F-RETURNER — the captured
+  continuation expects the original perform's returner type; (ii) the answer-GRADE wall (the
+  perform's returner grade is FREE, a general body's grade is structure-pinned, and no
+  re-grading lemma exists) forces **v1 clause bodies to the RETURN shape `ret w`** (`HasVTy`
+  premise) — mirroring the built-ins' identity return-clauses and recovering `ret`'s
+  grade-freedom. Row consequence: `ret w` is effect-free ⟹ NO `⊔ φ'` term; the conclusion is
+  the ℓ-discharged residual. The flagship compute-then-return clause stays
+  untyped-fragment-only in v1 (it doesn't type anyway — no binop HasCTy rule, ADR-0065).
+  **Compound entry gate for the general-body form: binop typing (ADR-0065) + grade surfacing
+  (Q27).** The original sketch below stands as the design intent this refined FROM.
+- **D3 — the original sketch.** Shape (mirroring `handleThrows`/`handleState`):
   given `M : A ! φ` under the bound cap, param `p : P`, and for each clause `(op, body)`:
   `body : opRes ℓ op ! φ'` under `param@1 : P, arg@0 : opArg ℓ op` (the landed binder
   discipline), with `φ' ⊆` the handle's residual row; conclusion `handle … : A ! (φ \ ℓ) ⊔ φ'`
