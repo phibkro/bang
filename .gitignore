@@ -1,3 +1,6 @@
+# Release artifacts (tools/release-artifact.sh stages the stripped binary here before upload)
+dist/
+
 # Lean / Lake build artifacts (Mathlib oleans etc. — multi-GB, fetched via `lake exe cache get`)
 .lake/
 *.olean
