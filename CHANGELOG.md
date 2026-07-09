@@ -80,6 +80,9 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **frontend** — effectful let-rec recursion via declared-row thunk type (ADR-0088, #48) (`fb94daf`)
 - **kernel** — ADR-0087 rung-1 — finite-list custom rep + honest capsH (slices 1-2) (`0c6ba99`)
 - **kernel** — ADR-0087 rung-2 — Stage-2 custom dispatch REAL on the finite rep, census clean (`6413281`)
+- **44-s4x** — (B') sim StoresBelow∧StoresDisjoint threading COMPLETE — 44→0 in AbstractMachine (`f053f8b`)
+- **44-s4x** — port U5bComplete to id-first 5-tuple evalD — module green, axiom-clean (`5dc28bc`)
+- **44-s4f** — close exec_wexec_sim_ok custom-freedom (A) — full project GREEN (`20dd320`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
