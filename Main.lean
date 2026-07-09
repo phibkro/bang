@@ -108,6 +108,104 @@ def runComp (compiled : Bool) (c : Comp) : IO UInt32 := do
   | .escapedCap  => IO.eprintln "capability escaped its handler"; pure 3
   | .stuck       => IO.eprintln "stuck (ill-formed program)"; pure 4
 
+/-! ## Module resolution (ADR-0093 D1) — file = module, `import`/`use` at the top of a file.
+
+Reading ANOTHER file is inherently IO, so this lives here (not `Bang.Frontend`, which is a pure
+leaf) — the pure half (`mergeModules`, `Bang.TypeCheck`) already exists and takes an ALREADY-
+RESOLVED `List (String × Prog)`; this section's only job is to WALK the import graph and produce
+that list, loudly erroring on a missing file or a cycle before `mergeModules` ever runs. -/
+
+/-- Resolve `import name`/`use name` module NAME to a file path: try `<dir of the importing
+file>/name.bang` first, then `<root>/name.bang` (D1's fixed, documented order). `none` on a miss in
+BOTH — the caller names both probed paths in its error (a miss must be loud AND specific, ADR-0046:
+"the fix is obvious from the message" is the bar, not just "file not found"). -/
+def resolveModulePath (root : System.FilePath) (importingDir : System.FilePath) (modName : String) :
+    IO (Option System.FilePath) := do
+  let sameDir := importingDir / s!"{modName}.bang"
+  if ← sameDir.pathExists then return some sameDir
+  let atRoot := root / s!"{modName}.bang"
+  if ← atRoot.pathExists then return some atRoot
+  return none
+
+/-- The accumulated state of one resolution walk: `resolved` maps a module name to its PARSED
+(unqualified) `Prog`, built bottom-up (a module is added only after everything IT imports is
+already resolved) so `resolved`'s LIST ORDER is already the dependency-first topological order
+`mergeModules` needs. `visiting` is the current DFS path (module names, root-to-here) — a name
+reappearing in `visiting` is the cycle (ADR-0076's acyclic-DAG pin, enforced here since the
+resolver is where the actual file graph is walked). -/
+structure ResolveState where
+  resolved : List (String × Prog) := []
+  visiting : List String := []
+
+/-- Recursively resolve `modName`'s transitive imports/uses, then `modName` itself, into `st`.
+Fuel-bounded (not structural — the import graph's depth isn't visible to Lean's termination
+checker without threading a well-founded proof no v1 program needs; a real cycle is caught by
+`visiting` LONG before fuel would ever matter at realistic project sizes, matching the file's own
+`bigFuel`-idiom precedent elsewhere in the codebase). -/
+partial def resolveModule (root : System.FilePath) (modName : String) (path : System.FilePath)
+    (st : ResolveState) : IO (Except String ResolveState) := do
+  if (st.resolved.map Prod.fst).contains modName then return .ok st   -- already resolved (diamond import)
+  if st.visiting.contains modName then
+    return .error s!"import cycle: {String.intercalate " → " (st.visiting ++ [modName])}"
+  let some src ← (do let s ← IO.FS.readFile path; pure (some s)) <|> pure none
+    | return .error s!"could not read module '{modName}' at '{path}'"
+  match Bang.Surface.parseProg src with
+  | .error m => return .error s!"module '{modName}' ({path}): parse error: {m}"
+  | .ok prog =>
+      let dir := path.parent.getD root
+      let mut st' := { st with visiting := st.visiting ++ [modName] }
+      for imp in prog.imports do
+        match ← resolveModule root imp.modName (Id.run <| dir / s!"{imp.modName}.bang") st' with
+        | .error e  => return .error e
+        | .ok stNew => st' := stNew
+      for u in prog.uses do
+        match ← resolveModule root u.modName (Id.run <| dir / s!"{u.modName}.bang") st' with
+        | .error e  => return .error e
+        | .ok stNew => st' := stNew
+      return .ok { st' with resolved := st'.resolved ++ [(modName, prog)], visiting := st.visiting }
+
+/-- The full D1 resolution + D2/D3/D4 merge, from an entry FILE: parse it, resolve every
+`import`/`use` it names (transitively, same-dir-then-root, cycle-checked), then `mergeModules` the
+result into ONE flat `Prog` ready for `checkAndLowerProg`. A resolved import's OWN path is
+re-probed via `resolveModulePath` (not the naive `dir/name.bang` `resolveModule` builds directly)
+ONLY at the top level, matching D1's exact documented search order; nested imports resolve relative
+to THEIR OWN file's directory (the natural reading of "same directory as the importing file" — a
+transitively-imported module's imports are relative to IT, not the original entry file). -/
+def resolveEntryFile (path : String) : IO (Except String Prog) := do
+  let entryPath : System.FilePath := ⟨path⟩
+  let root ← IO.currentDir
+  let some entrySrc ← (do let s ← IO.FS.readFile entryPath; pure (some s)) <|> pure none
+    | return .error s!"could not read file '{path}'"
+  match Bang.Surface.parseProg entrySrc with
+  | .error m => return .error s!"parse error: {m}"
+  | .ok entryProg =>
+      if entryProg.imports.isEmpty && entryProg.uses.isEmpty then return .ok entryProg
+      let dir := entryPath.parent.getD root
+      let mut st : ResolveState := {}
+      for imp in entryProg.imports do
+        match ← resolveModulePath root dir imp.modName with
+        | none =>
+            let probed1 := dir / s!"{imp.modName}.bang"
+            let probed2 := root / s!"{imp.modName}.bang"
+            return .error s!"cannot find module '{imp.modName}' — probed '{probed1}' and '{probed2}'"
+        | some found =>
+            match ← resolveModule root imp.modName found st with
+            | .error e  => return .error e
+            | .ok stNew => st := stNew
+      for u in entryProg.uses do
+        match ← resolveModulePath root dir u.modName with
+        | none =>
+            let probed1 := dir / s!"{u.modName}.bang"
+            let probed2 := root / s!"{u.modName}.bang"
+            return .error s!"cannot find module '{u.modName}' — probed '{probed1}' and '{probed2}'"
+        | some found =>
+            match ← resolveModule root u.modName found st with
+            | .error e  => return .error e
+            | .ok stNew => st := stNew
+      match Bang.TypeCheck.mergeModules st.resolved entryProg with
+      | .error e     => return .error e
+      | .ok merged   => return .ok merged
+
 /-- Run one source string through the whole pipeline, printing the outcome and returning the process
 exit code. `typecheck` selects the pipeline (ADR-0076 #51):
 
@@ -128,6 +226,21 @@ def runSource (typecheck compiled : Bool) (src : String) : IO UInt32 := do
     | .ok c               => runComp compiled c
   else
     match Bang.TypeCheck.elaborateToComp src with
+    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .ok c    => runComp compiled c
+
+/-- Run an already-RESOLVED-and-merged `Prog` (ADR-0093 D1-D4 — `resolveEntryFile`'s output) through
+the SAME two pipelines `runSource` offers for a single file: DEFAULT type-checked
+(`checkAndLowerProg`) or `--no-typecheck` raw erase-and-run (`elaborateToCompProg`), then `runComp`.
+No located errors either way (see `checkAndLowerProg`'s doc comment) — a resolution/parse failure
+is already located by `resolveEntryFile` itself, before this runs. -/
+def runResolvedProg (typecheck compiled : Bool) (prog : Prog) : IO UInt32 := do
+  if typecheck then
+    match Bang.TypeCheck.checkAndLowerProg prog with
+    | .error e => IO.eprintln s!"error: {e}"; pure 1
+    | .ok c    => runComp compiled c
+  else
+    match Bang.TypeCheck.elaborateToCompProg prog with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
     | .ok c    => runComp compiled c
 
@@ -353,14 +466,27 @@ partial def runRepl (typecheck compiled : Bool) : IO UInt32 := do
 def main (args : List String) : IO UInt32 := do
   match args with
   | cmd :: rest =>
-    if cmd == "run" || cmd == "eval" then
+    if cmd == "run" then
       -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
+      -- `run` ALWAYS goes through the module resolver (ADR-0093 D1) — a decl-free/import-free file
+      -- resolves to itself unchanged (`resolveEntryFile`'s short-circuit), so this is behavior-
+      -- preserving for every program in today's corpus; only a file with an `import`/`use` header
+      -- takes the actual resolve-and-merge path. `eval`'s inline string has no FILE to resolve
+      -- relative to, so it stays on the single-string `runSource` path unconditionally (below) —
+      -- an `import` in an `eval`-string program is out of v1 scope (no directory to search).
       let compiled   := rest.contains "--compiled"
       let typecheck  := !rest.contains "--no-typecheck"
       match rest.filter (fun a => !("--".isPrefixOf a)) with
       | [arg] =>
-        let src ← if cmd == "run" then IO.FS.readFile ⟨arg⟩ else pure arg
-        runSource typecheck compiled src
+        match ← resolveEntryFile arg with
+        | .error e   => IO.eprintln s!"error: {e}"; pure 1
+        | .ok merged => runResolvedProg typecheck compiled merged
+      | _ => IO.eprintln usage; pure 1
+    else if cmd == "eval" then
+      let compiled   := rest.contains "--compiled"
+      let typecheck  := !rest.contains "--no-typecheck"
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | [arg] => runSource typecheck compiled arg
       | _ => IO.eprintln usage; pure 1
     else if cmd == "repl" then
       let compiled  := rest.contains "--compiled"

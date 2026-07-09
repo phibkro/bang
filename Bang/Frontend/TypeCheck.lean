@@ -3082,7 +3082,7 @@ unknown-identifier error on `tokenizer_secret` (it was never merged in — only 
 loud, per ADR-0046, though it does not yet name "private" as the reason (a v1 gap; `use`'s
 violation gets the stronger message since `use` explicitly requests a name by its bare identifier,
 the exact case D3's own wording singles out). -/
-def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except String Prog := do
+public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except String Prog := do
   match firstPrivateUse resolved p with
   | some (modName, name) =>
       throw s!"'{name}' is private to module '{modName}' (use `pub` to export it, ADR-0093 D3)"
@@ -3179,6 +3179,29 @@ public def checkAndLower (src : String) : Except (String × Option Bang.Surface.
   let (e, effects) ← (elabProg prog).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
   let _ ← (runInferC (synthSC [] e) effects).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
   (Bang.Surface.lower e).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
+
+/-- PUBLIC typed runnable entry, `Prog`-taking (ADR-0093 D4 — the module resolver's own seam): the
+SAME `checkAndLower` pipeline (elaborate → TYPE-CHECK → lower), starting from an already-parsed
+`Prog` rather than re-parsing source text. `Main.lean`'s module resolver hands `mergeModules`'
+merged `Prog` here DIRECTLY — no print-then-reparse round-trip through `Bang.Format.showProg`
+(which would work, since `showProg`/`parseProg` already round-trip, but is strictly more work for
+no benefit: the merged `Prog` is already the exact AST the single-file pipeline would parse to). No
+span support (a synthesized multi-file `Prog` has no single contiguous source text a `Span` could
+index into) — a caller wanting located errors for a MULTI-file program is out of v1 scope (ADR-0093
+doesn't sketch cross-file diagnostics; the entry FILE's own parse errors are still located by
+`Main.lean`'s resolver before this ever runs, since `mergeModules` only accepts already-parsed
+`Prog`s). -/
+public def checkAndLowerProg (prog : Prog) : Except String Comp := do
+  let (e, effects) ← elabProg prog
+  let _ ← runInferC (synthSC [] e) effects
+  Bang.Surface.lower e
+
+/-- `Prog`-taking sibling of `elaborateToComp` — the raw (check-free) `--no-typecheck` escape for
+an already-merged multi-file program. Same rationale as `checkAndLowerProg`: the module resolver
+already has a `Prog`, not source text, so this skips re-parsing. -/
+public def elaborateToCompProg (prog : Prog) : Except String Comp := do
+  let (e, _) ← elabProg prog
+  Bang.Surface.lower e
 
 /-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
 def checkProg (src : String) : Except String (CT × EffRow) := do
