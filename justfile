@@ -45,6 +45,15 @@ test-repl:
 test-fmt:
     bash tools/test-fmt.sh
 
+# Gate for `bang check [--json]` (#59, agent-facing structured diagnostics):
+# ok:true/false via file+stdin · human vs --json rendering · the 0/1/2 exit
+# contract (ok / diagnostics / tool-error) · jq-parseability. The schema's
+# byte-exactness is gated separately by Bang/Frontend/Diagnostics.lean's
+# #guards; this gates the CLI surface. NOT wired into the default `verify`
+# chain (composed explicitly where needed).
+test-check-json:
+    bash tools/test-check-json.sh
+
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
 adr-index:
