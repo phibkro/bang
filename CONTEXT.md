@@ -36,7 +36,7 @@ decls parse, labels allocate ℓ≥4 deterministically, program-derived EffSig t
 user names; v1 restriction: builtin op names RESERVED in effect decls) and the kernel half (`125b383`..`06dbf9e`:
 `HasCTy.handleCustom` + `HasStack.customF` — the first typed user-effect rule; v1 clause bodies are the RET-SHAPE
 per the answer-grade wall, ADR-0092 §D3-as-landed; `concat_custom_absurd` retired by real arms; census
-byte-identical). **The edge is Stage 4 (IN FLIGHT, `feat-44-stage4`): derive evalD's custom arm ID-FIRST (operator
+byte-identical). **The edge is Stage 4 (IN FLIGHT, `feat-44-stage4-idfirst`): derive evalD's custom arm ID-FIRST (operator
 ruling 2026-07-09, issue #62 — dispatch by store-holding identity, matching the kernel unconditionally), drop BOTH
 scaffolding premises (`CustomFree`, `NoCustomFrame`) — `compile_forward_sim` returns to VcapFree-only.** Then
 5 (LR: three pre-registered debts in PATH-inc5 — compatK_handleCustom + krelS_custom_reinstall + dispatchOn_rename)
