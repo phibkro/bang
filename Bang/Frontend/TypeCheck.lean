@@ -20,9 +20,11 @@ module
 meta import Bang.Frontend.Surface
 meta import Bang.Core.Semantics     -- runTypedYieldsInt's #guards execute Source.eval (Trait.lean precedent)
 meta import Bang.Core.Grade         -- QTT.omega must be META-accessible for the #guards
+meta import Bang.Frontend.Format    -- lawInstancesOf (#60) reuses showSurf to render a law body to source text
 public import Bang.Frontend.Surface
 public import Bang.Core.Typing
 public import Bang.Core.Grade      -- QTT (the concrete grade rig)
+public import Bang.Frontend.Format  -- ditto (public: lawInstancesOf's OWN signature stays Surf/Ty-free; the import is internal plumbing)
 
 namespace Bang.TypeCheck
 open Bang
@@ -3102,6 +3104,30 @@ def checkLaws (src : String) : Except String (List String) := do
                     throw s!"law {tn}.{l.name} FAILS on its sample for {showVTy (vtyOf τR)}"
   return report
 
+/-- **PUBLIC (#60 seam):** enumerate every LAW INSTANCE in a program — one entry per (trait law ×
+matching impl), exactly the pairs `checkLaws` itself walks above, reused structurally (same
+trait×impl match, not re-derived). Each entry is `(traitName, lawName, params, body)`, `body`
+rendered to SOURCE TEXT (`Bang.Format.showSurf`) rather than the internal `Surf` AST — this keeps
+the export's OWN signature entirely `Surf`/`Ty`-free (the narrower alternative preferred over the
+broader visibility markers: no new type exposure, just four strings/list-of-strings per instance).
+A law-runner harness (`Bang.Witness.LawTest`, #60) can drive each entry's `body` + `params` through
+its OWN source-string generation/sampling without needing `ElabEnv`/`Val`/`VT` at all. -/
+public def lawInstancesOf (src : String) : Except String (List (String × String × List String × String)) := do
+  let p ← parseProg src
+  let mut out : List (String × String × List String × String) := []
+  for d in p.decls do
+    match d with
+    | .traitD tn _ _ laws =>
+        for other in p.decls do
+          match other with
+          | .implD tn' _ _ =>
+              if tn' == tn && !laws.isEmpty then
+                for l in laws do
+                  out := out ++ [(tn, l.name, l.params, Bang.Format.showSurf l.body)]
+          | _ => pure ()
+    | _ => pure ()
+  return out
+
 /-! ### Validation ⑦ — the northstar WITH its law: checked from source, rung displayed. -/
 
 /-- The full northstar prelude, parametrized by the law: `VecOps` (component-wise `add`, pair
@@ -4168,5 +4194,31 @@ module-interface work's territory — this reservation is the v1 stopgap, not th
 #guard (match Bang.Surface.parseProg "effect Mixed { read4 : Int -> Int, get : Int } 0" with
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
         | .error _ => false)
+
+/-! ### `lawInstancesOf` (#60 seam) — enumerates real trait×impl law instances, body rendered
+back to source text via `showSurf`, reusing the existing `vecLawProg`/`intOrdProg` corpus. -/
+
+-- a single-law, single-impl program yields exactly one instance, params/name/rendered-body exact.
+#guard (match lawInstancesOf (vecLawProg "0") with
+        | .ok [("VecOps", "comm", ["a", "b"], body)] =>
+            body == "let s = a + b in let t = b + a in s == t"
+        | _ => false)
+-- a MULTI-LAW trait (IntOrd's `trans`, ADR-0068 conditional-law corpus) yields one instance per
+-- law, ALL against the same impl — the trait×impl cross product, not just the first law.
+#guard (match lawInstancesOf (intOrdProg "trans(a, b, c): a < b => b < c => a < c" "0") with
+        | .ok [("IntOrd", "trans", ["a", "b", "c"], _)] => true
+        | _ => false)
+-- a program with NO impl of the trait yields NO instances (a law with nothing to check against
+-- is correctly absent, not a phantom entry) — `checkLaws`'s own `!laws.isEmpty` gate mirrored.
+#guard (match lawInstancesOf "trait Add { fn add(a, b) -> Self law comm(a, b): add a b == add b a } 0" with
+        | .ok [] => true | _ => false)
+-- a MULTI-TRAIT program (VecOps + IntOrd both present) discovers BOTH instances — confirming
+-- discovery is program-wide, not scoped to "the first trait found".
+#guard (match lawInstancesOf (vecOpsProg "comm(a, b): let s = a + b in (let t = b + a in s == t)"
+    (intOrdProg "trans(a, b, c): a < b => b < c => a < c" "0")) with
+        | .ok [("VecOps", "comm", _, _), ("IntOrd", "trans", _, _)] => true
+        | _ => false)
+-- a malformed program still fails LOUD through the same `parseProg` gate `checkLaws` uses.
+#guard (match lawInstancesOf "let x = in" with | .error _ => true | .ok _ => false)
 
 end Bang.TypeCheck

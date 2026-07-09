@@ -371,8 +371,10 @@ partial def fmtDArmList : DArms → List Format
 end
 
 /-- Top-level entry: an expression prints at the loosest tier (no defensive outer parens), rendered
-through the ONE canonical width (`render`, `defWidth`/`defIndent`). -/
-def showSurf (e : Surf) : String := render (fmtSurf .cmp e)
+through the ONE canonical width (`render`, `defWidth`/`defIndent`). PUBLIC (#60 seam): reused by
+`TypeCheck.lawInstancesOf` to render a discovered law's body back to source text — additive
+visibility only, no behavior change. -/
+public def showSurf (e : Surf) : String := render (fmtSurf .cmp e)
 
 /-! ## 4. Declaration + program printer
 
