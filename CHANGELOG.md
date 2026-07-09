@@ -107,6 +107,11 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **lang** — bang check is resolver-aware (issue #59 final slice, ADR-0093) (`6d69580`)
 - **nix** — package the bang runner CLI as a nix app (#63, WIP) (`6d8c347`)
 - **witness** — Q43 R1 proof-export goal emitter (arm B, total-only, sorry-bodied) (`afbb4b2`)
+- **lexer** — line comments `--` to end-of-line (#62) (`b0254cf`)
+- **cli** — --help/--version + human error messages for every exit (#66, #67) (`afa72d2`)
+- **surface** — unary minus (#64) (`85840ea`)
+- **cli** — bang test — wire the LawTest/lawInstancesOf seam (#60) (`586b2ed`)
+- **surface** — multi-binding let sugar (#68) (`3be8fcb`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
