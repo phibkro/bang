@@ -27,6 +27,7 @@ its trigger arises.
 | **All ADRs** (why-we-chose-X log) | `docs/decisions/README.md` |
 | **Deferred design questions** | `docs/notes/OPEN_QUESTIONS.md` |
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
+| **structOK multi-arg descent design** (#50 · the ADR-0091 fork's full analysis) | `docs/notes/structok-multiarg-design.md` |
 | **Feedback-loop audit** (loops by radius; refresh at each ◊ — `check-loop-audit.sh` enforces) | `docs/notes/loop-audit.md` |
 | **Standard-library map** (the third stratum: reusable abstractions as library code, gated by type-power) | `docs/notes/stdlib-map.md` |
 | **Formatting-techniques survey** (the canonical formatter #58: three-rung map · exact-vs-canonical · layout engine · zero-config) | `docs/notes/formatting-survey.md` |
