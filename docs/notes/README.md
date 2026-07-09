@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (25)
+## active (26)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -23,6 +23,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
 - [`hang-61-diagnosis.md`](hang-61-diagnosis.md) — Issue #61 diagnosis — the "hang" is per-step `Comp.subst` cost, not term blowup
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
+- [`laws-taxonomy.md`](laws-taxonomy.md) — The taxonomy of laws — model-shaped vs morphism-shaped, and where a property lives
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
 - [`multishot-survey.md`](multishot-survey.md) — Multi-shot resumption — empirical design inputs for the Q22 cap-rep fork
