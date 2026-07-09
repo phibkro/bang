@@ -2,16 +2,16 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: A `let rec` body currently cannot carry ANY latent effect — the μ-encoded knot's type `recTy = μX. Thunk(X → T)` forces the recursive thunk PURE (`tThunk` ⟹ ⊥), so the #45 fold-payload check (`φ' ⊆ φ`, φ=⊥) REJECTS a body that `raise`s, touches state, or calls a Div helper (#48; found in #47's soundness audit, case ⑤). This is sound-by-rejection but a T1-ergonomics completeness gap: a recursive parser that performs, or a recursive fold calling a partial helper, cannot be written. **Decision: implement #46 Option B as a row-carrying recursive thunk type — `recTy = μX. Thunk_ρ(X → T ! ρ)` — with ρ DECLARED in the `let rec` type annotation (`let rec f : Int -> Int ! {throws} = …`), never inferred by fixpoint.** The body checks against declared ρ (`φ_body ⊆ ρ` — the #45 arm generalizes from φ=⊥ to φ=ρ); inner self-calls type at ρ (retiring Option A's inner-⊥ under-approximation); the effective knot row stays `ρ ∪ (structOK ? ∅ : {Div})` so #47's termination certification keeps eliminating Div orthogonally. Elaborator-only (elaborate-to-mono, ADR-0075 pattern): the kernel, census, and frozen statements are untouched. **Rejected**: fixpoint row inference (implicit where explicit is available — violates the agent-first lens and the config-explicit-at-boundaries principle; more machinery for a worse contract), and effect-polymorphic recursion (needs #56's full Rémy treatment; nothing v1 writes requires it).
 - **Depends-on**: 0073, 0074-adjacent (#45 fold-payload check), 0019, 0020, 0075
 - **Relates-to**: #48 (the gap), #46/#47 (the landed Div-row + structOK seams this composes with), #56 (single-ρ subeffecting — the `φ_body ⊆ ρ` premise IS one subeffecting site; whatever #56 decides inherits it), OPEN_QUESTIONS (⊥-row⟹terminates soundness — D4)
 
 ## Status
 
-Proposed (2026-07-09, drafted while the str49/repl7/out54 lanes run) — awaiting operator ruling.
-Implementation is **entry-gated on the str49 lane landing** (#49/#50): both touch the same
-`TypeCheck.lean` regions (one writer per file).
+Accepted (2026-07-09, operator ruling same day — drafted and ruled while the str49/repl7/out54
+lanes ran). Implementation is **entry-gated on the str49 lane landing** (its formatter work owns
+the `TypeCheck.lean`-adjacent surface region this wave; one writer per file).
 
 - **Layer:** F (frontend/elaborator only — `recTy` construction, the #45 fold-payload arm, the
   `let rec` annotation grammar). No kernel constructor, no frozen statement, no census motion
