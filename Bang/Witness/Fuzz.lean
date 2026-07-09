@@ -28,7 +28,9 @@
 module
 
 meta import Bang.Backend.AbstractMachine
+meta import Bang.Witness.AgreeOutcome
 public import Bang.Backend.AbstractMachine
+public import Bang.Witness.AgreeOutcome
 
 namespace Bang.Fuzz
 
@@ -204,22 +206,17 @@ def genClosed (depth seed : Nat) : Comp := (genComp depth 0 [] seed).1
 
 /-! ## 4. The differential property.
 
-Mirrors `Agree`'s shape (AbstractMachine.lean `Agree`) but relaxes it to a DISJUNCTION that
-also admits the shared non-value `escapedCap`/`none` outcome (Q see the UNCAUGHT-raise axis
-example there) — a raw generated `perform` is very often uncaught, so a fuzzer that only
-accepted `Agree` would reject nearly every sample as a "failure" when both sides in fact
-agree on "no value". `stuck`-on-either-side (kernel `.stuck` or machine `none` on a
-NON-perform focus) is the one genuinely disqualifying outcome. -/
-
-/-- The two sides agree, covering all three shared outcomes: a value (`Agree`'s case), the
-DEFINED capability-escape (kernel `.escapedCap` / machine `none`), or fuel exhaustion
-(kernel `.oom` / machine `none` — under-fueled, not a real disagreement). Anything else
-(in particular kernel `.stuck`, or one side finishing while the other doesn't) is NOT
-covered — exactly the kernel-robustness property under test. -/
-def FuzzAgree (fuel : Nat) (M : Comp) : Prop :=
-  (∃ v, exec fuel 0 (compile M []) [] [] = some [.ret v] ∧ Source.eval fuel M = .done v) ∨
-  (Source.eval fuel M = .escapedCap ∧ exec fuel 0 (compile M []) [] [] = none) ∨
-  (Source.eval fuel M = .oom)
+`fuzzAgree` is now a PROJECTION of `Bang.AgreeOutcome.agreeOutcome` (#54 outcome-differential):
+that module's TOTAL oracle distinguishes all four `Result` cases (`done`/`oom`/`escapedCap`/
+`stuck`) with no admitted "either side, whatever" disjunct — strictly STRONGER than this
+file's former hand-rolled `FuzzAgree` (which let `.oom` pass regardless of what the machine
+said, and folded `escapedCap`/`stuck` into one disjunct). Empirically confirmed a PURE
+strengthening before landing: every one of `fuzzSeeds`' 200 generated programs that passed
+the old `fuzzAgree` also passes `agreeOutcome` (`scratch/OutcomeFuzzProbe.lean`, not
+committed — the check, not the artifact, is what mattered). `Bang.Fuzz`'s OWN `valEq` is
+kept (this file predates `AgreeOutcome`'s copy and nothing here depends on that module's
+private one) — same shape, not re-exported to avoid a needless cross-module coupling for a
+five-line helper. -/
 
 /-- `Val` structural equality (`Val` derives no `DecidableEq`/`BEq` — only the constructors
 this generator can actually produce need comparing, so a hand match suffices here rather
@@ -235,15 +232,12 @@ def valEq : Val → Val → Bool
   | .fold a,      .fold b      => valEq a b
   | _,            _            => false
 
-/-- Boolean reflection of `FuzzAgree`, so a counterexample can be caught by `#guard`
-(build-fail on `false`) rather than requiring a proof term per sample: both sides agree per
-`FuzzAgree`'s three-way disjunction. -/
+/-- Boolean reflection of the fuzz property, so a counterexample can be caught by `#guard`
+(build-fail on `false`) rather than requiring a proof term per sample. A thin projection of
+`Bang.AgreeOutcome.agreeOutcome` — see the `§4` header for why this is a strengthening, not
+a behavior change. -/
 def fuzzAgree (fuel : Nat) (M : Comp) : Bool :=
-  match Source.eval fuel M, exec fuel 0 (compile M []) [] [] with
-  | .done v,     some [.ret v'] => valEq v v'
-  | .escapedCap, none           => true
-  | .oom,        _              => true
-  | _,           _              => false
+  Bang.AgreeOutcome.agreeOutcome fuel M
 
 /-! ## 5. The fuzz run — fixed seeds (deterministic in CI), `#guard`-gated (fails the build
 on any counterexample). Depth/fuel/case-count are fixed constants, not a `native_decide`
