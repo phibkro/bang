@@ -348,31 +348,6 @@
 
 % ─── Tooling (provers, solvers, package managers) ────────────────────────────
 
-@inproceedings{xie-schrijvers-hu-popl25-biparsers,
-  keywords  = {topic:tooling role:substrate},
-  author    = {Xie, Ruifeng and Schrijvers, Tom and Hu, Zhenjiang},
-  title     = {Biparsers: Exact Printing for Data Synchronisation},
-  booktitle = {Proceedings of the ACM on Programming Languages (POPL)},
-  year      = 2025,
-  doi       = {10.1145/3704910},
-  note      = {Parser+printer as a lens; exact printing with non-injective parsers.
-               Operator-supplied 2026-07-09 as input to the #58 multi-line formatter
-               design pass (ADR-0090 draft). NB: bang's formatter is CANONICAL
-               (AST-only, destroys input layout) — the opposite goal of exact
-               printing; read for what the lens laws still teach.},
-}
-
-@unpublished{christiansen-darais-ma-final-pretty-printer,
-  keywords = {topic:tooling role:substrate},
-  author   = {Christiansen, David and Darais, David and Ma, Weixi},
-  title    = {The Final Pretty Printer},
-  year     = 2016,
-  note     = {Draft (PL'17 footer). Extensible, effectful pretty printing beyond the
-              Hughes/Wadler monospace-batch assumptions; correctness derived from the
-              laws of standard functional abstractions. Operator-supplied 2026-07-09,
-              same #58 design pass as [[xie-schrijvers-hu-popl25-biparsers]].},
-}
-
 @inproceedings{de-moura-ullrich-lean4-system-description,
   author    = {de Moura, Leonardo and Ullrich, Sebastian},
   title     = {The {Lean 4} Theorem Prover and Programming Language (System Description)},
@@ -970,4 +945,54 @@
             from it (GitHub #38, spec-shell grammar gap). Also unlocks Q24
             (whitespace-insensitivity) + #9 (tree-sitter from the same table).
             Operator-flagged 2026-07-05.},
+}
+
+% ─── Pretty-printing / formatting (the canonical formatter, #58) ──────────────
+
+@article{xie-popl25-biparsers-exact-printing,
+  keywords = {topic:surface-syntax topic:parsing grounds:task-58 role:frontier},
+  sha256 = {8cecab80f1527299626be033b9f94f4febdbfd534c9d303ae7bd93bd6277eee0},
+  author  = {Xie, Ruifeng and Schrijvers, Tom and Hu, Zhenjiang},
+  title   = {Biparsers: Exact Printing for Data Synchronisation},
+  journal = {Proceedings of the ACM on Programming Languages (POPL)},
+  volume  = 9,
+  number  = {POPL},
+  pages   = {74:1--74:27},
+  year    = 2025,
+  doi     = {10.1145/3704910},
+  note    = {Peking U + KU Leuven. Operator-flagged 2026-07-08 for the #58 formatter research pass.
+            Parser+printer as a LENS between source text (X) and data (Y), with a COMPLEMENT (C)
+            holding what parsing discards (whitespace, comments, format variants). Combinator library
+            with two round-trip laws verified in Agda: ParsePrint (parse-then-print recovers the
+            source) + PrintParse (print-then-parse recovers the AST). Handles the ESSENTIAL
+            NON-INJECTIVITY of parsers (many texts → one AST) that pretty-printer-only work sidesteps.
+            REFUTES nothing in bang's Format.lean: bang wants CANONICAL printing (destroy input format,
+            one rendering per AST), the OPPOSITE of exact-printing's goal (recover the original text).
+            The lens teaching that DOES transfer: PrintParse is precisely bang's round-trip law
+            (roundTripsOn), and bang's canonical printer is the degenerate biparser whose complement is
+            unit (nothing to recover) -- so bang's two #guard laws are the trivial-complement corner of
+            this paper's law framework, confirming (not extending) the current design. Cost of ADOPTING
+            it: a full Pratt-parser rewrite into the biparser combinator DSL, which bang does not need.
+            See docs/notes/formatting-survey.md.},
+}
+
+@inproceedings{christiansen-darais-ma-final-pretty-printer,
+  keywords = {topic:surface-syntax grounds:task-58 role:frontier},
+  sha256 = {8e40f9b866ff304c63ae7789b887bf5fb5c2f54ae775f72cea7ee527fee65a70},
+  author  = {Christiansen, David and Darais, David and Ma, Weixi},
+  title   = {The Final Pretty Printer},
+  booktitle = {Draft (operator-supplied; PL '17-class preprint, no published venue/DOI located)},
+  year    = 2017,
+  note    = {Indiana U + U Maryland. Operator-flagged 2026-07-08 for the #58 formatter research pass.
+            An EXTENSIBLE, effectful pretty printer: a MonadPretty type class (finally-tagless shallow
+            embedding), correct in ANY monad, so monad transformers add capabilities (proportional
+            fonts, non-Roman scripts, interactive presentations, semantic annotations, Web rendering).
+            KEY FINDING for bang: its LAYOUT engine is Wadler's -- group/nest/line/<>/flatten/ifFlat
+            obeying Wadler's Doc laws (Lemmas 7.1-7.4, "correctness derived SOLELY from the laws
+            governing standard FP abstractions"). Its EXTENSIONS (proportional/interactive/Web) are the
+            part bang does NOT need: bang formats to a monospace .bang text file. §5.2's precedence-env
+            atLevel (conditional parens per an env level) is exactly what bang's parenIf/sParenIf
+            already do structurally. So the FPP argues FOR a Wadler-algebra layout core (which
+            Lean's Std.Format already provides, host-verified-adjacent), and its novelty is orthogonal
+            to bang's target. See docs/notes/formatting-survey.md.},
 }

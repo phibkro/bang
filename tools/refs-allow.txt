@@ -82,3 +82,4 @@ Bang/Compile.lean
 # probes in scratch/ (tracked) if a doc will cite them.
 /tmp/cex_check.lean
 /tmp/machine_test.lean
+Init/Data/Format/Basic.lean  # Lean TOOLCHAIN source (Std.Format home), not a repo path — cited by the #58 formatting survey + ADR-0090 as the host Wadler engine

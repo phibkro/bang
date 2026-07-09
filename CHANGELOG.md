@@ -76,6 +76,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — implement `:t`/`:type` in the REPL against typeStringOfProg (#7) (`166070f`)
 - **frontend** — canonical formatter core (Bang/Frontend/Format.lean, #58) (`aaaf544`)
 - **cli** — wire `bang fmt` against fmtProg (#58 CLI half) (`299c4bc`)
+- **tooling** — test-fmt joins the default verify chain (`85a04e1`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

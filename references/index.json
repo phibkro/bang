@@ -642,6 +642,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "christiansen-darais-ma-final-pretty-printer",
+    "title": "The Final Pretty Printer",
+    "year": "2017",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "surface-syntax"
+    ],
+    "grounds": [
+      "task-58"
+    ],
+    "role": "frontier",
+    "ondisk": true,
+    "hop": "adjacent",
+    "path": "references/papers/adjacent/christiansen-darais-ma-final-pretty-printer.pdf",
+    "sha256_pinned": "8e40f9b866ff304c63ae7789b887bf5fb5c2f54ae775f72cea7ee527fee65a70"
+  },
+  {
     "key": "chu-guo-hoffmann-oopsla26-aara-effects",
     "title": "Handling Exceptions and Effects with Automatic Resource Analysis",
     "year": "2026",
@@ -899,6 +917,25 @@
     "sha256_pinned": ""
   },
   {
+    "key": "xie-popl25-biparsers-exact-printing",
+    "title": "Biparsers: Exact Printing for Data Synchronisation",
+    "year": "2025",
+    "doi": "10.1145/3704910",
+    "eprint": "",
+    "topics": [
+      "surface-syntax",
+      "parsing"
+    ],
+    "grounds": [
+      "task-58"
+    ],
+    "role": "frontier",
+    "ondisk": true,
+    "hop": "adjacent",
+    "path": "references/papers/adjacent/xie-popl25-biparsers-exact-printing.pdf",
+    "sha256_pinned": "8cecab80f1527299626be033b9f94f4febdbfd534c9d303ae7bd93bd6277eee0"
+  },
+  {
     "key": "zhao-arxiv2603-lemma-discovery",
     "title": "Lemma Discovery in Agentic Program Verification",
     "year": "2026",
@@ -913,38 +950,6 @@
     "ondisk": true,
     "hop": "adjacent",
     "path": "references/papers/adjacent/zhao-arxiv2603-lemma-discovery.pdf",
-    "sha256_pinned": ""
-  },
-  {
-    "key": "christiansen-darais-ma-final-pretty-printer",
-    "title": "The Final Pretty Printer",
-    "year": "2016",
-    "doi": "",
-    "eprint": "",
-    "topics": [
-      "tooling"
-    ],
-    "grounds": [],
-    "role": "substrate",
-    "ondisk": true,
-    "hop": "christiansen-darais-ma-final-pretty-printer.pdf",
-    "path": "references/papers/christiansen-darais-ma-final-pretty-printer.pdf",
-    "sha256_pinned": ""
-  },
-  {
-    "key": "xie-schrijvers-hu-popl25-biparsers",
-    "title": "Biparsers: Exact Printing for Data Synchronisation",
-    "year": "2025",
-    "doi": "10.1145/3704910",
-    "eprint": "",
-    "topics": [
-      "tooling"
-    ],
-    "grounds": [],
-    "role": "substrate",
-    "ondisk": true,
-    "hop": "xie-schrijvers-hu-popl25-biparsers.pdf",
-    "path": "references/papers/xie-schrijvers-hu-popl25-biparsers.pdf",
     "sha256_pinned": ""
   },
   {
