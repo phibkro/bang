@@ -75,6 +75,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **witness** — #54 outcome-differential — total agreement over Result, not just done (`0d405fd`)
 - **cli** — implement `:t`/`:type` in the REPL against typeStringOfProg (#7) (`166070f`)
 - **frontend** — canonical formatter core (Bang/Frontend/Format.lean, #58) (`aaaf544`)
+- **cli** — wire `bang fmt` against fmtProg (#58 CLI half) (`299c4bc`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
