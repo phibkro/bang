@@ -3008,33 +3008,40 @@ theorem sim : ∀ fe,
               -- route-B INSTALL (raised, FORWARD): MINT id := g, push τ.push g Θ, run M' at g+1; a raise
               -- FORWARDS, popping the pushed heap (τ1.tail) — ROLLBACK IS FREE (ADR-0031 D4). Mirror of state.
               simp only [Handler.label] at h
-              cases hM : evalD fe (g+1) σ (τ.push g Θ) (Comp.subst (Val.vcap g ℓ0) M) with
+              cases hM : evalD fe (g+1) σ (τ.push g Θ) κ (Comp.subst (Val.vcap g ℓ0) M) with
               | none => rw [hM] at h; simp at h
               | some oM =>
                 rw [hM] at h
                 match oM, h with
-                | (.raised ℓ' op' w, g1, σ1, τ1), h =>
+                | (.raised ℓ' op' w, g1, σ1, τ1, κ1), h =>
                     simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
                       Outcome.raised.injEq] at h
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
                     -- transaction-install + raise FORWARD: pop the pushed heap (τ1.tail). The txn frame
                     -- does NOT catch a foreign raise (its identity g is not the target), so the heap is
                     -- discarded with the frame — ROLLBACK IS FREE (ADR-0031 D4). Mirror of the state forward.
+                    -- κ passes unchanged (txn install doesn't touch custom frames); CCorr pops noncustom.
                     have htriple : Corr σ1 (netEffect hs σ1 τ1.tail) ∧ TCorr τ1.tail (netEffect hs σ1 τ1.tail)
-                        ∧ HMut hs (netEffect hs σ1 τ1.tail) := by
+                        ∧ CCorr κ1 (netEffect hs σ1 τ1.tail) ∧ HMut hs (netEffect hs σ1 τ1.tail) := by
                       set fr0 : HFrame := { id := g, handler := Handler.transaction ℓ0 Θ, savedCode := [], savedStack := [] }
                         with hfr0
-                      obtain ⟨⟨hCr, hTr, hmutr⟩, _⟩ :=
-                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ (τ.push g Θ) ℓ' op' w g1 σ1 τ1 hM (fr0 :: hs)
+                      obtain ⟨⟨hCr, hTr, hKr, hmutr⟩, _⟩ :=
+                        ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ (τ.push g Θ) κ ℓ' op' w g1 σ1 τ1 κ1 hM (fr0 :: hs)
                           (Corr_install_nonstate fr0 (by rw [hfr0]; intro ℓ s; simp) hC)
                           (TCorr_install ℓ0 Θ fr0 (by rw [hfr0]) hT)
-                      exact raisedTriple_pop_txn (by rw [hfr0]) hCr hTr hmutr
+                          (CCorr_install_noncustom fr0 (by rw [hfr0]; intro ℓ p cls; simp) hK)
+                      obtain ⟨hCt, hTt, hMt⟩ := raisedTriple_pop_txn (by rw [hfr0]) hCr hTr hmutr
+                      refine ⟨hCt, hTt, ?_, hMt⟩
+                      have hproj : hsCustoms (netEffect (fr0 :: hs) σ1 τ1) = hsCustoms (netEffect hs σ1 τ1.tail) := by
+                        rw [hsCustoms_netEffect, hsCustoms_netEffect]; simp only [hfr0, hsCustoms]
+                      unfold CCorr at hKr ⊢; rw [hKr, hproj]
                     refine ⟨htriple, fun c s F r hr => ?_⟩
                     set fr : HFrame := { id := g, handler := Handler.transaction ℓ0 Θ, savedCode := c, savedStack := s }
                       with hfrdef
-                    obtain ⟨_, kR⟩ := ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ (τ.push g Θ) ℓ' op' w g1 σ1 τ1 hM (fr :: hs)
+                    obtain ⟨_, kR⟩ := ihR (Comp.subst (Val.vcap g ℓ0) M) (g+1) σ (τ.push g Θ) κ ℓ' op' w g1 σ1 τ1 κ1 hM (fr :: hs)
                       (Corr_install_nonstate fr (by rw [hfrdef]; intro ℓ s; simp) hC)
                       (TCorr_install ℓ0 Θ fr (by rw [hfrdef]) hT)
+                      (CCorr_install_noncustom fr (by rw [hfrdef]; intro ℓ p cls; simp) hK)
                     have hfwd : throwOutcome F g1 ℓ' op' w (netEffect (fr :: hs) σ1 τ1) = some r := by
                       -- the txn install frame is skipped by the throws-unwind; the heap τ1.tail is what
                       -- the popped triple sees, and netEffect over the txn frame copies it through.
