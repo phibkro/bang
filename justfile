@@ -70,6 +70,17 @@ regen-all:
     # gen-proof-state EXCLUDED: build-dependent — in a build-less clone it emits a FALSE
     # census block into CONTEXT.md (toolmap finding 2026-07-09). Use `just proof-state` after a build.
 
+# Gate for ADR-0093 (file-modules, `import`/`use`/`pub`): real multi-FILE
+# resolution through the compiled CLI — happy-path import + use, the existing
+# examples/ corpus unchanged through the resolver, missing-import/cycle/
+# private-access error transcripts, and same-dir-shadows-root search order.
+# NOT part of the default `verify` chain (composed in separately) — the
+# module-merge CORE's own laws are already #guard-gated in
+# Bang/Frontend/TypeCheck.lean; this gates only what #guard cannot (real
+# filesystem IO).
+test-modules:
+    bash tools/test-modules.sh
+
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
 adr-index:
