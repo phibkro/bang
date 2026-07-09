@@ -105,6 +105,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **examples** — ADR-0093 first multi-file project — examples/json split (`9419517`)
 - **lang** — ADR-0093 D5 ruling point (c) — optional type ascription on plain let (`6e82851`)
 - **lang** — bang check is resolver-aware (issue #59 final slice, ADR-0093) (`6d69580`)
+- **lexer** — line comments `--` to end-of-line (#62) (`7efde28`)
+- **cli** — --help/--version + human error messages for every exit (#66, #67) (`709781d`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
