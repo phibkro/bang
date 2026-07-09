@@ -22,10 +22,10 @@ setup:
 orient:
     bash tools/orient.sh
 
-# Default verify gate — selfcheck + build + example-run oracle + audit. `audit`
-# now runs the full `just fitness` bundle (#114), which already includes the
-# ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
-verify: selfcheck build check-examples audit
+# Default verify gate — selfcheck + build + example-run oracle + REPL transcripts
+# + audit. `audit` now runs the full `just fitness` bundle (#114), which already
+# includes the ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
+verify: selfcheck build check-examples test-repl audit
 
 # Run every examples/<project>/main.bang and diff stdout against expected.txt —
 # the end-to-end run oracle for whole bang programs (supersedes per-example
@@ -35,9 +35,7 @@ check-examples:
 
 # Non-interactive gate for `bang repl` (issue #7): pipes scripted transcripts
 # through the binary and asserts stdout/stderr/exit-code, mirroring
-# check-examples.sh's shape. NOT yet wired into the default `verify` chain
-# (a cross-cutting gate-composition change is out of this lane's file
-# ownership) — run explicitly, or ask to have it added to `verify`.
+# check-examples.sh's shape. Part of the default `verify` chain.
 test-repl:
     bash tools/test-repl.sh
 

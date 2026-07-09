@@ -2561,6 +2561,13 @@ def displayProg (src : String) : String :=
   | .ok (B, φ) => showType B φ
   | .error e   => s!"error: {e}"
 
+/-- PUBLIC face of the checker for external tools (the REPL's `:t`, #7): the rendered
+`type ! row` of a checked program, or the check error as `.error`. Thin wrapper —
+`checkProg`/`showType` stay the SSoT; the `Except` (vs `displayProg`'s inline string)
+lets a caller route errors to stderr and keep stdout machine-clean. -/
+public def typeStringOfProg (src : String) : Except String String :=
+  (checkProg src).map (fun (B, φ) => showType B φ)
+
 
 /-! ### The TYPED face of the `Outcome` layer (issue #54).
 

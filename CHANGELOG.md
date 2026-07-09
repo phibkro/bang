@@ -70,6 +70,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — locate structural-mismatch errors via nameHint (#52 stage-B tier) (`95710a4`)
 - **witness** — #14 differential fuzz — Source.eval vs exec∘compile, 200 seeded samples (`ac20df2`)
 - **tooling** — new-worktree.sh defaults to FULL LOCAL CLONE — own object store per IC (`2e2c0c5`)
+- **cli** — bang REPL — interactive read-eval-print loop (issue #7) (`e478234`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
