@@ -105,6 +105,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **examples** — ADR-0093 first multi-file project — examples/json split (`9419517`)
 - **lang** — ADR-0093 D5 ruling point (c) — optional type ascription on plain let (`6e82851`)
 - **lang** — bang check is resolver-aware (issue #59 final slice, ADR-0093) (`6d69580`)
+- **nix** — package the bang runner CLI as a nix app (#63, WIP) (`6d8c347`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
@@ -125,5 +126,10 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tooling** — exclude gen-proof-state from regen-all — build-dependent (toolmap finding) (`6034c60`)
 - **release** — install.sh distinguishes no-releases-yet from network failure (`5b6ee00`)
 - **release** — de-nix the ELF loader path so the binary runs off a nix store (`8826266`)
+- **nix** — pin depsHash to the real cache-get output hash (#63, #78) (`e08f890`)
+- **nix** — scrub cache.hash — the FOD's sole reproducibility leak (#63, #78) (`922c18f`)
+- **nix** — pin depsHash to the now-deterministic cache-get output (#63, #78) (`e4be297`)
+- **nix** — scrub mathlib/batteries scripts/ — FOD store-ref leak (#63, #78) (`fa3e001`)
+- **nix** — re-pin depsHash after scripts/ scrub (#63, #78) (`d567654`)
 
 <!-- END GENERATED changelog -->
