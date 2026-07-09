@@ -33,6 +33,8 @@ public import Bang.Frontend.TypeCheck
 
 open Bang
 
+namespace Bang.Diagnostics
+
 /-! ## 1. A tiny hand-rolled JSON string emitter.
 
 No JSON library in the tree (per the mission brief); diagnostics are a small, fixed shape, so a
@@ -188,3 +190,5 @@ guessed. -/
 -- `jsonStr`'s `\"` escaping.
 #guard checkJson "1, \"oops\"" ==
   "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"msg\":\"trailing tokens after expression: [,, \\\"oops\\\"]\",\"span\":{\"line\":1,\"col\":2,\"endLine\":1,\"endCol\":3}}]}"
+
+end Bang.Diagnostics
