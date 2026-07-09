@@ -564,6 +564,7 @@ def pIdent : P String
           || t = "do" || t = ";"
           || t = "trait" || t = "impl" || t = "for" || t = "fn" || t = "law" || t = "data" || t = "|"
           || t = "effect"
+          || t = "import" || t = "use" || t = "pub"
           || t = "as" || t = "." || t = "where"
           || t = "in" || t = "=" || t = "=>" || t = "->" || t = ","
           || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = ":" then
@@ -1288,10 +1289,46 @@ inductive Decl where
     -- the ADR; a later bite can generalize the same way `capOpSig`'s ≤2-arity does for built-ins).
   deriving Repr, Inhabited, DecidableEq
 
-/-- A whole program: the declaration prelude + the body expression (ADR-0068 decision 3). -/
+/-- A declaration's NAME, for `pub`-set membership and module qualification (ADR-0093 D2/D3/D4) —
+the single place that knows how to project a name out of every `Decl` variant, so the qualifier and
+the visibility checker share one source of truth rather than re-deriving it. -/
+def Decl.name : Decl → String
+  | .traitD n _ _ _   => n
+  | .implD n _ _      => n     -- an impl's "name" is its trait name (ADR-0093 doesn't export impls
+                                -- independently — `pub impl` is accepted but the trait/data it's FOR
+                                -- carries the real export surface; kept here only so `pub` parses
+                                -- uniformly across every decl keyword, per the ADR's decl-prefix grammar)
+  | .dataD n _ _       => n
+  | .fnD n _ _ _ _ _   => n
+  | .effectD n _       => n
+
+/-- One `import` line: `import tokenizer` — brings `tokenizer` into scope as a qualifier prefix
+(`tokenizer.lex`), no names hoisted unqualified. `modName` is the bare stem (no `.bang`, no path) —
+resolution (same-dir-then-root, ADR-0093 D1) is Main.lean's job, not the parser's. -/
+structure ImportDecl where
+  modName : String
+  deriving Repr, Inhabited, DecidableEq
+
+/-- One `use` line: `use tokenizer (lex, Token)` — hoists exactly the named decls of `tokenizer`
+into UNQUALIFIED scope (ADR-0093 D2; no glob form exists). `names` is the explicit list; a `data`
+name in `names` brings its constructors along (D2's "ctors travel with their type"). -/
+structure UseDecl where
+  modName : String
+  names   : List String
+  deriving Repr, Inhabited, DecidableEq
+
+/-- A whole program: the declaration prelude + the body expression (ADR-0068 decision 3), now with
+a file's `import`/`use` header (ADR-0093 D1/D2) and the set of decl-names marked `pub` (D3). `pubNames`
+is a flat set rather than a per-`Decl` field so every EXISTING `Decl` consumer (36 sites across
+TypeCheck/Format/Surface as of ADR-0093) stays byte-identical — visibility is a property of the
+PROGRAM's header, not the declaration's shape, matching how `pub` reads in source (a prefix token
+consumed before the ordinary decl parse, not a new decl variant). -/
 structure Prog where
-  decls : List Decl
-  body  : Surf
+  imports  : List ImportDecl := []
+  uses     : List UseDecl    := []
+  pubNames : List String     := []
+  decls    : List Decl
+  body     : Surf
   deriving Repr, Inhabited, DecidableEq
 
 /-- The comma-separated tail of a parameter list, up to and including `)`. -/
@@ -1472,26 +1509,103 @@ def pDecl : Nat → P Decl
   | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', or 'effect', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
-/-- The declaration prelude: zero or more decls (delimited by their leading keyword). -/
-def pDecls : Nat → P (List Decl)
+/-- Is `t` a decl-leading keyword (with or without a `pub` prefix already stripped)? Named once so
+`pDecls`'s lookahead and `pDecl`'s `pub`-arm dispatch a single shared list (ADR-0093 D3: `pub` is
+accepted before every decl keyword). -/
+def isDeclStart : String → Bool
+  | "trait" | "impl" | "data" | "fn" | "effect" => true
+  | _ => false
+
+/-- One declaration, `pub`-prefixable (ADR-0093 D3): `pub data …`, `pub fn …`, etc. mark the decl
+exported; the bare form (no `pub`) is module-private by default. Returns the parsed `Decl` alongside
+whether it was `pub` — `pDecls` folds that into `Prog.pubNames` by `Decl.name` so every existing
+`Decl` consumer stays untouched (see the `Prog.pubNames` doc comment). -/
+def pDeclPub : Nat → P (Decl × Bool)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, "pub" :: ts =>
+      if let some t := ts.head? then
+        if isDeclStart t then do let (d, ts) ← pDecl f ts; .ok ((d, true), ts)
+        else .error ⟨s!"expected a declaration after 'pub', got '{t}'", ts⟩
+      else .error "expected a declaration after 'pub', got end of input"
+  | f + 1, ts => do let (d, ts) ← pDecl f ts; .ok ((d, false), ts)
+
+/-- The declaration prelude: zero or more (optionally `pub`-prefixed) decls, delimited by their
+leading keyword. Returns the decls plus the accumulated `pub` name set. -/
+def pDecls : Nat → P (List Decl × List String)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
-    | "trait" :: _ | "impl" :: _ | "data" :: _ | "fn" :: _ | "effect" :: _ => do
-        let (d, ts) ← pDecl f ts
-        let (ds, ts) ← pDecls f ts
-        .ok (d :: ds, ts)
-    | _ => .ok ([], ts)
+    | "pub" :: _ => do
+        let ((d, isPub), ts) ← pDeclPub f ts
+        let ((ds, pubs), ts) ← pDecls f ts
+        .ok ((d :: ds, if isPub then d.name :: pubs else pubs), ts)
+    | t :: _ =>
+      if isDeclStart t then do
+        let ((d, isPub), ts) ← pDeclPub f ts
+        let ((ds, pubs), ts) ← pDecls f ts
+        .ok ((d :: ds, if isPub then d.name :: pubs else pubs), ts)
+      else .ok (([], []), ts)
+    | [] => .ok (([], []), ts)
 
-/-- Parse a whole PROGRAM: the `trait`/`impl` declaration prelude, then the body expression.
-Same fuel bound as `parse`; a plain expression parses identically (`decls = []`). -/
+/-- One `import name` line (ADR-0093 D1) — a bare module qualifier, no names hoisted. -/
+def pImport : P ImportDecl
+  | "import" :: ts => do let (n, ts) ← pIdent ts; .ok (⟨n⟩, ts)
+  | t :: r          => .error ⟨s!"expected 'import', got '{t}'", t :: r⟩
+  | []              => .error "expected 'import', got end of input"
+
+/-- The comma-separated name list of a `use mod (a, b, C)` line, up to and including `)`. -/
+def pUseNamesLoop : P (List String)
+  | ts => Id.run do
+      let rec go : Nat → List String → P (List String)
+        | 0,     _,  ts => .error ⟨"parser out of fuel", ts⟩
+        | f + 1, ts, cur => do
+            let (n, ts) ← pIdent ts
+            match ts with
+            | "," :: ts => go f ts (cur ++ [n])
+            | ")" :: ts => .ok (cur ++ [n], ts)
+            | t :: r    => .error ⟨s!"expected ',' or ')' in a `use` name list, got '{t}'", t :: r⟩
+            | []        => .error "unterminated `use` name list"
+      go (ts.length + 1) ts []
+
+/-- One `use name (a, b, C)` line (ADR-0093 D2) — hoists exactly the named decls of module `name`
+into unqualified scope. -/
+def pUse : P UseDecl
+  | "use" :: ts => do
+      let (n, ts) ← pIdent ts
+      let (_, ts) ← expect "(" ts
+      let (names, ts) ← pUseNamesLoop ts
+      .ok (⟨n, names⟩, ts)
+  | t :: r => .error ⟨s!"expected 'use', got '{t}'", t :: r⟩
+  | []     => .error "expected 'use', got end of input"
+
+/-- The file HEADER: zero or more `import`/`use` lines, in any order, before the decl prelude
+(ADR-0093 D1/D2). Structural on the leading token — stops at the first token that is neither. -/
+def pHeader : Nat → P (List ImportDecl × List UseDecl)
+  | 0,     _  => .error "parser out of fuel"
+  | f + 1, "import" :: ts => do
+      let (imp, ts) ← pImport ("import" :: ts)
+      let ((imps, uses), ts) ← pHeader f ts
+      .ok ((imp :: imps, uses), ts)
+  | f + 1, "use" :: ts => do
+      let (u, ts) ← pUse ("use" :: ts)
+      let ((imps, uses), ts) ← pHeader f ts
+      .ok ((imps, u :: uses), ts)
+  | _ + 1, ts => .ok (([], []), ts)
+
+/-- Parse a whole PROGRAM: the `import`/`use` header (ADR-0093 D1/D2), the `pub`-prefixable decl
+prelude, then EITHER a body expression (script mode, unchanged corpus) OR nothing (library mode —
+a decls-only file, e.g. a module meant only to be imported, D5). Same fuel bound as `parse`; a
+plain expression still parses identically (`decls = []`, `body` present). -/
 def parseProgE (src : String) : Except PErr Prog := do
   let toks := tokenize src
   let fuel := toks.length * 6 + 1
-  let (ds, ts) ← pDecls fuel toks
-  let (e, rest) ← pExpr fuel ts
-  if rest.isEmpty then .ok ⟨ds, e⟩
-  else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
+  let ((imps, uses), ts) ← pHeader fuel toks
+  let ((ds, pubs), ts) ← pDecls fuel ts
+  if ts.isEmpty then .ok ⟨imps, uses, pubs, ds, .lit 0⟩    -- library mode: no trailing expr (D5)
+  else
+    let (e, rest) ← pExpr fuel ts
+    if rest.isEmpty then .ok ⟨imps, uses, pubs, ds, e⟩
+    else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
 
 def parseProg (src : String) : Except String Prog := (parseProgE src).mapError (·.msg)
 
@@ -2080,30 +2194,69 @@ def progParsesTo (src : String) (p : Prog) : Bool :=
 -- a trait with an op signature and a law parses to its decl form (the law body is an EQUATION
 -- over the op, via `==` — Bool-valued, per ADR-0068's v1 law-body scope).
 #guard progParsesTo "trait Add { fn add(a, b) -> Int ; law comm(a, b): add a b == add b a } 0"
-  ⟨[.traitD "Add" [] [⟨"add", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩]
+  { decls := [.traitD "Add" [] [⟨"add", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩]
       [⟨"comm", ["a", "b"],
         .binopS .eq (.app (.app (.var "add") (.var "a")) (.var "b"))
                     (.app (.app (.var "add") (.var "b")) (.var "a"))⟩]],
-   .lit 0⟩
+    body := .lit 0 }
 -- an impl for a STRUCTURAL target type (ADR-0068 decision 2): the target is a `pTy`.
 #guard progParsesTo "impl Add for (Int * Int) { fn add(p, q) = p } 0"
-  ⟨[.implD "Add" (.tProd .tInt .tInt) [⟨"add", ["p", "q"], .var "p"⟩]], .lit 0⟩
+  { decls := [.implD "Add" (.tProd .tInt .tInt) [⟨"add", ["p", "q"], .var "p"⟩]], body := .lit 0 }
 -- member separators are optional (keywords delimit): two ops, no semicolon.
 #guard progParsesTo "trait Ord { fn le(a, b) -> Int fn eq(a, b) -> Int } 0"
-  ⟨[.traitD "Ord" [] [⟨"le", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩,
-                      ⟨"eq", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩] []], .lit 0⟩
+  { decls := [.traitD "Ord" [] [⟨"le", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩,
+                      ⟨"eq", ["a", "b"], .tInt, .tArr .tSelf (.tArr .tSelf .tInt)⟩] []], body := .lit 0 }
 -- the northstar program SHAPE parses end-to-end: trait + impl + a pair-addition body.
 #guard (match parseProg "trait Add { fn add(a, b) -> Int } impl Add for (Int * Int) { fn add(p, q) = p } (1, 2) + (3, 4)" with
         | .ok p => p.decls.length == 2
         | .error _ => false)
 -- with NO decls, `parseProg` agrees with `parse` — the untyped path is untouched.
 #guard (match parseProg "let x = 3 in x + 1", parse "let x = 3 in x + 1" with
-        | .ok p, .ok e => decide (p = ⟨[], e⟩)
+        | .ok p, .ok e => decide (p = { decls := [], body := e })
         | _, _ => false)
 -- the new keywords are RESERVED: using one as a binder fails loud.
 #guard (match parseProg "let fn = 3 in fn" with | .error _ => true | _ => false)
 -- a malformed trait body fails loud (an expression where 'fn'/'law'/'}' was expected).
 #guard (match parseProg "trait Add { 3 } 0" with | .error _ => true | _ => false)
+
+/-! ### Stage ⑥ — modules: `import`/`use`/`pub` (ADR-0093 D1/D2/D3). Pure syntax here — resolution
+(reading another file, name-qualification, visibility ENFORCEMENT) is the elaborator/CLI's job
+(`TypeCheck.lean`/`Main.lean`); this stage only proves the header + `pub` prefix parse to the right
+`Prog` shape. -/
+
+-- a bare `import` line: qualifier-only, no names hoisted.
+#guard progParsesTo "import tokenizer 0"
+  { imports := [⟨"tokenizer"⟩], decls := [], body := .lit 0 }
+-- a `use` line: the explicit name list, ctor-carrying names included verbatim (D2 — ctors travel
+-- with their type is a RESOLUTION-time fact, not visible in the parsed `UseDecl` itself).
+#guard progParsesTo "use tokenizer (lex, Token) 0"
+  { uses := [⟨"tokenizer", ["lex", "Token"]⟩], decls := [], body := .lit 0 }
+-- both header forms compose, any order, before the decl prelude.
+#guard progParsesTo "import a use b (c) import d 0"
+  { imports := [⟨"a"⟩, ⟨"d"⟩], uses := [⟨"b", ["c"]⟩], decls := [], body := .lit 0 }
+-- `pub` prefixes every decl keyword and is recorded in `pubNames`; a bare (non-`pub`) decl is NOT.
+#guard progParsesTo "pub data Json = JNull data Hidden = HNull 0"
+  { pubNames := ["Json"],
+    decls := [.dataD "Json" [] [("JNull", [])], .dataD "Hidden" [] [("HNull", [])]],
+    body := .lit 0 }
+#guard progParsesTo "pub fn id(x) : Int where Eq a = x data Hidden = HNull 0"
+  { pubNames := ["id"],
+    decls := [.fnD "id" ["x"] .tInt "Eq" "a" (.var "x"), .dataD "Hidden" [] [("HNull", [])]],
+    body := .lit 0 }
+-- a DECLS-ONLY file (no trailing expression) parses to library mode — D5's third case. The
+-- placeholder body is `.lit 0` (unobservable — a library file is never itself RUN as a script;
+-- `Main.lean`'s entry-mode detection, not this parser, decides what "no body" MEANS operationally).
+#guard progParsesTo "data Json = JNull"
+  { decls := [.dataD "Json" [] [("JNull", [])]], body := .lit 0 }
+-- `import`/`use`/`pub` are RESERVED: using one as a binder fails loud (ADR-0046, matching the
+-- existing `let fn = …` reservation guard above).
+#guard (match parseProg "let import = 3 in import" with | .error _ => true | _ => false)
+#guard (match parseProg "let use = 3 in use" with | .error _ => true | _ => false)
+#guard (match parseProg "let pub = 3 in pub" with | .error _ => true | _ => false)
+-- `pub` before a non-decl keyword fails loud (naming what followed, not a silent no-op).
+#guard (match parseProg "pub let x = 3 in x" with | .error _ => true | _ => false)
+-- `use` missing its name-list parens fails loud, not a silent partial parse.
+#guard (match parseProg "use tokenizer 0" with | .error _ => true | _ => false)
 
 end -- public section
 end Bang.Surface
