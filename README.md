@@ -43,9 +43,30 @@ ROADMAP.md               long-term map of checkpoints (◊1 → ◊6)
 CONTEXT.md               volatile current position on the map
 ```
 
+## Install
+
+**Download a prebuilt binary** (x86_64 Linux — no Nix, no Lean, no build):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/phibkro/bang/main/tools/install.sh | sh
+bang eval "1 + 2"
+# → 3
+```
+
+This grabs the latest [GitHub Release](https://github.com/phibkro/bang/releases)
+binary and drops it in `~/.local/bin`. The binary is native and links only glibc
++ libgcc_s, so any mainstream glibc-based Linux runs it (no runtime dependencies to
+install).
+
+> **Releases start at the first version tag.** Until one is cut there is nothing to
+> download — use the build-from-source path below. Only x86_64 Linux has a prebuilt
+> binary today (a darwin build is a planned follow-up); on any other platform the
+> installer errors out and points you here.
+
 ## Run a bang program
 
-You need [Nix](https://nixos.org/download) with flakes enabled — nothing else
+To build from source (contributors, other platforms, or before the first release),
+you need [Nix](https://nixos.org/download) with flakes enabled — nothing else
 (no Lean, no elan; the dev shell brings the exact toolchain). Copy-paste, from a
 fresh checkout:
 

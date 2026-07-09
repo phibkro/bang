@@ -63,7 +63,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 
-## workflow (6)
+## workflow (7)
 
 _Workflow — bootstrap / orientation / dev-loop helpers; not a gate._
 
@@ -72,6 +72,15 @@ _Workflow — bootstrap / orientation / dev-loop helpers; not a gate._
 | [`eval.sh`](eval.sh) | `manual` | `Bang/Audit.lean` | submit a Lean snippet, get its elaborator output |
 | [`hooks/session-start.sh`](hooks/session-start.sh) | `hook` | `orient.sh` | SessionStart hook — print orient so the agent lands oriented |
 | [`install-hooks.sh`](install-hooks.sh) | `manual` | `git-hooks/pre-commit` | link tracked git hooks into .git/hooks/ |
+| [`install.sh`](install.sh) | `manual` | `.github/workflows/release.yml` | the curl-able installer for the `bang` binary. Detects the platform, |
 | [`new-worktree.sh`](new-worktree.sh) | `manual` | — | the ONE blessed way to spawn an isolated IC checkout (#40b) |
 | [`orient.sh`](orient.sh) | `manual` | `burndown.sh`, `paths/PATH-*.md`, `CONTEXT.md` | one-shot orient for fresh sessions |
 | [`setup.sh`](setup.sh) | `manual` | `install-hooks.sh` | first-time bootstrap for a fresh clone |
+
+## lane (1)
+
+_Lane scripts — one-off orchestration helpers._
+
+| script | runs-in | couples-with | purpose |
+|---|---|---|---|
+| [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
