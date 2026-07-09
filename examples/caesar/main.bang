@@ -27,18 +27,16 @@ let decode = {fun k => fun s => $caesar (26 - k) s}
 let roundtrips = {fun k => fun s => $eq ($decode k ($encode k s)) s}
 let bitStr = {fun r => match r { Left(u) -> "0", Right(u) -> "1" }}
 
+-- main's body: six independent, sequential value bindings feeding one final concat — exactly
+-- the shape issue #68's multi-binding let sugar targets (each binding only reads earlier ones,
+-- none needs its own scope boundary). One `let` block instead of six nested `let..in`s.
 let main =
-  let enc1 = $encode 3 "Hello, World"
-  in
-  let enc2 = $encode 13 "The quick brown Fox"
-  in
-  let enc3 = $encode 5 "Bang cipher"
-  in
-  let rt1 = $bitStr ($roundtrips 3 "Hello, World")
-  in
-  let rt2 = $bitStr ($roundtrips 13 "The quick brown Fox")
-  in
-  let rt3 = $bitStr ($roundtrips 5 "Bang cipher")
+  let enc1 = $encode 3 "Hello, World";
+      enc2 = $encode 13 "The quick brown Fox";
+      enc3 = $encode 5 "Bang cipher";
+      rt1 = $bitStr ($roundtrips 3 "Hello, World");
+      rt2 = $bitStr ($roundtrips 13 "The quick brown Fox");
+      rt3 = $bitStr ($roundtrips 5 "Bang cipher")
   in
   $concat "enc1=" ($concat enc1
   ($concat " enc2=" ($concat enc2

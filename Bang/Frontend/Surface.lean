@@ -741,8 +741,10 @@ structure Rule where
 
 /-- The reified keyword rules (ADR-0071 ②). Keyed on the leading keyword; `pExpr`'s fallthrough
 consults this table. Each `build` produces the EXACT `Surf` the retired bespoke arm produced, so the
-`parsesTo` corpus is preserved. `let` here is the `let x = e in b` form; the `let (a,b) = …` product
-elimination shares the keyword but is a different construct and stays a bespoke `pExpr` arm. -/
+`parsesTo` corpus is preserved. `let` is NOT here (issue #68): the multi-binding sugar (`let x = e1;
+y = e2 in body`) needs a repeated-group grammar the fixed linear `Choice` sequence can't express, so
+`let` — like `let (a,b) = …`, `let rec`, `match`, `do` — is a bespoke `pExpr` arm instead (its `n=1`
+case, no `;`, subsumes the old single-binding form this table used to carry). -/
 def keywordRule : String → Option Rule
   | "if"         => some ⟨[.kw "if", .refE, .kw "then", .refE, .kw "else", .refE],
       fun | [.expr c, .expr t, .expr e] => .ok (.ifS c t e) | _ => .error "if: rule arity"⟩
@@ -766,8 +768,6 @@ def keywordRule : String → Option Rule
           | _ => .error "state: rule arity"⟩
   | "fun"        => some ⟨[.kw "fun", .refI, .kw "=>", .refE],
       fun | [.name x, .expr b] => .ok (.lam x b) | _ => .error "fun: rule arity"⟩
-  | "let"        => some ⟨[.kw "let", .refI, .kw "=", .refE, .kw "in", .refE],
-      fun | [.name x, .expr e1, .expr e2] => .ok (.lett x e1 e2) | _ => .error "let: rule arity"⟩
   | _            => none
 
 mutual
@@ -797,6 +797,24 @@ def pExpr : Nat → P Surf
       let (_, ts) ← expect "in" ts
       let (body, ts) ← pExpr f ts
       .ok (.letRecS name t e body, ts)
+  -- MULTI-BINDING LET SUGAR (issue #68): `let x = e1; y = e2 in body` desugars to the IDENTICAL
+  -- nested `.lett` chain a hand-written `let x = e1 in let y = e2 in body` already produces — NO
+  -- new `Surf` constructor, elaborate-away, sequential scoping (each binding sees the earlier
+  -- ones; this is NOT Haskell's mutually-recursive let-block — bang's plain `let` stays
+  -- non-recursive by convention, `let rec` is the only recursion marker, so sequential is the
+  -- consistent reading). A BESPOKE arm (not `keywordRule`, whose `Rule`/`Choice` grammar is a
+  -- FIXED linear sequence — it cannot express "0-or-more repeated group"), matching how `let (a,b)`/
+  -- `let rec`/`match`/`do` already sit outside that table for the same reason. `n=1` binding (no
+  -- `;`) is the base case of the same loop, so this ALSO retires `keywordRule`'s old single-binding
+  -- `"let"` entry (ADR-0071 ②) — one construct, not two mechanisms for the same shape.
+  | f + 1, "let" :: ts => do
+      let (name, ts) ← pIdent ts
+      let (_, ts) ← expect "=" ts
+      let (e, ts) ← pExpr f ts
+      let (bindings, ts) ← pLetBindings f ts
+      let (_, ts) ← expect "in" ts
+      let (body, ts) ← pExpr f ts
+      .ok (((name, e) :: bindings).foldr (fun (n, e') acc => .lett n e' acc) body, ts)
   | f + 1, "match" :: ts => do           -- match s { arms } — anonymous sums (Left/Right → matchS)
       let (s, ts) ← pAtom f ts            -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
       let (_, ts) ← expect "{" ts
@@ -823,6 +841,20 @@ def pExpr : Nat → P Surf
           | some r => pRuleDrive f r.build r.choices [] ts
           | none   => pOp 0 f ts
       | []       => pOp 0 f ts
+
+/-- The REPEATED tail of the multi-binding `let` sugar (issue #68): while the next token is `;`,
+consume it and parse one more `<ident> = <expr>` binding, accumulating in ORDER (later `foldr` in
+the caller nests them correctly — see `pExpr`'s `let` arm). Stops (returns `[]`, `ts` unchanged) at
+anything else — the caller's own `expect "in"` reports the right error if that's not actually `in`. -/
+def pLetBindings : Nat → P (List (String × Surf))
+  | 0,     _ => .error "parser out of fuel"
+  | f + 1, ";" :: ts => do
+      let (name, ts) ← pIdent ts
+      let (_, ts) ← expect "=" ts
+      let (e, ts) ← pExpr f ts
+      let (rest, ts) ← pLetBindings f ts
+      .ok ((name, e) :: rest, ts)
+  | _ + 1, ts => .ok ([], ts)
 
 /-- ONE Pratt binding-power loop over the reified operator table `opInfo` (ADR-0071 ①), replacing
 the fixed `=>`/`<`·`==`/`+`·`-`/`*`·`/` precedence chain. `minBP` is the incoming binding power: an
@@ -1626,7 +1658,14 @@ Implemented by actually parsing the `let`/`let rec` HEAD (name, optional `: Ty`,
 that token: `in` ⟹ script mode (`none`, `pDecls` must NOT consume this — the caller re-parses the
 SAME prefix as the trailing body via `pExpr`), anything else ⟹ a genuine decl (`some`, cheaply
 re-derived by `pDecl` immediately after — reparsing here is simpler and no more costly than a
-backtracking combinator would be, since `pExpr`'s work is O(expr length) either way). -/
+backtracking combinator would be, since `pExpr`'s work is O(expr length) either way).
+
+`;` is ALSO script-mode (issue #68's multi-binding sugar): a top-level decl never has a `;`-
+separated binding LIST — that shape only exists inside `let x = e1; y = e2 in body`'s expression
+form — so `;` right after the first binding's RHS is exactly as decisive as `in` would be; a decl
+lookahead never needs to walk the WHOLE binding chain, only distinguish "more script-mode follows"
+from "this is a genuine decl". `let rec` has NO multi-binding form (only plain `let` does — #68's
+own scope), so its arm is unchanged. -/
 def isLetDecl (fuel : Nat) (ts : List String) : Bool :=
   match ts with
   | "let" :: "rec" :: nts => Id.run <| do
@@ -1656,7 +1695,7 @@ def isLetDecl (fuel : Nat) (ts : List String) : Bool :=
           | .error _ => pure false
           | .ok (_, nts) => match pExpr fuel nts with
             | .error _ => pure false
-            | .ok (_, rest) => pure (rest.head? != some "in")
+            | .ok (_, rest) => pure (rest.head? != some "in" && rest.head? != some ";")
   | _ => false
 
 /-- One declaration, `pub`-prefixable (ADR-0093 D3): `pub data …`, `pub fn …`, etc. mark the decl
@@ -2204,6 +2243,22 @@ def parsesTo (src : String) (e : Surf) : Bool :=
   | .error _ => false
 
 #guard parsesTo "let x = 3 in x" (.lett "x" (.lit 3) (.var "x"))
+-- MULTI-BINDING LET SUGAR (issue #68): `let x = e1; y = e2 in body` desugars to the IDENTICAL
+-- nested `.lett` chain a hand-written `let x = e1 in let y = e2 in body` produces — tree-checked,
+-- not just parse-success, so a future regression that silently changes the nesting order (or
+-- picks a DIFFERENT desugaring, e.g. a new AST node) is caught here.
+#guard parsesTo "let x = 3; y = 4 in x + y" (.lett "x" (.lit 3) (.lett "y" (.lit 4) (.binopS .add (.var "x") (.var "y"))))
+#guard parsesTo "let a = 1; b = 2; c = 3 in a" (.lett "a" (.lit 1) (.lett "b" (.lit 2) (.lett "c" (.lit 3) (.var "a"))))
+-- the n=1 case (no `;`) parses to the SAME tree the plain single-binding form always has —
+-- confirms the sugar's base case did not accidentally change existing behavior.
+#guard runYieldsInt 20 "let x = 3; y = 4 in x + y" 7
+#guard runYieldsInt 20 "let x = 3 in x" 3
+-- SEQUENTIAL SCOPING (the ruling's semantics, not Haskell's mutually-recursive let-block): a LATER
+-- binding sees an EARLIER one; an earlier binding can NEVER see a later one (there is no such
+-- binding to shadow yet — this would be an unbound-variable error if attempted, matching ordinary
+-- `let` nesting order).
+#guard runYieldsInt 20 "let x = 3; y = x + 1 in y" 4
+#guard runYieldsInt 20 "let a = 1; b = 2; c = a + b in c" 3
 #guard parsesTo "handle (raise 7)" (.handle (.raise (.lit 7)))
 #guard parsesTo "state 0 in (let z = put 7 in get)"
   (.stateS (.lit 0) (.lett "z" (.putS (.lit 7)) .getS))
@@ -2472,6 +2527,16 @@ trailing `in` (`isLetDecl`'s deterministic lookahead). -/
 -- the disambiguator must not touch the existing corpus) — `let x = 3 in x + 1` still parses as a
 -- decl-free program whose body is that whole `let … in …` expression, byte-identical to before.
 #guard (match parseProg "let x = 3 in x + 1", parse "let x = 3 in x + 1" with
+        | .ok p, .ok e => decide (p = { decls := [], body := e })
+        | _, _ => false)
+-- MULTI-BINDING SUGAR (issue #68) at TOP LEVEL: `isLetDecl`'s D5 lookahead must recognize `;`
+-- (not just `in`) as "still script-mode" — a decl NEVER has a `;`-separated binding chain (that
+-- shape only exists inside the `let … in …` EXPRESSION form), so `;` right after the first
+-- binding's RHS is exactly as decisive as `in` would be. Without this, a top-level program using
+-- the sugar would be MISJUDGED as a decl (since `;` != "in"), leaving the file's OWN body
+-- unconsumed and reporting library-mode nothing-to-run — this guard is the regression for that
+-- exact misjudgment.
+#guard (match parseProg "let x = 3; y = 4 in x + y", parse "let x = 3; y = 4 in x + y" with
         | .ok p, .ok e => decide (p = { decls := [], body := e })
         | _, _ => false)
 -- a decls-ONLY file using a plain `let` (library mode, D5's third case, no trailing body at all).
