@@ -1,0 +1,41 @@
+let rec shiftCode : Int -> Int -> Int = fun k => fun n =>
+  if 64 < n then if n < 91
+    then (n - 65 + k) - (n - 65 + k) / 26 * 26 + 65
+    else if 96 < n then if n < 123
+      then (n - 97 + k) - (n - 97 + k) / 26 * 26 + 97
+      else n
+    else n
+  else n
+in
+let rec caesar : Int -> Str -> Str = fun k => fun s =>
+  match (s : Str) {
+    SNil -> SNil,
+    SCons(c, rest) -> match c { Char(n) -> SCons(Char ($shiftCode k n), ($caesar k rest)) }
+  }
+in
+let encode = {fun k => fun s => $caesar k s}
+in
+let decode = {fun k => fun s => $caesar (26 - k) s}
+in
+let roundtrips = {fun k => fun s => $eq ($decode k ($encode k s)) s}
+in
+let bitStr = {fun r => match r { Left(u) -> "0", Right(u) -> "1" }}
+in
+let enc1 = $encode 3 "Hello, World"
+in
+let enc2 = $encode 13 "The quick brown Fox"
+in
+let enc3 = $encode 5 "Bang cipher"
+in
+let rt1 = $bitStr ($roundtrips 3 "Hello, World")
+in
+let rt2 = $bitStr ($roundtrips 13 "The quick brown Fox")
+in
+let rt3 = $bitStr ($roundtrips 5 "Bang cipher")
+in
+$concat "enc1=" ($concat enc1
+($concat " enc2=" ($concat enc2
+($concat " enc3=" ($concat enc3
+($concat " rt1=" ($concat rt1
+($concat " rt2=" ($concat rt2
+($concat " rt3=" rt3))))))))))
