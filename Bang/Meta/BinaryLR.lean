@@ -1127,9 +1127,15 @@ theorem dispatchOn_append_outer (n : Nat) (op : OpId) (v : Val) (Kᵢ : Stack) (
           cases v <;>
             (simp only [] at hd ⊢; obtain rfl := (Option.some.injEq _ _).mp hd.symm;
              simp [List.append_assoc])
-  | custom _ _ _ =>
-      -- custom's `dispatchOn` is `none` (ADR-0085 stage 1), so the hypothesis `hd : … = some cfg` is absurd.
-      simp [dispatchOn] at hd
+  | custom ℓ' p cl =>
+      -- custom (ADR-0085 stage 2, ADR-0087 finite rep): ONE-SHOT resume reinstalls over `Kᵢ ++ custom :: Kₒ`,
+      -- the SAME append shape as state/txn — appending `T` to the outer stack commutes with the reinstall.
+      simp only [dispatchOn] at hd ⊢
+      cases hcl : cl.find? (·.1 == op) with
+      | none => simp only [hcl, reduceCtorEq] at hd
+      | some clause =>
+          simp only [hcl] at hd ⊢
+          obtain rfl := (Option.some.injEq _ _).mp hd.symm; simp [List.append_assoc]
 
 /-- ◊4.5b-strengthen the krel-carrying resume CONCLUSION → `CoApproxC_le`. The strengthened handleF
 resume conjunct concludes a DECOMPOSITION `cfgⱼ = (Sᵢ, ret rⱼ)` with `r₁~r₂` (VrelK) + `Sᵢ~Sᵢ'` (KrelS

@@ -24,13 +24,14 @@ def cTrivial : Comp := .handle (Handler.custom 0 .vunit []) (.ret (.vint 5))
 example : Source.eval 50 cTrivial = Result.done (.vint 5) := by rfl
 example : Wasmfx.run 100 (compileC cTrivial) = Result.done (.int 5) := by rfl
 
-/-- (B) custom handle, body PERFORMS a custom op: the kernel does NOT reach done — custom dispatch is
-INERT (handlesOp custom = false ⇒ idDispatch none ⇒ the perform ESCAPES). So the frozen headline's
-HYPOTHESIS `Source.eval = done` is FALSE ⇒ the implication is VACUOUS, not violated. -/
+/-- (B) custom handle, body PERFORMS a custom op: with STAGE-2 dispatch REAL (ADR-0087), the `myop` clause
+services the op and RESUMES — the perform (the whole body) resolves to the clause result `7`, so
+`Source.eval = done 7`. (Stage-1 this ESCAPED — `handlesOp custom = false`; the finite rep + real dispatch
+is exactly what changed. Kept as the Stage-1→Stage-2 behaviour-shift witness.) -/
 def cPerform : Comp :=
   .handle (Handler.custom 0 .vunit [("myop", .ret (.vint 7))])
     (.perform (.vvar 0) "myop" .vunit)
-example : Source.eval 50 cPerform = Result.escapedCap := by rfl
+example : Source.eval 50 cPerform = Result.done (.vint 7) := by rfl
 
 end Bang.CustomStage1Refute
 

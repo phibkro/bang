@@ -477,7 +477,7 @@ def renameH (σ : Nat → Nat) : Handler → Handler
   | .state ℓ s  => .state ℓ (renameV σ s)
   | .throws ℓ   => .throws ℓ
   | .transaction ℓ Θ => .transaction ℓ (Θ.map (renameV σ))
-  | .custom ℓ p cl => .custom ℓ p cl    -- ADR-0085 stage 1: identity (param/clauses treated closed, like subst)
+  | .custom ℓ p cl => .custom ℓ p cl    -- ADR-0087: identity on custom (param/clauses closed in reachable configs, like shift/subst)
 end
 
 def renameF (σ : Nat → Nat) : Frame → Frame
@@ -779,8 +779,16 @@ theorem dispatchOn_rename (σ : Nat → Nat) (n : Nat) (op : OpId) (v : Val)
             if_neg hnew, if_neg hread, Option.map_some, renameK_append, renameK_cons,
             renameF_handleF, renameH_transaction, renameC_ret, tvarIdx_renameV, storeSet_map]
   | custom ℓ p cl =>
-    -- custom's `dispatchOn` is `none` (ADR-0085 stage 1, inert); renaming maps `none` to `none`.
-    simp only [renameH_custom, dispatchOn, Option.map_none]
+    -- ADR-0087 rung-2 NAMED RESIDUAL (off the clean census — `dispatchOn_rename` feeds ONLY the binary-LR
+    -- `lr_sound`, ALREADY in the flagged-7 sorryAx set; this adds NO new flagged headline). dispatchOn is
+    -- now a REAL resume, but `renameH` is IDENTITY on custom (kept identity to avoid the whole rename mutual
+    -- block going well-founded — the nested-inductive `List (OpId × Comp)` termination cascade, twin of
+    -- `capsCls`). The commutation holds when the clause/param are vcap-FREE (renameC/renameV = id on them),
+    -- which every elaborated custom clause IS — but threading that VcapFree-clause side condition (or making
+    -- renameH traverse + a `renameCls` structural helper) is deferred with the LR re-index (#15, PATH-inc5).
+    cases hcl : cl.find? (·.1 == op) with
+    | none => simp only [renameH_custom, dispatchOn, hcl, Option.map_none]
+    | some clause => sorry
 
 /-- **`idDispatch` commutes with an injective renaming.** -/
 theorem idDispatch_rename (σ : Nat → Nat) (hσ : Function.Injective σ)

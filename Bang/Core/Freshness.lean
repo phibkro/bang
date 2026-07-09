@@ -91,6 +91,23 @@ def capsCls : List (OpId × Comp) → List (Nat × Label)
     · simp_wf; omega
 end
 
+/-- Every cap of a clause `c ∈ cls` is a cap of the whole clause list (ADR-0087: the enumerability that
+dissolves the clause-cap blocker — the gh44s2 `sorry` on `q ∈ capsC clause` closes through this). -/
+theorem capsCls_mem {cls : List (OpId × Comp)} {c : OpId × Comp} (hc : c ∈ cls) :
+    ∀ q ∈ capsC c.2, q ∈ capsCls cls := by
+  induction cls with
+  | nil => simp at hc
+  | cons hd rest ih =>
+    intro q hq
+    rcases List.mem_cons.mp hc with h' | h'
+    · subst h'; exact (by simp only [capsCls]; exact List.mem_append_left _ hq)
+    · exact (by simp only [capsCls]; exact List.mem_append_right _ (ih h' q hq))
+
+/-- A `find?`-matched clause's caps land in `capsCls` (the honest custom `capsH` bounds them). -/
+theorem capsCls_find? {cls : List (OpId × Comp)} {op : OpId} {c : OpId × Comp}
+    (hf : cls.find? (·.1 == op) = some c) : ∀ q ∈ capsC c.2, q ∈ capsCls cls :=
+  capsCls_mem (List.mem_of_find?_eq_some hf)
+
 def capsK : EvalCtx → List (Nat × Label)
   | []                  => []
   | .letF N :: K        => capsC N ++ capsK K
@@ -506,9 +523,28 @@ theorem freshStack_idDispatch {g : Nat} {K K' : EvalCtx} {n : Nat} {ℓ : Label}
             | (rcases capsV_set_mem hp with h' | h'                            -- `writeTVar`: set cell
                · exact hch p h'
                · exact hv p (by simp only [capsV, List.mem_append] at h' ⊢; tauto))
-    | custom ℓ' p cl =>
-      -- custom services nothing (ADR-0085 stage 1): `handlesOp (.custom …) = false` contradicts `hk`.
-      exact absurd hk (by simp [handlesOp])
+    | custom ℓ' pm cl =>
+      -- custom (ADR-0085 stage 2, ADR-0087 finite rep): ONE-SHOT resume (read-only param). Mirrors `state`
+      -- — the reassembled stack + the param/arg/CLAUSE focus caps stay `< g`. THE D2 PAYOFF: the resume
+      -- focus is the substituted user CLAUSE, whose OWN literal caps ARE now bounded — `capsH custom =
+      -- capsV pm ++ capsCls cl` enumerates them, so the gh44s2 clause-cap `sorry` closes via `capsCls_find?`
+      -- + `hch` (the enumerability the finite rep buys). No new premise, unlike the ADR-0085 threaded route.
+      have hch : ∀ q ∈ capsH (Handler.custom ℓ' pm cl), q.1 < g := hckh
+      simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hk
+      obtain ⟨_, hsome⟩ := hk
+      obtain ⟨clause, hcl⟩ := Option.isSome_iff_exists.mp hsome
+      simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
+      obtain ⟨rfl, rfl⟩ := hd2
+      refine ⟨capsBelow_handler_irrel (hrec ▸ hcb), ?_,
+        stratFresh_handler_irrel (hrec ▸ hsf), hreassemble_capsK _ ?_⟩
+      · intro q hq
+        rcases capsC_substFrom 0 pm _ q hq with h' | h'
+        · rcases capsC_substFrom 0 (Val.shift v) clause.2 q h' with h'' | h''
+          · -- q ∈ capsC clause.2: the clause's OWN literal caps, now bounded (ADR-0087 enumerability).
+            exact hch q (by simp only [capsH]; exact List.mem_append_right _ (capsCls_find? hcl q h''))
+          · rw [capsV_shiftFrom] at h''; exact hv q h''
+        · exact hch q (by simp only [capsH]; exact List.mem_append_left _ h')
+      · intro q hq; simp only [capsH] at hq; exact hch q (by simp only [capsH]; exact hq)
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
 
 /-- The `Bool=1+1` encoding (ADR-0065) is closed: it carries no capabilities. -/
