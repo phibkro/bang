@@ -96,6 +96,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **witness** — LawTest law runner over source-generated samples (#60 slice 2) (`61d6a1e`)
 - **release** — tag-triggered binary-release workflow + strip/smoke recipe (`92772c3`)
 - **release** — curl-able install.sh + README distribution section (`30d308a`)
+- **witness** — LawTest discovery entry over lawInstancesOf (#60 slice 3) (`1918903`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
