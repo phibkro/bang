@@ -25,7 +25,7 @@ orient:
 # Default verify gate — selfcheck + build + example-run oracle + REPL transcripts
 # + audit. `audit` now runs the full `just fitness` bundle (#114), which already
 # includes the ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
-verify: selfcheck build check-examples test-repl test-fmt audit
+verify: selfcheck build check-examples test-repl test-fmt test-check-json audit
 
 # Run every examples/<project>/main.bang and diff stdout against expected.txt —
 # the end-to-end run oracle for whole bang programs (supersedes per-example
@@ -49,8 +49,7 @@ test-fmt:
 # ok:true/false via file+stdin · human vs --json rendering · the 0/1/2 exit
 # contract (ok / diagnostics / tool-error) · jq-parseability. The schema's
 # byte-exactness is gated separately by Bang/Frontend/Diagnostics.lean's
-# #guards; this gates the CLI surface. NOT wired into the default `verify`
-# chain (composed explicitly where needed).
+# #guards; this gates the CLI surface. Part of the default `verify` chain.
 test-check-json:
     bash tools/test-check-json.sh
 
