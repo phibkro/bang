@@ -2805,6 +2805,342 @@ def injectStdlib (declared : List String) (body : Surf) : Except String Surf := 
     return body
   wrapFnSrcs stdlibFnSrcs body
 
+/-! ## Modules (ADR-0093 D2/D3/D4) — merge-to-flat, PURE half.
+
+File resolution (reading `tokenizer.bang` off disk, same-dir-then-root, cycle detection across the
+FILE graph) is `Main.lean`'s job (IO). Everything HERE is a pure function over already-parsed
+`Prog`s: qualification + visibility + decl-merge, producing ONE flat `Prog` that `elabProg`/
+`buildEnv` consume completely unchanged (D4 — "the kernel never learns modules exist", the fourth
+elaborate-away application after ADR-0075/0088/0091). -/
+
+/-- Qualify one module's identifier: `modname_name` (an ordinary identifier — no new token/AST
+node). `_` needs no tokenizer change (already a legal identifier char, nothing in `tokenize`
+splits on it), unlike `modname.name` which would collide with the LIVE `.dotPerform` token. -/
+def qualifyName (modName name : String) : String := s!"{modName}_{name}"
+
+/-- The full set of a module's TOP-LEVEL names that qualification must rename: every decl's own
+name, PLUS (for a `data` decl) its constructors — D2's "ctors travel with their type". Function
+PARAMETER names are never in this set (they're bound locally; renaming only exact `.var` LEAVES —
+never a binder — is safe precisely because a binder can only ever SHADOW a top-level name, never
+BE renamed by this pass, so shadowing behaves exactly as it does today). -/
+def moduleTopNames (decls : List Decl) : List String :=
+  decls.flatMap (fun d => match d with
+    | .dataD n _ cs => n :: cs.map (·.1)
+    | _             => [d.name])
+
+/-! Rename every FREE occurrence of a name in `names` to `qualifyName modName ·`, everywhere in a
+`Surf` — an AST walk (not a token/reprint round-trip, so it needs no `Format` dependency and cannot
+silently miss a constructor: every `Surf`/`SurfArgs`/`DArms` arm is listed, mirroring `surfUsesVar`'s
+existing exhaustive-walk precedent). A binder that SHADOWS one of `names` (`fun lex => …` inside the
+module rebinding its own export) stops the rename at that subtree — ordinary lexical shadowing,
+not a module concern. -/
+mutual
+def qualifyVars (modName : String) (names : List String) : Surf → Surf
+  | .lit n       => .lit n
+  | .var x       => if names.contains x then .var (qualifyName modName x) else .var x
+  | .thunk e     => .thunk (qualifyVars modName names e)
+  | .force e     => .force (qualifyVars modName names e)
+  | .lett n a b  => if names.contains n then .lett n (qualifyVars modName names a) b   -- shadowed past `n`: stop renaming `n` in `b`
+                    else .lett n (qualifyVars modName names a) (qualifyVars modName names b)
+  | .lam n e     => if names.contains n then .lam n e else .lam n (qualifyVars modName names e)
+  | .app a b     => .app (qualifyVars modName names a) (qualifyVars modName names b)
+  | .raise e     => .raise (qualifyVars modName names e)
+  | .handle e    => .handle (qualifyVars modName names e)
+  | .getS        => .getS
+  | .putS e      => .putS (qualifyVars modName names e)
+  | .stateS a b  => .stateS (qualifyVars modName names a) (qualifyVars modName names b)
+  | .atomS e     => .atomS (qualifyVars modName names e)
+  | .newS e      => .newS (qualifyVars modName names e)
+  | .readS e     => .readS (qualifyVars modName names e)
+  | .writeS a b  => .writeS (qualifyVars modName names a) (qualifyVars modName names b)
+  | .inlS e      => .inlS (qualifyVars modName names e)
+  | .inrS e      => .inrS (qualifyVars modName names e)
+  | .pairS a b   => .pairS (qualifyVars modName names a) (qualifyVars modName names b)
+  | .matchS s lx e1 ry e2 =>
+      .matchS (qualifyVars modName names s) lx
+        (if names.contains lx then e1 else qualifyVars modName names e1) ry
+        (if names.contains ry then e2 else qualifyVars modName names e2)
+  | .splitS a b p body =>
+      .splitS a b (qualifyVars modName names p)
+        (if names.contains a || names.contains b then body else qualifyVars modName names body)
+  | .binopS op a b => .binopS op (qualifyVars modName names a) (qualifyVars modName names b)
+  | .ifS c t e     => .ifS (qualifyVars modName names c) (qualifyVars modName names t) (qualifyVars modName names e)
+  | .annotS e t    => .annotS (qualifyVars modName names e) t
+  | .unitS         => .unitS
+  | .foldS e       => .foldS (qualifyVars modName names e)
+  | .unfoldS e     => .unfoldS (qualifyVars modName names e)
+  | .matchD s arms => .matchD (qualifyVars modName names s) (qualifyDArmsVars modName names arms)
+  | .withCapS k i n b =>
+      .withCapS k (qualifyVars modName names i) n (if names.contains n then b else qualifyVars modName names b)
+  | .dotPerform r op .none      => .dotPerform (qualifyVars modName names r) op .none
+  | .dotPerform r op (.one a)   => .dotPerform (qualifyVars modName names r) op (.one (qualifyVars modName names a))
+  | .dotPerform r op (.two a b) => .dotPerform (qualifyVars modName names r) op (.two (qualifyVars modName names a) (qualifyVars modName names b))
+  | .letRecS n t f b => if names.contains n then .letRecS n t f b
+                         else .letRecS n t (qualifyVars modName names f) (qualifyVars modName names b)
+  | .divMark e     => .divMark (qualifyVars modName names e)
+def qualifyDArmsVars (modName : String) (names : List String) : DArms → DArms
+  | .nil              => .nil
+  | .cons c ps b rest =>
+      .cons c ps (if ps.any names.contains then b else qualifyVars modName names b) (qualifyDArmsVars modName names rest)
+end
+
+/-! Rename a `Ty.tName`/`Ty.tApp` occurrence of an imported `data` type to its qualified form
+(`geom_Pair`) — EXCEPT one this file `use`d (`use tokenizer (Token)` keeps `Token` unqualified in
+an ascription too, mirroring `qualifyDArmsAccess`'s ctor-pattern rule: `use` is the ONE mechanism
+that hoists a name into unqualified scope, D2). `dataTyOwners` maps a type name to its owning
+module; `usedNames` is the flat set of names this file's `use`s named. -/
+mutual
+def qualifyTyName (dataTyOwners : List (String × String)) (usedNames : List String) : Ty → Ty
+  | .tInt        => .tInt
+  | .tUnit       => .tUnit
+  | .tArr a b    => .tArr (qualifyTyName dataTyOwners usedNames a) (qualifyTyName dataTyOwners usedNames b)
+  | .tSum a b    => .tSum (qualifyTyName dataTyOwners usedNames a) (qualifyTyName dataTyOwners usedNames b)
+  | .tProd a b   => .tProd (qualifyTyName dataTyOwners usedNames a) (qualifyTyName dataTyOwners usedNames b)
+  | .tThunk a    => .tThunk (qualifyTyName dataTyOwners usedNames a)
+  | .tSelf       => .tSelf
+  | .tName n     => if usedNames.contains n then .tName n
+                     else match dataTyOwners.lookup n with
+                          | some modName => .tName (qualifyName modName n)
+                          | none         => .tName n
+  | .tApp n args => if usedNames.contains n then .tApp n (qualifyTyArgs dataTyOwners usedNames args)
+                     else match dataTyOwners.lookup n with
+                          | some modName => .tApp (qualifyName modName n) (qualifyTyArgs dataTyOwners usedNames args)
+                          | none         => .tApp n (qualifyTyArgs dataTyOwners usedNames args)
+  | .tMu a       => .tMu (qualifyTyName dataTyOwners usedNames a)
+  | .tVar i      => .tVar i
+  | .tEff ns a   => .tEff ns (qualifyTyName dataTyOwners usedNames a)
+def qualifyTyArgs (dataTyOwners : List (String × String)) (usedNames : List String) : TyArgs → TyArgs
+  | .one a   => .one (qualifyTyName dataTyOwners usedNames a)
+  | .two a b => .two (qualifyTyName dataTyOwners usedNames a) (qualifyTyName dataTyOwners usedNames b)
+end
+
+
+/-- Qualify one `Decl`'s internal bodies (trait law bodies / impl op bodies / a bounded fn's body) —
+`data`/`effect` decls carry no `Surf` but DO carry `Ty`s that can reference ANOTHER decl of the
+SAME module (`data Total = T(Helper)`) — those get qualified too (`qTy`, built from `names` as an
+intra-module `dataTyOwners` with no `usedNames` exclusion, since every name in `names` is this
+module's OWN top-level name and must qualify unconditionally here — the entry-file cross-module
+rewrite that DOES need a `usedNames` exclusion is `qualifyTyName`'s other call site, in
+`mergeModules` directly). -/
+def qualifyDeclBody (modName : String) (names : List String) : Decl → Decl :=
+  let qTy := qualifyTyName (names.map (·, modName)) []
+  fun d => match d with
+  | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
+  | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+  | .traitD n ps ops laws =>
+      .traitD n ps ops (laws.map (fun l => { l with body := qualifyVars modName names l.body }))
+  | .implD n t ops        =>
+      .implD n (qTy t) (ops.map (fun o => { o with body := qualifyVars modName names o.body }))
+  | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyVars modName names b)
+
+/-- Rename a `Decl`'s OWN top-level name (and a `data`'s ctors) to its qualified form — the
+"declaration side" of qualification, paired with `qualifyDeclBody`'s "reference side". A ctor
+NAMED in `usedCtors` stays BARE in the merged decl list (a `use`d ctor is meant to be written
+unqualified, and a `data` decl's ctor list can rename each ctor independently — nothing requires
+uniform renaming across one type's ctors) — the TYPE name itself still always qualifies (there is
+no unqualified-type-name analogue: `use tokenizer (Token)` hoists the CTORS `Token` carries per
+D2's "ctors travel with their type" wording, read literally as ctors, not the type name, which
+`qualifyTyName`'s OWN `usedNames` exclusion handles separately at ascription sites). -/
+def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
+  | .dataD n ps cs        =>
+      .dataD (qualifyName modName n) ps (cs.map (fun (c, tys) => (if usedCtors.contains c then c else qualifyName modName c, tys)))
+  | .effectD n ops        => .effectD (qualifyName modName n) ops
+  | .traitD n ps ops laws => .traitD (qualifyName modName n) ps ops laws
+  | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
+  | .fnD n ps ty tr tv b  => .fnD (qualifyName modName n) ps ty tr tv b
+
+/-- Qualify a whole parsed module `Prog`: every top-level name (`moduleTopNames`) becomes
+`modname_name`, everywhere in every decl body AND the trailing body expression — EXCEPT a ctor this
+file `use`d (`usedCtors`, kept bare so the importing file's unqualified reference resolves). Only
+`pub`-visible names are importABLE (`mergeModules` enforces that at the exposure boundary), but
+qualification renames every OTHER top-level name (pub or not) uniformly — a private decl still
+needs to be REACHABLE by its own qualified name from another decl of the same module. -/
+def qualifyModule (modName : String) (usedCtors : List String) (p : Prog) : Prog :=
+  let names := (moduleTopNames p.decls).filter (fun n => !usedCtors.contains n)
+  { p with
+    decls := p.decls.map (fun d => qualifyDeclName modName usedCtors (qualifyDeclBody modName names d))
+    body  := qualifyVars modName names p.body }
+
+/-- Does `p`'s header only reference NAMES the resolved module set actually exports (D3 — private
+by default)? Returns the first violation as `(modName, name)` if `use tokenizer (secret)` names a
+non-`pub` decl of `tokenizer` — the loud error names BOTH the module and the specific private name
+(agent-first: the error teaches the fix, not just "unknown name"). `resolved` maps a module name to
+its (unqualified, pre-merge) `Prog`, so visibility is checked against the ORIGINAL `pubNames`. -/
+def firstPrivateUse (resolved : List (String × Prog)) (p : Prog) : Option (String × String) :=
+  p.uses.findSome? (fun u =>
+    match resolved.lookup u.modName with
+    | none      => none    -- unresolved import is a SEPARATE (IO-layer) error, not this function's job
+    | some modP =>
+        -- a NAME is visible either directly (`modP.pubNames.contains n`, the decl's OWN name) or
+        -- as a CTOR of a `pub data` type (D3: "a `pub data` exports its ctors all-or-nothing") —
+        -- `pubNames` only ever records a decl's OWN name (`Decl.name`, never a ctor), so a ctor's
+        -- publicity is a SEPARATE lookup against its owning `pub data`'s ctor list.
+        let isPub (n : String) : Bool :=
+          modP.pubNames.contains n ||
+          modP.decls.any (fun d => match d with
+            | .dataD dn _ cs => modP.pubNames.contains dn && cs.any (fun (c, _) => c == n)
+            | _              => false)
+        (u.names.find? (fun n => !isPub n)).map (fun n => (u.modName, n)))
+
+/-! Rewrite BARE qualified access (`tokenizer.lex`, parsed as `.dotPerform (.var "tokenizer") "lex"
+.none` since `.` is the SAME token `h.get` uses — ADR-0070) into the ordinary qualified identifier
+`.var "tokenizer_lex"`, for every `modName` in `imports`. Restricted to the EXACT nullary-dot shape
+with a bare-`var` receiver naming a KNOWN import (never touching a real capability call: an
+undeclared-import receiver, or one WITH arguments, is left as `.dotPerform` unchanged — so a
+program using both `import net` and a capability named `net` cannot arise, since a name is either
+an import or isn't; the elaborator's own duplicate-name checks catch a real collision).
+
+`ctorOwners : List (String × String)` maps an UN-`use`d imported ctor name to its owning module —
+needed because a `data` CONSTRUCTOR PATTERN (`match p { Mk(a, b) -> … }`, `DArms.cons "Mk" …`) is a
+bare `String` the elaborator resolves by exact-match against the ctor table, never a `Surf.var`, so
+the ordinary value-reference rewrite above cannot reach it. Without a `use`, a bare-`import`ed
+module's ctor PATTERNS must be written qualified (`geom_Mk(a, b)`) by the user — v1 does not
+rewrite an unqualified pattern name to its qualified form under bare `import` (only `use` hoists a
+ctor to unqualified scope, matching D2's ctor-travel wording, which names `use` as the hoisting
+mechanism, not `import`). This function DOES still rewrite the *pattern* to its qualified name
+when the name matches a `ctorOwners` entry, so `mergeModules` can offer this rewrite once it knows
+which ctors came from where (kept general here rather than special-cased to a single call site). -/
+mutual
+def qualifyDotAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : Surf → Surf
+  | .dotPerform (.var m) op .none =>
+      if imports.contains m then .var (qualifyName m op)
+      else .dotPerform (qualifyDotAccess imports ctorOwners qTy (.var m)) op .none
+  | .dotPerform (.var m) op args =>
+      -- a qualified CTOR call (`geom.Mk(3, 4)`) is the SAME shape as a nullary qualified access,
+      -- just applied to args afterward: `geom_Mk(3, 4)` re-parses as `.app (.var "geom_Mk") …` —
+      -- but `Mk(3, 4)` at the SURFACE is `pCtor`'s own token-adjacent form, not `.app`, so here we
+      -- rebuild it as an ordinary application of the qualified ctor NAME to the (qualified) args —
+      -- `.app (.var qualified) arg` for 1 arg, and nested `.app`s for 2 (matching how a 2-ary ctor
+      -- constructor CALL already lowers via `pairS`, since ctor args are always exactly a pair at
+      -- the surface — see `pCtor`'s `≤2`-arity note).
+      if imports.contains m then
+        match args with
+        | .none      => .var (qualifyName m op)
+        | .one a     => .app (.var (qualifyName m op)) (qualifyDotAccess imports ctorOwners qTy a)
+        | .two a b   => .app (.var (qualifyName m op))
+            (.pairS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b))
+      else .dotPerform (qualifyDotAccess imports ctorOwners qTy (.var m)) op (qualifyDotAccessArgs imports ctorOwners qTy args)
+  | .dotPerform r op args   => .dotPerform (qualifyDotAccess imports ctorOwners qTy r) op (qualifyDotAccessArgs imports ctorOwners qTy args)
+  | .lit n                  => .lit n
+  | .var x                  => .var x
+  | .thunk e                => .thunk (qualifyDotAccess imports ctorOwners qTy e)
+  | .force e                => .force (qualifyDotAccess imports ctorOwners qTy e)
+  | .lett n a b             => .lett n (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
+  | .lam n e                => .lam n (qualifyDotAccess imports ctorOwners qTy e)
+  | .app a b                => .app (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
+  | .raise e                => .raise (qualifyDotAccess imports ctorOwners qTy e)
+  | .handle e                => .handle (qualifyDotAccess imports ctorOwners qTy e)
+  | .getS                   => .getS
+  | .putS e                 => .putS (qualifyDotAccess imports ctorOwners qTy e)
+  | .stateS a b              => .stateS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
+  | .atomS e                 => .atomS (qualifyDotAccess imports ctorOwners qTy e)
+  | .newS e                  => .newS (qualifyDotAccess imports ctorOwners qTy e)
+  | .readS e                 => .readS (qualifyDotAccess imports ctorOwners qTy e)
+  | .writeS a b               => .writeS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
+  | .inlS e                  => .inlS (qualifyDotAccess imports ctorOwners qTy e)
+  | .inrS e                  => .inrS (qualifyDotAccess imports ctorOwners qTy e)
+  | .pairS a b                => .pairS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
+  | .matchS s lx e1 ry e2      => .matchS (qualifyDotAccess imports ctorOwners qTy s) lx (qualifyDotAccess imports ctorOwners qTy e1) ry (qualifyDotAccess imports ctorOwners qTy e2)
+  | .splitS a b p body        => .splitS a b (qualifyDotAccess imports ctorOwners qTy p) (qualifyDotAccess imports ctorOwners qTy body)
+  | .binopS op a b            => .binopS op (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
+  | .ifS c t e                 => .ifS (qualifyDotAccess imports ctorOwners qTy c) (qualifyDotAccess imports ctorOwners qTy t) (qualifyDotAccess imports ctorOwners qTy e)
+  | .annotS e t                => .annotS (qualifyDotAccess imports ctorOwners qTy e) (qTy t)
+  | .unitS                    => .unitS
+  | .foldS e                  => .foldS (qualifyDotAccess imports ctorOwners qTy e)
+  | .unfoldS e                => .unfoldS (qualifyDotAccess imports ctorOwners qTy e)
+  | .matchD s arms             => .matchD (qualifyDotAccess imports ctorOwners qTy s) (qualifyDArmsAccess imports ctorOwners qTy arms)
+  | .withCapS k i n b           => .withCapS k (qualifyDotAccess imports ctorOwners qTy i) n (qualifyDotAccess imports ctorOwners qTy b)
+  | .letRecS n t f b            => .letRecS n (qTy t) (qualifyDotAccess imports ctorOwners qTy f) (qualifyDotAccess imports ctorOwners qTy b)
+  | .divMark e                  => .divMark (qualifyDotAccess imports ctorOwners qTy e)
+def qualifyDotAccessArgs (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : SurfArgs → SurfArgs
+  | .none      => .none
+  | .one a     => .one (qualifyDotAccess imports ctorOwners qTy a)
+  | .two a b   => .two (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
+def qualifyDArmsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : DArms → DArms
+  | .nil               => .nil
+  | .cons c ps b rest  =>
+      let c' := match ctorOwners.lookup c with
+        | some modName => qualifyName modName c
+        | none         => c
+      .cons c' ps (qualifyDotAccess imports ctorOwners qTy b) (qualifyDArmsAccess imports ctorOwners qTy rest)
+end
+
+/-- Merge the entry program `p` with its resolved imports (`resolved : List (String × Prog)`,
+UNQUALIFIED as parsed, in DEPENDENCY order — each module before anything that imports it, so a
+transitive import's own quals are already applied to it by the time it's folded in): qualify each
+imported module's decls (`qualifyModule`), prepend them (topological order = decl-list order,
+matching how the existing `prelude ++ p.decls` convention already threads dependency-first), rewrite
+the entry file's OWN bare qualified access (`tokenizer.lex` → `tokenizer_lex`, `qualifyDotAccess`),
+and hoist each `use`d name into unqualified scope via a wrapping `let` (`use tokenizer (lex)` ⟹
+`let lex = tokenizer_lex in <body>` — the SAME "wrap the body in a let" idiom `wrapFnSrcs`/
+`wrapGenericFns` already use for prelude injection, so this is the fourth application of an
+EXISTING mechanism, not a new one). Visibility (D3) is checked FIRST (`firstPrivateUse`) — a
+private-name violation is a loud error before any qualification happens, naming the exact
+`(module, name)` pair the D3 decision requires. A bare `import`-qualified reference to a PRIVATE
+name (`tokenizer.secret` with no matching `use`) is caught LATER, by the ordinary elaborator's
+unknown-identifier error on `tokenizer_secret` (it was never merged in — only `pub` decls travel) —
+loud, per ADR-0046, though it does not yet name "private" as the reason (a v1 gap; `use`'s
+violation gets the stronger message since `use` explicitly requests a name by its bare identifier,
+the exact case D3's own wording singles out). -/
+def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except String Prog := do
+  match firstPrivateUse resolved p with
+  | some (modName, name) =>
+      throw s!"'{name}' is private to module '{modName}' (use `pub` to export it, ADR-0093 D3)"
+  | none => pure ()
+  -- `usedNames` starts from the LITERAL `use` list, then EXPANDS: `use mod (Ty)` naming a `data`
+  -- type's OWN name also hoists its ctors unqualified (D2 — "ctors travel with their type", read
+  -- literally: naming the TYPE is enough, not just naming a ctor directly).
+  let usedNamesLiteral := p.uses.flatMap (fun u => u.names)
+  let usedNames := usedNamesLiteral ++ resolved.flatMap (fun (_, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .dataD n _ cs => if usedNamesLiteral.contains n then cs.map (·.1) else []
+      | _             => []))
+  let mut mergedDecls : List Decl := []
+  for (modName, modP) in resolved do
+    let modQ := qualifyModule modName usedNames modP
+    -- EVERY decl of an imported module is merged in (private ones included) — a private decl must
+    -- still be REACHABLE so another decl of the SAME module (already merged) can call it. D3's
+    -- visibility is enforced at the NAME-EXPOSURE boundary (`firstPrivateUse` above, gating what
+    -- THIS file's `use`/qualified access may NAME), not by omitting the decl from the kernel term —
+    -- exactly mirroring how a private field still exists in a compiled Rust crate.
+    mergedDecls := mergedDecls ++ modQ.decls
+  let importNames := resolved.map Prod.fst
+  -- CLASSIFY every resolved module's names so `use`/qualified access rewrites each the RIGHT way —
+  -- a `data` type name, a data CONSTRUCTOR, and a plain `fn`/`effect`/`trait` name are three
+  -- DIFFERENT surface positions (a type ascription's `Ty.tName`, a match PATTERN's bare `String`,
+  -- and an ordinary `Surf.var` reference respectively), so one uniform `let`-alias (which only
+  -- works for the third kind — ctors and type names are never first-class VALUES a `let` can
+  -- bind) is unsound. `ctorOwners` covers kind 2 (pattern rewrite for an UN-`use`d ctor — `use`
+  -- keeps a ctor BARE both in the merged decl list, `qualifyModule` above, and here, so there is
+  -- nothing to rewrite for it; only a bare `import`'s ctor needs the qualified pattern spelling).
+  -- Type names (kind 1) are handled by `qualifyTyName` (ascriptions/decl signatures) below. Only
+  -- kind 3 (plain functions) gets the `let`-alias wrap.
+  let allCtorOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .dataD _ _ cs => cs.map (fun (c, _) => (c, modName))
+      | _             => []))
+  let ctorOwners : List (String × String) :=
+    allCtorOwners.filter (fun (c, _) => !usedNames.contains c)
+  let dataTyOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
+    modP.decls.flatMap (fun d => match d with | .dataD n _ _ => [(n, modName)] | _ => []))
+  -- a `use`d name that is a PLAIN fn/effect/trait (not a ctor, not a data type) gets the
+  -- `let`-alias wrap — the one kind for which that mechanism is sound. Classified against the
+  -- UNFILTERED `allCtorOwners` (not `ctorOwners`, which excludes `use`d ctors BY DESIGN — using
+  -- the filtered set here would misclassify a `use`d ctor as a "plain fn").
+  let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
+    u.names.filterMap (fun n =>
+      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome then none else some (n, u.modName)))
+  let qTy := qualifyTyName dataTyOwners usedNames
+  let entryDecls := p.decls.map (fun d => match d with
+    | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
+    | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
+    | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners qTy l.body }))
+    | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners qTy o.body }))
+    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b))
+  let body := qualifyDotAccess importNames ctorOwners qTy p.body
+  let body := usedPlainFns.foldr (fun (n, modName) acc => Surf.lett n (Surf.var (qualifyName modName n)) acc) body
+  return { imports := [], uses := [], pubNames := p.pubNames, decls := mergedDecls ++ entryDecls, body := body }
+
 /-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve
 the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the type-checker's
 `.dotPerform` arm needs the program's user-effect table to resolve a `perform` against a declared
@@ -4220,5 +4556,83 @@ back to source text via `showSurf`, reusing the existing `vecLawProg`/`intOrdPro
         | _ => false)
 -- a malformed program still fails LOUD through the same `parseProg` gate `checkLaws` uses.
 #guard (match lawInstancesOf "let x = in" with | .error _ => true | .ok _ => false)
+
+/-! ### Modules (ADR-0093) — the v1 ORACLE: `elaborate(import-merged) ≡ elaborate(hand-qualified)`.
+
+Each case builds the merged `Prog` PROGRAMMATICALLY via `mergeModules` (mirroring how a real
+multi-file program would resolve) and checks it evaluates to the SAME value `Source.eval` gives a
+single hand-concatenated-and-qualified file — the differential guard the ADR names as v1's proof
+obligation. `runTypedYieldsInt`-style: elaborate → check → lower → `Source.eval`. -/
+
+/-- Run a merged `Prog` end to end (elaborate → check → lower → `Source.eval`), returning the
+resulting `Int` (or `none` on any failure) — the module-merge analogue of the existing
+`runYieldsInt`/`runTypedYieldsInt` corpus helpers, specialized to `Prog` (which already carries its
+decl prelude, unlike the bare-`Surf` helpers). -/
+def runMergedYieldsInt (fuel : Nat) (p : Prog) : Option Int :=
+  match elabProg p with
+  | .error _ => none
+  | .ok (e, effects) =>
+      match runInferC (synthSC [] e) effects with
+      | .error _ => none
+      | .ok _ =>
+          match Bang.Surface.lower e with
+          | .error _  => none
+          | .ok c     => match Bang.Source.eval fuel c with
+                          | .done (.vint n) => some n
+                          | _ => none
+
+-- a single `pub data` module + an entry file `import`-ing it (bare qualified access): the
+-- MERGED program agrees with the hand-qualified single-file equivalent. A BARE `import` (no
+-- `use`) does not hoist the ctor NAME into unqualified scope — the match PATTERN must spell the
+-- qualified ctor (`geom_Mk`) too, exactly as the hand-qualified form would (D2 names `use`, not
+-- bare `import`, as the hoisting mechanism).
+#guard
+  let modP : Prog := (Bang.Surface.parseProg "pub data Pair = Mk(Int, Int) 0").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg
+    "import geom let p = geom.Mk(3, 4) in match (p : geom_Pair) { geom_Mk(a, b) -> a + b }").toOption.get!
+  match mergeModules [("geom", modP)] entryP with
+  | .error _ => false
+  | .ok merged =>
+      let handQualified : Prog := (Bang.Surface.parseProg
+        "data geom_Pair = geom_Mk(Int, Int) let p = geom_Mk(3, 4) in match (p : geom_Pair) { geom_Mk(a, b) -> a + b }").toOption.get!
+      runMergedYieldsInt 200 merged == some 7 && runMergedYieldsInt 200 merged == runMergedYieldsInt 200 handQualified
+
+-- `use mod (Name)` hoists a `data` type's UNQUALIFIED constructor names too (D2 — "ctors travel
+-- with their type"): a ctor is never a first-class VALUE in this language (ADR-0069 — a nonzero-
+-- arity ctor referenced bare is a checked ARITY error, not an ordinary variable), so `use`'s hoist
+-- for a ctor is realized by keeping it BARE in the merged decl list (`qualifyModule`'s `usedCtors`
+-- exclusion), not a `let`-alias — the hand-qualified equivalent is simply `data geom_Pair =
+-- Mk(Int, Int)` (qualified TYPE name, bare CTOR name), no extra `let` needed.
+#guard
+  let modP : Prog := (Bang.Surface.parseProg "pub data Pair = Mk(Int, Int) 0").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "use geom (Mk) match (Mk(3, 4) : geom_Pair) { Mk(a, b) -> a + b }").toOption.get!
+  match mergeModules [("geom", modP)] entryP with
+  | .error _ => false
+  | .ok merged =>
+      let handQualified : Prog := (Bang.Surface.parseProg
+        "data geom_Pair = Mk(Int, Int) match (Mk(3, 4) : geom_Pair) { Mk(a, b) -> a + b }").toOption.get!
+      runMergedYieldsInt 200 merged == some 7 && runMergedYieldsInt 200 merged == runMergedYieldsInt 200 handQualified
+
+-- a PRIVATE decl (no `pub`) is unreachable via `use` — `mergeModules` fails LOUD, naming both the
+-- decl and the module (D3).
+#guard
+  let modP : Prog := (Bang.Surface.parseProg "data Secret = Hidden(Int) 0").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "use hidden (Secret) 0").toOption.get!
+  match mergeModules [("hidden", modP)] entryP with
+  | .error m => (m.splitOn "private").length > 1 && (m.splitOn "hidden").length > 1 && (m.splitOn "Secret").length > 1
+  | .ok _    => false
+
+-- a two-decl module (one pub, one private) merges correctly: the pub decl is reachable, the
+-- private one still usable INTERNALLY by another decl of the SAME module (D3's "private, not
+-- deleted" semantics) — `Helper` (private data) is referenced by `pub data Total`'s OWN payload
+-- type, and the entry file only ever names `Total`. `use calc (Total)` naming the TYPE also hoists
+-- its ctor `T` unqualified (D2 — "ctors travel with their type").
+#guard
+  let modP : Prog := (Bang.Surface.parseProg
+    "data Helper = H(Int) pub data Total = T(Helper) 0").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "use calc (Total) match (T(calc_H(15)) : calc_Total) { T(h) -> match (h : calc_Helper) { calc_H(n) -> n } }").toOption.get!
+  match mergeModules [("calc", modP)] entryP with
+  | .error _ => false
+  | .ok merged => runMergedYieldsInt 200 merged == some 15
 
 end Bang.TypeCheck
