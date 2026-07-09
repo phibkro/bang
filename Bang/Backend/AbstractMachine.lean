@@ -684,6 +684,16 @@ def StoresDisjoint (σ : SStore) (τ : THeap) (κ : CStore) : Prop :=
      ∧ (τ.get? n ≠ none → σ.get? n = none ∧ κ.get? n = none)
      ∧ (κ.get? n ≠ none → σ.get? n = none ∧ τ.get? n = none)
 
+/-- Every stored key across all three per-kind stores is `< g` (the fresh-id counter). This is the
+`sim`-side (exec-direction) freshness invariant that makes `StoresDisjoint` PUSH-STABLE: a `handle`
+mints key `g` (≥ every existing key ⇒ fresh ⇒ distinct from the other stores) then bumps `g→g+1`.
+`StoresBelow` alone does NOT give standing cross-store disjointness (two stores could share a key
+`< g`); the two ride together (`StoresBelow` makes the conjunct-`StoresDisjoint` push-stable). Both
+are TRIVIALLY true at the empty-store `compile_correct` entry. Sibling of the kernel `StratFresh` /
+`WellCounted` lineage; the machine-hs twin of the K-side `ctx*_get_none_of_ctx*_some` corollary. -/
+def StoresBelow (g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) : Prop :=
+  (∀ n, σ.get? n ≠ none → n < g) ∧ (∀ n, τ.get? n ≠ none → n < g) ∧ (∀ n, κ.get? n ≠ none → n < g)
+
 /-- Overwrite each `custom` frame's stored payload in `hs` with the head of `κ` (consumed in order).
 Since the custom param is READ-ONLY (v1), the head payload EQUALS the frame's own under `CCorr`, so
 this is effectively identity — but stated in the `updateStates`/`updateTxns` shape for the uniform
