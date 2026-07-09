@@ -106,13 +106,18 @@ let
       find $out/packages -type d -name .git -prune -exec rm -rf {} +
 
       # Remove the build artifacts of Mathlib's `cache` tool. `lake exe cache get`
-      # compiles that tool locally, and ITS trace/setup/rsp files are the ONLY
-      # non-deterministic content cache-get leaves (the downloaded Mathlib oleans
-      # + their .trace/.hash are bit-identical run to run — verified by diffing
-      # two independent cache-gets: 22 differing files, all cache-tool metadata).
+      # compiles that tool locally, and ITS artifacts are the ONLY non-deterministic
+      # content cache-get leaves (the downloaded Mathlib oleans + their .trace/.hash
+      # are bit-identical run to run). Verified by diffing two independent real
+      # cache-gets (each with the `cache` exe compiled): after this exact removal
+      # list the two package trees are BYTE-IDENTICAL. The load-bearing offender is
+      # `bin/cache.hash` — lake's 16-byte build-hash of the `cache` exe, which
+      # varies run-to-run (link-time hash-map iteration order) exactly like the exe
+      # itself; leaving it in was the FOD's sole reproducibility leak.
       # The pure build never rebuilds `cache`, so these are dead weight; dropping
       # them makes this FOD reproducible.
       rm -rf $out/packages/mathlib/.lake/build/bin/cache \
+             $out/packages/mathlib/.lake/build/bin/cache.hash \
              $out/packages/mathlib/.lake/build/bin/cache.rsp \
              $out/packages/mathlib/.lake/build/bin/cache.trace \
              $out/packages/mathlib/.lake/build/ir/Cache \
