@@ -40,6 +40,13 @@ import Bang.Backend.AbstractMachine
 open Bang
 open Bang.Surface
 
+/-- The `bang` CLI's SINGLE SOURCE OF TRUTH for its version string (issue #67/#69): every
+version-facing surface (`--version`, and the v0.1.0 release-checklist's "self-identifying
+binary" requirement) reads THIS constant — never a second hand-copied literal. Pre-tag: no
+`git tag` has been cut yet (issue #69's checklist is still open), so this is the honest
+pre-release marker; bump it here, in ONE place, at tag time. -/
+def bangVersion : String := "0.1.0-dev"
+
 /-- Default fuel for `Source.eval`. The kernel has no primitive arithmetic, so
 programs are small; the in-repo `#guard` demos top out around 200. 100000 is a
 generous ceiling that still terminates a genuinely-looping program as `oom`. -/
@@ -88,25 +95,56 @@ on an otherwise-empty stack — the exact shape `compile_correct` and the `Agree
 battery pin); `exec` COLLAPSES every non-success (out of fuel, escaped cap, stuck)
 into `none`, so unlike the interpreter this engine cannot sub-classify a failure —
 it reports one honest fail-loud non-value (exit 5). A successful value prints
-identically to the interpreted path (same `valPretty`). -/
+identically to the interpreted path (same `valPretty`).
+
+The MESSAGE (issue #67) names what collapsed even though `exec` itself can't
+distinguish the three — the oracle engine (`runComp`'s `.oom`/`.escapedCap`/`.stuck`
+arms below) already sub-classifies the SAME program, so the message directs the
+reader there for the specific cause rather than pretending `--compiled` can say more
+than its own return type allows. -/
 def runCompiled (c : Comp) : IO UInt32 := do
   match Bang.CalcVM.exec compiledFuel 0 (Bang.CalcVM.compile c []) [] [] with
   | some [.ret v] => IO.println (valPretty v); pure 0
   | _ =>
-    IO.eprintln "compiled machine produced no value (out of fuel, escaped cap, or stuck)"
+    IO.eprintln <|
+      "error: compiled machine produced no value — it does not sub-classify which " ++
+      "terminal collapsed (out of fuel, an escaped capability, or stuck); re-run " ++
+      "without --compiled to see which one, via the oracle engine's specific message"
     pure 5
 
 /-- Run a lowered `Comp` on the selected engine (§ issue #6): the kernel oracle `Source.eval`
 (default) or the calculated machine `exec ∘ compile` (`--compiled`). `done` → stdout + 0; every
-failure outcome → a clear stderr line + a distinct nonzero code (fail-loud, ADR-0063). -/
+failure outcome → a clear stderr line + a distinct nonzero code (fail-loud, ADR-0063).
+
+MESSAGES (issue #67, operator ruling 2026-07-09): the exit code stays the machine contract;
+each non-zero outcome ALSO gets a one-line stderr explanation naming the outcome, the likely
+cause, and the next step, matching `check --json`'s plain-English tone. `stuck` is reachable
+ONLY via `--no-typecheck` (`type_safety`: a well-typed ⊥-row program never gets there), so its
+message can unconditionally point at the type gate being off — not a flag-dependent guess. -/
 def runComp (compiled : Bool) (c : Comp) : IO UInt32 := do
   if compiled then runCompiled c
   else
   match Bang.Source.eval defaultFuel c with
   | .done v      => IO.println (valPretty v); pure 0
-  | .oom         => IO.eprintln "out of fuel"; pure 2
-  | .escapedCap  => IO.eprintln "capability escaped its handler"; pure 3
-  | .stuck       => IO.eprintln "stuck (ill-formed program)"; pure 4
+  | .oom         =>
+    IO.eprintln <|
+      s!"error: out of fuel (ceiling {defaultFuel} steps) — the program may diverge, or hit " ++
+      "the recursion-cost cliff (issue #61); a well-typed program that should terminate is " ++
+      "likely paying substitution cost per step rather than genuinely looping"
+    pure 2
+  | .escapedCap  =>
+    IO.eprintln <|
+      "error: a capability escaped its handler — it was forced (`$`/`!`) after the `with`/" ++
+      "`atomically`/`state` block that installed it had already returned; this is a defined " ++
+      "fail-loud terminal (ADR-0063), not corruption — move the force inside the handler's " ++
+      "scope, or restructure so the capability doesn't outlive it"
+    pure 3
+  | .stuck       =>
+    IO.eprintln <|
+      "error: stuck (ill-formed program) — this is only reachable with --no-typecheck; the " ++
+      "type gate was off, so an ill-typed term ran anyway (type_safety guarantees a well-typed " ++
+      "program never reaches this outcome) — drop --no-typecheck to catch it as a type error instead"
+    pure 4
 
 /-! ## Module resolution (ADR-0093 D1) — file = module, `import`/`use` at the top of a file.
 
@@ -380,6 +418,8 @@ def usage : String :=
   "  bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file\n\n" ++
   "  bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file\n" ++
   "             --json                  emit agent-facing structured JSON diagnostics on stdout\n\n" ++
+  "  bang --help, -h                    print this text and exit 0\n" ++
+  "  bang --version, -v                 print the version and exit 0\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
   "  (default)        parse → TYPE-CHECK → lower → run; an ill-typed program is a TYPE ERROR\n" ++
   "  --no-typecheck   raw erase-and-run (no type gate) — for oracle/differential testing\n\n" ++
@@ -546,7 +586,14 @@ partial def runRepl (typecheck compiled : Bool) : IO UInt32 := do
 def main (args : List String) : IO UInt32 := do
   match args with
   | cmd :: rest =>
-    if cmd == "run" then
+    if cmd == "--help" || cmd == "-h" then
+      -- A HELP REQUEST IS A SUCCESS (issue #66): stdout (not stderr — this is the ordinary
+      -- `usage` case's convention, reversed on purpose, since a piped `bang --help | less`
+      -- reader expects the text on stdout), exit 0.
+      IO.println usage; pure 0
+    else if cmd == "--version" || cmd == "-v" then
+      IO.println s!"bang {bangVersion}"; pure 0
+    else if cmd == "run" then
       -- FLAGS (`--…`) may appear in any order before the single positional; anything else is usage.
       -- `run` ALWAYS goes through the module resolver (ADR-0093 D1) — a decl-free/import-free file
       -- resolves to itself unchanged (`resolveEntryFile`'s short-circuit), so this is behavior-
