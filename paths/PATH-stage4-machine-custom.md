@@ -96,10 +96,17 @@ whole unit as one fresh-session atomic commit (ADR-0085's "L / weeks, spine-touc
   `c1fba11`). KEY REUSE confirmed: `raisedTriple_pop_nontxn` handles custom frames (`:1190`).
 - **`compile_correct` — DONE** (`f603941`, rides `sim`). **Agree diff-test battery — DONE** (`2a8d962`,
   the direct `evalD` examples gain the empty custom store).
-- **(d) `run_evalD` (~1080 lines)** — thread `κ`; **DROP `NoCustomFrame`**; prove the custom `handle`
-  case (recurse `M'` with pushed κ-entry; `CtxCorr`/`CapLabelCoh`/`FreshCfg`/`NoResume` over a custom
-  frame in `K`) and the custom `perform` case (inline-service resolves; `NoResume` now via the REAL
-  dispatch, not `NoCustomFrame.not_custom`'s absurdity). `perform_miss_raises` /
+- **(d) `run_evalD` (~1080 lines) — THE DELICATE ONE, start FRESH. Assessed 2026-07-09:** uses
+  `NoCustomFrame`/`hncf` in 31 places. Threading κ is mechanical, BUT dropping `NoCustomFrame` is the
+  coupled wall: (i) the built-in `handle` cases use `hncf.cons_handleF (by intro ℓ p cl; simp)` (works
+  only because non-custom); the CUSTOM `handle` case needs a genuinely NEW proof — install a custom frame
+  IN `K`, thread `CtxCorr`/`CapLabelCoh`/`FreshCfg`/`NoResume` through it. (ii) the `perform` raise case
+  uses `hncf.not_custom hsp` to discharge the custom-resolved subcase by ABSURDITY; this becomes a REAL
+  `NoResume`/dispatch proof. **PREREQUISITE machinery NOT yet built (do first):** the EvalCtx-side custom
+  bridge — `ctxCustoms` (sibling of `ctxStates`/`ctxTxns` on `Bang.EvalCtx`, NOT the HStack `hsCustoms`
+  which IS built), `CtxCorr`-custom install/pop, `CapLabelCoh`/`FreshCfg` custom-frame preservation, and
+  `NoResume` for a custom frame. Templates: the `ctxStates` EvalCtx machinery + the HStack `CCorr` family
+  already built this session. `perform_miss_raises` /
   `evalD_complete_gen_full` lose `NoCustomFrame` too.
 - **(e) `evalD_agrees_source`** — drop the `NoCustomFrame []` argument (now unconditional).
 - **(f) `Wasm.lean`** — thread `κ` through `evalD_mono`/`evalD_add`/`evalD_some_le` + `evalD_complete_gen`;
