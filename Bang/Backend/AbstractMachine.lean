@@ -1406,6 +1406,48 @@ theorem customUpdate_service {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
         simp only [hsCustom, hh] at hc
         simp only [customUpdate, hh, ih hc hcl, Option.map_some]
 
+/-- No custom frame for `n` ⇒ `customUpdate` misses (the machine falls to the throw path). Ties the
+`evalD`-side `κ.get? n = none` to the machine `customUpdate = none` via `CCorr`. -/
+theorem customUpdate_none_of_hsCustom_none {n : Nat} {op : Bang.OpId} {v : Val} :
+    ∀ {hs : HStack}, hsCustom hs n = none → customUpdate n op v hs = none := by
+  intro hs
+  induction hs with
+  | nil => intro _; rfl
+  | cons fr hs ih =>
+    intro hc
+    cases hh : fr.handler with
+    | custom ℓ0 p0 cls0 =>
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte] at hc; exact absurd hc (by simp)
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          simp only [customUpdate, hh, if_neg hid, ih hc, Option.map_none]
+    | state ℓ0 s => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc, Option.map_none]
+    | throws ℓ0 => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc, Option.map_none]
+    | transaction ℓ0 Θ => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc, Option.map_none]
+
+/-- Custom frame present but the op has no clause ⇒ `customUpdate` misses (throws path). Ties
+`cls.find? op = none` to the machine miss. -/
+theorem customUpdate_none_of_clause_miss {n : Nat} {op : Bang.OpId} {v : Val} {p : Val}
+    {cls : List (Bang.OpId × Comp)} :
+    ∀ {hs : HStack}, hsCustom hs n = some (p, cls) → cls.find? (·.1 == op) = none →
+      customUpdate n op v hs = none := by
+  intro hs
+  induction hs with
+  | nil => intro hc _; simp [hsCustom] at hc
+  | cons fr hs ih =>
+    intro hc hcl
+    cases hh : fr.handler with
+    | custom ℓ0 p0 cls0 =>
+        by_cases hid : fr.id = n
+        · simp only [hsCustom, hh, hid, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at hc
+          obtain ⟨rfl, rfl⟩ := hc
+          simp only [customUpdate, hh, hid, ↓reduceIte, hcl]
+        · simp only [hsCustom, hh, if_neg hid] at hc
+          simp only [customUpdate, hh, if_neg hid, ih hc hcl, Option.map_none]
+    | state ℓ0 s => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
+    | throws ℓ0 => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
+    | transaction ℓ0 Θ => simp only [hsCustom, hh] at hc; simp only [customUpdate, hh, ih hc hcl, Option.map_none]
+
 /-- Installing a `custom` frame pushes its `(p, cls)` onto the custom store (the `handle (custom)`
 INSTALL — analog of `Corr_install`). -/
 theorem CCorr_install {κ : CStore} {hs : HStack} (ℓ : Bang.EffectRow.Label) (p : Val)
@@ -2586,28 +2628,38 @@ theorem sim : ∀ fe,
           simp only [evalD] at h
           -- A single helper closing every raise-subcase: stores unchanged ⇒ netEffect = hs, machine OP
           -- (dispatch identity n2) falls to unwindFind = throwOutcome.
-          have close : ∀ (hns : stateUpdate n2 op2 v2 hs = none) (hnt : txnUpdate n2 op2 v2 hs = none),
+          -- `close` takes the store-misses AND a routing fact `hroute`: after stateUpdate/txnUpdate miss,
+          -- the OP arm hits `if isBuiltinOp op2` — either op2 IS built-in (goes straight to unwind) OR op2
+          -- is custom with `customUpdate = none` (falls through to unwind). Both reach throwOutcome.
+          have close : ∀ (hns : stateUpdate n2 op2 v2 hs = none) (hnt : txnUpdate n2 op2 v2 hs = none)
+              (hroute : (isBuiltinOp op2 = true) ∨ (customUpdate n2 op2 v2 hs = none)),
               (Corr σ (netEffect hs σ τ) ∧ TCorr τ (netEffect hs σ τ) ∧ CCorr κ (netEffect hs σ τ) ∧
                 HMut hs (netEffect hs σ τ)) ∧
               ∀ c s F r, throwOutcome F g n2 op2 v2 (netEffect hs σ τ) = some r →
                 ∃ F', exec F' g (compile (.perform (.vcap n2 ℓ2) op2 v2) c) s hs = some r := by
-            intro hns hnt
+            intro hns hnt hroute
             have hus : netEffect hs σ τ = hs := updateStates_self hC hT
             refine ⟨⟨by rw [hus]; exact hC, by rw [hus]; exact hT, by rw [hus]; exact hK,
               by rw [hus]; exact HMut.refl hs⟩, fun c s F r hr => ?_⟩
             rw [hus] at hr
             refine ⟨F+1, ?_⟩
-            simp only [compile, exec, hns, hnt]
-            simpa only [throwOutcome] using hr
+            cases hroute with
+            | inl hbi => simp only [compile, exec, hns, hnt, hbi, if_true]; simpa only [throwOutcome] using hr
+            | inr hnc =>
+                by_cases hbi : isBuiltinOp op2
+                · simp only [compile, exec, hns, hnt, hbi, if_true]; simpa only [throwOutcome] using hr
+                · simp only [compile, exec, hns, hnt, hbi, Bool.false_eq_true, if_false, hnc]
+                  simpa only [throwOutcome] using hr
           by_cases hop : op2 = "get"
           · subst hop
             simp only [if_pos rfl] at h
             cases hg : σ.get? n2 with
             | none =>
                 rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
+                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
                 exact close (stateUpdate_none_of_get?_none (Corr.get? hC ℓ ▸ hg))
                   (txnUpdate_none_of_non_txnop ℓ v hs (by decide))
+                  (Or.inl (by decide))
             | some sv => rw [hg] at h; simp at h
           · by_cases hop2 : op2 = "put"
             · subst hop2
@@ -2615,25 +2667,43 @@ theorem sim : ∀ fe,
               cases hg : σ.get? n2 with
               | none =>
                   rw [hg] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                  obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
+                  obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
                   exact close (stateUpdate_none_of_get?_none (Corr.get? hC ℓ ▸ hg))
                     (txnUpdate_none_of_non_txnop ℓ v hs (by decide))
+                    (Or.inl (by decide))
               | some sv => rw [hg] at h; simp at h
             · by_cases hopt : isTxnOp op2 = true
               · simp only [if_neg hop, if_neg hop2, hopt, if_true] at h
                 cases hgt : τ.get? n2 with
                 | none =>
                     rw [hgt] at h; simp only [Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
-                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
                     exact close (stateUpdate_none_of_non_getput n2 v2 hs hop hop2)
                       (txnUpdate_none_of_hsTxn_none (TCorr.get? hT n2 ▸ hgt))
+                      (Or.inl (by simp only [isBuiltinOp, hopt]; simp))
                 | some Θ => rw [hgt] at h; simp at h
               · rw [Bool.not_eq_true] at hopt
-                simp only [if_neg hop, if_neg hop2, hopt, if_false, Option.some.injEq, Prod.mk.injEq,
-                  Outcome.raised.injEq] at h
-                obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl⟩ := h
-                exact close (stateUpdate_none_of_non_getput ℓ v hs hop hop2)
-                  (txnUpdate_none_of_non_txnop ℓ v hs hopt)
+                simp only [if_neg hop, if_neg hop2, hopt, Bool.false_eq_true, if_false] at h
+                -- custom op raise: no custom frame (κ.get? n2 = none) OR unserviced clause ⇒ raise.
+                have hbif : isBuiltinOp op2 = false := isBuiltinOp_iff.mpr ⟨hop, hop2, hopt⟩
+                cases hck : κ.get? n2 with
+                | none =>
+                    simp only [hck, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                    obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                    exact close (stateUpdate_none_of_non_getput ℓ v hs hop hop2)
+                      (txnUpdate_none_of_non_txnop ℓ v hs hopt)
+                      (Or.inr (customUpdate_none_of_hsCustom_none (CCorr.get? hK ℓ ▸ hck)))
+                | some pcls =>
+                    obtain ⟨p, cls⟩ := pcls
+                    simp only [hck] at h
+                    cases hcl : cls.find? (·.1 == op2) with
+                    | some clause => simp only [hcl] at h; simp at h   -- clause hit ⇒ term not raise: vacuous
+                    | none =>
+                        simp only [hcl, Option.some.injEq, Prod.mk.injEq, Outcome.raised.injEq] at h
+                        obtain ⟨⟨rfl, rfl, rfl⟩, rfl, rfl, rfl, rfl⟩ := h
+                        exact close (stateUpdate_none_of_non_getput ℓ v hs hop hop2)
+                          (txnUpdate_none_of_non_txnop ℓ v hs hopt)
+                          (Or.inr (customUpdate_none_of_clause_miss (CCorr.get? hK ℓ ▸ hck) hcl))
       | letC M N =>
           simp only [evalD] at h
           cases hM : evalD fe g σ τ κ M with
