@@ -29,6 +29,7 @@ its trigger arises.
 | **Design-space survey** (open language-design questions + neighbour languages) | `docs/notes/design-space-map.md` |
 | **structOK multi-arg descent design** (#50 · the ADR-0091 fork's full analysis) | `docs/notes/structok-multiarg-design.md` |
 | **Verification ladder** (agent-speed quality gates · HoTT verdict · Q43 proof-export) | `docs/notes/verification-ladder.md` |
+| **Dogfood: JSON parser findings** (#61 blocker · module-shape needs · what worked) | `docs/notes/dogfood-json-findings.md` |
 | **Calculated CHECKER survey** (TCT/SbC · the frontend trust-map · fuzz-harness · evidence-passing verdict) | `docs/notes/calculated-typer-survey.md` |
 | **Feedback-loop audit** (loops by radius; refresh at each ◊ — `check-loop-audit.sh` enforces) | `docs/notes/loop-audit.md` |
 | **Standard-library map** (the third stratum: reusable abstractions as library code, gated by type-power) | `docs/notes/stdlib-map.md` |

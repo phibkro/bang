@@ -1,0 +1,346 @@
+data Json = JNull
+| JBool(Int)
+| JInt(Int)
+| JStr(Str)
+| JArr(Json)
+| JObj(Json)
+| JCons(Json, Json)
+| JNilL
+| JField(Str, Json)
+let isDigit = {fun n => if 47 < n then if n < 58 then 0 == 0 else 0 == 1 else 0 == 1}
+  in
+let isWs = {fun n =>
+    if n == 32
+      then 0 == 0
+      else if n == 10
+        then 0 == 0
+        else if n == 9 then 0 == 0 else if n == 13 then 0 == 0 else 0 == 1}
+  in
+let rec dropWs : Str -> Str = fun s =>
+    match (s : Str) {
+      SNil -> SNil,
+      SCons(c, rest) -> match c { Char(n) -> if $isWs n then $dropWs rest else SCons(c, rest) }
+    }
+  in
+let rec litMatch : Str -> Str -> Option Str = fun pat =>
+    fun input =>
+      match (pat : Str) {
+        SNil -> Some input,
+        SCons(pc, prest) -> match (input : Str) {
+          SNil -> None,
+          SCons(ic, irest) -> match pc {
+            Char(pn) -> match ic { Char(inn) -> if pn == inn then $litMatch prest irest else None }
+          }
+        }
+      }
+  in
+let rec parseValue : Str -> Option (Json * Str) ! {Div} = fun s0 =>
+    let s = $dropWs s0
+      in
+    match (s : Str) {
+      SNil -> None,
+      SCons(c0, restA) -> match c0 {
+        Char(code) -> if code == 110
+          then match ($litMatch "null" s) { None -> None, Some(r) -> Some(JNull, r) }
+          else if code == 116
+            then match ($litMatch "true" s) { None -> None, Some(r) -> Some(JBool 1, r) }
+            else if code == 102
+              then match ($litMatch "false" s) { None -> None, Some(r) -> Some(JBool 0, r) }
+              else if code == 34
+                then let rec scanStr : Str -> Option (Str * Str) = fun t =>
+                    match (t : Str) {
+                      SNil -> None,
+                      SCons(c, rest) -> match c {
+                        Char(n) -> if n == 34
+                          then Some(SNil, rest)
+                          else if n == 92
+                            then match (rest : Str) {
+                              SNil -> None,
+                              SCons(ec, erest) -> match ec {
+                                Char(en) -> let decoded = {if en == 110
+                                    then 10
+                                    else if en == 116
+                                      then 9
+                                      else if en == 34 then 34 else if en == 92 then 92 else en}
+                                  in
+                                match ($scanStr
+                                erest) {
+                                  None -> None,
+                                  Some(p) -> let (chars, r2) = p
+                                    in
+                                  Some(SCons(Char $decoded, chars), r2)
+                                }
+                              }
+                            }
+                            else match ($scanStr
+                            rest) {
+                              None -> None,
+                              Some(p) -> let (chars, r2) = p in Some(SCons(c, chars), r2)
+                            }
+                      }
+                    }
+                  in
+                match ($scanStr
+                restA) { None -> None, Some(p) -> let (str, r) = p in Some(JStr str, r) }
+                else if $isDigit code
+                  then let rec scanDigits : Str -> Option (Int * Str) = fun t =>
+                      match (t : Str) {
+                        SNil -> None,
+                        SCons(c, rest) -> match c {
+                          Char(n) -> if $isDigit n
+                            then match ($scanDigits
+                            rest) {
+                              None -> Some(n - 48, rest),
+                              Some(p) -> let (v, r2) = p in Some((n - 48) * 10 + v, r2)
+                            }
+                            else None
+                        }
+                      }
+                    in
+                  match ($scanDigits
+                  s) { None -> None, Some(p) -> let (v, r) = p in Some(JInt v, r) }
+                  else if code == 91
+                    then let rec parseElems : Str -> Option (Json * Str) ! {Div} = fun t0 =>
+                        let t = $dropWs t0
+                          in
+                        match (t : Str) {
+                          SNil -> None,
+                          SCons(cc, _) -> match cc {
+                            Char(ccode) -> if ccode == 93
+                              then Some(JNilL, t)
+                              else match ($parseValue
+                              t) {
+                                None -> None,
+                                Some(p) -> let (v, r1) = p
+                                  in
+                                let r1w = $dropWs r1
+                                  in
+                                match (r1w : Str) {
+                                  SNil -> None,
+                                  SCons(sep, r2) -> match sep {
+                                    Char(sn) -> if sn == 44
+                                      then match ($parseElems
+                                      r2) {
+                                        None -> None,
+                                        Some(pp) -> let (tailJ, r3) = pp
+                                          in
+                                        Some(JCons(v, tailJ), r3)
+                                      }
+                                      else if sn == 93 then Some(JCons(v, JNilL), r2) else None
+                                  }
+                                }
+                              }
+                          }
+                        }
+                      in
+                    match ($parseElems
+                    restA) { None -> None, Some(p) -> let (elems, r) = p in Some(JArr elems, r) }
+                    else if code == 123
+                      then let keyOf = {fun kj =>
+                          match (kj : Json) {
+                            JNull -> None,
+                            JBool(x) -> None,
+                            JInt(x) -> None,
+                            JStr(key) -> Some key,
+                            JArr(x) -> None,
+                            JObj(x) -> None,
+                            JCons(a, b) -> None,
+                            JNilL -> None,
+                            JField(k, v) -> None
+                          }}
+                        in
+                      let rec parseFields : Str -> Option (Json * Str) ! {Div} = fun t0 =>
+                          let t = $dropWs t0
+                            in
+                          match (t : Str) {
+                            SNil -> None,
+                            SCons(cc, _) -> match cc {
+                              Char(ccode) -> if ccode == 125
+                                then Some(JNilL, t)
+                                else match ($parseValue
+                                t) {
+                                  None -> None,
+                                  Some(kp) -> let (keyJ, rk) = kp
+                                    in
+                                  match ($keyOf
+                                  keyJ) {
+                                    None -> None,
+                                    Some(key) -> let rkw = $dropWs rk
+                                      in
+                                    match (rkw : Str) {
+                                      SNil -> None,
+                                      SCons(colonC, rk2) -> match colonC {
+                                        Char(cn) -> if cn == 58
+                                          then match ($parseValue
+                                          rk2) {
+                                            None -> None,
+                                            Some(vp) -> let (valJ, rf) = vp
+                                              in
+                                            let fieldJ = {JField(key, valJ)}
+                                              in
+                                            let rfw = $dropWs rf
+                                              in
+                                            match (rfw : Str) {
+                                              SNil -> None,
+                                              SCons(sep, rf2) -> match sep {
+                                                Char(sn) -> if sn == 44
+                                                  then match ($parseFields
+                                                  rf2) {
+                                                    None -> None,
+                                                    Some(pp) -> let (tailJ, r3) = pp
+                                                      in
+                                                    Some(JCons($fieldJ, tailJ), r3)
+                                                  }
+                                                  else if sn == 125
+                                                    then Some(JCons($fieldJ, JNilL), rf2)
+                                                    else None
+                                              }
+                                            }
+                                          }
+                                          else None
+                                      }
+                                    }
+                                  }
+                                }
+                            }
+                          }
+                        in
+                      match ($parseFields
+                      restA) {
+                        None -> None, Some(p) -> let (fields, r) = p in Some(JObj fields, r)
+                      }
+                      else None
+      }
+    }
+  in
+let rec intToStr : Int -> Str = fun n =>
+    if n < 10
+      then SCons(Char (n + 48), SNil)
+      else $concat ($intToStr (n / 10)) (SCons(Char (n - n / 10 * 10 + 48), SNil))
+  in
+let rec printJson : Json -> Str ! {Div} = fun j =>
+    match (j : Json) {
+      JNull -> "null",
+      JBool(b) -> if b == 0 then "false" else "true",
+      JInt(n) -> $intToStr n,
+      JStr(s) -> $concat "\"" ($concat s "\""),
+      JArr(l) -> let rec printElems : Json -> Str ! {Div} = fun ll =>
+          match (ll : Json) {
+            JNilL -> SNil,
+            JCons(h, t) -> let hStr = $printJson h
+              in
+            match (t : Json) {
+              JNilL -> hStr,
+              JNull -> $concat hStr ($concat "," ($printElems t)),
+              JBool(x) -> $concat hStr ($concat "," ($printElems t)),
+              JInt(x) -> $concat hStr ($concat "," ($printElems t)),
+              JStr(x) -> $concat hStr ($concat "," ($printElems t)),
+              JArr(x) -> $concat hStr ($concat "," ($printElems t)),
+              JObj(x) -> $concat hStr ($concat "," ($printElems t)),
+              JCons(x, y) -> $concat hStr ($concat "," ($printElems t)),
+              JField(x, y) -> $concat hStr ($concat "," ($printElems t))
+            },
+            JNull -> SNil,
+            JBool(x) -> SNil,
+            JInt(x) -> SNil,
+            JStr(x) -> SNil,
+            JArr(x) -> SNil,
+            JObj(x) -> SNil,
+            JField(x, y) -> SNil
+          }
+        in
+      $concat "[" ($concat ($printElems l) "]"),
+      JObj(l) -> let rec printFields : Json -> Str ! {Div} = fun ll =>
+          match (ll : Json) {
+            JNilL -> SNil,
+            JCons(h, t) -> let hStr = {match (h : Json) {
+                JField(k, v) -> $concat "\"" ($concat k ($concat "\":" ($printJson v))),
+                JNull -> SNil,
+                JBool(x) -> SNil,
+                JInt(x) -> SNil,
+                JStr(x) -> SNil,
+                JArr(x) -> SNil,
+                JObj(x) -> SNil,
+                JCons(x, y) -> SNil,
+                JNilL -> SNil
+              }}
+              in
+            match (t : Json) {
+              JNilL -> $hStr,
+              JNull -> $concat $hStr ($concat "," ($printFields t)),
+              JBool(x) -> $concat $hStr ($concat "," ($printFields t)),
+              JInt(x) -> $concat $hStr ($concat "," ($printFields t)),
+              JStr(x) -> $concat $hStr ($concat "," ($printFields t)),
+              JArr(x) -> $concat $hStr ($concat "," ($printFields t)),
+              JObj(x) -> $concat $hStr ($concat "," ($printFields t)),
+              JCons(x, y) -> $concat $hStr ($concat "," ($printFields t)),
+              JField(x, y) -> $concat $hStr ($concat "," ($printFields t))
+            },
+            JNull -> SNil,
+            JBool(x) -> SNil,
+            JInt(x) -> SNil,
+            JStr(x) -> SNil,
+            JArr(x) -> SNil,
+            JObj(x) -> SNil,
+            JField(x, y) -> SNil
+          }
+        in
+      $concat "{" ($concat ($printFields l) "}"),
+      JCons(h, t) -> SNil,
+      JNilL -> SNil,
+      JField(k, v) -> SNil
+    }
+  in
+let tagOf = {fun j =>
+    match (j : Json) {
+      JNull -> 0,
+      JBool(x) -> 1,
+      JInt(x) -> 2,
+      JStr(x) -> 3,
+      JArr(x) -> 4,
+      JObj(x) -> 5,
+      JCons(x, y) -> 6,
+      JNilL -> 7,
+      JField(x, y) -> 8
+    }}
+  in
+let rec tagAt : Int -> Json -> Int ! {Div} = fun idx =>
+    fun j =>
+      match (j : Json) {
+        JNull -> 0 - 1,
+        JBool(x) -> 0 - 1,
+        JInt(x) -> 0 - 1,
+        JStr(x) -> 0 - 1,
+        JArr(l) -> $tagAt idx l,
+        JObj(x) -> 0 - 1,
+        JCons(h, t) -> if idx == 0 then $tagOf h else $tagAt (idx - 1) t,
+        JNilL -> 0 - 1,
+        JField(x, y) -> 0 - 1
+      }
+  in
+let boolToBit = {fun r => match r { Left(u) -> 0, Right(u) -> 1 }}
+  in
+let parseTop = {fun s => match ($parseValue s) { None -> JNull, Some(p) -> let (v, rest) = p in v }}
+  in
+let arrJ = $parseTop "[1, 2, 3]"
+  in
+let arrTag0 = $tagAt 0 arrJ
+  in
+let objJ = $parseTop "{\"a\": 1, \"b\": 2}"
+  in
+let objTag = $tagOf objJ
+  in
+let nestedJ = $parseTop "[10, [20, 30], {\"x\": true, \"y\": null}]"
+  in
+let nestedTag0 = $tagAt 0 nestedJ
+  in
+let nestedTag1 = $tagAt 1 nestedJ
+  in
+let nestedTag2 = $tagAt 2 nestedJ
+  in
+let printedArr = $printJson (JArr (JCons(JInt 1, JCons(JInt 2, JCons(JInt 3, JNilL)))))
+  in
+let printedArrOk = $eq printedArr "[1,2,3]"
+  in
+arrTag0 * 1 + objTag * 10 + nestedTag0 * 1 + nestedTag1 * 1 + nestedTag2 * 1 +
+$boolToBit printedArrOk * 100
