@@ -53,6 +53,21 @@ test-fmt:
 test-check-json:
     bash tools/test-check-json.sh
 
+# Regenerate EVERY derived artifact in one shot — the write-side twin of the fitness
+# checks. Run before committing anything that touches generators' inputs; kills the
+# one-stale-leg-per-hook-cycle onion at landings.
+regen-all:
+    python3 tools/gen-adr-index.py
+    python3 tools/gen-notes-index.py
+    python3 tools/gen-questions-index.py
+    python3 tools/gen-llms-txt.py
+    python3 tools/refs.py build
+    python3 tools/gen-gate-index.py
+    python3 tools/gen-import-graph.py
+    python3 tools/gen-changelog.py
+    python3 tools/gen-reference.py
+    python3 tools/gen-proof-state.py
+
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
 adr-index:
