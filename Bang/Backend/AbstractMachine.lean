@@ -694,6 +694,165 @@ are TRIVIALLY true at the empty-store `compile_correct` entry. Sibling of the ke
 def StoresBelow (g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) : Prop :=
   (∀ n, σ.get? n ≠ none → n < g) ∧ (∀ n, τ.get? n ≠ none → n < g) ∧ (∀ n, κ.get? n ≠ none → n < g)
 
+/-! ### `StoresBelow`/`StoresDisjoint` preservation (push/put closure of the bridge invariant, (B')). -/
+
+-- push = cons on the assoc list ⇒ `get? m` sees the new key `g` OR the original.
+theorem SStore.get?_push_ne_none {σ : SStore} {g m : Nat} {v : Val} :
+    (σ.push g v).get? m ≠ none ↔ (m = g ∨ σ.get? m ≠ none) := by
+  simp only [SStore.push, SStore.get?, List.find?]
+  by_cases hc : g = m
+  · subst hc; simp
+  · have hc' : ¬ (m = g) := fun he => hc he.symm
+    simp only [hc, decide_false, Bool.false_eq_true, if_false, hc', false_or]
+theorem THeap.get?_push_ne_none {τ : THeap} {g m : Nat} {Θ : List Val} :
+    (τ.push g Θ).get? m ≠ none ↔ (m = g ∨ τ.get? m ≠ none) := by
+  simp only [THeap.push, THeap.get?, List.find?]
+  by_cases hc : g = m
+  · subst hc; simp
+  · have hc' : ¬ (m = g) := fun he => hc he.symm
+    simp only [hc, decide_false, Bool.false_eq_true, if_false, hc', false_or]
+theorem CStore.get?_push_ne_none {κ : CStore} {g m : Nat} {p : Val} {cls : List (Bang.OpId × Comp)} :
+    (κ.push g p cls).get? m ≠ none ↔ (m = g ∨ κ.get? m ≠ none) := by
+  simp only [CStore.push, CStore.get?, List.find?]
+  by_cases hc : g = m
+  · subst hc; simp
+  · have hc' : ¬ (m = g) := fun he => hc he.symm
+    simp only [hc, decide_false, Bool.false_eq_true, if_false, hc', false_or]
+
+-- `SStore.put` keeps the key SET (`= none` iff it was `= none`) — `put` never adds/removes a key,
+-- only rewrites a present one. Single induction on σ (each cons: replace-head keeps the key, else recurse).
+theorem SStore.put_get?_eq_none : ∀ (σ : SStore) {ℓ m : Bang.EffectRow.Label} {v : Val},
+    ((σ.put ℓ v).get? m = none ↔ σ.get? m = none) := by
+  intro σ
+  induction σ with
+  | nil => intro ℓ m v; rfl
+  | cons p σ ih =>
+    obtain ⟨ℓ0, w⟩ := p
+    intro ℓ m v
+    simp only [SStore.put]
+    by_cases hlv : ℓ0 = ℓ
+    · -- head replaced (ℓ0,w)→(ℓ0,v); `get? m` on both = check `ℓ0 = m` then recurse identically.
+      simp only [if_pos hlv]
+      by_cases hm : ℓ0 = m
+      · simp [SStore.get?, List.find?, hm]
+      · simp only [SStore.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]
+    · simp only [if_neg hlv]
+      by_cases hm : ℓ0 = m
+      · simp [SStore.get?, List.find?, hm]
+      · simp only [SStore.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]; exact ih
+theorem THeap.put_get?_eq_none : ∀ (τ : THeap) {ℓ m : Bang.EffectRow.Label} {Θ : List Val},
+    ((τ.put ℓ Θ).get? m = none ↔ τ.get? m = none) := by
+  intro τ
+  induction τ with
+  | nil => intro ℓ m Θ; rfl
+  | cons p τ ih =>
+    obtain ⟨ℓ0, w⟩ := p
+    intro ℓ m Θ
+    simp only [THeap.put]
+    by_cases hlv : ℓ0 = ℓ
+    · simp only [if_pos hlv]
+      by_cases hm : ℓ0 = m
+      · simp [THeap.get?, List.find?, hm]
+      · simp only [THeap.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]
+    · simp only [if_neg hlv]
+      by_cases hm : ℓ0 = m
+      · simp [THeap.get?, List.find?, hm]
+      · simp only [THeap.get?, List.find?, hm, decide_false, Bool.false_eq_true, if_false]; exact ih
+
+-- push `= none`: `m ≠ g` AND missed before.
+private theorem sstore_push_eq_none {σ : SStore} {g m : Nat} {v : Val}
+    (hne : m ≠ g) (h0 : σ.get? m = none) : (σ.push g v).get? m = none := by
+  by_contra hc; rcases SStore.get?_push_ne_none.mp hc with rfl | hin; exacts [hne rfl, hin h0]
+private theorem theap_push_eq_none {τ : THeap} {g m : Nat} {Θ : List Val}
+    (hne : m ≠ g) (h0 : τ.get? m = none) : (τ.push g Θ).get? m = none := by
+  by_contra hc; rcases THeap.get?_push_ne_none.mp hc with rfl | hin; exacts [hne rfl, hin h0]
+private theorem cstore_push_eq_none {κ : CStore} {g m : Nat} {p : Val} {cls : List (Bang.OpId × Comp)}
+    (hne : m ≠ g) (h0 : κ.get? m = none) : (κ.push g p cls).get? m = none := by
+  by_contra hc; rcases CStore.get?_push_ne_none.mp hc with rfl | hin; exacts [hne rfl, hin h0]
+
+theorem StoresBelow.put_state {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {n : Nat} {v : Val}
+    (h : StoresBelow g σ τ κ) : StoresBelow g (σ.put n v) τ κ :=
+  ⟨fun m hm => h.1 m (fun heq => hm ((SStore.put_get?_eq_none σ).mpr heq)), h.2.1, h.2.2⟩
+theorem StoresBelow.put_txn {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {n : Nat} {Θ : List Val}
+    (h : StoresBelow g σ τ κ) : StoresBelow g σ (τ.put n Θ) κ :=
+  ⟨h.1, fun m hm => h.2.1 m (fun heq => hm ((THeap.put_get?_eq_none τ).mpr heq)), h.2.2⟩
+theorem StoresBelow.push_state {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {s : Val}
+    (h : StoresBelow g σ τ κ) : StoresBelow (g+1) (σ.push g s) τ κ := by
+  refine ⟨fun m hm => ?_, fun m hm => Nat.lt_succ_of_lt (h.2.1 m hm), fun m hm => Nat.lt_succ_of_lt (h.2.2 m hm)⟩
+  rcases SStore.get?_push_ne_none.mp hm with heq | hin
+  · subst heq; exact Nat.lt_succ_self m
+  · exact Nat.lt_succ_of_lt (h.1 m hin)
+theorem StoresBelow.push_txn {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {Θ : List Val}
+    (h : StoresBelow g σ τ κ) : StoresBelow (g+1) σ (τ.push g Θ) κ := by
+  refine ⟨fun m hm => Nat.lt_succ_of_lt (h.1 m hm), fun m hm => ?_, fun m hm => Nat.lt_succ_of_lt (h.2.2 m hm)⟩
+  rcases THeap.get?_push_ne_none.mp hm with heq | hin
+  · subst heq; exact Nat.lt_succ_self m
+  · exact Nat.lt_succ_of_lt (h.2.1 m hin)
+theorem StoresBelow.push_custom {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {p : Val}
+    {cls : List (Bang.OpId × Comp)} (h : StoresBelow g σ τ κ) : StoresBelow (g+1) σ τ (κ.push g p cls) :=
+  ⟨fun m hm => Nat.lt_succ_of_lt (h.1 m hm), fun m hm => Nat.lt_succ_of_lt (h.2.1 m hm),
+   fun m hm => by rcases CStore.get?_push_ne_none.mp hm with rfl | hin
+                  exacts [by omega, Nat.lt_succ_of_lt (h.2.2 m hin)]⟩
+
+theorem StoresDisjoint.put_state {σ : SStore} {τ : THeap} {κ : CStore} {n : Nat} {v : Val}
+    (h : StoresDisjoint σ τ κ) : StoresDisjoint (σ.put n v) τ κ := by
+  intro m
+  have keyb : (σ.put n v).get? m ≠ none → σ.get? m ≠ none :=
+    fun hne heq => hne ((SStore.put_get?_eq_none σ).mpr heq)
+  exact ⟨fun hne => (h m).1 (keyb hne),
+    fun hne => ⟨(SStore.put_get?_eq_none σ).mpr ((h m).2.1 hne).1, ((h m).2.1 hne).2⟩,
+    fun hne => ⟨(SStore.put_get?_eq_none σ).mpr ((h m).2.2 hne).1, ((h m).2.2 hne).2⟩⟩
+theorem StoresDisjoint.put_txn {σ : SStore} {τ : THeap} {κ : CStore} {n : Nat} {Θ : List Val}
+    (h : StoresDisjoint σ τ κ) : StoresDisjoint σ (τ.put n Θ) κ := by
+  intro m
+  have keyb : (τ.put n Θ).get? m ≠ none → τ.get? m ≠ none :=
+    fun hne heq => hne ((THeap.put_get?_eq_none τ).mpr heq)
+  exact ⟨fun hne => ⟨(THeap.put_get?_eq_none τ).mpr ((h m).1 hne).1, ((h m).1 hne).2⟩,
+    fun hne => (h m).2.1 (keyb hne),
+    fun hne => ⟨((h m).2.2 hne).1, (THeap.put_get?_eq_none τ).mpr ((h m).2.2 hne).2⟩⟩
+theorem StoresDisjoint.push_state {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {s : Val}
+    (hd : StoresDisjoint σ τ κ) (hb : StoresBelow g σ τ κ) : StoresDisjoint (σ.push g s) τ κ := by
+  intro m
+  refine ⟨fun hne => ?_, fun hne => ?_, fun hne => ?_⟩
+  · rcases SStore.get?_push_ne_none.mp hne with rfl | hin
+    · exact ⟨by by_contra hc; exact Nat.lt_irrefl _ (hb.2.1 m hc),
+             by by_contra hc; exact Nat.lt_irrefl _ (hb.2.2 m hc)⟩
+    · exact (hd m).1 hin
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.2.1 m hne)
+    exact ⟨sstore_push_eq_none hmg ((hd m).2.1 hne).1, ((hd m).2.1 hne).2⟩
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.2.2 m hne)
+    exact ⟨sstore_push_eq_none hmg ((hd m).2.2 hne).1, ((hd m).2.2 hne).2⟩
+theorem StoresDisjoint.push_txn {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {Θ : List Val}
+    (hd : StoresDisjoint σ τ κ) (hb : StoresBelow g σ τ κ) : StoresDisjoint σ (τ.push g Θ) κ := by
+  intro m
+  refine ⟨fun hne => ?_, fun hne => ?_, fun hne => ?_⟩
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.1 m hne)
+    exact ⟨theap_push_eq_none hmg ((hd m).1 hne).1, ((hd m).1 hne).2⟩
+  · rcases THeap.get?_push_ne_none.mp hne with rfl | hin
+    · exact ⟨by by_contra hc; exact Nat.lt_irrefl _ (hb.1 m hc),
+             by by_contra hc; exact Nat.lt_irrefl _ (hb.2.2 m hc)⟩
+    · exact (hd m).2.1 hin
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.2.2 m hne)
+    exact ⟨((hd m).2.2 hne).1, theap_push_eq_none hmg ((hd m).2.2 hne).2⟩
+theorem StoresDisjoint.push_custom {g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {p : Val}
+    {cls : List (Bang.OpId × Comp)} (hd : StoresDisjoint σ τ κ) (hb : StoresBelow g σ τ κ) :
+    StoresDisjoint σ τ (κ.push g p cls) := by
+  intro m
+  refine ⟨fun hne => ?_, fun hne => ?_, fun hne => ?_⟩
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.1 m hne)
+    exact ⟨((hd m).1 hne).1, cstore_push_eq_none hmg ((hd m).1 hne).2⟩
+  · have hmg : m ≠ g := Nat.ne_of_lt (hb.2.1 m hne)
+    exact ⟨((hd m).2.1 hne).1, cstore_push_eq_none hmg ((hd m).2.1 hne).2⟩
+  · rcases CStore.get?_push_ne_none.mp hne with rfl | hin
+    · exact ⟨by by_contra hc; exact Nat.lt_irrefl _ (hb.1 m hc),
+             by by_contra hc; exact Nat.lt_irrefl _ (hb.2.1 m hc)⟩
+    · exact (hd m).2.2 hin
+
+theorem StoresBelow.nil {g : Nat} : StoresBelow g [] [] [] :=
+  ⟨fun _ h => absurd rfl h, fun _ h => absurd rfl h, fun _ h => absurd rfl h⟩
+theorem StoresDisjoint.nil : StoresDisjoint [] [] [] :=
+  fun _ => ⟨fun h => absurd rfl h, fun h => absurd rfl h, fun h => absurd rfl h⟩
+
 /-- Overwrite each `custom` frame's stored payload in `hs` with the head of `κ` (consumed in order).
 Since the custom param is READ-ONLY (v1), the head payload EQUALS the frame's own under `CCorr`, so
 this is effectively identity — but stated in the `updateStates`/`updateTxns` shape for the uniform
