@@ -1115,12 +1115,12 @@ theorem evalD_complete_gen_full : ∀ F,
                 have hs := Config.run_step F' (g, K, Comp.handle (Handler.state ℓ0 s0) M0)
                   (by intro gg vv hc; simp at hc)
                 rw [hmint] at hs; simp only at hs; rw [← hs]; exact hrun
-              obtain ⟨n, g1, σ1, τ1, hCFσ1, hCFτ1, hbody⟩ := ih F' (by omega) (Comp.subst (Val.vcap g ℓ0) M0) (g+1)
-                (σ.push g s0) τ (Frame.handleF g (Handler.state ℓ0 s0) :: K) v
-                hCinstall hTinstall hCohInstall hFreshInstall (hncf.cons_handleF (by intro ℓ p cl; simp)) hCFbody hCFσinstall hCFτ hrun'
+              obtain ⟨n, g1, σ1, τ1, κ1, hCFσ1, hCFτ1, hbody⟩ := ih F' (by omega) (Comp.subst (Val.vcap g ℓ0) M0) (g+1)
+                (σ.push g s0) τ [] (Frame.handleF g (Handler.state ℓ0 s0) :: K) v
+                hCinstall hTinstall hCohInstall hFreshInstall (hncf.cons_handleF (by intro ℓ p cl; simp)) rfl hCFbody hCFσinstall hCFτ hrun'
               rcases hbody with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F1, hF1le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F1, hF1le, hcont⟩
               · -- body terminates: t = ret v0 (evalD_term_shape; lam under handleF is stuck).
-                rcases evalD_term_shape _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
+                rcases evalD_term_shape _ _ _ _ _ _ _ _ _ _ _ hev with ⟨v0, rfl⟩ | ⟨M2, rfl⟩
                 · -- POP the state frame: whole handle → term(ret v0), σ1.tail. Compose via handle_state_composes.
                   obtain ⟨⟨hCpop, hTpop⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_state hCf hTf
                   rw [hnetEq] at hCohf hFf hcont
@@ -1139,8 +1139,8 @@ theorem evalD_complete_gen_full : ∀ F,
                           Comp.ret v0) (by intro gg vv hc; simp at hc)
                         rw [hunmark] at this; rw [this] at hcont; exact ⟨F1', by omega, hcont⟩
                   obtain ⟨Fs, hFslt, hFs⟩ := hcont''
-                  refine ⟨n+1, g1, σ1.tail, τ1, CFStore_tail hCFσ1, hCFτ1, Or.inl ⟨.ret v0, ?_, hCpop, hTpop, hCohPop, hFreshPop, hCFt, Fs, by omega, hFs⟩⟩
-                  exact handle_state_composes n g σ τ ℓ0 s0 M0 v0 g1 σ1 τ1 hev
+                  refine ⟨n+1, g1, σ1.tail, τ1, κ1, CFStore_tail hCFσ1, hCFτ1, Or.inl ⟨.ret v0, ?_, hCpop, hTpop, hCohPop, hFreshPop, hCFt, Fs, by omega, hFs⟩⟩
+                  exact handle_state_composes n g σ τ [] ℓ0 s0 M0 v0 g1 σ1 τ1 κ1 hev
                 · -- lam under handleF-state (UNMARK expects ret): stuck ⟹ hcont-absurd.
                   exfalso
                   obtain ⟨⟨_, _⟩, hnetEq⟩ := CtxCorr_ctxNetEffect_pop_state hCf hTf
