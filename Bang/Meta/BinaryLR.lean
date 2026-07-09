@@ -2089,7 +2089,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
   | @handleCustom _ _ ℓ p cl M e φ q qc P A _hcl _hcov _hp hM _hle _hBocc =>
       -- custom arm: the LR-custom obligation (contextual equivalence for user effects) is #44 STAGE 5's
       -- theorem, not Stage-3 kernel soundness — deferred with the LR re-index (#15/PATH-inc5); see
-      -- ADR-0092 D3/D4 landing. Feeds the already-flagged `lr_*` set only (no new flagged headline).
+      -- ADR-0092 D3/D4 landing. Concrete gap: a `compatK_handleCustom` compatibility lemma (the resumptive
+      -- user-effect analogue of `compatK_handleState`/`Transaction`). Feeds the already-flagged `lr_*` set
+      -- only (no new flagged headline).
       sorry
 end
 
@@ -2178,7 +2180,9 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
   | @customF K nh ℓ p cl e φ eo q P A Co _hcl _hcov _hp _hle _hBocc hK ihK =>
       -- custom arm: the LR-custom obligation (contextual equivalence for user effects) is #44 STAGE 5's
       -- theorem, not Stage-3 kernel soundness — deferred with the LR re-index (#15/PATH-inc5); see
-      -- ADR-0092 D3/D4 landing. Feeds the already-flagged `lr_*` set only (no new flagged headline).
+      -- ADR-0092 D3/D4 landing. Concrete gap: a `krelS_custom_reinstall` lemma (the resumptive user-effect
+      -- analogue of `krelS_state_reinstall`/`transaction_reinstall`), the stack-side of `compatK_handleCustom`.
+      -- Feeds the already-flagged `lr_*` set only (no new flagged headline).
       sorry
 
 end -- public section
