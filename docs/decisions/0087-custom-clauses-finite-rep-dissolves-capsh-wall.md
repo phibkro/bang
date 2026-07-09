@@ -2,14 +2,14 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: The #44 arc is blocked at ADR-0085's Stage-2 finding: making `Handler.custom` dispatch real regresses the clean CalcVM coherence headlines because `capsH : Handler → List (Nat × Label)` must BOUND a config's capabilities, and the coexist rep's clause map is an opaque `OpId → Option Comp` whose caps cannot be collected (the domain is not enumerable; `capsH (.custom …) = []` is currently sound ONLY by Stage-1 inertness). ADR-0085 sketched the fix as a THREADED well-formedness invariant ("custom clauses are VcapFree") through `CapLabelCoh`/`FreshCfg`/the machine proofs. **This ADR proposes the stronger move: change the representation — `Handler.custom : Label → Val → List (OpId × Comp) → Handler` (a finite association list) — making cap-enumeration STRUCTURAL.** `capsH`'s custom arm becomes `clauses.flatMap (capsC ∘ ·.2)` — total, honest, compositional — so `CapLabelCoh`/`FreshCfg` **statements do not change and gain no premise**: clause caps are bounded by the SAME machinery as every other cap, and the clean headlines stay clean by construction rather than by a side condition. The finite rep also matches the surface (an `effect` declaration and a `handle … with { … }` block are syntactically finite clause lists), makes `handlesOp` a decidable lookup, gives `renameH`/`substFrom`/`shiftFrom` an ordinary `.map` traversal, and eases Stage-3 typing (pointwise over the list). Cost: rebase the banked Stage-2 semantics (`origin/gh44s2`, one ~180-line WIP commit) from function-application dispatch to list lookup, and give up infinite op families — which `EffSig`-declared effects never produce (an `effect` decl is finite by construction). **Rejected**: (a) the threaded VcapFree-clause invariant (detection where construction is available: every machine theorem gains a premise + a preservation-lemma surface, violating the make-illegal-states-unrepresentable principle); (b) a subtype/bundled rep `{cl // ∀ op c, cl op = some c → VcapFree c}` (carries dependent proof obligations through every construction site for less than the list buys). Probe-first before the arc commits (falsifiable rungs below).
 - **Depends-on**: 0085, 0086, 0055, 0063
 - **Relates-to**: 0084 (the Net instance this unblocks), Q22/Q27 (multi-shot — unaffected by the rep choice), #44
 
 ## Status
 
-Proposed (2026-07-09) — the **entry gate for the #44 resume arc**; operator review before the arc opens. Supersedes ADR-0085's Stage-2 invariant SKETCH (its staged plan otherwise stands; see §Staging).
+Accepted (2026-07-09, operator ruling same day) — the **entry gate for the #44 resume arc** is OPEN: rung-1 probe first (D4). Supersedes ADR-0085's Stage-2 invariant SKETCH (its staged plan otherwise stands; see §Staging).
 
 - **Layer:** K (kernel — the `Handler.custom` constructor's argument type). Stage-1's rep is landed but INERT and UNTYPED (no well-typed program contains it; `capsH`/dispatch arms are vacuous or `[]`), so this is a **pre-activation rep change, not a re-freeze**: no frozen statement mentions the clause map's type, and the ~424-site coexist ripple re-touches only the custom arms (byte-identical built-ins stay byte-identical).
 
