@@ -1116,6 +1116,23 @@
     "sha256_pinned": ""
   },
   {
+    "key": "leijen-esop14-koka-row-effects",
+    "title": "Koka: Programming with Row-Polymorphic Effect Types",
+    "year": "2014",
+    "doi": "",
+    "eprint": "1406.2061",
+    "topics": [
+      "effect-algebra",
+      "effect-handlers"
+    ],
+    "grounds": [],
+    "role": "frontier",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "lesani-concur12-verifying-stm",
     "title": "A Framework for Verifying STM Algorithms",
     "year": "2012",
@@ -1144,6 +1161,22 @@
     "sha256_pinned": ""
   },
   {
+    "key": "lindley-icfp17-do-be-do-be-do",
+    "title": "Do Be Do Be Do",
+    "year": "2017",
+    "doi": "10.1145/3009837.3009897",
+    "eprint": "1611.09259",
+    "topics": [
+      "effect-handlers"
+    ],
+    "grounds": [],
+    "role": "frontier",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "mcbride-16-plenty-o-nuttin",
     "title": "I Got Plenty o' Nuttin'",
     "year": "2016",
@@ -1166,6 +1199,22 @@
     "topics": [],
     "grounds": [],
     "role": "",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "rossberg-icfp15-1ml",
+    "title": "1ML -- Core and Modules United (F-ing First-Class Modules)",
+    "year": "2015",
+    "doi": "10.1145/2784731.2784738",
+    "eprint": "",
+    "topics": [
+      "module-system"
+    ],
+    "grounds": [],
+    "role": "frontier",
     "ondisk": false,
     "hop": null,
     "path": null,

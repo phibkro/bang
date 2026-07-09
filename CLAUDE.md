@@ -35,6 +35,7 @@ its trigger arises.
 | **Feedback-loop audit** (loops by radius; refresh at each ◊ — `check-loop-audit.sh` enforces) | `docs/notes/loop-audit.md` |
 | **Standard-library map** (the third stratum: reusable abstractions as library code, gated by type-power) | `docs/notes/stdlib-map.md` |
 | **Formatting-techniques survey** (the canonical formatter #58: three-rung map · exact-vs-canonical · layout engine · zero-config) | `docs/notes/formatting-survey.md` |
+| **Handler-surface + unification survey** (Q38/Stage-7: the handler-syntax census · module≟trait≟effect unification attempts + failure modes · grade-as-dial prior art · ADR-inputs) | `docs/notes/q38-handler-surface-survey.md` |
 | **All design notes** (the exhaustive map of `docs/notes/`, grouped by status — generated) | `docs/notes/README.md` |
 | **Categorical reading** (objects/morphisms: graded `F⊣U` adjunction · graded monad = paradigm · handler-algebra · the two-hop functor) | `docs/notes/categorical-architecture.md` |
 | **Proof discipline** (PROOF_ORDER, sorry rules, axiom hygiene) | `docs/notes/spec-proof-discipline.md` |
