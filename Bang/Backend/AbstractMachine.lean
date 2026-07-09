@@ -612,6 +612,53 @@ def updateTxns : HStack → THeap → HStack
           | []           => fr :: updateTxns hs []     -- τ exhausted (unreachable under TCorr)
       | _ => fr :: updateTxns hs τ
 
+/-! ### Custom ↔ HStack correspondence (ADR-0085 Stage 4): the user-effect analog of the state/txn bridge
+
+`hsCustom`/`hsCustoms`/`updateCustoms`/`CCorr` are the EXACT mirror of `hsState`/`hsStates`/
+`updateStates`/`Corr`, projecting `custom ℓ p cls` frames into a `CStore` instead of `state ℓ s`
+frames into an `SStore`. A SEPARATE projection (op-disjointness — see `CStore`): the state/txn
+projections skip custom frames, the custom projection skips state/txn frames, and no op crosses.
+The custom param is READ-ONLY in v1, so `updateCustoms` is identity on the frame PAYLOAD (unlike
+`updateStates`/`updateTxns` which overwrite) — it only exists for the structural `netEffect` rebuild. -/
+
+/-- The `(param, clauses)` of the `custom` frame with IDENTITY `n` in `hs` (machine-side `CStore.get?`).
+KIND-FIRST (mirrors `customUpdate`): skip non-custom frames, at a custom frame return its payload if
+`id = n`. -/
+def hsCustom : HStack → Nat → Option (Val × List (Bang.OpId × Comp))
+  | [],       _ => none
+  | fr :: hs, n =>
+      match fr.handler with
+      | .custom _ p cls => if fr.id = n then some (p, cls) else hsCustom hs n
+      | _               => hsCustom hs n
+
+/-- Project the HStack to the custom store it mirrors: the `custom` frames, in order, as
+`(id, (p, cls))` entries keyed by IDENTITY (state/throws/txn frames carry no clause payload ⇒ skipped).
+`CCorr` says `evalD`'s threaded κ IS this projection. -/
+def hsCustoms : HStack → CStore
+  | []        => []
+  | fr :: hs  =>
+      match fr.handler with
+      | .custom _ p cls => (fr.id, (p, cls)) :: hsCustoms hs
+      | _               => hsCustoms hs
+
+/-- The bridge invariant (Stage 4), STRUCTURAL form: `evalD`'s threaded κ IS the projection of the
+machine's active custom frames. The user-effect analog of `Corr`/`TCorr`. -/
+def CCorr (κ : CStore) (hs : HStack) : Prop := κ = hsCustoms hs
+
+/-- Overwrite each `custom` frame's stored payload in `hs` with the head of `κ` (consumed in order).
+Since the custom param is READ-ONLY (v1), the head payload EQUALS the frame's own under `CCorr`, so
+this is effectively identity — but stated in the `updateStates`/`updateTxns` shape for the uniform
+`netEffect` rebuild. Non-custom frames pass through. -/
+def updateCustoms : HStack → CStore → HStack
+  | [],       _ => []
+  | fr :: hs, κ =>
+      match fr.handler with
+      | .custom ℓ0 _ _ =>
+          match κ with
+          | (_, (p, cls)) :: κ' => { fr with handler := .custom ℓ0 p cls } :: updateCustoms hs κ'
+          | []                  => fr :: updateCustoms hs []     -- κ exhausted (unreachable under CCorr)
+      | _ => fr :: updateCustoms hs κ
+
 /-- `get?` of the projection reads the state frame with identity `n` (ties `hsStates` to `hsState`). -/
 theorem get?_hsStates : ∀ (hs : HStack) (n : Nat),
     (hsStates hs).get? n = hsState hs n := by
@@ -1248,6 +1295,30 @@ theorem get?_hsTxns : ∀ (hs : HStack) (ℓ : Bang.EffectRow.Label),
 /-- Under `TCorr`, the heap read equals the machine read. -/
 theorem TCorr.get? {τ : THeap} {hs : HStack} (hT : TCorr τ hs) (ℓ : Bang.EffectRow.Label) :
     τ.get? ℓ = hsTxn hs ℓ := by rw [hT]; exact get?_hsTxns hs ℓ
+
+/-- `get?` of the custom projection reads the custom frame with identity `n` (ties `hsCustoms` to
+`hsCustom`). The user-effect analog of `get?_hsStates`/`get?_hsTxns`. -/
+theorem get?_hsCustoms : ∀ (hs : HStack) (n : Nat),
+    (hsCustoms hs).get? n = hsCustom hs n := by
+  intro hs
+  induction hs with
+  | nil => intro n; rfl
+  | cons fr hs ih =>
+    intro n
+    cases hh : fr.handler with
+    | custom ℓ0 p cl =>
+        simp only [hsCustoms, hsCustom, hh]
+        by_cases hc : fr.id = n
+        · simp [CStore.get?, List.find?, hc]
+        · simp only [if_neg hc, CStore.get?, List.find?, hc, decide_false, Bool.false_eq_true,
+            if_false]; exact ih n
+    | state ℓ0 s => simp only [hsCustoms, hsCustom, hh]; exact ih n
+    | throws ℓ0 => simp only [hsCustoms, hsCustom, hh]; exact ih n
+    | transaction ℓ0 Θ => simp only [hsCustoms, hsCustom, hh]; exact ih n
+
+/-- Under `CCorr`, the custom store read equals the machine read. -/
+theorem CCorr.get? {κ : CStore} {hs : HStack} (hK : CCorr κ hs) (n : Nat) :
+    κ.get? n = hsCustom hs n := by rw [hK]; exact get?_hsCustoms hs n
 
 /-- `THeap.put` hits at its own label when bound. Induction on τ. -/
 theorem THeap.get?_put_self : ∀ (τ : THeap) (ℓ : Bang.EffectRow.Label) (Θ : List Val) (Θ0 : List Val),
