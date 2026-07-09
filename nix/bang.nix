@@ -35,7 +35,7 @@
   # Hash of the official Lean release tarball for `leanVersion` (see re-pin above).
   toolchainHash ? "sha256-Ta10FBwsEZyhqmJmVr6DuOFCOK+6lycf178es/CBsxk=",
   # Hash of the `lake exe cache get` output tree (see re-pin above).
-  depsHash ? "sha256-kzE5SgoCPrZdi6Gj++hxu12ZuzRre+qWlBI5FMgZ3TA=",
+  depsHash ? "sha256-+cLIWkSbmet+BFGDfXwuMC4Mf4Hrh6tVgXWBVZ4Z6UQ=",
 }:
 
 let
