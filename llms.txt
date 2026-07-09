@@ -33,6 +33,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/notes/dogfood-json-findings.md](docs/notes/dogfood-json-findings.md) — Dogfood: JSON parser findings (#61 blocker · module-shape needs · what worked)
 - [docs/notes/envsem-survey.md](docs/notes/envsem-survey.md) — Env-semantics survey (#61 fix · substitution-vs-environment fork · keep spec, env in the machine)
 - [docs/notes/stranger-test-1.md](docs/notes/stranger-test-1.md) — Stranger test round 1 (8.5/10 · the reference-strings blind spot · the repeatable method)
+- [docs/notes/stranger-test-2.md](docs/notes/stranger-test-2.md) — Stranger test round 2 (7/10 · modules+laws under-surfaced · the pub-bypass find (#73) · rebuild-first method addendum)
 - [docs/notes/calculated-typer-survey.md](docs/notes/calculated-typer-survey.md) — Calculated CHECKER survey (TCT/SbC · the frontend trust-map · fuzz-harness · evidence-passing verdict)
 - [docs/notes/loop-audit.md](docs/notes/loop-audit.md) — Feedback-loop audit (loops by radius; refresh at each ◊ — check-loop-audit.sh enforces)
 - [docs/notes/stdlib-map.md](docs/notes/stdlib-map.md) — Standard-library map (the third stratum: reusable abstractions as library code, gated by type-power)

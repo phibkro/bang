@@ -36,12 +36,20 @@ decls parse, labels allocate ℓ≥4 deterministically, program-derived EffSig t
 user names; v1 restriction: builtin op names RESERVED in effect decls) and the kernel half (`125b383`..`06dbf9e`:
 `HasCTy.handleCustom` + `HasStack.customF` — the first typed user-effect rule; v1 clause bodies are the RET-SHAPE
 per the answer-grade wall, ADR-0092 §D3-as-landed; `concat_custom_absurd` retired by real arms; census
-byte-identical). **The edge is Stage 4 (IN FLIGHT, `feat-44-stage4-idfirst`): derive evalD's custom arm ID-FIRST (operator
-ruling 2026-07-09, issue #62 — dispatch by store-holding identity, matching the kernel unconditionally), drop BOTH
-scaffolding premises (`CustomFree`, `NoCustomFrame`) — `compile_forward_sim` returns to VcapFree-only.** Then
-5 (LR: three pre-registered debts in PATH-inc5 — compatK_handleCustom + krelS_custom_reinstall + dispatchOn_rename)
-→ 6 (soundness composition) → 7 (surface `handle … with { … }` — where the Q38 unification stress-test runs). The
-IO/net prong (ADR-0084) unblocks at Stage 7. **Modules v1 is LANDED (`7a95dfa`..`6d69580`, 2026-07-09, ADR-0093
+byte-identical). **STAGE 4 IS LANDED (`9617744`, 2026-07-10 — squash of feat-44-stage4-idfirst, 56 commits, five
+lanes + an independent zero-refutation audit): evalD's custom arm is ID-FIRST (operator ruling (3), issue #62 —
+dispatch by store-holding identity σ→τ→κ, matching the kernel unconditionally; the machine OP arm mirrors it);
+`NoCustomFrame` retired; sim carries `StoresBelow ∧ StoresDisjoint` (id-uniqueness is load-bearing for TRUTH);
+U5bComplete + Wasm ported to the 5-tuple; `exec_wexec_sim_ok` premised on custom-frame-absence with the full
+preservation proof. `CustomFree` is RETAINED on `compile_forward_sim` this unit — the converse-custom drop is the
+pre-registered follow-up (#62 stays open for it); Agree custom battery green through exec∘compile (resume→106,
+abort→42); census byte-unchanged.** **The edge is Stage 5** (LR: three pre-registered debts in PATH-inc5 —
+compatK_handleCustom + krelS_custom_reinstall + dispatchOn_rename) → 6 (soundness composition) → 7 (surface
+`handle … with { … }` — where the Q38 unification stress-test runs). The IO/net prong (ADR-0084) unblocks at
+Stage 7. **In parallel: the stranger-test round-2 fix wave** (7/10, `docs/notes/stranger-test-2.md` — #73
+pub-bypass via qualified access · #74 bang-test shape bug · #75 check --json span regression · #76 modules/trait
+reference gap) **and the queued design work** (ADR-0094 env semantics Proposed — ready for operator ruling;
+ADR-0089 workspace cut). **Modules v1 is LANDED (`7a95dfa`..`6d69580`, 2026-07-09, ADR-0093
 §as-landed): file-modules · `import`/`use`/`pub` · elaborate-to-flat with the merge≡hand-qualification oracle ·
 resolver-aware `bang run`/`bang check` · top-level `let`/`let rec` decls with `main` as a plain binding** — the
 frontend was orthogonal to the spine work, as planned. Binary-LR re-index stays DEFERRED (#15: D-now/A-probe-later,

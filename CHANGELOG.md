@@ -112,6 +112,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — unary minus (#64) (`85840ea`)
 - **cli** — bang test — wire the LawTest/lawInstancesOf seam (#60) (`586b2ed`)
 - **surface** — multi-binding let sugar (#68) (`3be8fcb`)
+- **calcvm** — #44 STAGE 4 — id-first custom arm through evalD·machine·sim·U5b·Wasm (squash of feat-44-stage4-idfirst, 56 commits) (`9617744`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
