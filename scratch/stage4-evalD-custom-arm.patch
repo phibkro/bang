@@ -1,0 +1,209 @@
+diff --git a/Bang/Backend/AbstractMachine.lean b/Bang/Backend/AbstractMachine.lean
+index 0747ef2..15d6b04 100644
+--- a/Bang/Backend/AbstractMachine.lean
++++ b/Bang/Backend/AbstractMachine.lean
+@@ -187,6 +187,41 @@ theorem isTxnOp_iff {op : Bang.OpId} :
+     isTxnOp op = true ↔ op = "newTVar" ∨ op = "readTVar" ∨ op = "writeTVar" := by
+   simp only [isTxnOp, Bool.or_eq_true, decide_eq_true_eq, or_assoc]
+ 
++/-! ## The custom store (ADR-0085 #44 Stage 4): the user-defined-effect analog of `SStore`/`THeap`
++
++`CStore` is the resumptive mechanism `evalD` threads for **custom** (`Handler.custom`) frames — the
++third **per-kind** store, a structural sibling of `SStore` (state) and `THeap` (transaction) under the
++KIND-FIRST-STORES idiom (route-B, build-arbitrated): stores are per-handler-kind, matching `evalD`'s
++per-kind dispatch — skip a non-matching kind, then check id. A custom frame carries a `(param, clauses)`
++payload, so the cell type is `Val × List (OpId × Comp)` (vs `SStore`'s `Val` and `THeap`'s `List Val`).
++
++`handle (custom ℓ p cls) M` PUSHES `(id ↦ (p, cls))` for the dynamic extent of `M` and POPS on exit;
++a `perform (vcap n ℓ) op v` at a live custom frame `n` looks up the frame's clauses, finds the op's
++clause, and INLINE-SERVICES it — runs `subst p (subst (shift v) clause.2)` as a sub-eval against the
++SAME store (frame stays live, so nested ops are handled) and resumes with its terminal value. The param
++is READ-ONLY in v1 (no in-place update — no `put`-analog), so `CStore` has no `.put`; a put-like
++param mutation is a post-v1 concern (ADR-0085 D2/Q27).
++
++**INVARIANT (op-disjointness — same load-bearing argument as `THeap`).** This is a SEPARATE parallel
++store, NOT a unified one, because custom ops (a user `effect` decl's fresh op names) are op-disjoint
++from the built-in op sets `{get,put}` / `{newTVar,readTVar,writeTVar}`. A label shared across kinds
++resolves unambiguously by op-id; the three projections never cross.
++
++**DEFERRED (per ADR-0085 D3, operator ruling 2026-07-09).** This is a per-kind store (kind-first
++idiom). The ADR-0085 D3 SINGLE-param-store generalization (one store subsuming state/txn/custom) is a
++DEFERRED census-preserving refactor — the SAME status as the handler-COLLAPSE (ADR-0085 D5, Option-A
++instances): a later beautification, not taken mid-derivation on taste (which would invert invariant #4). -/
++abbrev CStore := List (Nat × (Val × List (Bang.OpId × Comp)))
++
++/-- The nearest stored `(param, clauses)` for identity `n` (innermost custom frame wins — shadowing;
++identities are globally fresh, so at most one matches). -/
++def CStore.get? (κ : CStore) (n : Nat) : Option (Val × List (Bang.OpId × Comp)) :=
++  (κ.find? (fun p => p.1 = n)).map (·.2)
++
++/-- PUSH a fresh custom binding (a `handle (custom ℓ p cls)` install). -/
++def CStore.push (κ : CStore) (n : Nat) (p : Val) (cls : List (Bang.OpId × Comp)) : CStore :=
++  (n, (p, cls)) :: κ
++
+ /-! ## The denotational source `evalD` (substitution, terminal-Comp, store-threaded)
+ 
+ Fuel-bounded, structurally recursive on the fuel (NO `termination_by`, so the
+@@ -217,88 +252,105 @@ inductive Outcome where
+ -- kernel's `Source.step` handle-arm, Operational.lean:471), and keys both stores by the capability
+ -- IDENTITY `n` (not the label). A `perform (vcap n …)` dispatches by `n` (mirroring `idDispatch`/
+ -- `splitAtId`, :284/374); a `raised n …` propagates to the `handle` whose minted id equals `n`.
+--- The store key type is `Nat` (= `Label`), so `SStore`/`THeap` are reused with the key REINTERPRETED
+--- as an identity; identities are globally fresh (unique), so `get?`/`put` find the unique entry.
+-def evalD : Nat → Nat → SStore → THeap → Comp → Option (Outcome × Nat × SStore × THeap)
+-  | 0,          _, _, _, _         => none
+-  | Nat.succ _, g, σ, τ, .ret v    => some (.term (.ret v), g, σ, τ)
+-  | Nat.succ _, g, σ, τ, .lam M    => some (.term (.lam M), g, σ, τ)
+-  | Nat.succ f, g, σ, τ, .letC M N =>
+-      (evalD f g σ τ M).bind (fun p => match p with
+-        | (.term (.ret v), g', σ', τ') => evalD f g' σ' τ' (Comp.subst v N) -- M : F _ ⇒ terminal is `ret v`
+-        | (.term _, _, _, _)           => none                              -- ill-typed (letC of a lam)
+-        | (.raised n op w, g', σ', τ') => some (.raised n op w, g', σ', τ')) -- propagate the raise outward
+-  | Nat.succ f, g, σ, τ, .force (.vthunk M) => evalD f g σ τ M        -- force∘thunk = run the closed body
+-  | Nat.succ f, g, σ, τ, .app M v  =>
+-      (evalD f g σ τ M).bind (fun p => match p with
+-        | (.term (.lam N), g', σ', τ') => evalD f g' σ' τ' (Comp.subst v N) -- β: M ⇒ lam N, then N[v]
+-        | (.term _, _, _, _)           => none                              -- ill-typed (app of a non-lam)
+-        | (.raised n op w, g', σ', τ') => some (.raised n op w, g', σ', τ')) -- propagate the raise outward
++-- The store key type is `Nat` (= `Label`), so `SStore`/`THeap`/`CStore` are keyed by the capability
++-- IDENTITY; identities are globally fresh (unique), so `get?`/`put` find the unique entry. ADR-0085
++-- Stage 4: the THIRD store `κ : CStore` threads custom (`Handler.custom`) frames — a per-kind sibling
++-- of σ/τ (kind-first idiom), carrying `(param, clauses)` and INLINE-SERVICING a custom op by running
++-- the clause body as a sub-eval against the live frame.
++def evalD : Nat → Nat → SStore → THeap → CStore → Comp → Option (Outcome × Nat × SStore × THeap × CStore)
++  | 0,          _, _, _, _, _      => none
++  | Nat.succ _, g, σ, τ, κ, .ret v    => some (.term (.ret v), g, σ, τ, κ)
++  | Nat.succ _, g, σ, τ, κ, .lam M    => some (.term (.lam M), g, σ, τ, κ)
++  | Nat.succ f, g, σ, τ, κ, .letC M N =>
++      (evalD f g σ τ κ M).bind (fun p => match p with
++        | (.term (.ret v), g', σ', τ', κ') => evalD f g' σ' τ' κ' (Comp.subst v N) -- M : F _ ⇒ terminal `ret v`
++        | (.term _, _, _, _, _)            => none                              -- ill-typed (letC of a lam)
++        | (.raised n op w, g', σ', τ', κ') => some (.raised n op w, g', σ', τ', κ')) -- propagate the raise
++  | Nat.succ f, g, σ, τ, κ, .force (.vthunk M) => evalD f g σ τ κ M   -- force∘thunk = run the closed body
++  | Nat.succ f, g, σ, τ, κ, .app M v  =>
++      (evalD f g σ τ κ M).bind (fun p => match p with
++        | (.term (.lam N), g', σ', τ', κ') => evalD f g' σ' τ' κ' (Comp.subst v N) -- β: M ⇒ lam N, then N[v]
++        | (.term _, _, _, _, _)            => none                              -- ill-typed (app of a non-lam)
++        | (.raised n op w, g', σ', τ', κ') => some (.raised n op w, g', σ', τ', κ')) -- propagate the raise
+   -- perform (vcap n ℓ) op v: dispatch BY IDENTITY n (route-B). `get`/`put` resolve the state cell at
+-  -- key `n` in σ; `newTVar`/`readTVar`/`writeTVar` resolve the txn heap at key `n` in τ. A `raise` (or a
+-  -- mis-typed op, or no active frame) propagates as `raised n op v` toward the handler with identity n.
+-  | Nat.succ _, g, σ, τ, .perform (.vcap n _ℓ) op v   =>
++  -- key `n` in σ; `newTVar`/`readTVar`/`writeTVar` resolve the txn heap at key `n` in τ; a CUSTOM op
++  -- resolves the `(param, clauses)` at key `n` in κ and INLINE-SERVICES (ADR-0085 Stage 4). A `raise` (or
++  -- a mis-typed op, or no active frame) propagates as `raised n op v` toward the handler with identity n.
++  | Nat.succ f, g, σ, τ, κ, .perform (.vcap n _ℓ) op v   =>
+       if op = "get" then
+         match σ.get? n with
+-        | some s => some (.term (.ret s), g, σ, τ)                   -- get: return stored s, σ unchanged
+-        | none   => some (.raised n op v, g, σ, τ)                   -- no state frame for n ⇒ raise to n
++        | some s => some (.term (.ret s), g, σ, τ, κ)               -- get: return stored s, σ unchanged
++        | none   => some (.raised n op v, g, σ, τ, κ)              -- no state frame for n ⇒ raise to n
+       else if op = "put" then
+         match σ.get? n with
+-        | some _ => some (.term (.ret .vunit), g, σ.put n v, τ)      -- put: thread s := v at key n
+-        | none   => some (.raised n op v, g, σ, τ)
++        | some _ => some (.term (.ret .vunit), g, σ.put n v, τ, κ) -- put: thread s := v at key n
++        | none   => some (.raised n op v, g, σ, τ, κ)
+       else if isTxnOp op then
+         match τ.get? n with
+         | some Θ =>
+             -- serviced against the heap: thread Θ := Θ' in place (mirrors the machine's txnUpdate).
+             let (r, Θ') := txnService op v Θ
+-            some (.term (.ret r), g, σ, τ.put n Θ')
+-        | none => some (.raised n op v, g, σ, τ)                     -- no txn frame for n ⇒ raise to n
+-      else some (.raised n op v, g, σ, τ)                            -- raise / non-resumptive op
++            some (.term (.ret r), g, σ, τ.put n Θ', κ)
++        | none => some (.raised n op v, g, σ, τ, κ)                -- no txn frame for n ⇒ raise to n
++      else
++        -- custom op (ADR-0085 Stage 4): resolve `(p, cls)` at key `n` in κ; find the op's clause; INLINE-
++        -- SERVICE it — run `subst p (subst (shift v) clause.2)` as a sub-eval against the LIVE store
++        -- (κ unchanged: frame stays live, so nested ops are handled; param READ-ONLY in v1). Resume with
++        -- the clause's terminal value. No frame / no matching clause ⇒ raise to n (throws / non-resumptive).
++        match κ.get? n with
++        | some (p, cls) =>
++            match cls.find? (·.1 == op) with
++            | some clause => evalD f g σ τ κ (Comp.subst p (Comp.subst (Val.shift v) clause.2))
++            | none        => some (.raised n op v, g, σ, τ, κ)     -- op unserviced by this custom frame
++        | none => some (.raised n op v, g, σ, τ, κ)                -- raise / non-resumptive op
+   -- handle h M: MINT id := g, SUBSTITUTE `vcap id h.label` for the handle-bound var 0, recurse with g+1.
+   --  · state s : push (id ↦ s) on σ for M's extent; POP on exit; a raise FORWARDS (pop entry).
+   --  · transaction Θ : the list-heap analog (ADR-0031 D4); push (id ↦ Θ) on τ; POP on exit.
++  --  · custom (ℓ p cls) : the user-effect analog (ADR-0085 Stage 4); push (id ↦ (p, cls)) on κ; POP on exit.
+   --  · throws : CATCH a `raised n` with n = id ∧ op = "raise" ⇒ yield `term (ret w)` (zero-shot abort,
+-  --    ADR-0023). The at-raise stores σ'/τ' are KEPT (outer effects persist; inner frames already popped).
+-  | Nat.succ f, g, σ, τ, .handle h M  =>
++  --    ADR-0023). The at-raise stores σ'/τ'/κ' are KEPT (outer effects persist; inner frames already popped).
++  | Nat.succ f, g, σ, τ, κ, .handle h M  =>
+       let id := g
+       let M' := Comp.subst (.vcap id h.label) M
+       match h with
+       | .state _ s =>
+-          (evalD f (g+1) (σ.push id s) τ M').bind (fun p => match p with
+-            | (.term (.ret v), g', σ', τ') => some (.term (.ret v), g', σ'.tail, τ')  -- POP the pushed id entry
+-            | (.term _, _, _, _)           => none
+-            | (.raised n op' w, g', σ', τ') => some (.raised n op' w, g', σ'.tail, τ')) -- forward; pop entry
++          (evalD f (g+1) (σ.push id s) τ κ M').bind (fun p => match p with
++            | (.term (.ret v), g', σ', τ', κ') => some (.term (.ret v), g', σ'.tail, τ', κ')  -- POP the pushed id entry
++            | (.term _, _, _, _, _)            => none
++            | (.raised n op' w, g', σ', τ', κ') => some (.raised n op' w, g', σ'.tail, τ', κ')) -- forward; pop entry
+       | .transaction _ Θ =>
+-          (evalD f (g+1) σ (τ.push id Θ) M').bind (fun p => match p with
+-            | (.term (.ret v), g', σ', τ') => some (.term (.ret v), g', σ', τ'.tail)  -- POP the pushed id heap
+-            | (.term _, _, _, _)           => none
+-            | (.raised n op' w, g', σ', τ') => some (.raised n op' w, g', σ', τ'.tail)) -- forward; pop heap
+-      -- custom (ADR-0085 #44 STAGE 1): UNDEFINED — `none`. The DERIVED calc-machine arm is stage 4; this
+-      -- stage leaves the custom handle uninterpreted in the machine. This is the KEY stage-1 choice: because
+-      -- custom is untyped (no source/compiled program produces a custom HANDLE) AND the built-in arms above
+-      -- are byte-identical, every evalD-DRIVEN proof (`sim`/`compile_correct`/`evalD_agrees_source`) discharges
+-      -- its custom case VACUOUSLY — the hypothesis `evalD … (handle (.custom …) M) … = some …` is `none = some …`,
+-      -- absurd. No proof work leaks onto the custom arm; the calc machine stays an OUTPUT of stage-4 calculation.
+-      | .custom _ _ _ => none
++          (evalD f (g+1) σ (τ.push id Θ) κ M').bind (fun p => match p with
++            | (.term (.ret v), g', σ', τ', κ') => some (.term (.ret v), g', σ', τ'.tail, κ')  -- POP the pushed id heap
++            | (.term _, _, _, _, _)            => none
++            | (.raised n op' w, g', σ', τ', κ') => some (.raised n op' w, g', σ', τ'.tail, κ')) -- forward; pop heap
++      -- custom (ADR-0085 #44 STAGE 4 — DERIVED): the user-effect analog of the state arm. PUSH (id ↦ (p, cls))
++      -- on κ for M's extent; POP on exit; a raise FORWARDS (pop entry). Structural sibling of `state`, with the
++      -- clause-service happening at the `perform` arm (κ.get? + find? + inline sub-eval), exactly `state`'s
++      -- get/put-at-perform shape with USER clause logic in the resume focus (ADR-0085 D3, probe-confirmed).
++      | .custom _ p cls =>
++          (evalD f (g+1) σ τ (κ.push id p cls) M').bind (fun q => match q with
++            | (.term (.ret v), g', σ', τ', κ') => some (.term (.ret v), g', σ', τ', κ'.tail)  -- POP the pushed id entry
++            | (.term _, _, _, _, _)            => none
++            | (.raised n op' w, g', σ', τ', κ') => some (.raised n op' w, g', σ', τ', κ'.tail)) -- forward; pop entry
+       | .throws _ =>
+-          (evalD f (g+1) σ τ M').bind (fun p => match p with
+-            | (.term (.ret v), g', σ', τ') => some (.term (.ret v), g', σ', τ')
+-            | (.term _, _, _, _)           => none
+-            | (.raised n op' w, g', σ', τ') =>
++          (evalD f (g+1) σ τ κ M').bind (fun p => match p with
++            | (.term (.ret v), g', σ', τ', κ') => some (.term (.ret v), g', σ', τ', κ')
++            | (.term _, _, _, _, _)            => none
++            | (.raised n op' w, g', σ', τ', κ') =>
+                 -- CAUGHT (zero-shot abort) iff the raise targets THIS handler's identity. Discard the
+-                -- captured continuation; KEEP the at-raise stores σ'/τ' (outer put/writeTVar persists —
++                -- captured continuation; KEEP the at-raise stores σ'/τ'/κ' (outer put/writeTVar persists —
+                 -- inner frames already popped on the way out). Else forward outward.
+-                if n = id ∧ op' = "raise" then some (.term (.ret w), g', σ', τ')
+-                else some (.raised n op' w, g', σ', τ'))
++                if n = id ∧ op' = "raise" then some (.term (.ret w), g', σ', τ', κ')
++                else some (.raised n op' w, g', σ', τ', κ'))
+   -- ADT eliminators (Unit 6): PURE reductions — closed-value scrutinee, no store/counter change.
+-  | Nat.succ f, g, σ, τ, .case (.inl v) N₁ _  => evalD f g σ τ (Comp.subst v N₁)
+-  | Nat.succ f, g, σ, τ, .case (.inr v) _  N₂ => evalD f g σ τ (Comp.subst v N₂)
+-  | Nat.succ f, g, σ, τ, .split (.pair v w) N => evalD f g σ τ (Comp.subst v (Comp.subst (Val.shift w) N))
+-  | Nat.succ _, g, σ, τ, .unfold (.fold v)    => some (.term (.ret v), g, σ, τ)
++  | Nat.succ f, g, σ, τ, κ, .case (.inl v) N₁ _  => evalD f g σ τ κ (Comp.subst v N₁)
++  | Nat.succ f, g, σ, τ, κ, .case (.inr v) _  N₂ => evalD f g σ τ κ (Comp.subst v N₂)
++  | Nat.succ f, g, σ, τ, κ, .split (.pair v w) N => evalD f g σ τ κ (Comp.subst v (Comp.subst (Val.shift w) N))
++  | Nat.succ _, g, σ, τ, κ, .unfold (.fold v)    => some (.term (.ret v), g, σ, τ, κ)
+   -- δ-rule (ADR-0065, #40): mirrors `Source.step` (`binop op (vint a) (vint b) ⇒ ret (op.eval a b)`).
+   -- PURE — no store/counter change; non-`vint` operands fall to the catch-all (stuck, like Source.step).
+-  | Nat.succ _, g, σ, τ, .binop op (.vint a) (.vint b) => some (.term (.ret (op.eval a b)), g, σ, τ)
+-  | _,          _, _, _, _         => none                -- out of scope (ill-formed scrutinee)
++  | Nat.succ _, g, σ, τ, κ, .binop op (.vint a) (.vint b) => some (.term (.ret (op.eval a b)), g, σ, τ, κ)
++  | _,          _, _, _, _, _      => none                -- out of scope (ill-formed scrutinee)
+ 
+ /-! ## The machine — derived, not designed
+ 

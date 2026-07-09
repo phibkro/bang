@@ -59,6 +59,7 @@ Active edge: **#44 / ADR-0085** (banked; no separate PATH — tracked in the ADR
 | decisions (why-we-chose-X) | `docs/decisions/` (generated `README.md` index) |
 | in-flight work | `paths/PATH-*.md` |
 | deferred proof-spine (◊4 `lr_sound` seam — #15 ruled D-now/A-later) | `paths/PATH-inc5-lr-reindex.md` |
+| #44 Stage-4 machine custom arm (derive evalD/machine arm, drop `NoCustomFrame`+`CustomFree`) | `paths/PATH-stage4-machine-custom.md` |
 | deferred design questions | `docs/notes/OPEN_QUESTIONS.md` (generated ledger) |
 | subagent roles | `.claude/agents/` |
 | what's-open (issues, milestones) | GitHub Issues — github.com/phibkro/bang |
