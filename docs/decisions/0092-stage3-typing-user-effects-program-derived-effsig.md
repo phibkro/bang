@@ -10,7 +10,22 @@
 ## Status
 
 Accepted (2026-07-09, operator ruling same day — drafted and ruled while the s4/diag59/ml90
-lanes ran). Implementation sequencing: D1/D2 are elaborator work
+lanes ran).
+
+**D1/D2 EXECUTED (landed on main 844931f+88e0f55, gated clean-clone):** `effect` decls parse
+(Pratt sibling of data/trait), labels allocate ℓ:=4+effectIndex deterministically, the
+program-derived EffSig types performs at user labels (the performer-side generality confirmed
+live), user labels render in rows (showRow extended — they were invisible), and TWO
+implementation findings are recorded: (i) label-first dispatch in .dotPerform typing (the
+elaborator-side twin of rung-2's machine op-priority fork — a user op sharing a builtin name
+would have silently mis-typed via capOpSig); (ii) **v1 RESTRICTION: builtin op names are
+RESERVED in effect declarations** (loud error, capOpSig as the single source of truth) —
+closing the elaborator/machine collision class BY CONSTRUCTION; the real fix (namespacing ops
+by label end-to-end) defers to the Q34/Q38 module-interface work. D3/D4 (kernel lane) landing
+will add the two probe-caught D3 refinements (F-returner clause typing; the (B) ret-shape
+clause ruling from the answer-GRADE polymorphism wall).
+
+Implementation sequencing: D1/D2 are elaborator work
 (`TypeCheck.lean` — queue behind the #50 lane); D3/D4 are kernel typing + soundness work
 (`Bang/Core/Typing.lean` + `Soundness.lean` — a proof-engineer unit, probe-first). Stage 4
 (the s4 lane, in flight) is INDEPENDENT — the machine correspondence is untyped; neither unit
