@@ -66,6 +66,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **kernel** — #44 Stage 1 — Handler.custom rep (the general handler ctor); additive ripple, census stays axiom-clean (`d84aeae`)
 - **gates** — analysis quality gates wired into the lifecycle hooks (`f60472a`)
 - **core** — promote CustomFree into Freshness + land ADR-0086 (enabler) (`2606d02`)
+- **backend** — U5bComplete spine discharges evalD_complete_gen (ADR-0086) (`70bec60`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

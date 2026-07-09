@@ -54,14 +54,16 @@ graph TD
     Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
     Witness_BoccRegress["Witness.BoccRegress<br/>260L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>71L · fan-in 0"]
+    Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>38L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>99L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
+    Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
   end
   subgraph tier_Apex["Apex — verification spine + gate"]
     Audit["Audit<br/>54L · fan-in 0"]
     Distribution["Distribution<br/>65L · fan-in 0"]
-    Spec["Spec<br/>311L · fan-in 0"]
+    Spec["Spec<br/>317L · fan-in 0"]
   end
   Frontend_Surface_PropTest --> Frontend_Surface
 ```
@@ -96,12 +98,14 @@ graph TD
 | `Reify.CalcReify` | ? | 270 | 0 |
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 311 | 0 |
+| `Spec` | Apex | 317 | 0 |
 | `Witness.BoccRegress` | ? | 260 | 0 |
 | `Witness.CapEscapeWitness` | ? | 71 | 0 |
+| `Witness.CustomStage1Refute` | ? | 38 | 0 |
 | `Witness.LWRegress` | ? | 99 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.StateEscapeWitness` | ? | 73 | 0 |
+| `Witness.VcapFreeRefute` | ? | 55 | 0 |
 <!-- END GENERATED import-graph -->
 
 **What the shape reveals** (from `import` DAG + per-symbol reference counts):
