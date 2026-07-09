@@ -52,6 +52,7 @@ graph TD
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
     Reify_CalcReifyRef["Reify.CalcReifyRef<br/>163L · fan-in 0"]
     Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
+    Witness_AgreeOutcome["Witness.AgreeOutcome<br/>225L · fan-in 0"]
     Witness_BoccRegress["Witness.BoccRegress<br/>260L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>71L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>38L · fan-in 0"]
@@ -100,6 +101,7 @@ graph TD
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
 | `Spec` | Apex | 317 | 0 |
+| `Witness.AgreeOutcome` | ? | 225 | 0 |
 | `Witness.BoccRegress` | ? | 260 | 0 |
 | `Witness.CapEscapeWitness` | ? | 71 | 0 |
 | `Witness.CustomStage1Refute` | ? | 38 | 0 |
