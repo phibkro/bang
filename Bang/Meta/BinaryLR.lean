@@ -2087,13 +2087,9 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
            show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
         at this
   | @handleCustom _ _ ℓ p cl M e φ q qc P A _hcl _hcov _hp hM _hle _hBocc =>
-      -- STAGE-3 DEFERRED (ADR-0092): the binary-LR custom arm needs a `compatK_handleCustom`
-      -- compatibility lemma (the resumptive custom-handler contextual-equivalence for USER effects),
-      -- which does not yet exist — it is the LR-side analogue of `compatK_handleState`/`Transaction` and a
-      -- SEPARATE deliverable from the Stage-3 KERNEL soundness (preservation/progress, ADR-0092 D4, which
-      -- IS closed and census-clean). `crelK_fund` already feeds the sorry-bearing `lr_fundamental`, so this
-      -- `sorry` newly-flags no clean headline. ENTRY GATE for retiring it: prove `compatK_handleCustom`
-      -- (→ a `krelS_custom_reinstall`, mirroring `krelS_state_reinstall`).
+      -- custom arm: the LR-custom obligation (contextual equivalence for user effects) is #44 STAGE 5's
+      -- theorem, not Stage-3 kernel soundness — deferred with the LR re-index (#15/PATH-inc5); see
+      -- ADR-0092 D3/D4 landing. Feeds the already-flagged `lr_*` set only (no new flagged headline).
       sorry
 end
 
@@ -2180,11 +2176,9 @@ theorem krelS_refl {n : Nat} {C : Stack} {e eo : Eff} {B Co : CTy Eff Mult} {qo 
       exact krelS_transaction_reinstall hnewA hnewR hreadA hreadR hwriteA hwriteR hrestrict' nh n Θ Θ
         (heapRel_self_of_cells_int n Θ hcells) K K (KrelS_eff_cast (ihK hCo))
   | @customF K nh ℓ p cl e φ eo q P A Co _hcl _hcov _hp _hle _hBocc hK ihK =>
-      -- STAGE-3 DEFERRED (ADR-0092): the custom-frame self-relation needs `krelS_custom_reinstall`
-      -- (mirroring `krelS_state_reinstall`/`transaction_reinstall`) — the resumptive USER-effect handler's
-      -- LR reinstall lemma, a SEPARATE deliverable from Stage-3 KERNEL soundness (which is closed +
-      -- census-clean). `krelS_refl` is an LR lemma feeding the already-sorry-bearing LR spine, so this
-      -- `sorry` newly-flags no clean headline. ENTRY GATE: prove `krelS_custom_reinstall`.
+      -- custom arm: the LR-custom obligation (contextual equivalence for user effects) is #44 STAGE 5's
+      -- theorem, not Stage-3 kernel soundness — deferred with the LR re-index (#15/PATH-inc5); see
+      -- ADR-0092 D3/D4 landing. Feeds the already-flagged `lr_*` set only (no new flagged headline).
       sorry
 
 end -- public section

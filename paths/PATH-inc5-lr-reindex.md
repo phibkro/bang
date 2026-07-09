@@ -77,6 +77,13 @@ bounded scratch spike of the canonical-reshape `CrelK′` before any frozen re-t
   the clean fix is the `.map` clause traversal + its ~15-lemma renameH_shiftFrom/substFrom ripple
   (nested-inductive termination twin of `capsCls`), which is THIS path's re-index shape. Feeds
   only the flagged `lr_sound`; manager-ruled banked at the rung-2 landing (ADR-0087 §Status).
+- **binary-LR custom arms ×2 (BANKED HERE 2026-07-09, #44 Stage-3):** two doc-commented sorries in
+  `Bang/Meta/BinaryLR.lean` — `crelK_fund`'s `handleCustom` arm + `krelS_refl`'s `customF` arm, the
+  exhaustiveness cases forced by ADR-0092 D3's new `HasCTy.handleCustom`/`HasStack.customF`
+  constructors. The real proofs are the LR-CUSTOM obligation (contextual equivalence for user
+  effects) = #44 STAGE 5's theorem: a `compatK_handleCustom` + `krelS_custom_reinstall`, mirroring
+  the `compatK_handleState`/`krelS_state_reinstall` cores. Feed the already-flagged `lr_*` set only
+  (no new flagged headline); manager-ruled banked at the Stage-3 kernel landing (ADR-0092 D3/D4).
 
 ## Resume protocol
 Design-first: an ADR deciding route 1 vs 2 BEFORE any proof work (route 1 touches frozen
