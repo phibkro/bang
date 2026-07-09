@@ -5673,20 +5673,21 @@ Induction on the eval fuel `fe`. -/
 theorem run_evalD : ∀ fe,
     (∀ M g σ τ κ t g' σ' τ' κ', evalD fe g σ τ κ M = some (.term t, g', σ', τ', κ') →
       ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K → CCtxCorr κ K → WfCustomCfg (g, K, M) →
-        CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
+        WfCustomStore σ → WfCustomHeap τ → CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
         (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
           CCtxCorr κ' (ctxNetEffect K σ' τ') ∧ WfCustomComp t ∧
+          WfCustomStore σ' ∧ WfCustomHeap τ' ∧
           CapLabelCoh (g', ctxNetEffect K σ' τ', t) ∧ FreshCfg (g', ctxNetEffect K σ' τ', t)) ∧
         ∀ (fuel : Nat) (r : Bang.Result Val),
           Bang.Config.run fuel (g', ctxNetEffect K σ' τ', t) = r → ∃ F, Bang.Config.run F (g, K, M) = r)
     ∧ (∀ M g σ τ κ n op v g' σ' τ' κ', evalD fe g σ τ κ M = some (.raised n op v, g', σ', τ', κ') →
       ∀ (K : Bang.EvalCtx), CtxCorr σ K → CtxTxnCorr τ K → CCtxCorr κ K → WfCustomCfg (g, K, M) →
-        CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
+        WfCustomStore σ → WfCustomHeap τ → CapLabelCoh (g, K, M) → FreshCfg (g, K, M) →
         -- route-A 5th conjunct (build-proven necessary, route-B disproven): a raise NEVER RESUMES — the
         -- target `n` resolves only to none/throws/non-handling in the net-effect context. This is what makes
         -- the continuation's `Config.run` frame-INVARIANT under the letF/appF/handleF the propagation cases push.
         (CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
-          CCtxCorr κ' (ctxNetEffect K σ' τ') ∧ WfCustomVal v ∧
+          CCtxCorr κ' (ctxNetEffect K σ' τ') ∧ WfCustomVal v ∧ WfCustomStore σ' ∧ WfCustomHeap τ' ∧
           CapLabelCoh (g', ctxNetEffect K σ' τ', Comp.ret v) ∧ FreshCfg (g', ctxNetEffect K σ' τ', Comp.ret v) ∧
           NoResume (ctxNetEffect K σ' τ') n op) ∧
         ∀ (fuel : Nat) (r : Bang.Result Val),
@@ -5700,7 +5701,7 @@ theorem run_evalD : ∀ fe,
     obtain ⟨ihT, ihR⟩ := ih
     refine ⟨?_, ?_⟩
     · -- TERM PART
-      intro M g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK hWf hCoh hFresh
+      intro M g σ τ κ t g' σ' τ' κ' h K hCtx hTtx hCK hWf hWfσ hWfτ hCoh hFresh
       obtain ⟨hWfK, hWfM⟩ := hWf
       cases M with
       | ret v =>
@@ -6382,7 +6383,7 @@ theorem run_evalD : ∀ fe,
       -- `capsV v ⊆ capsC` of the focus in every case, so the raised value's coherence is a sub-multiset of
       -- the focus coherence the premise already carries). The continuation re-performs the op at the outer
       -- context; the BASE (`perform`) case is the only place a raise originates, the rest propagate via `ihR`.
-      intro M g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK hWf hCoh hFresh
+      intro M g σ τ κ n op v g' σ' τ' κ' h K hCtx hTtx hCK hWf hWfσ hWfτ hCoh hFresh
       obtain ⟨hWfK, hWfM⟩ := hWf
       cases M with
       | ret w => simp [evalD] at h
