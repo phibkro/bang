@@ -352,6 +352,117 @@ def substEnv : List Val → Comp → Comp
   | [],      M => M
   | v :: γ, M => substEnv γ (Comp.subst v M)
 
+/-! ### The closing-substitution engine — TRANSPLANTED from the LR spine (task #15 retires it)
+
+`substEnv` is BYTE-IDENTICAL to `Bang.Meta.LR.closeC`. The commutation lemma the correspondence
+induction turns on (`substEnv_cons_subst` below) already exists as `Bang.Meta.BinaryLR.closeC_subst_comm`,
+riding a `Val.Closed` swap engine. Per the operator ruling (2026-07-10, on task #11): the DESTINATION is
+option (A) — hoist that engine to `Bang/Core/Semantics/Subst.lean` so LR and this machine share ONE
+source — but SEQUENCED (s5grind is actively in `Bang/Meta/BinaryLR.lean`; two writers on one file is the
+trap). So the engine is TRANSPLANTED here as a SANCTIONED, TRACKED duplicate; **task #15 hoists it to Core
+and deletes these copies post-s5grind — the green build after retirement proves the duplicate was faithful.**
+Every transplanted decl carries the `TODO(hoist, task #15)` marker. Bodies are verbatim from LR/BinaryLR
+(behavior-preserving copies). -/
+
+-- TODO(hoist, task #15): faithful duplicate of Bang.Meta.LR.Val.Closed engine — retired by the post-s5grind hoist.
+/-- A value with no free de Bruijn indices (fixed by shift at every cutoff). -/
+def Val.ClosedE (v : Val) : Prop := ∀ k, Val.shiftFrom k v = v
+
+-- TODO(hoist, task #15): duplicate of Bang.Meta.LR.Val.Closed.{shift,shiftFrom_eq,subst_at}.
+theorem Val.ClosedE.shift {v : Val} (h : Val.ClosedE v) : Val.shift v = v := h 0
+theorem Val.ClosedE.shiftFrom_eq {v : Val} (h : Val.ClosedE v) (k : Nat) : Val.shiftFrom k v = v := h k
+theorem Val.ClosedE.subst_at {v : Val} (h : Val.ClosedE v) (k : Nat) (w : Val) :
+    Val.substFrom k w v = v := by
+  conv_lhs => rw [← h.shiftFrom_eq k]; exact Bang.Val.substFrom_shiftFrom k w v
+
+-- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{shiftN,shiftN_closed}.
+/-- Iterated `Val.shift` (weaken past `d` binders). -/
+def shiftNE : Nat → Val → Val
+  | 0,     v => v
+  | d + 1, v => Val.shift (shiftNE d v)
+theorem shiftNE_closed {v : Val} (h : Val.ClosedE v) : ∀ d, shiftNE d v = v
+  | 0     => rfl
+  | d + 1 => by show Val.shift (shiftNE d v) = v; rw [shiftNE_closed h d, h.shift]
+
+-- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.closeCUnderBinders (`closeC` = substEnv here).
+/-- Apply the closing env `δ` to a term sitting under `d` fresh binders (each filler weakened + substituted
+at level `d`). `closeUnderBindersE 0 = substEnv`. -/
+def closeUnderBindersE (d : Nat) : List Val → Comp → Comp
+  | [],     c => c
+  | v :: δ, c => closeUnderBindersE d δ (Comp.substFrom d (shiftNE d v) c)
+
+-- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{Val,Comp,Handler}.substFrom_swap_closed (ADJACENT swap).
+mutual
+theorem Val.substFrom_swap_closedE :
+    ∀ {v w : Val}, Val.ClosedE v → Val.ClosedE w → ∀ (k : Nat) (t : Val),
+      Val.substFrom k w (Val.substFrom (k + 1) v t) = Val.substFrom k v (Val.substFrom k w t)
+  | _, _, _, _, _, .vunit => rfl
+  | _, _, _, _, _, .vint _ => rfl
+  | _, _, _, _, _, .vcap _ _ => rfl
+  | v, w, hv, hw, k, .vvar i => by
+      rcases Nat.lt_trichotomy i k with hlt | heq | hgt
+      · simp only [Val.substFrom, if_neg (show ¬ i = k + 1 by omega), if_neg (show ¬ i > k + 1 by omega),
+          if_neg (show ¬ i = k by omega), if_neg (show ¬ i > k by omega)]
+      · subst heq
+        simp only [Val.substFrom, if_neg (show ¬ i = i + 1 by omega), if_neg (show ¬ i > i + 1 by omega),
+          if_true, hw.subst_at i v]
+      · rcases Nat.lt_trichotomy i (k + 1) with hk1 | heq1 | hgt1
+        · omega
+        · subst heq1
+          simp only [Val.substFrom, if_true, hv.subst_at k w,
+            if_neg (show ¬ k + 1 = k by omega), if_pos (show k + 1 > k by omega), Nat.add_sub_cancel]
+        · simp only [Val.substFrom, if_neg (show ¬ i = k + 1 by omega), if_pos (show i > k + 1 by omega),
+            if_neg (show ¬ i = k by omega), if_pos (show i > k by omega),
+            if_neg (show ¬ i - 1 = k by omega), if_pos (show i - 1 > k by omega)]
+  | v, w, hv, hw, k, .vthunk M => by
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closedE hv hw k M]
+  | v, w, hv, hw, k, .inl u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
+  | v, w, hv, hw, k, .inr u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
+  | v, w, hv, hw, k, .pair u₁ u₂ => by
+      simp only [Val.substFrom]
+      rw [Val.substFrom_swap_closedE hv hw k u₁, Val.substFrom_swap_closedE hv hw k u₂]
+  | v, w, hv, hw, k, .fold u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
+theorem Comp.substFrom_swap_closedE :
+    ∀ {v w : Val}, Val.ClosedE v → Val.ClosedE w → ∀ (k : Nat) (t : Comp),
+      Comp.substFrom k w (Comp.substFrom (k + 1) v t) = Comp.substFrom k v (Comp.substFrom k w t)
+  | v, w, hv, hw, k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
+  | v, w, hv, hw, k, .binop op a b => by
+      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k a, Val.substFrom_swap_closedE hv hw k b]
+  | v, w, hv, hw, k, .letC M N => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Comp.substFrom_swap_closedE hv hw k M, Comp.substFrom_swap_closedE hv hw (k + 1) N]
+  | v, w, hv, hw, k, .force u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
+  | v, w, hv, hw, k, .lam M => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Comp.substFrom_swap_closedE hv hw (k + 1) M]
+  | v, w, hv, hw, k, .app M u => by
+      simp only [Comp.substFrom]
+      rw [Comp.substFrom_swap_closedE hv hw k M, Val.substFrom_swap_closedE hv hw k u]
+  | v, w, hv, hw, k, .perform cp op u => by
+      simp only [Comp.substFrom]
+      rw [Val.substFrom_swap_closedE hv hw k cp, Val.substFrom_swap_closedE hv hw k u]
+  | v, w, hv, hw, k, .handle h M => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Handler.substFrom_swap_closedE hv hw k h, Comp.substFrom_swap_closedE hv hw (k + 1) M]
+  | v, w, hv, hw, k, .case u N₁ N₂ => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Val.substFrom_swap_closedE hv hw k u,
+        Comp.substFrom_swap_closedE hv hw (k + 1) N₁, Comp.substFrom_swap_closedE hv hw (k + 1) N₂]
+  | v, w, hv, hw, k, .split u N => by
+      simp only [Comp.substFrom, hv.shift, hw.shift]
+      rw [Val.substFrom_swap_closedE hv hw k u, Comp.substFrom_swap_closedE hv hw (k + 2) N]
+  | v, w, hv, hw, k, .unfold u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
+  | _, _, _, _, _, .oom => rfl
+  | _, _, _, _, _, .wrong _ => rfl
+theorem Handler.substFrom_swap_closedE :
+    ∀ {v w : Val}, Val.ClosedE v → Val.ClosedE w → ∀ (k : Nat) (h : Handler),
+      Handler.substFrom k w (Handler.substFrom (k + 1) v h) = Handler.substFrom k v (Handler.substFrom k w h)
+  | v, w, hv, hw, k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closedE hv hw k s]
+  | _, _, _, _, _, .throws _ => rfl
+  | _, _, _, _, _, .transaction _ _ => rfl
+  | _, _, _, _, _, .custom _ _ _ => rfl
+end
+
 mutual
 def readback : MVal → Val
   | .mvunit       => .vunit
@@ -382,40 +493,38 @@ reproduces `σ`. This IS the env/closure well-formedness invariant the env machi
 (survey §2: "for any variable x, the closure γ x is equivalent to the term σ x"). -/
 def EnvAgrees (ρ : MEnv) (σ : List Val) : Prop := readbackEnv ρ = σ
 
-/-! ### The substEnv calculus — the env↔subst commutation lemmas (slice-3 crux)
+/-! ### The substEnv calculus — the env↔subst commutation (slice-3 crux, transplanted engine)
 
-`substEnv γ` distributes over each binding former the way the kernel's single `Comp.subst`
-does, and it commutes with a fresh index-0 binder. These are the standard de Bruijn
-substitution-composition lemmas (PLFA `subst-commute`; Pierce TAPL §6.2). The CRUX is
-`substEnv_cons_subst`: it is what closes the `letC`/`app`/`case`/`split`/`handle` cases of
-the correspondence induction — the env-extension `mv ∷ₑ ρ` on the machine side matches the
-`Comp.subst (readback mv)` on the substitution side, once the tail env is shifted to make
-room for the new binder. -/
+`substEnv γ` commutes with pushing a fresh index-0 binder: the machine's `w ∷ₑ ρ` env-extension is
+the substitution machine's `Comp.subst w` under a `closeUnderBindersE 1 γ` (the tail env lifted past
+the new binder). This is the CRUX every binding case of the correspondence induction reduces to. The
+proof is transplanted `closeC_subst_comm` (task #15 retires the copy); it needs each filler CLOSED —
+the `Val.ClosedE` premise, TRUE by construction from readback (a ground MVal reads back to a closed
+`Val`). -/
 
-/-- `substEnv` on an empty env is the identity; on a cons it fills index 0 then folds the tail.
-(Definitional; named for rewriting.) -/
+/-- `substEnv` on an empty env is the identity; on a cons it fills index 0 then folds the tail. -/
 @[simp] theorem substEnv_nil (M : Comp) : substEnv [] M = M := rfl
 @[simp] theorem substEnv_cons (v : Val) (γ : List Val) (M : Comp) :
     substEnv (v :: γ) M = substEnv γ (Comp.subst v M) := rfl
 
-/-- **THE CRUX** — the env↔subst commutation that closes every binding case of the induction.
-Filling a fresh index-0 binder with `w` after substituting the SHIFTED tail env equals folding
-`w :: γ` directly. I.e. `substEnv` commutes with pushing a binder: the machine's `w ∷ₑ ρ`
-env-extension is the substitution machine's `Comp.subst w` under a `substEnv (γ.map shift)`.
-
-**SSoT FINDING (STOP-and-SHOW to the manager, 2026-07-10):** this crux ALREADY EXISTS in the repo
-as `Bang.Meta.BinaryLR.closeC_subst_comm` — and `substEnv` is BYTE-IDENTICAL to `Bang.Meta.LR.closeC`
-(`[] c => c ; v::δ => closeC δ (Comp.subst v c)`). The whole engine (`closeC`, `Val.Closed`,
-`closeC_subst_comm`, `Comp.substFrom_swap_closed`) is stranded in the two heavy LR modules; the clean
-"one construct per problem" fix is to HOIST it to the shared `Bang/Core/Semantics/Subst.lean` so both
-the LR spine and this env machine derive from ONE source (that hoist touches LR — a file this lane
-does not own — hence the STOP-and-SHOW). Note the engine's `Val.Closed` side condition: the
-correspondence's `EnvAgrees` premise must additionally carry that each readback filler is closed
-(TRUE by construction — readback of a ground MVal is closed — but threaded). `sorry` pending the
-manager's ruling on the hoist. -/
-theorem substEnv_cons_subst (w : Val) (γ : List Val) (M : Comp) :
-    Comp.subst w (substEnv (γ.map Val.shift) M) = substEnv (w :: γ) M := by
-  sorry -- SLICE-3 crux: = closeC_subst_comm (BinaryLR) once hoisted to Subst; needs Val.Closed fillers
+-- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.closeC_subst_comm, restated against substEnv.
+/-- **THE CRUX** (= `closeC_subst_comm`): filling a fresh level-0 binder with a CLOSED `w` after applying
+the closing env `γ` lifted past one binder equals applying `w :: γ` directly. Closes the binding cases of
+`evalE_agrees_evalD` — the env-extension `w ∷ₑ ρ` matches `Comp.subst w` under the lifted tail. -/
+theorem substEnv_cons_subst {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v)
+    {w : Val} (_hw : Val.ClosedE w) (N : Comp) :
+    (closeUnderBindersE 1 γ N).subst w = substEnv (w :: γ) N := by
+  -- substEnv (w :: γ) N = substEnv γ (Comp.subst w N); induction on γ (verbatim closeC_subst_comm).
+  show (closeUnderBindersE 1 γ N).subst w = substEnv γ (Comp.subst w N)
+  induction γ generalizing N with
+  | nil => rfl
+  | cons v γ ih =>
+    have hv : Val.ClosedE v := hγ v List.mem_cons_self
+    have hγ' : ∀ u ∈ γ, Val.ClosedE u := fun u hu => hγ u (List.mem_cons_of_mem v hu)
+    simp only [closeUnderBindersE, substEnv, shiftNE, hv.shift]
+    rw [ih hγ' (Comp.substFrom 1 v N)]
+    congr 1
+    exact Comp.substFrom_swap_closedE hv _hw 0 N
 
 /-- **The correspondence STATEMENT** (PLFA `γ≈ₑσ`; slice-3 proof).
 
