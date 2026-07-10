@@ -66,10 +66,16 @@ amendment ③ ruled: (β) fuel-reindex proceeds as a background lane). Emission:
 throws→try_table · state→locals; 66 programs wasmtime==Source.eval; rung 3 = the journal/rollback novelty,
 named). #95 fixed (~115×, knot sharing); #96 fixed (the missing printer tier); #97 partially (use-hoist;
 Mod_Eff mechanism traced). The 013 ergonomics menu: S1 grammar (site highlights bang) · S5 codes+explain ·
-S7/8/9 new/update/watch LANDED. **In flight**: the (β) fuel-reindex background lane
-(`feat-lr-fuel-reindex`, slice 1). **Queued**: the #52 Spanned-Surf design probe (unblocks `why`, LSP hover,
-rich diagnostics) · banner sweep + 010 (docs build waits on Lake upstream or a fork-pin ruling) · Mod_Eff
-slice · 013-S2 LSP + S6 fixits · rung-3 design · #83 dedup · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
+S7/8/9 new/update/watch LANDED. **In flight**: nothing — the (β)
+fuel-reindex lane is PARKED at a clean gated boundary (`feat-lr-fuel-reindex @ 42cdc9d6`: fuel twin +
+crux reduction landed, fuel-preserving-strip map-change banked; resume = the nested-handleF WF strip,
+fresh session). The 2026-07-10/11 wave also landed: `bang query hover` (#52 slice 5 — the probe
+overturned the Spanned-Surf ripple framing), the #105 prelude first slice (11 fns; the List family
+blocked on #108 ctor-namespacing, machine-arbitrated), the stdlib survey (#105–#107), examples
+nqueens + dst-rounds pair, and findings #98–#104. **Queued**: #108 ctor-namespacing ruling (gates the
+List prelude) · #106 Prelude.bang ruling (gates on #97-3) · banner sweep + 010 (docs build waits on
+Lake upstream or a fork-pin ruling) · Mod_Eff slice · 013-S2 LSP + S6 fixits · rung-3 design · #83
+dedup · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 
 ## Where things live (SSoT — reference these, don't copy them)
 
