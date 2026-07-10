@@ -1,0 +1,61 @@
+-- replicated-KV with FAILURE INJECTION, SEED B (one write dropped) -- the
+-- IDENTICAL simulated system as ../ndet-repkv-fail-a/, run under a DIFFERENT
+-- scheduler. Same two replicas, same three writes, same delivery-outcome
+-- consultation per (replica, write) site, same anti-entropy merge -- the ONLY
+-- thing that changes is the `with Choice as sched { pick(n) => … }` clause.
+--
+-- SEED B drops exactly ONE write: bound 26 (replica B's write3, the
+-- HIGHEST-stamped, highest-value write) is answered "dropped" (pick(26) => 1);
+-- every other delivery pick still answers "delivered" (=> 0). Replica B's
+-- pre-merge register therefore folds only write1 and write2 (max = 200) and
+-- STOPS there -- it never sees write3 -- while replica A folds all three and
+-- reaches 300. The two replicas' PRE-anti-entropy states genuinely differ
+-- (preConverged reads 0) -- this is the divergence the R2 addendum's
+-- named-next-rung promised: "does this write get delivered at all this
+-- round?" as a second `pick` dimension, with a REAL consequence (an
+-- observably different intermediate register), not merely a faked one.
+--
+-- The anti-entropy round below is what fixes it: an UNCONDITIONAL re-sync (no
+-- pick consulted -- this round cannot itself drop) takes each replica to the
+-- LWW-max of its own state and its peer's, so replica B picks up write3's
+-- value (300) from replica A and both land on 300 -- postConverged reads 1.
+-- That is "eventual consistency" made visible as one more fold: WITHOUT the
+-- anti-entropy round the drop would be a permanent, silent inconsistency;
+-- WITH it, the system still converges, just not on the same round the writes
+-- arrived. See ../ndet-repkv-fail-a/ for the drop-free control case where
+-- preConverged is already 1 with no repair needed.
+effect Choice { pick : Int -> Int }
+
+let main =
+  handle
+    let v1 = 100 in
+    let v2 = 200 in
+    let v3 = 300 in
+
+    let dA1 = sched.pick(21) in
+    let dA2 = sched.pick(22) in
+    let dA3 = sched.pick(23) in
+    let a0 = 0 in
+    let a1 = if dA1 == 0 then (if a0 < v1 then v1 else a0) else a0 in
+    let a2 = if dA2 == 0 then (if a1 < v2 then v2 else a1) else a1 in
+    let a3 = if dA3 == 0 then (if a2 < v3 then v3 else a2) else a2 in
+
+    let dB1 = sched.pick(24) in
+    let dB2 = sched.pick(25) in
+    let dB3 = sched.pick(26) in
+    let b0 = 0 in
+    let b1 = if dB1 == 0 then (if b0 < v1 then v1 else b0) else b0 in
+    let b2 = if dB2 == 0 then (if b1 < v2 then v2 else b1) else b1 in
+    let b3 = if dB3 == 0 then (if b2 < v3 then v3 else b2) else b2 in
+
+    let preConverged = if a3 == b3 then 1 else 0 in
+
+    let bFinal = if b3 < a3 then a3 else b3 in
+    let aFinal = if a3 < bFinal then bFinal else a3 in
+
+    let postConverged = if aFinal == bFinal then 1 else 0 in
+
+    (aFinal + bFinal) + postConverged * 100000 + preConverged * 10000 + a3 * 10 + b3 / 100
+  with Choice as sched {
+    pick(n) => if n == 26 then 1 else 0
+  }

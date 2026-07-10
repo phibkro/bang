@@ -1,0 +1,84 @@
+-- replicated-KV with FAILURE INJECTION, SEED A (drop-free schedule) -- the R2
+-- addendum's named next rung (docs/notes/distributed-story.md section 5): grows
+-- ../ndet-replicated-kv-a/'s delivery-ORDER fold with a delivery-OUTCOME
+-- consultation. Each of the THREE writes, delivered to EACH of the TWO
+-- replicas, now first asks a scheduler pick "does this write get delivered at
+-- all this round?" (0 = delivered, nonzero = dropped) BEFORE folding it in -- a
+-- second `pick` dimension the message-delivery step consults, still an
+-- ordinary user effect the kernel never learns about (same Choice mechanism as
+-- every ndet-* example in this repo).
+--
+-- Same three totally-stamped writes as ../ndet-replicated-kv-a/ (stamp 1<2<3,
+-- value 100/200/300, so "higher stamp" and "higher value" coincide -- the same
+-- value-max fold, no `mod` needed -- v1's BinOp set is `+ - * / < ==` only).
+-- Each write's delivery to each replica is gated by its own sched.pick(bound)
+-- call, using a DISTINCT bound per (replica, write) site (21..26) so ONE
+-- constant/arithmetic clause can answer differently per call-site by branching
+-- on the bound -- the same "clause reads its bound argument" technique
+-- ../ndet-replicated-kv-a/README.md's Draft-C note confirms is live
+-- (`pick(n) => n` types and runs today; G1 lifted for pure arithmetic).
+--
+-- SEED A is drop-free: every delivery pick returns 0 (delivered). Both
+-- replicas fold all three writes and land on the LWW-max (300) BEFORE any
+-- anti-entropy round runs -- preConverged already reads 1. This is the
+-- control case: see ../ndet-repkv-fail-b/ for the seed where one write is
+-- actually dropped, so preConverged reads 0 until the anti-entropy merge
+-- below repairs it back up to 1 (postConverged) -- the "eventual" in eventual
+-- consistency, made visible as one more fold.
+effect Choice { pick : Int -> Int }
+
+let main =
+  handle
+    -- three writes to the same key: v1 < v2 < v3 by construction (stamp order
+    -- coincides with value order, so "max stamp" and "max value" are the same
+    -- comparison -- see ../ndet-replicated-kv-a/main.bang's header).
+    let v1 = 100 in
+    let v2 = 200 in
+    let v3 = 300 in
+
+    -- replica A: each write's delivery is gated by its own drop-pick. a0 is
+    -- the empty-register start; each ai folds write_i in ONLY if delivered
+    -- (dAi == 0), else the register just carries forward unchanged.
+    let dA1 = sched.pick(21) in
+    let dA2 = sched.pick(22) in
+    let dA3 = sched.pick(23) in
+    let a0 = 0 in
+    let a1 = if dA1 == 0 then (if a0 < v1 then v1 else a0) else a0 in
+    let a2 = if dA2 == 0 then (if a1 < v2 then v2 else a1) else a1 in
+    let a3 = if dA3 == 0 then (if a2 < v3 then v3 else a2) else a2 in
+
+    -- replica B: an INDEPENDENT set of delivery picks (its own bounds
+    -- 24/25/26) -- the message bus can drop each replica's link differently,
+    -- the same "per-replica-independent picks" shape every ndet-* example
+    -- already uses for delivery ORDER, now reused for delivery OUTCOME.
+    let dB1 = sched.pick(24) in
+    let dB2 = sched.pick(25) in
+    let dB3 = sched.pick(26) in
+    let b0 = 0 in
+    let b1 = if dB1 == 0 then (if b0 < v1 then v1 else b0) else b0 in
+    let b2 = if dB2 == 0 then (if b1 < v2 then v2 else b1) else b1 in
+    let b3 = if dB3 == 0 then (if b2 < v3 then v3 else b2) else b2 in
+
+    -- PRE-anti-entropy quiescence: did the two replicas' independently-folded,
+    -- possibly-INCOMPLETE registers already land on the same value? Under a
+    -- real drop this reads 0 -- "eventual" consistency, not "immediate".
+    let preConverged = if a3 == b3 then 1 else 0 in
+
+    -- anti-entropy round: an UNCONDITIONAL re-sync (no pick consulted here --
+    -- this round cannot itself drop). Each replica takes the LWW-max of its
+    -- own state and its peer's. This is what makes convergence EVENTUAL
+    -- rather than immediate: a background gossip round that repairs whatever
+    -- a dropped write left behind.
+    let bFinal = if b3 < a3 then a3 else b3 in
+    let aFinal = if a3 < bFinal then bFinal else a3 in
+
+    let postConverged = if aFinal == bFinal then 1 else 0 in
+
+    -- output encodes five facts as non-overlapping decimal digit-slots (see
+    -- README.md for the exact arithmetic and the worked seed A/B table):
+    --   (aFinal+bFinal) in [0,600), postConverged*100000, preConverged*10000,
+    --   a3*10 in {1000,2000,3000}, b3/100 in {1,2,3}
+    (aFinal + bFinal) + postConverged * 100000 + preConverged * 10000 + a3 * 10 + b3 / 100
+  with Choice as sched {
+    pick(n) => 0
+  }

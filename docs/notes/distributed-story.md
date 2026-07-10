@@ -100,3 +100,18 @@ natural extension of THIS demo (same `Choice` effect, same seeded-handler mechan
 primitive) before rung 3's CALM-as-grade typing (`calm-as-grade-survey.md`) becomes relevant
 — CALM only has something to say about ops once there's a non-monotone one (a CAS key) to
 contrast against the monotone LWW merge this demo already has.
+
+**LANDED**: `examples/ndet-repkv-fail-a/` + `-b/` (lane failinj) — a per-(replica, write)
+delivery-outcome `pick` (0 = delivered, nonzero = dropped), six DISTINCT bounds so one
+handler value per seed answers six different delivery questions. Seed A is drop-free
+(`preConverged = 1` immediately); seed B drops replica B's highest-stamped write
+(`preConverged = 0` — a genuine pre-merge divergence), then an UNCONDITIONAL anti-entropy
+round (no `pick`, so it cannot itself drop) re-syncs both to the LWW-max
+(`postConverged = 1` under both seeds) — the differ-then-repair gap IS "eventual
+consistency" made visible as one more fold. Zero kernel changes; all three engines
+(`env`/`oracle`/`compiled`) agree on both seeds.
+
+**The next-next rung**: partition — drops CORRELATED by replica (a whole link down for a
+round, not one write independently), same distinct-bound technique. After that, rung 3's
+CALM-as-grade typing needs a non-monotone op (compare-and-swap) to contrast against the
+monotone LWW merge this whole family has used so far.
