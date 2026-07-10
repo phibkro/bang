@@ -30,7 +30,7 @@ echo "building bang runner…" >&2
 lake build bang >&2
 export BANG_BIN_FRESH=1
 
-batteries=(check-examples test-repl test-fmt test-check-json test-query \
+batteries=(check-examples check-examples-env test-repl test-fmt test-check-json test-query \
            test-rewrite test-annotate test-lint test-cli test-law test-modules)
 
 workdir="$(mktemp -d --tmpdir bang-run-batteries-XXXXXX)"

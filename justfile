@@ -41,6 +41,12 @@ run-batteries:
 check-examples:
     bash tools/check-examples.sh
 
+# Same corpus as check-examples, run through `bang run --engine=env` (the ADR-0094
+# environment machine) and diffed against the SAME expected.txt — the empirical
+# companion to `evalE_agrees_evalD`. Part of the default `verify` chain (run-batteries).
+check-examples-env:
+    bash tools/check-examples-env.sh
+
 # Non-interactive gate for `bang repl` (issue #7): pipes scripted transcripts
 # through the binary and asserts stdout/stderr/exit-code, mirroring
 # check-examples.sh's shape. Part of the default `verify` chain.

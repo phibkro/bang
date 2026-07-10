@@ -15,8 +15,12 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 bang=".lake/build/bin/bang"
 
-echo "building bang runner…" >&2
-lake build bang >&2
+# Honor run-batteries.sh's single up-front build (BANG_BIN_FRESH) like the other
+# batteries; standalone (`just check-examples-env`) still (re)builds — incremental.
+if [ -z "${BANG_BIN_FRESH:-}" ]; then
+  echo "building bang runner…" >&2
+  lake build bang >&2
+fi
 
 pass=0
 fail=0
