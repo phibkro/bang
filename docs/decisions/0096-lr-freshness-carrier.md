@@ -37,6 +37,68 @@ statements stay byte-identical; the frozen-DEF-block change is sanctioned for th
 conjunct ONLY. Census unchanged: carrier → `lr_fundamental` + `lr_fundamental_closed` shed
 (18→20); `lr_sound`'s third shed needs Q22 (held).
 
+## PROPOSED AMENDMENT — the class-2/class-1 carrier FORK (lane carrierprobe, 2026-07-10, AWAITING OPERATOR RULING)
+
+**Context.** The `StackInc` carrier landed and threaded through ~28 `BinaryLR` sites (`feat-lr-carrier-stackinc-wip @ 683a7448`, GREEN build), leaving TWO machine-characterized residual sorry-classes:
+
+- **class-1 (reinstall/append `StackInc`)** — 14 sites (671/672, 736/737, 755/756, 876/877, 907/908, 941/942, 1432/1433): the reinstall lemmas must feed `krelS_append` its explicit `StackInc (Kᵢ ++ handleF nh h :: K₁)` premise, where `Kᵢ` is the resume conjunct's UNIVERSALLY-bound captured continuation.
+- **class-2 (MINT `StackBelow g`)** — 8 sites (1196/1197, 1242/1243, 1278/1279, 1475/1476) at the `compatK_handle*` cores: the freshly-minted `handleF g` frame needs `StackBelow g K₁/K₂` (the current-counter domination) for `krelS_handleF_intro`. Plus 4 `krelS_refl` sites (1893/1922/1932/1948) which are the **Q22 seam** (`StackBelow nh K` unprovable from `HasStack` alone), already carved out by the ruling above — OUT of the fork's scope.
+
+The class-2 MINT `StackBelow g` collides with `KrelS_g_cast`'s g-independence (`BinaryLR.lean:1195` names it). Two forks resolve class-2:
+
+- **(a) Monotone cast** — carry `StackBelow g K` IN the `KrelS` def-invariant (beside `StackInc`), and weaken `KrelS_g_cast` to `g ≤ g'` only.
+- **(b) WellCounted premise** — leave `KrelS`/`KrelS_g_cast` byte-identical; add a `WellCounted (g,K) = StackBelow g K` PREMISE inside `CrelK`'s def, discharged at the top-level call sites from the machine invariant.
+
+**VERDICT: fork (a) REFUTED (both horns); fork (b) VIABLE. RECOMMEND (b). Class-1 needs its OWN per-frame conjunct regardless (surfaced by the probe).**
+
+### Q1 — fork (a) refutation (`Bang/Witness/CarrierForkA.lean`, axiom-clean)
+
+The full caller census of `KrelS_g_cast` (`BinaryLR.lean:1139/1143/1147/1151/1153` internal + 1201/1214/1247/1283/1480 MINT): every EXTERNAL caller is monotone (`g → g+1`), BUT the resume-conjunct internal recursion at **`:1151` casts `m g' g` — the REVERSE direction** (the captured continuation `Kᵢ` sits in contravariant/hypothesis position). Fork (a) is refuted on both horns:
+- `gcast_full_kills_stackBelow_invariant` — a `StackBelow g` def-invariant makes the FULL-general cast unprovable (at `g' := 0` on any live `handleF` frame, `StackBelow 0 K = False`). So fork (a) is FORCED to weaken the cast.
+- `monotone_gcast_cannot_serve_contravariant_resume` — but a `g ≤ g'`-only cast CANNOT serve the contravariant `:1151` recursion (it needs `g+1 → g`, the wrong direction). Refuted.
+
+### Q2 — fork (b) viability (`Bang/Witness/CarrierForkB.lean` + `CarrierForkBSkeleton.lean`, axiom-clean)
+
+The MINT obligation `StackBelow g K₁` arises INSIDE the compat cores after `CrelK`'s `intro g D K₁ K₂ hK`, so `g,K₁` are universally bound by `CrelK`. The reaching test (mirroring the ADR's `strip_mislocates`):
+- `crelK_stmt_premise_cannot_reach_mint` — a premise on `crelK_fund`/`crelK_fund_up`'s STATEMENT is OUTSIDE `∀ g K₁` → UNREACHABLE (same failure as shapes ii/iii). So "premise on the fund lemma" fails.
+- `crelK_def_premise_reaches_and_is_gcast_free` — a `StackBelow g K₁` hypothesis inside `CrelK`'s DEF (BESIDE `KrelS`, not folded in) DOES reach the MINT point AND is `KrelS_g_cast`-free (the cast stays full-general; the two facts never mix). This is precisely what fork (a) cannot do.
+
+The discharge chain elaborates (`CarrierForkBSkeleton.lean`, all `sorry`-free except the held Q22):
+- MINT-site: `StackBelow g K₁` IS the intro'd hypothesis (`mint_site_has_freshness`).
+- body re-application at `(g+1, handleF g :: K₁)`: needs `StackBelow (g+1) (handleF g :: K₁)`, discharged from the outer `StackBelow g K₁` by monotonicity + `g < g+1` (`body_reapply_discharges`) — the step fork (a) cannot do because its `StackBelow g` is cast-coupled.
+- root: `lr_fundamental`/`crelK_adequacy_nil` at `(0,[])` → `StackBelow 0 [] = True` (`root_nil_discharges`, 18→20 shed); `lr_sound` at `(handlerCount C, C)` → the Q22 seam (`lr_sound_root_needs_Q22`, held) — census UNCHANGED.
+
+### Q3 — class-1 needs its OWN per-frame conjunct (`Bang/Witness/CarrierClass1.lean`, axiom-clean)
+
+Class-1 is INDEPENDENT of the (a)/(b) ruling — it concerns the resume conjunct's `Kᵢ`, not the ambient MINT tail. The `stackInc_append_of_above` combinator (BANKED, `Invariants.lean:357`) closes class-1 from four antecedents; three are in scope (`StackInc Kᵢ`, `StackInc K₁`, `StackBelow nh K₁`) but the fourth — `StackAbove nh Kᵢ` (the captured continuation's ids all exceed the reinstalled catcher) — is MISSING:
+- `stackInc_not_above` — `StackInc Kᵢ ⇏ StackAbove nh Kᵢ` (independent). The current carrier is insufficient for class-1.
+- `class1_closes_given_above` — GIVEN `StackAbove nh Kᵢ`, class-1 closes via the banked combinator, no new infrastructure.
+
+So class-1 needs **a per-frame `StackAbove nh Kᵢ` conjunct ADDED to `KrelS`'s handleF resume clause** (the shape-(i″) per-frame conjunct). It is SELF-PROPAGATING (the recursive resume `KrelS m Cᵢ C εᵢ g Kᵢ Kᵢ'` carries it for the nested `krelS_append` arm at 671, matching `stackInc_gives_above`'s delivery from a machine-reached `StackInc`). This is a SECOND, orthogonal def-change, sanctioned by the (i′) frozen-DEF-block precedent (Spec.lean untouched).
+
+### Recommendation + cost estimate (sites-to-reprove)
+
+**Adopt fork (b) for class-2 + the per-frame `StackAbove nh` resume conjunct for class-1.** Together they replace all 22 in-scope sorries with in-scope hypotheses / the banked combinator.
+
+| change | edit surface | sites re-proved |
+|---|---|---|
+| (b) `StackBelow g K₁/K₂` premise on `CrelK` def | `LR.lean:1116` (CrelK def) + the 8 MINT sites drop their `sorry` + every `CrelK` CONSUMER discharges the premise (root `crelK_adequacy_nil`/`lr_fundamental` trivially; `lr_sound` → Q22) + the recursive-body re-applications inside compat cores (monotone-lift) | ~8 MINT + ~6 CrelK-application sites (letC/handle-body re-applies) ≈ **14** |
+| class-1 per-frame `StackAbove nh Kᵢ` resume conjunct | `LR.lean:1131` (KrelS handleF resume clause) + the 14 class-1 sites use `stackInc_append_of_above` + `krelS_handleF_intro`/`krelS_*_reinstall` thread the new conjunct | ~14 class-1 + the ~6 `krelS_*` intros/reinstalls that maintain it ≈ **20** |
+
+Rejected: **fork (a)** — refuted (Q1). The monotone-cast is structurally incompatible with the resume conjunct's contravariance; no restructuring of the resume clause avoids it without a deeper reshape (a shape (c) below).
+
+### The census consequence (honest)
+
+The winner (b + class-1 conjunct) still delivers **18→20** (`lr_fundamental` + `lr_fundamental_closed`), NOT more — `lr_sound`'s third shed (18→21) still needs Q22 (surfaced crisply as `StackBelow (handlerCount C) C` on the `krelS_refl` sites, unchanged from the (i′) ruling). **New debt surfaced:** class-1 is NOT closed by the class-2 carrier alone — it needs its own `StackAbove nh` resume-conjunct addition (Q3). This is additional work vs the ADR's original "the StackInc carrier closes it" framing, but it is a BANKED-combinator discharge (`stackInc_append_of_above` already exists), not new infrastructure.
+
+### What a shape (c) would need (if the operator rejects both forks' def-changes)
+
+If neither `CrelK`-def-premise (b) nor per-frame resume conjunct is acceptable, shape (c) would have to make the resume conjunct's `Kᵢ` COVARIANT — e.g. re-index the whole LR by a fuel-bounded/step-indexed judgment where the counter monotonicity is structural (memory `lr-crelk-custom-arm-termination-wall` fallback C). That is a full LR re-index — far larger than (b) — and is out of scope for this probe. The (b)+conjunct route is the minimal machine-arbitrated answer.
+
+### Ground (lane carrierprobe, `design-lr-carrier-fork`)
+
+`Bang/Witness/CarrierForkA.lean` (Q1 refutation, `[]`/`[propext,Quot.sound]`) · `Bang/Witness/CarrierForkB.lean` (Q2 reaching test, `[]`) · `Bang/Witness/CarrierForkBSkeleton.lean` (Q2 discharge-chain skeleton, `[]`/`[propext,Quot.sound]` + held Q22 `sorry`) · `Bang/Witness/CarrierClass1.lean` (Q3, `[]`/`[propext,Classical.choice,Quot.sound]`) · `BinaryLR.lean:1131/1151` (`KrelS_g_cast` contravariant recursion) · `BinaryLR.lean:1196-1197/1242-1243/1278-1279/1475-1476` (class-2 MINT sorries) · `BinaryLR.lean:736-737/…` (class-1 sorries) · `Invariants.lean:357` (`stackInc_append_of_above`, the class-1 combinator).
+
 ## Context
 
 ### The wall (task #29, item 1), machine-characterized
