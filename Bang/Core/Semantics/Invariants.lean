@@ -365,6 +365,40 @@ theorem stackInc_gives_above {nid : Nat} {Kᵢ Kₒ : EvalCtx} {hh : Handler}
     | letF N => simp only [List.cons_append, StackInc] at h; exact ih h
     | appF w => simp only [List.cons_append, StackInc] at h; exact ih h
 
+/-- **Boundary-location**: if the prefix `Q` is `nid`-free (`splitAtId Q nid = none`), then splitting the
+appended `Q ++ handleF nid hh :: Ko'` at `nid` lands EXACTLY on the boundary frame — `some (Q, hh, Ko')`.
+The positive companion of `splitAtId_above` (which supplies the `= none` premise from `StackAbove`). This
+is the LR SKIP-arm strip's boundary locator (ADR-0096, `da03e68` `splitAtId_append_boundary`). -/
+theorem splitAtId_append_boundary {nid : Nat} {hh : Handler} :
+    ∀ (Q Ko' : EvalCtx), splitAtId Q nid = none →
+    splitAtId (Q ++ Frame.handleF nid hh :: Ko') nid = some (Q, hh, Ko') := by
+  intro Q
+  induction Q with
+  | nil => intro Ko' _; simp [splitAtId]
+  | cons fr Q₀ ih =>
+      intro Ko' hnone
+      cases fr with
+      | handleF mm hd =>
+          simp only [splitAtId] at hnone
+          by_cases hmj : mm = nid
+          · rw [if_pos hmj] at hnone; simp at hnone
+          · rw [if_neg hmj] at hnone
+            simp only [List.cons_append, splitAtId, if_neg hmj,
+              ih Ko' (Option.map_eq_none_iff.mp hnone), Option.map_some]
+      | letF N => simp only [splitAtId, Option.map_eq_none_iff] at hnone
+                  simp only [List.cons_append, splitAtId, ih Ko' hnone, Option.map_some]
+      | appF w => simp only [splitAtId, Option.map_eq_none_iff] at hnone
+                  simp only [List.cons_append, splitAtId, ih Ko' hnone, Option.map_some]
+
+/-- **The composite strip locator**: from `StackInc` on the appended stack (machine-reached / carrier-
+supplied), `splitAtId` at the boundary id `nid` locates the boundary frame. Composes `stackInc_gives_above`
+→ `splitAtId_above` (prefix `nid`-free) → `splitAtId_append_boundary`. This is what the LR SKIP-arm strip
+consumes in ONE step (ADR-0096 amendment; `SkipArmOuterConjunctProbe` `skip_strip_from_stackInc`). -/
+theorem skip_strip_from_stackInc {nid : Nat} {hh : Handler} {P Ko' : EvalCtx}
+    (hInc : StackInc (P ++ Frame.handleF nid hh :: Ko')) :
+    splitAtId (P ++ Frame.handleF nid hh :: Ko') nid = some (P, hh, Ko') :=
+  splitAtId_append_boundary _ Ko' (splitAtId_above nid _ (stackInc_gives_above hInc))
+
 /-- **COMPOSITION** (the inverse of `stackInc_gives_above`): from `StackAbove nid Kᵢ` (every captured-above
 frame exceeds the catcher id — supplied at machine-reached sites via `stackInc_reachable` +
 `stackInc_gives_above`, the fork-B ruling of ADR-0096) together with `StackInc Kᵢ` and `StackInc` on the

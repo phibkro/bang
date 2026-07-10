@@ -1142,6 +1142,91 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
 -- `vcap m ℓ` (VrelK at cap type forces the SAME id `m` both sides, LR:1427); `Source.step` resolves it via
 -- `idDispatch K m ℓ op v = (splitAtId K m).bind (handlesOp-guard ∘ dispatchOn m)`. STANDALONE ⇒ a
 -- `set_option maxHeartbeats` is safe (no mutual structural-recursion inference).
+/-- ◊4.5b Landing-2 (task #37) — the RESUME-ONLY dispatch decomposition. From a `KrelS`-related stack pair
+and a LOCATED catcher (`splitAtId K₁ nid = some (K₁ᵢ, h, K₁ₒ)`), produce ONLY the catcher's resume conjunct
+(+ the matching `K₂`-split with a related handler `h'`). This is the fragment `crelK_fund_up` actually
+consumes — it does NOT reconstruct the inner/outer `KrelS` relations, so the SKIP arm simply RECURSES to the
+deeper catcher (no `krelS_handleF_intro` rebuild). That side-steps the ADR-0096 answer-type wall
+(`Dⱼ = Dᵢ`, route-A `c8b5909`): the inner-relation reconstruction — which forced the mismatched answer types
+— is never performed. Structural induction on `K₁`; the resume input answer `Dᵢ` is existentially bound (it
+is the catcher's own hole, threaded per-frame from `ih`). shape: biernacki-popl18 §5.4 (catcher resume). -/
+theorem krelS_dispatch_resume {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat} :
+    ∀ {K₁ K₂ : Stack} {nid : Nat} {K₁ᵢ K₁ₒ : Stack} {h : Handler},
+    KrelS n C D e g K₁ K₂ → Bang.splitAtId K₁ nid = some (K₁ᵢ, h, K₁ₒ) →
+    ∃ (K₂ᵢ K₂ₒ : Stack) (h' : Handler) (Dᵢ : CTy Eff Mult),
+      Bang.splitAtId K₂ nid = some (K₂ᵢ, h', K₂ₒ) ∧ HandlerRel Eff Mult n h h'
+      ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' : CTy Eff Mult) (εᵢ' : Eff)
+            (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
+          Bang.handlesOp h h.label op' = true →
+          Val.Closed w₁ → Val.Closed w₂ →
+          (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op' = some Aop → VrelK m Aop w₁ w₂) →
+          KrelS m Cᵢ' Dᵢ εᵢ' g Kᵢ Kᵢ' →
+          Bang.StackAbove nid Kᵢ →
+          (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op' = some Aᵣ →
+            ∃ qᵣ, Cᵢ' = CTy.F qᵣ Aᵣ) →
+          Bang.dispatchOn nid op' w₁ (Kᵢ, h, K₁ₒ) = some cfg₁ →
+          Bang.dispatchOn nid op' w₂ (Kᵢ', h', K₂ₒ) = some cfg₂ →
+          (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
+              cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
+              Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
+              KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) := by
+  intro K₁ K₂ nid K₁ᵢ K₁ₒ h hK hsp
+  induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e with
+  | nil => simp [Bang.splitAtId] at hsp
+  | cons fr K₁' ih =>
+      match K₂ with
+      | [] => exact absurd hK (by cases fr <;> simp [KrelS])
+      | fr₂ :: K₂' =>
+          cases fr with
+          | letF N₁ =>
+              cases fr₂ with
+              | letF N₂ =>
+                  rw [krelS_letF] at hK
+                  obtain ⟨hincT, q, A, B, φ, hC, hbody, htail⟩ := hK
+                  simp only [splitAtId, Option.map_eq_some_iff] at hsp
+                  obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
+                  simp only [Prod.mk.injEq] at heq
+                  obtain ⟨rfl, rfl, rfl⟩ := heq
+                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, hsp2, hHR, hres2⟩ := ih htail hsp'
+                  exact ⟨Frame.letF N₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ,
+                    by simp only [splitAtId]; rw [hsp2]; rfl, hHR, hres2⟩
+              | _ => simp [KrelS] at hK
+          | appF w₁ =>
+              cases fr₂ with
+              | appF w₂ =>
+                  rw [krelS_appF] at hK
+                  obtain ⟨hincT, q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
+                  simp only [splitAtId, Option.map_eq_some_iff] at hsp
+                  obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
+                  simp only [Prod.mk.injEq] at heq
+                  obtain ⟨rfl, rfl, rfl⟩ := heq
+                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, hsp2, hHR, hres2⟩ := ih htail hsp'
+                  exact ⟨Frame.appF w₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ,
+                    by simp only [splitAtId]; rw [hsp2]; rfl, hHR, hres2⟩
+              | _ => simp [KrelS] at hK
+          | handleF mh₁ hh₁ =>
+              cases fr₂ with
+              | handleF mh₂ hh₂ =>
+                  rw [krelS_handleF] at hK
+                  obtain ⟨⟨⟨hincK₁', hsbmh₁⟩, ⟨hincK₂', hsbmh₂⟩⟩, hmid, hHRtop, htail, hres⟩ := hK
+                  subst hmid
+                  simp only [splitAtId] at hsp
+                  by_cases hmn : mh₁ = nid
+                  · -- HIT: the catcher IS the top frame. Resume conjunct = hres directly (dispatch over K₁'=K₁ₒ).
+                    subst hmn
+                    rw [if_pos rfl, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
+                    obtain ⟨rfl, rfl, rfl⟩ := hsp
+                    exact ⟨[], K₂', hh₂, C, by simp [splitAtId], hHRtop, hres⟩
+                  · -- SKIP: recurse to the DEEPER catcher's resume; NO frame reconstruction.
+                    rw [if_neg hmn, Option.map_eq_some_iff] at hsp
+                    obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
+                    simp only [Prod.mk.injEq] at heq
+                    obtain ⟨rfl, rfl, rfl⟩ := heq
+                    obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, hsp2, hHR, hres2⟩ := ih htail hsp'
+                    exact ⟨Frame.handleF mh₁ hh₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ,
+                      by simp only [splitAtId]; rw [if_neg hmn, hsp2]; rfl, hHR, hres2⟩
+              | _ => simp [KrelS] at hK
+
 set_option maxHeartbeats 1000000 in
 theorem crelK_fund_up {n : Nat} {m : Nat} {ℓ : Label} {op : OpId} {q : Mult} {A B : VTy Eff Mult} {φ : Eff}
     {v₁ v₂ : Val}
@@ -1149,17 +1234,32 @@ theorem crelK_fund_up {n : Nat} {m : Nat} {ℓ : Label} {op : OpId} {q : Mult} {
     (hRes : EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some B)
     (hcv₁ : Val.Closed v₁) (hcv₂ : Val.Closed v₂) (hvk : VrelK n A v₁ v₂) :
     CrelK n (CTy.F q B) φ (Comp.perform (Val.vcap m ℓ) op v₁) (Comp.perform (Val.vcap m ℓ) op v₂) := by
-  -- ◊inc-5 STOP-AND-SHOW (the FROZEN-lr_sound guard, the value-carried mirror of the old ADR-0043 `:1707`
-  -- seam). `Source.step (g, K₁, perform (vcap m ℓ) op v₁) = (idDispatch K₁ m ℓ op v₁).map (g, ·)`. To run
-  -- the decomp (`krelS_splitAtId_decomp hK`) we first need `splitAtId K₁ m = some (Kᵢ, h, Kₒ)` AND the
-  -- fail-loud guard `handlesOp h ℓ op = true` — i.e. `CapResolves K₁ m ℓ op` (the cap NON-ESCAPES in K₁).
-  -- `KrelS` is purely structural + resume; it does NOT carry cap-resolution. And the resume values feed
-  -- the guarded `crelK_ret`'s `CapsBelow 0` premise + a counter-bridge (the dispatched `g` vs the canonical
-  -- `handlerCount Sᵢ`, `run_bump`). BOTH obligations are NonEscape/cap-scopedness facts about the OBSERVATION
-  -- context K₁ — which the FROZEN `lr_sound`/`lr_fundamental` statements (Spec.lean) do not provide. So this
-  -- arm PROPAGATES UP to the frozen statement: it is the ADR-0056/0057 escape-discipline question (B-occ,
-  -- task #23), not internally dischargeable from `KrelS` alone. Held as a named sorry pending ADR-0057
-  -- (the dissolution lemma `HasConfigTy ⟹ NonEscape` + the `CapsBelow` discharge it licenses).
+  -- ◊4.5b Landing-2 wall (task #37, SHARPENED 2026-07-10). The pre-carrier "CapResolves/NonEscape propagates
+  -- UP to the frozen statement" claim is STALE (git-blamed to Bang/Compat.lean 2026-06-24/26, before the
+  -- ADR-0096 carrier landed 8ecb681d). CORRECTED PICTURE (build-grounded this lane):
+  --  (a) The cap-RESOLUTION obligation is NOT needed: `CoApproxC_le` is ONE-SIDED (`ConvergesC_le n cfg₁ →
+  --      ∃ …, run cfg₂ …`). When `idDispatch K₁ m ℓ op = none` (splitAtId=none OR handlesOp=false) the LEFT
+  --      config is STUCK (`config_stuck_up_splitNone`/`not_convergesC_le_up_splitNone`, LR.lean) — so the
+  --      premise `ConvergesC_le` is FALSE and the implication is VACUOUS. No NonEscape fact required. This
+  --      dissolves the old "CapResolves needed" wall entirely.
+  --  (b) The RESUME arm (`idDispatch = some`, handlesOp=true) needs the CATCHER's resume conjunct at answer
+  --      `D`, which `krelS_dispatch_resume` (banked THIS lane, axiom-clean [propext,Quot.sound], above)
+  --      supplies WITHOUT the ADR-0096 answer-type wall — its SKIP arm recurses to the deeper catcher with
+  --      NO inner-relation reconstruction.
+  --  (c) THE REMAINING WALL: `krelS_dispatch_resume`'s resume conjunct has a `∀ Kᵢ Kᵢ', KrelS m Cᵢ' Dᵢ g Kᵢ
+  --      Kᵢ' → …` premise. For the perform, `Kᵢ = K₁ᵢ` (the captured continuation above the catcher), so
+  --      instantiating it needs the INNER RELATION `KrelS m' Cᵢ' Dᵢ g K₁ᵢ K₂ᵢ` at the catcher's hole answer
+  --      `Dᵢ`. Reconstructing the inner relation for a DEEP catcher (`handleF mh₁ hh₁ :: Ki'`) requires the
+  --      `mh₁`-frame's OWN resume conjunct AT answer `Dᵢ` — but the only source is `hres` (mh₁ over the
+  --      LONGER `K₁'`) at answer `D`, and re-answering `D → Dᵢ` is EXACTLY the ADR-0096 route-A `Dⱼ = Dᵢ`
+  --      refutation (false at `P=[]`, `c8b5909`; `Dᵢ` = catcher hole = `C` at HIT, so `Dᵢ ≠ D` when `C ≠ D`).
+  --      Three independent constructions this lane (route-A structural on the prefix; WF-strip via
+  --      `krelS_splitAtId_decomp` at `mᵢ<n`; `krelS_split_inner`) ALL converge on this same answer-type wall.
+  --  NEXT: the inner-relation answer-type wall is the real ADR-0096 residual (the carrier gave LOCATION
+  --  determinacy — `skip_strip_from_stackInc`, banked — but NOT answer-type determinacy). A combined
+  --  index-WF lemma producing (inner relation + resume conjunct) at a CONSISTENTLY-THREADED existential
+  --  answer is the candidate route; the `krelS_dispatch_resume` skeleton + `skip_strip_from_stackInc` are
+  --  the banked scaffold. shape: biernacki-popl18 §5.4.
   sorry
 
 /-- ADR-0058 route 1: `KrelS` is INDEPENDENT of the threaded fresh-id counter `g`. The counter only
