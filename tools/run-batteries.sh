@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=justfile,tools/test-*.sh runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # run-batteries.sh — concurrent driver for the independent verify batteries (plan 004).
 #
 # Each tools/test-*.sh (+ check-examples.sh) is independent by construction: its own

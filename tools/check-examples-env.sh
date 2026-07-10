@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=examples/*/main.bang,examples/*/expected.txt runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-examples-env.sh — the DIFFERENTIAL gate for the EXPERIMENTAL env engine (ADR-0094).
 #
 # Same corpus as check-examples.sh, but run through `bang run … --engine=env` (the environment

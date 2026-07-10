@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=Main.lean,Bang/Frontend/TypeCheck.lean runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-modules.sh — the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`).
 #
 # Mirrors test-fmt.sh's shape (build once, exercise the binary, diff, tally pass/fail). The

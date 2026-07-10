@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=workflow couples=burndown.sh,paths/PATH-*.md,CONTEXT.md runs-in=manual
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # orient.sh — one-shot orient for fresh sessions.
 # Used by `just orient` AND the SessionStart Claude Code hook.
 #

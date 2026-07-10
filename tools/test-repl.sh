@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=none runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-repl.sh — the non-interactive gate for `bang repl` (issue #7).
 #
 # The REPL is agent-facing (piped stdin, no TTY), so its test surface IS a

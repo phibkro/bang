@@ -173,6 +173,8 @@ def buildable(report, lean_root) -> bool:
 
 
 def main() -> int:
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--lean-root", default=".", help="where to run lake/git (default: cwd)")
     ap.add_argument("--context", default=None, help="doc to write (default: <lean-root>/CONTEXT.md)")

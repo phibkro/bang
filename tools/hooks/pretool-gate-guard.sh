@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=new-worktree.sh runs-in=hook
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun
 # that clobbered worktrees in multi-agent proof sessions: `lake exe cache get` run from
 # inside a linked git worktree (it re-clones Mathlib and clobbers the checkout — #40).

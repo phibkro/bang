@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=examples/*/main.bang runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-fmt.sh — the non-interactive gate for `bang fmt` (issue #58's CLI half).
 #
 # Mirrors test-repl.sh's shape (build once, exercise the binary, diff, tally pass/fail). The

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=Bang/**/*.lean runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-all-modules.sh — structural fitness for the module-system migration (Phase 1a).
 #
 # POLICY (operator, modules-everywhere): every `Bang/**/*.lean` must carry a Lean

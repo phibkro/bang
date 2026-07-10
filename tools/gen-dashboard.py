@@ -443,6 +443,8 @@ def write_pwa_files():
 
 
 def main():
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     ms = fetch_milestones()
     cps = parse_checkpoints(ROADMAP.read_text())
     health = parse_health(CONTEXT.read_text())

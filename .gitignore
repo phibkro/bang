@@ -23,6 +23,9 @@ oracle/_build/
 *.cmx
 *.o
 
+# Tool invocation telemetry (tools/tool-log.sh appends here; per-machine data, not repo content — plan 012)
+.claude/tool-invocations.log
+
 # direnv
 .direnv/
 

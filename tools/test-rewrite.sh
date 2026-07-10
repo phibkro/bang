@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=examples/*/main.bang runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-rewrite.sh — the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command
 # side over #80's query/read-model side).
 #

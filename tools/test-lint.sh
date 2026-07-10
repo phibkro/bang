@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=examples/*/main.bang runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-lint.sh — the non-interactive gate for `bang lint` (#82 item 2).
 #
 # Mirrors test-rewrite.sh/test-annotate.sh's shape (build once, exercise the binary, tally

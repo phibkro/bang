@@ -75,7 +75,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 
-## workflow (7)
+## workflow (8)
 
 _Workflow — bootstrap / orientation / dev-loop helpers; not a gate._
 
@@ -88,6 +88,7 @@ _Workflow — bootstrap / orientation / dev-loop helpers; not a gate._
 | [`new-worktree.sh`](new-worktree.sh) | `manual` | — | the ONE blessed way to spawn an isolated IC checkout (#40b) |
 | [`orient.sh`](orient.sh) | `manual` | `burndown.sh`, `paths/PATH-*.md`, `CONTEXT.md` | one-shot orient for fresh sessions |
 | [`setup.sh`](setup.sh) | `manual` | `install-hooks.sh` | first-time bootstrap for a fresh clone |
+| [`tool-log.sh`](tool-log.sh) | `manual` | `tools/*.sh`, `tools/*.py`, `justfile` | the single home for invocation telemetry (plan 012 slice 1) |
 
 ## lane (1)
 

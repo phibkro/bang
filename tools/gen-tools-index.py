@@ -57,17 +57,25 @@ SEP_RE = re.compile(r"^\S+\s*(?:—|--)\s*")  # a leading `<name> — ` / `<name
 
 
 def first_purpose(text):
-    """One-line purpose: the first prose line AFTER the `# tool:` header, stripped of
-    comment/docstring leaders and of a leading `<name> — ` / `<name> -- ` prefix if any.
-    Reading past the header (not just line 0) is what makes the .mjs `//`-header and the
-    shebang'd scripts glue up to the same first prose line."""
+    """One-line purpose: the first prose COMMENT line AFTER the `# tool:` header,
+    stripped of comment/docstring leaders and of a leading `<name> — ` / `<name> -- `
+    prefix if any. Reading past the header (not just line 0) is what makes the .mjs
+    `//`-header and the shebang'd scripts glue up to the same first prose line. Only
+    comment/docstring lines count — a code statement between the header and the prose
+    (e.g. the tool-log telemetry call, plan 012) is skipped, not mistaken for the purpose."""
     lines = text.splitlines()
     past_header = False
-    for line in lines[:14]:
+    for line in lines[:16]:
         if HEADER_RE.match(line):
             past_header = True
             continue
         if not past_header:
+            continue
+        stripped = line.strip()
+        # skip code statements (the tool-log telemetry line); only comments / docstrings
+        # carry the purpose prose.
+        if not (stripped.startswith("#") or stripped.startswith("//")
+                or stripped.startswith('"""') or stripped.startswith('"')):
             continue
         s = line.lstrip("#/").strip().lstrip('"').strip()
         if not s:
@@ -132,6 +140,8 @@ def render(rows):
 
 
 def main():
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     check = "--check" in sys.argv
     scripts = required_scripts()
     rows, missing = parse(scripts)

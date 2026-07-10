@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=workflow couples=.github/workflows/release.yml runs-in=manual
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # install.sh — the curl-able installer for the `bang` binary. Detects the platform,
 # downloads the latest GitHub Release asset, and drops it in ~/.local/bin. Paired with
 # release.yml (which names the asset `bang-<version>-x86_64-linux`) and the README's

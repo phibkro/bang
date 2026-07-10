@@ -280,6 +280,7 @@ check-bib:
 
 # Zero-dep Node sanity check on the row-unifier algorithm.
 selfcheck:
+    bash tools/tool-log.sh selfcheck.mjs
     node tools/selfcheck.mjs
 
 # Fast per-file Lean error check (no full library rebuild).
@@ -321,12 +322,14 @@ clean:
 
 # Run the headline-theorem #print axioms gate (per-theorem axiom report).
 axioms:
+    bash tools/tool-log.sh axioms
     lake env lean Bang/Audit.lean
 
 # Advisory dead-code scan: Bang.* decls unreachable from the Audit headlines +
 # the `bang` CLI entry. NEVER a gate — output curates via tools/deadcode-allow.txt.
 # Regenerates the tool's full-module import block first (drift-free coverage).
 dead-code:
+    bash tools/tool-log.sh dead-code
     python3 tools/gen-deadcode-imports.py
     lake env lean tools/DeadCode.lean
 
@@ -340,6 +343,7 @@ dead-code:
 lint-lean:
     #!/usr/bin/env bash
     set -euo pipefail
+    bash tools/tool-log.sh lint-lean
     for mod in Bang.Audit Bang.Backend.EnvMachine Bang.Distribution Bang.Examples \
       Bang.Frontend.Lint Bang.Frontend.NamedCore Bang.Frontend.Rewrite \
       Bang.Frontend.Surface.PropTest Bang.Frontend.Surface.Trait Bang.Reify.CalcReifySim \
@@ -355,4 +359,5 @@ lint-lean:
 # `graph` gives the import SHAPE (fan-in/fan-out), not per-file build timing; real timing
 # needs either a newer importGraph pin or parsing `lake build`'s own `Built <mod> (Xs)` lines.
 pole:
+    bash tools/tool-log.sh pole
     lake exe graph --to Bang.Audit import-graph.dot

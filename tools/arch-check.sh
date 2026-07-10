@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=Bang/**/*.lean runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # arch-check.sh — the import-direction fitness function (ADR-0046/0047 ②).
 # ──────────────────────────────────────────────────────────────────────────────
 # Enforces the layered architecture as a TESTED rung: drift in the dependency

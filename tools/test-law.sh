@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=none runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-law.sh — the non-interactive gate for `bang test` (issue #60's CLI wiring).
 #
 # Exercises the LawTest/lawInstancesOf discovery seam THROUGH the compiled binary: a real trait

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=paths/PATH-*.md,CONTEXT.md,ROADMAP.md runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-paths.sh — PATH lifecycle fitness function.
 #
 # A `paths/PATH-*.md` is a unit of in-flight work (CLAUDE.md). When its work lands

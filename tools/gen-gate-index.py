@@ -50,7 +50,10 @@ def parse_recipes(text):
             recipes[cur] = {"deps": deps, "cmds": []}
         elif cur and (line.startswith("    ") or line.startswith("\t")):
             s = line.strip()
-            if s and not s.startswith("#") and not s.startswith("@just"):
+            # tool-log.sh is invocation telemetry (plan 012), not a gate leg — skip it so
+            # the gloss still comes from the recipe's real primary command.
+            if s and not s.startswith("#") and not s.startswith("@just") \
+               and "tools/tool-log.sh" not in s:
                 recipes[cur]["cmds"].append(s.lstrip("@-"))
         elif line and not line.startswith(" "):
             cur = None
@@ -126,6 +129,8 @@ def splice(md, block):
 
 
 def main():
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     check = "--check" in sys.argv
     recipes = parse_recipes(open(JUSTFILE, encoding="utf-8").read())
     block = render(recipes)

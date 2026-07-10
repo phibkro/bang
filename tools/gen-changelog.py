@@ -90,6 +90,8 @@ def splice(md: str, block: str) -> str:
 
 
 def main() -> int:
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=".", help="repo root (default: cwd)")
     ap.add_argument("--file", default=None, help="changelog path (default: <root>/CHANGELOG.md)")
