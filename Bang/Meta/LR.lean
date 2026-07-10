@@ -1130,6 +1130,13 @@ DISCOVERY-IC FORM: SINGLE-BODY def + internal `match K₁, K₂` (the multi-clau
 unfolder); per-case `@[simp]` eq lemmas (`krelS_nil`/`letF`/`appF`/`handleF`) generated below. -/
 def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Nat → Stack → Stack → Prop
   | n, C, D, ε, g, K₁, K₂ =>
+      -- ADR-0096 (i′) freshness carrier: the id-ordering invariant `StackInc` on BOTH stacks, an OUTER
+      -- conjunct wrapping the match. Self-propagating — the recursive `KrelS … Kᵢ Kᵢ'` in each clause
+      -- (tail + the handleF resume conjunct's captured continuation + the resume-result `Sᵢ`) carries it,
+      -- which the SKIP-arm strip consumes (`stackInc_gives_above` → `splitAtId_above`). Discharged at the
+      -- machine-reached `crelK_fund_up` via `stackInc_reachable`. (Corrected from `StackBelow g`, refuted
+      -- for a LIVE deep-catcher id `nid < g` — ADR-0096 amendment; `scratch/StackBelowInsufficientProbe`.)
+      (StackInc K₁ ∧ StackInc K₂) ∧
       match K₁, K₂ with
       -- nil: hole type = answer type; observe related RETURNS (the biorthogonal base / return-half).
       -- ADR-0058 route 1: the return observation carries the REAL counter `g` (threaded from `CrelK`),
@@ -1241,21 +1248,26 @@ end
     KrelS n C D ε g [] [] ↔
       (C = D ∧ ∀ q A, C = CTy.F q A → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK n A v₁ v₂ →
         CoApproxC_le n (g, [], Comp.ret v₁) (g, [], Comp.ret v₂)) := by
-  rw [KrelS]
+  -- StackInc [] = True on both sides ⟹ the ADR-0096 outer conjunct is `True ∧ True`, dropped by simp.
+  rw [KrelS]; simp only [StackInc, true_and, and_true]
 
 @[simp] theorem krelS_letF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {N₁ N₂ : Comp} {K₁ K₂ : Stack} :
     KrelS n C D ε g (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) ↔
+      (StackInc K₁ ∧ StackInc K₂) ∧
       ∃ q A B φ, C = CTy.F q A ∧
         (∀ m, m < n → ∀ v₁ v₂, Val.Closed v₁ → Val.Closed v₂ → VrelK m A v₁ v₂ →
           CrelK m B φ (Comp.subst v₁ N₁) (Comp.subst v₂ N₂))
         ∧ KrelS n B D φ g K₁ K₂ := by
-  rw [KrelS]
+  -- StackInc (letF :: K) = StackInc K (def), so the ADR-0096 outer conjunct reads on the tails.
+  rw [KrelS]; simp only [StackInc]
 
 @[simp] theorem krelS_appF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {w₁ w₂ : Val} {K₁ K₂ : Stack} :
     KrelS n C D ε g (Frame.appF w₁ :: K₁) (Frame.appF w₂ :: K₂) ↔
+      (StackInc K₁ ∧ StackInc K₂) ∧
       ∃ q A B, C = CTy.arr q A B ∧
         Val.Closed w₁ ∧ Val.Closed w₂ ∧ VrelK n A w₁ w₂ ∧ KrelS n B D ε g K₁ K₂ := by
-  rw [KrelS]
+  -- StackInc (appF :: K) = StackInc K (def), so the ADR-0096 outer conjunct reads on the tails.
+  rw [KrelS]; simp only [StackInc]
 
 /-- ◊4.5b-append the RELATIONAL handler condition (state lives IN the handler, related-not-equal). Fixes
 label+kind (so `splitAt`/`handlesOp` fire identically — they ignore stored state) + relates the stored
@@ -1285,6 +1297,7 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
 @[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {nh nh' : Nat} {h h' : Handler}
     {K₁ K₂ : Stack} :
     KrelS n C D ε g (Frame.handleF nh h :: K₁) (Frame.handleF nh' h' :: K₂) ↔
+      ((StackInc K₁ ∧ StackBelow nh K₁) ∧ (StackInc K₂ ∧ StackBelow nh' K₂)) ∧
       (nh = nh' ∧ HandlerRel Eff Mult n h h' ∧ KrelS n C D ε g K₁ K₂
         ∧ (∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
@@ -1300,7 +1313,8 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
                 cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
                 Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
                 KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ'))) := by
-  cases h <;> cases h' <;> simp only [KrelS, HandlerRel]
+  -- StackInc (handleF nh h :: K) = StackInc K ∧ StackBelow nh K (def); exposed as the outer conjunct.
+  cases h <;> cases h' <;> simp only [KrelS, HandlerRel, StackInc]
 
 /-- ◊4.5b μ-floor: `CrelK 0` is VACUOUS (the metered obs at 0 — `ConvergesC_le 0` is `False`). -/
 theorem crelK_zero {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp} : CrelK 0 C ε c₁ c₂ := by
