@@ -1101,6 +1101,97 @@ def runLint (json quietClean : Bool) (file : Option String) : IO UInt32 := do
           IO.println s!"{warnCount} warning(s), {infoCount} info"
       pure (if hasWarning then 1 else 0)
 
+/-! ## `bang new NAME` — scaffold a runnable example project (plan 013 slice 7).
+
+Writes an `examples/<NAME>/` directory in the check-examples convention: a runnable starter
+`main.bang`, a `README.md` stub, and an `expected.txt` PRODUCED BY ACTUALLY RUNNING the
+starter (never hand-written — the oracle can't drift from a byte someone typed). `--module`
+scaffolds the multi-file import shape: a sibling `Lib.bang` exporting one `pub` fn that
+`main.bang` consumes via `use Lib (greet)`. The scaffolded sources deliberately avoid every
+reserved binder word (`get put raise new read write resume param with`, Surface.lean `pIdent`)
+so a scaffold always parses. -/
+
+/-- The single-file starter's `main.bang`. -/
+def newStarterMain : String :=
+  "-- A starter bang program. `bang run main.bang` runs it; the value prints to stdout.\n" ++
+  "-- Every value is a description until forced with `$` (ADR-0007); `bare` = description,\n" ++
+  "-- `$name` = the forced value. Edit `main`, then re-run — `bang test --update " ++
+  "<NAME>` re-bakes expected.txt.\n" ++
+  "let greeting = \"hello from bang\"\n" ++
+  "let main = $concat greeting \"!\"\n"
+
+/-- The `--module` variant's library `Lib.bang` — one `pub` export consumed by main. -/
+def newStarterLib : String :=
+  "-- A library module. `pub` exports a decl; a bare (non-`pub`) decl stays module-private\n" ++
+  "-- (ADR-0093 D3). This file is imported, not run directly.\n" ++
+  "pub let greet = {fun who => $concat \"hello, \" who}\n"
+
+/-- The `--module` variant's `main.bang` — consumes Lib's export. -/
+def newStarterModuleMain : String :=
+  "-- Multi-file starter: `use Lib (greet)` hoists Lib's `pub` fn into unqualified scope\n" ++
+  "-- (same-directory import; `bang run main.bang` resolves + merges Lib.bang automatically).\n" ++
+  "use Lib (greet)\n" ++
+  "let main = $greet \"bang\"\n"
+
+/-- The scaffolded README stub (`{name}` and the `--module` note interpolated). -/
+def newReadme (name : String) (isModule : Bool) : String :=
+  s!"# {name}\n\n" ++
+  "Scaffolded by `bang new" ++ (if isModule then " --module " else " ") ++ s!"{name}`.\n\n" ++
+  "- `main.bang` — the entry program (`bang run examples/" ++ name ++ "/main.bang`).\n" ++
+  (if isModule then
+    "- `Lib.bang` — a library module; its `pub greet` is consumed by `main.bang`.\n" else "") ++
+  "- `expected.txt` — the run oracle (produced by `bang new`, re-baked by " ++
+  s!"`bang test --update {name}`); `tools/check-examples.sh` diffs `main.bang`'s stdout against it.\n\n" ++
+  "Replace this stub with what the example teaches.\n"
+
+/-- Evaluate a fully-resolved `Prog` to its printed value STRING (the exact bytes `bang run`
+would put on stdout), on the default env engine — so a scaffold's `expected.txt` is what
+`bang run` and `check-examples` will actually observe, byte-for-byte. `.error` names the
+failing outcome (a scaffold that doesn't run is a loud failure, never a silent empty file). -/
+def evalProgToString (prog : Prog) : Except String String :=
+  match Bang.TypeCheck.checkAndLowerProg prog with
+  | .error e => .error e
+  | .ok c    =>
+    match Bang.EnvMachine.runE defaultFuel c with
+    | .done v => .ok (valPretty v)
+    | _       => .error "the starter produced no first-order value on the env engine"
+
+/-- Run `bang new NAME [--module]`: scaffold `examples/NAME/` per the check-examples convention
+(§ the doc block above). Refuses loudly if the target directory already exists (ADR-0046: never
+silently overwrite). The `expected.txt` is COMPUTED by running the just-written `main.bang`, so
+it can never disagree with the sources; a starter that fails to run aborts BEFORE any expected.txt
+is written (a half-scaffolded dir with a stale/empty oracle is worse than a loud failure). -/
+def runNew (name : String) (isModule : Bool) : IO UInt32 := do
+  let root ← IO.currentDir
+  let dir := root / "examples" / name
+  if ← dir.pathExists then
+    IO.eprintln s!"error: {dir} already exists — pick a new name or remove it first"
+    return 1
+  IO.FS.createDirAll dir
+  let mainSrc := if isModule then newStarterModuleMain else newStarterMain
+  IO.FS.writeFile (dir / "main.bang") mainSrc
+  if isModule then IO.FS.writeFile (dir / "Lib.bang") newStarterLib
+  IO.FS.writeFile (dir / "README.md") (newReadme name isModule)
+  -- expected.txt is the RUN oracle: resolve + run the just-written main.bang, capture its value.
+  match ← resolveEntryFile ((dir / "main.bang").toString) with
+  | .error e =>
+    IO.eprintln s!"error: scaffolded starter failed to resolve: {e}"
+    return 1
+  | .ok merged =>
+    match evalProgToString merged with
+    | .error e =>
+      IO.eprintln s!"error: scaffolded starter failed to run: {e} — no expected.txt written"
+      return 1
+    | .ok out =>
+      IO.FS.writeFile (dir / "expected.txt") (out ++ "\n")
+      IO.println s!"created examples/{name}/"
+      IO.println s!"  main.bang     ({mainSrc.length} bytes)"
+      if isModule then IO.println s!"  Lib.bang      (pub greet, consumed by main)"
+      IO.println s!"  README.md"
+      IO.println s!"  expected.txt  → {out}"
+      IO.println s!"run it:  bang run examples/{name}/main.bang"
+      return 0
+
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
@@ -1115,6 +1206,11 @@ def usage : String :=
   "                                     explanation, and a minimal triggering example. Codes appear\n" ++
   "                                     in `check` output (`error[B004]:` / the `explainCode` JSON\n" ++
   "                                     field). An unknown code is a LOUD error on stderr, exit 1.\n\n" ++
+  "  bang new <NAME> [--module]         scaffold examples/<NAME>/ — a runnable starter main.bang, a\n" ++
+  "                                     README stub, and an expected.txt PRODUCED BY RUNNING the\n" ++
+  "                                     starter (plan 013 s7, never hand-written). `--module` picks\n" ++
+  "                                     the multi-file import shape (a sibling Lib.bang whose `pub`\n" ++
+  "                                     fn main.bang consumes). Refuses if the dir already exists.\n\n" ++
   "  bang test [<file.bang>]            discover + sample-check every trait law (issue #60);\n" ++
   "                                     reads stdin if no file; reports per-law PASS/FAIL/ERROR/STUCK.\n" ++
   "                                     INPUT MUST BE DECLS-ONLY (no trailing expression) — the\n" ++
@@ -1420,8 +1516,18 @@ def main (args : List String) : IO UInt32 := do
       match rest.filter (fun a => !("--".isPrefixOf a)) with
       | [code] => runExplain code
       | _      => IO.eprintln usage; pure 1
+    else if cmd == "new" then
+      -- `bang new <NAME> [--module]` (plan 013 s7): scaffold examples/<NAME>/. `--module` picks the
+      -- multi-file import shape; any OTHER `--`-prefixed arg falls to usage (mirrors run/check).
+      let isModule := rest.contains "--module"
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | [name] => runNew name isModule
+      | _      => IO.eprintln usage; pure 1
     else if cmd == "test" then
-      -- no flags this slice (no `--samples`/`--seed`, a natural follow-up, not added speculatively).
+      -- `bang test [<file.bang>]` discovers + checks laws; `bang test --update <NAME>` (plan 013 s8)
+      -- is handled at the HARNESS level (tools/check-examples.sh --update), NOT here — `test`'s CLI
+      -- shape reads a single .bang FILE, whereas --update names an example DIRECTORY the run-oracle
+      -- harness owns (see that script's header). No flags on this verb this slice.
       match rest with
       | []      => runTest none        -- `bang test` with no file: read stdin
       | [arg]   => runTest (some arg)
