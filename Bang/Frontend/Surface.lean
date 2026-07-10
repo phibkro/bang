@@ -834,7 +834,16 @@ def pIdent : P String
           -- chain `e with Net {thunk}`, since a bare `with` fell through to `pAtom`'s `.var` catch-all
           -- and nothing marked it as a non-atom boundary — the SAME class of bug #26 fixed for
           -- `read`/`write`/`get`, generalized to a new keyword).
-          || t = "with" then
+          || t = "with"
+          -- #93 (ADR-0095 D5, RULED but never implemented until now): `resume` is RESERVED as a
+          -- BINDER name (a clause-arg name, a `let`/`fun` name, …) so the future explicit
+          -- `resume(w)` form (and the eventual multi-shot first-class `k`, Q22/Q27) slots in
+          -- without colliding with a program that already used `resume` as an ordinary identifier.
+          -- This is the BINDER half of D5's reservation — `pIdent` is where every other binder-name
+          -- reservation already lives (`with`, the built-in ambient-op names); the EFFECT-OP-NAME
+          -- half is a SEPARATE check in `buildEnv`'s `.effectD` case, since `pEffectMembers` parses
+          -- an op name directly off the token stream, never through `pIdent`.
+          || t = "resume" then
         .error ⟨s!"expected an identifier, got keyword '{t}'", t :: ts⟩
       else .ok (t, ts)
   | [] => .error "expected an identifier, got end of input"
@@ -1397,7 +1406,9 @@ def pAtom : Nat → P Surf
               || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "=="
               || t = "in" || t = "=" || t = "=>" || t = "->" || t = "," || t = ";" || t = ")" || t = "}" || t = ":"
               -- ADR-0095 D1 (RULED): `with` reserved — see `pIdent`'s own arm for why.
-              || t = "with" then
+              || t = "with"
+              -- #93 (ADR-0095 D5): `resume` reserved — see `pIdent`'s own arm for why.
+              || t = "resume" then
         .error ⟨s!"unexpected '{t}' where an atom was expected", t :: ts⟩
       else .ok (.var t, ts)
   | _ + 1, [] => .error "unexpected end of input where an atom was expected"
