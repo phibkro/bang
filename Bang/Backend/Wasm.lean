@@ -124,7 +124,11 @@ inductive Instr where
   | unmarkH : Instr                           -- pop the handler boundary (normal return)
   -- route-B: `opH` is IDENTITY-keyed (`Nat`, not label) — dispatch resolves the frame by capability
   -- identity `n` (mirroring `idDispatch`/`splitAtId`), matching the route-B CalcVM `OP n op v`.
-  | opH     : Nat → Bang.OpId → Bang.Val → Instr  -- perform op (identity-keyed resume/unwind)
+  -- CARRIES the CalcVM continuation `cc` (like `bindS`/`markH`): a CUSTOM resume runtime-recompiles the
+  -- clause body INTO `cc` (`exec`'s `compile body c`), so the residual needs the threaded continuation —
+  -- `lowerCode` is no longer a `++`-homomorphism, so the tail must be carried, not appended (§compile
+  -- purity). state/txn/abort resumes ignore `cc` and continue the lowered tail (a value resume / abort).
+  | opH     : Nat → Bang.OpId → Bang.Val → CalcVM.Code → Instr  -- perform op (identity-keyed resume/unwind)
   deriving Inhabited
 
 abbrev Code := List Instr
@@ -205,7 +209,10 @@ def lowerInstr (i : CalcVM.Instr) (c : CalcVM.Code) (rest : Wasmfx.Code) : Wasmf
   -- route-B: HANDLE DEFERS like SUBST — subsume the tail, carry the raw body `M` + CalcVM cont `c`.
   | .HANDLE h M   => [.markH h M c]
   | .UNMARK       => .unmarkH :: rest
-  | .OP n op v    => .opH n op v :: rest      -- identity-keyed
+  -- route-B: OP SUBSUMES the tail (like SUBST/markH), carrying the CalcVM cont `c` — a custom resume
+  -- runtime-recompiles the clause body INTO `c` (`exec`'s `compile body c`), and `lowerCode` is not a
+  -- `++`-homomorphism so the tail must be threaded, not appended. `rest = lowerCode c` is DROPPED.
+  | .OP n op v    => [.opH n op v c]           -- identity-keyed; carries the cont for the custom recompile
   | .THROW _ _ _  => rest                      -- never compiled (no-op)
 def lowerCode : CalcVM.Code → Wasmfx.Code
   | []      => []
@@ -299,6 +306,26 @@ def wUnwindFind : Nat → Bang.OpId → HStack → Option (Code × VStack × HSt
                      else (wUnwindFind n op hs).map (fun p => (p.1, p.2.1, p.2.2))
       | _ => (wUnwindFind n op hs).map (fun p => (p.1, p.2.1, p.2.2))
 
+/-- WASM analog of CalcVM's `customUpdate` (ADR-0085 Stage 4 user-effect inline clause-service):
+find the nearest `custom ℓ`-frame with IDENTITY `n`, look up the op's clause, and return the
+clause BODY (`subst p (subst (shift v) clause.2)`) to run BEFORE the resume continuation, the
+frame kept live (κ unchanged). STRUCTURALLY IDENTICAL to CalcVM's `customUpdate` (same recursion,
+same `Handler.custom` payload — the WASM HStack shares `Handler`, so the clauses live in the shared
+`custom ℓ0 p cls`). No matching clause / no custom frame at `n` ⇒ `none` (the caller falls through
+to `wUnwindFind`, the throws path). The returned `Comp` is re-compiled+lowered at the `opH` custom
+arm, mirroring `exec`'s `compile body c` (invariant #4). -/
+def wCustomUpdate : Nat → Bang.OpId → Bang.Val → HStack → Option (Comp × HStack)
+  | _, _, _, []       => none
+  | n, op, v, fr :: hs =>
+      match fr.handler with
+      | .custom _ p cls =>
+          if fr.id = n then
+            match cls.find? (·.1 == op) with
+            | some clause => some (Comp.subst p (Comp.subst (Val.shift v) clause.2), fr :: hs)
+            | none        => none
+          else (wCustomUpdate n op v hs).map (fun q => (q.1, fr :: q.2))
+      | _ => (wCustomUpdate n op v hs).map (fun q => (q.1, fr :: q.2))
+
 def wexec : Nat → Nat → Code → VStack → HStack → Option VStack
   | 0,          _, _,              _, _ => none
   | Nat.succ _, _, [],             s, _ => some s
@@ -341,17 +368,25 @@ def wexec : Nat → Nat → Code → VStack → HStack → Option VStack
       match hs with
       | _ :: hs' => wexec f g c s hs'
       | []       => none
-  | Nat.succ f, g, .opH n op v :: c, s, hs =>
-      -- OP dispatch mirrors exec EXACTLY: stateUpdate → txnUpdate → unwindFind, by identity `n`.
+  | Nat.succ f, g, .opH n op v cc :: _, s, hs =>
+      -- OP dispatch mirrors exec EXACTLY: stateUpdate → txnUpdate → customUpdate → unwindFind, by identity
+      -- `n` (id-first, no isBuiltinOp guard). state/txn resume a VALUE and continue the lowered cont
+      -- `lowerCode cc`; custom RE-COMPILES the clause body into `cc` (`exec`'s `compile body c`, lowered);
+      -- abort discards `cc` for the frame's saved OUTER continuation.
       match wStateUpdate n op v hs with
-      | some (r, hs') => wexec f g c (compileV r :: s) hs'         -- RESUME (state): continue c with ret r
+      | some (r, hs') => wexec f g (lowerCode cc) (compileV r :: s) hs'   -- RESUME (state): continue cc with ret r
       | none =>
           match wTxnUpdate n op v hs with
-          | some (r, hs') => wexec f g c (compileV r :: s) hs'     -- RESUME (txn): continue c with ret r
+          | some (r, hs') => wexec f g (lowerCode cc) (compileV r :: s) hs' -- RESUME (txn): continue cc with ret r
           | none =>
-              match wUnwindFind n op hs with
-              | some (c', s', hs') => wexec f g c' (compileV v :: s') hs'  -- ABORT to (Kₒ, ret v)
-              | none               => none
+              match wCustomUpdate n op v hs with
+              -- RESUME (custom): re-compile the clause body INTO `cc` (the resume cont), lower, run before it,
+              -- against the unchanged `hs` (frame kept live). Mirrors exec's `compile body c`, lowered.
+              | some (body, hs') => wexec f g (lowerCode (CalcVM.compile body cc)) s hs'
+              | none =>
+                  match wUnwindFind n op hs with
+                  | some (c', s', hs') => wexec f g c' (compileV v :: s') hs'  -- ABORT to (Kₒ, ret v)
+                  | none               => none
 
 /-- Run a compiled module to a single value on the operand stack. The closed
 program starts on the empty stack + empty handler stack; `done` = a singleton. -/
@@ -1411,6 +1446,26 @@ theorem customUpdate_none_of_noCustom {n : Nat} {op : Bang.OpId} {v : Bang.Val} 
       | throws _         => rw [CalcVM.customUpdate, hfrh, hrec]; rfl
       | transaction _ _  => rw [CalcVM.customUpdate, hfrh, hrec]; rfl
 
+/-- WASM sibling: no custom frame in the (injected) HStack ⇒ `wCustomUpdate` misses. Same walk as
+`customUpdate_none_of_noCustom` — `wCustomUpdate` is structurally identical, so the injected stack
+(sharing `Handler`) has no custom frame either. Discharges the `wexec` OP custom subcase this unit. -/
+theorem wCustomUpdate_none_of_noCustom {n : Nat} {op : Bang.OpId} {v : Bang.Val} :
+    ∀ {hs : CalcVM.HStack}, (∀ fr ∈ hs, NoCustomHFrame fr) →
+      wCustomUpdate n op v (injHStack hs) = none := by
+  intro hs
+  induction hs with
+  | nil => intro _; rfl
+  | cons fr hs ih =>
+      intro hnc
+      have hfr : NoCustomHFrame fr := hnc fr (by simp)
+      have hrec : wCustomUpdate n op v (injHStack hs) = none := ih (fun fr2 h2 => hnc fr2 (List.mem_cons_of_mem _ h2))
+      simp only [injHStack, List.map_cons, wCustomUpdate, injHFrame]
+      cases hfrh : fr.handler with
+      | custom ℓ0 p cl => exact absurd hfrh (hfr.1 ℓ0 p cl)
+      | state _ _        => simp only [hfrh]; rw [injHStack] at hrec; rw [hrec]; rfl
+      | throws _         => simp only [hfrh]; rw [injHStack] at hrec; rw [hrec]; rfl
+      | transaction _ _  => simp only [hfrh]; rw [injHStack] at hrec; rw [hrec]; rfl
+
 /-- The δ-folded `op.eval a b` is always custom-free: `BinOp.eval` yields a `vint` (arithmetic) or a
 `boolVal = inl/inr vunit` (comparison), all `CFVal`. -/
 theorem CFVal_binopEval (op : Bang.BinOp) (a b : Int) : Bang.CustomFree.CFVal (op.eval a b) := by
@@ -1930,9 +1985,11 @@ theorem exec_wexec_sim_ok :
                 | none =>
                     rw [htu] at h; simp only at h
                     rw [wTxnUpdate_comm_none n op v htu]
-                    -- custom clause-service misses (no custom frame, `hnch`): collapse exec's customUpdate
-                    -- match to its `none` branch (the throws-abort path). `wexec` has no custom mirror.
+                    -- custom clause-service misses (no custom frame, `hnch`): collapse BOTH exec's
+                    -- customUpdate and wexec's wCustomUpdate to their `none` branch (the throws-abort path).
+                    -- This slice retains custom-frame absence; the real custom lockstep lands with the drop.
                     rw [customUpdate_none_of_noCustom hnch] at h; simp only at h
+                    rw [wCustomUpdate_none_of_noCustom hnch]
                     cases huf : CalcVM.unwindFind n op hs with
                     | some q =>
                         obtain ⟨c', s2, hs2⟩ := q
@@ -2026,9 +2083,9 @@ theorem lowerCode_no_locals (code : CalcVM.Code) (j : Wasmfx.Instr)
     | UNMARK  => simp only [lowerCode, lowerInstr, List.mem_cons] at h
                  rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
                  · exact ih h
-    | OP n op v => simp only [lowerCode, lowerInstr, List.mem_cons] at h
-                   rcases h with rfl | h; · exact ⟨by intro k; simp, by intro k; simp⟩
-                   · exact ih h
+    -- route-B OP now SUBSUMES the tail (`[opH n op v c]`, the threaded-cont rep for the custom recompile).
+    | OP n op v => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
+                   exact ⟨by intro k; simp, by intro k; simp⟩
     -- route-B HANDLE is a SUBSUMING singleton (`[markH h M c]`, the deferred-recompile rep) — not a local.
     | HANDLE h0 M => simp only [lowerCode, lowerInstr, List.mem_singleton] at h; subst h
                      exact ⟨by intro k; simp, by intro k; simp⟩
@@ -2715,6 +2772,21 @@ example : Source.eval 50
 example : Wasmfx.run 50
     (compileC (.handle (.transaction 0 []) (.letC (.perform (.vvar 0) "newTVar" (.vint 5)) (.perform (.vvar 1) "readTVar" (.vint 0)))))
     = Result.done (.int 5) := by rfl
+
+-- ✓ CUSTOM CLAUSE-SERVICE + ONE-SHOT RESUME — `wexec`'s new `wCustomUpdate` branch (#62 Stage-4 WASM
+-- leg). A `custom` handler (label 1, read-only param 100) services `read 5` by running the clause
+-- `arg@0 + param@1 = 5 + 100 = 105`, RESUMING the letC continuation with 105; the continuation
+-- `105 + 1 = 106` runs AFTER the clause (one-shot resume). The clause body is re-compiled INTO the
+-- carried continuation `cc` at the `opH` custom arm — exactly `exec`'s `compile body c`, lowered.
+-- wexec ≡ kernel (106), the build-enforced witness that the custom OP-resume branch is sound.
+example : Source.eval 200
+    (.handle (.custom 1 (.vint 100) [("read", .binop .add (.vvar 0) (.vvar 1))])
+      (.letC (.perform (.vvar 0) "read" (.vint 5)) (.binop .add (.vvar 0) (.vint 1))))
+    = Result.done (.vint 106) := by rfl
+example : Wasmfx.run 200
+    (compileC (.handle (.custom 1 (.vint 100) [("read", .binop .add (.vvar 0) (.vvar 1))])
+      (.letC (.perform (.vvar 0) "read" (.vint 5)) (.binop .add (.vvar 0) (.vint 1)))))
+    = Result.done (.int 106) := by rfl
 
 end -- public section
 end Bang

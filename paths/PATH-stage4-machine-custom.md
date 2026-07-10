@@ -96,18 +96,14 @@ whole unit as one fresh-session atomic commit (ADR-0085's "L / weeks, spine-touc
   `c1fba11`). KEY REUSE confirmed: `raisedTriple_pop_nontxn` handles custom frames (`:1190`).
 - **`compile_correct` — DONE** (`f603941`, rides `sim`). **Agree diff-test battery — DONE** (`2a8d962`,
   the direct `evalD` examples gain the empty custom store).
-- **(d) `run_evalD` (~1080 lines) — THE DELICATE ONE, start FRESH. Assessed 2026-07-09:** uses
-  `NoCustomFrame`/`hncf` in 31 places. Threading κ is mechanical, BUT dropping `NoCustomFrame` is the
-  coupled wall: (i) the built-in `handle` cases use `hncf.cons_handleF (by intro ℓ p cl; simp)` (works
-  only because non-custom); the CUSTOM `handle` case needs a genuinely NEW proof — install a custom frame
-  IN `K`, thread `CtxCorr`/`CapLabelCoh`/`FreshCfg`/`NoResume` through it. (ii) the `perform` raise case
-  uses `hncf.not_custom hsp` to discharge the custom-resolved subcase by ABSURDITY; this becomes a REAL
-  `NoResume`/dispatch proof. **PREREQUISITE machinery NOT yet built (do first):** the EvalCtx-side custom
-  bridge — `ctxCustoms` (sibling of `ctxStates`/`ctxTxns` on `Bang.EvalCtx`, NOT the HStack `hsCustoms`
-  which IS built), `CtxCorr`-custom install/pop, `CapLabelCoh`/`FreshCfg` custom-frame preservation, and
-  `NoResume` for a custom frame. Templates: the `ctxStates` EvalCtx machinery + the HStack `CCorr` family
-  already built this session. `perform_miss_raises` /
-  `evalD_complete_gen_full` lose `NoCustomFrame` too.
+- **(d) `run_evalD` (~1080 lines) — DONE + LANDED** (Stage-4 idfirst squash `9617744`, 2026-07-10).
+  `run_evalD` (`AbstractMachine.lean:5473`) is fully κ-threaded with NO `NoCustomFrame` premise; the
+  custom `handle` case and the `perform` raise/`NoResume` cases are proven with real content (not
+  absurdity). `evalD`/`exec` are id-first (σ→τ→κ by store-holding identity, no `isBuiltinOp` dispatch
+  guard), so no `WfCustomOps`. `evalD_agrees_source` (`:6822`) is `VcapFree`-only. `NoCustomFrame` and its
+  lemma family (`:5088-5173`) are now DEAD helper code (zero hypothesis uses in `AbstractMachine.lean`) —
+  flagged as dead-code-advisory, not deleted this unit. **The `NoCustomFrame`/`CFComp` premises survive
+  ONLY in the WASM-leg converse spine — that is the actual remaining #62 work, see item (f)/(g) below.**
 - **(e) `evalD_agrees_source`** — drop the `NoCustomFrame []` argument (now unconditional).
 - **(f) `Wasm.lean`** — thread `κ` through `evalD_mono`/`evalD_add`/`evalD_some_le` + `evalD_complete_gen`;
   **DROP `CustomFree`** from `compile_forward_sim` + `evalD_complete_gen` (ADR-0086 named expiry — CITE
@@ -184,14 +180,23 @@ cleanly. (A) makes them trivial (`customUpdate` guarded off for built-ins).
       (perform inline-clause-service, perform-raise, custom clause-body-RAISES, custom handle install/pop,
       custom handle raise-FORWARD) · `compile_correct` · the Agree diff-test battery + the op-priority
       regression `#guard`. Op-priority resolution (A) is APPROVED + guard-pinned.
-- [ ] **RESUME HERE (converse tail, fresh full budget):** (d) `run_evalD` — see §Plan (d) for the
-      ASSESSED wall (31 `NoCustomFrame` uses; custom handle needs a NEW proof; PREREQ = build the
-      EvalCtx-side `ctxCustoms` bridge FIRST; the HStack-side `CCorr` family + `raisedTriple_pop_nontxn`
-      (handles custom frames, `:1190`) are templates). Then (e) `evalD_agrees_source` · (f) Wasm + drop
-      `CustomFree` · (g) U5b · (i) custom `exec∘compile` `#guard`s (custom→106, abort→42) · (j) census.
-- [ ] Blockers: the module is RED at the `run_evalD` wall (`AbstractMachine.lean:4813`) — expected
-      (atomic re-thread). Gates only on the final green sha. Do NOT start (d) half-depleted.
-- [ ] Completed: —
+- [x] **(d)/(e) LANDED** (Stage-4 idfirst squash `9617744`, 2026-07-10): `run_evalD` κ-threaded, no
+      `NoCustomFrame`; `evalD`/`exec` id-first; `evalD_agrees_source` `VcapFree`-only. Probe-verified on
+      main `8470d6b` by lane cnv 2026-07-10 (the original §Plan (d) "31 `NoCustomFrame` uses / ctxCustoms
+      prereq" assessment was written pre-squash and is STALE — it no longer binds).
+- [ ] **RESUME HERE (the WASM leg — sole remaining #62 work, lane cnv):** `CustomFree` survives ONLY on
+      `compile_forward_sim` (`Spec.lean:322`) because the WasmFX machine has no custom arm. Three slices:
+      (1) `wexec` custom OP arm (`wCustomUpdate`) DERIVED + the `exec`↔`wexec` commute lemma (the
+      pre-registered follow-up, `Wasm.lean:1354`); (2) U5b `evalD_complete_gen_full` converse κ-thread —
+      currently gates custom out by ABSURDITY (`CFHandler custom = False`, `U5bComplete.lean:1128`),
+      generalize to a real custom handle/perform arm (~800 lines, the converse mirror of `run_evalD`);
+      (3) DROP `CFComp`/`NoCustomFrame` premises from the U5b spine + `CustomFree` off `compile_forward_sim`
+      (pre-sanctioned premise-drop, consumer-safe strengthening; document `STATEMENT_CHANGE_OK` with task
+      #27 as sanction). Then (i) custom `exec∘compile` `#guard`s (custom→106, abort→42 through `run`) · (j)
+      census. NOTE: `CustomFree` is consumer-safe and does not yet BIND (Q34/Q38 op-namespacing hasn't made
+      builtin-named user ops legal) — parking is a legitimate alternative if the WASM budget is unwanted.
+- [ ] Completed: (a) evalD custom arm · (b) Corr machinery · (c) sim · `compile_correct` · Agree battery ·
+      (d) `run_evalD` · (e) `evalD_agrees_source`.
 
 ## Owner
 - Agent: s4 (compiler-engineer, `feat-44-stage4`). Resume same lane; this doc + the banked patch make it
