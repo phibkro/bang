@@ -482,7 +482,10 @@ def Disjoint {Eff : Type} [Lattice Eff] [OrderBot Eff] (e₁ e₂ : Eff) : Prop 
 /-- Well-formedness of instantiating a lacks-constrained row quantifier `∀(α # L). q α` at
 row `ε` (ADR-0018 rule 2, ADR-0024 D3): the instantiating row must avoid the forbidden labels
 `L`. `WfInst` *is* that disjointness side-condition; the family `q` names the quantifier. The
-monomorphic kernel has no `∀`-row binder, so the quantifier lives only as this `(q, L)` pair. -/
+monomorphic kernel has no `∀`-row binder, so the quantifier lives only as this `(q, L)` pair.
+`_q` names that quantifier family — part of the signature (callers pass it), unused in the
+disjointness body. -/
+@[nolint unusedArguments]
 def WfInst {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
     (_q : Eff → CTy Eff Mult) (L ε : Eff) : Prop := Disjoint ε L
 

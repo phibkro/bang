@@ -55,7 +55,9 @@ idComp`) is delivered by the `[AddGroup Eff]` group structure in `group_recovers
 proof, NOT by an inverse-effect TERM. Materializing an inverse as a `Comp` would need
 either group-effect operations the kernel does not have or a 6th primitive (invariant
 #5) — so the honest faithful def keeps the scaffold pure and lets the relation carry
-the inversion. Revisit when group effects get term-level operations. -/
+the inversion. Revisit when group effects get term-level operations.
+`_c` names the computation recovery is *about*; the pure-scaffold body ignores it by design. -/
+@[nolint unusedArguments]
 def recover (_c : Comp) : Comp := idComp
 
 -- Computation-to-computation contexts (for ctxApprox). SINGLE SOURCE OF TRUTH
@@ -984,7 +986,9 @@ Fig 7). Two stacks relate at index `n` and a base RETURNER type `F q A` when, pl
 with `BaseRel`-related values, they co-converge within the step budget — the
 biorthogonal "observe through related values" clause specialized to base answers. At
 non-returner answer types it is `False` (the base case for `Krel`, Unit 2). The index
-threads Biernacki's `▷` (later) budget. -/
+threads Biernacki's `▷` (later) budget. `_n` is that index — part of the relation's
+signature (a family indexed by `n`), unused in the base clause below. -/
+@[nolint unusedArguments]
 def BaseStackRel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff]
     (_n : Nat) (C : CTy Eff Mult) (K₁ K₂ : Stack) : Prop :=
   match C with

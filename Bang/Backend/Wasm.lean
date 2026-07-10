@@ -226,7 +226,9 @@ def compileC (c : Comp) : Wasmfx.Module :=
   { body := lowerCode (CalcVM.compile c []), result := .i32 }
 
 /-- Handlers are Milestone B (generator suspend/resume). Stubbed to an empty
-module; `handler_compiles` is a Milestone B obligation. -/
+module; `handler_compiles` is a Milestone B obligation. The `Handler` arg is the
+Milestone-B interface, unused by the current empty-module stub. -/
+@[nolint unusedArguments]
 def compileHandler (_ : Handler) : Wasmfx.Module :=
   { body := [], result := .unit }
 
@@ -2111,9 +2113,12 @@ end Wasmfx
 `HandlerLawful` / `Wasmfx.HandlerEquiv` are the Milestone B (generator
 suspend/resume) obligations; defined as `True`-on-the-empty-handler-module so
 `handler_compiles` is a tracked Milestone B `sorry`, not an axiom. They are NOT
-exercised by Milestone A's forward-sim (closed PURE programs). -/
+exercised by Milestone A's forward-sim (closed PURE programs). Args are the Milestone-B
+interface, unused by the `True`-on-the-empty-module stubs. -/
+@[nolint unusedArguments]
 def HandlerLawful (_ : Handler) : Prop := True
 
+@[nolint unusedArguments]
 def Wasmfx.HandlerEquiv (_ : Wasmfx.Module) (_ : Handler) : Prop := True
 
 
