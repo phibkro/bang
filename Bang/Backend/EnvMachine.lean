@@ -1089,6 +1089,45 @@ theorem evalV_PureV {ρ : MEnv} (hWFρ : MEnv.WF ρ) (hρ : MEnv.PureV ρ) :
       simp only [evalV, MVal.PureV]
       exact evalV_PureV hWFρ hρ (by simpa only [ValEF] using hEF) hsc.fold_inv
 
+/-- The δ-result round-trips: `readback (evalVOfBinop (BinOp.eval op x y)) = BinOp.eval op x y`.
+`BinOp.eval` only makes `vint`/`boolVal` (`inl/inr vunit`), each fixed by `evalVOfBinop`∘`readback`. -/
+theorem readback_evalVOfBinop_eval (op : BinOp) (x y : Int) :
+    readback (evalE.evalVOfBinop (Bang.BinOp.eval op x y)) = Bang.BinOp.eval op x y := by
+  cases op <;> simp only [Bang.BinOp.eval]
+  · simp only [evalE.evalVOfBinop, readback]
+  · simp only [evalE.evalVOfBinop, readback]
+  · simp only [evalE.evalVOfBinop, readback]
+  · simp only [evalE.evalVOfBinop, readback]
+  · rcases Bool.eq_false_or_eq_true (decide (x < y)) with hb | hb <;>
+      simp only [hb, Bang.boolVal, evalE.evalVOfBinop, readback]
+  · rcases Bool.eq_false_or_eq_true (decide (x = y)) with hb | hb <;>
+      simp only [hb, Bang.boolVal, evalE.evalVOfBinop, readback]
+
+/-- The δ-result is CLOSED (`vint`/`boolVal` are ground — no free de Bruijn index). -/
+theorem BinOp_eval_closedE (op : BinOp) (x y : Int) : Val.ClosedE (Bang.BinOp.eval op x y) := by
+  intro k; cases op <;> simp only [Bang.BinOp.eval]
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+  · rcases Bool.eq_false_or_eq_true (decide (x < y)) with hb | hb <;>
+      simp only [hb, Bang.boolVal, Val.shiftFrom]
+  · rcases Bool.eq_false_or_eq_true (decide (x = y)) with hb | hb <;>
+      simp only [hb, Bang.boolVal, Val.shiftFrom]
+
+/-- The δ-result's MVal image is `PureV` (a first-order ground value — no closures). -/
+theorem evalVOfBinop_eval_pureV (op : BinOp) (x y : Int) :
+    MVal.PureV (evalE.evalVOfBinop (Bang.BinOp.eval op x y)) := by
+  cases op <;> simp only [Bang.BinOp.eval]
+  · simp only [evalE.evalVOfBinop, MVal.PureV]
+  · simp only [evalE.evalVOfBinop, MVal.PureV]
+  · simp only [evalE.evalVOfBinop, MVal.PureV]
+  · simp only [evalE.evalVOfBinop, MVal.PureV]
+  · rcases Bool.eq_false_or_eq_true (decide (x < y)) with hb | hb <;>
+      simp only [hb, Bang.boolVal, evalE.evalVOfBinop, MVal.PureV]
+  · rcases Bool.eq_false_or_eq_true (decide (x = y)) with hb | hb <;>
+      simp only [hb, Bang.boolVal, evalE.evalVOfBinop, MVal.PureV]
+
 /-! ### The PURE-fragment correspondence (`_pure`, slice-3a)
 
 The empty-store, `EffectFree` sub-theorem the resume map sequences first. Fuel is MATCHED: `evalE` and
@@ -1224,7 +1263,31 @@ theorem evalE_agrees_evalD_pure :
         refine ⟨⟨hσ.symm, hτ.symm, hκ.symm⟩, ?_, hWFmw, hPmw⟩
         simp only [substEnv_unfold, hrb, Bang.CalcVM.evalD]
       | _ => rw [hw] at h; simp at h
-    | binop op a b => sorry
+    | binop op a b =>
+      -- evalE: evalV ρ a = mvint x, evalV ρ b = mvint y ⇒ mret (evalVOfBinop (op.eval x y)).
+      obtain ⟨hSca, hScb⟩ := hSc.binop_inv
+      obtain ⟨hEFa, hEFb⟩ := (by simpa only [EffectFree] using hEF : ValEF a ∧ ValEF b)
+      have hsca : Val.ScopedV γ.length a := hlen ▸ hSca
+      have hscb : Val.ScopedV γ.length b := hlen ▸ hScb
+      simp only [evalE] at h
+      cases ha : evalV ρ a with
+      | mvint x =>
+        cases hb : evalV ρ b with
+        | mvint y =>
+          rw [ha, hb] at h
+          simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq, MTerm.mret.injEq] at h
+          obtain ⟨hmv, -, hσ, hτ, hκ⟩ := h
+          subst hmv
+          -- substEnvV γ a = readback (mvint x) = vint x; likewise b.
+          have hrba : substEnvV γ a = Val.vint x := by
+            rw [show γ = readbackEnv ρ from hagree.symm, ← readback_evalV hWF (hlen ▸ hsca), ha]; rfl
+          have hrbb : substEnvV γ b = Val.vint y := by
+            rw [show γ = readbackEnv ρ from hagree.symm, ← readback_evalV hWF (hlen ▸ hscb), hb]; rfl
+          refine ⟨⟨hσ.symm, hτ.symm, hκ.symm⟩, ?_, ?_, evalVOfBinop_eval_pureV op x y⟩
+          · simp only [substEnv_binop, hrba, hrbb, Bang.CalcVM.evalD, readback_evalVOfBinop_eval]
+          · simp only [MVal.WF, readback_evalVOfBinop_eval]; exact BinOp_eval_closedE op x y
+        | _ => rw [ha, hb] at h; simp at h
+      | _ => rw [ha] at h; simp at h
     | perform w op v => simp only [EffectFree] at hEF
     | handle hd M => simp only [EffectFree] at hEF
     | oom => simp [evalE] at h
