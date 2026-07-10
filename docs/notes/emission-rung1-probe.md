@@ -34,7 +34,7 @@ every module ran with a matching value; a mismatch is a LOUD exit 1).
 
 The emitted `.wat` for `prog1` (`let x = 1 + 2 in x * 3`):
 
-```wat
+```wasm
 (module
   (func $main (export "main") (result i64) (local i64)
     (local.set 0 (i64.add (i64.const 1) (i64.const 2)))

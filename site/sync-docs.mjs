@@ -65,7 +65,16 @@ function mdxSafe(src) {
     const fenceMatch = line.match(/^\s*(```+|~~~+)/)
     if (fenceMatch) {
       const tok = fenceMatch[1][0]
-      if (!inFence) { inFence = true; fenceTok = tok }
+      if (!inFence) {
+        inFence = true; fenceTok = tok
+        // Shiki hard-errors on fence languages not in its bundle — and `bang` (our own
+        // language, ~200 fences across the docs) has no grammar yet. Alias the known
+        // non-bundled infostrings to plain `text` AT THE SYNC SEAM (the repo markdown
+        // stays `bang`-tagged — GitHub renders it; only the derived site copy degrades).
+        // A real bang tmLanguage grammar is the follow-up that deletes this map.
+        out.push(line.replace(/^(\s*(?:```+|~~~+))(bang|wat)\s*$/, '$1text'))
+        continue
+      }
       else if (tok === fenceTok) { inFence = false }
       out.push(line)
       continue
