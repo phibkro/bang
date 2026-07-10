@@ -170,5 +170,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — reserve 'resume' as a BINDER — the D5 reservation complete (#93 closed) (`f1cb2cfd`)
 - **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fc1197b2`)
 - **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fdd8ade3`)
+- **cli** — contain import-derived module paths to the project trees (plan 005) (`80b793c0`)
 
 <!-- END GENERATED changelog -->
