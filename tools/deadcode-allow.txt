@@ -12,11 +12,26 @@
 # is genuinely dead should be DELETED, not allow-listed.
 #
 # Categories a legitimate park falls into:
-#   - Witness/refutation lemmas imported by NO headline (they exist to be *built*, as
-#     do-not-weaken regression witnesses — the `Bang.+` glob compiles them; the gate
-#     is that they build, not that a headline calls them).
-#   - Public API surface staged AHEAD of its first caller (a `public` export a sibling
-#     lane will consume next slice; parked with the issue/task that will use it).
-#   - Alternate-form lemmas kept beside their used twin for readers (documented pair).
+#   (a) PERMANENT keep-despite-unreachable — witness/refutation lemmas imported by NO
+#       headline (they exist to be *built*, as do-not-weaken regression witnesses — the
+#       `Bang.+` glob compiles them; the gate is that they build, not that a headline
+#       calls them); alternate-form lemmas kept beside their used twin (documented pair).
+#   (b) EXPIRY-TAGGED sorry-gapped-live — a decl that IS reachable from the spine but
+#       flags as dead ONLY because its consumer's proof still carries `sorry` (a sorry'd
+#       arm emits no reference edge). Tag with the consumer + the expiry condition:
+#         `sorry-gapped-live: <consumer> — RE-AUDIT when <headline> sheds sorryAx`.
+#       These EXPIRE: when the spine closes they become truly reachable and the entry
+#       must be removed. Distinct from (a), which never expires.
+#
+# POSTURE (task #16, 2026-07-10): while `just dead-code` reports "N/M roots carry
+# sorryAx" (currently 7/26), the raw unreachable set is OVER-REPORTED and dominated by
+# category-(b) false-dead (~510 across 28 modules, e.g. the whole `RunPlugReshape.*`
+# cluster — live via `converges_plug_iff` at Spec.lean:241, sorry-gapped by the LR
+# spine). We DELIBERATELY do NOT mass-list that set here: parking ~500 decls would
+# defeat the advisory and the entries would all expire at spine-close anyway. Instead
+# the tool STATES its own limit (the ⚠ line) and the reliable signal it retains is a
+# fully-CLOSED orphan island (zero live callers, the route-1 class). RE-RUN + curate
+# this file once `lr_fundamental`/`lr_sound` shed sorryAx — the true-dead set only
+# becomes trustworthy then.
 #
 # ── entries (fully-qualified name — one per line — with a trailing `# why` comment) ──

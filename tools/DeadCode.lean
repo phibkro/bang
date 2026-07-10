@@ -158,11 +158,25 @@ def loadAllow : IO NameSet := do
     if !l.isEmpty then s := s.insert l.toName
   return s
 
+/-- How many roots transitively depend on `sorryAx`? A `sorry`'d proof emits NO
+    constant-reference edge to the lemmas it WILL use once closed, so every root
+    that carries `sorryAx` UNDER-REPORTS its true dependency set — its
+    sorry-gapped-but-live supporting machinery then flags as false-dead. This
+    count is the tool's honesty gauge: while it is > 0, the unreachable set is
+    inflated and is NOT a delete-list. -/
+def sorryRootCount : CommandElabM Nat := do
+  let mut c := 0
+  for r in roots do
+    let ax ← liftCoreM (Lean.collectAxioms r)
+    if ax.contains ``sorryAx then c := c + 1
+  return c
+
 /-- The advisory report, over the imported environment. -/
 def report : CommandElabM Unit := do
   let env ← getEnv
   let allow ← loadAllow
   let live := reachable env
+  let sorryRoots ← sorryRootCount
   let mut dead : Array (Name × Name) := #[]
   for (n, _) in env.const2ModIdx.toList do
     if inBangModule env n && isRealDecl env n && !live.contains n && !allow.contains n then
@@ -172,6 +186,14 @@ def report : CommandElabM Unit := do
   dead := dead.qsort fun a b =>
     a.1.toString < b.1.toString || (a.1 == b.1 && a.2.toString < b.2.toString)
   IO.println s!"── dead-code (advisory) — Bang.* decls unreachable from {roots.length} roots ──"
+  if sorryRoots > 0 then
+    IO.println s!"  ⚠ {sorryRoots}/{roots.length} roots carry sorryAx. A sorry'd proof emits no"
+    IO.println "    reference edge to the lemmas it will use once closed, so this run"
+    IO.println "    OVER-REPORTS: sorry-gapped-but-LIVE machinery flags as false-dead."
+    IO.println "    The count below is NOT a delete-list until the flagged spine closes —"
+    IO.println "    it reliably catches a fully-CLOSED orphan island (zero live callers),"
+    IO.println "    the route-1 class; treat everything else as re-audit-when-green."
+    IO.println ""
   if dead.isEmpty then
     IO.println "  none — every Bang.* declaration is reachable (or allow-listed)."
   else
