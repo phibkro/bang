@@ -578,8 +578,8 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
       -- (handleF nh h₁ :: K₁)` here, so `.2 = StackBelow nh K₁` is the intro's ordering premise.
       rw [krelS_nil] at hin
       obtain ⟨rfl, _⟩ := hin
-      simp only [List.nil_append] at hincA hincA'
-      simpa using krelS_handleF_intro (e := εᵢ) hHR htail hres hincA.2 hincA'.2
+      simp only [List.nil_append, StackInc] at hincA hincA'
+      simpa using krelS_handleF_intro (e := εᵢ) hHR htail hincA.2 hincA'.2 hres
   | (Frame.letF N₁ :: Kᵢrest), (Frame.letF N₂ :: Kᵢ'rest) =>
       rw [krelS_letF] at hin
       obtain ⟨_hinc, q, A, B, φ, hC, hbody, htin⟩ := hin
@@ -613,11 +613,13 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
       subst hmid
       -- `hincA : StackInc (handleF mh₁ hh₁ :: (Kᵢrest ++ handleF nh h₁ :: K₁))` — its outer conjunct IS
       -- the goal's StackInc after the append rewrite; peel the head for the recursion + supply it.
-      rw [List.cons_append, List.cons_append] at hincA hincA' ⊢
-      have hApeel : StackInc (Kᵢrest ++ Frame.handleF nh h₁ :: K₁) := hincA.1
-      have hApeel' : StackInc (Kᵢ'rest ++ Frame.handleF nh h₂ :: K₂) := hincA'.1
+      simp only [List.cons_append] at hincA hincA' ⊢
+      -- StackInc (handleF mh₁ :: (Kᵢrest++…)) = StackInc (Kᵢrest++…) ∧ StackBelow mh₁ (Kᵢrest++…) (def).
+      obtain ⟨hApeel, hbmh₁⟩ := hincA
+      obtain ⟨hApeel', hbmh₂⟩ := hincA'
       rw [krelS_handleF]
-      refine ⟨⟨hincA, hincA'⟩, rfl, hHRtop, krelS_append htin hHR htail hApeel hApeel' hres, ?_⟩
+      refine ⟨⟨⟨hApeel, hbmh₁⟩, ⟨hApeel', hbmh₂⟩⟩, rfl, hHRtop,
+        krelS_append htin hHR htail hApeel hApeel' hres, ?_⟩
       intro k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hd₁ hd₂
       -- recover the INNER dispatch (over `Kᵢrest`) by computing it, then lift via `dispatchOn_append_outer`.
       obtain ⟨cfgᵢ₁, hdi₁⟩ : ∃ c, Bang.dispatchOn mh₁ op w₁ (Kⱼ, hh₁, Kᵢrest) = some c := by
@@ -714,8 +716,8 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
   | _ m ih =>
     intro s₁ s₂ hcs₁ hcs₂ hsv K₁ K₂ hK hsbK₁ hsbK₂
     refine krelS_handleF_intro
-      (show HandlerRel Eff Mult m (Handler.state ℓ s₁) (Handler.state ℓ s₂) from ⟨rfl, S, hsv⟩) hK ?_
-      hsbK₁ hsbK₂
+      (show HandlerRel Eff Mult m (Handler.state ℓ s₁) (Handler.state ℓ s₂) from ⟨rfl, S, hsv⟩)
+      hK hsbK₁ hsbK₂ ?_
     intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
     rcases hrestrict op s₁ hcatch with rfl | rfl
     · -- GET: cfg = (Kᵢ ++ handleF nh (state ℓ sⱼ)::Kⱼ, ret sⱼ); resume value = the stored state (related).
