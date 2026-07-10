@@ -1,0 +1,14 @@
+effect Net { recv : Int -> Int, send : Int -> Int }
+
+handle
+  (let m1 = net.recv(7) in
+   let a1 = net.send(m1) in
+   let m2 = net.recv(13) in
+   let a2 = net.send(m2) in
+   let m3 = net.recv(21) in
+   let a3 = net.send(m3) in
+   a1 + a2 + a3)
+with Net as net {
+  recv(n) => n * 2 + 1,
+  send(n) => n + 1000
+}
