@@ -1,0 +1,10 @@
+effect Net { fetch : Int -> Int }
+handle (
+  handle
+    (inner.fetch(1)) + (outer.fetch(2))
+  with Net as inner {
+    fetch(n) => n * 10
+  }
+) with Net as outer {
+  fetch(n) => n * 100
+}
