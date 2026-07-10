@@ -141,7 +141,11 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **gate** — wire check-examples-env into the verify chain (`c91cde42`)
 - **examples** — R2 replicated-KV hello-world (ndet-replicated-kv-a/-b) (`69ccc9cc`)
 - **release** — the release battery + site CI + flake-check/shake riders (plan 011) (`2e3a266d`)
+- **tools** — invocation telemetry — tool-log.sh appends per-exec (plan 012 slice 1) (`e2d0bb75`)
+- **tools** — check-runs-in.py — validate the runs-in= header claim (plan 012 slice 2) (`c4eabc75`)
 - **surface** — #87 — the carried-param handler init becomes clause-nameable via `param` (`0c392ccc`)
+- **tools** — status= field + last-invoked view + deprecated-in-gate rule (plan 012 slice 3) (`c1df3611`)
+- **agents** — lane-discipline pack injected into role files via generated block (plan 012 slice 4) (`ff57f173`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

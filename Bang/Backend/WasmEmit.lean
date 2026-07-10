@@ -58,25 +58,60 @@ def Emit.isOk : Emit → Bool
   | .ok _ => true
   | .unsup _ => false
 
-/-- The wasm text for a `BinOp` on two i64 operands. Arithmetic only (rung-1 scope);
-comparisons are refused (they'd need the sum-encoded bool rep — see the note). -/
+/-- The wasm text for a straight-line `BinOp` on two i64 operands (a single infix instruction).
+`div` is NOT here — it needs a divisor-zero GUARD (`emitDiv`), and comparisons need the
+sum-encoded bool rep + a `case` context (`emitCmpCase`). Both are handled in `emitComp`
+directly, not through this table (rung-1.5). -/
 def binOpWat : BinOp → Option String
   | .add => some "i64.add"
   | .sub => some "i64.sub"
   | .mul => some "i64.mul"
-  | .div => some "i64.div_s"   -- signed (bang Int is signed); wasm div_s traps on /0, matching a
-                               -- CHECKED div — bang's kernel `div` is total (a/0 = 0), so /0 is a
-                               -- KNOWN rung-1 mismatch, flagged in the note (do not emit constant /0).
-  | .lt | .eq => none          -- comparisons ⇒ sum-encoded bool ⇒ out of rung-1 (note: rung-1.5)
+  | .div => none               -- guarded separately (emitDiv): kernel `a/0 = 0`, wasm div_s traps
+  | .lt | .eq => none          -- comparisons ⇒ sum-encoded bool ⇒ need a `case` context (emitCmpCase)
+
+/-- Guarded division — REVIEWER-RULED semantics (rung-1.5): the kernel's `div` is TOTAL,
+`a / 0 = 0` (Lean `Int` division, `BinOp.eval div`, IR.lean:184). wasm's `i64.div_s` TRAPS on a
+zero divisor, so a bare emission would diverge from `Source.eval` exactly at div-by-zero — and
+the reference wins (invariant #1: proof rides the reference; invariant #7: the guard's extra
+instructions are free, performance is second-class).
+
+The guard tests `i64.eqz` of the divisor and yields `0` when it is zero, else `div_s`. The
+operands `ea`/`eb` are pure `Val` expressions (`i64.const`/`local.get` — no side effects, no
+traps), so duplicating `eb` in both the test and the divide is safe (no scratch local needed).
+
+  (if (result i64) (i64.eqz <eb>)
+    (then (i64.const 0))
+    (else (i64.div_s <ea> <eb>)))
+
+Known residual gap (NOT this slice): `i64.div_s` also traps on `INT64_MIN / -1` (signed
+overflow). That is the pre-existing unbounded-`Int`→i64 edge (probe note §4.1, the bignum gap),
+orthogonal to div-by-zero; the corpus stays within the i64-representable range. -/
+def emitDiv (ea eb : String) : String :=
+  s!"(if (result i64) (i64.eqz {eb})\n      (then (i64.const 0))\n      (else (i64.div_s {ea} {eb})))"
+
+/-- The wasm comparison instruction for a comparison `BinOp` — used ONLY inside the fused
+`letC cmp; case` if-then-else pattern (a comparison result has no standalone i64 rep). Each
+leaves an i32 `0`/`1` on the stack, exactly what a wasm `if` condition consumes. Signed `lt_s`
+(bang `Int` is signed); `eq` is sign-agnostic. Arithmetic ops return `none` (not comparisons). -/
+def cmpWat : BinOp → Option String
+  | .lt => some "i64.lt_s"
+  | .eq => some "i64.eq"
+  | .add | .sub | .mul | .div => none
 
 /-- Emit a `Val` as an i64-leaving wasm expression, given the current de-Bruijn depth→local
-map `env` (env.get? i = the wasm local index bound to `vvar i`, innermost = env.head). -/
-def emitVal (env : List Nat) : Val → Emit
+map `env` (env[i]? = the wasm-local binding of `vvar i`, innermost = env.head).
+
+Each slot is an `Option Nat`: `some l` = the de Bruijn var is bound to wasm local `l`;
+`none` = bound-but-UNUSABLE (a `case`-on-bool payload — `boolVal` carries `vunit`, which has no
+i64 rep, so a branch referencing its payload is out of the rung-1.5 fragment, `unsup` not a
+wrong `local.get`). This models the de Bruijn binder even when no wasm local backs it. -/
+def emitVal (env : List (Option Nat)) : Val → Emit
   | .vint n => .ok s!"(i64.const {n})"
   | .vvar i =>
       match env[i]? with
-      | some l => .ok s!"(local.get {l})"
-      | none   => .unsup s!"free vvar {i} (open term — rung-1 emits closed programs only)"
+      | some (some l) => .ok s!"(local.get {l})"
+      | some none     => .unsup s!"vvar {i} binds a unit `case`-payload (no i64 rep — rung-1.5)"
+      | none          => .unsup s!"free vvar {i} (open term — rung-1 emits closed programs only)"
   | .vunit  => .unsup "vunit (no i64 rep in rung-1)"
   | .vcap _ _ => .unsup "vcap (effect capability — not pure ⊥-row)"
   | .vthunk _ => .unsup "vthunk (needs force/closure — stretch, not rung-1 arithmetic)"
@@ -88,25 +123,68 @@ local index; `next` is the next-free local index (for `letC`'s freshly-bound loc
 the expression text AND the total number of locals used (so the caller can declare them).
 
 `letC M N`: compute M, `local.set` it into local `next`, then emit N under the extended env
-(`next :: env`) — the wasm-locals image of a de-Bruijn binder. Emitted as a `(block (result i64) …)`?
-No — simpler and native: a wasm SEQUENCE `(local.set $k (…M…)) (…N…)`. We return the two-part text. -/
-def emitComp (env : List Nat) (next : Nat) : Comp → Emit × Nat
+(`some next :: env`) — the wasm-locals image of a de-Bruijn binder. Emitted as a `(block (result i64) …)`?
+No — simpler and native: a wasm SEQUENCE `(local.set $k (…M…)) (…N…)`. We return the two-part text.
+
+COMPARISON + case-on-bool (rung-1.5, the `if`-then-else pattern): the kernel expresses
+`if a<b then E₂ else E₁` as `letC (binop cmp a b) (case (vvar 0) N₁ N₂)` — the comparison
+reduces to `ret (boolVal c)` (`boolVal false = inl unit`, `boolVal true = inr unit`, IR.lean:173),
+`letC` binds it to var 0, and `case (vvar 0)` eliminates: `inl → N₁` (left), `inr → N₂` (right,
+`Eval.lean:96`). So a wasm `if` maps cleanly: the comparison leaves an i32 (`0`/`1`), and
+`(if (result i64) <cmp> (then <N₂>) (else <N₁>))` — TRUE(1)=inr picks N₂(then),
+FALSE(0)=inl picks N₁(else). The case binder (var 0) binds the `boolVal` unit payload, so both
+branches emit under `none :: env` (bound-but-unusable, `emitVal` refuses a payload read). Any
+comparison NOT in this immediate fused shape stays `unsup` (loud). -/
+def emitComp (env : List (Option Nat)) (next : Nat) : Comp → Emit × Nat
   | .ret v => (emitVal env v, next)
   | .binop op a b =>
       match binOpWat op with
-      | none => (.unsup s!"comparison binop (lt/eq) — sum-encoded bool, rung-1.5", next)
       | some w =>
           match emitVal env a, emitVal env b with
           | .ok ea, .ok eb => (.ok s!"({w} {ea} {eb})", next)
           | .unsup r, _ => (.unsup r, next)
           | _, .unsup r => (.unsup r, next)
+      | none =>
+          match op with
+          | .div =>
+              match emitVal env a, emitVal env b with
+              | .ok ea, .ok eb => (.ok (emitDiv ea eb), next)
+              | .unsup r, _ => (.unsup r, next)
+              | _, .unsup r => (.unsup r, next)
+          | _ =>
+              -- a bare comparison (lt/eq) leaves a sum-encoded `boolVal` with no standalone i64
+              -- rep — only meaningful when IMMEDIATELY eliminated by `case` (the fused letC arm).
+              (.unsup s!"bare comparison binop (lt/eq) — only emittable when fused `letC cmp; case` (rung-1.5)", next)
+  -- FUSED comparison + case-on-bool = wasm `if` (the `if`-then-else pattern; see the doc comment).
+  | .letC (.binop cmpOp a b) (.case (.vvar 0) n1 n2) =>
+      match cmpWat cmpOp with
+      | none => (.unsup s!"letC binds a non-comparison then case (general sum-case is rung-2)", next)
+      | some cw =>
+          match emitVal env a, emitVal env b with
+          | .unsup r, _ => (.unsup r, next)
+          | _, .unsup r => (.unsup r, next)
+          | .ok ea, .ok eb =>
+              -- Inside each branch the de Bruijn context has TWO extra binders relative to the
+              -- pre-`letC` scope: index 0 = the `case` unit payload, index 1 = the outer `letC`'s
+              -- `boolVal` (the comparison result). Neither has an i64 wasm local (the comparison is
+              -- consumed by the `if` condition; the payload is unit) — so the branch env is
+              -- `none :: none :: env` (both unusable slots), and a branch reading either is `unsup`.
+              let benv := none :: none :: env
+              let (e1, m1) := emitComp benv next n1   -- inl branch (false)
+              let (e2, m2) := emitComp benv next n2   -- inr branch (true)
+              match e1, e2 with
+              | .unsup r, _ => (.unsup r, next)
+              | _, .unsup r => (.unsup r, next)
+              | .ok e1S, .ok e2S =>
+                  (.ok s!"(if (result i64) ({cw} {ea} {eb})\n      (then {e2S})\n      (else {e1S}))",
+                   max m1 m2)
   | .letC m n =>
-      -- compute m into local `next`; run n with (next :: env), next local = next+1.
+      -- compute m into local `next`; run n with (some next :: env), next local = next+1.
       let (em, _) := emitComp env next m
       match em with
       | .unsup r => (.unsup r, next)
       | .ok emS =>
-          let (en, maxLocal) := emitComp (next :: env) (next + 1) n
+          let (en, maxLocal) := emitComp (some next :: env) (next + 1) n
           match en with
           | .unsup r => (.unsup r, next)
           | .ok enS =>
@@ -170,11 +248,29 @@ example : (emitModule prog2).isOk = true := by
 example : (emitModule prog3).isOk = true := by
   simp [prog3, emitModule, emitComp, emitVal, binOpWat, Emit.isOk]
 
+-- rung-1.5 arms: guarded div and the fused comparison + case-on-bool `if` emit `ok`.
+/-- `10 / 2` — guarded division (`emitDiv`). -/
+example : (emitModule (.binop .div (.vint 10) (.vint 2))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, binOpWat, emitDiv, Emit.isOk]
+/-- `if 1<2 then 200 else 100` = `letC (lt 1 2) (case (vvar 0) 100 200)` — the fused `if`. -/
+example :
+    (emitModule (.letC (.binop .lt (.vint 1) (.vint 2))
+      (.case (.vvar 0) (.ret (.vint 100)) (.ret (.vint 200))))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, cmpWat, Emit.isOk]
+
 -- Refusals are LOUD, not silent: an effectful/ADT former yields `unsup`, never a wrong `ok`.
 example : (emitModule (.perform (.vcap 0 0) "op" .vunit)).isOk = false := by
   simp [emitModule, emitComp, Emit.isOk]
 example : (emitModule (.ret .vunit)).isOk = false := by
   simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- A BARE comparison (not immediately eliminated by `case`) is refused — no standalone bool i64 rep.
+example : (emitModule (.binop .lt (.vint 1) (.vint 2))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, binOpWat, Emit.isOk]
+-- A branch that READS the case unit-payload (index 0) or the boolVal (index 1) is refused (no i64 rep).
+example :
+    (emitModule (.letC (.binop .lt (.vint 1) (.vint 2))
+      (.case (.vvar 0) (.ret (.vvar 0)) (.ret (.vint 0))))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, cmpWat, Emit.isOk]
 
 end -- public section
 
