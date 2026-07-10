@@ -31,9 +31,11 @@ check() {
 
 # ── happy path: a known corpus file → its exact canonical form ──
 # (examples/state/main.bang is a small fixed program; pin the LITERAL expected output so a printer
-# regression shows as a diff here, not just "still parses".)
+# regression shows as a diff here, not just "still parses". Canonical form since issue #71:
+# sequential let-bindings collapse to ONE `;`-block, so `let c = ... in let z = ... in $c`
+# prints as `let c = ...; z = ... in $c`.)
 got_out="$("$bang" fmt examples/state/main.bang 2>/dev/null)" && got_exit=0 || got_exit=$?
-want_out="state 0 in let c = {get} in let z = put 5 in \$c"
+want_out="state 0 in let c = {get}; z = put 5 in \$c"
 check "happy-path-stdout" "$got_out" "$want_out"
 check "happy-path-exit" "$got_exit" "0"
 

@@ -247,23 +247,18 @@ partial def fmtSurf (need : SPrec) : Surf → Format
   | .getS    => Format.text "get"
   | .thunk e => Format.text "{" ++ fmtSurf .cmp e ++ Format.text "}"
   | .force e => Format.text "$" ++ fmtSurf .atom e
-  -- `let … in …` (D2): break before `in`, body at BASE indent (not nested) — a let-CHAIN reads as
-  -- a flat sequence, matching the corpus's dominant idiom. `nest 0` keeps the group's OWN break
-  -- (before `in`) indented by `defIndent` (the bound value can wrap), while the continuation `b`
-  -- sits flush at the enclosing level.
-  | .lett x e b =>
-      fParenIf need .cmp <|
-        Format.group (nestD (Format.text s!"let {x} = " ++ fmtSurf .cmp e ++ Format.line ++ Format.text "in")
-          ++ Format.line) ++ fmtSurf .cmp b
-  -- MULTI-BINDING LET SUGAR (issue #68): `.lettMulti` is the SUGAR MARKER, printed BACK as
-  -- `;`-sugar — one `let` keyword, one binding per line (`; ` joins them), THEN `in` — the whole
-  -- point of the marker existing: a hand-written nested `let..in` chain never carries it (it's
-  -- always plain `.lett`, printed by the arm above), so fmt can print sugar for sugar-parsed
-  -- input WITHOUT auto-collapsing a hand-written chain into it (the operator's #68 ruling).
-  | .lettMulti binds b =>
-      fParenIf need .cmp <|
-        Format.group (nestD (Format.text "let " ++ fmtLetBindings binds ++ Format.line ++ Format.text "in")
-          ++ Format.line) ++ fmtSurf .cmp b
+  -- `let … in …` (D2/#68/#71): the CANONICAL form is ONE `let` block over the maximal run of
+  -- sequential bindings — `collectLetRun` walks the `.lett`/`.lettMulti` chain starting here and
+  -- flattens it to a single `x = e1; y = e2; … in body` block (operator ruling, 2026-07-10: #71
+  -- resolved always-sugar). A run of exactly ONE binding prints as plain `let x = e in body` (no
+  -- trailing `;`, matching every corpus program today) — `fmtLetRun` below picks the shape. This
+  -- is why `.lett` and `.lettMulti` share ONE arm: a hand-written nested chain (`.lett` all the
+  -- way down) and a sugar-parsed chain (starts `.lettMulti`, possibly followed by more `.lett`s
+  -- from an enclosing `let..in` outside the sugar) print IDENTICALLY once flattened — the
+  -- `lettMulti` MARKER's only remaining job is upstream (elaboration erases it before typing;
+  -- semantics never depend on it), not printing: the canonicalization here is print-side only.
+  | .lett x e b => fParenIf need .cmp (fmtLetRun (collectLetRun (.lett x e b)))
+  | .lettMulti binds b => fParenIf need .cmp (fmtLetRun (collectLetRun (.lettMulti binds b)))
   | .lam x b    =>
       fParenIf need .cmp <|
         Format.group (Format.text s!"fun {x} =>" ++ nestD (Format.line ++ fmtSurf .cmp b))
@@ -376,6 +371,52 @@ partial def fmtLetBindings : LetBindings → Format
   | .nil               => Format.nil
   | .cons n e .nil      => Format.text s!"{n} = " ++ fmtSurf .cmp e
   | .cons n e rest      => Format.text s!"{n} = " ++ fmtSurf .cmp e ++ Format.text "; " ++ fmtLetBindings rest
+/-- The PLAIN-`List`-taking sibling of `fmtLetBindings`, over `collectLetRun`'s flattened output
+(a `List (String × Surf)`, not the `LetBindings` mutual-inductive — repacking into `LetBindings`
+just to print would be a needless round-trip through a SEPARATE representation of the same list). -/
+partial def fmtLetBindingsList : List (String × Surf) → Format
+  | []            => Format.nil
+  | [(n, e)]      => Format.text s!"{n} = " ++ fmtSurf .cmp e
+  -- `"; "` THEN `Format.line` (not a bare `"; "`) gives the pretty-printer a real break point
+  -- BETWEEN bindings: when the whole block fits `defWidth`, `Format.line` renders as a single
+  -- space (the flat case) and the block stays one line; when it doesn't, EVERY `;` becomes its
+  -- own line (falling back to one-binding-per-line) INSTEAD of letting the printer break inside
+  -- some binding's own value expression at an arbitrary, hard-to-read point (the bug this fixes —
+  -- found by reformatting examples/json + examples/parser-combinators, whose long chains
+  -- collapsed to unreadable mid-expression wraps before this fix).
+  | (n, e) :: rest => Format.text s!"{n} = " ++ fmtSurf .cmp e ++ Format.text ";" ++ Format.line ++ fmtLetBindingsList rest
+/-- Flatten a MAXIMAL run of sequential `let`-bindings starting at `s` — walking THROUGH both
+`.lett` (a hand-written chain) and `.lettMulti` (an already-sugared sub-chain, e.g. nested inside
+a bigger hand-written one) uniformly, since the canonical OUTPUT (#71, operator ruling 2026-07-10)
+treats them identically: one block, regardless of how the input was written. Stops at the first
+non-`let`-shaped node, which becomes the run's BODY. `.lettMulti`'s own bindings splice in as
+ordinary list elements (its `LetBindings` shape is converted once via a local unpack, not a second
+recursive walker) so a `.lett`-then-`.lettMulti`-then-`.lett` chain (hand-written wrapping already-
+sugared wrapping hand-written — a real shape once fmt itself starts EMITTING sugar) flattens to
+ONE run, not three separate ones. -/
+partial def collectLetRun : Surf → List (String × Surf) × Surf
+  | .lett n e b =>
+      let (rest, body) := collectLetRun b
+      ((n, e) :: rest, body)
+  | .lettMulti binds b =>
+      let rec unpack : LetBindings → List (String × Surf)
+        | .nil           => []
+        | .cons n e rest => (n, e) :: unpack rest
+      let (restAfter, body) := collectLetRun b
+      (unpack binds ++ restAfter, body)
+  | s => ([], s)
+/-- Print a flattened let-run: `n = 0` bindings is unreachable (a run always has ≥1, since
+`collectLetRun` is only ever called from a `.lett`/`.lettMulti` node — both guarantee at least one
+binding), `n = 1` prints PLAIN `let x = e in body` (matching every corpus program today — no
+trailing `;`, so a single ordinary `let` is visually unchanged from pre-#71 output), `n ≥ 2` prints
+the ONE-BLOCK canonical form (#71): `let x = e1; y = e2; … in body`. -/
+partial def fmtLetRun : List (String × Surf) × Surf → Format
+  | ([(n, e)], body) =>
+      Format.group (nestD (Format.text s!"let {n} = " ++ fmtSurf .cmp e ++ Format.line ++ Format.text "in")
+        ++ Format.line) ++ fmtSurf .cmp body
+  | (binds, body) =>
+      Format.group (nestD (Format.text "let " ++ fmtLetBindingsList binds ++ Format.line ++ Format.text "in")
+        ++ Format.line) ++ fmtSurf .cmp body
 /-- One `matchD` arm as a `Format` document (no trailing separator — `fmtCommaGroup`'s `joinSep`
 supplies `,` + line between arms, matching D2's "one arm per line"). -/
 partial def fmtDArm : String → List String → Surf → Format
@@ -549,8 +590,14 @@ def idempotentOn (src : String) : Bool :=
       | .error _ => false
       | .ok out2 => out1 == out2
 
-/-- Round-trip: formatting never changes the parsed AST — `parse (fmt (parse s)) = parse s`,
-stated directly over `Prog` (`DecidableEq`-derived, so `==` is the real equality, not a stand-in).
+/-- Round-trip: formatting never changes the MEANING of the parsed program — `parse (fmt (parse
+s))` and `parse s` erase (`eraseLettMultiProg`) to the SAME `Prog`, stated over the erased form
+(`DecidableEq`-derived, so `==` is real equality). Erasure, not raw structural equality (issue
+#71, operator ruling 2026-07-10): the canonical-form printer COLLAPSES a hand-written nested
+`let..in` chain into the ONE-BLOCK `;`-sugar form, so the two ASTs genuinely differ in RAW SHAPE
+(`.lett` chain vs `.lettMulti`) while remaining semantically identical — `eraseLettMultiProg`
+(`Bang.Surface`) is exactly the normalization that makes "round-trips" mean "same meaning," not
+"byte-identical tree," matching how it already erases the marker before typing/lowering ever run.
 `false` on any parse/fmt failure along the way. -/
 def roundTripsOn (src : String) : Bool :=
   match parseProg src with
@@ -561,7 +608,7 @@ def roundTripsOn (src : String) : Bool :=
       | .ok out =>
           match parseProg out with
           | .error _ => false
-          | .ok p1 => p0 == p1
+          | .ok p1 => Bang.Surface.eraseLettMultiProg p0 == Bang.Surface.eraseLettMultiProg p1
 
 /-- Canonicity: two DIFFERENT source strings that parse to the SAME AST must format to the SAME
 output — the operational meaning of "canonical" (ADR-0090's D2 preamble: the multi-line shape is
@@ -694,17 +741,25 @@ a layout regression shows as a diff here), and two differently-formatted inputs 
 AST must format to the IDENTICAL output (canonicity — what "canonical" operationally means). -/
 
 -- flat-when-fits: `examples/state/main.bang`'s program easily fits `defWidth := 100` on one line —
--- multi-line layout must not introduce a break where the flat printer had none.
+-- multi-line layout must not introduce a break where the flat printer had none. (The `let c`/`let
+-- z` chain is now ONE canonical block, issue #71 — collapsing applies inside `state … in` bodies
+-- exactly like everywhere else.)
 open Bang.Format in
 #guard fmtProg "state 0 in let c = {get} in let z = put 5 in $c"
-       == .ok "state 0 in let c = {get} in let z = put 5 in $c"
+       == .ok "state 0 in let c = {get}; z = put 5 in $c"
 
 -- a long let-chain (each RHS individually short, but the CHAIN as a whole exceeds `defWidth`) must
--- break at each `let … in` per D2 (break before `in`, body at BASE indent — a flat sequence, not a
--- staircase). Expected string pinned byte-for-byte against `defWidth := 100`.
+-- break — now ONE canonical block (issue #71): every binding gets its OWN line (matching D2's
+-- "flat sequence" convention, one binding per line, rather than one `let … in` per binding
+-- staircasing). `fmtLetBindingsList` puts a `Format.line` (not a bare `"; "`) between bindings so
+-- the pretty-printer has a REAL break point there — without it, a too-wide block breaks inside
+-- some binding's OWN value expression at an arbitrary point instead (the bug this fixes; found
+-- reformatting examples/json + examples/parser-combinators, whose long chains collapsed to
+-- unreadable mid-expression wraps before it). Expected string pinned byte-for-byte against
+-- `defWidth := 100`.
 open Bang.Format in
 #guard fmtProg "let aVeryLongVariableName1 = 111111111 in let aVeryLongVariableName2 = 222222222 in let aVeryLongVariableName3 = 333333333 in aVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
-       == .ok "let aVeryLongVariableName1 = 111111111\n  in\nlet aVeryLongVariableName2 = 222222222\n  in\nlet aVeryLongVariableName3 = 333333333\n  in\naVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
+       == .ok "let aVeryLongVariableName1 = 111111111;\n  aVeryLongVariableName2 = 222222222;\n  aVeryLongVariableName3 = 333333333\n  in\naVeryLongVariableName1 + aVeryLongVariableName2 + aVeryLongVariableName3"
 
 -- idempotency + round-trip must ALSO hold on the wide let-chain above (the load-bearing case: a
 -- break-decision that depended on input line-structure, not width+AST, would show up here first).
@@ -803,21 +858,53 @@ open Bang.Format in
 open Bang.Format in
 #guard roundTripsOn "let x : Int = 3" && idempotentOn "let x : Int = 3"
 
-/-! ### Multi-binding `let` sugar (issue #68): fmt PRINTS the sugar for sugar-parsed input, does
-NOT auto-collapse a hand-written chain — the operator's exact ruling, verified here (not just
-documented) since the `.lettMulti` marker (`Bang.Surface`) is the mechanism that makes it possible:
-a sugar-parsed `Surf` carries the marker; a hand-written nested `.lett` chain never does. -/
+/-! ### Multi-binding `let` — the CANONICAL FORM (issues #68/#71, operator ruling 2026-07-10):
+fmt renders every MAXIMAL RUN of sequential `let`-bindings as ONE `let x = e1; y = e2 in body`
+block, regardless of how the input was written — a sugar-parsed `.lettMulti` block prints as
+itself; a hand-written nested `.lett` chain COLLAPSES into the identical block. `n = 1` stays
+plain `let x = e in body` (no trailing `;`). The `.lettMulti` MARKER (`Bang.Surface`) still exists
+and is still what makes any of this possible (a sugar-parsed tree carries provenance a hand-
+written one never does), but its role changed from "the printer's ONLY output-shape decision" to
+"upstream-only" (elaboration erases it before typing/lowering) — canonicalization is now a
+PRINT-SIDE pass (`collectLetRun`/`fmtLetRun`) that treats both shapes uniformly. -/
 
--- round-trips + idempotent, same as every other decl-level form above.
+-- round-trips + idempotent, same as every other decl-level form above. `roundTripsOn` compares
+-- via `eraseLettMultiProg` (semantic equivalence), not raw structural equality — the collapse
+-- deliberately changes a hand-written chain's RAW AST shape (`.lett` chain → `.lettMulti`) while
+-- preserving MEANING, so a byte-for-byte `Prog` comparison would (incorrectly) call that a
+-- round-trip failure.
 open Bang.Format in
 #guard roundTripsOn "let x = 3; y = 4 in x + y" && idempotentOn "let x = 3; y = 4 in x + y"
 open Bang.Format in
 #guard roundTripsOn "let a = 1; b = 2; c = 3 in a" && idempotentOn "let a = 1; b = 2; c = 3 in a"
 
--- THE RULING'S EXACT ASK: sugar-parsed input prints BACK as sugar (the `;` form), not expanded.
+-- sugar-parsed input prints as sugar…
 open Bang.Format in
 #guard fmtExpr "let x = 3; y = 4 in x + y" == .ok "let x = 3; y = 4 in x + y"
--- … but a HAND-WRITTEN nested chain is NOT auto-collapsed into the sugar — it round-trips as
--- itself, the two forms staying genuinely distinct through fmt (not just parse-equivalent).
+-- … AND a HAND-WRITTEN nested chain COLLAPSES to the IDENTICAL one-block canonical form — the two
+-- INPUT spellings converge on ONE output (canonicity: same meaning ⟹ same printed form).
 open Bang.Format in
-#guard fmtExpr "let x = 3 in let y = 4 in x + y" == .ok "let x = 3 in let y = 4 in x + y"
+#guard fmtExpr "let x = 3 in let y = 4 in x + y" == .ok "let x = 3; y = 4 in x + y"
+-- a run nested INSIDE another construct (not just at a program's top level) also collapses —
+-- the printer walks to the `.lett`/`.lettMulti` wherever it occurs, not only at `fmtSurf`'s
+-- outermost call.
+open Bang.Format in
+#guard fmtExpr "state 0 in (let c = {get} in (let z = put 5 in $c))" == .ok "state 0 in let c = {get}; z = put 5 in $c"
+
+-- SEMANTICS RIDER (operator's explicit ask, 2026-07-10): does the collapse stay safe when a
+-- chain SHADOWS — a later binding reusing an EARLIER binding's name? Verified empirically (not
+-- assumed) that this codebase's grammar/elaborator impose NO duplicate-name restriction on the
+-- `;`-block form (`pLetBindings` accepts any identifier, `desugarLettMulti`'s nesting preserves
+-- sequential scoping exactly like a hand-written chain does), so the collapse is safe for EVERY
+-- case tried — no exception was needed, unlike the operator's cautious hypothesis. These pin that
+-- finding as a permanent regression, not just a one-off manual check.
+#guard Bang.Surface.runYieldsInt 20 "let x = 1 in let x = 2 in x" 2
+#guard Bang.Surface.runYieldsInt 20 "let x = 1; x = 2 in x" 2
+-- a LATER same-named binding's RHS reading the EARLIER one (`x = x + 1`) — the sharpest version
+-- of "does shadowing actually work", not just "does the later value win".
+#guard Bang.Surface.runYieldsInt 20 "let x = 1 in let x = x + 1 in x" 2
+#guard Bang.Surface.runYieldsInt 20 "let x = 1; x = x + 1 in x" 2
+open Bang.Format in
+#guard fmtExpr "let x = 1 in let x = x + 1 in x" == .ok "let x = 1; x = x + 1 in x"
+open Bang.Format in
+#guard roundTripsOn "let x = 1 in let x = x + 1 in x" && idempotentOn "let x = 1 in let x = x + 1 in x"

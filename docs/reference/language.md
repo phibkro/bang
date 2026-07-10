@@ -107,10 +107,17 @@ convention (`let rec` is the only recursion marker, and it has no multi-binding 
 so sequential-not-recursive is the reading consistent with the rest of the surface.
 Semantically it ELABORATES to the IDENTICAL nested chain a hand-written
 `let x = e1 in let y = e2 in … in body` already produces (a thin `.lettMulti` SUGAR
-MARKER, erased before typing/lowering ever run — zero new semantics). The marker
-exists so **`bang fmt` can tell the two apart**: it PRINTS the sugar back for
-sugar-parsed input, but does NOT auto-collapse a hand-written nested chain into it —
-the two forms stay genuinely distinct through a round-trip, each printing as itself.
+MARKER, erased before typing/lowering ever run — zero new semantics).
+
+**`bang fmt`'s CANONICAL FORM is a single multi-binding block** (issue #71, operator
+ruling 2026-07-10): every MAXIMAL RUN of sequential `let`-bindings prints as ONE
+`let x = e1; y = e2; … in body` — a hand-written nested chain COLLAPSES into this
+form exactly like a sugar-parsed one does (a single binding still prints plain
+`let x = e in body`, no trailing `;`). The collapse is exactly semantics-preserving,
+including when a later binding SHADOWS an earlier one's name (`let x = 1 in let x =
+x + 1 in x` collapses to `let x = 1; x = x + 1 in x` — verified, not assumed: the
+grammar imposes no duplicate-name restriction, and sequential scoping through the
+`;`-chain matches the nested chain's binder-shadowing exactly).
 
 ### Lexical notes
 
