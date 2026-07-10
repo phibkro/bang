@@ -1637,6 +1637,84 @@ def StoresGood (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) : Prop :=
   ∧ (∀ p ∈ eκ, (MVal.WF p.2.1 ∧ MVal.PureV p.2.1) ∧ MEnv.WF p.2.2.2 ∧ MEnv.PureV p.2.2.2
        ∧ (∀ c ∈ p.2.2.1, Comp.ScopedC ((readbackEnv p.2.2.2).length + 2) c.2 ∧ EffectFree c.2))
 
+/-! ### W1 — store-op ↔ readback-map commutations (the 3b store backbone, envm3)
+
+Each per-kind store op (`get?`/`put`/`push`/`.tail`) commutes with the `readback`-map that IS the
+correspondence (`SStoreCorr`/`THeapCorr`/`CStoreCorr`). These are the mechanical readback-commutation
+lemmas the resume map names as W1 — the same shape 3a's distribution lemmas already exemplify. The
+`find?` structure is shared (`evalD`'s and `evalE`'s stores are `List (Nat × _)` keyed identically), so
+the map slides through `find?`/`getD` by the standard `List.find?_map`/`List.map` rewrites. -/
+
+/-- `SStore.get?` commutes with the readback-map: reading key `n` from `evalE`'s σ then reading back
+equals reading key `n` from the readback-image store. (both directions of the `get?` agreement.) -/
+theorem SStore.get?_readback (eσ : ESStore) (n : Nat) :
+    Bang.CalcVM.SStore.get? (eσ.map (fun p => (p.1, readback p.2))) n
+      = (eσ.get? n).map readback := by
+  induction eσ with
+  | nil => rfl
+  | cons a eσ ih =>
+    simp only [List.map_cons, Bang.CalcVM.SStore.get?, ESStore.get?, List.find?]
+    by_cases h : a.1 = n
+    · simp only [h, decide_true, Option.map_some]
+    · simp only [h, decide_false, Option.map_none]
+      simpa only [Bang.CalcVM.SStore.get?, ESStore.get?] using ih
+
+/-- `SStore.put` commutes with the readback-map: putting `readback arg` on the image equals imaging the
+`put arg`. -/
+theorem SStore.put_readback (eσ : ESStore) (n : Nat) (arg : MVal) :
+    Bang.CalcVM.SStore.put (eσ.map (fun p => (p.1, readback p.2))) n (readback arg)
+      = (eσ.put n arg).map (fun p => (p.1, readback p.2)) := by
+  induction eσ with
+  | nil => rfl
+  | cons a eσ ih =>
+    obtain ⟨k, w⟩ := a
+    simp only [List.map_cons, Bang.CalcVM.SStore.put, ESStore.put]
+    by_cases h : k = n
+    · simp only [h, if_true, List.map_cons]
+    · simp only [h, if_false, List.map_cons, ih]
+
+/-- `THeap.get?` commutes with the readback-map (`readback`-lifted per cell). -/
+theorem THeap.get?_readback (eτ : ETHeap) (n : Nat) :
+    Bang.CalcVM.THeap.get? (eτ.map (fun p => (p.1, p.2.map readback))) n
+      = (eτ.get? n).map (List.map readback) := by
+  induction eτ with
+  | nil => rfl
+  | cons a eτ ih =>
+    simp only [List.map_cons, Bang.CalcVM.THeap.get?, ETHeap.get?, List.find?]
+    by_cases h : a.1 = n
+    · simp only [h, decide_true, Option.map_some]
+    · simp only [h, decide_false, Option.map_none]
+      simpa only [Bang.CalcVM.THeap.get?, ETHeap.get?] using ih
+
+/-- `THeap.put` commutes with the readback-map. -/
+theorem THeap.put_readback (eτ : ETHeap) (n : Nat) (Θ : List MVal) :
+    Bang.CalcVM.THeap.put (eτ.map (fun p => (p.1, p.2.map readback))) n (Θ.map readback)
+      = (eτ.put n Θ).map (fun p => (p.1, p.2.map readback)) := by
+  induction eτ with
+  | nil => rfl
+  | cons a eτ ih =>
+    obtain ⟨k, w⟩ := a
+    simp only [List.map_cons, Bang.CalcVM.THeap.put, ETHeap.put]
+    by_cases h : k = n
+    · simp only [h, if_true, List.map_cons]
+    · simp only [h, if_false, List.map_cons, ih]
+
+/-- `CStore.get?` commutes with the readback-map (each frame's `(param, clauses, install-env)` reads back
+to `(readback param, closed-clauses)` — the `CStoreCorr` image). -/
+theorem CStore.get?_readback (eκ : ECStore) (n : Nat) :
+    Bang.CalcVM.CStore.get? (eκ.map (fun p => (p.1, (readback p.2.1,
+        p.2.2.1.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv p.2.2.2) c.2)))))) n
+      = (eκ.get? n).map (fun t => (readback t.1,
+          t.2.1.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv t.2.2) c.2)))) := by
+  induction eκ with
+  | nil => rfl
+  | cons a eκ ih =>
+    simp only [List.map_cons, Bang.CalcVM.CStore.get?, ECStore.get?, List.find?]
+    by_cases h : a.1 = n
+    · simp only [h, decide_true, Option.map_some]
+    · simp only [h, decide_false, Option.map_none]
+      simpa only [Bang.CalcVM.CStore.get?, ECStore.get?] using ih
+
 /-- **SLICE 3b — the effect-store correspondence (STATEMENT; the weave is envm3).**
 
 Generalizes `evalE_agrees_evalD_pure` off the pure fragment: arbitrary M (no `EffectFree`), arbitrary
