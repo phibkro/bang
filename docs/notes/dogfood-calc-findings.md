@@ -87,6 +87,25 @@ continuation when a sibling re-invokes the outer name.
 **Repro**: `examples/calc/Parser.bang` verbatim + any input containing `+`, `-`,
 or `(` (e.g. `"1 + 2"`), run under `bang run --compiled`. Kill with `timeout`.
 
+**RESOLVED verdict (issue #95, 2026-07-10 step-count probe — `scratch/calc95/`)**: it is
+**NOT a hang and NOT a loop** — the CalcVM `exec` **terminates with the correct value**
+(env = ck = compiled = `11021193` component-wise; `"1+2"` → 3 in ~44 s, `"(7)"` → 7 in
+~51 s). It is a **super-linear residual-recompile COST**, so at the 60 s dogfood timeout it
+*presented* as a hang. A step-counting mirror of `exec` shows only ~741 machine steps for
+`"1+2"`, but the residual `Code` reaches **~331K nodes** and wall-time tracks
+`totalSubstWork` (linear in per-step substitution work), not step count. The residual
+**doubles exponentially** in a single eval descent (`18K→34K→100K→166K→331K`, steps ~505–581).
+**Mechanism**: the ADR-0073 `let rec` μ-encoding (`buildLetRec`) knot body
+`let #g = unfold sv in ($#g) sv` mentions the knot var `sv` **twice**, so each `SUBST`
+doubles the captured `fold {inner}` (the whole function body); a deep re-entrant unfold
+chain (calc's parseFactor re-entering parseExpr through 4 large nested siblings) compounds
+it ~2^depth. **This is a COST fix, not a soundness fix** (value-agreement / invariant #1
+holds) — candidates (μ-knot sharing, `letC`-share, size-thresholded prompt `out of fuel`)
+all touch `AbstractMachine.lean`/`buildLetRec` and await an operator ruling. Whitespace is
+NOT the trigger (spaced `"1 + 2"` behaves identically to `"1+2"`); the discriminator is the
+`+`/`-`/`(` production (exprLoop = the re-entrant outer knot) vs `*` (termLoop). Minimal
+qualitative repro: `scratch/calc95/repro-min.bang` (<15 lines, env=ck=compiled=12).
+
 ## CORRECTNESS — `bang fmt` breaks `$(Mod.op) arg` (not semantics-preserving)
 
 **What I tried**: run `bang fmt` over the six files to canonicalize, per the json

@@ -1,0 +1,20 @@
+import Ast
+pub let rec intToStr : Int -> Str ! {Div} =
+  fun n =>
+    if n < 0
+      then $concat "-" ($intToStr (0 - n))
+      else if n < 10
+        then SCons(Char (n + 48), SNil)
+        else $concat ($intToStr (n / 10)) (SCons(Char (n - n / 10 * 10 + 48), SNil))
+pub let rec show : Ast_Expr -> Str ! {Div} =
+  fun e =>
+    match (e : Ast_Expr) {
+      ENum(v) -> $intToStr v,
+      EVar(nm) -> nm,
+      EAdd(a, b) -> $concat "(" ($concat ($show a) ($concat " + " ($concat ($show b) ")"))),
+      ESub(a, b) -> $concat "(" ($concat ($show a) ($concat " - " ($concat ($show b) ")"))),
+      EMul(a, b) -> $concat "(" ($concat ($show a) ($concat " * " ($concat ($show b) ")"))),
+      EDiv(a, b) -> $concat "(" ($concat ($show a) ($concat " / " ($concat ($show b) ")"))),
+      ENeg(a) -> $concat "-" ($show a),
+      EErr -> "err"
+    }
