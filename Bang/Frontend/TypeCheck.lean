@@ -3136,7 +3136,51 @@ def genericPreludeFnSrcs : List String :=
     -- `optionToEither : Option a -> (Unit + a)` — `None ↦ Left(())`, `Some ↦ Right` (`Option ≅ Either Unit`).
     "let optionToEither = { fun o => match o { None -> Left(()), Some(a) -> Right(a) } } in 0",
     -- `eitherToOption : (Unit + a) -> Option a` — `Left ↦ None`, `Right ↦ Some` (the `from`).
-    "let eitherToOption = { fun x => match x { Left(u) -> None, Right(a) -> Some(a) } } in 0" ]
+    "let eitherToOption = { fun x => match x { Left(u) -> None, Right(a) -> Some(a) } } in 0",
+    -- `withDefault d o : a -> Option a -> a` — unwrap-or (Rust `unwrap_or`/Haskell `fromMaybe`).
+    "let withDefault = { fun d => fun o => match o { None -> d, Some(v) -> v } } in 0",
+    -- #105 FIRST-SLICE PRELUDE (issue #105, docs/notes/stdlib-prelude-survey.md §3): the type-agnostic
+    -- entries below reference NO `Option`/`Result`/`Either` ctor — they ride this bucket only because
+    -- it is the existing home for non-recursive, conditionally-injected (name-mentioned-only) prelude
+    -- fns; they are gated by the SAME coarse `declared.contains "Option"/"Result"` check as
+    -- `bimap`/the isos above (a pre-existing imprecision — that gate is really "did the user take over
+    -- the tagged-sum namespace", not "does this fn need it" — inherited, not introduced here).
+    --
+    -- the dogfood-json TOP papercut (survey §3 #1). `let (a, b) = p in …` needs `p` bound to a
+    -- bare var first (`.splitS`'s scrutinee-shape rule).
+    -- `fst p : (a, b) -> a`
+    "let fst = { fun p => let (a, b) = p in a } in 0",
+    -- `snd p : (a, b) -> b`
+    "let snd = { fun p => let (a, b) = p in b } in 0",
+    -- `abs n : Int -> Int` — `if n < 0 then 0 - n else n` (both dogfooders hand-rolled this).
+    "let abs = { fun n => if n < 0 then 0 - n else n } in 0",
+    -- curried; total, no recursion.
+    -- `min a b : Int -> Int -> Int`
+    "let min = { fun a => fun b => if a < b then a else b } in 0",
+    -- `max a b : Int -> Int -> Int`
+    "let max = { fun a => fun b => if a < b then b else a } in 0",
+    -- `const x _y : a -> b -> a` — the `id` companion (mirrors the test-local `const` at ⑦b above).
+    "let const = { fun x => fun y => x } in 0",
+    -- CHAR KIT (survey §3 #8 — the calc lexer + json parser BOTH hand-rolled these). Code points are
+    -- ASCII (the codepoint-encoding note, ref §Strings). A curried param past the first (here, the
+    -- SOLE param `c`) needs a scrutinee ascription `(c : Char)` for named-match resolution (the #50
+    -- point-3 gap `eq`/`revApp` above also hit) — WITHOUT it: \"match scrutinee is #…, not Char\".
+    -- `isDigit c : Char -> Unit + Unit` — '0'..'9' is code points 48..57 inclusive.
+    "let isDigit = { fun c => match (c : Char) { Char(n) -> " ++
+      "if 47 < n then (if n < 58 then 0 == 0 else 0 == 1) else 0 == 1 } } in 0",
+    -- `isAlpha c : Char -> Unit + Unit` — 'A'..'Z' (65..90) or 'a'..'z' (97..122); `lower` is
+    -- let-bound once and reused on both the uppercase-fail and non-uppercase branches (avoids
+    -- writing the lowercase-range test twice).
+    "let isAlpha = { fun c => match (c : Char) { Char(n) -> " ++
+      "let lower = if 96 < n then (if n < 123 then 0 == 0 else 0 == 1) else 0 == 1 in " ++
+      "if 64 < n then (if n < 91 then 0 == 0 else lower) else lower } } in 0",
+    -- `toUpper c : Char -> Char` — TOTAL: shifts lowercase (97..122) down by 32; anything else,
+    -- including already-uppercase and non-letters, passes through unchanged.
+    "let toUpper = { fun c => match (c : Char) { Char(n) -> " ++
+      "if 96 < n then (if n < 123 then Char(n - 32) else Char(n)) else Char(n) } } in 0",
+    -- `toLower c : Char -> Char` — mirror: shifts uppercase (65..90) up by 32; else passthrough.
+    "let toLower = { fun c => match (c : Char) { Char(n) -> " ++
+      "if 64 < n then (if n < 91 then Char(n + 32) else Char(n)) else Char(n) } } in 0" ]
 
 /-- Wrap `body` with each generic-prelude fn (`genericPreludeFnSrcs`) ONLY if `body` mentions its name.
 The fns are mutually independent (none calls another), so checking the raw user body is complete. -/
@@ -5014,6 +5058,54 @@ witnessed-iso laws made real through `Source.eval`. -/
 -- `eitherToOption ∘ optionToEither = id` on `Some`/`None` (Option ≅ Either Unit).
 #guard runTypedYieldsInt 1200 "match (($eitherToOption) (($optionToEither) (Some(7)))) { None -> 99, Some(v) -> v }" 7
 #guard runTypedYieldsInt 1200 "match (($eitherToOption) (($optionToEither) (None : Option Int))) { None -> 0, Some(v) -> v }" 0
+
+/-! ### Validation ⑨k — issue #105 FIRST-SLICE PRELUDE: `fst`/`snd`/`abs`/`min`/`max`/`withDefault`/
+`const` + the char-class kit (`isDigit`/`isAlpha`/`toUpper`/`toLower`), all `genericPreludeFnSrcs`
+entries (ADR/docs/notes/stdlib-prelude-survey.md §3 — the first slice, ordered by dogfood demand).
+Each is used FREE with no local `let`/declaration (the injection under test); the char-kit guards use
+`(Char 97)`-style ctor-application (a `Char` literal `'a'` desugars to the SAME `Char 97`, both are
+exercised — see the `let c = 'a'`-style guards below). No List entry ships in this slice — the survey
+found NO free injected generic `List a` exists (only per-program user `data List a` declarations,
+e.g. `monoidInt` above); the list-independent subset ships alone, see the design-finding note below. -/
+-- `fst`/`snd` — the dogfood-json TOP papercut. `p` a literal pair.
+#guard runTypedYieldsInt 400 "($fst) (3, 4)" 3
+#guard runTypedYieldsInt 400 "($snd) (3, 4)" 4
+-- `abs` — negative and positive/zero branches (both dogfooders hand-rolled `0 - n`).
+#guard runTypedYieldsInt 400 "($abs) (0 - 7)" 7
+#guard runTypedYieldsInt 400 "($abs) 7" 7
+#guard runTypedYieldsInt 400 "($abs) 0" 0
+-- `min`/`max` — curried; both orderings (the `<` branch and its else).
+#guard runTypedYieldsInt 400 "(($min) 3) 7" 3
+#guard runTypedYieldsInt 400 "(($min) 7) 3" 3
+#guard runTypedYieldsInt 400 "(($max) 3) 7" 7
+#guard runTypedYieldsInt 400 "(($max) 7) 3" 7
+-- `const x y = x` — the `id` companion; used at two distinct 2nd-arg types (Int, a pair) like the
+-- test-local `const` at ⑦b, proving the injected one generalizes the same way.
+#guard runTypedYieldsInt 400 "(($const) 5) 9" 5
+#guard runTypedYieldsInt 400 "(($const) 7) (1, 2)" 7
+-- `withDefault d o` — `Some` returns the payload, `None` returns the default (both arms, Option's
+-- two ctors — mirrors the `mapOption`/`mapResult` Err/Ok-both-arms discipline above).
+#guard runTypedYieldsInt 400 "(($withDefault) 0) (Some(9))" 9
+#guard runTypedYieldsInt 400 "(($withDefault) 42) (None : Option Int)" 42
+-- CHAR KIT — `isDigit`: the '0'-'9' boundary (47 fails-low, 48/57 the inclusive ends, 58 fails-high).
+#guard runTypedYieldsInt 400 "if (($isDigit) (Char 48)) then 1 else 0" 1
+#guard runTypedYieldsInt 400 "if (($isDigit) (Char 57)) then 1 else 0" 1
+#guard runTypedYieldsInt 400 "if (($isDigit) (Char 97)) then 1 else 0" 0
+-- `isAlpha`: both letter ranges (upper/lower) true, a digit false — the non-letter edge.
+#guard runTypedYieldsInt 400 "if (($isAlpha) (Char 65)) then 1 else 0" 1
+#guard runTypedYieldsInt 400 "if (($isAlpha) (Char 122)) then 1 else 0" 1
+#guard runTypedYieldsInt 400 "if (($isAlpha) (Char 53)) then 1 else 0" 0
+-- `toUpper`/`toLower` — TOTAL: the letter-shift case AND the non-letter passthrough case each.
+#guard runTypedYieldsInt 400 "match (($toUpper) (Char 97)) { Char(n) -> n }" 65
+#guard runTypedYieldsInt 400 "match (($toUpper) (Char 53)) { Char(n) -> n }" 53
+#guard runTypedYieldsInt 400 "match (($toLower) (Char 65)) { Char(n) -> n }" 97
+#guard runTypedYieldsInt 400 "match (($toLower) (Char 53)) { Char(n) -> n }" 53
+-- shadowing: a user `let abs = …` in the body WINS over the injected one (lexical scope contract).
+#guard runTypedYieldsInt 400 "let abs = { fun n => 999 } in ($abs) (0 - 7)" 999
+-- INERT for unused: the whole #105 bucket adds no effect to a program that never mentions any of it.
+-- `EffRow.isEmpty`/`.card` are NONCOMPUTABLE in the compiled `#guard` path — `decide (ρ = ∅)` is the
+-- computable emptiness idiom (rides Finset's `DecidableEq`), matching `showRow`'s own usage.
+#guard (match checkProg "3" with | .ok (_, ρ) => decide (ρ = ∅) | _ => false)
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic
