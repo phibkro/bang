@@ -342,6 +342,108 @@ axiom-clean + `alpha_delivery_skeleton` FLAGGED `sorry` = the surviving wall) ·
 conjunct — `nid`/`C'` NOT in scope) · memory `lr-crelk-custom-arm-termination-wall` fallback (C) (the
 (β) viability precedent).
 
+## PROPOSED AMENDMENT ④ — the (β) DELIVERY verdict: fuel closes termination/location, NOT answer-coherence; the wall is shared with (α) (lane feat-lr-fuel-reindex, 2026-07-11, AWAITING OPERATOR RULING)
+
+**Context.** Amendment ③ ruled (β) — the fuel-indexed LR re-index (shape (c)) — the live background lane,
+sliced. Slice 1 de-risked the claim (the fuel-indexed twin `Bang/Meta/LRFuel.lean`, purely additive;
+LR/BinaryLR/Spec untouched); slice 2 built the strip proper to its wall. This amendment records the
+build-grounded DELIVERY verdict off `feat-lr-fuel-reindex @ 04a94cbe` (pushed, gated: build 0, frozen
+files byte-untouched).
+
+### (a) The β-delivery verdict — fuel closes the termination/location half COMPLETELY, but not the answer
+
+The fuel index does exactly what the memory-(C) precedent promised for TERMINATION, and no more. Closed
+sorry-free (axiom-clean `[propext, Quot.sound]` unless noted), all in `LRFuel.lean`:
+
+- the fuel-indexed def block `VrelKN`/`CrelKN`/`KrelSN` + the four `krelSN_nil/letF/appF/handleF` eq-lemmas
+  (the ~310-line mutual twin, termination `(n, role, f, stackLen, sizeOf)`);
+- **`KrelSN_g_cast` FULL-GENERAL** — the reverse `g'→g` cast on the captured continuation `Kᵢ` (the
+  fork-(a) killer, `CarrierForkA.monotone_gcast_cannot_serve_contravariant_resume`) is now a call at fuel
+  `fᵢ < f`, structurally descending, so full-generality SURVIVES; the fuel does NOT reintroduce fork (a)'s
+  contravariance kill;
+- `krelSN_stackInc`, `krelSN_handleF_intro`, `krelSN_length_eq` (helpers);
+- **the STRIP `krelSN_append_inv`** — FUEL-PRESERVING (`f → f`; the strip walks `Sstrip` structurally,
+  fuel descends only at the resume conjunct), so `KrelSN_fuel_mono` is OFF the path AND is polarity-blocked
+  anyway (VrelKN/CrelKN alternate hyp/concl; the fuel is NOT `∀ j <`-guarded like the metering index `n`) —
+  the dead marker was DELETED. The strip's nil + letF + appF arms + the two id-uniqueness refutations close
+  sorry-free; **the nested handleF-in-prefix resume relocation COMPOSES** via well-founded recursion on
+  `(f, Sstrip.length)`, the recursive strip firing at fuel `fₗ < fₖ < f` (this is where the fuel index is
+  genuinely load-bearing — the IH the LR's `AppendInvWF` lacked, the `Dⱼ = Dᵢ` refutation `c8b5909` being
+  that missing IH surfacing);
+- `krelSN_hole_det_refuted` (in-file do-not-weaken, axiom-clean) — the fuel-indexed hole-det is ALSO false
+  (the `letF` body is vacuous at index `n = 0` regardless of fuel).
+
+**The residual (trace-confirmed):** the crux/strip's SOLE remaining obligation is `Dstrip = Dᵢ` — the
+resume result's stripped-prefix answer (`hstrip : KrelSN m fⱼ (F qᵣ Aᵣ) Dstrip …`) must equal the decomp's
+carried answer `Dᵢ` (= `C'` via `hDC`, from `htail2 : KrelSN C' D e' g Ko' K₂ₒ`). This reduces to the
+machine-FALSE `krelSN_hole_det`, and the escapes are RULED OUT build-grounded:
+
+- **strengthened-strip escape — BUILT and WALLED.** I extended `krelSN_append_inv` to ALSO output the
+  boundary tail `htailBR : KrelSN m fⱼ Dstrip D e'' g Ko' K₂ₒ`, read off `hS`'s SINGLE derivation (no
+  re-decomp). It threads through all strip arms and builds. But `htailBR` (hole `Dstrip`) and `htail2`
+  (hole `C'`) are STILL two INDEPENDENT derivations over the SHARED `Ko'`/`K₂ₒ`/`D`, so `Dstrip = C'` STILL
+  needs hole-det — which `krelSN_hole_det_refuted` falsifies with a `Ko' = [letF, appF]` shape the crux's
+  `Ko'` can take. The single-derivation datum does not reach across.
+- **decouple escape — RULED OUT.** Rebinding the resume answer to `Dstrip` (severing it from `hin`'s `Dᵢ`)
+  breaks the CONSUMER: `crelK_fund_up` needs the inner relation `hin` and the resume conjunct at the SAME
+  existential answer for the biorthogonal composition (Biernacki Lemma 2). The shared `Dᵢ` is structural,
+  not incidental.
+
+### (b) The sharpened wall statement — both surviving routes hit inter-derivation answer-determinacy
+
+The census-4 wall is now doubly-confirmed as a **statement-level determinacy gap, NOT a proof-technique
+gap**. Route (α) (def-CONCLUSION strengthening) was refuted-at-delivery in ③ because the `Cb' = C'` tie is
+inter-derivation. Route (β) (fuel-reindex) is refuted-at-delivery HERE because `Dstrip = Dᵢ` is the SAME
+inter-derivation tie. The common core: **the `KrelS`/`KrelSN` decomp genuinely needs the boundary answer
+`Dᵢ` (the hole at which the resumed continuation bottoms) DETERMINED by the shared boundary tail `(Ko',
+K₂ₒ, D)`, and it is NOT** — `Ko'` may be `letF`/`appF`-headed, whose value-type is existentially free
+(the do-not-weaken falsifier, both at the flat `KrelS` and the fuel-indexed `KrelSN` level). Neither a
+conclusion-strengthening (α) nor a fuel index (β) carries a fact ACROSS two independent derivations of the
+same tail; both are single-derivation devices. The fuel index solves a DIFFERENT problem (well-founded
+termination of the self-referential strip) than the actual wall (inter-derivation answer determinacy).
+
+### (c) The two options, priced
+
+- **PARK (RECOMMEND).** Ship v1 with `lr_sound`/`lr_fundamental`/`lr_fundamental_closed` flagged, exactly
+  as the census-4 verdict and the PARK section below already price. Nothing user-facing regresses — the
+  soundness diagonal (`type_safety`, `custom_program_safe`, `compile_forward_sim`) is `Crel`-free and stays
+  axiom-clean. **The fuel twin `LRFuel.lean` stays BANKED on `feat-lr-fuel-reindex`** as the completed
+  termination/location half: if a route to answer-determinacy is later found, the WF strip + the g-cast +
+  the structural walk are done and reusable; only the answer-coherence hook would remain. The ◊4 binary-LR
+  paper stays the CPP-framed "machine-checked LR construction + the seam analysis" with the `lr_*` cluster
+  a named residual (now with TWO refuted closure routes as evidence, sharpening the seam story).
+- **A DEEPER def change — carry the boundary answer IN the frame/stack (kernel-level, NEW TERRITORY).**
+  The only thing that reaches across two derivations of the same tail is to make the boundary answer NOT a
+  per-derivation existential but a datum STORED on the shared object — i.e. the `handleF` frame (or the
+  eval-context) would have to CARRY its own answer/hole type, so `splitAtId`/the decomp READ it rather than
+  re-derive it, and any two decomps of the same physical stack agree BY CONSTRUCTION. Minimally it must
+  determine: **the returner hole type at every catcher frame** (what the resumed continuation bottoms to),
+  such that it is a function of the STACK (shared) not the DERIVATION (per-instance). Why this reaches
+  where (α)/(β) cannot: it moves the answer from the ∃-bound output of a relation (per-derivation) to a
+  field of the stack (single, shared) — the update-anomaly fix (one authoritative home) applied to the
+  boundary answer. This is a **kernel-level change to `Frame`/`EvalCtx` (or the typing that annotates
+  them)** touching `Source.step`/`splitAtId`/`dispatchOn` and the whole soundness diagonal, NOT an
+  LR-internal move — it is out of this lane's envelope and REQUIRES a kernel-engineer design consult with
+  its OWN refute-first probe (does a frame-carried answer stay consistent under `dispatchOn`'s reinstall?
+  does it survive `subst`? does it force a `Spec.lean` change?) BEFORE any grind. Unpriced here by design.
+
+### (d) Status
+
+**AWAITING OPERATOR RULING.** This amendment records the (β) delivery verdict; it does NOT alter the status
+of amendments ①–③ (all remain as they stand) nor flip the census (18, unchanged under both options). Like
+①–③, ④ flips only in a real 18→20 landing commit — which, on this evidence, no in-envelope route delivers.
+
+### Ground (lane feat-lr-fuel-reindex, off `feat-lr-carrier-stackinc-wip @ 25f18ed2`)
+
+`Bang/Meta/LRFuel.lean` (the fuel-indexed twin — the def block + eq-lemmas + `KrelSN_g_cast` +
+`krelSN_stackInc`/`krelSN_handleF_intro`/`krelSN_length_eq` CLEAN; `krelSN_append_inv` with the nested-WF
+resume relocation WIRED + the strengthened boundary-tail output; `krelSN_splitAtId_decomp` crux with the
+trace-confirmed `Dstrip = Dᵢ` wall; `krelSN_hole_det_refuted` the in-file do-not-weaken falsifier;
+`krelS_iff_exists_fuel` the bridge, both directions flagged) · `docs/notes/lr-fuel-reindex-design.md`
+(the slice map + "THE WALL" section, SSoT on the branch) · `Bang/Witness/HoleDetRefute.lean`
+(`krelS_hole_det_refuted`, the flat-`KrelS` twin of the fuel-level falsifier) · amendment ③ (the (α)
+delivery refutation this shares its wall with) · `feat-lr-fuel-reindex @ 04a94cbe` (pushed, gated).
+
 ## Context
 
 ### The wall (task #29, item 1), machine-characterized
