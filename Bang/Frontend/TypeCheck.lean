@@ -2142,16 +2142,37 @@ def letRecRow (name : String) (funBody : Surf) : EffRow :=
 
 /-- The μ-encoded fixpoint for `let rec f : T = <funBody'> in <bodyExpr'>` (ADR-0073; Landin's knot,
 NO new kernel primitive). `funBody'`/`bodyExpr'` are ALREADY elaborated (with `f : Thunk T` in scope).
-`Rec = μX. Thunk(X -> T)`; the self-knot `{ let #g = unfold sv in ($#g) sv } : Thunk T` reconstructs
-`f` from a self-value (`unfold` returns a RETURNER of the thunk, so it is let-bound before forcing —
-the #45 spike's shape). The OUTER knot (the user's call-site binding) is `divMark`-wrapped when
-`recRow` is nonempty (see `letRecRow`) → `f : Thunk ! {Div} T`, so `($f) x : … ! {Div}` (Div rides the
-`U`/judgment per ADR-0019/0020, NOT the arrow). The INNER knot stays pure so `recTy`'s `tThunk` (⊥)
-annotation holds. Emits only ordinary `Surf` the existing checker + kernel handle. -/
+`Rec = μX. Thunk(X -> T)`; the self-knot `{ let #g = unfold sv in ($#g) (fold #g) } : Thunk T`
+reconstructs `f` from a self-value (`unfold` returns a RETURNER of the thunk, so it is let-bound
+before forcing — the #45 spike's shape). The OUTER knot (the user's call-site binding) is
+`divMark`-wrapped when `recRow` is nonempty (see `letRecRow`) → `f : Thunk ! {Div} T`, so
+`($f) x : … ! {Div}` (Div rides the `U`/judgment per ADR-0019/0020, NOT the arrow). The INNER knot
+stays pure so `recTy`'s `tThunk` (⊥) annotation holds. Emits only ordinary `Surf` the existing
+checker + kernel handle.
+
+**`(fold #g)` NOT `sv` as the self-argument (#95 fix, the knot-SHARING encoding).** The self-
+application needs TWO things at `sv`'s type `Rec`: the unfolded function (`unfold sv`, forced via
+`#g`) AND `sv` ITSELF again, to hand the callee its own knot back. The ORIGINAL encoding wrote the
+SECOND occurrence as a bare `sv` — a second free reference to the SAME (growing, embedded) outer
+binder. The kernel's substitution (`Comp.substFrom`/`Val.substFrom`, `Bang/Core/Semantics/Subst.lean`
+— proof-bearing, untouched here) has NO sharing: whenever the ENCLOSING binder for `sv` fires
+(every re-entrant unfold), it copies `sv`'s bound value into EVERY free occurrence independently —
+`unfold sv` AND `… sv` each got their OWN full copy, and because `sv`'s value is `fold {inner}`
+(the WHOLE recursive closure, `inner` embedding the newly-unfolded `f`-thunk from the PREVIOUS
+level), each level's copy-of-a-copy compounded the residual ~2× per unfold — a `2^depth` blowup on
+deep re-entrant knots (issue #95; `docs/notes/dogfood-calc-findings.md` wall 1, `scratch/calc95/`).
+`fold #g` replaces the SECOND `sv`-reference with `#g` (the just-`unfold`ed, freshly LOCAL binding)
+re-wrapped in `fold` — semantically identical (`fold (unfold sv) = sv` by the fold/unfold iso,
+ADR-0029) but SYNTACTICALLY it removes `sv` as a free variable from the app-argument position
+entirely: the ENCLOSING (growing) `sv` substitution now touches exactly ONE occurrence (`unfold
+sv`'s operand) per level, not two, so the per-level residual stays CONSTANT-SIZE instead of
+doubling — turning the `2^depth` blowup into `O(depth)`. Measured: `examples/calc/main.bang` on
+`--compiled` 873s → ~7s (same value, `11021193`); `scratch/calc95/README.md` has the full
+before/after table. -/
 def buildLetRec (name : String) (t' : Ty) (funBody' bodyExpr' : Surf) (recRow : EffRow) : Surf :=
   let recTy : Ty := .tMu (.tThunk (.tArr (.tVar 0) t'))     -- μX. Thunk(X -> T)
   let knotBody : String → Surf := fun sv =>
-    .lett "#g" (.unfoldS (.var sv)) (.app (.force (.var "#g")) (.var sv))
+    .lett "#g" (.unfoldS (.var sv)) (.app (.force (.var "#g")) (.foldS (.var "#g")))
   let inner : Surf := .annotS (.lam "#self" (.lett name (.thunk (knotBody "#self")) funBody')) (.tArr recTy t')
   let recVal : Surf := .annotS (.foldS (.thunk inner)) recTy
   let outerKnot : Surf :=                                     -- Div rides the outer (call-site) thunk

@@ -16,10 +16,12 @@
 
 - **Blocker: 0** — the program reaches DONE on the gate engine (`bang run` env),
   deterministic output `11021193`, `check-examples` green.
-- **Correctness (in a non-gate tool): 2** — (1) `bang run --compiled` HANGS on
-  the parser where env + ck both return the right answer; (2) `bang fmt` is NOT
+- **Correctness (in a non-gate tool): 2** — (1) `bang run --compiled` was slow
+  (not hung — a residual-recompile cost pathology) on the parser where env + ck
+  both returned the right answer at full speed; **FIXED issue #95, 2026-07-10**
+  (see the wall's own section below for the numbers); (2) `bang fmt` is NOT
   semantics-preserving on `$(Mod.op) arg` — it emits a program that no longer
-  parses/runs.
+  parses/runs (still open).
 - **Missing-feature / arity wall: 2** — constructor payload arity capped at ≤ 2;
   no mutual `let rec` AND sibling nested `let rec`s can't forward-reference.
 - **Papercut: 3** — `use Mod (f)` won't hoist a `pub let rec` (only plain `let` +
@@ -87,24 +89,31 @@ continuation when a sibling re-invokes the outer name.
 **Repro**: `examples/calc/Parser.bang` verbatim + any input containing `+`, `-`,
 or `(` (e.g. `"1 + 2"`), run under `bang run --compiled`. Kill with `timeout`.
 
-**RESOLVED verdict (issue #95, 2026-07-10 step-count probe — `scratch/calc95/`)**: it is
-**NOT a hang and NOT a loop** — the CalcVM `exec` **terminates with the correct value**
-(env = ck = compiled = `11021193` component-wise; `"1+2"` → 3 in ~44 s, `"(7)"` → 7 in
-~51 s). It is a **super-linear residual-recompile COST**, so at the 60 s dogfood timeout it
-*presented* as a hang. A step-counting mirror of `exec` shows only ~741 machine steps for
-`"1+2"`, but the residual `Code` reaches **~331K nodes** and wall-time tracks
-`totalSubstWork` (linear in per-step substitution work), not step count. The residual
-**doubles exponentially** in a single eval descent (`18K→34K→100K→166K→331K`, steps ~505–581).
-**Mechanism**: the ADR-0073 `let rec` μ-encoding (`buildLetRec`) knot body
-`let #g = unfold sv in ($#g) sv` mentions the knot var `sv` **twice**, so each `SUBST`
-doubles the captured `fold {inner}` (the whole function body); a deep re-entrant unfold
-chain (calc's parseFactor re-entering parseExpr through 4 large nested siblings) compounds
-it ~2^depth. **This is a COST fix, not a soundness fix** (value-agreement / invariant #1
-holds) — candidates (μ-knot sharing, `letC`-share, size-thresholded prompt `out of fuel`)
-all touch `AbstractMachine.lean`/`buildLetRec` and await an operator ruling. Whitespace is
-NOT the trigger (spaced `"1 + 2"` behaves identically to `"1+2"`); the discriminator is the
-`+`/`-`/`(` production (exprLoop = the re-entrant outer knot) vs `*` (termLoop). Minimal
-qualitative repro: `scratch/calc95/repro-min.bang` (<15 lines, env=ck=compiled=12).
+**FIXED (issue #95, 2026-07-10 — route (i), elaborator-side μ-knot sharing in `buildLetRec`,
+branch `fix-95-knot-sharing`)**: it was **NOT a hang and NOT a loop** — the CalcVM `exec`
+always **terminated with the correct value** (env = ck = compiled = `11021193`
+component-wise), just paying a **super-linear residual-recompile COST**, so at the 60 s
+dogfood timeout it *presented* as a hang. **Mechanism**: the ADR-0073 `let rec` μ-encoding
+(`buildLetRec`) knot body `let #g = unfold sv in ($#g) sv` mentioned the knot var `sv`
+**twice**, so each `SUBST` doubled the captured `fold {inner}` (the whole function body); a
+deep re-entrant unfold chain (calc's parseFactor re-entering parseExpr through 4 large nested
+siblings) compounded it ~2^depth (residual `Code` reached ~331K nodes on `"1+2"`, exponential
+doubling burst `18K→34K→100K→166K→331K` within one eval descent). **Fix**: `buildLetRec`'s
+knot body now applies the unfolded self-function to `fold #g` (a re-wrap of the just-unfolded,
+freshly-LOCAL `#g` binding) instead of the raw `sv` — semantically identical by the
+fold/unfold iso (ADR-0029) but removes the SECOND free occurrence of the growing self-value
+from the substitution target, so each level's residual cost stays constant instead of
+doubling. **This was a COST fix, not a soundness fix** (value-agreement / invariant #1 held
+throughout, before and after) — purely elaborator-side (`Bang/Frontend/TypeCheck.lean`); the
+kernel/machine (`Subst.lean`/`AbstractMachine.lean`) is untouched, invariant #4 preserved.
+**Measured**: `examples/calc/main.bang` on `--compiled` 873 s → **7.3–7.9 s** (~115×,
+same value `11021193`); `"1+2"` single-input 43 s → **0.36 s** (~120×); `"1+2"` probe
+`maxCodeSize` 331,587 → 19,342 (~17×), `totalSubstWork` 9,365,512 → 1,291,988 (~7×); the
+codeSize doubling burst is GONE (flat/linear region instead). Full before/after table:
+`scratch/calc95/README.md`. Whitespace was NEVER the trigger (spaced `"1 + 2"` behaved
+identically to `"1+2"`); the discriminator was the `+`/`-`/`(` production (exprLoop = the
+re-entrant outer knot) vs `*` (termLoop) — moot now that both cost the same. Minimal
+qualitative repro: `scratch/calc95/repro-min.bang` (<15 lines, env=ck=compiled=12, unchanged).
 
 ## CORRECTNESS — `bang fmt` breaks `$(Mod.op) arg` (not semantics-preserving)
 

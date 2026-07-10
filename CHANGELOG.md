@@ -152,7 +152,10 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **dx** — generated bang TextMate grammar + Shiki highlighting (plan 013 slice 1) (`dec48cf5`)
 - **docs** — wire doc-gen4 via a docbuild/ subproject + `just docs` (plan 010 steps 2-3) (`e1a9fc24`)
 - **cli** — bang new NAME [--module] — scaffold a runnable example (plan 013 s7) (`1d40ad95`)
+- **examples** — failure injection as a second Choice dimension — ndet-repkv-fail-a/-b (R2 addendum's named next rung) (`5e75ba8e`)
 - **harness** — check-examples.sh --update NAME — deliberate snapshot acceptance (plan 013 s8) (`05cd8319`)
+- **emit** — rung-2b PROBE — state handlers → in-place wasm locals (ADR-0059 tail-call leg) (`b0f3cb3d`)
+- **dx** — just watch FILE — re-run `just check FILE` on save (plan 013 s9) (`73b8b56e`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
