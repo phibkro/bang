@@ -1510,3 +1510,239 @@
             one-liner: a DP privacy accountant (a runtime/audit tool) becomes a compile-time TYPE
             DISCIPLINE. Post-v1; named as the family's metric-grade member.},
 }
+
+% ─── R5 refinement-types survey corpus (docs/notes/refinement-types-survey.md) — bib-only ───
+
+@inproceedings{rondon-pldi08-liquid-types,
+  keywords = {topic:refinement-types grounds:refinement-types-survey role:foundational},
+  author  = {Rondon, Patrick M. and Kawaguchi, Ming and Jhala, Ranjit},
+  title   = {Liquid Types},
+  booktitle = {PLDI},
+  year    = 2008,
+  doi     = {10.1145/1375581.1375602},
+  note    = {The origin of SMT-backed decidable refinement types: HM inference + predicate
+            abstraction over a finite qualifier vocabulary, subtyping edges discharged as
+            quantifier-free SMT entailment queries. refinement-types-survey.md §1 census fact 1:
+            decidability is bought by FRAGMENT RESTRICTION, and the check is
+            decidable-via-an-oracle (the solver answers each edge).},
+}
+
+@inproceedings{vazou-icfp14-refinement-types-haskell,
+  keywords = {topic:refinement-types grounds:refinement-types-survey role:confirmed-sota},
+  author  = {Vazou, Niki and Seidel, Eric L. and Jhala, Ranjit and Vytiniotis, Dimitrios and Peyton Jones, Simon},
+  title   = {Refinement Types for Haskell},
+  booktitle = {ICFP},
+  year    = 2014,
+  doi     = {10.1145/2628136.2628161},
+  note    = {Liquid Haskell. THE totality-dependency finding (refinement-types-survey.md §1 fact 2):
+            refinement typing is UNSOUND under lazy evaluation (a binder may be bound to a diverging
+            term), recovered by stratifying binders by termination. bang's CBPV kernel dodges this
+            BY CONSTRUCTION (binders bind values; letC forces first) -- the survey's §3
+            compose-point bonus.},
+}
+
+@inproceedings{swamy-popl16-fstar-dependent-multimonadic,
+  keywords = {topic:refinement-types topic:dependent-effects grounds:refinement-types-survey grounds:lambda-cube-ascent-survey role:closest-prior-art},
+  author  = {Swamy, Nikhil and Hri\c{t}cu, C\u{a}t\u{a}lin and Keller, Chantal and Rastogi, Aseem and Delignat-Lavaud, Antoine and Forest, Simon and Bhargavan, Karthikeyan and Fournet, C\'{e}dric and Strub, Pierre-Yves and Kohlweiss, Markulf and Zinzindohou\'{e}, Jean-Karim and Zanella-B\'{e}guelin, Santiago},
+  title   = {Dependent Types and Multi-Monadic Effects in F*},
+  booktitle = {POPL},
+  year    = 2016,
+  doi     = {10.1145/2837614.2837655},
+  note    = {F*: full dependency in the Tot base, effects layered above via WP
+            (predicate-transformer) monads, obligations discharged by Z3 + manual proofs. BOTH
+            surveys' engineering-grade existence proof: the composed design (graded/effect-indexed
+            computations x refined value types) at scale, and the total-base effect ladder
+            effects-vs-cic.md names as the nearest existing system. Also the rung-2 cautionary tale
+            (solver-discharge brittleness).},
+}
+
+@inproceedings{brady-ecoop21-idris2-qtt-in-practice,
+  keywords = {topic:refinement-types topic:graded-types grounds:refinement-types-survey grounds:lambda-cube-ascent-survey role:census-neighbour},
+  author  = {Brady, Edwin C.},
+  title   = {Idris 2: Quantitative Type Theory in Practice},
+  booktitle = {ECOOP},
+  year    = 2021,
+  doi     = {10.4230/LIPIcs.ECOOP.2021.9},
+  note    = {The solver-free pole of the refinement census (§1): full dependency, zero SMT,
+            obligations discharged by conversion + explicit proofs; TCB = the kernel. Also the
+            shipped witness that dependency and GRADES (QTT 0/1/omega on binders) coexist in one
+            judgment -- the lambda-cube survey's §5 grades-compose-with-dependency row.},
+}
+
+@misc{lehmann-pldi23-flux-liquid-types-rust,
+  keywords = {topic:refinement-types grounds:refinement-types-survey role:shape-anchor},
+  author  = {Lehmann, Nico and Geller, Adam T. and Vazou, Niki and Jhala, Ranjit},
+  title   = {Flux: Liquid Types for Rust},
+  year    = 2023,
+  doi     = {10.48550/arXiv.2207.04034},
+  note    = {PLDI 2023. The tested-stratum-checker PRECEDENT (refinement-types-survey.md §4
+            consequence 1): a liquid-types layer bolted onto an existing language's surface with the
+            core untouched -- trusted like a linter, not like the kernel. Exactly the stratification
+            posture bang's refinement checker would take, minus bang's solver-free rung 1 and
+            proof-reconstruction rung 3. \url{https://arxiv.org/abs/2207.04034}},
+}
+
+@inproceedings{gaboardi-esop21-graded-hoare-logic,
+  keywords = {topic:grades topic:refinement-types grounds:refinement-types-survey role:confirmed-sota},
+  author  = {Gaboardi, Marco and Katsumata, Shin-ya and Orchard, Dominic and Sato, Tetsuya},
+  title   = {Graded Hoare Logic and its Categorical Semantics},
+  booktitle = {ESOP},
+  year    = 2021,
+  doi     = {10.1007/978-3-030-72019-3_9},
+  note    = {The literature's exact pronouncement on refinements-vs-grades
+            (refinement-types-survey.md §3 failure 3): GHL parameterizes a program logic by a grade
+            (preordered monoid folded along composition) AND Hoare assertions (pre/post predicates)
+            as TWO SEPARATE parameters -- the closest prior art to "refinements as a grade"
+            deliberately does not merge them. Corroborates the survey's REJECTED verdict on the
+            grade-axis reading. arXiv:2007.11235.},
+}
+
+@inproceedings{mohamed-cav25-lean-smt,
+  keywords = {topic:agentic-proving topic:refinement-types grounds:refinement-types-survey role:recipe},
+  author  = {Mohamed, Abdalrhman and Mascarenhas, Tomaz and Khan, Harun and Barbosa, Haniel and Reynolds, Andrew and Qian, Yicheng and Tinelli, Cesare and Barrett, Clark},
+  title   = {lean-smt: An SMT Tactic for Discharging Proof Goals in Lean},
+  booktitle = {CAV},
+  year    = 2025,
+  doi     = {10.1007/978-3-031-98682-6_11},
+  note    = {The rung-3 TCB story (refinement-types-survey.md §4): cvc5 emits a proof OBJECT,
+            reconstructed and replayed through Lean's small kernel -- the solver becomes an
+            untrusted proof FINDER with zero TCB growth. Because bang's host IS Lean, the SMT
+            refinement rung can be TCB-neutral, which none of LH/F*/Flux can claim (they trust Z3
+            forever). SMTCoq is the (slower-moving, fully-verified-checker) Coq ancestor.
+            arXiv:2505.15796.},
+}
+
+% ─── R6 lambda-cube-ascent survey corpus (docs/notes/lambda-cube-ascent-survey.md) — bib-only ───
+
+@phdthesis{vakar-thesis17-effectful-dependent-types,
+  keywords = {topic:dependent-effects topic:cbpv grounds:lambda-cube-ascent-survey role:substrate},
+  author  = {V\'{a}k\'{a}r, Matthijs},
+  title   = {In Search of Effectful Dependent Types},
+  school  = {University of Oxford},
+  year    = 2017,
+  note    = {Dependent CBPV: dCBPV- (types depend only on values; dependency does NOT cross
+            sequencing) is well-behaved -- subject reduction, determinism, SN, semantics "no more
+            complicated than simply typed" -- while dCBPV+ (Kleisli extensions, needed for full
+            CBV/CBN translations of DTT) turns hairy per-effect. The lambda-cube survey's §5 shape
+            for a future kernel Pi: dCBPV--shaped, over the total fragment. Companion: "A Framework
+            for Dependent Types and Effects" (arXiv:1512.08009).
+            \url{https://www.cs.ox.ac.uk/people/aleks.kissinger/theses/vakar-thesis.pdf}},
+}
+
+@inproceedings{ahman-fossacs16-dependent-fibred-effects,
+  keywords = {topic:dependent-effects topic:cbpv grounds:lambda-cube-ascent-survey role:substrate},
+  author  = {Ahman, Danel and Ghani, Neil and Plotkin, Gordon D.},
+  title   = {Dependent Types and Fibred Computational Effects},
+  booktitle = {FoSSaCS},
+  year    = 2016,
+  doi     = {10.1007/978-3-662-49630-5_3},
+  note    = {Value/computation split with TYPES DEPENDING ONLY ON VALUE TERMS; computational
+            Sigma-types account for dependency across sequencing; fibred adjunction models.
+            Independent confirmation of the dCBPV- seam, WITH algebraic effects -- the closest of
+            the dependent-CBPV family to bang's handler kernel. Follow-up: Ahman, "Handling Fibred
+            Algebraic Effects" (POPL 2018, doi:10.1145/3158095) adds handlers.},
+}
+
+@article{pedrot-popl20-fire-triangle,
+  keywords = {topic:dependent-effects topic:cbpv grounds:lambda-cube-ascent-survey role:foundational},
+  author  = {P\'{e}drot, Pierre-Marie and Tabareau, Nicolas},
+  title   = {The Fire Triangle: How to Mix Substitution, Dependent Elimination, and Effects},
+  journal = {Proc. ACM Program. Lang.},
+  volume  = 4,
+  number  = {POPL},
+  year    = 2020,
+  doi     = {10.1145/3371126},
+  note    = {THE no-go theorem (lambda-cube-ascent-survey.md §3/§6): substitution + unrestricted
+            dependent elimination + effects is inconsistent; dCBPV ("partial-derivative CBPV")
+            shows CBN must restrict dependent elimination and CBV must restrict substitution.
+            Upgrades the repo's CoC-corner exclusion from a taste decision to a THEOREM-BACKED
+            non-goal; the quarantine effects-vs-cic.md describes is mandatory.},
+}
+
+@inproceedings{casinghino-popl14-combining-proofs-programs,
+  keywords = {topic:dependent-effects grounds:lambda-cube-ascent-survey role:shape-anchor},
+  author  = {Casinghino, Chris and Sj\"{o}berg, Vilhelm and Weirich, Stephanie},
+  title   = {Combining Proofs and Programs in a Dependently Typed Language},
+  booktitle = {POPL},
+  year    = 2014,
+  doi     = {10.1145/2535838.2535883},
+  note    = {Zombie/Trellys: ONE syntax, TWO fragments -- a logical (total, proof-bearing) fragment
+            and a programmatic (partial, type-safe-only) fragment with explicit cross-fragment
+            rules. bang's stratification principle (verified total core / fuel-bounded Div superset,
+            explicit seam) independently invented as a language design -- the survey's §5
+            fragment-separation row.},
+}
+
+@inproceedings{eisenberg-haskell12-singletons,
+  keywords = {topic:dependent-effects grounds:lambda-cube-ascent-survey role:recipe},
+  author  = {Eisenberg, Richard A. and Weirich, Stephanie},
+  title   = {Dependently Typed Programming with Singletons},
+  booktitle = {Haskell Symposium},
+  year    = 2012,
+  doi     = {10.1145/2364506.2364522},
+  note    = {Faked dependency inside System-F-with-promotion: values promoted to types, paired with
+            runtime singleton witnesses. Evidence for the survey's §2 rung 3: the ergonomic SURFACE
+            of dependency does not require kernel Pi (GHC ran a dependently-flavored ecosystem on
+            this for a decade), at real annotation cost. The lambda-P-closed rung's general
+            technique when the index must FLOW through generic code.},
+}
+
+@inproceedings{moon-esop21-graded-modal-dtt,
+  keywords = {topic:grades topic:dependent-effects grounds:lambda-cube-ascent-survey role:frontier},
+  author  = {Moon, Benjamin and Eades III, Harley and Orchard, Dominic},
+  title   = {Graded Modal Dependent Type Theory},
+  booktitle = {ESOP},
+  year    = 2021,
+  doi     = {10.1007/978-3-030-72019-3_17},
+  note    = {GrTT: a dependent type theory graded by a parameterizable data-flow analysis
+            (parametric quantifiers, linearity in a dependent setting). With Idris-2/QTT, the
+            witness that the GRADE axis and the DEPENDENCY axis compose rather than compete
+            (lambda-cube-ascent-survey.md §5) -- confirming the kernel-substrate grade-family
+            framing survives a cube ascent. arXiv:2010.13163.},
+}
+
+@article{griesemer-oopsla20-featherweight-go,
+  keywords = {topic:monomorphization grounds:lambda-cube-ascent-survey role:census-neighbour},
+  author  = {Griesemer, Robert and Hu, Raymond and Kokke, Wen and Lange, Julien and Taylor, Ian Lance and Toninho, Bernardo and Wadler, Philip and Yoshida, Nobuko},
+  title   = {Featherweight Go},
+  journal = {Proc. ACM Program. Lang.},
+  volume  = 4,
+  number  = {OOPSLA},
+  year    = 2020,
+  doi     = {10.1145/3428217},
+  note    = {FG/FGG + monomorphisation as Go generics' formal model. With ellis-icfp22: the
+            canonical INSTANCE-DISCOVERY NON-TERMINATION witness (Box[int].Nest needs
+            Box[Box[int]].Nest needs ...) -- "perfectly well-behaved programs may produce infinitely
+            many type instantiations." Grounds the survey's §4 finiteness gate: Go ships a static
+            nomono check, the shape probe 2 would replicate as a bang fitness function.},
+}
+
+@misc{ellis-icfp22-generic-go-monomorphisation,
+  keywords = {topic:monomorphization grounds:lambda-cube-ascent-survey role:census-neighbour},
+  author  = {Ellis, Stephen and Zhu, Shuofei and Yoshida, Nobuko and Song, Linhai},
+  title   = {Generic Go to Go: Dictionary-Passing, Monomorphisation, and Hybrid},
+  year    = 2022,
+  doi     = {10.48550/arXiv.2208.06810},
+  note    = {ICFP 2022. Measures the design space Go 1.18 actually shipped (hybrid
+            monomorphisation + call-graph dictionary-passing) and documents where pure
+            monomorphisation is UNDEFINED (unbounded instance sets under polymorphic-recursion-
+            shaped programs). The engineering half of the survey's §4 wall.
+            \url{https://arxiv.org/abs/2208.06810}},
+}
+
+@article{lutze-oopsla25-simple-essence-monomorphization,
+  keywords = {topic:monomorphization grounds:lambda-cube-ascent-survey role:confirmed-sota},
+  author  = {Lutze, Matthew and Schuster, Philipp and Brachth\"{a}user, Jonathan Immanuel},
+  title   = {The Simple Essence of Monomorphization},
+  journal = {Proc. ACM Program. Lang.},
+  volume  = 9,
+  number  = {OOPSLA1},
+  year    = 2025,
+  doi     = {10.1145/3720472},
+  note    = {The monomorphization SOTA: a type-preserving, semantics-preserving translation via
+            type-based flow analysis that handles HIGHER-RANK and EXISTENTIAL types -- refuting the
+            folklore that rank-n kills monomorphization -- and names "polymorphic packing" (the
+            existential analog of polymorphic recursion) as the remaining divergence. The general
+            form of the survey's §4 finiteness criterion, and the analysis probe 2 would simplify
+            into a fitness gate.},
+}

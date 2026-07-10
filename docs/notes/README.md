@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (37)
+## active (39)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -26,6 +26,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`god-file-seams.md`](god-file-seams.md) — God-file seam map — split proposal for `TypeCheck.lean`/`AbstractMachine.lean`
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
 - [`kernel-substrate-survey.md`](kernel-substrate-survey.md) — Kernel-as-substrate — design survey: the verified semantic substrate + the profile ladder
+- [`lambda-cube-ascent-survey.md`](lambda-cube-ascent-survey.md) — Lambda-cube ascent — design survey (R6, ROADMAP §Pre-v1 research ladder)
 - [`laws-taxonomy.md`](laws-taxonomy.md) — The taxonomy of laws — model-shaped vs morphism-shaped, and where a property lives
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
@@ -35,6 +36,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`os-inspiration-survey.md`](os-inspiration-survey.md) — OS-inspiration survey — what operating systems teach bang about resources, scheduling, and access policy
 - [`proof-export-survey.md`](proof-export-survey.md) — Proof export (Q43) — design survey: a bang `law` becomes a Lean proof goal, proved once, cached
 - [`q38-handler-surface-survey.md`](q38-handler-surface-survey.md) — Handler surface + the module≟trait≟effect unification — empirical design inputs (Q38 / Stage-7)
+- [`refinement-types-survey.md`](refinement-types-survey.md) — Refinement types vs grades — design survey (R5, ROADMAP §Pre-v1 research ladder)
 - [`spec-handover.md`](spec-handover.md) — Spec handover — research/engineering interface
 - [`spec-proof-discipline.md`](spec-proof-discipline.md) — Spec proof discipline
 - [`stage5-lr-design.md`](stage5-lr-design.md) — Stage-5 LR design map — the user-effect binary LR (#44 Stage 5)
