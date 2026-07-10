@@ -5181,6 +5181,63 @@ module-interface work's territory — this reservation is the v1 stopgap, not th
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
         | .error _ => false)
 
+/-! ### ADR-0095 D1 (RULED) `handle e with Name as h { … }` — the REAL SURFACE corpus (#21
+s7probe/#44 Stage 7 e2e battery). Kernel-adjacent complement to `examples/handle-custom-*`
+(the run-oracle gate, `tools/check-examples.sh`): these `#guard`s pin the TYPE-CHECK verdicts and
+the D4 teaching diagnostic, catching a regression at `just check`/compiled-`#guard` speed rather
+than only at the slower example-run gate. `checkProg`/`checkAndLower` are the SAME production
+pipeline `bang check`/`bang run` use (no separate test-only path). -/
+
+-- the ADR-0095 D1 tracer bullet's OWN worked example (renamed read→fetch — `read` collides with
+-- the STM built-in's reserved name, #21 s7probe Finding 5) types cleanly.
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } handle (net.fetch(1)) + (net.fetch(2)) with Net as net { fetch(n) => n * 10 }"
+  with | .ok _ => true | .error _ => false)
+
+-- the Stage-2 kernel's `customResume`/`customAbortCoexist` #guards (`Eval.lean`), ported to
+-- SOURCE TEXT, both type-check (the `bang eval` RUN-oracle check lives in
+-- `examples/handle-custom-resume` / `examples/handle-custom-abort-coexist`, gated by
+-- `tools/check-examples.sh` — this #guard pins the FASTER type-check-only verdict alongside it).
+#guard (match checkProg
+    "effect Reader { fetch : Int -> Int } handle (let r = net.fetch(5) in r + 1) with (Reader 100) as net { fetch(x) => x + 100 }"
+  with | .ok _ => true | .error _ => false)
+#guard (match checkProg
+    "effect Reader { fetch : Int -> Int } handle (handle (let r = raise 42 in net.fetch(5)) with (Reader 100) as net { fetch(x) => x + 100 })"
+  with | .ok _ => true | .error _ => false)
+
+-- `with` is RESERVED (#21 s7probe Finding 3 — without it, `pApp`'s application-fold silently
+-- swallowed `with Name {…}` as an ordinary application chain instead of erroring): a program
+-- using `with` as a bare identifier is rejected at PARSE time.
+#guard (match Bang.Surface.parseProg "effect Net { fetch : Int -> Int } let with = 5 with" with
+        | .error _ => true | .ok _ => false)
+
+-- missing clause coverage (`ping` has no clause) is a clause-level diagnostic naming the effect
+-- + the uncovered op, not a bare crash.
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int, ping : Int -> Int } handle net.fetch(1) with Net as net { fetch(n) => n }"
+  with
+  | .error m => (m.splitOn "has no clause").length > 1
+  | .ok _    => false)
+
+-- an unknown op name in a clause head is a clause-level diagnostic naming the effect.
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } handle net.fetch(1) with Net as net { fetch(n) => n, ping(n) => n }"
+  with
+  | .error m => (m.splitOn "is not an operation of effect").length > 1
+  | .ok _    => false)
+
+-- ADR-0095 D4 (RULED): the TEACHING diagnostic — a clause body that performs an effect before
+-- resuming (here, `raise n`) is REJECTED with the specific v1-restriction message naming ADR-0065
+-- + Q27 (the general-body entry gate), never a bare type-mismatch. #21 s7probe WALL-4 fix:
+-- `checkHClauses` now types clause bodies via `synthSC` (computations) + an explicit
+-- ret-shape/effect-free row check, not `synthSV` (which had no `.binopS` arm and rejected EVERY
+-- non-atomic clause body for the wrong reason before this fix).
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } handle net.fetch(1) with Net as net { fetch(n) => raise n }"
+  with
+  | .error m => (m.splitOn "ret").length > 1 && (m.splitOn "ADR-0065").length > 1 && (m.splitOn "Q27").length > 1
+  | .ok _    => false)
+
 /-! ### `lawInstancesOf` (#60 seam) — enumerates real trait×impl law instances, body rendered
 back to source text via `showSurf`, reusing the existing `vecLawProg`/`intOrdProg` corpus. -/
 

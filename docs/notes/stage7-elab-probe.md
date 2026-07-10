@@ -1,3 +1,5 @@
+<!-- note-status: active -->
+
 # Stage-7 `handle … with` elaboration mechanics probe (#21 s7probe)
 
 **Status**: DONE — implemented against the RULED ADR-0095 grammar (accepted 2026-07-10,

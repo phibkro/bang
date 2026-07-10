@@ -1,0 +1,7 @@
+effect Reader { fetch : Int -> Int }
+handle
+  (handle
+    (let r = raise 42 in net.fetch(5))
+  with (Reader 100) as net {
+    fetch(x) => x + 100
+  })

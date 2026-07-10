@@ -56,7 +56,7 @@ meta import Bang.Frontend.Diagnostics
 public import Bang.Frontend.Diagnostics
 
 open Bang
-open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings Span Ty OpSig OpDef)
+open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses Span Ty OpSig OpDef)
 
 namespace Bang.Query
 
@@ -309,12 +309,21 @@ def surfUsesVar (nm : String) : Surf → Bool
   | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
   | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
   | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
+  -- ADR-0095 (landed post-copy, #21 s7probe rebase fix): `handleCustomS` mirrors
+  -- `TypeCheck.surfUsesVar`'s own arm — `x`/`h` are binders (a clause's arg / the cap name),
+  -- NOT modeled for shadowing, matching every other binder site in this copy.
+  | .handleCustomS _lbl n .none _h cls b       => surfUsesVar nm n || hClausesUseVar nm cls || surfUsesVar nm b
+  | .handleCustomS _lbl n (.one p) _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
+  | .handleCustomS _lbl n (.two p q) _h cls b  => surfUsesVar nm n || surfUsesVar nm p || surfUsesVar nm q || hClausesUseVar nm cls || surfUsesVar nm b
 def dArmsUseVar (nm : String) : DArms → Bool
   | .nil             => false
   | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
 def letBindingsUseVar (nm : String) : LetBindings → Bool
   | .nil            => false
   | .cons _ e rest  => surfUsesVar nm e || letBindingsUseVar nm rest
+def hClausesUseVar (nm : String) : HClauses → Bool
+  | .nil               => false
+  | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
 end
 
 #guard surfUsesVar "x" (.var "x") == true
