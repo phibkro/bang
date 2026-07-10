@@ -1,0 +1,42 @@
+-- N-QUEENS in bang — a stress test of the pure Div fragment.
+-- Counts solutions for the n-queens puzzle. Board = List Int of row
+-- positions of already-placed queens (most recent first). The classic
+-- two nested loops (per-column recursion x per-row candidate loop) are
+-- FUSED into one self-recursion because sibling let recs cannot
+-- forward-reference (no mutual let rec in v1).
+
+data List a = Nil | Cons(a, List a)
+
+-- safeAt q d bs: is a queen at row q, d columns away from the nearest
+-- placed queen, attacked by nothing in bs? 1 = safe, 0 = attacked.
+let rec safeAt : Int -> Int -> List Int -> Int ! {Div} =
+  fun q => fun d => fun bs =>
+    match (bs : List Int) {
+      Nil -> 1,
+      Cons(b, t) ->
+        if b == q then 0
+        else if b == q + d then 0
+        else if b + d == q then 0
+        else ($safeAt) q (d + 1) t
+    }
+
+-- solve n col q board: number of completions. col = queens placed so
+-- far; q = next candidate row in this column. The col==n check must
+-- precede the q==n check (a full board is a solution regardless of q).
+let rec solve : Int -> Int -> Int -> List Int -> Int ! {Div} =
+  fun n => fun col => fun q => fun board =>
+    if col == n then 1
+    else if q == n then 0
+    else
+      (if (($safeAt) q 1 board) == 1
+         then ($solve) n (col + 1) 0 (Cons(q, board))
+         else 0)
+      + ($solve) n col (q + 1) board
+
+-- 4-queens = 2, 5-queens = 10, 6-queens = 4. Encode all three:
+-- answer = q4 * 10000 + q5 * 100 + q6  =  2*10000 + 10*100 + 4 = 21004
+let q4 = ($solve) 4 0 0 Nil
+let q5 = ($solve) 5 0 0 Nil
+let q6 = ($solve) 6 0 0 Nil
+
+let main = q4 * 10000 + q5 * 100 + q6

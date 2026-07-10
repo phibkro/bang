@@ -1,0 +1,32 @@
+-- MINI-DST in bang — replicated-KV delivery-order rounds under a
+-- SWAPPABLE scheduler effect. The seed threads through the DRIVER's
+-- recursion (handler clauses are ret-shape + param is read-only, so the
+-- handler cannot own evolving state) — the handler owns only the POLICY
+-- (seed -> delivery bit).
+--
+-- Each round: two replicas each draw a delivery order for the same pair
+-- of racing writes. Round converges iff both replicas draw the same bit.
+-- Answer: converged-round count over 16 rounds, under the LCG policy.
+
+effect Sched { bit : Int -> Int }
+
+-- LCG step: s' = (s * 25 + 17) mod 65536, spelled with s - (s/k)*k.
+let rec step : Int -> Int ! {Div} = fun s =>
+  let t = s * 25 + 17 in t - (t / 65536) * 65536
+
+let main =
+  handle
+    let rec go : Int -> Int -> Int -> Int ! {Div, Sched} =
+      fun n => fun s => fun acc =>
+        if n == 0 then acc
+        else
+          let o1 = sched.bit(s) in
+          let s1 = ($step) s in
+          let o2 = sched.bit(s1) in
+          let s2 = ($step) s1 in
+          ($go) (n - 1) s2 (acc + (if o1 == o2 then 1 else 0))
+    in ($go) 16 12345 0
+  with Sched as sched {
+    -- policy: extract bit 6 of the seed (pure arithmetic only).
+    bit(s) => (s / 64) - ((s / 64) / 2) * 2
+  }
