@@ -883,9 +883,11 @@ def expectF (c : ICTy) : Infer (QTT × IVTy) := do
 
 /-- Run an inference action from an empty state, zonk, and zonk-EXTRACT to a kernel `VTy` (the concrete
 answer the elaborator's resolution sites + the boundary need). A residual value hole extracts to a
-reserved-range `tvar`; a residual comp hole fails loud. -/
-def runInferV (act : Infer IVTy) : Except String VT := do
-  let iv ← (do zonkV bigFuel (← act)).run' {}
+reserved-range `tvar`; a residual comp hole fails loud. `effects` (default `[]`): same WALL-3-class
+seeding fix as `zonkInferC` below — a fresh `USt` here dropped the effects table for any value
+inference that descends into a user-effect perform. -/
+def runInferV (act : Infer IVTy) (effects : List (String × EffectInfo) := []) : Except String VT := do
+  let iv ← (do zonkV bigFuel (← act)).run' { effects := effects }
   extractV iv
 /-- As `runInferC`, but keep the ZONKED `ICTy` (no extraction) — for the elaborator's chole-tolerant
 returner probes (`anfSplit`, `let`-RHS), which must inspect a higher-order result WITHOUT failing on a
@@ -5338,6 +5340,16 @@ pipeline `bang check`/`bang run` use (no separate test-only path). -/
   with | .ok _ => true | .error _ => false)
 #guard (match checkProg
     "effect Reader { fetch : Int -> Int } handle (handle (let r = raise 42 in net.fetch(5)) with (Reader 100) as net { fetch(x) => x + 100 })"
+  with | .ok _ => true | .error _ => false)
+
+-- `runInferV` `effects` seeding (plan 003 — the fifth WALL-3-class candidate, verdict LATENT):
+-- a user-effect perform inside a THUNK bound by `let`, reached under a binop (the elaborator's
+-- `runInferV` A-normalization probes). Pins the seeding contract: this types cleanly — the
+-- throwaway `runInferV` probes are non-fatal on failure and the CHECKER (seeded via
+-- `runInferC env.effects`) rules, so `runInferV`'s default `effects := []` stays
+-- behaviour-identical at every pre-existing call site.
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } handle (let t = {net.fetch(1)} in $t) + 0 with Net as net { fetch(n) => n * 10 }"
   with | .ok _ => true | .error _ => false)
 
 -- `with` is RESERVED (#21 s7probe Finding 3 — without it, `pApp`'s application-fold silently
