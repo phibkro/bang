@@ -1,0 +1,22 @@
+# tools/deadcode-allow.txt — declarations intentionally NOT reachable from the
+# dead-code roots (Bang/Audit.lean headlines + Main's `main`), yet KEPT on purpose.
+#
+# Read by tools/DeadCode.lean (`just dead-code`). Each non-comment line is a FULLY
+# QUALIFIED declaration name; the analyzer subtracts these from its unreachable set
+# so an intentional park does not show as noise. `#dead_code` is ADVISORY — never a
+# hard gate — so this file curates signal, it does not silence a failure.
+#
+# Sibling of tools/refs-allow.txt (dangling-reference exceptions): same discipline —
+# an entry here is a DOCUMENTED park with a reason, not a place to hide real rot.
+# When you delete the parked lemma, delete its line too. A NEW unreachable decl that
+# is genuinely dead should be DELETED, not allow-listed.
+#
+# Categories a legitimate park falls into:
+#   - Witness/refutation lemmas imported by NO headline (they exist to be *built*, as
+#     do-not-weaken regression witnesses — the `Bang.+` glob compiles them; the gate
+#     is that they build, not that a headline calls them).
+#   - Public API surface staged AHEAD of its first caller (a `public` export a sibling
+#     lane will consume next slice; parked with the issue/task that will use it).
+#   - Alternate-form lemmas kept beside their used twin for readers (documented pair).
+#
+# ── entries (fully-qualified name — one per line — with a trailing `# why` comment) ──
