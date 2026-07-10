@@ -42,9 +42,10 @@ per-step-`Comp.subst` fix, option A1: env semantics in the machine, substitution
 recursion/strings (ADR-0073/0074) all shipped into it — the verified kernel/census stayed axiom-clean throughout.
 
 **Active parallel work** (task board + `CHANGELOG.md` are the SSoT): `bang rewrite` slice 1 (#81, in flight); the
-#62 converse-custom `run_evalD` tail (`paths/PATH-stage4-machine-custom.md` item (d), in flight — `CustomFree` still
-on `compile_forward_sim` until it drops); the flagged-`lr_*` last wall (tasks #31/#32). `bang query` v1 landed
-(#80, `3e6bd3b`). (ADR-0089 workspace cut stays queued.)
+#62 converse-custom drop — `CustomFree` still retained on `compile_forward_sim` (the WasmFX backend has no custom
+arm this unit; `Bang/Backend/Wasm.lean`), rescoped in lane cnv (`paths/PATH-stage4-machine-custom.md`); the
+flagged-`lr_*` last wall (tasks #31/#32). `bang query` v1 landed (#80, `3e6bd3b`); Stage-4 `run_evalD` custom tail
+landed (`9617744`). (ADR-0089 workspace cut stays queued.)
 
 Next edge is operator-sequenced (no PATH open yet) — see the lead above and the task board. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`** (generated; see the index).
 
@@ -58,7 +59,7 @@ Next edge is operator-sequenced (no PATH open yet) — see the lead above and th
 | decisions (why-we-chose-X) | `docs/decisions/` (generated `README.md` index) |
 | in-flight work | `paths/PATH-*.md` |
 | deferred proof-spine (◊4 `lr_sound` seam — #15 ruled D-now/A-later) | `paths/PATH-inc5-lr-reindex.md` |
-| #62 converse-custom `run_evalD` tail (drop `CustomFree` from `compile_forward_sim`) | `paths/PATH-stage4-machine-custom.md` (item (d)) |
+| #62 converse-custom — drop `CustomFree` from `compile_forward_sim` (lane cnv) | `paths/PATH-stage4-machine-custom.md` |
 | deferred design questions | `docs/notes/OPEN_QUESTIONS.md` (generated ledger) |
 | subagent roles | `.claude/agents/` |
 | what's-open (issues, milestones) | GitHub Issues — github.com/phibkro/bang |
