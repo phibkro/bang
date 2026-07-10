@@ -60,6 +60,35 @@ def rung15Samples : List Sample :=
              (.letC (.binop .lt (.vvar 0) (.vint 4)) (.case (.vvar 0) (.ret (.vvar 2)) (.binop .mul (.vvar 2) (.vint 2)))),
             "let x=2+3 in if x<4 then x*2 else x  ⇒ 5 (x=5, 5<4 false → inl/else = x)"⟩ ]
 
+/-- RUNG-2 hand-picked samples (◊5.5 rung-2, ADR-0059 abort → exceptions): the `throws` fragment.
+`handle (throws ℓ) M` emits a `try_table`/`throw` (Wasm 3.0 exceptions); a caught `perform (vvar i)
+"raise" v` delivers `v` at the catch, a body that returns normally flows its value out. Each is a
+LOAD-BEARING regression witness for the abort semantics + the de-Bruijn cap-frame stack. The oracle
+`Source.eval` computes the SAME `Comp` (raise = zero-shot abort discarding the continuation). -/
+def rung2Samples : List Sample :=
+  -- caught raise: the payload becomes the handle's value.
+  [ ⟨"thr0", .handle (.throws 0) (.perform (.vvar 0) "raise" (.vint 7)),
+             "handle throws { raise 7 }  ⇒ 7 (caught, payload delivered)"⟩
+  -- raise DISCARDS the captured continuation (the `ret 99` after it never runs).
+  , ⟨"thr1", .handle (.throws 0) (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99))),
+             "handle throws { let _ = raise 7 in 99 }  ⇒ 7 (continuation discarded)"⟩
+  -- normal return: no raise, the body value flows out of the try_table.
+  , ⟨"thr2", .handle (.throws 0) (.ret (.vint 42)),
+             "handle throws { 42 }  ⇒ 42 (normal return, no raise)"⟩
+  -- body COMPUTES then returns (no raise): arithmetic runs, its value flows out.
+  , ⟨"thr3", .handle (.throws 0) (.binop .add (.vint 3) (.vint 4)),
+             "handle throws { 3 + 4 }  ⇒ 7 (compute then normal return)"⟩
+  -- nested handles, INNER raises to its OWN handler (vvar 0 = inner cap ⇒ inner tag).
+  , ⟨"thr4", .handle (.throws 0) (.handle (.throws 0) (.perform (.vvar 0) "raise" (.vint 5))),
+             "handle throws { handle throws { raise@inner 5 } }  ⇒ 5 (inner catches, outer normal)"⟩
+  -- nested handles, inner body raises to the OUTER handler (vvar 1 skips the inner cap-slot).
+  , ⟨"thr5", .handle (.throws 0) (.handle (.throws 0) (.perform (.vvar 1) "raise" (.vint 8))),
+             "handle throws { handle throws { raise@outer 8 } }  ⇒ 8 (throw skips inner try_table)"⟩
+  -- raise a COMPUTED payload: the perform argument is arithmetic-in-scope (value binder + cap binder).
+  , ⟨"thr6", .handle (.throws 0) (.letC (.binop .mul (.vint 6) (.vint 7))
+               (.perform (.vvar 1) "raise" (.vvar 0))),
+             "handle throws { let x = 6*7 in raise x }  ⇒ 42 (computed payload, cap at idx 1)"⟩ ]
+
 /-! ### Deterministic seed-indexed generator (rung-1.5 differential corpus)
 
 A small linear-congruential PRNG drives a structured generator over the EMITTABLE fragment:
@@ -156,10 +185,12 @@ def genCorpus (count : Nat) : List Sample :=
     let (prog, _) := genComp 0 3 seed
     ⟨s!"gen{i}", prog, s!"generated#{i} (seed {seed})"⟩)
 
-/-- All samples run by the harness: hand anchors + rung-1.5 witnesses + ~50 generated. Only the
-EMITTABLE ones are written; a refusal is reported but is NOT a differential failure (the generator
-stays in-fragment by construction, so a refusal would flag a generator bug — printed loud). -/
-def samples : List Sample := handSamples ++ rung15Samples ++ genCorpus 42
+/-- All samples run by the harness: hand anchors + rung-1.5 witnesses + rung-2 throws witnesses +
+~50 generated. Only the EMITTABLE ones are written; a refusal is reported but is NOT a differential
+failure (the generator stays in-fragment by construction, so a refusal would flag a generator bug —
+printed loud). The rung-2 (throws) samples are HAND anchors only; the generator stays in the pure
+rung-1/1.5 fragment (extending it into effect nesting is a later step). -/
+def samples : List Sample := handSamples ++ rung15Samples ++ rung2Samples ++ genCorpus 42
 
 def main (args : List String) : IO Unit := do
   let outdir := args.headD "."
