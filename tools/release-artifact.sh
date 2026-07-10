@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=lane couples=.github/workflows/release.yml,Main.lean,examples/caesar/main.bang runs-in=ci
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # release-artifact.sh — the strip + smoke + name recipe for a release binary, as ONE
 # script so CI (.github/workflows/release.yml) and the local dry-run run the identical
 # steps (no drift between "what CI does" and "what I proved locally"). Given a version

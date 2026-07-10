@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=Bang/**/*.lean runs-in=manual
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # burndown.sh — Phase B burndown chart.
 # Counts pending `sorry` (theorem-body stubs) and `axiom` (signature stubs)
 # per Lean file in Bang/, plus a total.

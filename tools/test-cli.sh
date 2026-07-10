@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=none runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-cli.sh — the non-interactive gate for `bang`'s TOP-LEVEL CLI hygiene (issue #66/#67).
 #
 # Two concerns, both CLI-surface (not covered by test-repl.sh/test-fmt.sh/test-check-json.sh,

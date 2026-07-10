@@ -894,6 +894,8 @@ def render():
 
 
 def main():
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     content = render()
     if "--check" in sys.argv:
         current = OUT.read_text() if OUT.exists() else ""

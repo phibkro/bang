@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=Bang/Core/IR.lean runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-primitives.sh — kernel fitness function for CLAUDE.md Invariants #3 & #5.
 #
 # Invariant #5: "Kernel stays at five primitives: thunk · force · effect rows ·

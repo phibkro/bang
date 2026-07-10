@@ -89,6 +89,8 @@ def render(text: str) -> str:
 
 
 def main():
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     check = "--check" in sys.argv
     text = open(CLAUDE, encoding="utf-8").read()
     generated = render(text)

@@ -179,5 +179,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — contain import-derived module paths to the project trees (plan 005) (`80b793c0`)
 - **lint** — silence unusedArguments false-positives (22 → 0, plan 009) (`6e50140b`)
 - **tools** — install-hooks.sh works from linked worktrees (`1d175a6d`)
+- **site** — the vocs build has NEVER succeeded — alias non-bundled fence langs at the sync seam (`0b1e9cca`)
 
 <!-- END GENERATED changelog -->

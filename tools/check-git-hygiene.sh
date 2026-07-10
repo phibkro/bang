@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=setup.sh runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-git-hygiene.sh — multi-worktree git-store safety fitness function (#40).
 # ──────────────────────────────────────────────────────────────────────────────
 # This repo runs MANY git worktrees off ONE shared `.git/objects` (parallel proof

@@ -31,6 +31,8 @@ NOTE_RE = re.compile(r"docs/notes/[A-Za-z0-9._/-]+\.md")
 
 
 def main() -> int:
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     root = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
     ).stdout.strip()

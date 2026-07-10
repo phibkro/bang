@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=Bang/**/*.lean runs-in=manual
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check.sh — fast per-file Lean error check.
 # Usage:
 #   bash tools/check.sh                    # full lake build (incremental)

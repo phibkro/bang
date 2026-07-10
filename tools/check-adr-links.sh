@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=docs/decisions/*.md runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-adr-links.sh — ADR integrity lint for docs/decisions/.
 #
 # The maintenance instance flagged: this repo DELETED ADR-0003/0004 (and collapsed

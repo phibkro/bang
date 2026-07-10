@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=CONTEXT.md,ROADMAP.md,sha-allow.txt runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-sha-reachable.sh — orientation-doc SHA reachability fitness function.
 # ──────────────────────────────────────────────────────────────────────────────
 # CONTEXT.md and ROADMAP.md cite commit SHAs as waypoints ("banked at `91a6515`",

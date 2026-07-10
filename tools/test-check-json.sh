@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=examples/*/main.bang runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # test-check-json.sh — the non-interactive gate for `bang check [--json]` (issue #59).
 #
 # Mirrors test-fmt.sh/test-repl.sh's shape (build once, exercise the binary, diff, tally

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=examples/*/main.bang,examples/*/expected.txt runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-examples.sh — the RUN-oracle gate for the bang example projects.
 #
 # For each examples/<project>/main.bang, run it through the `bang` runner and

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=devenv couples=tools/new-worktree.sh,justfile runs-in=manual
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # seed-lake.sh — reflink-seed THIS worktree's .lake from the MAIN checkout's.
 #
 # Run from inside a fresh (harness- or hand-made) linked worktree BEFORE the first

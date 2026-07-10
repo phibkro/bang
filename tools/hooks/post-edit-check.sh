@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=check.sh runs-in=hook
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # Claude Code PostToolUse hook for Edit/Write of Lean files.
 #
 # Wired in `.claude/settings.json` to fire after Edit/Write tool calls.

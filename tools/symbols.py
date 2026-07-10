@@ -59,6 +59,8 @@ def collect():
 
 
 def main():
+    try: __import__("subprocess").run(["bash", __import__("os").path.join(__import__("os").path.dirname(__file__), "tool-log.sh"), __import__("os").path.basename(__file__)], check=False)  # tool-log (plan 012)
+    except Exception: pass
     args = sys.argv[1:]
     as_json = "--json" in args
     by_file = "--by-file" in args

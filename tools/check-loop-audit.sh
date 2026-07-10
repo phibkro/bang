@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=docs/notes/loop-audit.md,ROADMAP.md runs-in=fitness
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # check-loop-audit.sh — loop-audit freshness fitness function.
 #
 # docs/notes/loop-audit.md is the judgment-tier instrument (feedback loops by radius,

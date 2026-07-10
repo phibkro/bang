@@ -4,13 +4,14 @@
 
 > The flat `tools/` folder, grouped by role. Regenerate with `just tools-index`; `--check` gates it (and the header convention) in `just fitness`. `couples` = the files/tools a script reads-from or writes-to; `runs-in` = where it fires (fitness · verify · hook · manual · ci).
 
-## gen (15)
+## gen (16)
 
 _Generators — write a derived artifact from a root (drift-unrepresentable). `--check` gates each in `just fitness`._
 
 | script | runs-in | couples-with | purpose |
 |---|---|---|---|
 | [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
+| [`gen-agent-pack.py`](gen-agent-pack.py) | `fitness` | `.claude/lane-discipline.md`, `.claude/agents/*.md`, `genblock.py` | splice the lane-discipline pack into each subagent role file |
 | [`gen-changelog.py`](gen-changelog.py) | `fitness` | `CHANGELOG.md` | generate CHANGELOG.md from conventional commits (the GENERATE rung) |
 | [`gen-dashboard.py`](gen-dashboard.py) | `manual` | `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`, `_site/index.html` | Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages) |
 | [`gen-deadcode-imports.py`](gen-deadcode-imports.py) | `manual` | `tools/DeadCode.lean`, `Bang/**/*.lean`, `Main.lean` | keep tools/DeadCode.lean's import block ≡ the module set |
@@ -26,7 +27,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean` | a generated symbol index for the Lean source (the navigation gap-fill) |
 
-## check (19)
+## check (20)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -46,6 +47,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-paths.sh`](check-paths.sh) | `fitness` | `paths/PATH-*.md`, `CONTEXT.md`, `ROADMAP.md` | PATH lifecycle fitness function |
 | [`check-primitives.sh`](check-primitives.sh) | `fitness` | `Bang/Core/IR.lean` | kernel fitness function for CLAUDE.md Invariants #3 & #5 |
 | [`check-refs.py`](check-refs.py) | `fitness` | `*.md`, `refs-allow.txt` | the stale cross-reference fitness function |
+| [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
 | [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt` | orientation-doc SHA reachability fitness function |
 | [`check.sh`](check.sh) | `manual` | `Bang/**/*.lean` | fast per-file Lean error check |
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
@@ -75,7 +77,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
 
-## workflow (7)
+## workflow (8)
 
 _Workflow — bootstrap / orientation / dev-loop helpers; not a gate._
 
@@ -88,6 +90,7 @@ _Workflow — bootstrap / orientation / dev-loop helpers; not a gate._
 | [`new-worktree.sh`](new-worktree.sh) | `manual` | — | the ONE blessed way to spawn an isolated IC checkout (#40b) |
 | [`orient.sh`](orient.sh) | `manual` | `burndown.sh`, `paths/PATH-*.md`, `CONTEXT.md` | one-shot orient for fresh sessions |
 | [`setup.sh`](setup.sh) | `manual` | `install-hooks.sh` | first-time bootstrap for a fresh clone |
+| [`tool-log.sh`](tool-log.sh) | `manual` | `tools/*.sh`, `tools/*.py`, `justfile` | the single home for invocation telemetry (plan 012 slice 1) |
 
 ## lane (1)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=workflow couples=install-hooks.sh runs-in=manual
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # setup.sh — first-time bootstrap for a fresh clone.
 # Usage: just setup
 #

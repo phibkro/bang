@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=check couples=Bang/**/*.lean,Bang/Audit.lean runs-in=verify
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # audit.sh — belt-and-suspenders CI guard. The real guarantee is Audit.lean
 # (#print axioms); this just catches the obvious cheats fast and cheaply.
 set -euo pipefail
