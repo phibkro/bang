@@ -25,7 +25,7 @@ orient:
 # Default verify gate — selfcheck + build + example-run oracle + REPL transcripts
 # + audit. `audit` now runs the full `just fitness` bundle (#114), which already
 # includes the ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
-verify: selfcheck build check-examples test-repl test-fmt test-check-json test-cli test-law audit
+verify: selfcheck build check-examples test-repl test-fmt test-check-json test-query test-cli test-law audit
 
 # Run every examples/<project>/main.bang and diff stdout against expected.txt —
 # the end-to-end run oracle for whole bang programs (supersedes per-example
@@ -52,6 +52,12 @@ test-fmt:
 # #guards; this gates the CLI surface. Part of the default `verify` chain.
 test-check-json:
     bash tools/test-check-json.sh
+
+# Gate for `bang query <op>` (#80, the agent LSP as stateless CLI subcommands): symbols/type/
+# effects/laws/def/refs — file-arg vs stdin, resolver-aware multi-file (import qualification),
+# and the 0/1/2 exit-code contract observed through the binary. Part of the default `verify` chain.
+test-query:
+    bash tools/test-query.sh
 
 # Gate for the TOP-LEVEL CLI hygiene (#66/#67): `--help`/`--version` exit 0
 # with text on stdout, and every non-zero RUNTIME outcome (oom/escapedCap/
