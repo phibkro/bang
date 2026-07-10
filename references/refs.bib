@@ -1204,3 +1204,152 @@
             Lean's Std.Format already provides, host-verified-adjacent), and its novelty is orthogonal
             to bang's target. See docs/notes/formatting-survey.md.},
 }
+
+@phdthesis{levy-thesis,
+  keywords = {topic:cbpv grounds:kernel-substrate-survey role:foundational},
+  author  = {Levy, Paul Blain},
+  title   = {Call-by-Push-Value},
+  school  = {Queen Mary and Westfield College, University of London},
+  year    = 2001,
+  url     = {https://www.cs.bham.ac.uk/~pbl/papers/thesisqmwphd.pdf},
+  note    = {THE universality theorem the kernel-as-substrate direction leans on: CBPV subsumes
+            both call-by-value and call-by-name via semantics-preserving translations, so a CBV
+            language and a CBN language both have a faithful home in a CBPV target. "A value IS,
+            a computation DOES" = bang's Val/Comp split (IR.lean:94/113). bang extends the target
+            with grades (Torczon); the grade carries the profile coordinate. Honest limit: the
+            theorem is about evaluation order (CBV/CBN), NOT about embedding an arbitrary TYPE
+            system -- that owes a per-language adequacy proof, and lands at a specific lambda-cube
+            corner (the note's type axis). See docs/notes/kernel-substrate-survey.md §1a.},
+}
+
+@inproceedings{levy-subsuming,
+  keywords = {topic:cbpv grounds:kernel-substrate-survey role:foundational},
+  author  = {Levy, Paul Blain},
+  title   = {Call-by-Push-Value: A Subsuming Paradigm},
+  booktitle = {Typed Lambda Calculi and Applications (TLCA)},
+  year    = 1999,
+  doi     = {10.1007/3-540-48959-2_17},
+  note    = {The conference precursor to the thesis; the "subsuming paradigm" framing (CBV & CBN
+            arise via translations from CBPV). Cited alongside levy-thesis for the substrate's
+            computational-axis licence.},
+}
+
+@article{plotkin-power-alg-ops-generic-effects,
+  keywords = {topic:effects grounds:kernel-substrate-survey role:foundational},
+  author  = {Plotkin, Gordon and Power, John},
+  title   = {Algebraic Operations and Generic Effects},
+  journal = {Applied Categorical Structures},
+  volume  = 11,
+  number  = 1,
+  pages   = {69--94},
+  year    = 2003,
+  doi     = {10.1023/A:1023064908962},
+  note    = {Effects are algebraic theories; a one-to-one correspondence between algebraic
+            operations and generic effects. The paradigm-classification axis of the substrate
+            census: bang's `perform` is a generic effect, a Handler is (the structural half of)
+            its algebra, and a program's PARADIGM is read off its effect row rather than asserted.
+            See categorical-architecture.md §4, laws-taxonomy.md §3, kernel-substrate-survey.md §1b.},
+}
+
+@article{rosu-k-framework,
+  keywords = {topic:verified-semantics grounds:kernel-substrate-survey role:census-neighbour},
+  author  = {Ro{\c s}u, Grigore},
+  title   = {K: A Semantic Framework for Programming Languages and Formal Analysis Tools},
+  journal = {Marktoberdorf lecture notes},
+  year    = 2017,
+  url     = {https://fsl.cs.illinois.edu/publications/rosu-2017-marktoberdorf.pdf},
+  note    = {The "one semantics, all tools derived correct-by-construction" vision -- the same dream
+            as the substrate, cashed differently. K's semantics are executable (rewrite/reachability
+            logic); recent proof-generation work emits per-execution certificates. But K derives
+            tools trusted-by-construction of the framework, WITHOUT a contextual-equivalence theorem
+            or a verified compiler to a real ISA. bang's narrower/deeper stack (one language + lr_sound
+            + compile_forward_sim) is the complement. Census neighbour, kernel-substrate-survey.md §1/§1c.},
+}
+
+@article{timany-jacm24-logical-type-soundness,
+  keywords = {topic:iris grounds:kernel-substrate-survey role:closest-prior-art},
+  author  = {Timany, Amin and Krebbers, Robbert and Dreyer, Derek and Birkedal, Lars},
+  title   = {A Logical Approach to Type Soundness},
+  journal = {Journal of the ACM},
+  year    = 2024,
+  url     = {https://iris-project.org/pdfs/2024-jacm-logical-type-soundness.pdf},
+  note    = {THE strongest prior art for the substrate claim -- and the distinction that preserves
+            bang's novelty. Iris is a language-parametric META-LOGIC + step-indexed logrel,
+            instantiated for DOT/Scala, reachability types, WasmFX, CompCert-C. With Iris you
+            INSTANTIATE the logic to your language and prove your OWN soundness; with the bang
+            substrate you ELABORATE into a fixed target and INHERIT its already-proven soundness
+            (owing only adequacy). A difference of packaging/reuse granularity, not raw power --
+            state it that way. kernel-substrate-survey.md §1c. Sibling in-repo: legoupil-pldi26-iris-wasmfx.},
+}
+
+@article{leroy-cacm09-compcert,
+  keywords = {topic:verified-compilation grounds:kernel-substrate-survey role:census-neighbour},
+  author  = {Leroy, Xavier},
+  title   = {Formal Verification of a Realistic Compiler},
+  journal = {Communications of the ACM},
+  volume  = 52,
+  number  = 7,
+  pages   = {107--115},
+  year    = 2009,
+  doi     = {10.1145/1538788.1538814},
+  url     = {https://xavierleroy.org/publi/compcert-CACM.pdf},
+  note    = {The canonical verified compiler (Clight -> asm, semantic preservation in Coq). Census
+            neighbour on the verified-compile axis; the adequacy obligation an embedder owes (§4)
+            is the analogue of CompCert's semantic-preservation theorem. But CompCert verifies a
+            compiler for ONE fixed language -- it is not a substrate other languages elaborate into.
+            kernel-substrate-survey.md §1/§4.},
+}
+
+@inproceedings{bodin-popl19-skeletal-semantics,
+  keywords = {topic:verified-semantics grounds:kernel-substrate-survey role:census-neighbour},
+  author  = {Bodin, Martin and Gardner, Philippa and Jensen, Thomas and Schmitt, Alan},
+  title   = {Skeletal Semantics and their Interpretations},
+  booktitle = {POPL},
+  year    = 2019,
+  url     = {https://inria.hal.science/hal-01881863v1},
+  note    = {A META-LANGUAGE: one skeleton per construct, many generic interpretations (well-formed-
+            ness, concrete, abstract, constraint-gen); Necro generates a certified OCaml interpreter
+            or a Coq mechanization. Census neighbour on the exec-spec axis, meta-language shape --
+            like K, it is "define once, derive many" rather than "a verified target to elaborate
+            into". kernel-substrate-survey.md §1.},
+}
+
+@inproceedings{sozeau-popl20-metacoq,
+  keywords = {topic:verified-typechecker grounds:kernel-substrate-survey role:census-neighbour},
+  author  = {Sozeau, Matthieu and Boulier, Simon and Forster, Yannick and Tabareau, Nicolas and Winterhalter, Th{\'e}o},
+  title   = {Coq Coq Correct! Verification of Type Checking and Erasure for Coq, in Coq},
+  booktitle = {POPL},
+  year    = 2020,
+  url     = {https://sozeau.gitlabpages.inria.fr/www/research/publications/Coq_Coq_Correct-POPL20.pdf},
+  note    = {A verified type-checker + certified erasure for PCUIC (Coq's kernel), in Coq. Census
+            neighbour: it verifies the HOST'S checker against its spec, rather than offering a
+            substrate for OTHER languages to embed into and inherit theorems. The relevant contrast
+            for bang's "calculated checker" direction, distinct from the substrate framing.
+            kernel-substrate-survey.md §1.},
+}
+
+@misc{riscv-rva23-profiles,
+  keywords = {topic:conformance-profiles grounds:kernel-substrate-survey role:shape-anchor},
+  author  = {{RISC-V International}},
+  title   = {RVA23 Profiles, Version 1.0},
+  year    = 2024,
+  howpublished = {Ratified 2024-10-17},
+  url     = {https://docs.riscv.org/reference/rva23/_attachments/rva23-profile.pdf},
+  note    = {THE shape-anchor for the profile framing: a base ISA (RV64I) + named ratified extensions,
+            each mandatory or optional, that an implementation claims conformance to. Mature in
+            hardware; NEVER applied to a verified semantic substrate. bang's novelty (§7) borrows the
+            FORM (base + named claimed subsets) and supplies new CONTENT (subsets index inherited
+            machine-checked THEOREMS, not feature presence). kernel-substrate-survey.md §7/§8.},
+}
+
+@misc{sql-conformance-iso9075,
+  keywords = {topic:conformance-profiles grounds:kernel-substrate-survey role:shape-anchor},
+  author  = {{ISO/IEC} and {PostgreSQL Global Development Group}},
+  title   = {SQL Conformance (ISO/IEC 9075); PostgreSQL Appendix D},
+  year    = 2023,
+  url     = {https://www.postgresql.org/docs/current/features.html},
+  note    = {Second shape-anchor: since SQL:1999 the standard is Core features (every conforming
+            implementation must supply) + optional feature PACKAGES an implementation claims. Same
+            "base + named claimed subsets" form as RISC-V profiles; again indexes feature presence,
+            not inherited proofs. kernel-substrate-survey.md §7.},
+}

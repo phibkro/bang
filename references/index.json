@@ -993,6 +993,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "bodin-popl19-skeletal-semantics",
+    "title": "Skeletal Semantics and their Interpretations",
+    "year": "2019",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "verified-semantics"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "census-neighbour",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "boruch-gruszecki-22-scoped-capabilities",
     "title": "Scoped Capabilities for Polymorphic Effects",
     "year": "2022",
@@ -1175,6 +1193,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "leroy-cacm09-compcert",
+    "title": "Formal Verification of a Realistic Compiler",
+    "year": "2009",
+    "doi": "10.1145/1538788.1538814",
+    "eprint": "",
+    "topics": [
+      "verified-compilation"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "census-neighbour",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "lesani-concur12-verifying-stm",
     "title": "A Framework for Verifying STM Algorithms",
     "year": "2012",
@@ -1197,6 +1233,42 @@
     "topics": [],
     "grounds": [],
     "role": "",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "levy-subsuming",
+    "title": "Call-by-Push-Value: A Subsuming Paradigm",
+    "year": "1999",
+    "doi": "10.1007/3-540-48959-2_17",
+    "eprint": "",
+    "topics": [
+      "cbpv"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "foundational",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "levy-thesis",
+    "title": "Call-by-Push-Value",
+    "year": "2001",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "cbpv"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "foundational",
     "ondisk": false,
     "hop": null,
     "path": null,
@@ -1247,6 +1319,42 @@
     "sha256_pinned": ""
   },
   {
+    "key": "plotkin-power-alg-ops-generic-effects",
+    "title": "Algebraic Operations and Generic Effects",
+    "year": "2003",
+    "doi": "10.1023/A:1023064908962",
+    "eprint": "",
+    "topics": [
+      "effects"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "foundational",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "riscv-rva23-profiles",
+    "title": "RVA23 Profiles, Version 1.0",
+    "year": "2024",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "conformance-profiles"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "shape-anchor",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "rossberg-icfp15-1ml",
     "title": "1ML -- Core and Modules United (F-ing First-Class Modules)",
     "year": "2015",
@@ -1257,6 +1365,78 @@
     ],
     "grounds": [],
     "role": "frontier",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "rosu-k-framework",
+    "title": "K: A Semantic Framework for Programming Languages and Formal Analysis Tools",
+    "year": "2017",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "verified-semantics"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "census-neighbour",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "sozeau-popl20-metacoq",
+    "title": "Coq Coq Correct! Verification of Type Checking and Erasure for Coq, in Coq",
+    "year": "2020",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "verified-typechecker"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "census-neighbour",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "sql-conformance-iso9075",
+    "title": "SQL Conformance (ISO/IEC 9075); PostgreSQL Appendix D",
+    "year": "2023",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "conformance-profiles"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "shape-anchor",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "timany-jacm24-logical-type-soundness",
+    "title": "A Logical Approach to Type Soundness",
+    "year": "2024",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "iris"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "closest-prior-art",
     "ondisk": false,
     "hop": null,
     "path": null,
