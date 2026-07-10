@@ -9,18 +9,33 @@
 
 ## Status
 
-Accepted (2026-07-10, operator re-ruling: shape **(i′)** — the `KrelS` def-invariant
-`StackBelow g` on the two stacks, self-propagating via the recursive conjuncts; Q22 stays HELD,
-the implementation targets the 18→20 shed). **Decision history, honestly:** the first draft
-recommended shape (iii) and the operator approved it; the reaching test (krnl3's
-`strip_mislocates_when_nid_in_prefix` witness) then REFUTED (iii) along with (ii) — the
-freshness fact must land on the resume conjunct's universally-bound `Kᵢ`, which no construct
-outside `KrelS`'s definition can bind — so that acceptance was vacated and the operator
-re-ruled on the surviving pair, taking the recommendation. (i″) (premise on the resume
-conjunct) remains the build-arbitrated fallback if (i′)'s self-propagation walls. The
-`Spec.lean` lr_* statements stay byte-identical; the frozen-DEF-block change is sanctioned BY
-THIS RULING for the invariant conjunct ONLY. Census: carrier → `lr_fundamental` +
-`lr_fundamental_closed` shed (18→20); `lr_sound`'s third shed needs Q22 (held).
+Accepted (2026-07-10, operator re-ruling: shape **(i′)** — the `KrelS` def-invariant conjunct,
+self-propagating via the recursive conjuncts; Q22 stays HELD, the implementation targets the
+18→20 shed). **Decision history, honestly:** the first draft recommended shape (iii) and the
+operator approved it; the reaching test (krnl3's `strip_mislocates_when_nid_in_prefix` witness)
+REFUTED (iii) along with (ii) — the freshness fact must land on the resume conjunct's
+universally-bound `Kᵢ`, which no construct outside `KrelS`'s definition can bind — so that
+acceptance was vacated and the operator re-ruled shape (i′). (i″) (premise on the resume
+conjunct) remains the build-arbitrated fallback if (i′)'s self-propagation walls.
+
+**AMENDMENT (2026-07-10, the predicate correction — lane lrcarry, machine-arbitrated):** the
+ruled conjunct's PREDICATE is **`StackInc`** (ids strictly increase up the stack;
+StackBelow-DERIVED: head clause = `StackInc K ∧ StackBelow n K` on the tail), NOT this ADR's
+original `StackBelow g`. DO-NOT-RETRY: `StackBelow g` is machine-INSUFFICIENT for the strip —
+`splitAtId_fresh` fires only when the searched id EQUALS the counter `g`, but the strip
+searches for the LIVE deep-catcher id `nid < g`, and `StackBelow g Kᵢ` does not exclude a live
+`nid` from `Kᵢ` (concrete counterexample `stackBelow_does_not_give_fresh_for_live_id` in
+`StackBelowInsufficientProbe.lean`, riding branch `lrcarry-probes`). The corrected carrier is fully de-risked
+axiom-clean (`lrcarry-probes @ e875881`): mint preserves it (`stackInc_mint`, co-travels with
+`WellCounted`), resume preserves it (`stackInc_reinstall` — the hard arm), delivery yields
+`StackAbove nid` on the captured region (`stackInc_gives_above`), which gives the strip's
+freshness (`splitAtId_above`) and closes the composite boundary-location
+(`skip_strip_locates`). Cost delta vs this ADR's budget: the same ~20-lemma ripple slot, plus
+the `StackInc` def + five drafted lemmas + a ~10-line `stackInc_reachable` companion to
+`wellCounted_reachable` in `Invariants.lean`. No new machinery; the `Spec.lean` lr_*
+statements stay byte-identical; the frozen-DEF-block change is sanctioned for the StackInc
+conjunct ONLY. Census unchanged: carrier → `lr_fundamental` + `lr_fundamental_closed` shed
+(18→20); `lr_sound`'s third shed needs Q22 (held).
 
 ## Context
 
