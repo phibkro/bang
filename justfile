@@ -31,7 +31,7 @@ verify: selfcheck build run-batteries audit
 # All independent test batteries, concurrently (single up-front binary build).
 # Same set as verify's former serial leg list — check-examples, test-repl,
 # test-fmt, test-check-json, test-query, test-rewrite, test-annotate, test-lint,
-# test-cli, test-law, test-modules — driven by tools/run-batteries.sh (plan 004).
+# test-82-verbs, test-cli, test-law, test-modules — driven by tools/run-batteries.sh (plan 004).
 run-batteries:
     bash tools/run-batteries.sh
 
@@ -93,6 +93,14 @@ test-annotate:
 # Part of the default `verify` chain.
 test-lint:
     bash tools/test-lint.sh
+
+# Gate for the #82 agent-tooling verbs over the landed Query rails (analysis/ergonomics commands
+# past query/rewrite/lint/annotate): `bang holes` (residual/underdetermined positions), `bang
+# impact` (transitive dependents = pre-edit blast radius), `bang semver-diff` (public-surface diff
+# → version bump). File/stdin, resolver-aware, the 0/1/2 exit contract, one falsify-once
+# discrimination case per verb. Part of `verify` (enrolled in tools/run-batteries.sh's array).
+test-82-verbs:
+    bash tools/test-82-verbs.sh
 
 # Gate for the TOP-LEVEL CLI hygiene (#66/#67): `--help`/`--version` exit 0
 # with text on stdout, and every non-zero RUNTIME outcome (oom/escapedCap/

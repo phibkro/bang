@@ -193,7 +193,11 @@ closed kernel type; `extractV`/`extractC` zonk-extract back to a closed `VTy`/`C
 a reserved-range `tvar` (display continuity with bite-0); a residual COMPUTATION hole is
 unrepresentable in `CTy` → the DEFINED fail-loud "annotate" (a genuinely un-inferable higher-order
 force), never a wrong accept. -/
-def holeBase  : Nat := 1000000
+-- `public`: `Bang.Query.holesOf` (#82 `bang holes`) reads this to detect a residual hole in a
+-- rendered top-level type/row — a residual VALUE hole extracts to `.tvar (holeBase + n)`
+-- (`extractV` above), so a `#N` with `N ≥ holeBase` in a `showTy` string IS an underdetermined
+-- position. ONE home for the marker range; the verb references it, never copies `1000000`.
+public def holeBase  : Nat := 1000000
 def rigidBase : Nat := 2000000
 def bigFuel   : Nat := 1000000
 /-- Base for a GENERIC-ctor template's type-PARAM markers (`data Option a`'s `a` ⟹ `.tVar (paramBase+0)`,

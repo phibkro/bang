@@ -598,4 +598,196 @@ public def refsJson (src name : String) : String :=
   | .error (m, _) => errorJsonOk m
   | .ok p         => refsJsonP p name
 
+/-! ## 4. `bang holes <file>` (#82 item 3) — residual/underdetermined positions.
+
+bang has NO user-facing `_` hole syntax today (the issue's own "needs small parser support"),
+but the checker DOES report underdetermined positions: a residual VALUE hole zonk-extracts to a
+reserved-range `tvar` (`TypeCheck.extractV`, `.tvar (holeBase + n)`), which `Format.showTy`
+renders as `#N` with `N ≥ TypeCheck.holeBase`. Those `#N` markers in a decl's already-computed
+`type`/`row` string ARE the underdetermined positions — a bare `id = {fun x => x}` reports
+`Thunk #1000003 -> #1000003`, two positions the checker could not pin down.
+
+`holes` is therefore a THIN PROJECTION of the SAME `DeclFact` list every other verb reads: for
+each decl, scan its `type`/`row` for `#N` markers with `N ≥ holeBase`, and report the ones found.
+NO new checking logic (the `Query.lean` invariant) — the holes are already in the facts `symbols`/
+`dump` surface; this verb just extracts + names them. DECL granularity (no per-node span, #52) —
+the honest ceiling without a Spanned-Surf tier. -/
+
+/-- Every `#N` marker in `s` with `N ≥ TypeCheck.holeBase` — a RESIDUAL hole, not a μ-bound
+`tVar` (those render `#0`-`#2`, well below `holeBase`) nor a legitimate small index. Pure string
+surgery over `showTy`'s ONE `#N` rendering convention, keyed on the SAME `holeBase` the extractor
+uses (SSoT — no copied `1000000`). Returns the raw marker numbers (as `#N` strings, the form a
+reader sees in the `type`/`row` field), de-duplicated in first-seen order. -/
+public def holeMarkersIn (s : String) : List String :=
+  -- Walk the chars ONE at a time (structural recursion on the tail — always decreasing). `cur`
+  -- accumulates the digit run seen since the last `#`; `inHash` marks whether we are inside a
+  -- `#`-introduced number. On a non-digit (or end), a completed run is committed iff `≥ holeBase`.
+  let commit (cur : List Char) (acc : List String) : List String :=
+    if cur.isEmpty then acc
+    else
+      let n := (String.mk cur.reverse).toNat!
+      let marker := "#" ++ String.mk cur.reverse
+      if n ≥ Bang.TypeCheck.holeBase && !acc.contains marker then marker :: acc else acc
+  let rec go : List Char → Bool → List Char → List String → List String
+    | [],        _,     cur, acc => (commit cur acc).reverse
+    | '#' :: cs, _,     cur, acc => go cs true [] (commit cur acc)
+    | c :: cs,   true,  cur, acc =>
+        if c.isDigit then go cs true (c :: cur) acc
+        else go cs false [] (commit cur acc)
+    | _ :: cs,   false, cur, acc => go cs false cur acc
+  go s.toList false [] []
+
+#guard holeMarkersIn "Thunk #1000003 -> #1000003" == ["#1000003"]
+#guard holeMarkersIn "(Int + #1000002)" == ["#1000002"]
+#guard holeMarkersIn "Int" == []
+#guard holeMarkersIn "(mu. #0)" == []          -- a μ-bound `#0` is NOT a hole (below holeBase)
+#guard holeMarkersIn "#1000004 -> #1000003 -> #1000004" == ["#1000004", "#1000003"]
+
+/-- **PUBLIC (TIER 1):** every decl of `p` that carries a residual hole, paired with the markers
+found across its `type` AND `row` (in that order). A decl with no hole is omitted (the report is
+the underdetermined SUBSET, not every decl). Reuses `declFactsOf` — ONE construct with every other
+verb; `holes` never re-checks the program. -/
+public def holesOf (p : Prog) : List (DeclFact × List String) :=
+  (declFactsOf p).filterMap (fun f =>
+    let markers := (f.type.map holeMarkersIn |>.getD []) ++ (f.row.map holeMarkersIn |>.getD [])
+    if markers.isEmpty then none else some (f, markers))
+
+/-- One hole finding → its JSON object: the decl's name/kind/type/row (so a reader sees WHERE the
+`#N` sits) plus the `holes` array of markers. -/
+def holeFindingJson (fm : DeclFact × List String) : String :=
+  let (f, markers) := fm
+  jsonObj [jsonStrField "name" f.name, jsonField "kind" f.kind.toJson,
+           jsonOptStrField "type" f.type, jsonOptStrField "row" f.row,
+           jsonField "holes" (jsonStrArr markers)]
+
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): `{"ok":true,"holes":[{name,kind,type,
+row,holes},...]}` — every decl with a residual/underdetermined position, in SOURCE ORDER. An EMPTY
+array is the honest "nothing underdetermined" answer (the program is fully pinned) — `ok:true`
+either way, matching `symbols`/`refs`'s "the caller inspects the array" convention. -/
+public def holesJsonP (p : Prog) : String :=
+  jsonObj [jsonField "ok" "true", jsonField "holes" (jsonArr ((holesOf p).map holeFindingJson))]
+
+/-- **PUBLIC entry**: `bang holes <file>` — the single-file/stdin route: parse `src` then defer to
+`holesJsonP`. -/
+public def holesJson (src : String) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p         => holesJsonP p
+
+/-! ## 5. `bang impact <file> <decl>` (#82 item 5) — transitive DEPENDENTS of a decl.
+
+The pre-edit blast-radius check: "what breaks if I change `decl`?" — the TRANSITIVE closure of
+decls that reference it (directly or through a chain). This is the REVERSE of the import/use graph
+`nameRefEdgesOf` already exposes: a forward edge `src → tgt` ("`src`'s body mentions `tgt`") read
+backwards is "`src` DEPENDS ON `tgt`". So `impact tgt` = every `src` reachable by walking edges
+`tgt`-ward.
+
+#83 CONSTRAINT (honored): #83 documents THREE duplicated Surf-walks and forbids a fourth. `impact`
+adds NONE — it reuses the SAME `nameRefEdgesOf` edge list `refs`/`dump` read (the ONE public
+edge-producing Surf-walk `Query.lean` exposes); the reverse closure below is a plain worklist BFS
+over that flat edge list, zero new tree recursion. DECL granularity (#52). -/
+
+/-- **PUBLIC (TIER 1):** the TRANSITIVE dependents of `name` in `p` — every decl whose body reaches
+`name` directly or through a chain, via reverse-BFS over `nameRefEdgesOf`'s `src → tgt` edges
+(walking `tgt`-ward: from a target back to every `src` that mentions it). Excludes `name` itself
+(the report is what DEPENDS ON it, not it). De-duplicated. `fuel`-bounded (LEAF module, no `partial`
+— `edges.length + 1` always suffices: each step either drains the worklist or adds a name never
+seen before, and there are at most `edges.length` distinct `src` names to ever add). -/
+public def dependentsOf (p : Prog) (name : String) : List String :=
+  let edges := nameRefEdgesOf p
+  let fuel := edges.length + 1
+  let rec go : Nat → List String → List String → List String
+    | 0,     _,      seen => seen
+    | _+1,   [],     seen => seen
+    | f+1,   n::ws,  seen =>
+        let callers := edges.filterMap (fun e =>
+          if e.tgt == n && e.src != name && !seen.contains e.src then some e.src else none)
+        go f (callers ++ ws) (callers.foldl (fun acc m => if acc.contains m then acc else m :: acc) seen)
+  go fuel [name] []
+
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): `{"ok":true,"decl":"<name>","dependents":
+[{"name","kind"},...]}` — the transitive blast radius of editing `name`, each dependent rendered as
+its `{name,kind}` (the SAME shape `refs` uses). An EMPTY array is the honest "nothing depends on it,
+safe to change in isolation" answer. `{"ok":false,"error":"no top-level decl named '<name>'"}` when
+`name` isn't declared (a LOUD miss, ADR-0046 — matching `def`, unlike `refs`). -/
+public def impactJsonP (p : Prog) (name : String) : String :=
+  if !p.decls.any (·.name == name) then
+    errorJsonOk s!"no top-level decl named '{name}'"
+  else
+    let deps := dependentsOf p name
+    let hits := deps.filterMap (fun dn => p.decls.find? (·.name == dn) |>.map (fun d =>
+      jsonObj [jsonStrField "name" d.name, jsonField "kind" (DeclKind.of d).toJson]))
+    jsonObj [jsonField "ok" "true", jsonStrField "decl" name, jsonField "dependents" (jsonArr hits)]
+
+/-- **PUBLIC entry**: `bang impact <file> <decl>` — the single-file/stdin route: parse `src` then
+defer to `impactJsonP`. -/
+public def impactJson (src name : String) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p         => impactJsonP p name
+
+/-! ## 6. `bang semver-diff <old> <new>` (#82 item 6) — the public-surface diff.
+
+The release battery's future companion (#72's enforcement engine, elm-package precedent): diff the
+PUBLIC (`pub`) `DeclFact` surface of two programs → which pub decls were ADDED, REMOVED, or CHANGED
+(a type/row change on a decl present in both). A pure comparison of two `declFactsOf` lists filtered
+to `pub` — ZERO new checking logic, the SAME facts `symbols`/`dump` surface, one per program.
+
+VERSION-BUMP MAPPING (the semver contract, elm/#72): a REMOVED or CHANGED pub decl is BREAKING
+(major); an ADDED pub decl is a feature (minor); no pub change is a patch. This verb reports the
+RAW facts (added/removed/changed) + the derived `bump` field so a caller (#72's release gate) keys
+its policy on ONE field, never re-deriving the classification. Non-`pub` decls are INVISIBLE here
+(they are not the public contract — a private decl's churn never bumps a version). -/
+
+/-- `(name, type, row)` public-surface signature of a `DeclFact` — the tuple `semver-diff` compares.
+`type`/`row` are the checker's rendered strings (`none` for a non-value kind — a trait/data/effect,
+whose `shape` is its contract; a shape change on those is a v1 KNOWN GAP, see `semverDiff`'s note). -/
+def pubSig (f : DeclFact) : String × Option String × Option String := (f.name, f.type, f.row)
+
+/-- **PUBLIC (TIER 1):** the public-surface diff of `old` → `new`: `(added, removed, changed)` decl
+names, where `changed` is a pub decl present in BOTH whose `(type, row)` signature differs. Compares
+`declFactsOf` filtered to `pub` — one construct with every other verb. NOTE (v1 known gap, honest):
+only VALUE-typed decls' `type`/`row` are compared; a `trait`/`data`/`effect`'s structural `shape`
+change is NOT yet a `changed` finding (its facts carry `type := none` so two versions compare equal
+on the tuple) — a forward pointer for #72's full enforcement, not a silent miss (documented in
+`docs/reference/language.md`'s `bang semver-diff` section). -/
+public def semverDiff (old new : Prog) : List String × List String × List String :=
+  let oldPub := (declFactsOf old).filter (·.pub)
+  let newPub := (declFactsOf new).filter (·.pub)
+  let oldNames := oldPub.map (·.name)
+  let newNames := newPub.map (·.name)
+  let added   := newNames.filter (!oldNames.contains ·)
+  let removed := oldNames.filter (!newNames.contains ·)
+  let changed := oldPub.filterMap (fun of =>
+    match newPub.find? (·.name == of.name) with
+    | some nf => if pubSig of != pubSig nf then some of.name else none
+    | none    => none)
+  (added, removed, changed)
+
+/-- The semver BUMP a diff implies: `major` if anything was removed or changed (BREAKING), else
+`minor` if anything was added (feature), else `patch` (no public change) — the elm-package/#72
+contract, derived HERE so a caller reads ONE field. -/
+def semverBump (added removed changed : List String) : String :=
+  if !removed.isEmpty || !changed.isEmpty then "major"
+  else if !added.isEmpty then "minor"
+  else "patch"
+
+/-- **PUBLIC (TIER 1):** `{"ok":true,"bump":"major|minor|patch","added":[...],"removed":[...],
+"changed":[...]}` for two already-parsed programs — the public-surface diff + its derived bump. -/
+public def semverDiffJsonP (old new : Prog) : String :=
+  let (added, removed, changed) := semverDiff old new
+  jsonObj [jsonField "ok" "true", jsonStrField "bump" (semverBump added removed changed),
+           jsonField "added" (jsonStrArr added), jsonField "removed" (jsonStrArr removed),
+           jsonField "changed" (jsonStrArr changed)]
+
+/-- **PUBLIC entry**: `bang semver-diff <oldSrc> <newSrc>` — parse both, diff their public surfaces.
+A parse failure on EITHER side is an op-level `errorJsonOk` (naming which side failed). -/
+public def semverDiffJson (oldSrc newSrc : String) : String :=
+  match Bang.Surface.parseProgLocated oldSrc with
+  | .error (m, _) => errorJsonOk s!"OLD did not parse: {m}"
+  | .ok old =>
+      match Bang.Surface.parseProgLocated newSrc with
+      | .error (m, _) => errorJsonOk s!"NEW did not parse: {m}"
+      | .ok new       => semverDiffJsonP old new
+
 end Bang.Query

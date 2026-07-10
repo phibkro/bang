@@ -873,3 +873,68 @@ closure (`Query.nameRefEdgesOf` + `Query.surfUsesVar`) cannot see is a false pos
 this rule does not itself distinguish from a genuine orphan — the finding names the
 decl, the human/agent judges deletability.
 
+## `bang holes` — residual/underdetermined positions (issue #82 item 3)
+
+`bang holes [<file.bang>]` lists every top-level decl whose checked type or effect row
+carries a RESIDUAL hole — a position the inference could not pin down. bang has no
+user-facing `_` hole syntax yet, but the checker still reports underdetermined
+positions: a bare `id = {fun x => x}` reports `Thunk #1000003 -> #1000003`, two
+positions (arg and result) the checker left polymorphic. Those `#N` markers (with
+`N ≥ holeBase`, `Bang.TypeCheck.holeBase`) ARE the holes — `holes` extracts and names
+them. ALWAYS JSON (agents are the audience), resolver-aware like `query`.
+
+```
+bang holes myfile.bang
+{"ok":true,"holes":[{"name":"id","kind":"let","type":"Thunk #1000003 -> #1000003","row":"{}","holes":["#1000003"]}]}
+```
+
+A fully-pinned program reports `{"ok":true,"holes":[]}`. **Exit contract** (the
+`query` convention): `2` unreadable file (nothing on stdout), `1` parse/resolution
+failure (`ok:false` on stdout), `0` a well-formed answer (an empty `holes` array is
+still exit `0` — the caller inspects the array). This is a THIN PROJECTION of the SAME
+`DeclFact` list `symbols`/`dump` expose — no new checking logic.
+
+## `bang impact` — the pre-edit blast radius (issue #82 item 5)
+
+`bang impact <file.bang> <decl>` reports the TRANSITIVE DEPENDENTS of `decl` — every
+top-level decl that reaches it directly or through a chain, so you know what breaks
+before you change it. This is the REVERSE of the reference graph `bang query refs`/
+`dump` already expose (a forward edge `src → tgt` read backwards is "`src` depends on
+`tgt`"), computed as a reverse closure over that SAME edge set — no new graph walk.
+
+```
+bang impact myfile.bang double
+{"ok":true,"decl":"double","dependents":[{"name":"main","kind":"let"},{"name":"quad","kind":"let"}]}
+```
+
+An empty `dependents` array is the honest "nothing depends on it, safe to change in
+isolation" answer. A nonexistent `decl` is a LOUD op-level miss
+(`{"ok":false,"error":"no top-level decl named '…'"}`, exit `0` — the tool ran).
+Same `2`/`1`/`0` exit contract as `holes`/`query`. ALWAYS JSON, resolver-aware. DECL
+granularity (#52).
+
+## `bang semver-diff` — the public-surface diff (issue #82 item 6)
+
+`bang semver-diff <old.bang> <new.bang>` diffs the PUBLIC (`pub`) decl surface of two
+programs and reports the required version bump — #72's enforcement engine (elm-package
+precedent) falling out of the fact base. Non-`pub` decls are INVISIBLE (a private
+decl's churn never bumps a version).
+
+```
+bang semver-diff v1.bang v2.bang
+{"ok":true,"bump":"major","added":["mul"],"removed":["sub"],"changed":[]}
+```
+
+| Change to the `pub` surface | `bump` |
+|---|---|
+| a pub decl REMOVED, or its `(type, row)` CHANGED | `major` (breaking) |
+| a pub decl ADDED (nothing removed/changed) | `minor` (feature) |
+| no pub change | `patch` |
+
+The `bump` field is DERIVED from added/removed/changed so a caller (a release gate)
+keys its policy on ONE field. **Exit contract**: `2` if EITHER file is unreadable
+(tool error, nothing on stdout), `1` if EITHER side fails to parse (`ok:false` naming
+the side), `0` a well-formed diff. ALWAYS JSON. **Known v1 gap** (a forward pointer,
+not a silent miss): only VALUE-typed decls' `type`/`row` are compared — a `trait`/
+`data`/`effect`'s structural `shape` change is not yet a `changed` finding.
+

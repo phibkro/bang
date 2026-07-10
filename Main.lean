@@ -675,6 +675,54 @@ def runQueryRefs (file : Option String) (name : String) : IO UInt32 := do
       | .error code => pure code
       | .ok p       => printQueryOk (Bang.Query.refsJsonP p name)
 
+/-- `bang holes [<file.bang>]` (#82 item 3) — every decl carrying a residual/underdetermined
+position (a checker hole rendered `#N`, `N ≥ holeBase`; see `Bang.Query.holesOf`). ALWAYS JSON on
+stdout — a machine-readable report like `check --json`/`query`'s shape (agents are the audience).
+RESOLVER-AWARE (the SAME `readQuerySrc`/`resolveQueryProg` split every `query` op uses — an agent
+querying a multi-file project needs its imports visible). Exit contract mirrors `query`: `2` on an
+unreadable file (tool error, nothing on stdout), `1` on a parse/resolution failure (`ok:false` on
+stdout), `0` when the tool ran and produced a well-formed answer (an EMPTY `holes` array — nothing
+underdetermined — is still `ok:true`/exit 0; the caller inspects the array, `query`'s convention). -/
+def runHoles (file : Option String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg file with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.holesJsonP p)
+
+/-- `bang impact <file.bang> <decl>` (#82 item 5) — the transitive DEPENDENTS of `decl` (the
+pre-edit blast radius: what breaks if I change it). ALWAYS JSON (agents are the audience).
+RESOLVER-AWARE (`readQuerySrc`/`resolveQueryProg`, like every `query` op). Same 0/1/2 exit contract
+as `holes`/`query`: `2` unreadable file, `1` parse/resolution failure, `0` well-formed answer (an
+`{"ok":false,...}` "no such decl" op-level miss is STILL exit 0 — the caller inspects `ok`). -/
+def runImpact (file : String) (decl : String) : IO UInt32 := do
+  match ← readQuerySrc (some file) with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg (some file) with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.impactJsonP p decl)
+
+/-- `bang semver-diff <old.bang> <new.bang>` (#82 item 6) — the public-surface diff of two programs
+→ the required version bump (#72's enforcement engine, elm-package precedent). ALWAYS JSON. Both
+files are read + parsed; an unreadable EITHER side is a tool error (exit 2, nothing on stdout); a
+parse failure on either side is an op-level `{"ok":false,...}` (exit 1, naming which side). Reads
+each file's raw source (NOT resolver-aware in v1 — the public surface is the file's OWN `pub` decls;
+a multi-file public-surface upgrade is the natural follow-up, matching `test`/`lint`'s precedent). -/
+def runSemverDiff (oldFile newFile : String) : IO UInt32 := do
+  match ← (do let s ← IO.FS.readFile ⟨oldFile⟩; pure (some s)) <|> pure none with
+  | none      => IO.eprintln s!"error: could not read file '{oldFile}'"; pure 2
+  | some oldSrc =>
+      match ← (do let s ← IO.FS.readFile ⟨newFile⟩; pure (some s)) <|> pure none with
+      | none      => IO.eprintln s!"error: could not read file '{newFile}'"; pure 2
+      | some newSrc =>
+          let out := Bang.Query.semverDiffJson oldSrc newSrc
+          IO.println out
+          -- op-level parse failure ⟹ exit 1 (mirrors `query`'s errorJsonOk-on-stdout/exit-1 path);
+          -- a well-formed diff ⟹ exit 0 (the caller reads `bump`).
+          pure (if out.startsWith "{\"ok\":false" then 1 else 0)
+
 /-! ## `bang rewrite <verb>` (#81) — the CQS COMMAND side over #80's query/read-model side.
 
 OUTPUT CONTRACT (operator ruling, 2026-07-10, verbatim): **every rewrite verb emits the DIFF
@@ -1088,6 +1136,22 @@ def usage : String :=
   "                                     schema. Exit 0 unless a `warning`-severity finding is\n" ++
   "                                     present; `--quiet-clean` suppresses the \"no findings\" line\n" ++
   "                                     on a clean human-table report. Reads stdin if no file.\n\n" ++
+  "  bang holes [<file.bang>]           list every decl carrying a residual/underdetermined\n" ++
+  "                                     position (a checker hole the inference could not pin down,\n" ++
+  "                                     rendered #N in the type/row; issue #82 item 3). ALWAYS JSON\n" ++
+  "                                     on stdout (agents are the audience). Resolver-aware like\n" ++
+  "                                     `query`; reads stdin if no file. Empty holes array + exit 0\n" ++
+  "                                     when the program is fully pinned.\n\n" ++
+  "  bang impact <file.bang> <decl>     the transitive DEPENDENTS of <decl> — the pre-edit blast\n" ++
+  "                                     radius (what breaks if you change it), reverse closure over\n" ++
+  "                                     the same ref-graph `query refs`/`dump` expose (issue #82\n" ++
+  "                                     item 5). ALWAYS JSON. Resolver-aware; empty dependents +\n" ++
+  "                                     exit 0 when nothing depends on it.\n\n" ++
+  "  bang semver-diff <old.bang> <new.bang>\n" ++
+  "                                     the public-surface diff of two programs → the required\n" ++
+  "                                     version bump (added/removed/changed pub decls + a derived\n" ++
+  "                                     major/minor/patch `bump`; issue #82 item 6, #72's engine).\n" ++
+  "                                     ALWAYS JSON.\n\n" ++
   "  bang --help, -h                    print this text and exit 0\n" ++
   "  bang --version, -v                 print the version and exit 0\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
@@ -1363,6 +1427,25 @@ def main (args : List String) : IO UInt32 := do
       | []      => runLint json quietClean none
       | [arg]   => runLint json quietClean (some arg)
       | _       => IO.eprintln usage; pure 1
+    else if cmd == "holes" then
+      -- `bang holes [<file.bang>]` (#82 item 3). ALWAYS JSON (agents are the audience — no `--json`
+      -- flag, matching `query`'s own convention); any `--`-prefixed arg falls to usage.
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | []      => runHoles none        -- read stdin
+      | [arg]   => runHoles (some arg)
+      | _       => IO.eprintln usage; pure 1
+    else if cmd == "impact" then
+      -- `bang impact <file.bang> <decl>` (#82 item 5). ALWAYS JSON; file THEN decl (file-first,
+      -- matching `query type`'s own file-first order — the file is unambiguous, the decl names
+      -- what to blast-radius). A stray `--`-prefixed arg falls to usage.
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | [file, decl] => runImpact file decl
+      | _            => IO.eprintln usage; pure 1
+    else if cmd == "semver-diff" then
+      -- `bang semver-diff <old.bang> <new.bang>` (#82 item 6). ALWAYS JSON; OLD then NEW positional.
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | [oldF, newF] => runSemverDiff oldF newF
+      | _            => IO.eprintln usage; pure 1
     else
       IO.eprintln usage; pure 1
   | _ => IO.eprintln usage; pure 1
