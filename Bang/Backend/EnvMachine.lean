@@ -1322,6 +1322,28 @@ theorem evalV_PureV {ρ : MEnv} (hWFρ : MEnv.WF ρ) (hρ : MEnv.PureV ρ) :
       simp only [evalV, MVal.PureV]
       exact evalV_PureV hWFρ hρ (by simpa only [ValEF] using hEF) hsc.fold_inv
 
+/-- `evalV` of ANY value (no `ValEF` needed) under a `WF ∧ WFClos` env is `WFClos` (the effect-fragment
+analog of `evalV_PureV`). The `vthunk M ↦ mvclos M ρ` case drops the `EffectFree M` obligation `PureV`
+required — a closure over an EFFECTFUL body is `WFClos` (its env-shape + body-scope are all that's
+constrained). Structural on `v`, needs only the source scoped so the closure's body-scope obligation holds. -/
+theorem evalV_WFClos {ρ : MEnv} (hWFρ : MEnv.WF ρ) (hρ : MEnv.WFClos ρ) :
+    ∀ {v : Val}, Val.ScopedV (readbackEnv ρ).length v → MVal.WFClos (evalV ρ v)
+  | .vunit, _ => by simp only [evalV, MVal.WFClos]
+  | .vint _, _ => by simp only [evalV, MVal.WFClos]
+  | .vcap _ _, _ => by simp only [evalV, MVal.WFClos]
+  | .vvar i, _ => by simp only [evalV]; exact MEnv.WFClos.get hρ i
+  | .vthunk M, hsc => by
+      simp only [evalV, MVal.WFClos]
+      refine ⟨?_, hWFρ, hρ⟩
+      intro k hk; have := hsc k hk
+      simp only [Val.shiftFrom, Val.vthunk.injEq] at this; exact this
+  | .inl w, hsc => by simp only [evalV, MVal.WFClos]; exact evalV_WFClos hWFρ hρ hsc.inl_inv
+  | .inr w, hsc => by simp only [evalV, MVal.WFClos]; exact evalV_WFClos hWFρ hρ hsc.inr_inv
+  | .pair w₁ w₂, hsc => by
+      simp only [evalV, MVal.WFClos]
+      exact ⟨evalV_WFClos hWFρ hρ hsc.pair_inv.1, evalV_WFClos hWFρ hρ hsc.pair_inv.2⟩
+  | .fold w, hsc => by simp only [evalV, MVal.WFClos]; exact evalV_WFClos hWFρ hρ hsc.fold_inv
+
 /-- The δ-result round-trips: `readback (evalVOfBinop (BinOp.eval op x y)) = BinOp.eval op x y`.
 `BinOp.eval` only makes `vint`/`boolVal` (`inl/inr vunit`), each fixed by `evalVOfBinop`∘`readback`. -/
 theorem readback_evalVOfBinop_eval (op : BinOp) (x y : Int) :
@@ -1917,8 +1939,28 @@ theorem evalE_agrees_evalD_gen :
     have hγ : ∀ v ∈ γ, Val.ClosedE v := hag ▸ hWF
     have hlen : (readbackEnv ρ).length = γ.length := by rw [show readbackEnv ρ = γ from hag]
     cases M with
-    | ret v => sorry
-    | lam M => sorry
+    | ret v =>
+      -- out = mret (evalV ρ v), stores unchanged; evalD (ret (substEnvV γ v)) = ret (readback ..).
+      simp only [evalE, Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+      obtain ⟨hout, -, hσ, hτ, hκ⟩ := h
+      have hsc : Val.ScopedV γ.length v := hlen ▸ (hSc.ret_inv)
+      subst hout hσ hτ hκ
+      refine ⟨G, dσ, dτ, dκ, ?_, hC, hG, ?_, by rintro n op mv ⟨⟩⟩
+      · simp only [substEnv_ret, readbackTermS, readbackTerm, Bang.CalcVM.evalD,
+          readback_evalV hWF (hlen ▸ hsc), show readbackEnv ρ = γ from hag]
+      · rintro t ⟨rfl⟩
+        exact ⟨evalV_WF hWF (hlen ▸ hsc), evalV_WFClos hWF hP (hlen ▸ hsc)⟩
+    | lam M =>
+      -- out = mlam M ρ, stores unchanged; evalD (lam (closeUnderBindersE 1 γ M)).
+      simp only [evalE, Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+      obtain ⟨hout, -, hσ, hτ, hκ⟩ := h
+      have hScM : Comp.ScopedC (γ.length + 1) M := hSc.lam_inv
+      subst hout hσ hτ hκ
+      refine ⟨G, dσ, dτ, dκ, ?_, hC, hG, ?_, by rintro n op mv ⟨⟩⟩
+      · simp only [substEnv_lam, readbackTermS, readbackTerm, Bang.CalcVM.evalD,
+          show readbackEnv ρ = γ from hag]
+      · rintro t ⟨rfl⟩
+        exact ⟨⟨hWF, hlen ▸ hScM⟩, hlen ▸ hScM, hWF, hP⟩
     | force w => sorry
     | letC M N => sorry
     | app M v => sorry
