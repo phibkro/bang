@@ -28,7 +28,7 @@ graph TD
   end
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
     Backend_AbstractMachine["Backend.AbstractMachine<br/>6850L · fan-in 0"]
-    Backend_EnvMachine["Backend.EnvMachine<br/>3369L · fan-in 0"]
+    Backend_EnvMachine["Backend.EnvMachine<br/>3335L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1496L · fan-in 0"]
     Backend_Wasm["Backend.Wasm<br/>2721L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>564L · fan-in 0"]
@@ -40,7 +40,7 @@ graph TD
     Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 0"]
     Core_Semantics_Eval["Core.Semantics.Eval<br/>415L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
-    Core_Semantics_Subst["Core.Semantics.Subst<br/>937L · fan-in 0"]
+    Core_Semantics_Subst["Core.Semantics.Subst<br/>940L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>3237L · fan-in 0"]
     Core_Typing["Core.Typing<br/>479L · fan-in 0"]
     Examples["Examples<br/>365L · fan-in 0"]
@@ -81,7 +81,7 @@ graph TD
 | `Frontend.Surface` | ? | 2712 | 1 |
 | `Audit` | Apex | 54 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
-| `Backend.EnvMachine` | ? | 3369 | 0 |
+| `Backend.EnvMachine` | ? | 3335 | 0 |
 | `Backend.U5bComplete` | ? | 1496 | 0 |
 | `Backend.Wasm` | ? | 2721 | 0 |
 | `Core.CapCoh` | ? | 564 | 0 |
@@ -93,7 +93,7 @@ graph TD
 | `Core.Semantics.Dispatch` | ? | 273 | 0 |
 | `Core.Semantics.Eval` | ? | 415 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
-| `Core.Semantics.Subst` | ? | 937 | 0 |
+| `Core.Semantics.Subst` | ? | 940 | 0 |
 | `Core.Soundness` | ? | 3237 | 0 |
 | `Core.Typing` | ? | 479 | 0 |
 | `Distribution` | Apex | 65 | 0 |
