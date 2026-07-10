@@ -1,0 +1,59 @@
+import Ast
+import Lexer
+import Parser
+import Eval
+import Print
+let baseEnv = {Ast.EnvCons("x", (10, Ast.EnvCons("y", (3, Ast.EnvNil))))}
+let calc = {fun src =>
+    let toks = $(Lexer.lex) src
+      in
+    let ast = $(Parser.parseAll) toks
+      in
+    handle (($(Eval.eval)) tr $baseEnv ast) with Eval_Trace as tr { log(x) => 0 }}
+let nodes = {fun src =>
+    let toks = $(Lexer.lex) src
+      in
+    let ast = $(Parser.parseAll) toks
+      in
+    handle (($(Eval.countSteps)) tr ast) with Eval_Trace as tr { log(x) => 1 }}
+let roundTrips = {fun src =>
+    let toks1 = $(Lexer.lex) src
+      in
+    let ast1 = $(Parser.parseAll) toks1
+      in
+    let shown = $(Print.show) ast1
+      in
+    let toks2 = $(Lexer.lex) shown
+      in
+    let ast2 = $(Parser.parseAll) toks2
+      in
+    handle
+      (let v1 = ($(Eval.eval)) tr $baseEnv ast1
+         in
+       let v2 = ($(Eval.eval)) tr $baseEnv ast2 in if v1 == v2 then 1 else 0)
+    with Eval_Trace as tr { log(x) => 0 }}
+let main =
+  let r1 = $calc "1 + 2 + 3"
+    in
+  let r2 = $calc "2 + 3 * 4"
+    in
+  let r3 = $calc "(2 + 3) * 4"
+    in
+  let r4 = $calc "12 + 3 * (4 - 5)"
+    in
+  let r5 = $calc "100 / (2 + 3)"
+    in
+  let r6 = $calc "0 - 7 + 10"
+    in
+  let r7 = $calc "2 * 3 * 4 - 5"
+    in
+  let r8 = $calc "1 + 2 * 3 - 4 / 2"
+    in
+  let rv = $calc "x * y + 1"
+    in
+  let n4 = $nodes "12 + 3 * (4 - 5)"
+    in
+  let rt = $roundTrips "12 + 3 * (4 - 5)"
+    in
+  r1 + r2 * 10 + r3 * 100 + r4 * 1000 + r5 + r6 + r7 + r8 + rv * 10000 +
+  n4 * 100000 + rt * 10000000

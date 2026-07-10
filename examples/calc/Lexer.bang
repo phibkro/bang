@@ -1,0 +1,58 @@
+import Ast
+pub let isDigit = {fun n => if 47 < n then if n < 58 then 0 == 0 else 0 == 1 else 0 == 1}
+pub let isAlpha = {fun n => if 96 < n then if n < 123 then 0 == 0 else 0 == 1 else 0 == 1}
+pub let isWs =
+  {fun n =>
+    if n == 32
+      then 0 == 0
+      else if n == 10
+        then 0 == 0
+        else if n == 9 then 0 == 0 else if n == 13 then 0 == 0 else 0 == 1}
+pub let rec lex : Str -> Ast_TokList ! {Div} =
+  fun s =>
+    match (s : Str) {
+      SNil -> Ast.TkNil,
+      SCons(c, rest) -> match c {
+        Char(n) -> if $isWs n
+          then $lex rest
+          else if n == 43
+            then Ast.TkCons(Ast.TPlus, $lex rest)
+            else if n == 45
+              then Ast.TkCons(Ast.TMinus, $lex rest)
+              else if n == 42
+                then Ast.TkCons(Ast.TStar, $lex rest)
+                else if n == 47
+                  then Ast.TkCons(Ast.TSlash, $lex rest)
+                  else if n == 40
+                    then Ast.TkCons(Ast.TLParen, $lex rest)
+                    else if n == 41
+                      then Ast.TkCons(Ast.TRParen, $lex rest)
+                      else if $isDigit n
+                        then let rec scanNum : Int -> Str -> Ast_TokList ! {Div} = fun acc =>
+                            fun t =>
+                              match (t : Str) {
+                                SNil -> Ast.TkCons(Ast.TNum acc, Ast.TkNil),
+                                SCons(dc, drest) -> match dc {
+                                  Char(dn) -> if $isDigit dn
+                                    then $scanNum (acc * 10 + (dn - 48)) drest
+                                    else Ast.TkCons(Ast.TNum acc, $lex t)
+                                }
+                              }
+                          in
+                        $scanNum (n - 48) rest
+                        else if $isAlpha n
+                          then let rec scanId : Str -> Str -> Ast_TokList ! {Div} = fun acc =>
+                              fun t =>
+                                match (t : Str) {
+                                  SNil -> Ast.TkCons(Ast.TIdent acc, Ast.TkNil),
+                                  SCons(ic, irest) -> match ic {
+                                    Char(inn) -> if $isAlpha inn
+                                      then $scanId ($concat acc (SCons(Char inn, SNil))) irest
+                                      else Ast.TkCons(Ast.TIdent acc, $lex t)
+                                  }
+                                }
+                            in
+                          $scanId (SCons(Char n, SNil)) rest
+                          else Ast.TkCons(Ast.TErr, Ast.TkNil)
+      }
+    }

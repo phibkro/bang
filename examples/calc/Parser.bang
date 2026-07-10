@@ -1,0 +1,102 @@
+import Ast
+pub let rec parseExpr : Ast_TokList -> Option (Ast_Expr * Ast_TokList) ! {Div} =
+  fun toks =>
+    let rec parseFactor : Ast_TokList -> Option (Ast_Expr * Ast_TokList) ! {Div} = fun ts =>
+        match (ts : Ast_TokList) {
+          TkNil -> None,
+          TkCons(h, rest) -> match (h : Ast_Tok) {
+            Ast_TNum(v) -> Some(Ast.ENum v, rest),
+            Ast_TIdent(nm) -> Some(Ast.EVar nm, rest),
+            Ast_TMinus -> match ($parseFactor
+            rest) { None -> None, Some(p) -> let (inner, r1) = p in Some(Ast.ENeg inner, r1) },
+            Ast_TLParen -> match ($parseExpr
+            rest) {
+              None -> None,
+              Some(p) -> let (inner, r1) = p
+                in
+              match (r1 : Ast_TokList) {
+                TkNil -> None,
+                TkCons(rp, r2) -> match (rp : Ast_Tok) {
+                  Ast_TRParen -> Some(inner, r2),
+                  Ast_TNum(x) -> None,
+                  Ast_TIdent(x) -> None,
+                  Ast_TPlus -> None,
+                  Ast_TMinus -> None,
+                  Ast_TStar -> None,
+                  Ast_TSlash -> None,
+                  Ast_TLParen -> None,
+                  Ast_TEnd -> None,
+                  Ast_TErr -> None
+                }
+              }
+            },
+            Ast_TPlus -> None,
+            Ast_TStar -> None,
+            Ast_TSlash -> None,
+            Ast_TRParen -> None,
+            Ast_TEnd -> None,
+            Ast_TErr -> None
+          }
+        }
+      in
+    let rec termLoop : Ast_Expr -> Ast_TokList -> Option (Ast_Expr * Ast_TokList) ! {Div} = fun acc =>
+        fun ts =>
+          match (ts : Ast_TokList) {
+            TkNil -> Some(acc, ts),
+            TkCons(h, rest) -> match (h : Ast_Tok) {
+              Ast_TStar -> match ($parseFactor
+              rest) {
+                None -> None, Some(p) -> let (rhs, r1) = p in $termLoop Ast.EMul(acc, rhs) r1
+              },
+              Ast_TSlash -> match ($parseFactor
+              rest) {
+                None -> None, Some(p) -> let (rhs, r1) = p in $termLoop Ast.EDiv(acc, rhs) r1
+              },
+              Ast_TNum(x) -> Some(acc, ts),
+              Ast_TIdent(x) -> Some(acc, ts),
+              Ast_TPlus -> Some(acc, ts),
+              Ast_TMinus -> Some(acc, ts),
+              Ast_TLParen -> Some(acc, ts),
+              Ast_TRParen -> Some(acc, ts),
+              Ast_TEnd -> Some(acc, ts),
+              Ast_TErr -> Some(acc, ts)
+            }
+          }
+      in
+    let rec parseTerm : Ast_TokList -> Option (Ast_Expr * Ast_TokList) ! {Div} = fun ts =>
+        match ($parseFactor ts) { None -> None, Some(p) -> let (f, r1) = p in $termLoop f r1 }
+      in
+    let rec exprLoop : Ast_Expr -> Ast_TokList -> Option (Ast_Expr * Ast_TokList) ! {Div} = fun acc =>
+        fun ts =>
+          match (ts : Ast_TokList) {
+            TkNil -> Some(acc, ts),
+            TkCons(h, rest) -> match (h : Ast_Tok) {
+              Ast_TPlus -> match ($parseTerm
+              rest) {
+                None -> None, Some(p) -> let (rhs, r1) = p in $exprLoop Ast.EAdd(acc, rhs) r1
+              },
+              Ast_TMinus -> match ($parseTerm
+              rest) {
+                None -> None, Some(p) -> let (rhs, r1) = p in $exprLoop Ast.ESub(acc, rhs) r1
+              },
+              Ast_TNum(x) -> Some(acc, ts),
+              Ast_TIdent(x) -> Some(acc, ts),
+              Ast_TStar -> Some(acc, ts),
+              Ast_TSlash -> Some(acc, ts),
+              Ast_TLParen -> Some(acc, ts),
+              Ast_TRParen -> Some(acc, ts),
+              Ast_TEnd -> Some(acc, ts),
+              Ast_TErr -> Some(acc, ts)
+            }
+          }
+      in
+    match ($parseTerm toks) { None -> None, Some(p) -> let (t, r1) = p in $exprLoop t r1 }
+pub let parseAll =
+  {fun toks =>
+    match ($parseExpr
+    toks) {
+      None -> Ast.EErr,
+      Some(p) -> let (e, rest) = p
+        in
+      match (rest : Ast_TokList) { TkNil -> e, TkCons(x, y) -> Ast.EErr }
+    }}
