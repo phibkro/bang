@@ -384,6 +384,31 @@ theorem krelSN_handleF_intro {n f : Nat} {nh : Nat} {C D : CTy Eff Mult} {e : Ef
   rw [krelSN_handleF]
   exact ⟨hincpair, rfl, hHR, htail, hres⟩
 
+/-- `KrelSN`-related stacks have EQUAL length (each clause relates same-headed frames + recurses on
+equal-length tails; the mismatched-head arms are `False`). Needed for the strip's nil case (a boundary
+on the LHS forces the RHS prefix empty). Structural on `K₁`. -/
+theorem krelSN_length_eq {n f : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} :
+    ∀ {K₁ K₂ : Stack}, KrelSN n f C D ε g K₁ K₂ → K₁.length = K₂.length
+  | [], [], _ => rfl
+  | [], (_ :: _), h => by simp [KrelSN] at h
+  | (_ :: _), [], h => by simp [KrelSN] at h
+  | (Frame.letF _ :: K₁'), (Frame.letF _ :: K₂'), h => by
+      rw [krelSN_letF] at h; obtain ⟨_, _, _, _, _, _, _, htail⟩ := h
+      simp only [List.length_cons]; rw [krelSN_length_eq htail]
+  | (Frame.appF _ :: K₁'), (Frame.appF _ :: K₂'), h => by
+      rw [krelSN_appF] at h; obtain ⟨_, _, _, _, _, _, _, _, htail⟩ := h
+      simp only [List.length_cons]; rw [krelSN_length_eq htail]
+  | (Frame.handleF _ _ :: K₁'), (Frame.handleF _ _ :: K₂'), h => by
+      rw [krelSN_handleF] at h; obtain ⟨_, _, _, htail, _⟩ := h
+      simp only [List.length_cons]; rw [krelSN_length_eq htail]
+  | (Frame.letF _ :: _), (Frame.appF _ :: _), h => by simp [KrelSN] at h
+  | (Frame.letF _ :: _), (Frame.handleF _ _ :: _), h => by simp [KrelSN] at h
+  | (Frame.appF _ :: _), (Frame.letF _ :: _), h => by simp [KrelSN] at h
+  | (Frame.appF _ :: _), (Frame.handleF _ _ :: _), h => by simp [KrelSN] at h
+  | (Frame.handleF _ _ :: _), (Frame.letF _ :: _), h => by simp [KrelSN] at h
+  | (Frame.handleF _ _ :: _), (Frame.appF _ :: _), h => by simp [KrelSN] at h
+termination_by K₁ _ => K₁.length
+
 /-! ## The fuel-descending STRIP lemma — `krelSN_append_inv`
 
 The strip the SKIP arm needs, ISOLATED as a fuel-descending lemma. From a `KrelSN` over the appended
@@ -401,19 +426,26 @@ the wall to a well-founded strip — it does NOT hit the `krelS_hole_det` refuta
 `Dᵢ` is this lemma's OUTPUT existential (carried), never re-derived from the shared tail. -/
 theorem krelSN_append_inv {m fₒ f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g : Nat} {nid : Nat}
     {hh h' : Handler} {Sstrip Ko' Sstrip' K₂ₒ : Stack}
-    (hfₒ : fₒ < f)
+    (hfₒ : fₒ ≤ f)
     (hS : KrelSN m f Cᵢ D εᵢ g (Sstrip ++ Frame.handleF nid hh :: Ko') (Sstrip' ++ Frame.handleF nid h' :: K₂ₒ)) :
-    -- The prefix relates at the boundary decomp's CARRIED answer `Dᵢ`, at the SMALLER fuel `fₒ`. `Dᵢ` is an
-    -- OUTPUT existential — the fuel-descent carries it, so it is NOT re-derived (dodging `krelSN_hole_det`).
+    -- The prefix relates at the boundary decomp's CARRIED answer `Dᵢ`, at fuel `fₒ ≤ f`. `Dᵢ` is an OUTPUT
+    -- existential — the fuel-descent carries it, so it is NOT re-derived (dodging `krelSN_hole_det`).
     ∃ (Dᵢ : CTy Eff Mult), KrelSN m fₒ Cᵢ Dᵢ εᵢ g Sstrip Sstrip' := by
-  -- WELL-FOUNDED on the FUEL: the handleF-in-prefix self-recursion (a nested handler in `Sstrip`) re-strips
-  -- at fuel `< fₒ`, so it TERMINATES — the IH the LR `krelS_append_inv` (`AppendInvWF`) LACKED (it had only
-  -- structural `Sstrip`-induction, which does not reach the re-stripped inner stack; the `Dⱼ = Dᵢ`
-  -- refutation `c8b5909` is that missing IH surfacing as a false cross-answer equation). The answer `Dᵢ` is
-  -- the boundary decomp's carried existential — the fuel-descent thread, NOT the refuted equation. This
-  -- fuel-WF recursion + the answer-as-output-existential is the slice-2 grind (the `krelSN_splitAtId_decomp`
-  -- self-call at `fₒ < f`); slice 1 establishes its SHAPE closes the crux (below), not its proof.
-  sorry
+  -- FINDING (slice 2): the strip walks `Sstrip` STRUCTURALLY. Each frame (letF/appF/handleF) THREADS its
+  -- tail at the SAME fuel `f` (fuel only descends at the RESUME conjunct, which the strip carries but does
+  -- NOT re-decompose). So the tail recursion is structural on `Sstrip.length` — fuel-WF is NOT needed here
+  -- (the earlier "self-referential re-strip" fear does not materialize: the strip never re-decomposes an
+  -- inner stack, it just peels frames). The answer `Dᵢ` is where `Sstrip` bottoms = the boundary frame's
+  -- hole, carried structurally. Fuel-mono (fₒ ≤ f) handles the VrelKN/CrelKN sub-arms (slice-2 mutual).
+  induction Sstrip generalizing Cᵢ εᵢ Sstrip' with
+  | nil =>
+      -- `Sstrip = []`: LHS = `handleF nid hh :: Ko'`. RHS head must match (handleF) ⇒ `Sstrip' = []` by
+      -- length-alignment. Output `Dᵢ := Cᵢ`, nil-relates. (Length-alignment + `Sstrip'=[]` is the sub-goal.)
+      sorry
+  | cons fr rest ih =>
+      -- peel `fr`; recurse on `rest` at the SAME fuel `f`. letF/appF/handleF each reconstruct over the
+      -- peeled tail (structural). The handleF-in-prefix carries its resume conjunct UNCHANGED (no re-strip).
+      sorry
 
 /-! ## THE CRUX — the fuel-indexed `krelSN_splitAtId_decomp`, SKIP arm CLOSED
 
@@ -553,10 +585,7 @@ theorem krelSN_splitAtId_decomp {n f : Nat} {C D : CTy Eff Mult} {e : Eff} {g : 
                     rw [← hSi, ← hSi'] at hSk
                     obtain ⟨Dstrip, hstrip⟩ := krelSN_append_inv (Sstrip := cfg₁.1) (Sstrip' := cfg₂.1)
                       (nid := nid) (hh := hh) (h' := h') (Ko' := Ko') (K₂ₒ := K₂ₒ) (fₒ := fⱼ - 1)
-                      (Nat.sub_lt (by
-                        -- fⱼ > 0: else the strip's captured-continuation supply is vacuous. The fuel FLOOR,
-                        -- analogous to `crelKN 0`; a def-level vacuity lemma (slice-2) discharges it.
-                        sorry) Nat.one_pos) hSk
+                      (Nat.sub_le fⱼ 1) hSk
                     -- ARBITRATED PAYOFF: the OUTPUT resume conjunct now binds `∃ fⱼ' < fₒ (= fᵢ)`; I supply
                     -- ARBITRATED PAYOFF, sharpened: supply the output fuel `fⱼ' := fⱼ - 1` (NOT `fⱼ`). Since
                     -- `fⱼ - 1 < fⱼ < fᵢ`, it satisfies the OUTPUT's `∃ fⱼ' < fᵢ`, AND the strip produces at
