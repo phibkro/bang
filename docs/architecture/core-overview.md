@@ -41,7 +41,7 @@ graph TD
     Core_Semantics_Eval["Core.Semantics.Eval<br/>415L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
     Core_Semantics_Subst["Core.Semantics.Subst<br/>230L · fan-in 0"]
-    Core_Soundness["Core.Soundness<br/>3237L · fan-in 0"]
+    Core_Soundness["Core.Soundness<br/>3299L · fan-in 0"]
     Core_Typing["Core.Typing<br/>479L · fan-in 0"]
     Examples["Examples<br/>365L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
@@ -69,9 +69,9 @@ graph TD
     Witness_VcapFreeRefute["Witness.VcapFreeRefute<br/>55L · fan-in 0"]
   end
   subgraph tier_Apex["Apex — verification spine + gate"]
-    Audit["Audit<br/>54L · fan-in 0"]
+    Audit["Audit<br/>58L · fan-in 0"]
     Distribution["Distribution<br/>65L · fan-in 0"]
-    Spec["Spec<br/>317L · fan-in 0"]
+    Spec["Spec<br/>341L · fan-in 0"]
   end
   Frontend_Surface_PropTest --> Frontend_Surface
 ```
@@ -79,7 +79,7 @@ graph TD
 | module | tier | LOC | fan-in |
 |---|---|---|---|
 | `Frontend.Surface` | ? | 2712 | 1 |
-| `Audit` | Apex | 54 | 0 |
+| `Audit` | Apex | 58 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3605 | 0 |
 | `Backend.U5bComplete` | ? | 1496 | 0 |
@@ -94,7 +94,7 @@ graph TD
 | `Core.Semantics.Eval` | ? | 415 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
 | `Core.Semantics.Subst` | ? | 230 | 0 |
-| `Core.Soundness` | ? | 3237 | 0 |
+| `Core.Soundness` | ? | 3299 | 0 |
 | `Core.Typing` | ? | 479 | 0 |
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 365 | 0 |
@@ -109,7 +109,7 @@ graph TD
 | `Reify.CalcReify` | ? | 270 | 0 |
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 317 | 0 |
+| `Spec` | Apex | 341 | 0 |
 | `Witness.AgreeOutcome` | ? | 236 | 0 |
 | `Witness.BoccRegress` | ? | 260 | 0 |
 | `Witness.CapEscapeWitness` | ? | 71 | 0 |

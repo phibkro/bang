@@ -180,6 +180,20 @@ Stages 1-3 unblock a RUNNING (if unproven) user-effect demo — the moat made vi
 tracer bullet before the proof grind. Stage 4 sequences with route-B (ADR-0052). Stages 5-6 pair
 with `proof-engineer`.
 
+**Stage-6 STATUS (2026-07-10, closing-slice landing): MET — and the MED-HIGH risk estimate is
+superseded.** The four named theorems (`preservation`/`progress`/`type_safety`/
+`no_accidental_handling`) were discharged INCREMENTALLY: each of Stages 2–5 folded its custom
+arms into the general theorems as it landed (the fold-in-as-you-land discipline), so the
+`just axioms` gate this row assigns passed on main before Stage 6 was ever scheduled — and
+non-vacuously (the Stage-3 typed rules make custom frames genuinely type; the resume chain is
+discharged). The residual-effect-threading this ADR feared was dissolved by the ret-shape
+(ADR-0092 §D3/D4). The closing slice (probe `docs/notes/stage6-soundness-design.md` + landing)
+added the two INSTANTIATION lemmas that make the composition usable at a custom handler —
+`custom_handlesWithin`, `no_accidental_handling_custom` `[propext]` — and the e2e HEADLINE
+`custom_program_safe` (a fully-handled well-typed program never sticks, at user labels) ⊆
+trusted-three. Census 16→18 clean / 7 flagged. `effect_sound`/Q14 confirmed OUT of #44
+(orthogonal, predates the arc). The arc's remaining stage is 7 (surface).
+
 **Overall size:** L / weeks, spine-touching (confirms ADR-0084) — the largest post-MVP direction.
 The no-frozen-statement-change + additive-ripple findings make it more tractable than feared (not a
 re-freeze), but stage 4 (+route-B entanglement) and the LR frontier keep it multi-session.

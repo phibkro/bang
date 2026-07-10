@@ -34,6 +34,7 @@ its trigger arises.
 | **CALM-as-grade survey** (rung-3 map: lattice-store core + `coord` row label · grading-the-row rejected · the Datalog-transfer wall · SPU = monotone fragment discharging `rowmonotone_coordination_free`) | `docs/notes/calm-as-grade-survey.md` |
 | **Laws taxonomy** (model-shaped vs morphism-shaped · composition-closed ⇒ gradeable criterion · the free/graded/law/runtime ladder · Q38 = one theory, three coats) | `docs/notes/laws-taxonomy.md` |
 | **Stage-5 LR design map** (the three pre-registered debts probed · ret-shape tractability CONFIRMED · one-session verdict · the HandlerRel-ripple slice order) | `docs/notes/stage5-lr-design.md` |
+| **Stage-6 soundness design** (the composition was already met incrementally · the instantiation lemmas + custom_program_safe e2e headline · Q14 out of #44) | `docs/notes/stage6-soundness-design.md` |
 | **Stage-6 soundness-composition map** (#44 Stage 6 · the headline gate met by composition as Stages 2-5 landed · the two instantiation lemmas + the e2e capstone · Q14 out of scope) | `docs/notes/stage6-soundness-design.md` |
 | **◊6 paper skeletons** (calculated-machine + binary-LR: census-checked claims · venue candidates · honest what-remains) | `docs/papers/` |
 | **Verification ladder** (agent-speed quality gates · HoTT verdict · Q43 proof-export) | `docs/notes/verification-ladder.md` |
