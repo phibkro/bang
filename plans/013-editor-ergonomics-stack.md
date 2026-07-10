@@ -1,4 +1,4 @@
-# Plan 013: The editor-ergonomics stack — generated grammars, the LSP wrapper, tree-sitter, VS Code
+# Plan 013: The ergonomics stack — generated grammars, LSP, tree-sitter, VS Code + the agent-loop verbs (explain · fixits · new · --update · watch)
 
 > **Executor instructions**: Follow this plan slice by slice; every slice is independently
 > bankable — commit each separately, land what fits, report the rest untouched. Run every
@@ -10,8 +10,11 @@
 
 ## Status
 
-- **Priority**: P3 (◊5.75 / public-early — human-facing; agents already have the JSON verbs)
-- **Effort**: L total, but sliced S/M/M/S
+- **Priority**: P3 for slices 1–4 (◊5.75 / public-early, human-facing); P2 for slices 5–9
+  (agent-loop verbs — they move the agent-coding yardstick directly)
+- **Effort**: XL total, but NINE independently bankable slices (S/M each) — this plan is a
+  MENU across multiple dispatches, not one lane's session. **Reorder slices 5–9 by the N5
+  dogfood findings note when it lands** (evidence beats the menu order below).
 - **Risk**: LOW (all additive; nothing enters the verify gate's Lean legs)
 - **Depends on**: none hard; slice 2 benefits from N3's verbs being merged (holes/impact landed)
 - **Category**: dx / direction
@@ -99,12 +102,59 @@ plain `npm pack` — DO NOT publish to the marketplace (outward action, operator
 install-and-open smoke result ONLY if a VS Code is available headlessly — otherwise state the
 packaging succeeded and the smoke is deferred to the operator.
 
+### Slice 5 (M): stable diagnostic codes + `bang explain` (the rustc pattern)
+
+A diagnostic-code REGISTRY as the SSoT (a table in code — code · one-line summary · the
+teaching text · a minimal triggering example), starting with the existing teaching-diagnostic
+family (the ADR-0095 D4 text, the reserved-word rejections, the row-mismatch and escape
+diagnostics) — the long tail retrofits incrementally, slice-bounded at ~10 codes. Diagnostics
+gain their code in output (`error[B012]: …`); `bang explain B012` prints the registry entry;
+`gen-reference.py` derives a diagnostics section from the registry (drift-unrepresentable).
+**Verify**: battery cases per code (trigger → the code appears; explain → the teaching text);
+reference regen includes the section; `--check` green.
+
+### Slice 6 (M): lint FIXITS riding the rewrite preservation gate
+
+Extend lint findings with an optional machine-applicable edit; `bang lint --fix` applies it and
+then runs THE SAME differential preservation gate `bang rewrite` uses — a fixit that provably
+preserves semantics, which is the bang-distinctive claim (Roslyn/rust-analyzer can't make it).
+Start with 1–2 mechanical lints only (whichever existing findings have obvious rewrites — read
+`Bang/Frontend/Lint.lean` for candidates); the mechanism is the deliverable, not coverage.
+**Verify**: fix applied → preservation gate green → re-lint shows the finding gone; a
+deliberately WRONG fixit (planted in a test) is REJECTED by the gate (the red-path test).
+
+### Slice 7 (S): `bang new NAME` scaffolding
+
+Scaffolds a directory per the examples convention (a runnable starter `main.bang`, an
+`expected.txt` produced by actually running it, a README stub) with a `--module` variant for
+the import/use multi-file shape. **Verify**: scaffold → `bang run` works out of the box →
+the directory passes the check-examples loop shape.
+
+### Slice 8 (S): `bang test --update` (deliberate snapshot acceptance)
+
+An update mode for the expected.txt oracle: re-runs a NAMED example and rewrites its
+expected.txt from actual output. Deliberate-only by design: requires naming the example (no
+bulk-silent mode), prints the old→new diff loudly, and relies on git for review (the oracle
+change is a visible diff, never an invisible mutation). **Verify**: update flow shown; the
+diff appears in `git status`; check-examples green after.
+
+### Slice 9 (S): watch mode
+
+`just watch [FILE]` — re-runs `just check FILE` (or check-examples for a named example) on
+file change via inotifywait (`nix shell nixpkgs#inotify-tools`), the Vite-lesson loop-speed
+item. **Verify**: a manual transcript (edit → automatic re-check output) in the report.
+
 ## Done criteria (per slice — land what fits)
 
 - [ ] S1: grammar generated + fitness-gated; site highlights bang; alias deleted
 - [ ] S2: LSP battery in the gate; smoke transcript in the report
 - [ ] S3: tree-sitter corpus green over all examples
 - [ ] S4: a .vsix artifact, unpublished
+- [ ] S5: ≥10 coded diagnostics + explain verb + the generated reference section
+- [ ] S6: the fixit mechanism with the preservation gate REJECTING a planted wrong fixit
+- [ ] S7: scaffold runs out of the box
+- [ ] S8: oracle updates are loud, named, git-visible
+- [ ] S9: the watch transcript
 - [ ] `just verify` + `just fitness` exit 0 after each slice
 
 ## STOP conditions
@@ -123,6 +173,7 @@ packaging succeeded and the smoke is deferred to the operator.
 - The generated-grammar `--check` leg makes syntax changes self-announcing: a parser-table
   edit that forgets to regen fails fitness — that's the "stable ergonomics while the surface
   is liquid" property this plan exists for.
-- Follow-ups (separate plans, fed by the N5 dogfood findings): `bang explain <diag-code>` +
-  stable diagnostic codes (the rustc pattern), lint FIXITS riding the rewrite preservation
-  gate, `bang new` scaffolding, `bang test --update` snapshot acceptance, watch mode.
+- Slices 5–9 were merged in from the ecosystem-inspiration survey (operator, 2026-07-10);
+  the N5 dogfood findings note is the standing re-prioritizer for them. Doctests were
+  surveyed and found ALREADY WON in inverted form (gen-reference derives examples FROM
+  compiled #guards — the docs gate the build rather than decorate it).
