@@ -585,15 +585,15 @@ def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M 
 step (`evalD (f+1) g σ τ M = evalD f g σ τ M'` for all f) AND ONE matching `Source.step`
 (`(g,K,M) → (g,K,M')`), then `CompletesTo` for `M'` lifts to `M`. Covers force/case/split/unfold
 (the pure same-context reductions); the evalD-step-equality is discharged per-constructor by `rfl`. -/
-theorem completesTo_reduce {F g : Nat} {σ : SStore} {τ : THeap} {M M' : Comp} {K : Bang.EvalCtx} {v : Val}
-    (hevD : ∀ f, evalD (f+1) g σ τ [] M = evalD f g σ τ [] M')
+theorem completesTo_reduce {F g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {M M' : Comp} {K : Bang.EvalCtx} {v : Val}
+    (hevD : ∀ f, evalD (f+1) g σ τ κ M = evalD f g σ τ κ M')
     (hstep : Source.step (g, K, M) = some (g, K, M'))
-    (hM' : CompletesTo F g σ τ M' K v) : CompletesTo (F+1) g σ τ M K v := by
-  obtain ⟨n, g', σ', τ', hCFσ', hCFτ', hd⟩ := hM'
-  refine ⟨n+1, g', σ', τ', hCFσ', hCFτ', ?_⟩
-  rcases hd with ⟨t, hev, hCf, hTf, hCohf, hFf, hCFt, F', hF'le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F', hF'le, hcont⟩
-  · exact Or.inl ⟨t, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, hCFt, F', by omega, hcont⟩
-  · exact Or.inr ⟨nn, oop, vv, by rw [hevD]; exact hev, hCf, hTf, hCohf, hFf, hNR, hCFv, F', by omega, hcont⟩
+    (hM' : CompletesTo F g σ τ κ M' K v) : CompletesTo (F+1) g σ τ κ M K v := by
+  obtain ⟨n, g', σ', τ', κ', hd⟩ := hM'
+  refine ⟨n+1, g', σ', τ', κ', ?_⟩
+  rcases hd with ⟨t, hev, hCf, hTf, hCCf, hCohf, hFf, F', hF'le, hcont⟩ | ⟨nn, oop, vv, hev, hCf, hTf, hCCf, hCohf, hFf, hNR, F', hF'le, hcont⟩
+  · exact Or.inl ⟨t, by rw [hevD]; exact hev, hCf, hTf, hCCf, hCohf, hFf, F', by omega, hcont⟩
+  · exact Or.inr ⟨nn, oop, vv, by rw [hevD]; exact hev, hCf, hTf, hCCf, hCohf, hFf, hNR, F', by omega, hcont⟩
 
 /-- id-first store-disjointness (converse-side): an identity `n` resolving to a TXN frame cannot ALSO
 resolve to a STATE frame — the `StratFresh` id-uniqueness makes `splitAtId` deterministic. The inverse
@@ -616,21 +616,24 @@ non-get/put; txn-miss or non-txn) yields `evalD → raised n2 op u` (stores unch
 `dispatchRun` continuation IS the kernel's own `Config.run` on the perform (label reconstructed by
 `labelOf`, or irrelevant on escape). `NoResume` follows: any frame that resolves is throws (abort) or
 fails the op. -/
-theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {K : Bang.EvalCtx}
+theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {κ : CStore} {K : Bang.EvalCtx}
     {n2 : Nat} {ℓ2 : Bang.EffectRow.Label} {op : Bang.OpId} {u v : Val}
-    (hCtx : CtxCorr σ K) (hTtx : CtxTxnCorr τ K)
+    (hCtx : CtxCorr σ K) (hTtx : CtxTxnCorr τ K) (hCK : CCtxCorr κ K)
     (hCoh : CapLabelCoh (g, K, Comp.perform (Val.vcap n2 ℓ2) op u))
     (hFresh : FreshCfg (g, K, Comp.perform (Val.vcap n2 ℓ2) op u))
     (hrun : Config.run (F+1) (g, K, Comp.perform (Val.vcap n2 ℓ2) op u) = Result.done v)
     (hst : (ctxStates K).get? n2 = none ∨ (op ≠ "get" ∧ op ≠ "put"))
     (htx : (ctxTxns K).get? n2 = none ∨ isTxnOp op = false)
-    (hncf : NoCustomFrame K)
-    (hCFu : CFVal u) (hCFσ : CFStore σ) (hCFτ : CFHeap τ)
-    (hev : evalD 1 g σ τ [] (Comp.perform (Val.vcap n2 ℓ2) op u) = some (.raised n2 op u, g, σ, τ, [])) :
-    CompletesTo (F+1) g σ τ (Comp.perform (Val.vcap n2 ℓ2) op u) K v := by
-  refine ⟨1, g, σ, τ, hCFσ, hCFτ, Or.inr ⟨n2, op, u, hev, ?_, ?_, ?_, ?_, ?_, hCFu, F+1, by omega, ?_⟩⟩
+    -- κ-side miss: no custom frame at n2, OR the frame's clause list has no matching op. Either way the
+    -- id-first perform reaches its raise (mirrors evalD's custom perform arm: κ.get? then find?).
+    (hcu : (ctxCustoms K).get? n2 = none ∨ ∀ p cl, (ctxCustoms K).get? n2 = some (p, cl) → cl.find? (·.1 == op) = none)
+    (hev : evalD 1 g σ τ κ (Comp.perform (Val.vcap n2 ℓ2) op u) = some (.raised n2 op u, g, σ, τ, κ)) :
+    CompletesTo (F+1) g σ τ κ (Comp.perform (Val.vcap n2 ℓ2) op u) K v := by
+  refine ⟨1, g, σ, τ, κ, Or.inr ⟨n2, op, u, hev, ?_, ?_, ?_, ?_, ?_, ?_, F+1, by omega, ?_⟩⟩
   · rw [ctxNetEffect_self hCtx hTtx]; exact hCtx
   · rw [ctxNetEffect_self hCtx hTtx]; exact hTtx
+  · -- CCtxCorr κ (ctxNetEffect K σ τ): ctxNetEffect only rebuilds σ/τ frames, custom projection invariant.
+    rw [ctxNetEffect_self hCtx hTtx]; exact hCK
   · rw [ctxNetEffect_self hCtx hTtx]
     exact ⟨fun p hp => hCoh.1 p (by simp only [Bang.Model.capsC] at hp ⊢; exact List.mem_append_right _ hp), hCoh.2⟩
   · rw [ctxNetEffect_self hCtx hTtx]
@@ -658,7 +661,13 @@ theorem perform_miss_raises {F g : Nat} {σ : SStore} {τ : THeap} {K : Bang.Eva
           simp [show (op == "newTVar") = false from by simpa using ea,
             show (op == "readTVar") = false from by simpa using eb,
             show (op == "writeTVar") = false from by simpa using ec]
-    | custom ℓ' p cl => exact (hncf.not_custom hsp).elim   -- ADR-0087 rung-2: no custom frame in K
+    | custom ℓ' p cl =>
+        -- custom frame resolves at n2 but its clause list misses op ⇒ handlesOp is false (NoResume left).
+        left
+        rcases hcu with hmiss | hclmiss
+        · exfalso; rw [splitAtId_custom_value hsp] at hmiss; exact absurd hmiss (by simp)
+        · have hcl := hclmiss p cl (by rw [splitAtId_custom_value hsp])
+          simp only [Handler.label, Bang.handlesOp, hcl]
   · -- dispatchRun continuation = the kernel's own Config.run on the perform (label reconstructed).
     rw [ctxNetEffect_self hCtx hTtx]
     simp only [dispatchRun]
