@@ -356,3 +356,34 @@ lint-lean:
 # needs either a newer importGraph pin or parsing `lake build`'s own `Built <mod> (Xs)` lines.
 pole:
     lake exe graph --to Bang.Audit import-graph.dot
+
+# The release battery (plan 011) — clean+main+verify gates, extracts notes since the
+# previous tag (reuses gen-changelog.py's own derivation, re-windowed — CHANGELOG.md has
+# no per-version sections to slice), creates a LOCAL annotated tag, and PRINTS the publish
+# commands without running them. The operator's finger stays on the publish button:
+#   just release v0.2.0              # normal
+#   just release v0.2.0 --skip-verify  # loud-warns, skips the `just verify` gate
+release VERSION *ARGS:
+    bash tools/release.sh {{VERSION}} {{ARGS}}
+
+# Advisory unused-import scan (report mode, no --fix — plan 011 rider). ONE combined
+# invocation over the same 19 root modules as lint-lean — unlike `lake lint`, `shake`
+# genuinely unions multiple modules' closures in a single call (plans/007-lint-triage.md
+# "Command note"; 26 files had removable imports at the last run). `lake exe shake` exits
+# nonzero when findings exist — advisory here, not a gate: tolerate it (`|| true`) but
+# assert the report is non-empty, so a masked tool failure doesn't read as "zero findings".
+shake:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="$(lake exe shake -- Bang.Audit Bang.Backend.EnvMachine Bang.Distribution Bang.Examples \
+      Bang.Frontend.Lint Bang.Frontend.NamedCore Bang.Frontend.Rewrite \
+      Bang.Frontend.Surface.PropTest Bang.Frontend.Surface.Trait Bang.Reify.CalcReifySim \
+      Bang.Witness.BinopTyping Bang.Witness.BoccRegress Bang.Witness.CapEscapeWitness \
+      Bang.Witness.CustomStage1Refute Bang.Witness.ElabFuzz Bang.Witness.ProofExport \
+      Bang.Witness.ReturnEscapeReach Bang.Witness.StateEscapeWitness Bang.Witness.VcapFreeRefute 2>&1)" || true
+    echo "$out"
+    if [[ -z "$out" ]]; then
+      echo "shake: EMPTY output — the tool likely failed silently rather than found zero" >&2
+      echo "       issues; investigate before trusting a clean report." >&2
+      exit 1
+    fi

@@ -27,6 +27,36 @@
             null;
       in
       {
+        # Cheap NO-NETWORK static gate (plan 011 rider) — selfcheck + the fitness legs
+        # that touch neither `lake` (no toolchain/oleans in a pure sandbox) nor `.git`
+        # (a derivation's `src` is a filtered copy of tracked files, not a real git repo —
+        # scripts needing `git log`/`git ls-files`/`git status` history are NOT included
+        # here; they stay in `just fitness`/`just verify`, run with real git available).
+        # This is NOT verify-as-flake-check (network wall via `lake exe cache get` — the
+        # #63 FOD pattern is the future path for that, tracked as a follow-up, not this
+        # rider). `nix flake check` runs this on every system (pure file/text checks,
+        # no toolchain dependency, unlike `packages`/`apps` which are x86_64-linux-only).
+        checks.static =
+          pkgs.runCommand "bang-static-checks"
+            {
+              src = self;
+              nativeBuildInputs = [
+                pkgs.python3
+                pkgs.nodejs_22
+              ];
+            }
+            ''
+              cp -r $src/. .
+              chmod -R u+w .
+              node tools/selfcheck.mjs
+              bash tools/check-primitives.sh
+              bash tools/arch-check.sh
+              bash tools/check-audit-sync.sh
+              bash tools/check-all-modules.sh
+              python3 tools/gen-import-graph.py --check
+              touch $out
+            '';
+
         packages = pkgs.lib.optionalAttrs (bangPkgs != null) {
           default = bangPkgs.bang;
           bang = bangPkgs.bang;
