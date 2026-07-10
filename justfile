@@ -243,8 +243,10 @@ notes-index:
     python3 tools/gen-notes-index.py
 
 # Regenerate tools/README.md (the flat-tools map) from each script's `# tool:` header.
-tools-index:
-    python3 tools/gen-tools-index.py
+# `just tools-index --with-log` prints a status + last-invoked view (from the telemetry
+# log) to stdout WITHOUT touching README.md — the deprecation-candidate view (plan 012).
+tools-index *ARGS:
+    python3 tools/gen-tools-index.py {{ARGS}}
 
 # Regenerate docs/notes/OPEN_QUESTIONS.md (multi-view ledger + validated tie-graph) from the OKF question files.
 questions-index:

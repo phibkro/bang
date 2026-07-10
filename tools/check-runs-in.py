@@ -34,7 +34,8 @@ PRECOMMIT = os.path.join(ROOT, "tools", "git-hooks", "pre-commit")
 SETTINGS = os.path.join(ROOT, ".claude", "settings.json")
 
 HEADER_RE = re.compile(r"^(?:#|//)\s*tool:\s*"
-                       r"role=(\S+)\s+couples=(\S+)\s+runs-in=(\S+)\s*$")
+                       r"role=(\S+)\s+couples=(\S+)\s+runs-in=(\S+)"
+                       r"(?:\s+status=(\S+))?\s*$")   # status= optional; default `active`
 TOOL_INVOKE_RE = re.compile(r"tools/([\w./-]+\.(?:sh|py|mjs))")
 
 
@@ -47,11 +48,11 @@ def required_scripts():
 
 
 def header_of(path):
-    """(role, couples, runs_in) or None."""
+    """(role, couples, runs_in, status) or None. status defaults to `active`."""
     for line in open(os.path.join(ROOT, path), encoding="utf-8").read().splitlines()[:6]:
         m = HEADER_RE.match(line)
         if m:
-            return m.group(1), m.group(2), m.group(3)
+            return m.group(1), m.group(2), m.group(3), (m.group(4) or "active")
     return None
 
 
@@ -135,7 +136,7 @@ def main():
     errors = []
 
     # (a) every runs-in=verify script is reachable
-    for s, (role, couples, runs_in) in hdrs.items():
+    for s, (role, couples, runs_in, status) in hdrs.items():
         if runs_in == "verify":
             base = s[len("tools/"):]
             if base not in reachable:
@@ -144,7 +145,7 @@ def main():
                               f"run-batteries `batteries` array.")
 
     # (b) every batteries entry has a matching runs-in=verify script
-    verify_bases = {s[len('tools/'):] for s, (r, c, ri) in hdrs.items() if ri == "verify"}
+    verify_bases = {s[len('tools/'):] for s, (r, c, ri, st) in hdrs.items() if ri == "verify"}
     for b in bats:
         base = f"{b}.sh"
         path = f"tools/{base}"
@@ -157,7 +158,7 @@ def main():
     # (c) every runs-in=hook script is referenced by a hook installation
     pre_src = open(PRECOMMIT, encoding="utf-8").read() if os.path.exists(PRECOMMIT) else ""
     settings_src = open(SETTINGS, encoding="utf-8").read() if os.path.exists(SETTINGS) else ""
-    for s, (role, couples, runs_in) in hdrs.items():
+    for s, (role, couples, runs_in, status) in hdrs.items():
         if runs_in == "hook":
             base = s[len("tools/"):]                # e.g. hooks/session-start.sh, git-hooks/pre-commit
             leaf = os.path.basename(s)
@@ -168,6 +169,22 @@ def main():
             if not referenced:
                 errors.append(f"(c) {s} claims runs-in=hook but is referenced by neither the "
                               f"pre-commit source nor .claude/settings.json.")
+
+    # (d) a status=deprecated tool may NOT appear in any gate chain (plan 012 slice 3).
+    # A deprecated tool wired to a gate is a contradiction — deprecate means "no longer fires".
+    # The gate-reachable set = verify-chain tools ∪ batteries ∪ fitness-chain tools ∪ hook refs.
+    fitness_chain = chain_closure("fitness", deps)
+    gate_tools = tools_invoked_by(verify_chain | fitness_chain, recipes) | battery_scripts
+    for s, (role, couples, runs_in, status) in hdrs.items():
+        if status == "deprecated":
+            base = s[len("tools/"):]
+            leaf = os.path.basename(s)
+            in_gate = (base in gate_tools
+                       or leaf in pre_src or leaf in settings_src
+                       or s == "tools/git-hooks/pre-commit")
+            if in_gate:
+                errors.append(f"(d) {s} is status=deprecated but still appears in a gate chain "
+                              f"(verify/fitness/batteries/hook) — un-wire it before deprecating.")
 
     print("── check-runs-in ──")
     if errors:

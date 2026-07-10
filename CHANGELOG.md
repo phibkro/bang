@@ -140,6 +140,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **examples** — ndet-sim-kv-a/-b — sim-KV handler-swap demo (#28 rung-2 entry, ndet-dst-design.md) (`ef338d1f`)
 - **gate** — wire check-examples-env into the verify chain (`c91cde42`)
 - **tools** — invocation telemetry — tool-log.sh appends per-exec (plan 012 slice 1) (`e2d0bb75`)
+- **tools** — check-runs-in.py — validate the runs-in= header claim (plan 012 slice 2) (`c4eabc75`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
