@@ -118,6 +118,11 @@ The workflow above holds, plus a hard-won discipline for **agents that write fil
 - **No-git-writes for spawned ICs.** An IC works in its own worktree (`tools/new-worktree.sh <path> <branch>
   main` — never a bare `git worktree add`), builds + gates *there*, and hands the finished files back; the
   manager lands them on `main`. One writer per file. Verify isolation (`git worktree list`); don't assume it.
+- **Seed before the first build.** In a fresh LINKED worktree (e.g. a harness-created one), run
+  `bash tools/seed-lake.sh` before any `lake build` — it reflink-copies the main checkout's `.lake`
+  (packages AND build; seconds on btrfs), so the first build is incremental instead of a cold ~20-min
+  rebuild. Never `lake exe cache get` in a seeded worktree. Staleness is safe: lake trace-verifies and
+  rebuilds only mismatches.
 - **`git add` new files IN the worktree before running `just fitness`** — hygiene checks scan `git ls-files`,
   so untracked files give a **false green**. Gate on tracked content.
 - **Gate the artifact, not the claim.** A confident wrong summary is the same failure as a green stub — go
