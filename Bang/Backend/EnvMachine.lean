@@ -533,9 +533,24 @@ If `evalE` runs `M` under `ρ` to a returner `mret mv`, and `ρ` agrees with a s
 read-back value. Generalized from the empty env to an arbitrary `ρ`/`σ` per PLFA's warning
 (the induction won't fire on the empty-env special case).
 
-`sorry` body — this is the slice-3 obligation; slice 1 confirms only that the statement
-TYPECHECKS (the domains + readback compose) and that the mini-Agree probe below holds
-concretely. -/
+RESUME MAP (the induction is the remaining slice-3 work — the CRUX `substEnv_cons_subst` it turns on
+is PROVEN above, so the grind below is mechanical, patterned on the landed `sim`/`run_evalD`):
+
+- Induct on FUEL `f` (mirrors `sim`), then case on `M`. Generalize over `γ` + `ρ` + the closed-filler
+  side condition (each `readbackEnv ρ` entry is `Val.ClosedE` — TRUE by construction; add it as a hyp).
+- PURE cases (ret/lam/force/letC/app/case/split/unfold/binop): `substEnv γ` DISTRIBUTES over the former
+  (a `substEnv`-over-constructor lemma per case, cheap), then the binder cases close by
+  `substEnv_cons_subst` (the env-extension `mv ∷ₑ ρ` ↔ `Comp.subst (readback mv)`). `readback (evalV ρ v)`
+  = `Val.subst`-image of `v` under `γ` (a value-level `substEnv`/`readback`∘`evalV` lemma — state + prove
+  alongside, the value analog of the crux).
+- EFFECT cases (perform/handle): NEED a store-correspondence MVal-store ↔ Val-store through readback — the
+  analog of `run_evalD`'s `Corr`/`TCorr`/`CCorr` + `StoresBelow`/`StoresDisjoint`. This is the heavy
+  sub-unit (a fresh session): thread empty→empty at entry, relate `evalE`'s σ/τ/κ (MVal) to `evalD`'s
+  (Val) pointwise-under-readback, and mirror the id-first dispatch + throws-catch case-for-case.
+- SPLIT SUGGESTED: land a `_pure` sub-theorem (empty stores, effect-free M) green FIRST — it needs no
+  store-correspondence and banks the bulk — then the effect-store correspondence as slice 3b.
+
+`sorry` — the induction; its linchpin is real (crux proven). -/
 theorem evalE_agrees_evalD (f : Nat) (γ : List Val) (M : Comp) (mv : MVal)
     (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) (ρ : MEnv) (g' : Nat)
     (eσ' : ESStore) (eτ' : ETHeap) (eκ' : ECStore)
@@ -544,7 +559,7 @@ theorem evalE_agrees_evalD (f : Nat) (γ : List Val) (M : Comp) (mv : MVal)
     ∃ F g'' σ' τ' κ',
       Bang.CalcVM.evalD F 0 [] [] [] (substEnv γ M)
         = some (.term (.ret (readback mv)), g'', σ', τ', κ') := by
-  sorry -- SLICE-3: the PLFA γ≈ₑσ induction (generalize-from-empty-env; env↔subst correspondence)
+  sorry -- SLICE-3 induction (see RESUME MAP above): crux proven; grind patterned on sim/run_evalD
 
 /-! ## Mini-Agree probe — the PIN'S EXECUTABLE CONFIRMATION
 
