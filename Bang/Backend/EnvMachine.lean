@@ -1106,14 +1106,50 @@ theorem evalE_agrees_evalD_pure :
     have hγ : ∀ v ∈ γ, Val.ClosedE v := hagree ▸ hWF
     have hlen : (readbackEnv ρ).length = γ.length := by rw [show readbackEnv ρ = γ from hagree]
     cases M with
-    | ret v => sorry
-    | lam M => sorry
+    | ret v =>
+      -- evalE: mret (evalV ρ v); evalD (ret (substEnvV γ v)) = ret (readback (evalV ρ v)).
+      have hmv : mv = evalV ρ v := by
+        simp only [evalE, Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq,
+          MTerm.mret.injEq] at h; exact h.1.symm
+      have hsc : Val.ScopedV γ.length v := hlen ▸ (hSc.ret_inv)
+      have hEFv : ValEF v := by simpa only [EffectFree] using hEF
+      subst hmv
+      refine ⟨?_, evalV_WF hWF (hlen ▸ hsc), evalV_PureV hPure hEFv (hlen ▸ hsc)⟩
+      simp only [substEnv_ret, Bang.CalcVM.evalD, readback_evalV hWF (hlen ▸ hsc),
+        show readbackEnv ρ = γ from hagree]
+    | lam M =>
+      -- evalE (lam M) = mterm (mlam M ρ), never a returner ⇒ h is contradictory.
+      simp only [evalE, Option.some.injEq, Prod.mk.injEq] at h
+      exact absurd h.1 (by simp)
     | force w => sorry
     | letC M N => sorry
     | app M v => sorry
     | case w N₁ N₂ => sorry
     | split w N => sorry
-    | unfold w => sorry
+    | unfold w =>
+      -- evalE: evalV ρ w must be mfold mv ⇒ mret mv. evalD: unfold (fold (readback mv)) ⇒ ret (readback mv).
+      have hsc : Val.ScopedV γ.length w := hlen ▸ hSc.unfold_inv
+      have hEFw : ValEF w := by simpa only [EffectFree] using hEF
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | mfold mw =>
+        rw [hw] at h
+        simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq, MTerm.mret.injEq] at h
+        obtain ⟨hmv, -⟩ := h
+        subst hmv
+        -- readback (evalV ρ w) = substEnvV γ w, and = fold (readback mw).
+        have hrb : substEnvV γ w = Val.fold (readback mw) := by
+          rw [show γ = readbackEnv ρ from hagree.symm, ← readback_evalV hWF (hlen ▸ hsc), hw]; rfl
+        have hWFmw : MVal.WF mw := by
+          have := evalV_WF hWF (hlen ▸ hsc); rw [hw] at this
+          simp only [MVal.WF, readback] at this
+          exact (Val.ScopedV.fold_inv (fun k _ => this k)).closedE_zero
+        have hPmw : MVal.PureV mw := by
+          have := evalV_PureV hPure hEFw (hlen ▸ hsc); rw [hw] at this
+          simpa only [MVal.PureV] using this
+        refine ⟨?_, hWFmw, hPmw⟩
+        simp only [substEnv_unfold, hrb, Bang.CalcVM.evalD]
+      | _ => rw [hw] at h; simp at h
     | binop op a b => sorry
     | perform w op v => simp only [EffectFree] at hEF
     | handle hd M => simp only [EffectFree] at hEF
