@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (29)
+## active (31)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -14,6 +14,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`calculated-typer-survey.md`](calculated-typer-survey.md) — Calculated type CHECKING — design inputs for a future ADR
 - [`calm-as-grade-survey.md`](calm-as-grade-survey.md) — CALM as a grade — can monotonicity be a coeffect in bang's row system?
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture
+- [`compiler-as-dbms-survey.md`](compiler-as-dbms-survey.md) — Compiler-as-DBMS — design survey: the query-engine architecture for bang's tooling
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
@@ -27,6 +28,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
 - [`multishot-survey.md`](multishot-survey.md) — Multi-shot resumption — empirical design inputs for the Q22 cap-rep fork
+- [`os-inspiration-survey.md`](os-inspiration-survey.md) — OS-inspiration survey — what operating systems teach bang about resources, scheduling, and access policy
 - [`proof-export-survey.md`](proof-export-survey.md) — Proof export (Q43) — design survey: a bang `law` becomes a Lean proof goal, proved once, cached
 - [`q38-handler-surface-survey.md`](q38-handler-surface-survey.md) — Handler surface + the module≟trait≟effect unification — empirical design inputs (Q38 / Stage-7)
 - [`spec-handover.md`](spec-handover.md) — Spec handover — research/engineering interface
