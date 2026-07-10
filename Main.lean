@@ -567,10 +567,10 @@ def runQueryDump (file : Option String) : IO UInt32 := do
   | .error code => pure code
   | .ok (src, headerProg) =>
       if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
-        printQueryOk (Bang.Query.dumpJson src)
+        printQueryOk (Bang.Query.dumpJson src bangVersion)
       else
         match file with
-        | none      => printQueryOk (Bang.Query.dumpJsonP headerProg)   -- stdin, no resolver path
+        | none      => printQueryOk (Bang.Query.dumpJsonP headerProg bangVersion)   -- stdin, no resolver path
         | some path =>
             match ← resolveEntryFile path with
             | .error e   => IO.println (Bang.Query.errorJsonOk e); pure 1
@@ -580,7 +580,7 @@ def runQueryDump (file : Option String) : IO UInt32 := do
                 -- `"imports"`/`"uses"` fields report what the program's source ACTUALLY declares,
                 -- not an artifact of the merge (a real fidelity gap `dumpJsonP` alone can't see,
                 -- since it only ever receives the merged `Prog`).
-                printQueryOk (Bang.Query.dumpJsonP { merged with imports := headerProg.imports, uses := headerProg.uses })
+                printQueryOk (Bang.Query.dumpJsonP { merged with imports := headerProg.imports, uses := headerProg.uses } bangVersion)
 
 /-- `bang query symbols <file>` / stdin — every top-level decl's outline. -/
 def runQuerySymbols (file : Option String) : IO UInt32 := do

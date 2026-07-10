@@ -371,18 +371,38 @@ golden `dump` output loads into DuckDB with ONE `read_json` call (`tools/test-qu
 `golden-dump-duckdb-loadable` check) — no unnesting gymnastics. The curated verbs (`symbols`/
 `type`/`effects`/`def`/`refs`) are DERIVED PREDICATES (views) over this extensional base — Tier 3.
 
-SCHEMA VERSIONING (the DBMS survey's ONE eager-adoption item, §6/§8): bang's 0.x "breaking changes
-allowed" policy collides with "agents write durable scripts against `dump`'s JSON" — every schema
-change breaks every saved query. `schemaVersion` is therefore a first-class field from v1: an
-ADDITIVE change (a new field/predicate) bumps the MINOR version; a removal/rename bumps MAJOR.
+SCHEMA VERSIONING (the DBMS survey's ONE eager-adoption item, §6/§8 — REFINED, operator ruling,
+2026-07-10): bang's 0.x "breaking changes allowed" policy collides with "agents write durable
+scripts against `dump`'s JSON" — every schema change breaks every saved query. The fix is TWO
+DISJOINT fields, never conflated:
+
+  `schemaVersion` — a plain MONOTONIC INTEGER, the CONTRACT itself. Bumps ONLY on a BREAKING shape
+    change (a field/table rename, removal, or MEANING change) — never for additive growth (a new
+    field or table is non-breaking BY CONTRACT, see below). Consumers key their compatibility
+    check on THIS field alone, never on `bangVersion`.
+  `bangVersion` — PROVENANCE metadata (which compiler binary emitted this dump), sourced from
+    `Main.lean`'s existing `bangVersion` constant and threaded in as a parameter (`Query.lean` is a
+    LEAF, fan-in 0 from the verified spine — it cannot import `Main.lean` upward; provenance is the
+    CALLER's fact to supply, not this module's to hardcode or reach for).
+
+THE CONTRACT RULE (the protobuf/Kubernetes-API discipline, stated so it is UNMISSABLE): **consumers
+MUST IGNORE UNKNOWN FIELDS.** This is what makes "additive ⟹ non-breaking" true by construction — a
+durable agent script asserting `schemaVersion == 1` must survive twenty compiler releases that only
+ADD facts, and a script that hard-fails on an unrecognized key breaks that guarantee itself. This
+rule is the OTHER HALF of the contract (bang emits `schemaVersion`; the CONSUMER promises forward-
+tolerance) — documented here AND in `docs/reference/language.md`'s `bang query` section, since it
+binds the reader, not just the emitter.
+
 `tools/test-query.sh`'s `golden-dump-schema-pinned` check fails CI on any un-versioned drift (a
 golden `dump` snapshot of a corpus example, byte-exact) — the "test" rung of the derivation-
 strength ladder applied to a public JSON contract. -/
 
-/-- **PUBLIC (TIER 1):** `dump`'s schema version — `"major.minor"`, additive-only bumps (a new
-field/predicate ⟹ minor; a removal/rename ⟹ major). The SINGLE SOURCE every `dump*Json*` entry
-reads (never a second hand-copied literal) — bump here, in ONE place, at a schema change. -/
-public def schemaVersion : String := "1.0"
+/-- **PUBLIC (TIER 1):** `dump`'s schema version — a plain monotonic `Nat`, bumped ONLY on a
+BREAKING shape change (rename/removal/meaning-change), never for additive growth (see this
+section's header for the full contract, including the consumer-side "ignore unknown fields" half).
+Starts at `1`. The SINGLE SOURCE every `dump*Json*` entry reads — bump here, in ONE place, at a
+genuine breaking change. -/
+public def schemaVersion : Nat := 1
 
 /-- One `ImportDecl`/`UseDecl` header line → its JSON object (`{"module":"Name"}` for an `import`,
 `{"module":"Name","names":[...]}` for a `use`). -/
@@ -393,9 +413,12 @@ def useJson (u : Bang.Surface.UseDecl) : String :=
 /-- **PUBLIC entry, `Prog`-taking** (the RESOLVER-AWARE route — `Main.lean`'s multi-file path hands
 an already-resolved-and-merged `Prog` here, optionally with a `declModule` provenance map from ITS
 OWN pre-merge resolution walk — `none` per-name when unavailable, e.g. the single-file/stdin
-route). `{"ok":true,"decls":[DeclFact,...],"refs":[RefEdge,...],"laws":[...],"imports":[...],
-"uses":[...]}` — the schema documented in `docs/reference/language.md`. -/
-public def dumpJsonP (p : Prog) (declModule : List (String × String) := []) : String :=
+route). `bangVersion` is `Main.lean`'s own version constant, threaded in (this module never
+hardcodes it — see this section's header). `{"ok":true,"schemaVersion":1,"bangVersion":"0.1.0",
+"decls":[DeclFact,...],"refs":[RefEdge,...],"laws":[...],"imports":[...],"uses":[...]}` — the
+schema documented in `docs/reference/language.md`. -/
+public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (String × String) := []) :
+    String :=
   let facts := (declFactsOf p).map (fun f => f.withModule (declModule.lookup f.name))
   -- NOTE: `lawInstancesOf` takes SOURCE TEXT, not a `Prog` (#60's own signature) — there is no
   -- `Prog`-taking sibling (matching `laws`'s own documented non-resolver-aware precedent below).
@@ -403,7 +426,8 @@ public def dumpJsonP (p : Prog) (declModule : List (String × String) := []) : S
   -- (`dumpJson`, the string-taking entry) and are an EMPTY (not absent) array on the `Prog`-only
   -- resolver route, where no single contiguous source exists to re-derive them from (the SAME
   -- `span:null`-class v1 grant `check --json`'s multi-file path already documents).
-  jsonObj [jsonField "ok" "true", jsonStrField "schemaVersion" schemaVersion,
+  jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
+           jsonStrField "bangVersion" bangVersion,
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
            jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
            jsonField "laws" "[]",
@@ -412,8 +436,9 @@ public def dumpJsonP (p : Prog) (declModule : List (String × String) := []) : S
 
 /-- **PUBLIC entry**: `bang query dump <file>` — the single-file/stdin route: parse `src`, assemble
 the full fact base INCLUDING law instances (this route has real source text `lawInstancesOf` can
-re-derive from — unlike the multi-file resolver route, see `dumpJsonP`'s note). -/
-public def dumpJson (src : String) : String :=
+re-derive from — unlike the multi-file resolver route, see `dumpJsonP`'s note). `bangVersion` is
+`Main.lean`'s own version constant, threaded in (see this section's header). -/
+public def dumpJson (src : String) (bangVersion : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
   | .ok p =>
@@ -423,7 +448,8 @@ public def dumpJson (src : String) : String :=
         | .error _  => []   -- a law-discovery failure never blanks the REST of the dump (ADR-0046:
                              -- one bad seam doesn't hide everything else — matches `symbols`'s own
                              -- per-decl `typeError` isolation, not an all-or-nothing gate).
-      jsonObj [jsonField "ok" "true", jsonStrField "schemaVersion" schemaVersion,
+      jsonObj [jsonField "ok" "true", jsonField "schemaVersion" (toString schemaVersion),
+               jsonStrField "bangVersion" bangVersion,
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
                jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
                jsonField "laws" (jsonArr lawsJ),

@@ -68,7 +68,7 @@ BANG
 
 got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "dump-exit" "$got_exit" "0"
-check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":"1.0","decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.0","decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
 
 # stdin agrees with file.
 got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query dump 2>/dev/null)" || true
@@ -118,17 +118,39 @@ check "dump-multifile-exit" "$got_exit4" "0"
 check "dump-multifile-imports-present" "$(printf '%s' "$got_out4" | grep -o '"imports":\[{"module":"Json"}' || true)" '"imports":[{"module":"Json"}'
 check "dump-multifile-qualified-present" "$(printf '%s' "$got_out4" | grep -o '"name":"Parse_dropWs"' || true)" '"name":"Parse_dropWs"'
 
-# ── GOLDEN-DUMP DRIFT TEST (the DBMS survey's eager-schema-discipline item, §6/§8 — a pinned
-# `dump` output that FAILS CI when the schema drifts un-versioned; the "test" rung of the
-# derivation-strength ladder applied to a public JSON contract). tools/golden-dump-caesar.json is
-# the pinned snapshot of `bang query dump examples/caesar/main.bang`; a real schema change (a new
-# field, a renamed key) must EITHER re-pin this file in the SAME commit (additive ⟹ minor bump) OR
-# bump schemaVersion's major component (removal/rename) — either way the change is now VISIBLE in
-# the diff, never silent. ──
+# ── GOLDEN-DUMP DRIFT TEST (the DBMS survey's eager-schema-discipline item, §6/§8, REFINED by the
+# operator's schemaVersion/bangVersion-disjointness ruling — a pinned `dump` output that FAILS CI
+# when the shape drifts UN-versioned; the "test" rung of the derivation-strength ladder applied to
+# a public JSON contract). tools/golden-dump-caesar.json is the pinned snapshot of `bang query dump
+# examples/caesar/main.bang`; a real BREAKING shape change (a rename/removal/meaning-change) must
+# EITHER re-pin this file in the SAME commit as a schemaVersion bump, or the diff is dishonest — a
+# schema-version bump with NO re-pin, or a re-pin with NO version bump, are both caught by this
+# byte-exact check. An ADDITIVE change (a new field/table) is non-breaking BY CONTRACT (consumers
+# must ignore unknown fields — see the demo below) so it does NOT require a schemaVersion bump, but
+# STILL requires a golden re-pin (the byte-exact snapshot changed) — the two are orthogonal checks,
+# not the same gate. ──
 got_golden="$("$bang" query dump examples/caesar/main.bang 2>/dev/null)" && got_golden_exit=0 || got_golden_exit=$?
 want_golden="$(cat tools/golden-dump-caesar.json)"
 check "golden-dump-exit" "$got_golden_exit" "0"
 check "golden-dump-schema-pinned" "$got_golden" "$want_golden"
+
+# ── schemaVersion / bangVersion DISJOINTNESS (operator ruling): schemaVersion is a plain monotonic
+# integer (the CONTRACT), bangVersion is compiler provenance — never conflated, never the same
+# field. A durable consumer keys ITS compatibility check on schemaVersion alone. ──
+check "schema-bang-version-disjoint" "$(printf '%s' "$got_golden" | grep -o '"schemaVersion":1,"bangVersion":"' || true)" '"schemaVersion":1,"bangVersion":"'
+
+# ── THE "IGNORE UNKNOWN FIELDS" CONSUMER CONTRACT (protobuf/k8s discipline, operator-ruled): a
+# durable agent script that only reads schemaVersion + decls must survive an ADDITIVE schema change
+# (a new top-level field the script never asked for). Simulated here by injecting a synthetic extra
+# field into a copy of dump's real output and confirming a naive jq extraction still works —
+# demonstrates the CONSUMER half of the contract, not just the producer's schemaVersion field. ──
+if command -v jq >/dev/null 2>&1; then
+  synthetic_extra="$(printf '%s' "$got_golden" | jq -c '. + {"futureField": {"nested": [1,2,3]}}')"
+  extracted="$(printf '%s' "$synthetic_extra" | jq -r '.schemaVersion')"
+  check "ignore-unknown-fields-contract" "$extracted" "1"
+else
+  echo "· ignore-unknown-fields-contract — SKIPPED (jq not in dev shell; not adding it for this check)"
+fi
 
 # ── CONCRETE RELATIONAL-SHAPE GATE (operator ruling, compiler-as-dbms-survey.md): the golden dump
 # must load into DuckDB with ONE `read_json` call, no unnesting gymnastics — `decls`/`refs` are
@@ -271,14 +293,15 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (53); jq's two guarded blocks (composed-query-pub-divergent, jq-parseable-all-ops)
-# each contribute exactly ONE `check()` call when jq is present (jq IS in the standard `nix
-# develop` shell, so this is the steady-state path); duckdb's ONE guarded check contributes one
-# more when duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The
-# total tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
-# regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
-want_total=53
-if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 2)); fi
+# always runs (54); jq's THREE guarded blocks (ignore-unknown-fields-contract,
+# composed-query-pub-divergent, jq-parseable-all-ops) each contribute exactly ONE `check()` call
+# when jq is present (jq IS in the standard `nix develop` shell, so this is the steady-state path);
+# duckdb's ONE guarded check contributes one more when duckdb happens to be reachable (NOT in the
+# flake — an ad-hoc `nix shell` reach). The total tracks WHICH optional tools actually ran, so a
+# genuinely truncated run is still caught regardless of which tools happened to be on PATH (never
+# a silently-widened acceptable range).
+want_total=54
+if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 3)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 1)); fi
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
