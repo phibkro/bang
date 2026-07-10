@@ -1,0 +1,7 @@
+effect Choice { pick : Int -> Int }
+
+handle
+  (sched.pick(6)) + (sched.pick(6)) + (sched.pick(6))
+with Choice as sched {
+  pick(n) => 5
+}

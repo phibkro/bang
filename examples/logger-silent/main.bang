@@ -1,0 +1,7 @@
+effect Log { log : Int -> Int }
+
+handle
+  (logger.log(10)) + (logger.log(20)) + (logger.log(30))
+with Log as logger {
+  log(msg) => 0
+}

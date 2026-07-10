@@ -25,6 +25,12 @@ examples/<project>/
 | [effect-op-arith](effect-op-arith/) | arithmetic composing with effect operations in one line (issue #26) | 70 |
 | [caesar](caesar/)               | an encode/decode/round-trip cipher, originally authored by the round-1 stranger-test agent | see README |
 | [json](json/)                   | **the first multi-file project** — a JSON parser + printer split across FOUR files, dogfooding the ADR-0093 module system (`import`/`use`/`pub`, qualified access) | 163 |
+| [handle-custom-tracer](handle-custom-tracer/) | ADR-0095 D1's own worked example — declare + perform + handle a user `effect` end to end | 30 |
+| [handle-custom-resume](handle-custom-resume/) | a parameter-carrying custom handler, one-shot resume with a continuation after it | 106 |
+| [handle-custom-abort-coexist](handle-custom-abort-coexist/) | `raise` aborts PAST a custom handler frame straight to the outer `throws` | 42 |
+| [logger-silent](logger-silent/) / [logger-counting](logger-counting/) | **handler-swap pair 1** — a `Log` effect; one handler discards every message, the other tallies the call count via the return path | 0 / 3 |
+| [fail-parser-strict](fail-parser-strict/) / [fail-parser-default](fail-parser-default/) | **handler-swap pair 2** — a `Try` effect guarding a chooser; `raise` aborts past the custom frame with either the raw failure code or a safe fallback | 999 / 0 |
+| [gen-seed-a](gen-seed-a/) / [gen-seed-b](gen-seed-b/) | **handler-swap pair 3** — generation-as-effect (`Choice.pick`); two seeded handlers produce two deterministic, replayable runs of the same program | 6 / 15 |
 
 ## Running
 

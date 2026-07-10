@@ -1,0 +1,10 @@
+effect Try { attempt : Int -> Int }
+
+handle
+  (handle
+    (let a = try.attempt(4) in
+     let b = (if 6 < 5 then try.attempt(6) else raise 0) in
+     a + b)
+  with Try as try {
+    attempt(x) => x
+  })
