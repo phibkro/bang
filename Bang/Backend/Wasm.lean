@@ -609,6 +609,61 @@ theorem wUnwindFind_comm (n : Nat) (op : Bang.OpId) :
                       obtain ⟨rfl, rfl, rfl⟩ := h
                       simp only [injHStack] at ih ⊢; rw [ih hrec]; simp
 
+/-- The custom mirror of `wStateUpdate_comm`: `wCustomUpdate` is STRUCTURALLY IDENTICAL to CalcVM's
+`customUpdate` (same recursion, same `Handler.custom` clause payload — the WASM HStack shares
+`Handler`), so it commutes with `injHStack`. The returned clause BODY is the SAME `Comp`
+(`subst p (subst (shift v) clause.2)` — no lowering; the body is RE-COMPILED at the `opH` custom arm),
+and the returned stack is the injection of exec's (the frame kept live). This is what makes the OP
+custom clause-service arm a lockstep — the drop that retires the `NoCustom*` scaffolding (#62). -/
+theorem wCustomUpdate_comm (n : Nat) (op : Bang.OpId) (v : Bang.Val) :
+    ∀ {hs : CalcVM.HStack} {body hs'}, CalcVM.customUpdate n op v hs = some (body, hs') →
+      wCustomUpdate n op v (injHStack hs) = some (body, injHStack hs') := by
+  intro hs
+  induction hs with
+  | nil => intro body hs' h; simp [CalcVM.customUpdate] at h
+  | cons fr hs ih =>
+      intro body hs' h
+      simp only [injHStack, List.map_cons, wCustomUpdate, injHFrame]
+      simp only [CalcVM.customUpdate] at h
+      cases hfr : fr.handler with
+      | custom ℓ0 p cl =>
+          rw [hfr] at h
+          by_cases hid : fr.id = n
+          · simp only [hid, if_pos rfl] at h
+            cases hcl : cl.find? (·.1 == op) with
+            | none => rw [hcl] at h; simp at h
+            | some clause =>
+                rw [hcl] at h; simp only [Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨rfl, rfl⟩ := h
+                simp [wCustomUpdate, injHStack, injHFrame, hfr, hid, hcl]
+          · simp only [hid, if_neg hid] at h
+            cases hrec : CalcVM.customUpdate n op v hs with
+            | none => rw [hrec] at h; simp at h
+            | some q => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                        obtain ⟨rfl, rfl⟩ := h
+                        simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr, hid]
+      | state ℓ0 s =>
+          rw [hfr] at h
+          cases hrec : CalcVM.customUpdate n op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some q => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+      | throws ℓ0 =>
+          rw [hfr] at h
+          cases hrec : CalcVM.customUpdate n op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some q => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+      | transaction ℓ0 Θ =>
+          rw [hfr] at h
+          cases hrec : CalcVM.customUpdate n op v hs with
+          | none => rw [hrec] at h; simp at h
+          | some q => rw [hrec] at h; simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      simp only [injHStack] at ih ⊢; rw [ih hrec]; simp [injHFrame, hfr]
+
 /-! #### Purity preservation under shift / subst (autosubst-style, structural) -/
 
 mutual
