@@ -43,7 +43,7 @@ graph TD
     Core_Soundness["Core.Soundness<br/>3237L · fan-in 0"]
     Core_Typing["Core.Typing<br/>479L · fan-in 0"]
     Examples["Examples<br/>365L · fan-in 0"]
-    Frontend_Diagnostics["Frontend.Diagnostics<br/>198L · fan-in 0"]
+    Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>789L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>2566L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
@@ -96,7 +96,7 @@ graph TD
 | `Core.Typing` | ? | 479 | 0 |
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 365 | 0 |
-| `Frontend.Diagnostics` | ? | 198 | 0 |
+| `Frontend.Diagnostics` | ? | 213 | 0 |
 | `Frontend.Format` | ? | 789 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
