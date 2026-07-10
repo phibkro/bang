@@ -1656,7 +1656,7 @@ theorem SStore.get?_readback (eσ : ESStore) (n : Nat) :
     simp only [List.map_cons, Bang.CalcVM.SStore.get?, ESStore.get?, List.find?]
     by_cases h : a.1 = n
     · simp only [h, decide_true, Option.map_some]
-    · simp only [h, decide_false, Option.map_none]
+    · simp only [h, decide_false]
       simpa only [Bang.CalcVM.SStore.get?, ESStore.get?] using ih
 
 /-- `SStore.put` commutes with the readback-map: putting `readback arg` on the image equals imaging the
@@ -1683,7 +1683,7 @@ theorem THeap.get?_readback (eτ : ETHeap) (n : Nat) :
     simp only [List.map_cons, Bang.CalcVM.THeap.get?, ETHeap.get?, List.find?]
     by_cases h : a.1 = n
     · simp only [h, decide_true, Option.map_some]
-    · simp only [h, decide_false, Option.map_none]
+    · simp only [h, decide_false]
       simpa only [Bang.CalcVM.THeap.get?, ETHeap.get?] using ih
 
 /-- `THeap.put` commutes with the readback-map. -/
@@ -1712,8 +1712,45 @@ theorem CStore.get?_readback (eκ : ECStore) (n : Nat) :
     simp only [List.map_cons, Bang.CalcVM.CStore.get?, ECStore.get?, List.find?]
     by_cases h : a.1 = n
     · simp only [h, decide_true, Option.map_some]
-    · simp only [h, decide_false, Option.map_none]
+    · simp only [h, decide_false]
       simpa only [Bang.CalcVM.CStore.get?, ECStore.get?] using ih
+
+/-! ### W2 — the stm service agrees under readback (`mtxnService` ⟺ `txnService`, envm3) -/
+
+/-- The TVar-index projector agrees under readback: `mtvarIdx` on an `MVal` equals `tvarIdx` on its
+readback. Both project only the `mvint`/`vint` case identically. -/
+theorem mtvarIdx_readback (v : MVal) : Bang.tvarIdx (readback v) = mtvarIdx v := by
+  cases v <;> rfl
+
+/-- `getD` commutes with a map when the default is the map of the machine default (local; avoids a
+Mathlib import path that doesn't reach this module). -/
+theorem getD_map_readback (Θ : List MVal) (n : Nat) :
+    (Θ.map readback).getD n (readback (MVal.mvint 0)) = readback (Θ.getD n (MVal.mvint 0)) := by
+  induction Θ generalizing n with
+  | nil => cases n <;> rfl
+  | cons a Θ ih => cases n with
+    | zero => rfl
+    | succ n => simpa only [List.map_cons, List.getD_cons_succ] using ih n
+
+/-- **W2**: the machine stm service `mtxnService` agrees with the reference `txnService` under readback —
+result value reads back, and the output heap reads back cell-wise. Case on the three stm ops; `newTVar`
+uses `Θ.length` (preserved by `.map`), `readTVar` uses `getD` (readback commutes with `getD` at the
+`mtvarIdx`-projected index), `writeTVar` uses `List.set` (readback commutes with `set`). -/
+theorem mtxnService_readback (op : Bang.OpId) (arg : MVal) (Θ : List MVal) :
+    Bang.CalcVM.txnService op (readback arg) (Θ.map readback)
+      = (readback (mtxnService op arg Θ).1, (mtxnService op arg Θ).2.map readback) := by
+  simp only [Bang.CalcVM.txnService, mtxnService]
+  by_cases hnew : op = "newTVar"
+  · simp only [hnew, if_true, List.length_map, List.map_append, List.map_cons, List.map_nil, readback]
+  · simp only [hnew, if_false]
+    by_cases hread : op = "readTVar"
+    · simp only [hread, if_true, mtvarIdx_readback]
+      rw [show (Val.vint 0) = readback (MVal.mvint 0) from rfl, getD_map_readback]
+    · simp only [hread, if_false]
+      cases arg with
+      | mpair iv w =>
+          simp only [readback, mtvarIdx_readback, Bang.storeSet, readback, List.map_set]
+      | _ => simp only [readback]
 
 /-- **SLICE 3b — the effect-store correspondence (STATEMENT; the weave is envm3).**
 
