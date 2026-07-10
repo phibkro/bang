@@ -526,6 +526,132 @@ theorem substEnv_cons_subst {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v)
     congr 1
     exact Comp.substFrom_swap_closedE hv _hw 0 N
 
+/-! ### The 2-binder crux (`split`; transplanted `closeC_subst2_comm` + `_ge` swap, task #15 retires) -/
+
+-- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{Val,Comp,Handler}.substFrom_swap_closed_ge.
+mutual
+theorem Val.substFrom_swap_closed_geE :
+    ∀ {u w : Val}, Val.ClosedE u → Val.ClosedE w → ∀ (i j : Nat), i ≤ j → ∀ (t : Val),
+      Val.substFrom i w (Val.substFrom (j + 1) u t) = Val.substFrom j u (Val.substFrom i w t)
+  | _, _, _, _, _, _, _,   .vunit => rfl
+  | _, _, _, _, _, _, _,   .vint _ => rfl
+  | _, _, _, _, _, _, _,   .vcap _ _ => rfl
+  | u, w, hu, hw, i, j, hij, .vvar m => by
+      rcases Nat.lt_trichotomy m i with hmi | hmi | hmi
+      · simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_neg (show ¬ m > j + 1 by omega),
+          if_neg (show ¬ m = i by omega), if_neg (show ¬ m > i by omega),
+          if_neg (show ¬ m = j by omega), if_neg (show ¬ m > j by omega)]
+      · subst hmi
+        simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega),
+          if_neg (show ¬ m > j + 1 by omega), if_true]
+        rw [hw.subst_at j u]
+      · rcases Nat.lt_trichotomy m (j + 1) with hmj | hmj | hmj
+        · simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_neg (show ¬ m > j + 1 by omega),
+            if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
+            if_neg (show ¬ m - 1 = j by omega), if_neg (show ¬ m - 1 > j by omega)]
+        · subst hmj
+          simp only [Val.substFrom, if_true,
+            if_neg (show ¬ j + 1 = i by omega), if_pos (show j + 1 > i by omega), Nat.add_sub_cancel]
+          rw [hu.subst_at i w]
+        · simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_pos (show m > j + 1 by omega),
+            if_neg (show ¬ m - 1 = i by omega), if_pos (show m - 1 > i by omega),
+            if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
+            if_neg (show ¬ m - 1 = j by omega), if_pos (show m - 1 > j by omega)]
+  | u, w, hu, hw, i, j, hij, .vthunk M => by
+      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed_geE hu hw i j hij M]
+  | u, w, hu, hw, i, j, hij, .inl t => by
+      simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .inr t => by
+      simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .pair a b => by
+      simp only [Val.substFrom]
+      rw [Val.substFrom_swap_closed_geE hu hw i j hij a, Val.substFrom_swap_closed_geE hu hw i j hij b]
+  | u, w, hu, hw, i, j, hij, .fold t => by
+      simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
+theorem Comp.substFrom_swap_closed_geE :
+    ∀ {u w : Val}, Val.ClosedE u → Val.ClosedE w → ∀ (i j : Nat), i ≤ j → ∀ (t : Comp),
+      Comp.substFrom i w (Comp.substFrom (j + 1) u t) = Comp.substFrom j u (Comp.substFrom i w t)
+  | u, w, hu, hw, i, j, hij, .ret t => by
+      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .binop op a b => by
+      simp only [Comp.substFrom]
+      rw [Val.substFrom_swap_closed_geE hu hw i j hij a, Val.substFrom_swap_closed_geE hu hw i j hij b]
+  | u, w, hu, hw, i, j, hij, .letC M N => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Comp.substFrom_swap_closed_geE hu hw i j hij M,
+        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) N]
+  | u, w, hu, hw, i, j, hij, .force t => by
+      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .lam M => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) M]
+  | u, w, hu, hw, i, j, hij, .app M t => by
+      simp only [Comp.substFrom]
+      rw [Comp.substFrom_swap_closed_geE hu hw i j hij M, Val.substFrom_swap_closed_geE hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .perform cp op t => by
+      simp only [Comp.substFrom]
+      rw [Val.substFrom_swap_closed_geE hu hw i j hij cp, Val.substFrom_swap_closed_geE hu hw i j hij t]
+  | u, w, hu, hw, i, j, hij, .handle hd M => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Handler.substFrom_swap_closed_geE hu hw i j hij hd,
+        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) M]
+  | u, w, hu, hw, i, j, hij, .case t N₁ N₂ => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Val.substFrom_swap_closed_geE hu hw i j hij t,
+        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) N₁,
+        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) N₂]
+  | u, w, hu, hw, i, j, hij, .split t N => by
+      simp only [Comp.substFrom, hu.shift, hw.shift]
+      rw [Val.substFrom_swap_closed_geE hu hw i j hij t,
+        Comp.substFrom_swap_closed_geE hu hw (i + 2) (j + 2) (by omega) N]
+  | u, w, hu, hw, i, j, hij, .unfold t => by
+      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
+  | _, _, _, _, _, _, _, .oom => rfl
+  | _, _, _, _, _, _, _, .wrong _ => rfl
+theorem Handler.substFrom_swap_closed_geE :
+    ∀ {u w : Val}, Val.ClosedE u → Val.ClosedE w → ∀ (i j : Nat), i ≤ j → ∀ (hd : Handler),
+      Handler.substFrom i w (Handler.substFrom (j + 1) u hd)
+        = Handler.substFrom j u (Handler.substFrom i w hd)
+  | u, w, hu, hw, i, j, hij, .state ℓ s => by
+      simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij s]
+  | _, _, _, _, _, _, _, .throws _ => rfl
+  | _, _, _, _, _, _, _, .transaction _ _ => rfl
+  | _, _, _, _, _, _, _, .custom _ _ _ => rfl
+end
+
+/-- `closeUnderBindersE 0 = substEnv` (level-0 subst, no weakening). -/
+theorem closeUnderBindersE_zero (γ : List Val) (c : Comp) : closeUnderBindersE 0 γ c = substEnv γ c := by
+  induction γ generalizing c with
+  | nil => rfl
+  | cons v γ ih => simp only [closeUnderBindersE, substEnv, Comp.subst, shiftNE]; exact ih _
+
+/-- Level-0 descent through `closeUnderBindersE (d+1)` for a CLOSED filler (drops the binder-depth by one;
+non-adjacent swap). Engine behind the 2-binder split crux. -/
+theorem closeUnderBindersE_subst0 (d : Nat) {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v)
+    {w : Val} (hw : Val.ClosedE w) (N : Comp) :
+    Comp.substFrom 0 w (closeUnderBindersE (d + 1) γ N) = closeUnderBindersE d γ (Comp.substFrom 0 w N) := by
+  induction γ generalizing N with
+  | nil => rfl
+  | cons v γ ih =>
+    have hv : Val.ClosedE v := hγ v List.mem_cons_self
+    have hγ' : ∀ u ∈ γ, Val.ClosedE u := fun u hu => hγ u (List.mem_cons_of_mem v hu)
+    simp only [closeUnderBindersE, shiftNE_closed hv]
+    rw [ih hγ' (Comp.substFrom (d + 1) v N)]
+    congr 1
+    exact Comp.substFrom_swap_closed_geE hv hw 0 d (Nat.zero_le d) N
+
+/-- **THE 2-BINDER CRUX** (`split`): filling the two binders of `closeUnderBindersE 2 γ N` (inner
+`shift w`, outer `v`, the `split (pair v w) N ↦ subst v (subst (shift w) N)` reduct) = closing
+`subst v (subst w N)`. Closes the `split` case of the correspondence. -/
+theorem substEnv_cons2_subst {γ : List Val} (hγ : ∀ u ∈ γ, Val.ClosedE u)
+    {v w : Val} (hv : Val.ClosedE v) (hw : Val.ClosedE w) (N : Comp) :
+    Comp.subst v (Comp.subst (Val.shift w) (closeUnderBindersE 2 γ N)) = substEnv γ (Comp.subst v (Comp.subst w N)) := by
+  rw [show Val.shift w = w from hw.shift]
+  show Comp.substFrom 0 v (Comp.substFrom 0 w (closeUnderBindersE (1 + 1) γ N))
+    = substEnv γ (Comp.substFrom 0 v (Comp.substFrom 0 w N))
+  rw [closeUnderBindersE_subst0 1 hγ hw N]
+  rw [closeUnderBindersE_subst0 0 hγ hv (Comp.substFrom 0 w N), closeUnderBindersE_zero]
+
 /-! ### `substEnv` distribution over the term constructors (slice-3a infra)
 
 The correspondence induction reduces `substEnv γ (F …)` to `F (substEnv γ …)` at every non-binding
@@ -1237,8 +1363,90 @@ theorem evalE_agrees_evalD_pure :
           | mlam _ _ => simp only [Option.bind_some] at h; exact absurd h (by simp)
         | mraised n op w => simp only [Option.bind_some] at h; exact absurd h (by simp)
     | app M v => sorry
-    | case w N₁ N₂ => sorry
-    | split w N => sorry
+    | case w N₁ N₂ =>
+      -- evalE: evalV ρ w = minl mv' ⇒ run N₁ under (mv' ∷ₑ ρ); minr ⇒ N₂. evalD: case-branch via crux.
+      obtain ⟨hScw, hScN₁, hScN₂⟩ := hSc.case_inv
+      obtain ⟨hEFw, hEFN₁, hEFN₂⟩ := (by simpa only [EffectFree] using hEF : ValEF w ∧ EffectFree N₁ ∧ EffectFree N₂)
+      have hscw : Val.ScopedV γ.length w := hlen ▸ hScw
+      have hWFsc : MVal.WF (evalV ρ w) := evalV_WF hWF (hlen ▸ hscw)
+      have hPsc : MVal.PureV (evalV ρ w) := evalV_PureV hWF hPure hEFw (hlen ▸ hscw)
+      have hrbw : substEnvV γ w = readback (evalV ρ w) := by
+        rw [show γ = readbackEnv ρ from hagree.symm, readback_evalV hWF (hlen ▸ hscw)]
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | minl mv' =>
+        rw [hw] at h
+        have hWFmv' : MVal.WF mv' := by
+          rw [hw] at hWFsc; simp only [MVal.WF, readback] at hWFsc
+          exact (Val.ScopedV.inl_inv (fun k _ => hWFsc k)).closedE_zero
+        have hPmv' : MVal.PureV mv' := by rw [hw] at hPsc; simpa only [MVal.PureV] using hPsc
+        have hagreeN : EnvAgrees (mv' ∷ₑ ρ) (readback mv' :: γ) := by
+          simp only [EnvAgrees, readbackEnv]; rw [show readbackEnv ρ = γ from hagree]
+        have hScN₁' : Comp.ScopedC (readback mv' :: γ).length N₁ := by
+          simpa only [List.length_cons] using hScN₁
+        obtain ⟨hst, hd, hWFmv, hPmv⟩ :=
+          ih (readback mv' :: γ) N₁ mv (mv' ∷ₑ ρ) g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ
+            hagreeN (MEnv.WF.cons hWFmv' hWF) (MEnv.PureV.cons hPmv' hPure) hEFN₁ hScN₁' h
+        refine ⟨hst, ?_, hWFmv, hPmv⟩
+        have hcrux : substEnv (readback mv' :: γ) N₁ = (closeUnderBindersE 1 γ N₁).subst (readback mv') :=
+          (substEnv_cons_subst hγ hWFmv' N₁).symm
+        simp only [substEnv_case, hrbw, hw, readback, Bang.CalcVM.evalD]
+        rw [← hcrux]; exact hd
+      | minr mv' =>
+        rw [hw] at h
+        have hWFmv' : MVal.WF mv' := by
+          rw [hw] at hWFsc; simp only [MVal.WF, readback] at hWFsc
+          exact (Val.ScopedV.inr_inv (fun k _ => hWFsc k)).closedE_zero
+        have hPmv' : MVal.PureV mv' := by rw [hw] at hPsc; simpa only [MVal.PureV] using hPsc
+        have hagreeN : EnvAgrees (mv' ∷ₑ ρ) (readback mv' :: γ) := by
+          simp only [EnvAgrees, readbackEnv]; rw [show readbackEnv ρ = γ from hagree]
+        have hScN₂' : Comp.ScopedC (readback mv' :: γ).length N₂ := by
+          simpa only [List.length_cons] using hScN₂
+        obtain ⟨hst, hd, hWFmv, hPmv⟩ :=
+          ih (readback mv' :: γ) N₂ mv (mv' ∷ₑ ρ) g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ
+            hagreeN (MEnv.WF.cons hWFmv' hWF) (MEnv.PureV.cons hPmv' hPure) hEFN₂ hScN₂' h
+        refine ⟨hst, ?_, hWFmv, hPmv⟩
+        have hcrux : substEnv (readback mv' :: γ) N₂ = (closeUnderBindersE 1 γ N₂).subst (readback mv') :=
+          (substEnv_cons_subst hγ hWFmv' N₂).symm
+        simp only [substEnv_case, hrbw, hw, readback, Bang.CalcVM.evalD]
+        rw [← hcrux]; exact hd
+      | _ => rw [hw] at h; simp at h
+    | split w N =>
+      -- evalE: evalV ρ w = mpair mv₁ mv₂ ⇒ run N under (mv₂ ∷ₑ mv₁ ∷ₑ ρ). evalD: split via the 2-binder crux.
+      obtain ⟨hScw, hScN⟩ := hSc.split_inv
+      obtain ⟨hEFw, hEFN⟩ := (by simpa only [EffectFree] using hEF : ValEF w ∧ EffectFree N)
+      have hscw : Val.ScopedV γ.length w := hlen ▸ hScw
+      have hWFsc : MVal.WF (evalV ρ w) := evalV_WF hWF (hlen ▸ hscw)
+      have hPsc : MVal.PureV (evalV ρ w) := evalV_PureV hWF hPure hEFw (hlen ▸ hscw)
+      have hrbw : substEnvV γ w = readback (evalV ρ w) := by
+        rw [show γ = readbackEnv ρ from hagree.symm, readback_evalV hWF (hlen ▸ hscw)]
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | mpair mv₁ mv₂ =>
+        rw [hw] at h
+        rw [hw] at hWFsc hPsc
+        simp only [MVal.WF, readback] at hWFsc
+        simp only [MVal.PureV] at hPsc
+        have hWF₁ : MVal.WF mv₁ := (Val.ScopedV.pair_inv (fun k _ => hWFsc k)).1.closedE_zero
+        have hWF₂ : MVal.WF mv₂ := (Val.ScopedV.pair_inv (fun k _ => hWFsc k)).2.closedE_zero
+        -- N runs under (mv₂ ∷ₑ mv₁ ∷ₑ ρ); env agrees with readback mv₂ :: readback mv₁ :: γ.
+        have hagreeN : EnvAgrees (mv₂ ∷ₑ mv₁ ∷ₑ ρ) (readback mv₂ :: readback mv₁ :: γ) := by
+          simp only [EnvAgrees, readbackEnv]; rw [show readbackEnv ρ = γ from hagree]
+        have hWFN : MEnv.WF (mv₂ ∷ₑ mv₁ ∷ₑ ρ) := MEnv.WF.cons hWF₂ (MEnv.WF.cons hWF₁ hWF)
+        have hPureN : MEnv.PureV (mv₂ ∷ₑ mv₁ ∷ₑ ρ) := MEnv.PureV.cons hPsc.2 (MEnv.PureV.cons hPsc.1 hPure)
+        have hScN' : Comp.ScopedC (readback mv₂ :: readback mv₁ :: γ).length N := by
+          simpa only [List.length_cons] using hScN
+        obtain ⟨hst, hd, hWFmv, hPmv⟩ :=
+          ih (readback mv₂ :: readback mv₁ :: γ) N mv (mv₂ ∷ₑ mv₁ ∷ₑ ρ) g G g'
+            eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ hagreeN hWFN hPureN hEFN hScN' h
+        refine ⟨hst, ?_, hWFmv, hPmv⟩
+        -- readback (mpair mv₁ mv₂) = pair (readback mv₁) (readback mv₂), matching evalD's pair scrutinee.
+        have hcrux : substEnv (readback mv₂ :: readback mv₁ :: γ) N
+            = Comp.subst (readback mv₁) (Comp.subst (Val.shift (readback mv₂)) (closeUnderBindersE 2 γ N)) := by
+          rw [substEnv_cons2_subst hγ hWF₁ hWF₂ N]; simp only [substEnv, Comp.subst]
+        simp only [substEnv_split, hrbw, hw, readback, Bang.CalcVM.evalD]
+        rw [hcrux] at hd; exact hd
+      | _ => rw [hw] at h; simp at h
     | unfold w =>
       -- evalE: evalV ρ w must be mfold mv ⇒ mret mv. evalD: unfold (fold (readback mv)) ⇒ ret (readback mv).
       have hsc : Val.ScopedV γ.length w := hlen ▸ hSc.unfold_inv
