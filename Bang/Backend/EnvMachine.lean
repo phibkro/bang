@@ -1106,6 +1106,81 @@ def MTerm.PureV : MTerm → Prop
   | .mlam N ρ =>
       EffectFree N ∧ Comp.ScopedC ((readbackEnv ρ).length + 1) N ∧ MEnv.WF ρ ∧ MEnv.PureV ρ
 
+/-! ### `WFClos` — the effect-fragment closure invariant (`PureV` minus `EffectFree`, envm3)
+
+`MVal.PureV`'s closure clause bundles FOUR facts: `EffectFree M ∧ ScopedC … ∧ MEnv.WF ρ ∧ MEnv.PureV ρ`.
+In the PURE fragment all four hold and `_pure` threads `PureV`. In the EFFECT fragment a returner may be
+`ret (vthunk N)` with an EFFECTFUL `N` (machine-checked: `effect_pureV_refutation_witness`), so the
+`EffectFree` clause is FALSE — but the `force`/`app` closure-entry cases still need the env-WF + body-scope
+the bundle carried (and `MVal.WF = ClosedE (readback)` cannot decompose them). So `WFClos` is exactly
+`PureV` MINUS the `EffectFree` clause: the closure discipline that survives effects.
+
+RELATION (ruling #2 rider, kept as a comment since factoring PureV THROUGH WFClos would churn the proven
+3a cases' positional `simp only [MVal.PureV]` extractions): `MVal.PureV mv → MVal.WFClos mv` pointwise —
+`PureV`'s closure clause is `EffectFree ∧ WFClos`'s clause. The two predicates run in parallel; `PureV` is
+the strictly stronger (pure-fragment) one, `WFClos` the effect-fragment one. -/
+mutual
+def MVal.WFClos : MVal → Prop
+  | .mvunit       => True
+  | .mvint _      => True
+  | .mvcap _ _    => True
+  -- the closure discipline WITHOUT EffectFree: env reads back closed (so the crux fires), env's own
+  -- closures are WFClos, body scoped under the env — everything `force`/`app` need, effects allowed.
+  | .mvclos M ρ   =>
+      Comp.ScopedC (readbackEnv ρ).length M ∧ MEnv.WF ρ ∧ MEnv.WFClos ρ
+  | .minl w       => MVal.WFClos w
+  | .minr w       => MVal.WFClos w
+  | .mpair w₁ w₂  => MVal.WFClos w₁ ∧ MVal.WFClos w₂
+  | .mfold w      => MVal.WFClos w
+def MEnv.WFClos : MEnv → Prop
+  | .nil       => True
+  | .cons v ρ  => MVal.WFClos v ∧ MEnv.WFClos ρ
+end
+
+theorem MEnv.WFClos.head {mv : MVal} {ρ : MEnv} (h : MEnv.WFClos (mv ∷ₑ ρ)) : MVal.WFClos mv := by
+  unfold MEnv.WFClos at h; exact h.1
+theorem MEnv.WFClos.tail {mv : MVal} {ρ : MEnv} (h : MEnv.WFClos (mv ∷ₑ ρ)) : MEnv.WFClos ρ := by
+  unfold MEnv.WFClos at h; exact h.2
+theorem MEnv.WFClos.cons {mv : MVal} {ρ : MEnv} (hmv : MVal.WFClos mv) (hρ : MEnv.WFClos ρ) :
+    MEnv.WFClos (mv ∷ₑ ρ) := by unfold MEnv.WFClos; exact ⟨hmv, hρ⟩
+
+/-- A `WFClos` env's lookup is `WFClos` (out-of-range gives `mvunit`, also `WFClos`). -/
+theorem MEnv.WFClos.get : ∀ {ρ : MEnv}, MEnv.WFClos ρ → ∀ (i : Nat), MVal.WFClos (ρ.get i)
+  | .nil, _, _ => by simp only [MEnv.get, MVal.WFClos]
+  | .cons v ρ, h, 0 => by simp only [MEnv.get]; exact h.head
+  | .cons v ρ, h, j + 1 => by simp only [MEnv.get]; exact MEnv.WFClos.get h.tail j
+
+/-! `PureV → WFClos` pointwise (the rider's relation, as a lemma so it's usable, not just prose):
+`PureV`'s stronger closure clause implies `WFClos`'s. Mutual over `MVal`/`MEnv`. -/
+mutual
+theorem MVal.PureV.wfclos : ∀ {mv : MVal}, MVal.PureV mv → MVal.WFClos mv
+  | .mvunit, _ => by simp only [MVal.WFClos]
+  | .mvint _, _ => by simp only [MVal.WFClos]
+  | .mvcap _ _, _ => by simp only [MVal.WFClos]
+  | .mvclos M ρ, h => by
+      obtain ⟨_, hsc, hWF, hP⟩ := (by simpa only [MVal.PureV] using h :
+        EffectFree M ∧ Comp.ScopedC (readbackEnv ρ).length M ∧ MEnv.WF ρ ∧ MEnv.PureV ρ)
+      exact ⟨hsc, hWF, hP.wfclos⟩
+  | .minl w, h => by simp only [MVal.WFClos]; exact (by simpa only [MVal.PureV] using h : MVal.PureV w).wfclos
+  | .minr w, h => by simp only [MVal.WFClos]; exact (by simpa only [MVal.PureV] using h : MVal.PureV w).wfclos
+  | .mpair w₁ w₂, h => by
+      obtain ⟨h₁, h₂⟩ := (by simpa only [MVal.PureV] using h : MVal.PureV w₁ ∧ MVal.PureV w₂)
+      exact ⟨h₁.wfclos, h₂.wfclos⟩
+  | .mfold w, h => by simp only [MVal.WFClos]; exact (by simpa only [MVal.PureV] using h : MVal.PureV w).wfclos
+theorem MEnv.PureV.wfclos : ∀ {ρ : MEnv}, MEnv.PureV ρ → MEnv.WFClos ρ
+  | .nil, _ => by simp only [MEnv.WFClos]
+  | .cons v ρ, h => by
+      obtain ⟨hv, hρ⟩ := (by simpa only [MEnv.PureV] using h : MVal.PureV v ∧ MEnv.PureV ρ)
+      exact ⟨hv.wfclos, hρ.wfclos⟩
+end
+
+/-- Purity of a machine TERMINAL, the `WFClos` form (effect fragment). Returner: its value `WFClos`.
+Function `mlam N ρ`: body scoped under one binder + captured env WF ∧ WFClos — NO `EffectFree`. -/
+def MTerm.WFClos : MTerm → Prop
+  | .mret mv  => MVal.WFClos mv
+  | .mlam N ρ =>
+      Comp.ScopedC ((readbackEnv ρ).length + 1) N ∧ MEnv.WF ρ ∧ MEnv.WFClos ρ
+
 /-! ### The value correspondence `readback ∘ evalV = substEnvV ∘ readbackEnv`
 
 For a `v` scoped under `|ρ|` with `ρ` well-formed, evaluating `v` under `ρ` then reading back equals
@@ -1824,15 +1899,15 @@ theorem evalE_agrees_evalD_gen :
     ∀ (f : Nat) (γ : List Val) (M : Comp) (out : MOutcome) (ρ : MEnv) (g G g' : Nat)
       (eσ eσ' : ESStore) (eτ eτ' : ETHeap) (eκ eκ' : ECStore)
       (dσ : Bang.CalcVM.SStore) (dτ : Bang.CalcVM.THeap) (dκ : Bang.CalcVM.CStore),
-      EnvAgrees ρ γ → MEnv.WF ρ → MEnv.PureV ρ → Comp.ScopedC γ.length M →
+      EnvAgrees ρ γ → MEnv.WF ρ → MEnv.WFClos ρ → Comp.ScopedC γ.length M →
       StoresGood eσ eτ eκ → StoresCorr eσ eτ eκ dσ dτ dκ →
       evalE f g eσ eτ eκ ρ M = some (out, g', eσ', eτ', eκ') →
       ∃ (G' : Nat) (dσ' : Bang.CalcVM.SStore) (dτ' : Bang.CalcVM.THeap) (dκ' : Bang.CalcVM.CStore),
         Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M)
             = some (readbackTermS out, G', dσ', dτ', dκ')
           ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ StoresGood eσ' eτ' eκ'
-          ∧ (∀ t, out = .mterm t → MTerm.WF t ∧ MTerm.PureV t)
-          ∧ (∀ n op mv, out = .mraised n op mv → MVal.WF mv ∧ MVal.PureV mv) := by
+          ∧ (∀ t, out = .mterm t → MTerm.WF t ∧ MTerm.WFClos t)
+          ∧ (∀ n op mv, out = .mraised n op mv → MVal.WF mv ∧ MVal.WFClos mv) := by
   intro f
   induction f with
   | zero =>
@@ -1860,13 +1935,13 @@ theorem evalE_agrees_evalD_effect :
     ∀ (f : Nat) (γ : List Val) (M : Comp) (t : MTerm) (ρ : MEnv) (g G g' : Nat)
       (eσ eσ' : ESStore) (eτ eτ' : ETHeap) (eκ eκ' : ECStore)
       (dσ : Bang.CalcVM.SStore) (dτ : Bang.CalcVM.THeap) (dκ : Bang.CalcVM.CStore),
-      EnvAgrees ρ γ → MEnv.WF ρ → MEnv.PureV ρ → Comp.ScopedC γ.length M →
+      EnvAgrees ρ γ → MEnv.WF ρ → MEnv.WFClos ρ → Comp.ScopedC γ.length M →
       StoresGood eσ eτ eκ → StoresCorr eσ eτ eκ dσ dτ dκ →
       evalE f g eσ eτ eκ ρ M = some (.mterm t, g', eσ', eτ', eκ') →
       ∃ (G' : Nat) (dσ' : Bang.CalcVM.SStore) (dτ' : Bang.CalcVM.THeap) (dκ' : Bang.CalcVM.CStore),
         Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M)
             = some (readbackTerm t, G', dσ', dτ', dκ')
-          ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ MTerm.WF t ∧ MTerm.PureV t := by
+          ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ MTerm.WF t ∧ MTerm.WFClos t := by
   intro f γ M t ρ g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ hag hWF hP hSc hG hC h
   obtain ⟨G', dσ', dτ', dκ', hd, hC', _, hWt, _⟩ :=
     evalE_agrees_evalD_gen f γ M (.mterm t) ρ g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ
