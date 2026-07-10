@@ -884,9 +884,14 @@ def runInferV (act : Infer IVTy) : Except String VT := do
   extractV iv
 /-- As `runInferC`, but keep the ZONKED `ICTy` (no extraction) — for the elaborator's chole-tolerant
 returner probes (`anfSplit`, `let`-RHS), which must inspect a higher-order result WITHOUT failing on a
-still-open computation hole. -/
-def zonkInferC (act : Infer (ICTy × Row)) : Except String (ICTy × EffRow) :=
-  (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).labels)).run' {}
+still-open computation hole. `effects` (ADR-0092 D2, #21 s7probe WALL-3-class fix, default `[]`):
+`.run' {}` seeded a FRESH, effects-less `USt` here too (the SAME class of bug `elabBind` had —
+`anfSplit`'s `synthSC Γ e'` throwaway run hits `.dotPerform`'s D2 arm on ANY A-normalized user-effect
+perform, e.g. `net.fetch(1) + 1`, which needs `handleCustomS`'s A-normalization to see `net`'s
+resolved label). Every PRE-existing call site is decl-free or doesn't need `.dotPerform` against a
+user effect, so the default keeps them behaviour-identical. -/
+def zonkInferC (act : Infer (ICTy × Row)) (effects : List (String × EffectInfo) := []) : Except String (ICTy × EffRow) :=
+  (do let (B, φ) ← act; return (← zonkC bigFuel B, (← resolveRow bigFuel φ).labels)).run' { effects := effects }
 /-- Run an inference action, zonk, and zonk-EXTRACT to a kernel `CTy` + effect row. `effects` seeds
 `USt`'s user-effect table (ADR-0092 D2, default `[]` — every PRE-existing call site is decl-free or
 doesn't need `.dotPerform` against a user effect, so it stays behaviour-identical); callers that DO
@@ -1113,7 +1118,12 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
   -- list, arms, bindings) that needs typing-algorithm recursion back into `synthSC`'s own mutual
   -- group needs this shape, not a `for`/`let rec` — a structural finding for s7design + whoever
   -- implements Stage 7 for real.
-  | .handleCustomS n p h cls body => do
+  -- ADR-0095 D1 (RULED): `_lbl` (the resolved-label slot) is IGNORED here — `synthSC` re-derives
+  -- `ℓ` fresh from `env.effects` every time (the SAME move `.dotPerform`'s D2 arm already makes),
+  -- exactly like `elabS` independently re-deriving `capKindLabel` rather than trusting a
+  -- possibly-stale tree annotation. The slot exists for `lowerC` (WALL 1's fix), which has no
+  -- `env` to re-derive from — `synthSC` is NOT in that position, so it stays state-sourced.
+  | .handleCustomS _lbl n p? h cls body => do
       match n with
       | .var effN => do
           let effs ← (do return (← get).effects)
@@ -1121,10 +1131,16 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
           | none => throw s!"handle: '{effN}' is not a declared effect"
           | some (_, ei) => do
               let ℓ := ei.label
-              -- THE PARAM: `P` is DISCOVERED from `p`'s own synthesized type (no separate declared
-              -- param-type exists in the strawman `effect` decl shape, ADR-0092 D1 doesn't carry
-              -- one) — the same move `state e0 in …` uses to discover `S` from `e0`.
-              let P ← synthSV Γ p
+              -- THE PARAM: `P` is DISCOVERED from the param-init's own synthesized type (no
+              -- separate declared param-type exists in the `effect` decl shape, ADR-0092 D1
+              -- doesn't carry one) — the same move `state e0 in …` uses to discover `S` from `e0`.
+              -- A param-less `Name` (`.none`) synthesizes at `Unit` (the kernel's `Handler.custom`
+              -- always carries a `p : Val`, ADR-0092's premise — `.unitS` is the CLOSED value
+              -- `lowerC`'s own `.none` arm already lowers to, kept CONSISTENT here).
+              let P ← (match p? with
+                | .none    => pure (.unit : IVTy)
+                | .one p0  => synthSV Γ p0
+                | .two _ _ => throw "handle: the param-init takes at most 1 argument")
               -- RET-SHAPE (ADR-0092 D3/D4, the grade wall): v1 requires each clause body's SYNTAX to
               -- be a bare value-shaped expression (no further computation after the resume value).
               -- `checkHClauses` approximates this SEMANTICALLY (no separate `.ret` marker exists in
@@ -1227,16 +1243,30 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer Row :=
       return φ
   termination_by (sizeOf e, 3)
 
-/-- #21 s7probe: the `HClauses` mutual partner `synthSC`'s `handleCustomS` arm needs (the `elabS`/
-`elabArms` precedent — a repeated-group `Surf` payload gets its OWN structurally-recursive sibling in
-the SAME mutual block, not a `for`/`let rec`; see the finding at `handleCustomS`'s call site).
-Structurally recurses on `cls : HClauses` (decreasing on EVERY call, including the `synthSV` call on
-each clause body `b` — `b` is a genuine subterm of `.cons op x b rest`, so `sizeOf`-based termination
-sees it directly, unlike the erased `hClausesToList` conversion). Checks each clause's body against
-its op's declared `resTy`, under `[argVar : argTy, #param : P]` (the ADR-0092 `HasClauses.cons`
-binder order — `opArg` at idx 0, `P` at idx 1, mirrored here as list-head-is-idx-0). Per-clause OP
-membership in the effect's declared ops is checked here too (an unknown op name is a clause-level
-diagnostic, distinct from the CALLER's coverage check in the other direction). -/
+/-- #21 s7probe (ADR-0095 D4 fix): the `HClauses` mutual partner `synthSC`'s `handleCustomS` arm
+needs (the `elabS`/`elabArms` precedent — a repeated-group `Surf` payload gets its OWN
+structurally-recursive sibling in the SAME mutual block, not a `for`/`let rec`; see the finding
+at `handleCustomS`'s call site). Structurally recurses on `cls : HClauses` (decreasing on EVERY
+call, including the `synthSC` call on each clause body `b` — `b` is a genuine subterm of
+`.cons op x b rest`, so `sizeOf`-based termination sees it directly). Checks each clause's body
+against its op's declared `resTy`, under `[argVar : argTy, #param : P]` (the ADR-0092
+`HasClauses.cons` binder order — `opArg` at idx 0, `P` at idx 1, mirrored here as
+list-head-is-idx-0). Per-clause OP membership in the effect's declared ops is checked here too
+(an unknown op name is a clause-level diagnostic, distinct from the CALLER's coverage check in
+the other direction).
+
+WALL-4 FIX (found live via the ADR-0095 tracer bullet, `n * 10` as a clause body): the body is a
+COMPUTATION (`.binopS` reduces via the kernel's `Comp.binop`, needing `synthSC`/`Comp` typing) —
+NOT already a bare VALUE the earlier `synthSV`-based check assumed. `synthSV` has no `.binopS`
+arm, so ANY non-atomic clause body (arithmetic, an application, …) unconditionally hit its
+catch-all `"not a value"` error — this was the root cause of the earlier "lowerV-path
+divergence" finding (WALL 4 in the original writeup), not a genuine typed/untyped pipeline
+mismatch; the untyped path never RAN this check at all (no `synthSC`/`synthSV` on the untyped
+path), which is why it "worked" there and only the TYPED path exposed the bug. Fixed: `synthSC`
+(computation typing) + an EXPLICIT ret-shape/effect-free check — ADR-0092 D4's own property
+("ret w is EFFECT-FREE, no φ' to join") is now checked DIRECTLY (`φ = botR`), not merely implied
+by `synthSV`'s row-blindness (which was wrong, not just imprecise: `synthSV` never even reaches a
+row to be blind to). -/
 def checkHClauses (Γ : NCtx) (effN : String) (ops : List (String × Option VT × VT)) (P : IVTy) :
     HClauses → Infer Unit
   | .nil => pure ()
@@ -1245,8 +1275,17 @@ def checkHClauses (Γ : NCtx) (effN : String) (ops : List (String × Option VT �
       | none => throw s!"handle: clause '{op}' is not an operation of effect '{effN}'"
       | some (_, argTy?, resTy) => do
           let argTy := embV (argTy?.getD .unit)   -- 0-ary op: `x` binds Unit (placeholder — no 0-ary clause corpus case yet)
-          let resV ← synthSV ((x, argTy) :: ("#param", P) :: Γ) b
-          unifyV bigFuel resV (embV resTy)
+          let (Cb, φ) ← synthSC ((x, argTy) :: ("#param", P) :: Γ) b
+          let _ ← unifyC bigFuel Cb (.F .omega (embV resTy))
+          -- ADR-0092 D4 / ADR-0095 D4: the RET-SHAPE / effect-free property, checked explicitly.
+          -- A non-empty row here means the clause body PERFORMS before resuming — exactly the v1
+          -- restriction ADR-0095 D4 names; the teaching diagnostic fires (not a bare type error).
+          let φr ← resolveRow bigFuel φ
+          -- `Finset.isEmpty` is noncomputable here (memory: effrow-finset-noncomputable-guard-path)
+          -- — `decide (φr.labels = ∅)` over `Finset`'s `DecidableEq` is the corpus-established
+          -- workaround for testing row-emptiness in this compiled #guard-reachable path.
+          if !(decide (φr.labels = ∅) && φr.tail.isNone) then
+            throw s!"handle: clause '{op}' body must be a `ret`-shape value in v1 (no effects before resuming) — a compute-then-return body needs binop typing (ADR-0065) + resumption-grade surfacing (Q27), tracked as the general-body entry gate (ADR-0095 D4)"
           checkHClauses Γ effN ops P rest
   termination_by cls => (sizeOf cls, 4)
 end
@@ -2109,10 +2148,14 @@ in the value slot: a syntactic value passes through (`id` prefix); a computation
 fresh `#anf`-name (its returner payload type in `Γ`), lifting it ABOVE the construct (so e.g. a
 ctor's fold still wraps a VALUE). A non-returner is left for the checker; an untypeable RHS surfaces
 its REAL error, not a downstream "unbound variable" (the #41 diagnostic). Fresh names key on `Γ.length`
-and shadow innermost-first (as `lower`'s own sentinels do), so nested/sibling binds stay correct. -/
-def anfSplit (Γ : NCtx) (e' : Surf) : Except String (NCtx × (Surf → Surf) × Surf) :=
+and shadow innermost-first (as `lower`'s own sentinels do), so nested/sibling binds stay correct.
+`effects` (ADR-0092 D2, #21 s7probe WALL-3-class fix, default `[]`): threaded to `zonkInferC`'s
+throwaway `synthSC` probe — see that function's own doc comment for the bug this closes (found live
+via the ADR-0095 tracer bullet: `net.fetch(1) + 1` A-normalizes the `.binopS`'s left operand through
+HERE, and without `effects` the probe wrongly rejected the already-well-typed `.dotPerform`). -/
+def anfSplit (Γ : NCtx) (e' : Surf) (effects : List (String × EffectInfo) := []) : Except String (NCtx × (Surf → Surf) × Surf) :=
   if isValueSurf e' then .ok (Γ, id, e')
-  else match zonkInferC (synthSC Γ e') with
+  else match zonkInferC (synthSC Γ e') effects with
     | .ok (.F _ A, _)   => let nm := s!"#anf{Γ.length}"; .ok ((nm, A) :: Γ, (Surf.lett nm e' ·), .var nm)
     -- bite-0b (arm c): a higher-order returner-to-be — `($g) x` whose type is still a bare `chole` — is
     -- LIFTED exactly like an `F`-returner (bind `#anf`, `let`-hoist it), so `($f)(($g) x)` can A-normalize
@@ -2293,8 +2336,8 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   -- below `expandArms`) since bounded-fn expansion is a DIFFERENT concern from typing (this pass has
   -- no termination-measure conflict with `synthSC`'s wall — `expandBFns` is ALREADY fuel-driven, not
   -- `sizeOf`-based, so a mutual `List`/`HClauses` sibling here is unremarkable, unlike the typing arm).
-  | f + 1, .handleCustomS n p h cls b => do
-      return .handleCustomS (← expandBFns env carrier? f n) (← expandBFns env carrier? f p) h
+  | f + 1, .handleCustomS lbl n p? h cls b => do
+      return .handleCustomS lbl (← expandBFns env carrier? f n) (← expandArgs env carrier? f p?) h
         (← expandHClauses env carrier? f cls) (← expandBFns env carrier? f b)
   | f + 1, .annotS e t => do
       -- HKT (ADR-0082): a higher-kinded METHOD call `(fmap inc x : Option Int)` — the result annotation
@@ -2406,32 +2449,32 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   -- A-normalize a computation ARGUMENT (#26 part-2), as `.pairS` does: an effect op's arg is
   -- VALUE-position (`checkSV … .int`), so `put (get + 1)` ⟹ `let #anf = get + 1 in put #anf`. A bare
   -- value arg passes through unchanged (`anfSplit`'s `id` prefix), matching `Surface.lower`.
-  | Γ, .raise e  => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.raise v)
+  | Γ, .raise e  => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e' env.effects; return w (.raise v)
   | Γ, .handle e => do return .handle (← elabS env Γ e)
-  | Γ, .putS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.putS v)
+  | Γ, .putS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e' env.effects; return w (.putS v)
   | Γ, .atomS e  => do return .atomS (← elabS env Γ e)
-  | Γ, .newS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.newS v)
-  | Γ, .readS e  => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.readS v)
+  | Γ, .newS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e' env.effects; return w (.newS v)
+  | Γ, .readS e  => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e' env.effects; return w (.readS v)
   -- A-normalize a computation payload (#41), as `.pairS` does: `Left(($g) e)` ⟹ `let #anf = ($g) e in
   -- Left(#anf)`, so the sum injection gets a VALUE payload (a bare `Left(value)` is unchanged).
-  | Γ, .inlS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.inlS v)
-  | Γ, .inrS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e'; return w (.inrS v)
+  | Γ, .inlS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e' env.effects; return w (.inlS v)
+  | Γ, .inrS e   => do let e' ← elabS env Γ e; let (_, w, v) ← anfSplit Γ e' env.effects; return w (.inrS v)
   -- state's INITIAL value is value-position (`checkSV e0 .int`) too — A-normalize it like the ops.
   | Γ, .stateS e0 e => do
       let e0' ← elabS env Γ e0
-      let (Γ1, w, v0) ← anfSplit Γ e0'
+      let (Γ1, w, v0) ← anfSplit Γ e0' env.effects
       return w (.stateS v0 (← elabS env Γ1 e))
   | Γ, .writeS r w  => do
       let r' ← elabS env Γ r
       let w' ← elabS env Γ w
-      let (Γ1, wr, rv) ← anfSplit Γ r'
-      let (_,  ww, wv) ← anfSplit Γ1 w'
+      let (Γ1, wr, rv) ← anfSplit Γ r' env.effects
+      let (_,  ww, wv) ← anfSplit Γ1 w' env.effects
       return wr (ww (.writeS rv wv))
   | Γ, .pairS a b   => do                     -- A-normalize computation components (bare pair in comp position), #41
       let a' ← elabS env Γ a
       let b' ← elabS env Γ b
-      let (Γ1, wa, va) ← anfSplit Γ a'
-      let (_,  wb, vb) ← anfSplit Γ1 b'
+      let (Γ1, wa, va) ← anfSplit Γ a' env.effects
+      let (_,  wb, vb) ← anfSplit Γ1 b' env.effects
       return wa (wb (.pairS va vb))
   | Γ, .foldS b     => do return .foldS (← elabS env Γ b)
   | Γ, .unfoldS b   => do return .unfoldS (← elabS env Γ b)
@@ -2441,29 +2484,29 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
         | some ℓ => (name, (.cap ℓ : IVTy)) :: Γ
         | none   => Γ
       return .withCapS kind init' name (← elabS env Γ' body)
-  -- #21 s7probe: `handleCustomS` structurally recurses, extending `Γ` with the cap binder for `body`
-  -- (mirroring `.withCapS` immediately above — the SAME "bind name : Cap ℓ" move) IF `n` resolves
-  -- against `env.effects`. THE WALL (findings write-up, `docs/notes/stage7-elab-probe.md`): a REAL
-  -- implementation must ALSO REWRITE `n`'s resolved label into the tree HERE (this is the ONE place
-  -- with both the `Surf` AST and `env.effects` in scope simultaneously — `lowerC` never sees
-  -- `env.effects`, confirmed structurally even on the fully-typed `checkAndLower` path, see
-  -- `lowerC`'s own `.handleCustomS` arm) — but `Surf` has NO label-carrying slot to rewrite INTO
-  -- (unlike `withCapS`'s `kind : String`, which `capKindLabel` re-derives independently at BOTH
-  -- elaboration and lowering because there are only 3 built-in, PROGRAM-INDEPENDENT labels). This
-  -- probe does NOT invent that slot (a real `Surf` AST change is implementation-lane territory, not
-  -- a provisional-syntax probe's call) — `elabS` here does everything ELSE production-shaped
-  -- (structural descent + Γ extension identical to `withCapS`), and `lower` stays the wall, so the
-  -- e2e probe (below) demonstrates through `synthSC`/`checkProg`'s TYPE-CHECK reaching a real
-  -- verdict, stopping short of an actual `bang eval` run (which needs the label rewrite to lower).
-  | Γ, .handleCustomS n p h cls body => do
+  -- ADR-0095 WALL-1 FIX (manager-ruled Option A): `elabS` is the ONE place with both the `Surf`
+  -- tree and `env.effects` in scope simultaneously — `lowerC` never sees `env.effects` (confirmed
+  -- structurally even on the fully-typed `checkAndLower` path, see `lowerC`'s own `.handleCustomS`
+  -- arm). So THIS arm RESOLVES `n`'s label against `env.effects` and REWRITES it into the tree's
+  -- `label?` slot (`handleCustomS`'s first field) — `lowerC` then reads it back verbatim, a PURE
+  -- function of the tree with no `ElabEnv` threading (the rejected alternative: polluting a
+  -- structural pass with elaboration state, AND the untyped `elaborateToComp` path lacks a full
+  -- `ElabEnv` anyway, so that alternative would dead-end there too). An unresolved `n` (not a
+  -- declared effect, or not a bare `.var`) leaves the slot `none` — `lowerC`'s own arm fails loud
+  -- on that, never silently defaulting a label.
+  | Γ, .handleCustomS _lbl n p? h cls body => do
       let n' ← elabS env Γ n
-      let p' ← elabS env Γ p
-      let Γ' := match n with
-        | .var effN => match env.effects.lookup effN with
-          | some ei => (h, (.cap ei.label : IVTy)) :: Γ
-          | none    => Γ
-        | _ => Γ
-      return .handleCustomS n' p' h (← elabHClauses env Γ' cls) (← elabS env Γ' body)
+      let p'? ← (match p? with
+        | .none    => (pure .none : Except String SurfArgs)
+        | .one p0  => do return .one (← elabS env Γ p0)
+        | .two a b => do return .two (← elabS env Γ a) (← elabS env Γ b))
+      let lbl' := match n with
+        | .var effN => (env.effects.lookup effN).map EffectInfo.label
+        | _         => none
+      let Γ' := match lbl' with
+        | some ℓ => (h, (.cap ℓ : IVTy)) :: Γ
+        | none   => Γ
+      return .handleCustomS lbl' n' p'? h (← elabHClauses env Γ' cls) (← elabS env Γ' body)
   | Γ, .dotPerform recv op args => do
       let recv' ← elabS env Γ recv
       let args' ← (match args with
@@ -2481,7 +2524,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             -- this bind then lifts that returner above the fold. Inner/outer `#anf` names may coincide
             -- at equal depth but shadow innermost-first (as `lower`'s sentinels do), so it stays correct.
             let a' ← elabS env Γ a
-            let (_, w, v) ← anfSplit Γ a'
+            let (_, w, v) ← anfSplit Γ a' env.effects
             -- GENERIC (bite-1/#55): the TEMPLATE μ (params as markers) — `embVInst` mints fresh holes, so
             -- the element type is INFERRED from the fields (`Cons(1, Nil)` ⟹ `a := Int`, no annotation).
             if ci.params.isEmpty then return w (ctorIntro ci v)
@@ -2490,11 +2533,11 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | Γ, .app f a     => do                     -- A-normalize a computation ARGUMENT (`($f)(n-1)`), #41
       let f' ← elabS env Γ f
       let a' ← elabS env Γ a
-      let (_, wrap, av) ← anfSplit Γ a'
+      let (_, wrap, av) ← anfSplit Γ a' env.effects
       return wrap (.app f' av)
   | Γ, .ifS c t e   => do                     -- A-normalize a computation condition (`n == 0`), #41
       let c' ← elabS env Γ c
-      let (Γ1, wrap, cv) ← anfSplit Γ c'
+      let (Γ1, wrap, cv) ← anfSplit Γ c' env.effects
       return wrap (.ifS cv (← elabS env Γ1 t) (← elabS env Γ1 e))
   | Γ, .lam x b     => do
       -- BARE (un-annotated) `fun x => …`: bind the param to a fresh HOLE so `anfSplit` inside the body
@@ -2535,7 +2578,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       | .error m       => throw s!"let-binding '{x}': {m}"
   | Γ, .matchS s xl el xr er => do
       let s' ← elabS env Γ s
-      let (Γ1, wrap, sv) ← anfSplit Γ s'       -- A-normalize a computation scrutinee, #41
+      let (Γ1, wrap, sv) ← anfSplit Γ s' env.effects       -- A-normalize a computation scrutinee, #41
       let (Γl, Γr) := match runInferV (synthSV Γ1 sv) with
         | .ok (.sum A B) => ((xl, embV A) :: Γ1, (xr, embV B) :: Γ1)
         -- the scrutinee's sum structure isn't known yet (a bare-sum eliminator over an unannotated
@@ -2546,7 +2589,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       return wrap (.matchS sv xl (← elabS env Γl el) xr (← elabS env Γr er))
   | Γ, .splitS a b p body => do
       let p0 ← elabS env Γ p
-      let (Γ1, wrap, p') ← anfSplit Γ p0       -- A-normalize a computation scrutinee, #41
+      let (Γ1, wrap, p') ← anfSplit Γ p0 env.effects       -- A-normalize a computation scrutinee, #41
       let Γ' := match runInferV (synthSV Γ1 p') with
         | .ok (.prod A B) => (b, embV B) :: (a, embV A) :: Γ1
         -- #55: the scrutinee's product structure isn't known yet (a generic Option's element `a` bound to
@@ -2561,7 +2604,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.gen env.aliases t)
   | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
       let s0 ← elabS env Γ s
-      let (Γ, wrap, s0') ← anfSplit Γ s0       -- A-normalize a computation scrutinee, #41
+      let (Γ, wrap, s0') ← anfSplit Γ s0 env.effects       -- A-normalize a computation scrutinee, #41
       -- GENERIC (bite-1): derive concrete arm-binder types from the CONCRETE scrutinee μ, so an arm's
       -- `anfSplit` can synthesize a computation (`($length) t`). Monomorphic ctors ⟹ empty table (elabArms
       -- falls back to `payloadClosed`, unchanged).
@@ -2622,8 +2665,8 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       -- both the kernel δ-rule and the trait resolver need value operands (#41). Atoms pass through.
       let a0 ← elabS env Γ a
       let b0 ← elabS env Γ b
-      let (Γ1, wa, a') ← anfSplit Γ a0
-      let (Γ2, wb, b') ← anfSplit Γ1 b0
+      let (Γ1, wa, a') ← anfSplit Γ a0 env.effects
+      let (Γ2, wb, b') ← anfSplit Γ1 b0 env.effects
       match runInferV (synthSV Γ2 a') with
       | .ok .int  => return wa (wb (.binopS op a' b'))   -- the kernel δ-rule path (ADR-0065)
       | .error _  => return wa (wb (.binopS op a' b'))   -- non-value operand: leave it; the checker rules
@@ -2917,7 +2960,9 @@ def surfUsesVar (nm : String) : Surf → Bool
   -- shadowing site here (`.lam _ e`, `.matchS s _ l _ r`), the shadow is NOT modeled (the whole
   -- function is a syntactic OVER-approximation, per its own doc comment: shadowed uses just cost a
   -- little extra fuel, never wrong).
-  | .handleCustomS n p _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
+  | .handleCustomS _lbl n .none _h cls b       => surfUsesVar nm n || hClausesUseVar nm cls || surfUsesVar nm b
+  | .handleCustomS _lbl n (.one p) _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
+  | .handleCustomS _lbl n (.two p q) _h cls b  => surfUsesVar nm n || surfUsesVar nm p || surfUsesVar nm q || hClausesUseVar nm cls || surfUsesVar nm b
 def dArmsUseVar (nm : String) : DArms → Bool
   | .nil            => false
   | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
@@ -3061,9 +3106,13 @@ def qualifyVars (modName : String) (names : List String) : Surf → Surf
       .lettMulti binds' (if shadowed then b else qualifyVars modName names b)
   -- #21 s7probe: `h` (the cap binder) shadows exactly like `.withCapS`'s own `n` above; `x` inside
   -- each clause shadows PER-CLAUSE (`qualifyHClausesVars`'s own arm, the `qualifyDArmsVars` precedent).
-  | .handleCustomS n p h cls b =>
-      .handleCustomS (qualifyVars modName names n) (qualifyVars modName names p) h
-        (qualifyHClausesVars modName names cls)
+  | .handleCustomS lbl n p? h cls b =>
+      .handleCustomS lbl (qualifyVars modName names n)
+        (match p? with
+          | .none    => .none
+          | .one p   => .one (qualifyVars modName names p)
+          | .two a b' => .two (qualifyVars modName names a) (qualifyVars modName names b'))
+        h (qualifyHClausesVars modName names cls)
         (if names.contains h then b else qualifyVars modName names b)
 def qualifyDArmsVars (modName : String) (names : List String) : DArms → DArms
   | .nil              => .nil
@@ -3227,8 +3276,8 @@ def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (
   -- `.lettMulti` is reachable — scan every binding RHS, then the body (Surface.lean:214).
   | .lettMulti binds b             => bindsFirstPrivateDotAccess resolved binds <|> firstPrivateDotAccess resolved b
   -- #21 s7probe: scan `n`/`p`/every clause body/`body`, the `withCapS` precedent immediately above.
-  | .handleCustomS n p _h cls b    =>
-      firstPrivateDotAccess resolved n <|> firstPrivateDotAccess resolved p
+  | .handleCustomS _lbl n p? _h cls b =>
+      firstPrivateDotAccess resolved n <|> argsFirstPrivateDotAccess resolved p?
         <|> hClausesFirstPrivateDotAccess resolved cls <|> firstPrivateDotAccess resolved b
 def bindsFirstPrivateDotAccess (resolved : List (String × Prog)) : LetBindings → Option (String × String)
   | .nil           => none
@@ -3333,8 +3382,8 @@ def qualifyDotAccess (imports : List String) (ctorOwners : List (String × Strin
   | .lettMulti binds b           => .lettMulti (qualifyLetBindingsAccess imports ctorOwners qTy binds) (qualifyDotAccess imports ctorOwners qTy b)
   -- #21 s7probe: the `withCapS` precedent immediately above — `n`/`p`/every clause body/`body` all
   -- recurse; `h` (the cap binder) is left AS-IS (no qualification target, matching `withCapS`'s `n`).
-  | .handleCustomS n p h cls b   =>
-      .handleCustomS (qualifyDotAccess imports ctorOwners qTy n) (qualifyDotAccess imports ctorOwners qTy p) h
+  | .handleCustomS lbl n p? h cls b =>
+      .handleCustomS lbl (qualifyDotAccess imports ctorOwners qTy n) (qualifyDotAccessArgs imports ctorOwners qTy p?) h
         (qualifyHClausesAccess imports ctorOwners qTy cls) (qualifyDotAccess imports ctorOwners qTy b)
 def qualifyDotAccessArgs (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : SurfArgs → SurfArgs
   | .none      => .none
@@ -3901,12 +3950,16 @@ def firstBareOpCallStep (opNames : List String) : Surf → Option String
   | .lettMulti binds b             => bindsFirstBareOpCall opNames binds <|> firstBareOpCall opNames b
   -- #21 s7probe: scan `n`/`p`/every clause body/`body`, the `withCapS` precedent above — fitting
   -- closure: this IS the #74 diagnostic-pattern function this probe's brief cites by name.
-  | .handleCustomS n p _h cls b    =>
-      firstBareOpCall opNames n <|> firstBareOpCall opNames p
+  | .handleCustomS _lbl n p? _h cls b =>
+      firstBareOpCall opNames n <|> argsFirstBareOpCall opNames p?
         <|> hClausesFirstBareOpCall opNames cls <|> firstBareOpCall opNames b
 def bindsFirstBareOpCall (opNames : List String) : LetBindings → Option String
   | .nil           => none
   | .cons _ e rest => firstBareOpCall opNames e <|> bindsFirstBareOpCall opNames rest
+def argsFirstBareOpCall (opNames : List String) : SurfArgs → Option String
+  | .none    => none
+  | .one a   => firstBareOpCall opNames a
+  | .two a b => firstBareOpCall opNames a <|> firstBareOpCall opNames b
 def dArmsFirstBareOpCall (opNames : List String) : DArms → Option String
   | .nil             => none
   | .cons _ _ b rest => firstBareOpCall opNames b <|> dArmsFirstBareOpCall opNames rest
