@@ -3,9 +3,9 @@
 <!-- adr-frontmatter -->
 
 - **Status**: Proposed
-- **Summary**: The last proof-layer wall gating `lr_fundamental`/`lr_fundamental_closed` (and one of `lr_sound`'s two residuals) is the `krelS_splitAtId_decomp` SKIP-arm resume relocation (`BinaryLR.lean:1030`, task #29 item 1). Machine-characterized on krnl3's `feat-lr-final-wall @ 2b0948e`: the relocation is a config-append INVERSE that needs `splitAtId cfg₁.1 nid = none` — an **id-uniqueness/freshness** fact — where the captured continuation `cfg₁.1 = Kᵢ ++ reinstall :: Ki'` has `Kᵢ` UNIVERSALLY quantified (any captured continuation). Both viable routes need it: the self-recursive strip (route B) and the un-append (route A). Route A **elaborates and terminates** (`AppendInvWF.lean`) but is **answer-type-refuted** at its last obligation (`Dⱼ = Dᵢ` fails at `P=[]`: `Dᵢ=X` vs `Dⱼ=F qᵣ Aᵣ`); the caller-discharge of a uniqueness *premise* (route B′) is **refuted** because the LR is freshness-free BY DESIGN — ADR-0058 route-1 dissolved `Canonical`/`CapsBelow`/`run_bump`, so no `WellCounted`/`FreshCfg` carrier is in scope to discharge it. **The carrier that must be RE-INTRODUCED already half-exists**: `CrelK`/`KrelS` ALREADY thread the real fresh-id counter `g` internally (ADR-0058 route-1 landed), and the kernel ALREADY has the exact well-formedness predicate (`StackBelow g K`, `Invariants.lean:39`, axiom-clean) and its consequences (`splitAtId_fresh`, `stackBelow_splitAtId`, `wellCounted_reachable`). What is MISSING is the assertion tying `g` to the stacks: `StackBelow g K₁ ∧ StackBelow g K₂`. **Three carrier shapes weighed**: (i) a `KrelS` def-invariant conjunct, (ii) a freshness premise on the lemma chain up to the headlines, (iii) a threaded side well-formedness judgment `WFIds g K` (the `StoresGood`/`WellCounted` precedent). **RECOMMEND shape (iii)**, threaded as a `StackBelow g`-shaped side judgment discharged from `wellCounted_reachable` at the `crelK_fund_up` consumer — it is the smallest reversal of route-1 (re-introduces the *fact*, not the *machinery*: no `Canonical`, no `run_bump`, no faked counter), forces **no frozen-statement change** (the `Spec.lean` `lr_*` statements never mention `g`/`KrelS`/the carrier), and its cost is bounded by the ~2 banked lemmas already axiom-clean on the branch (`KrelS_length_eq`, `splitAtId_append_boundary`) plus the thread-through. **Load-bearing honest correction to the task-#29 census claim**: the carrier closes `lr_fundamental` + `lr_fundamental_closed` (census **18→20**), NOT `lr_sound` — `lr_sound` carries a SECOND, independent residual (the Q22 reshape↔raw-focus bridge, `Spec.lean:252`), and the `stackBelow_handlerCount_of_hasStack` obligation the carrier would impose on `krelS_refl` at `lr_sound`'s `g := handlerCount C` instantiation is UNPROVABLE from `HasStack` alone (`FreshCarrierDischargeProbe.lean`) — that IS the Q22 seam. So `lr_sound`'s third shed needs Q22 co-resolved; **18→21 is only reachable if this ADR is landed together with the Q22 bridge**, not by the carrier alone. **PARK priced**: ship v1 with the three `lr_*` flagged; the ◊4 binary-LR paper (`docs/papers/binary-lr-skeleton.md`) becomes a CPP-framed "machine-checked LR construction + the seam analysis" with `lr_fundamental` a single named residual — honest, publishable now, but the POPL/ICFP "closed contextual-equivalence result" claim stays out of reach.
+- **Summary**: The last proof-layer wall gating `lr_fundamental`/`lr_fundamental_closed` (and one of `lr_sound`'s two residuals) is the `krelS_splitAtId_decomp` SKIP-arm resume relocation (`BinaryLR.lean:1030`, task #29 item 1). Machine-characterized on krnl3's `feat-lr-final-wall @ 2b0948e`: the relocation is a config-append INVERSE that needs `splitAtId cfg₁.1 nid = none` — an **id-uniqueness/freshness** fact — where the captured continuation `cfg₁.1 = Kᵢ ++ reinstall :: Ki'` has `Kᵢ` UNIVERSALLY quantified (any captured continuation). Both viable routes need it: the self-recursive strip (route B) and the un-append (route A). Route A **elaborates and terminates** (`AppendInvWF.lean`) but is **answer-type-refuted** at its last obligation (`Dⱼ = Dᵢ` fails at `P=[]`: `Dᵢ=X` vs `Dⱼ=F qᵣ Aᵣ`); the caller-discharge of a uniqueness *premise* (route B′) is **refuted** because the LR is freshness-free BY DESIGN — ADR-0058 route-1 dissolved `Canonical`/`CapsBelow`/`run_bump`, so no `WellCounted`/`FreshCfg` carrier is in scope to discharge it. **The carrier that must be RE-INTRODUCED already half-exists**: `CrelK`/`KrelS` ALREADY thread the real fresh-id counter `g` internally (ADR-0058 route-1 landed), and the kernel ALREADY has the exact well-formedness predicate (`StackBelow g K`, `Invariants.lean:39`, axiom-clean) and its consequences (`splitAtId_fresh`, `stackBelow_splitAtId`, `wellCounted_reachable`). What is MISSING is the assertion tying `g` to the stacks: `StackBelow g K₁ ∧ StackBelow g K₂`. **THE REACHING TEST (machine-decided, `da03e68` witness pair `BWitnessUniqueInResume.lean`, axiom-clean `[propext]`) narrows the shape space to a def-change**: the strip's needed fact lives on the resume conjunct's captured continuation `Kᵢ`, which `KrelS` binds UNIVERSALLY — `strip_mislocates_when_nid_in_prefix` refutes reaching it from a top-level premise (a concrete `Kᵢ = [handleF nid _]` mislocates the split), while `strip_with_fact` confirms the strip closes once the fact IS on `Kᵢ`. So the pure top-level shapes are REFUTED: **(ii) a lemma-chain premise and (iii) a consumer-side side judgment both CANNOT reach the bound `Kᵢ`** and are struck. The surviving shapes both put the fact inside `KrelS`: **(i′) a `KrelS` def-invariant on the two stack args** (the recursive resume-conjunct hyp `KrelS m … g Kᵢ Kᵢ'` then propagates `StackBelow g Kᵢ` for free — self-propagating, matches the `WellCounted` precedent), or **(i″) a fresh premise directly on the resume conjunct** (surgical, but the discharge threads at every producer). **RECOMMEND shape (i′)** for its self-propagation — re-introduces only the *fact*, not the *machinery* (no `Canonical`, no `run_bump`, no faked counter), and forces **no frozen-statement change** (the `Spec.lean` `lr_*` statements never mention `g`/`KrelS`/the carrier). The proof-layer close is ready to consume (`strip_with_fact` + the banked `KrelS_length_eq`); the cost is the FROZEN DEF-block change (`LR.lean:1131`) rippling to the ~20 `krelS_*` eq-lemmas, self-propagating so each intro maintains it inductively. **Load-bearing honest correction to the task-#29 census claim**: the carrier closes `lr_fundamental` + `lr_fundamental_closed` (census **18→20**), NOT `lr_sound` — `lr_sound` carries a SECOND, independent residual (the Q22 reshape↔raw-focus bridge, `Spec.lean:252`), and the `stackBelow_handlerCount_of_hasStack` obligation the carrier would impose on `krelS_refl` at `lr_sound`'s `g := handlerCount C` instantiation is UNPROVABLE from `HasStack` alone (`FreshCarrierDischargeProbe.lean`) — that IS the Q22 seam. So `lr_sound`'s third shed needs Q22 co-resolved; **18→21 is only reachable if this ADR is landed together with the Q22 bridge**, not by the carrier alone. **PARK priced**: ship v1 with the three `lr_*` flagged; the ◊4 binary-LR paper (`docs/papers/binary-lr-skeleton.md`) becomes a CPP-framed "machine-checked LR construction + the seam analysis" with `lr_fundamental` a single named residual — honest, publishable now, but the POPL/ICFP "closed contextual-equivalence result" claim stays out of reach.
 - **Depends-on**: 0058 (route-1 dissolved the freshness machinery this partially reverses — the reversal SCOPE turns on this), 0055 (global-fresh identity + `WellCounted`/`splitAtId_fresh` — the precedent the carrier re-uses), 0057 (the cap-escape half of task #29, item 2, resolved vacuously — orthogonal), 0016 (the LR is the ◊4 contextual-equivalence path, not the soundness diagonal)
-- **Relates-to**: #29 (the unit this ADR is the design consult for — item 1), Q22 (labelling-vs-closure cap-rep — the SECOND `lr_sound` residual, `docs/papers/binary-lr-skeleton.md` §8.1), `docs/notes/stage5-lr-design.md` (the sibling residual-map; the `_at`-twin shape precedent), `scratch/SkipRelocateProbe.lean` / `scratch/AppendInvWF.lean` / `scratch/KrelSUnappendProbe.lean` / `scratch/DecompFreshStrip.lean` (krnl3's four wall witnesses, `feat-lr-final-wall @ 2b0948e`), `scratch/FreshCarrierDischargeProbe.lean` (this lane's `krelS_refl`-discharge probe)
+- **Relates-to**: #29 (the unit this ADR is the design consult for — item 1), Q22 (labelling-vs-closure cap-rep — the SECOND `lr_sound` residual, `docs/papers/binary-lr-skeleton.md` §8.1), `docs/notes/stage5-lr-design.md` (the sibling residual-map; the `_at`-twin shape precedent), `scratch/SkipRelocateProbe.lean` / `scratch/AppendInvWF.lean` / `scratch/KrelSUnappendProbe.lean` / `scratch/DecompFreshStrip.lean` / `scratch/BWitnessUniqueInResume.lean` (krnl3's wall witnesses + the (a)-vs-(b) reaching-test pair, `feat-lr-final-wall @ da03e68`), `scratch/FreshCarrierDischargeProbe.lean` (this lane's `krelS_refl`-discharge probe)
 
 ## Status
 
@@ -73,6 +73,8 @@ the counter it needs:
 | `wellCounted_reachable` | `Invariants.lean:251` | axiom-clean | every machine-reachable config is `WellCounted` (the DISCHARGE at the consumer) |
 | `KrelS_length_eq` | banked, `2b0948e` | axiom-clean | length alignment for the two append boundaries |
 | `splitAtId_append_boundary` | banked, `2b0948e` | axiom-clean | `nid ∉ Q → split (Q ++ handleF nid hh :: Ko') nid = some (Q, hh, Ko')` |
+| `strip_with_fact` | banked, `da03e68` | axiom-clean `[propext]` | the strip CLOSES given `splitAtId Q nid = none` on the resume-result inner prefix — the ready-to-consume proof-layer close for whichever carrier reaches `Kᵢ` |
+| `strip_mislocates_when_nid_in_prefix` | banked, `da03e68` | axiom-clean `[propext]` | the REFUTATION: a concrete `Kᵢ = [handleF nid _]` mislocates the split — the fact is NOT reachable from the resume conjunct's hypotheses unless carried ON the conjunct |
 
 So the carrier does **not** re-introduce `Canonical`/`CapsBelow`/`run_bump` (the FAKED-counter
 reconciliation route-1 deleted). It re-introduces only the **FACT** that the real counter `g`
@@ -82,46 +84,74 @@ carrier asserts *a true property of the real counter*.
 
 ## Decision (RECOMMENDATION — pending operator ratification)
 
-**Adopt carrier shape (iii): a threaded side well-formedness judgment `StackBelow g` on the LR
-stacks, discharged at the `crelK_fund_up` consumer from `wellCounted_reachable`.** Below: the three
-shapes, each with ripple map + reversal scope + size; then the census honesty and the PARK price.
+**Adopt carrier shape (i′): enrich the `KrelS` resume conjunct so its universally-bound captured
+continuation `Kᵢ` carries `StackBelow g Kᵢ`** — either as a `KrelS` def-invariant on the two stack
+args (which the recursive `KrelS m Cᵢ C εᵢ g Kᵢ Kᵢ'` hypothesis then propagates to `Kᵢ` for free)
+or as a fresh premise on the resume conjunct itself. Both are `KrelS`-def changes; **the pure
+top-level shapes (ii) and the consumer-side (iii) are REFUTED by the reaching test** (below). The
+frozen `Spec.lean` `lr_*` statements stay byte-identical (`g`/`KrelS`/the invariant are all internal
+to `CrelK`/`KrelS`).
 
-### The option table
+### THE REACHING TEST — the load-bearing narrowing (`da03e68` witness pair)
 
-| shape | forces frozen-statement change? | reversal scope (vs route-1) | size |
-|---|---|---|---|
-| **(i) `KrelS` def-invariant conjunct** — add `StackBelow g K₁ ∧ StackBelow g K₂` to `KrelS` | **NO** to `Spec.lean` (`g`/`KrelS` internal); **YES** to the FROZEN DEF block (`LR.lean:1131`) — meaning shifts, every `krelS_*` eq-lemma + `krelS_refl` re-touched | re-introduces the FACT (not the machinery); but the invariant must hold at `krelS_refl` (`g:=handlerCount C`) — **UNDISCHARGEABLE from `HasStack`** (Q22, see below) | **large** — the DEF-block change ripples to ~20 `krelS_*` lemmas + `krelS_refl` blocks on Q22 |
-| **(ii) freshness premise on the lemma chain** — add `StackBelow g K₁ →` to `krelS_splitAtId_decomp`, `crelK_fund_up`, … up to `crelK_fund` | depends how far it rides: if it reaches `crelK_fund` → the `Spec.lean:271` `lr_fundamental` wiring `fun h => crelK_fund h` needs the premise → **YES, frozen change** | re-introduces the fact as a hypothesis; but threads through the term-measured mutual block (the s5grind rebuild) — wide | **medium-large** — premise-threading through the mutual block; risks a frozen change if it can't be discharged before `crelK_fund` |
-| **(iii) side judgment `WFIds g K`, discharged at the consumer** — carry `StackBelow g` as a SEPARATE hypothesis on `crelK_fund_up`/`krelS_splitAtId_decomp` ONLY, discharge from `wellCounted_reachable` where the config is machine-reached | **NO** — the judgment lives on the proof-internal lemmas below `crelK_fund`; the consumer discharges it, so it never surfaces on `crelK_fund`'s type nor `Spec.lean` | re-introduces ONLY the fact, ONLY on the two lemmas that need it, discharged locally — the narrowest reversal | **small-medium** — thread `StackBelow g` through `krelS_splitAtId_decomp` + its `crelK_fund_up` call; discharge from the banked lemmas + `wellCounted_reachable` |
+The strip's needed fact is `splitAtId <inner prefix> nid = none`, where the inner prefix is the
+resume-result stack `cfg₁.1`, built from the **captured continuation `Kᵢ`** that the `KrelS` resume
+conjunct binds **universally** (`LR.lean:1196-1204`: `∀ … (Kᵢ Kᵢ' : Stack) …, KrelS m Cᵢ C εᵢ g Kᵢ
+Kᵢ' → …`). The witness pair `BWitnessUniqueInResume.lean` (axiom-clean `[propext]`, re-verified green
+on this branch) decides WHERE the carrier must sit:
 
-### Why (iii) — the discrimination
+- `strip_with_fact` (GREEN): the strip CLOSES given `splitAtId Q nid = none` on the inner prefix `Q`.
+  So IF the fact reaches `Kᵢ`, the proof-layer close is ready (this is `splitAtId_append_boundary`
+  under a new name; ready to consume).
+- `strip_mislocates_when_nid_in_prefix` (GREEN refutation): but the fact is NOT reachable from the
+  conjunct's hypotheses. A concrete `Kᵢ = [handleF nid _]` makes `splitAtId` land on `Kᵢ`'s frame,
+  NOT the appended boundary — and the conjunct's ONLY constraint on `Kᵢ` is the plain `KrelS m Cᵢ C
+  εᵢ g Kᵢ Kᵢ'`, which carries no uniqueness. **A premise on the LEMMA (`krelS_splitAtId_decomp`,
+  `crelK_fund_up`) cannot reach a `∀ Kᵢ` bound inside `KrelS`.**
 
-The `StoresGood`/`WellCounted` precedent (`EnvMachine.lean:1871`, `Invariants.lean:46`) is exactly
-this shape: a well-formedness fact carried alongside the config, discharged from reachability where
-consumed, never surfacing on a headline. The id-first sim's `UniqueHId` threading from `FreshCfg`
-(memory `idfirst-sim-needs-hs-id-uniqueness`) is the same move on the machine side. The carrier
-`StackBelow g` is the LR-side twin.
+**Verdict: (b) — the uniqueness must ride INSIDE `KrelS`, on the resume conjunct's `Kᵢ`.** This is a
+def-shape enrichment, forced. It kills two of my three originally-tabled shapes.
 
-Crucially, (iii) **localizes the discharge to where it is TRUE**: `crelK_fund_up` observes configs
-reached by REAL machine runs (`Source.step` from a fresh counter), so `wellCounted_reachable` gives
-`StackBelow g K` for free there. The universally-quantified `Kᵢ` in the resume conjunct is a
-captured continuation of such a run, so it too inherits `StackBelow g` — killing the "`nid` might be
-in `Kᵢ`" case by construction. No faked counter, no density reconciliation, no `Canonical`.
+### The option table (updated — the strike is machine-witnessed)
 
-(i) is rejected because the DEF-block invariant must hold at EVERY `KrelS` instantiation, including
-`krelS_refl` at `lr_sound`'s `g := handlerCount C` — which is NOT a machine-reached config (see the
-census honesty). (ii) is rejected because the premise risks riding all the way to `crelK_fund` and
-forcing a frozen change; (iii) discharges it one level below, keeping `crelK_fund`'s type — hence
-`Spec.lean` — byte-identical.
+| shape | reaches `Kᵢ`? | forces frozen-statement change? | reversal scope (vs route-1) | size |
+|---|---|---|---|---|
+| **(i′) `KrelS` def-invariant on stacks (RECOMMEND)** — add `StackBelow g K₁ ∧ StackBelow g K₂` to `KrelS`; the recursive resume-conjunct hyp `KrelS m … g Kᵢ Kᵢ'` then SUPPLIES `StackBelow g Kᵢ` | **YES** (via the recursive `KrelS` hyp) | **NO** to `Spec.lean` (`g`/`KrelS`/invariant all internal to `CrelK`) | re-introduces ONLY the FACT on `KrelS`'s stacks; no `Canonical`/`run_bump` | **medium** — FROZEN DEF-block change (`LR.lean:1131`) rippling to the ~20 `krelS_*` eq-lemmas + `krelS_refl`; but the invariant is self-propagating (each `krelS_*` intro carries it inductively) |
+| **(i″) fresh premise ON the resume conjunct** — add `StackBelow g Kᵢ →` alongside the existing `KrelS m … g Kᵢ Kᵢ'` | **YES** (it IS on `Kᵢ`) | **NO** to `Spec.lean` (internal to `KrelS`) | narrower than (i′): touches only the handleF resume clause, not every `krelS_*` | **medium** — one clause of the DEF block + the resume-conjunct consumers (`krelS_state/txn_reinstall`, `compatK_handle*`); does NOT ripple to letF/appF eq-lemmas |
+| **(ii) top-level premise on `krelS_splitAtId_decomp`/the chain** | **NO — REFUTED** (`strip_mislocates`) | n/a | n/a | STRUCK |
+| **(iii) side judgment on the CONSUMER (`crelK_fund_up`)** — my original recommendation | **NO — REFUTED** (a consumer-side `StackBelow g` cannot constrain the `∀ Kᵢ` bound in `KrelS`; same failure as (ii)) | n/a | n/a | STRUCK — unless threaded THROUGH the resume conjunct, at which point it IS (i″) |
 
-### Reversal scope (all three)
+### Why (i′) over (i″) — the discrimination between the two survivors
 
-What route-1 dissolved and STAYS dissolved under (iii): `Canonical`, `Val.CapsBelow`,
-`run_bump_converges`, the faked `handlerCount`-as-counter, the density reconciliation. What comes
-back: **only** the assertion `StackBelow g K` (already defined) on the two proof-internal lemmas,
-plus the two banked strip lemmas. Route-1's core win — the observed config IS the actual config, the
-pop shift is the actual `g → g+1` — is preserved; the carrier adds the missing "and the ids are
-below `g`" that route-1 left implicit.
+Both survivors put the fact where it reaches `Kᵢ`. The choice is ripple vs precision:
+
+- **(i″)** is more surgical — it adds `StackBelow g Kᵢ` only on the handleF resume clause, so the
+  letF/appF `krelS_*` eq-lemmas are untouched. But it makes the resume conjunct's obligation heavier
+  at every producer that DISCHARGES the conjunct (`krelS_refl`'s handleF arm, `krelS_state_reinstall`,
+  `compatK_handle*`): each must now PROVE `StackBelow g Kᵢ` for the `Kᵢ` it supplies. For the
+  self-relation (`krelS_refl`) that `Kᵢ` is a machine-reached continuation (dischargeable via
+  `wellCounted_reachable`), but the discharge must be threaded at each producer.
+- **(i′)** carries the invariant on the whole `KrelS`, so it is **self-propagating**: `krelS_handleF`
+  reduces to `KrelS n C D ε g K₁' K₂'` at the tail, which already carries `StackBelow g (K₁'/K₂')`;
+  the intro lemmas maintain it inductively (a `handleF nid h :: K` extends `StackBelow g` iff
+  `nid < g ∧ StackBelow g K`). The producer discharges it ONCE at the root (the machine-reached
+  config), not at every resume conjunct. This matches the `WellCounted`/`StackBelow` kernel precedent
+  exactly (`Invariants.lean` proves `StackBelow` distributes over `++` and survives split — the
+  reconstruction lemmas are already banked). **RECOMMEND (i′)** for that self-propagation; it is the
+  cleaner invariant even though its edit surface (every `krelS_*` lemma) is wider than (i″)'s.
+
+### Reversal scope (both survivors)
+
+What route-1 dissolved and STAYS dissolved: `Canonical`, `Val.CapsBelow`, `run_bump_converges`, the
+faked `handlerCount`-as-counter, the density reconciliation. What comes back: **only** the assertion
+`StackBelow g K` (already defined, `Invariants.lean:39`) inside `KrelS`, plus the banked strip
+lemmas. Route-1's core win — the observed config IS the actual config, the pop shift is the actual
+`g → g+1` — is preserved; the carrier adds the missing "and the ids are below `g`" that route-1 left
+implicit on the LR side (the kernel side always had it, `WellCounted`). The `StoresGood`/`WellCounted`
+precedent (`EnvMachine.lean:1871`, `Invariants.lean:46`) and the id-first sim's `UniqueHId`-from-
+`FreshCfg` threading (memory `idfirst-sim-needs-hs-id-uniqueness`) are the same move; the difference
+this ADR establishes is that on the LR the fact must ride INSIDE the relation (the resume conjunct),
+not alongside it as a consumer-side judgment — the reaching test is what forces that.
 
 ## Consequences
 
@@ -137,19 +167,36 @@ below `g`" that route-1 left implicit.
    cap-rep seam (Q22 / `docs/papers/binary-lr-skeleton.md` §8.1).
 
 `lr_fundamental := crelK_fund` and `lr_fundamental_closed` route **only** through the mutual block
-→ `crelK_fund_up` → item 1; they do NOT touch the reshape bridge. Therefore:
+→ `crelK_fund_up` → item 1; they do NOT touch the reshape bridge NOR `krelS_refl`. Therefore:
 
 - **The carrier alone closes `lr_fundamental` + `lr_fundamental_closed` → census 18→20.**
 - **`lr_sound`'s third shed needs Q22 co-resolved** (18→21 requires BOTH this ADR AND the Q22 bridge).
 
-Moreover, the carrier's discharge at `lr_sound`'s `krelS_refl` instantiation (`g := handlerCount C`)
-is **itself the Q22 seam**: `StackBelow (handlerCount C) C` is UNPROVABLE from `HasStack C …` alone
-(`HasStack.handleF`, `Typing.lean:378`, binds the frame id `n` FREE — no density premise; a source
-observation context is not machine-reached). Probed and recorded as
-`stackBelow_handlerCount_of_hasStack` in `scratch/FreshCarrierDischargeProbe.lean` (kept as the
-do-not-retry witness that this discharge is NOT free). Shape (iii) sidesteps this by NOT putting the
-invariant on `KrelS` — it discharges only at the machine-reached `crelK_fund_up`, leaving `lr_sound`'s
-`krelS_refl` untouched; `lr_sound`'s closure then still awaits Q22, exactly as today.
+**The reaching-test verdict TIGHTENS this coupling — assess honestly.** Because the recommended
+shape puts `StackBelow g` INSIDE `KrelS` (the only way to reach `Kᵢ`), the `KrelS`-def invariant must
+now be established at EVERY `KrelS` construction — including `krelS_refl`, which `lr_sound` calls at
+`g := handlerCount C`. Under (i′), `krelS_refl` acquires a `StackBelow g C` obligation for its free
+`g`; the caller discharges it. And `lr_sound`'s caller-instantiation `g := handlerCount C` needs
+`StackBelow (handlerCount C) C` — which is **UNPROVABLE from `HasStack C …` alone** (`HasStack.handleF`,
+`Typing.lean:378`, binds the frame id `n` FREE — no density premise; a source observation context is
+NOT machine-reached). Probed and recorded as `stackBelow_handlerCount_of_hasStack` in
+`scratch/FreshCarrierDischargeProbe.lean` (green with the `sorry`, the do-not-retry witness that this
+discharge is not free). **This IS the Q22 seam surfacing on `krelS_refl`.** So the honest picture:
+- The invariant threads FINE through the `crelK_fund` path (machine-reached configs; `g` = the real
+  counter; `wellCounted_reachable` discharges it) — so `lr_fundamental`/`_closed` close cleanly.
+- The invariant does NOT discharge at `lr_sound`'s `krelS_refl` instantiation without Q22 — i.e. the
+  carrier makes `lr_sound`'s dependence on Q22 *structural and visible* (a `StackBelow (handlerCount C) C`
+  hole) rather than hidden inside the reshape bridge. It does NOT make `lr_sound` worse (it was already
+  blocked on Q22 via the reshape sorry); it relocates one of `lr_sound`'s two holes onto `krelS_refl`
+  as a clean, named `StackBelow`-shaped obligation — arguably a BETTER-scoped statement of the same
+  Q22 dependency.
+
+**Net:** the carrier closes `lr_fundamental` + `lr_fundamental_closed` (18→20) unconditionally; the
+third shed (`lr_sound`, 18→21) requires Q22, and under the recommended shape that requirement is now a
+crisp `StackBelow (handlerCount C) C` obligation on `krelS_refl`, not a diffuse reshape mismatch. There
+is no carrier shape that closes `lr_sound` without Q22 — the earlier idea that a consumer-side (iii)
+"sidesteps" the `krelS_refl` obligation is WRONG (it fails the reaching test and never closes item 1
+at all).
 
 ### Containment (VERIFIED, not assumed)
 
@@ -169,14 +216,17 @@ out of scope here). **The carrier touches only the 3-headline `lr_*` cluster.**
 
 ### The banked work carries over
 
-`KrelS_length_eq` and `splitAtId_append_boundary` (branch `2b0948e`, axiom-clean) are consumed
-directly once the `StackBelow g` fact is in scope: `splitAtId_append_boundary` supplies the
-boundary-location from `splitAtId cfg₁.1 nid = none` (= `splitAtId_fresh` applied to
-`StackBelow g cfg₁.1`), and `KrelS_length_eq` aligns the two append boundaries. `AppendInvWF`'s
-proven WF STRUCTURE (strong-induction + `dispatchOn_append_outer` lift) is the skeleton; only its
-answer-type obligation changes — with `StackBelow g` in hand, the strip locates the boundary
-determinately, so the `Dⱼ = Dᵢ` refutation dissolves (the boundary is the SAME frame both strips
-hit, fixing the answer by `rfl` rather than requiring the refuted cross-hole equality).
+`KrelS_length_eq` + `splitAtId_append_boundary` (`2b0948e`) and `strip_with_fact` (`da03e68`), all
+axiom-clean, are consumed directly once the `StackBelow g Kᵢ` fact reaches the resume conjunct:
+`strip_with_fact`/`splitAtId_append_boundary` supply the boundary-location from
+`splitAtId cfg₁.1 nid = none` (= `splitAtId_fresh` applied to `StackBelow g cfg₁.1`), and
+`KrelS_length_eq` aligns the two append boundaries. `AppendInvWF`'s proven WF STRUCTURE
+(strong-induction + `dispatchOn_append_outer` lift) is the skeleton; only its answer-type obligation
+changes — with `StackBelow g` in hand the strip locates the boundary determinately, so the
+`Dⱼ = Dᵢ` refutation dissolves (the boundary is the SAME frame both strips hit, fixing the answer by
+`rfl` rather than the refuted cross-hole equality). The `da03e68` witness confirms the strip's
+proof-layer close is READY the moment the carrier reaches `Kᵢ` — the remaining work is the
+def-enrichment + the self-propagation through the `krelS_*` intros, not new strip infrastructure.
 
 ### No invariant breach
 
@@ -186,16 +236,22 @@ carrier is the ADR-0055 `WellCounted` invariant, re-used at the LR — not a new
 
 ## Alternatives considered (rejected / deferred)
 
-- **Shape (i) — `KrelS` def-invariant.** Rejected: forces the FROZEN DEF-block change with the widest
-  ripple (~20 `krelS_*` lemmas) AND blocks at `krelS_refl` on the Q22-shaped
-  `StackBelow (handlerCount C) C` obligation that `HasStack` cannot discharge. It couples the carrier
-  to Q22 in the worst way (the invariant must hold at a non-machine-reached instantiation). Deferred
-  as the shape a future Q22 resolution might revisit (if the reshape makes `handlerCount C` the real
-  counter, (i) becomes discharge­able — but that is Q22's call, not this one's).
-- **Shape (ii) — premise on the lemma chain up to the headlines.** Rejected for v1: risks riding to
-  `crelK_fund` and forcing a frozen `lr_fundamental` change (a `STATEMENT_CHANGE_OK` event +
-  kernel-engineer review). (iii) achieves the same discharge one level lower with no frozen touch.
-  Keep as the fallback if (iii)'s local discharge does not close (build-arbitrate).
+- **Shape (i″) — fresh premise directly ON the resume conjunct.** The surviving alternative to the
+  recommended (i′). Surgical (touches only the handleF clause, not the letF/appF `krelS_*`), but the
+  `StackBelow g Kᵢ` obligation must be discharged at every producer that supplies the conjunct
+  (`krelS_refl`/`krelS_state_reinstall`/`compatK_handle*`), rather than once at the root. Kept as the
+  build-arbitrated alternative if (i′)'s `krelS_*` ripple proves heavier than the per-producer
+  discharge — the operator (or the implementing kernel-engineer) picks on the measured edit surface.
+- **Shape (ii) — top-level premise on the lemma chain (`krelS_splitAtId_decomp`/`crelK_fund_up`).**
+  **REFUTED by the reaching test** (`strip_mislocates_when_nid_in_prefix`, `da03e68`): a premise on
+  the LEMMA cannot constrain the `∀ Kᵢ` bound inside `KrelS`'s resume conjunct; a concrete
+  `Kᵢ = [handleF nid _]` mislocates the split regardless. Struck — the witness is the strike's
+  evidence.
+- **Shape (iii) — side judgment on the CONSUMER (`crelK_fund_up`), my original recommendation.**
+  **REFUTED by the same reaching test**: a `StackBelow g` carried on the consumer is a top-level fact,
+  so it cannot reach the bound `Kᵢ` any more than (ii) can. It closes item 1 only if threaded THROUGH
+  the resume conjunct — at which point it is no longer consumer-side, it is (i″). The "sidesteps the
+  `krelS_refl` obligation" claim in the first draft was wrong: it does not close item 1 at all.
 - **Route A un-append WITHOUT a carrier.** Answer-type-refuted (`c8b5909`, `AppendInvWF.lean`): the
   `Dⱼ = Dᵢ` obligation is false at `P = []`. The carrier is what makes the boundary determinate; the
   un-append is not a carrier-free path.
@@ -226,19 +282,22 @@ What the ◊4 binary-LR paper claim becomes (`docs/papers/binary-lr-skeleton.md`
   `lr_fundamental_closed`), leaving Q22 as `lr_sound`'s sole remaining architectural residual —
   which is the cleaner story to submit (one open seam, clearly scoped) than three.
 
-**Recommendation on PARK vs proceed:** proceed with shape (iii) — it is small, forces no frozen
+**Recommendation on PARK vs proceed:** proceed with shape (i′) — it forces no frozen `Spec.lean`
 change, re-introduces only a true fact the kernel already proves reachable, and it collapses the
 ◊4 residual set from three to one (the Q22 seam), materially improving the paper's honesty-to-claim
 ratio. But it does NOT on its own deliver `lr_sound`; if the operator's goal is the FULL closed
 equivalence result, this ADR must be sequenced WITH the Q22 bridge, and the two together are the
-"18→21" the census target names. The operator rules on: (a) carrier shape (recommend iii), and
+"18→21" the census target names. The operator rules on: (a) carrier shape — recommend (i′), with
+(i″) the build-arbitrated surgical alternative (both are `KrelS`-def changes → kernel-engineer
+consult per invariant #4/#5 discipline; the reaching test refuted every non-def shape), and
 (b) whether to sequence it with Q22 now or land the `lr_fundamental` shed alone (18→20) and hold Q22.
 
 ## Ground
 
 `scratch/SkipRelocateProbe.lean` · `scratch/AppendInvWF.lean` · `scratch/KrelSUnappendProbe.lean` ·
-`scratch/DecompFreshStrip.lean` · `scratch/KrelSLengthProbe.lean` · `scratch/CrelKUpVacuityProbe.lean`
-(krnl3, `feat-lr-final-wall @ 2b0948e`) · `scratch/FreshCarrierDischargeProbe.lean` (this lane) ·
+`scratch/DecompFreshStrip.lean` · `scratch/KrelSLengthProbe.lean` · `scratch/CrelKUpVacuityProbe.lean` ·
+`scratch/BWitnessUniqueInResume.lean` (the (a)-vs-(b) reaching-test witness pair, `[propext]`)
+(krnl3, `feat-lr-final-wall @ da03e68`) · `scratch/FreshCarrierDischargeProbe.lean` (this lane) ·
 `Bang/Meta/LR.lean:1116/1131` (frozen `CrelK`/`KrelS` DEF block, `g` threaded) ·
 `Bang/Meta/BinaryLR.lean:929/1018/1038` (`krelS_splitAtId_decomp` SKIP sorry, `crelK_fund_up`) ·
 `Bang/Core/Semantics/Invariants.lean:39/65/94/251` (`StackBelow`/`splitAtId_fresh`/
