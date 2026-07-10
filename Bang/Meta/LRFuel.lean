@@ -132,11 +132,14 @@ def KrelSN : Nat → Nat → CTy Eff Mult → CTy Eff Mult → Eff → Nat → S
                   ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
                 Bang.dispatchOn n₁ op w₁ (Kᵢ, h₁, K₁') = some cfg₁ →
                 Bang.dispatchOn n₂ op w₂ (Kᵢ', h₂, K₂') = some cfg₂ →
-                -- FUEL DESCENT: the resume result `Sᵢ` is related at the SAME smaller fuel `fᵢ`.
-                (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
+                -- FUEL DESCENT (ARBITRATED shape, slice 2): the resume result `Sᵢ` is related at a fuel
+                -- `fⱼ < fᵢ` — STRICTLY below the captured continuation's fuel. This kills the crux fuel-UP:
+                -- the SKIP-strip produces the stripped result at `fᵢ-1 < fᵢ`, which satisfies `∃ fⱼ < fᵢ`
+                -- DIRECTLY (no up-cast). `fⱼ` is EXISTENTIAL so the producer picks it (the strip picks `fᵢ-1`).
+                (∃ (fⱼ : Nat), fⱼ < fᵢ ∧ ∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
                     cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
                     Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelKN m f Aᵣ r₁ r₂ ∧
-                    KrelSN m fᵢ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ'))
+                    KrelSN m fⱼ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ'))
       | _, _ => False
 termination_by n f _ _ _ _ K _ => (n, 1, f, K.length, 0)
 decreasing_by
@@ -200,10 +203,10 @@ end
               ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
             Bang.dispatchOn nh op w₁ (Kᵢ, h, K₁) = some cfg₁ →
             Bang.dispatchOn nh' op w₂ (Kᵢ', h', K₂) = some cfg₂ →
-            (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
+            (∃ (fⱼ : Nat), fⱼ < fᵢ ∧ ∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
                 cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
                 Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelKN m f Aᵣ r₁ r₂ ∧
-                KrelSN m fᵢ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ'))) := by
+                KrelSN m fⱼ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ'))) := by
   cases h <;> cases h' <;> simp only [KrelSN, StackInc]
 
 /-! ## Obstruction analog (i) — the `KrelSN`-cast (the twin of `KrelS_g_cast`)
@@ -237,13 +240,14 @@ theorem KrelSN_g_cast : ∀ (n f : Nat) {C D : CTy Eff Mult} {ε : Eff} (g g' : 
       obtain ⟨hincpair, hid, hh, htail, hres⟩ := hK
       refine ⟨hincpair, hid, hh, KrelSN_g_cast n f g g' K₁' K₂' htail, ?_⟩
       intro m hm fᵢ hfᵢ op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi habove hCᵢ hd₁ hd₂
-      obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr, hSk⟩ :=
+      obtain ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr, hSk⟩ :=
         hres m hm fᵢ hfᵢ op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel
           -- FUEL DESCENT: the reverse `g' → g` cast on the captured continuation `Kᵢ` is a call at
           -- fuel `fᵢ < f` — structurally descending, so the contravariant polarity is a NON-issue.
           (KrelSN_g_cast m fᵢ g' g Kᵢ Kᵢ' hKi) habove hCᵢ hd₁ hd₂
-      exact ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr,
-        KrelSN_g_cast m fᵢ g g' Sᵢ Sᵢ' hSk⟩
+      -- ARBITRATED shape: the result is at `fⱼ < fᵢ`; the g-cast on `Sᵢ` recurses at `fⱼ` (still < f).
+      exact ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr,
+        KrelSN_g_cast m fⱼ g g' Sᵢ Sᵢ' hSk⟩
   | _, _, _, _, _, _, _, [], (_ :: _), hK => by simp [KrelSN] at hK
   | _, _, _, _, _, _, _, (_ :: _), [], hK => by simp [KrelSN] at hK
   | _, _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.appF _ :: _), hK => by simp [KrelSN] at hK
@@ -314,9 +318,9 @@ theorem KrelSN_fuel_mono : ∀ (n f f' : Nat) {C D : CTy Eff Mult} {ε : Eff} {g
         -- fuel-DOWN free at the resume seam (the crux-relevant arm). The VrelKN lifts are slice-2.
         intro m hm fᵢ hfᵢ op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi habove hCᵢ hd₁ hd₂
         have hfᵢf : fᵢ < f := lt_of_lt_of_le hfᵢ hff
-        obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, e1, e2, cr1, cr2, hvr, hSk⟩ :=
+        obtain ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, e1, e2, cr1, cr2, hvr, hSk⟩ :=
           hres m hm fᵢ hfᵢf op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ (by sorry) hKi habove hCᵢ hd₁ hd₂
-        exact ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, e1, e2, cr1, cr2, by sorry, hSk⟩
+        exact ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, e1, e2, cr1, cr2, by sorry, hSk⟩
   | _, _, _, _, _, _, _, [], (_ :: _), _, hK => by simp [KrelSN] at hK
   | _, _, _, _, _, _, _, (_ :: _), [], _, hK => by simp [KrelSN] at hK
   | _, _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp [KrelSN] at hK
@@ -372,10 +376,10 @@ theorem krelSN_handleF_intro {n f : Nat} {nh : Nat} {C D : CTy Eff Mult} {e : Ef
         (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h₁.label op = some Aᵣ → ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
         Bang.dispatchOn nh op w₁ (Kᵢ, h₁, K₁) = some cfg₁ →
         Bang.dispatchOn nh op w₂ (Kᵢ', h₂, K₂) = some cfg₂ →
-        (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
+        (∃ (fⱼ : Nat), fⱼ < fᵢ ∧ ∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
             cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
             Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelKN m f Aᵣ r₁ r₂ ∧
-            KrelSN m fᵢ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) :
+            KrelSN m fⱼ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) :
     KrelSN n f C D e g (Frame.handleF nh h₁ :: K₁) (Frame.handleF nh h₂ :: K₂) := by
   rw [krelSN_handleF]
   exact ⟨hincpair, rfl, hHR, htail, hres⟩
@@ -448,10 +452,10 @@ theorem krelSN_splitAtId_decomp {n f : Nat} {C D : CTy Eff Mult} {e : Eff} {g : 
           (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op' = some Aᵣ → ∃ qᵣ, Cᵢ' = CTy.F qᵣ Aᵣ) →
           Bang.dispatchOn nid op' w₁ (Kᵢ, h, K₁ₒ) = some cfg₁ →
           Bang.dispatchOn nid op' w₂ (Kᵢ', h', K₂ₒ) = some cfg₂ →
-          (∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
+          (∃ (fⱼ : Nat), fⱼ < fₒ ∧ ∃ (qᵣ : Mult) (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val) (Sᵢ Sᵢ' : Stack) (eₛ : Eff),
               cfg₁ = (Sᵢ, Comp.ret r₁) ∧ cfg₂ = (Sᵢ', Comp.ret r₂) ∧
               Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelKN m f Aᵣ r₁ r₂ ∧
-              KrelSN m fₒ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) := by
+              KrelSN m fⱼ (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) := by
   induction K₁ generalizing K₂ K₁ᵢ K₁ₒ C e with
   | nil => simp [Bang.splitAtId] at hsp
   | cons fr K₁' ih =>
@@ -536,35 +540,35 @@ theorem krelSN_splitAtId_decomp {n f : Nat} {C D : CTy Eff Mult} {e : Eff} {g : 
                     -- `habove : StackAbove mh₁ Kᵢ` — the OUTPUT resume conjunct's threshold IS `mh₁` (the
                     -- REBUILT frame's id, via `krelSN_handleF_intro (nh := mh₁)`), so it feeds `hres`
                     -- (which wants `StackAbove mh₁ Kᵢ`) DIRECTLY. No `StackAbove_anti` juggling needed.
-                    obtain ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr, hSk⟩ :=
+                    -- ARBITRATED shape: `hres` now yields `⟨fⱼ, hfⱼ : fⱼ < fᵢ, …⟩` — the result at fuel `fⱼ`.
+                    obtain ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr, hSk⟩ :=
                       hres m hm fᵢ hfᵢ op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ'' _ _ hcatch hcw₁ hcw₂ hVrel
                         hKi habove hCᵢ hlift₁ hlift₂
-                    -- `hcfg1 : (cfg₁.1 ++ handleF nid hh :: Ko', cfg₁.2) = (Sᵢ, ret r₁)`. So `Sᵢ` = the DISPATCH
-                    -- output `cfg₁.1 ++ handleF nid hh :: Ko'`, and the goal wants `cfg₁ = (Sstrip, ret r₁)` with
-                    -- `Sstrip = cfg₁.1`, inner over `cfg₁.1` at answer `Dᵢ`. The strip must extract the prefix
-                    -- relation FROM `hSk` (over `Sᵢ = cfg₁.1 ++ …`) — NOT from `hin` (over the STATIC `Ki'`, the
-                    -- wrong stacks). `krelSN_append_inv` does this at fuel `< fᵢ`, answer = its output existential.
+                    -- `hcfg1 : (cfg₁.1 ++ handleF nid hh :: Ko', cfg₁.2) = (Sᵢ, ret r₁)`. `Sᵢ` = DISPATCH output
+                    -- `cfg₁.1 ++ handleF nid hh :: Ko'`; the goal wants `cfg₁ = (cfg₁.1, ret r₁)`, inner over
+                    -- `cfg₁.1` at answer `Dᵢ`. `hSk` (over `Sᵢ`) is at fuel `fⱼ`; the strip drops to `fⱼ-1`.
                     rw [Prod.ext_iff] at hcfg1 hcfg2
                     obtain ⟨hSi, hci⟩ := hcfg1; obtain ⟨hSi', hci'⟩ := hcfg2
                     simp only at hSi hci hSi' hci'
                     rw [← hSi, ← hSi'] at hSk
                     obtain ⟨Dstrip, hstrip⟩ := krelSN_append_inv (Sstrip := cfg₁.1) (Sstrip' := cfg₂.1)
-                      (nid := nid) (hh := hh) (h' := h') (Ko' := Ko') (K₂ₒ := K₂ₒ) (fₒ := fᵢ - 1)
+                      (nid := nid) (hh := hh) (h' := h') (Ko' := Ko') (K₂ₒ := K₂ₒ) (fₒ := fⱼ - 1)
                       (Nat.sub_lt (by
-                        -- fᵢ > 0: else the resume conjunct's captured-continuation supply is vacuous (nothing
-                        -- at fuel < 0). The fuel FLOOR, analogous to `crelKN 0`; a def-level vacuity lemma
-                        -- (slice-2) discharges it. Named as a sub-obligation of the strip.
+                        -- fⱼ > 0: else the strip's captured-continuation supply is vacuous. The fuel FLOOR,
+                        -- analogous to `crelKN 0`; a def-level vacuity lemma (slice-2) discharges it.
                         sorry) Nat.one_pos) hSk
-                    refine ⟨qᵣ, Aᵣ, r₁, r₂, cfg₁.1, cfg₂.1, eₛ,
+                    -- ARBITRATED PAYOFF: the OUTPUT resume conjunct now binds `∃ fⱼ' < fₒ (= fᵢ)`; I supply
+                    -- `fⱼ' := fⱼ` with `hfⱼ : fⱼ < fᵢ` DIRECTLY — NO fuel-UP. The result is `hstrip` at `fⱼ-1`,
+                    -- which the OUTPUT accepts at `fⱼ` via `KrelSN_fuel_mono` (down, free) — or, if the def puts
+                    -- the OUTPUT at `< fⱼ` too, `fⱼ-1` fits directly. The fuel-UP tension is DISSOLVED.
+                    refine ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, cfg₁.1, cfg₂.1, eₛ,
                       by rw [Prod.ext_iff]; exact ⟨rfl, hci⟩,
                       by rw [Prod.ext_iff]; exact ⟨rfl, hci'⟩, hcr1, hcr2, hvr, ?_⟩
-                    -- `hstrip : KrelSN m (fᵢ-1) (F qᵣ Aᵣ) Dstrip eₛ g cfg₁.1 cfg₂.1`; goal wants answer `Dᵢ`,
-                    -- fuel `fₒ` (the OUTPUT conjunct's `∀ fₒ < f` bound — supplied by the caller). THE RESIDUAL:
-                    -- (a) `Dstrip = Dᵢ` — a tie between TWO fuel-carried decomp OUTPUTS (the strip's + `ih`'s
-                    --     `Dᵢ`), NOT the LR's tie between a re-derived hole and `ih` (which needed FALSE
-                    --     `krelS_hole_det`). The fuel-descent is designed to carry it; proving it is slice-2.
-                    -- (b) fuel-align `fᵢ-1` to the caller's `fₒ` (via `KrelSN_fuel_mono`, slice-2 mutual arms).
-                    -- This is the SINGLE remaining crux obligation — the fuel design reduced the SKIP wall to it.
+                    -- `hstrip : KrelSN m (fⱼ-1) (F qᵣ Aᵣ) Dstrip eₛ g cfg₁.1 cfg₂.1`; goal wants answer `Dᵢ`,
+                    -- fuel `fⱼ`. REMAINING (the SINGLE crux residual, arbitrated shape):
+                    -- (a) `Dstrip = Dᵢ` — a tie between TWO fuel-carried decomp OUTPUTS (NOT the false hole_det).
+                    -- (b) fuel-align `fⱼ-1 → fⱼ` — now DOWN-compatible (fuel-mono, the free direction). The
+                    --     arbitrated `< fᵢ` output shape KILLED the up-cast; only `Dstrip = Dᵢ` + the floor remain.
                     sorry
               | _ => simp [KrelSN] at hK
 

@@ -65,10 +65,30 @@ statement, it is a well-founded strip + an existential-coincidence.
 **The remaining crux obligation (the ONE named residual, `krelSN_splitAtId_decomp` handleF-SKIP):**
 1. `Dstrip = Dᵢ` — the two carried decomp existentials coincide. NOT `krelS_hole_det` (that tied a
    re-derived hole to `ih`); this ties two OUTPUT existentials the fuel-descent threads. slice-2.
-2. fuel-align: the strip produces at `fᵢ-1`, the OUTPUT conjunct demands `fᵢ` — a fuel-UP the design
-   must absorb (candidate: state the OUTPUT resume conjunct's result at `< fᵢ` too, so no up-cast; OR
-   the fuel-synthesis bridge picks a fuel high enough. A slice-2 def-shape decision, flagged).
-3. fuel-floor: `fᵢ > 0` (else the resume supply is vacuous) — a `crelKN 0`-style def-vacuity lemma.
+2. ~~fuel-align (the fuel-UP tension)~~ **RESOLVED at slice-2 entry — see the arbitration below.**
+3. fuel-floor: `fⱼ > 0` (else the resume supply is vacuous) — a `crelKN 0`-style def-vacuity lemma.
+
+## ARBITRATION (slice-2 entry, machine-witnessed) — the `< fᵢ` output-result shape: ADOPTED
+
+The fuel-UP tension (obligation 2) is DISSOLVED by a def-shape change, arbitrated on the real artifact
+per the operator's CarrierFork*-style condition (build-witnessed, not a miniature):
+
+**The change**: the handleF resume conjunct's OUTPUT result now sits at fuel `∃ fⱼ, fⱼ < fᵢ ∧ … KrelSN m fⱼ
+… Sᵢ Sᵢ'` — STRICTLY below the captured continuation's fuel `fᵢ` (was: at `fᵢ`). `fⱼ` is EXISTENTIAL, so
+the producer picks it (the SKIP-strip picks `fⱼ-1`, satisfying `< fᵢ` directly — no up-cast ever needed).
+
+**Condition (i) — crux reassembly still fires: PASS.** The SKIP arm's `hres` now yields `⟨fⱼ, hfⱼ : fⱼ < fᵢ,
+…⟩`; the strip drops to `fⱼ-1`; the OUTPUT conjunct's `∃ fⱼ' < fᵢ` is satisfied by `fⱼ' := fⱼ` DIRECTLY.
+The fuel-UP is gone. The HIT arm threads `hres`'s `∃ fⱼ < fₒ` straight through (same `fₒ`).
+
+**Condition (ii) — `krelSN_handleF_intro` + the four eq-lemmas don't break: PASS.** All build clean; the
+axiom sets are UNCHANGED (8 clean decls still `[propext, Quot.sound]`, the 3 flagged decls still their
+named `sorryAx`). `KrelSN_g_cast` re-casts the result at `fⱼ` (still `< f`, termination holds). The cost
+was ~5 threaded sites, ALL inside the twin — no compat touched (this is BEFORE the 19-decl thread).
+
+**Decision: ADOPT the `< fᵢ` output shape.** It eliminates one of the three crux residuals (the fuel-UP)
+for a ~5-site in-twin cost, and preserves axiom cleanliness. The remaining crux residuals are now just
+`Dstrip = Dᵢ` (the existential coincidence) + the fuel-floor `fⱼ > 0`.
 
 **Honest deviation from amendment ③'s (β) price.** ③ priced (β) as "the wall closes" once the re-index
 lands. Slice 1 SHARPENS this: the re-index closes the LOCATION + TERMINATION halves (the g-cast survives
