@@ -14,6 +14,9 @@ module
 public import Bang.Core.IR
 public import Bang.Core.Typing
 public import Bang.Core.Semantics
+-- #44 STAGE 5 (debt 3): `capsV`/`capsC`/`capsH` + `capsCls_find?` (the vcap-collectors) for the
+-- `dispatchOn_rename` custom-arm side condition (`capsH (custom …) = []` ⟹ rename is the identity).
+public import Bang.Core.Freshness
 
 namespace Bang
 
@@ -751,9 +754,77 @@ theorem storeSet_map (f : Val → Val) (Θ : List Val) (i : Nat) (w : Val) :
   cases v <;> simp only [renameV_vunit, renameV_vint, renameV_vvar, renameV_vcap, renameV_vthunk,
     renameV_inl, renameV_inr, renameV_pair, renameV_fold, tvarIdx]
 
+/-! #44 STAGE 5 (debt 3, route R-1): renaming is the IDENTITY on a `vcap`-free term (`capsV`/`capsC = []`),
+for ANY `σ`. `renameV`/`renameC` touch ONLY `.vcap` nodes (`LR.lean:452`), and `capsV`/`capsC` COLLECT
+exactly those nodes (`Freshness.lean:43`); so no `.vcap` ⟹ nothing to rename. The general-`σ` twin of the
+`bumpσ`-specific `renameV_capsBelow`. Used to close `dispatchOn_rename`'s custom arm: the param + clause
+bodies are `vcap`-free (elaborated custom clauses are closed source literals; caps enter only via runtime
+`handle`-mint, never inside a clause literal), so the resume focus commutes with `σ`. -/
+mutual
+theorem renameV_capsV_nil (σ : Nat → Nat) :
+    ∀ {v : Val}, Bang.Model.capsV v = [] → renameV σ v = v
+  | .vcap _ _,  h => by simp only [Bang.Model.capsV, List.cons_ne_nil] at h  -- `[(n,ℓ)] = []` absurd
+
+  | .vthunk c,  h => by simp only [Bang.Model.capsV] at h; simp only [renameV_vthunk, renameC_capsC_nil σ h]
+  | .inl v,     h => by simp only [Bang.Model.capsV] at h; simp only [renameV_inl, renameV_capsV_nil σ h]
+  | .inr v,     h => by simp only [Bang.Model.capsV] at h; simp only [renameV_inr, renameV_capsV_nil σ h]
+  | .pair a b,  h => by
+      simp only [Bang.Model.capsV, List.append_eq_nil_iff] at h
+      simp only [renameV_pair, renameV_capsV_nil σ h.1, renameV_capsV_nil σ h.2]
+  | .fold v,    h => by simp only [Bang.Model.capsV] at h; simp only [renameV_fold, renameV_capsV_nil σ h]
+  | .vunit,     _ => by simp only [renameV_vunit]
+  | .vint _,    _ => by simp only [renameV_vint]
+  | .vvar _,    _ => by simp only [renameV_vvar]
+theorem renameC_capsC_nil (σ : Nat → Nat) :
+    ∀ {c : Comp}, Bang.Model.capsC c = [] → renameC σ c = c
+  | .ret v,        h => by simp only [Bang.Model.capsC] at h; simp only [renameC_ret, renameV_capsV_nil σ h]
+  | .letC M N,     h => by
+      simp only [Bang.Model.capsC, List.append_eq_nil_iff] at h
+      simp only [renameC_letC, renameC_capsC_nil σ h.1, renameC_capsC_nil σ h.2]
+  | .force v,      h => by simp only [Bang.Model.capsC] at h; simp only [renameC_force, renameV_capsV_nil σ h]
+  | .lam M,        h => by simp only [Bang.Model.capsC] at h; simp only [renameC_lam, renameC_capsC_nil σ h]
+  | .app M v,      h => by
+      simp only [Bang.Model.capsC, List.append_eq_nil_iff] at h
+      simp only [renameC_app, renameC_capsC_nil σ h.1, renameV_capsV_nil σ h.2]
+  | .perform c _ v, h => by
+      simp only [Bang.Model.capsC, List.append_eq_nil_iff] at h
+      simp only [renameC_perform, renameV_capsV_nil σ h.1, renameV_capsV_nil σ h.2]
+  | .handle hh M,  h => by
+      simp only [Bang.Model.capsC, List.append_eq_nil_iff] at h
+      simp only [renameC_handle, renameH_capsH_nil σ h.1, renameC_capsC_nil σ h.2]
+  | .case v N₁ N₂, h => by
+      simp only [Bang.Model.capsC, List.append_eq_nil_iff] at h
+      simp only [renameC_case, renameV_capsV_nil σ h.1.1, renameC_capsC_nil σ h.1.2, renameC_capsC_nil σ h.2]
+  | .split v N,    h => by
+      simp only [Bang.Model.capsC, List.append_eq_nil_iff] at h
+      simp only [renameC_split, renameV_capsV_nil σ h.1, renameC_capsC_nil σ h.2]
+  | .unfold v,     h => by simp only [Bang.Model.capsC] at h; simp only [renameC_unfold, renameV_capsV_nil σ h]
+  | .binop _ v w,  h => by
+      simp only [Bang.Model.capsC, List.append_eq_nil_iff] at h
+      simp only [renameC_binop, renameV_capsV_nil σ h.1, renameV_capsV_nil σ h.2]
+  | .oom,          _ => by simp only [renameC_oom]
+  | .wrong _,      _ => by simp only [renameC_wrong]
+theorem renameH_capsH_nil (σ : Nat → Nat) :
+    ∀ {h : Handler}, Bang.Model.capsH h = [] → renameH σ h = h
+  | .state _ s,       hh => by
+      simp only [Bang.Model.capsH] at hh; simp only [renameH_state, renameV_capsV_nil σ hh]
+  | .throws _,        _  => by simp only [renameH_throws]
+  | .transaction _ Θ, hh => by
+      simp only [Bang.Model.capsH, List.flatMap_eq_nil_iff] at hh
+      simp only [renameH_transaction, Handler.transaction.injEq, true_and]
+      rw [List.map_congr_left (fun cell hc => renameV_capsV_nil σ (hh cell hc))]; exact List.map_id' _
+  | .custom _ _ _,    _  => by simp only [renameH_custom]
+end
+
 /-- **`dispatchOn` commutes with renaming.** -/
 theorem dispatchOn_rename (σ : Nat → Nat) (n : Nat) (op : OpId) (v : Val)
-    (Kᵢ : EvalCtx) (h : Handler) (Kₒ : EvalCtx) :
+    (Kᵢ : EvalCtx) (h : Handler) (Kₒ : EvalCtx)
+    -- #44 STAGE 5 (debt 3, R-1): the custom side condition — the handler's param + clause bodies are
+    -- `vcap`-free (`capsH h = []`), true of every ELABORATED custom clause (closed source literals; caps
+    -- enter only via runtime `handle`-mint, never inside a clause literal). VACUOUS for the built-ins
+    -- (their `renameH`/dispatch never touches a clause `subst`, so the hypothesis is unused there — the
+    -- caller passes `by simp [Bang.Model.capsH]` for a `custom`, or `nofun`/anything for the others). -/
+    (hcf : ∀ ℓ' p' cl', h = Handler.custom ℓ' p' cl' → Bang.Model.capsH h = []) :
     dispatchOn (σ n) op (renameV σ v) (renameK σ Kᵢ, renameH σ h, renameK σ Kₒ)
       = (dispatchOn n op v (Kᵢ, h, Kₒ)).map (fun x => (renameK σ x.1, renameC σ x.2)) := by
   cases h with
@@ -779,20 +850,34 @@ theorem dispatchOn_rename (σ : Nat → Nat) (n : Nat) (op : OpId) (v : Val)
             if_neg hnew, if_neg hread, Option.map_some, renameK_append, renameK_cons,
             renameF_handleF, renameH_transaction, renameC_ret, tvarIdx_renameV, storeSet_map]
   | custom ℓ p cl =>
-    -- ADR-0087 rung-2 NAMED RESIDUAL (off the clean census — `dispatchOn_rename` feeds ONLY the binary-LR
-    -- `lr_sound`, ALREADY in the flagged-7 sorryAx set; this adds NO new flagged headline). dispatchOn is
-    -- now a REAL resume, but `renameH` is IDENTITY on custom (kept identity to avoid the whole rename mutual
-    -- block going well-founded — the nested-inductive `List (OpId × Comp)` termination cascade, twin of
-    -- `capsCls`). The commutation holds when the clause/param are vcap-FREE (renameC/renameV = id on them),
-    -- which every elaborated custom clause IS — but threading that VcapFree-clause side condition (or making
-    -- renameH traverse + a `renameCls` structural helper) is deferred with the LR re-index (#15, PATH-inc5).
-    cases hcl : cl.find? (·.1 == op) with
-    | none => simp only [renameH_custom, dispatchOn, hcl, Option.map_none]
-    | some clause => sorry
+    -- #44 STAGE 5 (debt 3, R-1): `renameH` is IDENTITY on custom (kept identity — avoids the `renameCls`
+    -- nested-inductive termination cascade; ADR-0087). So the reinstalled frame + `find?` are unchanged by
+    -- σ; the resume focus `subst p (subst (shift v) clause.2)` commutes with σ IFF `p` and `clause.2` are
+    -- `vcap`-free — which `hcf` supplies (`capsH (custom …) = capsV p ++ capsCls cl = []`). The renamed arg
+    -- `v` is handled by the general `renameC_subst`/`renameV_shift` commutation; `p`/`clause.2` are pinned by
+    -- `renameV_capsV_nil`/`renameC_capsC_nil`.
+    have hch : Bang.Model.capsH (Handler.custom ℓ p cl) = [] := hcf ℓ p cl rfl
+    simp only [Bang.Model.capsH, List.append_eq_nil_iff] at hch
+    obtain ⟨hcp, hccl⟩ := hch
+    cases hfind : cl.find? (·.1 == op) with
+    | none => simp only [renameH_custom, dispatchOn, hfind, Option.map_none]
+    | some clause =>
+        have hcc : Bang.Model.capsC clause.2 = [] :=
+          List.eq_nil_iff_forall_not_mem.mpr fun q hq =>
+            (List.eq_nil_iff_forall_not_mem.mp hccl) q (Bang.Model.capsCls_find? hfind q hq)
+        simp only [renameH_custom, dispatchOn, hfind, Option.map_some, renameK_append, renameK_cons,
+          renameF_handleF, renameH_custom]
+        rw [renameC_subst, renameC_subst, renameV_shift, renameV_capsV_nil σ hcp,
+          renameC_capsC_nil σ hcc]
 
-/-- **`idDispatch` commutes with an injective renaming.** -/
+/-- **`idDispatch` commutes with an injective renaming.** #44 STAGE 5 (debt 3, R-1): the custom side
+condition — the `splitAtId`-selected handler, if `custom`, is `vcap`-free (`capsH = []`). True of every
+reachable config (elaborated custom clauses are closed source literals). Threaded up to the keystone. -/
 theorem idDispatch_rename (σ : Nat → Nat) (hσ : Function.Injective σ)
-    (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val) :
+    (K : EvalCtx) (n : Nat) (ℓ : Label) (op : OpId) (v : Val)
+    (hKcf : ∀ Kᵢ ℓ' p' cl' Kₒ,
+      splitAtId K n = some (Kᵢ, Handler.custom ℓ' p' cl', Kₒ) →
+        Bang.Model.capsH (Handler.custom ℓ' p' cl') = []) :
     idDispatch (renameK σ K) (σ n) ℓ op (renameV σ v)
       = (idDispatch K n ℓ op v).map (fun x => (renameK σ x.1, renameC σ x.2)) := by
   unfold idDispatch
@@ -803,7 +888,8 @@ theorem idDispatch_rename (σ : Nat → Nat) (hσ : Function.Injective σ)
     obtain ⟨Kᵢ, h, Kₒ⟩ := x
     simp only [Option.map_some, Option.bind_some, handlesOp_renameH]
     by_cases hh : handlesOp h ℓ op
-    · rw [if_pos hh, if_pos hh, dispatchOn_rename]
+    · rw [if_pos hh, if_pos hh,
+        dispatchOn_rename σ n op v Kᵢ h Kₒ (fun ℓ' p' cl' he => by subst he; exact hKcf Kᵢ ℓ' p' cl' Kₒ hsplit)]
     · rw [if_neg hh, if_neg hh]; rfl
 
 /-! THE KEYSTONE — `Source.step`/`Config.run` commute with the renaming.
@@ -923,7 +1009,13 @@ theorem step_rename (σ : Nat → Nat) (hσ : Function.Injective σ) (g : Nat) (
     cases cp with
     | vcap n ℓ =>
       simp only [renameCfg_eq, renameC_perform, renameV_vcap, Source.step]
-      rw [idDispatch_rename σ hσ K n ℓ op v]
+      -- #44 STAGE 5 (debt 3, R-1): `idDispatch_rename`'s custom side condition — the `splitAtId`-selected
+      -- handler, if `custom`, is `vcap`-free. RELOCATED RESIDUAL (was `dispatchOn_rename`'s custom sorry,
+      -- now closed under this precise premise): threading `StackCustomVcapFree K` through `step_rename`/
+      -- `run_rename` up to the `crelK_ret`/`crelK_fund` keystone consumers (+ its `Source.step`-invariance)
+      -- is the R-1 side-condition CASCADE the map flagged — deferred with the LR re-index (#15/PATH-inc5;
+      -- s5grind STOP-AND-SHOW). Feeds the already-flagged `lr_*` set only (no new flagged headline).
+      rw [idDispatch_rename σ hσ K n ℓ op v (fun Kᵢ ℓ' p' cl' Kₒ _ => by sorry)]
       cases idDispatch K n ℓ op v with
       | none => rfl
       | some y => rfl
