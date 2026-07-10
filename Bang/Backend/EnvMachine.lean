@@ -950,6 +950,79 @@ theorem Comp.ScopedC.handle_inv {n : Nat} {hdl : Handler} {M : Comp}
   simp only [Comp.shiftFrom, Comp.handle.injEq] at this
   rw [show k = (k - 1) + 1 by omega]; exact this.2
 
+/-- Scope MONOTONICITY: a term scoped under `a` is scoped under any `b ≥ a` (a smaller free-index bound
+is also a larger one). Immediate from the `∀ k ≥ n, shiftFrom k = id` phrasing. -/
+theorem Comp.ScopedC.mono {a b : Nat} {M : Comp} (h : Comp.ScopedC a M) (hab : a ≤ b) :
+    Comp.ScopedC b M := fun k hk => h k (Nat.le_trans hab hk)
+theorem Val.ScopedV.mono {a b : Nat} {v : Val} (h : Val.ScopedV a v) (hab : a ≤ b) :
+    Val.ScopedV b v := fun k hk => h k (Nat.le_trans hab hk)
+
+/-! ### `substFrom`-above-scope is identity — the close-is-identity engine (ruling #6, task #11)
+
+`Comp.substFrom d w M = M` when `M` is `ScopedC d` (M has no free index `≥ d`, so the substitution at
+level `d` touches nothing). Derived from `substFrom d w (shiftFrom d M) = M` (the round-trip below) by
+rewriting `shiftFrom d M = M` (the `ScopedC d` witness). The round-trip is a TRANSPLANT of the private
+`Bang.Comp.substFrom_shiftFrom`/`Handler.substFrom_shiftFrom` (public `Val.substFrom_shiftFrom` at the
+leaves) — task #15 retires the transplant with the rest. -/
+
+-- TODO(hoist, task #15): faithful duplicate of the private Bang.{Comp,Handler}.substFrom_shiftFrom.
+mutual
+theorem Comp.substFrom_shiftFromE (k : Nat) (v : Val) :
+    ∀ t : Comp, Comp.substFrom k v (Comp.shiftFrom k t) = t
+  | .ret w       => by simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w]
+  | .letC M N    => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Comp.substFrom_shiftFromE k v M, Comp.substFrom_shiftFromE (k + 1) (Val.shift v) N]
+  | .force w     => by simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w]
+  | .lam M       => by
+      simp only [Comp.shiftFrom, Comp.substFrom, Comp.substFrom_shiftFromE (k + 1) (Val.shift v) M]
+  | .app M w     => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Comp.substFrom_shiftFromE k v M, Bang.Val.substFrom_shiftFrom k v w]
+  | .perform cp op w   => by simp only [Comp.shiftFrom, Comp.substFrom,
+      Bang.Val.substFrom_shiftFrom k v cp, Bang.Val.substFrom_shiftFrom k v w]
+  | .handle h M  => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Handler.substFrom_shiftFromE k v h, Comp.substFrom_shiftFromE (k + 1) (Val.shift v) M]
+  | .case w N₁ N₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w,
+        Comp.substFrom_shiftFromE (k + 1) (Val.shift v) N₁,
+        Comp.substFrom_shiftFromE (k + 1) (Val.shift v) N₂]
+  | .split w N   => by
+      simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w,
+        Comp.substFrom_shiftFromE (k + 2) (Val.shift (Val.shift v)) N]
+  | .unfold w    => by simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w]
+  | .binop op w₁ w₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom,
+        Bang.Val.substFrom_shiftFrom k v w₁, Bang.Val.substFrom_shiftFrom k v w₂]
+  | .oom         => rfl
+  | .wrong _     => rfl
+theorem Handler.substFrom_shiftFromE (k : Nat) (v : Val) :
+    ∀ h : Handler, Handler.substFrom k v (Handler.shiftFrom k h) = h
+  | .state ℓ s       => by simp only [Handler.shiftFrom, Handler.substFrom, Bang.Val.substFrom_shiftFrom k v s]
+  | .throws _        => rfl
+  | .transaction _ _ => rfl
+  | .custom _ _ _    => rfl
+end
+
+/-- `substFrom` at a cutoff `≥` the scope is the IDENTITY: a term scoped under `d` has no free index at
+`d` or above, so substituting at level `d` fixes it. The close-is-identity primitive. -/
+theorem Comp.ScopedC.substFrom_eq {d : Nat} {M : Comp} (h : Comp.ScopedC d M) (w : Val) :
+    Comp.substFrom d w M = M := by
+  conv_lhs => rw [← h d (Nat.le_refl d)]
+  exact Comp.substFrom_shiftFromE d w M
+
+/-- **CLOSE-IS-IDENTITY BELOW THRESHOLD** (ruling #6): closing a `ScopedC d` body over ANY env at binder
+depth `d` is the identity — every filler substitutes at level `d`, which the body's scope makes vacuous.
+This is what collapses `CStoreCorr`'s `closeUnderBindersE 2` clause-map to the identity on a payload-closed
+(`ScopedC 2`) clause, so it agrees with `evalD`'s RAW-`cls` push at the custom-handle install. -/
+theorem closeUnderBindersE_scoped_id {d : Nat} {M : Comp} (h : Comp.ScopedC d M) :
+    ∀ γ : List Val, closeUnderBindersE d γ M = M
+  | [] => rfl
+  | v :: γ => by
+      rw [closeUnderBindersE, h.substFrom_eq (shiftNE d v)]
+      exact closeUnderBindersE_scoped_id h γ
+
 /-! ### `Comp.HandlerWF` — the handler-payload-scope premise (ADR-0030/0085; the txn/custom obligation)
 
 `Comp.ScopedC` is IDENTITY on `transaction`/`custom` handler payloads (`Handler.shiftFrom` leaves `Θ`,
@@ -960,12 +1033,18 @@ CANNOT witness that a `transaction`'s heap cells or a `custom`'s clauses are clo
 - TXN: `evalE` pushes `Θ.map (evalV ρ)` while `evalD` pushes the RAW `Θ`; `THeapCorr` on the pushed
   frames forces `readback (evalV ρ θ) = θ` for each `θ ∈ Θ`, i.e. `Val.ClosedE θ` (each heap cell is
   closed — ADR-0030's "transaction heaps are closed" invariant, made explicit).
-- CUSTOM: the pushed `StoresGood` frame obligation is `∀ c ∈ cls, Comp.ScopedC (n + 2) c.2` (each
-  clause scoped under the install-env length + the two service binders), plus `Val.ScopedV n p`.
+- CUSTOM: the handler's clause bodies are PAYLOAD-CLOSED — free only in their own two service binders
+  (op-arg at 0, param at 1), i.e. ABSOLUTE `Comp.ScopedC 2 c.2` (NOT `n + 2` relative) — and `p` closed
+  (`Val.ScopedV 0 p`). This mirrors the kernel's payload-identity substitution on custom (ruling #6,
+  task #11): a clause open into the enclosing scope would hit dangling indices at clause-run, so the
+  absolute premise excludes exactly the junk `Comp.subst`/`Handler.shiftFrom` already treat as closed.
+  It makes `closeUnderBindersE 2 (readbackEnv ρ) c.2 = c.2`, so `CStoreCorr`'s clause map is IDENTITY
+  and agrees with `evalD`'s RAW-`cls` push at the custom-handle install.
 
 `Comp.HandlerWF n M` states this at EVERY `handle` reachable in `M`, index-tracked (the binder depth `n`
-descends by 1 into a `handle`/`letC`/`lam`/`case` body, by 2 into `split`, and — for a custom handler —
-its clause bodies are checked at `n + 2`). It is MUTUAL with `Val.HandlerWF` (descending through every
+descends by 1 into a `handle`/`letC`/`lam`/`case` body, by 2 into `split`; a custom handler's clause
+bodies are checked at ABSOLUTE scope 2 — payload-closed, per ruling #6). It is MUTUAL with `Val.HandlerWF`
+(descending through every
 value position, chiefly `vthunk`'s captured `Comp`) so the invariant rides thunks/closures the same way
 `ScopedC`/`ScopedV` do — the `force`/`app` entry points re-enter a captured body, so a body's handlers
 must be constrained THROUGH the value that carries it. It is the machine-side twin of the kernel's
@@ -990,7 +1069,19 @@ def Comp.HandlerWF : Nat → Comp → Prop
         | .state _ s => Val.HandlerWF n s
         | .throws _ => True
         | .transaction _ Θ => ∀ θ ∈ Θ, Val.ClosedE θ ∧ ∀ m, Val.HandlerWF m θ
-        | .custom _ p cls => Val.ScopedV n p ∧ ∀ c ∈ cls, Comp.ScopedC (n + 2) c.2)
+        -- CUSTOM: PAYLOAD-CLOSED (ruling #6, task #11). The clause bodies are free only in their own
+        -- two service binders (op-arg at 0, param at 1) — ABSOLUTE scope 2, NOT `n+2` relative — and
+        -- the param `p` is closed (`ScopedV 0`). This states the kernel's own contract: `Comp.subst`/
+        -- `Handler.shiftFrom` are DELIBERATELY identity on a custom payload ("the CK focus is always
+        -- closed", ADR-0025/0030/0085 · Subst.lean:75-89), so a clause open INTO the enclosing scope is
+        -- semantically meaningless under payload-identity substitution (its extra frees never get bound).
+        -- Elaboration emits exactly payload-closed handlers, so the premise is real at every entry.
+        -- Each clause is scoped (`ScopedC 2`); the clause bodies' own handler-wellformedness rides
+        -- `Comp.HandlerWFClauses` — a MUTUAL sibling that recurses STRUCTURALLY on the clause LIST
+        -- (destructuring `(_, body) :: cs`), the termination-safe way to state `HandlerWF 2` per clause
+        -- (a direct recursive `HandlerWF` call on `c.2` here is not a structural subterm ⇒ non-terminating).
+        | .custom _ p cls => Val.ScopedV 0 p ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2)
+            ∧ Comp.HandlerWFClauses cls)
       ∧ Comp.HandlerWF (n + 1) M
 def Val.HandlerWF : Nat → Val → Prop
   | _, .vunit    => True
@@ -1002,6 +1093,13 @@ def Val.HandlerWF : Nat → Val → Prop
   | n, .inr w    => Val.HandlerWF n w
   | n, .pair w₁ w₂ => Val.HandlerWF n w₁ ∧ Val.HandlerWF n w₂
   | n, .fold w   => Val.HandlerWF n w
+/-- Handler-wellformedness of a custom handler's CLAUSE LIST, at the payload-closed absolute scope 2.
+Recurses STRUCTURALLY on the list (destructures `(_, body) :: cs`), which exposes `body` as a direct
+subterm — the termination-safe way to require `Comp.HandlerWF 2` of each clause body (a direct recursive
+`HandlerWF` call inside the `custom` obligation is not a structural subterm of the `handle`). -/
+def Comp.HandlerWFClauses : List (Bang.OpId × Comp) → Prop
+  | []             => True
+  | (_, body) :: cs => Comp.HandlerWF 2 body ∧ Comp.HandlerWFClauses cs
 end
 
 theorem Comp.HandlerWF.ret_inv {n : Nat} {v : Val} (h : Comp.HandlerWF n (Comp.ret v)) :
@@ -1042,8 +1140,80 @@ theorem Comp.HandlerWF.handle_txn {n : Nat} {ℓ : Bang.EffectRow.Label} {Θ : L
 theorem Comp.HandlerWF.handle_custom {n : Nat} {ℓ : Bang.EffectRow.Label} {p : Val}
     {cls : List (Bang.OpId × Comp)} {M : Comp}
     (h : Comp.HandlerWF n (Comp.handle (Handler.custom ℓ p cls) M)) :
-    Val.ScopedV n p ∧ ∀ c ∈ cls, Comp.ScopedC (n + 2) c.2 := by
+    Val.ScopedV 0 p ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2) ∧ Comp.HandlerWFClauses cls := by
   simp only [Comp.HandlerWF] at h; exact h.1
+
+/-- Per-CLAUSE `HandlerWF 2` from the clause-list invariant `Comp.HandlerWFClauses cls` (walk the list). -/
+theorem Comp.HandlerWFClauses.get {cls : List (Bang.OpId × Comp)}
+    (h : Comp.HandlerWFClauses cls) : ∀ c ∈ cls, Comp.HandlerWF 2 c.2 := by
+  induction cls with
+  | nil => intro c hc; simp only [List.not_mem_nil] at hc
+  | cons c cs ih =>
+      obtain ⟨_, body⟩ := c
+      simp only [Comp.HandlerWFClauses] at h
+      intro d hd
+      rcases List.mem_cons.mp hd with rfl | hd
+      · exact h.1
+      · exact ih h.2 d hd
+
+/-! `Comp.HandlerWF`/`Val.HandlerWF` MONOTONICITY: the index `n` only gates state-payload obligations
+(`Val.HandlerWF n s`), which descend structurally; the txn/custom payload obligations are `n`-INDEPENDENT
+(closed / absolute-scope-2). So a larger `n` is weaker — every witness at `a` is a witness at any `b ≥ a`. -/
+mutual
+theorem Comp.HandlerWF.mono : ∀ (M : Comp) (a b : Nat), a ≤ b → Comp.HandlerWF a M → Comp.HandlerWF b M
+  | .ret v,        a, b, hab, h => by simp only [Comp.HandlerWF] at h ⊢; exact Val.HandlerWF.mono v a b hab h
+  | .force w,      a, b, hab, h => by simp only [Comp.HandlerWF] at h ⊢; exact Val.HandlerWF.mono w a b hab h
+  | .unfold w,     a, b, hab, h => by simp only [Comp.HandlerWF] at h ⊢; exact Val.HandlerWF.mono w a b hab h
+  | .binop _ v w,  a, b, hab, h => by
+      simp only [Comp.HandlerWF] at h ⊢
+      exact ⟨Val.HandlerWF.mono v a b hab h.1, Val.HandlerWF.mono w a b hab h.2⟩
+  | .oom,          _, _, _,   _ => by simp only [Comp.HandlerWF]
+  | .wrong _,      _, _, _,   _ => by simp only [Comp.HandlerWF]
+  | .perform c _ v, a, b, hab, h => by
+      simp only [Comp.HandlerWF] at h ⊢
+      exact ⟨Val.HandlerWF.mono c a b hab h.1, Val.HandlerWF.mono v a b hab h.2⟩
+  | .letC M N,     a, b, hab, h => by
+      simp only [Comp.HandlerWF] at h ⊢
+      exact ⟨Comp.HandlerWF.mono M a b hab h.1, Comp.HandlerWF.mono N (a+1) (b+1) (by omega) h.2⟩
+  | .lam M,        a, b, hab, h => by
+      simp only [Comp.HandlerWF] at h ⊢; exact Comp.HandlerWF.mono M (a+1) (b+1) (by omega) h
+  | .app M w,      a, b, hab, h => by
+      simp only [Comp.HandlerWF] at h ⊢
+      exact ⟨Comp.HandlerWF.mono M a b hab h.1, Val.HandlerWF.mono w a b hab h.2⟩
+  | .case w N₁ N₂, a, b, hab, h => by
+      simp only [Comp.HandlerWF] at h ⊢
+      exact ⟨Val.HandlerWF.mono w a b hab h.1, Comp.HandlerWF.mono N₁ (a+1) (b+1) (by omega) h.2.1,
+        Comp.HandlerWF.mono N₂ (a+1) (b+1) (by omega) h.2.2⟩
+  | .split w N,    a, b, hab, h => by
+      simp only [Comp.HandlerWF] at h ⊢
+      exact ⟨Val.HandlerWF.mono w a b hab h.1, Comp.HandlerWF.mono N (a+2) (b+2) (by omega) h.2⟩
+  | .handle hdl M, a, b, hab, h => by
+      cases hdl with
+      | state _ s =>
+          simp only [Comp.HandlerWF] at h ⊢
+          exact ⟨Val.HandlerWF.mono s a b hab h.1, Comp.HandlerWF.mono M (a+1) (b+1) (by omega) h.2⟩
+      | throws _ =>
+          simp only [Comp.HandlerWF] at h ⊢
+          exact ⟨h.1, Comp.HandlerWF.mono M (a+1) (b+1) (by omega) h.2⟩
+      | transaction _ Θ =>
+          simp only [Comp.HandlerWF] at h ⊢
+          exact ⟨h.1, Comp.HandlerWF.mono M (a+1) (b+1) (by omega) h.2⟩
+      | custom _ p cls =>
+          simp only [Comp.HandlerWF] at h ⊢
+          exact ⟨h.1, Comp.HandlerWF.mono M (a+1) (b+1) (by omega) h.2⟩
+theorem Val.HandlerWF.mono : ∀ (v : Val) (a b : Nat), a ≤ b → Val.HandlerWF a v → Val.HandlerWF b v
+  | .vunit,    _, _, _,   _ => by simp only [Val.HandlerWF]
+  | .vint _,   _, _, _,   _ => by simp only [Val.HandlerWF]
+  | .vvar _,   _, _, _,   _ => by simp only [Val.HandlerWF]
+  | .vcap _ _, _, _, _,   _ => by simp only [Val.HandlerWF]
+  | .vthunk M, a, b, hab, h => by simp only [Val.HandlerWF] at h ⊢; exact Comp.HandlerWF.mono M a b hab h
+  | .inl w,    a, b, hab, h => by simp only [Val.HandlerWF] at h ⊢; exact Val.HandlerWF.mono w a b hab h
+  | .inr w,    a, b, hab, h => by simp only [Val.HandlerWF] at h ⊢; exact Val.HandlerWF.mono w a b hab h
+  | .pair w₁ w₂, a, b, hab, h => by
+      simp only [Val.HandlerWF] at h ⊢
+      exact ⟨Val.HandlerWF.mono w₁ a b hab h.1, Val.HandlerWF.mono w₂ a b hab h.2⟩
+  | .fold w,   a, b, hab, h => by simp only [Val.HandlerWF] at h ⊢; exact Val.HandlerWF.mono w a b hab h
+end
 
 /-! ### Closedness of `substEnv`/`substEnvV` from scope (slice-3a: the WF-preservation core)
 
