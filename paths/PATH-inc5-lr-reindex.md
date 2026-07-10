@@ -72,11 +72,13 @@ bounded scratch spike of the canonical-reshape `CrelK′` before any frozen re-t
 - **KrelS `splitAtId` decomp** (Units 1+2; the MISS answer-type-determinism wall DISSOLVED —
   `splitAtId` never tests `handlesOp`). One documented SKIP-relocation residual.
 - `seq_unit_proof` residual (cap-subst-commutes, off the critical path) — the `seq_unit` flag.
-- **`dispatchOn_rename` custom arm (BANKED HERE 2026-07-09, #44 rung-2):** one doc-commented
-  sorry in `Bang/Meta/LR.lean` — `renameH` is identity-on-custom while the RHS renames p+clauses;
-  the clean fix is the `.map` clause traversal + its ~15-lemma renameH_shiftFrom/substFrom ripple
-  (nested-inductive termination twin of `capsCls`), which is THIS path's re-index shape. Feeds
-  only the flagged `lr_sound`; manager-ruled banked at the rung-2 landing (ADR-0087 §Status).
+- **`dispatchOn_rename` custom arm — VOID BY DELETION (2026-07-10):** the entire rename keystone
+  chain (`dispatchOn_rename → … → run_bump_converges`) was DEAD CODE orphaned by the route-1
+  `crelK_ret` refactor (ADR-0058) — zero live callers, ref-verified twice + LSP-confirmed. The
+  chain (and this banked sorry with it) was surgically DELETED, axiom-diff byte-identical (the
+  debt was already axiom-isolated). Neither threaded nor proven: the consumer vanished first.
+  The R-2 `.map`-traversal cascade this entry sketched is likewise void unless a future consumer
+  resurrects the chain (git history holds it).
 - **`crelK_fund` custom arm — the ONE Stage-5 residual (updated 2026-07-10, Stage-5 landing):**
   Stage 5 RETIRED `krelS_refl`'s custom arm (krelS_custom_reinstall PROVEN) and closed
   `dispatchOn_rename`'s custom arm (R-1 side condition); `compatK_handleCustom` is proven.
