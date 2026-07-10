@@ -382,6 +382,41 @@ reproduces `σ`. This IS the env/closure well-formedness invariant the env machi
 (survey §2: "for any variable x, the closure γ x is equivalent to the term σ x"). -/
 def EnvAgrees (ρ : MEnv) (σ : List Val) : Prop := readbackEnv ρ = σ
 
+/-! ### The substEnv calculus — the env↔subst commutation lemmas (slice-3 crux)
+
+`substEnv γ` distributes over each binding former the way the kernel's single `Comp.subst`
+does, and it commutes with a fresh index-0 binder. These are the standard de Bruijn
+substitution-composition lemmas (PLFA `subst-commute`; Pierce TAPL §6.2). The CRUX is
+`substEnv_cons_subst`: it is what closes the `letC`/`app`/`case`/`split`/`handle` cases of
+the correspondence induction — the env-extension `mv ∷ₑ ρ` on the machine side matches the
+`Comp.subst (readback mv)` on the substitution side, once the tail env is shifted to make
+room for the new binder. -/
+
+/-- `substEnv` on an empty env is the identity; on a cons it fills index 0 then folds the tail.
+(Definitional; named for rewriting.) -/
+@[simp] theorem substEnv_nil (M : Comp) : substEnv [] M = M := rfl
+@[simp] theorem substEnv_cons (v : Val) (γ : List Val) (M : Comp) :
+    substEnv (v :: γ) M = substEnv γ (Comp.subst v M) := rfl
+
+/-- **THE CRUX** — the env↔subst commutation that closes every binding case of the induction.
+Filling a fresh index-0 binder with `w` after substituting the SHIFTED tail env equals folding
+`w :: γ` directly. I.e. `substEnv` commutes with pushing a binder: the machine's `w ∷ₑ ρ`
+env-extension is the substitution machine's `Comp.subst w` under a `substEnv (γ.map shift)`.
+
+**SSoT FINDING (STOP-and-SHOW to the manager, 2026-07-10):** this crux ALREADY EXISTS in the repo
+as `Bang.Meta.BinaryLR.closeC_subst_comm` — and `substEnv` is BYTE-IDENTICAL to `Bang.Meta.LR.closeC`
+(`[] c => c ; v::δ => closeC δ (Comp.subst v c)`). The whole engine (`closeC`, `Val.Closed`,
+`closeC_subst_comm`, `Comp.substFrom_swap_closed`) is stranded in the two heavy LR modules; the clean
+"one construct per problem" fix is to HOIST it to the shared `Bang/Core/Semantics/Subst.lean` so both
+the LR spine and this env machine derive from ONE source (that hoist touches LR — a file this lane
+does not own — hence the STOP-and-SHOW). Note the engine's `Val.Closed` side condition: the
+correspondence's `EnvAgrees` premise must additionally carry that each readback filler is closed
+(TRUE by construction — readback of a ground MVal is closed — but threaded). `sorry` pending the
+manager's ruling on the hoist. -/
+theorem substEnv_cons_subst (w : Val) (γ : List Val) (M : Comp) :
+    Comp.subst w (substEnv (γ.map Val.shift) M) = substEnv (w :: γ) M := by
+  sorry -- SLICE-3 crux: = closeC_subst_comm (BinaryLR) once hoisted to Subst; needs Val.Closed fillers
+
 /-- **The correspondence STATEMENT** (PLFA `γ≈ₑσ`; slice-3 proof).
 
 If `evalE` runs `M` under `ρ` to a returner `mret mv`, and `ρ` agrees with a substitution
