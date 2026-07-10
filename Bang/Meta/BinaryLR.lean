@@ -550,6 +550,10 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
     (hin : KrelS m Cᵢ Dᵢ εᵢ g Kᵢ Kᵢ')
     (hHR : HandlerRel Eff Mult m h₁ h₂)
     (htail : KrelS m Dᵢ D' e' g K₁ K₂)
+    -- ADR-0096 (i′): the id-ordering invariant on the FULL appended stacks (the goal's own). Delivers the
+    -- nil-base `StackBelow nh K₁/K₂` AND the nested `StackBelow mh₁ (Kᵢrest ++ …)` by projection/peel —
+    -- the caller supplies it from `stackInc_reachable` (the appended stack IS the machine-reached config).
+    (hincA : StackInc (Kᵢ ++ Frame.handleF nh h₁ :: K₁)) (hincA' : StackInc (Kᵢ' ++ Frame.handleF nh h₂ :: K₂))
     (hres : ∀ k, k < m → ∀ (op : OpId) (w₁ w₂ : Val) (Cⱼ : CTy Eff Mult) (εⱼ : Eff)
               (Kⱼ Kⱼ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
         Bang.handlesOp h₁ h₁.label op = true →
@@ -570,20 +574,29 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
   -- component drops) on the dispatched stack `Sᵢ` — which may be LONGER, but the step-index pays for it.
   match Kᵢ, Kᵢ' with
   | [], [] =>
-      -- Cᵢ = Dᵢ (nil); the append is `handleF h :: K` — `krelS_handleF_intro`.
+      -- Cᵢ = Dᵢ (nil); the append is `handleF h :: K` — `krelS_handleF_intro`. `hincA : StackInc
+      -- (handleF nh h₁ :: K₁)` here, so `.2 = StackBelow nh K₁` is the intro's ordering premise.
       rw [krelS_nil] at hin
       obtain ⟨rfl, _⟩ := hin
-      simpa using krelS_handleF_intro (e := εᵢ) hHR htail hres
+      simp only [List.nil_append] at hincA hincA'
+      simpa using krelS_handleF_intro (e := εᵢ) hHR htail hres hincA.2 hincA'.2
   | (Frame.letF N₁ :: Kᵢrest), (Frame.letF N₂ :: Kᵢ'rest) =>
       rw [krelS_letF] at hin
-      obtain ⟨q, A, B, φ, hC, hbody, htin⟩ := hin
+      obtain ⟨_hinc, q, A, B, φ, hC, hbody, htin⟩ := hin
       rw [List.cons_append, List.cons_append, krelS_letF]
-      exact ⟨q, A, B, φ, hC, hbody, krelS_append htin hHR htail hres⟩
+      -- `StackInc (letF :: rest ++ …) = StackInc (rest ++ …)` (def); peel for the recursion.
+      have hA : StackInc (Kᵢrest ++ Frame.handleF nh h₁ :: K₁) := by simpa [StackInc] using hincA
+      have hA' : StackInc (Kᵢ'rest ++ Frame.handleF nh h₂ :: K₂) := by simpa [StackInc] using hincA'
+      have hrec := krelS_append htin hHR htail hA hA' hres
+      exact ⟨krelS_stackInc hrec, q, A, B, φ, hC, hbody, hrec⟩
   | (Frame.appF u₁ :: Kᵢrest), (Frame.appF u₂ :: Kᵢ'rest) =>
       rw [krelS_appF] at hin
-      obtain ⟨q, A, B, hC, hcu₁, hcu₂, hu, htin⟩ := hin
+      obtain ⟨_hinc, q, A, B, hC, hcu₁, hcu₂, hu, htin⟩ := hin
       rw [List.cons_append, List.cons_append, krelS_appF]
-      exact ⟨q, A, B, hC, hcu₁, hcu₂, hu, krelS_append htin hHR htail hres⟩
+      have hA : StackInc (Kᵢrest ++ Frame.handleF nh h₁ :: K₁) := by simpa [StackInc] using hincA
+      have hA' : StackInc (Kᵢ'rest ++ Frame.handleF nh h₂ :: K₂) := by simpa [StackInc] using hincA'
+      have hrec := krelS_append htin hHR htail hA hA' hres
+      exact ⟨krelS_stackInc hrec, q, A, B, hC, hcu₁, hcu₂, hu, hrec⟩
   | (Frame.handleF mh₁ hh₁ :: Kᵢrest), (Frame.handleF mh₂ hh₂ :: Kᵢ'rest) =>
       -- ◊4.5b-strengthen CLOSE: a handler NESTED in the captured continuation. The structural shape
       -- closes HandlerRel + the recursive-append tail; the resume conjunct over the APPENDED tail is now
@@ -596,10 +609,15 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
       -- identity `mh₁` (= `mh₂` by `krelS_handleF`'s id equality), routed through `dispatchOn mh₁`.
       -- shape: biernacki-popl18 §5.4 Lemma 2 (config append).
       rw [krelS_handleF] at hin
-      obtain ⟨hmid, hHRtop, htin, hres_inner⟩ := hin
+      obtain ⟨_hincin, hmid, hHRtop, htin, hres_inner⟩ := hin
       subst hmid
-      rw [List.cons_append, List.cons_append, krelS_handleF]
-      refine ⟨rfl, hHRtop, krelS_append htin hHR htail hres, ?_⟩
+      -- `hincA : StackInc (handleF mh₁ hh₁ :: (Kᵢrest ++ handleF nh h₁ :: K₁))` — its outer conjunct IS
+      -- the goal's StackInc after the append rewrite; peel the head for the recursion + supply it.
+      rw [List.cons_append, List.cons_append] at hincA hincA' ⊢
+      have hApeel : StackInc (Kᵢrest ++ Frame.handleF nh h₁ :: K₁) := hincA.1
+      have hApeel' : StackInc (Kᵢ'rest ++ Frame.handleF nh h₂ :: K₂) := hincA'.1
+      rw [krelS_handleF]
+      refine ⟨⟨hincA, hincA'⟩, rfl, hHRtop, krelS_append htin hHR htail hApeel hApeel' hres, ?_⟩
       intro k hk op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKj hCⱼ hd₁ hd₂
       -- recover the INNER dispatch (over `Kᵢrest`) by computing it, then lift via `dispatchOn_append_outer`.
       obtain ⟨cfgᵢ₁, hdi₁⟩ : ∃ c, Bang.dispatchOn mh₁ op w₁ (Kⱼ, hh₁, Kᵢrest) = some c := by
@@ -640,16 +658,26 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
       -- append by `krelS_append` at the dropped index `k` (the step-index pays for the longer `Sᵢ`).
       refine ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ ++ Frame.handleF nh h₁ :: K₁, Sᵢ' ++ Frame.handleF nh h₂ :: K₂, eₛ,
         by simp, by simp, hcr₁, hcr₂, hr, ?_⟩
+      -- ADR-0096 (i′) THREADING RESIDUAL: the deep `krelS_append` over the dispatched `Sᵢ` needs
+      -- `StackInc (Sᵢ ++ handleF nh h₁ :: K₁)`. `Sᵢ` = inner-dispatch result over `Kᵢrest`
+      -- (= `Kⱼ ++ reinstall :: Kᵢrest` for a resuming handler), so
+      -- `Sᵢ ++ handleF nh h₁ :: K₁ = Kⱼ ++ reinstall :: (Kᵢrest ++ handleF nh h₁ :: K₁)`. Available:
+      -- `hApeel : StackInc (Kᵢrest ++ handleF nh h₁ :: K₁)` + `stackInc_idDispatch`/`stackInc_reinstall`
+      -- (slice 1) give the full appended StackInc from the dispatch. NEEDS: extract the dispatch shape
+      -- of `hdi₁`/`hlift₁` and apply stackInc_reinstall over the appended tail. Mechanical but multi-step
+      -- (the dispatch-result stack decomposition); isolated here as the last threading obligation.
+      have hSincA : StackInc (Sᵢ ++ Frame.handleF nh h₁ :: K₁) := by sorry
+      have hSincA' : StackInc (Sᵢ' ++ Frame.handleF nh h₂ :: K₂) := by sorry
       exact krelS_append (εᵢ := eₛ) hSrel (HandlerRel_mono (le_of_lt hk) hHR)
-        (KrelS_mono (le_of_lt hk) htail) (fun k' hk' => hres k' (lt_trans hk' hk))
-  | [], (_ :: _) => simp only [KrelS] at hin
+        (KrelS_mono (le_of_lt hk) htail) hSincA hSincA' (fun k' hk' => hres k' (lt_trans hk' hk))
+  | [], (_ :: _) => simp [KrelS] at hin
   | (fr :: _), [] => exact absurd hin (by simp only [KrelS]; cases fr <;> exact not_false)
-  | (Frame.letF _ :: _), (Frame.appF _ :: _) => simp only [KrelS] at hin
-  | (Frame.letF _ :: _), (Frame.handleF _ _ :: _) => simp only [KrelS] at hin
-  | (Frame.appF _ :: _), (Frame.letF _ :: _) => simp only [KrelS] at hin
-  | (Frame.appF _ :: _), (Frame.handleF _ _ :: _) => simp only [KrelS] at hin
-  | (Frame.handleF _ _ :: _), (Frame.letF _ :: _) => simp only [KrelS] at hin
-  | (Frame.handleF _ _ :: _), (Frame.appF _ :: _) => simp only [KrelS] at hin
+  | (Frame.letF _ :: _), (Frame.appF _ :: _) => simp [KrelS] at hin
+  | (Frame.letF _ :: _), (Frame.handleF _ _ :: _) => simp [KrelS] at hin
+  | (Frame.appF _ :: _), (Frame.letF _ :: _) => simp [KrelS] at hin
+  | (Frame.appF _ :: _), (Frame.handleF _ _ :: _) => simp [KrelS] at hin
+  | (Frame.handleF _ _ :: _), (Frame.letF _ :: _) => simp [KrelS] at hin
+  | (Frame.handleF _ _ :: _), (Frame.appF _ :: _) => simp [KrelS] at hin
 termination_by (m, Kᵢ.length)
 decreasing_by
   -- letF/appF/handleF structural recursions drop `Kᵢ.length` (m fixed); the nested handleF resume
