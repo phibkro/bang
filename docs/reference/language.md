@@ -274,14 +274,9 @@ effect performed) is fine (`fetch(n) => n * 10`, `fetch(n) => n + 1`); a clause 
 `new`/`read`/`write`/`raise`/`handle` are reserved at the op-name position) — a collision is
 a loud parse/elaboration error naming the conflict, not a silent shadow.
 
-**Known v1 limitations (both tracked, both real gaps in the LANDED surface — not merely
-undocumented corners):**
+**Known v1 limitation (tracked — a real gap in the LANDED surface, not merely an
+undocumented corner):**
 
-- **Multi-clause handlers are broken (issue #86).** Every worked example below is
-single-op/single-clause; a SECOND clause in the same `with … { … }` block breaks the
-FIRST clause's own binder (`unbound variable n` even on a trivial one-op perform once a
-second clause exists in the map). A multi-op effect (Reader `ask`+`local`, Logger
-`info`+`warn`) does not yet work end to end — stick to single-op effects until this closes.
 - **The parameter-carrying form's `init` is NOT clause-nameable (issue #87).** `handle e
 with (Name init) as h { op(x) => … }` parses and threads `init` internally, but NO
 identifier in a clause body currently resolves to it (an attempted `param`/similar binder
