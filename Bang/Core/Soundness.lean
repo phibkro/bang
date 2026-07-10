@@ -3208,6 +3208,21 @@ private theorem throws_handlesWithin (ℓ₀ : Label) :
   subst hℓ
   exact le_refl _
 
+/-- A `custom ℓ p cl` handler is scoped to its own label's row (#44 STAGE 6, ADR-0085). The custom
+analogue of `throws_handlesWithin` — it discharges the `HandlesWithin` premise of
+`no_accidental_handling` for the general user-defined-effect handler form, so the (already
+constructor-agnostic) abstraction-safety theorem holds at user labels too. Same shape as `throws`:
+`handlesOp (custom ℓ …) ℓ' op = true` forces `ℓ' = ℓ` via the label-match `&&` (ADR-0087 finite rep,
+`Dispatch.handlesOp`). This is the load-bearing Stage-6 lemma (the soundness composition names it). -/
+theorem custom_handlesWithin (ℓ : Label) (p : Val) (cl : List (OpId × Comp)) :
+    HandlesWithin (Eff := Eff) (Mult := Mult)
+      (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ) (Handler.custom ℓ p cl) := by
+  intro ℓ' op hcatch
+  simp only [handlesOp, Bool.and_eq_true, decide_eq_true_eq] at hcatch
+  obtain ⟨hℓ, _⟩ := hcatch
+  subst hℓ
+  exact le_refl _
+
 /-- NO ACCIDENTAL HANDLING (ADR-0024 D2): a handler scoped to row `l` never catches a FOREIGN
 operation — one whose label is in a disjoint row `e`. Such operations tunnel to an outer handler.
 Every hypothesis is load-bearing: `HandlesWithin` (a catch forces label ≤ l), `Disjoint l e`
@@ -3231,6 +3246,53 @@ ADR-0024 D3). `WfInst` carries exactly this, so the theorem projects it out. -/
 theorem rowinst_requires_disjoint_proof
     {q : Eff → CTy Eff Mult} {L ε : Eff} :
     WfInst q L ε → Disjoint ε L := id
+
+/-! ### F′. #44 STAGE 6 — user-effect soundness composition (ADR-0085)
+
+Stage 6 is a COMPOSITION, not a new grind: `preservation`/`progress`/`type_safety`/
+`no_accidental_handling` are constructor-agnostic (`Handler` is quantified, never destructured in
+the STATEMENT), so their custom arms were folded in as Stages 2–5 landed — the `just axioms` census
+gate ADR-0085 assigns Stage 6 already passes. What Stage 6 STATES is (i) the abstraction-safety
+property INSTANTIATED at a user label (`no_accidental_handling_custom_proof`, via
+`custom_handlesWithin`) and (ii) the end-to-end user-effect soundness headline
+(`custom_program_safe_proof`) — a program installing a custom handler and discharging its label to
+`⊥` never runs to `.stuck`, a corollary of the frozen `type_safety`. See
+`docs/notes/stage6-soundness-design.md`. -/
+
+/-- NO ACCIDENTAL HANDLING at a USER LABEL (#44 STAGE 6, ADR-0085): a scoped `custom ℓ p cl` handler
+never catches a FOREIGN operation (label in a disjoint row `e`). `no_accidental_handling` instantiated
+at the custom form via `custom_handlesWithin` — the concrete "extend abstraction-safety to user
+effects" statement. Rides the already-clean frozen theorem. -/
+theorem no_accidental_handling_custom_proof
+    {ℓ : Label} {p : Val} {cl : List (OpId × Comp)} {e : Eff} :
+    Disjoint (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ) e →
+    ∀ ℓ' op, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ e →
+      handlesOp (Handler.custom ℓ p cl) ℓ' op = false :=
+  no_accidental_handling_proof (custom_handlesWithin ℓ p cl)
+
+/-- Package a closed, fully-handled computation typing (`HasCTy [] [] c ⊥ (F q A)`) into the initial
+config typing `type_safety'` consumes (#44 STAGE 6, the one mechanical Stage-6 lemma). The empty stack
+is `HasStack.nil` (`HasStack [] ⊥ (F q A) ⊥ (F q A)`); `NonEscape'` is the free tautology
+`nonEscape'_all`. Constructor-agnostic — identical for the built-ins; it just makes the e2e headline
+STATEABLE from a `HasCTy`. -/
+theorem hasConfig'_of_closed
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy (Eff := Eff) (Mult := Mult) [] [] c ⊥ (CTy.F q A) →
+    HasConfig' (0, [], c) ⊥ (CTy.F q A) :=
+  fun hc => ⟨⟨⊥, CTy.F q A, hc, HasStack.nil⟩, nonEscape'_all _⟩
+
+/-- END-TO-END USER-EFFECT SOUNDNESS (#44 STAGE 6, ADR-0085 — the moat capstone): a well-typed program
+`c` whose effects are fully discharged (row `⊥`, e.g. by installing a `custom` handler over its label)
+never runs to `.stuck` at any fuel. A corollary of the frozen `type_safety` — which is
+constructor-agnostic, so it already covers the custom fragment inside `c`; this composes it with the
+initial-config packaging (`hasConfig'_of_closed`) to STATE user-effect soundness directly over a
+`HasCTy`. This is what makes the user-defined-effect soundness story a stated theorem, not an implied
+census fact. -/
+theorem custom_program_safe_proof
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy (Eff := Eff) (Mult := Mult) [] [] c ⊥ (CTy.F q A) →
+    ∀ fuel, Source.eval fuel c ≠ Result.stuck :=
+  fun hc => type_safety'_proof (hasConfig'_of_closed hc)
 
 end -- public section
 end Bang

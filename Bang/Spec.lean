@@ -62,6 +62,30 @@ theorem no_accidental_handling
     ∀ ℓ' op, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ e → handlesOp h ℓ' op = false
     := no_accidental_handling_proof
 
+-- [KEY] #44 STAGE 6 (ADR-0085): abstraction-safety INSTANTIATED at a user-defined-effect handler.
+-- A scoped `custom ℓ p cl` handler never catches a FOREIGN operation (label in a disjoint row `e`).
+-- Not a new frozen statement in the census-changing sense — a COMPOSITION of the (constructor-
+-- agnostic, already-clean) `no_accidental_handling` with `custom_handlesWithin`. This is the concrete
+-- "extend no accidental handling to user labels" property the moat needs stated.
+theorem no_accidental_handling_custom
+    {ℓ : EffectRow.Label} {p : Val} {cl : List (OpId × Comp)} {e : Eff} :
+    Disjoint (EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ) e →
+    ∀ ℓ' op, EffSig.labelEff (Eff := Eff) (Mult := Mult) ℓ' ≤ e →
+      handlesOp (Handler.custom ℓ p cl) ℓ' op = false
+    := no_accidental_handling_custom_proof
+
+-- [KEY] #44 STAGE 6 (ADR-0085) — the MOAT CAPSTONE: end-to-end user-effect soundness. A well-typed
+-- program whose effects are fully discharged (row `⊥`, e.g. by installing a `custom` handler over its
+-- label) never runs to `.stuck`. A corollary of the frozen `type_safety` (constructor-agnostic, so it
+-- already covers the custom fragment) composed with the initial-config packaging — it STATES the
+-- user-defined-effect soundness story directly over a `HasCTy`, rather than leaving it implied by the
+-- trusted-three census. See `docs/notes/stage6-soundness-design.md`.
+theorem custom_program_safe
+    {c : Comp} {q : Mult} {A : VTy Eff Mult} :
+    HasCTy (Eff := Eff) (Mult := Mult) [] [] c ⊥ (CTy.F q A) →
+    ∀ fuel, Source.eval fuel c ≠ Result.stuck
+    := custom_program_safe_proof
+
 
 /-! ## 3. Core syntactic metatheory -/
 

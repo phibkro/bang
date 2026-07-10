@@ -1,3 +1,5 @@
+<!-- note-status: active -->
+
 # Stage 6 (soundness composition) — design map
 
 > #44 / ADR-0085 Stage 6. Lane **s6probe**, 2026-07-10, probe branch `probe-stage6`
