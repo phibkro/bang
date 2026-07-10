@@ -77,11 +77,15 @@ bounded scratch spike of the canonical-reshape `CrelK′` before any frozen re-t
   the clean fix is the `.map` clause traversal + its ~15-lemma renameH_shiftFrom/substFrom ripple
   (nested-inductive termination twin of `capsCls`), which is THIS path's re-index shape. Feeds
   only the flagged `lr_sound`; manager-ruled banked at the rung-2 landing (ADR-0087 §Status).
-- **`crelK_fund` + `krelS_refl` custom arms (BANKED HERE 2026-07-09, #44 Stage-3 landing):**
-  two sorry-stubs in `Bang/Meta/BinaryLR.lean` — exhaustiveness arms for the new
-  `HasCTy.handleCustom`/`HasStack.customF` constructors. Real proofs need
-  `compatK_handleCustom` / `krelS_custom_reinstall` (the user-effect binary-LR/contextual
-  equivalence = #44 STAGE 5's theorem). Census-safe (feed only the flagged lr_* set).
+- **`crelK_fund` custom arm — the ONE Stage-5 residual (updated 2026-07-10, Stage-5 landing):**
+  Stage 5 RETIRED `krelS_refl`'s custom arm (krelS_custom_reinstall PROVEN) and closed
+  `dispatchOn_rename`'s custom arm (R-1 side condition); `compatK_handleCustom` is proven.
+  What remains is `crelK_fund`'s handleCustom arm — blocked by the vrelK_fund/crelK_fund
+  mutual block's heartbeat-fragile termination inference; both cheap fixes probe-REFUTED
+  (task #16 has the mechanisms: the U-clause routes thunks through CrelK, and a
+  parameterized block breaks the frozen Spec.lean:248 wiring). Fix = a kernel-engineer
+  mutual-block split. Plus the R-1 `StackCustomVcapFree` keystone cascade (same unit).
+  Census-safe (feeds only the flagged lr_* set).
 
 ## Resume protocol
 Design-first: an ADR deciding route 1 vs 2 BEFORE any proof work (route 1 touches frozen
