@@ -229,34 +229,30 @@ values are Lean objects, collected by Lean's RC. The verified compiler backend t
 (ADR-0059, refining ADR-0016), and here the memory story and the *control* story stop being separable —
 which is the correction that makes this rung richer than a plain "delegate to the host GC."
 
-**The target is Wasm 3.0, not WasmFX.** Stack switching (WasmFX / typed continuations) did **not** land
-in Wasm 3.0 (Sept 2025 standardized WasmGC, exception handling, tail calls, memory64, SIMD; WasmFX
-remains a separate, fork-only proposal — ADR-0059 §Context). ADR-0059 rejects WasmFX-as-primary for a
-verification-first reason (**shown**, ADR-0059 §Context/§Alternatives): targeting it would put the
-engine's opaque `switch` semantics in the **TCB**, and the Iris-WasmFX mechanization *found a real bug*
-in the proposal's suspend translation — so "trust the engine's stack-switch" is not free. WasmFX
-survives only as the **pluggable fast-path for the `general`/multishot slot, once standardized and
-shipped** (ADR-0059 §Decision).
+**There is no compatibility question to answer.** GC (managed `struct`/`array`, typed refs), tail calls
+(`return_call`), and exception handling (tags, `throw`/`try_table`) are all **standardized core features
+of Wasm 3.0** (Sept 2025) — not separate proposals to be composed or checked for interoperability. So
+bang's grade-directed lowering maps each grade to a *core 3.0 instruction*, and nothing needs verifying
+about whether those features coexist; the standard already guarantees it. (The one thing that did **not**
+land in 3.0 is stack switching / WasmFX — which is exactly why ADR-0059 does not depend on it: WasmFX is
+a post-standardization fast-path for the `general` slot only, never a v1 requirement.)
 
-**The lowering is grade-directed, and that is what fuses heap and control.** The effect row 2-colors the
-program for free (ADR-0059 §Decision):
+**The lowering is grade-directed** — the effect row 2-colors the program for free (ADR-0059 §Decision):
 
 ```
-  pure (empty row)        → native Wasm (direct calls, native stack)         [engine-independent]
-  effectful, abort (0×)   → Wasm exception (throw / try_table)               [engine-independent]
-  effectful, tail (1× tl) → direct call in place                            [engine-independent]
-  effectful, general (1×) → GC-frame-chain runtime + tail-call trampoline   [pluggable — WasmGC now]
+  pure (empty row)        → native Wasm (direct calls, native stack)         core 3.0
+  effectful, abort (0×)   → Wasm exception (throw / try_table)               core 3.0
+  effectful, tail (1× tl) → direct call in place (return_call trampoline)    core 3.0
+  effectful, general (1×) → GC-frame-chain (managed structs) + trampoline    core 3.0 (GC + tail calls)
 ```
 
-The `general` leg is where WasmGC does its work, and the finding for this survey is that **WasmGC is not
-merely "the host GC to delegate reclamation to" — the managed GC `struct` frames ARE the general-
-resumption runtime.** ADR-0059 §Decision: continuations are "managed `struct` frames linked by
-`.parent`, handler identity = the struct reference, raise/resume = re-point a `.parent` field." So at the
-backend, "the heap" (WasmGC-managed frames) and "the control representation" (the resumption chain) are
-**the same design** — the frames a GC collects are exactly the frames a resumable handler walks. This is
-why the composability question ("does the effect backend compose with the GC?") dissolves: they are not
-two orthogonal proposals bang has to compose — the GC-frame-chain *is* the effect runtime, and it is
-**bang's own abstract machine, verified with no opaque primitive in the TCB** (invariant #1; the
+The finding for this survey: **WasmGC is not merely "the host GC to delegate reclamation to" — the
+managed GC `struct` frames ARE the general-resumption runtime.** ADR-0059 §Decision: continuations are
+"managed `struct` frames linked by `.parent`, handler identity = the struct reference, raise/resume =
+re-point a `.parent` field." So at the backend, "the heap" (WasmGC-managed frames) and "the control
+representation" (the resumption chain) are **the same design** — the frames a GC collects are exactly
+the frames a resumable handler walks. And because the whole lowering lands on core 3.0 features, the
+runtime is **bang's own abstract machine with no opaque primitive in the TCB** (invariant #1; the
 machine-checked `CtxRel`/`SegRel` relation, ADR-0059 §Context, Lean 4.31 axiom-clean per-step).
 
 **The load-bearing v1 sharpening (shown, ADR-0059 §"The v1/post-v1 boundary"):** v1 does not need the
@@ -387,7 +383,61 @@ be a lie:
    needs the *complete* containment property, which is exactly the harder theorem B-occ does not
    deliver.
 
-### 4.4 Verdict
+### 4.4 The theorem-SHAPE mismatch — why the runtime detector cannot be promoted to the static guarantee
+
+There is a deeper reason the runtime half of the analogy fails, beyond "caps select, data is read"
+(§4.3): **the two mechanisms prove different *shapes* of theorem, and one shape cannot be lifted to the
+other.** Region typing (Tofte–Talpin, `runST`) is a **static soundness** property — *ahead of any run*,
+the type system guarantees "no allocation is ever read after its region is freed," a `∀`-over-executions
+statement discharged once at type-check time. `escapedCap` is a **per-execution liveness/fail-loud**
+property — *during a particular run*, if a specific captured cap is performed after its handler pops, the
+kernel routes to a defined terminal instead of corrupting. Concretely, in bang's own statements:
+
+```
+  mechanism        theorem shape                             where discharged        quantifier
+  ──────────────   ───────────────────────────────────────   ─────────────────────   ──────────────
+  region typing    "no escaped value is EVER read"            type-check (once)       ∀ programs · ∀ runs
+   (runST/T-T)      = STATIC SOUNDNESS
+  escapedCap       "IF a cap escapes, THIS run fails loud     runtime (per fuel/run)  ∃ run · at a
+   (ADR-0063)       (≠ stuck)" = type_safety's `≠ .stuck`      (Source.eval fuel c)     dispatch site
+                    (Spec.lean:155) — a DEFINED-outcome claim
+```
+
+**Shown** (`Spec.lean:155`, `type_safety`): bang's escape guarantee is `∀ fuel, Source.eval fuel c ≠
+Result.stuck` — a claim that *every run terminates in a defined outcome*, where an escape lands in the
+defined `.escapedCap` rather than genuine `.stuck`. That is not the region-soundness statement ("the
+escape never happens"); it is the *weaker, honest* statement bang ships for v1 ("if it happens it is
+defined, not UB"). You cannot promote the second to the first by improving the runtime: the runtime only
+ever sees one execution, at dispatch sites, after the fact. Making the escape *impossible* (the region
+guarantee) is intrinsically a type-system job — which is exactly why ADR-0063 files the structural fix as
+**post-v1 scoped-cap types**, not "a better `escapedCap`." So the runtime half of the analogy is not
+merely narrow (§4.3) — it is the *wrong theorem shape*, and no amount of runtime engineering closes it.
+
+### 4.5 The constructive half: what a region type system would have to prove (the B-occ strengthening)
+
+The refutation is not the whole story — §4.2's type-level transfer is *constructive*, and bang's own
+build-refuted lemma tells the region type system precisely what obligation it must discharge. The escape
+witness `progComp` (`ReturnEscapeReach.lean`) launders a cap out of a `state` handler via an **inner
+re-handle of the same label**: the re-handle discharges `ℓ` from the thunk's external type *by label*
+(identity-blind), satisfying the answer-type B-occ premise (`¬ LabelOccurs ℓ A`, ADR-0092 `:43`), while a
+live `cap ℓ` of a *different identity* rides inside the thunk (ADR-0063 §Context). So B-occ — a *label*
+non-occurrence check — is provably **incomplete** (`liveCapsResolveC_returnEscape` is build-FALSE,
+`ReturnEscapeRefute.lean`).
+
+The lesson for region typing, stated as an obligation: **a sound scoped-cap / region type system must
+track identity-containment, not just label non-occurrence.** The property B-occ approximates —
+"no live cap in the answer references a popped handler" — is exactly Tofte–Talpin's region-containment
+("every region in a value's type outlives the value's use"), and the witness shows the *label*
+approximation is the leaky version. So the region-typing work inherits a **sharpened spec for free**: not
+"strengthen B-occ" (still label-keyed, still leaky) but "re-index the escape guard by *identity/region*,"
+which is the dispatch-by-identity principle (glossary) lifted from the runtime into the type system. This
+is the genuine, code-grounded payoff of the type-level analogy: bang already has the counterexample that
+pins down what region typing must prove, and it points at the same identity-keyed structure the kernel
+already dispatches on. **Suggests** (the witness is build-sealed; the region-typing theorem is unbuilt):
+the post-v1 scoped-cap system and a region system would share not just the *construct* (rank-2/scoped
+types) but the *exact containment obligation* — one theorem, discharged once.
+
+### 4.6 Verdict
 
 > **cap-escape ≈ region-escape is TRUE for the type-system fix, FALSE for the runtime detector.** The
 > *structural* endpoint is genuinely shared: bang's post-v1 "scoped/region capability types that make
@@ -405,6 +455,21 @@ be a lie:
 > sharpest finding: the machinery that *looks* like it already solves region-escape solves only its
 > capability-shaped corner, and the honest post-v1 path is the shared *type-system* fix, not a
 > generalized runtime terminal.
+>
+> Two sharpenings the deepened analysis adds. **(a) The runtime half fails for a theorem-shape reason,
+> not just a coverage reason (§4.4):** region typing is *static soundness* (`∀ runs`, escape never
+> happens), `escapedCap` is *per-run fail-loud* (`∀ fuel, Source.eval ≠ .stuck`, `Spec.lean:155`) — a
+> defined-outcome claim caught after the fact at a dispatch site. No runtime improvement lifts the second
+> to the first; making the escape *impossible* is intrinsically a type-check-time job (which is why
+> ADR-0063 files the fix as post-v1 *types*, not a better terminal). **(b) The type-level transfer is
+> constructive, and bang already owns the counterexample that specs it (§4.5):** the build-refuted
+> `liveCapsResolveC_returnEscape` proves B-occ's *label* non-occurrence is the leaky approximation of
+> region-containment; the region type system's obligation is therefore to re-index the escape guard by
+> **identity/region** (dispatch-by-identity lifted into the type system), not to strengthen a still-leaky
+> label check. So the type-level analogy delivers more than a shared construct — it hands the region work
+> a **pre-refuted spec** and points at the exact identity-keyed containment the kernel already dispatches
+> on. Net: reject the runtime analogy (wrong theorem shape), adopt the type-level analogy (shared
+> construct *and* shared, already-pinned containment obligation).
 
 ---
 
@@ -455,11 +520,12 @@ External sources (added to `references/refs.bib` where new):
   `wasmfx-oopsla23`. WasmFX = the typed-continuations proposal; per ADR-0059 it is **not** bang's
   primary target (stock-engine-absent, and a `switch` primitive in the TCB — Iris-WasmFX found a real
   suspend-translation bug), only the post-standardization **fast-path for the `general` slot** (§3.1).
-- **WebAssembly 3.0 / WasmGC** — the actual backend target (ADR-0059): Sept 2025 standardized WasmGC
-  (managed `struct`/`array`, typed refs), exception handling, tail calls, memory64, SIMD; stack
-  switching did NOT land. WasmGC proposal <https://github.com/WebAssembly/gc>. §3.1: the managed GC
-  frames are both the reclaimed heap AND the general-resumption control representation. Cited by URL
-  (proposal, no paper) — the design ruling lives in ADR-0059, verified against it not the web.
+- **WebAssembly 3.0** — the actual backend target (ADR-0059). The Sept 2025 standard folds GC (managed
+  `struct`/`array`, typed refs), exception handling, tail calls, memory64, and SIMD into **core Wasm**
+  — so they are not separate proposals and there is no coexistence/compatibility question (§3.1). NEW →
+  `refs.bib` as `wasm3-standard`. §3.1: bang's grade-directed lowering maps each grade to a core 3.0
+  feature (exceptions=abort, tail calls=trampoline, GC structs=frame chain); the design ruling lives in
+  ADR-0059, verified against it, not the web.
 - **Launchbury & Peyton Jones**, "Lazy Functional State Threads", PLDI 1994 — the `runST` rank-2
   region-escape trick that ADR-0063's post-v1 scoped-cap fix is an instance of (§4.2). NEW →
   `refs.bib` as `launchbury-pldi94-runst`.
