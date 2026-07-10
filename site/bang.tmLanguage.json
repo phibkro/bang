@@ -1,0 +1,66 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "_generated": "by tools/gen-tmgrammar.py from Bang/Frontend/Surface.lean — do not hand-edit; run `just tmgrammar`.",
+  "name": "BANG",
+  "scopeName": "source.bang",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#effect-labels"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.double-dash.bang",
+      "match": "--.*$"
+    },
+    "strings": {
+      "name": "string.quoted.double.bang",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.bang",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "keywords": {
+      "name": "keyword.control.bang",
+      "match": "\\b(?:atomically|effect|handle|import|resume|Right|match|param|raise|state|trait|where|write|Left|data|else|impl|read|then|with|for|fun|get|law|let|new|pub|put|use|as|do|fn|if|in)\\b"
+    },
+    "effect-labels": {
+      "name": "support.type.effect.bang",
+      "match": "\\b(?:state|div|exn|stm)\\b"
+    },
+    "operators": {
+      "name": "keyword.operator.bang",
+      "match": "==|=>|\\*|\\+|\\-|/|<"
+    },
+    "numbers": {
+      "name": "constant.numeric.bang",
+      "match": "\\b-?\\d+\\b"
+    },
+    "punctuation": {
+      "name": "punctuation.bang",
+      "match": "[{}(),;]"
+    }
+  }
+}

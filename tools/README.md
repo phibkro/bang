@@ -4,7 +4,7 @@
 
 > The flat `tools/` folder, grouped by role. Regenerate with `just tools-index`; `--check` gates it (and the header convention) in `just fitness`. `couples` = the files/tools a script reads-from or writes-to; `runs-in` = where it fires (fitness · verify · hook · manual · ci).
 
-## gen (16)
+## gen (17)
 
 _Generators — write a derived artifact from a root (drift-unrepresentable). `--check` gates each in `just fitness`._
 
@@ -22,6 +22,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`gen-proof-state.py`](gen-proof-state.py) | `fitness` | `Bang/Audit.lean`, `burndown.sh`, `CONTEXT.md`, `genblock.py` | generate CONTEXT.md's proof-state line from the gate (the root) |
 | [`gen-questions-index.py`](gen-questions-index.py) | `fitness` | `docs/notes/questions/*.md`, `docs/notes/OPEN_QUESTIONS.md`, `genblock.py` | the design-question ledger, generated from the OKF files |
 | [`gen-reference.py`](gen-reference.py) | `fitness` | `Bang/Frontend/Surface.lean`, `docs/reference/language.md` | Generate docs/reference/language.md — a DERIVATION of the code, never hand-maintained |
+| [`gen-tmgrammar.py`](gen-tmgrammar.py) | `fitness` | `Bang/Frontend/Surface.lean`, `site/bang.tmLanguage.json` | Generate site/bang.tmLanguage.json — a TextMate grammar DERIVED from the reified parser tables |
 | [`gen-tools-index.py`](gen-tools-index.py) | `fitness` | `tools/*.sh`, `tools/*.py`, `tools/*.mjs`, `tools/README.md` | generate tools/README.md, the tools map |
 | [`genblock.py`](genblock.py) | `manual` | `gen-gate-index.py`, `gen-import-graph.py`, `gen-proof-state.py`, `gen-questions-index.py` | shared generator primitives |
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |

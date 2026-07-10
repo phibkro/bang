@@ -67,12 +67,12 @@ function mdxSafe(src) {
       const tok = fenceMatch[1][0]
       if (!inFence) {
         inFence = true; fenceTok = tok
-        // Shiki hard-errors on fence languages not in its bundle — and `bang` (our own
-        // language, ~200 fences across the docs) has no grammar yet. Alias the known
-        // non-bundled infostrings to plain `text` AT THE SYNC SEAM (the repo markdown
-        // stays `bang`-tagged — GitHub renders it; only the derived site copy degrades).
-        // A real bang tmLanguage grammar is the follow-up that deletes this map.
-        out.push(line.replace(/^(\s*(?:```+|~~~+))(bang|wat)\s*$/, '$1text'))
+        // Shiki hard-errors on fence languages not in its bundle. `bang` now HAS a
+        // grammar (site/bang.tmLanguage.json, registered via vocs.config's
+        // codeHighlight.langs — plan 013 slice 1), so `bang` fences highlight and are
+        // no longer aliased. `wat` stays aliased to `text`: it is not in Shiki's default
+        // bundle and some un-bundled wat fences remain (docs/notes/emission-rung1-probe.md).
+        out.push(line.replace(/^(\s*(?:```+|~~~+))(wat)\s*$/, '$1text'))
         continue
       }
       else if (tok === fenceTok) { inFence = false }
