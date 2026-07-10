@@ -176,11 +176,22 @@ D2's canonical break table, as implemented below:
     at its OWN top join, same shape as a binop chain).
   · tuples `(a, b)`, ctor calls `C(a, b)` — `group`, break after the comma when over width. -/
 
-inductive SPrec | cmp | add | mul | app | atom
+-- `dotted` (issue #96): a SIXTH tier the original five missed — `pDotted`/`pDotLoop` (ADR-0070)
+-- sit strictly BETWEEN `pApp` and `pAtom` in the real grammar (`pDotted := pAtom then zero+ `.op`
+-- performs`, `pApp`'s loop calls `pDotted` for each argument/spine element, but `$`/`!`'s force
+-- (`pAtom`'s own `"$"` arm) calls `pAtom` DIRECTLY, never `pDotted`). A `.dotPerform` node's
+-- printed form is therefore atom-tier ONLY at a `pDotted`-reachable slot (an app argument, an
+-- app-spine element) — NOT at a genuine `pAtom` slot (`force`'s target, `raise`/`put`/`match`
+-- scrutinee/…'s argument, `.dotPerform`'s own `recv`), where it must parenthesize. Before this
+-- tier existed, `.dotPerform` printed unconditionally bare (see its own arm below, pre-#96): `$`
+-- forcing a qualified name (`$(Mod.op)`, the ONLY correct spelling of "force an imported
+-- `let rec`") lost its disambiguating parens (`$Mod.op`), which re-parses as `.op` performed on
+-- the FORCED `Mod` (`($Mod).op`) — a silently different, ill-typed tree ("not a value").
+inductive SPrec | cmp | add | mul | app | dotted | atom
   deriving DecidableEq
 
 def SPrec.level : SPrec → Nat
-  | .cmp => 0 | .add => 1 | .mul => 2 | .app => 3 | .atom => 4
+  | .cmp => 0 | .add => 1 | .mul => 2 | .app => 3 | .dotted => 4 | .atom => 5
 
 /-- Text-level paren wrap (used where the wrapped content is itself still plain text, e.g. inside
 a `Format.text` literal or a defensively-printed internal node). -/
@@ -292,7 +303,15 @@ partial def fmtSurf (need : SPrec) : Surf → Format
           match isCtorHead f with
           | some n => fParenIf need .app (Format.text n ++ tuple)                          -- ctor-call: SCons(a, b)
           | none   => fParenIf need .app (fmtSurf .app f ++ Format.text " " ++ tuple)
-      | _ => fParenIf need .app (Format.group (fmtSurf .app f ++ Format.line ++ fmtSurf .atom a))
+      -- the argument's real reachable tier (#96 follow-up): `pAppLoop` parses each spine element
+      -- via `pDotted`, not `pAtom` (see `pApp`'s own doc comment) — so `.dotted` need is the
+      -- PRECISE bound here, not `.atom`. Using `.atom` (pre-#96's `dotted`-tier introduction) would
+      -- over-parenthesize a bare qualified access used as a plain argument (`f Mod.op` would print
+      -- `f (Mod.op)`, needlessly noisy but not wrong); `.dotted` need still correctly parenthesizes
+      -- anything LOOSER (a ctor-call at `.app` tier, `own.level < .dotted.level` — the pre-existing
+      -- `f SCons(a, b)` regression guard above stays green) while leaving an already-atomic or
+      -- already-dotted argument bare.
+      | _ => fParenIf need .app (Format.group (fmtSurf .app f ++ Format.line ++ fmtSurf .dotted a))
   -- `raise`/`put`/`new`/`read`/`write` parse in APPLICATION position (`pApp`, atom arguments) — their
   -- own printed form IS an atom, so `need` may demand `.atom` and still print bare (`raise 7`, applied
   -- as `f (raise 7)`, needs parens the caller already supplies via `.app`'s arg tier). Their ARGUMENTS,
@@ -376,9 +395,15 @@ partial def fmtSurf (need : SPrec) : Surf → Format
             | .two _ _ => fmtSurf .atom n) ++
           Format.text s!" as {h} " ++ fmtBraceBlock (fmtHClauseList cls)
   -- `h.op(args)` is parsed by `pDotLoop`, invoked FROM `pDotted` right after `pAtom` — the whole
-  -- chain result is itself an atom (feeds `pAppLoop`/`pOp` same as any other atom), so it never
-  -- needs defensive parens even at `.atom` need.
+  -- chain result feeds `pAppLoop`/`pOp` same as any other atom, so it never needs defensive parens
+  -- at an `.app`-spine or looser slot. Its OWN natural tier is `.dotted` (#96 fix): a `pDotted`
+  -- result is NOT itself reachable straight from `pAtom` (only `pAtom` THEN zero+ dot-performs
+  -- gets you here), so a slot that demands genuine `.atom` (`$e`'s `e`, `raise`/`put`/…'s
+  -- argument, `match`'s scrutinee, `.dotPerform`'s own `recv`) must see this wrapped in parens —
+  -- `fParenIf need .dotted` supplies exactly that, uniformly, the same mechanism every other
+  -- construct here already uses (no bespoke case needed at the `.force` call site).
   | .dotPerform recv op args =>
+      fParenIf need .dotted <|
       match args with
       | .none      => fmtSurf .atom recv ++ Format.text s!".{op}"
       | .one a     => fmtSurf .atom recv ++ Format.text s!".{op}" ++ fmtTupleGroup "(" ")" [fmtSurf .cmp a]
@@ -947,3 +972,85 @@ open Bang.Format in
 #guard fmtExpr "let x = 1 in let x = x + 1 in x" == .ok "let x = 1; x = x + 1 in x"
 open Bang.Format in
 #guard roundTripsOn "let x = 1 in let x = x + 1 in x" && idempotentOn "let x = 1 in let x = x + 1 in x"
+
+/-! ### Qualified force `$(Mod.op)` (issue #96) — the corpus gap that let both bugs escape.
+
+Found dogfooding `examples/calc/` (`docs/notes/dogfood-calc-findings.md` wall 2): before this fix,
+`.dotPerform` printed UNCONDITIONALLY bare (no `fParenIf`, see its own doc comment pre-#96), so `$`
+forcing a qualified name lost its disambiguating grouping parens — `$(Mod.op)` (the ONLY correct
+spelling; `$` forces exactly ONE `pAtom`, `Mod.op` is a `pDotted` result, one grammar tier looser)
+printed as `$Mod.op`, which RE-PARSES as `.op` performed on the FORCED `Mod` (`($Mod).op` — `$`
+binds tighter than `.op` there too), a silently DIFFERENT, ill-typed tree ("not a value"). The fix
+(§3 above): `SPrec` gained a `dotted` tier strictly between `app` and `atom`, and `.dotPerform`'s
+own printer now `fParenIf need .dotted`s itself — the SAME uniform mechanism (not a bespoke case at
+the `.force` call site) every other precedence-aware construct in this file already uses.
+
+Every guard below is a `roundTripsOn && idempotentOn` pair (this file's own definition of the two
+`bang fmt` laws, issue #58) — NOT a `Source.eval`-computed value, because the round-trip law is
+about the PARSED TREE surviving fmt, not about a runnable program (`Mod`/`m`/`f` here are free
+variables, exactly like `$c`/`h.get`/every other bare-name guard already in this corpus — see
+`roundTripsOn`'s own doc comment: it compares `parse s` against `parse (fmt (parse s))` via
+`eraseLettMultiProg`, needing no elaboration/import resolution). The end-to-end semantics-preserving
+claim (a REAL imported qualified force still evaluates identically after fmt) is separately checked
+live against `examples/calc/main.bang` (`tools/test-fmt.sh`'s corpus already sweeps it) — this
+`Bang/Frontend/Format.lean` corpus is the AST-equality half of the contract. -/
+
+-- bug 1, the minimal repro from the finding note: `$(Mod.op) arg` — MUST keep its parens.
+open Bang.Format in
+#guard roundTripsOn "$(Mod.op) arg" && idempotentOn "$(Mod.op) arg"
+-- the exact 3-line g.bang repro's shape, inline as one expression (a `let`-bound qualified force
+-- applied to an argument, wrapped in a `handle`, mirroring the note's `calc` example).
+open Bang.Format in
+#guard roundTripsOn "let ast = $(g.mk) src in handle ($(g.mk) ast) with E as e { op(x) => x }"
+       && idempotentOn "let ast = $(g.mk) src in handle ($(g.mk) ast) with E as e { op(x) => x }"
+-- the DIRECT falsification: fmt must NEVER emit the semantics-breaking bare spelling. Pinned
+-- byte-for-byte (not just round-trip) so a regression shows as an exact-string diff here — the
+-- clearest possible signal for the one bug this whole section exists to prevent.
+open Bang.Format in
+#guard fmtExpr "$(Mod.op) arg" == .ok "$(Mod.op) arg"
+
+-- bug 2, the idempotency oscillation: `$Mod.op (arg)` — a parenthesized argument after a qualified
+-- force. `$(Mod.op) (arg)` (correct spelling, space before the paren) must be a FIXED POINT: no
+-- oscillation between `$Mod.op (arg)` and `$Mod.op(arg)` on repeated fmt passes (found on
+-- `examples/calc/main.bang`'s `$(Parser.parseAll) ($(Lexer.lex) src)` shape).
+open Bang.Format in
+#guard roundTripsOn "$(Mod.op) (arg)" && idempotentOn "$(Mod.op) (arg)"
+-- the calc program's OWN nested-qualified-force shape verbatim (two qualified forces, one applied
+-- to the other's result) — the exact idiom the dogfood note flags as visually noisy AND, pre-fix,
+-- non-idempotent.
+open Bang.Format in
+#guard roundTripsOn "$(Parser.parseAll) ($(Lexer.lex) src)" && idempotentOn "$(Parser.parseAll) ($(Lexer.lex) src)"
+
+-- neighbors: the no-space paren variant `$(Mod.op)(arg)` (whitespace before `(` is insignificant
+-- per this file's own `isCtorHead` comment) round-trips + is idempotent, and canonicalizes to the
+-- SAME output as the spaced form (canonicity: same meaning ⟹ same printed form, D2's own rule).
+open Bang.Format in
+#guard roundTripsOn "$(Mod.op)(arg)" && idempotentOn "$(Mod.op)(arg)"
+open Bang.Format in
+#guard canonicalOn "$(Mod.op) (arg)" "$(Mod.op)(arg)"
+
+-- `$(f) x` — a PLAIN (non-qualified) forced name applied to an argument never triggers the
+-- `.dotted`-tier parenthesization (no `.dotPerform` node at all here — `f` is a bare `.var`), so it
+-- stays exactly as terse as before this fix (`$f x`, no regression on the common case).
+open Bang.Format in
+#guard roundTripsOn "$(f) x" && idempotentOn "$(f) x"
+open Bang.Format in
+#guard fmtExpr "$(f) x" == .ok "$f x"
+
+-- nested: `$($(m.f) x)` — a qualified force's RESULT re-forced. Parses (an outer `$` forcing a
+-- parenthesized application whose head is itself a qualified force), round-trips, and is
+-- idempotent — the `.dotted` tier composes through nesting exactly like every other tier already
+-- does (no bespoke handling needed for the nested case).
+open Bang.Format in
+#guard roundTripsOn "$($(m.f) x)" && idempotentOn "$($(m.f) x)"
+
+-- `.dotPerform` still prints BARE (no parens) at every slot the real grammar reaches it FROM
+-- `pDotted` directly — an application argument/spine element, `raise`'s target is `pAtom` so IS
+-- parenthesized (see below), but a plain qualified access used AS a value (not forced) needs none:
+-- `Mod.op` alone, and `f Mod.op` (an app whose argument is a bare qualified access, reached via
+-- `pAppLoop`'s `pDotted` call, not `pAtom`) — regression guards that the #96 fix did NOT
+-- over-parenthesize the common, already-correct cases.
+open Bang.Format in
+#guard roundTripsOn "Mod.op" && idempotentOn "Mod.op"
+open Bang.Format in
+#guard fmtExpr "Mod.op" == .ok "Mod.op"

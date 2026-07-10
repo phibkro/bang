@@ -148,6 +148,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tools** — status= field + last-invoked view + deprecated-in-gate rule (plan 012 slice 3) (`c1df3611`)
 - **agents** — lane-discipline pack injected into role files via generated block (plan 012 slice 4) (`ff57f173`)
 - **tooling** — #82 verbs holes/impact/semver-diff over the Query rails (`6c15d867`)
+- **diag** — stable diagnostic codes + `bang explain` (plan 013 slice 5) (`c6731077`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

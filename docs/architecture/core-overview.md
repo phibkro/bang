@@ -48,7 +48,7 @@ graph TD
     Frontend_Annotate["Frontend.Annotate<br/>251L · fan-in 0"]
     Frontend_DiagCodes["Frontend.DiagCodes<br/>209L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>224L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>950L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>1057L · fan-in 0"]
     Frontend_Lint["Frontend.Lint<br/>212L · fan-in 0"]
     Frontend_Query["Frontend.Query<br/>794L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>294L · fan-in 0"]
@@ -109,7 +109,7 @@ graph TD
 | `Frontend.Annotate` | ? | 251 | 0 |
 | `Frontend.DiagCodes` | ? | 209 | 0 |
 | `Frontend.Diagnostics` | ? | 224 | 0 |
-| `Frontend.Format` | ? | 950 | 0 |
+| `Frontend.Format` | ? | 1057 | 0 |
 | `Frontend.Lint` | ? | 212 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Query` | ? | 794 | 0 |
