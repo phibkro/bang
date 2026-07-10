@@ -54,7 +54,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh` | Claude Code PostToolUse hook for Edit/Write of Lean files |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 
-## test (16)
+## test (17)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -65,6 +65,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`emit-rung1-diff.sh`](emit-rung1-diff.sh) | `manual` | `EmitMain`, `Bang/Backend/WasmEmit.lean` | the ◊5.5 rung-1 / rung-1.5 EMISSION differential harness |
 | [`run-batteries.sh`](run-batteries.sh) | `verify` | `justfile`, `tools/test-*.sh` | concurrent driver for the independent verify batteries (plan 004) |
 | [`selfcheck.mjs`](selfcheck.mjs) | `verify` | — | Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed |
+| [`test-82-verbs.sh`](test-82-verbs.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for the #82 agent-tooling verbs over the landed |
 | [`test-annotate.sh`](test-annotate.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite annotate` (#82 item 1) |
 | [`test-check-json.sh`](test-check-json.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang check [--json]` (issue #59) |
 | [`test-cli.sh`](test-cli.sh) | `verify` | — | the non-interactive gate for `bang`'s TOP-LEVEL CLI hygiene (issue #66/#67) |
