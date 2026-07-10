@@ -5381,6 +5381,24 @@ gap the #85/#86 fixes were also closing (a binder silently missing, not a type e
     "effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in (($test) logic) * 1000 + (($prod) logic)"
     30005
 
+-- RUNTIME-SELECTING between two SEPARATELY-NAMED installer bindings works (they share ONE type,
+-- so the `if`'s branches unify structurally — no row-polymorphic REUSE needed): the wrapper
+-- pattern's "runtime-selectable" claim, confirmed live, not just narrated.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in let selector = (if 1 < 2 then test else prod) in ($selector) logic"
+    30
+
+-- DIAGNOSTIC / KNOWN GATE (#94, operator-ruled OUT of this lane's scope — a type-system-design
+-- question, subeffecting vs full Rémy row polymorphism, not a local elaboration fix): reusing the
+-- SAME installer BINDING against operands at genuinely DIFFERENT effect rows in one program still
+-- fails — the pre-existing, already-`#guard`-pinned `unifyRow` "single shared row var" incompleteness
+-- (`rowPolyDivSrc`'s "compose pure ∘ effectful" wall), confirmed here against the wrapper pattern
+-- specifically so a future #94 fix has a repro that exercises #84's actual construct, not just
+-- `rowPolyDivSrc`'s original `compose`.
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in let pureBody = ( {fun net => 99} : Thunk (Cap Net -> Int) ) in (($test) logic) + (($test) pureBody)"
+  with | .error _ => true | .ok _ => false)
+
 /-! ### #85 — a NESTED binop in a handler clause body lost the clause's own binder. `elabHClauses`
 (elaboration, runs BEFORE `checkHClauses`) never extended Γ with the clause's `x`/`#param` binders —
 its own doc comment claimed "there is no per-clause binder to add at elaboration", which is false:

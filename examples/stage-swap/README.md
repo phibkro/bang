@@ -49,3 +49,25 @@ Once #90 (row annotations naming USER-declared effects, `T ! {UserEffect}`) land
 ideal shape — the one sketched above — types and runs end to end; earlier revisions of this
 example worked around that gap by inlining the shared expression under each `handle` rather than
 abstracting it into a callable function.
+
+## Known gate: reusing ONE installer binding across differently-effectful bodies (#94)
+
+This example's shape — TWO installer BINDINGS (`test`, `prod`), each applied ONCE to the SAME
+`logic` — is fully general and works today (as does runtime-selecting between them, since they
+share one type: `(if flag then test else prod)(logic)` types and runs, confirmed live). What does
+NOT yet work is reusing the SAME installer binding against operands at genuinely DIFFERENT effect
+rows in one program:
+
+```
+-- FAILS today ("effect row mismatch"), even though each application alone type-checks:
+let pureBody = ( {fun net => 99} : Thunk (Cap Net -> Int) ) in
+(($test) logic) + (($test) pureBody)     -- `test` reused at {Net} then at {} — the wall
+```
+
+This is `unifyRow`'s pre-existing, already-documented "single shared row var" incompleteness
+(`TypeCheck.lean`'s `rowPolyDivSrc` corpus, `compose incPure <effectful>` — the SAME wall, not
+specific to the wrapper pattern or capabilities; confirmed via an isolated non-cap repro). Filed as
+issue #94 (a type-system-design decision — subeffecting vs full Rémy row polymorphism — not a local
+elaboration fix, so it is NOT ground this lane's rider budget covers). The per-stage story ships
+today in the form this example demonstrates (separately-named installer bindings); reusing ONE
+binding across stages with genuinely different effect rows is the named next rung.
