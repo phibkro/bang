@@ -1,34 +1,45 @@
 /-
-  Bang/Frontend/Query.lean — `bang query <op>`, the agent LSP as stateless CLI subcommands (#80).
-  ─────────────────────────────────────────────────────────────────────────────────────────────
-  Operator direction (2026-07-10): agents don't need LSP-the-protocol — they need the OPERATIONS,
-  as stateless CLI calls with JSON output. `bang check --json` (`Bang.Diagnostics`) is the family's
-  first member and this module's schema/exit-code exemplar; `Bang.TypeCheck.lawInstancesOf` (#60)
-  is the second seam, reused here directly rather than re-derived. This module adds NO new checking
-  or typing logic — every op is a RE-RENDERING of what the existing pipeline (parse/elaborate/
-  check) already computes, to a stable JSON shape. `--json` is the default and, in v1, the ONLY
-  output — a human-rendering may piggyback later (`Bang.Diagnostics`'s own precedent: the schema is
-  versioned like `check --json`'s).
+  Bang/Frontend/Query.lean — the `bang query` fact base: a PUBLIC LIBRARY API + its CLI views (#80).
+  ─────────────────────────────────────────────────────────────────────────────────────────────────
+  Operator direction (2026-07-10, REFINED — API-first, three tiers): agents/users don't need a fixed
+  menu of LSP-shaped operations; they need the FACTS, queryable however they like. This module is
+  structured in three tiers, outward from the core:
 
-  V1 OPERATION SET (name-addressed; position-addressed hover is OUT — gated on #52's Spanned-Surf
-  tier, a named follow-up, since `Surf` carries no per-node span today):
-    1. `symbols`  — the outline: every top-level decl, its KIND, and (for value-typed decls) its
-       checker-computed `type ! row`.
-    2. `effects`  — the row of ONE declaration (paradigm-as-value, queryable).
-    3. `type`     — type + row of ONE binding.
-    4. `laws`     — the landed `lawInstancesOf` (#60) seam, rendered as JSON.
-    5. `def`/`refs` — name-addressed definition/reference sites, at DECL granularity (the same
-       granularity `refs` can honestly report without per-node spans — see `refSitesOf`'s doc
-       comment). A Surf-tree walk in the `firstPrivateDotAccessProg`/`surfUsesVar` pattern
-       (`TypeCheck.lean`), covering EVERY `Surf`/`DArms`/`SurfArgs`/`LetBindings` constructor
-       (the #73-walk precedent this module's own walk mirrors, `lettMulti` included).
+    TIER 1 — the PUBLIC LIBRARY API (`declFactsOf`/`nameRefEdgesOf`/`lawFactsOf` below): every
+      fact-producing function is `public` and documented as a REUSABLE Lean-side API, not merely CLI
+      plumbing — a Lean script (or a future in-process consumer) composes these directly, the SAME
+      functions `Main.lean`'s CLI dispatch calls.
 
-  PER-DECL TYPE QUERY (`symbols`'s value-decl field, `type`, `effects`): `checkProg`/
-  `typeStringOfProg` (`TypeCheck.lean`) report the type of a whole program's TRAILING BODY, not of
-  an arbitrary top-level binding — there is no existing seam for "the type of just this decl". The
-  sound, print-then-reparse-free route (mirroring why `checkAndLowerProg` exists beside
-  `checkAndLower` at all, and why `Main.lean`'s `runCheck` explicitly REJECTS the naive
-  print-then-reparse alternative for a resolved `Prog`) is: build a `Prog` with the SAME `decls`/
+    TIER 2 — THE KEY OPERATION, `bang query dump <file> --json`: the COMPLETE fact base in ONE
+      export — every decl (name · kind · type · effect ROW · visibility · module) as a `DeclFact`,
+      every law instance, every name-reference edge, and the program's own import/use header. A user
+      or agent composes ARBITRARY queries over this in any scripting language (`jq`, `python`, a
+      Lean script) — v1 stops trying to predict which fixed verb matters; `dump` is the one export
+      that lets a caller ask a question no verb below anticipates (`tools/test-query.sh`'s composed-
+      query demo is exactly this: "every effectful decl whose row contains a user label", a
+      5-line `jq` filter over `dump`'s own output, no new Lean code).
+
+    TIER 3 — the CURATED CLI VERBS (`symbols`/`effects`/`type`/`laws`/`def`/`refs`): each is now a
+      THIN PROJECTION/FILTER over Tier 1's fact lists (`declFactsOf`/`nameRefEdgesOf`/`lawFactsOf`),
+      not an independent `p.decls` walk — ONE construct computes the facts, every surface (the full
+      dump, or a narrow verb) reads the SAME list. `symbols` = `declFactsOf` rendered whole; `type`/
+      `effects` = one `DeclFact` looked up by name; `def` = ditto, re-rendered as a single hit;
+      `refs` = `nameRefEdgesOf` filtered to one target name.
+
+  `bang check --json` (`Bang.Diagnostics`) is this module's schema/exit-code exemplar;
+  `Bang.TypeCheck.lawInstancesOf` (#60) is the law-fact seam, reused directly. This module adds NO
+  new checking/typing logic — every fact is a RE-RENDERING of what the existing pipeline (parse/
+  elaborate/check) already computes. `--json` is the only v1 output.
+
+  POSITION-ADDRESSING IS OUT (gated on #52's Spanned-Surf tier — `Surf` carries no per-node span
+  today): `nameRefEdgesOf` reports DECL-granularity edges (which decl's body mentions which name),
+  not a line/col occurrence list — the honest ceiling without that tier.
+
+  PER-DECL TYPE QUERY: `checkProg`/`typeStringOfProg` (`TypeCheck.lean`) report the type of a whole
+  program's TRAILING BODY, not of an arbitrary top-level binding — there is no seam for "the type of
+  just this decl" upstream. The sound, print-then-reparse-free route (mirroring why
+  `checkAndLowerProg` exists beside `checkAndLower`, and why `Main.lean`'s `runCheck` explicitly
+  REJECTS print-then-reparse for a resolved `Prog`) is: build a `Prog` with the SAME `decls`/
   `imports`/`uses` and `body := Surf.var name`, then check it via `TypeCheck.typeStringOfProgP` (the
   markers-only seam requested of — and landed by — the file owner, mirroring `checkProgRow` beside
   `checkAndLowerProg`). This module never touches `TypeCheck.lean`'s internals otherwise.
@@ -36,7 +47,8 @@
   This is a LEAF module (`Bang/Frontend/*`, fan-in 0 — the arch-check invariant): it reads the
   ALREADY-PUBLIC `Prog`/`Decl`/`Surf` shapes (`Bang.Frontend.Surface`), `Bang.TypeCheck.
   lawInstancesOf`/`typeStringOfProgP`/`checkProgRow`, and `Bang.Format.showSurf`/`showTy`, and
-  produces only JSON strings. No kernel/typing-rule change, no new checking behavior.
+  produces only JSON strings (+ the plain `DeclFact`/`RefEdge` records Tier 1 exposes). No kernel/
+  typing-rule change, no new checking behavior.
 -/
 module
 
@@ -48,7 +60,7 @@ open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings Span Ty OpSig OpDef
 
 namespace Bang.Query
 
-/-! ## 1. JSON emitter — reuses `Diagnostics.jsonStr` (the ONE string-escaper, SSoT) plus a few
+/-! ## 0. JSON emitter — reuses `Diagnostics.jsonStr` (the ONE string-escaper, SSoT) plus a few
 tiny array/object combinators in the same hand-rolled, no-dependency style (`Diagnostics.lean`'s
 own rationale: a small fixed shape beats a new dependency). -/
 
@@ -60,6 +72,10 @@ def jsonArr (items : List String) : String :=
 def jsonStrArr (items : List String) : String :=
   jsonArr (items.map Bang.Diagnostics.jsonStr)
 
+/-- A JSON array of already-`jsonStr`-escaped OPTIONAL strings, `none` rendering as `null`. -/
+def jsonOptStrArr (items : List (Option String)) : String :=
+  jsonArr (items.map (fun | some s => Bang.Diagnostics.jsonStr s | none => "null"))
+
 /-- One `"key":value` pair, value already rendered (caller supplies `jsonStr`-wrapped strings,
 `jsonArr`-wrapped arrays, or a bare literal like `true`/`42`). -/
 def jsonField (key value : String) : String :=
@@ -69,40 +85,106 @@ def jsonField (key value : String) : String :=
 def jsonObj (fields : List String) : String :=
   "{" ++ String.intercalate "," fields ++ "}"
 
+/-- A `jsonStr`-escaped STRING field — the common case (`jsonField k (jsonStr v)`), factored out
+since most facts below are raw strings, not pre-rendered JSON values. -/
+def jsonStrField (key value : String) : String :=
+  jsonField key (Bang.Diagnostics.jsonStr value)
+
+/-- An OPTIONAL `jsonStr`-escaped string field: `none ↦ "key":null`, matching ADR-0046 ("absence
+over a guessed default") rather than omitting the key — `dump`'s schema keeps every `DeclFact`
+shape-uniform (every key always present) so a consumer's `jq '.decls[].type'` never has to branch
+on key PRESENCE, only on `null`-ness. -/
+def jsonOptStrField (key : String) (value : Option String) : String :=
+  jsonField key (match value with | some s => Bang.Diagnostics.jsonStr s | none => "null")
+
 /-- `{"error":"<msg>"}` — the TOOL-error shape (`Main.lean`'s unreadable-file case, exit 2 —
 mirrors `check`'s convention of never folding a tool error into the ok/diagnostics schema). `msg`
 is raw text, so it is `jsonStr`-escaped here (`jsonField`'s `value` parameter wants an
 already-rendered JSON value, per its own doc comment). -/
 def errorJson (msg : String) : String :=
-  jsonObj [jsonField "error" (Bang.Diagnostics.jsonStr msg)]
+  jsonObj [jsonStrField "error" msg]
 
 /-- `{"ok":false,"error":"<msg>"}` — the uniform QUERY-FAILURE shape every op's `ok:true/false`
 JSON body uses (parse error, elaboration failure, unresolvable name). Mirrors `Diagnostics.
 checkFailJson`'s "one hand-assembled shape, `jsonStr` for the one string that needs escaping"
 convention, extended with the `ok` discriminant every op here shares with `check --json`. `public`:
 `Main.lean`'s resolver-aware dispatch (`readQuerySrc`/`resolveQueryProg`, #80) reuses this
-directly for a PARSE/resolution failure discovered OUTSIDE any single `*Json`/`*JsonP` entry's own
-pipeline (mirrors why `Diagnostics.jsonStr`/`parseFailJson` are `public` for the SAME reason on
-`check --json`'s resolver path). -/
+directly for a PARSE/resolution failure discovered OUTSIDE any single entry's own pipeline (mirrors
+why `Diagnostics.jsonStr`/`parseFailJson` are `public` for the SAME reason on `check --json`'s
+resolver path). -/
 public def errorJsonOk (msg : String) : String :=
-  jsonObj [jsonField "ok" "false", jsonField "error" (Bang.Diagnostics.jsonStr msg)]
+  jsonObj [jsonField "ok" "false", jsonStrField "error" msg]
 
 #guard errorJson "boom" == "{\"error\":\"boom\"}"
 #guard errorJsonOk "boom" == "{\"ok\":false,\"error\":\"boom\"}"
 #guard jsonArr ["1", "2"] == "[1,2]"
 #guard jsonStrArr ["a", "b\"c"] == "[\"a\",\"b\\\"c\"]"
 #guard jsonObj [jsonField "a" "1", jsonField "b" "\"x\""] == "{\"a\":1,\"b\":\"x\"}"
+#guard jsonOptStrField "type" (some "Int") == "\"type\":\"Int\""
+#guard jsonOptStrField "type" none == "\"type\":null"
 
-/-! ## 2. `symbols` — the outline: every top-level decl, its KIND, and a structural summary.
+/-! ## 1. TIER 1 — the PUBLIC LIBRARY API: fact-producing core, reusable outside the CLI.
 
-`kind` is a STABLE machine key (`"let" | "letRec" | "fn" | "trait" | "impl" | "data" | "effect"`,
-one per `Decl` constructor) — additive-only, matching `Diagnostics.DiagCode`'s own stability
-convention. Value-typed decls (`let`/`letRec`/`fn`) additionally carry `"type"` (the checker's
-`type ! row` string, via `TypeCheck.typeStringOfProgP` on a `body := Surf.var name` projection) —
-the OTHER kinds have no value-level type to report (a `trait`/`impl`/`data`/`effect` is a STATIC
-env entry, never itself a value `synthSC` can assign a `CT` to; see `TypeCheck.buildEnv`'s own
-`.letD .. | .letRecD .. => pure ()` split for why only decl-BINDERS carry a checker type at all).
-Those kinds instead carry a structural summary (`Bang.Format.showTy`-rendered signatures/ctors). -/
+`DeclFact` is the ONE record every downstream surface reads: `dump` renders the whole list, `symbols`
+renders it unfiltered, `type`/`effects`/`def` filter it to one name. Fields are `Option` where a
+decl kind genuinely has none (a `trait`/`data`/`effect` has no checker-computed value type) —
+`dump`'s JSON keeps every key PRESENT with `null` (see `jsonOptStrField`'s doc comment), so a
+consumer never branches on key existence, only nullness. -/
+
+/-- The stable, additive-only machine key for a decl's SHAPE — one per `Decl` constructor (matching
+`Diagnostics.DiagCode`'s own stability convention: a NEW kind is a schema addition, never a
+renumbering). -/
+public inductive DeclKind where
+  | letD | letRecD | fnD | traitD | implD | dataD | effectD
+  deriving Repr, DecidableEq
+
+/-- `DeclKind` from a `Decl` — the SINGLE place that knows the mapping (every fact/filter below
+reads it from here, never re-derives it by re-matching `Decl` itself). -/
+public def DeclKind.of : Decl → DeclKind
+  | .letD ..    => .letD
+  | .letRecD .. => .letRecD
+  | .fnD ..     => .fnD
+  | .traitD ..  => .traitD
+  | .implD ..   => .implD
+  | .dataD ..   => .dataD
+  | .effectD .. => .effectD
+
+/-- The JSON-schema STRING a `DeclKind` renders as (`"let"`/`"letRec"`/`"fn"`/`"trait"`/`"impl"`/
+`"data"`/`"effect"`) — the schema's own stable vocabulary, unrelated to Lean's constructor names. -/
+public def DeclKind.toJson : DeclKind → String
+  | .letD    => "\"let\""
+  | .letRecD => "\"letRec\""
+  | .fnD     => "\"fn\""
+  | .traitD  => "\"trait\""
+  | .implD   => "\"impl\""
+  | .dataD   => "\"data\""
+  | .effectD => "\"effect\""
+
+/-- A trait/impl/data/effect decl's STRUCTURAL summary (its ops/ctors/params, pre-rendered as one
+JSON value) — the non-value-typed kinds' analogue of a `letD`'s checker type. `none` for `letD`/
+`letRecD`/`fnD` (their fact carries `type`/`row` instead; see `DeclFact.shape`'s doc comment). -/
+def declShapeJson : Decl → Option String
+  | .traitD _ params sigs laws =>
+      some <| jsonObj [jsonField "params" (jsonStrArr params),
+               jsonField "ops" (jsonArr (sigs.map (fun o =>
+                 jsonObj [jsonStrField "name" o.name, jsonStrField "type" (Bang.Format.showTy o.methodTy)]))),
+               jsonField "laws" (jsonStrArr (laws.map (·.name)))]
+  | .implD _ τ ops =>
+      some <| jsonObj [jsonStrField "target" (Bang.Format.showTy τ),
+               jsonField "ops" (jsonArr (ops.map (fun o => jsonObj [jsonStrField "name" o.name])))]
+  | .dataD _ params ctors =>
+      some <| jsonObj [jsonField "params" (jsonStrArr params),
+               jsonField "ctors" (jsonArr (ctors.map (fun c =>
+                 jsonObj [jsonStrField "name" c.1, jsonField "payload" (jsonStrArr (c.2.map Bang.Format.showTy))])))]
+  | .effectD _ ops =>
+      some <| jsonObj [jsonField "ops" (jsonArr (ops.map (fun o =>
+                 jsonObj [jsonStrField "name" o.1, jsonStrField "type" (Bang.Format.showTy o.2)])))]
+  | .fnD _ ps _ tr tv _ =>
+      -- `fnD`'s BOUND-generic header (trait/typeVar/params) is structural too, alongside its
+      -- checker `type`/`row` (both present — a bounded fn is the one kind with BOTH).
+      some <| jsonObj [jsonField "params" (jsonStrArr ps),
+               jsonField "bound" (jsonObj [jsonStrField "trait" tr, jsonStrField "typeVar" tv])]
+  | .letD .. | .letRecD .. => none
 
 /-- Project ONE query name onto `p`: same `decls`/`imports`/`uses`, trailing body replaced by
 `Surf.var name` — the sound `checkAndLowerProg`-style route (see module header) that never
@@ -113,101 +195,8 @@ def withQueryBody (p : Prog) (name : String) : Prog :=
 /-- The checker's `type ! row` string for top-level binding `name` in program `p`, or the checker's
 own error message on failure (an ill-typed program, or `name` not bound as a VALUE — e.g. naming a
 `trait`/`data`/`effect`, which `Surf.var` can never resolve to). -/
-def typeOfDecl (p : Prog) (name : String) : Except String String :=
+def typeStringOfDecl (p : Prog) (name : String) : Except String String :=
   Bang.TypeCheck.typeStringOfProgP (withQueryBody p name)
-
-/-- One `OpSig` (trait method signature) rendered `"name(params) : methodTy"` — a compact,
-human/agent-readable summary; `methodTy` already carries the full `Self →` arrow shape
-(`OpSig.methodTy`'s own doc comment). `name`/`type` are both raw strings here — `jsonStr`-escaped
-at the call site, matching every other `jsonField` use in this module (`jsonField`'s own doc
-comment: its `value` parameter wants an ALREADY-RENDERED JSON value, and a bare identifier or
-`showTy`/`showSurf` result is source text, not one, until escaped). -/
-def opSigJson (o : OpSig) : String :=
-  jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr o.name),
-           jsonField "type" (Bang.Diagnostics.jsonStr (Bang.Format.showTy o.methodTy))]
-
-/-- One `OpDef` (impl method definition) — name only (the body is source-shaped, not a summary
-field; a caller wanting the body uses `def`/`refs` or reads the file). -/
-def opDefJson (o : OpDef) : String :=
-  jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr o.name)]
-
-/-- One data constructor `(name, payloadTys)` rendered as `{"name":..,"payload":[tyStr,...]}`. -/
-def ctorJson (c : String × List Ty) : String :=
-  jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr c.1),
-           jsonField "payload" (jsonStrArr (c.2.map Bang.Format.showTy))]
-
-/-- One effect op `(name, argTy?, resTy)` (the RAW declared `Ty`, pre-elaboration — `Decl.effectD`'s
-own shape, not `TypeCheck.EffectInfo`'s post-elaboration `VT`, so this needs no `ElabEnv`). -/
-def effectOpJson (o : String × Ty) : String :=
-  jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr o.1),
-           jsonField "type" (Bang.Diagnostics.jsonStr (Bang.Format.showTy o.2))]
-
-/-- One `symbols` entry: `{"name","kind","type"?,"ops"?,"ctors"?,"params"?,"target"?}` — fields
-beyond `name`/`kind` are PRESENT only for the decl kinds that carry them (never a null placeholder
-for an inapplicable field — ADR-0046: absence over a guessed default). `p` is the WHOLE program
-(for `typeOfDecl`'s projection); `d` is the one decl being rendered. -/
-def symbolJson (p : Prog) (d : Decl) : String :=
-  match d with
-  | .letD n _ _ =>
-      jsonObj <| [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"let\""] ++
-        (match typeOfDecl p n with
-         | .ok ty => [jsonField "type" (Bang.Diagnostics.jsonStr ty)]
-         | .error e => [jsonField "typeError" (Bang.Diagnostics.jsonStr e)])
-  | .letRecD n _ _ =>
-      jsonObj <| [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"letRec\""] ++
-        (match typeOfDecl p n with
-         | .ok ty => [jsonField "type" (Bang.Diagnostics.jsonStr ty)]
-         | .error e => [jsonField "typeError" (Bang.Diagnostics.jsonStr e)])
-  | .fnD n ps _ tr tv _ =>
-      jsonObj <| [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"fn\"",
-                   jsonField "params" (jsonStrArr ps),
-                   jsonField "bound" (jsonObj [jsonField "trait" (Bang.Diagnostics.jsonStr tr),
-                                                jsonField "typeVar" (Bang.Diagnostics.jsonStr tv)])] ++
-        (match typeOfDecl p n with
-         | .ok ty => [jsonField "type" (Bang.Diagnostics.jsonStr ty)]
-         | .error e => [jsonField "typeError" (Bang.Diagnostics.jsonStr e)])
-  | .traitD n params sigs laws =>
-      jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"trait\"",
-               jsonField "params" (jsonStrArr params),
-               jsonField "ops" (jsonArr (sigs.map opSigJson)),
-               jsonField "laws" (jsonStrArr (laws.map (·.name)))]
-  | .implD n τ ops =>
-      jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"impl\"",
-               jsonField "target" (Bang.Diagnostics.jsonStr (Bang.Format.showTy τ)),
-               jsonField "ops" (jsonArr (ops.map opDefJson))]
-  | .dataD n params ctors =>
-      jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"data\"",
-               jsonField "params" (jsonStrArr params),
-               jsonField "ctors" (jsonArr (ctors.map ctorJson))]
-  | .effectD n ops =>
-      jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"effect\"",
-               jsonField "ops" (jsonArr (ops.map effectOpJson))]
-
-/-- **PUBLIC entry, `Prog`-taking** (the RESOLVER-AWARE route — `Main.lean`'s multi-file path hands
-an already-resolved-and-merged `Prog` here directly, the SAME `checkAndLowerProg`-beside-
-`checkAndLower` split every resolver-aware op in this module follows): every top-level decl of `p`,
-in SOURCE ORDER. `{"ok":true,"symbols":[...]}` always (a `Prog` is already known to parse — nothing
-left to fail at this layer; a symbol's OWN `type` field may still carry a per-decl `typeError`, one
-bad decl does not blank the whole outline). -/
-public def symbolsJsonP (p : Prog) : String :=
-  jsonObj [jsonField "ok" "true", jsonField "symbols" (jsonArr (p.decls.map (symbolJson p)))]
-
-/-- **PUBLIC entry**: `bang query symbols <file>` — the single-file (STDIN-compatible) route: parse
-`src` then defer to `symbolsJsonP`. `{"ok":false,"error":"..."}` on a program that doesn't even
-PARSE (no decls to enumerate at all) — the one failure mode `symbolsJsonP` itself can't hit. -/
-public def symbolsJson (src : String) : String :=
-  match Bang.Surface.parseProgLocated src with
-  | .error (m, _) => errorJsonOk m
-  | .ok p         => symbolsJsonP p
-
-/-! ## 3. `type` / `effects` — type + row (or just the row) of ONE named binding.
-
-Both are thin projections of `typeOfDecl` (the SAME `withQueryBody`/`typeStringOfProgP` route
-`symbols` uses per-decl) — `effects` further trims the rendered `"T ! {row}"` string down to just
-the `{row}` part (string-level, not a second checker call: `showType`'s OWN rendering, reused
-verbatim by `typeStringOfProgP`, is `"{ty}"` with NO `! {...}` suffix when the row is empty — see
-`Diagnostics`/`TypeCheck.showType`'s convention — so "no `!`" ⟺ the row IS `{}`, an honest reading
-of the SAME string rather than a re-derivation). -/
 
 /-- Split a rendered `"T ! {row}"` (or bare `"T"`) into `(typeStr, rowStr)` — `rowStr` is `"{}"`
 when no `" ! "` separator is present (`showType`'s empty-row convention: the suffix is omitted
@@ -221,81 +210,88 @@ def splitTypeRow (rendered : String) : String × String :=
 #guard splitTypeRow "Int ! {throws}" == ("Int", "{throws}")
 #guard splitTypeRow "Int" == ("Int", "{}")
 
-/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route). `{"ok":true,"type":"T","row":"{...}"}`
-for the checked type of top-level binding `name` in `p`, or `{"ok":false,"error":"..."}` (an
-ill-typed program, or `name` naming something with no value-level type — see `typeOfDecl`'s doc
-comment). -/
-public def typeJsonP (p : Prog) (name : String) : String :=
-  match typeOfDecl p name with
-  | .error e  => errorJsonOk e
-  | .ok rendered =>
-      let (ty, row) := splitTypeRow rendered
-      jsonObj [jsonField "ok" "true", jsonField "type" (Bang.Diagnostics.jsonStr ty),
-               jsonField "row" (Bang.Diagnostics.jsonStr row)]
+/-- **PUBLIC (TIER 1 library API):** the COMPLETE fact record for ONE top-level decl — the atom
+`dump`/`symbols`/`type`/`effects`/`def` all read. `type`/`row` are `some` for a VALUE-typed decl
+(`let`/`letRec`/`fn`) that TYPE-CHECKS, `none` otherwise (either the decl has no value-level type —
+`trait`/`impl`/`data`/`effect` — or it does but the checker rejected the wrapping program;
+`typeError` then carries the checker's message so a `dump` reader can distinguish "no type by
+kind" from "type-checking failed", never conflating the two as one `null`). `shape` is `some` for
+the non-value kinds' structural summary (`declShapeJson`) or a bounded `fnD`'s header — `none` for
+a plain `let`/`letRec`. `module` is `none` at THIS layer (a flat `Prog` has no per-decl module
+provenance post-merge — `Main.lean`'s resolver-aware dump threads it in separately, see
+`moduleOfDecl` usage at the CLI layer) — `declFactsOf` alone (single-file, no resolver) is honest
+with `module := none` throughout. -/
+public structure DeclFact where
+  name      : String
+  kind      : DeclKind
+  type      : Option String
+  row       : Option String
+  typeError : Option String
+  shape     : Option String   -- pre-rendered JSON (already a value, not a raw string — see `toJson`)
+  pub       : Bool
+  module    : Option String
+  deriving Repr
 
-/-- **PUBLIC entry**: `bang query type <file> <name>` — the single-file/stdin route: parse `src`
-then defer to `typeJsonP`. `{"ok":false,"error":"..."}` on a parse failure too (the one mode
-`typeJsonP` can't hit). -/
-public def typeJson (src name : String) : String :=
-  match Bang.Surface.parseProgLocated src with
-  | .error (m, _) => errorJsonOk m
-  | .ok p         => typeJsonP p name
+/-- **PUBLIC (TIER 1):** the fact record for ONE decl `d` of program `p` (`p` supplies the checker
+context every value-typed decl's `type`/`row` needs). `module` defaults to `none`; the CLI layer
+(`Main.lean`, which has resolver provenance `Query.lean` itself does not) overlays it via
+`DeclFact.withModule`. -/
+public def declFactOf (p : Prog) (d : Decl) : DeclFact :=
+  let name := d.name
+  let pub := p.pubNames.contains name
+  let shape := declShapeJson d
+  match DeclKind.of d with
+  | .letD | .letRecD | .fnD =>
+      match typeStringOfDecl p name with
+      | .ok rendered =>
+          let (ty, row) := splitTypeRow rendered
+          { name, kind := DeclKind.of d, type := some ty, row := some row, typeError := none, shape, pub, module := none }
+      | .error e =>
+          { name, kind := DeclKind.of d, type := none, row := none, typeError := some e, shape, pub, module := none }
+  | k =>
+      { name, kind := k, type := none, row := none, typeError := none, shape, pub, module := none }
 
-/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route). `{"ok":true,"row":"{...}"}`, the effect
-ROW alone (paradigm-as-value, queryable — the bang-specific op no general LSP has; ADR-0076's "the
-compiler is a queryable service" realized at CLI cost). -/
-public def effectsJsonP (p : Prog) (name : String) : String :=
-  match typeOfDecl p name with
-  | .error e  => errorJsonOk e
-  | .ok rendered =>
-      let (_, row) := splitTypeRow rendered
-      jsonObj [jsonField "ok" "true", jsonField "row" (Bang.Diagnostics.jsonStr row)]
+/-- **PUBLIC (TIER 1):** every top-level decl of `p` as a `DeclFact`, in SOURCE ORDER (`p.decls`'s
+own list order — the parser preserves it, no re-sort). THE core fact-producing function every
+Tier-2/3 surface (`dump`/`symbols`/`type`/`effects`/`def`/`refs`) filters or renders. -/
+public def declFactsOf (p : Prog) : List DeclFact :=
+  p.decls.map (declFactOf p)
 
-/-- **PUBLIC entry**: `bang query effects <name> <file>` — the single-file/stdin route. Same
-failure shape as `typeJson`. -/
-public def effectsJson (src name : String) : String :=
-  match Bang.Surface.parseProgLocated src with
-  | .error (m, _) => errorJsonOk m
-  | .ok p         => effectsJsonP p name
+/-- Overlay a MODULE name onto a fact (the CLI resolver layer's own provenance, `Main.lean`'s
+`declModuleOf` map — `Query.lean` itself never computes this, since a flat merged `Prog` has no
+per-decl module field; see `DeclFact`'s own doc comment). -/
+public def DeclFact.withModule (f : DeclFact) (m : Option String) : DeclFact :=
+  { f with module := m }
 
-/-! ## 4. `laws` — the landed `lawInstancesOf` (#60) seam, rendered as JSON.
+/-- One `DeclFact` → its JSON object — every key ALWAYS present (`jsonOptStrField`'s "no branching
+on presence" convention), so `dump`'s array is uniform. -/
+public def DeclFact.toJson (f : DeclFact) : String :=
+  jsonObj [jsonStrField "name" f.name, jsonField "kind" f.kind.toJson,
+           jsonOptStrField "type" f.type, jsonOptStrField "row" f.row,
+           jsonOptStrField "typeError" f.typeError,
+           jsonField "shape" (f.shape.getD "null"),
+           jsonField "pub" (if f.pub then "true" else "false"),
+           jsonOptStrField "module" f.module]
 
-`lawInstancesOf` already enumerates every (trait law × matching impl) pair as a PLAIN `(traitName,
-lawName, params, bodySrc)` 4-tuple — this is a pure re-rendering, zero new discovery logic (the
-SAME reuse discipline `Diagnostics.checkJson` follows over `checkAndLower`). -/
+/-- **PUBLIC (TIER 1):** every `Surf` body attached to `Decl` `d` (a trait's law bodies, an impl's
+op bodies, a bounded `fn`'s body, a plain `let`/`let rec`'s bound expression) — the search space a
+name-reference walk covers PER decl. A `traitD`'s own OP SIGNATURES carry no body (only a declared
+`Ty`, never a `Surf`); `dataD`/`effectD` carry no `Surf` at all (pure type-level shape). -/
+public def declBodies : Decl → List Surf
+  | .traitD _ _ _ laws => laws.map (·.body)
+  | .implD _ _ ops     => ops.map (·.body)
+  | .dataD ..           => []
+  | .fnD _ _ _ _ _ b    => [b]
+  | .effectD ..          => []
+  | .letD _ _ e         => [e]
+  | .letRecD _ _ e      => [e]
 
-/-- One law instance `(trait, law, params, body)` → its JSON object. `body` is RAW source text
-(`Bang.Format.showSurf`, `lawInstancesOf`'s own doc comment), so it goes through `jsonStr` at this
-call site — `jsonField`'s `value` parameter wants an already-rendered JSON value, and a raw source
-string is not one until escaped (the `trait`/`law` name strings get the same treatment). -/
-def lawInstanceJson (inst : String × String × List String × String) : String :=
-  let (trait, law, params, body) := inst
-  jsonObj [jsonField "trait" (Bang.Diagnostics.jsonStr trait), jsonField "law" (Bang.Diagnostics.jsonStr law),
-           jsonField "params" (jsonStrArr params), jsonField "body" (Bang.Diagnostics.jsonStr body)]
-
-/-- **PUBLIC entry**: `bang query laws <file>` — `{"ok":true,"laws":[{"trait","law","params","body"},
-...]}` for every discovered law instance, or `{"ok":false,"error":"..."}` on a parse/elaboration
-failure (`lawInstancesOf`'s own `Except String _`, e.g. malformed decls — matching `runTest`'s SAME
-underlying seam's failure mode). -/
-public def lawsJson (src : String) : String :=
-  match Bang.TypeCheck.lawInstancesOf src with
-  | .error e  => errorJsonOk e
-  | .ok insts => jsonObj [jsonField "ok" "true", jsonField "laws" (jsonArr (insts.map lawInstanceJson))]
-
-/-! ## 5. `def` / `refs` — name-addressed definition/reference sites, at DECL granularity.
-
-Position-addressed hover is OUT of v1 (gated on #52's Spanned-Surf tier — `Surf` carries no
-per-node span today, only the TOKEN-level spans `Surface.tokenizeSpanned` produces before parsing
-ever discards them). What IS honestly answerable without that tier: which DECL defines a name, and
-which decls REFERENCE it — this module's own `surfUsesVar` (below) mirrors `TypeCheck.
-surfUsesVar`/`dArmsUseVar`/`letBindingsUseVar` EXACTLY (the #73-walk precedent this module's header
-cites), covering every `Surf`/`DArms`/`SurfArgs`/`LetBindings` constructor including `lettMulti` —
-copied rather than imported since the source `surfUsesVar` is a private `TypeCheck.lean` internal
-and this is a small, CLOSED structural recursion over an already-public inductive (zero typing
-logic, so a copy cannot drift into a different semantics the way a re-derived TYPE rule could). -/
-
-/-! Does `e` mention variable `nm` anywhere in its tree? Mirrors `TypeCheck.surfUsesVar` arm-for-arm
-(see this section's header for why it's a copy, not a reuse). -/
+/-! Does `e` mention variable `nm` anywhere in its tree? Mirrors `TypeCheck.surfUsesVar`/
+`dArmsUseVar`/`letBindingsUseVar` arm-for-arm (the #73-walk precedent, `TypeCheck.lean`) — copied
+rather than imported since the source is a private `TypeCheck.lean` internal and this is a small,
+CLOSED structural recursion over an already-public inductive (zero typing logic, so a copy cannot
+drift into a different SEMANTICS the way a re-derived TYPE rule could). Covers EVERY `Surf`/
+`DArms`/`SurfArgs`/`LetBindings` constructor, `lettMulti` included. -/
 mutual
 def surfUsesVar (nm : String) : Surf → Bool
   | .var x                         => x == nm
@@ -327,46 +323,182 @@ end
 #guard surfUsesVar "x" (.lettMulti (.cons "y" (.var "x") .nil) (.lit 0)) == true
 #guard surfUsesVar "x" (.matchD (.var "s") (.cons "C" ["a"] (.var "x") .nil)) == true
 
-/-- Every `Surf` body attached to a `Decl` (a trait's law bodies, an impl's op bodies, a bounded
-`fn`'s body, a plain `let`/`let rec`'s bound expression) — the search space `refs`/`def` walk PER
-decl. A `traitD`'s own OP SIGNATURES carry no body (only a declared `Ty`, never a `Surf` — a
-signature cannot reference a value by name); `dataD`/`effectD` carry no `Surf` at all (pure type-
-level shape). -/
-def declBodies : Decl → List Surf
-  | .traitD _ _ _ laws => laws.map (·.body)
-  | .implD _ _ ops     => ops.map (·.body)
-  | .dataD ..           => []
-  | .fnD _ _ _ _ _ b    => [b]
-  | .effectD ..          => []
-  | .letD _ _ e         => [e]
-  | .letRecD _ _ e      => [e]
-
-/-- Does ANY body attached to `d` mention `nm`? (`refs`'s per-decl predicate.) -/
-def declMentionsVar (nm : String) (d : Decl) : Bool :=
+/-- **PUBLIC (TIER 1):** does ANY body attached to `d` mention `nm`? -/
+public def declMentionsVar (nm : String) (d : Decl) : Bool :=
   (declBodies d).any (surfUsesVar nm)
 
-/-- **PUBLIC entry**: `bang query def <name> <file>` — the decl that DEFINES `name` (by `Decl.name`
-— for `traitD`/`implD` this is the trait's own name, matching `Decl.name`'s documented convention
-that an impl's "name" is the trait it implements, ADR-0093). `{"ok":true,"kind":"...","name":"..."}`
-on a hit; `{"ok":false,"error":"no top-level decl named '<name>'"}` when nothing in the file defines
-it (a LOUD miss, ADR-0046 — never a guessed nearest-match). Multiple decls can share a `Decl.name`
-ONLY for `traitD`+`implD` of the same trait (by design — `git grep` on the file finds the specific
-`impl` block; `def` here answers "where is `name` FIRST introduced as a top-level decl", i.e. the
-`traitD`/`letD`/etc. site) — the first SOURCE-ORDER match, consistent with `symbols`'s own ordering
-guarantee.
+/-- **PUBLIC (TIER 1) library API:** ONE name-reference EDGE — `from` is a REFERENCING decl's own
+name, `to` is the referenced name. DECL granularity (position-addressing is OUT, #52). -/
+public structure RefEdge where
+  src : String   -- the REFERENCING decl's own name (avoids the `from`/`to` reserved-word clash)
+  tgt : String   -- the REFERENCED name
+  deriving Repr
+
+/-- **PUBLIC (TIER 1):** every name-reference edge in `p` — for EACH decl, for EACH other
+name any OTHER decl (or itself) defines, an edge if the FIRST decl's body mentions the SECOND's
+name. `O(decls² )` (fine at bang-program scale; a differential/perf gate is the natural follow-up
+if a corpus ever grows past it) — this is the WHOLE edge set `dump`/`refs` both read; `refs name`
+is exactly `nameRefEdgesOf p |>.filter (·.tgt == name)`, ONE construct for both surfaces. -/
+public def nameRefEdgesOf (p : Prog) : List RefEdge :=
+  let names := p.decls.map Decl.name
+  p.decls.flatMap (fun d => names.filterMap (fun n =>
+    if declMentionsVar n d then some ⟨d.name, n⟩ else none))
+
+/-- One `RefEdge` → its JSON object. -/
+def RefEdge.toJson (e : RefEdge) : String :=
+  jsonObj [jsonStrField "from" e.src, jsonStrField "to" e.tgt]
+
+/-- **PUBLIC (TIER 1):** one law instance `(trait, law, params, body)` → its `LawFact`-shaped JSON.
+Thin re-rendering of `Bang.TypeCheck.lawInstancesOf` (#60's own discovery seam) — zero new
+discovery logic. -/
+def lawInstanceJson (inst : String × String × List String × String) : String :=
+  let (trait, law, params, body) := inst
+  jsonObj [jsonStrField "trait" trait, jsonStrField "law" law,
+           jsonField "params" (jsonStrArr params), jsonStrField "body" body]
+
+/-! ## 2. TIER 2 — `bang query dump <file>`: the COMPLETE fact base in one export.
+
+Assembles `declFactsOf` + `nameRefEdgesOf` + `lawInstancesOf` + the program's own `import`/`use`
+header into ONE JSON object — the schema documented in `docs/reference/language.md`'s `bang query`
+section. A caller composes ARBITRARY queries over this (a `jq`/`python`/Lean script) rather than
+waiting on a new fixed verb — `tools/test-query.sh`'s composed-query demo answers a question no
+verb below anticipates, over THIS export alone. -/
+
+/-- One `ImportDecl`/`UseDecl` header line → its JSON object (`{"module":"Name"}` for an `import`,
+`{"module":"Name","names":[...]}` for a `use`). -/
+def importJson (i : Bang.Surface.ImportDecl) : String := jsonObj [jsonStrField "module" i.modName]
+def useJson (u : Bang.Surface.UseDecl) : String :=
+  jsonObj [jsonStrField "module" u.modName, jsonField "names" (jsonStrArr u.names)]
+
+/-- **PUBLIC entry, `Prog`-taking** (the RESOLVER-AWARE route — `Main.lean`'s multi-file path hands
+an already-resolved-and-merged `Prog` here, optionally with a `declModule` provenance map from ITS
+OWN pre-merge resolution walk — `none` per-name when unavailable, e.g. the single-file/stdin
+route). `{"ok":true,"decls":[DeclFact,...],"refs":[RefEdge,...],"laws":[...],"imports":[...],
+"uses":[...]}` — the schema documented in `docs/reference/language.md`. -/
+public def dumpJsonP (p : Prog) (declModule : List (String × String) := []) : String :=
+  let facts := (declFactsOf p).map (fun f => f.withModule (declModule.lookup f.name))
+  -- NOTE: `lawInstancesOf` takes SOURCE TEXT, not a `Prog` (#60's own signature) — there is no
+  -- `Prog`-taking sibling (matching `laws`'s own documented non-resolver-aware precedent below).
+  -- `dump`'s law facts therefore come from the CALLER's original source string when available
+  -- (`dumpJson`, the string-taking entry) and are an EMPTY (not absent) array on the `Prog`-only
+  -- resolver route, where no single contiguous source exists to re-derive them from (the SAME
+  -- `span:null`-class v1 grant `check --json`'s multi-file path already documents).
+  jsonObj [jsonField "ok" "true",
+           jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
+           jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
+           jsonField "laws" "[]",
+           jsonField "imports" (jsonArr (p.imports.map importJson)),
+           jsonField "uses" (jsonArr (p.uses.map useJson))]
+
+/-- **PUBLIC entry**: `bang query dump <file>` — the single-file/stdin route: parse `src`, assemble
+the full fact base INCLUDING law instances (this route has real source text `lawInstancesOf` can
+re-derive from — unlike the multi-file resolver route, see `dumpJsonP`'s note). -/
+public def dumpJson (src : String) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p =>
+      let facts := declFactsOf p
+      let lawsJ := match Bang.TypeCheck.lawInstancesOf src with
+        | .ok insts => insts.map lawInstanceJson
+        | .error _  => []   -- a law-discovery failure never blanks the REST of the dump (ADR-0046:
+                             -- one bad seam doesn't hide everything else — matches `symbols`'s own
+                             -- per-decl `typeError` isolation, not an all-or-nothing gate).
+      jsonObj [jsonField "ok" "true",
+               jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
+               jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
+               jsonField "laws" (jsonArr lawsJ),
+               jsonField "imports" (jsonArr (p.imports.map importJson)),
+               jsonField "uses" (jsonArr (p.uses.map useJson))]
+
+/-! ## 3. TIER 3 — the curated CLI verbs, now THIN PROJECTIONS of Tier 1's fact lists.
+
+`symbols` = `declFactsOf` rendered whole (one construct with `dump`'s own `"decls"` field — the
+SAME `DeclFact.toJson`). `type`/`effects` = one `DeclFact` looked up by name. `def` = ditto,
+wrapped as a single hit. `refs` = `nameRefEdgesOf` filtered to one target. `laws` stays its own
+thin wrapper (STRING-only — no `Prog`-taking sibling, matching `bang test`'s own documented
+non-resolver-aware precedent: "no multi-file law-discovery need has arisen yet"). -/
+
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): every top-level decl of `p`, in SOURCE
+ORDER, rendered via the SAME `DeclFact.toJson` `dump` uses — `symbols` is `dump` narrowed to just
+the `"decls"` field. -/
+public def symbolsJsonP (p : Prog) : String :=
+  jsonObj [jsonField "ok" "true", jsonField "symbols" (jsonArr ((declFactsOf p).map DeclFact.toJson))]
+
+/-- **PUBLIC entry**: `bang query symbols <file>` — the single-file/stdin route: parse `src` then
+defer to `symbolsJsonP`. -/
+public def symbolsJson (src : String) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p         => symbolsJsonP p
+
+/-- Look up ONE `DeclFact` by name — the shared lookup `type`/`effects`/`def` all filter through
+(the Tier-3 "thin projection" move applied uniformly). -/
+def factByName (p : Prog) (name : String) : Option DeclFact :=
+  (declFactsOf p).find? (·.name == name)
+
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route). `{"ok":true,"type":"T","row":"{...}"}`
+for a `DeclFact` with a checker type, or `{"ok":false,"error":"..."}` (no such decl, or the decl
+has no value-level type / failed to check — `DeclFact.typeError`/kind mismatch surfaced honestly). -/
+public def typeJsonP (p : Prog) (name : String) : String :=
+  match factByName p name with
+  | none   => errorJsonOk s!"no top-level decl named '{name}'"
+  | some f =>
+      match f.type, f.row, f.typeError with
+      | some ty, some row, _ => jsonObj [jsonField "ok" "true", jsonStrField "type" ty, jsonStrField "row" row]
+      | _, _, some e          => errorJsonOk e
+      | _, _, none            => errorJsonOk s!"'{name}' ({f.kind.toJson}) has no value-level type"
+
+/-- **PUBLIC entry**: `bang query type <file> <name>` — the single-file/stdin route: parse `src`
+then defer to `typeJsonP`. -/
+public def typeJson (src name : String) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p         => typeJsonP p name
+
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route). `{"ok":true,"row":"{...}"}`, the effect
+ROW alone (paradigm-as-value, queryable — the bang-specific op no general LSP has; ADR-0076's "the
+compiler is a queryable service" realized at CLI cost). Same lookup/failure shape as `typeJsonP`. -/
+public def effectsJsonP (p : Prog) (name : String) : String :=
+  match factByName p name with
+  | none   => errorJsonOk s!"no top-level decl named '{name}'"
+  | some f =>
+      match f.row, f.typeError with
+      | some row, _  => jsonObj [jsonField "ok" "true", jsonStrField "row" row]
+      | _, some e    => errorJsonOk e
+      | none, none   => errorJsonOk s!"'{name}' ({f.kind.toJson}) has no value-level type"
+
+/-- **PUBLIC entry**: `bang query effects <name> <file>` — the single-file/stdin route. Same
+failure shape as `typeJson`. -/
+public def effectsJson (src name : String) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p         => effectsJsonP p name
+
+/-- **PUBLIC entry**: `bang query laws <file>` — `{"ok":true,"laws":[{"trait","law","params","body"},
+...]}` for every discovered law instance, or `{"ok":false,"error":"..."}` on a parse/elaboration
+failure (`lawInstancesOf`'s own `Except String _`). STRING-only (no resolver — see this section's
+header; matches `runTest`'s own documented precedent). -/
+public def lawsJson (src : String) : String :=
+  match Bang.TypeCheck.lawInstancesOf src with
+  | .error e  => errorJsonOk e
+  | .ok insts => jsonObj [jsonField "ok" "true", jsonField "laws" (jsonArr (insts.map lawInstanceJson))]
+
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): the decl that DEFINES `name` (by
+`Decl.name` — for `traitD`/`implD` this is the trait's own name, ADR-0093's documented convention),
+rendered via the SAME `DeclFact.toJson` `dump`/`symbols` use. `{"ok":false,"error":"no top-level
+decl named '<name>'"}` when nothing defines it (a LOUD miss, ADR-0046 — never a guessed
+nearest-match).
 
 MULTI-FILE NAMING (KNOWN v1 characteristic, not a bug — matches `check --json`'s own documented
 multi-file limitation in spirit): `p` here is the RESOLVED, MERGED `Prog` on the resolver path
 (`Main.lean`'s `resolveQueryProg`) — an imported (not `use`d) decl's name is QUALIFIED by the
 merge (`Parse.bang`'s `dropWs` becomes `Parse_dropWs`, `TypeCheck.mergeModules`'s own convention),
-so `def`/`refs`/`effects`/`type` on a multi-file program address the QUALIFIED name, matching
-exactly what a `bang run`/`bang check` error message on the SAME program would name. `symbols`
-surfaces the qualified names directly (visible in its own `"name"` field), so this is discoverable
-by construction, not a silent gotcha. -/
+so `def`/`refs`/`effects`/`type` on a multi-file program address the QUALIFIED name. `symbols`/
+`dump` surface the qualified names directly, so this is discoverable by construction. -/
 public def defJsonP (p : Prog) (name : String) : String :=
-  match p.decls.find? (fun d => d.name == name) with
+  match (p.decls.find? (fun d => d.name == name)) with
   | none   => errorJsonOk s!"no top-level decl named '{name}'"
-  | some d => jsonObj [jsonField "ok" "true", jsonField "symbol" (symbolJson p d)]
+  | some d => jsonObj [jsonField "ok" "true", jsonField "symbol" (declFactOf p d).toJson]
 
 /-- **PUBLIC entry**: `bang query def <name> <file>` — the single-file/stdin route: parse `src`
 then defer to `defJsonP`. -/
@@ -375,32 +507,22 @@ public def defJson (src name : String) : String :=
   | .error (m, _) => errorJsonOk m
   | .ok p         => defJsonP p name
 
-/-- The bare `"kind"` string a `Decl` renders as in `symbols`/`refs` (factored out so `refs` doesn't
-need a full `symbolJson` — a REF site's `kind` is a cheap tag, not the full outline entry `def`'s
-single-hit answer returns). -/
-def declKindJson : Decl → String
-  | .letD ..    => "\"let\""
-  | .letRecD .. => "\"letRec\""
-  | .fnD ..     => "\"fn\""
-  | .traitD ..  => "\"trait\""
-  | .implD ..   => "\"impl\""
-  | .dataD ..   => "\"data\""
-  | .effectD .. => "\"effect\""
-
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): every REF EDGE targeting `name` —
+`nameRefEdgesOf p |>.filter (·.tgt == name)`, the Tier-3 filter over Tier 1's own edge list (`refs`
+and `dump`'s `"refs"` field are the SAME computation, one construct). `{"ok":true,"refs":[
+{"name","kind"},...]}` (the FROM decl's name/kind — the historical shape this verb has always had,
+kept for the CURATED surface even though `dump`'s own `"refs"` array is the flat `{from,to}` edge
+list; a caller wanting edges reads `dump` directly). An EMPTY array is a valid, honest answer (the
+name is defined but never referenced, or isn't bound anywhere — `refs` does not itself validate
+`name` exists, unlike `def`). -/
 public def refsJsonP (p : Prog) (name : String) : String :=
-  let hits := p.decls.filter (declMentionsVar name) |>.map (fun d =>
-    jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr d.name),
-             jsonField "kind" (declKindJson d)])
+  let froms := (nameRefEdgesOf p).filterMap (fun e => if e.tgt == name then some e.src else none)
+  let hits := froms.filterMap (fun fromName => p.decls.find? (·.name == fromName) |>.map (fun d =>
+    jsonObj [jsonStrField "name" d.name, jsonField "kind" (DeclKind.of d).toJson]))
   jsonObj [jsonField "ok" "true", jsonField "refs" (jsonArr hits)]
 
 /-- **PUBLIC entry**: `bang query refs <name> <file>` — the single-file/stdin route: parse `src`
-then defer to `refsJsonP`. DECL granularity (see this section's header for why: no per-node span
-tier exists to report an exact line/col occurrence, and fabricating one would be a guess,
-ADR-0046). `{"ok":true,"refs":[{"name","kind"},...]}` — an EMPTY `refs` array is a valid, honest
-answer (the name is defined but never referenced, or `name` isn't even bound anywhere — `refs`
-does not itself validate that `name` is a real binding, unlike `def`; a caller wanting "does this
-name exist at all" combines this with `def`). `{"ok":false,"error":...}` only on a PARSE failure
-(there is no elaboration in this op's path at all). -/
+then defer to `refsJsonP`. DECL granularity (see Tier-1 header for why). -/
 public def refsJson (src name : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
