@@ -536,7 +536,8 @@ not six independent implementations.
 ```json
 {
   "ok": true,
-  "schemaVersion": "1.0",
+  "schemaVersion": 1,
+  "bangVersion": "0.1.0",
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect",
                "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
                "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
@@ -565,14 +566,28 @@ value-level type. `refs` is DECL-granularity (which decl's body mentions which n
 **position-addressing (line/col) is OUT of v1**, gated on issue #52's Spanned-Surf tier
 (`Surf` carries no per-node span today).
 
-**`schemaVersion` is a first-class field from v1** (bang's docs/notes/compiler-as-dbms-
-survey.md, the ONE piece of DBMS discipline adopted *eagerly*, not post-1.0): bang's 0.x
-"breaking changes allowed" policy collides with "agents write durable scripts against
-`dump`'s JSON" — every unversioned schema change breaks every saved query. An ADDITIVE
-change (a new field/predicate) bumps the MINOR version; a removal/rename bumps MAJOR.
+**`schemaVersion`/`bangVersion` are TWO DISJOINT fields, first-class from v1** (bang's
+docs/notes/compiler-as-dbms-survey.md, the ONE piece of DBMS discipline adopted *eagerly*,
+not post-1.0): bang's 0.x "breaking changes allowed" policy collides with "agents write
+durable scripts against `dump`'s JSON" — every unversioned BREAKING change silently
+invalidates every saved query. The two fields split the concern:
+
+- **`schemaVersion`** — a plain monotonic **integer**, THE CONTRACT. Bumps ONLY on a
+  BREAKING shape change (a field/table rename, removal, or meaning-change) — never for
+  additive growth. A durable consumer keys ITS compatibility check on this field alone.
+- **`bangVersion`** — PROVENANCE metadata (which compiler binary emitted this dump), NOT
+  a compatibility signal — never gate a script's behavior on it.
+
+**The other half of the contract binds the CONSUMER**: implementations **MUST IGNORE
+UNKNOWN FIELDS** (the protobuf/Kubernetes-API discipline). This is what makes "additive
+⟹ non-breaking" true by construction — a script asserting `schemaVersion == 1` must
+survive twenty compiler releases that only ADD facts; a script that hard-fails on an
+unrecognized key breaks that guarantee itself, regardless of what bang promises.
+
 `tools/golden-dump-caesar.json` is a pinned snapshot gated by `tools/test-query.sh`'s
-`golden-dump-schema-pinned` check — a schema change must re-pin this file in the SAME
-commit, so drift is always VISIBLE in the diff, never silent.
+`golden-dump-schema-pinned` check — ANY shape change (breaking or additive) must re-pin
+this file in the same commit, so drift is always VISIBLE in the diff, never silent; a
+BREAKING change additionally requires the `schemaVersion` bump.
 
 `decls`/`refs`/`laws`/`imports` are the **extensional** fact base (extracted, not
 computed from other facts); the curated verbs below are **intensional** — derived
