@@ -920,7 +920,11 @@ def MVal.PureV : MVal → Prop
   | .mvunit       => True
   | .mvint _      => True
   | .mvcap _ _    => True
-  | .mvclos M ρ   => EffectFree M ∧ Comp.ScopedC (readbackEnv ρ).length M ∧ MEnv.PureV ρ
+  -- a closure's captured env is itself WELL-FORMED: WF (reads back closed — needed so the crux fires in
+  -- the body's sub-cases), PureV (its own closures are effect-free), and the body is EffectFree + scoped
+  -- under the env. This IS the combined `Good` closure discipline the ruling approved.
+  | .mvclos M ρ   =>
+      EffectFree M ∧ Comp.ScopedC (readbackEnv ρ).length M ∧ MEnv.WF ρ ∧ MEnv.PureV ρ
   | .minl w       => MVal.PureV w
   | .minr w       => MVal.PureV w
   | .mpair w₁ w₂  => MVal.PureV w₁ ∧ MVal.PureV w₂
@@ -1056,7 +1060,7 @@ theorem evalV_WF {ρ : MEnv} (hρ : MEnv.WF ρ) {v : Val}
 /-- `evalV` of a `ValEF` value under a `PureV` env is `PureV` (the value's `MVal.PureV`). Structural on
 `v`; `vthunk M ↦ mvclos M ρ` gets `EffectFree M` from `ValEF (vthunk M)`, scope from the hyp, env-purity
 from `hρ`. Needs the source value scoped so the closure's body-scope obligation is met. -/
-theorem evalV_PureV {ρ : MEnv} (hρ : MEnv.PureV ρ) :
+theorem evalV_PureV {ρ : MEnv} (hWFρ : MEnv.WF ρ) (hρ : MEnv.PureV ρ) :
     ∀ {v : Val}, ValEF v → Val.ScopedV (readbackEnv ρ).length v → MVal.PureV (evalV ρ v)
   | .vunit, _, _ => by simp only [evalV, MVal.PureV]
   | .vint _, _, _ => by simp only [evalV, MVal.PureV]
@@ -1067,21 +1071,23 @@ theorem evalV_PureV {ρ : MEnv} (hρ : MEnv.PureV ρ) :
       exact MEnv.PureV.get hρ i
   | .vthunk M, hEF, hsc => by
       simp only [evalV, MVal.PureV]
-      refine ⟨hEF, ?_, hρ⟩
-      -- ScopedC of the thunk body M under |readbackEnv ρ| = the thunk's scope one level down? No:
+      refine ⟨hEF, ?_, hWFρ, hρ⟩
       -- vthunk M scoped under n means M scoped under n (thunk doesn't bind); readback env length = n.
       intro k hk; have := hsc k hk
       simp only [Val.shiftFrom, Val.vthunk.injEq] at this; exact this
   | .inl w, hEF, hsc => by
-      simp only [evalV, MVal.PureV]; exact evalV_PureV hρ (by simpa only [ValEF] using hEF) hsc.inl_inv
+      simp only [evalV, MVal.PureV]
+      exact evalV_PureV hWFρ hρ (by simpa only [ValEF] using hEF) hsc.inl_inv
   | .inr w, hEF, hsc => by
-      simp only [evalV, MVal.PureV]; exact evalV_PureV hρ (by simpa only [ValEF] using hEF) hsc.inr_inv
+      simp only [evalV, MVal.PureV]
+      exact evalV_PureV hWFρ hρ (by simpa only [ValEF] using hEF) hsc.inr_inv
   | .pair w₁ w₂, hEF, hsc => by
       simp only [evalV, MVal.PureV]
       have hEF' : ValEF w₁ ∧ ValEF w₂ := by simpa only [ValEF] using hEF
-      exact ⟨evalV_PureV hρ hEF'.1 hsc.pair_inv.1, evalV_PureV hρ hEF'.2 hsc.pair_inv.2⟩
+      exact ⟨evalV_PureV hWFρ hρ hEF'.1 hsc.pair_inv.1, evalV_PureV hWFρ hρ hEF'.2 hsc.pair_inv.2⟩
   | .fold w, hEF, hsc => by
-      simp only [evalV, MVal.PureV]; exact evalV_PureV hρ (by simpa only [ValEF] using hEF) hsc.fold_inv
+      simp only [evalV, MVal.PureV]
+      exact evalV_PureV hWFρ hρ (by simpa only [ValEF] using hEF) hsc.fold_inv
 
 /-! ### The PURE-fragment correspondence (`_pure`, slice-3a)
 
@@ -1114,14 +1120,38 @@ theorem evalE_agrees_evalD_pure :
       have hsc : Val.ScopedV γ.length v := hlen ▸ (hSc.ret_inv)
       have hEFv : ValEF v := by simpa only [EffectFree] using hEF
       subst hmv
-      refine ⟨?_, evalV_WF hWF (hlen ▸ hsc), evalV_PureV hPure hEFv (hlen ▸ hsc)⟩
+      refine ⟨?_, evalV_WF hWF (hlen ▸ hsc), evalV_PureV hWF hPure hEFv (hlen ▸ hsc)⟩
       simp only [substEnv_ret, Bang.CalcVM.evalD, readback_evalV hWF (hlen ▸ hsc),
         show readbackEnv ρ = γ from hagree]
     | lam M =>
       -- evalE (lam M) = mterm (mlam M ρ), never a returner ⇒ h is contradictory.
       simp only [evalE, Option.some.injEq, Prod.mk.injEq] at h
       exact absurd h.1 (by simp)
-    | force w => sorry
+    | force w =>
+      -- evalE: evalV ρ w = mvclos M' ρ' ⇒ run M' under ρ'. evalD: force (vthunk (substEnv (rbEnv ρ') M')).
+      have hsc : Val.ScopedV γ.length w := hlen ▸ hSc.force_inv
+      have hEFw : ValEF w := by simpa only [EffectFree] using hEF
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | mvclos M' ρ' =>
+        rw [hw] at h
+        -- purity of the closure ⇒ its body EffectFree + scoped, its env PureV.
+        have hpc : MVal.PureV (MVal.mvclos M' ρ') := by
+          have := evalV_PureV hWF hPure hEFw (hlen ▸ hsc); rw [hw] at this; exact this
+        have hpc' := by simpa only [MVal.PureV] using hpc
+        have hEFM' : EffectFree M' := hpc'.1
+        have hscM' : Comp.ScopedC (readbackEnv ρ').length M' := hpc'.2.1
+        have hWFρ' : MEnv.WF ρ' := hpc'.2.2.1
+        have hPρ' : MEnv.PureV ρ' := hpc'.2.2.2
+        obtain ⟨hd, hWFmv, hPmv⟩ := ih (readbackEnv ρ') M' mv ρ' g G g'
+          rfl hWFρ' hPρ' hEFM' hscM' h
+        refine ⟨?_, hWFmv, hPmv⟩
+        -- substEnv γ (force w) = force (substEnvV γ w) = force (vthunk (substEnv (rbEnv ρ') M')).
+        have hrb : substEnvV γ w = Val.vthunk (substEnv (readbackEnv ρ') M') := by
+          rw [show γ = readbackEnv ρ from hagree.symm, ← readback_evalV hWF (hlen ▸ hsc), hw]; rfl
+        rw [substEnv_force, hrb]
+        simpa only [Bang.CalcVM.evalD] using hd
+      | _ => rw [hw] at h; simp at h
     | letC M N => sorry
     | app M v => sorry
     | case w N₁ N₂ => sorry
@@ -1145,7 +1175,7 @@ theorem evalE_agrees_evalD_pure :
           simp only [MVal.WF, readback] at this
           exact (Val.ScopedV.fold_inv (fun k _ => this k)).closedE_zero
         have hPmw : MVal.PureV mw := by
-          have := evalV_PureV hPure hEFw (hlen ▸ hsc); rw [hw] at this
+          have := evalV_PureV hWF hPure hEFw (hlen ▸ hsc); rw [hw] at this
           simpa only [MVal.PureV] using this
         refine ⟨?_, hWFmw, hPmw⟩
         simp only [substEnv_unfold, hrb, Bang.CalcVM.evalD]
