@@ -606,6 +606,185 @@ def substEnvV : List Val → Val → Val
     simp only [substEnv, substEnvV, closeUnderBindersE, Comp.subst, Val.subst, Comp.substFrom, shiftNE]
     exact ih _ _
 
+/-! ### Closedness of the readback env (slice-3a: the closed-filler side condition)
+
+The crux `substEnv_cons_subst` needs each filler `Val.ClosedE`. The env values a PURE evaluation binds
+are read-back machine values; a machine value reads back closed exactly when it is *well-formed* —
+every closure inside captures an env covering its body's free vars. We package this as `MVal.WF`
+(reads back closed) + `MEnv.WF` (every entry WF) and thread it as the induction's side condition,
+mirroring the resume map's "each `readbackEnv ρ` entry is `Val.ClosedE`" hypothesis. -/
+
+/-- A machine value is well-formed iff it reads back to a CLOSED kernel value. The env-machine's
+well-scopedness invariant at the value level: a ground `MVal` (no closures, or closures whose captured
+env covers their body) reads back with no dangling de Bruijn index. -/
+def MVal.WF (mv : MVal) : Prop := Val.ClosedE (readback mv)
+
+/-- An environment is well-formed iff every entry is. Equivalently: every `readbackEnv ρ` entry is
+`Val.ClosedE` — exactly the crux's closed-filler side condition, threaded through binder extensions. -/
+def MEnv.WF (ρ : MEnv) : Prop := ∀ v ∈ readbackEnv ρ, Val.ClosedE v
+
+theorem MEnv.WF.nil : MEnv.WF .nil := by intro v hv; simp only [readbackEnv, List.not_mem_nil] at hv
+
+theorem MEnv.WF.cons {mv : MVal} {ρ : MEnv} (hmv : MVal.WF mv) (hρ : MEnv.WF ρ) :
+    MEnv.WF (mv ∷ₑ ρ) := by
+  intro v hv
+  simp only [readbackEnv, List.mem_cons] at hv
+  rcases hv with h | h
+  · exact h ▸ hmv
+  · exact hρ v h
+
+/-- The env-closedness hypothesis in the crux's `∀ v ∈ γ` form, from `MEnv.WF`. -/
+theorem MEnv.WF.closedEnv {ρ : MEnv} (hρ : MEnv.WF ρ) : ∀ v ∈ readbackEnv ρ, Val.ClosedE v := hρ
+
+/-! ### The value-level correspondence `readback ∘ evalV = substEnvV ∘ readbackEnv`
+
+`substEnvV` picks index `i` out of a CLOSED env exactly as `ρ.get i` does — the env-lookup ↔ subst
+identity (`substEnvV_vvar`). Lifted structurally, `substEnvV (readbackEnv ρ) v = readback (evalV ρ v)`
+(the value analog of the crux; the closure case bottoms out on `substEnv`/`readbackEnv` definitionally). -/
+
+/-- Closing a CLOSED value is the identity (each `Val.subst` in the fold leaves it fixed). -/
+theorem closeVE_closed {v : Val} (hv : Val.ClosedE v) : ∀ γ : List Val, substEnvV γ v = v
+  | []      => rfl
+  | u :: γ  => by
+      rw [substEnvV, show Val.subst u v = v from hv.subst_at 0 u]; exact closeVE_closed hv γ
+
+/-- On a CLOSED env, `substEnvV` on an IN-RANGE `vvar i` selects entry `i` — the env-lookup ↔ subst
+identity. The later substitutions fix the selected closed value; before the hit each `Val.subst`
+renumbers down. -/
+theorem substEnvV_vvar {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v) {i : Nat} (hi : i < γ.length) :
+    substEnvV γ (Val.vvar i) = γ[i] := by
+  induction γ generalizing i with
+  | nil => exact absurd hi (Nat.not_lt_zero i)
+  | cons u γ ih =>
+    have hu : Val.ClosedE u := hγ u List.mem_cons_self
+    have hγ' : ∀ v ∈ γ, Val.ClosedE v := fun v hv => hγ v (List.mem_cons_of_mem u hv)
+    cases i with
+    | zero =>
+      simp only [substEnvV, Val.subst, Val.substFrom, if_pos rfl, List.getElem_cons_zero]
+      exact closeVE_closed hu γ
+    | succ j =>
+      have hj : j < γ.length := by simp only [List.length_cons] at hi; omega
+      simp only [substEnvV, Val.subst, Val.substFrom, if_neg (Nat.succ_ne_zero j),
+        if_pos (Nat.succ_pos j), Nat.add_sub_cancel, List.getElem_cons_succ]
+      exact ih hγ' hj
+
+/-! ### Well-scopedness (slice-3a: the source-side scope invariant)
+
+A term is well-scoped under `n` binders when its free de Bruijn indices are all `< n` — captured, per
+the existing `shiftFrom`-fixpoint idiom, as "shifting at any cutoff `≥ n` is the identity" (`ClosedE` is
+`ScopedV 0`). This is the invariant `evalV`/`evalE` preserve: a value evaluated under `ρ` and read back
+is CLOSED exactly when the source term is scoped under `|ρ|`. Needed because a closure `mvclos M ρ` reads
+back to `vthunk (substEnv (readbackEnv ρ) M)`, closed only if `M`'s frees are covered by `ρ`. -/
+
+/-- `v`'s free de Bruijn indices are all `< n` (shift at any cutoff `≥ n` fixes it). `ScopedV 0 = ClosedE`. -/
+def Val.ScopedV (n : Nat) (v : Val) : Prop := ∀ k, n ≤ k → Val.shiftFrom k v = v
+/-- `M`'s free de Bruijn indices are all `< n`. -/
+def Comp.ScopedC (n : Nat) (M : Comp) : Prop := ∀ k, n ≤ k → Comp.shiftFrom k M = M
+
+theorem Val.ScopedV.closedE_zero {v : Val} (h : Val.ScopedV 0 v) : Val.ClosedE v :=
+  fun k => h k (Nat.zero_le k)
+
+/-- A `vvar i` scoped under `n` has `i < n` (the shift at cutoff `n` would bump it otherwise). -/
+theorem Val.ScopedV.vvar_lt {n i : Nat} (h : Val.ScopedV n (Val.vvar i)) : i < n := by
+  by_contra hlt
+  have := h n (Nat.le_refl n)
+  simp only [Val.shiftFrom, if_neg (by omega : ¬ i < n)] at this
+  exact absurd (Val.vvar.inj this) (by omega)
+
+/-! ### The value correspondence `readback ∘ evalV = substEnvV ∘ readbackEnv`
+
+For a `v` scoped under `|ρ|` with `ρ` well-formed, evaluating `v` under `ρ` then reading back equals
+substituting the read-back env into `v`. Structural induction on `v`: `vvar` uses the lookup identity
+(`substEnvV_vvar` + `readbackEnv` index-matching), the CLOSURE `vthunk M` bottoms out DEFINITIONALLY
+(both sides are `vthunk (substEnv (readbackEnv ρ) M)` — the closure defers, no recursion into `M`). -/
+
+/-- `readbackEnv` and `MEnv.get` match at every in-range index (`readbackEnv` is `MEnv.get` read back). -/
+theorem readbackEnv_getElem : ∀ (ρ : MEnv) {i : Nat} (hi : i < (readbackEnv ρ).length),
+    (readbackEnv ρ)[i] = readback (ρ.get i)
+  | .nil, i, hi => by simp only [readbackEnv, List.length_nil] at hi; exact absurd hi (Nat.not_lt_zero i)
+  | .cons u ρ, 0, _ => by simp only [readbackEnv, List.getElem_cons_zero, MEnv.get]
+  | .cons u ρ, j + 1, hi => by
+      simp only [readbackEnv, List.length_cons] at hi
+      simp only [readbackEnv, List.getElem_cons_succ, MEnv.get]
+      exact readbackEnv_getElem ρ (by omega)
+
+/-- `substEnvV` pushes through a `vthunk`: closing a suspended `Comp` is closing its body (`substEnv`).
+The DEFINITIONAL bridge that lets the closure case of the value correspondence bottom out. -/
+@[simp] theorem substEnvV_vthunk (γ : List Val) (M : Comp) :
+    substEnvV γ (Val.vthunk M) = Val.vthunk (substEnv γ M) := by
+  induction γ generalizing M with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, substEnv, Val.subst, Val.substFrom, Comp.subst]; exact ih _
+
+/-- `substEnvV` structural push-through the ADT/atom formers (used by the value correspondence). -/
+@[simp] theorem substEnvV_vunit (γ : List Val) : substEnvV γ Val.vunit = Val.vunit := by
+  induction γ with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, Val.subst, Val.substFrom]; exact ih
+@[simp] theorem substEnvV_vint (γ : List Val) (n : Int) : substEnvV γ (Val.vint n) = Val.vint n := by
+  induction γ with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, Val.subst, Val.substFrom]; exact ih
+@[simp] theorem substEnvV_vcap (γ : List Val) (n : Nat) (ℓ : Bang.EffectRow.Label) :
+    substEnvV γ (Val.vcap n ℓ) = Val.vcap n ℓ := by
+  induction γ with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, Val.subst, Val.substFrom]; exact ih
+@[simp] theorem substEnvV_inl (γ : List Val) (w : Val) :
+    substEnvV γ (Val.inl w) = Val.inl (substEnvV γ w) := by
+  induction γ generalizing w with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, Val.subst, Val.substFrom]; exact ih _
+@[simp] theorem substEnvV_inr (γ : List Val) (w : Val) :
+    substEnvV γ (Val.inr w) = Val.inr (substEnvV γ w) := by
+  induction γ generalizing w with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, Val.subst, Val.substFrom]; exact ih _
+@[simp] theorem substEnvV_pair (γ : List Val) (w₁ w₂ : Val) :
+    substEnvV γ (Val.pair w₁ w₂) = Val.pair (substEnvV γ w₁) (substEnvV γ w₂) := by
+  induction γ generalizing w₁ w₂ with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, Val.subst, Val.substFrom]; exact ih _ _
+@[simp] theorem substEnvV_fold (γ : List Val) (w : Val) :
+    substEnvV γ (Val.fold w) = Val.fold (substEnvV γ w) := by
+  induction γ generalizing w with
+  | nil => rfl
+  | cons u γ ih => simp only [substEnvV, Val.subst, Val.substFrom]; exact ih _
+
+/-- Scope projects into the single-child ADT formers (`inl`/`inr`/`fold`). -/
+theorem Val.ScopedV.inl_inv {n : Nat} {w : Val} (h : Val.ScopedV n (Val.inl w)) : Val.ScopedV n w := by
+  intro k hk; have := h k hk; simp only [Val.shiftFrom, Val.inl.injEq] at this; exact this
+theorem Val.ScopedV.inr_inv {n : Nat} {w : Val} (h : Val.ScopedV n (Val.inr w)) : Val.ScopedV n w := by
+  intro k hk; have := h k hk; simp only [Val.shiftFrom, Val.inr.injEq] at this; exact this
+theorem Val.ScopedV.fold_inv {n : Nat} {w : Val} (h : Val.ScopedV n (Val.fold w)) : Val.ScopedV n w := by
+  intro k hk; have := h k hk; simp only [Val.shiftFrom, Val.fold.injEq] at this; exact this
+theorem Val.ScopedV.pair_inv {n : Nat} {w₁ w₂ : Val} (h : Val.ScopedV n (Val.pair w₁ w₂)) :
+    Val.ScopedV n w₁ ∧ Val.ScopedV n w₂ := by
+  constructor <;> intro k hk <;>
+    · have := h k hk; simp only [Val.shiftFrom, Val.pair.injEq] at this
+      first | exact this.1 | exact this.2
+
+/-- **THE VALUE CORRESPONDENCE** (`readback ∘ evalV = substEnvV ∘ readbackEnv`). For a `v` well-scoped
+under `|ρ|` with `ρ` well-formed, evaluating `v` under `ρ` and reading back = substituting the read-back
+env. Structural on `v`; the closure case is DEFINITIONAL (`substEnvV_vthunk`). -/
+theorem readback_evalV {ρ : MEnv} (hρ : MEnv.WF ρ) :
+    ∀ {v : Val}, Val.ScopedV (readbackEnv ρ).length v →
+      readback (evalV ρ v) = substEnvV (readbackEnv ρ) v
+  | .vunit, _ => by simp only [evalV, readback, substEnvV_vunit]
+  | .vint _, _ => by simp only [evalV, readback, substEnvV_vint]
+  | .vcap _ _, _ => by simp only [evalV, readback, substEnvV_vcap]
+  | .vvar i, hv => by
+      have hi : i < (readbackEnv ρ).length := hv.vvar_lt
+      rw [substEnvV_vvar hρ hi, readbackEnv_getElem ρ hi]
+      simp only [evalV]
+  | .vthunk M, _ => by simp only [evalV, readback, substEnvV_vthunk]
+  | .inl w, hv => by simp only [evalV, readback, substEnvV_inl]; rw [readback_evalV hρ hv.inl_inv]
+  | .inr w, hv => by simp only [evalV, readback, substEnvV_inr]; rw [readback_evalV hρ hv.inr_inv]
+  | .pair w₁ w₂, hv => by
+      simp only [evalV, readback, substEnvV_pair]
+      rw [readback_evalV hρ hv.pair_inv.1, readback_evalV hρ hv.pair_inv.2]
+  | .fold w, hv => by simp only [evalV, readback, substEnvV_fold]; rw [readback_evalV hρ hv.fold_inv]
+
 /-- **The correspondence STATEMENT** (PLFA `γ≈ₑσ`; slice-3 proof).
 
 If `evalE` runs `M` under `ρ` to a returner `mret mv`, and `ρ` agrees with a substitution
