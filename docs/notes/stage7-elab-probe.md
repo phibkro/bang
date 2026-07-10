@@ -2,174 +2,195 @@
 
 # Stage-7 `handle … with` elaboration mechanics probe (#21 s7probe)
 
-**Status**: probe complete, findings banked. Syntax is explicitly PROVISIONAL (s7design's ADR-0095
-owns the real spelling) — everything below characterizes the MECHANICS every syntax choice shares,
-not the strawman's own grammar. **Post-probe rulings (2026-07-10): WALL 1 ruled — resolved-label
-slot on `handleCustomS`, lowering stays `ElabEnv`-free; and the D1 binding gap ruled — REQUIRED
-explicit `as h` binder, `handle e with Name as h { clauses }`. Both recorded in ADR-0095 §D1a;
-the probe branch realigns to the ruled grammar.**
+**Status**: DONE — implemented against the RULED ADR-0095 grammar (accepted 2026-07-10,
+`docs/decisions/0095-stage7-handler-surface.md`), e2e-verified. The original probe was built
+against a provisional strawman; once ADR-0095 landed (all five decisions as recommended), the
+manager upgraded this unit to a real implementation and ruled two open gaps (below). All three
+`bang eval` reference programs — the ADR's own D1 tracer bullet plus the Stage-2 kernel's
+`customResume`/`customAbortCoexist` #guards ported to source text — now produce the exact
+expected values.
 
 ## What was built
 
-A Flix-shaped strawman `handle N p with { op1(x) -> body1, op2(y) -> body2, … } as h in body`,
-end to end through the frontend:
+`handle e with Name as h { op(x) => body, … }` (param-less) / `handle e with (Name init) as h
+{ … }` (param-carrying), end to end through the frontend:
 
-- `Bang/Frontend/Surface.lean`: a new `Surf.handleCustomS` node + `HClauses` mutual list (the
-  `DArms` precedent), a bespoke `pExpr` parser arm (`pHClause`/`pHClauses`), and a documented
-  `.error` in `lowerC` (see WALL 1 below).
+- `Bang/Frontend/Surface.lean`: `Surf.handleCustomS` (6 fields: a resolved-label slot, the
+  effect-name reference, the param-init as `SurfArgs`, the mandatory cap binder, the clause
+  list, the handled body) + `HClauses` mutual list (the `DArms` precedent), a bespoke `pExpr`
+  parser arm (`pHandlerName`/`pHClause`/`pHClauses`), `with` newly RESERVED (§Finding 3), and a
+  REAL `lowerC` arm building `Handler.custom` + `Comp.handle` (WALL 1 fixed — see below).
 - `Bang/Frontend/TypeCheck.lean`: `synthSC`'s `.handleCustomS` typing arm (discharges the label,
-  binds the cap, checks clause coverage + ret-shape), a `checkHClauses` mutual sibling, `elabS`'s
-  `.handleCustomS` arm (extends Γ with the cap binding, mirrors `.withCapS`), an `elabHClauses`
-  sibling, and the ~9 exhaustive-match completions every other `Surf`-matching helper needed
-  (`structOK`, `expandBFns`, `surfUsesVar`, `qualifyVars`, `qualifyDotAccess`,
-  `firstPrivateDotAccess`, `firstBareOpCall`).
-- `Bang/Frontend/Format.lean`: a placeholder print arm (exhaustiveness only — the printer is out of
-  this probe's scope).
+  binds the cap, checks clause coverage + the D4 ret-shape/effect-free property), a
+  `checkHClauses` mutual sibling, `elabS`'s `.handleCustomS` arm (RESOLVES the label against
+  `env.effects` and REWRITES it into the tree's slot — the WALL-1 fix's real half), an
+  `elabHClauses` sibling, and the exhaustive-match completions every other `Surf`-matching
+  helper needed.
+- `Bang/Frontend/Format.lean`: a printer arm matching the ruled grammar (clause-list rendering
+  stays a placeholder — round-trip fidelity for `HClauses` is a follow-up, not blocking).
 
 Full build green (749/749 jobs), kernel census untouched (26 constructors), no kernel/Backend/Meta
 files touched.
 
-## WALL 1 (structural, blocks a real implementation): `Surf` has no label-carrying slot
+## The two rulings that resolved this unit's open gaps
 
-`lowerC : List String → Surf → Except String Comp` has **no `ElabEnv` parameter** — confirmed this
-is true even on the fully-typed `checkAndLower` pipeline: it calls `elabProg` (which threads
-`env.effects` through elaboration) and then calls `Bang.Surface.lower e` on the elaborated tree
-**alone**, discarding `effects`. `lower`/`lowerC` never see the effect-name→label table, typed path
-or not.
+1. **D1 binding-order gap** (flagged by this probe against the ADR's own tracer-bullet text,
+   which used an unbound `net` before any binder introduced it): **operator-ruled, reading (b)
+   — `as h` is MANDATORY in v1**, no implicit lowercase-of-Name default (rejected: silently
+   shadows a nested same-effect handler). Scope: `h` binds in the handled body `e`
+   (elaborate the clause-map + install the binder first, then `e` under the extended Γ — reading
+   (c)'s mechanics, reading (b)'s surface). The ADR is being amended with a D1a addendum
+   recording this.
+2. **WALL 1** (the resolved-label slot): **manager-ruled Option A** — add the slot directly to
+   `handleCustomS`; `elabS` resolves + rewrites it; `lowerC` stays a pure function of the tree
+   (no `ElabEnv` threading — rejected as polluting a structural pass with elaboration state, and
+   the untyped `elaborateToComp` path lacks a full `ElabEnv` anyway).
 
-The three built-in handler kinds (`state`/`throws`/`atomically`) get away with this because
-`capKindLabel : String → Option Label` is a **pure, program-independent** function — three hardcoded
-constants, re-derivable identically at both elaboration time and lowering time with zero shared
-state. A user effect's label has no such constant: `buildEnv`'s `.effectD` case allocates it as
-`4 + effects.length`, **decl-order-dependent**, known only post-elaboration.
+## WALL 1 — RESOLVED (Option A, implemented)
 
-**Consequence**: a real implementation needs `elabS` (the ONE place with both the `Surf` tree and
-`env.effects` in scope simultaneously) to **rewrite** the resolved label into the tree before `lower`
-ever runs. `Surf` currently has no slot to rewrite into — no constructor carries a resolved
-`Label : Nat` (`Ty.tEff` carries effect *names*, resolved only at the checker). This is an AST
-change (`s7design`/implementation-lane territory), not something this probe invents unilaterally.
-The strawman's `lowerC` arm fails loud naming this exact gap rather than crashing or guessing.
+`lowerC` gained no `ElabEnv` — instead `Surf.handleCustomS`'s first field is `Option Label`,
+`none` at parse time, rewritten to `some ℓ` by `elabS`'s new arm (the ONE place with both the
+tree and `env.effects` in scope). `lowerC` reads the slot directly and fails loud on `none`
+(elaboration never ran, or the effect name never resolved). `Option Surf` was tried for the
+param-init field first and REJECTED for an unrelated but load-bearing reason: Lean's
+`deriving DecidableEq` cannot see through `Option <mutual-self-type>` across a mutual inductive
+group (confirmed via isolated repro) — `SurfArgs` (already in the file, the `.dotPerform`
+precedent) was reused instead, generalizing the SAME reason `SurfArgs`/`DArms`/`LetBindings`
+are bespoke mutual types rather than `List`/`Option` of `Surf` in the first place.
 
-## WALL 2 (mechanics, SOLVED — read as a design lesson): a clause list can't type via `for`/`let rec`
+## WALL 2 — mechanics lesson (unchanged from the strawman probe, still load-bearing)
 
-The clause-list typing loop (checking each `op(x) -> body` clause's body against its declared
-`resTy`) needs to call back into `synthSV`/`unifyV` — siblings of `synthSC` in its own 4-way
-`mutual` block (`synthSV`/`checkSV`/`synthSC`/`checkSC`, ranked `(sizeOf e, 0..3)` to break the
-`check t → synth t` subsumption tie).
+Clause-list typing needs a mutual-sibling shape, not a `for`/`let rec`:
 
-Two natural-looking approaches both fail:
+1. **A `for` loop over a converted `List`**: `sizeOf`-based termination can't see through the
+   opaque conversion, so the inner `synthSV`/`synthSC` call fails `synthSC`'s own
+   `termination_by` proof.
+2. **A local `let rec`**: silently joins `synthSC`'s 4-way mutual group; Lean can't find a joint
+   measure, breaking the WHOLE file's termination and cascading `sorry`-taint through every
+   downstream `#guard`.
 
-1. **A `for` loop over `hClausesToList cls`** (converted to a plain `List`): the `sizeOf`-based
-   termination measure can't see through the opaque list-conversion call, so the `synthSV b` call
-   inside the loop fails `synthSC`'s own `termination_by (sizeOf e, 1)` proof — Lean reports "failed
-   to prove termination" pointing at the exact call.
-2. **A local `let rec checkClauses`** inside the `handleCustomS` match arm: this silently JOINS
-   `synthSC`'s own mutual-recursion group (since it calls `synthSV`), and Lean cannot find a joint
-   decreasing measure across the join — it breaks the WHOLE file's termination proof, and every
-   downstream `#guard` reports `uses 'sorry' and/or contains errors` (a scary-looking cascade that is
-   really just this one root cause).
+**The fix**: `checkHClauses` is a genuine THIRD mutual partner (the `elabS`/`elabArms`
+precedent), structurally recursing on `HClauses` with its own `termination_by cls => (sizeOf
+cls, 4)`. Generalizes to any future repeated-group `Surf` payload needing typing recursion.
 
-**The fix that works**: mirror the `elabS`/`elabArms` precedent already in the file (`elabArms`
-recurses `DArms` for named-match arm bodies, genuinely mutual with `elabS`). `HClauses` becomes a
-**third mutual partner** — `checkHClauses`, structurally recursing on `HClauses` itself with its own
-`termination_by cls => (sizeOf cls, 4)` — called from `synthSC`'s arm as an ordinary sibling call.
-This generalizes: **any repeated-group `Surf` payload needing typing-algorithm recursion back into
-`synthSC`'s own mutual group needs a genuine mutual sibling, never a `for`/`let rec`.** Filed as a
-structural note for whoever implements Stage 7 for real, and for any future construct with the same
-shape (a clause list, an arm list, a binding list) that needs TYPING (not just elaboration/lowering)
-recursion.
+## WALL 3 — RESOLVED, and found to be SYSTEMIC (two occurrences, not one)
 
-## WALL 3 (bug found LIVE by the e2e probe, FIXED): `elabBind`'s throwaway inference drops `effects`
+`elabS`'s "throwaway inference" helpers seed a FRESH, effects-less `USt` (`.run' {}`) — invisible
+until a user-effect construct exercised them, since no built-in `.dotPerform` op ever consults
+`USt.effects`. Two independent occurrences, both fixed:
 
-`elabS`'s `.lett` arm calls `elabBind Γ e'` to decide whether the RHS generalizes — a documented
-"throwaway inference" that runs `synthSC Γ e'` under a **freshly-seeded `USt`** (`.run' {}`).
-Freshly-seeded meant `effects := []` by default. This was invisible before this probe: **no
-built-in `.dotPerform` op ever consults `USt.effects`** (built-ins resolve via the pure,
-state-free `capOpSig`), so nothing had ever exercised this gap.
+1. **`elabBind`** (the `.lett` arm's let-generalization decision): fixed first, threading
+   `effects` (default `[]`) from `env.effects`.
+2. **`zonkInferC`/`anfSplit`** (the A-normalization helper EVERY `elabS` arm with a
+   computation-position operand calls — 19 call sites): found LIVE by the e2e probe's OWN tracer
+   bullet (`net.fetch(1) + 1` — the `.binopS` arm's A-normalization of the left operand hits
+   `anfSplit`, whose `zonkInferC` throwaway run rejected the already-well-typed `.dotPerform`
+   with a wrong "not a declared effect" diagnostic). Fixed the SAME way: `zonkInferC` and
+   `anfSplit` both gained an `effects` parameter (default `[]`), threaded from `env.effects` at
+   all 19 call sites.
 
-The instant a user-effect `perform` (`h.fetch(5)`) appears as a `let`-RHS
-(`let r = h.fetch(5) in body`), `elabBind`'s throwaway run hits the SAME `.dotPerform` D2 arm the
-outer type-check does — but with an EMPTY effects table — and produces a **wrong diagnostic**
-(`receiver's capability label is not a declared effect`, a false negative masking a program that
-types fine everywhere else). Confirmed live via `bang check` on
-`handle Reader 100 with { fetch(x) -> x } as h in let r = h.fetch(5) in r` (fails before the fix,
-reaches lowering after).
+**Generalizes**: any "run `synthSC`/`synthSV` in a throwaway sub-inference" helper in this file
+needs `effects` threaded, or it silently breaks the FIRST time a user-effect construct appears
+under it. Worth an audit pass for any THIRD occurrence not yet exercised.
 
-**Fix landed** (`Bang/Frontend/TypeCheck.lean`): `elabBind` now takes an `effects` parameter
-(default `[]`, preserving every existing non-effect call site byte-identical) and seeds its
-throwaway `USt` with it; the one call site (`elabS`'s `.lett` arm) passes `env.effects`. This is a
-genuine, narrow, load-bearing fix — not scope creep — since it blocks ANY future construct that
-types against `env.effects` from ever appearing as a `let`-RHS.
+## WALL 4 — RESOLVED (was NOT a pipeline divergence — a genuine bug in the clause-typing arm)
 
-## WALL 4 (bug found, NOT resolved — reported, not fixed): a clause body naming its own `arg` binder
-## in an arithmetic expression fails ONLY on the typed path, differently from the untyped path
+The originally-reported "typed vs untyped path disagree on an identical tree" turned out to be a
+RED HERRING from testing artifacts, not a real divergence. The actual bug: `checkHClauses`
+checked each clause body via `synthSV` (VALUE synthesis) — but a clause body like `n * 10` is a
+COMPUTATION (`.binopS` reduces via the kernel's `Comp.binop`, needing `Comp`/`synthSC` typing,
+not `Val`/`synthSV`). `synthSV` has no `.binopS` arm, so ANY non-atomic clause body
+unconditionally hit its catch-all `"not a value"` error — under BOTH typed and untyped framings
+of my test harness, which is what made it look like a path divergence; the untyped path simply
+never reached this check at all (no `synthSC`/`synthSV` runs there), so "worked" for the wrong
+reason. **Fixed**: `checkHClauses` now uses `synthSC` (computation typing) + an EXPLICIT
+ret-shape/effect-free check (`decide (φ.labels = ∅) && φ.tail.isNone` after `resolveRow` —
+`Finset.isEmpty` is noncomputable on this path, the corpus-established `decide`-based workaround)
+— ADR-0092 D4's "ret w is EFFECT-FREE" property is now checked DIRECTLY, and the ADR-0095 D4
+teaching diagnostic fires exactly when a clause body performs before resuming (falsified live:
+`fetch(n) => raise n` produces the exact D4 message naming ADR-0065 + Q27).
 
-`handle Reader 100 with { fetch(x) -> x + 0 } as h in h.fetch(5)`:
+## The e2e verdict: three `bang eval` programs, all exact
 
-- `elaborateToComp` (the `--no-typecheck` / untyped path: `elabProg` → `lower`, no `synthSC` at
-  all) reaches the DOCUMENTED WALL-1 diagnostic cleanly — the mechanics work as far as they can
-  without the label-rewrite.
-- `checkAndLower` (the typed, PRODUCTION path: `elabProg` → `synthSC` → `lower`, discarding the
-  type but keeping the SAME elaborated `e`) fails with `lowerV`'s generic catch-all `"expected a
-  value (wrap a computation in braces)"` — a DIFFERENT error, from a DIFFERENT construct than the
-  one under test, on the SAME `e`.
+1. **ADR-0095 D1's own tracer bullet** (renamed `read`→`fetch`, `net`.-perform syntax fixed to
+   the parenthesized `net.fetch(1)` call form — see Finding 2 below):
+   ```
+   effect Net { fetch : Int -> Int }
+   handle
+     (net.fetch(1)) + (net.fetch(2))
+   with Net as net {
+     fetch(n) => n * 10
+   }
+   ```
+   → `bang eval` = **30**, exactly as the ADR promises.
+2. **Stage-2 kernel's `customResume`** ported to source:
+   ```
+   effect Reader { fetch : Int -> Int }
+   handle
+     (let r = net.fetch(5) in r + 1)
+   with (Reader 100) as net {
+     fetch(x) => x + 100
+   }
+   ```
+   → `bang eval` = **106**, matching `Bang/Core/Semantics/Eval.lean`'s `customResume` #guard.
+3. **Stage-2 kernel's `customAbortCoexist`** ported to source (nested `handle`, `raise`
+   aborting past the custom frame):
+   ```
+   effect Reader { fetch : Int -> Int }
+   handle
+     (handle
+       (let r = raise 42 in net.fetch(5))
+     with (Reader 100) as net {
+       fetch(x) => x + 100
+     })
+   ```
+   → `bang eval` = **42**, matching `customAbortCoexist`'s #guard.
 
-Isolated (not the label-rewrite wall — confirmed by testing `fetch(x) -> x` and `fetch(x) -> 5`,
-both of which reach WALL 1 cleanly on EITHER path): the failure is specific to a clause body that is
-a `.binopS` referencing the clause's own arg binder (`x + 0`). Ruled out: parse-tree shape (dumped
-identical `Surf` AST both ways), `parseProg` vs `parseProgLocated` (dumped, structurally `==`),
-`checkAndLower`/`elaborateToComp` calling `elabProg` differently (they don't — same call), stale
-`.olean` caching (force-rebuilt, reproduces). **Not resolved within this probe's budget** — `lower e`
-giving a different result depending on whether `synthSC` ran first on the SAME `e` should be
-impossible for the pure, `Except`/`StateT`-based pipeline as understood; something in that
-understanding is incomplete. Flagged for the implementation lane to re-derive from scratch with
-fresh eyes (or a `sorry`-free `lean_run_code` REPL session, which this probe's CLI-only workflow
-didn't have time to set up) — NOT blocking the mechanics verdict below, since it's a corpus/testing
-gap on ONE narrow clause shape, not a wall on the overall pipeline shape.
+## Findings for the ADR / a future contributor (beyond the two already-ruled gaps)
 
-## Does the mechanics constrain the syntax choices? (the point of this probe)
+1. **A clause list is a repeated group** — confirms ADR-0071 ②'s own documented `keywordRule`
+   boundary generalizes here too; not a constraint on the spelling, but on the mechanism (any
+   `handle … with { … }` syntax needs a bespoke parser arm, never a linear `Choice` rule).
+2. **The ADR's own D1 example has a call-syntax slip**: `$net.read 1` does not parse/type the
+   way the prose implies. `$` forces its ATOM argument (`pAtom`, not the dot-chain), so
+   `$net.fetch(1)` parses as `(force net).fetch(1)` — `.dotPerform`'s receiver becomes a
+   `.force`-computation, which `synthSV` (value-only) rejects outright ("not a value"). The cap
+   binder `net`/`h` is ALREADY a value (`Cap ℓ`, bound directly by `handleCustomS`'s Γ
+   extension) — it never needs forcing; the correct call is a bare `net.fetch(1)` (no `$`,
+   matching ADR-0070's existing `h.op(args)` convention exactly). Separately, space-separated
+   call syntax (`net.fetch 1`, no parens) parses as `(net.fetch) 1` — a NULLARY perform applied
+   to `1` as a function call, not a 1-arg perform — the parenthesized form `net.fetch(1)` is
+   REQUIRED; D3's "curried" framing describes the OP SIGNATURE convention (a single-arg arrow),
+   not the CALL-SITE syntax, which stays `.op(args)` per ADR-0070. Worth a corrected example in
+   the ADR amendment.
+3. **`with` needed to become a reserved word.** Without reserving it, `e with Name { … }` parsed
+   as ONE giant application chain (`pApp`'s juxtaposition fold happily consumed `with`/`Name`/the
+   `{…}` thunk as successive atoms/arguments of `e`), since nothing marked `with` as a
+   non-identifier boundary token. Fixed in both `pIdent` and `pAtom`'s reserved-word lists — the
+   same class of fix #26 made for `read`/`write`/`get`, generalized to a new keyword.
+4. **The carried param's binder name (`param`) is INTERNAL, not surface-writable** in the
+   current implementation — a clause body cannot reference the carried param by any name (bound
+   under an internal `"#param"` sentinel). The ADR's own worked example
+   (`tick(u) => ret (param + 1)`) implies `param` should be a real, referenceable identifier.
+   **This is a real gap**, not yet closed — a follow-up should either surface `param` as an
+   actual bound name in `checkHClauses`'s/`elabHClauses`'s Γ (straightforward: add `("param", P)`
+   under its real name alongside the `"#param"` sentinel, or replace the sentinel outright) or
+   the ADR should clarify `param` is reserved-word sugar for the carried value. Flagged for the
+   next slice, not blocking (the e2e programs above don't exercise param-referencing bodies).
+5. **Reserved-keyword collision at the op level**: an `effect` op sharing a name with a built-in
+   (`read`, `get`, …) fails at PARSE time (`pIdent` rejects the keyword) rather than the more
+   informative "reserved" diagnostic `buildEnv` already gives for the DECL itself. Not a blocker
+   (the decl already can't declare `read`, so a clause naming it is dead code either way) — a
+   one-line ADR footnote would save a future contributor's confusion.
 
-Findings that s7design's ADR should know:
+## Files touched (frontend-only)
 
-1. **A clause list is a repeated group** — like `let`-multi/`match`/`do`, it structurally cannot fit
-   `keywordRule`'s linear `Choice` grammar (confirmed: needed a bespoke `pExpr` arm + a
-   `pArms`-precedent clause-list parser, exactly the class ADR-0071 ②'s own boundary note predicts).
-   Any syntax choice for `handle … with { … }` needs a bespoke parser arm, full stop — not a
-   constraint on the SPELLING, but confirms the mechanism.
-2. **The label-rewrite step (WALL 1) is syntax-independent** but genuinely load-bearing: WHATEVER
-   surface spelling lands, elaboration must gain a way to write a resolved `Label` into the AST
-   before lowering. This likely means `Surf.handleCustomS` (or whatever it's finally named) carries
-   an extra field — a `Label`/`Nat` slot, `none` until `elabS` fills it — OR lowering itself grows an
-   `ElabEnv` parameter (a bigger, more invasive change touching every `lowerC`/`lowerV` call site).
-   **This is a real design fork s7design's ADR should name explicitly**, since it is NOT free (either
-   choice ripples).
-3. **Clause typing needs a mutual-sibling shape (WALL 2)** — purely an IMPLEMENTATION concern, not
-   surface-visible, but worth flagging to whoever lands Stage 7 for real: budget for it, it is not a
-   one-line `for` loop.
-4. **The carried param has no surface binder name in this strawman** — `handleCustomS`'s clause
-   grammar (`op(x) -> body`) only captures the OP's argument binder, never a name for the carried
-   param (`ADR-0092`'s `P@1`). The mechanics bound it under an internal `"#param"` sentinel
-   (typeable, but UNWRITABLE from source) to get the e2e probe moving. **s7design's syntax needs an
-   explicit answer**: either a second named binder in the clause head (`op(x, p) -> body`, doubling
-   every clause's arity) or an implicit/ambient name (`self`/`param`) resolved specially. This is a
-   genuine syntax decision the mechanics surfaced, not a mechanics-only concern — flagged as the
-   single most concrete open question for the ADR.
-5. **Reserved-keyword collision at the OP level, not just the effect-decl level**: `effect Net
-   { read : … }` is already rejected at `buildEnv` (built-in names reserved v1-wide, ADR-0092
-   D1/D2's own note), but a clause using a reserved word as its OP NAME (`{ read(x) -> … }`) fails
-   at PARSE time (`pIdent` rejects the keyword token) — before elaboration ever gets a chance to
-   produce the (arguably more informative) "reserved" diagnostic. Confirmed live
-   (`error at 2:26: expected an identifier, got keyword 'read'`). Not a blocker (the effect decl
-   itself already can't declare `read`, so a clause naming it is dead code either way) but worth a
-   one-line ADR footnote so a future contributor doesn't mistake the parse error for a bug.
-
-## Files touched (frontend-only, per brief)
-
-- `Bang/Frontend/Surface.lean` — `Surf.handleCustomS`, `HClauses`, `pHClause`/`pHClauses`, the
-  `handle N p with {…}` parser arm, `hClausesToList`, `eraseLettMultiHClauses`, the documented
-  `lowerC` wall.
-- `Bang/Frontend/TypeCheck.lean` — `synthSC`'s typing arm, `checkHClauses`, `elabS`'s arm,
-  `elabHClauses`, the ~9 exhaustive-match completions, the `elabBind` effects-threading fix.
-- `Bang/Frontend/Format.lean` — placeholder print arm (exhaustiveness only).
+- `Bang/Frontend/Surface.lean` — `Surf.handleCustomS` (final 6-field shape), `HClauses`,
+  `pHandlerName`/`pHClause`/`pHClauses`, the `handle e with …` parser arm, `with` reservation,
+  `hClausesToList`, `eraseLettMultiHClauses`, the real `lowerC`/`lowerHClauses` arms.
+- `Bang/Frontend/TypeCheck.lean` — `synthSC`'s typing arm, `checkHClauses` (D4 ret-shape check),
+  `elabS`'s arm (the label resolve+rewrite), `elabHClauses`, the exhaustive-match completions,
+  the `elabBind` AND `zonkInferC`/`anfSplit` effects-threading fixes (WALL 3, both occurrences).
+- `Bang/Frontend/Format.lean` — the printer arm (clause-list rendering stays placeholder).
 
 No `Bang/Core`, `Bang/Backend`, or `Bang/Meta` file touched. Kernel census unchanged at 26.

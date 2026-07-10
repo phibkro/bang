@@ -354,6 +354,19 @@ partial def fmtSurf (need : SPrec) : Surf → Format
           Format.text s!"handle as {h} " ++ fmtSurf .cmp body
         else
           Format.text s!"{kind} as {h} " ++ fmtSurf .cmp body
+  -- ADR-0095 D1 (RULED): `handle e with Name as h { op(x) => body, … }` — a PLACEHOLDER clause
+  -- print (`{ … }`, not the real per-clause rendering) since `fmtSurf` has no `HClauses` arm yet
+  -- (round-trip fidelity for the clause LIST is implementation-lane follow-up, not this probe's
+  -- scope); the OUTER shape matches the ruled grammar exactly so a printed `handle` at least
+  -- re-parses to something structurally sane.
+  | .handleCustomS _lbl n p? h cls body =>
+      fParenIf need .cmp <|
+        Format.text "handle " ++ fmtSurf .cmp body ++ Format.text " with " ++
+          (match p? with
+            | .none    => fmtSurf .atom n
+            | .one p   => Format.text "(" ++ fmtSurf .atom n ++ Format.text " " ++ fmtSurf .atom p ++ Format.text ")"
+            | .two _ _ => fmtSurf .atom n) ++
+          Format.text s!" as {h} " ++ fmtBraceBlock (fmtHClauseList cls)
   -- `h.op(args)` is parsed by `pDotLoop`, invoked FROM `pDotted` right after `pAtom` — the whole
   -- chain result is itself an atom (feeds `pAppLoop`/`pOp` same as any other atom), so it never
   -- needs defensive parens even at `.atom` need.
@@ -428,6 +441,13 @@ partial def fmtDArm : String → List String → Surf → Format
 partial def fmtDArmList : DArms → List Format
   | .nil            => []
   | .cons c bs b rest => fmtDArm c bs b :: fmtDArmList rest
+/-- ADR-0095 D1: one custom-handle clause `op(x) => body`, the `fmtDArm` precedent (D3's `=>`
+arrow, not `->`). -/
+partial def fmtHClause : String → String → Surf → Format
+  | op, x, b => Format.text s!"{op}({x}) => " ++ fmtSurf .cmp b
+partial def fmtHClauseList : HClauses → List Format
+  | .nil               => []
+  | .cons op x b rest  => fmtHClause op x b :: fmtHClauseList rest
 end
 
 /-- Top-level entry: an expression prints at the loosest tier (no defensive outer parens), rendered

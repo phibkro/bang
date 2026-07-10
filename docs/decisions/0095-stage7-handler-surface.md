@@ -94,18 +94,19 @@ handle e with (Counter init 0) as ctr {
 }
 ```
 
-A complete v1 bang program using it (the tracer-bullet the implementation lane targets):
+A complete v1 bang program using it (the tracer-bullet the implementation lane targets;
+call syntax per D1b — bare `h.op(args)`, NOT `$`-forced):
 
 ```
 effect Net { read : Int -> Int }         -- the decl surface, already landed (ADR-0092)
 
 let main =
   handle
-    ($net.read 1) + ($net.read 2)        -- performs, curried (D3), through the D1a-bound `net`
+    (net.read(1)) + (net.read(2))        -- performs through the D1a-bound `net` (D1b call form)
   with Net as net {
     read(n) => ret (n * 10)              -- one-shot, ret-shape (D4/D5)
   }
--- evaluates to (1*10) + (2*10) = 30
+-- evaluates to (1*10) + (2*10) = 30    -- VERIFIED e2e: examples/handle-custom-tracer
 ```
 
 **Why this shape** (rq38 §1 "Degradation-to-v1 verdict", the census's sharpest finding):
@@ -179,6 +180,29 @@ slot holds a placeholder; lowering an unresolved slot is a defined loud error. R
 `ElabEnv` through every `lowerC` call site (pollutes a structural pass with elaboration state;
 the untyped `elaborateToComp` path has no full `ElabEnv` to thread). Probe evidence:
 `docs/notes/stage7-elab-probe.md`.
+
+### D1b — corrections from the implementation (2026-07-10, e2e-verified)
+
+Three findings from the implementation lane, recorded at landing (the examples above are
+already corrected):
+
+1. **The call syntax in this ADR's original examples was WRONG.** They wrote `$net.read 1`;
+   that form does not parse or type — the D1a-bound cap is already a *value*, so `$` would
+   force-then-perform on a non-thunk. The correct perform is the **bare parenthesized call**
+   `net.read(1)`, exactly ADR-0070's landed `h.op(args)` convention. D3's "curried" describes
+   the op's SIGNATURE and its desugaring (`write(k, v)` ⇒ curried), NOT a `$f x`-style
+   call-site spelling. Independently confirmed by the first consumer's design lane (ndet, G5).
+2. **`with` is now a RESERVED word.** Without reserving it, `pApp`'s application-fold silently
+   swallowed `with Name { … }` as an ordinary application chain — no error, wrong tree. The
+   reservation is the fix; a program using `with` as an identifier now fails loudly at parse.
+3. **The carried param has NO surface-writable binder yet.** D1's `(Counter init 0)` form
+   parses and the param is threaded internally (bound under a sentinel), but no clause can
+   NAME it from source — the `param` identifier in D1's Counter example is design intent, not
+   landed surface. This is the named NEXT SLICE of the handler surface. Priority note from the
+   first consumer (ndet/DST, `docs/notes/ndet-dst-design.md` §7): its stateless-seed design
+   RETIRED its need for the param binder — the consumer's actual critical-path ask is
+   **compute-then-return clause bodies (D4's exit gate: ADR-0065 binop typing + Q27)**, which
+   therefore outranks the param-binder slice in the queue.
 
 ### D2 — the Q38 posture: a SEPARATE `handle` construct now; unify machinery, not surface
 
