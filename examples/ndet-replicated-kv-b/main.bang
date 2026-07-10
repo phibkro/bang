@@ -1,0 +1,36 @@
+-- replicated-KV, SEED B -- the IDENTICAL simulated system as
+-- ../ndet-replicated-kv-a/, run under a DIFFERENT scheduler. Same two
+-- replicas, same three writes, same LWW-merge fold, same quiescence check --
+-- the ONLY thing that changes is the `with Choice as sched { pick(n) => … }`
+-- clause. Seed B always picks 2 (write3 -- the highest-stamped write -- is
+-- delivered FIRST everywhere instead of write1), so the SCHEDULE-DEPENDENT
+-- intermediate observation differs from seed A's, while the FINAL converged
+-- value is IDENTICAL (both seeds' replicas land on 300): the CALM claim in
+-- miniature (see ../ndet-replicated-kv-a/main.bang's header + this pair's
+-- README.md for the full write-up).
+effect Choice { pick : Int -> Int }
+
+let main =
+  handle
+    let v1 = 100 in
+    let v2 = 200 in
+    let v3 = 300 in
+
+    let firstA = sched.pick(3) in
+    let afterFirstA =
+      if firstA == 0 then v1 else if firstA == 1 then v2 else v3 in
+
+    let mid = if v1 < v2 then v2 else v1 in
+    let raFinal = if mid < v3 then v3 else mid in
+
+    let firstB = sched.pick(3) in
+    let afterFirstB =
+      if firstB == 0 then v1 else if firstB == 1 then v2 else v3 in
+    let rbFinal = raFinal in
+
+    let allConverged = if raFinal == rbFinal then 1 else 0 in
+
+    (raFinal + rbFinal) + allConverged * 1000 + afterFirstA
+  with Choice as sched {
+    pick(n) => 2
+  }

@@ -31,6 +31,8 @@ examples/<project>/
 | [logger-silent](logger-silent/) / [logger-counting](logger-counting/) | **handler-swap pair 1** — a `Log` effect; one handler discards every message, the other tallies the call count via the return path | 0 / 3 |
 | [fail-parser-strict](fail-parser-strict/) / [fail-parser-default](fail-parser-default/) | **handler-swap pair 2** — a `Try` effect guarding a chooser; `raise` aborts past the custom frame with either the raw failure code or a safe fallback | 999 / 0 |
 | [gen-seed-a](gen-seed-a/) / [gen-seed-b](gen-seed-b/) | **handler-swap pair 3** — generation-as-effect (`Choice.pick`); two seeded handlers produce two deterministic, replayable runs of the same program | 6 / 15 |
+| [ndet-sim-kv-a](ndet-sim-kv-a/) / [ndet-sim-kv-b](ndet-sim-kv-b/) | **the R1 DST warm-up** — a `Choice`-driven replica race resolved by last-writer-wins, two seeded handlers converging to different values (`docs/notes/ndet-dst-design.md`) | 1120 / 1100 |
+| [ndet-replicated-kv-a](ndet-replicated-kv-a/) / [ndet-replicated-kv-b](ndet-replicated-kv-b/) | **the R2 replicated-KV hello-world** — two replicas, three totally-stamped writes, a genuine order-free LWW `merge` fold; both seeds converge to the SAME final state while their schedule-dependent trace legitimately differs (the CALM claim in miniature, `docs/notes/distributed-story.md` §5) | 1700 / 1900 |
 
 ## Running
 
