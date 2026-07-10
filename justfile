@@ -458,3 +458,25 @@ docs:
 #   just update-example caesar
 update-example NAME:
     bash tools/check-examples.sh --update {{NAME}}
+
+# Watch a Lean FILE and re-run `just check FILE` on every save (plan 013 s9, the Vite loop-speed
+# lesson). Self-provisions inotifywait via `nix shell nixpkgs#inotify-tools` (no repo dep added).
+# Runs one check up front, then blocks re-running on each close_write event until Ctrl-C. Editors
+# that write-via-rename (vim/emacs) fire close_write on the temp then move it over the target, so
+# we watch the DIRECTORY and filter to the file's basename rather than the inode (which the rename
+# would orphan). FILE is required — a bare `just watch` has no target and would busy-loop.
+#   just watch Bang/Spec.lean
+watch FILE:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -f "{{FILE}}" ]; then echo "watch: no such file '{{FILE}}'" >&2; exit 1; fi
+    dir="$(dirname "{{FILE}}")"; base="$(basename "{{FILE}}")"
+    echo "watching {{FILE}} — Ctrl-C to stop"
+    just check "{{FILE}}" || true
+    nix shell nixpkgs#inotify-tools -c \
+      inotifywait -m -q -e close_write --format '%f' "$dir" | while read -r changed; do
+        if [ "$changed" = "$base" ]; then
+          echo "── {{FILE}} changed — re-checking ──"
+          just check "{{FILE}}" || true
+        fi
+      done
