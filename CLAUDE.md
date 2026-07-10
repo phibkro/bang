@@ -70,16 +70,19 @@ its trigger arises.
 
 ## Architecture in force (third design revision)
 
-Two-hop verified compilation per **ADR-0016**:
+Two-hop verified compilation per **ADR-0016 as revised by ADR-0059**:
 
 ```
-  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → WasmFX (annotated simulation)
+  source → graded-CBPV semantics → CalcVM (Bahr-Hutton) → Wasm 3.0 (annotated simulation)
 ```
 
-The CalcVM is the executable spec; WasmFX is the verified compiler output. The
-CalcVM→WasmFX hop is proven by **annotated forward simulation** (`compile_forward_sim`,
-ADR-0035) — NOT the biorthogonal/Benton–Hur LR, which proves ◊4 *contextual equivalence*
-(a separate theorem, the binary LR).
+The CalcVM is the executable spec; **Wasm 3.0 is the verified compiler target** (ADR-0059:
+grade-directed lowering — pure→native, abort→exceptions, tail→direct call, general→the
+GC-frame-chain runtime, the one pluggable slot where WasmFX `switch`/`resume` becomes a
+fast-path once standardized; stack switching did NOT land in Wasm 3.0). The CalcVM→Wasm hop
+is proven by **annotated forward simulation** (`compile_forward_sim`, ADR-0035) against the
+GC-frame abstract machine — NOT the biorthogonal/Benton–Hur LR, which proves ◊4 *contextual
+equivalence* (a separate theorem, the binary LR).
 ADRs 0003 and 0004 were deleted, subsumed by 0016. See `CONTEXT.md` for
 where the implementation stands; `docs/notes/k3-historical-status.md` for
 what the K3 work taught (preserved as input to the graded-CBPV port at ◊3).
