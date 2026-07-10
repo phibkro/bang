@@ -38,6 +38,7 @@ its trigger arises.
 | **Stage-5 LR design map** (the three pre-registered debts probed · ret-shape tractability CONFIRMED · one-session verdict · the HandlerRel-ripple slice order) | `docs/notes/stage5-lr-design.md` |
 | **Stage-6 soundness design** (the composition was already met incrementally · the instantiation lemmas + custom_program_safe e2e headline · Q14 out of #44) | `docs/notes/stage6-soundness-design.md` |
 | **Stage-6 soundness-composition map** (#44 Stage 6 · the headline gate met by composition as Stages 2-5 landed · the two instantiation lemmas + the e2e capstone · Q14 out of scope) | `docs/notes/stage6-soundness-design.md` |
+| **Stage-7 elaboration probe** (#44 Stage 7 · the 4 walls: label-slot ruled into ADR-0095 D1a · checkHClauses mutual sibling · elabBind effects fix · the open lowerV path divergence) | `docs/notes/stage7-elab-probe.md` |
 | **◊6 paper skeletons** (calculated-machine + binary-LR: census-checked claims · venue candidates · honest what-remains) | `docs/papers/` |
 | **Verification ladder** (agent-speed quality gates · HoTT verdict · Q43 proof-export) | `docs/notes/verification-ladder.md` |
 | **Dogfood: JSON parser findings** (#61 blocker · module-shape needs · what worked) | `docs/notes/dogfood-json-findings.md` |

@@ -3,7 +3,7 @@
 <!-- adr-frontmatter -->
 
 - **Status**: Accepted
-- **Summary**: Stages 1–6 landed the kernel arc for user-defined effects (`Handler.custom` rep, one-shot dispatch, the typed custom-handle rule, and the trusted-three census clean through soundness — ADR-0085/0092, ADR-0085 §Stage-6 STATUS `MET`). What remains is Stage 7: the **surface** a user writes and the **end-to-end `bang eval`** that lowers it. The `effect Name { op : A -> B }` half of the declaration surface already landed at Stage 3 (ADR-0092 §Status D1/D2 EXECUTED `844931f`+`88e0f55`); this ADR decides the `handle … with` half. It is also the stress-test the operator deferred Q38 TO (ADR-0093 §Q38-posture: "module-as-file deliberately left no construct to collide with it … run the stress-test THEN") and the decision issue #78 was parked TO (the trait-ops calling-convention fork). **Five decisions, each operator-ruled: (D1) the concrete `handle e with Name { op(arg) => body }` syntax — the Flix/Effekt method-impl clause shape (`def op(args, resume) = body`), recommended over the Koka match-arm and OCaml exception-style forms because it (a) is syntactically identical to a trait `impl` (serving Q38 for free), (b) degrades to v1's ret-shape/one-shot constraint by treating `resume` as an implicitly-tail-called bound name, and (c) grows to multi-shot by loosening the TYPING rule, not changing the surface (rq38 §1 degradation verdict); (D2) the Q38 posture — a SEPARATE `handle` construct now, NOT syntactic convergence with `trait`/`impl`, per the taxonomy's "unify the MACHINERY, keep the surfaces separate until this stress-test rules" (laws-taxonomy §5 caveat) and the census finding that every unification pays at the implementation layer, not the interface (rq38 §2); the interface ALREADY unifies in bang's glossary, so convergence buys nothing and costs the binding-time knob; (D3) the clause calling convention — effects are CURRIED (`op(x) => body` is sugar for a curried clause, `op` performed as `$cap.op arg` curried), decided ONCE with #78's tuple-vs-curried finding in view; the existing trait ops (tuple-style `fn eq(a,b)`, stranger-test-2 §S3 papercut) DIVERGE-documented in v1 and are flagged for convergence to curried in a follow-up (#78 option B), NOT retrofitted here; (D4) the ret-shape restriction (ADR-0092 §D3-as-landed: v1 clause bodies are `ret w`) surfaces as a SPECIFIC diagnostic ("clause body must be a `ret`-shape value in v1; compute-then-return needs binop typing (ADR-0065) + grade surfacing (Q27)") naming the exact entry gate, NOT a bare type error; (D5) resume's surface spelling — IMPLICIT tail-resume in v1 (a clause body that is `ret w` resumes with `w`; no `resume` binder needed), with `resume` RESERVED as a binder name so the explicit `resume(w)` form and the eventual multi-shot first-class `k` (Q22/Q27) slot in without a surface break.** **What Stage 7 does NOT do (explicitly scoped out): the IO prong is ADR-0084's own unit (unblocked BY this stage, not part of it); multi-shot / first-class `k` stays Q22/Q27 (v1 one-shot pin, ADR-0085 D2); param-UPDATE (`put`-like clauses) stays ADR-0092 D5 / ADR-0087 §Open-questions; op-name namespacing end-to-end (`Net.read` dissolving the builtin-name reservation) is named by ADR-0092 §Status as Q34/Q38 module-interface work and rides the module system, not the handler surface.** **Rejected**: the Koka match-arm form (`handle(e){ op(x) -> body }` — reads as exception-handling, obscures the interface-impl framing that serves Q38); the OCaml `effect Op k ->` form (exposes `k` as a first-class binder v1 cannot honor one-shot, and reads as exception matching); syntactic convergence of `handle` with `trait impl` in v1 (the taxonomy's implementation-layer-pays finding says the interface unification is free and the surface convergence is the untested claim — this ADR keeps them separate to KEEP the stress-test honest, not to foreclose it); tuple-style effect clauses matching today's trait ops (would double down on the #78/stranger-test-2 §S3 inconsistency the language should shed, not entrench); an explicit-`k` binder in v1 (ADR-0085 D2 one-shot pin means a visible `k` would over-promise a control the kernel cannot deliver).
+- **Summary**: Stages 1–6 landed the kernel arc for user-defined effects (`Handler.custom` rep, one-shot dispatch, the typed custom-handle rule, and the trusted-three census clean through soundness — ADR-0085/0092, ADR-0085 §Stage-6 STATUS `MET`). What remains is Stage 7: the **surface** a user writes and the **end-to-end `bang eval`** that lowers it. The `effect Name { op : A -> B }` half of the declaration surface already landed at Stage 3 (ADR-0092 §Status D1/D2 EXECUTED `844931f`+`88e0f55`); this ADR decides the `handle … with` half. It is also the stress-test the operator deferred Q38 TO (ADR-0093 §Q38-posture: "module-as-file deliberately left no construct to collide with it … run the stress-test THEN") and the decision issue #78 was parked TO (the trait-ops calling-convention fork). **Five decisions, each operator-ruled: (D1) the concrete `handle e with Name { op(arg) => body }` syntax — the Flix/Effekt method-impl clause shape (`def op(args, resume) = body`), recommended over the Koka match-arm and OCaml exception-style forms because it (a) is syntactically identical to a trait `impl` (serving Q38 for free), (b) degrades to v1's ret-shape/one-shot constraint by treating `resume` as an implicitly-tail-called bound name, and (c) grows to multi-shot by loosening the TYPING rule, not changing the surface (rq38 §1 degradation verdict) — **amended D1a (2026-07-10)**: the handled body names the capability via a REQUIRED explicit `as h` binder, `handle e with Name as h { … }`, scoping over the body (the ADR-0070 `state … as name` precedent; implicit-lowercase rejected — silently-shadowing nested same-effect handlers — and the optional-default sugar deferred as purely additive), with the decl-order-dependent label resolved at elaboration into a slot on the Surf constructor so lowering stays `ElabEnv`-free; (D2) the Q38 posture — a SEPARATE `handle` construct now, NOT syntactic convergence with `trait`/`impl`, per the taxonomy's "unify the MACHINERY, keep the surfaces separate until this stress-test rules" (laws-taxonomy §5 caveat) and the census finding that every unification pays at the implementation layer, not the interface (rq38 §2); the interface ALREADY unifies in bang's glossary, so convergence buys nothing and costs the binding-time knob; (D3) the clause calling convention — effects are CURRIED (`op(x) => body` is sugar for a curried clause, `op` performed as `$cap.op arg` curried), decided ONCE with #78's tuple-vs-curried finding in view; the existing trait ops (tuple-style `fn eq(a,b)`, stranger-test-2 §S3 papercut) DIVERGE-documented in v1 and are flagged for convergence to curried in a follow-up (#78 option B), NOT retrofitted here; (D4) the ret-shape restriction (ADR-0092 §D3-as-landed: v1 clause bodies are `ret w`) surfaces as a SPECIFIC diagnostic ("clause body must be a `ret`-shape value in v1; compute-then-return needs binop typing (ADR-0065) + grade surfacing (Q27)") naming the exact entry gate, NOT a bare type error; (D5) resume's surface spelling — IMPLICIT tail-resume in v1 (a clause body that is `ret w` resumes with `w`; no `resume` binder needed), with `resume` RESERVED as a binder name so the explicit `resume(w)` form and the eventual multi-shot first-class `k` (Q22/Q27) slot in without a surface break.** **What Stage 7 does NOT do (explicitly scoped out): the IO prong is ADR-0084's own unit (unblocked BY this stage, not part of it); multi-shot / first-class `k` stays Q22/Q27 (v1 one-shot pin, ADR-0085 D2); param-UPDATE (`put`-like clauses) stays ADR-0092 D5 / ADR-0087 §Open-questions; op-name namespacing end-to-end (`Net.read` dissolving the builtin-name reservation) is named by ADR-0092 §Status as Q34/Q38 module-interface work and rides the module system, not the handler surface.** **Rejected**: the Koka match-arm form (`handle(e){ op(x) -> body }` — reads as exception-handling, obscures the interface-impl framing that serves Q38); the OCaml `effect Op k ->` form (exposes `k` as a first-class binder v1 cannot honor one-shot, and reads as exception matching); syntactic convergence of `handle` with `trait impl` in v1 (the taxonomy's implementation-layer-pays finding says the interface unification is free and the surface convergence is the untested claim — this ADR keeps them separate to KEEP the stress-test honest, not to foreclose it); tuple-style effect clauses matching today's trait ops (would double down on the #78/stranger-test-2 §S3 inconsistency the language should shed, not entrench); an explicit-`k` binder in v1 (ADR-0085 D2 one-shot pin means a visible `k` would over-promise a control the kernel cannot deliver).
 - **Depends-on**: 0085 (the coexist custom-handler arc + one-shot v1 pin), 0092 (the typed custom-handle rule + the ret-shape D3 wall + the `effect`-decl surface already landed), 0093 (module-as-file, the Q38-testable-later posture this now runs), 0070 (named-cap surface: `as h` binder + `$h.op` perform — the lowering target already exists)
 - **Relates-to**: #44 (Stage 7 of the arc — the surface + e2e eval), #78 (the trait-ops calling-convention fork parked TO this decision — D3 rules it), Q38 (the module≟trait≟effect stress-test — D2 takes the position), Q22/Q27 (multi-shot + resumption grades — D5 leaves the door open, does not enter), Q34 (op-namespacing — the reservation-dissolving fix rides the module interface, out of scope here), ADR-0084 (IO/Net — the first real consumer, unblocked BY this stage), ADR-0065 (binop typing — half the D4 entry gate), `docs/notes/q38-handler-surface-survey.md` (the census + degradation verdict this ADR steals from), `docs/notes/laws-taxonomy.md` §3/§5 (one-theory-three-coats + the machinery-not-surface caveat), `docs/notes/stranger-test-2.md` §S3 (the trait tuple/curried inconsistency real users hit)
 
@@ -15,8 +15,13 @@ machinery-unified surfaces-separate (the Q38 stress-test's answer) · D3 effects
 ops diverge-documented (#78 half-ruled) · D4 the teaching diagnostic for ret-shape · D5 implicit
 tail-resume with `resume` reserved). Implementation = the Stage-7 lane, founded on this ADR +
 the s7probe mechanics findings. Originally Proposed same day.
-(s7probe → the elaboration mechanics + e2e eval) follows the ruling. Docs-only. This ADR
-changes no code and marks nothing Accepted.
+
+**Amended 2026-07-10 (D1a, operator-ruled):** the s7probe lane surfaced a genuine gap in D1's
+own tracer example — the handled body performs via `$net.read`, but nothing bound `net`. Ruled:
+a **REQUIRED explicit `as h` capability binder** — `handle e with Name as h { clauses }` — with
+`h` scoping over the handled body `e`. See §D1a below for the rationale and rejected
+alternatives; the examples in D1 are corrected accordingly. This is exactly the §Revisit-if
+channel firing as designed.
 
 - **Layer:** F (frontend — parser + elaborator + error messages) + product docs. Kernel
   untouched by construction (invariant #5): the surface LOWERS to the already-landed
@@ -75,7 +80,7 @@ The surface this ADR designs is the `handle e with Name { … }` form that BUILD
 `=>`-arrow clauses:
 
 ```
-handle e with Net {
+handle e with Net as net {         -- `as net` binds the capability in e (D1a)
   read(x)  => ret (x + 100)        -- one-shot tail-resume: the ret value resumes the continuation
   write(s) => ret unit             -- likewise
 }
@@ -84,7 +89,7 @@ handle e with Net {
 and, for a handler carrying a parameter (the ADR-0025 state mechanism, read-only in v1):
 
 ```
-handle e with (Counter init 0) {
+handle e with (Counter init 0) as ctr {
   tick(u) => ret (param + 1)       -- `param` names the carried Val; v1 is read-only (ADR-0092 D5 defers update)
 }
 ```
@@ -96,8 +101,8 @@ effect Net { read : Int -> Int }         -- the decl surface, already landed (AD
 
 let main =
   handle
-    ($net.read 1) + ($net.read 2)        -- performs, curried (D3)
-  with Net {
+    ($net.read 1) + ($net.read 2)        -- performs, curried (D3), through the D1a-bound `net`
+  with Net as net {
     read(n) => ret (n * 10)              -- one-shot, ret-shape (D4/D5)
   }
 -- evaluates to (1*10) + (2*10) = 30
@@ -133,6 +138,47 @@ let main =
 The census verdict is unambiguous (rq38 TL;DR #1): the method-impl family with a named `resume`
 is "the ONE that degrades most gracefully to bang's v1 ret-shape constraint AND grows best
 toward D5." D1 adopts it.
+
+### D1a — the capability binder: REQUIRED explicit `as h` (post-approval addendum, operator-ruled 2026-07-10)
+
+**The gap** (found by the s7probe lane, the §Revisit-if channel firing as designed): D1's
+original tracer example had the handled body perform via `$net.read` with `net` bound nowhere.
+This is not optional plumbing — the kernel's core principle is **typing by label, dispatch by
+identity** (glossary; ADR-0052 rejected dynamic nearest-label dispatch): the body performs
+through a named capability *value*, and nameable caps are what make nested same-effect handlers
+expressible at all. Flix needs no cap because it dispatches dynamically by effect name; bang
+deliberately does not.
+
+**Ruling.** The grammar is `handle e with Name as h { clauses }` — the `as h` binder is
+**mandatory** in v1, and `h` binds in the handled body `e`. Elaboration order: resolve the
+effect name and clause-map, install the binder, then elaborate `e` under the extended context
+(the binder is textually after `e` but scopes over it — same move as a `where` clause).
+This is the ADR-0070 precedent applied unchanged: the built-ins already write
+`state init as name in body`; the user surface inherits the same explicit-binder discipline.
+
+**Rejected alternatives:**
+
+- **Implicit lowercase only** (`Net` implicitly binds `net`, matching the original erroneous
+  example). Rejected: nested same-effect handlers become inexpressible — the inner handle
+  silently shadows the outer, so the surface could not express a program the identity-dispatch
+  kernel handles fine. It is also implicit binding, against the explicit-context discipline
+  (invariant #6's spirit; the agent-first lens).
+- **Optional `as` with a lowercase default.** Rejected for v1: the default is the footgun above
+  in disguise, and the sugar is purely ADDITIVE — it can be layered later without breaking any
+  explicit-form program, so v1 buys nothing by shipping it now. Not foreclosed.
+- **Binder-first restructure** (`handle h : Name { clauses } in e`). Rejected: reverses the
+  just-ruled D1 Flix shape for a scoping-presentation benefit the elaboration order already
+  delivers.
+
+**Implementation note (ruled with D1a, on s7probe's probe facts):** a user effect's label is
+decl-order-dependent and known only post-elaboration, but `lowerC` is a pure structural pass
+with no `ElabEnv` (true even on the typed `checkAndLower` path). The ruled mechanism is a
+**resolved-label slot on the `handleCustomS` Surf constructor**: elaboration resolves the label
+and rewrites it into the tree; lowering stays a pure function of the tree. Pre-elaboration the
+slot holds a placeholder; lowering an unresolved slot is a defined loud error. Rejected: threading
+`ElabEnv` through every `lowerC` call site (pollutes a structural pass with elaboration state;
+the untyped `elaborateToComp` path has no full `ElabEnv` to thread). Probe evidence:
+`docs/notes/stage7-elab-probe.md`.
 
 ### D2 — the Q38 posture: a SEPARATE `handle` construct now; unify machinery, not surface
 
