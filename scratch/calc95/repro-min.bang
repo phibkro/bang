@@ -1,0 +1,21 @@
+-- issue #95 minimal repro (QUALITATIVE): the CalcVM `--compiled` engine pays a
+-- large residual-recompile cost on re-entrant nested `let rec` knots (the mu-encoding
+-- of ADR-0073). env + ck agree on the value; --compiled agrees too but is much slower.
+--
+-- Shape: an outer knot `p` with nested siblings `factor`/`term`; `factor` RE-ENTERS
+-- the outer `p`. This is the same shape as calc's parseExpr/parseFactor/parseTerm/
+-- exprLoop. Bumping the arg (`$p N` in main) makes the compiled cost grow; calc's
+-- FOUR large siblings + deep re-entry push it into the exponential-residual regime
+-- (maxCodeSize ~331K in the calc probe) that presented as the reported "hang".
+let rec p : Int -> Option (Int * Int) ! {Div} = fun n =>
+  let rec factor : Int -> Option (Int * Int) ! {Div} = fun ts =>
+    if ts == 0 then Some(0, 0)
+    else match ($p (ts - 1) : Option (Int * Int)) {
+      None -> None, Some(q) -> let (a, b) = q in Some(a + 1, b + 1) }
+  in
+  let rec term : Int -> Option (Int * Int) ! {Div} = fun ts =>
+    match ($factor ts : Option (Int * Int)) {
+      None -> None, Some(q) -> let (a, b) = q in Some(a, b) }
+  in
+  $term n
+let main = match ($p 6 : Option (Int * Int)) { None -> 0, Some(q) -> let (a, b) = q in a + b }

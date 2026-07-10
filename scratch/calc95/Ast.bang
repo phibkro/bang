@@ -1,0 +1,20 @@
+pub data Tok = TNum(Int)
+| TIdent(Str)
+| TPlus
+| TMinus
+| TStar
+| TSlash
+| TLParen
+| TRParen
+| TEnd
+| TErr
+pub data TokList = TkNil | TkCons(Tok, TokList)
+pub data Expr = ENum(Int)
+| EVar(Str)
+| EAdd(Expr, Expr)
+| ESub(Expr, Expr)
+| EMul(Expr, Expr)
+| EDiv(Expr, Expr)
+| ENeg(Expr)
+| EErr
+pub data Env = EnvNil | EnvCons(Str, Int * Env)

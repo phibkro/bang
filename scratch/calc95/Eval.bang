@@ -1,0 +1,38 @@
+import Ast
+pub effect Trace { log : Int -> Int }
+pub let rec lookup : Str -> Ast_Env -> Int ! {Div} =
+  fun name =>
+    fun env =>
+      match (env : Ast_Env) {
+        EnvNil -> 0,
+        EnvCons(k, p) -> let (v, rest) = p in if $eq k name then v else $lookup name rest
+      }
+pub let rec eval : Cap Eval_Trace -> Ast_Env -> Ast_Expr -> Int ! {Div, Eval_Trace} =
+  fun tr =>
+    fun env =>
+      fun e =>
+        match (e : Ast_Expr) {
+          ENum(v) -> v,
+          EVar(nm) -> $lookup nm env,
+          EAdd(a, b) -> $eval tr env a + $eval tr env b,
+          ESub(a, b) -> $eval tr env a - $eval tr env b,
+          EMul(a, b) -> $eval tr env a * $eval tr env b,
+          EDiv(a, b) -> let d = $eval tr env b in if d == 0 then 0 else $eval tr env a / d,
+          ENeg(a) -> 0 - $eval tr env a,
+          EErr -> 0
+        }
+pub let rec countSteps : Cap Eval_Trace -> Ast_Expr -> Int ! {Div, Eval_Trace} =
+  fun tr =>
+    fun e =>
+      let self = tr.log(1)
+        in
+      match (e : Ast_Expr) {
+        ENum(v) -> self,
+        EVar(nm) -> self,
+        EAdd(a, b) -> self + $countSteps tr a + $countSteps tr b,
+        ESub(a, b) -> self + $countSteps tr a + $countSteps tr b,
+        EMul(a, b) -> self + $countSteps tr a + $countSteps tr b,
+        EDiv(a, b) -> self + $countSteps tr a + $countSteps tr b,
+        ENeg(a) -> self + $countSteps tr a,
+        EErr -> self
+      }
