@@ -37,6 +37,7 @@ import Bang.Frontend.Surface
 import Bang.Frontend.TypeCheck
 import Bang.Frontend.Format
 import Bang.Frontend.Diagnostics
+import Bang.Frontend.Query
 import Bang.Backend.AbstractMachine
 import Bang.Backend.EnvMachine
 import Bang.Witness.LawTest
@@ -487,6 +488,126 @@ def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
                     if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
                     pure 0
 
+/-! ## `bang query <op>` (#80) — the agent LSP as stateless CLI subcommands.
+
+Every op is `--json`-only in v1 (`Bang.Query`'s own module header: agents are the audience, a
+human rendering may piggyback later). RESOLVER-AWARE for the SAME reason `check --json` is (#75's
+ruling, applied here at first landing rather than retrofitted): `symbols`/`type`/`effects`/`def`/
+`refs` all take a FILE, and an agent querying a multi-file project needs its imports visible —
+mirrors `runCheck`'s exact single-file-fast-path/resolver split (`Bang.Query`'s `*JsonP` siblings
+beside its `src`-taking entries are the `checkAndLowerProg`-beside-`checkAndLower` split applied to
+this module). `laws` stays STRING-only (no `Prog`-taking sibling exists — `lawInstancesOf` itself
+has none, matching `runTest`'s own documented non-resolver-aware precedent: "no multi-file
+law-discovery need has arisen yet"). -/
+
+/-- Read `file`'s source (or stdin if `none`), returning `(src, headerProg)` — `headerProg` is the
+LOCATED parse used by every op below to decide fast-path vs resolver (mirrors `runCheck`'s own
+`parseProgLocated` peek). TOOL error (unreadable file — `none` never hits this arm, `readToEnd`
+doesn't fail the way a missing path does) reports on STDERR with NOTHING on stdout, exit `2` —
+mirrors `check --json`'s own convention exactly ("a tool error is not a diagnostic — the pipeline
+never even ran"). A PARSE error, by contrast, IS an op-level answer: `errorJsonOk` on stdout,
+exit `1`. -/
+def readQuerySrc (file : Option String) : IO (Except UInt32 (String × Bang.Surface.Prog)) := do
+  let srcRes ← match file with
+    | none      => some <$> (← IO.getStdin).readToEnd
+    | some path => (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none
+  match srcRes with
+  | none     =>
+      match file with
+      | some path => IO.eprintln s!"error: could not read file '{path}'"
+      | none      => pure ()
+      pure (.error 2)
+  | some src =>
+      match Bang.Surface.parseProgLocated src with
+      | .error (m, _) => IO.println (Bang.Query.errorJsonOk m); pure (.error 1)
+      | .ok headerProg => pure (.ok (src, headerProg))
+
+/-- Resolve `(src, headerProg, file)` to the `Prog` a resolver-aware query op should run against:
+the single-file fast path (no `import`/`use` header ⟹ just re-parse `src` directly, matching
+`Bang.Query`'s own `src`-taking entries) or the genuine multi-file resolver (`resolveEntryFile`,
+the SAME D1-D5 machinery `bang run`/`check --json` use) when a `file` path is available to resolve
+relative to (STDIN has none — the SAME limitation `bang run`'s own `eval` has, `runCheck`'s doc
+comment). On the resolver path, `.error` is a resolution/merge failure (missing import, cycle,
+private access) — printed as `errorJsonOk` and mapped to exit `1`, matching `check --json`'s SAME
+failure's exit code (ADR-0093 D1-D5). -/
+def resolveQueryProg (src : String) (headerProg : Bang.Surface.Prog) (file : Option String) :
+    IO (Except UInt32 Bang.Surface.Prog) := do
+  if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
+    match Bang.Surface.parseProgLocated src with
+    | .ok p         => pure (.ok p)
+    | .error (m, _) => IO.println (Bang.Query.errorJsonOk m); pure (.error 1)
+  else
+    match file with
+    | none      => pure (.ok headerProg)   -- stdin, no path to resolve relative to (same as `eval`'s limitation)
+    | some path =>
+        match ← resolveEntryFile path with
+        | .error e   => IO.println (Bang.Query.errorJsonOk e); pure (.error 1)
+        | .ok merged => pure (.ok merged)
+
+/-- Print `json` and return `0` — the uniform success tail every `runQuery*` arm shares (an op's
+OWN `errorJsonOk`/`ok:false` embeds its failure in the JSON body already; exit is still `0` at
+THIS layer since the tool ran and produced a well-formed answer — matching how `symbols`'s
+per-decl `typeError` doesn't fail the whole call. An op that fails structurally, like `def`'s "no
+such decl", is `{"ok":false,...}` on stdout but STILL exit 0 here — the CALLER inspects `ok`, the
+same convention a `grep`-style tool uses; only a genuine tool/resolution/parse failure, caught
+upstream in `readQuerySrc`/`resolveQueryProg`, uses a nonzero exit). -/
+def printQueryOk (json : String) : IO UInt32 := IO.println json *> pure 0
+
+/-- `bang query symbols <file>` / stdin — every top-level decl's outline. -/
+def runQuerySymbols (file : Option String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg file with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.symbolsJsonP p)
+
+/-- `bang query type <file> <name>` — type + row of one binding. -/
+def runQueryType (file : Option String) (name : String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg file with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.typeJsonP p name)
+
+/-- `bang query effects <name> [file]` — the row of one binding. -/
+def runQueryEffects (file : Option String) (name : String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg file with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.effectsJsonP p name)
+
+/-- `bang query laws <file>` — string-only (no resolver; see this section's header). -/
+def runQueryLaws (file : Option String) : IO UInt32 := do
+  let src ← match file with
+    | none      => (← IO.getStdin).readToEnd
+    | some path =>
+      match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
+      | none   => IO.eprintln s!"error: could not read file '{path}'"; return 2
+      | some s => pure s
+  printQueryOk (Bang.Query.lawsJson src)
+
+/-- `bang query def <name> <file>` — the decl defining `name`. -/
+def runQueryDef (file : Option String) (name : String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg file with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.defJsonP p name)
+
+/-- `bang query refs <name> <file>` — every decl referencing `name`. -/
+def runQueryRefs (file : Option String) (name : String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      match ← resolveQueryProg src headerProg file with
+      | .error code => pure code
+      | .ok p       => printQueryOk (Bang.Query.refsJsonP p name)
+
 /-- Default sample count and RNG seed for `bang test` — fixed (not randomized per-run) so a CI
 run is byte-reproducible (`Bang.LawTest.genIntSamples`'s own documented requirement: "the SAME
 seed reproduces the SAME samples"). 30 samples is a generous default for the Int-tuple shrinking
@@ -576,6 +697,20 @@ def usage : String :=
   "                                     reads stdin if no file; reports per-law PASS/FAIL/ERROR/STUCK.\n" ++
   "                                     INPUT MUST BE DECLS-ONLY (no trailing expression) — the\n" ++
   "                                     runner supplies its own body internally.\n\n" ++
+  "  bang query <op> ...                LSP-class operations as stateless CLI subcommands (issue #80);\n" ++
+  "                                     ALWAYS JSON on stdout (agents are the audience — no --json flag).\n" ++
+  "    bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row\n" ++
+  "    bang query type <file.bang> <name>      the checked type ! row of one top-level binding\n" ++
+  "    bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding\n" ++
+  "    bang query laws [<file.bang>]           every trait-law × impl instance (issue #60 seam)\n" ++
+  "    bang query def <name> <file.bang>       the decl that defines <name>\n" ++
+  "    bang query refs <name> <file.bang>      every decl whose body mentions <name>\n" ++
+  "                                     `symbols`/`type`/`effects`/`def`/`refs` read stdin if no\n" ++
+  "                                     <file.bang> is given (except `type`/`def`/`refs`, which\n" ++
+  "                                     always require a file — name-addressed multi-arg forms);\n" ++
+  "                                     a <file.bang> WITH imports/uses is resolved the SAME way\n" ++
+  "                                     `bang check` resolves it (imports visible to every op).\n" ++
+  "                                     `def`/`refs` are DECL-granularity, not line/col — see #52.\n\n" ++
   "  bang --help, -h                    print this text and exit 0\n" ++
   "  bang --version, -v                 print the version and exit 0\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
@@ -605,7 +740,14 @@ def usage : String :=
   "  NOTE: a <file.bang> with imports/uses is resolved the SAME way `bang run` resolves it, before\n" ++
   "  type-checking, so a multi-file project's imports are visible to `check`. KNOWN v1 LIMITATION:\n" ++
   "  a diagnostic from a resolved multi-file program always has \"span\":null — no line/col — since\n" ++
-  "  the resolved program has no single source text to locate into (follow-up: file-aware spans)."
+  "  the resolved program has no single source text to locate into (follow-up: file-aware spans).\n\n" ++
+  "EXIT CODES [bang query <op>]:\n" ++
+  "  0  the op ran and produced a JSON answer on stdout — INCLUDING an op-level \"ok\":false\n" ++
+  "     (e.g. `def` naming a decl that doesn't exist): the tool succeeded, the ANSWER is negative\n" ++
+  "  1  {\"ok\":false,\"error\":...} on stdout — a parse failure or (multi-file) an\n" ++
+  "     import-resolution failure: the op could not even run, but stdout still carries the answer\n" ++
+  "  2  tool error (e.g. unreadable file) — reported on STDERR, NOTHING on stdout (never folded\n" ++
+  "     into the JSON, mirrors `check --json`'s own TOOL-error convention exactly)."
 
 /-! ## The REPL (issue #7)
 
@@ -802,6 +944,24 @@ def main (args : List String) : IO UInt32 := do
       | []      => runTest none        -- `bang test` with no file: read stdin
       | [arg]   => runTest (some arg)
       | _       => IO.eprintln usage; pure 1
+    else if cmd == "query" then
+      -- `bang query <op> ...` (#80). Per-op ARGUMENT ORDER matches the issue's own spec exactly
+      -- (name-addressed ops put the NAME first when a bare-file positional would be ambiguous with
+      -- it; `symbols`/`type`/`laws` are unambiguous — file only — so file stays first there too,
+      -- matching `check`/`fmt`'s own convention). `--json` is NOT a flag here (`Bang.Query`'s
+      -- module header: `--json` is the ONLY v1 output, not an opt-in) — a stray `--`-prefixed arg
+      -- falls through to the usage error like every other subcommand's unknown-flag case.
+      match rest with
+      | ["symbols", file]       => runQuerySymbols (some file)
+      | ["symbols"]             => runQuerySymbols none
+      | ["type", file, name]    => runQueryType (some file) name
+      | ["effects", name, file] => runQueryEffects (some file) name
+      | ["effects", name]       => runQueryEffects none name
+      | ["laws", file]          => runQueryLaws (some file)
+      | ["laws"]                => runQueryLaws none
+      | ["def", name, file]     => runQueryDef (some file) name
+      | ["refs", name, file]    => runQueryRefs (some file) name
+      | _                       => IO.eprintln usage; pure 1
     else
       IO.eprintln usage; pure 1
   | _ => IO.eprintln usage; pure 1

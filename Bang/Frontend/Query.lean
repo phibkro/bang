@@ -79,8 +79,12 @@ def errorJson (msg : String) : String :=
 /-- `{"ok":false,"error":"<msg>"}` — the uniform QUERY-FAILURE shape every op's `ok:true/false`
 JSON body uses (parse error, elaboration failure, unresolvable name). Mirrors `Diagnostics.
 checkFailJson`'s "one hand-assembled shape, `jsonStr` for the one string that needs escaping"
-convention, extended with the `ok` discriminant every op here shares with `check --json`. -/
-def errorJsonOk (msg : String) : String :=
+convention, extended with the `ok` discriminant every op here shares with `check --json`. `public`:
+`Main.lean`'s resolver-aware dispatch (`readQuerySrc`/`resolveQueryProg`, #80) reuses this
+directly for a PARSE/resolution failure discovered OUTSIDE any single `*Json`/`*JsonP` entry's own
+pipeline (mirrors why `Diagnostics.jsonStr`/`parseFailJson` are `public` for the SAME reason on
+`check --json`'s resolver path). -/
+public def errorJsonOk (msg : String) : String :=
   jsonObj [jsonField "ok" "false", jsonField "error" (Bang.Diagnostics.jsonStr msg)]
 
 #guard errorJson "boom" == "{\"error\":\"boom\"}"
@@ -179,16 +183,22 @@ def symbolJson (p : Prog) (d : Decl) : String :=
       jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr n), jsonField "kind" "\"effect\"",
                jsonField "ops" (jsonArr (ops.map effectOpJson))]
 
-/-- **PUBLIC entry**: `bang query symbols <file>` — every top-level decl of `src`, in SOURCE ORDER
-(`p.decls`'s own order — the parser's list-build already preserves it, no re-sort). `{"ok":true,
-"symbols":[...]}` on a successful parse (a symbol's OWN `type` field may still carry a per-decl
-`typeError` — one bad decl does not blank the whole outline, unlike `check`'s all-or-nothing gate);
-`{"ok":false,"error":"..."}` on a program that doesn't even PARSE (no decls to enumerate at all). -/
+/-- **PUBLIC entry, `Prog`-taking** (the RESOLVER-AWARE route — `Main.lean`'s multi-file path hands
+an already-resolved-and-merged `Prog` here directly, the SAME `checkAndLowerProg`-beside-
+`checkAndLower` split every resolver-aware op in this module follows): every top-level decl of `p`,
+in SOURCE ORDER. `{"ok":true,"symbols":[...]}` always (a `Prog` is already known to parse — nothing
+left to fail at this layer; a symbol's OWN `type` field may still carry a per-decl `typeError`, one
+bad decl does not blank the whole outline). -/
+public def symbolsJsonP (p : Prog) : String :=
+  jsonObj [jsonField "ok" "true", jsonField "symbols" (jsonArr (p.decls.map (symbolJson p)))]
+
+/-- **PUBLIC entry**: `bang query symbols <file>` — the single-file (STDIN-compatible) route: parse
+`src` then defer to `symbolsJsonP`. `{"ok":false,"error":"..."}` on a program that doesn't even
+PARSE (no decls to enumerate at all) — the one failure mode `symbolsJsonP` itself can't hit. -/
 public def symbolsJson (src : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
-  | .ok p         =>
-      jsonObj [jsonField "ok" "true", jsonField "symbols" (jsonArr (p.decls.map (symbolJson p)))]
+  | .ok p         => symbolsJsonP p
 
 /-! ## 3. `type` / `effects` — type + row (or just the row) of ONE named binding.
 
@@ -211,33 +221,42 @@ def splitTypeRow (rendered : String) : String × String :=
 #guard splitTypeRow "Int ! {throws}" == ("Int", "{throws}")
 #guard splitTypeRow "Int" == ("Int", "{}")
 
-/-- **PUBLIC entry**: `bang query type <file> <name>` — `{"ok":true,"type":"T","row":"{...}"}` for
-the checked type of top-level binding `name`, or `{"ok":false,"error":"..."}` (a parse failure, an
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route). `{"ok":true,"type":"T","row":"{...}"}`
+for the checked type of top-level binding `name` in `p`, or `{"ok":false,"error":"..."}` (an
 ill-typed program, or `name` naming something with no value-level type — see `typeOfDecl`'s doc
 comment). -/
+public def typeJsonP (p : Prog) (name : String) : String :=
+  match typeOfDecl p name with
+  | .error e  => errorJsonOk e
+  | .ok rendered =>
+      let (ty, row) := splitTypeRow rendered
+      jsonObj [jsonField "ok" "true", jsonField "type" (Bang.Diagnostics.jsonStr ty),
+               jsonField "row" (Bang.Diagnostics.jsonStr row)]
+
+/-- **PUBLIC entry**: `bang query type <file> <name>` — the single-file/stdin route: parse `src`
+then defer to `typeJsonP`. `{"ok":false,"error":"..."}` on a parse failure too (the one mode
+`typeJsonP` can't hit). -/
 public def typeJson (src name : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
-  | .ok p =>
-      match typeOfDecl p name with
-      | .error e  => errorJsonOk e
-      | .ok rendered =>
-          let (ty, row) := splitTypeRow rendered
-          jsonObj [jsonField "ok" "true", jsonField "type" (Bang.Diagnostics.jsonStr ty),
-                   jsonField "row" (Bang.Diagnostics.jsonStr row)]
+  | .ok p         => typeJsonP p name
 
-/-- **PUBLIC entry**: `bang query effects <name> <file>` — `{"ok":true,"row":"{...}"}`, the effect
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route). `{"ok":true,"row":"{...}"}`, the effect
 ROW alone (paradigm-as-value, queryable — the bang-specific op no general LSP has; ADR-0076's "the
-compiler is a queryable service" realized at CLI cost). Same failure shape as `typeJson`. -/
+compiler is a queryable service" realized at CLI cost). -/
+public def effectsJsonP (p : Prog) (name : String) : String :=
+  match typeOfDecl p name with
+  | .error e  => errorJsonOk e
+  | .ok rendered =>
+      let (_, row) := splitTypeRow rendered
+      jsonObj [jsonField "ok" "true", jsonField "row" (Bang.Diagnostics.jsonStr row)]
+
+/-- **PUBLIC entry**: `bang query effects <name> <file>` — the single-file/stdin route. Same
+failure shape as `typeJson`. -/
 public def effectsJson (src name : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
-  | .ok p =>
-      match typeOfDecl p name with
-      | .error e  => errorJsonOk e
-      | .ok rendered =>
-          let (_, row) := splitTypeRow rendered
-          jsonObj [jsonField "ok" "true", jsonField "row" (Bang.Diagnostics.jsonStr row)]
+  | .ok p         => effectsJsonP p name
 
 /-! ## 4. `laws` — the landed `lawInstancesOf` (#60) seam, rendered as JSON.
 
@@ -334,42 +353,57 @@ it (a LOUD miss, ADR-0046 — never a guessed nearest-match). Multiple decls can
 ONLY for `traitD`+`implD` of the same trait (by design — `git grep` on the file finds the specific
 `impl` block; `def` here answers "where is `name` FIRST introduced as a top-level decl", i.e. the
 `traitD`/`letD`/etc. site) — the first SOURCE-ORDER match, consistent with `symbols`'s own ordering
-guarantee. -/
+guarantee.
+
+MULTI-FILE NAMING (KNOWN v1 characteristic, not a bug — matches `check --json`'s own documented
+multi-file limitation in spirit): `p` here is the RESOLVED, MERGED `Prog` on the resolver path
+(`Main.lean`'s `resolveQueryProg`) — an imported (not `use`d) decl's name is QUALIFIED by the
+merge (`Parse.bang`'s `dropWs` becomes `Parse_dropWs`, `TypeCheck.mergeModules`'s own convention),
+so `def`/`refs`/`effects`/`type` on a multi-file program address the QUALIFIED name, matching
+exactly what a `bang run`/`bang check` error message on the SAME program would name. `symbols`
+surfaces the qualified names directly (visible in its own `"name"` field), so this is discoverable
+by construction, not a silent gotcha. -/
+public def defJsonP (p : Prog) (name : String) : String :=
+  match p.decls.find? (fun d => d.name == name) with
+  | none   => errorJsonOk s!"no top-level decl named '{name}'"
+  | some d => jsonObj [jsonField "ok" "true", jsonField "symbol" (symbolJson p d)]
+
+/-- **PUBLIC entry**: `bang query def <name> <file>` — the single-file/stdin route: parse `src`
+then defer to `defJsonP`. -/
 public def defJson (src name : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
-  | .ok p =>
-      match p.decls.find? (fun d => d.name == name) with
-      | none   => errorJsonOk s!"no top-level decl named '{name}'"
-      | some d => jsonObj [jsonField "ok" "true", jsonField "symbol" (symbolJson p d)]
+  | .ok p         => defJsonP p name
 
-/-- **PUBLIC entry**: `bang query refs <name> <file>` — every top-level decl (by `Decl.name`,
-KIND-tagged the same way `symbols` does) whose body mentions `name` — DECL granularity (see this
-section's header for why: no per-node span tier exists to report an exact line/col occurrence, and
-fabricating one would be a guess, ADR-0046). `{"ok":true,"refs":[{"name","kind"},...]}` — an EMPTY
-`refs` array is a valid, honest answer (the name is defined but never referenced, or `name` isn't
-even bound anywhere — `refs` does not itself validate that `name` is a real binding, unlike `def`;
-a caller wanting "does this name exist at all" combines this with `def`). `{"ok":false,"error":...}`
-only on a PARSE failure (there is no elaboration in this op's path at all). -/
+/-- The bare `"kind"` string a `Decl` renders as in `symbols`/`refs` (factored out so `refs` doesn't
+need a full `symbolJson` — a REF site's `kind` is a cheap tag, not the full outline entry `def`'s
+single-hit answer returns). -/
+def declKindJson : Decl → String
+  | .letD ..    => "\"let\""
+  | .letRecD .. => "\"letRec\""
+  | .fnD ..     => "\"fn\""
+  | .traitD ..  => "\"trait\""
+  | .implD ..   => "\"impl\""
+  | .dataD ..   => "\"data\""
+  | .effectD .. => "\"effect\""
+
+public def refsJsonP (p : Prog) (name : String) : String :=
+  let hits := p.decls.filter (declMentionsVar name) |>.map (fun d =>
+    jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr d.name),
+             jsonField "kind" (declKindJson d)])
+  jsonObj [jsonField "ok" "true", jsonField "refs" (jsonArr hits)]
+
+/-- **PUBLIC entry**: `bang query refs <name> <file>` — the single-file/stdin route: parse `src`
+then defer to `refsJsonP`. DECL granularity (see this section's header for why: no per-node span
+tier exists to report an exact line/col occurrence, and fabricating one would be a guess,
+ADR-0046). `{"ok":true,"refs":[{"name","kind"},...]}` — an EMPTY `refs` array is a valid, honest
+answer (the name is defined but never referenced, or `name` isn't even bound anywhere — `refs`
+does not itself validate that `name` is a real binding, unlike `def`; a caller wanting "does this
+name exist at all" combines this with `def`). `{"ok":false,"error":...}` only on a PARSE failure
+(there is no elaboration in this op's path at all). -/
 public def refsJson (src name : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
-  | .ok p =>
-      let hits := p.decls.filter (declMentionsVar name) |>.map (fun d =>
-        jsonObj [jsonField "name" (Bang.Diagnostics.jsonStr d.name),
-                 jsonField "kind" (declKindJson d)])
-      jsonObj [jsonField "ok" "true", jsonField "refs" (jsonArr hits)]
-where
-  /-- The bare `"kind"` string a `Decl` renders as in `symbols`/`refs` (factored out so `refs`
-  doesn't need a full `symbolJson` — a REF site's `kind` is a cheap tag, not the full outline
-  entry `def`'s single-hit answer returns). -/
-  declKindJson : Decl → String
-    | .letD ..    => "\"let\""
-    | .letRecD .. => "\"letRec\""
-    | .fnD ..     => "\"fn\""
-    | .traitD ..  => "\"trait\""
-    | .implD ..   => "\"impl\""
-    | .dataD ..   => "\"data\""
-    | .effectD .. => "\"effect\""
+  | .ok p         => refsJsonP p name
 
 end Bang.Query
