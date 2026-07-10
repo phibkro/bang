@@ -24,6 +24,13 @@ below are coverage, hardening, and velocity work.
 | 008 | Hook env sanitization (`env -u GIT_INDEX_FILE …`) — the index-corruption vector fix | P1 | S | — | DONE — MERGED @ 222aa9ef; exercised twice under real pathspec commits, live hook carries it |
 | 009 | unusedArguments fix-wave (+ install-hooks worktree fix, check-examples-env drift) | P2 | S | 007 | IN PROGRESS — running as wave-lane W6 (`fix-hygiene-009`) |
 | 010 | doc-gen4 wiring: banner sweep (`/-`→`/-!`) + `docbuild/` subproject + `just docs` | P3 | M | census landing (task #37 — the banner sweep must not collide with in-flight proof edits) | TODO — plan written, dispatch after W2census lands |
+| 011 | Public-early plumbing: release battery + site CI (build-only) + flake-check/shake riders | P2 | M | — | IN PROGRESS — dispatched 2026-07-10 (`feat-public-plumbing-011`); HARD RULE: publishes nothing |
+
+**Trigger-gated tooling backlog** (no plan files yet; write on trigger): wasmtime/wabt into the
+dev shell (trigger: W4 emission probe lands green) · `says`/tryAtEachStep proof-golf loop
+(trigger: census landed + proof spine quiet; toolchain-pin risk) · build-timing script parsing
+`lake build` output (trigger: plan 006's split ADR wants critical-path data) · hyperfine
+micro-bench (trigger: someone actually needs a perf number; invariant #7 keeps it advisory).
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
