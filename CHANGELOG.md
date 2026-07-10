@@ -122,6 +122,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — --engine=env — the ADR-0094 environment machine, wired and MEASURED (squash-adjacent pick of envm5-perf) (`4c94b09`)
 - **⚠ BREAKING** **cli** — v0.1.0 — the env engine is the DEFAULT (ADR-0094 A1 complete) + version 0.1.0 (`bbca771`)
 - **stage6** — user-effect soundness composition — the moat capstone stated (#44) (`44834e6`)
+- **query** — Bang/Frontend/Query.lean — bang query v1 logic (#80) (`8d2d789`)
+- **query** — wire bang query <op> into Main.lean's CLI dispatch (#80) (`0e1bfc6`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
