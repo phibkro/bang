@@ -139,8 +139,11 @@ partial def fmtTyArgs : TyArgs → List String
   | .two a b => [fmtTy .atom a, fmtTy .atom b]
 end
 
-/-- Top-level entry: a type prints at the loosest tier (no defensive outer parens). -/
-def showTy (t : Ty) : String := fmtTy .arr t
+/-- Top-level entry: a type prints at the loosest tier (no defensive outer parens).
+`public` for the #80 query seam (like `showSurf` for #60): `bang query symbols` renders
+DECLARED `Ty` for trait/impl/data/effect decls — reusing this printer avoids a second,
+potentially-diverging parenthesization-aware `Ty` printer in Query.lean. -/
+public def showTy (t : Ty) : String := fmtTy .arr t
 
 /-! ## 3. Surface expression printer — now a `Std.Format` DOCUMENT builder (ADR-0090 D1/D2)
 

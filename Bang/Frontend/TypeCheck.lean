@@ -3464,6 +3464,18 @@ lets a caller route errors to stderr and keep stdout machine-clean. -/
 public def typeStringOfProg (src : String) : Except String String :=
   (checkProg src).map (fun (B, φ) => showType B φ)
 
+/-- Prog-taking sibling of `typeStringOfProg` (mirrors `checkAndLowerProg` beside
+`checkAndLower`) — the per-declaration query seam `bang query type`/`effects`/`symbols` (#80)
+needs: given an already-parsed `Prog`, check its trailing `body` and render `type ! row` as one
+string (a String, not `CT × EffRow` — `CT` is module-private, the `checkProgRow` rationale). A
+caller wanting "the type of decl `foo`" builds a `Prog` with the same `decls`/`imports`/`uses`
+and `body := .var "foo"` — sidestepping print-then-reparse, which `runCheck`'s doc comment
+names unsound for a resolved multi-file `Prog`. -/
+public def typeStringOfProgP (prog : Prog) : Except String String := do
+  let (e, effects) ← elabProg prog
+  let (B, φ) ← runInferC (synthSC [] e) effects
+  return showType B φ
+
 
 /-! ### The TYPED face of the `Outcome` layer (issue #54).
 
