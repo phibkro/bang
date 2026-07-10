@@ -122,6 +122,10 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — --engine=env — the ADR-0094 environment machine, wired and MEASURED (squash-adjacent pick of envm5-perf) (`4c94b09`)
 - **⚠ BREAKING** **cli** — v0.1.0 — the env engine is the DEFAULT (ADR-0094 A1 complete) + version 0.1.0 (`bbca771`)
 - **stage6** — user-effect soundness composition — the moat capstone stated (#44) (`44834e6`)
+- **tools** — dead-code fitness recipe — advisory unreachable-decl scan (task #16 UNIT 2) (`d85a5d7`)
+- **tools** — dead-code recipe states its own sorryAx over-report limit (task #16 UNIT 2 closeout) (`fac0ba5`)
+- **tools** — seed dead-code allow-list with the sorry-gapped-live cluster (task #16, operator-ruled) (`544fe17`)
+- **lr** — close the crelK_fund handleCustom arm — term-measured mutual rebuild (task #16 debt-1) (`1779e49`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
