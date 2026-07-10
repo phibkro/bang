@@ -350,7 +350,8 @@ def checkFailJson (msg : String) : String :=
 default or `--json` for the agent-facing structured schema (`Bang.Diagnostics`). Reads a file if
 given, else stdin (mirrors `fmt`'s file-or-stdin convention).
 
-RESOLVER-AWARE (ADR-0093 follow-up ruling, 2026-07-09): a FILE argument goes through the SAME
+RESOLVER-AWARE (ADR-0093 follow-up ruling, 2026-07-09) — for a GENUINE multi-file program only
+(#75 fix, 2026-07-10): a FILE argument with a nonempty `import`/`use` header goes through the SAME
 `resolveEntryFile` (import/use resolution + D5 entry-rule) `bang run` uses — the agent-first
 rationale is direct: `check --json` is the tool an agent actually calls to lint a program, so if it
 can't see imports, an agent cannot lint a multi-file project at all. The resolved `Prog` is checked
@@ -375,11 +376,27 @@ minimal correct move over a second implementation. STDIN input is NOT resolver-a
 to resolve relative to, matching `eval`'s same limitation on `bang run`) and stays on the ORIGINAL
 string-based `checkJson`/`checkAndLower` path (full span support, unaffected by any of the above).
 
+SINGLE-FILE FAST PATH (#75 fix, 2026-07-10 — the span regression this closes): a file with NO
+`import`/`use` header never needs `resolveEntryFile`/`checkAndLowerProg` at all — it stays on the
+exact string-based `checkJson`/`checkAndLower` pipeline stdin already uses, which is where FULL
+`Diagnostics`-schema spans (parse AND type/elaboration) come from. Round-1 of the stranger test
+praised these exact spans; routing every FILE argument through the resolver (even an import-free
+one) silently traded them for `span:null` on every file-input diagnostic — a real regression, not
+the documented v1 limitation (that limitation is about content pulled in via `import`/`use`, which
+genuinely has no single contiguous source a `Span` can index into; a lone file has exactly one). The
+test is `Bang.Surface.parseProgLocated src`'s own header fields: a PARSE failure is reported
+directly from THIS located call (full span, `code:"parse"` — fixing #75's mislabel, since the
+resolver's own internal parse used the un-located `parseProg`); a successful parse with an empty
+`imports`/`uses` header stays on the string pipeline (`checkJson`/`checkAndLower`, full span for
+type errors too); only a header that NAMES an import/use falls through to `resolveEntryFile` below
+— the genuine multi-file case the documented limitation covers.
+
 KNOWN v1 LIMITATION (documented here + the usage text, follow-up tracked under this ADR's own
 issue): a resolved multi-file program's diagnostic never carries a `span` (`null` always) — no
 line/col at all, not even a merged-source coordinate, since the `Prog`-taking pipeline has no source
 text to index into. File-aware span mapping (spans that name which file, with per-file coordinates)
-is a named follow-up, not solved by this ruling.
+is a named follow-up, not solved by this ruling. This grant covers ONLY programs that actually pull
+in `import`/`use` content — see the single-file fast path above for why a lone file doesn't need it.
 
 EXIT CODES (the `--json` contract; the human path reuses 0/1 and never emits 2 — a human already
 sees the read failure as the SAME uncaught-IO-exception report every other subcommand gives): `0`
@@ -396,19 +413,35 @@ def runCheck (json : Bool) (file : Option String) : IO UInt32 := do
   | some path =>
     match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
     | none     => IO.eprintln s!"error: could not read file '{path}'"; pure 2
-    | some _   =>
-        match ← resolveEntryFile path with
-        | .error e   =>
-            if json then IO.println (checkFailJson e) else IO.eprintln s!"error: {e}"
+    | some src =>
+        match Bang.Surface.parseProgLocated src with
+        -- header itself doesn't parse: located, full span, code "parse" (#75) — no resolver needed,
+        -- parsing precedes import resolution regardless of what `resolveEntryFile` would have done.
+        | .error (m, sp) =>
+            if json then IO.println (Bang.Diagnostics.parseFailJson m sp)
+            else match sp with
+              | some s => IO.eprintln s!"error at {s.loc}: {m}"
+              | none   => IO.eprintln s!"error: {m}"
             pure 1
-        | .ok merged =>
-            match Bang.TypeCheck.checkAndLowerProg merged with
-            | .error e =>
+        | .ok headerProg =>
+          -- single-file fast path (#75): no import/use header ⟹ the full-span string pipeline
+          -- (`checkJson`/`checkAndLower`, the SAME one stdin uses), not the resolver.
+          if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
+            if json then runCheckJson src else runCheckHuman src
+          else
+            -- genuine multi-file program: resolver + `Prog`-taking pipeline, `span:null` grant intact.
+            match ← resolveEntryFile path with
+            | .error e   =>
                 if json then IO.println (checkFailJson e) else IO.eprintln s!"error: {e}"
                 pure 1
-            | .ok _ =>
-                if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
-                pure 0
+            | .ok merged =>
+                match Bang.TypeCheck.checkAndLowerProg merged with
+                | .error e =>
+                    if json then IO.println (checkFailJson e) else IO.eprintln s!"error: {e}"
+                    pure 1
+                | .ok _ =>
+                    if json then IO.println "{\"ok\":true,\"diagnostics\":[]}" else IO.println "ok"
+                    pure 0
 
 /-- Default sample count and RNG seed for `bang test` — fixed (not randomized per-run) so a CI
 run is byte-reproducible (`Bang.LawTest.genIntSamples`'s own documented requirement: "the SAME
