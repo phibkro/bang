@@ -46,7 +46,7 @@ graph TD
     Examples["Examples<br/>365L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>914L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>532L · fan-in 0"]
+    Frontend_Query["Frontend.Query<br/>552L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>2712L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
@@ -102,7 +102,7 @@ graph TD
 | `Frontend.Diagnostics` | ? | 213 | 0 |
 | `Frontend.Format` | ? | 914 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 532 | 0 |
+| `Frontend.Query` | ? | 552 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 5163 | 0 |
