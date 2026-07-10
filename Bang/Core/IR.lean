@@ -185,6 +185,12 @@ def BinOp.eval : BinOp → Int → Int → Val
   | .lt,  a, b => boolVal (decide (a < b))
   | .eq,  a, b => boolVal (decide (a = b))
 
+/-- Whether a `BinOp` is a comparison (`< ==`, returning `Bool`) or arithmetic (`+ − × ÷`,
+returning `Int`). Drives `BinOp.resTy` and the `binop` `HasCTy` rule (ADR-0065 stage ④). -/
+def BinOp.isCompare : BinOp → Bool
+  | .lt | .eq => true
+  | .add | .sub | .mul | .div => false
+
 /-- `Store` — the transaction-scoped heap a `transaction` handler carries (ADR-0030). A TVar is
 an INDEX into this list (`Nat`, de-Bruijn-style); `newTVar` appends a cell (an allocation),
 `readTVar`/`writeTVar` index/update one. A `List Val`, NOT a `Finset`/map: order is the TVar
@@ -240,6 +246,14 @@ inductive CTy (Eff Mult : Type) : Type where
   -- to scale the argument's grades by (ADR-0019).
   | arr : Mult → VTy Eff Mult → CTy Eff Mult → CTy Eff Mult
 end
+
+/-- The result value type of a `binop` (ADR-0065 stage ④): arithmetic (`+ − × ÷`) returns
+`int`, comparisons (`< ==`) return `Bool = 1 + 1` (`VTy.sum unit unit`, ADR-0029/0065 — the
+same encoding `boolVal` inhabits). Mirrors `BinOp.eval`'s value/`boolVal` split so the reduct
+`ret (op.eval a b)` types at `F 1 (op.resTy)` (preservation). -/
+def BinOp.resTy {Eff Mult : Type} : BinOp → VTy Eff Mult
+  | .lt | .eq => VTy.sum VTy.unit VTy.unit
+  | .add | .sub | .mul | .div => VTy.int
 
 
 /-! ### 1.4a Type-level de Bruijn shift + substitution (ADR-0029, iso-recursive μ)

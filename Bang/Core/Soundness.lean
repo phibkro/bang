@@ -251,7 +251,7 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
     (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?binop ?perform ?handleThrows ?handleState
     ?handleTransaction ?handleCustom ?clausesNil ?clausesCons h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
@@ -290,6 +290,8 @@ theorem HasCTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                 simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
                   ihv, Nat.succ.inj (Nat.succ.inj ihN), Nat.min_self]
   case unfold => intro γ Γ v A _ ih; exact ih
+  case binop => intro γ γ_v γ_w Γ op v w _ _ hγ ihv ihw; subst hγ
+                simp only [hadd_eq_add, GradeVec.add_length, ihv, ihw, Nat.min_self]
   case perform => intro γ_c γ_v Γ _c ℓ op w φ q A B _hcap _hle _harg _hres _hv ih_cap ih_v
                   -- ADR-0054: perform now carries the cap derivation (grade γ_c) alongside the arg (γ_v):
                   -- grade `(q • γ_v) + γ_c`. Both IHs give `_.length = Γ.length`.
@@ -314,7 +316,7 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     (motive_2 := fun γ Γ _ _ _ _ => γ.length = Γ.length)
     (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?binop ?perform ?handleThrows ?handleState
     ?handleTransaction ?handleCustom ?clausesNil ?clausesCons h
   case vunit => intro Γ; simp
   case vint => intro Γ n; simp
@@ -346,6 +348,8 @@ theorem HasVTy.length_eq {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
                 simp only [hsmul_eq_smul, hadd_eq_add, GradeVec.add_length, GradeVec.smul_length,
                   ihv, Nat.succ.inj (Nat.succ.inj ihN), Nat.min_self]
   case unfold => intro γ Γ v A _ ih; exact ih
+  case binop => intro γ γ_v γ_w Γ op v w _ _ hγ ihv ihw; subst hγ
+                simp only [hadd_eq_add, GradeVec.add_length, ihv, ihw, Nat.min_self]
   case perform => intro γ_c γ_v Γ _c ℓ op w φ q A B _hcap _hle _harg _hres _hv ih_cap ih_v
                   -- ADR-0054: perform now carries the cap derivation (grade γ_c) alongside the arg (γ_v):
                   -- grade `(q • γ_v) + γ_c`. Both IHs give `_.length = Γ.length`.
@@ -471,6 +475,9 @@ private theorem HasCTy.shift_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.shiftFrom]
     rw [hv.shift_closed k hk, hN.shift_closed (k + 2) (by simp only [List.length_cons]; omega)]
   | @unfold γ Γ v A hv => simp only [Comp.shiftFrom]; rw [hv.shift_closed k hk]
+  | @binop γ γ_x γ_y Γ op x y hx hy _ =>
+    -- ADR-0065: both operands are closed `int` values; each shift-fixed (no binder crossing).
+    simp only [Comp.shiftFrom]; rw [hx.shift_closed k hk, hy.shift_closed k hk]
   | @perform γ_c γ_v Γ c ℓ op v φ q A B hcap _ _ _ hv =>
     -- ADR-0054: perform carries the cap value `c` (closed) + the arg `v`; both shift-fixed.
     simp only [Comp.shiftFrom]; rw [hcap.shift_closed k hk, hv.shift_closed k hk]
@@ -534,6 +541,9 @@ private theorem HasCTy.subst_closed {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
     simp only [Comp.substFrom]
     rw [hv.subst_closed k hk w, hN.subst_closed (k + 2) (by simp only [List.length_cons]; omega) _]
   | @unfold γ Γ v A hv => simp only [Comp.substFrom]; rw [hv.subst_closed k hk w]
+  | @binop γ γ_x γ_y Γ op x y hx hy _ =>
+    -- ADR-0065: both operands are closed `int` values; each subst-fixed (no binder crossing).
+    simp only [Comp.substFrom]; rw [hx.subst_closed k hk w, hy.subst_closed k hk w]
   | @perform γ_c γ_v Γ c ℓ op v φ q A B hcap _ _ _ hv =>
     -- ADR-0054: perform carries the cap value `c` (closed) + the arg `v`; both subst-fixed.
     simp only [Comp.substFrom]; rw [hcap.subst_closed k hk w, hv.subst_closed k hk w]
@@ -761,6 +771,13 @@ theorem HasCTy.weaken {γ : GradeVec Mult} {Γ : TyCtx Eff Mult}
   | @unfold γ Γ v A hv =>
     simp only [Comp.shiftFrom]
     exact HasCTy.unfold (hv.weaken k hk A')
+  | @binop γ γ_x γ_y Γ op x y hx hy hγ =>
+    -- ADR-0065: `shiftFrom k (binop op x y) = binop op (shift x) (shift y)`; grade
+    -- `insG (γ_x + γ_y) k = insG γ_x k + insG γ_y k` (`insG_add`, the `pair`-case combinator).
+    subst hγ
+    simp only [Comp.shiftFrom]
+    refine HasCTy.binop (hx.weaken k hk A') (hy.weaken k hk A') ?_
+    exact insG_add γ_x γ_y k (by rw [hx.length_eq, hy.length_eq])
   | @perform γ_c γ_v Γ c ℓ op w φ q A B hcap hmem hopArg hopRes hw =>
     -- ADR-0054: shiftFrom k (perform c op w) = perform (shift c) op (shift w); grade
     -- insG ((q•γ_v) + γ_c) k = (q • insG γ_v k) + insG γ_c k (insG_add_smul_aux). Cap + arg both weaken.
@@ -1341,7 +1358,7 @@ theorem HasCTy.subst_gen
     (motive_1 := VsubstMotive) (motive_2 := CsubstMotive)
     (motive_3 := fun _ _ _ _ => True)
     ?vunit ?vint ?vvar ?vcap ?vthunk ?inl ?inr ?pair ?fold
-    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?perform ?handleThrows ?handleState
+    ?ret ?letC ?force ?lam ?app ?case ?split ?unfold ?binop ?perform ?handleThrows ?handleState
     ?handleTransaction ?handleCustom ?clausesNil ?clausesCons
     hc Δ Γ A γ_v v rfl hv
   case vunit =>
@@ -1435,6 +1452,23 @@ theorem HasCTy.subst_gen
     subst hΓ
     rw [Comp.substFrom]
     exact HasCTy.unfold (ih Δ Γ A γ_v v rfl hv)
+  case binop =>
+    -- ADR-0065: both operands are `int` VALUES (no binder crossing); `Comp.substFrom` descends into
+    -- each. Grade `γ_x + γ_y` reshapes via `Sgrade_add` (the `pair`-case combinator), and each operand
+    -- re-types at the filler `v` via its value-subst IH — exactly the `perform` shape without the smul.
+    intro γ γ_x γ_y Γ₀ op x y hx hy hγ ihx ihy Δ Γ A γ_v v hΓ hv
+    subst hΓ; subst hγ
+    rw [Comp.substFrom]
+    have hl_x : γ_x.length = (Δ ++ A :: Γ).length := hx.length_eq
+    have hl_y : γ_y.length = (Δ ++ A :: Γ).length := hy.length_eq
+    have hvl : γ_v.length = (Δ ++ A :: Γ).length - 1 := by
+      rw [hv.length_eq, List.length_append, List.length_append, List.length_cons]; omega
+    rw [show γ_x + γ_y = GradeVec.add γ_x γ_y from rfl,
+      Sgrade_add γ_v Δ.length γ_x γ_y
+        (by rw [hl_x, List.length_append, List.length_cons]; omega)
+        (by rw [hl_y, List.length_append, List.length_cons]; omega)
+        (by rw [hl_x, hl_y]) (by rw [hl_x]; omega)]
+    exact HasCTy.binop (ihx Δ Γ A γ_v v rfl hv) (ihy Δ Γ A γ_v v rfl hv) rfl
   case perform =>
     -- ADR-0054: perform now carries the cap derivation (grade γ_cp) alongside the arg (γ_a); the
     -- substituted grade `Sgrade k ((q•γ_a) + γ_cp)` reshapes via `Sgrade_add` + `Sgrade_smul` (the
@@ -1776,6 +1810,15 @@ private theorem HasVTy.prod_canonical {γ0 : GradeVec Mult}
   | @pair _ γ_a γ_b _ a b _ _ ha hb hγ => exact ⟨γ_a, γ_b, a, b, rfl, hγ, ha, hb⟩
   | @vvar _ i _ hget => simp at hget
 
+/-- Canonical forms for a CLOSED `int` value: `v : int` is `vint n` (ADR-0065). `vvar` is
+excluded (`[][i]? = none`); no other former has type `int`. Used by the `binop` progress arm. -/
+private theorem HasVTy.int_canonical {γ0 : GradeVec Mult} {v : Val} :
+    HasVTy (Eff := Eff) (Mult := Mult) γ0 [] v VTy.int → ∃ n, v = Val.vint n := by
+  intro h
+  cases h with
+  | vint => exact ⟨_, rfl⟩
+  | @vvar _ i _ hget => simp at hget
+
 /-- Canonical forms for a CLOSED μ value: `v : μX.A` is `fold a` with `a : unrollMu A`. -/
 private theorem HasVTy.mu_canonical {γ0 : GradeVec Mult}
     {v : Val} {A : VTy Eff Mult} :
@@ -1795,13 +1838,39 @@ private theorem HasCTy.wrong_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mu
     {s : String} {e : Eff} {C : CTy Eff Mult} : ¬ HasCTy γ0 Γ0 (Comp.wrong s) e C := by
   intro h; cases h
 
-/-- `binop` is UNTYPEABLE in v1 (ADR-0065): the δ-rule has no `HasCTy` rule yet, so arithmetic runs
-(via `Source.eval`, diff-tested) but lives in the TESTED superset until the lawful-algebra layer types
-it (as `AddCommGroup Int`'s operation). A runtime-only focus, exactly like `oom`/`wrong`. -/
-private theorem HasCTy.binop_untypable {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
+/-- Inversion for a `binop` focus (ADR-0065 stage ④): a typed `binop op v w` has both operands
+`int`-typed, ⊥ row, result `F 1 (op.resTy)`, and additive operand grades. Mirrors `case_inv`/
+`split_inv`; drives the three soundness arms that were vacuous under `binop_untypable`. -/
+private theorem HasCTy.binop_inv {γ0 : GradeVec Mult} {Γ0 : TyCtx Eff Mult}
     {op : BinOp} {v w : Val} {e : Eff} {C : CTy Eff Mult} :
-    ¬ HasCTy γ0 Γ0 (Comp.binop op v w) e C := by
-  intro h; cases h
+    HasCTy γ0 Γ0 (Comp.binop op v w) e C →
+    ∃ γ_v γ_w, e = ⊥ ∧ C = CTy.F 1 (BinOp.resTy op) ∧ γ0 = γ_v + γ_w
+      ∧ HasVTy γ_v Γ0 v VTy.int ∧ HasVTy γ_w Γ0 w VTy.int := by
+  intro h
+  cases h with
+  | @binop _ γ_v γ_w _ _ _ _ hv hw hγ => exact ⟨γ_v, γ_w, rfl, rfl, hγ, hv, hw⟩
+
+/-- The reduct of a well-typed `binop` re-types (ADR-0065 stage ④): the closed operands are
+`vint a`/`vint b` (canonical forms), so the δ-rule produces `ret (op.eval a b)`, and
+`op.eval a b` is a CLOSED value of type `op.resTy` (`vint : int` for arithmetic, `boolVal :
+sum unit unit` for comparisons). Hence `ret (op.eval a b) : F 1 (op.resTy)` at grade `[]` —
+the preservation witness. -/
+private theorem BinOp.eval_hasVTy {Γ : TyCtx Eff Mult} (op : BinOp) (a b : Int) :
+    HasVTy (Eff := Eff) (Mult := Mult) (GradeVec.zeros Γ.length) Γ
+      (BinOp.eval op a b) (BinOp.resTy op) := by
+  -- arithmetic ops produce `vint : int`; comparisons produce `boolVal _ : sum unit unit`.
+  have hbool : ∀ (c : Bool), HasVTy (Eff := Eff) (Mult := Mult) (GradeVec.zeros Γ.length) Γ
+      (boolVal c) (VTy.sum VTy.unit VTy.unit) := by
+    intro c; cases c with
+    | false => exact HasVTy.inl HasVTy.vunit
+    | true  => exact HasVTy.inr HasVTy.vunit
+  cases op with
+  | add => exact HasVTy.vint
+  | sub => exact HasVTy.vint
+  | mul => exact HasVTy.vint
+  | div => exact HasVTy.vint
+  | lt  => exact hbool _
+  | eq  => exact hbool _
 
 /-- A focus typed at a smaller effect `e'` plugs into the same stack, with the
 whole-program effect only shrinking. Induction on `HasStack`; each frame is
@@ -2615,7 +2684,21 @@ theorem preservation_proof
     exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩, hnecfg'⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
-  | binop _ _ _ => exact absurd hfocus HasCTy.binop_untypable
+  | binop op v w =>
+    -- closed focus `binop op v w : (⊥, F 1 (op.resTy))`; `v w : int` are `vint a`/`vint b`
+    -- (canonical forms). δ-step `binop op (vint a) (vint b) ↦ ret (op.eval a b)`; the reduct
+    -- `ret (op.eval a b) : F 1 (op.resTy)` re-types (closed value, grade `1 • [] = []`).
+    obtain ⟨γ_v, γ_w, heq, hCeq, _hγ, hv, hw⟩ := hfocus.binop_inv
+    subst heq; subst hCeq
+    obtain ⟨a, hveq⟩ := hv.int_canonical
+    obtain ⟨b, hweq⟩ := hw.int_canonical
+    subst hveq; subst hweq
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    -- NonEscape of the reduct via the single return-escape lemma (`hnecfg'`).
+    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (BinOp.resTy op),
+      HasCTy.ret (BinOp.eval_hasVTy (Γ := []) op a b)
+        (by simp [hsmul_eq_smul, GradeVec.zeros, GradeVec.smul_nil]), hstack⟩, hnecfg'⟩
 
 /-- **The NonEscape-free TYPING preservation** — the gate for every `wsCfg_step` arm's typing half.
 A by-pathspec projection of `preservation_proof` (Metatheory:2038): identical per-case reconstruction,
@@ -2981,7 +3064,18 @@ theorem hasConfigTy_step
     exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (VTy.unrollMu A), HasCTy.ret ha (by simp [hsmul_eq_smul]), hstack⟩⟩
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
-  | binop _ _ _ => exact absurd hfocus HasCTy.binop_untypable
+  | binop op v w =>
+    -- closed focus `binop op v w : (⊥, F 1 (op.resTy))`; δ-step to `ret (op.eval a b)`.
+    obtain ⟨γ_v, γ_w, heq, hCeq, _hγ, hv, hw⟩ := hfocus.binop_inv
+    subst heq; subst hCeq
+    obtain ⟨a, hveq⟩ := hv.int_canonical
+    obtain ⟨b, hweq⟩ := hw.int_canonical
+    subst hveq; subst hweq
+    simp only [Source.step, Option.some.injEq] at hstep
+    subst hstep
+    exact ⟨eo, le_refl _, ⟨⊥, CTy.F 1 (BinOp.resTy op),
+      HasCTy.ret (BinOp.eval_hasVTy (Γ := []) op a b)
+        (by simp [hsmul_eq_smul, GradeVec.zeros, GradeVec.smul_nil]), hstack⟩⟩
 
 /-! ### E.3 progress (config level, ADR-0023) -/
 
@@ -3110,7 +3204,13 @@ theorem progress'_proof
     exact Or.inr (Or.inl ⟨(g, K, Comp.ret a), by simp [Source.step]⟩)
   | oom => exact absurd hfocus HasCTy.oom_untypable
   | wrong s => exact absurd hfocus HasCTy.wrong_untypable
-  | binop _ _ _ => exact absurd hfocus HasCTy.binop_untypable
+  | binop op v w =>
+    -- closed operands are `vint a`/`vint b`, so the δ-rule always steps (ADR-0065).
+    obtain ⟨γ_v, γ_w, _, _, _, hv, hw⟩ := hfocus.binop_inv
+    obtain ⟨a, hveq⟩ := hv.int_canonical
+    obtain ⟨b, hweq⟩ := hw.int_canonical
+    subst hveq; subst hweq
+    exact Or.inr (Or.inl ⟨(g, K, Comp.ret (BinOp.eval op a b)), by simp [Source.step]⟩)
 
 /-- Config-level safety under the reclassification: a `HasConfig'`-typed config never runs to `.stuck`.
 The escape now lands in `.escapedCap` (a defined terminal ≠ `.stuck`), so the third progress' outcome is
