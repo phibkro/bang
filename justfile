@@ -132,6 +132,7 @@ regen-all:
     python3 tools/gen-import-graph.py
     python3 tools/gen-changelog.py
     python3 tools/gen-reference.py
+    python3 tools/gen-tmgrammar.py
     # gen-proof-state EXCLUDED: build-dependent — in a build-less clone it emits a FALSE
     # census block into CONTEXT.md (toolmap finding 2026-07-09). Use `just proof-state` after a build.
 
@@ -226,6 +227,7 @@ fitness:
     python3 tools/gen-import-graph.py --check
     python3 tools/gen-changelog.py --check
     python3 tools/gen-reference.py --check
+    python3 tools/gen-tmgrammar.py --check
 
 # Orientation-doc SHA reachability: every backtick SHA cited as a waypoint in
 # CONTEXT.md/ROADMAP.md resolves to a real commit (a rebase/drop makes the prose
@@ -286,6 +288,11 @@ changelog:
 # Regenerate docs/reference/language.md from the Surf/Ty constructor comments + the verified #guard corpus.
 reference:
     python3 tools/gen-reference.py
+
+# Regenerate site/bang.tmLanguage.json — the TextMate grammar derived from the reified parser
+# tables (opInfo/keywordRule/pIdent) in Bang/Frontend/Surface.lean. `--check` gates it in fitness.
+tmgrammar:
+    python3 tools/gen-tmgrammar.py
 
 # Regenerate _site/index.html — the glanceable progress dashboard (milestones + ◊-map + proof-state + pulse).
 dashboard:

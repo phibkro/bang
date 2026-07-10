@@ -1,4 +1,5 @@
 import { defineConfig } from 'vocs/config'
+import bangGrammar from './bang.tmLanguage.json' with { type: 'json' }
 
 // Live subpath deploy target: https://phibkro.github.io/bang/
 // basePath makes every asset URL resolve under /bang/ (Vocs URLs-and-Deployment).
@@ -9,6 +10,15 @@ export default defineConfig({
   basePath: '/bang',
   // GitHub Pages is a static-only host: emit plain HTML/JS/CSS (no server runtime).
   renderStrategy: 'full-static',
+  // Register the GENERATED bang TextMate grammar with Shiki (vocs passes
+  // codeHighlight.langs straight through to rehype-shiki — verified empirically,
+  // vocs 2.3.3 `internal/config.js`). `name: 'bang'` is the fence-infostring id, so
+  // ```bang blocks highlight instead of degrading to plain text. The grammar is
+  // tools/gen-tmgrammar.py's committed output (derived from the reified parser
+  // tables), so highlighting cannot drift from what the parser recognises.
+  codeHighlight: {
+    langs: [{ ...bangGrammar, name: 'bang' }],
+  },
   // sync-docs.mjs rewrites relative `*.md` links to extensionless + flattens
   // [[wikilinks]], so most now resolve as Vocs routes. Kept at 'warn': some
   // cross-doc question links (e.g. the OPEN_QUESTIONS ties) route through
