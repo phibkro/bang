@@ -190,7 +190,21 @@ it can NEVER see this call as decreasing.
   Same `fail to show termination … Please use termination_by`: `hw` is still from `hcl`, not the
   scrutinee. Inlining does not change what the checker credits.
 
-**THE FIX — Fix-2b, height-indexed (the ONLY viable shape; keeps the frozen type):**
+**⚠ Fix-2b as written below is MACHINE-REFUTED (krnl2, 2026-07-10; witness
+`Fix2bHeightRefute.lean`, a scratch probe riding the lane's branch — reproduces on demand,
+EXIT 1 by design) — kept for the do-not-retry record; see the amendment after the slice plan
+for the surviving directions.** Root cause the pin missed: `HasVTy`/`HasCTy`/
+`HasClauses` are **Prop-valued** (`Typing.lean:103/138/344`), so ANY `Nat`-height over them is
+large elimination (Prop → Type), which Lean forbids:
+- hand-rolled `htC : HasCTy → Nat` → `error(nested.lean.propRecLargeElim)`: "recursor
+  HasCTy.casesOn can only eliminate into Prop" the moment a match binds constructor data;
+- auto-`sizeOf` → the degenerate Prop `SizeOf` instance (`sizeOf = 0` for every Prop), so every
+  decreasing goal is `0 < 0`. The pin's "TRY `sizeOf` first" hedge assumed `sizeOf` carries
+  derivation structure; on a Prop it is definitionally trivial.
+Do-not-retry: derivation-height over these Props is structurally impossible — no `set_option`
+rescues `propRecLargeElim`.
+
+**THE FIX — Fix-2b, height-indexed (REFUTED — the original text):**
 
 1. **Height functions** over the mutual `HasVTy`/`HasCTy`/`HasClauses` derivation:
    `htV : HasVTy … → Nat`, `htC : HasCTy … → Nat`, `htCl : HasClauses … → Nat`, each
@@ -246,6 +260,42 @@ block's 200k-budget heartbeat inference is not perturbed (a separate block).
 **Budget note:** this is a multi-session grind (the `_at` port + the height lemmas). The manager's
 call is whether it runs on the current unit's budget or a fresh unit — this pin is written so a
 FRESH unit can grind it cold.
+
+### AMENDMENT (manager, 2026-07-10) — Fix-2b refuted; the surviving directions, probe-ordered
+
+The height-function mechanism above died at Slice 1's viability probe (see the ⚠ block) — the
+refute-first discipline catching a bad pin before the ~670-line port. The `_at`-twin SHAPE
+(k-induction + post-block byte-identical recovery of the frozen `crelK_fund` type, Spec.lean:248
+untouched) survives; only the MEASURE must move off the Prop derivation. Two candidates, ruled
+into this probe order:
+
+**(A) Term-measured induction — spike FIRST, falsifiers before port.** `Comp`/`Val`/`Handler`
+are `Type` (`IR.lean:113`); the clause bodies and `M` are genuine sub-TERMS of the scrutinee
+`Comp.handle (Handler.custom ℓ p clauses) M`, and the LR fundamental recurses on derivations of
+the ORIGINAL (pre-substitution) term — closing substitutions ride `EnvRelK`, so the recursion
+targets are subterms. Index `_at` by `sizeOf (c : Comp)` (or a bespoke measure). TWO
+pre-registered falsifiers, checked in this order BEFORE any porting:
+1. **Same-term arms kill it outright:** if ANY `HasCTy`/`HasVTy` constructor types the SAME
+   term via a recursive premise on that same term (subsumption / row-weakening shape), the term
+   measure does not decrease there and (A) is dead — grep the constructors first; this is a
+   minutes-check.
+2. **List descent:** does the measure strictly decrease from the `handle` term into a clause
+   body `w` nested under `clauses : List (OpId × Comp)`? Auto-`sizeOf` may not credit the List
+   payload; a bespoke `Comp.measure` counting into handler clauses is the expected fix — but
+   build-arbitrate before trusting it.
+
+**(C) Fuel-indexed judgment copy — the KNOWN-VIABLE fallback.** Define `HasCTyN : Nat → …`
+(+ `HasVTyN`/`HasClausesN`), a fuel-indexed mirror of the judgment (constructors demand fuel
+`n` for sub-derivations, conclusion at `n+1`), plus the bridge
+`HasCTy … ↔ ∃ n, HasCTyN n …` — both directions eliminate Prop into Prop, so NO large-elimination
+wall exists anywhere in this route by construction. Induct `_at` on the fuel. Cost: mechanical
+duplication of the judgment's constructors (or the fragment the proof block touches) + the
+bridge lemmas — bigger diff than (A), zero type-theoretic risk. Frozen statements untouched
+(same post-block recovery).
+
+**(B) Statement-level fuel on the frozen twins — REJECTED unless (A) and (C) both die.** Touches
+frozen statements (`Spec.lean:248` chain), needs a frozen-statement ruling + kernel-engineer
+review; the whole point of the `_at` shape is to avoid this.
 
 ### Debt-3 residual — the R-1 `dispatchOn_rename` custom sorry is in DEAD CODE
 
