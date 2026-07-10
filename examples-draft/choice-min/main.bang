@@ -1,0 +1,8 @@
+effect Choice { pick : Int -> Int }
+
+let main =
+  handle
+    sched.pick(10)
+  with Choice as sched {
+    pick(n) => ret 0
+  }

@@ -30,6 +30,7 @@ its trigger arises.
 | **structOK multi-arg descent design** (#50 · the ADR-0091 fork's full analysis) | `docs/notes/structok-multiarg-design.md` |
 | **Multi-shot survey** (Q22/Q27 · one-shot-precedent · WasmFX backend constraint · verification-tax · the labelling-vs-closure verdict-shape) | `docs/notes/multishot-survey.md` |
 | **Distributed-systems story** (post-v1 arc: nondeterminism-as-effect · DST-as-handler · certified CRDTs · CALM-as-grade · the KV-store hello-world) | `docs/notes/distributed-story.md` |
+| **Ndet/DST design** (rung-2 entry slice · `Choice` as ordinary effect · seeded-deterministic DST handler = replayable sim, no IO · sim-KV handler-swap · designed within the D4 ret-shape wall via stateless seed-splitting · the gap list = G1 is the only critical-path ask) | `docs/notes/ndet-dst-design.md` |
 | **Proof-export survey** (Q43 design: law → Lean goal over the elaborated Comp · QuickChick-Dec analog · content-addressed cache · nothing enters the TCB) | `docs/notes/proof-export-survey.md` |
 | **CALM-as-grade survey** (rung-3 map: lattice-store core + `coord` row label · grading-the-row rejected · the Datalog-transfer wall · SPU = monotone fragment discharging `rowmonotone_coordination_free`) | `docs/notes/calm-as-grade-survey.md` |
 | **Laws taxonomy** (model-shaped vs morphism-shaped · composition-closed ⇒ gradeable criterion · the free/graded/law/runtime ladder · Q38 = one theory, three coats) | `docs/notes/laws-taxonomy.md` |
