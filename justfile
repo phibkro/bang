@@ -439,7 +439,12 @@ shake:
 # extern_lib behind isWindows, so its precompiled .so lacks the C symbol on Linux —
 # lake build Bang:docs fails at UnicodeBasic.TableLookup. No requirer-side override exists
 # (traced vs Lake 5.0.0 source; plans/010 report). Fix = one-line upstream PR to
-# fgdorais/lean4-unicode-basic un-gating the extern_lib (operator ledger).
+# fgdorais/lean4-unicode-basic — SUPERSEDED: upstream issue #81 is the canonical thread;
+# maintainer holds until a LAKE fix (Lake maintainer concurs it is a Lake bug); the un-gate
+# diff was already posted there and not merged. Our repro+nm evidence added to #81. Local
+# unblock option = docbuild-root direct-require of a patched FORK (shadows the transitive
+# dep) — operator call, since forking is outward. NixOS nuance: symbol missing everywhere,
+# faults only under eager binding (bindnow).
 # import-closure page render is slow by design. First run resolves doc-gen4's deps
 # (network) and compiles it (tens of minutes cold).
 docs:
