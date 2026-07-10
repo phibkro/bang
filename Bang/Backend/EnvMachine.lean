@@ -742,6 +742,58 @@ theorem Comp.ScopedC.split_inv {n : Nat} {w : Val} {N : Comp} (h : Comp.ScopedC 
   · have := h (k - 2) (by omega); simp only [Comp.shiftFrom, Comp.split.injEq] at this
     rw [show k = (k - 2) + 2 by omega]; exact this.2
 
+/-! ### The 3a purity invariant (FACTORED from closedness — ruling rider, 2026-07-10)
+
+`MVal.WF`/`MEnv.WF` (above) are the REUSABLE closedness core (reads-back-closed) slice 3b keeps
+UNCHANGED over store-held values. The purity discipline the PURE fragment additionally needs — every
+closure in reach carries an `EffectFree`, `ScopedC`-under-its-env body, so `force`/`app` never run
+effectful captured code — is a SEPARATE layer. 3b takes only the closedness core; 3a stacks purity on
+top. Kept factored per the ruling rider so 3b EXTENDS rather than reshapes (no "pure" baked into `WF`). -/
+
+/-- A computation performs no effects and installs no handler — the PURE fragment. Recursion mirrors the
+binding structure so `EffectFree` descends into every sub-computation the eval visits. `force`/`app`
+carry no `Comp` sub-term here (their closure body lives in the ENV, guarded by `MEnv.PureV` below). -/
+def EffectFree : Comp → Prop
+  | .ret _         => True
+  | .letC M N      => EffectFree M ∧ EffectFree N
+  | .force _       => True
+  | .lam M         => EffectFree M
+  | .app M _       => EffectFree M
+  | .perform _ _ _ => False
+  | .handle _ _    => False
+  | .case _ N₁ N₂  => EffectFree N₁ ∧ EffectFree N₂
+  | .split _ N     => EffectFree N
+  | .unfold _      => True
+  | .binop _ _ _   => True
+  | .oom           => True
+  | .wrong _       => True
+
+/-! The purity invariant on machine values / envs (the 3a layer over closedness): every closure a value
+reaches has an `EffectFree` body `ScopedC` under its captured env's length. Mutual over `MVal`/`MEnv`
+to descend the closure's env. `force`/`app` entering `mvclos M ρ'` then get `EffectFree M` + the env
+invariant to fire the IH — the fix for wrinkle 3 (closures carry arbitrary captured code). -/
+mutual
+def MVal.PureV : MVal → Prop
+  | .mvunit       => True
+  | .mvint _      => True
+  | .mvcap _ _    => True
+  | .mvclos M ρ   => EffectFree M ∧ Comp.ScopedC (readbackEnv ρ).length M ∧ MEnv.PureV ρ
+  | .minl w       => MVal.PureV w
+  | .minr w       => MVal.PureV w
+  | .mpair w₁ w₂  => MVal.PureV w₁ ∧ MVal.PureV w₂
+  | .mfold w      => MVal.PureV w
+def MEnv.PureV : MEnv → Prop
+  | .nil       => True
+  | .cons v ρ  => MVal.PureV v ∧ MEnv.PureV ρ
+end
+
+theorem MEnv.PureV.head {mv : MVal} {ρ : MEnv} (h : MEnv.PureV (mv ∷ₑ ρ)) : MVal.PureV mv := by
+  unfold MEnv.PureV at h; exact h.1
+theorem MEnv.PureV.tail {mv : MVal} {ρ : MEnv} (h : MEnv.PureV (mv ∷ₑ ρ)) : MEnv.PureV ρ := by
+  unfold MEnv.PureV at h; exact h.2
+theorem MEnv.PureV.cons {mv : MVal} {ρ : MEnv} (hmv : MVal.PureV mv) (hρ : MEnv.PureV ρ) :
+    MEnv.PureV (mv ∷ₑ ρ) := by unfold MEnv.PureV; exact ⟨hmv, hρ⟩
+
 /-! ### The value correspondence `readback ∘ evalV = substEnvV ∘ readbackEnv`
 
 For a `v` scoped under `|ρ|` with `ρ` well-formed, evaluating `v` under `ρ` then reading back equals
