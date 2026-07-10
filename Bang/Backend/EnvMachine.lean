@@ -717,6 +717,12 @@ def substEnvV : List Val → Val → Val
   | nil => rfl
   | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _ _
 
+@[simp] theorem substEnv_perform (γ : List Val) (cp : Val) (op : Bang.OpId) (w : Val) :
+    substEnv γ (Comp.perform cp op w) = Comp.perform (substEnvV γ cp) op (substEnvV γ w) := by
+  induction γ generalizing cp w with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _ _
+
 @[simp] theorem substEnv_letC (γ : List Val) (M N : Comp) :
     substEnv γ (Comp.letC M N) = Comp.letC (substEnv γ M) (closeUnderBindersE 1 γ N) := by
   induction γ generalizing M N with
@@ -1824,6 +1830,36 @@ theorem mtxnService_good {op : Bang.OpId} {arg : MVal} {Θ : List MVal}
           · exact hw
       | _ => intro mv hmv; exact hΘ mv hmv
 
+/-- `getD` of a good list at a good default is good (member-or-default). -/
+private theorem mval_getD_good {d : MVal} (hd : MVal.WF d ∧ MVal.WFClos d) :
+    ∀ {Θ : List MVal} (i : Nat), (∀ mv ∈ Θ, MVal.WF mv ∧ MVal.WFClos mv) →
+      MVal.WF (Θ.getD i d) ∧ MVal.WFClos (Θ.getD i d)
+  | [], _, _ => by simp only [List.getD, List.getElem?_nil, Option.getD_none]; exact hd
+  | a :: Θ, 0, hΘ => by simp only [List.getD_cons_zero]; exact hΘ a List.mem_cons_self
+  | a :: Θ, i + 1, hΘ => by
+      simp only [List.getD_cons_succ]
+      exact mval_getD_good hd i (fun mv hmv => hΘ mv (List.mem_cons_of_mem _ hmv))
+
+/-- The stm service RESULT value is `WF ∧ WFClos`: `newTVar` returns an index (`mvint`), `readTVar`
+a heap cell or the default (both good), `writeTVar` unit. -/
+theorem mtxnService_result_good {op : Bang.OpId} {arg : MVal} {Θ : List MVal}
+    (hΘ : ∀ mv ∈ Θ, MVal.WF mv ∧ MVal.WFClos mv) :
+    MVal.WF (mtxnService op arg Θ).1 ∧ MVal.WFClos (mtxnService op arg Θ).1 := by
+  have hint : ∀ z : Int, MVal.WF (MVal.mvint z) ∧ MVal.WFClos (MVal.mvint z) :=
+    fun z => ⟨by simp only [MVal.WF, readback]; intro k; rfl, by simp only [MVal.WFClos]⟩
+  have hunit : MVal.WF MVal.mvunit ∧ MVal.WFClos MVal.mvunit :=
+    ⟨by simp only [MVal.WF, readback]; intro k; rfl, by simp only [MVal.WFClos]⟩
+  simp only [mtxnService]
+  by_cases hnew : op = "newTVar"
+  · simp only [hnew, if_true]; exact hint _
+  · simp only [hnew, if_false]
+    by_cases hread : op = "readTVar"
+    · simp only [hread, if_true]; exact mval_getD_good (hint 0) _ hΘ
+    · simp only [hread, if_false]
+      cases arg with
+      | mpair iv w => exact hunit
+      | _ => exact hunit
+
 /-- The τ-clause of `StoresGood` is preserved under `put` of a good heap (list lemma). -/
 private theorem theap_put_good {n : Nat} {Θ' : List MVal}
     (hΘ' : ∀ mv ∈ Θ', MVal.WF mv ∧ MVal.WFClos mv) :
@@ -2345,7 +2381,169 @@ theorem evalE_agrees_evalD_gen :
             exact ⟨hWFres, (evalVOfBinop_eval_pureV op x y).wfclos⟩
         | _ => rw [ha, hb] at h; simp at h
       | _ => rw [ha] at h; simp at h
-    | perform w op v => sorry
+    | perform w op v =>
+      obtain ⟨hScw, hScv⟩ := hSc.perform_inv
+      have hscw : Val.ScopedV γ.length w := hlen ▸ hScw
+      have hscv : Val.ScopedV γ.length v := hlen ▸ hScv
+      have hWFarg : MVal.WF (evalV ρ v) := evalV_WF hWF (hlen ▸ hscv)
+      have hWCarg : MVal.WFClos (evalV ρ v) := evalV_WFClos hWF hP (hlen ▸ hscv)
+      have hArgGood : MVal.WF (evalV ρ v) ∧ MVal.WFClos (evalV ρ v) := ⟨hWFarg, hWCarg⟩
+      have hrbarg : substEnvV γ v = readback (evalV ρ v) := by
+        rw [show γ = readbackEnv ρ from hag.symm, readback_evalV hWF (hlen ▸ hscv)]
+      obtain ⟨hCσ, hCτ, hCκ⟩ := hC
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | mvcap n ℓ =>
+        rw [hw] at h
+        simp only at h  -- reduce the `match (mvcap n ℓ)` iota-redex so the store matches surface
+        have hrbw : substEnvV γ w = Val.vcap n ℓ := by
+          rw [show γ = readbackEnv ρ from hag.symm, ← readback_evalV hWF (hlen ▸ hscw), hw]; rfl
+        -- the evalD focus: perform (vcap n ℓ) op (readback arg).
+        have hsubst : substEnv γ (Comp.perform w op v)
+            = Comp.perform (Val.vcap n ℓ) op (readback (evalV ρ v)) := by
+          simp only [substEnv_perform, hrbw, hrbarg]
+        -- per-store get? agreement (W1).
+        have hσeq : Bang.CalcVM.SStore.get? dσ n = (eσ.get? n).map readback := by
+          rw [hCσ]; exact SStore.get?_readback eσ n
+        cases hσget : eσ.get? n with
+        | some s =>
+          rw [hσget] at h
+          simp only at h
+          have hsGood := hG.get_state hσget
+          have hσD : Bang.CalcVM.SStore.get? dσ n = some (readback s) := by rw [hσeq, hσget]; rfl
+          by_cases hop : op = "get"
+          · -- GET: mret s ↔ ret (readback s), σ unchanged.
+            rw [if_pos hop] at h
+            simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+            obtain ⟨hout, -, hσ', hτ', hκ'⟩ := h
+            subst hout hσ' hτ' hκ'
+            refine ⟨G, dσ, dτ, dκ, ?_, ⟨hCσ, hCτ, hCκ⟩, hG, ?_, by rintro n op mv ⟨⟩⟩
+            · rw [hsubst]
+              simp only [Bang.CalcVM.evalD, hσD, hop, if_true, readbackTermS, readbackTerm]
+            · rintro t ⟨rfl⟩; exact hsGood
+          · by_cases hop2 : op = "put"
+            · -- PUT: mret unit + σ.put; evalD ret unit + dσ.put (readback arg).
+              rw [if_neg hop, if_pos hop2] at h
+              simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+              obtain ⟨hout, -, hσ', hτ', hκ'⟩ := h
+              subst hout hσ' hτ' hκ'
+              refine ⟨G, Bang.CalcVM.SStore.put dσ n (readback (evalV ρ v)), dτ, dκ, ?_, ?_,
+                hG.put_state hArgGood, ?_, by rintro n op mv ⟨⟩⟩
+              · rw [hsubst]
+                subst hop2
+                simp only [Bang.CalcVM.evalD, hσD, if_neg hop, readbackTermS, readbackTerm, readback,
+                  reduceIte]
+              · exact ⟨by rw [hCσ]; exact (SStore.put_readback eσ n (evalV ρ v)).symm ▸ rfl, hCτ, hCκ⟩
+              · rintro t ⟨rfl⟩; exact ⟨by simp only [MTerm.WF, MVal.WF, readback]; intro k; rfl,
+                  by simp only [MTerm.WFClos, MVal.WFClos]⟩
+            · -- other op on a state frame ⇒ RAISE.
+              rw [if_neg hop, if_neg hop2] at h
+              simp only [Option.some.injEq, Prod.mk.injEq] at h
+              obtain ⟨hout, -, hσ', hτ', hκ'⟩ := h
+              subst hout hσ' hτ' hκ'
+              refine ⟨G, dσ, dτ, dκ, ?_, ⟨hCσ, hCτ, hCκ⟩, hG, by rintro t ⟨⟩, ?_⟩
+              · rw [hsubst]
+                simp only [Bang.CalcVM.evalD, hσD, hop, if_false, hop2, if_false, readbackTermS,
+                  hrbarg]
+              · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact hArgGood
+        | none =>
+          rw [hσget] at h
+          simp only at h
+          have hσD : Bang.CalcVM.SStore.get? dσ n = none := by rw [hσeq, hσget]; rfl
+          have hτeq : Bang.CalcVM.THeap.get? dτ n = (eτ.get? n).map (List.map readback) := by
+            rw [hCτ]; exact THeap.get?_readback eτ n
+          cases hτget : eτ.get? n with
+          | some Θ =>
+            rw [hτget] at h
+            simp only at h
+            have hτD : Bang.CalcVM.THeap.get? dτ n = some (Θ.map readback) := by rw [hτeq, hτget]; rfl
+            -- Θ's cells are good (from StoresGood τ-clause).
+            have hΘgood : ∀ mv ∈ Θ, MVal.WF mv ∧ MVal.WFClos mv := by
+              intro mv hmv
+              have hmem : (n, Θ) ∈ eτ := by
+                simp only [ETHeap.get?, Option.map_eq_some_iff] at hτget
+                obtain ⟨p, hf, hp⟩ := hτget
+                have := List.mem_of_find?_eq_some hf
+                have hp1 : p = (n, Θ) := by
+                  obtain ⟨a, b⟩ := p; simp only at hp; rw [← hp]
+                  have : a = n := by
+                    have := List.find?_some hf; simp only [decide_eq_true_eq] at this; exact this
+                  simp only [this]
+                rw [hp1] at this; exact this
+              exact hG.2.1 (n, Θ) hmem mv hmv
+            by_cases hoptxn : Bang.CalcVM.isTxnOp op = true
+            · -- TXN service.
+              simp only [hoptxn, if_true] at h
+              simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+              obtain ⟨hout, -, hσ', hτ', hκ'⟩ := h
+              subst hout hσ' hτ' hκ'
+              refine ⟨G, dσ, Bang.CalcVM.THeap.put dτ n ((mtxnService op (evalV ρ v) Θ).2.map readback),
+                dκ, ?_, ?_, hG.put_txn (mtxnService_good hArgGood hΘgood), ?_, by rintro n op mv ⟨⟩⟩
+              · rw [hsubst]
+                simp only [Bang.CalcVM.evalD, hσD, hτD, hoptxn, if_true]
+                rw [mtxnService_readback op (evalV ρ v) Θ]
+                simp only [readbackTermS, readbackTerm]
+              · exact ⟨hCσ, by rw [hCτ]; exact (THeap.put_readback eτ n (mtxnService op (evalV ρ v) Θ).2).symm ▸ rfl, hCκ⟩
+              · rintro t ⟨rfl⟩
+                -- the returned value r is WFClos: it's a heap cell (readTVar), an index (newTVar), or unit.
+                exact mtxnService_result_good hΘgood
+            · -- non-txn op on a txn frame ⇒ RAISE.
+              simp only [hoptxn, Bool.false_eq_true, if_false] at h
+              simp only [Option.some.injEq, Prod.mk.injEq] at h
+              obtain ⟨hout, -, hσ', hτ', hκ'⟩ := h
+              subst hout hσ' hτ' hκ'
+              refine ⟨G, dσ, dτ, dκ, ?_, ⟨hCσ, hCτ, hCκ⟩, hG, by rintro t ⟨⟩, ?_⟩
+              · rw [hsubst]
+                have hisTxn : Bang.CalcVM.isTxnOp op = false := Bool.not_eq_true _ |>.mp hoptxn
+                simp only [Bang.CalcVM.evalD, hσD, hτD, hisTxn, Bool.false_eq_true, if_false,
+                  readbackTermS, hrbarg]
+              · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact hArgGood
+          | none =>
+            rw [hτget] at h
+            simp only at h
+            have hτD : Bang.CalcVM.THeap.get? dτ n = none := by rw [hτeq, hτget]; rfl
+            have hκeq : Bang.CalcVM.CStore.get? dκ n
+                = (eκ.get? n).map (fun t => (readback t.1,
+                    t.2.1.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv t.2.2) c.2)))) := by
+              rw [hCκ]; exact CStore.get?_readback eκ n
+            cases hκget : eκ.get? n with
+            | some pcls =>
+              obtain ⟨p, cls, ρ_inst⟩ := pcls
+              rw [hκget] at h
+              simp only at h
+              have hκD : Bang.CalcVM.CStore.get? dκ n
+                  = some (readback p, cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))) := by
+                rw [hκeq, hκget]; rfl
+              obtain ⟨hpGood, hWFρinst, hWCρinst, hclsScope⟩ := hG.get_custom hκget
+              cases hclsfind : cls.find? (·.1 == op) with
+              | some clause =>
+                rw [hclsfind] at h
+                sorry
+              | none =>
+                rw [hclsfind] at h
+                simp only [Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨hout, -, hσ', hτ', hκ'⟩ := h
+                subst hout hσ' hτ' hκ'
+                refine ⟨G, dσ, dτ, dκ, ?_, ⟨hCσ, hCτ, hCκ⟩, hG, by rintro t ⟨⟩, ?_⟩
+                · rw [hsubst]
+                  have hfindD : (cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))).find? (·.1 == op) = none := by
+                    rw [List.find?_map,
+                      show ((fun x => x.1 == op) ∘ fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))
+                        = (fun x : Bang.OpId × Comp => x.1 == op) from rfl, hclsfind, Option.map_none]
+                  simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, hfindD, readbackTermS]
+                · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact hArgGood
+            | none =>
+              rw [hκget] at h
+              simp only at h
+              have hκD : Bang.CalcVM.CStore.get? dκ n = none := by rw [hκeq, hκget]; rfl
+              simp only [Option.some.injEq, Prod.mk.injEq] at h
+              obtain ⟨hout, -, hσ', hτ', hκ'⟩ := h
+              subst hout hσ' hτ' hκ'
+              refine ⟨G, dσ, dτ, dκ, ?_, ⟨hCσ, hCτ, hCκ⟩, hG, by rintro t ⟨⟩, ?_⟩
+              · rw [hsubst]
+                simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, readbackTermS, hrbarg]
+              · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact hArgGood
+      | _ => rw [hw] at h; simp at h
     | handle hdl M => sorry
     | oom => simp [evalE] at h
     | wrong s => simp [evalE] at h
