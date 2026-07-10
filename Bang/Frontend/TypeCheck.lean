@@ -2752,16 +2752,25 @@ def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx →
       let r' ← elabArms env binderTys Γ r
       .ok (.cons c bs b' r')
 
-/-- #21 s7probe: `HClauses` elaboration (custom-handle clause bodies) — the `elabArms` precedent.
-Every clause elaborates under the SAME `Γ'` (the `withCapS`-extended context `elabS`'s
-`handleCustomS` arm builds — clauses don't extend it further; there is no per-clause binder to add
-at elaboration, unlike `elabArms`'s per-ctor payload binders — the clause's own `arg`/`param` binders
-are a `synthSC`/`checkHClauses`-time concern, mirroring how `lowerC`'s cap-binder discipline is
-likewise elaboration-invisible until lowering). -/
+/-- #21 s7probe / #85 fix: `HClauses` elaboration (custom-handle clause bodies) — the `elabArms`
+precedent. **Correction to the s7probe-era claim this doc comment used to make** ("there is no
+per-clause binder to add at elaboration"): that is FALSE — `elabS`'s `.binopS` arm A-normalizes
+NESTED operands via `anfSplit`, which runs `synthSC`/`zonkInferC` on the operand's Γ IMMEDIATELY
+(elaboration-time, not deferred to `checkHClauses`). A clause body with only ATOMIC operands
+(`n * 10`) never triggers this (`anfSplit`'s `isValueSurf` short-circuit), which is why the bug
+stayed hidden until a NESTED binop (`n * 3 + 1`) forced a real `anfSplit` lookup of `n` — issue #85,
+the exact WALL-3 throwaway-context class (`stage7-elab-probe.md`): a Γ missing the clause's OWN
+binders. Fix: extend Γ with `x` (the op-arg) and `#param` (the carried-param sentinel, matching
+`checkHClauses`'s later `(x, argTy) :: ("#param", P) :: Γ` binding ORDER exactly, so `checkHClauses`
+re-typing the SAME tree sees consistent de-Bruijn positions) — bound to FRESH HOLES here (elaboration
+doesn't need the real op/param types, only that `x`/`#param` resolve STRUCTURALLY so `anfSplit`'s
+throwaway inference can find them; `checkHClauses` still supplies the real types at check-time). -/
 def elabHClauses (env : ElabEnv) (Γ : NCtx) : HClauses → Except String HClauses
   | .nil              => .ok .nil
   | .cons op x b rest => do
-      let b' ← elabS env Γ b
+      let Γ' := (x, ({ body := paramHole Γ.length } : Scheme))
+               :: ("#param", ({ body := paramHole (Γ.length + 1) } : Scheme)) :: Γ
+      let b' ← elabS env Γ' b
       let rest' ← elabHClauses env Γ rest
       .ok (.cons op x b' rest')
 end
@@ -5286,6 +5295,29 @@ pipeline `bang check`/`bang run` use (no separate test-only path). -/
   with
   | .error m => (m.splitOn "ret").length > 1 && (m.splitOn "ADR-0065").length > 1 && (m.splitOn "Q27").length > 1
   | .ok _    => false)
+
+/-! ### #85 — a NESTED binop in a handler clause body lost the clause's own binder. `elabHClauses`
+(elaboration, runs BEFORE `checkHClauses`) never extended Γ with the clause's `x`/`#param` binders —
+its own doc comment claimed "there is no per-clause binder to add at elaboration", which is false:
+`elabS`'s `.binopS` arm A-normalizes NESTED operands via `anfSplit`, which runs `synthSC`/
+`zonkInferC` on the SAME Γ immediately (elaboration-time). A clause body with only ATOMIC operands
+(`n * 10`) never hits this (`anfSplit`'s `isValueSurf` short-circuit skips the lookup entirely) —
+which is exactly why the bug stayed hidden until a NESTED binop (`n * 3 + 1`, `(n * 3) + 1`) forced
+a real Γ lookup of `n` that failed. The WALL-3 throwaway-context class (`stage7-elab-probe.md`),
+generalized to a THIRD occurrence. Fixed: `elabHClauses` now binds `x`/`#param` to fresh holes
+before elaborating the clause body — mirroring `checkHClauses`'s later real-typed binding, same
+ORDER, so both passes agree on de-Bruijn position. -/
+
+-- the repro triple (all three ports of the reported bug, run-oracle checked): a single atomic
+-- binop clause body (ALREADY worked, pinned so a future change can't silently re-break it), then
+-- the two NESTED-binop shapes that failed before this fix — `n * 3 + 1` is the DST consumer's own
+-- LCG shape (ctr-design.md §RE2), now running in the tested superset.
+#guard runTypedYieldsInt 200
+    "effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 10 }" 10
+#guard runTypedYieldsInt 200
+    "effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 3 + 1 }" 4
+#guard runTypedYieldsInt 200
+    "effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => (n * 3) + 1 }" 4
 
 /-! ### #84 gap 1 — caps-through-functions: `Cap Net` ascribes a function param to a named effect's
 capability type, so shared effectful logic can be a function called under EACH stage's own `handle …

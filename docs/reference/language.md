@@ -509,6 +509,11 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `match (($eitherToResult) (($resultToEither) (Err(3)))) { Err(e) -> e, Ok(a) -> 99 }` ⟹ `3`
 - `match (($eitherToOption) (($optionToEither) (Some(7)))) { None -> 99, Some(v) -> v }` ⟹ `7`  — `eitherToOption ∘ optionToEither = id` on `Some`/`None` (Option ≅ Either Unit).
 - `match (($eitherToOption) (($optionToEither) (None : Option Int))) { None -> 0, Some(v) -> v }` ⟹ `0`
+### #85 — a NESTED binop in a handler clause body lost the clause's own binder. `elabHClauses`
+
+- `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 10 }` ⟹ `10`  — LCG shape (ctr-design.md §RE2), now running in the tested superset.
+- `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 3 + 1 }` ⟹ `4`
+- `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => (n * 3) + 1 }` ⟹ `4`
 ### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
 
 - `let x = 3 data Marker = M x + 1` ⟹ `4`  — otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.
