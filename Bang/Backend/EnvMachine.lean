@@ -1722,6 +1722,42 @@ theorem evalE_agrees_evalD (f : Nat) (γ : List Val) (M : Comp) (mv : MVal)
         = some (.term (.ret (readback mv)), g'', σ', τ', κ') := by
   sorry -- SLICE-3 induction (see RESUME MAP above): crux proven; grind patterned on sim/run_evalD
 
+/-- **REFUTATION WITNESS (envm3, 2026-07-10) — the headline is FALSE for arbitrary evalE input stores.**
+The headline (:1715) binds `eσ eτ eκ` as ARBITRARY inputs on the `evalE` side while pinning the `evalD`
+side to `[] [] []`, with NO store-correspondence premise. That is unsound: an `evalE` store can hold a
+state cell whose identity `evalD`'s empty store cannot resolve, so `evalE` RETURNS where `evalD` RAISES.
+
+Concretely: `M = perform (vvar 0) "get" ()`, `γ = [vcap 7 0]`, `ρ = mvcap 7 0 ∷ₑ nil`,
+`eσ = [(7, mvunit)]`. All headline hypotheses hold (`EnvAgrees ρ γ` by `readbackEnv ρ = γ`), and
+`evalE` reads the cell ⇒ `mret mvunit`; but `substEnv γ M = perform (vcap 7 0) "get" ()` over
+`[] [] []` misses all three stores ⇒ `raised n "get" vunit`, never a `ret`. So the ∃ conclusion is
+unsatisfiable. This is INDEPENDENT of the in-file `sorry` (it takes the headline as a hypothesis `H`). -/
+theorem headline_refutation_witness
+    (H : ∀ (f : Nat) (γ : List Val) (M : Comp) (mv : MVal)
+          (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) (ρ : MEnv) (g' : Nat)
+          (eσ' : ESStore) (eτ' : ETHeap) (eκ' : ECStore),
+          EnvAgrees ρ γ →
+          evalE f 0 eσ eτ eκ ρ M = some (.mterm (.mret mv), g', eσ', eτ', eκ') →
+          ∃ F g'' σ' τ' κ',
+            Bang.CalcVM.evalD F 0 [] [] [] (substEnv γ M)
+              = some (.term (.ret (readback mv)), g'', σ', τ', κ')) : False := by
+  have heval : evalE 8 0 [(7, .mvunit)] [] [] (MVal.mvcap 7 0 ∷ₑ .nil)
+      (.perform (.vvar 0) "get" .vunit)
+      = some (.mterm (.mret .mvunit), 0, [(7, .mvunit)], [], []) := by
+    simp only [evalE, evalV, MEnv.get, ESStore.get?, List.find?, decide_true, if_true,
+      Option.map_some]
+  obtain ⟨F, g'', σ', τ', κ', hd⟩ :=
+    H 8 [Val.vcap 7 0] (.perform (.vvar 0) "get" .vunit) .mvunit
+      [(7, .mvunit)] [] [] (MVal.mvcap 7 0 ∷ₑ .nil) 0 [(7, .mvunit)] [] []
+      rfl heval
+  cases F with
+  | zero => simp only [Bang.CalcVM.evalD, reduceCtorEq] at hd
+  | succ F =>
+      simp only [substEnv, Comp.subst, Comp.substFrom, Val.substFrom, if_true, gt_iff_lt,
+        Bang.CalcVM.evalD, Bang.CalcVM.SStore.get?, Bang.CalcVM.THeap.get?, Bang.CalcVM.CStore.get?,
+        List.find?, Option.map_none, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hd
+      exact hd.1
+
 /-! ## Mini-Agree probe — the PIN'S EXECUTABLE CONFIRMATION
 
 A pure program run through `evalE` + `readback` must yield the same value the verified
