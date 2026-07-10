@@ -1,4 +1,5 @@
 name = "bang-lang"
+lintDriver = "batteries/runLinter"
 defaultTargets = ["Bang"]
 
 [[lean_lib]]

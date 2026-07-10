@@ -323,3 +323,30 @@ axioms:
 dead-code:
     python3 tools/gen-deadcode-imports.py
     lake env lean tools/DeadCode.lean
+
+# Batteries environment linters over every Bang module (plan 007; NOT in verify yet —
+# first-run backlog is triaged in plans/007-lint-triage.md, wiring is an operator call).
+# ROOT-MODULE enumeration, not full-file enumeration: `lake lint -- A B` scopes to the
+# LAST arg's import closure only (verified, see plans/007-lint-triage.md) — passing every
+# `.lean` file as its own scope would massively duplicate findings. The 19 modules below
+# are every file nothing else in Bang/ imports; their closures cover all of Bang/ (BFS-verified).
+# No Bang.lean barrel exists (retired, #81) so `lake lint` alone (bare) does not work.
+lint-lean:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for mod in Bang.Audit Bang.Backend.EnvMachine Bang.Distribution Bang.Examples \
+      Bang.Frontend.Lint Bang.Frontend.NamedCore Bang.Frontend.Rewrite \
+      Bang.Frontend.Surface.PropTest Bang.Frontend.Surface.Trait Bang.Reify.CalcReifySim \
+      Bang.Witness.BinopTyping Bang.Witness.BoccRegress Bang.Witness.CapEscapeWitness \
+      Bang.Witness.CustomStage1Refute Bang.Witness.ElabFuzz Bang.Witness.ProofExport \
+      Bang.Witness.ReturnEscapeReach Bang.Witness.StateEscapeWitness Bang.Witness.VcapFreeRefute; do
+      echo "=== $mod ==="
+      lake lint -- "$mod" || true
+    done
+
+# Build critical path — NOTE: `lake exe pole` does not exist in this importGraph pin
+# (only `graph` + `unused_transitive_imports` are registered; see plans/007-lint-triage.md).
+# `graph` gives the import SHAPE (fan-in/fan-out), not per-file build timing; real timing
+# needs either a newer importGraph pin or parsing `lake build`'s own `Built <mod> (Xs)` lines.
+pole:
+    lake exe graph --to Bang.Audit import-graph.dot
