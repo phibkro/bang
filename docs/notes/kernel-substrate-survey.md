@@ -23,10 +23,21 @@ already sells "a language safe to generate into"; the substrate direction genera
 *bang programs* to *other languages' programs* — elaborate language L into the kernel, and L
 inherits the kernel's theorems **at the corner of the design space L's elaboration lands in**.
 The operator's sharpening is the load-bearing structural move: the guarantees are not monolithic,
-they are **graded along two orthogonal axes** — a **type-power axis** (the lambda cube: λ→ →
-System F → Fω) and a **computational-power axis** (the effect row: ⊥-total → Div → labelled
-effects). A conformance *profile* is a cell in that matrix: a named (type-rung × row-rung) pair,
-plus a statement of exactly which theorems an embedding into that cell inherits. The prior art
+they are **graded along many orthogonal axes**. Two are load-bearing enough to form a named
+**base profile** — a **type-power axis** (the lambda cube: λ→ → System F → Fω) and a
+**computational-power axis** (the effect row: ⊥-total → Div → labelled effects) — but the
+computational side is not one axis, it is a **whole family** of gradeable dials (termination/cost,
+usage/linearity, nondeterminism, information-flow, regions, sensitivity, resumption, binding-time,
+protocol), each admissible under the *same* gradeable-axis criterion (`laws-taxonomy.md` §5:
+composition-closed ⇒ gradeable, user-definable) and **five of them already live in the repo's
+orbit unnamed-as-a-family** (§2). A conformance *profile* is therefore **not a 2D table cell** — it
+is a **RISC-V-style named base** (type-rung × row-rung) **plus extension letters**, one per further
+axis a language claims (the RV64GC shape). The lattice product does the work underneath; the
+conformance surface stays human-sized (§2d). Each such grade also carries an **economic payoff**
+(§1d): it converts a *global* analysis that is a bespoke external tool in its home community (RaML
+cost analysis, TLA+ determinism checking, a DP privacy accountant) into a *compositional type the
+kernel checks* — "implement against the kernel and your community's bespoke analyzer becomes a type
+discipline." The prior art
 for "a base spec + named certified subsets an implementer claims" is **RISC-V profiles**
 (RV64I base + ratified extensions) and **SQL conformance** (Core + optional feature packages) —
 mature in hardware and databases, and, to this survey's knowledge, **never applied to a *verified*
@@ -36,9 +47,9 @@ types**, with **no ∀-former** — so λ→ and (via elaborate-to-mono) System-
 inherit safety, but the *typed* inheritance boundary is sharp and must be stated, not blurred.
 
 ```
-   TWO ORTHOGONAL LADDERS (the profile matrix's axes)
+   THE BASE PROFILE (two axes) + EXTENSION LETTERS (the grade family, §2)
 
-   type-power  (lambda cube)          computational-power (effect row)
+   type-power  (lambda cube)          computational-power (effect row = the FIRST dial)
    ─────────────────────────          ────────────────────────────────
    λ→   simply typed                  ⊥      total fragment (System-F-shaped core, ADR-0026)
    F    ∀ (System F)                  Div    fuel-bounded, Turing-complete (the descent seam)
@@ -48,7 +59,12 @@ inherit safety, but the *typed* inheritance boundary is sharp and must be stated
    (surface/elaborator; erased        (kernel-native: the row IS the grade,
     into mono kernel — ADR-0075)       categorical-architecture.md §3)
 
-   a PROFILE = one (type-rung × row-rung) cell + the theorems an embedding into it inherits.
+           +  EXTENSION LETTERS (further gradeable computational-power axes, §2a):
+              termination/cost · usage/linearity · nondeterminism · info-flow ·
+              regions · sensitivity · resumption · binding-time · protocol
+
+   a PROFILE = a named BASE (type-rung × row-rung) + the extension letters a language claims
+               (RV64GC shape) + the theorems an embedding into it inherits. NOT an n-D table.
 ```
 
 ---
@@ -149,21 +165,95 @@ verified-compilation theorems."* It does **not** support *"nobody has language-p
 semantics"* — Iris and K do. The honest headline is the **profiles-for-a-verified-substrate**
 framing (§7), not "first verified substrate."
 
+### 1d · The economic axis — a grade turns a global analysis into a compositional type
+
+The census axes above are *capability* axes; there is an orthogonal *economic* one that sharpens
+why the substrate + grade-family framing (§2a) is valuable rather than merely elegant. **Each
+gradeable axis converts a GLOBAL, whole-program analysis — a bespoke external tool in its home
+community — into a COMPOSITIONAL type the kernel checks locally.** The pattern, stated as the
+one-liner: *"implement against the kernel and your community's bespoke analyzer becomes a type
+discipline."*
+
+```
+  community's bespoke GLOBAL analyzer          becomes, as a kernel grade …          axis (§2a)
+  ──────────────────────────────────────       ────────────────────────────────      ──────────
+  RaML cost analysis (whole-program            a COST grade folded along               T
+    amortized bound) [hoffmann-cav12]            composition — bound is a TYPE
+  TLA+ / model-checking for determinism        a NONDET grade (det→confluent) —        N
+    (external, whole-system)                     confluence is a TYPE [kuper-icfp13]
+  a differential-privacy accountant            a SENSITIVITY grade — ε is a TYPE       S
+    (runtime/audit budget tracking)              [reed-icfp10]
+  a taint / IFC analysis pass                   an INFO-FLOW grade — DCC as a TYPE      I
+    (whole-program dataflow) [abadi-popl99]
+```
+
+This is the same "constraints are generative" move the row already makes (idempotence buys
+decidable dispatch; `categorical-architecture.md` §3), read economically: the grade's soundness is
+paid **once** (the FREE fundamental lemma, `laws-taxonomy.md` §5), and thereafter every embedded
+program gets the analysis **for free, compositionally, at type-check time** — where its home
+community pays for a separate global tool per program. That is the substrate's under-stated
+value-add, and it is *why* naming the grade family (§2a) matters: each axis is a whole external
+analysis discipline collapsing into the kernel's one propagation engine.
+
 ---
 
-## 2 · The profile matrix — (type-rung × row-rung), with the typed-vs-erased boundary
+## 2 · The profile system — a named base + extension letters, with the typed-vs-erased boundary
 
 The operator's "spec for each corner of the lambda cube" becomes concrete once you notice bang
-**already grades both axes**, and the repo vocabulary already names them:
+**already grades multiple axes**, and the repo vocabulary already names the two base ones:
 
 - The **row axis** is kernel-native and already a lattice (ADR-0018; the total ⊥-fragment is
   literally an arrow in the effect lattice, `categorical-architecture.md` §8). The stratification
   table (CLAUDE.md) already names the verified core *"total fragment (⊥-row, System F)"*.
 - The **type axis** is the polymorphism ladder — and it is **not** in the kernel's types; it is in
   the **elaborator** (ADR-0075 "polymorphism elaborates to mono"; `stdlib-map.md` gates its whole
-  catalogue by "type-system power"). This is the crux the note must be honest about.
+  catalogue by "type-system power"). This is the crux the note must be honest about (§2b).
 
-### 2a · The load-bearing finding — the kernel's formalized types are λ→ + iso-recursion, no ∀
+But the row is only the **first** computational-power dial. The next finding (§2a) is that the
+row belongs to a **family** of gradeable axes, and the profile system's shape (§2d) must account
+for the whole family without becoming an n-dimensional table no human reads.
+
+### 2a · The grade family — the row is one dial among many (name the family)
+
+The gradeable-axis criterion is already pinned (`laws-taxonomy.md` §5): a property is *gradeable*
+iff it is **composition-closed** (a morphism-shaped law that composes — monotone∘monotone =
+monotone), in which case a **grade** is the type system's bookkeeping of which category the program
+lives in, and the propagation engine (fold the algebra along composition) is **generic** over any
+such axis (`GradeVec`, the distinct-lattice ruling). The effect row is simply the *first* grade
+bang shipped ("performs at most φ" — morphism-shaped, composition-closed); multiplicity (QTT,
+0/1/ω) the second. That criterion admits a **whole family of computational-power dials**, and
+**five already live in the repo's orbit** unnamed-as-a-family — naming the family is this note's
+contribution to the matrix design:
+
+```
+  axis (extension letter)   grades …                    coarse→fine · prior art          in-repo status
+  ───────────────────────   ─────────────────────────   ──────────────────────────────   ──────────────────────
+  effect / paradigm (E)     which effects may run        the row itself · Koka/Frank      ✅ KERNEL-NATIVE (ADR-0018)
+  usage / linearity (U)     how often a var is used      0/1/ω · QTT [atkey-lics18],      ✅ zero_usage_erasable is
+                                                          Granule [orchard-icfp19]          the 0-rung THEOREM (Spec:164)
+  termination / cost (T)     does it halt · how dear      Div (coarsest) → RaML            ◑ Div rung live (ADR-0028);
+                                                          [hoffmann-cav12] bounded-linear    RaML-fine = research
+  nondeterminism (N)         determinacy of the trace     det→confluent→arbitrary ·        ◑ the distributed-story /
+                                                          LVars/LVish [kuper-icfp13], CALM   calm-as-grade spine (Q-)
+  info-flow (I)              who may read a value          DCC [abadi-popl99] · seL4         ○ row-attenuation named
+                                                          noninterference                    (os-inspiration-survey)
+  regions / space (R)        where it is allocated         Tofte–Talpin [tofte-ic97] —      ○ "regions are effects"
+                                                          regions ARE effects                (post-v1)
+  sensitivity (S)            output distance vs input      Fuzz [reed-icfp10] — DP's ε      ○ post-v1; a metric grade
+                                                          IS a grade
+  resumption (K)             one-shot vs multi-shot        Koka fun/ctl · Q22/Q27           ◑ v1 one-shot; multishot-survey
+  binding-time (B)           static vs dynamic stage       Q38's static-vs-dynamic knob     ◑ IS this grade (§5 PRD stage)
+  protocol (P)              session conformance            session types                    ○ post-v1
+```
+
+**The load-bearing observation:** these are not analogies — they are the *same mechanism* (grade
+lattice + join-on-composition + a fundamental-lemma-of-a-logical-relation soundness proof,
+`laws-taxonomy.md` §5's FREE vs PRICED split). So a substrate that exposes the row as a
+conformance axis can expose *any* of them by the same move — the extension-letter model (§2d) is
+how the conformance surface stays finite while the family grows. (Kernel invariant #5 is
+untouched: axes are elaborator/type-layer; the five primitives never learn they exist.)
+
+### 2b · The load-bearing finding — the kernel's formalized types are λ→ + iso-recursion, no ∀
 
 `VTy`/`CTy` (`Bang/Core/IR.lean:221`–`242`) are: `unit`, `int`, `U φ C` (thunk), `cap ℓ`, `sum`,
 `prod`, `mu` (iso-recursive), `tvar`, `F q A`, `arr q A B`. The comment at `IR.lean:229`–`231`
@@ -184,10 +274,11 @@ monomorphized (ADR-0075/0081) into closed kernel terms before `Source.eval`/`Has
 kernel"). This is the single most important boundary in the note, and it dictates the honest
 typed-vs-erased column below.
 
-### 2b · The matrix
+### 2c · The base matrix (type-rung × row-rung)
 
 Read a cell as: *"an embedding whose types land at this (type-rung × row-rung) inherits these
-theorems, TYPED or ERASED."* **Typed** = the embedding's own types map to kernel `VTy`/`CTy` and
+theorems, TYPED or ERASED."* This is the **base profile**; the extension letters (§2a) ride on top
+(§2d). **Typed** = the embedding's own types map to kernel `VTy`/`CTy` and
 it inherits `type_safety` **at those types** (safety is a property *of the typed embedding*).
 **Erased** = the embedding monomorphizes/erases its polymorphism into closed kernel terms; it
 inherits safety **of the resulting mono program** and equivalence/compilation, but the kernel's
@@ -215,15 +306,43 @@ type judgment does **not** witness the *source* language's type discipline — o
   operators,     HKT) have NO kernel type-   ization (ADR-0082) erases    erases to mono handlers;
   HKT)           former (no kind structure   the constructor variable      inherits mono guarantees.
                  in VTy) → erased to mono.    before the kernel.           Fω-typed inheritance = OUT
-                 Inherits mono dynamics +     Functor/Monad SHIPPED this   OF SCOPE with reason (§2c).
+                 Inherits mono dynamics +     Functor/Monad SHIPPED this   OF SCOPE with reason (§2e).
                  safety, never Fω-typing.     way (ADR-0082).
  ───────────────────────────────────────────────────────────────────────────────────────────────
- dependent       OUT OF SCOPE (named, §2c). No kernel path intends Π-types; the verifier (Lean) is the
+ dependent       OUT OF SCOPE (named, §2e). No kernel path intends Π-types; the verifier (Lean) is the
  corners (λΠ,     dependent layer, and in-language dependent types are explicitly set aside
   CoC)           (verification-ladder.md, the HoTT verdict). Not a failure — a deliberate non-goal.
 ```
 
-### 2c · The out-of-scope corners, named with reason (not papered over)
+### 2d · The RISC-V-style naming — a named base + extension letters (NOT an n-D table)
+
+The grade family (§2a) makes the profile space genuinely n-dimensional, and an n-dimensional
+conformance table is unreadable and unshippable. The **naming ruling** (operator, 2026-07-10)
+resolves this exactly as RISC-V resolves ISA-feature explosion: **a named 2D base profile + one
+extension letter per further axis a language claims** — the `RV64GC` shape ([riscv-rva23]). The
+lattice product of all the axes does the semantic work *underneath*; the conformance *surface* a
+language claims is a short string:
+
+```
+  RISC-V                       verified-substrate profile
+  ───────────────────          ──────────────────────────────────────────────────────────
+  RV64            base ISA     BASE = (type-rung × row-rung), e.g. (λ→, {state})
+  G  = IMAFD      packaged     a named default bundle of extension letters (the "general" set)
+  C               extension    +U (usage/linearity) · +T (termination/cost) · +N (nondet) · …
+  "RV64GC"        the claim    "(λ→,{state}) + U T"  — the profile string a language conforms to
+```
+
+So the STLC tracer bullet (§5) conforms to **`(λ→, ⊥)`** — the pure base, no extensions. An IMP
+with a use-once store discipline conforms to **`(λ→, {state}) + U`**. A language wanting RaML-style
+cost bounds adds **`+ T`**; a differentially-private query language adds **`+ S`** (sensitivity).
+Each letter is *earned* the same way (§2a): declare the axis's lattice, annotate the leaves, and
+either ride the FREE fundamental lemma (over-approximation axes) or discharge the PRICED per-axis
+bridge (behavioural axes) — `laws-taxonomy.md` §5. The profile *string* is the human-sized public
+contract; the *proof obligation* per letter is what §4's transfer condition covers. This keeps the
+conformance surface finite as the family grows, and it is why the note factors the design as
+**base + letters**, not as a matrix that would need a new dimension every time a grade is added.
+
+### 2e · The out-of-scope corners, named with reason (not papered over)
 
 - **Fω-*typed* inheritance** (inheriting a type-operator discipline at the kernel-type level)
   needs the kernel `VTy` to gain **kinds** (a `*→*` former) — a kernel type-system change, i.e. a
@@ -235,7 +354,7 @@ type judgment does **not** witness the *source* language's type discipline — o
   layer, not the object language). Naming them keeps the cube honest — the substrate is a
   **λ-cube-lower-face** substrate (λ→, and the *erased* image of F/Fω), not a full-cube one.
 
-### 2d · What each locked corner would COST to unlock (the generative-constraint read)
+### 2f · What each locked corner would COST to unlock (the generative-constraint read)
 
 Stating the cost is the SOUL "name the right answer first, then its price" discipline:
 
@@ -343,18 +462,17 @@ shippable now; the expensive rung is the same Q43 proof-export machinery the rep
 
 The cheapest thing that would make the substrate claim *real* rather than aspirational: embed a
 tiny known language into the kernel and show it inheriting the theorems **without writing a new
-logical relation**. Two candidates, both landing in the **λ→ row** of the matrix (§2b):
+logical relation**. Two candidates, both landing in the **λ→ row** of the base matrix (§2c):
 
 ```
-  candidate   embeds as                              inherits (from Spec.lean)          matrix cell
-  ─────────   ──────────────────────────────────     ─────────────────────────────      ───────────
+  candidate   embeds as                              inherits (from Spec.lean)          profile string
+  ─────────   ──────────────────────────────────     ─────────────────────────────      ──────────────
   STLC        pure λ→ terms → Comp (lam/app/ret;      type_safety (λ→-typed) ·           (λ→ , ⊥)
-                no effects, ⊥-row)                     lr_sound equational reasoning ·      the cleanest
-                                                       compile_forward_sim (runs on Wasm)   corner
+                no effects, ⊥-row)                     lr_sound equational reasoning ·      no extensions
+                                                       compile_forward_sim (runs on Wasm)   (the cleanest)
   IMP         state-as-a-handler: assignment →         type_safety · effect_sound          (λ→ , {state})
-                perform put; deref → perform get;       (the row = {state}) ·               the "effects
-                the whole program under one `handle`    no_accidental_handling              are library"
-                                                                                            demo
+                perform put; deref → perform get;       (the row = {state}) ·               (+ U if the store
+                the whole program under one `handle`    no_accidental_handling              is use-once, §2d)
 ```
 
 **Why this is the right tracer bullet.** It exercises the *inheritance* claim end-to-end with the
@@ -377,7 +495,7 @@ note names the artifact and its size; a later increment builds it.
 
 **One caveat surfaced by §2a.** STLC's inheritance is genuinely *typed* (STLC types → kernel λ→
 types, safety at those types). But an embedder tempted to do **System-F** as the tracer bullet
-would hit the erased boundary immediately (§2b): the kernel has no ∀ to receive System-F's type
+would hit the erased boundary immediately (§2c): the kernel has no ∀ to receive System-F's type
 abstractions, so the "inheritance" would be of the *monomorphized residue*, and the demo would
 silently be weaker than it looks. **Pick λ→ for the bullet precisely because it is the corner where
 typed inheritance is real** — the matrix isn't decoration, it changes which tracer bullet is honest.
@@ -388,9 +506,11 @@ typed inheritance is real** — the matrix isn't decoration, it changes which tr
 
 Recording the decision-shaped residue, ADR-input posture (no decision taken):
 
-1. **Adopt the profile framing?** — whether to *publicly* factor the guarantees as named
-   (type-rung × row-rung) profiles (RISC-V/SQL precedent, §7), or keep them as monolithic
-   "the kernel is sound." The matrix (§2b) is the artifact an ADR would ratify or reject.
+1. **Adopt the profile framing, and at what naming granularity?** — whether to *publicly* factor
+   the guarantees as named **base (type-rung × row-rung) + extension-letter** profiles (RISC-V/SQL
+   precedent, §2d/§7), or keep them as monolithic "the kernel is sound." The base matrix (§2c) +
+   the grade family (§2a) + the extension-letter naming (§2d) are the artifacts an ADR ratifies or
+   rejects — including *which* extension letters are in the v1 "general" bundle vs deferred.
 2. **Freeze the substrate contract, and when?** — §3 says *identify now, freeze at the second
    embedder*. An ADR would pin the `substrateVersion` policy + the freeze-◊. Premature freeze
    costs the pre-1.0 licence the moving kernel still needs.
@@ -401,7 +521,7 @@ Recording the decision-shaped residue, ADR-input posture (no decision taken):
    "paradigms are values" concrete for an *external* language, at low cost. An ADR/roadmap entry
    would slot it (it rides the existing stack; it competes with kernel-forward work for attention,
    not for machinery).
-5. **The out-of-scope corners stay out** (§2c) — an ADR would record System-F-*typed* and
+5. **The out-of-scope corners stay out** (§2e) — an ADR would record System-F-*typed* and
    dependent inheritance as deliberate non-goals with the elaborate-to-mono rationale, so a later
    session doesn't read the "erased" cells as bugs and try to add ∀ to the kernel (which would
    trip invariant #5's spirit — a type-system spec change).
@@ -413,29 +533,35 @@ Recording the decision-shaped residue, ADR-input posture (no decision taken):
 **The claim.** RISC-V profiles ([riscv-rva23]) and SQL conformance ([sql-conformance]) are the
 mature pattern of *a base spec + named subsets an implementer claims conformance to*: RVA23 =
 RV64I base + ratified extensions, each mandatory/optional; SQL = Core + optional feature packages.
-Both grade an implementation's conformance along named axes. **No one has applied this pattern to a
-*formally verified semantic substrate*** — i.e. named (type-power × computational-power) profiles
-where claiming conformance to profile X means *inheriting a machine-checked theorem set*, not just
-"supports feature X." That is the defensible novelty, and it is a *reframing* of assets bang
-already has (the graded rows, the elaborate-to-mono ladder, the frozen Spec.lean statements) into a
-**public conformance surface**.
+Both grade an implementation's conformance along named axes, and — the detail that makes the
+analogy *tight* rather than loose — RISC-V does it with a **named base + extension letters**
+(`RV64GC`), exactly the shape bang's grade family needs (§2a/§2d). **No one has applied this
+pattern to a *formally verified semantic substrate*** — i.e. a named base (type-power ×
+computational-power) + extension letters where claiming conformance to profile X means *inheriting
+a machine-checked theorem set*, not just "supports feature X." That is the defensible novelty, and
+it is a *reframing* of assets bang already has (the graded rows, the grade family, the
+elaborate-to-mono ladder, the frozen Spec.lean statements) into a **public conformance surface**.
 
 ```
   ISA / SQL profile                    VERIFIED-SUBSTRATE profile (bang)
   ─────────────────────────────        ──────────────────────────────────────────────
-  base + named extensions              (type-rung × row-rung) cell
-  "conforms to RVA23"                  "embeds at (λ→, {state})"
+  base + extension letters (RV64GC)    base (type-rung × row-rung) + extension letters (§2d)
+  "conforms to RV64GC"                 "conforms to (λ→, {state}) + U T"
   conformance = feature presence       conformance = a MACHINE-CHECKED THEOREM SET inherited
   claimed by the implementer           EARNED by an adequacy proof (or the fuzz rung, §4)
   tested (compliance suite)            tested (differential vs Source.eval) → proven (Q43 adequacy)
 ```
 
 **Why it holds, checked honestly.** The census (§1) shows the *ingredients* exist elsewhere —
-Iris/K are language-parametric verified semantics; RISC-V/SQL are conformance profiles — but the
-*combination* (profiles indexing inherited *proofs* over a fixed verified *target language*) is, to
-this survey's knowledge, unclaimed. The novelty is **narrower** than "first verified substrate"
-(false — Iris) and narrower than "first conformance profiles" (false — RISC-V); it is precisely
-**"profiles as an index into a lattice of inherited theorems for a verified elaboration target."**
+Iris/K are language-parametric verified semantics; RISC-V/SQL are conformance profiles; the grade
+family's individual axes (Fuzz, RaML, QTT, LVars, DCC, Tofte–Talpin) are each real type
+disciplines in their home communities — but the *combination* (a named-base + extension-letter
+profile indexing inherited *proofs* over a fixed verified *target language*, each letter a grade
+that collapses a global analysis into a compositional type, §1d) is, to this survey's knowledge,
+unclaimed. The novelty is **narrower** than "first verified substrate" (false — Iris), narrower
+than "first conformance profiles" (false — RISC-V), and narrower than "first graded type system"
+(false — the whole grade family); it is precisely **"named conformance profiles as an index into a
+lattice of inherited theorems for a verified elaboration target, extensible by the grade family."**
 That precision is the claim to protect — a later session must not inflate it to "first verified
 substrate" (the census refutes that) nor collapse it to "just documentation of what's proven" (it
 is a *public contract with a conformance semantics*, §3).
@@ -453,28 +579,37 @@ row"* — which is real, novel, and load-bearingly honest about where the typed 
 ## 8 · Refutation check — did the ruled design shape survive?
 
 The brief pre-ruled **two orthogonal ladders (type-power × row-power), profiles = the matrix,
-RISC-V/SQL as the shape-anchor.** The evidence:
+RISC-V/SQL as the shape-anchor.** The operator addendum (2026-07-10) then reshaped it: **the matrix
+is n-axis, not 2D — the row is one dial in a grade family — named RISC-V-style (base + extension
+letters).** The evidence:
 
-- **SURVIVES, strengthened.** The row axis is kernel-native and already a lattice (ADR-0018); the
-  type axis is the elaborate-to-mono polymorphism ladder (`stdlib-map.md`, ADR-0075). The two are
-  genuinely orthogonal — the row grades *computation*, the cube grades *types*, and the repo
-  vocabulary ("total fragment (⊥-row, System F)") already sits at their intersection. The matrix
-  (§2b) is the natural artifact.
-- **ONE REFINEMENT the shape forced (a partial refutation of the naive reading).** The naive
-  reading — "each cube corner is a *typed* profile you inherit at" — is **false above λ→**. The
-  kernel has no ∀-former (`IR.lean:229`), so System-F/Fω corners are **erased**, not typed. The
-  ladders are orthogonal, but the *type* ladder's upper rungs collapse into "mono residue" at the
-  kernel boundary. This is not a refutation of the two-ladder shape; it is a refutation of the
-  assumption that the cube axis is *typed all the way up*. The matrix survives; the "typed" label
-  is correct only on its bottom row. I flag this as the note's sharpest finding because it is the
-  thing a later session would most easily get wrong.
-- **RISC-V/SQL anchor SURVIVES as *shape*, with a caveat.** They are the right precedent for "base
-  + named claimed subsets," but neither indexes *proofs* — so they anchor the *form* of the
-  profile system, not its *content*. The content-novelty (§7) is bang's; the form is borrowed.
+- **THE 2-LADDER BASE SURVIVES; the addendum's n-axis reshape is CONFIRMED, not a refutation.**
+  The row axis is kernel-native and already a lattice (ADR-0018); the type axis is the
+  elaborate-to-mono polymorphism ladder (`stdlib-map.md`, ADR-0075) — genuinely orthogonal. But
+  the row is demonstrably *one of a family*: the gradeable-axis criterion (`laws-taxonomy.md` §5)
+  admits usage/cost/nondet/info-flow/regions/sensitivity/resumption/binding-time/protocol, and
+  **five already live in the repo** (§2a: the row E ✅, usage U ✅ as `zero_usage_erasable`, Div-cost
+  T ◑, nondet N ◑ via calm-as-grade, resumption K ◑). So the 2D matrix is the *base*; the family
+  is real. The addendum's extension-letter naming (§2d) is the correct artifact — an n-D table
+  would be unreadable; `RV64GC`-style base+letters keeps the surface human-sized while the lattice
+  product does the work. This *strengthens* the ruled shape rather than refuting it.
+- **THE SHARPEST REFINEMENT (a partial refutation of the naive *typed* reading).** "Each cube
+  corner is a *typed* profile you inherit at" is **false above λ→**. The kernel has no ∀-former
+  (`IR.lean:229`), so System-F/Fω corners are **erased**, not typed — the *type* ladder's upper
+  rungs collapse into "mono residue" at the kernel boundary. Not a refutation of the two-ladder
+  shape; a refutation of the assumption the cube axis is *typed all the way up*. The base matrix
+  survives; the "typed" label is correct only on its bottom row. Still the note's sharpest finding —
+  the thing a later session would most easily get wrong.
+- **RISC-V/SQL anchor SURVIVES as *shape*, and the addendum made it TIGHTER.** They are the right
+  precedent for "base + named claimed subsets," and RISC-V specifically for **base + extension
+  letters** (`RV64GC`) — which is exactly the family's naming solution (§2d), not just a loose
+  analogy. Neither indexes *proofs*, so they anchor the *form*, not the *content*; the
+  content-novelty (§7) is bang's, the form is borrowed.
 
-No part of the ruled shape was refuted outright. The one correction — *typed inheritance is a λ→
-floor, not a full-cube surface* — is a sharpening the kernel's own types dictated, and it is the
-finding the note is built around (§2a).
+No part of the ruled shape was refuted outright. Two corrections stand: (1) *typed inheritance is a
+λ→ floor, not a full-cube surface* (kernel-types-dictated, §2b); (2) *the computational axis is a
+family, not a single row, named by extension letters* (the addendum's reshape, confirmed by the
+five in-repo grades, §2a/§2d). The note is built around both.
 
 ---
 
@@ -511,7 +646,23 @@ finding the note is built around (§2a).
   (<https://riscv.org/blog/risc-v-announces-ratification-of-the-rva23-profile-standard/>). [riscv-rva23]
 - **SQL conformance** (Core + optional feature packages, ISO/IEC 9075): PostgreSQL Appendix D "SQL
   Conformance" (<https://www.postgresql.org/docs/current/features.html>). [sql-conformance]
-- **Internal anchors**: `Bang/Core/IR.lean` (the term + type algebras — the λ→+μ finding, §2a) ·
+- **The grade family (§2a) — the extension-letter axes' prior art:**
+  - **QTT** (usage/linearity — the U axis): Atkey, "The Syntax and Semantics of Quantitative Type
+    Theory", LICS'18 (<https://bentnib.org/quantitative-type-theory.html>). [atkey-lics18]
+  - **Granule** (graded/usage types, sibling to U): Orchard, Liepelt, Eades, "Quantitative Program
+    Reasoning with Graded Modal Types", ICFP'19 — already in-repo (`orchard-icfp19-granule`).
+  - **RaML** (cost/termination — the T axis): Hoffmann, Aehlig, Hofmann, "Resource Aware ML",
+    CAV'12 (<http://www.linta.de/~aehlig/university/pub/12-raml.pdf>). [hoffmann-cav12]
+  - **LVars / LVish** (nondeterminism/determinacy — the N axis): Kuper, Newton, "LVars:
+    Lattice-based Data Structures for Deterministic Parallelism", ICFP'13
+    (<https://dl.acm.org/doi/10.1145/2502323.2502326>). [kuper-icfp13]
+  - **DCC** (information-flow — the I axis): Abadi, Banerjee, Heintze, Riecke, "A Core Calculus of
+    Dependency", POPL'99 (<https://dl.acm.org/doi/10.1145/292540.292555>). [abadi-popl99]
+  - **Region types** (space/regions — the R axis): Tofte, Talpin, "Region-Based Memory Management",
+    Information and Computation 132(2), 1997 (<https://doi.org/10.1006/inco.1996.2613>). [tofte-ic97]
+  - **Fuzz** (sensitivity — the S axis): Reed, Pierce, "Distance Makes the Types Grow Stronger: A
+    Calculus for Differential Privacy", ICFP'10 (<https://doi.org/10.1145/1863543.1863568>). [reed-icfp10]
+- **Internal anchors**: `Bang/Core/IR.lean` (the term + type algebras — the λ→+μ finding, §2b) ·
   `Bang/Core/Typing.lean` (`HasVTy`/`HasCTy` — the "valid embedding" judgment) · `Bang/Spec.lean`
   (the 18 frozen theorem statements — the inherited guarantees) · ADR-0075 (polymorphism
   elaborates to mono — the type axis lives in the elaborator) · ADR-0018 (rows are a lattice — the
