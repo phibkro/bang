@@ -2925,6 +2925,11 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
         for (opName, _) in ops do
           if (capOpSig opName).isSome then
             throw s!"effect {n}: op '{opName}' is reserved by a built-in effect (v1 restriction — see ADR-0092)"
+          -- ADR-0095 D5 / #93: `resume` is reserved so the future explicit `resume(w)` clause
+          -- form (and the eventual multi-shot first-class continuation, Q22/Q27) can land
+          -- without breaking any existing program that would otherwise use the name.
+          if opName == "resume" then
+            throw s!"effect {n}: op 'resume' is reserved for the future explicit resume form (ADR-0095 D5 — see issue #93)"
         -- D1: label := 4 + declIndex, deterministic by EFFECT-decl order (the four built-ins keep
         -- 0-3; `effects.length` is exactly "how many effect decls processed so far", so this is
         -- stable under interleaving with data/trait/impl/fn decls — only relative EFFECT order
@@ -5261,6 +5266,15 @@ module-interface work's territory — this reservation is the v1 stopgap, not th
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
 #guard (match Bang.Surface.parseProg "effect E { write : Int } 0" with
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+-- ADR-0095 D5 / #93: `resume` is reserved (NOT a built-in op — reserved for the FUTURE explicit
+-- resume(w) form) so its later arrival is additive, never a breaking change.
+#guard (match Bang.Surface.parseProg "effect F { resume : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+-- ...and the diagnostic names the reason (the future form + the issue), not a bare rejection.
+#guard (match Bang.Surface.parseProg "effect F { resume : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with
+            | .error m => (m.splitOn "future explicit resume").length > 1 | .ok _ => false)
+        | .error _ => false)
 -- a NON-colliding name (`read4`, not `read`) is ACCEPTED — the reservation is precise (built-in
 -- names only), not an over-broad rejection of anything superficially similar.
 #guard (match Bang.Surface.parseProg "effect Net { read4 : Int -> Int } 0" with
