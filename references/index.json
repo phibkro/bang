@@ -979,6 +979,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "abadi-popl99-dcc",
+    "title": "A Core Calculus of Dependency",
+    "year": "1999",
+    "doi": "10.1145/292540.292555",
+    "eprint": "",
+    "topics": [
+      "grades"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "grade-family-I",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "amin-rompf-popl17-definitional-interpreters",
     "title": "Type Soundness Proofs with Definitional Interpreters",
     "year": "2017",
@@ -987,6 +1005,24 @@
     "topics": [],
     "grounds": [],
     "role": "",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "atkey-lics18-quantitative-type-theory",
+    "title": "The Syntax and Semantics of Quantitative Type Theory",
+    "year": "2018",
+    "doi": "10.1145/3209108.3209189",
+    "eprint": "",
+    "topics": [
+      "grades"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "grade-family-U",
     "ondisk": false,
     "hop": null,
     "path": null,
@@ -1160,6 +1196,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "hoffmann-cav12-resource-aware-ml",
+    "title": "Resource Aware ML",
+    "year": "2012",
+    "doi": "10.1007/978-3-642-31424-7_64",
+    "eprint": "",
+    "topics": [
+      "grades"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "grade-family-T",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "kobayashi-kameyama-aplas25-oneshot-expressiveness",
     "title": "Expressive Power of One-Shot Control Operators and Coroutines",
     "year": "2025",
@@ -1170,6 +1224,24 @@
     ],
     "grounds": [],
     "role": "frontier",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "kuper-icfp13-lvars",
+    "title": "LVars: Lattice-based Data Structures for Deterministic Parallelism",
+    "year": "2013",
+    "doi": "10.1145/2502323.2502326",
+    "eprint": "",
+    "topics": [
+      "grades"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "grade-family-N",
     "ondisk": false,
     "hop": null,
     "path": null,
@@ -1337,6 +1409,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "reed-icfp10-fuzz",
+    "title": "Distance Makes the Types Grow Stronger: A Calculus for Differential Privacy",
+    "year": "2010",
+    "doi": "10.1145/1863543.1863568",
+    "eprint": "",
+    "topics": [
+      "grades"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "grade-family-S",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "riscv-rva23-profiles",
     "title": "RVA23 Profiles, Version 1.0",
     "year": "2024",
@@ -1437,6 +1527,24 @@
       "kernel-substrate-survey"
     ],
     "role": "closest-prior-art",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "tofte-ic97-region-memory",
+    "title": "Region-Based Memory Management",
+    "year": "1997",
+    "doi": "10.1006/inco.1996.2613",
+    "eprint": "",
+    "topics": [
+      "grades"
+    ],
+    "grounds": [
+      "kernel-substrate-survey"
+    ],
+    "role": "grade-family-R",
     "ondisk": false,
     "hop": null,
     "path": null,

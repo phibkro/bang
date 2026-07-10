@@ -1353,3 +1353,95 @@
             "base + named claimed subsets" form as RISC-V profiles; again indexes feature presence,
             not inherited proofs. kernel-substrate-survey.md §7.},
 }
+
+@inproceedings{atkey-lics18-quantitative-type-theory,
+  keywords = {topic:grades grounds:kernel-substrate-survey role:grade-family-U},
+  author  = {Atkey, Robert},
+  title   = {The Syntax and Semantics of Quantitative Type Theory},
+  booktitle = {LICS},
+  year    = 2018,
+  pages   = {56--65},
+  doi     = {10.1145/3209108.3209189},
+  url     = {https://bentnib.org/quantitative-type-theory.html},
+  note    = {The USAGE/linearity axis (extension letter U) of the substrate grade family
+            (kernel-substrate-survey.md §2a). QTT records a MULTIPLICITY per variable (0/1/omega),
+            refining realizability semantics to track resource behaviour. bang already ships this
+            axis: the Mult grade on F_q (IR.lean) + zero_usage_erasable (Spec.lean:164) is the
+            0-rung theorem. QTT is the dependent generalization; bang's is the mono kernel form.},
+}
+
+@inproceedings{hoffmann-cav12-resource-aware-ml,
+  keywords = {topic:grades grounds:kernel-substrate-survey role:grade-family-T},
+  author  = {Hoffmann, Jan and Aehlig, Klaus and Hofmann, Martin},
+  title   = {Resource Aware ML},
+  booktitle = {Computer Aided Verification (CAV)},
+  year    = 2012,
+  doi     = {10.1007/978-3-642-31424-7_64},
+  url     = {http://www.linta.de/~aehlig/university/pub/12-raml.pdf},
+  note    = {The COST/termination axis (extension letter T) of the grade family
+            (kernel-substrate-survey.md §2a, §1d). Types-with-POTENTIAL amortized analysis computes
+            polynomial resource bounds automatically. The economic one-liner (§1d): RaML is a
+            GLOBAL whole-program analysis in its home community; as a kernel grade the bound becomes
+            a COMPOSITIONAL TYPE. bang's Div rung (ADR-0028) is the coarsest T; RaML-fine is research.},
+}
+
+@inproceedings{kuper-icfp13-lvars,
+  keywords = {topic:grades grounds:kernel-substrate-survey role:grade-family-N},
+  author  = {Kuper, Lindsey and Newton, Ryan R.},
+  title   = {LVars: Lattice-based Data Structures for Deterministic Parallelism},
+  booktitle = {ICFP},
+  year    = 2013,
+  doi     = {10.1145/2502323.2502326},
+  note    = {The NONDETERMINISM/determinacy axis (extension letter N) of the grade family
+            (kernel-substrate-survey.md §2a). LVars generalize single-assignment to monotone
+            lattice writes; programs are quasi-deterministic (same answer or an error). The
+            quasi-determinism proof is a fundamental-lemma-of-an-LR (laws-taxonomy.md §5's exact
+            shape). bang's calm-as-grade / distributed-story spine is this axis; det->confluent
+            ->arbitrary is the coarse->fine ladder. Sibling to the CALM theorem.},
+}
+
+@inproceedings{abadi-popl99-dcc,
+  keywords = {topic:grades grounds:kernel-substrate-survey role:grade-family-I},
+  author  = {Abadi, Mart{\'i}n and Banerjee, Anindya and Heintze, Nevin and Riecke, Jon G.},
+  title   = {A Core Calculus of Dependency},
+  booktitle = {POPL},
+  year    = 1999,
+  doi     = {10.1145/292540.292555},
+  note    = {The INFORMATION-FLOW axis (extension letter I) of the grade family
+            (kernel-substrate-survey.md §2a, §1d). DCC unifies binding-time, slicing, and secure
+            information flow as ONE dependency calculus -- a lattice grade over "who may read a
+            value". The economic read: a whole-program IFC/taint pass becomes a compositional TYPE.
+            bang's row-attenuation (os-inspiration-survey) + seL4 noninterference is this axis.},
+}
+
+@article{tofte-ic97-region-memory,
+  keywords = {topic:grades grounds:kernel-substrate-survey role:grade-family-R},
+  author  = {Tofte, Mads and Talpin, Jean-Pierre},
+  title   = {Region-Based Memory Management},
+  journal = {Information and Computation},
+  volume  = 132,
+  number  = 2,
+  pages   = {109--176},
+  year    = 1997,
+  doi     = {10.1006/inco.1996.2613},
+  note    = {The REGIONS/space axis (extension letter R) of the grade family
+            (kernel-substrate-survey.md §2a). Region inference tracks WHERE values are allocated;
+            crucially "regions ARE effects" -- the region/effect calculus grades allocation on the
+            same machinery as the effect row, which is why it slots into the family rather than
+            being a separate mechanism. Post-v1 for bang.},
+}
+
+@inproceedings{reed-icfp10-fuzz,
+  keywords = {topic:grades grounds:kernel-substrate-survey role:grade-family-S},
+  author  = {Reed, Jason and Pierce, Benjamin C.},
+  title   = {Distance Makes the Types Grow Stronger: A Calculus for Differential Privacy},
+  booktitle = {ICFP},
+  year    = 2010,
+  doi     = {10.1145/1863543.1863568},
+  note    = {The SENSITIVITY axis (extension letter S) of the grade family
+            (kernel-substrate-survey.md §2a, §1d). Fuzz is a linear-logic-based type system where
+            each type carries its own METRIC and sensitivity analysis IS type-checking; a
+            differential-privacy epsilon is literally a grade. The sharpest instance of the economic
+            one-liner: a DP privacy accountant (a runtime/audit tool) becomes a compile-time TYPE
+            DISCIPLINE. Post-v1; named as the family's metric-grade member.},
+}
