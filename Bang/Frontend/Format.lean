@@ -126,6 +126,10 @@ partial def fmtTy (need : TyPrec) : Ty → String
   | .tUnit       => "Unit"
   | .tSelf       => "Self"
   | .tName n     => n
+  | .tCap ℓ      => s!"Cap #{ℓ}"                       -- #84 gap 1: already-RESOLVED (the source `Cap Net`
+                                  -- name is gone by the time `resolveTyG` produces this — `Format.lean`
+                                  -- has no `env.effects` to invert the label back, the SAME `tVar`/`tMu`
+                                  -- "INTERNAL; printed defensively" precedent, not a round-trippable form)
   | .tVar n      => s!"#{n}"                          -- INTERNAL (μ-bound); never parsed, printed defensively
   | .tMu a       => s!"(mu. {fmtTy .atom a})"          -- INTERNAL; ditto
   | .tThunk t    => parenIf need .atom s!"Thunk {fmtTy .atom t}"
@@ -134,6 +138,10 @@ partial def fmtTy (need : TyPrec) : Ty → String
   | .tSum a b    => parenIf need .add  s!"{fmtTy .add a} + {fmtTy .mul b}"      -- left-assoc: lhs at OWN level
   | .tProd a b   => parenIf need .mul  s!"{fmtTy .mul a} * {fmtTy .atom b}"     -- left-assoc: lhs at OWN level
   | .tEff ns t   => parenIf need .atom s!"{fmtTy .atom t} ! \{{String.intercalate ", " ns}}"
+  | .tEffR ls t  => parenIf need .atom       -- #90: already-RESOLVED (labels, not source names) —
+      s!"{fmtTy .atom t} ! \{{String.intercalate ", " (ls.map (s!"#{·}"))}}"   -- same `tCap`
+      -- defensive-rendering precedent: `Format.lean` has no `env.effects` to invert a label back
+      -- to its declared name, so this form is NOT round-trippable — internal, printed for debugging.
 partial def fmtTyArgs : TyArgs → List String
   | .one a   => [fmtTy .atom a]
   | .two a b => [fmtTy .atom a, fmtTy .atom b]

@@ -509,6 +509,19 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `match (($eitherToResult) (($resultToEither) (Err(3)))) { Err(e) -> e, Ok(a) -> 99 }` ⟹ `3`
 - `match (($eitherToOption) (($optionToEither) (Some(7)))) { None -> 99, Some(v) -> v }` ⟹ `7`  — `eitherToOption ∘ optionToEither = id` on `Some`/`None` (Option ≅ Either Unit).
 - `match (($eitherToOption) (($optionToEither) (None : Option Int))) { None -> 0, Some(v) -> v }` ⟹ `0`
+### #90 — row annotations (`T ! {…}`) could only name the four BUILT-IN effects (`throws`/
+
+- `effect Net { fetch : Int -> Int } let get2 = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in handle (($get2) net) with Net as net { fetch(n) => n * 10 }` ⟹ `30`  — types, and RUNS end to end (the #84 gap-1 pipeline that was `checkProg`-only until this fix).
+- `effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in ($test) logic` ⟹ `30`  — Now types AND runs.
+- `effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in (($test) logic) * 1000 + (($prod) logic)` ⟹ `30005`  — under each stage. `30005 = 30*1000 + 5` (test's `n*10` vs prod's `n+1`, both over `1+2`).
+### #85 — a NESTED binop in a handler clause body lost the clause's own binder. `elabHClauses`
+
+- `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 10 }` ⟹ `10`  — LCG shape (ctr-design.md §RE2), now running in the tested superset.
+- `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 3 + 1 }` ⟹ `4`
+- `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => (n * 3) + 1 }` ⟹ `4`
+- `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n, b(n) => n }` ⟹ `5`  — clause, not just the one performed). Repro triple from #86's own report, all fixed:
+- `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + 1, b(n) => n + 1 }` ⟹ `6`
+- `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + n * 2, b(n) => n }` ⟹ `15`  — combined: multi-clause AND a nested binop in the performed clause (#85 ⊔ #86 in one program).
 ### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
 
 - `let x = 3 data Marker = M x + 1` ⟹ `4`  — otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.

@@ -1,0 +1,5 @@
+effect Net { fetch : Int -> Int }
+let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in
+let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in
+let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in
+(($test) logic) * 1000 + (($prod) logic)
