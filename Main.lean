@@ -36,6 +36,7 @@ import Bang.Frontend.TypeCheck
 import Bang.Frontend.Format
 import Bang.Frontend.Diagnostics
 import Bang.Backend.AbstractMachine
+import Bang.Backend.EnvMachine
 import Bang.Witness.LawTest
 
 open Bang
@@ -62,6 +63,25 @@ over-supply never changes a value — a genuinely-looping program still terminat
 as the fail-loud non-value below. This maps fuel across the two engines; it does
 NOT redefine either. -/
 def compiledFuel : Nat := 1000000
+
+/-- The execution ENGINE (issue #6, ADR-0094). The two verified engines are `oracle` (the kernel
+`Source.eval`, the reference) and `compiled` (`exec ∘ compile`, the calculated machine). `env` is the
+EXPERIMENTAL environment machine `evalE`/`readback` (ADR-0094) — PROVEN ≡ the oracle at empty stores
+(`Bang.EnvMachine.evalE_agrees_evalD`), wired here to MEASURE the #61 substitution-cost fix. It is
+marked experimental in `--help` and stays off the default until an operator flip (slice 6). -/
+inductive Engine where
+  | oracle
+  | compiled
+  | env
+  deriving DecidableEq
+
+/-- Parse the engine selector from the flag list: `--engine=env` / `--engine=compiled` / `--engine=oracle`,
+with `--compiled` kept as a back-compat alias for `--engine=compiled` (issue #6's original spelling).
+Unknown `--engine=<x>` and the default both fall to `oracle`. -/
+def parseEngine (flags : List String) : Engine :=
+  if flags.contains "--engine=env" then .env
+  else if flags.contains "--engine=compiled" || flags.contains "--compiled" then .compiled
+  else .oracle
 
 /-- A `Str` value (ADR-0074, #49) — `SNil = fold (inl ())`, `SCons(Char cp, …) = fold (inr (fold cp,
 …))` — rendered to its glyphs (code points → chars). `none` if the value is not a char-list. Only a
@@ -113,18 +133,36 @@ def runCompiled (c : Comp) : IO UInt32 := do
       "without --compiled to see which one, via the oracle engine's specific message"
     pure 5
 
-/-- Run a lowered `Comp` on the selected engine (§ issue #6): the kernel oracle `Source.eval`
-(default) or the calculated machine `exec ∘ compile` (`--compiled`). `done` → stdout + 0; every
-failure outcome → a clear stderr line + a distinct nonzero code (fail-loud, ADR-0063).
+/-- Run a lowered `Comp` on the EXPERIMENTAL environment machine (`--engine=env`, ADR-0094): `evalE`/
+`readback` at empty stores — exactly the premise shape of the proven headline `evalE_agrees_evalD`
+(elaborator output is `WF`/`WFClos`/`HandlerWF`/`ScopedC` by the CK contract). Returns the value on a
+first-order returner; every other terminal (`raise`/function-terminal/oom/stuck) collapses to a single
+fail-loud line — the experimental engine does NOT sub-classify (that is what the oracle is for). -/
+def runEnv (c : Comp) : IO UInt32 := do
+  match Bang.EnvMachine.runE defaultFuel c with
+  | .done v => IO.println (valPretty v); pure 0
+  | _ =>
+    IO.eprintln <|
+      "error: the experimental env engine (--engine=env, ADR-0094) produced no first-order value — " ++
+      "it collapses out-of-fuel / escaped-capability / raise / function-terminal / stuck into one " ++
+      "outcome; re-run without --engine=env (the oracle engine) to see which one, with its specific message"
+    pure 5
+
+/-- Run a lowered `Comp` on the selected engine (§ issue #6, ADR-0094): the kernel oracle `Source.eval`
+(default), the calculated machine `exec ∘ compile` (`--engine=compiled`/`--compiled`), or the experimental
+environment machine `evalE`/`readback` (`--engine=env`). `done` → stdout + 0; every failure outcome →
+a clear stderr line + a distinct nonzero code (fail-loud, ADR-0063).
 
 MESSAGES (issue #67, operator ruling 2026-07-09): the exit code stays the machine contract;
 each non-zero outcome ALSO gets a one-line stderr explanation naming the outcome, the likely
 cause, and the next step, matching `check --json`'s plain-English tone. `stuck` is reachable
 ONLY via `--no-typecheck` (`type_safety`: a well-typed ⊥-row program never gets there), so its
 message can unconditionally point at the type gate being off — not a flag-dependent guess. -/
-def runComp (compiled : Bool) (c : Comp) : IO UInt32 := do
-  if compiled then runCompiled c
-  else
+def runComp (engine : Engine) (c : Comp) : IO UInt32 := do
+  match engine with
+  | .compiled => runCompiled c
+  | .env      => runEnv c
+  | .oracle   =>
   match Bang.Source.eval defaultFuel c with
   | .done v      => IO.println (valPretty v); pure 0
   | .oom         =>
@@ -277,32 +315,32 @@ exit code. `typecheck` selects the pipeline (ADR-0076 #51):
     run, NO type gate. Kept for oracle/differential testing (running an ill-typed program to observe
     the defined runtime `stuck`/`escapedCap`, ADR-0063).
 
-`compiled` selects only the execution ENGINE and is orthogonal to `typecheck`. -/
-def runSource (typecheck compiled : Bool) (src : String) : IO UInt32 := do
+`engine` selects only the execution ENGINE and is orthogonal to `typecheck`. -/
+def runSource (typecheck : Bool) (engine : Engine) (src : String) : IO UInt32 := do
   if typecheck then
     match Bang.TypeCheck.checkAndLower src with
     | .error (m, some sp) => IO.eprintln s!"error at {sp.loc}: {m}"; pure 1
     | .error (m, none)    => IO.eprintln s!"error: {m}"; pure 1
-    | .ok c               => runComp compiled c
+    | .ok c               => runComp engine c
   else
     match Bang.TypeCheck.elaborateToComp src with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
-    | .ok c    => runComp compiled c
+    | .ok c    => runComp engine c
 
 /-- Run an already-RESOLVED-and-merged `Prog` (ADR-0093 D1-D4 — `resolveEntryFile`'s output) through
 the SAME two pipelines `runSource` offers for a single file: DEFAULT type-checked
 (`checkAndLowerProg`) or `--no-typecheck` raw erase-and-run (`elaborateToCompProg`), then `runComp`.
 No located errors either way (see `checkAndLowerProg`'s doc comment) — a resolution/parse failure
 is already located by `resolveEntryFile` itself, before this runs. -/
-def runResolvedProg (typecheck compiled : Bool) (prog : Prog) : IO UInt32 := do
+def runResolvedProg (typecheck : Bool) (engine : Engine) (prog : Prog) : IO UInt32 := do
   if typecheck then
     match Bang.TypeCheck.checkAndLowerProg prog with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
-    | .ok c    => runComp compiled c
+    | .ok c    => runComp engine c
   else
     match Bang.TypeCheck.elaborateToCompProg prog with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
-    | .ok c    => runComp compiled c
+    | .ok c    => runComp engine c
 
 /-- Run `bang fmt`: format a whole program (decls + body, `Bang.Format.fmtProg`) and print the
 canonical form to stdout. `.error` → stderr + exit 1, the SAME convention `runSource`'s parse-error
@@ -538,9 +576,13 @@ def usage : String :=
   "  (default)        parse → TYPE-CHECK → lower → run; an ill-typed program is a TYPE ERROR\n" ++
   "  --no-typecheck   raw erase-and-run (no type gate) — for oracle/differential testing\n\n" ++
   "ENGINE:\n" ++
-  "  (default)    kernel oracle Source.eval\n" ++
-  "  --compiled   the calculated machine exec∘compile (verified compiler output, ADR-0016)\n" ++
-  "               — same program, same value; failures collapse to exit 5\n\n" ++
+  "  (default)          kernel oracle Source.eval\n" ++
+  "  --engine=compiled  the calculated machine exec∘compile (verified compiler output, ADR-0016)\n" ++
+  "  --compiled         alias for --engine=compiled\n" ++
+  "               — same program, same value; failures collapse to exit 5\n" ++
+  "  --engine=env       EXPERIMENTAL environment machine evalE/readback (ADR-0094) — PROVEN ≡ the\n" ++
+  "               oracle (evalE_agrees_evalD); measures the #61 substitution-cost fix; failures\n" ++
+  "               collapse to exit 5. Not the default; not for production use this slice.\n\n" ++
   "EXIT CODES:\n" ++
   "  0  done — value printed to stdout\n" ++
   "  1  usage / parse / elaboration / TYPE error\n" ++
@@ -640,7 +682,7 @@ def stripTPrefix (line : String) : Option String :=
 /-- Evaluate one line of REPL input against the accumulated bindings, returning the (possibly
 updated) bindings and the exit code of whatever ran (`0` for a silent `:let`/`:help`/comment/blank
 line, so a piped session's exit code reflects only the last REAL evaluation — see `runRepl`). -/
-def replStep (typecheck compiled : Bool) (binds : List ReplBinding) (line : String) :
+def replStep (typecheck : Bool) (engine : Engine) (binds : List ReplBinding) (line : String) :
     IO (List ReplBinding × UInt32) := do
   let line := line.trimAscii.toString
   if line.isEmpty then
@@ -662,7 +704,7 @@ def replStep (typecheck compiled : Bool) (binds : List ReplBinding) (line : Stri
     else match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
     | none     => IO.eprintln s!"error: could not read file '{path}'"; return (binds, 1)
     | some src =>
-      let code ← runSource typecheck compiled (wrapBindings binds src)
+      let code ← runSource typecheck engine (wrapBindings binds src)
       return (binds, code)
   else if line.startsWith ":let" then
     match splitLetCmd (line.drop 4).toString with
@@ -671,7 +713,7 @@ def replStep (typecheck compiled : Bool) (binds : List ReplBinding) (line : Stri
   else if line.startsWith ":" then
     IO.eprintln s!"error: unknown command '{line}' (:help for the list)"; return (binds, 1)
   else
-    let code ← runSource typecheck compiled (wrapBindings binds line)
+    let code ← runSource typecheck engine (wrapBindings binds line)
     return (binds, code)
 
 /-- The interactive/piped loop: read a line, `replStep`, repeat until `:q`/`:quit`/EOF. Works
@@ -680,7 +722,7 @@ exits on EOF) — `IO.FS.Stream.getLine` doesn't care which; that is what makes 
 (agent-driven) use case work for free, per the operator's agent-first framing. Tracks the exit
 code of the LAST line that actually ran (silent lines don't overwrite it), so a piped single-expr
 session's exit code matches `bang eval`'s for the same program. -/
-partial def runRepl (typecheck compiled : Bool) : IO UInt32 := do
+partial def runRepl (typecheck : Bool) (engine : Engine) : IO UInt32 := do
   let stdin ← IO.getStdin
   let isTty ← stdin.isTty
   let rec loop (binds : List ReplBinding) (lastCode : UInt32) : IO UInt32 := do
@@ -693,7 +735,7 @@ partial def runRepl (typecheck compiled : Bool) : IO UInt32 := do
       if trimmed == ":q" || trimmed == ":quit" then
         return lastCode
       else
-        let (binds', code) ← replStep typecheck compiled binds line
+        let (binds', code) ← replStep typecheck engine binds line
         loop binds' code
   loop [] 0
 
@@ -715,24 +757,24 @@ def main (args : List String) : IO UInt32 := do
       -- takes the actual resolve-and-merge path. `eval`'s inline string has no FILE to resolve
       -- relative to, so it stays on the single-string `runSource` path unconditionally (below) —
       -- an `import` in an `eval`-string program is out of v1 scope (no directory to search).
-      let compiled   := rest.contains "--compiled"
+      let engine     := parseEngine rest
       let typecheck  := !rest.contains "--no-typecheck"
       match rest.filter (fun a => !("--".isPrefixOf a)) with
       | [arg] =>
         match ← resolveEntryFile arg with
         | .error e   => IO.eprintln s!"error: {e}"; pure 1
-        | .ok merged => runResolvedProg typecheck compiled merged
+        | .ok merged => runResolvedProg typecheck engine merged
       | _ => IO.eprintln usage; pure 1
     else if cmd == "eval" then
-      let compiled   := rest.contains "--compiled"
+      let engine     := parseEngine rest
       let typecheck  := !rest.contains "--no-typecheck"
       match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | [arg] => runSource typecheck compiled arg
+      | [arg] => runSource typecheck engine arg
       | _ => IO.eprintln usage; pure 1
     else if cmd == "repl" then
-      let compiled  := rest.contains "--compiled"
+      let engine    := parseEngine rest
       let typecheck := !rest.contains "--no-typecheck"
-      runRepl typecheck compiled
+      runRepl typecheck engine
     else if cmd == "fmt" then
       -- no `--` flags this slice (no `-w`, per the team lead's hold); any non-positional is usage.
       match rest with
