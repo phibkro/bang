@@ -237,7 +237,14 @@ conclusion, ~28 sites) OR a `shape (c)` fuel-indexed re-index — BOTH beyond th
 hybrid promised. NEXT: operator ruling on whether to pay a def-CONCLUSION change (larger than the amendment
 priced) or PARK the `lr_*` cluster (ship v1 flagged, per the PARK section above).
 
-## PROPOSED AMENDMENT ③ — route (α) hole-determinacy probe: (α) REFUTED-at-delivery; RECOMMEND PARK or (β) (lane hole-det, 2026-07-10, AWAITING OPERATOR RULING)
+## PROPOSED AMENDMENT ③ — route (α) hole-determinacy probe: (α) REFUTED-at-delivery; RECOMMEND PARK or (β) (lane hole-det, 2026-07-10, RULED — see below)
+
+**RULED (operator, 2026-07-10 night): (α) STRUCK; the census unit stays PARKED; (β) adopted as a
+BACKGROUND lane.** The fuel-indexed re-index (β) proceeds as a long-running IC lane (branch
+`feat-lr-fuel-reindex`, sliced — slice 1 de-risks the load-bearing claim: the fuel-indexed def block +
+the SKIP-strip crux + the `KrelS ↔ ∃n, KrelSN n` bridge shape, gated before any 37-decl grind) in
+parallel with the emission arc, which keeps the momentum. This amendment (like ①/②) flips
+PROPOSED→Accepted only in a real 18→20 landing commit; the ruling here fixes DIRECTION, not status.
 
 **Context.** The census4 wall (above) names TWO surviving routes past the `Cb' = C'` SKIP tie: **(α)**
 a `KrelS`-def-CONCLUSION strengthening (carry hole-determinacy on the resume conjunct's conclusion,
