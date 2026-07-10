@@ -1982,7 +1982,56 @@ theorem evalE_agrees_evalD_gen :
         rw [substEnv_force, hrb]
         simpa only [Bang.CalcVM.evalD] using hd
       | _ => rw [hw] at h; simp at h
-    | letC M N => sorry
+    | letC M N =>
+      obtain ⟨hScM, hScN⟩ := hSc.letC_inv
+      simp only [evalE, Option.bind_eq_bind] at h
+      cases hM : evalE f g eσ eτ eκ ρ M with
+      | none => rw [hM] at h; simp at h
+      | some p =>
+        rw [hM] at h
+        obtain ⟨outM, g₁, σ₁, τ₁, κ₁⟩ := p
+        cases outM with
+        | mterm tM => cases tM with
+          | mret mw =>
+            simp only [Option.bind_some] at h
+            -- IH on M (terminal mret mw): evalD M ⇒ ret (readback mw), stores → σ₁ τ₁ κ₁ (corr dσ₁…), mw WFClos.
+            obtain ⟨G₁, dσ₁, dτ₁, dκ₁, hdM, hCM, hGM, hWtM, -⟩ :=
+              ih γ M (.mterm (.mret mw)) ρ g G g₁ eσ σ₁ eτ τ₁ eκ κ₁ dσ dτ dκ
+                hag hWF hP (hlen ▸ hScM) hG hC hM
+            obtain ⟨hWFmw, hWCmw⟩ := hWtM _ rfl
+            simp only [MTerm.WF] at hWFmw; simp only [MTerm.WFClos] at hWCmw
+            -- N runs under (mw ∷ₑ ρ) at M's output stores; IH on N gives the tail.
+            have hagN : EnvAgrees (mw ∷ₑ ρ) (readback mw :: γ) := by
+              simp only [EnvAgrees, readbackEnv]; rw [show readbackEnv ρ = γ from hag]
+            have hWFN : MEnv.WF (mw ∷ₑ ρ) := MEnv.WF.cons hWFmw hWF
+            have hWCN : MEnv.WFClos (mw ∷ₑ ρ) := MEnv.WFClos.cons hWCmw hP
+            have hScN' : Comp.ScopedC (readback mw :: γ).length N := by
+              simpa only [List.length_cons] using hScN
+            obtain ⟨G', dσ', dτ', dκ', hdN, hC', hG', hWt', hRt'⟩ :=
+              ih (readback mw :: γ) N out (mw ∷ₑ ρ) g₁ G₁ g' σ₁ eσ' τ₁ eτ' κ₁ eκ'
+                dσ₁ dτ₁ dκ₁ hagN hWFN hWCN hScN' hGM hCM h
+            refine ⟨G', dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
+            have hcrux : substEnv (readback mw :: γ) N = (closeUnderBindersE 1 γ N).subst (readback mw) :=
+              (substEnv_cons_subst hγ hWFmw N).symm
+            simp only [substEnv_letC, Bang.CalcVM.evalD, Option.bind_eq_bind]
+            rw [show Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M) = _ from hdM]
+            simp only [readbackTermS, readbackTerm, Option.bind_some]
+            rw [← hcrux]; exact hdN
+          | mlam _ _ => simp only [Option.bind_some] at h; exact absurd h (by simp)
+        | mraised n op w =>
+          -- M RAISES ⇒ letC short-circuits: out = mraised n op w. IH on M (raise-half) gives evalD raised.
+          simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨hout, hg, hσ, hτ, hκ⟩ := h
+          obtain ⟨G₁, dσ₁, dτ₁, dκ₁, hdM, hCM, hGM, -, hRM⟩ :=
+            ih γ M (.mraised n op w) ρ g G g₁ eσ σ₁ eτ τ₁ eκ κ₁ dσ dτ dκ
+              hag hWF hP (hlen ▸ hScM) hG hC hM
+          obtain ⟨hWFw, hWCw⟩ := hRM n op w rfl
+          subst hout hg hσ hτ hκ
+          refine ⟨G₁, dσ₁, dτ₁, dκ₁, ?_, hCM, hGM, by rintro t ⟨⟩, ?_⟩
+          · simp only [substEnv_letC, Bang.CalcVM.evalD, Option.bind_eq_bind]
+            rw [show Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M) = _ from hdM]
+            simp only [readbackTermS, Option.bind_some]
+          · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact ⟨hWFw, hWCw⟩
     | app M v => sorry
     | case w N₁ N₂ => sorry
     | split w N => sorry
