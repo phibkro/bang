@@ -44,11 +44,13 @@ graph TD
     Core_Soundness["Core.Soundness<br/>3399L · fan-in 0"]
     Core_Typing["Core.Typing<br/>492L · fan-in 0"]
     Examples["Examples<br/>365L · fan-in 0"]
+    Frontend_Annotate["Frontend.Annotate<br/>251L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>942L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>587L · fan-in 0"]
-    Frontend_Rewrite["Frontend.Rewrite<br/>292L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>2929L · fan-in 1"]
+    Frontend_Lint["Frontend.Lint<br/>208L · fan-in 0"]
+    Frontend_Query["Frontend.Query<br/>595L · fan-in 0"]
+    Frontend_Rewrite["Frontend.Rewrite<br/>294L · fan-in 0"]
+    Frontend_Surface["Frontend.Surface<br/>2962L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Frontend_TypeCheck["Frontend.TypeCheck<br/>5455L · fan-in 0"]
@@ -81,7 +83,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 2929 | 1 |
+| `Frontend.Surface` | ? | 2962 | 1 |
 | `Audit` | Apex | 58 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3338 | 0 |
@@ -101,11 +103,13 @@ graph TD
 | `Core.Typing` | ? | 492 | 0 |
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 365 | 0 |
+| `Frontend.Annotate` | ? | 251 | 0 |
 | `Frontend.Diagnostics` | ? | 213 | 0 |
 | `Frontend.Format` | ? | 942 | 0 |
+| `Frontend.Lint` | ? | 208 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 587 | 0 |
-| `Frontend.Rewrite` | ? | 292 | 0 |
+| `Frontend.Query` | ? | 595 | 0 |
+| `Frontend.Rewrite` | ? | 294 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 5455 | 0 |

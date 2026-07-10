@@ -39,6 +39,7 @@ import Bang.Frontend.Format
 import Bang.Frontend.Diagnostics
 import Bang.Frontend.Query
 import Bang.Frontend.Rewrite
+import Bang.Frontend.Lint
 import Bang.Backend.AbstractMachine
 import Bang.Backend.EnvMachine
 import Bang.Witness.LawTest
@@ -794,6 +795,50 @@ def runRewriteRename (write : Bool) (old new : String) (file : String) : IO UInt
               let gate ← preservationCheck p p'
               emitRewrite write (some file) src p' gate
 
+/-- One `SkipReason` → its human-readable report line — `runRewriteAnnotate`'s stderr summary,
+never stdout (stdout stays the pure diff/write contract every rewrite verb shares; the skip
+report is DIAGNOSTIC context alongside it, mirroring how `checkAndLowerProg`'s errors print to
+stderr beside `check`'s ok/fail stdout line). -/
+def renderSkipReason : Bang.Rewrite.SkipReason → String
+  | .alreadyAnnotated          => "already annotated"
+  | .notValueTyped             => "no value-level type (trait/impl/data/effect)"
+  | .typeCheckFailed msg       => s!"does not type-check standalone ({msg})"
+  | .userLabelInRow row        => s!"row {row} names a USER effect — annotate cannot express it yet (a known gap: row annotations only name the four builtin effects throws/state/stm/Div today; see docs/reference/language.md's `bang rewrite annotate` section)"
+  | .typeNotRoundTrippable ty  => s!"inferred type '{ty}' has no parseable surface ascription (a data-type/internal shape)"
+
+/-- `bang rewrite annotate [<file.bang>] [-w]` (#82 item 1): infer types AND effect rows for every
+top-level `letD` lacking an explicit ascription, splice them in. UNGATED (unlike `rename`) — see
+`Bang.Rewrite.annotate`'s own module header for why an added ascription cannot silently change
+program behavior — but this runner still defensively re-elaborates the rewritten `Prog` via
+`checkAndLowerProg` before ever emitting (a sanity check, not a preservation gate: an ascription
+that fails to re-elaborate is a BUG in `annotate`'s own round-trip claim, surfaced loudly rather
+than emitted). Reads a file if given, else stdin (mirrors `fmt`'s convention; `-w` still requires
+a real file path, same as every other verb). The per-decl skip/annotate SUMMARY prints to
+STDERR (never stdout — the diff/write contract on stdout stays uniform across every rewrite verb),
+so `effect creep becomes diff-visible` (#82's own framing) shows on a re-run: a decl whose row grew
+a new label appears as a changed line in the NEXT diff. -/
+def runRewriteAnnotate (write : Bool) (file : Option String) : IO UInt32 := do
+  let src ← match file with
+    | none      => (← IO.getStdin).readToEnd
+    | some path =>
+      match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
+      | none   => IO.eprintln s!"error: could not read file '{path}'"; return 2
+      | some s => pure s
+  match Bang.Surface.parseProg src with
+  | .error e => IO.eprintln s!"error: {e}"; pure 1
+  | .ok p    =>
+      let outcomes := Bang.Rewrite.annotateOutcomes p
+      for (d, o) in outcomes do
+        match o with
+        | .annotated ty => IO.eprintln s!"  + {d.name} : {Bang.Format.showTy ty}"
+        | .skipped why  => IO.eprintln s!"  · {d.name} — {renderSkipReason why}"
+      match Bang.Rewrite.annotate p with
+      | .error e => IO.eprintln s!"error: {e}"; pure 1
+      | .ok p'   =>
+          match Bang.TypeCheck.checkAndLowerProg p' with
+          | .error e => IO.eprintln s!"error: annotate produced a program that fails to elaborate ({e}) — this is a bug in annotate's own round-trip claim, aborting"; pure 1
+          | .ok _    => emitRewrite write file src p' none
+
 /-- Default sample count and RNG seed for `bang test` — fixed (not randomized per-run) so a CI
 run is byte-reproducible (`Bang.LawTest.genIntSamples`'s own documented requirement: "the SAME
 seed reproduces the SAME samples"). 30 samples is a generous default for the Int-tuple shrinking
@@ -870,6 +915,77 @@ def runTest (file : Option String) : IO UInt32 := do
       IO.println s!"laws: {passed}/{n} passed"
       pure (if allHold then 0 else 1)
 
+/-! ## `bang lint <file>` (#82 item 2) — the rule package over the query fact base. -/
+
+/-- One `Finding` → its JSON object — `{"rule","severity","decl","message"}`, `decl` rendered
+`null` for a whole-file finding (mirrors `Query.jsonOptStrField`'s "absence over a guessed
+default" convention — this module cannot import `Bang.Query`'s private JSON helpers, an unrelated
+LEAF, so the shape is hand-rolled here identically, `Main.lean`'s existing `checkFailJson`
+precedent for a small fixed JSON shape). -/
+def findingJson (f : Bang.Lint.Finding) : String :=
+  let declField := match f.decl with
+    | some n => Bang.Diagnostics.jsonStr n
+    | none   => "null"
+  "{\"rule\":" ++ Bang.Diagnostics.jsonStr f.rule ++
+    ",\"severity\":\"" ++ f.severity.toString ++ "\"" ++
+    ",\"decl\":" ++ declField ++
+    ",\"message\":" ++ Bang.Diagnostics.jsonStr f.message ++ "}"
+
+/-- The `--json` report: `{"ok":bool,"findings":[Finding,...]}` — `ok` is `true` only when NO
+finding reaches `.warning` (mirrors `check --json`'s `ok:true ⟺ no diagnostics` convention,
+narrowed to `.warning`-and-above since `.info` findings, by their own severity's definition, don't
+constitute a failure — an `unused-pub` decl is not wrong, just worth knowing about). -/
+def lintReportJson (findings : List Bang.Lint.Finding) : String :=
+  let ok := !findings.any (·.severity == .warning)
+  "{\"ok\":" ++ (if ok then "true" else "false") ++
+    ",\"findings\":[" ++ String.intercalate "," (findings.map findingJson) ++ "]}"
+
+/-- The human-table report: one line per finding, `[SEVERITY] rule decl — message` (`decl`
+rendered `(file)` for a whole-file finding), then a `N warning(s), M info` tally. -/
+def renderFindingHuman (f : Bang.Lint.Finding) : String :=
+  let sev := match f.severity with | .warning => "WARN" | .info => "INFO"
+  let declStr := f.decl.getD "(file)"
+  s!"[{sev}] {f.rule} {declStr} — {f.message}"
+
+/-- `bang lint [<file.bang>] [--json] [--quiet-clean]` (#82 item 2): run every rule
+(`Bang.Lint.lintProg`) over the file, report human table (default) or `--json`. EXIT CONTRACT
+(task #40): `0` when no finding reaches `.warning` (an `.info`-only or empty report still exits
+0 — mirrors `check --json`'s "the caller inspects `ok`" convention); `1` when any `.warning`
+finding is present; `2` the file could not be read (the `check`/`test` convention: a tool error is
+not a diagnostic). `--quiet-clean` suppresses the "no findings" success line on a CLEAN human-table
+report (a scripted caller wanting only nonzero-exit-on-real-findings, never printing on the happy
+path) — has no effect on `--json` (the JSON body is always the complete, stable answer; there is
+no "quiet" JSON). Reads a file if given, else stdin (mirrors `fmt`/`check`'s convention). NOT
+resolver-aware in v1 (like `test`/stdin `check`) — `Bang.Lint`'s rules operate on ONE parsed
+`Prog`; a resolver-aware multi-file upgrade is the natural follow-up if that need arises, matching
+`bang test`'s own documented non-resolver precedent. -/
+def runLint (json quietClean : Bool) (file : Option String) : IO UInt32 := do
+  let src ← match file with
+    | none      => (← IO.getStdin).readToEnd
+    | some path =>
+      match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
+      | none   => IO.eprintln s!"error: could not read file '{path}'"; return 2
+      | some s => pure s
+  match Bang.Surface.parseProg src with
+  | .error e =>
+      if json then IO.println (Bang.Query.errorJsonOk e) else IO.eprintln s!"error: {e}"
+      pure 1
+  | .ok p    =>
+      let findings := Bang.Lint.lintProg src p
+      let hasWarning := findings.any (·.severity == .warning)
+      if json then
+        IO.println (lintReportJson findings)
+      else
+        if findings.isEmpty then
+          if !quietClean then IO.println "no findings"
+        else
+          for f in findings do IO.println (renderFindingHuman f)
+          let warnCount := (findings.filter (·.severity == .warning)).length
+          let infoCount := (findings.filter (·.severity == .info)).length
+          IO.println s!"──────────────────────────────"
+          IO.println s!"{warnCount} warning(s), {infoCount} info"
+      pure (if hasWarning then 1 else 0)
+
 def usage : String :=
   "bang — the lang-bang runner\n\n" ++
   "USAGE:\n" ++
@@ -918,8 +1034,24 @@ def usage : String :=
   "                                               GATED on the differential PRESERVATION check (the\n" ++
   "                                               kernel oracle must agree on both programs) before\n" ++
   "                                               ever emitting — a failing gate aborts, no diff/write\n" ++
+  "    bang rewrite annotate [<file.bang>] [-w]  infer types AND effect rows for every top-level\n" ++
+  "                                               `let` lacking an ascription, splice them in — a\n" ++
+  "                                               PR that adds an effect to a row shows as a diff on\n" ++
+  "                                               re-run; row annotations name only the four builtin\n" ++
+  "                                               effects today (throws/state/stm/Div) — a decl whose\n" ++
+  "                                               row carries a USER effect is skipped with a note\n" ++
+  "                                               (stderr); reads stdin if no file\n" ++
   "                                     `-w` applies the change to `<file.bang>` in place; the default\n" ++
   "                                     prints a unified diff to stdout and touches nothing on disk.\n\n" ++
+  "  bang lint [<file.bang>] [--json] [--quiet-clean]\n" ++
+  "                                     rule package over the query fact base (issue #82 item 2):\n" ++
+  "                                     dead-private (an unreferenced non-pub decl, warning),\n" ++
+  "                                     unused-pub (a pub decl nothing in-module references, info),\n" ++
+  "                                     fmt-divergence (the file's layout ≠ its canonical form,\n" ++
+  "                                     warning). Human table by default, `--json` for the agent\n" ++
+  "                                     schema. Exit 0 unless a `warning`-severity finding is\n" ++
+  "                                     present; `--quiet-clean` suppresses the \"no findings\" line\n" ++
+  "                                     on a clean human-table report. Reads stdin if no file.\n\n" ++
   "  bang --help, -h                    print this text and exit 0\n" ++
   "  bang --version, -v                 print the version and exit 0\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
@@ -1182,7 +1314,19 @@ def main (args : List String) : IO UInt32 := do
       | ["fmt", file] => runRewriteFmt write (some file)
       | ["fmt"]       => runRewriteFmt write none
       | ["rename", old, new, file] => runRewriteRename write old new file
+      | ["annotate", file] => runRewriteAnnotate write (some file)
+      | ["annotate"]       => runRewriteAnnotate write none
       | _             => IO.eprintln usage; pure 1
+    else if cmd == "lint" then
+      -- `bang lint [<file.bang>] [--json] [--quiet-clean]` (#82 item 2). `--json`/`--quiet-clean`
+      -- may appear anywhere before the single optional positional (mirrors `check`'s own
+      -- `--json`-anywhere convention); any OTHER `--`-prefixed arg falls to usage.
+      let json := rest.contains "--json"
+      let quietClean := rest.contains "--quiet-clean"
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | []      => runLint json quietClean none
+      | [arg]   => runLint json quietClean (some arg)
+      | _       => IO.eprintln usage; pure 1
     else
       IO.eprintln usage; pure 1
   | _ => IO.eprintln usage; pure 1

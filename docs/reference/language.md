@@ -655,6 +655,8 @@ rewritten file, or aborts loudly with nothing written.
 re-housed as a command; reads stdin if no file |
 | `rename` | `<old> <new> <file.bang> [-w]` | rename a top-level declaration and every
 reference to it |
+| `annotate` | `[<file.bang>] [-w]` | infer types AND effect rows for every top-level
+`let` lacking an ascription, splice them in; reads stdin if no file |
 
 **`fmt` as rewrite #0**: `bang fmt` (the pre-existing, print-only CLI surface) is
 UNCHANGED — `bang rewrite fmt` is an ADDITIONAL surface sharing the SAME canonical
@@ -687,4 +689,71 @@ This is a RUNG-1 (differential) preservation check, not a proof — `docs/notes/
 proof-export-survey.md`'s rung-2 (the binary LR's contextual-equivalence certificate)
 is the post-LR upgrade path for a machine-checked guarantee rather than a run-time
 differential gate.
+
+### `annotate` — types AND effect rows become explicit, diff-visible ascriptions
+
+`bang rewrite annotate` infers the type AND effect row of every top-level `let`
+lacking an explicit ascription and splices it in — the SAME diff-by-default/`-w`
+contract every rewrite verb shares. It adds NO new checking: every fact it emits is
+a re-rendering of what `bang query type`/`effects` already compute
+(`Bang.Query.typeStringOfDecl`), reused directly.
+
+**The triple win**: checking is cheaper than inference (the checker already computed
+every decl's type + row; annotate only renders it back into source), explicit context
+for an agent reading the file (a decl's paradigm — which effects it may perform — is
+visible without running the checker), and **effect creep becomes diff-visible**: a PR
+that adds `Div`/`throws` to a previously-unconstrained decl shows as a one-line change
+on `annotate`'s own re-run, the same way any other diff does.
+
+**Never overwrites an existing ascription.** `annotate` only fills in a MISSING
+ascription — `let rec`/bounded `fn` decls already carry a mandatory one (ADR-0073/
+bite-2's own grammar), so they are always a no-op; a `let` that already has
+`: T` is left untouched even if the checker would infer something different-looking.
+A human-written ascription is authoritative.
+
+**Row annotations name only the four BUILTIN effects today** (`throws`/`state`/`stm`/
+`Div`) — a known gap, not a bug: naming a USER-declared `effect`'s label in a `! {ρ}`
+ascription requires a checker-side extension (`TypeCheck.effNames`) that has not yet
+landed. A decl whose row carries a user effect label is SKIPPED with a note (on
+stderr) rather than emitting an ascription that would silently fail to constrain the
+row it claims to — a forward pointer, not a silent gap.
+
+**Self-verified, per decl.** Before ever returning a candidate ascription, `annotate`
+re-derives the checker's type string FROM the candidate and requires it to agree with
+what was originally inferred (`roundTripsClean`) — a decl whose checker rendering is
+ambiguous or otherwise fails this check is skipped, never emitted wrong. A failure
+here skips only THAT decl, never the whole file.
+
+## `bang lint` — a rule package over the query fact base (issue #82)
+
+`bang lint [<file.bang>] [--json] [--quiet-clean]` runs a small package of rules
+over `Bang.Query`'s own fact base (`declFactsOf`/`nameRefEdgesOf`) — RULES ARE
+QUERIES, no new analysis machinery. Human table by default, `--json` for the agent
+schema. It mirrors `tools/DeadCode.lean`'s own Lean-side dead-code discipline (root
+set → transitive closure → "genuine orphan vs. intentional park" reading) at the
+SURFACE-program level.
+
+| Rule | Severity | Fires when |
+|---|---|---|
+| `dead-private` | warning | a non-`pub` top-level decl is unreachable from the
+program's public surface, its own trailing body, or (when declared) `main` — the
+SAME root convention `bang run` itself uses (ADR-0093 D5) |
+| `unused-pub` | info | a `pub` decl is referenced by NOTHING in the module (an
+external importer may still use it — a much weaker signal than `dead-private`) |
+| `fmt-divergence` | warning | the file's own layout ≠ its canonical form
+(`bang rewrite fmt -w` is the fix) |
+
+**Exit contract**: `0` unless a `warning`-severity finding is present (an `info`-only
+or empty report still exits `0` — the caller inspects `ok`/the finding list, the SAME
+convention `bang check --json` uses); `1` when any `warning` finding fires; `2` the
+file could not be read. `--quiet-clean` suppresses the "no findings" success line on
+a clean human-table report (for a scripted caller wanting only
+nonzero-exit-on-real-findings) — it has no effect on `--json` output, which is always
+the complete, stable answer.
+
+**`dead-private`'s own advisory honesty** (mirroring `tools/DeadCode.lean`'s own
+documented caveat): a decl reachable ONLY through a syntactic path this rule's SYNTACTIC
+closure (`Query.nameRefEdgesOf` + `Query.surfUsesVar`) cannot see is a false positive
+this rule does not itself distinguish from a genuine orphan — the finding names the
+decl, the human/agent judges deletability.
 

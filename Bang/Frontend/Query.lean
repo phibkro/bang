@@ -192,17 +192,20 @@ reparses printed source. -/
 def withQueryBody (p : Prog) (name : String) : Prog :=
   { p with body := .var name, isLibrary := false }
 
-/-- The checker's `type ! row` string for top-level binding `name` in program `p`, or the checker's
-own error message on failure (an ill-typed program, or `name` not bound as a VALUE — e.g. naming a
-`trait`/`data`/`effect`, which `Surf.var` can never resolve to). -/
-def typeStringOfDecl (p : Prog) (name : String) : Except String String :=
+/-- **PUBLIC (TIER 1):** the checker's `type ! row` string for top-level binding `name` in program
+`p`, or the checker's own error message on failure (an ill-typed program, or `name` not bound as a
+VALUE — e.g. naming a `trait`/`data`/`effect`, which `Surf.var` can never resolve to). `public`:
+`Bang.Rewrite.annotate` (#82) reuses this DIRECTLY (a `letD`'s own annotate-outcome needs exactly
+this per-decl checked fact) rather than re-deriving a second `withQueryBody`-style projection. -/
+public def typeStringOfDecl (p : Prog) (name : String) : Except String String :=
   Bang.TypeCheck.typeStringOfProgP (withQueryBody p name)
 
-/-- Split a rendered `"T ! {row}"` (or bare `"T"`) into `(typeStr, rowStr)` — `rowStr` is `"{}"`
-when no `" ! "` separator is present (`showType`'s empty-row convention: the suffix is omitted
-entirely, not printed as `"! {}"`). Pure string surgery over `TypeCheck.showType`'s ONE rendering
-convention (never re-derived from a second checker call). -/
-def splitTypeRow (rendered : String) : String × String :=
+/-- **PUBLIC (TIER 1):** split a rendered `"T ! {row}"` (or bare `"T"`) into `(typeStr, rowStr)` —
+`rowStr` is `"{}"` when no `" ! "` separator is present (`showType`'s empty-row convention: the
+suffix is omitted entirely, not printed as `"! {}"`). Pure string surgery over `TypeCheck.showType`'s
+ONE rendering convention (never re-derived from a second checker call). `public`: the SAME
+`Bang.Rewrite.annotate` consumer as `typeStringOfDecl` above. -/
+public def splitTypeRow (rendered : String) : String × String :=
   match rendered.splitOn " ! " with
   | [ty, row] => (ty, row)
   | _         => (rendered, "{}")
@@ -291,9 +294,14 @@ public def declBodies : Decl → List Surf
 rather than imported since the source is a private `TypeCheck.lean` internal and this is a small,
 CLOSED structural recursion over an already-public inductive (zero typing logic, so a copy cannot
 drift into a different SEMANTICS the way a re-derived TYPE rule could). Covers EVERY `Surf`/
-`DArms`/`SurfArgs`/`LetBindings` constructor, `lettMulti` included. -/
+`DArms`/`SurfArgs`/`LetBindings` constructor, `lettMulti` included.
+
+`surfUsesVar` itself is `public` (a #82 `bang lint` need: dead-decl detection needs the program's
+OWN trailing `body`'s references, which `nameRefEdgesOf`'s decl-to-decl edges alone don't cover —
+a pure additive-visibility change, the SAME move `declMentionsVar`/`EffectInfo` already made, no
+new logic). -/
 mutual
-def surfUsesVar (nm : String) : Surf → Bool
+public def surfUsesVar (nm : String) : Surf → Bool
   | .var x                         => x == nm
   | .lit _ | .getS | .unitS        => false
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
