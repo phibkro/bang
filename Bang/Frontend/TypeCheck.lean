@@ -3675,6 +3675,51 @@ def checkLaws (src : String) : Except String (List String) := do
                     throw s!"law {tn}.{l.name} FAILS on its sample for {showVTy (vtyOf τR)}"
   return report
 
+/-! #74 fix: a law body — or any expression — is diagnosed as calling a TRAIT OP BY NAME
+(`eq(x, x)`/`eq x x`, either the tuple-call or curried-call SHAPE `appSpine` recognizes uniformly)
+when the language has NO EXECUTION PATH for that call at all. ADR-0068 wires trait-op resolution
+EXCLUSIVELY through the overloaded OPERATOR (`env.insts` is consulted in exactly one place, the
+`.binopS` elaboration arm) — there is no `.app`-shaped resolution rule, so `eq(x, x)` reaches
+`Source.eval` as a genuinely unbound callee and dies with the opaque kernel message `app: callee is
+not a function ('eq')`. This is a REAL v1 constraint (confirmed: even a SIBLING op of the SAME impl
+cannot call another op of that impl by name), not a splice/context bug — the fix is diagnostic, not
+structural: detect the shape and report the actual constraint instead of a bare runtime crash. -/
+mutual
+def firstBareOpCall (opNames : List String) : Surf → Option String
+  | e =>
+    match appSpine e with
+    | some (h, _ :: _) => if opNames.contains h then some h else firstBareOpCallStep opNames e
+    | _                => firstBareOpCallStep opNames e
+def firstBareOpCallStep (opNames : List String) : Surf → Option String
+  | .var _ | .lit _ | .getS | .unitS => none
+  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => firstBareOpCall opNames e
+  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
+  | .binopS _ a b                  => firstBareOpCall opNames a <|> firstBareOpCall opNames b
+  | .matchS s _ l _ r              => firstBareOpCall opNames s <|> firstBareOpCall opNames l <|> firstBareOpCall opNames r
+  | .ifS c t e                     => firstBareOpCall opNames c <|> firstBareOpCall opNames t <|> firstBareOpCall opNames e
+  | .matchD s arms                 => firstBareOpCall opNames s <|> dArmsFirstBareOpCall opNames arms
+  | .withCapS _ i _ b              => firstBareOpCall opNames i <|> firstBareOpCall opNames b
+  | .dotPerform r _ .none          => firstBareOpCall opNames r
+  | .dotPerform r _ (.one a)       => firstBareOpCall opNames r <|> firstBareOpCall opNames a
+  | .dotPerform r _ (.two a b)     => firstBareOpCall opNames r <|> firstBareOpCall opNames a <|> firstBareOpCall opNames b
+  | .letRecS _ _ f b               => firstBareOpCall opNames f <|> firstBareOpCall opNames b
+def dArmsFirstBareOpCall (opNames : List String) : DArms → Option String
+  | .nil             => none
+  | .cons _ _ b rest => firstBareOpCall opNames b <|> dArmsFirstBareOpCall opNames rest
+end
+
+-- `add(a, b)` (tuple-call) is caught: `add` is a declared trait op, applied to a pair.
+#guard firstBareOpCall ["add"] (.app (.var "add") (.pairS (.var "a") (.var "b"))) == some "add"
+-- `add a b` (curried-call) is caught too — the SAME shape `appSpine` sees either way.
+#guard firstBareOpCall ["add"] (.app (.app (.var "add") (.var "a")) (.var "b")) == some "add"
+-- an ORDINARY operator (`a == b`, `.binopS`) is NOT a bare op call — that's the SUPPORTED path.
+#guard firstBareOpCall ["eq"] (.binopS Bang.BinOp.eq (.var "a") (.var "b")) == none
+-- a name that ISN'T one of the trait's ops (an ordinary local var applied to args) is not flagged.
+#guard firstBareOpCall ["eq"] (.app (.var "f") (.var "x")) == none
+-- nested inside a `let`/`if` — the traversal reaches every subexpression, not just the top.
+#guard firstBareOpCall ["eq"] (.lett "r" (.app (.var "eq") (.pairS (.var "x") (.var "x"))) (.var "r")) == some "eq"
+
 /-- **PUBLIC (#60 seam):** enumerate every LAW INSTANCE in a program — one entry per (trait law ×
 matching impl), exactly the pairs `checkLaws` itself walks above, reused structurally (same
 trait×impl match, not re-derived). Each entry is `(traitName, lawName, params, body)`, `body`
@@ -3698,6 +3743,74 @@ public def lawInstancesOf (src : String) : Except String (List (String × String
           | _ => pure ()
     | _ => pure ()
   return out
+
+/-- **PUBLIC (#60/#74 seam):** for every law instance `lawInstancesOf` would discover, ALSO report
+whether its BODY calls a trait op BY NAME (`firstBareOpCall`, against THAT trait's own declared op
+names, `sigs.map (·.name)`) — the shape the language has no execution path for (see
+`firstBareOpCall`'s docstring). Returns one entry PER LAW INSTANCE, in the SAME order
+`lawInstancesOf` would enumerate them (`(traitName, lawName, badOpName?)`), so a caller can zip the
+two lists positionally without re-deriving the trait×impl walk a second time (kept as a SEPARATE
+function rather than widening `lawInstancesOf`'s own additive/stable 4-tuple signature, which
+existing `#guard`s and `LawTest.lean` already destructure). -/
+public def lawInstanceOpCallDiagnostics (src : String) : Except String (List (String × String × Option String)) := do
+  let p ← parseProg src
+  let mut out : List (String × String × Option String) := []
+  for d in p.decls do
+    match d with
+    | .traitD tn _ sigs laws =>
+        let opNames := sigs.map (·.name)
+        for other in p.decls do
+          match other with
+          | .implD tn' _ _ =>
+              if tn' == tn && !laws.isEmpty then
+                for l in laws do
+                  out := out ++ [(tn, l.name, firstBareOpCall opNames l.body)]
+          | _ => pure ()
+    | _ => pure ()
+  return out
+
+-- a law body calling its OWN trait op by name IS flagged, naming the op (the #74 shape — the
+-- stranger's exact program modulo cosmetic naming).
+#guard (match lawInstanceOpCallDiagnostics
+    "trait Eq { fn eq(a, b) -> Int law refl(x): eq(x, x) == 1 } impl Eq for Int { fn eq(a, b) = a } 0" with
+        | .ok [("Eq", "refl", some "eq")] => true | _ => false)
+-- (the companion "IS NOT flagged for the supported operator-only shape" guard lives further down,
+-- once `intOrdProg` is in scope — see the `lawInstanceOpCallDiagnostics` block near `intOrdProg`.)
+
+/-! #74 fix, part 2: an `impl <Trait> for Int` targeting an op that ALIASES a built-in binop
+(`add`/`sub`/`mul`/`div`/`lt`/`eq` — `binopName`'s own reverse map) is SILENTLY DEAD — `Int`
+operands hit the kernel's own δ-rule (`.binopS`'s `.ok .int` arm, checked BEFORE `env.insts` is
+ever consulted) unconditionally, so the impl's op body can never be reached through the operator
+its own trait declares it for. Confirmed structurally (the SAME code path #74's diagnosis walked):
+not a hypothetical, a REAL v1 gap an author can trip over silently — `impl Eq for Int` type-checks
+and BUILDS fine, it simply never runs. Fail-loud here beats a silently-inert impl. -/
+public def unreachableIntImplDiagnostics (src : String) : Except String (List (String × String)) := do
+  let p ← parseProg src
+  let mut out : List (String × String) := []
+  for d in p.decls do
+    match d with
+    | .implD tn .tInt ops =>
+        for od in ops do
+          if [Bang.BinOp.add, .sub, .mul, .div, .lt, .eq].any (fun op => binopName op == od.name) then
+            out := out ++ [(tn, od.name)]
+    | _ => pure ()
+  return out
+
+-- `impl Eq for Int`'s `eq` op aliases the built-in `==` — flagged as unreachable.
+#guard (match unreachableIntImplDiagnostics
+    "trait Eq { fn eq(a, b) -> Int } impl Eq for Int { fn eq(a, b) = a }" with
+        | .ok [("Eq", "eq")] => true | _ => false)
+-- an impl targeting a NON-`Int` type (the real, WORKING corpus shape — `(Int * Int)`) is not
+-- flagged: `.binopS`'s δ-rule only shortcuts `Int` operands, so `env.insts` IS reached for anything
+-- else.
+#guard (match unreachableIntImplDiagnostics
+    "trait Eq2 { fn eq(a, b) -> Int } impl Eq2 for (Int * Int) { fn eq(a, b) = 1 }" with
+        | .ok [] => true | _ => false)
+-- an `impl … for Int` whose op DOESN'T alias any built-in name (an ordinary custom op, e.g. `dbl`)
+-- is not flagged — only the SIX operator-aliased names are actually shadowed.
+#guard (match unreachableIntImplDiagnostics
+    "trait Dbl { fn dbl(a, b) -> Int } impl Dbl for Int { fn dbl(a, b) = a }" with
+        | .ok [] => true | _ => false)
 
 /-! ### Validation ⑦ — the northstar WITH its law: checked from source, rung displayed. -/
 
@@ -3739,6 +3852,12 @@ exists so `checkLaws` has a trait×impl pair to instantiate). -/
 def intOrdProg (law : String) (body : String) : String :=
   "trait IntOrd { fn lt(a, b) -> (Unit + Unit) law " ++ law ++ " } " ++
   "impl IntOrd for Int { fn lt(a, b) = a < b } " ++ body
+
+-- `lawInstanceOpCallDiagnostics` companion: a law body using ONLY the overloaded operator (the
+-- supported v1 shape, `IntOrd`'s real corpus convention — `a < b`, never `lt(a, b)`) is NOT
+-- flagged. Confirms the detector doesn't over-fire on the language's actually-working law shape.
+#guard (match lawInstanceOpCallDiagnostics (intOrdProg "trans(a, b, c): a < b => b < c => a < c" "0") with
+        | .ok [("IntOrd", "trans", none)] => true | _ => false)
 
 -- TRANSITIVITY from source, READ AS WRITTEN (the `=>` sugar, #39): 3 params, k-tuple sampled. GREEN.
 #guard (match checkLaws (intOrdProg "trans(a, b, c): a < b => b < c => a < c" "0") with
