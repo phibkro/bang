@@ -22,10 +22,18 @@ setup:
 orient:
     bash tools/orient.sh
 
-# Default verify gate — selfcheck + build + example-run oracle + REPL transcripts
-# + audit. `audit` now runs the full `just fitness` bundle (#114), which already
-# includes the ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
-verify: selfcheck build check-examples test-repl test-fmt test-check-json test-query test-rewrite test-annotate test-lint test-cli test-law audit
+# Default verify gate — selfcheck + build + the independent test batteries (run
+# concurrently by run-batteries, plan 004) + audit. `audit` now runs the full
+# `just fitness` bundle (#114), which already includes the ADR-ledger `--check`,
+# so a separate `adr-check` dep is redundant.
+verify: selfcheck build run-batteries audit
+
+# All independent test batteries, concurrently (single up-front binary build).
+# Same set as verify's former serial leg list — check-examples, test-repl,
+# test-fmt, test-check-json, test-query, test-rewrite, test-annotate, test-lint,
+# test-cli, test-law, test-modules — driven by tools/run-batteries.sh (plan 004).
+run-batteries:
+    bash tools/run-batteries.sh
 
 # Run every examples/<project>/main.bang and diff stdout against expected.txt —
 # the end-to-end run oracle for whole bang programs (supersedes per-example
@@ -117,10 +125,9 @@ regen-all:
 # resolution through the compiled CLI — happy-path import + use, the existing
 # examples/ corpus unchanged through the resolver, missing-import/cycle/
 # private-access error transcripts, and same-dir-shadows-root search order.
-# NOT part of the default `verify` chain (composed in separately) — the
-# module-merge CORE's own laws are already #guard-gated in
-# Bang/Frontend/TypeCheck.lean; this gates only what #guard cannot (real
-# filesystem IO).
+# Part of the default `verify` chain (plan 004) — the module-merge CORE's own
+# laws are already #guard-gated in Bang/Frontend/TypeCheck.lean; this gates
+# only what #guard cannot (real filesystem IO).
 test-modules:
     bash tools/test-modules.sh
 

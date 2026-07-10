@@ -20,8 +20,10 @@ bang=".lake/build/bin/bang"
 # "missing" let a STALE exe through: `just build` (= `lake build`, the library)
 # does NOT rebuild the exe, so a present-but-stale binary produced false results
 # (a new example false-failing, or an old one false-passing). Build noise → stderr.
-echo "building bang runner…" >&2
-lake build bang >&2
+if [ -z "${BANG_BIN_FRESH:-}" ]; then
+  echo "building bang runner…" >&2
+  lake build bang >&2
+fi
 
 pass=0
 fail=0
