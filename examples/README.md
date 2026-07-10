@@ -33,6 +33,10 @@ examples/<project>/
 | [gen-seed-a](gen-seed-a/) / [gen-seed-b](gen-seed-b/) | **handler-swap pair 3** — generation-as-effect (`Choice.pick`); two seeded handlers produce two deterministic, replayable runs of the same program | 6 / 15 |
 | [ndet-sim-kv-a](ndet-sim-kv-a/) / [ndet-sim-kv-b](ndet-sim-kv-b/) | **the R1 DST warm-up** — a `Choice`-driven replica race resolved by last-writer-wins, two seeded handlers converging to different values (`docs/notes/ndet-dst-design.md`) | 1120 / 1100 |
 | [ndet-replicated-kv-a](ndet-replicated-kv-a/) / [ndet-replicated-kv-b](ndet-replicated-kv-b/) | **the R2 replicated-KV hello-world** — two replicas, three totally-stamped writes, a genuine order-free LWW `merge` fold; both seeds converge to the SAME final state while their schedule-dependent trace legitimately differs (the CALM claim in miniature, `docs/notes/distributed-story.md` §5) | 1700 / 1900 |
+| [ndet-repkv-fail-a](ndet-repkv-fail-a/) / [ndet-repkv-fail-b](ndet-repkv-fail-b/) | **R2b failure injection** — per-write delivery as another `Choice` consult; seed B drops a write, replicas VISIBLY diverge pre-merge and the anti-entropy fold re-converges them (eventual consistency made observable) | 113603 / 103602 |
+| [handle-custom-nested](handle-custom-nested/) | **identity dispatch pinned e2e** — two active handlers of ONE effect; the outer cap dispatches past the nearer same-label handler (`210`, where nearest-label would give `30` — ADR-0055) | 210 |
+| [echo-mock](echo-mock/) | **ADR-0084 slice A** — a `Net { recv, send }` effect echoed by a PURE mock handler; IO-as-paradigm, swappable for a real handler with zero body changes | 3085 |
+| [calc](calc/) | **the dogfood program** — a 6-module lexer→parser→evaluator (297 lines): modules, stdlib, recursion, a structural `Trace` effect; found #95/#96/#97 (`docs/notes/dogfood-calc-findings.md`) | 11021193 |
 
 ## Running
 
