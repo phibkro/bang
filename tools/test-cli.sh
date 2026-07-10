@@ -60,21 +60,28 @@ check "version-long-and-short-agree" "$got_v_out" "$ver_out"
 # oom (exit 2) — a genuinely-diverging `Div` recursion exhausts the fuel ceiling.
 oom_tmp="$(mktemp /tmp/bang-cli-test-oom-XXXXXX.bang)"
 printf 'let rec loop : Int -> Int ! {Div} = fun n => $loop (n + 1) in $loop 0' > "$oom_tmp"
-oom_stderr="$("$bang" run "$oom_tmp" 2>&1 >/dev/null)" && oom_exit=0 || oom_exit=$?
+# post-flip (v0.1.0): the sub-classified diagnosis is the ORACLE's contract — pin it there.
+oom_stderr="$("$bang" run --engine=oracle "$oom_tmp" 2>&1 >/dev/null)" && oom_exit=0 || oom_exit=$?
 rm -f "$oom_tmp"
 check "oom-exit" "$oom_exit" "2"
 contains "oom-message-names-outcome" "$oom_stderr" "out of fuel"
 contains "oom-message-names-issue" "$oom_stderr" "#61"
 
 # escapedCap (exit 3) — a `{get}` thunk forced after its `state` handler already returned.
-esc_stderr="$("$bang" eval --no-typecheck 'let c = (state 0 in {get}) in $c' 2>&1 >/dev/null)" && esc_exit=0 || esc_exit=$?
+esc_stderr="$("$bang" eval --engine=oracle --no-typecheck 'let c = (state 0 in {get}) in $c' 2>&1 >/dev/null)" && esc_exit=0 || esc_exit=$?
 check "escaped-exit" "$esc_exit" "3"
 contains "escaped-message-names-outcome" "$esc_stderr" "escaped its handler"
 contains "escaped-message-names-adr" "$esc_stderr" "ADR-0063"
 
 # stuck (exit 4, --no-typecheck only) — forcing a non-thunk value.
-stuck_stderr="$("$bang" eval --no-typecheck '$3' 2>&1 >/dev/null)" && stuck_exit=0 || stuck_exit=$?
+stuck_stderr="$("$bang" eval --engine=oracle --no-typecheck '$3' 2>&1 >/dev/null)" && stuck_exit=0 || stuck_exit=$?
 check "stuck-exit" "$stuck_exit" "4"
+
+# DEFAULT-ENGINE collapse contract (v0.1.0 flip, ADR-0094 A1): a failing program on the
+# default env engine exits 5 with a message that ROUTES to the oracle for diagnosis.
+defc_stderr="$("$bang" eval --no-typecheck '$3' 2>&1 >/dev/null)" && defc_exit=0 || defc_exit=$?
+check "default-collapse-exit" "$defc_exit" "5"
+contains "default-collapse-routes-to-oracle" "$defc_stderr" "engine=oracle"
 contains "stuck-message-names-typecheck-flag" "$stuck_stderr" "--no-typecheck"
 
 # compiled collapse (exit 5) — the SAME escape program, run on the calculated machine, which

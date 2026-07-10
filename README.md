@@ -88,9 +88,18 @@ Run a program from a file (there are ready examples in `examples/`):
 
 Other subcommands: `bang repl` (interactive), `bang fmt <file>` (canonical
 form), `bang check <file>` (type-check only, `--json` for structured
-diagnostics). `bang --help` lists flags and exit codes. Pass `--compiled` to run
-the *verified calculated machine* instead of the kernel oracle — same program,
-same value (ADR-0016).
+diagnostics), `bang test <file>` (law runner). `bang --help` lists flags and
+exit codes.
+
+**Engines (v0.1.0).** The default engine is the *proven environment machine*
+(ADR-0094): its agreement with the kernel semantics is a machine-checked
+theorem (`evalE_agrees_evalD`, axiom-clean) and it eliminates the per-step
+substitution cost — the `examples/json` parse runs in ~50 ms where the
+substitution reference takes ~16 s. `--engine=oracle` runs that reference
+(`Source.eval`) — slower, but its failures carry the specific outcome
+(out-of-fuel / escaped capability / stuck); it remains the arbiter in every
+differential gate. `--engine=compiled` runs the *verified calculated machine*
+(`exec ∘ compile`, ADR-0016) — same program, same value.
 
 **Cold-start cost.** Measured from a fresh clone: `cache get` ~2 min (decompresses
 Mathlib's prebuilt `.olean` files; **add several minutes to download ~2 GB from the

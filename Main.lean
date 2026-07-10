@@ -21,8 +21,10 @@
   the one-shot `Surface.runFrom` so a parse/lower error is reported as such,
   not collapsed into `stuck`.)
 
-  TWO ENGINES (issue #6). The default engine is the kernel oracle
-  `Bang.Source.eval`. `--compiled` instead runs `exec ∘ compile` — the
+  THREE ENGINES (issue #6 · ADR-0094). The default engine is the PROVEN
+  environment machine (`Bang.EnvMachine.evalE` + readback — v0.1.0's flip,
+  dissolving #61). `--engine=oracle` runs the kernel oracle
+  `Bang.Source.eval` (the reference + arbiter). `--compiled` runs `exec ∘ compile` — the
   CALCULATED abstract machine (`Bang.CalcVM`, the verified compiler output of
   the two-hop architecture, ADR-0016), making the verified spine's payoff
   user-visible: the SAME program, the interpreted oracle vs the compiled
@@ -47,7 +49,7 @@ version-facing surface (`--version`, and the v0.1.0 release-checklist's "self-id
 binary" requirement) reads THIS constant — never a second hand-copied literal. Pre-tag: no
 `git tag` has been cut yet (issue #69's checklist is still open), so this is the honest
 pre-release marker; bump it here, in ONE place, at tag time. -/
-def bangVersion : String := "0.1.0-dev"
+def bangVersion : String := "0.1.0"
 
 /-- Default fuel for `Source.eval`. The kernel has no primitive arithmetic, so
 programs are small; the in-repo `#guard` demos top out around 200. 100000 is a
@@ -64,11 +66,11 @@ as the fail-loud non-value below. This maps fuel across the two engines; it does
 NOT redefine either. -/
 def compiledFuel : Nat := 1000000
 
-/-- The execution ENGINE (issue #6, ADR-0094). The two verified engines are `oracle` (the kernel
-`Source.eval`, the reference) and `compiled` (`exec ∘ compile`, the calculated machine). `env` is the
-EXPERIMENTAL environment machine `evalE`/`readback` (ADR-0094) — PROVEN ≡ the oracle at empty stores
-(`Bang.EnvMachine.evalE_agrees_evalD`), wired here to MEASURE the #61 substitution-cost fix. It is
-marked experimental in `--help` and stays off the default until an operator flip (slice 6). -/
+/-- The execution ENGINE (issue #6, ADR-0094). Three engines: `env` (the DEFAULT since v0.1.0 —
+the environment machine `evalE`/`readback`, PROVEN ≡ the oracle at empty stores via
+`Bang.EnvMachine.evalE_agrees_evalD` and differentially gated; the #61 fix), `oracle` (the kernel
+`Source.eval` — the verified reference and the arbiter; sub-classifies failures), and `compiled`
+(`exec ∘ compile`, the calculated machine, ADR-0016). -/
 inductive Engine where
   | oracle
   | compiled
@@ -77,11 +79,15 @@ inductive Engine where
 
 /-- Parse the engine selector from the flag list: `--engine=env` / `--engine=compiled` / `--engine=oracle`,
 with `--compiled` kept as a back-compat alias for `--engine=compiled` (issue #6's original spelling).
-Unknown `--engine=<x>` and the default both fall to `oracle`. -/
+THE DEFAULT IS `env` (ADR-0094 A1's final step, operator-ruled at v0.1.0): the environment machine,
+PROVEN ≡ the oracle (`evalE_agrees_evalD`, trusted-three) and differentially gated (9/9 corpus,
+tools/check-examples-env.sh) — dissolving #61's per-step substitution cost (~300× on the json
+dogfood). The substitution oracle stays one flag away (`--engine=oracle`) and remains the arbiter
+in every differential gate. Unknown `--engine=<x>` falls to the default. -/
 def parseEngine (flags : List String) : Engine :=
-  if flags.contains "--engine=env" then .env
+  if flags.contains "--engine=oracle" then .oracle
   else if flags.contains "--engine=compiled" || flags.contains "--compiled" then .compiled
-  else .oracle
+  else .env
 
 /-- A `Str` value (ADR-0074, #49) — `SNil = fold (inl ())`, `SCons(Char cp, …) = fold (inr (fold cp,
 …))` — rendered to its glyphs (code points → chars). `none` if the value is not a char-list. Only a
@@ -143,9 +149,9 @@ def runEnv (c : Comp) : IO UInt32 := do
   | .done v => IO.println (valPretty v); pure 0
   | _ =>
     IO.eprintln <|
-      "error: the experimental env engine (--engine=env, ADR-0094) produced no first-order value — " ++
-      "it collapses out-of-fuel / escaped-capability / raise / function-terminal / stuck into one " ++
-      "outcome; re-run without --engine=env (the oracle engine) to see which one, with its specific message"
+      "error: the env engine (the default, ADR-0094) produced no first-order value — it collapses " ++
+      "out-of-fuel / escaped-capability / raise / function-terminal / stuck into one outcome; " ++
+      "re-run with --engine=oracle (the verified reference) for the specific diagnosis"
     pure 5
 
 /-- Run a lowered `Comp` on the selected engine (§ issue #6, ADR-0094): the kernel oracle `Source.eval`
@@ -576,13 +582,15 @@ def usage : String :=
   "  (default)        parse → TYPE-CHECK → lower → run; an ill-typed program is a TYPE ERROR\n" ++
   "  --no-typecheck   raw erase-and-run (no type gate) — for oracle/differential testing\n\n" ++
   "ENGINE:\n" ++
-  "  (default)          kernel oracle Source.eval\n" ++
+  "  (default)          environment machine evalE/readback (ADR-0094) — PROVEN ≡ the oracle\n" ++
+  "               (evalE_agrees_evalD, axiom-clean) + differentially gated; the FAST engine\n" ++
+  "               (#61's substitution cost eliminated, ~300x on examples/json)\n" ++
+  "  --engine=oracle    kernel oracle Source.eval — the verified reference; slower, but its\n" ++
+  "               failures carry the SPECIFIC outcome (oom/escaped-cap/stuck); the arbiter\n" ++
   "  --engine=compiled  the calculated machine exec∘compile (verified compiler output, ADR-0016)\n" ++
   "  --compiled         alias for --engine=compiled\n" ++
-  "               — same program, same value; failures collapse to exit 5\n" ++
-  "  --engine=env       EXPERIMENTAL environment machine evalE/readback (ADR-0094) — PROVEN ≡ the\n" ++
-  "               oracle (evalE_agrees_evalD); measures the #61 substitution-cost fix; failures\n" ++
-  "               collapse to exit 5. Not the default; not for production use this slice.\n\n" ++
+  "               — env/compiled failures collapse to exit 5; re-run with --engine=oracle\n" ++
+  "               for the specific diagnosis\n\n" ++
   "EXIT CODES:\n" ++
   "  0  done — value printed to stdout\n" ++
   "  1  usage / parse / elaboration / TYPE error\n" ++
