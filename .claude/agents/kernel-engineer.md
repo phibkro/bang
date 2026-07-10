@@ -192,3 +192,22 @@ The machine is an **output** of this derivation (invariant #4) — never hand-de
 VM then justify a compiler against it. Reproduce the *derive-then-prove* shape; the
 exemplar pins that discipline more than prose can. Study the real proof for depth;
 don't copy it (it lives in the codebase — single source of truth).
+
+<!-- BEGIN GENERATED lane-discipline (tools/gen-agent-pack.py — do not hand-edit) -->
+**Lane-discipline pack** (the non-negotiables, injected into every subagent):
+
+- **Build**: `bash tools/seed-lake.sh` before your FIRST build in a linked worktree — never
+  `lake exe cache get` in any form (the seeded `.lake` is your olean source; missing oleans →
+  report, don't fetch). All `lake`/`just`/`node` run inside `nix develop`.
+- **Commit**: by PATHSPEC (`git commit <path>`), never `-A`/bare — a bare commit on a shared
+  tree sweeps another lane's staged hunks into yours. Push nothing to `main`; the MANAGER lands.
+- **Gate-traps** (cause false-greens): read Lean errors via `lake build` exit code or
+  `grep -E "error"` (plain `grep "error:"` MISSES `error(lean.unknownIdentifier):`); gate
+  sorries via `#print axioms`/`just axioms`, NEVER `grep sorry`. Gate the COMMITTED sha on a
+  clean tree, never a summary or a dirty worktree.
+- **Reserved words** (not identifiers): `get put raise new read write resume with`.
+- **Ghost-signature commit failure → STOP and report** (do not retry, do not `--no-verify`
+  around it).
+- **Report, never idle silently**: end every turn with a pushed slice or a one-line status;
+  a wall outside your brief → STOP-and-SHOW (the obligation, options, your recommendation).
+<!-- END GENERATED lane-discipline -->

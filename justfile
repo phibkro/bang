@@ -200,6 +200,7 @@ fitness:
     python3 tools/check-doc-hygiene.py --check
     python3 tools/check-context-claims.py
     python3 tools/gen-notes-index.py --check
+    python3 tools/gen-agent-pack.py --check
     python3 tools/gen-tools-index.py --check
     python3 tools/gen-questions-index.py --check
     python3 tools/gen-llms-txt.py --check
@@ -241,6 +242,12 @@ import-graph:
 # Regenerate docs/notes/README.md (the design-notes map) from each note's `note-status` frontmatter.
 notes-index:
     python3 tools/gen-notes-index.py
+
+# Splice the lane-discipline pack (from .claude/lane-discipline.md) into each .claude/agents/*.md.
+# The generate-rung fallback: the harness doesn't expand @-injection in agent bodies, so the pack
+# is a marked GENERATED block, drift-gated by `just fitness`. Also run by fitness (`--check`).
+agent-pack:
+    python3 tools/gen-agent-pack.py
 
 # Regenerate tools/README.md (the flat-tools map) from each script's `# tool:` header.
 # `just tools-index --with-log` prints a status + last-invoked view (from the telemetry
