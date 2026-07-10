@@ -4748,9 +4748,10 @@ module-interface work's territory — this reservation is the v1 stopgap, not th
 back to source text via `showSurf`, reusing the existing `vecLawProg`/`intOrdProg` corpus. -/
 
 -- a single-law, single-impl program yields exactly one instance, params/name/rendered-body exact.
+-- (the body is a nested let-chain, so it renders through the CANONICAL one-block form, issue #71.)
 #guard (match lawInstancesOf (vecLawProg "0") with
         | .ok [("VecOps", "comm", ["a", "b"], body)] =>
-            body == "let s = a + b in let t = b + a in s == t"
+            body == "let s = a + b; t = b + a in s == t"
         | _ => false)
 -- a MULTI-LAW trait (IntOrd's `trans`, ADR-0068 conditional-law corpus) yields one instance per
 -- law, ALL against the same impl — the trait×impl cross product, not just the first law.

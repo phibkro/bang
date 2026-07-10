@@ -1,35 +1,46 @@
-let isDigit = { fun n => if 47 < n then (if n < 58 then 0 == 0 else 0 == 1) else 0 == 1 } in
-let sub48   = { fun n => n - 48 } in
-let satisfy = { fun pred => fun s => match (s : Str) {
-  SNil -> None,
-  SCons(c, rest) -> match c { Char(n) ->
-    if (($pred) n) then Some((n, rest)) else None } } } in
-let char = { fun code => ($satisfy) { fun n => n == code } } in
-let mapP = { fun f => fun p => fun s => match (($p) s) {
-  None -> None,
-  Some(r) -> let (v, rest) = r in let w = ($f) v in Some((w, rest)) } } in
-let orElse = { fun p => fun q => fun s => match (($p) s) {
-  None -> (($q) s),
-  Some(r) -> Some(r) } } in
-let andThen = { fun p => fun q => fun s => match (($p) s) {
-  None -> None,
-  Some(r1) -> let (v1, rest1) = r1 in match (($q) rest1) {
-    None -> None,
-    Some(r2) -> let (v2, rest2) = r2 in let sm = v1 + v2 in Some((sm, rest2)) } } } in
-let rec many : Thunk (Str -> Option (Int * Str)) -> Str -> Int = fun p => fun s =>
-  match (($p) s) {
-    None -> 0,
-    Some(r) -> let (v, rest) = r in 1 + ($many) p rest } in
-let firstVal = { fun p => fun s =>
-  match (($p) s) { None -> 0, Some(r) -> let (v, rest) = r in v } } in
-let digit = { ($mapP) sub48 { ($satisfy) isDigit } } in
-let nDigits = ($many) digit "42abc" in
-let firstDigit = ($firstVal) digit "7" in
-let choiceP = { ($orElse) { ($char) 122 } digit } in
-let choice = ($firstVal) choiceP "9x" in
-let seqP = { ($andThen) digit digit } in
-let seqSum = ($firstVal) seqP "34" in
-let toPair = { fun v => (v, v) } in
-let pairP = { ($mapP) toPair digit } in
-let pairSum = match (($pairP) "5") { None -> 0, Some(r) -> let (pv, rest) = r in let (x, y) = pv in x + y } in
+let isDigit = {fun n => if 47 < n then if n < 58 then 0 == 0 else 0 == 1 else 0 == 1};
+  sub48 = {fun n => n - 48};
+  satisfy = {fun pred =>
+    fun s =>
+      match (s : Str) {
+        SNil -> None,
+        SCons(c, rest) -> match c { Char(n) -> if $pred n then Some(n, rest) else None }
+      }};
+  char = {fun code => $satisfy {fun n => n == code}};
+  mapP = {fun f =>
+    fun p =>
+      fun s =>
+        match ($p
+        s) { None -> None, Some(r) -> let (v, rest) = r in let w = $f v in Some(w, rest) }};
+  orElse = {fun p => fun q => fun s => match ($p s) { None -> $q s, Some(r) -> Some r }};
+  andThen = {fun p =>
+    fun q =>
+      fun s =>
+        match ($p
+        s) {
+          None -> None,
+          Some(r1) -> let (v1, rest1) = r1
+            in
+          match ($q
+          rest1) {
+            None -> None, Some(r2) -> let (v2, rest2) = r2 in let sm = v1 + v2 in Some(sm, rest2)
+          }
+        }}
+  in
+let rec many : Thunk (Str -> Option (Int * Str)) -> Str -> Int = fun p =>
+    fun s => match ($p s) { None -> 0, Some(r) -> let (v, rest) = r in 1 + $many p rest }
+  in
+let firstVal = {fun p => fun s => match ($p s) { None -> 0, Some(r) -> let (v, rest) = r in v }};
+  digit = {$mapP sub48 {$satisfy isDigit}};
+  nDigits = $many digit "42abc";
+  firstDigit = $firstVal digit "7";
+  choiceP = {$orElse {$char 122} digit};
+  choice = $firstVal choiceP "9x";
+  seqP = {$andThen digit digit};
+  seqSum = $firstVal seqP "34";
+  toPair = {fun v => (v, v)};
+  pairP = {$mapP toPair digit};
+  pairSum = match ($pairP
+  "5") { None -> 0, Some(r) -> let (pv, rest) = r in let (x, y) = pv in x + y }
+  in
 nDigits + firstDigit + choice + seqSum + pairSum
