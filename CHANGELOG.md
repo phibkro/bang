@@ -157,6 +157,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **emit** — rung-2b PROBE — state handlers → in-place wasm locals (ADR-0059 tail-call leg) (`b0f3cb3d`)
 - **dx** — just watch FILE — re-run `just check FILE` on save (plan 013 s9) (`73b8b56e`)
 - **query** — wire decl-granularity hover — bang query hover <file> <line> <col> (#52 slice 5) (`e304e1b3`)
+- **stdlib** — #105 first-slice prelude — fst/snd/abs/min/max/withDefault/const + char kit (`8578590a`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
