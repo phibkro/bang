@@ -340,13 +340,17 @@ parallel substitution `substEnv`. Defining `substEnv` faithfully (it must reprod
 `Comp.subst`-composition the env defers) is slice-3 work; here it is a labelled PLACEHOLDER
 (identity) so the STATEMENT-level readback typechecks and the correspondence can be phrased. -/
 
-/-- Parallel substitution of a readback-env `γ : List Val` into `M` — the reconstruction of the
-`Comp.subst`-composition a closure defers. **Slice-3 obligation** (the env↔subst correspondence
-core): faithful `substEnv` reproduces, on the closure body, exactly the substitutions env-lookup
-elided. A labelled IDENTITY PLACEHOLDER at probe stage so `readback`'s closure arm + the `γ≈ₑσ`
-statement typecheck; first-order readback (all the mini-Agree probe and #61 dogfood observe) never
-reaches it, and the correspondence theorem carrying it is itself `sorry` (slice 3). -/
-def substEnv (_γ : List Val) (M : Comp) : Comp := M   -- PLACEHOLDER: slice-3 replaces with the faithful fold
+/-- Sequential substitution of a readback-env `γ : List Val` into `M` — the reconstruction of the
+`Comp.subst`-composition a closure/environment defers. **Slice-3 core** (the env↔subst correspondence):
+the env is `v₀ ∷ v₁ ∷ … ∷ nil` with `vᵢ` at de Bruijn index `i`; substituting it into `M` is filling
+index 0 with `v₀` (which shifts what was index 1 down to index 0), then repeating for `v₁`, etc. So it
+is a LEFT FOLD of the kernel's single `Comp.subst` over `γ` — exactly the composition `evalV`/`evalE`
+elided by resolving each index to `ρ.get i` instead of copying. `substEnv [] M = M` (a closed term is
+unchanged); this is the standard "environment = a pending simultaneous substitution" identity (PLFA
+`BigStep`; Pierce TAPL §6.2 shift/subst calculus). -/
+def substEnv : List Val → Comp → Comp
+  | [],      M => M
+  | v :: γ, M => substEnv γ (Comp.subst v M)
 
 mutual
 def readback : MVal → Val
@@ -455,6 +459,21 @@ private def yieldsIntE (r : Result Val) (n : Int) : Bool :=
 -- ── product: `split (3,4) as (a,b) in a` ⇒ 3 (split binds fst@1, snd@0). ──
 #guard yieldsIntE (runE 8 (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))) 3
 #guard yieldsIntE (Bang.Source.eval 8 (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))) 3
+
+-- ── DEEP closure capture (slice-3 de-risk for substEnv's fold order): a thunk closes over a
+--    MULTI-LAYER env `[y=4, x=3]`, is passed as an argument through a lambda, and forced INSIDE the
+--    lambda body — so the closure surfaces at a boundary the substitution machine handles by copying
+--    x,y into the thunk body. `let x=3 in let y=4 in (λf. force f) (thunk (x+y))` ⇒ 7.
+--    At the thunk site env is y∷x∷…, so x=vvar 1, y=vvar 0; the thunk body is `binop add (vvar 1)(vvar 0)`.
+--    This is the exact composition substEnv's LEFT FOLD must reproduce — a divergence here refutes the
+--    fold order BEFORE the induction grind. Both engines must agree at 7. ──
+private def deepClosureWitness : Comp :=
+  .letC (.ret (.vint 3))                                   -- x = 3   (x at idx 0 here)
+    (.letC (.ret (.vint 4))                                -- y = 4   (y at idx 0, x shifted to idx 1)
+      (.app (.lam (.force (.vvar 0)))                      -- (λf. force f)  applied to…
+        (.vthunk (.binop .add (.vvar 1) (.vvar 0)))))      -- …thunk(x+y): x=vvar1, y=vvar0 under [y,x]
+#guard yieldsIntE (runE 20 deepClosureWitness) 7
+#guard yieldsIntE (Bang.Source.eval 20 deepClosureWitness) 7
 
 /-! ### EFFECT-arm mini-Agree (slice 2) — one program per arm through BOTH engines, falsified.
 
