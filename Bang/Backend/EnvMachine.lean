@@ -1753,6 +1753,101 @@ def StoresGood (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) : Prop :=
   ∧ (∀ p ∈ eκ, (MVal.WF p.2.1 ∧ MVal.WFClos p.2.1) ∧ MEnv.WF p.2.2.2 ∧ MEnv.WFClos p.2.2.2
        ∧ (∀ c ∈ p.2.2.1, Comp.ScopedC ((readbackEnv p.2.2.2).length + 2) c.2))
 
+/-- A state cell fetched from a `StoresGood` σ is `WF ∧ WFClos`. -/
+theorem StoresGood.get_state {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore} {n : Nat} {s : MVal}
+    (hG : StoresGood eσ eτ eκ) (hget : eσ.get? n = some s) : MVal.WF s ∧ MVal.WFClos s := by
+  simp only [ESStore.get?, Option.map_eq_some_iff] at hget
+  obtain ⟨p, hfind, hs⟩ := hget
+  have hmem := List.mem_of_find?_eq_some hfind
+  have := hG.1 p hmem; rw [hs] at this; exact this
+
+/-- A custom frame fetched from a `StoresGood` κ carries its `(param, clauses, install-env)` goodness. -/
+theorem StoresGood.get_custom {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore} {n : Nat}
+    {p : MVal} {cls : List (Bang.OpId × Comp)} {ρ_inst : MEnv}
+    (hG : StoresGood eσ eτ eκ) (hget : eκ.get? n = some (p, cls, ρ_inst)) :
+    (MVal.WF p ∧ MVal.WFClos p) ∧ MEnv.WF ρ_inst ∧ MEnv.WFClos ρ_inst
+      ∧ (∀ c ∈ cls, Comp.ScopedC ((readbackEnv ρ_inst).length + 2) c.2) := by
+  simp only [ECStore.get?, Option.map_eq_some_iff] at hget
+  obtain ⟨q, hfind, hq⟩ := hget
+  have hmem := List.mem_of_find?_eq_some hfind
+  have := hG.2.2 q hmem; rw [hq] at this; exact this
+
+/-- The σ-clause of `StoresGood` is preserved under `put` of a good value (list lemma). -/
+private theorem sstore_put_good {n : Nat} {arg : MVal} (harg : MVal.WF arg ∧ MVal.WFClos arg) :
+    ∀ {eσ : ESStore}, (∀ p ∈ eσ, MVal.WF p.2 ∧ MVal.WFClos p.2) →
+      ∀ q ∈ eσ.put n arg, MVal.WF q.2 ∧ MVal.WFClos q.2
+  | [], _, q, hq => by simp only [ESStore.put, List.not_mem_nil] at hq
+  | (k, w) :: eσ, hσ, q, hq => by
+      simp only [ESStore.put] at hq
+      by_cases hk : k = n
+      · simp only [hk, if_true, List.mem_cons] at hq
+        rcases hq with rfl | hq
+        · exact harg
+        · exact hσ q (List.mem_cons_of_mem _ hq)
+      · simp only [hk, if_false, List.mem_cons] at hq
+        rcases hq with rfl | hq
+        · exact hσ (k, w) List.mem_cons_self
+        · exact sstore_put_good harg (fun p hp => hσ p (List.mem_cons_of_mem _ hp)) q hq
+
+theorem StoresGood.put_state {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore} {n : Nat} {arg : MVal}
+    (hG : StoresGood eσ eτ eκ) (harg : MVal.WF arg ∧ MVal.WFClos arg) :
+    StoresGood (eσ.put n arg) eτ eκ :=
+  ⟨sstore_put_good harg hG.1, hG.2.1, hG.2.2⟩
+
+/-- The stm service output heap is `WF ∧ WFClos` cell-wise when the input heap and arg are (txn `put`). -/
+theorem mtxnService_good {op : Bang.OpId} {arg : MVal} {Θ : List MVal}
+    (harg : MVal.WF arg ∧ MVal.WFClos arg)
+    (hΘ : ∀ mv ∈ Θ, MVal.WF mv ∧ MVal.WFClos mv) :
+    ∀ mv ∈ (mtxnService op arg Θ).2, MVal.WF mv ∧ MVal.WFClos mv := by
+  simp only [mtxnService]
+  by_cases hnew : op = "newTVar"
+  · simp only [hnew, if_true]
+    intro mv hmv; rw [List.mem_append] at hmv
+    rcases hmv with hmv | hmv
+    · exact hΘ mv hmv
+    · simp only [List.mem_singleton] at hmv; rw [hmv]; exact harg
+  · simp only [hnew, if_false]
+    by_cases hread : op = "readTVar"
+    · simp only [hread, if_true]; exact hΘ
+    · simp only [hread, if_false]
+      cases arg with
+      | mpair iv w =>
+          intro mv hmv
+          have hw : MVal.WF w ∧ MVal.WFClos w := by
+            obtain ⟨hWFp, hWCp⟩ := harg
+            simp only [MVal.WF, readback] at hWFp; simp only [MVal.WFClos] at hWCp
+            exact ⟨(by simp only [MVal.WF]; exact (Val.ScopedV.pair_inv (fun k _ => hWFp k)).2.closedE_zero),
+                   hWCp.2⟩
+          -- Θ.set i w's members are Θ's members or w; both good.
+          rcases List.mem_or_eq_of_mem_set hmv with hmv | rfl
+          · exact hΘ mv hmv
+          · exact hw
+      | _ => intro mv hmv; exact hΘ mv hmv
+
+/-- The τ-clause of `StoresGood` is preserved under `put` of a good heap (list lemma). -/
+private theorem theap_put_good {n : Nat} {Θ' : List MVal}
+    (hΘ' : ∀ mv ∈ Θ', MVal.WF mv ∧ MVal.WFClos mv) :
+    ∀ {eτ : ETHeap}, (∀ p ∈ eτ, ∀ mv ∈ p.2, MVal.WF mv ∧ MVal.WFClos mv) →
+      ∀ q ∈ eτ.put n Θ', ∀ mv ∈ q.2, MVal.WF mv ∧ MVal.WFClos mv
+  | [], _, q, hq => by simp only [ETHeap.put, List.not_mem_nil] at hq
+  | (k, w) :: eτ, hτ, q, hq => by
+      intro mv hmv
+      simp only [ETHeap.put] at hq
+      by_cases hk : k = n
+      · simp only [hk, if_true, List.mem_cons] at hq
+        rcases hq with rfl | hq
+        · exact hΘ' mv hmv
+        · exact hτ q (List.mem_cons_of_mem _ hq) mv hmv
+      · simp only [hk, if_false, List.mem_cons] at hq
+        rcases hq with rfl | hq
+        · exact hτ (k, w) List.mem_cons_self mv hmv
+        · exact theap_put_good hΘ' (fun p hp => hτ p (List.mem_cons_of_mem _ hp)) q hq mv hmv
+
+theorem StoresGood.put_txn {eσ : ESStore} {eτ : ETHeap} {eκ : ECStore} {n : Nat} {Θ' : List MVal}
+    (hG : StoresGood eσ eτ eκ) (hΘ' : ∀ mv ∈ Θ', MVal.WF mv ∧ MVal.WFClos mv) :
+    StoresGood eσ (eτ.put n Θ') eκ :=
+  ⟨hG.1, theap_put_good hΘ' hG.2.1, hG.2.2⟩
+
 /-- **WEDGE WITNESS (envm3, 2026-07-10) — `StoresGood`'s `PureV`/`EffectFree` clauses are over-strong
 for the effect fragment (a THIRD `PureV`-refutation, same root as `effect_pureV_refutation_witness`).**
 `StoresGood` demands every stored value be `MVal.PureV` (and every custom clause `EffectFree`). But the
