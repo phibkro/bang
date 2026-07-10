@@ -50,6 +50,7 @@ its trigger arises.
 | **◊6 paper skeletons** (calculated-machine + binary-LR: census-checked claims · venue candidates · honest what-remains) | `docs/papers/` |
 | **Verification ladder** (agent-speed quality gates · HoTT verdict · Q43 proof-export) | `docs/notes/verification-ladder.md` |
 | **Dogfood: JSON parser findings** (#61 blocker · module-shape needs · what worked) | `docs/notes/dogfood-json-findings.md` |
+| **Dogfood: calculator findings** (largest corpus program, 6 modules · `--compiled` hangs on re-entrant parser knot (env+ck agree) · `bang fmt` breaks `$(Mod.op)` · ctor arity ≤ 2 · sibling let-recs no forward-ref · imported-effect names need `Mod_Eff` everywhere · wildcard-arm = top ask) | `docs/notes/dogfood-calc-findings.md` |
 | **Stranger test round 1** (8.5/10 · the reference-strings blind spot · the repeatable method) | `docs/notes/stranger-test-1.md` |
 | **Stranger test round 2** (7/10 · modules+laws under-surfaced · the pub-bypass find (#73) · rebuild-first method addendum) | `docs/notes/stranger-test-2.md` |
 | **Stranger test round 3** (7/10 · Stage-7 user-effect surface: single-op works, multi-op broken (#86) · param-init inert (#87) · undocumented (#88) · laws+check-json FIXED vs r2 · probe-one-step-past-the-example addendum) | `docs/notes/stranger-test-3.md` |
