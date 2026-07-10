@@ -130,6 +130,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — Stage 7 lands — handle…with for user effects, e2e verified (#44 Stage 7, ADR-0095) (`1284c8e`)
 - **cli** — bang rewrite v1 — CQS command side with the verified-preservation gate (#81) (`f848914`)
 - **wasm** — the wexec custom arm — wCustomUpdate derived, opH carries the continuation (#62 slices 0+1) (`778afdf`)
+- **lr** — StackInc — the id-ordering machine invariant for the ADR-0096 carrier (task #37, slice 1) (`e2c7bd3`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
