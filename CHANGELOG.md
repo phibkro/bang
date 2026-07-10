@@ -171,5 +171,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fc1197b2`)
 - **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fdd8ade3`)
 - **cli** — contain import-derived module paths to the project trees (plan 005) (`80b793c0`)
+- **lint** — silence unusedArguments false-positives (22 → 0, plan 009) (`6e50140b`)
 
 <!-- END GENERATED changelog -->
