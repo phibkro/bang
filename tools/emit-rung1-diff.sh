@@ -15,6 +15,8 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 # comparison + case-on-bool `if` pattern. See docs/notes/emission-rung1-probe.md §rung-1.5.
 # rung-2 additions: `throws` handlers → Wasm-3.0 `try_table`/`throw` (abort → exceptions, ADR-0059).
 # These need `-W exceptions=y` on wasmtime (see the invocation below). §rung-2 of the same note.
+# rung-2b additions: `state` handlers → in-place resume (the store cell = a mutable wasm local;
+# get/put = straight-line local.get/local.set, no unwind). CORE wasm — no extra flag. §rung-2b.
 #
 # FALSE-GREEN DEFENSES (repo bash conventions): the emitted count is ASSERTED (a silently-empty
 # corpus or a mid-run generator refusal fails LOUD), no unguarded `$(a|b)` capture drives control
@@ -28,8 +30,8 @@ outdir="$(mktemp -d)"
 trap 'rm -rf "$outdir"' EXIT
 
 # Minimum number of emittable programs the corpus MUST run (hand anchors + rung-1.5 + rung-2 throws
-# + generated). A run below this is a FALSE GREEN (empty/short corpus) and fails loud.
-MIN_EMITTED="${MIN_EMITTED:-55}"
+# + rung-2b state + generated). A run below this is a FALSE GREEN (empty/short corpus) and fails loud.
+MIN_EMITTED="${MIN_EMITTED:-60}"
 
 echo "── building the emit-rung1 spike exe ──"
 lake build emit-rung1 >/dev/null 2>&1
