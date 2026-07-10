@@ -105,6 +105,65 @@ got_commented_run="$("$bang" run "$commented_tmp" 2>/dev/null)" && got_commented
 check "comment-metamorphic-run" "$got_commented_run" "7"
 check "comment-metamorphic-run-exit" "$got_commented_run_exit" "0"
 
+# ── QUALIFIED FORCE `$(Mod.op)` (issue #96) — the CLI-level half of the fix's proof ──
+# `Bang/Frontend/Format.lean`'s own `#guard` corpus already covers AST round-trip/idempotency
+# for these shapes (pure-function level, no elaboration). This block additionally checks the
+# END-TO-END claim the issue is actually about: a REAL multi-file program using `$(Mod.op)`
+# still RUNS to the correct answer after `bang fmt` — the "not a value" break the finding note
+# reported can ONLY be observed with a real import + `bang run`, so it belongs here, not in the
+# pure-parser corpus. `main.bang` in a scratch dir mirrors the note's own 3-line `g.bang` repro.
+fmt96_dir="$(mktemp -d /tmp/bang-fmt96-XXXXXX)"
+trap 'rm -f "$commented_tmp"; rm -rf "$fmt96_dir"' EXIT
+cat > "$fmt96_dir/g.bang" <<'BANGEOF'
+pub let mk = {fun s => s + 1}
+BANGEOF
+cat > "$fmt96_dir/main.bang" <<'BANGEOF'
+import g
+let main =
+  let ast = $(g.mk) 5 in ast
+BANGEOF
+
+# bug 1: fmt must not break the program — pre-fix, `bang run` on the fmt'd output errored
+# ("not a value") instead of printing 6.
+got_96_orig="$("$bang" run "$fmt96_dir/main.bang" 2>/dev/null)" && got_96_orig_exit=0 || got_96_orig_exit=$?
+check "issue96-original-runs" "$got_96_orig" "6"
+check "issue96-original-exit" "$got_96_orig_exit" "0"
+got_96_fmt="$("$bang" fmt "$fmt96_dir/main.bang" 2>/dev/null)" || true
+printf '%s\n' "$got_96_fmt" > "$fmt96_dir/main_fmt.bang"
+got_96_fmt_run="$("$bang" run "$fmt96_dir/main_fmt.bang" 2>/dev/null)" && got_96_fmt_run_exit=0 || got_96_fmt_run_exit=$?
+check "issue96-fmt-output-still-runs" "$got_96_fmt_run" "6"
+check "issue96-fmt-output-exit" "$got_96_fmt_run_exit" "0"
+# and fmt must PRESERVE the disambiguating parens verbatim (the direct textual falsification —
+# pre-fix this was `$g.mk 5`, which mis-parses as `($g).mk 5`).
+if [[ "$got_96_fmt" == *'$(g.mk)'* ]]; then
+  echo "✓ issue96-parens-preserved"; pass=$((pass + 1))
+else
+  echo "✗ issue96-parens-preserved — expected '\$(g.mk)' in fmt output, got [$got_96_fmt]"; fail=$((fail + 1))
+fi
+
+# bug 2: `$(Mod.op) (arg)` (a parenthesized argument after a qualified force) must be a FIXED
+# POINT under repeated fmt — pre-fix this oscillated `$Mod.op (arg)` ⟷ `$Mod.op(arg)` (and the
+# FIRST pass already broke the program per bug 1; this checks the space-collapse specifically,
+# on a two-module chain matching `examples/calc/main.bang`'s own `$(Parser.parseAll)
+# ($(Lexer.lex) src)` idiom).
+cat > "$fmt96_dir/g2.bang" <<'BANGEOF'
+pub let mk = {fun s => s + 1}
+pub let mk2 = {fun s => s + 2}
+BANGEOF
+cat > "$fmt96_dir/main2.bang" <<'BANGEOF'
+import g2
+let main =
+  let ast = $(g2.mk) ($(g2.mk2) 5) in ast
+BANGEOF
+got_96b_once="$("$bang" fmt "$fmt96_dir/main2.bang" 2>/dev/null)" || true
+mkdir -p "$fmt96_dir/pass2" && cp "$fmt96_dir/g2.bang" "$fmt96_dir/pass2/"
+printf '%s\n' "$got_96b_once" > "$fmt96_dir/pass2/main.bang"
+got_96b_twice="$("$bang" fmt "$fmt96_dir/pass2/main.bang" 2>/dev/null)" || true
+check "issue96-spaced-arg-idempotent" "$got_96b_twice" "$got_96b_once"
+got_96b_run="$("$bang" run "$fmt96_dir/main2.bang" 2>/dev/null)" && got_96b_run_exit=0 || got_96b_run_exit=$?
+check "issue96-spaced-arg-original-runs" "$got_96b_run" "8"
+check "issue96-spaced-arg-original-exit" "$got_96b_run_exit" "0"
+
 echo "──────────────────────────────"
 echo "fmt: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

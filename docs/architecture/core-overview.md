@@ -47,7 +47,7 @@ graph TD
     Examples["Examples<br/>365L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>251L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>950L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>1057L · fan-in 0"]
     Frontend_Lint["Frontend.Lint<br/>212L · fan-in 0"]
     Frontend_Query["Frontend.Query<br/>794L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>294L · fan-in 0"]
@@ -107,7 +107,7 @@ graph TD
 | `Examples` | ? | 365 | 0 |
 | `Frontend.Annotate` | ? | 251 | 0 |
 | `Frontend.Diagnostics` | ? | 213 | 0 |
-| `Frontend.Format` | ? | 950 | 0 |
+| `Frontend.Format` | ? | 1057 | 0 |
 | `Frontend.Lint` | ? | 212 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Query` | ? | 794 | 0 |
