@@ -1748,10 +1748,10 @@ its clauses' free vars (the scope obligation for `CStoreCorr`'s `closeUnderBinde
 This is the store-level twin of `MEnv.WF`/`MEnv.PureV`, and it rides the 3b induction exactly as the
 env invariants ride 3a. -/
 def StoresGood (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) : Prop :=
-  (∀ p ∈ eσ, MVal.WF p.2 ∧ MVal.PureV p.2)
-  ∧ (∀ p ∈ eτ, ∀ mv ∈ p.2, MVal.WF mv ∧ MVal.PureV mv)
-  ∧ (∀ p ∈ eκ, (MVal.WF p.2.1 ∧ MVal.PureV p.2.1) ∧ MEnv.WF p.2.2.2 ∧ MEnv.PureV p.2.2.2
-       ∧ (∀ c ∈ p.2.2.1, Comp.ScopedC ((readbackEnv p.2.2.2).length + 2) c.2 ∧ EffectFree c.2))
+  (∀ p ∈ eσ, MVal.WF p.2 ∧ MVal.WFClos p.2)
+  ∧ (∀ p ∈ eτ, ∀ mv ∈ p.2, MVal.WF mv ∧ MVal.WFClos mv)
+  ∧ (∀ p ∈ eκ, (MVal.WF p.2.1 ∧ MVal.WFClos p.2.1) ∧ MEnv.WF p.2.2.2 ∧ MEnv.WFClos p.2.2.2
+       ∧ (∀ c ∈ p.2.2.1, Comp.ScopedC ((readbackEnv p.2.2.2).length + 2) c.2))
 
 /-- **WEDGE WITNESS (envm3, 2026-07-10) — `StoresGood`'s `PureV`/`EffectFree` clauses are over-strong
 for the effect fragment (a THIRD `PureV`-refutation, same root as `effect_pureV_refutation_witness`).**
