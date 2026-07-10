@@ -196,5 +196,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **site** — the vocs build has NEVER succeeded — alias non-bundled fence langs at the sync seam (`0b1e9cca`)
 - **fmt** — preserve grouping parens on qualified force `$(Mod.op)` (#96) (`8d4d3739`)
 - **modules** — `use Mod (f)` hoists a self-recursive `pub let rec` (#97 item 3) (`225f3f42`)
+- **surface** — #95 knot-sharing — buildLetRec self-arg fold #g not sv (route i) (`ae0f0df6`)
 
 <!-- END GENERATED changelog -->

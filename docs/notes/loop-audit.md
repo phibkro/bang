@@ -9,7 +9,7 @@
 > (Origin: the 2026-07-08 multi-lens project evaluation — SDLC validation gap, VSM S4,
 > Meadows L6 all converge on the outer-loop asymmetry this table tracks.)
 
-_Position: post-MVP · v0.1.0 RELEASED (env engine default, `bbca771`) · #44 moat ARC COMPLETE · the ROADMAP's emission arc (◊5.25→◊5.5→◊6) + pre-v1 research ladder R1–R6 ADOPTED with the PUBLIC-EARLY policy (every ◊ ships a public v0.x tag; outsider exposure starts during ◊5.5) · 2026-07-10 (second refresh this date)._
+_Position: ◊5.25 gate met-as-amended (demos ✓ ×4 · census parked honestly on the hole-determinacy wall) · emission rungs 1–2b demonstrated (66-program engine-vs-oracle harness) · #95 ~115× fix · the first public-early tag imminent · 2026-07-10 (third refresh this date; the ◊5.25 checkpoint)._
 
 | loop (what corrects what) | cycle time | state |
 |---|---|---|
