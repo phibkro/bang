@@ -125,6 +125,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **query** — Bang/Frontend/Query.lean — bang query v1 logic (#80) (`8d2d789`)
 - **query** — wire bang query <op> into Main.lean's CLI dispatch (#80) (`0e1bfc6`)
 - **cli** — bang query v1 — the agent LSP as CLI verbs over the typed pipeline (#80, tier 3) (`3e6bd3b`)
+- **query** — schemaVersion + golden-dump drift gate + DuckDB relational-shape check (#80 tier 2) (`2f10cea`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
