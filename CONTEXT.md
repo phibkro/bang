@@ -83,7 +83,7 @@ build waits on Lake upstream or a fork-pin ruling) · Mod_Eff slice · 013-S2 LS
 | decisions (why-we-chose-X) | `docs/decisions/` (generated `README.md` index) |
 | in-flight work | `paths/PATH-*.md` |
 | deferred proof-spine (◊4 `lr_sound` seam — #15 ruled D-now/A-later) | `paths/PATH-inc5-lr-reindex.md` |
-| the parked lr_* census unit (carrier fork (a)/(b) awaiting probe + ruling, then 18→20) | task #37+#45 · `feat-lr-carrier-stackinc-wip @ 683a7448` · ADR-0096 + its pending amendment |
+| the parked lr_* census unit (PARKED on the hole-determinacy wall; resume trigger = the (α) def-conclusion probe) | task #37 · `feat-lr-carrier-stackinc-wip @ 1e5656c5` · ADR-0096 + its two PROPOSED amendments |
 | the advisor-plan backlog (findings → plans → executor → review loop) | `plans/README.md` |
 | deferred design questions | `docs/notes/OPEN_QUESTIONS.md` (generated ledger) |
 | subagent roles | `.claude/agents/` |
