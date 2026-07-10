@@ -473,10 +473,20 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
       -- `KrelSN` clause is `False`). So `Sstrip' = fr' :: rest'` with `fr'` matching `fr`'s kind.
       match Sstrip' with
       | [] =>
-          -- Sstrip' = [] but Sstrip = fr :: rest ⇒ LHS `fr`-headed, RHS `handleF nid h'`-headed. Only
-          -- matches if fr is handleF (with nid). Then the boundary is at the top of RHS but deep in LHS —
-          -- length mismatch (LHS longer). Refuted by `krelSN_length_eq`. slice-2 sub-obligation.
-          sorry
+          -- Sstrip' = [] but Sstrip = fr :: rest ⇒ LHS `fr :: (rest ++ handleF nid hh :: Ko')`, RHS
+          -- `handleF nid h' :: K₂ₒ`. `fr` must be `handleF nid _` (matching RHS head). Then LHS has `nid`
+          -- at head AND `handleF nid hh` in the tail — StackInc double-nid contradiction (symmetric to nil).
+          exfalso
+          rw [List.cons_append, List.nil_append] at hS
+          cases fr with
+          | handleF mh hd =>
+              rw [krelSN_handleF] at hS
+              obtain ⟨⟨⟨_, hsb⟩, _⟩, hid, _⟩ := hS
+              -- hsb : StackBelow mh (rest ++ handleF nid hh :: Ko'); `stackBelow_mid` ⇒ nid < mh. hid : mh =
+              -- nid (krelSN_handleF's nh = nh', LHS id mh, RHS boundary id nid) ⇒ nid < nid, absurd.
+              exact absurd (stackBelow_mid mh nid rest Ko' hsb) (by omega)
+          | letF _ => simp [KrelSN] at hS
+          | appF _ => simp [KrelSN] at hS
       | fr' :: rest' =>
           cases fr with
           | letF N₁ =>
