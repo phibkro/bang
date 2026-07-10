@@ -242,7 +242,7 @@ with Net as net {
 |---|---|
 | `effect Name { op : ArgTy -> ResTy, … }` | declares a named interface; the elaborator allocates a label (`4 + declIndex`, deterministic by decl order) and builds a program-derived op-signature table — the surface analogue of the kernel's `EffSig`. v1 ops are single-argument (`ArgTy -> ResTy`) or nullary (`op : ResTy`, no arrow) |
 | `handle e with Name as h { op(x) => body, … }` | installs a handler for `Name` around `e`, binding the capability as `h` — the `as h` binder is MANDATORY (no implicit default: two nested handlers of the same effect would otherwise silently collide) and scopes over `e`, not the clause bodies |
-| `handle e with (Name init) as h { … }` | the PARAMETER-CARRYING form — `init` is threaded internally at install time (see the v1 limitation below: no clause can yet NAME it) |
+| `handle e with (Name init) as h { … }` | the PARAMETER-CARRYING form — `init` is threaded internally at install time AND clause-nameable via the reserved identifier `param` (see below) |
 | `h.op(arg)` | performs `op` on the named capability `h` — the SAME `$h.op` bare-call convention the built-in named-cap surface uses (`state … as h`); NOT `$h.op arg` (`h` is already a value, not a thunk) |
 
 **Clause bodies are CURRIED, matching the perform site** (`op(x, y) => body` desugars to a
@@ -254,6 +254,23 @@ new construct born curried rather than inheriting the trait-op inconsistency).
 resumes the captured continuation with `x * 10` directly (one-shot, tail-resumptive); there
 is no explicit `resume(…)` form to write in v1 (a future multi-shot upgrade grows the
 surface additively, it does not change this form).
+
+**The carried param is CLAUSE-NAMEABLE via the reserved identifier `param`** (issue #87,
+ADR-0095 D1's own worked example). A `(Name init) as h` clause body reads the `init` value
+through the bare word `param` — READ-ONLY in v1 (no param-UPDATE surface, ADR-0092 D5
+deferred):
+
+```
+effect Reader { fetch : Int -> Int }
+handle net.fetch(5) with (Reader 100) as net { fetch(x) => x + param }
+-- net.fetch(5) resumes with 5 + 100 = 105
+```
+
+`param` is RESERVED at every BINDER position (a clause-arg name, the `as h` capability
+binder, a `let`/`fun` name, …) — the same discipline `with`/`resume` already use — so no
+user binding can ever shadow it; it stays freely usable as an ordinary expression
+(`param`, `param + x`, …) everywhere else, exactly like `get`. A param-less `Name` (no
+`(Name init)`) still elaborates fine; its clauses simply have no reason to reference `param`.
 
 **The v1 RET-SHAPE restriction — a clause body may not itself perform an effect before
 resuming.** A clause whose body computes-then-effects (e.g. performs another op, or
@@ -274,17 +291,8 @@ effect performed) is fine (`fetch(n) => n * 10`, `fetch(n) => n + 1`); a clause 
 `new`/`read`/`write`/`raise`/`handle` are reserved at the op-name position) — a collision is
 a loud parse/elaboration error naming the conflict, not a silent shadow.
 
-**Known v1 limitation (tracked — a real gap in the LANDED surface, not merely an
-undocumented corner):**
-
-- **The parameter-carrying form's `init` is NOT clause-nameable (issue #87).** `handle e
-with (Name init) as h { op(x) => … }` parses and threads `init` internally, but NO
-identifier in a clause body currently resolves to it (an attempted `param`/similar binder
-is an unbound-variable error) — the init value is accepted syntactically and then
-unreachable. Treat the parameter-carrying form as not-yet-usable in v1; a plain
-`effect Name { … }` (no carried param) is the form that works end to end.
-
-See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/`, and
+See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/` (now reading its
+carried param through `param` for real, issue #87), and
 `examples/handle-custom-abort-coexist/` (a `raise` inside a nested `handle` still aborts
 PAST a custom handler that is still installed — the two effect systems coexist) for worked,
 `check-examples`-gated single-op programs.
@@ -518,6 +526,15 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n, b(n) => n }` ⟹ `5`  — clause, not just the one performed). Repro triple from #86's own report, all fixed:
 - `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + 1, b(n) => n + 1 }` ⟹ `6`
 - `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + n * 2, b(n) => n }` ⟹ `15`  — combined: multi-clause AND a nested binop in the performed clause (#85 ⊔ #86 in one program).
+### #87 — the parameter-carrying form's `init` becomes CLAUSE-NAMEABLE via the literal
+
+- `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param }` ⟹ `100`  — ACCEPT: a bare `param` clause body resumes with the carried init value directly (no arithmetic).
+- `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => x + param }` ⟹ `105`  — ORIGINAL #87 report's own motivating shape (`fetch(x) => x + param`, README's stated intent).
+- `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param + x }` ⟹ `105`
+- `effect R { fetch : Int -> Int } handle (let r = net.fetch(5) in r + 1) with (R 100) as net { fetch(x) => x + param }` ⟹ `106`  — instead of hardcoding the literal `100` the way #87's report found.
+- `effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => x * 2 + param }` ⟹ `110`  — just the op-arg).
+- `effect R { fetch : Int -> Int } handle (let paramX = 7 in net.fetch(paramX)) with (R 100) as net { fetch(x) => x + param }` ⟹ `107`  — clause body — the reservation is exact-string, not a prefix block.
+- `effect R { fetch : Int -> Int } effect Q { ping : Int -> Int } handle ((handle (net.fetch(5)) with (R 100) as net { fetch(x) => x + param }) + (q.ping(1))) with Q as q { ping(n) => n }` ⟹ `106`  — second `with` on one `handle`.
 ### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
 
 - `let x = 3 data Marker = M x + 1` ⟹ `4`  — otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.

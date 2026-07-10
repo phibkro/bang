@@ -2,5 +2,5 @@ effect Reader { fetch : Int -> Int }
 handle
   (let r = net.fetch(5) in r + 1)
 with (Reader 100) as net {
-  fetch(x) => x + 100
+  fetch(x) => x + param
 }
