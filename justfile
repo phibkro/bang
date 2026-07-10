@@ -196,6 +196,7 @@ fitness:
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
     python3 tools/check-onboarding-refs.py
+    python3 tools/check-runs-in.py
     python3 tools/check-doc-hygiene.py --check
     python3 tools/check-context-claims.py
     python3 tools/gen-notes-index.py --check
@@ -218,6 +219,12 @@ check-sha:
 # PATH lifecycle: every active paths/PATH-*.md is reachable from CONTEXT/ROADMAP (done → archive). Also run by fitness.
 check-paths:
     bash tools/check-paths.sh
+
+# runs-in validation: every `runs-in=verify` script is reachable from the verify chain or the
+# batteries array; every battery is runs-in=verify; every runs-in=hook script is hook-referenced.
+# Makes the header's `runs-in=` claim a check, not a reading task. Also run by fitness.
+check-runs-in:
+    python3 tools/check-runs-in.py
 
 # Reference library (refs.bib = single source of truth; index.json + the README block are derived).
 refs-index:

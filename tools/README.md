@@ -26,7 +26,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean` | a generated symbol index for the Lean source (the navigation gap-fill) |
 
-## check (19)
+## check (20)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -46,6 +46,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-paths.sh`](check-paths.sh) | `fitness` | `paths/PATH-*.md`, `CONTEXT.md`, `ROADMAP.md` | PATH lifecycle fitness function |
 | [`check-primitives.sh`](check-primitives.sh) | `fitness` | `Bang/Core/IR.lean` | kernel fitness function for CLAUDE.md Invariants #3 & #5 |
 | [`check-refs.py`](check-refs.py) | `fitness` | `*.md`, `refs-allow.txt` | the stale cross-reference fitness function |
+| [`check-runs-in.py`](check-runs-in.py) | `fitness` | `justfile`, `tools/run-batteries.sh`, `tools/git-hooks/pre-commit`, `.claude/settings.json` | the `runs-in=` claim is VALIDATED, not just declared (plan 012 slice 2) |
 | [`check-sha-reachable.sh`](check-sha-reachable.sh) | `fitness` | `CONTEXT.md`, `ROADMAP.md`, `sha-allow.txt` | orientation-doc SHA reachability fitness function |
 | [`check.sh`](check.sh) | `manual` | `Bang/**/*.lean` | fast per-file Lean error check |
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
