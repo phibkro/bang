@@ -45,8 +45,9 @@ graph TD
     Core_Typing["Core.Typing<br/>479L · fan-in 0"]
     Examples["Examples<br/>365L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>934L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>942L · fan-in 0"]
     Frontend_Query["Frontend.Query<br/>587L · fan-in 0"]
+    Frontend_Rewrite["Frontend.Rewrite<br/>292L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>2929L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
@@ -100,9 +101,10 @@ graph TD
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 365 | 0 |
 | `Frontend.Diagnostics` | ? | 213 | 0 |
-| `Frontend.Format` | ? | 934 | 0 |
+| `Frontend.Format` | ? | 942 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Query` | ? | 587 | 0 |
+| `Frontend.Rewrite` | ? | 292 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 5455 | 0 |

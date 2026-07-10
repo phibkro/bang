@@ -559,14 +559,22 @@ one-per-line, so this uses literal `"\n"` text exactly as v1's `String.intercala
 unchanged since D2 does not name declaration SEPARATION as a group/break point, only each decl's
 OWN internal layout). A library-mode program (D5: decls-only, placeholder `.lit 0` body) prints
 its header+decls only — `Main.lean`'s entry-mode detection decides whether a bare `0` is real,
-not this printer; re-parsing that output still round-trips to the SAME `Prog` either way. NOT
-`public` — the only consumer is `fmtProg` below, in this same module; `Main.lean`'s resolver-aware
-`bang check` (ADR-0093 follow-up ruling) was tried against a print-then-reparse of a MERGED `Prog`
-through this function and found unsound (`applyEntryRule`'s synthesized `body := Surf.var "main"`
-prints as a bare trailing atom immediately after a `main`-decl ending in one, which re-tokenizes as
-ONE application) — it instead calls `TypeCheck.checkAndLowerProg` directly on the `Prog`, never
-re-stringifying, so this function never sees a resolver-merged `Prog` in practice. -/
-def showProg (p : Prog) : String :=
+not this printer; re-parsing that output still round-trips to the SAME `Prog` either way.
+
+`public` (#81): `fmtProg` below (this module) and `Bang.Rewrite`'s `fmt`/`rename` rewrites
+(`Bang/Frontend/Rewrite.lean`) both render a `Prog` through this ONE function, so a rewrite
+verb's diff and `bang fmt`'s own output stay visually consistent. CAVEAT unchanged from before
+`public`: `Main.lean`'s resolver-aware `bang check` (ADR-0093 follow-up ruling) was tried against
+a print-then-reparse of a RESOLVER-MERGED `Prog` through this function and found UNSOUND
+(`applyEntryRule`'s synthesized `body := Surf.var "main"` prints as a bare trailing atom
+immediately after a `main`-decl ending in one, which re-tokenizes as ONE application) —
+`bang check`/`run` instead call `TypeCheck.checkAndLowerProg` directly on the `Prog`, never
+re-stringifying. `Bang.Rewrite`'s CLI wiring (`Main.lean`'s `runRewriteFmt`/`runRewriteRename`)
+is SINGLE-FILE only (no resolver path, matching `rename`'s own "requires a file, no multi-file
+route" scope) — a caller reaching this function through a resolver-merged `Prog` still
+inherits the SAME unsoundness this caveat names; a pre-existing, documented v1 ceiling, not a
+new one #81 introduces. -/
+public def showProg (p : Prog) : String :=
   let headerDocs := (p.imports.map fmtImport) ++ (p.uses.map fmtUse)
   let declDocs := p.decls.map (fmtDeclPub p.pubNames)
   -- `p.isLibrary` ⟹ `p.body` is the UNOBSERVABLE `.lit 0` placeholder (D5's third case) — printing
