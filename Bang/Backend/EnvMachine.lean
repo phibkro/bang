@@ -490,6 +490,15 @@ def readbackTerm : MTerm → Bang.CalcVM.Outcome
   | .mret mv   => .term (.ret (readback mv))
   | .mlam N ρ  => .term (.lam (closeUnderBindersE 1 (readbackEnv ρ) N))
 
+/-- **W3 (envm3)**: readback of a machine OUTCOME to `evalD`'s `Outcome`, extending `readbackTerm` to the
+`mraised` terminal (the third `evalD` `Outcome`). A `mterm t` reads back as `readbackTerm t`; a `mraised
+n op mv` reads back as `raised n op (readback mv)` — the payload is a value, so the extension is
+structural. This is the conclusion target of the outcome-GENERAL `_gen` lemma the 3b induction needs
+(the term-only `evalE_agrees_evalD_effect` is its `mterm`-half corollary). -/
+def readbackTermS : MOutcome → Bang.CalcVM.Outcome
+  | .mterm t        => readbackTerm t
+  | .mraised n op mv => .raised n op (readback mv)
+
 /-! ## The `γ≈ₑσ` correspondence — the STATEMENT (slice-3 proof)
 
 The load-bearing bridge (PLFA `BigStep`, `envsem-survey.md` §2): an environment `ρ`
