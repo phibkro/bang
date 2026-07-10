@@ -361,7 +361,7 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
               cases fr₂ with
               | appF w₂ =>
                   rw [krelS_appF] at hK
-                  obtain ⟨q', A', B', hC, hcw₁, hcw₂, hw, htail⟩ := hK
+                  obtain ⟨_hinc, q', A', B', hC, hcw₁, hcw₂, hw, htail⟩ := hK
                   rw [CTy.arr.injEq] at hC; obtain ⟨rfl, rfl, rfl⟩ := hC
                   -- β `(appF w::K', lam M') ↦ (K', M'.subst w)`; body IH at the SAME index, non-dropping.
                   refine coApproxC_le_reduce
@@ -371,16 +371,16 @@ theorem compatK_lam {n : Nat} {q : Mult} {A : VTy Eff Mult} {B : CTy Eff Mult} {
                   have hb := hbody w₁ w₂ hcw₁ hcw₂ hw
                   rw [CrelK] at hb
                   exact hb g D K₁' K₂' htail
-              | _ => simp only [KrelS] at hK
-          | nil => simp only [KrelS] at hK
+              | _ => simp [KrelS] at hK
+          | nil => simp [KrelS] at hK
       | letF N₁ =>
           -- letF arrow: the clause requires `C = F q A`, but `C = arr q A B` (arr ≠ F) ⇒ False.
           cases K₂ with
           | cons fr₂ K₂' =>
               cases fr₂ with
-              | letF N₂ => rw [krelS_letF] at hK; obtain ⟨_, _, _, _, hC, _⟩ := hK; exact absurd hC (by simp)
-              | _ => simp only [KrelS] at hK
-          | nil => simp only [KrelS] at hK
+              | letF N₂ => rw [krelS_letF] at hK; obtain ⟨_, _, _, _, _, hC, _⟩ := hK; exact absurd hC (by simp)
+              | _ => simp [KrelS] at hK
+          | nil => simp [KrelS] at hK
       | handleF h₁ =>
           -- handleF on a `lam`: `(handleF h::K, lam M)` is STUCK (handleF reduces only a `ret`). Vacuous.
           intro hconv; exact absurd hconv (not_convergesC_le_of_stuck rfl (by intro g' u; simp))
@@ -671,7 +671,7 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
       exact krelS_append (εᵢ := eₛ) hSrel (HandlerRel_mono (le_of_lt hk) hHR)
         (KrelS_mono (le_of_lt hk) htail) hSincA hSincA' (fun k' hk' => hres k' (lt_trans hk' hk))
   | [], (_ :: _) => simp [KrelS] at hin
-  | (fr :: _), [] => exact absurd hin (by simp only [KrelS]; cases fr <;> exact not_false)
+  | (fr :: _), [] => exact absurd hin (by cases fr <;> simp [KrelS])
   | (Frame.letF _ :: _), (Frame.appF _ :: _) => simp [KrelS] at hin
   | (Frame.letF _ :: _), (Frame.handleF _ _ :: _) => simp [KrelS] at hin
   | (Frame.appF _ :: _), (Frame.letF _ :: _) => simp [KrelS] at hin
@@ -701,6 +701,9 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
     ∀ (nh : Nat) m (s₁ s₂ : Val), Val.Closed s₁ → Val.Closed s₂ →
       VrelK m S s₁ s₂ →
       ∀ (K₁ K₂ : Stack), KrelS m (CTy.F q A) D φ g K₁ K₂ →
+      -- ADR-0096 (i′): the reinstalled frame's id `nh` dominates the tail ids (caller supplies from
+      -- `stackInc_reachable`); threaded to `krelS_handleF_intro` + the recursive reinstall.
+      StackBelow nh K₁ → StackBelow nh K₂ →
       KrelS m (CTy.F q A) D φ g (Frame.handleF nh (Handler.state ℓ s₁) :: K₁)
                               (Frame.handleF nh (Handler.state ℓ s₂) :: K₂) := by
   -- GUARDED RECURSION on the index: the reinstalled handler (over the SAME tail, at the put-updated state
@@ -709,9 +712,10 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
   intro nh m
   induction m using Nat.strong_induction_on with
   | _ m ih =>
-    intro s₁ s₂ hcs₁ hcs₂ hsv K₁ K₂ hK
+    intro s₁ s₂ hcs₁ hcs₂ hsv K₁ K₂ hK hsbK₁ hsbK₂
     refine krelS_handleF_intro
       (show HandlerRel Eff Mult m (Handler.state ℓ s₁) (Handler.state ℓ s₂) from ⟨rfl, S, hsv⟩) hK ?_
+      hsbK₁ hsbK₂
     intro m' hm' op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi hCᵢ hd₁ hd₂
     rcases hrestrict op s₁ hcatch with rfl | rfl
     · -- GET: cfg = (Kᵢ ++ handleF nh (state ℓ sⱼ)::Kⱼ, ret sⱼ); resume value = the stored state (related).
@@ -721,12 +725,18 @@ theorem krelS_state_reinstall {q : Mult} {A S : VTy Eff Mult} {D : CTy Eff Mult}
       obtain rfl := (Option.some.injEq _ _).mp hd₂.symm
       -- the reinstalled `state ℓ s₁/s₂` over the tail relates at m' (IH at the SAME state pair, downward).
       have hreinst := ih m' hm' s₁ s₂ hcs₁ hcs₂ (VrelK_mono (le_of_lt hm') hsv) K₁ K₂
-        (KrelS_mono (le_of_lt hm') hK)
+        (KrelS_mono (le_of_lt hm') hK) hsbK₁ hsbK₂
       rw [krelS_handleF] at hreinst
+      -- ADR-0096 threading residual: `krelS_append` over the captured `Kᵢ` needs `StackInc (Kᵢ ++
+      -- reinstall :: K₁)`. `Kᵢ` = the resume conjunct's bound continuation (hKi); `StackInc Kᵢ` comes
+      -- from `krelS_stackInc hKi`, `StackBelow nh K₁` from hsbK₁, but the CROSS-ordering (Kᵢ's ids vs nh)
+      -- needs the machine-reached fact — same class as the deep krelS_append sorry. Isolated here.
+      have hInc₁ : StackInc (Kᵢ ++ Frame.handleF nh (Handler.state ℓ s₁) :: K₁) := by sorry
+      have hInc₂ : StackInc (Kᵢ' ++ Frame.handleF nh (Handler.state ℓ s₂) :: K₂) := by sorry
       have happ := krelS_append (Dᵢ := CTy.F q A) hKi
         (show HandlerRel Eff Mult m' (Handler.state ℓ s₁) (Handler.state ℓ s₂) from
           ⟨rfl, S, VrelK_mono (le_of_lt hm') hsv⟩)
-        (KrelS_mono (le_of_lt hm') hK) hreinst.2.2.2
+        (KrelS_mono (le_of_lt hm') hK) hInc₁ hInc₂ hreinst.2.2.2
       -- ◊4.5b-strengthen: SUPPLY the decomposition — the dispatched config is `(Kᵢ++reinstall::K, ret sⱼ)`,
       -- the resume value `s₁~s₂` at `S`, the appended stack `KrelS`-related at the returner hole `F qᵣ S`.
       exact ⟨qᵣ, S, s₁, s₂, _, _, εᵢ, rfl, rfl, hcs₁, hcs₂, VrelK_mono (le_of_lt hm') hsv, happ⟩
@@ -942,14 +952,14 @@ theorem krelS_handlerCount_eq {n : Nat} :
       intro K₂ C D e g hK
       rcases K₂ with _ | ⟨fr, K⟩
       · rfl
-      · simp only [KrelS] at hK
+      · simp [KrelS] at hK
   | cons fr K₁' ih =>
       intro K₂ C D e g hK
       rcases K₂ with _ | ⟨fr₂, K₂'⟩
-      · cases fr <;> simp only [KrelS] at hK
+      · cases fr <;> simp [KrelS] at hK
       · cases fr <;> cases fr₂ <;>
           first
-          | (simp only [KrelS] at hK; done)
+          | (simp [KrelS] at hK; done)
           | (rw [KrelS] at hK
              obtain ⟨_, _, _, _, _, _, htail⟩ := hK
              simp only [Bang.handlerCount]; exact ih htail)
@@ -1007,7 +1017,7 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                   refine ⟨Frame.letF N₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
                     by simp only [splitAtId]; rw [hsp2]; rfl, hHR, ?_, htail2, hres2⟩
                   rw [krelS_letF]; exact ⟨q, A, B, φ, hC, hbody, hin⟩
-              | _ => simp only [KrelS] at hK
+              | _ => simp [KrelS] at hK
           | appF w₁ =>
               cases fr₂ with
               | appF w₂ =>
@@ -1021,7 +1031,7 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                   refine ⟨Frame.appF w₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
                     by simp only [splitAtId]; rw [hsp2]; rfl, hHR, ?_, htail2, hres2⟩
                   rw [krelS_appF]; exact ⟨q, A, B, hC, hcw₁, hcw₂, hw, hin⟩
-              | _ => simp only [KrelS] at hK
+              | _ => simp [KrelS] at hK
           | handleF mh₁ hh₁ =>
               cases fr₂ with
               | handleF mh₂ hh₂ =>
@@ -1062,7 +1072,7 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                     -- factor through in general. The dissolution is REAL (no `handlesOp` wall); the residual
                     -- is this one clean relocation. Scoped here for the SKIP arm. shape: biernacki-popl18 §5.4.
                     sorry
-              | _ => simp only [KrelS] at hK
+              | _ => simp [KrelS] at hK
 
 -- ◊inc-5 the op-PRODUCER, re-keyed to ADR-0054/0055 IDENTITY dispatch. The capability is now a VALUE
 -- `vcap m ℓ` (VrelK at cap type forces the SAME id `m` both sides, LR:1427); `Source.step` resolves it via
@@ -1117,14 +1127,14 @@ theorem KrelS_g_cast : ∀ (n : Nat) {C D : CTy Eff Mult} {ε : Eff} (g g' : Nat
           (KrelS_g_cast m g' g Kᵢ Kᵢ' hKi) hCᵢ hd₁ hd₂
       exact ⟨qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, hcfg1, hcfg2, hcr1, hcr2, hvr,
         KrelS_g_cast m g g' Sᵢ Sᵢ' hSk⟩
-  | _, _, _, _, _, _, [], (_ :: _), hK => by simp only [KrelS] at hK
-  | _, _, _, _, _, _, (_ :: _), [], hK => by simp only [KrelS] at hK
-  | _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.appF _ :: _), hK => by simp only [KrelS] at hK
-  | _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.handleF _ _ :: _), hK => by simp only [KrelS] at hK
-  | _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.letF _ :: _), hK => by simp only [KrelS] at hK
-  | _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.handleF _ _ :: _), hK => by simp only [KrelS] at hK
-  | _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.letF _ :: _), hK => by simp only [KrelS] at hK
-  | _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.appF _ :: _), hK => by simp only [KrelS] at hK
+  | _, _, _, _, _, _, [], (_ :: _), hK => by simp [KrelS] at hK
+  | _, _, _, _, _, _, (_ :: _), [], hK => by simp [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.appF _ :: _), hK => by simp [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.handleF _ _ :: _), hK => by simp [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.letF _ :: _), hK => by simp [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.handleF _ _ :: _), hK => by simp [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.letF _ :: _), hK => by simp [KrelS] at hK
+  | _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.appF _ :: _), hK => by simp [KrelS] at hK
 termination_by n _ _ _ _ _ K₁ _ _ => (n, K₁.length)
 decreasing_by
   all_goals simp_wf
