@@ -94,3 +94,12 @@ scratch/KrelSUnappendProbe.lean
 scratch/DecompFreshStrip.lean
 scratch/KrelSLengthProbe.lean
 scratch/CrelKUpVacuityProbe.lean
+
+# ── H. #52 hover design-probe spike, adopted then deleted ──────────────────────────
+# docs/notes/spanned-surf-design.md §5 narrates Bang/Frontend/HoverSpike.lean, the working
+# spike that PROVED decl-granularity hover composes before slice 5 (bang query hover) was
+# implemented. Adopted into Bang/Frontend/Query.lean (hoverAtP/hoverJsonP/hoverJson, §4) per
+# the adopt-a-spike discipline, then the spike file was deleted — the note's own "Update" in
+# §1 records the adoption; these path references are RETROSPECTIVE (what the spike WAS), not
+# stale pointers. Recover: `git show dd1e5e27:Bang/Frontend/HoverSpike.lean`.
+Bang/Frontend/HoverSpike.lean

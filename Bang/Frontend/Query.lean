@@ -598,7 +598,116 @@ public def refsJson (src name : String) : String :=
   | .error (m, _) => errorJsonOk m
   | .ok p         => refsJsonP p name
 
-/-! ## 4. `bang holes <file>` (#82 item 3) — residual/underdetermined positions.
+/-! ## 4. `bang query hover <file> <line> <col>` (#52 slice 5) — decl-granularity hover.
+
+Promoted from the design-probe spike (`docs/notes/spanned-surf-design.md` §5, formerly
+`Bang/Frontend/HoverSpike.lean`, now deleted — this IS its adoption: the spike's helper becomes a
+Tier-1/3 projection of the SAME `declFactOf`/`tokenizeSpanned`/`locateToken` machinery every other
+verb already reads, not a new discovery mechanism). Answers "what decl is at `line:col`, and what
+is its type" at DECL granularity — the honest ceiling documented at Q1/Q2 of the design note: no
+`Surf`/`P` signature change, a cursor inside a decl's body resolves to that WHOLE decl (not the
+exact sub-expression under the cursor). -/
+
+/-- Is position `(line, col)` at-or-after the START of span `sp` (`sp`'s own start, 1-based,
+half-open convention matching `Span` itself)? Used to find the LAST decl whose name token starts
+at-or-before the cursor — the "nearest enclosing decl by name-token order" rule. -/
+def atOrAfter (line col : Nat) (sp : Span) : Bool :=
+  line > sp.line || (line == sp.line && col >= sp.col)
+
+#guard atOrAfter 1 5 ⟨1, 5, 1, 6⟩
+#guard atOrAfter 1 6 ⟨1, 5, 1, 6⟩
+#guard ! atOrAfter 1 4 ⟨1, 5, 1, 6⟩
+#guard atOrAfter 2 1 ⟨1, 5, 1, 6⟩
+
+/-- One decl's hover-relevant fact: its `DeclFact` (the SAME per-decl type/error/kind rendering
+`symbols`/`dump` use — zero new checking) paired with the `Span` of its NAME TOKEN, the anchor a
+cursor query compares against. `public`: the return type of `hoverAtP`, a Tier-1 entry. -/
+public structure HoverFact where
+  fact     : DeclFact
+  nameSpan : Span
+  deriving Repr
+
+/-- Every top-level decl of `p` as a `HoverFact`, in SOURCE ORDER (`p.decls`'s own list order,
+matching `declFactsOf`'s own invariant) — `locateToken` finds each decl's OWN name occurrence by
+construction (the FIRST occurrence of that string in `src`; a name that also occurs earlier as
+some OTHER token's text is the same honest-approximation caveat `locateInMsg` already documents
+and accepts for Stage B). `none` (a decl's name has no locatable token — should not happen for a
+real parse, since the decl was parsed FROM this exact source) is filtered out rather than guessed. -/
+def hoverFactsOf (src : String) (p : Prog) : List HoverFact :=
+  p.decls.filterMap (fun d =>
+    (Bang.Surface.locateToken src d.name).map (fun sp => { fact := declFactOf p d, nameSpan := sp }))
+
+/-- **PUBLIC (TIER 1):** hover at `(line, col)` in `p` (parsed from `src`) — the nearest-enclosing
+decl (the LAST decl, in source order, whose name-token START is at-or-before the cursor). `none`
+when the cursor sits before every decl's name (e.g. inside the `import`/`use` header, or the file
+is empty) — an honest miss, not a guess at the wrong decl. -/
+public def hoverAtP (src : String) (p : Prog) (line col : Nat) : Option HoverFact :=
+  let facts := hoverFactsOf src p
+  let candidates := facts.filter (fun f => atOrAfter line col f.nameSpan)
+  candidates.getLast?
+
+/-- One `HoverFact` → its JSON object: `{"name","kind","type","row","typeError","span":{...}}` —
+the SAME `DeclFact` fields `dump`/`symbols` render, plus the name-token `span` that answers the
+POSITION query. Reuses `Bang.Diagnostics.spanJson` (the ONE `Span`-rendering convention, SSoT — no
+second `{"line":...}` shape invented here). -/
+def HoverFact.toJson (f : HoverFact) : String :=
+  jsonObj [jsonStrField "name" f.fact.name, jsonField "kind" f.fact.kind.toJson,
+           jsonOptStrField "type" f.fact.type, jsonOptStrField "row" f.fact.row,
+           jsonOptStrField "typeError" f.fact.typeError,
+           jsonField "span" (Bang.Diagnostics.spanJson f.nameSpan)]
+
+/-- **PUBLIC entry, `Prog`-taking** (resolver-aware route): `{"ok":true,"decl":{...HoverFact...}}`
+on a hit, `{"ok":false,"error":"no decl at <line>:<col>"}` on a miss (an honest, LOUD non-answer,
+ADR-0046 — never a guessed nearest decl). `src` is required alongside `p` (unlike every other
+`*JsonP` entry) because hover's decl→span resolution needs the ORIGINAL source text `locateToken`
+scans — the resolver's merged `Prog` alone carries no span-locatable source. -/
+public def hoverJsonP (src : String) (p : Prog) (line col : Nat) : String :=
+  match hoverAtP src p line col with
+  | some f => jsonObj [jsonField "ok" "true", jsonField "decl" f.toJson]
+  | none   => errorJsonOk s!"no decl at {line}:{col}"
+
+/-- **PUBLIC entry**: `bang query hover <file> <line> <col>` — the single-file/stdin route: parse
+`src` then defer to `hoverJsonP`. 1-INDEXED line/col (matching `Span`'s own convention). -/
+public def hoverJson (src : String) (line col : Nat) : String :=
+  match Bang.Surface.parseProgLocated src with
+  | .error (m, _) => errorJsonOk m
+  | .ok p         => hoverJsonP src p line col
+
+/-! ### `#guard`s — hover's evidence (adopted verbatim from the spike, now over the real API). -/
+
+-- SINGLE decl, cursor INSIDE its body: resolves to that decl, typed.
+#guard hoverJson "let x = 3\nlet main = x + 1" 2 5 ==
+  "{\"ok\":true,\"decl\":{\"name\":\"main\",\"kind\":\"let\",\"type\":\"Int\",\"row\":\"{}\",\"typeError\":null,\"span\":{\"line\":2,\"col\":5,\"endLine\":2,\"endCol\":9}}}"
+-- cursor on the DECL'S OWN name token.
+#guard hoverJson "let x = 3\nlet main = x + 1" 1 5 ==
+  "{\"ok\":true,\"decl\":{\"name\":\"x\",\"kind\":\"let\",\"type\":\"Int\",\"row\":\"{}\",\"typeError\":null,\"span\":{\"line\":1,\"col\":5,\"endLine\":1,\"endCol\":6}}}"
+-- cursor BEFORE any decl name (column 1 line 1 is `let`, before `x` at col 5) — an honest miss.
+#guard hoverJson "let x = 3\nlet main = x + 1" 1 1 ==
+  "{\"ok\":false,\"error\":\"no decl at 1:1\"}"
+
+-- TWO decls: a cursor between them resolves to the EARLIER one (nearest enclosing, not nearest
+-- overall) — the coarse decl-granularity approximation this verb is honest about.
+#guard (match hoverAtP "let a = 1\nlet b = 2" (Bang.Surface.parseProg "let a = 1\nlet b = 2" |>.toOption |>.get!) 1 8 with
+        | some f => f.fact.name | none => "MISS") == "a"
+#guard (match hoverAtP "let a = 1\nlet b = 2" (Bang.Surface.parseProg "let a = 1\nlet b = 2" |>.toOption |>.get!) 2 5 with
+        | some f => f.fact.name | none => "MISS") == "b"
+
+-- a decl that FAILS to type-check renders its error, not a type (mirrors `declFactOf`'s
+-- `typeError` branch — no new checker behaviour).
+#guard (hoverJson "let x : Unit = 3\nlet main = 1" 1 5 |>.splitOn "typeError\":null").length == 1
+
+-- a NON-VALUE decl (`data`) renders `type`/`row`/`typeError` all `null` (mirrors `DeclFact`'s
+-- documented convention for trait/data/effect/impl — no bare-name special case needed, `hover`'s
+-- JSON is shape-uniform like `dump`'s).
+#guard hoverJson "data Pair = P(Int, Int)\nlet main = 1" 1 6 ==
+  "{\"ok\":true,\"decl\":{\"name\":\"Pair\",\"kind\":\"data\",\"type\":null,\"row\":null,\"typeError\":null,\"span\":{\"line\":1,\"col\":6,\"endLine\":1,\"endCol\":10}}}"
+
+-- KNOWN INTERACTION (issue #100, open, NOT fixed here): a user `data` type's rendered `type`
+-- string can leak an internal μ-encoding when hover resolves to a decl whose TYPE (not shape)
+-- mentions it — this corpus deliberately sticks to Int-typed decls to avoid asserting on a
+-- μ-string that #100 may change out from under this test.
+
+/-! ## 5. `bang holes <file>` (#82 item 3) — residual/underdetermined positions.
 
 bang has NO user-facing `_` hole syntax today (the issue's own "needs small parser support"),
 but the checker DOES report underdetermined positions: a residual VALUE hole zonk-extracts to a
@@ -674,7 +783,7 @@ public def holesJson (src : String) : String :=
   | .error (m, _) => errorJsonOk m
   | .ok p         => holesJsonP p
 
-/-! ## 5. `bang impact <file> <decl>` (#82 item 5) — transitive DEPENDENTS of a decl.
+/-! ## 6. `bang impact <file> <decl>` (#82 item 5) — transitive DEPENDENTS of a decl.
 
 The pre-edit blast-radius check: "what breaks if I change `decl`?" — the TRANSITIVE closure of
 decls that reference it (directly or through a chain). This is the REVERSE of the import/use graph
@@ -726,7 +835,7 @@ public def impactJson (src name : String) : String :=
   | .error (m, _) => errorJsonOk m
   | .ok p         => impactJsonP p name
 
-/-! ## 6. `bang semver-diff <old> <new>` (#82 item 6) — the public-surface diff.
+/-! ## 7. `bang semver-diff <old> <new>` (#82 item 6) — the public-surface diff.
 
 The release battery's future companion (#72's enforcement engine, elm-package precedent): diff the
 PUBLIC (`pub`) `DeclFact` surface of two programs → which pub decls were ADDED, REMOVED, or CHANGED

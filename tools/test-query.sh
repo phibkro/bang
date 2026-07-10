@@ -251,6 +251,42 @@ got_out="$("$bang" query def Parse_dropWs examples/json/main.bang 2>/dev/null)" 
 check "def-multifile-exit" "$got_exit" "0"
 check "def-multifile-hit" "$(printf '%s' "$got_out" | grep -o '"ok":true' || true)" '"ok":true'
 
+# ══ 6b. `hover` (#52 slice 5) — decl-granularity position query. 1-INDEXED line/col. ══
+
+# HIT — cursor inside a decl's body resolves to that whole decl, Int-typed (avoids asserting on a
+# μ-encoded hole string — issue #100, a KNOWN interaction with user data types, not fixed here).
+got_out="$("$bang" query hover "$tmpdir/simple.bang" 2 5 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "hover-hit-exit" "$got_exit" "0"
+check "hover-hit-shape" "$got_out" '{"ok":true,"decl":{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"span":{"line":2,"col":5,"endLine":2,"endCol":9}}}'
+
+# MISS — cursor in whitespace BEFORE any decl's name token (col 1 of line 1 is `let`, before
+# `double` at col 9) is an honest {"ok":false,...}, still exit 0 (the tool ran).
+got_out="$("$bang" query hover "$tmpdir/simple.bang" 1 1 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "hover-miss-exit" "$got_exit" "0"
+check "hover-miss-shape" "$got_out" '{"ok":false,"error":"no decl at 1:1"}'
+
+# stdin agrees with file.
+got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query hover 2 5 2>/dev/null)" || true
+got_file="$("$bang" query hover "$tmpdir/simple.bang" 2 5 2>/dev/null)" || true
+check "hover-stdin-eq-file" "$got_stdin" "$got_file"
+
+# MULTI-FILE — a position inside the ENTRY file (main.bang) of a multi-file (import-resolved)
+# program resolves through the SAME resolver every other query op uses (loose ok:true match,
+# matching def-multifile-hit's own precedent — the exact rendered type is not the point here).
+got_out="$("$bang" query hover examples/json/main.bang 29 5 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "hover-multifile-exit" "$got_exit" "0"
+check "hover-multifile-hit" "$(printf '%s' "$got_out" | grep -o '"name":"boolToBit"' || true)" '"name":"boolToBit"'
+
+# BAD FILE — unreadable path is a TOOL error (exit 2, nothing on stdout), matching every other op.
+got_out="$("$bang" query hover /no/such/file.bang 1 1 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "hover-bad-file-stdout-empty" "$got_out" ""
+check "hover-bad-file-exit" "$got_exit" "2"
+
+# non-numeric line/col is a USAGE error (exit 1, stderr — mirrors `type`'s own missing-arg case).
+got_usage_exit=0
+"$bang" query hover "$tmpdir/simple.bang" abc 1 >/dev/null 2>&1 || got_usage_exit=$?
+check "hover-usage-error-nonnumeric-exit" "$got_usage_exit" "1"
+
 # ══ 7. Exit-code contract: TOOL error (exit 2, unreadable file) ══
 
 got_out="$("$bang" query dump /no/such/file.bang 2>/dev/null)" && got_exit=0 || got_exit=$?
@@ -296,14 +332,14 @@ fi
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
-# always runs (54); jq's THREE guarded blocks (ignore-unknown-fields-contract,
-# composed-query-pub-divergent, jq-parseable-all-ops) each contribute exactly ONE `check()` call
-# when jq is present (jq IS in the standard `nix develop` shell, so this is the steady-state path);
-# duckdb's ONE guarded check contributes one more when duckdb happens to be reachable (NOT in the
-# flake — an ad-hoc `nix shell` reach). The total tracks WHICH optional tools actually ran, so a
-# genuinely truncated run is still caught regardless of which tools happened to be on PATH (never
-# a silently-widened acceptable range).
-want_total=54
+# always runs (64 — 54 pre-#52-slice-5 + 10 `hover` checks, §6b); jq's THREE guarded blocks
+# (ignore-unknown-fields-contract, composed-query-pub-divergent, jq-parseable-all-ops) each
+# contribute exactly ONE `check()` call when jq is present (jq IS in the standard `nix develop`
+# shell, so this is the steady-state path); duckdb's ONE guarded check contributes one more when
+# duckdb happens to be reachable (NOT in the flake — an ad-hoc `nix shell` reach). The total
+# tracks WHICH optional tools actually ran, so a genuinely truncated run is still caught
+# regardless of which tools happened to be on PATH (never a silently-widened acceptable range).
+want_total=64
 if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 3)); fi
 if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 1)); fi
 got_total=$((pass + fail))

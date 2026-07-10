@@ -706,6 +706,27 @@ def runQueryRefs (file : Option String) (name : String) : IO UInt32 := do
       | .error code => pure code
       | .ok p       => printQueryOk (Bang.Query.refsJsonP p name)
 
+/-- `bang query hover <file> <line> <col>` (#52 slice 5) — the decl at `line:col`, DECL granularity
+(see `Bang.Query`'s hover section for the ceiling). 1-INDEXED line/col. Written directly (not via
+`resolveQueryProg`, which discards `src` — hover needs the ORIGINAL source text alongside the
+resolved `Prog` for its span lookup, the SAME reason `runQueryDump`'s single-file path keeps `src`)
+so the resolver path still has `src` available for `hoverJsonP`'s span resolution. A miss
+(`{"ok":false,"error":"no decl at L:C"}`) is STILL exit 0 (the tool ran; matches `def`'s "no such
+decl" convention) — only a parse/resolution/unreadable-file failure is nonzero. -/
+def runQueryHover (file : Option String) (line col : Nat) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
+        printQueryOk (Bang.Query.hoverJson src line col)
+      else
+        match file with
+        | none      => printQueryOk (Bang.Query.hoverJsonP src headerProg line col)   -- stdin, no resolver path
+        | some path =>
+            match ← resolveEntryFile path with
+            | .error e   => IO.println (Bang.Query.errorJsonOk e); pure 1
+            | .ok merged => printQueryOk (Bang.Query.hoverJsonP src merged line col)
+
 /-- `bang holes [<file.bang>]` (#82 item 3) — every decl carrying a residual/underdetermined
 position (a checker hole rendered `#N`, `N ≥ holeBase`; see `Bang.Query.holesOf`). ALWAYS JSON on
 stdout — a machine-readable report like `check --json`/`query`'s shape (agents are the audience).
@@ -1233,12 +1254,18 @@ def usage : String :=
   "    bang query def <name> <file.bang>       the decl that defines <name>\n" ++
   "    bang query refs <name> <file.bang>      every decl whose body mentions <name>\n" ++
   "                                             (dump's own \"refs\" edge list, filtered to <name>)\n" ++
-  "                                     `dump`/`symbols`/`type`/`effects`/`def`/`refs` read stdin if\n" ++
-  "                                     no <file.bang> is given (except `type`/`def`/`refs`, which\n" ++
-  "                                     always require a file — name-addressed multi-arg forms);\n" ++
+  "    bang query hover [<file.bang>] <line> <col>\n" ++
+  "                                             the decl at 1-INDEXED <line>:<col> (issue #52 slice 5),\n" ++
+  "                                             DECL granularity — a cursor anywhere in a decl's body\n" ++
+  "                                             resolves to that WHOLE decl, rendered like `dump`'s own\n" ++
+  "                                             per-decl fact plus its name-token \"span\"; a miss\n" ++
+  "                                             (cursor before any decl) is {\"ok\":false,...}, exit 0\n" ++
+  "                                     `dump`/`symbols`/`type`/`effects`/`def`/`refs`/`hover` read\n" ++
+  "                                     stdin if no <file.bang> is given (except `type`/`def`/`refs`,\n" ++
+  "                                     which always require a file — name-addressed forms);\n" ++
   "                                     a <file.bang> WITH imports/uses is resolved the SAME way\n" ++
   "                                     `bang check` resolves it (imports visible to every op).\n" ++
-  "                                     `def`/`refs` are DECL-granularity, not line/col — see #52.\n\n" ++
+  "                                     `def`/`refs` are DECL-granularity, not sub-decl — see #52.\n\n" ++
   "  bang rewrite <verb> ...             the CQS COMMAND side over `query`'s read model (issue #81);\n" ++
   "                                     every verb prints a DIFF (source → rewritten) by default —\n" ++
   "                                     IMMUTABLE unless `-w` (write) is given (description-until-\n" ++
@@ -1551,6 +1578,14 @@ def main (args : List String) : IO UInt32 := do
       | ["laws"]                => runQueryLaws none
       | ["def", name, file]     => runQueryDef (some file) name
       | ["refs", name, file]    => runQueryRefs (some file) name
+      | ["hover", file, lineS, colS] =>
+          match lineS.toNat?, colS.toNat? with
+          | some line, some col => runQueryHover (some file) line col
+          | _, _                 => IO.eprintln usage; pure 1
+      | ["hover", lineS, colS] =>
+          match lineS.toNat?, colS.toNat? with
+          | some line, some col => runQueryHover none line col   -- stdin, no path to resolve imports
+          | _, _                 => IO.eprintln usage; pure 1
       | _                       => IO.eprintln usage; pure 1
     else if cmd == "rewrite" then
       -- `bang rewrite <verb> ...` (#81). `-w` may appear anywhere; every OTHER `--`-prefixed arg

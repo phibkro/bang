@@ -114,8 +114,10 @@ structure Diagnostic where
 
 /-- Render one `Span` as its JSON object: `{"line":L,"col":C,"endLine":EL,"endCol":EC}`. Built with
 `++` (not `s!"..."`) — Lean's string-interpolation syntax treats `{`/`}` as its OWN delimiters, so a
-literal brace can't be escaped inside an `s!` template; plain concatenation sidesteps the ambiguity. -/
-def spanJson (sp : Bang.Surface.Span) : String :=
+literal brace can't be escaped inside an `s!` template; plain concatenation sidesteps the ambiguity.
+`public`: `Bang.Query`'s `hover` verb (#52 slice 5) reuses this DIRECTLY as the ONE `Span`-rendering
+convention (SSoT) rather than inventing a second `{"line":...}` shape for its own `span` field. -/
+public def spanJson (sp : Bang.Surface.Span) : String :=
   "{\"line\":" ++ toString sp.line ++ ",\"col\":" ++ toString sp.col ++
   ",\"endLine\":" ++ toString sp.endLine ++ ",\"endCol\":" ++ toString sp.endCol ++ "}"
 

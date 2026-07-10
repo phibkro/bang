@@ -57,6 +57,7 @@ Documentation is **git-native** and agent-readable by design (ADR-0078): every d
 - [docs/notes/formatting-survey.md](docs/notes/formatting-survey.md) — Formatting-techniques survey (the canonical formatter #58: three-rung map · exact-vs-canonical · layout engine · zero-config)
 - [docs/notes/q38-handler-surface-survey.md](docs/notes/q38-handler-surface-survey.md) — Handler-surface + unification survey (Q38/Stage-7: the handler-syntax census · module≟trait≟effect unification attempts + failure modes · grade-as-dial prior art · ADR-inputs)
 - [docs/notes/god-file-seams.md](docs/notes/god-file-seams.md) — God-file seam map (TypeCheck/AbstractMachine split proposal · cut order · abbrev-risk register)
+- [docs/notes/spanned-surf-design.md](docs/notes/spanned-surf-design.md) — Spanned-Surf design (#52: located errors + hover · Q1-Q4 verdicts (no Surf/P change) · decl-granularity hover LANDED as bang query hover, slice 5)
 - [docs/notes/README.md](docs/notes/README.md) — All design notes (the exhaustive map of docs/notes/, grouped by status — generated)
 - [docs/notes/categorical-architecture.md](docs/notes/categorical-architecture.md) — Categorical reading (objects/morphisms: graded F⊣U adjunction · graded monad = paradigm · handler-algebra · the two-hop functor)
 - [docs/notes/spec-proof-discipline.md](docs/notes/spec-proof-discipline.md) — Proof discipline (PROOF_ORDER, sorry rules, axiom hygiene)
