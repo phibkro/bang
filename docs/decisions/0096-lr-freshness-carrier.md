@@ -2,25 +2,25 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: The last proof-layer wall gating `lr_fundamental`/`lr_fundamental_closed` (and one of `lr_sound`'s two residuals) is the `krelS_splitAtId_decomp` SKIP-arm resume relocation (`BinaryLR.lean:1030`, task #29 item 1). Machine-characterized on krnl3's `feat-lr-final-wall @ 2b0948e`: the relocation is a config-append INVERSE that needs `splitAtId cfg₁.1 nid = none` — an **id-uniqueness/freshness** fact — where the captured continuation `cfg₁.1 = Kᵢ ++ reinstall :: Ki'` has `Kᵢ` UNIVERSALLY quantified (any captured continuation). Both viable routes need it: the self-recursive strip (route B) and the un-append (route A). Route A **elaborates and terminates** (`AppendInvWF.lean`) but is **answer-type-refuted** at its last obligation (`Dⱼ = Dᵢ` fails at `P=[]`: `Dᵢ=X` vs `Dⱼ=F qᵣ Aᵣ`); the caller-discharge of a uniqueness *premise* (route B′) is **refuted** because the LR is freshness-free BY DESIGN — ADR-0058 route-1 dissolved `Canonical`/`CapsBelow`/`run_bump`, so no `WellCounted`/`FreshCfg` carrier is in scope to discharge it. **The carrier that must be RE-INTRODUCED already half-exists**: `CrelK`/`KrelS` ALREADY thread the real fresh-id counter `g` internally (ADR-0058 route-1 landed), and the kernel ALREADY has the exact well-formedness predicate (`StackBelow g K`, `Invariants.lean:39`, axiom-clean) and its consequences (`splitAtId_fresh`, `stackBelow_splitAtId`, `wellCounted_reachable`). What is MISSING is the assertion tying `g` to the stacks: `StackBelow g K₁ ∧ StackBelow g K₂`. **THE REACHING TEST (machine-decided, `da03e68` witness pair `BWitnessUniqueInResume.lean`, axiom-clean `[propext]`) narrows the shape space to a def-change**: the strip's needed fact lives on the resume conjunct's captured continuation `Kᵢ`, which `KrelS` binds UNIVERSALLY — `strip_mislocates_when_nid_in_prefix` refutes reaching it from a top-level premise (a concrete `Kᵢ = [handleF nid _]` mislocates the split), while `strip_with_fact` confirms the strip closes once the fact IS on `Kᵢ`. So the pure top-level shapes are REFUTED: **(ii) a lemma-chain premise and (iii) a consumer-side side judgment both CANNOT reach the bound `Kᵢ`** and are struck. The surviving shapes both put the fact inside `KrelS`: **(i′) a `KrelS` def-invariant on the two stack args** (the recursive resume-conjunct hyp `KrelS m … g Kᵢ Kᵢ'` then propagates `StackBelow g Kᵢ` for free — self-propagating, matches the `WellCounted` precedent), or **(i″) a fresh premise directly on the resume conjunct** (surgical, but the discharge threads at every producer). **RECOMMEND shape (i′)** for its self-propagation — re-introduces only the *fact*, not the *machinery* (no `Canonical`, no `run_bump`, no faked counter), and forces **no frozen-statement change** (the `Spec.lean` `lr_*` statements never mention `g`/`KrelS`/the carrier). The proof-layer close is ready to consume (`strip_with_fact` + the banked `KrelS_length_eq`); the cost is the FROZEN DEF-block change (`LR.lean:1131`) rippling to the ~20 `krelS_*` eq-lemmas, self-propagating so each intro maintains it inductively. **Load-bearing honest correction to the task-#29 census claim**: the carrier closes `lr_fundamental` + `lr_fundamental_closed` (census **18→20**), NOT `lr_sound` — `lr_sound` carries a SECOND, independent residual (the Q22 reshape↔raw-focus bridge, `Spec.lean:252`), and the `stackBelow_handlerCount_of_hasStack` obligation the carrier would impose on `krelS_refl` at `lr_sound`'s `g := handlerCount C` instantiation is UNPROVABLE from `HasStack` alone (`FreshCarrierDischargeProbe.lean`) — that IS the Q22 seam. So `lr_sound`'s third shed needs Q22 co-resolved; **18→21 is only reachable if this ADR is landed together with the Q22 bridge**, not by the carrier alone. **PARK priced**: ship v1 with the three `lr_*` flagged; the ◊4 binary-LR paper (`docs/papers/binary-lr-skeleton.md`) becomes a CPP-framed "machine-checked LR construction + the seam analysis" with `lr_fundamental` a single named residual — honest, publishable now, but the POPL/ICFP "closed contextual-equivalence result" claim stays out of reach.
 - **Depends-on**: 0058 (route-1 dissolved the freshness machinery this partially reverses — the reversal SCOPE turns on this), 0055 (global-fresh identity + `WellCounted`/`splitAtId_fresh` — the precedent the carrier re-uses), 0057 (the cap-escape half of task #29, item 2, resolved vacuously — orthogonal), 0016 (the LR is the ◊4 contextual-equivalence path, not the soundness diagonal)
 - **Relates-to**: #29 (the unit this ADR is the design consult for — item 1), Q22 (labelling-vs-closure cap-rep — the SECOND `lr_sound` residual, `docs/papers/binary-lr-skeleton.md` §8.1), `docs/notes/stage5-lr-design.md` (the sibling residual-map; the `_at`-twin shape precedent), `scratch/SkipRelocateProbe.lean` / `scratch/AppendInvWF.lean` / `scratch/KrelSUnappendProbe.lean` / `scratch/DecompFreshStrip.lean` / `scratch/BWitnessUniqueInResume.lean` (krnl3's wall witnesses + the (a)-vs-(b) reaching-test pair, `feat-lr-final-wall @ da03e68`), `scratch/FreshCarrierDischargeProbe.lean` (this lane's `krelS_refl`-discharge probe)
 
 ## Status
 
-Proposed — REVISED (2026-07-10, lane lrfresh). **Decision history, honestly:** the first draft
-recommended shape (iii) (consumer-side judgment) and the operator approved it ("iii approved").
-The reaching test (krnl3's `strip_mislocates_when_nid_in_prefix` witness) then REFUTED shape
-(iii) along with (ii): the freshness fact must land on the resume conjunct's universally-bound
-`Kᵢ`, which no construct OUTSIDE `KrelS`'s definition can bind — threading a side judgment
-through the conjunct IS a def change. The prior acceptance is therefore VACATED as premised on
-a refuted shape; the surviving options — (i′) a `KrelS` def-invariant on the two stacks
-(self-propagating; RECOMMENDED) and (i″) a freshness premise on the resume conjunct itself
-(build-arbitrated alternative) — are both frozen-DEF-block changes and await a fresh operator
-ruling. The `Spec.lean` lr_* statements stay byte-identical under both. The 18→20 census claim
-(carrier closes `lr_fundamental` + `lr_fundamental_closed`; `lr_sound`'s third shed needs Q22)
-is unchanged by the revision. Implementation lane (lrcarry) is HELD pending the re-ruling.
+Accepted (2026-07-10, operator re-ruling: shape **(i′)** — the `KrelS` def-invariant
+`StackBelow g` on the two stacks, self-propagating via the recursive conjuncts; Q22 stays HELD,
+the implementation targets the 18→20 shed). **Decision history, honestly:** the first draft
+recommended shape (iii) and the operator approved it; the reaching test (krnl3's
+`strip_mislocates_when_nid_in_prefix` witness) then REFUTED (iii) along with (ii) — the
+freshness fact must land on the resume conjunct's universally-bound `Kᵢ`, which no construct
+outside `KrelS`'s definition can bind — so that acceptance was vacated and the operator
+re-ruled on the surviving pair, taking the recommendation. (i″) (premise on the resume
+conjunct) remains the build-arbitrated fallback if (i′)'s self-propagation walls. The
+`Spec.lean` lr_* statements stay byte-identical; the frozen-DEF-block change is sanctioned BY
+THIS RULING for the invariant conjunct ONLY. Census: carrier → `lr_fundamental` +
+`lr_fundamental_closed` shed (18→20); `lr_sound`'s third shed needs Q22 (held).
 
 ## Context
 
