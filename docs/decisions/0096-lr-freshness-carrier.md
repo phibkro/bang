@@ -99,6 +99,110 @@ If neither `CrelK`-def-premise (b) nor per-frame resume conjunct is acceptable, 
 
 `Bang/Witness/CarrierForkA.lean` (Q1 refutation, `[]`/`[propext,Quot.sound]`) · `Bang/Witness/CarrierForkB.lean` (Q2 reaching test, `[]`) · `Bang/Witness/CarrierForkBSkeleton.lean` (Q2 discharge-chain skeleton, `[]`/`[propext,Quot.sound]` + held Q22 `sorry`) · `Bang/Witness/CarrierClass1.lean` (Q3, `[]`/`[propext,Classical.choice,Quot.sound]`) · `BinaryLR.lean:1131/1151` (`KrelS_g_cast` contravariant recursion) · `BinaryLR.lean:1196-1197/1242-1243/1278-1279/1475-1476` (class-2 MINT sorries) · `BinaryLR.lean:736-737/…` (class-1 sorries) · `Invariants.lean:357` (`stackInc_append_of_above`, the class-1 combinator).
 
+## PROPOSED AMENDMENT ② — the ANSWER-TYPE fork (lane answerfork, 2026-07-10, AWAITING OPERATOR RULING)
+
+**Context.** With the `StackInc`+class-1+class-2 carrier LANDED (`feat-lr-carrier-stackinc-wip @ def27451`),
+the LOCATION-determinacy residual is closed (`skip_strip_from_stackInc`, banked). The `crelK_fund_up`
+wall (`BinaryLR.lean:1231`, census3-sharpened) names the REMAINING residual: the resume arm's inner
+relation must be supplied at the DEEP catcher's answer `Dᵢ`, and the only source re-answers `D → Dᵢ`
+(the route-A `Dⱼ = Dᵢ` refutation, `c8b5909`). Two forks were tabled to close it:
+
+- **(a) answer-type-pinning CARRIER** — carry each frame's catcher answer as DATA (an answer-indexed
+  frame relation / def-invariant), NOT as an equation `Dⱼ = Dᵢ` (which route-A pre-refutes).
+- **(b) combined index-WF LEMMA** (no def change) — a single WF induction producing (inner relation +
+  resume conjunct) at a consistently-threaded existential answer.
+
+**VERDICT (machine-arbitrated, lane `design-lr-answer-fork` off `def27451`):**
+
+> **The census "answer-type wall" is RE-LOCATED, not at `crelK_fund_up` but ONE LEVEL DEEPER — inside
+> `krelS_splitAtId_decomp`'s SKIP arm.** The `crelK_fund_up` resume arm itself has **NO** `D → Dᵢ`
+> re-answering: routed through the FULL decomp (which delivers `hin` at answer `Dᵢ` AND the resume
+> conjunct's inner premise at the SAME `Dᵢ`), it fires by construction, mod tractable index/row/grade
+> casts (`AnswerForkCompose.decomp_route_fires_no_reanswer`, axiom-clean `[propext,Quot.sound]`). The
+> `D → Dᵢ` re-answering the census names lives ONLY on the `krelS_dispatch_resume` route (which delivers
+> the resume conjunct WITHOUT `hin`, forcing reconstruction from `hres` at answer `D`) — and, transitively,
+> in the decomp's own SKIP arm (whose reconstructed frame outputs at `Dᵢ` while its source `hres`
+> outputs at `D`, `AnswerForkSkipReanswer.skip_reanswer_D_ne_Di`). So the decision is:
+> **fork (a) is the viable frame; fork (b) alone cannot pin the answer.** But the required DATA is
+> ALREADY present — it is `krelS_splitAtId_decomp`'s existential `Dᵢ`. No NEW carrier field is needed;
+> the answer just must be threaded consistently through the SKIP relocation, which the LANDED
+> `StackInc` carrier's location determinacy makes a boundary-decomp (a `Dstrip`-existential), not a
+> cross-answer equation.**
+
+### Why (b) alone cannot close it — the answer is not location-determined
+
+`splitAtId : EvalCtx → Nat → Option (EvalCtx × Handler × EvalCtx)` returns **no `CTy`** — the answer
+type is ABSENT from the location data. `krelS_splitAtId_decomp`'s `Dᵢ` is `∃`-bound, and the same nil
+prefix `[]` self-relates at MANY answers (`AnswerForkSkipReanswer.boundary_answer_not_location_determined`,
+axiom-clean `[propext]`: `[]` relates at answer `F q A` AND at `F q unit`). So a WF LEMMA (fork b) with
+no carrier storing the answer has nothing forcing two decomps at the same `nid` to agree on `Dᵢ` — the
+existential threading census3 hoped for is UNAVAILABLE without a DATA carrier. Fork (b) is refuted AS A
+STANDALONE.
+
+### Why the answer-as-DATA is already in scope (the (a)-realized-through-existing-existential refinement)
+
+The `krelS_splitAtId_decomp` output ALREADY carries the answer as data: its inner `hin : KrelS n C Dᵢ
+e g K₁ᵢ K₂ᵢ` and its resume conjunct's inner premise `KrelS m Cᵢ' Dᵢ εᵢ' g Kᵢ Kᵢ'` share the SAME
+existential `Dᵢ`. So on the DECOMP route the answer unifies BY CONSTRUCTION — no equation, no re-answer
+(`AnswerForkCompose.decomp_route_fires_no_reanswer`). Fork (a)'s "carry the answer as DATA, not an
+equation" is thus realized THROUGH the decomp's existing existential — NOT a new frame field. The
+`nil_forces_grade_equality` witness confirms the only nil-forced obstruction is a returner-GRADE
+equality `q = qᵣ` (caller-choosable, `qᵣ := q`), in the tractability class of state/txn reinstall
+(`rfl`), NOT the refuted cross-answer.
+
+### The remaining residual, honestly
+
+The decomp's SKIP-arm sorry (`BinaryLR.lean:1138`) is NOT closed by this probe — its reconstructed
+frame outputs at `Dᵢ` while `hres` outputs at `D`. My `AnswerForkSkip.skip_strip_answer_is_decomp_existential`
+shows the STRIP's answer comes from a boundary-decomp existential (DATA, not a re-answer equation) — but
+it RIDES the decomp's own sorry (transitive `sorryAx`, HONESTLY flagged), so it is a SHAPE confirmation,
+not an independent close. The path to close it: complete the SKIP relocation by (i) LIFT the inner
+dispatch over `Ki'` to `K₁'` (`dispatchOn_append_outer`, `AnswerForkSkip.skip_lift_direct` axiom-clean),
+(ii) apply `hres`, (iii) STRIP the appended tail via a boundary-decomp at `nid` (located by
+`skip_strip_from_stackInc`), reading the deep answer `Dᵢ` off the boundary decomp's existential. Step
+(iii) is a self-referential decomp (the SKIP arm calling the decomp on the RESULT relation); it needs a
+WELL-FOUNDED measure so the recursion terminates — the fork-(b) WF SHAPE is right FOR THE STRIP, but
+CONSUMING the fork-(a) answer-as-data (the decomp existential), not producing it from nothing. **So the
+true answer is a HYBRID: (a)'s answer-as-data (already in the decomp existential) + (b)'s WF induction
+(for the SKIP self-recursion), NEITHER as a NEW `KrelS`-def field.**
+
+### Recommendation + sites-to-reprove
+
+**Adopt NEITHER (a) as a new def-field NOR (b) as a standalone lemma. Complete `krelS_splitAtId_decomp`'s
+SKIP arm (`BinaryLR.lean:1138`) via the LANDED carrier's boundary-decomp** — the answer threads as the
+decomp's existential `Dᵢ`, the location by `skip_strip_from_stackInc`, the WF measure on `(index,
+Ki'.length)` for the self-referential strip. `crelK_fund_up` (`:1263`) then routes through the FULL
+decomp (`decomp_route_fires_no_reanswer` is the ready composition). NO frozen-DEF change; NO `Spec.lean`
+change.
+
+| change | edit surface | sites |
+|---|---|---|
+| close `krelS_splitAtId_decomp` SKIP sorry (`:1138`) | ONE arm: lift (`dispatchOn_append_outer`) + apply `hres` + strip (`skip_strip_from_stackInc` + boundary-decomp at `nid`) + WF measure | **1 sorry** |
+| wire `crelK_fund_up` (`:1263`) through the FULL decomp | the resume arm consumes the decomp's `hin`+conjunct via `decomp_route_fires_no_reanswer`'s composition (index/row/grade casts) | **1 sorry** |
+
+### Census math (corrected under the winner)
+
+Closing the decomp SKIP sorry (`:1138`) + `crelK_fund_up` (`:1263`) sheds `lr_fundamental` +
+`lr_fundamental_closed` → **census 18→20**, IDENTICAL to the first amendment's target — because
+`lr_fundamental := crelK_fund` routes only through the mutual block → `crelK_fund_up` → the decomp, and
+the decomp's answer-coherence is the LAST residual on that path. `lr_sound`'s third shed (18→21) STILL
+needs Q22 (the `krelS_refl` reshape seam, held) — unchanged. **The answer-type fork does NOT reopen the
+census; it identifies the LAST proof-only obligation on the 18→20 path.** No genuinely-FALSE statement
+was found (nothing needs a hypothesis added / reshape): the wall is HARD (a WF self-recursion consuming
+an existential), not a refutable statement. The `Spec.lean` `lr_*` statements stay byte-identical.
+
+### Ground (lane answerfork, `design-lr-answer-fork` off `def27451`)
+
+`scratch/AnswerForkProbe.lean` (fork-(a) equation-refutation + data-survives-gcast + hole/answer
+separations, `[propext]`) · `scratch/AnswerForkDecomp.lean` (`nil_forces_grade_equality` grade-not-answer,
+`[propext]`) · `scratch/AnswerForkCompose.lean` (`decomp_route_fires_no_reanswer` — the SUCCESS skeleton,
+axiom-clean `[propext,Quot.sound]`) · `scratch/AnswerForkSkip.lean` (`skip_lift_direct` `[propext]` +
+`skip_strip_answer_is_decomp_existential` — SHAPE, rides decomp `sorryAx`, flagged) ·
+`scratch/AnswerForkSkipReanswer.lean` (`skip_reanswer_D_ne_Di` + `boundary_answer_not_location_determined`,
+`[propext]`) · `BinaryLR.lean:1138` (decomp SKIP sorry), `:1263` (`crelK_fund_up` sorry), `:1231` (the
+census3 wall comment) · `krelS_dispatch_resume` (axiom-clean, the no-`hin` route) vs
+`krelS_splitAtId_decomp` (`sorryAx`, the `hin`+conjunct route).
+
 ## Context
 
 ### The wall (task #29, item 1), machine-characterized
