@@ -6,5 +6,5 @@ let main =
     let b = sched.pick(2) in
     a + b
   with Choice as sched {
-    pick(n) => ret 1
+    pick(n) => 1
   }

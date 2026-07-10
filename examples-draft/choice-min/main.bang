@@ -4,5 +4,5 @@ let main =
   handle
     sched.pick(10)
   with Choice as sched {
-    pick(n) => ret 0
+    pick(n) => 0
   }

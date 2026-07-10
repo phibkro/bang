@@ -494,6 +494,15 @@ half is on main — verified `no handleCustomS in Bang/`). So the drafts are val
 grammar (ADR-0095) and the LANDED perform/effect-decl surface, not a live `bang eval`. The moment the
 surface lands, steps 2–5 above make Drafts A and B real.
 
+**VALIDATED (manager, 2026-07-10, hours after the done-call — Stage-7 landed at `1284c8e`):**
+`bang run` on Drafts A and B returns EXACTLY the expected values — `choice-min → 0`,
+`choice-two → 2` (the Stage-7 gate clone's binary, MATCH on both). ONE syntax correction was
+needed: the drafts wrote clause bodies as `pick(n) => ret 0` — but `ret` is the TYPING shape
+(D4), supplied by elaboration; the landed surface spells the body BARE (`pick(n) => 0`,
+matching `examples/handle-custom-tracer`'s `fetch(n) => n * 10`). D5's implicit tail-resume is
+implicit in the SPELLING too, not just the semantics. Drafts corrected in place. Draft C
+(sim-KV) still waits on G1, as designed.
+
 ---
 
 ## Sources

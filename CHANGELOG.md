@@ -127,6 +127,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — bang query v1 — the agent LSP as CLI verbs over the typed pipeline (#80, tier 3) (`3e6bd3b`)
 - **query** — bang query tier 1+2 — dump as the versioned fact base, verbs as projections (#80) (`2cda549`)
 - **lr** — close the crelK_fund handleCustom arm — term-measured mutual rebuild (task #16) (`5c2c03c`)
+- **surface** — Stage 7 lands — handle…with for user effects, e2e verified (#44 Stage 7, ADR-0095) (`1284c8e`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
