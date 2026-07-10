@@ -204,6 +204,48 @@ def extract_stdlib(text):
     return rows
 
 
+def extract_generic_prelude(text):
+    """(name, sig) for each `genericPreludeFnSrcs` entry (TypeCheck.lean).
+
+    Unlike `stdlibFnSrcs`, these are non-recursive `let NAME = { fun ... } in 0` thunks with NO
+    top-level type annotation on the string itself (they're `fun` literals, not `let rec : T =`)
+    — so NAME comes from the HEAD string literal, but SIG comes from the `-- `NAME args : SIG``
+    doc-comment line immediately preceding the entry (the convention every entry in this list
+    already follows). A comment-less entry falls back to `None` (renders as a source pointer)
+    rather than guessing — same discipline as `stdlibFnSrcs`'s `reverse` cell.
+
+    A HEAD (list-element start) is a `"let NAME = ..."` string literal preceded — modulo
+    whitespace and `--` comment lines — by `[` or `,`; a CONTINUATION string joined by `++`
+    (e.g. `isAlpha`'s body nests its own `let lower = ...`) is preceded by `++` and must NOT be
+    mistaken for a new entry (the #105 bug this guards: a naive scan over every `"let \\w+...` "
+    match in the block double-counts nested `let`s inside a multi-string body)."""
+    m = re.search(r"def genericPreludeFnSrcs\b.*?:=\s*\n\s*\[(.*?)\]\s*\n", text, re.S)
+    if not m:
+        sys.exit("gen-reference: could not locate `def genericPreludeFnSrcs` — the generic-prelude section is keyed off it.")
+    block = "[" + m.group(1)  # restore the opening `[` the capture group excluded, so the FIRST
+    # entry's "preceded by `[`" check (below) sees it too, not just entries after a `,`.
+    rows = []
+    for hm in re.finditer(r'"(let \w+.*?)"', block):
+        nm = re.match(r"let (\w+)\s*=", hm.group(1))
+        if not nm:
+            continue
+        # look at what precedes this string literal, skipping blank/comment lines: a REAL head is
+        # preceded by `[` or `,`; a continuation (nested inside a `++`-joined multi-string body) is
+        # preceded by `++` — skip those.
+        preceding_raw = block[:hm.start()]
+        stripped = re.sub(r"--[^\n]*\n", "\n", preceding_raw)  # drop comment lines first
+        tail = stripped.rstrip()
+        if not (tail.endswith("[") or tail.endswith(",")):
+            continue
+        name = nm.group(1)
+        sig_matches = re.findall(r"--\s*`" + re.escape(name) + r"[^`]*:\s*([^`]+)`", preceding_raw)
+        sig = sig_matches[-1].strip() if sig_matches else None
+        rows.append((name, sig))
+    if not rows:
+        sys.exit("gen-reference: `genericPreludeFnSrcs` parsed to no functions — the head-literal shape changed.")
+    return rows
+
+
 def parse_examples(path):
     """(section, comment, kind, src, result) for each runYieldsInt / display #guard."""
     lines = path.read_text().splitlines()
@@ -586,6 +628,22 @@ def render():
     L.append("")
     L.append("Curried (multi-arg) `let rec`s type `… ! {Div}` — the #47 multi-arg gap (ADR-0073), a sound")
     L.append("over-approximation: they terminate but the certifier can't prove it, so they run correctly.")
+    L.append("")
+
+    L.append("### Generic prelude functions")
+    L.append("")
+    L.append("Also FREE in every program — sourced from `genericPreludeFnSrcs` (`Bang/Frontend/TypeCheck.lean`),")
+    L.append("the ⊥-row (non-recursive) companions to the tagged-sum types (`Option`/`Result`/the built-in")
+    L.append("sum `Either`) plus the type-agnostic first-slice prelude (issue #105). Injected ONLY when a")
+    L.append("program mentions the name (unlike the unconditional string stdlib above), and skipped entirely")
+    L.append("if the program redeclares `Option`/`Result` (a coarse gate — shared by every entry in this list,")
+    L.append("even the type-agnostic ones). A user binding of the same name shadows the injected one.")
+    L.append("")
+    L.append("| Function | Signature |")
+    L.append("|---|---|")
+    for name, sig in extract_generic_prelude(TYPECHECK.read_text()):
+        cell = f"`{sig}`" if sig else "— (see `genericPreludeFnSrcs`)"
+        L.append(f"| `{name}` | {cell} |")
     L.append("")
 
     L.append("## Examples")

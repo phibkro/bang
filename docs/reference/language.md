@@ -371,6 +371,36 @@ not bare `concat …`. A user binding of the same name shadows the injected one 
 Curried (multi-arg) `let rec`s type `… ! {Div}` — the #47 multi-arg gap (ADR-0073), a sound
 over-approximation: they terminate but the certifier can't prove it, so they run correctly.
 
+### Generic prelude functions
+
+Also FREE in every program — sourced from `genericPreludeFnSrcs` (`Bang/Frontend/TypeCheck.lean`),
+the ⊥-row (non-recursive) companions to the tagged-sum types (`Option`/`Result`/the built-in
+sum `Either`) plus the type-agnostic first-slice prelude (issue #105). Injected ONLY when a
+program mentions the name (unlike the unconditional string stdlib above), and skipped entirely
+if the program redeclares `Option`/`Result` (a coarse gate — shared by every entry in this list,
+even the type-agnostic ones). A user binding of the same name shadows the injected one.
+
+| Function | Signature |
+|---|---|
+| `mapOption` | `Option a -> Option b` |
+| `mapResult` | `Result e a -> Result e b` |
+| `bimap` | `(e + a) -> (f + b)` |
+| `resultToEither` | `Result e a -> (e + a)` |
+| `eitherToResult` | `(e + a) -> Result e a` |
+| `optionToEither` | `Option a -> (Unit + a)` |
+| `eitherToOption` | `(Unit + a) -> Option a` |
+| `withDefault` | `a -> Option a -> a` |
+| `fst` | `(a, b) -> a` |
+| `snd` | `(a, b) -> b` |
+| `abs` | `Int -> Int` |
+| `min` | `Int -> Int -> Int` |
+| `max` | `Int -> Int -> Int` |
+| `const` | `a -> b -> a` |
+| `isDigit` | `Char -> Unit + Unit` |
+| `isAlpha` | `Char -> Unit + Unit` |
+| `toUpper` | `Char -> Char` |
+| `toLower` | `Char -> Char` |
+
 ## Examples
 
 Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is the inferred type.
@@ -512,6 +542,32 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `match (($eitherToResult) (($resultToEither) (Err(3)))) { Err(e) -> e, Ok(a) -> 99 }` ⟹ `3`
 - `match (($eitherToOption) (($optionToEither) (Some(7)))) { None -> 99, Some(v) -> v }` ⟹ `7`  — `eitherToOption ∘ optionToEither = id` on `Some`/`None` (Option ≅ Either Unit).
 - `match (($eitherToOption) (($optionToEither) (None : Option Int))) { None -> 0, Some(v) -> v }` ⟹ `0`
+### Validation ⑨k — issue #105 FIRST-SLICE PRELUDE: `fst`/`snd`/`abs`/`min`/`max`/`withDefault`/
+
+- `($fst) (3, 4)` ⟹ `3`  — `fst`/`snd` — the dogfood-json TOP papercut. `p` a literal pair.
+- `($snd) (3, 4)` ⟹ `4`
+- `($abs) (0 - 7)` ⟹ `7`  — `abs` — negative and positive/zero branches (both dogfooders hand-rolled `0 - n`).
+- `($abs) 7` ⟹ `7`
+- `($abs) 0` ⟹ `0`
+- `(($min) 3) 7` ⟹ `3`  — `min`/`max` — curried; both orderings (the `<` branch and its else).
+- `(($min) 7) 3` ⟹ `3`
+- `(($max) 3) 7` ⟹ `7`
+- `(($max) 7) 3` ⟹ `7`
+- `(($const) 5) 9` ⟹ `5`  — test-local `const` at ⑦b, proving the injected one generalizes the same way.
+- `(($const) 7) (1, 2)` ⟹ `7`
+- `(($withDefault) 0) (Some(9))` ⟹ `9`  — two ctors — mirrors the `mapOption`/`mapResult` Err/Ok-both-arms discipline above).
+- `(($withDefault) 42) (None : Option Int)` ⟹ `42`
+- `if (($isDigit) (Char 48)) then 1 else 0` ⟹ `1`  — CHAR KIT — `isDigit`: the '0'-'9' boundary (47 fails-low, 48/57 the inclusive ends, 58 fails-high).
+- `if (($isDigit) (Char 57)) then 1 else 0` ⟹ `1`
+- `if (($isDigit) (Char 97)) then 1 else 0` ⟹ `0`
+- `if (($isAlpha) (Char 65)) then 1 else 0` ⟹ `1`  — `isAlpha`: both letter ranges (upper/lower) true, a digit false — the non-letter edge.
+- `if (($isAlpha) (Char 122)) then 1 else 0` ⟹ `1`
+- `if (($isAlpha) (Char 53)) then 1 else 0` ⟹ `0`
+- `match (($toUpper) (Char 97)) { Char(n) -> n }` ⟹ `65`  — `toUpper`/`toLower` — TOTAL: the letter-shift case AND the non-letter passthrough case each.
+- `match (($toUpper) (Char 53)) { Char(n) -> n }` ⟹ `53`
+- `match (($toLower) (Char 65)) { Char(n) -> n }` ⟹ `97`
+- `match (($toLower) (Char 53)) { Char(n) -> n }` ⟹ `53`
+- `let abs = { fun n => 999 } in ($abs) (0 - 7)` ⟹ `999`  — shadowing: a user `let abs = …` in the body WINS over the injected one (lexical scope contract).
 ### #90 — row annotations (`T ! {…}`) could only name the four BUILT-IN effects (`throws`/
 
 - `effect Net { fetch : Int -> Int } let get2 = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in handle (($get2) net) with Net as net { fetch(n) => n * 10 }` ⟹ `30`  — types, and RUNS end to end (the #84 gap-1 pipeline that was `checkProg`-only until this fix).
