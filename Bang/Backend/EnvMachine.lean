@@ -44,10 +44,10 @@ are pure structural data). The EFFECT arms (`perform`/`handle`/state/txn/custom)
 the id-first OP dispatch are slice 2 — the Stage-4 κ machinery is
 representation-orthogonal and should thread unchanged onto this env-shaped focus.
 
-The `evalE_agrees_evalD` **correspondence STATEMENT** (the PLFA `γ≈ₑσ` shape) compiles
-here with a `sorry` body — proving it is slice 3, and its statement must generalize
-from the empty env to an arbitrary `ρ` + the `≈ₑ` premise for the induction to fire
-(PLFA's own warning, `envsem-survey.md` §2).
+The `evalE_agrees_evalD` **correspondence** (the PLFA `γ≈ₑσ` shape) is PROVEN here (slice 3,
+ruling #6/#1): its `_gen`/`_effect` engine generalizes from the empty env to an arbitrary `ρ`
++ the `≈ₑ` premise so the induction fires (PLFA's own warning, `envsem-survey.md` §2), and the
+top-level headline is the empty-store corollary.
 
 ## Why this is a NEW file, not an edit to `evalD`
 
@@ -2084,13 +2084,13 @@ theorem evalE_agrees_evalD_pure :
     | oom => simp [evalE] at h
     | wrong s => simp [evalE] at h
 
-/-! ## Slice 3b — the effect-store correspondence (STATEMENT + RESUME MAP; the weave is a fresh unit)
+/-! ## Slice 3b — the effect-store correspondence (PROVEN; ruling #6/#1)
 
 The pure fragment (`evalE_agrees_evalD_pure`, above) covers `EffectFree` M over empty stores. 3b closes
 the full headline `evalE_agrees_evalD` (below) by relaxing `EffectFree` and threading a correspondence
 between `evalE`'s MVal-keyed stores (σ/τ/κ) and `evalD`'s Val-keyed stores. This block STATES that
-correspondence + the `Good`-extension over store-held values so the effect theorem COMPILES with a
-labelled sorry; the weave is a fresh IC (envm3).
+correspondence + the `Good`-extension over store-held values; the `_gen`/`_effect` engine and the
+custom-handle install arm are PROVEN (axiom-clean), so the effect theorem and headline are sorry-free.
 
 KEY STRUCTURAL FACT (why this is SIMPLER than `run_evalD`'s bridge): both machines key stores by the
 SAME generative IDENTITY `Nat` (`Label = Nat`; `evalD` pushes `SStore.push id s` at the mint), and both
