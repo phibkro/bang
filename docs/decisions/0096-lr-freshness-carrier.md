@@ -203,6 +203,40 @@ axiom-clean `[propext,Quot.sound]`) · `scratch/AnswerForkSkip.lean` (`skip_lift
 census3 wall comment) · `krelS_dispatch_resume` (axiom-clean, the no-`hin` route) vs
 `krelS_splitAtId_decomp` (`sorryAx`, the `hin`+conjunct route).
 
+### CENSUS4 IMPLEMENTATION ATTEMPT — the hybrid built, ONE sub-obligation WALLED (lane census4, build-grounded)
+
+The RULED hybrid (amendment ② recommendation) was IMPLEMENTED to its wall on `feat-lr-carrier-stackinc-wip`.
+Banked GREEN (`just verify` exit 0):
+
+- **Binop LR arm CLOSED** (`crelK_binop` + helpers, `BinaryLR.lean` after `crelK_unfold`, axiom-clean
+  `[propext,Classical.choice,Quot.sound]`). LOAD-BEARING census correction: `lr_fundamental := crelK_fund
+  := crelK_fund_at` — and `crelK_fund_at`'s **`Comp.binop` arm** (formerly `BinaryLR.lean:1794`) was ALSO
+  `sorryAx`, on the `lr_fundamental` path. So the amendment's "the decomp's answer-coherence is the LAST
+  residual on the 18→20 path" was INCOMPLETE — the binop arm was a THIRD residual. It is now closed (the
+  twin of `crelK_unfold`: `VrelK int` literal-equality forces equal `vint` operands ⇒ equal δ-reducts ⇒
+  `CrelK_head_step`+`crelK_ret`). Sorry count 63→61.
+- **`Dᵢ = C'` answer-coherence conjunct ADDED to `krelS_splitAtId_decomp`'s OUTPUT** (the inner answer =
+  outer boundary hole; threads trivially — HIT `rfl`, SKIP inherits from `ih`). This is the fork-(a)
+  answer-as-DATA the amendment names, now a real output field. Builds clean.
+- **The WF `(n, K₁.length)` recursion + lift+strip skeleton** elaborates: `dispatchOn_append_outer` lifts
+  the goal dispatch to `K₁'`, `hres` fires, `skip_strip_from_stackInc` locates the boundary, the strip
+  self-recurses at `m < n` (index-decreasing). ALL of this composes.
+
+**THE WALL (the ONE remaining sub-obligation, `BinaryLR.lean` SKIP arm):** the strip's boundary-decomp
+delivers the inner relation at answer `Db` with `Db = Cb'` (its OWN `Dᵢ=C'` conjunct), where `Cb'` is the
+strip's outer hole over the SHARED tail `Ko'`/`K₂ₒ`. Closing needs `Cb' = C'` (the ORIGINAL outer hole over
+the SAME `Ko'`/`K₂ₒ` at the SAME answer `D`) — i.e. **"a `KrelS` hole is determined by (stack pair, answer)"
+(`krelS_hole_det`). This is REFUTED for a `letF`/`appF`-headed `Ko'`:** the hole `F q A` / `arr q A B` carries
+a value-type `A` the frame body does NOT pin, so two decomps of the same tail may relate at different `A`
+(the `letF` clause existentially binds `A`). So the amendment's "answer-as-data through the existential" is
+NECESSARY but NOT SUFFICIENT — the strip's `Db` must additionally be TIED to the original `Dᵢ`, and that tie
+needs hole-determinacy which is false. **Census4 verdict: the 18→20 shed is NOT reached; `lr_fundamental` +
+`lr_fundamental_closed` still `sorryAx` (SKIP + `crelK_fund_up`). The amendment stays PROPOSED.** The
+surviving route is a `KrelS`-def-CONCLUSION strengthening (carry hole-determinacy on the resume conjunct's
+conclusion, ~28 sites) OR a `shape (c)` fuel-indexed re-index — BOTH beyond the "no def-change" envelope the
+hybrid promised. NEXT: operator ruling on whether to pay a def-CONCLUSION change (larger than the amendment
+priced) or PARK the `lr_*` cluster (ship v1 flagged, per the PARK section above).
+
 ## Context
 
 ### The wall (task #29, item 1), machine-characterized

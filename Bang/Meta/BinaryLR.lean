@@ -265,6 +265,73 @@ theorem crelK_unfold {n : Nat} {A : VTy Eff Mult} {e : Eff} {w₁ w₂ : Val}
     rw [CrelK]; intro g D K₁ K₂ hsb₁ hsb₂ hK
     exact crelK_ret g D K₁ K₂ hK hcw₁.fold_inv hcw₂.fold_inv (hu m hm) hsb₁ hsb₂
 
+/-! ### ◊4.5b `binop` δ-rule (ADR-0065 stage ④) — the twin of `crelK_unfold`.
+
+`binop op (vint a) (vint b) ↦ ret (op.eval a b)` is a pure head-step. `VrelK int` is literal-equality
+(`BaseRel`), so two `VrelK int`-related operand closings are EQUAL `vint` literals ⇒ both sides step to
+the SAME reduct `ret (op.eval a b)`, and the reduct self-relates at `BinOp.resTy op` (int or `Bool =
+sum unit unit`). `CrelK_head_step` + `crelK_ret`. -/
+
+/-- `boolVal b` is closed (no de Bruijn indices — `inl/inr vunit`). -/
+theorem boolVal_closed (b : Bool) : Val.Closed (boolVal b) := by
+  cases b <;> (intro k; rfl)
+
+/-- The `binop` reduct `op.eval a b` is closed (a `vint` literal or a `boolVal`). -/
+theorem binopEval_closed (op : BinOp) (a b : Int) : Val.Closed (BinOp.eval op a b) := by
+  cases op <;> simp only [BinOp.eval]
+  case add => intro k; rfl
+  case sub => intro k; rfl
+  case mul => intro k; rfl
+  case div => intro k; rfl
+  case lt => exact boolVal_closed _
+  case eq => exact boolVal_closed _
+
+/-- `boolVal b` self-relates at `Bool = sum unit unit` (both `inl/inr vunit` self-relate at `unit`). -/
+theorem vrelK_boolVal_self (n : Nat) (b : Bool) :
+    VrelK (Eff := Eff) (Mult := Mult) n (VTy.sum VTy.unit VTy.unit) (boolVal b) (boolVal b) := by
+  cases b <;> simp only [boolVal, VrelK, BaseRel]
+  · exact Or.inl ⟨_, _, rfl, rfl, rfl, rfl⟩
+  · exact Or.inr ⟨_, _, rfl, rfl, rfl, rfl⟩
+
+/-- The `binop` reduct self-relates at its result type: `vint` self-relates at `int` (`BaseRel`),
+`boolVal` self-relates at `sum unit unit` (`vrelK_boolVal_self`). -/
+theorem vrelK_binopEval_self (n : Nat) (op : BinOp) (a b : Int) :
+    VrelK (Eff := Eff) (Mult := Mult) n (BinOp.resTy op) (BinOp.eval op a b) (BinOp.eval op a b) := by
+  cases op <;> simp only [BinOp.resTy, BinOp.eval]
+  case add => simp only [VrelK, BaseRel]; exact ⟨_, rfl, rfl⟩
+  case sub => simp only [VrelK, BaseRel]; exact ⟨_, rfl, rfl⟩
+  case mul => simp only [VrelK, BaseRel]; exact ⟨_, rfl, rfl⟩
+  case div => simp only [VrelK, BaseRel]; exact ⟨_, rfl, rfl⟩
+  case lt => exact vrelK_boolVal_self n _
+  case eq => exact vrelK_boolVal_self n _
+
+/-- `closeC` distributes over `binop` (δ-rule: operands are values, no binders crossed). -/
+theorem closeC_binop (δ : List Val) (op : BinOp) (v w : Val) :
+    closeC δ (Comp.binop op v w) = Comp.binop op (closeV δ v) (closeV δ w) := by
+  induction δ generalizing v w with
+  | nil => rfl
+  | cons u δ' ih => simp only [closeC, closeV, Comp.subst, Val.subst]; exact ih _ _
+
+/-- ◊4.5b `binop` of `VrelK`-int-related operands (ADR-0065 stage ④). `binop op (vint a) (vint b) ↦
+ret (op.eval a b)` (δ-rule CIStep; both sides EQUAL by `VrelK int` literal-equality); the ▷-head-step
+needs the reduct `ret (op.eval a b)` self-related at each `m < n`, from `crelK_ret` +
+`vrelK_binopEval_self`. The twin of `crelK_unfold`. shape: biernacki-popl18 §5.4. -/
+theorem crelK_binop {n : Nat} {op : BinOp} {v₁ v₂ w₁ w₂ : Val}
+    (hv : VrelK (Eff := Eff) (Mult := Mult) n VTy.int v₁ v₂)
+    (hw : VrelK (Eff := Eff) (Mult := Mult) n VTy.int w₁ w₂) :
+    CrelK n (CTy.F (1 : Mult) (BinOp.resTy op)) (⊥ : Eff)
+      (Comp.binop op v₁ w₁) (Comp.binop op v₂ w₂) := by
+  simp only [VrelK, BaseRel] at hv hw
+  obtain ⟨a, rfl, rfl⟩ := hv
+  obtain ⟨b, rfl, rfl⟩ := hw
+  refine CrelK_head_step (c₁' := Comp.ret (BinOp.eval op a b)) (c₂' := Comp.ret (BinOp.eval op a b)) ?_ ?_ ?_
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+  · exact ⟨fun _ _ => rfl, by intro v; simp⟩
+  · intro m _hm
+    rw [CrelK]; intro g D K₁ K₂ hsb₁ hsb₂ hK
+    exact crelK_ret g D K₁ K₂ hK (binopEval_closed op a b) (binopEval_closed op a b)
+      (vrelK_binopEval_self m op a b) hsb₁ hsb₂
+
 
 /-! ### B.3′b `CrelK` frame extensions + `compat` cores (`letC`/`app`)
 
@@ -1035,6 +1102,13 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
     ∃ (K₂ᵢ K₂ₒ : Stack) (h' : Handler) (Dᵢ : CTy Eff Mult) (C' : CTy Eff Mult) (e' : Eff),
       Bang.splitAtId K₂ nid = some (K₂ᵢ, h', K₂ₒ) ∧ HandlerRel Eff Mult n h h' ∧
       KrelS n C Dᵢ e g K₁ᵢ K₂ᵢ ∧ KrelS n C' D e' g K₁ₒ K₂ₒ
+      -- ADR-0096 amendment ② (census4 RULED hybrid): the ANSWER-COHERENCE datum. The inner region's
+      -- answer `Dᵢ` (what `K₁ᵢ` reduces TO) EQUALS the outer boundary frame's hole `C'` (`handleF nid h`
+      -- preserves its hole; the resume value flows out of `K₁ᵢ` INTO that frame). Threads trivially: HIT
+      -- sets `Dᵢ = C' = C`; every SKIP arm inherits it from `ih`. This is the DATA (NOT the refuted
+      -- `Dⱼ = Dᵢ` cross-answer equation) the SKIP-arm strip reads off the shared boundary+tail to fix the
+      -- resumed answer at `Dᵢ` — fork-(a) realized through the decomp's existing existential.
+      ∧ Dᵢ = C'
       ∧ (∀ m, m < n → ∀ (op' : OpId) (w₁ w₂ : Val) (Cᵢ' : CTy Eff Mult) (εᵢ' : Eff)
             (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
           Bang.handlesOp h h.label op' = true →
@@ -1068,9 +1142,9 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                   obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
                   obtain ⟨rfl, rfl, rfl⟩ := heq
-                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
+                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hDC, hres2⟩ := ih htail hsp'
                   refine ⟨Frame.letF N₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
-                    by simp only [splitAtId]; rw [hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                    by simp only [splitAtId]; rw [hsp2]; rfl, hHR, ?_, htail2, hDC, hres2⟩
                   rw [krelS_letF]; exact ⟨krelS_stackInc hin, q, A, B, φ, hC, hbody, hin⟩
               | _ => simp [KrelS] at hK
           | appF w₁ =>
@@ -1082,9 +1156,9 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                   obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                   simp only [Prod.mk.injEq] at heq
                   obtain ⟨rfl, rfl, rfl⟩ := heq
-                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
+                  obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hDC, hres2⟩ := ih htail hsp'
                   refine ⟨Frame.appF w₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
-                    by simp only [splitAtId]; rw [hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                    by simp only [splitAtId]; rw [hsp2]; rfl, hHR, ?_, htail2, hDC, hres2⟩
                   rw [krelS_appF]; exact ⟨krelS_stackInc hin, q, A, B, hC, hcw₁, hcw₂, hw, hin⟩
               | _ => simp [KrelS] at hK
           | handleF mh₁ hh₁ =>
@@ -1102,7 +1176,7 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                     rw [if_pos rfl, Option.some.injEq, Prod.mk.injEq, Prod.mk.injEq] at hsp
                     obtain ⟨rfl, rfl, rfl⟩ := hsp
                     refine ⟨[], K₂', hh₂, C, C, e,
-                      by simp [splitAtId], hHRtop, ?_, htail, hres⟩
+                      by simp [splitAtId], hHRtop, ?_, htail, rfl, hres⟩
                     rw [krelS_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
                   · -- SKIP (`mh₁ ≠ nid`): the id test fails — recurse with the SAME `nid` on the tail.
                     -- The skipped handleF wraps the inner prefix. The MISS edge is GONE (identity dispatch
@@ -1111,9 +1185,9 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                     obtain ⟨⟨Ki', hh, Ko'⟩, hsp', heq⟩ := hsp
                     simp only [Prod.mk.injEq] at heq
                     obtain ⟨rfl, rfl, rfl⟩ := heq
-                    obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hres2⟩ := ih htail hsp'
+                    obtain ⟨K₂ᵢ, K₂ₒ, h', Dᵢ, C', e', hsp2, hHR, hin, htail2, hDC, hres2⟩ := ih htail hsp'
                     refine ⟨Frame.handleF mh₁ hh₂ :: K₂ᵢ, K₂ₒ, h', Dᵢ, C', e',
-                      by simp only [splitAtId]; rw [if_neg hmn, hsp2]; rfl, hHR, ?_, htail2, hres2⟩
+                      by simp only [splitAtId]; rw [if_neg hmn, hsp2]; rfl, hHR, ?_, htail2, hDC, hres2⟩
                     -- ADR-0096: the skipped frame id `mh₁` dominates the inner prefix `K₁ᵢ`/`K₂ᵢ` — from
                     -- `hsbmh₁ : StackBelow mh₁ K₁'` (the machine-carried below-fact) split along the decomp
                     -- `K₁' = K₁ᵢ ++ handleF nid h :: K₁ₒ` (`splitAtId_decomp_inv hsp'`), the prefix half.
@@ -1127,14 +1201,25 @@ theorem krelS_splitAtId_decomp {n : Nat} {C D : CTy Eff Mult} {e : Eff} {g : Nat
                     -- `krelS_handleF_intro` rebuilds it from `hHRtop` + `hin` (inner relation, hole C,
                     -- answer Dᵢ) + a resume conjunct.
                     refine krelS_handleF_intro (nh := mh₁) hHRtop hin hsbi₁ hsbi₂ ?_
-                    -- ADR-0055 SKIP RESIDUAL (the old 1628 relocation sorry, identity-keyed): `hres` (hh₁'s
-                    -- resume over the ORIGINAL tail `K₁'`) must RELOCATE to the recursed inner prefix `Ki'`
-                    -- (where `splitAtId` placed the deeper catcher). `K₁' = Ki' ++ handleF nid h' :: Ko'`
-                    -- (`splitAtId_decomp hsp'`), so `dispatchOn` over `Ki'` lifts to `K₁'` via
-                    -- `dispatchOn_append_outer` — but the conjunct demands the INVERSE (strip the appended
-                    -- tail off a decomposition over the longer stack), which `hres` over `K₁'` does not
-                    -- factor through in general. The dissolution is REAL (no `handlesOp` wall); the residual
-                    -- is this one clean relocation. Scoped here for the SKIP arm. shape: biernacki-popl18 §5.4.
+                    -- ADR-0096 amendment ② SKIP-arm resume RELOCATION — census4 lane close ATTEMPTED, one
+                    -- residual sub-obligation WALLED (build-grounded; see report). The forward machinery is
+                    -- READY and axiom-clean: `hres` (hh₁'s resume over `K₁' = Ki' ++ handleF nid hh :: Ko'`)
+                    -- LIFTS to the goal's dispatch over `Ki'` via `dispatchOn_append_outer`, FIRES, and its
+                    -- resume result STRIPS at the boundary via `skip_strip_from_stackInc` (LOCATION is fully
+                    -- determinate now — the `StackInc` carrier). The `Dᵢ = C'` answer-coherence conjunct (added
+                    -- to this decomp's OUTPUT above) supplies the answer as DATA. The WF measure `(n, K₁.length)`
+                    -- lets the strip self-recurse at `m < n` (index-decreasing) — this ALL elaborates.
+                    -- THE WALL (the ONE residual): the strip's boundary-decomp delivers the inner at answer `Db`
+                    -- with `Db = Cb'` (its own `Dᵢ=C'` conjunct), where `Cb'` is the strip's outer hole over the
+                    -- SHARED tail `Ko'`/`K₂ₒ`; closing needs `Cb' = C'` (the original outer hole over the SAME
+                    -- `Ko'`/`K₂ₒ` at the SAME answer `D`). This "KrelS hole is determined by (stack pair, answer)"
+                    -- is FALSE for a `letF`/`appF`-headed `Ko'` (the hole `F q A` / `arr q A B` carries a FREE
+                    -- value-type `A` the frame body does not pin — two decomps of the same tail may relate at
+                    -- different `A`). So `krelS_hole_det` is REFUTED; the answer-coherence needs the resume
+                    -- conjunct's CONCLUSION to also carry the hole-determinacy (a `KrelS`-def-CONCLUSION
+                    -- strengthening, ~28 sites — beyond the census4 no-def-change envelope). shape:
+                    -- biernacki-popl18 §5.4. MISSING: hole-determinacy carried on the resume conclusion, or an
+                    -- inner-relation extractor that fixes the answer to the KNOWN tail hole without re-decomposing.
                     sorry
               | _ => simp [KrelS] at hK
 
@@ -1781,17 +1866,15 @@ theorem crelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (c : Comp) {e :
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund_at (Val.vvar i) (HasVTy.vvar hget) n δ₁ δ₂ hδ)
   | Comp.binop op v w, HasCTy.binop hv hw _ =>
-      -- ADR-0065 stage ④ / ctr slice 6 (DEFERRED — the LR obligation is sequenced LAST, off the
-      -- soundness critical path; `docs/notes/ctr-design.md` §3 ripple, §4.2 slice 6). The binop δ-step
-      -- `binop op (vint a) (vint b) ↦ ret (op.eval a b)` is a pure head-step (the `unfold`-arm shape,
-      -- `CrelK_head_step` + `crelK_ret`), BUT it only fires once BOTH operands close to `vint` literals.
-      -- Relating the two closings requires `VrelK n int (closeV δ₁ v) (closeV δ₂ v)` to force EQUAL
-      -- `vint` literals (int's VrelK is literal-equality), then a `crelK`-step to the equal `op.eval`
-      -- results. That is genuine binary-LR work (a new `crelK_binop` step-lemma, the twin of
-      -- `crelK_unfold`), and it lives in the already-`sorryAx` `lr_fundamental` cluster — NOT in the
-      -- kernel-typing + soundness slice this lane (task #36) discharges. MISSING: a `crelK_binop`
-      -- lemma (`VrelK int ⇒ equal vints ⇒ CrelK on the equal δ-reducts). shape: biernacki-popl18 §5.4.
-      sorry
+      -- ADR-0065 stage ④: the binop δ-step `binop op (vint a) (vint b) ↦ ret (op.eval a b)` is a pure
+      -- head-step. Both operands close to `VrelK int`-related (`vrelK_fund_at`) ⇒ EQUAL `vint` literals
+      -- (int's VrelK is literal-equality), so `crelK_binop` (the twin of `crelK_unfold`) fires. Census3
+      -- lane #37: this arm is on the `lr_fundamental := crelK_fund` path (it lives in `crelK_fund_at`),
+      -- so its `sorryAx` fed `lr_fundamental` and had to close for the 18→20 shed alongside the
+      -- decomp/`crelK_fund_up` cluster. shape: biernacki-popl18 §5.4.
+      intro n δ₁ δ₂ hδ
+      rw [closeC_binop, closeC_binop]
+      exact crelK_binop (vrelK_fund_at v hv n δ₁ δ₂ hδ) (vrelK_fund_at w hw n δ₁ δ₂ hδ)
   | Comp.perform cc op v, HasCTy.perform hcap _hℓ hArg hRes hv =>
       intro n δ₁ δ₂ hδ
       rw [closeC_perform, closeC_perform]
