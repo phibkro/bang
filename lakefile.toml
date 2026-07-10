@@ -1,5 +1,10 @@
 name = "bang-lang"
 defaultTargets = ["Bang"]
+# `lake test` = the Lean-ecosystem-standard entry point, delegating to the SAME battery
+# driver `just verify` runs (tools/run-batteries.sh). `just` stays the orchestration SSoT;
+# this only serves the reflexive `lake test` of a Lean developer who hasn't read the
+# justfile. Driver exe defined at the bottom of this file.
+testDriver = "tests"
 
 [[lean_lib]]
 name = "Bang"
@@ -19,6 +24,12 @@ globs = ["Bang.+"]
 [[lean_exe]]
 name = "bang"
 root = "Main"
+
+# The `lake test` driver (see `testDriver` above): a LEAF exe like `bang` — `Tests.lean`
+# at the repo root, outside the `Bang.+` glob, spawning `tools/run-batteries.sh`.
+[[lean_exe]]
+name = "tests"
+root = "Tests"
 
 # Mathlib gives us the Finset semilattice. The rev MUST match lean-toolchain:
 # the simplest reliable pin is to pick a Mathlib release tag and set
