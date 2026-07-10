@@ -81,6 +81,10 @@ public structure Finding where
   message  : String
   deriving Repr
 
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg; `prec` is the interface, not
+-- a dead param (unusedArguments false-positive on derived instances).
+attribute [nolint unusedArguments] instReprFinding.repr
+
 /-! ## 2. `dead-private` — the surface-level DeadCode.lean analogue.
 
 Root set: every `pub` name (`p.pubNames`) PLUS every free variable `p.body` itself mentions (the

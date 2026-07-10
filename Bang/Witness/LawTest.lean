@@ -72,6 +72,9 @@ structure DataSpec where
   ctors : List (String × List PayloadKind)
   deriving Repr, DecidableEq
 
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
+attribute [nolint unusedArguments] instReprDataSpec.repr
+
 /-- Render a `DataSpec` back to its `data` declaration source text. -/
 def DataSpec.toSrc (d : DataSpec) : String :=
   let ctorSrc := fun (c : String × List PayloadKind) =>
@@ -312,6 +315,9 @@ structure LawInstance where
   body        : String    -- the law's Bool-valued expression, over `params` + the prelude's ops
   deriving Repr
 
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
+attribute [nolint unusedArguments] instReprLawInstance.repr
+
 /-- Wrap a law's body in the SAME truth-readback idiom `checkLawOn` uses (`let #r = body in
 if #r then 1 else 0`) — encoding-agnostic (works whether the elaborator represents a bool as
 `Unit + Unit` or otherwise), and bind each param to a GENERATED Int-literal source string via
@@ -497,6 +503,9 @@ structure NamedOutcome where
   lawName   : String
   outcome   : LawOutcome
   deriving Repr
+
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
+attribute [nolint unusedArguments] instReprNamedOutcome.repr
 
 /-- **Discovery entry (public, #60):** find every law instance in a program made of `decls`
 (the trait/impl prelude, NO trailing body — `lawInstancesOf` needs a full parseable program, so

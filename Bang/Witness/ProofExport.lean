@@ -202,6 +202,9 @@ structure LeanGoalArtifact where
   «theorem» : String
   deriving Repr
 
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
+attribute [nolint unusedArguments] instReprLeanGoalArtifact.repr
+
 /-- One law instance to export — the `lawInstancesOf` projection PLUS the source program the law
 lives in. `params`/`body` are source text; `prelude` is the trait/impl/data decls the body's ops
 resolve against (NO trailing body). -/
@@ -213,6 +216,9 @@ structure LawInput where
   body    : String
   prelude : String
   deriving Repr
+
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
+attribute [nolint unusedArguments] instReprLawInput.repr
 
 /-- Lambda-wrap a law body over its params, ending in `LawTest.wrapLawBody`'s readback idiom — the
 form that elaborates to a CLOSED `Comp` function. -/

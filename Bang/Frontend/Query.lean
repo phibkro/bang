@@ -235,6 +235,10 @@ public structure DeclFact where
   module    : Option String
   deriving Repr
 
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg; `prec` is the interface, not
+-- a dead param (unusedArguments false-positive on derived instances).
+attribute [nolint unusedArguments] instReprDeclFact.repr
+
 /-- **PUBLIC (TIER 1):** the fact record for ONE decl `d` of program `p` (`p` supplies the checker
 context every value-typed decl's `type`/`row` needs). `module` defaults to `none`; the CLI layer
 (`Main.lean`, which has resolver provenance `Query.lean` itself does not) overlays it via
@@ -350,6 +354,9 @@ public structure RefEdge where
   src : String   -- the REFERENCING decl's own name (avoids the `from`/`to` reserved-word clash)
   tgt : String   -- the REFERENCED name
   deriving Repr
+
+-- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
+attribute [nolint unusedArguments] instReprRefEdge.repr
 
 /-- **PUBLIC (TIER 1):** every name-reference edge in `p` — for EACH decl, for EACH other
 name any OTHER decl (or itself) defines, an edge if the FIRST decl's body mentions the SECOND's

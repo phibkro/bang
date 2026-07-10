@@ -5,16 +5,22 @@
 # Skip a hook on demand: git commit --no-verify
 
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+toplevel="$(git rev-parse --show-toplevel)"
+cd "$toplevel"
 
-mkdir -p .git/hooks
+# Hooks belong to the COMMON git dir, not `.git/hooks` — in a linked worktree `.git`
+# is a gitfile (not a directory), so `mkdir -p .git/hooks` fails. `--git-common-dir`
+# resolves to the shared dir (`<main>/.git`) from either the main tree or a worktree.
+hooksdir="$(cd "$toplevel" && cd "$(git rev-parse --git-common-dir)" && pwd)/hooks"
+mkdir -p "$hooksdir"
 
 for hook in tools/git-hooks/*; do
   name=$(basename "$hook")
-  target=".git/hooks/$name"
+  target="$hooksdir/$name"
   # Idempotent: replace symlink each time so updates to tools/git-hooks/ take effect.
+  # Absolute target so the link is valid regardless of the common dir's depth.
   rm -f "$target"
-  ln -s "../../$hook" "$target"
+  ln -s "$toplevel/$hook" "$target"
   chmod +x "$hook"
   echo "✓ installed $name → $hook"
 done

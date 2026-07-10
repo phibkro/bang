@@ -1801,6 +1801,13 @@ structure Prog where
     -- the `fn`-body corpus already works around, but here it strikes the FORMATTER's own output).
   deriving Repr, Inhabited, DecidableEq
 
+-- `deriving Repr` synthesizes `repr : α → Nat → Format`; for these record types the
+-- generated body ignores the `prec` (precedence) argument. `prec` is the `Repr` interface,
+-- not a dead param — nolint the auto-generated instances (unusedArguments false-positive class).
+attribute [nolint unusedArguments]
+  instReprPErr.repr instReprSpan.repr instReprOpSig.repr instReprLawDecl.repr
+  instReprOpDef.repr instReprImportDecl.repr instReprUseDecl.repr instReprProg.repr
+
 /-- The comma-separated tail of a parameter list, up to and including `)`. -/
 def pParamsLoop : Nat → P (List String)
   | 0,     _  => .error "parser out of fuel"
