@@ -1580,6 +1580,117 @@ theorem evalE_agrees_evalD_pure :
     | oom => simp [evalE] at h
     | wrong s => simp [evalE] at h
 
+/-! ## Slice 3b — the effect-store correspondence (STATEMENT + RESUME MAP; the weave is a fresh unit)
+
+The pure fragment (`evalE_agrees_evalD_pure`, above) covers `EffectFree` M over empty stores. 3b closes
+the full headline `evalE_agrees_evalD` (below) by relaxing `EffectFree` and threading a correspondence
+between `evalE`'s MVal-keyed stores (σ/τ/κ) and `evalD`'s Val-keyed stores. This block STATES that
+correspondence + the `Good`-extension over store-held values so the effect theorem COMPILES with a
+labelled sorry; the weave is a fresh IC (envm3).
+
+KEY STRUCTURAL FACT (why this is SIMPLER than `run_evalD`'s bridge): both machines key stores by the
+SAME generative IDENTITY `Nat` (`Label = Nat`; `evalD` pushes `SStore.push id s` at the mint), and both
+carry PARALLEL per-kind stores in the SAME order. So the correspondence is a POINTWISE-UNDER-READBACK
+match of two lists with identical keys — NOT an HStack projection (`run_evalD`'s `Corr = σ = hsStates hs`
+projects a stack; here there is no stack to project, just `readback` on each entry). `run_evalD`'s
+`Corr`/`TCorr`/`CCorr` are the SHAPE to mirror (per-kind, id-keyed, op-disjoint); `StoresBelow`/
+`StoresDisjoint` (the id-first freshness backbone) port ACROSS UNCHANGED — they are already stated over
+`evalD`'s stores, and `evalE` mints ids identically (`handle` uses `g`, bumps `g+1`), so the SAME
+`StoresBelow`/`StoresDisjoint` invariants on the `evalD` side transfer through the key-identical
+correspondence. -/
+
+/-- The state-store correspondence: `evalE`'s `ESStore` reads back to `evalD`'s `SStore` pointwise —
+same keys, `readback` on each stored `MVal`. -/
+def SStoreCorr (eσ : ESStore) (dσ : Bang.CalcVM.SStore) : Prop :=
+  dσ = eσ.map (fun p => (p.1, readback p.2))
+
+/-- The txn-heap correspondence: each heap cell reads back (a `List MVal` maps to a `List Val`). -/
+def THeapCorr (eτ : ETHeap) (dτ : Bang.CalcVM.THeap) : Prop :=
+  dτ = eτ.map (fun p => (p.1, p.2.map readback))
+
+/-- The custom-store correspondence. `evalE` stores `(n, (mv_p, cls, ρ_inst))` — a param, RAW clauses,
+and the install-env the clauses closed over. `evalD` stores `(n, (v_p, cls'))` — a param and clauses
+ALREADY CLOSED over the install-env, leaving the TWO service binders (param at 1, op-arg at 0) open.
+So the param reads back and each clause body is `closeUnderBindersE 2 (readbackEnv ρ_inst)` of the raw
+`evalE` clause — the closure relationship at the store level (`evalD`'s perform does `subst p (subst
+(shift v) clause.2)` on the already-closed body; `evalE`'s runs the raw body under `arg ∷ p ∷ ρ_inst`,
+and 3a's crux-family equates the two). -/
+def CStoreCorr (eκ : ECStore) (dκ : Bang.CalcVM.CStore) : Prop :=
+  dκ = eκ.map (fun p =>
+    (p.1, (readback p.2.1,
+      p.2.2.1.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv p.2.2.2) c.2)))))
+
+/-- The combined store correspondence (all three per-kind stores related, in lockstep). -/
+def StoresCorr (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore)
+    (dσ : Bang.CalcVM.SStore) (dτ : Bang.CalcVM.THeap) (dκ : Bang.CalcVM.CStore) : Prop :=
+  SStoreCorr eσ dσ ∧ THeapCorr eτ dτ ∧ CStoreCorr eκ dκ
+
+/-- The `Good`-extension over STORE-HELD values (the ruling's 3b rider — factored so 3b EXTENDS, not
+reshapes). Every value the three `evalE` stores hold is WF (reads back closed) and PureV (its closures
+are `Good`); custom frames additionally carry an install-env that must itself be WF ∧ PureV and cover
+its clauses' free vars (the scope obligation for `CStoreCorr`'s `closeUnderBindersE 2` to be closed).
+This is the store-level twin of `MEnv.WF`/`MEnv.PureV`, and it rides the 3b induction exactly as the
+env invariants ride 3a. -/
+def StoresGood (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) : Prop :=
+  (∀ p ∈ eσ, MVal.WF p.2 ∧ MVal.PureV p.2)
+  ∧ (∀ p ∈ eτ, ∀ mv ∈ p.2, MVal.WF mv ∧ MVal.PureV mv)
+  ∧ (∀ p ∈ eκ, (MVal.WF p.2.1 ∧ MVal.PureV p.2.1) ∧ MEnv.WF p.2.2.2 ∧ MEnv.PureV p.2.2.2
+       ∧ (∀ c ∈ p.2.2.1, Comp.ScopedC ((readbackEnv p.2.2.2).length + 2) c.2 ∧ EffectFree c.2))
+
+/-- **SLICE 3b — the effect-store correspondence (STATEMENT; the weave is envm3).**
+
+Generalizes `evalE_agrees_evalD_pure` off the pure fragment: arbitrary M (no `EffectFree`), arbitrary
+`Good`-related input stores, over a general terminal. `readbackTermS` extends `readbackTerm` to the
+`mraised` terminal (the third `evalD` `Outcome`). The conclusion threads the store correspondence
+forward (output stores stay related) and the id-counter through the mint.
+
+RESUME MAP (envm3 — the weave; 3a's infra is ALL reusable, the cruxes are PROVEN):
+
+- FUEL-matched induction on `f`, cases on `M`, as in `_pure`. The 9 PURE cases are ALREADY structurally
+  proven in `_pure`; port them by relaxing `EffectFree M` to `EffectFree`-of-the-non-store-touching
+  parts and carrying `StoresGood` + `StoresCorr` through unchanged (they don't touch stores).
+- `perform (vcap n ℓ) op v` — mirror `evalD`'s id-first σ→τ→κ arm CASE-FOR-CASE:
+    * STATE: `eσ.get? n = some s` ⟺ (via `SStoreCorr`) `dσ.get? n = some (readback s)`; get returns it,
+      put threads `eσ.put n arg ⟺ dσ.put n (readback arg)` — need `SStoreCorr`-preservation under `put`
+      (a NEW lemma; the readback-map commutes with `put` — MISSING, state + prove).
+    * TXN: `eτ.get? n` ⟺ `dτ.get? n` under readback; `mtxnService` ⟺ `txnService` under readback
+      (a NEW lemma `mtxnService_readback` — MISSING; the MVal/Val stm-service agree pointwise).
+    * CUSTOM: `eκ.get? n = some (p,cls,ρ_inst)` ⟺ `dκ.get? n = some (readback p, closed-cls)`; the clause
+      sub-eval `arg ∷ p ∷ ρ_inst ⊢ clause.2` ⟺ `evalD (subst p (subst (shift v) closed-clause))` — closes
+      by the 2-BINDER crux `substEnv_cons2_subst` (PROVEN, 3a) applied to the clause body. This is the
+      case where 3a's cruxes pay off directly.
+    * The `handlesOp`-mismatch RAISE arms need `StoresDisjoint` (ported from `AbstractMachine.lean`) so a
+      mismatched op raises identically on both sides (the id resolves in at most one store).
+- `handle h M` — the MINT: `evalE` pushes `(g, image)` keyed by `g` and recurses at `g+1`; `evalD` pushes
+  `(g, val-image)` and recurses at `g+1`. The pushed entries are related by construction (`evalV ρ s` ⟺
+  `readback (evalV ρ s)` = `substEnvV γ s`, from 3a's value correspondence); POP is `.tail` on both,
+  which preserves `StoresCorr` (list tails commute with the readback-map). throws-CATCH: the `mraised
+  n "raise"` terminal ⟺ `evalD`'s `raised n "raise"`, caught identically. `StoresBelow` (ported) makes
+  the mint FRESH so `StoresDisjoint` is push-stable.
+- WALLS ALREADY VISIBLE (the MISSING lemmas to state+prove first, all mechanical readback-commutations):
+    (W1) `SStoreCorr`/`THeapCorr`/`CStoreCorr` preservation under `get?` (agreement), `put`, `push`,
+         `.tail` — the readback-map commutes with each store op. ~6 small lemmas.
+    (W2) `mtxnService_readback` — the stm service agrees under readback (newTVar/readTVar/writeTVar).
+    (W3) `readbackTermS` for `mraised` + its `MTerm`-WF/PureV extension (trivial — payload is a value).
+    (W4) porting `StoresBelow`/`StoresDisjoint` + their push/put preservation from `AbstractMachine.lean`
+         (they are `evalD`-side already; re-state over the correspondence or import — check one-writer).
+  None of these is a refutation risk; all are the same readback-commutation shape 3a's distribution
+  lemmas already exemplify. STOP-and-SHOW the assembled statement was this block; the weave is envm3.
+
+`sorry` — the 3b weave (statement + resume map only; see the WALLS above). -/
+theorem evalE_agrees_evalD_effect :
+    ∀ (f : Nat) (γ : List Val) (M : Comp) (t : MTerm) (ρ : MEnv) (g G g' : Nat)
+      (eσ eσ' : ESStore) (eτ eτ' : ETHeap) (eκ eκ' : ECStore)
+      (dσ : Bang.CalcVM.SStore) (dτ : Bang.CalcVM.THeap) (dκ : Bang.CalcVM.CStore),
+      EnvAgrees ρ γ → MEnv.WF ρ → MEnv.PureV ρ → Comp.ScopedC γ.length M →
+      StoresGood eσ eτ eκ → StoresCorr eσ eτ eκ dσ dτ dκ →
+      evalE f g eσ eτ eκ ρ M = some (.mterm t, g', eσ', eτ', eκ') →
+      ∃ (G' : Nat) (dσ' : Bang.CalcVM.SStore) (dτ' : Bang.CalcVM.THeap) (dκ' : Bang.CalcVM.CStore),
+        Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M)
+            = some (readbackTerm t, G', dσ', dτ', dκ')
+          ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ MTerm.WF t ∧ MTerm.PureV t := by
+  sorry
+
 /-- **The correspondence STATEMENT** (PLFA `γ≈ₑσ`; slice-3 proof).
 
 If `evalE` runs `M` under `ρ` to a returner `mret mv`, and `ρ` agrees with a substitution
