@@ -266,68 +266,6 @@ decreasing_by
     | (exact Prod.Lex.left _ _ (by omega))
     | (exact Prod.Lex.left _ _ ‹_ < _›)
 
-/-! ## Obstruction analog (ii) — fuel monotonicity: POLARITY-BLOCKED, and NOT NEEDED
-
-**CORRECTED FINDING (slice-2, supersedes the slice-1 "fuel-DOWN is free" claim):** the naive fuel-mono
-is POLARITY-BLOCKED in BOTH directions. The `KrelSN` resume conjunct's `∀ fᵢ < f` sub-range makes the
-`KrelSN`-level fuel-DOWN look free — but the letF clause's body is `∀ … VrelKN m f A →` (HYPOTHESIS,
-contravariant) `CrelKN m f B …` (conclusion, covariant). So `KrelSN` fuel-DOWN needs **VrelKN fuel-UP**
-(to feed the original body) AND **CrelKN fuel-DOWN**; VrelKN fuel-UP (its U-clause) needs CrelKN fuel-UP;
-the polarity ALTERNATES. Unlike the metering index `n` (which is `∀ j <`-guarded at the U-clause to break
-exactly this), the fuel `f` is NOT so guarded, so NEITHER fuel direction is simply provable through the
-mutual block. This decl's `sorry`s are precisely those blocked VrelKN/CrelKN arms.
-
-**BUT it is NOT NEEDED (slice-2, the map-changer):** `krelSN_append_inv` is FUEL-PRESERVING (`f → f`, it
-walks `Sstrip` structurally, never dropping fuel), and the crux supplies its output fuel directly — so NO
-fuel-mono sits on the strip/crux critical path. This decl is retained ONLY as the machine-checked marker
-of the polarity obstruction (the flagged `sorry`s ARE the block); it is dead code on the proof path and
-will be deleted once the compat re-proofs confirm they don't need it either (they thread a uniform fuel). -/
-theorem KrelSN_fuel_mono : ∀ (n f f' : Nat) {C D : CTy Eff Mult} {ε : Eff} {g : Nat} (K₁ K₂ : Stack),
-    f' ≤ f → KrelSN n f C D ε g K₁ K₂ → KrelSN n f' C D ε g K₁ K₂
-  | _, _, _, _, _, _, _, [], [], _, hK => by
-      rw [krelSN_nil] at hK ⊢
-      obtain ⟨hCD, _⟩ := hK
-      exact ⟨hCD, fun q A hC v₁ v₂ hc₁ hc₂ hv _ => ⟨1, v₂, rfl⟩⟩
-  | n, f, f', _, _, _, g, (Frame.letF N₁ :: K₁'), (Frame.letF N₂ :: K₂'), hff, hK => by
-      rw [krelSN_letF] at hK ⊢
-      obtain ⟨hincT, q, A, B, φ, hC, hbody, htail⟩ := hK
-      -- letF body/tail: the fuel `f` is INERT across the letF seam (fuel only descends at resume), so
-      -- the body `CrelKN m f` and tail `KrelSN n f` do not obviously mono in `f` without the mutual
-      -- `CrelKN`/`VrelKN` fuel-mono. That mutual block is the slice-2 grind; here the letF/appF arms
-      -- ARE the shape needing it. Flagged: the STRUCTURE is fuel-down, the mutual lift is slice-2.
-      refine ⟨hincT, q, A, B, φ, hC, ?_, KrelSN_fuel_mono n f f' K₁' K₂' hff htail⟩
-      sorry
-  | n, f, f', _, _, _, g, (Frame.appF w₁ :: K₁'), (Frame.appF w₂ :: K₂'), hff, hK => by
-      rw [krelSN_appF] at hK ⊢
-      obtain ⟨hincT, q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hK
-      -- appF cap: `VrelKN n f A w₁ w₂ → VrelKN n f' A` needs `VrelKN` fuel-mono (slice-2 mutual). tail ok.
-      refine ⟨hincT, q, A, B, hC, hcw₁, hcw₂, ?_, KrelSN_fuel_mono n f f' K₁' K₂' hff htail⟩
-      sorry
-  | n, f, f', _, _, _, g, (Frame.handleF nh h :: K₁'), (Frame.handleF nh' h' :: K₂'), hff, hK => by
-      rw [krelSN_handleF] at hK ⊢
-      obtain ⟨hincpair, hid, hh, htail, hres⟩ := hK
-      refine ⟨hincpair, hid, ?_, KrelSN_fuel_mono n f f' K₁' K₂' hff htail, ?_⟩
-      · -- HandlerRel state fuel-mono needs VrelKN fuel-mono (slice-2 mutual).
-        sorry
-      · -- THE FREE STEP: the resume conjunct at `f'` binds `∀ fᵢ < f'`; since `f' ≤ f`, `fᵢ < f' ≤ f`,
-        -- so the ORIGINAL `f`-conjunct fires DIRECTLY at the SAME `fᵢ` — no re-synthesis, the captured
-        -- continuation `Kᵢ`/result `Sᵢ` come at fuel `fᵢ` unchanged. This is the polarity that makes
-        -- fuel-DOWN free at the resume seam (the crux-relevant arm). The VrelKN lifts are slice-2.
-        intro m hm fᵢ hfᵢ op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKi habove hCᵢ hd₁ hd₂
-        have hfᵢf : fᵢ < f := lt_of_lt_of_le hfᵢ hff
-        obtain ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, e1, e2, cr1, cr2, hvr, hSk⟩ :=
-          hres m hm fᵢ hfᵢf op w₁ w₂ Cᵢ εᵢ Kᵢ Kᵢ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ (by sorry) hKi habove hCᵢ hd₁ hd₂
-        exact ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, Sᵢ, Sᵢ', eₛ, e1, e2, cr1, cr2, by sorry, hSk⟩
-  | _, _, _, _, _, _, _, [], (_ :: _), _, hK => by simp [KrelSN] at hK
-  | _, _, _, _, _, _, _, (_ :: _), [], _, hK => by simp [KrelSN] at hK
-  | _, _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp [KrelSN] at hK
-  | _, _, _, _, _, _, _, (Frame.letF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp [KrelSN] at hK
-  | _, _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.letF _ :: _), _, hK => by simp [KrelSN] at hK
-  | _, _, _, _, _, _, _, (Frame.appF _ :: _), (Frame.handleF _ _ :: _), _, hK => by simp [KrelSN] at hK
-  | _, _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.letF _ :: _), _, hK => by simp [KrelSN] at hK
-  | _, _, _, _, _, _, _, (Frame.handleF _ _ :: _), (Frame.appF _ :: _), _, hK => by simp [KrelSN] at hK
-termination_by n f f' _ _ _ _ K₁ _ => K₁.length
-
 /-! ## Helpers for the crux — `krelSN_stackInc` + `krelSN_handleF_intro` (twins of the LR versions). -/
 
 theorem krelSN_stackInc {n f : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {K₁ K₂ : Stack}
@@ -430,9 +368,10 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
   -- KEY DESIGN FINDING (slice 2): the strip is FUEL-PRESERVING (`f → f`, NOT `fₒ < f`). The strip walks
   -- `Sstrip` STRUCTURALLY, each frame threading its tail at the SAME fuel `f` (fuel descends ONLY at the
   -- resume conjunct, which the strip carries but never re-decomposes). So NO fuel drop, NO fuel-mono, NO
-  -- self-referential re-strip. This DISSOLVES the fuel-mono coupling entirely: `KrelSN_fuel_mono` (whose
+  -- self-referential re-strip. This DISSOLVES the fuel-mono coupling entirely: fuel monotonicity (whose
   -- naive form is polarity-blocked — VrelKN/CrelKN appear in alternating positions, so neither direction
-  -- is simply free) is NOT on the strip/crux path at all. The answer `Dᵢ` is where `Sstrip` bottoms = the
+  -- is simply free; the former `KrelSN_fuel_mono` marker was DELETED) is NOT on the strip/crux path at
+  -- all. The answer `Dᵢ` is where `Sstrip` bottoms = the
   -- boundary frame's hole, carried structurally. The crux supplies the output fuel as `fⱼ` directly
   -- (`fⱼ < fᵢ` from `hres`), matching the strip's fuel-preserving output — no mono anywhere.
   induction Sstrip generalizing Cᵢ εᵢ Sstrip' with
@@ -736,10 +675,13 @@ end Bang.Fuel
 
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
 -- AXIOM GATE (the `Bang/Witness/HoleDet*.lean` in-file pattern; the twin decls are module-private so
--- `#print axioms` runs HERE). The CLEAN deliverables (def block + eq-lemmas + g-cast + helpers) are
--- axiom-clean ⊆ {propext, Classical.choice, Quot.sound}. The three decls carrying FLAGGED `sorry`s
--- (`KrelSN_fuel_mono`, `krelSN_append_inv`, `krelSN_splitAtId_decomp`) will report `sorryAx` — that is
--- the honest slice-2 residual, NOT a gate failure. Each `sorry` is named in the design note.
+-- `#print axioms` runs HERE). The CLEAN deliverables (def block + eq-lemmas + g-cast + helpers +
+-- length_eq + the refutation witness) are axiom-clean ⊆ {propext, Classical.choice, Quot.sound}. The
+-- THREE decls carrying FLAGGED `sorry`s — `krelSN_append_inv` (the nested handleF-in-prefix relocation),
+-- `krelSN_splitAtId_decomp` (the crux `Dstrip = Dᵢ` structural thread), `krelS_iff_exists_fuel` (the
+-- bridge, both directions) — report `sorryAx`: the honest slice-2 residual, NOT a gate failure. Each is
+-- named in the design note. (The former polarity-blocked `KrelSN_fuel_mono` marker was DELETED — the
+-- fuel-preserving strip removed it from the path.)
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
 #print axioms Bang.Fuel.KrelSN
 #print axioms Bang.Fuel.krelSN_handleF
@@ -749,10 +691,11 @@ end Bang.Fuel
 #print axioms Bang.Fuel.KrelSN_g_cast
 #print axioms Bang.Fuel.krelSN_stackInc
 #print axioms Bang.Fuel.krelSN_handleF_intro
+#print axioms Bang.Fuel.krelSN_length_eq
 -- the three flagged decls (expect sorryAx — the slice-2 residual):
-#print axioms Bang.Fuel.KrelSN_fuel_mono
 #print axioms Bang.Fuel.krelSN_append_inv
 #print axioms Bang.Fuel.krelSN_splitAtId_decomp
+#print axioms Bang.Fuel.krelS_iff_exists_fuel
 -- the do-not-weaken refutation witness (CLEAN — the fuel-indexed hole-det is FALSE, confirming the
 -- `Dstrip = Dᵢ` route is the `dispatchOn`-structural answer-thread, NOT hole-det):
 #print axioms Bang.Fuel.krelSN_hole_det_refuted
