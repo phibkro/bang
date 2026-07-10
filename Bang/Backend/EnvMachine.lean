@@ -989,7 +989,7 @@ def Comp.HandlerWF : Nat → Comp → Prop
       (match h with
         | .state _ s => Val.HandlerWF n s
         | .throws _ => True
-        | .transaction _ Θ => ∀ θ ∈ Θ, Val.ClosedE θ
+        | .transaction _ Θ => ∀ θ ∈ Θ, Val.ClosedE θ ∧ ∀ m, Val.HandlerWF m θ
         | .custom _ p cls => Val.ScopedV n p ∧ ∀ c ∈ cls, Comp.ScopedC (n + 2) c.2)
       ∧ Comp.HandlerWF (n + 1) M
 def Val.HandlerWF : Nat → Val → Prop
@@ -1031,18 +1031,19 @@ theorem Comp.HandlerWF.perform_inv {n : Nat} {c w : Val} {op : Bang.OpId}
   simp only [Comp.HandlerWF] at h; exact h
 theorem Comp.HandlerWF.handle_body {n : Nat} {hdl : Handler} {M : Comp}
     (h : Comp.HandlerWF n (Comp.handle hdl M)) : Comp.HandlerWF (n + 1) M := by
-  cases hdl <;> exact h.2
+  cases hdl <;> (simp only [Comp.HandlerWF] at h; exact h.2)
 theorem Comp.HandlerWF.handle_state {n : Nat} {ℓ : Bang.EffectRow.Label} {s : Val} {M : Comp}
     (h : Comp.HandlerWF n (Comp.handle (Handler.state ℓ s) M)) : Val.HandlerWF n s := by
-  exact h.1
+  simp only [Comp.HandlerWF] at h; exact h.1
 theorem Comp.HandlerWF.handle_txn {n : Nat} {ℓ : Bang.EffectRow.Label} {Θ : List Val} {M : Comp}
-    (h : Comp.HandlerWF n (Comp.handle (Handler.transaction ℓ Θ) M)) : ∀ θ ∈ Θ, Val.ClosedE θ := by
-  exact h.1
+    (h : Comp.HandlerWF n (Comp.handle (Handler.transaction ℓ Θ) M)) :
+    ∀ θ ∈ Θ, Val.ClosedE θ ∧ ∀ m, Val.HandlerWF m θ := by
+  simp only [Comp.HandlerWF] at h; exact h.1
 theorem Comp.HandlerWF.handle_custom {n : Nat} {ℓ : Bang.EffectRow.Label} {p : Val}
     {cls : List (Bang.OpId × Comp)} {M : Comp}
     (h : Comp.HandlerWF n (Comp.handle (Handler.custom ℓ p cls) M)) :
     Val.ScopedV n p ∧ ∀ c ∈ cls, Comp.ScopedC (n + 2) c.2 := by
-  exact h.1
+  simp only [Comp.HandlerWF] at h; exact h.1
 
 /-! ### Closedness of `substEnv`/`substEnvV` from scope (slice-3a: the WF-preservation core)
 
@@ -1223,21 +1224,28 @@ theorem EffectFree.handlerWF : ∀ {M : Comp}, EffectFree M → ∀ n, Comp.Hand
   | .force w, h, n => by simp only [Comp.HandlerWF]; exact (by simpa only [EffectFree] using h : ValEF w).handlerWF n
   | .unfold w, h, n => by simp only [Comp.HandlerWF]; exact (by simpa only [EffectFree] using h : ValEF w).handlerWF n
   | .binop _ a b, h, n => by
+      simp only [Comp.HandlerWF]
       obtain ⟨ha, hb⟩ := (by simpa only [EffectFree] using h : ValEF a ∧ ValEF b)
       exact ⟨ha.handlerWF n, hb.handlerWF n⟩
   | .oom, _, n => by simp only [Comp.HandlerWF]
   | .wrong _, _, n => by simp only [Comp.HandlerWF]
   | .letC M N, h, n => by
+      simp only [Comp.HandlerWF]
       obtain ⟨hM, hN⟩ := (by simpa only [EffectFree] using h : EffectFree M ∧ EffectFree N)
       exact ⟨hM.handlerWF n, hN.handlerWF (n + 1)⟩
-  | .lam M, h, n => by exact (by simpa only [EffectFree] using h : EffectFree M).handlerWF (n + 1)
+  | .lam M, h, n => by
+      simp only [Comp.HandlerWF]
+      exact (by simpa only [EffectFree] using h : EffectFree M).handlerWF (n + 1)
   | .app M w, h, n => by
+      simp only [Comp.HandlerWF]
       obtain ⟨hM, hw⟩ := (by simpa only [EffectFree] using h : EffectFree M ∧ ValEF w)
       exact ⟨hM.handlerWF n, hw.handlerWF n⟩
   | .case w N₁ N₂, h, n => by
+      simp only [Comp.HandlerWF]
       obtain ⟨hw, hN₁, hN₂⟩ := (by simpa only [EffectFree] using h : ValEF w ∧ EffectFree N₁ ∧ EffectFree N₂)
       exact ⟨hw.handlerWF n, hN₁.handlerWF (n + 1), hN₂.handlerWF (n + 1)⟩
   | .split w N, h, n => by
+      simp only [Comp.HandlerWF]
       obtain ⟨hw, hN⟩ := (by simpa only [EffectFree] using h : ValEF w ∧ EffectFree N)
       exact ⟨hw.handlerWF n, hN.handlerWF (n + 2)⟩
   | .perform _ _ _, h, _ => absurd h (by simp only [EffectFree, not_false_eq_true])
@@ -1251,6 +1259,7 @@ theorem ValEF.handlerWF : ∀ {v : Val}, ValEF v → ∀ n, Val.HandlerWF n v
   | .inl w, h, n => by simp only [Val.HandlerWF]; exact (by simpa only [ValEF] using h : ValEF w).handlerWF n
   | .inr w, h, n => by simp only [Val.HandlerWF]; exact (by simpa only [ValEF] using h : ValEF w).handlerWF n
   | .pair w₁ w₂, h, n => by
+      simp only [Val.HandlerWF]
       obtain ⟨h₁, h₂⟩ := (by simpa only [ValEF] using h : ValEF w₁ ∧ ValEF w₂)
       exact ⟨h₁.handlerWF n, h₂.handlerWF n⟩
   | .fold w, h, n => by simp only [Val.HandlerWF]; exact (by simpa only [ValEF] using h : ValEF w).handlerWF n
@@ -2984,7 +2993,84 @@ theorem evalE_agrees_evalD_gen :
                 simp only [Bang.CalcVM.evalD, substEnvH_throws, Handler.label]
                 rw [hdR']; simp only [readbackTermS, Option.bind_some, if_neg hcatch]
               · rintro n' op'' mv' ⟨rfl, rfl, rfl⟩; exact hRtR _ _ _ rfl
-      | transaction ℓ Θ => sorry
+      | transaction ℓ Θ =>
+        -- TXN mint: push (g, Θ.map (evalV ρ)) on τ; evalD pushes the RAW Θ (substEnvH_transaction is id
+        -- on Θ). THeapCorr on the pushed frames needs (Θ.map (evalV ρ)).map readback = Θ, i.e.
+        -- readback (evalV ρ θ) = θ for each θ ∈ Θ — holds because θ is CLOSED (hHWF.handle_txn, the
+        -- ADR-0030 heap-closed invariant). Recurse at g+1, POP with τ.tail.
+        simp only [Handler.label] at hCapClosed hagN hWFcap hWFN hWCN hScN hHWNbody hcrux
+        have hΘgood : ∀ θ ∈ Θ, Val.ClosedE θ ∧ ∀ m, Val.HandlerWF m θ := hHWF.handle_txn
+        -- each pushed cell reads back to itself (closed) and is WF ∧ WFClos.
+        have hcellId : ∀ θ ∈ Θ, readback (evalV ρ θ) = θ := by
+          intro θ hθ
+          have hcl := (hΘgood θ hθ).1
+          rw [readback_evalV hWF (fun k _ => hcl k)]
+          exact closeVE_closed hcl (readbackEnv ρ)
+        have hΘmapGood : ∀ mv ∈ Θ.map (evalV ρ), MVal.WF mv ∧ MVal.WFClos mv := by
+          intro mv hmv
+          simp only [List.mem_map] at hmv
+          obtain ⟨θ, hθ, rfl⟩ := hmv
+          obtain ⟨hcl, hHWθ⟩ := hΘgood θ hθ
+          refine ⟨?_, evalV_WFClos hWF hP (fun k _ => hcl k) (hHWθ _)⟩
+          simp only [MVal.WF]; rw [hcellId θ hθ]; exact hcl
+        -- THeapCorr on the pushed cons: evalD pushes RAW Θ; (Θ.map (evalV ρ)).map readback = Θ.
+        have hΘrb : (Θ.map (evalV ρ)).map readback = Θ := by
+          rw [List.map_map]
+          conv_rhs => rw [← List.map_id Θ]
+          exact List.map_congr_left (fun θ hθ => by simp only [Function.comp]; exact hcellId θ hθ)
+        have hCτ' : THeapCorr (⟨g, Θ.map (evalV ρ)⟩ :: eτ) (⟨g, Θ⟩ :: dτ) := by
+          simp only [THeapCorr, List.map_cons]; rw [show dτ = _ from hCτ, hΘrb]
+        have hGpush : StoresGood eσ (⟨g, Θ.map (evalV ρ)⟩ :: eτ) eκ := by
+          obtain ⟨hs0, ht0, hk0⟩ := hG
+          refine ⟨hs0, fun p hp => ?_, hk0⟩
+          rcases List.mem_cons.mp hp with rfl | hp
+          · exact hΘmapGood
+          · exact ht0 p hp
+        simp only [evalE, Handler.label, Option.bind_eq_bind] at h
+        cases hev : evalE f (g+1) eσ (⟨g, Θ.map (evalV ρ)⟩ :: eτ) eκ
+            (MVal.mvcap g ℓ ∷ₑ ρ) M with
+        | none => rw [hev] at h; simp only [Option.bind_none, reduceCtorEq] at h
+        | some p =>
+          rw [hev] at h
+          obtain ⟨outR, gR, σR, τR, κR⟩ := p
+          obtain ⟨dσR, dτR, dκR, hdR, hCR, hGR, hWtR, hRtR⟩ :=
+            ih (Val.vcap g ℓ :: γ) M outR (MVal.mvcap g ℓ ∷ₑ ρ) (g+1) gR
+              eσ σR (⟨g, Θ.map (evalV ρ)⟩ :: eτ) τR eκ κR
+              dσ (⟨g, Θ⟩ :: dτ) dκ hagN hWFN hWCN hScN hHWNbody hGpush
+              ⟨hCσ, hCτ', hCκ⟩ hev
+          rw [hcrux] at hdR
+          have hdR' : Bang.CalcVM.evalD f (g+1) dσ (Bang.CalcVM.THeap.push dτ g Θ) dκ
+              (Comp.subst (Val.vcap g ℓ) (closeUnderBindersE 1 γ M))
+              = some (readbackTermS outR, gR, dσR, dτR, dκR) := hdR
+          cases outR with
+          | mterm tR => cases tR with
+            | mret v =>
+              simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                MOutcome.mterm.injEq, MTerm.mret.injEq] at h
+              obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+              subst hout hgc hσ' hτ' hκ'
+              obtain ⟨hCσR, hCτR, hCκR⟩ := hCR
+              refine ⟨dσR, dτR.tail, dκR, ?_, ?_, hτtail hGR, ?_, by rintro n op mv ⟨⟩⟩
+              · rw [substEnv_handle]
+                simp only [Bang.CalcVM.evalD, substEnvH_transaction, Handler.label]
+                rw [hdR']; simp only [readbackTermS, readbackTerm, Option.bind_some]
+              · refine ⟨hCσR, ?_, hCκR⟩
+                simp only [THeapCorr] at hCτR ⊢; rw [hCτR, ← List.map_tail]
+              · rintro t ⟨rfl⟩; exact hWtR _ rfl
+            | mlam _ _ =>
+              simp only [Option.bind_some, reduceCtorEq] at h
+          | mraised n op' w =>
+            simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+            subst hout hgc hσ' hτ' hκ'
+            obtain ⟨hCσR, hCτR, hCκR⟩ := hCR
+            refine ⟨dσR, dτR.tail, dκR, ?_, ?_, hτtail hGR, by rintro t ⟨⟩, ?_⟩
+            · rw [substEnv_handle]
+              simp only [Bang.CalcVM.evalD, substEnvH_transaction, Handler.label]
+              rw [hdR']; simp only [readbackTermS, Option.bind_some]
+            · refine ⟨hCσR, ?_, hCκR⟩
+              simp only [THeapCorr] at hCτR ⊢; rw [hCτR, ← List.map_tail]
+            · rintro n' op'' mv' ⟨rfl, rfl, rfl⟩; exact hRtR _ _ _ rfl
       | custom ℓ p cls => sorry
     | oom => simp [evalE] at h
     | wrong s => simp [evalE] at h
