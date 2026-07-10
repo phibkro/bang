@@ -517,3 +517,81 @@ capability minting guarantees an escaped cap resolves to no handler and fails lo
 (OCaml-effects' `Effect.Unhandled`). Post-v1 it becomes **untypeable** — scoped/region
 capability types (#21) make the escape unrepresentable rather than merely detected.
 
+## `bang query` — the agent LSP as stateless CLI subcommands (issue #80)
+
+`bang query <op>` exposes the compiler's own facts (parse/elaborate/check results) as
+JSON — the cheapest "LSP for agents": no server, no protocol, one process per call.
+Every op's Lean-side implementation is `Bang/Frontend/Query.lean`, a **public library
+API** (every fact-producing function is `public`, documented as reusable outside the
+CLI — a Lean script can call `declFactsOf`/`nameRefEdgesOf`/`lawInstancesOf` directly).
+
+**`bang query dump [<file.bang>]` is the key operation**: the COMPLETE fact base in one
+export, so you compose *arbitrary* queries (`jq`, `python`, a Lean script) instead of
+waiting on a new fixed verb. Every curated verb below (`symbols`/`type`/`effects`/`def`/
+`refs`) is a **thin projection** of the SAME fact list `dump` exports — one construct,
+not six independent implementations.
+
+### `dump`'s schema
+
+```json
+{
+  "ok": true,
+  "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect",
+               "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
+               "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
+  "refs": [ { "from": "declName", "to": "referencedName" } ],
+  "laws": [ { "trait": "..", "law": "..", "params": [".."], "body": "source text" } ],
+  "imports": [ { "module": ".." } ],
+  "uses":    [ { "module": "..", "names": [".."] } ]
+}
+```
+
+Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
+so a `jq '.decls[].type'`-style consumer never branches on key existence, only on
+nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that
+type-checks; `typeError` carries the checker's message when it doesn't; `shape` carries
+a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`, which have no
+value-level type. `refs` is DECL-granularity (which decl's body mentions which name) —
+**position-addressing (line/col) is OUT of v1**, gated on issue #52's Spanned-Surf tier
+(`Surf` carries no per-node span today).
+
+**KNOWN v1 LIMITATIONS** (both match `check --json`'s own documented multi-file grants,
+not new gaps): on a MULTI-FILE (resolver-aware) `dump`, `"laws"` is always `[]` — the
+merged program has no single contiguous source `lawInstancesOf` could re-derive law
+bodies from; and a decl's `"module"` is `null` unless the CLI layer's own resolution
+walk supplies provenance (`Query.lean`'s `declFactsOf` alone never computes it — a flat
+merged `Prog` carries no per-decl module field). An imported (not `use`d) decl's own
+`"name"` is QUALIFIED by the merge (`Parse.bang`'s `dropWs` becomes `Parse_dropWs`,
+`TypeCheck.mergeModules`'s convention) — `def`/`refs`/`type`/`effects` on a multi-file
+program address the qualified name, discoverable via `dump`/`symbols`'s own `"name"`
+field.
+
+### The curated verbs (thin projections of `dump`)
+
+| Verb | Args | Answers |
+|---|---|---|
+| `symbols` | `[<file.bang>]` | `dump`'s own `"decls"` array, unfiltered |
+| `type` | `<file.bang> <name>` | one `DeclFact`'s `type`+`row`, looked up by name |
+| `effects` | `<name> [<file.bang>]` | one `DeclFact`'s `row` alone |
+| `laws` | `[<file.bang>]` | every discovered trait-law × impl instance (issue #60 seam) |
+| `def` | `<name> <file.bang>` | the one decl DEFINING `name`, as a `DeclFact` |
+| `refs` | `<name> <file.bang>` | `dump`'s own `"refs"` edges, filtered to `<name>` |
+
+All are `--json`-only (agents are the audience — no human-rendering flag in v1). Every
+op reads stdin when no `<file.bang>` is given, except `type`/`def`/`refs` (name-addressed
+multi-arg forms that always require a file). A `<file.bang>` with `import`/`use` is
+resolved the SAME way `bang check`/`bang run` resolve it — imports are visible to every
+op. Exit codes: `0` the op ran (including an op-level `"ok":false` answer, e.g. `def`
+naming a decl that doesn't exist — the tool succeeded, the ANSWER is negative); `1` the
+op could not run at all (a parse or import-resolution failure, still `"ok":false` on
+stdout); `2` a tool error (e.g. unreadable file) — reported on stderr, nothing on stdout,
+never folded into the JSON (mirrors `check --json`'s own tool-error convention exactly).
+
+**Composing an arbitrary query over `dump`** — the whole point: no fixed verb answers
+"every exported decl whose type carries a divergence taint", but `dump` + `jq` does:
+
+```sh
+bang query dump myfile.bang | jq -c '
+  [.decls[] | select(.pub and ((.type // "") | contains("Div"))) | .name]'
+```
+
