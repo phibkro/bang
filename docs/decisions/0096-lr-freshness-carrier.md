@@ -237,6 +237,104 @@ conclusion, ~28 sites) OR a `shape (c)` fuel-indexed re-index — BOTH beyond th
 hybrid promised. NEXT: operator ruling on whether to pay a def-CONCLUSION change (larger than the amendment
 priced) or PARK the `lr_*` cluster (ship v1 flagged, per the PARK section above).
 
+## PROPOSED AMENDMENT ③ — route (α) hole-determinacy probe: (α) REFUTED-at-delivery; RECOMMEND PARK or (β) (lane hole-det, 2026-07-10, AWAITING OPERATOR RULING)
+
+**Context.** The census4 wall (above) names TWO surviving routes past the `Cb' = C'` SKIP tie: **(α)**
+a `KrelS`-def-CONCLUSION strengthening (carry hole-determinacy on the resume conjunct's conclusion,
+~28 sites), and **(β)** a `shape (c)` fuel-indexed LR re-index. This amendment is the machine-arbitrated
+refute-first probe of (α), with (β) priced (not built), off `feat-lr-carrier-stackinc-wip @ 1e5656c5`.
+
+**VERDICT (three sentences):** The census4 wall is a genuinely-FALSE statement — `krelS_hole_det` ("a
+`KrelS` hole is determined by (stack pair, answer)") is machine-REFUTED axiom-clean, so the tie must be
+carried as DATA, not re-derived. Route (α) survives the g-cast obstruction that killed fork (a) (the
+strengthening is on the COVARIANT conclusion, cast forward, unlike fork (a)'s def-invariant that lands
+in the contravariant hypothesis too), but it is **REFUTED AT DELIVERY (step 4)**: the tie `Cb' = C'` is
+INTER-DERIVATION — `Cb'` is the resume result `hres`'s OWN re-decomp hole, `C'` is `ih`'s INDEPENDENT
+decomposition of the same `Ko'`, and no conclusion datum LOCAL to `hres`'s derivation can reach `ih`'s
+independently-chosen `C'` (whose value-type is genuinely free over a `letF`/`appF`-headed `Ko'`). So
+**(α) does not close the wall**; the minimal machine-arbitrated answer is **PARK the `lr_*` cluster**
+(ship v1 flagged) or pay **(β)**'s full re-index.
+
+### The refute-first ladder (machine-checked, `Bang/Witness/HoleDet*.lean`)
+
+- **Step 0 — the falsifier (`HoleDetRefute.krelS_hole_det_refuted`, axiom-clean `[propext,Quot.sound]`,
+  `sorry`-FREE, KEPT as a do-not-weaken regression witness).** Taken as a hypothesis `H`,
+  `krelS_hole_det` forces `F 0 unit = F 0 int` on the witness `K = [letF (ret vunit), appF vunit]` —
+  which relates at BOTH holes over the SAME stacks + SAME answer `D = F 0 unit` (a `letF` head at
+  index `n = 0` binds `A` VACUOUSLY; the `appF` tail fixes the answer). Absurd. Confirms the census4
+  wall names a genuinely-FALSE statement (separates on the value-type `unit` vs `int`, so it does NOT
+  rely on `0 ≠ 1` in the abstract `Mult`).
+- **Step 1 — statability REFUTED for the generic form (`HoleDetAlphaStatability`, axiom-clean).** The
+  resume conjunct has NEITHER `nid` NOR `C'` in scope (`Kᵢ` universally bound; the deep catcher lives
+  inside it). The only SCOPE-RESPECTING generic tie is "the resume result is hole-determined", which
+  `alpha_conclusion_conjunct_is_hole_det_on_Si` shows IS `krelS_hole_det` restricted to `Sᵢ` — refuted;
+  and `alpha_conjunct_shrinks_out_letF_producer` shows it SHRINKS `KrelS` out of the free-`A`
+  `letF`/`appF` producers' range. The SURGICAL form (carry `nid`/`C'` literally) is UNSTATABLE.
+- **Step 2 — g-cast PASSES for a conclusion strengthening (`HoleDetAlphaGCast`, axiom-clean).** UNLIKE
+  fork (a): `KrelS_g_cast`'s resume recursion (`BinaryLR.lean:1373-1378`) casts the HYPOTHESIS `Kᵢ` in
+  REVERSE (`m g' g`, the fork-(a) killer) but the CONCLUSION `Sᵢ` FORWARD (`m g g'`). Any conclusion
+  datum forward-casts by the SAME `KrelS_g_cast` the existing `hSk` already uses
+  (`krelS_gcast_conclusion_is_forward`); the polarity split (`conclusion_side_casts_forward` vs
+  `CarrierForkA.monotone_gcast_cannot_serve_contravariant_resume`) is decisive. So g-cast is NOT (α)'s
+  obstruction.
+- **Step 4 — delivery REFUTED (`HoleDetAlphaDelivery`).**
+  `two_independent_decomps_over_shared_tail_can_disagree` (axiom-clean) shows two `KrelS` derivations
+  over the same `Ko'` at the same answer carry DIFFERENT outer holes. The delivery skeleton
+  `alpha_delivery_skeleton` reduces the SKIP close to `<hres-result's own hole> = C'` — the
+  inter-derivation tie — discharged only by a FLAGGED `sorry` (the surviving wall). Even the ADR's
+  strongest "inner-relation extractor" (hand back the result's own decomp) delivers `hres`'s hole, NOT
+  `ih`'s `C'`: the two are holes of DISTINCT derivations, unreachable by any single-derivation datum.
+
+**Net on (α): REFUTED-at-step-4.** It clears statability-generic-refute (step 1) only into
+unstatability, clears g-cast (step 2, genuine — corrects any assumption that g-cast blocks it), and
+DIES at delivery (step 4): the tie is inter-derivation and no conclusion strengthening reaches it. The
+~28-site cost the census4 wall priced would buy a strengthening that STILL cannot close the wall.
+
+### (β) price comparison — shape (c) fuel-indexed re-index (PRICED, not built)
+
+(β) = the memory `lr-crelk-custom-arm-termination-wall` fallback **(C)**: a fuel-indexed judgment copy
+(`KrelSN : Nat → …`, `CrelKN`, `VrelKN`) where the counter/index monotonicity is STRUCTURAL, so the
+resume conjunct's `Kᵢ` becomes COVARIANT (the step-index descends, no reverse cast) and the boundary
+tie threads through the fuel index rather than an existential answer. **KNOWN-VIABLE** (that memory:
+Prop-to-Prop everywhere, zero large-elimination risk — the DEF block is `Prop`-valued so a Nat-height
+is refuted, but a fuel-INDEX judgment copy is not a height over a derivation). **Price:** a FULL LR
+re-index — the ~310-line `VrelK`/`CrelK`/`KrelS` mutual DEF block (`LR.lean:1091-1400`) duplicated
+fuel-indexed, the 18 `krelS_*` + 19 `crelK_/vrelK_/compatK_*` decls re-proved against the indexed copy
+(~570 `KrelS`/`CrelK`/`VrelK` references in `BinaryLR.lean` alone), plus the `HasCTy ↔ ∃ n, HasCTyN n`
+collapse to recover the frozen `Spec.lean` `lr_*` statements byte-identical. What it BUYS: the SKIP
+strip's self-recursion becomes structurally-terminating on the index and the boundary tie threads
+covariantly — the wall closes. What it COSTS vs (α): (α) was ~28 sites on ONE conjunct; (β) is a
+whole-relation duplication (~40 decls + the def block) — an order of magnitude larger, and it re-opens
+every LR proof to the indexed form. **(β) is the ONLY route that closes the wall, but it is the big
+hammer.**
+
+### Recommendation FOR OPERATOR RULING
+
+**RECOMMEND: PARK the `lr_*` cluster (ship v1 flagged, per the PARK section above), OR — if the
+◊4 closed contextual-equivalence result is a hard v1 goal — pay (β)'s full re-index.** Do NOT pay
+(α): it is machine-refuted at delivery (~28 sites that still leave the wall open). The census is
+UNCHANGED under every option: PARK keeps the 3-headline `lr_*` cluster flagged (18 clean / 7 flagged),
+(β) sheds `lr_fundamental` + `lr_fundamental_closed` (18→20; `lr_sound`'s third shed still needs Q22,
+held). No frozen `Spec.lean` change under any option (all indices/carriers are internal to
+`CrelK`/`KrelS`). The soundness diagonal (`type_safety`, `custom_program_safe`, the compiler
+`compile_forward_sim`) is `Crel`-free and stays axiom-clean, so nothing user-facing regresses under
+PARK. **No genuinely-FALSE frozen statement was found** — the `Spec.lean` `lr_*` are provable in
+principle (via (β)); the wall is that (α) is the wrong-shaped fix, not that the theorem is false.
+
+### Ground (lane hole-det, `probe-lr-hole-det` off `1e5656c5`)
+
+`Bang/Witness/HoleDetRefute.lean` (`krelS_hole_det_refuted` — the do-not-weaken falsifier, axiom-clean
+`[propext,Quot.sound]`, `sorry`-free) · `Bang/Witness/HoleDetAlphaStatability.lean` (step 1:
+`alpha_conclusion_conjunct_is_hole_det_on_Si` + `alpha_conjunct_shrinks_out_letF_producer`, axiom-clean)
+· `Bang/Witness/HoleDetAlphaGCast.lean` (step 2: `conclusion_side_casts_forward` +
+`krelS_gcast_conclusion_is_forward`, axiom-clean — the polarity that DISTINGUISHES (α) from fork (a)) ·
+`Bang/Witness/HoleDetAlphaDelivery.lean` (step 4: `two_independent_decomps_over_shared_tail_can_disagree`
+axiom-clean + `alpha_delivery_skeleton` FLAGGED `sorry` = the surviving wall) ·
+`BinaryLR.lean:1203-1223` (the SKIP arm + wall comment) · `BinaryLR.lean:1373-1378`
+(`KrelS_g_cast` contravariant resume recursion) · `LR.lean:1212-1250` (the `KrelS` handleF resume
+conjunct — `nid`/`C'` NOT in scope) · memory `lr-crelk-custom-arm-termination-wall` fallback (C) (the
+(β) viability precedent).
+
 ## Context
 
 ### The wall (task #29, item 1), machine-characterized
