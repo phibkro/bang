@@ -1761,7 +1761,7 @@ theorem mtxnService_readback (op : Bang.OpId) (arg : MVal) (Θ : List MVal) :
           simp only [readback, mtvarIdx_readback, Bang.storeSet, readback, List.map_set]
       | _ => simp only [readback]
 
-/-- **SLICE 3b — the effect-store correspondence (STATEMENT; the weave is envm3).**
+/-! ### SLICE 3b — the effect-store correspondence (the weave, envm3)
 
 Generalizes `evalE_agrees_evalD_pure` off the pure fragment: arbitrary M (no `EffectFree`), arbitrary
 `Good`-related input stores, over a general terminal. `readbackTermS` extends `readbackTerm` to the
@@ -1801,7 +1801,40 @@ RESUME MAP (envm3 — the weave; 3a's infra is ALL reusable, the cruxes are PROV
   None of these is a refutation risk; all are the same readback-commutation shape 3a's distribution
   lemmas already exemplify. STOP-and-SHOW the assembled statement was this block; the weave is envm3.
 
-`sorry` — the 3b weave (statement + resume map only; see the WALLS above). -/
+The weave lives in `evalE_agrees_evalD_gen` below (the outcome-general engine); the frozen
+`evalE_agrees_evalD_effect` is its `mterm`-half corollary. -/
+
+/-- **The OUTCOME-GENERAL 3b engine (envm3).** The inductive core `evalE_agrees_evalD_effect` is the
+`mterm`-half of: for ANY `MOutcome` (terminal OR `mraised`), an `evalE` success maps to an `evalD`
+success at the read-back outcome, threading the store correspondence + `Good` extension forward.
+
+Generalizing over the outcome is REQUIRED for the induction: `letC`/`app`/`perform`/`handle` recurse into
+sub-evals that may RAISE, so the IH must cover the raise outcome (the `sim` exemplar in
+`AbstractMachine.lean` conjoins a term-half and a raise-half for exactly this reason).
+
+KEY SIMPLIFICATION (why NO `StoresDisjoint` premise is needed — the resume map's W4 dissolves): both
+machines key stores by the SAME identity and `StoresCorr` gives PER-STORE `get?` agreement (W1's
+`get?_readback` family), so the σ→τ→κ dispatch cascade takes the IDENTICAL branch on both sides
+without a cross-kind disjointness argument. `run_evalD`'s `sim` needed disjointness only because it
+related a store to a DIFFERENT structure (an HStack); here both sides are id-keyed lists.
+
+The output WF is stated per-outcome: a `mterm t` yields `MTerm.WF t ∧ MTerm.PureV t`; a `mraised n op mv`
+yields `MVal.WF mv ∧ MVal.PureV mv` (the raise payload). -/
+theorem evalE_agrees_evalD_gen :
+    ∀ (f : Nat) (γ : List Val) (M : Comp) (out : MOutcome) (ρ : MEnv) (g G g' : Nat)
+      (eσ eσ' : ESStore) (eτ eτ' : ETHeap) (eκ eκ' : ECStore)
+      (dσ : Bang.CalcVM.SStore) (dτ : Bang.CalcVM.THeap) (dκ : Bang.CalcVM.CStore),
+      EnvAgrees ρ γ → MEnv.WF ρ → MEnv.PureV ρ → Comp.ScopedC γ.length M →
+      StoresGood eσ eτ eκ → StoresCorr eσ eτ eκ dσ dτ dκ →
+      evalE f g eσ eτ eκ ρ M = some (out, g', eσ', eτ', eκ') →
+      ∃ (G' : Nat) (dσ' : Bang.CalcVM.SStore) (dτ' : Bang.CalcVM.THeap) (dκ' : Bang.CalcVM.CStore),
+        Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M)
+            = some (readbackTermS out, G', dσ', dτ', dκ')
+          ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ StoresGood eσ' eτ' eκ'
+          ∧ (∀ t, out = .mterm t → MTerm.WF t ∧ MTerm.PureV t)
+          ∧ (∀ n op mv, out = .mraised n op mv → MVal.WF mv ∧ MVal.PureV mv) := by
+  sorry
+
 theorem evalE_agrees_evalD_effect :
     ∀ (f : Nat) (γ : List Val) (M : Comp) (t : MTerm) (ρ : MEnv) (g G g' : Nat)
       (eσ eσ' : ESStore) (eτ eτ' : ETHeap) (eκ eκ' : ECStore)
@@ -1813,7 +1846,12 @@ theorem evalE_agrees_evalD_effect :
         Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M)
             = some (readbackTerm t, G', dσ', dτ', dκ')
           ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ MTerm.WF t ∧ MTerm.PureV t := by
-  sorry
+  intro f γ M t ρ g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ hag hWF hP hSc hG hC h
+  obtain ⟨G', dσ', dτ', dκ', hd, hC', _, hWt, _⟩ :=
+    evalE_agrees_evalD_gen f γ M (.mterm t) ρ g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ
+      hag hWF hP hSc hG hC h
+  obtain ⟨hWFt, hPt⟩ := hWt t rfl
+  exact ⟨G', dσ', dτ', dκ', by simpa only [readbackTermS] using hd, hC', hWFt, hPt⟩
 
 /-- **The correspondence STATEMENT** (PLFA `γ≈ₑσ`; slice-3 proof).
 
