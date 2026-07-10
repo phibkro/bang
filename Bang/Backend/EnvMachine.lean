@@ -3351,29 +3351,33 @@ If `evalE` runs `M` under `ρ` to a returner `mret mv`, and `ρ` agrees with a s
 read-back value. Generalized from the empty env to an arbitrary `ρ`/`σ` per PLFA's warning
 (the induction won't fire on the empty-env special case).
 
-RESUME MAP (slice-3b — the effect-store correspondence, the ONLY remaining work here):
+This is the top-of-machine corollary of `evalE_agrees_evalD_effect`: a whole-program run
+(EMPTY input stores on BOTH sides) that returns `mret mv` under an agreeing env `ρ`/`σ` maps,
+under `substEnv γ`, to an `evalD` run returning `ret (readback mv)`.
 
-- SLICE 3a is DONE: `evalE_agrees_evalD_pure` (above) proves this correspondence for the PURE fragment
-  (empty stores, `EffectFree` M) over a GENERAL terminal, axiom-clean. Its infra — `readbackTerm`,
-  `MTerm.WF`/`MTerm.PureV`, the single + 2-binder cruxes, `readback_evalV`, `evalV_WF`/`evalV_PureV`,
-  `substEnv_closed`, the `Good` closure discipline (`MVal.PureV`/`MEnv.WF`) — is ALL reusable by 3b.
-- 3b closes THIS headline by (a) relaxing `EffectFree` and (b) threading a store-correspondence
-  MVal-store ↔ Val-store through readback — the analog of `run_evalD`'s `Corr`/`TCorr`/`CCorr` +
-  `StoresBelow`/`StoresDisjoint` (`AbstractMachine.lean`). Relate `evalE`'s σ/τ/κ (MVal) to `evalD`'s
-  (Val) pointwise-under-readback; mirror the id-first σ→τ→κ dispatch + the throws-catch case-for-case;
-  `mraised` slots into `readbackTerm` as the third terminal. STOP-and-SHOW the correspondence-statement
-  shape BEFORE the weave (heavy sub-unit; the mandatory checkpoint).
-
-`sorry` — the 3b effect-store weave (3a pure fragment PROVEN; see `evalE_agrees_evalD_pure`). -/
-theorem evalE_agrees_evalD (f : Nat) (γ : List Val) (M : Comp) (mv : MVal)
-    (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) (ρ : MEnv) (g' : Nat)
+**Store-pinning (ruling #1, task #11):** the input stores are pinned to `[] [] []` on the `evalE`
+side (matching `evalD`'s `[] [] []`). The earlier form left the `evalE` stores ARBITRARY while pinning
+`evalD` to empty with no correspondence premise — that is UNSOUND (`headline_refutation_witness` below:
+an `evalE` state cell `evalD`'s empty store can't resolve makes `evalE` return where `evalD` raises).
+The empty-store pinning discharges `StoresGood`/`StoresCorr` trivially, and the `MEnv.WF`/`MEnv.WFClos`/
+`Comp.ScopedC`/`Comp.HandlerWF` premises are the elaboration-guaranteed well-formedness the `_effect`
+correspondence needs. Then the result is `evalE_agrees_evalD_effect` at empty stores, with
+`readbackTerm (mret mv) = term (ret (readback mv))`. -/
+theorem evalE_agrees_evalD (f : Nat) (γ : List Val) (M : Comp) (mv : MVal) (ρ : MEnv) (g' : Nat)
     (eσ' : ESStore) (eτ' : ETHeap) (eκ' : ECStore)
-    (_hagree : EnvAgrees ρ γ)
-    (_h : evalE f 0 eσ eτ eκ ρ M = some (.mterm (.mret mv), g', eσ', eτ', eκ')) :
-    ∃ F g'' σ' τ' κ',
-      Bang.CalcVM.evalD F 0 [] [] [] (substEnv γ M)
+    (hagree : EnvAgrees ρ γ) (hWF : MEnv.WF ρ) (hP : MEnv.WFClos ρ)
+    (hSc : Comp.ScopedC γ.length M) (hHWF : Comp.HandlerWF γ.length M)
+    (h : evalE f 0 [] [] [] ρ M = some (.mterm (.mret mv), g', eσ', eτ', eκ')) :
+    ∃ g'' σ' τ' κ',
+      Bang.CalcVM.evalD f 0 [] [] [] (substEnv γ M)
         = some (.term (.ret (readback mv)), g'', σ', τ', κ') := by
-  sorry -- SLICE-3 induction (see RESUME MAP above): crux proven; grind patterned on sim/run_evalD
+  obtain ⟨dσ', dτ', dκ', hd, _, _, _⟩ :=
+    evalE_agrees_evalD_effect f γ M (.mret mv) ρ 0 g' [] eσ' [] eτ' [] eκ' [] [] []
+      hagree hWF hP hSc hHWF
+      ⟨fun p hp => (List.not_mem_nil hp).elim, fun p hp => (List.not_mem_nil hp).elim,
+        fun p hp => (List.not_mem_nil hp).elim⟩
+      ⟨rfl, rfl, rfl⟩ h
+  exact ⟨g', dσ', dτ', dκ', by simpa only [readbackTerm] using hd⟩
 
 /-- **REFUTATION WITNESS (envm3, 2026-07-10) — the headline is FALSE for arbitrary evalE input stores.**
 The headline (:1715) binds `eσ eτ eκ` as ARBITRARY inputs on the `evalE` side while pinning the `evalD`
