@@ -997,6 +997,25 @@
     "sha256_pinned": ""
   },
   {
+    "key": "ahman-fossacs16-dependent-fibred-effects",
+    "title": "Dependent Types and Fibred Computational Effects",
+    "year": "2016",
+    "doi": "10.1007/978-3-662-49630-5_3",
+    "eprint": "",
+    "topics": [
+      "dependent-effects",
+      "cbpv"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "substrate",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "amin-rompf-popl17-definitional-interpreters",
     "title": "Type Soundness Proofs with Definitional Interpreters",
     "year": "2017",
@@ -1108,6 +1127,26 @@
     "sha256_pinned": ""
   },
   {
+    "key": "brady-ecoop21-idris2-qtt-in-practice",
+    "title": "Idris 2: Quantitative Type Theory in Practice",
+    "year": "2021",
+    "doi": "10.4230/LIPIcs.ECOOP.2021.9",
+    "eprint": "",
+    "topics": [
+      "refinement-types",
+      "graded-types"
+    ],
+    "grounds": [
+      "refinement-types-survey",
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "census-neighbour",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "brown-palsberg-popl16-self-interpreter-fomega",
     "title": "Breaking Through the Normalization Barrier: A Self-Interpreter for F-omega",
     "year": "2016",
@@ -1136,6 +1175,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "casinghino-popl14-combining-proofs-programs",
+    "title": "Combining Proofs and Programs in a Dependently Typed Language",
+    "year": "2014",
+    "doi": "10.1145/2535838.2535883",
+    "eprint": "",
+    "topics": [
+      "dependent-effects"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "shape-anchor",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "devilhena-pottier-popl21-separation-logic-handlers",
     "title": "A Separation Logic for Effect Handlers",
     "year": "2021",
@@ -1158,6 +1215,79 @@
     "topics": [],
     "grounds": [],
     "role": "",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "eisenberg-haskell12-singletons",
+    "title": "Dependently Typed Programming with Singletons",
+    "year": "2012",
+    "doi": "10.1145/2364506.2364522",
+    "eprint": "",
+    "topics": [
+      "dependent-effects"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "recipe",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "ellis-icfp22-generic-go-monomorphisation",
+    "title": "Generic Go to Go: Dictionary-Passing, Monomorphisation, and Hybrid",
+    "year": "2022",
+    "doi": "10.48550/arXiv.2208.06810",
+    "eprint": "",
+    "topics": [
+      "monomorphization"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "census-neighbour",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "gaboardi-esop21-graded-hoare-logic",
+    "title": "Graded Hoare Logic and its Categorical Semantics",
+    "year": "2021",
+    "doi": "10.1007/978-3-030-72019-3_9",
+    "eprint": "",
+    "topics": [
+      "grades",
+      "refinement-types"
+    ],
+    "grounds": [
+      "refinement-types-survey"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "griesemer-oopsla20-featherweight-go",
+    "title": "Featherweight Go",
+    "year": "2020",
+    "doi": "10.1145/3428217",
+    "eprint": "",
+    "topics": [
+      "monomorphization"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "census-neighbour",
     "ondisk": false,
     "hop": null,
     "path": null,
@@ -1261,6 +1391,24 @@
       "ADR-0063"
     ],
     "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "lehmann-pldi23-flux-liquid-types-rust",
+    "title": "Flux: Liquid Types for Rust",
+    "year": "2023",
+    "doi": "10.48550/arXiv.2207.04034",
+    "eprint": "",
+    "topics": [
+      "refinement-types"
+    ],
+    "grounds": [
+      "refinement-types-survey"
+    ],
+    "role": "shape-anchor",
     "ondisk": false,
     "hop": null,
     "path": null,
@@ -1382,6 +1530,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "lutze-oopsla25-simple-essence-monomorphization",
+    "title": "The Simple Essence of Monomorphization",
+    "year": "2025",
+    "doi": "10.1145/3720472",
+    "eprint": "",
+    "topics": [
+      "monomorphization"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "mcbride-16-plenty-o-nuttin",
     "title": "I Got Plenty o' Nuttin'",
     "year": "2016",
@@ -1396,6 +1562,44 @@
     "sha256_pinned": ""
   },
   {
+    "key": "mohamed-cav25-lean-smt",
+    "title": "lean-smt: An SMT Tactic for Discharging Proof Goals in Lean",
+    "year": "2025",
+    "doi": "10.1007/978-3-031-98682-6_11",
+    "eprint": "",
+    "topics": [
+      "agentic-proving",
+      "refinement-types"
+    ],
+    "grounds": [
+      "refinement-types-survey"
+    ],
+    "role": "recipe",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "moon-esop21-graded-modal-dtt",
+    "title": "Graded Modal Dependent Type Theory",
+    "year": "2021",
+    "doi": "10.1007/978-3-030-72019-3_17",
+    "eprint": "",
+    "topics": [
+      "grades",
+      "dependent-effects"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "frontier",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "orchard-icfp19-granule",
     "title": "Quantitative Program Reasoning with Graded Modal Types",
     "year": "2019",
@@ -1404,6 +1608,25 @@
     "topics": [],
     "grounds": [],
     "role": "",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "pedrot-popl20-fire-triangle",
+    "title": "The Fire Triangle: How to Mix Substitution, Dependent Elimination, and Effects",
+    "year": "2020",
+    "doi": "10.1145/3371126",
+    "eprint": "",
+    "topics": [
+      "dependent-effects",
+      "cbpv"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "foundational",
     "ondisk": false,
     "hop": null,
     "path": null,
@@ -1483,6 +1706,24 @@
     "sha256_pinned": ""
   },
   {
+    "key": "rondon-pldi08-liquid-types",
+    "title": "Liquid Types",
+    "year": "2008",
+    "doi": "10.1145/1375581.1375602",
+    "eprint": "",
+    "topics": [
+      "refinement-types"
+    ],
+    "grounds": [
+      "refinement-types-survey"
+    ],
+    "role": "foundational",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "rossberg-icfp15-1ml",
     "title": "1ML -- Core and Modules United (F-ing First-Class Modules)",
     "year": "2015",
@@ -1553,6 +1794,26 @@
     "sha256_pinned": ""
   },
   {
+    "key": "swamy-popl16-fstar-dependent-multimonadic",
+    "title": "Dependent Types and Multi-Monadic Effects in F*",
+    "year": "2016",
+    "doi": "10.1145/2837614.2837655",
+    "eprint": "",
+    "topics": [
+      "refinement-types",
+      "dependent-effects"
+    ],
+    "grounds": [
+      "refinement-types-survey",
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "closest-prior-art",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "timany-jacm24-logical-type-soundness",
     "title": "A Logical Approach to Type Soundness",
     "year": "2024",
@@ -1603,6 +1864,25 @@
     "sha256_pinned": ""
   },
   {
+    "key": "vakar-thesis17-effectful-dependent-types",
+    "title": "In Search of Effectful Dependent Types",
+    "year": "2017",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "dependent-effects",
+      "cbpv"
+    ],
+    "grounds": [
+      "lambda-cube-ascent-survey"
+    ],
+    "role": "substrate",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "vanhorn-might-icfp10-abstracting-abstract-machines",
     "title": "Abstracting Abstract Machines",
     "year": "2010",
@@ -1615,6 +1895,24 @@
       "inv-4"
     ],
     "role": "substrate",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "vazou-icfp14-refinement-types-haskell",
+    "title": "Refinement Types for Haskell",
+    "year": "2014",
+    "doi": "10.1145/2628136.2628161",
+    "eprint": "",
+    "topics": [
+      "refinement-types"
+    ],
+    "grounds": [
+      "refinement-types-survey"
+    ],
+    "role": "confirmed-sota",
     "ondisk": false,
     "hop": null,
     "path": null,
