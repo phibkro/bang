@@ -149,6 +149,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **agents** — lane-discipline pack injected into role files via generated block (plan 012 slice 4) (`ff57f173`)
 - **tooling** — #82 verbs holes/impact/semver-diff over the Query rails (`6c15d867`)
 - **diag** — stable diagnostic codes + `bang explain` (plan 013 slice 5) (`c6731077`)
+- **dx** — generated bang TextMate grammar + Shiki highlighting (plan 013 slice 1) (`dec48cf5`)
+- **docs** — wire doc-gen4 via a docbuild/ subproject + `just docs` (plan 010 steps 2-3) (`e1a9fc24`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
@@ -188,5 +190,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tools** — install-hooks.sh works from linked worktrees (`1d175a6d`)
 - **site** — the vocs build has NEVER succeeded — alias non-bundled fence langs at the sync seam (`0b1e9cca`)
 - **fmt** — preserve grouping parens on qualified force `$(Mod.op)` (#96) (`8d4d3739`)
+- **modules** — `use Mod (f)` hoists a self-recursive `pub let rec` (#97 item 3) (`225f3f42`)
 
 <!-- END GENERATED changelog -->

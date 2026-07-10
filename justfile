@@ -435,6 +435,11 @@ shake:
 # Generated API docs (doc-gen4) from the `/--`/`/-!` docstring convention. Builds
 # in the `docbuild/` SUBPROJECT (its own lake workspace — see docbuild/lakefile.toml)
 # so the root manifest stays untouched. NOT in `just verify`: doc-gen4 + the
+# KNOWN-BLOCKED upstream (2026-07-10): UnicodeBasic (doc-gen4 transitive dep) gates its
+# extern_lib behind isWindows, so its precompiled .so lacks the C symbol on Linux —
+# lake build Bang:docs fails at UnicodeBasic.TableLookup. No requirer-side override exists
+# (traced vs Lake 5.0.0 source; plans/010 report). Fix = one-line upstream PR to
+# fgdorais/lean4-unicode-basic un-gating the extern_lib (operator ledger).
 # import-closure page render is slow by design. First run resolves doc-gen4's deps
 # (network) and compiles it (tens of minutes cold).
 docs:
