@@ -2627,7 +2627,23 @@ theorem evalE_agrees_evalD_gen :
                 simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, readbackTermS, hrbarg]
               · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact hArgGood
       | _ => rw [hw] at h; simp at h
-    | handle hdl M => sorry
+    | handle hdl M =>
+      -- HANDLE (envm3 resume — the last _gen case). Infra ALL landed + green:
+      --   substEnv_handle · substEnvH_{state,transaction,custom,throws,label} · hSc.handle_inv ·
+      --   the mint crux (substEnv_cons_subst with vcap ClosedE) · single-counter (mint keys g on both).
+      -- SHAPE per kind (mirror the perform arm + the letC raise short-circuit):
+      --   mint id:=g, extend ρ with mvcap g (label hdl), recurse at g+1 under the pushed store entry,
+      --   then match the recursion outcome and POP (.tail) — .tail commutes with the readback-map so
+      --   StoresCorr survives. The pushed entry relates by readback: state evalV ρ s ↔ substEnvV γ s
+      --   (readback_evalV); txn Θ.map(evalV ρ) ↔ Θ (needs Θ cells CLOSED — kernel ADR-0030, add a
+      --   handler-payload-scope premise or derive from hSc); custom (evalV ρ p, cls, ρ) ↔
+      --   (readback p, closed-cls) — CStoreCorr by construction. throws: no push; CATCH mraised g
+      --   "raise" ⟺ evalD raised g "raise" (if_neg/if_pos on n=g∧op="raise"). The recursion IH fires
+      --   at fuel f (evalE/evalD both recurse at f). A first throws-arm attempt hit fiddly evalD
+      --   reduction (the nested `show … from by` rewrites) — do the evalD side with a clean
+      --   `rw [substEnv_handle]; simp only [Bang.CalcVM.evalD, Handler.label, substEnvH_*]` then bind
+      --   the recursion via the IH `hdR`, mirroring perform, NOT nested `show`s.
+      sorry
     | oom => simp [evalE] at h
     | wrong s => simp [evalE] at h
 
