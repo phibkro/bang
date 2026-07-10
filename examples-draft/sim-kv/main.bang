@@ -1,0 +1,22 @@
+-- SKELETON (not runnable, and blocked past Stage-7): the scheduler clause
+-- `ret ((lcg SEED) mod n)` is a COMPUTE-THEN-RETURN body — it hits ADR-0095 D4
+-- (the ret-shape wall / gap G1). Stays a draft until binop typing (ADR-0065) +
+-- grade surfacing (Q27) land. See docs/notes/ndet-dst-design.md §4.4 + §7.
+--
+-- `deliverStep`, `pendingCount`, `quiescentEqual`, `world0`, `SEED` stand in for
+-- ordinary Div-fragment library values + the externalized immutable world (§5.2);
+-- they are elided here — this file shows the SHAPE the DST handler wants, not a
+-- complete program.
+
+effect Choice { pick : Int -> Int }
+
+let lcg = fun x => (x * 1103515245 + 12345)
+
+let main =
+  handle
+    let m0 = deliverStep world0 (sched.pick(pendingCount world0)) in
+    let m1 = deliverStep m0     (sched.pick(pendingCount m0))     in
+    quiescentEqual m1
+  with Choice as sched {
+    pick(n) => ret ((lcg SEED) mod n)
+  }
