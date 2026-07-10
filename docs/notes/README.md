@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (32)
+## active (33)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -15,6 +15,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`calm-as-grade-survey.md`](calm-as-grade-survey.md) — CALM as a grade — can monotonicity be a coeffect in bang's row system?
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture
 - [`compiler-as-dbms-survey.md`](compiler-as-dbms-survey.md) — Compiler-as-DBMS — design survey: the query-engine architecture for bang's tooling
+- [`ctr-design.md`](ctr-design.md) — Compute-then-return design map — lifting the ADR-0095 D4 ret-shape restriction (#44 exit gate)
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
