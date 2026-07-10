@@ -2032,9 +2032,143 @@ theorem evalE_agrees_evalD_gen :
             rw [show Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M) = _ from hdM]
             simp only [readbackTermS, Option.bind_some]
           · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact ⟨hWFw, hWCw⟩
-    | app M v => sorry
-    | case w N₁ N₂ => sorry
-    | split w N => sorry
+    | app M v =>
+      obtain ⟨hScM, hScv⟩ := hSc.app_inv
+      have hscv : Val.ScopedV γ.length v := hlen ▸ hScv
+      have hWFav : MVal.WF (evalV ρ v) := evalV_WF hWF (hlen ▸ hscv)
+      have hWCav : MVal.WFClos (evalV ρ v) := evalV_WFClos hWF hP (hlen ▸ hscv)
+      simp only [evalE, Option.bind_eq_bind] at h
+      cases hM : evalE f g eσ eτ eκ ρ M with
+      | none => rw [hM] at h; simp at h
+      | some p =>
+        rw [hM] at h
+        obtain ⟨outM, g₁, σ₁, τ₁, κ₁⟩ := p
+        cases outM with
+        | mterm tM => cases tM with
+          | mlam N' ρ' =>
+            simp only [Option.bind_some] at h
+            obtain ⟨G₁, dσ₁, dτ₁, dκ₁, hdM, hCM, hGM, hWtM, -⟩ :=
+              ih γ M (.mterm (.mlam N' ρ')) ρ g G g₁ eσ σ₁ eτ τ₁ eκ κ₁ dσ dτ dκ
+                hag hWF hP (hlen ▸ hScM) hG hC hM
+            obtain ⟨hWFlam, hWClam⟩ := hWtM _ rfl
+            obtain ⟨hWFρ', hscN'⟩ := (by simpa only [MTerm.WF] using hWFlam :
+              MEnv.WF ρ' ∧ Comp.ScopedC ((readbackEnv ρ').length + 1) N')
+            obtain ⟨-, -, hWCρ'⟩ := (by simpa only [MTerm.WFClos] using hWClam :
+              Comp.ScopedC ((readbackEnv ρ').length + 1) N' ∧ MEnv.WF ρ' ∧ MEnv.WFClos ρ')
+            have hagN : EnvAgrees (evalV ρ v ∷ₑ ρ') (readback (evalV ρ v) :: readbackEnv ρ') := by
+              simp only [EnvAgrees, readbackEnv]
+            have hWFN : MEnv.WF (evalV ρ v ∷ₑ ρ') := MEnv.WF.cons hWFav hWFρ'
+            have hWCN : MEnv.WFClos (evalV ρ v ∷ₑ ρ') := MEnv.WFClos.cons hWCav hWCρ'
+            have hScN'' : Comp.ScopedC (readback (evalV ρ v) :: readbackEnv ρ').length N' := by
+              simpa only [List.length_cons] using hscN'
+            obtain ⟨G', dσ', dτ', dκ', hdN, hC', hG', hWt', hRt'⟩ :=
+              ih (readback (evalV ρ v) :: readbackEnv ρ') N' out (evalV ρ v ∷ₑ ρ') g₁ G₁ g'
+                σ₁ eσ' τ₁ eτ' κ₁ eκ' dσ₁ dτ₁ dκ₁ hagN hWFN hWCN hScN'' hGM hCM h
+            refine ⟨G', dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
+            have hcrux : substEnv (readback (evalV ρ v) :: readbackEnv ρ') N'
+                = (closeUnderBindersE 1 (readbackEnv ρ') N').subst (readback (evalV ρ v)) :=
+              (substEnv_cons_subst (by simpa only [MEnv.WF] using hWFρ') hWFav N').symm
+            have hrbv : substEnvV γ v = readback (evalV ρ v) := by
+              rw [show γ = readbackEnv ρ from hag.symm, readback_evalV hWF (hlen ▸ hscv)]
+            simp only [substEnv_app, hrbv, Bang.CalcVM.evalD, Option.bind_eq_bind]
+            rw [show Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M) = _ from hdM]
+            simp only [readbackTermS, readbackTerm, Option.bind_some]
+            rw [← hcrux]; exact hdN
+          | mret _ => simp only [Option.bind_some] at h; exact absurd h (by simp)
+        | mraised n op w =>
+          simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨hout, hg, hσ, hτ, hκ⟩ := h
+          obtain ⟨G₁, dσ₁, dτ₁, dκ₁, hdM, hCM, hGM, -, hRM⟩ :=
+            ih γ M (.mraised n op w) ρ g G g₁ eσ σ₁ eτ τ₁ eκ κ₁ dσ dτ dκ
+              hag hWF hP (hlen ▸ hScM) hG hC hM
+          obtain ⟨hWFw, hWCw⟩ := hRM n op w rfl
+          have hrbv : substEnvV γ v = readback (evalV ρ v) := by
+            rw [show γ = readbackEnv ρ from hag.symm, readback_evalV hWF (hlen ▸ hscv)]
+          subst hout hg hσ hτ hκ
+          refine ⟨G₁, dσ₁, dτ₁, dκ₁, ?_, hCM, hGM, by rintro t ⟨⟩, ?_⟩
+          · simp only [substEnv_app, hrbv, Bang.CalcVM.evalD, Option.bind_eq_bind]
+            rw [show Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M) = _ from hdM]
+            simp only [readbackTermS, Option.bind_some]
+          · rintro n' op' mv' ⟨rfl, rfl, rfl⟩; exact ⟨hWFw, hWCw⟩
+    | case w N₁ N₂ =>
+      obtain ⟨hScw, hScN₁, hScN₂⟩ := hSc.case_inv
+      have hscw : Val.ScopedV γ.length w := hlen ▸ hScw
+      have hWFsc : MVal.WF (evalV ρ w) := evalV_WF hWF (hlen ▸ hscw)
+      have hWCsc : MVal.WFClos (evalV ρ w) := evalV_WFClos hWF hP (hlen ▸ hscw)
+      have hrbw : substEnvV γ w = readback (evalV ρ w) := by
+        rw [show γ = readbackEnv ρ from hag.symm, readback_evalV hWF (hlen ▸ hscw)]
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | minl mv' =>
+        rw [hw] at h
+        have hWFmv' : MVal.WF mv' := by
+          rw [hw] at hWFsc; simp only [MVal.WF, readback] at hWFsc
+          exact (Val.ScopedV.inl_inv (fun k _ => hWFsc k)).closedE_zero
+        have hWCmv' : MVal.WFClos mv' := by rw [hw] at hWCsc; simpa only [MVal.WFClos] using hWCsc
+        have hagN : EnvAgrees (mv' ∷ₑ ρ) (readback mv' :: γ) := by
+          simp only [EnvAgrees, readbackEnv]; rw [show readbackEnv ρ = γ from hag]
+        have hScN₁' : Comp.ScopedC (readback mv' :: γ).length N₁ := by
+          simpa only [List.length_cons] using hScN₁
+        obtain ⟨G', dσ', dτ', dκ', hd, hC', hG', hWt', hRt'⟩ :=
+          ih (readback mv' :: γ) N₁ out (mv' ∷ₑ ρ) g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ
+            hagN (MEnv.WF.cons hWFmv' hWF) (MEnv.WFClos.cons hWCmv' hP) hScN₁' hG hC h
+        refine ⟨G', dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
+        have hcrux : substEnv (readback mv' :: γ) N₁ = (closeUnderBindersE 1 γ N₁).subst (readback mv') :=
+          (substEnv_cons_subst hγ hWFmv' N₁).symm
+        simp only [substEnv_case, hrbw, hw, readback, Bang.CalcVM.evalD]
+        rw [← hcrux]; exact hd
+      | minr mv' =>
+        rw [hw] at h
+        have hWFmv' : MVal.WF mv' := by
+          rw [hw] at hWFsc; simp only [MVal.WF, readback] at hWFsc
+          exact (Val.ScopedV.inr_inv (fun k _ => hWFsc k)).closedE_zero
+        have hWCmv' : MVal.WFClos mv' := by rw [hw] at hWCsc; simpa only [MVal.WFClos] using hWCsc
+        have hagN : EnvAgrees (mv' ∷ₑ ρ) (readback mv' :: γ) := by
+          simp only [EnvAgrees, readbackEnv]; rw [show readbackEnv ρ = γ from hag]
+        have hScN₂' : Comp.ScopedC (readback mv' :: γ).length N₂ := by
+          simpa only [List.length_cons] using hScN₂
+        obtain ⟨G', dσ', dτ', dκ', hd, hC', hG', hWt', hRt'⟩ :=
+          ih (readback mv' :: γ) N₂ out (mv' ∷ₑ ρ) g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ
+            hagN (MEnv.WF.cons hWFmv' hWF) (MEnv.WFClos.cons hWCmv' hP) hScN₂' hG hC h
+        refine ⟨G', dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
+        have hcrux : substEnv (readback mv' :: γ) N₂ = (closeUnderBindersE 1 γ N₂).subst (readback mv') :=
+          (substEnv_cons_subst hγ hWFmv' N₂).symm
+        simp only [substEnv_case, hrbw, hw, readback, Bang.CalcVM.evalD]
+        rw [← hcrux]; exact hd
+      | _ => rw [hw] at h; simp at h
+    | split w N =>
+      obtain ⟨hScw, hScN⟩ := hSc.split_inv
+      have hscw : Val.ScopedV γ.length w := hlen ▸ hScw
+      have hWFsc : MVal.WF (evalV ρ w) := evalV_WF hWF (hlen ▸ hscw)
+      have hWCsc : MVal.WFClos (evalV ρ w) := evalV_WFClos hWF hP (hlen ▸ hscw)
+      have hrbw : substEnvV γ w = readback (evalV ρ w) := by
+        rw [show γ = readbackEnv ρ from hag.symm, readback_evalV hWF (hlen ▸ hscw)]
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | mpair mv₁ mv₂ =>
+        rw [hw] at h
+        rw [hw] at hWFsc hWCsc
+        simp only [MVal.WF, readback] at hWFsc
+        simp only [MVal.WFClos] at hWCsc
+        have hWF₁ : MVal.WF mv₁ := (Val.ScopedV.pair_inv (fun k _ => hWFsc k)).1.closedE_zero
+        have hWF₂ : MVal.WF mv₂ := (Val.ScopedV.pair_inv (fun k _ => hWFsc k)).2.closedE_zero
+        have hagN : EnvAgrees (mv₂ ∷ₑ mv₁ ∷ₑ ρ) (readback mv₂ :: readback mv₁ :: γ) := by
+          simp only [EnvAgrees, readbackEnv]; rw [show readbackEnv ρ = γ from hag]
+        have hWFN : MEnv.WF (mv₂ ∷ₑ mv₁ ∷ₑ ρ) := MEnv.WF.cons hWF₂ (MEnv.WF.cons hWF₁ hWF)
+        have hWCN : MEnv.WFClos (mv₂ ∷ₑ mv₁ ∷ₑ ρ) :=
+          MEnv.WFClos.cons hWCsc.2 (MEnv.WFClos.cons hWCsc.1 hP)
+        have hScN' : Comp.ScopedC (readback mv₂ :: readback mv₁ :: γ).length N := by
+          simpa only [List.length_cons] using hScN
+        obtain ⟨G', dσ', dτ', dκ', hd, hC', hG', hWt', hRt'⟩ :=
+          ih (readback mv₂ :: readback mv₁ :: γ) N out (mv₂ ∷ₑ mv₁ ∷ₑ ρ) g G g'
+            eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ hagN hWFN hWCN hScN' hG hC h
+        refine ⟨G', dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
+        have hcrux : substEnv (readback mv₂ :: readback mv₁ :: γ) N
+            = Comp.subst (readback mv₁) (Comp.subst (Val.shift (readback mv₂)) (closeUnderBindersE 2 γ N)) := by
+          rw [substEnv_cons2_subst hγ hWF₁ hWF₂ N]; simp only [substEnv, Comp.subst]
+        simp only [substEnv_split, hrbw, hw, readback, Bang.CalcVM.evalD]
+        rw [hcrux] at hd; exact hd
+      | _ => rw [hw] at h; simp at h
     | unfold w =>
       -- evalV ρ w = mfold mw ⇒ mret mw. evalD unfold (fold (readback mw)) ⇒ ret (readback mw).
       have hsc : Val.ScopedV γ.length w := hlen ▸ hSc.unfold_inv
