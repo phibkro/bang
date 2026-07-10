@@ -1753,6 +1753,27 @@ def StoresGood (eσ : ESStore) (eτ : ETHeap) (eκ : ECStore) : Prop :=
   ∧ (∀ p ∈ eκ, (MVal.WF p.2.1 ∧ MVal.PureV p.2.1) ∧ MEnv.WF p.2.2.2 ∧ MEnv.PureV p.2.2.2
        ∧ (∀ c ∈ p.2.2.1, Comp.ScopedC ((readbackEnv p.2.2.2).length + 2) c.2 ∧ EffectFree c.2))
 
+/-- **WEDGE WITNESS (envm3, 2026-07-10) — `StoresGood`'s `PureV`/`EffectFree` clauses are over-strong
+for the effect fragment (a THIRD `PureV`-refutation, same root as `effect_pureV_refutation_witness`).**
+`StoresGood` demands every stored value be `MVal.PureV` (and every custom clause `EffectFree`). But the
+effect fragment LEGITIMATELY stores effectful-bodied closures: `perform cap "put" (thunk N)` with an
+effectful `N` puts `mvclos N ρ` into the state cell, and custom handler clauses are typically effectful
+(they `perform`/resume). This witness pins that a WF-but-NOT-PureV value exists, so `StoresGood` cannot
+be preserved forward under such a `put`/mint — the `_gen` perform/handle cases can't discharge the
+`StoresGood eσ' eτ' eκ'` conclusion as stated.
+
+FIX (same as ruling #2): `StoresGood` should thread `WFClos` not `PureV`, and DROP the custom clauses'
+`EffectFree c.2` (a clause body may perform). Then it is preservable + true in the effect fragment. -/
+theorem storesGood_pureV_wedge :
+    MVal.WF (.mvclos (.handle (.throws 0) (.ret .vunit)) .nil)
+    ∧ ¬ MVal.PureV (.mvclos (.handle (.throws 0) (.ret .vunit)) .nil) := by
+  refine ⟨?_, ?_⟩
+  · -- WF: the closure reads back to a CLOSED vthunk (empty env, closed body).
+    simp only [MVal.WF, readback, readbackEnv, substEnv]
+    intro k; simp only [Val.shiftFrom, Comp.shiftFrom, Val.shiftFrom, Bang.Handler.shiftFrom]
+  · -- ¬PureV: the closure's body `handle …` is NOT EffectFree (EffectFree (handle _ _) = False).
+    simp only [MVal.PureV, EffectFree, not_false_eq_true, false_and, not_false_iff]
+
 /-! ### W1 — store-op ↔ readback-map commutations (the 3b store backbone, envm3)
 
 Each per-kind store op (`get?`/`put`/`push`/`.tail`) commutes with the `readback`-map that IS the
