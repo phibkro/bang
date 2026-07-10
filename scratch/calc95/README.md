@@ -2,7 +2,51 @@
 
 Scratch evidence for issue #95. NOT proof-bearing; NOT wired into the build gate.
 
-## Verdict
+## STATUS: FIXED (2026-07-10, branch `fix-95-knot-sharing`)
+
+Route (i) — elaborator-side μ-knot sharing in `buildLetRec` (`Bang/Frontend/TypeCheck.lean`)
+— is LANDED. The fix is ONE line: the knot body's self-argument changes from the raw `sv`
+(a second free reference to the growing, embedded self-value) to `fold #g` (a re-wrap of the
+just-`unfold`ed, freshly-LOCAL `#g` binding — semantically identical by the fold/unfold iso,
+ADR-0029, but syntactically removes `sv` as a free variable from the app-argument position).
+See the `buildLetRec` doc comment for the full mechanism writeup. The kernel/machine
+(`Bang/Core/Semantics/Subst.lean`, `Bang/Backend/AbstractMachine.lean`) is UNTOUCHED — this is
+a tested-stratum elaboration change only.
+
+### Post-fix numbers (measured 2026-07-10, same corpus, same machine)
+
+| measurement | before | after | ratio |
+|---|---|---|---|
+| `examples/calc/main.bang` on `--compiled` (full 10-input corpus) | 873 s | **7.3–7.9 s** | ~115× |
+| `"1+2"` single-input (`scratch/calc95/runc.sh`) | 43 s | **0.36 s** | ~120× |
+| `"1+2"` probe `maxCodeSize` | 331,587 | **19,342** | ~17× |
+| `"1+2"` probe `maxSubstTermSize` | 330,037 | **18,879** | ~17× |
+| `"1+2"` probe `totalSubstWork` | 9,365,512 | **1,291,988** | ~7× |
+| `"1+2"` probe `steps` (machine-instruction fuel) | 741 | 741 | unchanged (fuel counts instructions, not per-instruction cost — see "why `#guard` fuel can't pin this" below) |
+| codeSize trace shape | exponential doubling burst (`18K→34K→100K→166K→331K`) | flat/linear region (peaks ~19K, stays there) | doubling ELIMINATED |
+| `repro-min.bang` sweep (`n=6..80`) `maxSubstTermSize` | grows with `n` (small shape doesn't hit the full exponential regime pre-fix either — see §4 below) | **flat 655** across `n=6..80` | linear→constant per-level cost |
+| Three-engine agreement (`repro-min.bang`, env=ck=compiled) | 12 = 12 = 12 | 12 = 12 = 12 | unchanged (value-soundness held throughout — this was always a COST bug) |
+| `examples/calc/main.bang` value | `11021193` | `11021193` | UNCHANGED (matches `expected.txt`; invariant #1 preserved) |
+
+All numbers measured with `bash tools/seed-lake.sh` + `nix develop --command lake build` on
+branch `fix-95-knot-sharing`, `.lake/build/bin/bang run --compiled …` / `scratch/calc95/gen.sh`
++ `runc.sh` / `StepProbe95.lean` (rebuild recipe below, unchanged).
+
+### Why a `#guard` fuel bound can't pin the performance delta
+`CalcVM.exec`'s `fuel : Nat` counts machine-INSTRUCTION-decrementing transitions, one per
+`Instr` consumed — NOT the cost of processing that instruction's (potentially huge) residual
+`Comp`/`Val` payload. The probe confirms `steps=741` IDENTICAL pre- and post-fix on the exact
+same `"1+2"` input — only `maxCodeSize`/`maxSubstTermSize`/`totalSubstWork` (and wall-clock)
+change. So `lake build`'s `#guard`s (which gate on fuel-bounded TERMINATION + VALUE, never
+wall-clock or memory) cannot express this regression directly; `Bang/Examples.lean`'s new
+`C-LETREC` guard (§D) pins VALUE correctness on the compiled path for a re-entrant knot
+(a real, permanent regression against any future SOUNDNESS break here), and the wall-clock
+collapse is pinned externally by this README's measured table + the `examples/calc/main.bang`
+corpus (already permanently gated by `check-examples`/`check-examples-env`, though those run
+the default `env` engine, not `--compiled` — the `--compiled` numbers above are this lane's
+manual verification per issue #95's acceptance criteria).
+
+## Original verdict (2026-07-10, pre-fix — preserved for the mechanism record)
 
 The `--compiled` (CalcVM `exec ∘ compile`) engine does **NOT hang** and does **NOT loop**
 on the calc parser inputs. It **TERMINATES with the correct value** (agreeing with `env`
@@ -75,9 +119,13 @@ root = "StepProbe95"
 `.lake/build/bin/stepprobe95 Ast.bang Lexer.bang Parser.bang Eval.bang entry.bang`
 (5-file calc mode) or `--single file.bang` (single-file typed mode).
 
-## What needs an operator ruling (NOT this lane's edit)
-The fix is a **cost fix, not a soundness fix** (per issue #95's own framing). Candidates:
-sharing/memoizing the μ-knot value so `unfold sv … sv` doesn't duplicate; or a `letC`-share
-so `compile (subst v N)` doesn't copy a large `v` twice; or prompt `out of fuel` when the
-residual crosses a size threshold. All touch the proof-bearing `AbstractMachine.lean` /
-`buildLetRec`, so they are findings for the operator, not edits here.
+## What needed an operator ruling (RESOLVED — route (i) landed)
+The fix is a **cost fix, not a soundness fix** (per issue #95's own framing). The ruled
+fix was route (i) — **elaborator-side μ-knot sharing in `buildLetRec`** (NOT a machine/kernel
+change): `fold #g` instead of `sv` as the self-application argument, eliminating the SECOND
+free occurrence of the growing self-value in the knot body's substitution target. See the
+"STATUS: FIXED" section above for the mechanism + measured numbers, and `buildLetRec`'s own
+doc comment (`Bang/Frontend/TypeCheck.lean`) for the full writeup with the ADR-0029 fold/unfold-
+iso justification. `Bang/Core/Semantics/Subst.lean` / `Bang/Backend/AbstractMachine.lean`
+(the proof-bearing substitution + machine) are UNTOUCHED — invariant #4 (the machine is a
+calculation output, never hand-tuned) holds.

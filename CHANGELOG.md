@@ -189,5 +189,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **tools** — install-hooks.sh works from linked worktrees (`1d175a6d`)
 - **site** — the vocs build has NEVER succeeded — alias non-bundled fence langs at the sync seam (`0b1e9cca`)
 - **fmt** — preserve grouping parens on qualified force `$(Mod.op)` (#96) (`8d4d3739`)
+- **surface** — #95 knot-sharing — buildLetRec self-arg fold #g not sv (route i) (`ae0f0df6`)
 
 <!-- END GENERATED changelog -->
