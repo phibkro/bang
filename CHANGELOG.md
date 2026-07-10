@@ -113,6 +113,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — bang test — wire the LawTest/lawInstancesOf seam (#60) (`586b2ed`)
 - **surface** — multi-binding let sugar (#68) (`3be8fcb`)
 - **calcvm** — #44 STAGE 4 — id-first custom arm through evalD·machine·sim·U5b·Wasm (squash of feat-44-stage4-idfirst, 56 commits) (`9617744`)
+- **fmt** — canonical multi-binding let — collapse sequential chains (#71) (`3e76135`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
@@ -139,5 +140,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **nix** — scrub mathlib/batteries scripts/ — FOD store-ref leak (#63, #78) (`fa3e001`)
 - **nix** — re-pin depsHash after scripts/ scrub (#63, #78) (`d567654`)
 - **cli** — #75 — bang check --json regains file-input spans (`b42109f`)
+- **surface** — let-sugar fmt preserves the marker instead of expanding (#68 follow-up) (`21c945b`)
 
 <!-- END GENERATED changelog -->
