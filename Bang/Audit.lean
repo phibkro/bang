@@ -39,6 +39,10 @@ open Bang
 #print axioms progress
 #print axioms type_safety
 #print axioms no_accidental_handling
+-- #44 STAGE 6 (ADR-0085) — user-effect soundness composition. Both ⊆ trusted-three (custom_program_safe
+-- rides type_safety; no_accidental_handling_custom rides the axiom-free no_accidental_handling).
+#print axioms no_accidental_handling_custom
+#print axioms custom_program_safe
 #print axioms rowinst_requires_disjoint
 -- `all_or_nothing_abort` (rung-3 atomicity) RETIRED in b8f2652 (ADR-0054 collapse: the ~1225-line
 -- positional-machinery purge deleted E.3 atomicity). v1 all-or-nothing rollback is now demonstrated
