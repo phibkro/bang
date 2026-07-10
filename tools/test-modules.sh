@@ -228,6 +228,44 @@ got_err="$("$bang" run "$fixdir/entry_library.bang" 2>&1 >/dev/null)" && got_err
 check "d5-library-mode-exit" "$got_err_exit" "1"
 check_contains "d5-library-mode-says-library" "$got_err" "library"
 
+# ── plan 005 (symlink containment): an import-derived module whose SYMLINK resolves outside BOTH
+# allowed trees (the entry file's directory subtree AND the CWD root subtree — the two probe
+# locations of D1's search order) must be rejected LOUDLY, naming the resolved real path and both
+# trees. `escdir` is a second mktemp dir — a SIBLING of `fixdir`, so outside the entry tree, and
+# under /tmp, so outside the repo root too. The entry FILE itself is exempt by design (the user's
+# explicit choice — every case in this file already runs an entry from /tmp, outside the CWD root,
+# which is the standing pin of that exemption). ──
+escdir="$(mktemp -d --tmpdir bang-modules-escape-XXXXXX)"
+trap 'rm -rf "$fixdir" "$decoy" "$escdir"' EXIT
+cat > "$escdir/escape_secret.bang" <<'BANG'
+pub data Outside = O(Int)
+BANG
+ln -s "$escdir/escape_secret.bang" "$fixdir/outside.bang"
+cat > "$fixdir/symlink_escape.bang" <<'BANG'
+import outside
+0
+BANG
+got_err="$("$bang" run "$fixdir/symlink_escape.bang" 2>&1 >/dev/null)" && got_err_exit=0 || got_err_exit=$?
+check "symlink-escape-exit" "$got_err_exit" "1"
+check_contains "symlink-escape-says-escapes" "$got_err" "escapes the project"
+check_contains "symlink-escape-names-real-target" "$got_err" "escape_secret.bang"
+check_contains "symlink-escape-names-entry-tree" "$got_err" "entry tree"
+check_contains "symlink-escape-names-root" "$got_err" "the root"
+
+# ── plan 005 green control: a symlink resolving WITHIN an allowed tree (here: the entry tree)
+# still works — containment rejects only ESCAPING symlinks, not symlinks per se (pinned). ──
+cat > "$fixdir/inside_real.bang" <<'BANG'
+pub data In = I(Int)
+BANG
+ln -s "$fixdir/inside_real.bang" "$fixdir/inside.bang"
+cat > "$fixdir/symlink_inside.bang" <<'BANG'
+import inside
+match (inside.I(5) : inside_In) { inside_I(n) -> n }
+BANG
+got_out="$("$bang" run "$fixdir/symlink_inside.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "symlink-within-tree-stdout" "$got_out" "5"
+check "symlink-within-tree-exit" "$got_exit" "0"
+
 echo "──────────────────────────────"
 echo "modules: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
