@@ -97,6 +97,14 @@ _Lane scripts — one-off orchestration helpers._
 |---|---|---|---|
 | [`release-artifact.sh`](release-artifact.sh) | `ci` | `.github/workflows/release.yml`, `Main.lean`, `examples/caesar/main.bang` | the strip + smoke + name recipe for a release binary, as ONE |
 
+## release (1)
+
+__
+
+| script | runs-in | couples-with | purpose |
+|---|---|---|---|
+| [`release.sh`](release.sh) | `manual` | `CHANGELOG.md`, `justfile` | the release battery (plan 011) |
+
 ## devenv (1)
 
 __

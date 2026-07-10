@@ -139,6 +139,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **examples** — echo-mock — ADR-0084 slice A, Net effect over a pure mock handler (`6cccef20`)
 - **examples** — ndet-sim-kv-a/-b — sim-KV handler-swap demo (#28 rung-2 entry, ndet-dst-design.md) (`ef338d1f`)
 - **gate** — wire check-examples-env into the verify chain (`c91cde42`)
+- **examples** — R2 replicated-KV hello-world (ndet-replicated-kv-a/-b) (`69ccc9cc`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
