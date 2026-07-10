@@ -34,15 +34,13 @@ the nested same-effect dispatch oracle — 23 examples. **#94 verdict (b)**: ann
 structurally (no open-row surface syntax exists); workaround posted to the issue — drop the ascription,
 let-generalization gives real ∀ρ reuse today; the subeffecting/Rémy/open-row-syntax fork DEFERRED.
 
-**The census wall sharpened: the (i′) StackInc-only carrier is machine-INSUFFICIENT** — the w2census attempt
-(re-parked @ `feat-lr-carrier-stackinc-wip @ 683a7448`, pushed) turned 28 non-building BinaryLR sites into a
-GREEN build with two characterized sorry-classes: reinstall/append needs per-frame `StackAbove`; MINT/refl
-arms need `StackBelow g` on observation stacks (`StackInc` = ordering ⇏ `StackBelow` = bounding), and carrying
-both collides with `KrelS_g_cast`'s g-independence. **The carrier fork — (a) monotone-only `g ≤ g'` cast +
-carry both, vs (b) `WellCounted` as explicit `CrelK` premise — is under a kernel-engineer refute-first probe
-(task #45, branch `design-lr-carrier-fork`) producing an ADR-0096 amendment for operator ruling.** The
-census count is unchanged at 18; the landing shape post-ruling is also unchanged — 18→20 via
-`lr_fundamental` + `lr_fundamental_closed`, while the STILL-FLAGGED `lr_sound` additionally needs Q22 (HELD).
+**The census wall is fully machine-characterized and the route is RULED** — four refute-first rounds
+(ADR-0096 amendments ①–③) killed every cheap shape; round 4's α-probe refuted the last def-change route
+at delivery (`krelS_hole_det` genuinely FALSE, axiom-clean falsifier KEPT as do-not-weaken). **Operator
+ruling (2026-07-10 night): the census unit stays PARKED; route (β) — the fuel-indexed LR re-index, the
+only route that closes the wall — runs as a BACKGROUND lane (`feat-lr-fuel-reindex`, sliced) parallel to
+the emission arc.** Census unchanged at 18; the landing shape unchanged — 18→20 via `lr_fundamental` +
+`lr_fundamental_closed`; the STILL-FLAGGED `lr_sound` additionally needs Q22 (HELD).
 
 **The tooling/hygiene stratum jumped a rung** (the /improve loop: 11 plans, 9 landed — `plans/README.md` is
 the ledger): `just verify` 27s→~10s warm (concurrent batteries) + `test-modules` AND the env-engine
@@ -62,16 +60,16 @@ v1, the polymorphism ladder, recursion/strings all shipped in it; census axiom-c
 **◊5.25 MET-AS-AMENDED (operator ruling γ, 2026-07-10 evening)**: all four demo clauses landed (sim-KV ·
 replicated-KV + drops · echo mock · #87 param binder); the census clause honestly re-scoped — three
 machine-arbitrated rounds refuted every no-def-change route to 18→20 (the HOLE-DETERMINACY wall; ADR-0096
-census4 addendum), so the unit is PARKED at `feat-lr-carrier-stackinc-wip @ 1e5656c5` (22 sorries retired
-today incl. a hidden third lr_fundamental path-sorry CLOSED; the (α) def-conclusion-strengthening probe is
-the resume trigger, fresh session). Emission: rungs 1–2b DEMONSTRATED (pure · comparisons+guarded-div ·
+census4 addendum), so the unit is PARKED at `feat-lr-carrier-stackinc-wip @ 25f18ed2` (22 sorries retired
+today incl. a hidden third lr_fundamental path-sorry CLOSED; the (α) probe RAN and REFUTED-at-delivery —
+amendment ③ ruled: (β) fuel-reindex proceeds as a background lane). Emission: rungs 1–2b DEMONSTRATED (pure · comparisons+guarded-div ·
 throws→try_table · state→locals; 66 programs wasmtime==Source.eval; rung 3 = the journal/rollback novelty,
 named). #95 fixed (~115×, knot sharing); #96 fixed (the missing printer tier); #97 partially (use-hoist;
 Mod_Eff mechanism traced). The 013 ergonomics menu: S1 grammar (site highlights bang) · S5 codes+explain ·
-S7/8/9 new/update/watch LANDED. **In flight**: nothing. **Queued**: the α-probe (census resume trigger) ·
-the #52 Spanned-Surf design probe (unblocks `why`, LSP hover, rich diagnostics) · banner sweep + 010 (docs
-build waits on Lake upstream or a fork-pin ruling) · Mod_Eff slice · 013-S2 LSP + S6 fixits · rung-3 design ·
-#83 dedup · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
+S7/8/9 new/update/watch LANDED. **In flight**: the (β) fuel-reindex background lane
+(`feat-lr-fuel-reindex`, slice 1). **Queued**: the #52 Spanned-Surf design probe (unblocks `why`, LSP hover,
+rich diagnostics) · banner sweep + 010 (docs build waits on Lake upstream or a fork-pin ruling) · Mod_Eff
+slice · 013-S2 LSP + S6 fixits · rung-3 design · #83 dedup · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 
 ## Where things live (SSoT — reference these, don't copy them)
 
@@ -83,7 +81,7 @@ build waits on Lake upstream or a fork-pin ruling) · Mod_Eff slice · 013-S2 LS
 | decisions (why-we-chose-X) | `docs/decisions/` (generated `README.md` index) |
 | in-flight work | `paths/PATH-*.md` |
 | deferred proof-spine (◊4 `lr_sound` seam — #15 ruled D-now/A-later) | `paths/PATH-inc5-lr-reindex.md` |
-| the parked lr_* census unit (PARKED on the hole-determinacy wall; resume trigger = the (α) def-conclusion probe) | task #37 · `feat-lr-carrier-stackinc-wip @ 1e5656c5` · ADR-0096 + its two PROPOSED amendments |
+| the parked lr_* census unit (α REFUTED; (β) fuel-reindex = the live background lane) | `feat-lr-carrier-stackinc-wip @ 25f18ed2` · `feat-lr-fuel-reindex` (slice 1 in flight) · ADR-0096 amendments ①–③ |
 | the advisor-plan backlog (findings → plans → executor → review loop) | `plans/README.md` |
 | deferred design questions | `docs/notes/OPEN_QUESTIONS.md` (generated ledger) |
 | subagent roles | `.claude/agents/` |
