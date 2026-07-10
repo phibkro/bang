@@ -30,7 +30,7 @@ graph TD
     Backend_AbstractMachine["Backend.AbstractMachine<br/>6850L · fan-in 0"]
     Backend_EnvMachine["Backend.EnvMachine<br/>3338L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1496L · fan-in 0"]
-    Backend_Wasm["Backend.Wasm<br/>2721L · fan-in 0"]
+    Backend_Wasm["Backend.Wasm<br/>2793L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>564L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
     Core_Freshness["Core.Freshness<br/>826L · fan-in 0"]
@@ -45,8 +45,9 @@ graph TD
     Core_Typing["Core.Typing<br/>479L · fan-in 0"]
     Examples["Examples<br/>365L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>938L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>946L · fan-in 0"]
     Frontend_Query["Frontend.Query<br/>587L · fan-in 0"]
+    Frontend_Rewrite["Frontend.Rewrite<br/>292L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>2938L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
@@ -84,7 +85,7 @@ graph TD
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3338 | 0 |
 | `Backend.U5bComplete` | ? | 1496 | 0 |
-| `Backend.Wasm` | ? | 2721 | 0 |
+| `Backend.Wasm` | ? | 2793 | 0 |
 | `Core.CapCoh` | ? | 564 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
 | `Core.Freshness` | ? | 826 | 0 |
@@ -100,9 +101,10 @@ graph TD
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 365 | 0 |
 | `Frontend.Diagnostics` | ? | 213 | 0 |
-| `Frontend.Format` | ? | 938 | 0 |
+| `Frontend.Format` | ? | 946 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Query` | ? | 587 | 0 |
+| `Frontend.Rewrite` | ? | 292 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 5583 | 0 |
