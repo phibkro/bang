@@ -81,8 +81,8 @@ The surface this ADR designs is the `handle e with Name { … }` form that BUILD
 
 ```
 handle e with Net as net {         -- `as net` binds the capability in e (D1a)
-  read(x)  => ret (x + 100)        -- one-shot tail-resume: the ret value resumes the continuation
-  write(s) => ret unit             -- likewise
+  read(x)  => x + 100              -- one-shot tail-resume: the BARE value body IS the resume value (D1c)
+  write(s) => unit                 -- likewise
 }
 ```
 
@@ -90,7 +90,7 @@ and, for a handler carrying a parameter (the ADR-0025 state mechanism, read-only
 
 ```
 handle e with (Counter init 0) as ctr {
-  tick(u) => ret (param + 1)       -- `param` names the carried Val; v1 is read-only (ADR-0092 D5 defers update)
+  tick(u) => param + 1             -- design intent: `param` names the carried Val (NOT yet surface-nameable, #87; v1 read-only)
 }
 ```
 
@@ -104,7 +104,7 @@ let main =
   handle
     (net.read(1)) + (net.read(2))        -- performs through the D1a-bound `net` (D1b call form)
   with Net as net {
-    read(n) => ret (n * 10)              -- one-shot, ret-shape (D4/D5)
+    read(n) => n * 10                    -- one-shot; the bare body IS the resume value (D1c, D4/D5)
   }
 -- evaluates to (1*10) + (2*10) = 30    -- VERIFIED e2e: examples/handle-custom-tracer
 ```
@@ -204,7 +204,22 @@ already corrected):
    **compute-then-return clause bodies (D4's exit gate: ADR-0065 binop typing + Q27)**, which
    therefore outranks the param-binder slice in the queue.
 
-### D2 — the Q38 posture: a SEPARATE `handle` construct now; unify machinery, not surface
+### D1c — two more corrections at reference-documentation time (2026-07-10, binary-verified)
+
+Found by the #88 reference lane re-verifying every claim against the live binary rather than
+transcribing this ADR:
+
+1. **Clause bodies are spelled BARE — there is no `ret` keyword at the surface.** This ADR's
+   original examples wrote `read(n) => ret (n * 10)`; the landed grammar is `read(n) => n * 10`
+   — the bare value body IS the resume value. D4's `ret w` is the KERNEL typing shape, supplied
+   by elaboration; D5's implicit tail-resume is implicit in the *spelling* too, not just the
+   semantics. All examples above are corrected. (Independently found by the ndet validation:
+   the drafts that wrote explicit `ret` failed until corrected.)
+2. **D5's `resume` reservation is NOT implemented.** `effect Foo { resume : Int -> Int }`
+   checks `ok` today — a program may bind or declare `resume`, so the future explicit
+   `resume(w)` form would be a BREAKING change, exactly what D5's reservation existed to
+   prevent. Filed as a surface gap; the fix (add `resume` to the reserved-op/binder list,
+   with a teaching diagnostic) is a small slice on the effects-surface lane.
 
 **Recommendation.** Keep `handle`/`effect` as their own surface constructs, distinct from
 `trait`/`impl`, in v1. Do NOT converge the syntaxes even though D1 makes them rhyme. This is
@@ -354,7 +369,7 @@ D3). BUT `resume` is a RESERVED binder name (a user effect may not declare an op
 nor bind it), so the explicit form slots in without a surface break:
 
 ```
-v1 (implicit):     read(n) => ret (n * 10)              -- ret value = the resume value
+v1 (implicit):     read(n) => n * 10                    -- the bare value body = the resume value (D1c)
 future (explicit): read(n) => resume (n * 10)           -- `resume` first-class; tail position in one-shot,
                                                           -- multi-shot when Q22/Q27 land
 ```
@@ -421,7 +436,7 @@ walks through it — as its own unit.
 - **#1 (proof rides the reference):** the e2e `bang eval` of a user program is diff-tested against
   `Source.eval` (the kernel oracle) — the same differential-#guard discipline ADR-0093's v1 oracle
   uses (`elaborate(surface) ≡ the hand-built kernel term`). No execution path ships without the
-  oracle behind it. The tracer-bullet program (`main = handle … with Net { read(n) => ret (n*10) }`
+  oracle behind it. The tracer-bullet program (`main = handle … with Net as net { read(n) => n*10 }`
   → 30) is the first such #guard.
 - **#6 (no implicit capture; reactivity is the operator):** the `handle … with` form installs a
   handler explicitly at the use site — the "runtime is a handler installed at the use site" thesis
