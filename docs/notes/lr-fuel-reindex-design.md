@@ -92,18 +92,32 @@ in-twin cost, preserving axiom cleanliness. SHARPENED FURTHER: the crux now supp
 path needs NO `KrelSN_fuel_mono` at all (the fuel-mono consumer is eliminated from the crux, not just
 made down-compatible). The remaining crux residual is now ONLY `Dstrip = Dᵢ` + the fuel-floor `fⱼ > 0`.
 
-## The `Dstrip = Dᵢ` route — refute-first settled (machine-witnessed, NOT a STOP-trigger)
+## THE WALL — `Dstrip = Dᵢ` reduces to inter-derivation hole-det; (β)-VIABILITY RE-OPENED
 
-Per the operator's STOP-trigger discipline, the FIRST move on `Dstrip = Dᵢ` was to check whether it
-routes through a FALSE statement. `krelSN_hole_det_refuted` (in-file, axiom-clean `[propext, Quot.sound]`,
-sorry-FREE, do-not-weaken) proves the **fuel-indexed hole-det is ALSO false** — the `letF` body is vacuous
-at index `n=0` regardless of the fuel `f`, so `[letF(ret vunit), appF vunit]` relates at two holes at any
-fuel. **This is NOT a STOP — it CONFIRMS the (β) premise**: `Dstrip = Dᵢ` was never going to close via
-hole-det; it closes via the STRUCTURAL fact that both decomps bottom at the SAME boundary frame
-`handleF nid hh` (the `dispatchOn` reinstall stack-shape, `Dispatch.lean:135/146/162`), so the answer is
-CARRIED DATA off the shared boundary, not re-derived. The refutation RULES OUT the naive hole-det route
-and PINS the slice-2 close to the `dispatchOn`-structural answer-thread — exactly (β)'s claim. (β) stays
-VIABLE; no re-open.
+**FINDING (slice-2, machine-grounded, the operator's STOP-trigger FIRED):** the crux/strip's sole
+remaining residual `Dstrip = Dᵢ` is NOT carried by the fuel index — it reduces to the machine-FALSE
+`krelSN_hole_det`, and the escape is ruled out. STOP-and-reported.
+
+What the fuel index DID close (all landed, axiom-clean or wired): the strip's WELL-FOUNDEDNESS (WF on
+`(f, Sstrip.length)`, the nested-handleF resume relocation composes at fuel `fₗ < fₖ < f`), the LOCATION
+determinacy, `KrelSN_g_cast` full-general, and the entire structural walk (nil + letF + appF + the two
+id-uniqueness refutations). The strip is fuel-preserving; termination is not the wall.
+
+What it did NOT close — the trace-confirmed goal: `hstrip : KrelSN m fⱼ (F qᵣ Aᵣ) Dstrip eₛ g cfg₁.1 cfg₂.1`
+vs goal answer `Dᵢ` (= `C'` via `hDC`, from `htail2 : KrelSN C' D e' g Ko' K₂ₒ`). I STRENGTHENED the strip
+to also output the boundary tail `htailBR : KrelSN m fⱼ Dstrip D e'' g Ko' K₂ₒ` (read off `hS`'s SINGLE
+derivation). But `htailBR` (hole `Dstrip`) and `htail2` (hole `C'`) are STILL two derivations over the
+SHARED `Ko'`/`K₂ₒ`/`D` — so `Dstrip = C'` STILL reduces to `krelSN_hole_det` (FALSE, the in-file
+do-not-weaken `krelSN_hole_det_refuted` uses exactly a `Ko' = [letF, appF]`-shape, reachable by the crux's
+`Ko'`). **The escape (rebind the resume answer to `Dstrip`, decouple from `hin`'s `Dᵢ`) is ruled out**: the
+decomp's `hin` + resume conjunct SHARE the existential `Dᵢ` because the consumer (`crelK_fund_up`) needs
+them at the same answer for the biorthogonal composition; decoupling breaks the consumer.
+
+**Net: the fuel-index (β) closes the TERMINATION/LOCATION half of the wall but NOT the ANSWER-COHERENCE
+half — which is the SAME inter-derivation hole-det that killed route (α).** The `Dstrip = Dᵢ` tie is
+between two independent derivations over the shared boundary tail; no single-derivation datum (fuel-carried
+or otherwise) reaches across. This is a genuine re-open of (β)-viability, surfaced BEFORE any compat work
+per the STOP-trigger. See the report for the recommendation.
 
 **Honest deviation from amendment ③'s (β) price.** ③ priced (β) as "the wall closes" once the re-index
 lands. Slice 1 SHARPENS this: the re-index closes the LOCATION + TERMINATION halves (the g-cast survives

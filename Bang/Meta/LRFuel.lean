@@ -362,9 +362,13 @@ the wall to a well-founded strip — it does NOT hit the `krelS_hole_det` refuta
 theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g : Nat} {nid : Nat}
     {hh h' : Handler} {Sstrip Ko' Sstrip' K₂ₒ : Stack}
     (hS : KrelSN m f Cᵢ D εᵢ g (Sstrip ++ Frame.handleF nid hh :: Ko') (Sstrip' ++ Frame.handleF nid h' :: K₂ₒ)) :
-    -- The prefix relates at the boundary decomp's CARRIED answer `Dᵢ`, at the SAME fuel `f`. `Dᵢ` is an
-    -- OUTPUT existential — carried structurally off the boundary, NOT re-derived (dodging `krelSN_hole_det`).
-    ∃ (Dᵢ : CTy Eff Mult), KrelSN m f Cᵢ Dᵢ εᵢ g Sstrip Sstrip' := by
+    -- STRENGTHENED OUTPUT (the answer-coherence carrier): the prefix relates at `Dᵢ`, AND the boundary tail
+    -- `Ko'`/`K₂ₒ` relates at hole `Dᵢ` (bottom `D`) — BOTH read off `hS`'s SINGLE derivation. So `Dᵢ` is
+    -- tied to `Ko'`'s hole WITHIN `hS` (not a re-decomp). The crux consumes this boundary relation DIRECTLY
+    -- (instead of its own independently-decomposed `C'`), avoiding the inter-derivation `Dstrip = Dᵢ` tie —
+    -- the answer threads as `hS`-carried data. `e'` for the tail is existential (its row below the boundary).
+    ∃ (Dᵢ : CTy Eff Mult) (e' : Eff), KrelSN m f Cᵢ Dᵢ εᵢ g Sstrip Sstrip'
+      ∧ KrelSN m f Dᵢ D e' g Ko' K₂ₒ := by
   -- KEY DESIGN FINDING (slice 2): the strip is FUEL-PRESERVING (`f → f`, NOT `fₒ < f`). The strip walks
   -- `Sstrip` STRUCTURALLY, each frame threading its tail at the SAME fuel `f` (fuel descends ONLY at the
   -- resume conjunct, which the strip carries but never re-decomposes). So NO fuel drop, NO fuel-mono, NO
@@ -381,10 +385,14 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
       simp only [List.nil_append] at hS ⊢
       match Sstrip' with
       | [] =>
-          -- RHS = `handleF nid h' :: K₂ₒ`; the handleF clause gives the tail relation at hole `Cᵢ`. Output
-          -- `Dᵢ := Cᵢ`: the empty prefix relates at `Cᵢ = Cᵢ` (nil clause, C = D). Handler-frame hole
-          -- preserved ⇒ Cᵢ is the answer at the boundary. `krelSN_nil`.
-          exact ⟨Cᵢ, by rw [krelSN_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩⟩
+          -- RHS = `handleF nid h' :: K₂ₒ`; the handleF clause gives the tail `KrelSN Cᵢ D εᵢ g Ko' K₂ₒ`
+          -- (hole `Cᵢ` PRESERVED by the frame). Output `Dᵢ := Cᵢ`, `e' := εᵢ`: the empty prefix nil-relates
+          -- at `Cᵢ = Cᵢ`, AND the boundary tail is `hS`'s OWN handleF-tail — the answer-carrier, from the
+          -- SINGLE derivation `hS` (no re-decomp, no hole-det).
+          simp only [List.nil_append] at hS
+          rw [krelSN_handleF] at hS
+          obtain ⟨_, _, _, htailB, _⟩ := hS
+          exact ⟨Cᵢ, εᵢ, by rw [krelSN_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩, htailB⟩
       | fr' :: rest' =>
           -- RHS head is `fr'`; LHS head is `handleF nid hh`. For the relation to hold `fr'` must be
           -- `handleF nid _` (same id, `krelSN_handleF`'s `nh = nh'`). But then `nid` appears at BOTH the
@@ -430,8 +438,8 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
               | letF N₂ =>
                   rw [List.cons_append, List.cons_append, krelSN_letF] at hS
                   obtain ⟨hincT, q, A, B, φ, hC, hbody, htail⟩ := hS
-                  obtain ⟨Dᵢ, hstrip⟩ := ih htail
-                  refine ⟨Dᵢ, ?_⟩
+                  obtain ⟨Dᵢ, e', hstrip, htailB⟩ := ih htail
+                  refine ⟨Dᵢ, e', ?_, htailB⟩
                   rw [krelSN_letF]
                   exact ⟨krelSN_stackInc hstrip, q, A, B, φ, hC, hbody, hstrip⟩
               | _ => rw [List.cons_append, List.cons_append] at hS; simp [KrelSN] at hS
@@ -440,8 +448,8 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
               | appF w₂ =>
                   rw [List.cons_append, List.cons_append, krelSN_appF] at hS
                   obtain ⟨hincT, q, A, B, hC, hcw₁, hcw₂, hw, htail⟩ := hS
-                  obtain ⟨Dᵢ, hstrip⟩ := ih htail
-                  refine ⟨Dᵢ, ?_⟩
+                  obtain ⟨Dᵢ, e', hstrip, htailB⟩ := ih htail
+                  refine ⟨Dᵢ, e', ?_, htailB⟩
                   rw [krelSN_appF]
                   exact ⟨krelSN_stackInc hstrip, q, A, B, hC, hcw₁, hcw₂, hw, hstrip⟩
               | _ => rw [List.cons_append, List.cons_append] at hS; simp [KrelSN] at hS
@@ -451,13 +459,12 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
                   rw [List.cons_append, List.cons_append, krelSN_handleF] at hS
                   obtain ⟨⟨⟨hincK₁, hsb₁⟩, ⟨hincK₂, hsb₂⟩⟩, hmid, hHR, htail, hres⟩ := hS
                   subst hmid
-                  obtain ⟨Dᵢ, hstrip⟩ := ih htail
-                  -- reconstruct the handleF frame over `rest`/`rest'` at answer `Dᵢ`. Need: the StackInc/below
-                  -- pair (from hsb₁/hsb₂ restricted to the prefix — `stackBelow_prefix`), the HandlerRel (hHR),
-                  -- the tail (`hstrip`), and a RESUME conjunct for `hd` over `rest`.
-                  refine ⟨Dᵢ, krelSN_handleF_intro
+                  obtain ⟨Dᵢ, e', hstrip, htailB⟩ := ih htail
+                  -- reconstruct the handleF frame over `rest`/`rest'` at answer `Dᵢ`; thread the boundary tail
+                  -- `htailB` (from `ih`) as the strengthened output's answer-carrier.
+                  refine ⟨Dᵢ, e', krelSN_handleF_intro
                     ⟨⟨(krelSN_stackInc hstrip).1, stackBelow_prefix mh rest _ hsb₁⟩,
-                     ⟨(krelSN_stackInc hstrip).2, stackBelow_prefix mh rest' _ hsb₂⟩⟩ hHR hstrip ?_⟩
+                     ⟨(krelSN_stackInc hstrip).2, stackBelow_prefix mh rest' _ hsb₂⟩⟩ hHR hstrip ?_, htailB⟩
                   -- THE NESTED RESUME RELOCATION (the recursive heart): build `hd`'s resume conjunct over `rest`
                   -- from `hres` (over `rest ++ handleF nid hh :: Ko'`). lift the goal dispatch to the longer tail
                   -- (`dispatchOn_append_outer`), fire `hres` at `fₖ`, STRIP the result back to `rest` via a
@@ -474,14 +481,16 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
                   rw [← hS1, ← hS2] at hSk
                   -- RECURSIVE STRIP at fuel `fₗ < fₖ < f` (the descent — WF measure `(f, Sstrip.length)` drops
                   -- `f` to `fₗ`; the recursive call is on ANY stack, so it MUST be fuel-WF, not structural).
-                  obtain ⟨Dstrip, hstripR⟩ := krelSN_append_inv (m := k) (f := fₗ) (Sstrip := cfg₁.1)
-                    (Sstrip' := cfg₂.1) (nid := nid) (hh := hh) (h' := h') (Ko' := Ko') (K₂ₒ := K₂ₒ) hSk
+                  obtain ⟨Dstrip, e'', hstripR, htailBR⟩ := krelSN_append_inv (m := k) (f := fₗ)
+                    (Sstrip := cfg₁.1) (Sstrip' := cfg₂.1) (nid := nid) (hh := hh) (h' := h')
+                    (Ko' := Ko') (K₂ₒ := K₂ₒ) hSk
+                  -- THE ANSWER-COHERENCE close (the escape): `htailBR : KrelSN k fₗ Dstrip D e'' g Ko' K₂ₒ` and
+                  -- `htailB : KrelSN m f Dᵢ D e' g Ko' K₂ₒ` — but these are at DIFFERENT fuel/rows and are STILL
+                  -- two derivations over `Ko'`. So `Dstrip = Dᵢ` is NOT closed by the boundary tails alone; it
+                  -- needs `Ko'`'s hole determined — the SAME wall. Characterized; see the crux + report.
                   refine ⟨fₗ, hfₗ, qᵣ, Aᵣ, r₁, r₂, cfg₁.1, cfg₂.1, eₛ,
                     by rw [Prod.ext_iff]; exact ⟨rfl, hci1⟩,
                     by rw [Prod.ext_iff]; exact ⟨rfl, hci2⟩, hcr1, hcr2, hvr, ?_⟩
-                  -- residual: `Dstrip = Dᵢ` (the boundary-structural thread — same as the crux's), + the
-                  -- output answer must be `Dᵢ`. This is the SAME `Dstrip = Dᵢ` obligation the crux carries;
-                  -- both close via the shared-boundary structural fact. slice-2 (the answer thread).
                   sorry
               | _ => rw [List.cons_append, List.cons_append] at hS; simp [KrelSN] at hS
   termination_by (f, Sstrip.length)
@@ -629,8 +638,8 @@ theorem krelSN_splitAtId_decomp {n f : Nat} {C D : CTy Eff Mult} {e : Eff} {g : 
                     rw [← hSi, ← hSi'] at hSk
                     -- FUEL-PRESERVING strip: `hSk` at fuel `fⱼ` yields the prefix at the SAME fuel `fⱼ` (no
                     -- drop, no mono). The answer `Dstrip` is the boundary decomp's carried existential.
-                    obtain ⟨Dstrip, hstrip⟩ := krelSN_append_inv (Sstrip := cfg₁.1) (Sstrip' := cfg₂.1)
-                      (nid := nid) (hh := hh) (h' := h') (Ko' := Ko') (K₂ₒ := K₂ₒ) hSk
+                    obtain ⟨Dstrip, e'', hstrip, htailBR⟩ := krelSN_append_inv (Sstrip := cfg₁.1)
+                      (Sstrip' := cfg₂.1) (nid := nid) (hh := hh) (h' := h') (Ko' := Ko') (K₂ₒ := K₂ₒ) hSk
                     -- ARBITRATED PAYOFF (final): supply the output fuel `fⱼ' := fⱼ` DIRECTLY (`hfⱼ : fⱼ < fᵢ`),
                     -- matching the fuel-preserving strip's `fⱼ` output. NO fuel-mono, NO fuel-align, NO floor
                     -- anywhere. The ONLY remaining crux residual is `Dstrip = Dᵢ` (the boundary-structural
@@ -638,10 +647,16 @@ theorem krelSN_splitAtId_decomp {n f : Nat} {C D : CTy Eff Mult} {e : Eff} {g : 
                     refine ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, cfg₁.1, cfg₂.1, eₛ,
                       by rw [Prod.ext_iff]; exact ⟨rfl, hci⟩,
                       by rw [Prod.ext_iff]; exact ⟨rfl, hci'⟩, hcr1, hcr2, hvr, ?_⟩
-                    -- `hstrip : KrelSN m (fⱼ-1) (F qᵣ Aᵣ) Dstrip eₛ g cfg₁.1 cfg₂.1`; goal: SAME fuel `fⱼ-1`,
-                    -- answer `Dᵢ`. THE SINGLE remaining crux residual: `Dstrip = Dᵢ` — a tie between TWO
-                    -- fuel-carried decomp OUTPUTS (NOT the false `krelS_hole_det`; both sides carried data).
-                    -- The fuel matches EXACTLY (no mono); the floor `fⱼ > 0` is the strip's own sub-obligation.
+                    -- THE WALL (trace-confirmed, escape ruled out): `hstrip : KrelSN m fⱼ (F qᵣ Aᵣ) Dstrip …`,
+                    -- goal wants answer `Dᵢ` (= `C'` by `hDC`, from `htail2 : KrelSN C' D e' g Ko' K₂ₒ`). The
+                    -- STRENGTHENED strip supplies `htailBR : KrelSN m fⱼ Dstrip D e'' g Ko' K₂ₒ` (hS's OWN Ko'
+                    -- relation) — but `htailBR` (hole `Dstrip`) and `htail2` (hole `C'`) are STILL two derivations
+                    -- over the shared `Ko'`/`K₂ₒ`/`D`, so `Dstrip = C'` STILL reduces to `krelSN_hole_det` (FALSE,
+                    -- refuted in-file). ESCAPE RULED OUT: rebinding the resume answer to `Dstrip` (decoupling from
+                    -- `hin`'s `Dᵢ`) breaks the CONSUMER (`crelK_fund_up` needs `hin` + resume at the SAME answer
+                    -- for the biorthogonal composition). So the fuel index closes the STRIP (WF, termination,
+                    -- location — all landed) but does NOT carry the ANSWER-COHERENCE: `Dstrip = Dᵢ` is genuinely
+                    -- inter-derivation hole-det. THIS RE-OPENS (β)-VIABILITY — the operator's STOP-trigger.
                     sorry
               | _ => simp [KrelSN] at hK
 
