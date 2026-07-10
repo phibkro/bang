@@ -283,7 +283,7 @@ theorem krelS_letF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff 
     (hK : KrelS n B D ε g K₁ K₂) :
     KrelS n (CTy.F q A) D ε g (Frame.letF N₁ :: K₁) (Frame.letF N₂ :: K₂) := by
   rw [krelS_letF]
-  exact ⟨q, A, B, φ, rfl, hN, KrelS_eff_anti hφε hK⟩
+  exact ⟨krelS_stackInc hK, q, A, B, φ, rfl, hN, KrelS_eff_anti hφε hK⟩
 
 /-- ◊4.5b the `letC` compat core at `CrelK` (the answer-typed `compat_letC`). REFOCUS
 `(K, letC M N) ↦ (letF N::K, M)` (one PUSH step), then run `M` (related at `F q1 A`, row φ₁) through the
@@ -317,7 +317,7 @@ theorem krelS_appF_intro {n : Nat} {q : Mult} {A : VTy Eff Mult} {B D : CTy Eff 
     (hv : VrelK n A v₁ v₂) (hK : KrelS n B D ε g K₁ K₂) :
     KrelS n (CTy.arr q A B) D ε g (Frame.appF v₁ :: K₁) (Frame.appF v₂ :: K₂) := by
   rw [krelS_appF]
-  exact ⟨q, A, B, rfl, hcv₁, hcv₂, hv, hK⟩
+  exact ⟨krelS_stackInc hK, q, A, B, rfl, hcv₁, hcv₂, hv, hK⟩
 
 /-- ◊4.5b the `app` compat core at `CrelK` (the answer-typed `compat_app`). REFOCUS
 `(K, app M v) ↦ (appF v::K, M)`, then run `M` (related at `arr q A B`) through the appF-extended
@@ -448,6 +448,10 @@ is SUPPLIED by the caller — throws via `crelK_ret` on the tail (zero-shot); st
 relation through `Kᵢ`. -/
 theorem krelS_handleF_intro {n : Nat} {nh : Nat} {C D : CTy Eff Mult} {e φ : Eff} {g : Nat} {h₁ h₂ : Handler}
     {K₁ K₂ : Stack} (hHR : HandlerRel Eff Mult n h₁ h₂) (hK : KrelS n C D φ g K₁ K₂)
+    -- ADR-0096 (i′): the head id `nh` DOMINATES the tail ids (the machine mints innermost-last, so the
+    -- handleF frame's id exceeds every id below it). Supplied by the caller from `stackInc_reachable` at
+    -- the machine-reached point; it is what the SKIP-arm strip's `StackAbove` fact ultimately rests on.
+    (hsb₁ : StackBelow nh K₁) (hsb₂ : StackBelow nh K₂)
     (hres : ∀ m, m < n → ∀ (op : OpId) (w₁ w₂ : Val) (Cᵢ : CTy Eff Mult) (εᵢ : Eff)
               (Kᵢ Kᵢ' : Stack) (cfg₁ cfg₂ : EvalCtx × Comp),
         Bang.handlesOp h₁ h₁.label op = true →
@@ -463,7 +467,9 @@ theorem krelS_handleF_intro {n : Nat} {nh : Nat} {C D : CTy Eff Mult} {e φ : Ef
             Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK m Aᵣ r₁ r₂ ∧
             KrelS m (CTy.F qᵣ Aᵣ) D eₛ g Sᵢ Sᵢ')) :
     KrelS n C D e g (Frame.handleF nh h₁ :: K₁) (Frame.handleF nh h₂ :: K₂) := by
-  rw [krelS_handleF]; exact ⟨rfl, hHR, KrelS_eff_cast hK, hres⟩
+  rw [krelS_handleF]
+  obtain ⟨hi₁, hi₂⟩ := krelS_stackInc hK
+  exact ⟨⟨⟨hi₁, hsb₁⟩, ⟨hi₂, hsb₂⟩⟩, rfl, hHR, KrelS_eff_cast hK, hres⟩
 
 /-- ◊4.5b-append DISPATCH-APPEND structural fact. `dispatchOn` over an outer stack `Kₒ ++ T` produces
 the SAME config as over `Kₒ`, with `T` appended to the result's outer stack. Uniform across all handler
