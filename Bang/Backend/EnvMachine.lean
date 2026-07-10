@@ -2518,7 +2518,42 @@ theorem evalE_agrees_evalD_gen :
               cases hclsfind : cls.find? (·.1 == op) with
               | some clause =>
                 rw [hclsfind] at h
-                sorry
+                -- evalE runs clause.2 under (arg ∷ p ∷ ρ_inst); evalD runs its CLOSED image via the crux.
+                have hclmem : clause ∈ cls := List.mem_of_find?_eq_some hclsfind
+                have hclScope : Comp.ScopedC ((readbackEnv ρ_inst).length + 2) clause.2 := hclsScope clause hclmem
+                obtain ⟨hWFp, hWCp⟩ := hpGood
+                -- env agreement for the extended install-env.
+                have hagN : EnvAgrees (evalV ρ v ∷ₑ p ∷ₑ ρ_inst)
+                    (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst) := by
+                  simp only [EnvAgrees, readbackEnv]
+                have hWFN : MEnv.WF (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) :=
+                  MEnv.WF.cons hWFarg (MEnv.WF.cons hWFp hWFρinst)
+                have hWCN : MEnv.WFClos (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) :=
+                  MEnv.WFClos.cons hWCarg (MEnv.WFClos.cons hWCp hWCρinst)
+                have hScN : Comp.ScopedC (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst).length clause.2 := by
+                  simpa only [List.length_cons] using hclScope
+                obtain ⟨G', dσ', dτ', dκ', hdN, hC', hG', hWt', hRt'⟩ :=
+                  ih (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst) clause.2 out
+                    (evalV ρ v ∷ₑ p ∷ₑ ρ_inst) g G g' eσ eσ' eτ eτ' eκ eκ'
+                    dσ dτ dκ hagN hWFN hWCN hScN hG ⟨hCσ, hCτ, hCκ⟩ h
+                refine ⟨G', dσ', dτ', dκ', ?_, hC', hG', hWt', hRt'⟩
+                -- the crux: substEnv (arg :: p :: rbEnv ρ_inst) clause.2
+                --   = subst (readback p) (subst (shift (readback arg)) (closeUnderBindersE 2 (rbEnv ρ_inst) clause.2)).
+                have hγinst : ∀ u ∈ readbackEnv ρ_inst, Val.ClosedE u := hWFρinst
+                have hcrux : substEnv (readback (evalV ρ v) :: readback p :: readbackEnv ρ_inst) clause.2
+                    = Comp.subst (readback p) (Comp.subst (Val.shift (readback (evalV ρ v)))
+                        (closeUnderBindersE 2 (readbackEnv ρ_inst) clause.2)) := by
+                  rw [substEnv_cons2_subst hγinst hWFp hWFarg clause.2]; simp only [substEnv, Comp.subst]
+                -- evalD find? on the CLOSED cls returns the closed clause.
+                have hfindD : (cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))).find? (·.1 == op)
+                    = some (clause.1, closeUnderBindersE 2 (readbackEnv ρ_inst) clause.2) := by
+                  rw [List.find?_map,
+                    show ((fun x => x.1 == op) ∘ fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ_inst) c.2))
+                      = (fun x : Bang.OpId × Comp => x.1 == op) from rfl, hclsfind]; rfl
+                rw [hsubst]
+                simp only [Bang.CalcVM.evalD, hσD, hτD, hκD, hfindD]
+                rw [hcrux] at hdN
+                exact hdN
               | none =>
                 rw [hclsfind] at h
                 simp only [Option.some.injEq, Prod.mk.injEq] at h
