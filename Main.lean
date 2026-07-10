@@ -553,6 +553,35 @@ same convention a `grep`-style tool uses; only a genuine tool/resolution/parse f
 upstream in `readQuerySrc`/`resolveQueryProg`, uses a nonzero exit). -/
 def printQueryOk (json : String) : IO UInt32 := IO.println json *> pure 0
 
+/-- `bang query dump <file>` / stdin — THE key operation (#80's operator refinement): the COMPLETE
+fact base in one export, so a caller composes ARBITRARY queries over it (a `jq`/`python`/Lean
+script) rather than waiting on a new fixed verb. SINGLE-FILE/STDIN fast path uses `Query.dumpJson`
+directly (full law facts — real source text `lawInstancesOf` can re-derive from); the MULTI-FILE
+resolver path uses `Query.dumpJsonP` on the merged `Prog` (empty `"laws"` array — the SAME
+documented v1 grant `check --json`'s own multi-file path carries, since a merged `Prog` has no
+single contiguous source `lawInstancesOf` could re-derive law bodies from). Written directly
+(not via `resolveQueryProg`, which always RE-PARSES from `src` and would silently drop the
+fast-path's law-fact advantage) so the single-file route keeps `src` all the way to `dumpJson`. -/
+def runQueryDump (file : Option String) : IO UInt32 := do
+  match ← readQuerySrc file with
+  | .error code => pure code
+  | .ok (src, headerProg) =>
+      if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
+        printQueryOk (Bang.Query.dumpJson src bangVersion)
+      else
+        match file with
+        | none      => printQueryOk (Bang.Query.dumpJsonP headerProg bangVersion)   -- stdin, no resolver path
+        | some path =>
+            match ← resolveEntryFile path with
+            | .error e   => IO.println (Bang.Query.errorJsonOk e); pure 1
+            | .ok merged =>
+                -- `mergeModules` clears `imports`/`uses` on its OWN merged output (D1-D4's flat
+                -- decl-list convention) — splice the ENTRY file's own header back on so `dump`'s
+                -- `"imports"`/`"uses"` fields report what the program's source ACTUALLY declares,
+                -- not an artifact of the merge (a real fidelity gap `dumpJsonP` alone can't see,
+                -- since it only ever receives the merged `Prog`).
+                printQueryOk (Bang.Query.dumpJsonP { merged with imports := headerProg.imports, uses := headerProg.uses } bangVersion)
+
 /-- `bang query symbols <file>` / stdin — every top-level decl's outline. -/
 def runQuerySymbols (file : Option String) : IO UInt32 := do
   match ← readQuerySrc file with
@@ -699,14 +728,24 @@ def usage : String :=
   "                                     runner supplies its own body internally.\n\n" ++
   "  bang query <op> ...                LSP-class operations as stateless CLI subcommands (issue #80);\n" ++
   "                                     ALWAYS JSON on stdout (agents are the audience — no --json flag).\n" ++
+  "                                     THE KEY OP is `dump` — the complete fact base in one export, so\n" ++
+  "                                     you compose ARBITRARY queries in jq/python/etc rather than\n" ++
+  "                                     waiting on a new fixed verb; every verb below is a THIN\n" ++
+  "                                     PROJECTION of the same facts `dump` exports (schema in\n" ++
+  "                                     docs/reference/language.md's `bang query` section).\n" ++
+  "    bang query dump [<file.bang>]           THE complete fact base: every decl (name/kind/type/\n" ++
+  "                                             row/visibility), every name-ref edge, every law\n" ++
+  "                                             instance, the import/use header — one JSON object\n" ++
   "    bang query symbols [<file.bang>]        outline: every top-level decl, its kind, type ! row\n" ++
+  "                                             (dump's own \"decls\" field, narrowed)\n" ++
   "    bang query type <file.bang> <name>      the checked type ! row of one top-level binding\n" ++
   "    bang query effects <name> [<file.bang>] the effect ROW alone of one top-level binding\n" ++
   "    bang query laws [<file.bang>]           every trait-law × impl instance (issue #60 seam)\n" ++
   "    bang query def <name> <file.bang>       the decl that defines <name>\n" ++
   "    bang query refs <name> <file.bang>      every decl whose body mentions <name>\n" ++
-  "                                     `symbols`/`type`/`effects`/`def`/`refs` read stdin if no\n" ++
-  "                                     <file.bang> is given (except `type`/`def`/`refs`, which\n" ++
+  "                                             (dump's own \"refs\" edge list, filtered to <name>)\n" ++
+  "                                     `dump`/`symbols`/`type`/`effects`/`def`/`refs` read stdin if\n" ++
+  "                                     no <file.bang> is given (except `type`/`def`/`refs`, which\n" ++
   "                                     always require a file — name-addressed multi-arg forms);\n" ++
   "                                     a <file.bang> WITH imports/uses is resolved the SAME way\n" ++
   "                                     `bang check` resolves it (imports visible to every op).\n" ++
@@ -952,6 +991,8 @@ def main (args : List String) : IO UInt32 := do
       -- module header: `--json` is the ONLY v1 output, not an opt-in) — a stray `--`-prefixed arg
       -- falls through to the usage error like every other subcommand's unknown-flag case.
       match rest with
+      | ["dump", file]          => runQueryDump (some file)
+      | ["dump"]                => runQueryDump none
       | ["symbols", file]       => runQuerySymbols (some file)
       | ["symbols"]             => runQuerySymbols none
       | ["type", file, name]    => runQueryType (some file) name

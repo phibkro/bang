@@ -7,9 +7,11 @@
 # JSON-emitter internals (`jsonStr`/`jsonField`/`jsonObj` escaping, the schema's per-op byte-exact
 # shape on a fixed input) are already gated at the Lean `#guard` level (Bang/Frontend/Query.lean) —
 # this file gates the CLI SURFACE specifically: file-arg vs stdin, argument-order per op, the
-# resolver-aware multi-file path (imports/qualification), and the 0/1/2 exit-code contract observed
-# THROUGH the binary (arg-parsing/file-reading/dispatch/exit-code plumbing is new code the `#guard`s
-# never touch — the SAME rationale test-check-json.sh's own header states).
+# resolver-aware multi-file path (imports/qualification), the 0/1/2 exit-code contract observed
+# THROUGH the binary, AND — the operator's API-first refinement (2026-07-10) — that `dump` is a
+# genuine COMPLETE fact base (every curated verb's answer is provably a SUBSET/PROJECTION of what
+# `dump` exports) plus a demonstration that a caller can COMPOSE an arbitrary query over `dump`'s
+# JSON that no fixed verb answers (a ~5-line `jq` filter, gated below).
 #
 # GOTCHA (set -euo pipefail, per test-check-json.sh's own documented lesson): an unguarded
 # `$(cmd1 | cmd2)` capture can kill this script SILENTLY mid-run. Every capture below either runs
@@ -51,53 +53,146 @@ impl Eq for Int { fn eq(a, b) = a }
 0
 BANG
 
-# ══ 1. `symbols` ══
+# `pub`/divergence-tainted fixture — the composed-query demo's own corpus: ONE decl is both `pub`
+# AND recursive (its type carries `Thunk!{Div}`, the ONLY place a v1 program's decl-level effect
+# taint is visible — a top-level decl's OUTER `row` cannot yet carry a genuine user/custom label,
+# since the `handle-with` D3 typed-custom-handle syntax (a live, separate lane's own work) hasn't
+# landed; this fixture and the demo below are honest about v1's actual reach, not a hypothetical).
+cat > "$tmpdir/pubdemo.bang" <<'BANG'
+pub let rec fib : Int -> Int = fun n => if n < 2 then n else $fib (n - 1) + $fib (n - 2)
+let helper = {fun n => $fib n + 1}
+pub let pure_add = {fun a => fun b => a + b}
+BANG
 
-# single-file, via file arg: every decl present, in source order, with checker-computed types.
-got_out="$("$bang" query symbols "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
-check "symbols-file-exit" "$got_exit" "0"
-check "symbols-file-ok-true" "$(printf '%s' "$got_out" | grep -o '"ok":true' || true)" '"ok":true'
-check "symbols-file-double-letrec" "$(printf '%s' "$got_out" | grep -o '"name":"double","kind":"letRec"' || true)" '"name":"double","kind":"letRec"'
-check "symbols-file-quad-let" "$(printf '%s' "$got_out" | grep -o '"name":"quad","kind":"let"' || true)" '"name":"quad","kind":"let"'
-check "symbols-file-main-type" "$(printf '%s' "$got_out" | grep -o '"name":"main","kind":"let","type":"Int"' || true)" '"name":"main","kind":"let","type":"Int"'
+# ══ 1. `dump` — THE key operation: the complete fact base ══
 
-# stdin agrees with file (SAME entry point, `symbols` with no file arg reads stdin).
-got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query symbols 2>/dev/null)" || true
-check "symbols-stdin-eq-file" "$got_stdin" "$got_out"
+got_out="$("$bang" query dump "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "dump-exit" "$got_exit" "0"
+check "dump-shape" "$got_out" '{"ok":true,"schemaVersion":1,"bangVersion":"0.1.0","decls":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}],"refs":[{"from":"quad","to":"double"},{"from":"main","to":"quad"}],"laws":[],"imports":[],"uses":[]}'
+
+# stdin agrees with file.
+got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query dump 2>/dev/null)" || true
+check "dump-stdin-eq-file" "$got_stdin" "$got_out"
+
+# EVERY curated verb's answer is a PROJECTION of `dump` — the layering claim, checked directly:
+# `symbols`'s "decls" entries equal `dump`'s "decls" entries byte-for-byte (same DeclFact.toJson).
+got_symbols="$("$bang" query symbols "$tmpdir/simple.bang" 2>/dev/null)" || true
+got_dump_decls="$(printf '%s' "$got_out" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"ok":True,"symbols":d["decls"]}, separators=(",",":")))' 2>/dev/null)" || true
+check "symbols-is-dump-decls-projection" "$got_symbols" "$got_dump_decls"
 
 # a parse failure is an OP-LEVEL answer (exit 1, ok:false on stdout — NOT a tool error).
-got_out="$(printf 'let x 3 in x' | "$bang" query symbols 2>/dev/null)" && got_exit=0 || got_exit=$?
-check "symbols-parse-error-ok-false" "$(printf '%s' "$got_out" | grep -o '"ok":false' || true)" '"ok":false'
-check "symbols-parse-error-exit" "$got_exit" "1"
+got_out2="$(printf 'let x 3 in x' | "$bang" query dump 2>/dev/null)" && got_exit2=0 || got_exit2=$?
+check "dump-parse-error-ok-false" "$(printf '%s' "$got_out2" | grep -o '"ok":false' || true)" '"ok":false'
+check "dump-parse-error-exit" "$got_exit2" "1"
 
-# every examples/*/main.bang round-trips ok:true through `symbols` (the corpus, not just one file).
+# dump's law/impl/trait facts — a decls-only fixture with a trait+impl+law.
+got_out3="$("$bang" query dump "$tmpdir/laws.bang" 2>/dev/null)" && got_exit3=0 || got_exit3=$?
+check "dump-laws-exit" "$got_exit3" "0"
+check "dump-laws-present" "$(printf '%s' "$got_out3" | grep -o '"laws":\[{"trait":"Eq"' || true)" '"laws":[{"trait":"Eq"'
+check "dump-trait-shape-present" "$(printf '%s' "$got_out3" | grep -o '"kind":"trait"' || true)" '"kind":"trait"'
+check "dump-impl-shape-present" "$(printf '%s' "$got_out3" | grep -o '"kind":"impl"' || true)" '"kind":"impl"'
+
+# every examples/*/main.bang round-trips ok:true through `dump` (the corpus, not just one file).
 examples_pass=0
 examples_fail=0
 for dir in examples/*/; do
   main="$dir/main.bang"
   name="$(basename "$dir")"
   [ -f "$main" ] || continue
-  out="$("$bang" query symbols "$main" 2>/dev/null)" || true
+  out="$("$bang" query dump "$main" 2>/dev/null)" || true
   if printf '%s' "$out" | grep -q '"ok":true'; then
     examples_pass=$((examples_pass + 1))
   else
-    echo "✗ symbols-examples-corpus — $name did not report ok:true: $out"
+    echo "✗ dump-examples-corpus — $name did not report ok:true: $out"
     examples_fail=$((examples_fail + 1))
   fi
 done
-check "symbols-examples-corpus-all-ok" "$examples_fail" "0"
-echo "  (symbols examples corpus: $examples_pass/$((examples_pass + examples_fail)) ok:true)"
+check "dump-examples-corpus-all-ok" "$examples_fail" "0"
+echo "  (dump examples corpus: $examples_pass/$((examples_pass + examples_fail)) ok:true)"
 
-# ── MULTI-FILE (resolver-aware): examples/json/main.bang imports Json/Parse/Print — an imported
-# decl's own top-level names must appear QUALIFIED (the merge convention `TypeCheck.mergeModules`
-# already applies to `bang run`/`check --json`) — this is the CLI-surface half of that behavior
-# (the pure merge itself is gated elsewhere); falsify by checking the UNQUALIFIED name is ABSENT.
-got_out="$("$bang" query symbols examples/json/main.bang 2>/dev/null)" && got_exit=0 || got_exit=$?
-check "symbols-multifile-exit" "$got_exit" "0"
-check "symbols-multifile-qualified-present" "$(printf '%s' "$got_out" | grep -o '"name":"Parse_dropWs"' || true)" '"name":"Parse_dropWs"'
-check "symbols-multifile-unqualified-absent" "$(printf '%s' "$got_out" | grep -c '"name":"dropWs"' || true)" "0"
+# ── MULTI-FILE dump: imports field must reflect the ENTRY file's OWN header (a real fidelity gap
+# found+fixed this slice — `mergeModules` clears `imports`/`uses` on its merged output, so `dump`
+# must splice the pre-merge header back on; falsify by requiring the field is NONEMPTY). ──
+got_out4="$("$bang" query dump examples/json/main.bang 2>/dev/null)" && got_exit4=0 || got_exit4=$?
+check "dump-multifile-exit" "$got_exit4" "0"
+check "dump-multifile-imports-present" "$(printf '%s' "$got_out4" | grep -o '"imports":\[{"module":"Json"}' || true)" '"imports":[{"module":"Json"}'
+check "dump-multifile-qualified-present" "$(printf '%s' "$got_out4" | grep -o '"name":"Parse_dropWs"' || true)" '"name":"Parse_dropWs"'
 
-# ══ 2. `type` / `effects` ══
+# ── GOLDEN-DUMP DRIFT TEST (the DBMS survey's eager-schema-discipline item, §6/§8, REFINED by the
+# operator's schemaVersion/bangVersion-disjointness ruling — a pinned `dump` output that FAILS CI
+# when the shape drifts UN-versioned; the "test" rung of the derivation-strength ladder applied to
+# a public JSON contract). tools/golden-dump-caesar.json is the pinned snapshot of `bang query dump
+# examples/caesar/main.bang`; a real BREAKING shape change (a rename/removal/meaning-change) must
+# EITHER re-pin this file in the SAME commit as a schemaVersion bump, or the diff is dishonest — a
+# schema-version bump with NO re-pin, or a re-pin with NO version bump, are both caught by this
+# byte-exact check. An ADDITIVE change (a new field/table) is non-breaking BY CONTRACT (consumers
+# must ignore unknown fields — see the demo below) so it does NOT require a schemaVersion bump, but
+# STILL requires a golden re-pin (the byte-exact snapshot changed) — the two are orthogonal checks,
+# not the same gate. ──
+got_golden="$("$bang" query dump examples/caesar/main.bang 2>/dev/null)" && got_golden_exit=0 || got_golden_exit=$?
+want_golden="$(cat tools/golden-dump-caesar.json)"
+check "golden-dump-exit" "$got_golden_exit" "0"
+check "golden-dump-schema-pinned" "$got_golden" "$want_golden"
+
+# ── schemaVersion / bangVersion DISJOINTNESS (operator ruling): schemaVersion is a plain monotonic
+# integer (the CONTRACT), bangVersion is compiler provenance — never conflated, never the same
+# field. A durable consumer keys ITS compatibility check on schemaVersion alone. ──
+check "schema-bang-version-disjoint" "$(printf '%s' "$got_golden" | grep -o '"schemaVersion":1,"bangVersion":"' || true)" '"schemaVersion":1,"bangVersion":"'
+
+# ── THE "IGNORE UNKNOWN FIELDS" CONSUMER CONTRACT (protobuf/k8s discipline, operator-ruled): a
+# durable agent script that only reads schemaVersion + decls must survive an ADDITIVE schema change
+# (a new top-level field the script never asked for). Simulated here by injecting a synthetic extra
+# field into a copy of dump's real output and confirming a naive jq extraction still works —
+# demonstrates the CONSUMER half of the contract, not just the producer's schemaVersion field. ──
+if command -v jq >/dev/null 2>&1; then
+  synthetic_extra="$(printf '%s' "$got_golden" | jq -c '. + {"futureField": {"nested": [1,2,3]}}')"
+  extracted="$(printf '%s' "$synthetic_extra" | jq -r '.schemaVersion')"
+  check "ignore-unknown-fields-contract" "$extracted" "1"
+else
+  echo "· ignore-unknown-fields-contract — SKIPPED (jq not in dev shell; not adding it for this check)"
+fi
+
+# ── CONCRETE RELATIONAL-SHAPE GATE (operator ruling, compiler-as-dbms-survey.md): the golden dump
+# must load into DuckDB with ONE `read_json` call, no unnesting gymnastics — `decls`/`refs` are
+# FLAT top-level arrays of flat records (Glean's "predicates = tables" framing), never a nested
+# tree. `duckdb` is NOT in the flake (an ad-hoc `nix shell nixpkgs#duckdb`, matching the cross-
+# project tooling convention for occasional CLI reach) — SKIPPED (not failed) if unavailable, the
+# SAME jq-optionality precedent this file already follows. ──
+duckdb_ran=0
+if command -v duckdb >/dev/null 2>&1; then
+  duckdb_rows="$(duckdb -csv -noheader -c "SELECT count(*) FROM (SELECT unnest(decls) AS d FROM read_json('tools/golden-dump-caesar.json'))" 2>/dev/null)" || true
+  check "golden-dump-duckdb-loadable" "$duckdb_rows" "7"
+  duckdb_ran=1
+else
+  echo "· golden-dump-duckdb-loadable — SKIPPED (duckdb not in dev shell; reach via 'nix shell nixpkgs#duckdb -c bash tools/test-query.sh' to exercise this check)"
+fi
+
+# ══ 2. THE COMPOSED-QUERY DEMO (operator-required, #80 refinement): a question no fixed verb
+# answers — "every EXPORTED (pub) decl whose type carries a divergence taint" — via a jq filter
+# over `dump`'s own output, ~5 lines, zero new Lean code. Skipped (not failed) if jq is absent from
+# the dev shell, matching test-check-json.sh's own jq-optionality precedent. ──
+if command -v jq >/dev/null 2>&1; then
+  composed="$("$bang" query dump "$tmpdir/pubdemo.bang" 2>/dev/null | \
+    jq -c '[.decls[] | select(.pub and ((.type // "") | contains("Div"))) | .name]')" || true
+  check "composed-query-pub-divergent" "$composed" '["fib"]'
+else
+  echo "· composed-query-pub-divergent — SKIPPED (jq not in dev shell; not adding it for this check)"
+fi
+
+# ══ 3. `symbols` (thin projection of dump's "decls") ══
+
+got_out="$("$bang" query symbols "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "symbols-exit" "$got_exit" "0"
+check "symbols-shape" "$got_out" '{"ok":true,"symbols":[{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"quad","kind":"let","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null},{"name":"main","kind":"let","type":"Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}]}'
+
+got_stdin="$(cat "$tmpdir/simple.bang" | "$bang" query symbols 2>/dev/null)" || true
+check "symbols-stdin-eq-file" "$got_stdin" "$got_out"
+
+got_out="$(printf 'let x 3 in x' | "$bang" query symbols 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "symbols-parse-error-ok-false" "$(printf '%s' "$got_out" | grep -o '"ok":false' || true)" '"ok":false'
+check "symbols-parse-error-exit" "$got_exit" "1"
+
+# ══ 4. `type` / `effects` ══
 
 got_out="$("$bang" query type "$tmpdir/simple.bang" double 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "type-exit" "$got_exit" "0"
@@ -107,70 +202,58 @@ got_out="$("$bang" query effects double "$tmpdir/simple.bang" 2>/dev/null)" && g
 check "effects-exit" "$got_exit" "0"
 check "effects-shape" "$got_out" '{"ok":true,"row":"{}"}'
 
-# `effects` reads stdin when no file is given (mirrors `check`/`fmt`'s stdin convention).
 got_out="$(cat "$tmpdir/simple.bang" | "$bang" query effects double 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "effects-stdin-exit" "$got_exit" "0"
 check "effects-stdin-shape" "$got_out" '{"ok":true,"row":"{}"}'
 
-# naming a nonexistent decl is a LOUD op-level miss (ok:false ON STDOUT — the checker's own
-# "unbound variable" surfaces through `typeStringOfProgP`'s `Except`) but exit 0: the TOOL ran
-# successfully and produced a well-formed (negative) answer — the SAME "ok:false is still exit 0"
-# convention `def-miss` below exercises (see usage text's EXIT CODES [bang query <op>] section:
-# exit 1 is reserved for "the op could NOT run" — a parse/resolution failure — not an op-level
-# negative answer).
+# naming a nonexistent decl is a LOUD op-level miss (ok:false ON STDOUT) but exit 0: the TOOL ran
+# successfully and produced a well-formed (negative) answer (exit 1 is reserved for "the op could
+# NOT run" — a parse/resolution failure — not an op-level negative answer).
 got_out="$("$bang" query type "$tmpdir/simple.bang" nosuch 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "type-miss-ok-false" "$(printf '%s' "$got_out" | grep -o '"ok":false' || true)" '"ok":false'
 check "type-miss-exit" "$got_exit" "0"
 
-# ══ 3. `laws` ══
+# ══ 5. `laws` ══
 
 got_out="$("$bang" query laws "$tmpdir/laws.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "laws-exit" "$got_exit" "0"
 check "laws-shape" "$got_out" '{"ok":true,"laws":[{"trait":"Eq","law":"refl","params":["x"],"body":"eq(x, x) == 1"}]}'
 
-# stdin agrees with file.
 got_stdin="$(cat "$tmpdir/laws.bang" | "$bang" query laws 2>/dev/null)" || true
 check "laws-stdin-eq-file" "$got_stdin" "$got_out"
 
-# no laws present ⟹ a vacuous, honest ok:true with an EMPTY array (mirrors `bang test`'s own
-# "0 discovered is not a failure" convention).
 got_out="$(printf 'let x = 3 in x' | "$bang" query laws 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "laws-empty-exit" "$got_exit" "0"
 check "laws-empty-shape" "$got_out" '{"ok":true,"laws":[]}'
 
-# ══ 4. `def` / `refs` ══
+# ══ 6. `def` / `refs` (thin filters over dump's "decls"/"refs") ══
 
 got_out="$("$bang" query def double "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "def-exit" "$got_exit" "0"
-check "def-shape" "$got_out" '{"ok":true,"symbol":{"name":"double","kind":"letRec","type":"Thunk Int -> Int"}}'
+check "def-shape" "$got_out" '{"ok":true,"symbol":{"name":"double","kind":"letRec","type":"Thunk Int -> Int","row":"{}","typeError":null,"shape":null,"pub":false,"module":null}}'
 
-# a miss is LOUD (ADR-0046 — never a guessed nearest-match) on stdout, exit 0 — the SAME "an
-# op-level ok:false is still exit 0" convention `type-miss` above exercises.
 got_out="$("$bang" query def nosuch "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "def-miss-ok-false" "$got_out" "{\"ok\":false,\"error\":\"no top-level decl named 'nosuch'\"}"
 check "def-miss-exit" "$got_exit" "0"
 
-# `refs double` finds `quad` (which calls `$double` twice) but not `main` (which never mentions it).
 got_out="$("$bang" query refs double "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "refs-exit" "$got_exit" "0"
 check "refs-shape" "$got_out" '{"ok":true,"refs":[{"name":"quad","kind":"let"}]}'
 
-# `refs` on a name nothing mentions is a VALID, honest empty answer (not an error — `refs` doesn't
-# itself validate the name exists, per Query.lean's own doc comment).
 got_out="$("$bang" query refs main "$tmpdir/simple.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "refs-empty-exit" "$got_exit" "0"
 check "refs-empty-shape" "$got_out" '{"ok":true,"refs":[]}'
 
-# MULTI-FILE def/refs: the qualified name is what's addressable post-merge (documented v1
-# characteristic — Query.lean's `defJsonP` doc comment).
 got_out="$("$bang" query def Parse_dropWs examples/json/main.bang 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "def-multifile-exit" "$got_exit" "0"
 check "def-multifile-hit" "$(printf '%s' "$got_out" | grep -o '"ok":true' || true)" '"ok":true'
 
-# ══ 5. Exit-code contract: TOOL error (exit 2, unreadable file) ══
+# ══ 7. Exit-code contract: TOOL error (exit 2, unreadable file) ══
 
-# `symbols`/`type`/`effects`/`def`/`refs`: tool error → STDERR message, NOTHING on stdout, exit 2
-# (mirrors `check --json`'s own tool-error convention exactly — never folded into the JSON).
+got_out="$("$bang" query dump /no/such/file.bang 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "tool-error-dump-stdout-empty" "$got_out" ""
+check "tool-error-dump-exit" "$got_exit" "2"
+
 got_out="$("$bang" query symbols /no/such/file.bang 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "tool-error-symbols-stdout-empty" "$got_out" ""
 check "tool-error-symbols-exit" "$got_exit" "2"
@@ -183,19 +266,15 @@ got_out="$("$bang" query laws /no/such/file.bang 2>/dev/null)" && got_exit=0 || 
 check "tool-error-laws-stdout-empty" "$got_out" ""
 check "tool-error-laws-exit" "$got_exit" "2"
 
-# ── usage errors (a malformed `query` invocation, e.g. missing positional) is a 1, matching every
-# other subcommand's usage-error convention (never a silent pick-first/pick-last). ──
 got_usage_exit=0
 "$bang" query type "$tmpdir/simple.bang" >/dev/null 2>&1 || got_usage_exit=$?
 check "usage-error-type-missing-name-exit" "$got_usage_exit" "1"
 
 # ── jq-parseability: every op's output is valid JSON, not just byte-matching our own expectation.
-# Skip with a note if jq isn't in the dev shell (test-check-json.sh's own precedent: not adding jq
-# to the flake for this). ──
 if command -v jq >/dev/null 2>&1; then
   jq_ok=0
   jq_total=0
-  for op_args in "symbols $tmpdir/simple.bang" "type $tmpdir/simple.bang double" \
+  for op_args in "dump $tmpdir/simple.bang" "symbols $tmpdir/simple.bang" "type $tmpdir/simple.bang double" \
                  "effects double $tmpdir/simple.bang" "laws $tmpdir/laws.bang" \
                  "def double $tmpdir/simple.bang" "refs double $tmpdir/simple.bang"; do
     jq_total=$((jq_total + 1))
@@ -213,8 +292,17 @@ fi
 
 echo "──────────────────────────────"
 echo "query: $pass passed, $fail failed"
-# Assert the expected total COUNT — catches a silently-truncated run.
-want_total=43
+# Assert the expected total COUNT — catches a silently-truncated run. BASE is every check that
+# always runs (54); jq's THREE guarded blocks (ignore-unknown-fields-contract,
+# composed-query-pub-divergent, jq-parseable-all-ops) each contribute exactly ONE `check()` call
+# when jq is present (jq IS in the standard `nix develop` shell, so this is the steady-state path);
+# duckdb's ONE guarded check contributes one more when duckdb happens to be reachable (NOT in the
+# flake — an ad-hoc `nix shell` reach). The total tracks WHICH optional tools actually ran, so a
+# genuinely truncated run is still caught regardless of which tools happened to be on PATH (never
+# a silently-widened acceptable range).
+want_total=54
+if command -v jq >/dev/null 2>&1; then want_total=$((want_total + 3)); fi
+if [ "$duckdb_ran" -eq 1 ]; then want_total=$((want_total + 1)); fi
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"

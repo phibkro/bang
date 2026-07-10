@@ -517,3 +517,120 @@ capability minting guarantees an escaped cap resolves to no handler and fails lo
 (OCaml-effects' `Effect.Unhandled`). Post-v1 it becomes **untypeable** — scoped/region
 capability types (#21) make the escape unrepresentable rather than merely detected.
 
+## `bang query` — the agent LSP as stateless CLI subcommands (issue #80)
+
+`bang query <op>` exposes the compiler's own facts (parse/elaborate/check results) as
+JSON — the cheapest "LSP for agents": no server, no protocol, one process per call.
+Every op's Lean-side implementation is `Bang/Frontend/Query.lean`, a **public library
+API** (every fact-producing function is `public`, documented as reusable outside the
+CLI — a Lean script can call `declFactsOf`/`nameRefEdgesOf`/`lawInstancesOf` directly).
+
+**`bang query dump [<file.bang>]` is the key operation**: the COMPLETE fact base in one
+export, so you compose *arbitrary* queries (`jq`, `python`, a Lean script) instead of
+waiting on a new fixed verb. Every curated verb below (`symbols`/`type`/`effects`/`def`/
+`refs`) is a **thin projection** of the SAME fact list `dump` exports — one construct,
+not six independent implementations.
+
+### `dump`'s schema — a VERSIONED public contract
+
+```json
+{
+  "ok": true,
+  "schemaVersion": 1,
+  "bangVersion": "0.1.0",
+  "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect",
+               "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
+               "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
+  "refs": [ { "from": "declName", "to": "referencedName" } ],
+  "laws": [ { "trait": "..", "law": "..", "params": [".."], "body": "source text" } ],
+  "imports": [ { "module": ".." } ],
+  "uses":    [ { "module": "..", "names": [".."] } ]
+}
+```
+
+`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —
+a relational fact base (Glean's "predicates = tables, facts = rows" framing), never a
+nested tree. The concrete test: `dump`'s output loads into DuckDB with ONE `read_json`
+call, no unnesting gymnastics —
+
+```sh
+bang query dump myfile.bang | duckdb -c "SELECT unnest(decls) FROM read_json('/dev/stdin')"
+```
+
+Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
+so a `jq '.decls[].type'`-style consumer never branches on key existence, only on
+nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that
+type-checks; `typeError` carries the checker's message when it doesn't; `shape` carries
+a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`, which have no
+value-level type. `refs` is DECL-granularity (which decl's body mentions which name) —
+**position-addressing (line/col) is OUT of v1**, gated on issue #52's Spanned-Surf tier
+(`Surf` carries no per-node span today).
+
+**`schemaVersion`/`bangVersion` are TWO DISJOINT fields, first-class from v1** (bang's
+docs/notes/compiler-as-dbms-survey.md, the ONE piece of DBMS discipline adopted *eagerly*,
+not post-1.0): bang's 0.x "breaking changes allowed" policy collides with "agents write
+durable scripts against `dump`'s JSON" — every unversioned BREAKING change silently
+invalidates every saved query. The two fields split the concern:
+
+- **`schemaVersion`** — a plain monotonic **integer**, THE CONTRACT. Bumps ONLY on a
+  BREAKING shape change (a field/table rename, removal, or meaning-change) — never for
+  additive growth. A durable consumer keys ITS compatibility check on this field alone.
+- **`bangVersion`** — PROVENANCE metadata (which compiler binary emitted this dump), NOT
+  a compatibility signal — never gate a script's behavior on it.
+
+**The other half of the contract binds the CONSUMER**: implementations **MUST IGNORE
+UNKNOWN FIELDS** (the protobuf/Kubernetes-API discipline). This is what makes "additive
+⟹ non-breaking" true by construction — a script asserting `schemaVersion == 1` must
+survive twenty compiler releases that only ADD facts; a script that hard-fails on an
+unrecognized key breaks that guarantee itself, regardless of what bang promises.
+
+`tools/golden-dump-caesar.json` is a pinned snapshot gated by `tools/test-query.sh`'s
+`golden-dump-schema-pinned` check — ANY shape change (breaking or additive) must re-pin
+this file in the same commit, so drift is always VISIBLE in the diff, never silent; a
+BREAKING change additionally requires the `schemaVersion` bump.
+
+`decls`/`refs`/`laws`/`imports` are the **extensional** fact base (extracted, not
+computed from other facts); the curated verbs below are **intensional** — derived
+predicates (views) over this extensional base, kept few and stable per the Kythe/Glean
+small-core lesson (push richness into derived views, not the base schema).
+
+**KNOWN v1 LIMITATIONS** (both match `check --json`'s own documented multi-file grants,
+not new gaps): on a MULTI-FILE (resolver-aware) `dump`, `"laws"` is always `[]` — the
+merged program has no single contiguous source `lawInstancesOf` could re-derive law
+bodies from; and a decl's `"module"` is `null` unless the CLI layer's own resolution
+walk supplies provenance (`Query.lean`'s `declFactsOf` alone never computes it — a flat
+merged `Prog` carries no per-decl module field). An imported (not `use`d) decl's own
+`"name"` is QUALIFIED by the merge (`Parse.bang`'s `dropWs` becomes `Parse_dropWs`,
+`TypeCheck.mergeModules`'s convention) — `def`/`refs`/`type`/`effects` on a multi-file
+program address the qualified name, discoverable via `dump`/`symbols`'s own `"name"`
+field.
+
+### The curated verbs (thin projections of `dump`)
+
+| Verb | Args | Answers |
+|---|---|---|
+| `symbols` | `[<file.bang>]` | `dump`'s own `"decls"` array, unfiltered |
+| `type` | `<file.bang> <name>` | one `DeclFact`'s `type`+`row`, looked up by name |
+| `effects` | `<name> [<file.bang>]` | one `DeclFact`'s `row` alone |
+| `laws` | `[<file.bang>]` | every discovered trait-law × impl instance (issue #60 seam) |
+| `def` | `<name> <file.bang>` | the one decl DEFINING `name`, as a `DeclFact` |
+| `refs` | `<name> <file.bang>` | `dump`'s own `"refs"` edges, filtered to `<name>` |
+
+All are `--json`-only (agents are the audience — no human-rendering flag in v1). Every
+op reads stdin when no `<file.bang>` is given, except `type`/`def`/`refs` (name-addressed
+multi-arg forms that always require a file). A `<file.bang>` with `import`/`use` is
+resolved the SAME way `bang check`/`bang run` resolve it — imports are visible to every
+op. Exit codes: `0` the op ran (including an op-level `"ok":false` answer, e.g. `def`
+naming a decl that doesn't exist — the tool succeeded, the ANSWER is negative); `1` the
+op could not run at all (a parse or import-resolution failure, still `"ok":false` on
+stdout); `2` a tool error (e.g. unreadable file) — reported on stderr, nothing on stdout,
+never folded into the JSON (mirrors `check --json`'s own tool-error convention exactly).
+
+**Composing an arbitrary query over `dump`** — the whole point: no fixed verb answers
+"every exported decl whose type carries a divergence taint", but `dump` + `jq` does:
+
+```sh
+bang query dump myfile.bang | jq -c '
+  [.decls[] | select(.pub and ((.type // "") | contains("Div"))) | .name]'
+```
+
