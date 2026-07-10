@@ -134,6 +134,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **u5b** — the converse κ-thread — evalD_complete_gen_full permits custom frames (#62 slice 2) (`9947bb4`)
 - **kernel** — the binop HasCTy rule — ADR-0065 stage ④ executed (ctr slice 1, G1 pillar A) (`b7269ac`)
 - **cli** — bang annotate + bang lint — the next #82 verbs over the query/rewrite rails (`104f18a`)
+- **wasm** — compile_forward_sim UNCONDITIONAL over user effects — CustomFree dropped (#62 CLOSED) (`d35295c`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

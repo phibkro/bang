@@ -217,6 +217,83 @@ wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws 
 discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch
 path that is still open.
 
+## User-defined effects (ADR-0095, issue #44 Stage 7)
+
+A user declares a NAMED effect interface (`effect Name { op : ArgTy -> ResTy, … }`),
+installs a HANDLER for it at a use site (`handle e with Name as h { … }`), and PERFORMS
+through the handler's own capability value (`h.op(arg)`) — the SAME "runtime is a
+handler installed at the use site" thesis the built-in effects (`state`/`atomically`)
+already use, now user-spellable. The kernel is untouched: this surface lowers to the
+already-landed `Handler.custom` constructor (ADR-0085) — a fourth handler shape, not a
+sixth primitive.
+
+```
+effect Net { fetch : Int -> Int }             -- the interface: one op, Int -> Int
+
+handle
+  (net.fetch(1)) + (net.fetch(2))              -- performs through the `as`-bound `net`
+with Net as net {
+  fetch(n) => n * 10                           -- bare body = the resume value (implicit tail-resume)
+}
+-- ⟹ 30   (examples/handle-custom-tracer)
+```
+
+| Form | Meaning |
+|---|---|
+| `effect Name { op : ArgTy -> ResTy, … }` | declares a named interface; the elaborator allocates a label (`4 + declIndex`, deterministic by decl order) and builds a program-derived op-signature table — the surface analogue of the kernel's `EffSig`. v1 ops are single-argument (`ArgTy -> ResTy`) or nullary (`op : ResTy`, no arrow) |
+| `handle e with Name as h { op(x) => body, … }` | installs a handler for `Name` around `e`, binding the capability as `h` — the `as h` binder is MANDATORY (no implicit default: two nested handlers of the same effect would otherwise silently collide) and scopes over `e`, not the clause bodies |
+| `handle e with (Name init) as h { … }` | the PARAMETER-CARRYING form — `init` is threaded internally at install time (see the v1 limitation below: no clause can yet NAME it) |
+| `h.op(arg)` | performs `op` on the named capability `h` — the SAME `$h.op` bare-call convention the built-in named-cap surface uses (`state … as h`); NOT `$h.op arg` (`h` is already a value, not a thunk) |
+
+**Clause bodies are CURRIED, matching the perform site** (`op(x, y) => body` desugars to a
+curried clause, mirroring `h.op(x)(y)`'s own curried call shape) — a deliberate divergence
+from today's trait-op convention (trait ops stay tuple-style, `fn add(a, b)`; effects are a
+new construct born curried rather than inheriting the trait-op inconsistency).
+
+**A bare clause body IS the resume value — v1 has no `resume` keyword.** `op(x) => x * 10`
+resumes the captured continuation with `x * 10` directly (one-shot, tail-resumptive); there
+is no explicit `resume(…)` form to write in v1 (a future multi-shot upgrade grows the
+surface additively, it does not change this form).
+
+**The v1 RET-SHAPE restriction — a clause body may not itself perform an effect before
+resuming.** A clause whose body computes-then-effects (e.g. performs another op, or
+`raise`s) is rejected with a named diagnostic, not a bare type error:
+
+```
+error: handle: clause 'fetch' body must be a `ret`-shape value in v1 (no effects
+       before resuming) — a compute-then-return body needs binop typing (ADR-0065)
+       + resumption-grade surfacing (Q27), tracked as the general-body entry gate
+       (ADR-0095 D4)
+```
+
+A clause body that only computes arithmetically over its argument and returns (no nested
+effect performed) is fine (`fetch(n) => n * 10`, `fetch(n) => n + 1`); a clause performing
+`raise`/another op/etc. before its final value hits this wall.
+
+**Effect op names may not collide with a built-in effect's own operations** (`get`/`put`/
+`new`/`read`/`write`/`raise`/`handle` are reserved at the op-name position) — a collision is
+a loud parse/elaboration error naming the conflict, not a silent shadow.
+
+**Known v1 limitations (both tracked, both real gaps in the LANDED surface — not merely
+undocumented corners):**
+
+- **Multi-clause handlers are broken (issue #86).** Every worked example below is
+single-op/single-clause; a SECOND clause in the same `with … { … }` block breaks the
+FIRST clause's own binder (`unbound variable n` even on a trivial one-op perform once a
+second clause exists in the map). A multi-op effect (Reader `ask`+`local`, Logger
+`info`+`warn`) does not yet work end to end — stick to single-op effects until this closes.
+- **The parameter-carrying form's `init` is NOT clause-nameable (issue #87).** `handle e
+with (Name init) as h { op(x) => … }` parses and threads `init` internally, but NO
+identifier in a clause body currently resolves to it (an attempted `param`/similar binder
+is an unbound-variable error) — the init value is accepted syntactically and then
+unreachable. Treat the parameter-carrying form as not-yet-usable in v1; a plain
+`effect Name { … }` (no carried param) is the form that works end to end.
+
+See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/`, and
+`examples/handle-custom-abort-coexist/` (a `raise` inside a nested `handle` still aborts
+PAST a custom handler that is still installed — the two effect systems coexist) for worked,
+`check-examples`-gated single-op programs.
+
 ## Effect channels
 
 The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;
