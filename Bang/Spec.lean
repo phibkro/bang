@@ -310,16 +310,18 @@ theorem compile_well_typed
   compile_well_typed_proof
 
 -- [KEY] Forward simulation — the heart of the contribution. PROVEN sorryAx-free for the FULL
--- fragment (handlers included), premised on `VcapFree c` + `CustomFree c` (ADR-0086). Both
--- premises are vacuous for every elaborator-produced program (the elaborator emits `vvar`, never
--- raw `vcap`; no surface form emits `Handler.custom` until ADR-0085 Stage 7), so the product-facing
--- meaning of ◊5 is unchanged. `CustomFree` is TEMPORARY scaffolding — ADR-0085 Stage 4 (the derived
--- custom machine arm) DROPS it (a consumer-safe strengthening). `VcapFree` persists until #21
--- (scoped capability types) makes a raw source `vcap` untypeable. The PURE arm routes through the
--- always-sorry-free `compile_forward_sim_pure`; the handler arm through the U5b completeness spine
--- (`evalD_complete_gen`, `Bang.Backend.U5bComplete`).
+-- fragment (handlers AND user-defined/custom effects included), premised on `VcapFree c` ONLY. The
+-- `CustomFree c` premise was DROPPED at #62 slice 3 (STATEMENT_CHANGE_OK, task #27 — a consumer-safe
+-- strengthening, the pre-registered ADR-0085 Stage-4 endpoint): the U5b completeness spine is now
+-- κ-threaded over custom frames and the WASM lowering's OP arm resolves custom clause-services as a
+-- real lockstep (`wCustomUpdate_comm`), so no `CustomFree` scaffolding is needed. `VcapFree` persists
+-- until #21 (scoped capability types) makes a raw source `vcap` untypeable; it is vacuous for every
+-- elaborator-produced program (the elaborator emits `vvar`, never raw `vcap`), so ◊5's product-facing
+-- meaning is unchanged. The PURE arm routes through the always-sorry-free `compile_forward_sim_pure`;
+-- the handler/custom arm through the U5b completeness spine (`evalD_complete_gen`,
+-- `Bang.Backend.U5bComplete`).
 theorem compile_forward_sim {c : Comp} {v : Val} {fuel : Nat} :
-    Bang.Model.VcapFree c → Bang.CustomFree.CFComp c →
+    Bang.Model.VcapFree c →
     Source.eval fuel c = Result.done v →
     ∃ fuel', Wasmfx.run fuel' (compileC c) = Result.done (compileV v) :=
   compile_forward_sim_proof
