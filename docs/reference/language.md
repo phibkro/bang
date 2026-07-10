@@ -132,6 +132,85 @@ the same disambiguation every language with juxtaposition-application + infix `-
 is `3` followed by a DROPPED line comment (`--10`), not `3 - (-10)` — write `3 - -10` or
 `3-(-10)` (a space or parens before the second `-`) to get subtraction of a negative.
 
+## Modules (ADR-0093)
+
+A **module is a file** — `import Foo` resolves `Foo.bang` (same directory, then the
+project root; a miss is a loud error naming both probed paths). No module header, no
+`module { … }` block — the module's name IS its filename stem.
+
+**The header comes first.** `import`/`use` lines form the file's HEADER and must appear
+before any `let`/`data`/`trait`/`fn` decl — a `use`/`import` after the first decl is a
+parse error (`unexpected 'use'/'import' where an atom was expected`). Any number of
+`import`/`use` lines compose, in any order, within the header.
+
+| Form | Effect |
+|---|---|
+| `import Foo` | brings `Foo` into scope as a QUALIFIER prefix only — `Foo.name` — no name is hoisted unqualified |
+| `use Foo (a, b, C)` | hoists exactly the NAMED decls of `Foo` into unqualified scope — `a`/`b`/`C` are then written bare, like any local `let`. The parens + comma-separated list are REQUIRED (`use Foo a` — no parens — is a parse error) |
+| `pub let x = …` / `pub data T = …` / `pub fn …` / `pub trait …` | exports the decl; a bare (non-`pub`) decl is module-PRIVATE by convention (ADR-0093 D3) — only a `pub` decl is nameable via qualified access or `use` |
+
+**Qualified access — the `$(mod.op) arg` convention.** A qualified reference to an
+imported (not `use`d) function must be FORCED as a PARENTHESIZED group, not a bare dotted
+atom: `$(Foo.op) arg`, never `$Foo.op arg` — `$` forces exactly one ATOM, and `Foo.op` is
+not itself an atom, so `$Foo.op arg` parses as `($Foo).op` (forcing `Foo` alone, then
+projecting `.op` off the result) — almost never what's intended. The same rule applies to
+any qualified call, including inside `let`/`match`; a `use`-hoisted name needs no such
+wrapping (`use Foo (op)` then a bare `$op arg`, exactly like a local binding).
+
+**The `Mod_Type` hand-qualification convention.** A qualified TYPE name has no dot syntax
+(`pTy` parses no `Foo.T`) — an imported `data` type must be spelled by hand as
+`Foo_T` (the module resolver's own qualification scheme, `Mod` `_` `Name`) wherever a bare
+type name is needed, e.g. a `match (v : Foo_T) { … }` ascription or a function's declared
+parameter type. `use Foo (T)` avoids this — it hoists `T` (and its constructors) fully
+unqualified, so the plain name `T` is written and matched on directly.
+
+**Known v1 limitation (visibility enforcement, tracked as issue #73):** `pub`/private-by-
+default is the DESIGNED semantics above (ADR-0093 D3), but enforcement is not yet wired —
+today a non-`pub` decl is still importable. Treat `pub` as the interface you are
+declaring, not (yet) a gate the checker enforces.
+
+See `examples/json/` for a worked four-file module program (`Json.bang`/`Parse.bang`/
+`Print.bang`/`main.bang`) exercising `import`, qualified access, and `Mod_Type` ascriptions
+end-to-end, gated by `check-examples`.
+
+## Traits & Laws (ADR-0040 §5, ADR-0068)
+
+A **trait** declares a Self-typed interface: zero or more operation SIGNATURES (`fn`) and
+zero or more LAWS (`law`) the implementations are expected to satisfy. An **impl**
+provides the operation bodies for one STRUCTURAL target type. Member separators (`;` or
+`,`) are optional — the leading keyword (`fn`/`law`/`}`) alone delimits each member.
+
+```
+trait Add { fn add(a, b) -> Int ; law comm(a, b): add a b == add b a }
+impl Add for (Int * Int) { fn add(p, q) = p }
+```
+
+| Form | Meaning |
+|---|---|
+| `trait Name { fn op(a, b) -> T }` | declares operation `op`, arity 2, every param typed `Self` (bite-2: v1 traits are Self-only — `[]` HK params) |
+| `trait Name { law lawName(a, b): expr }` | declares a LAW: `expr` is a Bool-valued equation over the params + trait ops (e.g. `add a b == add b a`), universally quantified over `a, b` |
+| `impl Name for Ty { fn op(a, b) = expr }` | supplies `op`'s body for the STRUCTURAL type `Ty` (a `pTy`, e.g. `Int`, `(Int * Int)`) |
+
+**A law body calls a trait op in PAREN-CALL form** (`add a b == add b a`, note the
+`add a b`, ordinary curried application) — this is consistent with the rest of the
+surface's curried convention (`f x y`, not `f(x, y)`). An `impl`'s operation DEFINITION,
+however, uses a TUPLE-STYLE parameter list at both the trait declaration site
+(`fn add(a, b) -> Int`) and the impl site (`fn add(p, q) = p`) — the parenthesized,
+comma-separated form, not curried `fn add a b`. This is a deliberate but visible
+asymmetry: trait/impl SIGNATURES use the paren-list form, law BODIES and ordinary
+function calls elsewhere use curried application.
+
+`bang test [<file.bang>]` (issue #60) discovers every trait-law instance in a decls-only
+program and sample-checks it (30 Int-tuple samples, a fixed seed for CI-reproducible
+runs), reporting PASS/FAIL/ERROR/STUCK per law. **Known v1 limitation (tracked as issue
+#74):** a law's INVOCATION of its trait op through `bang test`'s discovery/dispatch path
+currently errors (`app: callee is not a function`) rather than reaching PASS/FAIL — the
+grammar above is stable and build-gated (every form is a `lake build`-verified `#guard` in
+`Bang/Frontend/Surface.lean`), but end-to-end law EXECUTION through the CLI is not yet
+wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws to
+discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch
+path that is still open.
+
 ## Effect channels
 
 The surface's effect labels (the frozen v1 set). A handler on a label discharges its row;

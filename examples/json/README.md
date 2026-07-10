@@ -42,10 +42,14 @@ lake exe bang run examples/json/main.bang              # -> 163 (kernel oracle)
 lake exe bang run --compiled examples/json/main.bang    # -> 163 (verified machine, agrees)
 ```
 
-`bang check` (unlike `bang run`) does NOT resolve imports — it is a single-file
-diagnostic pipeline, so it cannot type-check `main.bang`/`Parse.bang`/`Print.bang`
-standalone (each references names their own `import` lines bring in). `Json.bang`
-(the one pure-`data`, import-free file) is the exception and checks clean alone.
+`bang check` DOES resolve imports (resolver-aware, matching `bang run`) —
+`bang check --json examples/json/main.bang` ⟹ `{"ok":true,...}`, seeing every name
+`main.bang`'s imports bring in. `Parse.bang`/`Print.bang` still can't be checked
+STANDALONE, but for a different reason: each is a pure library file (no `main` decl,
+no trailing expression — D5), and `bang check`/`run` both reject running a library
+file directly ("this file is a library ... import it from an entry file instead") —
+not an import-resolution gap. `Json.bang` (the one pure-`data`, import-free file) has
+neither issue and checks clean alone.
 
 ## A critical finding this example surfaced (module-adjacent)
 
