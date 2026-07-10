@@ -347,7 +347,10 @@ index 0 with `v₀` (which shifts what was index 1 down to index 0), then repeat
 is a LEFT FOLD of the kernel's single `Comp.subst` over `γ` — exactly the composition `evalV`/`evalE`
 elided by resolving each index to `ρ.get i` instead of copying. `substEnv [] M = M` (a closed term is
 unchanged); this is the standard "environment = a pending simultaneous substitution" identity (PLFA
-`BigStep`; Pierce TAPL §6.2 shift/subst calculus). -/
+`BigStep`; Pierce TAPL §6.2 shift/subst calculus).
+SSoT: extensionally = Core's `closeC` (`Bang/Core/Semantics/Subst.lean` §1.3c) — the crux math
+(`closeC_subst_comm`/`_subst2_comm`) is proven THERE and the crux lemmas below re-point to it; kept as
+the machine's own named fold for its `@[simp]` distribution set (not a duplicate to retire). -/
 def substEnv : List Val → Comp → Comp
   | [],      M => M
   | v :: γ, M => substEnv γ (Comp.subst v M)
