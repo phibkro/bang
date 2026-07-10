@@ -878,23 +878,38 @@ closure in reach carries an `EffectFree`, `ScopedC`-under-its-env body, so `forc
 effectful captured code — is a SEPARATE layer. 3b takes only the closedness core; 3a stacks purity on
 top. Kept factored per the ruling rider so 3b EXTENDS rather than reshapes (no "pure" baked into `WF`). -/
 
-/-- A computation performs no effects and installs no handler — the PURE fragment. Recursion mirrors the
-binding structure so `EffectFree` descends into every sub-computation the eval visits. `force`/`app`
-carry no `Comp` sub-term here (their closure body lives in the ENV, guarded by `MEnv.PureV` below). -/
+/-! A computation is in the PURE fragment (`EffectFree`) when it — AND every thunk it can RETURN or run
+— performs no effect and installs no handler. `EffectFree` must descend into VALUE thunks (`ValEF`),
+not just sub-computations: `ret (vthunk (perform …))` is effect-free AT TOP yet returns an effectful
+closure, so `force`/`app` on it would perform — the deep fragment excludes that. Mutual `EffectFree`
+(over `Comp`) / `ValEF` (over `Val`, = "every `vthunk` body is `EffectFree`"). This makes `MVal.PureV`
+of an evaluated value follow from `ValEF` of the source value + `MEnv.PureV` of the env. -/
+mutual
 def EffectFree : Comp → Prop
-  | .ret _         => True
+  | .ret v         => ValEF v
   | .letC M N      => EffectFree M ∧ EffectFree N
-  | .force _       => True
+  | .force v       => ValEF v
   | .lam M         => EffectFree M
-  | .app M _       => EffectFree M
+  | .app M v       => EffectFree M ∧ ValEF v
   | .perform _ _ _ => False
   | .handle _ _    => False
-  | .case _ N₁ N₂  => EffectFree N₁ ∧ EffectFree N₂
-  | .split _ N     => EffectFree N
-  | .unfold _      => True
-  | .binop _ _ _   => True
+  | .case v N₁ N₂  => ValEF v ∧ EffectFree N₁ ∧ EffectFree N₂
+  | .split v N     => ValEF v ∧ EffectFree N
+  | .unfold v      => ValEF v
+  | .binop _ a b   => ValEF a ∧ ValEF b
   | .oom           => True
   | .wrong _       => True
+def ValEF : Val → Prop
+  | .vunit       => True
+  | .vint _      => True
+  | .vvar _      => True
+  | .vcap _ _    => True
+  | .vthunk M    => EffectFree M
+  | .inl w       => ValEF w
+  | .inr w       => ValEF w
+  | .pair w₁ w₂  => ValEF w₁ ∧ ValEF w₂
+  | .fold w      => ValEF w
+end
 
 /-! The purity invariant on machine values / envs (the 3a layer over closedness): every closure a value
 reaches has an `EffectFree` body `ScopedC` under its captured env's length. Mutual over `MVal`/`MEnv`
@@ -921,6 +936,13 @@ theorem MEnv.PureV.tail {mv : MVal} {ρ : MEnv} (h : MEnv.PureV (mv ∷ₑ ρ)) 
   unfold MEnv.PureV at h; exact h.2
 theorem MEnv.PureV.cons {mv : MVal} {ρ : MEnv} (hmv : MVal.PureV mv) (hρ : MEnv.PureV ρ) :
     MEnv.PureV (mv ∷ₑ ρ) := by unfold MEnv.PureV; exact ⟨hmv, hρ⟩
+
+/-- A `PureV` env's in-range lookup is `PureV`. Out of range gives `mvunit` (also `PureV`), so the
+bound `i < |readbackEnv ρ|` is not even needed — but we keep the general form. -/
+theorem MEnv.PureV.get : ∀ {ρ : MEnv}, MEnv.PureV ρ → ∀ (i : Nat), MVal.PureV (ρ.get i)
+  | .nil, _, _ => by simp only [MEnv.get, MVal.PureV]
+  | .cons v ρ, h, 0 => by simp only [MEnv.get]; exact h.head
+  | .cons v ρ, h, j + 1 => by simp only [MEnv.get]; exact MEnv.PureV.get h.tail j
 
 /-! ### The value correspondence `readback ∘ evalV = substEnvV ∘ readbackEnv`
 
@@ -1015,6 +1037,51 @@ theorem readback_evalV {ρ : MEnv} (hρ : MEnv.WF ρ) :
       simp only [evalV, readback, substEnvV_pair]
       rw [readback_evalV hρ hv.pair_inv.1, readback_evalV hρ hv.pair_inv.2]
   | .fold w, hv => by simp only [evalV, readback, substEnvV_fold]; rw [readback_evalV hρ hv.fold_inv]
+
+/-! ### `evalV` preserves the invariants (slice-3a: results are WF ∧ PureV)
+
+Evaluating a scoped, `ValEF` source value under a WF/PureV env produces a WF (reads-back-closed) and
+PureV machine value — the bound-value obligations of the `_pure` induction's binder cases. `evalV_WF`
+routes through the value correspondence + `substEnvV_closed`; `evalV_PureV` is structural on `v`, the
+`vthunk` case producing `mvclos M ρ` whose purity is exactly `EffectFree M` (from `ValEF (vthunk M)`)
+∧ scope ∧ the env's `PureV`. -/
+
+/-- `evalV` of a scoped value under a WF env reads back closed (the value's `MVal.WF`). -/
+theorem evalV_WF {ρ : MEnv} (hρ : MEnv.WF ρ) {v : Val}
+    (hv : Val.ScopedV (readbackEnv ρ).length v) : MVal.WF (evalV ρ v) := by
+  unfold MVal.WF
+  rw [readback_evalV hρ hv]
+  exact substEnvV_closed (by simpa only [MEnv.WF] using hρ) hv
+
+/-- `evalV` of a `ValEF` value under a `PureV` env is `PureV` (the value's `MVal.PureV`). Structural on
+`v`; `vthunk M ↦ mvclos M ρ` gets `EffectFree M` from `ValEF (vthunk M)`, scope from the hyp, env-purity
+from `hρ`. Needs the source value scoped so the closure's body-scope obligation is met. -/
+theorem evalV_PureV {ρ : MEnv} (hρ : MEnv.PureV ρ) :
+    ∀ {v : Val}, ValEF v → Val.ScopedV (readbackEnv ρ).length v → MVal.PureV (evalV ρ v)
+  | .vunit, _, _ => by simp only [evalV, MVal.PureV]
+  | .vint _, _, _ => by simp only [evalV, MVal.PureV]
+  | .vcap _ _, _, _ => by simp only [evalV, MVal.PureV]
+  | .vvar i, _, _ => by
+      -- ρ.get i is a stored env value; PureV of the env's entries transfers (total, no range needed).
+      simp only [evalV]
+      exact MEnv.PureV.get hρ i
+  | .vthunk M, hEF, hsc => by
+      simp only [evalV, MVal.PureV]
+      refine ⟨hEF, ?_, hρ⟩
+      -- ScopedC of the thunk body M under |readbackEnv ρ| = the thunk's scope one level down? No:
+      -- vthunk M scoped under n means M scoped under n (thunk doesn't bind); readback env length = n.
+      intro k hk; have := hsc k hk
+      simp only [Val.shiftFrom, Val.vthunk.injEq] at this; exact this
+  | .inl w, hEF, hsc => by
+      simp only [evalV, MVal.PureV]; exact evalV_PureV hρ (by simpa only [ValEF] using hEF) hsc.inl_inv
+  | .inr w, hEF, hsc => by
+      simp only [evalV, MVal.PureV]; exact evalV_PureV hρ (by simpa only [ValEF] using hEF) hsc.inr_inv
+  | .pair w₁ w₂, hEF, hsc => by
+      simp only [evalV, MVal.PureV]
+      have hEF' : ValEF w₁ ∧ ValEF w₂ := by simpa only [ValEF] using hEF
+      exact ⟨evalV_PureV hρ hEF'.1 hsc.pair_inv.1, evalV_PureV hρ hEF'.2 hsc.pair_inv.2⟩
+  | .fold w, hEF, hsc => by
+      simp only [evalV, MVal.PureV]; exact evalV_PureV hρ (by simpa only [ValEF] using hEF) hsc.fold_inv
 
 /-! ### The PURE-fragment correspondence (`_pure`, slice-3a)
 
