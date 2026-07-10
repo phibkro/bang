@@ -424,3 +424,12 @@ shake:
       echo "       issues; investigate before trusting a clean report." >&2
       exit 1
     fi
+
+# Generated API docs (doc-gen4) from the `/--`/`/-!` docstring convention. Builds
+# in the `docbuild/` SUBPROJECT (its own lake workspace — see docbuild/lakefile.toml)
+# so the root manifest stays untouched. NOT in `just verify`: doc-gen4 + the
+# import-closure page render is slow by design. First run resolves doc-gen4's deps
+# (network) and compiles it (tens of minutes cold).
+docs:
+    bash tools/tool-log.sh docs
+    cd docbuild && lake build Bang:docs && echo "→ docbuild/.lake/build/doc/index.html"

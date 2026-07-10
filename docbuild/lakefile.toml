@@ -1,0 +1,29 @@
+# docbuild — the generated-API-docs subproject (plan 010).
+#
+# A SEPARATE lake workspace so the parent `bang-lang` package stays untouched:
+# doc-gen4 (and its md4lean / BibtexQuery / UnicodeBasic deps) resolve into
+# THIS workspace's `.lake/`, never the root manifest. The root `lakefile.toml`
+# and `lake-manifest.json` are byte-identical to base — doc-gen4 is a
+# dependency-ring cost we pay only when rendering docs.
+#
+# Build: `just docs` (= `cd docbuild && lake build Bang:docs`). NOT in the
+# verify gate — doc-gen4 + the import-closure page render is slow by design.
+#
+# The `bang-lang` require is BY PATH (`..`): doc-gen4's `Bang:docs` facet
+# renders the parent's already-built `Bang` oleans, so the parent must be built
+# first (the reflink-seeded `.lake/build` from the main checkout covers this).
+#
+# doc-gen4's tag tracks the Lean release; it MUST match `lean-toolchain`
+# (v4.30.0 here, copied from the parent). Bump both in lockstep on any
+# toolchain move.
+name = "docbuild"
+defaultTargets = ["Bang:docs"]
+
+[[require]]
+name = "doc-gen4"
+git = "https://github.com/leanprover/doc-gen4"
+rev = "v4.30.0"
+
+[[require]]
+name = "bang-lang"
+path = ".."
