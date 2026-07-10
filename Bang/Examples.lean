@@ -39,6 +39,12 @@ public import Bang.Frontend.Surface
 -- engine in the differential `#guard`s. Apex (this file) may import Backend.
 meta import Bang.Backend.AbstractMachine
 public import Bang.Backend.AbstractMachine
+-- §D (issue #95 regression) needs the TYPED elaborator (`let rec`'s `letRecS` desugar
+-- lives in `TypeCheck.elabS`/`buildLetRec` — the untyped `Surface.lower` §C already
+-- imports cannot reach it, per `TypeCheck.lean`'s own `letRecS` arm: "reaching the
+-- checker means elabProg didn't run"). Apex may import Frontend freely.
+meta import Bang.Frontend.TypeCheck
+public import Bang.Frontend.TypeCheck
 
 namespace Bang.Examples
 
@@ -360,5 +366,52 @@ private def compiledAgreesC (fuel : Nat) (c : Comp) (n : Int) : Bool :=
 
 #guard compiledAgreesC 2000 customResume 106
 #guard compiledAgreesC 2000 customAbortCoexist 42
+
+/-! ## D. Typed `let rec` on the COMPILED path (issue #95 regression)
+
+`let rec` (ADR-0073) desugars via the TYPED elaborator (`TypeCheck.elabS`'s `letRecS` arm →
+`buildLetRec`'s μ-knot, `Bang/Frontend/TypeCheck.lean`) — the untyped `Surface.lower` §C's guards
+above never reach it (reaching `letRecS` on that path is itself a checker error: "let rec is
+desugared away by the elaborator"). `compiledAgreesTyped` mirrors `compiledAgreesInt` but routes
+through `TypeCheck.checkAndLower` (the production `bang run`/`bang check` pipeline) so recursion's
+μ-knot IS exercised. This is the compiled-path companion to `runTypedYieldsInt`'s kernel-only
+`let rec` guards (`Bang/Frontend/TypeCheck.lean`'s `recProg`/`assertTypedOom` corpus, e.g. the
+countdown-sum `#guard`s near `recProg`). -/
+
+/-- Typed-pipeline compiled-path differential check: `checkAndLower src` then BOTH the calculated
+machine `exec ∘ compile` and the kernel oracle `Source.eval` agree on `vint n`. -/
+def compiledAgreesTyped (fuel : Nat) (src : String) (n : Int) : Bool :=
+  match Bang.TypeCheck.checkAndLower src with
+  | .error _ => false
+  | .ok c =>
+    (match Bang.CalcVM.exec fuel 0 (Bang.CalcVM.compile c []) [] [] with
+     | some [.ret (.vint m)] => m == n
+     | _                     => false)
+    &&
+    (match Source.eval fuel c with
+     | .done (.vint m) => m == n
+     | _               => false)
+
+-- D-LETREC (issue #95 fix pin). A RE-ENTRANT nested-`let rec` knot — an outer `p` with sibling
+-- `factor`/`term`, where `factor` calls BACK into the outer `p` (the exact shape
+-- `scratch/calc95/repro-min.bang` isolated from `examples/calc`'s parser, whose FOUR large
+-- sibling productions pushed `--compiled` to an 873s residual-recompile blowup before the
+-- `buildLetRec` knot-sharing fix, `docs/notes/dogfood-calc-findings.md` wall 1). Both engines
+-- agree at 12 — the SAME value `examples/calc`'s own re-entrant grammar agrees on across all
+-- three engines (`env`/`ck`/`--compiled`), now cheap on the compiled path too.
+#guard compiledAgreesTyped 4000
+  ("let rec p : Int -> Option (Int * Int) ! {Div} = fun n => "
+    ++ "let rec factor : Int -> Option (Int * Int) ! {Div} = fun ts => "
+    ++ "if ts == 0 then Some(0, 0) "
+    ++ "else match ($p (ts - 1) : Option (Int * Int)) { "
+    ++ "None -> None, Some(q) -> let (a, b) = q in Some(a + 1, b + 1) } "
+    ++ "in "
+    ++ "let rec term : Int -> Option (Int * Int) ! {Div} = fun ts => "
+    ++ "match ($factor ts : Option (Int * Int)) { "
+    ++ "None -> None, Some(q) -> let (a, b) = q in Some(a, b) } "
+    ++ "in "
+    ++ "$term n "
+    ++ "match ($p 6 : Option (Int * Int)) { None -> 0, Some(q) -> let (a, b) = q in a + b }")
+  12
 
 end Bang.Examples

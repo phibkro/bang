@@ -149,6 +149,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **agents** — lane-discipline pack injected into role files via generated block (plan 012 slice 4) (`ff57f173`)
 - **tooling** — #82 verbs holes/impact/semver-diff over the Query rails (`6c15d867`)
 - **diag** — stable diagnostic codes + `bang explain` (plan 013 slice 5) (`c6731077`)
+- **dx** — generated bang TextMate grammar + Shiki highlighting (plan 013 slice 1) (`dec48cf5`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
