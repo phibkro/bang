@@ -58,6 +58,38 @@ got_stdin="$(cat examples/state/main.bang | "$bang" check --json 2>/dev/null)" |
 check "file-and-stdin-agree" "$got_stdin" "$got_file"
 check "file-arg-ok-true" "$got_file" '{"ok":true,"diagnostics":[]}'
 
+# ── #75 REGRESSION GUARDS: single-file FILE input must match stdin's span/code EXACTLY, for both
+# a nameHint-located type error and a parse error (round-2 finding: file input silently dropped
+# both to span:null, and additionally mislabeled the parse error code:"type"). ──
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT
+
+# single-file, nameHint-located type error ('force: not a thunk') — file must equal stdin byte-for-byte.
+printf 'let x = 3 in $x' > "$tmpdir/type-err.bang"
+got_stdin_type="$(printf 'let x = 3 in $x' | "$bang" check --json 2>/dev/null)" || true
+got_file_type="$("$bang" check --json "$tmpdir/type-err.bang" 2>/dev/null)" || true
+check "75-single-file-type-error-file-eq-stdin" "$got_file_type" "$got_stdin_type"
+check "75-single-file-type-error-span-present" "$(printf '%s' "$got_file_type" | grep -o '"span":null' || true)" ""
+
+# single-file, PARSE error — file must carry code:"parse" (not "type") AND a real span (not null).
+printf 'let x 3 in x' > "$tmpdir/parse-err.bang"
+got_file_parse="$("$bang" check --json "$tmpdir/parse-err.bang" 2>/dev/null)" || true
+check "75-single-file-parse-error-code-parse" "$(printf '%s' "$got_file_parse" | grep -o '"code":"parse"' || true)" '"code":"parse"'
+check "75-single-file-parse-error-not-mislabeled-type" "$(printf '%s' "$got_file_parse" | grep -o '"code":"type"' || true)" ""
+check "75-single-file-parse-error-span-present" "$(printf '%s' "$got_file_parse" | grep -o '"span":null' || true)" ""
+got_stdin_parse="$(printf 'let x 3 in x' | "$bang" check --json 2>/dev/null)" || true
+check "75-single-file-parse-error-file-eq-stdin" "$got_file_parse" "$got_stdin_parse"
+
+# ── genuine MULTI-file program: the documented v1 grant (span:null, code:"type") must stay INTACT
+# — the #75 fix only widens the single-file fast path, never narrows the resolver path's own
+# (still-honest) limitation. ──
+mkdir -p "$tmpdir/mf"
+printf 'pub let x = 3' > "$tmpdir/mf/Lib.bang"
+printf 'import Lib\nlet main = $Lib.x + "a"' > "$tmpdir/mf/main.bang"
+got_mf="$("$bang" check --json "$tmpdir/mf/main.bang" 2>/dev/null)" || true
+check "75-multi-file-grant-intact-code-type" "$(printf '%s' "$got_mf" | grep -o '"code":"type"' || true)" '"code":"type"'
+check "75-multi-file-grant-intact-span-null" "$(printf '%s' "$got_mf" | grep -o '"span":null' || true)" '"span":null'
+
 # ── every examples/*/main.bang round-trips ok:true through --json (the corpus, not just one file) ──
 examples_pass=0
 examples_fail=0
@@ -137,7 +169,7 @@ echo "────────────────────────�
 echo "check-json: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run (the gotcha the mission
 # brief calls out) even if every individual `check` that DID run happened to pass.
-want_total=22
+want_total=30
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"

@@ -161,6 +161,21 @@ public def checkJson (src : String) : String :=
   let (ok, diags) := diagnoseSrc src
   renderDiagnostics ok diags
 
+/-- PUBLIC: one `ok:false` diagnostic JSON object for a PARSE failure located OUTSIDE `checkJson`'s
+own re-parse (#75 fix, 2026-07-10) — specifically `Main.runCheck`'s file-input header peek, which
+must report a header parse error (a malformed `import`/`use` line) with its real span and
+`code:"parse"`, the SAME schema `checkJson`'s own parse arm produces (`diagnoseSrc`'s `.error` case
+above), rather than falling through to the `Prog`-taking path's hand-assembled `code:"type"`/
+`span:null` `checkFailJson` (the #75 mislabel). Kept as its own tiny function (not a `Main.lean`
+literal) so the ONE `Diagnostic`/`renderDiagnostics` schema plumbing stays inside this module —
+`Main.lean` never hand-assembles JSON, mirroring why `checkFailJson` itself reuses `jsonStr` rather
+than a second escaper. -/
+public def parseFailJson (msg : String) (span : Option Bang.Surface.Span) : String :=
+  renderDiagnostics false [{ severity := .error, code := .parse, msg := msg, span := span }]
+
+#guard parseFailJson "expected '='" none ==
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"msg\":\"expected '='\",\"span\":null}]}"
+
 /-! ## 4. Schema `#guard`s — byte-exact expected strings (the schema IS the contract). Each
 expected string was COMPUTED via a compiled `#eval IO.println (checkJson …)` (a `lake build` run,
 not an in-editor reduction — `checkAndLower` walks `bigFuel` row recursion, unreliable under
