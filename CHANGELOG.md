@@ -141,5 +141,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **nix** — re-pin depsHash after scripts/ scrub (#63, #78) (`d567654`)
 - **cli** — #75 — bang check --json regains file-input spans (`b42109f`)
 - **surface** — let-sugar fmt preserves the marker instead of expanding (#68 follow-up) (`21c945b`)
+- **modules** — #73 — gate qualified Mod.name access against D3 visibility (`28aea68`)
+- **laws** — #74 — diagnose bare trait-op calls + unreachable Int impls (`bac023c`)
 
 <!-- END GENERATED changelog -->
