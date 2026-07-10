@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (34)
+## active (35)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -27,6 +27,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`laws-taxonomy.md`](laws-taxonomy.md) — The taxonomy of laws — model-shaped vs morphism-shaped, and where a property lives
 - [`lean-comment-style.md`](lean-comment-style.md) — Lean comment convention (BANG)
 - [`loop-audit.md`](loop-audit.md) — Loop audit — feedback loops by radius
+- [`memory-management-survey.md`](memory-management-survey.md) — Memory-management — design survey: param-passing handlers, the CBPV stack/heap split, and the heap ladder
 - [`multishot-survey.md`](multishot-survey.md) — Multi-shot resumption — empirical design inputs for the Q22 cap-rep fork
 - [`ndet-dst-design.md`](ndet-dst-design.md) — Nondeterminism as an effect + a DST handler + the sim-KV hello-world — the first Stage-7 consumer
 - [`os-inspiration-survey.md`](os-inspiration-survey.md) — OS-inspiration survey — what operating systems teach bang about resources, scheduling, and access policy
