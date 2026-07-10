@@ -440,12 +440,32 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
   -- (`fⱼ < fᵢ` from `hres`), matching the strip's fuel-preserving output — no mono anywhere.
   induction Sstrip generalizing Cᵢ εᵢ Sstrip' with
   | nil =>
-      -- `Sstrip = []`: LHS = `handleF nid hh :: Ko'` (handleF-headed). By id-uniqueness (StackInc) the RHS
-      -- boundary `handleF nid h'` is the UNIQUE `nid`-frame, so `Sstrip' = []`. Output `Dᵢ := Cᵢ`, nil.
-      -- Sstrip' = [] via head-match (the LHS `handleF nid hh` forces the RHS head `handleF nid h'`, and
-      -- id-uniqueness makes it the boundary) + length-alignment. Prove via `krelSN_length_eq` + the
-      -- StackInc id-uniqueness on the RHS (`nid` appears once). slice-2 sub-obligation.
-      sorry
+      -- `Sstrip = []`: LHS = `handleF nid hh :: Ko'` (handleF-headed). The RHS `Sstrip' ++ handleF nid h' ::
+      -- K₂ₒ` must be handleF-headed too; case on `Sstrip'`.
+      simp only [List.nil_append] at hS ⊢
+      match Sstrip' with
+      | [] =>
+          -- RHS = `handleF nid h' :: K₂ₒ`; the handleF clause gives the tail relation at hole `Cᵢ`. Output
+          -- `Dᵢ := Cᵢ`: the empty prefix relates at `Cᵢ = Cᵢ` (nil clause, C = D). Handler-frame hole
+          -- preserved ⇒ Cᵢ is the answer at the boundary. `krelSN_nil`.
+          exact ⟨Cᵢ, by rw [krelSN_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩⟩
+      | fr' :: rest' =>
+          -- RHS head is `fr'`; LHS head is `handleF nid hh`. For the relation to hold `fr'` must be
+          -- `handleF nid _` (same id, `krelSN_handleF`'s `nh = nh'`). But then `nid` appears at BOTH the
+          -- peeled `fr'` AND the boundary `handleF nid h'` — violating StackInc: the head id `nid` must
+          -- DOMINATE the tail (`StackBelow nid (rest' ++ handleF nid h' :: K₂ₒ)`), giving `nid < nid` (absurd
+          -- via `stackBelow_mid`). The double-nid contradiction.
+          exfalso
+          rw [List.cons_append] at hS
+          cases fr' with
+          | handleF mh' hd' =>
+              rw [krelSN_handleF] at hS
+              obtain ⟨⟨_, ⟨_, hsb⟩⟩, hid, _⟩ := hS
+              -- hid : nid = mh' (from `krelSN_handleF`'s nh = nh', LHS id nid, RHS id mh'); hsb : StackBelow
+              -- mh' (rest' ++ handleF nid h' :: K₂ₒ). `stackBelow_mid` gives `nid < mh' = nid`.
+              exact absurd (stackBelow_mid mh' nid rest' K₂ₒ hsb) (by omega)
+          | letF _ => simp [KrelSN] at hS
+          | appF _ => simp [KrelSN] at hS
   | cons fr rest ih =>
       -- peel `fr`; recurse on `rest` at the SAME fuel `f`. letF/appF/handleF each reconstruct over the
       -- peeled tail (structural). The handleF-in-prefix carries its resume conjunct UNCHANGED (no re-strip).

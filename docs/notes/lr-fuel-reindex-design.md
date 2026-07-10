@@ -113,17 +113,35 @@ fuel-UP/floor are NOT free; they are the slice-2 substance. (β) is NOT refuted 
 surfaced in the twin) — it is confirmed VIABLE with the crux reduced to a characterized, non-false
 obligation. This is the de-risk slice 1 existed to deliver: (β) as priced is SOUND; the grind is real.
 
-## Slice-2 map (the 37-decl grind, sliced)
+## The FUEL-PRESERVING strip finding (slice-2, the map-changer)
 
-1. `VrelKN`/`CrelKN` fuel-mono mutual block → closes `KrelSN_fuel_mono` fully (unblocks the strip's
-   fuel-align + the appF/letF/state arms). ~6 decls.
-2. `krelSN_append_inv` proper — the fuel-WF self-recursive strip (mirror `AppendInvWF`, fuel as measure).
-   Closes the crux's `Dstrip`-side. ~8 decls.
-3. The crux's `Dstrip = Dᵢ` coincidence + fuel-floor vacuity + fuel-UP resolution → `krelSN_splitAtId_decomp`
-   sorry-free. ~4 decls.
-4. Re-prove the ~19 `crelKN_/vrelKN_/compatK_*` compat decls against the twin (mechanical once 1–3 hold).
-5. The bridge `krelS_iff_exists_fuel` (fuel-synthesis ⟹ + fuel-erasure ⟸) — the LAST step, recovers the
-   frozen `Spec.lean` `lr_*` byte-identical. ~6 decls incl. the `HasCTy` collapse.
+The slice-2 grind's shape CHANGED materially: **the strip `krelSN_append_inv` is FUEL-PRESERVING
+(`f → f`), NOT fuel-descending (`fₒ < f`).** The strip walks `Sstrip` STRUCTURALLY (letF/appF/handleF
+peel), each frame threading its tail at the SAME fuel — fuel descends ONLY at the resume conjunct, which
+the strip carries but never re-decomposes. Consequences (all machine-witnessed):
+
+- **`KrelSN_fuel_mono` is OFF the critical path** — and its naive form is POLARITY-BLOCKED: the letF
+  clause has `VrelKN m f A →` (hyp, contravariant) `CrelKN m f B` (concl, covariant), so fuel-DOWN needs
+  VrelKN fuel-UP needs CrelKN fuel-UP … alternating; neither direction is simply free (the fuel is NOT
+  `∀ j <`-guarded like the metering index `n`). The fuel-preserving strip DISSOLVES this — no mono needed.
+- The strip's cons-case **letF + appF arms CLOSE sorry-free** (structural peel + reconstruct).
+- The crux supplies the output fuel `fⱼ` directly (fuel-preserving match) — NO fuel-align, NO floor.
+
+`krelSN_length_eq` (KrelSN stacks equal length) landed sorry-free (needed for the strip's alignment).
+
+## Slice-2 map (REVISED — fuel-mono struck)
+
+1. ~~fuel-mono mutual~~ **STRUCK** — the fuel-preserving strip needs no mono; the naive mono is
+   polarity-blocked and unneeded. (`KrelSN_fuel_mono` is now dead code, to be deleted.)
+2. `krelSN_append_inv` — STRUCTURAL (not fuel-WF). letF/appF arms CLOSED. Remaining: (a) nil
+   boundary-alignment `Sstrip'=[]` via StackInc id-uniqueness (`nid` appears once); (b) the
+   `Sstrip'=[]`-mismatch refutation (length); (c) the nested handleF-in-prefix resume relocation
+   (the SAME shape as the crux SKIP, one level in — fuel-descent at `fₖ < f`). ~4 sub-obligations.
+3. The crux's `Dstrip = Dᵢ` — the boundary-structural answer-thread (both prefixes bottom at the SAME
+   `handleF nid hh` frame; the answer is that frame's hole, carried DATA — NOT the FALSE `krelSN_hole_det`,
+   which was refute-first settled in-file). ~2 decls.
+4. Re-prove the ~19 `crelKN_/vrelKN_/compatK_*` compat decls against the twin (mechanical once 2–3 hold).
+5. The bridge `krelS_iff_exists_fuel` — the LAST step, recovers the frozen `Spec.lean` `lr_*` byte-identical.
 
 Census unchanged: (β) sheds `lr_fundamental` + `lr_fundamental_closed` (18→20); `lr_sound`'s third shed
 still needs Q22 (held). No frozen `Spec.lean` change — the fuel index is internal to `CrelKN`/`KrelSN`.
