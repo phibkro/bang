@@ -1481,40 +1481,10 @@ on the values quantified in `Krel`'s return-half / `Srel`'s resume-half is exact
 behaviour, and `EnvRel`-filler-closedness is then maintained by construction when the fundamental
 induction extends δ under a binder. -/
 
-/-- A value is `Closed` when every `shiftFrom` cutoff fixes it (no free de Bruijn index is exposed).
-The semantic analogue of `Metatheory.HasVTy.shift_closed`'s conclusion. -/
-def Val.Closed (v : Val) : Prop := ∀ k, Val.shiftFrom k v = v
-
-/-- The k=0 instance: a closed value is fixed by `Val.shift`. This is the vanishing-shift fact
-`closeC_subst_comm` consumes (`Comp.substFrom 1 (Val.shift v) N = Comp.substFrom 1 v N`). -/
-theorem Val.Closed.shift {v : Val} (h : Val.Closed v) : Val.shift v = v := h 0
-
-/-- A closed value is fixed by `Val.shiftFrom` at EVERY cutoff (the defining property, named). -/
-theorem Val.Closed.shiftFrom_eq {v : Val} (h : Val.Closed v) (k : Nat) : Val.shiftFrom k v = v := h k
-
-/-- A closed value is fixed by `Val.substFrom` at every cutoff, for any filler. Closed = shift-fixed at
-`k` ⇒ `substFrom k w v = substFrom k w (shiftFrom k v) = v` via the subst-after-shift cancellation
-(`Val.substFrom_shiftFrom`). This is what the substitution-swap lemma consumes when it traverses INTO a
-closed filler. -/
-theorem Val.Closed.subst_at {v : Val} (h : Val.Closed v) (k : Nat) (w : Val) :
-    Val.substFrom k w v = v := by
-  conv_lhs => rw [← h.shiftFrom_eq k]
-  exact Val.substFrom_shiftFrom k w v
-
-/-- Closedness is inherited by an injection's payload: `Closed (inl w) → Closed w` (and `inr`). The
-constructor `shiftFrom`s structurally, so the payload's shift-invariance follows by injectivity. -/
-theorem Val.Closed.inl_inv {w : Val} (h : Val.Closed (Val.inl w)) : Val.Closed w := by
-  intro k; have := h k; rw [Val.shiftFrom, Val.inl.injEq] at this; exact this
-theorem Val.Closed.inr_inv {w : Val} (h : Val.Closed (Val.inr w)) : Val.Closed w := by
-  intro k; have := h k; rw [Val.shiftFrom, Val.inr.injEq] at this; exact this
-/-- A pair's components are each closed. -/
-theorem Val.Closed.pair_inv {a b : Val} (h : Val.Closed (Val.pair a b)) :
-    Val.Closed a ∧ Val.Closed b := by
-  constructor <;> intro k <;> (have := h k; rw [Val.shiftFrom, Val.pair.injEq] at this)
-  exacts [this.1, this.2]
-/-- A `fold`'s payload is closed (the μ-intro analogue of `inl_inv`). -/
-theorem Val.Closed.fold_inv {w : Val} (h : Val.Closed (Val.fold w)) : Val.Closed w := by
-  intro k; have := h k; rw [Val.shiftFrom, Val.fold.injEq] at this; exact this
+-- `Val.Closed` (+ `.shift`/`.shiftFrom_eq`/`.subst_at`/`.inl_inv`/`.inr_inv`/`.pair_inv`/`.fold_inv`)
+-- HOISTED to `Bang/Core/Semantics/Subst.lean` §1.3c (task #15): pure de-Bruijn substitution machinery,
+-- shared by the LR and the env/closure machine — single source of truth in the substitution foundation.
+-- Available here via `Core.Semantics` re-import.
 
 /-! ### 5.2a′ Cap-closedness — REMOVED (ADR-0054).
 
@@ -2063,19 +2033,9 @@ An environment is a `List Val` of CLOSED fillers (the CK focus is always closed)
 `Compat.lean`) because the FROZEN `lr_fundamental` statement (`Spec.lean`) references them, and
 `Spec.lean` imports `LR` but not `Compat`. -/
 
-/-- Apply a closing environment δ to a computation: substitute index 0 with `δ[0]` (renumbering),
-then recurse on the tail (each `Comp.subst` removes the nearest binder). `closeC [] c = c`. -/
-def closeC : List Val → Comp → Comp
-  | [],      c => c
-  | v :: δ,  c => closeC δ (Comp.subst v c)
-
-/-- Apply a closing environment δ to a value (the value-level `closeC`). -/
-def closeV : List Val → Val → Val
-  | [],      v => v
-  | u :: δ,  v => closeV δ (Val.subst u v)
-
-@[simp] theorem closeC_nil (c : Comp) : closeC [] c = c := rfl
-@[simp] theorem closeV_nil (v : Val) : closeV [] v = v := rfl
+-- `closeC`/`closeV` (+ `closeC_nil`/`closeV_nil` and the whole closing-substitution calculus)
+-- HOISTED to `Bang/Core/Semantics/Subst.lean` §1.3c (task #15). The FROZEN `lr_fundamental`
+-- (`Spec.lean`) still references `closeC` — visible here and there via `Core.Semantics` re-import.
 
 
 /-! ## 5.2′d ◊4.5b — `EnvRelK` (the env relation over `VrelK`, for the migrated fundamental theorem).
