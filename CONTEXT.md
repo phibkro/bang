@@ -43,9 +43,15 @@ dispatch by store-holding identity σ→τ→κ, matching the kernel uncondition
 U5bComplete + Wasm ported to the 5-tuple; `exec_wexec_sim_ok` premised on custom-frame-absence with the full
 preservation proof. `CustomFree` is RETAINED on `compile_forward_sim` this unit — the converse-custom drop is the
 pre-registered follow-up (#62 stays open for it); Agree custom battery green through exec∘compile (resume→106,
-abort→42); census byte-unchanged.** **The edge is Stage 5** (LR: three pre-registered debts in PATH-inc5 —
-compatK_handleCustom + krelS_custom_reinstall + dispatchOn_rename) → 6 (soundness composition) → 7 (surface
-`handle … with { … }` — where the Q38 unification stress-test runs). The IO/net prong (ADR-0084) unblocks at
+abort→42); census byte-unchanged.** **STAGE 5 IS LANDED with two named residuals (2026-07-10, squashless picks off feat-44-stage5-lr):
+HandlerRel's custom arm is REAL (ClauseRel) · krelS_custom_reinstall PROVEN (the resumptive heart; retires the
+krelS_refl custom sorry) · dispatchOn_rename custom arm CLOSED (R-1 side condition). Residuals (task #16, both
+feeding only the flagged lr_* set): the crelK_fund handleCustom arm — blocked by the mutual block's heartbeat-
+fragile termination inference; both cheap fixes probe-REFUTED (the U-clause routes thunks through CrelK; a
+parameterized block breaks the frozen Spec wiring) — the fix is a kernel-engineer mutual-block split; and the
+R-1 StackCustomVcapFree keystone cascade. The ret-shape assumption (ADR-0092 §D3) HELD everywhere.** **The edge
+is Stage 6** (soundness composition) → 7 (surface `handle … with { … }` — where the Q38 unification stress-test
+runs). The IO/net prong (ADR-0084) unblocks at
 Stage 7. **In parallel: the stranger-test round-2 fix wave** (7/10, `docs/notes/stranger-test-2.md` — #73
 pub-bypass via qualified access · #74 bang-test shape bug · #75 check --json span regression · #76 modules/trait
 reference gap) **and the spine unit in flight: ADR-0094 (Accepted 2026-07-10) — the env/closure machine

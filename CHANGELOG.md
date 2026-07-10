@@ -114,6 +114,9 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — multi-binding let sugar (#68) (`3be8fcb`)
 - **calcvm** — #44 STAGE 4 — id-first custom arm through evalD·machine·sim·U5b·Wasm (squash of feat-44-stage4-idfirst, 56 commits) (`9617744`)
 - **fmt** — canonical multi-binding let — collapse sequential chains (#71) (`3e76135`)
+- **lr** — Stage-5 slice 1 — HandlerRel custom arm real (ClauseRel shape) + krelS_append ripples (`40dac44`)
+- **lr** — Stage-5 debt 2 — krelS_custom_reinstall + custom-frame self-relation (krelS_refl); debt 1 STOP-AND-SHOW (`36f06fd`)
+- **lr** — Stage-5 debt 3 — dispatchOn_rename custom arm closed (R-1 vcap-free side condition) (`3aa8966`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
