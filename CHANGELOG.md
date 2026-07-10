@@ -138,6 +138,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — caps through functions + the wrapper pattern — the per-stage story delivered (#84, #85, #86, #90) (`47a237db`)
 - **examples** — echo-mock — ADR-0084 slice A, Net effect over a pure mock handler (`6cccef20`)
 - **examples** — ndet-sim-kv-a/-b — sim-KV handler-swap demo (#28 rung-2 entry, ndet-dst-design.md) (`ef338d1f`)
+- **gate** — wire check-examples-env into the verify chain (`c91cde42`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
@@ -173,5 +174,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fc1197b2`)
 - **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fdd8ade3`)
 - **cli** — contain import-derived module paths to the project trees (plan 005) (`80b793c0`)
+- **lint** — silence unusedArguments false-positives (22 → 0, plan 009) (`6e50140b`)
+- **tools** — install-hooks.sh works from linked worktrees (`1d175a6d`)
 
 <!-- END GENERATED changelog -->
