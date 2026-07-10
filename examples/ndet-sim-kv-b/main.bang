@@ -1,0 +1,31 @@
+-- sim-KV, SEED B — the IDENTICAL simulated system as ../ndet-sim-kv-a/, run
+-- under a DIFFERENT scheduler. Same replicated last-writer-wins cell, same
+-- three write-rounds, same quiescence check -- the ONLY thing that changes is
+-- the `with Choice as sched { pick(n) => … }` clause. Seed B always picks 1
+-- (the LOWER-value writer wins each race instead of the higher one), so the
+-- run converges on a DIFFERENT final value than seed A while remaining
+-- internally consistent (every round still converges, because a constant
+-- clause still gives both replicas the same delivery order). This is
+-- "paradigm is a value; runtime is a handler installed at the use site"
+-- (ADR-0016) on the distributed axis: swap one handler, get a different
+-- deterministic interleaving of the exact same program.
+effect Choice { pick : Int -> Int }
+
+let main =
+  handle
+    let r1_1 = if (sched.pick(2)) == 0 then 20 else 10 in
+    let r2_1 = if (sched.pick(2)) == 0 then 20 else 10 in
+    let r1_2 = if (sched.pick(2)) == 0 then 40 else 30 in
+    let r2_2 = if (sched.pick(2)) == 0 then 40 else 30 in
+    let r1_3 = if (sched.pick(2)) == 0 then 60 else 50 in
+    let r2_3 = if (sched.pick(2)) == 0 then 60 else 50 in
+    let allConverged =
+      if (r1_1 == r2_1) then
+        if (r1_2 == r2_2) then
+          if (r1_3 == r2_3) then 1 else 0
+        else 0
+      else 0 in
+    (r1_3 + r2_3) + allConverged * 1000
+  with Choice as sched {
+    pick(n) => 1
+  }

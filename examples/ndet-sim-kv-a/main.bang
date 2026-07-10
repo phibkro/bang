@@ -1,0 +1,36 @@
+-- sim-KV, SEED A — a replicated last-writer-wins key-value cell, driven end to
+-- end by a Choice handler (docs/notes/ndet-dst-design.md's rung-2 entry increment).
+--
+-- Two replicas (r1, r2) hold the SAME key's value. Three write-rounds each pit
+-- two racing writers against both replicas; `sched.pick(2)` resolves DELIVERY
+-- ORDER independently per replica (the message bus can reorder each replica's
+-- link differently) -- pick returning 0 means the higher-value writer arrives
+-- LAST at that replica (last-writer-wins), 1 means the lower-value writer does.
+-- After all three rounds, the run checks QUIESCENCE: did every round converge
+-- (both replicas land on the same winner)? The scheduler here is a CONSTANT
+-- clause (seed A always picks 0), so both replicas always see the identical
+-- delivery order and always converge -- the same honesty Draft B names: a
+-- constant-clause scheduler cannot make two picks differ from EACH OTHER, but
+-- it DOES make two different SEEDS (seed A vs seed B, see ../ndet-sim-kv-b/)
+-- differ from each other, which is exactly the handler-swap property this
+-- pair demonstrates.
+effect Choice { pick : Int -> Int }
+
+let main =
+  handle
+    let r1_1 = if (sched.pick(2)) == 0 then 20 else 10 in
+    let r2_1 = if (sched.pick(2)) == 0 then 20 else 10 in
+    let r1_2 = if (sched.pick(2)) == 0 then 40 else 30 in
+    let r2_2 = if (sched.pick(2)) == 0 then 40 else 30 in
+    let r1_3 = if (sched.pick(2)) == 0 then 60 else 50 in
+    let r2_3 = if (sched.pick(2)) == 0 then 60 else 50 in
+    let allConverged =
+      if (r1_1 == r2_1) then
+        if (r1_2 == r2_2) then
+          if (r1_3 == r2_3) then 1 else 0
+        else 0
+      else 0 in
+    (r1_3 + r2_3) + allConverged * 1000
+  with Choice as sched {
+    pick(n) => 0
+  }
