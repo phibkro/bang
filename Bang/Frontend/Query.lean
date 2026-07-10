@@ -362,7 +362,27 @@ Assembles `declFactsOf` + `nameRefEdgesOf` + `lawInstancesOf` + the program's ow
 header into ONE JSON object — the schema documented in `docs/reference/language.md`'s `bang query`
 section. A caller composes ARBITRARY queries over this (a `jq`/`python`/Lean script) rather than
 waiting on a new fixed verb — `tools/test-query.sh`'s composed-query demo answers a question no
-verb below anticipates, over THIS export alone. -/
+verb below anticipates, over THIS export alone.
+
+SHAPE (operator-informed, the `compiler-as-dbms-survey.md` ruling): `dump` is a FLAT RELATIONAL
+fact base — `decls`/`refs`/`laws`/`imports`/`uses` are top-level ARRAYS OF FLAT RECORDS (Glean's
+"predicates = tables, facts = rows" framing), never a nested tree; the concrete gate is that the
+golden `dump` output loads into DuckDB with ONE `read_json` call (`tools/test-query.sh`'s
+`golden-dump-duckdb-loadable` check) — no unnesting gymnastics. The curated verbs (`symbols`/
+`type`/`effects`/`def`/`refs`) are DERIVED PREDICATES (views) over this extensional base — Tier 3.
+
+SCHEMA VERSIONING (the DBMS survey's ONE eager-adoption item, §6/§8): bang's 0.x "breaking changes
+allowed" policy collides with "agents write durable scripts against `dump`'s JSON" — every schema
+change breaks every saved query. `schemaVersion` is therefore a first-class field from v1: an
+ADDITIVE change (a new field/predicate) bumps the MINOR version; a removal/rename bumps MAJOR.
+`tools/test-query.sh`'s `golden-dump-schema-pinned` check fails CI on any un-versioned drift (a
+golden `dump` snapshot of a corpus example, byte-exact) — the "test" rung of the derivation-
+strength ladder applied to a public JSON contract. -/
+
+/-- **PUBLIC (TIER 1):** `dump`'s schema version — `"major.minor"`, additive-only bumps (a new
+field/predicate ⟹ minor; a removal/rename ⟹ major). The SINGLE SOURCE every `dump*Json*` entry
+reads (never a second hand-copied literal) — bump here, in ONE place, at a schema change. -/
+public def schemaVersion : String := "1.0"
 
 /-- One `ImportDecl`/`UseDecl` header line → its JSON object (`{"module":"Name"}` for an `import`,
 `{"module":"Name","names":[...]}` for a `use`). -/
@@ -383,7 +403,7 @@ public def dumpJsonP (p : Prog) (declModule : List (String × String) := []) : S
   -- (`dumpJson`, the string-taking entry) and are an EMPTY (not absent) array on the `Prog`-only
   -- resolver route, where no single contiguous source exists to re-derive them from (the SAME
   -- `span:null`-class v1 grant `check --json`'s multi-file path already documents).
-  jsonObj [jsonField "ok" "true",
+  jsonObj [jsonField "ok" "true", jsonStrField "schemaVersion" schemaVersion,
            jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
            jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
            jsonField "laws" "[]",
@@ -403,7 +423,7 @@ public def dumpJson (src : String) : String :=
         | .error _  => []   -- a law-discovery failure never blanks the REST of the dump (ADR-0046:
                              -- one bad seam doesn't hide everything else — matches `symbols`'s own
                              -- per-decl `typeError` isolation, not an all-or-nothing gate).
-      jsonObj [jsonField "ok" "true",
+      jsonObj [jsonField "ok" "true", jsonStrField "schemaVersion" schemaVersion,
                jsonField "decls" (jsonArr (facts.map DeclFact.toJson)),
                jsonField "refs" (jsonArr ((nameRefEdgesOf p).map RefEdge.toJson)),
                jsonField "laws" (jsonArr lawsJ),
