@@ -64,7 +64,7 @@ public import Bang.Frontend.Query
 public import Bang.Frontend.Format
 
 open Bang
-open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings Ty)
+open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses Ty)
 
 namespace Bang.Rewrite
 
@@ -147,6 +147,19 @@ def renameVars (old new : String) : Surf → Surf
       -- being renamed (the binding itself shadows `old` from there on).
       let (binds', shadowed) := renameLetBindingsVars old new binds
       .lettMulti binds' (if shadowed then b else renameVars old new b)
+  -- ADR-0095 (Stage 7, `handle e with Name as h { … }`): `n` (the effect-name reference) and `p?`
+  -- (the param-init expr) are always renamed (references, not binders); `h` (the mandatory cap
+  -- binder) shadows exactly like `.withCapS`'s own binder — stops renaming in `b` alone; each
+  -- clause's own arg binder shadows PER-CLAUSE (`renameHClausesVars`, the `renameDArmsVars`
+  -- precedent) — mirrors `qualifyVars`'s OWN `.handleCustomS` arm exactly (TypeCheck.lean).
+  | .handleCustomS lbl n p? h cls b =>
+      .handleCustomS lbl (renameVars old new n)
+        (match p? with
+          | .none     => .none
+          | .one p    => .one (renameVars old new p)
+          | .two a b' => .two (renameVars old new a) (renameVars old new b'))
+        h (renameHClausesVars old new cls)
+        (if h == old then b else renameVars old new b)
 def renameDArmsVars (old new : String) : DArms → DArms
   | .nil              => .nil
   | .cons c ps b rest =>
@@ -164,6 +177,14 @@ def renameLetBindingsVars (old new : String) : LetBindings → LetBindings × Bo
       else
         let (rest', shadowed) := renameLetBindingsVars old new rest
         (.cons n e' rest', shadowed)
+/-- Rename an ADR-0095 clause list `op(argName) => body`, one binder per clause — EACH clause
+shadows INDEPENDENTLY (unlike `.lettMulti`'s sequential chain: a clause's own arg binder has no
+bearing on any OTHER clause, mirroring `renameDArmsVars`'s own per-arm independence and
+`qualifyHClausesVars`'s documented precedent). -/
+def renameHClausesVars (old new : String) : HClauses → HClauses
+  | .nil               => .nil
+  | .cons op x b rest  =>
+      .cons op x (if x == old then b else renameVars old new b) (renameHClausesVars old new rest)
 end
 
 #guard renameVars "x" "y" (.var "x") == .var "y"
@@ -173,6 +194,27 @@ end
 #guard renameVars "x" "y" (.lett "x" (.var "x") (.var "x")) == .lett "x" (.var "y") (.var "x")   -- rhs renames (outer scope), body shadowed
 #guard renameVars "x" "y" (.lettMulti (.cons "x" (.var "x") .nil) (.var "x"))
      == .lettMulti (.cons "x" (.var "y") .nil) (.var "x")
+
+-- ADR-0095 (Stage 7) regression: `handle e with Name as h { op(a) => body }` — `n`/`p?` are
+-- references (always renamed); `h` shadows only in `body`; a clause's own arg binder shadows
+-- ONLY that clause's own body (mirrors `handle-custom-tracer`'s worked example shape).
+-- `n` (the effect-name REFERENCE, here deliberately named `net` too — a different SLOT from the
+-- cap binder `h` even though it happens to share a string) renames normally; `h`'s OWN binder
+-- shadows the rename inside `body`, so the `net` occurring THERE stays untouched — proves the two
+-- `net`-shaped things are handled by genuinely different rules, not accidentally both surviving.
+#guard renameVars "net" "conn"
+    (.handleCustomS none (.var "net") .none "net" (.cons "fetch" "n" (.var "n") .nil)
+      (.app (.var "net") (.var "x")))
+  == .handleCustomS none (.var "conn") .none "net" (.cons "fetch" "n" (.var "n") .nil)
+      (.app (.var "net") (.var "x"))
+#guard renameVars "x" "y"
+    (.handleCustomS none (.var "Net") .none "h" (.cons "fetch" "x" (.var "x") .nil)
+      (.var "x"))
+  == .handleCustomS none (.var "Net") .none "h" (.cons "fetch" "x" (.var "x") .nil)
+      (.var "y")   -- the clause's `x` shadows ITS OWN body only; the outer `body`'s `x` still renames
+#guard renameVars "x" "y"
+    (.handleCustomS none (.var "Net") (.one (.var "x")) "h" .nil (.var "x"))
+  == .handleCustomS none (.var "Net") (.one (.var "y")) "h" .nil (.var "y")   -- paramInit is a reference, always renamed
 
 /-- Rename a `Decl`'s internal body/bodies (trait law bodies / impl op bodies / a bounded fn's
 body / a plain `let`/`let rec`'s expression) — the "reference side" of a rename, applied to
