@@ -1553,6 +1553,18 @@ theorem crelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (c : Comp) {e :
             closeV_closed_scoped hδ.closed_right (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
           exact crelK_unfold hsc₁ hsc₂ (vrelK_fund_at (Val.vvar i) (HasVTy.vvar hget) n δ₁ δ₂ hδ)
+  | Comp.binop op v w, HasCTy.binop hv hw _ =>
+      -- ADR-0065 stage ④ / ctr slice 6 (DEFERRED — the LR obligation is sequenced LAST, off the
+      -- soundness critical path; `docs/notes/ctr-design.md` §3 ripple, §4.2 slice 6). The binop δ-step
+      -- `binop op (vint a) (vint b) ↦ ret (op.eval a b)` is a pure head-step (the `unfold`-arm shape,
+      -- `CrelK_head_step` + `crelK_ret`), BUT it only fires once BOTH operands close to `vint` literals.
+      -- Relating the two closings requires `VrelK n int (closeV δ₁ v) (closeV δ₂ v)` to force EQUAL
+      -- `vint` literals (int's VrelK is literal-equality), then a `crelK`-step to the equal `op.eval`
+      -- results. That is genuine binary-LR work (a new `crelK_binop` step-lemma, the twin of
+      -- `crelK_unfold`), and it lives in the already-`sorryAx` `lr_fundamental` cluster — NOT in the
+      -- kernel-typing + soundness slice this lane (task #36) discharges. MISSING: a `crelK_binop`
+      -- lemma (`VrelK int ⇒ equal vints ⇒ CrelK on the equal δ-reducts). shape: biernacki-popl18 §5.4.
+      sorry
   | Comp.perform cc op v, HasCTy.perform hcap _hℓ hArg hRes hv =>
       intro n δ₁ δ₂ hδ
       rw [closeC_perform, closeC_perform]

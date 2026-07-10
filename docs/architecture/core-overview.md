@@ -35,14 +35,14 @@ graph TD
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
     Core_Freshness["Core.Freshness<br/>826L · fan-in 0"]
     Core_Grade["Core.Grade<br/>82L · fan-in 0"]
-    Core_IR["Core.IR<br/>402L · fan-in 0"]
+    Core_IR["Core.IR<br/>416L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
     Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 0"]
     Core_Semantics_Eval["Core.Semantics.Eval<br/>415L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
     Core_Semantics_Subst["Core.Semantics.Subst<br/>940L · fan-in 0"]
-    Core_Soundness["Core.Soundness<br/>3299L · fan-in 0"]
-    Core_Typing["Core.Typing<br/>479L · fan-in 0"]
+    Core_Soundness["Core.Soundness<br/>3399L · fan-in 0"]
+    Core_Typing["Core.Typing<br/>492L · fan-in 0"]
     Examples["Examples<br/>365L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>213L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>942L · fan-in 0"]
@@ -52,12 +52,13 @@ graph TD
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Frontend_TypeCheck["Frontend.TypeCheck<br/>5455L · fan-in 0"]
-    Meta_BinaryLR["Meta.BinaryLR<br/>1841L · fan-in 0"]
+    Meta_BinaryLR["Meta.BinaryLR<br/>1853L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1741L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
     Reify_CalcReifyRef["Reify.CalcReifyRef<br/>163L · fan-in 0"]
     Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
     Witness_AgreeOutcome["Witness.AgreeOutcome<br/>236L · fan-in 0"]
+    Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
     Witness_BoccRegress["Witness.BoccRegress<br/>260L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>71L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
@@ -90,14 +91,14 @@ graph TD
 | `Core.EffectRow` | ? | 194 | 0 |
 | `Core.Freshness` | ? | 826 | 0 |
 | `Core.Grade` | ? | 82 | 0 |
-| `Core.IR` | ? | 402 | 0 |
+| `Core.IR` | ? | 416 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
 | `Core.Semantics.Dispatch` | ? | 273 | 0 |
 | `Core.Semantics.Eval` | ? | 415 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
 | `Core.Semantics.Subst` | ? | 940 | 0 |
-| `Core.Soundness` | ? | 3299 | 0 |
-| `Core.Typing` | ? | 479 | 0 |
+| `Core.Soundness` | ? | 3399 | 0 |
+| `Core.Typing` | ? | 492 | 0 |
 | `Distribution` | Apex | 65 | 0 |
 | `Examples` | ? | 365 | 0 |
 | `Frontend.Diagnostics` | ? | 213 | 0 |
@@ -108,13 +109,14 @@ graph TD
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 5455 | 0 |
-| `Meta.BinaryLR` | ? | 1841 | 0 |
+| `Meta.BinaryLR` | ? | 1853 | 0 |
 | `Meta.LR` | ? | 1741 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
 | `Spec` | Apex | 341 | 0 |
 | `Witness.AgreeOutcome` | ? | 236 | 0 |
+| `Witness.BinopTyping` | ? | 70 | 0 |
 | `Witness.BoccRegress` | ? | 260 | 0 |
 | `Witness.CapEscapeWitness` | ? | 71 | 0 |
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |

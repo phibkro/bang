@@ -197,6 +197,19 @@ inductive HasCTy : GradeVec Mult → TyCtx Eff Mult → Comp → Eff → CTy Eff
   | unfold : ∀ {γ Γ v A},
       HasVTy γ Γ v (VTy.mu A) →
       HasCTy γ Γ (Comp.unfold v) ⊥ (CTy.F 1 (VTy.unrollMu A))
+  -- T_Binop (ADR-0065 stage ④): a pure base-type δ-rule. Both operands are `int` VALUES,
+  -- consumed once each (multiplicative, `γ = γ_v + γ_w`, like `pair`); the result value type
+  -- is `op.resTy` (`int` for arithmetic, `Bool = sum unit unit` for comparisons). ⊥ row — the
+  -- LOAD-BEARING purity property (ADR-0065 rejected-alt 1: `4+2` must stay ⊥-row to be
+  -- foldable). Returner grade `1` like `unfold`: the reduct `ret (op.eval a b)` (a CLOSED value
+  -- in the operational-`vint` case) re-derives `F 1 (op.resTy)` at grade `1 • [] = []` via
+  -- `HasCTy.ret` — the preservation match. `q_or_1`/subsumption is not needed (base ops are
+  -- grade-inert in their result: the produced int/bool carries no variable budget).
+  | binop : ∀ {γ γ_v γ_w Γ} {op : BinOp} {v w : Val},
+      HasVTy γ_v Γ v VTy.int →
+      HasVTy γ_w Γ w VTy.int →
+      γ = γ_v + γ_w →
+      HasCTy γ Γ (Comp.binop op v w) ⊥ (CTy.F 1 (BinOp.resTy op))
   -- up (ADR-0022 D2): perform operation `op` of effect `ℓ`. `labelEff ℓ ≤ φ` is the
   -- lacks-discipline membership "`ℓ ∈ φ`" (ADR-0018) in the abstract lattice. The
   -- grade `q • γ` mirrors `ret`: the produced value's budget `q` scales the
