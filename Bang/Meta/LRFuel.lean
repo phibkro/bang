@@ -266,25 +266,22 @@ decreasing_by
     | (exact Prod.Lex.left _ _ (by omega))
     | (exact Prod.Lex.left _ _ ‹_ < _›)
 
-/-! ## Obstruction analog (ii) — fuel monotonicity: DIRECTION FINDING
+/-! ## Obstruction analog (ii) — fuel monotonicity: POLARITY-BLOCKED, and NOT NEEDED
 
-The slice-1 question: does SOME fuel-monotonicity direction hold, and is it the one consumers need?
+**CORRECTED FINDING (slice-2, supersedes the slice-1 "fuel-DOWN is free" claim):** the naive fuel-mono
+is POLARITY-BLOCKED in BOTH directions. The `KrelSN` resume conjunct's `∀ fᵢ < f` sub-range makes the
+`KrelSN`-level fuel-DOWN look free — but the letF clause's body is `∀ … VrelKN m f A →` (HYPOTHESIS,
+contravariant) `CrelKN m f B …` (conclusion, covariant). So `KrelSN` fuel-DOWN needs **VrelKN fuel-UP**
+(to feed the original body) AND **CrelKN fuel-DOWN**; VrelKN fuel-UP (its U-clause) needs CrelKN fuel-UP;
+the polarity ALTERNATES. Unlike the metering index `n` (which is `∀ j <`-guarded at the U-clause to break
+exactly this), the fuel `f` is NOT so guarded, so NEITHER fuel direction is simply provable through the
+mutual block. This decl's `sorry`s are precisely those blocked VrelKN/CrelKN arms.
 
-**Finding: the free direction is DOWNWARD on the RESUME CONJUNCT'S BOUND, i.e. `KrelSN n f → KrelSN n f'`
-for `f ≤ f'` is NOT free, and `f' ≤ f` IS — but the resume conjunct polarity FLIPS the naive reading.**
-Concretely, `KrelSN n (f+1) → KrelSN n f` (fuel DOWN) requires proving the resume conjunct `∀ fᵢ < f`
-from `∀ fᵢ < f+1` — TRIVIAL (a sub-range), the tail/letF/appF thread structurally. So **fuel-DOWN is the
-free monotonicity** (`KrelSN_fuel_mono` below), mirroring `KrelS_mono` on the metering index.
-
-The UPWARD direction (`KrelSN n f → KrelSN n (f+1)`) is NOT free: `∀ fᵢ < f+1` needs a resume witness at
-`fᵢ = f` the `f`-derivation never supplied. This is the honest boundary: upward fuel weakening walls at
-`fᵢ = f`, exactly the edge where the captured continuation would need a fuel the derivation lacks.
-
-**Consumer impact (assessed):** the ∃-bridge `KrelS ↔ ∃ f, KrelSN n f` and the `crelK_fund` producers
-need fuel-DOWN (a producer synthesizes at a high fuel `f` and any consumer at `f' ≤ f` accepts) — which
-IS the free direction. So the needed direction holds; upward is not needed (and not provable), precisely
-paralleling metering monotonicity. NEITHER-direction would have been the refutation; fuel-DOWN holding is
-the pass. -/
+**BUT it is NOT NEEDED (slice-2, the map-changer):** `krelSN_append_inv` is FUEL-PRESERVING (`f → f`, it
+walks `Sstrip` structurally, never dropping fuel), and the crux supplies its output fuel directly — so NO
+fuel-mono sits on the strip/crux critical path. This decl is retained ONLY as the machine-checked marker
+of the polarity obstruction (the flagged `sorry`s ARE the block); it is dead code on the proof path and
+will be deleted once the compat re-proofs confirm they don't need it either (they thread a uniform fuel). -/
 theorem KrelSN_fuel_mono : ∀ (n f f' : Nat) {C D : CTy Eff Mult} {ε : Eff} {g : Nat} (K₁ K₂ : Stack),
     f' ≤ f → KrelSN n f C D ε g K₁ K₂ → KrelSN n f' C D ε g K₁ K₂
   | _, _, _, _, _, _, _, [], [], _, hK => by
