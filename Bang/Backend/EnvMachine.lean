@@ -1833,7 +1833,28 @@ theorem evalE_agrees_evalD_gen :
           ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ StoresGood eσ' eτ' eκ'
           ∧ (∀ t, out = .mterm t → MTerm.WF t ∧ MTerm.PureV t)
           ∧ (∀ n op mv, out = .mraised n op mv → MVal.WF mv ∧ MVal.PureV mv) := by
-  sorry
+  intro f
+  induction f with
+  | zero =>
+    intro γ M out ρ g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ _ _ _ _ _ _ h; simp [evalE] at h
+  | succ f ih =>
+    intro γ M out ρ g G g' eσ eσ' eτ eτ' eκ eκ' dσ dτ dκ hag hWF hP hSc hG hC h
+    have hγ : ∀ v ∈ γ, Val.ClosedE v := hag ▸ hWF
+    have hlen : (readbackEnv ρ).length = γ.length := by rw [show readbackEnv ρ = γ from hag]
+    cases M with
+    | ret v => sorry
+    | lam M => sorry
+    | force w => sorry
+    | letC M N => sorry
+    | app M v => sorry
+    | case w N₁ N₂ => sorry
+    | split w N => sorry
+    | unfold w => sorry
+    | binop op a b => sorry
+    | perform w op v => sorry
+    | handle hdl M => sorry
+    | oom => simp [evalE] at h
+    | wrong s => simp [evalE] at h
 
 theorem evalE_agrees_evalD_effect :
     ∀ (f : Nat) (γ : List Val) (M : Comp) (t : MTerm) (ρ : MEnv) (g G g' : Nat)
@@ -1919,6 +1940,52 @@ theorem headline_refutation_witness
         Bang.CalcVM.evalD, Bang.CalcVM.SStore.get?, Bang.CalcVM.THeap.get?, Bang.CalcVM.CStore.get?,
         List.find?, Option.map_none, Option.some.injEq, Prod.mk.injEq, reduceCtorEq] at hd
       exact hd.1
+
+/-- **REFUTATION WITNESS #2 (envm3, 2026-07-10) — `_effect`'s `MTerm.PureV` conclusion is FALSE.**
+The frozen `evalE_agrees_evalD_effect` (and my `_gen` engine) conclude `MTerm.PureV t` of the terminal.
+For a returner `mret mv` that is `MVal.PureV mv`, i.e. every closure `mv` reaches has an `EffectFree`
+body. But `M = ret (vthunk N)` with an EFFECTFUL `N` evaluates to `mret (mvclos N ρ)`, and
+`MVal.PureV (mvclos N ρ) = EffectFree N ∧ …` is FALSE. NOTHING in `_effect`'s premises (WF/PureV env,
+`ScopedC`, `StoresGood`, `StoresCorr`) forbids that input — so the `MTerm.PureV` conclusion is
+unprovable AS STATED.
+
+Concretely `N = handle (throws 0) (ret ())` (effectful — `EffectFree (handle _ _) = False` — and CLOSED,
+so `ScopedC 0 M` holds), `γ = []`, `ρ = nil`, all stores empty. All `_effect` premises hold; evalE
+returns `mret (mvclos N nil)`; the claimed `MTerm.PureV` = `EffectFree N` = `False`. Machine-checked
+from `_effect` taken as hypothesis H, independent of the in-file sorry. -/
+theorem effect_pureV_refutation_witness
+    (H : ∀ (f : Nat) (γ : List Val) (M : Comp) (t : MTerm) (ρ : MEnv) (g G g' : Nat)
+          (eσ eσ' : ESStore) (eτ eτ' : ETHeap) (eκ eκ' : ECStore)
+          (dσ : Bang.CalcVM.SStore) (dτ : Bang.CalcVM.THeap) (dκ : Bang.CalcVM.CStore),
+          EnvAgrees ρ γ → MEnv.WF ρ → MEnv.PureV ρ → Comp.ScopedC γ.length M →
+          StoresGood eσ eτ eκ → StoresCorr eσ eτ eκ dσ dτ dκ →
+          evalE f g eσ eτ eκ ρ M = some (.mterm t, g', eσ', eτ', eκ') →
+          ∃ (G' : Nat) (dσ' : Bang.CalcVM.SStore) (dτ' : Bang.CalcVM.THeap) (dκ' : Bang.CalcVM.CStore),
+            Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M)
+                = some (readbackTerm t, G', dσ', dτ', dκ')
+              ∧ StoresCorr eσ' eτ' eκ' dσ' dτ' dκ' ∧ MTerm.WF t ∧ MTerm.PureV t) : False := by
+  have hEA : EnvAgrees (MEnv.nil) ([] : List Val) := rfl
+  have hWFnil : MEnv.WF (MEnv.nil) := by
+    intro v hv; simp only [readbackEnv] at hv; exact (List.not_mem_nil hv).elim
+  have hPnil : MEnv.PureV (MEnv.nil) := by simp only [MEnv.PureV]
+  have hSc : Comp.ScopedC ([] : List Val).length
+      (.ret (.vthunk (.handle (.throws 0) (.ret .vunit)))) := by
+    intro k _
+    simp only [Comp.shiftFrom, Val.shiftFrom, Bang.Handler.shiftFrom]
+  have hSG : StoresGood ([] : ESStore) ([] : ETHeap) ([] : ECStore) := by
+    refine ⟨?_, ?_, ?_⟩ <;> intro p hp <;> simp only [List.not_mem_nil] at hp
+  have hSC : StoresCorr ([] : ESStore) ([] : ETHeap) ([] : ECStore)
+      ([] : Bang.CalcVM.SStore) ([] : Bang.CalcVM.THeap) ([] : Bang.CalcVM.CStore) :=
+    ⟨rfl, rfl, rfl⟩
+  have heval : evalE 4 0 [] [] [] MEnv.nil (.ret (.vthunk (.handle (.throws 0) (.ret .vunit))))
+      = some (.mterm (.mret (.mvclos (.handle (.throws 0) (.ret .vunit)) MEnv.nil)), 0, [], [], []) := rfl
+  obtain ⟨G', dσ', dτ', dκ', _hd, _hC, _hWF, hPt⟩ :=
+    H 4 [] (.ret (.vthunk (.handle (.throws 0) (.ret .vunit))))
+      (.mret (.mvclos (.handle (.throws 0) (.ret .vunit)) MEnv.nil)) MEnv.nil 0 0 0
+      [] [] [] [] [] [] [] [] [] hEA hWFnil hPnil hSc hSG hSC heval
+  -- MTerm.PureV (mret (mvclos (handle …) nil)) = EffectFree (handle …) ∧ … = False ∧ …
+  simp only [MTerm.PureV, MVal.PureV, EffectFree] at hPt
+  exact hPt.1
 
 /-! ## Mini-Agree probe — the PIN'S EXECUTABLE CONFIRMATION
 
