@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (35)
+## active (36)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -22,6 +22,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`distributed-story.md`](distributed-story.md) — The distributed-systems story — nondeterminism as an effect, the runtime as a handler
 - [`dogfood-json-findings.md`](dogfood-json-findings.md) — Dogfood findings — a JSON parser/printer written in bang
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
+- [`god-file-seams.md`](god-file-seams.md) — God-file seam map — split proposal for `TypeCheck.lean`/`AbstractMachine.lean`
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
 - [`kernel-substrate-survey.md`](kernel-substrate-survey.md) — Kernel-as-substrate — design survey: the verified semantic substrate + the profile ladder
 - [`laws-taxonomy.md`](laws-taxonomy.md) — The taxonomy of laws — model-shaped vs morphism-shaped, and where a property lives
