@@ -354,6 +354,12 @@ partial def fmtSurf (need : SPrec) : Surf → Format
           Format.text s!"handle as {h} " ++ fmtSurf .cmp body
         else
           Format.text s!"{kind} as {h} " ++ fmtSurf .cmp body
+  -- #21 s7probe: PLACEHOLDER print (round-trip / pretty-print is NOT this probe's concern — the
+  -- printer is out of scope for a syntax-provisional strawman; s7design's ADR owns the real
+  -- spelling this arm would need to match). Satisfies `fmtSurf`'s exhaustive match only.
+  | .handleCustomS n p _h _cls body =>
+      Format.text "(handle " ++ fmtSurf .atom n ++ Format.text " " ++ fmtSurf .atom p
+        ++ Format.text " with { … } in " ++ fmtSurf .cmp body ++ Format.text ")"
   -- `h.op(args)` is parsed by `pDotLoop`, invoked FROM `pDotted` right after `pAtom` — the whole
   -- chain result is itself an atom (feeds `pAppLoop`/`pOp` same as any other atom), so it never
   -- needs defensive parens even at `.atom` need.

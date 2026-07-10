@@ -213,6 +213,18 @@ inductive Surf where
     -- chain a hand-written pyramid produces; every OTHER consumer (lowering, the typed elaborator,
     -- qualification/renaming passes) calls that FIRST and never pattern-matches `.lettMulti` itself
     -- — the parser produces it, the printer consumes it directly, everything in between erases it.
+  -- ── #21 s7probe (PROVISIONAL — syntax owned by the s7design ADR, this spelling WILL be re-cut) ──
+  | handleCustomS : Surf → Surf → String → HClauses → Surf → Surf
+    -- `handle <effName> <paramInit> with { op1(x) -> body1, op2(y) -> body2, … } as <capName> in <body>`
+    -- (Flix-shaped strawman). `effName` is a bare effect-name reference (`.var "Reader"` — resolved
+    -- against `env.effects` at elaboration, NOT parsed as a `Ty`/keyword: an EFFECT NAME lives in the
+    -- same namespace as a value var only insofar as the parser treats it as an identifier token,
+    -- exactly like `state`'s `Handler` kind tag). `paramInit` is the carried-param expr (mirrors
+    -- `state`'s `e0`); `capName` is the MANDATORY cap binder (ADR-0092's `handleCustom` always binds
+    -- a cap at idx 0 — no ambient/sentinel form exists for `custom`, unlike `state`/`throws`/
+    -- `atomically`'s optional `as`). `HClauses` is the parsed clause list, ret-shape UNCHECKED here
+    -- (ADR-0092 D3's ret-shape gate is an ELABORATION-time check, not a parse-time one — a clause body
+    -- can be any `Surf` at parse; `elabS`'s new arm rejects non-`ret`-shaped bodies loudly).
 
 /-- A cap-op argument list, capped at the v1 arity (≤ 2: `write` is the only binary op). A mutual
 inductive (not `List Surf`) so `Surf`'s `DecidableEq`/`Repr` derive — the `DArms` precedent. -/
@@ -234,9 +246,18 @@ the head — see `toLetBindings`), matching how `desugarLettMulti`'s `foldr`-equ
 inductive LetBindings where
   | nil  : LetBindings
   | cons : String → Surf → LetBindings → LetBindings
+
+/-- #21 s7probe clause list: `op(argName) -> body` entries, a `Surf`-mutual list (the `DArms`
+precedent — keeps `Surf`'s `DecidableEq`/`Repr` derivations straightforward). One binder per clause
+(the ADR-0092 D3 `arg@0` slot) — the AMBIENT param binder (`P@1`) is NOT here; it is bound once by
+`handleCustomS`'s own elaboration (mirrors how `HasClauses.cons` types every clause body under the
+SAME fixed `[opA, P]` context, not a per-clause one). -/
+inductive HClauses where
+  | nil  : HClauses
+  | cons : String → String → Surf → HClauses → HClauses
 end
 
-deriving instance Repr, Inhabited, DecidableEq for Surf, DArms, SurfArgs, LetBindings
+deriving instance Repr, Inhabited, DecidableEq for Surf, DArms, SurfArgs, LetBindings, HClauses
 
 /-- Pack parsed match arms into `DArms` (the parser's list shape → the AST's mutual shape). -/
 def toDArms : List (String × List String × Surf) → DArms
@@ -248,6 +269,15 @@ shape (the `toDArms` precedent, same reason). -/
 def toLetBindings : List (String × Surf) → LetBindings
   | []            => .nil
   | (n, e) :: r   => .cons n e (toLetBindings r)
+
+/-- #21 s7probe: the INVERSE of the `toDArms`/`toLetBindings` packing — unpack `HClauses` to a plain
+`List` for a CALLER that wants to `for`-loop over clauses (TypeCheck's `synthSC` arm does; a `for`
+loop inside the `Infer` monad can't be a LOCAL `let rec` there without joining `synthSC`'s own
+mutual-recursion group, which breaks termination — #21's own finding). Plain structural recursion
+(NOT part of any mutual block), so no termination hazard here. -/
+def hClausesToList : HClauses → List (String × String × Surf)
+  | .nil              => []
+  | .cons op x b rest => (op, x, b) :: hClausesToList rest
 
 /-- Desugar `.lettMulti binds body` to the IDENTICAL nested `.lett` chain a hand-written
 `let x = e1 in let y = e2 in … in body` already produces — a ONE-LEVEL unfold (does NOT itself
@@ -300,12 +330,17 @@ def eraseLettMulti : Surf → Surf
   | .letRecS n t f b => .letRecS n t (eraseLettMulti f) (eraseLettMulti b)
   | .divMark e     => .divMark (eraseLettMulti e)
   | .lettMulti binds body => desugarLettMulti (eraseLettMultiBindings binds) (eraseLettMulti body)
+  | .handleCustomS n p h cls body =>
+      .handleCustomS (eraseLettMulti n) (eraseLettMulti p) h (eraseLettMultiHClauses cls) (eraseLettMulti body)
 def eraseLettMultiDArms : DArms → DArms
   | .nil              => .nil
   | .cons c ps b rest  => .cons c ps (eraseLettMulti b) (eraseLettMultiDArms rest)
 def eraseLettMultiBindings : LetBindings → LetBindings
   | .nil            => .nil
   | .cons n e rest  => .cons n (eraseLettMulti e) (eraseLettMultiBindings rest)
+def eraseLettMultiHClauses : HClauses → HClauses
+  | .nil              => .nil
+  | .cons op x b rest => .cons op x (eraseLettMulti b) (eraseLettMultiHClauses rest)
 end
 
 #guard eraseLettMulti (.lit 3) == .lit 3
@@ -501,6 +536,29 @@ def lowerC (env : List String) : Surf → Except String Comp
   -- definitionally the way structural-recursion output does). Pre-erasing at the entry point
   -- keeps `lowerC` itself simple structural recursion, untouched.
   | .lettMulti .. => .error "unreachable: .lettMulti must be pre-erased by eraseLettMulti before lowering (issue #68)"
+  -- #21 s7probe FINDING (the wall this probe exists to name): `handleCustomS` CANNOT lower here.
+  -- `withCapS`'s three built-in kinds resolve their `Handler`'s label via `capKindLabel` — a PURE,
+  -- PROGRAM-INDEPENDENT `String → Option Label` (3 hardcoded constants: `stateLabel`/`exnLabel`/
+  -- `stmLabel`), callable with NO env beyond the kind string itself. A user effect's label has NO
+  -- such constant: `buildEnv`'s `.effectD` case allocates it as `4 + effects.length`, decl-order-
+  -- dependent, ONLY known post-elaboration (`env.effects`, an `ElabEnv` field `lowerC`'s signature —
+  -- `List String → Surf → Except String Comp`, no `ElabEnv` — cannot see). Confirmed structurally:
+  -- even the FULLY TYPED production pipeline (`checkAndLower`) calls `elabProg` (which threads
+  -- `env.effects` through) and THEN calls `Bang.Surface.lower e` on the elaborated tree ALONE,
+  -- discarding `effects` — so `lower`/`lowerC` NEVER see the label table, typed path or not.
+  -- CONSEQUENCE for the real construct: elaboration (`elabS`, which DOES have `env` in scope) must
+  -- REWRITE the label into the tree before `lower` ever runs — `Surf` needs a label-carrying slot on
+  -- `handleCustomS` (currently none — no `Ty`/`Surf` constructor carries a resolved `Label : Nat`;
+  -- `Ty.tEff` carries effect NAMES, resolved only at the checker) that `elabS` fills in and `lowerC`
+  -- then reads verbatim (mirroring how `elabS`'s `.withCapS` arm ALREADY looks up `capKindLabel` to
+  -- type the cap binder, but critically does NOT rewrite the tree — it doesn't need to, because
+  -- `lowerC` can re-derive the SAME constant independently). A user label has no independently-
+  -- re-derivable constant, so elaboration and lowering can no longer stay this decoupled for
+  -- `handleCustomS` specifically — reaching here (label unresolved) is a genuine PIPELINE gap, not a
+  -- user error, hence the diagnostic names the missing REWRITE STEP by name rather than describing a
+  -- source-level mistake.
+  | .handleCustomS .. =>
+      .error "handleCustomS: unreachable via direct lowering — a user-effect label has no lowering-time constant (unlike state/throws/atomically's capKindLabel); elaboration must rewrite the label into the tree before lower runs (#21 s7probe finding)"
   -- ── ADR-0070 (named capabilities) — `with` reuses the handler lowering with a USER name where the
   -- sentinel went; `h.op` is `perform (vvar h) op arg` (args A-normalized like the ambient ops). ──
   | .withCapS "state" init name body => do
@@ -927,6 +985,39 @@ def pExpr : Nat → P Surf
       match bindings with
       | [] => .ok (.lett name e body, ts)
       | _  => .ok (.lettMulti (toLetBindings ((name, e) :: bindings)) body, ts)
+  -- #21 s7probe (PROVISIONAL strawman, syntax NOT ADR-decided — see s7design): `handle N p with {
+  -- clauses } as h in body`. A BESPOKE arm (not `keywordRule`): the clause list is a repeated group,
+  -- the same "0-or-more" shape `let`-multi/`match` already sit outside the linear `Choice` grammar
+  -- for (ADR-0071 ②'s own documented boundary) — CONFIRMS the boundary generalizes to this construct
+  -- too, independent of which keyword/ordering the ADR eventually picks.
+  -- DISAMBIGUATION from plain `handle e` / `handle as h e` (keywordRule's existing entry): a
+  -- DETERMINISTIC lookahead on the SECOND token — `handle <ident> ...` only enters this arm when
+  -- that identifier is immediately followed by `with` after one more atom (checked structurally
+  -- below, not guessed at the token-classification level, per ADR-0046's "no guess" discipline: on
+  -- ANY mismatch this arm's `.error`s propagate rather than silently falling through to a
+  -- differently-wrong parse).
+  | f + 1, "handle" :: n :: ts =>
+      match pIdent [n] with
+      | .error _ => match keywordRule "handle" with     -- `n` isn't a plain ident (e.g. `handle (raise …)`)
+        | some r => pRuleDrive f r.build r.choices [] ("handle" :: n :: ts)
+        | none   => pOp 0 f ("handle" :: n :: ts)
+      | .ok _ =>
+        -- `n` IS a bare identifier — try the custom shape (`n <atom> with {`); on ANY mismatch
+        -- (no `with`, or `with` without `{`), this is NOT the custom form — it's the plain `handle e`
+        -- form with `e` starting at variable `n` (e.g. `handle x`), so re-drive `keywordRule`'s
+        -- ordinary `handle` entry over the FULL original token stream (never guess, ADR-0046: the
+        -- mismatch is detected structurally, not by a heuristic on `n` alone).
+        match pAtom f ts with
+        | .ok (p, "with" :: "{" :: ts) => do
+            let (cls, ts) ← pHClauses f ts
+            let (_, ts) ← expect "as" ts
+            let (h, ts) ← pIdent ts
+            let (_, ts) ← expect "in" ts
+            let (body, ts) ← pExpr f ts
+            .ok (.handleCustomS (.var n) p h cls body, ts)
+        | _ => match keywordRule "handle" with
+          | some r => pRuleDrive f r.build r.choices [] ("handle" :: n :: ts)
+          | none   => pOp 0 f ("handle" :: n :: ts)
   | f + 1, "match" :: ts => do           -- match s { arms } — anonymous sums (Left/Right → matchS)
       let (s, ts) ← pAtom f ts            -- OR named data ctors (→ matchD, elaborated later; ADR-0069)
       let (_, ts) ← expect "{" ts
@@ -1211,6 +1302,31 @@ def pAtom : Nat → P Surf
         .error ⟨s!"unexpected '{t}' where an atom was expected", t :: ts⟩
       else .ok (.var t, ts)
   | _ + 1, [] => .error "unexpected end of input where an atom was expected"
+
+/-- #21 s7probe: one custom-handle clause `op(x) -> body` (1-ary only — v1's `EffectInfo` op sigs
+are 0/1-ary, matching `pArm`'s ctor-payload shape but WITHOUT the 2-ary case: no declared op takes
+2 args, D1). -/
+def pHClause : Nat → P (String × String × Surf)
+  | 0,     _ => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (op, ts) ← pIdent ts
+      let (_, ts) ← expect "(" ts
+      let (x, ts) ← pIdent ts
+      let (_, ts) ← expect ")" ts
+      let (_, ts) ← expect "->" ts
+      let (body, ts) ← pExpr f ts
+      .ok ((op, x, body), ts)
+
+/-- #21 s7probe: clause list up to and including `}` (≥ 1 clause; `,` separators optional, the
+`pArms` precedent). -/
+def pHClauses : Nat → P HClauses
+  | 0,     _ => .error "parser out of fuel"
+  | f + 1, ts => do
+      let ((op, x, b), ts) ← pHClause f ts
+      let ts := (match ts with | "," :: r => r | _ => ts)
+      match ts with
+      | "}" :: r => .ok (.cons op x b .nil, r)
+      | _        => do let (rest, ts) ← pHClauses f ts; .ok (.cons op x b rest, ts)
 end
 
 /-- Parse a whole program: tokenize, parse one expression, require all tokens

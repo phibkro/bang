@@ -1091,6 +1091,63 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
           let capTy : IVTy := .cap ℓ
           let (B, φ) ← synthSC ((name, capTy) :: Γ) body   -- name : Cap ℓ in scope
           return (B, ← eraseRow bigFuel ℓ φ)                    -- the handler DISCHARGES ℓ
+  -- #21 s7probe: `handleCustomS n p h cls body` — the ADR-0092 `handleCustom`/`HasClauses` analogue,
+  -- ALGORITHMIC (mirrors `withCapS` immediately above; NO `LabelOccurs`/B-occ re-check here — that
+  -- invariant is kernel-proof-only, `synthSC` never re-derives it for ANY built-in handler either,
+  -- so this is not a new gap, just the existing algorithm/proof split). `n` MUST be a bare `.var`
+  -- naming a DECLARED `effect` (resolved via `env.effects`, exactly `.dotPerform`'s D2 lookup below)
+  -- — a non-`.var` `n` is a LOUD diagnostic (#74 pattern: name the construct, not a crash), since
+  -- there is no other sense in which `n` could denote an effect at v1.
+  --
+  -- MECHANICS FINDING (the load-bearing one): the clause loop CANNOT be a `for` over a converted
+  -- `List` (tried first) — `sizeOf`-based structural termination can't see through the opaque
+  -- `hClausesToList` call, so `synthSV b`'s call inside the loop fails the SAME termination proof
+  -- `synthSC`'s explicit `termination_by (sizeOf e, 1)` pins for every OTHER arm. It ALSO can't be a
+  -- local `let rec` (tried second) — that joins `synthSC`'s own 4-way mutual group and Lean can't
+  -- find a joint measure, breaking the WHOLE file's termination and cascading `sorry`-taint through
+  -- every downstream `#guard`. The fix that WORKS mirrors `elabS`/`elabArms` (the `DArms` precedent,
+  -- `matchD`'s named-match arms): `HClauses` becomes a genuine THIRD mutual partner
+  -- (`checkHClauses`, below), structurally recursing on `HClauses` itself with its own
+  -- `termination_by`, called from here as an ordinary mutual-sibling call — exactly how `synthSC`
+  -- already calls `synthSV`/`checkSC`. GENERALIZES: any REPEATED-GROUP `Surf` payload (a clause
+  -- list, arms, bindings) that needs typing-algorithm recursion back into `synthSC`'s own mutual
+  -- group needs this shape, not a `for`/`let rec` — a structural finding for s7design + whoever
+  -- implements Stage 7 for real.
+  | .handleCustomS n p h cls body => do
+      match n with
+      | .var effN => do
+          let effs ← (do return (← get).effects)
+          match effs.find? (fun (nm, _) => nm == effN) with
+          | none => throw s!"handle: '{effN}' is not a declared effect"
+          | some (_, ei) => do
+              let ℓ := ei.label
+              -- THE PARAM: `P` is DISCOVERED from `p`'s own synthesized type (no separate declared
+              -- param-type exists in the strawman `effect` decl shape, ADR-0092 D1 doesn't carry
+              -- one) — the same move `state e0 in …` uses to discover `S` from `e0`.
+              let P ← synthSV Γ p
+              -- RET-SHAPE (ADR-0092 D3/D4, the grade wall): v1 requires each clause body's SYNTAX to
+              -- be a bare value-shaped expression (no further computation after the resume value).
+              -- `checkHClauses` approximates this SEMANTICALLY (no separate `.ret` marker exists in
+              -- `Surf`, unlike the kernel's `Comp.ret`) — `b` must SYNTHESIZE at a VALUE type
+              -- matching the op's `resTy`, exactly what a value-return would. An effectful body fails
+              -- for a DIFFERENT surface reason (`synthSC`/row shape), so ret-shape and "effect-free"
+              -- collapse to the same check here — the exact ADR-0092 D4 property ("ret w is
+              -- EFFECT-FREE, no φ' to join") showing up as a REUSED mechanism (`synthSV`, which never
+              -- carries a row) rather than a dedicated syntactic gate. REPORTED to s7design: the D4
+              -- error MESSAGE ("clause body isn't ret-shaped") is not literally what fires — what
+              -- fires is `synthSV` rejecting a non-value `Surf` shape, a DIFFERENT, less specific
+              -- message; a real implementation needs a dedicated check to match the ADR's promised
+              -- diagnostic wording.
+              let _ ← checkHClauses Γ effN ei.ops P cls
+              -- COVERAGE: every declared op has a clause (the semantic half of ADR-0092's PROGRESS
+              -- premise — `∀ op, opArg ℓ op = some _ → clauses.find? ... .isSome`).
+              for (op, _, _) in ei.ops do
+                if !(Bang.Surface.hClausesToList cls).any (fun (op', _, _) => op' == op) then
+                  throw s!"handle: effect '{effN}' op '{op}' has no clause"
+              let capTy : IVTy := .cap ℓ
+              let (B, φ) ← synthSC ((h, capTy) :: Γ) body   -- h : Cap ℓ in scope (ADR-0092's cap-bind)
+              return (B, ← eraseRow bigFuel ℓ φ)                  -- the handler DISCHARGES ℓ
+      | _ => throw "handle: the effect name must be a bare identifier naming a declared `effect`"
   | .dotPerform recv op args => do
       match (← resolve bigFuel (← synthSV Γ recv)) with
       | .cap ℓ =>
@@ -1169,6 +1226,29 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer Row :=
       let _ ← unifyC bigFuel B expected                 -- HM subsumption (was structural `B = expected`)
       return φ
   termination_by (sizeOf e, 3)
+
+/-- #21 s7probe: the `HClauses` mutual partner `synthSC`'s `handleCustomS` arm needs (the `elabS`/
+`elabArms` precedent — a repeated-group `Surf` payload gets its OWN structurally-recursive sibling in
+the SAME mutual block, not a `for`/`let rec`; see the finding at `handleCustomS`'s call site).
+Structurally recurses on `cls : HClauses` (decreasing on EVERY call, including the `synthSV` call on
+each clause body `b` — `b` is a genuine subterm of `.cons op x b rest`, so `sizeOf`-based termination
+sees it directly, unlike the erased `hClausesToList` conversion). Checks each clause's body against
+its op's declared `resTy`, under `[argVar : argTy, #param : P]` (the ADR-0092 `HasClauses.cons`
+binder order — `opArg` at idx 0, `P` at idx 1, mirrored here as list-head-is-idx-0). Per-clause OP
+membership in the effect's declared ops is checked here too (an unknown op name is a clause-level
+diagnostic, distinct from the CALLER's coverage check in the other direction). -/
+def checkHClauses (Γ : NCtx) (effN : String) (ops : List (String × Option VT × VT)) (P : IVTy) :
+    HClauses → Infer Unit
+  | .nil => pure ()
+  | .cons op x b rest => do
+      match ops.find? (fun (n, _, _) => n == op) with
+      | none => throw s!"handle: clause '{op}' is not an operation of effect '{effN}'"
+      | some (_, argTy?, resTy) => do
+          let argTy := embV (argTy?.getD .unit)   -- 0-ary op: `x` binds Unit (placeholder — no 0-ary clause corpus case yet)
+          let resV ← synthSV ((x, argTy) :: ("#param", P) :: Γ) b
+          unifyV bigFuel resV (embV resTy)
+          checkHClauses Γ effN ops P rest
+  termination_by cls => (sizeOf cls, 4)
 end
 
 /-- End-to-end at the SURFACE: parse a source string, then type-check it as a computation (running the
@@ -1867,6 +1947,7 @@ def structOKRest (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : N
   | .letRecS gname _ fb bd =>                     -- nested let rec: a re-bound `gname` shadows our name
       gname != name && structOK fuel name slots targetIdx fb && structOK fuel name slots targetIdx bd
   | .lettMulti .. => false  -- unreachable in practice (elabProg erases #68's sugar first); refuse to certify (soundness > completeness)
+  | .handleCustomS .. => false  -- #21 s7probe: NOT yet analyzed for #47/ADR-0091 recursion shapes (clause bodies, the carried param) — conservatively refuse to certify (under-certify, never guess)
 /-- Per-arm structural check: a matchable scrutinee (`sm`) makes each arm's pattern binders strict
 subterms of the parameter; a non-matchable one only shadows them. -/
 def structOKArms (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) (sm : Bool) :
@@ -2048,8 +2129,18 @@ inference (`.run' {}`), defaults any dangling `chole` to `F ω ?`, then abstract
 rigids. Closing is LOAD-BEARING: an elaboration binding that embedded a throwaway's raw hole ids would
 COLLIDE with a later throwaway's fresh holes (whose counter restarts at 0) — spuriously unifying two
 independent polymorphic uses (bare `compose` at two types). A closed scheme instantiates fresh holes per
-use, exactly like the final check. `none` = the RHS is not a returner (and not a higher-order `chole`). -/
-def elabBind (Γ : NCtx) (e' : Surf) : Except String (Option Scheme) :=
+use, exactly like the final check. `none` = the RHS is not a returner (and not a higher-order `chole`).
+
+`effects` (ADR-0092 D2, #21 s7probe fix): the throwaway `synthSC Γ e'` call reaches the SAME
+`.dotPerform`/`handleCustomS` D2 arms the OUTER `runInferC` call does, and THOSE need `USt.effects` —
+`.run' {}` was seeding a completely FRESH, EMPTY-effects `USt` for this inner run, invisible until now
+because NO built-in `.dotPerform` op consults `USt.effects` (built-ins resolve via the pure, state-free
+`capOpSig`), so the gap had no live consumer before a user-effect `let`-RHS existed. THE MECHANICS
+FINDING: a `let`-bound RHS naming a user-effect `perform`/`handleCustomS` construct went through this
+UNTHREADED throwaway inference and got a WRONG diagnostic (`receiver's capability label is not a
+declared effect` — a genuine false negative, not the real error) instead of typing correctly — found
+LIVE by the #21 e2e probe (`let r = h.fetch(5) in r`, `bang check`), not a hypothetical. -/
+def elabBind (Γ : NCtx) (e' : Surf) (effects : List (String × EffectInfo) := []) : Except String (Option Scheme) :=
   (do
     let (Ce, _) ← synthSC Γ e'
     let payload? ← (match (← resolveC bigFuel Ce) with
@@ -2066,7 +2157,7 @@ def elabBind (Γ : NCtx) (e' : Surf) : Except String (Option Scheme) :=
         let rs := (freeRowsV Az).eraseDups   -- bite-0b item 3: close ROW vars too (else two uses of a
                                              -- row-poly binding share a tail var + spuriously clash)
         return some (⟨ms.length, rs.length, abstractRowsV rs (abstractV ms Az)⟩ : Scheme)
-  ).run' {}
+  ).run' { effects := effects }
 
 /-- Peel matching `fun`/`->` layers of an ASCRIBED curried lambda, binding EVERY parameter to its
 annotated domain — not just the outermost. So a nested `fun g => …` inside `(fun f => fun g => … :
@@ -2197,6 +2288,14 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env carrier? f recv) op (← expandArgs env carrier? f args)
   | f + 1, .matchD s arms => do return .matchD (← expandBFns env carrier? f s) (← expandArms env carrier? f arms)
   | f + 1, .lettMulti binds b => do return .lettMulti (← expandLetBindings env carrier? f binds) (← expandBFns env carrier? f b)
+  -- #21 s7probe: `handleCustomS` recurses structurally, mirroring `.withCapS`/`.matchD` above —
+  -- `n`/`p`/`body` expand directly; `cls` needs the SAME `DArms`-precedent sibling (`expandHClauses`,
+  -- below `expandArms`) since bounded-fn expansion is a DIFFERENT concern from typing (this pass has
+  -- no termination-measure conflict with `synthSC`'s wall — `expandBFns` is ALREADY fuel-driven, not
+  -- `sizeOf`-based, so a mutual `List`/`HClauses` sibling here is unremarkable, unlike the typing arm).
+  | f + 1, .handleCustomS n p h cls b => do
+      return .handleCustomS (← expandBFns env carrier? f n) (← expandBFns env carrier? f p) h
+        (← expandHClauses env carrier? f cls) (← expandBFns env carrier? f b)
   | f + 1, .annotS e t => do
       -- HKT (ADR-0082): a higher-kinded METHOD call `(fmap inc x : Option Int)` — the result annotation
       -- fixes the carrier constructor (`f := Option`), so we resolve the `Functor Option` impl and SPLICE
@@ -2264,6 +2363,12 @@ def expandArms (env : ElabEnv) (carrier? : Option String) : Nat → DArms → Ex
   | 0,     _             => .error "bounded-fn expansion out of fuel"
   | _ + 1, .nil          => .ok .nil
   | f + 1, .cons c bs b r => do return .cons c bs (← expandBFns env carrier? f b) (← expandArms env carrier? f r)
+
+/-- #21 s7probe: `HClauses` expansion (custom-handle clause bodies) — the `expandArms` precedent. -/
+def expandHClauses (env : ElabEnv) (carrier? : Option String) : Nat → HClauses → Except String HClauses
+  | 0,     _              => .error "bounded-fn expansion out of fuel"
+  | _ + 1, .nil           => .ok .nil
+  | f + 1, .cons op x b r => do return .cons op x (← expandBFns env carrier? f b) (← expandHClauses env carrier? f r)
 
 /-- `LetBindings` expansion (issue #68's `;`-binding list). -/
 def expandLetBindings (env : ElabEnv) (carrier? : Option String) : Nat → LetBindings → Except String LetBindings
@@ -2336,6 +2441,29 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
         | some ℓ => (name, (.cap ℓ : IVTy)) :: Γ
         | none   => Γ
       return .withCapS kind init' name (← elabS env Γ' body)
+  -- #21 s7probe: `handleCustomS` structurally recurses, extending `Γ` with the cap binder for `body`
+  -- (mirroring `.withCapS` immediately above — the SAME "bind name : Cap ℓ" move) IF `n` resolves
+  -- against `env.effects`. THE WALL (findings write-up, `docs/notes/stage7-elab-probe.md`): a REAL
+  -- implementation must ALSO REWRITE `n`'s resolved label into the tree HERE (this is the ONE place
+  -- with both the `Surf` AST and `env.effects` in scope simultaneously — `lowerC` never sees
+  -- `env.effects`, confirmed structurally even on the fully-typed `checkAndLower` path, see
+  -- `lowerC`'s own `.handleCustomS` arm) — but `Surf` has NO label-carrying slot to rewrite INTO
+  -- (unlike `withCapS`'s `kind : String`, which `capKindLabel` re-derives independently at BOTH
+  -- elaboration and lowering because there are only 3 built-in, PROGRAM-INDEPENDENT labels). This
+  -- probe does NOT invent that slot (a real `Surf` AST change is implementation-lane territory, not
+  -- a provisional-syntax probe's call) — `elabS` here does everything ELSE production-shaped
+  -- (structural descent + Γ extension identical to `withCapS`), and `lower` stays the wall, so the
+  -- e2e probe (below) demonstrates through `synthSC`/`checkProg`'s TYPE-CHECK reaching a real
+  -- verdict, stopping short of an actual `bang eval` run (which needs the label rewrite to lower).
+  | Γ, .handleCustomS n p h cls body => do
+      let n' ← elabS env Γ n
+      let p' ← elabS env Γ p
+      let Γ' := match n with
+        | .var effN => match env.effects.lookup effN with
+          | some ei => (h, (.cap ei.label : IVTy)) :: Γ
+          | none    => Γ
+        | _ => Γ
+      return .handleCustomS n' p' h (← elabHClauses env Γ' cls) (← elabS env Γ' body)
   | Γ, .dotPerform recv op args => do
       let recv' ← elabS env Γ recv
       let args' ← (match args with
@@ -2401,7 +2529,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       .error "let-sugar (`;`, issue #68) is erased by elabProg before elabS ever runs — reaching here is a bug"
   | Γ, .lett x e b  => do
       let e' ← elabS env Γ e
-      match elabBind Γ e' with                 -- report the RHS's REAL error, not a downstream unbound (#41)
+      match elabBind Γ e' env.effects with      -- report the RHS's REAL error, not a downstream unbound (#41)
       | .ok (some sch) => return .lett x e' (← elabS env ((x, sch) :: Γ) b)
       | .ok none       => throw s!"let-binding '{x}': value is not a returner — force it (${x}) or bind a value"
       | .error m       => throw s!"let-binding '{x}': {m}"
@@ -2536,6 +2664,19 @@ def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx →
       let b' ← elabS env Γa b
       let r' ← elabArms env binderTys Γ r
       .ok (.cons c bs b' r')
+
+/-- #21 s7probe: `HClauses` elaboration (custom-handle clause bodies) — the `elabArms` precedent.
+Every clause elaborates under the SAME `Γ'` (the `withCapS`-extended context `elabS`'s
+`handleCustomS` arm builds — clauses don't extend it further; there is no per-clause binder to add
+at elaboration, unlike `elabArms`'s per-ctor payload binders — the clause's own `arg`/`param` binders
+are a `synthSC`/`checkHClauses`-time concern, mirroring how `lowerC`'s cap-binder discipline is
+likewise elaboration-invisible until lowering). -/
+def elabHClauses (env : ElabEnv) (Γ : NCtx) : HClauses → Except String HClauses
+  | .nil              => .ok .nil
+  | .cons op x b rest => do
+      let b' ← elabS env Γ b
+      let rest' ← elabHClauses env Γ rest
+      .ok (.cons op x b' rest')
 end
 
 /-- Build the elaboration environment from a program's decl prelude, IN ORDER (a data type may
@@ -2772,12 +2913,20 @@ def surfUsesVar (nm : String) : Surf → Bool
   | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
   | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
   | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
+  -- #21 s7probe: `x`/`h` are BINDERS (a clause's arg / the cap name) — like every other binder-
+  -- shadowing site here (`.lam _ e`, `.matchS s _ l _ r`), the shadow is NOT modeled (the whole
+  -- function is a syntactic OVER-approximation, per its own doc comment: shadowed uses just cost a
+  -- little extra fuel, never wrong).
+  | .handleCustomS n p _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
 def dArmsUseVar (nm : String) : DArms → Bool
   | .nil            => false
   | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
 def letBindingsUseVar (nm : String) : LetBindings → Bool
   | .nil            => false
   | .cons _ e rest  => surfUsesVar nm e || letBindingsUseVar nm rest
+def hClausesUseVar (nm : String) : HClauses → Bool
+  | .nil               => false
+  | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
 end
 
 /-- The GENERIC-prelude functions (`genericPrelude` types + the built-in sum `Either`, ADR-0081
@@ -2910,10 +3059,20 @@ def qualifyVars (modName : String) (names : List String) : Surf → Surf
       -- returns whether ANY binding shadowed (⟹ stop qualifying `b`, matching `.lett`'s own arm).
       let (binds', shadowed) := qualifyLetBindingsVars modName names binds
       .lettMulti binds' (if shadowed then b else qualifyVars modName names b)
+  -- #21 s7probe: `h` (the cap binder) shadows exactly like `.withCapS`'s own `n` above; `x` inside
+  -- each clause shadows PER-CLAUSE (`qualifyHClausesVars`'s own arm, the `qualifyDArmsVars` precedent).
+  | .handleCustomS n p h cls b =>
+      .handleCustomS (qualifyVars modName names n) (qualifyVars modName names p) h
+        (qualifyHClausesVars modName names cls)
+        (if names.contains h then b else qualifyVars modName names b)
 def qualifyDArmsVars (modName : String) (names : List String) : DArms → DArms
   | .nil              => .nil
   | .cons c ps b rest =>
       .cons c ps (if ps.any names.contains then b else qualifyVars modName names b) (qualifyDArmsVars modName names rest)
+def qualifyHClausesVars (modName : String) (names : List String) : HClauses → HClauses
+  | .nil                => .nil
+  | .cons op x b rest =>
+      .cons op x (if names.contains x then b else qualifyVars modName names b) (qualifyHClausesVars modName names rest)
 /-- Qualify a `;`-binding chain (issue #68), threading shadowing sequentially: once a binding's
 name matches one of `names`, EVERY later binding's RHS (and the eventual body) stops being
 qualified — mirroring `.lett`'s own "shadowed past `n`" rule, applied binding-by-binding. Each
@@ -3067,12 +3226,19 @@ def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (
   -- #68 sugar: this walk runs PRE-erasure (mergeModules operates on raw per-file trees), so
   -- `.lettMulti` is reachable — scan every binding RHS, then the body (Surface.lean:214).
   | .lettMulti binds b             => bindsFirstPrivateDotAccess resolved binds <|> firstPrivateDotAccess resolved b
+  -- #21 s7probe: scan `n`/`p`/every clause body/`body`, the `withCapS` precedent immediately above.
+  | .handleCustomS n p _h cls b    =>
+      firstPrivateDotAccess resolved n <|> firstPrivateDotAccess resolved p
+        <|> hClausesFirstPrivateDotAccess resolved cls <|> firstPrivateDotAccess resolved b
 def bindsFirstPrivateDotAccess (resolved : List (String × Prog)) : LetBindings → Option (String × String)
   | .nil           => none
   | .cons _ e rest => firstPrivateDotAccess resolved e <|> bindsFirstPrivateDotAccess resolved rest
 def dArmsFirstPrivateDotAccess (resolved : List (String × Prog)) : DArms → Option (String × String)
   | .nil             => none
   | .cons _ _ b rest => firstPrivateDotAccess resolved b <|> dArmsFirstPrivateDotAccess resolved rest
+def hClausesFirstPrivateDotAccess (resolved : List (String × Prog)) : HClauses → Option (String × String)
+  | .nil               => none
+  | .cons _ _ b rest   => firstPrivateDotAccess resolved b <|> hClausesFirstPrivateDotAccess resolved rest
 def argsFirstPrivateDotAccess (resolved : List (String × Prog)) : SurfArgs → Option (String × String)
   | .none    => none
   | .one a   => firstPrivateDotAccess resolved a
@@ -3165,6 +3331,11 @@ def qualifyDotAccess (imports : List String) (ctorOwners : List (String × Strin
   | .letRecS n t f b            => .letRecS n (qTy t) (qualifyDotAccess imports ctorOwners qTy f) (qualifyDotAccess imports ctorOwners qTy b)
   | .divMark e                  => .divMark (qualifyDotAccess imports ctorOwners qTy e)
   | .lettMulti binds b           => .lettMulti (qualifyLetBindingsAccess imports ctorOwners qTy binds) (qualifyDotAccess imports ctorOwners qTy b)
+  -- #21 s7probe: the `withCapS` precedent immediately above — `n`/`p`/every clause body/`body` all
+  -- recurse; `h` (the cap binder) is left AS-IS (no qualification target, matching `withCapS`'s `n`).
+  | .handleCustomS n p h cls b   =>
+      .handleCustomS (qualifyDotAccess imports ctorOwners qTy n) (qualifyDotAccess imports ctorOwners qTy p) h
+        (qualifyHClausesAccess imports ctorOwners qTy cls) (qualifyDotAccess imports ctorOwners qTy b)
 def qualifyDotAccessArgs (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : SurfArgs → SurfArgs
   | .none      => .none
   | .one a     => .one (qualifyDotAccess imports ctorOwners qTy a)
@@ -3176,6 +3347,9 @@ def qualifyDArmsAccess (imports : List String) (ctorOwners : List (String × Str
         | some modName => qualifyName modName c
         | none         => c
       .cons c' ps (qualifyDotAccess imports ctorOwners qTy b) (qualifyDArmsAccess imports ctorOwners qTy rest)
+def qualifyHClausesAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : HClauses → HClauses
+  | .nil                 => .nil
+  | .cons op x b rest     => .cons op x (qualifyDotAccess imports ctorOwners qTy b) (qualifyHClausesAccess imports ctorOwners qTy rest)
 def qualifyLetBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : LetBindings → LetBindings
   | .nil            => .nil
   | .cons n e rest  => .cons n (qualifyDotAccess imports ctorOwners qTy e) (qualifyLetBindingsAccess imports ctorOwners qTy rest)
@@ -3725,12 +3899,20 @@ def firstBareOpCallStep (opNames : List String) : Surf → Option String
   -- #68 sugar: the law-diagnostic walk can see raw (pre-erasure) trees — cover `.lettMulti`
   -- like `.lett`: every binding RHS, then the body.
   | .lettMulti binds b             => bindsFirstBareOpCall opNames binds <|> firstBareOpCall opNames b
+  -- #21 s7probe: scan `n`/`p`/every clause body/`body`, the `withCapS` precedent above — fitting
+  -- closure: this IS the #74 diagnostic-pattern function this probe's brief cites by name.
+  | .handleCustomS n p _h cls b    =>
+      firstBareOpCall opNames n <|> firstBareOpCall opNames p
+        <|> hClausesFirstBareOpCall opNames cls <|> firstBareOpCall opNames b
 def bindsFirstBareOpCall (opNames : List String) : LetBindings → Option String
   | .nil           => none
   | .cons _ e rest => firstBareOpCall opNames e <|> bindsFirstBareOpCall opNames rest
 def dArmsFirstBareOpCall (opNames : List String) : DArms → Option String
   | .nil             => none
   | .cons _ _ b rest => firstBareOpCall opNames b <|> dArmsFirstBareOpCall opNames rest
+def hClausesFirstBareOpCall (opNames : List String) : HClauses → Option String
+  | .nil                => none
+  | .cons _ _ b rest    => firstBareOpCall opNames b <|> hClausesFirstBareOpCall opNames rest
 end
 
 -- `add(a, b)` (tuple-call) is caught: `add` is a declared trait op, applied to a pair.
