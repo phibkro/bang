@@ -213,6 +213,29 @@ def resolveModulePath (root : System.FilePath) (importingDir : System.FilePath) 
   if ← atRoot.pathExists then return some atRoot
   return none
 
+/-- The two real (symlink-resolved) trees an import-derived module path is allowed to live in:
+the ENTRY file's own directory subtree and the `root` (CWD) subtree — exactly the two probe
+locations of D1's same-dir-then-root search order, so every legitimate resolution (absent
+symlinks) already lands in one of them. Both fields are `IO.FS.realPath`-resolved ONCE, at
+entry-resolution time (`resolveEntryFile`), never re-resolved per module. -/
+structure AllowedRoots where
+  entryDir : System.FilePath
+  root     : System.FilePath
+
+/-- Resolve `p` to its real (symlink-free) path and require it inside one of the two real
+`allowed` trees. Import-derived paths only — the entry file is the USER's explicit choice and is
+never contained. `.error pReal` = escape (the REAL path is returned so the caller's diagnostic can
+name it alongside BOTH allowed trees — ADR-0046: the fix must be obvious from the message). `p`
+must exist (callers sit behind a `pathExists` check — `IO.FS.realPath` throws on a missing path). -/
+def containedRealPath (allowed : AllowedRoots) (p : System.FilePath) :
+    IO (Except System.FilePath System.FilePath) := do
+  let pReal ← IO.FS.realPath p
+  -- separator-guarded prefix check: `/proj` must not admit `/project-evil`
+  let inTree (r : System.FilePath) : Bool :=
+    pReal == r || pReal.toString.startsWith (r.toString ++ "/")
+  if inTree allowed.entryDir || inTree allowed.root then return .ok pReal
+  return .error pReal
+
 /-- The accumulated state of one resolution walk: `resolved` maps a module name to its PARSED
 (unqualified) `Prog`, built bottom-up (a module is added only after everything IT imports is
 already resolved) so `resolved`'s LIST ORDER is already the dependency-first topological order
@@ -227,13 +250,20 @@ structure ResolveState where
 Fuel-bounded (not structural — the import graph's depth isn't visible to Lean's termination
 checker without threading a well-founded proof no v1 program needs; a real cycle is caught by
 `visiting` LONG before fuel would ever matter at realistic project sizes, matching the file's own
-`bigFuel`-idiom precedent elsewhere in the codebase). -/
-partial def resolveModule (root : System.FilePath) (modName : String) (path : System.FilePath)
-    (st : ResolveState) : IO (Except String ResolveState) := do
+`bigFuel`-idiom precedent elsewhere in the codebase). Every module READ here is import-derived,
+so it passes the `containedRealPath` guard first (the entry file is read by `resolveEntryFile`
+itself, never here — the user's explicit choice of entry is never contained). -/
+partial def resolveModule (root : System.FilePath) (allowed : AllowedRoots) (modName : String)
+    (path : System.FilePath) (st : ResolveState) : IO (Except String ResolveState) := do
   if (st.resolved.map Prod.fst).contains modName then return .ok st   -- already resolved (diamond import)
   if st.visiting.contains modName then
     return .error s!"import cycle: {String.intercalate " → " (st.visiting ++ [modName])}"
-  let some src ← (do let s ← IO.FS.readFile path; pure (some s)) <|> pure none
+  if ¬ (← path.pathExists) then
+    return .error s!"could not read module '{modName}' at '{path}'"
+  let pathReal ← match ← containedRealPath allowed path with
+    | .error pReal => return .error s!"module '{modName}': resolved path escapes the project — '{pReal}' is outside both the entry tree '{allowed.entryDir}' and the root '{allowed.root}' (symlinked module sources must stay inside the project)"
+    | .ok r => pure r
+  let some src ← (do let s ← IO.FS.readFile pathReal; pure (some s)) <|> pure none
     | return .error s!"could not read module '{modName}' at '{path}'"
   match Bang.Surface.parseProg src with
   | .error m => return .error s!"module '{modName}' ({path}): parse error: {m}"
@@ -241,11 +271,11 @@ partial def resolveModule (root : System.FilePath) (modName : String) (path : Sy
       let dir := path.parent.getD root
       let mut st' := { st with visiting := st.visiting ++ [modName] }
       for imp in prog.imports do
-        match ← resolveModule root imp.modName (Id.run <| dir / s!"{imp.modName}.bang") st' with
+        match ← resolveModule root allowed imp.modName (Id.run <| dir / s!"{imp.modName}.bang") st' with
         | .error e  => return .error e
         | .ok stNew => st' := stNew
       for u in prog.uses do
-        match ← resolveModule root u.modName (Id.run <| dir / s!"{u.modName}.bang") st' with
+        match ← resolveModule root allowed u.modName (Id.run <| dir / s!"{u.modName}.bang") st' with
         | .error e  => return .error e
         | .ok stNew => st' := stNew
       return .ok { st' with resolved := st'.resolved ++ [(modName, prog)], visiting := st.visiting }
@@ -288,6 +318,12 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
   | .ok entryProg =>
       if entryProg.imports.isEmpty && entryProg.uses.isEmpty then return applyEntryRule entryProg
       let dir := entryPath.parent.getD root
+      -- both containment trees realPath-resolved ONCE here (never per module). The entry dir
+      -- exists (the entry file was just read from it); the `<|>` fallback to the root tree only
+      -- covers a pathological dir string and can only SHRINK the allowed set, never widen it.
+      let rootReal ← IO.FS.realPath root
+      let entryDirReal ← IO.FS.realPath dir <|> pure rootReal
+      let allowed : AllowedRoots := { entryDir := entryDirReal, root := rootReal }
       let mut st : ResolveState := {}
       for imp in entryProg.imports do
         match ← resolveModulePath root dir imp.modName with
@@ -296,7 +332,7 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
             let probed2 := root / s!"{imp.modName}.bang"
             return .error s!"cannot find module '{imp.modName}' — probed '{probed1}' and '{probed2}'"
         | some found =>
-            match ← resolveModule root imp.modName found st with
+            match ← resolveModule root allowed imp.modName found st with
             | .error e  => return .error e
             | .ok stNew => st := stNew
       for u in entryProg.uses do
@@ -306,7 +342,7 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
             let probed2 := root / s!"{u.modName}.bang"
             return .error s!"cannot find module '{u.modName}' — probed '{probed1}' and '{probed2}'"
         | some found =>
-            match ← resolveModule root u.modName found st with
+            match ← resolveModule root allowed u.modName found st with
             | .error e  => return .error e
             | .ok stNew => st := stNew
       match Bang.TypeCheck.mergeModules st.resolved entryProg with
