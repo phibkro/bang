@@ -5778,5 +5778,152 @@ only prove the AST shape) — this is the "does the ADR's own payoff actually ha
   | .error _ => false
   | .ok merged => runMergedYieldsInt 200 merged == some 42
 
+/-! ### Clause-shape MATRIX (plan 002) — systematic coverage of the silently-missing-binder
+family's predicted hiding places: nesting depth × op position × clause/handler configuration.
+Each axis value appears in at least one ACCEPTED program; the matrix is a regression net for
+context-threading (Γ / effects-table) in clause elaboration, not a semantics spec. -/
+
+-- matrix: 1-op effect, bare clause body, atomic perform-site operand (baseline sanity cell).
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle net.fetch(3) with Net as net { fetch(n) => n }" 3
+
+-- matrix: 1-op effect, nested-binop clause body depth 3, atomic perform-site operand.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle net.fetch(2) with Net as net { fetch(n) => ((n + 1) * 2) + (n * 3) }" 12
+
+-- matrix: 1-op effect, `let … in` clause body, atomic perform-site operand.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle net.fetch(4) with Net as net { fetch(n) => let m = n * 2 in m + 1 }" 9
+
+-- matrix: 1-op effect, immediately-applied-lambda clause body.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle net.fetch(5) with Net as net { fetch(n) => ($({fun m => m + 1})) n }" 6
+
+-- matrix: 1-op effect, bare clause body, compound-LEFT perform-site operand.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle (net.fetch(1) + 2) + 3 with Net as net { fetch(n) => n * 10 }" 15
+
+-- matrix: 1-op effect, bare clause body, compound-RIGHT perform-site operand.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle 3 + (2 + net.fetch(1)) with Net as net { fetch(n) => n * 10 }" 15
+
+-- matrix: 1-op effect, bare clause body, perform-site in a `let` RHS.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle (let r = net.fetch(2) in r + 1) with Net as net { fetch(n) => n * 10 }" 21
+
+-- matrix: 1-op effect, bare clause body, perform-site inside a forced thunk (plan-003 shape,
+-- REPEATED here as an explicit matrix cell rather than only living in the plan-003 section).
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle (let t = {net.fetch(1)} in $t) + 0 with Net as net { fetch(n) => n * 10 }" 10
+
+-- matrix: 2-op effect, decl order (a then b), both bodies bare, performed op is FIRST in decl order.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + 1, b(n) => n + 2 }" 6
+
+-- matrix: 2-op effect, decl order (a then b), both bodies bare, performed op is SECOND in decl order.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.b(5) with Two as two { a(n) => n + 1, b(n) => n + 2 }" 7
+
+-- matrix: 2-op effect, REVERSE clause decl order (the #86 shape: handler clauses written `b` then
+-- `a` while the effect declares `a` then `b`), performed op is the one declared FIRST but written
+-- LAST in the handler.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { b(n) => n + 2, a(n) => n + 1 }" 6
+
+-- matrix: 2-op effect, REVERSE clause decl order, performed op is the one declared SECOND but
+-- written FIRST in the handler.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.b(5) with Two as two { b(n) => n + 2, a(n) => n + 1 }" 7
+
+-- matrix: 2-op effect, reverse clause order, performed clause's body is a NESTED binop (compound),
+-- the OTHER clause's body stays bare — the #85⊔#86 combination with an asymmetric body shape.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { b(n) => n, a(n) => (n + 1) * 2 }" 12
+
+-- matrix: 2-op effect, decl order, one clause's body uses its param in a COMPOUND expression while
+-- the other clause's body is BARE (the axis explicitly named in the plan) — performed op is the
+-- COMPOUND one.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n * 2 + 1, b(n) => n }" 11
+
+-- matrix: 2-op effect, decl order, compound/bare asymmetry as above but performed op is the BARE
+-- one (proves the untouched compound clause's binder was still bound at elaboration time even
+-- though it's never exercised by THIS run).
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.b(5) with Two as two { a(n) => n * 2 + 1, b(n) => n }" 5
+
+-- matrix: 2-op effect, compound-LEFT perform-site operand, decl order.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle (two.a(3) + 1) + two.b(2) with Two as two { a(n) => n * 10, b(n) => n * 100 }" 231
+
+-- matrix: 2-op effect, compound-RIGHT perform-site operand, reverse clause order.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle 1 + (two.a(3) + two.b(2)) with Two as two { b(n) => n * 100, a(n) => n * 10 }" 231
+
+-- matrix: 2-op effect, perform-site in a `let` RHS, reverse clause order.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle (let r = two.b(4) in r + two.a(1)) with Two as two { b(n) => n * 10, a(n) => n + 1 }" 42
+
+-- matrix: 2-op effect, `let … in` clause body on the performed clause, decl order.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(6) with Two as two { a(n) => let m = n + 1 in m * 2, b(n) => n }" 14
+
+-- matrix: 3-op effect, decl order, all bodies bare, performed op is the MIDDLE one (the position
+-- least like either endpoint).
+#guard runTypedYieldsInt 200
+    "effect Three { a : Int -> Int, b : Int -> Int, c : Int -> Int } handle three.b(5) with Three as three { a(n) => n + 1, b(n) => n + 2, c(n) => n + 3 }" 7
+
+-- matrix: 3-op effect, REVERSE clause decl order (c, b, a), performed op is the one declared FIRST.
+#guard runTypedYieldsInt 200
+    "effect Three { a : Int -> Int, b : Int -> Int, c : Int -> Int } handle three.a(5) with Three as three { c(n) => n + 3, b(n) => n + 2, a(n) => n + 1 }" 6
+
+-- matrix: 3-op effect, REVERSE clause decl order, performed op is the one declared LAST but written
+-- FIRST in the handler.
+#guard runTypedYieldsInt 200
+    "effect Three { a : Int -> Int, b : Int -> Int, c : Int -> Int } handle three.c(5) with Three as three { c(n) => n + 3, b(n) => n + 2, a(n) => n + 1 }" 8
+
+-- matrix: 3-op effect, SCRAMBLED clause decl order (b, a, c — neither forward nor pure reverse),
+-- performed op is the MIDDLE-declared one, body is a nested binop.
+#guard runTypedYieldsInt 200
+    "effect Three { a : Int -> Int, b : Int -> Int, c : Int -> Int } handle three.b(4) with Three as three { b(n) => (n + 1) * 2, a(n) => n, c(n) => n }" 10
+
+-- matrix: 3-op effect, all THREE ops performed and combined in one binop chain, decl order handler
+-- — exercises every clause's binder in a single program.
+#guard runTypedYieldsInt 200
+    "effect Three { a : Int -> Int, b : Int -> Int, c : Int -> Int } handle three.a(1) + three.b(2) + three.c(3) with Three as three { a(n) => n * 10, b(n) => n * 100, c(n) => n * 1000 }" 3210
+
+-- matrix: 3-op effect, all three ops performed, REVERSE clause decl order.
+#guard runTypedYieldsInt 200
+    "effect Three { a : Int -> Int, b : Int -> Int, c : Int -> Int } handle three.a(1) + three.b(2) + three.c(3) with Three as three { c(n) => n * 1000, b(n) => n * 100, a(n) => n * 10 }" 3210
+
+-- matrix: 3-op effect, nested-binop clause body depth 3 on the performed clause, scrambled decl
+-- order handler.
+#guard runTypedYieldsInt 200
+    "effect Three { a : Int -> Int, b : Int -> Int, c : Int -> Int } handle three.c(2) with Three as three { b(n) => n, c(n) => ((n + 1) * 2) + (n * 3) , a(n) => n }" 12
+
+-- N/A (matrix axis dropped, confirmed against the parser, not assumed): the plan's "2-arg op
+-- (`fetch : Int -> Int -> Int`) with the param used at each position" axis. `pHClause`
+-- (`Bang/Frontend/Surface.lean` ~1432-1447) parses EXACTLY one `(x)` per clause — v1's
+-- `EffectInfo` op sigs are documented 0/1-ary only ("D3's curry-desugar is future work"), and
+-- `pHClause`'s own doc comment says so explicitly: "no declared op takes 2 args currently".
+-- A 2-arg op clause `fetch(x, y) => …` is not v1-expressible syntax, so this axis cannot produce
+-- a `#guard` (would be a parse-error cell, not a semantics cell) — replaced below with two
+-- additional cells from the already-valid axes (nesting × perform-site position) to keep the
+-- matrix's coverage intent (≥25 cells) without a syntactically-doomed guard.
+
+-- matrix: 1-op effect, clause body is a nested binop AND uses `let … in`, atomic perform-site —
+-- combines the "nested binop depth 3" and "let-body" body-shape axes in one clause.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } handle net.fetch(3) with Net as net { fetch(n) => let m = n + 1 in (m * 2) + (n * 3) }" 17
+
+-- matrix: 2-op effect, immediately-applied-lambda clause body on the performed clause, reverse
+-- clause decl order.
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(3) with Two as two { b(n) => n, a(n) => ($({fun m => m * 2})) n }" 6
+
+-- final count: 28 new #guards in this matrix subsection (excludes the plan-003/#85/#86 guards it
+-- deliberately re-exercises in NEW combinations rather than duplicates verbatim). The multi-arg-op
+-- axis is documented N/A above (not v1-expressible), per the plan's own contingency.
+
 end Bang.TypeCheck
 
