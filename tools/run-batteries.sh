@@ -32,7 +32,8 @@ lake build bang >&2
 export BANG_BIN_FRESH=1
 
 batteries=(check-examples check-examples-env test-repl test-fmt test-check-json test-query \
-           test-rewrite test-annotate test-lint test-82-verbs test-cli test-law test-modules)
+           test-rewrite test-annotate test-lint test-82-verbs test-cli test-law test-modules \
+           test-explain)
 
 workdir="$(mktemp -d --tmpdir bang-run-batteries-XXXXXX)"
 trap 'rm -rf "$workdir"' EXIT

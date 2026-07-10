@@ -408,16 +408,44 @@ def runCheckJson (src : String) : IO UInt32 := do
   IO.println out
   pure (if out.startsWith "{\"ok\":true" then 0 else 1)
 
+/-- The `error`-prefix for a human diagnostic, carrying the STABLE code when the message belongs to a
+coded family (the rustc `error[B004]:` shape) — `error[B004]` when `Bang.DiagCodes.codeForMsg` finds
+one, plain `error` otherwise. A reader can then run `bang explain B004` for the teaching text. -/
+def errWord (msg : String) : String :=
+  match Bang.DiagCodes.codeForMsg msg with
+  | some c => s!"error[{c}]"
+  | none   => "error"
+
 /-- Run `bang check` (human-readable, no `--json`): the SAME typed pipeline (`checkAndLower`) the
 default `bang run`/`eval` use, reporting only PASS/FAIL — no value is produced (unlike `run`,
 `check` never evaluates). Mirrors `runSource`'s DEFAULT arm's error rendering (`error at L:C: …` /
 `error: …`) so a human reading `bang check`'s failure sees the identical message `bang run` would
-have failed with. -/
+have failed with, plus the STABLE code (`error[B004]` via `errWord`) when the diagnostic is coded. -/
 def runCheckHuman (src : String) : IO UInt32 := do
   match Bang.TypeCheck.checkAndLower src with
-  | .error (m, some sp) => IO.eprintln s!"error at {sp.loc}: {m}"; pure 1
-  | .error (m, none)    => IO.eprintln s!"error: {m}"; pure 1
+  | .error (m, some sp) => IO.eprintln s!"{errWord m} at {sp.loc}: {m}"; pure 1
+  | .error (m, none)    => IO.eprintln s!"{errWord m}: {m}"; pure 1
   | .ok _               => IO.println "ok"; pure 0
+
+/-- `bang explain <CODE>` (plan 013 s5): print the registry teaching entry for a stable diagnostic
+code — summary, explanation, and a minimal triggering example (the `example?` field, when the
+diagnostic is a check-time one). An UNKNOWN code is a loud stderr error + exit 1 (never a silent
+empty print), matching every other verb's fail-loud contract. The registry (`Bang.DiagCodes`) is the
+SINGLE SOURCE OF TRUTH — the same table `check`'s codes and the generated reference read. -/
+def runExplain (code : String) : IO UInt32 := do
+  match Bang.DiagCodes.explain code with
+  | none => IO.eprintln s!"error: unknown diagnostic code '{code}' — run `bang --help` and see the codes in docs/reference/language.md"; pure 1
+  | some e =>
+    IO.println s!"{e.code}: {e.summary}"
+    IO.println ""
+    IO.println e.teaching
+    match e.example? with
+    | some ex =>
+      IO.println ""
+      IO.println "Triggering example:"
+      IO.println ex
+    | none => pure ()
+    pure 0
 
 /-- One `ok:false` diagnostic JSON object for the `Prog`-taking check path (`code` always `"type"`,
 `span` always `null` — see `runCheck`'s doc comment for why: no stage split, no source text to
@@ -426,8 +454,11 @@ own convention — Lean's string interpolation escapes a literal `{` as `\{`, no
 hand-written JSON-brace literal read backwards; plain concatenation sidesteps the ambiguity entirely
 (the SAME reason those two functions avoid `s!`). -/
 def checkFailJson (msg : String) : String :=
-  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"msg\":" ++
-    Bang.Diagnostics.jsonStr msg ++ ",\"span\":null}]}"
+  let explainStr := match Bang.DiagCodes.codeForMsg msg with
+    | some c => Bang.Diagnostics.jsonStr c
+    | none   => "null"
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"explainCode\":" ++
+    explainStr ++ ",\"msg\":" ++ Bang.Diagnostics.jsonStr msg ++ ",\"span\":null}]}"
 
 /-- `bang check [FLAGS] [<file.bang>]` (issue #59): type-check ONLY (no run), human-readable by
 default or `--json` for the agent-facing structured schema (`Bang.Diagnostics`). Reads a file if
@@ -1079,6 +1110,11 @@ def usage : String :=
   "  bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file\n\n" ++
   "  bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file\n" ++
   "             --json                  emit agent-facing structured JSON diagnostics on stdout\n\n" ++
+  "  bang explain <CODE>                print the teaching entry for a stable diagnostic code\n" ++
+  "                                     (the rustc `error[B004]` pattern, plan 013 s5): summary,\n" ++
+  "                                     explanation, and a minimal triggering example. Codes appear\n" ++
+  "                                     in `check` output (`error[B004]:` / the `explainCode` JSON\n" ++
+  "                                     field). An unknown code is a LOUD error on stderr, exit 1.\n\n" ++
   "  bang test [<file.bang>]            discover + sample-check every trait law (issue #60);\n" ++
   "                                     reads stdin if no file; reports per-law PASS/FAIL/ERROR/STUCK.\n" ++
   "                                     INPUT MUST BE DECLS-ONLY (no trailing expression) — the\n" ++
@@ -1379,6 +1415,11 @@ def main (args : List String) : IO UInt32 := do
       | []      => runCheck json none        -- `bang check [--json]` with no file: read stdin
       | [arg]   => runCheck json (some arg)
       | _       => IO.eprintln usage; pure 1
+    else if cmd == "explain" then
+      -- `bang explain <CODE>` (plan 013 s5): exactly one positional code; anything else is usage.
+      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      | [code] => runExplain code
+      | _      => IO.eprintln usage; pure 1
     else if cmd == "test" then
       -- no flags this slice (no `--samples`/`--seed`, a natural follow-up, not added speculatively).
       match rest with

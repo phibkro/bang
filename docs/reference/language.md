@@ -955,3 +955,26 @@ the side), `0` a well-formed diff. ALWAYS JSON. **Known v1 gap** (a forward poin
 not a silent miss): only VALUE-typed decls' `type`/`row` are compared — a `trait`/
 `data`/`effect`'s structural `shape` change is not yet a `changed` finding.
 
+## Diagnostic codes (`bang explain`)
+
+GENERATED from the registry in `Bang/Frontend/DiagCodes.lean` (plan 013 s5) — the SINGLE
+SOURCE OF TRUTH. Each diagnostic carries a STABLE code (the rustc `error[B004]` pattern):
+it appears in `bang check` output (`error[B004]: …`) and in the `explainCode` field of
+`bang check --json`. `bang explain <CODE>` prints the code's summary, teaching text, and a
+minimal triggering example. A code stays stable across message-wording changes, so tools
+and docs can reference it durably.
+
+| Code | Summary | `explain` example |
+|---|---|---|
+| `B001` | a reserved keyword used where an identifier/binder is required | yes |
+| `B002` | a custom effect declares an op name that a built-in effect already owns | yes |
+| `B003` | a computation's effect row does not match what the context expects | — |
+| `B004` | forcing (`$`) a value that is not a thunk | yes |
+| `B005` | a handler clause body is not a `ret`-shape value (the ADR-0095 D4 gate) | — |
+| `B007` | a match arm names a constructor not in the scrutinee's data type | — |
+| `B008` | the parser reached extra tokens after a complete expression | yes |
+| `B009` | a capability was forced after its handler's block returned (runtime) | — |
+| `B010` | a trait bound is unsatisfied — no impl of the trait for the carrier | — |
+| `B011` | a data constructor declares more than 2 payload fields | yes |
+| `B006` | a data constructor is applied to the wrong number of arguments | — |
+

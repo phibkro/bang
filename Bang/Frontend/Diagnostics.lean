@@ -30,6 +30,8 @@ module
 
 meta import Bang.Frontend.TypeCheck
 public import Bang.Frontend.TypeCheck
+meta import Bang.Frontend.DiagCodes
+public import Bang.Frontend.DiagCodes
 
 open Bang
 
@@ -117,12 +119,21 @@ def spanJson (sp : Bang.Surface.Span) : String :=
   "{\"line\":" ++ toString sp.line ++ ",\"col\":" ++ toString sp.col ++
   ",\"endLine\":" ++ toString sp.endLine ++ ",\"endCol\":" ++ toString sp.endCol ++ "}"
 
-/-- Render one `Diagnostic` as its JSON object. -/
+/-- Render one `Diagnostic` as its JSON object. The `explainCode` field is the STABLE `bang explain`
+code (`"B0xx"`) DERIVED from `msg` via `Bang.DiagCodes.codeForMsg` (SSoT — the registry, plan 013 s5),
+or JSON `null` for an as-yet-uncoded diagnostic. It sits ALONGSIDE the pre-existing coarse `code`
+(pipeline stage `"parse"`/`"type"`) — the two are orthogonal: `code` says WHICH stage, `explainCode`
+says WHICH teachable family (feeds `bang explain`). Additive: an agent that ignored it before is
+unaffected. -/
 def Diagnostic.toJson (d : Diagnostic) : String :=
   let spanStr := match d.span with
     | some sp => spanJson sp
     | none    => "null"
+  let explainStr := match Bang.DiagCodes.codeForMsg d.msg with
+    | some c => jsonStr c
+    | none   => "null"
   "{\"severity\":" ++ d.severity.toJson ++ ",\"code\":" ++ d.code.toJson ++
+  ",\"explainCode\":" ++ explainStr ++
   ",\"msg\":" ++ jsonStr d.msg ++ ",\"span\":" ++ spanStr ++ "}"
 
 /-- Render the whole result: `{"ok":bool,"diagnostics":[...]}` — exactly ONE JSON object, no
@@ -174,7 +185,7 @@ public def parseFailJson (msg : String) (span : Option Bang.Surface.Span) : Stri
   renderDiagnostics false [{ severity := .error, code := .parse, msg := msg, span := span }]
 
 #guard parseFailJson "expected '='" none ==
-  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"msg\":\"expected '='\",\"span\":null}]}"
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"explainCode\":null,\"msg\":\"expected '='\",\"span\":null}]}"
 
 /-! ## 4. Schema `#guard`s — byte-exact expected strings (the schema IS the contract). Each
 expected string was COMPUTED via a compiled `#eval IO.println (checkJson …)` (a `lake build` run,
@@ -189,24 +200,24 @@ guessed. -/
 
 -- a located PARSE error: exact line/col, code "parse".
 #guard checkJson "let x 3 in x" ==
-  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"msg\":\"expected '=', got '3'\",\"span\":{\"line\":1,\"col\":7,\"endLine\":1,\"endCol\":8}}]}"
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"explainCode\":null,\"msg\":\"expected '=', got '3'\",\"span\":{\"line\":1,\"col\":7,\"endLine\":1,\"endCol\":8}}]}"
 
 -- a TYPE error carrying a nameHint span (forcing a plain Int names the culprit, #52 Stage B):
 -- code "type", span non-null. `locateInMsg` finds the FIRST occurrence of the quoted name in
 -- source — here the BINDER site (`let x`, col 5), not the later force-site (`$x`, col 14).
 #guard checkJson "let x = 3 in $x" ==
-  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"msg\":\"force: not a thunk ('x')\",\"span\":{\"line\":1,\"col\":5,\"endLine\":1,\"endCol\":6}}]}"
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"explainCode\":\"B004\",\"msg\":\"force: not a thunk ('x')\",\"span\":{\"line\":1,\"col\":5,\"endLine\":1,\"endCol\":6}}]}"
 
 -- a TYPE error WITHOUT a locatable token (forcing a compound pair — no bare-var nameHint fires):
 -- span is the honest `null` fallback, not a guess.
 #guard checkJson "$(1, 2)" ==
-  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"msg\":\"force: not a thunk\",\"span\":null}]}"
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"type\",\"explainCode\":\"B004\",\"msg\":\"force: not a thunk\",\"span\":null}]}"
 
 -- STRING-ESCAPING: a stray string-literal token surviving to "trailing tokens after expression:
 -- [...]" carries REAL double-quote characters (the tokenizer keeps a string literal's delimiters
 -- raw, `tokenize`'s `'"' :: rest` arm) — a naturally-occurring escaping case, byte-exact through
 -- `jsonStr`'s `\"` escaping.
 #guard checkJson "1, \"oops\"" ==
-  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"msg\":\"trailing tokens after expression: [,, \\\"oops\\\"]\",\"span\":{\"line\":1,\"col\":2,\"endLine\":1,\"endCol\":3}}]}"
+  "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\"code\":\"parse\",\"explainCode\":\"B008\",\"msg\":\"trailing tokens after expression: [,, \\\"oops\\\"]\",\"span\":{\"line\":1,\"col\":2,\"endLine\":1,\"endCol\":3}}]}"
 
 end Bang.Diagnostics

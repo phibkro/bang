@@ -145,6 +145,14 @@ regen-all:
 test-modules:
     bash tools/test-modules.sh
 
+# Gate for stable diagnostic codes + `bang explain` (plan 013 slice 5): each example-carrying
+# registry code fires end-to-end (`explainCode` in --json, `error[Bxxx]` in the human path),
+# `explain CODE` prints the teaching entry, `explain BOGUS` is a loud unknown-code error. The
+# registry byte-exactness is #guard-gated in Bang/Frontend/DiagCodes.lean; this gates the CLI
+# surface. Part of the default `verify` chain (enrolled in tools/run-batteries.sh's array).
+test-explain:
+    bash tools/test-explain.sh
+
 # Regenerate the ADR decided-ledger (the index + resolved-questions tables in
 # docs/decisions/README.md) from each ADR's frontmatter. Drift = unrepresentable.
 adr-index:

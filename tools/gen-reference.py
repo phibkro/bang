@@ -18,6 +18,7 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SURFACE = ROOT / "Bang/Frontend/Surface.lean"
+DIAGCODES = ROOT / "Bang/Frontend/DiagCodes.lean"
 IR = ROOT / "Bang/Core/IR.lean"
 EVAL = ROOT / "Bang/Core/Semantics/Eval.lean"
 TYPECHECK = ROOT / "Bang/Frontend/TypeCheck.lean"
@@ -38,6 +39,52 @@ def extract_labels(text):
     rows = []
     for m in re.finditer(r"/--(.*?)-/\s*def\s+(\w+Label)\s*:\s*Label\s*:=\s*(\d+)", text, re.S):
         rows.append((m.group(2), m.group(3), first_sentence(m.group(1))))
+    return rows
+
+
+def extract_diag_codes(text):
+    """(code, summary, has_example) for each `DiagEntry` in `def registry` (DiagCodes.lean, plan 013 s5).
+
+    The registry is the SINGLE SOURCE OF TRUTH for diagnostic codes; this derives the reference's
+    codes section from it (drift unrepresentable). Each entry is a `{ code := "B0xx" … summary := "…"
+    … example? := (some "…"|none) }` record. `summary` is a single string literal; `example?` presence
+    is `some` vs `none`."""
+    m = re.search(r"def registry\s*:\s*List DiagEntry\s*:=\s*\[(.*?)\n\]", text, re.S)
+    if not m:
+        sys.exit("gen-reference: could not locate `def registry` — the diagnostic-codes section is keyed off it.")
+    body = m.group(1)
+    rows = []
+    # split on the record openers; each entry starts `{ code := "…"`.
+    for em in re.finditer(r"\{\s*code\s*:=\s*" + STR, body):
+        start = em.start()
+        # the entry spans from this `{` to the matching top-level `}` — find it by brace-matching,
+        # ignoring braces inside string literals.
+        depth, i, in_str, esc = 0, start, False, False
+        while i < len(body):
+            c = body[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            else:
+                if c == '"':
+                    in_str = True
+                elif c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            i += 1
+        entry = body[start:i + 1]
+        code = em.group(1)
+        sm = re.search(r"summary\s*:=\s*" + STR, entry)
+        summary = sm.group(1) if sm else ""
+        has_example = re.search(r"example\?\s*:=\s*some", entry) is not None
+        rows.append((code, summary, has_example))
     return rows
 
 
@@ -202,6 +249,7 @@ def parse_examples(path):
 
 def render():
     surf = SURFACE.read_text()
+    diagcodes = DIAGCODES.read_text()
     L = []
     L.append("# BANG — language reference")
     L.append("")
@@ -954,6 +1002,22 @@ def render():
     L.append("the side), `0` a well-formed diff. ALWAYS JSON. **Known v1 gap** (a forward pointer,")
     L.append("not a silent miss): only VALUE-typed decls' `type`/`row` are compared — a `trait`/")
     L.append("`data`/`effect`'s structural `shape` change is not yet a `changed` finding.")
+    L.append("")
+
+    L.append("## Diagnostic codes (`bang explain`)")
+    L.append("")
+    L.append("GENERATED from the registry in `Bang/Frontend/DiagCodes.lean` (plan 013 s5) — the SINGLE")
+    L.append("SOURCE OF TRUTH. Each diagnostic carries a STABLE code (the rustc `error[B004]` pattern):")
+    L.append("it appears in `bang check` output (`error[B004]: …`) and in the `explainCode` field of")
+    L.append("`bang check --json`. `bang explain <CODE>` prints the code's summary, teaching text, and a")
+    L.append("minimal triggering example. A code stays stable across message-wording changes, so tools")
+    L.append("and docs can reference it durably.")
+    L.append("")
+    L.append("| Code | Summary | `explain` example |")
+    L.append("|---|---|---|")
+    for code, summary, has_example in extract_diag_codes(diagcodes):
+        ex = "yes" if has_example else "—"
+        L.append(f"| `{code}` | {summary} | {ex} |")
     L.append("")
 
     return "\n".join(L) + "\n"
