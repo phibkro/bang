@@ -143,6 +143,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **release** — the release battery + site CI + flake-check/shake riders (plan 011) (`2e3a266d`)
 - **tools** — invocation telemetry — tool-log.sh appends per-exec (plan 012 slice 1) (`e2d0bb75`)
 - **tools** — check-runs-in.py — validate the runs-in= header claim (plan 012 slice 2) (`c4eabc75`)
+- **emit** — rung-1.5 emitter — guarded div + comparison/case-on-bool if (`0fc09ffa`)
 - **surface** — #87 — the carried-param handler init becomes clause-nameable via `param` (`0c392ccc`)
 - **tools** — status= field + last-invoked view + deprecated-in-gate rule (plan 012 slice 3) (`c1df3611`)
 - **agents** — lane-discipline pack injected into role files via generated block (plan 012 slice 4) (`ff57f173`)

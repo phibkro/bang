@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # tool: role=test couples=EmitMain,Bang/Backend/WasmEmit.lean runs-in=manual
+source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
 # emit-rung1-diff.sh — the ◊5.5 rung-1 / rung-1.5 EMISSION differential harness.
 # ──────────────────────────────────────────────────────────────────────────────
 # The first time bang output executes OUTSIDE Lean, now over a GENERATED corpus. For each
