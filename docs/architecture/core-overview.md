@@ -31,6 +31,7 @@ graph TD
     Backend_EnvMachine["Backend.EnvMachine<br/>3338L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1648L · fan-in 0"]
     Backend_Wasm["Backend.Wasm<br/>2889L · fan-in 0"]
+    Backend_WasmEmit["Backend.WasmEmit<br/>182L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>564L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
     Core_Freshness["Core.Freshness<br/>826L · fan-in 0"]
@@ -89,6 +90,7 @@ graph TD
 | `Backend.EnvMachine` | ? | 3338 | 0 |
 | `Backend.U5bComplete` | ? | 1648 | 0 |
 | `Backend.Wasm` | ? | 2889 | 0 |
+| `Backend.WasmEmit` | ? | 182 | 0 |
 | `Core.CapCoh` | ? | 564 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
 | `Core.Freshness` | ? | 826 | 0 |

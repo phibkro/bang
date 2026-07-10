@@ -32,6 +32,14 @@ root = "Main"
 name = "tests"
 root = "Tests"
 
+# The ◊5.5 EMISSION rung-1 SPIKE runner (LEAF, outside the `Bang.+` glob): emits `.wat` for
+# the pure arithmetic samples + prints the `Source.eval` oracle value, for the real-engine
+# diff (`tools/emit-rung1-diff.sh` → `wasmtime run`). Imported by nothing in `Bang/`; the
+# verified library + Audit gate are untouched. See `docs/notes/emission-rung1-probe.md`.
+[[lean_exe]]
+name = "emit-rung1"
+root = "EmitMain"
+
 # Mathlib gives us the Finset semilattice. The rev MUST match lean-toolchain:
 # the simplest reliable pin is to pick a Mathlib release tag and set
 # lean-toolchain to the Lean version THAT TAG uses (read its own lean-toolchain).

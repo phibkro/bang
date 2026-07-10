@@ -137,6 +137,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **wasm** — compile_forward_sim UNCONDITIONAL over user effects — CustomFree dropped (#62 CLOSED) (`d35295c8`)
 - **surface** — caps through functions + the wrapper pattern — the per-stage story delivered (#84, #85, #86, #90) (`47a237db`)
 - **examples** — echo-mock — ADR-0084 slice A, Net effect over a pure mock handler (`6cccef20`)
+- **examples** — ndet-sim-kv-a/-b — sim-KV handler-swap demo (#28 rung-2 entry, ndet-dst-design.md) (`ef338d1f`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
