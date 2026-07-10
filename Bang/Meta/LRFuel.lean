@@ -558,17 +558,18 @@ theorem krelSN_splitAtId_decomp {n f : Nat} {C D : CTy Eff Mult} {e : Eff} {g : 
                         -- analogous to `crelKN 0`; a def-level vacuity lemma (slice-2) discharges it.
                         sorry) Nat.one_pos) hSk
                     -- ARBITRATED PAYOFF: the OUTPUT resume conjunct now binds `∃ fⱼ' < fₒ (= fᵢ)`; I supply
-                    -- `fⱼ' := fⱼ` with `hfⱼ : fⱼ < fᵢ` DIRECTLY — NO fuel-UP. The result is `hstrip` at `fⱼ-1`,
-                    -- which the OUTPUT accepts at `fⱼ` via `KrelSN_fuel_mono` (down, free) — or, if the def puts
-                    -- the OUTPUT at `< fⱼ` too, `fⱼ-1` fits directly. The fuel-UP tension is DISSOLVED.
-                    refine ⟨fⱼ, hfⱼ, qᵣ, Aᵣ, r₁, r₂, cfg₁.1, cfg₂.1, eₛ,
+                    -- ARBITRATED PAYOFF, sharpened: supply the output fuel `fⱼ' := fⱼ - 1` (NOT `fⱼ`). Since
+                    -- `fⱼ - 1 < fⱼ < fᵢ`, it satisfies the OUTPUT's `∃ fⱼ' < fᵢ`, AND the strip produces at
+                    -- EXACTLY `fⱼ - 1` — so the result matches the demanded fuel with NO fuel-mono at all. The
+                    -- fuel-align obligation is ELIMINATED (not just made down-compatible). Only `Dstrip = Dᵢ`
+                    -- + the fuel-floor remain — no `KrelSN_fuel_mono` on the crux path.
+                    refine ⟨fⱼ - 1, by omega, qᵣ, Aᵣ, r₁, r₂, cfg₁.1, cfg₂.1, eₛ,
                       by rw [Prod.ext_iff]; exact ⟨rfl, hci⟩,
                       by rw [Prod.ext_iff]; exact ⟨rfl, hci'⟩, hcr1, hcr2, hvr, ?_⟩
-                    -- `hstrip : KrelSN m (fⱼ-1) (F qᵣ Aᵣ) Dstrip eₛ g cfg₁.1 cfg₂.1`; goal wants answer `Dᵢ`,
-                    -- fuel `fⱼ`. REMAINING (the SINGLE crux residual, arbitrated shape):
-                    -- (a) `Dstrip = Dᵢ` — a tie between TWO fuel-carried decomp OUTPUTS (NOT the false hole_det).
-                    -- (b) fuel-align `fⱼ-1 → fⱼ` — now DOWN-compatible (fuel-mono, the free direction). The
-                    --     arbitrated `< fᵢ` output shape KILLED the up-cast; only `Dstrip = Dᵢ` + the floor remain.
+                    -- `hstrip : KrelSN m (fⱼ-1) (F qᵣ Aᵣ) Dstrip eₛ g cfg₁.1 cfg₂.1`; goal: SAME fuel `fⱼ-1`,
+                    -- answer `Dᵢ`. THE SINGLE remaining crux residual: `Dstrip = Dᵢ` — a tie between TWO
+                    -- fuel-carried decomp OUTPUTS (NOT the false `krelS_hole_det`; both sides carried data).
+                    -- The fuel matches EXACTLY (no mono); the floor `fⱼ > 0` is the strip's own sub-obligation.
                     sorry
               | _ => simp [KrelSN] at hK
 
@@ -597,6 +598,38 @@ theorem krelS_iff_exists_fuel {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat
     rintro ⟨_f, _hKN⟩
     sorry
 
+/-! ## The `Dstrip = Dᵢ` route — refute-first: is fuel-indexed hole-det ALSO false?
+
+The crux's SINGLE residual is `Dstrip = Dᵢ` (two fuel-carried decomp answers coincide). The FIRST move
+(operator discipline: STOP-trigger) is to check whether this reduces to a FALSE statement — the
+fuel-indexed twin of `krelS_hole_det`. If `KrelSN`-hole-det is ALSO false, then `Dstrip = Dᵢ` CANNOT be
+routed through hole-det and needs the strip's structural answer-thread (the answer bottoms at the SAME
+boundary frame in both decomps — a `dispatchOn`-structural fact, NOT hole-det). This witness settles it. -/
+private theorem krelSN_hole_det_refuted
+    (H : ∀ (n f : Nat) (C₁ C₂ D : CTy Eff Mult) (e : Eff) (g : Nat) (K₁ K₂ : Stack),
+      KrelSN n f C₁ D e g K₁ K₂ → KrelSN n f C₂ D e g K₁ K₂ → C₁ = C₂) : False := by
+  have htail : KrelSN 0 0 (CTy.arr (0 : Mult) VTy.unit (CTy.F (0 : Mult) VTy.unit))
+      (CTy.F (0 : Mult) VTy.unit) (⊥ : Eff) 0 [Frame.appF Val.vunit] [Frame.appF Val.vunit] := by
+    have hnil : KrelSN 0 0 (CTy.F (0 : Mult) VTy.unit) (CTy.F (0 : Mult) VTy.unit) (⊥ : Eff) 0
+        ([] : Stack) [] := by
+      rw [krelSN_nil]; exact ⟨rfl, fun q A hC v₁ v₂ _ _ _ _ => ⟨1, v₂, rfl⟩⟩
+    rw [krelSN_appF]
+    exact ⟨⟨trivial, trivial⟩, 0, VTy.unit, CTy.F (0:Mult) VTy.unit, rfl,
+      (fun k => rfl), (fun k => rfl), by rw [VrelKN, BaseRel]; exact ⟨rfl, rfl⟩, hnil⟩
+  have h1 : KrelSN 0 0 (CTy.F (0 : Mult) VTy.unit) (CTy.F (0 : Mult) VTy.unit) (⊥ : Eff) 0
+      [Frame.letF (Comp.ret Val.vunit), Frame.appF Val.vunit]
+      [Frame.letF (Comp.ret Val.vunit), Frame.appF Val.vunit] := by
+    rw [krelSN_letF]
+    exact ⟨krelSN_stackInc htail, 0, VTy.unit, CTy.arr (0:Mult) VTy.unit (CTy.F (0:Mult) VTy.unit), ⊥, rfl,
+      (fun m hm => absurd hm (Nat.not_lt_zero m)), htail⟩
+  have h2 : KrelSN 0 0 (CTy.F (0 : Mult) VTy.int) (CTy.F (0 : Mult) VTy.unit) (⊥ : Eff) 0
+      [Frame.letF (Comp.ret Val.vunit), Frame.appF Val.vunit]
+      [Frame.letF (Comp.ret Val.vunit), Frame.appF Val.vunit] := by
+    rw [krelSN_letF]
+    exact ⟨krelSN_stackInc htail, 0, VTy.int, CTy.arr (0:Mult) VTy.unit (CTy.F (0:Mult) VTy.unit), ⊥, rfl,
+      (fun m hm => absurd hm (Nat.not_lt_zero m)), htail⟩
+  exact absurd (H 0 0 _ _ (CTy.F (0:Mult) VTy.unit) ⊥ 0 _ _ h1 h2) (by simp)
+
 end Bang.Fuel
 
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
@@ -618,3 +651,6 @@ end Bang.Fuel
 #print axioms Bang.Fuel.KrelSN_fuel_mono
 #print axioms Bang.Fuel.krelSN_append_inv
 #print axioms Bang.Fuel.krelSN_splitAtId_decomp
+-- the do-not-weaken refutation witness (CLEAN — the fuel-indexed hole-det is FALSE, confirming the
+-- `Dstrip = Dᵢ` route is the `dispatchOn`-structural answer-thread, NOT hole-det):
+#print axioms Bang.Fuel.krelSN_hole_det_refuted

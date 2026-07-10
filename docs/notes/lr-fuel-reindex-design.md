@@ -86,9 +86,24 @@ axiom sets are UNCHANGED (8 clean decls still `[propext, Quot.sound]`, the 3 fla
 named `sorryAx`). `KrelSN_g_cast` re-casts the result at `fⱼ` (still `< f`, termination holds). The cost
 was ~5 threaded sites, ALL inside the twin — no compat touched (this is BEFORE the 19-decl thread).
 
-**Decision: ADOPT the `< fᵢ` output shape.** It eliminates one of the three crux residuals (the fuel-UP)
-for a ~5-site in-twin cost, and preserves axiom cleanliness. The remaining crux residuals are now just
-`Dstrip = Dᵢ` (the existential coincidence) + the fuel-floor `fⱼ > 0`.
+**Decision: ADOPT the `< fᵢ` output shape.** It eliminates the fuel-UP crux residual for a ~5-site
+in-twin cost, preserving axiom cleanliness. SHARPENED FURTHER: the crux now supplies the output fuel as
+`fⱼ - 1` (not `fⱼ`), so the strip's `fⱼ-1` output matches the demanded fuel EXACTLY — the crux critical
+path needs NO `KrelSN_fuel_mono` at all (the fuel-mono consumer is eliminated from the crux, not just
+made down-compatible). The remaining crux residual is now ONLY `Dstrip = Dᵢ` + the fuel-floor `fⱼ > 0`.
+
+## The `Dstrip = Dᵢ` route — refute-first settled (machine-witnessed, NOT a STOP-trigger)
+
+Per the operator's STOP-trigger discipline, the FIRST move on `Dstrip = Dᵢ` was to check whether it
+routes through a FALSE statement. `krelSN_hole_det_refuted` (in-file, axiom-clean `[propext, Quot.sound]`,
+sorry-FREE, do-not-weaken) proves the **fuel-indexed hole-det is ALSO false** — the `letF` body is vacuous
+at index `n=0` regardless of the fuel `f`, so `[letF(ret vunit), appF vunit]` relates at two holes at any
+fuel. **This is NOT a STOP — it CONFIRMS the (β) premise**: `Dstrip = Dᵢ` was never going to close via
+hole-det; it closes via the STRUCTURAL fact that both decomps bottom at the SAME boundary frame
+`handleF nid hh` (the `dispatchOn` reinstall stack-shape, `Dispatch.lean:135/146/162`), so the answer is
+CARRIED DATA off the shared boundary, not re-derived. The refutation RULES OUT the naive hole-det route
+and PINS the slice-2 close to the `dispatchOn`-structural answer-thread — exactly (β)'s claim. (β) stays
+VIABLE; no re-open.
 
 **Honest deviation from amendment ③'s (β) price.** ③ priced (β) as "the wall closes" once the re-index
 lands. Slice 1 SHARPENS this: the re-index closes the LOCATION + TERMINATION halves (the g-cast survives
