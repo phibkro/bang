@@ -63,6 +63,10 @@ graph TD
     Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
     Witness_BoccRegress["Witness.BoccRegress<br/>260L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>71L · fan-in 0"]
+    Witness_CarrierClass1["Witness.CarrierClass1<br/>82L · fan-in 0"]
+    Witness_CarrierForkA["Witness.CarrierForkA<br/>82L · fan-in 0"]
+    Witness_CarrierForkB["Witness.CarrierForkB<br/>90L · fan-in 0"]
+    Witness_CarrierForkBSkeleton["Witness.CarrierForkBSkeleton<br/>91L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
@@ -123,6 +127,10 @@ graph TD
 | `Witness.BinopTyping` | ? | 70 | 0 |
 | `Witness.BoccRegress` | ? | 260 | 0 |
 | `Witness.CapEscapeWitness` | ? | 71 | 0 |
+| `Witness.CarrierClass1` | ? | 82 | 0 |
+| `Witness.CarrierForkA` | ? | 82 | 0 |
+| `Witness.CarrierForkB` | ? | 90 | 0 |
+| `Witness.CarrierForkBSkeleton` | ? | 91 | 0 |
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |
