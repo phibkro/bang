@@ -29,8 +29,8 @@ graph TD
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
     Backend_AbstractMachine["Backend.AbstractMachine<br/>6850L · fan-in 0"]
     Backend_EnvMachine["Backend.EnvMachine<br/>3338L · fan-in 0"]
-    Backend_U5bComplete["Backend.U5bComplete<br/>1649L · fan-in 0"]
-    Backend_Wasm["Backend.Wasm<br/>2848L · fan-in 0"]
+    Backend_U5bComplete["Backend.U5bComplete<br/>1648L · fan-in 0"]
+    Backend_Wasm["Backend.Wasm<br/>2889L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>564L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
     Core_Freshness["Core.Freshness<br/>826L · fan-in 0"]
@@ -74,7 +74,7 @@ graph TD
   subgraph tier_Apex["Apex — verification spine + gate"]
     Audit["Audit<br/>58L · fan-in 0"]
     Distribution["Distribution<br/>65L · fan-in 0"]
-    Spec["Spec<br/>341L · fan-in 0"]
+    Spec["Spec<br/>343L · fan-in 0"]
   end
   Frontend_Surface_PropTest --> Frontend_Surface
 ```
@@ -85,8 +85,8 @@ graph TD
 | `Audit` | Apex | 58 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3338 | 0 |
-| `Backend.U5bComplete` | ? | 1649 | 0 |
-| `Backend.Wasm` | ? | 2848 | 0 |
+| `Backend.U5bComplete` | ? | 1648 | 0 |
+| `Backend.Wasm` | ? | 2889 | 0 |
 | `Core.CapCoh` | ? | 564 | 0 |
 | `Core.EffectRow` | ? | 194 | 0 |
 | `Core.Freshness` | ? | 826 | 0 |
@@ -114,7 +114,7 @@ graph TD
 | `Reify.CalcReify` | ? | 270 | 0 |
 | `Reify.CalcReifyRef` | ? | 163 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 341 | 0 |
+| `Spec` | Apex | 343 | 0 |
 | `Witness.AgreeOutcome` | ? | 236 | 0 |
 | `Witness.BinopTyping` | ? | 70 | 0 |
 | `Witness.BoccRegress` | ? | 260 | 0 |

@@ -1601,7 +1601,6 @@ theorem dispatchRun_nil_ne_done (F g nn : Nat) (ℓ : Bang.EffectRow.Label) (op 
 `plug [] c = c`; the full spine at K=[] yields the term disjunct (the raised one escapes, obligation 3). -/
 theorem evalD_complete_gen_nil (F : Nat) (c : Comp) (v : Val)
     (hcapfree : Bang.Model.capsC c = [])
-    (hCFc : CFComp c)
     (hrun : Config.run F (0, [], c) = Result.done v) :
     ∃ n g', evalD n 0 [] [] [] c = some (.term (.ret v), g', [], [], []) := by
   have hCtx : CtxCorr [] ([] : Bang.EvalCtx) := rfl
