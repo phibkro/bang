@@ -52,7 +52,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh` | Claude Code PostToolUse hook for Edit/Write of Lean files |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 
-## test (15)
+## test (16)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -60,6 +60,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 |---|---|---|---|
 | [`check-examples-env.sh`](check-examples-env.sh) | `verify` | `examples/*/main.bang`, `examples/*/expected.txt` | the DIFFERENTIAL gate for the EXPERIMENTAL env engine (ADR-0094) |
 | [`check-examples.sh`](check-examples.sh) | `verify` | `examples/*/main.bang`, `examples/*/expected.txt` | the RUN-oracle gate for the bang example projects |
+| [`emit-rung1-diff.sh`](emit-rung1-diff.sh) | `manual` | `EmitMain`, `Bang/Backend/WasmEmit.lean` | the ◊5.5 rung-1 SPIKE differential harness |
 | [`run-batteries.sh`](run-batteries.sh) | `verify` | `justfile`, `tools/test-*.sh` | concurrent driver for the independent verify batteries (plan 004) |
 | [`selfcheck.mjs`](selfcheck.mjs) | `verify` | — | Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed |
 | [`test-annotate.sh`](test-annotate.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite annotate` (#82 item 1) |
