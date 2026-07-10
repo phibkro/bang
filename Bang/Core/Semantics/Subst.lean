@@ -176,7 +176,9 @@ theorem Val.substFrom_shiftFrom (k : Nat) (v : Val) :
         Val.substFrom_shiftFrom k v w₁, Val.substFrom_shiftFrom k v w₂]
   | .fold w      => by simp only [Val.shiftFrom, Val.substFrom, Val.substFrom_shiftFrom k v w]
 
-private theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
+-- public (was private): consumed by the env/closure machine's `Comp.ScopedC.substFrom_eq`
+-- (task #15 retired the transplanted copy in favour of this single source).
+theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
     ∀ t : Comp, Comp.substFrom k v (Comp.shiftFrom k t) = t
   | .ret w       => by simp only [Comp.shiftFrom, Comp.substFrom, Val.substFrom_shiftFrom k v w]
   | .letC M N    => by
@@ -208,7 +210,8 @@ private theorem Comp.substFrom_shiftFrom (k : Nat) (v : Val) :
   | .oom         => rfl
   | .wrong _     => rfl
 
-private theorem Handler.substFrom_shiftFrom (k : Nat) (v : Val) :
+-- public (was private): consumed transitively via `Comp.substFrom_shiftFrom` by the machine (task #15).
+theorem Handler.substFrom_shiftFrom (k : Nat) (v : Val) :
     ∀ h : Handler, Handler.substFrom k v (Handler.shiftFrom k h) = h
   | .state ℓ s       => by simp only [Handler.shiftFrom, Handler.substFrom, Val.substFrom_shiftFrom k v s]
   | .throws _        => rfl
