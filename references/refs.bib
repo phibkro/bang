@@ -1449,7 +1449,7 @@
 }
 
 @inproceedings{wasmfx-oopsla23,
-  keywords = {topic:memory grounds:memory-management-survey grounds:ADR-0016 role:confirmed-sota},
+  keywords = {topic:memory grounds:memory-management-survey grounds:ADR-0059 role:confirmed-sota},
   author  = {Phipps-Costin, Luna and Rossberg, Andreas and Guha, Arjun and Leijen, Daan
              and Hillerstr{\"o}m, Daniel and Sivaramakrishnan, KC and Pretnar, Matija
              and Lindley, Sam},
@@ -1457,14 +1457,14 @@
   booktitle = {Proc. ACM Program. Lang. (OOPSLA)},
   year    = 2023,
   doi     = {10.1145/3622814},
-  note    = {The verified effect-handler backend target (ADR-0016 two-hop). Load-bearing for the R0
-            heap rung (memory-management-survey.md §3.1): the WasmFX authors state the design is
-            CONSCIOUSLY INDEPENDENT of garbage collection and supports a plain reference-counting
-            implementation -- so it composes ALONGSIDE WasmGC without REQUIRING it. Consequence for
-            bang: the effect backend does not bet on coupled proposals (WasmFX+WasmGC); it can pick
-            WasmGC or RC for the heap independently of the effect story. (Calibration: quoted from
-            the authors' stated position; the PDF did not render for a verbatim page-pin.)
-            <https://kcsrk.info/papers/wasmfx_oopsla23.pdf>, wasmfx.dev.},
+  note    = {WasmFX = the typed-continuations (stack-switching) proposal. Per ADR-0059 it is NOT
+            bang's primary backend target: stack switching did not land in Wasm 3.0 (fork-only), and
+            targeting it would put an opaque `switch` primitive in the TCB -- the Iris-WasmFX
+            mechanization found a real suspend-translation bug. bang compiles to Wasm 3.0 with a
+            grade-directed lowering (abort->exn, tail->call, general->WasmGC frame-chain); WasmFX is
+            only the post-standardization FAST-PATH for the `general`/multishot slot
+            (memory-management-survey.md §3.1). <https://kcsrk.info/papers/wasmfx_oopsla23.pdf>,
+            wasmfx.dev.},
 }
 
 @inproceedings{launchbury-pldi94-runst,

@@ -1649,7 +1649,7 @@
     ],
     "grounds": [
       "memory-management-survey",
-      "ADR-0016"
+      "ADR-0059"
     ],
     "role": "confirmed-sota",
     "ondisk": false,

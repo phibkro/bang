@@ -38,7 +38,7 @@ the note's sharpest finding.
    the heap (escaping objects)   thunks = closures `mvclos M ρ`               EnvMachine.lean:81-82
    the erasure/in-place/share    the usage grade `Mult` in VTy/CTy            IR.lean:221-241, Spec.lean:164
      policy dial
-   reclamation (now)             delegate to host GC (Lean RC; WasmGC later)  ADR-0016 backend
+   reclamation (now)             host RC (Lean); Wasm 3.0 WasmGC at backend    ADR-0059 (grade-directed)
    reclamation (v1.x)            Perceus RC + reuse (soundness rides U)        §3, this note
    reclamation (post-v1)         regions = handler scopes (arena free at pop)  os-inspiration §7, ADR-INPUT
    "closure outlived its scope"  escapedCap defined fail-loud                  ADR-0063, Dispatch.lean:182
@@ -216,33 +216,59 @@ the language earns the grades that make each rung sound. Three rungs, each a str
 ```
   rung                 mechanism                              trust source                    when
   ──────────────────   ────────────────────────────────────  ──────────────────────────────  ──────────
-  R0  host-delegated   Lean RC (host); WasmGC at the backend  the host runtime is trusted      NOW
+  R0  host-delegated   Lean RC (host); Wasm 3.0 WasmGC at      the host runtime is trusted      NOW
+                       the backend (ADR-0059)                 (idealized GC heap, not a switch)
   R1  RC + reuse        Perceus (Koka/Lean4 runtime)           soundness rides the U grades     v1.x
   R2  regions           handler scope = arena, free-at-pop     handler LIFO = Tofte region      post-v1
 ```
 
-### 3.1 R0 — delegate to the host (now)
+### 3.1 R0 — delegate to the host (now); at the backend, the heap IS the control representation
 
 Today bang's evaluators run *inside Lean*, so reclamation is **Lean 4's own reference counting** — the
-values are Lean objects, collected by Lean's RC. The verified compiler backend (ADR-0016 two-hop:
-`… → CalcVM → WasmFX`) targets WebAssembly, where the analogous host facility is **WasmGC** (the
-Wasm garbage-collection proposal). The composability question the task flags — *does the WasmFX effect-
-handler backend compose with WasmGC?* — has a clean answer in the source:
+values are Lean objects, collected by Lean's RC. The verified compiler backend targets **Wasm 3.0**
+(ADR-0059, refining ADR-0016), and here the memory story and the *control* story stop being separable —
+which is the correction that makes this rung richer than a plain "delegate to the host GC."
 
-> **The WasmFX authors state that the design is deliberately independent of garbage collection and
-> supports a plain reference-counting implementation** — so it composes *alongside* WasmGC without
-> *requiring* it. From the WasmFX overview: WasmFX "is consciously designed to avoid any dependency on
-> garbage collection and supports an implementation using plain reference counting." (Phipps-Costin,
-> Rossberg, Guha, Leijen, Hillerström, Sivaramakrishnan, Pretnar, Lindley, *Continuing WebAssembly with
-> Effect Handlers*, OOPSLA'23; wasmfx.dev.)
+**The target is Wasm 3.0, not WasmFX.** Stack switching (WasmFX / typed continuations) did **not** land
+in Wasm 3.0 (Sept 2025 standardized WasmGC, exception handling, tail calls, memory64, SIMD; WasmFX
+remains a separate, fork-only proposal — ADR-0059 §Context). ADR-0059 rejects WasmFX-as-primary for a
+verification-first reason (**shown**, ADR-0059 §Context/§Alternatives): targeting it would put the
+engine's opaque `switch` semantics in the **TCB**, and the Iris-WasmFX mechanization *found a real bug*
+in the proposal's suspend translation — so "trust the engine's stack-switch" is not free. WasmFX
+survives only as the **pluggable fast-path for the `general`/multishot slot, once standardized and
+shipped** (ADR-0059 §Decision).
 
-**Calibration: suggests, with a sourced attestation I could not verify verbatim from the PDF.** The
-GC-independence claim is consistent across the wasmfx.dev site and the OOPSLA'23 paper's summary, but
-the paper PDF did not render in my fetch, so I quote the authors' stated position rather than a
-page-pinned line. The *consequence* for bang is favorable either way: because the two proposals are
-orthogonal (control-flow vs heap-reclamation), bang can pick WasmFX for effects **and** WasmGC for the
-heap, or WasmFX + RC — the backend choice is not forced by the effect story. This de-risks the
-ADR-0016 backend: it is not betting on both proposals landing coupled.
+**The lowering is grade-directed, and that is what fuses heap and control.** The effect row 2-colors the
+program for free (ADR-0059 §Decision):
+
+```
+  pure (empty row)        → native Wasm (direct calls, native stack)         [engine-independent]
+  effectful, abort (0×)   → Wasm exception (throw / try_table)               [engine-independent]
+  effectful, tail (1× tl) → direct call in place                            [engine-independent]
+  effectful, general (1×) → GC-frame-chain runtime + tail-call trampoline   [pluggable — WasmGC now]
+```
+
+The `general` leg is where WasmGC does its work, and the finding for this survey is that **WasmGC is not
+merely "the host GC to delegate reclamation to" — the managed GC `struct` frames ARE the general-
+resumption runtime.** ADR-0059 §Decision: continuations are "managed `struct` frames linked by
+`.parent`, handler identity = the struct reference, raise/resume = re-point a `.parent` field." So at the
+backend, "the heap" (WasmGC-managed frames) and "the control representation" (the resumption chain) are
+**the same design** — the frames a GC collects are exactly the frames a resumable handler walks. This is
+why the composability question ("does the effect backend compose with the GC?") dissolves: they are not
+two orthogonal proposals bang has to compose — the GC-frame-chain *is* the effect runtime, and it is
+**bang's own abstract machine, verified with no opaque primitive in the TCB** (invariant #1; the
+machine-checked `CtxRel`/`SegRel` relation, ADR-0059 §Context, Lean 4.31 axiom-clean per-step).
+
+**The load-bearing v1 sharpening (shown, ADR-0059 §"The v1/post-v1 boundary"):** v1 does not need the
+GC-frame runtime *at all*. bang's three handler forms (`state`, `throws`, `transaction` —
+machine-confirmed exhaustive, `Core.lean:120`) are all abort- or tail-resumptive (ADR-0025 closed-focus,
+one-shot in-place, no reification). So **v1's backend is just `throws`→exception + `state`/`transaction`
+→tail-call** — the engine-independent half, on stock Wasm 3.0, with no hand-built GC-machine. The
+GC-frame general leg is the **post-v1 ADR-0015 multishot frontier**; its per-step relation is
+axiom-clean but the cross-step store-preservation lemma is **unbuilt** (ADR-0059 open sub-clause, task
+#36 — do not cite the general leg as "verified" full stop until it lands). For the *memory* story this
+matters: v1's heap discipline is the closed-focus stack (§2) plus host RC; the GC-managed resumption
+heap is a post-v1 concern that arrives *with* multishot, not before.
 
 ### 3.2 R1 — Perceus reference-counting-with-reuse (v1.x)
 
@@ -391,7 +417,7 @@ Per invariant #7's sequencing and the ADR-input posture (present, don't decide):
 | **M1** | **Mutable user-handlers = D5 param-update** — the `state`-arm swap (`Dispatch.lean:137`) generalized to the `custom` arm; not new semantics | **v1.x** (gated on Q27 answer-grade) | existing reinstall mechanism | ADR-0092 D5 (extend D3 with pair-return) |
 | **M2** | **Shared state = TVar-in-transaction** (v1); privileged shared heap post-v1 | **v1 landed / post-v1** | ADR-0030 handler-STM | ADR-0030 §Revisit-if (concurrency) |
 | **M3** | **The U grade is the memory policy dial** (0=erase, 1=in-place, ω=share); close `zero_usage_erasable` to make the 0-rung a theorem | **v1** (proof pending `lr_fundamental`) | GradeVec, laws-taxonomy §5 | Spec.lean:164 (the open sorry) |
-| **M4** | **Backend heap = WasmGC OR RC, not forced** — WasmFX is GC-independent, so the effect backend does not bet on coupled proposals | **now (R0)** | ADR-0016 two-hop | ADR-0016 backend (WasmFX orthogonal to WasmGC) |
+| **M4** | **Backend = Wasm 3.0, grade-directed** (ADR-0059) — at the `general` slot the WasmGC frame-chain IS the resumption runtime (heap = control representation); no opaque WasmFX `switch` in the TCB; v1 needs only abort→exn + tail→call (closed-focus), no GC-machine | **now (R0)** | ADR-0059 two-hop refinement | ADR-0059 (WasmFX = post-standardization fast-path for `general` only) |
 | **M5** | **RC+reuse = Perceus, driven by the U grade** — Lean4's runtime is the existence proof; reuse rides single-use grades | **v1.x (R1)** | U axis (§2.2) | future ADR (grade→reuse lowering) |
 | **M6** | **Regions = handler scopes = the R grade axis** — handler pop is the region free; NOT a sixth primitive | **post-v1 (R2)** | os-inspiration §7, laws-taxonomy §5 | future ADR when grade axes ship |
 | **M7** | **Scoped-cap types = region types** (§4 verdict) — build the post-v1 cap-escape fix AS region typing (`runST` rank-2); one construct, both problems | **post-v1 (research)** | ADR-0063 §post-v1 goal | reopened #50 + a region-typing ADR |
@@ -426,12 +452,14 @@ External sources (added to `references/refs.bib` where new):
 - **Phipps-Costin, Rossberg, Guha, Leijen, Hillerström, Sivaramakrishnan, Pretnar, Lindley**,
   "Continuing WebAssembly with Effect Handlers", OOPSLA'23 (<https://doi.org/10.1145/3622814>;
   <https://kcsrk.info/papers/wasmfx_oopsla23.pdf>; wasmfx.dev). NEW → `refs.bib` as
-  `wasmfx-oopsla23`. The §3.1 GC-independence / RC-implementability claim: WasmFX is designed to avoid
-  any GC dependency and supports a reference-counting implementation, so it composes alongside WasmGC
-  without requiring it. *(Calibration: quoted from the authors' stated position; the PDF did not render
-  for a verbatim page-pin — see §3.1.)*
-- **WebAssembly GC (WasmGC)** proposal — <https://github.com/WebAssembly/gc>. The R0 backend host-heap
-  facility; orthogonal to WasmFX (§3.1). Cited by URL (proposal, no paper).
+  `wasmfx-oopsla23`. WasmFX = the typed-continuations proposal; per ADR-0059 it is **not** bang's
+  primary target (stock-engine-absent, and a `switch` primitive in the TCB — Iris-WasmFX found a real
+  suspend-translation bug), only the post-standardization **fast-path for the `general` slot** (§3.1).
+- **WebAssembly 3.0 / WasmGC** — the actual backend target (ADR-0059): Sept 2025 standardized WasmGC
+  (managed `struct`/`array`, typed refs), exception handling, tail calls, memory64, SIMD; stack
+  switching did NOT land. WasmGC proposal <https://github.com/WebAssembly/gc>. §3.1: the managed GC
+  frames are both the reclaimed heap AND the general-resumption control representation. Cited by URL
+  (proposal, no paper) — the design ruling lives in ADR-0059, verified against it not the web.
 - **Launchbury & Peyton Jones**, "Lazy Functional State Threads", PLDI 1994 — the `runST` rank-2
   region-escape trick that ADR-0063's post-v1 scoped-cap fix is an instance of (§4.2). NEW →
   `refs.bib` as `launchbury-pldi94-runst`.
@@ -441,8 +469,10 @@ Internal anchors:
 - **ADR-0025** (resumptive state handler — the `get`/`put` threading §1.1 cites), **ADR-0030**
   (STM-as-transactional-handler — TVars, the §1.3 shared-state escalation), **ADR-0063**
   (escapedCap defined fail-loud — the §4 machinery), **ADR-0092** (D5 param-update deferral — the §1.2
-  mutability surface slice), **ADR-0094** (env machine — the §2.1 stack/heap split), **ADR-0016**
-  (two-hop backend — the §3.1 WasmFX/WasmGC target).
+  mutability surface slice), **ADR-0094** (env machine — the §2.1 stack/heap split), **ADR-0059**
+  (grade-directed Wasm 3.0 backend — the §3.1 target: WasmGC frame-chain = heap = general-resumption
+  runtime; WasmFX is the post-standardization fast-path for `general` only; refines ADR-0016's
+  WasmFX-primary target).
 - **Code**: `Bang/Core/Semantics/Dispatch.lean:133-182` (the state/transaction/custom dispatch arms —
   the carried-value replace + the read-only-param reinstall + the escapedCap none-path);
   `Bang/Backend/EnvMachine.lean:77-121` (MVal/MEnv/evalV — closures = the only escapers);
