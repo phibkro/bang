@@ -205,3 +205,93 @@ NEXT (pure)    rung-1.5: comparisons + ADTs (i32 tag + memory rep)
 NEXT (effect)  rung-2 wall: throws→try_table/throw, state/transaction→tail-call (§6)
 LEAF/ADDITIVE  Bang/Backend/WasmEmit.lean · EmitMain.lean · tools/emit-rung1-diff.sh — gate green (755 jobs)
 ```
+
+---
+
+## 8 · Rung-1.5 LANDED (comparisons + guarded div + generated corpus)
+
+> **What landed (2026-07-10).** The two pure-fragment gaps §4 named — the `div_s`/`/0` mismatch and
+> comparisons+`case` — are CLOSED, and the 4-program hand corpus is now a **53-program
+> differential battery** (4 hand anchors + 7 rung-1.5 witnesses + 42 seed-generated), all
+> `wasmtime == Source.eval`. Still the TESTED stratum (emitter axiom set `[propext]`, no proof).
+
+### 8.1 · Guarded div — the reviewer ruling: preserve the kernel's total `div`
+
+The kernel `BinOp.eval div` is **total**, `a / 0 = 0` (Lean `Int` division, IR.lean:184). wasm
+`i64.div_s` **traps** on a zero divisor. Proof rides the reference (invariant #1), so the emitter
+matches the kernel, NOT the trap — `emitDiv` wraps the divide in a guard:
+
+```wat
+(if (result i64) (i64.eqz <divisor>)
+  (then (i64.const 0))
+  (else (i64.div_s <dividend> <divisor>)))
+```
+
+The extra instructions are free (invariant #7, performance second-class). Operands are pure `Val`
+expressions (`i64.const`/`local.get` — no side effects, no traps), so the divisor is duplicated in
+the `eqz` test and the divide without a scratch local. Corpus witnesses: `div1` (`7/0 ⇒ 0`, static
+zero), `div2` (`let d=3-3 in 100/d ⇒ 0`, dynamic zero) — both agree with the oracle. **Residual gap
+(unchanged, §4.1):** `i64.div_s` also traps on `INT64_MIN / -1` (signed overflow) — the pre-existing
+unbounded-`Int`→i64 edge, orthogonal to `/0`; the corpus stays in the i64-representable range.
+
+### 8.2 · Comparisons + case-on-bool = the wasm `if` (the if-then-else pattern)
+
+The kernel has NO standalone bool — `boolVal false = inl unit`, `boolVal true = inr unit`
+(IR.lean:173), and `binop lt/eq` reduces to `ret (boolVal c)`. The surface `if a<b then E₂ else E₁`
+is exactly `letC (binop cmp a b) (case (vvar 0) N₁ N₂)`: the comparison binds a `boolVal`, and
+`case (vvar 0)` eliminates it (`inl → N₁` else, `inr → N₂` then, Eval.lean:96). The emitter
+recognises this **fused** shape and emits a native wasm `if` — the comparison leaves an i32 `0`/`1`,
+consumed by the `if` condition:
+
+```wat
+(if (result i64) (i64.lt_s <a> <b>)   ;; TRUE(1)=inr → then=N₂ ;; FALSE(0)=inl → else=N₁
+  (then <N₂>)
+  (else <N₁>))
+```
+
+A **bare** comparison (not immediately `case`-eliminated) stays `Emit.unsup` — a `boolVal` has no
+standalone i64 rep. The general sum-`case` (arbitrary ADTs) stays out of scope (rung-2).
+
+**The de Bruijn two-binder subtlety (a real finding, caught BY the corpus).** Inside a branch the
+kernel context has TWO extra binders over the pre-`letC` scope: index 0 = the `case` unit payload,
+index 1 = the outer `letC`-bound `boolVal`. A first-pass emitter that pushed only ONE unusable slot
+(`none :: env`) mis-indexed any branch referencing an outer variable — `if3`
+(`let x=2+3 in if x<4 then x*2 else x`) diverged (`wasmtime 5` vs oracle `NON-INT-VALUE`) because
+the emitter read `x` where the kernel read the `boolVal`. Fix: branch env = `none :: none :: env`
+(both payload and boolVal unusable — no i64 rep), and the generator lifts branch bodies by
+`Comp.shiftFrom 0` **twice**. `env` is now `List (Option Nat)` — `some l` = a real wasm local,
+`none` = a bound-but-unusable slot that fails loud if read. This is the differential test earning
+its keep: a value-agreement corpus refuted the first derivation for the price of one run.
+
+### 8.3 · The generated corpus + false-green defenses
+
+`EmitMain.genComp` is a deterministic LCG-seeded structured generator over the emittable fragment
+(int atoms, in-scope-only vars ⇒ always closed, arithmetic + guarded div with a forced-zero-divisor
+branch, `letC` nesting, the fused `if`). Total (structural fuel recursion — no `partial`, no
+inhabited-type obligation). `tools/emit-rung1-diff.sh` runs all 53 emitted → `wasmtime` → diff vs
+`Source.eval`, and the false-green defenses the repo's bash conventions demand are all present: the
+emit exe prints `EMITTED_COUNT`/`REFUSED_COUNT` footers; the harness ASSERTS `emitted ≥ 50`,
+`refused == 0` (a generator drifting out of the fragment fails LOUD, not silently), `.wat`-count ==
+emitted, and checked == emitted (no silent skip); `wasmtime`'s exit is captured separately (never a
+piped exit code); a mismatch prints the program + both values and exits 1.
+
+### 8.4 · What rung-2 needs next (the wall from here, refining §6)
+
+- **General ADTs (the OTHER half of rung-1.5, deferred).** `lt`/`eq` are handled ONLY in the fused
+  `case` shape; arbitrary `inl`/`inr`/`pair`/`fold` + non-fused `case`/`split`/`unfold` still need a
+  value rep beyond i64 (an `i32` tag + `memory`/`struct` for sums/products, §6). That unblocks
+  bool-VALUED expressions (a bool bound, passed, returned — not just immediately eliminated).
+- **`throws → try_table/throw`** (§6, unchanged): the fused-`if` decision generalises — the emitter
+  now tracks a de Bruijn→local *and unusable-slot* environment; the handler-frame nesting for
+  `try_table` scopes + minted tags is the next environment layer (mirroring `HStack`).
+- **Proof-grade (§5, unchanged):** a formal wasm-fragment semantics + a `wexec (emit M) ≡
+  Source.eval M` forward simulation. The `if`/`div`-guard arms are per-former case analyses under
+  that theorem, not a re-architecture — the structural one-arm-per-former shape is preserved.
+
+```
+LANDED (rung-1.5)  guarded div (a/0=0) · comparison+case-on-bool → wasm `if` · 53-program corpus, 53/53 == Source.eval
+FINDING            fused-if branches carry TWO kernel binders (payload+boolVal); env = List (Option Nat), branch = none::none::env
+STRATUM            tested (differential); emitter defs axiom set [propext] (no sorryAx); leaf-additive (no proof-bearing file)
+NEXT (pure)        general ADTs — i32 tag + memory rep (bool-VALUED, non-fused case/split/unfold)
+NEXT (effect)      rung-2: throws→try_table/throw (§6), state/transaction→tail-call
+```
