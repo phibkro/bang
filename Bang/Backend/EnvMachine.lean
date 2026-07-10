@@ -723,6 +723,54 @@ def substEnvV : List Val → Val → Val
   | nil => rfl
   | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _ _
 
+/-- The handler-payload closing fold (`Handler.substFrom` folded over `γ`) — the `substEnv` analog for
+a handler. -/
+def substEnvH : List Val → Handler → Handler
+  | [],     h => h
+  | v :: γ, h => substEnvH γ (Handler.substFrom 0 v h)
+
+/-- `substEnv` distributes into a `handle`: the handler payload substitutes (via `substEnvH`) and the
+body closes under ONE binder (handle binds the cap at 0). The three handler kinds' payloads: `state s`
+substitutes `s`; `transaction Θ`/`custom p cls` are IDENTITY on their payloads (closed, ADR-0030/0085) —
+so their `substEnv` image keeps `Θ`/`(p, cls)` verbatim. -/
+@[simp] theorem substEnv_handle (γ : List Val) (h : Handler) (M : Comp) :
+    substEnv γ (Comp.handle h M) = Comp.handle (substEnvH γ h) (closeUnderBindersE 1 γ M) := by
+  induction γ generalizing h M with
+  | nil => rfl
+  | cons v γ ih =>
+    simp only [substEnv, closeUnderBindersE, Comp.subst, Comp.substFrom, shiftNE, substEnvH]
+    exact ih _ _
+
+@[simp] theorem substEnvH_state (γ : List Val) (ℓ : Bang.EffectRow.Label) (s : Val) :
+    substEnvH γ (Handler.state ℓ s) = Handler.state ℓ (substEnvV γ s) := by
+  induction γ generalizing s with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnvH, Handler.substFrom, substEnvV, Val.subst]; exact ih _
+@[simp] theorem substEnvH_transaction (γ : List Val) (ℓ : Bang.EffectRow.Label) (Θ : List Val) :
+    substEnvH γ (Handler.transaction ℓ Θ) = Handler.transaction ℓ Θ := by
+  induction γ with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnvH, Handler.substFrom]; exact ih
+@[simp] theorem substEnvH_custom (γ : List Val) (ℓ : Bang.EffectRow.Label) (p : Val)
+    (cls : List (Bang.OpId × Comp)) :
+    substEnvH γ (Handler.custom ℓ p cls) = Handler.custom ℓ p cls := by
+  induction γ with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnvH, Handler.substFrom]; exact ih
+@[simp] theorem substEnvH_throws (γ : List Val) (ℓ : Bang.EffectRow.Label) :
+    substEnvH γ (Handler.throws ℓ) = Handler.throws ℓ := by
+  induction γ with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnvH, Handler.substFrom]; exact ih
+/-- `Handler.label` is preserved by the closing fold (it only rewrites payloads, never the label). -/
+@[simp] theorem substEnvH_label (γ : List Val) (h : Handler) :
+    Handler.label (substEnvH γ h) = Handler.label h := by
+  cases h with
+  | state ℓ s => simp only [substEnvH_state, Handler.label]
+  | transaction ℓ Θ => simp only [substEnvH_transaction]
+  | custom ℓ p cls => simp only [substEnvH_custom]
+  | throws ℓ => simp only [substEnvH_throws]
+
 @[simp] theorem substEnv_letC (γ : List Val) (M N : Comp) :
     substEnv γ (Comp.letC M N) = Comp.letC (substEnv γ M) (closeUnderBindersE 1 γ N) := by
   induction γ generalizing M N with
