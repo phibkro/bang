@@ -214,6 +214,40 @@ got_out="$("$bang" run "$fixdir/entry_script_mode.bang" 2>/dev/null)" && got_exi
 check "d5-script-mode-stdout" "$got_out" "4"
 check "d5-script-mode-exit" "$got_exit" "0"
 
+# ── #97: `use Mod (f)` hoisting a SELF-RECURSIVE `pub let rec` (not just a rec-in-name-only decl
+# like `double` above, which never calls itself). `mergeModules` unconditionally qualifies a
+# `letRecD`'s own binding name (`fac` ⟹ `lib_for_rec_fac`, no `usedCtors`-style exclusion — the
+# `use`-hoist alias needs a qualified target), so `fac`'s OWN self-call inside its body must be
+# rewritten too, even though `fac` is excluded from the general `names` set (so EXTERNAL
+# references stay bare via the alias). Before the fix: the self-call stayed unqualified,
+# "unbound variable fac" at elaboration — the exact dogfood-calc wall (docs/notes/
+# dogfood-calc-findings.md, "PAPERCUT — use Mod (f) won't hoist a pub let rec"). ──
+cat > "$fixdir/lib_for_rec.bang" <<'BANG'
+pub let rec fac : Int -> Int = fun n => if n < 1 then 1 else n * ($fac) (n - 1)
+BANG
+cat > "$fixdir/entry_use_rec.bang" <<'BANG'
+use lib_for_rec (fac)
+($fac) 4
+BANG
+got_out="$("$bang" run "$fixdir/entry_use_rec.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "use-hoist-rec-self-call-stdout" "$got_out" "24"
+check "use-hoist-rec-self-call-exit" "$got_exit" "0"
+
+# ── negative control: a NON-`pub` `let rec` stays blocked by the D3 privacy gate exactly like a
+# non-pub plain `let` — `use`'s rec-hoist fix must not weaken visibility enforcement. ──
+cat > "$fixdir/lib_for_rec_priv.bang" <<'BANG'
+let rec secretFac : Int -> Int = fun n => if n < 1 then 1 else n * ($secretFac) (n - 1)
+BANG
+cat > "$fixdir/entry_use_rec_priv.bang" <<'BANG'
+use lib_for_rec_priv (secretFac)
+($secretFac) 4
+BANG
+got_err="$("$bang" run "$fixdir/entry_use_rec_priv.bang" 2>&1 >/dev/null)" && got_err_exit=0 || got_err_exit=$?
+check "use-hoist-rec-private-blocked-exit" "$got_err_exit" "1"
+check_contains "use-hoist-rec-private-blocked-names-decl" "$got_err" "secretFac"
+check_contains "use-hoist-rec-private-blocked-names-module" "$got_err" "lib_for_rec_priv"
+check_contains "use-hoist-rec-private-blocked-says-private" "$got_err" "private"
+
 cat > "$fixdir/entry_both.bang" <<'BANG'
 let main = 42
 let x = 3 in x

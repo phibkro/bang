@@ -3299,7 +3299,20 @@ SAME module (`data Total = T(Helper)`) — those get qualified too (`qTy`, built
 intra-module `dataTyOwners` with no `usedNames` exclusion, since every name in `names` is this
 module's OWN top-level name and must qualify unconditionally here — the entry-file cross-module
 rewrite that DOES need a `usedNames` exclusion is `qualifyTyName`'s other call site, in
-`mergeModules` directly). -/
+`mergeModules` directly).
+
+`.letRecD`'s own SELF-reference is special: `qualifyDeclName` (below) unconditionally renames a
+`letRecD`'s binding name to its qualified form (`fac` ⟹ `lib_fac`, no `usedCtors`-style exclusion
+— unlike a ctor, a `let rec`'s binding site always qualifies since the `use`-hoist alias needs a
+qualified target to point at). So when `n` was excluded from `names` (because THIS file `use`d
+it, #97), the self-call inside `e` must still be rewritten — `names` alone would leave `$fac`
+unqualified inside a body now bound as `lib_fac`, an unbound-variable at elaboration (issue #97:
+`use Mod (f)` hoisted a plain `let` cleanly but broke a `pub let rec`'s recursive self-call,
+because ordinary `names`-filtering that keeps a `use`d name unqualified is right for EXTERNAL
+references but wrong for `letRecD`'s one INTERNAL reference to its own now-always-qualified
+name). `n :: names` restores exactly that one name for this decl's own body walk (a `List.contains`
+membership check downstream, so the extra copy if `n` was already present is harmless), leaving the
+shared `names` list (and every OTHER decl's qualification) untouched. -/
 def qualifyDeclBody (modName : String) (names : List String) : Decl → Decl :=
   let qTy := qualifyTyName (names.map (·, modName)) []
   fun d => match d with
@@ -3311,7 +3324,7 @@ def qualifyDeclBody (modName : String) (names : List String) : Decl → Decl :=
       .implD n (qTy t) (ops.map (fun o => { o with body := qualifyVars modName names o.body }))
   | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyVars modName names b)
   | .letD n ty e          => .letD n (ty.map qTy) (qualifyVars modName names e)
-  | .letRecD n t e        => .letRecD n (qTy t) (qualifyVars modName names e)
+  | .letRecD n t e        => .letRecD n (qTy t) (qualifyVars modName (n :: names) e)
 
 /-- Rename a `Decl`'s OWN top-level name (and a `data`'s ctors) to its qualified form — the
 "declaration side" of qualification, paired with `qualifyDeclBody`'s "reference side". A ctor
@@ -5876,6 +5889,39 @@ only prove the AST shape) — this is the "does the ADR's own payoff actually ha
   match mergeModules [("lib", modP)] entryP with
   | .error _ => false
   | .ok merged => runMergedYieldsInt 200 merged == some 42
+
+-- #97: `use Mod (f)` hoisting a SELF-RECURSIVE `pub let rec` (unlike `double` above, which never
+-- calls itself — this is the shape that actually exercised the bug: `qualifyDeclName` always
+-- qualifies a `letRecD`'s OWN binding name to `lib_fac`, so the body's SELF-call must be qualified
+-- too, or it stays "unbound variable fac" after the merge, even though `fac` was correctly
+-- EXCLUDED from external-reference qualification (so the `use`-hoist alias itself stays sound).
+-- The oracle: the SAME program hand-qualified (`let rec lib_fac = … $lib_fac … in ($lib_fac) 4`)
+-- must agree with the merged `use`-hoisted form, and both compute the real factorial 4! = 24.
+#guard
+  let modP : Prog :=
+    (Bang.Surface.parseProg
+      "pub let rec fac : Int -> Int = fun n => if n < 1 then 1 else n * ($fac) (n - 1)").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "use lib (fac) ($fac) 4").toOption.get!
+  let handQualified : Prog :=
+    (Bang.Surface.parseProg
+      "let rec lib_fac : Int -> Int = fun n => if n < 1 then 1 else n * ($lib_fac) (n - 1) in ($lib_fac) 4").toOption.get!
+  match mergeModules [("lib", modP)] entryP with
+  | .error _ => false
+  | .ok merged =>
+      runMergedYieldsInt 200 merged == some 24 &&
+      runMergedYieldsInt 200 merged == runMergedYieldsInt 200 handQualified
+
+-- negative control alongside the fix: a NON-`pub` `let rec` must stay blocked by the D3 privacy
+-- gate exactly like a non-pub plain `let` — the rec-hoist fix touches only the QUALIFICATION of
+-- an already-permitted `use`, never the visibility check that runs before it.
+#guard
+  let modP : Prog :=
+    (Bang.Surface.parseProg
+      "let rec secretFac : Int -> Int = fun n => if n < 1 then 1 else n * ($secretFac) (n - 1)").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "use lib (secretFac) ($secretFac) 4").toOption.get!
+  match mergeModules [("lib", modP)] entryP with
+  | .error msg => (msg.splitOn "private").length > 1
+  | .ok _       => false
 
 /-! ### Clause-shape MATRIX (plan 002) — systematic coverage of the silently-missing-binder
 family's predicted hiding places: nesting depth × op position × clause/handler configuration.
