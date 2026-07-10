@@ -1248,6 +1248,25 @@
     "sha256_pinned": ""
   },
   {
+    "key": "launchbury-pldi94-runst",
+    "title": "Lazy Functional State Threads",
+    "year": "1994",
+    "doi": "10.1145/178243.178246",
+    "eprint": "",
+    "topics": [
+      "memory"
+    ],
+    "grounds": [
+      "memory-management-survey",
+      "ADR-0063"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "leijen-esop14-koka-row-effects",
     "title": "Koka: Programming with Row-Polymorphic Effect Types",
     "year": "2014",
@@ -1427,6 +1446,25 @@
     "sha256_pinned": ""
   },
   {
+    "key": "reinking-pldi21-perceus",
+    "title": "Perceus: Garbage Free Reference Counting with Reuse",
+    "year": "2020",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "memory"
+    ],
+    "grounds": [
+      "memory-management-survey",
+      "ADR-0094"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "riscv-rva23-profiles",
     "title": "RVA23 Profiles, Version 1.0",
     "year": "2024",
@@ -1593,6 +1631,25 @@
     ],
     "grounds": [
       "issue-61"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
+    "key": "wasmfx-oopsla23",
+    "title": "Continuing WebAssembly with Effect Handlers",
+    "year": "2023",
+    "doi": "10.1145/3622814",
+    "eprint": "",
+    "topics": [
+      "memory"
+    ],
+    "grounds": [
+      "memory-management-survey",
+      "ADR-0016"
     ],
     "role": "confirmed-sota",
     "ondisk": false,

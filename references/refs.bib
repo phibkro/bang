@@ -1431,6 +1431,56 @@
             being a separate mechanism. Post-v1 for bang.},
 }
 
+@techreport{reinking-pldi21-perceus,
+  keywords = {topic:memory grounds:memory-management-survey grounds:ADR-0094 role:confirmed-sota},
+  author  = {Reinking, Alex and Xie, Ningning and de Moura, Leonardo and Leijen, Daan},
+  title   = {Perceus: Garbage Free Reference Counting with Reuse},
+  institution = {Microsoft Research},
+  number  = {MSR-TR-2020-42},
+  year    = 2020,
+  note    = {Published PLDI 2021. The R1 rung of bang's heap-reclamation ladder
+            (memory-management-survey.md §3.2): precise reference counting that makes cycle-free
+            programs garbage-free, plus REUSE analysis (functional-but-in-place). Formalized in a
+            linear resource calculus; proven sound + garbage-free. Reference impl = Koka; Lean 4's
+            runtime is bang's IN-TREE existence proof (de Moura co-author). bang-specific angle:
+            Perceus reuse fires on single-use, which bang's U (multiplicity) grade carries AS A TYPE
+            -- reuse rides the grade rather than a separate uniqueness inference.
+            <https://xnning.github.io/papers/perceus.pdf>},
+}
+
+@inproceedings{wasmfx-oopsla23,
+  keywords = {topic:memory grounds:memory-management-survey grounds:ADR-0016 role:confirmed-sota},
+  author  = {Phipps-Costin, Luna and Rossberg, Andreas and Guha, Arjun and Leijen, Daan
+             and Hillerstr{\"o}m, Daniel and Sivaramakrishnan, KC and Pretnar, Matija
+             and Lindley, Sam},
+  title   = {Continuing WebAssembly with Effect Handlers},
+  booktitle = {Proc. ACM Program. Lang. (OOPSLA)},
+  year    = 2023,
+  doi     = {10.1145/3622814},
+  note    = {The verified effect-handler backend target (ADR-0016 two-hop). Load-bearing for the R0
+            heap rung (memory-management-survey.md §3.1): the WasmFX authors state the design is
+            CONSCIOUSLY INDEPENDENT of garbage collection and supports a plain reference-counting
+            implementation -- so it composes ALONGSIDE WasmGC without REQUIRING it. Consequence for
+            bang: the effect backend does not bet on coupled proposals (WasmFX+WasmGC); it can pick
+            WasmGC or RC for the heap independently of the effect story. (Calibration: quoted from
+            the authors' stated position; the PDF did not render for a verbatim page-pin.)
+            <https://kcsrk.info/papers/wasmfx_oopsla23.pdf>, wasmfx.dev.},
+}
+
+@inproceedings{launchbury-pldi94-runst,
+  keywords = {topic:memory grounds:memory-management-survey grounds:ADR-0063 role:confirmed-sota},
+  author  = {Launchbury, John and Peyton Jones, Simon L.},
+  title   = {Lazy Functional State Threads},
+  booktitle = {PLDI},
+  year    = 1994,
+  doi     = {10.1145/178243.178246},
+  note    = {The `runST` rank-2 type trick that PREVENTS a state thread (region) from escaping its
+            scope. memory-management-survey.md §4.2: ADR-0063's post-v1 scoped/region CAPABILITY
+            types "that make the escape untypeable" are an instance of this SAME construct -- which
+            is why cap-escape's structural fix ≡ region-escape prevention (the §4 verdict's
+            type-level half). The runtime half (escapedCap) does NOT generalize (§4.3).},
+}
+
 @inproceedings{reed-icfp10-fuzz,
   keywords = {topic:grades grounds:kernel-substrate-survey role:grade-family-S},
   author  = {Reed, Jason and Pierce, Benjamin C.},
