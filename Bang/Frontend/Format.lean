@@ -126,6 +126,10 @@ partial def fmtTy (need : TyPrec) : Ty → String
   | .tUnit       => "Unit"
   | .tSelf       => "Self"
   | .tName n     => n
+  | .tCap ℓ      => s!"Cap #{ℓ}"                       -- #84 gap 1: already-RESOLVED (the source `Cap Net`
+                                  -- name is gone by the time `resolveTyG` produces this — `Format.lean`
+                                  -- has no `env.effects` to invert the label back, the SAME `tVar`/`tMu`
+                                  -- "INTERNAL; printed defensively" precedent, not a round-trippable form)
   | .tVar n      => s!"#{n}"                          -- INTERNAL (μ-bound); never parsed, printed defensively
   | .tMu a       => s!"(mu. {fmtTy .atom a})"          -- INTERNAL; ditto
   | .tThunk t    => parenIf need .atom s!"Thunk {fmtTy .atom t}"

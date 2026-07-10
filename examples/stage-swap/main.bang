@@ -1,0 +1,3 @@
+effect Net { fetch : Int -> Int }
+(handle (net1.fetch(1)) + (net1.fetch(2)) with Net as net1 { fetch(n) => n * 10 }) * 1000
+  + (handle (net2.fetch(1)) + (net2.fetch(2)) with Net as net2 { fetch(n) => n + 1 })

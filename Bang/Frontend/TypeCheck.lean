@@ -383,6 +383,9 @@ def tyBoth : Ty → VT × CT
   | .tApp _ _  => let V : VT := .tvar 996; (V, .F .omega V)  -- POISON: `resolveTy` monomorphizes tApp first (bite-1)
   | .tMu b     => let V : VT := .mu (tyBoth b).1;  (V, .F .omega V)
   | .tVar n    => let V : VT := .tvar n;           (V, .F .omega V)
+  | .tCap ℓ    => let V : VT := .cap ℓ;            (V, .F .omega V)  -- #84 gap 1: ALREADY resolved by
+                                  -- `resolveTyG`'s `"Cap"` special case (never poison — the label is
+                                  -- concrete by construction the moment a `tCap` exists)
 @[inline] def vtyOf (t : Ty) : VT := (tyBoth t).1
 @[inline] def ctyOf (t : Ty) : CT := (tyBoth t).2
 
@@ -1480,6 +1483,7 @@ def substSelf (target : Ty) : Ty → Ty
   | .tInt      => .tInt
   | .tUnit     => .tUnit
   | .tName n   => .tName n
+  | .tCap ℓ    => .tCap ℓ   -- #84 gap 1: closed, no `Self` inside to substitute
   | .tApp n (.one a)   => .tApp n (.one (substSelf target a))              -- inlined (termination sees the subterms)
   | .tApp n (.two a b) => .tApp n (.two (substSelf target a) (substSelf target b))
   | .tVar n    => .tVar n
@@ -1495,6 +1499,7 @@ type (`List a -> a` at `a := Int` ⟹ `List Int -> Int`). A `.tName tv` is the b
 `.tName` is a real data name, left for `resolveTy`. Enumerated (a new `Ty` former fails here). -/
 def substTyVar (tv : String) (target : Ty) : Ty → Ty
   | .tName n   => if n == tv then target else .tName n
+  | .tCap ℓ    => .tCap ℓ   -- #84 gap 1: closed, no bound type var inside to substitute
   | .tApp n (.one a)   => .tApp n (.one (substTyVar tv target a))
   | .tApp n (.two a b) => .tApp n (.two (substTyVar tv target a) (substTyVar tv target b))
   | .tSelf     => .tSelf
@@ -1723,8 +1728,12 @@ mutual
 /-- Monomorphize `name argTys` to its CLOSED μ (ADR-0069 bite-1). `List Int` ↦ `μX. Unit + (Int × X)`:
 substitute the args for the decl's params in every ctor payload (self-reference ↦ the μ-bound var 0),
 right-nest into sum/product, μ-wrap. Fuel bounds decl-nesting depth (a cyclic generic instantiation
-fail-louds). The kernel only ever sees this closed μ (elaborate-to-mono; kernel untouched). -/
-def monoData (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+fail-louds). The kernel only ever sees this closed μ (elaborate-to-mono; kernel untouched). `effects`
+(#84 gap 1, default `[]`) is threaded ONLY so this stays in the same mutual group as `resolveTyG`
+(no generic `data` decl ever needs it — `Cap` is not a `gen` entry) — the SAME pass-through-for-the-
+mutual-group reason `USt.effects` threads through `elabBind`/`anfSplit` (WALL 3, #21 s7probe). -/
+def monoData (gen : List (String × GenData)) (aliases : List (String × Ty))
+    (effects : List (String × EffectInfo)) :
     Nat → String → List Ty → Except String Ty
   | 0,        _,    _      => .error "type monomorphization out of fuel (cyclic generic instantiation?)"
   | fuel + 1, name, argTys => do
@@ -1736,14 +1745,20 @@ def monoData (gen : List (String × GenData)) (aliases : List (String × Ty)) :
         else do
           let σ := gd.params.zip argTys
           let openPays ← gd.ctors.mapM (fun c =>
-            c.2.mapM (resolveTyG gen aliases fuel σ (some (name, gd.params))))
+            c.2.mapM (resolveTyG gen aliases effects fuel σ (some (name, gd.params))))
           return .tMu (sumOfTys (openPays.map prodOfTys))
 
 /-- Resolve a type in a GENERIC template context: `σ` substitutes params for concrete args, `self?`
 identifies the recursive self-application (↦ the μ-bound `tVar 0` — v1 has no nested self-binders so
 depth is always 0, ADR-0069). A `tApp` of ANOTHER (or the same, different-args) generic name recurses
-through `monoData`. `tName`s resolve param → σ, else the monomorphic alias env. -/
-def resolveTyG (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+through `monoData`. `tName`s resolve param → σ, else the monomorphic alias env. #84 gap 1: `tApp "Cap"
+(.one (.tName effN))` is intercepted BEFORE the generic-`gen`-table path — `Cap` is a BUILT-IN type
+former (a capability, not a user `data` decl), resolved against `effects` (ADR-0092 D1/D2's own
+`env.effects` table, the SAME lookup `.dotPerform`'s D2 arm and `handleCustomS`'s label-resolve arm
+already use) into the CLOSED `tCap ℓ` form — never reaching `monoData`/`gen.lookup`, which has no
+entry for "Cap" and would otherwise fail-loud "unknown generic type". -/
+def resolveTyG (gen : List (String × GenData)) (aliases : List (String × Ty))
+    (effects : List (String × EffectInfo)) :
     Nat → List (String × Ty) → Option (String × List String) → Ty → Except String Ty
   | 0,        _, _,     _  => .error "type resolution out of fuel"
   | fuel + 1, σ, self?, ty =>
@@ -1754,29 +1769,40 @@ def resolveTyG (gen : List (String × GenData)) (aliases : List (String × Ty)) 
         | none   =>
           match self? with
           | some (sn, []) => if n == sn then .ok (.tVar 0)   -- NULLARY self (monomorphic self-ref)
-                             else resolveName gen aliases n
-          | _             => resolveName gen aliases n
+                             else resolveName gen aliases effects n
+          | _             => resolveName gen aliases effects n
+    | .tApp "Cap" (.one (.tName effN)) =>                    -- #84 gap 1: `Cap Net` (a built-in
+        match effects.lookup effN with                        -- former, not a `gen` entry)
+        | some ei => .ok (.tCap ei.label)
+        | none    => .error s!"'Cap {effN}': '{effN}' is not a declared effect"
+    | .tApp "Cap" _ =>
+        .error "'Cap' takes exactly one argument naming a declared effect (`Cap Net`)"
     | .tApp n args =>
         match self? with
         | some (sn, sps) =>
             if n == sn && argsAreParams sps args.toList then .ok (.tVar 0)   -- self-recursion → μ-bound var
-            else do let args' ← args.toList.mapM (resolveTyG gen aliases fuel σ self?)
-                    monoData gen aliases fuel n args'
-        | none => do let args' ← args.toList.mapM (resolveTyG gen aliases fuel σ self?)
-                     monoData gen aliases fuel n args'
+            else do let args' ← args.toList.mapM (resolveTyG gen aliases effects fuel σ self?)
+                    monoData gen aliases effects fuel n args'
+        | none => do let args' ← args.toList.mapM (resolveTyG gen aliases effects fuel σ self?)
+                     monoData gen aliases effects fuel n args'
     | .tInt      => .ok .tInt
     | .tUnit     => .ok .tUnit
     | .tSelf     => .ok .tSelf
     | .tVar n    => .ok (.tVar n)
-    | .tMu b     => do return .tMu   (← resolveTyG gen aliases fuel σ self? b)
-    | .tArr a b  => do return .tArr  (← resolveTyG gen aliases fuel σ self? a) (← resolveTyG gen aliases fuel σ self? b)
-    | .tSum a b  => do return .tSum  (← resolveTyG gen aliases fuel σ self? a) (← resolveTyG gen aliases fuel σ self? b)
-    | .tProd a b => do return .tProd (← resolveTyG gen aliases fuel σ self? a) (← resolveTyG gen aliases fuel σ self? b)
-    | .tThunk t  => do return .tThunk (← resolveTyG gen aliases fuel σ self? t)
-    | .tEff ns t => do return .tEff ns (← resolveTyG gen aliases fuel σ self? t)
+    | .tCap ℓ    => .ok (.tCap ℓ)   -- already-resolved (re-entrant resolution, e.g. a `letRecS` re-run)
+    | .tMu b     => do return .tMu   (← resolveTyG gen aliases effects fuel σ self? b)
+    | .tArr a b  => do return .tArr  (← resolveTyG gen aliases effects fuel σ self? a) (← resolveTyG gen aliases effects fuel σ self? b)
+    | .tSum a b  => do return .tSum  (← resolveTyG gen aliases effects fuel σ self? a) (← resolveTyG gen aliases effects fuel σ self? b)
+    | .tProd a b => do return .tProd (← resolveTyG gen aliases effects fuel σ self? a) (← resolveTyG gen aliases effects fuel σ self? b)
+    | .tThunk t  => do return .tThunk (← resolveTyG gen aliases effects fuel σ self? t)
+    | .tEff ns t => do return .tEff ns (← resolveTyG gen aliases effects fuel σ self? t)
 
-/-- A bare type NAME: a monomorphic alias, else fail-loud (a generic name used WITHOUT args, or a typo). -/
-def resolveName (gen : List (String × GenData)) (aliases : List (String × Ty)) (n : String) : Except String Ty :=
+/-- A bare type NAME: a monomorphic alias, else fail-loud (a generic name used WITHOUT args, or a typo).
+`effects` is unused here BY CONSTRUCTION — a bare `.tName` can never be `Cap` (that always requires an
+argument, `Cap Net`, which `resolveTyG`'s `.tApp "Cap" …` arm intercepts a level up, before a bare-name
+`.tName "Cap"` could reach here) — threaded only for the mutual group's uniform signature. -/
+def resolveName (gen : List (String × GenData)) (aliases : List (String × Ty))
+    (_effects : List (String × EffectInfo)) (n : String) : Except String Ty :=
   match aliases.lookup n with
   | some t => .ok t
   | none   => match gen.lookup n with
@@ -1785,9 +1811,15 @@ def resolveName (gen : List (String × GenData)) (aliases : List (String × Ty))
 end
 
 /-- Close a type over the elaboration env: monomorphic names via `aliases`, generic applications
-(`List Int`) monomorphized via `monoData` (ADR-0069 bite-1). The public entry (σ empty, no self). -/
-def resolveTy (gen : List (String × GenData)) (aliases : List (String × Ty)) (t : Ty) : Except String Ty :=
-  resolveTyG gen aliases 1000 [] none t
+(`List Int`) monomorphized via `monoData` (ADR-0069 bite-1), `Cap Net` via `effects` (#84 gap 1). The
+public entry (σ empty, no self). `effects` defaults to `[]` (the WALL-3 `anfSplit`/`elabBind`
+precedent) — a caller with no `ElabEnv` in scope (data/trait/impl resolution inside `buildEnv`, which
+runs BEFORE `effects` is fully accumulated for later decls) behaves byte-identically to before this
+change; only `elabS`'s ascription sites (which run AFTER `buildEnv` completes, `env.effects` in full)
+pass the real table. -/
+def resolveTy (gen : List (String × GenData)) (aliases : List (String × Ty)) (t : Ty)
+    (effects : List (String × EffectInfo) := []) : Except String Ty :=
+  resolveTyG gen aliases effects 1000 [] none t
 
 /-- Inject a payload at ctor position `i` of `n` (right-nested sum; `n = 1` ⇒ no sum wrapper). -/
 def injSum : Nat → Nat → Surf → Surf
@@ -1807,7 +1839,7 @@ by unifying the fields (no user `: List Int` needed). Built by reusing `monoData
 back as marker args (`data List a` at args `[â]` ⟹ `μX. Unit + (â × X)`). -/
 def genTemplateTy (env : ElabEnv) (ci : CtorInfo) : Except String Ty :=
   let markers := (List.range ci.params.length).map (fun i => Ty.tVar (paramBase + i))
-  monoData env.gen env.aliases 1000 ci.dataName markers
+  monoData env.gen env.aliases env.effects 1000 ci.dataName markers
 
 def genCtorIntro (env : ElabEnv) (ci : CtorInfo) (payload : Surf) : Except String Surf := do
   return .annotS (.foldS (injSum ci.idx ci.total payload)) (← genTemplateTy env ci)
@@ -2208,9 +2240,14 @@ A -> B -> C)` also sees `g : B`; `elabS`'s `.lam` arm threads this extended `Γ`
 nested bodies, so `anfSplit` inside a curried fun can synthesize a computation ARGUMENT's type
 (`($g) x`) instead of failing on an unbound param. -/
 def curryBind : NCtx → Surf → Ty → NCtx
-  | Γ, e,        .tEff _ t   => curryBind Γ e t
-  | Γ, .lam x b, .tArr aT bT => curryBind ((x, (embV (vtyOf aT) : IVTy)) :: Γ) b bT
-  | Γ, _,        _           => Γ
+  | Γ, e,          .tEff _ t   => curryBind Γ e t
+  | Γ, .thunk e,   .tThunk t   => curryBind Γ e t   -- #84 gap 1: `{fun … => …} : Thunk (A -> B)` —
+                                  -- the ONLY v1 surface form that binds a function (a bare un-thunked
+                                  -- `fun` is "not a returner", confirmed #4698's own precedent) — peel
+                                  -- the thunk/`Thunk` layer together, then fall through to the `.lam`/
+                                  -- `.tArr` case below exactly as the un-thunked ascription already does
+  | Γ, .lam x b,   .tArr aT bT => curryBind ((x, (embV (vtyOf aT) : IVTy)) :: Γ) b bT
+  | Γ, _,          _           => Γ
   termination_by _ _ t => sizeOf t
 
 /-- Build the RAW monomorphic wrapper for one bounded-fn use `(fold arg : T)` (bite-2, ADR-0080). The
@@ -2225,7 +2262,7 @@ def bfnWrapper (env : ElabEnv) (bfn : BoundedFn) (t : Ty) (arg : Surf) : Except 
   let resTy := stripArrows bfn.params.length bfn.declaredTy
   if resTy != Ty.tName bfn.tyVar then
     throw s!"bounded fn '{bfn.traitName} {bfn.tyVar}': v1 fixes the carrier from the RESULT annotation, so the declared result type must be '{bfn.tyVar}' (the fold shape); got a different result type"
-  let Tv := vtyOf (← resolveTy env.gen env.aliases t)         -- the annotation IS the carrier T
+  let Tv := vtyOf (← resolveTy env.gen env.aliases t env.effects)         -- the annotation IS the carrier T
   let some rimpl := env.rawImpls.find? (fun r => r.traitName == bfn.traitName && r.targetVT == Tv)
     | throw s!"no impl of '{bfn.traitName}' for {showVTy Tv} — the bound '{bfn.traitName} {bfn.tyVar}' is unsatisfied"
   let recTy   := substTyVar bfn.tyVar t bfn.declaredTy        -- `List a -> a` ↦ `List T -> T`
@@ -2554,7 +2591,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   -- `: T` annotation drives check-mode on the recursive `fun`). The whole thing type-checks + lowers
   -- through the EXISTING checker/kernel — the desugar emits only ordinary `Surf`.
   | Γ, .letRecS name t (.lam pn pbody) bodyExpr => do
-      let t' ← resolveTy env.gen env.aliases t
+      let t' ← resolveTy env.gen env.aliases t env.effects
       let uT : IVTy := .U botR (embC (ctyOf t'))               -- f : Thunk T
       let dom : IVTy := match tyBoth t' with                   -- the fun's param type (domain of T)
         | (_, .arr _ A _) => embV A
@@ -2598,10 +2635,17 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
         | _               => (b, (paramHole (Γ1.length + 1) : IVTy)) :: (a, (paramHole Γ1.length : IVTy)) :: Γ1
       return wrap (.splitS a b p' (← elabS env Γ' body))
   | Γ, .annotS (.lam x b) t => do   -- an ascribed lam's body sees its param's type (as in checking)
-      let t' ← resolveTy env.gen env.aliases t         -- data names in user ascriptions close here (ADR-0069)
+      let t' ← resolveTy env.gen env.aliases t env.effects  -- data names + `Cap Net` (#84 gap 1) close here
       let Γ' := curryBind Γ (.lam x b) t'      -- bind EVERY curried param, not just the outermost
       return .annotS (← elabS env Γ' (.lam x b)) t'
-  | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.gen env.aliases t)
+  | Γ, .annotS (.thunk (.lam x b)) t => do   -- #84 gap 1: `{fun … => …} : Thunk (A -> B)` — the ONLY
+      -- v1 surface form that binds a FUNCTION (`let f = fun x => …` un-thunked is "not a returner",
+      -- #4698's own precedent) — mirrors the un-thunked `.annotS (.lam x b) t` arm immediately above,
+      -- peeling the `.thunk`/`Thunk` layer via `curryBind`'s new case before the SAME curried-bind walk.
+      let t' ← resolveTy env.gen env.aliases t env.effects
+      let Γ' := curryBind Γ (.thunk (.lam x b)) t'
+      return .annotS (.thunk (← elabS env Γ' (.lam x b))) t'
+  | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.gen env.aliases t env.effects)
   | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
       let s0 ← elabS env Γ s
       let (Γ, wrap, s0') ← anfSplit Γ s0 env.effects       -- A-normalize a computation scrutinee, #41
@@ -3163,6 +3207,11 @@ def qualifyTyName (dataTyOwners : List (String × String)) (usedNames : List Str
                           | none         => .tApp n (qualifyTyArgs dataTyOwners usedNames args)
   | .tMu a       => .tMu (qualifyTyName dataTyOwners usedNames a)
   | .tVar i      => .tVar i
+  | .tCap ℓ      => .tCap ℓ   -- #84 gap 1: never appears pre-elaboration (the parser only ever
+                                -- produces `tApp "Cap" (.one (.tName effN))`, resolved to `tCap`
+                                -- LATER by `resolveTyG` — this qualification pass runs BEFORE that,
+                                -- so this arm is unreachable in practice; enumerated for totality,
+                                -- matching the file's "no catch-all" discipline)
   | .tEff ns a   => .tEff ns (qualifyTyName dataTyOwners usedNames a)
 def qualifyTyArgs (dataTyOwners : List (String × String)) (usedNames : List String) : TyArgs → TyArgs
   | .one a   => .one (qualifyTyName dataTyOwners usedNames a)
@@ -3906,7 +3955,7 @@ def checkLaws (src : String) : Except String (List String) := do
           | .letRecD .. => pure ()
           | .implD tn' τTy _ =>
               if tn' == tn && !laws.isEmpty then                -- HK-trait laws are Stage D; Self-only path unchanged
-                let τR ← resolveTy env.gen env.aliases τTy      -- named impl targets sample at the closed μ
+                let τR ← resolveTy env.gen env.aliases τTy env.effects  -- named impl targets sample at the closed μ
                 for l in laws do
                   let sample := tuples l.params.length (sampleVT (vtyOf τR))
                   if sample.all (checkLawOn env l.params l.body) then
@@ -5236,6 +5285,85 @@ pipeline `bang check`/`bang run` use (no separate test-only path). -/
     "effect Net { fetch : Int -> Int } handle net.fetch(1) with Net as net { fetch(n) => raise n }"
   with
   | .error m => (m.splitOn "ret").length > 1 && (m.splitOn "ADR-0065").length > 1 && (m.splitOn "Q27").length > 1
+  | .ok _    => false)
+
+/-! ### #84 gap 1 — caps-through-functions: `Cap Net` ascribes a function param to a named effect's
+capability type, so shared effectful logic can be a function called under EACH stage's own `handle …
+with`. `.dotPerform`'s typing arm (`.cap ℓ` case above) ALREADY dispatches correctly off ANY receiver
+synthesizing `Cap ℓ` — the surface gap was the ASCRIPTION: `Cap Net` parses as an ordinary `tApp "Cap"
+(.one (.tName "Net"))` (no new grammar — `Cap` rides the existing generic-application parser) and
+`resolveTyG` now special-cases the head name `"Cap"`, resolving the argument against `env.effects`
+into the closed `Ty.tCap ℓ` ↦ kernel `VT.cap ℓ` (mirrors the `tName`/`tApp` ADR-0069
+"poison-until-resolved" precedent).
+
+**Surface-syntax finding (v1, pre-existing, not this gap's doing):** `fun` has NO inline per-parameter
+ascription (`fun (x : T) => …` does not parse — confirmed against `Bang/Frontend/Surface.lean`'s
+keyword-rule table, `"fun" => … [.kw "fun", .refI, .kw "=>", .refE]`, `.refI` is a BARE identifier).
+The v1 way to type a lambda's parameter is the OUTER ascription `(fun x => body : A -> B)` — `curryBind`
+walks it. Reaching that path for a NAMED (`let`-bound) function additionally requires THUNKING (a bare
+`let f = fun x => …` is documented+guarded as "not a returner" — see `#4698`'s own corpus a few
+hundred lines up) — so the full v1 spelling is `let f = ({fun x => body} : Thunk (A -> B ! {ρ}))`.
+`curryBind` + a new `elabS` arm (`.annotS (.thunk (.lam x b)) t`) were extended to peel this thunk
+layer identically to the un-thunked case.
+
+**Scope note (row-annotation gap, tracked separately):** row annotations (`T ! {…}`) cannot yet name a
+USER-declared effect — `effNames`/`effOf` are static, matching only the four built-ins (`throws`/
+`state`/`stm`/`Div`) by literal string, with no `env.effects` access (the same structural wall
+`resolveTy` had for `Cap`, on the sibling `Ty.tEff` constructor — NOT fixed here; flagged to the
+team lead as a separate, cross-cutting follow-up touching the row/effect-row surface `ctr`/`b65` is
+concurrently working). Consequence: a `Thunk (Cap Net -> Int ! {Net})` ascription cannot yet be
+written for a USER effect, so the corpus below proves the RECEIVER-DISPATCH mechanism directly
+(mirroring the existing `checkPerformUnderCap` precedent, ADR-0070's own `#3` validation section) —
+a `Cap ℓ`-typed binding in scope, regardless of HOW it got there, is enough to typecheck `.dotPerform`
+through it. The full end-to-end (`pub let get2 = fun (net : Cap Net) => …` exactly as the issue's
+sketch spells it, run via `Source.eval`) is BLOCKED on the row-annotation gap, not on this gap. -/
+
+-- the MECHANISM (#84's actual ask): a capability bound in Γ under a NAME other than the `as h`
+-- binder — exactly what a function PARAMETER would be — still dispatches `.dotPerform` correctly.
+-- `checkPerformUnderCap` seeds Γ directly (`(capName, Cap ℓ) :: []`, the SAME shape `curryBind`
+-- produces for an ascribed `fun net => …`), so this is a direct proof that `.dotPerform`'s typing
+-- arm is receiver-agnostic — it was ALREADY true before this lane; the surface gap was ascription.
+#guard (match checkPerformUnderCap "effect Net { fetch : Int -> Int } 0" "Net" "net" "(net.fetch(1)) + (net.fetch(2))"
+  with | .ok _ => true | .error _ => false)
+
+-- the ASCRIPTION (`Cap Net` resolving through `resolveTyG`/`tCap`): an identity function over a cap
+-- (`fun net => net`, thunked+ascribed the v1 way) types at `Thunk (Cap Net -> Cap Net)` — proves the
+-- surface `Cap Net` → `tCap ℓ` → kernel `VT.cap ℓ` pipeline resolves correctly, independent of the
+-- row-annotation gap (this function performs NOTHING, so its row bound is honestly `{}`).
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } let get2 = ( {fun net => net} : Thunk (Cap Net -> Cap Net) ) in 0"
+  with | .ok _ => true | .error _ => false)
+
+-- COMBINED: the ascribed cap-typed identity, APPLIED under a `handle … with` (so the ascription, the
+-- application, and the `as`-bound cap flowing IN as the argument all compose) — types end to end.
+-- `.dotPerform`'s receiver must SYNTHESIZE AS A VALUE (`synthSV`, ADR-0095's own s7probe Finding 2);
+-- `($get2)(net)` is a COMPUTATION (a force+application), so it is let-bound first (A-normalized by
+-- hand) before `.fetch` performs on the resulting value — the same shape `anfSplit` produces
+-- automatically for OTHER computation-position operands, applied here by hand at the call site.
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } let get2 = ( {fun net => net} : Thunk (Cap Net -> Cap Net) ) in handle (let n2 = ($get2)(net) in n2.fetch(1)) with Net as net { fetch(n) => n * 10 }"
+  with | .ok _ => true | .error _ => false)
+
+-- DIAGNOSTIC: `Cap` naming an UNDECLARED effect fails loud, naming the bad effect — never a silent
+-- fallthrough to `monoData`'s "unknown generic type" (which would be a confusing wrong-layer error).
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } let get2 = ( {fun net => net} : Thunk (Cap Ghost -> Cap Ghost) ) in 0"
+  with
+  | .error m => (m.splitOn "Ghost").length > 1 && (m.splitOn "not a declared effect").length > 1
+  | .ok _    => false)
+
+-- DIAGNOSTIC: `Cap` applied to more/fewer than one argument fails loud, naming the constraint.
+#guard (match checkProg "effect Net { fetch : Int -> Int } let get2 = ( {fun net => net} : Thunk (Cap -> Cap) ) in 0" with
+  | .error m => (m.splitOn "Cap").length > 1
+  | .ok _    => false)
+
+-- DIAGNOSTIC: an UN-ascribed cap param used as a `.dotPerform` receiver still fails the ORIGINAL
+-- "receiver is not a capability value" diagnostic (v1 has no cap inference — ascription is
+-- REQUIRED) — confirms gap 1 closes via ascription, not a silent whole-program inference fallback.
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } let get2 = {fun net => net.fetch(1)} in handle (($get2) net) with Net as net { fetch(n) => n * 10 }"
+  with
+  | .error m => (m.splitOn "not a capability value").length > 1
   | .ok _    => false)
 
 /-! ### `lawInstancesOf` (#60 seam) — enumerates real trait×impl law instances, body rendered

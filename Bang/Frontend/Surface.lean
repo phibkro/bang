@@ -139,6 +139,15 @@ inductive Ty where
   | tMu    : Ty → Ty             -- μ former (INTERNAL — built by data-decl encoding, never parsed in v1)
   | tVar   : Nat → Ty            -- μ-bound de Bruijn type var (INTERNAL, ditto)
   | tEff   : List String → Ty → Ty  -- T ! {throws, …}  effect-row annotation (names; checker maps to labels)
+  -- #84 gap 1 (caps-through-functions): `Cap Net` ascribes a function param to a named effect's
+  -- capability type. SURFACE form parses as an ordinary `tApp "Cap" (.one (.tName effN))` (no new
+  -- grammar — `Cap` rides the EXISTING generic-application parser, `pTyAtom`); `resolveTyG`
+  -- special-cases the head name `"Cap"` and resolves `effN` against `env.effects` into THIS closed
+  -- RESOLVED form (the `tName`/`tApp` "poison-until-resolveTy-runs" precedent, ADR-0069) — `tyBoth`
+  -- reads a `tCap` verbatim (no further env needed) into the kernel's `VT.cap ℓ` (ADR-0054/0070's
+  -- existing capability value type). A `tCap` reaching `tyBoth` UNRESOLVED cannot happen (the parser
+  -- never emits one directly — only `resolveTyG` constructs it, always already-closed).
+  | tCap   : Label → Ty
 /-- Type-application arguments, capped at the v1 arity (≤ 2: `Pair a b`, `Either a b`). A mutual
 inductive (not `List Ty`) so `Ty`'s `DecidableEq`/`Repr` derive — the `DArms`/`SurfArgs` precedent. -/
 inductive TyArgs where
