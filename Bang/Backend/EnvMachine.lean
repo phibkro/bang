@@ -352,17 +352,18 @@ def substEnv : List Val → Comp → Comp
   | [],      M => M
   | v :: γ, M => substEnv γ (Comp.subst v M)
 
-/-! ### The closing-substitution engine — TRANSPLANTED from the LR spine (task #15 retires it)
+/-! ### The closing-substitution engine — RIDES the hoisted spine (task #15 done)
 
-`substEnv` is BYTE-IDENTICAL to `Bang.Meta.LR.closeC`. The commutation lemma the correspondence
-induction turns on (`substEnv_cons_subst` below) already exists as `Bang.Meta.BinaryLR.closeC_subst_comm`,
-riding a `Val.Closed` swap engine. Per the operator ruling (2026-07-10, on task #11): the DESTINATION is
-option (A) — hoist that engine to `Bang/Core/Semantics/Subst.lean` so LR and this machine share ONE
-source — but SEQUENCED (s5grind is actively in `Bang/Meta/BinaryLR.lean`; two writers on one file is the
-trap). So the engine is TRANSPLANTED here as a SANCTIONED, TRACKED duplicate; **task #15 hoists it to Core
-and deletes these copies post-s5grind — the green build after retirement proves the duplicate was faithful.**
-Every transplanted decl carries the `TODO(hoist, task #15)` marker. Bodies are verbatim from LR/BinaryLR
-(behavior-preserving copies). -/
+`substEnv`/`substEnvV` are the machine's own folds, BYTE-IDENTICAL to the hoisted `closeC`/`closeV`
+(`Bang/Core/Semantics/Subst.lean` §1.3c). The commutation lemma the correspondence induction turns on
+(`substEnv_cons_subst` below) rides the hoisted `closeC_subst_comm`'s swap engine directly. Per the
+operator ruling (2026-07-10, on task #11), destination option (A) — hoist the shared engine to Core so
+the LR and this machine share ONE source — is now REALIZED (task #15): the swap/commutation mutuals and
+the closed-filler shift/subst engine were TRANSPLANTED here as sanctioned tracked duplicates while
+s5grind held `Bang/Meta/BinaryLR.lean`, and are now DELETED, consuming the hoisted names. The green
+build IS the proof the retired copies were faithful. What stays local is the machine's own API
+(`substEnv`/`substEnvV`/`substEnvH` + their distribution lemmas) and the tiny `shiftNE`/`closeUnderBindersE`
+defs that carry the machine's `simp`/`rw` unfold sites — all riding the hoisted engine for the hard facts. -/
 
 -- RETIRED (task #15): the transplanted closing-substitution ENGINE is HOISTED to
 -- `Bang/Core/Semantics/Subst.lean` §1.3c. `Val.ClosedE` is now an `abbrev` of the hoisted `Val.Closed`,
@@ -523,11 +524,12 @@ The correspondence induction reduces `substEnv γ (F …)` to `F (substEnv γ �
 component and `closeUnderBindersE d γ …` under each binder (`d` = the former's binder count). These are
 STRUCTURAL (induction on `γ`; the single `Comp.subst` step unfolds the constructor's `substFrom` clause)
 — no closedness consumed. `substEnvV` is the value-level fold (the `closeV` analog), needed for the
-value-carrying formers (`ret`/`case`/`split`/`unfold`/`app`/`force`/`binop`). These are BYTE-IDENTICAL
-to `Bang.Meta.BinaryLR.closeC_*`/`closeV_*` (task #15 retires the duplicate). -/
+value-carrying formers (`ret`/`case`/`split`/`unfold`/`app`/`force`/`binop`). It stays the machine's own
+def (byte-identical to the hoisted `closeV`, and paired with `substEnv` as the machine's correspondence
+API + `@[simp]` distribution surface); the SHARED ENGINE it once transplanted is retired (task #15). -/
 
--- TODO(hoist, task #15): duplicate of Bang.Meta.LR.closeV — the value-level closing fold.
-/-- Sequential substitution of a readback-env `γ` into a VALUE (the value-level `substEnv`). -/
+/-- Sequential substitution of a readback-env `γ` into a VALUE (the value-level `substEnv`; the machine's
+own fold, byte-identical to the hoisted `closeV`). -/
 def substEnvV : List Val → Val → Val
   | [],      v => v
   | u :: γ,  v => substEnvV γ (Val.subst u v)
@@ -812,52 +814,16 @@ rewriting `shiftFrom d M = M` (the `ScopedC d` witness). The round-trip is a TRA
 `Bang.Comp.substFrom_shiftFrom`/`Handler.substFrom_shiftFrom` (public `Val.substFrom_shiftFrom` at the
 leaves) — task #15 retires the transplant with the rest. -/
 
--- TODO(hoist, task #15): faithful duplicate of the private Bang.{Comp,Handler}.substFrom_shiftFrom.
-mutual
-theorem Comp.substFrom_shiftFromE (k : Nat) (v : Val) :
-    ∀ t : Comp, Comp.substFrom k v (Comp.shiftFrom k t) = t
-  | .ret w       => by simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w]
-  | .letC M N    => by
-      simp only [Comp.shiftFrom, Comp.substFrom,
-        Comp.substFrom_shiftFromE k v M, Comp.substFrom_shiftFromE (k + 1) (Val.shift v) N]
-  | .force w     => by simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w]
-  | .lam M       => by
-      simp only [Comp.shiftFrom, Comp.substFrom, Comp.substFrom_shiftFromE (k + 1) (Val.shift v) M]
-  | .app M w     => by
-      simp only [Comp.shiftFrom, Comp.substFrom,
-        Comp.substFrom_shiftFromE k v M, Bang.Val.substFrom_shiftFrom k v w]
-  | .perform cp op w   => by simp only [Comp.shiftFrom, Comp.substFrom,
-      Bang.Val.substFrom_shiftFrom k v cp, Bang.Val.substFrom_shiftFrom k v w]
-  | .handle h M  => by
-      simp only [Comp.shiftFrom, Comp.substFrom,
-        Handler.substFrom_shiftFromE k v h, Comp.substFrom_shiftFromE (k + 1) (Val.shift v) M]
-  | .case w N₁ N₂ => by
-      simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w,
-        Comp.substFrom_shiftFromE (k + 1) (Val.shift v) N₁,
-        Comp.substFrom_shiftFromE (k + 1) (Val.shift v) N₂]
-  | .split w N   => by
-      simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w,
-        Comp.substFrom_shiftFromE (k + 2) (Val.shift (Val.shift v)) N]
-  | .unfold w    => by simp only [Comp.shiftFrom, Comp.substFrom, Bang.Val.substFrom_shiftFrom k v w]
-  | .binop op w₁ w₂ => by
-      simp only [Comp.shiftFrom, Comp.substFrom,
-        Bang.Val.substFrom_shiftFrom k v w₁, Bang.Val.substFrom_shiftFrom k v w₂]
-  | .oom         => rfl
-  | .wrong _     => rfl
-theorem Handler.substFrom_shiftFromE (k : Nat) (v : Val) :
-    ∀ h : Handler, Handler.substFrom k v (Handler.shiftFrom k h) = h
-  | .state ℓ s       => by simp only [Handler.shiftFrom, Handler.substFrom, Bang.Val.substFrom_shiftFrom k v s]
-  | .throws _        => rfl
-  | .transaction _ _ => rfl
-  | .custom _ _ _    => rfl
-end
+-- RETIRED (task #15): the substFrom_shiftFromE transplant is gone — Bang.{Comp,Handler}.substFrom_shiftFrom
+-- are now PUBLIC in Bang/Core/Semantics/Subst.lean (were private), so `Comp.ScopedC.substFrom_eq` below
+-- consumes them directly (single source of truth).
 
 /-- `substFrom` at a cutoff `≥` the scope is the IDENTITY: a term scoped under `d` has no free index at
 `d` or above, so substituting at level `d` fixes it. The close-is-identity primitive. -/
 theorem Comp.ScopedC.substFrom_eq {d : Nat} {M : Comp} (h : Comp.ScopedC d M) (w : Val) :
     Comp.substFrom d w M = M := by
   conv_lhs => rw [← h d (Nat.le_refl d)]
-  exact Comp.substFrom_shiftFromE d w M
+  exact Comp.substFrom_shiftFrom d w M
 
 /-- **CLOSE-IS-IDENTITY BELOW THRESHOLD** (ruling #6): closing a `ScopedC d` body over ANY env at binder
 depth `d` is the identity — every filler substitutes at level `d`, which the body's scope makes vacuous.
