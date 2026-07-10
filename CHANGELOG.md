@@ -130,7 +130,11 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — Stage 7 lands — handle…with for user effects, e2e verified (#44 Stage 7, ADR-0095) (`1284c8e`)
 - **cli** — bang rewrite v1 — CQS command side with the verified-preservation gate (#81) (`f848914`)
 - **wasm** — the wexec custom arm — wCustomUpdate derived, opH carries the continuation (#62 slices 0+1) (`778afdf`)
-- **surface** — #84 gap 1 — cap-typed function params (caps-through-functions) (`ffe5fa1`)
+- **examples** — the effect showcase pack — three handler-swap pairs (task #38) (`08e8620`)
+- **u5b** — the converse κ-thread — evalD_complete_gen_full permits custom frames (#62 slice 2) (`9947bb4`)
+- **kernel** — the binop HasCTy rule — ADR-0065 stage ④ executed (ctr slice 1, G1 pillar A) (`b7269ac`)
+- **cli** — bang annotate + bang lint — the next #82 verbs over the query/rewrite rails (`104f18a`)
+- **surface** — #84 gap 1 — cap-typed function params (caps-through-functions) (`9a117bf`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
@@ -161,5 +165,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **modules** — #73 — gate qualified Mod.name access against D3 visibility (`28aea68`)
 - **laws** — #74 — diagnose bare trait-op calls + unreachable Int impls (`bac023c`)
 - **landing** — complete the task #15/#16 Part-B recovery — the transplant retirement + regen (the stuck-sequencer incident) (`4798f5e`)
+- **surface** — #85 — nested binop in a handler clause body lost its own binder (`240aea8`)
 
 <!-- END GENERATED changelog -->
