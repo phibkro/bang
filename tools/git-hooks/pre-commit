@@ -80,8 +80,15 @@ fi
 # history and stage it. Net effect: it's always current-up-to-prior, the `--check` fitness leg below
 # always passes, and the in-flight commit's own entry lands automatically in the NEXT commit. No manual
 # `just changelog` dance, no blocking. (Idempotent: a no-op when nothing new to record.)
+#
+# NOTE: `git commit` exports GIT_INDEX_FILE (and can export GIT_DIR) into this hook's environment.
+# `nix develop`/`lake`'s own git operations — e.g. inside .lake/packages/mathlib — must NOT inherit
+# our index path, or they write MATHLIB's tree through OUR worktree's index (the 11-incident
+# `.devcontainer/Dockerfile` ghost — plan 008). Strip only for these nix/lake invocations; the hook's
+# OWN `git diff --cached` below intentionally KEEPS the env, since a pathspec commit points
+# GIT_INDEX_FILE at a temporary index the hook must read to see the correct staged set.
 if [ -f CHANGELOG.md ]; then
-  nix develop --command just changelog > /dev/null 2>&1 || true
+  env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE nix develop --command just changelog > /dev/null 2>&1 || true
   git add CHANGELOG.md 2>/dev/null || true
 fi
 
@@ -93,7 +100,7 @@ fi
 # NOT covered by BANGLANG_SKIP_VERIFY_REASON (that is only for the slow/possibly-red
 # build); only `git commit --no-verify` bypasses them.
 echo "→ pre-commit: running just fitness (primitives · adr-links · adr-check · arch-check · audit-sync · check-refs)"
-if ! nix develop --command just fitness > /tmp/bang-fitness.log 2>&1; then
+if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE nix develop --command just fitness > /tmp/bang-fitness.log 2>&1; then
   echo "❌ pre-commit: just fitness failed. Last 20 lines:"
   tail -20 /tmp/bang-fitness.log | sed 's/^/    /'
   echo "   (full log: /tmp/bang-fitness.log) — fix the drift, or 'git commit --no-verify' to bypass."
@@ -115,7 +122,7 @@ fi
 
 echo "→ pre-commit: running just verify (set BANGLANG_SKIP_VERIFY_REASON to skip the build)"
 # Run via nix develop so lake/just are on PATH
-if ! nix develop --command just verify > /tmp/bang-precommit.log 2>&1; then
+if ! env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE nix develop --command just verify > /tmp/bang-precommit.log 2>&1; then
   echo "❌ pre-commit: just verify failed. Last 20 lines:"
   tail -20 /tmp/bang-precommit.log | sed 's/^/    /'
   echo "   (full log: /tmp/bang-precommit.log)"
