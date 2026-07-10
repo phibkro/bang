@@ -691,6 +691,57 @@ theorem Val.ScopedV.vvar_lt {n i : Nat} (h : Val.ScopedV n (Val.vvar i)) : i < n
   simp only [Val.shiftFrom, if_neg (by omega : ¬ i < n)] at this
   exact absurd (Val.vvar.inj this) (by omega)
 
+/-! #### `Comp.ScopedC` decomposition (into subterm scope at the right binder depth)
+
+Every eval case decomposes the source term's scope into scope of its parts: non-binding components stay
+at `n`, a `d`-binder body descends to `n + d` (letC/lam/case body = `n+1`, split body = `n+2`, the value
+components of ADT/perform/binop stay at `n`). Route-agnostic: needed by any invariant-bundle shape. -/
+
+theorem Comp.ScopedC.ret_inv {n : Nat} {w : Val} (h : Comp.ScopedC n (Comp.ret w)) : Val.ScopedV n w := by
+  intro k hk; have := h k hk; simp only [Comp.shiftFrom, Comp.ret.injEq] at this; exact this
+theorem Comp.ScopedC.force_inv {n : Nat} {w : Val} (h : Comp.ScopedC n (Comp.force w)) :
+    Val.ScopedV n w := by
+  intro k hk; have := h k hk; simp only [Comp.shiftFrom, Comp.force.injEq] at this; exact this
+theorem Comp.ScopedC.unfold_inv {n : Nat} {w : Val} (h : Comp.ScopedC n (Comp.unfold w)) :
+    Val.ScopedV n w := by
+  intro k hk; have := h k hk; simp only [Comp.shiftFrom, Comp.unfold.injEq] at this; exact this
+theorem Comp.ScopedC.binop_inv {n : Nat} {op : BinOp} {a b : Val}
+    (h : Comp.ScopedC n (Comp.binop op a b)) : Val.ScopedV n a ∧ Val.ScopedV n b := by
+  constructor <;> intro k hk <;>
+    · have := h k hk; simp only [Comp.shiftFrom, Comp.binop.injEq] at this
+      first | exact this.2.1 | exact this.2.2
+theorem Comp.ScopedC.app_inv {n : Nat} {M : Comp} {w : Val} (h : Comp.ScopedC n (Comp.app M w)) :
+    Comp.ScopedC n M ∧ Val.ScopedV n w := by
+  refine ⟨fun k hk => ?_, fun k hk => ?_⟩ <;>
+    · have := h k hk; simp only [Comp.shiftFrom, Comp.app.injEq] at this
+      first | exact this.1 | exact this.2
+theorem Comp.ScopedC.letC_inv {n : Nat} {M N : Comp} (h : Comp.ScopedC n (Comp.letC M N)) :
+    Comp.ScopedC n M ∧ Comp.ScopedC (n + 1) N := by
+  refine ⟨fun k hk => ?_, fun k hk => ?_⟩
+  · have := h k hk; simp only [Comp.shiftFrom, Comp.letC.injEq] at this; exact this.1
+  · have := h (k - 1) (by omega); simp only [Comp.shiftFrom, Comp.letC.injEq] at this
+    rw [show k = (k - 1) + 1 by omega]; exact this.2
+theorem Comp.ScopedC.lam_inv {n : Nat} {M : Comp} (h : Comp.ScopedC n (Comp.lam M)) :
+    Comp.ScopedC (n + 1) M := by
+  intro k hk; have := h (k - 1) (by omega)
+  simp only [Comp.shiftFrom, Comp.lam.injEq] at this
+  rw [show k = (k - 1) + 1 by omega]; exact this
+theorem Comp.ScopedC.case_inv {n : Nat} {w : Val} {N₁ N₂ : Comp}
+    (h : Comp.ScopedC n (Comp.case w N₁ N₂)) :
+    Val.ScopedV n w ∧ Comp.ScopedC (n + 1) N₁ ∧ Comp.ScopedC (n + 1) N₂ := by
+  refine ⟨fun k hk => ?_, fun k hk => ?_, fun k hk => ?_⟩
+  · have := h k hk; simp only [Comp.shiftFrom, Comp.case.injEq] at this; exact this.1
+  · have := h (k - 1) (by omega); simp only [Comp.shiftFrom, Comp.case.injEq] at this
+    rw [show k = (k - 1) + 1 by omega]; exact this.2.1
+  · have := h (k - 1) (by omega); simp only [Comp.shiftFrom, Comp.case.injEq] at this
+    rw [show k = (k - 1) + 1 by omega]; exact this.2.2
+theorem Comp.ScopedC.split_inv {n : Nat} {w : Val} {N : Comp} (h : Comp.ScopedC n (Comp.split w N)) :
+    Val.ScopedV n w ∧ Comp.ScopedC (n + 2) N := by
+  refine ⟨fun k hk => ?_, fun k hk => ?_⟩
+  · have := h k hk; simp only [Comp.shiftFrom, Comp.split.injEq] at this; exact this.1
+  · have := h (k - 2) (by omega); simp only [Comp.shiftFrom, Comp.split.injEq] at this
+    rw [show k = (k - 2) + 2 by omega]; exact this.2
+
 /-! ### The value correspondence `readback ∘ evalV = substEnvV ∘ readbackEnv`
 
 For a `v` scoped under `|ρ|` with `ρ` well-formed, evaluating `v` under `ρ` then reading back equals
