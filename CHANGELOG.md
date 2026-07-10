@@ -120,6 +120,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **envmachine** — ADR-0094 env/closure machine + PROVEN correspondence; fix(frontend): lettMulti arms heal red CI (`48415aa`)
 - **cli** — wire --engine=env — the experimental ADR-0094 environment machine (`9be1e40`)
 - **cli** — --engine=env — the ADR-0094 environment machine, wired and MEASURED (squash-adjacent pick of envm5-perf) (`4c94b09`)
+- **⚠ BREAKING** **cli** — v0.1.0 — the env engine is the DEFAULT (ADR-0094 A1 complete) + version 0.1.0 (`bbca771`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
