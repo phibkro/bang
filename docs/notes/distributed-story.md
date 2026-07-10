@@ -65,3 +65,38 @@ One artifact walks the whole ladder:
 The `examples/ledger` handler-zoo showcase (same program, five runtimes) is the
 single-node rehearsal of exactly this shape: the KV store is that zoo with the network as
 the sixth handler.
+
+## 5 · R2 addendum — the replicated-KV demo, what it pins and what it fakes
+
+Landed: `examples/ndet-replicated-kv-a/` + `-b/` (lane N4, branch `feat-r2-replicated-kv`).
+Grows `examples/ndet-sim-kv-a/`+`-b/`'s single-race-per-round shape (rung 2's entry
+increment, `ndet-dst-design.md`) into a genuine **replicated-KV** artifact: two replicas of
+one key, three totally-stamped writes, an explicit LWW `merge` fold, and a quiescence check
+— exactly §4's rung-2 shape, still LWW (no CRDT-law-checking; that stays rung 1).
+
+```
+what it PINS (real, checked by the example gate)                what it FAKES (named, not yet built)
+────────────────────────────────────────────────────────────    ──────────────────────────────────────
+• Choice as an ordinary user effect, unchanged kernel            • NO real network — one process, one
+• a seeded, deterministic, REPLAYABLE handler (3 identical         `bang eval`; "message delivery" is a
+  runs per seed, byte-identical output — the DST replay claim)     `pick` call, not a socket
+• an LWW merge that is a genuine join (commutative, associative,  • NO failure model — no drops, no
+  idempotent) — order-free by construction, not by luck            partitions, no crash/restart yet
+• the CALM claim in miniature: the merge's order-independence     • NO proved convergence law — the
+  is what MAKES both replicas converge under BOTH seeds, while      "all replicas equal" check is an
+  the schedule-dependent intermediate genuinely differs between     assertion baked into the program's
+  seeds (proving the two schedules really interleaved differently)  OUTPUT, not a Lean theorem (rung 1
+  — the divergent trace + convergent result pair is the evidence    + Q43 proof-export is the later hop)
+• the handler-swap: swapping ONE `with Choice as sched {…}` clause • NO CALM typing — nothing in this
+  is the entire diff between the two programs (ADR-0016's           demo is flagged non-monotone; there
+  paradigm-is-a-value thesis, now on the distributed axis)          is no compare-and-swap key yet (§4
+                                                                     item 3 / rung 3, still not built)
+```
+
+**The named next rung**: failure injection (drop / delay / partition) as another `Choice`
+dimension — a second `pick` the message-delivery step consults ("does this write get
+delivered at all this round?"), still a handler the kernel never learns about. That is the
+natural extension of THIS demo (same `Choice` effect, same seeded-handler mechanism, no new
+primitive) before rung 3's CALM-as-grade typing (`calm-as-grade-survey.md`) becomes relevant
+— CALM only has something to say about ops once there's a non-monotone one (a CAS key) to
+contrast against the monotone LWW merge this demo already has.

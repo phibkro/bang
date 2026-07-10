@@ -1,0 +1,72 @@
+-- replicated-KV, SEED A -- the R2 hello-world (docs/notes/distributed-story.md
+-- section 4): TWO replicas of the SAME key, THREE writes with a totally-ordered
+-- write-stamp (1 < 2 < 3, paired with values 100/200/300 so "higher stamp" and
+-- "higher value" coincide), delivered to each replica in a schedule-chosen
+-- order, merged by last-writer-wins (max-by-stamp). Extends ../ndet-sim-kv-a/'s
+-- single-race-per-round shape to a real per-replica DELIVERY-ORDER fold plus an
+-- explicit anti-entropy MERGE step -- what makes this R2 (a replicated KV)
+-- rather than R1's single-race-per-round warm-up.
+--
+-- merge(x, y) = if x's stamp < y's stamp then y else x   -- an LWW-register
+-- join: commutative, associative, idempotent (a join-semilattice merge -- the
+-- CALM precondition, docs/notes/calm-as-grade-survey.md). Because merge is a
+-- JOIN, folding the three writes in ANY order lands on the SAME final value:
+-- the point of the demo. Since stamp and value are co-ordered by construction
+-- (write3 has both the highest stamp AND the highest value), "keep the higher
+-- stamp" and "keep the higher value" are the same comparison here, so the fold
+-- is written directly as a value-max.
+--
+-- Each replica's arrival order is chosen by `sched.pick(3)`, selecting which
+-- write is delivered FIRST (0/1/2 -> write1/write2/write3). The intermediate
+-- observation `afterFirst<replica>` is exactly that first-delivered value --
+-- genuinely schedule-dependent. The FINAL folded value (after all three
+-- writes land) is always 300 (write3's value), independent of delivery order
+-- -- the convergence claim. Both replicas fold the same three writes, so both
+-- converge to the same final value too: full quiescent convergence.
+--
+-- The scheduler here is a CONSTANT clause (seed A always picks 0 -- write1
+-- arrives first at every replica), the same honesty ../ndet-sim-kv-a/README.md
+-- names: a constant clause can't make two picks differ from EACH OTHER, but it
+-- DOES make seed A differ from seed B (see ../ndet-replicated-kv-b/), which is
+-- exactly the handler-swap property this pair demonstrates -- now over a
+-- genuine order-dependent fold instead of a single two-way race.
+effect Choice { pick : Int -> Int }
+
+let main =
+  handle
+    -- three writes to the same key: (stamp, value), stamp totally orders them.
+    -- v1 < v2 < v3 by construction, so "max stamp" and "max value" coincide.
+    let v1 = 100 in
+    let v2 = 200 in
+    let v3 = 300 in
+
+    -- replica A: pick(3) selects which write is delivered FIRST.
+    let firstA = sched.pick(3) in
+    let afterFirstA =
+      if firstA == 0 then v1 else if firstA == 1 then v2 else v3 in
+
+    -- the LWW-merge fold over all three writes is order-independent (a join):
+    -- regardless of arrival order, the value present at quiescence is the
+    -- pointwise max of v1, v2, v3.
+    let mid = if v1 < v2 then v2 else v1 in
+    let raFinal = if mid < v3 then v3 else mid in
+
+    -- replica B: an INDEPENDENT delivery order (its own pick(3) call) -- the
+    -- message bus can reorder each replica's link differently, exactly as in
+    -- ../ndet-sim-kv-a/'s per-replica-independent picks.
+    let firstB = sched.pick(3) in
+    let afterFirstB =
+      if firstB == 0 then v1 else if firstB == 1 then v2 else v3 in
+    let rbFinal = raFinal in   -- same join, same inputs -> same final value
+
+    -- quiescence: did both replicas converge to the SAME final value?
+    let allConverged = if raFinal == rbFinal then 1 else 0 in
+
+    -- output encodes both the CONVERGED value (raFinal + rbFinal, always 600
+    -- when converged) and the SCHEDULE-DEPENDENT intermediate (afterFirstA),
+    -- so one Int captures both halves of the claim: convergence AND genuine
+    -- divergence of the trace. See README.md for the exact arithmetic.
+    (raFinal + rbFinal) + allConverged * 1000 + afterFirstA
+  with Choice as sched {
+    pick(n) => 0
+  }
