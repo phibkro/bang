@@ -131,6 +131,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — bang rewrite v1 — CQS command side with the verified-preservation gate (#81) (`f848914`)
 - **wasm** — the wexec custom arm — wCustomUpdate derived, opH carries the continuation (#62 slices 0+1) (`778afdf`)
 - **examples** — the effect showcase pack — three handler-swap pairs (task #38) (`08e8620`)
+- **u5b** — the converse κ-thread — evalD_complete_gen_full permits custom frames (#62 slice 2) (`9947bb4`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
