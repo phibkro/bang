@@ -742,6 +742,134 @@ theorem Comp.ScopedC.split_inv {n : Nat} {w : Val} {N : Comp} (h : Comp.ScopedC 
   · have := h (k - 2) (by omega); simp only [Comp.shiftFrom, Comp.split.injEq] at this
     rw [show k = (k - 2) + 2 by omega]; exact this.2
 
+/-! ### Closedness of `substEnv`/`substEnvV` from scope (slice-3a: the WF-preservation core)
+
+Closing a term SCOPED under `|γ|` over a CLOSED env `γ` yields a CLOSED term — the fold substitutes
+each free index with a closed filler, dropping the scope by one each step to `ScopedV 0 = ClosedE`.
+This is what makes `evalV`/`evalE` results read back closed (a closure `mvclos M ρ` reads back closed
+because `M` scoped + `readbackEnv ρ` closed ⇒ `substEnv (readbackEnv ρ) M` closed). Transplanted
+`shiftFrom_substFrom_closed` (the closed-filler shift/subst commutation) + `closeV_closed_scoped`
+from BinaryLR (task #15 retires). -/
+
+-- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{Val,Comp,Handler}.shiftFrom_substFrom_closed.
+mutual
+theorem Val.shiftFrom_substFrom_closedE :
+    ∀ {u : Val}, Val.ClosedE u → ∀ (k i : Nat), i ≤ k → ∀ (t : Val),
+      Val.shiftFrom k (Val.substFrom i u t) = Val.substFrom i u (Val.shiftFrom (k + 1) t)
+  | _, _,  _, _, _,    .vunit => rfl
+  | _, _,  _, _, _,    .vint _ => rfl
+  | _, _,  _, _, _,    .vcap _ _ => rfl
+  | u, hu, k, i, hik,  .vvar j => by
+      rcases Nat.lt_trichotomy j i with hji | hji | hji
+      · rw [Val.substFrom, if_neg (by omega), if_neg (by omega),
+          Val.shiftFrom, if_pos (by omega : j < k),
+          Val.shiftFrom, if_pos (by omega : j < k + 1),
+          Val.substFrom, if_neg (by omega), if_neg (by omega)]
+      · subst hji
+        rw [Val.substFrom, if_pos rfl, hu.shiftFrom_eq,
+          Val.shiftFrom, if_pos (by omega : j < k + 1), Val.substFrom, if_pos rfl]
+      · rw [Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
+        rcases Nat.lt_or_ge j (k + 1) with hjk | hjk
+        · rw [Val.shiftFrom, if_pos (by omega : j - 1 < k),
+            Val.shiftFrom, if_pos (by omega : j < k + 1),
+            Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
+        · rw [Val.shiftFrom, if_neg (by omega : ¬ j - 1 < k),
+            Val.shiftFrom, if_neg (by omega : ¬ j < k + 1),
+            Val.substFrom, if_neg (by omega), if_pos (by omega : j + 1 > i),
+            show j - 1 + 1 = j + 1 - 1 by omega]
+  | u, hu, k, i, hik,  .vthunk M => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Comp.shiftFrom_substFrom_closedE hu k i hik M]
+  | u, hu, k, i, hik,  .inl w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
+  | u, hu, k, i, hik,  .inr w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
+  | u, hu, k, i, hik,  .pair a b => by
+      simp only [Val.shiftFrom, Val.substFrom]
+      rw [Val.shiftFrom_substFrom_closedE hu k i hik a, Val.shiftFrom_substFrom_closedE hu k i hik b]
+  | u, hu, k, i, hik,  .fold w => by
+      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
+theorem Comp.shiftFrom_substFrom_closedE :
+    ∀ {u : Val}, Val.ClosedE u → ∀ (k i : Nat), i ≤ k → ∀ (t : Comp),
+      Comp.shiftFrom k (Comp.substFrom i u t) = Comp.substFrom i u (Comp.shiftFrom (k + 1) t)
+  | u, hu, k, i, hik, .ret w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
+  | u, hu, k, i, hik, .binop op a b => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Val.shiftFrom_substFrom_closedE hu k i hik a, Val.shiftFrom_substFrom_closedE hu k i hik b]
+  | u, hu, k, i, hik, .letC M N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.shiftFrom_substFrom_closedE hu k i hik M,
+        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) N]
+  | u, hu, k, i, hik, .force w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
+  | u, hu, k, i, hik, .lam M => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) M]
+  | u, hu, k, i, hik, .app M w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Comp.shiftFrom_substFrom_closedE hu k i hik M, Val.shiftFrom_substFrom_closedE hu k i hik w]
+  | u, hu, k, i, hik, .perform cp op w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]
+      rw [Val.shiftFrom_substFrom_closedE hu k i hik cp, Val.shiftFrom_substFrom_closedE hu k i hik w]
+  | u, hu, k, i, hik, .handle hd M => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Handler.shiftFrom_substFrom_closedE hu k i hik hd,
+        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) M]
+  | u, hu, k, i, hik, .case w N₁ N₂ => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.shiftFrom_substFrom_closedE hu k i hik w,
+        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) N₁,
+        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) N₂]
+  | u, hu, k, i, hik, .split w N => by
+      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
+      rw [Val.shiftFrom_substFrom_closedE hu k i hik w,
+        Comp.shiftFrom_substFrom_closedE hu (k + 2) (i + 2) (by omega) N]
+  | u, hu, k, i, hik, .unfold w => by
+      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
+  | _, _, _, _, _, .oom => rfl
+  | _, _, _, _, _, .wrong _ => rfl
+theorem Handler.shiftFrom_substFrom_closedE :
+    ∀ {u : Val}, Val.ClosedE u → ∀ (k i : Nat), i ≤ k → ∀ (hd : Handler),
+      Handler.shiftFrom k (Handler.substFrom i u hd) = Handler.substFrom i u (Handler.shiftFrom (k + 1) hd)
+  | u, hu, k, i, hik, .state ℓ s => by
+      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik s]
+  | _, _, _, _, _, .throws _ => rfl
+  | _, _, _, _, _, .transaction _ _ => rfl
+  | _, _, _, _, _, .custom _ _ _ => rfl
+end
+
+/-- Substituting the level-0 binder of an `(m+1)`-scoped VALUE with a CLOSED filler drops scope to `m`. -/
+theorem Val.ScopedV.subst_closed {m : Nat} {u v : Val} (hu : Val.ClosedE u)
+    (hv : Val.ScopedV (m + 1) v) : Val.ScopedV m (Val.subst u v) := by
+  intro k hk
+  rw [Val.subst, Val.shiftFrom_substFrom_closedE hu k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
+/-- The same for a COMPUTATION. -/
+theorem Comp.ScopedC.subst_closed {m : Nat} {u : Val} {M : Comp} (hu : Val.ClosedE u)
+    (hM : Comp.ScopedC (m + 1) M) : Comp.ScopedC m (Comp.subst u M) := by
+  intro k hk
+  rw [Comp.subst, Comp.shiftFrom_substFrom_closedE hu k 0 (Nat.zero_le k) M, hM (k + 1) (by omega)]
+
+/-- Closing a VALUE scoped under `|γ|` over a CLOSED env yields a CLOSED value. -/
+theorem substEnvV_closed : ∀ {γ : List Val} {v : Val},
+    (∀ u ∈ γ, Val.ClosedE u) → Val.ScopedV γ.length v → Val.ClosedE (substEnvV γ v)
+  | [],     v, _,  hv => fun k => hv k (Nat.zero_le k)
+  | u :: γ, v, hγ, hv => by
+      have hu : Val.ClosedE u := hγ u List.mem_cons_self
+      have hγ' : ∀ w ∈ γ, Val.ClosedE w := fun w hw => hγ w (List.mem_cons_of_mem u hw)
+      rw [substEnvV]
+      exact substEnvV_closed hγ'
+        (Val.ScopedV.subst_closed hu (by simpa only [List.length_cons] using hv))
+/-- Closing a COMPUTATION scoped under `|γ|` over a CLOSED env yields a CLOSED computation. -/
+theorem substEnv_closed : ∀ {γ : List Val} {M : Comp},
+    (∀ u ∈ γ, Val.ClosedE u) → Comp.ScopedC γ.length M → Comp.ScopedC 0 (substEnv γ M)
+  | [],     M, _,  hM => hM
+  | u :: γ, M, hγ, hM => by
+      have hu : Val.ClosedE u := hγ u List.mem_cons_self
+      have hγ' : ∀ w ∈ γ, Val.ClosedE w := fun w hw => hγ w (List.mem_cons_of_mem u hw)
+      rw [substEnv]
+      exact substEnv_closed hγ'
+        (Comp.ScopedC.subst_closed hu (by simpa only [List.length_cons] using hM))
+
 /-! ### The 3a purity invariant (FACTORED from closedness — ruling rider, 2026-07-10)
 
 `MVal.WF`/`MEnv.WF` (above) are the REUSABLE closedness core (reads-back-closed) slice 3b keeps
@@ -887,6 +1015,43 @@ theorem readback_evalV {ρ : MEnv} (hρ : MEnv.WF ρ) :
       simp only [evalV, readback, substEnvV_pair]
       rw [readback_evalV hρ hv.pair_inv.1, readback_evalV hρ hv.pair_inv.2]
   | .fold w, hv => by simp only [evalV, readback, substEnvV_fold]; rw [readback_evalV hρ hv.fold_inv]
+
+/-! ### The PURE-fragment correspondence (`_pure`, slice-3a)
+
+The empty-store, `EffectFree` sub-theorem the resume map sequences first. Fuel is MATCHED: `evalE` and
+`evalD` recurse structurally on the SAME term shape, so a success at `evalE` fuel `f` gives an `evalD`
+success at the SAME `f` (no fuel-monotonicity needed — the recursion depths coincide). The conclusion
+is STRENGTHENED with `MVal.WF mv ∧ MVal.PureV mv`: the binder cases extend the env with a bound value
+and must re-establish both invariants to fire the IH (IH-strengthening; ruling 2026-07-10 task #11).
+Stores stay `[]` throughout (`EffectFree` ⇒ no `perform`/`handle` ⇒ σ/τ/κ untouched, outcome never
+`mraised`). Counters `g`/`G` are free (no cap minted in the pure fragment). -/
+theorem evalE_agrees_evalD_pure :
+    ∀ (f : Nat) (γ : List Val) (M : Comp) (mv : MVal) (ρ : MEnv) (g G g' : Nat),
+      EnvAgrees ρ γ → MEnv.WF ρ → MEnv.PureV ρ → EffectFree M → Comp.ScopedC γ.length M →
+      evalE f g [] [] [] ρ M = some (.mterm (.mret mv), g', [], [], []) →
+      (Bang.CalcVM.evalD f G [] [] [] (substEnv γ M)
+          = some (.term (.ret (readback mv)), G, [], [], [])) ∧ MVal.WF mv ∧ MVal.PureV mv := by
+  intro f
+  induction f with
+  | zero => intro γ M mv ρ g G g' _ _ _ _ _ h; simp [evalE] at h
+  | succ f ih =>
+    intro γ M mv ρ g G g' hagree hWF hPure hEF hSc h
+    have hγ : ∀ v ∈ γ, Val.ClosedE v := hagree ▸ hWF
+    have hlen : (readbackEnv ρ).length = γ.length := by rw [show readbackEnv ρ = γ from hagree]
+    cases M with
+    | ret v => sorry
+    | lam M => sorry
+    | force w => sorry
+    | letC M N => sorry
+    | app M v => sorry
+    | case w N₁ N₂ => sorry
+    | split w N => sorry
+    | unfold w => sorry
+    | binop op a b => sorry
+    | perform w op v => simp only [EffectFree] at hEF
+    | handle hd M => simp only [EffectFree] at hEF
+    | oom => simp [evalE] at h
+    | wrong s => simp [evalE] at h
 
 /-- **The correspondence STATEMENT** (PLFA `γ≈ₑσ`; slice-3 proof).
 
