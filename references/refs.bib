@@ -1467,6 +1467,21 @@
             wasmfx.dev.},
 }
 
+@misc{wasm3-standard,
+  keywords = {topic:memory grounds:memory-management-survey grounds:ADR-0059 role:confirmed-sota},
+  author  = {{WebAssembly Community Group}},
+  title   = {WebAssembly Specification, Release 3.0},
+  year    = 2025,
+  note    = {bang's backend target (ADR-0059). Wasm 3.0 (Sept 2025) folds GC (managed struct/array,
+            typed refs), exception handling (tags, throw/try_table), tail calls (return_call),
+            memory64, and SIMD into CORE Wasm -- they are standardized features, NOT separate
+            proposals, so there is no coexistence/compatibility question to verify
+            (memory-management-survey.md §3.1). bang's grade-directed lowering maps each grade to a
+            core 3.0 feature: exceptions=abort, tail calls=trampoline, GC structs=the resumption
+            frame chain. Stack switching (WasmFX) did NOT land in 3.0 -- see wasmfx-oopsla23.
+            <https://webassembly.github.io/spec/>.},
+}
+
 @inproceedings{launchbury-pldi94-runst,
   keywords = {topic:memory grounds:memory-management-survey grounds:ADR-0063 role:confirmed-sota},
   author  = {Launchbury, John and Peyton Jones, Simon L.},

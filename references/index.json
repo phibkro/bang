@@ -1639,6 +1639,25 @@
     "sha256_pinned": ""
   },
   {
+    "key": "wasm3-standard",
+    "title": "WebAssembly Specification, Release 3.0",
+    "year": "2025",
+    "doi": "",
+    "eprint": "",
+    "topics": [
+      "memory"
+    ],
+    "grounds": [
+      "memory-management-survey",
+      "ADR-0059"
+    ],
+    "role": "confirmed-sota",
+    "ondisk": false,
+    "hop": null,
+    "path": null,
+    "sha256_pinned": ""
+  },
+  {
     "key": "wasmfx-oopsla23",
     "title": "Continuing WebAssembly with Effect Handlers",
     "year": "2023",
