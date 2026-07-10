@@ -25,7 +25,7 @@ orient:
 # Default verify gate — selfcheck + build + example-run oracle + REPL transcripts
 # + audit. `audit` now runs the full `just fitness` bundle (#114), which already
 # includes the ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
-verify: selfcheck build check-examples test-repl test-fmt test-check-json test-query test-rewrite test-cli test-law audit
+verify: selfcheck build check-examples test-repl test-fmt test-check-json test-query test-rewrite test-annotate test-lint test-cli test-law audit
 
 # Run every examples/<project>/main.bang and diff stdout against expected.txt —
 # the end-to-end run oracle for whole bang programs (supersedes per-example
@@ -66,6 +66,19 @@ test-query:
 # restored). Part of the default `verify` chain.
 test-rewrite:
     bash tools/test-rewrite.sh
+
+# Gate for `bang rewrite annotate` (#82 item 1): infers types AND effect rows for top-level `let`
+# decls lacking an ascription, diff-by-default/-w, the already-annotated no-op case, and a
+# genuinely non-empty builtin row (Div, via ordinary recursion) made diff-visible end to end.
+# Part of the default `verify` chain.
+test-annotate:
+    bash tools/test-annotate.sh
+
+# Gate for `bang lint` (#82 item 2): the three rules (dead-private/unused-pub/fmt-divergence) as
+# queries over the fact base, human table vs --json, the exit contract, and --quiet-clean.
+# Part of the default `verify` chain.
+test-lint:
+    bash tools/test-lint.sh
 
 # Gate for the TOP-LEVEL CLI hygiene (#66/#67): `--help`/`--version` exit 0
 # with text on stdout, and every non-zero RUNTIME outcome (oom/escapedCap/

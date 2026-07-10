@@ -62,6 +62,8 @@ module
 meta import Bang.Frontend.Query
 public import Bang.Frontend.Query
 public import Bang.Frontend.Format
+meta import Bang.Frontend.Annotate
+public import Bang.Frontend.Annotate
 
 open Bang
 open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses Ty)

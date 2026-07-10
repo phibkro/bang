@@ -66,9 +66,13 @@ import Bang.Core.Soundness
 import Bang.Core.Typing
 import Bang.Distribution
 import Bang.Examples
+import Bang.Frontend.Annotate
 import Bang.Frontend.Diagnostics
 import Bang.Frontend.Format
+import Bang.Frontend.Lint
 import Bang.Frontend.NamedCore
+import Bang.Frontend.Query
+import Bang.Frontend.Rewrite
 import Bang.Frontend.Surface
 import Bang.Frontend.Surface.PropTest
 import Bang.Frontend.Surface.Trait

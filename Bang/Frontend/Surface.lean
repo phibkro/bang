@@ -2169,6 +2169,39 @@ public def parseProgLocated (src : String) : Except (String × Option Span) Prog
 -- a well-formed program is `.ok` through the located path (a decl-free body parses to `⟨[], body⟩`).
 #guard (match parseProgLocated "let x = 3 in x" with | .ok _ => true | .error _ => false)
 
+/-- PUBLIC: parse a bare TYPE string (`Int`, `Int -> Int`, `Int ! {throws}`, …) — the type-level
+sibling of `parse`/`parseProg`, no existing entry exposes `pTy` directly. Rejects trailing tokens
+(mirrors `parseE`'s own "whole string is one term" contract). The intended consumer is a tool that
+RENDERS a `Ty` via `Format.showTy`/`TypeCheck.showVTy`/`showCTy` and wants to round-trip it back
+into a real `Ty` value (e.g. `bang annotate` re-parsing the checker's own inferred-type string
+rather than re-deriving a second `Ty`-construction path) — `pTy`'s grammar is exactly `fmtTy`'s
+own inverse for every constructor it can render (`Int`/`Unit`/`Thunk T`/`A -> B`/`A + B`/`A * B`/
+`T ! {ρ}`), so this composition is sound by construction for that rendered subset. `Ty.tMu`/
+`Ty.tApp`/`Ty.tSelf` are either unparseable in v1 (`tMu` — `fmtTy`'s own "INTERNAL" note) or parse
+to a DIFFERENT constructor on the way back in (`tApp`/`tSelf` read as ordinary atoms/names) — a
+caller round-tripping a RENDERED type must treat those as an honest non-round-trip, not assume
+this function inverts every `Ty` shape. -/
+public def parseTy (src : String) : Except String Ty :=
+  let toks := tokenize src
+  match pTy (toks.length * 4 + 1) toks with
+  | .error e => .error e.msg
+  | .ok (t, rest) =>
+      if rest.isEmpty then .ok t
+      else .error s!"trailing tokens after type: {rest}"
+
+#guard parseTy "Int" == .ok .tInt
+#guard parseTy "Unit" == .ok .tUnit
+#guard parseTy "Int -> Int" == .ok (.tArr .tInt .tInt)
+#guard parseTy "Thunk Int" == .ok (.tThunk .tInt)
+#guard parseTy "Int ! {throws}" == .ok (.tEff ["throws"] .tInt)
+#guard parseTy "Int ! {throws, state}" == .ok (.tEff ["throws", "state"] .tInt)
+#guard (parseTy "Int Int").isOk == false   -- trailing tokens: not an application at the type level (v1)
+-- round-trip on `fmtTy`'s OWN rendering grammar for a nested arrow+row shape (this module cannot
+-- import `Format.lean` — a downstream leaf, see its module header — so the literal string here IS
+-- `fmtTy`'s documented output for this `Ty`, asserted by hand rather than computed via the import;
+-- `tools/test-annotate.sh` exercises the REAL `fmtTy ∘ parseTy` round-trip end-to-end via the CLI).
+#guard parseTy "Int -> Int ! {throws}" == .ok (.tArr .tInt (.tEff ["throws"] .tInt))
+
 
 /-! ## 4. The end-to-end pipeline + green demo checks
 
