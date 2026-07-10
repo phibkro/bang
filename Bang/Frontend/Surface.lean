@@ -148,6 +148,14 @@ inductive Ty where
   -- existing capability value type). A `tCap` reaching `tyBoth` UNRESOLVED cannot happen (the parser
   -- never emits one directly — only `resolveTyG` constructs it, always already-closed).
   | tCap   : Label → Ty
+  -- #90 (row-annotation gap, the #84 gap-1 follow-up): `T ! {…}` could only name the four BUILT-IN
+  -- effects (`throws`/`state`/`stm`/`Div`) — `effNames`/`effOf` matched a FIXED literal-string list,
+  -- no `env.effects` access, so a USER effect name in a row annotation silently resolved to nothing.
+  -- Exactly the `tCap` shape: `resolveTyG`'s `.tEff` arm now resolves EACH name (built-in OR user)
+  -- against `effects` into THIS closed RESOLVED form (labels, not names) — `tyBoth`/`effOf` read a
+  -- `tEffR` verbatim, no further env needed. A `tEffR` reaching `tyBoth` unresolved cannot happen
+  -- (only `resolveTyG` constructs one, always already-closed — same invariant as `tCap`).
+  | tEffR  : List Label → Ty → Ty
 /-- Type-application arguments, capped at the v1 arity (≤ 2: `Pair a b`, `Either a b`). A mutual
 inductive (not `List Ty`) so `Ty`'s `DecidableEq`/`Repr` derive — the `DArms`/`SurfArgs` precedent. -/
 inductive TyArgs where

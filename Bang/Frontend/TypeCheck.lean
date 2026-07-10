@@ -232,9 +232,10 @@ def effNames (ns : List String) : EffRow :=
 /-- The DECLARED effect bound of an ascribed type, if any (`none` = unconstrained, stay inferred —
 the optional-annotation philosophy). A function's bound is its codomain's. -/
 def effOf : Ty → Option EffRow
-  | .tEff ns _ => some (effNames ns)
-  | .tArr _ b  => effOf b
-  | _          => none
+  | .tEff ns _  => some (effNames ns)
+  | .tEffR ls _ => some (List.foldl (fun acc ℓ => insert ℓ acc) (∅ : EffRow) ls)   -- #90: resolved
+  | .tArr _ b   => effOf b
+  | _           => none
 
 /-- A user `effect` decl's ALLOCATED label + resolved op signatures (ADR-0092 D1/D2). `label` is
 `4 + declIndex` among the program's `effect` decls (deterministic by decl order, ADR-0046 — see
@@ -376,6 +377,7 @@ def tyBoth : Ty → VT × CT
   | .tArr  a b => let f : CT := .arr .omega (tyBoth a).1 (tyBoth b).2
                   (.U ((effOf b).getD ∅) f, f)                        -- fn VALUE = thunked arrow, ITS OWN row
   | .tEff  _ t => tyBoth t        -- effect annotation is checker-level (effOf); dropped from the kernel type
+  | .tEffR _ t => tyBoth t        -- #90: ditto, the RESOLVED form — `effOf` reads it, not `tyBoth`
   | .tSelf     => let V : VT := .tvar 999; (V, .F .omega V)  -- POISON: `buildEnv` substitutes Self before
                                   -- any tyBoth; a leaked Self surfaces as `#999`, never unifies
   | .tName _   => let V : VT := .tvar 998; (V, .F .omega V)  -- POISON: `resolveTy` closes names before
@@ -1493,6 +1495,7 @@ def substSelf (target : Ty) : Ty → Ty
   | .tProd a b => .tProd (substSelf target a) (substSelf target b)
   | .tThunk t  => .tThunk (substSelf target t)
   | .tEff ns t => .tEff ns (substSelf target t)
+  | .tEffR ls t => .tEffR ls (substSelf target t)   -- #90: resolved row, no `Self` inside to substitute
 
 /-- Substitute the concrete carrier `T` for a bound type VARIABLE `tv` in a bounded-fn's declared
 type (`List a -> a` at `a := Int` ⟹ `List Int -> Int`). A `.tName tv` is the bound var; any other
@@ -1512,6 +1515,7 @@ def substTyVar (tv : String) (target : Ty) : Ty → Ty
   | .tProd a b => .tProd (substTyVar tv target a) (substTyVar tv target b)
   | .tThunk t  => .tThunk (substTyVar tv target t)
   | .tEff ns t => .tEff ns (substTyVar tv target t)
+  | .tEffR ls t => .tEffR ls (substTyVar tv target t)   -- #90: resolved row, no bound var inside
 
 /-- Right-nested arrow type from a param count + result (`mkArrs 2 T r = T -> T -> r`). -/
 def mkArrs : Nat → Ty → Ty → Ty
@@ -1724,6 +1728,18 @@ def argsAreParams (params : List String) : List Ty → Bool
                   | p :: ps => (ty == .tName p) && argsAreParams ps rest
                   | []      => false
 
+/-- #90: resolve ONE row-annotation name to its label — the four BUILT-INS first (the `effNames`
+table, unchanged), else the program's declared user `effect`s (`effects`, ADR-0092 D1/D2's own
+table). `none` ⟹ genuinely undeclared, the caller fails loud (never a silent drop — the bug
+`resolveTyG`'s `.tEff` arm replaces). Plain (not part of the `resolveTyG`/`monoData` mutual group —
+it doesn't recurse into either). -/
+def resolveEffName (effects : List (String × EffectInfo)) (n : String) : Option Label :=
+  if n = "throws" then some exnLabel
+  else if n = "state" then some stateLabel
+  else if n = "stm" then some stmLabel
+  else if n = "Div" then some divLabel
+  else (effects.lookup n).map EffectInfo.label
+
 mutual
 /-- Monomorphize `name argTys` to its CLOSED μ (ADR-0069 bite-1). `List Int` ↦ `μX. Unit + (Int × X)`:
 substitute the args for the decl's params in every ctor payload (self-reference ↦ the μ-bound var 0),
@@ -1795,7 +1811,16 @@ def resolveTyG (gen : List (String × GenData)) (aliases : List (String × Ty))
     | .tSum a b  => do return .tSum  (← resolveTyG gen aliases effects fuel σ self? a) (← resolveTyG gen aliases effects fuel σ self? b)
     | .tProd a b => do return .tProd (← resolveTyG gen aliases effects fuel σ self? a) (← resolveTyG gen aliases effects fuel σ self? b)
     | .tThunk t  => do return .tThunk (← resolveTyG gen aliases effects fuel σ self? t)
-    | .tEff ns t => do return .tEff ns (← resolveTyG gen aliases effects fuel σ self? t)
+    -- #90: resolve EACH name in the row annotation against BOTH the four built-ins AND the
+    -- program's declared user effects (`effects`) — the row-naming gap `Cap` already fixed for
+    -- ITS constructor, generalized to `tEff`'s sibling. An unresolvable name fails loud (never a
+    -- silent drop — the OLD `effNames` behavior this replaces for `resolveTyG`'s reachable path).
+    | .tEff ns t => do
+        let ls ← ns.mapM (fun n => match resolveEffName effects n with
+          | some ℓ => pure ℓ
+          | none   => throw s!"'{n}' is not a declared effect (row annotation)")
+        return .tEffR ls (← resolveTyG gen aliases effects fuel σ self? t)
+    | .tEffR ls t => do return .tEffR ls (← resolveTyG gen aliases effects fuel σ self? t)   -- already-resolved
 
 /-- A bare type NAME: a monomorphic alias, else fail-loud (a generic name used WITHOUT args, or a typo).
 `effects` is unused here BY CONSTRUCTION — a bare `.tName` can never be `Cap` (that always requires an
@@ -2241,6 +2266,12 @@ nested bodies, so `anfSplit` inside a curried fun can synthesize a computation A
 (`($g) x`) instead of failing on an unbound param. -/
 def curryBind : NCtx → Surf → Ty → NCtx
   | Γ, e,          .tEff _ t   => curryBind Γ e t
+  | Γ, e,          .tEffR _ t  => curryBind Γ e t   -- #90: the RESOLVED row form — by the time
+                                  -- `curryBind` runs (post-`resolveTyG`), a `.tEff` ascription has
+                                  -- ALREADY become `.tEffR` — this arm was missing, so a row-annotated
+                                  -- arrow (`Cap Net -> Int ! {Net}`) silently fell through to the
+                                  -- catch-all (no binding at all), the exact cause of a cap-typed
+                                  -- param losing its `Cap ℓ` binding the moment a row was attached.
   | Γ, .thunk e,   .tThunk t   => curryBind Γ e t   -- #84 gap 1: `{fun … => …} : Thunk (A -> B)` —
                                   -- the ONLY v1 surface form that binds a function (a bare un-thunked
                                   -- `fun` is "not a returner", confirmed #4698's own precedent) — peel
@@ -3222,6 +3253,8 @@ def qualifyTyName (dataTyOwners : List (String × String)) (usedNames : List Str
                                 -- so this arm is unreachable in practice; enumerated for totality,
                                 -- matching the file's "no catch-all" discipline)
   | .tEff ns a   => .tEff ns (qualifyTyName dataTyOwners usedNames a)
+  | .tEffR ls a  => .tEffR ls (qualifyTyName dataTyOwners usedNames a)   -- #90: same unreachable-
+                                -- pre-elaboration reasoning as `tCap` above — enumerated for totality
 def qualifyTyArgs (dataTyOwners : List (String × String)) (usedNames : List String) : TyArgs → TyArgs
   | .one a   => .one (qualifyTyName dataTyOwners usedNames a)
   | .two a b => .two (qualifyTyName dataTyOwners usedNames a) (qualifyTyName dataTyOwners usedNames b)
@@ -5296,6 +5329,58 @@ pipeline `bang check`/`bang run` use (no separate test-only path). -/
   | .error m => (m.splitOn "ret").length > 1 && (m.splitOn "ADR-0065").length > 1 && (m.splitOn "Q27").length > 1
   | .ok _    => false)
 
+/-! ### #90 — row annotations (`T ! {…}`) could only name the four BUILT-IN effects (`throws`/
+`state`/`stm`/`Div`) — `effNames`/`effOf` matched a fixed literal-string list, no `env.effects`
+access, so a USER effect name in a row annotation silently resolved to nothing (defaulting the
+declared bound to `∅`, ADR-0088 D2). Fixed the SAME way `Cap` was fixed (#84 gap 1): `resolveTyG`'s
+`.tEff` arm now resolves EACH name (built-in OR user, via the new `resolveEffName` helper) into the
+closed `Ty.tEffR` form (labels, not names) — `tyBoth`/`effOf` read it verbatim, no further env
+needed.
+
+**Also found + fixed while closing this out**: `curryBind` (the ascribed-lambda param-binding walk,
+#84 gap 1's own construct) was missing a `.tEffR` case — its `.tEff _ t => curryBind Γ e t` arm
+peeled `.tEff`, but by the time `curryBind` runs (AFTER `resolveTy`), a `.tEff` ascription has
+ALREADY become `.tEffR` — the OLD arm never matched, so a row-annotated arrow (`Cap Net -> Int !
+{Net}`) silently fell through `curryBith`'s catch-all (NO binding at all), losing the cap-typed
+param's `Cap ℓ` binding the instant a row was attached. A non-exhaustive match with a catch-all, so
+this compiled clean and only surfaced as a runtime "not a capability value" — exactly the kind of
+gap the #85/#86 fixes were also closing (a binder silently missing, not a type error). -/
+
+-- the row-annotation NAMES a user effect correctly: `Thunk (Cap Net -> Int ! {Net})` resolves,
+-- types, and RUNS end to end (the #84 gap-1 pipeline that was `checkProg`-only until this fix).
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } let get2 = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in handle (($get2) net) with Net as net { fetch(n) => n * 10 }"
+    30
+
+-- DIAGNOSTIC: an undeclared effect name in a row annotation fails loud, naming it — never a
+-- silent empty-row default (the bug this issue closes).
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } let f = ( {fun x => x} : Thunk (Int -> Int ! {Ghost}) ) in 0"
+  with
+  | .error m => (m.splitOn "Ghost").length > 1 && (m.splitOn "not a declared effect").length > 1
+  | .ok _    => false)
+
+-- mixed built-in + user names in ONE row annotation both resolve (`throws` AND `Net`).
+#guard (match checkProg
+    "effect Net { fetch : Int -> Int } let f = ( {fun net => (net.fetch(1)) + (raise 1)} : Thunk (Cap Net -> Int ! {throws, Net}) ) in 0"
+  with | .ok _ => true | .error _ => false)
+
+-- the #84 gap-2 WRAPPER PATTERN (operator-ruled, no kernel change): a reusable INSTALLER function
+-- (`fun body => handle (($body)(net)) with Net as net { … }`) composed with SEPARATELY-declared
+-- effectful logic (`fun net => …`) — this is exactly what the row-annotation gap blocked (the
+-- installer's own row-check pinned an empty bound before `logic`'s actual `{Net}` row was known).
+-- Now types AND runs.
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in ($test) logic"
+    30
+
+-- the PER-STAGE STORY itself: ONE logic function, TWO installer wrappers (`test`/`prod`, each
+-- installing a DIFFERENT handler) — the same shared business logic means something different
+-- under each stage. `30005 = 30*1000 + 5` (test's `n*10` vs prod's `n+1`, both over `1+2`).
+#guard runTypedYieldsInt 200
+    "effect Net { fetch : Int -> Int } let test = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n * 10 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let prod = ( {fun body => handle (($body)(net)) with Net as net { fetch(n) => n + 1 }} : Thunk (Thunk (Cap Net -> Int ! {Net}) -> Int) ) in let logic = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in (($test) logic) * 1000 + (($prod) logic)"
+    30005
+
 /-! ### #85 — a NESTED binop in a handler clause body lost the clause's own binder. `elabHClauses`
 (elaboration, runs BEFORE `checkHClauses`) never extended Γ with the clause's `x`/`#param` binders —
 its own doc comment claimed "there is no per-clause binder to add at elaboration", which is false:
@@ -5350,17 +5435,14 @@ hundred lines up) — so the full v1 spelling is `let f = ({fun x => body} : Thu
 `curryBind` + a new `elabS` arm (`.annotS (.thunk (.lam x b)) t`) were extended to peel this thunk
 layer identically to the un-thunked case.
 
-**Scope note (row-annotation gap, tracked separately):** row annotations (`T ! {…}`) cannot yet name a
-USER-declared effect — `effNames`/`effOf` are static, matching only the four built-ins (`throws`/
-`state`/`stm`/`Div`) by literal string, with no `env.effects` access (the same structural wall
-`resolveTy` had for `Cap`, on the sibling `Ty.tEff` constructor — NOT fixed here; flagged to the
-team lead as a separate, cross-cutting follow-up touching the row/effect-row surface `ctr`/`b65` is
-concurrently working). Consequence: a `Thunk (Cap Net -> Int ! {Net})` ascription cannot yet be
-written for a USER effect, so the corpus below proves the RECEIVER-DISPATCH mechanism directly
-(mirroring the existing `checkPerformUnderCap` precedent, ADR-0070's own `#3` validation section) —
-a `Cap ℓ`-typed binding in scope, regardless of HOW it got there, is enough to typecheck `.dotPerform`
-through it. The full end-to-end (`pub let get2 = fun (net : Cap Net) => …` exactly as the issue's
-sketch spells it, run via `Source.eval`) is BLOCKED on the row-annotation gap, not on this gap. -/
+**Scope note, UPDATED (#90 landed as this lane's slice 2):** at the time this section first landed,
+row annotations (`T ! {…}`) could not name a USER-declared effect — `effNames`/`effOf` were static,
+matching only the four built-ins by literal string, no `env.effects` access. That gap is now CLOSED
+(see the `#90` section above) — `Thunk (Cap Net -> Int ! {Net})` resolves, types, and RUNS. The
+corpus immediately below still proves the RECEIVER-DISPATCH mechanism directly (mirroring
+`checkPerformUnderCap`, ADR-0070's `#3` validation) as a minimal, row-independent witness; the
+`#90` section above carries the FULL end-to-end pipeline test (parse→elaborate→check→lower→
+`Source.eval`) this note used to describe as blocked. -/
 
 -- the MECHANISM (#84's actual ask): a capability bound in Γ under a NAME other than the `as h`
 -- binder — exactly what a function PARAMETER would be — still dispatches `.dotPerform` correctly.

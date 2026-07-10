@@ -138,6 +138,10 @@ partial def fmtTy (need : TyPrec) : Ty → String
   | .tSum a b    => parenIf need .add  s!"{fmtTy .add a} + {fmtTy .mul b}"      -- left-assoc: lhs at OWN level
   | .tProd a b   => parenIf need .mul  s!"{fmtTy .mul a} * {fmtTy .atom b}"     -- left-assoc: lhs at OWN level
   | .tEff ns t   => parenIf need .atom s!"{fmtTy .atom t} ! \{{String.intercalate ", " ns}}"
+  | .tEffR ls t  => parenIf need .atom       -- #90: already-RESOLVED (labels, not source names) —
+      s!"{fmtTy .atom t} ! \{{String.intercalate ", " (ls.map (s!"#{·}"))}}"   -- same `tCap`
+      -- defensive-rendering precedent: `Format.lean` has no `env.effects` to invert a label back
+      -- to its declared name, so this form is NOT round-trippable — internal, printed for debugging.
 partial def fmtTyArgs : TyArgs → List String
   | .one a   => [fmtTy .atom a]
   | .two a b => [fmtTy .atom a, fmtTy .atom b]
