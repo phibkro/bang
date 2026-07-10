@@ -1080,7 +1080,7 @@ def Comp.HandlerWF : Nat → Comp → Prop
         -- `Comp.HandlerWFClauses` — a MUTUAL sibling that recurses STRUCTURALLY on the clause LIST
         -- (destructuring `(_, body) :: cs`), the termination-safe way to state `HandlerWF 2` per clause
         -- (a direct recursive `HandlerWF` call on `c.2` here is not a structural subterm ⇒ non-terminating).
-        | .custom _ p cls => Val.ScopedV 0 p ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2)
+        | .custom _ p cls => (Val.ScopedV 0 p ∧ Val.HandlerWF 0 p) ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2)
             ∧ Comp.HandlerWFClauses cls)
       ∧ Comp.HandlerWF (n + 1) M
 def Val.HandlerWF : Nat → Val → Prop
@@ -1140,7 +1140,8 @@ theorem Comp.HandlerWF.handle_txn {n : Nat} {ℓ : Bang.EffectRow.Label} {Θ : L
 theorem Comp.HandlerWF.handle_custom {n : Nat} {ℓ : Bang.EffectRow.Label} {p : Val}
     {cls : List (Bang.OpId × Comp)} {M : Comp}
     (h : Comp.HandlerWF n (Comp.handle (Handler.custom ℓ p cls) M)) :
-    Val.ScopedV 0 p ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2) ∧ Comp.HandlerWFClauses cls := by
+    (Val.ScopedV 0 p ∧ Val.HandlerWF 0 p) ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2)
+      ∧ Comp.HandlerWFClauses cls := by
   simp only [Comp.HandlerWF] at h; exact h.1
 
 /-- Per-CLAUSE `HandlerWF 2` from the clause-list invariant `Comp.HandlerWFClauses cls` (walk the list). -/
@@ -3241,7 +3242,86 @@ theorem evalE_agrees_evalD_gen :
             · refine ⟨hCσR, ?_, hCκR⟩
               simp only [THeapCorr] at hCτR ⊢; rw [hCτR, ← List.map_tail]
             · rintro n' op'' mv' ⟨rfl, rfl, rfl⟩; exact hRtR _ _ _ rfl
-      | custom ℓ p cls => sorry
+      | custom ℓ p cls =>
+        -- CUSTOM mint: push (g, (evalV ρ p, cls, ρ)) on κ; evalD pushes the RAW (p, cls) — `substEnvH_custom`
+        -- is IDENTITY on the payload. CStoreCorr on the pushed frame needs `readback (evalV ρ p) = p`
+        -- (p CLOSED, `ScopedV 0`) and `closeUnderBindersE 2 (readbackEnv ρ) c.2 = c.2` per clause (PAYLOAD-
+        -- CLOSED `ScopedC 2` ⇒ close-is-identity), so the clause-map collapses to the RAW `cls`. Recurse at
+        -- g+1, POP with κ.tail. Structural sibling of the state/txn mint. (ruling #6, task #11)
+        simp only [Handler.label] at hCapClosed hagN hWFcap hWFN hWCN hScN hHWNbody hcrux
+        obtain ⟨⟨hpClosed, hpHW⟩, hclsScope, hclsHW⟩ := hHWF.handle_custom
+        have hpcl : Val.ClosedE p := hpClosed.closedE_zero
+        -- the pushed param reads back to itself (closed) and is WF ∧ WFClos.
+        have hpId : readback (evalV ρ p) = p := by
+          rw [readback_evalV hWF (fun k _ => hpcl k)]; exact closeVE_closed hpcl (readbackEnv ρ)
+        have hWFp : MVal.WF (evalV ρ p) := by
+          simp only [MVal.WF]; rw [hpId]; exact hpcl
+        have hWCp : MVal.WFClos (evalV ρ p) :=
+          evalV_WFClos hWF hP (hpClosed.mono (Nat.zero_le _))
+            (Val.HandlerWF.mono p 0 (readbackEnv ρ).length (Nat.zero_le _) hpHW)
+        -- each clause is closed under `closeUnderBindersE 2 (readbackEnv ρ)` (payload-closed ⇒ identity).
+        have hclsId : cls.map (fun c => (c.1, closeUnderBindersE 2 (readbackEnv ρ) c.2)) = cls := by
+          conv_rhs => rw [← List.map_id cls]
+          exact List.map_congr_left (fun c hc => by
+            simp only [id, closeUnderBindersE_scoped_id (hclsScope c hc) (readbackEnv ρ)])
+        -- the pushed frame is StoresGood: p WF/WFClos, ρ WF/WFClos, and each clause scoped/HandlerWF at
+        -- the RELATIVE index `(readbackEnv ρ).length + 2` (lifted from the absolute `ScopedC 2`/`HandlerWF 2`).
+        have hGpush : StoresGood eσ eτ (⟨g, (evalV ρ p, cls, ρ)⟩ :: eκ) := by
+          obtain ⟨hs0, ht0, hk0⟩ := hG
+          refine ⟨hs0, ht0, fun q hq => ?_⟩
+          rcases List.mem_cons.mp hq with rfl | hq
+          · exact ⟨⟨hWFp, hWCp⟩, hWF, hP, fun c hc =>
+              ⟨(hclsScope c hc).mono (by omega),
+               Comp.HandlerWF.mono c.2 2 ((readbackEnv ρ).length + 2) (by omega) (hclsHW.get c hc)⟩⟩
+          · exact hk0 q hq
+        -- CStoreCorr on the pushed cons: evalD pushes RAW (p, cls); the readback-map collapses to it.
+        have hCκ' : CStoreCorr (⟨g, (evalV ρ p, cls, ρ)⟩ :: eκ) (⟨g, (p, cls)⟩ :: dκ) := by
+          simp only [CStoreCorr, List.map_cons]; rw [show dκ = _ from hCκ, hpId, hclsId]
+        simp only [evalE, Handler.label, Option.bind_eq_bind] at h
+        cases hev : evalE f (g+1) eσ eτ (⟨g, (evalV ρ p, cls, ρ)⟩ :: eκ)
+            (MVal.mvcap g ℓ ∷ₑ ρ) M with
+        | none => rw [hev] at h; simp only [Option.bind_none, reduceCtorEq] at h
+        | some q =>
+          rw [hev] at h
+          obtain ⟨outR, gR, σR, τR, κR⟩ := q
+          obtain ⟨dσR, dτR, dκR, hdR, hCR, hGR, hWtR, hRtR⟩ :=
+            ih (Val.vcap g ℓ :: γ) M outR (MVal.mvcap g ℓ ∷ₑ ρ) (g+1) gR
+              eσ σR eτ τR (⟨g, (evalV ρ p, cls, ρ)⟩ :: eκ) κR
+              dσ dτ (⟨g, (p, cls)⟩ :: dκ) hagN hWFN hWCN hScN hHWNbody hGpush
+              ⟨hCσ, hCτ, hCκ'⟩ hev
+          rw [hcrux] at hdR
+          have hdR' : Bang.CalcVM.evalD f (g+1) dσ dτ (Bang.CalcVM.CStore.push dκ g p cls)
+              (Comp.subst (Val.vcap g ℓ) (closeUnderBindersE 1 γ M))
+              = some (readbackTermS outR, gR, dσR, dτR, dκR) := hdR
+          cases outR with
+          | mterm tR => cases tR with
+            | mret v =>
+              simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                MOutcome.mterm.injEq, MTerm.mret.injEq] at h
+              obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+              subst hout hgc hσ' hτ' hκ'
+              obtain ⟨hCσR, hCτR, hCκR⟩ := hCR
+              refine ⟨dσR, dτR, dκR.tail, ?_, ?_, hκtail hGR, ?_, by rintro n op mv ⟨⟩⟩
+              · rw [substEnv_handle]
+                simp only [Bang.CalcVM.evalD, substEnvH_custom, Handler.label]
+                rw [hdR']; simp only [readbackTermS, readbackTerm, Option.bind_some]
+              · refine ⟨hCσR, hCτR, ?_⟩
+                simp only [CStoreCorr] at hCκR ⊢; rw [hCκR, ← List.map_tail]
+              · rintro t ⟨rfl⟩; exact hWtR _ rfl
+            | mlam _ _ =>
+              simp only [Option.bind_some, reduceCtorEq] at h
+          | mraised n op' w =>
+            simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+            subst hout hgc hσ' hτ' hκ'
+            obtain ⟨hCσR, hCτR, hCκR⟩ := hCR
+            refine ⟨dσR, dτR, dκR.tail, ?_, ?_, hκtail hGR, by rintro t ⟨⟩, ?_⟩
+            · rw [substEnv_handle]
+              simp only [Bang.CalcVM.evalD, substEnvH_custom, Handler.label]
+              rw [hdR']; simp only [readbackTermS, Option.bind_some]
+            · refine ⟨hCσR, hCτR, ?_⟩
+              simp only [CStoreCorr] at hCκR ⊢; rw [hCκR, ← List.map_tail]
+            · rintro n' op'' mv' ⟨rfl, rfl, rfl⟩; exact hRtR _ _ _ rfl
     | oom => simp [evalE] at h
     | wrong s => simp [evalE] at h
 
