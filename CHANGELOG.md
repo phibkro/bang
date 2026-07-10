@@ -128,6 +128,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **query** — bang query tier 1+2 — dump as the versioned fact base, verbs as projections (#80) (`2cda549`)
 - **lr** — close the crelK_fund handleCustom arm — term-measured mutual rebuild (task #16) (`5c2c03c`)
 - **surface** — Stage 7 lands — handle…with for user effects, e2e verified (#44 Stage 7, ADR-0095) (`1284c8e`)
+- **cli** — bang rewrite v1 — CQS command side with the verified-preservation gate (#81) (`f848914`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)

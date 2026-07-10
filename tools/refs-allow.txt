@@ -83,3 +83,14 @@ Bang/Compile.lean
 /tmp/cex_check.lean
 /tmp/machine_test.lean
 Init/Data/Format/Basic.lean  # Lean TOOLCHAIN source (Std.Format home), not a repo path — cited by the #58 formatting survey + ADR-0090 as the host Wadler engine
+
+# ADR-0096 (the LR freshness-carrier design consult) cites krnl3's four wall
+# witnesses, which live on branch feat-lr-final-wall @ 2b0948e (the design-consult's
+# evidence branch), not on this docs branch off main. They are read-only evidence
+# pointers for the operator ruling; recoverable via `git show feat-lr-final-wall:<path>`.
+scratch/SkipRelocateProbe.lean
+scratch/AppendInvWF.lean
+scratch/KrelSUnappendProbe.lean
+scratch/DecompFreshStrip.lean
+scratch/KrelSLengthProbe.lean
+scratch/CrelKUpVacuityProbe.lean
