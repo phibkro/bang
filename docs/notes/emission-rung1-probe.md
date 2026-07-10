@@ -441,3 +441,193 @@ STOP-GATE PASSED  wasmtime 45 accepts try_table/throw behind `-W exceptions=y` (
 STRATUM           tested (differential); emitter defs axiom set [propext] (no sorryAx); leaf-additive (WasmEmit.lean/EmitMain.lean/harness)
 NEXT (effect)     state/transaction → tail-call (in-place resume, no unwind) — the tractable rung-2 leg; then custom; general = post-v1 GC-chain
 ```
+
+---
+
+## 10 · Rung-2b LANDED (state → in-place resume: the store cell is a mutable wasm LOCAL)
+
+> **What landed (2026-07-10).** ADR-0059's OTHER rung-2 leg — `state → tail-call / in-place resume` —
+> is **DEMONSTRATED**: `handle (state ℓ s₀) M` maps the store cell to a mutable wasm **local**, `get`
+> reads it (`local.get`), `put` writes it (`local.set`), and execution continues STRAIGHT-LINE — no
+> `try_table`, no unwind. **6 state programs — get-only, put-then-get, arithmetic-around-get, computed
+> put-payload, read-modify-write, normal-return — ran on `wasmtime` 45 with values MATCHING
+> `Source.eval`.** The corpus is now **66 programs** (53 pure/rung-1.5 + 7 throws + 6 state), all
+> `wasmtime == Source.eval`. Still the TESTED stratum (emitter axiom set `[propext]`, no `sorryAx`).
+> **The STOP-gate the brief named — "do state ops need dispatch context the static tree lacks?" —
+> passed: they do NOT. One handler per label, and the cap slot's de-Bruijn POSITION identifies the
+> cell. No id-vs-label context is needed at emit time (§10.2).** These are CORE wasm (locals only) —
+> no engine feature flag, unlike the throws leg.
+
+### 10.1 · The kernel→wasm mapping — state RESUMES (no abort), so the cell is a mutable local
+
+The derivation is forced by `dispatchOn`'s `.state` arm (Dispatch.lean:133) + handler-return-identity
+(Eval.lean:65). Unlike `throws` (which ABORTS — discards `Kᵢ`), `state` RESUMES `Kᵢ` on both ops:
+
+| kernel step (`dispatchOn` `.state ℓ' s` arm) | wasm emission |
+|---|---|
+| `handle (state ℓ s₀) M`: mint id `g`, push `handleF g (state ℓ s₀)`, run `subst (vcap g ℓ) M` | mint local `l`; `(local.set l <emit s₀>)` then `<emit M under .state l :: env>` — body value flows out |
+| `get`: `some (Kᵢ ++ handleF n (state ℓ' s) :: Kₒ, .ret s)` — RESUME `Kᵢ` with `s`, cell unchanged | `(local.get l)` — an i64-leaving expression; the surrounding wasm IS the resumed `Kᵢ` |
+| `put v`: `some (Kᵢ ++ handleF n (state ℓ' v) :: Kₒ, .ret .vunit)` — RESUME `Kᵢ` with UNIT, cell now `v` | `(local.set l <emit v>)` — a STATEMENT; then the continuation runs (fused `letC put; N`, §10.3) |
+| normal return (`handleF _ _ :: K, ret v ↦ K, ret v`) | body value flows straight out (no block, no catch) |
+
+Because RESUME reinstalls the frame with the threaded store and continues the SAME continuation, there
+is **nothing to unwind** — the "in-place resume" is literally: the store lives in a wasm local, and the
+`Kᵢ` the kernel resumes is the code that textually follows in the emitted function body. This is exactly
+ADR-0059's "one-shot in-place resumption (ADR-0025) … a direct call in wasm, no reification." Here the
+`state` fragment needs not even a call — a `letC`-threaded local sequence suffices (a `custom` clause
+body would be the first thing to need a real tail-call; §10.5).
+
+The `Slot` type gains a fourth variant, mirroring the `.cap` move for throws:
+
+```
+inductive Slot | val l    -- letC binder ⇒ wasm LOCAL (rung 1)
+                | cap t    -- handle(throws) binder ⇒ exception TAG (rung 2)
+                | state l  -- handle(state) binder ⇒ wasm LOCAL holding the store cell (rung 2b) ← NEW
+                | dead     -- case-payload / put's unit result (no i64 rep)
+```
+
+A `perform (vvar i) op _` routes on `env[i]`: `.state l` + `"get"` ⇒ `(local.get l)`; `.state l` +
+`"put"` ⇒ `(local.set l …)` (fused, §10.3). A KIND MISMATCH (`"raise"` on a `.state`, `"get"` on a
+`.cap`) is `unsup` — FAIL-LOUD, never a wrong read/throw, the static shadow of `idDispatch`'s fail-loud
+`handlesOp` guard.
+
+### 10.2 · The STOP-gate answered — labels ARE sufficient; no id-vs-label context at emit time
+
+The brief flagged the risk: "if state ops in the typed `Comp` require dispatch context the static tree
+lacks (the id-vs-label question at emit time)." **They do not, for the minimal fragment.** The reason is
+the SAME as throws: the emitter routes a `perform` by its cap's **de-Bruijn binder position**, not by a
+runtime identity or a label. `handle (state ℓ s₀) M` binds the cap at index 0 in `M` (ADR-0054, like
+`lam`); a `get`/`put` names it by `vvar i`; `env[i] = .state l` gives the cell's local. One `handle` per
+label in the fragment means the binder position uniquely picks the frame — exactly the "tag-identity =
+`idDispatch`" argument (§9.2), now "local-identity = `idDispatch`." The emitter never reads a label to
+dispatch — the cell local `l` plays the role of the runtime identity `g`, assigned by structural descent.
+
+**The de-Bruijn-shift finding (caught BY the corpus, the differential test earning its keep again).**
+A `put`'s continuation is subtle: `put` returns UNIT and resumes `Kᵢ`, and in the surface `let _ = put v
+in N` the `letC` binds that unit at index 0 of `N`. So **the cap that was `vvar i` before the put is
+`vvar (i+1)` inside `N`** — the whole env shifts by one across a `put`. The refute-first oracle probe
+(now `EmitMain.rung2bSamples`, run against `Source.eval` compiled) confirmed this directly: the
+put-then-get witness `stt1` is STUCK if the get names `vvar 0` (that binds the put-unit), and correct
+only at `vvar 1`. The emitter's fused `letC (put) N` arm pushes `.dead :: env` for `N` (the put-unit is
+unusable, no i64 rep) — identical to the case-payload treatment — so the shifted indices land correctly.
+`stt4` (read-modify-write) exercised three threaded locals (cell, `x=get`, `y=x+1`, `put y`, `get ⇒ 6`).
+
+### 10.3 · Why `put` is FUSED with its `letC` continuation (the one asymmetry with `get`)
+
+`get` returns a VALUE (`ret s`), so it slots anywhere an i64 is expected — `let x = get in x + 5` flows
+through the ORDINARY `letC m n` arm (emit `get` into a fresh local, run `n`). `put` returns UNIT (`ret
+.vunit`) — which has **no i64 rep** — so it cannot be a bare i64-leaving expression. The emitter handles
+`put` ONLY in the fused shape `letC (perform (vvar i) "put" v) N`: emit `(local.set l <emit v>)` as a
+STATEMENT, then emit `N` under `.dead :: env`. A **bare** `put` (a `put` in tail position, returning
+unit as the program's answer) is `unsup` — it would leave unit where the module's `result i64` demands
+an int, out of the int fragment (and a unit-returning program is `NON-INT-VALUE` to the oracle anyway).
+This mirrors rung-1.5's bare-comparison refusal: an op whose result has no standalone i64 rep is
+emittable only in the FUSED elimination shape that consumes it.
+
+### 10.4 · The side-by-side — state output on a real engine
+
+```
+sample   program                                                    wasmtime   oracle   verdict
+stt0     handle state(5) { get }                                            5        5   OK   (read initial cell)
+stt1     handle state(0) { let _ = put 7 in get }                           7        7   OK   (write then read; cap idx1 in cont)
+stt2     handle state(10) { let x = get in x + 5 }                         15       15   OK   (arithmetic around get)
+stt3     handle state(0) { let v = 3*4 in put v; get }                     12       12   OK   (computed put payload)
+stt4     handle state(5) { let x=get; let y=x+1; put y; get }               6        6   OK   (read-modify-write)
+stt5     handle state(99) { 20 + 22 }                                      42       42   OK   (normal return, cell unread)
+```
+
+The emitted `.wat` for `stt4` (read-modify-write — three threaded locals, all straight-line, no unwind):
+
+```wasm
+(module
+  (func $main (export "main") (result i64) (local i64) (local i64) (local i64)
+    (local.set 0 (i64.const 5))              ;; cell l=0 := s₀ (=5)
+    (local.set 1 (local.get 0))              ;; x := get      (local 1)
+    (local.set 2 (i64.add (local.get 1) (i64.const 1)))  ;; y := x+1  (local 2)
+    (local.set 0 (local.get 2))              ;; put y  — write the CELL local 0
+    (local.get 0)))                          ;; get    — read it back ⇒ 6
+```
+
+Local `0` is the state CELL (written by both the init and each `put`); locals `1`/`2` are ordinary
+`letC` binders. `get`/`put` are plain `local.get`/`local.set` of the cell — the "in-place resume" made
+concrete: **no `try_table`, no `block`, no `throw`; the store never unwinds because state never aborts.**
+A pure/throws program mints ZERO state locals beyond its own, so this extension is purely ADDITIVE.
+
+### 10.5 · Scope + what rung-2b STUBBED (honest gaps)
+
+- **`state`/`get`/`put` ONLY, single cell.** `transaction` (multi-cell STM) and `custom` (user effects)
+  stay `unsup` (loud). A `put` reached OUTSIDE the fused `letC` (bare unit tail) is refused (§10.3).
+- **`put` param is READ on resume, never captured.** v1 state is one-shot in-place (ADR-0025), which is
+  what the mutable-local model gives. A multi-shot resume (re-entering `Kᵢ` twice with different stores)
+  would need the store REIFIED, not a single mutating local — post-v1 GC-chain (§9.6), out of v1's three
+  handler forms (none reifies).
+- **Generator stays pure.** The 42-seed generator was NOT extended into state nesting; the 6 state
+  witnesses are HAND anchors (like the 7 throws). A generated state corpus needs the generator to track
+  the cap-frame depth AND the put-shift (mirror of the emitter's `Slot` stack) to stay in-fragment.
+- **Proof-grade (§5, unchanged).** No `wexec (emit M) ≡ Source.eval M`; the state arms would be
+  per-former cases under it. The one new invariant: a `.state l` slot ↔ a store cell whose value at each
+  program point mirrors the kernel's `handleF n (state ℓ' s)` payload — a local-value ↔ store-value
+  bijection preserved by `get` (read, no change) and `put` (write). Straight-line (no reification) makes
+  this the SIMPLEST arm to prove of the three effect legs.
+
+### 10.6 · What the store-as-a-local design implies for TRANSACTION (note-only analysis)
+
+`transaction ℓ Θ` (Dispatch.lean:143) is the MULTI-CELL generalization of `state`: `Θ : List Val` is the
+transaction heap, `newTVar` APPENDS (allocation, returns the new index), `readTVar`/`writeTVar`
+index/update a cell — and it RESUMES exactly like `state` (reinstalls a deep frame with the threaded
+`Θ'`, ADR-0025 pattern). So the naive wasm image is the state design SCALED UP: **the heap is a block of
+wasm `memory` (or an array of locals/globals), `readTVar i` = a load, `writeTVar i w` = a store,
+`newTVar v` = bump a length pointer + store.** The resumptive (commit) path is straight-line, same as
+state — no unwind.
+
+**But the ROLLBACK question is the real wall, and the store-as-mutable-cell design does NOT solve it for
+free.** The kernel's rollback is elegant (Dispatch.lean:139 comment): an abort is a zero-shot `throws`
+that ESCAPES the transaction frame, so the threaded `Θ'` is discarded WITH the frame and never commits —
+allocations survive (the heap's append-only growth) but writes vanish. In wasm, the transaction body is
+inside a `try_table` (the abort leg, §9), and a `throw` unwinds control to the catch — **but a
+`local.set`/`memory.store` already executed inside the body is NOT rolled back by the unwind.** wasm has
+no transactional memory: mutation is destructive-in-place. So a faithful `transaction` emitter needs ONE
+of:
+
+  1. **A JOURNAL (write-set).** Buffer `writeTVar`s in a side structure (a wasm `memory` region keyed by
+     TVar index), and only APPLY them to the base heap on the commit path (fall-through past the
+     `try_table`); on the abort path (catch), DROP the journal. This is the classic STM implementation,
+     and it maps cleanly: the journal is a second `memory` block, commit = a copy loop, abort = a
+     pointer reset. It is MORE code than state but structurally the SAME idioms (memory + a length).
+  2. **A COPY-ON-ENTRY snapshot.** Snapshot the heap into a scratch region at `handle` entry; on abort,
+     restore from the snapshot. Simpler to state, costlier per-transaction (whole-heap copy); the write
+     path stays destructive so `readTVar` needs no journal indirection. Invariant #7 (performance
+     second-class) says this is an acceptable v1 baseline.
+  3. **RE-USE the throws unwind + re-execute** — NOT viable: the kernel does not re-execute, it discards;
+     and wasm mutation is not idempotent under re-entry.
+
+The honest verdict: **transaction is NOT a small delta on state.** State rides on wasm's native mutable
+local because state never rolls back (its only control move is resume-in-place). Transaction ADDS the
+abort leg's unwind (which rung-2 already emits) OVER a mutable heap that MUST be made transactional by an
+explicit journal/snapshot — the piece wasm gives for free is the unwind (the `try_table`/`throw` control
+flow), NOT the memory rollback. That journal is rung-3 CODE (a real slice, tractable via memory + a
+write-set), not a note. **The state leg proves the resume half; the transaction leg's novelty is entirely
+in the rollback half, and it is the journal that the store-as-a-local design leaves unsolved.**
+
+### 10.7 · The honest boundary to rung-3 (the wall from here)
+
+- **transaction → journal/snapshot over `memory`** (§10.6): the resume half is state-scaled-to-`memory`;
+  the abort half re-uses rung-2's `try_table`, but the memory ROLLBACK needs an explicit write-set. The
+  tractable next slice, but genuinely more than state.
+- **custom (user effects) → tail-call over a clause table** (§9.6, unchanged): the resume shape is
+  state's, but the resumed value is a USER CLAUSE BODY (a `Comp`), not a hardcoded `get`/`put` result. So
+  custom needs the clause `Comp` emitted as the continuation — the FIRST arm that needs a real wasm
+  `call` (or an inlined body), because the clause computes before resuming. Gated on state landing (it
+  did) + the clause-emission machinery.
+- **general (multi-shot) → the GC-frame chain (post-v1)** (§9.6, unchanged): reified resumptions; nothing
+  in v1's three handler forms reifies, so this stays post-v1 (WasmFX `switch`/`resume` fast-path).
+
+```
+LANDED (rung-2b)  state → in-place resume (store cell = mutable wasm LOCAL) · 66-program corpus (53 pure + 7 throws + 6 state), 66/66 == Source.eval
+DESIGN            Slot gains `state l`; get = local.get, put = local.set (fused letC); NO try_table/unwind (state RESUMES, never aborts)
+STOP-GATE PASSED  no id-vs-label context needed at emit time — cap de-Bruijn POSITION picks the cell (one handle/label); local-identity = idDispatch
+FINDING           a `put`'s letC-continuation shifts the cap index by one (put-unit binds idx0) — env = .dead :: env in the cont; caught by the oracle probe
+STRATUM           tested (differential); emitter defs axiom set [propext] (no sorryAx); leaf-additive (WasmEmit.lean/EmitMain.lean/harness)
+TRANSACTION       NOT a small delta: the resume half scales to `memory`, but the ABORT half needs an explicit JOURNAL/snapshot — wasm mutation is destructive, the unwind does not roll back memory (§10.6)
+NEXT (effect)     transaction (journal over memory) → custom (clause body as tail-call) → general = post-v1 GC-chain
+```

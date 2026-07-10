@@ -89,6 +89,39 @@ def rung2Samples : List Sample :=
                (.perform (.vvar 1) "raise" (.vvar 0))),
              "handle throws { let x = 6*7 in raise x }  ⇒ 42 (computed payload, cap at idx 1)"⟩ ]
 
+/-- RUNG-2b hand-picked samples (◊5.5 rung-2b, ADR-0059's `state → tail-call / in-place resume`).
+`handle (state ℓ s₀) M` maps the store cell to a mutable wasm LOCAL: `get` reads it, `put` writes it,
+execution continues straight-line (state RESUMES `Kᵢ` — no unwind, no `try_table`), the handle's value
+is the body value. Each is a LOAD-BEARING regression witness for the in-place-resume semantics and the
+de-Bruijn cap-frame-shift subtlety (a `put`'s `letC` continuation shifts the cap index by one). The
+oracle `Source.eval` computes the SAME `Comp` — the values were confirmed against it (probe, note §10). -/
+def rung2bSamples : List Sample :=
+  -- get-only: read the initial cell.
+  [ ⟨"stt0", .handle (.state 0 (.vint 5)) (.perform (.vvar 0) "get" .vunit),
+             "handle state(5) { get }  ⇒ 5 (read initial cell)"⟩
+  -- put-then-get: write 7, read it back. The put's `letC` continuation shifts the cap to idx 1.
+  , ⟨"stt1", .handle (.state 0 (.vint 0))
+               (.letC (.perform (.vvar 0) "put" (.vint 7)) (.perform (.vvar 1) "get" .vunit)),
+             "handle state(0) { let _ = put 7 in get }  ⇒ 7 (write then read; cap idx1 in cont)"⟩
+  -- arithmetic around get: bind get, compute on it (the ordinary letC arm handles the get-as-value).
+  , ⟨"stt2", .handle (.state 0 (.vint 10))
+               (.letC (.perform (.vvar 0) "get" .vunit) (.binop .add (.vvar 0) (.vint 5))),
+             "handle state(10) { let x = get in x + 5 }  ⇒ 15 (arithmetic around get)"⟩
+  -- put a COMPUTED value then get: let v = 3*4 in put v; get. cap idx1 after the outer let, idx2 after put.
+  , ⟨"stt3", .handle (.state 0 (.vint 0))
+               (.letC (.binop .mul (.vint 3) (.vint 4))
+                 (.letC (.perform (.vvar 1) "put" (.vvar 0)) (.perform (.vvar 2) "get" .vunit))),
+             "handle state(0) { let v = 3*4 in put v; get }  ⇒ 12 (computed put payload)"⟩
+  -- read-modify-write: let x = get; let y = x+1; put y; get.  state 5 ⇒ 6 (get/put threaded).
+  , ⟨"stt4", .handle (.state 0 (.vint 5))
+               (.letC (.perform (.vvar 0) "get" .vunit)
+                 (.letC (.binop .add (.vvar 0) (.vint 1))
+                   (.letC (.perform (.vvar 2) "put" (.vvar 0)) (.perform (.vvar 3) "get" .vunit)))),
+             "handle state(5) { let x=get; let y=x+1; put y; get }  ⇒ 6 (read-modify-write)"⟩
+  -- normal return: no get/put, body value flows out (handler return = identity).
+  , ⟨"stt5", .handle (.state 0 (.vint 99)) (.binop .add (.vint 20) (.vint 22)),
+             "handle state(99) { 20 + 22 }  ⇒ 42 (normal return, cell unread)"⟩ ]
+
 /-! ### Deterministic seed-indexed generator (rung-1.5 differential corpus)
 
 A small linear-congruential PRNG drives a structured generator over the EMITTABLE fragment:
@@ -190,7 +223,7 @@ def genCorpus (count : Nat) : List Sample :=
 failure (the generator stays in-fragment by construction, so a refusal would flag a generator bug —
 printed loud). The rung-2 (throws) samples are HAND anchors only; the generator stays in the pure
 rung-1/1.5 fragment (extending it into effect nesting is a later step). -/
-def samples : List Sample := handSamples ++ rung15Samples ++ rung2Samples ++ genCorpus 42
+def samples : List Sample := handSamples ++ rung15Samples ++ rung2Samples ++ rung2bSamples ++ genCorpus 42
 
 def main (args : List String) : IO Unit := do
   let outdir := args.headD "."

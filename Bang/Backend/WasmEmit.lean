@@ -116,9 +116,18 @@ Tag IDENTITY gives LEXICAL dispatch for free: each open `handle` mints a distinc
 `try_table (catch $exn_t $h)` catches ONLY tag `t`, so a `throw $exn_t` unwinds to exactly the
 lexically-enclosing handle that minted `t` — the wasm image of identity-keyed `idDispatch`. -/
 inductive Slot where
-  | val  : Nat → Slot     -- value-binder ⇒ wasm local
-  | cap  : Nat → Slot     -- capability-binder (handle throws) ⇒ wasm exception tag
-  | dead : Slot           -- bound-but-unusable (case-on-bool payload)
+  | val   : Nat → Slot     -- value-binder ⇒ wasm local
+  | cap   : Nat → Slot     -- capability-binder (handle throws) ⇒ wasm exception tag
+  -- RUNG-2b (state → in-place resume, ADR-0059's tail-call leg): the de-Bruijn var is the
+  -- CAPABILITY naming a `handle (state ℓ s₀)` frame, whose single state cell is wasm LOCAL `l`.
+  -- `perform (vvar i) "get" _` with `env[i] = state l` emits `(local.get l)` (read the cell,
+  -- resume in place); `perform (vvar i) "put" v` emits `(local.set l ev)` (write, resume with
+  -- unit). NO unwind, NO try_table — state RESUMES `Kᵢ` (`dispatchOn`'s state arm reinstalls the
+  -- frame), unlike `throws`'s abort. The store is a mutable local threaded through the handled
+  -- region; the handle's return delivers the body value (handler return = identity). ONE local per
+  -- open `state` frame — the de-Bruijn env IS the store, exactly as `.cap` made it the handler stack.
+  | state : Nat → Slot     -- state-cap-binder (handle state) ⇒ wasm local holding the store cell
+  | dead  : Slot           -- bound-but-unusable (case-on-bool payload / a `put`'s unit result)
   deriving Repr, DecidableEq, Inhabited
 
 /-- Emit a `Val` as an i64-leaving wasm expression under the unified de-Bruijn `env`
@@ -128,10 +137,11 @@ def emitVal (env : List Slot) : Val → Emit
   | .vint n => .ok s!"(i64.const {n})"
   | .vvar i =>
       match env[i]? with
-      | some (.val l) => .ok s!"(local.get {l})"
-      | some (.cap _) => .unsup s!"vvar {i} binds a CAPABILITY (no i64 rep — a cap is only usable as a `perform` target)"
-      | some .dead    => .unsup s!"vvar {i} binds a unit `case`-payload (no i64 rep — rung-1.5)"
-      | none          => .unsup s!"free vvar {i} (open term — emits closed programs only)"
+      | some (.val l)   => .ok s!"(local.get {l})"
+      | some (.cap _)   => .unsup s!"vvar {i} binds a CAPABILITY (no i64 rep — a cap is only usable as a `perform` target)"
+      | some (.state _) => .unsup s!"vvar {i} binds a STATE capability (no i64 rep — usable only as a get/put `perform` target)"
+      | some .dead      => .unsup s!"vvar {i} binds a unit `case`/`put`-payload (no i64 rep)"
+      | none            => .unsup s!"free vvar {i} (open term — emits closed programs only)"
   | .vunit  => .unsup "vunit (no i64 rep in rung-1)"
   | .vcap _ _ => .unsup "vcap (runtime-minted capability — the static emitter routes caps by de-Bruijn binder, never a minted `vcap`)"
   | .vthunk _ => .unsup "vthunk (needs force/closure — stretch, not rung-1 arithmetic)"
@@ -226,8 +236,48 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
       | .ok bS =>
           (.ok s!"(block $h{t} (result i64)\n      (try_table (result i64) (catch $exn{t} $h{t})\n        {bS}))",
            mLoc, max mTag (t + 1))
+  -- RUNG 2b: handle (state ℓ s₀) M  →  in-place resume (ADR-0059's tail-call leg). The kernel
+  -- (`dispatchOn`'s `.state` arm, Dispatch.lean:133) RESUMES `Kᵢ` on both get (with `s`) and put
+  -- (with `unit`, cell now `v`) — NO abort, NO unwind. So the store is one mutable wasm LOCAL `l`,
+  -- initialized `(local.set l s₀)`, threaded through the handled region; `get`/`put` are straight-line
+  -- reads/writes of `l`; the handle's value is the body value (handler return = identity, Eval.lean:65).
+  -- Mint `l = next`, push `.state l` for M's index-0 cap-binder, prefix the init, deliver the body.
+  | .handle (.state _ s₀) M =>
+      let l := next
+      match emitVal env s₀ with
+      | .unsup r => (.unsup s!"state handler init value not i64-representable: {r}", next, nextTag)
+      | .ok es₀ =>
+          let (eb, mLoc, mTag) := emitComp (.state l :: env) (next + 1) nextTag M
+          match eb with
+          | .unsup r => (.unsup r, next, nextTag)
+          | .ok bS =>
+              -- (local.set l s₀) initializes the cell; then the body runs and leaves its i64 value.
+              -- The cell local `l = next` counts toward maxLocal (`max mLoc (next+1)`).
+              (.ok s!"(local.set {l} {es₀})\n    {bS}", max mLoc (next + 1), mTag)
+  -- RUNG 2b put site (FUSED with its `letC` continuation): letC (perform (vvar i) "put" v) N.
+  -- `put` returns UNIT and resumes `Kᵢ` (`dispatchOn`: `ret .vunit`, cell now `v`) — unit has no i64
+  -- rep, so put is a STATEMENT `(local.set l ev)`, then N runs. N binds the put-unit at index 0 (an
+  -- unusable `.dead` slot, exactly the throws `letC`/case-payload pattern), so N reads env indices
+  -- shifted by one (the cap that was `vvar i` is `vvar (i+1)` in N — verified against `Source.eval`).
+  | .letC (.perform (.vvar i) "put" v) N =>
+      match env[i]? with
+      | some (.state l) =>
+          match emitVal env v with
+          | .unsup r => (.unsup s!"put payload not i64-representable: {r}", next, nextTag)
+          | .ok ev =>
+              let (en, maxLocal, tn) := emitComp (.dead :: env) next nextTag N
+              match en with
+              | .unsup r => (.unsup r, next, nextTag)
+              | .ok enS =>
+                  -- write the cell, then leave N's value — a wasm SEQUENCE (put resumes in place).
+                  (.ok s!"(local.set {l} {ev})\n    {enS}", maxLocal, tn)
+      | some (.cap _)  => (.unsup s!"put target vvar {i} binds a THROWS cap (put is a state op)", next, nextTag)
+      | some (.val _)  => (.unsup s!"put target vvar {i} binds a VALUE, not a state capability", next, nextTag)
+      | some .dead     => (.unsup s!"put target vvar {i} binds an unusable slot", next, nextTag)
+      | none           => (.unsup s!"put target vvar {i} is free (open term)", next, nextTag)
   -- RUNG 2 raise site: perform (vvar i) "raise" v  →  throw $exn_t (emit v), where env[i] = .cap t.
-  -- Any non-`raise` op, a non-cap target, or a non-i64 payload is out of the throws fragment (loud).
+  -- RUNG 2b get site: perform (vvar i) "get" _  →  (local.get l), where env[i] = .state l (read cell).
+  -- Any non-`raise`/non-`get` op, a mismatched-kind target, or a non-i64 payload is out of fragment (loud).
   | .perform (.vvar i) op v =>
       if op = "raise" then
         match env[i]? with
@@ -235,11 +285,23 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
             match emitVal env v with
             | .ok ev => (.ok s!"(throw $exn{t} {ev})", next, nextTag)
             | .unsup r => (.unsup s!"raise payload not i64-representable: {r}", next, nextTag)
+        | some (.state _) => (.unsup s!"raise target vvar {i} binds a STATE cap (raise is a throws op)", next, nextTag)
         | some (.val _) => (.unsup s!"perform target vvar {i} binds a VALUE, not a capability", next, nextTag)
         | some .dead    => (.unsup s!"perform target vvar {i} binds an unusable slot", next, nextTag)
         | none          => (.unsup s!"perform target vvar {i} is free (open term)", next, nextTag)
+      else if op = "get" then
+        -- RUNG 2b: get reads the state cell (`dispatchOn`: `ret s`, resume in place). Payload ignored
+        -- (the surface `get` carries `vunit`). env[i] must be a state cap ⇒ `(local.get l)`.
+        match env[i]? with
+        | some (.state l) => (.ok s!"(local.get {l})", next, nextTag)
+        | some (.cap _)   => (.unsup s!"get target vvar {i} binds a THROWS cap (get is a state op)", next, nextTag)
+        | some (.val _)   => (.unsup s!"get target vvar {i} binds a VALUE, not a state capability", next, nextTag)
+        | some .dead      => (.unsup s!"get target vvar {i} binds an unusable slot", next, nextTag)
+        | none            => (.unsup s!"get target vvar {i} is free (open term)", next, nextTag)
       else
-        (.unsup s!"perform op {op} (only `raise`/throws is in the rung-2 fragment; get/put/newTVar/… are rung-2 state/txn)", next, nextTag)
+        -- `put` is handled ONLY in the fused `letC (put) N` arm above (it returns unit — no i64 rep
+        -- as a bare expression). A `put` reaching here is a bare put (unit tail) — out of fragment.
+        (.unsup s!"perform op {op} (rung-2: `raise`=throws, `get`/`put`=state; a BARE `put` (unit tail) needs the fused `letC put; N`; newTVar/… are rung-3 txn)", next, nextTag)
   | .letC m n =>
       -- compute m into local `next`; run n with (.val next :: env), next local = next+1.
       let (em, _, tm) := emitComp env next nextTag m
@@ -256,7 +318,7 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
   | .lam _ => (.unsup "lam (function value — stretch, non-recursive call)", next, nextTag)
   | .app _ _ => (.unsup "app (call — stretch)", next, nextTag)
   | .perform _ _ _ => (.unsup "perform on a non-vvar target (runtime cap / malformed — out of the static throws fragment)", next, nextTag)
-  | .handle _ _ => (.unsup "handle: only `throws` (abort → exceptions) is the rung-2 fragment; state/transaction/custom are rung-2 tail-call / rung-3", next, nextTag)
+  | .handle _ _ => (.unsup "handle: `throws` (abort → exceptions) and `state` (in-place resume) are the rung-2/2b fragment; transaction/custom are rung-3", next, nextTag)
   | .case _ _ _ => (.unsup "case (sum elim — rung-1.5)", next, nextTag)
   | .split _ _ => (.unsup "split (product elim — rung-1.5)", next, nextTag)
   | .unfold _ => (.unsup "unfold (μ elim — rung-1.5)", next, nextTag)
@@ -359,19 +421,54 @@ example :
       (.handle (.throws 0) (.perform (.vvar 0) "raise" (.vint 5))))).isOk = true := by
   simp [emitModule, emitComp, emitVal, Emit.isOk]
 
--- RUNG-2 refusals are LOUD: a non-`raise` op, a value-target perform, and a state handler.
--- perform "get" (a resumptive op — rung-2 state, not the abort fragment) → unsup.
+-- RUNG-2 refusals are LOUD: a KIND-mismatched op, a value-target perform, and an unsupported handler.
+-- perform "get" on a THROWS cap (get is a state op — kind mismatch) → unsup (no wrong throw/read).
 example :
     (emitModule (.handle (.throws 0) (.perform (.vvar 0) "get" .vunit))).isOk = false := by
-  simp [emitModule, emitComp, emitVal, Emit.isOk]
--- a state handler is out of the throws-only fragment → unsup.
-example :
-    (emitModule (.handle (.state 0 (.vint 0)) (.ret (.vint 1)))).isOk = false := by
   simp [emitModule, emitComp, emitVal, Emit.isOk]
 -- perform whose target binds a VALUE (letC-bound), not a cap → unsup (no wrong throw).
 example :
     (emitModule (.handle (.throws 0)
       (.letC (.ret (.vint 5)) (.perform (.vvar 0) "raise" (.vint 1))))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+
+-- ── RUNG-2b arms (state → in-place resume / tail-call) — structural regression guards ──────
+-- get-only: handle (state 0 5) { get }  ⇒ emits (local.set l 5) then (local.get l).
+example :
+    (emitModule (.handle (.state 0 (.vint 5)) (.perform (.vvar 0) "get" .vunit))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- put-then-get: handle (state 0 0) { let _ = put 7 in get } — cap shifts to idx1 in the put's cont.
+example :
+    (emitModule (.handle (.state 0 (.vint 0))
+      (.letC (.perform (.vvar 0) "put" (.vint 7)) (.perform (.vvar 1) "get" .vunit)))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- arithmetic around get: handle (state 0 10) { let x = get in x + 5 } — get flows the ordinary letC arm.
+example :
+    (emitModule (.handle (.state 0 (.vint 10))
+      (.letC (.perform (.vvar 0) "get" .vunit) (.binop .add (.vvar 0) (.vint 5))))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, binOpWat, Emit.isOk]
+-- normal return: handle (state 0 3) { 42 } — body value flows out (handler return = identity).
+example :
+    (emitModule (.handle (.state 0 (.vint 3)) (.ret (.vint 42)))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+
+-- RUNG-2b refusals are LOUD: kind-mismatched raise on a state cap, a value-target get, a bare put.
+-- raise on a STATE cap (raise is a throws op — kind mismatch) → unsup.
+example :
+    (emitModule (.handle (.state 0 (.vint 0)) (.perform (.vvar 0) "raise" (.vint 1)))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- get whose target binds a VALUE (letC-bound), not a state cap → unsup.
+example :
+    (emitModule (.handle (.state 0 (.vint 0))
+      (.letC (.ret (.vint 5)) (.perform (.vvar 0) "get" .vunit)))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- a BARE put (unit tail, not fused with a `letC` continuation) → unsup (unit has no i64 tail rep).
+example :
+    (emitModule (.handle (.state 0 (.vint 0)) (.perform (.vvar 0) "put" (.vint 1)))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- transaction (rung-3) stays out of the state fragment → unsup.
+example :
+    (emitModule (.handle (.transaction 0 []) (.ret (.vint 1)))).isOk = false := by
   simp [emitModule, emitComp, emitVal, Emit.isOk]
 
 end -- public section
