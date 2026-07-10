@@ -47,10 +47,10 @@ graph TD
     Examples["Examples<br/>418L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>251L · fan-in 0"]
     Frontend_DiagCodes["Frontend.DiagCodes<br/>209L · fan-in 0"]
-    Frontend_Diagnostics["Frontend.Diagnostics<br/>224L · fan-in 0"]
+    Frontend_Diagnostics["Frontend.Diagnostics<br/>226L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>1057L · fan-in 0"]
     Frontend_Lint["Frontend.Lint<br/>212L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>794L · fan-in 0"]
+    Frontend_Query["Frontend.Query<br/>903L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>294L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>3013L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
@@ -108,11 +108,11 @@ graph TD
 | `Examples` | ? | 418 | 0 |
 | `Frontend.Annotate` | ? | 251 | 0 |
 | `Frontend.DiagCodes` | ? | 209 | 0 |
-| `Frontend.Diagnostics` | ? | 224 | 0 |
+| `Frontend.Diagnostics` | ? | 226 | 0 |
 | `Frontend.Format` | ? | 1057 | 0 |
 | `Frontend.Lint` | ? | 212 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 794 | 0 |
+| `Frontend.Query` | ? | 903 | 0 |
 | `Frontend.Rewrite` | ? | 294 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |

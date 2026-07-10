@@ -10,6 +10,12 @@
 > it is `refs`/hover POSITION-addressing (`docs/reference/language.md:699`) and located
 > errors for COMPOUND (non-bare-variable) culprits. Both are addressable without a `Surf`
 > signature change, at decl granularity, cheaply — see §4.
+>
+> **Update:** Slice 5 (§6) has LANDED — `bang query hover <file> <line> <col>` is wired and
+> shipping. The spike this section describes (`Bang/Frontend/HoverSpike.lean`) was ADOPTED into
+> `Bang/Frontend/Query.lean` (`hoverAtP`/`hoverJsonP`/`hoverJson`, §4 of that file) per the
+> adopt-a-spike discipline, then deleted — the spike file paths below are now historical (git
+> history preserves them; the live implementation is `Bang/Frontend/Query.lean`).
 
 ## 1. What's already landed vs what issue #52 originally scoped
 

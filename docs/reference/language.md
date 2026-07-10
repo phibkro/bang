@@ -695,9 +695,13 @@ so a `jq '.decls[].type'`-style consumer never branches on key existence, only o
 nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that
 type-checks; `typeError` carries the checker's message when it doesn't; `shape` carries
 a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`, which have no
-value-level type. `refs` is DECL-granularity (which decl's body mentions which name) —
-**position-addressing (line/col) is OUT of v1**, gated on issue #52's Spanned-Surf tier
-(`Surf` carries no per-node span today).
+value-level type. `refs` is DECL-granularity (which decl's body mentions which name).
+
+**Position-addressing (line/col → decl) landed at DECL granularity** (issue #52 slice 5,
+`bang query hover`, below) — a cursor resolves to the NEAREST-ENCLOSING top-level decl,
+not an exact sub-expression. EXACT sub-decl spans remain OUT of v1: `Surf` carries no
+per-node span (the Spanned-Surf tier, `docs/notes/spanned-surf-design.md`'s Q1 — deferred
+until a concrete consumer needs finer-than-decl precision).
 
 **`schemaVersion`/`bangVersion` are TWO DISJOINT fields, first-class from v1** (bang's
 docs/notes/compiler-as-dbms-survey.md, the ONE piece of DBMS discipline adopted *eagerly*,
@@ -748,6 +752,7 @@ field.
 | `laws` | `[<file.bang>]` | every discovered trait-law × impl instance (issue #60 seam) |
 | `def` | `<name> <file.bang>` | the one decl DEFINING `name`, as a `DeclFact` |
 | `refs` | `<name> <file.bang>` | `dump`'s own `"refs"` edges, filtered to `<name>` |
+| `hover` | `[<file.bang>] <line> <col>` | the decl at 1-indexed `<line>:<col>` — nearest-enclosing, DECL granularity (issue #52 slice 5) |
 
 All are `--json`-only (agents are the audience — no human-rendering flag in v1). Every
 op reads stdin when no `<file.bang>` is given, except `type`/`def`/`refs` (name-addressed
@@ -758,6 +763,40 @@ naming a decl that doesn't exist — the tool succeeded, the ANSWER is negative)
 op could not run at all (a parse or import-resolution failure, still `"ok":false` on
 stdout); `2` a tool error (e.g. unreadable file) — reported on stderr, nothing on stdout,
 never folded into the JSON (mirrors `check --json`'s own tool-error convention exactly).
+
+### `hover` — decl-granularity position query (issue #52 slice 5)
+
+`bang query hover [<file.bang>] <line> <col>` answers "what decl is at this cursor, and
+what is its type" — the ONE position-addressed verb, resolving `<line>:<col>` (1-indexed,
+matching every other located-error convention in bang) to the NEAREST-ENCLOSING top-level
+decl (the LAST decl, in source order, whose name starts at-or-before the cursor). A cursor
+anywhere in a decl's body — not just on its name — resolves to that WHOLE decl; this is
+coarser than an LSP's exact sub-expression hover (see the position-addressing note above).
+
+```json
+{"ok":true,"decl":{"name":"main","kind":"let","type":"Int","row":"{}",
+ "typeError":null,"span":{"line":2,"col":5,"endLine":2,"endCol":9}}}
+```
+
+`decl` carries the SAME fields as one `dump`/`symbols` entry (`name`/`kind`/`type`/`row`/
+`typeError`), plus `span` — the decl's NAME-TOKEN location, rendered with the same
+`{"line","col","endLine","endCol"}` shape `bang check --json`'s diagnostics use (one
+`Span`-rendering convention, reused, not reinvented). A cursor before every decl's name
+(e.g. inside the `import`/`use` header) is an honest miss:
+
+```json
+{"ok":false,"error":"no decl at 1:1"}
+```
+
+still exit `0` — the tool ran and produced a well-formed negative answer, the SAME
+convention `def`'s "no such decl" miss uses. `hover` is resolver-aware like every other
+op (imports visible); on a multi-file program the cursor addresses the ENTRY file's own
+source text (the file passed on the command line), not an imported module's.
+
+**Known interaction (issue #100, open, not fixed by this verb):** a decl whose checker-
+rendered `type` mentions a user `data` type can leak an internal μ-encoding placeholder
+(e.g. `#1000070`) in the `type` string — the SAME rendering `dump`/`symbols`/`type` already
+produce for such a decl. `hover` does not introduce this; it re-renders the existing fact.
 
 **Composing an arbitrary query over `dump`** — the whole point: no fixed verb answers
 "every exported decl whose type carries a divergence taint", but `dump` + `jq` does:
