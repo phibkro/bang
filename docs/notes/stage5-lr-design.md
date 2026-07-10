@@ -161,3 +161,105 @@ W1/W2) · ADR-0092 §D3-as-landed (ret-shape) · ADR-0085/0087 (custom rep) ·
 `BinaryLR.lean:1281` (`krelS_state_reinstall` = the exemplar) · `BinaryLR.lean:1768`
 (`compatK_handleState`) · `Dispatch.lean:177` (the custom resume focus) ·
 `Typing.lean:317,344,428` (`HasCTy.handleCustom`/`HasClauses`/`HasStack.customF`).
+
+---
+
+## RESOLUTION (krnl lane, 2026-07-10) — the two residuals after s5grind, machine-checked
+
+s5grind landed the compat cores (`compatK_handleCustom`, `krelS_custom_reinstall`,
+`custom_clause_resume`/`_of` — all PROVEN, clean). What remained were TWO residuals; this
+section is the DEFINITIVE map (supersedes the "LOW/SMALL" estimates above for these two).
+
+### Debt-1 residual — the `crelK_fund` handleCustom in-block delegation (the DESIGN PIN)
+
+**The wall (machine-checked, not budget).** The `crelK_fund`/`vrelK_fund` PROOF mutual block
+(`BinaryLR.lean:1405`, SEPARATE from the frozen `VrelK/CrelK/KrelS` DEF block at `~1537`) is
+**structural recursion over the typing derivation** (`cases h with` on `HasCTy`). The custom
+arm needs `vrelK_fund` on the CLAUSE param/body, which come from the SEPARATE `HasClauses`
+hypothesis `hcl` (via `hasClauses_find?_typed hcl hf`), NOT a sub-derivation of the scrutinee
+`h`. The structural-recursion checker only credits recursion on sub-terms of the SCRUTINEE, so
+it can NEVER see this call as decreasing.
+
+**Do-not-retry ledger (all machine-checked this session):**
+- **(a) in-block via `custom_clause_resume_of (vf := @vrelK_fund)`** — REFUTED. Default budget →
+  `isDefEq` timeout (200k); `set_option maxHeartbeats 1000000` → `fail to show termination …
+  failed to infer structural recursion`.
+- **(c) standalone closed-value lemma** — REFUTED (s5grind): `VrelK`'s U-clause routes
+  thunk-typed values through `CrelK`, and `opR` can be `U φ B`, so no block-free specialization.
+- **Fix 1 (inline `custom_clause_resume_of`'s body so `vrelK_fund hw` is syntactic)** — REFUTED.
+  Same `fail to show termination … Please use termination_by`: `hw` is still from `hcl`, not the
+  scrutinee. Inlining does not change what the checker credits.
+
+**THE FIX — Fix-2b, height-indexed (the ONLY viable shape; keeps the frozen type):**
+
+1. **Height functions** over the mutual `HasVTy`/`HasCTy`/`HasClauses` derivation:
+   `htV : HasVTy … → Nat`, `htC : HasCTy … → Nat`, `htCl : HasClauses … → Nat`, each
+   `= 1 + max(children heights)`. CRUX: `htC (handleCustom hcl … hM …)` must strictly exceed
+   `htCl hcl` (so the clause derivations `hasClauses_find?_typed` extracts are at strictly
+   smaller height) AND `htC hM`. (Lean's auto-`sizeOf` on the mutual inductive may already give
+   this — TRY `sizeOf` first; only hand-roll `htC` if `sizeOf`'s cross-mutual accounting doesn't
+   credit `HasClauses` sub-derivations. Build-arbitrate which.)
+2. **Height-indexed twins** proven by `induction k` (well-founded on `k : Nat`, NOT structural on
+   the derivation — this is what dodges the wall):
+   ```
+   vrelK_fund_at : ∀ k, HasVTy γ Γ v A → htV h ≤ k → ∀ n δ₁ δ₂, EnvRelK n Γ δ₁ δ₂ → VrelK n A (closeV δ₁ v) (closeV δ₂ v)
+   crelK_fund_at : ∀ k, HasCTy γ Γ c e B → htC h ≤ k → ∀ n δ₁ δ₂, EnvRelK n Γ δ₁ δ₂ → CrelK n B e (closeC δ₁ c) (closeC δ₂ c)
+   ```
+   In the `handleCustom` arm, the `vrelK_fund` calls on the clause param/body invoke
+   `vrelK_fund_at (k-1)` at their strictly-smaller heights (`htV hp < htC h`, `htV hw < htC h`
+   through `htCl`), and the recursive body call is `crelK_fund_at (k-1) hM`. The `k=0` base is
+   vacuous (`htC h ≤ 0` is impossible since every `htC ≥ 1`).
+3. **Post-block, the FROZEN twins recover byte-identically** (this is what keeps `Spec.lean:248`
+   `lr_fundamental h := crelK_fund h` untouched):
+   ```
+   theorem crelK_fund (h : HasCTy γ Γ c e B) : ∀ n δ₁ δ₂, EnvRelK n Γ δ₁ δ₂ → CrelK n B e (closeC δ₁ c) (closeC δ₂ c) :=
+     crelK_fund_at (htC h) h (le_refl _)
+   -- and likewise vrelK_fund := vrelK_fund_at (htV h) h (le_refl _)
+   ```
+   The type of `crelK_fund` is BYTE-IDENTICAL to the current one (`BinaryLR.lean:1453`), so
+   Spec.lean:248, `custom_clause_resume` (`:1669`), and `krelS_refl` are all untouched.
+
+**Which arms recurse at strictly-smaller height:** every arm that today calls `vrelK_fund`/
+`crelK_fund` recursively — `vthunk` (`crelK_fund` on the thunk body), `inl`/`inr`/`pair`/`fold`
+(`vrelK_fund` on payloads), the `handle*` arms (`crelK_fund hM`), and the NEW custom arm
+(`vrelK_fund` on `hp`/`hw` via `htCl`, `crelK_fund hM`). All are structural children ⟹ strictly
+smaller `htC`/`htV`/`htCl` ⟹ within `k-1`.
+
+**Frozen-DEF-block untouched:** the `VrelK/CrelK/KrelS` DEF block (`:1537`, measure
+`(n,_,_,sizeOf _)`) is NOT touched — Fix-2b only restructures the PROOF block's recursion from
+implicit-structural to explicit-`k`-induction. No `set_option` on the frozen block; the frozen
+block's 200k-budget heartbeat inference is not perturbed (a separate block).
+
+**Slice plan for the grind (fresh unit):**
+1. Define `htV`/`htC`/`htCl` (or confirm `sizeOf` suffices) + the `htC (handleCustom) > htCl hcl`
+   lemma. *Green gate.*
+2. State `vrelK_fund_at`/`crelK_fund_at`; port the NON-custom arms verbatim (they're the current
+   arms with `_at (k-1)` on recursive calls + the `htX child < htX h ≤ k` side-goals by `omega`).
+   *Green gate — this is the bulk, mechanical.*
+3. Add the custom arm using the (proven) `compatK_handleCustom` + an inline/`_of` `hclause` now
+   calling `vrelK_fund_at (k-1)` on the clause derivations. *Un-sorries the custom arm.*
+4. Post-block: `crelK_fund`/`vrelK_fund` = `_at (htX h) h (le_refl _)`. *Byte-identical type;
+   Spec.lean:248 rebuilds unchanged.*
+5. Gate: `just axioms` — `lr_fundamental`/`lr_sound` LOSE nothing but the custom-arm `sorryAx`
+   contribution (the W1/W2 cluster sorries remain, orthogonal); 16 clean headlines byte-unchanged.
+
+**Budget note:** this is a multi-session grind (the `_at` port + the height lemmas). The manager's
+call is whether it runs on the current unit's budget or a fresh unit — this pin is written so a
+FRESH unit can grind it cold.
+
+### Debt-3 residual — the R-1 `dispatchOn_rename` custom sorry is in DEAD CODE
+
+The Debt-3 R-1 plan above ("thread `VcapFree` through `dispatchOn_rename` → `idDispatch_rename`
+→ the step-rename keystone") is **VOID**: that keystone chain is **dead code**. Ref-verified
+(krnl, 2026-07-10, clean tree): the chain `dispatchOn_rename → idDispatch_rename → step_rename
+→ run_rename → run_rename_converges → run_bump_converges` has ZERO live callers — 0 refs outside
+`LR.lean`; the terminus `run_bump_converges` has no caller at all (only its def + one prose
+comment at `:1961` that says "the OLD frozen-counter form"). The route-1 `crelK_ret` refactor
+orphaned it (`LR.lean:515`: "crelK_ret (route-1 form) bridges … no Canonical/CapsBelow/run_bump").
+The `by sorry` at `LR.lean:1018` sits inside this dead chain. **Correct move: DELETE the 6 dead
+chain lemmas** (removes the sorry + dead code) rather than thread a premise into lemmas nothing
+consumes. Deletion is surgical (the 6 are interleaved with the LIVE `renameCfg`/`bumpσ`/
+`CapsBelow`/`renameK_capsBelow` machinery — 102 live refs outside LR — so delete ONLY the 6
+theorems + any helper uniquely consumed by them; build + axiom-diff arbitrates). Gated behind an
+operator delete-vs-thread ruling (census-adjacent: the deletion may remove a `sorryAx` from a
+flagged headline, which shrinks the flagged set — a ledger event).
