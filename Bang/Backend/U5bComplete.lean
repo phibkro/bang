@@ -227,6 +227,31 @@ theorem handle_txn_forward
                = some (.raised n op w, g', σ', τ'.tail, κ') := by
   simp only [evalD, Handler.label, hbody, Option.bind_some]
 
+/-- CUSTOM handle composes (body terminates → whole handle terminates, pop κ'.tail). The user-effect
+analog of `handle_state_composes`: the custom handle arm PUSHES `κ.push g p cls` for the body's extent
+and POPS `κ'.tail` on a `term (ret v0)` exit (ADR-0085 Stage 4). Same 0-delta port shape. -/
+theorem handle_custom_composes
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (p : Val)
+    (cls : List (Bang.OpId × Comp)) (M : Comp)
+    (v0 : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) σ τ (κ.push g p cls) (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.term (.ret v0), g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.custom ℓ0 p cls) M)
+               = some (.term (.ret v0), g', σ', τ', κ'.tail) := by
+  simp only [evalD, Handler.label, hbody, Option.bind_some]
+
+/-- CUSTOM handler forwards a raise (body raised → whole handle raises, pop κ'.tail). The user-effect
+analog of `handle_state_forward`. -/
+theorem handle_custom_forward
+    (f g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (ℓ0 : Bang.EffectRow.Label) (p : Val)
+    (cls : List (Bang.OpId × Comp)) (M : Comp)
+    (n : Nat) (op : Bang.OpId) (w : Val) (g' : Nat) (σ' : SStore) (τ' : THeap) (κ' : CStore)
+    (hbody : evalD f (g+1) σ τ (κ.push g p cls) (Comp.subst (Val.vcap g ℓ0) M)
+               = some (.raised n op w, g', σ', τ', κ')) :
+    evalD (f+1) g σ τ κ (Comp.handle (Handler.custom ℓ0 p cls) M)
+               = some (.raised n op w, g', σ', τ', κ'.tail) := by
+  simp only [evalD, Handler.label, hbody, Option.bind_some]
+
 /-- Fuel monotonicity for `evalD` (the `evalD` analog of `exec_succ`/`exec_mono`): more fuel
 never changes a `some`. Needed by the converse spine, which COMBINES two `evalD` sub-runs at
 different fuels (e.g. letC binds M0 at `n`, subst-N at `ns`) — run_evalD never needs this because
@@ -535,23 +560,24 @@ theorem evalD_term_shape : ∀ (f g : Nat) (σ : SStore) (τ : THeap) (κ : CSto
 CONTINUATION run's fuel BOUNDED by the input fuel `F` (`F' ≤ F`). The bound is the fuel-decrease
 bookkeeping the sequencing arms (letC/app) need: M0's terminated-run leftover bounds the subst-run,
 which must be `< F` to reapply the strong-induction IH. -/
--- custom-free completeness: the machine custom-store is EMPTY throughout (input AND output `[]`) — no
--- custom handle fires under `CFComp`, so `evalD` never touches `κ`. Fixing it here keeps the sequencing
--- arms' sub-runs recursing at the SAME empty `κ` without a separate κ-invariance lemma.
-def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (M : Comp) (K : Bang.EvalCtx) (v : Val) : Prop :=
-  ∃ n g' σ' τ',
-    CFStore σ' ∧ CFHeap τ' ∧
-    ((∃ t, evalD n g σ τ [] M = some (.term t, g', σ', τ', []) ∧
+-- κ-THREADED completeness (#62 Slice 2): `evalD` threads the custom store `κ` (input) → `κ'` (output),
+-- exactly as it threads σ/τ. The CF (custom-free) conjuncts are GONE — custom content is now permitted;
+-- the κ-store agreement `CCtxCorr κ' (ctxNetEffect K σ' τ')` (the κ-analog of the `CtxCorr σ'` conjunct)
+-- replaces them, tying the output store to the context's active custom frames (as `run_evalD` does).
+def CompletesTo (F : Nat) (g : Nat) (σ : SStore) (τ : THeap) (κ : CStore) (M : Comp) (K : Bang.EvalCtx) (v : Val) : Prop :=
+  ∃ n g' σ' τ' κ',
+    ((∃ t, evalD n g σ τ κ M = some (.term t, g', σ', τ', κ') ∧
       CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
+      CCtxCorr κ' (ctxNetEffect K σ' τ') ∧
       CapLabelCoh (g', ctxNetEffect K σ' τ', t) ∧ FreshCfg (g', ctxNetEffect K σ' τ', t) ∧
-      CFComp t ∧
       ∃ F', F' ≤ F ∧ Config.run F' (g', ctxNetEffect K σ' τ', t) = Result.done v)
     ∨
-    (∃ nn oop vv, evalD n g σ τ [] M = some (.raised nn oop vv, g', σ', τ', []) ∧
+    (∃ nn oop vv, evalD n g σ τ κ M = some (.raised nn oop vv, g', σ', τ', κ') ∧
       CtxCorr σ' (ctxNetEffect K σ' τ') ∧ CtxTxnCorr τ' (ctxNetEffect K σ' τ') ∧
+      CCtxCorr κ' (ctxNetEffect K σ' τ') ∧
       CapLabelCoh (g', ctxNetEffect K σ' τ', Comp.ret vv) ∧
       FreshCfg (g', ctxNetEffect K σ' τ', Comp.ret vv) ∧
-      NoResume (ctxNetEffect K σ' τ') nn oop ∧ CFVal vv ∧
+      NoResume (ctxNetEffect K σ' τ') nn oop ∧
       ∃ F', F' ≤ F ∧ dispatchRun F' g' nn (ctxNetEffect K σ' τ') (labelOf (ctxNetEffect K σ' τ') nn) oop vv
               = Result.done v))
 
