@@ -110,6 +110,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — unary minus (#64) (`7a55ad6`)
 - **cli** — bang test — wire the LawTest/lawInstancesOf seam (#60) (`88e550a`)
 - **surface** — multi-binding let sugar (#68) (`44c0939`)
+- **fmt** — canonical multi-binding let — collapse sequential chains (#71) (`d25a3ea`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
