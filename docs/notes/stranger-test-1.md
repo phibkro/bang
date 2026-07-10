@@ -45,3 +45,12 @@ Roleplay-strict stranger + forbidden-files list + time-to-first-success metrics 
 quoted verbatim + "one doc change" question. Re-run at each ◊ (the loop-audit's user-loop
 row now tracks it). The cipher program: exercised match-on-Str, nested Char(n) match, single+
 multi-arg recursion, thunks, sums, arithmetic wrap, concat — a good template task.
+
+**Rebuild-first, always (added after round 2's false-regression scare).** Before scoring
+against the binary, REBUILD it from the round's base sha (`nix develop -c lake build bang`,
+~2 min warm) — never trust a prebuilt `.lake/build/bin/bang` at face value. Round 2's first
+pass hit a stale binary (predating that round's own ergonomics batch) and would have logged
+FOUR false regressions (`--help` exit 1, no `--version`, …) that were already fixed on the
+base sha — checking the binary's mtime against the relevant commits caught it before the
+score was recorded. Same gate-the-clean-sha discipline the proofs use, applied to a CLI
+artifact: a stale build is testing a lie, not the code.
