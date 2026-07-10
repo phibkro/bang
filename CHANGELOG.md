@@ -168,5 +168,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **landing** — complete the task #15/#16 Part-B recovery — the transplant retirement + regen (the stuck-sequencer incident) (`4798f5ef`)
 - **surface** — reserve 'resume' as an op name — ADR-0095 D5 implemented (#93) (`7330b5f1`)
 - **surface** — reserve 'resume' as a BINDER — the D5 reservation complete (#93 closed) (`f1cb2cfd`)
+- **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fc1197b2`)
+- **hooks** — sanitize GIT_INDEX_FILE/GIT_DIR from the hook's nix invocations — the worktree index-corruption vector (plan 008) (`fdd8ade3`)
 
 <!-- END GENERATED changelog -->

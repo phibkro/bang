@@ -19,37 +19,41 @@
 
 bang-lang is a small effect-typed language whose **paradigm and runtime are
 values, not language features**. The contribution is a **verified two-hop
-architecture**:
+architecture** (ADR-0016 as revised by ADR-0059):
 
 ```
   source ─►  graded-CBPV semantics  ─Bahr-Hutton calc─►  CalcVM
                                                             │
-                                                            └─Benton-Hur LR─►  WasmFX
+                                                            └─annotated fwd-sim─►  Wasm 3.0
+                                                               (grade-directed lowering)
 ```
 
 The CalcVM is the **executable specification** (canonical operational meaning).
-The WasmFX backend is the **optimized compiler output**, proven to preserve
-contextual equivalence. See ADR-0016 for the architecture commitment.
+**Wasm 3.0 is the verified compiler target** (ADR-0059): grade-directed
+lowering — pure→native, abort→exceptions, tail→direct call, general→the
+GC-frame-chain runtime; WasmFX `switch`/`resume` is the one pluggable fast-path
+slot once it standardizes (stack switching did NOT land in Wasm 3.0). The hop
+is proven by annotated forward simulation (`compile_forward_sim`, ADR-0035);
+the binary LR (◊4) is the separate contextual-equivalence theorem.
 
-Success = a runnable bang-lang program compiled to WasmFX, with kernel-checked
-proofs that observed behavior equals what the reference semantics says.
+Success = a runnable bang-lang program compiled to Wasm 3.0, **executed on a
+real engine**, with kernel-checked proofs that observed behavior equals what
+the reference semantics says. (As of 2026-07-10 the proof half is met and the
+real-engine half is not — that asymmetry is what ◊5.5 exists to close.)
 
 ## The map
 
 ```
-                                                                ┌─► Path-Surface
-                                                                │   (parser, type-checker, CLI)
-                                                                │
-[◊1]──►[◊2]──►[◊3]──►[◊4]────────────────────────────────►[◊5]──┼─► Path-Compiler-Optim
- recon  kernel  Calc  LR    compile_forward_sim                 │   (effect-specific lowerings,
- ✓     gate✓  ported       for trivial fragment                 │    dead-code, zero-grade erasure)
-        (v1)   to graded                                        │
-               CBPV                                             └─► Path-Kernel-Extensions
-                                                                    (multi-shot, STM, cost grading)
-                                                                                          │
-                                                                                          ▼
-        │                                                                              [◊6] ── release v0
-        │
+[◊1]──►[◊2]──►[◊3]──►[◊4]──►[◊5]───►[◊5.25]────►[◊5.5]─────►[◊5.75]────►[◊6]──► …v1 (label
+ recon  kernel  Calc   LR    fwd-sim  close+demo  EMISSION    compiled     public   deferred —
+ ✓      gate✓   ported ✓scoped  ✓     census 18→20  bang build  demo pack   v0.2+    see the
+        (v1)    ✓             (proof) sim-KV·IO mock  → .wasm on  in-browser  papers+  research
+                                      CTR #87        a real engine  ·xv6 slice  validation ladder)
+
+parallel, cross-layer (rule 2 — these don't tangle the emission spine):
+  RESEARCH LADDER (pre-v1, pulled forward — see §Pre-v1 research ladder)
+  PLANS BACKLOG   (advisor plans 001–007: tests·dx·hardening — see plans/README.md)
+
         │ ◊ = stable checkpoint (road may diverge here into parallel paths)
         │ ─►= linear segment (one path at a time; paths would tangle if forked)
 ```
@@ -63,8 +67,11 @@ proofs that observed behavior equals what the reference semantics says.
 | ◊3 | **CalcVM ported** · **gate ✓ (2026-06-23)** | Calc* machines collapsed into one graded-CBPV calculated machine; `exec ∘ compile ≡ eval` still proven | ✅ gate met: unified `Bang/Backend/AbstractMachine.lean` (pure CBPV + deep handlers/throws + resumptive state + transaction + ADT elims), `compile_correct`/`evalD_agrees_source`/`sim`/`run_evalD` axiom-clean ⊆ {propext, Classical.choice, Quot.sound}; K2 matrix (8 Calc* + Eval) retired to git history (`87d5aeb`, ADR-0017); 16-case 5-axis diff-test battery (`Agree`, all `rfl`, 0-axiom) green; `just verify` 723 jobs. ◊2 gate held 0-axiom throughout |
 | ◊4 | **LR foundation (non-▷ fragment)** · **gate ✓ scoped (2026-06-24, ADR-0039)** | `lr_fundamental` proven for the **non-▷ fragment** (pure CBPV · functions · non-recursive ADTs · throws); the cohesive **▷-subsystem** (μ fold/unfold · `up` · resumptive state/txn handlers) → **◊4.5**. (`group_recovers` RETIRED — ADR-0032.) | ✅ scoped gate met: `lr_fundamental` reads the real proof, `sorryAx` ONLY from the documented ▷-subsystem; ◊2 (`no_accidental_handling` 0-axiom, STD trusted-three) + ◊3 (CalcVM trusted-three) held; arrow clause = peeling+F-restriction (ADR-0038), closed-value carrier (ADR-0036). `lr_sound_closed` (F-typed) proven; `lr_sound`(arbitrary-C)/`zero_usage` → ◊4.5. `effect_sound` (Q14) → ◊5 |
 | ◊4.5 | **LR ▷-subsystem** · **✓ SCOPED-SEAM LANDED + MERGED into main @ `4c77ba8` (2026-06-24, gated 724 jobs); sorryAx-zero PROBED NO-GO under DYNAMIC dispatch → PIVOT to typed+static (ADR-0045) DISSOLVES the edge** | Answer-typed KrelS rebuild + (g) migration (frozen `Crel:=CrelK`) + `lr_sound` over typed ⊑ + μ fold/unfold + `up` + throws/state/txn resumptive composition ALL closed end-to-end. The resume-through-a-wrap edge is the ONE documented `krelS_splitAt_decomp` sorry (ADR-0026 descent; **ADR-0043**). `NoWrapMiss` predicate banked = the right primitive | **BROAD moat, NOT sorryAx-zero:** `lr_sound`/`lr_fundamental` hold for ALL contexts (incl. state-over-throws + legit stacking) modulo the single documented resume-edge sorry. The cheap typed-CrelK close (Architecture D) was BUILD-PROBED (`typed-crelk-probe@ffac1b0`) and is **NO-GO**: `HasStack` pins the bottom answer but the strip's intermediate `KrelS` hole can't be typed (no `KrelS⇒HasStack` bridge; LR one-way) — D only relocates the leak. Only the heavy index-everything reshape remains (4–7 sessions + frozen break, not worth one edge). **Seam was verified-final FOR THE DYNAMIC KERNEL; ADR-0045 pivots to typed+static dispatch, which DISSOLVES the edge** (build-gated — it was an artifact of dynamic dispatch; see CONTEXT ★ ACTIVE DIRECTION + `paths/archive/PATH-typed-static-pivot.md`). Merged cleanly (only README conflicted → regenerated; ADR-0043 re-frontmattered to the 0042 schema). |
-| ◊5 | **Compiler v0** · **✓ DONE, IN MAIN (`0e5e28d`, 2026-06-24); COMPLETENESS closed 2026-07-09: `compile_forward_sim` sorryAx-ZERO under the ADR-0086 premised re-freeze (`VcapFree ∧ CustomFree`, `d13e0af`)** | `compile_forward_sim` proven for a trivial fragment; WasmFX module type concrete | Round-trip test by fragment (corrected 2026-06-23, ADR-0035/0036 recon): **pure-arith** `.bang` → ANY engine incl. wasm3; **one-handler** `.bang` → **Wasmtime** `Config::wasm_stack_switching` (x86-64; wasm3 has NO stack-switching). Pick a **suspend/resume** effect (state/generator) for the tracer, NOT `throws` — `throws` lowers to `resume_throw`, unlanded in Wasmtime (#10248). Same value as `Source.eval`. |
-| ◊6 | **Release v0** | Three parallel paths from ◊5 converged into a releasable artifact | Public release tag + paper drafts for the theorems (`lr_fundamental`, `compile_forward_sim`, and the ◊4 group-recovery *resolution* — ADR-0032, the theorem itself retired) + **the validation gate** (verification ≠ validation): LICENSE present · ≥1 outsider ran an `examples/` project unassisted · ≥3 outsider-filed issues (the first external feedback loop — see `docs/notes/loop-audit.md`) |
+| ◊5 | **Compiler v0 (the PROOF half)** · **✓ DONE, IN MAIN (`0e5e28d`, 2026-06-24); COMPLETENESS closed 2026-07-10: `compile_forward_sim` UNCONDITIONAL over user effects (#62, `d35295c`)** | `compile_forward_sim` proven; Wasm module type concrete. **Honesty note (2026-07-10): the engine round-trip this row's original gate described never ran — the ✓ covers the proof against the GC-frame abstract machine. The round-trip is RE-HOMED to ◊5.5** (and retargeted from WasmFX to Wasm 3.0 by ADR-0059 — pre-revision gate text preserved in git history). | Proof gate: `compile_forward_sim` ⊆ trusted-three on a clean-tree build of the pinned sha. |
+| ◊5.25 | **Close + demo** | Census 18→20 landed (task #37: the StackInc carrier unit, `crelK_fund_up` rewrite); sim-KV nondeterminism demo (post-#94 probe) + IO mock echo server (ADR-0084 slice A) + CTR carried-param binder (#87) in `examples/` | `just verify` green incl. the new examples; proof-state block shows 20 clean; a public v0.1.x tag + short post (the public-early policy starts HERE, not at ◊6) |
+| ◊5.5 | **EMISSION — the real ◊5 gate** | `bang build -o out.wasm` emits Wasm 3.0 by grade-directed RUNGS (ADR-0059): rung 1 = ⊥-row/pure fragment → core wasm on ANY engine; rung 2 = abort→exceptions + tail→direct-call; rung 3 = general → the GC-frame-chain runtime | Per rung: the emitted `.wasm` runs on a real engine (wasmtime/node) and prints the SAME value as `Source.eval` on a differential corpus (proof rides the reference, now crossing a real engine boundary). Rung 1 alone unlocks ◊5.75 partially. |
+| ◊5.75 | **Compiled demo pack** | `examples/` run compiled; JSON parser + sim-KV in a browser; the xv6-slice narrative once real IO lands (ADR-0084 decision D — needs FFI design) | Demo repo/page with the compiled artifacts; each demo's output diffed against the kernel oracle |
+| ◊6 | **Public release v0.2 + papers + validation** (the "v1" LABEL stays deferred — see the research ladder) | Papers drafted from the ◊6 skeletons (`docs/papers/`: calculated-machine — ready once census lands; binary-LR — after 18→20); LICENSE; deliberate outsider exposure (Lean Zulip / HN / lobsters) | Public release tag + submitted-or-preprinted drafts + **the validation gate** (verification ≠ validation): ≥1 outsider ran an `examples/` project unassisted · ≥3 outsider-filed issues. **Pulled forward: exposure STARTS during ◊5.5** (experience-report post), because this gate has other-people latency no internal work can compress. |
 
 ## Product spine — pulled forward (PRD §7)
 
@@ -89,6 +96,48 @@ full end-to-end (surface → CalcVM → WasmFX → engine) thickens as the verif
 This is the **one sanctioned exception** to "linear segments admit no parallelism" below: the product
 spine is a *different layer* (surface) from the verification spine (kernel/compiler), so per rule 2
 (cross-layer paths run in parallel freely) it does not tangle the ◊-march.
+
+## Pre-v1 research ladder — pulled forward (2026-07-10 operator ruling)
+
+The research frontier moves BEFORE the "v1" label, not after it. The label is deferred;
+**publicness is not** — every ◊ from ◊5.25 on ships a public v0.x tag + a short post, and the
+◊6 validation gate's outsider exposure starts during ◊5.5 (it has other-people latency no
+internal work can compress). "v1" is stamped when the ladder's rungs below have landed or been
+consciously cut — not on a date.
+
+These run as cross-layer parallel tracks (parallelism rule 2): R1–R3 are library-code +
+handlers over the frozen kernel (design notes already banked), R4 is the one that eventually
+needs a K-ADR, R5 is survey-tier. None tangles the ◊5.5 emission spine.
+
+```
+R1  NONDETERMINISM   `Choice` as ordinary effect · seeded-deterministic DST handler
+     status: DESIGNED (docs/notes/ndet-dst-design.md) · sim-KV queued at ◊5.25 (#94 gate)
+R2  DISTRIBUTED      sim-KV grows into the replicated-KV under DST — nondeterminism-as-effect ·
+     SYSTEMS         DST-as-handler · certified CRDTs (docs/notes/distributed-story.md)
+     status: story mapped · first slice follows R1 (same lattice of handlers)
+R3  CALM-AS-GRADE    lattice-store core + `coord` row label; the monotone fragment discharges
+     coordination-freeness (docs/notes/calm-as-grade-survey.md)
+     status: SURVEYED · probe after R2's lattice-store exists to grade
+R4  CONCURRENCY      Q21, the multikernel: STM's privileged concurrent form returns; shared-
+     nothing per ADR-0037. KEY SEQUENCING INSIGHT: R1's deterministic scheduler
+     makes concurrency semantics TESTABLE-BY-SIMULATION before any real threads —
+     design + DST-simulated semantics pre-v1, real-thread implementation post-◊6.
+     status: design-first; K-ADR territory; do not start impl before the DST rung exists
+R5  REFINEMENT TYPES survey-tier ONLY pre-v1: grades vs refinements — bang's n-axis grade
+     family may subsume the cheap cases; refinements-as-an-axis is the question, not a
+     commitment. No design note exists yet — the survey is the deliverable.
+R6  LAMBDA-CUBE      how far up the cube (F → Fω → CoC) the SURFACE can climb while the
+     ASCENT          kernel stays ∀-free (IR has no ∀ — the elaborate-to-mono wall,
+     ADR-0027/0075): the polymorphism arc already proved F-and-HKT-without-kernel-∀;
+     the question is where that stratified compromise runs out — which dependent-type
+     ergonomics elaborate away (the R5 refinement fragment is likely the cheap face of
+     this same question) and which demand kernel Π (a K-ADR + downstream re-validation,
+     the expensive fork). Grounded in the profile ladder
+     (docs/notes/kernel-substrate-survey.md); survey-then-rule, sequenced with R5.
+──  MULTI-SHOT (Q22) PARKED, possibly permanently: nothing in R1–R5 or the xv6 narrative
+     needs it (cooperative scheduling = one-shot + scheduler loop). Reopening it is a
+     deliberate operator act, not a default.
+```
 
 ## Post-MVP direction — the tracks from here (stable map; live edge in `CONTEXT.md`)
 
@@ -147,12 +196,12 @@ and its own **cadence**.
 └──────────────────┬────────────────────────────────────────────┘
                    │ SEAM: typed AST contract
 ┌──────────────────┴ COMPILER LAYER ─ evolving ─────────────────┐
-│   graded-CBPV  ─Bahr-Hutton→  CalcVM  ─Benton-Hur→  WasmFX    │
+│   graded-CBPV  ─Bahr-Hutton→  CalcVM  ─fwd-sim→  Wasm 3.0     │
 │   theorems: type safety, lr_fundamental, compile_forward_sim  │
 │   optimizations welcome; must preserve preceding theorem      │
 │   cadence: days                                               │
 └──────────────────┬────────────────────────────────────────────┘
-                   │ SEAM: WasmFX module + handler protocol
+                   │ SEAM: Wasm 3.0 module + GC-frame handler protocol (ADR-0059)
 ┌──────────────────┴ KERNEL LAYER ─ frozen ─────────────────────┐
 │   graded-CBPV reference + effect-row algebra                  │
 │   theorems: unifier sound, no_accidental_handling             │
@@ -202,10 +251,12 @@ ADR-0037.
 
 ```
 ◊5 ──► PATH-compiler-optim     ─ owner: compiler-engineer
-   │   (effect-specific lowerings, dead-code, zero-grade erasure)
+   │   (◊5.5 emission rungs first; then effect-specific lowerings,
+   │    dead-code, zero-grade erasure — with a real engine to measure against)
    │
    ├──► PATH-kernel-extensions ─ owner: kernel-engineer + proof-engineer
-   │   (multi-shot handlers, STM, cost grading)
+   │   (the research ladder R4 concurrency/STM + cost grading;
+   │    multi-shot PARKED with Q22 — see §Pre-v1 research ladder)
    │
    └──► PATH-surface-v0        ─ owner: surface-engineer
        (parser, type-checker, CLI, error messages)
@@ -216,7 +267,7 @@ ADR-0037.
 | | Frozen | Liquid |
 |---|---|---|
 | **Kernel layer** | rows-as-sets · five primitives · graded-CBPV substrate · calculation-as-method | proof-body internals · helper lemmas |
-| **Compiler layer** | two-hop architecture · WasmFX as target · LR as correctness notion | individual machine designs · optimization strategies |
+| **Compiler layer** | two-hop architecture · Wasm 3.0 as target (ADR-0059; WasmFX `switch` = post-standardization fast-path only) · LR as correctness notion | individual machine designs · optimization strategies |
 | **Surface layer** | AST seam contract | EVERYTHING ELSE — syntax · glyphs · error formats · CLI shape |
 
 Frozen things change only via K-ADR + downstream re-validation. Liquid things
