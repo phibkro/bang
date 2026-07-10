@@ -3064,6 +3064,12 @@ def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (
   | .matchD s arms                 => firstPrivateDotAccess resolved s <|> dArmsFirstPrivateDotAccess resolved arms
   | .withCapS _ i _ b              => firstPrivateDotAccess resolved i <|> firstPrivateDotAccess resolved b
   | .letRecS _ _ f b               => firstPrivateDotAccess resolved f <|> firstPrivateDotAccess resolved b
+  -- #68 sugar: this walk runs PRE-erasure (mergeModules operates on raw per-file trees), so
+  -- `.lettMulti` is reachable — scan every binding RHS, then the body (Surface.lean:214).
+  | .lettMulti binds b             => bindsFirstPrivateDotAccess resolved binds <|> firstPrivateDotAccess resolved b
+def bindsFirstPrivateDotAccess (resolved : List (String × Prog)) : LetBindings → Option (String × String)
+  | .nil           => none
+  | .cons _ e rest => firstPrivateDotAccess resolved e <|> bindsFirstPrivateDotAccess resolved rest
 def dArmsFirstPrivateDotAccess (resolved : List (String × Prog)) : DArms → Option (String × String)
   | .nil             => none
   | .cons _ _ b rest => firstPrivateDotAccess resolved b <|> dArmsFirstPrivateDotAccess resolved rest
@@ -3704,6 +3710,12 @@ def firstBareOpCallStep (opNames : List String) : Surf → Option String
   | .dotPerform r _ (.one a)       => firstBareOpCall opNames r <|> firstBareOpCall opNames a
   | .dotPerform r _ (.two a b)     => firstBareOpCall opNames r <|> firstBareOpCall opNames a <|> firstBareOpCall opNames b
   | .letRecS _ _ f b               => firstBareOpCall opNames f <|> firstBareOpCall opNames b
+  -- #68 sugar: the law-diagnostic walk can see raw (pre-erasure) trees — cover `.lettMulti`
+  -- like `.lett`: every binding RHS, then the body.
+  | .lettMulti binds b             => bindsFirstBareOpCall opNames binds <|> firstBareOpCall opNames b
+def bindsFirstBareOpCall (opNames : List String) : LetBindings → Option String
+  | .nil           => none
+  | .cons _ e rest => firstBareOpCall opNames e <|> bindsFirstBareOpCall opNames rest
 def dArmsFirstBareOpCall (opNames : List String) : DArms → Option String
   | .nil             => none
   | .cons _ _ b rest => firstBareOpCall opNames b <|> dArmsFirstBareOpCall opNames rest

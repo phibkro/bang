@@ -28,6 +28,7 @@ graph TD
   end
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
     Backend_AbstractMachine["Backend.AbstractMachine<br/>6850L · fan-in 0"]
+    Backend_EnvMachine["Backend.EnvMachine<br/>3605L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1496L · fan-in 0"]
     Backend_Wasm["Backend.Wasm<br/>2721L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>564L · fan-in 0"]
@@ -48,7 +49,7 @@ graph TD
     Frontend_Surface["Frontend.Surface<br/>2712L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>5139L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>5151L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>2424L · fan-in 0"]
     Meta_LR["Meta.LR<br/>2227L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
@@ -80,6 +81,7 @@ graph TD
 | `Frontend.Surface` | ? | 2712 | 1 |
 | `Audit` | Apex | 54 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
+| `Backend.EnvMachine` | ? | 3605 | 0 |
 | `Backend.U5bComplete` | ? | 1496 | 0 |
 | `Backend.Wasm` | ? | 2721 | 0 |
 | `Core.CapCoh` | ? | 564 | 0 |
@@ -101,7 +103,7 @@ graph TD
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 5139 | 0 |
+| `Frontend.TypeCheck` | ? | 5151 | 0 |
 | `Meta.BinaryLR` | ? | 2424 | 0 |
 | `Meta.LR` | ? | 2227 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |
