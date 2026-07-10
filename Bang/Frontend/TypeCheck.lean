@@ -2927,7 +2927,11 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
             throw s!"effect {n}: op '{opName}' is reserved by a built-in effect (v1 restriction — see ADR-0092)"
           -- ADR-0095 D5 / #93: `resume` is reserved so the future explicit `resume(w)` clause
           -- form (and the eventual multi-shot first-class continuation, Q22/Q27) can land
-          -- without breaking any existing program that would otherwise use the name.
+          -- without breaking any existing program that would otherwise use the name. This is
+          -- the OP-NAME half only — the BINDER half (a clause arg-binder, `let`/`fun` name, or
+          -- bare reference to `resume` — D5's OWN text: "reserved as an op name AND a binder")
+          -- is `pIdent`/`pAtom`'s reserved-word-list entries in `Bang/Frontend/Surface.lean`,
+          -- the SAME mechanism `with` (D1) already uses — see those arms' own doc comments.
           if opName == "resume" then
             throw s!"effect {n}: op 'resume' is reserved for the future explicit resume form (ADR-0095 D5 — see issue #93)"
         -- D1: label := 4 + declIndex, deterministic by EFFECT-decl order (the four built-ins keep
@@ -5285,6 +5289,32 @@ module-interface work's territory — this reservation is the v1 stopgap, not th
 #guard (match Bang.Surface.parseProg "effect Mixed { read4 : Int -> Int, get : Int } 0" with
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
         | .error _ => false)
+
+/-! ### #93 continued — the BINDER half of D5's reservation. The OP-NAME half (the corpus
+immediately above) already covers `effect Foo { resume : … }`; D5's OWN text is "reserved as an
+op name AND a binder" — the binder half (a clause arg-binder, a `let`/`fun` name, or a bare
+reference to `resume`) is a SEPARATE mechanism, `pIdent`/`pAtom`'s reserved-word-list entries in
+`Bang/Frontend/Surface.lean` (the SAME mechanism `with`, D1's own reservation, already uses) —
+`pEffectMembers` parses an op name directly off the token stream, never through `pIdent`, so the
+op-name check above cannot also cover binders; this is why the reservation needs both mechanisms,
+not one. -/
+
+-- `resume` as a BINDER — a `let`-bound name — is rejected at PARSE time.
+#guard (match Bang.Surface.parseProg "let resume = 5 in resume" with
+        | .error _ => true | .ok _ => false)
+
+-- `resume` as a handler CLAUSE's arg-binder is rejected at PARSE time too (the exact position D5's
+-- future explicit form would bind it in).
+#guard (match Bang.Surface.parseProg "effect Net { fetch : Int -> Int } handle net.fetch(1) with Net as net { fetch(resume) => resume * 10 }" with
+        | .error _ => true | .ok _ => false)
+
+-- a NON-colliding name (`resumed`, not `resume`) is ACCEPTED — the reservation is precise, not an
+-- over-broad rejection of anything superficially similar (the `read4`-vs-`read` precedent, #92).
+#guard (match Bang.Surface.parseProg "effect Foo { resumed : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .ok _ => true | .error _ => false)
+        | .error _ => false)
+#guard (match Bang.Surface.parseProg "let resumed = 5 in resumed" with
+        | .ok _ => true | .error _ => false)
 
 /-! ### ADR-0095 D1 (RULED) `handle e with Name as h { … }` — the REAL SURFACE corpus (#21
 s7probe/#44 Stage 7 e2e battery). Kernel-adjacent complement to `examples/handle-custom-*`
