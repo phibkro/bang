@@ -135,6 +135,35 @@ check_contains "private-access-names-decl" "$got_err" "Secret"
 check_contains "private-access-names-module" "$got_err" "priv"
 check_contains "private-access-says-private" "$got_err" "private"
 
+# ── #73 fix: QUALIFIED (`Mod.name`) access to a non-pub decl must reject the SAME as the `use`
+# path above — the exact enforcement hole the stranger-test found (`$(Bare.plain) 41` silently
+# resolved to 42 with no error, while `use Bare (plain)` correctly rejected). Positive case
+# alongside it: `pub`-qualified access must keep working (D3 is "private, not deleted", not
+# "qualified access disabled"). ──
+cat > "$fixdir/qualbare.bang" <<'BANG'
+let plain = {fun x => x + 1}
+BANG
+cat > "$fixdir/qual_private.bang" <<'BANG'
+import qualbare
+let main = $(qualbare.plain) 41
+BANG
+got_err="$("$bang" run "$fixdir/qual_private.bang" 2>&1 >/dev/null)" && got_err_exit=0 || got_err_exit=$?
+check "qualified-private-access-exit" "$got_err_exit" "1"
+check_contains "qualified-private-access-names-decl" "$got_err" "plain"
+check_contains "qualified-private-access-names-module" "$got_err" "qualbare"
+check_contains "qualified-private-access-says-private" "$got_err" "private"
+
+cat > "$fixdir/qualpub.bang" <<'BANG'
+pub let plain = {fun x => x + 1}
+BANG
+cat > "$fixdir/qual_pub.bang" <<'BANG'
+import qualpub
+let main = $(qualpub.plain) 41
+BANG
+got_out="$("$bang" run "$fixdir/qual_pub.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "qualified-pub-access-stdout" "$got_out" "42"
+check "qualified-pub-access-exit" "$got_exit" "0"
+
 # ── same-dir import shadows a root-level module of the same name (D1's documented search order:
 # same-dir FIRST, then root) — a decoy module living AT THE PROJECT ROOT (the resolver's `root`,
 # `IO.currentDir` = repo top-level per `resolveEntryFile`) must NOT be picked when a same-named

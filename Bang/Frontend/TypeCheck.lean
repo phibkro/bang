@@ -3013,6 +3013,18 @@ def qualifyModule (modName : String) (usedCtors : List String) (p : Prog) : Prog
     body  := qualifyVars modName names p.body }
 
 
+/-- Is `n` a PUBLICLY-visible name of module `modP` (D3)? Visible either directly
+(`modP.pubNames.contains n`, the decl's OWN name) or as a CTOR of a `pub data` type (D3: "a `pub
+data` exports its ctors all-or-nothing") — `pubNames` only ever records a decl's OWN name
+(`Decl.name`, never a ctor), so a ctor's publicity is a SEPARATE lookup against its owning `pub
+data`'s ctor list. Shared by `firstPrivateUse` (the `use`-path gate) and `firstPrivateDotAccess`
+(the qualified-access gate, #73) — ONE visibility predicate, two call sites naming a name. -/
+def isPubName (modP : Prog) (n : String) : Bool :=
+  modP.pubNames.contains n ||
+  modP.decls.any (fun d => match d with
+    | .dataD dn _ cs => modP.pubNames.contains dn && cs.any (fun (c, _) => c == n)
+    | _              => false)
+
 /-- Does `p`'s header only reference NAMES the resolved module set actually exports (D3 — private
 by default)? Returns the first violation as `(modName, name)` if `use tokenizer (secret)` names a
 non-`pub` decl of `tokenizer` — the loud error names BOTH the module and the specific private name
@@ -3022,17 +3034,59 @@ def firstPrivateUse (resolved : List (String × Prog)) (p : Prog) : Option (Stri
   p.uses.findSome? (fun u =>
     match resolved.lookup u.modName with
     | none      => none    -- unresolved import is a SEPARATE (IO-layer) error, not this function's job
-    | some modP =>
-        -- a NAME is visible either directly (`modP.pubNames.contains n`, the decl's OWN name) or
-        -- as a CTOR of a `pub data` type (D3: "a `pub data` exports its ctors all-or-nothing") —
-        -- `pubNames` only ever records a decl's OWN name (`Decl.name`, never a ctor), so a ctor's
-        -- publicity is a SEPARATE lookup against its owning `pub data`'s ctor list.
-        let isPub (n : String) : Bool :=
-          modP.pubNames.contains n ||
-          modP.decls.any (fun d => match d with
-            | .dataD dn _ cs => modP.pubNames.contains dn && cs.any (fun (c, _) => c == n)
-            | _              => false)
-        (u.names.find? (fun n => !isPub n)).map (fun n => (u.modName, n)))
+    | some modP => (u.names.find? (fun n => !isPubName modP n)).map (fun n => (u.modName, n)))
+
+/-! Does a BARE QUALIFIED reference (`Mod.name`, `.dotPerform (.var m) op _` with `m` a known
+import) anywhere in `e` name a NON-`pub` decl of the module it qualifies (#73 — D3's enforcement
+hole: `firstPrivateUse` above only ever gated the `use` path, so `$(Bare.plain) 41` bypassed
+visibility entirely even though `use Bare (plain)` correctly rejected the same name). Mirrors
+`surfUsesVar`'s exhaustive-traversal shape (a query over `Surf`, paired with the REWRITE
+`qualifyDotAccess` performs on the same shape) rather than `firstPrivateUse`'s flat list scan,
+because a qualified access can appear ANYWHERE in an expression tree, not just in a header's `use`
+list. Only the two-arg qualified shapes (`.dotPerform (.var m) op _`) are checked — an
+`m`-that-isn't-an-import, or a receiver that itself needs recursing into, is walked structurally
+the same way `qualifyDotAccess` recurses. First violation wins (short-circuit via `orElse`, no
+worse than `findSome?`'s laziness). -/
+mutual
+def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (String × String)
+  | .dotPerform (.var m) op _ =>
+      match resolved.lookup m with
+      | some modP => if isPubName modP op then none else some (m, op)
+      | none      => none    -- `m` isn't a known import (an ordinary capability receiver) — not this function's job
+  | .dotPerform r _ args           => firstPrivateDotAccess resolved r <|> argsFirstPrivateDotAccess resolved args
+  | .lit _ | .var _ | .getS | .unitS => none
+  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => firstPrivateDotAccess resolved e
+  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
+  | .binopS _ a b                  => firstPrivateDotAccess resolved a <|> firstPrivateDotAccess resolved b
+  | .matchS s _ l _ r              => firstPrivateDotAccess resolved s <|> firstPrivateDotAccess resolved l <|> firstPrivateDotAccess resolved r
+  | .ifS c t e                     => firstPrivateDotAccess resolved c <|> firstPrivateDotAccess resolved t <|> firstPrivateDotAccess resolved e
+  | .matchD s arms                 => firstPrivateDotAccess resolved s <|> dArmsFirstPrivateDotAccess resolved arms
+  | .withCapS _ i _ b              => firstPrivateDotAccess resolved i <|> firstPrivateDotAccess resolved b
+  | .letRecS _ _ f b               => firstPrivateDotAccess resolved f <|> firstPrivateDotAccess resolved b
+def dArmsFirstPrivateDotAccess (resolved : List (String × Prog)) : DArms → Option (String × String)
+  | .nil             => none
+  | .cons _ _ b rest => firstPrivateDotAccess resolved b <|> dArmsFirstPrivateDotAccess resolved rest
+def argsFirstPrivateDotAccess (resolved : List (String × Prog)) : SurfArgs → Option (String × String)
+  | .none    => none
+  | .one a   => firstPrivateDotAccess resolved a
+  | .two a b => firstPrivateDotAccess resolved a <|> firstPrivateDotAccess resolved b
+end
+
+/-- Scan every decl body + the trailing body of `p` for the first private qualified access
+(`firstPrivateDotAccess`) — the PROGRAM-LEVEL wrapper `mergeModules` gates the entry file with,
+mirroring how `firstPrivateUse` gates `p.uses`. Decl bodies checked: `traitD`'s laws, `implD`'s
+op bodies, `fnD`/`letD`/`letRecD`'s bodies — every place a `Surf` expression lives in a `Decl`. -/
+def firstPrivateDotAccessProg (resolved : List (String × Prog)) (p : Prog) : Option (String × String) :=
+  p.decls.findSome? (fun d => match d with
+    | .traitD _ _ _ laws => laws.findSome? (fun l => firstPrivateDotAccess resolved l.body)
+    | .implD _ _ ops     => ops.findSome? (fun o => firstPrivateDotAccess resolved o.body)
+    | .fnD _ _ _ _ _ b   => firstPrivateDotAccess resolved b
+    | .letD _ _ e        => firstPrivateDotAccess resolved e
+    | .letRecD _ _ e     => firstPrivateDotAccess resolved e
+    | .dataD ..          => none
+    | .effectD ..        => none)
+  <|> firstPrivateDotAccess resolved p.body
 
 /-! Rewrite BARE qualified access (`tokenizer.lex`, parsed as `.dotPerform (.var "tokenizer") "lex"
 .none` since `.` is the SAME token `h.get` uses — ADR-0070) into the ordinary qualified identifier
@@ -3171,16 +3225,21 @@ the entry file's OWN bare qualified access (`tokenizer.lex` → `tokenizer_lex`,
 and hoist each `use`d name into unqualified scope via a wrapping `let` (`use tokenizer (lex)` ⟹
 `let lex = tokenizer_lex in <body>` — the SAME "wrap the body in a let" idiom `wrapFnSrcs`/
 `wrapGenericFns` already use for prelude injection, so this is the fourth application of an
-EXISTING mechanism, not a new one). Visibility (D3) is checked FIRST (`firstPrivateUse`) — a
-private-name violation is a loud error before any qualification happens, naming the exact
-`(module, name)` pair the D3 decision requires. A bare `import`-qualified reference to a PRIVATE
-name (`tokenizer.secret` with no matching `use`) is caught LATER, by the ordinary elaborator's
-unknown-identifier error on `tokenizer_secret` (it was never merged in — only `pub` decls travel) —
-loud, per ADR-0046, though it does not yet name "private" as the reason (a v1 gap; `use`'s
-violation gets the stronger message since `use` explicitly requests a name by its bare identifier,
-the exact case D3's own wording singles out). -/
+EXISTING mechanism, not a new one). Visibility (D3) is checked FIRST, against BOTH surfaces a
+private name can be named from: the `use` header (`firstPrivateUse`) AND a bare qualified
+`Mod.name` reference anywhere in the entry file's decls/body (`firstPrivateDotAccessProg`, #73 fix
+— previously `tokenizer.secret` silently RESOLVED via `qualifyDotAccess`'s rewrite to
+`tokenizer_secret`, which a private decl still merges in as reachable-by-its-own-module per the
+comment below, so the qualified path bypassed D3 entirely even though the semantically-equivalent
+`use tokenizer (secret)` correctly rejected the same name). Both checks throw the SAME message
+shape before any qualification happens, naming the exact `(module, name)` pair D3's wording
+requires. -/
 public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except String Prog := do
   match firstPrivateUse resolved p with
+  | some (modName, name) =>
+      throw s!"'{name}' is private to module '{modName}' (use `pub` to export it, ADR-0093 D3)"
+  | none => pure ()
+  match firstPrivateDotAccessProg resolved p with
   | some (modName, name) =>
       throw s!"'{name}' is private to module '{modName}' (use `pub` to export it, ADR-0093 D3)"
   | none => pure ()
@@ -4836,6 +4895,29 @@ def runMergedYieldsInt (fuel : Nat) (p : Prog) : Option Int :=
   | .error m => (m.splitOn "private").length > 1 && (m.splitOn "hidden").length > 1 && (m.splitOn "Secret").length > 1
   | .ok _    => false
 
+-- #73 fix: a PRIVATE decl is likewise unreachable via BARE QUALIFIED access (`bare.plain`) — the
+-- enforcement hole the stranger-test found (`use`'s gate above didn't cover this shape; a bare
+-- qualified reference silently resolved via `qualifyDotAccess`'s rewrite with no visibility check
+-- at all). Same loud-error shape, same two names. `data Marker = M` terminates `plain`'s bound
+-- expression before the trailing `0` — a bare literal FOLLOWED by another literal would otherwise
+-- parse the `0` as an APPLICATION argument to the thunk (`{fun x => x+1} 0`), the same
+-- value-followed-by-atom ambiguity the `let`-decl corpus above already works around.
+#guard
+  let modP : Prog := (Bang.Surface.parseProg "let plain = {fun x => x + 1} data Marker = M 0").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "import bare let main = $(bare.plain) 41").toOption.get!
+  match mergeModules [("bare", modP)] entryP with
+  | .error m => (m.splitOn "private").length > 1 && (m.splitOn "bare").length > 1 && (m.splitOn "plain").length > 1
+  | .ok _    => false
+
+-- companion positive: a `pub`-qualified BARE reference still merges + runs (D3 is "private, not
+-- deleted", not "qualified access disabled") — proves the #73 fix didn't over-tighten the gate.
+#guard
+  let modP : Prog := (Bang.Surface.parseProg "pub let plain = {fun x => x + 1} data Marker = M 0").toOption.get!
+  let entryP : Prog := (Bang.Surface.parseProg "import bare $(bare.plain) 41").toOption.get!
+  match mergeModules [("bare", modP)] entryP with
+  | .error _ => false
+  | .ok merged => runMergedYieldsInt 200 merged == some 42
+
 -- a two-decl module (one pub, one private) merges correctly: the pub decl is reachable, the
 -- private one still usable INTERNALLY by another decl of the SAME module (D3's "private, not
 -- deleted" semantics) — `Helper` (private data) is referenced by `pub data Total`'s OWN payload
@@ -4934,3 +5016,4 @@ only prove the AST shape) — this is the "does the ADR's own payoff actually ha
   | .ok merged => runMergedYieldsInt 200 merged == some 42
 
 end Bang.TypeCheck
+
