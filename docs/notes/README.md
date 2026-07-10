@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (41)
+## active (42)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -45,6 +45,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`stage6-soundness-design.md`](stage6-soundness-design.md) — Stage 6 (soundness composition) — design map
 - [`stage7-elab-probe.md`](stage7-elab-probe.md) — Stage-7 `handle … with` elaboration mechanics probe (#21 s7probe)
 - [`stdlib-map.md`](stdlib-map.md) — Standard-library map — the third stratum
+- [`stdlib-prelude-survey.md`](stdlib-prelude-survey.md) — Prelude / standard-library survey — the common core
 - [`stranger-test-1.md`](stranger-test-1.md) — Stranger test — round 1 (2026-07-09)
 - [`stranger-test-2.md`](stranger-test-2.md) — Stranger test — round 2 (2026-07-10)
 - [`stranger-test-3.md`](stranger-test-3.md) — Stranger test — round 3 (2026-07-10)

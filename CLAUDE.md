@@ -57,6 +57,7 @@ its trigger arises.
 | **Calculated CHECKER survey** (TCT/SbC · the frontend trust-map · fuzz-harness · evidence-passing verdict) | `docs/notes/calculated-typer-survey.md` |
 | **Feedback-loop audit** (loops by radius; refresh at each ◊ — `check-loop-audit.sh` enforces) | `docs/notes/loop-audit.md` |
 | **Standard-library map** (the third stratum: reusable abstractions as library code, gated by type-power) | `docs/notes/stdlib-map.md` |
+| **Prelude/stdlib survey** (10-language census × the bang gate-map · first-slice menu #105 · the stdlibFnSrcs-vs-Prelude.bang fork #106 · row-propagation = the Koka/Unison/Flix camp by construction) | `docs/notes/stdlib-prelude-survey.md` |
 | **Formatting-techniques survey** (the canonical formatter #58: three-rung map · exact-vs-canonical · layout engine · zero-config) | `docs/notes/formatting-survey.md` |
 | **Handler-surface + unification survey** (Q38/Stage-7: the handler-syntax census · module≟trait≟effect unification attempts + failure modes · grade-as-dial prior art · ADR-inputs) | `docs/notes/q38-handler-surface-survey.md` |
 | **God-file seam map** (TypeCheck/AbstractMachine split proposal · cut order · abbrev-risk register) | `docs/notes/god-file-seams.md` |
