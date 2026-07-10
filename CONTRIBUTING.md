@@ -98,6 +98,16 @@ issue (GitHub)  →  branch  →  make the change  →  the VERIFY GATE  →  PR
   0), and `grep "sorry"`/`grep "error:"` (use `#print axioms` and the build exit code — see `CLAUDE.md` §"How
   to verify").
 - **Gate the *committed* content**, on a clean tree — never a summary, a dirty worktree, or your own say-so.
+- **Follow Lean/Mathlib conventions when reasonable** (operator policy, 2026-07-10). Where this repo has no
+  rule of its own, the Lean community's is the default: the [Mathlib naming convention](https://leanprover-community.github.io/contribute/naming.html)
+  (snake_case proofs · UpperCamelCase types/props · a function named for its return), the
+  [library style guide](https://leanprover-community.github.io/contribute/style.html), and for
+  comments/docstrings the adopted convention in **`docs/notes/lean-comment-style.md`** (contract-first
+  `/--` docstrings · `/-!` banners · no history in comments). The mechanized face is `just lint-lean`
+  (Batteries/Mathlib environment linters — advisory today, see `plans/007-lint-triage.md`). "When
+  reasonable" is load-bearing: where bang's own conventions deliberately differ (the §-map + ADR
+  cross-ref style, generated-docs-over-hand-maintained, the agent-first lens), the repo's rule wins —
+  and a *new* deviation should say why, in the ADR or note that introduces it.
 
 ---
 
