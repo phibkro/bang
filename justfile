@@ -450,3 +450,11 @@ shake:
 docs:
     bash tools/tool-log.sh docs
     cd docbuild && lake build Bang:docs && echo "→ docbuild/.lake/build/doc/index.html"
+
+# Deliberate snapshot acceptance for ONE example (plan 013 s8): re-run examples/<NAME>/main.bang
+# and rewrite its expected.txt from actual output, printing the old→new diff loudly. NAME is
+# required (no bulk mode by design — the oracle change stays a small, reviewable git diff); an
+# unknown NAME is a loud error. Review the result with `git diff examples/<NAME>/expected.txt`.
+#   just update-example caesar
+update-example NAME:
+    bash tools/check-examples.sh --update {{NAME}}

@@ -151,6 +151,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **diag** — stable diagnostic codes + `bang explain` (plan 013 slice 5) (`c6731077`)
 - **dx** — generated bang TextMate grammar + Shiki highlighting (plan 013 slice 1) (`dec48cf5`)
 - **docs** — wire doc-gen4 via a docbuild/ subproject + `just docs` (plan 010 steps 2-3) (`e1a9fc24`)
+- **cli** — bang new NAME [--module] — scaffold a runnable example (plan 013 s7) (`1d40ad95`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
