@@ -508,12 +508,46 @@ rather than two statements, exactly the bug this signature design avoids by cons
 discovered instance is `runLaws`-checked against `n` generated samples (seed offset by POSITION
 so two laws in the same program never draw the identical sample sequence). A `lawInstancesOf`
 failure (malformed decls) short-circuits with that same error — no partial discovery silently
-swallowed. -/
+swallowed.
+
+**#74 fix:** BEFORE running a discovered instance, check `Bang.TypeCheck.lawInstanceOpCallDiagnostics`
+(the SAME trait×impl walk, in the SAME order, so zipping by position lines them up) — a law body
+that calls its own trait's op BY NAME (`eq(x, x)`, `add a b`, either call shape) has no execution
+path in v1 (ADR-0068: trait ops resolve ONLY through the overloaded operator, never a direct call;
+confirmed even a sibling op of the same impl can't call another by name). Diagnosing this UP FRONT
+turns the previous opaque runtime crash (`app: callee is not a function ('eq')`, discovered by the
+stranger test with zero PASS/FAIL/shrink ever reached) into a `.untypeable` outcome naming the
+actual constraint — `bang test` now fails LOUD with a fixable message instead of a bare crash,
+closing the loop without changing what the language can express.
+
+**#74 fix, part 2:** ALSO check `Bang.TypeCheck.unreachableIntImplDiagnostics` — an `impl <Trait>
+for Int` whose op aliases a built-in binop (`add`/`sub`/`mul`/`div`/`lt`/`eq`) is SILENTLY DEAD
+(the kernel's own `Int` δ-rule intercepts the operator before `env.insts` is ever consulted, so the
+impl's op body can never run) — a program-wide warning, not a per-law outcome, so it's surfaced as
+a synthetic `NamedOutcome` PREPENDED to the per-law results (piggybacking the EXISTING
+`Main.lean`/`renderOutcome` print+exit-code path with zero changes there: `.untypeable` already
+renders as a named `✗ … — ERROR — …` line and folds into the pass/fail tally correctly). -/
 def runLawsFromSource (decls : String) (n seed : Nat) : Except String (List NamedOutcome) := do
   let instances ← Bang.TypeCheck.lawInstancesOf (decls ++ " 0")
-  return (instances.zip (List.range instances.length)).map
+  let diagnostics ← Bang.TypeCheck.lawInstanceOpCallDiagnostics (decls ++ " 0")
+  let unreachable ← Bang.TypeCheck.unreachableIntImplDiagnostics (decls ++ " 0")
+  let unreachableOutcomes := unreachable.map (fun (tn, opName) =>
+    (⟨tn, "(unreachable impl)", .untypeable
+      s!"impl '{tn}' for Int defines '{opName}', which aliases a built-in operator — Int operands \
+always use the kernel's own arithmetic/comparison, so this impl's '{opName}' can never run (v1 \
+gap: pick a non-Int target type, e.g. a custom data type or (Int * Int), to exercise a custom \
+'{opName}')"⟩ : NamedOutcome))
+  let lawOutcomes := (instances.zip (List.range instances.length)).map
     (fun ((tn, ln, params, body), i) =>
-      ⟨tn, ln, runLaws ⟨decls, ln, params, body⟩ n (seed + i)⟩)
+      match diagnostics.getD i (tn, ln, none) with
+      | (_, _, some opName) =>
+          ⟨tn, ln, .untypeable
+            s!"law '{tn}.{ln}' calls trait op '{opName}' directly — trait ops are invoked ONLY \
+through their overloaded operator in v1 (ADR-0068; e.g. write the law using '==' or the op's \
+aliased operator, not '{opName}(...)' or '{opName} ...' by name)"⟩
+      | (_, _, none) =>
+          ⟨tn, ln, runLaws ⟨decls, ln, params, body⟩ n (seed + i)⟩)
+  return unreachableOutcomes ++ lawOutcomes
 
 /-- The `VecOps` northstar DECLS ONLY (mirrors `TypeCheck.lean`'s own `vecOpsProg`/`vecLawProg` —
 same content, reconstructed locally since those are internal test helpers, not exported; NO
@@ -536,19 +570,28 @@ def vecBogusLaw : String := "bogus(a, b): let s = a + b in (let t = a + a in s =
 -- real, true law — the same corpus program `TypeCheck.lean`'s own `#guard`s check).
 #guard (match runLawsFromSource (vecOpsDecls vecCommLaw) 20 7 with
         | .ok [⟨"VecOps", "comm", .holds 20⟩] => true | _ => false)
--- a MULTI-TRAIT program: discovery finds BOTH instances, in program order, each classified
--- independently — VecOps.comm holds, IntOrd.trans holds (both real true laws).
+-- a MULTI-TRAIT program: discovery finds BOTH law instances, in program order, each classified
+-- independently — VecOps.comm holds, IntOrd.trans holds (both real true laws) — PLUS the #74
+-- part-2 warning, PREPENDED: `intOrdPrelude`'s `impl IntOrd for Int { fn lt(a, b) = a < b }`
+-- targets `Int` with an op named `lt`, which ALIASES the built-in `<` — exactly the silently-dead
+-- shape `unreachableIntImplDiagnostics` exists to catch (IntOrd.trans's law body uses `<` directly,
+-- so it still holds — via the KERNEL's own comparison, not this impl's `lt`, which is precisely
+-- the gap being flagged).
 #guard (match runLawsFromSource
     (vecOpsDecls vecCommLaw ++ " " ++ intOrdPrelude) 20 7 with
-        | .ok [⟨"VecOps", "comm", .holds 20⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
+        | .ok [⟨"IntOrd", "(unreachable impl)", .untypeable _⟩,
+               ⟨"VecOps", "comm", .holds 20⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
         | _ => false)
 -- a MULTI-TRAIT program where ONE law is deliberately FALSE: discovery still finds both, and only
--- the false one reports a counterexample — proving per-law classification doesn't cross-contaminate.
+-- the false one reports a counterexample — proving per-law classification doesn't cross-contaminate
+-- (same prepended IntOrd/Int warning as above).
 #guard (match runLawsFromSource
     (vecOpsDecls vecBogusLaw ++ " " ++ intOrdPrelude) 20 7 with
-        | .ok [⟨"VecOps", "bogus", .counterexample _⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
+        | .ok [⟨"IntOrd", "(unreachable impl)", .untypeable _⟩,
+               ⟨"VecOps", "bogus", .counterexample _⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
         | _ => false)
 -- a program with NO trait laws at all discovers an EMPTY list (not an error) — vacuously fine.
 #guard (match runLawsFromSource "" 20 7 with | .ok [] => true | _ => false)
 -- a malformed decls prelude propagates lawInstancesOf's OWN error, not a bare crash.
 #guard (match runLawsFromSource "trait { " 20 7 with | .error _ => true | .ok _ => false)
+
