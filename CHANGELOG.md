@@ -136,7 +136,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **cli** — bang annotate + bang lint — the next #82 verbs over the query/rewrite rails (`104f18a7`)
 - **wasm** — compile_forward_sim UNCONDITIONAL over user effects — CustomFree dropped (#62 CLOSED) (`d35295c8`)
 - **surface** — caps through functions + the wrapper pattern — the per-stage story delivered (#84, #85, #86, #90) (`47a237db`)
-- **lr** — StackInc — the id-ordering machine invariant for the ADR-0096 carrier (task #37, slice 1) (`e2c7bd3`)
+- **lr** — StackInc — the id-ordering machine invariant for the ADR-0096 carrier (task #37, slice 1) (`5dd36c27`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

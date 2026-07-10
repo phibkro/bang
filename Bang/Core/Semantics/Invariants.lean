@@ -88,6 +88,12 @@ private theorem StackBelow_append (g : Nat) : ∀ (K1 K2 : EvalCtx),
     | letF N => simp only [List.cons_append, StackBelow]; exact ih
     | appF w => simp only [List.cons_append, StackBelow]; exact ih
 
+/-- Public projection of `StackBelow_append` (the `private` iff): a below-fact on `K1 ++ K2` restricts to
+its left prefix `K1`. The LR SKIP arm uses it to pin `StackBelow mh₁ K₁ᵢ` from the machine-carried
+`StackBelow mh₁ K₁'` along the `splitAtId` decomposition. -/
+theorem stackBelow_prefix (g : Nat) (K1 K2 : EvalCtx) (h : StackBelow g (K1 ++ K2)) : StackBelow g K1 :=
+  ((StackBelow_append g K1 K2).mp h).1
+
 /-- `splitAtId` returns sub-stacks of `K`, so `StackBelow g K` passes to BOTH the captured prefix `Kᵢ`
 and the outer `Kₒ`, and the matched frame's identity `n` is `< g`. The freshness companion to
 `splitAtId_fresh`: it bounds what a SUCCESSFUL split yields. -/
@@ -342,6 +348,34 @@ theorem stackInc_gives_above {nid : Nat} {Kᵢ Kₒ : EvalCtx} {hh : Handler}
       exact ⟨hnm, ih hincrest⟩
     | letF N => simp only [List.cons_append, StackInc] at h; exact ih h
     | appF w => simp only [List.cons_append, StackInc] at h; exact ih h
+
+/-- **COMPOSITION** (the inverse of `stackInc_gives_above`): from `StackAbove nid Kᵢ` (every captured-above
+frame exceeds the catcher id — supplied at machine-reached sites via `stackInc_reachable` +
+`stackInc_gives_above`, the fork-B ruling of ADR-0096) together with `StackInc Kᵢ` and `StackInc` on the
+reinstalled tail `handleF nid h :: Kₒ` (= `StackInc Kₒ ∧ StackBelow nid Kₒ`), rebuild `StackInc` on the
+full appended stack. This is the reinstall/append discharge the LR resume arms need for `krelS_append`. -/
+theorem stackInc_append_of_above {nid : Nat} {Kᵢ Kₒ : EvalCtx} {h : Handler}
+    (hab : StackAbove nid Kᵢ) (hincI : StackInc Kᵢ) (hincO : StackInc Kₒ) (hsbO : StackBelow nid Kₒ) :
+    StackInc (Kᵢ ++ Frame.handleF nid h :: Kₒ) := by
+  induction Kᵢ with
+  | nil => simp only [List.nil_append, StackInc]; exact ⟨hincO, hsbO⟩
+  | cons fr Kᵢ' ih =>
+    cases fr with
+    | handleF m hd =>
+      obtain ⟨hnm, habrest⟩ := hab
+      obtain ⟨hincrest, hbelowrest⟩ := hincI
+      simp only [List.cons_append, StackInc]
+      refine ⟨ih habrest hincrest, ?_⟩
+      -- `StackBelow m (Kᵢ'rest ++ handleF nid h :: Kₒ)`: the captured-above tail is below `m` (from
+      -- `StackInc Kᵢ`), the reinstalled frame `nid < m` (from `StackAbove`), and `Kₒ` is below `nid < m`.
+      rw [StackBelow_append]
+      exact ⟨hbelowrest, hnm, StackBelow_mono (le_of_lt hnm) Kₒ hsbO⟩
+    | letF N =>
+      simp only [List.cons_append, StackInc] at hincI ⊢
+      exact ih hab hincI
+    | appF w =>
+      simp only [List.cons_append, StackInc] at hincI ⊢
+      exact ih hab hincI
 
 /-- `splitAtId` locates a `handleF n` frame, so `K = Kᵢ ++ handleF n h :: Kₒ`. (Re-proven locally from
 `splitAtId`: the `Soundness.lean` copy imports THIS module, so it cannot be imported back.) -/
