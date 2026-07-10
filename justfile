@@ -25,7 +25,7 @@ orient:
 # Default verify gate — selfcheck + build + example-run oracle + REPL transcripts
 # + audit. `audit` now runs the full `just fitness` bundle (#114), which already
 # includes the ADR-ledger `--check`, so a separate `adr-check` dep is redundant.
-verify: selfcheck build check-examples test-repl test-fmt test-check-json test-query test-cli test-law audit
+verify: selfcheck build check-examples test-repl test-fmt test-check-json test-query test-rewrite test-cli test-law audit
 
 # Run every examples/<project>/main.bang and diff stdout against expected.txt —
 # the end-to-end run oracle for whole bang programs (supersedes per-example
@@ -58,6 +58,14 @@ test-check-json:
 # and the 0/1/2 exit-code contract observed through the binary. Part of the default `verify` chain.
 test-query:
     bash tools/test-query.sh
+
+# Gate for `bang rewrite <verb>` (#81, the CQS command side over #80's query/read-model side):
+# fmt-as-rewrite-#0 parity with `bang fmt`, the rename happy path + its three diagnostics, the
+# diff-vs--w output contract (immutable by default, `-w` writes), and the differential
+# PRESERVATION GATE falsified (a local-binding-capture case the gate must catch, then shown
+# restored). Part of the default `verify` chain.
+test-rewrite:
+    bash tools/test-rewrite.sh
 
 # Gate for the TOP-LEVEL CLI hygiene (#66/#67): `--help`/`--version` exit 0
 # with text on stdout, and every non-zero RUNTIME outcome (oom/escapedCap/

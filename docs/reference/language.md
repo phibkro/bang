@@ -634,3 +634,57 @@ bang query dump myfile.bang | jq -c '
   [.decls[] | select(.pub and ((.type // "") | contains("Div"))) | .name]'
 ```
 
+## `bang rewrite` — the CQS command side over the query fact base (issue #81)
+
+`bang query` INSPECTS a program (the read model); `bang rewrite <verb>` REWRITES one —
+a pure `Prog → Prog` transform, implemented in `Bang/Frontend/Rewrite.lean` as a
+**public library API** (every rewrite is `public`, reusable outside the CLI, mirroring
+`Bang.Query`'s own tier-1 convention) and consuming the QUERY side's own public facts
+(`declFactsOf`) rather than re-deriving a second decl inventory.
+
+**Output contract — immutable by default, mutation opt-in** (the language's own
+description-until-forced thesis, `$`/force, applied to tooling): every verb prints a
+**unified diff** (source → rewritten) on stdout and touches NOTHING on disk, unless
+`-w` is given, which APPLIES the change to the file in place. There is no partial or
+silent mutation — a rewrite either emits a diff, or (with `-w`) writes the whole
+rewritten file, or aborts loudly with nothing written.
+
+| Verb | Args | Does |
+|---|---|---|
+| `fmt` | `[<file.bang>] [-w]` | rewrite #0 — the canonical formatter (issue #58),
+re-housed as a command; reads stdin if no file |
+| `rename` | `<old> <new> <file.bang> [-w]` | rename a top-level declaration and every
+reference to it |
+
+**`fmt` as rewrite #0**: `bang fmt` (the pre-existing, print-only CLI surface) is
+UNCHANGED — `bang rewrite fmt` is an ADDITIONAL surface sharing the SAME canonical
+printer (`Bang.Format.showProg`), so the two never disagree on what "canonical" means.
+`Bang.Rewrite.fmt` is a no-op on the parsed AST by construction (formatting changes
+printed LAYOUT only — `Format.lean`'s own idempotency/round-trip laws already cover
+that at the Lean level); the diff a user sees is entirely `showProg`'s re-layout.
+
+**`rename`'s three loud diagnostics** (ADR-0046 — never a silent guess): naming a
+`<old>` that doesn't exist, a `<new>` that COLLIDES with an existing top-level name, or
+an `<old>` that is ambiguous (more than one top-level decl sharing it — a malformed-
+program defensive case). The rewrite itself is a shadowing-aware, capture-safe AST walk
+(mirrors `Bang.TypeCheck`'s own module-qualification pass, ADR-0093): a binder that
+shadows `<old>` stops the rename at that subtree, so a local variable of the same name
+is never touched.
+
+### The preservation gate — the moat feature
+
+`rename`'s static collision check only sees TOP-LEVEL names — it cannot see that the
+new name might collide with a LOCAL binding somewhere in the program (shadowing a
+call site rather than another declaration). The **differential preservation gate**
+catches this class of hazard: before emitting, `bang rewrite rename` re-elaborates
+BOTH the original and rewritten program (`Bang.TypeCheck.checkAndLowerProg`) and runs
+BOTH under the kernel ORACLE (`Bang.Source.eval`, the SAME reference `--engine=oracle`
+uses) — if the two outcomes disagree (a value that differs, one side elaborating and
+the other not, or elaboration failing with a genuinely different error), the rewrite
+ABORTS: no diff, no write, a loud message naming the divergence, nonzero exit.
+
+This is a RUNG-1 (differential) preservation check, not a proof — `docs/notes/
+proof-export-survey.md`'s rung-2 (the binary LR's contextual-equivalence certificate)
+is the post-LR upgrade path for a machine-checked guarantee rather than a run-time
+differential gate.
+

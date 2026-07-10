@@ -38,6 +38,7 @@ import Bang.Frontend.TypeCheck
 import Bang.Frontend.Format
 import Bang.Frontend.Diagnostics
 import Bang.Frontend.Query
+import Bang.Frontend.Rewrite
 import Bang.Backend.AbstractMachine
 import Bang.Backend.EnvMachine
 import Bang.Witness.LawTest
@@ -637,6 +638,162 @@ def runQueryRefs (file : Option String) (name : String) : IO UInt32 := do
       | .error code => pure code
       | .ok p       => printQueryOk (Bang.Query.refsJsonP p name)
 
+/-! ## `bang rewrite <verb>` (#81) — the CQS COMMAND side over #80's query/read-model side.
+
+OUTPUT CONTRACT (operator ruling, 2026-07-10, verbatim): **every rewrite verb emits the DIFF
+between source and rewritten program BY DEFAULT; `-w` applies the change with an explicit write.**
+Immutable by default, mutation opt-in — the language's own description-until-forced thesis
+(`$`/force, ADR-0007) applied to tooling. `fmt` re-housed as rewrite #0 adopts the SAME contract
+(a genuine behavior addition over the pre-existing `bang fmt`, which stays print-only — see
+`runFmt`'s own doc comment; `bang rewrite fmt` is a NEW, additional CLI surface, not a replacement).
+
+THE PRESERVATION GATE (the moat feature, #81 item 5): `rename` is gated on BEHAVIOR PRESERVATION
+before it ever emits — re-elaborate BOTH the original and rewritten `Prog` through the SAME
+`Bang.TypeCheck.checkAndLowerProg` the runner uses, then run BOTH under the kernel ORACLE
+(`Bang.Source.eval`, `--engine=oracle`'s own reference) and require the outcomes agree. This code
+lives HERE, not in `Bang.Frontend.Rewrite` — `Rewrite.lean` is a LEAF (fan-in 0, `tools/
+arch-check.sh`) and cannot reach `checkAndLowerProg`'s eval half without inverting that invariant;
+`Main.lean` is the unrestricted Apex-rank consumer `runComp`'s oracle arm already lives in, so the
+gate reuses that SAME machinery rather than re-deriving a second eval path. A rewrite that FAILS
+preservation aborts loudly (the failure shown) and never emits — falsified in `tools/
+test-rewrite.sh` by a deliberately name-colliding/miscompiled rewrite the gate must catch. -/
+
+/-- Unified-diff two strings, line-based, ZERO-context (every changed line shown, `-`/`+`
+prefixed; unchanged lines shown bare, matching a minimal `diff -u0`-style rendering) — a small
+hand-rolled renderer (the repo's own "small fixed shape beats a new dependency" convention,
+`Diagnostics.jsonStr`'s precedent) since no diff library is in the Lean toolchain here. NOT a
+byte-exact LCS diff (no minimal-edit-distance alignment) — a POSITIONAL line comparison: line `i`
+of `a` vs line `i` of `b`, changed/added/removed by INDEX. This is the honest ceiling for a
+rewrite whose changes are typically local (a rename touches few lines; `fmt` re-lays out the
+whole file) — sufficient for a human/agent to see WHAT changed, not a general-purpose diff tool. -/
+def unifiedDiff (a b : String) : String :=
+  let linesA := a.splitOn "\n"
+  let linesB := b.splitOn "\n"
+  let n := max linesA.length linesB.length
+  let rows := (List.range n).filterMap (fun i =>
+    let la := linesA[i]?
+    let lb := linesB[i]?
+    match la, lb with
+    | some x, some y => if x == y then some s!" {x}" else some s!"-{x}\n+{y}"
+    | some x, none    => some s!"-{x}"
+    | none,   some y  => some s!"+{y}"
+    | none,   none    => none)
+  String.intercalate "\n" rows
+
+#guard unifiedDiff "a\nb\nc" "a\nb\nc" == " a\n b\n c"
+#guard unifiedDiff "a\nb\nc" "a\nX\nc" == " a\n-b\n+X\n c"
+#guard unifiedDiff "a\nb" "a\nb\nc" == " a\n b\n+c"
+
+/-- Strip exactly ONE trailing `\n`, if present — `IO.FS.readFile`'s own convention (a well-formed
+text file ends in a newline the shell/editor added, not a semantic part of the program) vs
+`Bang.Format.showProg`'s output (no trailing newline; a total structural fold, nothing appends
+one). Without this, EVERY `rewrite fmt`/`rewrite rename` diff on an ordinary (newline-terminated)
+file would show a spurious final `-` line even when the program itself is byte-for-byte
+unchanged — a presentation artifact of the file/printer convention mismatch, not a real edit. -/
+def stripTrailingNewline (s : String) : String :=
+  if s.endsWith "\n" then s.dropRight 1 else s
+
+#guard stripTrailingNewline "a\nb\n" == "a\nb"
+#guard stripTrailingNewline "a\nb" == "a\nb"
+
+/-- Does `unifiedDiff a b` report NO changes (every line prefixed with a bare space)? The
+`diff-vs--w` battery's own definition of "byte-identical" at the LINE-DIFF layer, reused so the
+CLI's success message can say "no changes" honestly rather than always printing a diff header.
+Compares AFTER `stripTrailingNewline` on `a` (the file-read side) — see that function's doc
+comment for why. -/
+def diffIsEmpty (a b : String) : Bool := stripTrailingNewline a == b
+
+/-- Render `p` through the SAME canonical printer `bang fmt` uses (`Bang.Format.showProg`) — the
+ONE rendering every rewrite verb diffs against, so `bang rewrite fmt`'s diff and `bang rewrite
+rename`'s diff are visually consistent (both show canonical-form source, not a raw re-serialization
+that might differ from `bang fmt`'s own output for unrelated reasons). -/
+def renderProg (p : Bang.Surface.Prog) : String := Bang.Format.showProg p
+
+/-- THE PRESERVATION GATE (see this section's header): re-elaborate `orig`/`rewritten` via
+`checkAndLowerProg` and compare their kernel-oracle (`Bang.Source.eval`) outcomes. `.ok none` on
+agreement; `.ok (some msg)` names the FIRST divergence found (elaboration failure on one side but
+not the other, or a value/outcome mismatch) — never silently passes a divergent rewrite. Outcomes
+are compared via `valPretty`/an outcome-tag string — the SAME rendering `runComp`'s oracle arm
+already uses for `.done`, so "the same value" here means exactly what `bang run --engine=oracle`
+would print for both programs. -/
+def preservationCheck (orig rewritten : Bang.Surface.Prog) : IO (Option String) := do
+  match Bang.TypeCheck.checkAndLowerProg orig, Bang.TypeCheck.checkAndLowerProg rewritten with
+  | .error e, .ok _ => pure (some s!"preservation: original program failed to elaborate ({e}) — refusing to gate against a broken baseline")
+  | .ok _, .error e => pure (some s!"preservation: rewritten program FAILED TO ELABORATE ({e}) — the rewrite is unsound, aborting")
+  | .error e1, .error e2 =>
+      if e1 == e2 then pure none   -- both sides fail identically (e.g. renaming inside an already ill-typed program) — not a NEW divergence
+      else pure (some s!"preservation: both programs fail to elaborate, but with DIFFERENT errors (original: {e1}; rewritten: {e2})")
+  | .ok c1, .ok c2 =>
+      let outcomeTag (r : Result Val) : String := match r with
+        | .done v     => s!"done:{valPretty v}"
+        | .oom        => "oom"
+        | .escapedCap => "escapedCap"
+        | .stuck      => "stuck"
+      let o1 := outcomeTag (Bang.Source.eval defaultFuel c1)
+      let o2 := outcomeTag (Bang.Source.eval defaultFuel c2)
+      if o1 == o2 then pure none
+      else pure (some s!"preservation: the kernel oracle DISAGREES after rewriting — original evaluated to [{o1}], rewritten to [{o2}]")
+
+/-- Shared tail every rewrite verb's happy path funnels through: given the ORIGINAL `Prog`, its
+rendered source, and the REWRITTEN `Prog`, either print the diff (default) or WRITE the rewritten
+form to `path` (`-w`). `gate` is `none` for a rewrite with no preservation obligation (`fmt` — a
+no-op on the AST by construction, `Rewrite.fmt`'s own doc comment) or `some` the preservation
+message when a GATED rewrite (`rename`) failed it — in which case this function ABORTS before
+printing/writing anything, per #81 item 5 ("a rewrite that fails preservation aborts with the
+failure shown, does NOT emit"). -/
+def emitRewrite (write : Bool) (path : Option String) (origSrc : String) (rewritten : Bang.Surface.Prog)
+    (gate : Option String) : IO UInt32 := do
+  match gate with
+  | some msg => IO.eprintln s!"error: {msg}"; pure 1
+  | none =>
+      let out := renderProg rewritten
+      if write then
+        match path with
+        | none      => IO.eprintln "error: -w requires a <file.bang> path (cannot write stdin in place)"; pure 1
+        | some p    => IO.FS.writeFile ⟨p⟩ out; IO.println s!"wrote {p}"; pure 0
+      else
+        if diffIsEmpty origSrc out then IO.println "(no changes)"; pure 0
+        else IO.println (unifiedDiff (stripTrailingNewline origSrc) out); pure 0
+
+/-- `bang rewrite fmt [<file.bang>] [-w]` — rewrite #0 (#81 item 2): the canonical formatter
+re-housed as the first command. No preservation gate (`Rewrite.fmt` is `.ok p` — an AST no-op by
+construction; the ONLY thing that can change is printed LAYOUT, which `Format.lean`'s own
+idempotency/round-trip `#guard`s already cover at the Lean level). Reads a file if given, else
+stdin — mirrors `bang fmt`'s own file-or-stdin convention. -/
+def runRewriteFmt (write : Bool) (file : Option String) : IO UInt32 := do
+  let src ← match file with
+    | none      => (← IO.getStdin).readToEnd
+    | some path =>
+      match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
+      | none   => IO.eprintln s!"error: could not read file '{path}'"; return 2
+      | some s => pure s
+  match Bang.Surface.parseProg src with
+  | .error e => IO.eprintln s!"error: {e}"; pure 1
+  | .ok p    =>
+      match Bang.Rewrite.fmt p with
+      | .error e     => IO.eprintln s!"error: {e}"; pure 1
+      | .ok p'       => emitRewrite write file src p' none
+
+/-- `bang rewrite rename <old> <new> <file.bang> [-w]` — the classic first refactoring (#81 item
+3): rename a top-level decl + every reference to it, GATED on the preservation check (#81 item 5)
+before ever emitting. Requires a FILE (unlike `fmt`, no stdin route — `-w` needs a real path to
+write, and the diff-mode default stays consistent with that rather than branching on presence).
+Three loud, distinct failures surface directly from `Bang.Rewrite.rename` (missing/ambiguous/
+colliding name, ADR-0046) BEFORE the gate ever runs — a rename that can't even be COMPUTED never
+reaches preservation-checking. -/
+def runRewriteRename (write : Bool) (old new : String) (file : String) : IO UInt32 := do
+  match ← (do let s ← IO.FS.readFile ⟨file⟩; pure (some s)) <|> pure none with
+  | none     => IO.eprintln s!"error: could not read file '{file}'"; pure 2
+  | some src =>
+      match Bang.Surface.parseProg src with
+      | .error e => IO.eprintln s!"error: {e}"; pure 1
+      | .ok p    =>
+          match Bang.Rewrite.rename old new p with
+          | .error e => IO.eprintln s!"error: {e}"; pure 1
+          | .ok p'   =>
+              let gate ← preservationCheck p p'
+              emitRewrite write (some file) src p' gate
+
 /-- Default sample count and RNG seed for `bang test` — fixed (not randomized per-run) so a CI
 run is byte-reproducible (`Bang.LawTest.genIntSamples`'s own documented requirement: "the SAME
 seed reproduces the SAME samples"). 30 samples is a generous default for the Int-tuple shrinking
@@ -750,6 +907,19 @@ def usage : String :=
   "                                     a <file.bang> WITH imports/uses is resolved the SAME way\n" ++
   "                                     `bang check` resolves it (imports visible to every op).\n" ++
   "                                     `def`/`refs` are DECL-granularity, not line/col — see #52.\n\n" ++
+  "  bang rewrite <verb> ...             the CQS COMMAND side over `query`'s read model (issue #81);\n" ++
+  "                                     every verb prints a DIFF (source → rewritten) by default —\n" ++
+  "                                     IMMUTABLE unless `-w` (write) is given (description-until-\n" ++
+  "                                     forced, applied to tooling).\n" ++
+  "    bang rewrite fmt [<file.bang>] [-w]       rewrite #0: the canonical formatter (issue #58),\n" ++
+  "                                               re-housed as a command; reads stdin if no file\n" ++
+  "    bang rewrite rename <old> <new> <file.bang> [-w]\n" ++
+  "                                               rename a top-level decl + every reference to it;\n" ++
+  "                                               GATED on the differential PRESERVATION check (the\n" ++
+  "                                               kernel oracle must agree on both programs) before\n" ++
+  "                                               ever emitting — a failing gate aborts, no diff/write\n" ++
+  "                                     `-w` applies the change to `<file.bang>` in place; the default\n" ++
+  "                                     prints a unified diff to stdout and touches nothing on disk.\n\n" ++
   "  bang --help, -h                    print this text and exit 0\n" ++
   "  bang --version, -v                 print the version and exit 0\n\n" ++
   "PIPELINE (default: type-check first):\n" ++
@@ -1003,6 +1173,16 @@ def main (args : List String) : IO UInt32 := do
       | ["def", name, file]     => runQueryDef (some file) name
       | ["refs", name, file]    => runQueryRefs (some file) name
       | _                       => IO.eprintln usage; pure 1
+    else if cmd == "rewrite" then
+      -- `bang rewrite <verb> ...` (#81). `-w` may appear anywhere; every OTHER `--`-prefixed arg
+      -- is unrecognized (mirrors `query`'s own "unknown flag falls to usage" convention).
+      let write := rest.contains "-w"
+      let pos := rest.filter (fun a => a != "-w" && !("--".isPrefixOf a))
+      match pos with
+      | ["fmt", file] => runRewriteFmt write (some file)
+      | ["fmt"]       => runRewriteFmt write none
+      | ["rename", old, new, file] => runRewriteRename write old new file
+      | _             => IO.eprintln usage; pure 1
     else
       IO.eprintln usage; pure 1
   | _ => IO.eprintln usage; pure 1
