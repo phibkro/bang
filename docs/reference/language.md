@@ -531,11 +531,12 @@ waiting on a new fixed verb. Every curated verb below (`symbols`/`type`/`effects
 `refs`) is a **thin projection** of the SAME fact list `dump` exports — one construct,
 not six independent implementations.
 
-### `dump`'s schema
+### `dump`'s schema — a VERSIONED public contract
 
 ```json
 {
   "ok": true,
+  "schemaVersion": "1.0",
   "decls": [ { "name": "..", "kind": "let|letRec|fn|trait|impl|data|effect",
                "type": "T"|null, "row": "{..}"|null, "typeError": "msg"|null,
                "shape": {..}|null, "pub": true|false, "module": "Mod"|null } ],
@@ -546,6 +547,15 @@ not six independent implementations.
 }
 ```
 
+`decls`/`refs`/`laws`/`imports`/`uses` are **FLAT top-level arrays of flat records** —
+a relational fact base (Glean's "predicates = tables, facts = rows" framing), never a
+nested tree. The concrete test: `dump`'s output loads into DuckDB with ONE `read_json`
+call, no unnesting gymnastics —
+
+```sh
+bang query dump myfile.bang | duckdb -c "SELECT unnest(decls) FROM read_json('/dev/stdin')"
+```
+
 Every `DeclFact` key is **always present** — `null` means absent, never a missing key —
 so a `jq '.decls[].type'`-style consumer never branches on key existence, only on
 nullness. `type`/`row` are `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that
@@ -554,6 +564,20 @@ a structural summary (ops/ctors/params) for `trait`/`impl`/`data`/`effect`, whic
 value-level type. `refs` is DECL-granularity (which decl's body mentions which name) —
 **position-addressing (line/col) is OUT of v1**, gated on issue #52's Spanned-Surf tier
 (`Surf` carries no per-node span today).
+
+**`schemaVersion` is a first-class field from v1** (bang's docs/notes/compiler-as-dbms-
+survey.md, the ONE piece of DBMS discipline adopted *eagerly*, not post-1.0): bang's 0.x
+"breaking changes allowed" policy collides with "agents write durable scripts against
+`dump`'s JSON" — every unversioned schema change breaks every saved query. An ADDITIVE
+change (a new field/predicate) bumps the MINOR version; a removal/rename bumps MAJOR.
+`tools/golden-dump-caesar.json` is a pinned snapshot gated by `tools/test-query.sh`'s
+`golden-dump-schema-pinned` check — a schema change must re-pin this file in the SAME
+commit, so drift is always VISIBLE in the diff, never silent.
+
+`decls`/`refs`/`laws`/`imports` are the **extensional** fact base (extracted, not
+computed from other facts); the curated verbs below are **intensional** — derived
+predicates (views) over this extensional base, kept few and stable per the Kythe/Glean
+small-core lesson (push richness into derived views, not the base schema).
 
 **KNOWN v1 LIMITATIONS** (both match `check --json`'s own documented multi-file grants,
 not new gaps): on a MULTI-FILE (resolver-aware) `dump`, `"laws"` is always `[]` — the
