@@ -59,6 +59,16 @@ private theorem StackBelow_mono {g g' : Nat} (hle : g ≤ g') :
     | letF N => exact ih hK
     | appF v => exact ih hK
 
+/-- ADR-0096 fork-(b) MINT step: a `handleF g` frame minted at the current counter `g` (which dominates
+the tail `K`, `StackBelow g K`) is dominated by the incremented counter `g+1` — `g < g+1` bounds the new
+frame and `StackBelow (g+1) K` (monotone) bounds the old tail. This is the class-2 carrier's body
+re-application discharge (`CarrierForkBSkeleton.body_reapply_discharges`): the compat cores run the handle
+body at `(g+1, handleF g h :: K)`, whose fork-(b) premise `StackBelow (g+1) (handleF g h :: K)` is exactly
+this. Axiom-clean; no `KrelS_g_cast` coupling (the fact rides BESIDE `KrelS`, per the fork-(b) ruling). -/
+theorem stackBelow_mint {g : Nat} {h : Handler} {K : EvalCtx}
+    (hK : StackBelow g K) : StackBelow (g + 1) (Frame.handleF g h :: K) :=
+  ⟨by omega, StackBelow_mono (by omega) K hK⟩
+
 /-- **Freshness**: if every id on `K` is `< g`, then `splitAtId K g = none` — the fresh id `g` matches
 NO live frame. This kills the ADR-0054 collision: minting `g` then later resolving a cap named `g`
 finds ITS handler or nothing, never a same-depth impostor. shape: scratch/GlobalFreshProbe.lean. -/
@@ -93,6 +103,12 @@ its left prefix `K1`. The LR SKIP arm uses it to pin `StackBelow mh₁ K₁ᵢ` 
 `StackBelow mh₁ K₁'` along the `splitAtId` decomposition. -/
 theorem stackBelow_prefix (g : Nat) (K1 K2 : EvalCtx) (h : StackBelow g (K1 ++ K2)) : StackBelow g K1 :=
   ((StackBelow_append g K1 K2).mp h).1
+
+/-- Public projection: a below-fact on `K1 ++ handleF n h :: K2` gives `n < g` (the located middle frame
+is dominated). ADR-0096 class-1 deep arm: `nh < mh₁` from `StackBelow mh₁ (Kᵢrest ++ handleF nh h₁ :: K₁)`. -/
+theorem stackBelow_mid (g n : Nat) (K1 K2 : EvalCtx) {h : Handler}
+    (hb : StackBelow g (K1 ++ Frame.handleF n h :: K2)) : n < g :=
+  ((StackBelow_append g K1 (Frame.handleF n h :: K2)).mp hb).2.1
 
 /-- `splitAtId` returns sub-stacks of `K`, so `StackBelow g K` passes to BOTH the captured prefix `Kᵢ`
 and the outer `Kₒ`, and the matched frame's identity `n` is `< g`. The freshness companion to
@@ -490,6 +506,55 @@ theorem stackInc_idDispatch {K K' : EvalCtx} {n : Nat} {ℓ : Label} {op : OpId}
       simp only [dispatchOn, hcl, Option.some.injEq, Prod.mk.injEq] at hd2
       obtain ⟨rfl, _⟩ := hd2; exact stackInc_reinstall hincfull
   · rw [if_neg hk] at hd2; exact absurd hd2 (by simp)
+
+/-- ADR-0096 class-1 (deep `krelS_append` nested arm): the dispatch RESULT stack keeps `StackAbove nid`.
+Every `dispatchOn` result over `(Kᵢ, handleF-n, Kₒ)` is either `Kₒ` (throws abort) or
+`Kᵢ ++ handleF n reinstall :: Kₒ` (state/txn/custom resume). Given every id in `Kᵢ` AND `Kₒ` exceeds
+`nid`, and the reinstalled catcher id `n` also exceeds `nid` (`hcatcher : nid < n`), the result stack's
+ids all exceed `nid`. This delivers the `StackAbove nid Sᵢ` the nested `stackInc_append_of_above` needs
+when the dispatched inner result `Sᵢ` is re-appended to the outer tail. -/
+theorem stackAbove_dispatchOn {nid n : Nat} {op : OpId} {v : Val} {Kᵢ Kₒ Sᵢ : EvalCtx}
+    {h : Handler} {c' : Comp}
+    (habI : StackAbove nid Kᵢ) (hcatcher : nid < n) (habO : StackAbove nid Kₒ)
+    (hd : dispatchOn n op v (Kᵢ, h, Kₒ) = some (Sᵢ, c')) : StackAbove nid Sᵢ := by
+  -- the reinstalled `handleF n reinstall :: Kₒ` region: `nid < n` (hcatcher) ∧ `StackAbove nid Kₒ` (habO).
+  have hmid : ∀ (reinstall : Handler),
+      StackAbove nid (Kᵢ ++ Frame.handleF n reinstall :: Kₒ) := fun reinstall => by
+    rw [StackAbove_append]; exact ⟨habI, hcatcher, habO⟩
+  cases h with
+  | throws ℓ' =>
+      simp only [dispatchOn, Option.some.injEq, Prod.mk.injEq] at hd
+      obtain ⟨rfl, _⟩ := hd; exact habO
+  | state ℓ' s =>
+      simp only [dispatchOn] at hd
+      split at hd <;>
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hd
+          obtain ⟨rfl, _⟩ := hd; exact hmid _
+  | transaction ℓ' Θ =>
+      simp only [dispatchOn] at hd
+      (repeat' split at hd) <;>
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hd
+          obtain ⟨rfl, _⟩ := hd; exact hmid _
+  | custom ℓ' p cl =>
+      simp only [dispatchOn] at hd
+      split at hd
+      · simp only [Option.some.injEq, Prod.mk.injEq] at hd
+        obtain ⟨rfl, _⟩ := hd; exact hmid _
+      · exact absurd hd (by simp)
+
+/-- `StackInc` restricts to any SUFFIX (`StackInc (A ++ B) → StackInc B`) — the ids of `B` sit at the
+bottom of the increasing stack. Used to recover the reinstalled tail's `StackInc K₁ ∧ StackBelow nh K₁`
+(as `StackInc (handleF nh h :: K₁)`) from the outer `StackInc (Kᵢrest ++ handleF nh h :: K₁)`. -/
+theorem stackInc_suffix : ∀ (A B : EvalCtx), StackInc (A ++ B) → StackInc B := by
+  intro A
+  induction A with
+  | nil => intro B h; simpa using h
+  | cons fr A ih =>
+    intro B h
+    cases fr with
+    | handleF m hd => simp only [List.cons_append, StackInc] at h; exact ih B h.1
+    | letF N => simp only [List.cons_append, StackInc] at h; exact ih B h
+    | appF w => simp only [List.cons_append, StackInc] at h; exact ih B h
 
 /-- **`StackInc ∧ WellCounted` jointly preserved by `Source.step`.** They co-travel: the MINT arm needs
 `StackBelow g K` (from `WellCounted`) to place `handleF g` as the new top (largest) id; the DISPATCH arm

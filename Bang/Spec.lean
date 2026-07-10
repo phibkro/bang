@@ -245,7 +245,12 @@ theorem lr_sound
   rw [show (Crel fuel B e c₁ c₂) = CrelK fuel B e c₁ c₂ from rfl, CrelK] at hC
   -- biorthogonal closure at the witnessing fuel, observation context `(C, C)` (`krelS_refl hStack`),
   -- answer type `F qo Ao`, threaded counter `handlerCount C`. Yields the RAW-focus co-convergence.
-  have hobs := hC (handlerCount C) (CTy.F qo Ao) C C (krelS_refl (n := fuel) rfl hStack)
+  -- ADR-0096 fork-(b): CrelK now demands `StackBelow (handlerCount C) C` — UNPROVABLE from `HasStack`
+  -- alone (`HasStack.handleF` binds the frame id FREE; `lr_sound_root_needs_Q22`). This IS the Q22 seam
+  -- surfacing crisply on the `lr_sound` root — the SAME held residual as the reshape bridge below; supplied
+  -- as a named `sorry` (the ADR-ruled `lr_sound` shed needs Q22 co-resolved, out of the 18→20 scope).
+  have hsbC : StackBelow (handlerCount C) C := by sorry
+  have hobs := hC (handlerCount C) (CTy.F qo Ao) C C hsbC hsbC (krelS_refl (n := fuel) rfl hStack)
   -- `hobs : CoApproxC_le fuel (handlerCount C, C, c₁) (handlerCount C, C, c₂)` — but the goal/`hfuel`
   -- speak of the RESHAPED config `(handlerCount C, canonStack C cᵢ, capSubstInto C cᵢ)`. The reshape↔raw
   -- bridge is the documented architectural obstruction above; held as the sole named residual.

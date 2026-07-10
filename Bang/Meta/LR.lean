@@ -1115,7 +1115,16 @@ def VrelK : Nat → VTy Eff Mult → Val → Val → Prop
 `D` is QUANTIFIED here (internal to `KrelS`), so the eventual `Crel` signature is byte-identical. -/
 def CrelK : Nat → CTy Eff Mult → Eff → Comp → Comp → Prop
   | n, C, ε, c₁, c₂ =>
-      ∀ (g : Nat) (D : CTy Eff Mult) (K₁ K₂ : Stack), KrelS n C D ε g K₁ K₂ →
+      ∀ (g : Nat) (D : CTy Eff Mult) (K₁ K₂ : Stack),
+        -- ADR-0096 fork-(b) class-2 carrier (operator-ruled 2026-07-10): the MINT-freshness premise
+        -- `StackBelow g K₁/K₂` (the current counter `g` dominates the observation stacks), a SEPARATE
+        -- hypothesis BESIDE `KrelS` (NOT folded into it — `KrelS`/`KrelS_g_cast` stay byte-identical, the
+        -- fork's selling point vs fork (a), which is refuted `Bang/Witness/CarrierForkA.lean`). The
+        -- compat cores' fresh `handleF g` MINT consumes it directly (`krelS_handleF_intro` freshness);
+        -- the body re-application at `(g+1, handleF g :: K₁)` discharges it by monotone lift; the roots
+        -- (`crelK_adequacy_nil`/`lr_fundamental` at `(0,[])`) trivially. See `CarrierForkBSkeleton.lean`.
+        Bang.StackBelow g K₁ → Bang.StackBelow g K₂ →
+        KrelS n C D ε g K₁ K₂ →
         -- ADR-0058 route 1: carry the REAL fresh-id counter `g` (threaded into `KrelS`), NOT the
         -- derived `handlerCount K`. `g` is quantified UNIVERSALLY here — alongside the internal `D` —
         -- so `CrelK`'s external arity is unchanged and `abbrev Crel := CrelK` stays byte-identical.
@@ -1209,6 +1218,13 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Nat → Stack → 
                 -- as the outer config — dispatch (splitAtId + reinstall) PRESERVES the fresh-id counter
                 -- (only MINT increments it), so the resume interaction threads `g` unchanged.
                 KrelS m Cᵢ C εᵢ g Kᵢ Kᵢ' →
+                -- ADR-0096 class-1 carrier (operator-ruled 2026-07-10, shape (i″) per-frame): the captured
+                -- continuation `Kᵢ`'s ids all EXCEED the reinstalled catcher id `n₁` (= `nh`). This is the
+                -- MISSING fourth antecedent of `stackInc_append_of_above` (`Invariants.lean:357`) that the
+                -- reinstall/deep-append resume producers need (`CarrierClass1.lean` Q3 — `StackInc Kᵢ` alone
+                -- does NOT give it). Self-propagating: the recursive resume conjunct's own `KrelS … Sᵢ Sᵢ'`
+                -- carries `StackInc Sᵢ`, whence `stackInc_gives_above` re-derives the nested `StackAbove`.
+                Bang.StackAbove n₁ Kᵢ →
                 -- the captured continuation's hole `Cᵢ` is a RETURNER at the op-RESULT type (the resume
                 -- value flows into `Kᵢ` there). state/txn need this for `crelK_ret` to bridge the resume
                 -- through `Kᵢ`; the producer supplies it from the `up` typing (Cᵢ = F q (opRes)). throws
@@ -1305,6 +1321,8 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
             Val.Closed w₁ → Val.Closed w₂ →
             (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) h.label op = some Aop → VrelK m Aop w₁ w₂) →
             KrelS m Cᵢ C εᵢ g Kᵢ Kᵢ' →
+            -- ADR-0096 class-1 carrier (per-frame): `Kᵢ`'s ids all exceed the catcher id `nh`.
+            Bang.StackAbove nh Kᵢ →
             (∀ Aᵣ, EffSig.opRes (Eff := Eff) (Mult := Mult) h.label op = some Aᵣ →
               ∃ qᵣ, Cᵢ = CTy.F qᵣ Aᵣ) →
             Bang.dispatchOn nh op w₁ (Kᵢ, h, K₁) = some cfg₁ →
@@ -1335,9 +1353,45 @@ theorem krelS_stackInc {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {K₁
         case handleF.handleF => exact (krelS_handleF.mp h).1
         all_goals (exfalso; simp [KrelS] at h)
 
+/-- ADR-0096 class-1: `StackAbove` TRANSFERS across a `KrelS`-related stack pair. `KrelS` relates
+`handleF` frames with EQUAL ids (`krelS_handleF`'s `nh = nh'`) and letF/appF frames carry no id, so the
+two stacks have the SAME id-structure — a threshold `t` exceeded by every id of `K₁` is exceeded by every
+id of `K₂`. This lets the RHS class-1 obligation (`StackAbove nh Kᵢ'`) be discharged from the resume
+conjunct's one-sided `StackAbove nh Kᵢ` (ADR-0096's per-frame `StackAbove` rides only the LHS `Kᵢ`). -/
+theorem krelS_stackAbove_transfer {n : Nat} {D : CTy Eff Mult} {g : Nat} {t : Nat} :
+    ∀ {K₁ K₂ : Stack} {C : CTy Eff Mult} {ε : Eff},
+      KrelS n C D ε g K₁ K₂ → StackAbove t K₁ → StackAbove t K₂ := by
+  intro K₁
+  induction K₁ with
+  | nil => intro K₂ C ε h _; cases K₂ with
+    | nil => trivial
+    | cons fr₂ K₂' => simp [KrelS] at h
+  | cons fr₁ K₁' ih => intro K₂ C ε h hab; cases K₂ with
+    | nil => simp [KrelS] at h
+    | cons fr₂ K₂' =>
+        cases fr₁ <;> cases fr₂
+        case letF.letF _ _ =>
+          rw [krelS_letF] at h
+          obtain ⟨_, _, _, _, _, _, _, htail⟩ := h
+          simp only [StackAbove] at hab ⊢
+          exact ih htail hab
+        case appF.appF _ _ =>
+          rw [krelS_appF] at h
+          obtain ⟨_, _, _, _, _, _, _, _, htail⟩ := h
+          simp only [StackAbove] at hab ⊢
+          exact ih htail hab
+        case handleF.handleF _ _ _ _ =>
+          rw [krelS_handleF] at h
+          obtain ⟨_, hid, _, htail, _⟩ := h
+          subst hid
+          simp only [StackAbove] at hab ⊢
+          obtain ⟨hlt, habr⟩ := hab
+          exact ⟨hlt, ih htail habr⟩
+        all_goals (exfalso; simp [KrelS] at h)
+
 /-- ◊4.5b μ-floor: `CrelK 0` is VACUOUS (the metered obs at 0 — `ConvergesC_le 0` is `False`). -/
 theorem crelK_zero {C : CTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp} : CrelK 0 C ε c₁ c₂ := by
-  rw [CrelK]; intro g D K₁ K₂ _ hconv; exact absurd hconv (not_convergesC_le_zero _)
+  rw [CrelK]; intro g D K₁ K₂ _ _ _ hconv; exact absurd hconv (not_convergesC_le_zero _)
 
 /-- ◊4.5b adequacy grounding: `CrelK n (F q A)` at the IDENTITY (nil) stack gives the whole-program
 return observation. The `D = C, K = []` instance (Biernacki Lemma 2 identity). The capstone of
@@ -1345,7 +1399,8 @@ sub-block (a): it is the bridge `CrelK → ⊑` that the eventual `lr_sound` con
 theorem crelK_adequacy_nil {n : Nat} {q : Mult} {A : VTy Eff Mult} {ε : Eff} {c₁ c₂ : Comp}
     (h : CrelK n (CTy.F q A) ε c₁ c₂) : CoApproxC_le n (0, [], c₁) (0, [], c₂) := by
   rw [CrelK] at h
-  have := h 0 (CTy.F q A) [] []
+  -- ADR-0096 fork-(b): the two `StackBelow 0 []` MINT premises are trivially `True` at the root.
+  have := h 0 (CTy.F q A) [] [] trivial trivial
   apply this
   rw [krelS_nil]
   refine ⟨rfl, fun q' A' _ v₁ v₂ _ _ _ _ => ?_⟩
@@ -1515,8 +1570,8 @@ theorem KrelS_eff_cast {n : Nat} {C D : CTy Eff Mult} {ε ε' : Eff} {g : Nat} {
 theorem CrelK_eff_mono {n : Nat} {C : CTy Eff Mult} {ε ε' : Eff} {c₁ c₂ : Comp}
     (hεε' : ε ≤ ε') (hC : CrelK n C ε c₁ c₂) : CrelK n C ε' c₁ c₂ := by
   rw [CrelK] at hC ⊢
-  intro g D K₁ K₂ hK
-  exact hC g D K₁ K₂ (KrelS_eff_anti hεε' hK)
+  intro g D K₁ K₂ hsb₁ hsb₂ hK
+  exact hC g D K₁ K₂ hsb₁ hsb₂ (KrelS_eff_anti hεε' hK)
 
 
 /-! ## 5.2′c ◊4.5b sub-block (c) — `CrelK` value/head-step lemmas
@@ -1556,9 +1611,12 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
     (g : Nat) (D : CTy Eff Mult) (K₁ K₂ : Stack)
     (hK : KrelS n (CTy.F q A) D e g K₁ K₂)
     (hc₁ : Val.Closed v₁) (hc₂ : Val.Closed v₂)
-    (hv : VrelK n A v₁ v₂) :
+    (hv : VrelK n A v₁ v₂)
+    -- ADR-0096 fork-(b): the MINT-freshness premises threaded to the letF-tail `CrelK`-application
+    -- (`hbody k … g K₁' K₂'`). Peeled per frame (letF/appF/handleF all drop `StackBelow g` to the tail).
+    (hsb₁ : StackBelow g K₁) (hsb₂ : StackBelow g K₂) :
     CoApproxC_le n (g, K₁, Comp.ret v₁) (g, K₂, Comp.ret v₂) := by
-  induction K₁ generalizing K₂ A v₁ v₂ e with
+  induction K₁ generalizing K₂ A v₁ v₂ e hsb₂ with
   | nil =>
       cases K₂ with
       | nil => rw [krelS_nil] at hK; exact hK.2 q A rfl v₁ v₂ hc₁ hc₂ hv
@@ -1581,7 +1639,9 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                       refine coApproxC_le_anti_step rfl (by intro g' u; simp) rfl (by intro g' u; simp) ?_
                       have hCrel := hbody k (Nat.lt_succ_self k) v₁ v₂ hc₁ hc₂ (VrelK_mono (Nat.le_succ k) hv)
                       rw [CrelK] at hCrel
-                      exact hCrel g D K₁' K₂' (KrelS_mono (Nat.le_succ k) htail)
+                      -- ADR-0096 fork-(b): letF drops `StackBelow g` to the tail (`StackBelow g (letF::K)=StackBelow g K`).
+                      exact hCrel g D K₁' K₂' (by simpa [StackBelow] using hsb₁) (by simpa [StackBelow] using hsb₂)
+                        (KrelS_mono (Nat.le_succ k) htail)
               | _ => simp [KrelS] at hK
           | nil => simp [KrelS] at hK
       | appF w₁ =>
@@ -1598,7 +1658,8 @@ theorem crelK_ret {n : Nat} {q : Mult} {A : VTy Eff Mult} {e : Eff} {v₁ v₂ :
                   -- from `ih` — NO density, NO `run_bump`, NO `Canonical`/`CapsBelow`.
                   rw [krelS_handleF] at hK
                   obtain ⟨_hinc, _hid, _hHR, htail, _hres⟩ := hK
-                  have hih := ih K₂' htail hc₁ hc₂ hv
+                  -- ADR-0096 fork-(b): handleF drops `StackBelow g` to the tail (`= nh < g ∧ StackBelow g K`, take `.2`).
+                  have hih := ih K₂' htail hc₁ hc₂ hv hsb₁.2 hsb₂.2
                   exact coApproxC_le_reduce
                     (cfg₁' := (g, K₁', Comp.ret v₁)) (cfg₂' := (g, K₂', Comp.ret v₂))
                     rfl (by intro g' u; simp) rfl (by intro g' u; simp) hih
@@ -1767,7 +1828,8 @@ theorem lr_sound_closed {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemi
       have hconv : ConvergesC_le (f + 1) (0, [], c₁) :=
         ⟨v, hfuel⟩
       -- instantiate at g = 0 and the identity observation context: D = F q A, K₁ = K₂ = [] (krelS_nil_succ).
-      have hright := hC 0 (CTy.F q A) [] [] (krelS_nil_succ (f + 1) q A e 0) hconv
+      -- ADR-0096 fork-(b): the two `StackBelow 0 []` MINT premises are `True` at the nil root.
+      have hright := hC 0 (CTy.F q A) [] [] trivial trivial (krelS_nil_succ (f + 1) q A e 0) hconv
       -- hright : ∃ m w, Config.run m ([], c₂) = done w  =  Converges c₂.
       obtain ⟨m, w, hm⟩ := hright
       exact ⟨m, w, hm⟩
