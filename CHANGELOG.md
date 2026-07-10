@@ -138,5 +138,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **nix** — pin depsHash to the now-deterministic cache-get output (#63, #78) (`e4be297`)
 - **nix** — scrub mathlib/batteries scripts/ — FOD store-ref leak (#63, #78) (`fa3e001`)
 - **nix** — re-pin depsHash after scripts/ scrub (#63, #78) (`d567654`)
+- **cli** — #75 — bang check --json regains file-input spans (`905f662`)
 
 <!-- END GENERATED changelog -->
