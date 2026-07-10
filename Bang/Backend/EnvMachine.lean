@@ -526,6 +526,86 @@ theorem substEnv_cons_subst {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v)
     congr 1
     exact Comp.substFrom_swap_closedE hv _hw 0 N
 
+/-! ### `substEnv` distribution over the term constructors (slice-3a infra)
+
+The correspondence induction reduces `substEnv γ (F …)` to `F (substEnv γ …)` at every non-binding
+component and `closeUnderBindersE d γ …` under each binder (`d` = the former's binder count). These are
+STRUCTURAL (induction on `γ`; the single `Comp.subst` step unfolds the constructor's `substFrom` clause)
+— no closedness consumed. `substEnvV` is the value-level fold (the `closeV` analog), needed for the
+value-carrying formers (`ret`/`case`/`split`/`unfold`/`app`/`force`/`binop`). These are BYTE-IDENTICAL
+to `Bang.Meta.BinaryLR.closeC_*`/`closeV_*` (task #15 retires the duplicate). -/
+
+-- TODO(hoist, task #15): duplicate of Bang.Meta.LR.closeV — the value-level closing fold.
+/-- Sequential substitution of a readback-env `γ` into a VALUE (the value-level `substEnv`). -/
+def substEnvV : List Val → Val → Val
+  | [],      v => v
+  | u :: γ,  v => substEnvV γ (Val.subst u v)
+
+@[simp] theorem substEnvV_nil (v : Val) : substEnvV [] v = v := rfl
+
+@[simp] theorem substEnv_ret (γ : List Val) (w : Val) :
+    substEnv γ (Comp.ret w) = Comp.ret (substEnvV γ w) := by
+  induction γ generalizing w with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _
+
+@[simp] theorem substEnv_force (γ : List Val) (w : Val) :
+    substEnv γ (Comp.force w) = Comp.force (substEnvV γ w) := by
+  induction γ generalizing w with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _
+
+@[simp] theorem substEnv_app (γ : List Val) (M : Comp) (w : Val) :
+    substEnv γ (Comp.app M w) = Comp.app (substEnv γ M) (substEnvV γ w) := by
+  induction γ generalizing M w with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _ _
+
+@[simp] theorem substEnv_unfold (γ : List Val) (w : Val) :
+    substEnv γ (Comp.unfold w) = Comp.unfold (substEnvV γ w) := by
+  induction γ generalizing w with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _
+
+@[simp] theorem substEnv_binop (γ : List Val) (op : BinOp) (a b : Val) :
+    substEnv γ (Comp.binop op a b) = Comp.binop op (substEnvV γ a) (substEnvV γ b) := by
+  induction γ generalizing a b with
+  | nil => rfl
+  | cons v γ ih => simp only [substEnv, substEnvV, Comp.subst, Comp.substFrom]; exact ih _ _
+
+@[simp] theorem substEnv_letC (γ : List Val) (M N : Comp) :
+    substEnv γ (Comp.letC M N) = Comp.letC (substEnv γ M) (closeUnderBindersE 1 γ N) := by
+  induction γ generalizing M N with
+  | nil => rfl
+  | cons v γ ih =>
+    simp only [substEnv, closeUnderBindersE, Comp.subst, Comp.substFrom, shiftNE]
+    exact ih _ _
+
+@[simp] theorem substEnv_lam (γ : List Val) (M : Comp) :
+    substEnv γ (Comp.lam M) = Comp.lam (closeUnderBindersE 1 γ M) := by
+  induction γ generalizing M with
+  | nil => rfl
+  | cons v γ ih =>
+    simp only [substEnv, closeUnderBindersE, Comp.subst, Comp.substFrom, shiftNE]
+    exact ih _
+
+@[simp] theorem substEnv_case (γ : List Val) (w : Val) (N₁ N₂ : Comp) :
+    substEnv γ (Comp.case w N₁ N₂)
+      = Comp.case (substEnvV γ w) (closeUnderBindersE 1 γ N₁) (closeUnderBindersE 1 γ N₂) := by
+  induction γ generalizing w N₁ N₂ with
+  | nil => rfl
+  | cons v γ ih =>
+    simp only [substEnv, substEnvV, closeUnderBindersE, Comp.subst, Val.subst, Comp.substFrom, shiftNE]
+    exact ih _ _ _
+
+@[simp] theorem substEnv_split (γ : List Val) (w : Val) (N : Comp) :
+    substEnv γ (Comp.split w N) = Comp.split (substEnvV γ w) (closeUnderBindersE 2 γ N) := by
+  induction γ generalizing w N with
+  | nil => rfl
+  | cons v γ ih =>
+    simp only [substEnv, substEnvV, closeUnderBindersE, Comp.subst, Val.subst, Comp.substFrom, shiftNE]
+    exact ih _ _
+
 /-- **The correspondence STATEMENT** (PLFA `γ≈ₑσ`; slice-3 proof).
 
 If `evalE` runs `M` under `ρ` to a returner `mret mv`, and `ρ` agrees with a substitution
