@@ -364,104 +364,35 @@ and deletes these copies post-s5grind — the green build after retirement prove
 Every transplanted decl carries the `TODO(hoist, task #15)` marker. Bodies are verbatim from LR/BinaryLR
 (behavior-preserving copies). -/
 
--- TODO(hoist, task #15): faithful duplicate of Bang.Meta.LR.Val.Closed engine — retired by the post-s5grind hoist.
-/-- A value with no free de Bruijn indices (fixed by shift at every cutoff). -/
-def Val.ClosedE (v : Val) : Prop := ∀ k, Val.shiftFrom k v = v
+-- RETIRED (task #15): the transplanted closing-substitution ENGINE is HOISTED to
+-- `Bang/Core/Semantics/Subst.lean` §1.3c. `Val.ClosedE` is now an `abbrev` of the hoisted `Val.Closed`,
+-- so its dotted accessors (`.shift`/`.shiftFrom_eq`/`.subst_at`) resolve straight to the hoisted proofs
+-- and the local copies are deleted. `shiftNE`/`closeUnderBindersE` stay `def`s BYTE-IDENTICAL to the
+-- hoisted `shiftN`/`closeCUnderBinders` (they carry `simp only [·]`/`rw [·]` unfold sites the machine's
+-- distribution lemmas depend on), and the crux lemmas below delegate to the hoisted engine by defeq —
+-- so the former swap/commutation mutuals are deleted. The green build IS the proof the copies were faithful.
+/-- A value with no free de Bruijn indices — the machine's alias of the hoisted `Val.Closed`. -/
+abbrev Val.ClosedE (v : Val) : Prop := Val.Closed v
 
--- TODO(hoist, task #15): duplicate of Bang.Meta.LR.Val.Closed.{shift,shiftFrom_eq,subst_at}.
-theorem Val.ClosedE.shift {v : Val} (h : Val.ClosedE v) : Val.shift v = v := h 0
-theorem Val.ClosedE.shiftFrom_eq {v : Val} (h : Val.ClosedE v) (k : Nat) : Val.shiftFrom k v = v := h k
-theorem Val.ClosedE.subst_at {v : Val} (h : Val.ClosedE v) (k : Nat) (w : Val) :
-    Val.substFrom k w v = v := by
-  conv_lhs => rw [← h.shiftFrom_eq k]; exact Bang.Val.substFrom_shiftFrom k w v
-
--- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{shiftN,shiftN_closed}.
-/-- Iterated `Val.shift` (weaken past `d` binders). -/
+/-- Iterated `Val.shift` (weaken past `d` binders) — byte-identical to the hoisted `shiftN`. -/
 def shiftNE : Nat → Val → Val
   | 0,     v => v
   | d + 1, v => Val.shift (shiftNE d v)
+
+/-- A closed value is fixed by `shiftNE d` — the `shiftNE`-stated adapter of the hoisted `shiftN_closed`
+(the swap ENGINE it rode is retired; this thin fact over the machine's own `shiftNE` def stays). -/
 theorem shiftNE_closed {v : Val} (h : Val.ClosedE v) : ∀ d, shiftNE d v = v
   | 0     => rfl
   | d + 1 => by show Val.shift (shiftNE d v) = v; rw [shiftNE_closed h d, h.shift]
 
--- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.closeCUnderBinders (`closeC` = substEnv here).
-/-- Apply the closing env `δ` to a term sitting under `d` fresh binders (each filler weakened + substituted
-at level `d`). `closeUnderBindersE 0 = substEnv`. -/
+/-- Apply the closing env `δ` to a term under `d` fresh binders — byte-identical to hoisted
+`closeCUnderBinders`. -/
 def closeUnderBindersE (d : Nat) : List Val → Comp → Comp
   | [],     c => c
   | v :: δ, c => closeUnderBindersE d δ (Comp.substFrom d (shiftNE d v) c)
-
--- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{Val,Comp,Handler}.substFrom_swap_closed (ADJACENT swap).
-mutual
-theorem Val.substFrom_swap_closedE :
-    ∀ {v w : Val}, Val.ClosedE v → Val.ClosedE w → ∀ (k : Nat) (t : Val),
-      Val.substFrom k w (Val.substFrom (k + 1) v t) = Val.substFrom k v (Val.substFrom k w t)
-  | _, _, _, _, _, .vunit => rfl
-  | _, _, _, _, _, .vint _ => rfl
-  | _, _, _, _, _, .vcap _ _ => rfl
-  | v, w, hv, hw, k, .vvar i => by
-      rcases Nat.lt_trichotomy i k with hlt | heq | hgt
-      · simp only [Val.substFrom, if_neg (show ¬ i = k + 1 by omega), if_neg (show ¬ i > k + 1 by omega),
-          if_neg (show ¬ i = k by omega), if_neg (show ¬ i > k by omega)]
-      · subst heq
-        simp only [Val.substFrom, if_neg (show ¬ i = i + 1 by omega), if_neg (show ¬ i > i + 1 by omega),
-          if_true, hw.subst_at i v]
-      · rcases Nat.lt_trichotomy i (k + 1) with hk1 | heq1 | hgt1
-        · omega
-        · subst heq1
-          simp only [Val.substFrom, if_true, hv.subst_at k w,
-            if_neg (show ¬ k + 1 = k by omega), if_pos (show k + 1 > k by omega), Nat.add_sub_cancel]
-        · simp only [Val.substFrom, if_neg (show ¬ i = k + 1 by omega), if_pos (show i > k + 1 by omega),
-            if_neg (show ¬ i = k by omega), if_pos (show i > k by omega),
-            if_neg (show ¬ i - 1 = k by omega), if_pos (show i - 1 > k by omega)]
-  | v, w, hv, hw, k, .vthunk M => by
-      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closedE hv hw k M]
-  | v, w, hv, hw, k, .inl u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
-  | v, w, hv, hw, k, .inr u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
-  | v, w, hv, hw, k, .pair u₁ u₂ => by
-      simp only [Val.substFrom]
-      rw [Val.substFrom_swap_closedE hv hw k u₁, Val.substFrom_swap_closedE hv hw k u₂]
-  | v, w, hv, hw, k, .fold u => by simp only [Val.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
-theorem Comp.substFrom_swap_closedE :
-    ∀ {v w : Val}, Val.ClosedE v → Val.ClosedE w → ∀ (k : Nat) (t : Comp),
-      Comp.substFrom k w (Comp.substFrom (k + 1) v t) = Comp.substFrom k v (Comp.substFrom k w t)
-  | v, w, hv, hw, k, .ret u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
-  | v, w, hv, hw, k, .binop op a b => by
-      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k a, Val.substFrom_swap_closedE hv hw k b]
-  | v, w, hv, hw, k, .letC M N => by
-      simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Comp.substFrom_swap_closedE hv hw k M, Comp.substFrom_swap_closedE hv hw (k + 1) N]
-  | v, w, hv, hw, k, .force u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
-  | v, w, hv, hw, k, .lam M => by
-      simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Comp.substFrom_swap_closedE hv hw (k + 1) M]
-  | v, w, hv, hw, k, .app M u => by
-      simp only [Comp.substFrom]
-      rw [Comp.substFrom_swap_closedE hv hw k M, Val.substFrom_swap_closedE hv hw k u]
-  | v, w, hv, hw, k, .perform cp op u => by
-      simp only [Comp.substFrom]
-      rw [Val.substFrom_swap_closedE hv hw k cp, Val.substFrom_swap_closedE hv hw k u]
-  | v, w, hv, hw, k, .handle h M => by
-      simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Handler.substFrom_swap_closedE hv hw k h, Comp.substFrom_swap_closedE hv hw (k + 1) M]
-  | v, w, hv, hw, k, .case u N₁ N₂ => by
-      simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Val.substFrom_swap_closedE hv hw k u,
-        Comp.substFrom_swap_closedE hv hw (k + 1) N₁, Comp.substFrom_swap_closedE hv hw (k + 1) N₂]
-  | v, w, hv, hw, k, .split u N => by
-      simp only [Comp.substFrom, hv.shift, hw.shift]
-      rw [Val.substFrom_swap_closedE hv hw k u, Comp.substFrom_swap_closedE hv hw (k + 2) N]
-  | v, w, hv, hw, k, .unfold u => by simp only [Comp.substFrom]; rw [Val.substFrom_swap_closedE hv hw k u]
-  | _, _, _, _, _, .oom => rfl
-  | _, _, _, _, _, .wrong _ => rfl
-theorem Handler.substFrom_swap_closedE :
-    ∀ {v w : Val}, Val.ClosedE v → Val.ClosedE w → ∀ (k : Nat) (h : Handler),
-      Handler.substFrom k w (Handler.substFrom (k + 1) v h) = Handler.substFrom k v (Handler.substFrom k w h)
-  | v, w, hv, hw, k, .state ℓ s => by simp only [Handler.substFrom]; rw [Val.substFrom_swap_closedE hv hw k s]
-  | _, _, _, _, _, .throws _ => rfl
-  | _, _, _, _, _, .transaction _ _ => rfl
-  | _, _, _, _, _, .custom _ _ _ => rfl
-end
+-- RETIRED (task #15): the adjacent substitution-swap mutual ({Val,Comp,Handler}.substFrom_swap_closedE)
+-- is HOISTED as {Val,Comp,Handler}.substFrom_swap_closed (Bang/Core/Semantics/Subst.lean §1.3c). The
+-- crux `substEnv_cons_subst` below consumes the hoisted `closeC_subst_comm` directly.
 
 mutual
 def readback : MVal → Val
@@ -525,14 +456,16 @@ the `Val.ClosedE` premise, TRUE by construction from readback (a ground MVal rea
 @[simp] theorem substEnv_cons (v : Val) (γ : List Val) (M : Comp) :
     substEnv (v :: γ) M = substEnv γ (Comp.subst v M) := rfl
 
--- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.closeC_subst_comm, restated against substEnv.
-/-- **THE CRUX** (= `closeC_subst_comm`): filling a fresh level-0 binder with a CLOSED `w` after applying
-the closing env `γ` lifted past one binder equals applying `w :: γ` directly. Closes the binding cases of
-`evalE_agrees_evalD` — the env-extension `w ∷ₑ ρ` matches `Comp.subst w` under the lifted tail. -/
+/-- **THE CRUX** (= the hoisted `closeC_subst_comm`): filling a fresh level-0 binder with a CLOSED `w`
+after applying the closing env `γ` lifted past one binder equals applying `w :: γ` directly. Closes the
+binding cases of `evalE_agrees_evalD` — the env-extension `w ∷ₑ ρ` matches `Comp.subst w` under the
+lifted tail. Delegates to the hoisted engine (task #15): `substEnv`/`closeUnderBindersE`/`Val.ClosedE`
+are aliases of `closeC`/`closeCUnderBinders`/`Val.Closed`, so this is exactly `closeC_subst_comm`. -/
 theorem substEnv_cons_subst {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v)
     {w : Val} (_hw : Val.ClosedE w) (N : Comp) :
     (closeUnderBindersE 1 γ N).subst w = substEnv (w :: γ) N := by
-  -- substEnv (w :: γ) N = substEnv γ (Comp.subst w N); induction on γ (verbatim closeC_subst_comm).
+  -- substEnv (w :: γ) N = substEnv γ (Comp.subst w N); induction on γ. Same shape as the hoisted
+  -- `closeC_subst_comm` (task #15), now consuming the hoisted `Comp.substFrom_swap_closed` swap.
   show (closeUnderBindersE 1 γ N).subst w = substEnv γ (Comp.subst w N)
   induction γ generalizing N with
   | nil => rfl
@@ -542,100 +475,14 @@ theorem substEnv_cons_subst {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v)
     simp only [closeUnderBindersE, substEnv, shiftNE, hv.shift]
     rw [ih hγ' (Comp.substFrom 1 v N)]
     congr 1
-    exact Comp.substFrom_swap_closedE hv _hw 0 N
+    exact Comp.substFrom_swap_closed hv _hw 0 N
 
-/-! ### The 2-binder crux (`split`; transplanted `closeC_subst2_comm` + `_ge` swap, task #15 retires) -/
+/-! ### The 2-binder crux (`split`) — over the hoisted `_ge` swap engine (task #15) -/
 
--- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{Val,Comp,Handler}.substFrom_swap_closed_ge.
-mutual
-theorem Val.substFrom_swap_closed_geE :
-    ∀ {u w : Val}, Val.ClosedE u → Val.ClosedE w → ∀ (i j : Nat), i ≤ j → ∀ (t : Val),
-      Val.substFrom i w (Val.substFrom (j + 1) u t) = Val.substFrom j u (Val.substFrom i w t)
-  | _, _, _, _, _, _, _,   .vunit => rfl
-  | _, _, _, _, _, _, _,   .vint _ => rfl
-  | _, _, _, _, _, _, _,   .vcap _ _ => rfl
-  | u, w, hu, hw, i, j, hij, .vvar m => by
-      rcases Nat.lt_trichotomy m i with hmi | hmi | hmi
-      · simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_neg (show ¬ m > j + 1 by omega),
-          if_neg (show ¬ m = i by omega), if_neg (show ¬ m > i by omega),
-          if_neg (show ¬ m = j by omega), if_neg (show ¬ m > j by omega)]
-      · subst hmi
-        simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega),
-          if_neg (show ¬ m > j + 1 by omega), if_true]
-        rw [hw.subst_at j u]
-      · rcases Nat.lt_trichotomy m (j + 1) with hmj | hmj | hmj
-        · simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_neg (show ¬ m > j + 1 by omega),
-            if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
-            if_neg (show ¬ m - 1 = j by omega), if_neg (show ¬ m - 1 > j by omega)]
-        · subst hmj
-          simp only [Val.substFrom, if_true,
-            if_neg (show ¬ j + 1 = i by omega), if_pos (show j + 1 > i by omega), Nat.add_sub_cancel]
-          rw [hu.subst_at i w]
-        · simp only [Val.substFrom, if_neg (show ¬ m = j + 1 by omega), if_pos (show m > j + 1 by omega),
-            if_neg (show ¬ m - 1 = i by omega), if_pos (show m - 1 > i by omega),
-            if_neg (show ¬ m = i by omega), if_pos (show m > i by omega),
-            if_neg (show ¬ m - 1 = j by omega), if_pos (show m - 1 > j by omega)]
-  | u, w, hu, hw, i, j, hij, .vthunk M => by
-      simp only [Val.substFrom]; rw [Comp.substFrom_swap_closed_geE hu hw i j hij M]
-  | u, w, hu, hw, i, j, hij, .inl t => by
-      simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .inr t => by
-      simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .pair a b => by
-      simp only [Val.substFrom]
-      rw [Val.substFrom_swap_closed_geE hu hw i j hij a, Val.substFrom_swap_closed_geE hu hw i j hij b]
-  | u, w, hu, hw, i, j, hij, .fold t => by
-      simp only [Val.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
-theorem Comp.substFrom_swap_closed_geE :
-    ∀ {u w : Val}, Val.ClosedE u → Val.ClosedE w → ∀ (i j : Nat), i ≤ j → ∀ (t : Comp),
-      Comp.substFrom i w (Comp.substFrom (j + 1) u t) = Comp.substFrom j u (Comp.substFrom i w t)
-  | u, w, hu, hw, i, j, hij, .ret t => by
-      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .binop op a b => by
-      simp only [Comp.substFrom]
-      rw [Val.substFrom_swap_closed_geE hu hw i j hij a, Val.substFrom_swap_closed_geE hu hw i j hij b]
-  | u, w, hu, hw, i, j, hij, .letC M N => by
-      simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed_geE hu hw i j hij M,
-        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) N]
-  | u, w, hu, hw, i, j, hij, .force t => by
-      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .lam M => by
-      simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) M]
-  | u, w, hu, hw, i, j, hij, .app M t => by
-      simp only [Comp.substFrom]
-      rw [Comp.substFrom_swap_closed_geE hu hw i j hij M, Val.substFrom_swap_closed_geE hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .perform cp op t => by
-      simp only [Comp.substFrom]
-      rw [Val.substFrom_swap_closed_geE hu hw i j hij cp, Val.substFrom_swap_closed_geE hu hw i j hij t]
-  | u, w, hu, hw, i, j, hij, .handle hd M => by
-      simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Handler.substFrom_swap_closed_geE hu hw i j hij hd,
-        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) M]
-  | u, w, hu, hw, i, j, hij, .case t N₁ N₂ => by
-      simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Val.substFrom_swap_closed_geE hu hw i j hij t,
-        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) N₁,
-        Comp.substFrom_swap_closed_geE hu hw (i + 1) (j + 1) (by omega) N₂]
-  | u, w, hu, hw, i, j, hij, .split t N => by
-      simp only [Comp.substFrom, hu.shift, hw.shift]
-      rw [Val.substFrom_swap_closed_geE hu hw i j hij t,
-        Comp.substFrom_swap_closed_geE hu hw (i + 2) (j + 2) (by omega) N]
-  | u, w, hu, hw, i, j, hij, .unfold t => by
-      simp only [Comp.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij t]
-  | _, _, _, _, _, _, _, .oom => rfl
-  | _, _, _, _, _, _, _, .wrong _ => rfl
-theorem Handler.substFrom_swap_closed_geE :
-    ∀ {u w : Val}, Val.ClosedE u → Val.ClosedE w → ∀ (i j : Nat), i ≤ j → ∀ (hd : Handler),
-      Handler.substFrom i w (Handler.substFrom (j + 1) u hd)
-        = Handler.substFrom j u (Handler.substFrom i w hd)
-  | u, w, hu, hw, i, j, hij, .state ℓ s => by
-      simp only [Handler.substFrom]; rw [Val.substFrom_swap_closed_geE hu hw i j hij s]
-  | _, _, _, _, _, _, _, .throws _ => rfl
-  | _, _, _, _, _, _, _, .transaction _ _ => rfl
-  | _, _, _, _, _, _, _, .custom _ _ _ => rfl
-end
+-- RETIRED (task #15): the non-adjacent swap mutual ({Val,Comp,Handler}.substFrom_swap_closed_geE) is
+-- HOISTED as {Val,Comp,Handler}.substFrom_swap_closed_ge (Bang/Core/Semantics/Subst.lean §1.3c). The
+-- level-0-descent helpers below stay `def`-local (they thread `closeUnderBindersE`, the machine's own
+-- def) but consume the hoisted `_ge` swap; the 2-binder crux keeps its structure over them.
 
 /-- `closeUnderBindersE 0 = substEnv` (level-0 subst, no weakening). -/
 theorem closeUnderBindersE_zero (γ : List Val) (c : Comp) : closeUnderBindersE 0 γ c = substEnv γ c := by
@@ -644,7 +491,7 @@ theorem closeUnderBindersE_zero (γ : List Val) (c : Comp) : closeUnderBindersE 
   | cons v γ ih => simp only [closeUnderBindersE, substEnv, Comp.subst, shiftNE]; exact ih _
 
 /-- Level-0 descent through `closeUnderBindersE (d+1)` for a CLOSED filler (drops the binder-depth by one;
-non-adjacent swap). Engine behind the 2-binder split crux. -/
+non-adjacent swap). Engine behind the 2-binder split crux; consumes the hoisted `Comp.substFrom_swap_closed_ge`. -/
 theorem closeUnderBindersE_subst0 (d : Nat) {γ : List Val} (hγ : ∀ v ∈ γ, Val.ClosedE v)
     {w : Val} (hw : Val.ClosedE w) (N : Comp) :
     Comp.substFrom 0 w (closeUnderBindersE (d + 1) γ N) = closeUnderBindersE d γ (Comp.substFrom 0 w N) := by
@@ -656,7 +503,7 @@ theorem closeUnderBindersE_subst0 (d : Nat) {γ : List Val} (hγ : ∀ v ∈ γ,
     simp only [closeUnderBindersE, shiftNE_closed hv]
     rw [ih hγ' (Comp.substFrom (d + 1) v N)]
     congr 1
-    exact Comp.substFrom_swap_closed_geE hv hw 0 d (Nat.zero_le d) N
+    exact Comp.substFrom_swap_closed_ge hv hw 0 d (Nat.zero_le d) N
 
 /-- **THE 2-BINDER CRUX** (`split`): filling the two binders of `closeUnderBindersE 2 γ N` (inner
 `shift w`, outer `v`, the `split (pair v w) N ↦ subst v (subst (shift w) N)` reduct) = closing
@@ -1225,103 +1072,20 @@ because `M` scoped + `readbackEnv ρ` closed ⇒ `substEnv (readbackEnv ρ) M` c
 `shiftFrom_substFrom_closed` (the closed-filler shift/subst commutation) + `closeV_closed_scoped`
 from BinaryLR (task #15 retires). -/
 
--- TODO(hoist, task #15): duplicate of Bang.Meta.BinaryLR.{Val,Comp,Handler}.shiftFrom_substFrom_closed.
-mutual
-theorem Val.shiftFrom_substFrom_closedE :
-    ∀ {u : Val}, Val.ClosedE u → ∀ (k i : Nat), i ≤ k → ∀ (t : Val),
-      Val.shiftFrom k (Val.substFrom i u t) = Val.substFrom i u (Val.shiftFrom (k + 1) t)
-  | _, _,  _, _, _,    .vunit => rfl
-  | _, _,  _, _, _,    .vint _ => rfl
-  | _, _,  _, _, _,    .vcap _ _ => rfl
-  | u, hu, k, i, hik,  .vvar j => by
-      rcases Nat.lt_trichotomy j i with hji | hji | hji
-      · rw [Val.substFrom, if_neg (by omega), if_neg (by omega),
-          Val.shiftFrom, if_pos (by omega : j < k),
-          Val.shiftFrom, if_pos (by omega : j < k + 1),
-          Val.substFrom, if_neg (by omega), if_neg (by omega)]
-      · subst hji
-        rw [Val.substFrom, if_pos rfl, hu.shiftFrom_eq,
-          Val.shiftFrom, if_pos (by omega : j < k + 1), Val.substFrom, if_pos rfl]
-      · rw [Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
-        rcases Nat.lt_or_ge j (k + 1) with hjk | hjk
-        · rw [Val.shiftFrom, if_pos (by omega : j - 1 < k),
-            Val.shiftFrom, if_pos (by omega : j < k + 1),
-            Val.substFrom, if_neg (by omega), if_pos (by omega : j > i)]
-        · rw [Val.shiftFrom, if_neg (by omega : ¬ j - 1 < k),
-            Val.shiftFrom, if_neg (by omega : ¬ j < k + 1),
-            Val.substFrom, if_neg (by omega), if_pos (by omega : j + 1 > i),
-            show j - 1 + 1 = j + 1 - 1 by omega]
-  | u, hu, k, i, hik,  .vthunk M => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Comp.shiftFrom_substFrom_closedE hu k i hik M]
-  | u, hu, k, i, hik,  .inl w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
-  | u, hu, k, i, hik,  .inr w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
-  | u, hu, k, i, hik,  .pair a b => by
-      simp only [Val.shiftFrom, Val.substFrom]
-      rw [Val.shiftFrom_substFrom_closedE hu k i hik a, Val.shiftFrom_substFrom_closedE hu k i hik b]
-  | u, hu, k, i, hik,  .fold w => by
-      simp only [Val.shiftFrom, Val.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
-theorem Comp.shiftFrom_substFrom_closedE :
-    ∀ {u : Val}, Val.ClosedE u → ∀ (k i : Nat), i ≤ k → ∀ (t : Comp),
-      Comp.shiftFrom k (Comp.substFrom i u t) = Comp.substFrom i u (Comp.shiftFrom (k + 1) t)
-  | u, hu, k, i, hik, .ret w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
-  | u, hu, k, i, hik, .binop op a b => by
-      simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Val.shiftFrom_substFrom_closedE hu k i hik a, Val.shiftFrom_substFrom_closedE hu k i hik b]
-  | u, hu, k, i, hik, .letC M N => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Comp.shiftFrom_substFrom_closedE hu k i hik M,
-        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) N]
-  | u, hu, k, i, hik, .force w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
-  | u, hu, k, i, hik, .lam M => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) M]
-  | u, hu, k, i, hik, .app M w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Comp.shiftFrom_substFrom_closedE hu k i hik M, Val.shiftFrom_substFrom_closedE hu k i hik w]
-  | u, hu, k, i, hik, .perform cp op w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]
-      rw [Val.shiftFrom_substFrom_closedE hu k i hik cp, Val.shiftFrom_substFrom_closedE hu k i hik w]
-  | u, hu, k, i, hik, .handle hd M => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Handler.shiftFrom_substFrom_closedE hu k i hik hd,
-        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) M]
-  | u, hu, k, i, hik, .case w N₁ N₂ => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Val.shiftFrom_substFrom_closedE hu k i hik w,
-        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) N₁,
-        Comp.shiftFrom_substFrom_closedE hu (k + 1) (i + 1) (by omega) N₂]
-  | u, hu, k, i, hik, .split w N => by
-      simp only [Comp.shiftFrom, Comp.substFrom, hu.shift]
-      rw [Val.shiftFrom_substFrom_closedE hu k i hik w,
-        Comp.shiftFrom_substFrom_closedE hu (k + 2) (i + 2) (by omega) N]
-  | u, hu, k, i, hik, .unfold w => by
-      simp only [Comp.shiftFrom, Comp.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik w]
-  | _, _, _, _, _, .oom => rfl
-  | _, _, _, _, _, .wrong _ => rfl
-theorem Handler.shiftFrom_substFrom_closedE :
-    ∀ {u : Val}, Val.ClosedE u → ∀ (k i : Nat), i ≤ k → ∀ (hd : Handler),
-      Handler.shiftFrom k (Handler.substFrom i u hd) = Handler.substFrom i u (Handler.shiftFrom (k + 1) hd)
-  | u, hu, k, i, hik, .state ℓ s => by
-      simp only [Handler.shiftFrom, Handler.substFrom]; rw [Val.shiftFrom_substFrom_closedE hu k i hik s]
-  | _, _, _, _, _, .throws _ => rfl
-  | _, _, _, _, _, .transaction _ _ => rfl
-  | _, _, _, _, _, .custom _ _ _ => rfl
-end
+-- RETIRED (task #15): the closed-filler shift/subst commutation mutual
+-- ({Val,Comp,Handler}.shiftFrom_substFrom_closedE) is HOISTED as {Val,Comp,Handler}.shiftFrom_substFrom_closed
+-- (Bang/Core/Semantics/Subst.lean §1.3c). The `subst_closed` consumers below use the hoisted names.
 
 /-- Substituting the level-0 binder of an `(m+1)`-scoped VALUE with a CLOSED filler drops scope to `m`. -/
 theorem Val.ScopedV.subst_closed {m : Nat} {u v : Val} (hu : Val.ClosedE u)
     (hv : Val.ScopedV (m + 1) v) : Val.ScopedV m (Val.subst u v) := by
   intro k hk
-  rw [Val.subst, Val.shiftFrom_substFrom_closedE hu k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
+  rw [Val.subst, Val.shiftFrom_substFrom_closed hu k 0 (Nat.zero_le k) v, hv (k + 1) (by omega)]
 /-- The same for a COMPUTATION. -/
 theorem Comp.ScopedC.subst_closed {m : Nat} {u : Val} {M : Comp} (hu : Val.ClosedE u)
     (hM : Comp.ScopedC (m + 1) M) : Comp.ScopedC m (Comp.subst u M) := by
   intro k hk
-  rw [Comp.subst, Comp.shiftFrom_substFrom_closedE hu k 0 (Nat.zero_le k) M, hM (k + 1) (by omega)]
+  rw [Comp.subst, Comp.shiftFrom_substFrom_closed hu k 0 (Nat.zero_le k) M, hM (k + 1) (by omega)]
 
 /-- Closing a VALUE scoped under `|γ|` over a CLOSED env yields a CLOSED value. -/
 theorem substEnvV_closed : ∀ {γ : List Val} {v : Val},
