@@ -1961,13 +1961,81 @@ theorem evalE_agrees_evalD_gen :
           show readbackEnv ρ = γ from hag]
       · rintro t ⟨rfl⟩
         exact ⟨⟨hWF, hlen ▸ hScM⟩, hlen ▸ hScM, hWF, hP⟩
-    | force w => sorry
+    | force w =>
+      -- evalV ρ w = mvclos M' ρ' ⇒ run M' under ρ'. evalD: force (vthunk (substEnv (rbEnv ρ') M')).
+      have hsc : Val.ScopedV γ.length w := hlen ▸ hSc.force_inv
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | mvclos M' ρ' =>
+        rw [hw] at h
+        -- WFClos of the closure gives its body-scope + env-WF + env-WFClos (no EffectFree needed).
+        have hwfc : MVal.WFClos (MVal.mvclos M' ρ') := by
+          have := evalV_WFClos hWF hP (hlen ▸ hsc); rw [hw] at this; exact this
+        obtain ⟨hscM', hWFρ', hWFCρ'⟩ := (by simpa only [MVal.WFClos] using hwfc :
+          Comp.ScopedC (readbackEnv ρ').length M' ∧ MEnv.WF ρ' ∧ MEnv.WFClos ρ')
+        obtain ⟨G', dσ', dτ', dκ', hd, hC', hG', hWt, hRt⟩ :=
+          ih (readbackEnv ρ') M' out ρ' g G g' eσ eσ' eτ eτ' eκ eκ'
+            dσ dτ dκ rfl hWFρ' hWFCρ' hscM' hG hC h
+        refine ⟨G', dσ', dτ', dκ', ?_, hC', hG', hWt, hRt⟩
+        have hrb : substEnvV γ w = Val.vthunk (substEnv (readbackEnv ρ') M') := by
+          rw [show γ = readbackEnv ρ from hag.symm, ← readback_evalV hWF (hlen ▸ hsc), hw]; rfl
+        rw [substEnv_force, hrb]
+        simpa only [Bang.CalcVM.evalD] using hd
+      | _ => rw [hw] at h; simp at h
     | letC M N => sorry
     | app M v => sorry
     | case w N₁ N₂ => sorry
     | split w N => sorry
-    | unfold w => sorry
-    | binop op a b => sorry
+    | unfold w =>
+      -- evalV ρ w = mfold mw ⇒ mret mw. evalD unfold (fold (readback mw)) ⇒ ret (readback mw).
+      have hsc : Val.ScopedV γ.length w := hlen ▸ hSc.unfold_inv
+      simp only [evalE] at h
+      cases hw : evalV ρ w with
+      | mfold mw =>
+        rw [hw] at h
+        simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+        obtain ⟨hout, -, hσ, hτ, hκ⟩ := h
+        subst hout hσ hτ hκ
+        have hrb : substEnvV γ w = Val.fold (readback mw) := by
+          rw [show γ = readbackEnv ρ from hag.symm, ← readback_evalV hWF (hlen ▸ hsc), hw]; rfl
+        have hwfc : MVal.WFClos (MVal.mfold mw) := by
+          have := evalV_WFClos hWF hP (hlen ▸ hsc); rw [hw] at this; exact this
+        have hWFmw : MVal.WF mw := by
+          have := evalV_WF hWF (hlen ▸ hsc); rw [hw] at this
+          simp only [MVal.WF, readback] at this
+          exact (Val.ScopedV.fold_inv (fun k _ => this k)).closedE_zero
+        refine ⟨G, dσ, dτ, dκ, ?_, hC, hG, ?_, by rintro n op mv ⟨⟩⟩
+        · simp only [substEnv_unfold, hrb, readbackTermS, readbackTerm, Bang.CalcVM.evalD]
+        · rintro t ⟨rfl⟩
+          exact ⟨hWFmw, by simpa only [MVal.WFClos] using hwfc⟩
+      | _ => rw [hw] at h; simp at h
+    | binop op a b =>
+      -- evalV ρ a = mvint x, evalV ρ b = mvint y ⇒ mret (evalVOfBinop (op.eval x y)).
+      obtain ⟨hSca, hScb⟩ := hSc.binop_inv
+      have hsca : Val.ScopedV γ.length a := hlen ▸ hSca
+      have hscb : Val.ScopedV γ.length b := hlen ▸ hScb
+      simp only [evalE] at h
+      cases ha : evalV ρ a with
+      | mvint x =>
+        cases hb : evalV ρ b with
+        | mvint y =>
+          rw [ha, hb] at h
+          simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+          obtain ⟨hout, -, hσ, hτ, hκ⟩ := h
+          subst hout hσ hτ hκ
+          have hrba : substEnvV γ a = Val.vint x := by
+            rw [show γ = readbackEnv ρ from hag.symm, ← readback_evalV hWF (hlen ▸ hsca), ha]; rfl
+          have hrbb : substEnvV γ b = Val.vint y := by
+            rw [show γ = readbackEnv ρ from hag.symm, ← readback_evalV hWF (hlen ▸ hscb), hb]; rfl
+          have hWFres : MTerm.WF (MTerm.mret (evalE.evalVOfBinop (Bang.BinOp.eval op x y))) := by
+            simp only [MTerm.WF, MVal.WF, readback_evalVOfBinop_eval]; exact BinOp_eval_closedE op x y
+          refine ⟨G, dσ, dτ, dκ, ?_, hC, hG, ?_, by rintro n op mv ⟨⟩⟩
+          · simp only [substEnv_binop, hrba, hrbb, readbackTermS, readbackTerm, Bang.CalcVM.evalD,
+              readback_evalVOfBinop_eval]
+          · rintro t ⟨rfl⟩
+            exact ⟨hWFres, (evalVOfBinop_eval_pureV op x y).wfclos⟩
+        | _ => rw [ha, hb] at h; simp at h
+      | _ => rw [ha] at h; simp at h
     | perform w op v => sorry
     | handle hdl M => sorry
     | oom => simp [evalE] at h
