@@ -111,10 +111,10 @@ THREE NORTH-STAR TRACKS (each design-first, ≈post-v1; the operator sequences t
         (ADR-0079) → bounded traits (ADR-0080) → annotation-free intro (ADR-0081) → HKT Functor+Monad
         (ADR-0082) + prelude Option/Result/Either (ADR-0083) + effect row-poly (`5d0a32f`), all
         elaborate-to-mono (ADR-0075) — verified kernel UNTOUCHED the entire arc. Forward frontier: optics (Q26).
-  (c) USER-DEFINED EFFECTS & HANDLERS ⟳ STARTED — "paradigm is a value" MADE REAL, THE MOAT.
-        #44 (ADR-0085): a general kernel handler + `effect` decl + handler expression. Stage 1 landed
-        (`d84aeae`, additive ripple, census axiom-clean); Stage 2 banked. Spine-touching (ripples to the
-        calculated machine + LR + soundness) + furthest-reaching — the current edge (see `CONTEXT.md`).
+  (c) USER-DEFINED EFFECTS & HANDLERS ✅ ARC COMPLETE — "paradigm is a value" MADE REAL, THE MOAT.
+        #44 (ADR-0085): a general kernel handler + `effect` decl + handler expression, landed end-to-end
+        kernel→machine→LR→soundness→surface (`handle … with`, ADR-0095). Spine-touching + furthest-reaching;
+        forward slices (compute-then-return, carried-param, IO/net) are operator-sequenced — cursor in `CONTEXT.md`.
 
 VERIFICATION COMPLETION (parallel, verification-spine layer)
   #15 lr_sound ◊4 seam — OPERATOR-RULED deferred (D-now/A-probe-later, 2026-07-09; PATH-inc5)

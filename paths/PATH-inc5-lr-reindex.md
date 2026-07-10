@@ -79,15 +79,15 @@ bounded scratch spike of the canonical-reshape `CrelK′` before any frozen re-t
   debt was already axiom-isolated). Neither threaded nor proven: the consumer vanished first.
   The R-2 `.map`-traversal cascade this entry sketched is likewise void unless a future consumer
   resurrects the chain (git history holds it).
-- **`crelK_fund` custom arm — the ONE Stage-5 residual (updated 2026-07-10, Stage-5 landing):**
-  Stage 5 RETIRED `krelS_refl`'s custom arm (krelS_custom_reinstall PROVEN) and closed
-  `dispatchOn_rename`'s custom arm (R-1 side condition); `compatK_handleCustom` is proven.
-  What remains is `crelK_fund`'s handleCustom arm — blocked by the vrelK_fund/crelK_fund
-  mutual block's heartbeat-fragile termination inference; both cheap fixes probe-REFUTED
-  (task #16 has the mechanisms: the U-clause routes thunks through CrelK, and a
-  parameterized block breaks the frozen Spec.lean:248 wiring). Fix = a kernel-engineer
-  mutual-block split. Plus the R-1 `StackCustomVcapFree` keystone cascade (same unit).
-  Census-safe (feeds only the flagged lr_* set).
+- **`crelK_fund` custom arm — CLOSED (`5c2c03c`, 2026-07-10, task #16):** Stage 5 retired
+  `krelS_refl`'s custom arm (krelS_custom_reinstall PROVEN) and closed `dispatchOn_rename`'s
+  (R-1 side condition); this landing closed the last one — the vrelK_fund/crelK_fund PROOF
+  mutual block rebuilt from structural to well-founded recursion on `sizeOf` of the TERM
+  (after derivation-height was machine-refuted, Prop large-elim; stage5-lr-design §AMENDMENT).
+  Frozen VrelK/CrelK/KrelS DEF block untouched; sorries 53→52. **What still flags
+  `lr_fundamental`** is the two ORTHOGONAL residuals, NOT this arm: the ADR-0057 cap-escape
+  sorry + the ADR-0055 SKIP relocation (task #29, the last wall). Census-safe (feeds only the
+  flagged lr_* set).
 
 ## Resume protocol
 Design-first: an ADR deciding route 1 vs 2 BEFORE any proof work (route 1 touches frozen

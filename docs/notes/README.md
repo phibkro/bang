@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (34)
+## active (32)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -20,9 +20,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
 - [`distributed-story.md`](distributed-story.md) — The distributed-systems story — nondeterminism as an effect, the runtime as a handler
 - [`dogfood-json-findings.md`](dogfood-json-findings.md) — Dogfood findings — a JSON parser/printer written in bang
-- [`envsem-survey.md`](envsem-survey.md) — Environment / closure semantics — the design-space survey for #61's fix
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
-- [`hang-61-diagnosis.md`](hang-61-diagnosis.md) — Issue #61 diagnosis — the "hang" is per-step `Comp.subst` cost, not term blowup
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
 - [`kernel-substrate-survey.md`](kernel-substrate-survey.md) — Kernel-as-substrate — design survey: the verified semantic substrate + the profile ladder
 - [`laws-taxonomy.md`](laws-taxonomy.md) — The taxonomy of laws — model-shaped vs morphism-shaped, and where a property lives
@@ -45,7 +43,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`tactics-survey.md`](tactics-survey.md) — Lean 4 tactics + tooling survey (for bang-lang verification)
 - [`verification-ladder.md`](verification-ladder.md) — The verification ladder — quality gates for agent-speed code
 
-## archival (9)
+## archival (11)
 
 _Spike / experiment / pivot record — input to a specific ADR; preserved, not current._
 
@@ -54,6 +52,8 @@ _Spike / experiment / pivot record — input to a specific ADR; preserved, not c
 - [`cap-representation-spike-findings.md`](cap-representation-spike-findings.md) — Cap-representation feasibility spike — findings (→ ADR-0053 GO on absolute caps)
 - [`compiler-overview.md`](compiler-overview.md) — bang-lang compiler overview — how it works (for the Lexa comparison)
 - [`dispatch-verification-landscape.md`](dispatch-verification-landscape.md) — Effect-handler dispatch × verification — the landscape, and consequences for bang-lang
+- [`envsem-survey.md`](envsem-survey.md) — Environment / closure semantics — the design-space survey for #61's fix
+- [`hang-61-diagnosis.md`](hang-61-diagnosis.md) — Issue #61 diagnosis — the "hang" is per-step `Comp.subst` cost, not term blowup
 - [`kernel-shell-library.md`](kernel-shell-library.md) — Kernel / Shell / Library — the layering of bang-lang
 - [`monadic-recast-spike-findings.md`](monadic-recast-spike-findings.md) — Feasibility spike: recasting CalcReify's bisimulation into the Bahr–Hutton 2022 monadic frame
 - [`scoped-capabilities-for-vcapfree-drop.md`](scoped-capabilities-for-vcapfree-drop.md) — Scoped capabilities — the #18 (drop-VcapFree) design record

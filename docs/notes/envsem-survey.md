@@ -1,4 +1,4 @@
-<!-- note-status: active -->
+<!-- note-status: archival -->
 # Environment / closure semantics — the design-space survey for #61's fix
 
 > **One-sentence recommendation.** Keep `Source.eval` as the substitution SPEC,

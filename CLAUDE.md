@@ -40,11 +40,10 @@ its trigger arises.
 | **Stage-5 LR design map** (the three pre-registered debts probed · ret-shape tractability CONFIRMED · one-session verdict · the HandlerRel-ripple slice order) | `docs/notes/stage5-lr-design.md` |
 | **Stage-6 soundness design** (the composition was already met incrementally · the instantiation lemmas + custom_program_safe e2e headline · Q14 out of #44) | `docs/notes/stage6-soundness-design.md` |
 | **Stage-6 soundness-composition map** (#44 Stage 6 · the headline gate met by composition as Stages 2-5 landed · the two instantiation lemmas + the e2e capstone · Q14 out of scope) | `docs/notes/stage6-soundness-design.md` |
-| **Stage-7 elaboration probe** (#44 Stage 7 · the 4 walls: label-slot ruled into ADR-0095 D1a · checkHClauses mutual sibling · elabBind effects fix · the open lowerV path divergence) | `docs/notes/stage7-elab-probe.md` |
+| **Stage-7 elaboration probe** (#44 Stage 7, now LANDED `1284c8e` · the 4 walls: label-slot → ADR-0095 D1a · checkHClauses mutual sibling · elabBind effects fix · WALL 4 = synthSV→synthSC) | `docs/notes/stage7-elab-probe.md` |
 | **◊6 paper skeletons** (calculated-machine + binary-LR: census-checked claims · venue candidates · honest what-remains) | `docs/papers/` |
 | **Verification ladder** (agent-speed quality gates · HoTT verdict · Q43 proof-export) | `docs/notes/verification-ladder.md` |
 | **Dogfood: JSON parser findings** (#61 blocker · module-shape needs · what worked) | `docs/notes/dogfood-json-findings.md` |
-| **Env-semantics survey** (#61 fix · substitution-vs-environment fork · keep spec, env in the machine) | `docs/notes/envsem-survey.md` |
 | **Stranger test round 1** (8.5/10 · the reference-strings blind spot · the repeatable method) | `docs/notes/stranger-test-1.md` |
 | **Stranger test round 2** (7/10 · modules+laws under-surfaced · the pub-bypass find (#73) · rebuild-first method addendum) | `docs/notes/stranger-test-2.md` |
 | **Calculated CHECKER survey** (TCT/SbC · the frontend trust-map · fuzz-harness · evidence-passing verdict) | `docs/notes/calculated-typer-survey.md` |
@@ -59,7 +58,6 @@ its trigger arises.
 | **Lean 4 tactics for this work** | `docs/notes/tactics-survey.md` |
 | **K2/K3 calculation proof patterns** (legacy) | `docs/notes/k2-calculation-playbook.md` |
 | **K3 historical status** (pre-pivot narrative + composition-mechanism map) | `docs/notes/k3-historical-status.md` |
-| **Issue #61 perf diagnosis** (the "hang" = per-step `Comp.subst` cost; substitution vs environment reference semantics) | `docs/notes/hang-61-diagnosis.md` |
 | **Dev environment** (Nix flake, scripts, gotchas) | `docs/notes/dev-env.md` |
 | **Comment/doc convention** (Mathlib-grounded; `just symbols` for navigation) | `docs/notes/lean-comment-style.md` |
 | **Original design thesis** (v0/v1; partially superseded by ADR-0016) | `docs/spec/bang-lang-design.md`, `docs/spec/bang-lang-description-value.md` |

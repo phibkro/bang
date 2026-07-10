@@ -26,7 +26,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean` | a generated symbol index for the Lean source (the navigation gap-fill) |
 
-## check (18)
+## check (19)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -42,6 +42,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`check-doc-hygiene.py`](check-doc-hygiene.py) | `fitness` | `docs/notes/*.md`, `docs-allow.txt` | the doc-reachability / staleness fitness function |
 | [`check-git-hygiene.sh`](check-git-hygiene.sh) | `fitness` | `setup.sh` | multi-worktree git-store safety fitness function (#40) |
 | [`check-loop-audit.sh`](check-loop-audit.sh) | `fitness` | `docs/notes/loop-audit.md`, `ROADMAP.md` | loop-audit freshness fitness function |
+| [`check-onboarding-refs.py`](check-onboarding-refs.py) | `fitness` | `ONBOARDING.md`, `CLAUDE.md` | ONBOARDING's note references ⊆ CLAUDE's index (drift gate) |
 | [`check-paths.sh`](check-paths.sh) | `fitness` | `paths/PATH-*.md`, `CONTEXT.md`, `ROADMAP.md` | PATH lifecycle fitness function |
 | [`check-primitives.sh`](check-primitives.sh) | `fitness` | `Bang/Core/IR.lean` | kernel fitness function for CLAUDE.md Invariants #3 & #5 |
 | [`check-refs.py`](check-refs.py) | `fitness` | `*.md`, `refs-allow.txt` | the stale cross-reference fitness function |

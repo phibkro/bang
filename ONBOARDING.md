@@ -171,7 +171,7 @@ If anything seems off, this single command tells the full story:
 nix develop --command just verify
 ```
 
-Expect: selfcheck pass → lake build 729+ jobs → tools/audit.sh static
+Expect: selfcheck pass → lake build clean → tools/audit.sh static
 guards pass → axiom-burndown report per theorem. If red anywhere, the
 first error message is usually the right place to start debugging.
 

@@ -1,4 +1,4 @@
-<!-- note-status: active -->
+<!-- note-status: archival -->
 # Issue #61 diagnosis — the "hang" is per-step `Comp.subst` cost, not term blowup
 
 > **Verdict (one sentence).** The reported hang is NOT exponential elaboration

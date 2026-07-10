@@ -161,6 +161,7 @@ fitness:
     bash tools/check-audit-sync.sh
     bash tools/check-all-modules.sh
     python3 tools/check-refs.py
+    python3 tools/check-onboarding-refs.py
     python3 tools/check-doc-hygiene.py --check
     python3 tools/check-context-claims.py
     python3 tools/gen-notes-index.py --check
