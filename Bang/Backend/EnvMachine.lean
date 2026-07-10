@@ -1391,7 +1391,56 @@ theorem evalE_agrees_evalD_pure :
             rw [← hcrux]; exact hdN
           | mlam _ _ => simp only [Option.bind_some] at h; exact absurd h (by simp)
         | mraised n op w => simp only [Option.bind_some] at h; exact absurd h (by simp)
-    | app M v => sorry
+    | app M v =>
+      -- evalE: run M ⇒ mlam N' ρ', β under (evalV ρ v ∷ₑ ρ') N'. evalD: app-β via the crux.
+      obtain ⟨hScM, hScv⟩ := hSc.app_inv
+      obtain ⟨hEFM, hEFv⟩ := (by simpa only [EffectFree] using hEF : EffectFree M ∧ ValEF v)
+      have hscv : Val.ScopedV γ.length v := hlen ▸ hScv
+      have hWFav : MVal.WF (evalV ρ v) := evalV_WF hWF (hlen ▸ hscv)
+      have hPav : MVal.PureV (evalV ρ v) := evalV_PureV hWF hPure hEFv (hlen ▸ hscv)
+      simp only [evalE, Option.bind_eq_bind] at h
+      cases hM : evalE f g eσ eτ eκ ρ M with
+      | none => rw [hM] at h; simp at h
+      | some p =>
+        rw [hM] at h
+        obtain ⟨out, g₁, σ₁, τ₁, κ₁⟩ := p
+        cases out with
+        | mterm tM => cases tM with
+          | mlam N' ρ' =>
+            simp only [Option.bind_some] at h
+            -- IH on M (terminal mlam N' ρ'): store-invariance, evalD ⇒ lam (closeUnderBindersE 1 (rbEnv ρ') N'),
+            -- and the closure's WF/PureV (its env Good, its body EffectFree + scoped).
+            obtain ⟨⟨hσ₁, hτ₁, hκ₁⟩, hdM, hWFlam, hPlam⟩ :=
+              ih γ M (.mlam N' ρ') ρ g G g₁ eσ σ₁ eτ τ₁ eκ κ₁ dσ dτ dκ hagree hWF hPure hEFM (hlen ▸ hScM) hM
+            obtain ⟨hWFρ', hscN'⟩ := (by simpa only [MTerm.WF] using hWFlam : MEnv.WF ρ' ∧ Comp.ScopedC ((readbackEnv ρ').length + 1) N')
+            obtain ⟨hEFN', -, -, hPρ'⟩ :=
+              (by simpa only [MTerm.PureV] using hPlam :
+                EffectFree N' ∧ Comp.ScopedC ((readbackEnv ρ').length + 1) N' ∧ MEnv.WF ρ' ∧ MEnv.PureV ρ')
+            -- N' runs under (evalV ρ v ∷ₑ ρ'); env agrees with readback (evalV ρ v) :: readbackEnv ρ'.
+            have hagreeN : EnvAgrees (evalV ρ v ∷ₑ ρ') (readback (evalV ρ v) :: readbackEnv ρ') := by
+              simp only [EnvAgrees, readbackEnv]
+            have hWFN : MEnv.WF (evalV ρ v ∷ₑ ρ') := MEnv.WF.cons hWFav hWFρ'
+            have hPureN : MEnv.PureV (evalV ρ v ∷ₑ ρ') := MEnv.PureV.cons hPav hPρ'
+            have hScN'' : Comp.ScopedC (readback (evalV ρ v) :: readbackEnv ρ').length N' := by
+              simpa only [List.length_cons] using hscN'
+            obtain ⟨hstN, hdN, hWFt, hPt⟩ :=
+              ih (readback (evalV ρ v) :: readbackEnv ρ') N' t (evalV ρ v ∷ₑ ρ') g₁ G g'
+                σ₁ eσ' τ₁ eτ' κ₁ eκ' dσ dτ dκ hagreeN hWFN hPureN hEFN' hScN'' h
+            obtain ⟨hstN1, hstN2, hstN3⟩ := hstN
+            refine ⟨⟨hstN1.trans hσ₁, hstN2.trans hτ₁, hstN3.trans hκ₁⟩, ?_, hWFt, hPt⟩
+            -- crux: (closeUnderBindersE 1 (rbEnv ρ') N').subst (readback (evalV ρ v))
+            --        = substEnv (readback (evalV ρ v) :: readbackEnv ρ') N'.
+            have hcrux : substEnv (readback (evalV ρ v) :: readbackEnv ρ') N'
+                = (closeUnderBindersE 1 (readbackEnv ρ') N').subst (readback (evalV ρ v)) :=
+              (substEnv_cons_subst (by simpa only [MEnv.WF] using hWFρ') hWFav N').symm
+            have hrbv : substEnvV γ v = readback (evalV ρ v) := by
+              rw [show γ = readbackEnv ρ from hagree.symm, readback_evalV hWF (hlen ▸ hscv)]
+            simp only [substEnv_app, hrbv, Bang.CalcVM.evalD, Option.bind_eq_bind]
+            rw [show Bang.CalcVM.evalD f G dσ dτ dκ (substEnv γ M) = _ from hdM]
+            simp only [readbackTerm, Option.bind_some]
+            rw [← hcrux]; exact hdN
+          | mret _ => simp only [Option.bind_some] at h; exact absurd h (by simp)
+        | mraised n op w => simp only [Option.bind_some] at h; exact absurd h (by simp)
     | case w N₁ N₂ =>
       -- evalE: evalV ρ w = minl mv' ⇒ run N₁ under (mv' ∷ₑ ρ); minr ⇒ N₂. evalD: case-branch via crux.
       obtain ⟨hScw, hScN₁, hScN₂⟩ := hSc.case_inv
