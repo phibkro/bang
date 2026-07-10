@@ -514,6 +514,9 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 10 }` ⟹ `10`  — LCG shape (ctr-design.md §RE2), now running in the tested superset.
 - `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => n * 3 + 1 }` ⟹ `4`
 - `effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => (n * 3) + 1 }` ⟹ `4`
+- `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n, b(n) => n }` ⟹ `5`  — clause, not just the one performed). Repro triple from #86's own report, all fixed:
+- `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + 1, b(n) => n + 1 }` ⟹ `6`
+- `effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + n * 2, b(n) => n }` ⟹ `15`  — combined: multi-clause AND a nested binop in the performed clause (#85 ⊔ #86 in one program).
 ### ADR-0093 D5 (operator ruling, 2026-07-09) — top-level `let`/`let rec` DECLS actually RUN.
 
 - `let x = 3 data Marker = M x + 1` ⟹ `4`  — otherwise parse as an APPLICATION (`(3) x`), the same ambiguity this whole corpus works around.

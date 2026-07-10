@@ -5319,6 +5319,18 @@ ORDER, so both passes agree on de-Bruijn position. -/
 #guard runTypedYieldsInt 200
     "effect Net { pick : Int -> Int } handle net.pick(1) with Net as net { pick(n) => (n * 3) + 1 }" 4
 
+-- #86 (SAME root cause as #85, a sibling trigger found independently by stranger-test round 3):
+-- a MULTI-clause handler lost its clause binder even with BARE bodies, the moment a SECOND clause
+-- existed — closed by the identical `elabHClauses` fix above (it binds `x`/`#param` for EVERY
+-- clause, not just the one performed). Repro triple from #86's own report, all fixed:
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n, b(n) => n }" 5
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + 1, b(n) => n + 1 }" 6
+-- combined: multi-clause AND a nested binop in the performed clause (#85 ⊔ #86 in one program).
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + n * 2, b(n) => n }" 15
+
 /-! ### #84 gap 1 — caps-through-functions: `Cap Net` ascribes a function param to a named effect's
 capability type, so shared effectful logic can be a function called under EACH stage's own `handle …
 with`. `.dotPerform`'s typing arm (`.cap ℓ` case above) ALREADY dispatches correctly off ANY receiver
