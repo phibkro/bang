@@ -1158,9 +1158,10 @@ inlined form lives in `KrelS_mono`'s handleF case; extracted here for the `krelS
 theorem HandlerRel_mono {n m : Nat} {h₁ h₂ : Handler} (hmn : m ≤ n)
     (hh : HandlerRel Eff Mult n h₁ h₂) : HandlerRel Eff Mult m h₁ h₂ := by
   cases h₁ <;> cases h₂ <;> simp only [HandlerRel] at hh ⊢
-  · exact ⟨hh.1, hh.2.imp fun _ hv => VrelK_mono hmn hv⟩
-  · exact hh
-  · exact ⟨hh.1, hh.2.1, fun i hi => VrelK_mono hmn (hh.2.2 i hi)⟩
+  case state.state => exact ⟨hh.1, hh.2.imp fun _ hv => VrelK_mono hmn hv⟩
+  case throws.throws => exact hh
+  case transaction.transaction => exact ⟨hh.1, hh.2.1, fun i hi => VrelK_mono hmn (hh.2.2 i hi)⟩
+  all_goals exact ⟨hh.1, hh.2.1, hh.2.2.imp fun _ hpv => ⟨VrelK_mono hmn hpv.1, hpv.2⟩⟩
 
 /-- ◊4.5b-append `krelS_append` — the config-level Biernacki Lemma-2 analogue. Compose a related captured
 continuation `Kᵢ ~ Kᵢ'` (answer type `Dᵢ`) with a related handleF-extended tail (`handleF h :: K`, hole
@@ -1232,15 +1233,26 @@ theorem krelS_append {m : Nat} {nh : Nat} {Cᵢ Dᵢ D' : CTy Eff Mult} {εᵢ e
         | throws _ => exact ⟨_, rfl⟩
         | state _ _ => rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
         | transaction _ _ => unfold dispatchOn; split_ifs <;> first | exact ⟨_, rfl⟩ | (cases w₁ <;> exact ⟨_, rfl⟩)
-        -- custom is untyped/inert (ADR-0085 stage 1): `HandlerRel m (.custom …) hh₂ = False` refutes `hHRtop`.
-        | custom _ _ _ => exact absurd hHRtop (by simp [HandlerRel])
+        -- custom (#44 STAGE 5): `dispatchOn` custom is `some` iff `find? (·.1==op)` is `some`, and that is
+        -- INDEPENDENT of the outer stack. The OUTER dispatch `hd₁` already succeeded over `Kᵢrest ++ …`, so
+        -- `find?` is `some` — the inner dispatch (over `Kᵢrest`) succeeds by the SAME match. (`dispatchOn`
+        -- reinstalls over `Kᵢ ++ custom :: Kₒ`; the `Kₒ` half never gates the `some`/`none` decision.)
+        | custom ℓ' p cl =>
+            simp only [dispatchOn] at hd₁ ⊢
+            cases hf : cl.find? (·.1 == op) with
+            | none => simp only [hf, reduceCtorEq] at hd₁
+            | some clause => simp only [hf]; exact ⟨_, rfl⟩
       obtain ⟨cfgᵢ₂, hdi₂⟩ : ∃ c, Bang.dispatchOn mh₁ op w₂ (Kⱼ', hh₂, Kᵢ'rest) = some c := by
         cases hh₂ with
         | throws _ => exact ⟨_, rfl⟩
         | state _ _ => rw [dispatchOn]; split <;> exact ⟨_, rfl⟩
         | transaction _ _ => unfold dispatchOn; split_ifs <;> first | exact ⟨_, rfl⟩ | (cases w₂ <;> exact ⟨_, rfl⟩)
-        -- custom hh₂: `HandlerRel m hh₁ (.custom …)` needs hh₁ concrete to reduce to `False` — case it, then refute.
-        | custom _ _ _ => cases hh₁ <;> exact absurd hHRtop (by simp [HandlerRel])
+        -- custom (symmetric): the RHS outer dispatch `hd₂` forced `find?` some — the inner one succeeds.
+        | custom ℓ' p cl =>
+            simp only [dispatchOn] at hd₂ ⊢
+            cases hf : cl.find? (·.1 == op) with
+            | none => simp only [hf, reduceCtorEq] at hd₂
+            | some clause => simp only [hf]; exact ⟨_, rfl⟩
       have hlift₁ := dispatchOn_append_outer mh₁ op w₁ Kⱼ hh₁ Kᵢrest (Frame.handleF nh h₁ :: K₁) hdi₁
       have hlift₂ := dispatchOn_append_outer mh₁ op w₂ Kⱼ' hh₂ Kᵢ'rest (Frame.handleF nh h₂ :: K₂) hdi₂
       rw [hd₁] at hlift₁; rw [hd₂] at hlift₂

@@ -1562,6 +1562,9 @@ def KrelS : Nat → CTy Eff Mult → CTy Eff Mult → Eff → Nat → Stack → 
                ℓ₁ = ℓ₂ ∧ Θ₁.length = Θ₂.length ∧
                  ∀ i : Nat, i < Θ₁.length →
                    VrelK n (VTy.int : VTy Eff Mult) (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
+           | Handler.custom ℓ₁ p₁ cl₁, Handler.custom ℓ₂ p₂ cl₂ =>
+               ℓ₁ = ℓ₂ ∧ cl₁ = cl₂ ∧
+                 ∃ P : VTy Eff Mult, VrelK n P p₁ p₂ ∧ HasClauses ℓ₁ P cl₁
            | _, _ => False) ∧ KrelS n C D ε g K₁' K₂'
             -- ◊4.5b-append RESUME CONJUNCT (config-level re-expression of old `Srel` LR:554), now threading
             -- the CAPTURED CONTINUATION `Kᵢ`. state/txn dispatch KEEPS `Kᵢ` (Operational:295): the dispatched
@@ -1653,6 +1656,14 @@ def HandlerRel (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] [CommSemiring Mult
       ℓ₁ = ℓ₂ ∧ Θ₁.length = Θ₂.length ∧
         ∀ i : Nat, i < Θ₁.length →
           VrelK (Eff := Eff) (Mult := Mult) n VTy.int (Θ₁.getD i (Val.vint 0)) (Θ₂.getD i (Val.vint 0))
+  -- custom (#44 STAGE 5, ADR-0092 §D3 ret-shape): the user-effect analogue of `state`'s stored-cell
+  -- relation. Same label, same clause list (`cl₁ = cl₂` — v1 clauses are closed source literals, both
+  -- sides run the SAME handler), and the carried READ-ONLY param `p₁ ~ p₂` at SOME param type `P` under
+  -- which the clause list is well-typed (`∃ P, VrelK n P p₁ p₂ ∧ HasClauses ℓ₁ P cl₁`) — the exact shape
+  -- of state's `∃ S, VrelK n S s₁ s₂`, with `HasClauses` carrying the interface the reinstall resumes at.
+  | Handler.custom ℓ₁ p₁ cl₁, Handler.custom ℓ₂ p₂ cl₂ =>
+      ℓ₁ = ℓ₂ ∧ cl₁ = cl₂ ∧
+        ∃ P : VTy Eff Mult, VrelK (Eff := Eff) (Mult := Mult) n P p₁ p₂ ∧ HasClauses ℓ₁ P cl₁
   | _, _ => False
 
 @[simp] theorem krelS_handleF {n : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} {nh nh' : Nat} {h h' : Handler}
@@ -1764,6 +1775,8 @@ theorem KrelS_mono {n m : Nat} {C D : CTy Eff Mult} {ε : Eff} {g : Nat} :
         exact hh
       · -- transaction/transaction: pointwise heap mono
         exact ⟨hh.1, hh.2.1, fun i hi => VrelK_mono hmn (hh.2.2 i hi)⟩
+      · -- custom/custom: relate the read-only param at the smaller index (clauses unchanged)
+        exact ⟨hh.1, hh.2.1, hh.2.2.imp fun _ hpv => ⟨VrelK_mono hmn hpv.1, hpv.2⟩⟩
   | [], (_ :: _), _, hK => by simp only [KrelS] at hK
   | (_ :: _), [], _, hK => by simp only [KrelS] at hK
   | (Frame.letF _ :: _), (Frame.appF _ :: _), _, hK => by simp only [KrelS] at hK
