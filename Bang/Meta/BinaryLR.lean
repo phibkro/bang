@@ -1403,21 +1403,19 @@ ADR-0056/0057 cap-escape / B-occ question, task #23), plus the `krelS_splitAtId_
 residual. The Kripke continuation indices use `∀ m < n` at the letC/case/split seams (the `compatK_*`
 cores' ▷-guarded shape) and `∀ j ≤ n` would over-supply. -/
 mutual
-theorem vrelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+theorem vrelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (v : Val) {A : VTy Eff Mult}
     (h : HasVTy γ Γ v A) :
     ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
       VrelK n A (closeV δ₁ v) (closeV δ₂ v) := by
-  cases h with
-  | vunit => intro n δ₁ δ₂ _; rw [closeV_vunit, closeV_vunit, VrelK]; exact ⟨rfl, rfl⟩
-  | vint  => intro n δ₁ δ₂ _; rw [closeV_vint, closeV_vint, VrelK]; exact ⟨_, rfl, rfl⟩
-  | @vcap _ nid ℓ =>
-      -- ADR-0054: a capability is a CLOSED absolute value `vcap nid ℓ` (no de-Bruijn var), so `closeV`
-      -- leaves it fixed. `VrelK` at `cap ℓ` forces the SAME id + label both sides — `⟨nid, rfl, rfl⟩`.
+  match v, h with
+  | Val.vunit, HasVTy.vunit => intro n δ₁ δ₂ _; rw [closeV_vunit, closeV_vunit, VrelK]; exact ⟨rfl, rfl⟩
+  | Val.vint _, HasVTy.vint => intro n δ₁ δ₂ _; rw [closeV_vint, closeV_vint, VrelK]; exact ⟨_, rfl, rfl⟩
+  | Val.vcap nid ℓ, HasVTy.vcap =>
       intro n δ₁ δ₂ _
       have hcap : Val.Closed (Val.vcap nid ℓ) := fun k => rfl
       rw [closeV_closed hcap, closeV_closed hcap, VrelK]
       exact ⟨nid, rfl, rfl⟩
-  | @vvar _ i _ hget =>
+  | Val.vvar i, HasVTy.vvar hget =>
       intro n δ₁ δ₂ hδ
       have hlen₁ := hδ.length_left
       have hlen₂ := hδ.length_right
@@ -1425,63 +1423,61 @@ theorem vrelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy
       rw [closeV_vvar (hδ.closed_left) (by omega) Val.vunit,
           closeV_vvar (hδ.closed_right) (by omega) Val.vunit]
       exact hδ.vrel_at hget Val.vunit Val.vunit
-  | @vthunk _ _ M φ B hM =>
+  | Val.vthunk M, HasVTy.vthunk hM =>
       intro n δ₁ δ₂ hδ
       rw [closeV_vthunk, closeV_vthunk, VrelK]
-      -- ◊4.5b the U-clause is `∀ j < n`: supply `CrelK j` for each `j < n` via the IH at `j` on the
-      -- `EnvRelK_mono`-weakened env (`j < n ⇒ j ≤ n`). The ▷-guarded thunk.
       exact ⟨closeC δ₁ M, closeC δ₂ M, rfl, rfl,
-        fun j hjn => crelK_fund hM j δ₁ δ₂ (EnvRelK_mono (Nat.le_of_lt hjn) hδ)⟩
-  | @inl _ _ w A B hw =>
+        fun j hjn => crelK_fund_at M hM j δ₁ δ₂ (EnvRelK_mono (Nat.le_of_lt hjn) hδ)⟩
+  | Val.inl w, HasVTy.inl hw =>
       intro n δ₁ δ₂ hδ
       rw [closeV_inl, closeV_inl, VrelK]
-      exact Or.inl ⟨_, _, rfl, rfl, vrelK_fund hw n δ₁ δ₂ hδ⟩
-  | @inr _ _ w A B hw =>
+      exact Or.inl ⟨_, _, rfl, rfl, vrelK_fund_at w hw n δ₁ δ₂ hδ⟩
+  | Val.inr w, HasVTy.inr hw =>
       intro n δ₁ δ₂ hδ
       rw [closeV_inr, closeV_inr, VrelK]
-      exact Or.inr ⟨_, _, rfl, rfl, vrelK_fund hw n δ₁ δ₂ hδ⟩
-  | @pair _ _ _ _ a b A B ha hb _ =>
+      exact Or.inr ⟨_, _, rfl, rfl, vrelK_fund_at w hw n δ₁ δ₂ hδ⟩
+  | Val.pair a b, HasVTy.pair ha hb hgr =>
       intro n δ₁ δ₂ hδ
       rw [closeV_pair, closeV_pair, VrelK]
-      exact ⟨_, _, _, _, rfl, rfl, vrelK_fund ha n δ₁ δ₂ hδ, vrelK_fund hb n δ₁ δ₂ hδ⟩
-  | @fold _ _ w A hw =>
+      exact ⟨_, _, _, _, rfl, rfl, vrelK_fund_at a ha n δ₁ δ₂ hδ, vrelK_fund_at b hb n δ₁ δ₂ hδ⟩
+  | Val.fold w, HasVTy.fold hw =>
       intro n δ₁ δ₂ hδ
       rw [closeV_fold, closeV_fold, VrelK]
       exact ⟨_, _, rfl, rfl,
-        fun j hjn => vrelK_fund hw j δ₁ δ₂ (EnvRelK_mono (Nat.le_of_lt hjn) hδ)⟩
+        fun j hjn => vrelK_fund_at w hw j δ₁ δ₂ (EnvRelK_mono (Nat.le_of_lt hjn) hδ)⟩
+termination_by sizeOf v
+decreasing_by all_goals (simp_wf; try omega)
 
-theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
+theorem crelK_fund_at {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} (c : Comp) {e : Eff} {B : CTy Eff Mult}
     (h : HasCTy γ Γ c e B) :
     ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
       CrelK n B e (closeC δ₁ c) (closeC δ₂ c) := by
-  cases h with
-  | @ret _ _ _ v A q hv _ =>
+  match c, h with
+  | Comp.ret v, HasCTy.ret hv _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_ret, closeC_ret]
       have hsc₁ : Val.Closed (closeV δ₁ v) :=
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hsc₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
-      -- ROUTE-1: `crelK_ret` gives the unfolded `CrelK` body per observation context; unfold + apply.
       rw [CrelK]; intro g D K₁ K₂ hK
-      exact crelK_ret g D K₁ K₂ hK hsc₁ hsc₂ (vrelK_fund hv n δ₁ δ₂ hδ)
-  | @letC _ _ _ _ M N φ₁ φ₂ q1 q2 A B hM hN _ =>
+      exact crelK_ret g D K₁ K₂ hK hsc₁ hsc₂ (vrelK_fund_at v hv n δ₁ δ₂ hδ)
+  | Comp.letC M N, HasCTy.letC (A := A) hM hN _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_letC, closeC_letC]
-      refine compatK_letC (q1 := q1) (crelK_fund hM n δ₁ δ₂ hδ) ?_
-      -- ▷-guarded continuation: at EVERY `m < n`, on the `EnvRelK_mono`-weakened env.
+      refine compatK_letC (crelK_fund_at M hM n δ₁ δ₂ hδ) ?_
       intro m hmn v₁ v₂ hcv₁ hcv₂ hvrel
       rw [closeC_subst_comm hδ.closed_left hcv₁, closeC_subst_comm hδ.closed_right hcv₂]
       have hδ' : EnvRelK m (A :: Γ) (v₁ :: δ₁) (v₂ :: δ₂) := by
         rw [EnvRelK]; exact ⟨hcv₁, hcv₂, hvrel, EnvRelK_mono (Nat.le_of_lt hmn) hδ⟩
-      have := crelK_fund hN m (v₁ :: δ₁) (v₂ :: δ₂) hδ'
+      have := crelK_fund_at N hN m (v₁ :: δ₁) (v₂ :: δ₂) hδ'
       rwa [show closeC (v₁ :: δ₁) N = closeC δ₁ (Comp.subst v₁ N) from rfl,
            show closeC (v₂ :: δ₂) N = closeC δ₂ (Comp.subst v₂ N) from rfl] at this
-  | @force _ _ v φ B hv =>
+  | Comp.force v, HasCTy.force hv =>
       intro n δ₁ δ₂ hδ
       rw [closeC_force, closeC_force]
-      exact crelK_force (vrelK_fund hv n δ₁ δ₂ hδ)
-  | @lam _ _ M φ q A B hM =>
+      exact crelK_force (vrelK_fund_at v hv n δ₁ δ₂ hδ)
+  | Comp.lam M, HasCTy.lam (A := A) hM =>
       intro n δ₁ δ₂ hδ
       rw [closeC_lam, closeC_lam]
       refine compatK_lam ?_
@@ -1489,56 +1485,56 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
       rw [closeC_subst_comm hδ.closed_left hcw₁, closeC_subst_comm hδ.closed_right hcw₂]
       have hδ' : EnvRelK n (A :: Γ) (w₁ :: δ₁) (w₂ :: δ₂) := by
         rw [EnvRelK]; exact ⟨hcw₁, hcw₂, hw, hδ⟩
-      have := crelK_fund hM n (w₁ :: δ₁) (w₂ :: δ₂) hδ'
+      have := crelK_fund_at M hM n (w₁ :: δ₁) (w₂ :: δ₂) hδ'
       rwa [show closeC (w₁ :: δ₁) M = closeC δ₁ (Comp.subst w₁ M) from rfl,
            show closeC (w₂ :: δ₂) M = closeC δ₂ (Comp.subst w₂ M) from rfl] at this
-  | @app _ _ _ _ M v φ q A B hM hv _ =>
+  | Comp.app M v, HasCTy.app hM hv _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_app, closeC_app]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
-      exact compatK_app (crelK_fund hM n δ₁ δ₂ hδ) hscv₁ hscv₂ (vrelK_fund hv n δ₁ δ₂ hδ)
-  | @case _ _ _ _ v N₁ N₂ φ q A B C hv hN₁ hN₂ _ =>
+      exact compatK_app (crelK_fund_at M hM n δ₁ δ₂ hδ) hscv₁ hscv₂ (vrelK_fund_at v hv n δ₁ δ₂ hδ)
+  | Comp.case v N₁ N₂, HasCTy.case (A := A) (B := Bc) hv hN₁ hN₂ _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_case, closeC_case]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
-      refine compatK_case (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_ ?_
+      refine compatK_case (vrelK_fund_at v hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_ ?_
       · intro m hm u₁ u₂ hcu₁ hcu₂ hu
         rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
         have hδ' : EnvRelK m (A :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by
           rw [EnvRelK]; exact ⟨hcu₁, hcu₂, hu, EnvRelK_mono (Nat.le_of_lt hm) hδ⟩
-        exact crelK_fund hN₁ m (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+        exact crelK_fund_at N₁ hN₁ m (u₁ :: δ₁) (u₂ :: δ₂) hδ'
       · intro m hm u₁ u₂ hcu₁ hcu₂ hu
         rw [closeC_subst_comm hδ.closed_left hcu₁, closeC_subst_comm hδ.closed_right hcu₂]
-        have hδ' : EnvRelK m (B :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by
+        have hδ' : EnvRelK m (Bc :: Γ) (u₁ :: δ₁) (u₂ :: δ₂) := by
           rw [EnvRelK]; exact ⟨hcu₁, hcu₂, hu, EnvRelK_mono (Nat.le_of_lt hm) hδ⟩
-        exact crelK_fund hN₂ m (u₁ :: δ₁) (u₂ :: δ₂) hδ'
-  | @split _ _ _ _ v N φ q A B C hv hN _ =>
+        exact crelK_fund_at N₂ hN₂ m (u₁ :: δ₁) (u₂ :: δ₂) hδ'
+  | Comp.split v N, HasCTy.split (A := A) (B := Bs) hv hN _ =>
       intro n δ₁ δ₂ hδ
       rw [closeC_split, closeC_split]
       have hscv₁ : Val.Closed (closeV δ₁ v) :=
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hscv₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
-      refine compatK_split (vrelK_fund hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_
+      refine compatK_split (vrelK_fund_at v hv n δ₁ δ₂ hδ) hscv₁ hscv₂ ?_
       intro m hm a₁ a₂ b₁ b₂ hca₁ hca₂ hcb₁ hcb₂ ha hb
       rw [closeC_subst2_comm hδ.closed_left hca₁ hcb₁, closeC_subst2_comm hδ.closed_right hca₂ hcb₂]
-      have hδ' : EnvRelK m (B :: A :: Γ) (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) := by
+      have hδ' : EnvRelK m (Bs :: A :: Γ) (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) := by
         rw [EnvRelK]; refine ⟨hcb₁, hcb₂, hb, ?_⟩; rw [EnvRelK]
         exact ⟨hca₁, hca₂, ha, EnvRelK_mono (Nat.le_of_lt hm) hδ⟩
-      have := crelK_fund hN m (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) hδ'
+      have := crelK_fund_at N hN m (b₁ :: a₁ :: δ₁) (b₂ :: a₂ :: δ₂) hδ'
       rwa [show closeC (b₁ :: a₁ :: δ₁) N = closeC δ₁ (Comp.subst a₁ (Comp.subst b₁ N)) from rfl,
            show closeC (b₂ :: a₂ :: δ₂) N = closeC δ₂ (Comp.subst a₂ (Comp.subst b₂ N)) from rfl] at this
-  | @unfold _ _ v A hv =>
+  | Comp.unfold v, HasCTy.unfold hv =>
       intro n δ₁ δ₂ hδ
       rw [closeC_unfold, closeC_unfold]
-      cases hv with
-      | @fold _ _ a _ ha =>
+      match v, hv with
+      | Val.fold a, HasVTy.fold ha =>
           rw [closeV_fold, closeV_fold]
           have hsa₁ : Val.Closed (closeV δ₁ a) :=
             closeV_closed_scoped hδ.closed_left (by have := ha.scopedIn; rwa [hδ.length_left])
@@ -1548,41 +1544,29 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
             ⟨fun _ _ => rfl, by intro u; simp⟩ ⟨fun _ _ => rfl, by intro u; simp⟩ ?_
           intro m hm
           rw [CrelK]; intro g D K₁ K₂ hK
-          exact crelK_ret g D K₁ K₂ hK hsa₁ hsa₂ (vrelK_fund ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ))
-      | @vvar _ i _ hget =>
+          exact crelK_ret g D K₁ K₂ hK hsa₁ hsa₂ (vrelK_fund_at a ha m δ₁ δ₂ (EnvRelK_mono (le_of_lt hm) hδ))
+      | Val.vvar i, HasVTy.vvar hget =>
           have hsc₁ : Val.Closed (closeV δ₁ (Val.vvar i)) :=
             closeV_closed_scoped hδ.closed_left (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_left])
           have hsc₂ : Val.Closed (closeV δ₂ (Val.vvar i)) :=
             closeV_closed_scoped hδ.closed_right (by
               have := (HasVTy.vvar hget).scopedIn; rwa [hδ.length_right])
-          exact crelK_unfold hsc₁ hsc₂ (vrelK_fund (HasVTy.vvar hget) n δ₁ δ₂ hδ)
-  | @perform _ _ _ c ℓ op v φ q A B hcap _hℓ hArg hRes hv =>
-      -- ◊4.5b-append: the op-PRODUCER, now a THIN call to `crelK_fund_up` (extracted outside the mutual
-      -- block so its match stays small enough for structural-recursion inference). `hvk` precomputed via
-      -- `vrelK_fund hv` (the only mutual recursion); the rest is self-contained in `crelK_fund_up`.
-      -- ADR-0054: the cap argument `c : cap ℓ` closes to a LITERAL `vcap mid ℓ` (VrelK at cap forces the
-      -- same id both sides — `vrelK_fund hcap`), so the closed redex is `perform (vcap mid ℓ) op …`, the
-      -- exact shape `crelK_fund_up` consumes.
+          exact crelK_unfold hsc₁ hsc₂ (vrelK_fund_at (Val.vvar i) (HasVTy.vvar hget) n δ₁ δ₂ hδ)
+  | Comp.perform cc op v, HasCTy.perform hcap _hℓ hArg hRes hv =>
       intro n δ₁ δ₂ hδ
       rw [closeC_perform, closeC_perform]
-      have hck : VrelK n (VTy.cap ℓ) (closeV δ₁ c) (closeV δ₂ c) := vrelK_fund hcap n δ₁ δ₂ hδ
+      have hck : VrelK n (VTy.cap _) (closeV δ₁ cc) (closeV δ₂ cc) := vrelK_fund_at cc hcap n δ₁ δ₂ hδ
       rw [VrelK] at hck
       obtain ⟨mid, hc1, hc2⟩ := hck
       rw [hc1, hc2]
-      have hvk : VrelK n A (closeV δ₁ v) (closeV δ₂ v) := vrelK_fund hv n δ₁ δ₂ hδ
+      have hvk : VrelK n _ (closeV δ₁ v) (closeV δ₂ v) := vrelK_fund_at v hv n δ₁ δ₂ hδ
       have hcv₁ : Val.Closed (closeV δ₁ v) :=
         closeV_closed_scoped hδ.closed_left (by have := hv.scopedIn; rwa [hδ.length_left])
       have hcv₂ : Val.Closed (closeV δ₂ v) :=
         closeV_closed_scoped hδ.closed_right (by have := hv.scopedIn; rwa [hδ.length_right])
       exact crelK_fund_up hArg hRes hcv₁ hcv₂ hvk
-  | @handleThrows _ _ ℓ M e φ q qc A hArg _hIface hM _hsub _hBocc =>
-      -- ◊4.5b sub-block (f): handler row-discharge over `CrelK`. throws is ▷-free (zero-shot abort, no
-      -- resume). ADR-0054/0055: `handle` BINDS the capability — `closeC_handleThrows` rewrites to
-      -- `handle (throws ℓ) (closeCUnderBinders 1 δ M)` (body under ONE binder, var 0 = the cap). So the
-      -- `compatK_handleThrows` premise is CAP-QUANTIFIED `∀ gid, CrelK … (subst (vcap gid ℓ) …)`, supplied
-      -- by the IH `crelK_fund hM` on the env EXTENDED by `vcap gid ℓ` at the cap binder (PARALLEL `lam`,
-      -- bridged by `closeC_subst_comm`). The env-shift wall (ADR-0050) is dissolved: caps are absolute.
+  | Comp.handle (Handler.throws ℓ) M, HasCTy.handleThrows (e := e) hArg _hIface hM _hsub _hBocc =>
       intro n δ₁ δ₂ hδ
       rw [closeC_handleThrows, closeC_handleThrows]
       refine compatK_handleThrows (e := e) hArg (fun gid => ?_)
@@ -1593,21 +1577,17 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
         exact ⟨hclosed, hclosed,
           (show VrelK n (VTy.cap ℓ) (Val.vcap gid ℓ) (Val.vcap gid ℓ) by
             rw [VrelK]; exact ⟨gid, rfl, rfl⟩), hδ⟩
-      have := crelK_fund hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
+      have := crelK_fund_at M hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
       rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
            show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
         at this
-  | @handleState _ _ ℓ s₀ M e φ q qc S A _hga hgr hp hpr _hrestrict hs hM _hsub _hBocc =>
-      -- ◊4.5b-append: state-resume closes via `compatK_handleState` (→ `krelS_state_reinstall`, the
-      -- resumptive heart). The stored state `s₀` is CLOSED (`HasVTy [] []`, so `closeV δᵢ s₀ = s₀`); its
-      -- self-relation `VrelK k S s₀ s₀` comes from `vrelK_fund hs`. ADR-0054/0055: cap-binding premise via
-      -- the `vcap gid ℓ`-EXTENDED env (parallel `lam`, bridged by `closeC_subst_comm`).
+  | Comp.handle (Handler.state ℓ s₀) M, HasCTy.handleState (e := e) _hga hgr hp hpr _hrestrict hs hM _hsub _hBocc =>
       intro n δ₁ δ₂ hδ
       rw [closeC_handleState, closeC_handleState]
       have hcs₀ : Val.Closed s₀ := fun k => hs.shift_closed k (Nat.zero_le k)
       rw [closeV_closed hcs₀, closeV_closed hcs₀]
-      have hsv : ∀ k, VrelK k S s₀ s₀ := fun k => by
-        have := vrelK_fund hs k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
+      have hsv : ∀ k, VrelK k _ s₀ s₀ := fun k => by
+        have := vrelK_fund_at s₀ hs k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
         rwa [closeV_closed hcs₀] at this
       have hrestrict' : ∀ op s', Bang.handlesOp (Handler.state ℓ s') ℓ op = true → op = "get" ∨ op = "put" :=
         fun op s' hc => by
@@ -1621,14 +1601,11 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
         exact ⟨hclosed, hclosed,
           (show VrelK n (VTy.cap ℓ) (Val.vcap gid ℓ) (Val.vcap gid ℓ) by
             rw [VrelK]; exact ⟨gid, rfl, rfl⟩), hδ⟩
-      have := crelK_fund hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
+      have := crelK_fund_at M hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
       rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
            show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
         at this
-  | @handleTransaction _ _ ℓ Θ₀ M e φ q qc A hnewA hnewR hreadA hreadR hwriteA hwriteR _hrestrict hcells hM _hsub _hBocc =>
-      -- ◊4.5b-append: transaction-resume via `compatK_handleTransaction` (→ `krelS_transaction_reinstall`).
-      -- `HeapRel n Θ₀ Θ₀` from `hcells` via `heapRel_self_of_cells_int` (NO `vrelK_fund` — int is base).
-      -- ADR-0054/0055: cap-binding premise via the `vcap gid ℓ`-EXTENDED env (parallel `lam`).
+  | Comp.handle (Handler.transaction ℓ Θ₀) M, HasCTy.handleTransaction (e := e) hnewA hnewR hreadA hreadR hwriteA hwriteR _hrestrict hcells hM _hsub _hBocc =>
       intro n δ₁ δ₂ hδ
       rw [closeC_handleTransaction, closeC_handleTransaction]
       have hrestrict' : ∀ op Θ', Bang.handlesOp (Handler.transaction ℓ Θ') ℓ op = true →
@@ -1644,21 +1621,105 @@ theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Ef
         exact ⟨hclosed, hclosed,
           (show VrelK n (VTy.cap ℓ) (Val.vcap gid ℓ) (Val.vcap gid ℓ) by
             rw [VrelK]; exact ⟨gid, rfl, rfl⟩), hδ⟩
-      have := crelK_fund hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
+      have := crelK_fund_at M hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
       rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
            show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
         at this
-  | @handleCustom _ _ ℓ p cl M e φ q qc P A _hcl _hcov _hp hM _hle _hBocc =>
-      -- STAGE-5 debt 1 BLOCKED (s5grind STOP-AND-SHOW): the `crelK_fund` mutual block cannot host the
-      -- `vrelK_fund`-based `hclause` construction — any recursive `vrelK_fund` reference (bare OR applied
-      -- into a complex ∃-goal) tips the block's default heartbeat budget on `whnf`/`isDefEq` (the same
-      -- well-founded-fix fragility the GetD comment names). state's arm is affordable ONLY because its
-      -- resume value IS the op-arg (`hVrel`), needing NO `vrelK_fund` on a clause body. `compatK_handleCustom`
-      -- + `krelS_custom_reinstall` (debt 2, post-block) are proven and CLEAN; only this in-block delegation
-      -- is blocked. Fix options: (a) split the mutual block so the custom arm lands post-block; (b) a
-      -- heartbeat-tolerant reformulation of the resume producer. Feeds the already-flagged `lr_*` set only.
-      sorry
+  | Comp.handle (Handler.custom ℓ p cl) M, HasCTy.handleCustom (e := e) (P := P) hcl hcov hp hM _hle _hBocc =>
+      intro n δ₁ δ₂ hδ
+      rw [closeC_handleCustom, closeC_handleCustom]
+      have hcp : Val.Closed p := fun k => hp.shift_closed k (Nat.zero_le k)
+      -- param self-relation (like state's `hsv`) via the in-block `vrelK_fund_at`
+      have hpv : ∀ k, VrelK k P p p := fun k => by
+        have := vrelK_fund_at p hp k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
+        rwa [closeV_closed hcp] at this
+      -- coverage restriction (custom analogue of state's get/put)
+      have hrestrict : ∀ op p', Bang.handlesOp (Handler.custom ℓ p' cl) ℓ op = true →
+          (cl.find? (·.1 == op)).isSome := fun op p' hc => by
+        simp only [handlesOp, Bool.and_eq_true] at hc
+        exact hc.2
+      -- the resume producer, in-block: vf = vrelK_fund_at (v/A explicit → adapt to implicit)
+      have hclause : ∀ (k : Nat) (op : OpId) (clause : OpId × Comp) (v₁ v₂ : Val),
+          cl.find? (·.1 == op) = some clause → Val.Closed v₁ → Val.Closed v₂ →
+          (∀ Aop, EffSig.opArg (Eff := Eff) (Mult := Mult) ℓ op = some Aop → VrelK k Aop v₁ v₂) →
+          ∃ (Aᵣ : VTy Eff Mult) (r₁ r₂ : Val),
+            EffSig.opRes (Eff := Eff) (Mult := Mult) ℓ op = some Aᵣ ∧
+            Comp.subst p (Comp.subst (Val.shift v₁) clause.2) = Comp.ret r₁ ∧
+            Comp.subst p (Comp.subst (Val.shift v₂) clause.2) = Comp.ret r₂ ∧
+            Val.Closed r₁ ∧ Val.Closed r₂ ∧ VrelK k Aᵣ r₁ r₂ := by
+        intro k op clause v₁ v₂ hf hcv₁ hcv₂ hVarg
+        obtain ⟨opA, opR, qa, qp, w, hbodyeq, hoa, hor, hw⟩ := hasClauses_find?_typed hcl hf
+        -- the clause value VrelK, via the IN-BLOCK recursion on w:
+        have hcp : Val.Closed p := fun j => hp.shift_closed j (Nat.zero_le j)
+        have hsv₁ : Val.shift v₁ = v₁ := hcv₁.shift
+        have hsv₂ : Val.shift v₂ = v₂ := hcv₂.shift
+        have hcsv₁ : Val.Closed (Val.shift v₁) := by rw [hsv₁]; exact hcv₁
+        have hcsv₂ : Val.Closed (Val.shift v₂) := by rw [hsv₂]; exact hcv₂
+        have hop : clause.1 = op := by have := List.find?_some hf; simpa using this
+        rw [hop] at hoa hor
+        have hpv : VrelK k P p p := by
+          have := vrelK_fund_at p hp k [] [] (EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩)
+          rwa [closeV_closed hcp] at this
+        have hδcl : EnvRelK k (opA :: P :: []) [Val.shift v₁, p] [Val.shift v₂, p] := by
+          rw [EnvRelK]
+          refine ⟨hcsv₁, hcsv₂, ?_, hcp, hcp, hpv, EnvRelK_nil_iff k [] [] |>.mpr ⟨rfl, rfl⟩⟩
+          rw [hsv₁, hsv₂]; exact hVarg opA hoa
+        have hmem : clause ∈ cl := List.mem_of_find?_eq_some hf
+        have hszcl : sizeOf clause < sizeOf cl := List.sizeOf_lt_of_mem hmem
+        have hszw : sizeOf w < sizeOf clause := by
+          calc sizeOf w < sizeOf clause.2 := by rw [hbodyeq]; simp only [Comp.ret.sizeOf_spec]; omega
+            _ ≤ sizeOf clause := by
+                obtain ⟨c1, c2⟩ := clause; simp only [Prod.mk.sizeOf_spec]; omega
+        have hwv : VrelK k opR (Val.subst p (Val.subst (Val.shift v₁) w))
+                              (Val.subst p (Val.subst (Val.shift v₂) w)) := by
+          have := vrelK_fund_at w hw k [Val.shift v₁, p] [Val.shift v₂, p] hδcl
+          simpa only [closeV, closeV_nil] using this
+        have hclosed : ∀ v', Val.Closed (Val.shift v') →
+            Val.Closed (Val.subst p (Val.subst (Val.shift v') w)) := fun v' hcv' => by
+          have := closeV_closed_scoped (δ := [Val.shift v', p]) (v := w)
+            (by intro u hu; rcases List.mem_cons.mp hu with rfl | hu; exact hcv'
+                rcases List.mem_cons.mp hu with rfl | hu; exact hcp; simp at hu)
+            (by simpa using hw.scopedIn)
+          simpa only [closeV, closeV_nil] using this
+        refine ⟨opR, Val.subst p (Val.subst (Val.shift v₁) w), Val.subst p (Val.subst (Val.shift v₂) w),
+          hor, ?_, ?_, hclosed v₁ hcsv₁, hclosed v₂ hcsv₂, hwv⟩
+        · rw [hbodyeq]; simp only [Comp.subst, Comp.substFrom]
+        · rw [hbodyeq]; simp only [Comp.subst, Comp.substFrom]
+      refine compatK_handleCustom (e := e) hcl hrestrict hpv hclause hcp (fun gid => ?_)
+      have hclosed : Val.Closed (Val.vcap gid ℓ) := fun k => rfl
+      rw [closeC_subst_comm hδ.closed_left hclosed, closeC_subst_comm hδ.closed_right hclosed]
+      have hδ' : EnvRelK n (VTy.cap ℓ :: Γ) (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) := by
+        rw [EnvRelK]
+        exact ⟨hclosed, hclosed,
+          (show VrelK n (VTy.cap ℓ) (Val.vcap gid ℓ) (Val.vcap gid ℓ) by
+            rw [VrelK]; exact ⟨gid, rfl, rfl⟩), hδ⟩
+      have := crelK_fund_at M hM n (Val.vcap gid ℓ :: δ₁) (Val.vcap gid ℓ :: δ₂) hδ'
+      rwa [show closeC (Val.vcap gid ℓ :: δ₁) M = closeC δ₁ (Comp.subst (Val.vcap gid ℓ) M) from rfl,
+           show closeC (Val.vcap gid ℓ :: δ₂) M = closeC δ₂ (Comp.subst (Val.vcap gid ℓ) M) from rfl]
+        at this
+termination_by sizeOf c
+decreasing_by
+  all_goals simp_wf
+  all_goals first | omega | (simp_all; omega)
 end
+
+/-- ◊4.5b fundamental theorem (value), frozen-signature wrapper over the term-measured
+`vrelK_fund_at`. Byte-identical type to the pre-Fix-2b `vrelK_fund` (implicit `v`), so all
+callers + `krelS_refl`/`custom_clause_resume` are untouched. -/
+theorem vrelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {v : Val} {A : VTy Eff Mult}
+    (h : HasVTy γ Γ v A) :
+    ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
+      VrelK n A (closeV δ₁ v) (closeV δ₂ v) :=
+  vrelK_fund_at v h
+
+/-- ◊4.5b fundamental theorem (computation), frozen-signature wrapper over `crelK_fund_at`.
+Byte-identical type to the pre-Fix-2b `crelK_fund` (implicit `c`), so `Spec.lean` (`lr_fundamental
+:= fun h => crelK_fund h`), `krelS_refl`, and `custom_clause_resume` are all untouched. -/
+theorem crelK_fund {γ : GradeVec Mult} {Γ : TyCtx Eff Mult} {c : Comp} {e : Eff} {B : CTy Eff Mult}
+    (h : HasCTy γ Γ c e B) :
+    ∀ (n : Nat) (δ₁ δ₂ : List Val), EnvRelK n Γ δ₁ δ₂ →
+      CrelK n B e (closeC δ₁ c) (closeC δ₂ c) :=
+  crelK_fund_at c h
 
 /-- #44 STAGE 5 (debt 2, sub-proof W-c) — the RESUME-VALUE PRODUCER for `krelS_custom_reinstall`/
 `compatK_handleCustom`. From `HasClauses ℓ P cl` + the param typing `HasVTy [] [] p P`, build the

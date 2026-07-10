@@ -287,3 +287,10 @@ clean:
 # Run the headline-theorem #print axioms gate (per-theorem axiom report).
 axioms:
     lake env lean Bang/Audit.lean
+
+# Advisory dead-code scan: Bang.* decls unreachable from the Audit headlines +
+# the `bang` CLI entry. NEVER a gate — output curates via tools/deadcode-allow.txt.
+# Regenerates the tool's full-module import block first (drift-free coverage).
+dead-code:
+    python3 tools/gen-deadcode-imports.py
+    lake env lean tools/DeadCode.lean

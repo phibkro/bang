@@ -4,7 +4,7 @@
 
 > The flat `tools/` folder, grouped by role. Regenerate with `just tools-index`; `--check` gates it (and the header convention) in `just fitness`. `couples` = the files/tools a script reads-from or writes-to; `runs-in` = where it fires (fitness · verify · hook · manual · ci).
 
-## gen (14)
+## gen (15)
 
 _Generators — write a derived artifact from a root (drift-unrepresentable). `--check` gates each in `just fitness`._
 
@@ -13,6 +13,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`gen-adr-index.py`](gen-adr-index.py) | `fitness` | `docs/decisions/*.md`, `docs/decisions/README.md`, `docs/notes/OPEN_QUESTIONS.md` | generate the ADR decided-ledger from per-ADR frontmatter |
 | [`gen-changelog.py`](gen-changelog.py) | `fitness` | `CHANGELOG.md` | generate CHANGELOG.md from conventional commits (the GENERATE rung) |
 | [`gen-dashboard.py`](gen-dashboard.py) | `manual` | `ROADMAP.md`, `CONTEXT.md`, `CHANGELOG.md`, `_site/index.html` | Generate _site/index.html — the operator's glanceable progress dashboard (GitHub Pages) |
+| [`gen-deadcode-imports.py`](gen-deadcode-imports.py) | `manual` | `tools/DeadCode.lean`, `Bang/**/*.lean`, `Main.lean` | keep tools/DeadCode.lean's import block ≡ the module set |
 | [`gen-gate-index.py`](gen-gate-index.py) | `fitness` | `justfile`, `.claude/codebase-maintenance.md`, `genblock.py` | the gate composition, generated from the justfile (the root) |
 | [`gen-import-graph.py`](gen-import-graph.py) | `fitness` | `Bang/**/*.lean`, `docs/architecture/core-overview.md`, `genblock.py` | the module dependency graph, generated from the `import` edges |
 | [`gen-llms-txt.py`](gen-llms-txt.py) | `fitness` | `CLAUDE.md`, `llms.txt` | generate llms.txt (the LLM-doc-index standard, llmstxt.org) |
