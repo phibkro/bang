@@ -51,10 +51,10 @@ graph TD
     Frontend_Lint["Frontend.Lint<br/>212L · fan-in 0"]
     Frontend_Query["Frontend.Query<br/>602L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>294L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>2997L · fan-in 1"]
+    Frontend_Surface["Frontend.Surface<br/>3013L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>5930L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>6025L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1853L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1745L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
@@ -84,7 +84,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 2997 | 1 |
+| `Frontend.Surface` | ? | 3013 | 1 |
 | `Audit` | Apex | 58 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3338 | 0 |
@@ -114,7 +114,7 @@ graph TD
 | `Frontend.Rewrite` | ? | 294 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 5930 | 0 |
+| `Frontend.TypeCheck` | ? | 6025 | 0 |
 | `Meta.BinaryLR` | ? | 1853 | 0 |
 | `Meta.LR` | ? | 1745 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |

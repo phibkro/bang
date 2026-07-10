@@ -1256,11 +1256,17 @@ structurally-recursive sibling in the SAME mutual block, not a `for`/`let rec`; 
 at `handleCustomS`'s call site). Structurally recurses on `cls : HClauses` (decreasing on EVERY
 call, including the `synthSC` call on each clause body `b` — `b` is a genuine subterm of
 `.cons op x b rest`, so `sizeOf`-based termination sees it directly). Checks each clause's body
-against its op's declared `resTy`, under `[argVar : argTy, #param : P]` (the ADR-0092
+against its op's declared `resTy`, under `[argVar : argTy, param : P]` (the ADR-0092
 `HasClauses.cons` binder order — `opArg` at idx 0, `P` at idx 1, mirrored here as
 list-head-is-idx-0). Per-clause OP membership in the effect's declared ops is checked here too
 (an unknown op name is a clause-level diagnostic, distinct from the CALLER's coverage check in
 the other direction).
+
+#87 (ADR-0095 D1's own worked example, landed): the binder is spelled the LITERAL surface
+identifier `"param"`, not a `#`-prefixed sentinel — `pIdent` (Surface.lean) reserves `param` as a
+keyword at every binder position, so no clause-arg/cap-binder/`let`/`fun` name can ever collide
+with it, making a plain `Γ`-lookup of `.var "param"` safe by construction (the same discipline
+`with`/`resume` already use).
 
 WALL-4 FIX (found live via the ADR-0095 tracer bullet, `n * 10` as a clause body): the body is a
 COMPUTATION (`.binopS` reduces via the kernel's `Comp.binop`, needing `synthSC`/`Comp` typing) —
@@ -1282,7 +1288,7 @@ def checkHClauses (Γ : NCtx) (effN : String) (ops : List (String × Option VT �
       | none => throw s!"handle: clause '{op}' is not an operation of effect '{effN}'"
       | some (_, argTy?, resTy) => do
           let argTy := embV (argTy?.getD .unit)   -- 0-ary op: `x` binds Unit (placeholder — no 0-ary clause corpus case yet)
-          let (Cb, φ) ← synthSC ((x, argTy) :: ("#param", P) :: Γ) b
+          let (Cb, φ) ← synthSC ((x, argTy) :: ("param", P) :: Γ) b
           let _ ← unifyC bigFuel Cb (.F .omega (embV resTy))
           -- ADR-0092 D4 / ADR-0095 D4: the RET-SHAPE / effect-free property, checked explicitly.
           -- A non-empty row here means the clause body PERFORMS before resuming — exactly the v1
@@ -2793,16 +2799,18 @@ NESTED operands via `anfSplit`, which runs `synthSC`/`zonkInferC` on the operand
 (`n * 10`) never triggers this (`anfSplit`'s `isValueSurf` short-circuit), which is why the bug
 stayed hidden until a NESTED binop (`n * 3 + 1`) forced a real `anfSplit` lookup of `n` — issue #85,
 the exact WALL-3 throwaway-context class (`stage7-elab-probe.md`): a Γ missing the clause's OWN
-binders. Fix: extend Γ with `x` (the op-arg) and `#param` (the carried-param sentinel, matching
-`checkHClauses`'s later `(x, argTy) :: ("#param", P) :: Γ` binding ORDER exactly, so `checkHClauses`
+binders. Fix: extend Γ with `x` (the op-arg) and `param` (the carried-param binder, matching
+`checkHClauses`'s later `(x, argTy) :: ("param", P) :: Γ` binding ORDER exactly, so `checkHClauses`
 re-typing the SAME tree sees consistent de-Bruijn positions) — bound to FRESH HOLES here (elaboration
-doesn't need the real op/param types, only that `x`/`#param` resolve STRUCTURALLY so `anfSplit`'s
-throwaway inference can find them; `checkHClauses` still supplies the real types at check-time). -/
+doesn't need the real op/param types, only that `x`/`param` resolve STRUCTURALLY so `anfSplit`'s
+throwaway inference can find them; `checkHClauses` still supplies the real types at check-time).
+#87: `param` is the LITERAL surface identifier (not a `#`-sentinel) — safe because `pIdent`
+reserves it at every binder position, so `x` here can never literally BE `"param"`. -/
 def elabHClauses (env : ElabEnv) (Γ : NCtx) : HClauses → Except String HClauses
   | .nil              => .ok .nil
   | .cons op x b rest => do
       let Γ' := (x, ({ body := paramHole Γ.length } : Scheme))
-               :: ("#param", ({ body := paramHole (Γ.length + 1) } : Scheme)) :: Γ
+               :: ("param", ({ body := paramHole (Γ.length + 1) } : Scheme)) :: Γ
       let b' ← elabS env Γ' b
       let rest' ← elabHClauses env Γ rest
       .ok (.cons op x b' rest')
@@ -2936,6 +2944,15 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
           -- the SAME mechanism `with` (D1) already uses — see those arms' own doc comments.
           if opName == "resume" then
             throw s!"effect {n}: op 'resume' is reserved for the future explicit resume form (ADR-0095 D5 — see issue #93)"
+          -- #87: `param` needs the SAME dual reservation `resume` has — `pHClause`'s clause HEAD
+          -- (the op name, `op(x) => body`) is ALSO parsed via `pIdent`, so an `effect` declaring an
+          -- op literally named `param` would type-check here but make its OWN clause unparseable
+          -- (`param(y) => …` is rejected as a reserved-keyword binder, not a clause head) — an
+          -- effect with no writable clause for one of its own ops, caught here instead of leaving a
+          -- silently-undischargeable op for the coverage check to reject later with a confusing
+          -- "no clause" message that hides the real cause.
+          if opName == "param" then
+            throw s!"effect {n}: op 'param' is reserved for the carried-param clause binder (ADR-0095 D1 — see issue #87)"
         -- D1: label := 4 + declIndex, deterministic by EFFECT-decl order (the four built-ins keep
         -- 0-3; `effects.length` is exactly "how many effect decls processed so far", so this is
         -- stable under interleaving with data/trait/impl/fn decls — only relative EFFECT order
@@ -3832,6 +3849,13 @@ def assertTypeError (fuel : Nat) (src : String) : Bool :=
 /-- Does the typed run report a located PARSE error at `line:col`? -/
 def assertParseErrorAt (fuel : Nat) (src : String) (line col : Nat) : Bool :=
   match runOutcome fuel src with | .parseErr (some sp) _ => sp.line == line && sp.col == col | _ => false
+
+/-- Does the typed run report EITHER a parse error OR a type error (#87's binder-reservation
+guards) — the assertion cares only that the program is REJECTED, not at which pipeline stage; a
+reserved-keyword-as-binder failure is a parse error (`pIdent`), while an unresolved-op-shape
+failure (the fake `param.set(x)` write-attempt guard) surfaces at elaboration. -/
+def assertParseErrorOrTypeError (fuel : Nat) (src : String) : Bool :=
+  match runOutcome fuel src with | .parseErr _ _ => true | .typeErr _ => true | _ => false
 
 /-- Does the typed run exhaust fuel (`oom`)? Reachable through the type gate (a well-typed diverging
 program). -/
@@ -5291,6 +5315,16 @@ module-interface work's territory — this reservation is the v1 stopgap, not th
 #guard (match Bang.Surface.parseProg "effect Mixed { read4 : Int -> Int, get : Int } 0" with
         | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false)
         | .error _ => false)
+-- #87: `param` gets the SAME dual reservation `resume` does — an `effect` declaring an op named
+-- `param` would type-check but leave that op's clause UNPARSEABLE (`param(y) => …`'s clause HEAD
+-- is also `pIdent`-routed), so it is rejected here, at decl elaboration, with a diagnostic naming
+-- the real reason.
+#guard (match Bang.Surface.parseProg "effect G { param : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with | .error _ => true | .ok _ => false) | .error _ => false)
+#guard (match Bang.Surface.parseProg "effect G { param : Int -> Int } 0" with
+        | .ok p => (match buildEnv p.decls with
+            | .error m => (m.splitOn "carried-param clause binder").length > 1 | .ok _ => false)
+        | .error _ => false)
 
 /-! ### #93 continued — the BINDER half of D5's reservation. The OP-NAME half (the corpus
 immediately above) already covers `effect Foo { resume : … }`; D5's OWN text is "reserved as an
@@ -5489,6 +5523,67 @@ ORDER, so both passes agree on de-Bruijn position. -/
 -- combined: multi-clause AND a nested binop in the performed clause (#85 ⊔ #86 in one program).
 #guard runTypedYieldsInt 200
     "effect Two { a : Int -> Int, b : Int -> Int } handle two.a(5) with Two as two { a(n) => n + n * 2, b(n) => n }" 15
+
+/-! ### #87 — the parameter-carrying form's `init` becomes CLAUSE-NAMEABLE via the literal
+identifier `param` (ADR-0095 D1's own worked example, `tick(u) => param + 1`). Landed by (1)
+`pIdent` (Surface.lean) reserving `param` as a BINDER keyword — the SAME move as `resume`/`with`
+— so no clause-arg/cap-binder/`let`/`fun` name can shadow it, and (2) `lowerHClauses`/
+`checkHClauses`/`elabHClauses` pushing the LITERAL string `"param"` (not a `#`-sentinel) onto the
+binder context, so `.var "param"` resolves via the SAME ordinary `lookup`/`Γ`-lookup every other
+identifier uses. The reference's former "known v1 limitation" bullet is RETIRED by this slice
+(`tools/gen-reference.py` updated accordingly). -/
+
+-- ACCEPT: a bare `param` clause body resumes with the carried init value directly (no arithmetic).
+#guard runTypedYieldsInt 200
+    "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param }" 100
+-- ACCEPT: `param` in a compound position, both operand orders (`x + param` / `param + x`) — the
+-- ORIGINAL #87 report's own motivating shape (`fetch(x) => x + param`, README's stated intent).
+#guard runTypedYieldsInt 200
+    "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => x + param }" 105
+#guard runTypedYieldsInt 200
+    "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param + x }" 105
+-- ACCEPT: the `letC` CONTINUATION after the one-shot resume also observes the correct value —
+-- mirrors `examples/handle-custom-resume`'s own `(5+100)+1` shape, now reading `param` for real
+-- instead of hardcoding the literal `100` the way #87's report found.
+#guard runTypedYieldsInt 200
+    "effect R { fetch : Int -> Int } handle (let r = net.fetch(5) in r + 1) with (R 100) as net { fetch(x) => x + param }" 106
+-- ACCEPT: `param` inside a NESTED binop in the clause body (the #85 WALL-3 class, re-verified for
+-- the param binder specifically — `anfSplit`'s throwaway inference must resolve `param` too, not
+-- just the op-arg).
+#guard runTypedYieldsInt 200
+    "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => x * 2 + param }" 110
+-- NON-COLLISION: an identifier whose name merely SHADOWS-LOOKING (`paramX`, a distinct
+-- identifier that is not the reserved word), bound INSIDE the handled expression (an ordinary
+-- `let … in …`, not a decl-level binding), still resolves normally alongside `param` in the
+-- clause body — the reservation is exact-string, not a prefix block.
+#guard runTypedYieldsInt 200
+    "effect R { fetch : Int -> Int } handle (let paramX = 7 in net.fetch(paramX)) with (R 100) as net { fetch(x) => x + param }" 107
+-- NON-COLLISION: a DIFFERENT effect's param-less handler, NESTED OUTSIDE a param-carrying one,
+-- both actually PERFORMED and composed with `+` INSIDE the outer handled body — the binder push
+-- is per-`handleCustomS` install, not a global name that could leak across handlers. Mirrors the
+-- ADR-0095 corpus's OWN nested-`handle` composition shape (line ~5376 above: `handle (handle …
+-- with … as … { … })`) — v1 composes multiple handlers by NESTING `handle`, not by chaining a
+-- second `with` on one `handle`.
+#guard runTypedYieldsInt 200
+    "effect R { fetch : Int -> Int } effect Q { ping : Int -> Int } handle ((handle (net.fetch(5)) with (R 100) as net { fetch(x) => x + param }) + (q.ping(1))) with Q as q { ping(n) => n }" 106
+
+-- REJECT: `param` cannot be used as a clause-arg binder — reserved at every binder position.
+#guard assertParseErrorOrTypeError 200
+    "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(param) => param + 1 }"
+-- REJECT: `param` cannot be used as the `as h` capability binder either (same binder-reservation
+-- mechanism, `pIdent` is the SINGLE site every binder position routes through).
+#guard assertParseErrorOrTypeError 200
+    "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as param { fetch(x) => x }"
+-- REJECT: `param` cannot be bound by an ordinary `let` either — confirms the reservation is
+-- BINDER-POSITION-wide (`pIdent`), not special-cased to the handler clause syntax only.
+#guard assertParseErrorOrTypeError 200 "let param = 5 in param + 1"
+-- REJECT: no param-WRITE surface exists — there is no `put`-like clause syntax for the carried
+-- param in v1 (ADR-0092 D5 is explicitly deferred); attempting a plausible-looking write spelling
+-- is simply an ordinary elaboration error (unbound `set`/assignment forms), not a silently-
+-- accepted mutation. `param = …` inside a clause body is parsed as an EQUALITY/comparison
+-- expression (`==`'s sibling), not an assignment — confirms v1 has no write surface to guard.
+#guard assertParseErrorOrTypeError 200
+    "effect R { fetch : Int -> Int } handle net.fetch(5) with (R 100) as net { fetch(x) => param.set(x) }"
 
 /-! ### #84 gap 1 — caps-through-functions: `Cap Net` ascribes a function param to a named effect's
 capability type, so shared effectful logic can be a function called under EACH stage's own `handle …

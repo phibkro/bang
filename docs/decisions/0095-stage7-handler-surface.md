@@ -202,7 +202,8 @@ already corrected):
    first consumer (ndet/DST, `docs/notes/ndet-dst-design.md` §7): its stateless-seed design
    RETIRED its need for the param binder — the consumer's actual critical-path ask is
    **compute-then-return clause bodies (D4's exit gate: ADR-0065 binop typing + Q27)**, which
-   therefore outranks the param-binder slice in the queue.
+   therefore outranks the param-binder slice in the queue. **LANDED 2026-07-10 — see D1d below**:
+   `param` is now clause-nameable, read-only, exactly as this bullet's own example intended.
 
 ### D1c — two more corrections at reference-documentation time (2026-07-10, binary-verified)
 
@@ -220,6 +221,22 @@ transcribing this ADR:
    `resume(w)` form would be a BREAKING change, exactly what D5's reservation existed to
    prevent. Filed as a surface gap; the fix (add `resume` to the reserved-op/binder list,
    with a teaching diagnostic) is a small slice on the effects-surface lane.
+
+### D1d — the carried param becomes clause-nameable (2026-07-10, issue #87, landed)
+
+D1's own worked example (`tick(u) => param + 1`) named `param` as design intent from the start;
+D1b finding 3 recorded that the binder was NOT yet wired to any clause-body identifier — the
+`(Name init)` form's `init` was threaded internally (bound under an unreachable `#`-sentinel) but
+nothing in a clause body resolved to it. **Landed exactly as D1's example specified**: the bare
+identifier `param` is RESERVED as a binder keyword (`pIdent`, the same mechanism `with`/`resume`
+already use — no clause-arg, `as h` cap-binder, `let`/`fun` name, etc. can shadow it) and, inside
+a `(Name init) as h { … }` clause body, `param` resolves to the carried `init` value via the
+SAME ordinary variable lookup every other identifier uses (the internal `#`-sentinel indirection
+is retired — `param` is pushed onto the lowering/typing context as the literal string, safe by
+construction because the reservation makes collision unrepresentable). Read-only, matching D1's
+own scope (ADR-0092 D5's param-UPDATE protocol stays deferred — no write surface was added).
+`examples/handle-custom-resume` now reads its carried `100` through `param` for real, retiring
+the "hardcodes the literal" gap #87's report found.
 
 **Recommendation.** Keep `handle`/`effect` as their own surface constructs, distinct from
 `trait`/`impl`, in v1. Do NOT converge the syntaxes even though D1 makes them rhyme. This is

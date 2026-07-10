@@ -610,13 +610,17 @@ def lowerC (env : List String) : Surf → Except String Comp
   -- handler's PAYLOAD, not under the cap binder) exactly like `state`'s `s : S`. `body` (= `e`)
   -- lowers under the cap binder `h :: env` (ADR-0095's binding-gap ruling, reading (c) mechanics
   -- — `h` is in scope for `e` regardless of `e`'s textual position before `with Name as h { … }`
-  -- in source). Each clause body lowers under TWO fresh binders, `arg :: "#param" :: env`
-  -- (`HasClauses.cons`'s premise order: `opArg` at idx 0, `P` at idx 1) — `param` is NOT a
-  -- user-visible identifier in `env`'s namespace (a clause referencing the ADR's `param` name
-  -- resolves via a DEDICATED lookup, not `env`'s ordinary `lookup`, since `#param` is a sentinel
-  -- like `lowerC`'s other internal binder names — `#s0`, `#anf…` — that the grammar cannot spell,
-  -- so `param` the SURFACE identifier and `#param` the internal sentinel never collide; the
-  -- surface→sentinel bridge is `lowerHClauses`'s own small env-prepend below, not a generic rename).
+  -- in source). Each clause body lowers under TWO fresh binders, `arg :: "param" :: env`
+  -- (`HasClauses.cons`'s premise order: `opArg` at idx 0, `P` at idx 1) — #87: `param` IS a
+  -- user-visible identifier in `env`'s namespace now (RESOLVED via `env`'s ORDINARY `lookup`,
+  -- exactly like `arg`/any other binder). This differs from the OTHER internal `#`-sentinels
+  -- (`#s0`, `#p0`, `#arg`, `#w` — genuinely unreachable A-normal-form binders, never referenced
+  -- by name at the surface); `param` is deliberately NOT `#`-prefixed because ADR-0095 D1's own
+  -- worked example names it as the surface binder a clause body reads. Collision is prevented by
+  -- CONSTRUCTION, not by a naming trick: `pIdent` (Surface.lean, #87) reserves the bare word
+  -- `param` as a keyword everywhere a user binder is introduced (`op(x) => …`'s `x`, `as h`, `let`,
+  -- `fun`, …), so no user program can ever push a DIFFERENT `"param"` onto `env` that would shadow
+  -- this one — the same discipline `with`/`resume` already use.
   | .handleCustomS .none _ _ _ _ _ =>
       .error "handleCustomS: unresolved effect label reaching lowering — elaboration must run first (ADR-0095 WALL-1 fix, #21 s7probe finding)"
   | .handleCustomS (some ℓ) _ p? h cls body => do
@@ -662,14 +666,18 @@ def lowerC (env : List String) : Surf → Except String Comp
           let rv ← lowerV ("#w" :: env) recv
           return .letC cw (.perform rv (capOpKernel op) (.pair (Val.shift rref) (.vvar 0)))
 
-/-- ADR-0095 D1/#21 s7probe: lower a `handleCustomS` clause list to the kernel's `List (OpId ×
-Comp)` (ADR-0087 finite rep). Each clause body lowers under `arg :: "#param" :: env` — the
-`HasClauses.cons` binder order (`opArg` at idx 0, `P` at idx 1) — regardless of ITS OWN op's arity
-(v1 is single-arg only, so `arg` is always exactly one name). -/
+/-- ADR-0095 D1/#21 s7probe (#87: `param` now a REAL surface binder, not a sentinel): lower a
+`handleCustomS` clause list to the kernel's `List (OpId × Comp)` (ADR-0087 finite rep). Each
+clause body lowers under `arg :: "param" :: env` — the `HasClauses.cons` binder order (`opArg` at
+idx 0, `P` at idx 1) — regardless of ITS OWN op's arity (v1 is single-arg only, so `arg` is always
+exactly one name). `"param"` is pushed as the LITERAL identifier (not `#`-prefixed) so a clause
+body's bare `param` reference resolves via `lowerV`'s ordinary `lookup` — safe by construction
+because `pIdent` reserves `param` as a keyword at every binder position (#87), so no OTHER name
+bound here can ever collide with it. -/
 def lowerHClauses (env : List String) : HClauses → Except String (List (OpId × Comp))
   | .nil              => .ok []
   | .cons op x b rest => do
-      let bc ← lowerC (x :: "#param" :: env) b
+      let bc ← lowerC (x :: "param" :: env) b
       let restC ← lowerHClauses env rest
       return (op, bc) :: restC
 
@@ -843,7 +851,15 @@ def pIdent : P String
           -- reservation already lives (`with`, the built-in ambient-op names); the EFFECT-OP-NAME
           -- half is a SEPARATE check in `buildEnv`'s `.effectD` case, since `pEffectMembers` parses
           -- an op name directly off the token stream, never through `pIdent`.
-          || t = "resume" then
+          || t = "resume"
+          -- #87 (ADR-0095 D1's own worked example, "design intent: `param` names the carried Val"):
+          -- `param` is RESERVED as a BINDER name — the SAME move as `resume` immediately above —
+          -- so no clause-arg (`op(param) => …`), cap binder (`… as param { … }`), `let`/`fun` name,
+          -- etc. can ever shadow the ambient carried-param identifier a `(Name init) as h { … }`
+          -- clause body reads. `param` stays READABLE as a plain expression (`pAtom`'s `.var`
+          -- catch-all is UNCHANGED — `param` is not reserved there, exactly like `get`'s own
+          -- keyword-but-expression treatment) — only the BINDER half is blocked here.
+          || t = "param" then
         .error ⟨s!"expected an identifier, got keyword '{t}'", t :: ts⟩
       else .ok (t, ts)
   | [] => .error "expected an identifier, got end of input"
