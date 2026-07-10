@@ -2643,7 +2643,167 @@ theorem evalE_agrees_evalD_gen :
       --   reduction (the nested `show … from by` rewrites) — do the evalD side with a clean
       --   `rw [substEnv_handle]; simp only [Bang.CalcVM.evalD, Handler.label, substEnvH_*]` then bind
       --   the recursion via the IH `hdR`, mirroring perform, NOT nested `show`s.
-      sorry
+      have hScM : Comp.ScopedC (γ.length + 1) M := hlen ▸ hSc.handle_inv
+      -- the minted cap `vcap g (Handler.label hdl)` is ClosedE (shiftFrom is rfl on a vcap).
+      have hCapClosed : Val.ClosedE (Val.vcap g (Handler.label hdl)) := by
+        intro k; rfl
+      -- the extended install-env `mvcap g ℓ ∷ₑ ρ` agrees with `vcap g ℓ :: γ` and is WF/WFClos.
+      have hagN : EnvAgrees (MVal.mvcap g (Handler.label hdl) ∷ₑ ρ)
+          (Val.vcap g (Handler.label hdl) :: γ) := by
+        simp only [EnvAgrees, readbackEnv, readback]; rw [show readbackEnv ρ = γ from hag]
+      have hWFcap : Val.ClosedE (readback (MVal.mvcap g (Handler.label hdl))) := by
+        simp only [readback]; exact hCapClosed
+      have hWFN : MEnv.WF (MVal.mvcap g (Handler.label hdl) ∷ₑ ρ) :=
+        MEnv.WF.cons hWFcap hWF
+      have hWCN : MEnv.WFClos (MVal.mvcap g (Handler.label hdl) ∷ₑ ρ) :=
+        MEnv.WFClos.cons (by simp only [MVal.WFClos]) hP
+      have hScN : Comp.ScopedC (Val.vcap g (Handler.label hdl) :: γ).length M := by
+        simpa only [List.length_cons] using hScM
+      -- the mint crux: the extended-env substEnv IS the closed body with the cap substituted.
+      have hcrux : substEnv (Val.vcap g (Handler.label hdl) :: γ) M
+          = Comp.subst (Val.vcap g (Handler.label hdl)) (closeUnderBindersE 1 γ M) :=
+        (substEnv_cons_subst hγ hCapClosed M).symm
+      -- `.tail` of a StoresGood store stays StoresGood (membership in tail ⊆ membership in list).
+      have hσtail : ∀ {eσ₀ : ESStore} {eτ₀ : ETHeap} {eκ₀ : ECStore},
+          StoresGood eσ₀ eτ₀ eκ₀ → StoresGood eσ₀.tail eτ₀ eκ₀ := by
+        rintro eσ₀ eτ₀ eκ₀ ⟨hs, ht, hk⟩
+        exact ⟨fun p hp => hs p (List.mem_of_mem_tail hp), ht, hk⟩
+      have hτtail : ∀ {eσ₀ : ESStore} {eτ₀ : ETHeap} {eκ₀ : ECStore},
+          StoresGood eσ₀ eτ₀ eκ₀ → StoresGood eσ₀ eτ₀.tail eκ₀ := by
+        rintro eσ₀ eτ₀ eκ₀ ⟨hs, ht, hk⟩
+        exact ⟨hs, fun p hp => ht p (List.mem_of_mem_tail hp), hk⟩
+      have hκtail : ∀ {eσ₀ : ESStore} {eτ₀ : ETHeap} {eκ₀ : ECStore},
+          StoresGood eσ₀ eτ₀ eκ₀ → StoresGood eσ₀ eτ₀ eκ₀.tail := by
+        rintro eσ₀ eτ₀ eκ₀ ⟨hs, ht, hk⟩
+        exact ⟨hs, ht, fun p hp => hk p (List.mem_of_mem_tail hp)⟩
+      obtain ⟨hCσ, hCτ, hCκ⟩ := hC
+      cases hdl with
+      | state ℓ s =>
+        -- STATE mint: push (g, evalV ρ s) on σ; the pushed cell reads back to (g, readback (evalV ρ s)),
+        -- and readback (evalV ρ s) = substEnvV γ s (the value correspondence). Recurse at g+1, POP with .tail.
+        simp only [Handler.label] at hCapClosed hagN hWFcap hWFN hWCN hScN hcrux
+        have hscs : Val.ScopedV γ.length s := hlen ▸ (by
+          have := hSc; intro k hk
+          have h1 := this k (by omega)
+          simp only [Comp.shiftFrom, Handler.shiftFrom, Comp.handle.injEq] at h1
+          have := h1.1; simp only [Handler.state.injEq] at this; exact this.2)
+        have hWFs : MVal.WF (evalV ρ s) := evalV_WF hWF (hlen ▸ hscs)
+        have hWCs : MVal.WFClos (evalV ρ s) := evalV_WFClos hWF hP (hlen ▸ hscs)
+        have hrbs : substEnvV γ s = readback (evalV ρ s) := by
+          rw [show γ = readbackEnv ρ from hag.symm, readback_evalV hWF (hlen ▸ hscs)]
+        simp only [evalE, Handler.label, Option.bind_eq_bind] at h
+        -- the pushed evalE σ reads back to the pushed evalD σ (SStoreCorr on the cons).
+        have hCσ' : SStoreCorr (⟨g, evalV ρ s⟩ :: eσ) (⟨g, readback (evalV ρ s)⟩ :: dσ) := by
+          simp only [SStoreCorr, List.map_cons]; rw [show dσ = _ from hCσ]
+        have hGpush : StoresGood (⟨g, evalV ρ s⟩ :: eσ) eτ eκ := by
+          obtain ⟨hs0, ht0, hk0⟩ := hG
+          refine ⟨fun p hp => ?_, ht0, hk0⟩
+          rcases List.mem_cons.mp hp with rfl | hp
+          · exact ⟨hWFs, hWCs⟩
+          · exact hs0 p hp
+        cases hev : evalE f (g+1) (⟨g, evalV ρ s⟩ :: eσ) eτ eκ
+            (MVal.mvcap g ℓ ∷ₑ ρ) M with
+        | none => rw [hev] at h; simp only [Option.bind_none, reduceCtorEq] at h
+        | some p =>
+          rw [hev] at h
+          obtain ⟨outR, gR, σR, τR, κR⟩ := p
+          obtain ⟨dσR, dτR, dκR, hdR, hCR, hGR, hWtR, hRtR⟩ :=
+            ih (Val.vcap g ℓ :: γ) M outR (MVal.mvcap g ℓ ∷ₑ ρ) (g+1) gR
+              (⟨g, evalV ρ s⟩ :: eσ) σR eτ τR eκ κR
+              (⟨g, readback (evalV ρ s)⟩ :: dσ) dτ dκ hagN hWFN hWCN hScN hGpush
+              ⟨hCσ', hCτ, hCκ⟩ hev
+          -- push the closed body into hdR so it lines up with the evalD state-mint focus.
+          rw [hcrux] at hdR
+          have hdR' : Bang.CalcVM.evalD f (g+1) (Bang.CalcVM.SStore.push dσ g (readback (evalV ρ s)))
+              dτ dκ (Comp.subst (Val.vcap g ℓ) (closeUnderBindersE 1 γ M))
+              = some (readbackTermS outR, gR, dσR, dτR, dκR) := hdR
+          -- now split on the recursion outcome; POP with .tail on both sides.
+          cases outR with
+          | mterm tR => cases tR with
+            | mret v =>
+              simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                MOutcome.mterm.injEq, MTerm.mret.injEq] at h
+              obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+              subst hout hgc hσ' hτ' hκ'
+              obtain ⟨hCσR, hCτR, hCκR⟩ := hCR
+              refine ⟨dσR.tail, dτR, dκR, ?_, ?_, hσtail hGR, ?_, by rintro n op mv ⟨⟩⟩
+              · rw [substEnv_handle]
+                simp only [Bang.CalcVM.evalD, substEnvH_state, Handler.label, hrbs]
+                rw [hdR']; simp only [readbackTermS, readbackTerm, Option.bind_some]
+              · refine ⟨?_, hCτR, hCκR⟩
+                simp only [SStoreCorr] at hCσR ⊢; rw [hCσR, ← List.map_tail]
+              · rintro t ⟨rfl⟩; exact hWtR _ rfl
+            | mlam _ _ =>
+              simp only [Option.bind_some, reduceCtorEq] at h
+          | mraised n op' w =>
+            simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq] at h
+            obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+            subst hout hgc hσ' hτ' hκ'
+            obtain ⟨hCσR, hCτR, hCκR⟩ := hCR
+            refine ⟨dσR.tail, dτR, dκR, ?_, ?_, hσtail hGR, by rintro t ⟨⟩, ?_⟩
+            · rw [substEnv_handle]
+              simp only [Bang.CalcVM.evalD, substEnvH_state, Handler.label, hrbs]
+              rw [hdR']; simp only [readbackTermS, Option.bind_some]
+            · refine ⟨?_, hCτR, hCκR⟩
+              simp only [SStoreCorr] at hCσR ⊢; rw [hCσR, ← List.map_tail]
+            · rintro n' op'' mv' ⟨rfl, rfl, rfl⟩; exact hRtR _ _ _ rfl
+      | throws ℓ =>
+        -- THROWS mint: NO push. Recurse at g+1; CATCH mraised g "raise" ⟺ evalD raised g "raise".
+        simp only [Handler.label] at hCapClosed hagN hWFcap hWFN hWCN hScN hcrux
+        simp only [evalE, Handler.label, Option.bind_eq_bind] at h
+        cases hev : evalE f (g+1) eσ eτ eκ (MVal.mvcap g ℓ ∷ₑ ρ) M with
+        | none => rw [hev] at h; simp only [Option.bind_none, reduceCtorEq] at h
+        | some p =>
+          rw [hev] at h
+          obtain ⟨outR, gR, σR, τR, κR⟩ := p
+          obtain ⟨dσR, dτR, dκR, hdR, hCR, hGR, hWtR, hRtR⟩ :=
+            ih (Val.vcap g ℓ :: γ) M outR (MVal.mvcap g ℓ ∷ₑ ρ) (g+1) gR
+              eσ σR eτ τR eκ κR dσ dτ dκ hagN hWFN hWCN hScN hG ⟨hCσ, hCτ, hCκ⟩ hev
+          rw [hcrux] at hdR
+          have hdR' : Bang.CalcVM.evalD f (g+1) dσ dτ dκ
+              (Comp.subst (Val.vcap g ℓ) (closeUnderBindersE 1 γ M))
+              = some (readbackTermS outR, gR, dσR, dτR, dκR) := hdR
+          cases outR with
+          | mterm tR => cases tR with
+            | mret v =>
+              simp only [Option.bind_some, Option.some.injEq, Prod.mk.injEq,
+                MOutcome.mterm.injEq, MTerm.mret.injEq] at h
+              obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+              subst hout hgc hσ' hτ' hκ'
+              refine ⟨dσR, dτR, dκR, ?_, hCR, hGR, ?_, by rintro n op mv ⟨⟩⟩
+              · rw [substEnv_handle]
+                simp only [Bang.CalcVM.evalD, substEnvH_throws, Handler.label]
+                rw [hdR']; simp only [readbackTermS, readbackTerm, Option.bind_some]
+              · rintro t ⟨rfl⟩; exact hWtR _ rfl
+            | mlam _ _ =>
+              simp only [Option.bind_some, reduceCtorEq] at h
+          | mraised n op' w =>
+            simp only [Option.bind_some] at h
+            by_cases hcatch : n = g ∧ op' = "raise"
+            · -- CAUGHT: mret w ⟺ evalD ret w. KEEP the stores.
+              rw [if_pos hcatch] at h
+              simp only [Option.some.injEq, Prod.mk.injEq, MOutcome.mterm.injEq] at h
+              obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+              subst hout hgc hσ' hτ' hκ'
+              obtain ⟨hWFw, hWCw⟩ := hRtR _ _ _ rfl
+              refine ⟨dσR, dτR, dκR, ?_, hCR, hGR, ?_, by rintro n op mv ⟨⟩⟩
+              · rw [substEnv_handle]
+                simp only [Bang.CalcVM.evalD, substEnvH_throws, Handler.label]
+                rw [hdR']; simp only [readbackTermS, Option.bind_some, hcatch.1, hcatch.2, and_self,
+                  if_true, readbackTerm]
+              · rintro t ⟨rfl⟩; exact ⟨hWFw, hWCw⟩
+            · -- FORWARD: mraised n op' w ⟺ evalD raised n op' w.
+              rw [if_neg hcatch] at h
+              simp only [Option.some.injEq, Prod.mk.injEq] at h
+              obtain ⟨hout, hgc, hσ', hτ', hκ'⟩ := h
+              subst hout hgc hσ' hτ' hκ'
+              refine ⟨dσR, dτR, dκR, ?_, hCR, hGR, by rintro t ⟨⟩, ?_⟩
+              · rw [substEnv_handle]
+                simp only [Bang.CalcVM.evalD, substEnvH_throws, Handler.label]
+                rw [hdR']; simp only [readbackTermS, Option.bind_some, if_neg hcatch]
+              · rintro n' op'' mv' ⟨rfl, rfl, rfl⟩; exact hRtR _ _ _ rfl
+      | transaction ℓ Θ => sorry
+      | custom ℓ p cls => sorry
     | oom => simp [evalE] at h
     | wrong s => simp [evalE] at h
 
