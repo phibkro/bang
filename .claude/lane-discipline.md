@@ -73,3 +73,19 @@
 - Atomic re-threads may push RED WIP (label it, use the sanctioned skip-verify reason);
   atomicity governs what may LAND, not what may reach origin. Never end a session on an
   unpushed red spine.
+
+## Landing-flow gates (manager-side — added 2026-07-10 after the lettMulti false-green)
+
+- **Landing builds run VISIBLE and rc-checked.** Never `just build > /dev/null` inside an
+  rc-summarized chain at a landing — the lettMulti missing-cases break rode exactly that
+  pattern onto main. Pipe to a file, grep it, check the exit.
+- **Background scripts must PROPAGATE the commit's rc** — a trailing `echo`/`tail` launders
+  a failed commit into a green task exit (`set -e` or explicit `exit $rc`).
+- **Watch every landing push's CI run to its VERDICT.** CI is the backstop that catches
+  what local flows mask (it caught lettMulti); a push without a watched verdict is an
+  unverified claim. `gh run watch <id> --exit-status`.
+- **Cross-branch constructor skew is a landing hazard**: a lane's exhaustive matches over a
+  type that gained constructors on main AFTER its clone was cut will pick cleanly as text
+  and break only at recompile. At landing, any pick touching files that match over
+  Surf/Comp/Val/Handler gets its build re-verified — the gate clone of the LANE's branch
+  cannot see this class.

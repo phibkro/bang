@@ -117,6 +117,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **lr** — Stage-5 slice 1 — HandlerRel custom arm real (ClauseRel shape) + krelS_append ripples (`40dac44`)
 - **lr** — Stage-5 debt 2 — krelS_custom_reinstall + custom-frame self-relation (krelS_refl); debt 1 STOP-AND-SHOW (`36f06fd`)
 - **lr** — Stage-5 debt 3 — dispatchOn_rename custom arm closed (R-1 vcap-free side condition) (`3aa8966`)
+- **envmachine** — ADR-0094 env/closure machine + PROVEN correspondence; fix(frontend): lettMulti arms heal red CI (`48415aa`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aad`)
