@@ -1,10 +1,13 @@
 # tools/deadcode-allow.txt — declarations intentionally NOT reachable from the
 # dead-code roots (Bang/Audit.lean headlines + Main's `main`), yet KEPT on purpose.
 #
-# Read by tools/DeadCode.lean (`just dead-code`). Each non-comment line is a FULLY
-# QUALIFIED declaration name; the analyzer subtracts these from its unreachable set
-# so an intentional park does not show as noise. `#dead_code` is ADVISORY — never a
-# hard gate — so this file curates signal, it does not silence a failure.
+# Read by tools/DeadCode.lean (`just dead-code`). Each non-comment line is EITHER a
+# FULLY QUALIFIED declaration name (exact park) OR a NAMESPACE PREFIX ending `.*`
+# (e.g. `Bang.RunPlugReshape.*` parks that whole namespace — the SSoT form for a
+# sorry-gapped-live CLUSTER: one expiry-tagged line, not a rot-prone name-by-name
+# block). The analyzer subtracts these from its unreachable set so an intentional
+# park does not show as noise. `just dead-code` is ADVISORY — never a hard gate — so
+# this file curates signal, it does not silence a failure.
 #
 # Sibling of tools/refs-allow.txt (dangling-reference exceptions): same discipline —
 # an entry here is a DOCUMENTED park with a reason, not a place to hide real rot.
@@ -24,14 +27,28 @@
 #       must be removed. Distinct from (a), which never expires.
 #
 # POSTURE (task #16, 2026-07-10): while `just dead-code` reports "N/M roots carry
-# sorryAx" (currently 7/26), the raw unreachable set is OVER-REPORTED and dominated by
-# category-(b) false-dead (~510 across 28 modules, e.g. the whole `RunPlugReshape.*`
-# cluster — live via `converges_plug_iff` at Spec.lean:241, sorry-gapped by the LR
-# spine). We DELIBERATELY do NOT mass-list that set here: parking ~500 decls would
-# defeat the advisory and the entries would all expire at spine-close anyway. Instead
-# the tool STATES its own limit (the ⚠ line) and the reliable signal it retains is a
-# fully-CLOSED orphan island (zero live callers, the route-1 class). RE-RUN + curate
-# this file once `lr_fundamental`/`lr_sound` shed sorryAx — the true-dead set only
-# becomes trustworthy then.
+# sorryAx" (currently 7/26), the raw unreachable set is OVER-REPORTED — sorry'd arms
+# emit no reference edges, so live-but-sorry-gapped machinery flags as false-dead
+# (~510 across 28 modules on the bare run). Two mitigations, both applied:
+#   - the tool STATES its own limit (the ⚠ line in `just dead-code`), so no session
+#     misreads the raw count as a kill-list; and
+#   - the KNOWN sorry-gapped-live CLUSTERS are parked below as category-(b) prefix
+#     entries (one `.*` line each, expiry-tagged) — bounded, not a ~500-line block.
+# The reliable signal that remains is a fully-CLOSED orphan island (zero live callers,
+# the route-1 class). RE-RUN + re-curate the (b) entries once `lr_fundamental`/
+# `lr_sound` shed sorryAx (`just axioms`) — they EXPIRE then; the true-dead set only
+# becomes trustworthy at that point.
 #
-# ── entries (fully-qualified name — one per line — with a trailing `# why` comment) ──
+# ── (a) PERMANENT keep-despite-unreachable (exact name — trailing `# why`) ──
+
+# ── (b) EXPIRY-TAGGED sorry-gapped-live (task #16, 2026-07-10) ────────────────────
+# The RunPlugReshape run_plug/converges_plug_iff machinery IS reachable from the LR
+# spine — `converges_plug_iff` is used at Bang/Spec.lean:241-242 (`rw […]`) — but the
+# consuming proofs (lr_sound/lr_fundamental arms) still carry `sorry`, and a sorry'd
+# arm emits NO constant-reference edge, so the whole cluster flags as false-dead.
+# These are NOT dead; they EXPIRE from this list the moment the spine closes.
+# RE-AUDIT when lr_fundamental / lr_sound shed sorryAx (`just axioms`): remove these
+# two lines and re-run `just dead-code` — if the cluster is now reachable, done; if
+# any member is still flagged, THAT is genuine death to investigate.
+Bang.RunPlugReshape.*   # sorry-gapped-live: consumer Spec.lean:241 converges_plug_iff — RE-AUDIT when lr_fundamental sheds sorryAx
+Bang.run_plug           # sorry-gapped-live: the reshape bridge (LR.lean:903) feeding converges_plug_iff — RE-AUDIT when lr_fundamental sheds sorryAx

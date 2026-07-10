@@ -21,7 +21,13 @@
 
   ADVISORY, never a gate. The route-1 rename chain (deleted at 58387c8) is
   exactly what this would have flagged the week it orphaned — that forensic win,
-  made standing. The named upstream `#list_unused_decls`
+  made standing. THE READING DISTINCTION: a fully-CLOSED orphan island (zero live
+  callers, the route-1 class) is DELETABLE; a decl flagged only because its live
+  consumer's proof still carries `sorry` (sorry-gapped-live, e.g. `RunPlugReshape.*`
+  via `converges_plug_iff` at Spec.lean:241) is PARKED, not dead — it expires from
+  the allow-list when the spine closes. While roots carry `sorryAx` (the ⚠ line
+  reports how many) the raw count is NOT a kill-list; re-audit as headlines close.
+  The named upstream `#list_unused_decls`
   (Mathlib.Tactic.FindUnused) is absent from our pinned Mathlib v4.30.0; this is
   the same transitive-closure-from-roots analysis over available deps (core
   `getUsedConstantsAsSet` + importGraph `getModuleFor?` + Batteries `isAutoDecl`),
@@ -147,16 +153,33 @@ def isRealDecl (env : Environment) (n : Name) : Bool :=
        | .thmInfo _ | .defnInfo _ | .axiomInfo _ | .opaqueInfo _ => true
        | _ => false
 
-/-- Load the allow-list (fully-qualified names, one per line; `#` comments). -/
-def loadAllow : IO NameSet := do
+/-- The parsed allow-list: EXACT fully-qualified names, plus NAMESPACE PREFIXES
+    (a line ending `.*`, e.g. `Bang.RunPlugReshape.*`, parks the whole namespace —
+    the SSoT form for a sorry-gapped-live CLUSTER, one expiry-tagged line instead of
+    a rot-prone name-by-name block). -/
+structure Allow where
+  exact : NameSet
+  prefixes : Array Name
+
+/-- Load the allow-list (`#` comments; `Foo.Bar` exact or `Foo.Bar.*` prefix). -/
+def loadAllow : IO Allow := do
   let path := "tools/deadcode-allow.txt"
-  if !(← System.FilePath.pathExists path) then return {}
+  if !(← System.FilePath.pathExists path) then return ⟨{}, #[]⟩
   let txt ← IO.FS.readFile path
-  let mut s : NameSet := {}
+  let mut ex : NameSet := {}
+  let mut pre : Array Name := #[]
   for line in txt.splitOn "\n" do
     let l := (line.takeWhile (· != '#')).trimAscii
-    if !l.isEmpty then s := s.insert l.toName
-  return s
+    if l.isEmpty then continue
+    if l.endsWith ".*" then
+      pre := pre.push (l.dropRight 2).toName
+    else
+      ex := ex.insert l.toName
+  return ⟨ex, pre⟩
+
+/-- Is `n` allow-listed — by an exact match or under a parked namespace prefix? -/
+def Allow.covers (a : Allow) (n : Name) : Bool :=
+  a.exact.contains n || a.prefixes.any (·.isPrefixOf n)
 
 /-- How many roots transitively depend on `sorryAx`? A `sorry`'d proof emits NO
     constant-reference edge to the lemmas it WILL use once closed, so every root
@@ -179,7 +202,7 @@ def report : CommandElabM Unit := do
   let sorryRoots ← sorryRootCount
   let mut dead : Array (Name × Name) := #[]
   for (n, _) in env.const2ModIdx.toList do
-    if inBangModule env n && isRealDecl env n && !live.contains n && !allow.contains n then
+    if inBangModule env n && isRealDecl env n && !live.contains n && !allow.covers n then
       if !(← liftCoreM (isAutoDecl n)) then
         if let some m := env.getModuleFor? n then
           dead := dead.push (m, n)
