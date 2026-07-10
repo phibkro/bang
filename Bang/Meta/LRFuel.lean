@@ -452,13 +452,43 @@ theorem krelSN_append_inv {m f : Nat} {Cᵢ D : CTy Eff Mult} {εᵢ : Eff} {g :
                   obtain ⟨⟨⟨hincK₁, hsb₁⟩, ⟨hincK₂, hsb₂⟩⟩, hmid, hHR, htail, hres⟩ := hS
                   subst hmid
                   obtain ⟨Dᵢ, hstrip⟩ := ih htail
-                  -- the peeled handleF frame's resume conjunct `hres` is over the LONGER stack (the tail with
-                  -- the boundary appended). Reconstructing over `rest'` needs the resume RELOCATED — but at
-                  -- fuel-PRESERVING, the resume conjunct binds `∀ fₖ < f` and the captured continuation is at
-                  -- `fₖ`, so this is the SAME resume-relocation the crux SKIP arm performs, one level in. The
-                  -- fuel-descent handles it (fₖ < f). slice-2 sub-obligation (the nested handleF-in-prefix).
+                  -- reconstruct the handleF frame over `rest`/`rest'` at answer `Dᵢ`. Need: the StackInc/below
+                  -- pair (from hsb₁/hsb₂ restricted to the prefix — `stackBelow_prefix`), the HandlerRel (hHR),
+                  -- the tail (`hstrip`), and a RESUME conjunct for `hd` over `rest`.
+                  refine ⟨Dᵢ, krelSN_handleF_intro
+                    ⟨⟨(krelSN_stackInc hstrip).1, stackBelow_prefix mh rest _ hsb₁⟩,
+                     ⟨(krelSN_stackInc hstrip).2, stackBelow_prefix mh rest' _ hsb₂⟩⟩ hHR hstrip ?_⟩
+                  -- THE NESTED RESUME RELOCATION (the recursive heart): build `hd`'s resume conjunct over `rest`
+                  -- from `hres` (over `rest ++ handleF nid hh :: Ko'`). lift the goal dispatch to the longer tail
+                  -- (`dispatchOn_append_outer`), fire `hres` at `fₖ`, STRIP the result back to `rest` via a
+                  -- RECURSIVE `krelSN_append_inv` at fuel `fₖ < f`. The recursive call at SMALLER fuel is what the
+                  -- fuel index buys (WF on `(f, Sstrip.length)`); it is the crux SKIP pattern one level in.
+                  intro k hk fₖ hfₖ op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' cfg₁ cfg₂ hcatch hcw₁ hcw₂ hVrel hKj habove hCⱼ hd₁ hd₂
+                  have hl₁ := dispatchOn_append_outer mh op w₁ Kⱼ hd rest (Frame.handleF nid hh :: Ko') hd₁
+                  have hl₂ := dispatchOn_append_outer mh op w₂ Kⱼ' hd' rest' (Frame.handleF nid h' :: K₂ₒ) hd₂
+                  obtain ⟨fₗ, hfₗ, qᵣ, Aᵣ, r₁, r₂, Sⱼ, Sⱼ', eₛ, hc1, hc2, hcr1, hcr2, hvr, hSk⟩ :=
+                    hres k hk fₖ hfₖ op w₁ w₂ Cⱼ εⱼ Kⱼ Kⱼ' _ _ hcatch hcw₁ hcw₂ hVrel hKj habove hCⱼ hl₁ hl₂
+                  rw [Prod.ext_iff] at hc1 hc2
+                  obtain ⟨hS1, hci1⟩ := hc1; obtain ⟨hS2, hci2⟩ := hc2
+                  simp only at hS1 hci1 hS2 hci2
+                  rw [← hS1, ← hS2] at hSk
+                  -- RECURSIVE STRIP at fuel `fₗ < fₖ < f` (the descent — WF measure `(f, Sstrip.length)` drops
+                  -- `f` to `fₗ`; the recursive call is on ANY stack, so it MUST be fuel-WF, not structural).
+                  obtain ⟨Dstrip, hstripR⟩ := krelSN_append_inv (m := k) (f := fₗ) (Sstrip := cfg₁.1)
+                    (Sstrip' := cfg₂.1) (nid := nid) (hh := hh) (h' := h') (Ko' := Ko') (K₂ₒ := K₂ₒ) hSk
+                  refine ⟨fₗ, hfₗ, qᵣ, Aᵣ, r₁, r₂, cfg₁.1, cfg₂.1, eₛ,
+                    by rw [Prod.ext_iff]; exact ⟨rfl, hci1⟩,
+                    by rw [Prod.ext_iff]; exact ⟨rfl, hci2⟩, hcr1, hcr2, hvr, ?_⟩
+                  -- residual: `Dstrip = Dᵢ` (the boundary-structural thread — same as the crux's), + the
+                  -- output answer must be `Dᵢ`. This is the SAME `Dstrip = Dᵢ` obligation the crux carries;
+                  -- both close via the shared-boundary structural fact. slice-2 (the answer thread).
                   sorry
               | _ => rw [List.cons_append, List.cons_append] at hS; simp [KrelSN] at hS
+  termination_by (f, Sstrip.length)
+  decreasing_by
+    -- the nested recursive strip call is at fuel `fₗ < fₖ < f` (Lex-left on the fuel); the structural
+    -- `ih` (letF/appF/handleF tail peel) is the equation-compiler's own induction, same-fuel shorter stack.
+    · exact Prod.Lex.left _ _ (by omega)
 
 /-! ## THE CRUX — the fuel-indexed `krelSN_splitAtId_decomp`, SKIP arm CLOSED
 
