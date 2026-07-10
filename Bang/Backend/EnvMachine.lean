@@ -885,6 +885,16 @@ theorem Comp.ScopedC.split_inv {n : Nat} {w : Val} {N : Comp} (h : Comp.ScopedC 
   · have := h k hk; simp only [Comp.shiftFrom, Comp.split.injEq] at this; exact this.1
   · have := h (k - 2) (by omega); simp only [Comp.shiftFrom, Comp.split.injEq] at this
     rw [show k = (k - 2) + 2 by omega]; exact this.2
+theorem Comp.ScopedC.perform_inv {n : Nat} {cp w : Val} {op : Bang.OpId}
+    (h : Comp.ScopedC n (Comp.perform cp op w)) : Val.ScopedV n cp ∧ Val.ScopedV n w := by
+  refine ⟨fun k hk => ?_, fun k hk => ?_⟩ <;>
+    · have := h k hk; simp only [Comp.shiftFrom, Comp.perform.injEq] at this
+      first | exact this.1 | exact this.2.2
+theorem Comp.ScopedC.handle_inv {n : Nat} {hdl : Handler} {M : Comp}
+    (h : Comp.ScopedC n (Comp.handle hdl M)) : Comp.ScopedC (n + 1) M := by
+  intro k hk; have := h (k - 1) (by omega)
+  simp only [Comp.shiftFrom, Comp.handle.injEq] at this
+  rw [show k = (k - 1) + 1 by omega]; exact this.2
 
 /-! ### Closedness of `substEnv`/`substEnvV` from scope (slice-3a: the WF-preservation core)
 
