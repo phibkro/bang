@@ -621,7 +621,8 @@ theorem krelSN_splitAtId_decomp {n f : Nat} {C D : CTy Eff Mult} {e : Eff} {g : 
                         hKi habove hCᵢ hlift₁ hlift₂
                     -- `hcfg1 : (cfg₁.1 ++ handleF nid hh :: Ko', cfg₁.2) = (Sᵢ, ret r₁)`. `Sᵢ` = DISPATCH output
                     -- `cfg₁.1 ++ handleF nid hh :: Ko'`; the goal wants `cfg₁ = (cfg₁.1, ret r₁)`, inner over
-                    -- `cfg₁.1` at answer `Dᵢ`. `hSk` (over `Sᵢ`) is at fuel `fⱼ`; the strip drops to `fⱼ-1`.
+                    -- `cfg₁.1` at answer `Dᵢ`. `hSk` (over `Sᵢ`) is at fuel `fⱼ`; the fuel-preserving strip
+                    -- keeps `fⱼ`.
                     rw [Prod.ext_iff] at hcfg1 hcfg2
                     obtain ⟨hSi, hci⟩ := hcfg1; obtain ⟨hSi', hci'⟩ := hcfg2
                     simp only at hSi hci hSi' hci'
