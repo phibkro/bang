@@ -295,3 +295,149 @@ STRATUM            tested (differential); emitter defs axiom set [propext] (no s
 NEXT (pure)        general ADTs — i32 tag + memory rep (bool-VALUED, non-fused case/split/unfold)
 NEXT (effect)      rung-2: throws→try_table/throw (§6), state/transaction→tail-call
 ```
+
+---
+
+## 9 · Rung-2 LANDED (throws → Wasm-3.0 exceptions: `try_table`/`throw`)
+
+> **What landed (2026-07-10).** The rung-2 abort leg (ADR-0059's `throws → Wasm exception`) is
+> **DEMONSTRATED**: `handle (throws ℓ) M` emits a Wasm-3.0 `try_table`/`throw`, and **7 throws
+> programs — caught raise, continuation-discard, normal return, compute-then-return, nested
+> inner-catch, nested outer-catch, computed payload — ran on `wasmtime` 45 with values MATCHING
+> `Source.eval`.** The corpus is now **60 programs** (53 pure/rung-1.5 + 7 rung-2), all
+> `wasmtime == Source.eval`. Still the TESTED stratum (emitter axiom set `[propext]`, no proof).
+> The STOP-gate ("does the engine accept exception opcodes?") passed: wasmtime 45 supports
+> `try_table`/`throw` behind the `-W exceptions=y` feature flag (structurally fine — see §9.3).
+
+### 9.1 · The kernel→wasm mapping — abort IS `try_table`/`throw`
+
+The kernel's zero-shot `throws` (Eval.lean `Source.step` + Dispatch.lean `dispatchOn`) is EXACTLY
+wasm exception semantics, confirmed against `scratch/U5bSpine.lean`'s composition lemmas:
+
+| kernel step (`Source.step` / `dispatchOn`) | wasm emission |
+|---|---|
+| `handle (throws ℓ) M`: mint fresh id `g`, push `handleF g`, run `subst (vcap g ℓ) M` | `(block $hₜ (try_table (result i64) (catch $exnₜ $hₜ) <emit M>))` |
+| caught raise (`dispatchOn` throws arm): discard `Kᵢ`, deliver payload `w` to `Kₒ` (`ret w`) | `throw $exnₜ (emit v)` → catch branches to `$hₜ` with the payload as block result |
+| normal return (`handleF _ _ :: K, ret v ↦ K, ret v`, handler-return = identity) | body value flows out of the `try_table` = the block result (no throw) |
+
+The catch-target `$hₜ` is a `block` WRAPPING the `try_table`, whose result type is the body's i64.
+On a caught `throw` the payload is delivered as that block's result; on normal fall-through the body's
+value IS that result — one uniform result type, so both outcomes leave one i64 (verified on wasmtime,
+§9.4). This is the "engine-independent half ADR-0059 calls 'for free'" made concrete.
+
+### 9.2 · The frame-stack design — the de-Bruijn env IS the handler stack (the rung-2 wall, resolved)
+
+§6 named the wall: "the emit-from-`Comp` recursion must now track the handler-frame nesting to place
+`try_table` scopes and mint tags, where rung 1 only tracked a locals environment." The resolution
+is the SAME move rung-1.5 made for the two-binder subtlety, generalized: **one unified de-Bruijn
+environment** (`emitVal`/`emitComp` take `List Slot`), because BOTH binders bind index 0 —
+
+```
+inductive Slot | val (l : Nat)   -- letC binder ⇒ wasm LOCAL l
+                | cap (t : Nat)   -- handle(throws) binder ⇒ wasm exception TAG t
+                | dead            -- case-on-bool payload (rung-1.5 unusable slot)
+```
+
+`handle (throws ℓ) M` (ADR-0054: `handle` binds a capability at index 0 in `M`, like `lam`) pushes
+`.cap t :: env` where `t = nextTag` is minted by descent; `letC` pushes `.val next :: env`. A raise
+`perform (vvar i) "raise" v` reads `env[i]`: a `.cap t` slot emits `throw $exnₜ`; a `.val`/`.dead`
+slot (or a non-`raise` op) is `unsup` — FAIL-LOUD, never a wrong `throw`. **The de-Bruijn env IS the
+`HStack` mirror**: a cap-slot per open `handle`, threaded on the SAME recursion as the locals — so
+tag-minting needed no separate stack, just a third slot variant + a `nextTag` counter (the emit
+return became `Emit × maxLocal × maxTag`).
+
+**Tag-minting choice: one distinct tag per `handle` frame** (not one global tag). Justification: a
+`try_table (catch $exnₜ $hₜ)` catches ONLY tag `t`, so `throw $exnₜ` unwinds to exactly the
+lexically-enclosing handle that minted `t` — **tag identity IS the wasm image of identity-keyed
+`idDispatch`** (the cap names its lexically-enclosing handler, ADR-0052/0054). This is what makes the
+nested cases correct WITHOUT any runtime identity counter: `thr4` (inner `vvar 0` → inner tag, inner
+catch) vs `thr5` (inner body `vvar 1` skips the inner cap-slot → outer tag → `throw $exn0` propagates
+PAST the inner `try_table (catch $exn1)` to the outer catch) both matched the oracle (5 and 8). A
+single global tag would MIS-route `thr5` (the inner catch would swallow the outer-bound raise).
+
+This is the **HANDLE-defer-recompile idiom's static shadow**: `compile` can't read a label from a
+`vvar` cap statically, and mints the id at exec-time; the STATIC emitter likewise can't see a runtime
+`vcap`, but it mints the wasm TAG structurally by descent — the tag plays the role of the identity `g`,
+and the de-Bruijn binder position (not a minted value) is what `perform` routes on.
+
+### 9.3 · The tag-minting + engine-flag choices (deliverable 3's SAY-WHY)
+
+- **Tag rep: `(tag $exnₜ (param i64))` per minted frame.** Each abort carries one i64 payload (the
+  raise value), matching bang's rung-2 i64 fragment. `emitModule` declares `numTags` such tags at the
+  module head; a pure/rung-1.5 program mints ZERO tags, so its module is byte-identical to the rung-1
+  form — the extension is purely ADDITIVE (no pure module changed a byte).
+- **wasmtime flag: `-W exceptions=y`.** wasmtime 45 gates the exception-handling proposal behind this
+  feature flag (it is Wasm-3.0 CORE but not on-by-default yet). The flag is INERT for pure modules, so
+  ONE invocation covers the whole 60-program corpus. Added to `tools/emit-rung1-diff.sh` with a comment.
+  This is the STOP-gate the brief named: exceptions are STRUCTURALLY supported (a hand-written
+  `try_table`/`throw` returning its payload ran clean), just behind a flag — NOT a structural rejection.
+
+### 9.4 · The side-by-side — throws output on a real engine
+
+```
+sample   program                                              wasmtime   oracle   verdict
+thr0     handle throws { raise 7 }                                    7        7   OK   (caught, payload delivered)
+thr1     handle throws { let _ = raise 7 in 99 }                      7        7   OK   (continuation discarded)
+thr2     handle throws { 42 }                                        42       42   OK   (normal return)
+thr3     handle throws { 3 + 4 }                                      7        7   OK   (compute then normal return)
+thr4     handle throws { handle throws { raise@inner 5 } }            5        5   OK   (inner catches)
+thr5     handle throws { handle throws { raise@outer 8 } }            8        8   OK   (throw skips inner try_table)
+thr6     handle throws { let x = 6*7 in raise x }                    42       42   OK   (computed payload, cap@idx1)
+```
+
+The emitted `.wat` for `thr1` (raise discards the `let`-continuation):
+
+```wasm
+(module
+  (tag $exn0 (param i64))
+  (func $main (export "main") (result i64) (local i64)
+    (block $h0 (result i64)
+      (try_table (result i64) (catch $exn0 $h0)
+        (local.set 0 (throw $exn0 (i64.const 7)))    ;; throw unwinds BEFORE the local.set/99 run
+    (i64.const 99)))))
+```
+
+The `throw` sits where the `letC`-bound computation would leave its value; because `throw` is
+stack-polymorphic (produces the empty/unreachable result), wasm type-checks it as the `local.set`
+operand AND unwinds before the set fires — so the `local.set 0 … (i64.const 99)` continuation is
+DISCARDED exactly as the kernel's `dispatchOn` throws-arm discards `Kᵢ` (result 7, not 99). The
+differential test earns its keep again: this is subtle, and wasmtime confirmed it.
+
+### 9.5 · Scope + what rung-2 STUBBED (honest gaps)
+
+- **`throws`/`raise` ONLY.** `state`/`transaction`/`custom` handlers, and any non-`raise` op
+  (`get`/`put`/`newTVar`/…), stay `unsup` (loud). The resumptive handlers are the OTHER rung-2 leg
+  (state/transaction → tail-call / in-place resume, §6) — a different wasm shape (thread the store as
+  locals/globals + a direct call, no `try_table`), deliberately out of this abort-only slice.
+- **Generator stays pure.** The 42-program seed generator was NOT extended into effect nesting; the 7
+  throws witnesses are HAND anchors. A generated throws corpus (random handle-nesting + in-scope cap
+  targets) is a cheap next step but needs the generator to track the cap-frame depth (mirror of the
+  emitter's `Slot` stack) to stay in-fragment.
+- **Forwarding a raise to a MISMATCHED-kind or ESCAPED cap is out of fragment.** The minimal fragment
+  emits only raises caught by a lexically-enclosing `throws` handle (the `handle_throws_caught`/
+  `_forward` composition lemmas' caught case). A cap escaping its handler (`escapedCap`) has no static
+  wasm image here — post-v1 scoped-cap types make it untypeable anyway.
+- **Proof-grade (§5, unchanged).** No `wexec (emit M) ≡ Source.eval M` theorem; the throws arms would
+  be per-former cases under it (the `try_table` frame ↔ `handleF` frame is the one new invariant — a
+  tag-identity ↔ handler-identity bijection, the static analog of `WellCounted`/`StratFresh`).
+
+### 9.6 · The rung-3 wall from here
+
+- **state/transaction → tail-call (the OTHER rung-2 leg).** One-shot in-place resumption (ADR-0025):
+  the handler services `get`/`put`/TVar ops and continues the SAME continuation — a direct call in
+  wasm, store threaded as locals/globals/`memory`. NO `try_table` (no unwind); the emit env grows a
+  RESUMPTIVE frame variant carrying the store cells. This is the tractable next slice.
+- **custom (user effects) → tail-call over a clause table.** `dispatchOn`'s custom arm is `state`'s
+  resume with USER clause logic; the wasm image is the same tail-resume shape with the clause body
+  emitted as the continuation. Gated on the resumptive leg landing first.
+- **general (multi-shot) → the GC-frame chain (post-v1).** Reified resumptions on the WasmGC
+  frame-chain (ADR-0059 §v1/post-v1). Nothing in v1's three handler forms reifies, so this stays
+  post-v1; the WasmFX `switch`/`resume` fast-path plugs in once standardized.
+
+```
+LANDED (rung-2)   throws → try_table/throw (abort → exceptions) · 60-program corpus (53 pure + 7 throws), 60/60 == Source.eval
+DESIGN            de-Bruijn env IS the handler stack: Slot = val l | cap t | dead; one tag per handle frame = tag-identity = idDispatch
+STOP-GATE PASSED  wasmtime 45 accepts try_table/throw behind `-W exceptions=y` (Wasm-3.0 core, feature-flagged, not structural)
+STRATUM           tested (differential); emitter defs axiom set [propext] (no sorryAx); leaf-additive (WasmEmit.lean/EmitMain.lean/harness)
+NEXT (effect)     state/transaction → tail-call (in-place resume, no unwind) — the tractable rung-2 leg; then custom; general = post-v1 GC-chain
+```

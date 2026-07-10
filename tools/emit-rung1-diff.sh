@@ -13,6 +13,8 @@ source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/n
 #
 # rung-1.5 additions: guarded division (kernel `a/0 = 0` vs wasm trapping div_s), and the
 # comparison + case-on-bool `if` pattern. See docs/notes/emission-rung1-probe.md §rung-1.5.
+# rung-2 additions: `throws` handlers → Wasm-3.0 `try_table`/`throw` (abort → exceptions, ADR-0059).
+# These need `-W exceptions=y` on wasmtime (see the invocation below). §rung-2 of the same note.
 #
 # FALSE-GREEN DEFENSES (repo bash conventions): the emitted count is ASSERTED (a silently-empty
 # corpus or a mid-run generator refusal fails LOUD), no unguarded `$(a|b)` capture drives control
@@ -25,9 +27,9 @@ cd "$(git rev-parse --show-toplevel)"
 outdir="$(mktemp -d)"
 trap 'rm -rf "$outdir"' EXIT
 
-# Minimum number of emittable programs the corpus MUST run (hand anchors + rung-1.5 + generated).
-# A run below this is a FALSE GREEN (empty/short corpus) and fails loud.
-MIN_EMITTED="${MIN_EMITTED:-50}"
+# Minimum number of emittable programs the corpus MUST run (hand anchors + rung-1.5 + rung-2 throws
+# + generated). A run below this is a FALSE GREEN (empty/short corpus) and fails loud.
+MIN_EMITTED="${MIN_EMITTED:-55}"
 
 echo "── building the emit-rung1 spike exe ──"
 lake build emit-rung1 >/dev/null 2>&1
@@ -83,8 +85,12 @@ for wat in "$outdir"/*.wat; do
   [ -n "$oracle" ] || { echo "FAIL: no oracle value parsed for $name (report format drift?)"; exit 2; }
 
   # Run wasmtime, capturing value + exit code SEPARATELY (never a piped exit code).
+  # `-W exceptions=y` enables the Wasm-3.0 exception-handling proposal (try_table/throw) the
+  # rung-2 `throws` modules use. Confirmed on wasmtime 45: exceptions are Wasm-3.0 CORE but
+  # gated behind this feature flag (not on by default yet); the flag is INERT for the pure
+  # rung-1/1.5 modules, so one invocation covers the whole corpus.
   set +e
-  engine="$(nix shell nixpkgs#wasmtime -c wasmtime run --invoke main "$wat" 2>/dev/null)"
+  engine="$(nix shell nixpkgs#wasmtime -c wasmtime run -W exceptions=y --invoke main "$wat" 2>/dev/null)"
   wt_rc=$?
   set -e
   if [ "$wt_rc" -ne 0 ]; then engine="ENGINE-ERR(rc=$wt_rc)"; fi

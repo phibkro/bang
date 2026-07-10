@@ -98,124 +98,191 @@ def cmpWat : BinOp → Option String
   | .eq => some "i64.eq"
   | .add | .sub | .mul | .div => none
 
-/-- Emit a `Val` as an i64-leaving wasm expression, given the current de-Bruijn depth→local
-map `env` (env[i]? = the wasm-local binding of `vvar i`, innermost = env.head).
+/-- What a de-Bruijn binder slot maps to (RUNG-2 generalization of the rung-1.5 `Option Nat`).
+Both `letC` (value-binder) and `handle` (cap-binder, ADR-0054 — `handle h M` binds a capability
+at index 0 in `M`, like `lam`) bind de-Bruijn index 0, so ONE unified environment must describe
+what each slot is. Innermost binder = `env.head`.
 
-Each slot is an `Option Nat`: `some l` = the de Bruijn var is bound to wasm local `l`;
-`none` = bound-but-UNUSABLE (a `case`-on-bool payload — `boolVal` carries `vunit`, which has no
-i64 rep, so a branch referencing its payload is out of the rung-1.5 fragment, `unsup` not a
-wrong `local.get`). This models the de Bruijn binder even when no wasm local backs it. -/
-def emitVal (env : List (Option Nat)) : Val → Emit
+  - `val l`   : the de-Bruijn var is a VALUE bound to wasm local `l` (a `letC` binder).
+  - `cap t`   : the de-Bruijn var is a CAPABILITY naming the handle-frame whose wasm exception
+                tag is `t` (a `handle (throws ℓ)` binder). A `perform (vvar i) "raise" v` with
+                `env[i] = cap t` emits `throw $exn_t`. **This is the rung-2 handler-frame stack**:
+                the de-Bruijn env IS the frame stack (a cap-slot per open `handle`), mirroring the
+                kernel's `HStack`/`EvalCtx` — tag-minting rides the SAME recursion as the locals env.
+  - `dead`    : bound-but-UNUSABLE (a `case`-on-bool unit payload — `boolVal` carries `vunit`, no
+                i64 rep; reading it is out of fragment ⇒ `unsup`, not a wrong `local.get`).
+
+Tag IDENTITY gives LEXICAL dispatch for free: each open `handle` mints a distinct tag, and
+`try_table (catch $exn_t $h)` catches ONLY tag `t`, so a `throw $exn_t` unwinds to exactly the
+lexically-enclosing handle that minted `t` — the wasm image of identity-keyed `idDispatch`. -/
+inductive Slot where
+  | val  : Nat → Slot     -- value-binder ⇒ wasm local
+  | cap  : Nat → Slot     -- capability-binder (handle throws) ⇒ wasm exception tag
+  | dead : Slot           -- bound-but-unusable (case-on-bool payload)
+  deriving Repr, DecidableEq, Inhabited
+
+/-- Emit a `Val` as an i64-leaving wasm expression under the unified de-Bruijn `env`
+(`env[i]?` = the binding of `vvar i`). Only VALUE slots yield an i64 expression; a `cap`/`dead`
+slot has no i64 rep, so reading it is `unsup` (fail-loud — never a wrong `local.get`). -/
+def emitVal (env : List Slot) : Val → Emit
   | .vint n => .ok s!"(i64.const {n})"
   | .vvar i =>
       match env[i]? with
-      | some (some l) => .ok s!"(local.get {l})"
-      | some none     => .unsup s!"vvar {i} binds a unit `case`-payload (no i64 rep — rung-1.5)"
-      | none          => .unsup s!"free vvar {i} (open term — rung-1 emits closed programs only)"
+      | some (.val l) => .ok s!"(local.get {l})"
+      | some (.cap _) => .unsup s!"vvar {i} binds a CAPABILITY (no i64 rep — a cap is only usable as a `perform` target)"
+      | some .dead    => .unsup s!"vvar {i} binds a unit `case`-payload (no i64 rep — rung-1.5)"
+      | none          => .unsup s!"free vvar {i} (open term — emits closed programs only)"
   | .vunit  => .unsup "vunit (no i64 rep in rung-1)"
-  | .vcap _ _ => .unsup "vcap (effect capability — not pure ⊥-row)"
+  | .vcap _ _ => .unsup "vcap (runtime-minted capability — the static emitter routes caps by de-Bruijn binder, never a minted `vcap`)"
   | .vthunk _ => .unsup "vthunk (needs force/closure — stretch, not rung-1 arithmetic)"
   | .inl _ | .inr _ | .pair _ _ | .fold _ =>
       .unsup "ADT value (sum/product/μ — needs struct rep, rung-1.5)"
 
-/-- Emit a pure `Comp` as an i64-leaving wasm expression. `env` maps de-Bruijn depth to wasm
-local index; `next` is the next-free local index (for `letC`'s freshly-bound local). Returns
-the expression text AND the total number of locals used (so the caller can declare them).
+/-- Emit a `Comp` as an i64-leaving wasm expression under the unified de-Bruijn `env`.
 
-`letC M N`: compute M, `local.set` it into local `next`, then emit N under the extended env
-(`some next :: env`) — the wasm-locals image of a de-Bruijn binder. Emitted as a `(block (result i64) …)`?
-No — simpler and native: a wasm SEQUENCE `(local.set $k (…M…)) (…N…)`. We return the two-part text.
+Threaded state:
+  - `next`    : next-free wasm LOCAL index (for `letC`'s bound value).
+  - `nextTag` : next-free wasm exception-TAG index (for `handle (throws _)`'s minted tag).
+Returned: `Emit × Nat × Nat` = `(text, maxLocal, maxTag)` — the caller declares that many
+locals and tags at the module level.
 
-COMPARISON + case-on-bool (rung-1.5, the `if`-then-else pattern): the kernel expresses
-`if a<b then E₂ else E₁` as `letC (binop cmp a b) (case (vvar 0) N₁ N₂)` — the comparison
-reduces to `ret (boolVal c)` (`boolVal false = inl unit`, `boolVal true = inr unit`, IR.lean:173),
-`letC` binds it to var 0, and `case (vvar 0)` eliminates: `inl → N₁` (left), `inr → N₂` (right,
-`Eval.lean:96`). So a wasm `if` maps cleanly: the comparison leaves an i32 (`0`/`1`), and
-`(if (result i64) <cmp> (then <N₂>) (else <N₁>))` — TRUE(1)=inr picks N₂(then),
-FALSE(0)=inl picks N₁(else). The case binder (var 0) binds the `boolVal` unit payload, so both
-branches emit under `none :: env` (bound-but-unusable, `emitVal` refuses a payload read). Any
-comparison NOT in this immediate fused shape stays `unsup` (loud). -/
-def emitComp (env : List (Option Nat)) (next : Nat) : Comp → Emit × Nat
-  | .ret v => (emitVal env v, next)
+`letC M N` (rung 1): compute M into local `next`, emit N under `.val next :: env`.
+
+FUSED comparison + case-on-bool = wasm `if` (rung 1.5): `letC (binop cmp a b) (case (vvar 0) N₁ N₂)`.
+The comparison reduces to `ret (boolVal c)` (`false = inl unit`, `true = inr unit`, IR.lean:173),
+`letC` binds it at 0, `case (vvar 0)` eliminates: `inl → N₁` (else), `inr → N₂` (then). Both branch
+bodies carry TWO extra binders (idx 0 = case unit payload, idx 1 = the boolVal) — both `.dead`.
+
+`handle (throws ℓ) M` = wasm `try_table`/`throw` (RUNG 2 — abort → exceptions, ADR-0059). The
+kernel (`Source.step`/`dispatchOn`, Eval.lean:83/Dispatch.lean:132) mints a fresh identity `g`,
+substitutes `vcap g ℓ` for the body's index-0 cap-binder, and on a caught raise ABORTS: discards
+the captured continuation `Kᵢ`, delivering the payload `w` to the outer stack (`ret w`); a body
+that returns normally pops the handler frame (`ret v = ret v`). Both map to:
+
+```wat
+(block $h (result i64)
+  (try_table (result i64) (catch $exn_t $h)
+    <emit body under (.cap t :: env)>))   ;; raise → br $h WITH payload ; normal → body value out
+```
+
+The MINTED wasm tag `t = nextTag` is the static image of the runtime identity `g` — assigned by
+descent (one tag per open `handle`), pushed onto the cap-frame stack as `.cap t`. A `perform
+(vvar i) "raise" v` inside the body with `env[i] = .cap t` emits `throw $exn_t (emit v)`, which
+wasm unwinds to exactly the `try_table` declaring `catch $exn_t` — the lexically-enclosing handle
+that minted `t`, i.e. IDENTITY dispatch realized as tag identity. Nested handles get distinct tags,
+so an inner raise to an OUTER handler (`vvar 1` skipping the inner cap-slot) throws the outer tag
+and correctly unwinds past the inner `try_table`. Only `throws`/`"raise"` is in this fragment;
+`state`/`transaction`/`custom` handlers, and any non-`raise` op, stay `unsup` (loud). -/
+def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × Nat × Nat
+  | .ret v => (emitVal env v, next, nextTag)
   | .binop op a b =>
       match binOpWat op with
       | some w =>
           match emitVal env a, emitVal env b with
-          | .ok ea, .ok eb => (.ok s!"({w} {ea} {eb})", next)
-          | .unsup r, _ => (.unsup r, next)
-          | _, .unsup r => (.unsup r, next)
+          | .ok ea, .ok eb => (.ok s!"({w} {ea} {eb})", next, nextTag)
+          | .unsup r, _ => (.unsup r, next, nextTag)
+          | _, .unsup r => (.unsup r, next, nextTag)
       | none =>
           match op with
           | .div =>
               match emitVal env a, emitVal env b with
-              | .ok ea, .ok eb => (.ok (emitDiv ea eb), next)
-              | .unsup r, _ => (.unsup r, next)
-              | _, .unsup r => (.unsup r, next)
+              | .ok ea, .ok eb => (.ok (emitDiv ea eb), next, nextTag)
+              | .unsup r, _ => (.unsup r, next, nextTag)
+              | _, .unsup r => (.unsup r, next, nextTag)
           | _ =>
               -- a bare comparison (lt/eq) leaves a sum-encoded `boolVal` with no standalone i64
               -- rep — only meaningful when IMMEDIATELY eliminated by `case` (the fused letC arm).
-              (.unsup s!"bare comparison binop (lt/eq) — only emittable when fused `letC cmp; case` (rung-1.5)", next)
+              (.unsup s!"bare comparison binop (lt/eq) — only emittable when fused `letC cmp; case` (rung-1.5)", next, nextTag)
   -- FUSED comparison + case-on-bool = wasm `if` (the `if`-then-else pattern; see the doc comment).
   | .letC (.binop cmpOp a b) (.case (.vvar 0) n1 n2) =>
       match cmpWat cmpOp with
-      | none => (.unsup s!"letC binds a non-comparison then case (general sum-case is rung-2)", next)
+      | none => (.unsup s!"letC binds a non-comparison then case (general sum-case is rung-2)", next, nextTag)
       | some cw =>
           match emitVal env a, emitVal env b with
-          | .unsup r, _ => (.unsup r, next)
-          | _, .unsup r => (.unsup r, next)
+          | .unsup r, _ => (.unsup r, next, nextTag)
+          | _, .unsup r => (.unsup r, next, nextTag)
           | .ok ea, .ok eb =>
               -- Inside each branch the de Bruijn context has TWO extra binders relative to the
               -- pre-`letC` scope: index 0 = the `case` unit payload, index 1 = the outer `letC`'s
               -- `boolVal` (the comparison result). Neither has an i64 wasm local (the comparison is
               -- consumed by the `if` condition; the payload is unit) — so the branch env is
-              -- `none :: none :: env` (both unusable slots), and a branch reading either is `unsup`.
-              let benv := none :: none :: env
-              let (e1, m1) := emitComp benv next n1   -- inl branch (false)
-              let (e2, m2) := emitComp benv next n2   -- inr branch (true)
+              -- `.dead :: .dead :: env` (both unusable slots), and a branch reading either is `unsup`.
+              let benv := .dead :: .dead :: env
+              let (e1, m1, t1) := emitComp benv next nextTag n1   -- inl branch (false)
+              let (e2, m2, t2) := emitComp benv next nextTag n2   -- inr branch (true)
               match e1, e2 with
-              | .unsup r, _ => (.unsup r, next)
-              | _, .unsup r => (.unsup r, next)
+              | .unsup r, _ => (.unsup r, next, nextTag)
+              | _, .unsup r => (.unsup r, next, nextTag)
               | .ok e1S, .ok e2S =>
                   (.ok s!"(if (result i64) ({cw} {ea} {eb})\n      (then {e2S})\n      (else {e1S}))",
-                   max m1 m2)
+                   max m1 m2, max t1 t2)
+  -- RUNG 2: handle (throws ℓ) M  →  try_table/throw. Mint tag `nextTag`, push `.cap nextTag` for the
+  -- body's index-0 cap-binder, wrap the body in `(block $h (try_table (catch $exn_t $h) <body>))`.
+  | .handle (.throws _) M =>
+      let t := nextTag
+      let (eb, mLoc, mTag) := emitComp (.cap t :: env) next (nextTag + 1) M
+      match eb with
+      | .unsup r => (.unsup r, next, nextTag)
+      | .ok bS =>
+          (.ok s!"(block $h{t} (result i64)\n      (try_table (result i64) (catch $exn{t} $h{t})\n        {bS}))",
+           mLoc, max mTag (t + 1))
+  -- RUNG 2 raise site: perform (vvar i) "raise" v  →  throw $exn_t (emit v), where env[i] = .cap t.
+  -- Any non-`raise` op, a non-cap target, or a non-i64 payload is out of the throws fragment (loud).
+  | .perform (.vvar i) op v =>
+      if op = "raise" then
+        match env[i]? with
+        | some (.cap t) =>
+            match emitVal env v with
+            | .ok ev => (.ok s!"(throw $exn{t} {ev})", next, nextTag)
+            | .unsup r => (.unsup s!"raise payload not i64-representable: {r}", next, nextTag)
+        | some (.val _) => (.unsup s!"perform target vvar {i} binds a VALUE, not a capability", next, nextTag)
+        | some .dead    => (.unsup s!"perform target vvar {i} binds an unusable slot", next, nextTag)
+        | none          => (.unsup s!"perform target vvar {i} is free (open term)", next, nextTag)
+      else
+        (.unsup s!"perform op {op} (only `raise`/throws is in the rung-2 fragment; get/put/newTVar/… are rung-2 state/txn)", next, nextTag)
   | .letC m n =>
-      -- compute m into local `next`; run n with (some next :: env), next local = next+1.
-      let (em, _) := emitComp env next m
+      -- compute m into local `next`; run n with (.val next :: env), next local = next+1.
+      let (em, _, tm) := emitComp env next nextTag m
       match em with
-      | .unsup r => (.unsup r, next)
+      | .unsup r => (.unsup r, next, nextTag)
       | .ok emS =>
-          let (en, maxLocal) := emitComp (some next :: env) (next + 1) n
+          let (en, maxLocal, tn) := emitComp (.val next :: env) (next + 1) tm n
           match en with
-          | .unsup r => (.unsup r, next)
+          | .unsup r => (.unsup r, next, nextTag)
           | .ok enS =>
-              -- (local.set $next em) then leave the value of n. A wasm `(block (result i64) ...)`
-              -- would need `br`; simpler: emit `em` set + `en` as a two-statement sequence. The
-              -- FUNCTION body wraps these; here we thread the SEQUENCE text with a marker split by \n.
-              (.ok s!"(local.set {next} {emS})\n    {enS}", maxLocal)
-  | .force _ => (.unsup "force (needs thunk/closure — stretch)", next)
-  | .lam _ => (.unsup "lam (function value — stretch, non-recursive call)", next)
-  | .app _ _ => (.unsup "app (call — stretch)", next)
-  | .perform _ _ _ => (.unsup "perform (effect — not pure ⊥-row)", next)
-  | .handle _ _ => (.unsup "handle (effect handler — not pure ⊥-row)", next)
-  | .case _ _ _ => (.unsup "case (sum elim — rung-1.5)", next)
-  | .split _ _ => (.unsup "split (product elim — rung-1.5)", next)
-  | .unfold _ => (.unsup "unfold (μ elim — rung-1.5)", next)
-  | .oom => (.unsup "oom", next)
-  | .wrong s => (.unsup s!"wrong: {s}", next)
+              -- (local.set $next em) then leave the value of n — a wasm SEQUENCE (no `block`/`br`).
+              (.ok s!"(local.set {next} {emS})\n    {enS}", maxLocal, tn)
+  | .force _ => (.unsup "force (needs thunk/closure — stretch)", next, nextTag)
+  | .lam _ => (.unsup "lam (function value — stretch, non-recursive call)", next, nextTag)
+  | .app _ _ => (.unsup "app (call — stretch)", next, nextTag)
+  | .perform _ _ _ => (.unsup "perform on a non-vvar target (runtime cap / malformed — out of the static throws fragment)", next, nextTag)
+  | .handle _ _ => (.unsup "handle: only `throws` (abort → exceptions) is the rung-2 fragment; state/transaction/custom are rung-2 tail-call / rung-3", next, nextTag)
+  | .case _ _ _ => (.unsup "case (sum elim — rung-1.5)", next, nextTag)
+  | .split _ _ => (.unsup "split (product elim — rung-1.5)", next, nextTag)
+  | .unfold _ => (.unsup "unfold (μ elim — rung-1.5)", next, nextTag)
+  | .oom => (.unsup "oom", next, nextTag)
+  | .wrong s => (.unsup s!"wrong: {s}", next, nextTag)
 
-/-- Whole-module emission: wrap the pure-fragment body in a wasm module exporting `main : () → i64`,
-declaring the `numLocals` i64 locals the `letC`s used. Returns the full `.wat` text or a refusal.
+/-- Whole-module emission: wrap the fragment body in a wasm module exporting `main : () → i64`,
+declaring the `numLocals` i64 locals the `letC`s used and the `numTags` exception tags the
+`handle (throws _)`s minted. Returns the full `.wat` text or a refusal.
 
-The module is CORE wasm 3.0 — no GC, no exceptions, no imports — so it runs on ANY engine
-(`wasmtime run out.wat`), matching ADR-0059 rung 1 ("core wasm on ANY engine"). -/
+RUNG 1 (no `handle`): CORE wasm 3.0 — no GC, no exceptions, no imports — runs on ANY engine.
+RUNG 2 (with `handle throws`): declares `(tag $exnT (param i64))` per minted tag and uses the
+`try_table`/`throw` exception-handling proposal (Wasm 3.0 core; wasmtime needs `-W exceptions=y`,
+see `tools/emit-rung1-diff.sh`). A pure/rung-1.5 program emits ZERO tags, so its module is
+byte-identical to the rung-1 form (the tag block is empty) — the extension is purely additive. -/
 def emitModule (M : Comp) : Emit :=
-  let (body, numLocals) := emitComp [] 0 M
+  let (body, numLocals, numTags) := emitComp [] 0 0 M
   match body with
   | .unsup r => .unsup r
   | .ok b =>
       let localDecls :=
         (List.range numLocals).foldl (fun acc _ => acc ++ " (local i64)") ""
-      .ok s!"(module\n  (func $main (export \"main\") (result i64){localDecls}\n    {b})\n)"
+      -- One `(tag $exnT (param i64))` per minted throws-handler tag (each abort carries an i64 payload).
+      let tagDecls :=
+        (List.range numTags).foldl (fun acc t => acc ++ s!"\n  (tag $exn{t} (param i64))") ""
+      .ok s!"(module{tagDecls}\n  (func $main (export \"main\") (result i64){localDecls}\n    {b})\n)"
 
 -- ── SELF-TESTS (by rfl — axiom-clean; part of the `lake build` gate) ─────────────────────
 
@@ -271,6 +338,41 @@ example :
     (emitModule (.letC (.binop .lt (.vint 1) (.vint 2))
       (.case (.vvar 0) (.ret (.vvar 0)) (.ret (.vint 0))))).isOk = false := by
   simp [emitModule, emitComp, emitVal, cmpWat, Emit.isOk]
+
+-- ── RUNG-2 arms (throws → try_table/throw) — structural regression guards ─────────────────
+-- caught raise: handle (throws 0) (perform (vvar 0) "raise" 7)  ⇒ emits (7 delivered on catch).
+example :
+    (emitModule (.handle (.throws 0) (.perform (.vvar 0) "raise" (.vint 7)))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- raise discards continuation: handle (throws 0) (letC (raise 7) (ret 99)) ⇒ emits.
+example :
+    (emitModule (.handle (.throws 0)
+      (.letC (.perform (.vvar 0) "raise" (.vint 7)) (.ret (.vint 99))))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- normal return: handle (throws 0) (binop add 3 4) ⇒ body value flows out of try_table.
+example :
+    (emitModule (.handle (.throws 0) (.binop .add (.vint 3) (.vint 4)))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, binOpWat, Emit.isOk]
+-- nested handles (distinct tags): inner catches its own raise.
+example :
+    (emitModule (.handle (.throws 0)
+      (.handle (.throws 0) (.perform (.vvar 0) "raise" (.vint 5))))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+
+-- RUNG-2 refusals are LOUD: a non-`raise` op, a value-target perform, and a state handler.
+-- perform "get" (a resumptive op — rung-2 state, not the abort fragment) → unsup.
+example :
+    (emitModule (.handle (.throws 0) (.perform (.vvar 0) "get" .vunit))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- a state handler is out of the throws-only fragment → unsup.
+example :
+    (emitModule (.handle (.state 0 (.vint 0)) (.ret (.vint 1)))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- perform whose target binds a VALUE (letC-bound), not a cap → unsup (no wrong throw).
+example :
+    (emitModule (.handle (.throws 0)
+      (.letC (.ret (.vint 5)) (.perform (.vvar 0) "raise" (.vint 1))))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
 
 end -- public section
 
