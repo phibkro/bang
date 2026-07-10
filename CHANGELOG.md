@@ -167,6 +167,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **laws** — #74 — diagnose bare trait-op calls + unreachable Int impls (`bac023c`)
 - **landing** — complete the task #15/#16 Part-B recovery — the transplant retirement + regen (the stuck-sequencer incident) (`4798f5e`)
 - **surface** — reserve 'resume' as an op name — ADR-0095 D5 implemented (#93) (`7330b5f`)
-- **surface** — #93 — the D5 resume reservation, ruled but never implemented (`746a9c0`)
+- **surface** — #93 — the D5 resume reservation, ruled but never implemented (`f8202a3`)
 
 <!-- END GENERATED changelog -->
