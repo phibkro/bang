@@ -137,6 +137,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **wasm** — compile_forward_sim UNCONDITIONAL over user effects — CustomFree dropped (#62 CLOSED) (`d35295c8`)
 - **surface** — caps through functions + the wrapper pattern — the per-stage story delivered (#84, #85, #86, #90) (`47a237db`)
 - **lr** — StackInc — the id-ordering machine invariant for the ADR-0096 carrier (task #37, slice 1) (`5dd36c27`)
+- **lr** — ADR-0096 RULED carrier — class-2 fork-b + class-1 StackAbove (Landing 1, task #37) (`8ecb681d`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
