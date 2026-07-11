@@ -1,0 +1,54 @@
+-- std/Io.bang — host IO as ordinary effects (ADR-0104, host-io-design §1).
+--
+-- These are PLAIN `effect` decls: `import Io` names them, `with Io_Console as c { … }`
+-- installs a handler, `c.print(msg)` performs an op. Nothing kernel-new — IO is a
+-- paradigm-as-library (ADR-0084, the moat).
+--
+-- WHY A MODULE, NOT THE PRELUDE (least-authority, os-inspiration §1): a program must
+-- `import Io` to name these effects, so its `main` row is the capability manifest
+-- (ADR-0093 D5) — the opposite of ambient authority. A dependency cannot quietly acquire
+-- IO: the acquisition would change its signature and every caller's row with it.
+--
+-- SEPARATE LABELS, NOT ONE `effect IO { … }` (row-attenuation): each label is a
+-- separately-grantable capability. `--allow=Console` grants Console without Clock; the
+-- driver (Main.lean) resolves those names to their allocated labels via the program's
+-- effect table (labels are `4 + decl-index`, not fixed — ADR-0104).
+--
+-- PAYLOADS ARE SENDABLE (ADR-0101 G7): `Str` is μ-data, `Int`/`Unit` are ground, so every
+-- op payload and result serializes into the record/replay trace (host-io-design §3). An op
+-- carrying a thunk or a cap would be an escape channel out of the handler AND would have no
+-- faithful trace serialization — the Sendable constraint keeps both closed.
+
+-- Console — line-oriented terminal IO. `print` writes a line to stdout (returns unit);
+-- `readLine` reads a line from stdin. Both Sendable (`Str`/`Unit`).
+pub effect Console { print : Str -> Unit, readLine : Unit -> Str }
+
+-- Clock — wall-clock reads. `now` returns milliseconds since the epoch. The canonical
+-- "same program, different answer per run": its recorded trace is one `Int` per read, and
+-- replay reproduces THAT run's timestamps (host-io-design §3, honest-limits).
+pub effect Clock { now : Unit -> Int }
+
+-- ── SIM handlers (the DEFAULT runtime; `--env=sim`, verified-core semantics) ────────────
+--
+-- A handler is SYNTAX (`with L as h { … }`), not a first-class value in v1, so a sim cannot
+-- be exported as a plain `let`. Instead this module documents the canonical sim clause
+-- bodies; a program (or `examples/hostio-echo`) installs them at its use site. Each clause is
+-- `ret`-shape (ADR-0095 D4): the ret-shape wall forbids effects-before-resume in a v1 clause.
+--
+-- Console sim — `print` swallows the line (returns unit); `readLine` returns a FIXED line.
+-- A scripted, stateful readLine (feeding successive lines) wants carried-param UPDATE
+-- (ADR-0092 D5, open) so the fixed-source form is the honest v1 sim (host-io-design §1,
+-- the ndet-dst "honest v1 within the wall" discipline):
+--
+--     with Io_Console as c {
+--       print(s)    => (),        -- swallow: the sim produces no real output
+--       readLine(u) => SNil       -- a fixed empty line (or a scripted constant)
+--     }
+--
+-- Clock sim — `now` returns a FIXED timestamp (deterministic, replayable):
+--
+--     with Io_Clock as k { now(u) => 0 }
+--
+-- The REAL handlers live host-side in Main.lean's driver loop (`--env=real`), do the actual
+-- IO in Lean's IO monad, and RECORD each (label,op,payload,result) row so the run can be
+-- REPLAYED under these sim handlers on the pure oracle — the invariant-#1 gate (ADR-0104 §3).

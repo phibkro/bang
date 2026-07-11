@@ -239,10 +239,31 @@ leaf) — the pure half (`mergeModules`, `Bang.TypeCheck`) already exists and ta
 RESOLVED `List (String × Prog)`; this section's only job is to WALK the import graph and produce
 that list, loudly erroring on a missing file or a cycle before `mergeModules` ever runs. -/
 
+/-! ### Bundled `std/` modules (ADR-0104) — a SECOND search root, baked into the binary.
+
+`import Io` resolves to `std/Io.bang` WITHOUT a filesystem probe: the source is `include_str`-baked
+into the executable at compile time, exactly as `Prelude.bang` is (`TypeCheck.preludeSrc`). This is
+the robust convention — a bundled stdlib module works for an installed `bang` binary regardless of
+CWD (a `std/`-relative-to-CWD probe would only work from the repo root), and `test-modules.sh`'s
+`bang check std/Io.bang` leg keeps the baked bytes ≡ the on-disk file. Unlike the prelude (auto-
+injected into EVERY program), an `std/` module is served ONLY on an explicit `import`/`use` — the
+least-authority discipline (host-io-design §1): a program must name `Io` to get IO into its row.
+
+std modules resolve BEFORE the same-dir/root filesystem probe (`resolveModulePath` /
+`resolveModule`), so a stray local `Io.bang` cannot silently shadow the bundled one. -/
+def stdModules : List (String × String) :=
+  [("Io", include_str "std/Io.bang")]
+
+/-- The bundled source for std module `modName`, or `none` if it is not a bundled std module. -/
+def stdModuleSrc (modName : String) : Option String :=
+  (stdModules.find? (·.1 = modName)).map (·.2)
+
 /-- Resolve `import name`/`use name` module NAME to a file path: try `<dir of the importing
 file>/name.bang` first, then `<root>/name.bang` (D1's fixed, documented order). `none` on a miss in
 BOTH — the caller names both probed paths in its error (a miss must be loud AND specific, ADR-0046:
-"the fix is obvious from the message" is the bar, not just "file not found"). -/
+"the fix is obvious from the message" is the bar, not just "file not found"). A bundled `std/` module
+(`stdModuleSrc`) is served by `resolveModule` directly, ahead of this path probe, so it never reaches
+here — callers check `stdModuleSrc` first. -/
 def resolveModulePath (root : System.FilePath) (importingDir : System.FilePath) (modName : String) :
     IO (Option System.FilePath) := do
   let sameDir := importingDir / s!"{modName}.bang"
@@ -296,6 +317,23 @@ partial def resolveModule (root : System.FilePath) (allowed : AllowedRoots) (mod
   if (st.resolved.map Prod.fst).contains modName then return .ok st   -- already resolved (diamond import)
   if st.visiting.contains modName then
     return .error s!"import cycle: {String.intercalate " → " (st.visiting ++ [modName])}"
+  -- ADR-0104: a bundled `std/` module (e.g. `Io`) is served from `include_str`-baked source,
+  -- BEFORE the filesystem probe — trusted, compiled-in, no containment check (it isn't a
+  -- user path). Its OWN transitive imports still resolve normally (relative to `dir` = `root`).
+  if let some src := stdModuleSrc modName then
+    match Bang.Surface.parseProg src with
+    | .error m => return .error s!"bundled std module '{modName}': parse error: {m}"
+    | .ok prog =>
+        let mut st' := { st with visiting := st.visiting ++ [modName] }
+        for imp in prog.imports do
+          match ← resolveModule root allowed imp.modName (Id.run <| root / s!"{imp.modName}.bang") st' with
+          | .error e  => return .error e
+          | .ok stNew => st' := stNew
+        for u in prog.uses do
+          match ← resolveModule root allowed u.modName (Id.run <| root / s!"{u.modName}.bang") st' with
+          | .error e  => return .error e
+          | .ok stNew => st' := stNew
+        return .ok { st' with resolved := st'.resolved ++ [(modName, prog)], visiting := st.visiting }
   if ¬ (← path.pathExists) then
     return .error s!"could not read module '{modName}' at '{path}'"
   let pathReal ← match ← containedRealPath allowed path with
@@ -364,6 +402,13 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
       let allowed : AllowedRoots := { entryDir := entryDirReal, root := rootReal }
       let mut st : ResolveState := {}
       for imp in entryProg.imports do
+        -- ADR-0104: a bundled `std/` module resolves via `resolveModule`'s baked-source branch,
+        -- ahead of the filesystem probe (`path` is unused for it — pass a placeholder).
+        if (stdModuleSrc imp.modName).isSome then
+          match ← resolveModule root allowed imp.modName root st with
+          | .error e  => return .error e
+          | .ok stNew => st := stNew
+        else
         match ← resolveModulePath root dir imp.modName with
         | none =>
             let probed1 := dir / s!"{imp.modName}.bang"
@@ -374,6 +419,11 @@ def resolveEntryFile (path : String) : IO (Except String Prog) := do
             | .error e  => return .error e
             | .ok stNew => st := stNew
       for u in entryProg.uses do
+        if (stdModuleSrc u.modName).isSome then
+          match ← resolveModule root allowed u.modName root st with
+          | .error e  => return .error e
+          | .ok stNew => st := stNew
+        else
         match ← resolveModulePath root dir u.modName with
         | none =>
             let probed1 := dir / s!"{u.modName}.bang"

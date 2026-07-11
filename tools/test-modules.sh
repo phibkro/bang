@@ -64,6 +64,16 @@ got_fmt="$("$bang" fmt Prelude.bang 2>/dev/null)"
 got_src="$(cat Prelude.bang)"
 check "prelude-bang-fmt-idempotent" "$got_fmt" "$got_src"
 
+# ── ADR-0104: the bundled `std/Io.bang` module (host-IO effects) is `include_str`-baked into the
+# binary (Main.lean `stdModules`); this leg keeps the baked bytes ≡ the on-disk file — a broken
+# std module fails LOUD here, not silently at a resolver miss. Like the prelude, it is a pure
+# library file (effect decls, no `main`, no trailing expr) so `check` yields `ok`. NOT fmt-checked:
+# unlike the terse comment-free prelude, `std/Io.bang` is a user-facing stdlib module documented
+# with doc comments by design, so `bang fmt` (which strips comments) is intentionally NOT idempotent.
+got_out="$("$bang" check std/Io.bang 2>&1)" && got_exit=0 || got_exit=$?
+check "std-io-bang-checks-clean-stdout" "$got_out" "ok"
+check "std-io-bang-checks-clean-exit" "$got_exit" "0"
+
 # ── happy path: a real 2-file program (bare `import` + qualified ctor call + match) ──
 cat > "$fixdir/geom.bang" <<'BANG'
 pub data Pair = Mk(Int, Int)
