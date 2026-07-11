@@ -4018,29 +4018,67 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let b0 ← elabS env Γ b
       let (Γ1, wa, a') ← anfSplit Γ a0 env.effects
       let (Γ2, wb, b') ← anfSplit Γ1 b0 env.effects
+      -- #118 fork (narrow): dispatch at a RESOLVED `τ`, as before. `dispatchInst τ` is the
+      -- pre-#118 body, factored out so the hole case (below) can reuse it once it has picked a
+      -- `τ` from the OTHER operand.
+      let dispatchInst : VT → Except String Surf := fun τ =>
+        match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
+        | none => .error s!"no impl provides '{binopName op}' for {foldDataTyOrRaw env.ctors env.gen τ}"
+        | some inst =>
+            match inst.params, inst.knotName with
+            -- #112: KNOT dispatch — app the `letRecS`-bound name (`elabProg` wraps the whole
+            -- program in these, see `wrapPendingKnots`) to a TUPLED argument, mirroring exactly
+            -- how the knot itself is built (`fun pq => let (p, q) = pq in …`, the tupled-single-
+            -- arg encoding that sidesteps `letRecS`'s separate curried-arity gap — de-risked
+            -- against self- AND backward-referential impls this session, see `Inst`'s doc comment).
+            | [_, _], some kn => .ok (.app (.force (.var kn)) (.pairS a' b'))
+            -- pre-#112 splice path — unreachable for a genuinely 2-param op post-fix (every 2-param
+            -- op now gets `some kn` from `buildEnv`), kept only so the match stays exhaustive/total.
+            | [p, q], none    =>
+                let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
+                .ok (.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b')
+            | _, _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
+      -- #118: when ONE operand's type is a bare-fun-param HOLE, the OTHER operand may still
+      -- resolve concretely — an unannotated `fun p => p == derivedCarrierValue` shape. If EXACTLY
+      -- ONE impl of this op targets the OTHER operand's type, that impl is unambiguous — dispatch
+      -- through it exactly as the both-resolved case does (the rewritten `.app`'s domain type
+      -- lets the CHECKER's ordinary HM unification pin the hole from the impl's own signature,
+      -- the same mechanism an explicit annotation drives today). A HOLE here is OVERLOADED with a
+      -- second, unrelated meaning (`anfSplit`'s OWN `chole`-tolerant ANF placeholder, `paramHole`
+      -- reused as a `#anf` binder's provisional type for a still-higher-order returner, e.g. plain
+      -- `Int` arithmetic whose left operand came through a `.dotPerform` A-normalization) — NOT
+      -- every hole here is a genuine "unannotated fun param awaiting trait dispatch". ZERO
+      -- candidate impls is therefore NOT an error (that would misfire on the ANF-placeholder case,
+      -- confirmed live: broke the `handle two.a(3) + 1` corpus) — it DEFERS exactly as before #118,
+      -- preserving the checker's own `.int`-arithmetic path as the fallback. TWO OR MORE candidates:
+      -- no single answer exists without more information — teach the fix (annotate the bare `fun`'s
+      -- VALUE, `{fun p => …} : Thunk (T -> …)`, the one surface form that DOES carry a param type in
+      -- v1), rather than guess. Symmetric in `a`/`b` (either side may be the hole).
+      let annotHint := "annotate the bare fun's VALUE with a Thunk type ascription (e.g. (fun p => ...) : Thunk (T -> ...)) so the impl can be resolved"
+      let deferred : Surf := .binopS op a' b'
+      let holeAgainstOther : Unit → Except String Surf := fun _ => do
+        let τa ← runInferV (synthSV Γ2 a')
+        let τb ← runInferV (synthSV Γ2 b')
+        match asHole τa, asHole τb with
+        | some _, some _ => return deferred          -- both sides unresolved: no evidence to dispatch on, defer
+        | some _, none   =>
+            match env.insts.filter (fun i => i.opName == binopName op && i.target == τb) with
+            | [_]  => dispatchInst τb
+            | []   => return deferred                 -- no impl at τb: not a trait op here (e.g. ANF/Int) — defer
+            | _ :: _ :: _ => .error s!"'{binopName op}': {foldDataTyOrRaw env.ctors env.gen τb} has MULTIPLE candidate impls — the unannotated operand can't be resolved to one; {annotHint}"
+        | none, some _   =>
+            match env.insts.filter (fun i => i.opName == binopName op && i.target == τa) with
+            | [_]  => dispatchInst τa
+            | []   => return deferred                 -- no impl at τa: not a trait op here (e.g. ANF/Int) — defer
+            | _ :: _ :: _ => .error s!"'{binopName op}': {foldDataTyOrRaw env.ctors env.gen τa} has MULTIPLE candidate impls — the unannotated operand can't be resolved to one; {annotHint}"
+        | none, none     => return deferred           -- neither side is a hole: unreachable from this arm's caller (both callers already checked ≥1 side IS a hole), kept total
       match runInferV (synthSV Γ2 a') with
       | .ok .int  => return wa (wb (.binopS op a' b'))   -- the kernel δ-rule path (ADR-0065)
       | .error _  => return wa (wb (.binopS op a' b'))   -- non-value operand: leave it; the checker rules
       | .ok τ =>
         match asHole τ with
-        | some _ => return wa (wb (.binopS op a' b'))     -- HOLE operand (bare-`fun` param): defer to the checker
-        | none =>
-          match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
-          | none => .error s!"no impl provides '{binopName op}' for {foldDataTyOrRaw env.ctors env.gen τ}"
-          | some inst =>
-              match inst.params, inst.knotName with
-              -- #112: KNOT dispatch — app the `letRecS`-bound name (`elabProg` wraps the whole
-              -- program in these, see `wrapPendingKnots`) to a TUPLED argument, mirroring exactly
-              -- how the knot itself is built (`fun pq => let (p, q) = pq in …`, the tupled-single-
-              -- arg encoding that sidesteps `letRecS`'s separate curried-arity gap — de-risked
-              -- against self- AND backward-referential impls this session, see `Inst`'s doc comment).
-              | [_, _], some kn => return wa (wb (.app (.force (.var kn)) (.pairS a' b')))
-              -- pre-#112 splice path — unreachable for a genuinely 2-param op post-fix (every 2-param
-              -- op now gets `some kn` from `buildEnv`), kept only so the match stays exhaustive/total.
-              | [p, q], none    =>
-                  let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
-                  return wa (wb (.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'))
-              | _, _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
+        | some _ => do let s ← holeAgainstOther (); return wa (wb s)
+        | none   => do let s ← dispatchInst τ; return wa (wb s)
   -- #97 item 2: adding `elabLetRecBindings` (a NEW mutual sibling, recursing on `LetRecBindings`,
   -- a type the block's structural-recursion inference has no prior size relation for) broke pure
   -- inference across the WHOLE `elabS`/`elabArms`/`elabHClauses` group — explicit `termination_by`
@@ -6023,6 +6061,56 @@ public def unreachableIntImplDiagnostics (src : String) : Except String (List (S
 #guard (match unreachableIntImplDiagnostics
     "trait Dbl { fn dbl(a, b) -> Int } impl Dbl for Int { fn dbl(a, b) = a }" with
         | .ok [] => true | _ => false)
+
+/-! ### #118 — the bare-fun-param hole gap: `fun p => … p == derivedCarrierValue …`. `elabS`'s
+`.binopS` arm consults `env.insts` to dispatch a non-`Int` `==`/`<` to a trait impl, but explicitly
+DEFERRED to the checker when either operand's synthesized type was still a HOLE (an unannotated
+`fun` param) — and the checker's OWN `.binopS` arm (`synthSC`/`checkSC`) hard-codes BOTH operands
+to `.int`, never consulting `env.insts` at all. No stage ever revisits the hole once elaboration
+punts, so a bare `fun p => p == carrierValue` (the OTHER operand fully resolved, `carrierValue`'s
+type has exactly ONE `Eq` impl) got a generic type-mismatch instead of dispatching. Fixed
+(narrow, one-candidate-pins-the-hole): when one operand is a hole, the elaborator now inspects the
+OTHER operand's resolved type; exactly one matching impl ⟹ dispatch through it (the SAME rewrite
+the both-resolved case already used) — the checker's ordinary HM unification then pins the hole
+from the impl's own parameter type, exactly as an explicit annotation already did. Zero or
+multiple candidates ⟹ still defer/refuse (never guess) — a hole is OVERLOADED with a second,
+unrelated meaning (`anfSplit`'s own `chole`-tolerant ANF placeholder for a still-higher-order
+`.dotPerform` returner, e.g. plain `Int` arithmetic over a handler op's result) so "zero
+candidates" must stay a SILENT defer (an error there broke the `effect Two {…} handle
+two.a(3) + 1 …` corpus class — confirmed live, reverted to defer). -/
+def eqTraitIntListProg (body : String) : String :=
+  "data IntList = Nil | Cons(Int, IntList) " ++
+  "trait Eq { fn eq(a, b) -> (Unit + Unit) law refl(a): a == a } " ++
+  "impl Eq for IntList { fn eq(p, q) = match p { " ++
+  "Nil -> match q { Nil -> 0 == 0, Cons(hy, ty) -> 0 == 1 }, " ++
+  "Cons(hx, tx) -> match q { Nil -> 0 == 1, " ++
+  "Cons(hy, ty) -> let headEq = hx == hy in let tailEq = tx == ty in " ++
+  "if headEq then tailEq else 0 == 1 } } } " ++ body
+
+-- RED-BEFORE (confirmed live pre-fix: "type mismatch" — `env.insts` never re-consulted once the
+-- elaborator's `.binopS` arm punted on the bare `fun` param's hole type). GREEN-AFTER: the ONE
+-- `Eq` impl targeting `IntList` (the other operand `l1`'s resolved type) pins the hole.
+def bareFunEqSrc118 :=
+  eqTraitIntListProg "let l1 = Cons(1, Cons(2, Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l1) then 1 else 0"
+#guard (match checkProg bareFunEqSrc118 with | .ok _ => true | _ => false)
+-- semantically correct, not just type-checking: `l1 == l1` is TRUE, and a genuinely DIFFERENT list
+-- compared against the same `compareIt` closure is FALSE — the fix dispatches to the REAL impl
+-- (a per-element recursive `Eq`), not a vacuous accept.
+#guard runTypedYieldsInt 400 bareFunEqSrc118 1
+def bareFunEqSrc118Diff :=
+  eqTraitIntListProg "let l1 = Cons(1, Cons(2, Nil)) in let l2 = Cons(9, Cons(9, Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l2) then 1 else 0"
+#guard runTypedYieldsInt 400 bareFunEqSrc118Diff 0
+
+-- REGRESSION GUARD for the fix's OWN wall (confirmed live during development — an earlier cut of
+-- this fix treated a ZERO-candidate hole as an ERROR, which misfires on `anfSplit`'s UNRELATED
+-- `chole`-tolerant ANF placeholder: plain `Int` arithmetic over a `.dotPerform` result also
+-- synthesizes a "hole" at this call site, with correctly zero `env.insts` candidates for `+`).
+-- This must still TYPE (deferring to the checker's `.int` path), not error.
+#guard (match checkProg
+    "effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }" with
+        | .ok _ => true | _ => false)
+#guard runTypedYieldsInt 200
+    "effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }" 32
 
 /-! ### Validation ⑦ — the northstar WITH its law: checked from source, rung displayed. -/
 

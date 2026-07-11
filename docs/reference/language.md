@@ -544,6 +544,9 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 ### Exceptional / error terminals — the typed `Outcome` layer's NEW capability (issue #54).
 
 - `1 + Left(0)` ⟹ `0`  — helper says only `false`, the `Outcome` names the actual terminal (here: a type error).
+### #118 — the bare-fun-param hole gap: `fun p => … p == derivedCarrierValue …`. `elabS`'s
+
+- `effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }` ⟹ `32`
 ### Validation ⑨b — HIGHER-ORDER constructor payloads (#45): a `Thunk (Int -> Int)` field.
 
 - `let f = ( {fun x => x + 1} : Thunk (Int -> Int) ) in ($f) 41` ⟹ `42`  — the checkSC thunk arm (thunk in COMPUTATION position): an annotated thunk at top level, forced+applied.
