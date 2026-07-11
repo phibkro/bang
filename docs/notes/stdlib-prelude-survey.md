@@ -77,26 +77,64 @@ convention is `($f) x` and qualified `$(Mod.op) x` (§Modules); generic data ari
 Classes: **(a) SUPPLYABLE TODAY** — System-F-typeable, arity ≤ 2, self-recursion only.
 **(b) GATED** on a named wall. **(c) POST-V1** — needs typeclass-dispatch or IO.
 
+**Correction (2026-07-11, #105 list-prelude lane, machine-confirmed against the real binary):**
+every row below marked (a) for a `List a` CONSUMER (`map`/`filter`/`foldr`/`foldl`/`length`/
+`append`/`head`/`tail`/`take`/`drop`/`zip`/`any`/`all`/`concatMap`/`range`/`replicate`) is
+SUPPLYABLE only INSIDE one user program that monomorphizes `List a` to a concrete element type
+(`let rec length : List Int -> Int = …`, the shape every corpus `#guard`/example actually uses,
+e.g. `examples/nqueens`) — **not as ONE shared `Prelude.bang` entry serving every element type**.
+A prelude entry needs a single signature that generalizes over `a`, and bang's surface has no
+top-level `∀a.` mechanism: `pub let rec length : List a -> Int = …` fails `unknown type name 'a'`
+(traced to `resolveTyG`/`resolveName`, `Bang/Frontend/TypeCheck.lean:1814-1873` — a bare type
+variable resolves only via a `data` decl's own monomorphization substitution or a bounded
+function's trait-bound variable, never a free/generalized one), and omitting the ascription
+diverges the checker's self-recursion fixpoint. The one existing generic-plus-recursion mechanism,
+ADR-0080's bounded `fn f(xs) : List a -> a where Trait a = …`, forces a trait bound these
+functions don't want (none of `length`/`append`/`take`/`drop`/`zip`/`range`/`replicate` touch
+elements). **Every row below is re-classed (b), gated on this wall** — the "class (a)" verdicts
+that follow are the STALE per-program-only reasoning, kept for their `! {Div}`/arity/shape
+analysis (still correct once a real ∀-generalization or a bound-free ADR-0080 relaxation exists)
+but WRONG about prelude-level supplyability. See `stdlib-map.md`'s List-a row for the corrected
+status and **issue #120** (the ∀a-generalization-vs-bound-free-`where` fork) this wall was
+escalated to — a kernel-adjacent typing-rule decision, out of this survey's/this lane's scope.
+
 ```
 construct           class  wall / note (all citing docs/reference/language.md unless marked)
 ──────────────────────────────────────────────────────────────────────────────────────────────
-map (List a)        (a)    EXISTS — generic List + map shipped (ADR-0079); ref §generic-data.
-filter (List a)     (a)    EXISTS — shipped alongside map (ADR-0079).
-foldr / foldl       (a)    self-recursive over List a; System-F-typeable. Curried ⇒ `! {Div}` (#47).
-length              (a)    single-arg structural rec ⇒ ⊥-row via structOK (dogfood-json GOOD §).
-append (List a)     (a)    two-arg; supplyable, types `! {Div}` (curried over-approx, #47).
-reverse (List a)    (a)    exists for Str; the List a form is the same shape — supplyable today.
-head / tail         (a)    returns `Option a` (prelude Option exists, ADR-0083). Total, ⊥-row.
-take / drop         (a)    two-arg (Int, List a) ⇒ `! {Div}` over-approx (#47); still runs.
-zip                 (a)*   List a × List b → List (Pair a b). *arity-2 generic data is the CEILING
-                           (ref §Types "arity ≤ 2") — `Pair a b` is exactly at it. Supplyable.
-any / all           (a)    fold + Bool; Bool = 1+1 exists (ADR-0065). Supplyable.
-concatMap/flatMap   (a)    map then concat; both supplyable. Curried ⇒ `! {Div}`.
-elem / contains     (a)    needs `eq` on the element — trivial for Int/Str (bang has Str `eq`);
-                           GENERIC `elem : Eq a => …` is class (c) (needs Eq-dispatch, below).
-range (Int→List)    (a)    self-recursive Int producer; `! {Div}` over-approx. Supplyable.
-replicate           (a)    same shape as range. Supplyable.
-min / max (Int)     (a)    `if a < b …`; Int `<` exists (ref §operator table). Supplyable.
+map (List a)        (b)*   generic DATA + annotation-free/-driven CONSTRUCTION ship (ADR-0079/
+                           0081); no shared generic CONSUMER — see the ∀a-wall correction above.
+filter (List a)     (b)*   same wall as `map`.
+foldr / foldl       (b)*   self-recursive, no bound needed ⇒ same ∀a-wall; `fold` WITH a trait
+                           bound (`where Monoid a`) is the one shape that DOES ship (ADR-0080).
+length              (b)*   same wall — per-program monomorphic supplyable (§ analysis below still
+                           holds for that case), not prelude-shareable.
+append (List a)     (b)*   same wall.
+reverse (List a)    (a)    exists for Str (concrete, no generalization needed) — the `List a` form
+                           hits the SAME ∀a-wall as `length`/`append` above; Str-only ships today.
+head / tail         (b)*   returns `Option a`; NON-recursive (single match on `Nil`/`Cons`), so it
+                           dodges the fixpoint-seeding half of the wall — but the ASCRIPTION half
+                           still applies (`List a -> Option a` needs the same unbound `a`). Worth
+                           a follow-up probe: does a non-recursive generic `List a` consumer (no
+                           self-call) type-check without an ascription, mirroring `mapOption`'s
+                           shape? Not tested this lane — flagged, not verified either way.
+take / drop         (b)*   self-recursive ⇒ same ∀a-wall.
+zip                 (b)*   self-recursive (walks both lists) ⇒ same ∀a-wall; the arity-2 `Pair a b`
+                           ceiling note still holds once the wall clears.
+any / all           (b)*   self-recursive (structural fold) ⇒ same ∀a-wall; a PREDICATE arg makes
+                           an `Eq`/`Ord`-style trait bound the WRONG fit even if bound-free-`where`
+                           ships (a predicate function, not a carrier constraint).
+concatMap/flatMap   (b)*   map then concat; inherits `map`'s wall.
+elem / contains     (a/c)  needs `eq` on the element — the ONE row here where a trait bound
+                           (`Eq a`) is semantically CORRECT, not a workaround — ADR-0080's bounded
+                           `fn` shape may already fit once injected-generic-fn dispatch (class (c)
+                           below) lands; unaffected by this correction.
+range (Int→List)    (a)    self-recursive Int PRODUCER (`Int -> List Int`, concrete element type
+                           Int, no `a` anywhere) — NOT affected by the ∀a-wall; genuinely (a).
+replicate           (b)*   `a -> Int -> List a` — the ELEMENT is generic (unlike `range`), so it
+                           DOES hit the ∀a-wall despite the shape-parallel to `range` the original
+                           entry claimed; re-classed.
+min / max (Int)     (a)    `if a < b …`; Int `<` exists (ref §operator table). Supplyable — already
+                           SHIPPED in `Prelude.bang` since this survey (confirmed 2026-07-11).
 abs (Int)           (a)    `if n < 0 then 0 - n else n`; supplyable (dogfood calc hand-rolled it).
 mod / rem           (b)    ISSUE #102 — no `%` binop and no injected `mod`; today `t-(t/k)*k`.
                            Wall = a new δ-rule + parser-table row (shape (a) in #102), OR inject `mod`.
@@ -145,22 +183,29 @@ Koka/Unison/Flix — the more common and the more type-transparent choice.
 
 ### First slice — supplyable TODAY, ordered by dogfood-demand evidence
 
-All class (a). Ordered by how loudly the dogfood corpus asked (calc/json findings + issues #101/#102):
+**Status as of 2026-07-11: items 1, 4, 5, 8, 9, 10 SHIPPED (`Prelude.bang`, confirmed this lane);
+items 2, 3, 6, 7 (the `List a` entries) are BLOCKED on the ∀a-generalization wall (§2 correction
+above) — not class (a) as originally listed.** Ordered by how loudly the dogfood corpus asked
+(calc/json findings + issues #101/#102):
 
 ```
- #  construct        why now (evidence)
- ──────────────────────────────────────────────────────────────────────────────────────
- 1  fst / snd        dogfood-json TOP papercut ("first thing most people reach for"); trivial.
- 2  length (List a)  10/10 universal; every list program wants it.
- 3  append (List a)  10/10 universal; the calc/json parsers hand-rolled concat-like joins.
- 4  abs (Int)        both dogfooders hand-rolled `0 - n`; 10/10 universal.
- 5  min / max (Int)  10/10; guard-heavy code (calc eval, bounds) wants them.
- 6  head / tail      Option-returning; 9/10; list destructuring boilerplate.
- 7  take / drop      9/10; slicing shows up in every list-processing program.
- 8  isDigit/isAlpha/toUpper/toLower  calc lexer + json parser BOTH hand-rolled code-point tests.
- 9  id / const       id already shipped; const is one line and completes the pair (7/10).
-10  withDefault (Option/Result)  10/10; pairs with the shipped Option prelude (ADR-0083).
+ #  construct        why now (evidence)                                        status
+ ──────────────────────────────────────────────────────────────────────────────────────────
+ 1  fst / snd        dogfood-json TOP papercut ("first thing most reach for"); trivial.   ✅ shipped
+ 2  length (List a)  10/10 universal; every list program wants it.                        ⛔ ∀a-wall
+ 3  append (List a)  10/10 universal; calc/json parsers hand-rolled concat-like joins.     ⛔ ∀a-wall
+ 4  abs (Int)        both dogfooders hand-rolled `0 - n`; 10/10 universal.                 ✅ shipped
+ 5  min / max (Int)  10/10; guard-heavy code (calc eval, bounds) wants them.                ✅ shipped
+ 6  head / tail      Option-returning; 9/10; list destructuring boilerplate.               ⛔ ∀a-wall*
+ 7  take / drop      9/10; slicing shows up in every list-processing program.              ⛔ ∀a-wall
+ 8  isDigit/isAlpha/toUpper/toLower  BOTH dogfooders hand-rolled code-point tests.          ✅ shipped
+ 9  id / const       id already shipped; const is one line and completes the pair (7/10).  ✅ shipped
+10  withDefault (Option/Result)  10/10; pairs with the shipped Option prelude (ADR-0083).   ✅ shipped
 ```
+
+(*`head`/`tail` are non-recursive, so they dodge the fixpoint-seeding half of the wall — but the
+ascription (`List a -> Option a`) still needs the same unbound `a`; unverified this lane whether
+that half alone is passable, see the §2 correction's flagged follow-up.)
 
 (`mod` is demand-rank-high — issue #102, stress session — but it is class (b), so it heads the second
 slice, not this one.)
