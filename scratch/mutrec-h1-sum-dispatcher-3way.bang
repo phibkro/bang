@@ -1,0 +1,13 @@
+-- H1 falsifier: a Bekic-style sum-dispatcher for a 3-WAY mutual group needs a
+-- fan-out sum type of degree 3. bang's generic-data arity is capped at 2 args
+-- to `tApp`/ctors (payload arity <= 2 in v1, TypeCheck.lean:2878/2889); a
+-- degree-3 dispatcher's argument sum needs a 3-way injection (Arg1|Arg2|Arg3),
+-- which is itself a >2-ctor sum -- fine as a flat sum (each ctor is unary,
+-- arity 1) -- but the RESULT type has the same problem AND every dispatcher
+-- needs its own FRESH sum-type name per mutual group (no anonymous sums in
+-- v1), which collides with issue #108 (ctor names are not type-namespaced)
+-- the moment two mutual-rec groups exist in one program (both would want
+-- "Arg1"/"Left"/"L" etc). This file demonstrates the arity-2 payload cap
+-- directly: a 3-way dispatcher argument as one flat product cannot be built
+-- in a single ctor.
+data DispatchArg = A(Int, Int, Int)
