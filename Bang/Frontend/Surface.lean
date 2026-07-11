@@ -126,6 +126,9 @@ types — the checker interprets it into the kernel's `VTy`/`CTy` (`tArr` ⇒ a 
 else a `VTy`, with `F`/`U` wrapping inserted by the checker). Carried only by the ascription node
 `annotS`; erased at lowering (types never reach the kernel term). -/
 mutual
+/-- A surface TYPE expression — one grammar covering both value and computation types
+(distinguished by the checker, not the syntax); see this section's own doc comment for the
+interpretation rule and the `annotS`/erasure contract. -/
 inductive Ty where
   | tInt   : Ty                  -- Int
   | tUnit  : Ty                  -- Unit
@@ -176,6 +179,9 @@ def TyArgs.map (f : Ty → Ty) : TyArgs → TyArgs
   | .two a b => .two (f a) (f b)
 
 mutual
+/-- The surface AST — every parseable bang expression, name-based (pre-de-Bruijn) and untyped
+(types live only on the `annotS`/`Ty` side, erased at lowering). `Bang.Surface.lower` is the
+one function that turns this into the kernel's `Comp`. -/
 inductive Surf where
   | lit    : Int → Surf                 -- 3
   | var    : String → Surf              -- x
@@ -414,6 +420,10 @@ def desugarLettMulti : LetBindings → Surf → Surf
 
 -- The FULL tree-wide erasure of lettMulti (issue #68).
 mutual
+/-- Recursively desugar every `.lettMulti` node ANYWHERE in `e` to its nested `.lett` chain
+(via `desugarLettMulti`, the one-level unfold) — the tree-wide erasure pass every non-printer
+consumer runs before touching a parsed `Surf` (`.lettMulti` is a PRINTER-only sugar marker, per
+its own doc comment). -/
 def eraseLettMulti : Surf → Surf
   | .lit n       => .lit n
   | .var x       => .var x
@@ -458,15 +468,22 @@ def eraseLettMulti : Surf → Surf
   | .hostPerformS lbl n op .none      => .hostPerformS lbl (eraseLettMulti n) op .none
   | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (eraseLettMulti n) op (.one (eraseLettMulti a))
   | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (eraseLettMulti n) op (.two (eraseLettMulti a) (eraseLettMulti b))
+/-- `eraseLettMulti`'s sibling for a `matchD` arm list: erase `.lettMulti` in every arm body. -/
 def eraseLettMultiDArms : DArms → DArms
   | .nil              => .nil
   | .cons c ps b rest  => .cons c ps (eraseLettMulti b) (eraseLettMultiDArms rest)
+/-- `eraseLettMulti`'s sibling for a `;`-chained binding list: erase `.lettMulti` in every
+binding's RHS. -/
 def eraseLettMultiBindings : LetBindings → LetBindings
   | .nil            => .nil
   | .cons n e rest  => .cons n (eraseLettMulti e) (eraseLettMultiBindings rest)
+/-- `eraseLettMulti`'s sibling for a handler clause list: erase `.lettMulti` in every clause
+body. -/
 def eraseLettMultiHClauses : HClauses → HClauses
   | .nil              => .nil
   | .cons op x b rest => .cons op x (eraseLettMulti b) (eraseLettMultiHClauses rest)
+/-- `eraseLettMulti`'s sibling for a mutual `let rec … and …` binding list: erase `.lettMulti`
+in every sibling's RHS. -/
 def eraseLettMultiLRBindings : LetRecBindings → LetRecBindings
   | .nil               => .nil
   | .cons n t e rest   => .cons n t (eraseLettMulti e) (eraseLettMultiLRBindings rest)
@@ -516,9 +533,12 @@ its enclosing handler by `lookup`. The sentinels start with `#` (never produced 
 rejects only keywords/punctuators — so in practice a source program cannot bind one; the tracer
 bullet's grammar has no `#`-led idents). One sentinel per handler KIND, so a `raise`/`get`/`new`
 each finds its own nearest handler even when kinds nest. -/
-def capExn   : String := "#exn"     -- the throws-handler cap binder
-def capState : String := "#state"   -- the state-handler cap binder
-def capStm   : String := "#stm"     -- the transaction-handler cap binder
+/-- The reserved sentinel name lowering binds the ambient THROWS handler's capability to. -/
+def capExn   : String := "#exn"
+/-- The reserved sentinel name lowering binds the ambient STATE handler's capability to. -/
+def capState : String := "#state"
+/-- The reserved sentinel name lowering binds the ambient TRANSACTION handler's capability to. -/
+def capStm   : String := "#stm"
 
 /-- Map a surface cap-op name (`h.new`) to the kernel `OpId` (`newTVar`) — ADR-0070. The
 state/exn ops are already the kernel names; the stm ops abbreviate. Unknown names pass through
@@ -889,7 +909,10 @@ token list AT THE POINT OF FAILURE (its head is the offending token; `[]` = at/a
 `parseLocated` recovers the offending token's `Span` by index (`length - rest.length`). `parse`
 ERASES this to a bare `String` (behaviour-preserving); the internal combinators thread it. -/
 structure PErr where
+  /-- The human-readable error message. -/
   msg  : String
+  /-- The token list AT THE POINT OF FAILURE — `[]` means at/after end of input, otherwise a
+  SUFFIX of `tokenize src` whose head is the offending token (recovers a `Span` by index). -/
   rest : List String
   deriving Repr
 
@@ -902,6 +925,8 @@ instance : Coe String PErr := ⟨fun m => ⟨m, []⟩⟩
 `List String → Except PErr (α × List String)` — the error carries the failure position. -/
 abbrev P (α : Type) := List String → Except PErr (α × List String)
 
+/-- Consume the exact token `tok` from the head of the stream, or fail with a located "expected …
+got …" `PErr` naming the actual offending token (or end-of-input). -/
 def expect (tok : String) : P Unit
   | t :: ts => if t = tok then .ok ((), ts) else .error ⟨s!"expected '{tok}', got '{t}'", t :: ts⟩
   | []      => .error s!"expected '{tok}', got end of input"
@@ -990,6 +1015,8 @@ def pTyPostEff (a : Ty) : P Ty
   | ts               => .ok (a, ts)
 
 mutual
+/-- The full type-expression parser: `->` (right-assoc, loosest), with an optional `! {ρ}`
+effect-row postfix binding tighter than `->` but looser than `+`/`*`. -/
 def pTy : Nat → P Ty
   | 0,     _  => .error "type parser out of fuel"
   | f + 1, ts => do
@@ -998,28 +1025,33 @@ def pTy : Nat → P Ty
       match ts with
       | "->" :: ts => do let (b, ts) ← pTy f ts; .ok (.tArr a b, ts)   -- right-assoc
       | _          => .ok (a, ts)
-def pTyAdd : Nat → P Ty                      -- A + B  (left-assoc, loosest after ->)
+/-- `A + B` (left-assoc, loosest binary level after `->`). -/
+def pTyAdd : Nat → P Ty
   | 0,     _  => .error "type parser out of fuel"
   | f + 1, ts => do let (a, ts) ← pTyMul f ts; pTyAddLoop f a ts
+/-- The left-association loop of `pTyAdd`: keep folding `+ B` while one follows. -/
 def pTyAddLoop : Nat → Ty → P Ty
   | 0,     a, ts          => .ok (a, ts)
   | f + 1, a, "+" :: ts   => do let (b, ts) ← pTyMul f ts; pTyAddLoop f (.tSum a b) ts
   | _ + 1, a, ts          => .ok (a, ts)
-def pTyMul : Nat → P Ty                      -- A * B  (left-assoc, binds tighter than +)
+/-- `A * B` (left-assoc, binds tighter than `+`). -/
+def pTyMul : Nat → P Ty
   | 0,     _  => .error "type parser out of fuel"
   | f + 1, ts => do let (a, ts) ← pTyAtom f ts; pTyMulLoop f a ts
+/-- The left-association loop of `pTyMul`: keep folding `* B` while one follows. -/
 def pTyMulLoop : Nat → Ty → P Ty
   | 0,     a, ts          => .ok (a, ts)
   | f + 1, a, "*" :: ts   => do let (b, ts) ← pTyAtom f ts; pTyMulLoop f (.tProd a b) ts
   | _ + 1, a, ts          => .ok (a, ts)
--- Can `t` START a type atom? (⟹ a candidate type-application ARGUMENT after a data name.) Every
--- separator/operator token is NOT an atom start, so application stops at `*`/`+`/`->`/`)`/… — exactly
--- the tokens that continue an enclosing type or end it. A bare identifier (`a`, `List`), `Int`/`Unit`/…,
--- and `(` (a parenthesized arg, `List (Int * Int)`) all START an atom.
+/-- Can `t` START a type atom (⟹ a candidate type-application ARGUMENT after a data name)? Every
+separator/operator token is NOT an atom start, so application stops at `*`/`+`/`->`/`)`/… — exactly
+the tokens that continue an enclosing type or end it. A bare identifier (`a`, `List`), `Int`/
+`Unit`/…, and `(` (a parenthesized arg, `List (Int * Int)`) all START an atom. -/
 def isTyAtomStart : String → Bool
   | ")" | "}" | "{" | "," | ";" | "|" | "->" | "+" | "*" | "!" | "=" | "in" | "=>" | "where" => false
   | _ => true
-def pTyAtom1 : Nat → P Ty                     -- ONE atom, no trailing application (args of an application)
+/-- ONE type atom, no trailing application (an application's own ARGUMENT position). -/
+def pTyAtom1 : Nat → P Ty
   | 0,     _            => .error "type parser out of fuel"
   | _ + 1, "Int" :: ts  => .ok (.tInt, ts)
   | _ + 1, "Unit" :: ts => .ok (.tUnit, ts)
@@ -1035,8 +1067,8 @@ def pTyAtom1 : Nat → P Ty                     -- ONE atom, no trailing applica
       if isTyAtomStart t then .ok (.tName t, ts)
       else .error ⟨s!"expected a type, got '{t}'", t :: ts⟩
   | _ + 1, []           => .error "expected a type, got end of input"
--- Greedy trailing type ARGUMENTS after a data name (`List Int a` ⇒ args `[Int, a]`); each is ONE atom
--- (`List (Map k v)` needs parens), application tightest, stops at the first non-atom token.
+/-- Greedy trailing type ARGUMENTS after a data name (`List Int a` ⇒ args `[Int, a]`); each is ONE
+atom (`List (Map k v)` needs parens), application tightest, stops at the first non-atom token. -/
 def pTyArgs : Nat → P (List Ty)
   | 0,     ts => .ok ([], ts)   -- fuel out ⟹ no more args (the head already parsed; safe)
   | f + 1, ts => match ts with
@@ -1044,7 +1076,8 @@ def pTyArgs : Nat → P (List Ty)
                   do let (a, ts) ← pTyAtom1 f ts; let (rest, ts) ← pTyArgs f ts; .ok (a :: rest, ts)
                 else .ok ([], ts)
     | []     => .ok ([], ts)
--- A type atom = one atom, then (if it is a bare NAME) any trailing atom args ⇒ a type APPLICATION.
+/-- A type atom = one atom, then (if it is a bare NAME) any trailing atom args ⇒ a type
+APPLICATION (`List Int`, `Pair a b`), capped at ≤ 2 args in v1 (`TyArgs`'s own arity). -/
 def pTyAtom : Nat → P Ty
   | 0,     _  => .error "type parser out of fuel"
   | f + 1, ts => do
@@ -1121,7 +1154,11 @@ inductive Choice
 `build` is total (`Except`); the choice sequence GUARANTEES the frag shape, so each rule's mismatch
 branch is unreachable — it exists only because `List Frag` cannot be statically arity-constrained. -/
 structure Rule where
+  /-- The linear sequence of things to parse after the leading keyword (each a `Choice`). -/
   choices : List Choice
+  /-- Assembles the collected `Frag`s into the final `Surf` node — total (`Except`) even though
+  the `choices` sequence GUARANTEES the frag shape, since `List Frag` cannot be statically
+  arity-constrained (the mismatch branch is unreachable in practice, not in the type). -/
   build   : List Frag → Except String Surf
 
 /-- The reified keyword rules (ADR-0071 ②). Keyed on the leading keyword; `pExpr`'s fallthrough
@@ -1409,6 +1446,8 @@ application, so `h.get + 1` = `(h.get) + 1` and `f h.get` = `f (h.get)`. -/
 def pDotted : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
   | f + 1, ts => do let (a, ts) ← pAtom f ts; pDotLoop f a ts
+/-- The left-fold loop of `pDotted`: keep eating `.op`/`.op(args)` performs (raw-token op names,
+NOT `pIdent` — an op name is never a bound variable, ADR-0092) while one follows. -/
 def pDotLoop : Nat → Surf → P Surf
   | 0,      a, ts => .ok (a, ts)
   | f + 1, a, ts =>
@@ -1654,6 +1693,8 @@ def parseE (src : String) : Except PErr Surf := do
   if rest.isEmpty then .ok e
   else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
 
+/-- Parse `src` to a `Surf`, erasing `parseE`'s located `PErr` to a bare message (behaviour-
+preserving) — `parseLocated` is the sibling that keeps the position. -/
 def parse (src : String) : Except String Surf := (parseE src).mapError (·.msg)
 
 /-! ### Source spans (ADR-0076 #2 — the IR carries source truth; errors/LSP are VIEWS)
@@ -1670,9 +1711,13 @@ FINDING at the bottom of this section). -/
 /-- A source location: a half-open `[start, end)` range in 1-based `line`/`col`. Frontend/IR metadata.
 PUBLIC so the `bang` CLI can print a located parse error's `line:col` (ADR-0076 #51/#52). -/
 public structure Span where
-  line    : Nat        -- 1-based start line
-  col     : Nat        -- 1-based start column
+  /-- 1-based start line. -/
+  line    : Nat
+  /-- 1-based start column. -/
+  col     : Nat
+  /-- 1-based end line (exclusive — the half-open range's far boundary). -/
   endLine : Nat
+  /-- 1-based end column (exclusive). -/
   endCol  : Nat
   deriving Repr, DecidableEq, Inhabited
 
@@ -1859,9 +1904,15 @@ v1 scope (ADR-0068): no trait hierarchy in source syntax; law bodies are Bool-va
     · `fmap : (a → b) → f a → f b` — a FULL method type (HKT, ADR-0082): `params = []`, `methodTy` is the
       parsed type, `retTy` its final result (`peelArrows`). The impl's `fn`-def supplies the param NAMES. -/
 structure OpSig where
+  /-- The op's name. -/
   name     : String
+  /-- Parameter NAMES for the params-all-`Self` bite-2 form (`[]` for a full HKT method type). -/
   params   : List String
+  /-- The op's result type (the params-all-`Self` form's own final result, or `methodTy`'s
+  peeled-arrow tail for the full-method form). -/
   retTy    : Ty
+  /-- The op's FULL type — `Self → … → retTy` for the params-all-`Self` form (`selfArrows`), or
+  the parsed HKT method type verbatim for the full form. -/
   methodTy : Ty
   deriving Repr, Inhabited, DecidableEq
 
@@ -1879,15 +1930,21 @@ def peelArrows : Ty → Ty
 variables; `body` is a Bool-valued expression over them + the trait's ops. Pure syntax here —
 discharge (the ADR-0068 tested-rung elaboration) is the elaborator's job. -/
 structure LawDecl where
+  /-- The law's name (`comm`, `assoc`, …). -/
   name   : String
+  /-- The universally-quantified variable names the law's `body` is stated over. -/
   params : List String
+  /-- The Bool-valued expression asserting the law, over `params` + the trait's own ops. -/
   body   : Surf
   deriving Repr, Inhabited, DecidableEq
 
 /-- An impl operation DEFINITION: `fn add(p, q) = e`. -/
 structure OpDef where
+  /-- The op's name (must match a signature the impl's target `trait` declares). -/
   name   : String
+  /-- The definition's parameter names. -/
   params : List String
+  /-- The definition's body expression. -/
   body   : Surf
   deriving Repr, Inhabited, DecidableEq
 
@@ -1946,6 +2003,8 @@ def Decl.name : Decl → String
 (`tokenizer.lex`), no names hoisted unqualified. `modName` is the bare stem (no `.bang`, no path) —
 resolution (same-dir-then-root, ADR-0093 D1) is Main.lean's job, not the parser's. -/
 structure ImportDecl where
+  /-- The bare module stem (no `.bang`, no path) — resolution is `Main.lean`'s job, not the
+  parser's. -/
   modName : String
   deriving Repr, Inhabited, DecidableEq
 
@@ -1953,7 +2012,9 @@ structure ImportDecl where
 into UNQUALIFIED scope (ADR-0093 D2; no glob form exists). `names` is the explicit list; a `data`
 name in `names` brings its constructors along (D2's "ctors travel with their type"). -/
 structure UseDecl where
+  /-- The module the names are hoisted FROM. -/
   modName : String
+  /-- The explicit list of decl names hoisted into unqualified scope. -/
   names   : List String
   deriving Repr, Inhabited, DecidableEq
 
@@ -1964,25 +2025,28 @@ TypeCheck/Format/Surface as of ADR-0093) stays byte-identical — visibility is 
 PROGRAM's header, not the declaration's shape, matching how `pub` reads in source (a prefix token
 consumed before the ordinary decl parse, not a new decl variant). -/
 structure Prog where
+  /-- The file's `import` lines (ADR-0093 D1). -/
   imports  : List ImportDecl := []
+  /-- The file's `use` lines (ADR-0093 D2). -/
   uses     : List UseDecl    := []
+  /-- The names of every `pub`-marked top-level decl (a flat set, not a per-`Decl` field — this
+  structure's own doc comment names why). -/
   pubNames : List String     := []
-  -- ADR-0097 §1: a `data` decl's trailing `deriving (Eq, Ord)` clause, keyed by the TYPE name
-  -- (`(dataName, deriveList)`) — a `Prog`-header-shaped field mirroring `pubNames` immediately
-  -- above (same rationale: a per-`Decl` field on `.dataD` would ripple across all 45 existing
-  -- `.dataD` call sites for a property no consumer besides the derive handler needs). Only a
-  -- `data` decl ever contributes a nonempty entry (`pDecl`'s own contract, Surface.lean).
+  /-- A `data` decl's trailing `deriving (Eq, Ord)` clause, keyed by the TYPE name (`(dataName,
+  deriveList)`) — a `Prog`-header-shaped field mirroring `pubNames` (ADR-0097 §1); only a `data`
+  decl ever contributes a nonempty entry. -/
   derivesFor : List (String × List String) := []
+  /-- The declaration prelude — every top-level `trait`/`impl`/`data`/`fn`/`effect`/`let`/
+  `let rec`. -/
   decls    : List Decl
+  /-- The program's trailing (script-mode) body expression, or the UNOBSERVABLE `.lit 0`
+  placeholder when `isLibrary` is `true`. -/
   body     : Surf
+  /-- `true` ⟺ no trailing body expression was present (D5's third case, no script-mode body) —
+  needed so `showProg` can tell a genuine library file apart from a script-mode program whose
+  REAL body happens to be `.lit 0` (the doc comment above names the exact round-trip hazard this
+  avoids). -/
   isLibrary : Bool := false
-    -- `true` ⟺ no trailing body expression was present (D5's third case) — `body` then carries the
-    -- UNOBSERVABLE `.lit 0` placeholder. Needed so `showProg` (Format.lean) can tell a genuine
-    -- library file apart from a SCRIPT-mode program whose real body happens to BE `.lit 0` — without
-    -- this, printing the placeholder unconditionally can round-trip to a DIFFERENT program when a
-    -- top-level `let`'s bound expression is a bare atom (`let main = 42`, followed by the printed
-    -- placeholder `0`, re-parses `42 0` as an APPLICATION — the same literal-adjacency ambiguity
-    -- the `fn`-body corpus already works around, but here it strikes the FORMATTER's own output).
   deriving Repr, Inhabited, DecidableEq
 
 -- `deriving Repr` synthesizes `repr : α → Nat → Format`; for these record types the
@@ -2389,6 +2453,7 @@ def parseProgE (src : String) : Except PErr Prog := do
     if rest.isEmpty then .ok ⟨imps, uses, pubs, derivesFor, ds, e, false⟩
     else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
 
+/-- Parse `src` to a `Prog`, erasing `parseProgE`'s located `PErr` to a bare message. -/
 def parseProg (src : String) : Except String Prog := (parseProgE src).mapError (·.msg)
 
 /-- Erase `.lettMulti` (issue #68) from EVERY `Surf`-carrying field of a `Decl` — the `Decl`-level
@@ -2510,6 +2575,9 @@ The REAL terminals, grounded in the source (NOT invented):
     elaboration/TYPE error. The untyped `runFrom` collapses both to `.stuck`, so `runOutcomeFrom`
     only ever produces `yields | oom | escaped | stuck`; `parseErr`/`typeErr` are reachable only
     through the typed runners in `TypeCheck`. -/
+/-- Every terminal a program run can reach — the corpus-oracle assertion vocabulary this section's
+own doc comment names, unioning the untyped pipeline's `.stuck`-collapsed failures with the typed
+path's two PRE-eval stage failures. -/
 inductive Outcome where
   | parseErr : Option Span → String → Outcome   -- located parse error (span from `parseProgLocated`)
   | typeErr  : String → Outcome                 -- elaboration or type error (un-located in v1 ⇒ no span)
@@ -2607,7 +2675,9 @@ lowerings the L-phase IC will hide behind sugar). Each takes the CAPABILITY valu
 a `vvar` referencing the enclosing `transaction` handler's binder. The de Bruijn index varies with
 nesting depth, so the cap is a parameter, not baked in (`stmNew (.vvar 0)`, `stmRead (.vvar 4)`, …). -/
 def stmNew (c : Val) (v : Val) : Comp := .perform c "newTVar" v
+/-- `readTVar i` on capability `c` — returns the TVar's current value. -/
 def stmRead (c : Val) (i : Int) : Comp := .perform c "readTVar" (.vint i)
+/-- `writeTVar i w` on capability `c` — writes `w`, returns `unit`. -/
 def stmWrite (c : Val) (i : Int) (w : Val) : Comp := .perform c "writeTVar" (.pair (.vint i) w)
 
 /-- COMMIT: `atomically (alloc A=100, B=0; A:=70; B:=30; read (A,B))` ⟶ `(70, 30)`.
@@ -2711,6 +2781,8 @@ define a structural `BEq` HERE, in the additive surface, mutually over `Val`/`Co
 stack-shape assumption — so it is also safe under the `#guard`s above. -/
 
 mutual
+/-- Structural equality on kernel `Val`s (additive, defined outside the kernel — this section's
+own doc comment names why `Core.lean` cannot derive it). -/
 def beqVal : Val → Val → Bool
   | .vunit,      .vunit      => true
   | .vint a,     .vint b     => a == b
@@ -2721,6 +2793,7 @@ def beqVal : Val → Val → Bool
   | .pair a b,   .pair c d   => beqVal a c && beqVal b d
   | .fold a,     .fold b     => beqVal a b
   | _,           _           => false
+/-- Structural equality on kernel `Comp`s — `beqVal`'s mutual sibling. -/
 def beqComp : Comp → Comp → Bool
   | .ret a,        .ret b        => beqVal a b
   | .letC a b,     .letC c d     => beqComp a c && beqComp b d
@@ -2737,11 +2810,13 @@ def beqComp : Comp → Comp → Bool
   | .oom,          .oom          => true
   | .wrong s,      .wrong t      => s == t
   | _,             _             => false
+/-- Structural equality on kernel `Handler`s — `beqVal`'s mutual sibling. -/
 def beqHandler : Handler → Handler → Bool
   | .state ℓ v,   .state ℓ' w   => ℓ == ℓ' && beqVal v w
   | .throws ℓ,    .throws ℓ'    => ℓ == ℓ'
   | .transaction ℓ Θ, .transaction ℓ' Θ' => ℓ == ℓ' && beqStore Θ Θ'
   | _,            _             => false
+/-- Structural equality on a TVar heap (`List Val`) — `beqVal`'s mutual sibling. -/
 def beqStore : List Val → List Val → Bool
   | [],      []      => true
   | a :: as, b :: bs => beqVal a b && beqStore as bs
@@ -2754,6 +2829,8 @@ instance : BEq Val := ⟨beqVal⟩
 
 Lands here (after `BEq Val`) because comparing `yields` payloads needs it. `Val` exposes only `BEq`
 (not `DecidableEq`), so `deriving BEq` on `Outcome` can't fire; hand-written. -/
+/-- Structural equality on `Outcome`s — hand-written (this section's own doc comment names why
+`deriving BEq` can't fire: `Val` exposes only `BEq`, not `DecidableEq`). -/
 def Outcome.beq : Outcome → Outcome → Bool
   | .parseErr s1 m1, .parseErr s2 m2 =>
       -- `Span` derives `DecidableEq` (not `BEq`), so compare its fields, not `s1 == s2`.
