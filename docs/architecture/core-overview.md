@@ -44,7 +44,7 @@ graph TD
     Core_Semantics_Subst["Core.Semantics.Subst<br/>940L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>3399L · fan-in 0"]
     Core_Typing["Core.Typing<br/>495L · fan-in 0"]
-    Examples["Examples<br/>435L · fan-in 0"]
+    Examples["Examples<br/>510L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
     Frontend_DiagCodes["Frontend.DiagCodes<br/>249L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
@@ -55,7 +55,7 @@ graph TD
     Frontend_Surface["Frontend.Surface<br/>3180L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>7303L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>7958L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1745L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
@@ -107,7 +107,7 @@ graph TD
 | `Core.Soundness` | ? | 3399 | 0 |
 | `Core.Typing` | ? | 495 | 0 |
 | `Distribution` | Apex | 67 | 0 |
-| `Examples` | ? | 435 | 0 |
+| `Examples` | ? | 510 | 0 |
 | `Frontend.Annotate` | ? | 252 | 0 |
 | `Frontend.DiagCodes` | ? | 249 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
@@ -118,7 +118,7 @@ graph TD
 | `Frontend.Rewrite` | ? | 308 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 7303 | 0 |
+| `Frontend.TypeCheck` | ? | 7958 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1745 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |

@@ -431,4 +431,79 @@ knot. -/
     ++ "in ($even) 10")
   1
 
+/-! ## F. Bound-free `let rec` monomorphization (ADR-0103, #120 List-family door)
+
+`length : List a -> Int` — a SELF-RECURSIVE generic with NO trait bound — is realized by a
+call-site-monomorphization pre-pass (`TypeCheck.monomorphizeLetRec`/`monomorphizeOne`) running
+BEFORE `elabS`: it discovers the finite instantiation set from ANNOTATED call-site arguments and
+emits one monomorphic `let rec` residue per element, exactly witness w3's by-hand shape
+(`docs/decisions/witness-0103/w3-two-residues-one-program.bang`), auto-generated. -/
+
+-- w3's TWO residues (`List Int` + `List (Unit+Unit)`), now written as ONE bound-free `let rec`
+-- ascription instead of two hand-written monomorphic ones — the ADR-0103 payoff. Both call sites
+-- carry an explicit argument annotation (the discovery anchor, decision item 3); the pre-pass
+-- discovers `{Int, Unit+Unit}` and emits two residues, agreeing with w3's own hand-written result.
+#guard compiledAgreesTyped 4000
+  ("data List a = Nil | Cons(a, List a) "
+    ++ "let rec length : List a -> Int = fun xs => "
+    ++ "match (xs : List a) { Nil -> 0, Cons(h, t) -> 1 + (($length) t) } "
+    ++ "let x = ($length) (Cons(1, Cons(2, Nil)) : List Int) in "
+    ++ "let y = ($length) (Cons(Left(()), Nil) : List (Unit + Unit)) in "
+    ++ "x + y")
+  3
+
+-- A user re-declaring `length` for a DIFFERENT (non-generic) type shadows the bound-free `let
+-- rec` entirely (ordinary lexical shadowing, `TypeCheck.monomorphizeOne`'s `.letRecS`/shadow arm)
+-- — the outer generic residue (called BEFORE the shadow) and the inner monomorphic `length : Int
+-- -> Int` (called after) coexist without collision: `1 + 10 = 11`.
+#guard compiledAgreesTyped 4000
+  ("data List a = Nil | Cons(a, List a) "
+    ++ "let rec length : List a -> Int = fun xs => "
+    ++ "match (xs : List a) { Nil -> 0, Cons(h, t) -> 1 + (($length) t) } "
+    ++ "let outer = ($length) (Cons(1, Nil) : List Int) in "
+    ++ "let rec length : Int -> Int = fun n => n in "
+    ++ "outer + (($length) 10)")
+  11
+
+-- An UNREFERENCED bound-free `let rec` costs NOTHING (the `expandBFns`/`env.bfns` precedent,
+-- ADR-0098's mention-filter the same move one layer up): `monomorphizeOne` DROPS a zero-call-site
+-- binding rather than emitting a residue, so the surviving program is just `42` — verified at a
+-- FUEL BOUND (`50`, far below the `4000` the OTHER guards in this section need) that would starve
+-- if the dropped `let rec`'s knot were ever built.
+#guard compiledAgreesTyped 50
+  ("data List a = Nil | Cons(a, List a) "
+    ++ "let rec length : List a -> Int = fun xs => "
+    ++ "match (xs : List a) { Nil -> 0, Cons(h, t) -> 1 + (($length) t) } "
+    ++ "42")
+  42
+
+-- POLYMORPHIC recursion (a self-call at a DIFFERENT instantiation than the enclosing call, R6's
+-- finiteness-gate wall — ADR-0103 decision item 3) is REJECTED, never silently monomorphized: the
+-- residue built for the OUTER call's instantiation (`List (Unit+Unit)`) has its self-call forced
+-- to the SAME residue (every self-reference inside ONE residue's body maps to that residue alone,
+-- `w4`'s monomorphic-recursion invariant), so the INNER self-call's own `List Int` annotation is
+-- discarded — producing an ill-typed residue the downstream type-checker rejects LOUD (never a
+-- wrong-but-quiet result). `checkAndLower` errors ⟹ `compiledAgreesTyped` returns `false` for
+-- EVERY `n` (the `.error _ => false` arm) — asserting rejection at `n := 0` (an arbitrary
+-- sentinel) is equivalent to asserting "this program never type-checks", the negative-test idiom
+-- this file's own `.error _ => false` arm already establishes.
+#guard !(compiledAgreesTyped 4000
+  ("data List a = Nil | Cons(a, List a) "
+    ++ "let rec weird : List a -> Int = fun xs => "
+    ++ "match (xs : List a) { Nil -> 0, "
+    ++ "Cons(h, t) -> 1 + (($weird) (Cons(1, Nil) : List Int)) } "
+    ++ "($weird) (Cons(Left(()), Nil) : List (Unit + Unit))")
+  0)
+
+-- `take`/`drop` (`Prelude.bang`, the ADR-0103 payoff) called through the AUTO-`use` alias
+-- (ADR-0098) — `$take`/`$drop` here resolve `Prelude_take`/`Prelude_drop`'s bare `let take =
+-- Prelude_take in …` alias, NOT the qualified name directly, so this pins the `inlineVarAliases`
+-- fix (the module-alias-indirection gap discovery couldn't see through until fixed): `take 2` of
+-- `[1,2,3]` then `drop 1` leaves `[2]`, head 2.
+#guard compiledAgreesTyped 4000
+  ("data List a = Nil | Cons(a, List a) "
+    ++ "let taken = ($take 2) (Cons(1, Cons(2, Cons(3, Nil))) : List Int) in "
+    ++ "match (($drop 1) (taken : List Int) : List Int) { Nil -> 0, Cons(h, t) -> h }")
+  2
+
 end Bang.Examples
