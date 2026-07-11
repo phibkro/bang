@@ -1,0 +1,5 @@
+-- A starter bang program. `bang run main.bang` runs it; the value prints to stdout.
+-- Every value is a description until forced with `$` (ADR-0007); `bare` = description,
+-- `$name` = the forced value. Edit `main`, then re-run — `bang test --update <NAME>` re-bakes expected.txt.
+let greeting = "hello from bang"
+let main = $concat greeting "!"

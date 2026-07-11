@@ -1,0 +1,2 @@
+effect Reader { fetch : Int -> Int }
+handle net.fetch(5) with (Reader 100) as net { fetch(x) => x + param }

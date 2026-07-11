@@ -1,0 +1,137 @@
+bang-lang — Lean 4 dev shell
+
+  just                 # list available recipes
+  just verify          # selfcheck + build + audit (default gate)
+  just check [FILE]    # fast per-file error check
+  just burndown        # Phase B burndown chart
+  just loogle QUERY    # Mathlib type-signature search
+  just install-hooks   # one-time: link git pre-commit
+
+Fresh? Read ONBOARDING.md → CLAUDE.md → ROADMAP.md → CONTEXT.md
+bash tools/check-primitives.sh
+primitives: OK — 26 kernel constructors match the allowlist (Invariants #3/#5 structural)
+bash tools/check-git-hygiene.sh
+✓ check-git-hygiene: gc.auto=0, gc.autoDetach=false (multi-worktree store safe)
+bash tools/check-sha-reachable.sh
+── check-sha-reachable (orientation-doc SHA waypoints) ──
+PASS: all 12 cited SHA(s) in CONTEXT.md ROADMAP.md resolve to commit objects.
+bash tools/check-paths.sh
+── check-paths (PATH lifecycle) ──
+PASS: every active PATH is reachable from CONTEXT/ROADMAP; none double-archived.
+bash tools/check-loop-audit.sh
+── check-loop-audit (◊-refresh freshness) ──
+PASS: loop-audit is as fresh as ROADMAP (last audit commit ≥ last ROADMAP commit).
+bash tools/check-adr-links.sh
+note: refs to ADRs with no file (documented history — see README 'Recent culls'):
+       ADR-0003 (intentional: deleted/collapsed or template placeholder)
+       ADR-0004 (intentional: deleted/collapsed or template placeholder)
+       ADR-0010 (intentional: deleted/collapsed or template placeholder)
+       ADR-0011 (intentional: deleted/collapsed or template placeholder)
+       ADR-0012 (intentional: deleted/collapsed or template placeholder)
+       ADR-0013 (intentional: deleted/collapsed or template placeholder)
+       ADR-0014 (intentional: deleted/collapsed or template placeholder)
+       ADR-0123 (intentional: deleted/collapsed or template placeholder)
+adr-links: OK — index ↔ file bijection clean, in-repo links resolve, all ADR refs across the governance surface (Bang/+docs/+CONTEXT/ROADMAP/CLAUDE/ONBOARDING/paths) have files (documented-history notes above)
+python3 tools/gen-adr-index.py --check
+adr-index: OK — README current + Q⟺ADR + Status copies consistent.
+bash tools/arch-check.sh
+── arch-check (import-direction fitness function) ──
+PASS: the V holds — Core imports neither edge; Frontend and Backend meet only at Core.
+bash tools/check-audit-sync.sh
+audit-sync: OK — all 18 Spec headline theorems are gated in Audit.lean
+bash tools/check-all-modules.sh
+modules: OK — 53/54 Bang/*.lean carry a `module` header; 1 documented exception(s).
+python3 tools/check-refs.py
+── check-refs (doc path/link references) ──
+PASS: every path/link reference resolves (intentional-historical refs in tools/refs-allow.txt).
+python3 tools/check-onboarding-refs.py
+── check-onboarding-refs (ONBOARDING note pointers ⊆ CLAUDE index) ──
+PASS: all 7 `docs/notes/*.md` pointer(s) in ONBOARDING.md are current in CLAUDE.md's reference index.
+python3 tools/check-runs-in.py
+── check-runs-in ──
+PASS: 18 verify-tagged reachable · 15 batteries all runs-in=verify · 4 hook-tagged referenced.
+python3 tools/check-doc-hygiene.py --check
+── doc-hygiene (docs/notes reachability · status · staleness) ──
+  age  lines  in  status     reach  doc
+   2d    421  17  active     OK      OPEN_QUESTIONS.md
+   0d    121   5  active     OK      actor-sendable-design.md
+   6d    127   3  archival   OK      calc-typer-experiment-findings.md
+   2d    176   4  archival   OK      calculated-type-system-frontier.md
+   2d    266   3  active     OK      calculated-typer-survey.md
+   1d    547  10  active     OK      calm-as-grade-survey.md
+   6d     95   3  archival   OK      cap-representation-spike-findings.md
+   6d    222   4  active     OK      categorical-architecture.md
+   1d    516   4  active     OK      compiler-as-dbms-survey.md
+   6d    225   2  archival   OK      compiler-overview.md
+   0d    185   8  active     OK      copy-kit.md
+   0d    547   7  active     OK      ctr-design.md
+   3d    189   7  active     OK      design-space-map.md
+   6d    156   4  active     OK      dev-env.md
+   6d    271   5  active     OK      development-lifecycle.md
+   6d    122   4  archival   OK      dispatch-verification-landscape.md
+   0d    118  13  active     OK      distributed-story.md
+   0d    163   3  active     OK      distribution-survey.md
+   0d    396   5  active     OK      dogfood-calc-findings.md
+   2d    422   6  active     OK      dogfood-json-findings.md
+   0d    331   5  active     OK      effect-algebra-survey.md
+   1d     63   4  active     OK      effects-vs-cic.md
+   0d    634   7  active     OK      emission-rung1-probe.md
+   0d    235   2  active     OK      emission-rung3-design.md
+   0d    157   4  active     OK      emission-rung4-design.md
+   0d    157   2  active     OK      emission-rung5-design.md
+   1d    274   3  archival   OK      envsem-survey.md
+   0d    186   4  active     OK      explainer-series.md
+   2d    210   4  active     OK      formatting-survey.md
+   1d    318   6  active     OK      god-file-seams.md
+   0d    162   2  active     OK      grade-poly-returner-consult.md
+   1d    172   5  archival   OK      hang-61-diagnosis.md
+   0d    329   5  active     OK      host-io-design.md
+   6d     86   2  active     OK      increment-lifecycle.md
+   0d    238   3  active     OK      interactive-tour-design.md
+   6d    580   8  historical OK      k2-calculation-playbook.md
+   6d    101   2  historical OK      k3-historical-status.md
+   6d    130   4  archival   OK      kernel-shell-library.md
+   1d    677   8  active     OK      kernel-substrate-survey.md
+   1d    327   6  active     OK      lambda-cube-ascent-survey.md
+   1d    121   9  active     OK      laws-taxonomy.md
+   0d     44   8  active     OK      lean-comment-style.md
+   0d    287   3  active     OK      listdecl-injection-design.md
+   0d     45   5  active     OK      loop-audit.md
+   1d    554   5  active     OK      memory-management-survey.md
+   6d    147   2  archival   OK      monadic-recast-spike-findings.md
+   1d    308   7  active     OK      multishot-survey.md
+   0d    265   3  active     OK      mutual-rec-design.md
+   1d    532  25  active     OK      ndet-dst-design.md
+   1d    573   8  active     OK      os-inspiration-survey.md
+   1d    367   7  active     OK      proof-export-survey.md
+   1d    343   5  active     OK      q38-handler-surface-survey.md
+   1d    284   4  active     OK      refinement-types-survey.md
+   6d     77   2  archival   OK      scoped-capabilities-for-vcapfree-drop.md
+   0d    209   3  active     OK      spanned-surf-design.md
+   6d     95   7  active     OK      spec-handover.md
+   6d    185  11  active     OK      spec-proof-discipline.md
+   1d    316   4  active     OK      stage5-lr-design.md
+   1d    203   3  active     OK      stage6-soundness-design.md
+   1d    197   4  active     OK      stage7-elab-probe.md
+   0d    169   6  active     OK      stdlib-map.md
+   0d    292   7  active     OK      stdlib-prelude-survey.md
+   1d     57   6  active     OK      stranger-test-1.md
+   1d    212   4  active     OK      stranger-test-2.md
+   1d    182   4  active     OK      stranger-test-3.md
+   0d    319   2  active     OK      stranger-test-4.md
+   2d    238   4  active     OK      structok-multiarg-design.md
+   6d    229   4  active     OK      tactics-survey.md
+   0d    110   5  active     OK      traction-survey.md
+   0d    253   3  active     OK      traits-prelude-survey.md
+   6d    114   2  archival   OK      typed-static-pivot-scope.md
+   2d     66   8  active     OK      verification-ladder.md
+   0d    337   8  active     OK      wasm-concurrency-survey.md
+
+hygiene: OK — every note is stamped, reachable, and (if active) indexed.
+python3 tools/check-context-claims.py
+── check-context-claims (prose vs generated proof-state) ──
+PASS: no prose line claims a flagged headline (7 flagged) clean.
+python3 tools/gen-notes-index.py --check
+── gen-notes-index ──
+FAIL: docs/notes/README.md is stale — run `just notes-index`.
+error: Recipe `fitness` failed on line 219 with exit code 1

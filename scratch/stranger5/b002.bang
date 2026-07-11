@@ -1,0 +1,2 @@
+effect KV { put : Int -> Int }
+handle kv.put(7) with KV as kv { put(n) => n }

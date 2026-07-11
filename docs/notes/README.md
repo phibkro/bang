@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (60)
+## active (61)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -64,6 +64,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`stranger-test-2.md`](stranger-test-2.md) — Stranger test — round 2 (2026-07-10)
 - [`stranger-test-3.md`](stranger-test-3.md) — Stranger test — round 3 (2026-07-10)
 - [`stranger-test-4.md`](stranger-test-4.md) — Stranger test — round 4
+- [`stranger-test-5.md`](stranger-test-5.md) — Stranger test — round 5 (pre-v0.2)
 - [`structok-multiarg-design.md`](structok-multiarg-design.md) — `structOK` multi-arg / accumulator descent — design note (#50)
 - [`tactics-survey.md`](tactics-survey.md) — Lean 4 tactics + tooling survey (for bang-lang verification)
 - [`traction-survey.md`](traction-survey.md) — Traction survey — how new-age languages got adopted, mapped to a bang plan

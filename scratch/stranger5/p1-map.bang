@@ -1,0 +1,11 @@
+data List a = Nil | Cons(a, List a)
+let rec map : (Int -> Int) -> List Int -> List Int =
+  fun f => fun xs => match (xs : List Int) {
+    Nil -> (Nil : List Int),
+    Cons(h, t) -> Cons(($f) h, (($map) f t))
+  }
+let rec sum : List Int -> Int =
+  fun xs => match (xs : List Int) { Nil -> 0, Cons(h, t) -> h + (($sum) t) }
+let nums = (Cons(1, Cons(2, Cons(3, Nil))) : List Int) in
+let doubled = (($map) {fun x => x * 2} (nums : List Int)) in
+($sum) (doubled : List Int)
