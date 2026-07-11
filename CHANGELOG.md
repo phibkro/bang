@@ -190,6 +190,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **prelude** — #105 List-family batch — length/append/head/tail (`b170b6fd`)
 - **prelude** — add id + fix a real bang-fmt printer bug it surfaced (`a3ade3a4`)
 - **backend** — B1 bignum rep + decimal readback — big literals round-trip on the WasmGC path (#132) (`82117536`)
+- **backend** — B2 bignum add/sub/compare on the WasmGC path — full ℤ arithmetic (#132) (`e2f29cd1`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
