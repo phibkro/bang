@@ -8,6 +8,7 @@ monorepo workspace.
 |---|---|---|
 | [`docs/`](docs/) | the vocs + waku documentation site → GitHub Pages `/bang/` | shipped |
 | [`landing/`](landing/) | the marketing landing page | stub — future lane |
+| [`run-service/`](run-service/) | the `/run` playground exec service (tour door-2) — POST source, run it in a resource jail, get stdout/exit | shipped (service; frontend hookup is a future lane) |
 
 ## Why two independent apps, not one workspace
 
