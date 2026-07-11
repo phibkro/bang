@@ -69,24 +69,34 @@ amendment ③ ruled: (β) fuel-reindex proceeds as a background lane). Emission:
 throws→try_table · state→locals; 66 programs wasmtime==Source.eval; rung 3 = the journal/rollback novelty,
 named). #95 fixed (~115×, knot sharing); #96 fixed (the missing printer tier); #97 partially (use-hoist;
 Mod_Eff mechanism traced). The 013 ergonomics menu: S1 grammar (site highlights bang) · S5 codes+explain ·
-S7/8/9 new/update/watch LANDED. **In flight**: nothing — the (β)
-lane ran to its STOP-trigger and the census unit is CLOSED-AS-PARKED (above). The 2026-07-10/11 waves
-landed: **the stdlib IS a module** (#106 CLOSED, ADR-0098 Accepted: `Prelude.bang` embedded +
-fuel-filtered auto-use, string buckets deleted — invariant #5 realized on the stdlib itself) · **plan
-010 FULLY DONE** (UnicodeBasic fork-pin, the generated BangDocs barrel — a rootless-glob false-green
-renderer caught, 51 API pages live — and the 40-banner `/-!` sweep) · `bang query hover` (#52 slice 5;
-the probe overturned the Spanned-Surf ripple framing) · the #105 prelude first slice (11 fns; List
-family gated on #108, machine-arbitrated) · TWO design pins ready for implementation dispatches:
-**derive-handler ADR-0097** (tier-1 Eq/Ord, non-recursive carriers until #112's buildEnv two-pass fix;
-laws auto-attach verified free) and **mutual-rec H2** (tuple-of-thunks knot spike-verified; H1 Bekić
-refuted twice; H3 diagnostic ships independently) · the stdlib + traits surveys (#105–#107, #109–#111)
-· examples nqueens + dst-rounds pair · findings #98–#104, #112–#113. Rulings 2026-07-11: #108
-namespaced ctors (design probe queued) · #106 mechanism B (landed same day) · 010 fork · mutual-rec
-probe-now · #78 park ratified. **Queued**: #108 ctor-namespacing design probe → the List prelude ·
-the H2 mutual-rec implementation (5-slice map in `mutual-rec-design.md`) + H3 diagnostic · #109
-derive implementation (post-#110 ADR, non-recursive scope) · #112 buildEnv two-pass · Mod_Eff slice ·
-013-S2 LSP + S6 fixits · rung-3 design · #83 dedup · ADR-0089. Design ledger:
-**`docs/notes/OPEN_QUESTIONS.md`**.
+S7/8/9 new/update/watch LANDED. **In flight**: nothing.
+**The 2026-07-10/11 mega-session landed the LANGUAGE-CAPABILITY wave**: mutual `let rec … and …`
+(N-way, ADR-0102; two compiler bugs root-caused en route incl. the #119 subsumption-asymmetry class) ·
+`deriving (Eq, Ord)` with recursive carriers + auto-checked laws (ADR-0097 Accepted; the #112
+knot-dispatch fix underneath — trait dispatch is splice→call now) · type-namespaced constructors
+(ADR-0099 Accepted, B012) · the wildcard `_` arm (#101 CLOSED, B014; growing-rewrites-belong-in-the-
+fuel-pre-pass rule pinned) · bound-free `let rec` monomorphization (ADR-0103 Accepted; take/drop in
+the prelude; the construction-boundary claim REFUTED in the good direction — append/zip ungated,
+residue = the List-decl injection question + length's fuel tax, see #105/#120) · `Prelude.bang`
+(ADR-0098) · `--fuel` + the μ-display re-fold (#100/#103a — oracle solves nqueens in 0.7s) · emission
+RUNG 3 DEMONSTRATED (txn journal/rollback on wasmtime, corpus 72; the explicit-restore finding) ·
+plan 010 FULLY DONE (fork-pin + BangDocs barrel + banner sweep; 51 API pages) · `bang query hover`.
+**The DIRECTION wave**: G1 tested-superset (ADR-0100 Accepted — the carve-out grade-refuted; ∀q′ door
+= #115) · **concurrency = scheduler-as-handler (ADR-0101 Accepted**, the full G-package; Sendable
+fragment proven at the syntactic core; WASI-0.3 = the first production backend, spike-gated) ·
+the host-IO design (`host-io-design.md`: the msuspended seam · recorded-effects replay answers
+Q(conc-6) · Console/Clock wedge · Deno-shaped grants — "Deno's permissions, but in the type system") ·
+the effect-algebra + wasm-concurrency + traits + stdlib surveys. **The GO-TO-MARKET wave**: stranger
+round 4 = 8/10 (findings #121–#125; gaps moved broken→untaught) · traction survey (wedge = "docs that
+cannot lie"; media-team NOT-YET) · copy kit + explainer series (`copy-kit.md`; the held-back replay
+claim = the top content unlock) · distribution survey (rung-0 EXISTS — curl+de-nixed binary; widen
+the matrix; static = the wasm component story, Lean musl CLOSED-not-planned) · the interactive-tour
+design (v0 corpus-lessons $0 → v1 server-backed; the NO-AMBIENT-IO sandbox win) · `web/` restructure
+LANDED (site/ → web/docs/, 443-file build green, web/landing stubbed). **Queued** (operator buttons
+first): ship web/docs on the tag · the #70 announcement · the release-matrix widening · tour v0 ·
+then: the List-decl injection design (#105 residue) · #121–#125 stranger fixes · #115 ∀q′ consult ·
+#117 trait-prelude migration · #119 subsumption fix · Mod_Eff · 013-S2/S6 · rung-4 emission ·
+#83 · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 
 ## Where things live (SSoT — reference these, don't copy them)
 

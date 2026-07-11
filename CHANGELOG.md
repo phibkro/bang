@@ -167,6 +167,8 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **traits** — deriving (Eq, Ord) structural fold handler (#109, ADR-0097) (`3afc82c8`)
 - **surface** — mutual `let rec … and …` — H2 tuple-of-thunks μ-knot (#97 item 2) (`0ca879b1`)
 - **surface** — wildcard match arm `_` (#101) (`5577fd5b`)
+- **types** — ADR-0103 monomorphization pre-pass for bound-free let rec (`f4919063`)
+- **prelude** — ADR-0103 List-consumer payoff — take/drop + the auto-use alias fix (`47101cfe`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
