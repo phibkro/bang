@@ -416,6 +416,23 @@ def readbackEnv : MEnv → List Val
   | .cons v ρ  => readback v :: readbackEnv ρ
 end
 
+/-- Embed a GROUND first-order `Val` (no `vvar`/`vthunk`) as an `MVal` — the partial inverse of
+`readback` on the closed-data fragment. The host-IO driver (ADR-0104) uses this to lift a host
+answer `Val` (unit/int/Str-fold — always ground) into the response `evalEHost` resumes with. A
+`vvar` (impossible for a closed host answer) maps to `mvunit`; a `vthunk` (a host op can't return
+one — payloads are Sendable) closes over the empty env. NOT `evalV`'s general job (that resolves
+FREE vars against an env); this is the ground-only, env-free embedding a host result needs. -/
+def readbackIn : Val → MVal
+  | .vunit      => .mvunit
+  | .vint n     => .mvint n
+  | .vcap n ℓ   => .mvcap n ℓ
+  | .vvar _     => .mvunit                      -- unreachable for a closed host answer
+  | .vthunk M   => .mvclos M .nil               -- unreachable (Sendable payloads carry no thunk)
+  | .inl w      => .minl (readbackIn w)
+  | .inr w      => .minr (readbackIn w)
+  | .pair a b   => .mpair (readbackIn a) (readbackIn b)
+  | .fold w     => .mfold (readbackIn w)
+
 /-- Readback of a machine TERMINAL to the substitution machine's `Outcome` (the general-terminal
 correspondence target, ruling (A) 2026-07-10). A returner `mret mv` reads back to `ret (readback mv)`;
 a function `mlam N ρ` reads back to `lam` of its body closed under ONE binder over the captured env
@@ -3220,6 +3237,17 @@ structure HostReq where
   deriving Inhabited
 
 /-! ## `evalEHost` — the host-IO sibling of `evalE` (ADR-0104 §4, the replay-prefix seam)
+
+╔══════════════════════════════════════════════════════════════════════════════════════════════╗
+║ ⚠ SIBLING-OF-`evalE` — EDIT BOTH OR THE GATE FAILS. `evalEHost` is `evalE` BYTE-FOR-BYTE except  ║
+║ ONE leaf (the perform host-inject arm). Any change to `evalE`'s OTHER arms MUST be mirrored here ║
+║ — the `hostYieldsInt (stepHost [] …) ≡ runE …` drift `#guard`s below (ADR-0104 §4 condition-i)   ║
+║ pin them equal on the FULL witness corpus at `hostResponses=[]`, so an un-mirrored edit turns    ║
+║ THIS MODULE RED at CI, never silently. They cannot be ONE def: unifying needs the tuple re-key   ║
+║ of the proven `evalE_agrees_evalD_gen` (ADR-0094) that B1-refuted (22+31 sites, ADR-0104 §4).    ║
+║ TEMPORARY BY DESIGN: the concurrency-era suspendable engine (ADR-0101) SUBSUMES the replay-prefix ║
+║ — when it lands, this sibling + the re-eval driver retire together (the ADR-0104 future door).   ║
+╚══════════════════════════════════════════════════════════════════════════════════════════════╝
 
 **Tested-stratum by construction** (NOT proven — that is the whole point). `evalEHost` is a
 BYTE-FOR-BYTE sibling of `evalE` EXCEPT the perform "n in no store" leaf: where `evalE` produces

@@ -5406,6 +5406,19 @@ public def checkAndLowerProg (prog : Prog) : Except String Comp := do
   let _ ← runInferC (synthSC [] e) effects
   Bang.Surface.lower e
 
+/-- Like `checkAndLowerProg`, but ALSO returns the program's effect NAME→LABEL map (ADR-0104): the
+host-IO driver (`Main.lean`) resolves `--allow=Console,Clock` NAMES to the labels the elaborator
+allocated (`4 + decl-index`, NOT fixed), so a `perform` on a granted host label is recognized at the
+seam. The map is exactly `elabProg`'s `effects` table projected to `(name, label)` — the same table
+`showRow`/`displayProg` already read (ADR-0092 D2). Built-in effects (throws/state/stm/Div, labels
+0-3) are NOT host labels and are omitted; only DECLARED user effects (which host effects are) appear. -/
+public def checkAndLowerProgWithEffects (prog : Prog) :
+    Except String (Comp × List (String × Bang.EffectRow.Label)) := do
+  let (e, effects, _, _) ← elabProg prog
+  let _ ← runInferC (synthSC [] e) effects
+  let c ← Bang.Surface.lower e
+  return (c, effects.map (fun (n, ei) => (n, ei.label)))
+
 /-- `Prog`-taking sibling of `elaborateToComp` — the raw (check-free) `--no-typecheck` escape for
 an already-merged multi-file program. Same rationale as `checkAndLowerProg`: the module resolver
 already has a `Prog`, not source text, so this skips re-parsing. -/
