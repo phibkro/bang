@@ -1,0 +1,7 @@
+-- TARGET (post-#108): a bare ctor name that only ONE in-scope type owns still resolves bare —
+-- the common case, unaffected by namespacing (only a genuine cross-type COLLISION needs the
+-- qualified fallback). L/LNil/LCons has no cross-type collision with IntList's Nil/Cons.
+data L = LNil | LCons(Int, L)
+data IntList = Nil | Cons(Int, IntList)
+let xs = Cons(7, Nil) in
+match xs { Nil -> 0, Cons(h, t) -> h }
