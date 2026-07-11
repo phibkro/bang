@@ -173,7 +173,13 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **release** — widen the binary matrix to 3 Lean Tier-1 platforms (`0760351f`)
 - **tour** — interactive tour v0 — corpus-generated, no-exec lessons (`42593812`)
 - **docs** — document deriving + refuse generic-carrier deriving with a teaching diagnostic (#122) (`3a19b6f3`)
+- **host-io** — slice 1 — std/Io.bang + bundled std-module resolution (`293c9e68`)
+- **host-io** — slice 5 — examples/hostio-echo (sim-corpus half) (`6343fa70`)
+- **host-io** — slice 2a — evalEHost sibling seam + drift gate (fork B/B2) (`afe5bd39`)
 - **◊5.5** — emission rung-4 — closures + ADTs + recursion on WasmGC (nqueens = 21004) (`0a494a0b`)
+- **host-io** — slice 2b — host-IO driver plumbing + evalEHost conditions (`534e96f0`)
+- **host-io** — slice 3 — test-hostio.sh record/replay battery (`79688327`)
+- **tour** — /run playground exec service (door-2) — resource jail + smoke gate (`baa47309`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

@@ -28,7 +28,7 @@ _Generators — write a derived artifact from a root (drift-unrepresentable). `-
 | [`refs.py`](refs.py) | `fitness` | `references/refs.bib`, `references/index.json`, `references/README.md`, `refs-allow.txt` | the reference library as a generated, queried, tested derivation |
 | [`symbols.py`](symbols.py) | `manual` | `Bang/**/*.lean` | a generated symbol index for the Lean source (the navigation gap-fill) |
 
-## check (20)
+## check (21)
 
 _Checks — fitness functions that fail on drift (structural invariants, doc/ref reachability, git-store safety)._
 
@@ -54,6 +54,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`git-hooks/pre-commit`](git-hooks/pre-commit) | `hook` | `justfile`, `gen-changelog.py` | pre-commit hook — invariants checked before each commit |
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh` | Claude Code PostToolUse hook for Edit/Write of Lean files |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
+| [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
 ## test (20)
 
