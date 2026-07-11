@@ -1,0 +1,14 @@
+package spike:sf-test;
+
+// stream<u8> / future<u32> in an interface — the WASI 0.3 async value types.
+// This fixture proves the WIT type layer round-trips through wasm-tools 1.249
+// (see run.sh step "wit-roundtrip"). It is NOT instantiated (a real stream
+// producer needs a guest toolchain with wasip3 std — the named blocker).
+interface pipe {
+  read-bytes: func() -> stream<u8>;
+  get-val: func() -> future<u32>;
+}
+
+world test {
+  export pipe;
+}

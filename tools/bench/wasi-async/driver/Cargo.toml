@@ -1,0 +1,15 @@
+[package]
+name = "wasi-async-driver"
+version = "0.0.0"
+edition = "2021"
+
+# Mirrors the G2 driver's engine-pinned, compile-once measurement style, extended
+# with async support (component_model_async + async_support) so we can drive an
+# async-lifted export through the wasmtime host event loop and time it against a
+# sync-lifted counterpart.
+[dependencies]
+wasmtime = { version = "45", default-features = false, features = ["cranelift", "component-model", "component-model-async", "runtime", "async"] }
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[profile.release]
+opt-level = 3

@@ -1,0 +1,7 @@
+package spike:async-test;
+interface counter {
+  next: async func() -> u32;
+}
+world test {
+  export counter;
+}
