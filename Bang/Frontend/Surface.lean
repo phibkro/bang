@@ -1498,8 +1498,22 @@ def pDo : Nat → P Surf
         | "}" :: ts => .ok (e, ts)       -- the final statement is the block's value
         | ts        => .error ⟨"expected ';' or '}' after a do-block statement", ts⟩
 
-/-- Parse one match arm `C -> e` · `C(x) -> e` · `C(x, y) -> e` (ctor name is `Left`/`Right` or
-any identifier — named data ctors, ADR-0069; payload arity ≤ 2 in v1, the tuple-grammar bound). -/
+/-- The REMAINING comma-separated binder names after `(b1,` (`b1` already parsed) — B011's N-ary
+match-arm fix, `pArm`'s own doc comment has the full rationale. Flat (unlike `pTupleTail`'s
+right-nested VALUE result): `bindPayload` (TypeCheck.lean) does the nesting at BINDING time from
+this flat list, mirroring `splitProd`'s flat-list dual of `prodOfTys`'s right-nested type. -/
+def pArmBinders : Nat → P (List String)
+  | 0,     _ => .error "parser out of fuel"
+  | f + 1, ts => do
+      let (b, ts) ← pIdent ts
+      match ts with
+      | "," :: r => do let (rest, ts) ← pArmBinders f r; .ok (b :: rest, ts)
+      | ")" :: r => .ok ([b], r)
+      | t :: r   => .error ⟨s!"expected ',' or ')' in a match-arm payload, got '{t}'", t :: r⟩
+      | []       => .error "unterminated match-arm payload"
+
+/-- Parse one match arm `C -> e` · `C(x) -> e` · `C(x, y, …) -> e` (ctor name is `Left`/`Right` or
+any identifier — named data ctors, ADR-0069; N-ary payload binders, B011 #144). -/
 def pArm : Nat → P (String × List String × Surf)
   | 0,      _ => .error "parser out of fuel"
   | f + 1, ts => do
@@ -1508,17 +1522,8 @@ def pArm : Nat → P (String × List String × Surf)
         | "Right" :: r => .ok ("Right", r)
         | ts           => pIdent ts)
       let (bs, ts) ← (match ts with
-        | "(" :: r => do
-            let (b1, ts) ← pIdent r
-            (match ts with
-             | ")" :: r2 => (.ok ([b1], r2) : Except PErr (List String × List String))
-             | "," :: r2 => do
-                 let (b2, ts) ← pIdent r2
-                 let (_, ts) ← expect ")" ts
-                 .ok ([b1, b2], ts)
-             | t :: r => .error ⟨s!"expected ',' or ')' in a match-arm payload, got '{t}'", t :: r⟩
-             | []     => .error "unterminated match-arm payload")
-        | ts => (.ok ([], ts) : Except PErr (List String × List String)))
+        | "(" :: r => pArmBinders f r
+        | ts       => (.ok ([], ts) : Except PErr (List String × List String)))
       let (_, ts) ← expect "->" ts
       let (body, ts) ← pExpr f ts
       .ok ((ctor, bs, body), ts)
@@ -1537,13 +1542,17 @@ def pArms : Nat → P (List (String × List String × Surf))
 def pAtom : Nat → P Surf
   | 0,      _ => .error "parser out of fuel"
   | _ + 1, "(" :: ")" :: ts => .ok (.unitS, ts)   -- `()` — the unit value literal (ADR-0069)
-  | f + 1, "(" :: ts => do               -- grouping `(e)` OR product intro `(a, b)`
+  | f + 1, "(" :: ts => do               -- grouping `(e)` OR product intro `(a, b, …)` (B011, #144:
+      -- N-ary, not just a pair — right-nested `.pairS` matching `prodOfTys`'s own right-nesting
+      -- convention, so a ≥3-ary ctor's CALL site `T(1, 2, 3)` parses the SAME shape `buildEnv`'s
+      -- payload-type resolution already accepts (both walk N-ary comma lists — only THIS call-site
+      -- grammar was still capped at exactly one comma). `pTupleTail` parses the REMAINING
+      -- comma-separated exprs up to `)` and right-nests them onto `e`.
       let (e, ts) ← pExpr f ts
       match ts with
-      | "," :: ts =>
-          let (e2, ts) ← pExpr f ts
-          let (_, ts) ← expect ")" ts
-          .ok (.pairS e e2, ts)
+      | "," :: ts => do
+          let (pair, ts) ← pTupleTail f e ts
+          .ok (pair, ts)
       | ":" :: ts =>                      -- type ascription `(e : T)` → annotS (ADR-0066 ②)
           let (t, ts) ← pTy f ts
           let (_, ts) ← expect ")" ts
@@ -1606,6 +1615,25 @@ def pAtom : Nat → P Surf
         .error ⟨s!"unexpected '{t}' where an atom was expected", t :: ts⟩
       else .ok (.var t, ts)
   | _ + 1, [] => .error "unexpected end of input where an atom was expected"
+
+/-- The REMAINING comma-separated exprs after `(e1,` (`e1` already parsed, `head`), up to and
+including `)` — B011's N-ary call-site fix (`pAtom`'s own doc comment has the full rationale).
+Right-nests onto `head`: `(1, 2, 3)` parses `head = 1`, this loop collects `[2, 3]`, and the result
+is `.pairS 1 (.pairS 2 3)` — matching `prodOfTys : List Ty → Ty`'s identical right-nesting (`[t] ↦
+t`, `t :: rest ↦ .tProd t (prodOfTys rest)`), so a payload of N types nests the SAME shape its VALUE
+does; `splitProd`'s dual walk (match-arm binders, `genBinderTable`) already destructures ANY right-
+nested depth, not just 2, so this is the only grammar-level change B011's relaxation needs. -/
+def pTupleTail : Nat → Surf → P Surf
+  | 0,     _,    _  => .error "parser out of fuel"
+  | f + 1, head, ts => do
+      let (e, ts) ← pExpr f ts
+      match ts with
+      | "," :: ts => do
+          let (rest, ts) ← pTupleTail f e ts
+          .ok (.pairS head rest, ts)
+      | ")" :: ts => .ok (.pairS head e, ts)
+      | t :: r    => .error ⟨s!"expected ',' or ')' in a tuple, got '{t}'", t :: r⟩
+      | []        => .error "unterminated tuple (expected ')')"
 
 /-- ADR-0095 D1: the `with` clause's handler-name position — a bare `Name` (param-less) or a
 parenthesized `(Name init)` (param-carrying). A genuine top-level function (not an inline-ascribed
@@ -2157,7 +2185,8 @@ def pCtorTysLoop : Nat → P (List Ty)
       | t' :: r  => .error ⟨s!"expected ',' or ')' in a constructor payload, got '{t'}'", t' :: r⟩
       | []       => .error "unterminated constructor payload"
 
-/-- One data constructor: `Name` (payload `Unit`) or `Name(T, …)` (arity ≤ 2 in v1). -/
+/-- One data constructor: `Name` (payload `Unit`) or `Name(T, …)` (N-ary — B011's v1 arity-2 cap
+lifted, #144; the elaborator right-nests an N-ary payload into a product, `prodOfTys`). -/
 def pCtor : Nat → P (String × List Ty)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts => do

@@ -54,8 +54,6 @@ trigger_carries_code 'effect E { get : Int -> Int }
 let main = 3'                                                     'B002'
 trigger_carries_code 'let x = 3 in $x'                            'B004'
 trigger_carries_code '1, 2'                                       'B008'
-trigger_carries_code 'data T = C(Int, Int, Int)
-let main = 3'                                                     'B011'
 trigger_carries_code 'data List a = Nil | Cons(a, List a)
 data IntList = Nil | Cons(Int, IntList)
 Nil'                                                               'B012'
@@ -63,6 +61,12 @@ trigger_carries_code 'let rec outer : Int -> Int ! {Div} = fun n => let rec a : 
 trigger_carries_code 'let x = 3
 let y = 4
 x + y'                                                             'B016'
+
+# ── B011 RETIRED (#144): its FORMER trigger now type-checks CLEAN, no diagnostic at all — the
+# positive regression for the payload-arity-≤2 cap being lifted (a ≥3-ary ctor constructs/matches
+# fine end-to-end, not just "some other code fires now"). ──
+b011_former_trigger="$(printf 'data T = C(Int, Int, Int)\nlet main = 3' | "$bang" check --json 2>/dev/null)" || true
+check "b011-retired-former-trigger-now-clean" "$b011_former_trigger" '{"ok":true,"diagnostics":[]}'
 
 # ── the HUMAN path prefixes the stable code (rustc `error[B004]:` shape) ──
 human_err="$(printf 'let x = 3 in $x' | "$bang" check 2>&1 >/dev/null)" || true
