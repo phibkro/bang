@@ -246,3 +246,23 @@ Polymorphic recursion is genuinely needed (a self-call at a different type) — 
 finiteness gate and is the R6 λ2/dependent frontier, its own K-ADR; OR annotation-free carrier
 inference (#55) is taken up, unblocking the constructing half; OR a bound-free `fn` surface is
 demanded independently of `let rec` (would reopen the one-construct-per-problem choice).
+
+## Amendment ① (2026-07-11, operator-ratified) — the List injection ships unconditionally
+
+The Implementation note's residue 2 ("a kernel-provided `List` is NOT shipped… tried and
+reverted") is **superseded**: the design probe `docs/notes/listdecl-injection-design.md`
+(12 witnesses, run against the built binary) established that the revert's blocker is not a
+wall but a priced migration. With ADR-0099's B012 in force plus the D4 type-name shadow
+(witnessed arity-agnostic, w10 — a fact neither landing ADR recorded), unconditional injection
+is SOUND: a user's same-name `List` shadows silently; a differently-named list-shaped `data`
+with bare `Nil`/`Cons` gets a LOUD B012 ambiguity naming both candidates — a local, one-line
+qualification fix at each colliding corpus fixture, not a silent break. The operator ratified
+shipping `data List a = Nil | Cons(a, List a)` in the UNCONDITIONAL `genericPrelude` bucket
+(alongside `Option`/`Result`; zero fuel for non-users — data registration is not a `letC`
+step; sidesteps the mention-filter's `.annotS` Ty-blindness entirely) and accepted the corpus
+migration cost. Candidate (f) (type-scan the mention filter) stays the priced fallback; (g)
+(namespaced-only ctors) stays rejected.
+
+`length`'s residue is ruled: **fuel-sweep** (operator, over the note's cheaper rename) — the
+canonical name is worth the corpus touch; the sweep carries the same regression discipline as
+any contract change. Implementation rides the #105 first-slice lane.
