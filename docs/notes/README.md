@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (60)
+## active (61)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -35,6 +35,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
 - [`god-file-seams.md`](god-file-seams.md) — God-file seam map — split proposal for `TypeCheck.lean`/`AbstractMachine.lean`
 - [`grade-poly-returner-consult.md`](grade-poly-returner-consult.md) — Consult note — the grade-polymorphic binop returner (`F ∀q'`), issue #115
+- [`h1b-nearness-design.md`](h1b-nearness-design.md) — H1b — lexical nearness for module-qualified host performs (design pass, #127)
 - [`host-io-design.md`](host-io-design.md) — Host-IO environment design — filesystem/network/ambient IO as effects + handlers
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
 - [`interactive-tour-design.md`](interactive-tour-design.md) — Interactive language tour + in-browser playground — design
