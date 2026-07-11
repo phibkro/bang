@@ -69,7 +69,7 @@ graph TD
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 0"]
-    Witness_LawTest["Witness.LawTest<br/>607L · fan-in 0"]
+    Witness_LawTest["Witness.LawTest<br/>630L · fan-in 0"]
     Witness_ProofExport["Witness.ProofExport<br/>349L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
@@ -131,7 +131,7 @@ graph TD
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.LWRegress` | ? | 100 | 0 |
-| `Witness.LawTest` | ? | 607 | 0 |
+| `Witness.LawTest` | ? | 630 | 0 |
 | `Witness.ProofExport` | ? | 349 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.StateEscapeWitness` | ? | 73 | 0 |
