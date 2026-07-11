@@ -71,6 +71,7 @@ def step (acc c : UInt64) : UInt64 := mix (acc * 0x100000001b3 ^^^ c)
 /-- Tag seeds — distinct per constructor so `.ret v` and `.force v` (same child shape) differ. -/
 def tag (n : Nat) : UInt64 := mix (UInt64.ofNat (n + 1))
 
+/-- Hash a `BinOp` to a distinct per-operator seed. -/
 def hashBinOp : BinOp → UInt64
   | .add => tag 40 | .sub => tag 41 | .mul => tag 42
   | .div => tag 43 | .lt => tag 44 | .eq => tag 45
@@ -80,6 +81,7 @@ def hashStr (s : String) : UInt64 :=
   s.toUTF8.foldl (fun acc b => step acc (UInt64.ofNat b.toNat)) (tag 60)
 
 mutual
+/-- Structurally hash a value to a `UInt64` (order-sensitive, per-constructor tagged). -/
 partial def hashVal : Val → UInt64
   | .vunit      => tag 0
   | .vint n     => step (tag 1) (UInt64.ofNat n.toNat ^^^ (if n < 0 then 0x8000000000000000 else 0))
@@ -90,6 +92,7 @@ partial def hashVal : Val → UInt64
   | .inr v      => step (tag 6) (hashVal v)
   | .pair a b   => step (step (tag 7) (hashVal a)) (hashVal b)
   | .fold v     => step (tag 8) (hashVal v)
+/-- Structurally hash a computation to a `UInt64`. -/
 partial def hashComp : Comp → UInt64
   | .ret v         => step (tag 10) (hashVal v)
   | .letC m n      => step (step (tag 11) (hashComp m)) (hashComp n)
@@ -104,6 +107,7 @@ partial def hashComp : Comp → UInt64
   | .binop op v w  => step (step (step (tag 20) (hashBinOp op)) (hashVal v)) (hashVal w)
   | .oom           => tag 21
   | .wrong s       => step (tag 22) (hashStr s)
+/-- Structurally hash a handler to a `UInt64`. -/
 partial def hashHandler : Handler → UInt64
   | .state ℓ v         => step (step (tag 30) (UInt64.ofNat ℓ)) (hashVal v)
   | .throws ℓ          => step (tag 31) (UInt64.ofNat ℓ)
@@ -137,6 +141,7 @@ renderer is TOTAL (every constructor handled) though a TOTAL-fragment law never 
 `perform`/`handle`/`custom`/`oom`/`wrong` — handling them keeps the emitter robust and the seam
 honest (a mis-classified non-total law would still render, then fail the total-only gate first). -/
 
+/-- Render a `BinOp` as its Lean anonymous-constructor source (`.add`, …). -/
 def showBinOp : BinOp → String
   | .add => ".add" | .sub => ".sub" | .mul => ".mul"
   | .div => ".div" | .lt => ".lt" | .eq => ".eq"
@@ -153,6 +158,7 @@ def strLit (s : String) : String :=
 def intLit (n : Int) : String := if n < 0 then s!"({n})" else toString n
 
 mutual
+/-- Render a value as literal Lean-term source (`Bang.Val.…`). -/
 partial def showVal : Val → String
   | .vunit      => "Bang.Val.vunit"
   | .vint n     => s!"(Bang.Val.vint {intLit n})"
@@ -163,6 +169,7 @@ partial def showVal : Val → String
   | .inr v      => s!"(Bang.Val.inr {showVal v})"
   | .pair a b   => s!"(Bang.Val.pair {showVal a} {showVal b})"
   | .fold v     => s!"(Bang.Val.fold {showVal v})"
+/-- Render a computation as literal Lean-term source (`Bang.Comp.…`). -/
 partial def showComp : Comp → String
   | .ret v         => s!"(Bang.Comp.ret {showVal v})"
   | .letC m n      => s!"(Bang.Comp.letC {showComp m} {showComp n})"
@@ -177,6 +184,7 @@ partial def showComp : Comp → String
   | .binop op v w  => s!"(Bang.Comp.binop {showBinOp op} {showVal v} {showVal w})"
   | .oom           => "Bang.Comp.oom"
   | .wrong s       => s!"(Bang.Comp.wrong {strLit s})"
+/-- Render a handler as literal Lean-term source (`Bang.Handler.…`). -/
 partial def showHandler : Handler → String
   | .state ℓ v        => s!"(Bang.Handler.state {ℓ} {showVal v})"
   | .throws ℓ         => s!"(Bang.Handler.throws {ℓ})"
@@ -197,8 +205,11 @@ def N₀ : Nat := 400
 source (imports + header comment + the arm-B `theorem … := by sorry`); `address` is the elaborated
 `Comp`'s content-address. -/
 structure LeanGoalArtifact where
+  /-- The law's name. -/
   lawName : String
+  /-- The elaborated `Comp`'s content-address. -/
   address : String
+  /-- The whole emitted `.lean` source (imports, header, the arm-B theorem). -/
   «theorem» : String
   deriving Repr
 
@@ -209,11 +220,17 @@ attribute [nolint unusedArguments] instReprLeanGoalArtifact.repr
 lives in. `params`/`body` are source text; `prelude` is the trait/impl/data decls the body's ops
 resolve against (NO trailing body). -/
 structure LawInput where
+  /-- The trait the law belongs to. -/
   trait   : String
+  /-- The implementation the law is checked against. -/
   impl    : String
+  /-- The law's name. -/
   lawName : String
+  /-- The law's parameter names (source text). -/
   params  : List String
+  /-- The law body (source text). -/
   body    : String
+  /-- The trait/impl/data decls the body's ops resolve against (no trailing body). -/
   prelude : String
   deriving Repr
 
@@ -295,6 +312,7 @@ def intOrdPrelude : String :=
   "trait IntOrd { fn lt(a, b) -> (Unit + Unit) law trans(a, b, c): a < b => b < c => a < c } " ++
   "impl IntOrd for Int { fn lt(a, b) = a < b }"
 
+/-- The `IntOrd.trans` corpus law as a `LawInput` fixture. -/
 def transInput : LawInput :=
   ⟨"IntOrd", "Int", "trans", ["a", "b", "c"], "a < b => b < c => a < c", intOrdPrelude⟩
 
@@ -314,9 +332,12 @@ def transInput : LawInput :=
         | .error _ => false)
 
 -- (b) a Div-rowed law is REJECTED, with the row NAMED (`Div`) — proof-eligibility is typed.
+/-- A `Div`-rowed (non-total) law body: a recursive `loop` — used to test rejection. -/
 def loopyBody : String :=
   "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in (let z = ($loop) a in a == a)"
+/-- The trait prelude wrapping `loopyBody`. -/
 def loopyPrelude : String := "trait T { fn f(a) -> Int law loopy(a): " ++ loopyBody ++ " }"
+/-- The non-total `loopy` law as a `LawInput` fixture. -/
 def loopyInput : LawInput := ⟨"T", "Int", "loopy", ["a"], loopyBody, loopyPrelude⟩
 
 #guard (match exportGoal "src0000" loopyInput with
@@ -325,6 +346,7 @@ def loopyInput : LawInput := ⟨"T", "Int", "loopy", ["a"], loopyBody, loopyPrel
 
 -- (c) two α-renamed variants of the SAME law produce IDENTICAL content-addresses (de-Bruijn:
 -- renaming params can't move the elaborated term, so the address is rename-invariant).
+/-- An α-renamed variant of `transInput` — used to test content-address rename-invariance. -/
 def transRenamed : LawInput :=
   ⟨"IntOrd", "Int", "trans", ["x", "y", "z"], "x < y => y < z => x < z", intOrdPrelude⟩
 
@@ -333,6 +355,7 @@ def transRenamed : LawInput :=
         | _, _ => false)
 
 -- (d) two DIFFERENT laws produce DIFFERENT content-addresses (comm over Int ≠ trans).
+/-- The `IntAdd.comm` corpus law as a `LawInput` fixture — a different law than `trans`. -/
 def commInput : LawInput :=
   ⟨"IntAdd", "Int", "comm", ["a", "b"],
    "let s = a + b in (let t = b + a in s == t)",

@@ -68,7 +68,9 @@ inductive PayloadKind | int | recur
 prelude carries; `genValueOf` uses the SAME spec to generate a matching value — spec and source
 render from ONE structure, so they cannot drift (the single-source-of-truth move). -/
 structure DataSpec where
+  /-- The `data` declaration's name. -/
   name  : String
+  /-- Each constructor's name and its payload kinds. -/
   ctors : List (String × List PayloadKind)
   deriving Repr, DecidableEq
 
@@ -309,9 +311,13 @@ param is assumed `Int`-typed in v1 (matches `TypeCheck.lean`'s own `sampleVT` ce
 `VecOps`'s laws are all over `Int`/`(Int*Int)`; a `data`-decl-typed param is the `DataSpec` upgrade,
 sketched in `checkLawInstanceOverSpec` below). -/
 structure LawInstance where
+  /-- Everything before the body: the trait/impl/data decls the body resolves against. -/
   progPrelude : String    -- everything BEFORE the body (trait/impl/data decls, space-terminated)
+  /-- The law's name (for the report line). -/
   lawName     : String    -- for the report line only
+  /-- The law's quantified parameter names, in order. -/
   params      : List String
+  /-- The law's Bool-valued body expression over `params` + the prelude's ops. -/
   body        : String    -- the law's Bool-valued expression, over `params` + the prelude's ops
   deriving Repr
 
@@ -347,6 +353,7 @@ def evalLawOn (inst : LawInstance) (args : List String) : Bool :=
 
 -- IntOrd.trans discharges on real generated Int samples (mirrors `intOrdProg` in TypeCheck.lean,
 -- reconstructed here as a `LawInstance` — same corpus content, source-string driven).
+/-- The `IntOrd.trans` corpus prelude (trait + `Int` impl) as source text. -/
 def intOrdPrelude : String :=
   "trait IntOrd { fn lt(a, b) -> (Unit + Unit) law trans(a, b, c): a < b => b < c => a < c } " ++
   "impl IntOrd for Int { fn lt(a, b) = a < b }"
@@ -369,6 +376,8 @@ the kernel's own `Int` δ-rule, so the impl's body never runs. Sampling it anywa
 `.holds` was MISLEADING: the samples exercise the KERNEL's built-in `==`/`<`/etc., not the
 impl the law is nominally checking — a `PASS` a user could trust as validating their impl when the
 impl never executed. `.skipped` reports this honestly instead of silently reusing `.holds`). -/
+/-- The fail-loud result of checking one law: `holds`, `counterexample` (shrunk
+witness), `untypeable`, `evalStuck`, or `skipped` — each a distinct failure mode. -/
 inductive LawOutcome where
   | holds        : Nat → LawOutcome                      -- N samples, all true
   | counterexample : List String → LawOutcome            -- the SHRUNK witness, rendered per param
@@ -487,8 +496,10 @@ def runLaws (inst : LawInstance) (n seed : Nat) : LawOutcome :=
 -- never returns) but does not terminate within `evalLawOn`'s fixed 400-fuel budget — genuinely
 -- distinct from BOTH a counterexample (the law never gets to evaluate `false`) and untypeable
 -- (elaboration/type-checking succeeds; only EVALUATION doesn't reach a Bool readback).
+/-- A well-typed but non-terminating (`Div`-rowed) law body — used to witness `evalStuck`. -/
 def loopyLawBody : String :=
   "let rec loop : Int -> Int = fun n => ($loop)(n + 1) in (let z = ($loop) a in a == a)"
+/-- The trait prelude wrapping `loopyLawBody`. -/
 def loopyPrelude : String := "trait T { fn f(a) -> Int law loopy(a): " ++ loopyLawBody ++ " }"
 #guard (match runLaws ⟨loopyPrelude, "loopy", ["a"], loopyLawBody⟩ 3 1 with
         | .evalStuck _ => true | _ => false)
@@ -505,8 +516,11 @@ over several discovered laws can name each one — `runLaws`'s own `LawOutcome` 
 identity, correctly: a caller-supplied `LawInstance` already carries `lawName`, but a multi-law
 DISCOVERY run needs the trait name too, since two traits can share a law name). -/
 structure NamedOutcome where
+  /-- The trait the discovered law came from. -/
   traitName : String
+  /-- The law's name. -/
   lawName   : String
+  /-- The law's check outcome. -/
   outcome   : LawOutcome
   deriving Repr
 
@@ -595,7 +609,9 @@ def vecOpsDecls (law : String) : String :=
   "fn add(p, q) = let (a, b) = p in (let (c, d) = q in (let x = a + c in (let y = b + d in (x, y)))) " ++
   "fn eq(p, q) = let (a, b) = p in (let (c, d) = q in (let e = a == c in (if e then b == d else 0 == 1))) }"
 
+/-- A true `VecOps` law (addition commutes) as source text. -/
 def vecCommLaw : String := "comm(a, b): let s = a + b in (let t = b + a in s == t)"
+/-- A false `VecOps` law (used to witness a counterexample) as source text. -/
 def vecBogusLaw : String := "bogus(a, b): let s = a + b in (let t = a + a in s == t)"
 
 -- a SINGLE-law program: discovery finds exactly the one instance, and it HOLDS (VecOps.comm is a
