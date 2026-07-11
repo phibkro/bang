@@ -82,8 +82,18 @@ host resource into a value; the opaque-`Int` token keeps the fragment closed.
 > with the host answers accumulated so far), realized as a byte-identical-except-one-leaf sibling
 > `evalEHost` (B2, after B1's proven-spine re-key was refuted). See **ADR-0104 §4** for the mechanism, the
 > full fork trail (B/B1/B2), the rejected A/C, the future door (the concurrency-era suspendable engine
-> subsumes the replay-prefix), and the open host-provision reach. The interfaces (§1), grant surface
+> subsumes the replay-prefix), and the **H1 host-provision reach (#126, LANDED)**. The interfaces (§1), grant surface
 > (§2a), trace/conformance (§3), and WASI mapping (§4) below stand as designed.
+
+> **H1 STATUS (2026-07-11, hostio-reach lane) — LANDED, with a nearness correction.** A module-qualified
+> host perform (`Io.print x`) now elaborates and reaches the driver's grant surface — the `hostPerformS`
+> Surf former + its ~18-arm traversal ripple (Surface.lean/TypeCheck.lean/Query.lean/Rewrite.lean/
+> Format.lean). Ships LABEL-ONLY AMBIENT dispatch: a lexically-enclosing `with Io_Console` does NOT
+> catch the call (measured, refuting this doc's own §2a "nearest handler" framing for the H1 case
+> specifically) — the full mechanism-vs-name-lookup analysis, the `#guard` gap it surfaces, and the
+> named H1b follow-up (lexical nearness, a deferred design pass) live in **ADR-0104 §4** (the
+> authoritative correction; do not duplicate the analysis here). `examples/hostio-echo/ambient.bang` +
+> `tools/test-hostio-seam.sh` §6 demonstrate the shipped semantics end-to-end against real IO.
 
 **The load-bearing constraint (verified from code):** the host boundary CANNOT live in `Source.eval`.
 `Source.eval` (`Eval.lean`, the kernel oracle) is pure Lean, no `IO`; the env machine (`EnvMachine.lean`,
@@ -140,8 +150,13 @@ capability." The checker knows `main`'s row (ADR-0093 D5), so an under-granting 
 
 **escapedCap interaction.** `escapedCap` stays the terminal for a genuinely-unhandled label. The
 seam is *narrow*: only a perform on a CLI-designated host label that also escapes σ→τ→κ suspends;
-everything else keeps today's fail-loud semantics. A user `with Net as h {…}` still catches `Net`
-lexically — the host frame is the *outermost* fallback, reached only when no user handler does.
+everything else keeps today's fail-loud semantics. A user `with Net as h {…}` catches a perform
+performed ON `h` (`h.op(…)`, the ordinary `.dotPerform` cap-threading spelling) lexically — the host
+frame is the *outermost* fallback, reached only when no user handler does. **[H1 scope note, ADR-0104
+§4: this sentence describes the pre-existing `.dotPerform`/named-cap path, UNCHANGED by H1. It does
+NOT extend to the NEW module-qualified AMBIENT spelling (`Io.print` with no receiver) — that path
+reaches the driver unconditionally regardless of an enclosing `with`, measured and corrected in the
+ADR; see the H1 STATUS note above.]**
 
 **Rejected.** *(a) IO inside a monadic `Source.eval`* / *(b) an FFI table threaded through `evalE`* —
 both poison the pure oracle with `IO`, destroying the "prover interpreting the object language"
