@@ -213,5 +213,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **traits** — law on an unreachable impl reports SKIPPED, not a misleading PASS (#113) (`8de80a8e`)
 - **traits** — self- and backward-recursive impl ops resolve via knot dispatch (#112) (`faafaa09`)
 - **display** — data types render by declared name, not raw mu (#100) (`7d63f548`)
+- **diagnostics** — teach the thunk idiom on a bare-function let binding (#121) (`b6020eea`)
+- **diagnostics** — teach ascription instead of leaking an internal hole marker (#124) (`b63f01d2`)
 
 <!-- END GENERATED changelog -->

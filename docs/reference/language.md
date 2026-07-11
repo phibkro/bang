@@ -227,6 +227,36 @@ wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws 
 discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch
 path that is still open.
 
+## Deriving (ADR-0097, issue #109)
+
+A `data` decl's trailing `deriving (Eq, Ord)` clause generates the `trait`/`impl`
+pair a hand-written `Eq`/`Ord` implementation would otherwise need — same-tag
+structural fold for `Eq` (AND over every payload slot; different tag ⇒ `false`),
+decl-order tag comparison + lexicographic payload for `Ord`:
+
+```
+data Point = Pt(Int, Int) deriving (Eq, Ord)
+let p1 = Pt(3, 4) in let p2 = Pt(3, 4) in p1 == p2   -- true, no hand-written impl
+```
+
+The generated `impl` is indistinguishable from a hand-written one — `==`/`<` dispatch
+through it exactly like any other trait op, usable directly in a `match`. A
+SELF-RECURSIVE carrier (`data IntList = Nil | Cons(Int, IntList) deriving (Eq)`) is
+supported: the fold recurses through the SAME knot-based `let rec` dispatch (#112) a
+hand-written recursive impl rides.
+
+**Only `Eq`/`Ord` derive today** (tier 1 — their ops are binop-dispatched, so a
+derived impl is usable the moment it exists, no separate name-callability wiring).
+**A GENERIC carrier cannot derive** (`data Box a = Mk(a) deriving (Eq)` is refused
+LOUD at the decl site, naming the limitation): `deriving` emits ONE `impl` at decl
+time, targeting the carrier's own (necessarily monomorphic) type — a generic `data`
+has no single monomorphic type to target, and unlike a `let rec`'s call-site-driven
+monomorphization (ADR-0103), a `deriving` clause has no call site to discover an
+instantiation set from. Work around it with a monomorphic alias data decl (`data BoxI
+= Mk(Int) deriving (Eq)`) or a hand-written `impl` for the specific instantiation
+needed. See `examples/derive-eq-ord/`, `examples/trait-recursive-eq/`,
+`examples/trait-recursive-ord/`.
+
 ## User-defined effects (ADR-0095, issue #44 Stage 7)
 
 A user declares a NAMED effect interface (`effect Name { op : ArgTy -> ResTy, … }`),

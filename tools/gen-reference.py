@@ -276,6 +276,7 @@ def parse_examples(path):
 def render():
     surf = SURFACE.read_text()
     diagcodes = DIAGCODES.read_text()
+    typecheck = TYPECHECK.read_text()
     L = []
     L.append("# BANG — language reference")
     L.append("")
@@ -499,6 +500,47 @@ def render():
     L.append("wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws to")
     L.append("discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch")
     L.append("path that is still open.")
+    L.append("")
+
+    if "def pDerivingClause" not in surf:
+        sys.exit(
+            "gen-reference: `pDerivingClause` not found in Surface.lean — the Deriving "
+            "section below is keyed off it (issue #122)."
+        )
+    if "cannot derive for" not in typecheck:
+        sys.exit(
+            "gen-reference: the generic-carrier derive refusal not found in TypeCheck.lean — "
+            "the Deriving section's limitation note is keyed off it (issue #122)."
+        )
+    L.append("## Deriving (ADR-0097, issue #109)")
+    L.append("")
+    L.append("A `data` decl's trailing `deriving (Eq, Ord)` clause generates the `trait`/`impl`")
+    L.append("pair a hand-written `Eq`/`Ord` implementation would otherwise need — same-tag")
+    L.append("structural fold for `Eq` (AND over every payload slot; different tag ⇒ `false`),")
+    L.append("decl-order tag comparison + lexicographic payload for `Ord`:")
+    L.append("")
+    L.append("```")
+    L.append("data Point = Pt(Int, Int) deriving (Eq, Ord)")
+    L.append("let p1 = Pt(3, 4) in let p2 = Pt(3, 4) in p1 == p2   -- true, no hand-written impl")
+    L.append("```")
+    L.append("")
+    L.append("The generated `impl` is indistinguishable from a hand-written one — `==`/`<` dispatch")
+    L.append("through it exactly like any other trait op, usable directly in a `match`. A")
+    L.append("SELF-RECURSIVE carrier (`data IntList = Nil | Cons(Int, IntList) deriving (Eq)`) is")
+    L.append("supported: the fold recurses through the SAME knot-based `let rec` dispatch (#112) a")
+    L.append("hand-written recursive impl rides.")
+    L.append("")
+    L.append("**Only `Eq`/`Ord` derive today** (tier 1 — their ops are binop-dispatched, so a")
+    L.append("derived impl is usable the moment it exists, no separate name-callability wiring).")
+    L.append("**A GENERIC carrier cannot derive** (`data Box a = Mk(a) deriving (Eq)` is refused")
+    L.append("LOUD at the decl site, naming the limitation): `deriving` emits ONE `impl` at decl")
+    L.append("time, targeting the carrier's own (necessarily monomorphic) type — a generic `data`")
+    L.append("has no single monomorphic type to target, and unlike a `let rec`'s call-site-driven")
+    L.append("monomorphization (ADR-0103), a `deriving` clause has no call site to discover an")
+    L.append("instantiation set from. Work around it with a monomorphic alias data decl (`data BoxI")
+    L.append("= Mk(Int) deriving (Eq)`) or a hand-written `impl` for the specific instantiation")
+    L.append("needed. See `examples/derive-eq-ord/`, `examples/trait-recursive-eq/`,")
+    L.append("`examples/trait-recursive-ord/`.")
     L.append("")
 
     if "handleCustomS" not in surf or "def pDecl" not in surf:

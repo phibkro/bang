@@ -5281,7 +5281,18 @@ public def expandDerives (p : Prog) : Except String Prog := do
     for (dataName, derives) in p.derivesFor do
       match p.decls.find? (fun d => match d with | .dataD n _ _ => n == dataName | _ => false) with
       | none => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
-      | some (.dataD _ _ cs) =>
+      -- #122: a GENERIC carrier (`ps` non-empty, e.g. `data Box a = …`) has no monomorphic
+      -- `Ty.tName dataName` for the generated `impl <Trait> for {dataName}` to target — `resolveName`
+      -- would hit its own `generic type needs type argument(s)` error at an impl site that names no
+      -- concrete instantiation. Refuse LOUD (ADR-0046) at the decl site instead of letting that
+      -- confusing downstream error surface — generic-carrier deriving is a real future slice
+      -- (monomorphize the fold PER INSTANTIATION, ADR-0097 §6 "Revisit if"), not implemented here.
+      | some (.dataD _ (_ :: _) _) =>
+          throw s!"cannot derive for '{dataName}': it is a GENERIC data type (has type parameters) — \
+v1's derive handler only targets MONOMORPHIC carriers (ADR-0097 §6). Either drop the type parameter \
+(a monomorphic alias like 'data {dataName}I = …(Int)…') or hand-write the 'impl' for the specific \
+instantiation you need."
+      | some (.dataD _ [] cs) =>
           for deriveName in derives do
             let ds ← expandOneDerive seenStopgapTraits dataName cs deriveName
             for d in ds do
