@@ -177,12 +177,28 @@ regression floor (it never touches bignum — small ints throughout).
 
 ## 6 · What this does NOT do (honest boundary)
 
-1. **i64 fast-path SHIPPED** (better than this note predicted). The landed `$addVal`/`$subVal`/
-   `$mulVal`/`$cmpVal` keep in-range operands on `$ival` (i64) and only spill to limbs on overflow or
-   a `$bigval` operand — the V8/JSC smi pattern, which §1 had deferred. Overflow detection is the
-   named add-check `(a^s)&(b^s)<0` and mul-check `p/a==b`; the cost is a few i64 ops on the hot path,
-   paid only because the alternative (all-limbs) was measurably worse for the small-int-heavy corpus
-   (nqueens). What is NOT done: i31ref for tiny ints (c) — a further refinement, still deferred.
+1. **i64 fast-path SHIPPED — and the overflow check is a CORRECTNESS requirement, not the perf
+   optimization §1 deferred.** §1 rejected the smi fast-path as *perf overhead nobody observes*. That
+   framing is now SUPERSEDED for the fast path's overflow CHECK: with a fast path present, the check is
+   what makes computed overflow (two in-range operands whose result exceeds i64 — e.g. `21!` crossing
+   2⁶³ from below, `(2⁶³−1)+(2⁶³−1)`) spill to limbs instead of silently wrapping. Omitting it would
+   ship loud-wrap for *computed* values while only literals round-trip — the exact middle path the
+   differential harness catches the first time a factorial crosses 2⁶³. So the check is mandatory for
+   the fidelity contract, priced accordingly. The three emitted sequences (all witnessed on wasmtime
+   45, `scratch/bignum-addval-witness.wat` / `bignum-mulval-witness.wat`):
+   - **add** (`$addVal`): `s = a+b` (wrapping); overflow iff `(a^s)&(b^s) < 0` (operands same sign,
+     result differs) ⇒ spill. Else `$ival s`.
+   - **sub** (`$subVal`): `= $addVal a (bNeg b)` — reuses the add check, no separate sequence (bNeg
+     handles the `INT64_MIN` edge by promoting to `$bigval`).
+   - **mul** (`$mulVal`): `p = a*b` (wrapping); no-overflow iff `a==0 ∨ (p/a == b ∧ ¬(a==-1 ∧
+     b==INT64_MIN))` (division-back-check; the `-1×MIN` special-case covers the one value where
+     `p/a==b` holds but the true product `2⁶³` is unrepresentable). Wasm has no `mul_high`, so the
+     div-back is the check (not a 32-bit split). Else spill.
+   - **cmp** (`$cmpVal`): both `$ival` ⇒ signed i64 compare (no overflow possible); else promote both,
+     sign-then-magnitude compare. Returns −1/0/1.
+   Verified end-to-end: `(2⁶³−1)+(2⁶³−1)=18446744073709551614` and `(4×10⁹)×(4×10⁹)=16000000000000000000`
+   both spill correctly (`examples/big-add`, and `factorial` which crosses 2⁶³ *from* in-range mul).
+   What is NOT done: `i31ref` for tiny ints (option (c)) — a further perf refinement, still deferred.
 2. **div (B4) DEFERRED** — schoolbook bignum long division not implemented; the loud trap stays for
    div-into-bignum only (small-int div is correct via the B0 Euclidean i64 path). Named, not silent.
 3. **Proof-grade** — TESTED stratum (differential vs `Source.eval`), same seam as rungs 1–5. A
