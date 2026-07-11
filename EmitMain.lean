@@ -122,6 +122,52 @@ def rung2bSamples : List Sample :=
   , ⟨"stt5", .handle (.state 0 (.vint 99)) (.binop .add (.vint 20) (.vint 22)),
              "handle state(99) { 20 + 22 }  ⇒ 42 (normal return, cell unread)"⟩ ]
 
+/-- RUNG-3 hand-picked samples (◊5.5 rung-3, ADR-0030's transaction journal/rollback on wasm).
+`handle (transaction ℓ []) M` maps the TVar heap to linear MEMORY (one i64 per cell); `newTVar`
+allocates + bumps a `$heaplen` local, `readTVar`/`writeTVar` load/store a cell, and the body is
+wrapped in a `catch_all_ref`/`throw_ref` snapshot-restore so a foreign `raise` crossing the txn
+boundary ROLLS BACK the heap (drops allocations) before propagating to the outer throws handler —
+the wasm image of "the discarded frame takes `Θ'` with it" (Dispatch.lean:143). Each is a
+LOAD-BEARING witness. The oracle `Source.eval` computes the SAME `Comp` (confirmed, note §rung-3). -/
+def rung3Samples : List Sample :=
+  -- alloc + read-back (AgreeOutcome:162): new r=9; read r ⇒ 9.
+  [ ⟨"txn0", .handle (.transaction 2 [])
+               (.letC (.perform (.vvar 0) "newTVar" (.vint 9)) (.perform (.vvar 1) "readTVar" (.vvar 0))),
+             "atomically { r = new 9; read r }  ⇒ 9 (alloc + read)"⟩
+  -- COMMIT (A10-shape): new r=100; write r 70; read r ⇒ 70 (write stands on fall-through).
+  , ⟨"txn1", .handle (.transaction 2 [])
+               (.letC (.perform (.vvar 0) "newTVar" (.vint 100))
+                 (.letC (.perform (.vvar 1) "writeTVar" (.pair (.vint 0) (.vint 70)))
+                   (.perform (.vvar 2) "readTVar" (.vint 0)))),
+             "atomically { r = new 100; write r 70; read r }  ⇒ 70 (commit)"⟩
+  -- two cells, write the first: new a=5; new b=10; write a 7; read a ⇒ 7 (index arithmetic).
+  , ⟨"txn2", .handle (.transaction 2 [])
+               (.letC (.perform (.vvar 0) "newTVar" (.vint 5))
+                 (.letC (.perform (.vvar 1) "newTVar" (.vint 10))
+                   (.letC (.perform (.vvar 2) "writeTVar" (.pair (.vint 0) (.vint 7)))
+                     (.perform (.vvar 3) "readTVar" (.vint 0))))),
+             "atomically { a=new 5; b=new 10; write a 7; read a }  ⇒ 7 (two cells)"⟩
+  -- read the SECOND cell: new a=5; new b=10; read b ⇒ 10 (allocation ordering / offset 8).
+  , ⟨"txn3", .handle (.transaction 2 [])
+               (.letC (.perform (.vvar 0) "newTVar" (.vint 5))
+                 (.letC (.perform (.vvar 1) "newTVar" (.vint 10))
+                   (.perform (.vvar 2) "readTVar" (.vint 1)))),
+             "atomically { a=new 5; b=new 10; read b }  ⇒ 10 (second cell, offset 8)"⟩
+  -- A11 ABORT/ROLLBACK: outer throws over a txn that writes 70 then raises 100 ⇒ 100 (write vanishes).
+  , ⟨"txn4", .handle (.throws 0)
+               (.handle (.transaction 2 [])
+                 (.letC (.perform (.vvar 0) "newTVar" (.vint 100))
+                   (.letC (.perform (.vvar 1) "writeTVar" (.pair (.vint 0) (.vint 70)))
+                     (.perform (.vvar 3) "raise" (.vint 100))))),
+             "handle (atomically { r=new 100; write r 70; raise 100 })  ⇒ 100 (A11 abort, rollback)"⟩
+  -- abort with a COMPUTED payload: new a=5; write a 99; raise 42 ⇒ 42 (rollback, distinct payload).
+  , ⟨"txn5", .handle (.throws 0)
+               (.handle (.transaction 2 [])
+                 (.letC (.perform (.vvar 0) "newTVar" (.vint 5))
+                   (.letC (.perform (.vvar 1) "writeTVar" (.pair (.vint 0) (.vint 99)))
+                     (.perform (.vvar 3) "raise" (.vint 42))))),
+             "handle (atomically { a=new 5; write a 99; raise 42 })  ⇒ 42 (abort, payload≠cell)"⟩ ]
+
 /-! ### Deterministic seed-indexed generator (rung-1.5 differential corpus)
 
 A small linear-congruential PRNG drives a structured generator over the EMITTABLE fragment:
@@ -223,7 +269,7 @@ def genCorpus (count : Nat) : List Sample :=
 failure (the generator stays in-fragment by construction, so a refusal would flag a generator bug —
 printed loud). The rung-2 (throws) samples are HAND anchors only; the generator stays in the pure
 rung-1/1.5 fragment (extending it into effect nesting is a later step). -/
-def samples : List Sample := handSamples ++ rung15Samples ++ rung2Samples ++ rung2bSamples ++ genCorpus 42
+def samples : List Sample := handSamples ++ rung15Samples ++ rung2Samples ++ rung2bSamples ++ rung3Samples ++ genCorpus 42
 
 def main (args : List String) : IO Unit := do
   let outdir := args.headD "."

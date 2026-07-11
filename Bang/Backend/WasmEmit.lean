@@ -128,6 +128,15 @@ inductive Slot where
   -- region; the handle's return delivers the body value (handler return = identity). ONE local per
   -- open `state` frame — the de-Bruijn env IS the store, exactly as `.cap` made it the handler stack.
   | state : Nat → Slot     -- state-cap-binder (handle state) ⇒ wasm local holding the store cell
+  -- RUNG-3 (transaction → journal/snapshot over linear memory, ADR-0030). The de-Bruijn var is the
+  -- CAPABILITY naming a `handle (transaction ℓ Θ)` frame — the MULTI-CELL generalization of `state`.
+  -- The transaction heap is linear MEMORY (one i64 per cell at offset `8*idx`); `newTVar v` appends
+  -- (bump `$heaplen` local, store `v`, return the old length as the TVar index), `readTVar (vint i)`
+  -- loads cell `i`, `writeTVar (pair (vint i) w)` stores `w` at cell `i` (returns unit). Rollback is
+  -- NOT free on wasm (mutation is destructive): the emitter SNAPSHOTS the heap at `handle` entry and
+  -- RESTORES on the abort path (a `catch_all`-then-rethrow around the body — §rung-3). The Nat is the
+  -- `$heaplen` LOCAL holding this transaction's live cell count (the index a `newTVar` allocates at).
+  | txn   : Nat → Slot     -- transaction-cap-binder (handle transaction) ⇒ the `$heaplen` local
   | dead  : Slot           -- bound-but-unusable (case-on-bool payload / a `put`'s unit result)
   deriving Repr, DecidableEq, Inhabited
 
@@ -141,6 +150,7 @@ def emitVal (env : List Slot) : Val → Emit
       | some (.val l)   => .ok s!"(local.get {l})"
       | some (.cap _)   => .unsup s!"vvar {i} binds a CAPABILITY (no i64 rep — a cap is only usable as a `perform` target)"
       | some (.state _) => .unsup s!"vvar {i} binds a STATE capability (no i64 rep — usable only as a get/put `perform` target)"
+      | some (.txn _)   => .unsup s!"vvar {i} binds a TRANSACTION capability (no i64 rep — usable only as a newTVar/readTVar/writeTVar `perform` target)"
       | some .dead      => .unsup s!"vvar {i} binds a unit `case`/`put`-payload (no i64 rep)"
       | none            => .unsup s!"free vvar {i} (open term — emits closed programs only)"
   | .vunit  => .unsup "vunit (no i64 rep in rung-1)"
@@ -255,6 +265,67 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
               -- (local.set l s₀) initializes the cell; then the body runs and leaves its i64 value.
               -- The cell local `l = next` counts toward maxLocal (`max mLoc (next+1)`).
               (.ok s!"(local.set {l} {es₀})\n    {bS}", max mLoc (next + 1), mTag)
+  -- RUNG-3: handle (transaction ℓ Θ) M  →  journal/snapshot over linear MEMORY (ADR-0030).
+  -- The transaction heap is linear memory (one i64 per cell, cell `i` at byte `8*i`). This slice
+  -- takes the empty-heap start (`Θ = []`, the surface `atomically`), so `handle` resets the live
+  -- length to 0. `$heaplen = next` counts cells; `$saved = next+1` snapshots it for rollback. The
+  -- body runs under a `.txn next` slot; its i64 value flows out on the COMMIT (fall-through) path.
+  -- ROLLBACK (the rung-3 novelty): wasm mutation is DESTRUCTIVE — the outer throws-unwind does NOT
+  -- undo the `memory.store`s a `writeTVar` did (unlike the kernel, where the discarded frame takes
+  -- `Θ'` with it). So the body is wrapped in `(try_table (catch_all_ref $ab) …)`: on ANY exception
+  -- crossing this txn boundary, branch to `$ab`, RESTORE the heap length, then RETHROW (`throw_ref`)
+  -- so the lexically-enclosing throws handler still catches. Empty-start restore is `$heaplen :=
+  -- saved` (allocations dropped — cells that no longer exist are unreadable); a full snapshot COPY
+  -- loop is the general form for pre-seeded heaps (§rung-3.2 of the design note).
+  | .handle (.transaction _ Θ) M =>
+      if Θ ≠ [] then
+        (.unsup "transaction with a non-empty initial heap Θ (only `atomically`/empty-start is rung-3)", next, nextTag)
+      else
+        let hl := next          -- $heaplen local: live cell count (= next alloc index)
+        let sv := next + 1      -- $saved local: snapshot of $heaplen for rollback
+        let (eb, mLoc, mTag) := emitComp (.txn hl :: env) (next + 2) nextTag M
+        match eb with
+        | .unsup r => (.unsup s!"transaction body: {r}", next, nextTag)
+        | .ok bS =>
+            (.ok s!"(local.set {hl} (i64.const 0))\n    (local.set {sv} (local.get {hl}))\n    (block $txcommit{hl} (result i64)\n      (block $txab{hl} (result exnref)\n        (try_table (result i64) (catch_all_ref $txab{hl})\n          {bS})\n        (br $txcommit{hl}))\n      (local.set {hl} (local.get {sv}))\n      (throw_ref))",
+             max mLoc (next + 2), mTag)
+  -- RUNG-3 newTVar site (FUSED with its `letC` continuation): letC (perform (vvar i) "newTVar" v) N.
+  -- `newTVar v` (dispatchOn: `ret (vint Θ.length)`, heap `Θ ++ [v]`) allocates: store `v` at the
+  -- next free cell (`8 * $heaplen`), return the OLD length as the TVar index, bump `$heaplen`. The
+  -- index is a VALUE (an i64), so it flows like an ordinary letC binder — N binds it at index 0 as a
+  -- `.val` local. Emit: capture old len → local, store v, bump len, then N reads the index via it.
+  | .letC (.perform (.vvar i) "newTVar" v) N =>
+      match env[i]? with
+      | some (.txn hl) =>
+          match emitVal env v with
+          | .unsup r => (.unsup s!"newTVar init value not i64-representable: {r}", next, nextTag)
+          | .ok ev =>
+              let idxLoc := next
+              let (en, maxLocal, tn) := emitComp (.val idxLoc :: env) (next + 1) nextTag N
+              match en with
+              | .unsup r => (.unsup r, next, nextTag)
+              | .ok enS =>
+                  (.ok s!"(local.set {idxLoc} (local.get {hl}))\n    (i64.store (i32.wrap_i64 (i64.mul (local.get {idxLoc}) (i64.const 8))) {ev})\n    (local.set {hl} (i64.add (local.get {hl}) (i64.const 1)))\n    {enS}", maxLocal, tn)
+      | some _ => (.unsup s!"newTVar target vvar {i} does not bind a transaction capability", next, nextTag)
+      | none   => (.unsup s!"newTVar target vvar {i} is free (open term)", next, nextTag)
+  -- RUNG-3 writeTVar site (FUSED with its `letC` continuation): letC (perform (vvar i) "writeTVar" (pair (vint j) w)) N.
+  -- `writeTVar (pair (vint j) w)` (dispatchOn: storeSet Θ j w, `ret unit`) writes `w` to cell `j`,
+  -- returns UNIT (no i64 rep) — a STATEMENT fused with its continuation, exactly like `put`. N binds
+  -- the write-unit at index 0 (a `.dead` slot). The index `j` is a value expression (static `vint`).
+  | .letC (.perform (.vvar i) "writeTVar" (.pair jv w)) N =>
+      match env[i]? with
+      | some (.txn _) =>
+          match emitVal env jv, emitVal env w with
+          | .ok ej, .ok ew =>
+              let (en, maxLocal, tn) := emitComp (.dead :: env) next nextTag N
+              match en with
+              | .unsup r => (.unsup r, next, nextTag)
+              | .ok enS =>
+                  (.ok s!"(i64.store (i32.wrap_i64 (i64.mul {ej} (i64.const 8))) {ew})\n    {enS}", maxLocal, tn)
+          | .unsup r, _ => (.unsup s!"writeTVar index not i64-representable: {r}", next, nextTag)
+          | _, .unsup r => (.unsup s!"writeTVar value not i64-representable: {r}", next, nextTag)
+      | some _ => (.unsup s!"writeTVar target vvar {i} does not bind a transaction capability", next, nextTag)
+      | none   => (.unsup s!"writeTVar target vvar {i} is free (open term)", next, nextTag)
   -- RUNG 2b put site (FUSED with its `letC` continuation): letC (perform (vvar i) "put" v) N.
   -- `put` returns UNIT and resumes `Kᵢ` (`dispatchOn`: `ret .vunit`, cell now `v`) — unit has no i64
   -- rep, so put is a STATEMENT `(local.set l ev)`, then N runs. N binds the put-unit at index 0 (an
@@ -273,6 +344,7 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
                   -- write the cell, then leave N's value — a wasm SEQUENCE (put resumes in place).
                   (.ok s!"(local.set {l} {ev})\n    {enS}", maxLocal, tn)
       | some (.cap _)  => (.unsup s!"put target vvar {i} binds a THROWS cap (put is a state op)", next, nextTag)
+      | some (.txn _)  => (.unsup s!"put target vvar {i} binds a TRANSACTION cap (put is a state op — use writeTVar)", next, nextTag)
       | some (.val _)  => (.unsup s!"put target vvar {i} binds a VALUE, not a state capability", next, nextTag)
       | some .dead     => (.unsup s!"put target vvar {i} binds an unusable slot", next, nextTag)
       | none           => (.unsup s!"put target vvar {i} is free (open term)", next, nextTag)
@@ -287,6 +359,7 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
             | .ok ev => (.ok s!"(throw $exn{t} {ev})", next, nextTag)
             | .unsup r => (.unsup s!"raise payload not i64-representable: {r}", next, nextTag)
         | some (.state _) => (.unsup s!"raise target vvar {i} binds a STATE cap (raise is a throws op)", next, nextTag)
+        | some (.txn _)   => (.unsup s!"raise target vvar {i} binds a TRANSACTION cap (raise is a throws op)", next, nextTag)
         | some (.val _) => (.unsup s!"perform target vvar {i} binds a VALUE, not a capability", next, nextTag)
         | some .dead    => (.unsup s!"perform target vvar {i} binds an unusable slot", next, nextTag)
         | none          => (.unsup s!"perform target vvar {i} is free (open term)", next, nextTag)
@@ -296,13 +369,25 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
         match env[i]? with
         | some (.state l) => (.ok s!"(local.get {l})", next, nextTag)
         | some (.cap _)   => (.unsup s!"get target vvar {i} binds a THROWS cap (get is a state op)", next, nextTag)
+        | some (.txn _)   => (.unsup s!"get target vvar {i} binds a TRANSACTION cap (get is a state op — use readTVar)", next, nextTag)
         | some (.val _)   => (.unsup s!"get target vvar {i} binds a VALUE, not a state capability", next, nextTag)
         | some .dead      => (.unsup s!"get target vvar {i} binds an unusable slot", next, nextTag)
         | none            => (.unsup s!"get target vvar {i} is free (open term)", next, nextTag)
+      else if op = "readTVar" then
+        -- RUNG 3: readTVar reads transaction heap cell `j` (`dispatchOn`: `ret Θ[j]`, resume in place).
+        -- The payload `v` is the TVar index (a `vint j`), an i64 expression ⇒ `(i64.load (8*j))`.
+        -- readTVar returns a VALUE (unlike write/new/put's unit), so it flows here as an i64-leaver.
+        match env[i]? with
+        | some (.txn _) =>
+            match emitVal env v with
+            | .ok ej   => (.ok s!"(i64.load (i32.wrap_i64 (i64.mul {ej} (i64.const 8))))", next, nextTag)
+            | .unsup r => (.unsup s!"readTVar index not i64-representable: {r}", next, nextTag)
+        | some _ => (.unsup s!"readTVar target vvar {i} does not bind a transaction capability", next, nextTag)
+        | none   => (.unsup s!"readTVar target vvar {i} is free (open term)", next, nextTag)
       else
-        -- `put` is handled ONLY in the fused `letC (put) N` arm above (it returns unit — no i64 rep
-        -- as a bare expression). A `put` reaching here is a bare put (unit tail) — out of fragment.
-        (.unsup s!"perform op {op} (rung-2: `raise`=throws, `get`/`put`=state; a BARE `put` (unit tail) needs the fused `letC put; N`; newTVar/… are rung-3 txn)", next, nextTag)
+        -- `put`/`writeTVar`/`newTVar` are handled ONLY in the fused `letC (op) N` arms above (they
+        -- return unit / a bound index — no i64 rep as a bare tail expression). Reaching here = bare.
+        (.unsup s!"perform op {op} (rung-2/3: `raise`=throws, `get`/`readTVar`=read; `put`/`writeTVar`/`newTVar` need the fused `letC op; N`)", next, nextTag)
   | .letC m n =>
       -- compute m into local `next`; run n with (.val next :: env), next local = next+1.
       let (em, _, tm) := emitComp env next nextTag m
@@ -326,6 +411,17 @@ def emitComp (env : List Slot) (next : Nat) (nextTag : Nat) : Comp → Emit × N
   | .oom => (.unsup "oom", next, nextTag)
   | .wrong s => (.unsup s!"wrong: {s}", next, nextTag)
 
+/-- Does this `Comp` contain a `handle (transaction …)` anywhere? Drives the `(memory 1)`
+declaration in `emitModule` (rung-3 uses linear memory for the TVar heap). A pure/throws/state
+program mints ZERO memory, so its module stays byte-identical to the earlier rungs (additive). -/
+def usesTxn : Comp → Bool
+  | .handle (.transaction _ _) _ => true
+  | .handle _ M => usesTxn M
+  | .letC m n => usesTxn m || usesTxn n
+  | .case _ n1 n2 => usesTxn n1 || usesTxn n2
+  | .split _ n => usesTxn n
+  | _ => false
+
 /-- Whole-module emission: wrap the fragment body in a wasm module exporting `main : () → i64`,
 declaring the `numLocals` i64 locals the `letC`s used and the `numTags` exception tags the
 `handle (throws _)`s minted. Returns the full `.wat` text or a refusal.
@@ -334,7 +430,9 @@ RUNG 1 (no `handle`): CORE wasm 3.0 — no GC, no exceptions, no imports — run
 RUNG 2 (with `handle throws`): declares `(tag $exnT (param i64))` per minted tag and uses the
 `try_table`/`throw` exception-handling proposal (Wasm 3.0 core; wasmtime needs `-W exceptions=y`,
 see `tools/emit-rung1-diff.sh`). A pure/rung-1.5 program emits ZERO tags, so its module is
-byte-identical to the rung-1 form (the tag block is empty) — the extension is purely additive. -/
+byte-identical to the rung-1 form (the tag block is empty) — the extension is purely additive.
+RUNG 3 (with `handle transaction`): additionally declares `(memory 1)` for the TVar heap (one i64
+per cell). The rollback path uses `catch_all_ref`/`throw_ref` (also under `-W exceptions=y`). -/
 def emitModule (M : Comp) : Emit :=
   let (body, numLocals, numTags) := emitComp [] 0 0 M
   match body with
@@ -345,7 +443,9 @@ def emitModule (M : Comp) : Emit :=
       -- One `(tag $exnT (param i64))` per minted throws-handler tag (each abort carries an i64 payload).
       let tagDecls :=
         (List.range numTags).foldl (fun acc t => acc ++ s!"\n  (tag $exn{t} (param i64))") ""
-      .ok s!"(module{tagDecls}\n  (func $main (export \"main\") (result i64){localDecls}\n    {b})\n)"
+      -- One page of linear memory for the TVar heap, only when a transaction is present (additive).
+      let memDecl := if usesTxn M then "\n  (memory 1)" else ""
+      .ok s!"(module{tagDecls}{memDecl}\n  (func $main (export \"main\") (result i64){localDecls}\n    {b})\n)"
 
 -- ── SELF-TESTS (by rfl — axiom-clean; part of the `lake build` gate) ─────────────────────
 
@@ -467,9 +567,31 @@ example :
 example :
     (emitModule (.handle (.state 0 (.vint 0)) (.perform (.vvar 0) "put" (.vint 1)))).isOk = false := by
   simp [emitModule, emitComp, emitVal, Emit.isOk]
--- transaction (rung-3) stays out of the state fragment → unsup.
+-- ── RUNG-3 arms (transaction → journal/snapshot over linear memory) — structural guards ────
+-- empty-start transaction, trivial body: emits (memory declared, heaplen reset).
 example :
-    (emitModule (.handle (.transaction 0 []) (.ret (.vint 1)))).isOk = false := by
+    (emitModule (.handle (.transaction 0 []) (.ret (.vint 1)))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- new;read: handle (txn) (let r = newTVar 9 in readTVar r) — alloc, read-back.
+example :
+    (emitModule (.handle (.transaction 2 [])
+      (.letC (.perform (.vvar 0) "newTVar" (.vint 9)) (.perform (.vvar 1) "readTVar" (.vvar 0))))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- A11 abort/rollback: outer throws over a txn that writes then raises → emits (catch_all_ref restore).
+example :
+    (emitModule (.handle (.throws 0)
+      (.handle (.transaction 2 [])
+        (.letC (.perform (.vvar 0) "newTVar" (.vint 100))
+          (.letC (.perform (.vvar 1) "writeTVar" (.pair (.vint 0) (.vint 70)))
+            (.perform (.vvar 3) "raise" (.vint 100))))))).isOk = true := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- RUNG-3 refusals are LOUD: a non-empty initial heap is out of the empty-start fragment.
+example :
+    (emitModule (.handle (.transaction 0 [.vint 5]) (.ret (.vint 1)))).isOk = false := by
+  simp [emitModule, emitComp, emitVal, Emit.isOk]
+-- a `get` on a TRANSACTION cap (kind mismatch — txn uses readTVar) → unsup.
+example :
+    (emitModule (.handle (.transaction 0 []) (.perform (.vvar 0) "get" .vunit))).isOk = false := by
   simp [emitModule, emitComp, emitVal, Emit.isOk]
 
 end -- public section
