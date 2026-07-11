@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (46)
+## active (47)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -56,6 +56,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`tactics-survey.md`](tactics-survey.md) — Lean 4 tactics + tooling survey (for bang-lang verification)
 - [`traits-prelude-survey.md`](traits-prelude-survey.md) — Traits / typeclasses prelude survey — the census + the derivability matrix
 - [`verification-ladder.md`](verification-ladder.md) — The verification ladder — quality gates for agent-speed code
+- [`wasm-concurrency-survey.md`](wasm-concurrency-survey.md) — Wasm components + concurrency — how bang should model concurrent execution (design survey)
 
 ## archival (11)
 
