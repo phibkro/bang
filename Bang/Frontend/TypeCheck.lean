@@ -3866,6 +3866,216 @@ def injectPrelude (p : Prog) : Except String Prog :=
       pubNames := mentioned, decls := preludeProg.decls.filter (fun d => mentioned.contains d.name) }
     mergeModules [("Prelude", trimmedPrelude)] { p with uses := p.uses ++ [⟨"Prelude", mentioned⟩] }
 
+/-! ## `deriving (Eq, Ord)` — the structural derive handler (ADR-0097, issue #109)
+
+A `data Foo = C₀(…) | C₁(…) | … deriving (Eq, Ord)` clause (parsed into `Prog.derivesFor`,
+Surface.lean) expands to an ordinary `Decl.traitD` + `Decl.implD` pair, indistinguishable at the
+kernel boundary from a hand-written one (ADR-0097's "Layer F" framing — the SAME elaborate-away
+move `ADR-0069`/`0075`/`0088`/`0091`/`0093` already use). §2's codegen: same-tag structural fold for
+`Eq` (AND over payload-slot `==`, different-tag ⇒ `false`); decl-order tag comparison + lexicographic
+payload for `Ord`. §3a: recursive carriers (`Cons(Int, IntList)`) are IN SCOPE — the generated
+`impl`'s 2-param op rides the SAME `#112` knot-based `let rec` dispatch (`buildEnv`'s `.implD` arm,
+`wrapPendingKnots`) any hand-written 2-param impl op does, so a self-referential `tx == ty` (on the
+carrier's own recursive field) resolves through real recursion, not a splice.
+
+**Trait sourcing (ADR-0097 §2's decision (a), scoped per §6/Revisit-if's stopgap):** rather than
+importing a `Prelude.bang`-declared `trait Eq`/`trait Ord` (deferred — see the two gaps this
+session found, not yet closed: `mergeModules`'s `qualifyDeclName` unconditionally qualifies a
+`.traitD`'s OWN name to `ModName_Name` with no `usedPlainFns`-style un-qualification alias for
+trait names, unlike a plain fn; and `bang test`'s law discovery, `lawInstancesOf`/
+`lawInstanceOpCallDiagnostics`, parses RAW source directly with no prelude/module-merge step at
+all, so a prelude-only trait declaration would be invisible to `bang test` on a decls-only derived
+program), the handler emits a MINIMAL inline `trait Eq`/`trait Ord` declaration itself — ONLY when
+the program doesn't already declare a trait of that name (a user's own hand-written `trait Eq`
+wins; the handler then targets IT instead, matching whatever op/law shape the user chose, mirroring
+how `#108`'s ctor namespacing needs no derive-handler awareness because the fold is always
+self-type-scoped). This keeps every derive-handler-touched program SELF-CONTAINED (no module merge,
+no qualification, no `bang test` blind spot) — the exact shape ADR-0097's own witnesses ran, and
+what `examples/trait-recursive-{eq,ord}` already encode by hand. Superseded once `Prelude.bang`
+ships a canonical `trait Eq`/`trait Ord` AND both gaps above are closed (ADR-0097's own "Revisit
+if"). -/
+
+/-- The canonical `Eq`/`Ord` trait declarations this handler targets — SAME shape ADR-0097 §2's
+worked examples and `examples/trait-recursive-{eq,ord}` hand-write, so a generated impl is
+behaviorally IDENTICAL to those (the differential oracle this handler is built to match). One law
+each (`refl`/`irrefl` — deliberately minimal, not the full `symm`/`trans`/total-order set ADR-0097
+§2 sketches for the eventual `Prelude.bang` version): a stopgap ships the SMALLEST law that still
+demonstrates `bang test`'s free law-discovery (ADR-0097 §5), not the full canonical law suite,
+which belongs on the (not-yet-shipped) prelude declaration this stands in for. -/
+def eqTraitDecl : Decl :=
+  .traitD "Eq" [] [⟨"eq", ["a", "b"], .tSum .tUnit .tUnit, .tArr .tSelf (.tArr .tSelf (.tSum .tUnit .tUnit))⟩]
+    [⟨"refl", ["a"], .binopS .eq (.var "a") (.var "a")⟩]
+
+def ordTraitDecl : Decl :=
+  .traitD "Ord" [] [⟨"lt", ["a", "b"], .tSum .tUnit .tUnit, .tArr .tSelf (.tArr .tSelf (.tSum .tUnit .tUnit))⟩]
+    [⟨"irrefl", [], .binopS .eq (.lit 0) (.lit 0)⟩]
+
+/-- `true`/`false` as the SAME `Unit + Unit` encoding every hand-written law/impl in the corpus
+uses (`0 == 0` / `0 == 1`, ADR-0097 §2's worked examples) — the derive handler's fold emits these
+verbatim at a base case, never a `Bool`-typed literal (v1 has none). -/
+def deriveTrueS : Surf := .binopS .eq (.lit 0) (.lit 0)
+def deriveFalseS : Surf := .binopS .eq (.lit 0) (.lit 1)
+
+/-- Does `t` mention a FUNCTION type anywhere in its structure? (`.tArr` at ANY depth, including
+nested inside a product/sum/thunk payload slot.) ADR-0097 §4: a ctor payload slot of function type
+is refused outright (`Eq`/`Ord` are undecidable on functions) — VACUOUS in v1 today (`resolveTy`'s
+`CtorInfo` shape admits no function-typed payload, ADR-0069), but the handler asserts the policy
+now per the ADR's own "state it now so a future payload-kind extension does not silently
+mis-derive" rationale. -/
+def tyHasArrow : Ty → Bool
+  | .tArr .. => true
+  | .tSum a b | .tProd a b => tyHasArrow a || tyHasArrow b
+  | .tThunk a | .tEff _ a | .tEffR _ a => tyHasArrow a
+  | .tMu a => tyHasArrow a
+  | _ => false
+
+/-- Fresh field-binder names for a ctor's arity-≤2 payload (ADR-0069: ≤ 2 fields in v1, nest
+tuples beyond that) — `x0`/`x1` for the LEFT scrutinee's binders, `y0`/`y1` for the RIGHT, so a
+same-ctor arm's two bound-variable sets never collide (`matchD`'s outer arm binds `x*`, the nested
+inner arm binds `y*`, both visible together in the innermost body). -/
+def deriveFieldNames (pfx : String) (arity : Nat) : List String :=
+  (List.range arity).map (fun i => s!"{pfx}{i}")
+
+/-- The `Eq` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒ AND-fold
+`x_i == y_i` over every payload slot (nested `let`+`if`, the exact `headEq`/`tailEq` shape
+`examples/trait-recursive-eq` hand-writes — recursing via bare `==`, which dispatches through
+`env.insts`/the `#112` knot for a `Self`-typed field exactly like a hand-written impl, or the
+kernel δ-rule for `Int`); different ctor ⇒ `false`, unconditionally (payload never inspected). -/
+def eqArmBody (outerArity innerArity : Nat) : Surf :=
+  if outerArity != innerArity then deriveFalseS   -- unreachable in practice (matching ctor identity
+                                                    -- implies matching arity, ADR-0069) — defensive.
+  else
+    let xs := deriveFieldNames "x" outerArity
+    let ys := deriveFieldNames "y" innerArity
+    match xs, ys with
+    | [], []             => deriveTrueS                                    -- nullary ctor: trivially equal
+    | [x0], [y0]          => .binopS .eq (.var x0) (.var y0)                -- 1 field: bare `==`
+    | [x0, x1], [y0, y1] =>                                                 -- 2 fields: AND-fold
+        .lett "#headEq" (.binopS .eq (.var x0) (.var y0))
+          (.lett "#tailEq" (.binopS .eq (.var x1) (.var y1))
+            (.ifS (.var "#headEq") (.var "#tailEq") deriveFalseS))
+    | _, _ => deriveFalseS   -- unreachable: arity ≤ 2 in v1 (ADR-0069), defensive fallback.
+
+/-- The full `Eq.eq` fold over ALL (outer, inner) ctor pairs of `cs` — a `matchD`-of-`matchD`
+diagonal, ADR-0097 §2's exact shape. Each outer arm's binders are `x0..`; each nested inner arm
+(one per ctor of `cs` again) is `y0..` when it's the SAME ctor as the outer arm (payload-wise
+fold), else `deriveFalseS` (payload unused, so its binders are irrelevant — bound but unread). -/
+def eqFoldBody (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
+  let outerArms := cs.map (fun (outerCtor, outerTys) =>
+    let xs := deriveFieldNames "x" outerTys.length
+    let innerArms := cs.map (fun (innerCtor, innerTys) =>
+      let ys := deriveFieldNames "y" innerTys.length
+      let body := if innerCtor == outerCtor then eqArmBody outerTys.length innerTys.length else deriveFalseS
+      (innerCtor, ys, body))
+    (outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
+  .matchD (.var pVar) (toDArms outerArms)
+
+/-- The `Ord` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒
+lexicographic ladder over payload slots (`if hx < hy then true else if hy < hx then false else
+recurse-next-slot`, `examples/trait-recursive-ord`'s exact shape); DIFFERENT ctor ⇒ the OUTER
+ctor's decl-order INDEX compared against the INNER's (`outerIdx < innerIdx`, ADR-0097 §2's
+"ctor-index order = decl order, the tag IS the ordinal" — ADR-0069's sum-by-decl-order encoding). -/
+def ordArmBody (outerIdx innerIdx outerArity innerArity : Nat) : Surf :=
+  if outerIdx != innerIdx then
+    if outerIdx < innerIdx then deriveTrueS else deriveFalseS
+  else if outerArity != innerArity then deriveFalseS   -- defensive: same idx ⇒ same ctor ⇒ same arity
+  else
+    let xs := deriveFieldNames "x" outerArity
+    let ys := deriveFieldNames "y" innerArity
+    match xs, ys with
+    | [], []             => deriveFalseS                                    -- nullary vs nullary: never strictly less
+    | [x0], [y0]          => .binopS .lt (.var x0) (.var y0)                 -- 1 field: bare `<`
+    | [x0, x1], [y0, y1] =>                                                  -- 2 fields: lexicographic ladder
+        .ifS (.binopS .lt (.var x0) (.var y0)) deriveTrueS
+          (.ifS (.binopS .lt (.var y0) (.var x0)) deriveFalseS
+            (.binopS .lt (.var x1) (.var y1)))
+    | _, _ => deriveFalseS   -- unreachable: arity ≤ 2 in v1 (ADR-0069), defensive fallback.
+
+/-- The full `Ord.lt` fold over ALL (outer, inner) ctor pairs of `cs` — mirrors `eqFoldBody`'s
+`matchD`-of-`matchD` shape exactly, threading each ctor's DECL-ORDER INDEX (its position in `cs`,
+ADR-0069's ordinal) into `ordArmBody` instead of a same/different-ctor Bool. -/
+def ordFoldBody (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
+  let indexed := cs.zipIdx
+  let outerArms := indexed.map (fun ((outerCtor, outerTys), outerIdx) =>
+    let xs := deriveFieldNames "x" outerTys.length
+    let innerArms := indexed.map (fun ((innerCtor, innerTys), innerIdx) =>
+      let ys := deriveFieldNames "y" innerTys.length
+      (innerCtor, ys, ordArmBody outerIdx innerIdx outerTys.length innerTys.length))
+    (outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
+  .matchD (.var pVar) (toDArms outerArms)
+
+/-- Expand ONE `(dataName, deriveList)` entry (`Prog.derivesFor`) into the `Decl`s it contributes:
+a stopgap `trait Eq`/`trait Ord` declaration IFF the program doesn't already declare a trait of
+that name (the "target the user's own trait if present" rule, this section's header comment), plus
+the generated `impl <Trait> for <dataName> { fn <op>(p, q) = <fold> }`. Refuses (LOUD error, ADR-0046)
+a function-typed payload slot anywhere in `cs` (ADR-0097 §4 — vacuous in v1 today, asserted anyway)
+and an unrecognized derive name (only `Eq`/`Ord` are tier-1, ADR-0097's own scope). -/
+def expandOneDerive (existingTraitNames : List String) (dataName : String)
+    (cs : List (String × List Ty)) (deriveName : String) : Except String (List Decl) := do
+  if cs.any (fun (_, tys) => tys.any tyHasArrow) then
+    throw s!"cannot derive '{deriveName}' for '{dataName}': a constructor payload is function-typed \
+(Eq/Ord are undecidable on functions, ADR-0097 §4)"
+  match deriveName with
+  | "Eq" =>
+      let traitDecl := if existingTraitNames.contains "Eq" then [] else [eqTraitDecl]
+      let implDecl := Decl.implD "Eq" (Ty.tName dataName)
+        [⟨"eq", ["p", "q"], eqFoldBody cs "p" "q"⟩]
+      pure (traitDecl ++ [implDecl])
+  | "Ord" =>
+      let traitDecl := if existingTraitNames.contains "Ord" then [] else [ordTraitDecl]
+      let implDecl := Decl.implD "Ord" (Ty.tName dataName)
+        [⟨"lt", ["p", "q"], ordFoldBody cs "p" "q"⟩]
+      pure (traitDecl ++ [implDecl])
+  | other => throw s!"unknown derive '{other}' for '{dataName}' — v1 supports only 'Eq'/'Ord' (ADR-0097 tier 1)"
+
+/-- **The derive handler's PUBLIC entry (#109, ADR-0097).** Expand every `Prog.derivesFor` entry
+into its `trait`/`impl` decls, APPENDING them AFTER `p.decls` — every derived `impl`'s target
+`data` decl (and, when the program hand-declares its own `trait Eq`/`trait Ord`, that trait too)
+textually PRECEDES it, matching `buildEnv`'s own "IN ORDER" contract (`buildEnv`'s doc comment,
+TypeCheck.lean: "a data type may reference itself + earlier decls; forward references fail loud")
+and mirroring hand-written impl placement in the ADR's own worked examples and
+`examples/trait-recursive-*`.
+
+A stopgap trait declaration (`eqTraitDecl`/`ordTraitDecl`) is added AT MOST ONCE per program even
+if multiple `data` decls derive the SAME trait (`Eq` on both `Box` and `IntList` in one program) —
+tracked via a running `traits already emitted or user-declared` set threaded through the fold,
+avoiding a `buildEnv` "duplicate trait" surprise (today unenforced, ADR-0097 doesn't want to be the
+first thing that trips it). Runs BEFORE `injectPrelude`/`eraseLettMultiProg` in `elabProg`'s
+pipeline, and is called directly by `lawInstancesOf`/`lawInstanceOpCallDiagnostics`/
+`unreachableIntImplDiagnostics` (via `parseProgWithDerives`, below) so `bang test`'s raw-source law
+discovery sees the SAME expanded decls `elabProg` does — closing the gap a `Prelude.bang`-sourced
+trait would have left open (this section's header comment). -/
+public def expandDerives (p : Prog) : Except String Prog := do
+  if p.derivesFor.isEmpty then pure p
+  else
+    let existingTraitNames := p.decls.filterMap (fun d => match d with | .traitD n .. => some n | _ => none)
+    let mut newDecls : List Decl := []
+    let mut seenStopgapTraits : List String := existingTraitNames
+    for (dataName, derives) in p.derivesFor do
+      match p.decls.find? (fun d => match d with | .dataD n _ _ => n == dataName | _ => false) with
+      | none => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
+      | some (.dataD _ _ cs) =>
+          for deriveName in derives do
+            let ds ← expandOneDerive seenStopgapTraits dataName cs deriveName
+            for d in ds do
+              match d with
+              | .traitD n .. => seenStopgapTraits := n :: seenStopgapTraits
+              | _ => pure ()
+            newDecls := newDecls ++ ds
+      | some _ => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
+    pure { p with decls := p.decls ++ newDecls }
+
+/-- `parseProg` FOLLOWED by `expandDerives` (#109) — the ONE place law discovery
+(`lawInstancesOf`/`lawInstanceOpCallDiagnostics`/`unreachableIntImplDiagnostics`) and `elabProg`'s
+own `Bang.Surface.parseProg src >>= elabProg` callers should reach for instead of a bare
+`parseProg`, so a `deriving`-only decls file (no hand-written `trait`/`impl` at all) still
+discovers its derived impl's laws under `bang test` — `bang test`'s `runTest` (Main.lean) parses
+RAW source with zero module/prelude resolution, so if the derive expansion happened only inside
+`elabProg`'s deeper pipeline, `bang test` would see zero decls and report "no trait laws found"
+even though a `deriving`-generated impl (with a freely-attached law, ADR-0097 §5) exists. -/
+def parseProgWithDerives (src : String) : Except String Prog :=
+  Bang.Surface.parseProg src >>= expandDerives
+
 /-- **#112 fix.** Wrap `body` in one `let rec` per PENDING 2-param impl-op knot (`env.pendingKnots`,
 DECL ORDER — each subsequent `let rec` nests OUTSIDE the previous, so it sees every earlier knot's
 name in scope, mirroring `buildEnv`'s pre-#112 "earlier ops resolve" guarantee while ALSO giving
@@ -3911,8 +4121,16 @@ DIRECTLY here, not via the module mechanism — they are foundational to how lit
 (`"hi"`/`'a'` desugar straight to `SCons`/`Char` ctor names) and to annotation-free generic
 introduction (ADR-0081), so they precede `Prelude.bang`'s own elaboration (its `pub let`s reference
 `Str`/`Char`/`Option`/`Result` ctors, which must already be in `buildEnv`'s `ElabEnv` for THEM to
-type-check) — out of ADR-0098's scope (only the FUNCTION strings moved to a module). -/
+type-check) — out of ADR-0098's scope (only the FUNCTION strings moved to a module).
+
+`expandDerives` (#109, ADR-0097) runs FIRST of all, before `injectPrelude` — it only touches
+`p.decls`/`p.derivesFor` (both already populated by the parser, `Prog`'s still-unmerged shape) and
+must land its generated `trait`/`impl` decls before `injectPrelude`'s mention-filter walk and
+`eraseLettMultiProg`'s per-decl `.lettMulti` erasure both see them (a generated impl's body carries
+no `.lettMulti` marker today, but running derive-expansion first keeps the ordering uniform with
+every other decl-shaped pass in this pipeline). -/
 def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) := do
+  let p ← expandDerives p
   let p ← injectPrelude p
   let p := Bang.Surface.eraseLettMultiProg p
   let (nonLetDecls, foldedBody) := foldLetDecls p.decls p.body
@@ -4343,7 +4561,7 @@ broader visibility markers: no new type exposure, just four strings/list-of-stri
 A law-runner harness (`Bang.Witness.LawTest`, #60) can drive each entry's `body` + `params` through
 its OWN source-string generation/sampling without needing `ElabEnv`/`Val`/`VT` at all. -/
 public def lawInstancesOf (src : String) : Except String (List (String × String × List String × String)) := do
-  let p ← parseProg src
+  let p ← parseProgWithDerives src
   let mut out : List (String × String × List String × String) := []
   for d in p.decls do
     match d with
@@ -4367,7 +4585,7 @@ two lists positionally without re-deriving the trait×impl walk a second time (k
 function rather than widening `lawInstancesOf`'s own additive/stable 4-tuple signature, which
 existing `#guard`s and `LawTest.lean` already destructure). -/
 public def lawInstanceOpCallDiagnostics (src : String) : Except String (List (String × String × Option String)) := do
-  let p ← parseProg src
+  let p ← parseProgWithDerives src
   let mut out : List (String × String × Option String) := []
   for d in p.decls do
     match d with
@@ -4399,7 +4617,7 @@ its own trait declares it for. Confirmed structurally (the SAME code path #74's 
 not a hypothetical, a REAL v1 gap an author can trip over silently — `impl Eq for Int` type-checks
 and BUILDS fine, it simply never runs. Fail-loud here beats a silently-inert impl. -/
 public def unreachableIntImplDiagnostics (src : String) : Except String (List (String × String)) := do
-  let p ← parseProg src
+  let p ← parseProgWithDerives src
   let mut out : List (String × String) := []
   for d in p.decls do
     match d with

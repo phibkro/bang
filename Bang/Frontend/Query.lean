@@ -462,11 +462,21 @@ public def dumpJsonP (p : Prog) (bangVersion : String) (declModule : List (Strin
 /-- **PUBLIC entry**: `bang query dump <file>` — the single-file/stdin route: parse `src`, assemble
 the full fact base INCLUDING law instances (this route has real source text `lawInstancesOf` can
 re-derive from — unlike the multi-file resolver route, see `dumpJsonP`'s note). `bangVersion` is
-`Main.lean`'s own version constant, threaded in (see this section's header). -/
+`Main.lean`'s own version constant, threaded in (see this section's header).
+
+`"decls"` is expanded through `Bang.TypeCheck.expandDerives` (#109, ADR-0097 §7) — same rule as
+`lawInstancesOf` a few lines below: a `deriving`-generated `trait`/`impl` is real elaborator input
+and should APPEAR in the fact base, even though `DeclFact` carries no provenance marker yet (§7's
+named, non-blocking follow-up — "derived" vs "hand-written" is not yet distinguishable from the
+output, only PRESENCE is asserted this slice). A `expandDerives` failure (e.g. a malformed
+`deriving` target) falls back to the UN-expanded `p` rather than failing the whole dump — mirrors
+the law-discovery-failure isolation immediately below (one bad seam doesn't hide everything else,
+ADR-0046). -/
 public def dumpJson (src : String) (bangVersion : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
-  | .ok p =>
+  | .ok p0 =>
+      let p := (Bang.TypeCheck.expandDerives p0).toOption.getD p0
       let facts := declFactsOf p
       let lawsJ := match Bang.TypeCheck.lawInstancesOf src with
         | .ok insts => insts.map lawInstanceJson
@@ -496,11 +506,12 @@ public def symbolsJsonP (p : Prog) : String :=
   jsonObj [jsonField "ok" "true", jsonField "symbols" (jsonArr ((declFactsOf p).map DeclFact.toJson))]
 
 /-- **PUBLIC entry**: `bang query symbols <file>` — the single-file/stdin route: parse `src` then
-defer to `symbolsJsonP`. -/
+defer to `symbolsJsonP`. Expanded through `Bang.TypeCheck.expandDerives` first (#109, same rule +
+same failure-isolation as `dumpJson`'s own "decls" field, this section's header comment). -/
 public def symbolsJson (src : String) : String :=
   match Bang.Surface.parseProgLocated src with
   | .error (m, _) => errorJsonOk m
-  | .ok p         => symbolsJsonP p
+  | .ok p0        => symbolsJsonP ((Bang.TypeCheck.expandDerives p0).toOption.getD p0)
 
 /-- Look up ONE `DeclFact` by name — the shared lookup `type`/`effects`/`def` all filter through
 (the Tier-3 "thin projection" move applied uniformly). -/

@@ -1805,6 +1805,12 @@ structure Prog where
   imports  : List ImportDecl := []
   uses     : List UseDecl    := []
   pubNames : List String     := []
+  -- ADR-0097 §1: a `data` decl's trailing `deriving (Eq, Ord)` clause, keyed by the TYPE name
+  -- (`(dataName, deriveList)`) — a `Prog`-header-shaped field mirroring `pubNames` immediately
+  -- above (same rationale: a per-`Decl` field on `.dataD` would ripple across all 45 existing
+  -- `.dataD` call sites for a property no consumer besides the derive handler needs). Only a
+  -- `data` decl ever contributes a nonempty entry (`pDecl`'s own contract, Surface.lean).
+  derivesFor : List (String × List String) := []
   decls    : List Decl
   body     : Surf
   isLibrary : Bool := false
@@ -1961,28 +1967,56 @@ def pTraitParams : Nat → P (List String)
     | p :: r   => do let (rest, ts) ← pTraitParams f r; .ok (p :: rest, ts)
     | []       => .error "unterminated trait declaration (expected '{')"
 
-/-- One declaration: `trait N { … }`, `impl N for τ { … }`, or `data N ā = C | …`. -/
-def pDecl : Nat → P Decl
+/-- The comma-separated trait-name list of an OPTIONAL trailing `deriving (Eq, Ord)` clause on a
+`data` decl (ADR-0097 §1) — up to and including `)`. Absent entirely ⇒ `[]`, the loop-until-`=`
+shape `pDataParams` already established for a `data` decl's OWN optional trailing clauses. -/
+def pDerivingNamesLoop : Nat → P (List String)
+  | 0,     ts => .error ⟨"parser out of fuel", ts⟩
+  | f + 1, ts => do
+      let (n, ts) ← pIdent ts
+      match ts with
+      | "," :: ts => do let (rest, ts) ← pDerivingNamesLoop f ts; .ok (n :: rest, ts)
+      | ")" :: ts => .ok ([n], ts)
+      | t :: r    => .error ⟨s!"expected ',' or ')' in a 'deriving' clause, got '{t}'", t :: r⟩
+      | []        => .error "unterminated 'deriving' clause"
+
+/-- `deriving (Eq, Ord)` immediately after a `data` decl's constructor list — OPTIONAL, `[]` when
+absent (every existing `data` decl with no trailing `deriving` keyword parses unchanged). -/
+def pDerivingClause : Nat → P (List String)
+  | 0,     ts => .error ⟨"parser out of fuel", ts⟩
+  | f + 1, "deriving" :: ts => do
+      let (_, ts) ← expect "(" ts
+      pDerivingNamesLoop f ts
+  | _ + 1, ts => .ok ([], ts)
+
+/-- One declaration: `trait N { … }`, `impl N for τ { … }`, or `data N ā = C | … [deriving (…)]`.
+Returns the derives list ALONGSIDE the `Decl` — `[]` for every non-`data` decl (`deriving` is a
+`data`-only trailing clause, ADR-0097 §1) — mirroring how `pDeclPub` threads its OWN out-of-band
+`isPub` flag next to the parsed `Decl` rather than widening `Decl.dataD`'s own constructor (which
+would ripple across all 45 existing `.dataD` call sites for a property that, like `pub`-ness, is
+PROGRAM-header-shaped, not decl-shaped — the `Prog.pubNames` precedent, ADR-0093). -/
+def pDecl : Nat → P (Decl × List String)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, "data" :: ts => do
       let (n, ts) ← pIdent ts
       let (ps, ts) ← pDataParams f ts        -- type params before `=` (`data List a`); [] = monomorphic
       let (_, ts) ← expect "=" ts
       let (cs, ts) ← pCtors f ts
-      .ok (.dataD n ps cs, ts)
+      let (derives, ts) ← pDerivingClause f ts
+      .ok ((.dataD n ps cs, derives), ts)
   | f + 1, "trait" :: ts => do
       let (n, ts) ← pIdent ts
       let (ps, ts) ← pTraitParams f ts        -- HK trait params before `{` (`trait Functor f`); [] = Self-only
       let (_, ts) ← expect "{" ts
       let ((ops, laws), ts) ← pTraitMembers f ts
-      .ok (.traitD n ps ops laws, ts)
+      .ok ((.traitD n ps ops laws, []), ts)
   | f + 1, "impl" :: ts => do
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect "for" ts
       let (t, ts) ← pTy f ts
       let (_, ts) ← expect "{" ts
       let (ops, ts) ← pImplMembers f ts
-      .ok (.implD n t ops, ts)
+      .ok ((.implD n t ops, []), ts)
   | f + 1, "fn" :: ts => do                    -- bounded generic function (bite-2, ADR-0080)
       let (n, ts) ← pIdent ts
       let (ps, ts) ← pParams f ts
@@ -1993,19 +2027,19 @@ def pDecl : Nat → P Decl
       let (tv, ts) ← pIdent ts
       let (_, ts) ← expect "=" ts
       let (b, ts) ← pExpr f ts                 -- body (self-delimiting: end it at a `match`/`)` before the next decl)
-      .ok (.fnD n ps ty tr tv b, ts)
+      .ok ((.fnD n ps ty tr tv b, []), ts)
   | f + 1, "effect" :: ts => do                -- ADR-0092 D1: `effect N { op1 : ArgTy -> ResTy, … }`
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect "{" ts
       let (ops, ts) ← pEffectMembers f ts
-      .ok (.effectD n ops, ts)
+      .ok ((.effectD n ops, []), ts)
   | f + 1, "let" :: "rec" :: ts => do          -- ADR-0093 D5 (operator ruling): `let rec name : T = expr`
       let (n, ts) ← pIdent ts
       let (_, ts) ← expect ":" ts
       let (t, ts) ← pTy f ts
       let (_, ts) ← expect "=" ts
       let (e, ts) ← pExpr f ts
-      .ok (.letRecD n t e, ts)
+      .ok ((.letRecD n t e, []), ts)
   | f + 1, "let" :: ts => do                   -- ADR-0093 D5 (operator ruling): `let name [: Ty] = expr` (no `in`)
       let (n, ts) ← pIdent ts
       match ts with
@@ -2013,11 +2047,11 @@ def pDecl : Nat → P Decl
           let (t, ts) ← pTy f ts
           let (_, ts) ← expect "=" ts
           let (e, ts) ← pExpr f ts
-          .ok (.letD n (some t) e, ts)
+          .ok ((.letD n (some t) e, []), ts)
       | _ => do
           let (_, ts) ← expect "=" ts
           let (e, ts) ← pExpr f ts
-          .ok (.letD n none e, ts)
+          .ok ((.letD n none e, []), ts)
   | _ + 1, t :: r => .error ⟨s!"expected 'trait', 'impl', 'data', 'fn', 'effect', or 'let', got '{t}'", t :: r⟩
   | _ + 1, []     => .error "expected a declaration, got end of input"
 
@@ -2080,45 +2114,53 @@ def isLetDecl (fuel : Nat) (ts : List String) : Bool :=
 
 /-- One declaration, `pub`-prefixable (ADR-0093 D3): `pub data …`, `pub fn …`, etc. mark the decl
 exported; the bare form (no `pub`) is module-private by default. Returns the parsed `Decl` alongside
-whether it was `pub` — `pDecls` folds that into `Prog.pubNames` by `Decl.name` so every existing
-`Decl` consumer stays untouched (see the `Prog.pubNames` doc comment). -/
-def pDeclPub : Nat → P (Decl × Bool)
+whether it was `pub`, alongside the decl's OWN `deriving (…)` clause (`[]` except for `data`,
+ADR-0097 §1) — `pDecls` folds `isPub` into `Prog.pubNames` and `derives` into `Prog.derivesFor`, both
+by `Decl.name`, so every existing `Decl` consumer stays untouched (see `Prog.pubNames`'s own doc
+comment, the precedent this mirrors). -/
+def pDeclPub : Nat → P (Decl × Bool × List String)
   | 0,     _  => .error "parser out of fuel"
   | f + 1, "pub" :: ts =>
       if let some t := ts.head? then
-        if isDeclStart t || isLetDecl f ts then do let (d, ts) ← pDecl f ts; .ok ((d, true), ts)
+        if isDeclStart t || isLetDecl f ts then do
+          let ((d, derives), ts) ← pDecl f ts; .ok ((d, true, derives), ts)
         else .error ⟨s!"expected a declaration after 'pub', got '{t}'", ts⟩
       else .error "expected a declaration after 'pub', got end of input"
-  | f + 1, ts => do let (d, ts) ← pDecl f ts; .ok ((d, false), ts)
+  | f + 1, ts => do let ((d, derives), ts) ← pDecl f ts; .ok ((d, false, derives), ts)
 
 /-- The declaration prelude: zero or more (optionally `pub`-prefixed) decls, delimited by their
-leading keyword. Returns the decls plus the accumulated `pub` name set. A `let`/`let rec` decl is
-included ONLY when `isLetDecl` confirms it is not the script-mode body form (ADR-0093 D5) — checked
-BEFORE consuming anything, so a script-mode `let … in …` correctly falls through to `.ok (([], []),
-ts)` with `ts` UNCONSUMED, letting `parseProgE`'s `pExpr fuel ts` parse it as the trailing body. -/
-def pDecls : Nat → P (List Decl × List String)
+leading keyword. Returns the decls plus the accumulated `pub` name set plus the accumulated
+`(typeName, deriveList)` pairs (ADR-0097 §1 — only a `data` decl ever contributes a nonempty entry,
+`pDecl`'s own contract). A `let`/`let rec` decl is included ONLY when `isLetDecl` confirms it is not
+the script-mode body form (ADR-0093 D5) — checked BEFORE consuming anything, so a script-mode
+`let … in …` correctly falls through to `.ok ((([], [], []), ts))` with `ts` UNCONSUMED, letting
+`parseProgE`'s `pExpr fuel ts` parse it as the trailing body. -/
+def pDecls : Nat → P (List Decl × List String × List (String × List String))
   | 0,     _  => .error "parser out of fuel"
   | f + 1, ts =>
     match ts with
     | "pub" :: rest =>
       if (rest.head?.map isDeclStart).getD false || isLetDecl f rest then do
-        let ((d, isPub), ts) ← pDeclPub f ts
-        let ((ds, pubs), ts) ← pDecls f ts
-        .ok ((d :: ds, if isPub then d.name :: pubs else pubs), ts)
-      else .ok (([], []), ts)
+        let ((d, isPub, derives), ts) ← pDeclPub f ts
+        let ((ds, pubs, derivesFor), ts) ← pDecls f ts
+        .ok ((d :: ds, if isPub then d.name :: pubs else pubs,
+              if derives.isEmpty then derivesFor else (d.name, derives) :: derivesFor), ts)
+      else .ok (([], [], []), ts)
     | "let" :: _ =>
       if isLetDecl f ts then do
-        let ((d, isPub), ts) ← pDeclPub f ts
-        let ((ds, pubs), ts) ← pDecls f ts
-        .ok ((d :: ds, if isPub then d.name :: pubs else pubs), ts)
-      else .ok (([], []), ts)
+        let ((d, isPub, derives), ts) ← pDeclPub f ts
+        let ((ds, pubs, derivesFor), ts) ← pDecls f ts
+        .ok ((d :: ds, if isPub then d.name :: pubs else pubs,
+              if derives.isEmpty then derivesFor else (d.name, derives) :: derivesFor), ts)
+      else .ok (([], [], []), ts)
     | t :: _ =>
       if isDeclStart t then do
-        let ((d, isPub), ts) ← pDeclPub f ts
-        let ((ds, pubs), ts) ← pDecls f ts
-        .ok ((d :: ds, if isPub then d.name :: pubs else pubs), ts)
-      else .ok (([], []), ts)
-    | [] => .ok (([], []), ts)
+        let ((d, isPub, derives), ts) ← pDeclPub f ts
+        let ((ds, pubs, derivesFor), ts) ← pDecls f ts
+        .ok ((d :: ds, if isPub then d.name :: pubs else pubs,
+              if derives.isEmpty then derivesFor else (d.name, derives) :: derivesFor), ts)
+      else .ok (([], [], []), ts)
+    | [] => .ok (([], [], []), ts)
 
 /-- One `import name` line (ADR-0093 D1) — a bare module qualifier, no names hoisted. -/
 def pImport : P ImportDecl
@@ -2173,11 +2215,11 @@ def parseProgE (src : String) : Except PErr Prog := do
   let toks := tokenize src
   let fuel := toks.length * 6 + 1
   let ((imps, uses), ts) ← pHeader fuel toks
-  let ((ds, pubs), ts) ← pDecls fuel ts
-  if ts.isEmpty then .ok ⟨imps, uses, pubs, ds, .lit 0, true⟩    -- library mode: no trailing expr (D5)
+  let ((ds, pubs, derivesFor), ts) ← pDecls fuel ts
+  if ts.isEmpty then .ok ⟨imps, uses, pubs, derivesFor, ds, .lit 0, true⟩    -- library mode: no trailing expr (D5)
   else
     let (e, rest) ← pExpr fuel ts
-    if rest.isEmpty then .ok ⟨imps, uses, pubs, ds, e, false⟩
+    if rest.isEmpty then .ok ⟨imps, uses, pubs, derivesFor, ds, e, false⟩
     else .error ⟨s!"trailing tokens after expression: {rest}", rest⟩
 
 def parseProg (src : String) : Except String Prog := (parseProgE src).mapError (·.msg)

@@ -598,20 +598,30 @@ the SAME D1-D5 machinery `bang run`/`check --json` use) when a `file` path is av
 relative to (STDIN has none — the SAME limitation `bang run`'s own `eval` has, `runCheck`'s doc
 comment). On the resolver path, `.error` is a resolution/merge failure (missing import, cycle,
 private access) — printed as `errorJsonOk` and mapped to exit `1`, matching `check --json`'s SAME
-failure's exit code (ADR-0093 D1-D5). -/
+failure's exit code (ADR-0093 D1-D5).
+
+Expanded through `Bang.TypeCheck.expandDerives` (#109, ADR-0097 §7) on EVERY path before returning
+— `symbols`/`type`/`effects`/`def`/`refs`/`hover` all fan out from here (`runQuerySymbols`'s own
+`symbolsJsonP p` call site, and its siblings, never touch `Bang.Query.symbolsJson`'s own
+already-expanded string entry, so this is the ONE place that needs the fix for the resolver-backed
+verbs to see a `deriving`-generated `trait`/`impl`). A `expandDerives` failure falls back to the
+un-expanded `Prog` (same isolation rule as `Query.lean`'s `dumpJson`/`symbolsJson`) rather than
+failing the whole query. -/
 def resolveQueryProg (src : String) (headerProg : Bang.Surface.Prog) (file : Option String) :
     IO (Except UInt32 Bang.Surface.Prog) := do
+  let withDerives (p : Bang.Surface.Prog) : Bang.Surface.Prog :=
+    (Bang.TypeCheck.expandDerives p).toOption.getD p
   if headerProg.imports.isEmpty && headerProg.uses.isEmpty then
     match Bang.Surface.parseProgLocated src with
-    | .ok p         => pure (.ok p)
+    | .ok p         => pure (.ok (withDerives p))
     | .error (m, _) => IO.println (Bang.Query.errorJsonOk m); pure (.error 1)
   else
     match file with
-    | none      => pure (.ok headerProg)   -- stdin, no path to resolve relative to (same as `eval`'s limitation)
+    | none      => pure (.ok (withDerives headerProg))   -- stdin, no path to resolve relative to (same as `eval`'s limitation)
     | some path =>
         match ← resolveEntryFile path with
         | .error e   => IO.println (Bang.Query.errorJsonOk e); pure (.error 1)
-        | .ok merged => pure (.ok merged)
+        | .ok merged => pure (.ok (withDerives merged))
 
 /-- Print `json` and return `0` — the uniform success tail every `runQuery*` arm shares (an op's
 OWN `errorJsonOk`/`ok:false` embeds its failure in the JSON body already; exit is still `0` at

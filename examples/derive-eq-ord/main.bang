@@ -1,0 +1,23 @@
+data Point = Pt(Int, Int) deriving (Eq, Ord)
+
+-- Without `deriving`, comparing/ordering `Point` values by hand needs a `trait Eq`/`trait Ord`
+-- declaration plus a same-tag structural-fold `impl` for each — roughly 15 lines
+-- (`examples/trait-recursive-eq/main.bang` hand-writes the equivalent shape for a recursive
+-- carrier). `deriving (Eq, Ord)` generates both from the `data` decl's own constructor shape.
+
+let origin = Pt(0, 0) in
+let p1 = Pt(3, 4) in
+let p2 = Pt(3, 4) in
+let p3 = Pt(3, 5) in
+
+-- `==`/`<` dispatch through the generated `impl` exactly like a hand-written one — usable
+-- directly in a `match`, no special derive-aware syntax.
+let same    = p1 == p2 in    -- same-tag, equal payload -> true
+let diff    = p1 == p3 in    -- same-tag, differing payload -> false
+let ordered = p1 < p3 in     -- lexicographic: (3,4) < (3,5) -> true
+let classified = match (p1 == origin) {
+  Left(u)  -> if ordered then 1 else 0,   -- p1 is not the origin: report the ordering check
+  Right(u) -> 9                            -- p1 IS the origin (not this branch)
+} in
+
+if same then (if diff then 0 else (if classified == 1 then 1 else 0)) else 0
