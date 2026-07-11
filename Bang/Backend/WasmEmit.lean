@@ -867,8 +867,10 @@ partial def callClosGC (clL : Nat) (cloE argE : String) : String :=
   seqBlock s!"(local.set {clL} {cloE})\n    (call_ref $fn (struct.get $clos $env (ref.cast (ref $clos) (local.get {clL}))) {argE} (struct.get $clos $code (ref.cast (ref $clos) (local.get {clL}))))"
 end
 
-/-- The fixed WASM-GC type + helper preamble every rung-4 module shares. -/
-def gcPreamble : String :=
+/-- The fixed WASM-GC recursive TYPE block (`$val` supertype + subtypes + `$env`/`$fn`/`$clos`). Split
+from the helper funcs so the print module can interleave WASI imports between the two — wat requires
+ALL imports precede ANY function definition. -/
+def gcTypes : String :=
   "(rec\n" ++
   "    (type $val  (sub (struct)))\n" ++
   "    (type $ival (sub $val (struct (field i64))))\n" ++
@@ -876,7 +878,10 @@ def gcPreamble : String :=
   "    (type $pair (sub $val (struct (field (ref null $val)) (field (ref null $val)))))\n" ++
   "    (type $env  (struct (field $hd (ref null $val)) (field $tl (ref null $env))))\n" ++
   "    (type $fn   (func (param (ref null $env)) (param (ref null $val)) (result (ref null $val))))\n" ++
-  "    (type $clos (sub $val (struct (field $code (ref $fn)) (field $env (ref null $env))))))\n" ++
+  "    (type $clos (sub $val (struct (field $code (ref $fn)) (field $env (ref null $env))))))"
+
+/-- The fixed `$box`/`$lookup` helper functions. -/
+def gcHelpers : String :=
   "  (func $box (param $n i64) (result (ref null $val)) (struct.new $ival (local.get $n)))\n" ++
   "  (func $lookup (param $e (ref null $env)) (param $n i32) (result (ref null $val))\n" ++
   "    (block $done (loop $l\n" ++
@@ -885,6 +890,150 @@ def gcPreamble : String :=
   "      (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n" ++
   "      (br $l)))\n" ++
   "    (struct.get $env $hd (local.get $e)))"
+
+/-- The fixed WASM-GC type + helper preamble every rung-4 module shares (types then helper funcs). -/
+def gcPreamble : String := gcTypes ++ "\n" ++ gcHelpers
+
+/-- The module-header items the readback needs: the WASI `fd_write` import, one page of linear memory
+(the render scratch buffer), the write cursor, and the literal pool. These MUST be emitted before any
+function definition (wat's import-before-function rule), so they are separated from `renderFns`. -/
+def renderImports : String :=
+  "  (import \"wasi_snapshot_preview1\" \"fd_write\"\n" ++
+  "    (func $fd_write (param i32 i32 i32 i32) (result i32)))\n" ++
+  "  (memory (export \"memory\") 1)\n" ++
+  "  (global $cur (mut i32) (i32.const 16))\n" ++
+  "  (data (i32.const 0) \"()inl inr <thunk>\")"
+
+/-- The readback FUNCTIONS: `$emitByte`/`$emitCp`/`$emitInt`/`$emitLit`/`$isStr`/`$emitStr`/`$render`/
+`$flush` — the wasm image of `valPretty`/`asString`. Emitted AFTER all imports. -/
+def renderFns : String :=
+  "  (func $emitByte (param $b i32)\n" ++
+  "    (i32.store8 (global.get $cur) (local.get $b))\n" ++
+  "    (global.set $cur (i32.add (global.get $cur) (i32.const 1))))\n" ++
+  "  (func $emitCp (param $cp i32)\n" ++
+  "    (if (i32.lt_u (local.get $cp) (i32.const 0x80))\n" ++
+  "      (then (call $emitByte (local.get $cp)))\n" ++
+  "      (else (if (i32.lt_u (local.get $cp) (i32.const 0x800))\n" ++
+  "        (then\n" ++
+  "          (call $emitByte (i32.or (i32.const 0xC0) (i32.shr_u (local.get $cp) (i32.const 6))))\n" ++
+  "          (call $emitByte (i32.or (i32.const 0x80) (i32.and (local.get $cp) (i32.const 0x3F)))))\n" ++
+  "        (else (if (i32.lt_u (local.get $cp) (i32.const 0x10000))\n" ++
+  "          (then\n" ++
+  "            (call $emitByte (i32.or (i32.const 0xE0) (i32.shr_u (local.get $cp) (i32.const 12))))\n" ++
+  "            (call $emitByte (i32.or (i32.const 0x80) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 0x3F))))\n" ++
+  "            (call $emitByte (i32.or (i32.const 0x80) (i32.and (local.get $cp) (i32.const 0x3F)))))\n" ++
+  "          (else\n" ++
+  "            (call $emitByte (i32.or (i32.const 0xF0) (i32.shr_u (local.get $cp) (i32.const 18))))\n" ++
+  "            (call $emitByte (i32.or (i32.const 0x80) (i32.and (i32.shr_u (local.get $cp) (i32.const 12)) (i32.const 0x3F))))\n" ++
+  "            (call $emitByte (i32.or (i32.const 0x80) (i32.and (i32.shr_u (local.get $cp) (i32.const 6)) (i32.const 0x3F))))\n" ++
+  "            (call $emitByte (i32.or (i32.const 0x80) (i32.and (local.get $cp) (i32.const 0x3F)))))))))))\n" ++
+  "  (func $emitInt (param $n i64) (local $u i64) (local $start i32) (local $end i32) (local $t i32)\n" ++
+  "    (if (i64.lt_s (local.get $n) (i64.const 0))\n" ++
+  "      (then (call $emitByte (i32.const 45)) (local.set $u (i64.sub (i64.const 0) (local.get $n))))\n" ++
+  "      (else (local.set $u (local.get $n))))\n" ++
+  "    (local.set $start (global.get $cur))\n" ++
+  "    (block $done (loop $l\n" ++
+  "      (call $emitByte (i32.wrap_i64 (i64.add (i64.const 48) (i64.rem_u (local.get $u) (i64.const 10)))))\n" ++
+  "      (local.set $u (i64.div_u (local.get $u) (i64.const 10)))\n" ++
+  "      (br_if $l (i64.ne (local.get $u) (i64.const 0)))))\n" ++
+  "    (local.set $end (i32.sub (global.get $cur) (i32.const 1)))\n" ++
+  "    (block $rd (loop $rl\n" ++
+  "      (br_if $rd (i32.ge_s (local.get $start) (local.get $end)))\n" ++
+  "      (local.set $t (i32.load8_u (local.get $start)))\n" ++
+  "      (i32.store8 (local.get $start) (i32.load8_u (local.get $end)))\n" ++
+  "      (i32.store8 (local.get $end) (local.get $t))\n" ++
+  "      (local.set $start (i32.add (local.get $start) (i32.const 1)))\n" ++
+  "      (local.set $end (i32.sub (local.get $end) (i32.const 1)))\n" ++
+  "      (br $rl))))\n" ++
+  "  (func $emitLit (param $off i32) (param $len i32) (local $i i32)\n" ++
+  "    (local.set $i (i32.const 0))\n" ++
+  "    (block $d (loop $l\n" ++
+  "      (br_if $d (i32.ge_u (local.get $i) (local.get $len)))\n" ++
+  "      (call $emitByte (i32.load8_u (i32.add (local.get $off) (local.get $i))))\n" ++
+  "      (local.set $i (i32.add (local.get $i) (i32.const 1)))\n" ++
+  "      (br $l))))\n" ++
+  "  (func $isSum (param $v (ref null $val)) (result i32) (ref.test (ref $sum) (local.get $v)))\n" ++
+  "  (func $isPair (param $v (ref null $val)) (result i32) (ref.test (ref $pair) (local.get $v)))\n" ++
+  "  (func $isIval (param $v (ref null $val)) (result i32) (ref.test (ref $ival) (local.get $v)))\n" ++
+  "  (func $isStr (param $v (ref null $val)) (result i32)\n" ++
+  "    (local $node (ref null $val)) (local $pr (ref null $val))\n" ++
+  "    (local.set $node (local.get $v))\n" ++
+  "    (if (i32.eqz (call $isSum (local.get $node))) (then (return (i32.const 0))))\n" ++
+  "    (if (i32.ne (struct.get $sum $tag (ref.cast (ref $sum) (local.get $node))) (i32.const 1))\n" ++
+  "      (then (return (i32.const 0))))\n" ++
+  "    (block $done (loop $l\n" ++
+  "      (local.set $pr (struct.get $sum $payload (ref.cast (ref $sum) (local.get $node))))\n" ++
+  "      (if (i32.eqz (call $isPair (local.get $pr))) (then (return (i32.const 0))))\n" ++
+  "      (if (i32.eqz (call $isIval (struct.get $pair 0 (ref.cast (ref $pair) (local.get $pr)))))\n" ++
+  "        (then (return (i32.const 0))))\n" ++
+  "      (local.set $node (struct.get $pair 1 (ref.cast (ref $pair) (local.get $pr))))\n" ++
+  "      (if (i32.eqz (call $isSum (local.get $node))) (then (return (i32.const 0))))\n" ++
+  "      (if (i32.eq (struct.get $sum $tag (ref.cast (ref $sum) (local.get $node))) (i32.const 0))\n" ++
+  "        (then (return (i32.const 1))))\n" ++
+  "      (br $l)))\n" ++
+  "    (i32.const 1))\n" ++
+  "  (func $emitStr (param $v (ref null $val)) (local $node (ref null $val)) (local $pr (ref null $val))\n" ++
+  "    (local.set $node (local.get $v))\n" ++
+  "    (block $done (loop $l\n" ++
+  "      (if (i32.eqz (call $isSum (local.get $node))) (then (br $done)))\n" ++
+  "      (if (i32.eq (struct.get $sum $tag (ref.cast (ref $sum) (local.get $node))) (i32.const 0))\n" ++
+  "        (then (br $done)))\n" ++
+  "      (local.set $pr (struct.get $sum $payload (ref.cast (ref $sum) (local.get $node))))\n" ++
+  "      (call $emitCp (i32.wrap_i64 (struct.get $ival 0\n" ++
+  "        (ref.cast (ref $ival) (struct.get $pair 0 (ref.cast (ref $pair) (local.get $pr)))))))\n" ++
+  "      (local.set $node (struct.get $pair 1 (ref.cast (ref $pair) (local.get $pr))))\n" ++
+  "      (br $l))))\n" ++
+  "  (func $render (param $v (ref null $val))\n" ++
+  "    (if (ref.is_null (local.get $v)) (then (call $emitLit (i32.const 0) (i32.const 2)) (return)))\n" ++
+  "    (if (call $isIval (local.get $v))\n" ++
+  "      (then (call $emitInt (struct.get $ival 0 (ref.cast (ref $ival) (local.get $v)))) (return)))\n" ++
+  "    (if (call $isPair (local.get $v))\n" ++
+  "      (then\n" ++
+  "        (call $emitByte (i32.const 40))\n" ++
+  "        (call $render (struct.get $pair 0 (ref.cast (ref $pair) (local.get $v))))\n" ++
+  "        (call $emitByte (i32.const 44)) (call $emitByte (i32.const 32))\n" ++
+  "        (call $render (struct.get $pair 1 (ref.cast (ref $pair) (local.get $v))))\n" ++
+  "        (call $emitByte (i32.const 41))\n" ++
+  "        (return)))\n" ++
+  "    (if (call $isSum (local.get $v))\n" ++
+  "      (then\n" ++
+  "        (if (call $isStr (local.get $v)) (then (call $emitStr (local.get $v)) (return)))\n" ++
+  "        (if (i32.eq (struct.get $sum $tag (ref.cast (ref $sum) (local.get $v))) (i32.const 0))\n" ++
+  "          (then (call $emitLit (i32.const 2) (i32.const 4)))\n" ++
+  "          (else (call $emitLit (i32.const 6) (i32.const 4))))\n" ++
+  "        (call $render (struct.get $sum $payload (ref.cast (ref $sum) (local.get $v))))\n" ++
+  "        (return)))\n" ++
+  "    (call $emitLit (i32.const 10) (i32.const 7)))\n" ++
+  "  (func $flush\n" ++
+  "    (i32.store (i32.const 4) (i32.const 16))\n" ++
+  "    (i32.store (i32.const 8) (i32.sub (global.get $cur) (i32.const 16)))\n" ++
+  "    (drop (call $fd_write (i32.const 1) (i32.const 4) (i32.const 1) (i32.const 12))))"
+
+/-- The `$val` READBACK preamble (rung-5, Part 1): the WASI-command printer that walks the emitted
+`$val` GC graph and renders the SAME text `Main.lean`'s `valPretty`/`asString` produce — the exact
+bytes each `examples/<name>/expected.txt` carries (which IS `bang run`'s stdout). This closes rung-4's
+non-Int gap (design §5.3): `caesar` returns a `Str`, not an `Int`, so `$unbox`-to-i64 gave a
+meaningless answer; the printer emits its glyph string instead.
+
+NOTE: `renderImports` (WASI import + memory + global + data pool) MUST precede any function, so a
+consumer that also emits GC helper funcs must place `renderImports` BEFORE them and `renderFns` after
+(this is why `emitModuleGCPrint` interleaves `gcTypes` · `renderImports` · `gcHelpers` · `renderFns`).
+
+Correspondence to `valPretty` (Main.lean:130):
+  - `vint n`   → decimal (`$emitInt`, two's-complement-safe negative handling)
+  - `pair a b` → `(a, b)`
+  - `inl v`/`inr v` → `inl `/`inr ` + payload   (a `$sum` that is NOT a non-empty Str)
+  - a NON-EMPTY `Str` char-list → its glyphs (`asString`; `$isStr` detects the
+    `SCons = $sum tag1 ($pair ($ival cp) rest)` spine, `SNil = $sum tag0` terminator)
+  - `clos`/unknown → `<thunk>`  (matches `valPretty`'s `vthunk`/opaque arm)
+
+ONE fidelity gap, honestly named: `fold` ERASES on the GC path (design §2 — no `$fold` struct), so a
+bare non-Str `fold` and an EMPTY `Str` (`fold (inl ())`) — which `valPretty` prints with a `fold `
+prefix — read back structurally as `inl ()` here. This never bites the corpus (every non-Int result
+is a non-empty `Str`); a program returning a bare `fold` would mis-render, a documented rung-5
+boundary of the erasing rep, not a silent wrong emission for the covered fragment. -/
+def renderPreamble : String :=
+  renderImports ++ "\n" ++ renderFns
 
 /-- Declare locals from a per-index type list (index order). -/
 def declLocalsFromTys (tys : List String) : String :=
@@ -917,6 +1066,29 @@ def emitModuleGC (M : Comp) : EmitGC :=
           -- $unbox extracts the final i64 answer (main returns i64 for the harness diff).
           let unboxFn := "(func $unbox (param $v (ref null $val)) (result i64)\n    (struct.get $ival 0 (ref.cast (ref $ival) (local.get $v))))"
           .ok s!"(module\n  {gcPreamble}\n  {unboxFn}{elemDeclare fnCount}{fnsText}\n  {mainFn}\n)"
+
+/-- Whole-module GC emission with the `$val` READBACK (rung-5 Part 1): identical to `emitModuleGC`
+except the entry is a WASI `_start` command that computes the body `$val`, walks it with `$render`
+(the `valPretty` image, `renderPreamble`), appends a `\n` (matching `bang run`'s `IO.println`), and
+`fd_write`s to stdout. This handles ANY result shape (Int / Str / sum / pair) uniformly — the printed
+bytes ARE `examples/<name>/expected.txt`, so ONE readback gates the whole corpus (Int programs print
+`valPretty (vint n) = toString n`, byte-identical to the old `$unbox` path). Run with plain
+`wasmtime run <mod.wat>` (WASI command), NOT `--invoke main`. -/
+def emitModuleGCPrint (M : Comp) : EmitGC :=
+  let st0 : GCState := { base := 0, next := 1, localTys := [tyEnv] }
+  match emitCompGC 0 M st0 with
+  | (.unsup r, _) => .unsup r
+  | (.ok body, stF) =>
+          let fnsOrdered := stF.fns.reverse
+          let fnCount := stF.nextFn
+          let fnsText := (fnsOrdered.map renderFn).foldl (fun acc f => acc ++ "\n  " ++ f) ""
+          let mainLocals := declLocalsFromTys stF.localTys.reverse
+          -- `_start` renders the body value + a trailing newline, then flushes to stdout.
+          let startFn :=
+            s!"(func $_start (export \"_start\"){mainLocals}\n    (local.set 0 (ref.null $env))\n    (call $render\n    {body})\n    (call $emitByte (i32.const 10))\n    (call $flush))"
+          -- Order matters (wat: imports before functions): types · WASI imports · GC helpers ·
+          -- readback fns · lifted fns · `_start`.
+          .ok s!"(module\n  {gcTypes}\n  {renderImports}\n  {gcHelpers}\n  {renderFns}{elemDeclare fnCount}{fnsText}\n  {startFn}\n)"
 
 end -- public section
 
