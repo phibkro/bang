@@ -3252,6 +3252,152 @@ def substTyVarInSurfLRBindings (qTy : Ty → Ty) : LetRecBindings → LetRecBind
   | .cons n t e rest   => .cons n (qTy t) (substTyVarInSurf qTy e) (substTyVarInSurfLRBindings qTy rest)
 end
 
+mutual
+/-- INLINE a bare-variable value alias `let n = m in rest` (`m` a bare `.var`, NOT a call/thunk/
+anything else — the narrow shape `mergeModules`'s auto-`use` mechanism produces, ADR-0098:
+`aliasDecls`'s `.letD n none (Surf.var (qualifyName modName n))`, e.g. `let take = Prelude_take in
+…`): rewrite every free `.var n` in `rest` to `.var m`, then DROP the now-dead alias binding
+entirely. NEEDED because `monoCallSpine`'s discovery matches the CALL HEAD `.force (.var name)`
+literally against the qualified `let rec`'s OWN name (`Prelude_take`) — a caller writing the
+UNQUALIFIED alias (`$take …`, the only spelling a program auto-`use`ing the prelude ever writes)
+is invisible to it without this inlining first (confirmed live: `$take 2 xs` through the
+`Prelude`-injected alias reported "a use leaves a type variable unresolved" — ZERO call sites
+found — until this pass ran first). Non-bare-`.var`-RHS `.lett`s (an ordinary user `let`, or a
+computed value) are left completely alone — this is NOT a general copy-propagation optimizer, only
+the ONE narrow shape the module system's alias-injection is known to produce. Exhaustive over
+every `Surf` former (the `qualifyVars`/`substTyVarInSurf` completeness discipline). -/
+partial def inlineVarAliases : Surf → Surf
+  | .lit n       => .lit n
+  | .var x       => .var x
+  | .getS        => .getS
+  | .unitS       => .unitS
+  | .thunk e     => .thunk (inlineVarAliases e)
+  | .force e     => .force (inlineVarAliases e)
+  | .raise e     => .raise (inlineVarAliases e)
+  | .handle e    => .handle (inlineVarAliases e)
+  | .putS e      => .putS (inlineVarAliases e)
+  | .atomS e     => .atomS (inlineVarAliases e)
+  | .newS e      => .newS (inlineVarAliases e)
+  | .readS e     => .readS (inlineVarAliases e)
+  | .inlS e      => .inlS (inlineVarAliases e)
+  | .inrS e      => .inrS (inlineVarAliases e)
+  | .foldS e     => .foldS (inlineVarAliases e)
+  | .unfoldS e   => .unfoldS (inlineVarAliases e)
+  | .divMark e   => .divMark (inlineVarAliases e)
+  | .lam x e     => .lam x (inlineVarAliases e)
+  | .annotS e t  => .annotS (inlineVarAliases e) t
+  | .lett n (.var m) rest =>
+      -- the ONE interesting case: substitute `n ↦ m` through `rest` (`qualifyVars`-style single-
+      -- target rename, reused via `qualifyName`'s `modName_name` trick would be wrong here — `m` is
+      -- an arbitrary already-qualified name, not `modName ++ "_" ++ n`, so a bespoke inline rename)
+      -- THEN recurse (a chain `let a = b in let c = a in …` collapses fully, left-to-right).
+      inlineVarAliases (renameVarTo n m rest)
+  | .lett x a b  => .lett x (inlineVarAliases a) (inlineVarAliases b)
+  | .stateS a b  => .stateS (inlineVarAliases a) (inlineVarAliases b)
+  | .writeS a b  => .writeS (inlineVarAliases a) (inlineVarAliases b)
+  | .pairS a b   => .pairS (inlineVarAliases a) (inlineVarAliases b)
+  | .splitS x y a b => .splitS x y (inlineVarAliases a) (inlineVarAliases b)
+  | .binopS op a b  => .binopS op (inlineVarAliases a) (inlineVarAliases b)
+  | .app a b        => .app (inlineVarAliases a) (inlineVarAliases b)
+  | .ifS c t e      => .ifS (inlineVarAliases c) (inlineVarAliases t) (inlineVarAliases e)
+  | .matchS s xl l xr r => .matchS (inlineVarAliases s) xl (inlineVarAliases l) xr (inlineVarAliases r)
+  | .matchD s arms  => .matchD (inlineVarAliases s) (inlineVarAliasesDArms arms)
+  | .withCapS k i n b => .withCapS k (inlineVarAliases i) n (inlineVarAliases b)
+  | .dotPerform r op .none      => .dotPerform (inlineVarAliases r) op .none
+  | .dotPerform r op (.one a)   => .dotPerform (inlineVarAliases r) op (.one (inlineVarAliases a))
+  | .dotPerform r op (.two a b) => .dotPerform (inlineVarAliases r) op (.two (inlineVarAliases a) (inlineVarAliases b))
+  | .letRecS n t f b => .letRecS n t (inlineVarAliases f) (inlineVarAliases b)
+  | .letRecMultiS binds b => .letRecMultiS (inlineVarAliasesLRBindings binds) (inlineVarAliases b)
+  | .lettMulti binds b => .lettMulti (inlineVarAliasesBindings binds) (inlineVarAliases b)
+  | .handleCustomS lbl n p? h cls b =>
+      .handleCustomS lbl (inlineVarAliases n)
+        (match p? with
+          | .none    => .none
+          | .one p   => .one (inlineVarAliases p)
+          | .two a c => .two (inlineVarAliases a) (inlineVarAliases c))
+        h (inlineVarAliasesHClauses cls) (inlineVarAliases b)
+partial def inlineVarAliasesDArms : DArms → DArms
+  | .nil              => .nil
+  | .cons c ps b rest => .cons c ps (inlineVarAliases b) (inlineVarAliasesDArms rest)
+partial def inlineVarAliasesBindings : LetBindings → LetBindings
+  | .nil            => .nil
+  | .cons n e rest  => .cons n (inlineVarAliases e) (inlineVarAliasesBindings rest)
+partial def inlineVarAliasesHClauses : HClauses → HClauses
+  | .nil               => .nil
+  | .cons op x b rest  => .cons op x (inlineVarAliases b) (inlineVarAliasesHClauses rest)
+partial def inlineVarAliasesLRBindings : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons n t e rest   => .cons n t (inlineVarAliases e) (inlineVarAliasesLRBindings rest)
+/-- Rename every FREE `.var n` to `.var m`, shadow-aware (the `qualifyVars` precedent, specialized
+to a single arbitrary target rather than `qualifyName`'s `modName_name` construction) — the engine
+`inlineVarAliases`'s `.lett n (.var m) rest` arm rides. -/
+partial def renameVarTo (n m : String) : Surf → Surf
+  | .lit k       => .lit k
+  | .var x       => if x == n then .var m else .var x
+  | .getS        => .getS
+  | .unitS       => .unitS
+  | .thunk e     => .thunk (renameVarTo n m e)
+  | .force e     => .force (renameVarTo n m e)
+  | .raise e     => .raise (renameVarTo n m e)
+  | .handle e    => .handle (renameVarTo n m e)
+  | .putS e      => .putS (renameVarTo n m e)
+  | .atomS e     => .atomS (renameVarTo n m e)
+  | .newS e      => .newS (renameVarTo n m e)
+  | .readS e     => .readS (renameVarTo n m e)
+  | .inlS e      => .inlS (renameVarTo n m e)
+  | .inrS e      => .inrS (renameVarTo n m e)
+  | .foldS e     => .foldS (renameVarTo n m e)
+  | .unfoldS e   => .unfoldS (renameVarTo n m e)
+  | .divMark e   => .divMark (renameVarTo n m e)
+  | .lam x e     => if x == n then .lam x e else .lam x (renameVarTo n m e)
+  | .annotS e t  => .annotS (renameVarTo n m e) t
+  | .lett x a b  => if x == n then .lett x (renameVarTo n m a) b else .lett x (renameVarTo n m a) (renameVarTo n m b)
+  | .stateS a b  => .stateS (renameVarTo n m a) (renameVarTo n m b)
+  | .writeS a b  => .writeS (renameVarTo n m a) (renameVarTo n m b)
+  | .pairS a b   => .pairS (renameVarTo n m a) (renameVarTo n m b)
+  | .splitS x y a b => .splitS x y (renameVarTo n m a) (if x == n || y == n then b else renameVarTo n m b)
+  | .binopS op a b  => .binopS op (renameVarTo n m a) (renameVarTo n m b)
+  | .app a b        => .app (renameVarTo n m a) (renameVarTo n m b)
+  | .ifS c t e      => .ifS (renameVarTo n m c) (renameVarTo n m t) (renameVarTo n m e)
+  | .matchS s xl l xr r =>
+      .matchS (renameVarTo n m s) xl (if xl == n then l else renameVarTo n m l)
+        xr (if xr == n then r else renameVarTo n m r)
+  | .matchD s arms  => .matchD (renameVarTo n m s) (renameVarToDArms n m arms)
+  | .withCapS k i x b => .withCapS k (renameVarTo n m i) x (if x == n then b else renameVarTo n m b)
+  | .dotPerform r op .none      => .dotPerform (renameVarTo n m r) op .none
+  | .dotPerform r op (.one a)   => .dotPerform (renameVarTo n m r) op (.one (renameVarTo n m a))
+  | .dotPerform r op (.two a b) => .dotPerform (renameVarTo n m r) op (.two (renameVarTo n m a) (renameVarTo n m b))
+  | .letRecS nm t f b => if nm == n then .letRecS nm t f b else .letRecS nm t (renameVarTo n m f) (renameVarTo n m b)
+  | .letRecMultiS binds b =>
+      if (letRecBindingsNames binds).contains n then .letRecMultiS binds b
+      else .letRecMultiS (renameVarToLRBindings n m binds) (renameVarTo n m b)
+  | .lettMulti binds b =>
+      let (binds', shadowed) := renameVarToBindings n m binds
+      .lettMulti binds' (if shadowed then b else renameVarTo n m b)
+  | .handleCustomS lbl v p? h cls b =>
+      .handleCustomS lbl (renameVarTo n m v)
+        (match p? with
+          | .none    => .none
+          | .one p   => .one (renameVarTo n m p)
+          | .two a c => .two (renameVarTo n m a) (renameVarTo n m c))
+        h (renameVarToHClauses n m cls) (if h == n then b else renameVarTo n m b)
+partial def renameVarToDArms (n m : String) : DArms → DArms
+  | .nil              => .nil
+  | .cons c ps b rest => .cons c ps (if ps.contains n then b else renameVarTo n m b) (renameVarToDArms n m rest)
+partial def renameVarToHClauses (n m : String) : HClauses → HClauses
+  | .nil               => .nil
+  | .cons op x b rest  => .cons op x (if x == n then b else renameVarTo n m b) (renameVarToHClauses n m rest)
+partial def renameVarToLRBindings (n m : String) : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons nm t e rest  => .cons nm t (renameVarTo n m e) (renameVarToLRBindings n m rest)
+partial def renameVarToBindings (n m : String) : LetBindings → LetBindings × Bool
+  | .nil            => (.nil, false)
+  | .cons nm e rest =>
+      let e' := renameVarTo n m e
+      if nm == n then (.cons nm e' rest, true)
+      else let (rest', shadowed) := renameVarToBindings n m rest; (.cons nm e' rest', shadowed)
+end
+
 /-- Monomorphize ONE bound-free `let rec name : t = fb in bodyExpr` node (ADR-0103): discover every
 call site's instantiation (`callSitesOf`), complete + group them into a distinct residue set
 (`completeInstantiation`/`indexInstantiations`), redirect every call in `bodyExpr` to its own
@@ -4011,7 +4157,15 @@ annotation-free introduction — ADR-0081/#55). `Option a` is nullable/`Maybe`; 
 Rust-style success/error (`Ok` = success), two type params (the v1 arity-≤2 ceiling, ADR-0079).
 `Either e a` is NOT here: it IS the built-in binary sum `e + a` — `Left`/`Right`/`match` are already
 reserved surface primitives for it (Surface.pIdent), so `Either` needs no data decl (one construct per
-problem — the isos below convert between `Result`/`Option` and this built-in sum). Each type is
+problem — the isos below convert between `Result`/`Option` and this built-in sum). `List a` is
+DELIBERATELY NOT here (ADR-0103's own residual finding, not fixed by this pass): its NATURAL ctor
+names `Nil`/`Cons` collide, as an UNCONDITIONAL injection, with SEVERAL pre-existing corpus fixtures
+that independently chose the SAME bare names for their OWN differently-named list-shaped `data`
+decls (`listProg`'s `data IntList = Nil | Cons(…)`, confirmed live: ADR-0099 ambiguous-bare-ctor
+errors cascade the moment `List`'s `Nil`/`Cons` become globally visible). `take`/`drop`
+(`Prelude.bang`) still work standalone or against a program's OWN `data List a` — only the
+convenience of a KERNEL-PROVIDED `List` (so `Cons(…) : List Int` resolves with zero declaration,
+matching `Option`/`Result`) is deferred; see the ADR-0103 implementation report. Each type here is
 filtered out (like `Str`/`Char`) when the user redeclares it. Library over `data` — NO kernel
 primitive (invariant #5). -/
 def genericPrelude : List Decl :=
@@ -4789,7 +4943,9 @@ def preludeSigs : List (String × String) :=
     ("isDigit", "Char -> Unit + Unit"),
     ("isAlpha", "Char -> Unit + Unit"),
     ("toUpper", "Char -> Char"),
-    ("toLower", "Char -> Char") ]
+    ("toLower", "Char -> Char"),
+    ("take", "Int -> List a -> List a"),
+    ("drop", "Int -> List a -> List a") ]
 
 /-- Auto-`use` the prelude into `p` (ADR-0098): merge a TRIMMED `preludeProg` — containing only the
 decls the program actually MENTIONS (`progUsesVar`) — in as a resolved module named `"Prelude"`,
@@ -5116,14 +5272,19 @@ def elabProg (p : Prog) :
   -- the real elaboration+fixpoint-build) — NOT wrap an already-elaborated body, which would need a
   -- second `elabS` pass over the wrapper alone.
   let wrapped := wrapPendingKnots env.pendingKnots (← expandBFns env none bigFuel foldedBody)
-  -- ADR-0103: monomorphize every bound-free `let rec` (`length : List a -> Int`) BEFORE `elabS` —
-  -- the `expandBFns` twin, running on the SAME `wrapped` tree. Independent of bounded-fn expansion
-  -- (a disjoint surface: `let rec … : T = …` vs `fn … where Trait`, ADR-0103's "one construct per
-  -- problem" ruling keeps them as separate constructs, so pass ORDER between the two is immaterial
-  -- — neither can produce input the other needs to see). By the time `elabS` runs, every surviving
-  -- `.letRecS` ascription is concrete; the `resolveTy` chokepoint (`elabS`'s OWN `.letRecS` arm)
-  -- is UNCHANGED.
-  let monomorphized ← monomorphizeLetRec env.gen env.aliases bigFuel wrapped
+  -- ADR-0103: monomorphize every bound-free `let rec` (`take : Int -> List a -> List a`) BEFORE
+  -- `elabS` — the `expandBFns` twin, running on the SAME `wrapped` tree. Independent of bounded-fn
+  -- expansion (a disjoint surface: `let rec … : T = …` vs `fn … where Trait`, ADR-0103's "one
+  -- construct per problem" ruling keeps them as separate constructs, so pass ORDER between the two
+  -- is immaterial — neither can produce input the other needs to see). By the time `elabS` runs,
+  -- every surviving `.letRecS` ascription is concrete; the `resolveTy` chokepoint (`elabS`'s OWN
+  -- `.letRecS` arm) is UNCHANGED. `inlineVarAliases` runs FIRST: the module system's auto-`use`
+  -- injection (ADR-0098) makes an unqualified prelude call (`$take …`) an ALIAS reference (`let
+  -- take = Prelude_take in …`), not a DIRECT call on the qualified `let rec`'s own name — discovery
+  -- (`monoCallSpine`) only recognizes the latter, so the alias must be collapsed away first
+  -- (confirmed live: `$take` through the injected alias was invisible to discovery without this).
+  let dealiased := inlineVarAliases wrapped
+  let monomorphized ← monomorphizeLetRec env.gen env.aliases bigFuel dealiased
   let e ← elabS env [] monomorphized   -- bounded-fn uses/mono residues → elaborate (bite-2 + ADR-0103)
   return (e, env.effects, env.ctors, env.gen)
 

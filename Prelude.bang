@@ -52,3 +52,13 @@ pub let toLower =
     match (c : Char) {
       Char(n) -> if 64 < n then if n < 91 then Char (n + 32) else Char n else Char n
     }}
+pub let rec take : Int -> List a -> List a =
+  fun n =>
+    fun xs =>
+      if n == 0
+        then Nil
+        else match (xs : List a) { Nil -> Nil, Cons(h, t) -> Cons(h, $take (n - 1) t) }
+pub let rec drop : Int -> List a -> List a =
+  fun n =>
+    fun xs =>
+      if n == 0 then xs else match (xs : List a) { Nil -> Nil, Cons(h, t) -> $drop (n - 1) t }

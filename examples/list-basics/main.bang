@@ -1,0 +1,12 @@
+-- ADR-0103: the bound-free `let rec` monomorphization pre-pass. `take`/`drop`
+-- (Prelude.bang) are GENERIC over the element type (`Int -> List a -> List
+-- a`, no trait bound) — the pre-pass discovers each call site's concrete
+-- instantiation from its annotation and emits one monomorphic residue per
+-- element, exactly witness w3's by-hand shape, auto-generated.
+data List a = Nil | Cons(a, List a)
+let rec length : List a -> Int =
+  fun xs => match (xs : List a) { Nil -> 0, Cons(h, t) -> 1 + (($length) t) }
+let nums = (Cons(1, Cons(2, Cons(3, Cons(4, Cons(5, Nil))))) : List Int) in
+let firstThree = ($take 3) (nums : List Int) in
+let lastTwo = ($drop 3) (nums : List Int) in
+(($length) (firstThree : List Int)) * 100 + (($length) (lastTwo : List Int))

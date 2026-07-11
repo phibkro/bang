@@ -406,6 +406,8 @@ binding of the same name shadows the injected one.
 | `isAlpha` | `Char -> Unit + Unit` |
 | `toUpper` | `Char -> Char` |
 | `toLower` | `Char -> Char` |
+| `take` | `Int -> List a -> List a` |
+| `drop` | `Int -> List a -> List a` |
 
 ## Examples
 

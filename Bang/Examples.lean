@@ -495,4 +495,15 @@ emits one monomorphic `let rec` residue per element, exactly witness w3's by-han
     ++ "($weird) (Cons(Left(()), Nil) : List (Unit + Unit))")
   0)
 
+-- `take`/`drop` (`Prelude.bang`, the ADR-0103 payoff) called through the AUTO-`use` alias
+-- (ADR-0098) — `$take`/`$drop` here resolve `Prelude_take`/`Prelude_drop`'s bare `let take =
+-- Prelude_take in …` alias, NOT the qualified name directly, so this pins the `inlineVarAliases`
+-- fix (the module-alias-indirection gap discovery couldn't see through until fixed): `take 2` of
+-- `[1,2,3]` then `drop 1` leaves `[2]`, head 2.
+#guard compiledAgreesTyped 4000
+  ("data List a = Nil | Cons(a, List a) "
+    ++ "let taken = ($take 2) (Cons(1, Cons(2, Cons(3, Nil))) : List Int) in "
+    ++ "match (($drop 1) (taken : List Int) : List Int) { Nil -> 0, Cons(h, t) -> h }")
+  2
+
 end Bang.Examples

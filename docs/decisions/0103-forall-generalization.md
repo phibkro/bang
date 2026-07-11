@@ -2,7 +2,7 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: A bound-free self-recursive generic (`length : List a -> Int`, the whole List family:
   `append`/`take`/`drop`/`zip`/`range`/`replicate`) is realized by the SAME elaborate-to-mono move as
   every other generic (ADR-0075/0079/0080/0082): a pre-`elabS` pass discovers the FINITE set of
@@ -25,8 +25,11 @@
   finiteness gate this lives inside), #55 (annotation-driven generic CONSTRUCTION — the append/zip
   half's residual dependency)
 
-- **Status:** Proposed (kernel-engineer consult 2026-07-11; the OPERATOR ratifies — a type-power
-  extension, invariant #4/#5 discipline)
+- **Status:** Accepted (kernel-engineer consult 2026-07-11; the OPERATOR ratifies — a type-power
+  extension, invariant #4/#5 discipline; landed 2026-07-11: `monomorphizeLetRec` implemented as the
+  `expandBFns` twin, `Prelude.bang`'s `take`/`drop` shipped as the List-consumer payoff. `length`
+  and a kernel-provided `List` deferred — see the Implementation note below for the residual
+  findings this session established empirically)
 - **Date:** 2026-07-11
 - **Layer:** C + checker/elaborator (tested superset). Frontend LEAF (`Frontend/TypeCheck`, the
   elaborate-away seam); census byte-identical, kernel untouched. NO Spec.lean / Kernel change (a
@@ -182,16 +185,60 @@ elaboration time — the §4 gate holds. The one place it could fail the gate is
 check (decision item 3), never monomorphized silently. Kernel untouched, census stable — the survey's
 licence extends here conditional on the finiteness gate, exactly as it does for the bounded rung.
 
+## Implementation (2026-07-11) — the residue and residual findings, established empirically
+
+`monomorphizeLetRec` (the `expandBFns` twin, `Bang/Frontend/TypeCheck.lean`) discovers a bound-free
+`let rec`'s instantiation set from ANNOTATED call-site arguments (`(($f) arg : T)` — the argument-
+position twin of `bfnWrapper`'s result-anchored discovery, w2's own decisive reason the two can't
+share a mechanism) and emits one monomorphic residue per distinct instantiation, wired into
+`elabProg` right before `elabS`. Four corpus `#guard`s (`Bang/Examples.lean` §F) pin: the w3
+two-residue shape now expressible as ONE bound-free `let rec`; lexical shadowing; the zero-call-site
+DROP (an unreferenced generic costs nothing, the `expandBFns`/`env.bfns` precedent); and polymorphic
+recursion REJECTED loud by the downstream type-checker (not a targeted diagnostic yet — a `type
+mismatch`, since every self-call inside one residue forces to that residue's own name regardless of
+its own annotation — safe, never silently wrong, but a coarser message than "annotate the use").
+
+**CONSTRUCTION REFUTES this ADR's own residual-dependency framing above.** `append`/`take`/`drop`/
+`zip` all CONSTRUCT (`Cons(h, tail)`) inside a monomorphized residue and run correctly WITHOUT any
+`#55` annotation-free-inference work — because by the time `elabS` sees a residue, its tyvar is
+ALREADY closed to a concrete type by `substTyVar`; `Cons(h, tail)` is then ordinary MONOMORPHIC
+construction, not generic inference. Verified live: `append`/`take` both build + consume `List Int`
+correctly, chained through an intermediate `let` with no annotation on the DOWNSTREAM use (only the
+generic function's OWN call site needs the anchor). The REAL boundary is narrower and different in
+kind than "construction vs consumption": it is **whether the call site that discovers the
+instantiation carries an explicit annotation** — `#55`'s annotation-free CONSTRUCTION wall is a
+SEPARATE, still-real gap for a DIFFERENT case (an un-annotated ctor intro with no enclosing type
+context at all), but it does not gate the List family's constructing half the way this ADR assumed.
+
+**Two residual gaps found, priced, and left open (not this session's scope):**
+1. **The auto-`use` alias indirection** (ADR-0098): an unqualified prelude call (`$take …`) resolves
+   through a `let take = Prelude_take in …` alias, not a direct reference to the qualified `let
+   rec`'s own name — invisible to `monoCallSpine`'s discovery without a dedicated collapse pass
+   (`inlineVarAliases`, added this session, narrow: only the ONE bare-`.var`-RHS shape the module
+   system produces, not a general copy-propagation optimizer).
+2. **A kernel-provided `List` is NOT shipped** (deferred, not fixed): `data List a` referenced ONLY
+   via a type ANNOTATION (never a bare `.var`) is invisible to `injectPrelude`'s mention-filter
+   (`progUsesVar`/`surfUsesVar` scan value positions only, never a `.annotS`'s `Ty` slot) — so
+   `List` can't ride `Prelude.bang`'s mention-filtered injection the way `take`/`drop` do. Adding it
+   to the UNCONDITIONAL `genericPrelude` bucket instead (alongside `Option`/`Result`) was tried and
+   reverted: its natural ctor names `Nil`/`Cons`, made globally visible, collide with SEVERAL
+   pre-existing corpus fixtures that independently chose the SAME bare names for their OWN
+   differently-named list-shaped `data` decls (`listProg`'s `data IntList = Nil | Cons(…)`,
+   confirmed live via ADR-0099 ambiguous-bare-ctor cascades). `take`/`drop` still work today against
+   a program's OWN `data List a` declaration — only the zero-declaration convenience is deferred.
+
 ## What the List family costs once the door opens
 
 The 9-10/10-universal List family (#105's final residue) becomes expressible as bound-free `let rec`
 prelude entries. CONSUMING members (`length`/`take`/`drop`/`sum`) are unblocked immediately (w0/w3
-prove the residues run + certify). CONSTRUCTING members that BUILD generic data in synth position
-(`append`/`zip`/`range`/`replicate` returning `List a`) carry a RESIDUAL dependency on #55's
-annotation-driven generic INTRODUCTION (ADR-0079/0081) — the same construction-side wall bounded fns
-hit (ADR-0080's own deferral). w0's `List Int` construction runs because the annotation pins it; the
-generic case needs #55's inference. So the door opens the CONSUMING List family in full and the
-CONSTRUCTING half up to the #55 annotation boundary.
+prove the residues run + certify) — SHIPPED for `take`/`drop`; `length` itself is withheld (not a
+mechanism gap — its NAME collides with a pervasive corpus-local helper of the same name, taxing
+several tight-fuel `#guard`s the moment it entered the mention-filtered prelude; a rename or a
+fuel-bump sweep would resolve it, out of this session's scope). CONSTRUCTING members
+(`append`/`zip`/`range`/`replicate`) do NOT carry the `#55` dependency this ADR originally assumed
+— see the Implementation note above; they are blocked only by the SAME `Prelude.bang` mention-filter
+gap `List` itself hits (a construction call site needs `List`/`Nil`/`Cons` resolvable, which needs
+either a kernel-provided `List` or the caller's own `data List a`), not by annotation-free inference.
 
 ## Revisit if
 
