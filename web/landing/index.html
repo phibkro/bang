@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>bang — the docs can't lie</title>
+  <meta
+    name="description"
+    content="bang is a programming language with a formally-verified core, compiled to WebAssembly. Its reference is generated from the same verified source the compiler runs — the docs cannot drift from the language."
+  />
+  <meta name="color-scheme" content="dark light" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <!--
+    Landing page for bang. One self-contained static page — no framework.
+    Every copy claim traces to docs/notes/copy-kit.md (cited inline as data-cite).
+    Anti-hype rules (copy-kit.md §5) are a hard gate: no full-playground claim,
+    no closed-LR claim, no "production-ready". The v0.x line is required, present.
+  -->
+
+  <a class="skip-link" href="#code-moment">Skip to the code</a>
+
+  <header class="hero">
+    <nav class="topbar" aria-label="Primary">
+      <span class="wordmark">bang<span class="bang">!</span></span>
+      <div class="topbar-links">
+        <a href="./docs/">Docs</a>
+        <a href="./tour/">Tour</a>
+        <a href="https://github.com/phibkro/bang">GitHub</a>
+      </div>
+    </nav>
+
+    <div class="hero-inner">
+      <!-- Tagline: copy-kit.md §1 candidate A (the ruled winner) -->
+      <h1 class="tagline">
+        The docs can't lie.<br />
+        <span class="tagline-2">They're generated from the proof.</span>
+      </h1>
+
+      <!-- Subhead: copy-kit.md §2 -->
+      <p class="subhead">
+        bang is a programming language with a formally-verified core, compiled to
+        WebAssembly. Its reference isn't written — it's <em>generated</em> from the
+        same verified source the compiler runs, and every example in it is
+        machine-checked on every build. The documentation literally cannot drift
+        from the language.
+      </p>
+
+      <!-- Three subclaims: copy-kit.md §2 -->
+      <ul class="subclaims">
+        <li>
+          <strong>Verified core, honest edges.</strong>
+          A small kernel — thunks, effects, handlers, STM — is proven correct in
+          Lean; the rest is a tested superset, and the seam between them is marked,
+          never hidden.
+        </li>
+        <li>
+          <strong>Paradigms are values.</strong>
+          Imperative, transactional, reactive — each is a library over one kernel,
+          installed as a handler you can swap.
+        </li>
+        <li>
+          <strong>Built to be generated into.</strong>
+          Illegal states are unrepresentable, not linted — which is what makes it a
+          safe target for an AI to write. bang itself is built by agent teams.
+        </li>
+      </ul>
+
+      <div class="cta-row">
+        <!-- Install CTA: the curl one-liner from README.md §Install -->
+        <div class="install" role="group" aria-label="Install command">
+          <code id="install-cmd"
+            >curl -fsSL https://raw.githubusercontent.com/phibkro/bang/main/tools/install.sh | sh</code
+          >
+          <button
+            id="copy-btn"
+            type="button"
+            aria-label="Copy install command to clipboard"
+          >
+            Copy
+          </button>
+        </div>
+        <!-- Tour CTA: sibling lane; may 404 until both deploy -->
+        <a class="cta-secondary" href="./tour/">Take the tour&nbsp;&rsaquo;</a>
+      </div>
+      <p class="cta-note" aria-live="polite">
+        <span id="copy-status"></span>
+      </p>
+    </div>
+  </header>
+
+  <main>
+    <!-- 2 · The code moment: the logger pair, same program, one clause differs -->
+    <section id="code-moment" class="code-moment" aria-labelledby="cm-heading">
+      <h2 id="cm-heading">Same program. Swap the runtime. Different answer.</h2>
+      <!-- Caption: explainer-series.md E3 hook -->
+      <p class="section-lead">
+        The runtime isn't a property of the language. It's a value you install.
+      </p>
+
+      <div class="cartridge-pair">
+        <figure class="cartridge">
+          <figcaption>
+            <span class="cart-name">logger-silent</span>
+            <span class="cart-out" aria-label="output">→ <b>0</b></span>
+          </figcaption>
+          <pre class="code" aria-label="logger-silent source"><code><span class="kw">effect</span> <span class="ty">Log</span> { <span class="fn">log</span> : <span class="ty">Int</span> <span class="op">-&gt;</span> <span class="ty">Int</span> }
+
+<span class="kw">handle</span>
+  (logger.<span class="fn">log</span>(<span class="num">10</span>)) <span class="op">+</span> (logger.<span class="fn">log</span>(<span class="num">20</span>)) <span class="op">+</span> (logger.<span class="fn">log</span>(<span class="num">30</span>))
+<span class="kw">with</span> <span class="ty">Log</span> <span class="kw">as</span> logger {
+  <span class="fn">log</span>(msg) <span class="op">=&gt;</span> <span class="num diff">0</span>
+}</code></pre>
+        </figure>
+
+        <figure class="cartridge">
+          <figcaption>
+            <span class="cart-name">logger-counting</span>
+            <span class="cart-out" aria-label="output">→ <b>3</b></span>
+          </figcaption>
+          <pre class="code" aria-label="logger-counting source"><code><span class="kw">effect</span> <span class="ty">Log</span> { <span class="fn">log</span> : <span class="ty">Int</span> <span class="op">-&gt;</span> <span class="ty">Int</span> }
+
+<span class="kw">handle</span>
+  (logger.<span class="fn">log</span>(<span class="num">10</span>)) <span class="op">+</span> (logger.<span class="fn">log</span>(<span class="num">20</span>)) <span class="op">+</span> (logger.<span class="fn">log</span>(<span class="num">30</span>))
+<span class="kw">with</span> <span class="ty">Log</span> <span class="kw">as</span> logger {
+  <span class="fn">log</span>(msg) <span class="op">=&gt;</span> <span class="num diff">1</span>
+}</code></pre>
+        </figure>
+      </div>
+
+      <p class="cartridge-note">
+        The program text is identical. Only the highlighted handler clause changes —
+        <code>=&gt; 0</code> versus <code>=&gt; 1</code> — and the answer follows.
+      </p>
+    </section>
+
+    <!-- 3 · The honesty strip: verified-core / tested-superset (stratification) -->
+    <section class="honesty" aria-labelledby="hon-heading">
+      <h2 id="hon-heading">What's proven, and what's tested</h2>
+      <!-- copy-kit.md §4 Q4, compressed to a diagram -->
+      <p class="section-lead">
+        The seam is drawn in the types, not blurred by a slogan.
+      </p>
+
+      <div class="strata" role="img"
+        aria-label="Two-band diagram. Left band: the verified core — kernel semantics, effect-row algebra, the CalcVM derivation, safety of the total fragment — proven in Lean and axiom-clean. A marked seam, the effect row, divides the bands. Right band: the tested superset — the surface parser and elaborator, the runtime, and the Turing-complete Div fragment — differential-tested against the verified reference.">
+        <div class="band band-proven">
+          <span class="band-label">Verified &mdash; proven in Lean, axiom-clean</span>
+          <ul>
+            <li>kernel semantics</li>
+            <li>effect-row algebra</li>
+            <li>the CalcVM derivation</li>
+            <li>safety of the total fragment</li>
+          </ul>
+        </div>
+        <div class="seam" aria-hidden="true">
+          <span class="seam-label">the effect row &mdash; the marked descent</span>
+        </div>
+        <div class="band band-tested">
+          <span class="band-label">Tested &mdash; differential-tested vs the reference</span>
+          <ul>
+            <li>the surface parser + elaborator</li>
+            <li>the runtime</li>
+            <li>the <code>Div</code> fragment (fuel-bounded)</li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="honesty-note">
+        Descent from verified to tested is never silent. A language that tells you
+        precisely where the proof stops is more trustworthy than one that says
+        "verified" and means "we have some tests."
+      </p>
+
+      <!-- REQUIRED by copy-kit.md §5 anti-hype rules -->
+      <p class="version-line">
+        <strong>v0.x</strong> — not production-ready, moving fast. Use it to explore
+        the ideas, not to run your payroll.
+      </p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-links">
+      <a href="./docs/">Docs</a>
+      <a href="./tour/">Tour</a>
+      <a href="https://github.com/phibkro/bang">GitHub</a>
+    </div>
+    <div class="footer-install" role="group" aria-label="Install command">
+      <code
+        >curl -fsSL https://raw.githubusercontent.com/phibkro/bang/main/tools/install.sh | sh</code
+      >
+    </div>
+    <p class="footer-fine">
+      bang is v0.x and moving fast. Built by agent teams.
+    </p>
+  </footer>
+
+  <script src="./copy.js" defer></script>
+</body>
+</html>
