@@ -92,11 +92,22 @@ cannot lie"; media-team NOT-YET) · copy kit + explainer series (`copy-kit.md`; 
 claim = the top content unlock) · distribution survey (rung-0 EXISTS — curl+de-nixed binary; widen
 the matrix; static = the wasm component story, Lean musl CLOSED-not-planned) · the interactive-tour
 design (v0 corpus-lessons $0 → v1 server-backed; the NO-AMBIENT-IO sandbox win) · `web/` restructure
-LANDED (site/ → web/docs/, 443-file build green, web/landing stubbed). **Queued** (operator buttons
-first): ship web/docs on the tag · the #70 announcement · the release-matrix widening · tour v0 ·
-then: the List-decl injection design (#105 residue) · #121–#125 stranger fixes · #115 ∀q′ consult ·
-#117 trait-prelude migration · #119 subsumption fix · Mod_Eff · 013-S2/S6 · rung-4 emission ·
-#83 · ADR-0089. Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
+LANDED (site/ → web/docs/, 443-file build green, web/landing stubbed). **The SECOND WAVE closed it
+out (2026-07-11, all landed ≤ `aa0f7e8f`)**: emission rung 4 (nqueens=21004, closures/ADTs/recursion
+on WasmGC) then **rung-5 ENTRY** — the unified `$val` readback (corpus 83, caesar's Str joins) + the
+**no-frame-chain verdict** (v1 handlers all one-shot in-place ⇒ rung 5 = a representation merge;
+slice map S0–S5 ready) · the **host-IO wedge** (ADR-0104: `std/Io.bang` Console/Clock, the
+msuspended seam, record/replay gated by `test-hostio-seam.sh`; the H1 module-qualified reach = #126)
+· **G2 MEASURED** (#116: instantiation µs-cheap, copy tax ~4 ns/elem linear — the components
+deferral quantified; survey §G2-MEASURED + `tools/bench/g2-components/`) · the checker pair
+(#119 check-mode subsumption arms — blanket-subsumption REFUTED live · #118 one-candidate-pins-
+the-hole) · stranger-4 fixes #121–#125 · #115 ∀q′ consult (DEFER, priced) · release-matrix widened ·
+tour v0 · landing draft · the `/run` playground service · the **#70 launch kit drafted**
+(`docs/outreach/`). **Queued** (operator buttons FIRST): announcement review → matrix dry-run →
+deploy web/docs → landing taste pass → **tag v0.2** → post · then: #126 H1 reach (one-writer Surf
+window) · rung-5 S0–S4 implementation · #117 trait-prelude migration + Mod_Eff · the List-decl
+injection design (#105) · 013-S2/S6 · #83 · ADR-0089 · stranger round 5 (post-v0.2).
+Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 
 ## Where things live (SSoT — reference these, don't copy them)
 
