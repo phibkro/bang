@@ -188,12 +188,24 @@ theorem zero_usage_erasable
   sorry
 
 -- [KEY] Effect soundness: static grade `e` over-approximates every observed trace.
+-- Q14 RE-FOUNDATION (ADR-0105; the three `Trace`/`evalTrace`/`traceWithin` axioms are now defs):
+-- the INFORMATIVE runtime bound — each dispatched label is `≤` the LIVE effect it was performed
+-- under (`traceWithin t`, per-dispatch = `e ⊔ {live handler labels}`), NOT the discharged top-level
+-- `e` (the naive `t ⊆ e` is REFUTED: an in-program handler removes its label from `e`; the escaping-
+-- only reading is VACUOUS — see `Bang/Witness/EffectTraceWitness.lean`). `evalTrace` takes the whole-
+-- program residual `e` as the initial bound. STATEMENT-CHANGE (operator-sanctioned, ADR-0105).
+-- PROOF: `runTrace_traceWithin` — a machine induction (`Config.runTrace.induct`), NO preservation,
+-- NO LR; the `HasCTy` premise is not needed (the runtime bound is typing-independent), so the
+-- theorem holds for ANY well-loaded run. The static premise stays for the intended reading.
 theorem effect_sound
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
-    {v : Val} {t : Trace} :
+    {v : Val} {t : Trace Eff} :
     HasCTy [] [] c e (CTy.F q A) →
-    Source.evalTrace fuel c = Result.done (v, t) →
-    traceWithin t e := sorry
+    Source.evalTrace (Mult := Mult) fuel c e = Result.done (v, t) →
+    traceWithin (Mult := Mult) t := by
+  intro _ hrun
+  unfold Source.evalTrace at hrun
+  exact runTrace_traceWithin fuel (0, [], c) e [] v t hrun (traceWithin_nil)
 
 
 /-! ## 5. Logical relation theorems -/
