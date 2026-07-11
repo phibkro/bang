@@ -18,7 +18,10 @@
   independent of the derive mechanism. **This narrows tier-1's honest scope to non-self-recursive
   carriers** until the ordering gap is fixed (a named, separate, non-blocking follow-up, §Recursive
   wall); tier-1 SHIPS for the non-recursive case, which is the common law-bearing shape the
-  `VecOps`/`IntOrd`/`Box`-style corpus already exercises.
+  `VecOps`/`IntOrd`/`Box`-style corpus already exercises. **UPDATE (2026-07-11, issue #112, §3a):
+  the wall is FIXED** — knot-based `.binopS` dispatch (not the originally-named two-pass, which was
+  built and refuted first) closes it; tier-1's scope narrowing above is LIFTED for the
+  self-recursive case, see §3a for the full account.
 - **Resolves**: issue #110 (this design consult), gates issue #109 (`deriving (Eq, Ord)` impl)
 - **Depends-on**: 0068 (trait/impl wiring + `checkLaws`/`bang test` law discovery), 0069
   (`data`-decl μ-sum-of-products encoding), 0079 (generic data monomorphization — scopes tier-1 to
@@ -174,6 +177,78 @@ into #109's scope silently. Filed as a follow-up issue (recommendation: title
 `fix(traits): impl bodies can't self-reference their own instance — buildEnv single-pass insts
 registration`), independent of and NOT blocking tier-1's non-recursive slice.
 
+### 3a — ADDENDUM (2026-07-11, issue #112): the wall is FIXED — knot-based dispatch, not option (i)
+
+**Option (i) alone (signature pre-registration) was BUILT and REFUTED before landing anything.**
+Two-pass `buildEnv` — pre-register every impl op's signature into `env.insts` with a placeholder
+body, elaborate real bodies in a second pass against the complete table — compiles and still FAILS
+on `w2`/`w2c`: `unbound variable #pending-impl-body`. Root cause, machine-confirmed this session:
+`.binopS` dispatch (`elabS`'s `.binopS` arm) resolves an operator by **textually splicing
+`inst.body`** — an already-elaborated `Surf` VALUE — into the call site
+(`.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'`), never re-descended into. A
+self-referential call bakes in whatever `insts[idx]` holds AT THE MOMENT its OWN body is
+elaborated (still the pass-1 placeholder) — no ordering of a signature-then-body two-pass closes
+that gap, because splicing is substitution, and a genuinely self-recursive body has no fixed
+inlining depth (iterating pass 2 to a fixpoint can't converge either, for the same reason). The
+same probe also showed a FORWARD reference between two DIFFERENT impls (impl A's op calling impl
+B's, B declared textually AFTER A) fails identically and for the identical reason — this is not a
+self-recursion-only gap, it is a property of the SPLICE mechanism itself.
+
+**The actual fix: uniform knot-based dispatch, not a two-pass registration order.** Every 2-param
+impl op (the only arity `.binopS` ever dispatches — its own match requires exactly `[p, q]`) is
+now bound as a genuine `let rec` fixpoint via the SAME Landin's-knot machinery (`letRecS`/
+`buildLetRec`, ADR-0073, hardened by #95's knot-sharing fix) ordinary recursive `let`s already use
+— NOT a new recursion mechanism. `buildEnv`'s `.implD` arm defers a 2-param op to a
+`PendingOpKnot` (fresh binder name, target/ret types, RAW params/body) instead of elaborating it
+inline; `elabProg` wraps the whole program body in one `let rec` per pending knot (decl order,
+TUPLED single-argument encoding — `let rec eq : (Self * Self) -> RetTy = fun pq => let (p, q) = pq
+in body`, called as `($eq) (a, b)`) BEFORE the single `elabS` pass, so `letRecS`'s own elaboration
+arm — which resolves a self-reference through the μ-encoded fixpoint, not substitution — is what
+actually type-checks and lowers the recursive body. `.binopS` dispatch changed from splicing
+`inst.body` to `.app (.force (.var knotName)) (.pairS a' b')`. Non-2-param ops (0/1/3+) are
+UNCHANGED (still pre-elaborated + spliced) — safe because `.binopS` never dispatches that arity, so
+a splice-caused self-reference wall there is structurally unreachable through the operator surface.
+
+**Why TUPLED, not curried, args:** `letRecS`'s elaboration arm only threads the `let rec`'s
+DECLARED type onto its OUTERMOST `.lam` binder; a curried second parameter (`fun p => fun q =>
+…`) falls through the GENERIC `.lam` arm instead, which mints it a FRESH HOLE rather than the
+arrow's second domain — a separate, pre-existing gap in `letRecS` for curried multi-arg functions,
+confirmed this session and NOT touched by this fix (consuming `letRecS` as-is, not restructuring
+it — the tupled encoding sidesteps the gap entirely, since `peelTupleSplit`'s single-param-
+immediately-destructured shape is already fully supported).
+
+**Scope actually landed vs. still blocked:**
+- Self-recursion (w2/w2c's exact shape — `Eq`/`Ord` on `IntList`) — **FIXED.** Both witnesses now
+  RUN correctly (`w2` → `1`, `w2c` → `inr ()`), promoted to `examples/trait-recursive-eq` and
+  `examples/trait-recursive-ord` (gated by `check-examples.sh`/`check-examples-env.sh` forever, both
+  engines).
+- A BACKWARD reference (a later-declared impl's op calling an earlier-declared impl's op) — **now
+  works, strictly MORE than pre-#112** (the old single-pass splice already resolved "earlier ops",
+  this fix adds self-reference on top without regressing it — confirmed via a hand-written
+  cross-impl repro, backward direction).
+- A FORWARD or MUTUAL reference (an earlier-declared impl calling a later one, or two impls calling
+  each other) — **still fails** (`unbound variable <laterKnotName>`). Plain `letRecS` only ever
+  sees itself + prior bindings in scope; TRUE forward/mutual dispatch needs the N-way
+  tuple-of-thunks generalization of `buildLetRec` a separate, concurrently in-flight lane
+  (`feat-mutual-rec`, `buildLetRecMulti`) is building — deliberately NOT built or touched here (a
+  cross-lane collision this fix's own scope explicitly stopped short of).
+
+**Consequence for tier-1's scope (supersedes §3's narrowing above):** the `insts`-registration
+wall this section names is CLOSED for the self-recursive case — tier-1's derive scope widens back
+to self-recursive carriers (`IntList`/`List`-shaped `data`, the FIRST recursive-type derive ask
+§3 flagged as blocked) the moment #109 targets it; the derive handler's own carrier-detection logic
+(§3's "detect self-recursion and refuse") is no longer needed for that case. Tier-1 remains
+narrowed only for a MUTUAL-recursion derive shape (two `data` types whose `Eq`/`Ord` impls would
+need to call each other) — a shape no SINGLE-type derive (§2's fold, always over ONE `data` decl's
+own ctors) can produce in the first place, so this residual limit is VACUOUS for #109's actual
+codegen target, not a live constraint.
+
+Landed: branch `fix-112-buildenv-twopass`, `Bang/Frontend/TypeCheck.lean` (`Inst`/`PendingOpKnot`/
+`ElabEnv.pendingKnots`, `buildEnv`'s `.implD` arm, `wrapPendingKnots`, `elabProg`, `checkLawOn`'s
+matching wrap), two new `examples/` projects. Gates: `lake build bang` clean, `just verify` green
+(examples both engines, `tools/test-law.sh` 20/20, fitness/audit), `just axioms` unchanged (7
+pre-existing `sorryAx`, none in `TypeCheck.lean`).
+
 ### 4 — Carrier refusal: built-in carriers refused outright; function-typed fields refused
 
 **Built-in carrier (dead-impl trap, #78 fact 3, RE-CONFIRMED this session):**
@@ -281,29 +356,41 @@ BEq/DecidableEq/Repr/Inhabited/Hashable/Ord — the mechanism transplanted, §1/
 ruling comment (operator, 2026-07-11, option (a)); `Bang/Frontend/TypeCheck.lean:2854-2929`
 (`buildEnv`, the exact ordering the recursive-carrier wall is located in).
 
+**§3a addendum, 2026-07-11 (issue #112):** the `w2`/`w2c` FAILED row above is HISTORICAL — both now
+RUN correctly (`w2` → `1`, `w2c` → `inr ()`) against the knot-based dispatch fix; promoted to
+`examples/trait-recursive-eq`/`examples/trait-recursive-ord`, gated forever. See §3a for the full
+before/after and what remains blocked (forward/mutual reference).
+
 ## Consequences
 
 - #109 implements: the `deriving (Eq, Ord)` parser clause (`pDecl`'s `"data"` arm), the fold
-  codegen for NON-self-recursive `data` targets only, the built-in-carrier refusal (free by
-  construction — §4), and a `bang fmt` print arm for the new clause (§1's flagged gap).
-- #109 does NOT implement (named, separate work): recursive-carrier derive (blocked on the
-  `buildEnv` ordering fix, §3's follow-up issue), any `DeclFact` provenance marker (§7's follow-up),
+  codegen — **now for self-recursive `data` targets too** (§3a), not just non-recursive ones — the
+  built-in-carrier refusal (free by construction — §4), and a `bang fmt` print arm for the new
+  clause (§1's flagged gap).
+- #109 does NOT implement (named, separate work): a `DeclFact` provenance marker (§7's follow-up),
   a prelude `Eq`/`Ord` trait declaration if #106's `Prelude.bang` migration has not landed one yet
   (§2's dependency — if absent, #109 ships its own minimal `trait Eq`/`trait Ord` declaration
-  inline as a stopgap, superseded once #106 lands the canonical one).
-- The traits-prelude-survey's tier-1 recommendation SURVIVES with one honest narrowing: "tier 1
-  ships today" now reads "tier 1 ships today for non-self-recursive carriers"; the common
-  law-bearing corpus shape (`VecOps`-style paired records, `Box`-style small sums) is exactly the
-  surviving case — the FIRST recursive-type derive ask (a `deriving`d `IntList`/`List`) waits on
-  the named follow-up.
+  inline as a stopgap, superseded once #106 lands the canonical one). Recursive-carrier derive is
+  NO LONGER on this list (§3a closed it) — a MUTUAL mid-derive shape remains structurally
+  unreachable from a single-type fold (§3a's last paragraph), so it needs no explicit exclusion.
+- The traits-prelude-survey's tier-1 recommendation SURVIVES with its §3 narrowing now LIFTED
+  (§3a): "tier 1 ships today" covers self-recursive carriers (`IntList`/`List`-shaped `data`) as
+  well as the non-recursive `VecOps`/`Box`-style corpus — the FIRST recursive-type derive ask is
+  unblocked.
 
 ## Revisit if
 
-- The `buildEnv` `insts`-ordering fix (§3) lands → tier-1 scope extends to self-recursive carriers
-  without a design change here (the codegen SHAPE in §2 is already correct for the recursive case;
-  only the elaboration-ordering wall blocks it).
+- ~~The `buildEnv` `insts`-ordering fix (§3) lands~~ — **DONE, §3a (2026-07-11, issue #112).** Landed
+  as knot-based dispatch (a dispatch-MECHANISM change: splice → `let rec`-bound call), not the
+  originally-named two-pass registration order (§3a explains why option (i) alone was refuted).
+  Tier-1 scope extended to self-recursive carriers; the codegen SHAPE in §2 needed no change.
 - #106's `Prelude.bang` migration lands a canonical `trait Eq`/`trait Ord` → #109's stopgap inline
   declaration (§2) is deleted in favor of importing the prelude one.
 - Tier-2 derives (#111) unblock on #78 → this ADR's carrier-refusal and law-auto-attach findings
   (§4/§5) are directly reusable (both are trait-shape-generic, not Eq/Ord-specific); only the
   codegen fold (§2) is per-trait and needs its own worked example at that time.
+- `feat-mutual-rec`'s `buildLetRecMulti` (N-way tuple-of-thunks knot) lands → the forward/mutual
+  impl-reference gap §3a leaves open (structurally unreachable from #109's own single-type fold,
+  but a real gap for HAND-WRITTEN cross-impl programs) could close too, by swapping
+  `wrapPendingKnots`'s chained `letRecS` for the mutual generalization — not required for #109,
+  named here as the natural next step if a hand-written mutual-impl program is ever blocked on it.
