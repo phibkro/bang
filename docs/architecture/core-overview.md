@@ -46,7 +46,7 @@ graph TD
     Core_Typing["Core.Typing<br/>495L · fan-in 0"]
     Examples["Examples<br/>418L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>210L · fan-in 0"]
+    Frontend_DiagCodes["Frontend.DiagCodes<br/>221L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>1058L · fan-in 0"]
     Frontend_Lint["Frontend.Lint<br/>213L · fan-in 0"]
@@ -55,7 +55,7 @@ graph TD
     Frontend_Surface["Frontend.Surface<br/>3013L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>6280L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>6370L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1745L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
@@ -107,7 +107,7 @@ graph TD
 | `Distribution` | Apex | 67 | 0 |
 | `Examples` | ? | 418 | 0 |
 | `Frontend.Annotate` | ? | 252 | 0 |
-| `Frontend.DiagCodes` | ? | 210 | 0 |
+| `Frontend.DiagCodes` | ? | 221 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
 | `Frontend.Format` | ? | 1058 | 0 |
 | `Frontend.Lint` | ? | 213 | 0 |
@@ -116,7 +116,7 @@ graph TD
 | `Frontend.Rewrite` | ? | 295 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 6280 | 0 |
+| `Frontend.TypeCheck` | ? | 6370 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1745 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |

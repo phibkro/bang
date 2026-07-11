@@ -2256,6 +2256,38 @@ def genBinderTable (ctors : List (String × CtorInfo)) (dataName : String) (τ :
         | none     => none)
   | _ => []
 
+/-- Qualify one module's identifier: `modname_name` (an ordinary identifier — no new token/AST
+node). `_` needs no tokenizer change (already a legal identifier char, nothing in `tokenize`
+splits on it), unlike `modname.name` which would collide with the LIVE `.dotPerform` token.
+Hoisted here (ahead of its original `## Modules` section, unchanged definition) so `resolveCtor`
+below — needed by the `elabS`/`elabArms` mutual block, which precedes `## Modules` in file order —
+can reuse the SAME qualification scheme for `Type_Ctor` (ADR-0099) rather than duplicating it. -/
+def qualifyName (modName name : String) : String := s!"{modName}_{name}"
+
+/-- **ADR-0099**: resolve a bare (or `Type_Ctor`-qualified) constructor reference against `env.ctors`.
+A ctor's true key is `(dataName, ctorName)`, not the bare name alone — `env.ctors` still stores every
+entry flat (unchanged representation), so resolution moves from registration-time refusal to a
+USE-time lookup here. **Tries the QUALIFIED spelling FIRST** (some candidate whose
+`dataName ++ "_" ++ ctorName` — the `qualifyName` convention, ADR-0093 — equals `x` exactly): this
+must run before the bare-name filter, since a qualified reference like `IntList_Cons` shares NO bare
+ctor name with anything (`candidates` on the bare name alone would be `[]`, wrongly falling through
+to "not a ctor"). Only once no candidate's qualified spelling matches does it fall back to the
+bare-name ambiguity-set filter (every candidate whose OWN `ctorName` equals `x`): 0 ⟹ `none` (not a
+ctor at all, falls through to ordinary var/application handling unchanged); exactly 1 ⟹ that one,
+byte-identical to today's `.lookup` for every unambiguous reference; 2+ ⟹ **B012**, `.error` carrying
+the full candidate list (dataName × qualified spelling pairs) for the diagnostic to name every
+candidate + its fix. -/
+def resolveCtor (env : ElabEnv) (x : String) : Option (Except String CtorInfo) :=
+  match env.ctors.find? (fun p => qualifyName p.2.dataName p.1 == x) with
+  | some ci => some (.ok ci.2)
+  | none    =>
+      match env.ctors.filter (fun p => p.1 == x) with
+      | []   => none
+      | [ci] => some (.ok ci.2)
+      | cs   =>
+          let owners := cs.map (fun p => s!"{p.2.dataName} (as '{qualifyName p.2.dataName p.1}')")
+          let ownersStr := String.intercalate ", " owners
+          some (.error s!"ambiguous constructor '{x}' — candidates: {ownersStr}")
 
 /-- A-normalize a VALUE-position subterm (#41), mirroring `lowerV`-or-`letC` in `Surface.lower` but
 at the NAMED elaboration layer (no de-Bruijn shift — a fresh binder just extends `Γ`). Returns the
@@ -2559,8 +2591,8 @@ mutual
 def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
   | _, .lit n => .ok (.lit n)
   | _, .var x =>
-      match env.ctors.lookup x with           -- a 0-ary ctor use (`Nil`) IS an intro (ADR-0069)
-      | some ci => if ci.arity == 0 then
+      match resolveCtor env x with             -- a 0-ary ctor use (`Nil`) IS an intro (ADR-0069); ADR-0099 resolution
+      | some (.ok ci) => if ci.arity == 0 then
                      -- GENERIC (bite-1/#55): the ctor's TEMPLATE μ (params as markers) — `embVInst` mints
                      -- fresh holes at the annotation, so the element type is INFERRED from context (an
                      -- enclosing concrete annotation OR the fields), no user `: Option Int` required.
@@ -2568,7 +2600,8 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
                      if ci.params.isEmpty then .ok (ctorIntro ci .unitS)
                      else genCtorIntro env ci .unitS
                    else .error s!"constructor '{x}' expects {ci.arity} argument(s)"
-      | none    => .ok (.var x)
+      | some (.error e) => .error e             -- ADR-0099 B012: ambiguous bare ctor
+      | none             => .ok (.var x)
   | _, .getS  => .ok .getS
   | _, .unitS => .ok .unitS
   | Γ, .thunk b  => do return .thunk (← elabS env Γ b)
@@ -2642,8 +2675,8 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
         | .two a b => do return .two (← elabS env Γ a) (← elabS env Γ b))
       return .dotPerform recv' op args'
   | Γ, .app (.var c) a => do                  -- ctor intro `Cons(e, …)` parses as application (ADR-0069)
-      match env.ctors.lookup c with
-      | some ci =>
+      match resolveCtor env c with            -- ADR-0099 resolution
+      | some (.ok ci) =>
           if ci.arity == 0 then .error s!"constructor '{c}' takes no arguments"
           else do
             -- A-normalize the payload so the fold wraps a VALUE (computations lifted above, #41). A
@@ -2656,7 +2689,8 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             -- the element type is INFERRED from the fields (`Cons(1, Nil)` ⟹ `a := Int`, no annotation).
             if ci.params.isEmpty then return w (ctorIntro ci v)
             else return w (← genCtorIntro env ci v)
-      | none    => do return .app (.var c) (← elabS env Γ a)
+      | some (.error e) => .error e           -- ADR-0099 B012: ambiguous bare ctor
+      | none             => do return .app (.var c) (← elabS env Γ a)
   | Γ, .app f a     => do                     -- A-normalize a computation ARGUMENT (`($f)(n-1)`), #41
       let f' ← elabS env Γ f
       let a' ← elabS env Γ a
@@ -2749,22 +2783,26 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       -- through a parser argument with NO concrete `: Option (Int * Str)` annotation.
       let (s', binderTys) ← (match armsToList arms with
         | (c0, _, _) :: _ =>
-            match env.ctors.lookup c0 with
-            | some ci0 =>
+            match resolveCtor env c0 with       -- ADR-0099: the FIRST arm's ctor seeds ci0, matchD's
+                                                 -- existing type-directed context (ADR-0099 §1's
+                                                 -- "resolveCtor naturally runs inside it")
+            | some (.ok ci0) =>
                 if ci0.params.isEmpty then pure (s0', ([] : List (String × List IVTy)))
                 else match runInferV (synthSV Γ s0') with
                      | .ok τ@(.mu _) => pure (s0', genBinderTable env.ctors ci0.dataName τ)   -- concrete: bite-1
                      | _ => do let tmpl ← genTemplateTy env ci0                                -- unknown: template-drive
                                pure (.annotS s0' tmpl, genBinderTable env.ctors ci0.dataName (vtyOf tmpl))
+            | some (.error e) => .error e       -- ADR-0099 B012: ambiguous first-arm ctor
             | none => pure (s0', [])
         | [] => pure (s0', ([] : List (String × List IVTy))))
       let arms' ← elabArms env binderTys Γ arms   -- bodies elaborated under ctor-typed Γ
       match armsToList arms' with
       | [] => .error "match needs at least one arm"
       | armsL@((c0, _, _) :: _) =>
-        match env.ctors.lookup c0 with
+        match resolveCtor env c0 with           -- ADR-0099 resolution
         | none => .error s!"unknown constructor '{c0}' in match"
-        | some ci0 => do
+        | some (.error e) => .error e           -- ADR-0099 B012: ambiguous first-arm ctor
+        | some (.ok ci0) => do
             let dcs := (env.ctors.filter (fun p => p.2.dataName == ci0.dataName)).map Prod.snd
             let dcs := (dcs.toArray.qsort (fun a b => a.idx < b.idx)).toList
             if armsL.length != dcs.length then
@@ -2787,7 +2825,11 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
               match env.ctors.find? (fun p => p.2.dataName == ci.dataName && p.2.idx == ci.idx) with
               | none => throw "impossible: ctor without a name key"
               | some (cn, _) =>
-                match armsL.find? (fun a => a.1 == cn) with
+                -- ADR-0099: an arm may spell this ctor BARE (`cn`, e.g. `Nil`) or QUALIFIED
+                -- (`Type_Ctor`, e.g. `IntList_Nil`) — a cross-type collision forces the qualified
+                -- spelling (§Migration), so both must match here, not just the bare name.
+                let qn := qualifyName ci.dataName cn
+                match armsL.find? (fun a => a.1 == cn || a.1 == qn) with
                 | none => throw s!"match on {ci0.dataName}: missing arm for '{cn}'"
                 | some (_, bs, body') => do
                     if bs.length != ci.arity then
@@ -2831,21 +2873,33 @@ validation fail-louds right after). -/
 def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx → DArms → Except String DArms
   | _, .nil => .ok .nil
   | Γ, .cons c bs b r => do
-      let Γa := match binderTys.lookup c with
+      -- ADR-0099: an arm may spell its ctor QUALIFIED (`Type_Ctor`) when a cross-type collision
+      -- forced it — `binderTys` is keyed on the BARE name (`genBinderTable`), so a direct `.lookup c`
+      -- misses; every entry here shares ONE `dataName` (this table is built per-scrutinee in
+      -- `matchD`), so try each entry's OWN qualified spelling as a fallback key.
+      let binderLookup : Option (List IVTy) :=
+        (binderTys.lookup c).orElse (fun _ =>
+          (binderTys.find? (fun p => (env.ctors.lookup p.1).any (fun ci => qualifyName ci.dataName p.1 == c))).map Prod.snd)
+      let Γa := match binderLookup with
         -- GENERIC (bite-1): concrete field types derived from the scrutinee's μ (`genBinderTable`).
         | some tys =>
             (match bs, tys with
              | [b1], [t1]         => (b1, (t1 : Scheme)) :: Γ
              | [b1, b2], [t1, t2] => (b2, (t2 : Scheme)) :: (b1, (t1 : Scheme)) :: Γ
              | _, _               => Γ)
-        -- MONOMORPHIC: the ctor's own closed payload types (ADR-0069), unchanged.
-        | none => match env.ctors.lookup c with
-          | some ci =>
+        -- MONOMORPHIC: the ctor's own closed payload types (ADR-0069), unchanged. ADR-0099: an
+        -- AMBIGUOUS `c` here just leaves Γ un-extended (mirroring the pre-existing `none` case) —
+        -- `matchD`'s OWN `resolveCtor env c0` call (on the first arm) is what actually reports the
+        -- B012 for this match; a non-first ambiguous arm name still gets caught there too, since
+        -- `dcs`/`armsL` validation runs against the SAME (single, now-resolved) `ci0.dataName`.
+        | none => match resolveCtor env c with
+          | some (.ok ci) =>
               (match bs, ci.payloadClosed with
                | [b1], [t1]         => (b1, embV (vtyOf t1)) :: Γ
                | [b1, b2], [t1, t2] => (b2, embV (vtyOf t2)) :: (b1, embV (vtyOf t1)) :: Γ
                | _, _               => Γ)
-          | none => Γ
+          | some (.error _) => Γ
+          | none             => Γ
       let b' ← elabS env Γa b
       let r' ← elabArms env binderTys Γ r
       .ok (.cons c bs b' r')
@@ -2918,7 +2972,13 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
         aliases := (n, closed) :: aliases
         let mut i := 0
         for (c, cp) in cs.zip closedPays do
-          if (ctors.lookup c.1).isSome then throw s!"duplicate constructor '{c.1}'"
+          -- ADR-0099: only a SAME-TYPE duplicate (two ctors named `c.1` inside THIS `data`'s own
+          -- `cs` list) still refuses — that collision has no bare-name resolution story (which
+          -- ctor would the bare name even mean within one type?). A cross-type collision (another
+          -- `data` decl elsewhere already owning `c.1`) is no longer a registration-time error —
+          -- resolution moves to USE time (`resolveCtor`, below).
+          if (ctors.filter (fun p => p.2.dataName == n)).any (fun p => p.1 == c.1) then
+            throw s!"duplicate constructor '{c.1}'"
           if cp.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
           ctors := (c.1, ⟨n, i, cs.length, cp.length, cp, closed, [], []⟩) :: ctors
           i := i + 1
@@ -2929,7 +2989,9 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
         gen := (n, ⟨params, cs⟩) :: gen
         let mut i := 0
         for c in cs do
-          if (ctors.lookup c.1).isSome then throw s!"duplicate constructor '{c.1}'"
+          -- ADR-0099: same-type-only duplicate refusal — see the mono `.dataD` arm's comment above.
+          if (ctors.filter (fun p => p.2.dataName == n)).any (fun p => p.1 == c.1) then
+            throw s!"duplicate constructor '{c.1}'"
           if c.2.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
           ctors := (c.1, ⟨n, i, cs.length, c.2.length, [], .tUnit, params, c.2⟩) :: ctors
           i := i + 1
@@ -3093,11 +3155,6 @@ FILE graph) is `Main.lean`'s job (IO). Everything HERE is a pure function over a
 `Prog`s: qualification + visibility + decl-merge, producing ONE flat `Prog` that `elabProg`/
 `buildEnv` consume completely unchanged (D4 — "the kernel never learns modules exist", the fourth
 elaborate-away application after ADR-0075/0088/0091). -/
-
-/-- Qualify one module's identifier: `modname_name` (an ordinary identifier — no new token/AST
-node). `_` needs no tokenizer change (already a legal identifier char, nothing in `tokenize`
-splits on it), unlike `modname.name` which would collide with the LIVE `.dotPerform` token. -/
-def qualifyName (modName name : String) : String := s!"{modName}_{name}"
 
 /-- The full set of a module's TOP-LEVEL names that qualification must rename: every decl's own
 name, PLUS (for a `data` decl) its constructors — D2's "ctors travel with their type". Function
@@ -4456,6 +4513,39 @@ def listProg (body : String) : String :=
 #guard (match checkProg (listProg "let s = Nil in match s { Nil -> 0, Snoc(h, t) -> h }") with
         | .error _ => true | _ => false)
 #guard (match checkProg (listProg "Cons(7)") with | .error _ => true | _ => false)
+
+/-! ### Validation ⑨a — ADR-0099: constructors are TYPE-namespaced (#108).
+
+The four `docs/decisions/witness-0099/*.bang` witnesses, promoted into the corpus (hand-verified
+against the real `bang` binary at ADR-0099 design time; expectations here are the SAME programs run
+through the SAME `checkProg`/`runTypedYieldsInt` oracle helpers Validation ⑨ already uses — never
+guessed). `List a`'s `Nil`/`Cons` and `IntList`'s `Nil`/`Cons` co-present is the collision this ADR
+resolves: a cross-type bare-name collision is a USE-time ambiguity (B012), not a registration-time
+refusal. -/
+def collidingListsProg (body : String) : String :=
+  "data List a = Nil | Cons(a, List a) data IntList = Nil | Cons(Int, IntList) " ++ body
+
+-- w0: two `data` decls sharing bare ctor names, UNUSED — nothing is ambiguous, no registration-time
+-- refusal (the pre-#108 behavior was `error: duplicate constructor 'Nil'` even here).
+#guard runTypedYieldsInt 200 (collidingListsProg "0") 0
+-- w1: the #105/#108 acceptance case — a prelude-shaped `List a` and a user `IntList` coexist, each
+-- matched via ITS OWN qualified ctor names (`IntList_Nil`/`IntList_Cons`) since the bare names
+-- collide (both types are in scope).
+#guard runTypedYieldsInt 600 (collidingListsProg
+  "let xs = IntList_Cons(7, IntList_Nil) in match xs { IntList_Nil -> 0, IntList_Cons(h, t) -> h }") 7
+-- w2: a BARE ambiguous ctor reference is a LOUD B012 error naming both owning types + the qualified
+-- spellings — never a silent pick of "whichever `data` decl came first".
+#guard (match checkProg (collidingListsProg "Nil") with
+        | .error m => (m.splitOn "ambiguous constructor 'Nil'").length > 1
+            && (m.splitOn "IntList (as 'IntList_Nil')").length > 1
+            && (m.splitOn "List (as 'List_Nil')").length > 1
+        | .ok _ => false)
+-- w3: a bare ctor name only ONE in-scope type owns still resolves bare — the common (non-colliding)
+-- case is untouched by namespacing. `L`/`LNil`/`LCons` has no cross-type collision with `IntList`.
+def nonCollidingListsProg (body : String) : String :=
+  "data L = LNil | LCons(Int, L) data IntList = Nil | Cons(Int, IntList) " ++ body
+#guard runTypedYieldsInt 600 (nonCollidingListsProg
+  "let xs = Cons(7, Nil) in match xs { Nil -> 0, Cons(h, t) -> h }") 7
 
 /-! ### Validation ⑨b — HIGHER-ORDER constructor payloads (#45): a `Thunk (Int -> Int)` field.
 
