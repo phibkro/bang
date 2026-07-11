@@ -32,7 +32,7 @@ graph TD
     Backend_Rung5ProofGrade["Backend.Rung5ProofGrade<br/>144L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1649L · fan-in 0"]
     Backend_Wasm["Backend.Wasm<br/>2931L · fan-in 0"]
-    Backend_WasmEmit["Backend.WasmEmit<br/>1632L · fan-in 0"]
+    Backend_WasmEmit["Backend.WasmEmit<br/>1666L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>566L · fan-in 0"]
     Core_EffectRow["Core.EffectRow<br/>203L · fan-in 0"]
     Core_Freshness["Core.Freshness<br/>833L · fan-in 0"]
@@ -96,7 +96,7 @@ graph TD
 | `Backend.Rung5ProofGrade` | ? | 144 | 0 |
 | `Backend.U5bComplete` | ? | 1649 | 0 |
 | `Backend.Wasm` | ? | 2931 | 0 |
-| `Backend.WasmEmit` | ? | 1632 | 0 |
+| `Backend.WasmEmit` | ? | 1666 | 0 |
 | `Core.CapCoh` | ? | 566 | 0 |
 | `Core.EffectRow` | ? | 203 | 0 |
 | `Core.Freshness` | ? | 833 | 0 |
