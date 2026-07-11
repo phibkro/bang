@@ -173,6 +173,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **release** — widen the binary matrix to 3 Lean Tier-1 platforms (`0760351f`)
 - **tour** — interactive tour v0 — corpus-generated, no-exec lessons (`42593812`)
 - **docs** — document deriving + refuse generic-carrier deriving with a teaching diagnostic (#122) (`3a19b6f3`)
+- **◊5.5** — emission rung-4 — closures + ADTs + recursion on WasmGC (nqueens = 21004) (`0a494a0b`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

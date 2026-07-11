@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (57)
+## active (58)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
