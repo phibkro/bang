@@ -96,17 +96,33 @@ below. They confirm Candidate 1 is structurally sound on a real engine before th
 ## The implementation-lane slice map
 
 ```
-S0  $env effect slots     add a $ref (mutable box) $val subtype; the emitter's env becomes uniform
+S0  [DONE] $env effect slots   add a $ref (mutable box) $val subtype; the emitter's env becomes uniform
                           $env (rung-4 already has it) — a handler pushes a $ref/tag slot, get/put =
                           struct.get/set. Refute-first: the two hand witnesses (DONE) fix the shape.
-S1  state on the GC path  port the rung-2b `.state` arm to $env: handle (state s₀) mints a $ref box,
+S1  [DONE] state on GC path   port the rung-2b `.state` arm to $env: handle (state s₀) mints a $ref box,
                           get/put read/write it; closures capture it for free (the S0 witness).
-S2  throws on the GC path port rung-2's try_table/throw verbatim (control flow, rep-agnostic); the
-                          cap slot carries the tag identity. The first GC program mixing raise + a closure.
-S3  transaction (GC heap) TVar heap = a GC array of $ref cells (rung-3 Q1 option B); newTVar appends,
-                          read/write index, rollback drops the journal. catch_all_ref/throw_ref reused.
-S4  custom (user effects) clause body lifted to a $fn; one-shot resume = call_ref into the continuation
-                          closure (no reification). Unblocks the ADR-0059 `general` slot for v1 (tail).
+                          LANDED: `state` example emits emitModuleGC + runs 5 == bang run on wasmtime 45.
+S2  [DONE] throws on GC path port rung-2's try_table/throw verbatim (control flow, rep-agnostic); the
+                          cap slot carries the tag identity (a compile-time `CapSlot` context threaded
+                          alongside the runtime $env). LANDED: `handle` example (raise 7 caught) emits
+                          emitModuleGC + runs 7 == bang run; result type is $val not i64. Tag decls
+                          `(tag $exnT (param (ref null $val)))` per minted handle.
+S3  [DONE] transaction     TVar heap = a $txbox mutable pointer to an $env list of $ref cells (rung-3
+                          Q1 option B); newTVar prepends + returns the old length (index), read/write
+                          walk to the cell ($txcell) and struct.get/set in place, rollback resets the
+                          box to null. catch_all_ref/throw_ref reused. LANDED: stm=70, effect-op-arith=70
+                          == bang run on wasmtime 45; the ABORT path (raise inside a txn) verified 42 ==
+                          bang run — the explicit rollback (struct.set $txbox null + throw_ref) FIRES.
+S4  [DONE] custom effects   clause body lifted to a lam-style $fn capturing (p :: handlerEnv); a custom
+                          op call_refs its clause with the op-value ⇒ body env (v :: p :: handlerEnv) =
+                          the image of subst p (subst (shift v) clause.2) — one-shot resume, no
+                          reification (design (c)). The clause closures live in a $txbox in the cap's
+                          ENV slot (env-reachable via $lookup + $clausecell), so a NESTED closure that
+                          performs the op works (dst-rounds). LANDED: logger-counting=3, logger-silent=0,
+                          handle-custom-{resume=106,tracer=30,nested=210,abort-coexist=42}, dst-rounds-
+                          {const=16,lcg=9}, ndet-{sim,replicated,rep}-kv all == bang run on wasmtime 45.
+                          NAMED REFUSAL: a cap threaded as a first-class runtime VALUE (vcap passed into
+                          a closure as an arg — stage-swap) has no GC $val rep in v1; refused loudly.
 S5  proof-grade           extend the wexec≡Source.eval obligation with the $env-slot↔store bijection;
                           per-former, same seam as rungs 1-4 (tested stratum until then).
 ```
@@ -129,4 +145,12 @@ SURVIVES      throws (try_table/throw) + rollback (catch_all_ref/throw_ref) are 
               verbatim, rep-agnostic. Only the VALUE/ENV rep merges.
 SLICES        S0 $ref slot · S1 state · S2 throws · S3 txn(GC heap) · S4 custom · S5 proof-grade.
               No frame-chain slice (post-v1, the ADR-0015 multi-shot frontier).
+LANDED        S0-S4 DONE (feat-rung5-effects): 34 whole programs → WasmGC → wasmtime == bang run, of
+              which 22 are EFFECTFUL (state/stm/throws/logger/custom/dst-rounds/ndet). The rung-4
+              blanket effect-refusal is REPLACED — effectful corpus programs now compile via
+              emitModuleGC. Gate = tools/emit-rung5-effects-diff.sh (auto-discovering, both-direction).
+NAMED WALLS   a first-class capability (vcap) threaded as a runtime VALUE (passed into a closure as an
+              arg — stage-swap) has no GC $val cap rep in v1: refused LOUDLY. Full bignum (i64 wrap,
+              inherited rung 4) and non-empty-start Θ (only atomically) stay named refusals. S5 proof-
+              grade (wexec≡Source.eval with the $env-slot↔store bijection) = the tested→verified lift.
 ```
