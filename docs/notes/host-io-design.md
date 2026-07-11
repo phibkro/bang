@@ -73,6 +73,18 @@ host resource into a value; the opaque-`Int` token keeps the fragment closed.
 
 ## 2 · The host-handler mechanism — the pause/resume seam in the ENV machine
 
+> **CORRECTION (ADR-0104 supersedes the mechanism below).** This section's `msuspended`-fourth-`MOutcome`
+> + `resumeE`/`k'.resume` seam presupposes a machine with a REIFIED CONTINUATION. Verified at
+> implementation: the default engine (`EnvMachine.evalE`, ADR-0094) is BIG-STEP — its stack is Lean's call
+> stack, so there is no continuation object to hand a driver and resume. "The env machine's stack IS the
+> continuation" is true of the CalcVM `exec` (`AbstractMachine.lean`), NOT the big-step `evalE` named here
+> — the two got conflated. The realized seam is the **replay-prefix driver** (re-run the pure evaluator
+> with the host answers accumulated so far), realized as a byte-identical-except-one-leaf sibling
+> `evalEHost` (B2, after B1's proven-spine re-key was refuted). See **ADR-0104 §4** for the mechanism, the
+> full fork trail (B/B1/B2), the rejected A/C, the future door (the concurrency-era suspendable engine
+> subsumes the replay-prefix), and the open host-provision reach. The interfaces (§1), grant surface
+> (§2a), trace/conformance (§3), and WASI mapping (§4) below stand as designed.
+
 **The load-bearing constraint (verified from code):** the host boundary CANNOT live in `Source.eval`.
 `Source.eval` (`Eval.lean`, the kernel oracle) is pure Lean, no `IO`; the env machine (`EnvMachine.lean`,
 ADR-0094, default engine) is *also* pure — `evalE : … → Option (MOutcome × …)`. The IO monad exists

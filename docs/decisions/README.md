@@ -121,6 +121,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0101](0101-concurrency-model-scheduler-as-handler.md) | Accepted | Concurrency model: scheduler-as-handler; components/threads are backends, not the model | Concurrency is an ORDINARY effect (a `conc`/`Sched` row label) and a scheduler is a | — / — | — / — | — | — |
 | [0102](0102-mutual-let-rec.md) | Accepted | Mutual `let rec … and …`: H2 tuple-of-thunks μ-knot (#97 item 2) | `let rec f : T1 = e1 and g : T2 = e2 … in body` generalizes ADR-0073's single-function | — / — | — / — | — | — |
 | [0103](0103-forall-generalization.md) | Accepted | ∀-generalization for bound-free self-recursive generics: a call-site-monomorphization pre-pass (the List-family door) | A bound-free self-recursive generic (`length : List a -> Int`, the whole List family: | — / — | — / — | — | — |
+| [0104](0104-host-io-environment.md) | Accepted | Host IO as effects + handlers, driven by an environment seam with record/replay conformance | Host IO (Console, Clock now; Fs, Net later) is an ORDINARY `effect` in the row, | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 
