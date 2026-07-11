@@ -1,0 +1,20 @@
+-- witness-b-shadow-risk — probes whether SAME-LABEL nested `with Io_Console` handlers typecheck
+-- and run today (the shape ADR-0052 build-proved diverges between lexical/identity dispatch and
+-- nearest-label dispatch). Each cap-threaded perform NAMES its handler explicitly (con_inner vs
+-- con_outer) so there is no ambiguity today -- the point is only: does bang admit two live
+-- same-label handler frames simultaneously? If yes, ANY future "resolve an ambient call to the
+-- nearest same-label with" mechanism must pick one of them by proximity, which is exactly the
+-- nearest-label discipline ADR-0052 rejected in favor of lexical/identity dispatch.
+import Io
+let main =
+  handle
+    handle
+      con_inner.print(SCons(Char(105), SNil))
+    with Io_Console as con_inner {
+      print(s) => (),
+      readLine(u) => SCons(Char(50), SNil)
+    }
+  with Io_Console as con_outer {
+    print(s) => (),
+    readLine(u) => SCons(Char(49), SNil)
+  }

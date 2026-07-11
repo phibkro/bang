@@ -1,0 +1,14 @@
+-- witness-a-status-quo.bang — H1b design probe, candidate (a): what does status quo lose?
+--
+-- A test-harness attempt to MOCK ambient Io.print via an enclosing `with Io_Console`, without
+-- any --env plumbing. Under the shipped (label-only ambient) semantics this should NOT be
+-- intercepted: Io.print reaches the driver's outermost grant surface unconditionally, even
+-- though the perform sits textually inside the handler's scope.
+import Io
+let main =
+  handle
+    Io.print(SCons(Char(104), SCons(Char(105), SNil)))   -- ambient spelling, NOT con.print
+  with Io_Console as con {
+    print(s) => (),
+    readLine(u) => SCons(Char(104), SNil)
+  }

@@ -1,0 +1,9 @@
+-- witness-c — confirms get/put's nearness is genuinely SAFE under nested same-shaped `state`
+-- blocks: the inner `get` binds to the LEXICALLY nearest `state`, by ordinary variable shadowing
+-- (the reserved name `capState` is pushed once per `state ... in`, shifting like any binder) --
+-- NOT by a runtime "nearest matching label" search over live handler identities. Expect: inner
+-- get = 20 (nearest), unaffected by the outer state's value.
+let main =
+  state 1 in
+  state 20 in
+  get
