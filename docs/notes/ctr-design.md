@@ -1,9 +1,11 @@
 <!-- note-status: active -->
 # Compute-then-return design map — lifting the ADR-0095 D4 ret-shape restriction (#44 exit gate)
 
-> **⚠ VERDICT CORRECTION (2026-07-11, ctr-g1 lane, F1 MACHINE-REFUTED).** The "(γ) GO" verdict
-> below (§2.3/§5) is **WRONG**. F1 — the ⊥-row computing-body grade-freedom claim — is **REFUTED,
-> axiom-clean**, and the correct picture inverts the note's remedy:
+> **⚠ VERDICT CORRECTION (2026-07-11, ctr-g1 lane, F1 MACHINE-REFUTED). The DECISION lives in
+> [ADR-0100](../decisions/0100-g1-compute-then-return-ships-tested-superset.md) — this note is the
+> design probe; the ADR is the one decision home.** The "(γ) GO" verdict below (§2.3/§5) is
+> **WRONG**. F1 — the ⊥-row computing-body grade-freedom claim — is **REFUTED, axiom-clean**, and
+> the correct picture inverts the note's remedy:
 >
 > 1. **The kernel `HasClauses` computing-body carve-out is UNSTATEABLE at the grade the surface
 >    actually uses.** The surface types every `binopS` AND every `perform` at grade **`.F .omega`**
