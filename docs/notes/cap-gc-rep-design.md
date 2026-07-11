@@ -222,6 +222,78 @@ headline (`calc`/`stage-swap` emit); `C4` is the tested→verified lift. No clos
 > not a one-arm change; and because v1 does NOT statically exclude escape (scoped-cap types are
 > post-v1, ADR-0063), so the runtime fail-loud is mandatory, not optional.
 
+## 8 · Implementation findings (feat-cap-gc-rep, 2026-07-12)
+
+Measured facts from the implementation lane that refine §6's slice map:
+
+- **The escape hole is LIVE in the shipping emitter, and spans ALL cap kinds.** Fed real escape
+  `Comp`s through `emitModuleGCPrint` (`rung4-shape --escape`): a STATE-cap escape (`{get}` thunk
+  forced past its handler) emits + prints `0`; a CUSTOM-cap escape (`{perform log}` thunk) emits +
+  prints `99` — both where the kernel `#guard`s `.escapedCap`. So C2's stamp is a **cross-cutting
+  liveness thread** through EVERY `handle`-mint and EVERY `perform` arm (state `get`/`put`, custom
+  `call_ref`, txn), not a first-class-cap-only change. This is wider than the #133 headline. The
+  escape-differential gate (`tools/emit-escape-diff.sh`, LANDED `cb512890`) makes it visible + pins
+  the regression class; `capEscape-get` is `XFAIL_UNTIL_STAMP` (known-red, build stays green) until
+  C2 removes the entry.
+- **The happy-path C0 is more surgical than §6 assumed — the `$txbox` IS already the runtime cap
+  value.** Reading the emitted lexical-custom dispatch (`logger-counting`): a `perform` does
+  `$clausecell (struct.get $txbox 0 (ref.cast (ref $txbox) ($lookup env i))) pos` + `call_ref`. A
+  FIRST-CLASS cap's env slot holds the SAME `$txbox` (passed in via `app`). So a `.none`-slot
+  perform on a CUSTOM op can REUSE the identical dispatch — no new `$cap` type needed for the happy
+  path; the only new thing is knowing the op's POSITION (no compile-time `CapSlot.custom` map).
+- **Single-op covers the entire shippable corpus.** The ONLY two first-class-cap programs are
+  `calc` (`Eval_Trace`, one op `log`) and `stage-swap` (`Net`, one op `fetch`) — both single-op ⇒
+  position 0. A MULTI-op first-class cap can be a NAMED refusal (invariant #1: fail loud, never a
+  wrong multi-op dispatch) without blocking anything currently shippable. The general multi-op
+  position needs the effect-decl op ordering threaded to the perform (a `$cap` carrying the op→pos
+  map, or the effect signature in `GCState`) — deferred behind the refusal.
+- **Revised slice order (proposed):** C0 (first-class happy path, single-op, stage-swap unlocks) is
+  INDEPENDENT of C2 (the escape stamp). Shipping C0 first banks the #133 headline (`stage-swap`/
+  `calc` emit) with escape honestly `XFAIL`'d; C2 then flips the escape gate green as its own slice.
+  This isolates the riskier cross-cutting stamp from the headline win. (Ordering is a
+  correctness-adjacent call — see the lane's messages to the manager.)
+
+### 8.1 · SEVERITY: escape IS surface-reachable — a LIVE miscompile of legal programs (#134)
+
+**The earlier "escape is not surface-expressible in v1" claim was WRONG** (it was a syntax artifact
+of `let x = $(…)` attempts, which the elaborator rejects with `not a value` at `TypeCheck.lean:1042`
+— a syntax refusal, NOT a structural one). The correct form `let x = <comp> in <force>` typechecks
+clean AND reaches `escapedCap` on the oracle AND silently miscompiles. Two independent witnesses,
+every verdict machine-cited (`scratch/cap-gc/surface-escape/`):
+
+```
+(1) STATE cap escape — b3.bang:
+      let leaked = state 0 in { get } in
+      $leaked
+    bang check          → ok           (typechecker ACCEPTS — no structural refusal)
+    run --engine=oracle → escapedCap   (ADR-0063 fail-loud)
+    run --compiled      → fail-loud     (the CalcVM agrees — "no value" terminal)
+    EMIT → wasmtime     → 0, rc=0       ← SILENT MISCOMPILE
+
+(2) CUSTOM cap escape — c1.bang:
+      effect Log { emit : Int -> Int }
+      let leaked = handle ({ logger.emit(7) }) with Log as logger { emit(x) => x } in
+      $leaked
+    bang check          → ok
+    run --engine=oracle → escapedCap
+    EMIT → wasmtime     → 7, rc=0       ← SILENT MISCOMPILE
+```
+
+So **#134 is a LIVE compiled≠oracle divergence on legal, well-typed programs**, not an
+unreachable-from-surface kernel curiosity. The oracle AND the CalcVM both fail loud; only
+`emitModuleGC` produces a module that silently returns a value. This is the exact defect class that
+GATES a tag (a wasm binary computing a different answer than the verified oracle for a program a
+user can write and the typechecker blesses). It is EMIT-path-only today (`bang run` default env +
+`--compiled` both fail loud correctly), but "the compiled-wasm binary silently miscompiles legal
+escape programs" is real and demonstrable.
+
+**Consequence for the slice order:** C2 (the escape stamp) is NOT the "riskier second slice" — it is
+the FIX for a tag-gating miscompile, and should go FIRST. The §8 bullet's C0-first proposal assumed
+escape was latent; it is not. Revised recommendation: **C2 (escape stamp, close the miscompile,
+flip the gate green) before C0 (the first-class headline).** The escape gate's `capEscape-get`
+`XFAIL` is now understood as masking a surface-reachable defect, not a theoretical one — sharpening
+the urgency of removing it.
+
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
 - `stage-swap-capval.wat` — candidate (a) happy path: a `$cap` value passed as an argument, two
