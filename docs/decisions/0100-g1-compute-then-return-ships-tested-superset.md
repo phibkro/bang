@@ -2,7 +2,7 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: A ⊥-row COMPUTING custom-handler clause body (compute-then-return, e.g.
   `fetch(n) => let m = n * 2 in m + 1`, the ndet G1 scheduler `pick(n) => lcg(seed ⊕ step) mod n`)
   **ships as a TESTED-SUPERSET feature, NOT as verified-core coverage.** The surface already
@@ -35,7 +35,7 @@
 
 ## Status
 
-Proposed. The operator ratifies (per `ctr-design.md`, this is the honest exit gate for the G1
+Accepted (operator ratification, 2026-07-11): G1 ships as tested-superset. ADDENDUM to the ruling: the grade-polymorphic binop returner (`F ∀q'`) kernel consult is QUEUED (not just priced) — filed as a tracked issue at ratification.
 arc — a decision a future session could relitigate, so it is recorded here rather than left in a
 design note).
 
