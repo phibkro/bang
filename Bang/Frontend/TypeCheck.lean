@@ -6351,6 +6351,23 @@ def bareFunEqSrc118Diff :=
 #guard runTypedYieldsInt 200
     "effect Two { a : Int -> Int } handle (two.a(3) + 1) + 1 with Two as two { a(n) => n * 10 }" 32
 
+-- issue #130: a custom effect declaring/using a built-in-op-name-colliding op (`get`/`put`/`raise`/
+-- `read`/`write`) must reach the TYPED B002 diagnostic, not die as a raw lexer error in the
+-- HANDLER CLAUSE's op-name position (`pHClause` previously read it via `pIdent`, which rejects
+-- reserved keywords — the DECLARATION's op name, via `pEffectMembers`, and the PERFORM site's op
+-- name, via `pDotLoop`, never had this bug; only the clause head did). `Bang.DiagCodes.codeForMsg`
+-- cross-checked directly against the SAME registry `test-explain.sh`'s CLI battery drives.
+#guard (match checkAndLower "effect KV { get : Int -> Int } handle kv.get(7) with KV as kv { get(n) => n }" with
+        | .error (m, _) => Bang.DiagCodes.codeForMsg m == some "B002"
+        | .ok _ => false)
+#guard (match checkAndLower "effect KV { put : Int -> Int } handle kv.put(7) with KV as kv { put(n) => n }" with
+        | .error (m, _) => Bang.DiagCodes.codeForMsg m == some "B002"
+        | .ok _ => false)
+-- a NON-colliding op name in the exact same clause-head position (unaffected by B002, only by the
+-- fixed parse) still runs end to end — confirms `pOpName` didn't just silently swallow real errors.
+#guard runTypedYieldsInt 200
+    "effect KV { set : Int -> Int } handle kv.set(7) with KV as kv { set(n) => n }" 7
+
 /-! ### Validation ⑦ — the northstar WITH its law: checked from source, rung displayed. -/
 
 /-- The full northstar prelude, parametrized by the law: `VecOps` (component-wise `add`, pair

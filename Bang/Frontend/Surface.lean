@@ -1584,16 +1584,39 @@ def pHandlerName : Nat → P (String × SurfArgs)
       let (nm, ts) ← pIdent ts
       .ok ((nm, .none), ts)
 
+/-- A clause-head OP NAME: the token immediately before `(` in `op(x) => body`. Issue #130 — op
+names are NOT general binder identifiers; they are effect-op-name literals, a sub-language whose
+only collision rule is B002 (clashing with a BUILT-IN effect's op — get/put/raise/read/write/…,
+ADR-0092), checked downstream in `buildEnv`'s `.effectD`/handle-elaboration pass. `pIdent`'s
+reserved-word gate exists to protect BINDER positions (`let`/`fun`/clause-arg names — `resume`/
+`param` are reserved there for exactly that reason, ADR-0095 D5); an op name is never bound as a
+variable, so that gate does not apply to it, and applying it anyway was the bug: `effect KV { get :
+… }` parsed fine (`pEffectMembers` already reads the DECLARATION's op name as a raw token, matching
+this same convention), but a `get(x) => body` CLAUSE — and B002's own documented repro — died on a
+raw lexer error before B002's typed check ever ran. `h.op(args)` (`pDotLoop`, the PERFORM site) was
+never affected — it already reads `op` as a raw token, exactly the convention this restores here.
+Any token works EXCEPT `}` (end of clause list — a genuinely empty/malformed clause head) and `(`
+itself (an op name can never be empty); both fall through to a plain parse error naming the
+offending token, matching every other structural-position failure in this parser. -/
+def pOpName : P String
+  | "}" :: r => .error ⟨"expected a clause op name (e.g. `op(x) => body`), got '}'", "}" :: r⟩
+  | "(" :: r => .error ⟨"expected a clause op name before '(', got '('", "(" :: r⟩
+  | t :: ts  => .ok (t, ts)
+  | []       => .error "expected a clause op name, got end of input"
+
 /-- ADR-0095 D1/D3 (RULED): one custom-handle clause `op(x) => body` (1-ary only — v1's
 `EffectInfo` op sigs are 0/1-ary, matching `pArm`'s ctor-payload shape but WITHOUT the 2-ary
 case: no declared op takes 2 args currently, D3's curry-desugar is future work — see `HClauses`'s
 own doc comment). `=>` (not `->`) per D1's exact grammar — no ambiguity with `opInfo`'s `"=>"`
 implication operator: this arm `expect`s the token directly (never routes through `pExpr`'s
-Pratt loop for the arrow itself), matching `fun x => body`'s own `keywordRule` entry. -/
+Pratt loop for the arrow itself), matching `fun x => body`'s own `keywordRule` entry. The `op`
+name reads via `pOpName` (issue #130 — a raw token, NOT `pIdent`: an op name is a label, never a
+bound variable); `x` (the clause's ARGUMENT binder) stays `pIdent` unchanged — it IS a genuine
+binder, so `resume`/`param`'s reservation correctly still applies to it. -/
 def pHClause : Nat → P (String × String × Surf)
   | 0,     _ => .error "parser out of fuel"
   | f + 1, ts => do
-      let (op, ts) ← pIdent ts
+      let (op, ts) ← pOpName ts
       let (_, ts) ← expect "(" ts
       let (x, ts) ← pIdent ts
       let (_, ts) ← expect ")" ts
@@ -3045,6 +3068,17 @@ so `a.get`/`b.get` hit their own cells. Runs via the untyped path (parse→lower
   (.withCapS "state" (.lit 5) "h" (.dotPerform (.var "h") "get" .none))
 #guard parsesTo "h.put(7)" (.dotPerform (.var "h") "put" (.one (.lit 7)))
 #guard parsesTo "t.write(r, w)" (.dotPerform (.var "t") "write" (.two (.var "r") (.var "w")))
+-- issue #130: a handler CLAUSE HEAD's op name (`get(n) => …`) parses even when that name is a
+-- reserved keyword elsewhere (`get`/`put`/`raise`/`read`/`write`, ADR-0092's built-in-effect list)
+-- — `pHClause` reads `op` via `pOpName` (a raw token), NOT `pIdent` (the general binder-name gate).
+-- The clause's ARGUMENT binder (`n` here) still goes through `pIdent` unchanged: `resume`/`param`
+-- stay reserved there (this assertion would fail to compile if that regressed — a keyword `n`
+-- has no legal `Surf`, so a broken `x`-gate could only be caught by an actual reserved-arg test,
+-- not this one; the argument-binder path is untouched by this fix and already covered elsewhere).
+#guard parsesTo "handle kv.get(7) with KV as kv { get(n) => n }"
+  (.handleCustomS none (.var "KV") (SurfArgs.none) "kv"
+    (.cons "get" "n" (.var "n") .nil)
+    (.dotPerform (.var "kv") "get" (.one (.lit 7))))
 
 -- implication sugar (#39): `P => Q` desugars to `let #p = P in if #p then Q else 0 == 0`.
 #guard parsesTo "a < b => c"

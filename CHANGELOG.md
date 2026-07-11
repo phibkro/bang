@@ -239,5 +239,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **elab** — #118 bare-fun-param hole gap — one-candidate-pins-the-hole dispatch (`25a99ad4`)
 - **modules** — the two #117 module-machinery gaps blocking trait-prelude migration (`b7e91ed2`)
 - **deriving** — #128 — type-qualify generated impl ctor names, doc the migration cost (`7de7ab12`)
+- **frontend** — #129 — top-level let-decl juxtaposition-absorption diagnostic (B016) (`8e0bca23`)
 
 <!-- END GENERATED changelog -->
