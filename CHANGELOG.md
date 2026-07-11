@@ -172,6 +172,11 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **landing** — the bang landing page — one static page over the ruled copy kit (`23f2f366`)
 - **release** — widen the binary matrix to 3 Lean Tier-1 platforms (`0760351f`)
 - **tour** — interactive tour v0 — corpus-generated, no-exec lessons (`42593812`)
+- **host-io** — slice 1 — std/Io.bang + bundled std-module resolution (`293c9e68`)
+- **host-io** — slice 5 — examples/hostio-echo (sim-corpus half) (`6343fa70`)
+- **host-io** — slice 2a — evalEHost sibling seam + drift gate (fork B/B2) (`afe5bd39`)
+- **host-io** — slice 2b — host-IO driver plumbing + evalEHost conditions (`534e96f0`)
+- **host-io** — slice 3 — test-hostio.sh record/replay battery (`79688327`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
