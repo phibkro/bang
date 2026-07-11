@@ -1,0 +1,56 @@
+-- mutual-parity — the canonical `let rec … and …` example (#97 item 2).
+-- `even`/`odd` mutually recurse: each descends by decrementing and handing off
+-- to the OTHER sibling, with no self-call at all — a shape a single `let rec`
+-- cannot express directly (today's workaround is one hand-fused function
+-- carrying a parity flag, see `three-way-cycle` below for the N-way case and
+-- the fused differential in Bang/Frontend/TypeCheck.lean's ⑨j′ #guards).
+--
+-- Neither sibling structurally certifies on its own (each call hands off to
+-- the OTHER function, not a strict subterm of `n`), and mutual-group
+-- structural certification is not yet implemented (`structOK`'s conservative
+-- default, the design note's documented gap) — so both need the explicit
+-- `! {Div}` annotation, same rule ADR-0073 already requires for a
+-- non-structural single `let rec`.
+let rec even : Int -> Int ! {Div} = fun n =>
+      let isZero = n == 0 in
+      if isZero then 1
+      else
+        let n1 = n - 1 in
+        ($odd) n1
+    and odd : Int -> Int ! {Div} = fun n =>
+      let isZero = n == 0 in
+      if isZero then 0
+      else
+        let n1 = n - 1 in
+        ($even) n1
+in
+
+-- three-way-cycle — an N-way mutual group (N > 2), confirming the H2 tuple-of-
+-- thunks knot generalizes past a pair: `a`/`b`/`c` hand off in a strict cycle,
+-- each landing on its OWN base case only when the cycle returns to it.
+let rec cycleA : Int -> Int ! {Div} = fun n =>
+      let isZero = n == 0 in
+      if isZero then 100
+      else
+        let n1 = n - 1 in
+        ($cycleB) n1
+    and cycleB : Int -> Int ! {Div} = fun n =>
+      let isZero = n == 0 in
+      if isZero then 200
+      else
+        let n1 = n - 1 in
+        ($cycleC) n1
+    and cycleC : Int -> Int ! {Div} = fun n =>
+      let isZero = n == 0 in
+      if isZero then 300
+      else
+        let n1 = n - 1 in
+        ($cycleA) n1
+in
+
+let e10 = ($even) 10 in
+let o10 = ($odd) 10 in
+let e7  = ($even) 7 in
+let o7  = ($odd) 7 in
+let c9  = ($cycleA) 9 in   -- 9 mod 3 == 0 -> lands back on cycleA's own base case
+e10 + o10 * 10 + e7 * 100 + o7 * 1000 + c9

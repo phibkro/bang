@@ -414,4 +414,21 @@ def compiledAgreesTyped (fuel : Nat) (src : String) (n : Int) : Bool :=
     ++ "match ($p 6 : Option (Int * Int)) { None -> 0, Some(q) -> let (a, b) = q in a + b }")
   12
 
+/-! ## E. MUTUAL `let rec … and …` on the COMPILED path (#97 item 2).
+
+The H2 tuple-of-thunks μ-knot (`buildLetRecMulti`) reuses `buildLetRec`'s `knotBody` BYTE-FOR-BYTE
+(the #95 knot-sharing fix — `fold #g`, never a second free `sv`) — so the per-level residual-cost
+argument transfers unchanged: a mutual group should NOT reintroduce the pre-#95 `2^depth` blowup on
+the compiled path. `compiledAgreesTyped` exercises `CalcVM.exec ∘ compile` (NOT just the kernel
+oracle `Source.eval`), the same two-engine differential §D already runs for the single-function
+knot. -/
+-- even/odd at a moderately re-entrant depth (10 mutual unfolds) — both engines agree at `1`.
+#guard compiledAgreesTyped 4000
+  ("let rec even : Int -> Int ! {Div} = fun n => "
+    ++ "let c = n == 0 in if c then 1 else let n1 = n - 1 in ($odd) n1 "
+    ++ "and odd : Int -> Int ! {Div} = fun n => "
+    ++ "let c = n == 0 in if c then 0 else let n1 = n - 1 in ($even) n1 "
+    ++ "in ($even) 10")
+  1
+
 end Bang.Examples

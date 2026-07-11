@@ -1077,5 +1077,6 @@ and docs can reference it durably.
 | `B009` | a capability was forced after its handler's block returned (runtime) | — |
 | `B010` | a trait bound is unsatisfied — no impl of the trait for the carrier | — |
 | `B011` | a data constructor declares more than 2 payload fields | yes |
+| `B012` | a nested `let rec` forward-references a sibling `let rec` bound later in the same block | yes |
 | `B006` | a data constructor is applied to the wrong number of arguments | — |
 

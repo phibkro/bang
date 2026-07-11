@@ -219,6 +219,16 @@ inductive Surf where
   -- ── ADR-0073 (recursion) ──
   | letRecS : String → Ty → Surf → Surf → Surf       -- let rec f : T = <fun> in <body>  (μ-knot; DESUGARED in elabS, typed-path only)
   | divMark : Surf → Surf                             -- INTERNAL (#46): adds {divLabel} to the wrapped computation's row; RUNTIME no-op (lowers to its child)
+  -- ── #97 item 2 (mutual `let rec`, H2 design: `docs/notes/mutual-rec-design.md`) ──
+  | letRecMultiS : LetRecBindings → Surf → Surf
+    -- `let rec f : T1 = e1 and g : T2 = e2 and … in body` (≥ 2 siblings; a single-binding `let rec`
+    -- STAYS `letRecS`, unchanged — this is strictly the `and`-chained mutual-group form). DESUGARED
+    -- in `elabS` (typed-path only, mirroring `letRecS` itself) to the H2 tuple-of-thunks μ-knot: a
+    -- SHARED self-knot `Rec = μX. Thunk(X → T1 * T2 * … )` (right-nested product, `buildLetRecMulti`'s
+    -- own doc comment has the full encoding), each sibling forcing the SAME knot and projecting its
+    -- own slot — giving every sibling visibility of every OTHER sibling by construction, not by
+    -- ordering (the H1 Bekić-dispatcher alternative was REFUTED, two independent walls — ctor/generic
+    -- arity ≤ 2, `Div`-row all-or-nothing certification — see the design note + the ADR).
   -- ── issue #68 (multi-binding let sugar) ──
   | lettMulti : LetBindings → Surf → Surf
     -- let x = e1; y = e2; … in body  — a SUGAR MARKER (like `divMark`): semantically transparent
@@ -311,9 +321,22 @@ curry-desugar for `op(a, b) => body` (→ nested single-binder clauses) is FUTUR
 inductive HClauses where
   | nil  : HClauses
   | cons : String → String → Surf → HClauses → HClauses
+
+/-- Mutual `let rec … and …` sibling list (#97 item 2, H2 design: `docs/notes/mutual-rec-design.md`)
+— a `Surf`-mutual list (the `LetBindings`/`DArms` precedent: keeps `Surf`'s `DecidableEq`/`Repr`
+derivations straightforward). Each sibling carries its OWN mandatory type ascription (ADR-0073's
+rule generalized — the H2 spike found HM cannot break the mutual circularity without one: `even`'s
+RHS free-references `odd` and vice versa, so ordinary `let`-generalization has nothing to unify
+against until every sibling exists). ORDER is binding order (`cons` prepends the FIRST-parsed
+sibling), matching `LetBindings`'s own convention — `toLetRecBindings`/the parser reverses the
+accumulator the same way `toLetBindings` does. `letRecMultiS.name` (`Decl`-analogue, below) reports
+EVERY sibling name for `elabS`'s H3 forward-reference diagnostic. -/
+inductive LetRecBindings where
+  | nil  : LetRecBindings
+  | cons : String → Ty → Surf → LetRecBindings → LetRecBindings
 end
 
-deriving instance Repr, Inhabited, DecidableEq for Surf, DArms, SurfArgs, LetBindings, HClauses
+deriving instance Repr, Inhabited, DecidableEq for Surf, DArms, SurfArgs, LetBindings, HClauses, LetRecBindings
 
 /-- Pack parsed match arms into `DArms` (the parser's list shape → the AST's mutual shape). -/
 def toDArms : List (String × List String × Surf) → DArms
@@ -325,6 +348,25 @@ shape (the `toDArms` precedent, same reason). -/
 def toLetBindings : List (String × Surf) → LetBindings
   | []            => .nil
   | (n, e) :: r   => .cons n e (toLetBindings r)
+
+/-- Pack a `List (String × Ty × Surf)` into `LetRecBindings` — the `toLetBindings` precedent, for
+`let rec f : T1 = e1 and g : T2 = e2 …`'s parsed sibling list. -/
+def toLetRecBindings : List (String × Ty × Surf) → LetRecBindings
+  | []                => .nil
+  | (n, t, e) :: r    => .cons n t e (toLetRecBindings r)
+
+/-- Unpack `LetRecBindings` to a plain `List` (the `hClausesToList`/`toLetBindings`-inverse
+precedent) — `elabS`'s `letRecMultiS` arm folds over this, and the H3 diagnostic's sibling-name
+lookahead needs a plain list to search. -/
+def letRecBindingsToList : LetRecBindings → List (String × Ty × Surf)
+  | .nil             => []
+  | .cons n t e rest => (n, t, e) :: letRecBindingsToList rest
+
+/-- Every sibling NAME bound by a `let rec … and …` group, in binding order — the H3 diagnostic's
+"is this unbound name actually a later sibling" lookahead set. -/
+def letRecBindingsNames : LetRecBindings → List String
+  | .nil             => []
+  | .cons n _ _ rest => n :: letRecBindingsNames rest
 
 /-- #21 s7probe: the INVERSE of the `toDArms`/`toLetBindings` packing — unpack `HClauses` to a plain
 `List` for a CALLER that wants to `for`-loop over clauses (TypeCheck's `synthSC` arm does; a `for`
@@ -390,6 +432,7 @@ def eraseLettMulti : Surf → Surf
       .handleCustomS lbl (eraseLettMulti n)
         (match p? with | .none => .none | .one p => .one (eraseLettMulti p) | .two a b => .two (eraseLettMulti a) (eraseLettMulti b))
         h (eraseLettMultiHClauses cls) (eraseLettMulti body)
+  | .letRecMultiS binds body => .letRecMultiS (eraseLettMultiLRBindings binds) (eraseLettMulti body)
 def eraseLettMultiDArms : DArms → DArms
   | .nil              => .nil
   | .cons c ps b rest  => .cons c ps (eraseLettMulti b) (eraseLettMultiDArms rest)
@@ -399,6 +442,9 @@ def eraseLettMultiBindings : LetBindings → LetBindings
 def eraseLettMultiHClauses : HClauses → HClauses
   | .nil              => .nil
   | .cons op x b rest => .cons op x (eraseLettMulti b) (eraseLettMultiHClauses rest)
+def eraseLettMultiLRBindings : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons n t e rest   => .cons n t (eraseLettMulti e) (eraseLettMultiLRBindings rest)
 end
 
 #guard eraseLettMulti (.lit 3) == .lit 3
@@ -582,6 +628,7 @@ def lowerC (env : List String) : Surf → Except String Comp
       | .error _ => return .letC (← lowerC env e) (.unfold (.vvar 0))
   | .matchD .. => .error "named match needs the typed path (data declarations, ADR-0069) — run via checkProg/runTyped"
   | .letRecS .. => .error "let rec needs the typed path (μ-encoded recursion, ADR-0073) — run via checkProg/runTyped"
+  | .letRecMultiS .. => .error "mutual let rec needs the typed path (μ-encoded recursion, #97 item 2) — run via checkProg/runTyped"
   | .divMark e => lowerC env e   -- #46: Div is a pure TYPING marker (no runtime semantics) — erase it
   -- `.lettMulti` (issue #68) should NEVER reach `lowerC`: every entry point (`lower` below,
   -- `elabProg`) calls `eraseLettMulti` FIRST, resolving every occurrence (root or nested) to plain
@@ -1074,9 +1121,15 @@ def pExpr : Nat → P Surf
       let (t, ts) ← pTy f ts
       let (_, ts) ← expect "=" ts
       let (e, ts) ← pExpr f ts
+      -- #97 item 2: `and` right after the first sibling's RHS means a MUTUAL group — peek
+      -- deterministically (ADR-0046), never backtrack. Zero `and`s ⟹ the ORIGINAL single-binder
+      -- `.letRecS` (unchanged shape, unchanged elaboration path); ≥1 `and` ⟹ `.letRecMultiS`.
+      let (siblings, ts) ← pLetRecBindings f ts
       let (_, ts) ← expect "in" ts
       let (body, ts) ← pExpr f ts
-      .ok (.letRecS name t e body, ts)
+      match siblings with
+      | [] => .ok (.letRecS name t e body, ts)
+      | _  => .ok (.letRecMultiS (toLetRecBindings ((name, t, e) :: siblings)) body, ts)
   -- MULTI-BINDING LET SUGAR (issue #68): `let x = e1; y = e2 in body` desugars to the IDENTICAL
   -- nested `.lett` chain a hand-written `let x = e1 in let y = e2 in body` already produces — NO
   -- new `Surf` constructor, elaborate-away, sequential scoping (each binding sees the earlier
@@ -1181,6 +1234,26 @@ def pLetBindings : Nat → P (List (String × Surf))
       .ok ((name, e) :: rest, ts)
   | _ + 1, ts => .ok ([], ts)
 
+/-- The `and`-tail loop of `let rec f : T1 = e1 and g : T2 = e2 … in body` (#97 item 2) — the
+`pLetBindings` precedent (`;`-tail loop), peeking `"and"` instead of `";"`. Each sibling repeats
+the SAME `name : Ty = expr` shape `let rec`'s own head already parses (ADR-0073's mandatory
+ascription, generalized — every sibling needs one, not just the first, since H2's μ-knot encoding
+breaks mutual circularity via per-sibling ascription, not shared inference). `pExpr` is
+self-delimiting (stops cleanly at whatever follows), so peeking the token right after each
+sibling's RHS deterministically decides "another sibling" (`and`) vs "done" (anything else, left
+for the caller to `expect "in"`) — no backtracking, ADR-0046. -/
+def pLetRecBindings : Nat → P (List (String × Ty × Surf))
+  | 0,     _ => .error "parser out of fuel"
+  | f + 1, "and" :: ts => do
+      let (name, ts) ← pIdent ts
+      let (_, ts) ← expect ":" ts
+      let (t, ts) ← pTy f ts
+      let (_, ts) ← expect "=" ts
+      let (e, ts) ← pExpr f ts
+      let (rest, ts) ← pLetRecBindings f ts
+      .ok ((name, t, e) :: rest, ts)
+  | _ + 1, ts => .ok ([], ts)
+
 /-- ONE Pratt binding-power loop over the reified operator table `opInfo` (ADR-0071 ①), replacing
 the fixed `=>`/`<`·`==`/`+`·`-`/`*`·`/` precedence chain. `minBP` is the incoming binding power: an
 operand is `pApp` (application — the tightest operator, juxtaposition), then while the next token is
@@ -1258,7 +1331,15 @@ def pAppLoop : Nat → Surf → P Surf
     | t :: _ =>
       if t = ")" || t = "}" || t = "in" || t = "=" || t = "=>" || t = "," || t = "->"
          || t = "+" || t = "-" || t = "*" || t = "/" || t = "<" || t = "==" || t = "."
-         || t = "then" || t = "else" || t = ";" || t = "as" then
+         || t = "then" || t = "else" || t = ";" || t = "as"
+         -- #97 item 2: `and` must STOP the application-fold, the SAME class of fix `with`/`resume`
+         -- needed (ADR-0095 D1/D5, `pIdent`'s own doc comment) — without this, `fun n => n` (the
+         -- FIRST sibling's body) followed by `and g : …` folds `and`/`g` into the application spine
+         -- as bare-identifier ARGUMENTS (`(fun n => n) and g`), consuming past the `and`-chain
+         -- boundary entirely before `pLetRecBindings`'s own peek ever runs — found live (the exact
+         -- #26-class lesson: an operation/keyword form needs its terminator reserved at EVERY loop
+         -- that could otherwise swallow it, not just where it's introduced).
+         || t = "and" then
         .ok (acc, ts)
       else
         match pDotted f ts with
@@ -2044,8 +2125,13 @@ backtracking combinator would be, since `pExpr`'s work is O(expr length) either 
 separated binding LIST — that shape only exists inside `let x = e1; y = e2 in body`'s expression
 form — so `;` right after the first binding's RHS is exactly as decisive as `in` would be; a decl
 lookahead never needs to walk the WHOLE binding chain, only distinguish "more script-mode follows"
-from "this is a genuine decl". `let rec` has NO multi-binding form (only plain `let` does — #68's
-own scope), so its arm is unchanged. -/
+from "this is a genuine decl". `let rec` has NO multi-binding TOP-LEVEL-DECL form (only plain
+`let` does — #68's own scope) — but it DOES have a script-mode MUTUAL form as of #97 item 2
+(`let rec f : T1 = e1 and g : T2 = e2 … in body`), which `letRecD` has NO analogue for (this
+implementation's own scope decision: the top-level `and`-chained decl form is deferred, see the
+ADR). So `"and"` right after the first sibling's RHS is EXACTLY as decisive as `"in"`/`";"` —
+seeing it means script mode, full stop, no need to walk the rest of the `and`-chain (the same
+short-circuit `";"` already gets). -/
 def isLetDecl (fuel : Nat) (ts : List String) : Bool :=
   match ts with
   | "let" :: "rec" :: nts => Id.run <| do
@@ -2059,7 +2145,7 @@ def isLetDecl (fuel : Nat) (ts : List String) : Bool :=
             | .error _ => pure false
             | .ok (_, nts) => match pExpr fuel nts with
               | .error _ => pure false
-              | .ok (_, rest) => pure (rest.head? != some "in")
+              | .ok (_, rest) => pure (rest.head? != some "in" && rest.head? != some "and")
   | "let" :: nts => Id.run <| do
       match pIdent nts with
       | .error _ => pure false
@@ -2860,6 +2946,33 @@ so `a.get`/`b.get` hit their own cells. Runs via the untyped path (parse→lower
       (.binopS .eq (.lit 0) (.lit 0))))
 -- a TRUE implication with a false premise runs to true (vacuous — 5 < 3 => anything).
 #guard runYieldsInt 30 "if (5 < 3 => 0 == 1) then 1 else 0" 1
+
+-- MUTUAL `let rec … and …` (#97 item 2): a single-binding `let rec` STAYS `.letRecS` unchanged
+-- (zero `and`s — no regression on the ADR-0073 form); ≥ 1 `and` produces `.letRecMultiS`, tree-
+-- checked (not just parse-success) against the new `LetRecBindings` sibling list.
+#guard parsesTo "let rec f : Int -> Int = fun n => n in f"
+  (.letRecS "f" (.tArr .tInt .tInt) (.lam "n" (.var "n")) (.var "f"))
+#guard parsesTo "let rec f : Int -> Int = fun n => n and g : Int -> Int = fun n => n in f"
+  (.letRecMultiS
+    (.cons "f" (.tArr .tInt .tInt) (.lam "n" (.var "n"))
+      (.cons "g" (.tArr .tInt .tInt) (.lam "n" (.var "n")) .nil))
+    (.var "f"))
+-- 3+ siblings chain in binding order (`cons` prepends, matching `LetBindings`'s own convention).
+#guard parsesTo "let rec a : Int = 1 and b : Int = 2 and c : Int = 3 in a"
+  (.letRecMultiS
+    (.cons "a" .tInt (.lit 1) (.cons "b" .tInt (.lit 2) (.cons "c" .tInt (.lit 3) .nil)))
+    (.var "a"))
+-- `and` does NOT swallow into an enclosing application spine (the #97 `pAppLoop` stop-list fix —
+-- without it, `fun n => n` folds `and`/`g` as bare-identifier ARGUMENTS before the `and`-chain
+-- lookahead ever runs; this guard is the parser-level regression pin for that fix).
+#guard parsesTo "let rec f : Int -> Int = fun n => n and g : Int -> Int = fun n => f in f"
+  (.letRecMultiS
+    (.cons "f" (.tArr .tInt .tInt) (.lam "n" (.var "n"))
+      (.cons "g" (.tArr .tInt .tInt) (.lam "n" (.var "f")) .nil))
+    (.var "f"))
+-- `and` stays usable as an ORDINARY identifier outside the `let rec` head position (contextual
+-- disambiguation only, the SAME discipline `rec` itself already uses — never globally reserved).
+#guard parsesTo "let and = 5 in and + 1" (.lett "and" (.lit 5) (.binopS .add (.var "and") (.lit 1)))
 
 /-! ### Stage ⑤ — `trait`/`impl` declarations parse (issue #24 piece 1; ADR-0040 §5, ADR-0068).
 

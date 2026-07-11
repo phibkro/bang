@@ -44,18 +44,18 @@ graph TD
     Core_Semantics_Subst["Core.Semantics.Subst<br/>940L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>3399L · fan-in 0"]
     Core_Typing["Core.Typing<br/>495L · fan-in 0"]
-    Examples["Examples<br/>418L · fan-in 0"]
+    Examples["Examples<br/>435L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>210L · fan-in 0"]
+    Frontend_DiagCodes["Frontend.DiagCodes<br/>223L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
-    Frontend_Format["Frontend.Format<br/>1058L · fan-in 0"]
+    Frontend_Format["Frontend.Format<br/>1076L · fan-in 0"]
     Frontend_Lint["Frontend.Lint<br/>213L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>904L · fan-in 0"]
-    Frontend_Rewrite["Frontend.Rewrite<br/>295L · fan-in 0"]
-    Frontend_Surface["Frontend.Surface<br/>3013L · fan-in 1"]
+    Frontend_Query["Frontend.Query<br/>910L · fan-in 0"]
+    Frontend_Rewrite["Frontend.Rewrite<br/>308L · fan-in 0"]
+    Frontend_Surface["Frontend.Surface<br/>3126L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>6192L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>6611L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1745L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
@@ -85,7 +85,7 @@ graph TD
 
 | module | tier | LOC | fan-in |
 |---|---|---|---|
-| `Frontend.Surface` | ? | 3013 | 1 |
+| `Frontend.Surface` | ? | 3126 | 1 |
 | `Audit` | Apex | 60 | 0 |
 | `Backend.AbstractMachine` | ? | 6850 | 0 |
 | `Backend.EnvMachine` | ? | 3338 | 0 |
@@ -105,18 +105,18 @@ graph TD
 | `Core.Soundness` | ? | 3399 | 0 |
 | `Core.Typing` | ? | 495 | 0 |
 | `Distribution` | Apex | 67 | 0 |
-| `Examples` | ? | 418 | 0 |
+| `Examples` | ? | 435 | 0 |
 | `Frontend.Annotate` | ? | 252 | 0 |
-| `Frontend.DiagCodes` | ? | 210 | 0 |
+| `Frontend.DiagCodes` | ? | 223 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
-| `Frontend.Format` | ? | 1058 | 0 |
+| `Frontend.Format` | ? | 1076 | 0 |
 | `Frontend.Lint` | ? | 213 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 904 | 0 |
-| `Frontend.Rewrite` | ? | 295 | 0 |
+| `Frontend.Query` | ? | 910 | 0 |
+| `Frontend.Rewrite` | ? | 308 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 6192 | 0 |
+| `Frontend.TypeCheck` | ? | 6611 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1745 | 0 |
 | `Reify.CalcReify` | ? | 270 | 0 |

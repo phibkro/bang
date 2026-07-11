@@ -57,7 +57,7 @@ public import Bang.Frontend.Diagnostics
 -/
 
 open Bang
-open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses Span Ty OpSig OpDef)
+open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses LetRecBindings Span Ty OpSig OpDef)
 
 namespace Bang.Query
 
@@ -328,6 +328,9 @@ public def surfUsesVar (nm : String) : Surf → Bool
   | .handleCustomS _lbl n .none _h cls b       => surfUsesVar nm n || hClausesUseVar nm cls || surfUsesVar nm b
   | .handleCustomS _lbl n (.one p) _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
   | .handleCustomS _lbl n (.two p q) _h cls b  => surfUsesVar nm n || surfUsesVar nm p || surfUsesVar nm q || hClausesUseVar nm cls || surfUsesVar nm b
+  -- #97 item 2 (landed post-copy): `letRecMultiS` mirrors `TypeCheck.surfUsesVar`'s own arm —
+  -- sibling names are binders, not modeled for shadowing, matching this copy's own discipline.
+  | .letRecMultiS binds b          => letRecBindingsUseVar nm binds || surfUsesVar nm b
 def dArmsUseVar (nm : String) : DArms → Bool
   | .nil             => false
   | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
@@ -337,6 +340,9 @@ def letBindingsUseVar (nm : String) : LetBindings → Bool
 def hClausesUseVar (nm : String) : HClauses → Bool
   | .nil               => false
   | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
+def letRecBindingsUseVar (nm : String) : LetRecBindings → Bool
+  | .nil               => false
+  | .cons _ _ e rest   => surfUsesVar nm e || letRecBindingsUseVar nm rest
 end
 
 #guard surfUsesVar "x" (.var "x") == true
