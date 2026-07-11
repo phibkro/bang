@@ -28,6 +28,38 @@ pub effect Console { print : Str -> Unit, readLine : Unit -> Str }
 -- replay reproduces THAT run's timestamps (host-io-design §3, honest-limits).
 pub effect Clock { now : Unit -> Int }
 
+-- Fs — filesystem access, Deno-shaped (host-io-design §1; ADR-0104 §Scope "next" tier, now
+-- landed by the hostio-widen lane). Three ops, all Sendable in AND out:
+--
+--   readFile  : Str -> Str          -- read a whole file's UTF-8 contents into a Str
+--   writeFile : Str * Str -> Unit    -- write a body (2nd) to a path (1st); overwrites/creates
+--   exists    : Str -> Int           -- 1 if the path exists, 0 otherwise (Int-as-Bool; v1 has
+--                                       no ergonomic sum-typed carrier for a Bool result yet)
+--
+-- WHY THESE SHAPES (the v1 type-vocabulary constraint, host-io-design §1):
+--   * `readFile`/`writeFile` carry only `Str` (μ-data, Sendable) and `Unit` — no FD or handle
+--     ever crosses (FD-as-payload is REJECTED, ADR-0104: an opaque host resource in a value
+--     is a non-Sendable escape channel + has no faithful trace serialization). The whole-file
+--     read/write surface needs no handle at all — the path IS the capability token.
+--   * `exists` returns `Int` (0/1), NOT a `Bool`: the prelude has no auto-derived Bool carrier
+--     that survives the Sendable-trace round-trip as cleanly as a ground `Int`, and every other
+--     host op result is already ground Int/Str/Unit. An `Int`-as-predicate keeps the trace's
+--     `result` column uniformly ground (host-io-design §3: all four fields Sendable).
+--   * `writeFile`'s `Str * Str` PAIR payload is the first multi-arg host op — it rides the
+--     `hostPerformS .two` lowering (ADR-0104 §4 reach, already arg-arity-generic): the surface
+--     `Io.writeFile(path, body)` lowers to `perform (vcap hostCapId ℓ) "writeFile" (pair p b)`,
+--     and the driver's `hostServiceReal` splits the pair back into (path, body). No new seam.
+--
+-- DEFERRED (named, not a dead end — host-io-design §1's "honest v1 within the wall"):
+--   * `listDir : Str -> [Str]` — needs an ergonomic sum/list carrier for the RESULT (a Str list)
+--     that serializes cleanly into the trace; the v1 vocabulary has `μ`-lists but no derived
+--     Show/parse round-trip for a list-of-Str trace field. Filed with the effect, not shipped.
+--   * `readFile` on a missing path — v1 the real handler FAILS LOUD (host-io-design §3: the
+--     driver's `none` → the "no host handler / IO failure" fail-loud terminal), rather than
+--     returning a sum `Result Str Err`; a typed error channel wants the same sum-carrier
+--     `listDir` waits on. `Io.exists(path)` is the v1 pre-check idiom.
+pub effect Fs { readFile : Str -> Str, writeFile : Str * Str -> Unit, exists : Str -> Int }
+
 -- ── SIM handlers (the DEFAULT runtime; `--env=sim`, verified-core semantics) ────────────
 --
 -- A handler is SYNTAX (`with L as h { … }`), not a first-class value in v1, so a sim cannot
@@ -48,6 +80,19 @@ pub effect Clock { now : Unit -> Int }
 -- Clock sim — `now` returns a FIXED timestamp (deterministic, replayable):
 --
 --     with Io_Clock as k { now(u) => 0 }
+--
+-- Fs sim — the SAME within-the-wall discipline (host-io-design §1). A stateful in-memory file
+-- MAP (writeFile updating what a later readFile returns) wants carried-param UPDATE (ADR-0092 D5,
+-- open), so the honest v1 sim is FIXED-source: `readFile` returns a constant body, `exists`
+-- returns a constant, `writeFile` swallows (returns unit, no persistence). A program that wants
+-- record/replay determinism over REAL fs nondeterminism uses `--env=real --record` then
+-- `--replay` (ADR-0104 §3) — the trace, not a sim map, is the v1 determinism source for Fs:
+--
+--     with Io_Fs as fs {
+--       readFile(p)    => SNil,      -- a fixed (empty) body; a scripted constant otherwise
+--       writeFile(pb)  => (),        -- swallow: the sim persists nothing
+--       exists(p)      => 0          -- a fixed "absent" (or a scripted constant)
+--     }
 --
 -- The REAL handlers live host-side in Main.lean's driver loop (`--env=real`), do the actual
 -- IO in Lean's IO monad, and RECORD each (label,op,payload,result) row so the run can be
