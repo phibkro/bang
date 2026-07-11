@@ -1,0 +1,9 @@
+-- factorial (issue #132, bignum lane B3 — the canonical bignum milestone). fact 25 =
+-- 15511210043330985984000000, FAR past 2^63 (9223372036854775808). Recursive multiplication:
+-- each n * fact(n-1) starts on the i64 fast path and, once the product exceeds i64, $mulVal promotes
+-- to a $bigval and does schoolbook limb multiply. This is the first bang program computing an
+-- arbitrary-precision result outside Lean — before B3 the compiled path silently WRAPPED past 2^63.
+let rec fact : Int -> Int = fun n =>
+  if n < 2 then 1 else n * ($fact) (n - 1)
+in
+($fact) 25
