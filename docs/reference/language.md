@@ -103,8 +103,9 @@ like `let (a,b) = …`, `let rec`, `match`, `do` — it is a bespoke `pExpr` arm
 `let x = e1; y = e2; … in body` binds SEQUENTIALLY (a later binding sees every
 earlier one; an earlier binding can never see a later one). **Contrast with Haskell's
 `let`-block**, which is mutually recursive: bang's plain `let` stays non-recursive by
-convention (`let rec` is the only recursion marker, and it has no multi-binding form),
-so sequential-not-recursive is the reading consistent with the rest of the surface.
+convention (`let rec` is the only recursion marker; its `… and …` chain is the ONE
+mutually-recursive multi-binding form — see below), so sequential-not-recursive is the
+reading consistent with the rest of the surface.
 Semantically it ELABORATES to the IDENTICAL nested chain a hand-written
 `let x = e1 in let y = e2 in … in body` already produces (a thin `.lettMulti` SUGAR
 MARKER, erased before typing/lowering ever run — zero new semantics).
@@ -118,6 +119,30 @@ including when a later binding SHADOWS an earlier one's name (`let x = 1 in let 
 x + 1 in x` collapses to `let x = 1; x = x + 1 in x` — verified, not assumed: the
 grammar imposes no duplicate-name restriction, and sequential scoping through the
 `;`-chain matches the nested chain's binder-shadowing exactly).
+
+### Mutual recursion — `let rec … and …` (ADR-0102, issue #97)
+
+`let rec` grows a MUTUALLY-RECURSIVE multi-binding form by chaining siblings with `and`:
+`let rec f : T1 = e1 and g : T2 = e2 … in body`. Every sibling is in scope in every
+sibling's RHS (so `f` may call `g` and `g` may call `f`) — the one place bang's surface
+is mutually recursive. A single-binding `let rec` (no `and`) keeps its original
+non-mutual shape unchanged; `≥ 1 and` desugars to the `.letRecMultiS` group form.
+
+Each sibling carries its OWN mandatory `: T ! {row}` ascription (the same rule a
+non-structural single `let rec` already needs, ADR-0073): a mutual group's siblings
+hand off to each OTHER, not to a strict subterm of their own argument, so neither
+structurally certifies on its own — both need the explicit `! {Div}`.
+
+```bang
+let rec even : Int -> Int ! {Div} = fun n =>
+      if n == 0 then 1 else ($odd) (n - 1)
+    and odd : Int -> Int ! {Div} = fun n =>
+      if n == 0 then 0 else ($even) (n - 1)
+in ($even) 10
+-- ⟹ 1
+```
+
+See `examples/mutual-parity` for the N-way cycle (a three-sibling `and` group).
 
 ### Binding a function (issue #121)
 
@@ -196,9 +221,9 @@ zero or more LAWS (`law`) the implementations are expected to satisfy. An **impl
 provides the operation bodies for one STRUCTURAL target type. Member separators (`;` or
 `,`) are optional — the leading keyword (`fn`/`law`/`}`) alone delimits each member.
 
-```
+```bang no-run
 trait Add { fn add(a, b) -> Int ; law comm(a, b): add a b == add b a }
-impl Add for (Int * Int) { fn add(p, q) = p }
+impl Add for Int { fn add(p, q) = p }
 ```
 
 | Form | Meaning |
@@ -238,9 +263,12 @@ pair a hand-written `Eq`/`Ord` implementation would otherwise need — same-tag
 structural fold for `Eq` (AND over every payload slot; different tag ⇒ `false`),
 decl-order tag comparison + lexicographic payload for `Ord`:
 
-```
+```bang
 data Point = Pt(Int, Int) deriving (Eq, Ord)
-let p1 = Pt(3, 4) in let p2 = Pt(3, 4) in p1 == p2   -- true, no hand-written impl
+let p1 = Pt(3, 4) in
+let p2 = Pt(3, 4) in
+if p1 == p2 then 1 else 0   -- 1: equal, via the derived impl (no hand-written one)
+-- ⟹ 1
 ```
 
 The generated `impl` is indistinguishable from a hand-written one — `==`/`<` dispatch
@@ -277,7 +305,7 @@ already use, now user-spellable. The kernel is untouched: this surface lowers to
 already-landed `Handler.custom` constructor (ADR-0085) — a fourth handler shape, not a
 sixth primitive.
 
-```
+```bang
 effect Net { fetch : Int -> Int }             -- the interface: one op, Int -> Int
 
 handle
@@ -310,10 +338,11 @@ ADR-0095 D1's own worked example). A `(Name init) as h` clause body reads the `i
 through the bare word `param` — READ-ONLY in v1 (no param-UPDATE surface, ADR-0092 D5
 deferred):
 
-```
+```bang
 effect Reader { fetch : Int -> Int }
 handle net.fetch(5) with (Reader 100) as net { fetch(x) => x + param }
--- net.fetch(5) resumes with 5 + 100 = 105
+-- net.fetch(5) resumes with 5 + 100
+-- ⟹ 105
 ```
 
 `param` is RESERVED at every BINDER position (a clause-arg name, the `as h` capability
@@ -326,6 +355,7 @@ user binding can ever shadow it; it stays freely usable as an ordinary expressio
 resuming.** A clause whose body computes-then-effects (e.g. performs another op, or
 `raise`s) is rejected with a named diagnostic, not a bare type error:
 
+<!-- no-gate: a diagnostic-message transcript, not a bang program -->
 ```
 error: handle: clause 'fetch' body must be a `ret`-shape value in v1 (no effects
        before resuming) — a compute-then-return body needs binop typing (ADR-0065)
@@ -348,7 +378,7 @@ ascription on the PARAMETER (`fun e => (e : Cap Fail).fail(9)`) does not parse a
 type there — `Cap Name` must be spelled inside the enclosing THUNK's own arrow-and-row
 annotation, cap position included, exactly like every other parameter type:
 
-```
+```bang
 effect Fail { fail : Int -> Int }
 let apply = ( {fun cap => fun x => cap.fail(x)} : Thunk (Cap Fail -> Int -> Int ! {Fail}) )
 handle (($apply) net) 9 with Fail as net { fail(n) => n }
@@ -1105,6 +1135,7 @@ positions (arg and result) the checker left polymorphic. Those `#N` markers (wit
 `N ≥ holeBase`, `Bang.TypeCheck.holeBase`) ARE the holes — `holes` extracts and names
 them. ALWAYS JSON (agents are the audience), resolver-aware like `query`.
 
+<!-- no-gate: a CLI-invocation transcript (command + JSON output), not a bang program -->
 ```
 bang holes myfile.bang
 {"ok":true,"holes":[{"name":"id","kind":"let","type":"Thunk #1000003 -> #1000003","row":"{}","holes":["#1000003"]}]}
@@ -1124,6 +1155,7 @@ before you change it. This is the REVERSE of the reference graph `bang query ref
 `dump` already expose (a forward edge `src → tgt` read backwards is "`src` depends on
 `tgt`"), computed as a reverse closure over that SAME edge set — no new graph walk.
 
+<!-- no-gate: a CLI-invocation transcript (command + JSON output), not a bang program -->
 ```
 bang impact myfile.bang double
 {"ok":true,"decl":"double","dependents":[{"name":"main","kind":"let"},{"name":"quad","kind":"let"}]}
@@ -1142,6 +1174,7 @@ programs and reports the required version bump — #72's enforcement engine (elm
 precedent) falling out of the fact base. Non-`pub` decls are INVISIBLE (a private
 decl's churn never bumps a version).
 
+<!-- no-gate: a CLI-invocation transcript (command + JSON output), not a bang program -->
 ```
 bang semver-diff v1.bang v2.bang
 {"ok":true,"bump":"major","added":["mul"],"removed":["sub"],"changed":[]}

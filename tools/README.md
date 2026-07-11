@@ -56,7 +56,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (22)
+## test (23)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -81,6 +81,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-lint.sh`](test-lint.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang lint` (#82 item 2) |
 | [`test-modules.sh`](test-modules.sh) | `verify` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
 | [`test-query.sh`](test-query.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang query <op>` (issue #80, the agent LSP as |
+| [`test-reference-samples.sh`](test-reference-samples.sh) | `verify` | `docs/reference/language.md`, `tools/gen-reference.py` | the SAMPLE-GATING battery for the generated reference (#131) |
 | [`test-repl.sh`](test-repl.sh) | `verify` | — | the non-interactive gate for `bang repl` (issue #7) |
 | [`test-rewrite.sh`](test-rewrite.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang rewrite <verb>` (issue #81, the CQS command |
 | [`wasmfx-probe.sh`](wasmfx-probe.sh) | `manual` | `test/wasmfx/generator.wat` | ◊5 engine probe (OPEN_QUESTIONS Q9 / ADR-0035): confirm a released Wasmtime runs |
