@@ -2889,6 +2889,18 @@ example :
   (.matchS (.var "s") "x" (.var "x") "y" (.var "y"))
 #guard parsesTo "let (a, b) = p in a" (.splitS "a" "b" (.var "p") (.var "a"))
 
+-- #101: a wildcard arm `_` parses as an ORDINARY `DArms` entry — `_` is not a reserved token
+-- (`pIdent` never blocks it), so `pArm`'s ctor-name slot accepts it with ZERO parser changes; the
+-- named-ctor arm list falls to `.matchD` (not the `Left`/`Right`-shaped `.matchS` shortcut, since
+-- the arm set here isn't exactly that pair) carrying `_` as a literal ctor-name string, resolved
+-- to concrete arms only later, by the ELABORATOR's `expandWildcardArms` pre-pass — the parse tree
+-- itself is honest about what was written (ADR-0046: no silent resolution at parse time).
+#guard parsesTo "match s { Cons(h, t) -> h , _ -> 0 }"
+  (.matchD (.var "s") (.cons "Cons" ["h", "t"] (.var "h") (.cons "_" [] (.lit 0) .nil)))
+-- a BARE wildcard-only match parses too (rejected later, at elaboration — `expandWildcardArms`'s
+-- own "needs at least one explicit constructor arm" diagnostic, not a parse error).
+#guard parsesTo "match s { _ -> 0 }" (.matchD (.var "s") (.cons "_" [] (.lit 0) .nil))
+
 /-! ### Stage 2e — arithmetic & `if` from source text (issue #4, ADR-0065).
 
 Infix `+ − × ÷` and `< ==` with C-style precedence (`*` tighter than `+`, both tighter than `<`),

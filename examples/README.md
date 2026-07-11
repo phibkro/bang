@@ -39,6 +39,7 @@ examples/<project>/
 | [calc](calc/) | **the dogfood program** — a 6-module lexer→parser→evaluator (297 lines): modules, stdlib, recursion, a structural `Trace` effect; found #95/#96/#97 (`docs/notes/dogfood-calc-findings.md`) | 11021193 |
 | [nqueens](nqueens/) | **the pure-fragment stress test** — N-queens 4/5/6 fused into one self-recursion (no mutual `let rec` in v1); also the live env-vs-oracle fuel-cliff benchmark (#61) | 21004 |
 | [dst-rounds-lcg](dst-rounds-lcg/) / [dst-rounds-const](dst-rounds-const/) | **handler-swap pair 4 (DST rounds)** — a RECURSIVE driver with a declared user-effect row (`! {Div, Sched}`) performing through a captured cap; the seed threads through the driver because ret-shape + read-only `param` forbid handler-side state (the CTR-gate before/after ergonomics benchmark) | 9 / 16 |
+| [wildcard-match](wildcard-match/) | **the `_` wildcard match arm (issue #101)** — one shared body covers every constructor not named explicitly (including one WITH payload); expands to concrete arms before elaboration, so the kernel-facing eliminator (ADR-0069) is unchanged | 2 |
 
 ## Running
 

@@ -534,6 +534,15 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `data List a = Nil | Cons(a, List a) match (Cons(7, Nil)) { Nil -> 0, Cons(h, t) -> h }` ⟹ `7`  — solved μ). No `: List Int` annotation. Consumed by a `match` to yield an Int the run-oracle can check.
 - `data Option a = None | Some(a) match (Some(5)) { None -> 0, Some(v) -> v }` ⟹ `5`  — `Some(x)` where `x : Int` ⟹ `Option Int`, no annotation; destructured to its payload.
 - `data List a = Nil | Cons(a, List a) match (Cons(7, Nil) : List Int) { Nil -> 0, Cons(h, t) -> h }` ⟹ `7`  — annotation-free is ADDITIVE: the SAME decl still accepts an explicit `: List Int` (ADR-0079 check-mode).
+### Validation ⑨i-bis — issue #101: the WILDCARD match arm `_`.
+
+- `data Color = Red | Green | Blue match Red { Red -> 1, _ -> 0 }` ⟹ `1`  — a 3-ctor type, ONE explicit arm + wildcard covering the other two — picks the wildcard body.
+- `data Color = Red | Green | Blue match Green { Red -> 1, _ -> 0 }` ⟹ `0`
+- `data Color = Red | Green | Blue match Blue { Red -> 1, _ -> 0 }` ⟹ `0`
+- `data List a = Nil | Cons(a, List a) match (Cons(7, Nil)) { Cons(h, t) -> h, _ -> 0 }` ⟹ `7`  — a 2-ctor recursive type: `_` covers the UNNAMED `Nil` case, `Cons` stays explicit and binds its payload.
+- `data List a = Nil | Cons(a, List a) match (Nil : List Int) { Cons(h, t) -> h, _ -> 99 }` ⟹ `99`
+- `data Color = Red | Green | Blue match Blue { Red -> 1, Green -> 2, _ -> 3 }` ⟹ `3`  — wildcard covering exactly ONE of three ctors (the other two named explicitly) — no wasted expansion.
+- `data List a = Nil | Cons(a, List a) match (Cons(1, Cons(2, Nil)) : List Int) { Nil -> 0, _ -> 42 }` ⟹ `42`  — expansion must still resolve `Cons`'s GENERIC arity (2) to mint exactly 2 fresh binder names.
 ### Validation ⑨j — the GENERIC PRELUDE: `Option`/`Result` + their maps + the ISO round-trips vs
 
 - `match (Some(5)) { None -> 0, Some(v) -> v }` ⟹ `5`  — ADR-0079/0081 generic-data guards above).
@@ -1080,4 +1089,5 @@ and docs can reference it durably.
 | `B012` | a bare constructor name is owned by two or more co-present `data` types | yes |
 | `B013` | a nested `let rec` forward-references a sibling `let rec` bound later in the same block | yes |
 | `B006` | a data constructor is applied to the wrong number of arguments | — |
+| `B014` | a match's `_` wildcard arm is misplaced or covers nothing (issue #101) | yes |
 

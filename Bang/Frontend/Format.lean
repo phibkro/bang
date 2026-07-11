@@ -760,6 +760,12 @@ open Bang.Format in
 open Bang.Format in
 #guard roundTripsOn "match Right(7) { Left(a) -> 0 , Right(x) -> x }"
        && idempotentOn "match Right(7) { Left(a) -> 0 , Right(x) -> x }"
+-- #101: a wildcard arm round-trips with NO printer change (`fmtDArm`'s existing `c, [], b` case
+-- prints `_` exactly like any other zero-arity ctor arm — `_` is an ordinary `DArms` ctor-name
+-- string all the way through the print/parse pipeline, matching the `parsesTo` corpus's own note).
+open Bang.Format in
+#guard roundTripsOn "data List a = Nil | Cons(a, List a) match (Cons(7, Nil)) { Cons(h, t) -> h, _ -> 0 }"
+       && idempotentOn "data List a = Nil | Cons(a, List a) match (Cons(7, Nil)) { Cons(h, t) -> h, _ -> 0 }"
 open Bang.Format in
 #guard roundTripsOn "let (a, b) = (3, 4) in (let (c, d) = (b, a) in c)"
        && idempotentOn "let (a, b) = (3, 4) in (let (c, d) = (b, a) in c)"
