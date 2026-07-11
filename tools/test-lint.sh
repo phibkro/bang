@@ -115,6 +115,77 @@ got_messy_fixed="$("$bang" lint "$tmpdir/messy.bang" 2>/dev/null)" && got_messy_
 check "lint-fmt-divergence-fixed-exit" "$got_messy_fixed_exit" "0"
 check "lint-fmt-divergence-fixed-clean" "$got_messy_fixed" "no findings"
 
+# ══ 5b. `bang lint --fix` — the preservation-gated fixit (plan 013 slice 6) ══
+
+# happy path: --fix removes the dead-private decl, DIFF mode by default (file untouched).
+cp "$tmpdir/deadprivate.bang" "$tmpdir/fix-happy.bang"
+before_fix_md5="$(md5sum "$tmpdir/fix-happy.bang" | cut -d' ' -f1)"
+got_fix_diff="$("$bang" lint --fix "$tmpdir/fix-happy.bang" 2>/dev/null)" && got_fix_diff_exit=0 || got_fix_diff_exit=$?
+after_fix_md5="$(md5sum "$tmpdir/fix-happy.bang" | cut -d' ' -f1)"
+check "lint-fix-diff-exit" "$got_fix_diff_exit" "0"
+check "lint-fix-diff-file-untouched" "$after_fix_md5" "$before_fix_md5"
+check "lint-fix-diff-removes-helper" "$(printf '%s' "$got_fix_diff" | grep -c -- '-let helper' || true)" "1"
+
+# -w APPLIES the fix; the rewritten program still runs (preservation held), and re-lint is clean.
+"$bang" lint --fix "$tmpdir/fix-happy.bang" -w >/dev/null 2>&1
+got_fix_run="$("$bang" run --engine=oracle "$tmpdir/fix-happy.bang" 2>/dev/null)" && got_fix_run_exit=0 || got_fix_run_exit=$?
+want_fix_run="$("$bang" run --engine=oracle "$tmpdir/deadprivate.bang" 2>/dev/null)"
+check "lint-fix-w-preserves-value" "$got_fix_run" "$want_fix_run"
+check "lint-fix-w-run-exit" "$got_fix_run_exit" "0"
+got_fix_relint="$("$bang" lint "$tmpdir/fix-happy.bang" 2>/dev/null)" && got_fix_relint_exit=0 || got_fix_relint_exit=$?
+check "lint-fix-w-relint-clean" "$got_fix_relint" "no findings"
+check "lint-fix-w-relint-exit" "$got_fix_relint_exit" "0"
+
+# a program with NOTHING fixable (only unused-pub, which has no fixit) is a correct no-op.
+got_fix_nofix="$("$bang" lint --fix "$tmpdir/unusedpub.bang" 2>/dev/null)" && got_fix_nofix_exit=0 || got_fix_nofix_exit=$?
+check "lint-fix-no-fixable-exit" "$got_fix_nofix_exit" "0"
+check "lint-fix-no-fixable-message" "$(printf '%s' "$got_fix_nofix" | grep -c 'no fixable findings' || true)" "1"
+
+# ══ 5c. THE REFUSED FIXIT — a `dataD` decl `dead-private` flags but the fixit CANNOT safely
+# delete (`declMentionsVar`'s scan never sees a TYPE name, only `.var` leaves — a ctor call like
+# `Mk(1,2)` references the ctor `Mk`, never the owning type `Pair`; a `deriving` clause references
+# the type by name in a DECL HEADER, not a `Surf` node). Confirmed LIVE while building this fixit,
+# not a hypothetical: `applyDeadPrivateFix` refuses every type-level decl kind UNCONDITIONALLY
+# (`safeToAutoDelete`'s own #guards), so `--fix` never even ATTEMPTS this deletion — the mechanism
+# itself is what a "planted wrong fixit" would need the gate to catch; here the refusal happens one
+# layer earlier (never construct the bad edit at all), which is the STRONGER guarantee. ══
+
+cat > "$tmpdir/dataderive.bang" <<'BANG'
+data Pair = Mk(Int, Int) deriving (Eq)
+let main = if Mk(1, 2) == Mk(1, 2) then 1 else 0
+BANG
+
+# `dead-private` DOES fire on `Pair` (the underlying scan-gap the rule itself still has —
+# documented, not silently hidden: the FINDING is honest, only the auto-fixit is refused).
+got_data_lint="$("$bang" lint "$tmpdir/dataderive.bang" 2>/dev/null)" && got_data_lint_exit=0 || got_data_lint_exit=$?
+check "lint-dataderive-flags-pair" "$(printf '%s' "$got_data_lint" | grep -c 'dead-private Pair' || true)" "1"
+
+# `--fix` reports it unfixable (no dataD/traitD/implD/effectD ever gets auto-deleted) — file
+# untouched, EVEN before any preservation re-elaboration runs (the refusal is unconditional).
+before_data_md5="$(md5sum "$tmpdir/dataderive.bang" | cut -d' ' -f1)"
+got_data_fix="$("$bang" lint --fix "$tmpdir/dataderive.bang" 2>/dev/null)" && got_data_fix_exit=0 || got_data_fix_exit=$?
+after_data_md5="$(md5sum "$tmpdir/dataderive.bang" | cut -d' ' -f1)"
+check "lint-fix-refuses-dataD-exit" "$got_data_fix_exit" "0"
+check "lint-fix-refuses-dataD-message" "$(printf '%s' "$got_data_fix" | grep -c 'no fixable findings' || true)" "1"
+check "lint-fix-refuses-dataD-file-untouched" "$after_data_md5" "$before_data_md5"
+
+# -w confirms the SAME refusal, and the program still runs to its ORIGINAL value (1) — proof the
+# refusal, not luck, is what kept this program correct.
+got_data_run_before="$("$bang" run --engine=oracle "$tmpdir/dataderive.bang" 2>/dev/null)"
+"$bang" lint --fix "$tmpdir/dataderive.bang" -w >/dev/null 2>&1
+got_data_run_after="$("$bang" run --engine=oracle "$tmpdir/dataderive.bang" 2>/dev/null)" && got_data_run_after_exit=0 || got_data_run_after_exit=$?
+check "lint-fix-refuses-dataD-w-value-preserved" "$got_data_run_after" "$got_data_run_before"
+check "lint-fix-refuses-dataD-w-run-exit" "$got_data_run_after_exit" "0"
+
+# ══ 5d. `bang lint --fix` usage hygiene ══
+
+got_fix_unreadable_exit=0
+"$bang" lint --fix /no/such/file.bang >/dev/null 2>&1 || got_fix_unreadable_exit=$?
+check "lint-fix-unreadable-file-exit" "$got_fix_unreadable_exit" "2"
+
+got_fix_nofile="$("$bang" lint --fix 2>&1 >/dev/null)" && got_fix_nofile_exit=0 || got_fix_nofile_exit=$?
+check "lint-fix-no-file-exit" "$got_fix_nofile_exit" "1"
+
 # ══ 5. Usage / exit-code hygiene ══
 
 got_unreadable_exit=0
@@ -128,7 +199,7 @@ check "lint-stdin-clean" "$got_stdin" "no findings"
 echo "──────────────────────────────"
 echo "lint: $pass passed, $fail failed"
 # Assert the expected total COUNT — catches a silently-truncated run.
-want_total=21
+want_total=38
 got_total=$((pass + fail))
 if [ "$got_total" -ne "$want_total" ]; then
   echo "✗ check-count-mismatch — expected $want_total checks to run, only $got_total did (script truncated?)"

@@ -50,7 +50,7 @@ graph TD
     Frontend_DiagCodes["Frontend.DiagCodes<br/>277L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>1116L · fan-in 0"]
-    Frontend_Lint["Frontend.Lint<br/>213L · fan-in 0"]
+    Frontend_Lint["Frontend.Lint<br/>279L · fan-in 0"]
     Frontend_Query["Frontend.Query<br/>881L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>3272L · fan-in 1"]
@@ -115,7 +115,7 @@ graph TD
 | `Frontend.DiagCodes` | ? | 277 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
 | `Frontend.Format` | ? | 1116 | 0 |
-| `Frontend.Lint` | ? | 213 | 0 |
+| `Frontend.Lint` | ? | 279 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
 | `Frontend.Query` | ? | 881 | 0 |
 | `Frontend.Rewrite` | ? | 313 | 0 |

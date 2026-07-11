@@ -1486,6 +1486,42 @@ def runLint (json quietClean : Bool) (file : Option String) : IO UInt32 := do
           IO.println s!"{warnCount} warning(s), {infoCount} info"
       pure (if hasWarning then 1 else 0)
 
+/-- `bang lint --fix <file.bang> [-w]` (plan 013 slice 6): apply the `dead-private` findings'
+mechanical fixit (`Bang.Lint.applyDeadPrivateFix` — delete the unreachable decl) for EVERY
+`dead-private` finding in one pass, GATED on `preservationCheck` before ever emitting — the SAME
+differential oracle `bang rewrite rename` uses, reused verbatim (not a second gate mechanism).
+Deleting a decl is not an AST no-op the way `fmt` is (`applyDeadPrivateFix`'s own doc comment
+names the real risk a syntactic-only reachability scan can hide), so this fixit genuinely needs
+the gate, unlike `fmt`'s ungated path. `unused-pub`/`fmt-divergence` have NO fixit yet (`fmt-
+divergence`'s fix is `bang rewrite fmt`, already its own verb — not duplicated here); a finding
+with no fixit is silently skipped (never a partial/wrong deletion), so `--fix` on a program with
+ONLY those findings is a correct no-op, reported as such. Requires a FILE, like `rename` (a real
+path to gate + optionally write against; no stdin route). -/
+def runLintFix (write : Bool) (file : String) : IO UInt32 := do
+  match ← (do let s ← IO.FS.readFile ⟨file⟩; pure (some s)) <|> pure none with
+  | none     => IO.eprintln s!"error: could not read file '{file}'"; pure 2
+  | some src =>
+      match Bang.Surface.parseProg src with
+      | .error e => IO.eprintln s!"error: {e}"; pure 1
+      | .ok p    =>
+          let findings := Bang.Lint.lintProg src p
+          let deadNames := findings.filterMap (fun f => if f.rule == "dead-private" then f.decl else none)
+          -- fold left-to-right: `applyDeadPrivateFix` re-derives `p.decls.find?` fresh each step, so
+          -- removing name N never disturbs a LATER name M's own lookup (independent decls, #82's
+          -- own `dead-private` contract — each flagged decl is unreachable ON ITS OWN, not only in
+          -- combination with a sibling also being removed). `.getD acc` on a `none` result (a
+          -- type-level decl `applyDeadPrivateFix` refuses — its own doc comment names the confirmed
+          -- live false-positive) leaves `acc` UNCHANGED for that one name and continues the fold —
+          -- a partial `--fix` (some findings resolved, an unfixable one still reported by a plain
+          -- `bang lint` afterward) is correct, never a silent whole-pass no-op or a wrong deletion.
+          let p' := deadNames.foldl (fun acc n => (Bang.Lint.applyDeadPrivateFix acc n).getD acc) p
+          if p' == p then
+            IO.println "(no fixable findings — dead-private is empty; unused-pub/fmt-divergence have no fixit yet)"
+            pure 0
+          else
+            let gate ← preservationCheck p p'
+            emitRewrite write (some file) src p' gate
+
 /-! ## `bang new NAME` — scaffold a runnable example project (plan 013 slice 7).
 
 Writes an `examples/<NAME>/` directory in the check-examples convention: a runnable starter
@@ -1668,6 +1704,15 @@ def usage : String :=
   "                                     schema. Exit 0 unless a `warning`-severity finding is\n" ++
   "                                     present; `--quiet-clean` suppresses the \"no findings\" line\n" ++
   "                                     on a clean human-table report. Reads stdin if no file.\n\n" ++
+  "  bang lint --fix <file.bang> [-w]   apply the dead-private findings' fixit (delete the\n" ++
+  "                                     unreachable decl) for EVERY dead-private finding, GATED on\n" ++
+  "                                     the SAME preservation check `rewrite rename` uses (plan 013\n" ++
+  "                                     slice 6) — a fixit that provably preserves the program's\n" ++
+  "                                     Source.eval outcome, never a guessed edit. unused-pub/\n" ++
+  "                                     fmt-divergence have no fixit yet (fmt-divergence's fix is\n" ++
+  "                                     `bang rewrite fmt`, already its own verb). Requires a real\n" ++
+  "                                     file (no stdin — the gate needs a path to re-elaborate\n" ++
+  "                                     against); `-w` writes in place, default prints a diff.\n\n" ++
   "  bang holes [<file.bang>]           list every decl carrying a residual/underdetermined\n" ++
   "                                     position (a checker hole the inference could not pin down,\n" ++
   "                                     rendered #N in the type/row; issue #82 item 3). ALWAYS JSON\n" ++
@@ -1982,15 +2027,24 @@ def main (args : List String) : IO UInt32 := do
       | ["annotate"]       => runRewriteAnnotate write none
       | _             => IO.eprintln usage; pure 1
     else if cmd == "lint" then
-      -- `bang lint [<file.bang>] [--json] [--quiet-clean]` (#82 item 2). `--json`/`--quiet-clean`
-      -- may appear anywhere before the single optional positional (mirrors `check`'s own
-      -- `--json`-anywhere convention); any OTHER `--`-prefixed arg falls to usage.
-      let json := rest.contains "--json"
-      let quietClean := rest.contains "--quiet-clean"
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | []      => runLint json quietClean none
-      | [arg]   => runLint json quietClean (some arg)
-      | _       => IO.eprintln usage; pure 1
+      -- `bang lint [<file.bang>] [--json] [--quiet-clean]` (#82 item 2), or
+      -- `bang lint --fix <file.bang> [-w]` (plan 013 slice 6 — the preservation-gated fixit path,
+      -- a SEPARATE mode from the report path above: `--fix` REQUIRES a file, never stdin, mirroring
+      -- `rewrite rename`'s own file-required convention since the gate needs a real program to
+      -- re-elaborate both sides of). `--json`/`--quiet-clean` may appear anywhere before the single
+      -- optional positional in the REPORT path; any OTHER `--`-prefixed arg falls to usage.
+      if rest.contains "--fix" then
+        let write := rest.contains "-w"
+        match rest.filter (fun a => a != "--fix" && a != "-w") with
+        | [file] => runLintFix write file
+        | _      => IO.eprintln usage; pure 1
+      else
+        let json := rest.contains "--json"
+        let quietClean := rest.contains "--quiet-clean"
+        match rest.filter (fun a => !("--".isPrefixOf a)) with
+        | []      => runLint json quietClean none
+        | [arg]   => runLint json quietClean (some arg)
+        | _       => IO.eprintln usage; pure 1
     else if cmd == "holes" then
       -- `bang holes [<file.bang>]` (#82 item 3). ALWAYS JSON (agents are the audience — no `--json`
       -- flag, matching `query`'s own convention); any `--`-prefixed arg falls to usage.
