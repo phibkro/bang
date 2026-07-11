@@ -159,6 +159,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **query** — wire decl-granularity hover — bang query hover <file> <line> <col> (#52 slice 5) (`e304e1b3`)
 - **stdlib** — #105 first-slice prelude — fst/snd/abs/min/max/withDefault/const + char kit (`8578590a`)
 - **docs** — unblock the doc-gen4 build (plan 010) — UnicodeBasic fork pin + the generated BangDocs barrel (`43676ce2`)
+- **stdlib** — migrate injected prelude to Prelude.bang module, auto-used (#106) (`3856b0e6`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

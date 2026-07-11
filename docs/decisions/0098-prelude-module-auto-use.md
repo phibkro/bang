@@ -2,7 +2,7 @@
 
 <!-- adr-frontmatter -->
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Summary**: Issue #106 (operator-ruled 2026-07-11, unblocked same day when #97 item-3 turned out
   already fixed at `225f3f42`): the injected stdlib/generic-prelude functions — 21 entries across
   `stdlibFnSrcs` (`concat`/`reverse`/`eq`) and `genericPreludeFnSrcs` (`mapOption`/`mapResult`/
@@ -43,11 +43,10 @@
 
 ## Status
 
-Proposed — implementation landed on branch `feat-prelude-module`; gated by `just verify` on a
-committed sha (this ADR's own PR/merge names it). Not yet Accepted pending the operator's read of
-the fuel-cost finding in decision point (2), which was NOT anticipated by the survey that scoped
-this work and changes the shape of "auto-use" from "always-on" to "on-mention" — a live design
-choice worth a second look before Accepted.
+Accepted (2026-07-11) — mechanism B was operator-RULED on issue #106 (2026-07-11) and the
+implementation LANDED on main in the merge commit this ADR rode in on, full `just verify` green
+(all 14 batteries, both engines) in the landing gate itself. The string buckets are deleted;
+`Prelude.bang` is the sole SSoT.
 
 ## Context
 
