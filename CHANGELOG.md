@@ -192,6 +192,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **backend** — B1 bignum rep + decimal readback — big literals round-trip on the WasmGC path (#132) (`82117536`)
 - **backend** — B2 bignum add/sub/compare on the WasmGC path — full ℤ arithmetic (#132) (`e2f29cd1`)
 - **backend** — B3 bignum multiply — factorial past 2^63 on WasmGC (#132) (`e6804ad6`)
+- **cli** — bang emit — module-resolved WasmGC emit; json compiles + runs on wasmtime (#136) (`d1fb4758`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
