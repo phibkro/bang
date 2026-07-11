@@ -195,6 +195,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **lint** — plan 013 slice 6 — dead-private fixit, preservation-gated (`84cb31c5`)
 - **cli** — bang emit — module-resolved WasmGC emit; json compiles + runs on wasmtime (#136) (`d1fb4758`)
 - **frontend** — bare imported-effect names — the Mod_Eff ergonomics fix (`d3941d9e`)
+- **frontend** — lift B011's v1 ctor-payload arity-2 cap (#144) (`f1f09bcf`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
