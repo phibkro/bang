@@ -988,7 +988,10 @@ the exit-code tally. `PASS`/`FAIL`/`ERROR` mirror `check --json`'s plain-English
 naming; a counterexample/eval-stuck witness prints via `renderWitness` WITHOUT parameter names
 (`NamedOutcome` doesn't carry `params` — only `LawInstance` does, and `runLawsFromSource`
 doesn't surface it back to the caller — a positional witness list is still actionable and this
-avoids widening `NamedOutcome`'s public shape for a cosmetic label). -/
+avoids widening `NamedOutcome`'s public shape for a cosmetic label). `.skipped` (#113) counts as
+PASS for the tally — not sampling an unreachable impl's law is not itself a failure (the
+unreachable-impl `.untypeable` line already forces a non-zero exit); it renders `–` (a dash, not
+`✓`/`✗`) so a reader can tell "not run" apart from "ran and held" at a glance. -/
 def renderOutcome (o : Bang.LawTest.NamedOutcome) : String × Bool :=
   let name := s!"{o.traitName}.{o.lawName}"
   match o.outcome with
@@ -996,6 +999,7 @@ def renderOutcome (o : Bang.LawTest.NamedOutcome) : String × Bool :=
   | .counterexample ws => (s!"✗ {name} — FAIL — counterexample {ws}", false)
   | .untypeable m       => (s!"✗ {name} — ERROR — {m}", false)
   | .evalStuck ws       => (s!"✗ {name} — STUCK — witness {ws} did not evaluate to a Bool", false)
+  | .skipped m          => (s!"– {name} — SKIPPED — {m}", true)
 
 /-- `bang test [<file.bang>]` (#60's CLI wiring): discover EVERY trait-law instance in a program
 (`Bang.LawTest.runLawsFromSource`, the landed #60 discovery seam) and sample-check each one,

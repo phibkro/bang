@@ -360,15 +360,21 @@ def intOrdPrelude : String :=
 /-! ## 5. The result type — FAIL-LOUD, each case its own constructor (never folded into a bare
 `Bool`/`false`): a law that HOLDS on every sample, a COUNTEREXAMPLE (with its shrunk witness), a
 law whose program is UNTYPEABLE (the elaboration/type error itself, so the caller sees WHY, not
-just "false"), and EVAL-STUCK (the sample elaborated and type-checked but `Source.eval` produced
+just "false"), EVAL-STUCK (the sample elaborated and type-checked but `Source.eval` produced
 neither `done (vint 1)` nor `done (vint 0)` — `.oom`/`.escapedCap`/`.stuck`/a non-Int `done`, each
 a genuinely different failure mode from "the law is false"; distinguished from `.counterexample`
-because a law author needs to know their LAW EVALUATES rather than merely FALSIFIES). -/
+because a law author needs to know their LAW EVALUATES rather than merely FALSIFIES), and SKIPPED
+(issue #113: a law on an impl `unreachableIntImplDiagnostics` already flags — its op is shadowed by
+the kernel's own `Int` δ-rule, so the impl's body never runs. Sampling it anyway and reporting
+`.holds` was MISLEADING: the samples exercise the KERNEL's built-in `==`/`<`/etc., not the
+impl the law is nominally checking — a `PASS` a user could trust as validating their impl when the
+impl never executed. `.skipped` reports this honestly instead of silently reusing `.holds`). -/
 inductive LawOutcome where
   | holds        : Nat → LawOutcome                      -- N samples, all true
   | counterexample : List String → LawOutcome            -- the SHRUNK witness, rendered per param
   | untypeable   : String → LawOutcome                   -- the elaboration/type error message
   | evalStuck    : List String → LawOutcome              -- the witness that got PAST typing but didn't eval to a Bool
+  | skipped      : String → LawOutcome                   -- #113: not sampled — the impl is unreachable (reason text)
   deriving Repr
 
 /-- Render one witness (a list of per-param source strings) as `"(a=1, b=2, c=3)"` — used by both
@@ -535,7 +541,17 @@ for Int` whose op aliases a built-in binop (`add`/`sub`/`mul`/`div`/`lt`/`eq`) i
 impl's op body can never run) — a program-wide warning, not a per-law outcome, so it's surfaced as
 a synthetic `NamedOutcome` PREPENDED to the per-law results (piggybacking the EXISTING
 `Main.lean`/`renderOutcome` print+exit-code path with zero changes there: `.untypeable` already
-renders as a named `✗ … — ERROR — …` line and folds into the pass/fail tally correctly). -/
+renders as a named `✗ … — ERROR — …` line and folds into the pass/fail tally correctly).
+
+**#113 fix:** a law instance whose TRAIT NAME appears in `unreachable` is on a dead impl too — the
+previous behavior sampled it anyway (`runLaws`, below) and reported `.holds`/PASS, which is
+MISLEADING: `evalLawOn`'s samples are plain `Int` literals, so the law body's operator hits the
+KERNEL's own `==`/`<`/etc. via the δ-rule, never the impl being nominally validated — a `PASS` a
+user could trust as "my impl satisfies this law" when the impl never ran. Checked BEFORE sampling
+(short-circuits `runLaws` entirely, so no wasted elaboration+eval either): the law reports
+`.skipped` instead, naming the SAME unreachable-impl reason the ERROR line above already gives, so
+a reader sees both "this impl can never run" (the ERROR line) and "…so its laws weren't sampled"
+(the SKIP line) without needing to infer the connection. -/
 def runLawsFromSource (decls : String) (n seed : Nat) : Except String (List NamedOutcome) := do
   let instances ← Bang.TypeCheck.lawInstancesOf (decls ++ " 0")
   let diagnostics ← Bang.TypeCheck.lawInstanceOpCallDiagnostics (decls ++ " 0")
@@ -546,6 +562,7 @@ def runLawsFromSource (decls : String) (n seed : Nat) : Except String (List Name
 always use the kernel's own arithmetic/comparison, so this impl's '{opName}' can never run (v1 \
 gap: pick a non-Int target type, e.g. a custom data type or (Int * Int), to exercise a custom \
 '{opName}')"⟩ : NamedOutcome))
+  let unreachableTraits := unreachable.map Prod.fst
   let lawOutcomes := (instances.zip (List.range instances.length)).map
     (fun ((tn, ln, params, body), i) =>
       match diagnostics.getD i (tn, ln, none) with
@@ -555,7 +572,13 @@ gap: pick a non-Int target type, e.g. a custom data type or (Int * Int), to exer
 through their overloaded operator in v1 (ADR-0068; e.g. write the law using '==' or the op's \
 aliased operator, not '{opName}(...)' or '{opName} ...' by name)"⟩
       | (_, _, none) =>
-          ⟨tn, ln, runLaws ⟨decls, ln, params, body⟩ n (seed + i)⟩)
+          if unreachableTraits.contains tn then
+            ⟨tn, ln, .skipped
+              s!"impl '{tn}' for Int is unreachable (its op aliases a built-in operator — see the \
+'(unreachable impl)' note above), so '{tn}.{ln}' was not sampled — a PASS here would validate the \
+kernel's own operator, not this impl"⟩
+          else
+            ⟨tn, ln, runLaws ⟨decls, ln, params, body⟩ n (seed + i)⟩)
   return unreachableOutcomes ++ lawOutcomes
 
 /-- The `VecOps` northstar DECLS ONLY (mirrors `TypeCheck.lean`'s own `vecOpsProg`/`vecLawProg` —
@@ -580,24 +603,24 @@ def vecBogusLaw : String := "bogus(a, b): let s = a + b in (let t = a + a in s =
 #guard (match runLawsFromSource (vecOpsDecls vecCommLaw) 20 7 with
         | .ok [⟨"VecOps", "comm", .holds 20⟩] => true | _ => false)
 -- a MULTI-TRAIT program: discovery finds BOTH law instances, in program order, each classified
--- independently — VecOps.comm holds, IntOrd.trans holds (both real true laws) — PLUS the #74
--- part-2 warning, PREPENDED: `intOrdPrelude`'s `impl IntOrd for Int { fn lt(a, b) = a < b }`
--- targets `Int` with an op named `lt`, which ALIASES the built-in `<` — exactly the silently-dead
--- shape `unreachableIntImplDiagnostics` exists to catch (IntOrd.trans's law body uses `<` directly,
--- so it still holds — via the KERNEL's own comparison, not this impl's `lt`, which is precisely
--- the gap being flagged).
+-- independently — VecOps.comm holds (a real true law) — PLUS the #74 part-2 warning, PREPENDED:
+-- `intOrdPrelude`'s `impl IntOrd for Int { fn lt(a, b) = a < b }` targets `Int` with an op named
+-- `lt`, which ALIASES the built-in `<` — exactly the silently-dead shape
+-- `unreachableIntImplDiagnostics` exists to catch. #113: IntOrd.trans is therefore `.skipped`, NOT
+-- `.holds` — sampling it would exercise the KERNEL's own `<`, not this dead impl's `lt`, so a PASS
+-- would misleadingly look like the impl was validated.
 #guard (match runLawsFromSource
     (vecOpsDecls vecCommLaw ++ " " ++ intOrdPrelude) 20 7 with
         | .ok [⟨"IntOrd", "(unreachable impl)", .untypeable _⟩,
-               ⟨"VecOps", "comm", .holds 20⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
+               ⟨"VecOps", "comm", .holds 20⟩, ⟨"IntOrd", "trans", .skipped _⟩] => true
         | _ => false)
 -- a MULTI-TRAIT program where ONE law is deliberately FALSE: discovery still finds both, and only
 -- the false one reports a counterexample — proving per-law classification doesn't cross-contaminate
--- (same prepended IntOrd/Int warning as above).
+-- (same prepended IntOrd/Int warning as above; IntOrd.trans still `.skipped`, #113).
 #guard (match runLawsFromSource
     (vecOpsDecls vecBogusLaw ++ " " ++ intOrdPrelude) 20 7 with
         | .ok [⟨"IntOrd", "(unreachable impl)", .untypeable _⟩,
-               ⟨"VecOps", "bogus", .counterexample _⟩, ⟨"IntOrd", "trans", .holds 20⟩] => true
+               ⟨"VecOps", "bogus", .counterexample _⟩, ⟨"IntOrd", "trans", .skipped _⟩] => true
         | _ => false)
 -- a program with NO trait laws at all discovers an EMPTY list (not an error) — vacuously fine.
 #guard (match runLawsFromSource "" 20 7 with | .ok [] => true | _ => false)
