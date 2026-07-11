@@ -74,6 +74,8 @@ environment it closed over. `vvar` VANISHES from `MVal`: environment values are
 stored as a value). This is the CESK invariant. Kernel `Val`'s `vcap n ℓ` rides across
 unchanged (a closed identity, no env). -/
 mutual
+/-- Machine values (CESK): the kernel `Val` census with `vthunk M` replaced by a
+closure `mvclos M ρ` and `vvar` erased (environment values are ground). -/
 inductive MVal : Type where
   | mvunit : MVal
   | mvint  : Int → MVal
@@ -94,7 +96,8 @@ end
 instance : Inhabited MVal := ⟨.mvunit⟩
 instance : Inhabited MEnv := ⟨.nil⟩
 
-@[inherit_doc] infixr:67 " ∷ₑ " => MEnv.cons
+/-- Cons a machine value onto an environment (`MEnv.cons`). -/
+infixr:67 " ∷ₑ " => MEnv.cons
 
 namespace MEnv
 
@@ -113,6 +116,8 @@ end MEnv
 The ONLY constructor that captures the env is `vthunk M ↦ mvclos M ρ` — every other
 former is structural. `vvar i ↦ ρ.get i` is the O(1) lookup that replaces the O(body)
 `Comp.subst`, dissolving #61's per-step cost (survey §5). -/
+/-- Close a syntactic `Val` under environment `ρ`, resolving free variables to ground
+`MVal`s (the O(1) env lookup replacing `Comp.subst`). -/
 def evalV (ρ : MEnv) : Val → MVal
   | .vunit      => .mvunit
   | .vint n     => .mvint n
@@ -129,6 +134,8 @@ def evalV (ρ : MEnv) : Val → MVal
 A pure computation runs to one of two terminals: a returner `mret mv` (a `ret v`
 produced value `mv`) or a function `mlam M ρ` (a `lam M` closed over `ρ` — the
 function-closure). Mirrors `evalD`'s `Outcome.term (ret v | lam M)`, env-shaped. -/
+/-- A pure computation's terminal: a returner `mret mv` or a function closure
+`mlam M ρ` (the env-shaped image of `evalD`'s `Outcome.term`). -/
 inductive MTerm : Type where
   | mret : MVal → MTerm            -- a returner produced this machine value
   | mlam : Comp → MEnv → MTerm     -- a function: body M closed over env ρ
@@ -154,8 +161,12 @@ bodies closed over (the closure again: a clause `Comp` has free vars — param a
 op-arg at idx 0 — over whatever env was live at `handle`-install). Op-disjointness across
 kinds (state/txn/custom op-sets disjoint) makes the three parallel stores sound exactly as
 in `evalD` — a shared label resolves unambiguously by op-id within the resolved frame. -/
+/-- The env-shaped state store: `evalD`'s `SStore` with `MVal` payloads. -/
 abbrev ESStore := List (Nat × MVal)                                    -- state cells (σ image)
+/-- The env-shaped transaction heap store: `evalD`'s `THeap` with `MVal` payloads. -/
 abbrev ETHeap  := List (Nat × List MVal)                               -- txn heaps  (τ image)
+/-- The env-shaped custom store: `evalD`'s `CStore` with `MVal` payloads, additionally
+carrying each frame's install-time environment for its clause bodies. -/
 abbrev ECStore := List (Nat × (MVal × List (Bang.OpId × Comp) × MEnv)) -- custom frames (κ image): (param, clauses, install-env)
 
 /-- Nearest stored state cell for identity `n` (innermost wins; ids are globally fresh ⇒ unique). -/
@@ -210,6 +221,9 @@ handle RAISES (fail-loud, never falls through to another store).
 * `handle h M` — MINT `id := g`, BIND `mvcap id ℓ` into ρ at index 0 (the env analog of
   `evalD`'s `subst (vcap id ℓ) M`), recurse with `g+1`; push/pop the per-kind store entry;
   throws CATCHES `mraised id "raise"` (zero-shot abort, KEEP the at-raise stores). -/
+/-- The environment big-step evaluator: the env-shaped image of `evalD`, threading the
+fresh-id counter, the three `MVal`-keyed effect stores, and the environment `ρ`.
+Reduction is env lookup, never whole-term substitution; id-first dispatch is preserved. -/
 def evalE : Nat → Nat → ESStore → ETHeap → ECStore → MEnv → Comp →
     Option (MOutcome × Nat × ESStore × ETHeap × ECStore)
   | 0,          _, _, _, _, _, _          => none
@@ -399,6 +413,8 @@ def closeUnderBindersE (d : Nat) : List Val → Comp → Comp
 -- crux `substEnv_cons_subst` below consumes the hoisted `closeC_subst_comm` directly.
 
 mutual
+/-- Read a machine value back to a syntactic `Val` (the inverse embedding: a closure
+`mvclos M ρ` becomes `vthunk` of `M` closed over the read-back environment). -/
 def readback : MVal → Val
   | .mvunit       => .vunit
   | .mvint n      => .vint n
@@ -411,6 +427,7 @@ def readback : MVal → Val
   -- `substEnv` is slice-3 (the env↔subst correspondence core); stated here so first-order
   -- readback + the correspondence statement compile.
   | .mvclos M ρ   => .vthunk (substEnv (readbackEnv ρ) M)
+/-- Read an environment back to a list of syntactic `Val`s (entrywise `readback`). -/
 def readbackEnv : MEnv → List Val
   | .nil       => []
   | .cons v ρ  => readback v :: readbackEnv ρ
@@ -884,6 +901,9 @@ must be constrained THROUGH the value that carries it. It is the machine-side tw
 closed-heap discipline: a caller (the headline / `_effect`, over a well-formed program) discharges it
 structurally. -/
 mutual
+/-- Every `handle` reachable in a computation carries a payload-closed handler
+(transaction heaps closed, custom clauses at absolute scope 2), index-tracked at
+binder depth `n`. The machine-side twin of the kernel's closed-heap discipline. -/
 def Comp.HandlerWF : Nat → Comp → Prop
   | n, .ret v        => Val.HandlerWF n v
   | n, .force w      => Val.HandlerWF n w
@@ -916,6 +936,8 @@ def Comp.HandlerWF : Nat → Comp → Prop
         | .custom _ p cls => (Val.ScopedV 0 p ∧ Val.HandlerWF 0 p) ∧ (∀ c ∈ cls, Comp.ScopedC 2 c.2)
             ∧ Comp.HandlerWFClauses cls)
       ∧ Comp.HandlerWF (n + 1) M
+/-- `Comp.HandlerWF` carried through every value position (chiefly a `vthunk`'s
+captured computation), so the invariant rides thunks and closures. -/
 def Val.HandlerWF : Nat → Val → Prop
   | _, .vunit    => True
   | _, .vint _   => True
@@ -1109,6 +1131,8 @@ closure, so `force`/`app` on it would perform — the deep fragment excludes tha
 (over `Comp`) / `ValEF` (over `Val`, = "every `vthunk` body is `EffectFree`"). This makes `MVal.PureV`
 of an evaluated value follow from `ValEF` of the source value + `MEnv.PureV` of the env. -/
 mutual
+/-- A computation is in the pure fragment: it — and every thunk it can return or run —
+performs no effect and installs no handler. -/
 def EffectFree : Comp → Prop
   | .ret v         => ValEF v
   | .letC M N      => EffectFree M ∧ EffectFree N
@@ -1123,6 +1147,7 @@ def EffectFree : Comp → Prop
   | .binop _ a b   => ValEF a ∧ ValEF b
   | .oom           => True
   | .wrong _       => True
+/-- A value is in the pure fragment: every `vthunk` body it carries is `EffectFree`. -/
 def ValEF : Val → Prop
   | .vunit       => True
   | .vint _      => True
@@ -1191,6 +1216,8 @@ reaches has an `EffectFree` body `ScopedC` under its captured env's length. Mutu
 to descend the closure's env. `force`/`app` entering `mvclos M ρ'` then get `EffectFree M` + the env
 invariant to fire the IH — the fix for wrinkle 3 (closures carry arbitrary captured code). -/
 mutual
+/-- The purity invariant on a machine value: every closure it reaches has an
+`EffectFree` body scoped under its captured env (the 3a layer over closedness). -/
 def MVal.PureV : MVal → Prop
   | .mvunit       => True
   | .mvint _      => True
@@ -1204,6 +1231,7 @@ def MVal.PureV : MVal → Prop
   | .minr w       => MVal.PureV w
   | .mpair w₁ w₂  => MVal.PureV w₁ ∧ MVal.PureV w₂
   | .mfold w      => MVal.PureV w
+/-- Every value in a machine environment is `PureV`. -/
 def MEnv.PureV : MEnv → Prop
   | .nil       => True
   | .cons v ρ  => MVal.PureV v ∧ MEnv.PureV ρ
@@ -1251,6 +1279,8 @@ RELATION (ruling #2 rider, kept as a comment since factoring PureV THROUGH WFClo
 `PureV`'s closure clause is `EffectFree ∧ WFClos`'s clause. The two predicates run in parallel; `PureV` is
 the strictly stronger (pure-fragment) one, `WFClos` the effect-fragment one. -/
 mutual
+/-- The effect-fragment closure invariant: `PureV` minus its `EffectFree` clause —
+each closure's env reads back closed, its body is scoped and `HandlerWF`. -/
 def MVal.WFClos : MVal → Prop
   | .mvunit       => True
   | .mvint _      => True
@@ -1267,6 +1297,7 @@ def MVal.WFClos : MVal → Prop
   | .minr w       => MVal.WFClos w
   | .mpair w₁ w₂  => MVal.WFClos w₁ ∧ MVal.WFClos w₂
   | .mfold w      => MVal.WFClos w
+/-- Every value in a machine environment is `WFClos`. -/
 def MEnv.WFClos : MEnv → Prop
   | .nil       => True
   | .cons v ρ  => MVal.WFClos v ∧ MEnv.WFClos ρ
@@ -3221,6 +3252,8 @@ fragment; a red one refutes the domain shape for the price of this file.
 
 `runE` closes an empty-env, empty-store eval (counter 0) and reads back a returner to a
 `Result Val`, exactly the shape `Source.eval` yields, so the two are directly comparable. -/
+/-- Run a closed program on empty env and stores, reading a returner back to a
+`Result Val` — the shape `Source.eval` yields, for direct comparison. -/
 def runE (fuel : Nat) (M : Comp) : Result Val :=
   match evalE fuel 0 [] [] [] .nil M with
   | some (.mterm (.mret mv), _, _, _, _) => .done (readback mv)
@@ -3230,9 +3263,13 @@ def runE (fuel : Nat) (M : Comp) : Result Val :=
 payload — everything the driver needs to (a) do the real IO and (b) record a trace row. `label` is
 carried so the driver knows WHICH host handler to invoke (`mraised` is identity-keyed and drops it). -/
 structure HostReq where
+  /-- The escaped capability's generative identity. -/
   id      : Nat
+  /-- The effect label, so the driver knows which host handler to invoke. -/
   label   : Bang.EffectRow.Label
+  /-- The operation name. -/
   op      : Bang.OpId
+  /-- The read-back operation payload. -/
   payload : Val
   deriving Inhabited
 
@@ -3280,6 +3317,9 @@ The result tuple's LAST slot `Option HostReq` carries the PENDING host request w
 at an ungranted-answer host perform (empty `rs`) — set ONLY by the host-seam arm (`none` everywhere
 else). This surfaces the escaped cap's LABEL (which `mraised` drops, being identity-keyed), so the
 driver picks the right host handler. `stepHost` reads this slot. -/
+/-- The host-IO sibling of `evalE` (ADR-0104): byte-for-byte identical except the
+perform-on-a-host-label leaf, which consumes a supplied response prefix (or surfaces
+the next `HostReq`) instead of failing loud. Tested-stratum by construction. -/
 def evalEHost (hostLabels : List Nat) :
     Nat → Nat → ESStore → ETHeap → ECStore → MEnv → List MVal → Comp →
     Option (MOutcome × Nat × ESStore × ETHeap × ECStore × List MVal × Option HostReq)

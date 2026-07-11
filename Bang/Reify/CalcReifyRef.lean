@@ -61,6 +61,7 @@ inductive Entry where
   | ev : Int → Entry
   | ek : (Int → Comp) → Entry
 
+/-- The reference reifier's environment: a list of `Entry` bindings. -/
 abbrev REnv := List Entry
 
 /-- Free-monad bind: thread `f` past the first `perform`. Fuel-bounded because the

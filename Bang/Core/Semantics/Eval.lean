@@ -35,6 +35,9 @@ variable {Mult : Type} [CommSemiring Mult] [DecidableEq Mult]
 
 /-! ## 2. Operational semantics (small-step + fuel-iterated) -/
 
+/-- The outcome of a fuel-bounded evaluation: a completed value (`done`), fuel
+exhaustion (`oom`), a capability escaping its handler (`escapedCap`, ADR-0063),
+or a stuck configuration (`stuck`, never reached by a well-typed program). -/
 inductive Result (α : Type) where
   | done : α → Result α
   | oom : Result α
@@ -395,8 +398,12 @@ theorem Config.run_done_add (k : Nat) :
 
 -- Trace / evalTrace: still axiom; need concrete Eff to express
 -- "label in row" (see `docs/notes/OPEN_QUESTIONS.md` Q1).
+/-- The trace of effects performed during an evaluation (opaque until a concrete
+`Eff` is fixed; see `docs/notes/OPEN_QUESTIONS.md` Q1). -/
 axiom Trace            : Type
+/-- Fuel-bounded evaluation returning both the value and the effect `Trace`. -/
 axiom Source.evalTrace : Nat → Comp → Result (Val × Trace)
+/-- The trace stays within effect row `Eff` (every performed label is in `Eff`). -/
 axiom traceWithin      {Eff : Type} : Trace → Eff → Prop
 
 /-- isReturn: a Comp is "returned" iff it's `ret v` for some v. -/

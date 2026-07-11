@@ -131,6 +131,7 @@ inductive Instr where
   | opH     : Nat → Bang.OpId → Bang.Val → CalcVM.Code → Instr  -- perform op (identity-keyed resume/unwind)
   deriving Inhabited
 
+/-- A lowered WASM program: a list of `Instr`. -/
 abbrev Code := List Instr
 
 /-- The WASM operand stack holds runtime values (`Wasmfx.Val`). -/
@@ -141,18 +142,25 @@ abbrev VStack := List Val
 operand stack) to resume on a zero-shot abort. Mirrors the stack-switching
 `cont`-reference captured at the handler boundary. -/
 structure HFrame where
+  /-- The minted generative identity; lookups resolve by it (route-B). -/
   id         : Nat          -- route-B: the minted generative identity; lookups resolve by it
+  /-- The installed handler. -/
   handler    : Handler
+  /-- The outer continuation code to resume on a zero-shot abort. -/
   savedCode  : Code
+  /-- The outer continuation operand stack to resume on a zero-shot abort. -/
   savedStack : VStack
 
+/-- The WASM handler stack: a list of saved `HFrame` boundaries. -/
 abbrev HStack := List HFrame
 
 /-- A WASM module: a single start-function body (the lowered instruction stream
 of a closed program) plus its declared result type. The forward simulation runs
 this body to a single value on the WASM operand stack. -/
 structure Module where
+  /-- The lowered start-function body (the instruction stream of a closed program). -/
   body   : Code
+  /-- The module's declared result type. -/
   result : Ty
   deriving Inhabited
 
@@ -198,6 +206,8 @@ single-function form, which matched the head constructor THROUGH the cons
 (`.SUBST N :: c => …`), compiled to a non-reducing matcher and broke `rfl` on every
 handler probe (the build caught it). Mutual because `MARK` lowers a nested `Code`. -/
 mutual
+/-- Lower one calculated `Instr` (with its CalcVM continuation `c` and lowered tail
+`rest`) to WASM opcodes; residual opcodes carry `c` and subsume the tail. -/
 def lowerInstr (i : CalcVM.Instr) (c : CalcVM.Code) (rest : Wasmfx.Code) : Wasmfx.Code :=
   match i with
   | .RET v        => .const v :: rest
@@ -214,6 +224,7 @@ def lowerInstr (i : CalcVM.Instr) (c : CalcVM.Code) (rest : Wasmfx.Code) : Wasmf
   -- `++`-homomorphism so the tail must be threaded, not appended. `rest = lowerCode c` is DROPPED.
   | .OP n op v    => [.opH n op v c]           -- identity-keyed; carries the cont for the custom recompile
   | .THROW _ _ _  => rest                      -- never compiled (no-op)
+/-- Lower a calculated `Code` to WASM opcodes, recursing structurally on the list. -/
 def lowerCode : CalcVM.Code → Wasmfx.Code
   | []      => []
   | i :: c  => lowerInstr i c (lowerCode c)
@@ -266,6 +277,8 @@ match) — only the saved code/stack carried in the kept/restored frames are WAS
 rather than CalcVM. This 1:1 mirror is what keeps `exec_wexec_sim` a clean
 lockstep: `injHStack` commutes with both (proven in the handler-commutation
 lemmas). -/
+/-- Service a state op against the WASM handler stack by identity `n` (the WASM analog
+of CalcVM's `stateUpdate`): update the matching frame's cell in place, return the read. -/
 def wStateUpdate : Nat → Bang.OpId → Bang.Val → HStack → Option (Bang.Val × HStack)
   | _, _, _, []       => none
   | n, op, v, fr :: hs =>
@@ -328,6 +341,8 @@ def wCustomUpdate : Nat → Bang.OpId → Bang.Val → HStack → Option (Comp �
           else (wCustomUpdate n op v hs).map (fun q => (q.1, fr :: q.2))
       | _ => (wCustomUpdate n op v hs).map (fun q => (q.1, fr :: q.2))
 
+/-- The WASM abstract machine: run lowered `Code` against the operand and handler
+stacks, threading the fresh-id counter — the simulation target for `exec`. -/
 def wexec : Nat → Nat → Code → VStack → HStack → Option VStack
   | 0,          _, _,              _, _ => none
   | Nat.succ _, _, [],             s, _ => some s
@@ -408,6 +423,8 @@ A thunk body must be pure (run on `force`); the predicates are mutually recursiv
 ADT scrutinees may be open (`vvar`, substituted before the eliminator steps), so
 `Val.Pure` accepts variables. -/
 mutual
+/-- A computation is in the effect-free fragment the compiler covers: the pure CBPV
+core plus the ADT formers/eliminators, no `up`/`handle`/`oom`/`wrong`. -/
 def Comp.Pure : Comp → Prop
   | .ret v          => Val.Pure v
   | .letC M N       => Comp.Pure M ∧ Comp.Pure N
@@ -420,6 +437,8 @@ def Comp.Pure : Comp → Prop
   | .split v N      => Val.Pure v ∧ Comp.Pure N
   | .unfold v       => Val.Pure v
   | _               => False
+/-- A value is in the compiler's pure fragment: every `vthunk` body is pure, no
+`vcap` (a capability is not handler-free). -/
 def Val.Pure : Bang.Val → Prop
   | .vunit        => True
   | .vint _       => True
@@ -462,6 +481,7 @@ def InstrPure : CalcVM.Instr → Prop
   | .SPLIT w N => Val.Pure w ∧ Comp.Pure N
   | _        => False
 
+/-- Every instruction in a calculated `Code` is pure-spine (`InstrPure`). -/
 def CodePure (code : CalcVM.Code) : Prop := ∀ i ∈ code, InstrPure i
 
 /-! #### Handler simulation invariant (`InstrOk`/`CodeOk`) — the FULL handler set
@@ -478,9 +498,12 @@ at all — all handlers + all values are in scope. `InstrOk i` = "`i` is not `TH
 -- route-B: the `.MARK _ cr => CodeOk cr` recursive obligation DISSOLVES — `HANDLE h M` carries a RAW
 -- `Comp` body (not pre-compiled code), so there is no nested `Code` to constrain THROW-free; the body's
 -- THROW-freedom comes from `compile_no_throw` when `wexec` re-compiles it. `InstrOk i` = "`i` is not THROW".
+/-- A calculated instruction is `THROW`-free — the only constraint the full-handler-set
+simulation needs (a `compile`-output never contains `THROW`). -/
 def InstrOk : CalcVM.Instr → Prop
   | .THROW _ _ _ => False          -- never compiled; resuming `[]`/dropping it would be unsound
   | _            => True
+/-- Every instruction in a calculated `Code` is `InstrOk`. -/
 def CodeOk : CalcVM.Code → Prop
   | []     => True
   | i :: c => InstrOk i ∧ CodeOk c
@@ -500,6 +523,7 @@ lockstep (the WASM helpers `wStateUpdate`/`wUnwindFind` commute with it). -/
 def injHFrame (fr : CalcVM.HFrame) : HFrame :=
   { id := fr.id, handler := fr.handler, savedCode := lowerCode fr.savedCode, savedStack := injStack fr.savedStack }
 
+/-- Inject a CalcVM handler stack onto the WASM one (entrywise `injHFrame`). -/
 def injHStack (hs : CalcVM.HStack) : HStack := hs.map injHFrame
 
 /-! #### Handler-helper commutation: the WASM helpers mirror exec's under `injHStack`.
@@ -1033,11 +1057,13 @@ THREADING the carried CalcVM continuation `c` (the threaded-cont rep) so the
 `ret v`/`lam M`. `exec` preserves it (RET/LAMI push pure terminals from pure
 instrs; SUBST/APP pop a pure value and run pure recompiled code), which discharges
 the value-purity obligation in the SUBST/APP arms. -/
+/-- A machine terminal (`ret v` / `lam M`) is pure — the operand-stack invariant. -/
 def TerminalPure : Comp → Prop
   | .ret v => Val.Pure v
   | .lam M => Comp.Pure M
   | _      => False
 
+/-- Every terminal on a machine stack is `TerminalPure`. -/
 def StackPure (s : CalcVM.Stack) : Prop := ∀ t ∈ s, TerminalPure t
 
 /-- A handler frame is pure when its saved continuation (code + stack) is — the
@@ -1047,6 +1073,7 @@ pure for a well-typed closed program — threaded as part of the invariant). -/
 def HFramePure (fr : CalcVM.HFrame) : Prop :=
   CodePure fr.savedCode ∧ StackPure fr.savedStack
 
+/-- Every frame on a handler stack is `HFramePure`. -/
 def HStackPure (hs : CalcVM.HStack) : Prop := ∀ fr ∈ hs, HFramePure fr
 
 /-! #### `HStackOk` — the handler-capable simulation's ONLY invariant (full handler set)
@@ -1055,8 +1082,11 @@ With txn verified, the simulation needs NO value/handler/stack constraint — on
 every saved handler frame's continuation is THROW-free (`CodeOk`), so an abort-resume
 runs THROW-free code. No `TerminalOk`/`StackOk` (the operand stack is unconstrained),
 no handler constraint (all handlers in scope). `HFrameOk fr = CodeOk fr.savedCode`. -/
+/-- A handler frame's saved continuation is `THROW`-free — the only invariant the
+handler-capable simulation needs. -/
 def HFrameOk (fr : CalcVM.HFrame) : Prop := CodeOk fr.savedCode
 
+/-- Every frame on a handler stack is `HFrameOk`. -/
 def HStackOk (hs : CalcVM.HStack) : Prop := ∀ fr ∈ hs, HFrameOk fr
 
 theorem exec_wexec_sim :
@@ -2085,11 +2115,13 @@ NO `local` reference, so the pure-spine `compileC` (which threads no `getL`/`set
 for closed-focus substitution code) trivially has none — the calculated machine
 is substitution-based (closed focus, ADR-0025 D2), so `compile c []` carries no
 free-variable locals at all. -/
+/-- Instruction `i` references local `j` (a `getL j`/`setL j`). -/
 def InstrMentionsLocal : Instr → Nat → Prop
   | .getL k, j => k = j
   | .setL k, j => k = j
   | _,       _ => False
 
+/-- The module's body references local `k` somewhere. -/
 def MentionsLocal (m : Module) (k : Nat) : Prop :=
   ∃ i ∈ m.body, InstrMentionsLocal i k
 
@@ -2103,6 +2135,7 @@ def InstrWF : Instr → Prop
   | .setL _ => False
   | _       => True
 
+/-- A module is well-typed when every instruction in its body is `InstrWF`. -/
 def WellTyped (m : Module) : Prop :=
   ∀ i ∈ m.body, InstrWF i
 
@@ -2115,9 +2148,13 @@ suspend/resume) obligations; defined as `True`-on-the-empty-handler-module so
 `handler_compiles` is a tracked Milestone B `sorry`, not an axiom. They are NOT
 exercised by Milestone A's forward-sim (closed PURE programs). Args are the Milestone-B
 interface, unused by the `True`-on-the-empty-module stubs. -/
+/-- The Milestone B handler-lawfulness obligation (a `True` placeholder until the
+generator suspend/resume backend lands). -/
 @[nolint unusedArguments]
 def HandlerLawful (_ : Handler) : Prop := True
 
+/-- The Milestone B handler-equivalence obligation (a `True` placeholder until the
+generator suspend/resume backend lands). -/
 @[nolint unusedArguments]
 def Wasmfx.HandlerEquiv (_ : Wasmfx.Module) (_ : Handler) : Prop := True
 

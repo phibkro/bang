@@ -113,6 +113,8 @@ prepend — this exactly mirrors the machine's in-place `stateUpdate` on the HSt
 the HStack-state-projection stay structurally identical, which is what makes the bridge invariant a
 direct correspondence rather than a representation translation). `∉ store` ⟺ no active `state`
 frame for `ℓ` ⟹ the op propagates as a throws-path `raised`. -/
+/-- The state store `evalD` threads (ADR-0031): a stack of `(label ↦ value)` bindings
+mirroring the machine's active `state ℓ s` frames 1:1, in order. -/
 abbrev SStore := List (Bang.EffectRow.Label × Val)
 
 /-- The nearest stored value for label `ℓ` (innermost binding wins — shadowing). -/
@@ -149,6 +151,8 @@ ALREADY structural via op-disjointness — the inverse of correctness-by-constru
 transaction op-sets stay disjoint. Adding an op handled by BOTH kinds would reintroduce
 cross-kind ambiguity (a label could resolve to either projection) — re-examine the rep
 (unify into one ordered store) BEFORE doing so. -/
+/-- The transaction heap store `evalD` threads (ADR-0031): `SStore` generalized from a
+single cell to a list-heap, mirroring the machine's active `transaction ℓ Θ` frames. -/
 abbrev THeap := List (Bang.EffectRow.Label × List Bang.Val)
 
 /-- The nearest stored heap for label `ℓ` (innermost transaction frame wins — shadowing). -/
@@ -211,6 +215,8 @@ resolves unambiguously by op-id; the three projections never cross.
 idiom). The ADR-0085 D3 SINGLE-param-store generalization (one store subsuming state/txn/custom) is a
 DEFERRED census-preserving refactor — the SAME status as the handler-COLLAPSE (ADR-0085 D5, Option-A
 instances): a later beautification, not taken mid-derivation on taste (which would invert invariant #4). -/
+/-- The custom-effect store `evalD` threads (ADR-0085): keyed by handler identity to a
+`(param, clauses)` payload, mirroring the machine's active `custom ℓ p cls` frames. -/
 abbrev CStore := List (Nat × (Val × List (Bang.OpId × Comp)))
 
 /-- The nearest stored `(param, clauses)` for identity `n` (innermost custom frame wins — shadowing;
@@ -257,6 +263,9 @@ inductive Outcome where
 -- Stage 4: the THIRD store `κ : CStore` threads custom (`Handler.custom`) frames — a per-kind sibling
 -- of σ/τ (kind-first idiom), carrying `(param, clauses)` and INLINE-SERVICING a custom op by running
 -- the clause body as a sub-eval against the live frame.
+/-- The CalcVM reference (route-B, ADR-0052): the big-step denotation of the identity
+kernel, threading the fresh-id counter and the per-kind stores (state/heap/custom) and
+dispatching by capability identity. Must agree with `Source.eval`. -/
 def evalD : Nat → Nat → SStore → THeap → CStore → Comp → Option (Outcome × Nat × SStore × THeap × CStore)
   | 0,          _, _, _, _, _      => none
   | Nat.succ _, g, σ, τ, κ, .ret v    => some (.term (.ret v), g, σ, τ, κ)
@@ -376,6 +385,8 @@ Each `evalD` clause forces an instruction (computing the RHS of (★)):
 `{RET, LAMI, SUBST, APP}` falls out. `SUBST`/`APP` carry the residual `Comp` (the
 CK-flavour noted in the header — flattened in a later increment). -/
 
+/-- The calculated VM's instruction set (route-B, ADR-0052): the `{RET, LAMI, SUBST,
+APP}` core derived from `evalD` plus the handler/dispatch/ADT-eliminator instructions. -/
 inductive Instr where
   | RET   : Val → Instr      -- push the terminal `ret v`
   | LAMI  : Comp → Instr     -- push the terminal `lam M`
@@ -403,6 +414,7 @@ inductive Instr where
   -- (no UNFOLD: `unfold (fold v)` erases to `RET v` at compile time — see `compile`.)
   deriving Inhabited
 
+/-- A compiled program: a list of `Instr`. -/
 abbrev Code  := List Instr
 /-- The machine stack holds *terminal computations* (`ret v` / `lam M`) — the
 shared value representation both `evalD` and `exec` produce, keeping correctness a
@@ -414,13 +426,20 @@ abbrev Stack := List Comp
 frame's generative name — `unwindFind`/`stateUpdate`/`txnUpdate` resolve by it (mirroring
 `splitAtId`). The inner continuation is DISCARDED on abort (throws are zero-shot), so it is NOT saved. -/
 structure HFrame where
+  /-- The frame's minted generative identity; dispatch resolves by it. -/
   id         : Nat
+  /-- The installed handler. -/
   handler    : Handler
+  /-- The outer continuation code to resume on a zero-shot abort (`Kₒ`). -/
   savedCode  : Code
+  /-- The outer continuation stack to resume on a zero-shot abort. -/
   savedStack : Stack
 
+/-- The machine's handler stack: a list of saved `HFrame`s. -/
 abbrev HStack := List HFrame
 
+/-- Compile a computation into bytecode prepended onto continuation code `c`
+(derived from `evalD` by Bahr–Hutton reasoning). -/
 def compile : Comp → Code → Code
   | .ret v,             c => Instr.RET v :: c
   | .lam M,             c => Instr.LAMI M :: c
@@ -679,6 +698,8 @@ gap). This disjointness is TRUE of every reachable configuration by generative f
 mints a globally-fresh id and pushes onto exactly one store. It is the store-level image of the kernel's
 `StratFresh`; the discharge is `storesDisjoint_of_freshCfg` (bundling the `ctxStates/ctxTxns/ctxCustoms
 _get_none_of_capsBelow` triple), threaded from `FreshCfg` at the `sim` call site in `run_evalD`. -/
+/-- No identity is bound in more than one of the three per-kind stores — the
+id-first dispatch backbone (a key resolves to at most one store). -/
 def StoresDisjoint (σ : SStore) (τ : THeap) (κ : CStore) : Prop :=
   ∀ n, (σ.get? n ≠ none → τ.get? n = none ∧ κ.get? n = none)
      ∧ (τ.get? n ≠ none → σ.get? n = none ∧ κ.get? n = none)

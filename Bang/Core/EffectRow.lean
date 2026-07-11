@@ -23,7 +23,9 @@ design is differential-tested independent of the proofs.
 
 namespace Bang.EffectRow
 
+/-- An effect label: the type-level name an effect row tracks (a `Nat`). -/
 public abbrev Label := Nat
+/-- A row variable: the identifier of a polymorphic row tail (a `Nat`). -/
 public abbrev RVar  := Nat
 
 /-- The concrete effect-row carrier: a `Finset Label`. Mathlib gives this
@@ -46,8 +48,13 @@ public abbrev EffRow := Finset Label
 no sorted/duplicate-free invariant to carry, and equality is extensional. -/
 public abbrev RowC := Finset Label
 
+/-- A syntactic effect row: a canonical label set together with an optional
+polymorphic tail variable. The unifier operates on this open form; a closed row
+has `tail = none`. -/
 public structure Row where
+  /-- The row's concrete label set. -/
   labels : RowC
+  /-- The optional polymorphic tail; `none` for a closed row. -/
   tail   : Option RVar
 deriving DecidableEq
 -- NOTE: `Repr` was dropped here: `Finset.instRepr` is an `unsafe` declaration, so
@@ -55,6 +62,7 @@ deriving DecidableEq
 -- (`uses unsafe declaration 'Finset.instRepr'`). Repr is unused — Main.lean
 -- serialises via the custom `rowToJson`.
 
+/-- A row substitution: an association list mapping row variables to rows. -/
 public abbrev Subst := List (RVar × Row)
 
 /-! ## The algebra is Mathlib's Finset join-semilattice -/
@@ -79,6 +87,7 @@ theorem canon_unique (a b : RowC) (h : ∀ x, x ∈ a ↔ x ∈ b) : a = b :=
 
 /-! ## The unifier (Rémy/Pottier specialised to idempotent set-rows) -/
 
+/-- Look up the row bound to row variable `r` in substitution `s`. -/
 public def lookupVar (r : RVar) (s : Subst) : Option Row :=
   (s.find? (fun b => b.1 = r)).map (·.2)
 
