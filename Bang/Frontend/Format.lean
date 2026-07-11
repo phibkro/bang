@@ -537,15 +537,24 @@ def fmtMemberBlock (members : List String) : Format :=
     Format.text "{" ++ Format.nest defIndent (Format.line ++ Format.joinSep (members.map Format.text) sep)
       ++ Format.line ++ Format.text "}")
 
+/-- A `data` decl's trailing `deriving (Eq, Ord)` clause, keyed by TYPE NAME against
+`Prog.derivesFor` (ADR-0097 §1) — mirrors `fmtDeclPub`'s own "look the name up in a `Prog`-level
+flat list, print the clause only when present" shape immediately below. `[]` (not found, or found
+empty) prints nothing — matches how a `data` decl with no `deriving` keyword parses today. -/
+def fmtDerivingClause (derivesFor : List (String × List String)) (dataName : String) : Format :=
+  match derivesFor.lookup dataName with
+  | some ds => if ds.isEmpty then Format.text "" else Format.text s!" deriving ({String.intercalate ", " ds})"
+  | none    => Format.text ""
+
 /-- One declaration — flat when it fits in `defWidth`, one member/ctor per line (D2) when it
 doesn't. `data`/`trait`/`impl` bodies use `fmtCtorList`/`fmtMemberBlock` (the D2 multi-line decl
 shape); `fnD` is comment-free canonical rendering (comments are not part of `Surf`/`Decl`,
 ADR-0046: the surface has no semantics of its own beyond its elaboration, and a comment carries
 none, so it is out of scope for this AST-driven printer). -/
-def fmtDeclDoc : Decl → Format
+def fmtDeclDoc (derivesFor : List (String × List String)) : Decl → Format
   | .dataD n ps cs   =>
       let params := if ps.isEmpty then "" else " " ++ String.intercalate " " ps
-      Format.text s!"data {n}{params} = " ++ fmtCtorList cs
+      Format.text s!"data {n}{params} = " ++ fmtCtorList cs ++ fmtDerivingClause derivesFor n
   | .traitD n ps ops laws =>
       let params := if ps.isEmpty then "" else " " ++ String.intercalate " " ps
       let body := (ops.map fmtOpSig) ++ (laws.map fmtLawDecl)
@@ -570,7 +579,7 @@ def fmtDeclDoc : Decl → Format
   | .letRecD n t e =>     -- `let rec name : T = expr` — the recursive sibling, same no-`in` shape.
       Format.group (nestD (Format.text s!"let rec {n} : {showTy t} =" ++ Format.line ++ fmtSurf .cmp e))
 
-def fmtDecl (d : Decl) : String := render (fmtDeclDoc d)
+def fmtDecl (d : Decl) : String := render (fmtDeclDoc [] d)
 
 /-- One `import name` line (ADR-0093 D1). -/
 def fmtImport (i : ImportDecl) : Format := Format.text s!"import {i.modName}"
@@ -581,9 +590,10 @@ def fmtUse (u : UseDecl) : Format :=
 
 /-- One decl, `pub`-prefixed iff its name is in `pubNames` (ADR-0093 D3) — `pubNames` is a flat
 set on `Prog`, not a per-`Decl` field (see `Prog.pubNames`'s doc comment), so the printer
-re-attaches the prefix here rather than `fmtDeclDoc` carrying it. -/
-def fmtDeclPub (pubNames : List String) (d : Decl) : Format :=
-  if pubNames.contains d.name then Format.text "pub " ++ fmtDeclDoc d else fmtDeclDoc d
+re-attaches the prefix here rather than `fmtDeclDoc` carrying it. `derivesFor` is threaded through
+the same way, for the SAME reason (`Prog.derivesFor`'s doc comment, ADR-0097 §1). -/
+def fmtDeclPub (pubNames : List String) (derivesFor : List (String × List String)) (d : Decl) : Format :=
+  if pubNames.contains d.name then Format.text "pub " ++ fmtDeclDoc derivesFor d else fmtDeclDoc derivesFor d
 
 /-- A whole program: the `import`/`use` header (ADR-0093 D1/D2), then each decl on its own line
 (`pub`-prefixed per D3), then the body expression. Matches every `examples/*/main.bang` today
@@ -610,7 +620,7 @@ inherits the SAME unsoundness this caveat names; a pre-existing, documented v1 c
 new one #81 introduces. -/
 public def showProg (p : Prog) : String :=
   let headerDocs := (p.imports.map fmtImport) ++ (p.uses.map fmtUse)
-  let declDocs := p.decls.map (fmtDeclPub p.pubNames)
+  let declDocs := p.decls.map (fmtDeclPub p.pubNames p.derivesFor)
   -- `p.isLibrary` ⟹ `p.body` is the UNOBSERVABLE `.lit 0` placeholder (D5's third case) — printing
   -- it would append a REAL trailing `0` a re-parse cannot tell apart from the placeholder, and
   -- worse, a bare-atom-ending decl (`let main = 42`) would swallow that `0` as an APPLICATION
