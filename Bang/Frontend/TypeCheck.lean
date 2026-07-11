@@ -5161,12 +5161,16 @@ list it's handed, so filtering HERE keeps an unused prelude entry at ZERO fuel c
 preserving the retired `wrapGenericFns`'s conditional-injection discipline (Config.run's CK machine
 decrements fuel once per `letC` step regardless of whether the binder is ever forced — an
 UNCONDITIONAL 21-entry prelude merge would tax every program ~21 fuel steps it never asked for; the
-tight-fuel corpus, `#guard`s at fuel 20-50, falsified that shape directly). Mirrors
-`Bang.Query.surfUsesVar` arm-for-arm (that copy lives DOWNSTREAM of this file — `Query.lean`
-imports `Diagnostics.lean` imports `TypeCheck.lean` — so importing it back here would cycle; this
-stays the upstream original, same discipline as before ADR-0098). -/
+tight-fuel corpus, `#guard`s at fuel 20-50, falsified that shape directly).
+
+**PUBLIC (issue #83):** `Query.lean` used to carry its own byte-identical COPY of this function
+(rationale at the time: `Query.lean` → `Diagnostics.lean` → `TypeCheck.lean`, so importing
+`TypeCheck` back into `Query` looked like it would cycle) — but that import chain is DOWNSTREAM,
+not circular: `Query.lean` already transitively imports this file, so `Bang.Query.surfUsesVar` is
+now a thin re-export of THIS definition (below), not a second implementation. One authoritative
+home; a new `Surf` constructor now breaks ONE exhaustive match, not two. -/
 mutual
-def surfUsesVar (nm : String) : Surf → Bool
+public def surfUsesVar (nm : String) : Surf → Bool
   | .var x                         => x == nm
   | .lit _ | .getS | .unitS        => false
   | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e

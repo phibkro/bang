@@ -240,5 +240,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **modules** — the two #117 module-machinery gaps blocking trait-prelude migration (`b7e91ed2`)
 - **deriving** — #128 — type-qualify generated impl ctor names, doc the migration cost (`7de7ab12`)
 - **frontend** — #129 — top-level let-decl juxtaposition-absorption diagnostic (B016) (`8e0bca23`)
+- **frontend** — #130 — handler-clause op names accept reserved keywords, reach B002 (`563badd4`)
 
 <!-- END GENERATED changelog -->
