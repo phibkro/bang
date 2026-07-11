@@ -342,7 +342,32 @@ axiom-clean + `alpha_delivery_skeleton` FLAGGED `sorry` = the surviving wall) ·
 conjunct — `nid`/`C'` NOT in scope) · memory `lr-crelk-custom-arm-termination-wall` fallback (C) (the
 (β) viability precedent).
 
-## PROPOSED AMENDMENT ④ — the (β) DELIVERY verdict: fuel closes termination/location, NOT answer-coherence; the wall is shared with (α) (lane feat-lr-fuel-reindex, 2026-07-11, AWAITING OPERATOR RULING)
+## PROPOSED AMENDMENT ④ — the (β) DELIVERY verdict: fuel closes termination/location, NOT answer-coherence; the wall is shared with (α) (lane feat-lr-fuel-reindex, 2026-07-11, RULED — see below)
+
+**RULED (operator, 2026-07-11): PARK DEFINITIVELY — the `lr_*` census unit is CLOSED-AS-PARKED.** Both
+surviving routes past the census-4 SKIP tie — (α) the `KrelS`-def-CONCLUSION strengthening (③) and (β)
+the fuel-indexed re-index (this amendment) — are machine-REFUTED-at-delivery at the SAME
+inter-derivation ANSWER-DETERMINACY wall (`Dstrip = Dᵢ` / `Cb' = C'` are the same tie): the decomp needs
+the boundary answer determined by the shared tail `(Ko', K₂ₒ, D)` and it is NOT, and no single-derivation
+device (conclusion-strengthening or fuel index) reaches across two derivations. This is a statement-level
+determinacy gap, not a proof-technique gap. **Consequences of the park:** the fuel twin `LRFuel.lean`
+stays BANKED on `feat-lr-fuel-reindex` as the COMPLETED termination/location half + the falsifier set
+(`krelSN_hole_det_refuted` / `krelS_hole_det_refuted`) — reusable if a wall-changing idea ever lands; v1
+ships the three `lr_*` (`lr_sound`/`lr_fundamental`/`lr_fundamental_closed`) FLAGGED (census 18, unchanged,
+nothing user-facing regresses — the soundness diagonal is `Crel`-free and axiom-clean); the ◊4 binary-LR
+paper goes **CPP-framed** as "a machine-checked LR construction + the seam analysis" with the `lr_*`
+cluster a single named residual (now with TWO build-refuted closure routes as evidence).
+
+**THE RESUME BAR (verbatim, do-not-lower):** only a design idea that GENUINELY CHANGES THE WALL re-opens
+this unit. The SOLE named such shape is **answer-determined-by-construction** — carry the boundary answer
+(the returner hole type at every catcher) as a datum ON THE FRAME/STACK so any two decomps of the same
+physical stack agree by construction (answer-in-the-frame, kernel-adjacent). It **requires its own
+kernel-engineer refute-first design consult BEFORE any implementation** (does a frame-carried answer stay
+consistent under `dispatchOn`'s reinstall? survive `subst`? force a `Spec.lean` change?). Anything short of
+a wall-changing idea does NOT re-open the unit. **No background lane, no queue slot** — the park is
+definitive, not a hold. Like ①–③, this amendment flips PROPOSED→Accepted only in a real 18→20 landing
+commit; the ruling here CLOSES the unit as parked, it does not land the shed (which no in-envelope route
+delivers).
 
 **Context.** Amendment ③ ruled (β) — the fuel-indexed LR re-index (shape (c)) — the live background lane,
 sliced. Slice 1 de-risked the claim (the fuel-indexed twin `Bang/Meta/LRFuel.lean`, purely additive;
@@ -429,9 +454,12 @@ termination of the self-referential strip) than the actual wall (inter-derivatio
 
 ### (d) Status
 
-**AWAITING OPERATOR RULING.** This amendment records the (β) delivery verdict; it does NOT alter the status
-of amendments ①–③ (all remain as they stand) nor flip the census (18, unchanged under both options). Like
-①–③, ④ flips only in a real 18→20 landing commit — which, on this evidence, no in-envelope route delivers.
+**RULED — PARK DEFINITIVELY (operator, 2026-07-11; see the ruling block at this amendment's head).** The
+`lr_*` census unit is CLOSED-as-parked; the resume bar is answer-determined-by-construction gated on a
+kernel-engineer refute-first consult. This amendment records the (β) delivery verdict; it does NOT alter
+the status of amendments ①–③ (all remain as they stand) nor flip the census (18, unchanged). Like ①–③, ④
+flips PROPOSED→Accepted only in a real 18→20 landing commit — which, on this evidence, no in-envelope route
+delivers; the ruling closes the unit as parked, it does not land the shed.
 
 ### Ground (lane feat-lr-fuel-reindex, off `feat-lr-carrier-stackinc-wip @ 25f18ed2`)
 
