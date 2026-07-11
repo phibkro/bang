@@ -45,7 +45,8 @@ CONTEXT.md               volatile current position on the map
 
 ## Install
 
-**Download a prebuilt binary** (x86_64 Linux — no Nix, no Lean, no build):
+**Download a prebuilt binary** (x86_64/aarch64 Linux or Apple Silicon macOS — no Nix,
+no Lean, no build):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/phibkro/bang/main/tools/install.sh | sh
@@ -53,15 +54,16 @@ bang eval "1 + 2"
 # → 3
 ```
 
-This grabs the latest [GitHub Release](https://github.com/phibkro/bang/releases)
-binary and drops it in `~/.local/bin`. The binary is native and links only glibc
-+ libgcc_s, so any mainstream glibc-based Linux runs it (no runtime dependencies to
-install).
+This detects your platform, grabs the matching latest
+[GitHub Release](https://github.com/phibkro/bang/releases) asset, and drops it in
+`~/.local/bin`. The binary is native and self-contained: the Linux builds link only
+glibc + libgcc_s (glibc 2.26+, so any mainstream distro from ~2018 on) with no runtime
+dependencies to install.
 
 > **Releases start at the first version tag.** Until one is cut there is nothing to
-> download — use the build-from-source path below. Only x86_64 Linux has a prebuilt
-> binary today (a darwin build is a planned follow-up); on any other platform the
-> installer errors out and points you here.
+> download — use the build-from-source path below. Prebuilt binaries cover
+> **x86_64-linux, aarch64-linux, and aarch64-darwin (Apple Silicon)**; on any other
+> platform (Intel macOS, Windows) the installer errors out and points you here.
 
 ## Run a bang program
 

@@ -15,15 +15,20 @@ BIN_NAME="bang"
 err() { echo "install.sh: $*" >&2; exit 1; }
 
 # --- platform detection ------------------------------------------------------------
-# Linux x86_64 only for now (the only triple release.yml builds). Anything else is a
-# clear error, not a silent wrong download.
+# The three triples release.yml's matrix builds. Anything else is a clear error, not a
+# silent wrong download. `uname -m` reports `arm64` on macOS and `aarch64` on Linux for
+# the same ISA — both map to the aarch64 triple.
 os="$(uname -s)"
 arch="$(uname -m)"
 case "$os/$arch" in
   Linux/x86_64) triple="x86_64-linux" ;;
+  Linux/aarch64 | Linux/arm64) triple="aarch64-linux" ;;
+  Darwin/arm64 | Darwin/aarch64) triple="aarch64-darwin" ;;
   *)
-    err "unsupported platform '$os/$arch'. Prebuilt binaries are x86_64-linux only for now.
-     Build from source instead — see the README 'Run a bang program' section."
+    err "unsupported platform '$os/$arch'. Prebuilt binaries cover x86_64-linux,
+     aarch64-linux, and aarch64-darwin (Apple Silicon). For anything else (incl.
+     Intel macOS and Windows), build from source with Nix — see the README
+     'Run a bang program' section (or 'nix develop')."
     ;;
 esac
 

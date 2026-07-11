@@ -48,10 +48,10 @@ bang`) in `release.yml`. Per channel:
 
 | channel | feasible? | the work | blocker / note |
 |---|---|---|---|
-| **curl installer** | ✅ **SHIPPED** | `tools/install.sh` (platform-detect → GH Release asset → `~/.local/bin`) | x86_64-linux only today; errors loud on other platforms |
-| **GH Release x86_64-linux** | ✅ **SHIPPED** | `release.yml` (tag-triggered) + `release-artifact.sh` (strip + **de-nix the ELF interp** + smoke) | none — this is rung 0, live |
-| **GH Release aarch64-linux** | 🟡 **2-line change** | add a matrix row; Lean Tier-1 supports it (glibc 2.27+) | needs an aarch64 runner (GH-hosted arm64 exists) or QEMU/cross |
-| **GH Release aarch64-darwin** | 🟡 **matrix row** | add `macos-latest` (Apple Silicon); Lean Tier-1 | the FOD is x86_64-linux-gated in flake.nix — darwin uses the `nix develop -c lake build` path (what `release.yml` already does). Local darwin check machine exists (intel-Mac memory) |
+| **curl installer** | ✅ **SHIPPED (3 triples)** | `tools/install.sh` (platform-detect → GH Release asset → `~/.local/bin`) | covers x86_64-linux, aarch64-linux, aarch64-darwin; errors loud + names alternatives elsewhere |
+| **GH Release x86_64-linux** | ✅ **SHIPPED** | `release.yml` matrix row + `release-artifact.sh` (strip + **de-nix the ELF interp** + smoke) | none — live; smoke-verified locally |
+| **GH Release aarch64-linux** | ✅ **SHIPPED** | `release.yml` matrix row (`ubuntu-24.04-arm`); Lean Tier-1 (glibc 2.27+); same ELF de-nix path | untested-until-first-run (no arm64 runner in this lane); build path identical to x86_64 |
+| **GH Release aarch64-darwin** | 🟡 **SHIPPED, one honest gap** | `release.yml` matrix row (`macos-latest`, Apple Silicon); Lean Tier-1; `nix develop -c lake build` path (not the x86_64-gated FOD) | strip + smoke only — Mach-O dylib de-nixing (`install_name_tool`) is UNVERIFIED until the first darwin run; the run prints `otool -L` so a /nix/store leak shows. Loudly flagged |
 | **brew tap** | 🟡 rung 1 | a `homebrew-bang` tap repo w/ a formula pointing at the GH Release asset | trivial once ≥1 platform ships; Gleam's exact path |
 | **scoop / winget** | 🔴 rung 2 | Windows binary first | Lean *is* Tier-1 on Windows, but see §4 |
 | **npm-wrapped** | 🟡 rung 2 (assess) | wrapper pkg + per-platform `@bang/<triple>` optionalDeps | **78 MB × N platforms** on npm is heavy; supply-chain optics; defer |
@@ -61,15 +61,23 @@ bang`) in `release.yml`. Per channel:
 ## 3. THE RECOMMENDED LADDER
 
 ```
-rung 0  (v0.2, MOSTLY DONE)   curl installer + GH Release binary
-        ├── x86_64-linux ....... ✅ already ships (release.yml + install.sh)
-        ├── aarch64-linux ...... + one matrix row (Lean Tier-1)
-        └── aarch64-darwin ..... + one matrix row (Apple Silicon; Lean Tier-1)
-                                  → widen install.sh's platform `case` to match
+rung 0  (v0.2, DONE — 3-row matrix landed)   curl installer + GH Release binary
+        ├── x86_64-linux ....... ✅ ships + smoke-verified locally (release.yml + install.sh)
+        ├── aarch64-linux ...... ✅ matrix row (ubuntu-24.04-arm; Lean Tier-1) — untested until first run
+        └── aarch64-darwin ..... ✅ matrix row (macos-latest; Lean Tier-1) — strip+smoke only,
+                                  dylib de-nix UNVERIFIED until first darwin run (loud gap)
+                                  install.sh's platform `case` widened to all three
 rung 1  (fast-follow)         brew tap  (homebrew-bang, formula → GH Release asset)
 rung 2  (later / on-demand)   container image · npm-wrapped · Windows+scoop/winget
 never  (contributor lane)     nix develop  — the build-from-source path, unchanged
 ```
+
+**Verification path (operator):** the matrix is testable WITHOUT cutting a tag — a
+`workflow_dispatch` run (Actions → Release → Run workflow on `feat-release-matrix`)
+builds + smoke-tests + uploads all three as CI artifacts but does NOT publish a Release
+(the create step is tag-gated). Use that to prove the arm64 + darwin rows green before
+the first real tag. A cachix/magic-nix-cache layer would cut per-row cold-build cost but
+needs an auth secret — the operator's config step, not added here.
 
 **Rung-0 verdict:** the curl-installer + x86_64-linux binary is **already the front door**
 and correctly de-nixed. The single highest-leverage move is **widening the release matrix
@@ -80,9 +88,11 @@ Nix."
 
 ## 4. The three requested verdicts
 
-- **Rung-0 verdict** — Done and correct for x86_64-linux. It is NOT Nix-gated for the end
-  user (the binary is native; Nix is only the *build* substrate in CI). The gap is **breadth,
-  not existence**: two matrix rows away from the table-stakes 3-platform matrix.
+- **Rung-0 verdict** — Done across all three Tier-1 platforms (the matrix landed on
+  `feat-release-matrix`). It is NOT Nix-gated for the end user (the binary is native; Nix is
+  only the *build* substrate in CI). x86_64-linux is smoke-verified locally; the arm64 and
+  darwin rows are wired but untested until the first `workflow_dispatch`/tag run (the darwin
+  dylib-de-nix gap is the one loud caveat, see §5).
 - **Static-linking verdict** — **Not available.** Lean ships no musl/static-glibc target;
   the runtime dynamically links glibc. bang therefore **cannot** match Zig's "static tarball
   runs on every distro." The mitigation is already in place and sufficient: `release-artifact.sh`
@@ -93,32 +103,42 @@ Nix."
   downstream of a Windows binary that doesn't exist yet, (c) bang's audience (Lean/PL/agent
   users) skews non-Windows. Defer to post-1.0; revisit only if a concrete user asks.
 
-## 5. CI sketch (shape, not YAML)
+## 5. CI shape (LANDED on `feat-release-matrix`)
 
-`release.yml` already has the skeleton and a commented matrix-promotion block. The shape:
+`release.yml` now runs the 3-row matrix. The shape:
 
 ```
-on: push tags v*  (+ workflow_dispatch for dry-run, tag-gated publish)
-strategy.matrix:
-  - { os: ubuntu-latest,        triple: x86_64-linux  }   # ← live
-  - { os: ubuntu-24.04-arm,     triple: aarch64-linux }   # ← add (GH arm64 runner)
-  - { os: macos-latest,         triple: aarch64-darwin}   # ← add (Apple Silicon)
+on: push tags v*  (+ workflow_dispatch for dry-run — builds+uploads CI artifacts,
+                     does NOT publish a Release; the create step is tag-gated)
+strategy: fail-fast:false  (independent artifacts — one row's failure ≠ cancel the rest)
+matrix.include:
+  - { os: ubuntu-latest,    triple: x86_64-linux  }   # ← live, smoke-verified locally
+  - { os: ubuntu-24.04-arm, triple: aarch64-linux }   # ← GH arm64 runner
+  - { os: macos-latest,     triple: aarch64-darwin}   # ← Apple Silicon
 per row:
-  nix-installer → cache(elan+.lake) → `lake exe cache get` → `lake build bang`
-  → release-artifact.sh <ver> <triple>   (strip + de-nix + smoke on the stripped exe)
-  → upload asset  →  (tag only) gh release create --generate-notes
+  nix-installer → cache(elan+.lake, keyed per-triple) → `lake exe cache get`
+  → `lake build bang` → release-artifact.sh <ver> <triple>
+  → upload CI artifact  →  (tag only) create-Release-if-absent + upload asset
 ```
 
-The strip/de-nix/smoke steps in `release-artifact.sh` are **already platform-agnostic** (the
-header says so); darwin has no ELF interp to rewrite (Mach-O) — a small `case "$TRIPLE"` guard
-around the `patchelf` line handles that. `install.sh`'s platform `case` widens to match the
-three triples. No new machinery — three matrix rows and two `case` arms.
+`release-artifact.sh` guards the de-nix by `case "$TRIPLE"`: on `*-linux` it strips +
+patchelf-rewrites the ELF interpreter (the portability move); on `*-darwin` it strips +
+prints `otool -L` linkage (Mach-O has no ELF interp). **The one honest gap:** Mach-O
+dylib de-nixing (`install_name_tool` to rewrite any hardcoded `/nix/store/…*.dylib`) is
+NOT done — the exact dylib set a `bang` Mach-O carries is unverifiable without a darwin
+machine. The smoke set proves the binary is self-consistent ON the runner; the residual
+risk is a /nix/store dylib that resolves on the CI Mac but not on a stranger's — the
+`otool -L` dump in the build log exposes it, and both the release note and this section
+name it. If the first darwin run shows a leak, add the `install_name_tool` arm then.
+The tag-shared Release is created once (create-if-absent guard) and each row uploads
+its own asset with `--clobber`. `install.sh`'s platform `case` matches all three triples.
 
 ## 6. Proposed issues (do not file)
 
-1. **Widen the release matrix to aarch64-linux + aarch64-darwin** — promote `release.yml`'s
-   commented matrix; guard the `patchelf` line for Mach-O; extend `install.sh`'s platform case.
-   *The rung-0 completion; highest leverage.*
+1. ~~**Widen the release matrix to aarch64-linux + aarch64-darwin**~~ — ✅ **LANDED** on
+   `feat-release-matrix`: 3-row matrix, `patchelf` guarded for Mach-O, `install.sh` case
+   extended. Remaining: the operator dry-runs `workflow_dispatch` to prove the arm64 +
+   darwin rows, and closes the darwin dylib-de-nix gap if the first run shows a leak.
 2. **Homebrew tap (`phibkro/homebrew-bang`)** — formula pulling the GH Release asset; the
    Gleam pattern. Gated on issue 1 landing ≥1 asset. *Rung 1.*
 3. **Publish a container image** — `FROM debian:stable-slim` + the de-nixed binary; near-free
