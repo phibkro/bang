@@ -140,7 +140,7 @@ The repo already runs the top rung of the derivation ladder for run-outputs:
 `tools/check-examples.sh` (run every `main.bang`, diff stdout vs `expected.txt`; `--update NAME`
 re-bakes one oracle as a reviewable git diff). **36 example projects** exist, each a pre-verified
 `(program, expected-output)` pair. Plus a bang **TextMate grammar** generated from the parser
-tables (`site/bang.tmLanguage.json`, `tools/gen-tmgrammar.py`) already highlights ` ```bang `
+tables (`web/docs/bang.tmLanguage.json`, `tools/gen-tmgrammar.py`) already highlights ` ```bang `
 fences in the vocs site — highlighting cannot drift from the parser.
 
 **The pipeline** (a lesson's expected output IS its `expected.txt` — same SSoT move as the site):
