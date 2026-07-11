@@ -122,6 +122,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0102](0102-mutual-let-rec.md) | Accepted | Mutual `let rec … and …`: H2 tuple-of-thunks μ-knot (#97 item 2) | `let rec f : T1 = e1 and g : T2 = e2 … in body` generalizes ADR-0073's single-function | — / — | — / — | — | — |
 | [0103](0103-forall-generalization.md) | Accepted | ∀-generalization for bound-free self-recursive generics: a call-site-monomorphization pre-pass (the List-family door) | A bound-free self-recursive generic (`length : List a -> Int`, the whole List family: | — / — | — / — | — | — |
 | [0104](0104-host-io-environment.md) | Accepted | Host IO as effects + handlers, driven by an environment seam with record/replay conformance | Host IO (Console, Clock now; Fs, Net later) is an ORDINARY `effect` in the row, | — / — | — / — | — | — |
+| [0105](0105-effect-sound-trace-runtime-bound.md) | Accepted | effect_sound trace semantics: the runtime live-bound (Q14 ruling) | `effect_sound` (`Bang/Spec.lean:191`, a ◊2-block soundness theorem) was flagged with three | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 

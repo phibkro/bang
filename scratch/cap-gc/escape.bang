@@ -1,0 +1,3 @@
+let escaper = { state 42 in { get } } in
+let t = $($escaper) in
+$t

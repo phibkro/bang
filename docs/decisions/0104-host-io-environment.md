@@ -341,8 +341,98 @@ nearness) is NAMED but NOT shipped — a future design pass, §4.
 |---|---|---|
 | **wedge** | `Console` + `Clock` | THIS ADR + #126 — no resource handles, pure Sendable ops, host side ~3 lines of Lean IO; SIM + mechanism + the H1 reach ALL LANDED, ambient `Mod.op` dispatch (label-only, H1b nearness deferred) |
 | next | `Rand` | identical shape to `Choice.pick`; reuses the ndet-dst seeded handler as its sim. Free once the wedge lands |
-| next | `Fs` read-only | one resource kind (opaque-`Int` handle), fixed-map sim; deferred |
+| **next** | `Fs` (read+write+exists) | **LANDED (hostio-widen lane, §Addendum below)** — `readFile`/`writeFile`/`exists`, whole-file (no handle: the path IS the token), Sendable in+out, real fs round-trip + record/replay gated; the fixed-source sim + `listDir`/typed-errors deferred |
 | last | `Net` | ADR-0084 slice B; needs connection handles + (post-v1) `listen`/`accept` = the concurrency substrate |
+
+## Addendum — the Fs widening (hostio-widen lane, 2026-07-12)
+
+The `Fs` "next" tier LANDED, widening the host surface from Console/Clock to the filesystem.
+Deno-shaped, whole-file (no FD/handle crosses the boundary — the path IS the capability token).
+**Nothing in the seam, the kernel, `Spec.lean`, or the Frontend changed** — the widening is
+entirely `std/Io.bang` (one `effect` decl) + `Main.lean` (three driver arms + a trace-robustness
+fix). Re-gated: `just verify` exit 0; the axiom census byte-identical to the pre-Fs baseline
+(the ADR-0094 headline + all 25 entries unchanged); `test-hostio-seam.sh` 19→33 checks green.
+
+### The Fs shape (the v1 type-vocabulary constraint decided it)
+
+```
+pub effect Fs { readFile : Str -> Str, writeFile : Str * Str -> Unit, exists : Str -> Int }
+```
+
+- **In `std/Io.bang`, NOT a separate `std/Fs.bang`.** The task named `std/Fs.bang`; the design
+  note (§1, the survey this ADR ratifies) puts every host effect in ONE `std/Io.bang`, and that
+  won on two grounds: (a) the ambient spelling stays `Io.readFile`/`Io.writeFile` (consistent with
+  `Io.print`), where a separate module would give the uglier `Fs_Fs` qualified label + `Fs.readFile`
+  spelling; (b) row-attenuation is per-LABEL, not per-module — separate labels in one module are
+  already separately grantable (`--allow=Fs` grants Fs without Console). The `stdModules` list is
+  generic, so a second module was free to add — it just wasn't the better shape. `--allow=Fs`
+  resolves via the existing tail-match (`Io_Fs` ends in `_Fs`), no grant-parser change.
+
+- **`writeFile : Str * Str -> Unit` is ONE pair-typed argument, not two args.** v1 effect ops are
+  single-arg (ADR-0095 D3); the checker refuses `writeFile(p, b)` ("v1 supports at most 1
+  argument", TypeCheck.lean:1332). The surface spelling is `Io.writeFile((path, body))` — the
+  pair value `(path, body)` as the single argument. It lowers via `hostPerformS .one (pairS …)` →
+  `perform (vcap hostCapId ℓ) "writeFile" (pair p b)`; the driver's `hostServiceReal` splits the
+  pair back. (The `hostPerformS .two` lowering arm exists but is DEAD for host performs — the
+  checker rejects `.two`; the pair-as-one-arg path is the live one. Noted so a future reader
+  doesn't mistake `.two` for the writeFile path.) This is the first multi-component host payload.
+
+- **`exists : Str -> Int` returns 0/1, not a `Bool`.** No ergonomic Sendable Bool carrier survives
+  the trace round-trip as cleanly as a ground `Int`; every other host result is already ground
+  Int/Str/Unit, so an Int-predicate keeps the trace's `result` column uniformly ground (§3).
+
+- **DEFERRED (named, shapes known):** `listDir : Str -> [Str]` (needs an ergonomic Sendable
+  list-of-Str RESULT carrier that trace-serializes — the same sum-carrier a typed error channel
+  wants); a typed `readFile` error (`Result Str Err`) — v1 a missing/unreadable path FAILS LOUD
+  (the driver's `none` → the fail-loud terminal), and `Io.exists` is the v1 pre-check idiom.
+
+### The grant surface — per-LABEL, `fs:read`/`fs:write` deferred (and why it's not cheap)
+
+`--allow=Fs` grants all three Fs ops. **Deno's per-op `fs:read`/`fs:write` granularity was
+considered and REJECTED for v1 — it is not the cheap item the task hoped.** The seam grants by
+LABEL (`evalEHost`'s `hostLabels : List Nat`, checked `hostLabels.contains ℓ`); a per-OP grant
+would make the seam check op names too — a change to the PROVEN `evalEHost` (the B2 sibling whose
+whole point is byte-identical-to-`evalE`, drift-gated). Per-op scoping stays GRANT-SIDE policy in
+v1, matching the design note §2a's ruling for per-resource scoping ("the ROW tracks the effect,
+the grant scopes the resource; pushing paths/hosts into the type is deliberately out of scope").
+If wanted later, it rides the same future suspendable-engine door as the rest of the seam, or a
+grant-side op-filter that never touches the proof spine — its own slice, not this one.
+
+### The sim-mode ruling for Fs — the TRACE is the determinism source, not a sim map
+
+Under `--env=sim` there is **no per-op in-memory Fs MAP in v1**. A stateful sim (a `writeFile`
+updating what a later `readFile` returns) needs carried-param UPDATE (ADR-0092 D5, open) — the
+same wall the note (§1) named for a scripted `readLine`. So the honest v1 Fs determinism source is
+the **`--record`/`--replay` trace**, not a sim map: a real run records the `(label,op,payload,
+result)` sequence, and replay reproduces it on the pure oracle WITH THE FILE ABSENT. A program that
+wants an in-line sim installs its OWN `with Io_Fs as fs { readFile(p) => …, writeFile(pb) => (),
+exists(p) => 0 }` fixed-source clauses (documented in `std/Io.bang`), exactly as
+`hostio-echo/main.bang` does for Console — that program never reaches the driver. This is the
+"honest v1 within the wall" discipline; the fixed-source sim relaxes to a stateful map when D5
+lands (see §Revisit-if).
+
+### The trace-robustness fix (load-bearing for Fs, invariant #1)
+
+Fs surfaced a latent trace bug the Console wedge never hit: a `readFile` result routinely carries a
+`"` or a NEWLINE, and the pre-Fs loader sliced the result field with `takeWhile (· != '"')` — which
+would TRUNCATE at the first quote, and a newline in a value would split the ndJSON row. That is a
+silent record/replay DIVERGENCE — the exact false-green invariant #1 exists to forbid. Fixed
+structurally: `traceRow` now `jsonEscape`s payload/result (`"`→`\"`, `\`→`\\`, newline→`\n`, …), and
+`loadTraceResults` slices the field escape-aware (`takeJsonField`, an escape doesn't terminate) then
+`jsonUnescape`s. Also made result-parsing OP-DIRECTED (`parseTraceResult op s`): `readFile`/
+`readLine` ALWAYS yield a `Str`, so a file body of `"42"` replays as the Str "42", not the int 42
+(the old op-blind int-first parse was a latent Fs/readLine ambiguity). All three fixes are in
+`Main.lean` (the driver, not the seam); the round-trip is battery-gated (`fs-escaped-body-round-trips`,
+`fs-escaped-trace-one-row-per-op`).
+
+### Verified end-to-end (the real journey, not a stub)
+
+Run against a real `mktemp` jail (`test-hostio-seam.sh` §7): `Io.writeFile((path,body))` wrote the
+file to disk (`fs-real-file-on-disk`), `Io.exists`/`Io.readFile` round-tripped, output "hi"
+(`fs-real-write-read-stdout`); recording then DELETING the file then replaying reproduced "hi"
+byte-identically WITHOUT re-creating the file (`fs-replay-did-no-real-io` = absent) — the
+tested-stratum host handler conforming to the pure oracle, invariant #1 met over a real filesystem
+boundary. No-env and ungranted-label both fail loud to `escapedCap` (exit 5).
 
 ## Rejected
 

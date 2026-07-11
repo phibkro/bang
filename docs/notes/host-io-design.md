@@ -63,7 +63,7 @@ ret-shape; mutable-state sims (an Fs tracking an in-memory file map) want carrie
 |---|---|---|---|
 | **wedge** | `Console` + `Clock` | no resource handles, pure Sendable ops, host side is 3 lines of Lean IO (`IO.println`/`(← IO.monoMsNow)`); Clock is the canonical "same program, different answer per run" — its trace is one `Int` | S |
 | next | `Rand` | *identical shape to `Choice.pick`* — reuses the ndet-dst seeded handler as its SIM; the host handler is `IO.rand`. Free once the wedge lands | S |
-| next | `Fs` read-only | one resource kind, read side only (no write-ordering/durability semantics); sim = fixed file-map | M |
+| next | `Fs` (read+write+exists) | **LANDED (hostio-widen lane, 2026-07-12 — see ADR-0104 §Addendum)**: `readFile`/`writeFile`/`exists`, whole-file (NO handle — the path is the token, so this row's opaque-`Int`-handle framing was unneeded for the whole-file surface); `writeFile : Str * Str -> Unit` is ONE pair-arg (`Io.writeFile((p,b))`, single-arg ops D3); sim = the record/replay TRACE (not a fixed map — a stateful map wants D5); `listDir`/typed-errors deferred | M |
 | last | `Net` | ADR-0084 slice B verbatim; needs connection handles + (post-v1) `listen`/`accept` multiplexing = the concurrency substrate (ADR-0030/0101) | L |
 
 **Rejected.** *(a) IO in the prelude* — ambient authority; `main`'s row stops being its manifest.

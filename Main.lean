@@ -606,21 +606,75 @@ partial def strToVal (s : String) : Val :=
 disjoint, ADR-0104 §2 — so op-name dispatch is unambiguous). Unknown op ⇒ `none` (fail-loud). -/
 def hostServiceReal (op : Bang.OpId) (payload : Val) : IO (Option Val) := do
   match op with
-  | "print"    => match asString payload with
-                  | some s => IO.println s; pure (some .vunit)
-                  | none   => pure none                       -- print of a non-Str ⇒ fail-loud
-  | "readLine" => let line ← (← IO.getStdin).getLine
-                  pure (some (strToVal (line.dropRightWhile (· == '\n'))))
-  | "now"      => let ms ← IO.monoMsNow; pure (some (.vint (Int.ofNat ms)))
-  | _          => pure none
+  | "print"     => match asString payload with
+                   | some s => IO.println s; pure (some .vunit)
+                   | none   => pure none                       -- print of a non-Str ⇒ fail-loud
+  | "readLine"  => let line ← (← IO.getStdin).getLine
+                   pure (some (strToVal (line.dropRightWhile (· == '\n'))))
+  | "now"       => let ms ← IO.monoMsNow; pure (some (.vint (Int.ofNat ms)))
+  -- ── Fs (ADR-0104 §Scope "next" tier, hostio-widen lane) — whole-file read/write + exists. All
+  -- Sendable in/out (Str/Unit/Int); NO FD crosses the boundary (the path IS the token). ──
+  | "readFile"  => match asString payload with
+                   | some p => match ← (IO.FS.readFile ⟨p⟩ |>.toBaseIO) with
+                               | .ok contents => pure (some (strToVal contents))
+                               | .error _     => pure none     -- missing/unreadable ⇒ fail-loud (v1 has no sum-typed error carrier; Io.exists is the pre-check idiom)
+                   | none   => pure none                       -- readFile of a non-Str path ⇒ fail-loud
+  | "writeFile" => match payload with                          -- the (Str,Str) pair the `.two` lowering built (ADR-0104 §4)
+                   | .pair pathV bodyV =>
+                       match asString pathV, asString bodyV with
+                       | some p, some body => match ← (IO.FS.writeFile ⟨p⟩ body |>.toBaseIO) with
+                                              | .ok _    => pure (some .vunit)
+                                              | .error _ => pure none   -- unwritable (bad dir, perms) ⇒ fail-loud
+                       | _, _              => pure none         -- either half non-Str ⇒ fail-loud
+                   | _ => pure none                             -- writeFile payload not a pair ⇒ fail-loud
+  | "exists"    => match asString payload with
+                   | some p => let ex ← (System.FilePath.pathExists ⟨p⟩ : IO Bool)
+                               pure (some (.vint (if ex then 1 else 0)))
+                   | none   => pure none                       -- exists of a non-Str path ⇒ fail-loud
+  | _           => pure none
+
+/-- JSON-escape a string for a trace field (ADR-0104 §3): `"` → `\"`, `\` → `\\`, newline → `\n`,
+carriage-return → `\r`, tab → `\t`. Load-bearing for `Fs.readFile` (hostio-widen lane) — a file body
+routinely contains a `"` or a newline, and the OLD `takeWhile (· != '"')` loader would TRUNCATE such
+a result on replay (a silent record/replay divergence = the exact false-green invariant #1 forbids).
+`jsonUnescape` (below) is its inverse; the ndJSON row is now a well-formed JSON string, one row per
+line, so a value's own newline never splits the row. -/
+def jsonEscape (s : String) : String :=
+  s.foldl (init := "") (fun acc c =>
+    acc ++ match c with
+      | '"'  => "\\\""
+      | '\\' => "\\\\"
+      | '\n' => "\\n"
+      | '\r' => "\\r"
+      | '\t' => "\\t"
+      | c    => c.toString)
+
+/-- The inverse of `jsonEscape` (ADR-0104 §3): consume a `\`-escape as ONE char, everything else
+verbatim. A trailing lone `\` (malformed) is dropped. Used by `loadTraceResults` after it slices the
+`"…"`-delimited field respecting escapes. -/
+partial def jsonUnescape (s : String) : String :=
+  let rec go (cs : List Char) (acc : String) : String :=
+    match cs with
+    | '\\' :: 'n'  :: rest => go rest (acc.push '\n')
+    | '\\' :: 'r'  :: rest => go rest (acc.push '\r')
+    | '\\' :: 't'  :: rest => go rest (acc.push '\t')
+    | '\\' :: '"'  :: rest => go rest (acc.push '"')
+    | '\\' :: '\\' :: rest => go rest (acc.push '\\')
+    | '\\' :: []           => acc
+    | c :: rest            => go rest (acc.push c)
+    | []                   => acc
+  go s.toList ""
 
 /-- One recorded trace row (ADR-0104 §3): a satisfied host perform, ndJSON. All fields Sendable
 (`op`/`payload`/`result` — `label`/`id` are `Nat`), so it serializes faithfully. Payload/result are
-rendered via `valPretty` (the SAME rendering the run oracle uses) — for the wedge (Str/Int/Unit)
-`valPretty` is injective enough to replay by POSITION (the row order IS the replay prefix). -/
+rendered via `valPretty` then JSON-ESCAPED (`jsonEscape`) — so a `Fs.readFile` result carrying a `"`
+or a newline stays ONE well-formed row, replayable by POSITION (the row order IS the replay prefix).
+`valPretty` on the wedge shapes (Str/Int/Unit + the `writeFile` (Str,Str) pair payload) is injective
+enough that positional replay reproduces the run (host-io-design §3). -/
 def traceRow (req : Bang.EnvMachine.HostReq) (result : Val) : String :=
   "{\"label\":" ++ toString req.label ++ ",\"op\":\"" ++ req.op ++
-  "\",\"payload\":\"" ++ valPretty req.payload ++ "\",\"result\":\"" ++ valPretty result ++ "\"}"
+  "\",\"payload\":\"" ++ jsonEscape (valPretty req.payload) ++
+  "\",\"result\":\"" ++ jsonEscape (valPretty result) ++ "\"}"
 
 /-- The replay-prefix DRIVER (ADR-0104 §4). Runs `M` under `evalEHost` at the granted `hostLabels`
 with the response prefix built SO FAR (`rsRev`, reversed for O(1) append); on a host request, calls
@@ -676,24 +730,54 @@ def resolveAllow (effMap : List (String × Bang.EffectRow.Label)) (allow : Optio
         | none        => .error s!"--allow names '{nm}', which is not a declared effect in this program \
                           (declared: {String.intercalate ", " (effMap.map (·.1))})")
 
-/-- Parse a `--replay` trace's `result` fields, in order, into the response prefix the sim run
-consumes (ADR-0104 §3). A trace row is `{…,"result":"<valPretty>"}`; for the wedge the results are
-`()` (unit), an int, or a Str glyph-string, which `parseTraceResult` lifts back to a `Val`. The row
-ORDER is the replay prefix (positional), matching how record appended them. -/
-def parseTraceResult (s : String) : Option Val :=
-  if s == "()" then some .vunit
-  else match s.toInt? with
-    | some n => some (.vint n)
-    | none   => some (strToVal s)      -- a Str glyph-string (the only remaining Sendable wedge shape)
+/-- Parse a `--replay` trace's `result` field back to a `Val`, DISPATCHED BY OP (ADR-0104 §3,
+hostio-widen lane). The op name pins the result TYPE, so the parse can't guess wrong: `readLine`/
+`readFile` ALWAYS yield a `Str` (a file body of `"42"` replays as the Str "42", NOT the int 42 —
+the op-blind int-first parse was a latent Fs/readLine ambiguity); `now`/`exists` yield an `Int`;
+`print`/`writeFile` yield `Unit`. An unknown op falls back to the old shape-guess (unit → int → Str)
+so a hand-written trace still loads. The row ORDER is the replay prefix (positional). -/
+def parseTraceResult (op : Bang.OpId) (s : String) : Option Val :=
+  match op with
+  | "readLine" | "readFile" => some (strToVal s)                 -- ALWAYS a Str (never int-guessed)
+  | "now" | "exists"        => s.toInt?.map Val.vint             -- ALWAYS an Int
+  | "print" | "writeFile"   => some .vunit                       -- ALWAYS Unit
+  | _ =>
+    if s == "()" then some .vunit
+    else match s.toInt? with
+      | some n => some (.vint n)
+      | none   => some (strToVal s)
 
-/-- Extract the ordered `result` values from an ndJSON trace file's rows (one row per line). A line
-without a `"result":"…"` field is skipped (blank lines, trailing newline). ADR-0104 §3. -/
+/-- Take the chars of a JSON string body up to (not including) its closing `"`, treating a `\`-escape
+as TWO consumed chars so an escaped `\"` does NOT terminate the field (ADR-0104 §3). The raw
+(still-escaped) prefix is returned for `jsonUnescape` to decode. Because `traceRow` escapes newlines,
+the field can't contain a real `\n` either — one row stays one line. -/
+partial def takeJsonField (cs : List Char) : String :=
+  let rec go (cs : List Char) (acc : String) : String :=
+    match cs with
+    | '"'  :: _            => acc                       -- unescaped closing quote ⇒ field ends
+    | '\\' :: c :: rest    => go rest (acc.push '\\' |>.push c)  -- an escape: keep BOTH chars, don't terminate
+    | c :: rest            => go rest (acc.push c)
+    | []                   => acc                       -- malformed (no closing quote): take what we have
+  go cs ""
+
+/-- Slice a `"<key>":"<value>"` string field out of an ndJSON row, escape-aware
+(`takeJsonField`) + `jsonUnescape`d. `none` if the key is absent. Shared by `loadTraceResults`
+for both the `op` (dispatch key) and `result` (payload) fields. -/
+def jsonStrField (key line : String) : Option String :=
+  match line.splitOn ("\"" ++ key ++ "\":\"") with
+  | _ :: rest :: _ => some (jsonUnescape (takeJsonField rest.toList))
+  | _              => none
+
+/-- Extract the ordered `result` values from an ndJSON trace file's rows (one row per line). Each row
+supplies BOTH its `op` (the dispatch key that pins the result TYPE) and its `result` string; a row
+missing either is skipped (blank lines, trailing newline). The result is sliced escape-aware then
+`jsonUnescape`d before op-directed `parseTraceResult` — so a `Fs.readFile` result carrying
+`"`/newline/a bare integer round-trips faithfully (ADR-0104 §3, hostio-widen lane). -/
 def loadTraceResults (contents : String) : List Val :=
-  (contents.splitOn "\n").filterMap (fun line =>
-    let marker := "\"result\":\""
-    match (line.splitOn marker) with
-    | _ :: rest :: _ => parseTraceResult (rest.takeWhile (· != '"')).toString
-    | _              => none)
+  (contents.splitOn "\n").filterMap (fun line => do
+    let op     ← jsonStrField "op" line
+    let result ← jsonStrField "result" line
+    parseTraceResult op result)
 
 /-- The host-IO entry (ADR-0104): run a resolved `Prog` under the replay-prefix driver. Resolves
 `--allow` names→labels via the program's effect map, then drives `evalEHost`. Record and REPLAY share

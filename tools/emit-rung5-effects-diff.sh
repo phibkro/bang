@@ -27,11 +27,21 @@ trap 'rm -rf "$outdir"' EXIT
 #   calc/json/hostio-echo : FRONTEND lower-errors (BEFORE the emitter) — pre-existing, orthogonal.
 #   stage-swap            : a capability threaded as a first-class runtime VALUE (a vcap passed into
 #                           a closure as an argument) — no GC $val cap rep in v1 (rung-5+ wall).
+#   sched-*                : `drive`'s NINE-argument curried `let rec` (5 curried Step/Int params
+#                           plus round+acc) leaves a type variable unresolved for ADR-0103's
+#                           monomorphization pass at one of its self-calls — a frontend lower-error
+#                           orthogonal to the Sched EFFECT itself (the same wall calc/json hit on
+#                           unrelated polymorphic-use shapes, not a Sched-specific gap). Named here,
+#                           not investigated further — a compiler-side fix is out of this lane's
+#                           write scope (docs/notes/sched-library-demo.md §"the emission attempt").
 declare -A KNOWN_REFUSALS=(
   [calc]="frontend: unbound variable Ast"
   [json]="frontend: unresolved type variable"
   [hostio-echo]="frontend: host-IO perform not lowered here"
   [stage-swap]="first-class capability (vcap) threaded as a runtime value"
+  [sched-roundrobin]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
+  [sched-swap-dfs]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
+  [sched-seeded-lcg]="frontend: unresolved type variable (drive's curried self-calls, ADR-0103 monomorphization)"
 )
 
 echo "── building the rung4-shape emitter exe ──"

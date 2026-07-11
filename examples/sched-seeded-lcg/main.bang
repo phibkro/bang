@@ -1,0 +1,129 @@
+-- sched-seeded-lcg — the DST BRIDGE: the SAME driver as ../sched-roundrobin/, under
+-- a THIRD `Sched` handler whose `next` policy is a SEEDED PSEUDO-RANDOM function of
+-- the round counter (an LCG, the same `s*25+17 mod 65536` step ../dst-rounds-lcg/
+-- uses), rather than a hand-designed round-robin/DFS rule. This is
+-- `docs/notes/ndet-dst-design.md`'s "the scheduler IS a seeded handler" thesis
+-- applied to a real cooperative-task interleaving, not just a delivery-order coin:
+-- same seed ⇒ same sequence of `next` picks ⇒ the SAME interleaving, EVERY run — a
+-- concurrent bang program is replayable by construction, with no real IO and no
+-- recorded trace, because the only nondeterminism seam (`sched.next`) is a pure
+-- function closed over a constant seed (ADR-0101 §G6).
+--
+-- The seed is a plain `let`-bound Int CLOSED OVER by the handler clause (not a
+-- handler-carried mutable register — v1's `param` is read-only, ADR-0092 D5 open;
+-- ../../docs/notes/sched-library-demo.md §"stateless seed-splitting" is the same
+-- externalization ../dst-rounds-lcg/ and ndet-dst-design.md §5.1 already use).
+import Sched
+import Task
+
+-- LCG step (identical spelling to ../dst-rounds-lcg/main.bang's `step`).
+let rec lcgStep : Int -> Int ! {Div} = fun s =>
+  let t = s * 25 + 17 in t - (t / 65536) * 65536
+
+-- precomputed pick sequence (rounds 0..8 are the most this 3-task/3-step driver
+-- ever calls `sched.next`): a v1 handler clause is `ret`-shape ONLY (ADR-0095 D4)
+-- — a compute-then-return body calling the RECURSIVE `lcgStep` inline hits the
+-- ret-shape wall (`Div` is itself a row label the clause would need to perform
+-- before resuming). Precomputing the table OUTSIDE the handler and having the
+-- clause do plain arithmetic on an already-bound value is the honest v1 shape
+-- (identical to ../dst-rounds-lcg/'s single-call-per-round `step` usage — the
+-- difference here is the driver may call `next` up to 9 times, so the table is
+-- built once, closed over, and the clause just calls `Sched.lookup9`).
+let s0 = ($lcgStep) 12345 in
+let s1 = ($lcgStep) s0 in
+let s2 = ($lcgStep) s1 in
+let s3 = ($lcgStep) s2 in
+let s4 = ($lcgStep) s3 in
+let s5 = ($lcgStep) s4 in
+let s6 = ($lcgStep) s5 in
+let s7 = ($lcgStep) s6 in
+let s8 = ($lcgStep) s7 in
+
+handle
+  (let tid1 = sched.spawn(1) in
+   let tid2 = sched.spawn(2) in
+   let tid3 = sched.spawn(3) in
+   let t1 = ($(Task.makeTask)) tid1 3 in
+   let t2 = ($(Task.makeTask)) tid2 3 in
+   let t3 = ($(Task.makeTask)) tid3 3 in
+   -- drive: pop-one-step-per-round over a fixed 3-slot queue (ta/sa, tb/sb, tc/sc =
+   -- task-id/current-Step pairs). A finished slot (Fin) is skipped without consuming
+   -- a `sched.next` pick — the handler is only asked to choose among RUNNABLE tasks,
+   -- so the trace never "wastes" a round on a task that has nothing left to do.
+   let rec drive
+     : Int -> Step -> Int -> Step -> Int -> Step -> Int -> Int -> Int ! {Div, Sched_Sched}
+     = fun ta => fun sa => fun tb => fun sb => fun tc => fun sc => fun round => fun acc =>
+       match (sa : Step) {
+         Fin(u) -> match (sb : Step) {
+           Fin(v) -> match (sc : Step) {
+             Fin(w) -> acc,
+             More(kc) -> (let c1 = ($kc) () in
+                          let acc1 = acc * 10 + tc in
+                          ($drive) ta sa tb sb tc c1 (round + 1) acc1)
+           },
+           More(kb) -> (let b1 = ($kb) () in
+                        let acc1 = acc * 10 + tb in
+                        ($drive) ta sa tb b1 tc sc (round + 1) acc1)
+         },
+         More(ka) -> match (sb : Step) {
+           Fin(v) -> match (sc : Step) {
+             Fin(w) -> (let a1 = ($ka) () in
+                        let acc1 = acc * 10 + ta in
+                        ($drive) ta a1 tb sb tc sc (round + 1) acc1),
+             More(kc) ->
+               (let choice = sched.next(round) in
+                if choice == 0 then
+                  (let a1 = ($ka) () in
+                   let acc1 = acc * 10 + ta in
+                   ($drive) ta a1 tb sb tc sc (round + 1) acc1)
+                else
+                  (let c1 = ($kc) () in
+                   let acc1 = acc * 10 + tc in
+                   ($drive) ta sa tb sb tc c1 (round + 1) acc1))
+           },
+           More(kb) -> match (sc : Step) {
+             Fin(w) ->
+               (let choice = sched.next(round) in
+                if choice == 0 then
+                  (let a1 = ($ka) () in
+                   let acc1 = acc * 10 + ta in
+                   ($drive) ta a1 tb sb tc sc (round + 1) acc1)
+                else
+                  (let b1 = ($kb) () in
+                   let acc1 = acc * 10 + tb in
+                   ($drive) ta sa tb b1 tc sc (round + 1) acc1)),
+             More(kc) ->
+               (let choice = sched.next(round) in
+                if choice == 0 then
+                  (let a1 = ($ka) () in
+                   let acc1 = acc * 10 + ta in
+                   ($drive) ta a1 tb sb tc sc (round + 1) acc1)
+                else (if choice == 1 then
+                  (let b1 = ($kb) () in
+                   let acc1 = acc * 10 + tb in
+                   ($drive) ta sa tb b1 tc sc (round + 1) acc1)
+                else
+                  (let c1 = ($kc) () in
+                   let acc1 = acc * 10 + tc in
+                   ($drive) ta sa tb sb tc c1 (round + 1) acc1)))
+           }
+         }
+       }
+   in ($drive) tid1 t1 tid2 t2 tid3 t3 0 0)
+with Sched_Sched as sched {
+  spawn(n) => n,
+  -- the clause body is `ret`-shape (ADR-0095 D4): plain arithmetic (mod 3) on ONE
+  -- of the precomputed LCG steps closed over above, selected by the round counter.
+  -- `round` never exceeds 8 for this driver (3 tasks x 3 steps, at most one
+  -- `sched.next` call per round once ties become possible).
+  next(round) =>
+    if round == 0 then s0 - (s0 / 3) * 3 else
+    if round == 1 then s1 - (s1 / 3) * 3 else
+    if round == 2 then s2 - (s2 / 3) * 3 else
+    if round == 3 then s3 - (s3 / 3) * 3 else
+    if round == 4 then s4 - (s4 / 3) * 3 else
+    if round == 5 then s5 - (s5 / 3) * 3 else
+    if round == 6 then s6 - (s6 / 3) * 3 else
+    if round == 7 then s7 - (s7 / 3) * 3 else
+    s8 - (s8 / 3) * 3
+}

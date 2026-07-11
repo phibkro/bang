@@ -194,7 +194,9 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **backend** — B3 bignum multiply — factorial past 2^63 on WasmGC (#132) (`e6804ad6`)
 - **lint** — plan 013 slice 6 — dead-private fixit, preservation-gated (`84cb31c5`)
 - **cli** — bang emit — module-resolved WasmGC emit; json compiles + runs on wasmtime (#136) (`d1fb4758`)
+- **hostio** — widen the ADR-0104 host wedge from Console/Clock to Fs (read+write+exists) (`08a6b699`)
 - **frontend** — bare imported-effect names — the Mod_Eff ergonomics fix (`d3941d9e`)
+- **sched** — scheduler-as-handler as ordinary library code (ADR-0101 §G1 demo) (`cb021012`)
 - **frontend** — lift B011's v1 ctor-payload arity-2 cap (#144) (`f1f09bcf`)
 
 ### Fixes
