@@ -239,5 +239,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **elab** — #118 bare-fun-param hole gap — one-candidate-pins-the-hole dispatch (`25a99ad4`)
 - **modules** — the two #117 module-machinery gaps blocking trait-prelude migration (`b7e91ed2`)
 - **deriving** — #128 — type-qualify generated impl ctor names, doc the migration cost (`7de7ab12`)
+- **backend** — Euclidean division on both emit paths — compiled path now matches the oracle (#132) (`5f566fd9`)
 
 <!-- END GENERATED changelog -->
