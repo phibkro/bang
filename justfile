@@ -289,7 +289,7 @@ changelog:
 reference:
     python3 tools/gen-reference.py
 
-# Regenerate site/bang.tmLanguage.json — the TextMate grammar derived from the reified parser
+# Regenerate web/docs/bang.tmLanguage.json — the TextMate grammar derived from the reified parser
 # tables (opInfo/keywordRule/pIdent) in Bang/Frontend/Surface.lean. `--check` gates it in fitness.
 tmgrammar:
     python3 tools/gen-tmgrammar.py

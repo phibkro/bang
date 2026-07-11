@@ -4,7 +4,7 @@
 > command and confirm the expected result before moving on. If a STOP condition
 > occurs, stop and report — do not improvise. The reviewer maintains the index.
 >
-> **Drift check (run first)**: `git log --oneline -2 -- justfile .github/ site/ flake.nix`
+> **Drift check (run first)**: `git log --oneline -2 -- justfile .github/ web/docs/ flake.nix`
 > and compare "Current state" below against the live tree.
 
 ## Status
@@ -76,7 +76,7 @@ new tag.
 
 Create the workflow `site.yml` under `.github/workflows/`: on PRs/pushes touching `site/**` or `docs/**`; steps: checkout,
 setup bun (`oven-sh/setup-bun`), `bun install --frozen-lockfile` in `site/`, run the sync script
-if the build needs it, `bun run build` (read `site/package.json` scripts for the real name).
+if the build needs it, `bun run build` (read `web/docs/package.json` scripts for the real name).
 Handle the mermaid/chromium question per Current-state (prefer committed-SVG passthrough).
 **Verify**: you cannot run Actions locally — validate the workflow with
 `nix shell nixpkgs#actionlint -c actionlint .github/workflows/site.yml` (clean) AND prove the

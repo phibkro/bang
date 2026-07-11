@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# tool: role=gen couples=Bang/Frontend/Surface.lean,site/bang.tmLanguage.json runs-in=fitness
-"""Generate site/bang.tmLanguage.json — a TextMate grammar DERIVED from the reified parser tables.
+# tool: role=gen couples=Bang/Frontend/Surface.lean,web/docs/bang.tmLanguage.json runs-in=fitness
+"""Generate web/docs/bang.tmLanguage.json — a TextMate grammar DERIVED from the reified parser tables.
 
 Single source of truth (the generate rung of the derivation ladder):
   • Bang/Frontend/Surface.lean — the SAME reified tables the parser consults:
@@ -19,7 +19,7 @@ Real linguist/GitHub registration is POST-ADOPTION (a linguist PR is an outward 
 button) — this grammar drives editor/site highlighting (Shiki, tree-sitter's TextMate consumers,
 the slice-4 VS Code extension), NOT per-repo GitHub rendering.
 
-Usage:  gen-tmgrammar.py            regenerate site/bang.tmLanguage.json
+Usage:  gen-tmgrammar.py            regenerate web/docs/bang.tmLanguage.json
         gen-tmgrammar.py --check    exit 1 if the committed grammar != the regenerated one (fitness leg)
 """
 import json
@@ -39,7 +39,7 @@ _gr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_gr)
 
 SURFACE = ROOT / "Bang/Frontend/Surface.lean"
-OUT = ROOT / "site/bang.tmLanguage.json"
+OUT = ROOT / "web/docs/bang.tmLanguage.json"
 
 # ── Hand-written lexical residue (NOT in the reified tables) ──
 # TextMate regexes for the lexical layer the rule/op tables don't carry.
@@ -163,7 +163,7 @@ def main():
     if "--check" in sys.argv:
         current = OUT.read_text() if OUT.exists() else ""
         if current != content:
-            print("tmgrammar: STALE — site/bang.tmLanguage.json != regenerated. Run `just tmgrammar`.")
+            print("tmgrammar: STALE — web/docs/bang.tmLanguage.json != regenerated. Run `just tmgrammar`.")
             sys.exit(1)
         print("tmgrammar: OK — bang.tmLanguage.json ≡ the reified parser tables.")
         return

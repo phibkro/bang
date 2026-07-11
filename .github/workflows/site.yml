@@ -1,7 +1,7 @@
 name: Site
 
 # BUILD-ONLY validation for the vocs docs site — the pre-merge signal `pages.yml` doesn't
-# give (pages.yml triggers push-to-main only, so a PR touching site/** or docs/** currently
+# give (pages.yml triggers push-to-main only, so a PR touching web/docs/** or docs/** currently
 # gets no CI signal until after merge). This workflow never deploys and carries no `pages:`
 # permission; it exists purely to catch a broken site build before it lands. Mirrors
 # pages.yml's build step (same chromium fix for mmdc/mermaid-cli) — if that step's shape
@@ -12,11 +12,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "site/**"
+      - "web/docs/**"
       - "docs/**"
   pull_request:
     paths:
-      - "site/**"
+      - "web/docs/**"
       - "docs/**"
   workflow_dispatch:
 
@@ -37,7 +37,7 @@ jobs:
 
       - name: Build vocs docs site (validation only — output is not published)
         run: |
-          cd site
+          cd web/docs
           bun install --frozen-lockfile
           # mmdc (mermaid-cli) pre-renders diagrams to static SVG — needs a headless
           # browser; bun blocks postinstall, so install it explicitly (matches pages.yml).

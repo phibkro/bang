@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = join(siteDir, '..')
+const repoRoot = join(siteDir, '..', '..')
 const pagesDir = join(siteDir, 'src', 'pages')
 // Pre-rendered mermaid SVGs land here; vite copies site/public → the site root,
 // served under basePath. vocs does NOT rewrite markdown-image src with basePath
