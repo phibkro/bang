@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (51)
+## active (55)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -16,20 +16,24 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`calm-as-grade-survey.md`](calm-as-grade-survey.md) — CALM as a grade — can monotonicity be a coeffect in bang's row system?
 - [`categorical-architecture.md`](categorical-architecture.md) — The categorical reading of bang's architecture
 - [`compiler-as-dbms-survey.md`](compiler-as-dbms-survey.md) — Compiler-as-DBMS — design survey: the query-engine architecture for bang's tooling
+- [`copy-kit.md`](copy-kit.md) — Copy kit — pitching bang accurately and hook-worthily
 - [`ctr-design.md`](ctr-design.md) — Compute-then-return design map — lifting the ADR-0095 D4 ret-shape restriction (#44 exit gate)
 - [`design-space-map.md`](design-space-map.md) — Design-space map — the open language-design questions
 - [`dev-env.md`](dev-env.md) — Dev environment
 - [`development-lifecycle.md`](development-lifecycle.md) — bang-lang development lifecycle
 - [`distributed-story.md`](distributed-story.md) — The distributed-systems story — nondeterminism as an effect, the runtime as a handler
+- [`distribution-survey.md`](distribution-survey.md) — Distribution survey — a more accessible install story than "ride Nix"
 - [`dogfood-calc-findings.md`](dogfood-calc-findings.md) — Dogfood findings — a multi-module calculator written in bang
 - [`dogfood-json-findings.md`](dogfood-json-findings.md) — Dogfood findings — a JSON parser/printer written in bang
 - [`effect-algebra-survey.md`](effect-algebra-survey.md) — The algebra of effects and the effect-side lambda cube — design survey (R-series companion to R6)
 - [`effects-vs-cic.md`](effects-vs-cic.md) — Effects vs the Calculus of (Inductive) Constructions — additive or derivative?
 - [`emission-rung1-probe.md`](emission-rung1-probe.md) — Emission rung-1 probe — pure ⊥-row arithmetic → real `.wat`, run on wasmtime
 - [`emission-rung3-design.md`](emission-rung3-design.md) — Emission rung-3 design — transaction journal/rollback on Wasm (the ◊5.5 novelty rung)
+- [`explainer-series.md`](explainer-series.md) — Explainer series — the multi-sensory outline
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
 - [`god-file-seams.md`](god-file-seams.md) — God-file seam map — split proposal for `TypeCheck.lean`/`AbstractMachine.lean`
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
+- [`interactive-tour-design.md`](interactive-tour-design.md) — Interactive language tour + in-browser playground — design
 - [`kernel-substrate-survey.md`](kernel-substrate-survey.md) — Kernel-as-substrate — design survey: the verified semantic substrate + the profile ladder
 - [`lambda-cube-ascent-survey.md`](lambda-cube-ascent-survey.md) — Lambda-cube ascent — design survey (R6, ROADMAP §Pre-v1 research ladder)
 - [`laws-taxonomy.md`](laws-taxonomy.md) — The taxonomy of laws — model-shaped vs morphism-shaped, and where a property lives

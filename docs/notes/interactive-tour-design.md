@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Interactive language tour + in-browser playground — design
 
 **Status**: design probe (docs-only). Off main @ `16060b5f`, branch `design-interactive-tour`.
