@@ -44,6 +44,10 @@ root = "EmitMain"
 name = "txn-oracle-probe"
 root = "scratch.TxnOracleProbe"
 
+[[lean_exe]]
+name = "rung4-shape"
+root = "scratch.Rung4Shape"
+
 # Mathlib gives us the Finset semilattice. The rev MUST match lean-toolchain:
 # the simplest reliable pin is to pick a Mathlib release tag and set
 # lean-toolchain to the Lean version THAT TAG uses (read its own lean-toolchain).
