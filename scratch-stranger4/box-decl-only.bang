@@ -1,0 +1,2 @@
+data Box a = Mk(a) deriving (Eq)
+let x = 5 in x

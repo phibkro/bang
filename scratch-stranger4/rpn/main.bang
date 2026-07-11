@@ -1,0 +1,76 @@
+-- rpn — a reverse-Polish-notation calculator over a space-separated string.
+-- Exercises: strings (List Char), curried structural recursion, a user data
+-- type for the value stack, a custom `Fail` effect for the failure channels
+-- (stack underflow, divide-by-zero) THREADED THROUGH helpers as a typed
+-- capability, and the injected char stdlib (isDigit).
+--
+-- Input tokens: multi-digit non-negative integers and the operators + - * / .
+-- Example: "3 4 + 5 *"  ==  (3 + 4) * 5  ==  35.
+
+effect Fail { fail : Int -> Int }
+
+-- A stack of Ints. Named `Stack`, not the built-in List, so a match reads
+-- clearly. (An effect op named `Err`/`Ok` would clash with the prelude's
+-- Result constructors, hence `Fail`.)
+data Stack = Empty | Push(Int, Stack)
+
+-- A single character's code point.
+let code = {fun c => match (c : Char) { Char(n) -> n }}
+
+-- Apply one operator (given as its char code) to the top two stack entries.
+-- On underflow or divide-by-zero, perform `f.fail` — the handler decides what
+-- a failure evaluates to. A cap threaded as a parameter needs the whole thunk
+-- annotated `Thunk (Cap Fail -> …)`; an inline `(f : Cap Fail)` does not parse.
+let apply = ( {fun f => fun op => fun st => match (st : Stack) {
+  Empty       -> Empty,
+  Push(b, r1) -> match (r1 : Stack) {
+    Empty        -> let z = f.fail(1) in Empty,
+    Push(a, r2)  ->
+      if op == 43 then Push(a + b, r2)
+      else if op == 45 then Push(a - b, r2)
+      else if op == 42 then Push(a * b, r2)
+      else if op == 47 then (if b == 0 then (let z = f.fail(2) in Empty) else Push(a / b, r2))
+      else (let z = f.fail(3) in Empty)
+  }
+} } : Thunk (Cap Fail -> Int -> Stack -> Stack ! {Fail}) )
+
+-- Fold the token string left to right. `cur` is the number accumulating for
+-- the current token (-1 = "no digits seen yet"); a space or end flushes `cur`
+-- onto the stack; an operator applies immediately.
+let go = ( {fun f =>
+  let rec loop : Int -> Stack -> Str -> Stack ! {Div, Fail} =
+    fun cur => fun st => fun s => match (s : Str) {
+      SNil ->
+        if cur < 0 then st else Push(cur, st),
+      SCons(c, t) ->
+        let n = ($code) c in
+        if n == 32 then
+          (if cur < 0 then ($loop) (0 - 1) st t
+           else ($loop) (0 - 1) (Push(cur, st)) t)
+        else if (($isDigit) c) then
+          let base = if cur < 0 then 0 else cur in
+          ($loop) (base * 10 + (n - 48)) st t
+        else
+          let st2 = if cur < 0 then st else Push(cur, st) in
+          ($loop) (0 - 1) ((($apply) f) n st2) t
+    }
+  in $loop (0 - 1) Empty }
+  : Thunk (Cap Fail -> Str -> Stack ! {Div, Fail}) )
+
+-- The stack's top, or a failure if it is empty.
+let top = ( {fun f => fun st => match (st : Stack) {
+  Empty      -> f.fail(1),
+  Push(v, r) -> v
+}} : Thunk (Cap Fail -> Stack -> Int ! {Fail}) )
+
+-- eval : run the fold under a handler that maps every failure to (0 - code),
+-- so underflow -> -1, div-by-zero -> -2, then read the top.
+let eval = ( {fun src =>
+  handle
+    (let final = (($go) f) src in (($top) f) final)
+  with Fail as f { fail(c) => 0 - c }
+} : Thunk (Str -> Int ! {Div}) )
+
+-- "3 4 + 5 *" = (3+4)*5 = 35. (Other inputs: "10 2 /" = 5, "7 0 /" = -2
+-- div-by-zero, "1 +" = -1 underflow — swap the string in to try them.)
+let main = ($eval) "3 4 + 5 *"

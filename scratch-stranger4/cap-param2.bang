@@ -1,0 +1,3 @@
+effect Fail { fail : Int -> Int }
+let useIt = ( {fun e => e.fail(9)} : Thunk (Cap Fail -> Int ! {Fail}) )
+let main = handle (($useIt) err) with Fail as err { fail(c) => 0 - c }

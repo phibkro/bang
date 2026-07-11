@@ -1,0 +1,2 @@
+let rec double : Int -> Int = fun x => x + x
+let main = ($double) 21

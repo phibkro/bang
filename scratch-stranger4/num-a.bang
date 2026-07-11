@@ -1,0 +1,5 @@
+let rec numOf : Str -> Int ! {Div} = fun s => match s {
+  SNil -> 0,
+  SCons(c, t) -> (match c { Char(n) -> n - 48 }) + ($numOf) t
+}
+let main = ($numOf) "12"

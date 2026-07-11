@@ -1,0 +1,2 @@
+data BoxI = MkI(Int) deriving (Eq)
+let a = MkI(3) in let b = MkI(3) in if a == b then 1 else 0

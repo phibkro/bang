@@ -1,0 +1,2 @@
+data Box a = Mk(a) deriving (Eq)
+let a = Mk(3) in let b = Mk(3) in if a == b then 1 else 0
