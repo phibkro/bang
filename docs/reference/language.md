@@ -1186,4 +1186,5 @@ and docs can reference it durably.
 | `B006` | a data constructor is applied to the wrong number of arguments | — |
 | `B014` | a match's `_` wildcard arm is misplaced or covers nothing (issue #101) | yes |
 | `B015` | a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121) | yes |
+| `B016` | a top-level `let` with no `in` absorbed the next line as an application (issue #129) | yes |
 

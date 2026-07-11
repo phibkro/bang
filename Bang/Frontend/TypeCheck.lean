@@ -6,6 +6,7 @@ meta import Bang.Frontend.Surface
 meta import Bang.Core.Semantics     -- runTypedYieldsInt's #guards execute Source.eval (Trait.lean precedent)
 meta import Bang.Core.Grade         -- QTT.omega must be META-accessible for the #guards
 meta import Bang.Frontend.Format    -- lawInstancesOf (#60) reuses showSurf to render a law body to source text
+meta import Bang.Frontend.DiagCodes -- issue #129 regression #guard cross-checks the B016 registry code (a leaf, fan-in 0 — no cycle risk)
 public import Bang.Frontend.Surface
 public import Bang.Core.Typing
 public import Bang.Core.Grade      -- QTT (the concrete grade rig)
@@ -996,6 +997,28 @@ def nameHint : Surf → String
   | .var x => s!" ('{x}')"
   | _      => ""
 
+/-- Issue #129: a top-level `let name = e` with NO trailing `in` parses `e` with `pExpr` — the same
+juxtaposition-application grammar an ordinary call site uses (ADR-0046: the surface is one syntax,
+elaborated the same way everywhere; a bare newline carries no significance). So `let x = 3` ⏎
+`let y = 4` ⏎ `x + y`, though each line is individually a valid top-level `let` decl (ADR-0093 D5),
+folds `4` against the FOLLOWING line's leading token via `Surface.pAppLoop`'s left-associating
+application loop: `4 x` becomes `.app (.lit 4) (.var "x")` before `y`'s decl boundary is even
+found. A literal can never be a legitimate application callee (`3 x` never type-checks under ANY
+program), so this shape is an unambiguous absorption signal, not a guess (ADR-0046's "never a
+guess" bar) — the ordinary `app: callee is not a function` message just names no token because
+`nameHint`'s callee `f` here is `.lit _`, not `.var`. Detected structurally on the CALLEE spine
+(not the argument), so a legitimate `f x` where `f` itself elaborates to a non-function type still
+falls through to the generic message unlocated, exactly as before. -/
+def absorbedLetHint : Surf → Surf → String
+  | .lit n, .var y =>
+      s!" — '{n}' is a literal, never a callable; the next line's `{y}` looks like it was folded in "
+        ++ s!"as an application argument. A top-level `let` needs `in` to end its RHS on the SAME "
+        ++ s!"line (`let name = e in …`), or omit `in` and let each `let` be its own top-level "
+        ++ s!"declaration (ADR-0093) — but then EVERY line up to '{y}' must be a complete expression "
+        ++ s!"by itself, and a bare literal like '{n}' already is one. Check for a missing `in` right "
+        ++ s!"after '{n}', or a missing newline/`;` boundary."
+  | _, _ => ""
+
 -- Termination: the rank (synth = 0, check = 1) breaks the `check t → synth t` subsumption tie, as
 -- in the spike; every other call is on a structural subterm of the `Surf`.
 mutual
@@ -1097,7 +1120,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
           assignC n (.arr .omega A B)
           let _ ← checkSV Γ a A
           return (B, φ)
-      | _          => throw s!"app: callee is not a function{nameHint f}"
+      | _          => throw s!"app: callee is not a function{nameHint f}{absorbedLetHint f a}"
   | .binopS op a b => do
       let _ ← checkSV Γ a .int; let _ ← checkSV Γ b .int
       return (.F .omega (binopResTy op), botR)
@@ -1375,7 +1398,7 @@ def checkSC (Γ : NCtx) (e : Surf) (expected : ICTy) : Infer Row :=
           let _ ← checkSV Γ a A
           let _ ← subsumeAppC bigFuel B expected
           return φ
-      | _          => throw s!"app: callee is not a function{nameHint f}"
+      | _          => throw s!"app: callee is not a function{nameHint f}{absorbedLetHint f a}"
   | e, expected => do
       let (B, φ) ← synthSC Γ e
       let _ ← unifyC bigFuel B expected                 -- HM subsumption (was structural `B = expected`)
@@ -5955,6 +5978,19 @@ unit test of the fallback, decoupled from any actual program). -/
 -- `app: callee is not a function` — applying a plain Int variable names it.
 #guard (match checkAndLower "let f = 3 in f 5" with
         | .error (m, _) => (Bang.Surface.locateInMsg "let f = 3 in f 5" m).map (·.loc) == some "1:5"
+        | .ok _ => false)
+-- issue #129: a top-level `let` with no `in` absorbs the next line's leading token as a juxtaposition
+-- application (`4 x` from `let x = 3` ⏎ `let y = 4` ⏎ `x + y`). The retrofitted `absorbedLetHint`
+-- fires (the `looks like it was folded in` anchor B016 keys on) AND `locateInMsg` finds a real span
+-- for the literal callee — was a spanless, uncoded message before this fix (the exact regression).
+#guard (match checkAndLower "let x = 3\nlet y = 4\nx + y" with
+        | .error (m, _) => (m.splitOn "looks like it was folded in as an application argument").length > 1
+        | .ok _ => false)
+#guard (match checkAndLower "let x = 3\nlet y = 4\nx + y" with
+        | .error (m, _) => (Bang.Surface.locateInMsg "let x = 3\nlet y = 4\nx + y" m).map (·.loc) == some "2:9"
+        | .ok _ => false)
+#guard (match checkAndLower "let x = 3\nlet y = 4\nx + y" with
+        | .error (m, _) => Bang.DiagCodes.codeForMsg m == some "B016"
         | .ok _ => false)
 -- `match: scrutinee is not a sum` — matching a plain Int variable names it.
 #guard (match checkAndLower "let x = 3 in match x { Left(a) -> a, Right(b) -> b }" with
