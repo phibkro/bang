@@ -4453,25 +4453,28 @@ def strPrelude : List Decl :=
     .dataD "Str"  [] [("SNil", []), ("SCons", [.tName "Char", .tName "Str"])] ]
 
 /-- The built-in GENERIC prelude: the universal tagged-sum types, injected before every program so
-`Some`/`None`/`Ok`/`Err` resolve with NO declaration (enabled by generic data — ADR-0079 — plus
-annotation-free introduction — ADR-0081/#55). `Option a` is nullable/`Maybe`; `Result e a` is
-Rust-style success/error (`Ok` = success), two type params (the v1 arity-≤2 ceiling, ADR-0079).
-`Either e a` is NOT here: it IS the built-in binary sum `e + a` — `Left`/`Right`/`match` are already
-reserved surface primitives for it (Surface.pIdent), so `Either` needs no data decl (one construct per
-problem — the isos below convert between `Result`/`Option` and this built-in sum). `List a` is
-DELIBERATELY NOT here (ADR-0103's own residual finding, not fixed by this pass): its NATURAL ctor
-names `Nil`/`Cons` collide, as an UNCONDITIONAL injection, with SEVERAL pre-existing corpus fixtures
-that independently chose the SAME bare names for their OWN differently-named list-shaped `data`
-decls (`listProg`'s `data IntList = Nil | Cons(…)`, confirmed live: ADR-0099 ambiguous-bare-ctor
-errors cascade the moment `List`'s `Nil`/`Cons` become globally visible). `take`/`drop`
-(`Prelude.bang`) still work standalone or against a program's OWN `data List a` — only the
-convenience of a KERNEL-PROVIDED `List` (so `Cons(…) : List Int` resolves with zero declaration,
-matching `Option`/`Result`) is deferred; see the ADR-0103 implementation report. Each type here is
-filtered out (like `Str`/`Char`) when the user redeclares it. Library over `data` — NO kernel
-primitive (invariant #5). -/
+`Some`/`None`/`Ok`/`Err`/`Nil`/`Cons` resolve with NO declaration (enabled by generic data —
+ADR-0079 — plus annotation-free introduction — ADR-0081/#55). `Option a` is nullable/`Maybe`;
+`Result e a` is Rust-style success/error (`Ok` = success), two type params (the v1 arity-≤2
+ceiling, ADR-0079). `Either e a` is NOT here: it IS the built-in binary sum `e + a` —
+`Left`/`Right`/`match` are already reserved surface primitives for it (Surface.pIdent), so `Either`
+needs no data decl (one construct per problem — the isos below convert between `Result`/`Option`
+and this built-in sum). `List a = Nil | Cons(a, List a)` ships here per ADR-0103 Amendment ①
+(operator-ratified 2026-07-11, superseding the ADR's own earlier "tried and reverted" Implementation
+note): ADR-0099's B012 (bare-ctor ambiguity, landed+machine-verified) plus this bucket's existing
+type-NAME shadow (D4, arity-agnostic — a user's own same-name `data List`/`data List a` simply wins,
+zero code) together make unconditional injection sound — a DIFFERENTLY-named list-shaped type using
+the SAME bare `Nil`/`Cons` ctor names now gets a loud, local, one-line-fix B012 ambiguity error
+instead of silently breaking (see `docs/notes/listdecl-injection-design.md` for the full witness
+set). Costs zero runtime fuel for programs that never construct/match a `List` (a `data` decl is an
+elaboration-time table entry, not a `Config.run` step — only `Prelude.bang`'s mention-filtered
+VALUES, e.g. `take`/`drop`/`length`, cost a `letC`). Each type here is filtered out (like
+`Str`/`Char`) when the user redeclares it. Library over `data` — NO kernel primitive (invariant
+#5). -/
 def genericPrelude : List Decl :=
   [ .dataD "Option" ["a"]      [("None", []),           ("Some",  [.tName "a"])],
-    .dataD "Result" ["e", "a"] [("Err",  [.tName "e"]), ("Ok",    [.tName "a"])] ]
+    .dataD "Result" ["e", "a"] [("Err",  [.tName "e"]), ("Ok",    [.tName "a"])],
+    .dataD "List"   ["a"]      [("Nil",  []),           ("Cons",  [.tName "a", .tApp "List" (.one (.tName "a"))])] ]
 
 /-! ## Modules (ADR-0093 D2/D3/D4) — merge-to-flat, PURE half.
 
@@ -5307,12 +5310,17 @@ def preludeSigs : List (String × String) :=
     ("min", "Int -> Int -> Int"),
     ("max", "Int -> Int -> Int"),
     ("const", "a -> b -> a"),
+    ("id", "a -> a"),
     ("isDigit", "Char -> Unit + Unit"),
     ("isAlpha", "Char -> Unit + Unit"),
     ("toUpper", "Char -> Char"),
     ("toLower", "Char -> Char"),
     ("take", "Int -> List a -> List a"),
-    ("drop", "Int -> List a -> List a") ]
+    ("drop", "Int -> List a -> List a"),
+    ("length", "List a -> Int"),
+    ("append", "List a -> List a -> List a"),
+    ("head", "List a -> Option a"),
+    ("tail", "List a -> Option (List a)") ]
 
 /-- Auto-`use` the prelude into `p` (ADR-0098): merge a TRIMMED `preludeProg` — containing only the
 decls the program actually MENTIONS (`progUsesVar`) — in as a resolved module named `"Prelude"`,
@@ -6215,27 +6223,31 @@ unrelated meaning (`anfSplit`'s own `chole`-tolerant ANF placeholder for a still
 `.dotPerform` returner, e.g. plain `Int` arithmetic over a handler op's result) so "zero
 candidates" must stay a SILENT defer (an error there broke the `effect Two {…} handle
 two.a(3) + 1 …` corpus class — confirmed live, reverted to defer). -/
+-- ADR-0103 Amendment ①: `IntList`'s bare `Nil`/`Cons` now collide with the unconditionally
+-- injected `List a`'s SAME ctor names (B012 ambiguity) — qualified to `IntList_Nil`/`IntList_Cons`
+-- per the ratified migration (a local, one-line fix at each colliding fixture; ADR-0099's
+-- namespaced form, not a new mechanism).
 def eqTraitIntListProg (body : String) : String :=
   "data IntList = Nil | Cons(Int, IntList) " ++
   "trait Eq { fn eq(a, b) -> (Unit + Unit) law refl(a): a == a } " ++
   "impl Eq for IntList { fn eq(p, q) = match p { " ++
-  "Nil -> match q { Nil -> 0 == 0, Cons(hy, ty) -> 0 == 1 }, " ++
-  "Cons(hx, tx) -> match q { Nil -> 0 == 1, " ++
-  "Cons(hy, ty) -> let headEq = hx == hy in let tailEq = tx == ty in " ++
+  "IntList_Nil -> match q { IntList_Nil -> 0 == 0, IntList_Cons(hy, ty) -> 0 == 1 }, " ++
+  "IntList_Cons(hx, tx) -> match q { IntList_Nil -> 0 == 1, " ++
+  "IntList_Cons(hy, ty) -> let headEq = hx == hy in let tailEq = tx == ty in " ++
   "if headEq then tailEq else 0 == 1 } } } " ++ body
 
 -- RED-BEFORE (confirmed live pre-fix: "type mismatch" — `env.insts` never re-consulted once the
 -- elaborator's `.binopS` arm punted on the bare `fun` param's hole type). GREEN-AFTER: the ONE
 -- `Eq` impl targeting `IntList` (the other operand `l1`'s resolved type) pins the hole.
 def bareFunEqSrc118 :=
-  eqTraitIntListProg "let l1 = Cons(1, Cons(2, Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l1) then 1 else 0"
+  eqTraitIntListProg "let l1 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l1) then 1 else 0"
 #guard (match checkProg bareFunEqSrc118 with | .ok _ => true | _ => false)
 -- semantically correct, not just type-checking: `l1 == l1` is TRUE, and a genuinely DIFFERENT list
 -- compared against the same `compareIt` closure is FALSE — the fix dispatches to the REAL impl
 -- (a per-element recursive `Eq`), not a vacuous accept.
 #guard runTypedYieldsInt 400 bareFunEqSrc118 1
 def bareFunEqSrc118Diff :=
-  eqTraitIntListProg "let l1 = Cons(1, Cons(2, Nil)) in let l2 = Cons(9, Cons(9, Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l2) then 1 else 0"
+  eqTraitIntListProg "let l1 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in let l2 = IntList_Cons(9, IntList_Cons(9, IntList_Nil)) in let compareIt = {fun p => p == l1} in if ($(compareIt) l2) then 1 else 0"
 #guard runTypedYieldsInt 400 bareFunEqSrc118Diff 0
 
 -- REGRESSION GUARD for the fix's OWN wall (confirmed live during development — an earlier cut of
@@ -6318,25 +6330,30 @@ def intOrdProg (law : String) (body : String) : String :=
 Named constructors + named match, from source text, typed and run via the oracle. Recursive
 FUNCTIONS stay out of scope (fix + Div, a separate bullet) — the demos construct and destruct. -/
 
+-- ADR-0103 Amendment ①: `IntList`'s bare `Nil`/`Cons` collide with the unconditionally injected
+-- `List a` of the SAME ctor names — qualified to `IntList_Nil`/`IntList_Cons` (ADR-0099's
+-- namespaced form, the ratified one-line migration). The `.error _` guards below (missing-arm /
+-- unknown-ctor / arity-mismatch) are UNCHANGED: they already expect an error, and B012 ambiguity
+-- is still an error, so those keep testing what they tested.
 def listProg (body : String) : String :=
   "data IntList = Nil | Cons(Int, IntList) " ++ body
 
 -- construct + destruct a recursive value: head of Cons(7, Nil).
-#guard runTypedYieldsInt 400 (listProg "let s = Cons(7, Nil) in match s { Nil -> 0, Cons(h, t) -> h }") 7
+#guard runTypedYieldsInt 400 (listProg "let s = IntList_Cons(7, IntList_Nil) in match s { IntList_Nil -> 0, IntList_Cons(h, t) -> h }") 7
 -- arms are order-independent (name-keyed, not positional).
-#guard runTypedYieldsInt 400 (listProg "let s = Cons(7, Nil) in match s { Cons(h, t) -> h, Nil -> 0 }") 7
+#guard runTypedYieldsInt 400 (listProg "let s = IntList_Cons(7, IntList_Nil) in match s { IntList_Cons(h, t) -> h, IntList_Nil -> 0 }") 7
 -- nested destructuring: the SECOND element of Cons(7, Cons(9, Nil)).
 #guard runTypedYieldsInt 600 (listProg
-  "let s = Cons(7, Cons(9, Nil)) in match s { Nil -> 0, Cons(h, t) -> match t { Nil -> h, Cons(h2, t2) -> h2 } }") 9
+  "let s = IntList_Cons(7, IntList_Cons(9, IntList_Nil)) in match s { IntList_Nil -> 0, IntList_Cons(h, t) -> match t { IntList_Nil -> h, IntList_Cons(h2, t2) -> h2 } }") 9
 -- the data type DISPLAYS by its DECLARED name (issue #100's display-time re-fold), not the raw
 -- structural μ ADR-0069 decision 3's transparent-alias encoding produces underneath.
-#guard displayProg (listProg "Cons(7, Nil)") == "IntList"
+#guard displayProg (listProg "IntList_Cons(7, IntList_Nil)") == "IntList"
 -- fail-loud: a missing arm · an unknown ctor · payload-arity mismatch at the type level.
-#guard (match checkProg (listProg "let s = Nil in match s { Nil -> 0 }") with
+#guard (match checkProg (listProg "let s = IntList_Nil in match s { IntList_Nil -> 0 }") with
         | .error _ => true | _ => false)
-#guard (match checkProg (listProg "let s = Nil in match s { Nil -> 0, Snoc(h, t) -> h }") with
+#guard (match checkProg (listProg "let s = IntList_Nil in match s { IntList_Nil -> 0, Snoc(h, t) -> h }") with
         | .error _ => true | _ => false)
-#guard (match checkProg (listProg "Cons(7)") with | .error _ => true | _ => false)
+#guard (match checkProg (listProg "IntList_Cons(7)") with | .error _ => true | _ => false)
 
 /-! ### Validation ⑨a — ADR-0099: constructors are TYPE-namespaced (#108).
 
@@ -6365,11 +6382,15 @@ def collidingListsProg (body : String) : String :=
             && (m.splitOn "List (as 'List_Nil')").length > 1
         | .ok _ => false)
 -- w3: a bare ctor name only ONE in-scope type owns still resolves bare — the common (non-colliding)
--- case is untouched by namespacing. `L`/`LNil`/`LCons` has no cross-type collision with `IntList`.
+-- case is untouched by namespacing. `L`/`LNil`/`LCons` has no cross-type collision with `IntList`
+-- (distinct ctor names). `IntList`'s OWN `Nil`/`Cons` are qualified here (ADR-0103 Amendment ①):
+-- once `List a` ships unconditionally, they collide with `List`'s SAME bare names — this program's
+-- ORIGINAL point (an `L`-vs-`IntList` non-collision) is unaffected by that migration, so `L` stays
+-- bare while `IntList`'s ctors move to their qualified spelling.
 def nonCollidingListsProg (body : String) : String :=
   "data L = LNil | LCons(Int, L) data IntList = Nil | Cons(Int, IntList) " ++ body
 #guard runTypedYieldsInt 600 (nonCollidingListsProg
-  "let xs = Cons(7, Nil) in match xs { Nil -> 0, Cons(h, t) -> h }") 7
+  "let xs = IntList_Cons(7, IntList_Nil) in match xs { IntList_Nil -> 0, IntList_Cons(h, t) -> h }") 7
 
 /-! ### Validation ⑨b — HIGHER-ORDER constructor payloads (#45): a `Thunk (Int -> Int)` field.
 
@@ -7239,9 +7260,9 @@ witnessed-iso laws made real through `Source.eval`. -/
 auto-`use`d (ADR-0098; docs/notes/stdlib-prelude-survey.md §3 — the first slice, ordered by dogfood
 demand). Each is used FREE with no local `let`/declaration (the injection under test); the char-kit guards use
 `(Char 97)`-style ctor-application (a `Char` literal `'a'` desugars to the SAME `Char 97`, both are
-exercised — see the `let c = 'a'`-style guards below). No List entry ships in this slice — the survey
-found NO free injected generic `List a` exists (only per-program user `data List a` declarations,
-e.g. `monoidInt` above); the list-independent subset ships alone, see the design-finding note below. -/
+exercised — see the `let c = 'a'`-style guards below). The List family (`take`/`drop`/`length`/
+`append`/`head`/`tail`) ships separately below (Validation ⑨l) — it needed `List a` itself to become
+a free injected generic (ADR-0103 Amendment ①), landed after this slice. -/
 -- `fst`/`snd` — the dogfood-json TOP papercut. `p` a literal pair.
 #guard runTypedYieldsInt 400 "($fst) (3, 4)" 3
 #guard runTypedYieldsInt 400 "($snd) (3, 4)" 4
@@ -7258,6 +7279,13 @@ e.g. `monoidInt` above); the list-independent subset ships alone, see the design
 -- test-local `const` at ⑦b, proving the injected one generalizes the same way.
 #guard runTypedYieldsInt 400 "(($const) 5) 9" 5
 #guard runTypedYieldsInt 400 "(($const) 7) (1, 2)" 7
+-- `id x = x` — used at TWO distinct types in the SAME program (Int, then a pair): a non-recursive
+-- `pub let` (no self-call, no inline generic type annotation) rides ordinary let-generalization,
+-- unlike `head`/`tail` which need the ascribed-`let rec` shape (their body's OWN `match (xs : List
+-- a)` annotation is what needed the monomorphization pre-pass — `id`'s body has no such annotation).
+#guard runTypedYieldsInt 400 "($id) 5" 5
+#guard runTypedYieldsInt 400
+  "let n = ($id) 5 in let (a, b) = ($id) (3, 4) in n + a + b" 12
 -- `withDefault d o` — `Some` returns the payload, `None` returns the default (both arms, Option's
 -- two ctors — mirrors the `mapOption`/`mapResult` Err/Ok-both-arms discipline above).
 #guard runTypedYieldsInt 400 "(($withDefault) 0) (Some(9))" 9
@@ -7281,6 +7309,59 @@ e.g. `monoidInt` above); the list-independent subset ships alone, see the design
 -- `EffRow.isEmpty`/`.card` are NONCOMPUTABLE in the compiled `#guard` path — `decide (ρ = ∅)` is the
 -- computable emptiness idiom (rides Finset's `DecidableEq`), matching `showRow`'s own usage.
 #guard (match checkProg "3" with | .ok (_, ρ) => decide (ρ = ∅) | _ => false)
+
+/-! ### Validation ⑨l — the List family: `take`/`drop`/`length`/`append`/`head`/`tail`, ridden over
+the UNCONDITIONALLY injected `List a` (ADR-0103 Amendment ①, `genericPrelude`). Zero local `data
+List a` declaration anywhere below — the zero-declaration convenience the Amendment's Implementation
+note deferred, now landed. Each bound-free `let rec` entry (`take`/`drop`/`length`/`append`) needs an
+ANNOTATED call site to discover its monomorphic instantiation (ADR-0103 decision item 3); `head`/
+`tail` carry the same bound-free `let rec` ascription shape for the SAME reason even though neither
+self-recurses (a plain un-ascribed `pub let` leaves its inline `match (xs : List a)` annotation's
+free `a` unresolved — `monomorphizeLetRec` only visits `.letRecS` nodes). -/
+-- `length` — the empty list, a singleton, and a 3-element list (the self-recursive walk, all arms).
+#guard runTypedYieldsInt 400 "$length ((Nil : List Int) : List Int)" 0
+#guard runTypedYieldsInt 400 "$length ((Cons(7, Nil) : List Int) : List Int)" 1
+#guard runTypedYieldsInt 600
+  "$length ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int)" 3
+-- `take`/`drop` — zero declaration (ADR-0103's own residual gap, now closed): the FIRST slice
+-- (`examples/list-basics`) needed its own `data List a`; this doesn't.
+#guard runTypedYieldsInt 600
+  "$length (($take 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)" 2
+#guard runTypedYieldsInt 600
+  "$length (($drop 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)" 1
+-- `append` — the annotation anchors on `append`'s FIRST argument (the discovery site); the result
+-- (4 elements) proves both input lists' payloads survive the concatenation, in order.
+#guard runTypedYieldsInt 800
+  ("let xs = (Cons(1, Cons(2, Nil)) : List Int) in let ys = (Cons(3, Cons(4, Nil)) : List Int) in " ++
+   "$length ((($append (xs : List Int)) ys) : List Int)") 4
+-- `head` — `Some` on a non-empty list, `None` on `Nil` (both `Option` arms, TOTAL).
+#guard runTypedYieldsInt 400
+  "match ($head ((Cons(7, Nil) : List Int) : List Int)) { None -> 0 - 1, Some(v) -> v }" 7
+#guard runTypedYieldsInt 400
+  "match ($head ((Nil : List Int) : List Int)) { None -> 0 - 1, Some(v) -> v }" (0 - 1)
+-- `tail` — `Some` wraps the REST of the list (its length, not its head, distinguishes it from `head`
+-- returning a value directly); `None` on `Nil`.
+#guard runTypedYieldsInt 600
+  ("match ($tail ((Cons(7, Cons(8, Nil)) : List Int) : List Int)) " ++
+   "{ None -> 0 - 1, Some(t) -> $length (t : List Int) }") 1
+#guard runTypedYieldsInt 400
+  "match ($tail ((Nil : List Int) : List Int)) { None -> 0 - 1, Some(t) -> $length (t : List Int) }" (0 - 1)
+-- a DIFFERENTLY-named list-shaped type with the SAME bare `Nil`/`Cons` ctor names collides with the
+-- injected `List` (B012, ADR-0099) — the ratified migration cost, not a silent break (qualified
+-- form still resolves, `IntList_Nil`/`IntList_Cons`, mirroring Validation ⑨a's `collidingListsProg`).
+#guard (match checkProg "data IntList = Nil | Cons(Int, IntList) Nil" with
+        | .error m => (m.splitOn "ambiguous constructor 'Nil'").length > 1
+        | .ok _ => false)
+#guard runTypedYieldsInt 400
+  ("data IntList = Nil | Cons(Int, IntList) let xs = IntList_Cons(7, IntList_Nil) in " ++
+   "match xs { IntList_Nil -> 0, IntList_Cons(h, t) -> h }") 7
+-- a SAME-named user `data List a` still SHADOWS the injected one, zero-code (ADR-0098 D4's type-name
+-- shadow, generalized to `List` — the arity-agnostic finding `listdecl-injection-design.md` w10
+-- established): the user's OWN `Cons`/`Nil` win, and `length`'s SELF-RECURSIVE body still resolves
+-- to the injected prelude `length`, riding the SAME `List` shape the user just (re)declared.
+#guard runTypedYieldsInt 600
+  ("data List a = Nil | Cons(a, List a) " ++
+   "$length ((Cons(1, Cons(2, Nil)) : List Int) : List Int)") 2
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic
