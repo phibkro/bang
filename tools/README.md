@@ -55,7 +55,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/post-edit-check.sh`](hooks/post-edit-check.sh) | `hook` | `check.sh` | Claude Code PostToolUse hook for Edit/Write of Lean files |
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 
-## test (18)
+## test (19)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -72,6 +72,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`test-cli.sh`](test-cli.sh) | `verify` | — | the non-interactive gate for `bang`'s TOP-LEVEL CLI hygiene (issue #66/#67) |
 | [`test-explain.sh`](test-explain.sh) | `verify` | `Bang/Frontend/DiagCodes.lean` | the CLI gate for stable diagnostic codes + `bang explain` (plan 013 slice 5) |
 | [`test-fmt.sh`](test-fmt.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang fmt` (issue #58's CLI half) |
+| [`test-hostio.sh`](test-hostio.sh) | `verify` | `Main.lean`, `Bang/Backend/EnvMachine.lean`, `std/Io.bang` | the CLI-surface gate for the host-IO wedge (ADR-0104) |
 | [`test-law.sh`](test-law.sh) | `verify` | — | the non-interactive gate for `bang test` (issue #60's CLI wiring) |
 | [`test-lint.sh`](test-lint.sh) | `verify` | `examples/*/main.bang` | the non-interactive gate for `bang lint` (#82 item 2) |
 | [`test-modules.sh`](test-modules.sh) | `verify` | `Main.lean`, `Bang/Frontend/TypeCheck.lean` | the non-interactive gate for ADR-0093 (file-modules, `import`/`use`/`pub`) |
