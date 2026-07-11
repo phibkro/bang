@@ -119,6 +119,16 @@ x + 1 in x` collapses to `let x = 1; x = x + 1 in x` — verified, not assumed: 
 grammar imposes no duplicate-name restriction, and sequential scoping through the
 `;`-chain matches the nested chain's binder-shadowing exactly).
 
+### Binding a function (issue #121)
+
+`let f = e in body` binds a VALUE — `e` must be a value, not a bare computation.
+`fun x => …` is a COMPUTATION (a "returner") in bang's CBPV core (ADR-0007), so
+binding one directly — `let f = fun x => … in body`, the single most natural thing a
+functional programmer reaches for — is a type error (`B015`): a bare function is a
+computation, not a value. **Suspend it in a thunk** to bind it: `let f = {fun x => …}
+in body`; **force it to call it**: `($f) arg`. This applies at every `let`, not only
+top-level ones. `examples/caesar` follows this idiom throughout (`encode`/`decode`).
+
 ### Lexical notes
 
 **Line comments**: `--` runs to end-of-line (or end-of-input) and is dropped by the
@@ -208,14 +218,48 @@ function calls elsewhere use curried application.
 
 `bang test [<file.bang>]` (issue #60) discovers every trait-law instance in a decls-only
 program and sample-checks it (30 Int-tuple samples, a fixed seed for CI-reproducible
-runs), reporting PASS/FAIL/ERROR/STUCK per law. **Known v1 limitation (tracked as issue
-#74):** a law's INVOCATION of its trait op through `bang test`'s discovery/dispatch path
-currently errors (`app: callee is not a function`) rather than reaching PASS/FAIL — the
-grammar above is stable and build-gated (every form is a `lake build`-verified `#guard` in
-`Bang/Frontend/Surface.lean`), but end-to-end law EXECUTION through the CLI is not yet
-wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws to
-discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch
-path that is still open.
+runs), reporting PASS/FAIL/ERROR/STUCK per law — end-to-end law EXECUTION through the CLI
+works (issue #74, closed): a law body written in the SUPPORTED shape (its trait ops
+reached only through the overloaded operator — `add a b == add b a`, not `add(a, b)` by
+name) samples and PASSes/FAILs for real.
+
+**A law body may not call its trait op BY NAME** (`eq(x, x)` or curried `add a b` where
+`add`/`eq` name a trait op directly): ADR-0068 wires trait-op resolution EXCLUSIVELY
+through the overloaded operator (`==`/`<`/`+`/…), never a direct call — even a sibling op
+of the SAME impl cannot call another op of that impl by name. `bang test` diagnoses this
+UP FRONT with a specific, fixable message (`law 'Trait.law' calls trait op 'op' directly —
+trait ops are invoked ONLY through their overloaded operator in v1 (ADR-0068; …)`) rather
+than the opaque runtime crash (`app: callee is not a function`) an earlier version gave.
+
+## Deriving (ADR-0097, issue #109)
+
+A `data` decl's trailing `deriving (Eq, Ord)` clause generates the `trait`/`impl`
+pair a hand-written `Eq`/`Ord` implementation would otherwise need — same-tag
+structural fold for `Eq` (AND over every payload slot; different tag ⇒ `false`),
+decl-order tag comparison + lexicographic payload for `Ord`:
+
+```
+data Point = Pt(Int, Int) deriving (Eq, Ord)
+let p1 = Pt(3, 4) in let p2 = Pt(3, 4) in p1 == p2   -- true, no hand-written impl
+```
+
+The generated `impl` is indistinguishable from a hand-written one — `==`/`<` dispatch
+through it exactly like any other trait op, usable directly in a `match`. A
+SELF-RECURSIVE carrier (`data IntList = Nil | Cons(Int, IntList) deriving (Eq)`) is
+supported: the fold recurses through the SAME knot-based `let rec` dispatch (#112) a
+hand-written recursive impl rides.
+
+**Only `Eq`/`Ord` derive today** (tier 1 — their ops are binop-dispatched, so a
+derived impl is usable the moment it exists, no separate name-callability wiring).
+**A GENERIC carrier cannot derive** (`data Box a = Mk(a) deriving (Eq)` is refused
+LOUD at the decl site, naming the limitation): `deriving` emits ONE `impl` at decl
+time, targeting the carrier's own (necessarily monomorphic) type — a generic `data`
+has no single monomorphic type to target, and unlike a `let rec`'s call-site-driven
+monomorphization (ADR-0103), a `deriving` clause has no call site to discover an
+instantiation set from. Work around it with a monomorphic alias data decl (`data BoxI
+= Mk(Int) deriving (Eq)`) or a hand-written `impl` for the specific instantiation
+needed. See `examples/derive-eq-ord/`, `examples/trait-recursive-eq/`,
+`examples/trait-recursive-ord/`.
 
 ## User-defined effects (ADR-0095, issue #44 Stage 7)
 
@@ -290,6 +334,31 @@ effect performed) is fine (`fetch(n) => n * 10`, `fetch(n) => n + 1`); a clause 
 **Effect op names may not collide with a built-in effect's own operations** (`get`/`put`/
 `new`/`read`/`write`/`raise`/`handle` are reserved at the op-name position) — a collision is
 a loud parse/elaboration error naming the conflict, not a silent shadow.
+
+**Passing a capability to a helper function (issue #90/#123).** The `net`/`h` bound by
+`as` is an ordinary VALUE once bound — it can be passed to a helper like any other
+argument, typed `Cap Name` (`Cap Net`, naming the effect). The catch: a bare inline
+ascription on the PARAMETER (`fun e => (e : Cap Fail).fail(9)`) does not parse as a cap
+type there — `Cap Name` must be spelled inside the enclosing THUNK's own arrow-and-row
+annotation, cap position included, exactly like every other parameter type:
+
+```
+effect Fail { fail : Int -> Int }
+let apply = ( {fun cap => fun x => cap.fail(x)} : Thunk (Cap Fail -> Int -> Int ! {Fail}) )
+handle (($apply) net) 9 with Fail as net { fail(n) => n }
+-- ⟹ 9 — `net`, threaded as an ordinary Cap-typed argument, still dispatches by identity
+```
+
+Every effect row a threaded cap's own ops perform must appear in the THUNK's row (`!
+{Fail}` above) — the same row-composition rule an inline `handle` needs, just spelled
+once on the helper instead of at the call site.
+
+**An effect or op name that collides with a prelude Result/Option constructor name**
+(`Err`/`Ok`/`Some`/`None`) is read as that CONSTRUCTOR at an ascription site, not the
+effect — `(e : Cap Err)` parses `Err` as the `Result` constructor, not an effect name,
+and fails with the unrelated-looking `constructor 'Err' expects 1 argument(s)`. Name a
+custom effect something that does not collide with a prelude constructor (e.g. `Fail`,
+not `Err`) until effect/op names get their own namespace (tracked, issue #123).
 
 See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/` (now reading its
 carried param through `param` for real, issue #87), and
@@ -1092,4 +1161,5 @@ and docs can reference it durably.
 | `B013` | a nested `let rec` forward-references a sibling `let rec` bound later in the same block | yes |
 | `B006` | a data constructor is applied to the wrong number of arguments | — |
 | `B014` | a match's `_` wildcard arm is misplaced or covers nothing (issue #101) | yes |
+| `B015` | a top-level `let` binds a bare `fun` directly — it must be thunked (issue #121) | yes |
 

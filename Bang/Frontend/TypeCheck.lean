@@ -3591,6 +3591,29 @@ def monomorphizeLRBindings (gen : List (String × GenData)) (aliases : List (Str
   | f + 1, .cons n t e rest  => do return .cons n t (← monomorphizeLetRec gen aliases f e) (← monomorphizeLRBindings gen aliases f rest)
 end
 
+/-- #124: the `.matchD` scrutinee-type-mismatch error, teaching-phrase aware. `foldDataTyOrRaw`
+(the general-purpose renderer `bang holes`/`bang query type`/`hover` ALSO depend on — its raw
+`#N` markers are `Bang.Query.holesOf`'s OWN detection signal, `holeMarkersIn`'s textual scan —
+must NOT be changed to prose here; only THIS error-throw site's rendering is teaching-phrase'd,
+so the general fold stays byte-identical for every other caller). An unresolved position (`n ≥
+holeBase`, the same threshold `holesOf` itself uses) renders as a phrase naming the fix — ascribe
+the scrutinee — instead of the bare `#N` a stranger cannot act on (the #124 finding: a curried
+`let rec`'s LATER parameter falls through unascribed — `letRecS`'s elaboration arm only threads
+the declared type onto the OUTERMOST `.lam` binder, so a match on a later param's value lands
+here with an unresolved `paramHole`). -/
+def matchScrutineeTyErr (ctors : List (String × CtorInfo)) (gen : List (String × GenData))
+    (τ : VT) (dataName : String) (indefiniteArticle : Bool) : String :=
+  let rendered := foldDataTyOrRaw ctors gen τ
+  let isHole := match τ with | .tvar n => decide (n ≥ holeBase) | _ => false
+  let article := if indefiniteArticle then "a " else ""
+  if isHole then
+    s!"match scrutinee's type is undetermined here (an underdetermined position, shown as \
+'{rendered}' internally) — ascribe it, e.g. `match (s : {dataName}) \{ … }`, to pin the type \
+BEFORE the match (this is the common shape when a curried `let rec`'s LATER parameter is matched: \
+only the OUTERMOST param's declared type is threaded automatically)"
+  else
+    s!"match scrutinee is {rendered}, not {article}{dataName}"
+
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
 instance env, ctor intros + named matches through the data env (ADR-0069); every other
 constructor maps structurally (ENUMERATED — a new `Surf` form fails here until elaborated, the
@@ -3767,7 +3790,15 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       let e' ← elabS env Γ e
       match elabBind Γ e' env.effects with      -- report the RHS's REAL error, not a downstream unbound (#41)
       | .ok (some sch) => return .lett x e' (← elabS env ((x, sch) :: Γ) b)
-      | .ok none       => throw s!"let-binding '{x}': value is not a returner — force it (${x}) or bind a value"
+      | .ok none       =>
+          -- #121: a bare `fun` RHS is the single most common trigger of "not a returner" (a
+          -- functional programmer's most natural `let f = fun x => …`) — name the REAL fix (thunk
+          -- the RHS) instead of the generic `$x` suggestion, which doesn't even parse at this
+          -- position (`$` forces a THUNK to a value; a bare `fun` is already a computation, not a
+          -- thunk, so there is nothing here for `$` to force).
+          match e with
+          | .lam .. => throw s!"let-binding '{x}': a bare function is a computation (a \"returner\"), not a value — a top-level `let` binds a VALUE, so wrap it in a thunk: `let {x} = \{fun … => …}` (see `examples/caesar`)"
+          | _        => throw s!"let-binding '{x}': value is not a returner — wrap it in a thunk (\{…}), or bind a value"
       | .error m       => throw s!"let-binding '{x}': {m}"
   | Γ, .matchS s xl el xr er => do
       let s' ← elabS env Γ s
@@ -3853,10 +3884,10 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             match runInferV (synthSV Γ s') with
             | .ok τ =>
                 if ci0.params.isEmpty then
-                  if τ != vtyOf ci0.dataTy then throw s!"match scrutinee is {foldDataTyOrRaw env.ctors env.gen τ}, not {ci0.dataName}"
+                  if τ != vtyOf ci0.dataTy then throw (matchScrutineeTyErr env.ctors env.gen τ ci0.dataName false)
                 else match τ with
                      | .mu _ => pure ()
-                     | _     => throw s!"match scrutinee is {foldDataTyOrRaw env.ctors env.gen τ}, not a {ci0.dataName}"
+                     | _     => throw (matchScrutineeTyErr env.ctors env.gen τ ci0.dataName true)
             | .error e => throw s!"match scrutinee: {e}"
             -- order arms by ctor position (pure bookkeeping — no recursion below)
             let mut ordered : List (List String × Surf) := []
@@ -5250,7 +5281,18 @@ public def expandDerives (p : Prog) : Except String Prog := do
     for (dataName, derives) in p.derivesFor do
       match p.decls.find? (fun d => match d with | .dataD n _ _ => n == dataName | _ => false) with
       | none => throw s!"'deriving' names '{dataName}', which is not a 'data' decl in this program"
-      | some (.dataD _ _ cs) =>
+      -- #122: a GENERIC carrier (`ps` non-empty, e.g. `data Box a = …`) has no monomorphic
+      -- `Ty.tName dataName` for the generated `impl <Trait> for {dataName}` to target — `resolveName`
+      -- would hit its own `generic type needs type argument(s)` error at an impl site that names no
+      -- concrete instantiation. Refuse LOUD (ADR-0046) at the decl site instead of letting that
+      -- confusing downstream error surface — generic-carrier deriving is a real future slice
+      -- (monomorphize the fold PER INSTANTIATION, ADR-0097 §6 "Revisit if"), not implemented here.
+      | some (.dataD _ (_ :: _) _) =>
+          throw s!"cannot derive for '{dataName}': it is a GENERIC data type (has type parameters) — \
+v1's derive handler only targets MONOMORPHIC carriers (ADR-0097 §6). Either drop the type parameter \
+(a monomorphic alias like 'data {dataName}I = …(Int)…') or hand-write the 'impl' for the specific \
+instantiation you need."
+      | some (.dataD _ [] cs) =>
           for deriveName in derives do
             let ds ← expandOneDerive seenStopgapTraits dataName cs deriveName
             for d in ds do

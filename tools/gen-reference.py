@@ -276,6 +276,7 @@ def parse_examples(path):
 def render():
     surf = SURFACE.read_text()
     diagcodes = DIAGCODES.read_text()
+    typecheck = TYPECHECK.read_text()
     L = []
     L.append("# BANG — language reference")
     L.append("")
@@ -361,6 +362,22 @@ def render():
     L.append("x + 1 in x` collapses to `let x = 1; x = x + 1 in x` — verified, not assumed: the")
     L.append("grammar imposes no duplicate-name restriction, and sequential scoping through the")
     L.append("`;`-chain matches the nested chain's binder-shadowing exactly).")
+    L.append("")
+
+    if "a bare function is a computation" not in diagcodes:
+        sys.exit(
+            "gen-reference: the B015 'bare function' anchor not found in DiagCodes.lean — the "
+            "'Binding a function' note below is keyed off it (issue #121)."
+        )
+    L.append("### Binding a function (issue #121)")
+    L.append("")
+    L.append("`let f = e in body` binds a VALUE — `e` must be a value, not a bare computation.")
+    L.append("`fun x => …` is a COMPUTATION (a \"returner\") in bang's CBPV core (ADR-0007), so")
+    L.append("binding one directly — `let f = fun x => … in body`, the single most natural thing a")
+    L.append("functional programmer reaches for — is a type error (`B015`): a bare function is a")
+    L.append("computation, not a value. **Suspend it in a thunk** to bind it: `let f = {fun x => …}")
+    L.append("in body`; **force it to call it**: `($f) arg`. This applies at every `let`, not only")
+    L.append("top-level ones. `examples/caesar` follows this idiom throughout (`encode`/`decode`).")
     L.append("")
 
     if '"-\' :: \'-\' :: rest' not in surf and "'-' :: '-' :: rest" not in surf:
@@ -473,16 +490,66 @@ def render():
     L.append("asymmetry: trait/impl SIGNATURES use the paren-list form, law BODIES and ordinary")
     L.append("function calls elsewhere use curried application.")
     L.append("")
+    if "EXCLUSIVELY through the overloaded OPERATOR" not in typecheck:
+        sys.exit(
+            "gen-reference: the #74/ADR-0068 by-name-op-call diagnostic not found in "
+            "TypeCheck.lean — the Traits & Laws law-execution note below is keyed off it (issue #125)."
+        )
     L.append("`bang test [<file.bang>]` (issue #60) discovers every trait-law instance in a decls-only")
     L.append("program and sample-checks it (30 Int-tuple samples, a fixed seed for CI-reproducible")
-    L.append("runs), reporting PASS/FAIL/ERROR/STUCK per law. **Known v1 limitation (tracked as issue")
-    L.append("#74):** a law's INVOCATION of its trait op through `bang test`'s discovery/dispatch path")
-    L.append("currently errors (`app: callee is not a function`) rather than reaching PASS/FAIL — the")
-    L.append("grammar above is stable and build-gated (every form is a `lake build`-verified `#guard` in")
-    L.append("`Bang/Frontend/Surface.lean`), but end-to-end law EXECUTION through the CLI is not yet")
-    L.append("wired. `impl Add for (Int * Int) { fn add(p, q) = p }` — an impl with no laws to")
-    L.append("discharge — type-checks and runs today; it is specifically the discovered-LAW dispatch")
-    L.append("path that is still open.")
+    L.append("runs), reporting PASS/FAIL/ERROR/STUCK per law — end-to-end law EXECUTION through the CLI")
+    L.append("works (issue #74, closed): a law body written in the SUPPORTED shape (its trait ops")
+    L.append("reached only through the overloaded operator — `add a b == add b a`, not `add(a, b)` by")
+    L.append("name) samples and PASSes/FAILs for real.")
+    L.append("")
+    L.append("**A law body may not call its trait op BY NAME** (`eq(x, x)` or curried `add a b` where")
+    L.append("`add`/`eq` name a trait op directly): ADR-0068 wires trait-op resolution EXCLUSIVELY")
+    L.append("through the overloaded operator (`==`/`<`/`+`/…), never a direct call — even a sibling op")
+    L.append("of the SAME impl cannot call another op of that impl by name. `bang test` diagnoses this")
+    L.append("UP FRONT with a specific, fixable message (`law 'Trait.law' calls trait op 'op' directly —")
+    L.append("trait ops are invoked ONLY through their overloaded operator in v1 (ADR-0068; …)`) rather")
+    L.append("than the opaque runtime crash (`app: callee is not a function`) an earlier version gave.")
+    L.append("")
+
+    if "def pDerivingClause" not in surf:
+        sys.exit(
+            "gen-reference: `pDerivingClause` not found in Surface.lean — the Deriving "
+            "section below is keyed off it (issue #122)."
+        )
+    if "cannot derive for" not in typecheck:
+        sys.exit(
+            "gen-reference: the generic-carrier derive refusal not found in TypeCheck.lean — "
+            "the Deriving section's limitation note is keyed off it (issue #122)."
+        )
+    L.append("## Deriving (ADR-0097, issue #109)")
+    L.append("")
+    L.append("A `data` decl's trailing `deriving (Eq, Ord)` clause generates the `trait`/`impl`")
+    L.append("pair a hand-written `Eq`/`Ord` implementation would otherwise need — same-tag")
+    L.append("structural fold for `Eq` (AND over every payload slot; different tag ⇒ `false`),")
+    L.append("decl-order tag comparison + lexicographic payload for `Ord`:")
+    L.append("")
+    L.append("```")
+    L.append("data Point = Pt(Int, Int) deriving (Eq, Ord)")
+    L.append("let p1 = Pt(3, 4) in let p2 = Pt(3, 4) in p1 == p2   -- true, no hand-written impl")
+    L.append("```")
+    L.append("")
+    L.append("The generated `impl` is indistinguishable from a hand-written one — `==`/`<` dispatch")
+    L.append("through it exactly like any other trait op, usable directly in a `match`. A")
+    L.append("SELF-RECURSIVE carrier (`data IntList = Nil | Cons(Int, IntList) deriving (Eq)`) is")
+    L.append("supported: the fold recurses through the SAME knot-based `let rec` dispatch (#112) a")
+    L.append("hand-written recursive impl rides.")
+    L.append("")
+    L.append("**Only `Eq`/`Ord` derive today** (tier 1 — their ops are binop-dispatched, so a")
+    L.append("derived impl is usable the moment it exists, no separate name-callability wiring).")
+    L.append("**A GENERIC carrier cannot derive** (`data Box a = Mk(a) deriving (Eq)` is refused")
+    L.append("LOUD at the decl site, naming the limitation): `deriving` emits ONE `impl` at decl")
+    L.append("time, targeting the carrier's own (necessarily monomorphic) type — a generic `data`")
+    L.append("has no single monomorphic type to target, and unlike a `let rec`'s call-site-driven")
+    L.append("monomorphization (ADR-0103), a `deriving` clause has no call site to discover an")
+    L.append("instantiation set from. Work around it with a monomorphic alias data decl (`data BoxI")
+    L.append("= Mk(Int) deriving (Eq)`) or a hand-written `impl` for the specific instantiation")
+    L.append("needed. See `examples/derive-eq-ord/`, `examples/trait-recursive-eq/`,")
+    L.append("`examples/trait-recursive-ord/`.")
     L.append("")
 
     if "handleCustomS" not in surf or "def pDecl" not in surf:
@@ -563,6 +630,31 @@ def render():
     L.append("**Effect op names may not collide with a built-in effect's own operations** (`get`/`put`/")
     L.append("`new`/`read`/`write`/`raise`/`handle` are reserved at the op-name position) — a collision is")
     L.append("a loud parse/elaboration error naming the conflict, not a silent shadow.")
+    L.append("")
+    L.append("**Passing a capability to a helper function (issue #90/#123).** The `net`/`h` bound by")
+    L.append("`as` is an ordinary VALUE once bound — it can be passed to a helper like any other")
+    L.append("argument, typed `Cap Name` (`Cap Net`, naming the effect). The catch: a bare inline")
+    L.append("ascription on the PARAMETER (`fun e => (e : Cap Fail).fail(9)`) does not parse as a cap")
+    L.append("type there — `Cap Name` must be spelled inside the enclosing THUNK's own arrow-and-row")
+    L.append("annotation, cap position included, exactly like every other parameter type:")
+    L.append("")
+    L.append("```")
+    L.append("effect Fail { fail : Int -> Int }")
+    L.append("let apply = ( {fun cap => fun x => cap.fail(x)} : Thunk (Cap Fail -> Int -> Int ! {Fail}) )")
+    L.append("handle (($apply) net) 9 with Fail as net { fail(n) => n }")
+    L.append("-- ⟹ 9 — `net`, threaded as an ordinary Cap-typed argument, still dispatches by identity")
+    L.append("```")
+    L.append("")
+    L.append("Every effect row a threaded cap's own ops perform must appear in the THUNK's row (`!")
+    L.append("{Fail}` above) — the same row-composition rule an inline `handle` needs, just spelled")
+    L.append("once on the helper instead of at the call site.")
+    L.append("")
+    L.append("**An effect or op name that collides with a prelude Result/Option constructor name**")
+    L.append("(`Err`/`Ok`/`Some`/`None`) is read as that CONSTRUCTOR at an ascription site, not the")
+    L.append("effect — `(e : Cap Err)` parses `Err` as the `Result` constructor, not an effect name,")
+    L.append("and fails with the unrelated-looking `constructor 'Err' expects 1 argument(s)`. Name a")
+    L.append("custom effect something that does not collide with a prelude constructor (e.g. `Fail`,")
+    L.append("not `Err`) until effect/op names get their own namespace (tracked, issue #123).")
     L.append("")
     L.append("See `examples/handle-custom-tracer/`, `examples/handle-custom-resume/` (now reading its")
     L.append("carried param through `param` for real, issue #87), and")
