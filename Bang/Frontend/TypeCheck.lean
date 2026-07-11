@@ -1884,6 +1884,147 @@ def resolveTy (gen : List (String × GenData)) (aliases : List (String × Ty)) (
     (effects : List (String × EffectInfo) := []) : Except String Ty :=
   resolveTyG gen aliases effects 1000 [] none t
 
+/-! ### Display-time μ re-fold (issue #100)
+
+A `data` decl's closed μ-type (`ci.dataTy` / `monoData`'s output) is what a checked expression's
+type actually carries — `showVTy`'s raw `(mu. (Unit + (Int * #0)))` is technically correct but
+illegible; a user wrote `List Int`, never a μ. This is the INVERSE of elaboration (ADR-0069):
+given a candidate `VT`, find the `data` decl (monomorphic OR generic) whose encoding it matches,
+and print the declared name (+ resolved args) instead. Never a GUESS — an unmatched μ (an
+anonymous/kernel-level recursive type with no backing `data` decl) still falls back to the raw
+`showVTy` rendering unchanged; this is purely ADDITIVE legibility over what already displays. -/
+
+-- `selfFree`/`unifyDataTy`/`showBoundArg`/`foldDataTy`/`foldDataTyOrRaw` all live in ONE `mutual`
+-- group below (a doc comment must attach to the first DEF inside `mutual`, never precede the
+-- `mutual` keyword itself — a Lean parse rule, not a style choice): `unifyDataTy` calls itself
+-- structurally, `foldDataTy` calls `unifyDataTy` and (via `showBoundArg`) itself (nested data
+-- types fold too), and `selfFree`/`selfFreeC` are called from `unifyDataTy`.
+mutual
+/-- Does this `VT`/`CT` contain NO raw `.tvar` (an escaped de-Bruijn self-reference)? Guards
+`unifyDataTy`'s bare-param case (`.tName p, v`) below — since unification runs OUTSIDE any μ
+binder, any `.tvar` reaching that level is dangling, never a genuine closed argument; without this
+guard a NON-recursive decl's bare-param ctor (`Option a`'s `Some(a)`, template `Unit + a`)
+over-matches a DIFFERENT recursive decl's closed μ body (`List Int`'s `Unit + (Int × #0)`, binding
+`a := (Int × #0)` — a value that still carries the dangling `#0`) — the exact false-positive #100's
+fold must refuse (fall through to raw `showVTy`, never a WRONG name). -/
+partial def selfFree : VT → Bool
+  | .tvar _   => false
+  | .sum a b  => selfFree a && selfFree b
+  | .prod a b => selfFree a && selfFree b
+  | .mu _     => true   -- a NESTED μ CAPTURES its own `.tvar 0` (De Bruijn) — closed from OUR level regardless of what's inside
+  | .U _ b    => selfFreeC b
+  | _         => true
+partial def selfFreeC : CT → Bool
+  | .F _ a     => selfFree a
+  | .arr _ a b => selfFree a && selfFreeC b
+
+partial def unifyDataTy (selfName : String) : Ty → VT → Option (List (String × VT))
+  -- self-recursion (`resolveTyG`'s NULLARY-self case): the template's `tApp selfName params`
+  -- became `.tVar 0` at monomorphization time (the μ-bound var, NOT re-wrapped in a nested `.mu`)
+  -- — tried BEFORE the generic `.tName`/`.tApp` cases below since `argsAreParams` self-recursion
+  -- is a MORE specific match than a bare param would be.
+  | .tApp n _,   .tvar 0      => if n == selfName then some [] else none
+  | .tName p,    v            => if selfFree v then some [(p, v)] else none
+  | .tInt,       .int         => some []
+  | .tUnit,      .unit        => some []
+  | .tSum a b,   .sum c d     => (· ++ ·) <$> unifyDataTy selfName a c <*> unifyDataTy selfName b d
+  | .tProd a b,  .prod c d    => (· ++ ·) <$> unifyDataTy selfName a c <*> unifyDataTy selfName b d
+  | .tMu a,      .mu c        => unifyDataTy selfName a c
+  | .tVar i,     .tvar j      => if i == j then some [] else none
+  | _,           _            => none
+
+/-- Render a resolved param binding (from `unifyDataTy`) — recurses through `foldDataTy` so a
+NESTED data type (`Option (List Int)`) folds at every level, not just the outermost. -/
+partial def showBoundArg (ctors : List (String × CtorInfo)) (gen : List (String × GenData))
+    (v : VT) : String :=
+  foldDataTyOrRaw ctors gen v
+
+/-- The actual fold: try every MONOMORPHIC `data` decl first (direct structural equality against
+`ci.dataTy`, deduped by `dataName` since every ctor of the same decl carries an identical
+`dataTy`), then every GENERIC decl (`gen`, ADR-0069 bite-1) via `unifyDataTy` against each ctor's
+OWN template with the OUTER μ substituted in for self — a match names the decl + its resolved args
+(recursively folded, `List (List Int)` renders fully). `none` when nothing backing this `VT`
+exists (an anonymous/kernel μ, e.g. `impl Add for (Int * Int)`'s product — never `data`-declared,
+correctly untouched). Monomorphic decls are tried BEFORE generic ones — a monomorphic decl's
+`dataTy` is a closed literal `VT`, cheaper and unambiguous to check first; a generic decl's
+unification is only attempted when nothing closed already matched. -/
+partial def foldDataTy (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (τ : VT) :
+    Option String :=
+  match τ with
+  | .mu body =>
+      -- monomorphic: any ctor's `dataTy` (params = []) that equals this μ names its decl.
+      match ctors.find? (fun (_, ci) => ci.params.isEmpty && vtyOf ci.dataTy == τ) with
+      | some (_, ci) => some ci.dataName
+      | none =>
+        -- generic: try each decl's ctors as ONE right-nested sum-of-products template (mirrors
+        -- `monoData`'s own `sumOfTys (openPays.map prodOfTys)` construction) unified against `body`.
+        gen.findSome? (fun (dname, gd) =>
+          if gd.params.isEmpty then none else
+          let template := sumOfTys (gd.ctors.map (fun c => prodOfTys c.2))
+          match unifyDataTy dname template body with
+          | none      => none
+          | some σ    =>
+              -- every declared param must have resolved (a template mentioning fewer params than
+              -- declared is a decl the fold doesn't recognize — fall through to the raw μ, never a
+              -- partial/misleading name).
+              let args := gd.params.mapM (fun p => σ.lookup p)
+              -- a multi-word rendered arg (`List Int`) is PARENTHESIZED as an application argument
+              -- (`Result Unit (List Int)`, not the ambiguous `Result Unit List Int`) — mirrors
+              -- `Format.showTy`'s own `parenIf need .atom` convention for `.tApp` args.
+              let parenArg (s : String) : String := if s.contains ' ' then s!"({s})" else s
+              args.map (fun vs => s!"{dname} " ++ String.intercalate " " (vs.map (fun v => parenArg (showBoundArg ctors gen v))))
+        )
+  | _ => none
+
+/-- `foldDataTy`, falling back to a STRUCTURAL walk (never the raw `showVTy` wholesale) when `τ`
+itself doesn't match a decl — mirrors `showVTy`'s OWN recursive shape (`.sum`/`.prod`/`.U`/etc)
+but recurses through `foldDataTyOrRaw`/`foldCTyOrRaw` at every position instead of `showVTy`/
+`showCTy`, so a data type BURIED inside a non-matching outer shape still folds (`Thunk!{Div} Int ->
+List Int -> Int`, a `let rec`'s `.U`-wrapped arrow type — `safeAt`'s own signature — needs its
+`.arr`-nested `List Int` to fold even though the OUTER `.U` itself is not itself a `data` type).
+Falling back to bare `showVTy` at the top would lose the fold the instant ONE non-data wrapper
+(`.U`, an arrow, a bare product) sits between the checked type and the buried `data` position —
+exactly `safeAt`'s case. `showVTy`/`showCTy` themselves stay UNCHANGED (the raw structural
+printer; `display`'s decl-free source path and the internal `#guard`s asserting kernel-level
+shapes with no backing `data` decl keep their exact existing behavior — this function is the ONLY
+decl-aware entry, never called from `showVTy`/`showCTy`'s own recursion). -/
+partial def foldDataTyOrRaw (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (τ : VT) :
+    String :=
+  match foldDataTy ctors gen τ with
+  | some name => name
+  | none =>
+    match τ with
+    | .int      => "Int"
+    | .unit     => "Unit"
+    | .sum a b  => s!"({foldDataTyOrRaw ctors gen a} + {foldDataTyOrRaw ctors gen b})"
+    | .prod a b => s!"({foldDataTyOrRaw ctors gen a} * {foldDataTyOrRaw ctors gen b})"
+    | .U φ b    => let r := showRow φ; s!"Thunk{if r.isEmpty then "" else s!"!\{{r}}"} {foldCTyOrRaw ctors gen b}"
+    | .cap ℓ    => s!"Cap {ℓ}"
+    | .mu a     => s!"(mu. {foldDataTyOrRaw ctors gen a})"   -- an unmatched μ (no backing decl) still folds its INSIDE
+    | .tvar n   => s!"#{n}"
+
+/-- `showCTy`'s DECL-AWARE sibling: recurses through the arrow/returner shape exactly like
+`showCTy` (a returner displays as its value type; an arrow prints domain -> codomain), folding
+EVERY value position through `foldDataTyOrRaw` rather than the raw `showVTy` — so a data type
+buried inside an arrow (`List Int -> Int`, `safeAt`'s own signature) folds too, not just a bare
+returner. Lives in the SAME `mutual` group (calls `foldDataTyOrRaw` above, which calls this back
+for a `.U`-wrapped computation body — the two are mutually recursive, mirroring `showVTy`/
+`showCTy`'s own original mutual group exactly). -/
+partial def foldCTyOrRaw (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) :
+    CT → String
+  | .F _ a     => foldDataTyOrRaw ctors gen a
+  | .arr _ a b => s!"{foldDataTyOrRaw ctors gen a} -> {foldCTyOrRaw ctors gen b}"
+end
+
+/-- `showType`'s DECL-AWARE sibling (issue #100): the SAME `! \{…}` row-suffix convention, but the
+value/arrow shape renders through `foldCTyOrRaw` — every `query type`/hover/checker-error site that
+has an `ElabEnv` (or just its `ctors`/`gen` tables) in scope should call THIS, not `showType`. -/
+def showTypeD (ctors : List (String × CtorInfo)) (gen : List (String × GenData)) (B : CT)
+    (φ : EffRow) (effects : List (String × EffectInfo) := []) : String :=
+  let r := showRow φ effects
+  let body := foldCTyOrRaw ctors gen B
+  if r.isEmpty then body else s!"{body} ! \{{r}}"
+
 /-- Inject a payload at ctor position `i` of `n` (right-nested sum; `n = 1` ⇒ no sum wrapper). -/
 def injSum : Nat → Nat → Surf → Surf
   | 0,     1, p => p
@@ -2386,7 +2527,7 @@ def bfnWrapper (env : ElabEnv) (bfn : BoundedFn) (t : Ty) (arg : Surf) : Except 
     throw s!"bounded fn '{bfn.traitName} {bfn.tyVar}': v1 fixes the carrier from the RESULT annotation, so the declared result type must be '{bfn.tyVar}' (the fold shape); got a different result type"
   let Tv := vtyOf (← resolveTy env.gen env.aliases t env.effects)         -- the annotation IS the carrier T
   let some rimpl := env.rawImpls.find? (fun r => r.traitName == bfn.traitName && r.targetVT == Tv)
-    | throw s!"no impl of '{bfn.traitName}' for {showVTy Tv} — the bound '{bfn.traitName} {bfn.tyVar}' is unsatisfied"
+    | throw s!"no impl of '{bfn.traitName}' for {foldDataTyOrRaw env.ctors env.gen Tv} — the bound '{bfn.traitName} {bfn.tyVar}' is unsatisfied"
   let recTy   := substTyVar bfn.tyVar t bfn.declaredTy        -- `List a -> a` ↦ `List T -> T`
   let recCore := Surf.letRecS bfn.name recTy (funFromParams bfn.params bfn.body)
                    (.app (.force (.var bfn.name)) arg)         -- `let rec fold : … = … in ($fold) arg`
@@ -2814,10 +2955,10 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
             match runInferV (synthSV Γ s') with
             | .ok τ =>
                 if ci0.params.isEmpty then
-                  if τ != vtyOf ci0.dataTy then throw s!"match scrutinee is {showVTy τ}, not {ci0.dataName}"
+                  if τ != vtyOf ci0.dataTy then throw s!"match scrutinee is {foldDataTyOrRaw env.ctors env.gen τ}, not {ci0.dataName}"
                 else match τ with
                      | .mu _ => pure ()
-                     | _     => throw s!"match scrutinee is {showVTy τ}, not a {ci0.dataName}"
+                     | _     => throw s!"match scrutinee is {foldDataTyOrRaw env.ctors env.gen τ}, not a {ci0.dataName}"
             | .error e => throw s!"match scrutinee: {e}"
             -- order arms by ctor position (pure bookkeeping — no recursion below)
             let mut ordered : List (List String × Surf) := []
@@ -2851,7 +2992,7 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
         | some _ => return wa (wb (.binopS op a' b'))     -- HOLE operand (bare-`fun` param): defer to the checker
         | none =>
           match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
-          | none => .error s!"no impl provides '{binopName op}' for {showVTy τ}"
+          | none => .error s!"no impl provides '{binopName op}' for {foldDataTyOrRaw env.ctors env.gen τ}"
           | some inst =>
               match inst.params, inst.knotName with
               -- #112: KNOT dispatch — app the `letRecS`-bound name (`elabProg` wraps the whole
@@ -4128,8 +4269,15 @@ type-check) — out of ADR-0098's scope (only the FUNCTION strings moved to a mo
 must land its generated `trait`/`impl` decls before `injectPrelude`'s mention-filter walk and
 `eraseLettMultiProg`'s per-decl `.lettMulti` erasure both see them (a generated impl's body carries
 no `.lettMulti` marker today, but running derive-expansion first keeps the ordering uniform with
-every other decl-shaped pass in this pipeline). -/
-def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) := do
+every other decl-shaped pass in this pipeline).
+
+Also returns `env.ctors`/`env.gen` (issue #100) — the μ-re-fold display sites (`displayProg`,
+`typeStringOfProg{,P}`) need the SAME decl env `elabS`'s own error messages already fold through
+(`foldDataTyOrRaw`), and re-parsing/re-`buildEnv`-ing a second time just to recover it would risk
+drift from whatever THIS elaboration actually resolved (e.g. prelude-injection order). Additive
+tuple fields — every existing `(e, effects)`/`(e, _)` destructure widens to match. -/
+def elabProg (p : Prog) :
+    Except String (Surf × List (String × EffectInfo) × List (String × CtorInfo) × List (String × GenData)) := do
   let p ← expandDerives p
   let p ← injectPrelude p
   let p := Bang.Surface.eraseLettMultiProg p
@@ -4142,7 +4290,7 @@ def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) :=
   -- second `elabS` pass over the wrapper alone.
   let wrapped := wrapPendingKnots env.pendingKnots (← expandBFns env none bigFuel foldedBody)
   let e ← elabS env [] wrapped   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
-  return (e, env.effects)
+  return (e, env.effects, env.ctors, env.gen)
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
 prelude + body, elaborate it (resolve data constructors, named matches, and type-directed operators
@@ -4151,7 +4299,7 @@ program parses to `⟨[], body⟩` and elaborates to itself, so this is a strict
 `Surface.lower ∘ parse` runner path — the whole MVP surface becomes runnable from the CLI. -/
 public def elaborateToComp (src : String) : Except String Comp := do
   let prog ← Bang.Surface.parseProg src
-  let (e, _) ← elabProg prog
+  let (e, _, _, _) ← elabProg prog
   Bang.Surface.lower e
 
 /-- PUBLIC typed runnable entry (the `bang` CLI's DEFAULT pipeline, ADR-0076 #51): parse (located) →
@@ -4166,7 +4314,7 @@ Stage B) when it names a locatable token, else un-located (`none` → a plain me
 per-node span tier). -/
 public def checkAndLower (src : String) : Except (String × Option Bang.Surface.Span) Comp := do
   let prog ← Bang.Surface.parseProgLocated src
-  let (e, effects) ← (elabProg prog).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
+  let (e, effects, _, _) ← (elabProg prog).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
   let _ ← (runInferC (synthSC [] e) effects).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
   (Bang.Surface.lower e).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
 
@@ -4182,7 +4330,7 @@ doesn't sketch cross-file diagnostics; the entry FILE's own parse errors are sti
 `Main.lean`'s resolver before this ever runs, since `mergeModules` only accepts already-parsed
 `Prog`s). -/
 public def checkAndLowerProg (prog : Prog) : Except String Comp := do
-  let (e, effects) ← elabProg prog
+  let (e, effects, _, _) ← elabProg prog
   let _ ← runInferC (synthSC [] e) effects
   Bang.Surface.lower e
 
@@ -4190,12 +4338,12 @@ public def checkAndLowerProg (prog : Prog) : Except String Comp := do
 an already-merged multi-file program. Same rationale as `checkAndLowerProg`: the module resolver
 already has a `Prog`, not source text, so this skips re-parsing. -/
 public def elaborateToCompProg (prog : Prog) : Except String Comp := do
-  let (e, _) ← elabProg prog
+  let (e, _, _, _) ← elabProg prog
   Bang.Surface.lower e
 
 /-- Parse + elaborate + CHECK a source program — the decl-aware, typed sibling of `check`. -/
 def checkProg (src : String) : Except String (CT × EffRow) := do
-  let (e, effects) ← Bang.Surface.parseProg src >>= elabProg
+  let (e, effects, _, _) ← Bang.Surface.parseProg src >>= elabProg
   runInferC (synthSC [] e) effects
 
 /-- The ROW of a checked program — the minimal public projection of `checkProg` (whose full
@@ -4207,14 +4355,17 @@ public def checkProgRow (src : String) : Except String EffRow :=
 /-- Parse + elaborate + check + DISPLAY — the decl-aware, typed sibling of `display`. Re-derives
 `effects` alongside the checked type (rather than widening `checkProg`'s established `(CT ×
 EffRow)` return type, which `typeStringOfProg`/the REPL's `:t` already depend on) so a DECLARED
-user-effect label in the row renders by its SOURCE name (ADR-0092 D2), not silently vanishing. -/
+user-effect label in the row renders by its SOURCE name (ADR-0092 D2), not silently vanishing.
+Renders through `showTypeD` (issue #100), not bare `showType` — a `data`-backed μ in the checked
+type folds back to its declared name (`List Int`, not `(mu. (Unit + (Int * #0)))`); `ctors`/`gen`
+come straight off THIS `elabProg` call (no second `buildEnv`). -/
 def displayProg (src : String) : String :=
   match (do
-      let (e, effects) ← Bang.Surface.parseProg src >>= elabProg
+      let (e, effects, ctors, gen) ← Bang.Surface.parseProg src >>= elabProg
       let (B, φ) ← runInferC (synthSC [] e) effects
-      return (B, φ, effects)) with
-  | .ok (B, φ, effects) => showType B φ effects
-  | .error e            => s!"error: {e}"
+      return (B, φ, effects, ctors, gen)) with
+  | .ok (B, φ, effects, ctors, gen) => showTypeD ctors gen B φ effects
+  | .error e                        => s!"error: {e}"
 
 /-- TEST-ONLY (ADR-0092 D1/D2, no surface syntax): type `perform` (`.dotPerform`) against a
 DECLARED user effect under a HYPOTHETICAL capability binding `capName : Cap ℓ` — the D3 typed
@@ -4240,11 +4391,15 @@ def checkPerformUnderCap (declsSrc effectName capName exprSrc : String) :
       runInferC (synthSC [(capName, capTy)] ebody) env.effects
 
 /-- PUBLIC face of the checker for external tools (the REPL's `:t`, #7): the rendered
-`type ! row` of a checked program, or the check error as `.error`. Thin wrapper —
-`checkProg`/`showType` stay the SSoT; the `Except` (vs `displayProg`'s inline string)
-lets a caller route errors to stderr and keep stdout machine-clean. -/
-public def typeStringOfProg (src : String) : Except String String :=
-  (checkProg src).map (fun (B, φ) => showType B φ)
+`type ! row` of a checked program, or the check error as `.error`. Renders through `showTypeD`
+(issue #100), same as `displayProg` — `checkProg`'s established `(CT × EffRow)` return type stays
+UNWIDENED (its own doc comment's constraint: `CT` is module-private), so this calls `elabProg`
+directly (mirroring `displayProg`'s own inline pattern) rather than routing through `checkProg`,
+to recover `ctors`/`gen` for the fold. -/
+public def typeStringOfProg (src : String) : Except String String := do
+  let (e, effects, ctors, gen) ← Bang.Surface.parseProg src >>= elabProg
+  let (B, φ) ← runInferC (synthSC [] e) effects
+  return showTypeD ctors gen B φ effects
 
 /-- Prog-taking sibling of `typeStringOfProg` (mirrors `checkAndLowerProg` beside
 `checkAndLower`) — the per-declaration query seam `bang query type`/`effects`/`symbols` (#80)
@@ -4252,11 +4407,12 @@ needs: given an already-parsed `Prog`, check its trailing `body` and render `typ
 string (a String, not `CT × EffRow` — `CT` is module-private, the `checkProgRow` rationale). A
 caller wanting "the type of decl `foo`" builds a `Prog` with the same `decls`/`imports`/`uses`
 and `body := .var "foo"` — sidestepping print-then-reparse, which `runCheck`'s doc comment
-names unsound for a resolved multi-file `Prog`. -/
+names unsound for a resolved multi-file `Prog`. Renders through `showTypeD` (issue #100) — this is
+the DIRECT path `bang query type`/hover/`symbols` ride, so it is the highest-value fold site. -/
 public def typeStringOfProgP (prog : Prog) : Except String String := do
-  let (e, effects) ← elabProg prog
+  let (e, effects, ctors, gen) ← elabProg prog
   let (B, φ) ← runInferC (synthSC [] e) effects
-  return showType B φ
+  return showTypeD ctors gen B φ effects
 
 
 /-! ### The TYPED face of the `Outcome` layer (issue #54).
@@ -4308,7 +4464,7 @@ it runs. Now a thin PROJECTION of the `Outcome` layer (issue #54) over the SAME 
 behaviour is identical — the green corpus is the build-gated proof). -/
 def runTypedYieldsInt (fuel : Nat) (src : String) (n : Int) : Bool :=
   match (do
-      let (e, effects) ← Bang.Surface.parseProg src >>= elabProg
+      let (e, effects, _, _) ← Bang.Surface.parseProg src >>= elabProg
       let _ ← runInferC (synthSC [] e) effects
       Bang.Surface.lower e) with
   | .ok c => outcomeIs (evalToOutcome (Source.eval fuel c)) (.yields (.vint n))
@@ -4484,9 +4640,9 @@ def checkLaws (src : String) : Except String (List String) := do
                   let sample := tuples l.params.length (sampleVT (vtyOf τR))
                   if sample.all (checkLawOn env l.params l.body) then
                     report := report ++
-                      [s!"↓ {tn}.{l.name} @ {showVTy (vtyOf τR)}: DESCENT [test ({sample.length} samples): source law — the ADR-0068 v1 ceiling] (tested)"]
+                      [s!"↓ {tn}.{l.name} @ {foldDataTyOrRaw env.ctors env.gen (vtyOf τR)}: DESCENT [test ({sample.length} samples): source law — the ADR-0068 v1 ceiling] (tested)"]
                   else
-                    throw s!"law {tn}.{l.name} FAILS on its sample for {showVTy (vtyOf τR)}"
+                    throw s!"law {tn}.{l.name} FAILS on its sample for {foldDataTyOrRaw env.ctors env.gen (vtyOf τR)}"
   return report
 
 /-! #74 fix: a law body — or any expression — is diagnosed as calling a TRAIT OP BY NAME
@@ -4723,8 +4879,9 @@ def listProg (body : String) : String :=
 -- nested destructuring: the SECOND element of Cons(7, Cons(9, Nil)).
 #guard runTypedYieldsInt 600 (listProg
   "let s = Cons(7, Cons(9, Nil)) in match s { Nil -> 0, Cons(h, t) -> match t { Nil -> h, Cons(h2, t2) -> h2 } }") 9
--- the data type DISPLAYS as its structural μ (transparent alias, ADR-0069 decision 3).
-#guard displayProg (listProg "Cons(7, Nil)") == "(mu. (Unit + (Int * #0)))"
+-- the data type DISPLAYS by its DECLARED name (issue #100's display-time re-fold), not the raw
+-- structural μ ADR-0069 decision 3's transparent-alias encoding produces underneath.
+#guard displayProg (listProg "Cons(7, Nil)") == "IntList"
 -- fail-loud: a missing arm · an unknown ctor · payload-arity mismatch at the type level.
 #guard (match checkProg (listProg "let s = Nil in match s { Nil -> 0 }") with
         | .error _ => true | _ => false)
@@ -6232,7 +6389,7 @@ decl prelude, unlike the bare-`Surf` helpers). -/
 def runMergedYieldsInt (fuel : Nat) (p : Prog) : Option Int :=
   match elabProg p with
   | .error _ => none
-  | .ok (e, effects) =>
+  | .ok (e, effects, _, _) =>
       match runInferC (synthSC [] e) effects with
       | .error _ => none
       | .ok _ =>
