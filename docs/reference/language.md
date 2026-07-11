@@ -595,7 +595,7 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 ### Validation ⑦b — HM polymorphism RUNS end-to-end (ADR-0075 bite-0, the real pipeline).
 
 - `let id = {fun x => x} in (let a = ($id) 5 in (let u = ($id) () in a))` ⟹ `5`  — id at Int and Unit (independent instantiations): 5.
-### EFFECT ROW-POLYMORPHISM (ADR-0075 bite-0b item 3) — ONE `compose`, generic over its effect row.
+### #119 — the row-subsumption asymmetry (fork-1): `checkSC`'s `.annotS` arm ALREADY used
 
 - `match Right(7) { Left(a) -> 0, Right(x) -> x }` ⟹ `7`  — #53 — bare anonymous injections RUN end-to-end through the typed default path (CHECK precedes eval).
 - `let x = Right(7) in match x { Left(a) -> 0, Right(x) -> x }` ⟹ `7`
