@@ -594,6 +594,330 @@ example :
     (emitModule (.handle (.transaction 0 []) (.perform (.vvar 0) "get" .vunit))).isOk = false := by
   simp [emitModule, emitComp, emitVal, Emit.isOk]
 
+-- ═══════════════════════════════════════════════════════════════════════════════════════
+-- RUNG 4 — closures + ADTs + recursion on WasmGC (the "nqueens compiles" rung)
+-- ═══════════════════════════════════════════════════════════════════════════════════════
+/-!
+  The rung-1/2/3 emitter above is a STATIC inline structural recursion: every former is flattened
+  into `$main`'s body with a compile-time de-Bruijn env of `Slot`s. That model CANNOT express
+  recursion — the μ-knot (`let rec`, ADR-0073: `Rec = μX. Thunk(X → T)`, Landin's knot) applies
+  itself under `force`/`unfold` an unbounded number of RUNTIME times; an inline emitter that
+  unfolded it would not terminate at compile time (the wall the rung-1 note §4 named: "SUBST/APP
+  carry residual Comps exec re-compiles at runtime — a static emitter can't consume them without
+  BEING the interpreter").
+
+  Rung 4 is the DERIVED answer (invariant #4 — the machine is an output of the calculation): the
+  kernel reduces closures/ADTs by SUBSTITUTION into RESIDUAL Comps (`evalD`: `app (lam N) v ↦ N[v]`,
+  `case (inl v) N₁ N₂ ↦ N₁[v]`, `force (vthunk M) ↦ M`, `unfold (fold v) ↦ ret v`,
+  AbstractMachine.lean:263-357). The faithful WASM image of "reduce a residual Comp at runtime" is a
+  REAL CALL: each `lam`/`vthunk` lambda-lifts to a top-level wasm function; `app`/`force` become
+  `call_ref` through a closure GC-struct; recursion runs on the WASM CALL STACK, exactly as `exec`
+  re-`compile`s under fuel (ADR-0059's `general → WasmGC-frame-chain runtime` slot).
+
+  VALUE REP (`$val` = a uniform GC reference so lambdas are polymorphic — `List a` is generic):
+    - `vint n`        → `(struct $ival (field i64))` — BOXED i64. Bang `Int` is unbounded ℤ; this
+                        rung is i64-RANGE with a documented LOUD deviation (like guarded-div). Full
+                        bignum is a NAMED rung-5 refusal (GC-array limb rep), NOT emitted here.
+    - `inl v`/`inr v` → `(struct $sum (field $tag i32) (field $payload (ref null $val)))`, tag 0/1.
+    - `pair a b`      → `(struct $pair (field (ref null $val)) (field (ref null $val)))`.
+    - `fold v`        → ERASES (IR.lean:106): `fold v` = `v`'s bits, `unfold` = identity.
+    - `vthunk M`/`lam M` → `(struct $clos (field $code (ref $fn)) (field $env (ref null $env)))`.
+
+  ENVIRONMENT (`$env` = a cons-list of values, innermost binder first):
+    `(struct $env (field $hd (ref null $val)) (field $tl (ref null $env)))`. Every binder PREPENDS
+    its value into a FRESH env local (never a mutated shared local — branch bodies each set their
+    own env local, so alternatives never leak binders); `vvar i` = `$lookup env i`. A lifted
+    function receives its captured env as param 0 and prepends its argument; `$main` starts null.
+
+  RECURSION FALLS OUT (no invented former): the μ-knot `letC (unfold (vvar 0)) (app (force (vvar 0))
+    (fold (vvar 0)))` — `unfold`/`fold` erase, `force`/`app` are `call_ref`s. Emitting the four
+    formers faithfully IS emitting recursion.
+
+  LOCALS: one monotone counter per function; each fresh local records its wasm TYPE (`env`-ref or
+  `val`-ref) in `localTys` so `emitModuleGC`/`renderFn` declare them in index order with the right
+  type — no offset arithmetic, no index collisions. Indices 0,1 are the fixed params inside a lifted
+  fn (env0, arg); `$main` has no params, so its locals start at 0.
+
+  SEPARATE emitter (`emitModuleGC`), NOT a rewrite of the inline one (ADR-0059 grade-directed: the
+  pure/effect fragment stays on rungs 1-3). Fail-loud preserved: `perform`/`handle` on the GC path
+  are NAMED rung-5 refusals (effects lower on the inline path, rungs 2/3).
+-/
+
+/-- A rung-4 emission result: wasm text leaving one `(ref null $val)`, or a named refusal. -/
+inductive EmitGC where
+  | ok    : String → EmitGC
+  | unsup : String → EmitGC
+  deriving Repr, DecidableEq, Inhabited
+
+def EmitGC.isOk : EmitGC → Bool
+  | .ok _ => true
+  | .unsup _ => false
+
+/-- A lambda-lifted top-level function: its index, body text, and the per-index local TYPES it
+declares (index 0 upward, EXCLUDING the two params — `localTys[k]` is the type of local `paramCount+k`). -/
+structure LiftedFn where
+  idx      : Nat
+  body     : String
+  localTys : List String
+  deriving Repr, Inhabited
+
+/-- State threaded through GC emission. `next` = the next fresh local index in the CURRENT function
+(2 inside a lifted fn, past env0+arg; 0 in `$main`). `localTys` records the type of each local from
+`base` upward, in claim order (reversed for O(1) prepend; reversed back at render). `base` = the
+first non-param local index in the current function. -/
+structure GCState where
+  fns      : List LiftedFn := []
+  nextFn   : Nat := 0
+  base     : Nat := 0                 -- first non-param local index (0 in main, 2 in a lifted fn)
+  next     : Nat := 0                 -- next fresh local index
+  localTys : List String := []        -- types of locals [base..next), reversed
+  deriving Inhabited
+
+/-- Claim a fresh local of wasm type `ty`, returning its index and the updated state. -/
+def GCState.fresh (st : GCState) (ty : String) : Nat × GCState :=
+  (st.next, { st with next := st.next + 1, localTys := ty :: st.localTys })
+
+/-- Wrap a statement-prefixed sequence (`local.set …`s followed by a value expression) in a
+`(block (result (ref null $val)) …)` so it is a SINGLE value-producing expression, valid in
+operand position. Every emitter arm that emits `local.set` statements before its value returns this
+form — so nesting (an `app` whose callee is itself an `app`) composes without a void `local.set` in
+value position (the wasm folded-form rule: a subexpression must produce exactly one value). -/
+def seqBlock (body : String) : String :=
+  s!"(block (result (ref null $val))\n    {body})"
+
+/-- Arithmetic `BinOp` → the i64 wasm op (comparisons handled via the fused `if`, not here). -/
+def binopGCWat : BinOp → Option String
+  | .add => some "i64.add" | .sub => some "i64.sub" | .mul => some "i64.mul"
+  | .div => none | .lt | .eq => none
+
+/-- Comparison `BinOp` → the i64 wasm compare (i32 result), for the fused `if`. -/
+def cmpGCWat : BinOp → Option String
+  | .lt => some "i64.lt_s" | .eq => some "i64.eq" | _ => none
+
+def unboxI (e : String) : String := s!"(struct.get $ival 0 (ref.cast (ref $ival) {e}))"
+def boxI (e : String) : String := s!"(struct.new $ival {e})"
+def emitDivGCI (ea eb : String) : String :=
+  s!"(if (result i64) (i64.eqz {eb}) (then (i64.const 0)) (else (i64.div_s {ea} {eb})))"
+def lookupGC (envL i : Nat) : String := s!"(call $lookup (local.get {envL}) (i32.const {i}))"
+
+/-- wasm type strings for the two local roles. -/
+def tyEnv : String := "(ref null $env)"
+def tyVal : String := "(ref null $val)"
+
+mutual
+/-- Emit a `Val` as a `(ref null $val)` expression under env-local `envL`, threading `GCState`. -/
+partial def emitValGC (envL : Nat) (v : Val) (st : GCState) : EmitGC × GCState :=
+  match v with
+  | .vint n => (.ok (boxI s!"(i64.const {n})"), st)
+  | .vvar i => (.ok (lookupGC envL i), st)
+  | .vunit  => (.ok (boxI "(i64.const 0)"), st)
+  | .inl w =>
+      match emitValGC envL w st with
+      | (.ok ew, st') => (.ok s!"(struct.new $sum (i32.const 0) {ew})", st')
+      | (.unsup r, st') => (.unsup r, st')
+  | .inr w =>
+      match emitValGC envL w st with
+      | (.ok ew, st') => (.ok s!"(struct.new $sum (i32.const 1) {ew})", st')
+      | (.unsup r, st') => (.unsup r, st')
+  | .pair a b =>
+      match emitValGC envL a st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok ea, st1) =>
+        match emitValGC envL b st1 with
+        | (.unsup r, st') => (.unsup r, st')
+        | (.ok eb, st2) => (.ok s!"(struct.new $pair {ea} {eb})", st2)
+  | .fold w => emitValGC envL w st
+  | .vthunk M => emitCloVal true envL M st            -- THUNK: no arg binder (force = run M as-is).
+  | .vcap _ _ => (.unsup "vcap (runtime capability — no rung-4 GC value rep)", st)
+
+/-- Lambda-lift `M` to a fresh top-level fn; emit the closure value capturing the CURRENT env.
+
+`isThunk` distinguishes the two closure kinds — the kernel treats them differently (invariant #4,
+AbstractMachine.lean:269 vs 263/270):
+  - `lam M`:  `app (lam M) v ↦ M[v]` — M's index 0 IS the argument. The lifted fn PREPENDS its arg
+              param to the captured env (body env = arg :: capturedEnv), so `vvar 0` = the arg.
+  - `vthunk M`: `force (vthunk M) ↦ M` — a thunk introduces NO binder; M's `vvar 0` is the FIRST
+              CAPTURED var. The lifted fn runs the body under the captured env DIRECTLY (the fn's arg
+              param is a `force`-supplied dummy, ignored). Getting this wrong shifts every index by
+              one inside every thunk — the μ-knot's `unfold`/`force`/`app` then cast a non-closure. -/
+partial def emitCloVal (isThunk : Bool) (envL : Nat) (M : Comp) (st : GCState) : EmitGC × GCState :=
+  let fnIdx := st.nextFn
+  -- lam: local 2 = arg :: env0, body under env-local 2. thunk: body under env-local 0 (the captured
+  -- env param directly), no arg prepend. Fresh locals start at 3 (lam) or 1 (thunk).
+  -- thunk: body env = the captured env param (local 0); fresh locals from 2 (past both params, so
+  -- their declared types don't clash with the param types). lam: local 2 = arg::env0, fresh from 3.
+  let (bodyEnvL, freshStart) := if isThunk then (0, 2) else (2, 3)
+  -- Pre-declared locals past the two params: lam declares local 2 (arg::env0, tyEnv); thunk none.
+  let preTys : List String := if isThunk then [] else [tyEnv]
+  let stInner : GCState :=
+    { st with nextFn := st.nextFn + 1, base := freshStart, next := freshStart, localTys := preTys }
+  match emitCompGC bodyEnvL M stInner with
+  | (.unsup r, st') => (.unsup r, { st with fns := st'.fns, nextFn := st'.nextFn })
+  | (.ok body, st2) =>
+      let prefixArg := if isThunk then "" else s!"(local.set 2 (struct.new $env (local.get 1) (local.get 0)))\n    "
+      let full := s!"{prefixArg}{body}"
+      let lifted : LiftedFn := ⟨fnIdx, full, st2.localTys.reverse⟩
+      (.ok s!"(struct.new $clos (ref.func $fn{fnIdx}) (local.get {envL}))",
+       { st with fns := lifted :: st2.fns, nextFn := st2.nextFn })
+
+/-- Emit a `Comp` as a `(ref null $val)` expression under env-local `envL`, threading `GCState`. -/
+partial def emitCompGC (envL : Nat) (c : Comp) (st : GCState) : EmitGC × GCState :=
+  match c with
+  | .ret v => emitValGC envL v st
+  | .binop op a b =>
+      match binopGCWat op with
+      | some w =>
+          match emitValGC envL a st with
+          | (.unsup r, st') => (.unsup r, st')
+          | (.ok ea, st1) =>
+            match emitValGC envL b st1 with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok eb, st2) => (.ok (boxI s!"({w} {unboxI ea} {unboxI eb})"), st2)
+      | none =>
+          match op with
+          | .div =>
+              match emitValGC envL a st with
+              | (.unsup r, st') => (.unsup r, st')
+              | (.ok ea, st1) =>
+                match emitValGC envL b st1 with
+                | (.unsup r, st') => (.unsup r, st')
+                | (.ok eb, st2) => (.ok (boxI (emitDivGCI (unboxI ea) (unboxI eb))), st2)
+          | _ =>
+              -- COMPARISON: emit the sum-encoded boolVal directly (`true = inr unit` tag 1,
+              -- `false = inl unit` tag 0, IR.lean:173). Unlike the inline emitter (no bare-bool
+              -- i64 rep), the GC path HAS a sum rep, so no fusion is needed — a subsequent `case`
+              -- eliminates it generically. `unit` payload = a boxed 0 (never inspected).
+              match cmpGCWat op with
+              | none => (.unsup s!"binop {repr op} not emittable on the GC path", st)
+              | some cw =>
+                  match emitValGC envL a st with
+                  | (.unsup r, st') => (.unsup r, st')
+                  | (.ok ea, st1) =>
+                    match emitValGC envL b st1 with
+                    | (.unsup r, st') => (.unsup r, st')
+                    | (.ok eb, st2) =>
+                        let u := boxI "(i64.const 0)"
+                        (.ok s!"(if (result (ref null $val)) ({cw} {unboxI ea} {unboxI eb}) (then (struct.new $sum (i32.const 1) {u})) (else (struct.new $sum (i32.const 0) {u})))", st2)
+  | .letC m n => emitLetGC envL m n st
+  | .force fv =>
+      match emitValGC envL fv st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok efv, st1) =>
+          let (clL, st2) := st1.fresh tyVal
+          (.ok (callClosGC clL efv (boxI "(i64.const 0)")), st2)
+  | .lam M => emitCloVal false envL M st              -- LAM: arg at index 0 (prepended by the fn).
+  | .app M v =>
+      match emitCompGC envL M st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok eM, st1) =>
+        match emitValGC envL v st1 with
+        | (.unsup r, st') => (.unsup r, st')
+        | (.ok ev, st2) =>
+            let (clL, st3) := st2.fresh tyVal
+            (.ok (callClosGC clL eM ev), st3)
+  | .case v n1 n2 =>
+      match emitValGC envL v st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok ev, st1) =>
+          let (scL, st1a) := st1.fresh tyVal
+          let (e1L, st1b) := st1a.fresh tyEnv
+          let (e2L, st2) := st1b.fresh tyEnv
+          match emitCompGC e1L n1 st2 with
+          | (.unsup r, st') => (.unsup r, st')
+          | (.ok b1, st3) =>
+            match emitCompGC e2L n2 st3 with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok b2, st4) =>
+                let payload := s!"(struct.get $sum $payload (ref.cast (ref $sum) (local.get {scL})))"
+                (.ok (seqBlock s!"(local.set {scL} {ev})\n    (if (result (ref null $val)) (i32.eqz (struct.get $sum $tag (ref.cast (ref $sum) (local.get {scL}))))\n      (then (local.set {e1L} (struct.new $env {payload} (local.get {envL}))) {b1})\n      (else (local.set {e2L} (struct.new $env {payload} (local.get {envL}))) {b2}))"), st4)
+  | .split v n =>
+      match emitValGC envL v st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok ev, st1) =>
+          let (scL, st1a) := st1.fresh tyVal
+          let (e1L, st1b) := st1a.fresh tyEnv
+          let (e2L, st2) := st1b.fresh tyEnv
+          match emitCompGC e2L n st2 with
+          | (.unsup r, st') => (.unsup r, st')
+          | (.ok bn, st3) =>
+              let fst := s!"(struct.get $pair 0 (ref.cast (ref $pair) (local.get {scL})))"
+              let snd := s!"(struct.get $pair 1 (ref.cast (ref $pair) (local.get {scL})))"
+              (.ok (seqBlock s!"(local.set {scL} {ev})\n    (local.set {e1L} (struct.new $env {fst} (local.get {envL})))\n    (local.set {e2L} (struct.new $env {snd} (local.get {e1L})))\n    {bn}"), st3)
+  | .unfold v => emitValGC envL v st
+  | .perform _ _ _ => (.unsup "perform (effects on the GC path are rung-5)", st)
+  | .handle _ _ => (.unsup "handle (effects lower on the inline path; GC-path effects are rung-5)", st)
+  | .oom => (.unsup "oom", st)
+  | .wrong s => (.unsup s!"wrong: {s}", st)
+
+/-- `letC m n`: compute m, bind its value at index 0 in a fresh env local, run n. -/
+partial def emitLetGC (envL : Nat) (m n : Comp) (st : GCState) : EmitGC × GCState :=
+  match emitCompGC envL m st with
+  | (.unsup r, st') => (.unsup r, st')
+  | (.ok em, st1) =>
+      let (e2L, st2) := st1.fresh tyEnv
+      match emitCompGC e2L n st2 with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok en, st3) =>
+          (.ok (seqBlock s!"(local.set {e2L} (struct.new $env {em} (local.get {envL})))\n    {en}"), st3)
+
+/-- Call closure `cloE` with arg `argE` (both `(ref null $val)`): stash the cast closure in temp
+local `clL`, dispatch `call_ref` on its `$code` with its captured `$env` + the arg. Wrapped in a
+`seqBlock` so it is a single value expression (composes when `cloE`/`argE` are themselves calls). -/
+partial def callClosGC (clL : Nat) (cloE argE : String) : String :=
+  seqBlock s!"(local.set {clL} {cloE})\n    (call_ref $fn (struct.get $clos $env (ref.cast (ref $clos) (local.get {clL}))) {argE} (struct.get $clos $code (ref.cast (ref $clos) (local.get {clL}))))"
+end
+
+/-- The fixed WASM-GC type + helper preamble every rung-4 module shares. -/
+def gcPreamble : String :=
+  "(rec\n" ++
+  "    (type $val  (sub (struct)))\n" ++
+  "    (type $ival (sub $val (struct (field i64))))\n" ++
+  "    (type $sum  (sub $val (struct (field $tag i32) (field $payload (ref null $val)))))\n" ++
+  "    (type $pair (sub $val (struct (field (ref null $val)) (field (ref null $val)))))\n" ++
+  "    (type $env  (struct (field $hd (ref null $val)) (field $tl (ref null $env))))\n" ++
+  "    (type $fn   (func (param (ref null $env)) (param (ref null $val)) (result (ref null $val))))\n" ++
+  "    (type $clos (sub $val (struct (field $code (ref $fn)) (field $env (ref null $env))))))\n" ++
+  "  (func $box (param $n i64) (result (ref null $val)) (struct.new $ival (local.get $n)))\n" ++
+  "  (func $lookup (param $e (ref null $env)) (param $n i32) (result (ref null $val))\n" ++
+  "    (block $done (loop $l\n" ++
+  "      (br_if $done (i32.eqz (local.get $n)))\n" ++
+  "      (local.set $e (struct.get $env $tl (local.get $e)))\n" ++
+  "      (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n" ++
+  "      (br $l)))\n" ++
+  "    (struct.get $env $hd (local.get $e)))"
+
+/-- Declare locals from a per-index type list (index order). -/
+def declLocalsFromTys (tys : List String) : String :=
+  tys.foldl (fun acc t => acc ++ s!" (local {t})") ""
+
+/-- Render one lifted function: two params (env0, arg) + its own locals + body. -/
+def renderFn (f : LiftedFn) : String :=
+  s!"(func $fn{f.idx} (type $fn) (param (ref null $env)) (param (ref null $val)) (result (ref null $val)){declLocalsFromTys f.localTys}\n    {f.body})"
+
+/-- `(elem declare func $fn0 $fn1 …)` — every lifted fn must be declared for `ref.func`. -/
+def elemDeclare (n : Nat) : String :=
+  if n = 0 then "" else
+    "\n  (elem declare func" ++ (List.range n).foldl (fun acc i => acc ++ s!" $fn{i}") "" ++ ")"
+
+/-- Whole-module GC emission: preamble + lifted fns + `$main`. `$main` runs the body under env-local
+`base=0`, `next=1` (local 0 = the initial env, set to a null cons — `ref.null $env`). Returns full
+`.wat` or a refusal. -/
+def emitModuleGC (M : Comp) : EmitGC :=
+  -- main: local 0 = env (starts null), fresh locals from 1.
+  let st0 : GCState := { base := 0, next := 1, localTys := [tyEnv] }
+  match emitCompGC 0 M st0 with
+  | (.unsup r, _) => .unsup r
+  | (.ok body, stF) =>
+          let fnsOrdered := stF.fns.reverse
+          let fnCount := stF.nextFn
+          let fnsText := (fnsOrdered.map renderFn).foldl (fun acc f => acc ++ "\n  " ++ f) ""
+          let mainLocals := declLocalsFromTys stF.localTys.reverse
+          let mainFn :=
+            s!"(func $main (export \"main\") (result i64){mainLocals}\n    (local.set 0 (ref.null $env))\n    (call $unbox\n    {body}))"
+          -- $unbox extracts the final i64 answer (main returns i64 for the harness diff).
+          let unboxFn := "(func $unbox (param $v (ref null $val)) (result i64)\n    (struct.get $ival 0 (ref.cast (ref $ival) (local.get $v))))"
+          .ok s!"(module\n  {gcPreamble}\n  {unboxFn}{elemDeclare fnCount}{fnsText}\n  {mainFn}\n)"
+
 end -- public section
 
 end Bang.WasmEmit

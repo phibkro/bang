@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (56)
+## active (57)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -29,6 +29,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`effects-vs-cic.md`](effects-vs-cic.md) — Effects vs the Calculus of (Inductive) Constructions — additive or derivative?
 - [`emission-rung1-probe.md`](emission-rung1-probe.md) — Emission rung-1 probe — pure ⊥-row arithmetic → real `.wat`, run on wasmtime
 - [`emission-rung3-design.md`](emission-rung3-design.md) — Emission rung-3 design — transaction journal/rollback on Wasm (the ◊5.5 novelty rung)
+- [`emission-rung4-design.md`](emission-rung4-design.md) — Emission rung-4 design — closures + ADTs + recursion on WasmGC (the "nqueens compiles" rung)
 - [`explainer-series.md`](explainer-series.md) — Explainer series — the multi-sensory outline
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
 - [`god-file-seams.md`](god-file-seams.md) — God-file seam map — split proposal for `TypeCheck.lean`/`AbstractMachine.lean`
