@@ -3209,6 +3209,179 @@ def runE (fuel : Nat) (M : Comp) : Result Val :=
   | some (.mterm (.mret mv), _, _, _, _) => .done (readback mv)
   | _                                    => .stuck   -- a function-terminal, a raise, or stuck: no first-order value
 
+/-- One host REQUEST surfaced by `evalEHost`: the escaped cap's identity, label, op, and readback
+payload — everything the driver needs to (a) do the real IO and (b) record a trace row. `label` is
+carried so the driver knows WHICH host handler to invoke (`mraised` is identity-keyed and drops it). -/
+structure HostReq where
+  id      : Nat
+  label   : Bang.EffectRow.Label
+  op      : Bang.OpId
+  payload : Val
+  deriving Inhabited
+
+/-! ## `evalEHost` — the host-IO sibling of `evalE` (ADR-0104 §4, the replay-prefix seam)
+
+**Tested-stratum by construction** (NOT proven — that is the whole point). `evalEHost` is a
+BYTE-FOR-BYTE sibling of `evalE` EXCEPT the perform "n in no store" leaf: where `evalE` produces
+the fail-loud `mraised` terminal (ADR-0063 escapedCap), `evalEHost` — for a perform on a
+CLI-designated HOST LABEL (`ℓ ∈ hostLabels`) — CONSUMES the head of a supplied response prefix
+`rs` and CONTINUES as if the host had answered (`mret r`), or, if `rs` is empty, surfaces the
+SAME `mraised` (now read as "the next host REQUEST", not an error). A non-host escaped perform,
+and every other arm, is identical to `evalE`.
+
+**Why a sibling, not a thread through `evalE` (ADR-0104 §4 / condition-1 ruling):** threading the
+response prefix through `evalE` re-keys its result tuple (a 6th component), rippling the PROVEN
+`evalE_agrees_evalD_gen` (ADR-0094) across 22 destructure + 31 statement sites — a proven-spine
+re-key, not a mechanical re-green. Keeping `evalE` byte-identical and putting the host inject in a
+sibling makes the re-green trivial (the headline is untouched) at the cost of this ~1-leaf-different
+copy. The DRIFT is gated at CI: `test-hostio.sh` asserts `evalEHost … [] ≡ evalE …` on the corpus
+(the `hostReplay_agrees_pure` `#guard`s below), so `evalEHost` can never silently diverge from the
+proven engine on the shared (non-host) fragment.
+
+The threaded `rs : List MVal` is consumed POSITIONALLY (head-first) across successive host performs
+— faithful to a host that answers the SAME `(label,op,payload)` differently on repeat (two
+`Clock.now`s). The remaining `rs` rides the result tuple's last slot so consumption threads through
+`letC`/`app`/`handle` exactly as the stores do. `hostLabels : List Nat` is the `--allow` grant set
+resolved to labels (the driver maps names→labels via the program's effect table, ADR-0104 §2).
+
+**One-shot (ADR-0101 G5):** the driver consumes `rs` and re-runs; it never re-enters a captured
+continuation. The O(#host-performs²) re-eval this implies is bounded by `--max-host-requests`
+(the driver, Main.lean) — the named fail-loud ceiling, not a silent quadratic.
+
+The result tuple's LAST slot `Option HostReq` carries the PENDING host request when evaluation halts
+at an ungranted-answer host perform (empty `rs`) — set ONLY by the host-seam arm (`none` everywhere
+else). This surfaces the escaped cap's LABEL (which `mraised` drops, being identity-keyed), so the
+driver picks the right host handler. `stepHost` reads this slot. -/
+def evalEHost (hostLabels : List Nat) :
+    Nat → Nat → ESStore → ETHeap → ECStore → MEnv → List MVal → Comp →
+    Option (MOutcome × Nat × ESStore × ETHeap × ECStore × List MVal × Option HostReq)
+  | 0,          _, _, _, _, _, _, _           => none
+  | Nat.succ _, g, σ, τ, κ, ρ, rs, .ret v     => some (.mterm (.mret (evalV ρ v)), g, σ, τ, κ, rs, none)
+  | Nat.succ _, g, σ, τ, κ, ρ, rs, .lam M     => some (.mterm (.mlam M ρ), g, σ, τ, κ, rs, none)
+  | Nat.succ f, g, σ, τ, κ, ρ, rs, .letC M N  =>
+      (evalEHost hostLabels f g σ τ κ ρ rs M).bind (fun p => match p with
+        | (.mterm (.mret mv), g', σ', τ', κ', rs', none) => evalEHost hostLabels f g' σ' τ' κ' (mv ∷ₑ ρ) rs' N
+        | (.mterm (.mlam _ _), _, _, _, _, _, _)         => none
+        | (out, g', σ', τ', κ', rs', req)                => some (out, g', σ', τ', κ', rs', req))
+  | Nat.succ f, g, σ, τ, κ, ρ, rs, .app M v   =>
+      (evalEHost hostLabels f g σ τ κ ρ rs M).bind (fun p => match p with
+        | (.mterm (.mlam N ρ'), g', σ', τ', κ', rs', none) => evalEHost hostLabels f g' σ' τ' κ' (evalV ρ v ∷ₑ ρ') rs' N
+        | (.mterm (.mret _), _, _, _, _, _, _)            => none
+        | (out, g', σ', τ', κ', rs', req)                  => some (out, g', σ', τ', κ', rs', req))
+  | Nat.succ f, g, σ, τ, κ, ρ, rs, .force w   =>
+      match evalV ρ w with
+      | .mvclos M ρ' => evalEHost hostLabels f g σ τ κ ρ' rs M
+      | _            => none
+  -- perform: id-first σ→τ→κ, IDENTICAL to evalE UNTIL the "n in no store" leaf (the host seam).
+  | Nat.succ f, g, σ, τ, κ, ρ, rs, .perform w op v =>
+      match evalV ρ w with
+      | .mvcap n ℓ =>
+          let arg := evalV ρ v
+          match σ.get? n with
+          | some s =>
+              if op = "get" then some (.mterm (.mret s), g, σ, τ, κ, rs, none)
+              else if op = "put" then some (.mterm (.mret .mvunit), g, σ.put n arg, τ, κ, rs, none)
+              else some (.mraised n op arg, g, σ, τ, κ, rs, none)
+          | none =>
+          match τ.get? n with
+          | some Θ =>
+              if Bang.CalcVM.isTxnOp op then
+                let (r, Θ') := mtxnService op arg Θ
+                some (.mterm (.mret r), g, σ, τ.put n Θ', κ, rs, none)
+              else some (.mraised n op arg, g, σ, τ, κ, rs, none)
+          | none =>
+          match κ.get? n with
+          | some (p, cls, ρ_inst) =>
+              match cls.find? (·.1 == op) with
+              | some clause => evalEHost hostLabels f g σ τ κ (arg ∷ₑ p ∷ₑ ρ_inst) rs clause.2
+              | none        => some (.mraised n op arg, g, σ, τ, κ, rs, none)
+          -- ── THE HOST SEAM (the ONLY arm that differs from evalE) ──
+          -- n in no store. If ℓ is a granted HOST label AND a response is queued, the host ANSWERED:
+          -- return it and CONTINUE (the replay-prefix resume). If no response is queued, HALT with a
+          -- pending `HostReq` (carrying ℓ) — the driver services it and re-runs with rs ++ [answer].
+          -- A non-host escaped perform is the SAME fail-loud `mraised` evalE produces (escapedCap).
+          | none =>
+              if hostLabels.contains ℓ then
+                match rs with
+                | r :: rs' => some (.mterm (.mret r), g, σ, τ, κ, rs', none)               -- host answered ⇒ resume
+                | []       => some (.mraised n op arg, g, σ, τ, κ, [], some ⟨n, ℓ, op, readback arg⟩)  -- next host REQUEST
+              else some (.mraised n op arg, g, σ, τ, κ, rs, none)                           -- non-host escape ⇒ escapedCap
+      | _ => none
+  | Nat.succ f, g, σ, τ, κ, ρ, rs, .handle h M =>
+      let id := g
+      let ρ' := MVal.mvcap id (Handler.label h) ∷ₑ ρ
+      match h with
+      | .state _ s =>
+          (evalEHost hostLabels f (g+1) (⟨id, evalV ρ s⟩ :: σ) τ κ ρ' rs M).bind (fun p => match p with
+            | (.mterm (.mret v), g', σ', τ', κ', rs', req)  => some (.mterm (.mret v), g', σ'.tail, τ', κ', rs', req)
+            | (.mterm (.mlam _ _), _, _, _, _, _, _)        => none
+            | (.mraised n op' w, g', σ', τ', κ', rs', req)  => some (.mraised n op' w, g', σ'.tail, τ', κ', rs', req))
+      | .transaction _ Θ =>
+          (evalEHost hostLabels f (g+1) σ (⟨id, Θ.map (evalV ρ)⟩ :: τ) κ ρ' rs M).bind (fun p => match p with
+            | (.mterm (.mret v), g', σ', τ', κ', rs', req)  => some (.mterm (.mret v), g', σ', τ'.tail, κ', rs', req)
+            | (.mterm (.mlam _ _), _, _, _, _, _, _)        => none
+            | (.mraised n op' w, g', σ', τ', κ', rs', req)  => some (.mraised n op' w, g', σ', τ'.tail, κ', rs', req))
+      | .custom _ p cls =>
+          (evalEHost hostLabels f (g+1) σ τ (⟨id, (evalV ρ p, cls, ρ)⟩ :: κ) ρ' rs M).bind (fun q => match q with
+            | (.mterm (.mret v), g', σ', τ', κ', rs', req)  => some (.mterm (.mret v), g', σ', τ', κ'.tail, rs', req)
+            | (.mterm (.mlam _ _), _, _, _, _, _, _)        => none
+            | (.mraised n op' w, g', σ', τ', κ', rs', req)  => some (.mraised n op' w, g', σ', τ', κ'.tail, rs', req))
+      | .throws _ =>
+          (evalEHost hostLabels f (g+1) σ τ κ ρ' rs M).bind (fun p => match p with
+            | (.mterm (.mret v), g', σ', τ', κ', rs', req)  => some (.mterm (.mret v), g', σ', τ', κ', rs', req)
+            | (.mterm (.mlam _ _), _, _, _, _, _, _)        => none
+            | (.mraised n op' w, g', σ', τ', κ', rs', req)  =>
+                if n = id ∧ op' = "raise" then some (.mterm (.mret w), g', σ', τ', κ', rs', req)
+                else some (.mraised n op' w, g', σ', τ', κ', rs', req))
+  | Nat.succ f, g, σ, τ, κ, ρ, rs, .case w N₁ N₂ =>
+      match evalV ρ w with
+      | .minl mv => evalEHost hostLabels f g σ τ κ (mv ∷ₑ ρ) rs N₁
+      | .minr mv => evalEHost hostLabels f g σ τ κ (mv ∷ₑ ρ) rs N₂
+      | _        => none
+  | Nat.succ f, g, σ, τ, κ, ρ, rs, .split w N =>
+      match evalV ρ w with
+      | .mpair mv mw => evalEHost hostLabels f g σ τ κ (mw ∷ₑ mv ∷ₑ ρ) rs N
+      | _            => none
+  | Nat.succ _, g, σ, τ, κ, ρ, rs, .unfold w =>
+      match evalV ρ w with
+      | .mfold mv => some (.mterm (.mret mv), g, σ, τ, κ, rs, none)
+      | _         => none
+  | Nat.succ _, g, σ, τ, κ, ρ, rs, .binop op v w =>
+      match evalV ρ v, evalV ρ w with
+      | .mvint a, .mvint b => some (.mterm (.mret (evalVOfBinop2 (op.eval a b))), g, σ, τ, κ, rs, none)
+      | _,        _        => none
+  | _,          _, _, _, _, _, _, _          => none
+where
+  /-- Local copy of `evalE`'s `evalVOfBinop` (the `where`-scoped helper isn't visible here). -/
+  evalVOfBinop2 : Val → MVal
+    | .vint n     => .mvint n
+    | .inl w      => .minl (evalVOfBinop2 w)
+    | .inr w      => .minr (evalVOfBinop2 w)
+    | .vunit      => .mvunit
+    | _           => .mvunit
+
+/-- The terminal `evalEHost` reaches on a fixed response prefix `rs`: either the program finished
+(`hdone`), it needs a host answer (`hreq` — the driver services it and re-runs with `rs ++ [answer]`),
+or it collapsed to a non-first-order / fail-loud terminal (`hstuck`). The driver loop lives in
+`Main.lean` (the only IO site); this type is its pure interface. -/
+inductive HostStep where
+  | hdone  : Val → HostStep            -- a first-order returner: readback value
+  | hreq   : HostReq → HostStep        -- an unserviced host perform: the next request
+  | hstuck : HostStep                  -- function-terminal / non-host raise / oom / stuck
+  deriving Inhabited
+
+/-- Run `M` under `evalEHost` with a FIXED response prefix `rs` and granted host labels, classifying
+the terminal (`HostStep`). PURE — the driver (Main.lean) supplies `rs` and interprets `hreq`. The
+pending-request slot (last tuple component) DISTINGUISHES a granted host perform (a `HostReq`, carrying
+the escaped cap's LABEL — the driver services it and re-runs with `rs ++ [answer]`) from a genuine
+`escapedCap`/non-host raise (`none` there) — which, like a function terminal or oom, is `hstuck` (the
+driver's fail-loud, mirroring `runE`). -/
+def stepHost (hostLabels : List Nat) (fuel : Nat) (rs : List MVal) (M : Comp) : HostStep :=
+  match evalEHost hostLabels fuel 0 [] [] [] .nil rs M with
+  | some (.mterm (.mret mv), _, _, _, _, _, _)  => .hdone (readback mv)
+  | some (_, _, _, _, _, _, some req)           => .hreq req    -- a granted host perform: the label rides `req`
+  | _                                           => .hstuck      -- escapedCap / non-host raise / fn-terminal / oom
+
 /-- `runE` and `Source.eval` agree on a pure program (the mini-Agree). -/
 def MiniAgree (fuel : Nat) (M : Comp) (v : Val) : Prop :=
   runE fuel M = .done v ∧ Bang.Source.eval fuel M = .done v
@@ -3332,6 +3505,50 @@ This is the load-bearing witness — the closure captured `x` from the env, and 
 gives the same value the substitution reference got by copying `x` into the thunk body. -/
 example : MiniAgree 14 (.letC (.ret (.vint 7)) (.force (.vthunk (.ret (.vvar 0))))) (.vint 7) :=
   ⟨by rfl, by rfl⟩
+
+/-! ### The `evalEHost ≡ evalE` DRIFT GATE (ADR-0104 §4 condition-1)
+
+`evalEHost` is a hand-copied sibling of `evalE` (they cannot be ONE def without re-keying the proven
+`evalE_agrees_evalD_gen` tuple). The risk is DRIFT: a future edit to `evalE` not mirrored in
+`evalEHost` (or vice versa). These `#guard`s pin it at CI: with NO granted host labels and an EMPTY
+response prefix, `stepHost [] fuel [] M` must produce the SAME first-order value as `runE fuel M` —
+i.e. on the shared (non-host) fragment the sibling IS the proven engine. Compiled `#guard`s (the only
+reliable eval, `lean-eval-reliable-only-compiled`), run over the SAME witness battery as the mini-Agree
+above (pure · state · txn · txn-abort · custom · custom-abort · deep-closure), so any divergence on ANY
+arm turns this module RED. This is the derivation-ladder "test" rung standing in for the "generate" rung
+the tuple-re-key cost forecloses. `tools/test-hostio.sh` additionally re-checks it end-to-end on the
+corpus. -/
+private def hostYieldsInt (s : HostStep) (n : Int) : Bool :=
+  match s with | .hdone (.vint m) => m == n | _ => false
+
+-- Each pair: `runE` (the proven engine) and `stepHost [] · [] ·` (the sibling, no host labels, no
+-- responses) yield the SAME int on the SAME witness. Drift on any arm ⇒ one side flips ⇒ RED.
+#guard hostYieldsInt (stepHost [] 8 [] (.app (.lam (.ret (.vvar 0))) (.vint 5))) 5
+#guard hostYieldsInt (stepHost [] 12 [] (.letC (.ret (.vint 7)) (.force (.vthunk (.ret (.vvar 0)))))) 7
+#guard hostYieldsInt (stepHost [] 14 []
+  (.letC (.ret (.vint 3)) (.letC (.ret (.vint 4)) (.binop .add (.vvar 1) (.vvar 0))))) 7
+#guard hostYieldsInt (stepHost [] 8 [] (.case (.inl (.vint 5)) (.ret (.vvar 0)) (.ret (.vint 99)))) 5
+#guard hostYieldsInt (stepHost [] 8 [] (.split (.pair (.vint 3) (.vint 4)) (.ret (.vvar 1)))) 3
+#guard hostYieldsInt (stepHost [] 20 [] deepClosureWitness) 7
+#guard hostYieldsInt (stepHost [] 80 [] stateWitness) 7
+#guard hostYieldsInt (stepHost [] 40 [] txnWitness) 9
+#guard hostYieldsInt (stepHost [] 80 [] txnAbortWitness) 100
+#guard hostYieldsInt (stepHost [] 200 [] customWitness) 106
+#guard hostYieldsInt (stepHost [] 200 [] customAbortWitness) 42
+
+-- ── the host SEAM itself: an ESCAPED perform on a GRANTED host label, response supplied, RESUMES.
+--    A cap for label 9 is captured in a thunk under a `handle (throws 9)` then FORCED after the
+--    handler returns — the escapedCap shape (ADR-0063). With label 9 GRANTED and a response `[77]`
+--    queued, the seam injects 77 instead of failing. `let c = (thunk that performs on the minted
+--    cap) in (handle (throws 9) (ret c)); force the result` — the cap outlives its throws frame,
+--    so its perform hits NO store ⇒ the host seam ⇒ 77. ──
+#guard hostYieldsInt (stepHost [9] 40 [.mvint 77]
+  (.letC (.handle (.throws 9) (.ret (.vthunk (.perform (.vvar 0) "now" .vunit))))
+    (.force (.vvar 0)))) 77
+-- and the SAME program with label 9 NOT granted ⇒ escapedCap ⇒ hstuck (NOT hdone) ⇒ projector false.
+#guard (hostYieldsInt (stepHost [] 40 [.mvint 77]
+  (.letC (.handle (.throws 9) (.ret (.vthunk (.perform (.vvar 0) "now" .vunit))))
+    (.force (.vvar 0)))) 77) == false
 
 end -- public section
 end Bang.EnvMachine
