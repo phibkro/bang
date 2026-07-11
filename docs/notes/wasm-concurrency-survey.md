@@ -245,6 +245,70 @@ spike; the async ABI is new and its fit to graded-CBPV lowering is *unverified*.
   shared GC structs; the privileged-STM form (ADR-0030) can't ship before its substrate. Reframe
   the invariant-#3 debt against a moving proposal.
 
+## §G2-MEASURED — component instantiation cost + canonical-ABI copy tax (2026-07-11)
+
+Issue #116. The §G2 deferral rested on two *unverified* numbers; this section
+supplies them. Measured on **wasmtime 45.0.0** (CLI round-trip) / **wasmtime crate
+34.0.2** (the timing driver, Cranelift, component-model + WasmGC on); components built
+with **wasm-tools 1.249.0**; single machine (workstation, x86-64, Linux 6.18). The
+engine is built once and each component compiled once — the driver times only
+`Instance::new` / a single component call, so process + JIT startup do not pollute
+the µs figures. Re-runnable: `tools/bench/g2-components/run.sh`.
+
+**(1) Instantiation cost** — warm µs/instance (a fresh `Store` per iteration = the
+honest "spawn a new instance" cost), N=10 000:
+
+| allocator | trivial component | stateful (mem + table + global) |
+|---|---|---|
+| default (mmap/instance) | ~0.7 µs | ~9 µs |
+| pooling (pre-reserved slots) | ~1 µs | ~2–3 µs |
+
+Cold (first) instantiation: 8–26 µs. All figures are **single-digit-to-low-tens µs** —
+3–5 orders of magnitude below a millisecond. Instantiation is *not* a ms-scale
+deployment cost; it is green-thread-plausible. The pooling allocator (the config a
+spawn-primitive would actually use) makes the stateful case ~3× cheaper by reusing
+memory mappings.
+
+**(2) Canonical-ABI copy tax** — µs/call, callee re-compiled once, N≥3 000:
+
+| payload crossing the boundary | µs/call |
+|---|---|
+| empty (floor: `func() -> u32`) | ~0.15 µs |
+| small flat message (`tuple<u32,u32>`, by-value) | ~0.20 µs |
+| `list<u32>` copy-in only (callee returns len), n=1 000 | ~4–6 µs |
+| `list<u32>` copy-in only, n=100 000 | ~400–420 µs |
+
+The copy-in is a **linear ~4 ns/element** memcpy-class cost (confirmed two ways:
+copy-only scales 4–6 µs → ~420 µs across 1k→100k; and `copy+sum` minus a `no-cross`
+baseline — same sum with the list built *inside* the callee, no boundary — leaves a
+~3.8 ns/element boundary-attributable delta). Correctness was checked every run
+(`sum[0..1000)=499500`, `sum[0..100000) mod 2³²=704982704`).
+
+**Verdict: the G2 deferral STANDS, and is now quantified rather than asserted.**
+- Instantiation being **µs-cheap does *not* by itself make components the spawn
+  primitive** — it clears the *first* gate (G2's "cheap enough (µs)") but the copy
+  tax gate is the deciding one.
+- A component boundary is **free for small flat messages** (~0.2 µs, at the floor)
+  but pays a **linear per-element tax on collection/GC-heap payloads** (~4 ns/elem;
+  ~0.4 ms for a 100k-element list). This is exactly the shared-nothing,
+  copy-crossing cost model the survey assumed [why-cm]. So the boundary is the right
+  shape for a *coarse actor / distribution / isolation* seam (small messages, or
+  amortized bulk transfers) and the *wrong* shape for fine-grained in-process spawn
+  that shares large mutable GC structure — which is precisely why the in-process
+  cooperative scheduler (seat a, §1.2) stays the default concurrency primitive and
+  `!`-across-a-component-boundary (G7) lowers to this copy-crossing call.
+
+**Caveats / what was NOT measured.** Single machine, no cross-run statistics beyond
+2–3 repeats (the claim is orders-of-magnitude, not benchmarketing). The list payload
+is `u32` (4 B/elem); a `list<record>` or `list<string>` pays more per element
+(pointer-chasing + nested realloc) — the ~4 ns/elem floor is a *lower* bound on real
+GC-value crossings. **The component-model async lift/lower** (WASI-0.3 `async func` /
+`stream<T>` / `future<T>`, G8) was **not** measured — those add task/subtask
+bookkeeping and backpressure on top of the raw copy, and their fit to graded-CBPV
+lowering is still the Q(conc-3) spike. Hand-written WAT `record` lift did not validate
+on this toolchain (wasm-tools 1.249 quirk); `tuple<u32,u32>` is the ABI-identical flat
+proxy used for the small-message row.
+
 ## Citations
 
 **bang-side** (ADR/note): ADR-0007 (force explicit; `!` = actor-send) · ADR-0016/0059 (two-hop arch;
