@@ -92,6 +92,27 @@ def parseEngine (flags : List String) : Engine :=
   else if flags.contains "--engine=compiled" || flags.contains "--compiled" then .compiled
   else .env
 
+/-- Parse `--fuel N` out of the raw flag list (issue #103(a)): a TWO-TOKEN flag (unlike every
+other `--…` flag in this CLI, which is single-token), so it needs its own scan rather than a
+`.contains` check. Returns `defaultFuel` when absent, when the value fails to parse as a `Nat`, or
+when `--fuel` is the last token with no following value — never a silent 0/crash; an unparseable
+value falls back to the safe default rather than becoming a surprising fuel-less run. -/
+def parseFuel (flags : List String) : Nat :=
+  let rec go : List String → Nat
+    | "--fuel" :: v :: _ => v.toNat?.getD defaultFuel
+    | _ :: rest          => go rest
+    | []                 => defaultFuel
+  go flags
+
+/-- Strip `--fuel N` (BOTH tokens) out of a flag list, alongside the SAME `"--".isPrefixOf`
+single-token filter every other subcommand already applies — so `--fuel`'s VALUE token (a bare
+number, no `--` prefix) doesn't leak through as a stray positional. Composes with
+`.filter (fun a => !("--".isPrefixOf a))`: apply THIS first, then that. -/
+def stripFuelFlag : List String → List String
+  | "--fuel" :: _ :: rest => stripFuelFlag rest
+  | a :: rest             => a :: stripFuelFlag rest
+  | []                    => []
+
 /-- A `Str` value (ADR-0074, #49) — `SNil = fold (inl ())`, `SCons(Char cp, …) = fold (inr (fold cp,
 …))` — rendered to its glyphs (code points → chars). `none` if the value is not a char-list. Only a
 NON-EMPTY result is treated as a string by `valPretty` (an EMPTY char-list `fold (inl ())` is
@@ -131,9 +152,15 @@ The MESSAGE (issue #67) names what collapsed even though `exec` itself can't
 distinguish the three — the oracle engine (`runComp`'s `.oom`/`.escapedCap`/`.stuck`
 arms below) already sub-classifies the SAME program, so the message directs the
 reader there for the specific cause rather than pretending `--compiled` can say more
-than its own return type allows. -/
-def runCompiled (c : Comp) : IO UInt32 := do
-  match Bang.CalcVM.exec compiledFuel 0 (Bang.CalcVM.compile c []) [] [] with
+than its own return type allows.
+
+`srcFuel` is the USER-facing fuel (issue #103(a), `--fuel N`; `defaultFuel` when not
+given) — scaled ×10 to stay in `exec`'s finer machine-instruction unit, exactly the
+same ratio `compiledFuel := 10 * defaultFuel` already fixed for the no-flag case (see
+`compiledFuel`'s own doc comment); this makes `--fuel` raise BOTH engines' ceilings by
+the same proportional amount rather than only the oracle's. -/
+def runCompiled (srcFuel : Nat) (c : Comp) : IO UInt32 := do
+  match Bang.CalcVM.exec (10 * srcFuel) 0 (Bang.CalcVM.compile c []) [] [] with
   | some [.ret v] => IO.println (valPretty v); pure 0
   | _ =>
     IO.eprintln <|
@@ -146,9 +173,13 @@ def runCompiled (c : Comp) : IO UInt32 := do
 `readback` at empty stores — exactly the premise shape of the proven headline `evalE_agrees_evalD`
 (elaborator output is `WF`/`WFClos`/`HandlerWF`/`ScopedC` by the CK contract). Returns the value on a
 first-order returner; every other terminal (`raise`/function-terminal/oom/stuck) collapses to a single
-fail-loud line — the experimental engine does NOT sub-classify (that is what the oracle is for). -/
-def runEnv (c : Comp) : IO UInt32 := do
-  match Bang.EnvMachine.runE defaultFuel c with
+fail-loud line — the experimental engine does NOT sub-classify (that is what the oracle is for).
+
+`fuel` is the USER-facing fuel (issue #103(a), `--fuel N`; `defaultFuel` when not given) — `runE`
+already takes fuel as a plain parameter, so no scaling is needed (unlike the compiled engine's finer
+machine-instruction unit): this engine's step is the SAME unit `--fuel` names. -/
+def runEnv (fuel : Nat) (c : Comp) : IO UInt32 := do
+  match Bang.EnvMachine.runE fuel c with
   | .done v => IO.println (valPretty v); pure 0
   | _ =>
     IO.eprintln <|
@@ -166,19 +197,26 @@ MESSAGES (issue #67, operator ruling 2026-07-09): the exit code stays the machin
 each non-zero outcome ALSO gets a one-line stderr explanation naming the outcome, the likely
 cause, and the next step, matching `check --json`'s plain-English tone. `stuck` is reachable
 ONLY via `--no-typecheck` (`type_safety`: a well-typed ⊥-row program never gets there), so its
-message can unconditionally point at the type gate being off — not a flag-dependent guess. -/
-def runComp (engine : Engine) (c : Comp) : IO UInt32 := do
+message can unconditionally point at the type gate being off — not a flag-dependent guess.
+
+`fuel` is the USER-facing ceiling (issue #103(a), `--fuel N`; `defaultFuel` when not given) —
+plumbed to all three engines: the oracle directly (SAME unit `Source.eval` counts in), the env
+engine directly (`runEnv`'s own doc comment — SAME unit), the compiled engine ×10-scaled
+(`runCompiled`'s own doc comment — its finer machine-instruction unit). The out-of-fuel MESSAGE
+below names `fuel`, not the frozen `defaultFuel` constant, so it stays accurate under `--fuel`. -/
+def runComp (engine : Engine) (fuel : Nat) (c : Comp) : IO UInt32 := do
   match engine with
-  | .compiled => runCompiled c
-  | .env      => runEnv c
+  | .compiled => runCompiled fuel c
+  | .env      => runEnv fuel c
   | .oracle   =>
-  match Bang.Source.eval defaultFuel c with
+  match Bang.Source.eval fuel c with
   | .done v      => IO.println (valPretty v); pure 0
   | .oom         =>
     IO.eprintln <|
-      s!"error: out of fuel (ceiling {defaultFuel} steps) — the program may diverge, or hit " ++
+      s!"error: out of fuel (ceiling {fuel} steps) — the program may diverge, or hit " ++
       "the recursion-cost cliff (issue #61); a well-typed program that should terminate is " ++
-      "likely paying substitution cost per step rather than genuinely looping"
+      "likely paying substitution cost per step rather than genuinely looping — try a higher " ++
+      "ceiling with --fuel N (issue #103)"
     pure 2
   | .escapedCap  =>
     IO.eprintln <|
@@ -360,32 +398,35 @@ exit code. `typecheck` selects the pipeline (ADR-0076 #51):
     run, NO type gate. Kept for oracle/differential testing (running an ill-typed program to observe
     the defined runtime `stuck`/`escapedCap`, ADR-0063).
 
-`engine` selects only the execution ENGINE and is orthogonal to `typecheck`. -/
-def runSource (typecheck : Bool) (engine : Engine) (src : String) : IO UInt32 := do
+`engine` selects only the execution ENGINE and is orthogonal to `typecheck`. `fuel` is the
+USER-facing ceiling (issue #103(a), `--fuel N`; `defaultFuel` when not given), forwarded straight
+to `runComp`. -/
+def runSource (typecheck : Bool) (engine : Engine) (fuel : Nat) (src : String) : IO UInt32 := do
   if typecheck then
     match Bang.TypeCheck.checkAndLower src with
     | .error (m, some sp) => IO.eprintln s!"error at {sp.loc}: {m}"; pure 1
     | .error (m, none)    => IO.eprintln s!"error: {m}"; pure 1
-    | .ok c               => runComp engine c
+    | .ok c               => runComp engine fuel c
   else
     match Bang.TypeCheck.elaborateToComp src with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
-    | .ok c    => runComp engine c
+    | .ok c    => runComp engine fuel c
 
 /-- Run an already-RESOLVED-and-merged `Prog` (ADR-0093 D1-D4 — `resolveEntryFile`'s output) through
 the SAME two pipelines `runSource` offers for a single file: DEFAULT type-checked
 (`checkAndLowerProg`) or `--no-typecheck` raw erase-and-run (`elaborateToCompProg`), then `runComp`.
 No located errors either way (see `checkAndLowerProg`'s doc comment) — a resolution/parse failure
-is already located by `resolveEntryFile` itself, before this runs. -/
-def runResolvedProg (typecheck : Bool) (engine : Engine) (prog : Prog) : IO UInt32 := do
+is already located by `resolveEntryFile` itself, before this runs. `fuel` is the USER-facing ceiling
+(issue #103(a), `--fuel N`; `defaultFuel` when not given), forwarded straight to `runComp`. -/
+def runResolvedProg (typecheck : Bool) (engine : Engine) (fuel : Nat) (prog : Prog) : IO UInt32 := do
   if typecheck then
     match Bang.TypeCheck.checkAndLowerProg prog with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
-    | .ok c    => runComp engine c
+    | .ok c    => runComp engine fuel c
   else
     match Bang.TypeCheck.elaborateToCompProg prog with
     | .error e => IO.eprintln s!"error: {e}"; pure 1
-    | .ok c    => runComp engine c
+    | .ok c    => runComp engine fuel c
 
 /-- Run `bang fmt`: format a whole program (decls + body, `Bang.Format.fmtProg`) and print the
 canonical form to stdout. `.error` → stderr + exit 1, the SAME convention `runSource`'s parse-error
@@ -1223,6 +1264,15 @@ def usage : String :=
   "  bang run  [FLAGS] <file.bang>      run a bang program from a file\n" ++
   "  bang eval [FLAGS] \"<surface expr>\"  run a surface expression directly\n" ++
   "  bang repl [FLAGS]                  interactive read-eval-print loop (issue #7)\n" ++
+  "             --engine=oracle|compiled|env   select the execution engine (ADR-0094; default env)\n" ++
+  "             --no-typecheck                 skip the type gate (oracle/differential testing)\n" ++
+  "             --fuel N                       raise the step ceiling above the default " ++
+  s!"{defaultFuel}\n" ++
+  "                                             (issue #103); applies to run/eval/repl on every " ++
+  "engine\n" ++
+  "                                             (the compiled engine scales it ×10 internally for " ++
+  "its\n" ++
+  "                                             finer machine-instruction unit — see `runCompiled`)\n" ++
   "  bang fmt  [<file.bang>]            print the canonical form (issue #58); reads stdin if no file\n\n" ++
   "  bang check [FLAGS] [<file.bang>]   type-check only, no run (issue #59); reads stdin if no file\n" ++
   "             --json                  emit agent-facing structured JSON diagnostics on stdout\n\n" ++
@@ -1436,7 +1486,7 @@ def stripTPrefix (line : String) : Option String :=
 /-- Evaluate one line of REPL input against the accumulated bindings, returning the (possibly
 updated) bindings and the exit code of whatever ran (`0` for a silent `:let`/`:help`/comment/blank
 line, so a piped session's exit code reflects only the last REAL evaluation — see `runRepl`). -/
-def replStep (typecheck : Bool) (engine : Engine) (binds : List ReplBinding) (line : String) :
+def replStep (typecheck : Bool) (engine : Engine) (fuel : Nat) (binds : List ReplBinding) (line : String) :
     IO (List ReplBinding × UInt32) := do
   let line := line.trimAscii.toString
   if line.isEmpty then
@@ -1458,7 +1508,7 @@ def replStep (typecheck : Bool) (engine : Engine) (binds : List ReplBinding) (li
     else match ← (do let s ← IO.FS.readFile ⟨path⟩; pure (some s)) <|> pure none with
     | none     => IO.eprintln s!"error: could not read file '{path}'"; return (binds, 1)
     | some src =>
-      let code ← runSource typecheck engine (wrapBindings binds src)
+      let code ← runSource typecheck engine fuel (wrapBindings binds src)
       return (binds, code)
   else if line.startsWith ":let" then
     match splitLetCmd (line.drop 4).toString with
@@ -1467,7 +1517,7 @@ def replStep (typecheck : Bool) (engine : Engine) (binds : List ReplBinding) (li
   else if line.startsWith ":" then
     IO.eprintln s!"error: unknown command '{line}' (:help for the list)"; return (binds, 1)
   else
-    let code ← runSource typecheck engine (wrapBindings binds line)
+    let code ← runSource typecheck engine fuel (wrapBindings binds line)
     return (binds, code)
 
 /-- The interactive/piped loop: read a line, `replStep`, repeat until `:q`/`:quit`/EOF. Works
@@ -1476,7 +1526,7 @@ exits on EOF) — `IO.FS.Stream.getLine` doesn't care which; that is what makes 
 (agent-driven) use case work for free, per the operator's agent-first framing. Tracks the exit
 code of the LAST line that actually ran (silent lines don't overwrite it), so a piped single-expr
 session's exit code matches `bang eval`'s for the same program. -/
-partial def runRepl (typecheck : Bool) (engine : Engine) : IO UInt32 := do
+partial def runRepl (typecheck : Bool) (engine : Engine) (fuel : Nat) : IO UInt32 := do
   let stdin ← IO.getStdin
   let isTty ← stdin.isTty
   let rec loop (binds : List ReplBinding) (lastCode : UInt32) : IO UInt32 := do
@@ -1489,7 +1539,7 @@ partial def runRepl (typecheck : Bool) (engine : Engine) : IO UInt32 := do
       if trimmed == ":q" || trimmed == ":quit" then
         return lastCode
       else
-        let (binds', code) ← replStep typecheck engine binds line
+        let (binds', code) ← replStep typecheck engine fuel binds line
         loop binds' code
   loop [] 0
 
@@ -1513,22 +1563,25 @@ def main (args : List String) : IO UInt32 := do
       -- an `import` in an `eval`-string program is out of v1 scope (no directory to search).
       let engine     := parseEngine rest
       let typecheck  := !rest.contains "--no-typecheck"
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
+      let fuel       := parseFuel rest
+      match stripFuelFlag rest |>.filter (fun a => !("--".isPrefixOf a)) with
       | [arg] =>
         match ← resolveEntryFile arg with
         | .error e   => IO.eprintln s!"error: {e}"; pure 1
-        | .ok merged => runResolvedProg typecheck engine merged
+        | .ok merged => runResolvedProg typecheck engine fuel merged
       | _ => IO.eprintln usage; pure 1
     else if cmd == "eval" then
       let engine     := parseEngine rest
       let typecheck  := !rest.contains "--no-typecheck"
-      match rest.filter (fun a => !("--".isPrefixOf a)) with
-      | [arg] => runSource typecheck engine arg
+      let fuel       := parseFuel rest
+      match stripFuelFlag rest |>.filter (fun a => !("--".isPrefixOf a)) with
+      | [arg] => runSource typecheck engine fuel arg
       | _ => IO.eprintln usage; pure 1
     else if cmd == "repl" then
       let engine    := parseEngine rest
       let typecheck := !rest.contains "--no-typecheck"
-      runRepl typecheck engine
+      let fuel      := parseFuel rest
+      runRepl typecheck engine fuel
     else if cmd == "fmt" then
       -- no `--` flags this slice (no `-w`, per the team lead's hold); any non-positional is usage.
       match rest with
