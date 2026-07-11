@@ -4782,11 +4782,27 @@ reusing the same "keep bare" set `.dataD`'s ctors already ride — a trait is a 
 exactly like a ctor, `moduleTopNames`'s own `d.name` fallback already includes it) — otherwise
 `impl Eq for Box` and `trait Eq`'s own now-qualified `ModName_Eq` diverge and `buildEnv` rejects the
 impl as targeting an undeclared trait (confirmed live before this fix: `error: impl of undeclared
-trait 'Eq'`, a two-file program importing a trait and implementing it in the entry file). -/
+trait 'Eq'`, a two-file program importing a trait and implementing it in the entry file).
+
+A `use`d EFFECT is the exact same shape as a `use`d trait, not a `use`d type: an effect's declared
+name is referenced via `Surf.var` (inside `withCapS`'s `k`-labelled init / `handleCustomS`'s `n`
+field — `handle … with Log as h { … }` parses `Log` as `.var "Log"`, resolved to a label only later)
+AND via `Ty` row/`Cap` positions (`! {Log}`, `Cap Log`) — but crucially those `Ty` positions are
+resolved by a SEPARATE later pass (`resolveEffName`/`resolveTyG`'s `Cap` special case, against
+`env.effects`) that looks up the LITERAL name text unchanged; row annotations are never rewritten by
+any `qualify*` pass (`.tEff ns t`'s `ns` list is threaded through `qualifyTyName` untouched). So the
+ONLY place an effect's spelling is decided is here, its own decl-name qualification, mirroring the
+trait rule exactly (`usedCtors.contains n` keeps it bare) — once the effect's OWN `.effectD` decl
+stays unqualified, `env.effects` is keyed by the bare name and every reference site (`Surf.var`,
+`! {…}` rows, `Cap …`) resolves for free, no separate reference-side fix needed. Before this fix, an
+imported effect needed the mangled `Mod_Eff` spelling in EVERY position even in files that `use`d it
+(`docs/notes/dogfood-calc-findings.md`'s papercut, confirmed live: `error: 'Log' is not a declared
+effect (row annotation)` for a bare row naming a `use`d effect). -/
 def qualifyDeclName (modName : String) (usedCtors : List String) : Decl → Decl
   | .dataD n ps cs        =>
       .dataD (qualifyName modName n) ps (cs.map (fun (c, tys) => (if usedCtors.contains c then c else qualifyName modName c, tys)))
-  | .effectD n ops        => .effectD (qualifyName modName n) ops
+  | .effectD n ops        =>
+      .effectD (if usedCtors.contains n then n else qualifyName modName n) ops
   | .traitD n ps ops laws =>
       .traitD (if usedCtors.contains n then n else qualifyName modName n) ps ops laws
   | .implD n t ops        => .implD n t ops          -- an impl's "name" is its TRAIT (already qualified via the trait's own decl)
@@ -5076,9 +5092,19 @@ def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog
     modP.decls.flatMap (fun d => match d with
       | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
       | _              => []))
+  -- an EFFECT or TRAIT name is not a `let`-aliasable "plain fn" — `mergeModules`'s twin site (this
+  -- function's own doc-comment cross-ref) has the full rationale; this transitively-imported-module
+  -- pass needs the identical exclusion so a module that itself `use`s an effect from a THIRD module
+  -- gets the same bare, direct-resolving name, not a shadowing `let`-alias.
+  let nonAliasableNames : List String := resolved.flatMap (fun (_, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .effectD n _   => [n]
+      | .traitD n _ _ _ => [n]
+      | _              => []))
   let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
     u.names.filterMap (fun n =>
-      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome then none else some (n, u.modName)))
+      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome || nonAliasableNames.contains n
+      then none else some (n, u.modName)))
   let decls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
     | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
@@ -5144,15 +5170,18 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
     mergedDecls := mergedDecls ++ modQ.decls
   let importNames := resolved.map Prod.fst
   -- CLASSIFY every resolved module's names so `use`/qualified access rewrites each the RIGHT way —
-  -- a `data` type name, a data CONSTRUCTOR, and a plain `fn`/`effect`/`trait` name are three
-  -- DIFFERENT surface positions (a type ascription's `Ty.tName`, a match PATTERN's bare `String`,
-  -- and an ordinary `Surf.var` reference respectively), so one uniform `let`-alias (which only
-  -- works for the third kind — ctors and type names are never first-class VALUES a `let` can
-  -- bind) is unsound. `ctorOwners` covers kind 2 (pattern rewrite for an UN-`use`d ctor — `use`
-  -- keeps a ctor BARE both in the merged decl list, `qualifyModule` above, and here, so there is
-  -- nothing to rewrite for it; only a bare `import`'s ctor needs the qualified pattern spelling).
-  -- Type names (kind 1) are handled by `qualifyTyName` (ascriptions/decl signatures) below. Only
-  -- kind 3 (plain functions) gets the `let`-alias wrap.
+  -- a `data` type name, a data CONSTRUCTOR, an `effect`/`trait` name, and a plain `fn` name are
+  -- FOUR different surface positions (a type ascription's `Ty.tName`, a match PATTERN's bare
+  -- `String`, `handleCustomS`/`withCapS`/`implD`'s own bare-`.var`-or-name resolution against
+  -- `env.effects`/the trait table, and an ordinary `Surf.var` reference respectively), so one
+  -- uniform `let`-alias (which only works for the fourth kind — ctors, type names, and effect/trait
+  -- names are never first-class VALUES a `let` can bind) is unsound. `ctorOwners` covers kind 2
+  -- (pattern rewrite for an UN-`use`d ctor — `use` keeps a ctor BARE both in the merged decl list,
+  -- `qualifyModule` above, and here, so there is nothing to rewrite for it; only a bare `import`'s
+  -- ctor needs the qualified pattern spelling). Type names (kind 1) are handled by `qualifyTyName`
+  -- (ascriptions/decl signatures) below; effect/trait names (kind 3) stay bare via
+  -- `qualifyDeclName`'s own `usedCtors` exemption and are excluded from the alias set below
+  -- (`nonAliasableNames`) — only kind 4 (plain functions) gets the `let`-alias wrap.
   let allCtorOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
     modP.decls.flatMap (fun d => match d with
       | .dataD _ _ cs => cs.map (fun (c, _) => (c, modName))
@@ -5168,13 +5197,29 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
     modP.decls.flatMap (fun d => match d with
       | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
       | _              => []))
-  -- a `use`d name that is a PLAIN fn/effect/trait (not a ctor, not a data type) gets the
+  -- an EFFECT or TRAIT name is a fourth classification kind, not "plain fn" (the doc comment two
+  -- paragraphs below was stale on this point — before this fix, `use Mod (Log)` naming an effect
+  -- fell through to `usedPlainFns` and got a `let Log = Mod_Log in …` alias wrap, WRONG for the
+  -- same reason a trait wrap would be wrong: `handleCustomS`'s `n`/`withCapS`'s `k` fields expect
+  -- `Log` to resolve DIRECTLY against `env.effects` by its (now-bare, `qualifyDeclName`'s own
+  -- `usedCtors`-exemption) name — a `let`-bound value shadows that resolution with an unrelated
+  -- ordinary variable, and `handleCustomS`'s `.var effN` lookup finds the QUALIFIED name instead of
+  -- the bare one the alias's RHS names, "not a declared effect" (confirmed live). Traits ride the
+  -- exact same fix for the same reason (`qualifyDeclName`'s own `.traitD` bare-keeping arm has the
+  -- same "referenced via one non-`let`-able surface position" rationale). -/
+  let nonAliasableNames : List String := resolved.flatMap (fun (_, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .effectD n _   => [n]
+      | .traitD n _ _ _ => [n]
+      | _              => []))
+  -- a `use`d name that is a PLAIN fn (not a ctor, not a data type, not an effect/trait) gets the
   -- `let`-alias wrap — the one kind for which that mechanism is sound. Classified against the
   -- UNFILTERED `allCtorOwners` (not `ctorOwners`, which excludes `use`d ctors BY DESIGN — using
   -- the filtered set here would misclassify a `use`d ctor as a "plain fn").
   let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
     u.names.filterMap (fun n =>
-      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome then none else some (n, u.modName)))
+      if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome || nonAliasableNames.contains n
+      then none else some (n, u.modName)))
   let qTy := qualifyTyName dataTyOwners usedNames
   let entryDecls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
@@ -5695,6 +5740,33 @@ def eqModProg : Prog :=
                   [⟨"eq", ["p", "q"], .binopS .eq (.var "p") (.var "q")⟩]],
       body := .binopS .eq (.app (.var "BLeft") (.lit 3)) (.app (.var "BLeft") (.lit 3)), isLibrary := false } with
     | .ok merged => merged.decls.any (fun d => match d with | .traitD "Eq" .. => true | _ => false)
+    | .error _   => false)
+
+/-- **The `.effectD` twin of #117's gap-1 fix** (Mod_Eff ergonomics): a `use`d EFFECT resolves
+BARE at every reference site — `handle … with Log as h { … }` (`.handleCustomS`'s `n : .var "Log"`
+field) AND `Cap Log`/`! {Log}` row annotations (`resolveEffName` against `env.effects`, keyed by
+whatever spelling `qualifyDeclName` leaves the effect's OWN decl at). Reproduced RED before this fix
+(live via `bang run`, `docs/notes/dogfood-calc-findings.md`'s papercut): `error: 'Log' is not a
+declared effect (row annotation)` for a bare row naming a `use`d effect, and — even after ONLY the
+decl-name half of the fix — `error: handle: 'LibMod_Log' is not a declared effect` from the SEPARATE
+`usedPlainFns` alias-wrap bug (a `use`d effect misclassified as a "plain fn", `let Log = LibMod_Log`
+shadowing the direct-resolution `handleCustomS` needs). Exercises `mergeModules` directly (the SAME
+`Prog`-taking pure-function seam `eqModProg`'s test above uses) with the effect's `Cap`/`handle`
+positions BOTH present, so either half of the fix regressing fails this guard. -/
+def logModProg : Prog :=
+  { pubNames := ["Log", "helper"],
+    decls := [.effectD "Log" [("emit", .tArr .tInt .tInt)],
+              .letRecD "helper" (.tArr (.tApp "Cap" (.one (.tName "Log"))) (.tArr .tInt (.tEff ["Log"] .tInt)))
+                (.lam "cap" (.lam "x" (.dotPerform (.var "cap") "emit" (.one (.var "x")))))],
+    body := .lit 0, isLibrary := true }
+#guard (match mergeModules [("LibMod", logModProg)]
+    { uses := [⟨"LibMod", ["Log"]⟩],
+      decls := [],
+      body := .handleCustomS none (.var "Log")
+                (.one (.app (.app (.var "LibMod_helper") (.var "h")) (.lit 5))) "h"
+                (.cons "emit" "x" (.binopS .add (.var "x") (.lit 1)) .nil)
+                (.var "h"), isLibrary := false } with
+    | .ok merged => merged.decls.any (fun d => match d with | .effectD "Log" .. => true | _ => false)
     | .error _   => false)
 
 /-- **Widened for #117's gap-2 fix.** Originally `parseProg >>= expandDerives` alone (so a
