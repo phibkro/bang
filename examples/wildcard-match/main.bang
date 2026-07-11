@@ -1,0 +1,22 @@
+data Color = Red | Green | Blue | Yellow | Purple
+data List a = Nil | Cons(a, List a)
+
+-- Without a wildcard, a match on `Color` needs FIVE explicit arms even when four of them
+-- share the same "not the color I care about" body. `_` (issue #101) names that shared body
+-- ONCE — the elaborator expands it into the missing constructors' arms (here: Green, Blue,
+-- Yellow, Purple), duplicating the body under fresh, unused binders. The kernel never sees a
+-- wildcard: `expandWildcardArms` runs BEFORE elaboration, so the ADR-0069 named-match
+-- elimination shape is exactly as before — this is sugar, not a new kernel construct.
+let rec isWarm : Color -> Int = fun c => match c { Red -> 1, _ -> 0 } in
+
+-- The wildcard also covers ctors with PAYLOAD (`Cons`) — its fresh binders are minted at the
+-- constructor's real arity and simply never used, since the wildcard body ignores the payload.
+let rec countWarm : List Color -> Int = fun cs =>
+  match cs {
+    Nil -> 0,
+    Cons(c, rest) -> ($isWarm) c + ($countWarm) rest
+  }
+in
+
+let palette = Cons(Red, Cons(Blue, Cons(Red, Cons(Green, Nil)))) in
+($countWarm) palette

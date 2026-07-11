@@ -2546,6 +2546,62 @@ def resolveCtor (env : ElabEnv) (x : String) : Option (Except String CtorInfo) :
           let ownersStr := String.intercalate ", " owners
           some (.error s!"ambiguous constructor '{x}' — candidates: {ownersStr}")
 
+/-- **#101**: expand a match's wildcard arm `_ -> body` (if present) into one fresh arm per
+constructor of the scrutinee's data type NOT already covered by an earlier, EXPLICIT arm — so
+every downstream consumer (`elabArms`'s binder typing, the `matchD` arm's `dcs`/`ordered`
+exhaustiveness loop) sees an ordinary fully-explicit `DArms` and needs NO wildcard awareness of
+its own (one preprocessing seam, zero blast radius on the existing pipeline). Fresh binder names
+(`"_w0"`, `"_w1"`, …, sized to each missing ctor's arity) are unused by construction — the
+wildcard body binds nothing, so reusing it verbatim under fresh names is safe (no capture: these
+names cannot appear free in `body`, since `body` was parsed BEFORE any of them were minted).
+
+The data type is resolved from the FIRST EXPLICIT arm's ctor (`resolveCtor`, ADR-0099) — the
+SAME anchor `matchD`'s own post-`elabArms` validation already uses for `c0`; a wildcard is
+therefore only resolvable when at least one explicit ctor arm exists to name the type (a
+`match s { _ -> e }` with zero explicit arms has no textual anchor — B014, distinct from the
+dead-arm case).
+
+Errors (both routed to codeForMsg **B014**, ADR-friendly wording chosen so both anchor on
+`"wildcard arm"`):
+- `_` appears before the LAST arm: reachability violates the ADR-0069 elimination shape (arms
+  after a `_` in decl order are never reached — the SAME "would never fire" property a trailing
+  catch-all guarantees in every ML-family match).
+- `_` covers ZERO ctors (every ctor already has an explicit arm): dead code, not an error the
+  writer intended — the ADR-0069 exhaustiveness check would have accepted the match without it. -/
+def expandWildcardArms (env : ElabEnv) (arms : DArms) : Except String DArms := do
+  let armsL := armsToList arms
+  -- no wildcard at all: pass through unchanged (the overwhelmingly common case, zero cost).
+  if !armsL.any (fun a => a.1 == "_") then return arms
+  -- reject a non-last wildcard BEFORE anything else (a clear position, independent of whether the
+  -- data type even resolves) — `List.findIdx?` locates it; anything after that index is dead.
+  let wIdx := armsL.findIdx (fun a => a.1 == "_")
+  if wIdx != armsL.length - 1 then
+    throw "wildcard arm '_' must be the LAST arm in a match — arms after it can never fire (unreachable)"
+  let explicit := armsL.take wIdx   -- every arm before the wildcard (already ctor-named, by construction)
+  let (_, _, wBody) := armsL[wIdx]!
+  match explicit with
+  | [] => throw "wildcard arm '_' needs at least one explicit constructor arm to name the match's data type"
+  | (c0, _, _) :: _ =>
+    match resolveCtor env c0 with
+    | none            => throw s!"unknown constructor '{c0}' in match"
+    | some (.error e) => throw e                          -- ADR-0099 B012, unchanged precedent
+    | some (.ok ci0)  => do
+      let dcs := (env.ctors.filter (fun p => p.2.dataName == ci0.dataName)).map Prod.snd
+      let dcs := (dcs.toArray.qsort (fun a b => a.idx < b.idx)).toList
+      let covered (cn : String) : Bool :=
+        explicit.any (fun a => a.1 == cn || a.1 == qualifyName ci0.dataName cn)
+      let missing := dcs.filter (fun ci =>
+        match env.ctors.find? (fun p => p.2.dataName == ci.dataName && p.2.idx == ci.idx) with
+        | some (cn, _) => !covered cn
+        | none         => false)
+      if missing.isEmpty then
+        throw "wildcard arm '_' covers no constructors — every constructor of this data type already has an explicit arm (dead code)"
+      let freshArms := missing.map (fun ci =>
+        match env.ctors.find? (fun p => p.2.dataName == ci.dataName && p.2.idx == ci.idx) with
+        | some (cn, _) => (cn, (List.range ci.arity).map (fun i => s!"_w{ci.idx}_{i}"), wBody)
+        | none         => (s!"#impossible", [], wBody))   -- unreachable: `missing` built from the same `dcs`
+      return toDArms (explicit ++ freshArms)
+
 /-- A-normalize a VALUE-position subterm (#41), mirroring `lowerV`-or-`letC` in `Surface.lower` but
 at the NAMED elaboration layer (no de-Bruijn shift — a fresh binder just extends `Γ`). Returns the
 extended context, a `let`-prefix to wrap around the enclosing construct, and the value-`Surf` to use
@@ -2747,7 +2803,16 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   | f + 1, .letRecMultiS binds b => do
       return .letRecMultiS (← expandLetRecBindings env carrier? f binds) (← expandBFns env carrier? f b)
   | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env carrier? f recv) op (← expandArgs env carrier? f args)
-  | f + 1, .matchD s arms => do return .matchD (← expandBFns env carrier? f s) (← expandArms env carrier? f arms)
+  | f + 1, .matchD s arms => do
+      -- #101: expand a trailing `_` wildcard arm into its missing ctors' arms HERE (this pre-pass,
+      -- not `elabS`'s `.matchD` arm) — `expandBFns` already walks the whole tree with `env` in scope
+      -- and is fuel-driven (not `sizeOf`-based), so it is the one place a rewrite that can GROW the
+      -- arm list is unremarkable; interleaving it into the `elabS`/`elabArms` mutual block instead
+      -- breaks that block's structural termination proof (confirmed by a failed build attempt: the
+      -- expansion violates `sizeOf (expanded arms) ≤ sizeOf arms0`). Body expansion (`expandArms`,
+      -- bounded-fn splicing) then proceeds over the ALREADY-explicit result, unchanged.
+      let arms ← expandWildcardArms env arms
+      return .matchD (← expandBFns env carrier? f s) (← expandArms env carrier? f arms)
   | f + 1, .lettMulti binds b => do return .lettMulti (← expandLetBindings env carrier? f binds) (← expandBFns env carrier? f b)
   -- #21 s7probe: `handleCustomS` recurses structurally, mirroring `.withCapS`/`.matchD` above —
   -- `n`/`p`/`body` expand directly; `cls` needs the SAME `DArms`-precedent sibling (`expandHClauses`,
@@ -3106,6 +3171,13 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       return .annotS (.thunk (← elabS env Γ' (.lam x b))) t'
   | Γ, .annotS e t => do return .annotS (← elabS env Γ e) (← resolveTy env.gen env.aliases t env.effects)
   | Γ, .matchD s arms => do                    -- named match → unfold + matchS chain (ADR-0069)
+      -- #101: a `_` wildcard arm is expanded to its missing ctors' arms by a SEPARATE fuel-driven
+      -- pre-pass (`expandWildcards`, the `expandBFns` precedent) that runs over the WHOLE program
+      -- before `elabS` starts — NOT here. Interleaving the expansion into this mutual `elabS`/
+      -- `elabArms` block breaks its `sizeOf`-based termination proof (the expansion only ever
+      -- GROWS `arms`, so `sizeOf (expanded arms) ≤ sizeOf arms0` is false — confirmed by a failed
+      -- `termination_by` build attempt). By the time `elabS` reaches this arm, `arms` is already
+      -- fully explicit — zero wildcard awareness needed anywhere in this mutual block.
       let s0 ← elabS env Γ s
       let (Γ, wrap, s0') ← anfSplit Γ s0 env.effects       -- A-normalize a computation scrutinee, #41
       -- GENERIC (bite-1): derive concrete arm-binder types from the CONCRETE scrutinee μ, so an arm's
@@ -6004,6 +6076,73 @@ def genPair :=
    "let mapP = { fun f => fun p => fun s => match (($p) s) { None -> None, " ++
    "Some(r) -> let (v, rest) = r in let w = ($f) v in Some((w, rest)) } } in " ++
    "match (($mapP) {fun v => v + 10} {fun s => Some((7, s))} \"x\") { None -> 0, Some(r) -> let (v, rest) = r in v }") 17
+
+/-! ### Validation ⑨i-bis — issue #101: the WILDCARD match arm `_`.
+
+`_ -> body` expands to one fresh arm per constructor NOT already covered by an earlier explicit
+arm (`expandWildcardArms`, ADR-0069's own elaboration shape unchanged — the kernel sees an
+ordinary fully-explicit `matchS` chain). Positive cases run through `runTypedYieldsInt` (the
+run-oracle); the three error shapes (misplaced, unanchored, dead) through
+`assertParseErrorOrTypeError` (elaboration-stage, `.typeErr` bucket per `runOutcome`'s split). -/
+
+-- a 3-ctor type, ONE explicit arm + wildcard covering the other two — picks the wildcard body.
+#guard runTypedYieldsInt 400 "data Color = Red | Green | Blue match Red { Red -> 1, _ -> 0 }" 1
+#guard runTypedYieldsInt 400 "data Color = Red | Green | Blue match Green { Red -> 1, _ -> 0 }" 0
+#guard runTypedYieldsInt 400 "data Color = Red | Green | Blue match Blue { Red -> 1, _ -> 0 }" 0
+-- a 2-ctor recursive type: `_` covers the UNNAMED `Nil` case, `Cons` stays explicit and binds its payload.
+#guard runTypedYieldsInt 800
+  "data List a = Nil | Cons(a, List a) match (Cons(7, Nil)) { Cons(h, t) -> h, _ -> 0 }" 7
+#guard runTypedYieldsInt 800
+  "data List a = Nil | Cons(a, List a) match (Nil : List Int) { Cons(h, t) -> h, _ -> 99 }" 99
+-- wildcard covering exactly ONE of three ctors (the other two named explicitly) — no wasted expansion.
+#guard runTypedYieldsInt 400
+  "data Color = Red | Green | Blue match Blue { Red -> 1, Green -> 2, _ -> 3 }" 3
+-- GENERIC data (ADR-0069 bite-1): the wildcard's fresh binders are typed no differently than an
+-- explicit arm's would be — irrelevant here since the wildcard body ignores its payload, but the
+-- expansion must still resolve `Cons`'s GENERIC arity (2) to mint exactly 2 fresh binder names.
+#guard runTypedYieldsInt 800
+  "data List a = Nil | Cons(a, List a) match (Cons(1, Cons(2, Nil)) : List Int) { Nil -> 0, _ -> 42 }" 42
+-- NESTED match: an inner wildcard and an outer wildcard, independently expanded.
+#guard runTypedYieldsInt 1200
+  ("data List a = Nil | Cons(a, List a) " ++
+   "match (Cons(3, Cons(7, Nil))) { Cons(h, t) -> match t { Cons(h2, t2) -> h2, _ -> (0 - 1) }, _ -> (0 - 2) }") 7
+#guard runTypedYieldsInt 1200
+  ("data List a = Nil | Cons(a, List a) " ++
+   "match (Cons(3, Nil)) { Cons(h, t) -> match t { Cons(h2, t2) -> h2, _ -> (0 - 1) }, _ -> (0 - 2) }") (0 - 1)
+
+-- B014 error 1: `_` before the LAST arm (arms after it are unreachable — rejected, not silently
+-- dropped). Asserts the EXACT message (via `runOutcome`, not just "some error fired") — pre-#101,
+-- `_` was an unrecognized ctor name and ALSO rejected, so a bare `assertParseErrorOrTypeError`
+-- would pass vacuously without exercising this fix; pinning the message text makes the guard
+-- meaningful (it fails loud if the wildcard-position check regresses to a different diagnostic).
+-- NOTE: `locateInMsg` (issue #52 Stage B) POST-HOC locates the first single-quoted token in an
+-- elaboration message — `'_'` is the first quote here, and `_` genuinely occurs in the source, so
+-- `locateToken` FINDS it and `checkAndLower` reports this as a `.parseErr (some sp)`, not
+-- `.typeErr` (an accidental-but-harmless side effect of #52's generic quoted-name heuristic firing
+-- on a wildcard's own quoting convention — not a v1 bug, just a bucketing quirk this guard must
+-- match rather than fight); both branches are asserted so the guard is honest about which fires.
+#guard (match runOutcome 400 "data Color = Red | Green | Blue match Red { _ -> 1, Green -> 2 }" with
+  | .typeErr m           => m == "wildcard arm '_' must be the LAST arm in a match — arms after it can never fire (unreachable)"
+  | .parseErr (some _) m => m == "wildcard arm '_' must be the LAST arm in a match — arms after it can never fire (unreachable)"
+  | _                    => false)
+-- B014 error 2: `_` alone with no explicit arm to anchor the match's data type (same `locateInMsg`
+-- quirk: `'_'` quote-locates).
+#guard (match runOutcome 400 "data Color = Red | Green | Blue match Green { _ -> 42 }" with
+  | .typeErr m           => m == "wildcard arm '_' needs at least one explicit constructor arm to name the match's data type"
+  | .parseErr (some _) m => m == "wildcard arm '_' needs at least one explicit constructor arm to name the match's data type"
+  | _                    => false)
+-- B014 error 3: `_` covers NOTHING — every ctor already has an explicit arm (dead code).
+#guard (match runOutcome 400
+    ("data List a = Nil | Cons(a, List a) " ++
+     "match (Nil : List Int) { Nil -> 1, Cons(h, t) -> h, _ -> 99 }") with
+  | .typeErr m           => m == "wildcard arm '_' covers no constructors — every constructor of this data type already has an explicit arm (dead code)"
+  | .parseErr (some _) m => m == "wildcard arm '_' covers no constructors — every constructor of this data type already has an explicit arm (dead code)"
+  | _                    => false)
+-- B014's `codeForMsg` contract (all three messages) is asserted in `DiagCodes.lean` itself — that
+-- module is DOWNSTREAM of this one (`Diagnostics.lean` imports `DiagCodes.lean` imports
+-- `TypeCheck.lean`), so it cannot be re-imported here (the SAME cycle `surfUsesVar`'s doc comment
+-- names above); the exact three message strings are kept byte-identical between the two files by
+-- construction, since both are copied from `expandWildcardArms`'s literal `throw` text.
 
 /-! ### Validation ⑨j — the GENERIC PRELUDE: `Option`/`Result` + their maps + the ISO round-trips vs
 the built-in sum `Either` (the tagged-sum TYPES injected globally, `genericPrelude`; their COMBINATORS

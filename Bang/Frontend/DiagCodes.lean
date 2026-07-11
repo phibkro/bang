@@ -179,7 +179,18 @@ def registry : List DiagEntry := [
       "A `data` constructor must be applied to EXACTLY its declared arity. `Cons(x)` when `Cons` "
         ++ "takes 2, or `Nil(x)` when `Nil` takes none, both fire this. Supply the right number of "
         ++ "arguments (nest a tuple if the payload is compound — v1 caps constructor payload at 2)."
-    example? := none }
+    example? := none },
+  { code := "B014"
+    anchors := ["wildcard arm '_'"]
+    summary := "a match's `_` wildcard arm is misplaced or covers nothing (issue #101)"
+    teaching :=
+      "A `_ -> body` wildcard arm expands to one fresh arm per constructor NOT already covered by "
+        ++ "an earlier explicit arm (reusing `body`, ignoring the payload) — it must be the LAST arm "
+        ++ "(arms after it can never fire, since it always matches), needs at least one explicit "
+        ++ "constructor arm before it to name the match's data type, and must cover at least one "
+        ++ "constructor (a wildcard over an already-exhaustive match is dead code). Move it last, "
+        ++ "add an explicit arm to anchor the type, or drop it if every constructor is already named."
+    example? := some "data Color = Red | Green | Blue\nmatch Red { _ -> 1, Green -> 2 }" }
 ]
 
 /-! ## 3. The two total functions over the registry. -/
@@ -218,6 +229,10 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "no impl of 'Eq' for 'Option' — the bound 'Eq a' is unsatisfied" == some "B010"
 #guard codeForMsg "constructor 'C': payload arity ≤ 2 in v1 (nest tuples)" == some "B011"
 #guard codeForMsg "'b' is a sibling `let rec` defined later — siblings cannot forward-reference…" == some "B013"
+-- #101: all three wildcard-arm diagnostics share the `"wildcard arm '_'"` anchor.
+#guard codeForMsg "wildcard arm '_' must be the LAST arm in a match — arms after it can never fire (unreachable)" == some "B014"
+#guard codeForMsg "wildcard arm '_' needs at least one explicit constructor arm to name the match's data type" == some "B014"
+#guard codeForMsg "wildcard arm '_' covers no constructors — every constructor of this data type already has an explicit arm (dead code)" == some "B014"
 
 -- a diagnostic outside every family carries no code (honest none, not a wrong guess).
 #guard codeForMsg "some brand-new diagnostic nobody has coded yet" == none
