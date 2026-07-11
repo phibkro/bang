@@ -643,3 +643,14 @@ def vecBogusLaw : String := "bogus(a, b): let s = a + b in (let t = a + a in s =
 -- a malformed decls prelude propagates lawInstancesOf's OWN error, not a bare crash.
 #guard (match runLawsFromSource "trait { " 20 7 with | .error _ => true | .ok _ => false)
 
+-- **#117's trait-prelude migration regression net:** a DERIVE-ONLY program (zero hand-written
+-- `trait`/`impl`, `deriving (Eq, Ord)` alone) discovers the FULL 6-law suite `Prelude.bang`'s
+-- canonical `trait Eq`/`trait Ord` carry (refl/symm/trans, irrefl/asym/trans) — not the deleted
+-- stopgap's single minimal law each. `injectPrelude`'s widened mention-set (`p.derivesFor`, not
+-- just a bare `Eq`/`Ord` reference anywhere in the body) is what makes this resolve at ALL: this
+-- program mentions neither trait name outside its `deriving` clause.
+#guard (match runLawsFromSource "data Point = Pt(Int, Int) deriving (Eq, Ord)" 30 7 with
+    | .ok outcomes => outcomes.length == 6 && outcomes.all (fun o => match o.outcome with
+        | .holds _ => true | _ => false)
+    | .error _ => false)
+

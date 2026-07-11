@@ -55,7 +55,7 @@ graph TD
     Frontend_Surface["Frontend.Surface<br/>3238L · fan-in 1"]
     Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
-    Frontend_TypeCheck["Frontend.TypeCheck<br/>8572L · fan-in 0"]
+    Frontend_TypeCheck["Frontend.TypeCheck<br/>8587L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
     Meta_LR["Meta.LR<br/>1773L · fan-in 0"]
     Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 0"]
@@ -71,7 +71,7 @@ graph TD
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 0"]
-    Witness_LawTest["Witness.LawTest<br/>646L · fan-in 0"]
+    Witness_LawTest["Witness.LawTest<br/>657L · fan-in 0"]
     Witness_ProofExport["Witness.ProofExport<br/>372L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_SendableFragment["Witness.SendableFragment<br/>148L · fan-in 0"]
@@ -119,7 +119,7 @@ graph TD
 | `Frontend.Rewrite` | ? | 313 | 0 |
 | `Frontend.Surface.PropTest` | ? | 125 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
-| `Frontend.TypeCheck` | ? | 8572 | 0 |
+| `Frontend.TypeCheck` | ? | 8587 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
 | `Meta.LR` | ? | 1773 | 0 |
 | `Reify.CalcReify` | ? | 283 | 0 |
@@ -136,7 +136,7 @@ graph TD
 | `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.GradePolyReturner` | ? | 165 | 0 |
 | `Witness.LWRegress` | ? | 100 | 0 |
-| `Witness.LawTest` | ? | 646 | 0 |
+| `Witness.LawTest` | ? | 657 | 0 |
 | `Witness.ProofExport` | ? | 372 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.SendableFragment` | ? | 148 | 0 |
