@@ -1,0 +1,7 @@
+-- Euclidean division regression (issue #132): the kernel's `/` is Int.ediv, whose remainder is
+-- always non-negative, so (0 - 7) / 2 = -4 — NOT the truncated -3 that wasm's raw i64.div_s gives.
+-- Before the B0 fix the compiled path emitted a bare div_s and returned -3 (compiled != oracle);
+-- this example gates that the emitted div sequence is Euclidean. The negative dividend comes from
+-- subtraction (0 - 7) to avoid any negative-literal parsing question — the delta is in the DIVISION,
+-- not the literal.
+(0 - 7) / 2
