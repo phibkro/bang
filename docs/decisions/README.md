@@ -118,6 +118,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0098](0098-prelude-module-auto-use.md) | Accepted | The prelude is a real `Prelude.bang` module, auto-`use`d | Issue #106 (operator-ruled 2026-07-11, unblocked same day when #97 item-3 turned out | — / — | — / — | — | — |
 | [0099](0099-ctor-namespacing.md) | Accepted | Constructors are type-namespaced — bare names resolve when unambiguous in scope | A data constructor's true identity is `(dataName, ctorName)`, not `ctorName` alone | — / — | — / — | — | — |
 | [0100](0100-g1-compute-then-return-ships-tested-superset.md) | Accepted | G1 compute-then-return clause bodies ship as a tested-superset feature (the kernel carve-out is refuted) | A ⊥-row COMPUTING custom-handler clause body (compute-then-return, e.g. | — / — | — / — | — | — |
+| [0101](0101-concurrency-model-scheduler-as-handler.md) | Accepted | Concurrency model: scheduler-as-handler; components/threads are backends, not the model | Concurrency is an ORDINARY effect (a `conc`/`Sched` row label) and a scheduler is a | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 
