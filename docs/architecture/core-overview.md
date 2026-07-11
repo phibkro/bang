@@ -27,23 +27,23 @@ graph TD
     Frontend_NamedCore["Frontend.NamedCore<br/>386L · fan-in 0"]
   end
   subgraph tier_Core["Core — IR · typing · KERNEL (the narrow waist)"]
-    Backend_AbstractMachine["Backend.AbstractMachine<br/>6850L · fan-in 0"]
-    Backend_EnvMachine["Backend.EnvMachine<br/>3584L · fan-in 0"]
+    Backend_AbstractMachine["Backend.AbstractMachine<br/>6871L · fan-in 0"]
+    Backend_EnvMachine["Backend.EnvMachine<br/>3624L · fan-in 0"]
     Backend_U5bComplete["Backend.U5bComplete<br/>1648L · fan-in 0"]
-    Backend_Wasm["Backend.Wasm<br/>2894L · fan-in 0"]
+    Backend_Wasm["Backend.Wasm<br/>2931L · fan-in 0"]
     Backend_WasmEmit["Backend.WasmEmit<br/>1360L · fan-in 0"]
     Core_CapCoh["Core.CapCoh<br/>566L · fan-in 0"]
-    Core_EffectRow["Core.EffectRow<br/>194L · fan-in 0"]
-    Core_Freshness["Core.Freshness<br/>827L · fan-in 0"]
-    Core_Grade["Core.Grade<br/>82L · fan-in 0"]
-    Core_IR["Core.IR<br/>416L · fan-in 0"]
+    Core_EffectRow["Core.EffectRow<br/>203L · fan-in 0"]
+    Core_Freshness["Core.Freshness<br/>833L · fan-in 0"]
+    Core_Grade["Core.Grade<br/>84L · fan-in 0"]
+    Core_IR["Core.IR<br/>440L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
     Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 0"]
-    Core_Semantics_Eval["Core.Semantics.Eval<br/>415L · fan-in 0"]
+    Core_Semantics_Eval["Core.Semantics.Eval<br/>422L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
-    Core_Semantics_Subst["Core.Semantics.Subst<br/>940L · fan-in 0"]
-    Core_Soundness["Core.Soundness<br/>3399L · fan-in 0"]
-    Core_Typing["Core.Typing<br/>495L · fan-in 0"]
+    Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 0"]
+    Core_Soundness["Core.Soundness<br/>3400L · fan-in 0"]
+    Core_Typing["Core.Typing<br/>510L · fan-in 0"]
     Examples["Examples<br/>510L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
     Frontend_DiagCodes["Frontend.DiagCodes<br/>262L · fan-in 0"]
@@ -57,9 +57,9 @@ graph TD
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Frontend_TypeCheck["Frontend.TypeCheck<br/>8451L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
-    Meta_LR["Meta.LR<br/>1745L · fan-in 0"]
-    Reify_CalcReify["Reify.CalcReify<br/>270L · fan-in 0"]
-    Reify_CalcReifyRef["Reify.CalcReifyRef<br/>163L · fan-in 0"]
+    Meta_LR["Meta.LR<br/>1773L · fan-in 0"]
+    Reify_CalcReify["Reify.CalcReify<br/>283L · fan-in 0"]
+    Reify_CalcReifyRef["Reify.CalcReifyRef<br/>164L · fan-in 0"]
     Reify_CalcReifySim["Reify.CalcReifySim<br/>1436L · fan-in 0"]
     Witness_AgreeOutcome["Witness.AgreeOutcome<br/>236L · fan-in 0"]
     Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
@@ -71,8 +71,8 @@ graph TD
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 0"]
-    Witness_LawTest["Witness.LawTest<br/>630L · fan-in 0"]
-    Witness_ProofExport["Witness.ProofExport<br/>349L · fan-in 0"]
+    Witness_LawTest["Witness.LawTest<br/>646L · fan-in 0"]
+    Witness_ProofExport["Witness.ProofExport<br/>372L · fan-in 0"]
     Witness_ReturnEscapeReach["Witness.ReturnEscapeReach<br/>121L · fan-in 0"]
     Witness_SendableFragment["Witness.SendableFragment<br/>148L · fan-in 0"]
     Witness_StateEscapeWitness["Witness.StateEscapeWitness<br/>73L · fan-in 0"]
@@ -90,23 +90,23 @@ graph TD
 |---|---|---|---|
 | `Frontend.Surface` | ? | 3238 | 1 |
 | `Audit` | Apex | 60 | 0 |
-| `Backend.AbstractMachine` | ? | 6850 | 0 |
-| `Backend.EnvMachine` | ? | 3584 | 0 |
+| `Backend.AbstractMachine` | ? | 6871 | 0 |
+| `Backend.EnvMachine` | ? | 3624 | 0 |
 | `Backend.U5bComplete` | ? | 1648 | 0 |
-| `Backend.Wasm` | ? | 2894 | 0 |
+| `Backend.Wasm` | ? | 2931 | 0 |
 | `Backend.WasmEmit` | ? | 1360 | 0 |
 | `Core.CapCoh` | ? | 566 | 0 |
-| `Core.EffectRow` | ? | 194 | 0 |
-| `Core.Freshness` | ? | 827 | 0 |
-| `Core.Grade` | ? | 82 | 0 |
-| `Core.IR` | ? | 416 | 0 |
+| `Core.EffectRow` | ? | 203 | 0 |
+| `Core.Freshness` | ? | 833 | 0 |
+| `Core.Grade` | ? | 84 | 0 |
+| `Core.IR` | ? | 440 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
 | `Core.Semantics.Dispatch` | ? | 273 | 0 |
-| `Core.Semantics.Eval` | ? | 415 | 0 |
+| `Core.Semantics.Eval` | ? | 422 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
-| `Core.Semantics.Subst` | ? | 940 | 0 |
-| `Core.Soundness` | ? | 3399 | 0 |
-| `Core.Typing` | ? | 495 | 0 |
+| `Core.Semantics.Subst` | ? | 947 | 0 |
+| `Core.Soundness` | ? | 3400 | 0 |
+| `Core.Typing` | ? | 510 | 0 |
 | `Distribution` | Apex | 67 | 0 |
 | `Examples` | ? | 510 | 0 |
 | `Frontend.Annotate` | ? | 252 | 0 |
@@ -121,9 +121,9 @@ graph TD
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 8451 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |
-| `Meta.LR` | ? | 1745 | 0 |
-| `Reify.CalcReify` | ? | 270 | 0 |
-| `Reify.CalcReifyRef` | ? | 163 | 0 |
+| `Meta.LR` | ? | 1773 | 0 |
+| `Reify.CalcReify` | ? | 283 | 0 |
+| `Reify.CalcReifyRef` | ? | 164 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
 | `Spec` | Apex | 344 | 0 |
 | `Witness.AgreeOutcome` | ? | 236 | 0 |
@@ -136,8 +136,8 @@ graph TD
 | `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.GradePolyReturner` | ? | 165 | 0 |
 | `Witness.LWRegress` | ? | 100 | 0 |
-| `Witness.LawTest` | ? | 630 | 0 |
-| `Witness.ProofExport` | ? | 349 | 0 |
+| `Witness.LawTest` | ? | 646 | 0 |
+| `Witness.ProofExport` | ? | 372 | 0 |
 | `Witness.ReturnEscapeReach` | ? | 121 | 0 |
 | `Witness.SendableFragment` | ? | 148 | 0 |
 | `Witness.StateEscapeWitness` | ? | 73 | 0 |
