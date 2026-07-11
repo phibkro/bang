@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (55)
+## active (56)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -32,6 +32,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`explainer-series.md`](explainer-series.md) — Explainer series — the multi-sensory outline
 - [`formatting-survey.md`](formatting-survey.md) — Formatting-techniques survey — the design inputs for bang's multi-line layout (#58)
 - [`god-file-seams.md`](god-file-seams.md) — God-file seam map — split proposal for `TypeCheck.lean`/`AbstractMachine.lean`
+- [`host-io-design.md`](host-io-design.md) — Host-IO environment design — filesystem/network/ambient IO as effects + handlers
 - [`increment-lifecycle.md`](increment-lifecycle.md) — the `incN` lifecycle
 - [`interactive-tour-design.md`](interactive-tour-design.md) — Interactive language tour + in-browser playground — design
 - [`kernel-substrate-survey.md`](kernel-substrate-survey.md) — Kernel-as-substrate — design survey: the verified semantic substrate + the profile ladder
