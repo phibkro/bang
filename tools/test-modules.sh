@@ -51,6 +51,19 @@ check_contains() {
 fixdir="$(mktemp -d --tmpdir bang-modules-test-XXXXXX)"
 trap 'rm -rf "$fixdir"' EXIT
 
+# ── ADR-0097: the embedded prelude module itself checks clean, standalone (no `main`, a pure
+# library file — this is the build-time invariant `preludeProg`'s `.get!` relies on staying true;
+# a broken `Prelude.bang` should fail LOUD here, not silently at `lake build`'s `.get!` panic). ──
+got_out="$("$bang" check Prelude.bang 2>&1)" && got_exit=0 || got_exit=$?
+check "prelude-bang-checks-clean-stdout" "$got_out" "ok"
+check "prelude-bang-checks-clean-exit" "$got_exit" "0"
+
+# `Prelude.bang` is ALREADY its own canonical form — `bang fmt` is idempotent on it (comment-free,
+# matching the examples/*.bang convention, ADR-0097).
+got_fmt="$("$bang" fmt Prelude.bang 2>/dev/null)"
+got_src="$(cat Prelude.bang)"
+check "prelude-bang-fmt-idempotent" "$got_fmt" "$got_src"
+
 # ── happy path: a real 2-file program (bare `import` + qualified ctor call + match) ──
 cat > "$fixdir/geom.bang" <<'BANG'
 pub data Pair = Mk(Int, Int)
@@ -300,6 +313,68 @@ BANG
 got_out="$("$bang" run "$fixdir/symlink_inside.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
 check "symlink-within-tree-stdout" "$got_out" "5"
 check "symlink-within-tree-exit" "$got_exit" "0"
+
+# ── ADR-0097: the embedded `Prelude.bang`, auto-`use`d — CLI-surface coverage the compiled
+# #guards can't reach (the AUTO part is a real-filesystem-adjacent behavior: a program with ZERO
+# import/use header still gets `injectPrelude`'s merge). No explicit `use Prelude (…)` anywhere. ──
+cat > "$fixdir/prelude_auto_no_header.bang" <<'BANG'
+($abs) (0 - 7)
+BANG
+got_out="$("$bang" run "$fixdir/prelude_auto_no_header.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "prelude-auto-use-stdout" "$got_out" "7"
+check "prelude-auto-use-exit" "$got_exit" "0"
+
+# a program mentioning MULTIPLE prelude names, still no header — auto-`use` covers every mention.
+cat > "$fixdir/prelude_auto_multi.bang" <<'BANG'
+($fst) (($min) 3 7, ($max) 3 7)
+BANG
+got_out="$("$bang" run "$fixdir/prelude_auto_multi.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "prelude-auto-multi-stdout" "$got_out" "3"
+check "prelude-auto-multi-exit" "$got_exit" "0"
+
+# a user's OWN top-level binding of a prelude name SHADOWS the auto-`use`d one — per-name, no
+# `--no-prelude` escape hatch needed (ADR-0097 D4).
+cat > "$fixdir/prelude_shadow.bang" <<'BANG'
+let abs = { fun n => 999 } in
+($abs) (0 - 7)
+BANG
+got_out="$("$bang" run "$fixdir/prelude_shadow.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "prelude-shadow-stdout" "$got_out" "999"
+check "prelude-shadow-exit" "$got_exit" "0"
+
+# a program mentioning NO prelude name is untouched (injectPrelude short-circuits, ADR-0097 D2/D3's
+# fuel-cost finding) — a tight fuel budget that would break under an unconditional 21-entry merge
+# still runs; this fixture cannot directly observe fuel, but pins the FUNCTIONAL no-op.
+cat > "$fixdir/prelude_unmentioned.bang" <<'BANG'
+1 + 1
+BANG
+got_out="$("$bang" run "$fixdir/prelude_unmentioned.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "prelude-unmentioned-stdout" "$got_out" "2"
+check "prelude-unmentioned-exit" "$got_exit" "0"
+
+# a project that names its OWN module `Prelude.bang` (same directory) is NOT silently shadowed —
+# it sits inert with no `use`/`import` naming it; the built-in `abs` still wins (ADR-0097 D4).
+cat > "$fixdir/Prelude.bang" <<'BANG'
+pub let abs = {fun n => 777}
+BANG
+cat > "$fixdir/prelude_user_module_inert.bang" <<'BANG'
+($abs) (0 - 7)
+BANG
+got_out="$("$bang" run "$fixdir/prelude_user_module_inert.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "prelude-user-module-inert-stdout" "$got_out" "7"
+check "prelude-user-module-inert-exit" "$got_exit" "0"
+
+# ...but an EXPLICIT `use Prelude (abs)` resolves to the USER's file (ordinary same-dir-then-root
+# search, ADR-0093 D1) — the user's own binding wins, same "later binder shadows" rule as any
+# other user-vs-prelude collision.
+cat > "$fixdir/prelude_user_module_explicit.bang" <<'BANG'
+use Prelude (abs)
+($abs) (0 - 7)
+BANG
+got_out="$("$bang" run "$fixdir/prelude_user_module_explicit.bang" 2>/dev/null)" && got_exit=0 || got_exit=$?
+check "prelude-user-module-explicit-stdout" "$got_out" "777"
+check "prelude-user-module-explicit-exit" "$got_exit" "0"
+rm -f "$fixdir/Prelude.bang"
 
 echo "──────────────────────────────"
 echo "modules: $pass passed, $fail failed"

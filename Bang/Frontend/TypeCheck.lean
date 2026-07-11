@@ -3001,7 +3001,8 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
       -- environment entry like `data`/`trait`/`effect` — it never enters `ElabEnv` at all. Instead
       -- it is desugared BEFORE `buildEnv` ever runs (`foldLetDecls`, below) into nested
       -- `Surf.lett`/`Surf.letRecS` wrapping the trailing body — the SAME "wrap the body in a let"
-      -- idiom `wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s `use`-hoist already use. By the time
+      -- idiom `mergeModules`'s `use`-hoist (and `injectPrelude`'s auto-`use`, ADR-0097) already
+      -- use. By the time
       -- `buildEnv` sees a decl list, every `letD`/`letRecD` has ALREADY been folded into `p.body`
       -- (see `elabProg`'s new pre-pass) — this arm exists only so the match stays exhaustive for
       -- a caller that hands `buildEnv` a RAW (pre-fold) decl list (the `mergeModules` internals,
@@ -3028,182 +3029,6 @@ primitive (invariant #5). -/
 def genericPrelude : List Decl :=
   [ .dataD "Option" ["a"]      [("None", []),           ("Some",  [.tName "a"])],
     .dataD "Result" ["e", "a"] [("Err",  [.tName "e"]), ("Ok",    [.tName "a"])] ]
-
-/-- The built-in string STDLIB (ADR-0074, #49 stage 3): `concat`/`reverse`/`eq` as `let rec` folds
-over `Str`, injected in scope of EVERY program's body (closing the #50 reuse gap — a program shouldn't
-re-inline `concat` the way the tokenizer had to). Each fn is a source string ending in a placeholder
-body (`0`); `injectStdlib` parses it, keeps the `let rec` head, and re-roots it over the user body.
-Ordered `concat → reverse → eq` so `reverse` (which appends via `concat`) sees it. `concat`/`eq` are
-CURRIED so `letRecRow` types them `! {Div}` (multi-arg #47 gap, ADR-0073) — a sound over-approximation:
-they terminate but the certifier can't prove it. `reverse` picks up `Div` transitively (it calls
-`$concat`). Library over `data` + `let rec` — NO kernel change (invariant #5). -/
-def stdlibFnSrcs : List String :=
-  [ "let rec concat : Str -> Str -> Str = fun a => fun b => " ++
-      "match a { SNil -> b, SCons(c, t) -> SCons(c, ($concat) t b) } in 0",
-    -- `reverse` folds via an accumulator: a curried recursive `revApp` (nested in the thunk so it is
-    -- NOT exposed) threads the reversed prefix, and `reverse s = revApp SNil s`. A direct single-arg
-    -- `reverse` that appends via `$concat` does NOT type-check (buildLetRec's inner knot demands a
-    -- single-arg structural fold be self-contained — it can't call another `Div` fn), so the
-    -- accumulator is the working shape. `Div` (curried `revApp`) rides the result.
-    "let reverse = { let rec revApp : Str -> Str -> Str = fun acc => fun s => " ++
-      "match (s : Str) { SNil -> acc, SCons(c, t) -> ($revApp) (SCons(c, acc)) t } in " ++
-      "fun s => ($revApp) SNil s } in 0",
-    -- `eq` compares char-by-char; `Bool = Unit + Unit` (ADR-0065), `0==0` = true, `0==1` = false. The
-    -- SECOND curried param `b` needs a `(b : Str)` ascription so the named-match resolver sees its type
-    -- (curried params past the first aren't propagated into elaboration-time match resolution).
-    "let rec eq : Str -> Str -> Unit + Unit = fun a => fun b => " ++
-      "match a { SNil -> match (b : Str) { SNil -> 0 == 0, SCons(c2, t2) -> 0 == 1 }, " ++
-      "SCons(c, t) -> match (b : Str) { SNil -> 0 == 1, " ++
-      "SCons(c2, t2) -> if (match c { Char(n) -> match c2 { Char(m) -> n == m } }) " ++
-      "then ($eq) t t2 else 0 == 1 } } in 0" ]
-
-/-- Wrap `body` in the string-stdlib `let rec`s (see `stdlibFnSrcs`). INERT for programs that don't
-use them: each `let rec … in body` binds a THUNK (a value, `⊥`-row) — the program's row is the body's
-row, so an unused `Div`-typed stdlib fn adds NO effect (mirrors the unused `Char`/`Str` ctors). A
-user binding of the same name in the body simply SHADOWS the injected one (lexical scope). SKIPPED
-when the user redeclares `Str`/`Char` (the injected fns reference the prelude ctors, which the user's
-data may not provide) — same discipline as the data prelude's `declared` filter. -/
-def wrapFnSrcs (srcs : List String) (body : Surf) : Except String Surf := do
-  let wraps ← srcs.mapM (fun src => do
-    match ← Bang.Surface.parse src with
-    | .letRecS n t f _ => return (fun (b : Surf) => Surf.letRecS n t f b)
-    | .lett n rhs _    => return (fun (b : Surf) => Surf.lett n rhs b)
-    | _ => .error "prelude fn did not parse as a `let`/`let rec`")
-  return wraps.foldr (fun w acc => w acc) body
-
-/-! Does `nm` occur as a free-ish variable reference anywhere in `e` (`surfUsesVar`)? A syntactic
-over-approximation (ignores shadowing — a shadowed use just over-injects, costing a little fuel, never
-wrong). Used to inject a generic-prelude fn ONLY when the program mentions it, so an unused combinator
-costs NO eval fuel (keeping tight-fuel programs green — the string stdlib's `let rec`s are cheap enough
-to stay unconditional, these 7 are not in aggregate). -/
-mutual
-def surfUsesVar (nm : String) : Surf → Bool
-  | .var x                         => x == nm
-  | .lit _ | .getS | .unitS        => false
-  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
-  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => surfUsesVar nm e
-  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
-  | .binopS _ a b                  => surfUsesVar nm a || surfUsesVar nm b
-  | .matchS s _ l _ r              => surfUsesVar nm s || surfUsesVar nm l || surfUsesVar nm r
-  | .ifS c t e                     => surfUsesVar nm c || surfUsesVar nm t || surfUsesVar nm e
-  | .matchD s arms                 => surfUsesVar nm s || dArmsUseVar nm arms
-  | .withCapS _ i _ b              => surfUsesVar nm i || surfUsesVar nm b
-  | .dotPerform r _ .none          => surfUsesVar nm r
-  | .dotPerform r _ (.one a)       => surfUsesVar nm r || surfUsesVar nm a
-  | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
-  | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
-  | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
-  -- #21 s7probe: `x`/`h` are BINDERS (a clause's arg / the cap name) — like every other binder-
-  -- shadowing site here (`.lam _ e`, `.matchS s _ l _ r`), the shadow is NOT modeled (the whole
-  -- function is a syntactic OVER-approximation, per its own doc comment: shadowed uses just cost a
-  -- little extra fuel, never wrong).
-  | .handleCustomS _lbl n .none _h cls b       => surfUsesVar nm n || hClausesUseVar nm cls || surfUsesVar nm b
-  | .handleCustomS _lbl n (.one p) _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
-  | .handleCustomS _lbl n (.two p q) _h cls b  => surfUsesVar nm n || surfUsesVar nm p || surfUsesVar nm q || hClausesUseVar nm cls || surfUsesVar nm b
-def dArmsUseVar (nm : String) : DArms → Bool
-  | .nil            => false
-  | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
-def letBindingsUseVar (nm : String) : LetBindings → Bool
-  | .nil            => false
-  | .cons _ e rest  => surfUsesVar nm e || letBindingsUseVar nm rest
-def hClausesUseVar (nm : String) : HClauses → Bool
-  | .nil               => false
-  | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
-end
-
-/-- The GENERIC-prelude functions (`genericPrelude` types + the built-in sum `Either`, ADR-0081
-annotation-free): per-type maps + the isomorphism conversions, injected in scope of EVERY program's
-body — `Option`/`Result`/`Either` come with their combinators built in (the #50 reuse discipline).
-Plain `let`s binding THUNKS ⟹ ⊥-row VALUES, so they're INERT for programs that don't use them (unlike
-the `Div`-typed string stdlib): an unused prelude fn adds NO effect and leaves a pure program pure.
-`mapOption`/`mapResult` are higher-order over generic data (ADR-0081 #55: `match` recovers the
-scrutinee's type from its arm ctors, `Some(($f) x)` constructs annotation-free); `bimap` + the isos
-range over the built-in sum (`Either = e + a`). The four `*To*` functions WITNESS the `Result ≅ Either`
-and `Option ≅ Either Unit` isos — their round-trips (`from ∘ to = id`) are property-tested below. -/
-def genericPreludeFnSrcs : List String :=
-  [ -- `mapOption f : Option a -> Option b` — map the payload; `None` passes through.
-    "let mapOption = { fun f => fun o => match o { None -> None, Some(x) -> Some(($f) x) } } in 0",
-    -- `mapResult f : Result e a -> Result e b` — map the SUCCESS side (`Ok`); an `Err` passes through
-    -- (Rust's `Result::map`). The error type `e` is untouched.
-    "let mapResult = { fun f => fun r => match r { Err(e) -> Err(e), Ok(a) -> Ok(($f) a) } } in 0",
-    -- `bimap g f : (e + a) -> (f + b)` — the BIFUNCTOR map over the built-in sum (`Either`): `g` over
-    -- `Left`, `f` over `Right` (both sides, unlike `mapResult`'s success-only).
-    "let bimap = { fun g => fun f => fun x => match x { Left(e) -> Left(($g) e), Right(a) -> Right(($f) a) } } in 0",
-    -- `resultToEither : Result e a -> (e + a)` — `Err ↦ Left`, `Ok ↦ Right` (the iso `to`).
-    "let resultToEither = { fun r => match r { Err(e) -> Left(e), Ok(a) -> Right(a) } } in 0",
-    -- `eitherToResult : (e + a) -> Result e a` — `Left ↦ Err`, `Right ↦ Ok` (the iso `from`).
-    "let eitherToResult = { fun x => match x { Left(e) -> Err(e), Right(a) -> Ok(a) } } in 0",
-    -- `optionToEither : Option a -> (Unit + a)` — `None ↦ Left(())`, `Some ↦ Right` (`Option ≅ Either Unit`).
-    "let optionToEither = { fun o => match o { None -> Left(()), Some(a) -> Right(a) } } in 0",
-    -- `eitherToOption : (Unit + a) -> Option a` — `Left ↦ None`, `Right ↦ Some` (the `from`).
-    "let eitherToOption = { fun x => match x { Left(u) -> None, Right(a) -> Some(a) } } in 0",
-    -- `withDefault d o : a -> Option a -> a` — unwrap-or (Rust `unwrap_or`/Haskell `fromMaybe`).
-    "let withDefault = { fun d => fun o => match o { None -> d, Some(v) -> v } } in 0",
-    -- #105 FIRST-SLICE PRELUDE (issue #105, docs/notes/stdlib-prelude-survey.md §3): the type-agnostic
-    -- entries below reference NO `Option`/`Result`/`Either` ctor — they ride this bucket only because
-    -- it is the existing home for non-recursive, conditionally-injected (name-mentioned-only) prelude
-    -- fns; they are gated by the SAME coarse `declared.contains "Option"/"Result"` check as
-    -- `bimap`/the isos above (a pre-existing imprecision — that gate is really "did the user take over
-    -- the tagged-sum namespace", not "does this fn need it" — inherited, not introduced here).
-    --
-    -- the dogfood-json TOP papercut (survey §3 #1). `let (a, b) = p in …` needs `p` bound to a
-    -- bare var first (`.splitS`'s scrutinee-shape rule).
-    -- `fst p : (a, b) -> a`
-    "let fst = { fun p => let (a, b) = p in a } in 0",
-    -- `snd p : (a, b) -> b`
-    "let snd = { fun p => let (a, b) = p in b } in 0",
-    -- `abs n : Int -> Int` — `if n < 0 then 0 - n else n` (both dogfooders hand-rolled this).
-    "let abs = { fun n => if n < 0 then 0 - n else n } in 0",
-    -- curried; total, no recursion.
-    -- `min a b : Int -> Int -> Int`
-    "let min = { fun a => fun b => if a < b then a else b } in 0",
-    -- `max a b : Int -> Int -> Int`
-    "let max = { fun a => fun b => if a < b then b else a } in 0",
-    -- `const x _y : a -> b -> a` — the `id` companion (mirrors the test-local `const` at ⑦b above).
-    "let const = { fun x => fun y => x } in 0",
-    -- CHAR KIT (survey §3 #8 — the calc lexer + json parser BOTH hand-rolled these). Code points are
-    -- ASCII (the codepoint-encoding note, ref §Strings). A curried param past the first (here, the
-    -- SOLE param `c`) needs a scrutinee ascription `(c : Char)` for named-match resolution (the #50
-    -- point-3 gap `eq`/`revApp` above also hit) — WITHOUT it: \"match scrutinee is #…, not Char\".
-    -- `isDigit c : Char -> Unit + Unit` — '0'..'9' is code points 48..57 inclusive.
-    "let isDigit = { fun c => match (c : Char) { Char(n) -> " ++
-      "if 47 < n then (if n < 58 then 0 == 0 else 0 == 1) else 0 == 1 } } in 0",
-    -- `isAlpha c : Char -> Unit + Unit` — 'A'..'Z' (65..90) or 'a'..'z' (97..122); `lower` is
-    -- let-bound once and reused on both the uppercase-fail and non-uppercase branches (avoids
-    -- writing the lowercase-range test twice).
-    "let isAlpha = { fun c => match (c : Char) { Char(n) -> " ++
-      "let lower = if 96 < n then (if n < 123 then 0 == 0 else 0 == 1) else 0 == 1 in " ++
-      "if 64 < n then (if n < 91 then 0 == 0 else lower) else lower } } in 0",
-    -- `toUpper c : Char -> Char` — TOTAL: shifts lowercase (97..122) down by 32; anything else,
-    -- including already-uppercase and non-letters, passes through unchanged.
-    "let toUpper = { fun c => match (c : Char) { Char(n) -> " ++
-      "if 96 < n then (if n < 123 then Char(n - 32) else Char(n)) else Char(n) } } in 0",
-    -- `toLower c : Char -> Char` — mirror: shifts uppercase (65..90) up by 32; else passthrough.
-    "let toLower = { fun c => match (c : Char) { Char(n) -> " ++
-      "if 64 < n then (if n < 91 then Char(n + 32) else Char(n)) else Char(n) } } in 0" ]
-
-/-- Wrap `body` with each generic-prelude fn (`genericPreludeFnSrcs`) ONLY if `body` mentions its name.
-The fns are mutually independent (none calls another), so checking the raw user body is complete. -/
-def wrapGenericFns (body : Surf) : Except String Surf := do
-  let mut wraps : List (Surf → Surf) := []
-  for src in genericPreludeFnSrcs do
-    match ← Bang.Surface.parse src with
-    | .lett n rhs _ => if surfUsesVar n body then wraps := wraps ++ [fun (b : Surf) => Surf.lett n rhs b]
-    | _ => .error "generic prelude fn did not parse as a `let`"
-  return wraps.foldr (fun w acc => w acc) body
-
-/-- Inject the injected-in-scope prelude FUNCTIONS: the `Div`-typed string stdlib
-(`concat`/`reverse`/`eq`, `stdlibFnSrcs`) — SKIPPED when the user redeclares `Str`/`Char` (the fns
-reference the prelude ctors) — and the ⊥-row generic-prelude combinators (`genericPreludeFnSrcs`) —
-SKIPPED when the user redeclares ANY of `Option`/`Result`/`Either` (they take over those types). The
-two bundles are independent (the generic combinators reference no string types), so they gate
-separately. A user binding of the same name in the body simply SHADOWS the injected one. -/
-def injectStdlib (declared : List String) (body : Surf) : Except String Surf := do
-  let body ← if declared.contains "Option" || declared.contains "Result"
-             then pure body else wrapGenericFns body
-  if declared.contains "Str" || declared.contains "Char" then
-    return body
-  wrapFnSrcs stdlibFnSrcs body
 
 /-! ## Modules (ADR-0093 D2/D3/D4) — merge-to-flat, PURE half.
 
@@ -3653,9 +3478,9 @@ imported module's decls (`qualifyModule`), prepend them (topological order = dec
 matching how the existing `prelude ++ p.decls` convention already threads dependency-first), rewrite
 the entry file's OWN bare qualified access (`tokenizer.lex` → `tokenizer_lex`, `qualifyDotAccess`),
 and hoist each `use`d name into unqualified scope via a wrapping `let` (`use tokenizer (lex)` ⟹
-`let lex = tokenizer_lex in <body>` — the SAME "wrap the body in a let" idiom `wrapFnSrcs`/
-`wrapGenericFns` already use for prelude injection, so this is the fourth application of an
-EXISTING mechanism, not a new one). Visibility (D3) is checked FIRST, against BOTH surfaces a
+`let lex = tokenizer_lex in <body>` — the SAME "wrap the body in a let" idiom `injectPrelude`
+(ADR-0097) rides too, since it is just ANOTHER caller of this same `use`-hoist). Visibility (D3)
+is checked FIRST, against BOTH surfaces a
 private name can be named from: the `use` header (`firstPrivateUse`) AND a bare qualified
 `Mod.name` reference anywhere in the entry file's decls/body (`firstPrivateDotAccessProg`, #73 fix
 — previously `tokenizer.secret` silently RESOLVED via `qualifyDotAccess`'s rewrite to
@@ -3762,28 +3587,204 @@ def foldLetDecls (ds : List Decl) (tail : Surf) : List Decl × Surf :=
     | _              => acc) tail
   (nonLetDecls, body)
 
-/-- Elaborate a whole program: inject the string prelude + stdlib, build the elaboration env, resolve
-the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the type-checker's
-`.dotPerform` arm needs the program's user-effect table to resolve a `perform` against a declared
-`effect`'s op, and `synthSC`/`checkSC` have no separate `ElabEnv` parameter (see `USt.effects`'s
-comment) — so `elabProg`'s caller threads the pair into `runInferC`.
+/-! Does `nm` occur as a free-ish variable reference anywhere in `e` (`surfUsesVar`)? A syntactic
+over-approximation (ignores shadowing — a shadowed use just over-injects, costing a little fuel,
+never wrong). Used to filter the prelude's auto-`use` list (ADR-0097 §auto-use) down to the names a
+program ACTUALLY mentions, before `injectPrelude` constructs the synthetic `use` clause —
+`mergeModules`'s alias-injection (and hence a program's fuel cost) is driven entirely by the `use`
+list it's handed, so filtering HERE keeps an unused prelude entry at ZERO fuel cost, exactly
+preserving the retired `wrapGenericFns`'s conditional-injection discipline (Config.run's CK machine
+decrements fuel once per `letC` step regardless of whether the binder is ever forced — an
+UNCONDITIONAL 21-entry prelude merge would tax every program ~21 fuel steps it never asked for; the
+tight-fuel corpus, `#guard`s at fuel 20-50, falsified that shape directly). Mirrors
+`Bang.Query.surfUsesVar` arm-for-arm (that copy lives DOWNSTREAM of this file — `Query.lean`
+imports `Diagnostics.lean` imports `TypeCheck.lean` — so importing it back here would cycle; this
+stays the upstream original, same discipline as before ADR-0097). -/
+mutual
+def surfUsesVar (nm : String) : Surf → Bool
+  | .var x                         => x == nm
+  | .lit _ | .getS | .unitS        => false
+  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => surfUsesVar nm e
+  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
+  | .binopS _ a b                  => surfUsesVar nm a || surfUsesVar nm b
+  | .matchS s _ l _ r              => surfUsesVar nm s || surfUsesVar nm l || surfUsesVar nm r
+  | .ifS c t e                     => surfUsesVar nm c || surfUsesVar nm t || surfUsesVar nm e
+  | .matchD s arms                 => surfUsesVar nm s || dArmsUseVar nm arms
+  | .withCapS _ i _ b              => surfUsesVar nm i || surfUsesVar nm b
+  | .dotPerform r _ .none          => surfUsesVar nm r
+  | .dotPerform r _ (.one a)       => surfUsesVar nm r || surfUsesVar nm a
+  | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
+  | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
+  | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
+  -- `x`/`h` are BINDERS (a clause's arg / the cap name) — like every other binder-shadowing site
+  -- here (`.lam _ e`, `.matchS s _ l _ r`), the shadow is NOT modeled (the whole function is a
+  -- syntactic OVER-approximation, per its own doc comment: shadowed uses just cost a little extra
+  -- fuel, never wrong).
+  | .handleCustomS _lbl n .none _h cls b       => surfUsesVar nm n || hClausesUseVar nm cls || surfUsesVar nm b
+  | .handleCustomS _lbl n (.one p) _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
+  | .handleCustomS _lbl n (.two p q) _h cls b  => surfUsesVar nm n || surfUsesVar nm p || surfUsesVar nm q || hClausesUseVar nm cls || surfUsesVar nm b
+def dArmsUseVar (nm : String) : DArms → Bool
+  | .nil            => false
+  | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
+def letBindingsUseVar (nm : String) : LetBindings → Bool
+  | .nil            => false
+  | .cons _ e rest  => surfUsesVar nm e || letBindingsUseVar nm rest
+def hClausesUseVar (nm : String) : HClauses → Bool
+  | .nil               => false
+  | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
+end
 
-`eraseLettMultiProg` FIRST (issue #68): resolves every `.lettMulti` sugar marker — in any decl's
-body or the program's own trailing body — to plain `.lett` chains before ANY of `foldLetDecls`/
-`expandBFns`/`elabS`/qualification ever run. This is why none of those functions (nor `synthSC`/
-`structOKRest`) have their own `.lettMulti` arm: by the time they see a real program, there is
-none left in the tree (matching `letRecS`/`matchD`'s own "pre-resolved, reaching here is a bug"
-convention) — only `Bang.Format` (the printer) and the module-qualification passes that run
-BEFORE this (`qualifyVars`/`qualifyDotAccess`/`surfUsesVar`, on raw per-file `Surf` before
-`mergeModules` hands a merged `Prog` here) need to see through the marker transparently. -/
+/-- Every `Surf` body attached to a `Decl` (mirrors `Bang.Query.declBodies`, upstream copy for the
+same cycle reason as `surfUsesVar` above): a `fnD`/`letD`/`letRecD`'s own body/rhs; `dataD`/
+`effectD` carry no `Surf`; `traitD`/`implD` are excluded too (a prelude entry is never referenced
+from a law/method body in v1's corpus, and `Prelude.bang` itself declares neither). -/
+def declBodiesTC : Decl → List Surf
+  | .fnD _ _ _ _ _ b => [b]
+  | .letD _ _ e      => [e]
+  | .letRecD _ _ e   => [e]
+  | .dataD ..  | .effectD .. | .traitD .. | .implD .. => []
+
+/-- Does `nm` occur anywhere in `p` — its trailing body OR any decl's own body (a name mentioned
+only inside another top-level `let`'s definition, not the trailing expression, must still trigger
+the prelude alias — e.g. `let main = ($double) 21` with no other body, ADR-0093 D5's own precedent
+for "a decl's body is a real use site too"). -/
+def progUsesVar (nm : String) (p : Prog) : Bool :=
+  surfUsesVar nm p.body || p.decls.any (fun d => (declBodiesTC d).any (surfUsesVar nm))
+
+/-- The prelude module's SOURCE, embedded into the binary at COMPILE time (ADR-0097 §embed):
+`Prelude.bang` is ordinary bang source living at the repo root, checked/fmt'd/tested like any
+module — `include_str` bakes its bytes into the `.olean`/executable so `bang` stays a single
+self-contained binary with no runtime search path (a path-based alternative would need the file
+findable at RUN time relative to an install location no v1 packaging story fixes; embedding makes
+the SOURCE FILE the only single source of truth — there is no second copy to drift, since the
+compiled bytes ARE `Prelude.bang`'s bytes, re-derived on every build). Path is relative to THIS
+file's own directory (`Bang/Frontend/`), two levels up to the repo root — Lean's `include_str`
+resolves relative to the including `.lean` file, independent of build CWD. -/
+def preludeSrc : String := include_str "../../Prelude.bang"
+
+/-- The prelude, PARSED once (`Prog`, unqualified — `mergeModules` qualifies it per-elaboration
+exactly like any other resolved import). A parse failure here is a BUILD-time bug (the embedded
+source is fixed at compile time, gated by `test-modules.sh`'s own `bang check Prelude.bang` leg
+and this file's own `#guard`s below) — `.get!` is sound because `Prelude.bang` is committed,
+checked source, not user input; a broken prelude fails LOUD at `lake build`, never at runtime. -/
+def preludeProg : Prog := (Bang.Surface.parseProg preludeSrc).toOption.get!
+
+/-- Every `pub` name the prelude exports — the auto-`use` list (ADR-0097 §auto-use): a program
+implicitly gets `use Prelude (name₁, name₂, …)` naming every one of these, with NO explicit
+`use`/`import` line needed. Precomputed once (not per-elaboration) since `preludeProg` is fixed. -/
+def preludePubNames : List String := preludeProg.pubNames
+
+/-- DESCRIPTIVE signatures for the reference doc (`docs/reference/language.md`'s Standard-library/
+Generic-prelude tables, `tools/gen-reference.py`'s `extract_prelude_section`) — hand-maintained
+PROSE, not verified syntax: bang's surface has no `forall`/generic function-type ascription (an
+attempt at `pub let mapOption : (a -> b) -> Option a -> Option b = …` rejects with "unknown type
+name 'a'" — generics elaborate to MONO, ADR-0075/0079, so a top-level ascription can only ever name
+a CONCRETE type), so a generic entry's real signature cannot live IN `Prelude.bang` as checked
+syntax the way `concat : Str -> Str -> Str` does. This table is this fact's one acknowledged
+escape hatch — `Prelude.bang` stays comment-free (matching the `examples/*.bang` convention:
+`bang fmt` strips `--` comments, so a commented module permanently fails `bang lint`'s
+`fmt-divergence` check; verified live — reintroducing per-entry doc comments here made `bang lint
+Prelude.bang` flag every one). Consistency with the RUNNING code is enforced by the corpus
+`#guard`s (⑨h′/⑨j/⑨k below), which exercise every entry against these exact signatures — a
+signature drifting from reality breaks a `#guard`, not silently. -/
+def preludeSigs : List (String × String) :=
+  [ ("concat", "Str -> Str -> Str"),
+    ("eq", "Str -> Str -> Unit + Unit"),
+    ("mapOption", "(a -> b) -> Option a -> Option b"),
+    ("mapResult", "(a -> b) -> Result e a -> Result e b"),
+    ("bimap", "(e -> f) -> (a -> b) -> (e + a) -> (f + b)"),
+    ("resultToEither", "Result e a -> (e + a)"),
+    ("eitherToResult", "(e + a) -> Result e a"),
+    ("optionToEither", "Option a -> (Unit + a)"),
+    ("eitherToOption", "(Unit + a) -> Option a"),
+    ("withDefault", "a -> Option a -> a"),
+    ("fst", "(a, b) -> a"),
+    ("snd", "(a, b) -> b"),
+    ("abs", "Int -> Int"),
+    ("min", "Int -> Int -> Int"),
+    ("max", "Int -> Int -> Int"),
+    ("const", "a -> b -> a"),
+    ("isDigit", "Char -> Unit + Unit"),
+    ("isAlpha", "Char -> Unit + Unit"),
+    ("toUpper", "Char -> Char"),
+    ("toLower", "Char -> Char") ]
+
+/-- Auto-`use` the prelude into `p` (ADR-0097): merge a TRIMMED `preludeProg` — containing only the
+decls the program actually MENTIONS (`progUsesVar`) — in as a resolved module named `"Prelude"`,
+with those same names pre-added to `p`'s own `uses`. The user never writes `use Prelude (…)`
+themselves.
+
+Trimming `preludeProg.decls` (not just the `use` alias list) is load-bearing: `mergeModules` folds
+EVERY decl of a resolved module into `mergedDecls` unconditionally (`use`-selectivity only controls
+the unqualified ALIAS, not whether the qualified `Prelude_name` decl itself is merged), and
+`foldLetDecls` later wraps the body in one `let` PER decl in the final list — so an untrimmed merge
+would still pay `Config.run`'s one-fuel-per-`letC` cost for all 21 entries regardless of a filtered
+`use`. Trimming the SOURCE module is sound here specifically because NO prelude entry calls another
+top-level prelude entry (verified: `concat`/`eq` self-recurse, `reverse` nests its own PRIVATE
+`revApp`, but none references a SIBLING top-level name) — so there is no cross-entry closure to
+compute; each mentioned name's own decl is everything it needs. This is the general fix
+`mergeModules` itself doesn't need YET (an ordinary user `import`/`use` already opts into its
+target's full decl cost deliberately) but the always-on prelude specifically requires (every
+program pays it, not just ones that opt in) — a genuinely NEW cost `injectStdlib`'s old bucket-gate
+never had, closed here rather than deferred.
+
+Composes with the module resolver's OWN `mergeModules` call transparently: for a multi-file
+program, `p` here is already the once-merged `Prog` (`imports`/`uses` cleared to `[]` by that
+earlier merge, ADR-0093 D4) — merging AGAIN with the (trimmed) prelude as the sole resolved module
+is just `mergeModules`'s ordinary multi-import shape, run a second time. For the single-file fast
+path, this is the ONLY merge that ever runs. An EMPTY mention set short-circuits before any merge
+(zero fuel, zero decls — matches a program with no `use` header at all).
+
+Shadowing/suppression falls out of `mergeModules`'s EXISTING decl-ordering for free (ADR-0097
+§auto-use, no special-case code): the auto-`use` aliases are prepended before the entry file's own
+decls (`mergeModules`'s `aliasDecls ++ entryDecls`), so a user's own top-level `let`/`data` of the
+SAME name is the INNERMOST (later) binder and lexically SHADOWS the prelude one — verified live
+(`#guard` below: a user `abs` overrides the prelude `abs`). This is STRICTLY finer-grained than the
+retired `injectStdlib`'s all-or-nothing `declared.contains "Str"/"Option"` bucket gate: each of the
+21 prelude names shadows INDEPENDENTLY, not as two coarse bundles. A name COLLISION between the
+prelude and a module the user separately `use`s is the SAME loud multi-import error `mergeModules`
+already gives two colliding `use`s (ADR-0046) — no new error path. -/
+def injectPrelude (p : Prog) : Except String Prog :=
+  let mentioned := preludePubNames.filter (progUsesVar · p)
+  if mentioned.isEmpty then pure p
+  else
+    let trimmedPrelude := { preludeProg with
+      pubNames := mentioned, decls := preludeProg.decls.filter (fun d => mentioned.contains d.name) }
+    mergeModules [("Prelude", trimmedPrelude)] { p with uses := p.uses ++ [⟨"Prelude", mentioned⟩] }
+
+/-- Elaborate a whole program: auto-`use` the prelude module (ADR-0097), build the elaboration env,
+resolve the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the
+type-checker's `.dotPerform` arm needs the program's user-effect table to resolve a `perform`
+against a declared `effect`'s op, and `synthSC`/`checkSC` have no separate `ElabEnv` parameter (see
+`USt.effects`'s comment) — so `elabProg`'s caller threads the pair into `runInferC`.
+
+`injectPrelude` FIRST: it runs its own `mergeModules` pass (needs `Prog`'s still-separate
+`imports`/`uses`/`decls`/`body` fields), so it must precede `eraseLettMultiProg`/`foldLetDecls`
+(which fold decls into ONE `Surf` tree `mergeModules` cannot re-enter). `eraseLettMultiProg` NEXT
+(issue #68): resolves every `.lettMulti` sugar marker — in any decl's body or the program's own
+trailing body, INCLUDING the prelude's own decls now merged in — to plain `.lett` chains before ANY
+of `foldLetDecls`/`expandBFns`/`elabS`/qualification ever run. This is why none of those functions
+(nor `synthSC`/`structOKRest`) have their own `.lettMulti` arm: by the time they see a real program,
+there is none left in the tree (matching `letRecS`/`matchD`'s own "pre-resolved, reaching here is a
+bug" convention) — only `Bang.Format` (the printer) and the module-qualification passes that run
+BEFORE this (`qualifyVars`/`qualifyDotAccess`/`Bang.Query.surfUsesVar`, on raw per-file `Surf`
+before `mergeModules` hands a merged `Prog` here) need to see through the marker transparently.
+
+`strPrelude`/`genericPrelude` (the `data` types `Char`/`Str`/`Option`/`Result`) stay INJECTED
+DIRECTLY here, not via the module mechanism — they are foundational to how literals PARSE
+(`"hi"`/`'a'` desugar straight to `SCons`/`Char` ctor names) and to annotation-free generic
+introduction (ADR-0081), so they precede `Prelude.bang`'s own elaboration (its `pub let`s reference
+`Str`/`Char`/`Option`/`Result` ctors, which must already be in `buildEnv`'s `ElabEnv` for THEM to
+type-check) — out of ADR-0097's scope (only the FUNCTION strings moved to a module). -/
 def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) := do
+  let p ← injectPrelude p
   let p := Bang.Surface.eraseLettMultiProg p
   let (nonLetDecls, foldedBody) := foldLetDecls p.decls p.body
   let declared := nonLetDecls.filterMap (fun | .dataD n _ _ => some n | _ => none)
   let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
-  let body ← injectStdlib declared foldedBody
   let env ← buildEnv (prelude ++ nonLetDecls)
-  let e ← elabS env [] (← expandBFns env none bigFuel body)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
+  let e ← elabS env [] (← expandBFns env none bigFuel foldedBody)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
   return (e, env.effects)
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
@@ -4703,8 +4704,9 @@ def lengthDef : String :=
 
 /-! ### Validation ⑨h′ — the STRING STDLIB: `concat`/`reverse`/`eq` injected FREE (#49 stage 3, #50).
 
-`concat`/`reverse`/`eq` are `let rec` folds injected in scope of EVERY program (`stdlibFnSrcs`,
-`injectStdlib`), so a program uses them WITHOUT re-inlining (the #50 gap the tokenizer hit). Pre-
+`concat`/`reverse`/`eq` are `let rec` folds in `Prelude.bang`, auto-`use`d (ADR-0097, `injectPrelude`)
+into scope of every program that mentions them, so a program uses them WITHOUT re-inlining (the #50
+gap the tokenizer hit). Pre-
 ADR-0091, ALL were `Div`-typed (curried `let rec` — the old #47 multi-arg gap; they terminate, the
 old single-slot certifier couldn't prove it). ADR-0091's single-fixed-slot descent now CERTIFIES
 `concat`/`eq` as TOTAL directly (`⊥`-row, `Div ∉ ρ`) — this is #47's own stated contract working as
@@ -4785,7 +4787,7 @@ reference must not repeat. -/
 -- IDIOM 3: the uppercase letter range 'A'-'Z'.
 #guard runTypedYieldsInt 100 "match 'A' { Char(n) -> n }" 65
 #guard runTypedYieldsInt 100 "match 'Z' { Char(n) -> n }" 90
--- the injected STDLIB (free in every program, no import needed — `stdlibFnSrcs` above): `concat`.
+-- the auto-`use`d STDLIB (free in every program, no import needed — `Prelude.bang`, ADR-0097): `concat`.
 #guard runTypedYieldsInt 3000 "match (($concat) \"foo\" \"bar\") { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }" 102
 -- the injected STDLIB: `eq`, structural string equality.
 #guard runTypedYieldsInt 3000 "if (($eq) \"cat\" \"cat\") then 1 else 0" 1
@@ -5031,7 +5033,8 @@ def genPair :=
    "match (($mapP) {fun v => v + 10} {fun s => Some((7, s))} \"x\") { None -> 0, Some(r) -> let (v, rest) = r in v }") 17
 
 /-! ### Validation ⑨j — the GENERIC PRELUDE: `Option`/`Result` + their maps + the ISO round-trips vs
-the built-in sum `Either` (injected globally, `genericPrelude` + `genericPreludeFnSrcs`). The tagged-sum
+the built-in sum `Either` (the tagged-sum TYPES injected globally, `genericPrelude`; their COMBINATORS
+— `mapOption`/`mapResult`/`bimap`/the isos — auto-`use`d from `Prelude.bang`, ADR-0097). The tagged-sum
 data types and their combinators are available with NO `data` declaration — `Some`/`Ok`/`Err` resolve
 against the injected prelude the way `"hi"` resolves against `Str`; `Left`/`Right` are the primitive
 sum (`Either = e + a`, no decl). The `*To*` conversions witness the `Result ≅ Either` and
@@ -5060,9 +5063,9 @@ witnessed-iso laws made real through `Source.eval`. -/
 #guard runTypedYieldsInt 1200 "match (($eitherToOption) (($optionToEither) (None : Option Int))) { None -> 0, Some(v) -> v }" 0
 
 /-! ### Validation ⑨k — issue #105 FIRST-SLICE PRELUDE: `fst`/`snd`/`abs`/`min`/`max`/`withDefault`/
-`const` + the char-class kit (`isDigit`/`isAlpha`/`toUpper`/`toLower`), all `genericPreludeFnSrcs`
-entries (ADR/docs/notes/stdlib-prelude-survey.md §3 — the first slice, ordered by dogfood demand).
-Each is used FREE with no local `let`/declaration (the injection under test); the char-kit guards use
+`const` + the char-class kit (`isDigit`/`isAlpha`/`toUpper`/`toLower`), all `Prelude.bang` entries
+auto-`use`d (ADR-0097; docs/notes/stdlib-prelude-survey.md §3 — the first slice, ordered by dogfood
+demand). Each is used FREE with no local `let`/declaration (the injection under test); the char-kit guards use
 `(Char 97)`-style ctor-application (a `Char` literal `'a'` desugars to the SAME `Char 97`, both are
 exercised — see the `let c = 'a'`-style guards below). No List entry ships in this slice — the survey
 found NO free injected generic `List a` exists (only per-program user `data List a` declarations,

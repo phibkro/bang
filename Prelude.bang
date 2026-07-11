@@ -1,0 +1,54 @@
+pub let rec concat : Str -> Str -> Str =
+  fun a => fun b => match a { SNil -> b, SCons(c, t) -> SCons(c, $concat t b) }
+pub let reverse =
+  {let rec revApp : Str -> Str -> Str = fun acc =>
+      fun s => match (s : Str) { SNil -> acc, SCons(c, t) -> $revApp (SCons(c, acc)) t }
+    in
+  fun s => $revApp SNil s}
+pub let rec eq : Str -> Str -> Unit + Unit =
+  fun a =>
+    fun b =>
+      match a {
+        SNil -> match (b : Str) { SNil -> 0 == 0, SCons(c2, t2) -> 0 == 1 },
+        SCons(c, t) -> match (b : Str) {
+          SNil -> 0 == 1,
+          SCons(c2, t2) -> if match c { Char(n) -> match c2 { Char(m) -> n == m } }
+            then $eq t t2
+            else 0 == 1
+        }
+      }
+pub let mapOption = {fun f => fun o => match o { None -> None, Some(x) -> Some ($f x) }}
+pub let mapResult = {fun f => fun r => match r { Err(e) -> Err e, Ok(a) -> Ok ($f a) }}
+pub let bimap =
+  {fun g => fun f => fun x => match x { Left(e) -> Left($g e), Right(a) -> Right($f a) }}
+pub let resultToEither = {fun r => match r { Err(e) -> Left(e), Ok(a) -> Right(a) }}
+pub let eitherToResult = {fun x => match x { Left(e) -> Err e, Right(a) -> Ok a }}
+pub let optionToEither = {fun o => match o { None -> Left(()), Some(a) -> Right(a) }}
+pub let eitherToOption = {fun x => match x { Left(u) -> None, Right(a) -> Some a }}
+pub let withDefault = {fun d => fun o => match o { None -> d, Some(v) -> v }}
+pub let fst = {fun p => let (a, b) = p in a}
+pub let snd = {fun p => let (a, b) = p in b}
+pub let abs = {fun n => if n < 0 then 0 - n else n}
+pub let min = {fun a => fun b => if a < b then a else b}
+pub let max = {fun a => fun b => if a < b then b else a}
+pub let const = {fun x => fun y => x}
+pub let isDigit =
+  {fun c =>
+    match (c : Char) { Char(n) -> if 47 < n then if n < 58 then 0 == 0 else 0 == 1 else 0 == 1 }}
+pub let isAlpha =
+  {fun c =>
+    match (c : Char) {
+      Char(n) -> let lower = if 96 < n then if n < 123 then 0 == 0 else 0 == 1 else 0 == 1
+        in
+      if 64 < n then if n < 91 then 0 == 0 else lower else lower
+    }}
+pub let toUpper =
+  {fun c =>
+    match (c : Char) {
+      Char(n) -> if 96 < n then if n < 123 then Char (n - 32) else Char n else Char n
+    }}
+pub let toLower =
+  {fun c =>
+    match (c : Char) {
+      Char(n) -> if 64 < n then if n < 91 then Char (n + 32) else Char n else Char n
+    }}

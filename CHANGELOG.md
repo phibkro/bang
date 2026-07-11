@@ -158,6 +158,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **dx** — just watch FILE — re-run `just check FILE` on save (plan 013 s9) (`73b8b56e`)
 - **query** — wire decl-granularity hover — bang query hover <file> <line> <col> (#52 slice 5) (`e304e1b3`)
 - **stdlib** — #105 first-slice prelude — fst/snd/abs/min/max/withDefault/const + char kit (`8578590a`)
+- **docs** — unblock the doc-gen4 build (plan 010) — UnicodeBasic fork pin + the generated BangDocs barrel (`43676ce2`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

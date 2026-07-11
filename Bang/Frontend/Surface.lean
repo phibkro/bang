@@ -1756,9 +1756,9 @@ inductive Decl where
     -- never a guess (ADR-0046). Desugars at `Prog`-assembly time (`foldLetDecls`) to nested
     -- `Surf.lett`s wrapping the body (the ascription, when present, becomes an `annotS` around the
     -- bound expression — mirroring how an expression-level `(e : T)` ascription already works) —
-    -- the SAME "wrap the body in a let" idiom `wrapFnSrcs`/`wrapGenericFns`/`mergeModules`'s
-    -- `use`-hoist already use, so this is not a new mechanism, just its first SURFACE-visible
-    -- (parseable, `pub`-able, formattable) use.
+    -- the SAME "wrap the body in a let" idiom `mergeModules`'s `use`-hoist (and `injectPrelude`'s
+    -- auto-`use`, ADR-0097) already use, so this is not a new mechanism, just its first
+    -- SURFACE-visible (parseable, `pub`-able, formattable) use.
   | letRecD : String → Ty → Surf → Decl
     -- `let rec name : T = expr` (NO trailing `in`) — the recursive sibling, mirroring `letRecS`'s
     -- shape (ADR-0073's mandatory type annotation) at decl scope. `main` is now literally `let main
