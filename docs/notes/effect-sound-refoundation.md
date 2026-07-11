@@ -126,6 +126,24 @@ discharge is `runTrace_traceWithin` in `Bang/Core/Semantics/Eval.lean`, a machin
 HARD-RAIL clear of `lr_*`. The `HasCTy` premise is NOT used (the bound is typing-independent); it
 stays on the statement for the intended reading. The plan below is the record of how it went.
 
+### What the theorem GUARDS (its refutation content — NOT true-by-construction)
+
+The auditor's fair question: with `HasCTy` unused and the bound computed from the same frames dispatch
+walks, is this vacuous? NO. `effect_sound` couples two INDEPENDENTLY-computed things — `runTrace`
+records the label the CAPABILITY claims (`perform (vcap n ℓ)`), `liveBound` folds labels off the
+HANDLER FRAMES (`h.label`). They agree ONLY because dispatch is fail-loud: `idDispatch` fires iff
+`handlesOp h ℓ op`, forcing `h.label = ℓ` (`handlesOp_label`). So the theorem certifies
+**dispatch/liveBound coherence: a recorded label is always the label of a live frame that handled it.**
+
+The falsifying bug-shape is machine-witnessed (`EffectTraceWitness.lean` Witness 3, `cMismatch`,
+`rfl`-checked): a cap `vcap 0 2` claiming label 2, id-matching a `throws 1` frame (label 1). WITH the
+guard it ESCAPES (`escapedCap`, never `done`) — no bad record. WITHOUT the `handlesOp` guard (the
+pre-ADR-0054 identity-only silent-wrong dispatch), it would `done`-record `(2, {1})` with `2 ∉ {1}` —
+`effect_sound` FALSE. The runtime bound being "computed from the frames dispatch walks" is the point:
+the theorem checks that dispatch's identity-match and the frame's label-content agree, a real invariant
+that DID break (pre-0054). `HasCTy` is unused because this is an operational property of the fail-loud
+dispatcher, not of the static type — a strength, not a vacuity.
+
 ### The discharge structure (as landed)
 
 1. **Value-agreement differential guard.** `Source.eval` stays the oracle. A generic

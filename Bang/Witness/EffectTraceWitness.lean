@@ -100,6 +100,27 @@ example :
   intro p hp; simp only [List.mem_singleton] at hp; subst hp
   simp only [EffSig.labelEff]; decide
 
+/-! ## Witness 3 — the FALSIFYING bug-shape (why `effect_sound` is NOT true-by-construction)
+
+`effect_sound` couples two independently-computed things: `runTrace` records the label `ℓ` the
+CAPABILITY claims (`perform (vcap n ℓ)`); `liveBound` folds labels off the HANDLER FRAMES (`h.label`).
+They agree only because dispatch is FAIL-LOUD (`idDispatch` fires iff `handlesOp h ℓ op`, forcing
+`h.label = ℓ`). This witness exhibits the machine bug the theorem catches: a cap whose CLAIMED label
+differs from the frame it id-matches. -/
+
+/-- `handle (throws 1) (perform (vcap 0 2) "raise")`: the cap claims label 2 but id-matches the
+`throws 1` frame (id 0, label 1). The `handlesOp` guard REFUSES (label 2 ≠ frame label 1), so the run
+ESCAPES — it never reaches `done`, never records a coherence-violating `(2, {1})`. -/
+def cMismatch : Comp :=
+  .handle (Handler.throws 1) (.perform (.vcap 0 2) "raise" .vunit)
+
+/-- The mismatch cap ESCAPES (not `done`): with the guard, a cap whose label ≠ its id-matched frame's
+label is stuck. So `effect_sound` never sees a bad record. WITHOUT the `handlesOp` guard (identity-only
+dispatch, pre-ADR-0054), this same run would `done`-record `(2, {1})` with `2 ∉ {1}` — `effect_sound`
+FALSE. That is the theorem's refutation content: it certifies dispatch/liveBound coherence. -/
+example : Source.evalTrace (Eff := Finset Label) (Mult := Nat) 50 cMismatch ∅ = Result.escapedCap :=
+  rfl
+
 end Bang.EffectTraceWitness
 
 end -- @[expose] public section

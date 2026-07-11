@@ -70,6 +70,26 @@ true focus residual, and exactly what `traceWithin` needs. The discharge is then
 (a dispatched `ℓ` resolves to a `handleF` frame on `K` with label `ℓ`, so `labelEff ℓ ≤ liveBound K e`)
 with NO preservation and NO logical relation — it never approaches the parked `lr_*` territory.
 
+### What the theorem GUARDS (its refutation content — not true-by-construction)
+
+`effect_sound` couples two INDEPENDENTLY-computed things: `runTrace` records the label `ℓ` from the
+CAPABILITY (`perform (vcap n ℓ)` — the label the cap *claims*), while `liveBound` folds labels from the
+HANDLER FRAMES (`handleF n h` — via `h.label`). These agree only because dispatch is FAIL-LOUD:
+`idDispatch` fires iff `handlesOp h ℓ op = true`, which forces `h.label = ℓ` (`handlesOp_label`). So the
+theorem certifies **dispatch/liveBound coherence — a recorded label is always the label of a LIVE frame
+that actually handled it.** The `HasCTy` premise is unused because this coherence is an operational
+property of the fail-loud dispatcher, not of the static type.
+
+**The falsifying bug-shape** (machine-witnessed, `Bang/Witness/EffectTraceWitness.lean`): a cap
+`vcap 0 2` claiming label 2, id-matching a `throws 1` frame (label 1). WITH the guard this run
+ESCAPES (`idDispatch = none → escapedCap`, never `done`), so it records nothing coherence-violating —
+`effect_sound` holds. WITHOUT the `handlesOp` guard (the pre-ADR-0054 identity-ONLY silent-wrong
+dispatch), the same program would reach `done` recording `(2, liveBound = {1})` with `2 ∉ {1}`, and
+`effect_sound` would be **FALSE**. That is the machine bug the theorem catches: a dispatcher that
+routes a cap to a frame whose label it does not carry. The runtime bound being "computed from the same
+frames dispatch walks" is the point — the theorem checks that dispatch's identity-match and the
+frame's label-content agree, which is a real, breakable invariant (it broke, pre-0054).
+
 ## Consequences
 
 - `effect_sound`'s axiom set: `[sorryAx, Trace, traceWithin, Source.evalTrace]` → `[propext, Quot.sound]`
