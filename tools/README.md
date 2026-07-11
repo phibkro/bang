@@ -56,7 +56,7 @@ _Checks — fitness functions that fail on drift (structural invariants, doc/ref
 | [`hooks/pretool-gate-guard.sh`](hooks/pretool-gate-guard.sh) | `hook` | `new-worktree.sh` | PreToolUse(Bash) guard — blocks the ONE unambiguous, structurally-detectable footgun |
 | [`test-run-service.sh`](test-run-service.sh) | `manual` | `web/run-service/*.ts`, `examples/*/main.bang` | Smoke battery + GATE for the /run playground exec service (web/run-service/) |
 
-## test (21)
+## test (22)
 
 _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime, the row-unifier) end-to-end._
 
@@ -66,6 +66,7 @@ _Tests — exercise a real boundary (the compiled `bang` binary, a live Wasmtime
 | [`check-examples.sh`](check-examples.sh) | `verify` | `examples/*/main.bang`, `examples/*/expected.txt` | the RUN-oracle gate for the bang example projects |
 | [`emit-rung1-diff.sh`](emit-rung1-diff.sh) | `manual` | `EmitMain`, `Bang/Backend/WasmEmit.lean` | the ◊5.5 rung-1 / rung-1.5 EMISSION differential harness |
 | [`emit-rung4-diff.sh`](emit-rung4-diff.sh) | `manual` | `scratch/Rung4Shape.lean`, `Bang/Backend/WasmEmit.lean` | the ◊5.5 EMISSION rung-4 differential harness (closures + ADTs + recursion) |
+| [`emit-rung5-effects-diff.sh`](emit-rung5-effects-diff.sh) | `manual` | `scratch/Rung4Shape.lean`, `Bang/Backend/WasmEmit.lean` | the ◊5.5 EMISSION rung-5 S0-S4 EFFECTS harness |
 | [`emit-rung5-print-diff.sh`](emit-rung5-print-diff.sh) | `manual` | `scratch/Rung4Shape.lean`, `Bang/Backend/WasmEmit.lean` | the ◊5.5 EMISSION rung-5 Part-1 READBACK harness |
 | [`run-batteries.sh`](run-batteries.sh) | `verify` | `justfile`, `tools/test-*.sh` | concurrent driver for the independent verify batteries (plan 004) |
 | [`selfcheck.mjs`](selfcheck.mjs) | `verify` | — | Purpose: de-risk the DESIGN before any F*/OCaml/TS toolchain is installed |
