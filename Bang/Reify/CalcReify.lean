@@ -49,6 +49,8 @@ namespace Bang.CalcReify
 
 /-! ## Instructions, values, frames -/
 
+/-- The reifier's bytecode instructions: stack ops, environment bind/lookup, and
+the handler/continuation controls (`INSTALL`/`PERFORM`/`RESUME`). -/
 inductive Instr where
   | PUSH    : Int → Instr
   | ADD     : Instr
@@ -60,6 +62,7 @@ inductive Instr where
   | RESUME  : Instr
 deriving Inhabited, Repr
 
+/-- A compiled program: a list of `Instr`. -/
 abbrev Code := List Instr
 
 /-- de Bruijn source: arithmetic + `let` + one op (`perform`), `handle clause body`
@@ -82,19 +85,26 @@ inductive Value where
   | vcont : Code → List Value → List Value → Code → List Value → Value
 deriving Inhabited, Repr
 
+/-- The machine environment: a list of bound `Value`s, indexed by de Bruijn position. -/
 abbrev Env   := List Value
+/-- The machine operand stack: a list of `Value`s. -/
 abbrev Stack := List Value
 
 /-- A continuation frame. `clause = some (code, env)` is a handler frame (its op
 clause); `clause = none` is a **pure return** frame. Either way, on a *normal*
 value reaching it the value is passed to `(retCode, retEnv, retStack)`. -/
 structure Frame where
+  /-- The op clause `(code, env)` for a handler frame; `none` for a pure-return frame. -/
   clause   : Option (Code × Env)
+  /-- The code a normal value reaching this frame returns into. -/
   retCode  : Code
+  /-- The environment the return code runs under. -/
   retEnv   : Env
+  /-- The stack the return code runs against. -/
   retStack : Stack
 deriving Inhabited
 
+/-- The continuation: a stack of handler/return `Frame`s. -/
 abbrev Kont := List Frame
 
 /-! ## The machine — a flat generalised-continuation machine
@@ -103,6 +113,8 @@ abbrev Kont := List Frame
 `(code, stack)`, and `K` is the enclosing stack of handler/return frames. On empty
 code the value on the stack is returned **through** `K`. -/
 
+/-- Run `code` under environment, stack, and continuation `K` for the given fuel,
+returning the final `Value` (or `none` on stuck/exhaustion). -/
 def exec : Nat → Code → Env → Stack → Kont → Option Value
   | 0,   _,      _,   _, _ => none
   | f+1, [],     _,   s, K =>
@@ -151,6 +163,7 @@ def exec : Nat → Code → Env → Stack → Kont → Option Value
 
 /-! ## Compiler and top-level run -/
 
+/-- Compile a `Src` term into bytecode prepended onto continuation code `c`. -/
 def compile : Src → Code → Code
   | .val n,            c => Instr.PUSH n :: c
   | .add x y,          c => compile x (compile y (Instr.ADD :: c))

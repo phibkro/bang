@@ -68,6 +68,7 @@ The term-level variable is now a **de Bruijn index** (`Nat`), not a name —
 see ADR-0020. There is no `Var` abbreviation anymore: a bound occurrence is
 the offset to its binder (0 = nearest enclosing binder). -/
 
+/-- An effect operation's name (a `String`); dispatched to a handler, not a bound variable. -/
 abbrev OpId := String
 
 /-- Primitive binary operators on the `Int` base type (ADR-0065). NOT effect operations
@@ -91,6 +92,8 @@ Handler = value-level spec of how to handle a labelled operation
 NOT bind; their `Val` payload shifts under substitution like any value. -/
 
 mutual
+/-- CBPV values: the inert half of the syntax (units, ints, de Bruijn variables,
+capabilities, thunks, and ADT introducers). Every value is forced to observe it. -/
 inductive Val : Type where
   | vunit  : Val
   | vint   : Int → Val
@@ -110,6 +113,8 @@ inductive Val : Type where
   | pair   : Val → Val → Val            -- product intro     : A → B → A × B
   | fold   : Val → Val                  -- μ intro (= a constructor): T[μX.T/X] → μX.T
   deriving Inhabited
+/-- CBPV computations: the effectful half of the syntax (return, sequencing, force,
+functions, effect performs, handlers, ADT eliminators, and base-type δ-rules). -/
 inductive Comp : Type where
   | ret    : Val → Comp
   | letC   : Comp → Comp → Comp          -- letC M N: N binds index 0 (= M's value)
@@ -136,6 +141,9 @@ inductive Comp : Type where
   | binop  : BinOp → Val → Val → Comp
   | oom    : Comp
   | wrong  : String → Comp
+/-- A value-level handler spec: how a labelled effect's operations are serviced —
+`state` (threads a cell), `throws` (zero-shot exception), `transaction` (STM heap),
+or `custom` (a user-defined clause list). -/
 inductive Handler : Type where
   | state  : Label → Val → Handler
   | throws : Label → Handler
@@ -203,12 +211,15 @@ abbrev Store := List Val
 Lexa OOPSLA'24 style; near-syntactic mapping to WasmFX typed continuations.
 `letF` carries the continuation `N` (which binds index 0). -/
 
+/-- A CK-machine evaluation-context frame: a pending `letC` continuation (`letF`),
+a pending application argument (`appF`), or an installed handler (`handleF`). -/
 inductive Frame : Type where
   | letF    : Comp → Frame                -- let □; N   (N binds index 0)
   | appF    : Val → Frame                 -- □ v
   | handleF : Nat → Handler → Frame       -- handle h □  (Nat = the runtime capability identity, ADR-0054)
   deriving Inhabited
 
+/-- A CK-machine evaluation context: a stack of `Frame`s, innermost first. -/
 abbrev EvalCtx := List Frame   -- innermost frame first
 
 /-- A CK-machine configuration: a focus computation under a frame stack (ADR-0023), with a
@@ -224,6 +235,8 @@ abbrev Config := Nat × EvalCtx × Comp
 /-! ### 1.4 Type syntax (Torczon graded CBPV) -/
 
 mutual
+/-- Value types (graded CBPV): units, ints, thunk types `U φ C`, capability types
+`Cap ℓ`, sums, products, and iso-recursive `μ` types. -/
 inductive VTy (Eff Mult : Type) : Type where
   | unit : VTy Eff Mult
   | int  : VTy Eff Mult
@@ -239,6 +252,8 @@ inductive VTy (Eff Mult : Type) : Type where
   | prod : VTy Eff Mult → VTy Eff Mult → VTy Eff Mult   -- A × B
   | mu   : VTy Eff Mult → VTy Eff Mult                  -- μX. A  (A under one type-level binder)
   | tvar : Nat → VTy Eff Mult                           -- type-level de Bruijn recursion var
+/-- Computation types (graded CBPV): the returner `F q A` and the graded arrow
+`arr q A B`, whose multiplicity `q` records argument usage. -/
 inductive CTy (Eff Mult : Type) : Type where
   | F   : Mult → VTy Eff Mult → CTy Eff Mult
   -- `arr q A B` = `A →^q B` (Torczon `CAbs q' A B`): the argument multiplicity
@@ -277,6 +292,7 @@ def VTy.tyShiftFrom {Eff Mult : Type} (c : Nat) : VTy Eff Mult → VTy Eff Mult
   | .prod A B    => .prod (VTy.tyShiftFrom c A) (VTy.tyShiftFrom c B)
   | .mu A        => .mu (VTy.tyShiftFrom (c + 1) A)        -- mu binds one type var
   | .tvar i      => if i < c then .tvar i else .tvar (i + 1)
+/-- Increment a computation type's free recursion vars (`≥ c`) by 1. -/
 def CTy.tyShiftFrom {Eff Mult : Type} (c : Nat) : CTy Eff Mult → CTy Eff Mult
   | .F q A       => .F q (VTy.tyShiftFrom c A)
   | .arr q A B   => .arr q (VTy.tyShiftFrom c A) (CTy.tyShiftFrom c B)
@@ -297,6 +313,7 @@ def VTy.tySubstFrom {Eff Mult : Type} (k : Nat) (T : VTy Eff Mult) : VTy Eff Mul
       if i = k then T
       else if i > k then .tvar (i - 1)
       else .tvar i
+/-- Replace recursion var `k` with `T` in a computation type, renumbering. -/
 def CTy.tySubstFrom {Eff Mult : Type} (k : Nat) (T : VTy Eff Mult) : CTy Eff Mult → CTy Eff Mult
   | .F q A       => .F q (VTy.tySubstFrom k T A)
   | .arr q A B   => .arr q (VTy.tySubstFrom k T A) (CTy.tySubstFrom k T B)
@@ -331,8 +348,12 @@ fix; de Bruijn aligns positionally, so the carrier reverts to a list and the
 five named side-conditions (closedness, grade-freshness, no-dup-keys, the two
 `γ y = 0` invariants) become structural — they vanish. -/
 
+/-- The positional resource vector: a `List Mult` indexed by de Bruijn position,
+same length as the ambient `TyCtx`. Splits, scales, and adds. -/
 abbrev GradeVec (Mult : Type) := List Mult
 
+/-- The ambient positional type context: a `List (VTy …)` indexed by de Bruijn
+position, shared across a derivation (types match, never add). -/
 abbrev TyCtx (Eff Mult : Type) := List (VTy Eff Mult)
 
 /-- Positional grade addition (de Bruijn `γ₁ Q+ γ₂`). Same-length lists. -/
@@ -373,6 +394,9 @@ parametric over the signature; a program supplies the instance.
 The `up` typing rule (`Bang/Syntax.lean`, ADR-0022 D2) and handler typing consume
 this; the metatheory is parametric in `[EffSig Eff Mult]`, so no global instance is
 needed to state or prove the theorems. -/
+/-- The effect-operation signature interface (ADR-0022): the argument/result types
+each `(ℓ, op)` presents, plus each label's singleton effect row. Supplied per program;
+the kernel stays parametric in `[EffSig Eff Mult]`. -/
 class EffSig (Eff Mult : Type) [Lattice Eff] [OrderBot Eff] where
   /-- The singleton effect row of a label (`ℓ ∈ φ` is `labelEff ℓ ≤ φ`). -/
   labelEff : Label → Eff
