@@ -5465,15 +5465,25 @@ def eqArmBody (outerArity innerArity : Nat) : Surf :=
 /-- The full `Eq.eq` fold over ALL (outer, inner) ctor pairs of `cs` — a `matchD`-of-`matchD`
 diagonal, ADR-0097 §2's exact shape. Each outer arm's binders are `x0..`; each nested inner arm
 (one per ctor of `cs` again) is `y0..` when it's the SAME ctor as the outer arm (payload-wise
-fold), else `deriveFalseS` (payload unused, so its binders are irrelevant — bound but unread). -/
-def eqFoldBody (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
+fold), else `deriveFalseS` (payload unused, so its binders are irrelevant — bound but unread).
+**#128:** every `matchD` arm head is the TYPE-QUALIFIED ctor name (`qualifyName dataName ctor`,
+ADR-0099's `Type_Ctor` convention — `qualifyDeclName`'s own precedent, TypeCheck.lean:4686),
+UNCONDITIONALLY, not just when a collision is detected: a qualified reference resolves identically
+whether or not the bare name is ambiguous (verified live — `Box_BLeft` matches fine even with no
+colliding `Box`-named type in scope), so there is no cheaper "detect the collision, qualify only
+then" branch to earn — one spelling, always correct, mirrors the already-generated `impl`'s own
+target `Ty.tName dataName` (never bare-vs-qualified conditional either). Fixes the #128 regression
+(ADR-0103 Amendment ①'s unconditional `List` injection made every bare-`Nil`/`Cons` carrier's
+OWN generated derive body ambiguous, B012, since the generator emitted the SAME bare spelling a
+hand-written impl would need to qualify post-migration). -/
+def eqFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
   let outerArms := cs.map (fun (outerCtor, outerTys) =>
     let xs := deriveFieldNames "x" outerTys.length
     let innerArms := cs.map (fun (innerCtor, innerTys) =>
       let ys := deriveFieldNames "y" innerTys.length
       let body := if innerCtor == outerCtor then eqArmBody outerTys.length innerTys.length else deriveFalseS
-      (innerCtor, ys, body))
-    (outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
+      (qualifyName dataName innerCtor, ys, body))
+    (qualifyName dataName outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
   .matchD (.var pVar) (toDArms outerArms)
 
 /-- The `Ord` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒
@@ -5499,15 +5509,17 @@ def ordArmBody (outerIdx innerIdx outerArity innerArity : Nat) : Surf :=
 
 /-- The full `Ord.lt` fold over ALL (outer, inner) ctor pairs of `cs` — mirrors `eqFoldBody`'s
 `matchD`-of-`matchD` shape exactly, threading each ctor's DECL-ORDER INDEX (its position in `cs`,
-ADR-0069's ordinal) into `ordArmBody` instead of a same/different-ctor Bool. -/
-def ordFoldBody (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
+ADR-0069's ordinal) into `ordArmBody` instead of a same/different-ctor Bool. **#128:** every
+`matchD` arm head TYPE-QUALIFIED (`qualifyName dataName ctor`), same fix + rationale as
+`eqFoldBody`'s own doc comment. -/
+def ordFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar qVar : String) : Surf :=
   let indexed := cs.zipIdx
   let outerArms := indexed.map (fun ((outerCtor, outerTys), outerIdx) =>
     let xs := deriveFieldNames "x" outerTys.length
     let innerArms := indexed.map (fun ((innerCtor, innerTys), innerIdx) =>
       let ys := deriveFieldNames "y" innerTys.length
-      (innerCtor, ys, ordArmBody outerIdx innerIdx outerTys.length innerTys.length))
-    (outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
+      (qualifyName dataName innerCtor, ys, ordArmBody outerIdx innerIdx outerTys.length innerTys.length))
+    (qualifyName dataName outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
   .matchD (.var pVar) (toDArms outerArms)
 
 /-- Expand ONE `(dataName, deriveList)` entry (`Prog.derivesFor`) into the `Decl`s it contributes:
@@ -5524,9 +5536,9 @@ def expandOneDerive (dataName : String) (cs : List (String × List Ty)) (deriveN
 (Eq/Ord are undecidable on functions, ADR-0097 §4)"
   match deriveName with
   | "Eq" =>
-      pure [Decl.implD "Eq" (Ty.tName dataName) [⟨"eq", ["p", "q"], eqFoldBody cs "p" "q"⟩]]
+      pure [Decl.implD "Eq" (Ty.tName dataName) [⟨"eq", ["p", "q"], eqFoldBody dataName cs "p" "q"⟩]]
   | "Ord" =>
-      pure [Decl.implD "Ord" (Ty.tName dataName) [⟨"lt", ["p", "q"], ordFoldBody cs "p" "q"⟩]]
+      pure [Decl.implD "Ord" (Ty.tName dataName) [⟨"lt", ["p", "q"], ordFoldBody dataName cs "p" "q"⟩]]
   | other => throw s!"unknown derive '{other}' for '{dataName}' — v1 supports only 'Eq'/'Ord' (ADR-0097 tier 1)"
 
 /-- **The derive handler's PUBLIC entry (#109, ADR-0097; #117 landed the trait-sourcing decision).**
@@ -7417,6 +7429,24 @@ def derivePointProg : String := "data Point = Pt(Int, Int) deriving (Eq, Ord) "
 -- derives NOTHING at all — `p.derivesFor.isEmpty` short-circuits `expandDerives`/the widened
 -- mention union before `injectPrelude` ever runs, so a non-deriving program pays nothing extra.
 #guard (match checkProg "3" with | .ok (_, ρ) => decide (ρ = ∅) | _ => false)
+
+/-! ### Validation ⑨n — #128: `deriving` on a carrier whose BARE ctor names collide with the
+injected `List a` (ADR-0103 Amendment ①) — RED before this fix (`B012 ambiguous constructor
+'Nil'`, confirmed live against the branch this ADR landed on: the GENERATED impl body used the
+same bare ctor spelling a hand-written impl would need to qualify post-migration). `eqFoldBody`/
+`ordFoldBody` now emit `Type_Ctor`-qualified ctor names UNCONDITIONALLY (ADR-0099's convention),
+so the generated impl resolves regardless of collision — a USER value of the SAME colliding
+carrier still needs the qualified spelling too (the ordinary B012 migration cost, unrelated to
+this fix), exercised here identically to `examples/trait-recursive-{eq,ord}`. -/
+def derivedIntListProg : String :=
+  "data IntList = Nil | Cons(Int, IntList) deriving (Eq, Ord) "
+#guard (match checkProg (derivedIntListProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 3000
+  (derivedIntListProg ++
+    "let l1 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in " ++
+    "let l2 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in " ++
+    "let l3 = IntList_Cons(1, IntList_Cons(3, IntList_Nil)) in " ++
+    "if l1 == l2 then (if l1 == l3 then 0 else (if l1 < l3 then 1 else 0)) else 0") 1
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic
