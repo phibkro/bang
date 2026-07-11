@@ -160,6 +160,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **stdlib** — #105 first-slice prelude — fst/snd/abs/min/max/withDefault/const + char kit (`8578590a`)
 - **docs** — unblock the doc-gen4 build (plan 010) — UnicodeBasic fork pin + the generated BangDocs barrel (`43676ce2`)
 - **stdlib** — migrate injected prelude to Prelude.bang module, auto-used (#106) (`3856b0e6`)
+- **cli** — --fuel N on run/eval/repl, raises the step ceiling (#103a) (`80807b7e`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
@@ -201,5 +202,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **fmt** — preserve grouping parens on qualified force `$(Mod.op)` (#96) (`8d4d3739`)
 - **modules** — `use Mod (f)` hoists a self-recursive `pub let rec` (#97 item 3) (`225f3f42`)
 - **surface** — #95 knot-sharing — buildLetRec self-arg fold #g not sv (route i) (`ae0f0df6`)
+- **traits** — law on an unreachable impl reports SKIPPED, not a misleading PASS (#113) (`8de80a8e`)
 
 <!-- END GENERATED changelog -->
