@@ -160,6 +160,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **stdlib** — #105 first-slice prelude — fst/snd/abs/min/max/withDefault/const + char kit (`8578590a`)
 - **docs** — unblock the doc-gen4 build (plan 010) — UnicodeBasic fork pin + the generated BangDocs barrel (`43676ce2`)
 - **stdlib** — migrate injected prelude to Prelude.bang module, auto-used (#106) (`3856b0e6`)
+- **cli** — --fuel N on run/eval/repl, raises the step ceiling (#103a) (`80807b7e`)
 - **emit** — rung-3 transaction journal/rollback on wasm — A11 abort runs on wasmtime (`07f5c0ad`)
 - **surface** — parse+format optional `deriving (…)` clause on data decls (#109 slice 1) (`857ec39b`)
 - **ctors** — type-namespaced constructors — resolveCtor + B012 (#108, ADR-0099) (`ec6c7f35`)
@@ -207,5 +208,6 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **surface** — #95 knot-sharing — buildLetRec self-arg fold #g not sv (route i) (`ae0f0df6`)
 - **traits** — law on an unreachable impl reports SKIPPED, not a misleading PASS (#113) (`8de80a8e`)
 - **traits** — self- and backward-recursive impl ops resolve via knot dispatch (#112) (`faafaa09`)
+- **display** — data types render by declared name, not raw mu (#100) (`7d63f548`)
 
 <!-- END GENERATED changelog -->

@@ -119,6 +119,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0099](0099-ctor-namespacing.md) | Accepted | Constructors are type-namespaced — bare names resolve when unambiguous in scope | A data constructor's true identity is `(dataName, ctorName)`, not `ctorName` alone | — / — | — / — | — | — |
 | [0100](0100-g1-compute-then-return-ships-tested-superset.md) | Accepted | G1 compute-then-return clause bodies ship as a tested-superset feature (the kernel carve-out is refuted) | A ⊥-row COMPUTING custom-handler clause body (compute-then-return, e.g. | — / — | — / — | — | — |
 | [0101](0101-concurrency-model-scheduler-as-handler.md) | Accepted | Concurrency model: scheduler-as-handler; components/threads are backends, not the model | Concurrency is an ORDINARY effect (a `conc`/`Sched` row label) and a scheduler is a | — / — | — / — | — | — |
+| [0102](0102-mutual-let-rec.md) | Accepted | Mutual `let rec … and …`: H2 tuple-of-thunks μ-knot (#97 item 2) | `let rec f : T1 = e1 and g : T2 = e2 … in body` generalizes ADR-0073's single-function | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 

@@ -157,6 +157,18 @@ def registry : List DiagEntry := [
         ++ "`IntList_Nil`) to disambiguate — an ordinary identifier, the same `Mod_Type` convention "
         ++ "module qualification already uses."
     example? := some "data List a = Nil | Cons(a, List a)\ndata IntList = Nil | Cons(Int, IntList)\nNil" },
+  { code := "B013"
+    anchors := ["is a sibling `let rec` defined later"]
+    summary := "a nested `let rec` forward-references a sibling `let rec` bound later in the same block"
+    teaching :=
+      "A nested `let rec` (the pre-#97 mutual-recursion workaround) can only call EARLIER siblings — "
+        ++ "each inner `let rec` is bound SEQUENTIALLY, so a forward reference to one bound later in "
+        ++ "the same enclosing body is genuinely unbound at that point. Reorder so every sibling calls "
+        ++ "only earlier siblings (leaf-level rules first), restructure into ONE self-recursive "
+        ++ "function, or — the direct fix — use the mutual `let rec f : T1 = e1 and g : T2 = e2 in "
+        ++ "body` form (#97 item 2), which gives every sibling simultaneous visibility of every other."
+    example? := some
+      "let rec outer : Int -> Int ! {Div} = fun n => let rec a : Int -> Int ! {Div} = fun m => ($b) m in let rec b : Int -> Int ! {Div} = fun m => ($a) m in ($a) n in ($outer) 3" },
   -- B006 is the BROAD constructor-arity family — listed LAST of the constructor cluster so the
   -- specific families above (B007 unknown, B011 payload) win their own messages before this
   -- `"constructor '"`-anchored catch-all would shadow them (registry order = specificity).
@@ -205,6 +217,7 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "error: a capability escaped its handler — it was forced" == some "B009"
 #guard codeForMsg "no impl of 'Eq' for 'Option' — the bound 'Eq a' is unsatisfied" == some "B010"
 #guard codeForMsg "constructor 'C': payload arity ≤ 2 in v1 (nest tuples)" == some "B011"
+#guard codeForMsg "'b' is a sibling `let rec` defined later — siblings cannot forward-reference…" == some "B013"
 
 -- a diagnostic outside every family carries no code (honest none, not a wrong guess).
 #guard codeForMsg "some brand-new diagnostic nobody has coded yet" == none

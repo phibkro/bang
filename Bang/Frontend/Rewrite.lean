@@ -67,7 +67,7 @@ public import Bang.Frontend.Annotate
 -/
 
 open Bang
-open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses Ty)
+open Bang.Surface (Decl Prog Surf DArms SurfArgs LetBindings HClauses LetRecBindings Ty letRecBindingsNames)
 
 namespace Bang.Rewrite
 
@@ -143,6 +143,12 @@ def renameVars (old new : String) : Surf → Surf
   | .dotPerform r op (.two a b) => .dotPerform (renameVars old new r) op (.two (renameVars old new a) (renameVars old new b))
   | .letRecS n t f b => if n == old then .letRecS n t f b
                          else .letRecS n t (renameVars old new f) (renameVars old new b)
+  -- #97 item 2: mirrors `qualifyVars`'s own `.letRecMultiS` arm — every sibling is SIMULTANEOUSLY
+  -- in scope of every OTHER sibling's body, so if ANY sibling shadows `old`, `old` stops being
+  -- renamed for EVERY sibling's RHS (not just the ones textually after it) and for `b`.
+  | .letRecMultiS binds b =>
+      if letRecBindingsNames binds |>.contains old then .letRecMultiS binds b
+      else .letRecMultiS (renameLetRecBindingsVars old new binds) (renameVars old new b)
   | .divMark e     => .divMark (renameVars old new e)
   | .lettMulti binds b =>
       -- sequential shadowing through the `;`-chain, mirroring `qualifyVars`'s `.lettMulti` arm
@@ -188,6 +194,13 @@ def renameHClausesVars (old new : String) : HClauses → HClauses
   | .nil               => .nil
   | .cons op x b rest  =>
       .cons op x (if x == old then b else renameVars old new b) (renameHClausesVars old new rest)
+/-- Rename a `let rec … and …` sibling chain (#97 item 2) — the CALLER (`.letRecMultiS`'s own
+arm above) has ALREADY checked no sibling shadows `old`, so every RHS renames unconditionally
+(mirrors `qualifyLetRecBindingsVars`'s own precedent — no sequential threading needed, since
+mutual siblings share ONE simultaneous scope). -/
+def renameLetRecBindingsVars (old new : String) : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons n t e rest   => .cons n t (renameVars old new e) (renameLetRecBindingsVars old new rest)
 end
 
 #guard renameVars "x" "y" (.var "x") == .var "y"

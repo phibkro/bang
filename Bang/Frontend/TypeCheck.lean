@@ -1097,6 +1097,7 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
                      | _     => throw s!"unfold: not a μ value{nameHint b}"
   | .matchD .. => throw "named match is elaborated away on the typed path — reaching the checker means the data env lacked its constructors (ADR-0069)"
   | .letRecS .. => throw "let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (ADR-0073)"
+  | .letRecMultiS .. => throw "mutual let rec is desugared away by the elaborator — reaching the checker means elabProg didn't run (#97 item 2)"
   | .lettMulti .. => throw "let-sugar (`;`) is erased by elabProg — reaching the checker means elabProg didn't run (issue #68)"
   | .divMark e => do let (B, φ) ← synthSC Γ e; return (B, ← insertRow bigFuel divLabel φ)  -- #46: mark the row divergent
   -- ── ADR-0070 (named capabilities) ──
@@ -2221,6 +2222,13 @@ def structOKRest (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : N
       structOK fuel name slots targetIdx recv && structOKArgs fuel name slots targetIdx args
   | .letRecS gname _ fb bd =>                     -- nested let rec: a re-bound `gname` shadows our name
       gname != name && structOK fuel name slots targetIdx fb && structOK fuel name slots targetIdx bd
+  -- #97 item 2: a nested MUTUAL `let rec … and …` group is NOT analyzed for structural descent —
+  -- `structOK`'s call-recognizer (`callSpine`) is keyed on a SINGLE function name and cannot
+  -- attribute a sibling's self-calls back to per-function descent (the design note's explicitly
+  -- flagged, unscoped judgment call: mutual groups conservatively default to `Div` for v1).
+  -- Refuse to certify (soundness > completeness) — the SAME discipline `.lettMulti`/
+  -- `.handleCustomS` already use for a shape this checker hasn't been extended to read.
+  | .letRecMultiS .. => false
   | .lettMulti .. => false  -- unreachable in practice (elabProg erases #68's sugar first); refuse to certify (soundness > completeness)
   | .handleCustomS .. => false  -- #21 s7probe: NOT yet analyzed for #47/ADR-0091 recursion shapes (clause bodies, the carried param) — conservatively refuse to certify (under-certify, never guess)
 /-- Per-arm structural check: a matchable scrutinee (`sm`) makes each arm's pattern binders strict
@@ -2345,6 +2353,114 @@ def buildLetRec (name : String) (t' : Ty) (funBody' bodyExpr' : Surf) (recRow : 
   let outerKnot : Surf :=                                     -- Div rides the outer (call-site) thunk
     if divLabel ∈ recRow then .thunk (.divMark (knotBody "#rec")) else .thunk (knotBody "#rec")
   .lett "#rec" recVal (.lett name outerKnot bodyExpr')
+
+/-- Right-nest a `Ty` list into ONE product type, `n ≥ 2`: `[T1, T2] ↦ T1 * T2`, `[T1, T2, T3] ↦
+T1 * (T2 * T3)`, … — the `splitProd`/`prodOfTys` right-nested-product convention already used for
+ctor payloads (ADR-0069/#50), reused here for the H2 μ-knot's pair-of-thunks slot. `[]`/singleton
+are unreachable from `buildLetRecMulti`'s own caller (≥ 2 siblings, `elabS`'s `.letRecMultiS` arm
+only reaches this with a genuine `and`-chain) — `[t]` degenerates to `t` defensively rather than
+poisoning, `[]` is truly unreachable (a bare `.tUnit` placeholder, never hit). -/
+def prodOfTysN : List Ty → Ty
+  | []        => .tUnit
+  | [t]       => t
+  | t :: rest => .tProd t (prodOfTysN rest)
+
+/-- Right-nested `splitS`-chain projecting slot `i` (0-indexed) of an `n`-way product bound to
+`pv`, running `body` with `slot` bound to the `i`-th component — the `navSum`/`splitProd`
+eliminator-descent precedent, specialized to `splitS`'s BINARY elimination (bang has no N-ary
+`split`, so an `i > 0` projection walks `i` nested `splitS`s, discarding the FST half each time via
+a throwaway `#drop` binder and re-binding `pv` to the SND remainder — `splitS a b p body` is `a =
+fst, b = snd`). `n = 1` (a degenerate 1-sibling group; `prodOfTysN`'s own `[t] ↦ t` case) binds the
+WHOLE value directly, no split. **The bug this replaced**: the ORIGINAL version short-circuited on
+`i + 1 >= n` (the LAST overall index) *before* checking whether any discards had actually happened
+yet — for `n = 2, i = 1` that fired on the FIRST call, binding `slot := pv` to the STILL-WHOLE pair
+(never having split off slot 0's fst), which type/runtime-failed as `force: not a thunk` (the pair
+itself forced, not its snd component) — confirmed live via `bang check`/`bang run` on a 2-sibling
+smoke test. The fix: recurse on `n` ALONE (not `i` vs `n` jointly) — `n = 1` is the true base case
+(the current `pv` IS the target, whatever `i` started as), and every OTHER step discards fst,
+decrements `n`, and recurses on `i - 1` (or `i` itself when `i = 0`, since `i = 0, n > 1` still
+needs ONE split to peel off `#slot` from `#drop`). -/
+def projectSlot (pv : String) (i n : Nat) (slot : String) (body : Surf) : Surf :=
+  if n <= 1 then .lett slot (.var pv) body                          -- degenerate: the value IS the slot
+  else if i == 0 then .splitS slot "#drop" (.var pv) body           -- peel fst = the target, done
+  else
+    -- unique per-depth name for the SND remainder (`#p{n}`, `n` strictly decreasing) — NOT a bare
+    -- re-bind of `pv` itself, so no level's `#drop`/remainder can shadow an OUTER level's binder of
+    -- the SAME literal name (debugging measure for a live `effect row mismatch` wall; ruling out
+    -- accidental name capture through the projection chain before looking elsewhere).
+    let pv' := s!"#p{n}"
+    .splitS "#drop" pv' (.var pv) (projectSlot pv' (i - 1) (n - 1) slot body)
+
+/-- The H2 tuple-of-thunks μ-knot (#97 item 2, `docs/notes/mutual-rec-design.md`): generalizes
+`buildLetRec`'s single self-knot `Rec = μX. Thunk(X → T)` to an N-tuple self-knot `Rec = μX.
+Thunk(X → T1 * T2 * … * Tn)` (right-nested product, `prodOfTysN`) so EVERY sibling forces the SAME
+shared knot and projects its own slot (`projectSlot`) — giving every sibling visibility of every
+OTHER sibling by construction, not by ordering (H1's Bekić-dispatcher alternative was REFUTED on
+two independent walls: ctor/generic arity ≤ 2, `Div`-row all-or-nothing certification; see the
+design note + the ADR). `names`/`tys`/`bodies'` are PARALLEL lists (sibling order, already
+elaborated); `bodyExpr'` is the trailing `in …` tail.
+
+**The CBPV double-thunk trap (probe-banked, `mutual-rec-design.md` finding 2):** each sibling's
+re-derivation thunk (`sibThunk` below) MUST `force` its projected slot before returning — a
+naive `splitS … in #slot` (no `force`) types "fine" at each isolated sub-step (the checker's
+structural unification silently accepts a `U (U ρ arrow)` thunk-of-a-thunk mismatch) but RUNS to
+`STUCK`. `sibThunk`'s `.force (.var slot)` is that fix, made structural here so no future N-way
+caller can omit it — `scratch/H2Spike-VERIFIED-GREEN.lean`'s `evenThunk`/`oddThunk` is the
+byte-for-byte precedent this generalizes. Every sibling REQUIRES its own mandatory type ascription
+(ADR-0073's rule generalized — HM cannot break the mutual circularity without one; the grammar
+enforces this at parse time, `pLetRecBindings`).
+
+**`Div`-row placement**: mirrors `buildLetRec`'s OWN split exactly — the INNER knot (every
+sibling's re-derivation thunk INSIDE `inner`'s own self-referential body) stays PURE (`recTy`'s
+`tThunk` (⊥) annotation depends on this, `buildLetRec`'s placement note, #46), while EVERY
+sibling's OUTER (call-site) thunk is `divMark`-wrapped when `recRow` is nonempty. `structOK` has
+NOT been extended to certify a co-recursive NAME SET (the design note's flagged, unscoped judgment
+call), so `elabS`'s `.letRecMultiS` arm always passes a nonempty `recRow` for v1 (every mutual
+group defaults to `Div`, sound per `structOK`'s own "default false" discipline) — the extension
+point for a future per-sibling/per-group structural certification is `letRecRow`'s call site in
+`elabS`, not here (this function stays a pure ENCODING parametrized by `recRow`, mirroring
+`buildLetRec`'s own separation of concerns). -/
+def buildLetRecMulti (names : List String) (tys : List Ty) (bodies' : List Surf) (bodyExpr' : Surf)
+    (recRow : EffRow) : Surf :=
+  let n := names.length
+  let pairTy : Ty := prodOfTysN tys
+  let recTy : Ty := .tMu (.tThunk (.tArr (.tVar 0) pairTy))    -- μX. Thunk(X → T1 * T2 * … * Tn)
+  let knotBody : String → Surf := fun sv =>                     -- BYTE-IDENTICAL to buildLetRec's
+    .lett "#g" (.unfoldS (.var sv)) (.app (.force (.var "#g")) (.foldS (.var "#g")))  -- own #95-fixed shape
+  -- one re-derivation thunk PER sibling: force the shared knot, project + FORCE this sibling's slot
+  -- (the double-thunk trap fix, this function's own doc comment). `marked` selects `divMark` on the
+  -- knot re-derivation call — `false` for the INNER (self-referential) use, `true` for the OUTER
+  -- (call-site) use when `recRow` carries `Div`, exactly `buildLetRec`'s own inner/outer split.
+  let sibThunk : Bool → Nat → String → Surf := fun marked i sv =>
+    let kb := if marked && divLabel ∈ recRow then .divMark (knotBody sv) else knotBody sv
+    .lett "#p" (.force (.thunk kb))
+      (projectSlot "#p" i n "#slot" (.force (.var "#slot")))
+  let indexed : List (Nat × String × Ty) := (List.range n).zip (names.zip tys)
+  -- bind EVERY sibling name to an `.annotS`-ascribed thunk (`Thunk Ti`) — the H2 spike's OWN
+  -- verified shape (`H2Spike-VERIFIED-GREEN.lean`'s `evenThunk`/`oddThunk` bindings, BOTH inner
+  -- and outer, mandatory per ADR-0073's rule generalized).
+  let rec bindSiblings : Bool → String → List (Nat × String × Ty) → Surf → Surf
+    | _,      _,  [],               tail => tail
+    | marked, sv, (i, nm, ty) :: rest, tail =>
+        Surf.lett nm (.annotS (.thunk (sibThunk marked i sv)) (.tThunk ty)) (bindSiblings marked sv rest tail)
+  -- the pair VALUE itself: right-nested `pairS` of each sibling's OWN thunked body (already
+  -- elaborated `bodies'`), mirroring `buildLetRec`'s `funBody'` slot but N-wide.
+  let rec pairVal : List Surf → Surf
+    | []        => .unitS
+    | [b]       => .thunk b
+    | b :: rest => .pairS (.thunk b) (pairVal rest)
+  -- The pair tail is `.annotS`-wrapped at its OWN construction site (not just at `inner`'s outer
+  -- `.tArr recTy pairTy`) — forces `checkSC` to take the EXPLICIT `.annotS` arm (`subRow`-aware
+  -- subsumption) for the pair's OWN check, instead of falling through the generic catch-all
+  -- (`synthSC` + `unifyC`'s `.U`-row EQUALITY, no subsumption) when the tail is a `.lett`-chain
+  -- ending in a bare `.pairS` rather than a `.lam`/other `checkSC`-recognized value shape. Found
+  -- live: a LEAF sibling (declared `!{Div}`, but its own body never actually performs Div) failed
+  -- `unifyRow`'s exact-equality check on this exact path — `subRow`'s subsumption (declared bound
+  -- ⊇ actual) is the semantically correct rule here, matching every OTHER `Div`-bound check site.
+  let inner : Surf :=
+    .annotS (.lam "#self" (bindSiblings false "#self" indexed (.annotS (pairVal bodies') pairTy))) (.tArr recTy pairTy)
+  let recVal : Surf := .annotS (.foldS (.thunk inner)) recTy
+  .lett "#rec" recVal (bindSiblings true "#rec" indexed bodyExpr')
 
 /-- Bind a match arm's payload binders over the payload variable (arity ≤ 2). -/
 def bindPayload : List String → String → Surf → Surf
@@ -2628,6 +2744,8 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
       return .matchS (← expandBFns env carrier? f s) xl (← expandBFns env carrier? f el) xr (← expandBFns env carrier? f er)
   | f + 1, .withCapS k init n body => do return .withCapS k (← expandBFns env carrier? f init) n (← expandBFns env carrier? f body)
   | f + 1, .letRecS n t fn b => do return .letRecS n t (← expandBFns env carrier? f fn) (← expandBFns env carrier? f b)
+  | f + 1, .letRecMultiS binds b => do
+      return .letRecMultiS (← expandLetRecBindings env carrier? f binds) (← expandBFns env carrier? f b)
   | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env carrier? f recv) op (← expandArgs env carrier? f args)
   | f + 1, .matchD s arms => do return .matchD (← expandBFns env carrier? f s) (← expandArms env carrier? f arms)
   | f + 1, .lettMulti binds b => do return .lettMulti (← expandLetBindings env carrier? f binds) (← expandBFns env carrier? f b)
@@ -2718,7 +2836,63 @@ def expandLetBindings (env : ElabEnv) (carrier? : Option String) : Nat → LetBi
   | 0,     _              => .error "bounded-fn expansion out of fuel"
   | _ + 1, .nil           => .ok .nil
   | f + 1, .cons n e rest => do return .cons n (← expandBFns env carrier? f e) (← expandLetBindings env carrier? f rest)
+/-- `LetRecBindings` expansion (#97 item 2 mutual `let rec … and …` sibling list) — the
+`expandLetBindings` precedent. -/
+def expandLetRecBindings (env : ElabEnv) (carrier? : Option String) : Nat → LetRecBindings → Except String LetRecBindings
+  | 0,     _                => .error "bounded-fn expansion out of fuel"
+  | _ + 1, .nil              => .ok .nil
+  | f + 1, .cons n t e rest  => do return .cons n t (← expandBFns env carrier? f e) (← expandLetRecBindings env carrier? f rest)
 end
+
+/-- One `let rec … and …` sibling (#97 item 2) AFTER its declared `Ty` is resolved and its function
+literal is peeled — `name`, the resolved `T`, the param name, the UN-elaborated param body, and the
+resolved param-domain `IVTy` (mirrors `.letRecS`'s own inline `t'`/`dom` locals). -/
+structure LRResolved where
+  name : String
+  ty   : Ty
+  pn   : String
+  pbody : Surf
+  dom  : IVTy
+
+/-- Resolve every sibling's declared `Ty` + peel its function literal (#97 item 2) — pure w.r.t.
+`elabS` (no elaboration of any BODY happens here, only `resolveTy` + the `.lam` peel), so this sits
+OUTSIDE the `elabS` mutual block entirely; `elabLetRecBindings` (inside the block, below) is the
+sibling that actually elaborates each `pbody`, recursing over the ORIGINAL `LetRecBindings` tree
+(not this `List`) — Lean's mutual structural-recursion inference needs every sibling's decreasing
+argument to share a KNOWN-related type across the whole `elabS`/`elabArms`/`elabHClauses` group; a
+freshly-invented `List LRResolved` carrier broke that unification (confirmed: build failed
+"Cannot use parameters …" until this list stayed a QUERY table, `elabLetRecBindings` structurally
+recursing on `LetRecBindings` itself — the `elabHClauses`/`HClauses` precedent). A non-function
+sibling throws immediately (mirrors `.letRecS`'s own "requires a function literal" arm). -/
+def resolveLetRecBindingTys (env : ElabEnv) : LetRecBindings → Except String (List LRResolved)
+  | .nil               => .ok []
+  | .cons nm t fb rest => do
+      let t' ← resolveTy env.gen env.aliases t env.effects
+      match fb with
+      | .lam pn pbody =>
+          let dom : IVTy := match tyBoth t' with
+            | (_, .arr _ A _) => embV A
+            | _               => .tvar 997                      -- POISON: T not a function → fails loud below
+          let rest' ← resolveLetRecBindingTys env rest
+          return ⟨nm, t', pn, pbody, dom⟩ :: rest'
+      | _ => throw s!"mutual let rec sibling '{nm}' requires a function literal: `{nm} : T = fun x => …` (#97 item 2, ADR-0073's rule generalized)"
+
+/-- Every resolved sibling's `f : Thunk T` binding, in order — `letRecMultiS`'s Γ-extension
+(mirrors `.letRecS`'s single `(name, uT)`, generalized to N). -/
+def letRecBindingUTys : List LRResolved → List (String × Scheme)
+  | []      => []
+  | r :: rs => (r.name, ({ body := .U botR (embC (ctyOf r.ty)) } : Scheme)) :: letRecBindingUTys rs
+
+def letRecResolvedNames : List LRResolved → List String := List.map (·.name)
+def letRecResolvedTys   : List LRResolved → List Ty     := List.map (·.ty)
+
+/-- Look up a resolved sibling by name — `elabLetRecBindings`'s bridge from a `LetRecBindings`
+node's bare name (the recursion carrier) to its pre-resolved `LRResolved` (the query table built
+ONCE by `resolveLetRecBindingTys`, threaded read-only through the recursion). `none` is
+unreachable (every name in the `LetRecBindings` tree was resolved into `table` by construction —
+`elabS`'s own `.letRecMultiS` arm builds `table` from the SAME tree it recurses `binds` over). -/
+def lrLookup (table : List LRResolved) (nm : String) : Option LRResolved :=
+  table.find? (·.name == nm)
 
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
 instance env, ctor intros + named matches through the data env (ADR-0069); every other
@@ -2868,6 +3042,26 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
       return buildLetRec name t' (.annotS (.lam pn pbody') t') bodyExpr' (letRecRow name (.lam pn pbody))
   | _, .letRecS _ _ _ _ =>
       .error "let rec requires a function literal: `let rec f : T = fun x => … in …` (ADR-0073)"
+  -- `let rec f : T1 = e1 and g : T2 = e2 … in body` (#97 item 2) → the H2 tuple-of-thunks μ-knot
+  -- (`buildLetRecMulti`'s own doc comment has the full encoding). Every sibling must be a function
+  -- literal (mirroring `.letRecS`'s own requirement immediately above — one un-annotated `fun` per
+  -- sibling is what `pLetRecBindings`'s grammar always produces) and elaborates its body with EVERY
+  -- sibling name bound (mutual visibility) PLUS its own param, exactly generalizing `.letRecS`'s
+  -- single-name `(pn, dom) :: (name, uT) :: Γ` binding to N names. `resolveLetRecBindingTys`/
+  -- `letRecBindingUTys`/`elabLetRecBindings` (below, mutual siblings of `elabS`) do the two-pass
+  -- work: resolve every `Ty` + extend Γ with EVERY sibling's `uT` FIRST (so each sibling's body sees
+  -- every OTHER sibling), then elaborate each body under that shared, fully-extended Γsibs.
+  | Γ, .letRecMultiS binds bodyExpr => do
+      let resolved ← resolveLetRecBindingTys env binds
+      let Γsibs := letRecBindingUTys resolved ++ Γ
+      let bodies' ← elabLetRecBindings env Γsibs resolved binds
+      let bodyExpr' ← elabS env Γsibs bodyExpr
+      let names := letRecResolvedNames resolved
+      let tys := letRecResolvedTys resolved
+      -- `structOK` is NOT extended to certify a co-recursive NAME SET (the design note's flagged,
+      -- unscoped judgment call) — every mutual group conservatively carries `Div`, sound per
+      -- `structOK`'s own "default false" discipline (`buildLetRecMulti`'s own doc comment).
+      return buildLetRecMulti names tys bodies' bodyExpr' {divLabel}
   | _, .divMark _ =>
       .error "divMark is internal (#46 let rec Div-marker) — it is EMITTED by the elaborator, never received"
   | _, .lettMulti .. =>
@@ -3007,6 +3201,12 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
                   let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
                   return wa (wb (.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'))
               | _, _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
+  -- #97 item 2: adding `elabLetRecBindings` (a NEW mutual sibling, recursing on `LetRecBindings`,
+  -- a type the block's structural-recursion inference has no prior size relation for) broke pure
+  -- inference across the WHOLE `elabS`/`elabArms`/`elabHClauses` group — explicit `termination_by`
+  -- on every sibling, the `synthSC`/`checkHClauses` precedent (`(sizeOf recursedArg, tiebreak)`),
+  -- fixes it uniformly (confirmed: pre-existing inference held before this addition).
+  termination_by _ e => (sizeOf e, 0)
 
 /-- Elaborate named-match arm BODIES structurally over `DArms`, each under its ctor's
 payload-typed Γ (unknown ctor / wrong arity ⇒ un-extended Γ here; the `matchD` arm's
@@ -3044,6 +3244,7 @@ def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx →
       let b' ← elabS env Γa b
       let r' ← elabArms env binderTys Γ r
       .ok (.cons c bs b' r')
+  termination_by _ arms => (sizeOf arms, 1)
 
 /-- #21 s7probe / #85 fix: `HClauses` elaboration (custom-handle clause bodies) — the `elabArms`
 precedent. **Correction to the s7probe-era claim this doc comment used to make** ("there is no
@@ -3068,6 +3269,48 @@ def elabHClauses (env : ElabEnv) (Γ : NCtx) : HClauses → Except String HClaus
       let b' ← elabS env Γ' b
       let rest' ← elabHClauses env Γ rest
       .ok (.cons op x b' rest')
+  termination_by cls => (sizeOf cls, 2)
+/-- Elaborate every sibling's body (#97 item 2) under `Γsibs`, recursing over the ORIGINAL
+`LetRecBindings` tree (the `elabHClauses`/`HClauses` structural-recursion precedent — see
+`resolveLetRecBindingTys`'s own doc comment for why a derived `List LRResolved` carrier breaks
+mutual termination inference). `table` is the pre-resolved lookup (`resolveLetRecBindingTys`'s
+output) threaded read-only; the CALLER (`letRecMultiS`'s own `elabS` arm) has ALREADY extended
+`Γsibs` with EVERY sibling's `f : Thunk T` binding (mutual visibility), so this only adds each
+sibling's OWN param before elaborating its `pbody` — the `.letRecS` precedent's `(pn, dom) ::
+(name, uT) :: Γ` binding, minus the already-shared `uT`s. Returns each sibling's elaborated
+`.annotS (.lam pn pbody') t'` (the SAME shape `buildLetRecMulti`'s `bodies'` parameter expects),
+in `binds`' order. `lrLookup` returning `none` throws loud (an internal-invariant violation, per
+its own doc comment — never silently drops a sibling). -/
+def elabLetRecBindings (env : ElabEnv) (Γsibs : NCtx) (table : List LRResolved) :
+    LetRecBindings → Except String (List Surf)
+  | .nil                  => .ok []
+  -- `fb`/`t` come DIRECTLY off the `.cons` pattern (genuine subterms — `sizeOf`-visible), not off
+  -- an `lrLookup` result: a lookup-derived `r.pbody` breaks the termination proof (Lean cannot
+  -- relate an opaque `List.find?` result's field to `rest`'s size). Only `pn`/`dom` (the peeled
+  -- param name/domain, NOT re-derivable from `fb`/`t` alone without re-running `resolveTy`) come
+  -- from `table` — `fb` itself, matched here, MUST be `.lam pn _` (guaranteed by
+  -- `resolveLetRecBindingTys` already having validated every sibling is a function literal; a
+  -- mismatch here is an internal-invariant violation, thrown loud, never silently guessed).
+  | .cons nm _t fb rest    => do
+      match lrLookup table nm, fb with
+      | some r, .lam pn pbody =>
+          let pbody' ← elabS env ((pn, r.dom) :: Γsibs) pbody
+          let rest' ← elabLetRecBindings env Γsibs table rest
+          -- `r.ty` (RESOLVED, from `table`) — NOT the pattern's own raw `_t` (still an UNRESOLVED
+          -- name-based `.tEff [names] _`, never run through `resolveTy`). Using the raw `_t` here
+          -- was the actual root cause of a live `effect row mismatch` wall on any sibling whose
+          -- OWN function-body annotation (this one) never got resolved against `env.effects`,
+          -- while `buildLetRecMulti`'s OUTER re-derivation-thunk ascriptions (built from `tys`,
+          -- which IS `r.ty`-sourced via `letRecResolvedTys`) correctly used the RESOLVED
+          -- `.tEffR [label]` form — the two ascriptions disagreed on an unresolved-vs-resolved row
+          -- reading of the SAME declared type, and `unifyC`/`subRow` saw them as genuinely
+          -- different rows (confirmed via a throwaway inlined `#guard` dumping the elaborated tree:
+          -- the inner function-body annotation showed `Ty.tEff ["Div"] …` while every OTHER
+          -- ascription in the SAME knot showed `Ty.tEffR [3] …`).
+          .ok (.annotS (.lam pn pbody') r.ty :: rest')
+      | none, _ => throw s!"internal: mutual let rec sibling '{nm}' missing from its own resolved table (#97 item 2)"
+      | _, _    => throw s!"internal: mutual let rec sibling '{nm}' is not a function literal despite passing resolveLetRecBindingTys (#97 item 2)"
+  termination_by binds => (sizeOf binds, 3)
 end
 
 /-- Build the elaboration environment from a program's decl prelude, IN ORDER (a data type may
@@ -3356,6 +3599,14 @@ def qualifyVars (modName : String) (names : List String) : Surf → Surf
   | .dotPerform r op (.two a b) => .dotPerform (qualifyVars modName names r) op (.two (qualifyVars modName names a) (qualifyVars modName names b))
   | .letRecS n t f b => if names.contains n then .letRecS n t f b
                          else .letRecS n t (qualifyVars modName names f) (qualifyVars modName names b)
+  -- #97 item 2: a mutual group's siblings are ALL simultaneously in scope of EACH OTHER'S bodies
+  -- (that is the whole point of `letRecMultiS` over a plain sequential `letRecS` chain) — so unlike
+  -- `.lettMulti`'s SEQUENTIAL shadowing, if ANY sibling name shadows one of `names`, that name is
+  -- shadowed for EVERY sibling's RHS (not just the ones textually after it) and for `b`.
+  | .letRecMultiS binds b =>
+      let siblingNames := letRecBindingsNames binds
+      let names' := names.filter (fun n => !siblingNames.contains n)
+      .letRecMultiS (qualifyLetRecBindingsVars modName names' binds) (qualifyVars modName names' b)
   | .divMark e     => .divMark (qualifyVars modName names e)
   | .lettMulti binds b =>
       -- issue #68: SEQUENTIAL shadowing through the `;`-chain — mirrors `.lett`'s OWN rule (a
@@ -3397,6 +3648,13 @@ def qualifyLetBindingsVars (modName : String) (names : List String) : LetBinding
       else
         let (rest', shadowed) := qualifyLetBindingsVars modName names rest
         (.cons n e' rest', shadowed)
+/-- Qualify a `let rec … and …` sibling chain (#97 item 2): `names` has ALREADY had every sibling
+name filtered out by the caller (`.letRecMultiS`'s own arm above) — every sibling RHS sees the SAME
+already-filtered `names`, since mutual siblings are simultaneously in scope of each other (no
+sequential shadowing threading needed here, unlike `qualifyLetBindingsVars`). -/
+def qualifyLetRecBindingsVars (modName : String) (names : List String) : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons n t e rest    => .cons n t (qualifyVars modName names e) (qualifyLetRecBindingsVars modName names rest)
 end
 
 /-! Rename a `Ty.tName`/`Ty.tApp` occurrence of an imported `data` type to its qualified form
@@ -3559,9 +3817,14 @@ def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (
   | .handleCustomS _lbl n p? _h cls b =>
       firstPrivateDotAccess resolved n <|> argsFirstPrivateDotAccess resolved p?
         <|> hClausesFirstPrivateDotAccess resolved cls <|> firstPrivateDotAccess resolved b
+  -- #97 item 2: scan every sibling RHS, then the body — the `.lettMulti` precedent immediately above.
+  | .letRecMultiS binds b           => lrBindsFirstPrivateDotAccess resolved binds <|> firstPrivateDotAccess resolved b
 def bindsFirstPrivateDotAccess (resolved : List (String × Prog)) : LetBindings → Option (String × String)
   | .nil           => none
   | .cons _ e rest => firstPrivateDotAccess resolved e <|> bindsFirstPrivateDotAccess resolved rest
+def lrBindsFirstPrivateDotAccess (resolved : List (String × Prog)) : LetRecBindings → Option (String × String)
+  | .nil             => none
+  | .cons _ _ e rest => firstPrivateDotAccess resolved e <|> lrBindsFirstPrivateDotAccess resolved rest
 def dArmsFirstPrivateDotAccess (resolved : List (String × Prog)) : DArms → Option (String × String)
   | .nil             => none
   | .cons _ _ b rest => firstPrivateDotAccess resolved b <|> dArmsFirstPrivateDotAccess resolved rest
@@ -3665,6 +3928,8 @@ def qualifyDotAccess (imports : List String) (ctorOwners : List (String × Strin
   | .handleCustomS lbl n p? h cls b =>
       .handleCustomS lbl (qualifyDotAccess imports ctorOwners qTy n) (qualifyDotAccessArgs imports ctorOwners qTy p?) h
         (qualifyHClausesAccess imports ctorOwners qTy cls) (qualifyDotAccess imports ctorOwners qTy b)
+  -- #97 item 2: the `.letRecS`/`.lettMulti` precedent — every sibling's type + RHS + the body recurse.
+  | .letRecMultiS binds b        => .letRecMultiS (qualifyLetRecBindingsAccess imports ctorOwners qTy binds) (qualifyDotAccess imports ctorOwners qTy b)
 def qualifyDotAccessArgs (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : SurfArgs → SurfArgs
   | .none      => .none
   | .one a     => .one (qualifyDotAccess imports ctorOwners qTy a)
@@ -3682,6 +3947,9 @@ def qualifyHClausesAccess (imports : List String) (ctorOwners : List (String × 
 def qualifyLetBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : LetBindings → LetBindings
   | .nil            => .nil
   | .cons n e rest  => .cons n (qualifyDotAccess imports ctorOwners qTy e) (qualifyLetBindingsAccess imports ctorOwners qTy rest)
+def qualifyLetRecBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons n t e rest    => .cons n (qTy t) (qualifyDotAccess imports ctorOwners qTy e) (qualifyLetRecBindingsAccess imports ctorOwners qTy rest)
 end
 
 /-- Rewrite a MODULE's OWN bare qualified access (`Json.JNull`) to ITS OWN imports/uses, BEFORE
@@ -3878,6 +4146,9 @@ def surfUsesVar (nm : String) : Surf → Bool
   | .handleCustomS _lbl n .none _h cls b       => surfUsesVar nm n || hClausesUseVar nm cls || surfUsesVar nm b
   | .handleCustomS _lbl n (.one p) _h cls b    => surfUsesVar nm n || surfUsesVar nm p || hClausesUseVar nm cls || surfUsesVar nm b
   | .handleCustomS _lbl n (.two p q) _h cls b  => surfUsesVar nm n || surfUsesVar nm p || surfUsesVar nm q || hClausesUseVar nm cls || surfUsesVar nm b
+  -- #97 item 2: sibling names are BINDERS (like `x`/`h` above), not modeled as shadows — an
+  -- over-approximation, never wrong (same discipline).
+  | .letRecMultiS binds b          => letRecBindingsUseVar nm binds || surfUsesVar nm b
 def dArmsUseVar (nm : String) : DArms → Bool
   | .nil            => false
   | .cons _ _ b rest => surfUsesVar nm b || dArmsUseVar nm rest
@@ -3887,7 +4158,77 @@ def letBindingsUseVar (nm : String) : LetBindings → Bool
 def hClausesUseVar (nm : String) : HClauses → Bool
   | .nil               => false
   | .cons _ _ b rest   => surfUsesVar nm b || hClausesUseVar nm rest
+def letRecBindingsUseVar (nm : String) : LetRecBindings → Bool
+  | .nil               => false
+  | .cons _ _ e rest   => surfUsesVar nm e || letRecBindingsUseVar nm rest
 end
+
+/-! #97 item 2's H3 diagnostic: "forward reference to a sibling `let rec`" teaching message. Every
+existing NESTED `let rec` (the pre-#97 workaround for a mutual-looking shape — an outer `let rec`
+with sibling INNER `let rec`s in its body) can only call EARLIER siblings, never a LATER one — the
+inner functions are bound SEQUENTIALLY (`.lett`-style nesting), unlike the genuine simultaneous
+visibility `.letRecMultiS`'s `and`-chain now gives. A forward reference surfaces at `synthSC`'s
+ORDINARY "unbound variable" check (the desugared tree has already lost the `letRecS`/`letRecMultiS`
+shape by the time that check runs — `elabProg` fully expands the μ-knot before `synthSC` ever sees
+the tree), so this diagnostic runs POST-HOC: collect every name ANY `letRecS`/`letRecMultiS`
+ANYWHERE in the ORIGINAL (pre-elaboration) tree binds, then check whether the unbound name is one of
+them. -/
+mutual
+/-- Every name bound by a `letRecS`/`letRecMultiS` ANYWHERE in `e` (a syntactic over-approximation
+— the `surfUsesVar` precedent: costs nothing to collect a name from an unreachable branch, never
+wrong to include one). Walks the WHOLE tree (not scope-aware) because the diagnostic only needs "is
+X a sibling `let rec` name SOMEWHERE in this program", not a scope-exact answer — a false-positive
+match (a name that HAPPENS to be a `let rec` binder elsewhere, unrelated to the actual unbound
+reference) still produces a technically-imprecise but HARMLESS hint (worst case: slightly
+over-eager teaching text on a genuinely-different bug), never a wrong ANSWER (the underlying
+"unbound variable" error still fires either way — this only decides the MESSAGE). -/
+def letRecBoundNames : Surf → List String
+  | .letRecS n _ f b               => n :: (letRecBoundNames f ++ letRecBoundNames b)
+  | .letRecMultiS binds b          => letRecBindingsNamesTC binds ++ letRecBoundNames b
+  | .lit _ | .var _ | .getS | .unitS => []
+  | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+  | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ => letRecBoundNames e
+  | .lett _ a b | .app a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b
+  | .binopS _ a b                  => letRecBoundNames a ++ letRecBoundNames b
+  | .matchS s _ l _ r              => letRecBoundNames s ++ letRecBoundNames l ++ letRecBoundNames r
+  | .ifS c t e                     => letRecBoundNames c ++ letRecBoundNames t ++ letRecBoundNames e
+  | .matchD s arms                 => letRecBoundNames s ++ letRecBoundNamesDArms arms
+  | .withCapS _ i _ b              => letRecBoundNames i ++ letRecBoundNames b
+  | .dotPerform r _ .none          => letRecBoundNames r
+  | .dotPerform r _ (.one a)       => letRecBoundNames r ++ letRecBoundNames a
+  | .dotPerform r _ (.two a b)     => letRecBoundNames r ++ letRecBoundNames a ++ letRecBoundNames b
+  | .lettMulti binds b             => letRecBoundNamesBindings binds ++ letRecBoundNames b
+  | .handleCustomS _lbl n .none _h cls b       => letRecBoundNames n ++ letRecBoundNamesHClauses cls ++ letRecBoundNames b
+  | .handleCustomS _lbl n (.one p) _h cls b    => letRecBoundNames n ++ letRecBoundNames p ++ letRecBoundNamesHClauses cls ++ letRecBoundNames b
+  | .handleCustomS _lbl n (.two p q) _h cls b  => letRecBoundNames n ++ letRecBoundNames p ++ letRecBoundNames q ++ letRecBoundNamesHClauses cls ++ letRecBoundNames b
+def letRecBoundNamesDArms : DArms → List String
+  | .nil              => []
+  | .cons _ _ b rest  => letRecBoundNames b ++ letRecBoundNamesDArms rest
+def letRecBoundNamesBindings : LetBindings → List String
+  | .nil            => []
+  | .cons _ e rest  => letRecBoundNames e ++ letRecBoundNamesBindings rest
+def letRecBoundNamesHClauses : HClauses → List String
+  | .nil               => []
+  | .cons _ _ b rest   => letRecBoundNames b ++ letRecBoundNamesHClauses rest
+def letRecBindingsNamesTC : LetRecBindings → List String
+  | .nil               => []
+  | .cons n _ e rest   => n :: (letRecBoundNames e ++ letRecBindingsNamesTC rest)
+end
+
+/-- H3's message rewrite: if `msg` is the ordinary "unbound variable X" shape AND `X` is bound by
+SOME `letRecS`/`letRecMultiS` anywhere in `prog`'s trailing body (`letRecBoundNames`), replace it
+with the B0NN teaching diagnostic (DiagCodes.lean registers the anchor); otherwise `msg` passes
+through UNCHANGED (every other diagnostic family is untouched — this is a pure ADDITIVE retrofit,
+the same "codes are retrofitted onto existing strings" discipline `DiagCodes.lean`'s own header
+documents). `X`'s bare identifier is recovered the SAME way `locateInMsg` already does (the
+"unbound variable " prefix-strip), so the two stay in lockstep by construction. -/
+def rewriteForwardRefMsg (prog : Prog) (msg : String) : String :=
+  if "unbound variable ".isPrefixOf msg then
+    let x := (msg.drop "unbound variable ".length).toString
+    if (letRecBoundNames prog.body).contains x then
+      s!"'{x}' is a sibling `let rec` defined later — siblings cannot forward-reference through nested `let rec` (v1 has no mutual visibility that way; use `let rec f : T1 = e1 and g : T2 = e2 in body` instead, #97 item 2). Reorder so every sibling calls only EARLIER siblings + the outer knot (leaf-level rules first), or restructure into ONE self-recursive function, or use the mutual `and`-chain form."
+    else msg
+  else msg
 
 /-- Every `Surf` body attached to a `Decl` (mirrors `Bang.Query.declBodies`, upstream copy for the
 same cycle reason as `surfUsesVar` above): a `fnD`/`letD`/`letRecD`'s own body/rhs; `dataD`/
@@ -4315,7 +4656,11 @@ per-node span tier). -/
 public def checkAndLower (src : String) : Except (String × Option Bang.Surface.Span) Comp := do
   let prog ← Bang.Surface.parseProgLocated src
   let (e, effects, _, _) ← (elabProg prog).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
-  let _ ← (runInferC (synthSC [] e) effects).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
+  -- #97 item 2 H3: an "unbound variable" from THIS step may be a forward reference to a sibling
+  -- `let rec` — rewrite to the teaching diagnostic BEFORE locating (the rewritten message still
+  -- names the same identifier, so `locateInMsg`'s span-finder is unaffected).
+  let _ ← (runInferC (synthSC [] e) effects).mapError
+    (fun m => let m' := rewriteForwardRefMsg prog m; (m', Bang.Surface.locateInMsg src m'))
   (Bang.Surface.lower e).mapError (fun m => (m, Bang.Surface.locateInMsg src m))
 
 /-- PUBLIC typed runnable entry, `Prog`-taking (ADR-0093 D4 — the module resolver's own seam): the
@@ -4682,9 +5027,14 @@ def firstBareOpCallStep (opNames : List String) : Surf → Option String
   | .handleCustomS _lbl n p? _h cls b =>
       firstBareOpCall opNames n <|> argsFirstBareOpCall opNames p?
         <|> hClausesFirstBareOpCall opNames cls <|> firstBareOpCall opNames b
+  -- #97 item 2: every sibling RHS, then the body — the `.lettMulti` precedent immediately above.
+  | .letRecMultiS binds b          => lrBindsFirstBareOpCall opNames binds <|> firstBareOpCall opNames b
 def bindsFirstBareOpCall (opNames : List String) : LetBindings → Option String
   | .nil           => none
   | .cons _ e rest => firstBareOpCall opNames e <|> bindsFirstBareOpCall opNames rest
+def lrBindsFirstBareOpCall (opNames : List String) : LetRecBindings → Option String
+  | .nil             => none
+  | .cons _ _ e rest => firstBareOpCall opNames e <|> lrBindsFirstBareOpCall opNames rest
 def argsFirstBareOpCall (opNames : List String) : SurfArgs → Option String
   | .none    => none
   | .one a   => firstBareOpCall opNames a
@@ -5234,6 +5584,75 @@ def curriedBadDef : String :=
          "match xs { LNil -> acc, LCons(h, t) -> ($f) t } in")
         "($f) (LCons(1, LNil)) 0")
         with | .error _ => true | _ => false)
+
+/-! ### Validation ⑨j′ — MUTUAL `let rec … and …` (#97 item 2, H2 tuple-of-thunks μ-knot).
+
+`let rec f : T1 = e1 and g : T2 = e2 … in body` (grammar: `Bang.Surface.pLetRecBindings`;
+elaboration: `elabS`'s `.letRecMultiS` arm → `buildLetRecMulti`) generalizes ⑨e's single-function
+knot to an N-tuple self-knot every sibling shares — each sibling forces the SAME knot and projects
+its own slot, giving MUTUAL visibility by construction (not textual ordering). Every mutual group
+conservatively carries `Div` (⑨g's structural certification is NOT extended to co-recursive name
+sets — a documented, unscoped gap, see the ADR), so every sibling needs the explicit `! {Div}`
+annotation ⑨f already demonstrates for the single-function case. -/
+-- even/odd, the CANONICAL 2-way mutual pair — genuinely alternating calls, no base-case guard
+-- collapse possible (each sibling's ONLY recursive exit is through the OTHER).
+def evenOddProg (arg : Int) (call : String) : String :=
+  s!"let rec even : Int -> Int ! \{Div} = fun n => " ++
+    "let c = n == 0 in if c then 1 else let n1 = n - 1 in ($odd) n1 " ++
+    "and odd : Int -> Int ! {Div} = fun n => " ++
+    "let c = n == 0 in if c then 0 else let n1 = n - 1 in ($even) n1 " ++
+    s!"in (${call}) {arg}"
+#guard runTypedYieldsInt 4000 (evenOddProg 10 "even") 1
+#guard runTypedYieldsInt 4000 (evenOddProg 10 "odd") 0
+#guard runTypedYieldsInt 4000 (evenOddProg 7 "even") 0
+#guard runTypedYieldsInt 4000 (evenOddProg 7 "odd") 1
+#guard runTypedYieldsInt 4000 (evenOddProg 0 "even") 1
+#guard runTypedYieldsInt 4000 (evenOddProg 1 "even") 0
+-- DIFFERENTIAL vs the hand-fused single-function equivalent (today's nested-`let rec` workaround
+-- shape, `⑨g`'s `smDef`/`lenDef` precedent) — same computed value at every tested `n`, confirming
+-- the mutual sugar is not just "typechecks" but semantically EQUIVALENT to the manual encoding it
+-- replaces (the H2 spike's own differential falsifier, now through the REAL grammar).
+def fusedParityProg (parity arg : Int) : String :=
+  s!"let rec fused : Int -> Int -> Int ! \{Div} = fun p => fun n => " ++
+    "let c = n == 0 in if c then (1 - p) else " ++
+    "let p1 = 1 - p in let n1 = n - 1 in ($fused) p1 n1 " ++
+    s!"in ($fused) {parity} {arg}"
+#guard runTypedYieldsInt 4000 (fusedParityProg 0 10) 1
+#guard runTypedYieldsInt 4000 (fusedParityProg 1 10) 0
+#guard runTypedYieldsInt 4000 (fusedParityProg 0 7) 0
+#guard runTypedYieldsInt 4000 (fusedParityProg 1 7) 1
+#guard (runTypedYieldsInt 4000 (evenOddProg 10 "even") 1) == (runTypedYieldsInt 4000 (fusedParityProg 0 10) 1)
+#guard (runTypedYieldsInt 4000 (evenOddProg 7 "odd") 1) == (runTypedYieldsInt 4000 (fusedParityProg 1 7) 1)
+-- a LEAF sibling (references NO sibling name, including itself) alongside one that calls it — the
+-- root-caused wall (`elabLetRecBindings` using the unresolved `Ty` + `checkSC`'s catch-all doing
+-- exact row unification instead of subsumption on the pair tail) is now a PERMANENT regression
+-- guard, not just a scratchpad repro.
+#guard runTypedYieldsInt 2000
+  ("let rec f : Int -> Int ! {Div} = fun n => n " ++
+   "and g : Int -> Int ! {Div} = fun n => let c = n == 0 in if c then n else ($f) n " ++
+   "in ($g) 3") 3
+-- a THREE-way fully-cyclic group (confirms the N-tuple projection generalizes past N=2) — each
+-- sibling's ONLY base case is its own turn in the a→b→c→a… cycle; 9 decrements from `a` lands
+-- back on `a`'s own base case (9 mod 3 == 0).
+#guard runTypedYieldsInt 4000
+  ("let rec a : Int -> Int ! {Div} = fun n => " ++
+   "let z1 = n == 0 in if z1 then 1 else let n1 = n - 1 in ($b) n1 " ++
+   "and b : Int -> Int ! {Div} = fun n => " ++
+   "let z2 = n == 0 in if z2 then 2 else let n1 = n - 1 in ($c) n1 " ++
+   "and c : Int -> Int ! {Div} = fun n => " ++
+   "let z3 = n == 0 in if z3 then 3 else let n1 = n - 1 in ($a) n1 " ++
+   "in ($a) 9") 1
+-- a MUTUAL group's CALL-SITE row contains Div (⑨f's precedent, generalized) — the conservative
+-- default (structural certification is NOT extended to co-recursive sets).
+#guard (match checkProg (evenOddProg 10 "even") with | .ok (_, ρ) => divLabel ∈ ρ | _ => false)
+-- a sibling MISSING its own mandatory type ascription fails loud (ADR-0073's rule generalized —
+-- the grammar itself enforces this, `pLetRecBindings` always requires `: Ty` per sibling, so this
+-- guard documents the PARSE-level rejection of an attempted omission, not an elaborator check).
+#guard (match Bang.Surface.parseProg "let rec f : Int -> Int = fun n => n and g = fun n => n in ($f) 3" with
+        | .error _ => true | .ok _ => false)
+-- a non-function sibling (mirrors ⑨e's single-function "requires a function literal" guard).
+#guard (match checkProg "let rec f : Int -> Int = fun n => n and x : Int = 5 in ($f) 3" with
+        | .error _ => true | _ => false)
 
 /-! ### Validation ⑨h — STRINGS: `String = List Char` (ADR-0074, #49).
 

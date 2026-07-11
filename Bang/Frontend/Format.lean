@@ -413,6 +413,14 @@ partial def fmtSurf (need : SPrec) : Surf → Format
       fParenIf need .cmp <|
         Format.group (nestD (Format.text s!"let rec {f} : {showTy ty} = " ++ fmtSurf .cmp body ++ Format.line ++ Format.text "in")
           ++ Format.line) ++ fmtSurf .cmp b
+  -- `let rec f : T1 = e1 and g : T2 = e2 … in body` (#97 item 2): one `and`-joined sibling per
+  -- line (the `fmtLetBindingsList` precedent — a real BREAK POINT between siblings, not a bare
+  -- `" and "`, so a long mutual group falls back to one-sibling-per-line instead of an
+  -- unreadable mid-expression wrap), `in` on its own line matching `.letRecS`'s own shape.
+  | .letRecMultiS binds b =>
+      fParenIf need .cmp <|
+        Format.group (nestD (Format.text "let rec " ++ fmtLetRecBindings binds ++ Format.line ++ Format.text "in")
+          ++ Format.line) ++ fmtSurf .cmp b
   | .divMark e => fmtSurf need e                                          -- INTERNAL marker; transparent to printing
 /-- `.lettMulti`'s `;`-separated binding list (issue #68): `x = e1; y = e2; …`, ONE line, joined
 by `; ` (not one-per-line — the whole point of the sugar is compactness; contrast the EXPANDED
@@ -479,6 +487,16 @@ partial def fmtDArmList : DArms → List Format
 arrow, not `->`). -/
 partial def fmtHClause : String → String → Surf → Format
   | op, x, b => Format.text s!"{op}({x}) => " ++ fmtSurf .cmp b
+/-- `let rec … and …` (#97 item 2) sibling list: `f : T1 = e1 and\ng : T2 = e2` — one sibling per
+LINE (`Format.line` between siblings, the `fmtLetBindingsList` break-point idiom), never a bare
+`" and "` join, so a long mutual group falls back to readable one-per-line instead of an
+arbitrary mid-expression wrap. -/
+partial def fmtLetRecBindings : LetRecBindings → Format
+  | .nil                  => Format.nil
+  | .cons n t e .nil      => Format.text s!"{n} : {showTy t} = " ++ fmtSurf .cmp e
+  | .cons n t e rest      =>
+      Format.text s!"{n} : {showTy t} = " ++ fmtSurf .cmp e ++ Format.text " and" ++ Format.line
+        ++ fmtLetRecBindings rest
 partial def fmtHClauseList : HClauses → List Format
   | .nil               => []
   | .cons op x b rest  => fmtHClause op x b :: fmtHClauseList rest
