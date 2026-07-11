@@ -1624,9 +1624,18 @@ def appSpine : Surf → Option (String × List Surf)
   | _        => none
 
 /-- One resolvable instance op: the resolution key (`opName` × structural `target`) plus what
-the elaborated call site needs. `body` is PRE-ELABORATED at env build (ADR-0069 upgraded
-piece-2's raw splice: nested ctors and earlier ops inside an impl body now resolve). PUBLIC
-(#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior change. -/
+the elaborated call site needs. **#112 fix — two dispatch modes, `knotName` selects between
+them:** a 2-PARAM op (the only arity `.binopS` dispatch ever calls, see its `[p, q]` match) is
+KNOT-BOUND — `knotName := some "#opknotN"` names a `let rec` (Landin's-knot, ADR-0073/#95)
+wrapping the WHOLE elaborated program (built by `elabProg`, not here — `buildEnv` only MINTS the
+name and records the op for the wrapper pass; `body` for this case is an inert placeholder,
+NEVER spliced), so a self- or backward-referential call resolves through the SAME real recursion
+mechanism ordinary `let rec` uses, not textual substitution. Any OTHER arity (0/1/3+ params) keeps
+the PRE-#112 behavior: `body` is PRE-ELABORATED at env build (`knotName := none`) and spliced
+verbatim wherever it's consulted — safe because `.binopS` is `body`'s ONLY consumer (grep-verified)
+and never dispatches a non-2-param op, so a splice-caused self-reference wall can't be reached
+through that arity. PUBLIC (#60 seam): forced by `ElabEnv`'s field type — additive visibility
+only, no behavior change to non-impl paths. -/
 public structure Inst where
   opName   : String
   target   : VT       -- the structural resolution key (ADR-0068 decision 2)
@@ -1634,8 +1643,23 @@ public structure Inst where
   retTy    : Ty       -- the trait sig's ret type, Self-substituted
   params   : List String
   body     : Surf
+  knotName : Option String := none   -- #112: `some` ⟹ dispatch via `($knotName) (a, b)`, ignore `body`
 
 public abbrev InstEnv := List Inst
+
+/-- **#112 fix — one pending KNOT** for a 2-param impl op: the fresh binder name `.binopS`
+dispatch will reference, the impl's target type (the knot's tupled-arg domain, `T * T`), the
+op's result type, and its RAW (un-elaborated) params/body — elaborated later, inside `letRecS`'s
+OWN elaboration arm (`TypeCheck.lean`'s `.letRecS` case), which is what actually resolves a
+self- or backward reference through the μ-encoded fixpoint. Kept RAW here (not `Surf`-elaborated)
+for the SAME reason `RawOp`/`RawImpl` already are: elaborating too early is precisely the #112 bug. -/
+public structure PendingOpKnot where
+  knotName : String
+  targetTy : Ty
+  retTy    : Ty
+  p1       : String    -- the op's two Self-typed param NAMES, as declared (`fn eq(p, q) = …`)
+  p2       : String
+  rawBody  : Surf
 
 /-- One data constructor's elaboration record (ADR-0069). For a GENERIC data type (`params ≠ []`,
 ADR-0069 bite-1) `payloadClosed`/`dataTy` are placeholders (a generic ctor has no ONE closed type —
@@ -1718,6 +1742,7 @@ public structure ElabEnv where
   hktMethodOf : List (String × String) := []         -- HK method opName × its trait name (`fmap` ↦ `Functor`)
   hktImpls    : List HktImpl := []                    -- HK impls, keyed by carrier ctor name
   effects     : List (String × EffectInfo) := []      -- ADR-0092 D1/D2: effect NAME ↦ its label + op sigs
+  pendingKnots : List PendingOpKnot := []              -- #112: 2-param impl ops awaiting `elabProg`'s knot wrap
 
 /-- k-ary payload as a right-nested product (`[] ↦ Unit`, the 0-ary payload). -/
 def prodOfTys : List Ty → Ty
@@ -2786,11 +2811,19 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
           match env.insts.find? (fun i => i.opName == binopName op && i.target == τ) with
           | none => .error s!"no impl provides '{binopName op}' for {showVTy τ}"
           | some inst =>
-              match inst.params with
-              | [p, q] =>
+              match inst.params, inst.knotName with
+              -- #112: KNOT dispatch — app the `letRecS`-bound name (`elabProg` wraps the whole
+              -- program in these, see `wrapPendingKnots`) to a TUPLED argument, mirroring exactly
+              -- how the knot itself is built (`fun pq => let (p, q) = pq in …`, the tupled-single-
+              -- arg encoding that sidesteps `letRecS`'s separate curried-arity gap — de-risked
+              -- against self- AND backward-referential impls this session, see `Inst`'s doc comment).
+              | [_, _], some kn => return wa (wb (.app (.force (.var kn)) (.pairS a' b')))
+              -- pre-#112 splice path — unreachable for a genuinely 2-param op post-fix (every 2-param
+              -- op now gets `some kn` from `buildEnv`), kept only so the match stays exhaustive/total.
+              | [p, q], none    =>
                   let fnTy : Ty := .tArr inst.targetTy (.tArr inst.targetTy inst.retTy)
                   return wa (wb (.app (.app (.annotS (.lam p (.lam q inst.body)) fnTy) a') b'))
-              | _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
+              | _, _ => .error s!"'{inst.opName}': operator resolution needs exactly 2 params (got {inst.params.length})"
 
 /-- Elaborate named-match arm BODIES structurally over `DArms`, each under its ctor's
 payload-typed Γ (unknown ctor / wrong arity ⇒ un-extended Γ here; the `matchD` arm's
@@ -2845,17 +2878,27 @@ end
 /-- Build the elaboration environment from a program's decl prelude, IN ORDER (a data type may
 reference itself + earlier decls; forward references fail loud). Data: encode the μ body
 (self ↦ `tVar 0` — no surface μ syntax means self never sits under a nested binder, so depth 0
-is always right) and the closed binder-typing payloads (self ↦ the closed μ). Impls: resolve
-the target, validate against the trait (op name + param arity), and PRE-ELABORATE op bodies
-against the env-so-far — nested ctors and EARLIER ops resolve; a self-recursive op fail-louds
-as an unresolved operator (out of scope until `fix` lands, ADR-0069). PUBLIC (#60 seam): the
-law-runner harness needs a real `ElabEnv` (trait/impl-derived) to drive `checkLawOn`, and this
-is the only constructor of one from a parsed decl list — no behavior change, additive visibility
-only. -/
+is always right) and the closed binder-typing payloads (self ↦ the closed μ). Impls: resolve the
+target, validate against the trait (op name + param arity). **#112 fix — dispatch mechanism, not
+just registration order:** a 2-param op (`.binopS`'s ONLY dispatchable arity) is deferred to
+`env.pendingKnots` — NOT elaborated here — so `elabProg` can knot-bind it via `letRecS`'s existing
+μ-encoded fixpoint (real recursion, ADR-0073/#95) once the WHOLE program is assembled; this is
+what lets a self- or backward-referential call (`tx == ty` on `Self`, or an earlier impl's op)
+resolve, where the OLD single-pass splice-based scheme could not (ADR-0097 §3's "recursive-carrier
+wall" — confirmed, this session, that a signature-only two-pass ALSO fails: `.binopS` splices
+`inst.body` as an already-elaborated VALUE, so a self-call bakes in whatever `insts[idx]` holds AT
+ITS OWN elaboration time, not after — no ordering of a signature-then-body two-pass closes that,
+only real recursion does). Any OTHER arity (0/1/3+ params) is UNCHANGED from before: PRE-ELABORATED
+against the env-so-far here (nested ctors + earlier ops resolve; a self-recursive one still
+fail-louds — but `.binopS` never dispatches that arity anyway, so this residual gap is UNREACHABLE
+through the operator surface, see `Inst`'s doc comment). PUBLIC (#60 seam): the law-runner harness
+needs a real `ElabEnv` (trait/impl-derived) to drive `checkLawOn`, and this is the only constructor
+of one from a parsed decl list — no behavior change to non-impl decls, additive visibility only. -/
 public def buildEnv (ds : List Decl) : Except String ElabEnv := do
   let mut aliases : List (String × Ty) := []
   let mut ctors   : List (String × CtorInfo) := []
   let mut insts   : InstEnv := []
+  let mut pendingKnots : List PendingOpKnot := []
   let mut traits  : List (String × List OpSig) := []
   let mut gen     : List (String × GenData) := []
   let mut bfns    : List (String × BoundedFn) := []
@@ -2922,10 +2965,22 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
                   if od.params.length != sig.params.length then
                     throw s!"'{od.name}': impl has {od.params.length} params, the trait declares {sig.params.length}"
                   let retR ← resolveTy gen aliases (substSelf τR sig.retTy)
-                  -- op params are all `Self`-typed (v1 convention); a 0-ary op (`empty`) has none.
-                  let bodyΓ : NCtx := od.params.map (fun p => (p, embV (vtyOf τR)))
-                  let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], [], []⟩ bodyΓ od.body
-                  insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody⟩]
+                  match od.params with
+                  -- #112: the 2-param arity `.binopS` actually dispatches — defer to a KNOT, never
+                  -- splice. `insts` still gets an entry (so `env.insts.find?` at the call site
+                  -- resolves the op NAME/target to something) but `body` is an inert placeholder;
+                  -- `knotName` is what dispatch actually uses (see `Inst`'s doc comment).
+                  | [p1, p2] =>
+                      let kn := s!"#opknot{insts.length}"
+                      insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, .var "#unreachable-knot-placeholder", some kn⟩]
+                      pendingKnots := pendingKnots ++ [⟨kn, τR, retR, p1, p2, od.body⟩]
+                  -- 0/1/3+-param ops: UNCHANGED pre-#112 behavior — pre-elaborate + splice. Safe:
+                  -- `.binopS` never dispatches this arity (its own match requires exactly `[p, q]`),
+                  -- so a splice-caused self-reference wall is structurally unreachable here.
+                  | _ =>
+                      let bodyΓ : NCtx := od.params.map (fun p => (p, embV (vtyOf τR)))
+                      let ebody ← elabS ⟨insts, ctors, aliases, gen, [], [], [], [], [], [], []⟩ bodyΓ od.body
+                      insts := insts ++ [⟨od.name, vtyOf τR, τR, retR, od.params, ebody, none⟩]
                   rawOps := rawOps ++ [⟨od.name, od.params, od.body, sig.retTy⟩]   -- RAW, for bounded-fn monomorphization
             rawImpls := rawImpls ++ [⟨tn, vtyOf τR, rawOps⟩]
     | .fnD n ps ty tr tv b =>                    -- bounded generic function (bite-2, ADR-0080)
@@ -3008,7 +3063,7 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
       -- (see `elabProg`'s new pre-pass) — this arm exists only so the match stays exhaustive for
       -- a caller that hands `buildEnv` a RAW (pre-fold) decl list (the `mergeModules` internals,
       -- which qualify `letD`/`letRecD` bodies before folding happens).
-  return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls, effects⟩
+  return ⟨insts, ctors, aliases, gen, bfns, rawImpls, hktTraits, hktMethodOf, hktImpls, effects, pendingKnots⟩
 
 /-- The built-in string prelude (ADR-0074): `Char` = a code point (a newtype over `Int`, distinct so
 you can't mix a char and a number), `Str` = a monomorphic char-list. Injected before every program so
@@ -3754,6 +3809,28 @@ def injectPrelude (p : Prog) : Except String Prog :=
       pubNames := mentioned, decls := preludeProg.decls.filter (fun d => mentioned.contains d.name) }
     mergeModules [("Prelude", trimmedPrelude)] { p with uses := p.uses ++ [⟨"Prelude", mentioned⟩] }
 
+/-- **#112 fix.** Wrap `body` in one `let rec` per PENDING 2-param impl-op knot (`env.pendingKnots`,
+DECL ORDER — each subsequent `let rec` nests OUTSIDE the previous, so it sees every earlier knot's
+name in scope, mirroring `buildEnv`'s pre-#112 "earlier ops resolve" guarantee while ALSO giving
+self-reference for free — the μ-encoded fixpoint (`buildLetRec`, ADR-0073/#95) is REAL recursion,
+not a splice, so `tx == ty` inside `eq`'s own body resolves through the SAME mechanism an ordinary
+`let rec` uses). TUPLED single-arg encoding (`fun pq => let (p1, p2) = pq in rawBody`), NOT curried
+(`fun p1 => fun p2 => …`) — de-risked this session: `letRecS`'s elaboration arm
+(`TypeCheck.lean`'s `.letRecS` case) only threads the DECLARED type onto the OUTERMOST `.lam`
+binder; a curried second parameter falls through the GENERIC `.lam` arm instead, which mints it a
+FRESH HOLE rather than the arrow's second domain — a separate, pre-existing gap this fix does NOT
+touch (consuming `letRecS` as-is per this slice's scope). A FORWARD reference (an EARLIER knot
+calling a LATER one) still fails here — `let rec` alone only ever sees itself + prior bindings;
+TRUE mutual/forward impl dispatch needs `buildLetRecMulti`'s N-way tuple-of-thunks generalization
+of `buildLetRec` (a separate, in-flight lane's scope — not built or touched here). -/
+def wrapPendingKnots (knots : List PendingOpKnot) (body : Surf) : Surf :=
+  knots.foldr (fun k acc =>
+      let domTy : Ty := .tProd k.targetTy k.targetTy
+      let knotTy : Ty := .tArr domTy k.retTy
+      let knotFun : Surf := .lam "#pq" (.splitS k.p1 k.p2 (.var "#pq") k.rawBody)
+      Surf.letRecS k.knotName knotTy knotFun acc)
+    body
+
 /-- Elaborate a whole program: auto-`use` the prelude module (ADR-0098), build the elaboration env,
 resolve the body. Returns the elaborated body ALONGSIDE `env.effects` (ADR-0092 D2) — the
 type-checker's `.dotPerform` arm needs the program's user-effect table to resolve a `perform`
@@ -3785,7 +3862,11 @@ def elabProg (p : Prog) : Except String (Surf × List (String × EffectInfo)) :=
   let declared := nonLetDecls.filterMap (fun | .dataD n _ _ => some n | _ => none)
   let prelude := (strPrelude ++ genericPrelude).filter (fun | .dataD n _ _ => !declared.contains n | _ => true)
   let env ← buildEnv (prelude ++ nonLetDecls)
-  let e ← elabS env [] (← expandBFns env none bigFuel foldedBody)   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
+  -- #112: knot-wrap BEFORE `elabS` (RAW `letRecS` nodes feeding its OWN `.letRecS` arm, which does
+  -- the real elaboration+fixpoint-build) — NOT wrap an already-elaborated body, which would need a
+  -- second `elabS` pass over the wrapper alone.
+  let wrapped := wrapPendingKnots env.pendingKnots (← expandBFns env none bigFuel foldedBody)
+  let e ← elabS env [] wrapped   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
   return (e, env.effects)
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
@@ -4072,7 +4153,14 @@ def tuples : Nat → List Val → List (List Val)
 (operators resolve), CHECK, lower, and run through `Source.eval`. PUBLIC (#60 seam): this is
 the exact per-sample check the law-runner harness (`Bang.Witness.LawTest`) needs to reuse rather
 than re-derive (build-on-checkLawOn-don't-rederive) — no behavior change, additive visibility
-only. -/
+only.
+
+**#112:** MUST `wrapPendingKnots env.pendingKnots` before `elabS`, same as `elabProg` — a law body
+can dispatch a 2-param op via `.binopS` (`a == a`, `IntOrd.trans`'s `a < b`, …), which now resolves
+via `.app (.force (.var knotName)) …` (see `Inst`'s doc comment); without the wrap, `knotName`
+would be an unbound variable at THIS call site, since `elabProg` is not in the chain here — this
+is a SEPARATE `elabS env [] …` call, matching `elaborateToComp`'s own by construction, not by
+sharing the pre-#112 splice's implicit no-wrapper-needed property. -/
 public def checkLawOn (env : ElabEnv) (params : List String) (body : Surf) (args : List Val) : Bool :=
   if params.length != args.length then false else
   let wrapped := (params.zip args).foldr
@@ -4080,7 +4168,7 @@ public def checkLawOn (env : ElabEnv) (params : List String) (body : Surf) (args
       match valToSurf pv.2 with
       | some s => .lett pv.1 s acc
       | none   => acc)  -- unsupported sample value ⇒ unbound param ⇒ the check below fails loud
-    (Surf.lett "#r" body (.ifS (.var "#r") (.lit 1) (.lit 0)))
+    (wrapPendingKnots env.pendingKnots (Surf.lett "#r" body (.ifS (.var "#r") (.lit 1) (.lit 0))))
   match (do
       let e ← elabS env [] wrapped
       let _ ← runInferC (synthSC [] e)
