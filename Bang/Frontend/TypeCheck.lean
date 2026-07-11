@@ -1285,6 +1285,26 @@ def synthSC (Γ : NCtx) (e : Surf) : Infer (ICTy × Row) :=
   | .inlS p => do return (.F .omega (.sum (← synthSV Γ p) (← freshHole)), botR)
   | .inrS p => do return (.F .omega (.sum (← freshHole) (← synthSV Γ p)), botR)
   | .foldS _ => throw "fold needs an expected μ type — annotate (ctor elaboration provides it)"
+  -- ADR-0104 §4 the reach (#126): `hostPerformS` — the SAME D2 total-lookup-over-declared-ops
+  -- typing `.dotPerform`'s `ℓ ≥ 4` branch uses (immediately above), minus the receiver synthesis
+  -- (the label is ALREADY resolved by `elabS`'s pre-pass, mirroring `handleCustomS`'s WALL-1 fix) —
+  -- a module-qualified host perform is ALWAYS a user effect (any `pub effect` decl allocates
+  -- `ℓ ≥ 4`, D1/D2), so there is no built-in-vs-user branch to make here.
+  | .hostPerformS none _ op _ => throw s!"hostPerformS: unresolved effect label reaching the checker for op '{op}' — elaboration must run first (ADR-0104 §4, #126)"
+  | .hostPerformS (some ℓ) _ op args => do
+      let effs ← (do return (← get).effects)
+      match effs.find? (fun (_, ei) => ei.label == ℓ) with
+      | none => throw s!"host perform '{op}': resolved label is not a declared effect"
+      | some (effName, ei) =>
+          match ei.ops.find? (fun (n, _, _) => n == op) with
+          | none => throw s!"unknown operation '{op}' for effect '{effName}'"
+          | some (_, argTy?, resTy) =>
+              match args, argTy? with
+              | .none,  none   => return (.F .omega (embV resTy), singR ℓ)
+              | .one a, some t => do let _ ← checkSV Γ a (embV t); return (.F .omega (embV resTy), singR ℓ)
+              | .none,  some _ => throw s!"effect '{effName}' op '{op}' expects 1 argument(s), got 0"
+              | .one _, none   => throw s!"effect '{effName}' op '{op}' expects 0 argument(s), got 1"
+              | .two .., _     => throw s!"effect '{effName}' op '{op}': v1 supports at most 1 argument"
   -- NO catch-all: synthSC now ENUMERATES every Surf constructor, so a NEW feature fails to compile
   -- here until it is typed — pipeline-completeness by construction (the operator's enforcement ask).
   termination_by (sizeOf e, 1)
@@ -2390,6 +2410,7 @@ def structOKRest (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : N
   | .letRecMultiS .. => false
   | .lettMulti .. => false  -- unreachable in practice (elabProg erases #68's sugar first); refuse to certify (soundness > completeness)
   | .handleCustomS .. => false  -- #21 s7probe: NOT yet analyzed for #47/ADR-0091 recursion shapes (clause bodies, the carried param) — conservatively refuse to certify (under-certify, never guess)
+  | .hostPerformS .. => false  -- ADR-0104 §4 the reach (#126): NOT yet analyzed for #47/ADR-0091 recursion shapes — conservatively refuse to certify (under-certify, never guess); a host perform inside a `let rec` body is an edge case with no corpus need yet
 /-- Per-arm structural check: a matchable scrutinee (`sm`) makes each arm's pattern binders strict
 subterms of the parameter; a non-matchable one only shadows them. -/
 def structOKArms (fuel : Nat) (name : String) (slots : List Slot) (targetIdx : Nat) (sm : Bool) :
@@ -2961,6 +2982,8 @@ def expandBFns (env : ElabEnv) (carrier? : Option String) : Nat → Surf → Exc
   | f + 1, .letRecMultiS binds b => do
       return .letRecMultiS (← expandLetRecBindings env carrier? f binds) (← expandBFns env carrier? f b)
   | f + 1, .dotPerform recv op args => do return .dotPerform (← expandBFns env carrier? f recv) op (← expandArgs env carrier? f args)
+  | f + 1, .hostPerformS lbl n op args => do
+      return .hostPerformS lbl (← expandBFns env carrier? f n) op (← expandArgs env carrier? f args)
   | f + 1, .matchD s arms => do
       -- #101: expand a trailing `_` wildcard arm into its missing ctors' arms HERE (this pre-pass,
       -- not `elabS`'s `.matchD` arm) — `expandBFns` already walks the whole tree with `env` in scope
@@ -3190,6 +3213,9 @@ partial def callSitesOf (name : String) (domains : List Ty) (e : Surf) : List (L
     | .dotPerform r _ .none      => callSitesOf name domains r
     | .dotPerform r _ (.one a)   => callSitesOf name domains r ++ callSitesOf name domains a
     | .dotPerform r _ (.two a b) => callSitesOf name domains r ++ callSitesOf name domains a ++ callSitesOf name domains b
+    | .hostPerformS _lbl n _ .none      => callSitesOf name domains n
+    | .hostPerformS _lbl n _ (.one a)   => callSitesOf name domains n ++ callSitesOf name domains a
+    | .hostPerformS _lbl n _ (.two a b) => callSitesOf name domains n ++ callSitesOf name domains a ++ callSitesOf name domains b
     | .letRecS n _ f b => callSitesOf name domains f ++ (if n == name then [] else callSitesOf name domains b)
     | .letRecMultiS binds b =>
         callSitesOfLRBindings name domains binds ++
@@ -3314,6 +3340,9 @@ partial def redirectCalls (name : String) (domains : List Ty) (tvs : List String
     | .dotPerform r op .none      => .dotPerform (redirectCalls name domains tvs residues self? r) op .none
     | .dotPerform r op (.one a)   => .dotPerform (redirectCalls name domains tvs residues self? r) op (.one (redirectCalls name domains tvs residues self? a))
     | .dotPerform r op (.two a b) => .dotPerform (redirectCalls name domains tvs residues self? r) op (.two (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b))
+    | .hostPerformS lbl n op .none      => .hostPerformS lbl (redirectCalls name domains tvs residues self? n) op .none
+    | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (redirectCalls name domains tvs residues self? n) op (.one (redirectCalls name domains tvs residues self? a))
+    | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (redirectCalls name domains tvs residues self? n) op (.two (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b))
     | .letRecS nm t f b =>
         .letRecS nm t (redirectCalls name domains tvs residues self? f)
           (if nm == name then b else redirectCalls name domains tvs residues self? b)
@@ -3398,6 +3427,9 @@ def substTyVarInSurf (qTy : Ty → Ty) : Surf → Surf
   | .dotPerform r op .none      => .dotPerform (substTyVarInSurf qTy r) op .none
   | .dotPerform r op (.one a)   => .dotPerform (substTyVarInSurf qTy r) op (.one (substTyVarInSurf qTy a))
   | .dotPerform r op (.two a b) => .dotPerform (substTyVarInSurf qTy r) op (.two (substTyVarInSurf qTy a) (substTyVarInSurf qTy b))
+  | .hostPerformS lbl n op .none      => .hostPerformS lbl (substTyVarInSurf qTy n) op .none
+  | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (substTyVarInSurf qTy n) op (.one (substTyVarInSurf qTy a))
+  | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (substTyVarInSurf qTy n) op (.two (substTyVarInSurf qTy a) (substTyVarInSurf qTy b))
   | .letRecS n t f b => .letRecS n (qTy t) (substTyVarInSurf qTy f) (substTyVarInSurf qTy b)
   | .letRecMultiS binds b => .letRecMultiS (substTyVarInSurfLRBindings qTy binds) (substTyVarInSurf qTy b)
   | .lettMulti binds b => .lettMulti (substTyVarInSurfBindings qTy binds) (substTyVarInSurf qTy b)
@@ -3476,6 +3508,9 @@ partial def inlineVarAliases : Surf → Surf
   | .dotPerform r op .none      => .dotPerform (inlineVarAliases r) op .none
   | .dotPerform r op (.one a)   => .dotPerform (inlineVarAliases r) op (.one (inlineVarAliases a))
   | .dotPerform r op (.two a b) => .dotPerform (inlineVarAliases r) op (.two (inlineVarAliases a) (inlineVarAliases b))
+  | .hostPerformS lbl n op .none      => .hostPerformS lbl (inlineVarAliases n) op .none
+  | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (inlineVarAliases n) op (.one (inlineVarAliases a))
+  | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (inlineVarAliases n) op (.two (inlineVarAliases a) (inlineVarAliases b))
   | .letRecS n t f b => .letRecS n t (inlineVarAliases f) (inlineVarAliases b)
   | .letRecMultiS binds b => .letRecMultiS (inlineVarAliasesLRBindings binds) (inlineVarAliases b)
   | .lettMulti binds b => .lettMulti (inlineVarAliasesBindings binds) (inlineVarAliases b)
@@ -3537,6 +3572,9 @@ partial def renameVarTo (n m : String) : Surf → Surf
   | .dotPerform r op .none      => .dotPerform (renameVarTo n m r) op .none
   | .dotPerform r op (.one a)   => .dotPerform (renameVarTo n m r) op (.one (renameVarTo n m a))
   | .dotPerform r op (.two a b) => .dotPerform (renameVarTo n m r) op (.two (renameVarTo n m a) (renameVarTo n m b))
+  | .hostPerformS lbl v op .none      => .hostPerformS lbl (renameVarTo n m v) op .none
+  | .hostPerformS lbl v op (.one a)   => .hostPerformS lbl (renameVarTo n m v) op (.one (renameVarTo n m a))
+  | .hostPerformS lbl v op (.two a b) => .hostPerformS lbl (renameVarTo n m v) op (.two (renameVarTo n m a) (renameVarTo n m b))
   | .letRecS nm t f b => if nm == n then .letRecS nm t f b else .letRecS nm t (renameVarTo n m f) (renameVarTo n m b)
   | .letRecMultiS binds b =>
       if (letRecBindingsNames binds).contains n then .letRecMultiS binds b
@@ -3655,6 +3693,8 @@ def monomorphizeLetRec (gen : List (String × GenData)) (aliases : List (String 
   | f + 1, .withCapS k init n body => do return .withCapS k (← monomorphizeLetRec gen aliases f init) n (← monomorphizeLetRec gen aliases f body)
   | f + 1, .annotS e t => do return .annotS (← monomorphizeLetRec gen aliases f e) t
   | f + 1, .dotPerform recv op args => do return .dotPerform (← monomorphizeLetRec gen aliases f recv) op (← monomorphizeArgs gen aliases f args)
+  | f + 1, .hostPerformS lbl n op args => do
+      return .hostPerformS lbl (← monomorphizeLetRec gen aliases f n) op (← monomorphizeArgs gen aliases f args)
   | f + 1, .matchD s arms => do return .matchD (← monomorphizeLetRec gen aliases f s) (← monomorphizeArms gen aliases f arms)
   | f + 1, .lettMulti binds b => do return .lettMulti (← monomorphizeLetBindings gen aliases f binds) (← monomorphizeLetRec gen aliases f b)
   | f + 1, .handleCustomS lbl n p? h cls b => do
@@ -3814,6 +3854,21 @@ def elabS (env : ElabEnv) : NCtx → Surf → Except String Surf
         | .one a   => do return .one (← elabS env Γ a)
         | .two a b => do return .two (← elabS env Γ a) (← elabS env Γ b))
       return .dotPerform recv' op args'
+  -- ADR-0104 §4 the host-provision reach (#126): `hostPerformS` — the SAME WALL-1 two-stage
+  -- resolution `handleCustomS` uses immediately above (`qualifyDotAccess` leaves `label?` at
+  -- `none`; THIS arm resolves `effRef` against `env.effects` and rewrites the slot). No new
+  -- binder is introduced here (unlike `handleCustomS`'s `h`) — the receiver is a LITERAL cap
+  -- `lowerC` synthesizes directly from the resolved label, not a name bound in `Γ`.
+  | Γ, .hostPerformS _lbl n op args => do
+      let n' ← elabS env Γ n
+      let args' ← (match args with
+        | .none    => (pure .none : Except String SurfArgs)
+        | .one a   => do return .one (← elabS env Γ a)
+        | .two a b => do return .two (← elabS env Γ a) (← elabS env Γ b))
+      let lbl' := match n with
+        | .var effN => (env.effects.lookup effN).map EffectInfo.label
+        | _         => none
+      return .hostPerformS lbl' n' op args'
   | Γ, .app (.var c) a => do                  -- ctor intro `Cons(e, …)` parses as application (ADR-0069)
       match resolveCtor env c with            -- ADR-0099 resolution
       | some (.ok ci) =>
@@ -4483,6 +4538,9 @@ def qualifyVars (modName : String) (names : List String) : Surf → Surf
   | .dotPerform r op .none      => .dotPerform (qualifyVars modName names r) op .none
   | .dotPerform r op (.one a)   => .dotPerform (qualifyVars modName names r) op (.one (qualifyVars modName names a))
   | .dotPerform r op (.two a b) => .dotPerform (qualifyVars modName names r) op (.two (qualifyVars modName names a) (qualifyVars modName names b))
+  | .hostPerformS lbl n op .none      => .hostPerformS lbl (qualifyVars modName names n) op .none
+  | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (qualifyVars modName names n) op (.one (qualifyVars modName names a))
+  | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (qualifyVars modName names n) op (.two (qualifyVars modName names a) (qualifyVars modName names b))
   | .letRecS n t f b => if names.contains n then .letRecS n t f b
                          else .letRecS n t (qualifyVars modName names f) (qualifyVars modName names b)
   -- #97 item 2: a mutual group's siblings are ALL simultaneously in scope of EACH OTHER'S bodies
@@ -4679,11 +4737,22 @@ list. Only the two-arg qualified shapes (`.dotPerform (.var m) op _`) are checke
 `m`-that-isn't-an-import, or a receiver that itself needs recursing into, is walked structurally
 the same way `qualifyDotAccess` recurses. First violation wins (short-circuit via `orElse`, no
 worse than `findSome?`'s laziness). -/
+/-- ADR-0104 §4 the host-provision reach (#126): is `op` an operation of one of `modP`'s `pub
+effect` decls? The D3 exemption `firstPrivateDotAccess`'s `.dotPerform (.var m) op _` arm needs —
+`isPubName` alone rejects `Io.print` (an effect op is never a `pubNames`/ctor entry, only the
+EFFECT's own decl name `Console` is) even though `qualifyDotAccess` (TypeCheck.lean, this file)
+legitimately turns it into a `hostPerformS` host perform for exactly this shape: a PUB effect's
+op. Non-`pub` effects are NOT exempted (a private effect's ops stay genuinely private, D3). -/
+def isPubEffectOp (modP : Prog) (op : String) : Bool :=
+  modP.decls.any (fun d => match d with
+    | .effectD n ops => modP.pubNames.contains n && ops.any (fun (opN, _) => opN == op)
+    | _              => false)
+
 mutual
 def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (String × String)
   | .dotPerform (.var m) op _ =>
       match resolved.lookup m with
-      | some modP => if isPubName modP op then none else some (m, op)
+      | some modP => if isPubName modP op || isPubEffectOp modP op then none else some (m, op)
       | none      => none    -- `m` isn't a known import (an ordinary capability receiver) — not this function's job
   | .dotPerform r _ args           => firstPrivateDotAccess resolved r <|> argsFirstPrivateDotAccess resolved args
   | .lit _ | .var _ | .getS | .unitS => none
@@ -4705,6 +4774,15 @@ def firstPrivateDotAccess (resolved : List (String × Prog)) : Surf → Option (
         <|> hClausesFirstPrivateDotAccess resolved cls <|> firstPrivateDotAccess resolved b
   -- #97 item 2: scan every sibling RHS, then the body — the `.lettMulti` precedent immediately above.
   | .letRecMultiS binds b           => lrBindsFirstPrivateDotAccess resolved binds <|> firstPrivateDotAccess resolved b
+  -- ADR-0104 §4 the host-provision reach (#126): `hostPerformS` NEVER reaches this scan on a real
+  -- program — this pass runs BEFORE `qualifyDotAccess` (the ONLY producer of `hostPerformS`) inside
+  -- `mergeModules`'s pipeline, so at this point the tree is still raw `.dotPerform`. The arm exists
+  -- only for EXHAUSTIVENESS (a future caller feeding an already-qualified tree through this pass
+  -- would otherwise silently skip it) — `effRef` is a plain qualified-effect var reference (already
+  -- past the D3 gate BY CONSTRUCTION: `qualifyDotAccess`'s `hostPerformS`-emitting arm only fires
+  -- for a PUB effect's op, §4 exempts a host op from the ordinary `isPubName` check by design), so
+  -- it is never itself a private-access violation — only structurally recurse into it and the args.
+  | .hostPerformS _lbl n _op args   => firstPrivateDotAccess resolved n <|> argsFirstPrivateDotAccess resolved args
 def bindsFirstPrivateDotAccess (resolved : List (String × Prog)) : LetBindings → Option (String × String)
   | .nil           => none
   | .cons _ e rest => firstPrivateDotAccess resolved e <|> bindsFirstPrivateDotAccess resolved rest
@@ -4757,10 +4835,27 @@ mechanism, not `import`). This function DOES still rewrite the *pattern* to its 
 when the name matches a `ctorOwners` entry, so `mergeModules` can offer this rewrite once it knows
 which ctors came from where (kept general here rather than special-cased to a single call site). -/
 mutual
-def qualifyDotAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : Surf → Surf
+/-- ADR-0104 §4 the host-provision reach (#126): `effectOps : List (String × String × String)`
+maps an OP NAME + its OWNING module to the owning effect's QUALIFIED decl name
+(`("print", "Io", "Io_Console")`) — the `ctorOwners` PRECEDENT (same "owner lookup before the
+ordinary import-alias rewrite" idiom, one extra field since `hostPerformS` needs the QUALIFIED
+target `env.effects` is keyed by, not just the module name `ctorOwners`-style lookups return),
+populated ONLY from a module's `pub effect` decls (D3: a private effect's ops are NOT in this
+list, so a bare `m.op` naming them falls through to the ordinary `imports.contains m` branch
+below and is qualified as an ordinary — and then correctly UNBOUND — reference, never silently
+granted host access). Checked FIRST in both `.dotPerform (.var m) op _` arms, mirroring how
+`qualifyDArmsAccess` already consults `ctorOwners` before its own default: a match emits the NEW
+`hostPerformS` former (label unresolved — `elabS`'s WALL-1-style arm resolves it against
+`env.effects` using `n := .var qualifiedEffectName` — see below) instead of the ordinary
+`Mod_op` var-alias rewrite (which would be WRONG here: an effect op has no `letD`/`fnD` a
+var-alias could name). -/
+def qualifyDotAccess (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : Surf → Surf
   | .dotPerform (.var m) op .none =>
+      match effectOps.find? (fun (opN, owner, _) => opN == op && owner == m) with
+      | some (_, _, qualifiedEff) => .hostPerformS none (.var qualifiedEff) op .none
+      | none =>
       if imports.contains m then .var (qualifyName m op)
-      else .dotPerform (qualifyDotAccess imports ctorOwners qTy (.var m)) op .none
+      else .dotPerform (qualifyDotAccess imports ctorOwners effectOps qTy (.var m)) op .none
   | .dotPerform (.var m) op args =>
       -- a qualified CTOR call (`geom.Mk(3, 4)`) is the SAME shape as a nullary qualified access,
       -- just applied to args afterward: `geom_Mk(3, 4)` re-parses as `.app (.var "geom_Mk") …` —
@@ -4769,73 +4864,77 @@ def qualifyDotAccess (imports : List String) (ctorOwners : List (String × Strin
       -- `.app (.var qualified) arg` for 1 arg, and nested `.app`s for 2 (matching how a 2-ary ctor
       -- constructor CALL already lowers via `pairS`, since ctor args are always exactly a pair at
       -- the surface — see `pCtor`'s `≤2`-arity note).
+      match effectOps.find? (fun (opN, owner, _) => opN == op && owner == m) with
+      | some (_, _, qualifiedEff) => .hostPerformS none (.var qualifiedEff) op (qualifyDotAccessArgs imports ctorOwners effectOps qTy args)
+      | none =>
       if imports.contains m then
         match args with
         | .none      => .var (qualifyName m op)
-        | .one a     => .app (.var (qualifyName m op)) (qualifyDotAccess imports ctorOwners qTy a)
+        | .one a     => .app (.var (qualifyName m op)) (qualifyDotAccess imports ctorOwners effectOps qTy a)
         | .two a b   => .app (.var (qualifyName m op))
-            (.pairS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b))
-      else .dotPerform (qualifyDotAccess imports ctorOwners qTy (.var m)) op (qualifyDotAccessArgs imports ctorOwners qTy args)
-  | .dotPerform r op args   => .dotPerform (qualifyDotAccess imports ctorOwners qTy r) op (qualifyDotAccessArgs imports ctorOwners qTy args)
+            (.pairS (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b))
+      else .dotPerform (qualifyDotAccess imports ctorOwners effectOps qTy (.var m)) op (qualifyDotAccessArgs imports ctorOwners effectOps qTy args)
+  | .dotPerform r op args   => .dotPerform (qualifyDotAccess imports ctorOwners effectOps qTy r) op (qualifyDotAccessArgs imports ctorOwners effectOps qTy args)
+  | .hostPerformS lbl n op args => .hostPerformS lbl (qualifyDotAccess imports ctorOwners effectOps qTy n) op (qualifyDotAccessArgs imports ctorOwners effectOps qTy args)
   | .lit n                  => .lit n
   | .var x                  => .var x
-  | .thunk e                => .thunk (qualifyDotAccess imports ctorOwners qTy e)
-  | .force e                => .force (qualifyDotAccess imports ctorOwners qTy e)
-  | .lett n a b             => .lett n (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
-  | .lam n e                => .lam n (qualifyDotAccess imports ctorOwners qTy e)
-  | .app a b                => .app (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
-  | .raise e                => .raise (qualifyDotAccess imports ctorOwners qTy e)
-  | .handle e                => .handle (qualifyDotAccess imports ctorOwners qTy e)
+  | .thunk e                => .thunk (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .force e                => .force (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .lett n a b             => .lett n (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .lam n e                => .lam n (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .app a b                => .app (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .raise e                => .raise (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .handle e                => .handle (qualifyDotAccess imports ctorOwners effectOps qTy e)
   | .getS                   => .getS
-  | .putS e                 => .putS (qualifyDotAccess imports ctorOwners qTy e)
-  | .stateS a b              => .stateS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
-  | .atomS e                 => .atomS (qualifyDotAccess imports ctorOwners qTy e)
-  | .newS e                  => .newS (qualifyDotAccess imports ctorOwners qTy e)
-  | .readS e                 => .readS (qualifyDotAccess imports ctorOwners qTy e)
-  | .writeS a b               => .writeS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
-  | .inlS e                  => .inlS (qualifyDotAccess imports ctorOwners qTy e)
-  | .inrS e                  => .inrS (qualifyDotAccess imports ctorOwners qTy e)
-  | .pairS a b                => .pairS (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
-  | .matchS s lx e1 ry e2      => .matchS (qualifyDotAccess imports ctorOwners qTy s) lx (qualifyDotAccess imports ctorOwners qTy e1) ry (qualifyDotAccess imports ctorOwners qTy e2)
-  | .splitS a b p body        => .splitS a b (qualifyDotAccess imports ctorOwners qTy p) (qualifyDotAccess imports ctorOwners qTy body)
-  | .binopS op a b            => .binopS op (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
-  | .ifS c t e                 => .ifS (qualifyDotAccess imports ctorOwners qTy c) (qualifyDotAccess imports ctorOwners qTy t) (qualifyDotAccess imports ctorOwners qTy e)
-  | .annotS e t                => .annotS (qualifyDotAccess imports ctorOwners qTy e) (qTy t)
+  | .putS e                 => .putS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .stateS a b              => .stateS (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .atomS e                 => .atomS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .newS e                  => .newS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .readS e                 => .readS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .writeS a b               => .writeS (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .inlS e                  => .inlS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .inrS e                  => .inrS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .pairS a b                => .pairS (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .matchS s lx e1 ry e2      => .matchS (qualifyDotAccess imports ctorOwners effectOps qTy s) lx (qualifyDotAccess imports ctorOwners effectOps qTy e1) ry (qualifyDotAccess imports ctorOwners effectOps qTy e2)
+  | .splitS a b p body        => .splitS a b (qualifyDotAccess imports ctorOwners effectOps qTy p) (qualifyDotAccess imports ctorOwners effectOps qTy body)
+  | .binopS op a b            => .binopS op (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .ifS c t e                 => .ifS (qualifyDotAccess imports ctorOwners effectOps qTy c) (qualifyDotAccess imports ctorOwners effectOps qTy t) (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .annotS e t                => .annotS (qualifyDotAccess imports ctorOwners effectOps qTy e) (qTy t)
   | .unitS                    => .unitS
-  | .foldS e                  => .foldS (qualifyDotAccess imports ctorOwners qTy e)
-  | .unfoldS e                => .unfoldS (qualifyDotAccess imports ctorOwners qTy e)
-  | .matchD s arms             => .matchD (qualifyDotAccess imports ctorOwners qTy s) (qualifyDArmsAccess imports ctorOwners qTy arms)
-  | .withCapS k i n b           => .withCapS k (qualifyDotAccess imports ctorOwners qTy i) n (qualifyDotAccess imports ctorOwners qTy b)
-  | .letRecS n t f b            => .letRecS n (qTy t) (qualifyDotAccess imports ctorOwners qTy f) (qualifyDotAccess imports ctorOwners qTy b)
-  | .divMark e                  => .divMark (qualifyDotAccess imports ctorOwners qTy e)
-  | .lettMulti binds b           => .lettMulti (qualifyLetBindingsAccess imports ctorOwners qTy binds) (qualifyDotAccess imports ctorOwners qTy b)
+  | .foldS e                  => .foldS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .unfoldS e                => .unfoldS (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .matchD s arms             => .matchD (qualifyDotAccess imports ctorOwners effectOps qTy s) (qualifyDArmsAccess imports ctorOwners effectOps qTy arms)
+  | .withCapS k i n b           => .withCapS k (qualifyDotAccess imports ctorOwners effectOps qTy i) n (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .letRecS n t f b            => .letRecS n (qTy t) (qualifyDotAccess imports ctorOwners effectOps qTy f) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+  | .divMark e                  => .divMark (qualifyDotAccess imports ctorOwners effectOps qTy e)
+  | .lettMulti binds b           => .lettMulti (qualifyLetBindingsAccess imports ctorOwners effectOps qTy binds) (qualifyDotAccess imports ctorOwners effectOps qTy b)
   -- #21 s7probe: the `withCapS` precedent immediately above — `n`/`p`/every clause body/`body` all
   -- recurse; `h` (the cap binder) is left AS-IS (no qualification target, matching `withCapS`'s `n`).
   | .handleCustomS lbl n p? h cls b =>
-      .handleCustomS lbl (qualifyDotAccess imports ctorOwners qTy n) (qualifyDotAccessArgs imports ctorOwners qTy p?) h
-        (qualifyHClausesAccess imports ctorOwners qTy cls) (qualifyDotAccess imports ctorOwners qTy b)
+      .handleCustomS lbl (qualifyDotAccess imports ctorOwners effectOps qTy n) (qualifyDotAccessArgs imports ctorOwners effectOps qTy p?) h
+        (qualifyHClausesAccess imports ctorOwners effectOps qTy cls) (qualifyDotAccess imports ctorOwners effectOps qTy b)
   -- #97 item 2: the `.letRecS`/`.lettMulti` precedent — every sibling's type + RHS + the body recurse.
-  | .letRecMultiS binds b        => .letRecMultiS (qualifyLetRecBindingsAccess imports ctorOwners qTy binds) (qualifyDotAccess imports ctorOwners qTy b)
-def qualifyDotAccessArgs (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : SurfArgs → SurfArgs
+  | .letRecMultiS binds b        => .letRecMultiS (qualifyLetRecBindingsAccess imports ctorOwners effectOps qTy binds) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+def qualifyDotAccessArgs (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : SurfArgs → SurfArgs
   | .none      => .none
-  | .one a     => .one (qualifyDotAccess imports ctorOwners qTy a)
-  | .two a b   => .two (qualifyDotAccess imports ctorOwners qTy a) (qualifyDotAccess imports ctorOwners qTy b)
-def qualifyDArmsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : DArms → DArms
+  | .one a     => .one (qualifyDotAccess imports ctorOwners effectOps qTy a)
+  | .two a b   => .two (qualifyDotAccess imports ctorOwners effectOps qTy a) (qualifyDotAccess imports ctorOwners effectOps qTy b)
+def qualifyDArmsAccess (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : DArms → DArms
   | .nil               => .nil
   | .cons c ps b rest  =>
       let c' := match ctorOwners.lookup c with
         | some modName => qualifyName modName c
         | none         => c
-      .cons c' ps (qualifyDotAccess imports ctorOwners qTy b) (qualifyDArmsAccess imports ctorOwners qTy rest)
-def qualifyHClausesAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : HClauses → HClauses
+      .cons c' ps (qualifyDotAccess imports ctorOwners effectOps qTy b) (qualifyDArmsAccess imports ctorOwners effectOps qTy rest)
+def qualifyHClausesAccess (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : HClauses → HClauses
   | .nil                 => .nil
-  | .cons op x b rest     => .cons op x (qualifyDotAccess imports ctorOwners qTy b) (qualifyHClausesAccess imports ctorOwners qTy rest)
-def qualifyLetBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : LetBindings → LetBindings
+  | .cons op x b rest     => .cons op x (qualifyDotAccess imports ctorOwners effectOps qTy b) (qualifyHClausesAccess imports ctorOwners effectOps qTy rest)
+def qualifyLetBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : LetBindings → LetBindings
   | .nil            => .nil
-  | .cons n e rest  => .cons n (qualifyDotAccess imports ctorOwners qTy e) (qualifyLetBindingsAccess imports ctorOwners qTy rest)
-def qualifyLetRecBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (qTy : Ty → Ty) : LetRecBindings → LetRecBindings
+  | .cons n e rest  => .cons n (qualifyDotAccess imports ctorOwners effectOps qTy e) (qualifyLetBindingsAccess imports ctorOwners effectOps qTy rest)
+def qualifyLetRecBindingsAccess (imports : List String) (ctorOwners : List (String × String)) (effectOps : List (String × String × String)) (qTy : Ty → Ty) : LetRecBindings → LetRecBindings
   | .nil               => .nil
-  | .cons n t e rest    => .cons n (qTy t) (qualifyDotAccess imports ctorOwners qTy e) (qualifyLetRecBindingsAccess imports ctorOwners qTy rest)
+  | .cons n t e rest    => .cons n (qTy t) (qualifyDotAccess imports ctorOwners effectOps qTy e) (qualifyLetRecBindingsAccess imports ctorOwners effectOps qTy rest)
 end
 
 /-- Rewrite a MODULE's OWN bare qualified access (`Json.JNull`) to ITS OWN imports/uses, BEFORE
@@ -4864,18 +4963,27 @@ def qualifyModuleOwnImports (resolved : List (String × Prog)) (p : Prog) : Prog
   let dataTyOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
     modP.decls.flatMap (fun d => match d with | .dataD n _ _ => [(n, modName)] | _ => []))
   let qTy := qualifyTyName dataTyOwners usedNames
+  -- ADR-0104 §4 the host-provision reach (#126): `effectOps` maps an OP NAME to its owning
+  -- effect's QUALIFIED decl name (`("print", "Io_Console")`) — the `env.effects` KEY `elabS`'s
+  -- WALL-1-style `hostPerformS` arm looks up (D3: only a `pub effect`'s ops grant this — see
+  -- `qualifyDotAccess`'s own doc comment for the full rationale, `mergeModules`'s twin site
+  -- below for the identical construction).
+  let effectOps : List (String × String × String) := resolved.flatMap (fun (modName, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
+      | _              => []))
   let usedPlainFns : List (String × String) := p.uses.flatMap (fun u =>
     u.names.filterMap (fun n =>
       if (allCtorOwners.lookup n).isSome || (dataTyOwners.lookup n).isSome then none else some (n, u.modName)))
   let decls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
     | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
-    | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners qTy l.body }))
-    | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners qTy o.body }))
-    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b)
-    | .letD n ty e          => .letD n (ty.map qTy) (qualifyDotAccess importNames ctorOwners qTy e)
-    | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners qTy e))
-  let body := qualifyDotAccess importNames ctorOwners qTy p.body
+    | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners effectOps qTy l.body }))
+    | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners effectOps qTy o.body }))
+    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners effectOps qTy b)
+    | .letD n ty e          => .letD n (ty.map qTy) (qualifyDotAccess importNames ctorOwners effectOps qTy e)
+    | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners effectOps qTy e))
+  let body := qualifyDotAccess importNames ctorOwners effectOps qTy p.body
   let aliasDecls : List Decl := usedPlainFns.map (fun (n, modName) => .letD n none (Surf.var (qualifyName modName n)))
   { p with decls := aliasDecls ++ decls, body := body }
 
@@ -4949,6 +5057,13 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
     allCtorOwners.filter (fun (c, _) => !usedNames.contains c)
   let dataTyOwners : List (String × String) := resolved.flatMap (fun (modName, modP) =>
     modP.decls.flatMap (fun d => match d with | .dataD n _ _ => [(n, modName)] | _ => []))
+  -- ADR-0104 §4 the host-provision reach (#126): `effectOps` maps an OP NAME to its owning
+  -- effect's QUALIFIED decl name — the `qualifyModuleOwnImports` twin site (that function's own
+  -- doc comment has the full rationale). D3-gated: only a `pub effect`'s ops appear.
+  let effectOps : List (String × String × String) := resolved.flatMap (fun (modName, modP) =>
+    modP.decls.flatMap (fun d => match d with
+      | .effectD n ops => if modP.pubNames.contains n then ops.map (fun (op, _) => (op, modName, qualifyName modName n)) else []
+      | _              => []))
   -- a `use`d name that is a PLAIN fn/effect/trait (not a ctor, not a data type) gets the
   -- `let`-alias wrap — the one kind for which that mechanism is sound. Classified against the
   -- UNFILTERED `allCtorOwners` (not `ctorOwners`, which excludes `use`d ctors BY DESIGN — using
@@ -4960,12 +5075,12 @@ public def mergeModules (resolved : List (String × Prog)) (p : Prog) : Except S
   let entryDecls := p.decls.map (fun d => match d with
     | .dataD n ps cs        => .dataD n ps (cs.map (fun (c, tys) => (c, tys.map qTy)))
     | .effectD n ops        => .effectD n (ops.map (fun (op, ty) => (op, qTy ty)))
-    | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners qTy l.body }))
-    | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners qTy o.body }))
-    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners qTy b)
-    | .letD n ty e          => .letD n (ty.map qTy) (qualifyDotAccess importNames ctorOwners qTy e)
-    | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners qTy e))
-  let body := qualifyDotAccess importNames ctorOwners qTy p.body
+    | .traitD n ps ops laws => .traitD n ps ops (laws.map (fun l => { l with body := qualifyDotAccess importNames ctorOwners effectOps qTy l.body }))
+    | .implD n t ops        => .implD n (qTy t) (ops.map (fun o => { o with body := qualifyDotAccess importNames ctorOwners effectOps qTy o.body }))
+    | .fnD n ps ty tr tv b  => .fnD n ps (qTy ty) tr tv (qualifyDotAccess importNames ctorOwners effectOps qTy b)
+    | .letD n ty e          => .letD n (ty.map qTy) (qualifyDotAccess importNames ctorOwners effectOps qTy e)
+    | .letRecD n t e        => .letRecD n (qTy t) (qualifyDotAccess importNames ctorOwners effectOps qTy e))
+  let body := qualifyDotAccess importNames ctorOwners effectOps qTy p.body
   -- `use`-hoisted plain-fn aliases are injected as `letD` decls at the FRONT of the entry file's
   -- own decls (not wrapped only around `p.body`) — a `use`d name must be visible from WITHIN
   -- another entry-file decl too (e.g. a top-level `let main = ($double) 21`, ADR-0093 D5's own
@@ -5023,6 +5138,9 @@ def surfUsesVar (nm : String) : Surf → Bool
   | .dotPerform r _ .none          => surfUsesVar nm r
   | .dotPerform r _ (.one a)       => surfUsesVar nm r || surfUsesVar nm a
   | .dotPerform r _ (.two a b)     => surfUsesVar nm r || surfUsesVar nm a || surfUsesVar nm b
+  | .hostPerformS _lbl n _ .none      => surfUsesVar nm n
+  | .hostPerformS _lbl n _ (.one a)   => surfUsesVar nm n || surfUsesVar nm a
+  | .hostPerformS _lbl n _ (.two a b) => surfUsesVar nm n || surfUsesVar nm a || surfUsesVar nm b
   | .letRecS _ _ f b               => surfUsesVar nm f || surfUsesVar nm b
   | .lettMulti binds b             => letBindingsUseVar nm binds || surfUsesVar nm b
   -- `x`/`h` are BINDERS (a clause's arg / the cap name) — like every other binder-shadowing site
@@ -5083,6 +5201,9 @@ def letRecBoundNames : Surf → List String
   | .dotPerform r _ .none          => letRecBoundNames r
   | .dotPerform r _ (.one a)       => letRecBoundNames r ++ letRecBoundNames a
   | .dotPerform r _ (.two a b)     => letRecBoundNames r ++ letRecBoundNames a ++ letRecBoundNames b
+  | .hostPerformS _lbl n _ .none      => letRecBoundNames n
+  | .hostPerformS _lbl n _ (.one a)   => letRecBoundNames n ++ letRecBoundNames a
+  | .hostPerformS _lbl n _ (.two a b) => letRecBoundNames n ++ letRecBoundNames a ++ letRecBoundNames b
   | .lettMulti binds b             => letRecBoundNamesBindings binds ++ letRecBoundNames b
   | .handleCustomS _lbl n .none _h cls b       => letRecBoundNames n ++ letRecBoundNamesHClauses cls ++ letRecBoundNames b
   | .handleCustomS _lbl n (.one p) _h cls b    => letRecBoundNames n ++ letRecBoundNames p ++ letRecBoundNamesHClauses cls ++ letRecBoundNames b
@@ -5943,6 +6064,9 @@ def firstBareOpCallStep (opNames : List String) : Surf → Option String
   | .dotPerform r _ .none          => firstBareOpCall opNames r
   | .dotPerform r _ (.one a)       => firstBareOpCall opNames r <|> firstBareOpCall opNames a
   | .dotPerform r _ (.two a b)     => firstBareOpCall opNames r <|> firstBareOpCall opNames a <|> firstBareOpCall opNames b
+  | .hostPerformS _lbl n _ .none      => firstBareOpCall opNames n
+  | .hostPerformS _lbl n _ (.one a)   => firstBareOpCall opNames n <|> firstBareOpCall opNames a
+  | .hostPerformS _lbl n _ (.two a b) => firstBareOpCall opNames n <|> firstBareOpCall opNames a <|> firstBareOpCall opNames b
   | .letRecS _ _ f b               => firstBareOpCall opNames f <|> firstBareOpCall opNames b
   -- #68 sugar: the law-diagnostic walk can see raw (pre-erasure) trees — cover `.lettMulti`
   -- like `.lett`: every binding RHS, then the body.
@@ -7893,6 +8017,25 @@ def runMergedYieldsInt (fuel : Nat) (p : Prog) : Option Int :=
                           | .done (.vint n) => some n
                           | _ => none
 
+/-- ADR-0104 §4 the host-provision reach (#126): the `Outcome`-preserving sibling of
+`runMergedYieldsInt` — a merged `Prog`'s FULL pipeline result (elaborate → check → lower →
+`Source.eval`), not projected onto `Option Int`. NEEDED for the H1 regression corpus: a module-
+qualified host perform's Comp evaluates to `.escapedCap` (ADR-0063), a terminal `runMergedYieldsInt`
+would collapse to the SAME `none` as a genuine elaboration failure — indistinguishable, and this
+slice's whole point is pinning THAT SPECIFIC terminal. A `typeErr`/`parseErr` reaching THIS helper
+means `elabProg`/`checkProg` failed BEFORE `Source.eval` ever ran (no located span in this shape,
+matching `runOutcomeFrom`'s own untyped-collapse note). -/
+def runMergedOutcome (fuel : Nat) (p : Prog) : Outcome :=
+  match elabProg p with
+  | .error m => .typeErr m
+  | .ok (e, effects, _, _) =>
+      match runInferC (synthSC [] e) effects with
+      | .error m => .typeErr m
+      | .ok _ =>
+          match Bang.Surface.lower e with
+          | .error m  => .typeErr m
+          | .ok c     => evalToOutcome (Bang.Source.eval fuel c)
+
 -- a single `pub data` module + an entry file `import`-ing it (bare qualified access): the
 -- MERGED program agrees with the hand-qualified single-file equivalent. A BARE `import` (no
 -- `use`) does not hoist the ctor NAME into unqualified scope — the match PATTERN must spell the
@@ -8086,6 +8229,75 @@ only prove the AST shape) — this is the "does the ADR's own payoff actually ha
   match mergeModules [("lib", modP)] entryP with
   | .error msg => (msg.splitOn "private").length > 1
   | .ok _       => false
+
+/-! ### ADR-0104 §4 the host-provision reach (#126) — the regression corpus pinning SHIPPED H1
+semantics (label-only ambient dispatch, nearness RETRACTED — see the ADR correction). Each `#guard`
+mirrors the `runMergedYieldsInt`/`mergeModules`-driven shape above, using `runMergedOutcome` (this
+file) so the SPECIFIC terminal (`.escaped` vs a genuine `.typeErr`) is pinned, not collapsed. `hostIoP`
+is the minimal `pub effect` module the whole corpus shares — one `Console`-shaped op (`print :
+Str -> Unit`), the exact op-arity `Io.bang`'s real `Console` decl uses, so this corpus tracks the
+shipped module shape without importing `std/Io.bang`'s baked-in text (keeping the module SMALL and
+the intent legible at each call site — the `Str`/glyph plumbing `Io.bang`'s real Console needs is
+orthogonal to what THIS corpus is pinning). -/
+def hostIoP : Prog :=
+  (Bang.Surface.parseProg "pub effect Console { print : Str -> Unit } 0").toOption.get!
+
+-- POSITIVE: `Io.print(x)` (module-qualified, no receiver `with`) elaborates + type-checks clean —
+-- the #73 D3 private-access gate no longer rejects it (`isPubEffectOp`'s exemption, this file).
+-- `SNil` is the empty `Str` (Prelude ctor chain); the payload TYPE-CHECKS against `print`'s
+-- declared `Str -> Unit` — proves the FULL WALL-1-style label resolution + op-arity check fired,
+-- not just "parses."
+#guard
+  let entryP : Prog := (Bang.Surface.parseProg "import Io let main = Io.print(SNil)").toOption.get!
+  match mergeModules [("Io", hostIoP)] entryP with
+  | .error _ => false
+  | .ok merged => match elabProg merged with
+    | .error _ => false
+    | .ok (e, effects, _, _) => match runInferC (synthSC [] e) effects with
+      | .error _ => false
+      | .ok _    => true
+
+-- NEGATIVE (the seam, ungranted): with NO host env, `Io.print(x)` reaches the driver's OUTERMOST
+-- fallback and hits the DEFINED `escapedCap` terminal (ADR-0063) — never `stuck`, never silently
+-- swallowed. This is the invariant `bang run` (no `--env`) relies on: `Source.eval` alone (the
+-- pure oracle, no driver) is the machine this `#guard` exercises, matching what the CLI's
+-- no-`--env` path actually runs before any driver/grant surface enters.
+#guard
+  let entryP : Prog := (Bang.Surface.parseProg "import Io let main = Io.print(SNil)").toOption.get!
+  match mergeModules [("Io", hostIoP)] entryP with
+  | .error _ => false
+  | .ok merged => runMergedOutcome 200 merged == .escaped
+
+-- THE REFUTATION WITNESS (H1b's motivating pin — ADR-0104's nearness correction): a
+-- lexically-ENCLOSING `with Io_Console as con { … }` does NOT catch a module-qualified
+-- `Io.print(x)` inside it — it STILL escapes. `hostPerformS` lowers to a LITERAL capability
+-- (`vcap hostCapId ℓ`), a FIXED identity independent of `with`'s freshly-minted generative id;
+-- dispatch is identity-first (glossary), so no lexical position can route the perform to the
+-- enclosing handler. This #guard is the MEASURED refutation that motivated the ADR-0104
+-- correction — it must NOT regress silently back to "passes" (which would mean nearness
+-- accidentally started working, a SEMANTICS change needing its own review, not a bug fix) NOR
+-- start failing for a DIFFERENT reason (a parse/elab break would also make this `#guard` read
+-- "true" for the wrong cause — the `.escaped` check pins the EXACT terminal, not just falsity).
+#guard
+  let entryP : Prog := (Bang.Surface.parseProg
+    "import Io let main = handle Io.print(SNil) with Io_Console as con { print(s) => () }").toOption.get!
+  match mergeModules [("Io", hostIoP)] entryP with
+  | .error _ => false
+  | .ok merged => runMergedOutcome 200 merged == .escaped
+
+-- COMPANION POSITIVE (the pre-existing path, UNAFFECTED by H1): the ORDINARY named-cap spelling
+-- (`con.print(x)`, NOT module-qualified) still resolves entirely within the user's OWN handler —
+-- `.dotPerform` on a bound cap was never touched by this slice. Proves H1's new `hostPerformS`
+-- path and the pre-existing `.dotPerform` path stay genuinely SEPARATE constructs post-correction
+-- (`Mod.op` = ambient/driver, `cap.op` = the installed handler), not two spellings of one thing.
+#guard
+  let entryP : Prog := (Bang.Surface.parseProg
+    "import Io let main = handle con.print(SNil) with Io_Console as con { print(s) => () }").toOption.get!
+  match mergeModules [("Io", hostIoP)] entryP with
+  | .error _ => false
+  | .ok merged => match runMergedOutcome 200 merged with
+    | .yields _ => true    -- the ordinary named-cap path RUNS TO A VALUE (untouched by H1)
+    | _         => false
 
 /-! ### Clause-shape MATRIX (plan 002) — systematic coverage of the silently-missing-binder
 family's predicted hiding places: nesting depth × op position × clause/handler configuration.

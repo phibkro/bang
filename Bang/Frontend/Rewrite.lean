@@ -141,6 +141,11 @@ def renameVars (old new : String) : Surf → Surf
   | .dotPerform r op .none      => .dotPerform (renameVars old new r) op .none
   | .dotPerform r op (.one a)   => .dotPerform (renameVars old new r) op (.one (renameVars old new a))
   | .dotPerform r op (.two a b) => .dotPerform (renameVars old new r) op (.two (renameVars old new a) (renameVars old new b))
+  -- ADR-0104 §4 the host-provision reach (#126): `hostPerformS` mirrors `qualifyVars`'s own arm —
+  -- `n` (the effect-name reference) is always renamed (a reference, not a binder), no shadow site.
+  | .hostPerformS lbl n op .none      => .hostPerformS lbl (renameVars old new n) op .none
+  | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (renameVars old new n) op (.one (renameVars old new a))
+  | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (renameVars old new n) op (.two (renameVars old new a) (renameVars old new b))
   | .letRecS n t f b => if n == old then .letRecS n t f b
                          else .letRecS n t (renameVars old new f) (renameVars old new b)
   -- #97 item 2: mirrors `qualifyVars`'s own `.letRecMultiS` arm — every sibling is SIMULTANEOUSLY

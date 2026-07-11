@@ -285,6 +285,28 @@ inductive Surf where
     --               gap ruling's reading (c) mechanics: install the clause-map/binder FIRST, then
     --               elaborate `e` under it — even though `e` prints textually BEFORE `with Name as h
     --               { … }` in source, per D1's own worked example).
+  -- ── ADR-0104 §4 the host-provision reach (#126): a MODULE-QUALIFIED host perform ──
+  | hostPerformS : Option Label → Surf → String → SurfArgs → Surf
+    -- `Io.print(x)` — a bare-qualified access whose `op` names an OP of a `pub effect` the
+    -- qualified module declares (NOT one of the module's `pub` DECL names, so `qualifyDotAccess`'s
+    -- ordinary `Mod.name → Mod_name` var-alias rewrite is the wrong target — an effect op has no
+    -- `letD`/`fnD` to alias). Mirrors `handleCustomS`'s TWO-STAGE resolution exactly:
+    --   `label?`  : `none` at MERGE time (`qualifyDotAccess`, no `env.effects` yet) — `elabS`'s
+    --               WALL-1-style arm (below) resolves it against `env.effects`, same as
+    --               `handleCustomS`'s own `label?` slot.
+    --   `effRef`  : a bare effect-name reference (`.var "Io_Console"`, ALREADY module-qualified —
+    --               `qualifyDotAccess` emits the qualified effect name directly, since it already
+    --               knows which module owns the op) — resolved against `env.effects` the SAME
+    --               `EffectInfo.label` lookup `handleCustomS`'s `n : .var effN` arm uses.
+    --   `op`      : the effect op name (`"print"`), UNQUALIFIED — looked up in `EffectInfo.ops`.
+    --   `args`    : the call arguments, reusing `SurfArgs` (the `dotPerform` precedent).
+    -- Lowers (once `label?` resolves to `some ℓ`) to `perform (vcap hostCapId ℓ) op args` — a
+    -- LITERAL capability value, not a `handle`-bound `vvar` (the one narrow, ADR-0104-priced
+    -- exception to "the elaborator emits vvar, never vcap": `T_Cap` types a `vcap` STRUCTURALLY,
+    -- with no side-condition that `n` came from a `handle` install, and the runtime seam is already
+    -- #guard-proven for exactly this shape — `Bang/Backend/EnvMachine.lean`'s `hostCapId` doc comment
+    -- has the collision-safety argument). An unresolved `label?` reaching `lowerC` fails loud
+    -- (elaboration never ran, or `effRef` never resolved to a declared effect) — never guessed.
 
 /-- A cap-op argument list, capped at the v1 arity (≤ 2: `write` is the only binary op). A mutual
 inductive (not `List Surf`) so `Surf`'s `DecidableEq`/`Repr` derive — the `DArms` precedent. -/
@@ -433,6 +455,9 @@ def eraseLettMulti : Surf → Surf
         (match p? with | .none => .none | .one p => .one (eraseLettMulti p) | .two a b => .two (eraseLettMulti a) (eraseLettMulti b))
         h (eraseLettMultiHClauses cls) (eraseLettMulti body)
   | .letRecMultiS binds body => .letRecMultiS (eraseLettMultiLRBindings binds) (eraseLettMulti body)
+  | .hostPerformS lbl n op .none      => .hostPerformS lbl (eraseLettMulti n) op .none
+  | .hostPerformS lbl n op (.one a)   => .hostPerformS lbl (eraseLettMulti n) op (.one (eraseLettMulti a))
+  | .hostPerformS lbl n op (.two a b) => .hostPerformS lbl (eraseLettMulti n) op (.two (eraseLettMulti a) (eraseLettMulti b))
 def eraseLettMultiDArms : DArms → DArms
   | .nil              => .nil
   | .cons c ps b rest  => .cons c ps (eraseLettMulti b) (eraseLettMultiDArms rest)
@@ -503,6 +528,19 @@ def capOpKernel : String → String
   | "read"  => "readTVar"
   | "write" => "writeTVar"
   | op      => op
+
+/-- The RESERVED identity a module-qualified host perform (`hostPerformS`, ADR-0104 §4 the reach,
+#126) lowers its literal capability to — `perform (vcap hostCapId ℓ) op arg`, NOT a `handle`-bound
+`vvar` (the one narrow exception to "the elaborator emits vvar, never vcap", `Bang/Core/IR.lean`'s
+`vcap` doc comment — priced by the ADR, licensed by `T_Cap` typing a `vcap` STRUCTURALLY with no
+side-condition on how `n` was minted). COLLISION-SAFE by construction: the runtime seam
+(`Bang.EnvMachine.evalEHost`'s host arm) dispatches `perform (vcap n ℓ)` id-first through σ→τ→κ —
+if `n` is absent from EVERY store the dispatch falls to the host-label check (keyed on `ℓ`, not
+`n`); a REAL `handle` mints ids starting at `g := 0` incrementing by 1 per install, so a fixed
+constant this large is never allocated by any reachable program, and even a hypothetical future
+collision would be harmless (the host arm never CONSULTS `n`'s specific value, only its absence
+from the stores) — see `EnvMachine.lean`'s `evalEHost` doc comment for the dispatch order. -/
+def hostCapId : Nat := 999999999999
 
 mutual
 /-- Lower a surface term that is in COMPUTATION position to a `Comp`. -/
@@ -712,6 +750,26 @@ def lowerC (env : List String) : Surf → Except String Comp
           let cw ← lowerC env w
           let rv ← lowerV ("#w" :: env) recv
           return .letC cw (.perform rv (capOpKernel op) (.pair (Val.shift rref) (.vvar 0)))
+  -- ── ADR-0104 §4 the host-provision reach (#126) — `hostPerformS`: a LITERAL cap, not a
+  -- `lookup`-resolved `vvar` (there is no source binder for a driver-provisioned host handler). The
+  -- op name is the kernel `OpId` verbatim (host ops never collide with `capOpKernel`'s new/read/write
+  -- renames — `print`/`readLine`/`now` pass through unchanged). ──
+  | .hostPerformS .none _ _ _ =>
+      .error "hostPerformS: unresolved effect label reaching lowering — elaboration must run first (ADR-0104 §4, #126)"
+  | .hostPerformS (some ℓ) _ op .none      => .ok (.perform (.vcap hostCapId ℓ) op .vunit)
+  | .hostPerformS (some ℓ) _ op (.one a)   =>
+      match lowerV env a with
+      | .ok av   => .ok (.perform (.vcap hostCapId ℓ) op av)
+      | .error _ => do
+          let ca ← lowerC env a
+          return .letC ca (.perform (.vcap hostCapId ℓ) op (.vvar 0))   -- the literal cap is CLOSED — no shift needed
+  | .hostPerformS (some ℓ) _ op (.two r w) => do
+      let rref ← lowerV env r
+      match lowerV env w with
+      | .ok wv   => .ok (.perform (.vcap hostCapId ℓ) op (.pair rref wv))
+      | .error _ => do
+          let cw ← lowerC env w
+          return .letC cw (.perform (.vcap hostCapId ℓ) op (.pair (Val.shift rref) (.vvar 0)))
 
 /-- ADR-0095 D1/#21 s7probe (#87: `param` now a REAL surface binder, not a sentinel): lower a
 `handleCustomS` clause list to the kernel's `List (OpId × Comp)` (ADR-0087 finite rep). Each
