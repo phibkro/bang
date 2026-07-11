@@ -1,4 +1,4 @@
-<!-- note-status: active -->
+<!-- note-status: archival -->
 # Flagged-headline triage (proof-debt lane, 2026-07-11)
 
 Baseline: main @ `ccec47e9`. Axiom trace from `lake env lean Bang/Audit.lean` on

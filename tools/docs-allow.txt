@@ -12,4 +12,4 @@
 # nothing — belongs here. History-only content should be DELETED (git preserves it),
 # not allowlisted.
 #
-# (empty — every docs/notes/*.md is currently reachable)
+flagged-headline-triage.md  # proof-debt lane triage (task #133); archival terminal — seq_unit discharged, findings live in the proof + commit history
