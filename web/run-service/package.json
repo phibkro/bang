@@ -1,0 +1,11 @@
+{
+  "name": "bang-run-service",
+  "private": true,
+  "type": "module",
+  "description": "The /run playground exec service — POST source, run it in a resource jail, get stdout/stderr/exit.",
+  "scripts": {
+    "start": "bun run server.ts",
+    "dev": "bun --watch server.ts",
+    "smoke": "bash ../../tools/test-run-service.sh"
+  }
+}
