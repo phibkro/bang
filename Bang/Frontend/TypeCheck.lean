@@ -1531,6 +1531,59 @@ def substTyVar (tv : String) (target : Ty) : Ty → Ty
   | .tEff ns t => .tEff ns (substTyVar tv target t)
   | .tEffR ls t => .tEffR ls (substTyVar tv target t)   -- #90: resolved row, no bound var inside
 
+/-- Collect the GENUINELY free type-variable names in a `let rec` ascription (ADR-0103 decision
+item 2): a `.tName n` that is neither a `data` decl (`gen`) nor a monomorphic `aliases` entry is
+exactly the shape `resolveName` would fail loud on today (`resolveTyG`'s `.tName` arm, the #120
+wall) — so this is the SAME lookup, run BEFORE resolution to decide "generalizable" vs "typo",
+never a second source of truth. Structural, enumerated (a new `Ty` former fails to compile here
+until handled — the `substTyVar`/`substSelf` completeness precedent). `.eraseDups` since a tyvar
+may occur many times (`List a -> List a -> Int`). -/
+def freeTyVars (gen : List (String × GenData)) (aliases : List (String × Ty)) : Ty → List String
+  | .tName n    => if (aliases.lookup n).isSome then [] else if (gen.lookup n).isSome then [] else [n]
+  | .tCap _     => []
+  | .tSelf      => []
+  | .tInt       => []
+  | .tUnit      => []
+  | .tVar _     => []
+  -- `Cap Net`'s argument names a DECLARED EFFECT (`resolveTyG`'s #84-gap-1 special case,
+  -- `env.effects` — a table this pass never sees), never a `gen`/`aliases` type name and never a
+  -- generalizable tyvar — contributes NOTHING here (mirrors `resolveTyG`'s own `.tApp "Cap" …`
+  -- interception BEFORE the generic-`gen`-table path). Missing this case mis-flagged
+  -- `examples/calc`'s `eval : Cap Eval_Trace -> …` as a bound-free generic over `Eval_Trace`
+  -- (confirmed live: `existing-examples-unchanged` regressed until this arm was added).
+  | .tApp "Cap" _       => []
+  | .tApp _ (.one a)    => freeTyVars gen aliases a
+  | .tApp _ (.two a b)  => freeTyVars gen aliases a ++ freeTyVars gen aliases b
+  | .tMu b      => freeTyVars gen aliases b
+  | .tArr a b   => freeTyVars gen aliases a ++ freeTyVars gen aliases b
+  | .tSum a b   => freeTyVars gen aliases a ++ freeTyVars gen aliases b
+  | .tProd a b  => freeTyVars gen aliases a ++ freeTyVars gen aliases b
+  | .tThunk t   => freeTyVars gen aliases t
+  | .tEff _ t   => freeTyVars gen aliases t
+  | .tEffR _ t  => freeTyVars gen aliases t
+  |>.eraseDups
+
+/-- Match a `let rec` ascription TEMPLATE (containing free tyvars, e.g. `List a -> Int`) against a
+concrete call-site annotation for THE SAME slot (e.g. `List Int`), collecting tyvar bindings —
+ADR-0103 decision item 3's discovery mechanism, the `hktMatch` precedent specialized to argument-
+position carriers (the fold-shape wall, w2, is exactly why THIS family needs its own matcher rather
+than reusing `bfnWrapper`'s result-anchored one). A `.tName` in the template binds to the concrete
+counterpart (the caller restricts `v` to genuinely-free names via `freeTyVars`); any other shape
+mismatch contributes nothing (`hktMatch`'s own "non-aligning shapes contribute nothing" discipline
+— this pass only ever WIDENS the candidate set, a later check on the residue catches a genuinely
+ill-typed instantiation). -/
+def matchTyVars : Ty → Ty → List (String × Ty)
+  | .tName v,           c                  => [(v, c)]
+  | .tApp _ (.one p),   .tApp _ (.one c)   => matchTyVars p c
+  | .tApp _ (.two p q), .tApp _ (.two c d) => matchTyVars p c ++ matchTyVars q d
+  | .tArr p q,          .tArr c d          => matchTyVars p c ++ matchTyVars q d
+  | .tProd p q,         .tProd c d         => matchTyVars p c ++ matchTyVars q d
+  | .tSum p q,          .tSum c d          => matchTyVars p c ++ matchTyVars q d
+  | .tThunk p,          .tThunk c          => matchTyVars p c
+  | .tEff _ p,          c                  => matchTyVars p c
+  | p,                  .tEff _ c          => matchTyVars p c
+  | _,                  _                  => []
+
 /-- Right-nested arrow type from a param count + result (`mkArrs 2 T r = T -> T -> r`). -/
 def mkArrs : Nat → Ty → Ty → Ty
   | 0,     _, r => r
@@ -2893,6 +2946,439 @@ unreachable (every name in the `LetRecBindings` tree was resolved into `table` b
 `elabS`'s own `.letRecMultiS` arm builds `table` from the SAME tree it recurses `binds` over). -/
 def lrLookup (table : List LRResolved) (nm : String) : Option LRResolved :=
   table.find? (·.name == nm)
+
+/-! ## Bound-free `let rec` monomorphization (ADR-0103, the #120 List-family door)
+
+A pure `Surf → Surf` pre-pass — the `expandBFns` TWIN, run in `elabProg` alongside it, BEFORE
+`elabS` — that discovers the finite call-site instantiation set of a bound-free generic `let rec`
+(`let rec length : List a -> Int = …`) and emits one monomorphic residue per element (exactly
+witness w3's by-hand shape, auto-generated). By the time this pass returns, every surviving
+`.letRecS` ascription is concrete (`freeTyVars` on it is `[]`), so `elabS`'s OWN `.letRecS` arm
+(the `resolveTy` chokepoint, TypeCheck.lean's `.letRecS` case) runs completely unchanged — the fix
+is upstream of it, never in it, preserving that arm's fail-loud typo-catch for every OTHER caller. -/
+
+/-- Peel a curried call spine rooted at `.force (.var name)`: `($name) v1 v2 … vn` ↦ `some [v1, …,
+vn]` (the `callSpine` precedent, generalized to any name — `callSpine` itself stays single-purpose
+to `structOK`'s certifier). `none` if `e` is not a call on `name` at all. -/
+def monoCallSpine (name : String) : Surf → Option (List Surf)
+  | .app (.force (.var g)) a => if g == name then some [a] else none
+  | .app f a                 => (monoCallSpine name f).map (· ++ [a])
+  | _                        => none
+
+/-- Peel `n` domain arrows off a curried `Ty`, returning the DOMAIN list in order (`List a -> List
+a -> Int`, `n=2` ↦ `[List a, List a]`) — the ascription-side twin of `monoCallSpine`'s argument
+list, so each call argument lines up positionally with the ascription slot it instantiates. -/
+def curriedDomains : Nat → Ty → List Ty
+  | 0,     _         => []
+  | n + 1, .tArr a b => a :: curriedDomains n b
+  | _ + 1, t         => [t]   -- fewer arrows than requested: the tail itself (a shape error downstream)
+
+/-- Discover ONE call site's instantiation of `name`'s free tyvars: line up each curried argument
+against its ascription DOMAIN (`domains`, `curriedDomains` already applied by the caller), and for
+every argument that is an explicit annotation `(e : T)` — ADR-0103 decision item 3's discovery
+anchor, the argument-position twin of `bfnWrapper`'s RESULT-anchored annotation (the fold-shape
+wall, w2, is exactly why this family cannot reuse that anchor) — `matchTyVars` the domain template
+against `T`. An un-annotated argument contributes nothing at this call (never a guess); the caller
+decides whether the union still closes every free tyvar. -/
+def discoverAtCall (domains : List Ty) (args : List Surf) : List (String × Ty) :=
+  (domains.zip args).flatMap (fun (dom, arg) => match arg with
+    | .annotS _ concreteTy => matchTyVars dom concreteTy
+    | _                    => [])
+
+mutual
+/-- Every call site of `name` found in `e`, in LEFT-TO-RIGHT traversal order, as its raw discovered
+binding list (`discoverAtCall`, possibly incomplete — completeness is checked by the caller once
+every call site is collected). Exhaustive over every `Surf` former (the `letRecBoundNames`/
+`qualifyVars` completeness discipline) — a NESTED `let rec`/`letRecMultiS` re-binding `name` shadows
+it exactly as `qualifyVars` shadows a qualified name: the shadowed subtree contributes NO further
+call sites (a shadowed inner `name` is a genuinely different binding, never a use of the outer one). -/
+partial def callSitesOf (name : String) (domains : List Ty) (e : Surf) : List (List (String × Ty)) :=
+  let here := match monoCallSpine name e with
+    | some args => [discoverAtCall domains args]
+    | none      => []
+  here ++ match e with
+    | .lit _ | .var _ | .getS | .unitS => []
+    | .thunk e | .force e | .raise e | .handle e | .putS e | .atomS e | .newS e | .readS e
+    | .lam _ e | .inlS e | .inrS e | .foldS e | .unfoldS e | .divMark e | .annotS e _ =>
+        callSitesOf name domains e
+    | .lett _ a b | .stateS a b | .writeS a b | .pairS a b | .splitS _ _ a b | .binopS _ a b =>
+        callSitesOf name domains a ++ callSitesOf name domains b
+    | .app a b =>
+        -- `monoCallSpine` already counted the WHOLE spine (every curried arg) as ONE call site
+        -- (`here`, above) when `e` itself is a call on `name` — but it only ever READS the spine's
+        -- shape, never descends INTO an argument's own subterms, so an argument that itself
+        -- contains a NESTED `name` call (`f ($length xs : T)`, or `name`'s own arg position holding
+        -- another `name` call) still needs `b` walked regardless of whether `e` as a whole is
+        -- `name`'s spine. Only `a` needs the "already counted" skip (recursing into it again down
+        -- a `name`-spine would re-`monoCallSpine`-match the SAME outer call at every curried layer,
+        -- double-counting once per argument) — `b` is always walked, spine or not.
+        (if (monoCallSpine name e).isSome then [] else callSitesOf name domains a) ++ callSitesOf name domains b
+    | .matchS s _ l _ r => callSitesOf name domains s ++ callSitesOf name domains l ++ callSitesOf name domains r
+    | .ifS c t el        => callSitesOf name domains c ++ callSitesOf name domains t ++ callSitesOf name domains el
+    | .matchD s arms     => callSitesOf name domains s ++ callSitesOfDArms name domains arms
+    | .withCapS _ i _ b  => callSitesOf name domains i ++ callSitesOf name domains b
+    | .dotPerform r _ .none      => callSitesOf name domains r
+    | .dotPerform r _ (.one a)   => callSitesOf name domains r ++ callSitesOf name domains a
+    | .dotPerform r _ (.two a b) => callSitesOf name domains r ++ callSitesOf name domains a ++ callSitesOf name domains b
+    | .letRecS n _ f b => callSitesOf name domains f ++ (if n == name then [] else callSitesOf name domains b)
+    | .letRecMultiS binds b =>
+        callSitesOfLRBindings name domains binds ++
+        (if (letRecBindingsNames binds).contains name then [] else callSitesOf name domains b)
+    | .lettMulti binds b => callSitesOfBindings name domains binds ++ callSitesOf name domains b
+    | .handleCustomS _lbl n .none _h cls b       => callSitesOf name domains n ++ callSitesOfHClauses name domains cls ++ callSitesOf name domains b
+    | .handleCustomS _lbl n (.one p) _h cls b    => callSitesOf name domains n ++ callSitesOf name domains p ++ callSitesOfHClauses name domains cls ++ callSitesOf name domains b
+    | .handleCustomS _lbl n (.two p q) _h cls b  => callSitesOf name domains n ++ callSitesOf name domains p ++ callSitesOf name domains q ++ callSitesOfHClauses name domains cls ++ callSitesOf name domains b
+partial def callSitesOfDArms (name : String) (domains : List Ty) : DArms → List (List (String × Ty))
+  | .nil              => []
+  | .cons _ _ b rest  => callSitesOf name domains b ++ callSitesOfDArms name domains rest
+partial def callSitesOfBindings (name : String) (domains : List Ty) : LetBindings → List (List (String × Ty))
+  | .nil            => []
+  | .cons _ e rest  => callSitesOf name domains e ++ callSitesOfBindings name domains rest
+partial def callSitesOfHClauses (name : String) (domains : List Ty) : HClauses → List (List (String × Ty))
+  | .nil               => []
+  | .cons _ _ b rest   => callSitesOf name domains b ++ callSitesOfHClauses name domains rest
+partial def callSitesOfLRBindings (name : String) (domains : List Ty) : LetRecBindings → List (List (String × Ty))
+  | .nil               => []
+  | .cons n _ e rest   =>
+      (if n == name then [] else callSitesOf name domains e) ++ callSitesOfLRBindings name domains rest
+end
+
+/-- Complete every discovered call-site binding against `tvs` (`name`'s free-tyvar list, order-
+stable from `freeTyVars`): a binding is COMPLETE iff every `tv ∈ tvs` was pinned by SOME annotation
+at that call (`discoverAtCall` may have only pinned a subset, or pinned the SAME var twice — the
+LAST occurrence wins, mirroring `List.lookup`'s own first-match convention read right-to-left via
+`List.reverse` so a later annotation in a multi-arg call overrides an earlier accidental alias).
+`none` ⟹ that call site is unmonomorphizable (some free tyvar never annotated) — the caller fails
+LOUD naming it, never silently drops it or guesses. -/
+def completeInstantiation (tvs : List String) (binding : List (String × Ty)) : Option (List (String × Ty)) :=
+  tvs.mapM (fun tv => (binding.reverse.lookup tv).map (tv, ·))
+
+/-- Assign each COMPLETE call-site instantiation a residue index, collapsing call sites that agree
+on every tyvar to the SAME index (`List.idxOf`-style first-match) — the distinct-instantiation-set
+discovery ADR-0103 decision item 1 asks for (w3: two calls at different types ⟹ two residues; the
+witness's own by-hand shape, here auto-derived). Returns the DISTINCT instantiation list (residue
+order = FIRST-SEEN order, so residue naming is deterministic across identical input) paired with,
+for EACH original call site, which residue index it belongs to. -/
+def indexInstantiations (complete : List (List (String × Ty))) :
+    List (List (String × Ty)) × List Nat :=
+  complete.foldl (fun (distinct, idxs) binding =>
+    match distinct.findIdx? (· == binding) with
+    | some i => (distinct, idxs ++ [i])
+    | none   => (distinct ++ [binding], idxs ++ [distinct.length])
+  ) ([], [])
+
+/-- Redirect ONLY the call HEAD (`.force (.var name)` at the spine root) to `freshName`, leaving
+every argument untouched (arguments are rewritten separately, by the caller's own recursion — this
+is the `qualifyVars`-style "rename the leaf, recurse elsewhere" split, applied to a call-spine head
+instead of a bare variable). -/
+partial def redirectHead (name freshName : String) : Surf → Surf
+  | .app f a         => .app (redirectHead name freshName f) a
+  | .force (.var g)  => if g == name then .force (.var freshName) else .force (.var g)
+  | e                => e
+
+mutual
+/-- Rewrite `e`, redirecting every call site of `name` to ITS OWN residue's fresh name — a SELF-
+CONTAINED single pass (no separate discovery pass to stay in lockstep with, avoiding the two-walk
+synchronization hazard a split discover-then-redirect design carries): at a recognized call spine,
+RE-DISCOVER that ONE site's binding (`discoverAtCall`, the same call `callSitesOf` makes) and look
+it up directly in `residues` (a call's binding, once completed against `tvs`, uniquely determines
+its residue by construction — `indexInstantiations` grouped by exactly this equality). An
+INCOMPLETE call (some free tyvar unpinned) was already rejected by the caller before any residue
+existed, so `lookup` failing here is unreachable in the CALL case; it IS reachable in the SELF-CALL
+case (`self? = some freshName`; see `monomorphizeOne`), where every self-reference maps to that one
+fixed name regardless of its own (irrelevant — a self-call carries no annotation to rediscover)
+binding. Exhaustive over every `Surf` former (the `qualifyVars`/`callSitesOf` completeness
+discipline); mirrors `callSitesOf`'s OWN `.app`/shadow treatment exactly (both consult
+`monoCallSpine` the same way), but needs no index-threading since each redirect is self-determined. -/
+partial def redirectCalls (name : String) (domains : List Ty) (tvs : List String)
+    (residues : List (List (String × Ty) × String)) (self? : Option String) : Surf → Surf
+  | e =>
+    match monoCallSpine name e with
+    | some args =>
+        let freshName? := match self? with
+          | some sn => some sn
+          | none    =>
+              match completeInstantiation tvs (discoverAtCall domains args) with
+              | some sub => (residues.find? (fun (s, _) => s == sub)).map (·.2)
+              | none     => none   -- unreachable: the caller already rejected incomplete calls
+        let e' := match freshName? with
+          | some fresh => redirectHead name fresh e
+          | none       => e
+        -- an argument may itself contain a NESTED call (same-name or otherwise) needing its own
+        -- redirect — `monoCallSpine` only reads the spine's shape, never descends. `args` were
+        -- consumed structurally above; redirect each independently (order-irrelevant, no shared
+        -- counter to desync).
+        redirectArgsInHead name domains tvs residues self? e'
+    | none =>
+    match e with
+    | .lit n => .lit n
+    | .var x => .var x
+    | .getS  => .getS
+    | .unitS => .unitS
+    | .thunk e   => .thunk   (redirectCalls name domains tvs residues self? e)
+    | .force e   => .force   (redirectCalls name domains tvs residues self? e)
+    | .raise e   => .raise   (redirectCalls name domains tvs residues self? e)
+    | .handle e  => .handle  (redirectCalls name domains tvs residues self? e)
+    | .putS e    => .putS    (redirectCalls name domains tvs residues self? e)
+    | .atomS e   => .atomS   (redirectCalls name domains tvs residues self? e)
+    | .newS e    => .newS    (redirectCalls name domains tvs residues self? e)
+    | .readS e   => .readS   (redirectCalls name domains tvs residues self? e)
+    | .inlS e    => .inlS    (redirectCalls name domains tvs residues self? e)
+    | .inrS e    => .inrS    (redirectCalls name domains tvs residues self? e)
+    | .foldS e   => .foldS   (redirectCalls name domains tvs residues self? e)
+    | .unfoldS e => .unfoldS (redirectCalls name domains tvs residues self? e)
+    | .divMark e => .divMark (redirectCalls name domains tvs residues self? e)
+    | .lam x e   => .lam x   (redirectCalls name domains tvs residues self? e)
+    | .annotS e t => .annotS (redirectCalls name domains tvs residues self? e) t
+    | .lett x a b     => .lett x (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
+    | .stateS a b     => .stateS (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
+    | .writeS a b     => .writeS (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
+    | .pairS a b      => .pairS (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
+    | .splitS x y a b => .splitS x y (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
+    | .binopS op a b  => .binopS op (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
+    | .app a b        => .app (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b)
+    | .ifS c t el     => .ifS (redirectCalls name domains tvs residues self? c) (redirectCalls name domains tvs residues self? t) (redirectCalls name domains tvs residues self? el)
+    | .matchS s xl l xr r => .matchS (redirectCalls name domains tvs residues self? s) xl (redirectCalls name domains tvs residues self? l) xr (redirectCalls name domains tvs residues self? r)
+    | .matchD s arms  => .matchD (redirectCalls name domains tvs residues self? s) (redirectCallsDArms name domains tvs residues self? arms)
+    | .withCapS k i x b => .withCapS k (redirectCalls name domains tvs residues self? i) x (redirectCalls name domains tvs residues self? b)
+    | .dotPerform r op .none      => .dotPerform (redirectCalls name domains tvs residues self? r) op .none
+    | .dotPerform r op (.one a)   => .dotPerform (redirectCalls name domains tvs residues self? r) op (.one (redirectCalls name domains tvs residues self? a))
+    | .dotPerform r op (.two a b) => .dotPerform (redirectCalls name domains tvs residues self? r) op (.two (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? b))
+    | .letRecS nm t f b =>
+        .letRecS nm t (redirectCalls name domains tvs residues self? f)
+          (if nm == name then b else redirectCalls name domains tvs residues self? b)
+    | .letRecMultiS binds b =>
+        .letRecMultiS (redirectCallsLRBindings name domains tvs residues self? binds)
+          (if (letRecBindingsNames binds).contains name then b else redirectCalls name domains tvs residues self? b)
+    | .lettMulti binds b => .lettMulti (redirectCallsBindings name domains tvs residues self? binds) (redirectCalls name domains tvs residues self? b)
+    | .handleCustomS lbl n p? h cls b =>
+        .handleCustomS lbl (redirectCalls name domains tvs residues self? n)
+          (match p? with
+            | .none    => .none
+            | .one p   => .one (redirectCalls name domains tvs residues self? p)
+            | .two a c => .two (redirectCalls name domains tvs residues self? a) (redirectCalls name domains tvs residues self? c))
+          h (redirectCallsHClauses name domains tvs residues self? cls) (redirectCalls name domains tvs residues self? b)
+partial def redirectArgsInHead (name : String) (domains : List Ty) (tvs : List String)
+    (residues : List (List (String × Ty) × String)) (self? : Option String) : Surf → Surf
+  | .app f a => .app (redirectArgsInHead name domains tvs residues self? f) (redirectCalls name domains tvs residues self? a)
+  | e        => e   -- reached the call HEAD (`.force (.var freshOrName)`) — already redirected by the caller
+partial def redirectCallsDArms (name : String) (domains : List Ty) (tvs : List String)
+    (residues : List (List (String × Ty) × String)) (self? : Option String) : DArms → DArms
+  | .nil              => .nil
+  | .cons c ps b rest => .cons c ps (redirectCalls name domains tvs residues self? b) (redirectCallsDArms name domains tvs residues self? rest)
+partial def redirectCallsBindings (name : String) (domains : List Ty) (tvs : List String)
+    (residues : List (List (String × Ty) × String)) (self? : Option String) : LetBindings → LetBindings
+  | .nil            => .nil
+  | .cons n e rest  => .cons n (redirectCalls name domains tvs residues self? e) (redirectCallsBindings name domains tvs residues self? rest)
+partial def redirectCallsHClauses (name : String) (domains : List Ty) (tvs : List String)
+    (residues : List (List (String × Ty) × String)) (self? : Option String) : HClauses → HClauses
+  | .nil               => .nil
+  | .cons op x b rest  => .cons op x (redirectCalls name domains tvs residues self? b) (redirectCallsHClauses name domains tvs residues self? rest)
+partial def redirectCallsLRBindings (name : String) (domains : List Ty) (tvs : List String)
+    (residues : List (List (String × Ty) × String)) (self? : Option String) : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons n t e rest   =>
+      .cons n t (if n == name then e else redirectCalls name domains tvs residues self? e)
+        (redirectCallsLRBindings name domains tvs residues self? rest)
+end
+
+mutual
+/-- Apply `qTy : Ty → Ty` to EVERY `Ty` slot embedded in a `Surf` tree — the `qualifyDotAccess`
+precedent (TypeCheck.lean, module qualification's own `qTy`-threading), specialized here to just
+the type-substitution concern (no dot-access/import qualification, so a dedicated function rather
+than reusing `qualifyDotAccess` itself across this file's large forward-distance to it). NEEDED
+because a `let rec`'s declared ascription is not the ONLY place its tyvar can appear: the function
+BODY may carry its own internal ascriptions mentioning the same var (`match (xs : List a) { … }`,
+`fun_hktMultiply.hktMatch`-shaped continuations, …) — `monomorphizeOne` closes the OUTER ascription
+via `substTyVar`, but every such INNER occurrence must close too, or the residue still contains a
+free `a` the checker rejects (confirmed live: an outer-only substitution left `match (xs : List a)`
+unclosed, reproducing the #120 wall INSIDE a nominally-monomorphized residue). Exhaustive over
+every `Surf` former (the `qualifyDotAccess`/`callSitesOf` completeness discipline). -/
+def substTyVarInSurf (qTy : Ty → Ty) : Surf → Surf
+  | .lit n       => .lit n
+  | .var x       => .var x
+  | .getS        => .getS
+  | .unitS       => .unitS
+  | .thunk e     => .thunk (substTyVarInSurf qTy e)
+  | .force e     => .force (substTyVarInSurf qTy e)
+  | .raise e     => .raise (substTyVarInSurf qTy e)
+  | .handle e    => .handle (substTyVarInSurf qTy e)
+  | .putS e      => .putS (substTyVarInSurf qTy e)
+  | .atomS e     => .atomS (substTyVarInSurf qTy e)
+  | .newS e      => .newS (substTyVarInSurf qTy e)
+  | .readS e     => .readS (substTyVarInSurf qTy e)
+  | .inlS e      => .inlS (substTyVarInSurf qTy e)
+  | .inrS e      => .inrS (substTyVarInSurf qTy e)
+  | .foldS e     => .foldS (substTyVarInSurf qTy e)
+  | .unfoldS e   => .unfoldS (substTyVarInSurf qTy e)
+  | .divMark e   => .divMark (substTyVarInSurf qTy e)
+  | .lam x e     => .lam x (substTyVarInSurf qTy e)
+  | .annotS e t  => .annotS (substTyVarInSurf qTy e) (qTy t)
+  | .lett x a b  => .lett x (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
+  | .stateS a b  => .stateS (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
+  | .writeS a b  => .writeS (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
+  | .pairS a b   => .pairS (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
+  | .splitS x y a b => .splitS x y (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
+  | .binopS op a b  => .binopS op (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
+  | .app a b        => .app (substTyVarInSurf qTy a) (substTyVarInSurf qTy b)
+  | .ifS c t e      => .ifS (substTyVarInSurf qTy c) (substTyVarInSurf qTy t) (substTyVarInSurf qTy e)
+  | .matchS s xl l xr r => .matchS (substTyVarInSurf qTy s) xl (substTyVarInSurf qTy l) xr (substTyVarInSurf qTy r)
+  | .matchD s arms  => .matchD (substTyVarInSurf qTy s) (substTyVarInSurfDArms qTy arms)
+  | .withCapS k i n b => .withCapS k (substTyVarInSurf qTy i) n (substTyVarInSurf qTy b)
+  | .dotPerform r op .none      => .dotPerform (substTyVarInSurf qTy r) op .none
+  | .dotPerform r op (.one a)   => .dotPerform (substTyVarInSurf qTy r) op (.one (substTyVarInSurf qTy a))
+  | .dotPerform r op (.two a b) => .dotPerform (substTyVarInSurf qTy r) op (.two (substTyVarInSurf qTy a) (substTyVarInSurf qTy b))
+  | .letRecS n t f b => .letRecS n (qTy t) (substTyVarInSurf qTy f) (substTyVarInSurf qTy b)
+  | .letRecMultiS binds b => .letRecMultiS (substTyVarInSurfLRBindings qTy binds) (substTyVarInSurf qTy b)
+  | .lettMulti binds b => .lettMulti (substTyVarInSurfBindings qTy binds) (substTyVarInSurf qTy b)
+  | .handleCustomS lbl n p? h cls b =>
+      .handleCustomS lbl (substTyVarInSurf qTy n)
+        (match p? with
+          | .none    => .none
+          | .one p   => .one (substTyVarInSurf qTy p)
+          | .two a c => .two (substTyVarInSurf qTy a) (substTyVarInSurf qTy c))
+        h (substTyVarInSurfHClauses qTy cls) (substTyVarInSurf qTy b)
+def substTyVarInSurfDArms (qTy : Ty → Ty) : DArms → DArms
+  | .nil              => .nil
+  | .cons c ps b rest => .cons c ps (substTyVarInSurf qTy b) (substTyVarInSurfDArms qTy rest)
+def substTyVarInSurfBindings (qTy : Ty → Ty) : LetBindings → LetBindings
+  | .nil            => .nil
+  | .cons n e rest  => .cons n (substTyVarInSurf qTy e) (substTyVarInSurfBindings qTy rest)
+def substTyVarInSurfHClauses (qTy : Ty → Ty) : HClauses → HClauses
+  | .nil               => .nil
+  | .cons op x b rest  => .cons op x (substTyVarInSurf qTy b) (substTyVarInSurfHClauses qTy rest)
+def substTyVarInSurfLRBindings (qTy : Ty → Ty) : LetRecBindings → LetRecBindings
+  | .nil               => .nil
+  | .cons n t e rest   => .cons n (qTy t) (substTyVarInSurf qTy e) (substTyVarInSurfLRBindings qTy rest)
+end
+
+/-- Monomorphize ONE bound-free `let rec name : t = fb in bodyExpr` node (ADR-0103): discover every
+call site's instantiation (`callSitesOf`), complete + group them into a distinct residue set
+(`completeInstantiation`/`indexInstantiations`), redirect every call in `bodyExpr` to its own
+residue (`redirectCalls`), and wrap the rewritten body in one concrete `.letRecS` per residue
+(order is immaterial — each residue is a closed, mutually-invisible `let rec`, so any nesting order
+runs identically; residues are built LAST-discovered-innermost only because `foldr` is the natural
+shape over an already-built list). Zero call sites ⟹ DROP the binding (the `expandBFns`/`env.bfns`
+precedent: an unreferenced generic costs nothing and produces nothing — ADR-0098's mention-filter
+is the same move one layer up). An INCOMPLETE call (some free tyvar never pinned by an annotation)
+fails LOUD naming the function, never silently drops that call or guesses its type. Residue names
+are `#monoK_name` (`qualifyName` reused verbatim, `K` = the distinct-instantiation index) —
+`#`-prefixed so no user identifier can collide (the parser's own sentinel-name convention,
+`#anf`/`#rec`/`#g`/…). Every residue's `fb'` is ADDITIONALLY closed via `substTyVarInSurf` (not
+just the outer ascription `t'`) — the function BODY's own internal ascriptions (`match (xs : List
+a) { … }`) mention the same tyvar and must close too. -/
+def monomorphizeOne (name : String) (t : Ty) (fb bodyExpr : Surf) (tvs : List String) :
+    Except String Surf := do
+  let domains := curriedDomains tvs.length t
+  let raw := callSitesOf name domains bodyExpr
+  if raw.isEmpty then
+    return bodyExpr
+  else do
+    let complete ← raw.mapM (fun binding =>
+      match completeInstantiation tvs binding with
+      | some sub => .ok sub
+      | none     => .error s!"'{name}': a use leaves a type variable unresolved — annotate the argument (e.g. `({name} arg : List Int)`) so ADR-0103's monomorphization pass can close it")
+    let (distinct, _) := indexInstantiations complete
+    let freshNames := (List.range distinct.length).map (fun i => qualifyName s!"#mono{i}" name)
+    let residues := distinct.zip freshNames
+    let bodyExpr' := redirectCalls name domains tvs residues none bodyExpr
+    return residues.foldr (fun (sub, freshName) acc =>
+      let closeTy : Ty → Ty := fun ty => sub.foldl (fun ty' (tv, c) => substTyVar tv c ty') ty
+      let t' := closeTy t
+      -- `fb`'s own self-reference is a call site too, but it carries NO annotation to rediscover
+      -- (`$length t` inside `length`'s own body, not `($length t : List Int)`) — `self? := some
+      -- freshName` short-circuits `redirectCalls`'s discovery step entirely for this walk, so EVERY
+      -- self-call redirects uniformly to THIS residue's own fresh name (never a sibling's — the
+      -- monomorphic, non-polymorphic-recursion invariant `w4` established). `substTyVarInSurf
+      -- closeTy` ADDITIONALLY closes every tyvar occurrence INSIDE `fb`'s body (`match (xs : List
+      -- a) { … }`) — the outer ascription `t'` alone does not reach there.
+      let fb' := substTyVarInSurf closeTy (redirectCalls name domains tvs residues (some freshName) fb)
+      .letRecS freshName t' fb' acc) bodyExpr'
+
+mutual
+/-- Bound-free `let rec` monomorphization pre-pass (ADR-0103): a PURE `Surf → Surf` fuel-bounded
+rewrite, run in `elabProg` alongside `expandBFns`, BEFORE `elabS`. `.letRecS` is the ONE
+interesting case: if its ascription has a free tyvar (`freeTyVars gen aliases t`, the SAME lookup
+`resolveTyG` would fail loud on, TypeCheck.lean's `.letRecS`/`resolveTy` chokepoint), monomorphize
+it (`monomorphizeOne`) and recurse into the RESULT at `f` (fresh fuel — the result's residues are
+concrete by construction: `substTyVar` closed every free tyvar, so `freeTyVars` on a residue's OWN
+ascription is `[]`, and the recursive call cannot loop on the SAME node, only reach genuinely
+NESTED bound-free `let rec`s elsewhere in the rewritten tree). Every other former maps structurally
+(the `expandBFns` completeness precedent — a new `Surf` former fails here until handled). -/
+def monomorphizeLetRec (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → Surf → Except String Surf
+  | 0,     _ => .error "let rec monomorphization out of fuel"
+  | _ + 1, .lit n     => .ok (.lit n)
+  | _ + 1, .var x     => .ok (.var x)
+  | _ + 1, .unitS     => .ok .unitS
+  | _ + 1, .getS      => .ok .getS
+  | f + 1, .thunk e   => do return .thunk (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .force e   => do return .force (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .raise e   => do return .raise (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .handle e  => do return .handle (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .putS e    => do return .putS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .atomS e   => do return .atomS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .newS e    => do return .newS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .readS e   => do return .readS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .inlS e    => do return .inlS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .inrS e    => do return .inrS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .foldS e   => do return .foldS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .unfoldS e => do return .unfoldS (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .divMark e => do return .divMark (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .lam x b   => do return .lam x (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .lett x e b   => do return .lett x (← monomorphizeLetRec gen aliases f e) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .app g a      => do return .app (← monomorphizeLetRec gen aliases f g) (← monomorphizeLetRec gen aliases f a)
+  | f + 1, .stateS a b   => do return .stateS (← monomorphizeLetRec gen aliases f a) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .writeS a b   => do return .writeS (← monomorphizeLetRec gen aliases f a) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .pairS a b    => do return .pairS (← monomorphizeLetRec gen aliases f a) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .binopS op a b => do return .binopS op (← monomorphizeLetRec gen aliases f a) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .ifS c t e    => do return .ifS (← monomorphizeLetRec gen aliases f c) (← monomorphizeLetRec gen aliases f t) (← monomorphizeLetRec gen aliases f e)
+  | f + 1, .splitS a b p body => do return .splitS a b (← monomorphizeLetRec gen aliases f p) (← monomorphizeLetRec gen aliases f body)
+  | f + 1, .matchS s xl el xr er => do
+      return .matchS (← monomorphizeLetRec gen aliases f s) xl (← monomorphizeLetRec gen aliases f el) xr (← monomorphizeLetRec gen aliases f er)
+  | f + 1, .withCapS k init n body => do return .withCapS k (← monomorphizeLetRec gen aliases f init) n (← monomorphizeLetRec gen aliases f body)
+  | f + 1, .annotS e t => do return .annotS (← monomorphizeLetRec gen aliases f e) t
+  | f + 1, .dotPerform recv op args => do return .dotPerform (← monomorphizeLetRec gen aliases f recv) op (← monomorphizeArgs gen aliases f args)
+  | f + 1, .matchD s arms => do return .matchD (← monomorphizeLetRec gen aliases f s) (← monomorphizeArms gen aliases f arms)
+  | f + 1, .lettMulti binds b => do return .lettMulti (← monomorphizeLetBindings gen aliases f binds) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .handleCustomS lbl n p? h cls b => do
+      return .handleCustomS lbl (← monomorphizeLetRec gen aliases f n) (← monomorphizeArgs gen aliases f p?) h
+        (← monomorphizeHClauses gen aliases f cls) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .letRecMultiS binds b => do
+      return .letRecMultiS (← monomorphizeLRBindings gen aliases f binds) (← monomorphizeLetRec gen aliases f b)
+  | f + 1, .letRecS name t fb bodyExpr => do
+      match freeTyVars gen aliases t with
+      | [] => do return .letRecS name t (← monomorphizeLetRec gen aliases f fb) (← monomorphizeLetRec gen aliases f bodyExpr)
+      | tvs => do
+          let rewritten ← monomorphizeOne name t fb bodyExpr tvs
+          monomorphizeLetRec gen aliases f rewritten
+def monomorphizeArgs (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → SurfArgs → Except String SurfArgs
+  | 0,     _        => .error "let rec monomorphization out of fuel"
+  | _ + 1, .none    => .ok .none
+  | f + 1, .one a   => do return .one (← monomorphizeLetRec gen aliases f a)
+  | f + 1, .two a b => do return .two (← monomorphizeLetRec gen aliases f a) (← monomorphizeLetRec gen aliases f b)
+def monomorphizeArms (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → DArms → Except String DArms
+  | 0,     _             => .error "let rec monomorphization out of fuel"
+  | _ + 1, .nil          => .ok .nil
+  | f + 1, .cons c bs b r => do return .cons c bs (← monomorphizeLetRec gen aliases f b) (← monomorphizeArms gen aliases f r)
+def monomorphizeHClauses (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → HClauses → Except String HClauses
+  | 0,     _              => .error "let rec monomorphization out of fuel"
+  | _ + 1, .nil           => .ok .nil
+  | f + 1, .cons op x b r => do return .cons op x (← monomorphizeLetRec gen aliases f b) (← monomorphizeHClauses gen aliases f r)
+def monomorphizeLetBindings (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → LetBindings → Except String LetBindings
+  | 0,     _              => .error "let rec monomorphization out of fuel"
+  | _ + 1, .nil           => .ok .nil
+  | f + 1, .cons n e rest => do return .cons n (← monomorphizeLetRec gen aliases f e) (← monomorphizeLetBindings gen aliases f rest)
+def monomorphizeLRBindings (gen : List (String × GenData)) (aliases : List (String × Ty)) :
+    Nat → LetRecBindings → Except String LetRecBindings
+  | 0,     _                => .error "let rec monomorphization out of fuel"
+  | _ + 1, .nil              => .ok .nil
+  | f + 1, .cons n t e rest  => do return .cons n t (← monomorphizeLetRec gen aliases f e) (← monomorphizeLRBindings gen aliases f rest)
+end
 
 /-! Type-directed elaboration over `Surf`: resolves `binopS` on non-Int operands through the
 instance env, ctor intros + named matches through the data env (ADR-0069); every other
@@ -4630,7 +5116,15 @@ def elabProg (p : Prog) :
   -- the real elaboration+fixpoint-build) — NOT wrap an already-elaborated body, which would need a
   -- second `elabS` pass over the wrapper alone.
   let wrapped := wrapPendingKnots env.pendingKnots (← expandBFns env none bigFuel foldedBody)
-  let e ← elabS env [] wrapped   -- bounded-fn uses → their monomorphic wrappers, THEN elaborate (bite-2)
+  -- ADR-0103: monomorphize every bound-free `let rec` (`length : List a -> Int`) BEFORE `elabS` —
+  -- the `expandBFns` twin, running on the SAME `wrapped` tree. Independent of bounded-fn expansion
+  -- (a disjoint surface: `let rec … : T = …` vs `fn … where Trait`, ADR-0103's "one construct per
+  -- problem" ruling keeps them as separate constructs, so pass ORDER between the two is immaterial
+  -- — neither can produce input the other needs to see). By the time `elabS` runs, every surviving
+  -- `.letRecS` ascription is concrete; the `resolveTy` chokepoint (`elabS`'s OWN `.letRecS` arm)
+  -- is UNCHANGED.
+  let monomorphized ← monomorphizeLetRec env.gen env.aliases bigFuel wrapped
+  let e ← elabS env [] monomorphized   -- bounded-fn uses/mono residues → elaborate (bite-2 + ADR-0103)
   return (e, env.effects, env.ctors, env.gen)
 
 /-- PUBLIC runnable entry (the `bang` CLI's typed pipeline): parse a program's `trait`/`impl`/`data`
