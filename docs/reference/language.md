@@ -357,15 +357,20 @@ The surface is sugar over these; `Source.eval` (Bang/Core/IR.lean) is the refere
 
 ## Standard library
 
-Library functions available FREE in every program — injected in scope like the `Char`/`Str`
-prelude, so no import is needed — sourced from `stdlibFnSrcs` (`Bang/Frontend/TypeCheck.lean`).
-They are `let rec` bindings, so call them with the **force convention**: `($concat) "ab" "cd"`,
-not bare `concat …`. A user binding of the same name shadows the injected one (lexical scope).
+Library functions available FREE in every program that mentions them — `Prelude.bang` (repo
+root), auto-`use`d (ADR-0098): no `import`/`use` line needed. They are `let rec` bindings,
+so call them with the **force convention**: `($concat) "ab" "cd"`, not bare `concat …`. A user
+binding of the same name shadows the injected one (lexical scope, per-name — not an
+all-or-nothing bucket); this also covers a project that names its OWN module `Prelude.bang` —
+an explicit `use Prelude (name)`/`import Prelude` resolves to the USER's file (the ordinary
+same-dir-then-root search, ADR-0093 D1) and its own binding of `name` wins, exactly like any
+other user-vs-prelude shadow; with no explicit `use`/`import` naming `Prelude`, a same-named
+file just sits there unreferenced (no silent pickup).
 
 | Function | Signature |
 |---|---|
 | `concat` | `Str -> Str -> Str` |
-| `reverse` | — (no top-level annotation — see `stdlibFnSrcs`) |
+| `reverse` | — (no top-level annotation — see `Prelude.bang`) |
 | `eq` | `Str -> Str -> Unit + Unit` |
 
 Curried (multi-arg) `let rec`s type `… ! {Div}` — the #47 multi-arg gap (ADR-0073), a sound
@@ -373,18 +378,19 @@ over-approximation: they terminate but the certifier can't prove it, so they run
 
 ### Generic prelude functions
 
-Also FREE in every program — sourced from `genericPreludeFnSrcs` (`Bang/Frontend/TypeCheck.lean`),
-the ⊥-row (non-recursive) companions to the tagged-sum types (`Option`/`Result`/the built-in
-sum `Either`) plus the type-agnostic first-slice prelude (issue #105). Injected ONLY when a
-program mentions the name (unlike the unconditional string stdlib above), and skipped entirely
-if the program redeclares `Option`/`Result` (a coarse gate — shared by every entry in this list,
-even the type-agnostic ones). A user binding of the same name shadows the injected one.
+Also FREE in every program that mentions them — `Prelude.bang`'s remaining entries: the ⊥-row
+(non-recursive) companions to the tagged-sum types (`Option`/`Result`/the built-in sum
+`Either`) plus the type-agnostic first-slice prelude (issue #105). Auto-`use`d ONLY for the
+names a program actually mentions (a syntactic scan, ADR-0098 — this is a FUEL discipline, not
+just a scope-pollution one: `Prelude.bang` is a real module merged in via `mergeModules`, and
+an unconditional merge would tax every program one evaluation step per unused entry). A user
+binding of the same name shadows the injected one.
 
 | Function | Signature |
 |---|---|
-| `mapOption` | `Option a -> Option b` |
-| `mapResult` | `Result e a -> Result e b` |
-| `bimap` | `(e + a) -> (f + b)` |
+| `mapOption` | `(a -> b) -> Option a -> Option b` |
+| `mapResult` | `(a -> b) -> Result e a -> Result e b` |
+| `bimap` | `(e -> f) -> (a -> b) -> (e + a) -> (f + b)` |
 | `resultToEither` | `Result e a -> (e + a)` |
 | `eitherToResult` | `(e + a) -> Result e a` |
 | `optionToEither` | `Option a -> (Unit + a)` |
@@ -504,7 +510,7 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `match 'z' { Char(n) -> n }` ⟹ `122`
 - `match 'A' { Char(n) -> n }` ⟹ `65`  — IDIOM 3: the uppercase letter range 'A'-'Z'.
 - `match 'Z' { Char(n) -> n }` ⟹ `90`
-- `match (($concat) \"foo\" \"bar\") { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }` ⟹ `102`  — the injected STDLIB (free in every program, no import needed — `stdlibFnSrcs` above): `concat`.
+- `match (($concat) \"foo\" \"bar\") { SNil -> 0, SCons(c, t) -> match c { Char(n) -> n } }` ⟹ `102`  — the auto-`use`d STDLIB (free in every program, no import needed — `Prelude.bang`, ADR-0098): `concat`.
 - `if (($eq) \"cat\" \"cat\") then 1 else 0` ⟹ `1`  — the injected STDLIB: `eq`, structural string equality.
 - `if (($eq) \"cat\" \"dog\") then 1 else 0` ⟹ `0`
 ### Validation ⑨d — VALUE-POSITION A-normalization (#41): computations spelled NATURALLY.

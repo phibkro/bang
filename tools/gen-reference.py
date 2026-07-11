@@ -22,6 +22,7 @@ DIAGCODES = ROOT / "Bang/Frontend/DiagCodes.lean"
 IR = ROOT / "Bang/Core/IR.lean"
 EVAL = ROOT / "Bang/Core/Semantics/Eval.lean"
 TYPECHECK = ROOT / "Bang/Frontend/TypeCheck.lean"
+PRELUDE = ROOT / "Prelude.bang"
 SOURCES = [ROOT / "Bang/Examples.lean", TYPECHECK]
 OUT = ROOT / "docs/reference/language.md"
 
@@ -182,68 +183,51 @@ def extract_result_ctors(text):
     return names
 
 
-def extract_stdlib(text):
-    """(name, sig) for each `stdlibFnSrcs` entry (TypeCheck.lean).
+# The 3 STRING-STDLIB names (concat/reverse/eq) vs the GENERIC-PRELUDE remainder -- Prelude.bang
+# carries NO section markers (it is comment-free, matching the examples/*.bang convention: `bang
+# fmt` strips `--` comments, so a commented module permanently fails `bang lint`'s
+# `fmt-divergence` check), so the split is this fixed NAME set instead of a text boundary.
+STDLIB_NAMES = {"concat", "reverse", "eq"}
 
-    The single source is the list of `let rec … in 0` program strings injected in scope of every
-    program. Each entry's HEAD string literal begins `let[ rec] NAME[ : SIG] =` — NAME is always
-    derivable (the correct-by-construction part), SIG only when a top-level annotation is present
-    (concat/eq). `reverse` has none (an accumulator fold), so its cell points to the source rather
-    than hand-copying a signature that could drift."""
-    m = re.search(r"def stdlibFnSrcs\b.*?:=\s*\n\s*\[(.*?)\]\s*\n", text, re.S)
+
+def extract_prelude_decl_names(prelude_text):
+    """Every `pub let[ rec] NAME` decl name in `Prelude.bang`, in SOURCE ORDER -- the name/order
+    SSoT (ADR-0098: the module itself, not a Lean string bucket)."""
+    names = re.findall(r"^pub let(?: rec)? (\w+)", prelude_text, re.M)
+    if not names:
+        sys.exit("gen-reference: no `pub let` entries found in Prelude.bang.")
+    return names
+
+
+def extract_prelude_sigs(typecheck_text):
+    """(name -> sig) from `TypeCheck.lean`'s `preludeSigs` table -- the DESCRIPTIVE signature SSoT
+    (ADR-0098 sec preludeSigs): bang's surface has no generic function-type ascription (`pub let
+    mapOption : (a -> b) -> ... = ...` rejects -- generics elaborate to MONO, ADR-0075/0079), so a
+    generic entry's signature cannot live as checked syntax IN `Prelude.bang` the way `concat :
+    Str -> Str -> Str` does; `preludeSigs` is the one hand-maintained escape hatch, kept honest by
+    the corpus `#guard`s that exercise every entry against these exact shapes."""
+    m = re.search(r"def preludeSigs\b.*?:=\s*\n\s*\[(.*?)\]\s*\n", typecheck_text, re.S)
     if not m:
-        sys.exit("gen-reference: could not locate `def stdlibFnSrcs` — the stdlib section is keyed off it.")
-    rows = []
-    # a HEAD is a string literal beginning `let ` — continuation strings begin `match`/`fun`/`SCons`.
-    for hm in re.finditer(r'"(let (?:rec )?\w+.*?)"', m.group(1)):
-        nm = re.match(r"let (?:rec )?(\w+)\s*(?::\s*([^=]+?))?\s*=", hm.group(1))
-        if nm:
-            rows.append((nm.group(1), nm.group(2).strip() if nm.group(2) else None))
-    if not rows:
-        sys.exit("gen-reference: `stdlibFnSrcs` parsed to no functions — the head-literal shape changed.")
-    return rows
+        sys.exit("gen-reference: could not locate `def preludeSigs` -- the stdlib/generic-prelude sections are keyed off it.")
+    sigs = {}
+    for nm, sig in re.findall(r'\(\s*"(\w+)"\s*,\s*"([^"]*)"\s*\)', m.group(1)):
+        sigs[nm] = sig
+    if not sigs:
+        sys.exit("gen-reference: `preludeSigs` parsed to no entries -- the head-literal shape changed.")
+    return sigs
 
 
-def extract_generic_prelude(text):
-    """(name, sig) for each `genericPreludeFnSrcs` entry (TypeCheck.lean).
+def extract_stdlib(prelude_text, sigs):
+    """(name, sig) for the 3 STRING STDLIB entries (concat/reverse/eq), in `Prelude.bang`'s OWN
+    declared order -- `reverse` has no signature (an accumulator fold; true in the retired string
+    bucket too, not new here)."""
+    return [(n, sigs.get(n)) for n in extract_prelude_decl_names(prelude_text) if n in STDLIB_NAMES]
 
-    Unlike `stdlibFnSrcs`, these are non-recursive `let NAME = { fun ... } in 0` thunks with NO
-    top-level type annotation on the string itself (they're `fun` literals, not `let rec : T =`)
-    — so NAME comes from the HEAD string literal, but SIG comes from the `-- `NAME args : SIG``
-    doc-comment line immediately preceding the entry (the convention every entry in this list
-    already follows). A comment-less entry falls back to `None` (renders as a source pointer)
-    rather than guessing — same discipline as `stdlibFnSrcs`'s `reverse` cell.
 
-    A HEAD (list-element start) is a `"let NAME = ..."` string literal preceded — modulo
-    whitespace and `--` comment lines — by `[` or `,`; a CONTINUATION string joined by `++`
-    (e.g. `isAlpha`'s body nests its own `let lower = ...`) is preceded by `++` and must NOT be
-    mistaken for a new entry (the #105 bug this guards: a naive scan over every `"let \\w+...` "
-    match in the block double-counts nested `let`s inside a multi-string body)."""
-    m = re.search(r"def genericPreludeFnSrcs\b.*?:=\s*\n\s*\[(.*?)\]\s*\n", text, re.S)
-    if not m:
-        sys.exit("gen-reference: could not locate `def genericPreludeFnSrcs` — the generic-prelude section is keyed off it.")
-    block = "[" + m.group(1)  # restore the opening `[` the capture group excluded, so the FIRST
-    # entry's "preceded by `[`" check (below) sees it too, not just entries after a `,`.
-    rows = []
-    for hm in re.finditer(r'"(let \w+.*?)"', block):
-        nm = re.match(r"let (\w+)\s*=", hm.group(1))
-        if not nm:
-            continue
-        # look at what precedes this string literal, skipping blank/comment lines: a REAL head is
-        # preceded by `[` or `,`; a continuation (nested inside a `++`-joined multi-string body) is
-        # preceded by `++` — skip those.
-        preceding_raw = block[:hm.start()]
-        stripped = re.sub(r"--[^\n]*\n", "\n", preceding_raw)  # drop comment lines first
-        tail = stripped.rstrip()
-        if not (tail.endswith("[") or tail.endswith(",")):
-            continue
-        name = nm.group(1)
-        sig_matches = re.findall(r"--\s*`" + re.escape(name) + r"[^`]*:\s*([^`]+)`", preceding_raw)
-        sig = sig_matches[-1].strip() if sig_matches else None
-        rows.append((name, sig))
-    if not rows:
-        sys.exit("gen-reference: `genericPreludeFnSrcs` parsed to no functions — the head-literal shape changed.")
-    return rows
+def extract_generic_prelude(prelude_text, sigs):
+    """(name, sig) for every OTHER `Prelude.bang` entry (mapOption, the isos, the #105 first
+    slice, the char kit), in `Prelude.bang`'s OWN declared order."""
+    return [(n, sigs.get(n)) for n in extract_prelude_decl_names(prelude_text) if n not in STDLIB_NAMES]
 
 
 def parse_examples(path):
@@ -615,15 +599,22 @@ def render():
 
     L.append("## Standard library")
     L.append("")
-    L.append("Library functions available FREE in every program — injected in scope like the `Char`/`Str`")
-    L.append("prelude, so no import is needed — sourced from `stdlibFnSrcs` (`Bang/Frontend/TypeCheck.lean`).")
-    L.append("They are `let rec` bindings, so call them with the **force convention**: `($concat) \"ab\" \"cd\"`,")
-    L.append("not bare `concat …`. A user binding of the same name shadows the injected one (lexical scope).")
+    L.append("Library functions available FREE in every program that mentions them — `Prelude.bang` (repo")
+    L.append("root), auto-`use`d (ADR-0098): no `import`/`use` line needed. They are `let rec` bindings,")
+    L.append("so call them with the **force convention**: `($concat) \"ab\" \"cd\"`, not bare `concat …`. A user")
+    L.append("binding of the same name shadows the injected one (lexical scope, per-name — not an")
+    L.append("all-or-nothing bucket); this also covers a project that names its OWN module `Prelude.bang` —")
+    L.append("an explicit `use Prelude (name)`/`import Prelude` resolves to the USER's file (the ordinary")
+    L.append("same-dir-then-root search, ADR-0093 D1) and its own binding of `name` wins, exactly like any")
+    L.append("other user-vs-prelude shadow; with no explicit `use`/`import` naming `Prelude`, a same-named")
+    L.append("file just sits there unreferenced (no silent pickup).")
     L.append("")
     L.append("| Function | Signature |")
     L.append("|---|---|")
-    for name, sig in extract_stdlib(TYPECHECK.read_text()):
-        cell = f"`{sig}`" if sig else "— (no top-level annotation — see `stdlibFnSrcs`)"
+    prelude_text = PRELUDE.read_text()
+    prelude_sigs = extract_prelude_sigs(TYPECHECK.read_text())
+    for name, sig in extract_stdlib(prelude_text, prelude_sigs):
+        cell = f"`{sig}`" if sig else "— (no top-level annotation — see `Prelude.bang`)"
         L.append(f"| `{name}` | {cell} |")
     L.append("")
     L.append("Curried (multi-arg) `let rec`s type `… ! {Div}` — the #47 multi-arg gap (ADR-0073), a sound")
@@ -632,17 +623,18 @@ def render():
 
     L.append("### Generic prelude functions")
     L.append("")
-    L.append("Also FREE in every program — sourced from `genericPreludeFnSrcs` (`Bang/Frontend/TypeCheck.lean`),")
-    L.append("the ⊥-row (non-recursive) companions to the tagged-sum types (`Option`/`Result`/the built-in")
-    L.append("sum `Either`) plus the type-agnostic first-slice prelude (issue #105). Injected ONLY when a")
-    L.append("program mentions the name (unlike the unconditional string stdlib above), and skipped entirely")
-    L.append("if the program redeclares `Option`/`Result` (a coarse gate — shared by every entry in this list,")
-    L.append("even the type-agnostic ones). A user binding of the same name shadows the injected one.")
+    L.append("Also FREE in every program that mentions them — `Prelude.bang`'s remaining entries: the ⊥-row")
+    L.append("(non-recursive) companions to the tagged-sum types (`Option`/`Result`/the built-in sum")
+    L.append("`Either`) plus the type-agnostic first-slice prelude (issue #105). Auto-`use`d ONLY for the")
+    L.append("names a program actually mentions (a syntactic scan, ADR-0098 — this is a FUEL discipline, not")
+    L.append("just a scope-pollution one: `Prelude.bang` is a real module merged in via `mergeModules`, and")
+    L.append("an unconditional merge would tax every program one evaluation step per unused entry). A user")
+    L.append("binding of the same name shadows the injected one.")
     L.append("")
     L.append("| Function | Signature |")
     L.append("|---|---|")
-    for name, sig in extract_generic_prelude(TYPECHECK.read_text()):
-        cell = f"`{sig}`" if sig else "— (see `genericPreludeFnSrcs`)"
+    for name, sig in extract_generic_prelude(prelude_text, prelude_sigs):
+        cell = f"`{sig}`" if sig else "— (see `Prelude.bang`)"
         L.append(f"| `{name}` | {cell} |")
     L.append("")
 
