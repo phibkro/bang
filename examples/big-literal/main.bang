@@ -1,0 +1,6 @@
+-- Bignum literal round-trip (issue #132, bignum lane B1): a value past 2^63 = 9223372036854775808.
+-- bang's kernel Int is unbounded ℤ; before B1 the WasmGC emitter emitted (i64.const <this>) — invalid
+-- wat (out of i64 range), so the value could not round-trip at all. Now it emits a $bigval (base-10⁹
+-- sign-magnitude limbs) and the WASI printer renders it byte-identical to bang run. No arithmetic yet
+-- (that is B2/B3) — this gates the REP + decimal READBACK.
+99999999999999999999
