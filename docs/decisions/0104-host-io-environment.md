@@ -28,7 +28,7 @@
   `docs/notes/actor-sendable-design.md` (the Sendable fragment the trace serializes),
   `docs/notes/os-inspiration-survey.md` §1 (row-attenuation = pledge; no ambient authority),
   `std/Io.bang` (the bundled Console/Clock module), `examples/hostio-echo/` (the sim-corpus demonstrator),
-  `tools/test-hostio.sh` (the record/replay battery gate)
+  `tools/test-hostio-seam.sh` (the record/replay battery gate)
 
 - **Layer**: R (runtime / tooling — where host IO enters: the driver + the grant surface, not the kernel)
 - **Date**: 2026-07-11
@@ -188,20 +188,46 @@ mechanism; B2's sibling is explicitly temporary (its banner says so). A future s
 see B as "the right v1 wedge" and A as "deferred to the concurrency era," NOT B as permanent or A as
 wrong.
 
-**OPEN — the host-provision reach (the NEXT slice, cross-lane).** The seam services an escaped host
-perform, but a normal program installs its OWN `with Io_Console as con {…}`, which catches every Console
-op LEXICALLY — so the host seam is the outermost fallback ONLY for a perform NO user handler catches.
-Reaching it needs the program to leave the host effect UNHANDLED and the RUNTIME to provide the outer
-handler. The v1 surface has no smooth spelling for that (verified: a `perform` needs a bound cap; `Io.print
-x` elaborates as a module-qualified private reference, not a perform; `.dotPerform` requires the receiver
-resolve to `.cap ℓ`; a cap-param `main` isn't a runnable entry). The chosen reach is **a module-qualified
-host perform** (`Io.print x` → a perform on a RUNTIME-minted `Io_Console` cap, reached by the seam) — a
-narrow elaboration affordance, deliberately the RUNTIME's own ambient authority (right where the design
-REJECTS ambient authority for USER code, os-inspiration §1). That is a surface/elaboration slice
-(cross-lane), named here as the NEXT step. Until it lands, the v1 wedge ships the SIM runtime (the program
-writes its `with` sim clauses, corpus-green) plus this engine+driver mechanism, READY for the reach.
-Rejected for the reach: recording the SIM's own performs (vacuous — a deterministic sim has no host
-nondeterminism to pin, so the conformance gate would be toothless).
+**OPEN — the host-provision reach (H1, the NEXT slice; live host IO does NOT ship in this slice).**
+This slice ships the SIM runtime + the proven engine/driver MECHANISM; it does NOT ship live host IO.
+"Mechanism ready, reach pending" is the honest statement — a normal program installs its OWN
+`with Io_Console as con {…}`, which catches every Console op LEXICALLY, so the host seam (the outermost
+fallback) is reached ONLY by a perform NO user handler catches. Reaching it needs the program to leave the
+host effect UNHANDLED and the RUNTIME to provide the outer handler.
+
+*The reach, grounded from code (so the next lane starts from evidence, not rediscovery):*
+- A `perform` needs a BOUND cap. `Io.print x` currently parses as `dotPerform (var "Io") "print"` and
+  elaborates as a module-qualified private REFERENCE (`'print' is private to module 'Io'`), NOT a perform;
+  `.dotPerform`'s type-check arm REQUIRES the receiver resolve to `.cap ℓ` (a module name isn't a value).
+  A cap-param `main` (`main : Cap Io_Console -> …`) isn't a runnable entry (ADR-0093 D5). So there is no
+  v1 surface spelling that reaches the seam.
+- **The chosen reach = H1, a module-qualified host perform** (`Io.print x` → a perform on a host-labelled
+  cap the RUNTIME provides), following the get/put BUILT-IN-AMBIENT precedent: bang's built-ins already
+  perform against the nearest handler with no named cap; H1 is a host effect behaving like a built-in
+  whose OUTERMOST handler is the driver. The row still carries the label (the manifest stays honest); a
+  user `with Io_Console` wins by NEARNESS (mints a real frame that catches first — the seam fires only
+  past it). So the SAME program is sim-in-corpus (user `with`) and real-under-`--env=real` (no user
+  handler → driver), zero body changes.
+- **The runtime half is PROVEN** (compiled `#guard`): a literal host cap on a granted label
+  (`perform (vcap reservedId ℓ) op arg`) misses all stores → reaches the seam → surfaces a `HostReq`,
+  and with a queued response RESUMES. So the driver + seam are ready.
+- **The elaboration half is the irreducible floor**: the label ℓ isn't available at `Surface.lowerC`
+  (which threads only the binder env), and there is NO literal-cap Surf former (verified: cap values come
+  only from a `handle`/`with` mint binder). So H1 needs a new INTERNAL Surf former (a `hostPerformS`
+  carrying the resolved label, emitted by a TypeCheck pre-pass where the effects table is live), lowering
+  to the literal-host-cap perform, plus exempting host modules from the private-dot-access gate
+  (`mergeModules`). That former ripples the codebase's Surf-traversal completeness discipline (~8 sites:
+  `qualifyDotAccess`/`eraseLettMulti`/`firstPrivateDotAccess`/`callSitesOf`/…) — a bounded but
+  shared-inductive surface/elaboration slice, deferred to its own lane (one-writer-coordinated).
+
+*Rejected for the reach:*
+- **H2 — recording the SIM's own performs.** VACUOUS (verified live): a deterministic sim has no host
+  nondeterminism to pin, so record-then-replay of a sim run reproduces trivially and the conformance gate
+  has NO teeth. Shipping it would be a green-stub — the exact lie the invariant-#1 gate exists to prevent.
+  The gate gets teeth only with real host nondeterminism, i.e. with H1.
+- **H3 — a cap-param `main` the driver applies.** More ceremonial: re-opens the ADR-0093 D5 entry rules
+  AND taxes every IO program's signature (`main : Cap Io_Console -> …`) where H1 keeps the body cap-free.
+  Rejected in favor of H1's built-in-ambient spelling.
 
 ### 5. The compiled backend — host handlers are WASI imports
 
@@ -225,9 +251,19 @@ lowering slot), not general GC-frame resumption.
 
 ## Scope (v1 = the Console/Clock wedge)
 
+**WHAT THIS SLICE SHIPS — stated plainly.** This slice ships: (1) the SIM runtime — `import Io` +
+`with Io_* {…}` sim handlers, corpus-green on both engines; (2) the PROVEN engine/driver MECHANISM —
+the `evalEHost` seam + its drift gate, the `Main.lean` replay-prefix driver (`--env`/`--allow`/
+`--record`/`--replay`/`--max-host-requests`), the record/replay battery. **It does NOT ship LIVE host
+IO**: a normal program's own `with` catches its host ops lexically, so reaching the outermost host seam
+needs the H1 elaboration affordance (§4, "the host-provision reach") — the NAMED NEXT slice, filed as its
+own issue (a surface-engineer elaboration slice; the mechanism here waits for it). "Mechanism ready, reach
+pending" is true; "real IO ships" would not be — and H2 (the sim-recording shortcut) is a vacuous gate
+(§4), so it is NOT shipped as a stand-in.
+
 | tier | effect | v1 status |
 |---|---|---|
-| **wedge** | `Console` + `Clock` | THIS ADR — no resource handles, pure Sendable ops, host side ~3 lines of Lean IO |
+| **wedge** | `Console` + `Clock` | THIS ADR — no resource handles, pure Sendable ops, host side ~3 lines of Lean IO (SIM + mechanism; live IO gated on H1) |
 | next | `Rand` | identical shape to `Choice.pick`; reuses the ndet-dst seeded handler as its sim. Free once the wedge lands |
 | next | `Fs` read-only | one resource kind (opaque-`Int` handle), fixed-map sim; deferred |
 | last | `Net` | ADR-0084 slice B; needs connection handles + (post-v1) `listen`/`accept` = the concurrency substrate |

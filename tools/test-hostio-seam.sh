@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # tool: role=test couples=Main.lean,Bang/Backend/EnvMachine.lean,std/Io.bang runs-in=verify
 source "$(git rev-parse --show-toplevel 2>/dev/null)/tools/tool-log.sh" 2>/dev/null && tool_log "$(basename "$0")" || true
-# test-hostio.sh — the CLI-surface gate for the host-IO wedge (ADR-0104).
+# test-hostio-seam.sh — the SEAM + CLI-surface gate for the host-IO wedge (ADR-0104).
+#
+# NOT AN END-TO-END REAL-IO GATE (honest naming, ADR-0104 §Scope): live host IO does not ship in this
+# slice — a normal program's own `with` catches its host ops lexically, so the outermost host seam is
+# reached only via the H1 elaboration affordance (the named NEXT slice). This battery gates the SEAM
+# MECHANISM (via the compiled #guards, below) + the driver's SIM-path + flag SURFACE — everything that
+# IS reachable today — never presented as e2e.
 #
 # WHAT THIS GATES vs WHAT THE #guards GATE (the seam's invariant-#1 oracle):
 #   - the ENGINE seam's correctness (evalEHost ≡ evalE at hostResponses=[], and the seam
