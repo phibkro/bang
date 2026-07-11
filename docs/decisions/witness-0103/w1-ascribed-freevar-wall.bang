@@ -1,0 +1,12 @@
+-- THE #120 WALL (machine-traced). The SAME `length` with a FREE tyvar `a` in the ascription:
+-- `resolveTy`→`resolveTyG`'s `.tName "a"` arm has no σ-entry and no `self?` match, so `resolveName`
+-- fails loud. No construct introduces a free top-level ∀a today (ADR-0075 generalizes let-bound
+-- THUNKS, never a `let rec` ascription — see w4).
+-- Observed 2026-07-11 on the real binary: `bang run` → `error: unknown type name 'a'`.
+-- The ONLY chokepoint is the `resolveTy env.gen env.aliases t env.effects` call in `.letRecS`
+-- (TypeCheck.lean:3033). Everything downstream (structOK, the μ-knot, the checker) is inert to
+-- the tyvar once monomorphization has closed it — witnessed by w0.
+data List a = Nil | Cons(a, List a)
+let rec length : List a -> Int =
+  fun xs => match (xs : List a) { Nil -> 0, Cons(h, t) -> 1 + (($length) t) }
+$length (Cons(1, Cons(2, Nil)))

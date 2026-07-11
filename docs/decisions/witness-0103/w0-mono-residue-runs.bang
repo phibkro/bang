@@ -1,0 +1,9 @@
+-- GROUND TRUTH (today, no change): a MONOMORPHIC `let rec length : List Int -> Int` type-checks,
+-- certifies TOTAL (structOK — no Div marker), and RUNS via the oracle. Result: 2.
+-- This is the RESIDUE monomorphization must emit — one concrete `let rec` per call-site
+-- instantiation. The whole ∀-door is "auto-generate what THIS file writes by hand".
+-- Observed 2026-07-11 on the real binary: `bang run` → 2 ; `bang check --json` → {"ok":true}.
+data List a = Nil | Cons(a, List a)
+let rec length : List Int -> Int =
+  fun xs => match (xs : List Int) { Nil -> 0, Cons(h, t) -> 1 + (($length) t) }
+$length (Cons(1, Cons(2, Nil)))
