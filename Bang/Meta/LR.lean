@@ -66,7 +66,10 @@ def recover (_c : Comp) : Comp := idComp
 -- (popl18 §3 Fig 1). `ctxApprox`/`ctxEquiv` quantify over these. `EvalCtx` is the
 -- typed object `HasStack` (Syntax.lean §1.7) is already a judgement over, so reusing
 -- it (rather than a parallel `Cxt`) keeps one context algebra everywhere.
+/-- A computation-to-computation context: the kernel's CK frame stack `EvalCtx`,
+reused as Biernacki's evaluation-context notion `E[·]`. -/
 abbrev Cxt : Type := EvalCtx
+/-- Plug computation `c` into the hole of context `C`. -/
 def Cxt.plug (C : Cxt) (c : Comp) : Comp := Bang.plug C c
 
 /-- Observation: fuel-bounded convergence to a returned value. -/
@@ -86,9 +89,12 @@ ADR-0038: only returners are observed) is exactly what `krelS_refl` consumes to 
 def ctxApprox {e : Eff} {B : CTy Eff Mult} (c₁ c₂ : Comp) : Prop :=
   ∀ (C : Cxt) (eo : Eff) (qo : Mult) (Ao : VTy Eff Mult),
     HasStack C e B eo (CTy.F qo Ao) → Converges (Cxt.plug C c₁) → Converges (Cxt.plug C c₂)
+/-- Contextual equivalence `≈`: approximation both ways, at focus type `(e, B)`. -/
 def ctxEquiv {e : Eff} {B : CTy Eff Mult} (c₁ c₂ : Comp) : Prop :=
   ctxApprox (e := e) (B := B) c₁ c₂ ∧ ctxApprox (e := e) (B := B) c₂ c₁
+/-- Contextual approximation. -/
 infixl:50 " ⊑ " => ctxApprox
+/-- Contextual equivalence. -/
 infixl:50 " ≈ " => ctxEquiv
 
 /-- Termination of c₁ implies termination of c₂ (Biernacki's `Obs`, approx form). -/
@@ -197,6 +203,8 @@ Torczon's grade-0 erasure (`semtyping.v`), which is proved via the logical relat
 -- ◊4.5b (g): `≈` now carries an implicit focus type `{e B}` (the typed-context restriction). The
 -- substitution-irrelevance is QUANTIFIED over EVERY focus type — the two fillers give `≈`-equal terms at
 -- whatever type the observation context demands. The implicit `{e B}` are bound here (def-level ∀).
+/-- Index `i`'s binder is never evaluated in `c`: any two fillers substituted at `i`
+give contextually-equivalent computations (semantic grade-0 erasure). -/
 def NotEvaluated (i : Nat) (c : Comp) : Prop :=
   ∀ (v₁ v₂ : Val) {e : Eff} {B : CTy Eff Mult}, ctxEquiv (e := e) (B := B) (Comp.substFrom i v₁ c) (Comp.substFrom i v₂ c)
 
@@ -276,12 +284,15 @@ closed form — only that the focus is `applyCaps L c` for SOME list `L`, which 
 def applyCaps : List (Nat × Val) → Comp → Comp
   | [], c        => c
   | (k, v) :: L, c => applyCaps L (Comp.substFrom k v c)
+/-- `applyCaps` on a value: apply the cumulative cap-substitution list to a `Val`. -/
 def applyCapsV : List (Nat × Val) → Val → Val
   | [], v        => v
   | (k, u) :: L, v => applyCapsV L (Val.substFrom k u v)
+/-- `applyCaps` on a handler: apply the cumulative cap-substitution list to a `Handler`. -/
 def applyCapsH : List (Nat × Val) → Handler → Handler
   | [], h        => h
   | (k, u) :: L, h => applyCapsH L (Handler.substFrom k u h)
+/-- Shift a cap-substitution list under one binder (each key `+1`, each filler shifted). -/
 def bumpL (L : List (Nat × Val)) : List (Nat × Val) := L.map (fun p => (p.1 + 1, Val.shift p.2))
 
 theorem applyCaps_snoc (L : List (Nat × Val)) (k : Nat) (v : Val) (c : Comp) :
@@ -405,6 +416,7 @@ theorem run_reshape_gen : ∀ (C : EvalCtx) (n g : Nat) (K : EvalCtx) (c : Comp)
 
 /-- `canonStack`/`capSubstInto` — the stack and focus of the canonical reached config. -/
 def canonStack (C : EvalCtx) (c : Comp) : EvalCtx := (reshape 0 [] C c).2.1
+/-- The focus of the canonical reached config for `plug C c`. -/
 def capSubstInto (C : EvalCtx) (c : Comp) : Comp := (reshape 0 [] C c).2.2
 
 /-- **`run_plug_reshape`** (the contract): running `plug C c` for `C.length + n` steps from the fresh
@@ -451,6 +463,7 @@ theorem reshape_reId (σ : Nat → Nat) (C : EvalCtx) : ∀ (g : Nat) (K : EvalC
 /-! Renaming over the term language (`RenameInvarianceProbe §1/§3`) — for `splitAtId_rename`. -/
 
 mutual
+/-- Rename capability identities in a value by `σ`. -/
 def renameV (σ : Nat → Nat) : Val → Val
   | .vcap n ℓ   => .vcap (σ n) ℓ
   | .vthunk c   => .vthunk (renameC σ c)
@@ -459,6 +472,7 @@ def renameV (σ : Nat → Nat) : Val → Val
   | .pair a b   => .pair (renameV σ a) (renameV σ b)
   | .fold v     => .fold (renameV σ v)
   | v           => v
+/-- Rename capability identities in a computation by `σ`. -/
 def renameC (σ : Nat → Nat) : Comp → Comp
   | .ret v        => .ret (renameV σ v)
   | .letC M N     => .letC (renameC σ M) (renameC σ N)
@@ -475,6 +489,7 @@ def renameC (σ : Nat → Nat) : Comp → Comp
   -- then break LOUDLY here rather than silently inherit the wrong identity default (ADR-0065 review).
   | .oom          => .oom
   | .wrong s      => .wrong s
+/-- Rename capability identities in a handler by `σ`. -/
 def renameH (σ : Nat → Nat) : Handler → Handler
   | .state ℓ s  => .state ℓ (renameV σ s)
   | .throws ℓ   => .throws ℓ
@@ -482,11 +497,13 @@ def renameH (σ : Nat → Nat) : Handler → Handler
   | .custom ℓ p cl => .custom ℓ p cl    -- ADR-0087: identity on custom (param/clauses closed in reachable configs, like shift/subst)
 end
 
+/-- Rename capability identities in a frame by `σ` (including a `handleF`'s own id). -/
 def renameF (σ : Nat → Nat) : Frame → Frame
   | .letF N      => .letF (renameC σ N)
   | .appF v      => .appF (renameV σ v)
   | .handleF n h => .handleF (σ n) (renameH σ h)
 
+/-- Rename capability identities across an evaluation context by `σ`. -/
 def renameK (σ : Nat → Nat) : EvalCtx → EvalCtx := List.map (renameF σ)
 
 @[simp] theorem renameK_cons (σ : Nat → Nat) (fr : Frame) (K : EvalCtx) :
@@ -766,6 +783,7 @@ PREDICATE family below is KEPT — it still feeds `Canonical` (live in `BinaryLR
 /-! LR-LOCAL cap-scopedness: every `vcap` id occurring in the term is `< g`. Feeds `Canonical`
 (the density invariant); the `bumpσ`-fixpoint half was deleted with the rename chain (R-1). -/
 mutual
+/-- Every `vcap` identity in a value is `< g` (the LR-local cap-scopedness invariant). -/
 def Val.CapsBelow (g : Nat) : Val → Prop
   | .vcap n _   => n < g
   | .vthunk c   => Comp.CapsBelow g c
@@ -774,6 +792,7 @@ def Val.CapsBelow (g : Nat) : Val → Prop
   | .pair a b   => Val.CapsBelow g a ∧ Val.CapsBelow g b
   | .fold v     => Val.CapsBelow g v
   | _           => True
+/-- Every `vcap` identity in a computation is `< g`. -/
 def Comp.CapsBelow (g : Nat) : Comp → Prop
   | .ret v        => Val.CapsBelow g v
   | .letC M N     => Comp.CapsBelow g M ∧ Comp.CapsBelow g N
@@ -790,6 +809,7 @@ def Comp.CapsBelow (g : Nat) : Comp → Prop
   -- LOUDLY here, not silently claim "no caps" (the latent default binop would have inherited).
   | .oom          => True
   | .wrong _      => True
+/-- Every `vcap` identity in a handler's carried values is `< g`. -/
 def Handler.CapsBelow (g : Nat) : Handler → Prop
   | .state _ s       => Val.CapsBelow g s
   | .throws _        => True
@@ -966,7 +986,10 @@ shape: biernacki-popl18 §3 Fig 1 (`ECont`), §5.1 Figs 6–9 (Vrel/Srel/Krel/Cr
 -- — the kernel's CK frame stack — so `Stack` reuses `EvalCtx` and `Stack.plug` reuses
 -- `plug`. (Biernacki keeps one `ECont` grammar across the operational semantics and
 -- the LR; we likewise keep one `EvalCtx`.)
+/-- The LR's stack/continuation domain: the kernel's CK frame stack `EvalCtx`, reused
+as Biernacki's `K⟦·⟧` domain. -/
 abbrev Stack : Type := EvalCtx
+/-- Plug computation `c` into the hole of stack `K`. -/
 def Stack.plug (K : Stack) (c : Comp) : Comp := Bang.plug K c
 
 /-- Base-type value relation (Biernacki `⟦τ⟧` restricted to base types, popl18 §5.1
@@ -1600,6 +1623,8 @@ An environment is a `List Val` of CLOSED fillers (the CK focus is always closed)
 Structurally identical to `EnvRel` (Closed ∧ Closed ∧ rel ∧ rec); only the value relation is `VrelK`.
 The `crelK_fund`/`vrelK_fund` migration closes open terms over `EnvRelK`-related environments. -/
 
+/-- The environment relation over `VrelK`: two substitutions are related when they are
+pointwise closed and `VrelK`-related at each context type. -/
 def EnvRelK {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop
   | [],      [],        []        => True
@@ -1633,12 +1658,15 @@ names now ABBREVIATE the answer-typed relations (`VrelK`/`CrelK`/`EnvRelK`) — 
 (`D` is quantified internally inside `CrelK`/`KrelS`), so the frozen statements do not change shape. The
 old flat relations were deleted above; this is the body-swap the (g) migration calls for. -/
 
+/-- The frozen value relation name, abbreviating the answer-typed `VrelK`. -/
 abbrev Vrel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] : Nat → VTy Eff Mult → Val → Val → Prop := VrelK
 
+/-- The frozen computation relation name, abbreviating the answer-typed `CrelK`. -/
 abbrev Crel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] : Nat → CTy Eff Mult → Eff → Comp → Comp → Prop := CrelK
 
+/-- The frozen environment relation name, abbreviating `EnvRelK`. -/
 abbrev EnvRel {Eff Mult : Type} [Lattice Eff] [OrderBot Eff] [CommSemiring Mult] [DecidableEq Mult]
     [EffSig Eff Mult] (n : Nat) : TyCtx Eff Mult → List Val → List Val → Prop := EnvRelK n
 
