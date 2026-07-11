@@ -166,6 +166,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **ctors** — type-namespaced constructors — resolveCtor + B012 (#108, ADR-0099) (`ec6c7f35`)
 - **traits** — deriving (Eq, Ord) structural fold handler (#109, ADR-0097) (`3afc82c8`)
 - **surface** — mutual `let rec … and …` — H2 tuple-of-thunks μ-knot (#97 item 2) (`0ca879b1`)
+- **surface** — wildcard match arm `_` (#101) (`5577fd5b`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

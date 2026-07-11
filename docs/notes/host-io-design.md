@@ -137,6 +137,25 @@ property (the stratification principle) and `#guard`-testability. *(c) A pre-col
 after evaluation* — cannot express data dependence (a `readFile` whose path came from a prior
 `readLine`); suspend/resume exists precisely so the continuation carries that dependence.
 
+### 2a · The Deno prior art (operator-named; the grant surface's reference model)
+
+Deno's permission model is the named inspiration for the grant surface, and the census it
+validated: developers WANT deny-by-default with explicit, fine-grained allows. The mapping:
+
+| Deno | bang | note |
+|---|---|---|
+| deny-by-default | the default `--env=sim` (real IO never ambient) | stronger: sim is a WORKING runtime, not a refusal |
+| `--allow-net=host:port` | `--allow=Net` (+ per-resource scoping in the GRANT, host-side) | per-resource stays grant-side policy in v1 — the ROW tracks the effect, the grant scopes the resource; pushing paths/hosts into the type is deliberately out of scope |
+| prompt-on-first-use | NOT adopted for v1 | the CLI is agent-driven/non-interactive-first; a prompt mode can arrive with a TTY check later |
+| `Deno.permissions` (runtime query) | `bang query effects <fn>` | EXISTS TODAY — and it's static: the answer comes from the type, not from probing the runtime |
+
+**The structural contrast (copy-kit material):** Deno enforces permissions at RUNTIME by
+intercepting syscalls — the program's requirements are discovered by running it. bang's effect
+row makes the requirement STATIC: the type declares what the program may perform, checked before
+it runs, and the grant is the handler installation. A dependency cannot quietly acquire network
+access — the acquisition would change its SIGNATURE and every caller's row with it (effect creep
+is diff-visible via `bang rewrite annotate`). "Deno's permissions, but in the type system."
+
 ## 3 · THE CONFORMANCE STORY — record/replay as invariant-#1 compliance (load-bearing)
 
 Invariant #1: *proof rides the reference; anything that runs is diff-tested against the oracle.* The
