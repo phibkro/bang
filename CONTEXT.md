@@ -103,10 +103,20 @@ deferral quantified; survey §G2-MEASURED + `tools/bench/g2-components/`) · the
 (#119 check-mode subsumption arms — blanket-subsumption REFUTED live · #118 one-candidate-pins-
 the-hole) · stranger-4 fixes #121–#125 · #115 ∀q′ consult (DEFER, priced) · release-matrix widened ·
 tour v0 · landing draft · the `/run` playground service · the **#70 launch kit drafted**
-(`docs/outreach/`). **Queued** (operator buttons FIRST): announcement review → matrix dry-run →
-deploy web/docs → landing taste pass → **tag v0.2** → post · then: #126 H1 reach (one-writer Surf
-window) · rung-5 S0–S4 implementation · #117 trait-prelude migration + Mod_Eff · the List-decl
-injection design (#105) · 013-S2/S6 · #83 · ADR-0089 · stranger round 5 (post-v0.2).
+(`docs/outreach/`). **The THIRD WAVE closed the pre-tag backlog (2026-07-11 evening, ≤ `e79a8ede`)**:
+#126 host-IO reach SHIPPED (label-only ambient dispatch; the ADR-0104 nearness claim measurement-
+REFUTED and retracted; #127 H1b then CLOSED by design pass — nearness = ADR-0052's rejected
+nearest-label, witnessed) · the PRELUDE ARC complete (#105 List+batch+`id` · #117 trait Eq/Ord into
+Prelude.bang with FULL law suites, 3 module-machinery gaps · #128 derive-on-colliding-carrier
+regression fixed red-first; #120 fuel-sweep proved UNNEEDED on measurement) · **S5 proof-grade
+re-framed: census 18→20 clean** (the effectful forward-sim was already proven by composition —
+adversarially AUDITED 5/5; the GC-bijection half = a priced post-v1 wall; the fmtTyArgs paren bug
++ the stale ONE-sorry comment killed en route) · docBlame 190→6 (non-Frontend) · **stranger round 5
+= 7/10 pre-tag QA** (F2 the List-injection regression CAUGHT+FIXED before public; #129/#130/#131
+open). **Queued**: the operator RELEASE LADDER (announcement review → matrix dry-run → deploy
+web/docs → landing taste pass → **tag v0.2** → post — NOTHING blocks the tag) · then #129 (top-level-
+let absorption) · #130 (B002 lexer routing) · #131 (mutual-rec reference prose + gate prose samples) ·
+#114 Frontend docBlame (143) · 013-S2/S6 · #83 · stranger round 6 (post-release, prose-sample-gated).
 Design ledger: **`docs/notes/OPEN_QUESTIONS.md`**.
 
 ## Where things live (SSoT — reference these, don't copy them)
