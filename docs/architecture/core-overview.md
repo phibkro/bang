@@ -65,6 +65,7 @@ graph TD
     Witness_BinopTyping["Witness.BinopTyping<br/>70L · fan-in 0"]
     Witness_BoccRegress["Witness.BoccRegress<br/>261L · fan-in 0"]
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
+    Witness_CtrGradeRefute["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
@@ -127,6 +128,7 @@ graph TD
 | `Witness.BinopTyping` | ? | 70 | 0 |
 | `Witness.BoccRegress` | ? | 261 | 0 |
 | `Witness.CapEscapeWitness` | ? | 72 | 0 |
+| `Witness.CtrGradeRefute` | ? | 138 | 0 |
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |

@@ -1,7 +1,41 @@
 <!-- note-status: active -->
 # Compute-then-return design map — lifting the ADR-0095 D4 ret-shape restriction (#44 exit gate)
 
-> **Verdict (one sentence).** The answer-grade wall **still stands** on current main
+> **⚠ VERDICT CORRECTION (2026-07-11, ctr-g1 lane, F1 MACHINE-REFUTED). The DECISION lives in
+> [ADR-0100](../decisions/0100-g1-compute-then-return-ships-tested-superset.md) — this note is the
+> design probe; the ADR is the one decision home.** The "(γ) GO" verdict below (§2.3/§5) is
+> **WRONG**. F1 — the ⊥-row computing-body grade-freedom claim — is **REFUTED, axiom-clean**, and
+> the correct picture inverts the note's remedy:
+>
+> 1. **The kernel `HasClauses` computing-body carve-out is UNSTATEABLE at the grade the surface
+>    actually uses.** The surface types every `binopS` AND every `perform` at grade **`.F .omega`**
+>    (`TypeCheck.lean:1047, 1201`) — NOT grade 1. The kernel `binop` rule (`Typing.lean:212`) PINS
+>    the returner grade to **1**. `1 ≠ ω`, so a lowered `binop` clause body cannot type at the
+>    perform's grade in the kernel. §2.3's grade-freedom argument OVER-GENERALIZED: it holds only
+>    for a CLOSED `ret w` (grade `[]`, so `q • [] = []` for all q), NOT a computing body whose
+>    returned value carries a non-`[]` grade. Witnesses (build-gated in `Bang/Witness/CtrGradeRefute.lean`,
+>    axiom-clean ⊆ trusted-3): `binop_body_fixed_grade` (bare binop types only at `F 1`),
+>    `letc_body_not_at_zero` (the `q_or_1` floor breaks it at grade 0), `binop_body_not_at_omega`
+>    (the §2.5 fallback fails at THE surface grade ω). KEPT as do-not-retry regression witnesses.
+> 2. **But G1's CONSUMER is NOT blocked.** The surface already ACCEPTS ⊥-row computing clause
+>    bodies (`checkHClauses` only checks the ROW is ∅, `TypeCheck.lean:1305` — it does NOT check
+>    ret-shape), and `Source.eval` RUNS them correctly (`scratch/CtrTracerRuns.lean`: `n*10` ⇒ 30,
+>    `let m = n*2 in m+1` ⇒ 11, both green vs the kernel oracle). G1 works TODAY, in the tested
+>    superset — it is simply **not covered by `custom_program_safe`**, which is the intended
+>    stratification seam, not a bug.
+> 3. **The honest gate is therefore: G1 ships as a TESTED-SUPERSET feature** (surface-accepted +
+>    differential-tested vs `Source.eval`), and the kernel `HasClauses` **stays ret-shape** (no
+>    carve-out). Lifting it into the verified core would require making the kernel `binop` returner
+>    grade POLYMORPHIC (a genuine kernel change far bigger than a carve-out — the §2.5 ∀q' premise
+>    does NOT collapse to the ret-shape as the note claims; it is simply FALSE, because binop's
+>    grade is pinned to 1, not free). **Q27 is still not needed for G1's RUN path; the answer-grade
+>    pillar (B) IS load-bearing for the kernel-COVERAGE path, contradicting §2.4.**
+>
+> The original verdict is preserved below for the record. Read §"⚠ F1 REFUTATION" (appended) for
+> the corrected slice plan. — the STOP-and-SHOW that produced this correction is the ctr-g1 report.
+
+> **Verdict (one sentence — SUPERSEDED, see correction above).** The answer-grade wall **still
+> stands** on current main
 > (`69b16e2`) — all three D3 probes re-verify axiom-clean — but it is **narrower than the
 > ADR-0095 D4 diagnostic implies**: the *surface* already accepts a **pure**
 > compute-then-return body (`n * 10` type-checks and runs, the tracer), and the ndet G1
@@ -345,15 +379,15 @@ F4 (surface)     the elaborator can DISTINGUISH a ⊥-row computing body (admit 
 
 ```
 slice 0  (this note)  DONE. Wall re-verified, two-pillar structure named, Q27 mis-attribution
-                      surfaced, ripple mapped. Scratch witnesses CtrWallRecheck.lean +
-                      CtrF1DependsF2.lean.
+                      surfaced, ripple mapped. Scratch witness CtrWallRecheck.lean (the slice-0
+                      F2-dependency probe was superseded when F2 landed — see the F1 refutation).
 slice 1  ADR-0065 ④   land the binop HasCTy rule + 3 soundness arms (F2). Kernel lane; ADR-0065
                       is already Accepted, so this is EXECUTION of a decided ADR, not a new one.
                       ← RECOMMENDED SLICE 1 (the machine-checked dependency below FORCES this order).
 slice 2  F1 probe     scratch: the ⊥-row-body grade-freedom derivation (§2.3), NOW STATEABLE (binop
-                      types). GO/NO-GO for pillar B. Cannot precede slice 1 — CtrF1DependsF2.lean
-                      machine-checks that a `letC(binop…)(ret…)` body is untypeable until binop types
-                      (letC's bound-M premise inverts to the binop, refuted by binop_untypable).
+                      types). GO/NO-GO for pillar B. [OUTCOME: REFUTED — see the F1 refutation
+                      section. The body types at F 1, not the perform's grade ω; the carve-out is
+                      unstateable. Witnesses in Bang/Witness/CtrGradeRefute.lean.]
 slice 3  D4 kernel    the `⊥`-row `HasClauses` arm + mem_typed normalization (F3) + the preservation
          rule         custom arm's step-to-ret. Needs an ADR (kernel typing change) + operator ruling.
 slice 4  surface      lift checkHClauses' reject → accept for ⊥-row computing bodies; wire the
@@ -437,3 +471,76 @@ afternoon. It is the cheapest possible GO/NO-GO for the operator's twice-priorit
   `docs/notes/questions/Q27-surfacing-the-grade-axis.md` (resumption grade ≠ answer grade —
   the mis-attribution source), `docs/notes/multishot-survey.md` (Q22/Q27 the effectful/multi-shot
   future).
+
+---
+
+## ⚠ F1 REFUTATION — the corrected slice plan (ctr-g1 lane, 2026-07-11)
+
+The header correction supersedes the "(γ) GO" verdict. Here is what the F1 refutation forces,
+grounded in machine-checked witnesses.
+
+### The refutation, precisely
+
+```
+witness (Bang/Witness/CtrGradeRefute.lean, axiom-clean)  claim
+────────────────────────────────────────────────────────────────────────────────────────────
+binop_body_fixed_grade                                  a bare binop body types ONLY at F 1 int;
+                                                        NO derivation at F q_perf int for q_perf ≠ 1
+letc_body_not_at_zero                                   the letC-wrapped body (returning the bound
+                                                        result) cannot type at F 0 int — the q_or_1
+                                                        floor forces usage ≥ 1, ret at grade 0 needs 0
+letc_body_types_at_one                                  POSITIVE baseline: the SAME body DOES type at
+                                                        F 1 int (the wall is grade-SPECIFIC, q ≠ 1)
+binop_body_not_at_omega                                 the §2.5 ∀q' fallback FAILS at q' = ω — THE
+                                                        grade the surface's perform actually uses
+scratch/CtrTracerRuns.lean (2 #guards)                  BUT the body RUNS: n*10 ⇒ 30, let m=n*2 in
+                                                        m+1 ⇒ 11, both green vs Source.eval
+```
+
+### Why the kernel carve-out is unstateable (the grade-layer mismatch)
+
+```
+                          SURFACE (ω-liberal)              KERNEL (grade-precise)
+────────────────────────────────────────────────────────────────────────────────────────────
+binop returner grade      .F .omega  (TypeCheck:1047)      F 1  (Typing:212, PINNED)
+perform returner grade    .F .omega  (TypeCheck:1201)      F q  (q universally free, incl ω)
+clause-body check         unifyC vs .F .omega resTy        HasClauses needs body : F q_perf opR
+                          (TypeCheck:1297) — row-∅ only     at the perform's q_perf
+verdict                   ACCEPTS the computing body       CANNOT type it at q_perf = ω (1 ≠ ω)
+```
+
+The surface and kernel grade algebras differ by design — the surface admits at ω what the kernel
+types at 1. `checkHClauses` never builds a kernel `HasClauses`; it types via `synthSC` +
+row-emptiness. So "surface accepts" and "kernel covers" were ALWAYS decoupled (the note's §1.1 got
+this right). The error was believing the kernel could be RETROFITTED to cover the computing body —
+F1 shows it cannot, because the binop returner grade is pinned to 1 while the perform is at ω.
+
+### The corrected slices
+
+```
+slice     status         action
+────────────────────────────────────────────────────────────────────────────────────────────
+F2        LANDED (main)  ADR-0065 stage ④ HasCTy.binop rule + soundness arms — ALREADY MERGED
+                         (45697d59 / b7269acb). Witness: Bang/Witness/BinopTyping.lean.
+F1        REFUTED        the ⊥-row computing-body kernel carve-out is UNSTATEABLE at the surface
+                         grade. Witnesses above. DO NOT attempt slice-3 (HasClauses carve-out).
+slice-3   CANCELLED      the ret-shape HasClauses STAYS. No kernel typing change ships for G1.
+surface   NO-OP          checkHClauses ALREADY accepts ⊥-row computing bodies (row-∅ check only).
+                         B005 already fires only for effectful bodies. No surface change needed.
+consumer  SHIPS AS       G1's compute-then-return clause bodies ship as a TESTED-SUPERSET feature:
+          TESTED-        surface-accepted + differential-tested vs Source.eval. NOT covered by
+          SUPERSET       custom_program_safe (the intended stratification seam, CLAUDE.md).
+verified  DEFERRED       kernel coverage of computing bodies needs a GRADE-POLYMORPHIC binop
+  core                   returner (F ∀q' int) — a genuine kernel change, NOT a carve-out, and out
+                         of scope for G1. The answer-grade pillar (B) IS load-bearing for THIS
+                         (contradicting §2.4); Q27 remains not-needed for the RUN path.
+```
+
+### Honest bottom line
+
+G1 (⊥-row compute-then-return clause bodies) **already works** at the surface + run level and
+needs **no kernel change** to ship as a tested-superset feature. What CANNOT be done — and what the
+original note wrongly promised — is lifting those bodies into the verified core via a `HasClauses`
+carve-out. That is blocked by a real grade-layer mismatch (surface ω vs kernel binop-1), refuted
+axiom-clean. The `custom_program_safe` headline stays ret-shape; the computing bodies ride the
+stratification seam, exactly as the language-level seam is designed to permit.

@@ -117,6 +117,7 @@ ADRs are tagged by layer (see `../../ROADMAP.md`):
 | [0097](0097-derive-handler-eq-ord-structural-fold.md) | Proposed | Deriving handlers: `Eq`/`Ord` as a structural fold over the ADR-0069 μ-sum-of-products | A `data Foo = … deriving (Eq, Ord)` clause runs an elaboration-level handler | — / — | — / — | — | — |
 | [0098](0098-prelude-module-auto-use.md) | Accepted | The prelude is a real `Prelude.bang` module, auto-`use`d | Issue #106 (operator-ruled 2026-07-11, unblocked same day when #97 item-3 turned out | — / — | — / — | — | — |
 | [0099](0099-ctor-namespacing.md) | Accepted | Constructors are type-namespaced — bare names resolve when unambiguous in scope | A data constructor's true identity is `(dataName, ctorName)`, not `ctorName` alone | — / — | — / — | — | — |
+| [0100](0100-g1-compute-then-return-ships-tested-superset.md) | Proposed | G1 compute-then-return clause bodies ship as a tested-superset feature (the kernel carve-out is refuted) | A ⊥-row COMPUTING custom-handler clause body (compute-then-return, e.g. | — / — | — / — | — | — |
 
 ### Resolved questions (derived from ADR `Resolves:` fields)
 
