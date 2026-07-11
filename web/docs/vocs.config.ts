@@ -1,5 +1,6 @@
 import { defineConfig } from 'vocs/config'
 import bangGrammar from './bang.tmLanguage.json' with { type: 'json' }
+import { lessons } from './tour-manifest.mjs'
 
 // Live subpath deploy target: https://phibkro.github.io/bang/
 // basePath makes every asset URL resolve under /bang/ (Vocs URLs-and-Deployment).
@@ -39,6 +40,16 @@ export default defineConfig({
         { text: 'Current position (CONTEXT)', link: '/CONTEXT' },
         { text: 'Roadmap', link: '/ROADMAP' },
         { text: 'Agent guide (CLAUDE)', link: '/CLAUDE' },
+      ],
+    },
+    {
+      // Generated FROM tour-manifest.mjs (the SSoT for lesson order/titles) —
+      // never hand-duplicated, so the sidebar cannot drift from gen-tour.mjs's
+      // own page list.
+      text: 'Tour',
+      items: [
+        { text: 'Overview', link: '/tour' },
+        ...lessons.map((l) => ({ text: `${l.n}. ${l.title}`, link: `/tour/${l.slug}` })),
       ],
     },
     {
