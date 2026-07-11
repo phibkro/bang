@@ -1,0 +1,12 @@
+import Io
+let main =
+  handle
+    (let prompt = SCons(Char(63), SNil) in
+     let u1 = con.print(prompt) in
+     let line = con.readLine(()) in
+     let u2 = con.print(line) in
+     $reverse line)
+  with Io_Console as con {
+    print(s) => (),
+    readLine(u) => SCons(Char(104), SCons(Char(105), SNil))
+  }
