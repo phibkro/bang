@@ -107,8 +107,12 @@ S2  [DONE] throws on GC path port rung-2's try_table/throw verbatim (control flo
                           alongside the runtime $env). LANDED: `handle` example (raise 7 caught) emits
                           emitModuleGC + runs 7 == bang run; result type is $val not i64. Tag decls
                           `(tag $exnT (param (ref null $val)))` per minted handle.
-S3  transaction (GC heap) TVar heap = a GC array of $ref cells (rung-3 Q1 option B); newTVar appends,
-                          read/write index, rollback drops the journal. catch_all_ref/throw_ref reused.
+S3  [DONE] transaction     TVar heap = a $txbox mutable pointer to an $env list of $ref cells (rung-3
+                          Q1 option B); newTVar prepends + returns the old length (index), read/write
+                          walk to the cell ($txcell) and struct.get/set in place, rollback resets the
+                          box to null. catch_all_ref/throw_ref reused. LANDED: stm=70, effect-op-arith=70
+                          == bang run on wasmtime 45; the ABORT path (raise inside a txn) verified 42 ==
+                          bang run — the explicit rollback (struct.set $txbox null + throw_ref) FIRES.
 S4  custom (user effects) clause body lifted to a $fn; one-shot resume = call_ref into the continuation
                           closure (no reification). Unblocks the ADR-0059 `general` slot for v1 (tail).
 S5  proof-grade           extend the wexec≡Source.eval obligation with the $env-slot↔store bijection;

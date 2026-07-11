@@ -896,6 +896,36 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
           -- struct.set the box in place, then leave boxed unit (put returns `ret .vunit`). Wrapped in
           -- a seqBlock so the statement + value compose as one value expression.
           (.ok (seqBlock s!"(struct.set $ref 0 (ref.cast (ref $ref) {lookupGC envL i}) {ev})\n    {boxI "(i64.const 0)"}"), st1)
+  -- RUNG 5 S3: transaction STM ops on the GC heap. The cap `vvar i` resolves via `$lookup` to the
+  -- heap box `H` (a `$ref` holding the `$env` journal of cells). All three ops one-shot resume in place.
+  -- newTVar v (kernel `ret (vint Θ.length)`, heap `Θ ++ [v]`): return the OLD length (the index) then
+  -- PREPEND a fresh $ref cell to H's list. Wrapped in a seqBlock; the returned boxed index flows to letC.
+  | .perform (.vvar i) "newTVar" v =>
+      match emitValGC envL caps v st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok ev, st1) =>
+          let hbox := s!"(ref.cast (ref $txbox) {lookupGC envL i})"
+          let hlist := s!"(struct.get $txbox 0 {hbox})"
+          -- boxed index = $txlen(list) BEFORE the prepend; then H := cons(new $ref v, list).
+          (.ok (seqBlock s!"{boxI s!"(call $txlen {hlist})"}\n    (struct.set $txbox 0 {hbox} (struct.new $env (struct.new $ref {ev}) {hlist}))"), st1)
+  -- readTVar (vint j) (kernel `ret Θ[j]`): fetch the cell for index j via $txcell, read its $val.
+  | .perform (.vvar i) "readTVar" v =>
+      match emitValGC envL caps v st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok ev, st1) =>
+          let hlist := s!"(struct.get $txbox 0 (ref.cast (ref $txbox) {lookupGC envL i}))"
+          (.ok s!"(struct.get $ref 0 (call $txcell {hlist} {unboxI ev}))", st1)
+  -- writeTVar (pair (vint j) w) (kernel `storeSet Θ j w`, `ret .vunit`): struct.set the j-th cell,
+  -- then leave boxed unit. The payload is a pair; project index (fst) and value (snd) from it.
+  | .perform (.vvar i) "writeTVar" (.pair jv w) =>
+      match emitValGC envL caps jv st with
+      | (.unsup r, st') => (.unsup r, st')
+      | (.ok ej, st1) =>
+        match emitValGC envL caps w st1 with
+        | (.unsup r, st') => (.unsup r, st')
+        | (.ok ew, st2) =>
+            let hlist := s!"(struct.get $txbox 0 (ref.cast (ref $txbox) {lookupGC envL i}))"
+            (.ok (seqBlock s!"(struct.set $ref 0 (call $txcell {hlist} {unboxI ej}) {ew})\n    {boxI "(i64.const 0)"}"), st2)
   -- RUNG 5 S2: raise on the GC path. `perform (vvar i) "raise" v` where index `i` is a `throws` cap
   -- (compile-time tag `t` in `caps`) emits `(throw $exn{t} <boxed payload>)` — a zero-shot abort that
   -- wasm unwinds to exactly the `try_table (catch $exn{t})` the lexically-enclosing `handle (throws)`
@@ -941,7 +971,26 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
           -- env slot 0 = a placeholder (the throws cap has no runtime value — dispatch is the tag);
           -- a boxed unit keeps the $env slot well-typed and the de-Bruijn depth aligned.
           (.ok (seqBlock s!"(local.set {e2L} (struct.new $env {boxI "(i64.const 0)"} (local.get {envL})))\n    (block $h{t} (result (ref null $val))\n      (try_table (result (ref null $val)) (catch $exn{t} $h{t})\n        {bM}))"), st3)
-  | .handle _ _ => (.unsup "handle: `state` (S1) and `throws` (S2) lower on the GC path; transaction/custom are S3-S4", st)
+  -- RUNG 5 S3: handle (transaction Θ) M on the GC path. Empty-start only (Θ=[], all v1 STM surface,
+  -- ADR-0030). Mint a fresh heap box H = (new $ref null) held in a local, push it as env slot 0. Run M
+  -- under a `catch_all_ref`/`throw_ref` wrapper INSIDE any enclosing throws try_table: on ANY abort
+  -- crossing the txn boundary, RESET H's list to null (rollback — the journal drops; empty-start
+  -- restore, rung-3 §Q3) then re-raise the same exnref so the lexically-enclosing throws handler still
+  -- catches. This restore is EXPLICIT and load-bearing (rung-3 key finding: wasm unwinds free but the
+  -- heap mutation is not undone) — even though the txn-local cells are also GC-unreachable after unwind,
+  -- resetting H matches `bang run`'s discard-Θ'-on-abort exactly. Commit (fall-through) keeps writes.
+  | .handle (.transaction _ Θ) M =>
+      if Θ ≠ [] then
+        (.unsup "transaction with a non-empty initial heap Θ (only `atomically`/empty-start lowers)", st)
+      else
+        let (hL, st1) := st.fresh "(ref $txbox)"        -- the heap box, kept in a local for rollback
+        let (e2L, st2) := st1.fresh tyEnv
+        match emitCompGC e2L (CapSlot.none :: caps) M st2 with
+        | (.unsup r, st') => (.unsup r, st')
+        | (.ok bM, st3) =>
+            -- H := new empty box; env slot 0 = H; body under a txcommit/txab rollback wrapper.
+            (.ok (seqBlock s!"(local.set {hL} (struct.new $txbox (ref.null $env)))\n    (local.set {e2L} (struct.new $env (local.get {hL}) (local.get {envL})))\n    (block $txc{hL} (result (ref null $val))\n      (block $txa{hL} (result exnref)\n        (try_table (result (ref null $val)) (catch_all_ref $txa{hL})\n          {bM})\n        (br $txc{hL}))\n      (struct.set $txbox 0 (local.get {hL}) (ref.null $env))\n      (throw_ref))"), st3)
+  | .handle _ _ => (.unsup "handle: `state` (S1), `throws` (S2), `transaction` (S3) lower on the GC path; custom is S4", st)
   | .oom => (.unsup "oom", st)
   | .wrong s => (.unsup s!"wrong: {s}", st)
 
@@ -979,11 +1028,22 @@ def gcTypes : String :=
   -- the unified-rep move (rung-5 design (b) Candidate 1): the compile-time inline `.state` LOCAL
   -- becomes a runtime heap box, reachable through the env cons-list.
   "    (type $ref  (sub $val (struct (field (mut (ref null $val))))))\n" ++
+  -- RUNG 5 S3: a $txbox is the transaction HEAP box — a mutable pointer to the $env journal of $ref
+  -- cells. Distinct from $ref because its field is a $env list, not a $val (a $env is not a $val).
+  "    (type $txbox (sub $val (struct (field (mut (ref null $env))))))\n" ++
   "    (type $env  (struct (field $hd (ref null $val)) (field $tl (ref null $env))))\n" ++
   "    (type $fn   (func (param (ref null $env)) (param (ref null $val)) (result (ref null $val))))\n" ++
   "    (type $clos (sub $val (struct (field $code (ref $fn)) (field $env (ref null $env))))))"
 
-/-- The fixed `$box`/`$lookup` helper functions. -/
+/-- The fixed `$box`/`$lookup` helper functions, plus the RUNG 5 S3 transaction-heap helpers.
+
+The TVar heap is the GC image of the kernel's `Θ : List Val` (rung-3 Q1 option B — a GC list of
+`$ref` cells, the right rep once a TVar can hold a closure/ADT). A `handle (transaction)` mints a
+`$ref` box `H` holding a `(ref null $env)` list of `$ref` CELLS, cells PREPENDED (newest at front).
+`newTVar` returns `Θ.length` (the OLD length = the kernel index) and prepends a fresh cell; a cell
+with kernel-index `i` sits at front-position `(length-1-i)`. `readTVar`/`writeTVar` walk to that cell
+and `struct.get`/`struct.set` it — the SAME in-place resume as state (one-shot, ADR-0025). Rollback
+= reset `H` to null (the journal drops; empty-start restore, rung-3 §Q3). -/
 def gcHelpers : String :=
   "  (func $box (param $n i64) (result (ref null $val)) (struct.new $ival (local.get $n)))\n" ++
   "  (func $lookup (param $e (ref null $env)) (param $n i32) (result (ref null $val))\n" ++
@@ -992,7 +1052,26 @@ def gcHelpers : String :=
   "      (local.set $e (struct.get $env $tl (local.get $e)))\n" ++
   "      (local.set $n (i32.sub (local.get $n) (i32.const 1)))\n" ++
   "      (br $l)))\n" ++
-  "    (struct.get $env $hd (local.get $e)))"
+  "    (struct.get $env $hd (local.get $e)))\n" ++
+  -- $txlen: the current heap length = Θ.length (walk the cons-list). newTVar returns this as the index.
+  "  (func $txlen (param $h (ref null $env)) (result i64) (local $n i64)\n" ++
+  "    (local.set $n (i64.const 0))\n" ++
+  "    (block $d (loop $l\n" ++
+  "      (br_if $d (ref.is_null (local.get $h)))\n" ++
+  "      (local.set $n (i64.add (local.get $n) (i64.const 1)))\n" ++
+  "      (local.set $h (struct.get $env $tl (local.get $h)))\n" ++
+  "      (br $l)))\n" ++
+  "    (local.get $n))\n" ++
+  -- $txcell: the $ref CELL for kernel-index `i` — at front-position (length-1-i), since cells are
+  -- prepended (newest first). Walk that many $tl steps, cast the $hd to $ref.
+  "  (func $txcell (param $h (ref null $env)) (param $i i64) (result (ref $ref)) (local $k i64)\n" ++
+  "    (local.set $k (i64.sub (i64.sub (call $txlen (local.get $h)) (i64.const 1)) (local.get $i)))\n" ++
+  "    (block $d (loop $l\n" ++
+  "      (br_if $d (i64.eqz (local.get $k)))\n" ++
+  "      (local.set $h (struct.get $env $tl (local.get $h)))\n" ++
+  "      (local.set $k (i64.sub (local.get $k) (i64.const 1)))\n" ++
+  "      (br $l)))\n" ++
+  "    (ref.cast (ref $ref) (struct.get $env $hd (local.get $h))))"
 
 /-- The fixed WASM-GC type + helper preamble every rung-4 module shares (types then helper funcs). -/
 def gcPreamble : String := gcTypes ++ "\n" ++ gcHelpers
