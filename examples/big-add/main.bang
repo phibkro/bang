@@ -1,0 +1,4 @@
+-- Bignum addition (issue #132, bignum lane B2): (2^63-1) + (2^63-1) = 18446744073709551614, which
+-- OVERFLOWS i64 from two IN-RANGE operands — the exact case a plain i64.add would wrap. $addVal takes
+-- the i64 fast path, detects the signed overflow ((a^s)&(b^s)<0), and promotes to a $bigval limb sum.
+9223372036854775807 + 9223372036854775807
