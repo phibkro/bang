@@ -1,3 +1,4 @@
+<!-- note-status: active -->
 # Consult note — the grade-polymorphic binop returner (`F ∀q'`), issue #115
 
 **Status:** DEFER (feasible + sound, ripple real, no consumer needs it yet).

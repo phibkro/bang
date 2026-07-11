@@ -172,6 +172,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **landing** — the bang landing page — one static page over the ruled copy kit (`23f2f366`)
 - **release** — widen the binary matrix to 3 Lean Tier-1 platforms (`0760351f`)
 - **tour** — interactive tour v0 — corpus-generated, no-exec lessons (`42593812`)
+- **docs** — document deriving + refuse generic-carrier deriving with a teaching diagnostic (#122) (`3a19b6f3`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
@@ -216,5 +217,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **traits** — law on an unreachable impl reports SKIPPED, not a misleading PASS (#113) (`8de80a8e`)
 - **traits** — self- and backward-recursive impl ops resolve via knot dispatch (#112) (`faafaa09`)
 - **display** — data types render by declared name, not raw mu (#100) (`7d63f548`)
+- **diagnostics** — teach the thunk idiom on a bare-function let binding (#121) (`b6020eea`)
+- **diagnostics** — teach ascription instead of leaking an internal hole marker (#124) (`b63f01d2`)
 
 <!-- END GENERATED changelog -->

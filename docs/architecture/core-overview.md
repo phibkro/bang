@@ -69,6 +69,7 @@ graph TD
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
+    Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
     Witness_LWRegress["Witness.LWRegress<br/>100L · fan-in 0"]
     Witness_LawTest["Witness.LawTest<br/>630L · fan-in 0"]
     Witness_ProofExport["Witness.ProofExport<br/>349L · fan-in 0"]
@@ -133,6 +134,7 @@ graph TD
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |
+| `Witness.GradePolyReturner` | ? | 165 | 0 |
 | `Witness.LWRegress` | ? | 100 | 0 |
 | `Witness.LawTest` | ? | 630 | 0 |
 | `Witness.ProofExport` | ? | 349 | 0 |
