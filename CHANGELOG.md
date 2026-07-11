@@ -227,5 +227,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **display** — data types render by declared name, not raw mu (#100) (`7d63f548`)
 - **diagnostics** — teach the thunk idiom on a bare-function let binding (#121) (`b6020eea`)
 - **diagnostics** — teach ascription instead of leaking an internal hole marker (#124) (`b63f01d2`)
+- **checker** — #119 row-subsumption asymmetry — checkSC catch-all now subsumption-aware (`48131c06`)
+- **elab** — #118 bare-fun-param hole gap — one-candidate-pins-the-hole dispatch (`25a99ad4`)
 
 <!-- END GENERATED changelog -->
