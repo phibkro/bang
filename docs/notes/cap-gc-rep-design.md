@@ -253,6 +253,47 @@ Measured facts from the implementation lane that refine §6's slice map:
   This isolates the riskier cross-cutting stamp from the headline win. (Ordering is a
   correctness-adjacent call — see the lane's messages to the manager.)
 
+### 8.1 · SEVERITY: escape IS surface-reachable — a LIVE miscompile of legal programs (#134)
+
+**The earlier "escape is not surface-expressible in v1" claim was WRONG** (it was a syntax artifact
+of `let x = $(…)` attempts, which the elaborator rejects with `not a value` at `TypeCheck.lean:1042`
+— a syntax refusal, NOT a structural one). The correct form `let x = <comp> in <force>` typechecks
+clean AND reaches `escapedCap` on the oracle AND silently miscompiles. Two independent witnesses,
+every verdict machine-cited (`scratch/cap-gc/surface-escape/`):
+
+```
+(1) STATE cap escape — b3.bang:
+      let leaked = state 0 in { get } in
+      $leaked
+    bang check          → ok           (typechecker ACCEPTS — no structural refusal)
+    run --engine=oracle → escapedCap   (ADR-0063 fail-loud)
+    run --compiled      → fail-loud     (the CalcVM agrees — "no value" terminal)
+    EMIT → wasmtime     → 0, rc=0       ← SILENT MISCOMPILE
+
+(2) CUSTOM cap escape — c1.bang:
+      effect Log { emit : Int -> Int }
+      let leaked = handle ({ logger.emit(7) }) with Log as logger { emit(x) => x } in
+      $leaked
+    bang check          → ok
+    run --engine=oracle → escapedCap
+    EMIT → wasmtime     → 7, rc=0       ← SILENT MISCOMPILE
+```
+
+So **#134 is a LIVE compiled≠oracle divergence on legal, well-typed programs**, not an
+unreachable-from-surface kernel curiosity. The oracle AND the CalcVM both fail loud; only
+`emitModuleGC` produces a module that silently returns a value. This is the exact defect class that
+GATES a tag (a wasm binary computing a different answer than the verified oracle for a program a
+user can write and the typechecker blesses). It is EMIT-path-only today (`bang run` default env +
+`--compiled` both fail loud correctly), but "the compiled-wasm binary silently miscompiles legal
+escape programs" is real and demonstrable.
+
+**Consequence for the slice order:** C2 (the escape stamp) is NOT the "riskier second slice" — it is
+the FIX for a tag-gating miscompile, and should go FIRST. The §8 bullet's C0-first proposal assumed
+escape was latent; it is not. Revised recommendation: **C2 (escape stamp, close the miscompile,
+flip the gate green) before C0 (the first-class headline).** The escape gate's `capEscape-get`
+`XFAIL` is now understood as masking a surface-reachable defect, not a theoretical one — sharpening
+the urgency of removing it.
+
 ## Artifacts (all under `scratch/cap-gc/`, run on wasmtime 45.0.0)
 
 - `stage-swap-capval.wat` — candidate (a) happy path: a `$cap` value passed as an argument, two

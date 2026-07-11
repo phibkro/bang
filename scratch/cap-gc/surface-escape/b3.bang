@@ -1,0 +1,2 @@
+let leaked = state 0 in { get } in
+$leaked

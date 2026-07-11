@@ -26,8 +26,14 @@ outdir="$(mktemp -d)"
 trap 'rm -rf "$outdir"' EXIT
 
 # Programs the emitter does not yet fail-loud on (no $liveTop stamp). C2 removes these.
+# The `surface:*` entries are #134: LEGAL .bang programs that `bang check` clean, reach escapedCap on
+# the oracle, and silently miscompile on the emit path TODAY (b3 → 0, c1 → 7). These are the
+# tag-gating witnesses — a wasm binary computing a different answer than the verified oracle for a
+# program the typechecker blesses. C2's stamp closes them; the C2 commit removes these entries.
 declare -A XFAIL_UNTIL_STAMP=(
-  [capEscape-get]="no \$liveTop watermark yet (#133 C2) — emits + silently returns a value"
+  [capEscape-get]="no \$liveTop watermark yet (#133/#134 C2) — emits + silently returns a value"
+  [surface:b3]="#134 STATE-cap escape (legal surface program) silently returns 0 on emit"
+  [surface:c1]="#134 CUSTOM-cap escape (legal surface program) silently returns 7 on emit"
 )
 
 echo "── building the rung4-shape emitter exe ──"
@@ -42,59 +48,81 @@ printf '%-22s %s\n' "escape program" "verdict"
 fail=0
 checked=0
 xfailed=0
-# `--escape <outdir>` writes one <name>.wat per catalog entry + prints a TSV: name KERNEL=… EMIT=… …
-while IFS=$'\t' read -r name kernel emit rest; do
-  [ -n "$name" ] || continue
+
+# Shared verdict for one escape program: given its name, kernel outcome, and either EMIT=REFUSED or
+# a written .wat path, assert (1) kernel = escapedCap and (2) the emitted run fails loud. Updates the
+# module-level fail/checked/xfailed counters. A silent value (rc=0) is the HOLE — tolerated only if
+# the name is on XFAIL_UNTIL_STAMP (documented known-red until the #133 C2 $liveTop stamp lands).
+verdict_one() {
+  local name="$1" kernel="$2" emit="$3" wat="$4"
   checked=$((checked + 1))
 
-  # (1) kernel MUST be escapedCap — the whole catalog is escape-shaped by construction.
   if [ "$kernel" != "KERNEL=escapedCap" ]; then
-    printf '%-22s %s\n' "$name" "FAIL (kernel=$kernel, expected escapedCap — bad catalog entry)"
-    fail=1; continue
+    printf '%-24s %s\n' "$name" "FAIL (kernel=$kernel, expected escapedCap — bad catalog entry)"
+    fail=1; return
   fi
 
-  # (2) the emitted run MUST fail loud. Two loud shapes count: EMIT=REFUSED (never emitted), or the
-  # emitted module TRAPS / exits non-zero on wasmtime. A silent value (rc=0) is the HOLE.
-  loud=0
-  detail=""
+  local loud=0 detail=""
   if [ "$emit" = "EMIT=REFUSED" ]; then
     loud=1; detail="emitter refused (loud)"
   else
-    wat="$rest"   # the 4th TSV field = the written path
-    [ -f "$wat" ] || { printf '%-22s %s\n' "$name" "FAIL (no .wat: $rest)"; fail=1; continue; }
+    [ -f "$wat" ] || { printf '%-24s %s\n' "$name" "FAIL (no .wat: $wat)"; fail=1; return; }
     set +e
+    local out rc
     out="$(nix shell nixpkgs#wasmtime -c wasmtime run -W gc=y,function-references=y,exceptions=y "$wat" 2>/dev/null)"
     rc=$?
     set -e
-    if [ "$rc" -ne 0 ]; then
-      loud=1; detail="wasmtime fail-loud (rc=$rc)"
-    else
-      loud=0; detail="SILENT value [$out] rc=0 — the escape HOLE"
-    fi
+    if [ "$rc" -ne 0 ]; then loud=1; detail="wasmtime fail-loud (rc=$rc)"
+    else loud=0; detail="SILENT value [$out] rc=0 — the escape HOLE"; fi
   fi
 
   if [ "$loud" -eq 1 ]; then
-    # loud is correct. If it's still on the xfail list, the xfail is stale.
     if [ -n "${XFAIL_UNTIL_STAMP[$name]+x}" ]; then
-      printf '%-22s %s\n' "$name" "FAIL (now fails loud — REMOVE from XFAIL_UNTIL_STAMP): $detail"
-      fail=1
+      printf '%-24s %s\n' "$name" "FAIL (now fails loud — REMOVE from XFAIL_UNTIL_STAMP): $detail"; fail=1
     else
-      printf '%-22s %s\n' "$name" "OK ($detail)"
+      printf '%-24s %s\n' "$name" "OK ($detail)"
     fi
   else
-    # silent value = the hole. Tolerated ONLY while xfail'd (documented known-red).
     if [ -n "${XFAIL_UNTIL_STAMP[$name]+x}" ]; then
-      printf '%-22s %s\n' "$name" "XFAIL (known-red #133 C2: $detail)"
-      xfailed=$((xfailed + 1))
+      printf '%-24s %s\n' "$name" "XFAIL (known-red #134 C2: $detail)"; xfailed=$((xfailed + 1))
     else
-      printf '%-22s %s\n' "$name" "FAIL — $detail"
-      fail=1
+      printf '%-24s %s\n' "$name" "FAIL — $detail"; fail=1
     fi
   fi
+}
+
+# ── Leg 1: raw-Comp catalog (escape shapes not tied to a specific surface program) ──
+# `--escape <outdir>` writes one <name>.wat per catalog entry + prints a TSV: name KERNEL=… EMIT=… path
+echo "  [raw Comp catalog]"
+while IFS=$'\t' read -r name kernel emit rest; do
+  [ -n "$name" ] || continue
+  verdict_one "$name" "$kernel" "$emit" "$rest"
 done < <("$bin" --escape "$outdir")
 
+# ── Leg 2: SURFACE-reachable escape (#134) — legal .bang programs that `bang check`s clean, reach
+# escapedCap on the oracle, and silently miscompile TODAY. These prove #134 is a live miscompile of
+# legal programs, not a raw-Comp curiosity. Driven through the FULL surface→emit pipeline (`--print`).
+echo "  [surface-reachable #134]"
+surfdir="tools/../scratch/cap-gc/surface-escape"
+for src in "$surfdir"/*.bang; do
+  [ -f "$src" ] || continue
+  name="surface:$(basename "$src" .bang)"
+  # --print emits + prints the oracle valPretty; ORACLE-DIVERGED-OR-STUCK == the escape terminal.
+  wat="$outdir/$(basename "$src" .bang).wat"
+  set +e
+  report="$("$bin" --print "$src" "$wat" 2>/dev/null)"
+  set -e
+  # kernel: the oracle diverged/stuck line = the escape terminal (valPretty can't render escapedCap).
+  if printf '%s\n' "$report" | grep -qi 'ORACLE-DIVERGED-OR-STUCK'; then kern="KERNEL=escapedCap"; else kern="KERNEL=done"; fi
+  if printf '%s\n' "$report" | grep -qiE 'EMIT-REFUSED|LOWER-ERROR'; then
+    verdict_one "$name" "$kern" "EMIT=REFUSED" ""
+  else
+    verdict_one "$name" "$kern" "EMIT=ok" "$wat"
+  fi
+done
+
 echo ""
-echo "escape gate: $checked programs checked, $xfailed known-red (awaiting the #133 C2 \$liveTop stamp)."
+echo "escape gate: $checked programs checked, $xfailed known-red (awaiting the #134/#133 C2 \$liveTop stamp)."
 if [ "$fail" -eq 0 ]; then
   if [ "$xfailed" -eq 0 ]; then
     echo "PASS — every escape program fails loud on wasmtime (== the kernel's .escapedCap)."
