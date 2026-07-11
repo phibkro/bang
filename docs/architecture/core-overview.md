@@ -47,14 +47,14 @@ graph TD
     Core_Typing["Core.Typing<br/>510L · fan-in 0"]
     Examples["Examples<br/>510L · fan-in 0"]
     Frontend_Annotate["Frontend.Annotate<br/>252L · fan-in 0"]
-    Frontend_DiagCodes["Frontend.DiagCodes<br/>277L · fan-in 0"]
+    Frontend_DiagCodes["Frontend.DiagCodes<br/>287L · fan-in 0"]
     Frontend_Diagnostics["Frontend.Diagnostics<br/>227L · fan-in 0"]
     Frontend_Format["Frontend.Format<br/>1116L · fan-in 0"]
-    Frontend_Lint["Frontend.Lint<br/>279L · fan-in 0"]
-    Frontend_Query["Frontend.Query<br/>881L · fan-in 0"]
+    Frontend_Lint["Frontend.Lint<br/>289L · fan-in 0"]
+    Frontend_Query["Frontend.Query<br/>899L · fan-in 0"]
     Frontend_Rewrite["Frontend.Rewrite<br/>313L · fan-in 0"]
     Frontend_Surface["Frontend.Surface<br/>3272L · fan-in 1"]
-    Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>125L · fan-in 0"]
+    Frontend_Surface_PropTest["Frontend.Surface.PropTest<br/>127L · fan-in 0"]
     Frontend_Surface_Trait["Frontend.Surface.Trait<br/>418L · fan-in 0"]
     Frontend_TypeCheck["Frontend.TypeCheck<br/>8674L · fan-in 0"]
     Meta_BinaryLR["Meta.BinaryLR<br/>1854L · fan-in 0"]
@@ -112,14 +112,14 @@ graph TD
 | `Distribution` | Apex | 67 | 0 |
 | `Examples` | ? | 510 | 0 |
 | `Frontend.Annotate` | ? | 252 | 0 |
-| `Frontend.DiagCodes` | ? | 277 | 0 |
+| `Frontend.DiagCodes` | ? | 287 | 0 |
 | `Frontend.Diagnostics` | ? | 227 | 0 |
 | `Frontend.Format` | ? | 1116 | 0 |
-| `Frontend.Lint` | ? | 279 | 0 |
+| `Frontend.Lint` | ? | 289 | 0 |
 | `Frontend.NamedCore` | Frontend | 386 | 0 |
-| `Frontend.Query` | ? | 881 | 0 |
+| `Frontend.Query` | ? | 899 | 0 |
 | `Frontend.Rewrite` | ? | 313 | 0 |
-| `Frontend.Surface.PropTest` | ? | 125 | 0 |
+| `Frontend.Surface.PropTest` | ? | 127 | 0 |
 | `Frontend.Surface.Trait` | ? | 418 | 0 |
 | `Frontend.TypeCheck` | ? | 8674 | 0 |
 | `Meta.BinaryLR` | ? | 1854 | 0 |

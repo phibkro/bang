@@ -226,13 +226,27 @@ provenance post-merge — `Main.lean`'s resolver-aware dump threads it in separa
 `moduleOfDecl` usage at the CLI layer) — `declFactsOf` alone (single-file, no resolver) is honest
 with `module := none` throughout. -/
 public structure DeclFact where
+  /-- The decl's top-level name (`Decl.name`). -/
   name      : String
+  /-- Which of the 7 `Decl` constructors this is (`DeclKind.of`). -/
   kind      : DeclKind
+  /-- The decl's rendered type, `some` only for a VALUE-typed decl (`let`/`letRec`/`fn`) that
+  type-checks — see this structure's own doc comment for the full `type`/`row`/`typeError`
+  three-way split. -/
   type      : Option String
+  /-- The decl's rendered effect row, alongside `type` (`some` under the same condition). -/
   row       : Option String
+  /-- The checker's error message, `some` when a value-typed decl's `type`/`row` came back `none`
+  because type-checking FAILED (as opposed to `none` because this decl kind has no value-level
+  type at all) — the disambiguation this structure's own doc comment names. -/
   typeError : Option String
+  /-- The non-value kinds' structural summary (`declShapeJson`), or a bounded `fnD`'s header;
+  `none` for a plain `let`/`letRec`. -/
   shape     : Option String   -- pre-rendered JSON (already a value, not a raw string — see `toJson`)
+  /-- Is this decl `pub` (exported)? -/
   pub       : Bool
+  /-- The decl's owning module name, `none` at this layer (a flat `Prog` has no per-decl module
+  provenance post-merge) — `Main.lean`'s resolver-aware dump overlays it separately. -/
   module    : Option String
   deriving Repr
 
@@ -318,8 +332,10 @@ public def declMentionsVar (nm : String) (d : Decl) : Bool :=
 /-- **PUBLIC (TIER 1) library API:** ONE name-reference EDGE — `from` is a REFERENCING decl's own
 name, `to` is the referenced name. DECL granularity (position-addressing is OUT, #52). -/
 public structure RefEdge where
-  src : String   -- the REFERENCING decl's own name (avoids the `from`/`to` reserved-word clash)
-  tgt : String   -- the REFERENCED name
+  /-- The REFERENCING decl's own name (`src`/`tgt` avoid the `from`/`to` reserved-word clash). -/
+  src : String
+  /-- The REFERENCED name. -/
+  tgt : String
   deriving Repr
 
 -- `deriving Repr`'s generated `repr` ignores its `prec` arg (unusedArguments false-positive).
@@ -601,7 +617,9 @@ def atOrAfter (line col : Nat) (sp : Span) : Bool :=
 `symbols`/`dump` use — zero new checking) paired with the `Span` of its NAME TOKEN, the anchor a
 cursor query compares against. `public`: the return type of `hoverAtP`, a Tier-1 entry. -/
 public structure HoverFact where
+  /-- The decl's fact record — the SAME per-decl type/error/kind rendering `symbols`/`dump` use. -/
   fact     : DeclFact
+  /-- The `Span` of the decl's NAME TOKEN — the anchor a cursor-position query compares against. -/
   nameSpan : Span
   deriving Repr
 

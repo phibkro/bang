@@ -68,6 +68,8 @@ public inductive Severity where
   | info | warning
   deriving Repr, DecidableEq
 
+/-- The lowercase rendering `Main.lean`'s human-table output and `--json` schema both use for a
+`Severity` — `"info"` or `"warning"`, matching the constructor names verbatim. -/
 public def Severity.toString : Severity → String
   | .info    => "info"
   | .warning => "warning"
@@ -76,9 +78,17 @@ public def Severity.toString : Severity → String
 finding like `fmt-divergence`), with a human-readable message. DECL granularity throughout
 (matches `Query.RefEdge`'s own documented ceiling, #52 — no per-node span exists yet). -/
 public structure Finding where
-  rule     : String        -- the stable machine key: "dead-private" | "unused-pub" | "fmt-divergence"
+  /-- The stable machine key identifying which rule fired: `"dead-private"` | `"unused-pub"` |
+  `"fmt-divergence"` — the `explainCode`-style stable identifier a scripted caller matches on,
+  independent of `message`'s free-text wording. -/
+  rule     : String
+  /-- How urgently this finding should be acted on — `.warning` counts toward `bang lint`'s
+  nonzero-exit contract, `.info` does not. -/
   severity : Severity
-  decl     : Option String  -- the flagged decl's name, or `none` for a whole-file finding
+  /-- The flagged decl's name, or `none` for a WHOLE-FILE finding (`fmt-divergence` — the file's
+  own layout, not any one decl, is what diverges). -/
+  decl     : Option String
+  /-- The human-readable explanation rendered in `bang lint`'s table and `--json` output. -/
   message  : String
   deriving Repr
 

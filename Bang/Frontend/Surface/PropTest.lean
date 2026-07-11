@@ -48,6 +48,8 @@ every sample is a well-formed `Stack Int`. -/
 exists so `Arbitrary`/`Repr`/`Shrinkable` resolve to the stack generator below, not to a
 generic `Val` instance (there is none). -/
 structure StackVal where
+  /-- The wrapped `Val`, known by construction to be `push`/`empty`-shaped (a well-formed
+  `Stack Int`) — the generator below is the only producer. -/
   val : Val
 
 /-- Stack depth (number of pushes), for a readable `Repr` of a counter-example. -/

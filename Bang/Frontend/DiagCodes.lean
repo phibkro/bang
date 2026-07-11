@@ -53,11 +53,21 @@ def contains (hay needle : String) : Bool :=
 diagnostic (so the battery can run it and assert the code appears); `none` for a runtime-only
 terminal (e.g. escaped-cap) whose trigger needs `bang run`, not `bang check`, noted in `teaching`. -/
 structure DiagEntry where
+  /-- The stable code (`"B012"`, …) — outlives the message wording, the rustc `error[E0499]`
+  pattern this registry retrofits onto every existing diagnostic message. -/
   code     : String
-  anchors  : List String   -- ALL must be substrings of a message for it to carry this code
-  summary  : String        -- one line
-  teaching : String        -- the explanation `bang explain` prints
-  example? : Option String  -- a minimal triggering source string (for `check`), or none (runtime)
+  /-- ALL of these substrings must appear in a diagnostic message for it to carry this entry's
+  `code` (`DiagEntry.matches`) — stable across the message's own dynamic interpolation. -/
+  anchors  : List String
+  /-- The one-line summary `bang explain` prints as its header, alongside `code`. -/
+  summary  : String
+  /-- The full explanation `bang explain` prints below `summary` — why the diagnostic fires and
+  how to resolve it. -/
+  teaching : String
+  /-- A minimal source string that TRIGGERS this diagnostic (so the battery can run it and assert
+  the code appears), or `none` for a runtime-only terminal (e.g. escaped-cap) whose trigger needs
+  `bang run`, not `bang check` — noted in `teaching` when `none`. -/
+  example? : Option String
   deriving Repr
 
 /-- The registry — the SINGLE SOURCE OF TRUTH for diagnostic codes. ORDER IS SPECIFICITY: an entry
