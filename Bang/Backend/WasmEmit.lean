@@ -745,6 +745,34 @@ def emitDivGCI (ea eb : String) : String :=
   s!"(if (result i64) (i64.eqz {eb}) (then (i64.const 0)) (else (if (result i64) (i64.lt_s (i64.rem_s {ea} {eb}) (i64.const 0)) (then (if (result i64) (i64.gt_s {eb} (i64.const 0)) (then (i64.sub (i64.div_s {ea} {eb}) (i64.const 1))) (else (i64.add (i64.div_s {ea} {eb}) (i64.const 1))))) (else (i64.div_s {ea} {eb})))))"
 def lookupGC (envL i : Nat) : String := s!"(call $lookup (local.get {envL}) (i32.const {i}))"
 
+/-- The base-10⁹ limb decomposition of a NON-NEGATIVE `Nat`, LEAST-significant limb first, with NO
+leading (most-significant) zero limbs — the canonical `$bigval` magnitude. `0` yields `[0]` (a single
+zero limb) so the array is never empty. Base 10⁹ = the readback-friendly base (each limb = 9 decimal
+digits; `$emitBig` renders top-bare then `%09d`). Compile-time only (the literal `n : Int` is known);
+runtime limb arithmetic (bignum lane B2/B3) lives in wasm. -/
+partial def bigLimbs (m : Nat) : List Nat :=
+  if m < 1000000000 then [m]
+  else (m % 1000000000) :: bigLimbs (m / 1000000000)
+
+/-- Whether an `Int` literal fits in a signed i64 (`$ival`) or needs the `$bigval` limb rep. The
+boundary is exactly the kernel-vs-i64 gap: `[−2⁶³, 2⁶³)` is `$ival`; anything outside is `$bigval`. -/
+def fitsI64 (n : Int) : Bool := (-9223372036854775808 : Int) ≤ n ∧ n < (9223372036854775808 : Int)
+
+/-- Emit an out-of-i64-range `Int` LITERAL as a `$bigval` (issue #132 / bignum lane B1). Sign +
+base-10⁹ limb array built with `array.new_fixed` (limbs LSB-first, matching `$emitBig`'s walk).
+In-range literals never reach here (they stay `$ival`, `boxI`). Witnessed:
+`scratch/bigval-literal-readback.wat`. -/
+def emitBigLit (n : Int) : String :=
+  let sign : Nat := if n < 0 then 1 else 0
+  let mag  : Nat := n.natAbs
+  let limbs := bigLimbs mag
+  let limbStr := String.intercalate " " (limbs.map (fun l => s!"(i64.const {l})"))
+  s!"(struct.new $bigval (i32.const {sign}) (array.new_fixed $limbs {limbs.length} {limbStr}))"
+
+/-- Box an `Int` literal as a `$val`: `$ival` when it fits i64, else `$bigval` (bignum lane B1). -/
+def boxInt (n : Int) : String :=
+  if fitsI64 n then s!"(struct.new $ival (i64.const {n}))" else emitBigLit n
+
 /-- wasm type strings for the two local roles. -/
 def tyEnv : String := "(ref null $env)"
 def tyVal : String := "(ref null $val)"
@@ -755,7 +783,7 @@ capability context (§`CapSlot`), threaded ALONGSIDE the runtime `$env` so a nes
 which de-Bruijn slots are handler caps. Threads `GCState`. -/
 partial def emitValGC (envL : Nat) (caps : List CapSlot) (v : Val) (st : GCState) : EmitGC × GCState :=
   match v with
-  | .vint n => (.ok (boxI s!"(i64.const {n})"), st)
+  | .vint n => (.ok (boxInt n), st)   -- $ival if it fits i64, else $bigval limbs (bignum lane B1)
   | .vvar i => (.ok (lookupGC envL i), st)
   | .vunit  => (.ok (boxI "(i64.const 0)"), st)
   | .inl w =>
@@ -1099,6 +1127,14 @@ def gcTypes : String :=
   "(rec\n" ++
   "    (type $val  (sub (struct)))\n" ++
   "    (type $ival (sub $val (struct (field i64))))\n" ++
+  -- BIGNUM (issue #132 / bignum lane B1): a $bigval carries an unbounded ℤ as sign-magnitude —
+  -- $sign (0 = non-negative, 1 = negative; zero is always sign 0) + $mag, a base-10⁹ limb array
+  -- (LEAST-significant limb first, no leading zero limbs). Base 10⁹ makes decimal readback a
+  -- zero-pad concat (`$emitBig`) and keeps limb·limb < 2⁶³ for schoolbook mul (bignum lane B2/B3).
+  -- A LITERAL past [−2⁶³,2⁶³) emits as a $bigval (`emitBigLit`); in-range ints stay $ival. See
+  -- `docs/notes/emission-bignum-design.md`.
+  "    (type $limbs  (array (mut i64)))\n" ++
+  "    (type $bigval (sub $val (struct (field $sign i32) (field $mag (ref $limbs)))))\n" ++
   "    (type $sum  (sub $val (struct (field $tag i32) (field $payload (ref null $val)))))\n" ++
   "    (type $pair (sub $val (struct (field (ref null $val)) (field (ref null $val)))))\n" ++
   -- RUNG 5: a $ref is a MUTABLE box holding a $val — the GC-path image of a state cell / TVar cell.
@@ -1216,6 +1252,49 @@ def renderFns : String :=
   "      (local.set $start (i32.add (local.get $start) (i32.const 1)))\n" ++
   "      (local.set $end (i32.sub (local.get $end) (i32.const 1)))\n" ++
   "      (br $rl))))\n" ++
+  -- BIGNUM readback (issue #132 / bignum lane B1): render a $bigval to decimal. Base 10⁹ ⇒ the top
+  -- limb prints BARE, every lower limb zero-padded to EXACTLY 9 digits, high→low; a '-' prefix when
+  -- $sign=1. Byte-identical to `bang run`'s Lean-`Int` decimal (witnessed scratch/bigval-literal-readback.wat).
+  -- $put9 writes 9 zero-padded digits of $v at [$cur,$cur+9); $putBare writes the bare decimal of $v.
+  "  (func $put9 (param $v i64) (local $i i32) (local $start i32)\n" ++
+  "    (local.set $start (global.get $cur))\n" ++
+  "    (global.set $cur (i32.add (global.get $cur) (i32.const 9)))\n" ++
+  "    (local.set $i (i32.const 8))\n" ++
+  "    (block $done (loop $l\n" ++
+  "      (i32.store8 (i32.add (local.get $start) (local.get $i))\n" ++
+  "        (i32.add (i32.const 48) (i32.wrap_i64 (i64.rem_u (local.get $v) (i64.const 10)))))\n" ++
+  "      (local.set $v (i64.div_u (local.get $v) (i64.const 10)))\n" ++
+  "      (br_if $done (i32.eqz (local.get $i)))\n" ++
+  "      (local.set $i (i32.sub (local.get $i) (i32.const 1)))\n" ++
+  "      (br $l))))\n" ++
+  "  (func $putBare (param $v i64) (local $n i32) (local $t i64) (local $i i32) (local $start i32)\n" ++
+  "    (local.set $n (i32.const 1)) (local.set $t (i64.div_u (local.get $v) (i64.const 10)))\n" ++
+  "    (block $cd (loop $cl (br_if $cd (i64.eqz (local.get $t)))\n" ++
+  "      (local.set $n (i32.add (local.get $n) (i32.const 1)))\n" ++
+  "      (local.set $t (i64.div_u (local.get $t) (i64.const 10))) (br $cl)))\n" ++
+  "    (local.set $start (global.get $cur))\n" ++
+  "    (global.set $cur (i32.add (global.get $cur) (local.get $n)))\n" ++
+  "    (local.set $i (i32.sub (local.get $n) (i32.const 1)))\n" ++
+  "    (block $done (loop $l\n" ++
+  "      (i32.store8 (i32.add (local.get $start) (local.get $i))\n" ++
+  "        (i32.add (i32.const 48) (i32.wrap_i64 (i64.rem_u (local.get $v) (i64.const 10)))))\n" ++
+  "      (local.set $v (i64.div_u (local.get $v) (i64.const 10)))\n" ++
+  "      (br_if $done (i32.eqz (local.get $i)))\n" ++
+  "      (local.set $i (i32.sub (local.get $i) (i32.const 1)))\n" ++
+  "      (br $l))))\n" ++
+  "  (func $emitBig (param $b (ref $bigval)) (local $m (ref $limbs)) (local $i i32)\n" ++
+  "    (if (i32.eq (struct.get $bigval $sign (local.get $b)) (i32.const 1))\n" ++
+  "      (then (call $emitByte (i32.const 45))))\n" ++
+  "    (local.set $m (struct.get $bigval $mag (local.get $b)))\n" ++
+  "    (local.set $i (i32.sub (array.len (local.get $m)) (i32.const 1)))\n" ++
+  "    (call $putBare (array.get $limbs (local.get $m) (local.get $i)))\n" ++
+  "    (local.set $i (i32.sub (local.get $i) (i32.const 1)))\n" ++
+  "    (block $d (loop $l\n" ++
+  "      (br_if $d (i32.lt_s (local.get $i) (i32.const 0)))\n" ++
+  "      (call $put9 (array.get $limbs (local.get $m) (local.get $i)))\n" ++
+  "      (local.set $i (i32.sub (local.get $i) (i32.const 1)))\n" ++
+  "      (br $l))))\n" ++
+  "  (func $isBig (param $v (ref null $val)) (result i32) (ref.test (ref $bigval) (local.get $v)))\n" ++
   "  (func $emitLit (param $off i32) (param $len i32) (local $i i32)\n" ++
   "    (local.set $i (i32.const 0))\n" ++
   "    (block $d (loop $l\n" ++
@@ -1256,6 +1335,8 @@ def renderFns : String :=
   "      (br $l))))\n" ++
   "  (func $render (param $v (ref null $val))\n" ++
   "    (if (ref.is_null (local.get $v)) (then (call $emitLit (i32.const 0) (i32.const 2)) (return)))\n" ++
+  "    (if (call $isBig (local.get $v))\n" ++
+  "      (then (call $emitBig (ref.cast (ref $bigval) (local.get $v))) (return)))\n" ++
   "    (if (call $isIval (local.get $v))\n" ++
   "      (then (call $emitInt (struct.get $ival 0 (ref.cast (ref $ival) (local.get $v)))) (return)))\n" ++
   "    (if (call $isPair (local.get $v))\n" ++
