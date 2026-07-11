@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sync": "node sync-docs.mjs",
-    "dev": "node sync-docs.mjs && vocs dev",
-    "build": "node sync-docs.mjs && vocs build",
+    "sync": "node sync-docs.mjs && node gen-tour.mjs",
+    "dev": "node sync-docs.mjs && node gen-tour.mjs && vocs dev",
+    "build": "node sync-docs.mjs && node gen-tour.mjs && vocs build",
     "preview": "vocs preview"
   },
   "dependencies": {

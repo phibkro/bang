@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { escapeProse } from './mdx-safe.mjs'
 
 const siteDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(siteDir, '..', '..')
@@ -135,21 +136,6 @@ function renderMermaid(code) {
 // mdxSafe, since they wrap across lines.)
 function rewriteLinks(line) {
   return line.replace(/\]\((?!https?:|#)([^)]+?)\.md(#[^)]*)?\)/g, ']($1$2)')
-}
-
-// Escape MDX's JSX/expression triggers (`<`, `{`). MDX does NOT parse JSX inside
-// an inline-code span — EXCEPT a GFM table splits `code | with a pipe`, breaking
-// the span and exposing a `<;>` (Lean combinator) to the parser. So: escape in
-// prose always; inside a code span only when it holds a `|` (the break risk).
-// Everywhere else the code span is left verbatim, so `Foo<Bar>` still displays.
-const esc = (s) => s.replace(/</g, '&lt;').replace(/\{/g, '&#123;')
-function escapeProse(line) {
-  return line
-    .split(/(`+[^`]*`+)/) // odd indices are inline-code spans
-    .map((seg, i) =>
-      i % 2 === 0 ? esc(seg) : seg.includes('|') ? esc(seg) : seg,
-    )
-    .join('')
 }
 
 // --- emit -------------------------------------------------------------------
