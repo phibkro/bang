@@ -1,0 +1,10 @@
+[package]
+name = "g2-driver"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+wasmtime = { version = "34", default-features = false, features = ["cranelift", "component-model", "runtime", "gc", "gc-drc", "pooling-allocator"] }
+
+[profile.release]
+opt-level = 3
