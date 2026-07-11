@@ -165,6 +165,23 @@ H2 (adopted) sidesteps both: the tuple-of-thunks encoding uses the BUILT-IN prod
 (`tProd`/`pairS`/`splitS`), never a fresh `data` declaration, so it never touches the ctor-arity cap
 or #108's namespace collision at all — H2's main structural advantage over H1.
 
+## Width verification + the asymmetry finding (restored addendum)
+
+**N-way width: verified to N=3, no structural limit, no refusal diagnostic shipped.** An apparent
+3-way wall during implementation was the implementing lane's OWN test-file name shadow (a local
+`let c = …` rebinding the third sibling's name), not an encoding defect — the corrected 3-way
+cyclic group type-checks and runs (`a(9)` cycling a→b→c nine levels lands on the base case). The
+right-nested product projection (`projectSlot`) has no structural reason to stop at any particular
+N; N≥4 is untested but unblocked. (This addendum restores content from an orphaned follow-up
+commit, `0016ed9f` on the deleted feature branch, re-recorded at merge.)
+
+**The row-subsumption asymmetry is a latent bug CLASS, not just this feature's site** — `checkSC`'s
+`.annotS` arm checks rows by subsumption (`subRow`, declared ⊇ actual — sound) while its generic
+catch-all routes through `unifyC`/`unifyV`/`unifyRow`, which demands row EQUALITY. Any
+declared-row value reaching the checker through the catch-all can hit a false mismatch. This
+feature's site was fixed by `.annotS`-wrapping the pair value at construction (a local workaround);
+the class is tracked as issue #119 with the full fix-fork analysis.
+
 ## Consequences
 
 - No kernel change (invariant #5 holds — five primitives, elaborator-only).
