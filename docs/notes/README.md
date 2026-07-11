@@ -6,7 +6,7 @@
 > table carries the curated *active* pointers (the always-loaded working set); this
 > is the full map. Regenerate with `just notes-index`; `--check` gates it in `just fitness`.
 
-## active (65)
+## active (66)
 
 _Current living reference. Also pointed to by CLAUDE.md's reference index._
 
@@ -27,6 +27,7 @@ _Current living reference. Also pointed to by CLAUDE.md's reference index._
 - [`dogfood-calc-findings.md`](dogfood-calc-findings.md) — Dogfood findings — a multi-module calculator written in bang
 - [`dogfood-json-findings.md`](dogfood-json-findings.md) — Dogfood findings — a JSON parser/printer written in bang
 - [`effect-algebra-survey.md`](effect-algebra-survey.md) — The algebra of effects and the effect-side lambda cube — design survey (R-series companion to R6)
+- [`effect-sound-refoundation.md`](effect-sound-refoundation.md) — effect_sound re-foundation — the three trace axioms → defs (Q14, 2026-07-12)
 - [`effects-vs-cic.md`](effects-vs-cic.md) — Effects vs the Calculus of (Inductive) Constructions — additive or derivative?
 - [`emission-bignum-design.md`](emission-bignum-design.md) — Emission bignum design — full ℤ on the WasmGC path (closing the rung-4/5 i64-wrap gap)
 - [`emission-rung1-probe.md`](emission-rung1-probe.md) — Emission rung-1 probe — pure ⊥-row arithmetic → real `.wat`, run on wasmtime

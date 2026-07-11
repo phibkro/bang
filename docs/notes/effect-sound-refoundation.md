@@ -34,28 +34,57 @@ So the two obvious semantics both fail:
 | trace = ALL dispatched labels; `t ⊆ e` | `∀ ℓ ∈ t, labelEff ℓ ≤ e` | **FALSE** (internal handling discharges ℓ from e) |
 | trace = ESCAPING labels only; `t ⊆ e` | same | **VACUOUS** (an escaping op → `escapedCap`, not `done`, so on a `done` run `t = []`) |
 
-## The chosen design — Q14 option (1), the INFORMATIVE per-focus bound
+## The chosen design — Q14 option (1) via the RUNTIME BOUND (no preservation, no LR)
 
-Log at each DISPATCH the pair `(label, focus-effect)`, and check each label against
-the effect it was **performed at**, not the discharged top-level `e`. This is Q14's
-option (1) ("the most informative"). It is TRUE (preservation bounds each focus
-effect) and non-vacuous (every internal dispatch is a real checked obligation).
+Log at each DISPATCH the pair `(label, liveBound K e)`, and check each label against
+the bound it was **performed under**, not the discharged top-level `e`. This is Q14's
+option (1) ("the most informative"), realized WITHOUT threading a typing fact:
 
-### The three defs (`Eval.lean` §effect-trace — the OBVIOUS images)
+**The live bound is computed config-side.** `liveBound K e := e ⊔ ⨆{labelEff(h.label) |
+handleF n h ∈ K}` — the top-level row joined with the labels of the currently-installed
+handler frames. Handler frames carry their labels at runtime (`handleF n h`, `h.label` —
+dispatch needs them; the glossary's typing-by-label/dispatch-by-identity split guarantees
+labels are runtime-present). So the passenger maintains the bound purely from the stack:
+entering a `handle` puts its label in the bound (structurally, `handleF` is on `K`),
+popping removes it. No preservation, no LR — the theorem becomes "every dispatched op was
+performed under a LIVE handler for its label, or its label is in the top-level row `e`",
+provable by induction on the machine (a dispatched `ℓ` resolves to a `handleF` frame on
+`K` whose label is `ℓ`, so `labelEff ℓ ≤ liveBound K e`).
+
+This is the manager's Phase-2 redirect: the earlier worry ("the performed-at residual is a
+TYPING fact") was pessimistic — the runtime bound `e ∪ {live handler labels}` is a SUPERSET
+of the true focus residual, and it is exactly what `traceWithin` needs, computed config-side.
+
+### DE-RISKED with runnable witnesses (BEFORE any induction)
+
+`Bang/Witness/EffectTraceWitness.lean` (build-gated, 6 `example`s, all `rfl`/`decide`):
+
+| witness | records | naive `⊆ ∅` | `traceWithin` |
+|---|---|---|---|
+| `handle(throws 1)(raise 1)` @ ∅ | `(1, {1} ⊔ ∅)` | **FALSE** (refuted) | **TRUE** |
+| `handle(throws 1)(handle(throws 2)(raise 1))` @ ∅ | `(1, {2} ⊔ {1} ⊔ ∅)` | FALSE | TRUE (1 ∈ bound) |
+
+The nested case CONFIRMS the runtime bound tracks EVERY live handler (both `throws` frames
+join in), not just the discharging one — the shape is genuinely informative. No divergence
+from the statement found, so no fork; the runtime-bound shape CLOSES the cheap witnesses.
+
+### The four defs (`Eval.lean` §effect-trace — the OBVIOUS images)
 
 ```
-abbrev Trace (Eff)           := List (Label × Eff)           -- (dispatched label, focus residual)
+abbrev Trace (Eff)           := List (Label × Eff)      -- (dispatched label, runtime live bound)
+def liveBound                : EvalCtx → Eff → Eff      -- e ⊔ ⨆{labelEff h.label | handleF h ∈ K}
 def Config.runTrace          : Nat → Config → Eff → Trace Eff → Result (Val × Trace Eff)
-                                -- = Config.run + a passenger accumulator; appends (ℓ,φ) at DISPATCH
+                                -- = Config.run + a passenger; appends (ℓ, liveBound K e) at DISPATCH
 def Source.evalTrace fuel c e := Config.runTrace fuel (0,[],c) e []
-def traceWithin t            := ∀ p ∈ t, labelEff p.1 ≤ p.2   -- per-focus bound
+def traceWithin t            := ∀ p ∈ t, labelEff p.1 ≤ p.2   -- per-dispatch runtime bound
 ```
 
 `Trace` = `List Label` would be the naive candidate; it is replaced by
 `List (Label × Eff)` precisely because a flat label-list cannot express the
-per-focus bound Q14 forces. `Source.eval`/`Config.run` stay **byte-identical**
-(verified: the `git diff` on `Eval.lean` removes only the three axiom lines and adds
-the sibling; `runTrace` is a separate def, `Config.run` is untouched).
+per-dispatch bound Q14 forces. `liveBound` is the new helper — the runtime bound
+folded off the stack `K` (config-side, no typing). `Source.eval`/`Config.run` stay
+**byte-identical** (verified: the `git diff` on `Eval.lean` removes only the three axiom
+lines and adds the sibling; `runTrace` is a separate def, `Config.run` is untouched).
 
 ### STATEMENT CHANGE (operator-visible fork)
 
@@ -90,35 +119,41 @@ The `sorryAx` is the theorem body (Phase 2); the three type/def axioms are gone.
 
 ## Phase-2 plan (after operator ack of the statement change)
 
-1. **Value-agreement differential guard.** `Source.eval` stays the oracle. The
-   guard is a generic lemma (NOT a `#guard` — no concrete `EffSig` instance exists
-   in-tree; the kernel is abstract over `Eff`):
-   `(Config.runTrace n cfg φ t).map_value = Config.run n cfg` — i.e. the value
-   component agrees for all `n, cfg, φ, t`. Structural induction on fuel; the two
-   defs share `Source.step` and the same terminal classification (the DISPATCH
-   `none → escapedCap` arm matches `Config.run`'s `perform (vcap _) → escapedCap`).
-2. **The discharge.** `traceWithin t` = every recorded `(ℓ, φ)` has `labelEff ℓ ≤ φ`.
-   Each recording happens at a DISPATCH step of a config typed at focus residual
-   `φ`; the `perform` typing rule GIVES `labelEff ℓ ≤ φ` directly. The induction
-   threads `HasConfigTy`-preservation (`preservation`, `Spec.lean:119`) to carry the
-   focus-typing to each dispatch. Key obligation: the `φ` passed to `runTrace` must
-   track the config's residual — the initial `e` is the whole-program residual, and
-   the DISPATCH arm records the CURRENT `φ`. **OPEN for Phase 2:** `runTrace` threads
-   a SINGLE `φ` (the top-level `e`), but the focus residual SHRINKS as handlers pop.
-   Two shapes to resolve at Phase 2 kickoff:
-   - (i) record the top-level `e` at every dispatch and prove `labelEff ℓ ≤ e` for
-     the *unhandled* labels only — collapses toward Option B (vacuous) unless the
-     trace is filtered to escaping labels;
-   - (ii) thread the LIVE focus residual through `runTrace` (recompute from the
-     config's stack, or preservation-derive it) so each `(ℓ, φ)` carries the ACTUAL
-     performed-at effect — the genuinely informative bound. **(ii) is the design
-     intent**; it needs `runTrace` to compute/carry the per-config `φ`, which is the
-     one non-mechanical Phase-2 question (the perform-in-handler labeling question
-     Q14 flagged). Price it BEFORE grinding: if (ii) needs the LR spine it is a
-     priced refutation, not a discharge.
+The earlier (i)-vs-(ii) fork is RESOLVED by the runtime bound: `runTrace` records
+`(ℓ, liveBound K e)` where `liveBound` is folded from the stack (config-side), so no
+per-config typing thread is needed. The two remaining pieces:
+
+1. **Value-agreement differential guard.** `Source.eval` stays the oracle. A generic
+   lemma (NOT a `#guard` on the value — the kernel is abstract over `Eff`; the WITNESS
+   file uses a local `Finset Label` instance to check the TRACE shape instead):
+   `(Config.runTrace n cfg e t).value = Config.run n cfg` — the value component agrees
+   for all `n, cfg, e, t`. Structural induction on fuel; the two defs share `Source.step`
+   and the same terminal classification (DISPATCH `none → escapedCap` matches
+   `Config.run`'s `perform (vcap _) → escapedCap`).
+2. **The discharge.** `traceWithin t` = every recorded `(ℓ, liveBound K e)` has
+   `labelEff ℓ ≤ liveBound K e`. The induction invariant: at every DISPATCH-recording
+   config, the dispatched capability `vcap n ℓ` resolves (`idDispatch K n ℓ … ≠ none`,
+   else the run is `escapedCap` not the recording arm) to a `handleF n h` frame ON `K`
+   whose label is `ℓ` (`handlesOp h ℓ op = true ⟹ h.label = ℓ`, the existing
+   `Dispatch.lean:50` lemma). Then `labelEff ℓ = labelEff h.label ≤ liveBound K e` by a
+   `liveBound`-membership lemma (a `handleF` frame on `K` contributes its label's row to
+   the fold — a straightforward `EvalCtx` induction). **NO preservation, NO LR needed**:
+   the bound is what dispatch itself witnesses. The one lemma to prove:
+   `handleF n h ∈ K → labelEff h.label ≤ liveBound K e` (fold-membership), plus the
+   dispatch-finds-a-matching-frame fact (`splitAtId` returns a frame with `handlesOp`,
+   already in `Invariants.lean`). Estimate: ~2 lemmas + the fuel induction, well under
+   the LR territory. **HARD RAIL respected**: this route never touches `lr_*`.
 
 ## Files
 
-- `Bang/Core/Semantics/Eval.lean` §effect-trace (~:399-449) — the three defs.
-- `Bang/Spec.lean:191` — `effect_sound` restated.
+- `Bang/Core/Semantics/Eval.lean` §effect-trace (~:399-470) — the four defs (`Trace`,
+  `liveBound`, `Config.runTrace`, `Source.evalTrace`, `traceWithin`).
+- `Bang/Spec.lean:191` — `effect_sound` restated (`STATEMENT_CHANGE_OK`, this Q14 ruling).
+- `Bang/Witness/EffectTraceWitness.lean` — the 6 runnable refutation/confirmation witnesses.
 - `docs/notes/questions/Q14-effect-sound-trace-observation.md` — the design fork this resolves.
+
+## ADR obligation (operator condition)
+
+An ADR must record the Q14 ruling: option (1) via the runtime bound, the two refuted
+alternatives (naive-false / escaping-vacuous) with their witness references, and the
+`evalTrace`/`traceWithin` signature changes. Number next-free at merge time.

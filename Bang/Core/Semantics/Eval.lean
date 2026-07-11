@@ -396,7 +396,7 @@ theorem Config.run_done_add (k : Nat) :
           show Config.run (m + k) cfg' = Result.done w
           exact ih cfg' w h
 
-/-! ### Effect trace (ADR-????, Q14 re-foundation) — concrete images of the three parked axioms.
+/-! ### Effect trace (Q14 re-foundation) — concrete images of the three parked axioms.
 
 The three symbols `Trace`/`Source.evalTrace`/`traceWithin` were bare `axiom`s parked on Q1 (a
 concrete `Eff`). Q1 is now RESOLVED (`[Lattice Eff] [OrderBot Eff]`, ADR-0018), so they become
@@ -405,33 +405,53 @@ concrete DEFINITIONS — the obvious images of the machine.
 The DESIGN choice is the trace SEMANTICS (Q14): a program's dispatched labels are NOT all `≤ e`,
 because a label handled by an in-program `handle` frame is DISCHARGED from the residual row
 `e` (the `handleThrows`/`handleState` typing rules remove `ℓ` from `φ`). So `trace ⊆ e` (naive) is
-FALSE, and "only-escaping labels ⊆ e" is VACUOUS (an escaping op runs to `escapedCap`, not `done`,
-so its trace is empty). We take Q14 option (1) — the INFORMATIVE bound: log at each DISPATCH the
-`(label, focus-effect)` pair, where the focus effect is the residual row bounding the config at the
-point the op is performed (preservation bounds it by `e`). `traceWithin` then checks each label
-against the effect it was performed at, not the discharged top-level `e`. -/
+FALSE (`handle (throws ℓ)(raise ℓ)` at `e = ⊥`), and "only-escaping labels ⊆ e" is VACUOUS (an
+escaping op runs to `escapedCap`, not `done`, so its trace is empty).
 
-/-- The effect trace: the labels dispatched during a run, each paired with the residual effect row
-`φ` bounding the focus at the point it was performed (a DISPATCH-site observation). -/
+We take Q14 option (1) — the INFORMATIVE per-dispatch bound — realized WITHOUT preservation-threading
+via the **runtime bound**: the live effect row at a config is `e ⊔ ⨆{labelEff(h.label) | handleF h ∈ K}`
+— the top-level row JOINED with the labels of the currently-installed handler frames. Handler frames
+carry their labels at runtime (dispatch needs them: `handleF n h`, `h.label`), so this bound is
+COMPUTED config-side by the passenger — no typing fact, no preservation. Entering a `handle` pushes
+its label into the bound (structurally: `handleF` is on `K`), popping removes it. At each DISPATCH we
+record `(ℓ, liveBound K e)`; `traceWithin` checks each `labelEff ℓ ≤` its recorded bound. The
+resulting theorem: "every dispatched op was performed under a LIVE handler for its label, or its
+label is in the top-level row `e`" — provable by induction on the machine (a dispatched `ℓ` resolves
+to a `handleF` frame on `K` whose label is `ℓ`, so `labelEff ℓ ≤ liveBound K e`). -/
+
+/-- The effect trace: the labels dispatched during a run, each paired with the RUNTIME live bound
+`e ⊔ ⨆ live-handler-labels` in force at the point it was performed. -/
 abbrev Trace (Eff : Type) := List (Label × Eff)
 
+/-- The runtime live-effect bound at a config: the top-level row `e` joined with the singleton rows
+of every `handleF` frame's label on the stack `K`. Computed purely config-side (handler frames carry
+their labels — dispatch reads them), so no typing fact is needed. -/
+def liveBound {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult] :
+    EvalCtx → Eff → Eff
+  | [], e                    => e
+  | .handleF _ h :: K, e     =>
+      EffSig.labelEff (Eff := Eff) (Mult := Mult) h.label ⊔ liveBound (Mult := Mult) K e
+  | .letF _ :: K, e          => liveBound (Mult := Mult) K e
+  | .appF _ :: K, e          => liveBound (Mult := Mult) K e
+
 /-- Instrumented `Config.run`: identical control flow to `Config.run`, but accumulates the dispatched
-`(label, φ)` pairs. `φ` is the residual effect passed positionally (the config's typing bound; the
-statement supplies it from preservation). The VALUE component agrees with `Config.run` byte-for-byte
-(same step, same terminals) — the accumulator is a passenger. -/
-def Config.runTrace : Nat → Config → Eff → Trace Eff → Result (Val × Trace Eff)
+`(label, liveBound)` pairs. The VALUE component agrees with `Config.run` byte-for-byte (same step,
+same terminals) — the accumulator is a passenger. The bound is recomputed from the stack `K` at each
+DISPATCH (runtime-present handler labels), so `e` is the fixed top-level row (never re-threaded). -/
+def Config.runTrace {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult] :
+    Nat → Config → Eff → Trace Eff → Result (Val × Trace Eff)
   | 0, _, _, _                    => .oom
   | _ + 1, (_, [], .ret v), _, t  => .done (v, t)
-  | n + 1, cfg, φ, t              =>
-      match cfg.2.2, cfg.2.1 with
-      -- DISPATCH: record `(ℓ, φ)` before stepping. Other arms thread `t` unchanged.
-      | .perform (.vcap _ ℓ) _ _, _ =>
+  | n + 1, cfg, e, t              =>
+      match cfg.2.2 with
+      -- DISPATCH: record `(ℓ, liveBound K e)` before stepping. Other arms thread `t` unchanged.
+      | .perform (.vcap _ ℓ) _ _ =>
           match Source.step cfg with
-          | some cfg' => Config.runTrace n cfg' φ (t ++ [(ℓ, φ)])
+          | some cfg' => Config.runTrace (Mult := Mult) n cfg' e (t ++ [(ℓ, liveBound (Mult := Mult) cfg.2.1 e)])
           | none      => .escapedCap
-      | _, _ =>
+      | _ =>
           match Source.step cfg with
-          | some cfg' => Config.runTrace n cfg' φ t
+          | some cfg' => Config.runTrace (Mult := Mult) n cfg' e t
           | none      =>
               match cfg.2.2 with
               | .perform (.vcap _ _) _ _ => .escapedCap
@@ -439,13 +459,15 @@ def Config.runTrace : Nat → Config → Eff → Trace Eff → Result (Val × Tr
 
 /-- Fuel-bounded evaluation returning both the value and the effect `Trace`. Load into a fresh
 machine (`⟨0, [], c⟩`), run under the whole-program residual `e`, empty trace. -/
-def Source.evalTrace (fuel : Nat) (c : Comp) (e : Eff) : Result (Val × Trace Eff) :=
-  Config.runTrace fuel (0, [], c) e []
+def Source.evalTrace {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+    (fuel : Nat) (c : Comp) (e : Eff) : Result (Val × Trace Eff) :=
+  Config.runTrace (Mult := Mult) fuel (0, [], c) e []
 
-/-- The trace stays within effect row `e` (INFORMATIVE bound, Q14 option 1): every dispatched label
-is `≤` the residual effect row it was performed at. Discharged (internally-handled) labels are
-checked against their own focus effect, not the top-level `e`. -/
-def traceWithin [EffSig Eff Mult] (t : Trace Eff) : Prop :=
+/-- The trace stays within its recorded bounds (INFORMATIVE, Q14 option 1): every dispatched label
+is `≤` the runtime live bound in force when it was performed. Internally-handled labels are checked
+against their handler's live bound (which contains their label), NOT the discharged top-level `e`. -/
+def traceWithin {Mult : Type} [CommSemiring Mult] [DecidableEq Mult] [EffSig Eff Mult]
+    (t : Trace Eff) : Prop :=
   ∀ p ∈ t, EffSig.labelEff (Eff := Eff) (Mult := Mult) p.1 ≤ p.2
 
 /-- isReturn: a Comp is "returned" iff it's `ret v` for some v. -/

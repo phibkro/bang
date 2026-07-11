@@ -197,7 +197,7 @@ theorem effect_sound
     {c : Comp} {e : Eff} {q : Mult} {A : VTy Eff Mult} {fuel : Nat}
     {v : Val} {t : Trace Eff} :
     HasCTy [] [] c e (CTy.F q A) →
-    Source.evalTrace fuel c e = Result.done (v, t) →
+    Source.evalTrace (Mult := Mult) fuel c e = Result.done (v, t) →
     traceWithin (Mult := Mult) t := sorry
 
 

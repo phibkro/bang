@@ -40,7 +40,7 @@ graph TD
     Core_IR["Core.IR<br/>440L · fan-in 0"]
     Core_Semantics["Core.Semantics<br/>25L · fan-in 0"]
     Core_Semantics_Dispatch["Core.Semantics.Dispatch<br/>273L · fan-in 0"]
-    Core_Semantics_Eval["Core.Semantics.Eval<br/>422L · fan-in 0"]
+    Core_Semantics_Eval["Core.Semantics.Eval<br/>486L · fan-in 0"]
     Core_Semantics_Invariants["Core.Semantics.Invariants<br/>264L · fan-in 0"]
     Core_Semantics_Subst["Core.Semantics.Subst<br/>947L · fan-in 0"]
     Core_Soundness["Core.Soundness<br/>3400L · fan-in 0"]
@@ -68,6 +68,7 @@ graph TD
     Witness_CapEscapeWitness["Witness.CapEscapeWitness<br/>72L · fan-in 0"]
     Witness_CtrGradeRefute["Witness.CtrGradeRefute<br/>138L · fan-in 0"]
     Witness_CustomStage1Refute["Witness.CustomStage1Refute<br/>39L · fan-in 0"]
+    Witness_EffectTraceWitness["Witness.EffectTraceWitness<br/>106L · fan-in 0"]
     Witness_ElabFuzz["Witness.ElabFuzz<br/>430L · fan-in 0"]
     Witness_Fuzz["Witness.Fuzz<br/>281L · fan-in 0"]
     Witness_GradePolyReturner["Witness.GradePolyReturner<br/>165L · fan-in 0"]
@@ -82,7 +83,7 @@ graph TD
   subgraph tier_Apex["Apex — verification spine + gate"]
     Audit["Audit<br/>69L · fan-in 0"]
     Distribution["Distribution<br/>67L · fan-in 0"]
-    Spec["Spec<br/>346L · fan-in 0"]
+    Spec["Spec<br/>351L · fan-in 0"]
   end
   Frontend_Surface_PropTest --> Frontend_Surface
 ```
@@ -104,7 +105,7 @@ graph TD
 | `Core.IR` | ? | 440 | 0 |
 | `Core.Semantics` | ? | 25 | 0 |
 | `Core.Semantics.Dispatch` | ? | 273 | 0 |
-| `Core.Semantics.Eval` | ? | 422 | 0 |
+| `Core.Semantics.Eval` | ? | 486 | 0 |
 | `Core.Semantics.Invariants` | ? | 264 | 0 |
 | `Core.Semantics.Subst` | ? | 947 | 0 |
 | `Core.Soundness` | ? | 3400 | 0 |
@@ -127,13 +128,14 @@ graph TD
 | `Reify.CalcReify` | ? | 283 | 0 |
 | `Reify.CalcReifyRef` | ? | 164 | 0 |
 | `Reify.CalcReifySim` | ? | 1436 | 0 |
-| `Spec` | Apex | 346 | 0 |
+| `Spec` | Apex | 351 | 0 |
 | `Witness.AgreeOutcome` | ? | 236 | 0 |
 | `Witness.BinopTyping` | ? | 70 | 0 |
 | `Witness.BoccRegress` | ? | 261 | 0 |
 | `Witness.CapEscapeWitness` | ? | 72 | 0 |
 | `Witness.CtrGradeRefute` | ? | 138 | 0 |
 | `Witness.CustomStage1Refute` | ? | 39 | 0 |
+| `Witness.EffectTraceWitness` | ? | 106 | 0 |
 | `Witness.ElabFuzz` | ? | 430 | 0 |
 | `Witness.Fuzz` | ? | 281 | 0 |
 | `Witness.GradePolyReturner` | ? | 165 | 0 |
