@@ -725,14 +725,33 @@ value position (the wasm folded-form rule: a subexpression must produce exactly 
 def seqBlock (body : String) : String :=
   s!"(block (result (ref null $val))\n    {body})"
 
-/-- Arithmetic `BinOp` → the i64 wasm op (comparisons handled via the fused `if`, not here). -/
+/-- Arithmetic `BinOp` → the i64 wasm op used on the GC path. Only `mul` remains here (bignum lane
+B3 replaces it with `$mulVal`); `add`/`sub` route through `binopValHelper` (the bignum-safe runtime
+helper), and `div`/comparisons are handled separately. -/
 def binopGCWat : BinOp → Option String
-  | .add => some "i64.add" | .sub => some "i64.sub" | .mul => some "i64.mul"
-  | .div => none | .lt | .eq => none
+  | .mul => some "i64.mul"
+  | .add | .sub | .div | .lt | .eq => none
+
+/-- `add`/`sub` → the bignum-safe runtime helper (`$addVal`/`$subVal`) that operates on BOXED `$val`
+operands (mixed `$ival`/`$bigval`) and returns an unbounded result (issue #132 / bignum lane B2).
+`mul` stays on the i64 path (B3); comparisons and `div` are elsewhere. -/
+def binopValHelper : BinOp → Option String
+  | .add => some "$addVal"
+  | .sub => some "$subVal"
+  | .mul | .div | .lt | .eq => none
 
 /-- Comparison `BinOp` → the i64 wasm compare (i32 result), for the fused `if`. -/
 def cmpGCWat : BinOp → Option String
   | .lt => some "i64.lt_s" | .eq => some "i64.eq" | _ => none
+
+/-- BIGNUM-safe comparison condition (issue #132 / bignum lane B2): given two BOXED `$val` operand
+expressions, produce the i32 boolean wasm condition via `$cmpVal` (which returns −1/0/1 on the mixed
+`$ival`/`$bigval` rep). `lt` = `cmpVal < 0`, `eq` = `cmpVal == 0`. Operands are NOT unboxed (a
+`$bigval` operand must not truncate to i64). -/
+def cmpValCond : BinOp → Option (String → String → String)
+  | .lt => some (fun ea eb => s!"(i32.lt_s (call $cmpVal {ea} {eb}) (i32.const 0))")
+  | .eq => some (fun ea eb => s!"(i32.eqz (call $cmpVal {ea} {eb}))")
+  | _ => none
 
 def unboxI (e : String) : String := s!"(struct.get $ival 0 (ref.cast (ref $ival) {e}))"
 def boxI (e : String) : String := s!"(struct.new $ival {e})"
@@ -846,8 +865,22 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
   match c with
   | .ret v => emitValGC envL caps v st
   | .binop op a b =>
+      match binopValHelper op with
+      | some h =>
+          -- BIGNUM add/sub (issue #132 / bignum lane B2): operands stay BOXED $val; the runtime
+          -- `$addVal`/`$subVal` picks the i64 fast path (both $ival, no overflow) or the sign-magnitude
+          -- limb path (promotes to $bigval, demotes a small result). No unboxI — the result is unbounded.
+          match emitValGC envL caps a st with
+          | (.unsup r, st') => (.unsup r, st')
+          | (.ok ea, st1) =>
+            match emitValGC envL caps b st1 with
+            | (.unsup r, st') => (.unsup r, st')
+            | (.ok eb, st2) => (.ok s!"(call {h} {ea} {eb})", st2)
+      | none =>
       match binopGCWat op with
       | some w =>
+          -- MUL (bignum lane B3, still i64-wrap): unbox, i64.mul, rebox as $ival. Overflows silently
+          -- past 2⁶³ until B3 lands $mulVal; NAMED in docs/notes/emission-bignum-design.md.
           match emitValGC envL caps a st with
           | (.unsup r, st') => (.unsup r, st')
           | (.ok ea, st1) =>
@@ -868,9 +901,9 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
               -- `false = inl unit` tag 0, IR.lean:173). Unlike the inline emitter (no bare-bool
               -- i64 rep), the GC path HAS a sum rep, so no fusion is needed — a subsequent `case`
               -- eliminates it generically. `unit` payload = a boxed 0 (never inspected).
-              match cmpGCWat op with
+              match cmpValCond op with
               | none => (.unsup s!"binop {repr op} not emittable on the GC path", st)
-              | some cw =>
+              | some mkCond =>
                   match emitValGC envL caps a st with
                   | (.unsup r, st') => (.unsup r, st')
                   | (.ok ea, st1) =>
@@ -878,7 +911,10 @@ partial def emitCompGC (envL : Nat) (caps : List CapSlot) (c : Comp) (st : GCSta
                     | (.unsup r, st') => (.unsup r, st')
                     | (.ok eb, st2) =>
                         let u := boxI "(i64.const 0)"
-                        (.ok s!"(if (result (ref null $val)) ({cw} {unboxI ea} {unboxI eb}) (then (struct.new $sum (i32.const 1) {u})) (else (struct.new $sum (i32.const 0) {u})))", st2)
+                        -- BIGNUM-safe comparison (issue #132 / bignum lane B2): $cmpVal returns −1/0/1
+                        -- on the mixed $ival/$bigval rep; lt = (cmp < 0), eq = (cmp == 0). Operands
+                        -- stay boxed $val (no unboxI — a big operand must not truncate to i64).
+                        (.ok s!"(if (result (ref null $val)) {mkCond ea eb} (then (struct.new $sum (i32.const 1) {u})) (else (struct.new $sum (i32.const 0) {u})))", st2)
   -- RUNG 5 S1: a `put`/`get` fused with its `letC` continuation. The inline path MUST fuse (unit has
   -- no i64 rep); the GC path does NOT need to (unit is a boxed $val), but a bare `letC (put) N`
   -- prepends a `none` cap slot for the unit binder — so route through the ordinary letC arm, which
@@ -1198,6 +1234,147 @@ def gcHelpers : String :=
   "      (br $l)))\n" ++
   "    (struct.get $env $hd (local.get $h)))"
 
+/-- BIGNUM runtime helpers (issue #132 / bignum lane B2): sign-magnitude arithmetic over the mixed
+`$ival`/`$bigval` rep. Each `$addVal`/`$subVal` takes two `(ref null $val)` and returns one, with an
+i64 FAST PATH (both `$ival`, no signed overflow ⇒ `$ival`) and a limb SLOW PATH (`$toBig` promote,
+sign-magnitude `$addMag`/`$subMag` dispatched on signs via `$cmpMag`, `$normBig` demotes a small
+result back to `$ival`). `$cmpVal` returns −1/0/1 (used by the `lt`/`eq` arms). Witnessed:
+`scratch/bignum-addval-witness.wat` (all cases == hand oracle on wasmtime 45). Mul is bignum lane B3.
+Every routine keeps the normalization invariant (no leading zero limbs; canonical zero). -/
+def bignumHelpers : String :=
+  "  (func $bIsBig (param $v (ref null $val)) (result i32) (ref.test (ref $bigval) (local.get $v)))\n" ++
+  "  (func $bIsIval (param $v (ref null $val)) (result i32) (ref.test (ref $ival) (local.get $v)))\n" ++
+  "  (func $bIvalN (param $v (ref null $val)) (result i64) (struct.get $ival 0 (ref.cast (ref $ival) (local.get $v))))\n" ++
+  "  (func $bLimbsOfU (param $m i64) (result (ref $limbs)) (local $n i32) (local $t i64) (local $r (ref $limbs)) (local $i i32)\n" ++
+  "    (local.set $n (i32.const 1)) (local.set $t (i64.div_u (local.get $m) (i64.const 1000000000)))\n" ++
+  "    (block $cd (loop $cl (br_if $cd (i64.eqz (local.get $t)))\n" ++
+  "      (local.set $n (i32.add (local.get $n) (i32.const 1)))\n" ++
+  "      (local.set $t (i64.div_u (local.get $t) (i64.const 1000000000))) (br $cl)))\n" ++
+  "    (local.set $r (array.new_default $limbs (local.get $n))) (local.set $i (i32.const 0))\n" ++
+  "    (block $d (loop $l (br_if $d (i32.ge_u (local.get $i) (local.get $n)))\n" ++
+  "      (array.set $limbs (local.get $r) (local.get $i) (i64.rem_u (local.get $m) (i64.const 1000000000)))\n" ++
+  "      (local.set $m (i64.div_u (local.get $m) (i64.const 1000000000)))\n" ++
+  "      (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $l)))\n" ++
+  "    (local.get $r))\n" ++
+  "  (func $bToBig (param $v (ref null $val)) (result (ref $bigval)) (local $n i64) (local $sign i32) (local $mag i64)\n" ++
+  "    (if (result (ref $bigval)) (call $bIsBig (local.get $v))\n" ++
+  "      (then (ref.cast (ref $bigval) (local.get $v)))\n" ++
+  "      (else\n" ++
+  "        (local.set $n (call $bIvalN (local.get $v)))\n" ++
+  "        (if (i64.lt_s (local.get $n) (i64.const 0))\n" ++
+  "          (then (local.set $sign (i32.const 1)) (local.set $mag (i64.sub (i64.const 0) (local.get $n))))\n" ++
+  "          (else (local.set $sign (i32.const 0)) (local.set $mag (local.get $n))))\n" ++
+  "        (struct.new $bigval (local.get $sign) (call $bLimbsOfU (local.get $mag))))))\n" ++
+  "  (func $bAddMag (param $a (ref $limbs)) (param $b (ref $limbs)) (result (ref $limbs))\n" ++
+  "    (local $la i32) (local $lb i32) (local $n i32) (local $i i32) (local $carry i64) (local $sum i64) (local $r (ref $limbs)) (local $av i64) (local $bv i64)\n" ++
+  "    (local.set $la (array.len (local.get $a))) (local.set $lb (array.len (local.get $b)))\n" ++
+  "    (local.set $n (i32.add (select (local.get $la) (local.get $lb) (i32.gt_u (local.get $la) (local.get $lb))) (i32.const 1)))\n" ++
+  "    (local.set $r (array.new_default $limbs (local.get $n))) (local.set $i (i32.const 0)) (local.set $carry (i64.const 0))\n" ++
+  "    (block $d (loop $l (br_if $d (i32.ge_u (local.get $i) (local.get $n)))\n" ++
+  "      (local.set $av (if (result i64) (i32.lt_u (local.get $i) (local.get $la)) (then (array.get $limbs (local.get $a) (local.get $i))) (else (i64.const 0))))\n" ++
+  "      (local.set $bv (if (result i64) (i32.lt_u (local.get $i) (local.get $lb)) (then (array.get $limbs (local.get $b) (local.get $i))) (else (i64.const 0))))\n" ++
+  "      (local.set $sum (i64.add (i64.add (local.get $av) (local.get $bv)) (local.get $carry)))\n" ++
+  "      (local.set $carry (i64.div_u (local.get $sum) (i64.const 1000000000)))\n" ++
+  "      (array.set $limbs (local.get $r) (local.get $i) (i64.rem_u (local.get $sum) (i64.const 1000000000)))\n" ++
+  "      (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $l)))\n" ++
+  "    (call $bTrim (local.get $r)))\n" ++
+  "  (func $bCmpMag (param $a (ref $limbs)) (param $b (ref $limbs)) (result i32)\n" ++
+  "    (local $la i32) (local $lb i32) (local $i i32) (local $av i64) (local $bv i64)\n" ++
+  "    (local.set $la (array.len (local.get $a))) (local.set $lb (array.len (local.get $b)))\n" ++
+  "    (if (i32.gt_u (local.get $la) (local.get $lb)) (then (return (i32.const 1))))\n" ++
+  "    (if (i32.lt_u (local.get $la) (local.get $lb)) (then (return (i32.const -1))))\n" ++
+  "    (local.set $i (i32.sub (local.get $la) (i32.const 1)))\n" ++
+  "    (block $d (loop $l (br_if $d (i32.lt_s (local.get $i) (i32.const 0)))\n" ++
+  "      (local.set $av (array.get $limbs (local.get $a) (local.get $i))) (local.set $bv (array.get $limbs (local.get $b) (local.get $i)))\n" ++
+  "      (if (i64.gt_u (local.get $av) (local.get $bv)) (then (return (i32.const 1))))\n" ++
+  "      (if (i64.lt_u (local.get $av) (local.get $bv)) (then (return (i32.const -1))))\n" ++
+  "      (local.set $i (i32.sub (local.get $i) (i32.const 1))) (br $l)))\n" ++
+  "    (i32.const 0))\n" ++
+  "  (func $bTrim (param $r (ref $limbs)) (result (ref $limbs)) (local $top i32) (local $n i32) (local $i i32) (local $o (ref $limbs))\n" ++
+  "    (local.set $top (i32.sub (array.len (local.get $r)) (i32.const 1)))\n" ++
+  "    (block $td (loop $tl (br_if $td (i32.eqz (local.get $top)))\n" ++
+  "      (br_if $td (i64.ne (array.get $limbs (local.get $r) (local.get $top)) (i64.const 0)))\n" ++
+  "      (local.set $top (i32.sub (local.get $top) (i32.const 1))) (br $tl)))\n" ++
+  "    (local.set $n (i32.add (local.get $top) (i32.const 1)))\n" ++
+  "    (if (i32.eq (local.get $n) (array.len (local.get $r))) (then (return (local.get $r))))\n" ++
+  "    (local.set $o (array.new_default $limbs (local.get $n))) (local.set $i (i32.const 0))\n" ++
+  "    (block $cd (loop $cl (br_if $cd (i32.ge_u (local.get $i) (local.get $n)))\n" ++
+  "      (array.set $limbs (local.get $o) (local.get $i) (array.get $limbs (local.get $r) (local.get $i)))\n" ++
+  "      (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $cl)))\n" ++
+  "    (local.get $o))\n" ++
+  "  (func $bSubMag (param $a (ref $limbs)) (param $b (ref $limbs)) (result (ref $limbs))\n" ++
+  "    (local $la i32) (local $lb i32) (local $i i32) (local $borrow i64) (local $av i64) (local $bv i64) (local $diff i64) (local $r (ref $limbs))\n" ++
+  "    (local.set $la (array.len (local.get $a))) (local.set $lb (array.len (local.get $b)))\n" ++
+  "    (local.set $r (array.new_default $limbs (local.get $la))) (local.set $i (i32.const 0)) (local.set $borrow (i64.const 0))\n" ++
+  "    (block $d (loop $l (br_if $d (i32.ge_u (local.get $i) (local.get $la)))\n" ++
+  "      (local.set $av (array.get $limbs (local.get $a) (local.get $i)))\n" ++
+  "      (local.set $bv (if (result i64) (i32.lt_u (local.get $i) (local.get $lb)) (then (array.get $limbs (local.get $b) (local.get $i))) (else (i64.const 0))))\n" ++
+  "      (local.set $diff (i64.sub (i64.sub (local.get $av) (local.get $bv)) (local.get $borrow)))\n" ++
+  "      (if (i64.lt_s (local.get $diff) (i64.const 0))\n" ++
+  "        (then (local.set $diff (i64.add (local.get $diff) (i64.const 1000000000))) (local.set $borrow (i64.const 1)))\n" ++
+  "        (else (local.set $borrow (i64.const 0))))\n" ++
+  "      (array.set $limbs (local.get $r) (local.get $i) (local.get $diff))\n" ++
+  "      (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $l)))\n" ++
+  "    (call $bTrim (local.get $r)))\n" ++
+  "  (func $bNormBig (param $sign i32) (param $mag (ref $limbs)) (result (ref null $val)) (local $len i32) (local $v i64)\n" ++
+  "    (local.set $len (array.len (local.get $mag)))\n" ++
+  "    (if (i32.le_u (local.get $len) (i32.const 2))\n" ++
+  "      (then\n" ++
+  "        (local.set $v (array.get $limbs (local.get $mag) (i32.const 0)))\n" ++
+  "        (if (i32.eq (local.get $len) (i32.const 2))\n" ++
+  "          (then (local.set $v (i64.add (local.get $v) (i64.mul (array.get $limbs (local.get $mag) (i32.const 1)) (i64.const 1000000000))))))\n" ++
+  "        (if (i32.eq (local.get $sign) (i32.const 1)) (then (local.set $v (i64.sub (i64.const 0) (local.get $v)))))\n" ++
+  "        (return (struct.new $ival (local.get $v)))))\n" ++
+  "    (struct.new $bigval (local.get $sign) (local.get $mag)))\n" ++
+  "  (func $addVal (param $x (ref null $val)) (param $y (ref null $val)) (result (ref null $val))\n" ++
+  "    (local $bx (ref $bigval)) (local $by (ref $bigval)) (local $sx i32) (local $sy i32) (local $mx (ref $limbs)) (local $my (ref $limbs)) (local $c i32) (local $a i64) (local $b i64) (local $s i64)\n" ++
+  "    (if (i32.and (call $bIsIval (local.get $x)) (call $bIsIval (local.get $y)))\n" ++
+  "      (then\n" ++
+  "        (local.set $a (call $bIvalN (local.get $x))) (local.set $b (call $bIvalN (local.get $y)))\n" ++
+  "        (local.set $s (i64.add (local.get $a) (local.get $b)))\n" ++
+  "        (if (i64.ge_s (i64.and (i64.xor (local.get $a) (local.get $s)) (i64.xor (local.get $b) (local.get $s))) (i64.const 0))\n" ++
+  "          (then (return (struct.new $ival (local.get $s)))))))\n" ++
+  "    (local.set $bx (call $bToBig (local.get $x))) (local.set $by (call $bToBig (local.get $y)))\n" ++
+  "    (local.set $sx (struct.get $bigval $sign (local.get $bx))) (local.set $sy (struct.get $bigval $sign (local.get $by)))\n" ++
+  "    (local.set $mx (struct.get $bigval $mag (local.get $bx))) (local.set $my (struct.get $bigval $mag (local.get $by)))\n" ++
+  "    (if (result (ref null $val)) (i32.eq (local.get $sx) (local.get $sy))\n" ++
+  "      (then (call $bNormBig (local.get $sx) (call $bAddMag (local.get $mx) (local.get $my))))\n" ++
+  "      (else\n" ++
+  "        (local.set $c (call $bCmpMag (local.get $mx) (local.get $my)))\n" ++
+  "        (if (result (ref null $val)) (i32.eqz (local.get $c))\n" ++
+  "          (then (struct.new $ival (i64.const 0)))\n" ++
+  "          (else (if (result (ref null $val)) (i32.eq (local.get $c) (i32.const 1))\n" ++
+  "            (then (call $bNormBig (local.get $sx) (call $bSubMag (local.get $mx) (local.get $my))))\n" ++
+  "            (else (call $bNormBig (local.get $sy) (call $bSubMag (local.get $my) (local.get $mx))))))))))\n" ++
+  "  (func $bNeg (param $v (ref null $val)) (result (ref null $val)) (local $bg (ref $bigval)) (local $n i64)\n" ++
+  "    (if (result (ref null $val)) (call $bIsIval (local.get $v))\n" ++
+  "      (then\n" ++
+  "        (local.set $n (call $bIvalN (local.get $v)))\n" ++
+  "        (if (result (ref null $val)) (i64.eq (local.get $n) (i64.const -9223372036854775808))\n" ++
+  "          (then (struct.new $bigval (i32.const 0) (call $bLimbsOfU (i64.const 9223372036854775808))))\n" ++
+  "          (else (struct.new $ival (i64.sub (i64.const 0) (local.get $n))))))\n" ++
+  "      (else\n" ++
+  "        (local.set $bg (ref.cast (ref $bigval) (local.get $v)))\n" ++
+  "        (if (result (ref null $val)) (i32.and (i32.eq (array.len (struct.get $bigval $mag (local.get $bg))) (i32.const 1)) (i64.eqz (array.get $limbs (struct.get $bigval $mag (local.get $bg)) (i32.const 0))))\n" ++
+  "          (then (local.get $v))\n" ++
+  "          (else (struct.new $bigval (i32.xor (struct.get $bigval $sign (local.get $bg)) (i32.const 1)) (struct.get $bigval $mag (local.get $bg))))))))\n" ++
+  "  (func $subVal (param $x (ref null $val)) (param $y (ref null $val)) (result (ref null $val))\n" ++
+  "    (call $addVal (local.get $x) (call $bNeg (local.get $y))))\n" ++
+  "  (func $cmpVal (param $x (ref null $val)) (param $y (ref null $val)) (result i32)\n" ++
+  "    (local $bx (ref $bigval)) (local $by (ref $bigval)) (local $sx i32) (local $sy i32) (local $c i32) (local $a i64) (local $b i64)\n" ++
+  "    (if (i32.and (call $bIsIval (local.get $x)) (call $bIsIval (local.get $y)))\n" ++
+  "      (then\n" ++
+  "        (local.set $a (call $bIvalN (local.get $x))) (local.set $b (call $bIvalN (local.get $y)))\n" ++
+  "        (if (i64.lt_s (local.get $a) (local.get $b)) (then (return (i32.const -1))))\n" ++
+  "        (if (i64.gt_s (local.get $a) (local.get $b)) (then (return (i32.const 1))))\n" ++
+  "        (return (i32.const 0))))\n" ++
+  "    (local.set $bx (call $bToBig (local.get $x))) (local.set $by (call $bToBig (local.get $y)))\n" ++
+  "    (local.set $sx (struct.get $bigval $sign (local.get $bx))) (local.set $sy (struct.get $bigval $sign (local.get $by)))\n" ++
+  "    (if (i32.ne (local.get $sx) (local.get $sy)) (then (return (select (i32.const -1) (i32.const 1) (i32.eq (local.get $sx) (i32.const 1))))))\n" ++
+  "    (local.set $c (call $bCmpMag (struct.get $bigval $mag (local.get $bx)) (struct.get $bigval $mag (local.get $by))))\n" ++
+  "    (if (i32.eq (local.get $sx) (i32.const 1)) (then (return (i32.sub (i32.const 0) (local.get $c)))))\n" ++
+  "    (local.get $c))"
+
 /-- The fixed WASM-GC type + helper preamble every rung-4 module shares (types then helper funcs). -/
 def gcPreamble : String := gcTypes ++ "\n" ++ gcHelpers
 
@@ -1424,7 +1601,7 @@ def emitModuleGC (M : Comp) : EmitGC :=
           -- $unbox extracts the final i64 answer (main returns i64 for the harness diff).
           let unboxFn := "(func $unbox (param $v (ref null $val)) (result i64)\n    (struct.get $ival 0 (ref.cast (ref $ival) (local.get $v))))"
           -- RUNG 5 S2: throws tags (if any) declared right after the type block, before any function.
-          .ok s!"(module\n  {gcPreamble}{tagDecls stF.tagCount}\n  {unboxFn}{elemDeclare fnCount}{fnsText}\n  {mainFn}\n)"
+          .ok s!"(module\n  {gcPreamble}\n  {bignumHelpers}{tagDecls stF.tagCount}\n  {unboxFn}{elemDeclare fnCount}{fnsText}\n  {mainFn}\n)"
 
 /-- Whole-module GC emission with the `$val` READBACK (rung-5 Part 1): identical to `emitModuleGC`
 except the entry is a WASI `_start` command that computes the body `$val`, walks it with `$render`
@@ -1447,7 +1624,7 @@ def emitModuleGCPrint (M : Comp) : EmitGC :=
             s!"(func $_start (export \"_start\"){mainLocals}\n    (local.set 0 (ref.null $env))\n    (call $render\n    {body})\n    (call $emitByte (i32.const 10))\n    (call $flush))"
           -- Order matters (wat: imports before functions/tags): types · WASI imports · S2 throws tags ·
           -- GC helpers · readback fns · lifted fns · `_start`.
-          .ok s!"(module\n  {gcTypes}\n  {renderImports}{tagDecls stF.tagCount}\n  {gcHelpers}\n  {renderFns}{elemDeclare fnCount}{fnsText}\n  {startFn}\n)"
+          .ok s!"(module\n  {gcTypes}\n  {renderImports}{tagDecls stF.tagCount}\n  {gcHelpers}\n  {bignumHelpers}\n  {renderFns}{elemDeclare fnCount}{fnsText}\n  {startFn}\n)"
 
 end -- public section
 

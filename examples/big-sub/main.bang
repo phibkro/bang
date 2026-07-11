@@ -1,0 +1,4 @@
+-- Bignum subtraction crossing back into i64 range (issue #132, bignum lane B2):
+-- 100000000000000000000 - 99999999999999999998 = 2. Exercises sign-magnitude subMag on big operands
+-- and $normBig demoting the small result back to an $ival — the value round-trips as plain "2".
+100000000000000000000 - 99999999999999999998
