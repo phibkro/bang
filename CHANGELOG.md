@@ -170,6 +170,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **types** — ADR-0103 monomorphization pre-pass for bound-free let rec (`f4919063`)
 - **prelude** — ADR-0103 List-consumer payoff — take/drop + the auto-use alias fix (`47101cfe`)
 - **landing** — the bang landing page — one static page over the ruled copy kit (`23f2f366`)
+- **release** — widen the binary matrix to 3 Lean Tier-1 platforms (`0760351f`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
