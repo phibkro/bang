@@ -1,0 +1,16 @@
+-- DOOR (b) REFUTATION — the fold-shape wall. Door (b) proposed "relax ADR-0080 to a bound-FREE
+-- bounded fn". But ADR-0080's carrier-fixing mechanism (`bfnWrapper`, TypeCheck.lean:2642) REQUIRES
+-- the declared RESULT type to BE the bound var (`… -> a`, the fold shape) — it reads the carrier off
+-- the RESULT annotation. The List family's carrier is an ARGUMENT-position tyvar (`List a -> Int`),
+-- result `Int`, NOT `a`. So even WITH a (vacuous) Monoid bound, the bounded-fn path rejects it.
+-- Observed 2026-07-11 on the real binary:
+--   `error: bounded fn 'Monoid a': v1 fixes the carrier from the RESULT annotation, so the declared
+--    result type must be 'a' (the fold shape); got a different result type`.
+-- ⟹ The bounded-fn mold does NOT fit the List family. Door (b) as "reuse the bounded-fn seam"
+--   is REFUTED; the honest door is a fresh monomorphization pre-pass keyed on ARGUMENT carriers
+--   (which is exactly door (a) — same mechanism, see the ADR).
+data List a = Nil | Cons(a, List a)
+trait Monoid { fn empty() -> Self  fn combine(x, y) -> Self }
+impl Monoid for Int { fn empty() = 0  fn combine(x, y) = x + y }
+fn length(xs) : List a -> Int where Monoid a = match xs { Nil -> 0, Cons(h, t) -> 1 + (($length) t) }
+(length (Cons(1, Cons(2, Nil)) : List Int) : Int)

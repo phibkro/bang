@@ -1,0 +1,15 @@
+-- THE MONOMORPHIZATION TARGET, WRITTEN BY HAND. Two call-site instantiations of `length`
+-- (`List Int` and `List (Unit+Unit)`) as TWO monomorphic `let rec` residues in ONE program.
+-- This is EXACTLY what the ∀-door's monomorphization pre-pass would auto-generate: discover the
+-- instantiation set {Int, Unit+Unit} from call sites, emit one `buildLetRec`-shaped residue per
+-- element. If this runs, the finiteness-gate + residue model is sound (R6 §4: instantiations
+-- discovered from call sites ⟹ finite closed set ⟹ elaborate-to-mono holds, kernel untouched).
+-- Observed 2026-07-11 on the real binary: `bang run` → 3  (lengthI [1,2]=2, lengthB [Left ()]=1).
+data List a = Nil | Cons(a, List a)
+let rec lengthI : List Int -> Int =
+  fun xs => match (xs : List Int) { Nil -> 0, Cons(h, t) -> 1 + (($lengthI) t) }
+let rec lengthB : List (Unit + Unit) -> Int =
+  fun xs => match (xs : List (Unit + Unit)) { Nil -> 0, Cons(h, t) -> 1 + (($lengthB) t) }
+let a = ($lengthI) (Cons(1, Cons(2, Nil))) in
+let b = ($lengthB) (Cons(Left(()), Nil)) in
+a + b

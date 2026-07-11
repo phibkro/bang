@@ -1,0 +1,15 @@
+-- WHY `let rec` CAN'T RIDE let-generalization TODAY (the #120 "say precisely why" ask).
+-- A NON-recursive generic (`id`) ALREADY generalizes (ADR-0075 bite-0b): used at TWO types
+-- (`Int` and `Unit+Unit`) in one program — no clash. Observed: `bang run` → 5.
+-- The difference for `let rec`: the self-reference `$length` is bound in the body at a SINGLE
+-- fixed monomorphic thunk type `uT` (TypeCheck.lean:3034), NOT a scheme — the μ-knot `buildLetRec`
+-- closes over a CONCRETE `t'`. Generalizing the ascription would demand the recursive CALL
+-- instantiate at a fresh type = POLYMORPHIC recursion (undecidable, R6 §4 wall). But the List
+-- family is UNIFORM (`$length t` uses `a` at the SAME type) = MONOMORPHIC recursion, which
+-- monomorphization handles by construction (w0/w3). So `let rec`'s barrier is not "no
+-- generalization" but "the SELF-KNOT is monomorphic"; the fix is to close the tyvar BEFORE the
+-- knot (per call-site instantiation), never to generalize the knot itself.
+let id = {fun x => x}
+let a = ($id) 5 in
+let b = ($id) (Left(0)) in
+a
