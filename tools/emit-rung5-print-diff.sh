@@ -31,7 +31,7 @@ CORPUS=(
   tokenizer string-stdlib derive-eq-ord trait-recursive-eq trait-recursive-ord
   caesar neg-div big-literal big-add big-sub big-mul factorial
 )
-MIN_EMITTED="${MIN_EMITTED:-17}"
+MIN_EMITTED="${MIN_EMITTED:-18}"   # 17 single-file + json (module-aware, via bang emit)
 
 echo "── building the rung4-shape emitter exe ──"
 lake build rung4-shape >/dev/null 2>&1
@@ -87,6 +87,59 @@ for name in "${CORPUS[@]}"; do
     echo "   wasmtime stdout : [$engine_trimmed]"
     echo "   --print oracle  : [$oracle]"
     echo "   expected.txt    : [$expected]"
+    echo ""
+  fi
+done
+
+# ── MODULE-AWARE gate (issue #136): whole programs that `import`, so the single-file `rung4-shape`
+# scratch exe can't resolve them. These go through `bang emit` (which shares the runner's module
+# resolution) → wasmtime → diffed vs `bang run`'s OWN stdout (the live oracle, not a checked-in
+# expected.txt — a multi-module program's answer is `bang run`'s output by construction).
+MODULE_CORPUS=( json )
+echo ""
+echo "── module-aware (bang emit → wasmtime) vs bang run ──"
+lake build bang >/dev/null 2>&1
+bangbin="$(find .lake/build/bin -name bang | head -1)"
+[ -n "$bangbin" ] || { echo "FAIL: bang binary not found"; exit 2; }
+for name in "${MODULE_CORPUS[@]}"; do
+  main="examples/$name/main.bang"
+  wat="$outdir/$name.wat"
+  [ -f "$main" ] || { echo "FAIL: missing example $main"; exit 2; }
+
+  # Oracle = bang run's stdout (the SoT for a resolved multi-module program).
+  set +e
+  oracle="$("$bangbin" run "$main" 2>/dev/null)"
+  run_rc=$?
+  set -e
+  [ "$run_rc" -eq 0 ] || { echo "FAIL: bang run crashed on $name (rc=$run_rc)"; exit 2; }
+
+  # Emit via the module-resolving path; a refusal/error must FAIL (not read as green).
+  set +e
+  emitout="$("$bangbin" emit "$main" -o "$wat" 2>&1)"
+  emit_rc=$?
+  set -e
+  if [ "$emit_rc" -ne 0 ]; then
+    echo "FAIL: bang emit refused/errored on $name:"; printf '%s\n' "$emitout" | head -3; exit 2
+  fi
+  [ -f "$wat" ] || { echo "FAIL: no .wat emitted for $name"; exit 2; }
+  emitted=$((emitted + 1))
+
+  set +e
+  engine="$(nix shell nixpkgs#wasmtime -c wasmtime run -W gc=y,function-references=y,exceptions=y "$wat" 2>/dev/null)"
+  wt_rc=$?
+  set -e
+  [ "$wt_rc" -eq 0 ] || engine="ENGINE-ERR(rc=$wt_rc)"
+
+  if [ "$engine" = "$oracle" ]; then
+    verdict="OK"
+  else
+    verdict="MISMATCH"; fail=1
+  fi
+  printf '%-22s %s\n' "$name" "$verdict"
+  if [ "$verdict" = "MISMATCH" ]; then
+    echo ""; echo "!! MISMATCH on $name (module-aware)"
+    echo "   wasmtime stdout : [$engine]"
+    echo "   bang run stdout : [$oracle]"
     echo ""
   fi
 done
