@@ -1214,7 +1214,7 @@ and docs can reference it durably.
 | `B008` | the parser reached extra tokens after a complete expression | yes |
 | `B009` | a capability was forced after its handler's block returned (runtime) | — |
 | `B010` | a trait bound is unsatisfied — no impl of the trait for the carrier | — |
-| `B011` | a data constructor declares more than 2 payload fields | yes |
+| `B011` | RETIRED — the v1 payload-arity-≤2 cap this code named was LIFTED (#144) | — |
 | `B012` | a bare constructor name is owned by two or more co-present `data` types | yes |
 | `B013` | a nested `let rec` forward-references a sibling `let rec` bound later in the same block | yes |
 | `B006` | a data constructor is applied to the wrong number of arguments | — |

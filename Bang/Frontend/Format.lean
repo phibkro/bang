@@ -311,10 +311,20 @@ partial def fmtSurf (need : SPrec) : Surf → Format
       | none   =>
       match a with
       | .pairS a1 a2 =>
-          let tuple := fmtTupleGroup "(" ")" [fmtSurf .cmp a1, fmtSurf .cmp a2]
           match isCtorHead f with
-          | some n => fParenIf need .app (Format.text n ++ tuple)                          -- ctor-call: SCons(a, b)
-          | none   => fParenIf need .app (fmtSurf .app f ++ Format.text " " ++ tuple)
+          -- B011's v1 arity-2 cap lifted (#144): a CTOR's payload right-nests (`prodOfTys`), so
+          -- `Q(1, (2, (3, 4)))`'s tree is what an N-ary `Q(1, 2, 3, 4)` call ELABORATES to — print
+          -- it FLAT (`flattenCtorPayload`), not as literal nested parens, so a ≥3-ary ctor call
+          -- round-trips to the SAME surface spelling the author wrote (`bang fmt` idempotence).
+          -- A bare `.pairS` NOT under a ctor head (the `none` arm below, and every OTHER `.pairS`
+          -- site — a plain tuple literal, a match-arm's `let (a,b) = …`, etc.) is NEVER a ctor
+          -- payload, so it stays a literal 2-tuple, unflattened — only THIS call-site convention
+          -- (an `.app` whose argument is exactly a `.pairS`, headed by a resolved ctor name) is
+          -- eligible; the flattening is a PRINT-side convention only, transparent to `parsesTo`.
+          | some n => fParenIf need .app (Format.text n ++ fmtTupleGroup "(" ")" (flattenCtorPayload a1 a2))
+          | none   =>
+              let tuple := fmtTupleGroup "(" ")" [fmtSurf .cmp a1, fmtSurf .cmp a2]
+              fParenIf need .app (fmtSurf .app f ++ Format.text " " ++ tuple)
       -- the argument's real reachable tier (#96 follow-up): `pAppLoop` parses each spine element
       -- via `pDotted`, not `pAtom` (see `pApp`'s own doc comment) — so `.dotted` need is the
       -- PRECISE bound here, not `.atom`. Using `.atom` (pre-#96's `dotted`-tier introduction) would
@@ -524,6 +534,19 @@ partial def fmtLetRecBindings : LetRecBindings → Format
 partial def fmtHClauseList : HClauses → List Format
   | .nil               => []
   | .cons op x b rest  => fmtHClause op x b :: fmtHClauseList rest
+/-- Flatten a CTOR CALL's right-nested payload (B011's v1 arity-2 cap lifted, #144) back to its
+flat surface spelling: `Q(1, (2, (3, 4)))`'s tree — `a1 = 1`, `a2 = .pairS 2 (.pairS 3 4)` — prints
+as `[1, 2, 3, 4]`, so the caller's `fmtTupleGroup` renders `Q(1, 2, 3, 4)`, matching what the author
+actually wrote (`bang fmt` idempotence over the N-ary corpus). Only descends through NESTED
+`.pairS` on the RIGHT (`prodOfTys`'s own right-nesting shape) — a `.pairS` that is itself the FINAL
+element (not a further-nested tuple) stops the descent and prints as one leaf, exactly matching
+`prodOfTys : List Ty → Ty`'s `[t] ↦ t` base case (the LAST field of an odd-length payload is a bare
+type, never a further product, so there is no over-flattening ambiguity: this walk and the type-level
+`splitProd`/`bindPayload` walk peel the SAME depth). -/
+partial def flattenCtorPayload (a1 a2 : Surf) : List Format :=
+  fmtSurf .cmp a1 :: (match a2 with
+    | .pairS b1 b2 => flattenCtorPayload b1 b2
+    | _            => [fmtSurf .cmp a2])
 end
 
 /-- Top-level entry: an expression prints at the loosest tier (no defensive outer parens), rendered

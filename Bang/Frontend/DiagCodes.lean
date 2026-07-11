@@ -149,14 +149,26 @@ def registry : List DiagEntry := [
         ++ "carrier. Provide the `impl`, or annotate the use so the carrier constructor resolves "
         ++ "(`… : Option Int`). Imports bring another module's impls into scope."
     example? := none },
+  -- RETIRED (#144): the v1 payload-arity-≤2 cap this code named is LIFTED — a `data` constructor's
+  -- payload is N-ary (`prodOfTys` already right-nested any length; only the elaboration-side THROW
+  -- was the actual limit, not the encoding). The code stays reserved (never reused for a different
+  -- diagnostic — the whole point of a stable code per this file's own header comment) but matches
+  -- NOTHING: a `Bang.DiagCodes` sentinel anchor no real diagnostic message can ever contain (NOT
+  -- `anchors := []` — `DiagEntry.matches`'s `List.all` is VACUOUSLY true on an empty list, which
+  -- would make B011 match EVERY message and shadow the whole registry's specificity order ahead of
+  -- it — found via this file's own `#guard`s failing loud when tried, the exact "codes are total,
+  -- never a silent gap" discipline this registry's header comment states). `bang explain B011`
+  -- still answers for anyone who saw it in an old error log.
   { code := "B011"
-    anchors := ["payload arity ≤ 2"]
-    summary := "a data constructor declares more than 2 payload fields"
+    anchors := ["Bang.DiagCodes.retired.B011.matches-nothing"]
+    summary := "RETIRED — the v1 payload-arity-≤2 cap this code named was LIFTED (#144)"
     teaching :=
-      "v1 caps a `data` constructor's payload at arity 2. Nest a tuple to carry more: "
-        ++ "`Node((a, b), c)` instead of `Node(a, b, c)`. The cap keeps the elaboration's tuple "
-        ++ "descent bounded (structOK / #50)."
-    example? := some "data T = C(Int, Int, Int)\nlet main = 3" },
+      "A `data` constructor's payload arity was capped at 2 in early v1 (nest tuples to carry more, "
+        ++ "e.g. `Node((a, b), c)`); the cap is now LIFTED — `Node(a, b, c)` and longer payloads "
+        ++ "construct, match, and derive directly (elaboration right-nests the payload internally, "
+        ++ "transparently to the surface). This code is retired and fires on nothing; kept only so "
+        ++ "`bang explain B011` still answers for anyone who saw it in an older error log."
+    example? := none },
   { code := "B012"
     anchors := ["ambiguous constructor"]
     summary := "a bare constructor name is owned by two or more co-present `data` types"
@@ -180,15 +192,16 @@ def registry : List DiagEntry := [
     example? := some
       "let rec outer : Int -> Int ! {Div} = fun n => let rec a : Int -> Int ! {Div} = fun m => ($b) m in let rec b : Int -> Int ! {Div} = fun m => ($a) m in ($a) n in ($outer) 3" },
   -- B006 is the BROAD constructor-arity family — listed LAST of the constructor cluster so the
-  -- specific families above (B007 unknown, B011 payload) win their own messages before this
-  -- `"constructor '"`-anchored catch-all would shadow them (registry order = specificity).
+  -- specific family above (B007 unknown) wins its own messages before this `"constructor '"`-
+  -- anchored catch-all would shadow it (registry order = specificity). B011 (payload arity) no
+  -- longer competes here — it is RETIRED (#144, matches nothing, see its own registry entry).
   { code := "B006"
     anchors := ["constructor '"]
     summary := "a data constructor is applied to the wrong number of arguments"
     teaching :=
       "A `data` constructor must be applied to EXACTLY its declared arity. `Cons(x)` when `Cons` "
         ++ "takes 2, or `Nil(x)` when `Nil` takes none, both fire this. Supply the right number of "
-        ++ "arguments (nest a tuple if the payload is compound — v1 caps constructor payload at 2)."
+        ++ "arguments — any arity is fine (the v1 payload-arity-≤2 cap was lifted, #144)."
     example? := none },
   { code := "B014"
     anchors := ["wildcard arm '_'"]
@@ -256,12 +269,18 @@ def explain (code : String) : Option DiagEntry :=
 #guard codeForMsg "constructor 'Nil' takes no arguments" == some "B006"
 #guard codeForMsg "unknown constructor 'Foo' in match" == some "B007"
 -- the specific constructor families are NOT shadowed by B006's broad `"constructor '"` anchor.
-#guard codeForMsg "constructor 'C': payload arity ≤ 2 in v1 (nest tuples)" == some "B011"
+-- B011 RETIRED (#144): its former trigger message no longer occurs (the cap it named is lifted) —
+-- a same-shaped ≥3-ary ctor message now falls through to B006 (the broad "wrong arity" family,
+-- e.g. an actual arity MISMATCH on a ≥3-ary ctor still fires B006, unaffected by the retirement).
+#guard codeForMsg "constructor 'C' expects 3 argument(s)" == some "B006"
 #guard codeForMsg "ambiguous constructor 'Nil' — candidates: IntList (as 'IntList_Nil'), List (as 'List_Nil')" == some "B012"
 #guard codeForMsg "trailing tokens after expression: [2]" == some "B008"
 #guard codeForMsg "error: a capability escaped its handler — it was forced" == some "B009"
 #guard codeForMsg "no impl of 'Eq' for 'Option' — the bound 'Eq a' is unsatisfied" == some "B010"
-#guard codeForMsg "constructor 'C': payload arity ≤ 2 in v1 (nest tuples)" == some "B011"
+-- B011 RETIRED (#144) matches NOTHING (its sentinel anchor can never be a substring of any real
+-- diagnostic) — its FORMER trigger message now falls through to B006's broad `"constructor '"`
+-- catch-all instead (still a live, coded message; just a different code than before the retirement).
+#guard codeForMsg "constructor 'C': payload arity ≤ 2 in v1 (nest tuples)" == some "B006"
 #guard codeForMsg "'b' is a sibling `let rec` defined later — siblings cannot forward-reference…" == some "B013"
 -- #101: all three wildcard-arm diagnostics share the `"wildcard arm '_'"` anchor.
 #guard codeForMsg "wildcard arm '_' must be the LAST arm in a match — arms after it can never fire (unreachable)" == some "B014"

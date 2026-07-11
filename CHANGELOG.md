@@ -194,6 +194,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **backend** — B3 bignum multiply — factorial past 2^63 on WasmGC (#132) (`e6804ad6`)
 - **lint** — plan 013 slice 6 — dead-private fixit, preservation-gated (`84cb31c5`)
 - **cli** — bang emit — module-resolved WasmGC emit; json compiles + runs on wasmtime (#136) (`d1fb4758`)
+- **frontend** — bare imported-effect names — the Mod_Eff ergonomics fix (`d3941d9e`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)

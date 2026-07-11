@@ -1,0 +1,32 @@
+-- issue #144: B011's v1 payload-arity-≤2 cap is LIFTED. A `data` constructor's payload is N-ary —
+-- construct, match, and `deriving (Eq, Ord)` all work directly at arity 3 and 4, no manual tuple
+-- nesting needed at the surface (the elaborator right-nests the payload internally, transparently:
+-- `Q(1, 2, 3, 4)` elaborates the same way `Q(1, (2, (3, 4)))` would have needed to be written by
+-- hand under the old cap).
+
+data Triple = T(Int, Int, Int) deriving (Eq, Ord)
+data Quad = Q(Int, Int, Int, Int) deriving (Eq, Ord)
+
+let t1 = T(1, 2, 3) in
+let t2 = T(1, 2, 3) in
+let t3 = T(1, 2, 4) in
+
+-- construct + match: every field binds, in declared order.
+let tripleSum = match (t1 : Triple) { T(a, b, c) -> a + b + c } in
+
+-- `deriving (Eq, Ord)` folds over ALL N fields (not just the first 1-2).
+let tripleEq  = if t1 == t2 then 1 else 0 in   -- same payload -> equal
+let tripleNeq = if t1 == t3 then 1 else 0 in   -- differing LAST field -> not equal
+let tripleLt  = if t1 < t3 then 1 else 0 in    -- lexicographic: (1,2,3) < (1,2,4) -> true
+
+let q1 = Q(1, 2, 3, 4) in
+let q2 = Q(1, 2, 3, 4) in
+let q3 = Q(1, 2, 3, 5) in
+
+let quadSum = match (q1 : Quad) { Q(a, b, c, d) -> a + b + c + d } in
+let quadEq  = if q1 == q2 then 1 else 0 in
+let quadNeq = if q1 == q3 then 1 else 0 in
+let quadLt  = if q1 < q3 then 1 else 0 in
+
+tripleSum + tripleEq * 10 + tripleNeq * 100 + tripleLt * 1000 +
+quadSum * 10000 + quadEq * 100000 + quadNeq * 1000000 + quadLt * 10000000

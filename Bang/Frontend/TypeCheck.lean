@@ -1895,7 +1895,8 @@ public structure CtorInfo where
   idx           : Nat
   /-- Constructor count (the right-nested sum's total arm count). -/
   total         : Nat
-  /-- Payload arity (≤ 2 in v1). -/
+  /-- Payload arity — N-ary (B011's v1 arity-2 cap lifted, #144); a ≥3-ary payload right-nests
+  into a product (`prodOfTys`), destructured the same way by `splitProd`/`bindPayload`. -/
   arity         : Nat
   /-- MONOMORPHIC: payload types, the data's own name resolved to the CLOSED μ — placeholder for a
   GENERIC ctor (`params ≠ []`), see this structure's own doc comment. -/
@@ -2726,12 +2727,22 @@ def buildLetRecMulti (names : List String) (tys : List Ty) (bodies' : List Surf)
   let recVal : Surf := .annotS (.foldS (.thunk inner)) recTy
   .lett "#rec" recVal (bindSiblings true "#rec" indexed bodyExpr')
 
-/-- Bind a match arm's payload binders over the payload variable (arity ≤ 2). -/
-def bindPayload : List String → String → Surf → Surf
-  | [],       _, body => body
-  | [b],      v, body => .lett b (.var v) body
-  | [b1, b2], v, body => .splitS b1 b2 (.var v) body
-  | _,        _, body => body   -- arity ≤ 2 enforced at env build
+/-- Bind a match arm's payload binders over the payload variable (B011, #144: N-ary, matching
+`prodOfTys`'s right-nesting — `[b1, b2, b3]` destructures `.splitS b1 #w (var v) …` where `#w`
+holds the REMAINING right-nested pair `(b2, b3)`, recursively bound the same way `splitProd`'s dual
+type-level walk peels one field at a time. `#w`'s numeric suffix (binder DEPTH, not a global
+counter) avoids colliding with a sibling arm's own `#w` at the SAME depth — each arm's binder chain
+is independently scoped (no cross-arm capture is possible: `#w0`/`#w1`/… are `lett`-bound strictly
+inside THIS arm's own body), so depth alone is a sufficient disambiguator. -/
+def bindPayload : List String → String → Surf → Surf :=
+  fun bs v body => go bs v 0 body
+where go : List String → String → Nat → Surf → Surf
+  | [],           _, _, body => body
+  | [b],          v, _, body => .lett b (.var v) body
+  | [b1, b2],     v, _, body => .splitS b1 b2 (.var v) body
+  | b1 :: rest,   v, d, body =>
+      let w := s!"#w{d}"
+      .splitS b1 w (.var v) (go rest w (d + 1) body)
 
 /-- Assemble the ordered (already-elaborated) match arms into the `matchS` chain over the
 unfolded scrutinee — the last ctor's payload is the bare right-nested-sum tail. -/
@@ -4239,13 +4250,18 @@ def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx →
       let binderLookup : Option (List IVTy) :=
         (binderTys.lookup c).orElse (fun _ =>
           (binderTys.find? (fun p => (env.ctors.lookup p.1).any (fun ci => qualifyName ci.dataName p.1 == c))).map Prod.snd)
+      -- N-ary (B011's v1 arity-2 cap lifted, #144): `List.zip bs tys` pairs each binder with its
+      -- field type positionally regardless of length — the SAME generalization `bindPayload`'s
+      -- desugar got, needed HERE too since `elabS`'s arm-body pass (`anfSplit`/`synthSV`) needs
+      -- every binder in `Γ` BEFORE `bindPayload` ever runs (this is elaboration-time context, not
+      -- the later desugar) — a length MISMATCH (malformed `binderTys`/`payloadClosed`, never
+      -- reachable given `elabS`'s own `bs.length != ci.arity` guard upstream) degrades to `Γ`
+      -- un-extended, mirroring the old `| _, _ => Γ` catch-all's fail-soft convention.
       let Γa := match binderLookup with
         -- GENERIC (bite-1): concrete field types derived from the scrutinee's μ (`genBinderTable`).
         | some tys =>
-            (match bs, tys with
-             | [b1], [t1]         => (b1, (t1 : Scheme)) :: Γ
-             | [b1, b2], [t1, t2] => (b2, (t2 : Scheme)) :: (b1, (t1 : Scheme)) :: Γ
-             | _, _               => Γ)
+            if bs.length == tys.length then (bs.zip tys).foldr (fun (b, t) acc => (b, (t : Scheme)) :: acc) Γ
+            else Γ
         -- MONOMORPHIC: the ctor's own closed payload types (ADR-0069), unchanged. ADR-0099: an
         -- AMBIGUOUS `c` here just leaves Γ un-extended (mirroring the pre-existing `none` case) —
         -- `matchD`'s OWN `resolveCtor env c0` call (on the first arm) is what actually reports the
@@ -4253,10 +4269,9 @@ def elabArms (env : ElabEnv) (binderTys : List (String × List IVTy)) : NCtx →
         -- `dcs`/`armsL` validation runs against the SAME (single, now-resolved) `ci0.dataName`.
         | none => match resolveCtor env c with
           | some (.ok ci) =>
-              (match bs, ci.payloadClosed with
-               | [b1], [t1]         => (b1, embV (vtyOf t1)) :: Γ
-               | [b1, b2], [t1, t2] => (b2, embV (vtyOf t2)) :: (b1, embV (vtyOf t1)) :: Γ
-               | _, _               => Γ)
+              if bs.length == ci.payloadClosed.length then
+                (bs.zip ci.payloadClosed).foldr (fun (b, t) acc => (b, embV (vtyOf t)) :: acc) Γ
+              else Γ
           | some (.error _) => Γ
           | none             => Γ
       let b' ← elabS env Γa b
@@ -4381,7 +4396,9 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
           -- resolution moves to USE time (`resolveCtor`, below).
           if (ctors.filter (fun p => p.2.dataName == n)).any (fun p => p.1 == c.1) then
             throw s!"duplicate constructor '{c.1}'"
-          if cp.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
+          -- B011's v1 arity-2 cap LIFTED (#144): `prodOfTys`/`splitProd` already right-nest ANY
+          -- payload length (`ctors.arity`, formerly capped, now the true field count) — see this
+          -- struct's `arity` field doc comment for the N-ary contract.
           ctors := (c.1, ⟨n, i, cs.length, cp.length, cp, closed, [], []⟩) :: ctors
           i := i + 1
     | .dataD n params cs => do                   -- GENERIC (ADR-0069 bite-1): register the TEMPLATE; ctors monomorphize per use
@@ -4394,7 +4411,9 @@ public def buildEnv (ds : List Decl) : Except String ElabEnv := do
           -- ADR-0099: same-type-only duplicate refusal — see the mono `.dataD` arm's comment above.
           if (ctors.filter (fun p => p.2.dataName == n)).any (fun p => p.1 == c.1) then
             throw s!"duplicate constructor '{c.1}'"
-          if c.2.length > 2 then throw s!"constructor '{c.1}': payload arity ≤ 2 in v1 (nest tuples)"
+          -- B011's v1 arity-2 cap LIFTED (#144): the GENERIC-template twin of the mono `.dataD`
+          -- arm's own fix above — `monoData`/`resolveTyG` right-nest via `prodOfTys` per concrete
+          -- instantiation regardless of ctor arity.
           ctors := (c.1, ⟨n, i, cs.length, c.2.length, [], .tUnit, params, c.2⟩) :: ctors
           i := i + 1
     | .traitD n params sigs _ => do
@@ -5573,32 +5592,30 @@ def tyHasArrow : Ty → Bool
   | .tMu a => tyHasArrow a
   | _ => false
 
-/-- Fresh field-binder names for a ctor's arity-≤2 payload (ADR-0069: ≤ 2 fields in v1, nest
-tuples beyond that) — `x0`/`x1` for the LEFT scrutinee's binders, `y0`/`y1` for the RIGHT, so a
-same-ctor arm's two bound-variable sets never collide (`matchD`'s outer arm binds `x*`, the nested
-inner arm binds `y*`, both visible together in the innermost body). -/
+/-- Fresh field-binder names for a ctor's N-ary payload (B011's v1 arity-2 cap lifted, #144) —
+`x0`/`x1`/`x2`/… for the LEFT scrutinee's binders, `y0`/`y1`/`y2`/… for the RIGHT, so a same-ctor
+arm's two bound-variable sets never collide (`matchD`'s outer arm binds `x*`, the nested inner arm
+binds `y*`, both visible together in the innermost body). -/
 def deriveFieldNames (pfx : String) (arity : Nat) : List String :=
   (List.range arity).map (fun i => s!"{pfx}{i}")
 
-/-- The `Eq` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒ AND-fold
-`x_i == y_i` over every payload slot (nested `let`+`if`, the exact `headEq`/`tailEq` shape
-`examples/trait-recursive-eq` hand-writes — recursing via bare `==`, which dispatches through
-`env.insts`/the `#112` knot for a `Self`-typed field exactly like a hand-written impl, or the
-kernel δ-rule for `Int`); different ctor ⇒ `false`, unconditionally (payload never inspected). -/
+/-- The `Eq` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2, N-ary generalization
+#144): same ctor ⇒ AND-fold `x_i == y_i` over EVERY payload slot (right-nested `let`+`if`,
+generalizing the `headEq`/`tailEq` 2-field shape `examples/trait-recursive-eq` hand-writes to
+arbitrary length — `foldr` over the (field-binder) pairs, so the LAST slot seeds the base case and
+each earlier slot wraps it in one more `let #tailEq = (x_i == y_i) in if #tailEq then <acc> else
+false`; recursing via bare `==`, which dispatches through `env.insts`/the `#112` knot for a
+`Self`-typed field exactly like a hand-written impl, or the kernel δ-rule for `Int`); different
+ctor ⇒ `false`, unconditionally (payload never inspected). -/
 def eqArmBody (outerArity innerArity : Nat) : Surf :=
   if outerArity != innerArity then deriveFalseS   -- unreachable in practice (matching ctor identity
                                                     -- implies matching arity, ADR-0069) — defensive.
   else
     let xs := deriveFieldNames "x" outerArity
     let ys := deriveFieldNames "y" innerArity
-    match xs, ys with
-    | [], []             => deriveTrueS                                    -- nullary ctor: trivially equal
-    | [x0], [y0]          => .binopS .eq (.var x0) (.var y0)                -- 1 field: bare `==`
-    | [x0, x1], [y0, y1] =>                                                 -- 2 fields: AND-fold
-        .lett "#headEq" (.binopS .eq (.var x0) (.var y0))
-          (.lett "#tailEq" (.binopS .eq (.var x1) (.var y1))
-            (.ifS (.var "#headEq") (.var "#tailEq") deriveFalseS))
-    | _, _ => deriveFalseS   -- unreachable: arity ≤ 2 in v1 (ADR-0069), defensive fallback.
+    (xs.zip ys).foldr (fun (xi, yi) acc =>
+      .lett "#tailEq" (.binopS .eq (.var xi) (.var yi))
+        (.ifS (.var "#tailEq") acc deriveFalseS)) deriveTrueS
 
 /-- The full `Eq.eq` fold over ALL (outer, inner) ctor pairs of `cs` — a `matchD`-of-`matchD`
 diagonal, ADR-0097 §2's exact shape. Each outer arm's binders are `x0..`; each nested inner arm
@@ -5624,11 +5641,13 @@ def eqFoldBody (dataName : String) (cs : List (String × List Ty)) (pVar qVar : 
     (qualifyName dataName outerCtor, xs, .matchD (.var qVar) (toDArms innerArms)))
   .matchD (.var pVar) (toDArms outerArms)
 
-/-- The `Ord` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2): same ctor ⇒
-lexicographic ladder over payload slots (`if hx < hy then true else if hy < hx then false else
-recurse-next-slot`, `examples/trait-recursive-ord`'s exact shape); DIFFERENT ctor ⇒ the OUTER
-ctor's decl-order INDEX compared against the INNER's (`outerIdx < innerIdx`, ADR-0097 §2's
-"ctor-index order = decl order, the tag IS the ordinal" — ADR-0069's sum-by-decl-order encoding). -/
+/-- The `Ord` fold body for one (outer ctor, inner ctor) pair (ADR-0097 §2, N-ary generalization
+#144): same ctor ⇒ lexicographic ladder over EVERY payload slot (`if hx < hy then true else if hy <
+hx then false else recurse-next-slot`, generalizing `examples/trait-recursive-ord`'s 2-field shape
+via `foldr` from the LAST slot — its base case is a bare `x_last < y_last` — `deriveFalseS`
+seeds the fold for a 0-field ctor, "never strictly less"); DIFFERENT ctor ⇒ the OUTER ctor's
+decl-order INDEX compared against the INNER's (`outerIdx < innerIdx`, ADR-0097 §2's "ctor-index
+order = decl order, the tag IS the ordinal" — ADR-0069's sum-by-decl-order encoding). -/
 def ordArmBody (outerIdx innerIdx outerArity innerArity : Nat) : Surf :=
   if outerIdx != innerIdx then
     if outerIdx < innerIdx then deriveTrueS else deriveFalseS
@@ -5636,14 +5655,9 @@ def ordArmBody (outerIdx innerIdx outerArity innerArity : Nat) : Surf :=
   else
     let xs := deriveFieldNames "x" outerArity
     let ys := deriveFieldNames "y" innerArity
-    match xs, ys with
-    | [], []             => deriveFalseS                                    -- nullary vs nullary: never strictly less
-    | [x0], [y0]          => .binopS .lt (.var x0) (.var y0)                 -- 1 field: bare `<`
-    | [x0, x1], [y0, y1] =>                                                  -- 2 fields: lexicographic ladder
-        .ifS (.binopS .lt (.var x0) (.var y0)) deriveTrueS
-          (.ifS (.binopS .lt (.var y0) (.var x0)) deriveFalseS
-            (.binopS .lt (.var x1) (.var y1)))
-    | _, _ => deriveFalseS   -- unreachable: arity ≤ 2 in v1 (ADR-0069), defensive fallback.
+    (xs.zip ys).foldr (fun (xi, yi) acc =>
+      .ifS (.binopS .lt (.var xi) (.var yi)) deriveTrueS
+        (.ifS (.binopS .lt (.var yi) (.var xi)) deriveFalseS acc)) deriveFalseS
 
 /-- The full `Ord.lt` fold over ALL (outer, inner) ctor pairs of `cs` — mirrors `eqFoldBody`'s
 `matchD`-of-`matchD` shape exactly, threading each ctor's DECL-ORDER INDEX (its position in `cs`,
@@ -7646,6 +7660,29 @@ def derivedIntListProg : String :=
     "let l2 = IntList_Cons(1, IntList_Cons(2, IntList_Nil)) in " ++
     "let l3 = IntList_Cons(1, IntList_Cons(3, IntList_Nil)) in " ++
     "if l1 == l2 then (if l1 == l3 then 0 else (if l1 < l3 then 1 else 0)) else 0") 1
+
+/-! ### Validation ⑨o — #144: B011's v1 payload-arity-≤2 cap LIFTED. A 3-field AND a 4-field
+ctor construct, match, and `deriving (Eq, Ord)` end to end (the whole pipeline: `pTupleTail`'s
+N-ary call-site grammar → `bindPayload`'s N-ary desugar → `elabArms`'s N-ary elaboration-context
+extension → `eqArmBody`/`ordArmBody`'s N-ary fold). RED before this fix (`bang check`/`bang run`
+both `error[B011]: constructor 'T': payload arity ≤ 2 in v1`, confirmed live pre-fix). -/
+def deriveTripleProg : String := "data Triple = T(Int, Int, Int) deriving (Eq, Ord) "
+#guard (match checkProg (deriveTripleProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 3000
+  (deriveTripleProg ++
+    "let t1 = T(1, 2, 3) in let t2 = T(1, 2, 3) in let t3 = T(1, 2, 4) in " ++
+    "let matched = match (t1 : Triple) { T(a, b, c) -> a + b + c } in " ++
+    "matched + (if t1 == t2 then 100 else 0) + (if t1 == t3 then 1000 else 0) + " ++
+    "(if t1 < t3 then 10000 else 0)") 10106
+
+def deriveQuadProg : String := "data Quad = Q(Int, Int, Int, Int) deriving (Eq, Ord) "
+#guard (match checkProg (deriveQuadProg ++ "0") with | .ok _ => true | .error _ => false)
+#guard runTypedYieldsInt 3000
+  (deriveQuadProg ++
+    "let q1 = Q(1, 2, 3, 4) in let q2 = Q(1, 2, 3, 4) in let q3 = Q(1, 2, 3, 5) in " ++
+    "let matched = match (q1 : Quad) { Q(a, b, c, d) -> a + b + c + d } in " ++
+    "matched + (if q1 == q2 then 100 else 0) + (if q1 == q3 then 1000 else 0) + " ++
+    "(if q1 < q3 then 10000 else 0)") 10110
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic
