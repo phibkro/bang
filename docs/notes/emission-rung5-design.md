@@ -145,4 +145,12 @@ SURVIVES      throws (try_table/throw) + rollback (catch_all_ref/throw_ref) are 
               verbatim, rep-agnostic. Only the VALUE/ENV rep merges.
 SLICES        S0 $ref slot · S1 state · S2 throws · S3 txn(GC heap) · S4 custom · S5 proof-grade.
               No frame-chain slice (post-v1, the ADR-0015 multi-shot frontier).
+LANDED        S0-S4 DONE (feat-rung5-effects): 34 whole programs → WasmGC → wasmtime == bang run, of
+              which 22 are EFFECTFUL (state/stm/throws/logger/custom/dst-rounds/ndet). The rung-4
+              blanket effect-refusal is REPLACED — effectful corpus programs now compile via
+              emitModuleGC. Gate = tools/emit-rung5-effects-diff.sh (auto-discovering, both-direction).
+NAMED WALLS   a first-class capability (vcap) threaded as a runtime VALUE (passed into a closure as an
+              arg — stage-swap) has no GC $val cap rep in v1: refused LOUDLY. Full bignum (i64 wrap,
+              inherited rung 4) and non-empty-start Θ (only atomically) stay named refusals. S5 proof-
+              grade (wexec≡Source.eval with the $env-slot↔store bijection) = the tested→verified lift.
 ```
