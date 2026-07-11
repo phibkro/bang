@@ -211,3 +211,17 @@ backend, not the model.
 - **Real IO handlers land and the replay guarantee must be pinned** (Q(conc-6)) → decide schedule-only
   vs recorded-effects for the DST replay contract; the v1 sim runtime's schedule-only guarantee is the
   floor, not the ceiling.
+
+## Addendum ① (2026-07-11) — the lowering spike is MET: GO
+
+The one gating spike ran (`tools/bench/wasi-async/`, survey §G8-SPIKE, merged from `b6bbcd2f`):
+a WASI-0.3 **async component validated AND ran end-to-end** on wasmtime 45 (`task.return` → 42,
+`-W component-model-async=y`); the full async canon-builtin set is implemented in wasm-tools 1.249.
+Measured: the async lift is a **fixed ~0.7 µs/call bookkeeping tax** (~2.4× the sync floor),
+payload-orthogonal — cheap enough to back cooperative scheduling. Model fit ABI-confirmed: the host
+event loop blocks the *task* (not the instance), so the bang handler keeps the `pick` — the
+scheduler-as-handler split survives contact with the real ABI, and grade 0/1/ω maps onto
+sync-lift / async-lift / no-ABI-path (one-shot by construction; Q22/Q27 stay parked). Named residual:
+`stream<T>` per-chunk throughput unmeasured — blocked on guest-std packaging (no nixpkgs
+wasm32-wasip3 rust-std yet), NOT on the ABI. Implementation remains post-v1; the gate this ADR
+placed on it is discharged.
