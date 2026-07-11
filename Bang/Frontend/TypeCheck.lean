@@ -195,10 +195,9 @@ closed kernel type; `extractV`/`extractC` zonk-extract back to a closed `VTy`/`C
 a reserved-range `tvar` (display continuity with bite-0); a residual COMPUTATION hole is
 unrepresentable in `CTy` → the DEFINED fail-loud "annotate" (a genuinely un-inferable higher-order
 force), never a wrong accept. -/
--- `public`: `Bang.Query.holesOf` (#82 `bang holes`) reads this to detect a residual hole in a
--- rendered top-level type/row — a residual VALUE hole extracts to `.tvar (holeBase + n)`
--- (`extractV` above), so a `#N` with `N ≥ holeBase` in a `showTy` string IS an underdetermined
--- position. ONE home for the marker range; the verb references it, never copies `1000000`.
+/-- The base of the VALUE-hole marker range (`.tvar (holeBase + n)` in a rendered type/row means an
+underdetermined position) — `public` so `Bang.Query.holesOf` (`bang holes`) references this ONE
+home rather than copying the literal `1000000`. -/
 public def holeBase  : Nat := 1000000
 def rigidBase : Nat := 2000000
 def bigFuel   : Nat := 1000000
@@ -253,8 +252,11 @@ constructs and consults; the kernel itself never sees effect NAMES (label-agnost
 D1's "kernel never learns names"). PUBLIC (#60 seam): forced by `ElabEnv`'s field type —
 additive visibility only, no behavior change. -/
 public structure EffectInfo where
+  /-- The allocated kernel label (`4 + declIndex` among the program's `effect` decls). -/
   label : Label
-  ops   : List (String × Option VT × VT)   -- (opName, argTy?, resTy)
+  /-- Each declared op's resolved `(opName, argTy?, resTy)` — `argTy? = none` for a 0-ary op,
+  `some A` for the v1 single-arg arrow. -/
+  ops   : List (String × Option VT × VT)
 
 /-- Map an effect label back to its surface name (the inverse of the lowering's `exnLabel`/… choice).
 Moved ahead of `checkSV` (below) so the thunk-row mismatch error (ADR-0088) can name the offending
@@ -1840,14 +1842,25 @@ and never dispatches a non-2-param op, so a splice-caused self-reference wall ca
 through that arity. PUBLIC (#60 seam): forced by `ElabEnv`'s field type — additive visibility
 only, no behavior change to non-impl paths. -/
 public structure Inst where
+  /-- The trait op's name this instance resolves. -/
   opName   : String
-  target   : VT       -- the structural resolution key (ADR-0068 decision 2)
-  targetTy : Ty       -- the impl's declared target, for the elaborated annotation
-  retTy    : Ty       -- the trait sig's ret type, Self-substituted
+  /-- The structural resolution key (ADR-0068 decision 2) — the carrier's `VT`. -/
+  target   : VT
+  /-- The impl's declared target type, for the elaborated annotation. -/
+  targetTy : Ty
+  /-- The trait sig's return type, `Self`-substituted at this carrier. -/
+  retTy    : Ty
+  /-- The definition's parameter names. -/
   params   : List String
+  /-- The definition's body — an inert placeholder, NEVER spliced, when `knotName` is `some`
+  (#112: the knot-bound 2-param case dispatches through the `let rec` instead). -/
   body     : Surf
-  knotName : Option String := none   -- #112: `some` ⟹ dispatch via `($knotName) (a, b)`, ignore `body`
+  /-- `some` ⟹ this is a #112 knot-bound 2-param op — dispatch via `($knotName) (a, b)`, ignoring
+  `body`. `none` ⟹ the pre-#112 splice path (`body` consulted verbatim). -/
+  knotName : Option String := none
 
+/-- The elaborator's instance table — every resolvable `Inst`, keyed by scanning `opName`/`target`
+at each dispatch site (no map: the list is small, linear scan is fine at bang-program scale). -/
 public abbrev InstEnv := List Inst
 
 /-- **#112 fix — one pending KNOT** for a 2-param impl op: the fresh binder name `.binopS`
@@ -1857,11 +1870,17 @@ OWN elaboration arm (`TypeCheck.lean`'s `.letRecS` case), which is what actually
 self- or backward reference through the μ-encoded fixpoint. Kept RAW here (not `Surf`-elaborated)
 for the SAME reason `RawOp`/`RawImpl` already are: elaborating too early is precisely the #112 bug. -/
 public structure PendingOpKnot where
+  /-- The fresh binder name `.binopS` dispatch will reference. -/
   knotName : String
+  /-- The knot's tupled-arg domain (the impl's target type, `T * T`). -/
   targetTy : Ty
+  /-- The op's result type. -/
   retTy    : Ty
-  p1       : String    -- the op's two Self-typed param NAMES, as declared (`fn eq(p, q) = …`)
+  /-- The op's first `Self`-typed param name, as declared (`fn eq(p, q) = …`). -/
+  p1       : String
+  /-- The op's second `Self`-typed param name. -/
   p2       : String
+  /-- The RAW (un-elaborated) body — elaborated later inside `letRecS`'s own arm. -/
   rawBody  : Surf
 
 /-- One data constructor's elaboration record (ADR-0069). For a GENERIC data type (`params ≠ []`,
@@ -1870,14 +1889,23 @@ it is monomorphized per use); the concrete μ is built from `params`/`payloadGen
 `monoData`, gated on `params.isEmpty`. PUBLIC (#60 seam): forced by `ElabEnv`'s field type —
 additive visibility only, no behavior change. -/
 public structure CtorInfo where
+  /-- The owning `data` type's name. -/
   dataName      : String
-  idx           : Nat        -- position in decl order (the sum injection)
-  total         : Nat        -- constructor count (right-nested sum shape)
-  arity         : Nat        -- payload arity (≤ 2 in v1)
-  payloadClosed : List Ty    -- MONOMORPHIC: payload types, the data's own name resolved to the CLOSED μ
-  dataTy        : Ty         -- MONOMORPHIC: the closed μ type (`tMu body`)
-  params        : List String := []   -- GENERIC type params ([] = monomorphic; ADR-0069 bite-1)
-  payloadGen    : List Ty    := []    -- GENERIC: this ctor's SURFACE payload template (params as `tName`, self as `tApp`)
+  /-- Position in decl order — the sum injection index. -/
+  idx           : Nat
+  /-- Constructor count (the right-nested sum's total arm count). -/
+  total         : Nat
+  /-- Payload arity (≤ 2 in v1). -/
+  arity         : Nat
+  /-- MONOMORPHIC: payload types, the data's own name resolved to the CLOSED μ — placeholder for a
+  GENERIC ctor (`params ≠ []`), see this structure's own doc comment. -/
+  payloadClosed : List Ty
+  /-- MONOMORPHIC: the closed μ type (`tMu body`) — placeholder for a GENERIC ctor. -/
+  dataTy        : Ty
+  /-- GENERIC type params (`[]` = monomorphic; ADR-0069 bite-1). -/
+  params        : List String := []
+  /-- GENERIC: this ctor's SURFACE payload template (params free as `tName`, self as `tApp`). -/
+  payloadGen    : List Ty    := []
 
 /-- A GENERIC data declaration's template (ADR-0069 bite-1): its type params + each ctor's surface
 payload types (params free as `tName`, self-reference as `tApp Name params`). Monomorphized to a
@@ -1886,7 +1914,10 @@ generic (`params ≠ []`) decls live here; monomorphic decls stay in `aliases` (
 PUBLIC (#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior
 change. -/
 public structure GenData where
+  /-- The data type's declared type-param names. -/
   params : List String
+  /-- Each constructor's `(name, payload template)` — payload params free as `tName`, self-
+  reference as `tApp Name params`. -/
   ctors  : List (String × List Ty)
 
 /-- A bounded generic function template (bite-2, ADR-0080): `fn fold(xs) : List a -> a where Monoid a
@@ -1895,11 +1926,18 @@ name + itself recursively); monomorphized per concrete use by substituting `tyVa
 the resolved `Trait T` instance's ops. PUBLIC (#60 seam): forced by `ElabEnv`'s field type —
 additive visibility only, no behavior change. -/
 public structure BoundedFn where
+  /-- The function's name. -/
   name       : String
+  /-- The function's parameter names. -/
   params     : List String
+  /-- The function's declared type — mentions the bound type var `tyVar`. -/
   declaredTy : Ty
+  /-- The trait the bound var must implement (`Monoid a`'s `Monoid`). -/
   traitName  : String
+  /-- The bound type variable's name (`Monoid a`'s `a`). -/
   tyVar      : String
+  /-- The RAW body — references the trait's ops by name + itself recursively, elaborated per
+  concrete use by substituting `tyVar := T`. -/
   body       : Surf
 
 /-- One impl op kept in RAW (un-elaborated) form, with the trait sig's `Self`-based ret type — so a
@@ -1907,16 +1945,24 @@ bounded-fn monomorphization can re-elaborate it at a concrete carrier `T` (its t
 `T`, exactly as `buildEnv`'s pre-elaboration does). PUBLIC (#60 seam): forced by `RawImpl`'s field
 type — additive visibility only, no behavior change. -/
 public structure RawOp where
+  /-- The op's name. -/
   name   : String
+  /-- The definition's parameter names. -/
   params : List String
+  /-- The RAW (un-elaborated) body. -/
   body   : Surf
-  retTy  : Ty          -- the trait sig's ret type (`Self`-based; `Self ↦ T` at use)
+  /-- The trait sig's `Self`-based return type (`Self ↦ T` when re-elaborated at a concrete
+  carrier). -/
+  retTy  : Ty
 
 /-- One impl kept RAW + keyed by its resolved carrier, for bounded-fn instance resolution. PUBLIC
 (#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior change. -/
 public structure RawImpl where
+  /-- The implemented trait's name. -/
   traitName : String
+  /-- The resolved carrier this impl targets, the resolution key. -/
   targetVT  : VT
+  /-- The impl's op definitions, kept RAW. -/
   ops       : List RawOp
 
 /-- One higher-kinded impl (ADR-0082), kept keyed on the carrier CONSTRUCTOR NAME (`Functor Option` ⟹
@@ -1925,8 +1971,12 @@ closed VT until applied. `ops` are the impl's op defs, spliced monomorphically a
 PUBLIC (#60 seam): forced by `ElabEnv`'s field type — additive visibility only, no behavior
 change. -/
 public structure HktImpl where
+  /-- The implemented HK trait's name. -/
   traitName : String
+  /-- The carrier's constructor NAME (`Functor Option` ⟹ `"Option"`) — an HK carrier has no
+  closed `VT` until applied, so this keys by name instead. -/
   ctorName  : String
+  /-- The impl's op definitions, spliced monomorphically at each concrete use. -/
   ops       : List Bang.Surface.OpDef
 
 /-- The full elaboration environment: instance ops + data constructors + type aliases + generic decls
@@ -1935,17 +1985,29 @@ public structure HktImpl where
 the law-runner harness needs a real, constructed `ElabEnv` to drive `checkLawOn` — additive
 visibility only, no behavior change. -/
 public structure ElabEnv where
+  /-- Every resolvable trait-op instance. -/
   insts    : InstEnv
+  /-- Every data constructor's elaboration record, keyed by bare ctor name. -/
   ctors    : List (String × CtorInfo)
+  /-- Monomorphic `data` decls' name ↦ their closed type alias (generic decls live in `gen`
+  instead). -/
   aliases  : List (String × Ty)
+  /-- Generic `data` decls' name ↦ their template, for per-use monomorphization. -/
   gen      : List (String × GenData) := []
+  /-- Bounded generic functions' name ↦ their RAW template, for per-use monomorphization. -/
   bfns     : List (String × BoundedFn) := []
+  /-- Every impl kept RAW + keyed by carrier, for bounded-fn instance resolution. -/
   rawImpls : List RawImpl := []
-  hktTraits   : List (String × List String) := []   -- HK trait NAME × its constructor-kinded params (`Functor` ↦ `["f"]`)
-  hktMethodOf : List (String × String) := []         -- HK method opName × its trait name (`fmap` ↦ `Functor`)
-  hktImpls    : List HktImpl := []                    -- HK impls, keyed by carrier ctor name
-  effects     : List (String × EffectInfo) := []      -- ADR-0092 D1/D2: effect NAME ↦ its label + op sigs
-  pendingKnots : List PendingOpKnot := []              -- #112: 2-param impl ops awaiting `elabProg`'s knot wrap
+  /-- HK trait NAME × its constructor-kinded params (`Functor` ↦ `["f"]`). -/
+  hktTraits   : List (String × List String) := []
+  /-- HK method opName × its trait name (`fmap` ↦ `Functor`). -/
+  hktMethodOf : List (String × String) := []
+  /-- HK impls, keyed by carrier ctor name. -/
+  hktImpls    : List HktImpl := []
+  /-- ADR-0092 D1/D2: user effect NAME ↦ its allocated label + op sigs. -/
+  effects     : List (String × EffectInfo) := []
+  /-- #112: 2-param impl ops awaiting `elabProg`'s knot wrap. -/
+  pendingKnots : List PendingOpKnot := []
 
 /-- k-ary payload as a right-nested product (`[] ↦ Unit`, the 0-ary payload). -/
 def prodOfTys : List Ty → Ty
@@ -5170,6 +5232,10 @@ not circular: `Query.lean` already transitively imports this file, so `Bang.Quer
 now a thin re-export of THIS definition (below), not a second implementation. One authoritative
 home; a new `Surf` constructor now breaks ONE exhaustive match, not two. -/
 mutual
+/-- Does `nm` occur as a free-ish variable reference (a bare `.var` leaf) anywhere in `e`? A
+syntactic, shadow-blind over-approximation — see this section's own doc comment for the full
+contract and the confirmed live gap on TYPE-level decl names (`dataD`/`traitD`/`implD`/`effectD`
+own name never appears as a `.var`, only their ops/ctors do). -/
 public def surfUsesVar (nm : String) : Surf → Bool
   | .var x                         => x == nm
   | .lit _ | .getS | .unitS        => false
@@ -6273,6 +6339,10 @@ ever consulted) unconditionally, so the impl's op body can never be reached thro
 its own trait declares it for. Confirmed structurally (the SAME code path #74's diagnosis walked):
 not a hypothetical, a REAL v1 gap an author can trip over silently — `impl Eq for Int` type-checks
 and BUILDS fine, it simply never runs. Fail-loud here beats a silently-inert impl. -/
+/-- Every `impl <Trait> for Int` op that ALIASES a built-in binop (`add`/`sub`/`mul`/`div`/`lt`/
+`eq`) and is therefore SILENTLY DEAD — `Int` operands hit the kernel's own δ-rule before
+`env.insts` is ever consulted, so the impl's body can never run; see this section's own doc
+comment for the full diagnosis. Returns `(traitName, opName)` pairs. -/
 public def unreachableIntImplDiagnostics (src : String) : Except String (List (String × String)) := do
   let p ← parseProgWithDerives src
   let mut out : List (String × String) := []
