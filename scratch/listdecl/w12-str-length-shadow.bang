@@ -1,0 +1,2 @@
+let rec length : Str -> Int = fun s => match s { SNil -> 0, SCons(c, rest) -> 1 + ($length) rest } in
+$length "hi"

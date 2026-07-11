@@ -1,0 +1,7 @@
+-- w5: does a purely TYPE-position mention of `List` (never a bare .var/Nil/Cons value use)
+-- get seen by the mention-filter? Constructs via `Prelude_take`'s own machinery only —
+-- no local `data List a`, to see if the prelude's own type-only self-reference resolves
+-- List/Nil/Cons from ITS OWN scope (i.e. does injectPrelude see through to Prelude.bang's
+-- own unqualified List mention when the CALLER never mentions List/Nil/Cons at all).
+let xs = 5 in
+xs
