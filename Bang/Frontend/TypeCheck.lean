@@ -5315,7 +5315,11 @@ def preludeSigs : List (String × String) :=
     ("toUpper", "Char -> Char"),
     ("toLower", "Char -> Char"),
     ("take", "Int -> List a -> List a"),
-    ("drop", "Int -> List a -> List a") ]
+    ("drop", "Int -> List a -> List a"),
+    ("length", "List a -> Int"),
+    ("append", "List a -> List a -> List a"),
+    ("head", "List a -> Option a"),
+    ("tail", "List a -> Option (List a)") ]
 
 /-- Auto-`use` the prelude into `p` (ADR-0098): merge a TRIMMED `preludeProg` — containing only the
 decls the program actually MENTIONS (`progUsesVar`) — in as a resolved module named `"Prelude"`,
@@ -7255,9 +7259,9 @@ witnessed-iso laws made real through `Source.eval`. -/
 auto-`use`d (ADR-0098; docs/notes/stdlib-prelude-survey.md §3 — the first slice, ordered by dogfood
 demand). Each is used FREE with no local `let`/declaration (the injection under test); the char-kit guards use
 `(Char 97)`-style ctor-application (a `Char` literal `'a'` desugars to the SAME `Char 97`, both are
-exercised — see the `let c = 'a'`-style guards below). No List entry ships in this slice — the survey
-found NO free injected generic `List a` exists (only per-program user `data List a` declarations,
-e.g. `monoidInt` above); the list-independent subset ships alone, see the design-finding note below. -/
+exercised — see the `let c = 'a'`-style guards below). The List family (`take`/`drop`/`length`/
+`append`/`head`/`tail`) ships separately below (Validation ⑨l) — it needed `List a` itself to become
+a free injected generic (ADR-0103 Amendment ①), landed after this slice. -/
 -- `fst`/`snd` — the dogfood-json TOP papercut. `p` a literal pair.
 #guard runTypedYieldsInt 400 "($fst) (3, 4)" 3
 #guard runTypedYieldsInt 400 "($snd) (3, 4)" 4
@@ -7297,6 +7301,59 @@ e.g. `monoidInt` above); the list-independent subset ships alone, see the design
 -- `EffRow.isEmpty`/`.card` are NONCOMPUTABLE in the compiled `#guard` path — `decide (ρ = ∅)` is the
 -- computable emptiness idiom (rides Finset's `DecidableEq`), matching `showRow`'s own usage.
 #guard (match checkProg "3" with | .ok (_, ρ) => decide (ρ = ∅) | _ => false)
+
+/-! ### Validation ⑨l — the List family: `take`/`drop`/`length`/`append`/`head`/`tail`, ridden over
+the UNCONDITIONALLY injected `List a` (ADR-0103 Amendment ①, `genericPrelude`). Zero local `data
+List a` declaration anywhere below — the zero-declaration convenience the Amendment's Implementation
+note deferred, now landed. Each bound-free `let rec` entry (`take`/`drop`/`length`/`append`) needs an
+ANNOTATED call site to discover its monomorphic instantiation (ADR-0103 decision item 3); `head`/
+`tail` carry the same bound-free `let rec` ascription shape for the SAME reason even though neither
+self-recurses (a plain un-ascribed `pub let` leaves its inline `match (xs : List a)` annotation's
+free `a` unresolved — `monomorphizeLetRec` only visits `.letRecS` nodes). -/
+-- `length` — the empty list, a singleton, and a 3-element list (the self-recursive walk, all arms).
+#guard runTypedYieldsInt 400 "$length ((Nil : List Int) : List Int)" 0
+#guard runTypedYieldsInt 400 "$length ((Cons(7, Nil) : List Int) : List Int)" 1
+#guard runTypedYieldsInt 600
+  "$length ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int)" 3
+-- `take`/`drop` — zero declaration (ADR-0103's own residual gap, now closed): the FIRST slice
+-- (`examples/list-basics`) needed its own `data List a`; this doesn't.
+#guard runTypedYieldsInt 600
+  "$length (($take 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)" 2
+#guard runTypedYieldsInt 600
+  "$length (($drop 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)" 1
+-- `append` — the annotation anchors on `append`'s FIRST argument (the discovery site); the result
+-- (4 elements) proves both input lists' payloads survive the concatenation, in order.
+#guard runTypedYieldsInt 800
+  ("let xs = (Cons(1, Cons(2, Nil)) : List Int) in let ys = (Cons(3, Cons(4, Nil)) : List Int) in " ++
+   "$length ((($append (xs : List Int)) ys) : List Int)") 4
+-- `head` — `Some` on a non-empty list, `None` on `Nil` (both `Option` arms, TOTAL).
+#guard runTypedYieldsInt 400
+  "match ($head ((Cons(7, Nil) : List Int) : List Int)) { None -> 0 - 1, Some(v) -> v }" 7
+#guard runTypedYieldsInt 400
+  "match ($head ((Nil : List Int) : List Int)) { None -> 0 - 1, Some(v) -> v }" (0 - 1)
+-- `tail` — `Some` wraps the REST of the list (its length, not its head, distinguishes it from `head`
+-- returning a value directly); `None` on `Nil`.
+#guard runTypedYieldsInt 600
+  ("match ($tail ((Cons(7, Cons(8, Nil)) : List Int) : List Int)) " ++
+   "{ None -> 0 - 1, Some(t) -> $length (t : List Int) }") 1
+#guard runTypedYieldsInt 400
+  "match ($tail ((Nil : List Int) : List Int)) { None -> 0 - 1, Some(t) -> $length (t : List Int) }" (0 - 1)
+-- a DIFFERENTLY-named list-shaped type with the SAME bare `Nil`/`Cons` ctor names collides with the
+-- injected `List` (B012, ADR-0099) — the ratified migration cost, not a silent break (qualified
+-- form still resolves, `IntList_Nil`/`IntList_Cons`, mirroring Validation ⑨a's `collidingListsProg`).
+#guard (match checkProg "data IntList = Nil | Cons(Int, IntList) Nil" with
+        | .error m => (m.splitOn "ambiguous constructor 'Nil'").length > 1
+        | .ok _ => false)
+#guard runTypedYieldsInt 400
+  ("data IntList = Nil | Cons(Int, IntList) let xs = IntList_Cons(7, IntList_Nil) in " ++
+   "match xs { IntList_Nil -> 0, IntList_Cons(h, t) -> h }") 7
+-- a SAME-named user `data List a` still SHADOWS the injected one, zero-code (ADR-0098 D4's type-name
+-- shadow, generalized to `List` — the arity-agnostic finding `listdecl-injection-design.md` w10
+-- established): the user's OWN `Cons`/`Nil` win, and `length`'s SELF-RECURSIVE body still resolves
+-- to the injected prelude `length`, riding the SAME `List` shape the user just (re)declared.
+#guard runTypedYieldsInt 600
+  ("data List a = Nil | Cons(a, List a) " ++
+   "$length ((Cons(1, Cons(2, Nil)) : List Int) : List Int)") 2
 
 /-! ## Stage ⑤d — BOUNDED generic functions (bite-2, ADR-0080): a `Monoid a =>`-bounded `fold`,
 MONOMORPHIZED per concrete carrier. `fn sum(xs) : List a -> a where Monoid a = …` is a bounded generic

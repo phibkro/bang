@@ -62,3 +62,11 @@ pub let rec drop : Int -> List a -> List a =
   fun n =>
     fun xs =>
       if n == 0 then xs else match (xs : List a) { Nil -> Nil, Cons(h, t) -> $drop (n - 1) t }
+pub let rec length : List a -> Int =
+  fun xs => match (xs : List a) { Nil -> 0, Cons(h, t) -> 1 + $length t }
+pub let rec append : List a -> List a -> List a =
+  fun xs => fun ys => match (xs : List a) { Nil -> ys, Cons(h, t) -> Cons(h, $append t ys) }
+pub let rec head : List a -> Option a =
+  fun xs => match (xs : List a) { Nil -> None, Cons(h, t) -> Some h }
+pub let rec tail : List a -> Option List a =
+  fun xs => match (xs : List a) { Nil -> None, Cons(h, t) -> Some t }

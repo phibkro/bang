@@ -477,6 +477,10 @@ binding of the same name shadows the injected one.
 | `toLower` | `Char -> Char` |
 | `take` | `Int -> List a -> List a` |
 | `drop` | `Int -> List a -> List a` |
+| `length` | `List a -> Int` |
+| `append` | `List a -> List a -> List a` |
+| `head` | `List a -> Option a` |
+| `tail` | `List a -> Option (List a)` |
 
 ## Examples
 
@@ -657,6 +661,14 @@ Every example below is a build-verified `#guard`. `⟹` is evaluation; `:` is th
 - `match (($toLower) (Char 65)) { Char(n) -> n }` ⟹ `97`
 - `match (($toLower) (Char 53)) { Char(n) -> n }` ⟹ `53`
 - `let abs = { fun n => 999 } in ($abs) (0 - 7)` ⟹ `999`  — shadowing: a user `let abs = …` in the body WINS over the injected one (lexical scope contract).
+### Validation ⑨l — the List family: `take`/`drop`/`length`/`append`/`head`/`tail`, ridden over
+
+- `$length ((Nil : List Int) : List Int)` ⟹ `0`  — `length` — the empty list, a singleton, and a 3-element list (the self-recursive walk, all arms).
+- `$length ((Cons(7, Nil) : List Int) : List Int)` ⟹ `1`
+- `$length ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int)` ⟹ `3`
+- `$length (($take 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)` ⟹ `2`  — (`examples/list-basics`) needed its own `data List a`; this doesn't.
+- `$length (($drop 2) ((Cons(1, Cons(2, Cons(3, Nil))) : List Int) : List Int) : List Int)` ⟹ `1`
+- `match ($head ((Cons(7, Nil) : List Int) : List Int)) { None -> 0 - 1, Some(v) -> v }` ⟹ `7`  — `head` — `Some` on a non-empty list, `None` on `Nil` (both `Option` arms, TOTAL).
 ### #90 — row annotations (`T ! {…}`) could only name the four BUILT-IN effects (`throws`/
 
 - `effect Net { fetch : Int -> Int } let get2 = ( {fun net => (net.fetch(1)) + (net.fetch(2))} : Thunk (Cap Net -> Int ! {Net}) ) in handle (($get2) net) with Net as net { fetch(n) => n * 10 }` ⟹ `30`  — types, and RUNS end to end (the #84 gap-1 pipeline that was `checkProg`-only until this fix).
