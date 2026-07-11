@@ -1,22 +1,25 @@
+-- Uses the type-qualified `IntList_Nil`/`IntList_Cons` spelling (ADR-0099): the prelude's
+-- unconditional `data List a = Nil | Cons(a, List a)` (ADR-0103 Amendment ①) shares these bare
+-- ctor names, so a bare reference here would be ambiguous (B012).
 data IntList = Nil | Cons(Int, IntList)
 
 trait Eq { fn eq(a, b) -> (Unit + Unit) law refl(a): a == a }
 
 impl Eq for IntList {
   fn eq(p, q) = match p {
-    Nil -> match q { Nil -> 0 == 0, Cons(hy, ty) -> 0 == 1 },
-    Cons(hx, tx) -> match q {
-      Nil -> 0 == 1,
-      Cons(hy, ty) -> let headEq = hx == hy in
+    IntList_Nil -> match q { IntList_Nil -> 0 == 0, IntList_Cons(hy, ty) -> 0 == 1 },
+    IntList_Cons(hx, tx) -> match q {
+      IntList_Nil -> 0 == 1,
+      IntList_Cons(hy, ty) -> let headEq = hx == hy in
                        let tailEq = tx == ty in
                        if headEq then tailEq else 0 == 1
     }
   }
 }
 
-let l1 = Cons(1, Cons(2, Cons(3, Nil))) in
-let l2 = Cons(1, Cons(2, Cons(3, Nil))) in
-let l3 = Cons(1, Cons(2, Cons(4, Nil))) in
+let l1 = IntList_Cons(1, IntList_Cons(2, IntList_Cons(3, IntList_Nil))) in
+let l2 = IntList_Cons(1, IntList_Cons(2, IntList_Cons(3, IntList_Nil))) in
+let l3 = IntList_Cons(1, IntList_Cons(2, IntList_Cons(4, IntList_Nil))) in
 let same = l1 == l2 in
 let diff = l1 == l3 in
 if same then (if diff then 9 else 1) else 0
