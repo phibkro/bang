@@ -725,20 +725,20 @@ value position (the wasm folded-form rule: a subexpression must produce exactly 
 def seqBlock (body : String) : String :=
   s!"(block (result (ref null $val))\n    {body})"
 
-/-- Arithmetic `BinOp` → the i64 wasm op used on the GC path. Only `mul` remains here (bignum lane
-B3 replaces it with `$mulVal`); `add`/`sub` route through `binopValHelper` (the bignum-safe runtime
-helper), and `div`/comparisons are handled separately. -/
+/-- Arithmetic `BinOp` → the i64 wasm op used on the GC path. NONE remain — `add`/`sub`/`mul` all
+route through `binopValHelper` (the bignum-safe runtime helpers), `div` is the B0 Euclidean path,
+comparisons are `cmpValCond`. Kept as a (now-empty) hook for any future i64-only op. -/
 def binopGCWat : BinOp → Option String
-  | .mul => some "i64.mul"
-  | .add | .sub | .div | .lt | .eq => none
+  | .add | .sub | .mul | .div | .lt | .eq => none
 
-/-- `add`/`sub` → the bignum-safe runtime helper (`$addVal`/`$subVal`) that operates on BOXED `$val`
-operands (mixed `$ival`/`$bigval`) and returns an unbounded result (issue #132 / bignum lane B2).
-`mul` stays on the i64 path (B3); comparisons and `div` are elsewhere. -/
+/-- `add`/`sub`/`mul` → the bignum-safe runtime helper (`$addVal`/`$subVal`/`$mulVal`) that operates
+on BOXED `$val` operands (mixed `$ival`/`$bigval`) and returns an unbounded result (issue #132 /
+bignum lane B2 add·sub, B3 mul). Comparisons and `div` are handled elsewhere. -/
 def binopValHelper : BinOp → Option String
   | .add => some "$addVal"
   | .sub => some "$subVal"
-  | .mul | .div | .lt | .eq => none
+  | .mul => some "$mulVal"
+  | .div | .lt | .eq => none
 
 /-- Comparison `BinOp` → the i64 wasm compare (i32 result), for the fused `if`. -/
 def cmpGCWat : BinOp → Option String
@@ -1373,7 +1373,41 @@ def bignumHelpers : String :=
   "    (if (i32.ne (local.get $sx) (local.get $sy)) (then (return (select (i32.const -1) (i32.const 1) (i32.eq (local.get $sx) (i32.const 1))))))\n" ++
   "    (local.set $c (call $bCmpMag (struct.get $bigval $mag (local.get $bx)) (struct.get $bigval $mag (local.get $by))))\n" ++
   "    (if (i32.eq (local.get $sx) (i32.const 1)) (then (return (i32.sub (i32.const 0) (local.get $c)))))\n" ++
-  "    (local.get $c))"
+  "    (local.get $c))\n" ++
+  -- BIGNUM MUL (bignum lane B3): schoolbook $bMulMag (base 1e9, limb·limb < 1e18 < 2⁶³ so no
+  -- 128-bit intermediate) + $mulVal with the i64 fast path (both $ival, no overflow via p/a==b AND
+  -- not the INT64_MIN×-1 edge — wasm has no mul_high). Witnessed scratch/bignum-mulval-witness.wat.
+  "  (func $bMulMag (param $a (ref $limbs)) (param $b (ref $limbs)) (result (ref $limbs))\n" ++
+  "    (local $la i32) (local $lb i32) (local $n i32) (local $i i32) (local $j i32) (local $r (ref $limbs)) (local $carry i64) (local $cur i64) (local $ai i64)\n" ++
+  "    (local.set $la (array.len (local.get $a))) (local.set $lb (array.len (local.get $b)))\n" ++
+  "    (local.set $n (i32.add (local.get $la) (local.get $lb)))\n" ++
+  "    (local.set $r (array.new_default $limbs (local.get $n))) (local.set $i (i32.const 0))\n" ++
+  "    (block $od (loop $ol (br_if $od (i32.ge_u (local.get $i) (local.get $la)))\n" ++
+  "      (local.set $ai (array.get $limbs (local.get $a) (local.get $i))) (local.set $carry (i64.const 0)) (local.set $j (i32.const 0))\n" ++
+  "      (block $id (loop $il (br_if $id (i32.ge_u (local.get $j) (local.get $lb)))\n" ++
+  "        (local.set $cur (i64.add (i64.add (array.get $limbs (local.get $r) (i32.add (local.get $i) (local.get $j))) (i64.mul (local.get $ai) (array.get $limbs (local.get $b) (local.get $j)))) (local.get $carry)))\n" ++
+  "        (array.set $limbs (local.get $r) (i32.add (local.get $i) (local.get $j)) (i64.rem_u (local.get $cur) (i64.const 1000000000)))\n" ++
+  "        (local.set $carry (i64.div_u (local.get $cur) (i64.const 1000000000)))\n" ++
+  "        (local.set $j (i32.add (local.get $j) (i32.const 1))) (br $il)))\n" ++
+  "      (array.set $limbs (local.get $r) (i32.add (local.get $i) (local.get $lb)) (i64.add (array.get $limbs (local.get $r) (i32.add (local.get $i) (local.get $lb))) (local.get $carry)))\n" ++
+  "      (local.set $i (i32.add (local.get $i) (i32.const 1))) (br $ol)))\n" ++
+  "    (call $bTrim (local.get $r)))\n" ++
+  "  (func $bIsZeroVal (param $v (ref null $val)) (result i32)\n" ++
+  "    (if (result i32) (call $bIsIval (local.get $v))\n" ++
+  "      (then (i64.eqz (call $bIvalN (local.get $v))))\n" ++
+  "      (else (i32.and (i32.eq (array.len (struct.get $bigval $mag (ref.cast (ref $bigval) (local.get $v)))) (i32.const 1)) (i64.eqz (array.get $limbs (struct.get $bigval $mag (ref.cast (ref $bigval) (local.get $v))) (i32.const 0)))))))\n" ++
+  "  (func $mulVal (param $x (ref null $val)) (param $y (ref null $val)) (result (ref null $val))\n" ++
+  "    (local $a i64) (local $b i64) (local $p i64) (local $bx (ref $bigval)) (local $by (ref $bigval)) (local $sx i32) (local $sy i32)\n" ++
+  "    (if (i32.or (call $bIsZeroVal (local.get $x)) (call $bIsZeroVal (local.get $y))) (then (return (struct.new $ival (i64.const 0)))))\n" ++
+  "    (if (i32.and (call $bIsIval (local.get $x)) (call $bIsIval (local.get $y)))\n" ++
+  "      (then\n" ++
+  "        (local.set $a (call $bIvalN (local.get $x))) (local.set $b (call $bIvalN (local.get $y)))\n" ++
+  "        (local.set $p (i64.mul (local.get $a) (local.get $b)))\n" ++
+  "        (if (i32.and (i64.eq (i64.div_s (local.get $p) (local.get $a)) (local.get $b)) (i32.eqz (i32.and (i64.eq (local.get $a) (i64.const -1)) (i64.eq (local.get $b) (i64.const -9223372036854775808)))))\n" ++
+  "          (then (return (struct.new $ival (local.get $p)))))))\n" ++
+  "    (local.set $bx (call $bToBig (local.get $x))) (local.set $by (call $bToBig (local.get $y)))\n" ++
+  "    (local.set $sx (struct.get $bigval $sign (local.get $bx))) (local.set $sy (struct.get $bigval $sign (local.get $by)))\n" ++
+  "    (struct.new $bigval (i32.xor (local.get $sx) (local.get $sy)) (call $bMulMag (struct.get $bigval $mag (local.get $bx)) (struct.get $bigval $mag (local.get $by)))))"
 
 /-- The fixed WASM-GC type + helper preamble every rung-4 module shares (types then helper funcs). -/
 def gcPreamble : String := gcTypes ++ "\n" ++ gcHelpers

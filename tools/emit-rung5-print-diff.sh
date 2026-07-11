@@ -29,9 +29,9 @@ trap 'rm -rf "$outdir"' EXIT
 CORPUS=(
   nqueens list-basics mutual-parity parser-combinators wildcard-match
   tokenizer string-stdlib derive-eq-ord trait-recursive-eq trait-recursive-ord
-  caesar neg-div big-literal big-add big-sub
+  caesar neg-div big-literal big-add big-sub factorial
 )
-MIN_EMITTED="${MIN_EMITTED:-15}"
+MIN_EMITTED="${MIN_EMITTED:-16}"
 
 echo "── building the rung4-shape emitter exe ──"
 lake build rung4-shape >/dev/null 2>&1
