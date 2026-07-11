@@ -185,6 +185,7 @@ out of scope here. Squash-merge each increment to `main` → one clean entry per
 - **rung5** — S2 — throws on the WasmGC path (try_table/throw, $val payload) (`47b74c6b`)
 - **rung5** — S3 — transaction on the WasmGC heap ($txbox journal + explicit rollback) (`ae8c18be`)
 - **rung5** — S4 — custom user effects on the WasmGC path (clause call_ref) (`0de1d687`)
+- **surface** — #126 the host-IO reach — module-qualified host perform (hostPerformS) (`5f035611`)
 
 ### Fixes
 - **surface** — A-normalize effect-op arguments — arithmetic composes as put/raise/write args (#26 part-1) (`1e83aade`)
